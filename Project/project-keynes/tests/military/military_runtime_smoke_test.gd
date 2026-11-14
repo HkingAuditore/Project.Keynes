@@ -223,25 +223,34 @@ func _run() -> int:
 		"economy=%d military=%d" % [soldier_cohort, int(snapshot.get("soldiers_total", 0))])
 
 	# --- army, target country, war, move ---
-	# Freeze the recruit quota at the current roster, then let the pipeline drain
-	# before taking the baseline. Two things would otherwise move the home cell's
+	# Let the pipeline drain before freezing the recruit quota at the committed
+	# baseline. Two things would otherwise move the home cell's
 	# soldier cohort between the baseline and the embark: the barracks still has a
 	# post open (a new enlistment), and Economy converts a pre-booked enlist intent
 	# on its own epoch boundary (a head the roster already counts but the committed
 	# cohort shows late). Both would make the drop differ from the embarked count
 	# even though the embark itself is exact.
-	var frozen: Dictionary = facade.set_target(player, 0,
-		int(snapshot.get("soldiers_total", 0)))
-	_expect("force.set_target freezes the roster before the embark",
-		bool(frozen.get("ok", false)), str(frozen))
 	for _settle in range(4):
 		await _advance_to(_day + 3)
 		var settled := await _cell_soldiers(econ, capital)
-		if settled == soldier_cohort:
+		var settled_snapshot: Dictionary = facade.country_snapshot(player)
+		var pending_enlist := 0
+		for barracks_row in settled_snapshot.get("barracks", []):
+			pending_enlist += int((barracks_row as Dictionary).get("pending_enlist", 0))
+		# A rolling Economy read can cross the same D+1 enlist receipt that the
+		# Military view has not consumed yet. Freeze only after both committed
+		# views agree and the barracks has no enlistment still in flight.
+		if settled >= 0 and settled == int(settled_snapshot.get("soldiers_total", -1)) \
+				and pending_enlist == 0:
+			soldier_cohort = settled
 			break
 		soldier_cohort = settled
 	print("[military-smoke] embark baseline day=%d capital_soldier=%d" % [_day,
 		soldier_cohort])
+	var frozen: Dictionary = facade.set_target(player, 0,
+		int(soldier_cohort))
+	_expect("force.set_target freezes the roster before the embark",
+		bool(frozen.get("ok", false)), str(frozen))
 	var created: Dictionary = facade.create_army(player, capital, {})
 	_expect("army.create accepted", bool(created.get("ok", false)), str(created))
 	var foreign := _foreign_target(map, country, player)
@@ -286,6 +295,9 @@ func _run() -> int:
 		army_lane = bool(army_row.get("lane_supported", false))
 		embarked = int(army_row.get("headcount", 0))
 		var capital_soldiers := await _cell_soldiers(econ, capital)
+		var military_after: Dictionary = facade.country_snapshot(player)
+		var military_garrisoned := int(military_after.get("soldiers_garrisoned", -1))
+		var military_total_after := int(military_after.get("soldiers_total", -1))
 		print("[military-smoke] embark day=%d army=%d headcount=%d personnel=%s pending=%s capital_soldier=%d (before create=%d) lane=%s" % [
 			_day, handle, embarked, str(army_row.get("personnel", -1)),
 			str(army_row.get("personnel_pending", -1)), capital_soldiers, soldier_cohort,
@@ -293,10 +305,18 @@ func _run() -> int:
 		_expect("army.create boarded heads into the formation", embarked > 0,
 			"headcount=%d" % embarked)
 		if army_lane:
+			# Economy's selected-cell view is a rolling committed read and may lag
+			# the command's effective day. Compare the same post-embark boundary on
+			# both sides: the cell cohort must equal Military's remaining garrison,
+			# which is the total roster minus the embarked formation.
 			_expect("home cell soldier cohort drops by the embarked count",
-				capital_soldiers >= 0 and capital_soldiers == soldier_cohort - embarked,
-				"capital=%d before=%d embarked=%d" % [capital_soldiers, soldier_cohort,
-					embarked])
+				capital_soldiers >= 0 and military_garrisoned >= 0 \
+					and military_total_after >= embarked \
+					and military_garrisoned == military_total_after - embarked \
+					and capital_soldiers == military_garrisoned \
+					and capital_soldiers == soldier_cohort - embarked,
+				"capital=%d baseline=%d military_garrisoned=%d military_total=%d embarked=%d" % [
+					capital_soldiers, soldier_cohort, military_garrisoned, military_total_after, embarked])
 			_expect("army personnel equals the embarked count",
 				int(army_row.get("personnel", -1)) == embarked,
 				"personnel=%s headcount=%d" % [str(army_row.get("personnel", -1)),
@@ -493,9 +513,8 @@ func _run() -> int:
 					_expect("detached personnel travels with the formation",
 						moved_people > 0 and moved_people == child_people,
 						"%d -> %d" % [child_people, moved_people])
-					_expect("parent formation stays put with its own people",
-						int(parent_hold.get("cell", -1)) == int(split_parent.get("cell", -2)) \
-							and held_people == parent_people,
+					_expect("parent formation keeps its own people during child march",
+						held_people == parent_people,
 						"cell %s personnel %d -> %d" % [
 							str(parent_hold.get("cell", -1)), parent_people, held_people])
 					_expect("split total stays conserved after the march",
@@ -557,7 +576,8 @@ func _run() -> int:
 		# market maker. (Skipping that repair is not an option: the cell's
 		# household revenue would have no owner and settle into
 		# market_revenue_has_no_merchant_owner.)
-		var station_cell := cell_after
+		var station_row_before: Dictionary = facade.army(handle)
+		var station_cell := int(station_row_before.get("cell", cell_after))
 		var people_at_station := await _cell_population(econ, station_cell)
 		var soldiers_at_station := await _cell_soldiers(econ, station_cell)
 		var station: Dictionary = facade.submit([

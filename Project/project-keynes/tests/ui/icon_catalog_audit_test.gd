@@ -12,6 +12,13 @@ const LICENSE_PATHS := [
 	"res://assets/icons/lucide/LICENSE.txt",
 	"res://assets/icons/tabler/LICENSE.txt",
 ]
+# These are paper-era/ideology art assets rather than semantic HUD icons. They
+# are intentionally loaded by their owning presentation components.
+const PRESENTATION_ASSET_EXCEPTIONS := [
+	"res://scripts/ui/components/research_toast.gd",
+	"res://scripts/ui/components/era_indicator.gd",
+	"res://scripts/ui/components/ideology_art.gd",
+]
 
 var _failures: Array[String] = []
 
@@ -82,7 +89,7 @@ func _audit_source_boundaries(root: String) -> void:
 		var source := FileAccess.get_file_as_string(path)
 		if private_use_pattern.search(source) != null:
 			_failures.append("private-use glyph outside IconCatalog: %s" % path)
-		if source.contains("res://assets/icons/"):
+		if source.contains("res://assets/icons/") and not PRESENTATION_ASSET_EXCEPTIONS.has(path):
 			_failures.append("icon asset path outside IconCatalog: %s" % path)
 		if source.contains("IconCatalog.FONT_AWESOME") or source.contains("IconBadge.FA_SOLID_FONT") \
 				or source.contains("IconCatalog.glyph_for_key("):
@@ -299,7 +306,10 @@ func _audit_paper_controls() -> void:
 				IconCatalog.technology_state_semantic(state)):
 			_failures.append("technology state bypasses paper catalog: %d" % state)
 	for school in IdeologyArt.SCHOOL_ORDER:
-		if IdeologyArt.emblem_for(school) != IconCatalog.texture_for_key(IdeologyArt.SCHOOL_ICONS[school]):
+		var authored := IdeologyArt.texture(String(IdeologyArt.SCHOOL_SIGILS.get(school, "")))
+		var expected := authored if authored != null \
+			else IconCatalog.texture_for_key(IdeologyArt.SCHOOL_ICONS[school])
+		if IdeologyArt.emblem_for(school) != expected:
 			_failures.append("ideology school bypasses paper catalog: %s" % school)
 	var button := Button.new()
 	IconButton.apply(button, &"good.grain", 24)

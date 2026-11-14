@@ -275,7 +275,17 @@ struct Sim {
                     receipts.push_back(r);
                     break;
                 case MILITARY_INTENT_DISCHARGE:
+                    if (in.cell >= 0) {
+                        enlist_by_cell[(size_t)in.cell] = std::max<int64_t>(0,
+                            enlist_by_cell[(size_t)in.cell] - in.count);
+                        dg.cell_unemployed[(size_t)in.cell] += in.count;
+                    }
+                    receipts.push_back(r);
+                    break;
                 case MILITARY_INTENT_CASUALTY:
+                    if (in.cell >= 0)
+                        enlist_by_cell[(size_t)in.cell] = std::max<int64_t>(0,
+                            enlist_by_cell[(size_t)in.cell] - in.count);
                     receipts.push_back(r);
                     break;
                 case MILITARY_INTENT_STATE_BUILD: {
@@ -734,6 +744,10 @@ bool test_partial_discharge(const MilitaryTerrainInput &t, std::string &report) 
             r.source_id = in.source_id;
             r.committed_count = in.count * 5 / 8;   // Economy moved 5/8 of the request
             committed += r.committed_count;
+            sim.enlist_by_cell[(size_t)C] = std::max<int64_t>(0,
+                sim.enlist_by_cell[(size_t)C] - r.committed_count);
+            sim.dg.cell_soldiers[(size_t)C] = sim.enlist_by_cell[(size_t)C];
+            sim.dg.cell_unemployed[(size_t)C] += r.committed_count;
             sim.receipts.push_back(r);
         }
     }

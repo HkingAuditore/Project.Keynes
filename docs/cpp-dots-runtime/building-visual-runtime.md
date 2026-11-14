@@ -304,13 +304,13 @@ Desktop resident 上限 128、Web 48；Body 上限 q0/q1/q2 为 6k/18k/36k（扣
   三批次、Shadow 共享 buffer、未变行跳过、画质往返逐位一致且复用节点、单格增量重算、
   社会档位变化只重算变化行、`lod_fraction` 与名次、水格与 hex 边界、TOD uniform（含
   decal）和 24 位宏观索引。
-- `tests/_tmp_building_art_harness.tscn`：美术截图台。11 列时代 × 6 行地方经济（稻作小村、
+- `tests/probes/_tmp_building_art_harness.tscn`：美术截图台。11 列时代 × 6 行地方经济（稻作小村、
   麦作农镇、纺织城、矿冶镇、富裕首府、积雪渔林盐业；各行带 tier 与贫富档），走真实层与
   DLL，输出总览、近景、城市、夜景、黄昏截图；`detail` 输出单格特写，`wealth` 改为在
   时代 5 横扫生活水平与贫富：
 
 ```powershell
-& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' --path Project\project-keynes --resolution 1600x900 res://tests/_tmp_building_art_harness.tscn -- <out_dir> [detail|wealth]
+& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' --path Project\project-keynes --resolution 1600x900 res://tests/probes/_tmp_building_art_harness.tscn -- <out_dir> [detail|wealth]
 ```
 
 这些测试不改变 DataCore 或 PKEC。截图台需要真实渲染设备；headless 只验证资源装载、

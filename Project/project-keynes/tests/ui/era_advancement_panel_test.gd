@@ -6,6 +6,7 @@ extends SceneTree
 
 var failures := 0
 const STATUSES := ["locked", "ready", "purchasing", "paused", "completing", "max"]
+const RuleCatalog = preload("res://scripts/era/era_advancement_catalog.gd")
 
 
 func _initialize() -> void:
@@ -185,15 +186,15 @@ func _all_buffs_drawn(panel: EraAdvancementPanel, snapshot: Dictionary) -> bool:
 func _check_once(panel: EraAdvancementPanel, status: String) -> void:
 	await process_frame
 	var counts := {
-		"任选其二": _drawn_count(panel, "任选其二"),
+		"规则": _drawn_count(panel, RuleCatalog.CONDITIONS_RULE_TEXT),
 		"已满足": _drawn_count(panel, "已满足"),
 		"时代晋升": _drawn_count(panel, "时代晋升"),
 		"农耕时代": _drawn_count(panel, "农耕时代"),
 		"status": _drawn_count(panel, String(panel.model().get("status_chip", "?"))),
 	}
-	var expected := {"任选其二": 1, "已满足": 0, "时代晋升": 1, "农耕时代": 1, "status": 1}
+	var expected := {"规则": 1, "已满足": 0, "时代晋升": 1, "农耕时代": 1, "status": 1}
 	if status == "max":
-		expected = {"任选其二": 0, "已满足": 0, "时代晋升": 1, "农耕时代": 0, "status": 1}
+		expected = {"规则": 0, "已满足": 0, "时代晋升": 1, "农耕时代": 0, "status": 1}
 	_check("%s: rule, count, era name and status each drawn exactly once %s" % [status, str(counts)],
 		counts == expected)
 
@@ -402,7 +403,8 @@ func _check_view_model() -> void:
 	_check("delta hint: 2 missing → '还差 2 项条件'", EraIndicatorViewModel.delta_hint("locked",
 		[], 0, 2) == "还差 2 项条件")
 	_check("vm converts budget from MONEY_SCALE", is_equal_approx(float(model.era_daily), 6.125))
-	_check("vm progress text", String(model.progress_text) == "45%")
+	_check("vm progress is formatted once in the status chip",
+		is_equal_approx(float(model.progress), 0.45) and String(model.status_chip).ends_with("45%"))
 	_check("vm keeps era ids aligned with era icons",
 		String(model.current.id) == "stone" and String(model.next.id) == "agrarian")
 	_check("milestone research fields are gone",

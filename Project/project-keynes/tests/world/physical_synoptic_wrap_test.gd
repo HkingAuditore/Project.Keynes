@@ -4,7 +4,8 @@ extends SceneTree
 #   godot --headless --path . --script res://tests/world/physical_synoptic_wrap_test.gd
 
 const CPP_PATH := "../../gdext/src/world_ext_physical.cpp"
-const BAKER_PATH := "res://scripts/rendering/map_baker.gd"
+const SHARED_PHYSICS_PATH := "../../gdext/src/runtime_climate_physics.cpp"
+const BAKER_PATH := "res://scripts/rendering/bakers/physical_circulation_baker.gd"
 const FALLBACK_PATH := "res://scripts/rendering/physical_circulation_solver.gd"
 
 var _checks := 0
@@ -13,17 +14,18 @@ var _failures := 0
 
 func _init() -> void:
 	var cpp := FileAccess.get_file_as_string(CPP_PATH)
+	var shared_physics := FileAccess.get_file_as_string(SHARED_PHYSICS_PATH)
 	var baker := FileAccess.get_file_as_string(BAKER_PATH)
 	var fallback := FileAccess.get_file_as_string(FALLBACK_PATH)
 	_expect(not cpp.is_empty(), "physical C++ source is readable")
 	_expect(cpp.contains("physical_wrap01(double world_x"), "native passes share positive periodic longitude")
-	_expect(cpp.contains("const double k1x = 1.0 + double(seed_bits & 1u);") \
-		and cpp.contains("const double slp_syn_k1x = 1.0 + double(slp_seed_bits & 1u);"),
+	_expect(shared_physics.contains("const double k1x = 3.0 + double(seed_bits & 3u);") \
+		and shared_physics.contains("const double k2x = 3.0 + double((seed_bits >> 2) & 3u);"),
 		"wind and SLP use integer zonal harmonics")
 	_expect(not cpp.contains("std::sin(seed_a) * 0.80 + 0.35") \
 		and not cpp.contains("0.90 + 0.40 * std::sin(slp_syn_sa)"),
 		"non-periodic zonal wave numbers are absent")
-	_expect(baker.count('"wrap_period_x":') >= 5 and baker.count('"wrap_origin_x":') >= 5,
+	_expect(baker.count('"wrap_period_x":') >= 4 and baker.count('"wrap_origin_x":') >= 4,
 		"daily, sliced, and oneshot physical paths pass the wrap contract")
 	_expect(fallback.contains("static func _neighbor_for_dir") \
 		and fallback.contains("posmod(off.x, map.width)"),

@@ -659,4 +659,3 @@ static func _is_water_cell(cell) -> bool:
 		if flag is bool and bool(flag):
 			return true
 	return false
-

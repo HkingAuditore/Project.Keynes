@@ -30,7 +30,7 @@
       "owner": "country",
       "tag": "PKCN",
       "version": 15,
-      "source": "gdext/src/country_runtime.cpp",
+      "source": "gdext/src/country_runtime_persistence.cpp",
       "tokens": [
         "SCHEMA_VERSION",
         "version != SCHEMA_VERSION"
@@ -115,7 +115,7 @@
       "owner": "rules",
       "tag": "PKID",
       "version": 14,
-      "source": "gdext/src/ideology_runtime.cpp",
+      "source": "gdext/src/ideology_runtime_persistence.cpp",
       "tokens": [
         "SAVE_SCHEMA_VERSION",
         "schema != SAVE_SCHEMA_VERSION"
@@ -145,7 +145,7 @@
       "owner": "country",
       "tag": "PKCN",
       "version": 14,
-      "source": "gdext/src/country_runtime.cpp",
+      "source": "gdext/src/country_runtime_persistence.cpp",
       "tokens": [
         "PKCN",
         "SCHEMA_VERSION"

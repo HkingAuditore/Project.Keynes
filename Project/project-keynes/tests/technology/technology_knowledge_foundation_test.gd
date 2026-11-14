@@ -14,13 +14,19 @@ func _init() -> void:
 	var signals := PackedStringArray(["resource.iron_ore", "resource.coal", "resource.timber",
 		"development.trade.goods_2", "development.buildings.active_4_180d"])
 	var blocked := _fixture(starters, signals)
-	_expect("early knowledge institution is the first research opportunity",
-		_state(blocked, "tech.early_knowledge_institution") == 2)
-	for id in ["tech.iron_ore_identification", "tech.coal_outcrop_identification", "tech.market_institutions"]:
+	_expect("early knowledge institution is already a starter technology",
+		_state(blocked, "tech.early_knowledge_institution") == 5)
+	for id in ["tech.iron_ore_identification", "tech.coal_outcrop_identification"]:
 		_expect("resource sighting only reveals: %s" % id, _state(blocked, id) == 1)
 		_attempt_enqueue(blocked, id, int(blocked.day), false)
 		blocked.day = int(blocked.day) + 1
 		_expect("missing institution prevents enqueue: %s" % id, _state(blocked, id) == 1)
+	_expect("trade evidence reveals market institutions", _state(blocked,
+		"tech.market_institutions") == 2)
+	_attempt_enqueue(blocked, "tech.market_institutions", int(blocked.day))
+	blocked.day = int(blocked.day) + 1
+	_expect("trade evidence admits market institutions", _state(blocked,
+		"tech.market_institutions") == 3)
 	var completed := starters.duplicate()
 	completed.append("tech.early_knowledge_institution")
 	completed.append("tech.stone_knapping")

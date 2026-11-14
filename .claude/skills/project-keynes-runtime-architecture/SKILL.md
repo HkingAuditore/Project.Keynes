@@ -37,7 +37,7 @@ For runtime architecture work, inspect:
 - `Project.Keynes/Project/project-keynes/scripts/simulation/systems/*.gd`
 - `Project.Keynes/gdext/src/world_ext*.cpp`
 - `Project.Keynes/gdext/src/world_ext.h`
-- `Project.Keynes/gdext/src/world_ext_bind_methods.cpp`
+- `gdext/src/world_ext_bind_<模块>.cpp`
 - `Project.Keynes/gdext/src/system_schedule.cpp`
 - `Project.Keynes/gdext/src/system_schedule.h`
 - `Project.Keynes/gdext/src/sus_scheduler_ext.cpp`
@@ -217,6 +217,40 @@ Generation and bake:
 - GDScript still assembles `MapData` / `HexCell` and performs Godot texture/object operations.
 - Native generation publish writes initial runtime slots and flushes/rebinds as needed.
 
+## Fail-Closed Exit Inventory
+
+Before a domain goes ACTIVE, enumerate every fail-closed point the change adds on the
+production path and answer two questions for each:
+
+1. Is this rejection a contract violation or a timing window? If one error string covers
+   both, split it first. Callers can only act on what the string tells them.
+2. For timing windows: does the caller have a fallback — async enqueue, park-and-replay,
+   or documented soft skip? If not, either add one or prove the window is unreachable in
+   production.
+
+This gate exists because D7's cohort-cash sync fast path skipped it: it classified an open
+Country plan window as a contract violation and had no reachable fallback, so a routine
+continuation drove the whole economy runtime into FATAL in a shipped session. Headless
+suites and soaks were green throughout.
+
+Related: a cursor-driven stage can always park by not advancing its cursor. Drain the peer
+queue on the way out so the two sides do not wait on each other.
+
+## Runtime Forensics
+
+Stops and stalls must leave an artifact without the player reproducing them a second time.
+
+- `scripts/game/runtime_forensics.gd` is the shared capture/dump module. Write to
+  `user://diagnostics/<tag>_<stamp>.json` plus a fixed `tmp/runtime_forensics_<tag>.json`
+  for agents to read.
+- `WorldRuntimeHost._observe_economy_fatal` dumps on **any** economy fatal reason, once per
+  reason. `_poll_simulation_stall_watchdog` dumps when the authoritative day stops advancing
+  while the clock runs.
+- A watchdog observes only. Never pause the clock or change authority from it, or the
+  watchdog becomes a behaviour variable in the very scenario it is measuring.
+- Every capture must include `authoritative_domain_mask` and host state. Cross-domain fast
+  paths are selected by that mask; without it a boundary rejection cannot be judged.
+
 ## Deletion And Fallback Rules
 
 Use `docs/architecture/current-state.md` before deleting runtime code.
@@ -268,3 +302,39 @@ When completing runtime architecture work, report:
 - Whether fallback remains and how it reports.
 - What static/build/runtime validation was run.
 - Any remaining blockers from `docs/architecture/current-state.md` or `docs/architecture/current-state.md`.
+
+## Extensible world architecture (2026-11-03)
+
+Start new systems and migrations from `docs/architecture/design.md`
+and `docs/architecture/development-guide.md`. Distinguish the target from actual
+integration. Worker and inline executor identity/data routing now share
+`RuntimeExecutionContext`; closing live admission must not change the data owner
+inside an in-flight call. State-provider registration uses explicit dependencies
+and unique section ownership through `runtime_module_registry.gd`; new providers
+register before binding a world and own their compatibility policy. Do not grow
+coordinator-specific branches for extension formats.
+
+Legacy persistence now delegates to all 18 adapters in `scripts/game/save_modules/`.
+Only `world_state_bindings.gd` sees the host/generator; it resolves narrow capabilities
+at each call so post-Country Economy replacement cannot leave a stale reference.
+Providers own decoding and declare peer-section reads. Keep module-specific restore
+work out of the coordinator. `RuntimeClockBinding` subscribes to WorldClock changes
+after executor creation and detaches before stop; UI refresh and timed retries are
+not clock-control owners. See the development guide for these concrete APIs.
+
+## Economy boundary and regression follow-up (2026-11-03)
+
+Use `EconomyAuthorityTransfer` for executor/save identity handoff and prepared
+Country asset servicing. Do not restore Host friendship or persistent override
+switches. `EconomyInvariantProbe` owns isolated self-test worlds.
+`EconomyRecordSource` freezes committed rows; the CSV writer must not access the
+runtime or duplicate price formulas. Diagnostic opening uses copied inputs,
+explicit policy and separate pure planning/finance modules under `economy/bootstrap`.
+Investment review cursors finish the current frozen epoch; do not reintroduce a
+second cross-epoch pending list. Preserve first post-restore integer resources
+and precipitation history, collectible income, recruit savings on restart and
+cycle-flow expiry accounting. New tests must declare content-dependent premises
+and keep full ledger, worker/scalar and continuation checks. See the current
+architecture development guide and validation record.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

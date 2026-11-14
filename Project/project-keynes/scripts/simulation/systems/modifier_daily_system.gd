@@ -28,8 +28,7 @@ func should_run(ctx: SusTickContext) -> bool:
 	# E8: when Modifier is Host ACTIVE, C++ should_run already suppresses
 	# production writes; keep the SUS shell idle as well.
 	if facade != null and facade.is_configured() and facade.world_ext() != null:
-		var report: Dictionary = facade.world_ext().get_runtime_thread_report() \
-			if facade.world_ext().has_method("get_runtime_thread_report") else {}
+		var report: Dictionary = facade.world_ext().get_runtime_thread_report()
 		if bool(report.get("modifier_worker_authoritative", false)):
 			return false
 	return facade != null and facade.is_configured() and ctx != null \
@@ -59,9 +58,7 @@ func tick(ctx) -> Dictionary:
 		int(ctx.day_index) if ctx != null else 0)
 	# Modifier Runtime is the safe commit boundary for native Effect commands.
 	# This is a C++ -> C++ ACK; GDScript only keeps the scheduler shell.
-	var effect_ack: Dictionary = {}
-	if facade.world_ext().has_method("ack_effect_native_modifier"):
-		effect_ack = facade.world_ext().ack_effect_native_modifier()
+	var effect_ack: Dictionary = facade.world_ext().ack_effect_native_modifier()
 	_last_report = result.duplicate(true)
 	facade.dispatch_events()
 	return {

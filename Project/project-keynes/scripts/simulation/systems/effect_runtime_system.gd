@@ -35,8 +35,6 @@ func should_run(ctx: SusTickContext) -> bool:
 # enqueued transaction is actually waiting on the Country/Economy adapters.
 func _colonization_adapter_pending() -> bool:
 	var ext = facade.world_ext()
-	if not ext.has_method("get_effect_native_adapter_report"):
-		return false
 	var report: Dictionary = ext.get_effect_native_adapter_report()
 	return not bool(report.get("idle", true))
 
@@ -53,39 +51,31 @@ func tick(ctx) -> Dictionary:
 	# adapter and the legacy transaction fallback — all of those are suppressed
 	# or worker-owned — but still settle Economy-origin colonization
 	# transactions, whose CLAIM must reach Country and be ACKed here.
-	if facade.world_ext().has_method("get_runtime_thread_report"):
-		var report: Dictionary = facade.world_ext().get_runtime_thread_report()
-		if bool(report.get("effect_worker_authoritative", false)):
-			var claim: Dictionary = {}
-			if facade.world_ext().has_method("dispatch_effect_native_country"):
-				claim = facade.world_ext().dispatch_effect_native_country()
-			if facade.world_ext().has_method("ack_effect_native_country"):
-				facade.world_ext().ack_effect_native_country()
-			if facade.world_ext().has_method("settle_orphaned_effect_native_country_acks"):
-				facade.world_ext().settle_orphaned_effect_native_country_acks()
-			var settle: Dictionary = {}
-			if facade.world_ext().has_method("dispatch_effect_native_economy"):
-				settle = facade.world_ext().dispatch_effect_native_economy()
-			# Economy ACK is part of the same reduced adapter pass.  Without it,
-			# the SETTLE command is applied but the Effect transaction remains
-			# pending, so the expedition stays visible as "落地结算中" forever.
-			if facade.world_ext().has_method("ack_effect_native_economy"):
-				facade.world_ext().ack_effect_native_economy()
-			return {
-				"done": true,
-				"work_done": int(claim.get("submitted_commands", 0))
-					+ int(settle.get("submitted_commands", 0)),
-				"elapsed_ms": float(Time.get_ticks_usec() - started_us) / 1000.0,
-				"progress_ratio": 1.0,
-				"stage_name": "effect_worker_colonization_adapters",
-				"path": "EFFECT_WORKER",
-				"native_country_transactions": int(claim.get(
-					"submitted_transactions", 0)),
-				"native_country_commands": int(claim.get("submitted_commands", 0)),
-				"native_economy_transactions": int(settle.get(
-					"submitted_transactions", 0)),
-				"native_economy_commands": int(settle.get("submitted_commands", 0)),
-			}
+	var report: Dictionary = facade.world_ext().get_runtime_thread_report()
+	if bool(report.get("effect_worker_authoritative", false)):
+		var claim: Dictionary = facade.world_ext().dispatch_effect_native_country()
+		facade.world_ext().ack_effect_native_country()
+		facade.world_ext().settle_orphaned_effect_native_country_acks()
+		var settle: Dictionary = facade.world_ext().dispatch_effect_native_economy()
+		# Economy ACK is part of the same reduced adapter pass.  Without it,
+		# the SETTLE command is applied but the Effect transaction remains
+		# pending, so the expedition stays visible as "落地结算中" forever.
+		facade.world_ext().ack_effect_native_economy()
+		return {
+			"done": true,
+			"work_done": int(claim.get("submitted_commands", 0))
+				+ int(settle.get("submitted_commands", 0)),
+			"elapsed_ms": float(Time.get_ticks_usec() - started_us) / 1000.0,
+			"progress_ratio": 1.0,
+			"stage_name": "effect_worker_colonization_adapters",
+			"path": "EFFECT_WORKER",
+			"native_country_transactions": int(claim.get(
+				"submitted_transactions", 0)),
+			"native_country_commands": int(claim.get("submitted_commands", 0)),
+			"native_economy_transactions": int(settle.get(
+				"submitted_transactions", 0)),
+			"native_economy_commands": int(settle.get("submitted_commands", 0)),
+		}
 	var day := int(ctx.day_index) if ctx != null else 0
 	var result: Dictionary = facade.world_ext().run_effect_daily(day)
 	# C++ owns Effect -> Modifier batching. The facade remains the compatibility
@@ -93,18 +83,10 @@ func tick(ctx) -> Dictionary:
 	# Economy performs generation-safe transaction preflight before any sibling
 	# adapter can enqueue the same multi-domain transaction. A permanent Economy
 	# rejection therefore cannot leave a newly queued Modifier command behind.
-	var native_economy_dispatched: Dictionary = {}
-	if facade.world_ext().has_method("dispatch_effect_native_economy"):
-		native_economy_dispatched = facade.world_ext().dispatch_effect_native_economy()
-	var native_dispatched: Dictionary = {}
-	if facade.world_ext().has_method("dispatch_effect_native_modifier"):
-		native_dispatched = facade.world_ext().dispatch_effect_native_modifier()
-	var native_country_dispatched: Dictionary = {}
-	if facade.world_ext().has_method("dispatch_effect_native_country"):
-		native_country_dispatched = facade.world_ext().dispatch_effect_native_country()
-	var native_gameplay_dispatched: Dictionary = {}
-	if facade.world_ext().has_method("dispatch_effect_native_gameplay"):
-		native_gameplay_dispatched = facade.world_ext().dispatch_effect_native_gameplay()
+	var native_economy_dispatched: Dictionary = facade.world_ext().dispatch_effect_native_economy()
+	var native_dispatched: Dictionary = facade.world_ext().dispatch_effect_native_modifier()
+	var native_country_dispatched: Dictionary = facade.world_ext().dispatch_effect_native_country()
+	var native_gameplay_dispatched: Dictionary = facade.world_ext().dispatch_effect_native_gameplay()
 	var dispatched: Dictionary = facade.dispatch_transactions()
 	return {
 		"done": bool(result.get("done", true)),

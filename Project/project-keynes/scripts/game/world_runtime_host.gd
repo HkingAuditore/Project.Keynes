@@ -244,6 +244,7 @@ const ClimateAuthorityPolicyScript = preload("res://scripts/game/climate_authori
 # Use the preload instance type — not class_name ClimateAuthorityPolicy — so
 # dependents (e.g. game_save_coordinator) can parse before global class registry.
 var _climate_authority_policy = ClimateAuthorityPolicyScript.new()
+var _climate_runtime = preload("res://scripts/game/world_runtime_climate.gd").new()
 
 var _renderer: HexRenderer = null
 # GM 开关「关闭地形 GI」按下时暂存的三个强度原值，关掉开关时原样还回去。
@@ -537,7 +538,6 @@ var _prefetch_diag_boot: Dictionary = {}
 var _prefetch_diag_snapshot: Dictionary = {}
 var _prefetch_diag_on_cache: int = -1
 var _prefetch_boot_emitted: bool = false
-var _environment_publish_next_day_cursor: int = -1
 var _ideology_refresh_pending_day: int = -1
 var _ideology_instance_refreshed_day: int = -1
 var _ideology_derived_pumped_day: int = -1
@@ -619,99 +619,7 @@ func _sched_elapsed_ms(started_usec: int) -> float:
 ## 所以任何一步都不允许去等条件变量；缺 peer 时由 C++ 侧在同一线程上把 Country
 ## peer 适配器推一轮再重试同一天。
 func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionary:
-	var ext = _generator.get_data_core_world_ext() \
-		if _generator != null and _generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("run_native_daily_inline_day"):
-		if _reject_web_daily_fallback("web_native_daily_api_missing", "缺少原生日推进入口，请更新网页原生模块"):
-			return {"ok": false, "code": "native_daily_inline_api_missing"}
-		if _native_daily_inline_active:
-			push_error("[runtime-inline] run_native_daily_inline_day 缺失：回退到主线程 daily tick")
-			_native_daily_inline_active = false
-		return {"ok": false, "code": "native_daily_inline_api_missing"}
-	var segment_usec := Time.get_ticks_usec()
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "enter"})
-	# 单日单推进声明：今天由**内联执行器**推进。同一 day 上若已有别人声明过
-	# （正常不会发生：生产场景里只有本 host 推进模拟），main.gd 那套 GDScript
-	# SUS 日 tick 会自己让位。这里只是登记，不影响本函数的执行。
-	_claim_day_for_native(day_idx, &"native_inline")
-	_apply_climate_writeback_if_authoritative(report)
-	_sched_day_climate_writeback_ms += _sched_elapsed_ms(segment_usec)
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_writeback"})
-	segment_usec = Time.get_ticks_usec()
-	_service_country_worker_transport()
-	_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_transport"})
-	# 输入日必须等于 host 的 committed_day+1。内联日没有跨线程重试，错日会直接
-	# 停在 inline_daily_environment_day_mismatch，所以这里按 host 的提交水印取值。
-	var host_day := int(report.get("simulation_committed_day",
-		report.get("committed_day", -1)))
-	var next_day := host_day + 1
-	segment_usec = Time.get_ticks_usec()
-	if _generator.has_method("capture_runtime_inputs_for_worker"):
-		_generator.capture_runtime_inputs_for_worker(
-			maxi(0, next_day), _world_clock.season_phase_for_day(day_idx),
-			MapGenerator.ENV_CALLSITE_INLINE_DAY)
-	_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_capture",
-		"ms": int(_sched_elapsed_ms(segment_usec))})
-	# 探针：native 调用本身的独立 epoch（桌面 _dcp_on() 为假时连计时都不做）。
-	var _dcp_native_usec: int = Time.get_ticks_usec() if _dcp_on() else 0
-	_prepare_military_exploration_day(next_day)
-	var result: Dictionary = ext.run_native_daily_inline_day()
-	_runtime_native_daily_inline_last = result
-	if _dcp_native_usec > 0:
-		_dcp_inline_ms = float(Time.get_ticks_usec() - _dcp_native_usec) / 1000.0
-	# 每个内联日的耗时/域覆盖：第一次 daily tick 在浏览器里特别贵（一次性初始化），
-	# 用这个事件区分"首日一次性成本"和"每天稳态成本"。
-	WebTelemetry.emit("inline_day", {
-		"day": day_idx,
-		"ms": int(_sched_elapsed_ms(segment_usec)),
-		"ok": bool(result.get("ok", false)),
-		"reason": String(result.get("reason", "")),
-		"attempts": int(result.get("attempts", 0)),
-		"peer": int(result.get("peer_pumped", 0)),
-		"from": int(result.get("from_day", -1)),
-		"committed": int(result.get("committed_day", -1)),
-		"domain_mask": int(result.get("completed_domain_mask", 0)),
-		"work": int(result.get("work_units", 0)),
-		# 分域耗时（12 个 stage 名 → ms），以及 capture / 计划 / 提交尾巴 / peer 泵。
-		"stages": result.get("stage_ms", {}),
-		"capture": int(result.get("capture_ms", 0.0)),
-		"pre": int(result.get("pre_stage_ms", 0.0)),
-		"climate": int(result.get("climate_ms", 0.0)),
-		"plan": int(result.get("plan_build_ms", 0.0)),
-		"tail": int(result.get("commit_tail_ms", 0.0)),
-		"peer_ms": int(result.get("peer_ms", 0.0)),
-		"budget_hit": bool(result.get("budget_exceeded", false)),
-		"serial_only": bool(result.get("executor_serial_only", false)),
-		"dispatch": int(result.get("executor_dispatch", 0)),
-	})
-	if bool(result.get("ok", false)):
-		_runtime_native_daily_inline_days += 1
-	else:
-		_runtime_native_daily_inline_pending_days += 1
-		# 静默冻结是最难查的失败形态：每 30 次至少留一行能指名原因的日志。
-		if _runtime_native_daily_inline_pending_days % 30 == 1:
-			print("[runtime-inline] day=%d pending reason=%s attempts=%d peer_pumped=%d host_day=%d" % [
-				day_idx, String(result.get("reason", "?")),
-				int(result.get("attempts", 0)), int(result.get("peer_pumped", 0)),
-				host_day])
-	# 提交已经发布；把同一份提交落到 MapData/slot，本帧的 UI/渲染就能读到今天。
-	#
-	# 探针：这里的 commit 消费是 inline_day 事件**看不到**的那一段——它排在
-	# inline_day 打点之后，包含 LUT 重编码 / 天气场纹理刷新 / 自然资源回灌 /
-	# 视觉 patch 应用。day_cost_ema 与 inline_day 的差额主要就落在这里。
-	if _dcp_on():
-		var dcp_commit_usec := Time.get_ticks_usec()
-		# 复用同一调用栈里刚取的那份 report（内联日没有 worker 线程，两次读取
-		# 必然同值），省掉一天里第二次 get_runtime_thread_report() 打包。
-		_consume_runtime_commit_if_ready(report)
-		_dcp_commit_ms = float(Time.get_ticks_usec() - dcp_commit_usec) / 1000.0
-	else:
-		_consume_runtime_commit_if_ready()
-	return result
-
-
+	return _daily_adapter._run_native_daily_inline_day(self, day_idx, report)
 func _on_clock_day_changed(day_idx: int) -> void:
 	# 首日挂死定位：进入/离开日 tick 各发一条带绝对时间戳的事件，
 	# 静默前最后一条就能区分"挂在 tick 里"还是"挂在 tick 之后"。
@@ -761,189 +669,7 @@ func _dcp_publish_day(elapsed_usec: int) -> void:
 
 
 func _clock_day_changed_impl(day_idx: int) -> void:
-	if _is_web_build() and _runtime_worker_fault_paused:
-		return
-	# OFF/SHADOW keep the synchronous reference authority in this host. The
-	# PlayerController only consumes the resulting state for UI; it must not be
-	# another simulation entry point.
-	var day_started_usec := Time.get_ticks_usec()
-	_sched_day_report_ms = 0.0
-	_sched_day_snapshots_ms = 0.0
-	_sched_day_climate_writeback_ms = 0.0
-	_sched_day_climate_wait_ms = 0.0
-	_sched_day_capture_ms = 0.0
-	_sched_day_country_peer_ms = 0.0
-	_sched_day_country_read_ms = 0.0
-	_sched_day_promote_ms = 0.0
-	# Web 单日成本探针的 host 分段（未开探针时这几行只是置 0，全部是本类私有
-	# 字段，没有任何生产读取点）。
-	_dcp_inline_ms = 0.0
-	_dcp_commit_ms = 0.0
-	_dcp_publish_ms = 0.0
-	_dcp_finish_ms = 0.0
-	_dcp_resource_ms = 0.0
-	_dcp_military_ms = 0.0
-	_dcp_visual_ms = 0.0
-	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
-		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-		return
-	var segment_usec := Time.get_ticks_usec()
-	var report := _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
-	_sched_day_report_ms = _sched_elapsed_ms(segment_usec)
-	# native_daily_inline：没有 worker 线程，这一天的 12 域日屏障就在本线程上跑。
-	# 必须放在下面的 capacity wait 之前 —— 内联执行者自己消费环境帧，ring 容量
-	# 从来不是问题，去等一个"worker 消费"的信号只会把主线程钉住。
-	if _native_daily_inline_active:
-		_annual_reports.before_day(day_idx)
-		_run_native_daily_inline_day(day_idx, report)
-		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-		return
-	# Capacity waits must yield to _process so peer ACKs and writeback keep
-	# running. Retain this semantic day instead of dropping a rejected input.
-	if bool(report.get("climate_worker_authoritative", false)):
-		segment_usec = Time.get_ticks_usec()
-		var capacity := wait_for_climate_consumed(0)
-		_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
-		if not bool(capacity.get("ok", false)):
-			# Peer pump before parking: Country/fiscal soft-commit may be what
-			# frees ring capacity. wait_for_climate_consumed(0) does not pump.
-			segment_usec = Time.get_ticks_usec()
-			_service_country_worker_transport()
-			_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
-			_arm_climate_capacity_pending(day_idx)
-			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-			return
-	_clear_climate_capacity_pending()
-	_annual_reports.before_day(day_idx)
-	# Whole-graph only. `authority_ready` stays false until every domain has a
-	# POD handler; a per-domain promotion (Climate) must NOT skip the tick,
-	# because the other eleven domains are still computed right here. Reading
-	# `simulation_worker_ready` instead would stop economy, country, triggers
-	# and perf recording the moment Climate alone was promoted — the tick is
-	# the entry point for all of them, not just Climate. Climate itself is
-	# suppressed further down, inside the native daily graph.
-	var whole_graph_authoritative := String(report.get("simulation_thread_mode", "OFF")) == "ACTIVE" \
-		and bool(report.get("authority_ready", false))
-	if whole_graph_authoritative:
-		# 单日单推进声明：今天由 worker 整图权威推进（web 上这条分支不会走到，
-		# 内联在上面就 return 了；桌面 _day_barrier_claim_enabled=false → 空转）。
-		_claim_day_for_native(day_idx, &"native_worker")
-		# Worker owns domain formulas, but the host must still:
-		#   writeback → (optional season) → capture next-day environment → peer pump.
-		# Skipping capture here parks the worker on environment wait while it still
-		# holds the authority-boundary lock; any blocking switch then freezes Godot.
-		if bool(report.get("climate_worker_authoritative", false)):
-			segment_usec = Time.get_ticks_usec()
-			_consume_modifier_worker_snapshot_if_authoritative()
-			_consume_effect_worker_snapshot_if_authoritative()
-			_service_effect_worker_intents_if_authoritative()
-			_consume_trigger_worker_snapshot_if_authoritative()
-			_service_trigger_worker_intents_if_authoritative()
-			_consume_ideology_worker_snapshot_if_authoritative()
-			_service_ideology_worker_intents_if_authoritative()
-			_sched_day_snapshots_ms += _sched_elapsed_ms(segment_usec)
-		segment_usec = Time.get_ticks_usec()
-		_apply_climate_writeback_if_authoritative(report)
-		_sched_day_climate_writeback_ms += _sched_elapsed_ms(segment_usec)
-		if bool(report.get("climate_worker_authoritative", false)):
-			segment_usec = Time.get_ticks_usec()
-			var capacity_result := wait_for_climate_consumed(0)
-			_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
-			if not bool(capacity_result.get("ok", false)):
-				# [android-day1-deadlock 2026-11-01] 这里以前静默 return：一旦 worker
-				# 因为没输入而不再消费环境环，day_changed 每次都在这里掉头，capture
-				# 永不执行 → ring 恒 0 → worker 永远等输入。安卓上正是这个死循环，
-				# 所以把"谁拒绝了这次容量检查"打出来。
-				if _day_capture_blocked_logs < 8:
-					_day_capture_blocked_logs += 1
-					print("[day-capture] blocked day=%d code=%s state=%s consumed=%s ring=%s" % [
-						day_idx, String(capacity_result.get("code", "?")),
-						str(capacity_result.get("worker_state", -1)),
-						str(capacity_result.get("consumed_generation", -1)),
-						str(capacity_result.get("ring_pending", -1))])
-				segment_usec = Time.get_ticks_usec()
-				_service_country_worker_transport()
-				_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
-				_arm_climate_capacity_pending(day_idx)
-				_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-				return
-		if _generator.has_method("capture_runtime_inputs_for_worker"):
-			# 与 sus_tick_daily 的输入日约定一致，接管当天不能跳过一日。
-			segment_usec = Time.get_ticks_usec()
-			var capture_result: Dictionary = _generator.capture_runtime_inputs_for_worker(
-				maxi(0, day_idx - 1), _world_clock.season_phase_for_day(day_idx),
-				MapGenerator.ENV_CALLSITE_HOST_DAY_CHANGED)
-			if not bool(capture_result.get("ok", true)) and _day_capture_blocked_logs < 8:
-				_day_capture_blocked_logs += 1
-				print("[day-capture] failed day=%d code=%s reason=%s" % [
-					maxi(0, day_idx - 1), String(capture_result.get("code", "?")),
-					String(capture_result.get("fallback_reason",
-						capture_result.get("reason", "")))])
-			_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)
-		segment_usec = Time.get_ticks_usec()
-		_service_country_worker_transport()
-		_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
-		# Country read-view + vision stay on _process (budgeted). Putting them on
-		# day_changed inflated day_cost_ema and collapsed 50x throughput while the
-		# worker sat in input_wait. Peer pump above is enough for the day barrier.
-		_sched_day_country_read_ms = 0.0
-		segment_usec = Time.get_ticks_usec()
-		_try_promote_economy_pod_active()
-		_sched_day_promote_ms += _sched_elapsed_ms(segment_usec)
-		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-		return
-	# Climate 在 worker 手上时，先把它上一天的结果落进 MapData，再跑这一天的 tick。
-	#
-	# run_daily_tick 里有两个读写 MapData 的环节：season refresh 重算 moisture /
-	# snow_cover / soil_moisture / PAW 这批与日频写者重叠的场，capture 则把 MapData
-	# 打包成 worker 下一天的输入。回灌只挂在 _process 上时，它与本 tick 的先后取决于
-	# 节点树的 _process 顺序 —— 也就是「谁最后写 MapData」决定了 worker 下一天读到
-	# 什么，而这两条路径谁先谁后并没有任何东西保证。在这里显式回灌一次，把顺序钉成
-	#   回灌(第 N 天) → capture(第 N+1 天的输入) → season refresh
-	# 三者落在同一个调用栈里串行。
-	#
-	# 试过反过来排（tick 之后再回灌，让 capture 夹在 season refresh 与回灌之间），
-	# 动机是让季节性重算能进入 worker。零改善：四条平坦的场逐项不变。所以季节信号
-	# 进不来的原因不是这个执行序，改回确定性更强的这一版。
-	#
-	# _process 那次回灌保留：它服务于视觉的每帧刷新。apply 侧有 generation 与
-	# committed-day 双重门，同一天重复调用不会二次应用。
-	if bool(report.get("climate_worker_authoritative", false)):
-		_consume_modifier_worker_snapshot_if_authoritative()
-		_consume_effect_worker_snapshot_if_authoritative()
-		_service_effect_worker_intents_if_authoritative()
-		# H8: Trigger before Ideology mirrors the worker stage order, and doing it
-		# here (not only after the tick) lets this day's graph pulse hand off the
-		# effects the worker just emitted instead of trailing them by a day.
-		_consume_trigger_worker_snapshot_if_authoritative()
-		_service_trigger_worker_intents_if_authoritative()
-		_consume_ideology_worker_snapshot_if_authoritative()
-		_service_ideology_worker_intents_if_authoritative()
-	_apply_climate_writeback_if_authoritative(report)
-	if bool(report.get("climate_worker_authoritative", false)):
-		# B8 P3：等输入 ring 有空位再 capture（after_generation=0）。
-		# 允许最多 SLOT_COUNT-1 天流水线，大地图不再被“等上一份完全消费”串成单槽。
-		# serial_wait soak 仍可显式传具体 generation。
-		segment_usec = Time.get_ticks_usec()
-		var capacity_result := wait_for_climate_consumed(0)
-		_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
-		if not bool(capacity_result.get("ok", false)):
-			segment_usec = Time.get_ticks_usec()
-			_service_country_worker_transport()
-			_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
-			_arm_climate_capacity_pending(day_idx)
-			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-			return
-	segment_usec = Time.get_ticks_usec()
-	# 单日单推进声明：今天由本 host 的 GDScript SUS tick 推进。若 main.gd 也挂在
-	# 同一场景（当前不会），它的 sus_tick_daily 会看到这条声明并让位。
-	_claim_day_for_native(day_idx, &"host_sus")
-	_prepare_military_exploration_day(day_idx)
-	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
-	_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
-
-
+	_daily_adapter._clock_day_changed_impl(self, day_idx)
 func _on_camera_zoom_changed(value: float) -> void:
 	if _renderer != null:
 		_renderer.set_camera_zoom(value)
@@ -1012,23 +738,7 @@ func building_visual_type_count() -> int:
 ## 这一步（economy facade 目录 + renderer.configure_building_visuals）在浏览器里
 ## 实测 42s，放在加载路径里会把"进世界"卡死；延后执行只影响建筑外观的可用时间。
 func _defer_building_visual_catalog_after_ready() -> void:
-	if _exiting_tree or not is_inside_tree():
-		return
-	if PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS:
-		return
-	var session = _runtime_session
-	var token: int = session.generation
-	var timer := get_tree().create_timer(3.0, true, false, true)
-	await timer.timeout
-	if _exiting_tree or not is_inside_tree() or not session.is_current(token):
-		return
-	var started := Time.get_ticks_msec()
-	var report: Dictionary = refresh_building_visual_catalog()
-	var elapsed := Time.get_ticks_msec() - started
-	print("[building-visual] web deferred catalog ok=%s %dms" % [
-		str(report.get("ok", false)), elapsed])
-	WebTelemetry.emit("bind_step", {"s": "deferred_building_visual_done", "dur": elapsed})
-
+	await _generation_adapter._defer_building_visual_catalog_after_ready(self)
 func _bind_presentation_resources() -> void:
 	_presentation.bind_resources(_current_map, _generator, _renderer, _camera,
 		_fog_of_war_enabled, hex_size, map_wrap_period_x())
@@ -1070,129 +780,23 @@ func last_seed() -> int:
 ## 所以任何生成路径都可能产出一个配置文件里没有的 seed；不写回的话，之后存档
 ## 记录的是旧 seed，读档重建出的是另一张世界，起始格/领土/地形互相矛盾。
 func _adopt_generated_seed(generated_seed: int) -> void:
-	if generated_seed <= 0 or _new_game_config.is_empty():
-		return
-	var base = _new_game_config.get("base", {})
-	if not base is Dictionary:
-		return
-	var recorded := int((base as Dictionary).get("initial_seed", 0))
-	if recorded == generated_seed:
-		return
-	(base as Dictionary)["initial_seed"] = generated_seed
-	push_warning("[session] generated world seed %d adopted (session config requested %d); saves now reproduce this world" % [
-		generated_seed, recorded])
-
-
-# ─── 地图生成失败诊断（mapgen-diagnostics）───────────────────────────────
-# generate_world 失败时把 MapGenerator.last_generation_error 整块留在 host 上，
-# 由 player_game 交给 WorldLoadingOverlay 展示/复制/落盘。
+	_generation_adapter._adopt_generated_seed(self, generated_seed)
 var last_world_generation_error: Dictionary = {}
 
 
 ## 完整失败详情纯文本（多行）。UI "复制详情" 与日志文件共用同一段文本。
 func last_world_generation_error_text() -> String:
-	if last_world_generation_error.is_empty():
-		return ""
-	var detail := String(last_world_generation_error.get("detail_text", ""))
-	if not detail.is_empty():
-		return detail
-	# 兜底：没有 detail_text 时用 JSON，但必须先剔除原始 native report——
-	# 它带 10+ 个 n_cells 级 PackedArray，直接 stringify 会产出几 MB 文本。
-	var safe := last_world_generation_error.duplicate()
-	safe.erase("native_report_raw")
-	return JSON.stringify(safe, "  ", true)
-
-
-## 生成失败归因：把 MapGenerator 的结构化错误压成"一句中文 + 阶段 + 原因 + 排查建议"。
-## 传 preflight_override 时表示失败发生在 generate() 之前（自检拦下）。
+	return _generation_adapter.last_world_generation_error_text(self)
 func _report_world_generation_failure(preflight_override: Dictionary = {}) -> void:
-	var err: Dictionary = {}
-	if _generator != null:
-		# 浅拷贝：只复制顶层键，native_report_raw 仍指向同一份原始字典（不重复分配）。
-		err = _generator.last_generation_error.duplicate()
-	if err.is_empty() and not preflight_override.is_empty():
-		var first_issue := ""
-		var issues: Array = preflight_override.get("issues", [])
-		if not issues.is_empty() and issues[0] is Dictionary:
-			first_issue = String((issues[0] as Dictionary).get("message", ""))
-		err = {
-			"stage": "preflight",
-			"reason": "preflight_failed",
-			"summary": "生成前自检未通过：%s" % first_issue,
-			"hint": "按下面 preflight 里点名的缺失项处理；安卓一般是原生库缺失/过旧。",
-			"preflight": preflight_override,
-			"env": preflight_override.get("env", {}),
-			"native_report": {},
-			"superseded": false,
-		}
-	if err.is_empty():
-		err = {
-			"stage": "unknown",
-			"reason": "map_generator_failed",
-			"summary": "地图生成器返回空结果，且未留下任何诊断信息。",
-			"hint": "这是 MapGenerator 之外的调用层问题；请附完整 logcat/godot.log。",
-			"preflight": {},
-			"env": {},
-			"native_report": {},
-			"superseded": false,
-		}
-	# 被新一轮 generate 取代：不弹失败面板，否则会盖住新一轮的进度条。
-	if bool(err.get("superseded", false)):
-		print("[mapgen] generation superseded at stage=%s (no failure UI)"
-			% String(err.get("stage", "?")))
-		return
-	if _generator != null:
-		err["detail_text"] = _generator.last_generation_error_text()
-	last_world_generation_error = err
-	var summary := _world_generation_failure_summary(err)
-	# 同一行同时 print + push_error：print 给 adb logcat，push_error 给编辑器/错误面板。
-	print("[mapgen][fatal] %s" % summary)
-	push_error("[mapgen][fatal] %s" % summary)
-	world_generation_failed.emit(summary)
-
-
-## 非 MapGenerator 来源的失败（开局初始化 / 存档恢复）：自建诊断记录后统一上报。
-## 走同一条 print+push_error+signal 通道，保证 UI/日志/文件三处看到的是同一段文本。
+	_generation_adapter._report_world_generation_failure(self, preflight_override)
 func _emit_world_generation_failure(stage: String, reason: String, summary: String, hint: String) -> void:
-	last_world_generation_error = {
-		"stage": stage,
-		"reason": reason,
-		"summary": summary,
-		"hint": hint,
-		"preflight": {},
-		"env": {},
-		"native_report": {},
-		"superseded": false,
-		"detail_text": _format_world_generation_detail(stage, reason, summary, hint),
-	}
-	var line := _world_generation_failure_summary(last_world_generation_error)
-	print("[mapgen][fatal] %s" % line)
-	push_error("[mapgen][fatal] %s" % line)
-	world_generation_failed.emit(line)
-
-
-## 非 MapGenerator 来源失败的多行详情（结构与 MapGenerator 的保持同构，便于统一复制）。
+	_generation_adapter._emit_world_generation_failure(self, stage, reason, summary, hint)
 func _format_world_generation_detail(stage: String, reason: String, summary: String, hint: String) -> String:
-	var timestamp := Time.get_datetime_string_from_system(true)
-	return HostValueHelpers._format_world_generation_detail(
-		stage, reason, summary, hint, timestamp)
-
-
-## 一句话摘要：含 stage + reason + 一句排查建议（玩家能看懂、开发者能定位）。
+	return _generation_adapter._format_world_generation_detail(self, stage, reason, summary, hint)
 func _world_generation_failure_summary(err: Dictionary) -> String:
-	return HostValueHelpers._world_generation_failure_summary(err)
-
-
-## --mapgen-selfcheck：把自检 JSON 打到 stdout（安卓：adb logcat -s godot:*）。
-## 桌面/headless 走 tests/world/mapgen_selfcheck.tscn；这里覆盖"已经进了游戏场景"的场景。
+	return _generation_adapter._world_generation_failure_summary(self, err)
 func _maybe_run_mapgen_selfcheck_cli() -> void:
-	if not MapGenerator.mapgen_selfcheck_requested():
-		return
-	var probe := MapGenerator.new()
-	var report: Dictionary = probe.run_mapgen_selfcheck(true)
-	print("[mapgen][selfcheck][summary] ok=%s" % str(report.get("ok", false)))
-
-
+	_generation_adapter._maybe_run_mapgen_selfcheck_cli(self)
 func _ready() -> void:
 	_maybe_run_mapgen_selfcheck_cli()
 
@@ -1262,52 +866,7 @@ func end_state_capture() -> void:
 
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
-	_generation_request += 1
-	var request := _generation_request
-	var clock_was_paused := _world_clock.paused if _world_clock != null else true
-	var closed: Dictionary = await close_world()
-	if request != _generation_request or _exiting_tree or not is_inside_tree():
-		return
-	if not bool(closed.get("ok", false)):
-		_emit_world_generation_failure("close", String(closed.get("code", "close_failed")),
-			"上一局游戏尚未关闭。", "请保留运行日志。")
-		return
-	_runtime_session = WorldSession.new()
-	_session_frames = SessionFrameGate.new()
-	_session_prepare_options = {"seed": seed_override, "safe_area": safe_area,
-		"clock_was_paused": clock_was_paused}
-	last_world_generation_error.clear()
-	_clear_web_daily_fallback_failure()
-	var configured: Dictionary = _runtime_session.configure(WorldSessionModules.entries(self, _session_extensions))
-	if not bool(configured.get("ok", false)):
-		_emit_world_generation_failure("modules", String(configured.get("code", "module_invalid")),
-			"游戏系统配置不完整。", String(configured.get("detail", "")))
-		return
-	var prepared: Dictionary = await _runtime_session.prepare()
-	if not bool(prepared.get("ok", false)):
-		if prepared.get("code") != "session_cancelled" and not _exiting_tree:
-			if last_world_generation_error.is_empty():
-				_emit_world_generation_failure("modules", String(prepared.get("code", "module_prepare_failed")),
-					"游戏系统准备失败。", String(prepared.get("message", "")))
-			await close_world()
-		return
-	_runtime_ready_for_ticks = true
-	# The host process also drains building visual dirty cells. Keep it alive for
-	# the normal runtime; overlay refreshes must not disable construction/era
-	# intelligence updates.
-	set_process(true)
-	if _world_clock != null:
-		# 只在输入及 worker 均已建立后恢复新世界/存档原有的运行模式。
-		_world_clock.pause(bool(_session_prepare_options.clock_was_paused))
-		on_clock_running_changed(not _world_clock.paused)
-	# Web 构建：世界就绪事件（agent 侧据此判断"可以点开始了"）。
-	WebTelemetry.emit("ready", {
-		"day": _world_clock.day_index() if _world_clock != null else -1,
-		"paused": _world_clock.paused if _world_clock != null else true,
-	})
-	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
-
-
+	await _generation_adapter.generate_world(self, seed_override, safe_area)
 func close_world() -> Dictionary:
 	return await _lifecycle.close_world(self)
 
@@ -1337,130 +896,26 @@ func _release_world_data() -> Dictionary:
 
 
 func _session_noop() -> void:
-	pass
-
-
+	_generation_adapter._session_noop(self)
 func _session_ok() -> Dictionary:
-	return {"ok": true}
-
-
-## native_daily_inline 是否要在本次会话生效。
-##
-## 浏览器里默认生效（没有可用 worker 线程）。桌面/headless 只有显式
-## PK_NATIVE_DAILY_INLINE=1 才生效 —— 桌面 worker 路径不受影响。
-## PROBE：置 false 可让 web 退回主线程 daily tick（用来二分"首日挂死"是否在内联路径）。
+	return _generation_adapter._session_ok(self)
 const PK_WEB_FORCE_NO_INLINE := false
 
 
 func _native_daily_inline_requested() -> bool:
-	if not runtime_native_daily_inline:
-		return false
-	if PK_WEB_FORCE_NO_INLINE:
-		return false
-	# worker 启动失败（或 ACTIVE 没被授予）之后的回退：本会话内强制内联。
-	# 这条必须排在 `_web_worker_requested()` 之前 —— 回退的意义就是"worker 要了
-	# 但没成"，此时 switches 还停在 worker 侧，不看这个标志就没有执行者了。
-	if _web_worker_inline_fallback:
-		return true
-	# Web 用回 native worker：内联日与 worker 是互斥的两种"日屏障执行者"。
-	# 选了 worker 就必须把内联关掉 —— 否则 `config["native_daily_inline"]=true`
-	# 会让 host 干脆不 spawn 线程，日屏障又回到主线程。
-	if _web_worker_requested():
-		return false
-	if _is_web_build():
-		return true
-	# [android-inline 2026-11-01] 移动端默认内联（与 web 同一执行者）。安卓上
-	# worker 线程路径会停在 day 1：worker state=PAUSED / attempt_slices=0 /
-	# environment ring=0，而主线程又在等它提交（真机与模拟器均可复现）。
-	# 内联日由主线程直接跑 12 域，不依赖 worker 线程与 env 环，web 上已验证多年。
-	# 想恢复实验性 worker：PK_MOBILE_NATIVE_WORKER=1。
-	if (OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")) \
-			and OS.get_environment("PK_MOBILE_NATIVE_WORKER") != "1":
-		return true
-	return OS.get_environment("PK_NATIVE_DAILY_INLINE") == "1"
-
-
-## 「本进程是 web 构建」的单一判据。
-##
-## `PK_FORCE_WEB_SEMANTICS=1` 是**只在 headless 上使用**的语义镜像：浏览器里
-## `OS.has_feature("web")` 改不了，而这条链上的三个决定（谁执行日屏障 / 起不起
-## worker / 起不来怎么回退）恰恰是最容易写错、也最需要被回归覆盖的部分。
-## 生产环境永远不会设这个变量，所以它对线上零影响。
+	return _daily_adapter._native_daily_inline_requested(self)
 func _is_web_build() -> bool:
-	return OS.has_feature("web") \
-		or OS.get_environment("PK_FORCE_WEB_SEMANTICS") == "1"
-
-
-## Web 用回 native worker 的总开关解析。默认 false。
-## 环境变量 `PK_WEB_WORKER=1` 优先于导出项，便于 headless/CI 做 A/B。
-## 不缓存：它只在这几处冷路径被读（configure / worker 启动 / _process 里的
-## 预发布判定），而缓存会让"导出项在 configure 之后被改"变成静默失效。
+	return _daily_adapter._is_web_build(self)
 func _web_worker_requested() -> bool:
-	# [2026-10-31] web defaults to the worker, same as the PC baseline.
-	# Real-device data (RTX 4080 + Chrome, 365 days): worker 9.92 days/s vs inline
-	# 9.81 -- throughput parity -- while the main thread spends 4 ms/day vs 46 ms
-	# (-91%), so almost the whole frame budget goes back to GPU/UI.
-	# Fallback chain, highest priority first:
-	#   ?worker=0 (Engine meta) > PK_WEB_WORKER=0/1 (env) > runtime_web_worker
-	#   > web platform default (true).
-	# Desktop is unaffected: it already runs the worker, and
-	# `_native_daily_inline_requested()` there only looks at PK_NATIVE_DAILY_INLINE.
-	if Engine.has_meta("pk_web_worker"):
-		return bool(Engine.get_meta("pk_web_worker"))
-	var env := OS.get_environment("PK_WEB_WORKER")
-	if env == "1":
-		return true
-	if env == "0":
-		return false
-	if runtime_web_worker:
-		return true
-	return OS.has_feature("web")
-
-
-## A new, fully closed session may retry; never clear a native simulation fault here.
+	return _daily_adapter._web_worker_requested(self)
 func _clear_web_daily_fallback_failure() -> void:
-	if not _is_web_build() or _runtime_last_fault_diagnostics.get("source") != "web_daily_executor":
-		return
-	_runtime_worker_fault_paused = false
-	_runtime_last_fault_diagnostics.clear()
-	_web_worker_start_ok = false
-	_web_worker_start_code = ""
-	_native_daily_inline_active = false
-	if _world_clock != null:
-		_world_clock.clear_authority_fault_hold()
-
-
+	_daily_adapter._clear_web_daily_fallback_failure(self)
 func _web_gdscript_daily_fallback_allowed() -> bool:
-	return runtime_web_allow_gdscript_daily_fallback \
-		or OS.get_environment("PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK") == "1"
-
-
-## Return true only when this Web session must stop instead of using the legacy tick.
+	return _daily_adapter._web_gdscript_daily_fallback_allowed(self)
 func _reject_web_daily_fallback(code: String, reason: String) -> bool:
-	if not _is_web_build() or _web_gdscript_daily_fallback_allowed():
-		return false
-	if _runtime_worker_fault_paused:
-		return true
-	_web_worker_start_ok = false
-	_web_worker_start_code = code
-	_runtime_worker_fault_paused = true
-	_runtime_last_fault_diagnostics = {"fault_code": code, "reason": reason,
-		"source": "web_daily_executor", "state": "FAULTED"}
-	if _world_clock != null:
-		_world_clock.latch_authority_fault_hold()
-	WebTelemetry.emit("web_daily_executor_failed", {"code": code, "reason": reason})
-	_emit_world_generation_failure("runtime_executor", code,
-		"网页模拟无法启动：%s" % reason,
-		"请更新网页和原生模块，并启用原生执行器及气候权威。诊断用旧脚本回退需显式打开逃生开关。")
-	return true
-
-
+	return _daily_adapter._reject_web_daily_fallback(self, code, reason)
 func _effective_environment_prefetch_days() -> int:
-	if not _web_worker_requested():
-		return clampi(runtime_environment_prefetch_days, 0, 3)
-	return maxi(clampi(runtime_environment_prefetch_days, 0, 3), WEB_WORKER_PREFETCH_DAYS)
-
-
+	return _daily_adapter._effective_environment_prefetch_days(self)
 func _preparation_process_frame() -> void:
 	await get_tree().process_frame
 
@@ -1510,10 +965,6 @@ func _prefetch_diag_seen_text() -> String:
 	return _daily_adapter._prefetch_diag_seen_text(self)
 func _emit_prefetch_diag(code: StringName) -> void:
 	_daily_adapter._emit_prefetch_diag(self, code)
-func _environment_publish_next_day() -> int:
-	return _daily_adapter._environment_publish_next_day(self)
-func _set_environment_publish_next_day(day: int) -> void:
-	_daily_adapter._set_environment_publish_next_day(self, day)
 func _suspend_environment_prefetch_for_save(reason: String) -> void:
 	_daily_adapter._suspend_environment_prefetch_for_save(self, reason)
 func _resume_environment_prefetch_after_save() -> void:
@@ -1556,10 +1007,10 @@ func _consume_trigger_worker_snapshot_if_authoritative() -> void:
 	_daily_adapter._consume_trigger_worker_snapshot_if_authoritative(self)
 func _service_trigger_worker_intents_if_authoritative() -> void:
 	_daily_adapter._service_trigger_worker_intents_if_authoritative(self)
-func _service_trigger_country_delivery(ext: Object, _report: Dictionary) -> void:
-	_daily_adapter._service_trigger_country_delivery(self, ext, _report)
-func _ack_trigger_delivery_ids(ext: Object) -> Dictionary:
-	return _daily_adapter._ack_trigger_delivery_ids(self, ext)
+func _service_trigger_country_delivery(trigger, effect, report: Dictionary) -> void:
+	_daily_adapter._service_trigger_country_delivery(self, trigger, effect, report)
+func _ack_trigger_delivery_ids(trigger) -> Dictionary:
+	return _daily_adapter._ack_trigger_delivery_ids(self, trigger)
 func _consume_country_worker_read_view_if_authoritative() -> void:
 	_daily_adapter._consume_country_worker_read_view_if_authoritative(self)
 func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
@@ -1589,114 +1040,17 @@ func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
 	return _daily_adapter.wait_for_climate_consumed(self, after_environment_generation)
 func _try_promote_economy_pod_active() -> void:
-	if not runtime_economy_auto_pod_active:
-		return
-	if _generator == null or not _generator.has_method("get_data_core_world_ext"):
-		return
-	var ext = _generator.get_data_core_world_ext()
-	if ext == null or not ext.has_method("switch_economy_authority"):
-		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
-	if String(report.get("simulation_thread_mode", "OFF")) != "ACTIVE":
-		return
-	if not bool(report.get("economy_pod_active_ready", false)):
-		return
-	# Already bound OwnedState means POD_ACTIVE promotion has landed.
-	if String(report.get("economy_formula_backing", "")) == "owned_state":
-		return
-	# Cheap prefilter; C++ still try_locks because this races with the worker.
-	if int(report.get("worker_day_inflight", 0)) != 0 \
-			or int(report.get("economy_inflight_mutations", 0)) != 0:
-		return
-	var switched: Dictionary = ext.switch_economy_authority("POD_ACTIVE")
-	if bool(switched.get("ok", false)):
-		print("[runtime-worker] Economy authority promoted to POD_ACTIVE")
-
-
-## 运行时开关 Climate|Country 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，
-## 主线程立刻恢复算 climate/country。打开则相反。不需要重新生成世界。
-## B8-4：这个入口现在等价于 force_on / force_off；想回到 auto 用
-## set_climate_authority_override("auto")。
+	_climate_runtime._try_promote_economy_pod_active(self)
 func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
-	runtime_climate_authority_enabled = enabled
-	_climate_authority_policy.set_force_enabled(enabled)
-	return _restart_worker_with_current_policy()
-
-
+	return _climate_runtime.set_runtime_climate_authority_enabled(self, enabled)
 func _restart_worker_with_current_policy() -> Dictionary:
-	return _lifecycle.restart_worker_with_current_policy(self)
-
-
-## B8-4：三态策略入口。auto 交给实测阈值，force_on/force_off 覆盖它。
+	return _climate_runtime._restart_worker_with_current_policy(self)
 func set_climate_authority_override(mode: String) -> Dictionary:
-	var applied: Dictionary = _climate_authority_policy.set_override_mode(mode)
-	if not bool(applied.get("ok", false)):
-		return applied
-	# override 只决定"模式"，不覆写会话 request（诊断要能同时看到"想开"与"实际
-	# 生效"）。重启路径自己会重新解析策略，避免半状态。
-	var restarted: Dictionary = _restart_worker_with_current_policy()
-	return {
-		"ok": bool(restarted.get("ok", true)),
-		"code": String(restarted.get("code", "ok")),
-		"override": mode,
-		"policy": _resolve_climate_authority_policy(),
-		"diagnostics": restarted,
-	}
-
-
-## 解析当前策略（不改状态）。诊断与启动路径共用同一个函数，避免两处判据漂移。
+	return _climate_runtime.set_climate_authority_override(self, mode)
 func _resolve_climate_authority_policy() -> Dictionary:
-	var n_cells := _current_map.cell_count() if _current_map != null else 0
-	return _climate_authority_policy.resolve(runtime_climate_authority_enabled, n_cells)
-
-
-## Climate|Country 权威诊断。供 dev console / 对拍场景读，不参与调度决策。
+	return _climate_runtime._resolve_climate_authority_policy(self)
 func climate_authority_diagnostics() -> Dictionary:
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator != null and _generator.has_method("get_runtime_thread_report") \
-		else {}
-	return {
-		"enabled": runtime_climate_authority_enabled,
-		"worker_authoritative": bool(report.get("climate_worker_authoritative", false)),
-		"country_worker_authoritative": bool(report.get(
-			"country_worker_authoritative", false)),
-		"authoritative_domain_mask": int(report.get("authoritative_domain_mask", 0)),
-		"requested_authority_mask": int(report.get("requested_authority_mask", 0)),
-		"writeback_generation": _runtime_climate_writeback_generation,
-		"writeback_days": _runtime_climate_writeback_days,
-		"writeback_last_day": _runtime_climate_writeback_last_day,
-		"writeback_applied_fields": _runtime_climate_writeback_applied_fields,
-		"writeback_skipped_fields": _runtime_climate_writeback_skipped,
-		# B8 P0：交付游标与回灌分段耗时。writeback_days 只说明"回灌落地几天"，
-		# 这几条才区分"worker 没消费"（superseded/consumed 落后 published）与
-		# "回灌本身慢"（memcpy/flush）。
-		"climate_committed_day": int(report.get("climate_committed_day", -1)),
-		"climate_consumed_generation": int(report.get(
-			"climate_consumed_generation", 0)),
-		"environment_published_days": int(report.get(
-			"environment_published_days", 0)),
-		"environment_consumed_days": int(report.get(
-			"environment_consumed_days", 0)),
-		"environment_superseded_days": int(report.get(
-			"environment_superseded_days", 0)),
-		"environment_dropped_days": int(report.get(
-			"environment_dropped_days", 0)),
-		"environment_ring_pending": int(report.get(
-			"environment_ring_pending", 0)),
-		"climate_wait_total_ms": int(report.get("climate_wait_total_ms", 0)),
-		"climate_wait_last_ms": int(report.get("climate_wait_last_ms", 0)),
-		"climate_wait_max_ms": int(report.get("climate_wait_max_ms", 0)),
-		"writeback_memcpy_ms": float(_runtime_climate_writeback_memcpy_ms),
-		"writeback_flush_ms": float(_runtime_climate_writeback_flush_ms),
-		"writeback_drop_count": int(_runtime_climate_writeback_drops),
-		"authority_policy": _resolve_climate_authority_policy(),
-	}
-
-
-## 视觉 intent 的兼容适配点。worker 只发布数值 intent；具体 MapData/GPU
-## 更新仍留在主线程。当前未迁移的 family 不做隐式写入，避免误把 probe
-## 数据当成权威状态。
+	return _climate_runtime.climate_authority_diagnostics(self)
 func _apply_runtime_visual_patch(_family: int, _patch: Dictionary) -> void:
 	return
 
@@ -1712,51 +1066,7 @@ func _refresh_map_overlay(force: bool) -> void:
 
 
 func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
-	# Web 单日成本探针：PlayerController 的 UI/HUD 段是它自己算好后从这里递进来的。
-	# 必须记在 early-return 之前 —— whole-graph 分支里 commit 消费点已经先调过
-	# 一次 finish_daily_tick(0.0)，把 _pending_tick_start_usec 清掉了，PlayerController
-	# 这次会在这里直接返回，UI 数字只有记在前面才不会丢。
-	if ui_ms > 0.0 and _dcp_on():
-		# 直接记进当天的桶：PlayerController 是第 2 个 day_changed 监听者，桶到
-		# 下一天开始才 flush，所以这一段仍归属**当天**（不能用 _dcp_publish_day
-		# 里那个在 host 分支末尾就清掉的暂存值，否则会错记到隔天）。
-		_world_clock.day_cost_add(&"pcui", ui_ms)
-	if _pending_tick_start_usec <= 0:
-		return
-	_last_ui_perf_summary = ui_breakdown.duplicate(false)
-	_last_ui_perf_summary["_tick_idx"] = _fast_tick_count
-	var fast_ms_before_recorders := (
-		Time.get_ticks_usec() - _pending_tick_start_usec) / 1000.0
-	var recorder_diag := _publish_fast_tick_perf_sample(
-		_pending_tick_sus_ms,
-		_pending_tick_render_ms,
-		maxf(ui_ms, 0.0),
-		fast_ms_before_recorders,
-		_pending_tick_skipped_day
-	)
-	var fast_ms_after_recorders := (
-		Time.get_ticks_usec() - _pending_tick_start_usec) / 1000.0
-	_last_fast_tick_ms = int(round(fast_ms_after_recorders))
-	_last_tick_timing = {
-		"tick_idx": _fast_tick_count,
-		"fast_ms": fast_ms_after_recorders,
-		"fast_ms_before_recorders": fast_ms_before_recorders,
-		"t_sus_ms": _pending_tick_sus_ms,
-		"t_render_ms": _pending_tick_render_ms,
-		"t_ui_ms": maxf(ui_ms, 0.0),
-		"was_skipped_day": _pending_tick_skipped_day,
-	}
-	if recorder_diag.is_empty():
-		_last_recorder_perf_summary.clear()
-	else:
-		recorder_diag["fast_ms_before_recorders"] = fast_ms_before_recorders
-		recorder_diag["fast_ms_after_recorders"] = fast_ms_after_recorders
-		_last_recorder_perf_summary = recorder_diag
-	if _generator != null and _current_map != null:
-		_generator.sync_detail_scatter_after_tick(_current_map)
-	_pending_tick_start_usec = 0
-
-
+	_daily_adapter.finish_daily_tick(self, ui_ms, ui_breakdown)
 func get_current_map() -> MapData:
 	return _current_map
 
@@ -1819,131 +1129,11 @@ func get_sus_last_tick_summary() -> Dictionary:
 
 
 func get_sim_breakdowns() -> Dictionary:
-	var out: Dictionary = {}
-	if _generator == null:
-		return out
-	if not _last_ui_perf_summary.is_empty():
-		out["ui"] = _last_ui_perf_summary.duplicate(false)
-	if _generator.has_method("sus_climate_breakdown"):
-		out["climate"] = _generator.sus_climate_breakdown()
-	if _generator.has_method("sus_weather_breakdown"):
-		out["weather"] = _generator.sus_weather_breakdown()
-	if _generator.has_method("sus_enum_atlas_breakdown"):
-		out["enum_atlas"] = _generator.sus_enum_atlas_breakdown()
-	if _generator.has_method("sus_sea_ice_atlas_breakdown"):
-		out["sea_ice_atlas"] = _generator.sus_sea_ice_atlas_breakdown()
-	if _generator.has_method("sus_dynamic_visual_atlas_breakdown"):
-		out["dynamic_visual_atlas"] = _generator.sus_dynamic_visual_atlas_breakdown()
-	if _generator.has_method("sus_ocean_currents_breakdown"):
-		out["ocean"] = _generator.sus_ocean_currents_breakdown()
-	var tick_report := get_sus_last_tick_report()
-	var country_job = tick_report.get("country_daily", {})
-	if country_job is Dictionary and _generator.has_method("get_country_report"):
-		var country_report: Dictionary = _generator.get_country_report()
-		var report_day := int(country_report.get(
-			"last_committed_day", country_report.get("day_index", -1)))
-		var current_day := int(_world_clock.day_index()) if _world_clock != null else report_day
-		if not country_report.is_empty() and report_day >= 0 and report_day >= current_day:
-			var country_breakdown: Dictionary = {
-				"_tick_idx": _fast_tick_count,
-				"country_report_mode": country_report.get(
-					"country_report_mode", country_report.get("report_mode", "")),
-				"country_state_hash_ms": country_report.get(
-					"country_state_hash_ms", country_report.get("state_hash_ms", 0.0)),
-				"country_report_build_ms": country_report.get(
-					"country_report_build_ms", country_report.get("report_build_ms", 0.0)),
-				"research_queue_size": country_report.get("research_queue_size", -1),
-				"research_full_scan_fallbacks": country_report.get(
-					"research_full_scan_fallbacks", 0),
-				"research_activation_ms": country_report.get("research_activation_ms", 0.0),
-				"research_allocation_ms": country_report.get("research_allocation_ms", 0.0),
-				"research_effect_ack_ms": country_report.get("research_effect_ack_ms", 0.0),
-				"research_discovery_ms": country_report.get("research_discovery_ms", 0.0),
-				"research_modifier_ms": country_report.get("research_modifier_ms", 0.0),
-				"research_report_ms": country_report.get("research_report_ms", 0.0),
-				"research_countries_scanned": country_report.get("research_countries_scanned", 0),
-				"research_active_countries": country_report.get("research_active_countries", 0),
-				"research_pending_checks": country_report.get("research_pending_checks", 0),
-				"research_discovery_checks": country_report.get("research_discovery_checks", 0),
-				"research_discovery_frontier_mismatches": country_report.get(
-					"research_discovery_frontier_mismatches", 0),
-				"research_modifier_queries": country_report.get("research_modifier_queries", 0),
-				"research_modifier_cache_hits": country_report.get("research_modifier_cache_hits", 0),
-				"research_remainder_iterations": country_report.get("research_remainder_iterations", 0),
-			}
-			out["country"] = country_breakdown
-	var economy_job = tick_report.get("economy_daily", {})
-	var economy_report: Dictionary = {}
-	if economy_job is Dictionary \
-		and str((economy_job as Dictionary).get("skipped_reason", "")) == "" \
-		and _generator.has_method("get_economy_perf_report"):
-		# Use the cached compact snapshot. Building the full economy report here
-		# used to allocate hundreds of fields on every fast tick.
-		economy_report = _generator.get_economy_perf_report()
-		if not economy_report.is_empty():
-			economy_report["_tick_idx"] = _fast_tick_count
-			out["economy"] = economy_report
-			out["class_opinion"] = {
-				"_tick_idx": _fast_tick_count,
-				"revision": economy_report.get("class_opinion_revision", 0),
-				"class_hash": economy_report.get("class_opinion_class_hash", 0),
-				"country_count": economy_report.get("class_opinion_country_count", 0),
-				"class_count": economy_report.get("class_opinion_class_count", 0),
-				"cells_scanned": economy_report.get("class_opinion_cells", 0),
-				"slots_scanned": economy_report.get("class_opinion_slots_scanned", 0),
-				"last_cells_scanned": economy_report.get("class_opinion_last_cells_scanned", 0),
-				"last_slots_scanned": economy_report.get("class_opinion_last_slots_scanned", 0),
-				"zero_population_rows": economy_report.get(
-					"class_opinion_zero_population_rows", 0),
-				"last_zero_population_rows": economy_report.get(
-					"class_opinion_last_zero_population_rows", 0),
-				"ms": economy_report.get("class_opinion_ms", 0.0),
-			}
-	if _generator.has_method("get_ideology_report"):
-		var ideology: Dictionary = _generator.get_ideology_report()
-		if bool(ideology.get("configured", false)):
-			ideology["_tick_idx"] = _fast_tick_count
-			out["ideology"] = ideology
-	if _generator.has_method("get_effect_report"):
-		var effect: Dictionary = _generator.get_effect_report()
-		if bool(effect.get("configured", false)):
-			effect["_tick_idx"] = _fast_tick_count
-			out["effect"] = effect
-	if _generator.has_method("get_runtime_perf_snapshot"):
-		var graph: Dictionary = _generator.get_runtime_perf_snapshot(0)
-		if not graph.is_empty():
-			graph["_tick_idx"] = _fast_tick_count
-			out["runtime_graph"] = graph
-	return out.duplicate(false)
-
-
+	return _daily_adapter.get_sim_breakdowns(self)
 func get_environment_perf_summary() -> Dictionary:
-	var summary := get_sus_last_tick_summary()
-	var out: Dictionary = {
-		"tick_idx": _fast_tick_count,
-		"fast_ms": _last_fast_tick_ms,
-		"map_cells": _current_map.cell_count() if _current_map != null else 0,
-		"last_tick": summary,
-		"timing": _last_tick_timing.duplicate(false),
-		"window": {},
-		"recorders": _last_recorder_perf_summary.duplicate(false),
-	}
-	if _generator != null and _generator.has_method("sus_report_sim_budget_window"):
-		out["window"] = _generator.sus_report_sim_budget_window()
-	return out
-
-
+	return _daily_adapter.get_environment_perf_summary(self)
 func get_recorder_perf_summary() -> Dictionary:
-	return _last_recorder_perf_summary.duplicate(false)
-
-
-# main.gd dump_render_profile() 的玩家会话等价实现（GM 面板触发，不绑热键）。
-# 采样 120 帧输出帧墙钟统计 + SUS/非 SUS 帧均耗时 + 渲染监视器，用来判断高倍速
-# 掉帧的成本落在仿真循环内还是渲染/present 侧。
-# 输出三通道：print 控制台 + 单次 TXT 快照 + 累积 CSV（A/B 对比友好），
-# 落盘路径与 PerfRecorder 一致（桌面 ../../tmp，移动端 user://perf）。
-# 返回 {ok, txt_path, csv_path} 或 {ok=false, error}，供 GM 面板回显路径。
-# GM/diagnostic methods delegate to the passive adapter.
+	return _daily_adapter.get_recorder_perf_summary(self)
 func dump_render_profile() -> Dictionary:
 	return await _gm_adapter.dump_render_profile(self)
 func set_perf_recorder(recorder: RefCounted) -> void:
@@ -2073,336 +1263,22 @@ func _publish_fast_tick_perf_sample(
 		fast_ms: float,
 		was_skipped_day: bool
 ) -> Dictionary:
-	# 帧墙钟差分：发布点间墙钟 / 期间引擎帧数。1 tick/帧时即上一帧墙钟；
-	# 高速多 tick 帧取区间平均，不产生 0 除（frame_delta=0 时保留上一值）。
-	var publish_now_usec := Time.get_ticks_usec()
-	var publish_now_frame := Engine.get_process_frames()
-	if _last_perf_publish_usec > 0:
-		var frame_delta := publish_now_frame - _last_perf_publish_frame
-		if frame_delta > 0:
-			_last_frame_wall_ms = float(publish_now_usec - _last_perf_publish_usec) \
-				/ 1000.0 / float(frame_delta)
-	_last_perf_publish_usec = publish_now_usec
-	_last_perf_publish_frame = publish_now_frame
-	var perf_ready := _recorder_ready(_perf_recorder)
-	var tile_ready := _recorder_ready(_tile_data_recorder)
-	var economy_ready := _recorder_ready(_economy_data_recorder)
-	var continuation: Dictionary = {}
-	if _generator != null and _generator.has_method("consume_continuation_perf_summary"):
-		continuation = _generator.consume_continuation_perf_summary()
-	if not perf_ready and not tile_ready and not economy_ready:
-		return {}
-	var started_usec := Time.get_ticks_usec()
-	var detail_report: Dictionary = _renderer.detail_scatter_refresh_report() \
-		if _renderer != null and _renderer.has_method("detail_scatter_refresh_report") else {}
-	var out: Dictionary = {
-		"total_ms": 0.0,
-		"perf_ms": 0.0,
-		"tile_ms": 0.0,
-		"economy_ms": 0.0,
-		"perf_recording": perf_ready,
-		"tile_recording": tile_ready,
-		"economy_recording": economy_ready,
-		"tile_recorded": false,
-		"tile_rows": 0,
-		"tile_reason": "",
-		"economy_recorded": false,
-		"economy_rows": 0,
-		"economy_reason": "",
-	}
-	var sample: Dictionary = {
-		"tick_idx": _fast_tick_count,
-		"timestamp_ms": Time.get_ticks_msec(),
-		"was_skipped_day": was_skipped_day,
-		"fps": Engine.get_frames_per_second(),
-		"speed_multiplier": float(_world_clock.speed_multiplier) if _world_clock != null else 0.0,
-		"fast_ms": fast_ms,
-		"t_sus_ms": t_sus_ms,
-		"t_render_ms": t_render_ms,
-		"t_ui_ms": t_ui_ms,
-		"continuation_frames": int(continuation.get("frames", 0)),
-		"continuation_slices": int(continuation.get("slices", 0)),
-		"continuation_started_slices": int(
-			continuation.get("continuation_started_slices", 0)),
-		"continuation_completed_slices": int(
-			continuation.get("continuation_completed_slices", 0)),
-		"continuation_budget_exhausted": bool(
-			continuation.get("continuation_budget_exhausted", false)),
-		"continuation_budget_overrun_frames": int(
-			continuation.get("continuation_budget_overrun_frames", 0)),
-		"continuation_max_budget_overrun_ms": float(
-			continuation.get("continuation_max_budget_overrun_ms", 0.0)),
-		"continuation_blocked_by_stage": str(
-			continuation.get("continuation_blocked_by_stage", "")),
-		"continuation_country_slices": int(continuation.get("country_slices", 0)),
-		"continuation_economy_slices": int(continuation.get("economy_slices", 0)),
-		"continuation_wall_ms": float(continuation.get("wall_ms", 0.0)),
-		"continuation_max_frame_wall_ms": float(continuation.get("max_frame_wall_ms", 0.0)),
-		"continuation_max_slice_ms": float(continuation.get("max_slice_ms", 0.0)),
-		"continuation_last_slice_ms": float(continuation.get("last_slice_ms", 0.0)),
-		"continuation_budget_ms": float(continuation.get("budget_ms", 0.0)),
-		"continuation_last_stage": str(continuation.get("last_stage", "")),
-		"continuation_last_next_stage": str(continuation.get("last_next_stage", "")),
-		"continuation_last_substage": str(continuation.get("last_substage", "")),
-		"continuation_last_path": str(continuation.get("last_path", "")),
-		"continuation_done": bool(continuation.get("done", false)),
-		"continuation_stage_counts": JSON.stringify(continuation.get("stage_counts", {})),
-		"continuation_stage_wall_ms": JSON.stringify(continuation.get("stage_wall_ms", {})),
-		"continuation_stage_max_slice_ms": JSON.stringify(
-			continuation.get("stage_max_slice_ms", {})),
-		"continuation_substage_counts": JSON.stringify(
-			continuation.get("substage_counts", {})),
-		"continuation_substage_wall_ms": JSON.stringify(
-			continuation.get("substage_wall_ms", {})),
-		"continuation_substage_max_slice_ms": JSON.stringify(
-			continuation.get("substage_max_slice_ms", {})),
-		"continuation_substage_work": JSON.stringify(
-			continuation.get("substage_work", {})),
-		# WorldClock 帧内分解：pulse = 本帧 continuation 脉冲段（日循环之前运行，
-		# fast_ms 看不到）；loop/full 在帧尾才更新，此处读到的是上一帧的值，
-		# 稳态下逐行平移一帧不影响对比分析。
-		"clock_pulse_ms": _world_clock.get_last_pulse_ms() if _world_clock != null else 0.0,
-		"clock_loop_ms": _world_clock.get_last_loop_ms() if _world_clock != null else 0.0,
-		"clock_full_ms": _world_clock.get_last_full_proc_ms() if _world_clock != null else 0.0,
-		"clock_day_cost_ema_ms": _world_clock.get_day_cost_ms_ema() if _world_clock != null else 0.0,
-		"clock_throughput_cap": _world_clock.get_throughput_cap_days_per_frame() if _world_clock != null else 0.0,
-		"clock_last_advanced_days": _world_clock.get_last_advanced_days() if _world_clock != null else 0,
-		"sched_day_total_ms": _sched_day_total_ms,
-		"sched_day_report_ms": _sched_day_report_ms,
-		"sched_day_snapshots_ms": _sched_day_snapshots_ms,
-		"sched_day_climate_writeback_ms": _sched_day_climate_writeback_ms,
-		"sched_day_climate_wait_ms": _sched_day_climate_wait_ms,
-		"sched_day_capture_ms": _sched_day_capture_ms,
-		"sched_day_country_peer_ms": _sched_day_country_peer_ms,
-		"sched_day_country_read_ms": _sched_day_country_read_ms,
-		"sched_day_promote_ms": _sched_day_promote_ms,
-		"sched_proc_frames": _sched_proc_frames,
-		"sched_proc_economy_input_ms": _sched_proc_economy_input_ms,
-		"sched_proc_peer_ms": _sched_proc_peer_ms,
-		"sched_proc_snapshots_ms": _sched_proc_snapshots_ms,
-		"sched_proc_country_read_ms": _sched_proc_country_read_ms,
-		"sched_proc_country_visual_ms": _sched_proc_country_visual_ms,
-		"sched_proc_commit_ms": _sched_proc_commit_ms,
-		"sched_proc_resource_ms": _sched_proc_resource_ms,
-		"sched_proc_visual_ms": _sched_proc_visual_ms,
-		"sched_proc_building_ms": _sched_proc_building_ms,
-		"sched_proc_overlay_ms": _sched_proc_overlay_ms,
-		"sched_proc_last_total_ms": _sched_proc_last_total_ms,
-		"country_read_full_snapshot_applied": _country_read_last_full_snapshot,
-		"country_read_applied_cells": _country_read_last_applied_cells,
-		"country_read_territory_changed_cells": _country_read_last_territory_changed_cells,
-		"country_read_full_snapshot_count": _country_worker_read_full_snapshot_count,
-		"country_read_patch_count": _country_worker_read_patch_count,
-		"country_read_rejected_count": _country_worker_read_rejected_count,
-		"country_visual_last_refresh_ms": _country_visual_last_refresh_ms,
-		"country_visual_refresh_pending": _country_visual_refresh_pending,
-		"country_visual_refresh_deferred_frames": _country_visual_refresh_deferred_frames,
-		"country_visual_refresh_run_count": _country_visual_refresh_run_count,
-		"country_visual_refresh_defer_count": _country_visual_refresh_defer_count,
-		# 帧尾探针：标签重建 / 植被 succession drain 读到的是上一帧的值（这些工作
-		# 由 tick 触发、在帧尾 _process 执行，天然滞后本行一帧）；overlay 烘焙是
-		# 自上一行以来的累计值，发布后清零。
-		"tail_label_ms": _settlement_label_layer.get_last_rebuild_ms() \
-			if _settlement_label_layer != null else 0.0,
-		"tail_label_count": _settlement_label_layer.get_last_rebuild_label_count() \
-			if _settlement_label_layer != null else 0,
-		"tail_vegetation_ms": _renderer.get_last_detail_drain_ms() \
-			if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0,
-		# succession 队列健康度：全链路在途 cell 数与累计入队去重跳过数。稳态下
-		# inflight 应有界（≤ 单批气候 dirty 规模），dedup_skips 应随气候提交增长。
-		"tail_vegetation_inflight": int(detail_report.get("inflight_cells", 0)),
-		"tail_vegetation_dedup_skips": int(detail_report.get("enqueue_dedup_skips", 0)),
-		"tail_vegetation_tasks": int(detail_report.get("frame_tasks", 0)),
-		"tail_vegetation_forced_tasks": int(detail_report.get("frame_forced_tasks", 0)),
-		"tail_vegetation_max_task_ms": float(detail_report.get("max_task_ms", 0.0)),
-		"tail_vegetation_plan_ms": float(detail_report.get("plan_ms", 0.0)),
-		"tail_vegetation_encode_ms": float(detail_report.get("encode_ms", 0.0)),
-		"tail_vegetation_cache_update_ms": float(detail_report.get("cache_update_ms", 0.0)),
-		"tail_vegetation_assemble_ms": float(detail_report.get("assemble_ms", 0.0)),
-		"tail_vegetation_upload_ms": float(detail_report.get("upload_ms", 0.0)),
-		"tail_overlay_ms": _overlay_bake_ms_accum,
-		"tail_overlay_last_bake_ms": _map_overlay_last_bake_ms,
-		"tail_overlay_interval_msec": _map_overlay_refresh_interval_msec(),
-		"tail_overlay_refresh_count": _map_overlay_refresh_count,
-		# 帧级渲染残差探针：frame_wall = 相邻两次发布点间的平均帧墙钟（process
-		# frames 差分，多 tick 帧取平均）；engine_process/physics 为引擎监视器原始
-		# 值（信息列，其口径与帧墙钟不严格可比）；residual = wall - clock_full -
-		# 已知帧尾探针 ≈ 渲染提交 + GPU present + 未埋点 _process 节点。
-		# overlay 项只减「最近一次烘焙」而不是跨帧累加值：accum 的时间基准是相邻
-		# 两行之间，拿它去减单帧均值会把 residual 恒压成 0，废掉这一列。
-		"frame_wall_ms": _last_frame_wall_ms,
-		"engine_process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
-		"engine_physics_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
-		"render_objects_in_frame": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
-		"render_primitives_in_frame": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
-		"render_draw_calls_in_frame": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
-		"render_residual_ms": maxf(0.0, _last_frame_wall_ms
-			- (_world_clock.get_last_full_proc_ms() if _world_clock != null else 0.0)
-			- (_renderer.get_last_detail_drain_ms() \
-				if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0)
-			- (_settlement_label_layer.get_last_rebuild_ms() \
-				if _settlement_label_layer != null else 0.0)
-			- _map_overlay_last_bake_ms
-			- _sched_proc_country_visual_ms),
-	}
-	_sched_proc_frames = 0
-	_sched_proc_economy_input_ms = 0.0
-	_sched_proc_peer_ms = 0.0
-	_sched_proc_snapshots_ms = 0.0
-	_sched_proc_country_read_ms = 0.0
-	_sched_proc_country_visual_ms = 0.0
-	_sched_proc_commit_ms = 0.0
-	_sched_proc_resource_ms = 0.0
-	_sched_proc_visual_ms = 0.0
-	_sched_proc_building_ms = 0.0
-	_sched_proc_overlay_ms = 0.0
-	_overlay_bake_ms_accum = 0.0
-	if _generator != null and _generator.has_method("sus_climate_breakdown"):
-		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
-		if not climate_diag.is_empty():
-			sample["climate"] = climate_diag
-	if _generator != null and _generator.has_method("sus_weather_breakdown"):
-		var weather_diag: Dictionary = _generator.sus_weather_breakdown()
-		if not weather_diag.is_empty():
-			sample["weather"] = weather_diag
-	if _generator != null and _generator.has_method("sus_ocean_currents_breakdown"):
-		var ocean_diag: Dictionary = _generator.sus_ocean_currents_breakdown()
-		if not ocean_diag.is_empty():
-			sample["ocean_currents"] = ocean_diag
-	if perf_ready and _perf_recorder != null and _perf_recorder.has_method("is_recording") \
-			and bool(_perf_recorder.is_recording()) \
-			and _generator != null and _generator.has_method("get_runtime_perf_snapshot"):
-		var runtime_graph: Dictionary = _generator.get_runtime_perf_snapshot(0)
-		if not runtime_graph.is_empty():
-			sample["runtime_graph"] = runtime_graph
-	if perf_ready:
-		var perf_started_usec := Time.get_ticks_usec()
-		HostRecorders.record(_perf_recorder, sample)
-		out["perf_ms"] = (Time.get_ticks_usec() - perf_started_usec) / 1000.0
-	if tile_ready:
-		var tile_started_usec := Time.get_ticks_usec()
-		var tile_result = HostRecorders.record(_tile_data_recorder, sample)
-		out["tile_ms"] = (Time.get_ticks_usec() - tile_started_usec) / 1000.0
-		HostRecorders.apply_tile_result(tile_result, out)
-	if economy_ready:
-		var economy_started_usec := Time.get_ticks_usec()
-		var economy_result = HostRecorders.record(_economy_data_recorder, sample)
-		out["economy_ms"] = (Time.get_ticks_usec() - economy_started_usec) / 1000.0
-		HostRecorders.apply_economy_result(economy_result, out)
-	out["total_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
-	return out
-
-
+	return _daily_adapter._publish_fast_tick_perf_sample(self, t_sus_ms, t_render_ms, t_ui_ms, fast_ms, was_skipped_day)
 func _recorder_ready(recorder: RefCounted) -> bool:
-	return HostRecorders._recorder_ready(recorder)
-
-
+	return _daily_adapter._recorder_ready(self, recorder)
 func on_speed_changed(new_speed: float) -> void:
-	if _renderer != null:
-		if _renderer.has_method("set_simulation_speed_multiplier"):
-			_renderer.set_simulation_speed_multiplier(new_speed)
-		var weather_layer := _renderer.get_node_or_null("WeatherLayer")
-		if weather_layer != null and weather_layer.has_method("set_clock_speed_multiplier"):
-			weather_layer.set_clock_speed_multiplier(new_speed)
-		var fog_layer := _renderer.get_node_or_null("FogOfWarLayer")
-		if fog_layer != null and fog_layer.has_method("set_clock_speed_multiplier"):
-			fog_layer.set_clock_speed_multiplier(new_speed)
-		if weather_layer != null and weather_layer.has_method("reset_snapshot_pacing"):
-			weather_layer.reset_snapshot_pacing()
-	if _generator == null:
-		return
-	var cp = _generator._c() if _generator.has_method("_c") else null
-	var auto_weather_stride := true
-	if cp != null and cp.get("weather_refresh_auto_stride_by_speed") != null:
-		auto_weather_stride = bool(cp.weather_refresh_auto_stride_by_speed)
-	if not auto_weather_stride:
-		return
-	var stride := 1
-	if new_speed >= 15.0:
-		stride = 8
-	elif new_speed >= 3.0:
-		stride = 4
-	_generator.set_weather_refresh_stride(stride)
-
-
+	_daily_adapter.on_speed_changed(self, new_speed)
 func on_clock_running_changed(running: bool) -> void:
-	if _renderer == null:
-		return
-	if _world_clock != null and _renderer.has_method("set_simulation_speed_multiplier"):
-		_renderer.set_simulation_speed_multiplier(_world_clock.speed_multiplier)
-	if _renderer.has_method("set_clock_running"):
-		_renderer.set_clock_running(running)
-	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
-	if weather_layer != null and weather_layer.has_method("set_clock_running"):
-		weather_layer.set_clock_running(running)
-	var fog_layer := _renderer.get_node_or_null("FogOfWarLayer")
-	if fog_layer != null and fog_layer.has_method("set_clock_running"):
-		fog_layer.set_clock_running(running)
-
-
+	_daily_adapter.on_clock_running_changed(self, running)
 func _sync_runtime_worker_clock() -> void:
-	_clock_binding.synchronize()
-
-
+	_daily_adapter._sync_runtime_worker_clock(self)
 func on_visual_day_phase_changed(visual_day_phase: float) -> void:
-	if _renderer == null:
-		return
-	if _gm_tod_preview_enabled:
-		if day_night_enabled:
-			_gm_tod_cycle_uv.x = fposmod(visual_day_phase, 1.0)
-			_gm_tod_sun_uv = _gm_tod_cycle_uv
-		_apply_gm_tod_sun_preview()
-		return
-	_renderer.set_day_phase(visual_day_phase)
-	if _tod_profile != null and _renderer.has_method("apply_tod"):
-		_tod_profile.recompute(visual_day_phase, day_night_enabled)
-		_renderer.apply_tod(_tod_profile)
-
-
+	_daily_adapter.on_visual_day_phase_changed(self, visual_day_phase)
 func get_gm_tod_sun_preview() -> Dictionary:
-	if _world_clock == null:
-		return _gm_error("clock_unavailable", "时钟尚未就绪。")
-	var uv := _gm_preview_marker_uv()
-	var angles := eternal_angles_from_uv(_current_eternal_uv())
-	var elevation := clampf(angles.y * (_gm_tod_sun_height_scale if _gm_tod_preview_enabled else 1.0),
-		8.0, 85.0)
-	return {
-		"ok": true,
-		"preview": _gm_tod_preview_enabled,
-		"uv": uv,
-		"height_scale": _gm_tod_sun_height_scale if _gm_tod_preview_enabled else 1.0,
-		"day_night": day_night_enabled,
-		"azimuth_deg": angles.x,
-		"elevation_deg": elevation,
-	}
-
-
+	return _gm_adapter.get_gm_tod_sun_preview(self)
 func set_gm_tod_sun_preview(enabled: bool, uv: Vector2 = Vector2(0.25, 0.5),
 		height_scale: float = 1.0) -> Dictionary:
-	if _world_clock == null:
-		return _gm_error("clock_unavailable", "时钟尚未就绪。")
-	var clamped := Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
-	_gm_tod_sun_height_scale = clampf(height_scale, 0.2, 1.5)
-	if day_night_enabled:
-		_gm_tod_cycle_uv = clamped
-	else:
-		_gm_tod_eternal_uv = clamped
-		_gm_tod_eternal_uv_valid = true
-	_gm_tod_sun_uv = clamped
-	_gm_tod_preview_enabled = enabled
-	if enabled:
-		if day_night_enabled:
-			_world_clock.hold_visual_day_phase(_gm_tod_cycle_uv.x)
-		elif not _world_clock.visual_day_phase_held:
-			_world_clock.hold_visual_day_phase(_world_clock.visual_day_phase)
-		_apply_gm_tod_sun_preview()
-	else:
-		_clear_gm_tod_sun_preview()
-		_world_clock.release_visual_day_phase()
-	gm_tod_preview_changed.emit(_gm_tod_preview_enabled)
-	return get_gm_tod_sun_preview()
-
-
+	return _gm_adapter.set_gm_tod_sun_preview(self, enabled, uv, height_scale)
 static func eternal_uv_from_angles(azimuth_deg: float, elevation_deg: float) -> Vector2:
 	var elevation := clampf(elevation_deg, 8.0, 85.0)
 	var dist := (85.0 - elevation) / 77.0
@@ -2447,119 +1323,25 @@ static func map_sun_uv_to_screen(uv: Vector2, camera_position: Vector2,
 
 
 func gm_tod_screen_to_sun_uv(screen_pos: Vector2) -> Vector2:
-	var current := _gm_tod_sun_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
-	if _camera == null or _renderer == null or _camera.zoom.x <= 0.0:
-		return current
-	var bounds := _renderer.get_world_bounds()
-	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
-		return current
-	return map_screen_to_sun_uv(screen_pos, _camera.position, _camera.zoom.x,
-		_camera.get_viewport_rect().size, bounds)
-
-
+	return _gm_adapter.gm_tod_screen_to_sun_uv(self, screen_pos)
 func gm_tod_sun_screen_position() -> Vector2:
-	if _camera == null or _renderer == null or _camera.zoom.x <= 0.0:
-		return Vector2(INF, INF)
-	var bounds := _renderer.get_world_bounds()
-	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
-		return Vector2(INF, INF)
-	var uv := _gm_tod_sun_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
-	return map_sun_uv_to_screen(uv, _camera.position, _camera.zoom.x,
-		_camera.get_viewport_rect().size, bounds)
-
-
+	return _gm_adapter.gm_tod_sun_screen_position(self)
 func _current_eternal_uv() -> Vector2:
-	if _gm_tod_eternal_uv_valid:
-		return _gm_tod_eternal_uv
-	return eternal_uv_from_angles(-60.0, 37.0)
-
-
+	return _gm_adapter._current_eternal_uv(self)
 func _gm_preview_marker_uv() -> Vector2:
-	if day_night_enabled:
-		return _gm_tod_cycle_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
-	return _current_eternal_uv()
-
-
+	return _gm_adapter._gm_preview_marker_uv(self)
 func _gm_live_sun_uv() -> Vector2:
-	var phase := 0.25
-	var season := 1.0
-	if _world_clock != null:
-		phase = _world_clock.visual_day_phase
-		season = _world_clock.season_phase()
-	var tilt := deg_to_rad(23.5)
-	if _renderer != null:
-		tilt = deg_to_rad(float(_renderer.axial_tilt_deg))
-	var year_progress := fposmod(season, 4.0) * 0.25
-	var decl := tilt * cos(TAU * year_progress)
-	var lat_signed := clampf(decl / (PI * 0.5), -1.0, 1.0)
-	return Vector2(fposmod(phase, 1.0), lat_signed * 0.5 + 0.5)
-
-
+	return _gm_adapter._gm_live_sun_uv(self)
 func _apply_gm_tod_sun_preview() -> void:
-	if _renderer == null or not _gm_tod_preview_enabled:
-		return
-	if _tod_profile == null:
-		_init_tod_profile()
-	if day_night_enabled:
-		_gm_tod_sun_uv = _gm_tod_cycle_uv
-		_renderer.set_day_phase(_gm_tod_cycle_uv.x)
-		if _tod_profile != null and _renderer.has_method("apply_tod"):
-			_tod_profile.recompute(_gm_tod_cycle_uv.x, true)
-			_renderer.apply_tod(_tod_profile)
-		if _renderer.has_method("set_tod_debug_sun_position"):
-			_renderer.set_tod_debug_sun_position(true, _gm_tod_cycle_uv)
-	else:
-		var uv := _current_eternal_uv()
-		_gm_tod_sun_uv = uv
-		var angles := eternal_angles_from_uv(uv)
-		var elevation := clampf(angles.y * _gm_tod_sun_height_scale, 8.0, 85.0)
-		var phase := _world_clock.visual_day_phase if _world_clock != null else 0.25
-		if _tod_profile != null and _renderer.has_method("apply_tod"):
-			_tod_profile.recompute(phase, false)
-			_tod_profile.sun_dir = eternal_sun_dir(angles.x, elevation)
-			_renderer.apply_tod(_tod_profile)
-		if _renderer.has_method("set_tod_debug_sun_position"):
-			_renderer.set_tod_debug_sun_position(true, uv)
-	if _renderer.has_method("set_tod_debug_sun_height_scale"):
-		_renderer.set_tod_debug_sun_height_scale(_gm_tod_sun_height_scale)
-
-
+	_gm_adapter._apply_gm_tod_sun_preview(self)
 func _clear_gm_tod_sun_preview() -> void:
-	if _renderer == null:
-		return
-	if _renderer.has_method("set_tod_debug_sun_position"):
-		_renderer.set_tod_debug_sun_position(false, _gm_tod_sun_uv)
-	if _renderer.has_method("set_tod_debug_sun_height_scale"):
-		_renderer.set_tod_debug_sun_height_scale(1.0)
-
-
+	_gm_adapter._clear_gm_tod_sun_preview(self)
 func on_season_changed(season_idx: int) -> void:
-	if _generator == null or _current_map == null or _world_data == null:
-		return
-	var cp = _generator._c() if _generator.has_method("_c") else null
-	mark_map_overlay_dirty(&"season_changed")
-	var use_legacy := false
-	if cp != null and "season_refresh_legacy_signal" in cp:
-		use_legacy = bool(cp.season_refresh_legacy_signal)
-	if not use_legacy:
-		return
-	if _generator.has_method("queue_season_refresh"):
-		_generator.queue_season_refresh(season_idx)
-	else:
-		_generator.refresh_seasonal(_current_map, _world_data, season_idx)
-
-
+	_presentation.on_season_changed(self, season_idx)
 func on_year_changed(_year_idx: int) -> void:
-	if _generator != null and _current_map != null and _world_data != null:
-		_generator.refresh_yearly(_current_map, _world_data)
-		mark_map_overlay_dirty(&"year_changed")
-
-
+	_presentation.on_year_changed(self, _year_idx)
 func fit_camera(safe_area: Rect2 = Rect2()) -> void:
-	if _camera != null:
-		_camera.fit_to_viewport(1.0, safe_area, true)
-
-
+	_presentation.fit_camera(self, safe_area)
 func map_wrap_period_x() -> float:
 	if _current_map == null:
 		return 0.0
@@ -2573,25 +1355,7 @@ func map_wrap_period_x() -> float:
 ## Out-of-range indices are dropped rather than clamped: a stale index must
 ## paint nothing, not paint the closest valid hex.
 func cell_display_centers(cells: PackedInt32Array, ref_x: float) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	if _current_map == null or cells.is_empty():
-		return out
-	var wrap_period := map_wrap_period_x()
-	out.resize(cells.size())
-	var kept := 0
-	for index in range(cells.size()):
-		var cell := _current_map.cell_at(int(cells[index]))
-		if cell == null:
-			continue
-		var canonical := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
-		out[kept] = HexUtils.nearest_display_world(canonical, ref_x, wrap_period)
-		kept += 1
-	if kept != out.size():
-		out.resize(kept)
-	return out
-
-
-# Visual/vision methods delegate to the passive adapter.
+	return _presentation.cell_display_centers(self, cells, ref_x)
 func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	await _visual_adapter._bind_renderer_and_camera(self, safe_area)
 func _defer_settlement_labels_after_ready() -> void:
@@ -2773,303 +1537,58 @@ func _refresh_country_borders() -> Dictionary:
 func _rebuild_view_adapter() -> void:
 	_visual_adapter._rebuild_view_adapter(self)
 func _apply_feature_flags() -> void:
-	DCFeatureFlags.set_cell_indirection(cell_indirection_enabled)
-	DCFeatureFlags.set_ocean_current_visual(ocean_current_visual_enabled)
-	DCFeatureFlags.set_sea_ice_atlas(sea_ice_atlas_enabled)
-	# 桌面默认开；移动端由 mobile_terrain_horizon_enabled 开关控制；Web 只有
-	# Compatibility/WebGL2 后端，逐像素 marching 开销和离屏 viewport 读回都偏重
-	# （readback 在部分浏览器/驱动上会强制同步 flush GPU 管线），默认关闭——
-	# 这里必须和 DCFeatureFlags.terrain_horizon_gpu_bake_active() 的 fallback
-	# 语义保持一致。之前只判断了 "mobile"，漏判 Web，导致每次开局都把这条显式
-	# meta 覆盖成 true，盖掉了 feature_flags.gd 里"web 默认关"的设计。
-	var terrain_horizon_enabled: bool
-	if OS.has_feature("mobile"):
-		terrain_horizon_enabled = mobile_terrain_horizon_enabled
-	elif DCFeatureFlags.is_web():
-		terrain_horizon_enabled = false
-	else:
-		terrain_horizon_enabled = true
-	DCFeatureFlags.set_terrain_horizon_gpu_bake(terrain_horizon_enabled)
-
-
+	_generation_adapter._apply_feature_flags(self)
 func _world_setup_config() -> Dictionary:
-	if not _new_game_config.is_empty():
-		return _new_game_config
-	if not Engine.has_meta(WORLD_SETUP_META):
-		return {}
-	var raw = Engine.get_meta(WORLD_SETUP_META)
-	if raw is Dictionary and String((raw as Dictionary).get("source", "")) == "world_setup":
-		return raw as Dictionary
-	return {}
-
-
+	return _generation_adapter._world_setup_config(self)
 func _apply_world_setup_base_config() -> void:
-	var config := _world_setup_config()
-	if config.is_empty():
-		return
-	var base = config.get("base", {})
-	if base is Dictionary:
-		map_width = clampi(int((base as Dictionary).get("map_width", map_width)),
-			10, DCFeatureFlags.max_map_width())
-		map_height = clampi(int((base as Dictionary).get("map_height", map_height)),
-			8, DCFeatureFlags.max_map_height())
-		initial_seed = max(0, int((base as Dictionary).get("initial_seed", initial_seed)))
-		sea_level = clampf(float((base as Dictionary).get("sea_level", sea_level)), 0.1, 0.8)
-		num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)
-		continent_size = clampf(float((base as Dictionary).get("continent_size", continent_size)), 0.2, 0.9)
-		river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
-		generate_test_economy_data = bool((base as Dictionary).get(
-			"generate_test_economy_data", generate_test_economy_data))
-		var requested_population_scale := int((base as Dictionary).get(
-			"test_economy_population_scale", test_economy_population_scale))
-		test_economy_population_scale = requested_population_scale \
-			if requested_population_scale in [0, 1, 10, 100, 1000] else 0
-	var render = config.get("render", {})
-	if render is Dictionary:
-		mobile_terrain_horizon_enabled = bool((render as Dictionary).get(
-			"mobile_terrain_horizon_enabled", mobile_terrain_horizon_enabled
-		))
-
-
+	_generation_adapter._apply_world_setup_base_config(self)
 func _cmdline_pkmap_path() -> String:
-	for raw in OS.get_cmdline_user_args():
-		var item := str(raw)
-		if item.begins_with("pkmap="):
-			return item.substr(6).strip_edges()
-	return ""
-
-
+	return _generation_adapter._cmdline_pkmap_path(self)
 func _apply_pkmap_override(cfg: MapConfig) -> void:
-	if cfg == null:
-		return
-	var path := ""
-	var setup := _world_setup_config()
-	var base = setup.get("base", {})
-	if base is Dictionary:
-		path = String((base as Dictionary).get("pkmap_path", "")).strip_edges()
-	var cmdline := _cmdline_pkmap_path()
-	if not cmdline.is_empty():
-		# `pkmap=` 是开新局的开发入口。读档时地图来源必须以存档 config 为准：
-		# 用命令行换一张图会让重建世界与存档世界不一致（起始格/领土/地形互相
-		# 矛盾），最终在视野收尾被判为失败。这里直接忽略并留一条 warning。
-		if not _pending_load_bundle.is_empty():
-			push_warning("[pkmap] ignoring pkmap= cmdline override during load (saved source: %s)" % path)
-		else:
-			path = cmdline
-	if path.is_empty():
-		return
-	cfg.map_source = "pkmap"
-	cfg.pkmap_path = path
-	var peeked: Dictionary = PkmapIOScript.peek_pkmap(path)
-	if not bool(peeked.get("ok", false)):
-		push_error("[pkmap] 无法预读 %s：%s" % [path, String(peeked.get("message", ""))])
-		return
-	cfg.width = int(peeked.get("width", cfg.width))
-	cfg.height = int(peeked.get("height", cfg.height))
-	cfg.sea_level = float(peeked.get("sea_level", cfg.sea_level))
-	var packed_seed := int(peeked.get("seed", 0))
-	if packed_seed != 0:
-		cfg.seed = packed_seed
-	map_width = cfg.width
-	map_height = cfg.height
-	sea_level = cfg.sea_level
-
-
+	_generation_adapter._apply_pkmap_override(self, cfg)
 func _load_runtime_climate_profile() -> ClimateProfile:
-	var profile := ResourceLoader.load(DEFAULT_CLIMATE_PROFILE_PATH, "Resource") as ClimateProfile
-	if profile != null:
-		profile = profile.duplicate(true) as ClimateProfile
-	else:
-		push_warning("[PlayerGame] default ClimateProfile missing; using in-memory defaults.")
-		profile = ClimateProfile.new()
-	profile.set_meta(&"source_path", DEFAULT_CLIMATE_PROFILE_PATH)
-	return profile
-
-
+	return _generation_adapter._load_runtime_climate_profile(self)
 func _apply_runtime_climate_profile(generator_ref: MapGenerator) -> void:
-	if generator_ref == null:
-		return
-	var profile := _load_runtime_climate_profile()
-	var config := _world_setup_config()
-	var climate_overrides: Dictionary = {}
-	if not config.is_empty():
-		var climate = config.get("climate", {})
-		if climate is Dictionary:
-			var profile_props := {}
-			for prop in profile.get_property_list():
-				profile_props[String(prop.get("name", ""))] = true
-			for name in (climate as Dictionary).keys():
-				var key := String(name)
-				if not profile_props.has(key):
-					continue
-				profile.set(key, (climate as Dictionary)[name])
-				climate_overrides[key] = true
-	if OS.has_feature("mobile"):
-		_apply_mobile_profile_defaults(profile, climate_overrides)
-	generator_ref.climate_profile = profile
-
-
+	_generation_adapter._apply_runtime_climate_profile(self, generator_ref)
 func _apply_mobile_profile_defaults(profile: ClimateProfile, climate_overrides: Dictionary) -> void:
-	if profile.get("native_daily_sim_stride") != null and not climate_overrides.has("native_daily_sim_stride"):
-		profile.native_daily_sim_stride = MOBILE_NATIVE_DAILY_STRIDE_DAYS
-	if profile.get("native_daily_commit_lag_budget_days") != null and not climate_overrides.has("native_daily_commit_lag_budget_days"):
-		profile.native_daily_commit_lag_budget_days = MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS
-	if profile.get("native_daily_sea_ice_spread_dt_cap_days") != null and not climate_overrides.has("native_daily_sea_ice_spread_dt_cap_days"):
-		profile.native_daily_sea_ice_spread_dt_cap_days = float(MOBILE_NATIVE_DAILY_STRIDE_DAYS)
-	if profile.get("natural_resource_daily_stride") != null and not climate_overrides.has("natural_resource_daily_stride"):
-		profile.natural_resource_daily_stride = maxi(int(profile.natural_resource_daily_stride), MOBILE_NATURAL_RESOURCE_STRIDE_DAYS)
-	if profile.get("dynamic_visual_atlas_upload_stride") != null and not climate_overrides.has("dynamic_visual_atlas_upload_stride"):
-		profile.dynamic_visual_atlas_upload_stride = maxi(int(profile.dynamic_visual_atlas_upload_stride), MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE)
-	if profile.get("weather_field_advect_steps") != null and not climate_overrides.has("weather_field_advect_steps"):
-		profile.weather_field_advect_steps = mini(int(profile.weather_field_advect_steps), MOBILE_WEATHER_FIELD_ADVECT_STEPS)
-
-
+	_generation_adapter._apply_mobile_profile_defaults(self, profile, climate_overrides)
 func _init_tod_profile() -> void:
-	if _tod_profile != null:
-		return
-	_tod_profile = TODProfile.new()
-	_tod_profile.configure(0.65, 0.55, 0.72, 1.0)
-
-
+	_generation_adapter._init_tod_profile(self)
 func _on_baker_stage_progress(stage: String, fraction: float) -> void:
-	generation_progress.emit(stage, fraction)
-
-
+	_generation_adapter._on_baker_stage_progress(self, stage, fraction)
 func _enter_tree() -> void:
-	_exiting_tree = false
-	add_to_group(&"world_sessions")
-
-
+	_generation_adapter._enter_tree(self)
 func _exit_tree() -> void:
-	_clock_binding.detach()
-	_exiting_tree = true
-	_runtime_session.request_close()
-	_session_frames.cancel()
-	if _generator != null:
-		_generator.cancel_loading_work()
-		_generator.request_runtime_stop()
-
-
+	_generation_adapter._exit_tree(self)
 var _loading_visual_usec := 0
 var _loading_visual_name := ""
 func _loading_visual_step(label: String) -> void:
-	# 这条日志行打印的是"上一步"的耗时；进度同理：每次调用时把上一步标记为完成，
-	# 把生成后阶段的游标向前推一格。label 本身只进日志，UI 文案用固定 stage key。
-	_advance_visual_progress("bind")
-	var now:=Time.get_ticks_usec()
-	if _loading_visual_usec>0:
-		var step_ms := float(now-_loading_visual_usec)/1000.0
-		print("[loading-visual-substep] %s %.1fms" % [_loading_visual_name, step_ms])
-		WebTelemetry.emit("visual_step", {"label": _loading_visual_name, "dur": step_ms})
-	_loading_visual_usec=now
-	_loading_visual_name=label
-
-
-# ─── 生成后阶段进度（绑渲染器 → 植被图层 → 建筑外观）─────────────────────────
-# 生成器返回后到 hide_completed() 之间没有任何 bake_progress，原先只有一次
-# "upload"=98% 就静默到 100%。这里用与生成器同款的单调几何游标：
-# 每推进一步向 VISUAL_PROGRESS_CEIL 逼近固定比例，严格单调、永不回退、
-# 也永远到不了 1.0（100% 只属于 WorldLoadingOverlay.hide_completed()）。
-# fraction 语义是"UI 完成度绝对值"，overlay 的 ABSOLUTE_STAGES 直接照搬。
+	_generation_adapter._loading_visual_step(self, label)
 const VISUAL_PROGRESS_START := 0.96
 const VISUAL_PROGRESS_CEIL := 0.99
 const VISUAL_PROGRESS_GAIN := 0.09
 var _visual_progress := 0.0
 
 func _advance_visual_progress(stage: String, begin: bool = false) -> void:
-	if _visual_progress <= 0.0:
-		# 0.0 = 本次生成还没进入后期阶段（或已复位）：不打扰 overlay 的现有进度。
-		# 只有 generate_world 里"生成器已返回"那一次调用带 begin=true。
-		if not begin:
-			return
-		_visual_progress = VISUAL_PROGRESS_START
-	else:
-		_visual_progress = minf(VISUAL_PROGRESS_CEIL,
-			_visual_progress + (VISUAL_PROGRESS_CEIL - _visual_progress) * VISUAL_PROGRESS_GAIN)
-	generation_progress.emit(stage, _visual_progress)
-
-
-## HexRenderer 建完一个植被层回调一次（_rebuild_cooperative →
-## _setup_loading_vegetation_layers_for_deferred_fill 的逐层循环）。
-## 有些画质档位会构建 14+ 层，逐层推进才不会在 98% 处长时间停住。
+	_generation_adapter._advance_visual_progress(self, stage, begin)
 func _on_renderer_loading_layer_progress(_layer_index: int, _layer_count: int,
 		_layer_name: String) -> void:
-	_advance_visual_progress("visual")
-
-
+	_generation_adapter._on_renderer_loading_layer_progress(self, _layer_index, _layer_count, _layer_name)
 func _on_annual_report_ready(report_id: int) -> void:
 	annual_report_ready.emit(report_id)
 
 
 func annual_report_status() -> Dictionary:
-	return _annual_reports.status()
-
-
+	return _generation_adapter.annual_report_status(self)
 func annual_report_snapshot(report_id: int) -> Dictionary:
-	return _annual_reports.snapshot(report_id)
-
-
+	return _generation_adapter.annual_report_snapshot(self, report_id)
 func annual_report_history(offset: int = 0, limit: int = 64) -> Dictionary:
-	return _annual_reports.history(offset, limit)
-
-
+	return _generation_adapter.annual_report_history(self, offset, limit)
 func mark_annual_report_presented(report_id: int) -> void:
-	_annual_reports.mark_presented(report_id)
-
-
+	_generation_adapter.mark_annual_report_presented(self, report_id)
 func annual_reports_waiting_for_year(year: int) -> bool:
-	return _annual_reports.waiting_for_year(year)
-
-
+	return _generation_adapter.annual_reports_waiting_for_year(self, year)
 func annual_report_catalogs() -> Dictionary:
-	if _generator == null:
-		return {}
-	var economy = _generator.get_economy_facade()
-	var country: Dictionary = _generator.get_country_facade().native_catalog()
-	var professions := PackedStringArray()
-	for id in economy.profession_ids():
-		professions.append(economy.profession_display_name(StringName(id)))
-	var buildings := PackedStringArray()
-	for index in economy.building_type_ids().size():
-		buildings.append(economy.building_display_name(index))
-	var goods := PackedStringArray()
-	for index in economy.good_ids().size():
-		goods.append(economy.good_display_name(index))
-	# 资源名与「认没认出来」走同一个循环、同一个下标：报表里的 resource id 就是
-	# ResourceProfileRegistry.ordered() 的下标，两个数组必须等长同序。
-	var viewer: Dictionary = _player_completed_technology_ids()
-	var know_discovery: bool = bool(viewer.get("ok", false))
-	var known: PackedStringArray = viewer.get("ids", PackedStringArray())
-	var resources := PackedStringArray()
-	var discovered := PackedByteArray()
-	for profile in ResourceProfileRegistry.ordered():
-		resources.append(String(profile.display_name))
-		if know_discovery:
-			discovered.append(1 if ResourceProfileRegistry.discovery_visible(profile, known) else 0)
-	var out: Dictionary = {"profession_names": professions, "building_names": buildings,
-		"resource_names": resources, "good_names": goods,
-		"technology_names": country.get("technology_display_names", PackedStringArray())}
-	# 拿不到玩家科技快照时**不带这个键**：调用方"没报告"与"查了是 0"是两件事，
-	# 缺省必须表现为"不过滤"，否则一次读档期的查询失败会把整栏资源吞掉。
-	if know_discovery:
-		out["resource_discovered"] = discovered
-	return out
-
-
-## 玩家已完成科技 id。年报"资源"栏要据此藏掉还没认出来的矿种。
-## 认矿门控（ResourceProfile.discovery_technology_tags）本来就在 GDScript 侧，
-## 原生只管"能不能采"，所以这条过滤只能在这里做 —— 与地图覆盖层、悬停卡同一套判定。
+	return _generation_adapter.annual_report_catalogs(self)
 func _player_completed_technology_ids() -> Dictionary:
-	if _generator == null or not _generator.has_method("get_country_facade"):
-		return {"ok": false}
-	var facade = _generator.get_country_facade()
-	if facade == null or not facade.has_method("snapshot"):
-		return {"ok": false}
-	if _player_country_handle == 0:
-		_player_country_handle = _resolve_player_country_handle()
-	if _player_country_handle == 0:
-		return {"ok": false}
-	var snapshot: Dictionary = facade.snapshot(_player_country_handle)
-	if not bool(snapshot.get("ok", false)):
-		return {"ok": false}
-	return {"ok": true, "ids": snapshot.get("technology_ids", PackedStringArray())}
+	return _generation_adapter._player_completed_technology_ids(self)

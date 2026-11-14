@@ -51,8 +51,8 @@ func _run() -> void:
 	_expect("country action bar has five sections", buttons.size() == 5)
 	_expect("economy replaces taxation in country actions",
 		buttons.has("economy") and not buttons.has("taxation"))
-	_expect("ideology replaces politics in country actions",
-		buttons.has("ideology") and not buttons.has("politics"))
+	_expect("politics hosts ideology in country actions",
+		buttons.has("politics") and not buttons.has("ideology"))
 	for button_value in buttons.values():
 		var action := button_value as Button
 		var action_icons := action.find_children("*", "TextureRect", true, false) \
@@ -68,7 +68,7 @@ func _run() -> void:
 			action != null and action.find_children("*", "IconBadge", true, false).is_empty())
 	_expect("country action bar is compact", bar.size.x <= 422.0)
 	var paused_before := clock.paused
-	for section_id in ["technology", "ideology", "economy", "military"]:
+	for section_id in ["technology", "politics", "economy", "military"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		if button != null:

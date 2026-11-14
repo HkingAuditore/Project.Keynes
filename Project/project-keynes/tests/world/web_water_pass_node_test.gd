@@ -95,18 +95,24 @@ func _run() -> void:
 		+ "#define PK_WEB_TEXTURE_BUDGET\n" + FileAccess.get_file_as_string(SHADER_PATH),
 		"legacy variant code == HexRenderer.WATER_PASS_PREFIX + shader source")
 	var uniforms: Array = material.shader.get_shader_uniform_list()
-	# 不再钉死 exact total：uniform 会随功能增删（surface array 的这一轮就 +7）。
-	# 真正的不变量是"紧凑水面只拿它消费的键"，由下面的逐个取值断言 + 水位/羊皮纸
-	# 断言守；这里只要求它远小于 world_map 的 186 个。
-	_expect(uniforms.size() >= 16 and uniforms.size() < 60,
+	# Seven material samplers fit the Web texture budget. The ocean-current
+	# texture and its controls are part of the compact water program's contract.
+	_expect(uniforms.size() == 67,
 		"legacy variant stays a compact uniform set (got %d)" % uniforms.size())
+	var sampler_names := PackedStringArray()
 	var legacy_samplers := 0
 	for entry in uniforms:
 		if int(entry.get("type", TYPE_NIL)) == TYPE_OBJECT:
 			legacy_samplers += 1
-	_expect(legacy_samplers == 6,
-		"legacy variant declares 6 samplers incl. the shared surface array (got %d)"
+			sampler_names.append(String(entry.name))
+	_expect(legacy_samplers == 7,
+		"legacy variant declares 7 samplers incl. surface array and ocean flow (got %d)"
 			% legacy_samplers)
+	sampler_names.sort()
+	var expected_samplers := PackedStringArray(["dyn_lut", "enum_lut", "height_tex",
+		"map_index_atlas", "ocean_current_flow_tex", "terrain_surface_tex", "water_depth_tex"])
+	expected_samplers.sort()
+	_expect(sampler_names == expected_samplers, "compact water declares only its seven owned textures")
 	_expect(_range(material, "lut_dims") == Vector2(4.0, 2.0),
 		"lut_dims follows the world's cell LUT grid")
 	_expect(_range(material, "world_size") == Vector2(100.0, 80.0),

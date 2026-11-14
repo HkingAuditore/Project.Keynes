@@ -11,7 +11,7 @@ const AtlasEncodersScript = preload("res://scripts/rendering/bakers/atlas_encode
 
 
 static func native_active(world_ext: Object) -> bool:
-	return world_ext != null and world_ext.has_method(&"run_bake_terrain_index_pass")
+	return world_ext != null
 
 
 static func build_cell_inputs(map: MapData) -> Dictionary:

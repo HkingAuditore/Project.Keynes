@@ -462,6 +462,10 @@ public:
         // Ideology-local scalars live above the Economy range in the same
         // catalog but have no Economy sampler or threshold consumer.
         MetricMask scalar_mask;
+        // Program-level conditions gate each target. The derived layer evaluates
+        // them per cell; a STATE condition has no instance to read there.
+        int32_t condition_count = 0;
+        bool condition_reads_state = false;
     };
 
     // Durable identity for an external owner (ideology, trigger, etc.).  The
@@ -829,6 +833,12 @@ public:
         const std::string &program_key,
         const int64_t *metric_values, int32_t metric_count,
         int64_t &out_value, std::string &error) const;
+    // The condition-side twin: does the program's condition pass for these
+    // samples. A program without conditions passes.
+    bool evaluate_program_conditions_for_metrics(
+        const std::string &program_key,
+        const int64_t *metric_values, int32_t metric_count,
+        bool &passes, std::string &error) const;
     bool program_modifier_commands(const std::string &program_key,
                                    std::vector<ProgramModifierCommand> &out) const;
     godot::Dictionary report() const;
@@ -1195,6 +1205,9 @@ private:
 
     bool evaluate_condition(const Definition &definition,
                             const Instance &instance) const;
+    template <typename MetricFn, typename StateFn>
+    bool run_condition_machine(const Definition &definition, MetricFn metric,
+                               StateFn state) const;
     bool execute_program(const Definition &definition, Instance &instance,
                          int64_t day, Transaction &transaction,
                          std::string &error);

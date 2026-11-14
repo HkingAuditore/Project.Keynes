@@ -470,12 +470,15 @@ func _run() -> void:
 		failures.append("loading overlay does not cover the full viewport")
 	var loading_center := loading.get_global_rect().get_center()
 	var card_center := loading._card.get_global_rect().get_center()
-	if loading_center.distance_to(card_center) > 1.0:
-		failures.append("loading card is not centered in the viewport")
+	if absf(loading_center.x - card_center.x) > 1.0 \
+			or loading._card.get_global_rect().end.y > loading.get_global_rect().end.y - 16.0:
+		failures.append("loading card is not horizontally centered inside its bottom safe area")
 	loading.show_message("正在生成世界")
 	loading.set_progress("physical", 0.65)
+	var completed_progress := loading._progress.value
 	loading.set_progress("terrain", 0.20)
-	if not is_equal_approx(loading._progress.value, 65.0):
+	if not is_equal_approx(completed_progress, 62.0) \
+			or not is_equal_approx(loading._progress.value, completed_progress):
 		failures.append("loading progress regressed after an older stage update")
 	if loading._stage_label.text != "生成地形和水文":
 		failures.append("loading stage was not localized for players")

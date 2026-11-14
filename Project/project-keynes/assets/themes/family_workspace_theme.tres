@@ -95,7 +95,7 @@ border_width_right = 1
 border_color = Color(0.38, 0.26, 0.15, 0.42)
 
 [sub_resource type="FontVariation" id="BodySemibold"]
-base_font = ExtResource("1_font")
+base_font = ExtResource("ui_swei_bold")
 
 [sub_resource type="FontVariation" id="BodyMedium"]
 base_font = ExtResource("1_font")

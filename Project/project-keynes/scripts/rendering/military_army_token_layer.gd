@@ -1,5 +1,7 @@
 extends Node2D
 class_name MilitaryArmyTokenLayer
+const MilitaryTokenLod = preload("res://scripts/rendering/military_token_lod.gd")
+
 
 ## z=10 部队棋子层：纸片贴纸棋子 + GPU 插值 + 低缩放按格聚合。
 ##
@@ -36,14 +38,14 @@ const FORMATION_CATALOG_SCRIPT = preload(
 const Z_INDEX := 10
 const INSTANCE_CAP := 2048
 const AGGREGATE_ZOOM := 0.35
-const AGGREGATE_EXIT_ZOOM := 0.37
-const AGGREGATE_REENTER_ZOOM := 0.33
+const AGGREGATE_EXIT_ZOOM = MilitaryTokenLod.AGGREGATE_EXIT_ZOOM
+const AGGREGATE_REENTER_ZOOM = MilitaryTokenLod.AGGREGATE_REENTER_ZOOM
 const FORMATION_ZOOM := 0.70
-const FORMATION_ENTER_EXIT_ZOOM := 0.72
-const FORMATION_EXIT_ZOOM := 0.68
-const LOD_AGGREGATE := 0
-const LOD_REPRESENTATIVE := 1
-const LOD_FORMATION := 2
+const FORMATION_ENTER_EXIT_ZOOM = MilitaryTokenLod.FORMATION_ENTER_EXIT_ZOOM
+const FORMATION_EXIT_ZOOM = MilitaryTokenLod.FORMATION_EXIT_ZOOM
+const LOD_AGGREGATE = MilitaryTokenLod.LOD_AGGREGATE
+const LOD_REPRESENTATIVE = MilitaryTokenLod.LOD_REPRESENTATIVE
+const LOD_FORMATION = MilitaryTokenLod.LOD_FORMATION
 const ACTION_IDLE := 0
 const ACTION_MOVE := 1
 const ACTION_ATTACK := 2
@@ -1229,27 +1231,11 @@ func _process(delta: float) -> void:
 
 
 static func lod_for_zoom_with_hysteresis(zoom: float, current: int) -> int:
-	match current:
-		LOD_AGGREGATE:
-			return LOD_REPRESENTATIVE if zoom > AGGREGATE_EXIT_ZOOM else LOD_AGGREGATE
-		LOD_REPRESENTATIVE:
-			if zoom < AGGREGATE_REENTER_ZOOM:
-				return LOD_AGGREGATE
-			if zoom > FORMATION_ENTER_EXIT_ZOOM:
-				return LOD_FORMATION
-			return LOD_REPRESENTATIVE
-		LOD_FORMATION:
-			return LOD_REPRESENTATIVE if zoom < FORMATION_EXIT_ZOOM else LOD_FORMATION
-	return LOD_REPRESENTATIVE
+	return MilitaryTokenLod.lod_for_zoom_with_hysteresis(zoom, current)
 
 
 static func _lod_name(mode: int) -> String:
-	match mode:
-		LOD_AGGREGATE:
-			return "aggregate"
-		LOD_FORMATION:
-			return "formation"
-	return "representative"
+	return MilitaryTokenLod._lod_name(mode)
 
 
 func set_lod_override_for_tests(mode: int) -> void:

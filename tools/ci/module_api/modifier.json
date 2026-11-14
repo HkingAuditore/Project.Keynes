@@ -13,6 +13,7 @@
   "composition_roots": {
     "world_ext.cpp": "Godot binding layer owns ModifierRuntime",
     "world_ext_climate.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_climate_async.cpp": "Godot binding layer owns ModifierRuntime (split from world_ext_climate.cpp)",
     "world_ext_country.cpp": "Godot binding layer owns ModifierRuntime",
     "world_ext_economy.cpp": "Godot binding layer owns ModifierRuntime",
     "world_ext_effect.cpp": "Godot binding layer owns ModifierRuntime",

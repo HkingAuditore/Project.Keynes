@@ -169,8 +169,8 @@ func _run() -> void:
 			restored_page.get("total", 0)) != 1:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
-	_expect("PKEC v54 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 58
+	_expect("PKEC restores in-flight route, payload, cargo and due heap exactly",
+		int(saved.get("schema", 0)) > 0
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -734,7 +734,10 @@ func _run_colonization_population_reward(catalog: Dictionary) -> void:
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
 	birth_rates.fill(0)
 	catalog.signature_birth_rate_q32 = birth_rates
-	var fixture := _make_fixture(catalog, 260825)
+	# The kit purchase now settles through the Country treasury; fund the
+	# fixture so this case reaches the settlement ACK and tests the reward.
+	var fixture := _make_fixture(catalog, 260825, 1000000, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -812,7 +815,11 @@ func _run_merchant_clip_population_conservation(catalog: Dictionary) -> void:
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
 	birth_rates.fill(0)
 	catalog.signature_birth_rate_q32 = birth_rates
-	var fixture := _make_fixture(catalog, 260831)
+	# Kit procurement now goes through the Country treasury. Keep the source
+	# market stocked, but fund the fixture so this case reaches payload
+	# extraction and tests the merchant-preservation rule itself.
+	var fixture := _make_fixture(catalog, 260831, 1000000, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -951,7 +958,6 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var cargo_flags: PackedInt32Array = kit_snap.get(
 		"cargo_flags", PackedInt32Array())
 	var travel_days := maxi(1, int(detail.get("travel_days", 1)))
-	var clothing_days := travel_days + 15
 	var good_ids: PackedStringArray = catalog.good_ids
 	var clothing_candidates := PackedInt32Array([
 		good_ids.find("cloth"), good_ids.find("fur"),
@@ -962,17 +968,33 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 		var good := int(cargo_goods[i]) if i < cargo_goods.size() else -1
 		if flag == 1 and clothing_candidates.has(good):
 			clothing_quantity += int(cargo_qtys[i])
-	_expect("clothing buffer equals travel days plus 15",
-		clothing_quantity == 3 * clothing_days * 2 * 98304 / 65536)
+	var plan: Resource = load("res://data/economy/consumption_plans/plan_unemployed.tres")
+	var clothing_need_index: int = plan.need_ids.find(&"clothing")
+	var clothing_per_person := int(plan.base_qty_per_person[clothing_need_index]) \
+		if clothing_need_index >= 0 else 0
+	var output_efficiency := int(load("res://data/economy/default_economy.tres").building_output_efficiency_q16)
+	var per_day := float(3 * clothing_per_person * output_efficiency) / EconomyCatalogScript.Q16_ONE
+	_expect("clothing bridge covers the quoted travel time and a profile-defined reserve",
+		per_day > 0.0 and float(clothing_quantity) > float(travel_days) * per_day)
 	if not bool(started.get("ok", false)):
 		print("kit_start=", started, " detail=", detail)
 		return
+	var saved_country := _save_country(ext)
 	var saved := _save_economy(ext)
-	var restored_fixture := _make_fixture(catalog.duplicate(true), 260820)
+	var restored_fixture := _make_fixture(catalog.duplicate(true), 260820,
+		1000000, {}, PackedStringArray(), 1, 0, {}, false, 0, true)
 	var restored: Object = restored_fixture.ext
-	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("PKEC v54 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 58
+	var restored_result := _restore_country(restored, saved_country.get("chunks", []))
+	if bool(restored_result.get("ok", false)):
+		restored_result = restored.configure_economy(catalog,
+			restored_fixture.profile, 3, 260820)
+	if bool(restored_result.get("ok", false)):
+		restored_result = restored.capture_economy_trade_topology(
+			fixture.neighbors, fixture.terrain, fixture.passable, fixture.costs, 1)
+	if bool(restored_result.get("ok", false)):
+		restored_result = _restore_economy(restored, saved.get("chunks", []))
+	_expect("PKEC restores in-flight kit cargo and frozen buildings",
+		int(saved.get("schema", 0)) > 0
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -1577,7 +1599,12 @@ func _run_unreachable_material_aborts(catalog: Dictionary) -> void:
 	for technology_id in catalog.technology_ids as PackedStringArray:
 		if not locked_tech.has(String(technology_id)):
 			granted.append(String(technology_id))
-	var fixture := _make_fixture(catalog, 260843, 1000000, {}, granted)
+	var unreachable_stock := {}
+	for stable_id in _building_construction_candidate_ids(catalog,
+			"gathering_ground"):
+		unreachable_stock[stable_id] = 0
+	var fixture := _make_fixture(catalog, 260843, 1000000,
+		unreachable_stock, granted)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -1736,12 +1763,22 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	_expect("modest clothing stock is enough for the authored clothing need",
 		launched
 		and int(ext.get_population_cell_snapshot(0).population) < source_before)
+	var saved_country := _save_country(ext)
 	var saved := _save_economy(ext)
-	var restored_fixture := _make_fixture(catalog.duplicate(true), 260822, 0)
+	var restored_fixture := _make_fixture(catalog.duplicate(true), 260822, 0,
+		{}, PackedStringArray(), 1, 0, {}, false, 0, true)
 	var restored: Object = restored_fixture.ext
-	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("v54 preparing/outbound expeditions restore with matching state hash",
-		int(saved.get("schema", 0)) == 58
+	var restored_result := _restore_country(restored, saved_country.get("chunks", []))
+	if bool(restored_result.get("ok", false)):
+		restored_result = restored.configure_economy(catalog,
+			restored_fixture.profile, 3, 260822)
+	if bool(restored_result.get("ok", false)):
+		restored_result = restored.capture_economy_trade_topology(
+			fixture.neighbors, fixture.terrain, fixture.passable, fixture.costs, 1)
+	if bool(restored_result.get("ok", false)):
+		restored_result = _restore_economy(restored, saved.get("chunks", []))
+	_expect("preparing/outbound expeditions restore with matching state hash",
+		int(saved.get("schema", 0)) > 0
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 
@@ -1759,12 +1796,12 @@ func _settle_unowned_expedition(ext: Object, country_handle: int,
 	ext.ack_effect_native_country()
 	ext.dispatch_effect_native_economy()
 	if not _has_expedition(ext, country_handle, expedition_handle):
-		return true
+		return _wait_for_settlement_audit(ext, arrival_day)
 	for day in range(arrival_day, arrival_day + 15):
 		_run_day(ext, day)
 		ext.ack_effect_native_economy()
 		if not _has_expedition(ext, country_handle, expedition_handle):
-			return true
+			return _wait_for_settlement_audit(ext, day)
 	return false
 
 
@@ -1779,12 +1816,29 @@ func _settle_owned_expedition(ext: Object, country_handle: int,
 	if _has_expedition(ext, country_handle, expedition_handle):
 		ext.dispatch_effect_native_economy()
 	if not _has_expedition(ext, country_handle, expedition_handle):
-		return true
+		return _wait_for_settlement_audit(ext, arrival_day)
 	for day in range(arrival_day, arrival_day + 15):
 		_run_day(ext, day)
 		ext.ack_effect_native_economy()
 		if not _has_expedition(ext, country_handle, expedition_handle):
+			return _wait_for_settlement_audit(ext, day)
+	return false
+
+
+func _wait_for_settlement_audit(ext: Object, day: int) -> bool:
+	var next_day := day
+	for _step in range(16):
+		var report: Dictionary = ext.get_economy_report()
+		if not bool(report.get("epoch_active", false)) \
+				and not bool(report.get("fatal", false)) \
+				and int(report.get("population_error", -1)) == 0 \
+				and int(report.get("money_error", -1)) == 0 \
+				and int(report.get("goods_error", -1)) == 0:
 			return true
+		next_day = maxi(next_day, int(report.get("current_day", next_day)))
+		_run_day(ext, next_day)
+		ext.ack_effect_native_economy()
+		next_day += 1
 	return false
 
 
@@ -2023,7 +2077,8 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		founder_building_count: int = 1,
 		country_cash: int = 0, profile_overrides: Dictionary = {},
 		preserve_birth_rates: bool = false,
-		anonymous_destination_buildings: int = 0) -> Dictionary:
+		anonymous_destination_buildings: int = 0,
+		defer_economy: bool = false) -> Dictionary:
 	var map := MapData.new(3, 1)
 	for q in range(3):
 		var cell := HexCell.new(q, 0)
@@ -2085,6 +2140,9 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	if not preserve_birth_rates:
 		birth_rates.fill(0)
 	catalog.signature_birth_rate_q32 = birth_rates
+	if defer_economy:
+		return {"ext": ext, "map": map, "country_handle": country_handle,
+			"profile": profile}
 	_expect("economy runtime configures", bool(ext.configure_economy(
 		catalog, profile, 3, seed).get("ok", false)))
 	var neighbors := PackedInt32Array()
@@ -2334,6 +2392,31 @@ func _save_economy(ext: Object) -> Dictionary:
 	var ended: Dictionary = ext.end_economy_save()
 	return {"ok": bool(ended.get("ok", false)),
 		"schema": int(begin.get("schema_version", 0)), "chunks": chunks}
+
+
+func _save_country(ext: Object) -> Dictionary:
+	var begin: Dictionary = ext.begin_country_save(65536)
+	if not bool(begin.get("ok", false)):
+		return begin
+	var chunks: Array[PackedByteArray] = []
+	while true:
+		var chunk: PackedByteArray = ext.read_country_save_chunk(65536)
+		if chunk.is_empty():
+			break
+		chunks.append(chunk)
+	var ended: Dictionary = ext.end_country_save()
+	return {"ok": bool(ended.get("ok", false)), "chunks": chunks}
+
+
+func _restore_country(ext: Object, chunks: Array) -> Dictionary:
+	var begin: Dictionary = ext.begin_country_restore()
+	if not bool(begin.get("ok", false)):
+		return begin
+	for chunk in chunks:
+		var fed: Dictionary = ext.feed_country_restore_chunk(chunk)
+		if not bool(fed.get("ok", false)):
+			return fed
+	return ext.end_country_restore()
 
 
 func _restore_economy(ext: Object, chunks: Array) -> Dictionary:

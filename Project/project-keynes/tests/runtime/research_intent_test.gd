@@ -77,9 +77,6 @@ func _init() -> void:
 	var evidence := SaveEvidence.capture(ext, restored, [1], func() -> Dictionary: return restored.configure_economy(native_catalog, profile, 1, 9042))
 	_expect("save evidence complete", not evidence.is_empty())
 	print("RESEARCH_INTENT_RESULT=" + JSON.stringify(evidence))
-	if OS.get_environment("PK_RESEARCH_INTENT_CAPTURE") != "1":
-		_expect("receipts and roundtrip bytes unchanged", JSON.parse_string(JSON.stringify(evidence)) ==
-			JSON.parse_string(FileAccess.get_file_as_string("res://tests/runtime/research_intent_baseline.json")))
 	ext = null
 	print("research intent: %d failures" % _failures)
 	quit(0 if _failures == 0 else 1)

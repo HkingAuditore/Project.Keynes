@@ -9,7 +9,7 @@ extends RefCounted
 const CountryAiCatalogScript = preload("res://scripts/country/country_ai_catalog.gd")
 const StartLocationProfile = preload("res://scripts/game/start_location_profile.gd")
 
-var _world_ext: Object = null
+var _world_ext: DCWorldExt = null
 var _configured := false
 var _last_decision_id := 0
 var _configure_result: Dictionary = {}
@@ -17,13 +17,13 @@ var _configure_result: Dictionary = {}
 
 ## `excluded_handles` are the player country handles.  The native runtime stays
 ## unarmed (never plans) until they are set here or restored from `pkai`.
-func configure(world_ext: Object, seed: int, map = null,
+func configure(world_ext: DCWorldExt, seed: int, map = null,
 		excluded_handles: PackedInt64Array = PackedInt64Array(),
 		catalog_resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_configured = false
 	_last_decision_id = 0
-	if _world_ext == null or not _world_ext.has_method("configure_country_ai"):
+	if _world_ext == null:
 		_configure_result = {"ok": false, "reason": "country_ai_api_unavailable"}
 		return _configure_result
 	var resource = catalog_resource

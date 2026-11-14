@@ -56,7 +56,7 @@ func _ready() -> void:
 	if ResourceLoader.exists("res://assets/ui/menu_atlas_v1/cloud_noise_v1.png"):
 		_cloud_noise_texture = load("res://assets/ui/menu_atlas_v1/cloud_noise_v1.png")
 	if hero and ResourceLoader.exists("res://assets/ui/menu_atlas_v1/hero_atlas_v1.png"):
-		_hero_rect = TextureRect.new()
+		_hero_rect = UIControlParts.texture_rect()
 		_hero_rect.texture = load("res://assets/ui/menu_atlas_v1/hero_atlas_v1.png")
 		_hero_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_hero_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -115,7 +115,7 @@ func set_layout_state(state: Dictionary) -> void:
 
 
 func _build_art_nodes() -> void:
-	_island_canvas = Control.new()
+	_island_canvas = UIControlParts.control()
 	_island_canvas.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(_island_canvas)
 
@@ -241,7 +241,7 @@ func _rebuild_art() -> void:
 
 	var wet_tint := Vector3(lerpf(1.04, 0.96, wetness), lerpf(0.95, 1.04, wetness), 1.0)
 	for entry in placements:
-		var piece := TextureRect.new()
+		var piece := UIControlParts.texture_rect()
 		piece.texture = entry.get("tex", _art_texture) as Texture2D
 		piece.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		piece.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED if entry.has("tex") else TextureRect.STRETCH_SCALE
@@ -299,7 +299,7 @@ func _build_cache_nodes() -> void:
 	_height_view = _make_view()
 	_height_mat = ShaderMaterial.new()
 	_height_mat.shader = HeightShader
-	var canvas := ColorRect.new()
+	var canvas := UIControlParts.color_rect()
 	canvas.size = Vector2(cache_size)
 	canvas.material = _height_mat
 	_height_view.add_child(canvas)
@@ -312,12 +312,12 @@ func _build_cache_nodes() -> void:
 		material_layer.set_shader_parameter("threshold", LEVELS[i])
 		material_layer.set_shader_parameter("paper_color", COLORS[i])
 		material_layer.set_shader_parameter("pixel", Vector2.ONE / Vector2(cache_size))
-		var surface := ColorRect.new()
+		var surface := UIControlParts.color_rect()
 		surface.size = Vector2(cache_size)
 		surface.material = material_layer
 		view.add_child(surface)
 		_layer_views.append(view)
-		var layer := TextureRect.new()
+		var layer := UIControlParts.texture_rect()
 		var cropped := AtlasTexture.new()
 		cropped.atlas = view.get_texture()
 		cropped.region = Rect2(Vector2.ZERO, Vector2(cache_size))

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <deque>
@@ -633,6 +634,18 @@ private:
         std::vector<std::pair<int32_t, int64_t>> treasury_consumed;
     };
 
+    // Per-call orchestration state for the country command pipeline. The
+    // mutable batch remains the sole owner of staged country data; this only
+    // carries the timing and result values across the three execution phases.
+    struct CoreSliceContext {
+        int64_t requested_day = -1;
+        int64_t day = -1;
+        size_t cursor_start = 0;
+        size_t cursor_limit = 0;
+        std::chrono::steady_clock::time_point start;
+        CountryCoreStepResult result;
+    };
+
     bool validate_handle(uint64_t handle, int32_t &slot) const;
     bool validate_admission_command(const Command &command,
                                     std::string &error) const;
@@ -642,6 +655,10 @@ private:
     CountryBoundarySeal open_implicit_boundary(int64_t day);
     void close_boundary_seal();
     CountryCoreStepResult run_slice_core(int64_t requested_day);
+    bool prepare_country_slice(CoreSliceContext &context);
+    bool preflight_country_slice(CoreSliceContext &context);
+    bool commit_country_slice(CoreSliceContext &context);
+    bool report_peer_rejection(int64_t day, CountryCoreStepResult &result);
     uint64_t make_handle(int32_t slot) const;
     int64_t debit_country_cash(int64_t country_handle, int64_t requested,
                                 const char *trace_stage);

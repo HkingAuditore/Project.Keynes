@@ -50,7 +50,11 @@ bool NativeSimulationHost::publish_environment(
         return false;
     }
     std::lock_guard<std::mutex> publish_lock(_environment_publish_mutex);
-    const auto previous = _environment_ring.latest();
+    const bool preparing_restore_input = _has_pending_restore &&
+        state() == RuntimeWorkerState::STOPPED && execution_has_stopped();
+    const auto previous = preparing_restore_input
+        ? std::atomic_load_explicit(&_environment_snapshot, std::memory_order_acquire)
+        : _environment_ring.latest();
     if (previous == nullptr) {
         // Fall back to legacy single-slot pointer for the first publish of a
         // session that restored without going through the ring.
@@ -69,9 +73,11 @@ bool NativeSimulationHost::publish_environment(
     const bool climate_authoritative_watermark =
         (authoritative_domain_mask() &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-    const int64_t stale_watermark = climate_authoritative_watermark
-        ? _climate_committed_day.load(std::memory_order_acquire)
-        : _committed_day.load(std::memory_order_acquire);
+    const int64_t stale_watermark = preparing_restore_input
+        ? _pending_restore_bundle.committed_day
+        : (climate_authoritative_watermark
+            ? _climate_committed_day.load(std::memory_order_acquire)
+            : _committed_day.load(std::memory_order_acquire));
     if (snapshot.day < stale_watermark) {
         _stale_environment_rejected.fetch_add(1, std::memory_order_relaxed);
         error = "runtime_input_before_committed_day";
@@ -81,7 +87,17 @@ bool NativeSimulationHost::publish_environment(
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-    if (!climate_authoritative && !_climate_trace.push(snapshot)) {
+    // The worker consumes inputs strictly day by day, so under authority a
+    // skipped day can never be filled and the worker parks until the peer-stall
+    // timeout. Refuse anything but the next day; callers publish from
+    // next_environment_day().
+    if (!preparing_restore_input && climate_authoritative &&
+        snapshot.day != next_environment_day()) {
+        error = "runtime_input_day_not_next";
+        return false;
+    }
+    if (!preparing_restore_input && !climate_authoritative &&
+        !_climate_trace.push(snapshot)) {
         error = "climate_trace_capacity_exceeded";
         return false;
     }
@@ -90,22 +106,26 @@ bool NativeSimulationHost::publish_environment(
         EconomyCostProbe probe("environment.seal_input_hash", snapshot.day, snapshot.cell_count);
         copy->sealed_climate_input_hash = RuntimeClimateKernel::input_hash(*copy);
     }
-    bool dropped = false;
-    if (climate_authoritative) {
-        // ACTIVE：满环拒绝，主线程 wait_climate_consumed(0) 等空位 —— 不静默丢天。
-        if (!_environment_ring.has_capacity() || !_environment_ring.try_push(copy)) {
-            error = "climate_environment_pending";
-            return false;
-        }
-    } else {
-        // SHADOW：允许 force 覆盖最旧未消费输入，计入 dropped（ring 溢出语义）。
-        if (!_environment_ring.force_push(copy, dropped)) {
-            error = "climate_environment_ring_push_failed";
-            return false;
-        }
-        if (dropped) {
-            _environment_dropped_days.fetch_add(1, std::memory_order_relaxed);
-            _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+    // Restore preparation stages the replacement input. start() retires the old
+    // queue and seeds this snapshot; the stopped world's full queue cannot drain.
+    if (!preparing_restore_input) {
+        bool dropped = false;
+        if (climate_authoritative) {
+            // ACTIVE：满环拒绝，主线程 wait_climate_consumed(0) 等空位 —— 不静默丢天。
+            if (!_environment_ring.has_capacity() || !_environment_ring.try_push(copy)) {
+                error = "climate_environment_pending";
+                return false;
+            }
+        } else {
+            // SHADOW：允许 force 覆盖最旧未消费输入，计入 dropped（ring 溢出语义）。
+            if (!_environment_ring.force_push(copy, dropped)) {
+                error = "climate_environment_ring_push_failed";
+                return false;
+            }
+            if (dropped) {
+                _environment_dropped_days.fetch_add(1, std::memory_order_relaxed);
+                _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
     std::atomic_store_explicit(&_environment_snapshot,

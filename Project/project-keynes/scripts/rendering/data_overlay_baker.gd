@@ -161,8 +161,7 @@ static func bake(
 	var soa_ready: bool = world.cell_first_px_arr.size() > 0 \
 		and world.cell_px_count_arr.size() > 0 \
 		and not world.flat_px_indices_arr.is_empty()
-	var ext_ready: bool = world_ext != null \
-		and world_ext.has_method(&"encode_overlay_atlas")
+	var ext_ready: bool = world_ext != null
 	var cpp_path: bool = soa_ready and ext_ready
 	var n_cells_soa: int = world.cell_first_px_arr.size() if cpp_path else 0
 	# cpp_path 下按 cell.index 收集 per-cell R/G byte + 有效标记；C++ 端做 fan-out。

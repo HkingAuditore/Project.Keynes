@@ -43,7 +43,7 @@
 5. `_generate_cells_native_base()` 调 `DCWorldExt.run_native_world_generate_base_pass(seed, cfg_dict, profile_dict)`。
 6. base 成功后调 `DCWorldExt.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, base_res)`。
 7. post-base 成功后调 `TerrainGeneratorScript.assemble_native_result()` 创建 `MapData` 和 `HexCell`。
-8. `_snapshot_base_state(map)` 保存 `base_terrain / base_landform / base_vegetation`。
+8. `DCTerrainGenerator.snapshot_base_state(map)` 保存 `base_terrain / base_landform / base_vegetation`。
 9. `_bootstrap_sea_ice_fraction(map, cfg)` 初始化海冰连续覆盖率，稳定极地多年冰可把 `terrain` 翻成 `SEA_ICE`。
 10. `_sync_axes_for_map(map, cfg)` 因海冰可能改写 terrain，重新派生三轴。
 11. `map._build_indices()` 在 bake 前建立 cell index 和邻居索引。

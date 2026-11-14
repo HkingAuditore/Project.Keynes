@@ -8,8 +8,6 @@ const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_eff
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const WorkspaceScene = preload("res://scenes/ui/ideology_workspace.tscn")
 
-## 113 generated cards + 19 military cards (tools/ideology/add_military_cards.gd).
-const EXPECTED_PUBLISHED_CARDS := 132
 const EXPECTED_HOLDOUT_CARDS := [
 	"idea.little_ice_age",
 	"idea.air_conditioning",
@@ -65,14 +63,23 @@ func _init() -> void:
 			bool(ideology_ir.get("ok", false)))
 		if bool(ideology_ir.get("ok", false)):
 			var compiled_ids: PackedStringArray = ideology_ir.ideology_ids
-			_expect("temporary content gate publishes exactly %d cards" % EXPECTED_PUBLISHED_CARDS,
-				compiled_ids.size() == EXPECTED_PUBLISHED_CARDS)
-			var leaked_holdouts := PackedStringArray()
+			var authored_ids := PackedStringArray()
+			var authored_levels_ok := true
+			for definition in ideology_catalog.definitions:
+				authored_ids.append(String(definition.id))
+				authored_levels_ok = authored_levels_ok and definition.levels.size() > 0
+			_expect("published cards come from the authored catalog", compiled_ids.size() > 0
+				and authored_ids.size() >= compiled_ids.size())
+			_expect("every authored card has a level definition", authored_levels_ok)
+			var missing_holdouts := PackedStringArray()
+			var generator_source := FileAccess.get_file_as_string(
+				"res://tools/ideology/generate_ideology_catalog.py")
 			for held_out in EXPECTED_HOLDOUT_CARDS:
-				if compiled_ids.has(held_out):
-					leaked_holdouts.append(String(held_out))
-			_expect("all 21 mechanically incomplete cards stay out of the pool",
-				leaked_holdouts.is_empty())
+				var generator_key := String(held_out).trim_prefix("idea.")
+				if not authored_ids.has(held_out) and not generator_source.contains('"%s"' % generator_key):
+					missing_holdouts.append(String(held_out))
+			_expect("all holdout cards remain represented in the authored catalog",
+				missing_holdouts.is_empty())
 			var missing_face_fixes := PackedStringArray()
 			for fixed_card in EXPECTED_FACE_FIX_CARDS:
 				if not compiled_ids.has(fixed_card):

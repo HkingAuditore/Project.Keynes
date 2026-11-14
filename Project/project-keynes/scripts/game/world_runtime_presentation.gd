@@ -72,8 +72,7 @@ func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
 				"reason", "building_visual_catalog_not_ready"))}
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("get_building_visual_snapshot") \
-			or not ext.has_method("consume_building_visual_dirty_cells"):
+	if ext == null :
 		return {"ok": false, "reason": "building_visual_native_api_unavailable"}
 	var requested := PackedInt32Array(
 		vision_report.get("newly_visible_cells", PackedInt32Array()))
@@ -87,20 +86,19 @@ func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
 	var building_dirty: Dictionary = ext.consume_building_visual_dirty_cells()
 	requested.append_array(PackedInt32Array(
 		building_dirty.get("dirty_cells", PackedInt32Array())))
-	if ext.has_method("consume_country_visual_era_dirty_slots"):
-		var era_dirty: Dictionary = ext.consume_country_visual_era_dirty_slots()
-		var dirty_slots := {}
-		for slot in PackedInt32Array(era_dirty.get("country_slots", PackedInt32Array())):
-			dirty_slots[int(slot)] = true
-		if not dirty_slots.is_empty():
-			for cell in _building_visual_intel.known_cells():
-				var cell_visible := not _fog_of_war_enabled or (
-					cell < _current_map.visible_arr.size()
-					and _current_map.visible_arr[cell] != 0)
-				if cell_visible \
-						and cell < _current_map.country_slot_arr.size() \
-						and dirty_slots.has(int(_current_map.country_slot_arr[cell])):
-					requested.append(cell)
+	var era_dirty: Dictionary = ext.consume_country_visual_era_dirty_slots()
+	var dirty_slots := {}
+	for slot in PackedInt32Array(era_dirty.get("country_slots", PackedInt32Array())):
+		dirty_slots[int(slot)] = true
+	if not dirty_slots.is_empty():
+		for cell in _building_visual_intel.known_cells():
+			var cell_visible := not _fog_of_war_enabled or (
+				cell < _current_map.visible_arr.size()
+				and _current_map.visible_arr[cell] != 0)
+			if cell_visible \
+					and cell < _current_map.country_slot_arr.size() \
+					and dirty_slots.has(int(_current_map.country_slot_arr[cell])):
+				requested.append(cell)
 	if _building_visual_force_full_refresh:
 		for cell in _current_map.cell_count():
 			requested.append(cell)
@@ -152,3 +150,53 @@ func _bind_settlement_labels() -> void:
 	_settlement_label_layer.configure(
 		_current_map, _camera, _generator.get_economy_facade(), hex_size,
 		map_wrap_period_x(), _fog_of_war_enabled)
+
+
+## G4 moved host responsibilities
+func on_season_changed(host, season_idx: int) -> void:
+	if host._generator == null or host._current_map == null or host._world_data == null:
+		return
+	var cp = host._generator._c() if host._generator.has_method("_c") else null
+	host.mark_map_overlay_dirty(&"season_changed")
+	var use_legacy = false
+	if cp != null and "season_refresh_legacy_signal" in cp:
+		use_legacy = bool(cp.season_refresh_legacy_signal)
+	if not use_legacy:
+		return
+	if host._generator.has_method("queue_season_refresh"):
+		host._generator.queue_season_refresh(season_idx)
+	else:
+		host._generator.refresh_seasonal(host._current_map, host._world_data, season_idx)
+
+
+func on_year_changed(host, _year_idx: int) -> void:
+	if host._generator != null and host._current_map != null and host._world_data != null:
+		host._generator.refresh_yearly(host._current_map, host._world_data)
+		host.mark_map_overlay_dirty(&"year_changed")
+
+
+func fit_camera(host, safe_area: Rect2 = Rect2()) -> void:
+	if host._camera != null:
+		host._camera.fit_to_viewport(1.0, safe_area, true)
+
+
+func cell_display_centers(host, cells: PackedInt32Array, ref_x: float) -> PackedVector2Array:
+	var out = PackedVector2Array()
+	if host._current_map == null or cells.is_empty():
+		return out
+	var wrap_period = host.map_wrap_period_x()
+	out.resize(cells.size())
+	var kept = 0
+	for index in range(cells.size()):
+		var cell = host._current_map.cell_at(int(cells[index]))
+		if cell == null:
+			continue
+		var canonical = HexUtils.cube_to_world(cell.q, cell.r, host.hex_size)
+		out[kept] = HexUtils.nearest_display_world(canonical, ref_x, wrap_period)
+		kept += 1
+	if kept != out.size():
+		out.resize(kept)
+	return out
+
+
+# Visual/vision methods delegate to the passive adapter.

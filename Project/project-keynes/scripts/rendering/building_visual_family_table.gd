@@ -9,8 +9,8 @@ extends Resource
 const DEFAULT_PATH := "res://data/rendering/building_visual_families.tres"
 
 ## Ordered exactly like the Family enum in gdext/src/world_ext_building_visual.cpp.
-## Each entry: {id, archetype, sectors, kinds, climate_profiles, resources, keywords}.
-## Resolution order: `visual.family.<id>` tag, sector/kind, production climate
+## Each entry: {id, archetype, type_ids, sectors, kinds, climate_profiles, resources, keywords}.
+## Resolution order: `visual.family.<id>` tag, explicit type id, sector/kind, production climate
 ## profile, production resource, then keywords (substrings of the type id,
 ## industry chain and output goods) in table order.
 @export var families: Array[Dictionary] = []
@@ -40,7 +40,7 @@ func archetype_of(family: int) -> int:
 	return int(families[family].get("archetype", -1))
 
 
-## Returns {family, source}; source is "tag", "sector", "climate", "resource",
+## Returns {family, source}; source is "tag", "type", "sector", "climate", "resource",
 ## "keyword" or "" when nothing matched.
 func resolve(type_id: String, sector: String, kind: int, tags: PackedStringArray,
 		climate_profile: String, resources: PackedStringArray, chain_id: String,
@@ -51,6 +51,9 @@ func resolve(type_id: String, sector: String, kind: int, tags: PackedStringArray
 			var tagged := ids.find(String(tag).trim_prefix("visual.family."))
 			if tagged >= 0:
 				return {"family": tagged, "source": "tag"}
+	for i in families.size():
+		if PackedStringArray(families[i].get("type_ids", PackedStringArray())).has(type_id):
+			return {"family": i, "source": "type"}
 	for i in families.size():
 		var entry: Dictionary = families[i]
 		if PackedInt32Array(entry.get("kinds", PackedInt32Array())).has(kind) \

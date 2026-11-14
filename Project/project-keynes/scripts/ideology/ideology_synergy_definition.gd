@@ -98,8 +98,15 @@ func validate() -> String:
 			# Multiple route rows for one route would duplicate every expansion.
 			if String(override.match_value).strip_edges().is_empty():
 				return "ideology_synergy_override_match_value_missing"
+		# PROGRAM rows may leave `match_value` empty and use the legacy
+		# `target_definition_key` instead. Compare the effective target so two
+		# different target_definition_key values do not collide as empty rows.
+		var effective_match := String(override.match_value).strip_edges()
+		if effective_match.is_empty() and int(override.match_kind) == \
+				ParameterScript.MatchKind.PROGRAM:
+			effective_match = String(override.target_definition_key).strip_edges()
 		var row_key := "%d:%s:%d" % [int(override.match_kind),
-			String(override.match_value).strip_edges(), int(override.field)]
+			effective_match, int(override.field)]
 		# Scale rows of different magnitudes on one target would multiply twice;
 		# selector rewrites of the same field on one target are ambiguous. Both
 		# are authoring slips and must fail before expansion can hide them.

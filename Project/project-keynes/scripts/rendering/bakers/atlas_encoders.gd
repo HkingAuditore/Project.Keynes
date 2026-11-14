@@ -1,6 +1,8 @@
 extends RefCounted
 class_name DCAtlasEncoders
 
+const NativeWorld = preload("res://scripts/data_core/native_world.gd")
+
 ## Bake-time texture encoder dispatcher.
 ##
 ## C++ (`DCWorldExt`) owns the byte payload loops; GDScript only keeps Image/ImageTexture
@@ -17,7 +19,7 @@ static func _get_native_ext(native_ext: Object) -> Object:
 		return native_ext
 	if not ClassDB.class_exists("DCWorldExt"):
 		return null
-	return ClassDB.instantiate("DCWorldExt")
+	return NativeWorld.create()
 
 
 static func _same_size(existing: ImageTexture, W: int, H: int) -> bool:

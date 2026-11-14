@@ -17,7 +17,7 @@ Read the files relevant to the requested change before editing:
 - Native population, market, and building state/algorithms: `gdext/src/economy_runtime.{h,cpp}`.
 - Country technology/treasury bridge: `gdext/src/country_runtime.{h,cpp}` and `world_ext_country.cpp`.
 - DataCore environment/resource bridge: `gdext/src/world_ext_economy.cpp`.
-- GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_methods.cpp`.
+- GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_<模块>.cpp`.
 - Catalog/facade: `Project/project-keynes/scripts/economy/`.
 - Scheduler shell: `scripts/simulation/systems/economy_daily_system.gd`.
 - Clock continuation: `scripts/geography/map_generator.gd`, `world_clock.gd`.
@@ -143,23 +143,6 @@ Details: `docs/architecture/current-state.md`, section
 - Buy inputs and produce/sell output before wage transfer. Then cap wage transfer by post-sale owner
   cash and pay only committed local employees. Report paid and unpaid wages separately without
   changing total money; arrears do not retroactively cancel current production.
-- Restart finance for a SUSPENDED group bills only hard inputs and employee wages, never soft inputs
-  or owner livelihood. Every restart gate must be reachable by a group with zero owners and delinquent
-  merchant debt; otherwise a profitable bare-hands survival producer (hunting camp) stays shut
-  forever and its cell starves next to unmet demand. Resource gates require one building's worth,
-  not the whole group: under open access (`resource_safe_harvest_q16=0`) extract availability is the
-  remaining stock, which a group that grew in a good decade may never meet at full scale after the
-  stock was hunted down, and production already clamps to it. When adding a
-  recovery gate, check it against both cases (non-executable groups are never liquidated either).
-- Any cash leg paid to local merchants must first check `local_merchants_can_receive(cell)`: a famine
-  can empty every merchant cohort while stock remains, and a failed credit is world-fatal.
-- Survival food floors are substitutes, not three must-buys: `process_market_cell` gives the
-  price-blind `survival_required` floor only to food needs whose cheapest in-stock price index
-  (price / reference) is within 4x of the cheapest food need, and scales dominated needs' elastic
-  demand by `4*cheapest/index`. Without this, a hunted-out meat price drains every household's
-  savings into the merchant and the cell starves next to a cheap, unsold staple pile.
-- A restart-reserved ACTIVE lot (purchase intent, no output/sales) is not an owner mobility source,
-  except when its owner cohort's needs satisfaction is below 0.5; starving owners must be able to leave.
 - Use sorted cell CSR and visit active building cells/groups only. Never scan all building groups
   once per cell or materialize Godot objects in the native graph.
 - Keep pending construction, committed building groups, role fills, per-cohort employment, building
@@ -242,6 +225,21 @@ Include:
 - Whether locked N/S or a historical auto/fixed-five path was benchmarked.
 - Remaining blockers and intentionally excluded systems.
 
+## Colonization procurement demand (2026-10-17)
+
+PREPARING kit shortages now have an epoch-frozen, sparse cash-backed forecast.
+Use `epoch_procurement_demand_daily[_for_market]` for generic non-household
+price, inventory, production and investment consumers; keep research-only
+bootstrap/policy checks on the research helper. Full-kit forecasts choose one
+reachable substitute per residual group, subtract custody/in-flight goods and
+share a Country cash cap after fiscal/research budgeting. Do not credit sales,
+withdrawal EMA or real cargo from a forecast. One-shot balances normalize over
+inventory days and rebuild after cancellation/departure/restore. No new schema.
+See `docs/cpp-dots-runtime/family-colonization-runtime.md` and
+`tests/country/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
+each propagation entry: runtime-local visit generations can collide across
+worlds in the same process.
+
 ## Satisfaction realized consumption (2026-10-18)
 
 Basic, comfort and luxury score realized consumption against an authored living
@@ -306,3 +304,9 @@ architecture development guide and validation record.
   rejection without mutation, unchanged continuation, and committed roundtrip.
 - Compact/StageOps epoch preparation must observe the same current day before
   spread/cache selection; retain the optimization when checking daily parity.
+
+## Military procurement demand (2026-11-08)
+
+Economy opcode 36 retains a complete Military shortage-demand snapshot in the existing persisted pending-command queue. Reset is cell=-1/country=0/qty=0; rows name real SKU, owned market cell, quantity and normalization days. At epoch freeze recheck current treasury and other public procurement commitments; add the derived daily amounts through the generic procurement demand helpers. Do not count forecasts as sales, withdrawals, cash transfers or new stock. Derived demand vectors are rebuilt, not serialized.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

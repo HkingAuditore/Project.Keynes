@@ -89,7 +89,7 @@ bounded in length, and disappear on the night side.
 
 ## Tuning
 
-Use `tests/_tmp_building_art_harness.tscn` (11 era columns × 6 local economies — rice
+Use `tests/probes/_tmp_building_art_harness.tscn` (11 era columns × 6 local economies — rice
 hamlet, wheat town, textile town, mining town, rich capital, snowed coast — each with tier
 and wealth bands; overview, close-ups, city, night and dusk shots; `detail` for single-cell
 close-ups; `wealth` sweeps living level and inequality across columns at era 5). Read the

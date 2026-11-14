@@ -25,7 +25,11 @@ func _run() -> void:
 	_expect("high sun blocks cold freeze", _delta_frac(0.0, 1.0, false) < 0.0)
 	_expect("high sun blocks neighbor contagion", _delta_frac(0.0, 1.0, true) < 0.0)
 	_expect("low sun allows cold freeze", _delta_frac(0.0, 0.1, false) > 0.0)
-	_expect("shoulder sun partially gates freeze", _freeze_gate(0.45) > 0.0 and _freeze_gate(0.45) < 1.0)
+	var low_insolation: float = float(_cp.sea_ice_freeze_insol_low)
+	var high_insolation: float = maxf(float(_cp.sea_ice_freeze_insol_high), low_insolation + 0.001)
+	var shoulder_insolation: float = (low_insolation + high_insolation) * 0.5
+	_expect("shoulder sun partially gates freeze",
+		_freeze_gate(shoulder_insolation) > 0.0 and _freeze_gate(shoulder_insolation) < 1.0)
 	# [seaice dt 修复 2026-06-16] cap 现为"每日"速率上限：先裁剪日速率再乘 dt_days，
 	# 因此单 pass 变化上限 = cap * dt_days（加速档下海冰才能跟上季节）。
 	_expect("per-day rate is capped before dt scaling",

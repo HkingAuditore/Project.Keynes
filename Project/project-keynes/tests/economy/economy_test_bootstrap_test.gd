@@ -6,6 +6,7 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const WorldSetupScript = preload("res://scripts/ui/world_setup.gd")
 const StartInputs = preload("res://scripts/economy/bootstrap/test_start_inputs.gd")
 const StartPlanner = preload("res://scripts/economy/bootstrap/test_settlement_planner.gd")
+const StartPolicy = preload("res://scripts/economy/bootstrap/test_start_policy.gd")
 const CountryTestHelper = preload("res://tests/country/country_test_helper.gd")
 
 var _failures := PackedStringArray()
@@ -62,8 +63,13 @@ func _initialize() -> void:
 	profile.market_max_cycle_days = 1
 	var native_catalog := compiled.duplicate(true)
 	native_catalog.erase("ok")
-	_expect("all-technology test country bootstraps", CountryTestHelper.configure_all_technologies(
-		ext, native_catalog, map.cell_count(), 42, map.is_water_arr))
+	_expect("diagnostic country configures its authored technologies", ext.configure_country(
+		native_catalog, {"country_runtime_mode": "ACTIVE",
+		"starting_technology_ids": PackedStringArray(StartPolicy.TECHNOLOGY_IDS)}, map.cell_count(), 42).get("ok", false))
+	var country_water := PackedByteArray()
+	for terrain in map.terrain_arr:
+		country_water.append(1 if MapData.terrain_is_water(terrain) else 0)
+	_expect("diagnostic country bootstraps", ext.bootstrap_country({}, country_water).get("ok", false))
 	var configure_result: Dictionary = facade.configure(ext, map.cell_count(), 42, profile)
 	var configure_ok := bool(configure_result.get("ok", false))
 	_expect("facade configures" if configure_ok else "facade configures: %s" %
@@ -195,10 +201,10 @@ func _initialize() -> void:
 		String(communal_hearth_jobs.get("owner_profession", "")) == "artisan" and
 		(communal_hearth_jobs.get("employee_professions", PackedStringArray()) as PackedStringArray).is_empty() and
 		(communal_hearth_jobs.get("employee_slots", PackedInt64Array()) as PackedInt64Array).is_empty())
-	_expect("fixture is restricted to a sparse mid-stone subset",
+	_expect("fixture is restricted to its authored sparse building and technology subset",
 		int(first.get("building_group_count", 0)) > 0 and
 		int(first.get("eligible_building_type_count", 0)) < catalog_buildings.size() / 4 and
-		_fixture_uses_only_mid_stone_buildings(first, facade))
+		_fixture_uses_only_authored_buildings(first, facade))
 	_expect("bootstrap creates exactly one merchant post per populated cell",
 		_fixture_has_one_merchant_post_per_populated_cell(first, facade))
 	_expect("professions follow actual local building jobs",
@@ -277,7 +283,7 @@ func _initialize() -> void:
 	_expect("resource-backed stone-age bullion extraction is present",
 		_has_building(buildings, "placer_gold_working") or
 		_has_building(buildings, "surface_silver_working"))
-	_expect("stone-age household weaving remains in the complete industry set",
+	_expect("authored household weaving remains in the complete industry set",
 		_has_building(buildings, "household_weaving_shelter"))
 	_expect("stone food processing is demand-sized instead of fixed at two",
 		_building_count(buildings, "communal_hearth") <= 2)
@@ -350,7 +356,7 @@ func _initialize() -> void:
 	_expect("second cycle consumes category-compatible stone tools",
 		bool(second_cycle.get("done", false)) and not bool(second_cycle.get("fatal", false)) and
 		int(second_cycle.get("production_inputs_consumed", 0)) > 0)
-	_expect("complete stone-age chain retains household weaving",
+	_expect("complete diagnostic chain retains household weaving",
 		_has_building(facade.building_cell_snapshot(0),
 			"household_weaving_shelter"))
 	var third_cycle: Dictionary = _run_day(ext, 2)
@@ -896,7 +902,7 @@ func _fixture_has_one_merchant_post_per_populated_cell(
 		var type_id := int(type_ids[i])
 		if type_id < 0 or type_id >= stable_ids.size():
 			return false
-		if stable_ids[type_id] != "merchant_post":
+		if stable_ids[type_id] != "early_merchant_post":
 			continue
 		if int(counts[i]) != 1 or merchant_cells.has(int(cells[i])):
 			return false
@@ -1164,21 +1170,17 @@ func _building_output_reconciles(snapshot: Dictionary, building_id: String) -> b
 	return false
 
 
-func _fixture_uses_only_mid_stone_buildings(packet: Dictionary, facade) -> bool:
+func _fixture_uses_only_authored_buildings(packet: Dictionary, facade) -> bool:
 	var type_ids: PackedInt32Array = packet.building_packet.building_type_ids
 	var stable_ids: PackedStringArray = facade.building_type_ids()
 	for type_id in type_ids:
 		if type_id < 0 or type_id >= stable_ids.size():
 			return false
+		if not StartPolicy.BUILDING_IDS.has(String(stable_ids[type_id])):
+			return false
 		var spec: Dictionary = facade.building_placement_spec(StringName(stable_ids[type_id]))
-		for tag in spec.get("technology_tags", PackedStringArray()):
-			var technology := String(tag)
-			if technology.begins_with("tech.") and technology not in [
-					"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control",
-					"tech.deadwood_collection", "tech.ground_stone_tools",
-					"tech.communal_specialization", "tech.timber_sawing", "tech.gold_panning",
-					"tech.surface_silver_collection", "tech.weaving"]:
-				return false
+		if not StartPolicy.building_available(spec):
+			return false
 	return true
 
 

@@ -5,7 +5,7 @@ signal transactions_available(batch: Dictionary)
 
 const EffectCatalogScript = preload("res://scripts/effect/effect_catalog.gd")
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _clock: WorldClock
 var _catalog: Resource
 var _configured := false
@@ -19,12 +19,12 @@ var _native_claimed_transactions_skipped := 0
 func _adapter_ack_bit(action: int) -> int:
 	return (1 << (action - 1)) if action >= 1 and action <= 6 else 0
 
-func configure(world_ext: Object, clock: WorldClock = null,
+func configure(world_ext: DCWorldExt, clock: WorldClock = null,
 		catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_clock = clock
 	_catalog = catalog if catalog != null else EffectCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_effects"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt effect API unavailable"}
 	if _catalog == null or not _catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "EffectCatalog unavailable"}
@@ -233,6 +233,63 @@ func report() -> Dictionary:
 	out["legacy_fallback_transactions"] = _legacy_fallback_transactions
 	out["native_claimed_transactions_skipped"] = _native_claimed_transactions_skipped
 	return out
+
+
+func native_adapter_report() -> Dictionary:
+	return _world_ext.get_effect_native_adapter_report() if _world_ext != null else {}
+
+
+func should_run(day_index: int) -> bool:
+	return bool(_world_ext.effect_should_run(day_index)) if _world_ext != null else false
+
+
+func poll_worker_intent() -> Dictionary:
+	return _world_ext.poll_effect_worker_intent() if _world_ext != null else {
+		"ok": false, "available": false}
+
+
+func submit_worker_ack(ack: Dictionary) -> Dictionary:
+	return _world_ext.submit_effect_worker_ack(ack) if _world_ext != null else {
+		"ok": false, "reason": "effect_worker_api_missing"}
+
+
+func dispatch_native_country() -> Dictionary:
+	return _world_ext.dispatch_effect_native_country() if _world_ext != null else {
+		"ok": false, "reason": "effect_adapter_api_missing"}
+
+
+func ack_native_country() -> Dictionary:
+	return _world_ext.ack_effect_native_country() if _world_ext != null else {
+		"ok": false, "reason": "effect_adapter_api_missing"}
+
+
+func settle_orphaned_native_country_acks() -> Dictionary:
+	return _world_ext.settle_orphaned_effect_native_country_acks() if _world_ext != null else {
+		"ok": false, "reason": "effect_adapter_api_missing"}
+
+
+func dispatch_native_economy() -> Dictionary:
+	return _world_ext.dispatch_effect_native_economy() if _world_ext != null else {
+		"ok": false, "reason": "effect_adapter_api_missing"}
+
+
+func ack_native_economy() -> Dictionary:
+	return _world_ext.ack_effect_native_economy() if _world_ext != null else {
+		"ok": false, "reason": "effect_adapter_api_missing"}
+
+
+func capture_state() -> PackedByteArray:
+	return _world_ext.capture_effect_state() if _world_ext != null else PackedByteArray()
+
+
+func restore_state(bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_effect_state(bytes) if _world_ext != null else {
+		"ok": false, "reason": "effect_provider_missing"}
+
+
+func clear_state() -> Dictionary:
+	return _world_ext.clear_effect_state() if _world_ext != null else {
+		"ok": false, "reason": "effect_provider_missing"}
 
 
 # 这个计数完全由 GDScript 侧维护。单独暴露出来，让每 tick 只想读它的调用方不必

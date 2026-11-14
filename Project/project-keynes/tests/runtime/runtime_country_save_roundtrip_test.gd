@@ -197,16 +197,16 @@ func _check_bundle(bundle: PackedByteArray, saved: Dictionary,
 		Header.has_country_section(bundle))
 	_expect("Country section payload is non-empty",
 		int(saved.get("country_bytes", 0)) > 0)
-	_expect("Country provider returns PKCN v15",
+	_expect("Country provider returns the captured PKCN schema",
 		provider_pkcn.size() > 32 and _ascii_magic(provider_pkcn) == "PKCN"
-		and int(provider_pkcn.decode_u32(4)) == 14)
+		and int(provider_pkcn.decode_u32(4)) == int(expected_pkcn.decode_u32(4)))
 	_expect("save provider reuses the exact canonical PKCN capture",
 		provider_pkcn == expected_pkcn)
 	var cpd2 := _country_section(bundle)
-	_expect("CPD2 section is locatable and uses ABI v2",
+	_expect("CPD2 section is locatable and uses the captured schema",
 		cpd2.size() >= 104 and _ascii_magic(cpd2) == "CPD2"
 		and int(cpd2.decode_u32(4)) == 2
-		and int(cpd2.decode_u32(8)) == 14)
+		and int(cpd2.decode_u32(8)) == int(expected_pkcn.decode_u32(4)))
 	_expect("CPD2 embeds the same canonical PKCN",
 		_embedded_pkcn(cpd2) == provider_pkcn)
 

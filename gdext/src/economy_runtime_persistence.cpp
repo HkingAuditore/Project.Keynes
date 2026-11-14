@@ -81,7 +81,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     // whose Country state legitimately carries due commands (worker start
     // after load then fell back to the synchronous path).
     if (_country_runtime == nullptr || !country_reads().economy_available() ||
-        (!_ecp2_rollback_backup_export && !_forensics_allow_fatal_export &&
+        (!_save_country_identity_override && !_ecp2_rollback_backup_export && !_forensics_allow_fatal_export &&
          country_reads().should_run(_last_committed_day.get()))) {
         out["ok"] = false;
         out["reason"] = "save_requires_idle_country_runtime";
@@ -353,15 +353,6 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     return out;
 }
 
-Dictionary NativeEconomyRuntime::begin_restore_pkec_migrate() {
-    Dictionary out = begin_restore();
-    if (!static_cast<bool>(out.get("ok", false))) return out;
-    prepare_restore_candidate_scratch();
-    out["scratch_prepared"] = true;
-    out["migrate_path"] = true;
-    out["requires_ecp2"] = false;
-    return out;
-}
 
 void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     // Candidate rebuild surface only. Callers must already hold a validated
@@ -1500,6 +1491,12 @@ Dictionary NativeEconomyRuntime::end_restore() {
     _bootstrapped = true;
     military_soldier_profession(); // Rebuild the catalog lookup before the first restored quote.
     _track_b_investment_cells_pending.swap(_restore.track_b_investment_cells_pending);
+    _track_b_derived_cell_cache.swap(_restore.track_b_derived_cell_cache);
+    _track_b_derived_cell_cache_day = _restore.track_b_derived_cell_cache_day;
+    _track_b_derived_cell_cache_cells =
+        static_cast<int32_t>(_track_b_derived_cell_cache.size());
+    _family_colonization_population_reward_pending.swap(
+        _restore.family_colonization_population_reward_pending);
     if (_restore.committed_generation_seen) {
         _committed_generation = _restore.restored_committed_generation;
     } else if (++_committed_generation == 0) {
@@ -1723,8 +1720,7 @@ bool NativeEconomyRuntime::validate_ecp2_candidate(
         error = "ecp2_owned_state_missing_or_invalid";
         return false;
     }
-    if (!EconomyAuthorityTransfer::validate_resource_continuation(*this, in, error)) return false;
-    if (!EconomyAuthorityTransfer::validate_owner_mobility_continuation(*this, in, error)) return false; if (!EconomyAuthorityTransfer::validate_cadence_continuation(*this, in, error)) return false; if (!EconomyAuthorityTransfer::validate_population_continuation(*this, in, error)) return false;
+    if (!EconomyAuthorityTransfer::validate_continuations(*this, in, error)) return false;
     uint64_t revision = 0;
     std::vector<uint64_t> handles;
     std::vector<int64_t> last_day;
@@ -1960,9 +1956,7 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
         _class_opinion_revision, _development_fact_country_handles,
         _development_fact_last_day, _development_fact_qualified,
         country_class_opinion_snapshot()));
-    append_publication_block(owned_state_wire, EconomyAuthorityTransfer::capture_resource_continuation(*this), 9u);
-    append_publication_block(owned_state_wire, EconomyAuthorityTransfer::capture_owner_mobility_continuation(*this), 10u);
-    append_publication_block(owned_state_wire, EconomyAuthorityTransfer::capture_cadence_continuation(*this), 11u); append_publication_block(owned_state_wire, EconomyAuthorityTransfer::capture_population_continuation(*this), 12u);
+    EconomyAuthorityTransfer::append_continuations(*this, owned_state_wire);
     out.domain_blobs[ECP2_DOMAIN_OWNED_STATE] = std::move(owned_state_wire);
     out.authority_domain_mask |= ECP2_DOMAIN_OWNED_STATE;
     }
@@ -2094,9 +2088,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
     _class_opinion_buffers[0] = std::move(restored_opinion);
     _class_opinion_committed_buffer = 0;
     _class_opinion_revision = restored_revision;
-    if (!EconomyAuthorityTransfer::restore_resource_continuation(*this, in, error)) return false;
-    if (!EconomyAuthorityTransfer::restore_owner_mobility_continuation(*this, in, error)) return false;
-    if (!EconomyAuthorityTransfer::restore_cadence_continuation(*this, in, error)) return false; if (!EconomyAuthorityTransfer::restore_population_continuation(*this, in, error)) return false;
+    if (!EconomyAuthorityTransfer::restore_continuations(*this, in, error)) return false;
     if (!validate_restored_committed_snapshot(error)) {
         _restore = {};
         return false;

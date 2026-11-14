@@ -18,7 +18,7 @@ class FakeHost:
 class FakeExt:
 	var fail := true
 
-	func get_military_render_snapshot(_after_revision: int) -> Dictionary:
+	func render_snapshot(_after_revision: int) -> Dictionary:
 		if fail:
 			return {"ok": false, "reason": "military_not_configured"}
 		return {

@@ -8,6 +8,7 @@ families = Array[Dictionary]([{
 "archetype": 0,
 "climate_profiles": PackedStringArray("dryland_crop"),
 "id": "field",
+"type_ids": PackedStringArray("automated_farm", "highland_tuber_plot", "terrace_farm"),
 "keywords": PackedStringArray(),
 "resources": PackedStringArray()
 }, {
@@ -74,12 +75,14 @@ families = Array[Dictionary]([{
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "workshop",
+"type_ids": PackedStringArray("armory", "arsenal_workshop", "body_armor_works", "bow_workshop", "bowyer_camp", "bronze_armory", "flintlock_works", "gunsmithy", "hide_armorer", "iron_armorer", "plate_armorer", "rifle_works", "spear_knapper"),
 "keywords": PackedStringArray("tool", "knapping", "furniture", "cabinet", "jewel", "goldsmith", "leather", "footwear", "cobbler", "tann", "paper", "parchment", "print", "manuscript", "scriptor", "packaging", "glassware", "housewares", "latex"),
 "resources": PackedStringArray()
 }, {
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "food",
+"type_ids": PackedStringArray("cold_storage"),
 "keywords": PackedStringArray("bread", "bak", "beverage", "brew", "distill", "staple", "communal_hearth", "canned", "canning", "dairy", "cream", "meat", "slaughter", "edible_oil", "processed_food", "kitchen"),
 "resources": PackedStringArray()
 }, {
@@ -98,24 +101,28 @@ families = Array[Dictionary]([{
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "metallurgy",
+"type_ids": PackedStringArray("armor_plate_mill", "cannon_foundry", "shot_foundry"),
 "keywords": PackedStringArray("steel", "smelter", "bloomery", "coke", "aluminum", "production.copper", "production.tin", "production.zinc", "production.lead", "rare_earth_metals", "wrought_iron", "wire", "bronzesmith"),
 "resources": PackedStringArray()
 }, {
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "chemical",
+"type_ids": PackedStringArray("cartridge_works", "continuous_nitration_works", "method_propellant_plant_r10", "method_propellant_plant_r9", "munitions_plant", "nitric_acid_plant", "powder_mill", "powder_works", "propellant_plant", "smokeless_powder_works", "steam_powder_works", "water_powder_mill"),
 "keywords": PackedStringArray("chemical", "plastic", "rubber", "fertilizer", "compost", "explosive", "detergent", "soap", "lubricant", "refined_fuel", "pharma", "nuclear_fuel", "nuclear_medicine"),
 "resources": PackedStringArray()
 }, {
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "machinery",
+"type_ids": PackedStringArray("automatic_arms_works", "chariot_wright", "howitzer_works", "mbt_works", "missile_systems_plant", "tank_works"),
 "keywords": PackedStringArray("engine", "machinery", "machine_parts", "railway", "automobile", "vessel", "shipyard", "maritime", "appliance", "electric_motor", "reactor_component"),
 "resources": PackedStringArray()
 }, {
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "electronics",
+"type_ids": PackedStringArray("drone_factory", "guided_munitions_plant", "smart_arms_plant"),
 "keywords": PackedStringArray("semiconductor", "chip", "computer", "electronic", "telecom", "radio", "batter", "scientific_instrument", "electrical_equipment", "insulated_cable", "autonomous_systems"),
 "resources": PackedStringArray()
 }, {
@@ -136,6 +143,7 @@ families = Array[Dictionary]([{
 "archetype": 5,
 "climate_profiles": PackedStringArray(),
 "id": "service",
+"sectors": PackedStringArray("service"),
 "keywords": PackedStringArray(),
 "kinds": PackedInt32Array(2),
 "resources": PackedStringArray()

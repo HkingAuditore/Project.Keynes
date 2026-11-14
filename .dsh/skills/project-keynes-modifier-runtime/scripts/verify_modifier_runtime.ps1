@@ -11,11 +11,12 @@ $failures = [System.Collections.Generic.List[string]]::new()
 function Assert-Text {
     param([string]$RelativePath, [string[]]$Patterns)
     $path = Join-Path $repoRoot $RelativePath
-    if (-not (Test-Path -LiteralPath $path)) {
+    $files = @(Get-ChildItem -Path $path -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
         $failures.Add("missing file: $RelativePath")
         return
     }
-    $content = Get-Content -LiteralPath $path -Raw
+    $content = ($files | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
     foreach ($pattern in $Patterns) {
         if ($content -notmatch $pattern) {
             $failures.Add("missing pattern '$pattern' in $RelativePath")
@@ -32,7 +33,7 @@ Assert-Text "gdext/src/modifier_runtime.cpp" @(
     "active_instances_by_domain", "snapshot_versions", "bucket_update_ms",
     "estimated_memory_bytes_by_domain", "error_reasons", "journal_version"
 )
-Assert-Text "gdext/src/world_ext_bind_methods.cpp" @(
+Assert-Text "gdext/src/world_ext_bind_*.cpp" @(
     "configure_modifiers", "submit_modifier_commands", "run_modifier_daily",
     "capture_modifier_domain", "restore_modifier_domain", "clear_modifier_domain",
     "ensure_modifier_building_handle"
@@ -54,19 +55,27 @@ Assert-Text "gdext/src/world_ext_climate.cpp" @(
 )
 Assert-Text "gdext/src/economy_runtime.cpp" @(
     "effective_building_output_quantity", "country_economy_output_factor",
-    "ensure_building_identity"
+    "ensure_building_identity", "city_good_output_factor_q16",
+    "collect_scope_stat_entries"
 )
 Assert-Text "gdext/src/economy_runtime_persistence_codec.h" @("SAVE_SECTION_MODIFIERS")
 Assert-Text "gdext/src/country_runtime.h" @("SCHEMA_VERSION = 11")
-Assert-Text "gdext/src/economy_runtime.h" @("SCHEMA_VERSION = 33")
+Assert-Text "gdext/src/economy_runtime.h" @(
+    "SCHEMA_VERSION = 41", "valid_family_effect_entity_handle"
+)
 Assert-Text "gdext/src/modifier_runtime.h" @(
-    "PROTOCOL_VERSION = 2", "SAVE_SCHEMA_VERSION = 2", "COMMAND_SET_MAGNITUDE"
+    "PROTOCOL_VERSION = 2", "SAVE_SCHEMA_VERSION = 3", "COMMAND_SET_MAGNITUDE",
+    "collect_scope_stat_entries"
+)
+Assert-Text "gdext/src/modifier_runtime.cpp" @(
+    "modifier_family_effect_handle_stale", "command.producer == 161"
 )
 Assert-Text "Project/project-keynes/scripts/game/game_save_coordinator.gd" @(
-	'"pkcm"', '"pkgp"', '&"pkcn", 10', '&"pkec", 33'
+	'"pkcm"', '"pkgp"', '&"pkcn", 11', '&"pkec", 41'
 )
 Assert-Text "docs/architecture/current-state.md" @(
-	"clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v11", "PKEC v33", "PKGP v1"
+	"clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v11", "PKEC v41",
+	"Modifier schema v3", "PKGP v1"
 )
 Assert-Text ".codex/skills/project-keynes-modifier-runtime/SKILL.md" @(
     "Non-Negotiable Invariants", "verify_modifier_runtime.ps1",
@@ -99,7 +108,7 @@ if ($Godot) {
         throw "Godot not found: $GodotPath"
     }
     $project = Join-Path $repoRoot "Project\project-keynes"
-    & $GodotPath --headless --path $project --script res://tests/modifier_runtime_test.gd
+    & $GodotPath --headless --path $project --script res://tests/effect/modifier_runtime_test.gd
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

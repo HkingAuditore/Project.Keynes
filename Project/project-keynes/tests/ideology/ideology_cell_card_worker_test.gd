@@ -38,14 +38,13 @@ const EQUIP_BOUNDARY_DAYS := 5
 const LEVEL_BOUNDARY_DAYS := 5
 const UNEQUIP_BOUNDARY_DAYS := 5
 const TERRITORY_BOUNDARY_DAYS := 8
-const HARD_BARRIER_PULSES := 400
-const POD_COMMIT_PULSES := 1000
 const WORKER_PAUSE_PULSES := 2500
 const WORKER_POLL_DELAY_MS := 2
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EffectDomainCatalogScript = preload(
 	"res://scripts/effect/effect_domain_catalog.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const DrawGateHelper = preload(
 	"res://tests/ideology/ideology_draw_gate_helper.gd")
 
@@ -375,7 +374,7 @@ func _wait_for_cell_targets() -> bool:
 func _card_refs_cleared() -> bool:
 	if _ext == null:
 		return false
-	var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+	var report: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 	if not bool(report.get("ok", false)):
 		return false
 	var ideas: PackedInt64Array = report.get("idea_ids", PackedInt64Array())
@@ -548,9 +547,9 @@ func _cell_baseline(stat: String, cell: int) -> float:
 
 
 func _cell_targets() -> PackedInt64Array:
-	var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+	var report: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 	if not bool(report.get("ok", false)):
-		_fail("%s: effect instance report failed: %s"
+		_fail("%s: effect target report failed: %s"
 			% [_card, String(report.get("reason", "unknown"))])
 		return PackedInt64Array()
 	var ideas: PackedInt64Array = report.get(
@@ -667,7 +666,7 @@ func _resolve_row_targets(targets: PackedInt64Array) -> Dictionary:
 
 
 func _reported_targets_for_row(selector: int) -> PackedInt64Array:
-	var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+	var report: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 	if not bool(report.get("ok", false)):
 		return PackedInt64Array()
 	var ideas: PackedInt64Array = report.get("idea_ids", PackedInt64Array())
@@ -827,6 +826,11 @@ func _equip() -> bool:
 		return false
 	_next_sequence = maxi(_next_sequence, int(gates.get(
 		"next_sequence", _next_sequence)))
+	# The gate grant is a queued Country command; DISCOVER before it lands is refused.
+	for _day in range(EQUIP_BOUNDARY_DAYS):
+		if DrawGateHelper.draw_gates_landed(_host, _card, _handle) or _runtime_faulted:
+			break
+		_drive_days(1)
 	var discovered: Dictionary = _submit([{
 		"op": 1, "day": _tick, "handle": _handle, "idea": _dense}])
 	if not _require("%s: worker accepts discover" % _card,
@@ -866,7 +870,7 @@ func _raise_to_level(level: int) -> bool:
 	_drive_days(3)
 	var current := -1
 	for _day in range(LEVEL_BOUNDARY_DAYS + 1):
-		var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+		var report: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 		var ideas: PackedInt64Array = report.get(
 			"idea_ids", PackedInt64Array())
 		var levels: PackedInt64Array = report.get(
@@ -1085,27 +1089,9 @@ func _wait_for_country_commit(cell: int, handle: int) -> bool:
 	return false
 
 
-## A Country claim is a Country boundary. Advance that boundary, publish the
-## pending ideology input, and service the country peer between host ticks.
+## A Country claim is a Country boundary: drive one worker day so it commits.
 func _run_territory_day() -> void:
-	_tick += 1
-	_clock.current_day = float(_tick)
-	_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-	_host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier() and pulses < HARD_BARRIER_PULSES:
-		_clock.simulation_backpressure_pulse.emit(_tick)
-		pulses += 1
-	if _ext.has_method("service_country_worker_peer_adapter"):
-		_ext.service_country_worker_peer_adapter(64, true)
-	if _ext.has_method("publish_ideology_worker_inputs"):
-		_ext.publish_ideology_worker_inputs()
-	OS.delay_msec(WORKER_POLL_DELAY_MS)
-	var fault := _worker_fault()
-	if not fault.is_empty():
-		_runtime_faulted = true
-		_fail("worker faulted while waiting for territory day %d: %s"
-			% [_tick, fault])
+	_drive_days(1)
 
 
 func _land_cells_near_owned(cells: Array[int], handle: int) -> Array[int]:
@@ -1175,54 +1161,15 @@ func _teardown_world() -> void:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		var fault := _worker_fault()
-		if not fault.is_empty():
-			_runtime_faulted = true
-			_require("worker stays healthy before day %d" % (_tick + 1),
-				false, fault)
-			break
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < HARD_BARRIER_PULSES:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		_wait_ideology_pod_day(before)
-		fault = _worker_fault()
-		if not fault.is_empty():
-			_runtime_faulted = true
-			_require("worker stays healthy after day %d" % _tick,
-				false, fault)
-			break
-		_ext.set_runtime_clock(true, WORKER_SPEED)
-		_wait_worker_paused(_ext)
-		OS.delay_msec(WORKER_POLL_DELAY_MS)
+	if _runtime_faulted:
+		return _tick
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	if not bool(driven["ok"]):
+		_runtime_faulted = true
+		_require("worker commits day %d" % _tick, false, str(driven))
 	return _tick
-
-
-func _wait_ideology_pod_day(baseline: int) -> int:
-	var last := baseline
-	for _pulse in range(POD_COMMIT_PULSES):
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(WORKER_POLL_DELAY_MS)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		last = int(report.get("ideology_pod_committed_day", -1))
-		if last > baseline:
-			break
-		if String(report.get("simulation_host_state", "")) in ["STOPPED", "FAULTED"]:
-			break
-	return last
 
 
 func _submit(rows: Array) -> Dictionary:
@@ -1276,23 +1223,6 @@ func _dense_id(card: String) -> int:
 		return -1
 	var ids := PackedStringArray(native.get("ideology_ids", PackedStringArray()))
 	return ids.find("idea.%s" % card)
-
-
-func _worker_fault() -> String:
-	if _ext == null:
-		return ""
-	return String(_ext.get_runtime_thread_report().get("fault_code", ""))
-
-
-func _has_hard_barrier() -> bool:
-	if _clock != null and _clock.has_method("has_hard_barrier"):
-		return bool(_clock.has_hard_barrier())
-	for source in [&"economy_day_barrier", &"country_day_barrier",
-			&"ideology_day_barrier", &"bio_occupancy_day_barrier",
-			&"native_daily_day_barrier"]:
-		if _clock._simulation_backpressure_sources.has(source):
-			return true
-	return false
 
 
 func _wait_worker_paused(ext: Object) -> void:

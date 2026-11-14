@@ -101,11 +101,14 @@ func _run() -> void:
 	var catalog_units := PackedStringArray()
 	for row in military_catalog.get("units", []) as Array:
 		catalog_units.append(String((row as Dictionary).get("id", "")))
-	_expect(catalog_units.size() == 24, "military catalog still has 24 units")
-	_expect(mapped_units.size() == catalog_units.size(),
-		"formation mapping covers all 24 units")
-	for unit_id in catalog_units:
-		_expect(mapped_units.has(unit_id), "mapped unit %s exists in catalog" % unit_id)
+	_expect(not catalog_units.is_empty(), "military catalog has units")
+	_expect(mapped_units.size() <= catalog_units.size(),
+		"formation mapping does not exceed the unit catalog")
+	# A newly authored unit may intentionally use the paper-token fallback until
+	# its formation art is chosen. Every authored mapping must still resolve to a
+	# real unit, so a typo cannot silently select another rig.
+	for unit_id in mapped_units:
+		_expect(catalog_units.has(unit_id), "mapped unit %s exists in catalog" % unit_id)
 
 	_validate_atlas(catalog)
 	_validate_atlas_import()

@@ -154,6 +154,7 @@ NativeSimulationHost::NativeSimulationHost(uint64_t previous_country_session_epo
     _ideology_pod_snapshot_generation.store(0, std::memory_order_release);
     _ideology_pod_pending_transition_count.store(0, std::memory_order_release);
     _ideology_pod_intent_count.store(0, std::memory_order_release);
+    _ideology_opinion_wait_days.store(0, std::memory_order_release);
     for (auto &character : _ideology_pod_fallback_reason)
         character.store('\0', std::memory_order_relaxed);
     for (auto &character : _events_pod_fallback_reason) {

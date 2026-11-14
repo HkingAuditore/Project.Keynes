@@ -156,6 +156,7 @@ func _init() -> void:
 		and player.get_node_or_null("UI/UIRoot/ModalLayer/EraRewardDialog") is EraRewardDialog)
 	if scene != null:
 		scene.free()
+	controller.free()
 	print("=== player controller contract: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
 
@@ -547,6 +548,7 @@ func _military_facade_from_host_generator():
 	var host := _RuntimeHostStub.new()
 	controller.set("_runtime_host", host)
 	var resolved = controller.call("_military_facade")
+	controller.free()
 	return resolved if resolved == host.generated.facade else null
 
 

@@ -17,16 +17,19 @@ import subprocess
 import sys
 import tempfile
 
-from run_regression_checks import SHUTDOWN_LEAK
+from run_regression_checks import SHUTDOWN_LEAK, is_engine_error
 from runtime_test_hygiene import trace_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = (
+    ("startup_boundary", "tests/runtime/startup_save_boundary_test.gd", "startup save boundary:"),
+    ("settlement_boundary", "tests/runtime/economy_settlement_save_boundary_test.gd", "economy settlement save boundary:"),
     ("save_restore", "tests/runtime/runtime_inline_save_restore_test.gd", "inline save/restore:"),
     ("executor_boundaries", "tests/runtime/runtime_executor_boundary_test.gd", "executor boundaries:"),
     ("world_lifecycle", "tests/runtime/runtime_world_lifecycle_test.gd", "runtime world lifecycle:"),
     ("formal_inline_restart", "tests/runtime/runtime_inline_coordinator_save_test.gd", "inline coordinator save:"),
     ("world_rules", "tests/runtime/runtime_world_rules_rebuild_test.gd", "runtime world rules rebuild:"),
+    ("opinion_inputs", "tests/runtime/runtime_opinion_input_lifecycle_test.gd", "runtime opinion input lifecycle:"),
 )
 
 
@@ -78,7 +81,7 @@ def main() -> int:
                 result = subprocess.run(command, cwd=ROOT, env=environment,
                                         stdout=output, stderr=subprocess.STDOUT, check=False)
             lines = path.read_text(errors="replace").splitlines()
-            errors = [line for line in lines if line.startswith("ERROR:") or
+            errors = [line for line in lines if is_engine_error(line) or
                       "SCRIPT ERROR:" in line or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
             if not any(
                     line.startswith(result_prefix) and line.endswith(", 0 failures")

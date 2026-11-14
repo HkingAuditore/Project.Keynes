@@ -19,7 +19,7 @@ func configure(generator, clock: WorldClock, handle: int) -> Dictionary:
 	_generator = generator
 	_clock = clock
 	_ext = generator.get_data_core_world_ext() if generator != null else null
-	if _ext == null or not _ext.has_method("configure_annual_reports") or handle == 0:
+	if _ext == null or false or handle == 0:
 		return {"ok": false, "reason": "annual_api_unavailable"}
 	# Economy/Country setup can fail before the simulation module is prepared.  In
 	# that case the facades are intentionally left null; report configuration must
@@ -66,7 +66,7 @@ func poll() -> void:
 	if _boundary_day >= 0 and bool(state.get("worker_managed", false)) \
 			and int(state.get("last_day", -1)) >= _boundary_day - 1 \
 			and int(state.get("last_day", -1)) < _boundary_day and not _boundary_input_sent:
-		var captured: Dictionary = _generator.capture_runtime_inputs_for_worker(
+		var captured: Dictionary = _generator.publish_environment_through(
 			_boundary_day, _clock.season_phase_for_day(_boundary_day))
 		_boundary_input_sent = bool(captured.get("ok", false))
 	if _boundary_day >= 0 and int(state.get("last_day", -1)) >= _boundary_day \

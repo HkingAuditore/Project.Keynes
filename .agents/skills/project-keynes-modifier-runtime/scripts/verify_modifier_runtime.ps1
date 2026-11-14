@@ -11,11 +11,12 @@ $failures = [System.Collections.Generic.List[string]]::new()
 function Assert-Text {
     param([string]$RelativePath, [string[]]$Patterns)
     $path = Join-Path $repoRoot $RelativePath
-    if (-not (Test-Path -LiteralPath $path)) {
+    $files = @(Get-ChildItem -Path $path -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
         $failures.Add("missing file: $RelativePath")
         return
     }
-    $content = Get-Content -LiteralPath $path -Raw
+    $content = ($files | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
     foreach ($pattern in $Patterns) {
         if ($content -notmatch $pattern) {
             $failures.Add("missing pattern '$pattern' in $RelativePath")
@@ -32,7 +33,7 @@ Assert-Text "gdext/src/modifier_runtime.cpp" @(
     "active_instances_by_domain", "snapshot_versions", "bucket_update_ms",
     "estimated_memory_bytes_by_domain", "error_reasons", "journal_version"
 )
-Assert-Text "gdext/src/world_ext_bind_methods.cpp" @(
+Assert-Text "gdext/src/world_ext_bind_*.cpp" @(
     "configure_modifiers", "submit_modifier_commands", "run_modifier_daily",
     "capture_modifier_domain", "restore_modifier_domain", "clear_modifier_domain",
     "ensure_modifier_building_handle"
@@ -107,7 +108,7 @@ if ($Godot) {
         throw "Godot not found: $GodotPath"
     }
     $project = Join-Path $repoRoot "Project\project-keynes"
-    & $GodotPath --headless --path $project --script res://tests/modifier_runtime_test.gd
+    & $GodotPath --headless --path $project --script res://tests/effect/modifier_runtime_test.gd
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

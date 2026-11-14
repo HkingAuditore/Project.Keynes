@@ -88,6 +88,11 @@
     std::vector<int32_t> _family_birth_factor_q16;
     std::vector<int32_t> _family_absorb_bonus_q16;
     std::vector<int32_t> _family_colonization_population_reward;
+    // A population reward frozen by family.population_reward must survive
+    // policy recomputation until the next successful SETTLE ACK. It is stored
+    // in PKEC family records and the economy state hash, separately from the
+    // per-epoch expansionism effect scalar.
+    std::vector<int32_t> _family_colonization_population_reward_pending;
     EconomyTrackedRecords<FamilyTraitCommand> _family_trait_commands{{{14, 4}, "commands.family_trait_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
     // Milestone founding: per-cell count of population milestones that have
     // produced a family, offers awaiting a player choice, queued choices, and

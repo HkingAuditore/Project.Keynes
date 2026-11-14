@@ -1,5 +1,10 @@
 # Economy Runtime Architecture and Data
 
+Cell-tax addendum: per-cell tax policy is an epoch-only compiled cache made of
+short sorted exact slices, shared local-default effective rows, per-cell compiled
+IDs and active masks. Do not allocate a cell×catalog matrix or access
+ModifierStore/Country objects in worker loops.
+
 ## Contents
 
 1. Authority and layering
@@ -29,6 +34,13 @@ DataCore contributes only the sample-day environment columns: temperature, moist
 and weather intensity. `world_ext_economy.cpp` reads raw F32 slot pointers once and quantizes them
 to Q16. No per-cell cross-language calls occur.
 
+Production-climate loss adaptation is epoch-derived, not persisted authority. Configuration resolves
+the four global country hazard stats plus the six production profiles × four hazards. Epoch capture
+freezes both dense Q16 tables. `production_climate_capacity_q16()` selects the limiting hazard,
+computes `clamp(global_factor × profile_factor, 0.20, 1.00)`, and applies that value in the sole
+capacity formula. Actual production, investment forecasts, recovery, and liquidation therefore share
+one climate result; PKEC byte schema does not change.
+
 ## 2. Population storage
 
 `PopulationStore` is a 64-lane page/chunk SoA. Each cell owns a page chain; allocation and reclaim
@@ -40,6 +52,10 @@ Per lane:
 - `population:i64`, `funds:i64`.
 - `epoch_income:i64`, `epoch_expense:i64`, `income_ema:i64`.
 - `needs_satisfaction:u16`, `worst_need_id:u16`, `flags:u16`.
+- `composite_satisfaction:u16`, `worst_dimension_id:u8`, `satisfaction_dims:u16 × SAT_DIM_COUNT`
+  (stride-stored), `income_baseline_ema:i64`, `epoch_tax_paid:i64`,
+  `epoch_subsidy_received:i64` — the composite satisfaction authority, ~43 B/slot. All of them
+  enter `state_hash` and PKEC v30. See `docs/cpp-dots-runtime/satisfaction-runtime.md`.
 - `demography_residual:i64` reserved by the structural ABI; Market V2 does not run demography.
 
 Use `(generation << 32) | slot_index` as the external handle. Increment generation on release and
@@ -93,13 +109,8 @@ revenue among merchants by merchant population with stable prefix quotients. Mer
 other cohorts.
 
 For a populated cell without a merchant, convert one person from the largest nonmerchant cohort,
-inherit ethnicity, and transfer proportional funds. `rebuild_merchant_ranges` uses that same repair
-before failing; colonization extract, kit owner filling, employment, and investment already keep
-the last living merchant. Rebuild merchant CSR after real structural changes; normal cycles reuse
-it. Epoch preflight checks a living merchant slot, not a stale primary index. Government research
-procurement must also check living merchants before debiting country treasury: household deaths can
-empty a merchant cohort before `STRUCTURAL_REMOVE_EMPTY`, and `purchase_research_points` has no
-rollback.
+inherit ethnicity, and transfer proportional funds. Rebuild merchant CSR only after real structural
+changes; normal cycles must reuse it.
 
 ## 5. Commands and public API
 
@@ -129,13 +140,18 @@ Coarse public API:
 - begin/read/end save
 - begin/feed/end restore
 - fixed-math probe and deterministic state hash
+- `explain_cohort_satisfaction(handle)` and `get_cell_satisfaction_attractiveness(cell)`:
+  pure reads, only safe between native slices, called only while the Inspector is open
 
 Do not add per-cohort setters.
 
 The Inspector opens with `get_population_cell_summary(cell)`, which returns only aggregate population,
 funds, income/expense, cohort count, and satisfaction. Full population, market, building, and natural
-resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` also emits
-a cold-path cohort-major CSR demand preview:
+resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` publishes
+the composite satisfaction columns for every cohort — `overall_satisfaction_by_cohort_q16`,
+`satisfaction_dims_by_cohort_q16` (stride `satisfaction_dimension_count`),
+`worst_satisfaction_dimension_by_cohort`, `living_standard_level_by_cohort` — without any trace
+filter, and also emits a cold-path cohort-major CSR demand preview:
 
 ```text
 demand_good_offsets       cohort_count + 1
@@ -172,16 +188,14 @@ source rows. Object detail and the first visible population tab still use the de
 
 ## 6. Save and visibility
 
-PKEC schema v36 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
+PKEC schema v11 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
 commands, buildings, construction, audit history, sparse market/labor signals, trade orders,
-trade-flow EMA, per-cell `support_ema_q16`, end. Save only at a
+trade-flow EMA, end. Save only at a
 committed boundary. The header stores numeric scales, catalog identity, cycle length, committed day,
 environment identity, matching PKCN schema/generation/hash, submit sequence, trade next ID/resolved
-configuration, and section counts. Restore PKCN first. Writer is v36; reader accepts v35 with
-`support_ema = 1`. PKEC v10 migrates to empty trade state and
+configuration, and section counts. Restore PKCN v1 first. PKEC v10 migrates to empty trade state and
 rebuilds topology; PKEC v2-v9 return `legacy_countryless_economy_save_unsupported`; do not
-synthesize a global treasury or per-cell technology during restore. `K_geo`, family cover, and
-`K_eff` are derived inspector diagnostics and stay out of the save bytes and `state_hash`.
+synthesize a global treasury or per-cell technology during restore.
 
 During `building_employment`, `building_production`, `household_market`, `structural_commit`, or
 `wait_commit`, save and gameplay systems must not
@@ -206,30 +220,33 @@ owner/employee job capacity but leaves all employment counters and market stock 
 native graph to fill. This is a development fixture, not a production historical population provider.
 
 Gold and silver deposits are intentionally early-visible monetary anchors. Gathering technology
-unlocks low-yield merchant-owned gold and silver workings with no goods inputs or employees; they
-extract the matching real deposit and output only bullion. Later employee-bearing mines remain
+unlocks low-yield merchant-owned gold and silver workings with no goods inputs; they extract the
+matching real deposit, employ miners, and output only bullion. Later employee-bearing mines remain
 industrialist-owned production. Accepted bullion uses the native issue path, publishes
 `bullion_money_issued` plus gold/silver splits, and remains inside exact money and goods audits.
 
 Player Inspector visibility is technology-filtered without changing native authority. Market
 snapshots retain the complete dense goods catalog for stable indices, save, and hashing, while the
 ViewModel renders only rows whose `good_technology_available` value is true. Natural-resource
-reserves remain physically present in MapData; the ViewModel renders only resources that satisfy
-`discovery_technology_tags` and have at least one technology-available collector in the selected
-cell's country. Missing snapshot metadata fails open so stale/unavailable native detail does not
+reserves remain physically present in MapData. The Inspector is the viewing player's dossier:
+visible cells, including unowned land, use that country's completed technologies against
+`discovery_technology_tags`. Extraction stays cell-local and still requires a
+technology-available collector on the selected cell. An empty filtered list means the current
+technologies have not identified local deposits; it must not be presented as "resource types are
+unconfigured". Missing snapshot metadata fails open so stale/unavailable native detail does not
 silently erase the whole dossier.
 
 ## 7. Source map
 
-- Native types/graph/math/save: `gdext/src/economy_runtime.{h,cpp}`, `economy_runtime_water.cpp`
+- Native types/graph/math/save: `gdext/src/economy_runtime.{h,cpp}`
 - Environment capture/API forwarding: `gdext/src/world_ext_economy.cpp`
-- GDExtension binding: `world_ext.h`, `world_ext_bind_methods.cpp`
+- GDExtension binding: `world_ext.h`, `world_ext_bind_<模块>.cpp`
 - Catalog/facade: `scripts/economy/economy_catalog.gd`, `economy_facade.gd`
 - Profiles: `scripts/data/{economy,good,need,profession,ethnicity,consumption_plan,environment_demand_curve}_profile.gd`
 - Content: `data/economy/`, `data/goods/`
 - UI: `scripts/ui/cell_inspector_view_model.gd`
 - Focused tests: `tests/goods_storage_schema_test.gd`, `economy_runtime_bench.gd`
-- Trade tests: `tests/economy_trade_runtime_test.gd`, `tests/water_transport_runtime_test.gd`
+- Trade tests: `tests/economy_trade_runtime_test.gd`
 
 ### Inspector settlement cashflow
 
@@ -244,9 +261,7 @@ reports `settlement_detail_pending` until the first traced commit.
 `NativeEconomyRuntime` also owns sparse building owner-lots, pending construction, committed role
 fills, and per-cohort owner/employee employment counts. Keep `(cell, signature)` cohort identity;
 ownership stores the sponsor's stable signature identity rather than adding employer to signatures.
-Buildings stay outside MapData/HexCell/component slots. Each `BuildingType` compiles a maintenance
-CSR (authored daily goods, or construction BOM amortized by sector horizon) that investment, owner
-purchases, and merchant construction reserves read. The bridge only samples geographic/resource
+Buildings stay outside MapData/HexCell/component slots. The bridge only samples geographic/resource
 slots and publishes resource extraction through `extra_change`.
 On the worker path (`capture_worker_day_input`) the economy owns its reserves: slots seed the
 worker float lanes once (or the saved stock on restore), extraction folds into them at publish,
@@ -265,26 +280,32 @@ candidate selection remains technology-gated, deterministic, and native-owned. M
 may not own ordinary production. The only merchant-owner profiles are the two early bullion
 collectors described above; both GDScript and native catalog validation enforce their exact recipe.
 
-Building upgrade families compile stable family IDs and per-type tiers. Construction checks the
-highest technology-available tier and rejects an older BUILD with
-`building_tier_obsolete_for_construction`; production checks only the building's own technology, so
-existing older assets continue operating. Building snapshots expose family indices, tiers, highest
-available tiers, and construction availability. These catalog additions change the catalog hash but
-not the PKEC v11 byte layout.
-
-At `building_commit`, endogenous owner investment reviews unlocked types on the
-investment cycle. A type still enters on a market deficit; when deficit is zero,
-stealable incumbent supply (same good, strictly higher unit cost after
-`investment_displacement_min_advantage_q16`) can still seed utilization. Old
-plants are not rewritten or demolished in the investment pass; cheaper offtake
-leaves them unsold so the existing suspension/liquidation path retires them.
-Expansion still requires target margin, payback, construction stock, and a
-sponsor whose per-capita funds cover materials plus 30 living-cost days.
+Building upgrade families compile stable family IDs and per-type tiers. Construction keeps every
+technology-available tier buildable; production checks only the building's own technology, so
+existing older assets continue operating without automatic conversion. Building snapshots expose
+family indices, tiers, highest available tiers, and construction availability. These catalog additions
+change the catalog hash but not the PKEC v11 byte layout.
 
 At `building_commit`, endogenous owner investment may create one industrial building per cell only
-when a 30-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
+when a 180-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
 Expansion requires the configured target margin, at least 75% planned utilization, persistent
 demand pressure, enough local construction stock, and an entrepreneur whose per-capita funds cover
 materials plus 30 living-cost days. The entrepreneur moves one person and proportional funds into
 the owner signature before the normal BUILD transaction pays local merchants. Collectors and
 services are excluded so price signals alone cannot expand natural-resource extraction.
+
+## Derived cell layer 对经济侧的影响
+
+`refresh_city_output_modifier_factors` 的工作集来自
+`collect_scope_stat_entries(ECONOMY, GROUP, ...)`，该函数**已并入派生层**
+(`modifier_runtime.cpp:1571-1584`)。逐格取值走
+`effective_value(ECONOMY, stat, 0, cell, 1.0)` (`economy_runtime.cpp:7327`)，与派生层合并
+是同一次调用。
+
+因此：**只有派生贡献、没有 legacy GROUP 桶的格也会进工作集**，逐格因子照常被记录。
+不要为此再加第二条路径。
+
+删除理念旧 v1 平面时（plan 22 §15.7）唯一需要确认的就是这条并集仍然存在——它存在。
+
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

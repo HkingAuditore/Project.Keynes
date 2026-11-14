@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Repeat the golden and compare full daily results and diagnostic economy hashes.
-
-Never writes baselines or changes production knobs. Candidate capture is explicit.
-Runs serially, retains initialization/report evidence, and stops immediately if
-the reviewed ledger changes or a Godot check fails.
-"""
+"""Check repeated daily results and optional temporary refactor evidence."""
 from __future__ import annotations
 
 import argparse
@@ -13,7 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from run_regression_checks import ROOT, SHUTDOWN_LEAK
+from run_regression_checks import ROOT, SHUTDOWN_LEAK, is_engine_error
 
 
 def require_fixed_replay_cadence() -> None:
@@ -54,40 +49,87 @@ def difference(expected, actual, path="result"):
     return None
 
 
-def run_external(args, logs: Path) -> int:
-    baseline_path = ROOT / "Project/project-keynes/tests/runtime/golden_external_advancers_baseline.v5.json"
-    expected = None if args.capture_candidate else json.loads(baseline_path.read_text())
-    command = [args.godot, "--headless", "--path", str(ROOT / "Project/project-keynes"),
-               "--script", "res://tests/runtime/golden_external_advancers_test.gd"]
-    runs = []
-    for index in range(1, args.runs + 1):
-        environment = os.environ.copy()
-        environment["PK_GOLDEN_DIAGNOSTICS"] = "1"
-        environment["PK_GOLDEN_EXTERNAL_CAPTURE"] = "1" if args.capture_candidate else "0"
-        log = logs / f"run-{index}.log"
-        with log.open("w") as output:
-            process = subprocess.run(command, env=environment, stdout=output,
-                                     stderr=subprocess.STDOUT, check=False)
-        lines = log.read_text(errors="replace").splitlines()
-        errors = [line for line in lines if line.startswith("ERROR:") or "SCRIPT ERROR:" in line
-                  or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
-        results = records(lines, "GOLDEN_EXTERNAL_RESULT=")
-        actual = results[0] if len(results) == 1 else None
-        if expected is None and actual is not None:
-            expected = actual
-            (logs / "candidate.json").write_text(json.dumps(expected, indent=2) + "\n")
-        diff = difference(expected, actual)
-        valid = process.returncode == 0 and not errors and actual is not None and diff is None
-        runs.append({"run": index, "valid": valid, "exit": process.returncode, "errors": errors,
-                     "first_difference": diff, "chain": actual["days"][-1]["chain"] if actual and actual["days"] else None})
-        passed = len(runs) == args.runs and all(row["valid"] for row in runs)
-        (logs / "summary.json").write_text(json.dumps({"command": command,
-            "capture_candidate": args.capture_candidate, "requested_runs": args.runs,
-            "completed_runs": len(runs), "passed": passed, "runs": runs}, indent=2) + "\n")
-        print(f"v5 run {index}: valid={valid} chain={runs[-1]['chain']} first_difference={diff}", flush=True)
-        if not valid:
-            return 1
-    return 0
+def candidate_path(value: str) -> Path:
+    """Resolve symlinks too, so a path outside cannot alias a tracked file."""
+    path = Path(value)
+    if not path.is_absolute():
+        raise argparse.ArgumentTypeError("candidate path must be absolute")
+    path = path.resolve()
+    if path.is_relative_to(ROOT.resolve()):
+        raise argparse.ArgumentTypeError("candidate path must be outside the repository")
+    return path
+
+
+def add_candidate_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--write-candidate", type=candidate_path,
+                        help="write the first valid result outside the repository")
+    parser.add_argument("--compare-to", type=candidate_path,
+                        help="also compare every field with earlier refactor evidence")
+
+
+def load_comparison(parser, path: Path | None) -> dict | None:
+    if path is None:
+        return None
+    try:
+        value = json.loads(path.read_text())
+        if not isinstance(value, dict) or not value:
+            raise ValueError("candidate must be a nonempty object")
+        return value
+    except (OSError, ValueError) as error:
+        parser.error(f"cannot read candidate: {error}")
+
+
+def fresh_logs(parser, path: Path) -> Path:
+    logs = path.resolve()
+    logs.mkdir(parents=True, exist_ok=True)
+    if any(logs.iterdir()):
+        parser.error("use a fresh empty log directory to preserve previous evidence")
+    return logs
+
+
+def write_candidate(path: Path | None, result: dict) -> None:
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(result, indent=2) + "\n")
+
+
+def read_result(lines: list[str], prefix: str, exit_code: int) -> tuple[dict | None, list[str]]:
+    errors = [line for line in lines if is_engine_error(line) or "SCRIPT ERROR:" in line
+              or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
+    if exit_code:
+        errors.append(f"exit={exit_code}")
+    try:
+        values = records(lines, prefix)
+        if len(values) != 1 or not isinstance(values[0], dict) or not values[0]:
+            return None, errors + [f"expected one nonempty {prefix} object; found {len(values)}"]
+        return values[0], errors
+    except (ValueError, TypeError) as error:
+        return None, errors + [f"invalid evidence JSON: {error}"]
+
+
+def daily_evidence_errors(actual: dict, lines: list[str], external: bool) -> list[str]:
+    days = actual.get("days")
+    expected_days = list(range(1, 5 if external else 9))
+    if not isinstance(days, list) or [row.get("day") for row in days] != expected_days:
+        return ["missing or unordered daily evidence"]
+    if external:
+        domains = {"MILITARY", "NATURAL_RESOURCE", "FAMILY", "PERSON", "VISION"}
+        if any(set(row.get("hashes", {})) != domains for row in days):
+            return ["missing external domain evidence"]
+        return []
+    domains = {"CLIMATE", "TRIGGER_INPUT", "IDEOLOGY", "EFFECT", "MODIFIER", "ECONOMY", "EVENTS", "COUNTRY"}
+    if any(set(row.get("domain_hashes", {})) != domains for row in days):
+        return ["missing daily domain evidence"]
+    diagnostics = records(lines, "GOLDEN_DIAGNOSTIC=")
+    bootstrap = records(lines, "GOLDEN_BOOTSTRAP=")
+    if len(bootstrap) != 1 or [row.get("day") for row in diagnostics] != expected_days:
+        return ["missing initialization or daily diagnostics"]
+    if any(not isinstance(row.get("whole_economy_hash"), str)
+           or not row["whole_economy_hash"].isdigit()
+           or row["whole_economy_hash"] != day.get("whole_economy_hash")
+           for row, day in zip(diagnostics, days)):
+        return ["invalid diagnostic economy hash"]
+    return []
 
 
 def main() -> int:
@@ -95,104 +137,60 @@ def main() -> int:
     parser.add_argument("--godot", default=os.environ.get("GODOT_BIN", "godot"))
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--log-dir", type=Path, required=True)
-    parser.add_argument("--capture-candidate", action="store_true",
-                        help="compare runs to the first candidate, without accepting a baseline")
-    parser.add_argument("--legacy-only", action="store_true",
-                        help="disable domain diagnostics and compare the preserved v2 baseline")
-    parser.add_argument("--external-only", action="store_true", help="run the independent v5 advancer fixture")
+    add_candidate_arguments(parser)
+    parser.add_argument("--external-only", action="store_true", help="run the independent external advancer fixture")
     args = parser.parse_args()
-    require_fixed_replay_cadence()
     if args.runs < 2:
         parser.error("--runs must be at least 2")
-    logs = args.log_dir.resolve()
-    logs.mkdir(parents=True, exist_ok=True)
-    if any(logs.glob("run-*.log")) or (logs / "summary.json").exists():
-        parser.error("use a fresh log directory to preserve previous evidence")
-    if args.external_only:
-        if args.legacy_only:
-            parser.error("--external-only and --legacy-only are separate fixtures")
-        return run_external(args, logs)
-    filename = "golden_day_hash_baseline.v2.json" if args.legacy_only else "golden_day_hash_baseline.json"
-    baseline = json.loads((ROOT / "Project/project-keynes/tests/runtime" / filename).read_text())
-    expected_days = [row["day"] for row in baseline["days"]]
-    expected_result = None if args.capture_candidate else baseline
-    runs: list[dict] = []
-    first_difference = None
-    first_hashes = None
-    first_excluded = None
-    excluded_difference = None
-    failed = False
+    comparison = load_comparison(parser, args.compare_to)
+    logs = fresh_logs(parser, args.log_dir)
+    require_fixed_replay_cadence()
+    name = "golden_external_advancers" if args.external_only else "golden_day_hash"
+    prefix = "GOLDEN_EXTERNAL_RESULT=" if args.external_only else "GOLDEN_RESULT="
     command = [args.godot, "--headless", "--path", str(ROOT / "Project/project-keynes"),
-               "--script", "res://tests/runtime/golden_day_hash_test.gd"]
+               "--script", f"res://tests/runtime/{name}_test.gd"]
+    first = None
+    first_bootstrap = None
+    runs = []
     for index in range(1, args.runs + 1):
         environment = os.environ.copy()
-        environment.pop("PK_GOLDEN_CAPTURE", None)
-        environment["PK_GOLDEN_LEGACY_ONLY"] = "1" if args.legacy_only else "0"
-        if args.capture_candidate:
-            environment["PK_GOLDEN_CAPTURE"] = "1"
         environment["PK_GOLDEN_DIAGNOSTICS"] = "1"
-        environment["PK_SIM_DAY_TRACE"] = str((logs / f"trace-{index}.log").resolve())
+        environment["PK_SIM_DAY_TRACE"] = str(logs / f"trace-{index}.log")
         log = logs / f"run-{index}.log"
         with log.open("w") as output:
-            process = subprocess.run(command, cwd=ROOT, env=environment,
-                                     stdout=output, stderr=subprocess.STDOUT, check=False)
+            process = subprocess.run(command + ["--log-file", str(logs / f"engine-{index}.log")],
+                                     cwd=ROOT, env=environment, stdout=output,
+                                     stderr=subprocess.STDOUT, check=False)
         lines = log.read_text(errors="replace").splitlines()
-        errors = [line for line in lines if line.startswith("ERROR:")
-                  or "SCRIPT ERROR:" in line or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
+        actual, errors = read_result(lines, prefix, process.returncode)
         try:
-            golden = records(lines, "GOLDEN_RESULT=")
-            diagnostics = records(lines, "GOLDEN_DIAGNOSTIC=")
+            if actual is not None:
+                errors.extend(daily_evidence_errors(actual, lines, args.external_only))
             bootstrap = records(lines, "GOLDEN_BOOTSTRAP=")
-            excluded = records(lines, "GOLDEN_DOMAIN_EXCLUDED=")
-            if first_excluded is None:
-                first_excluded = excluded
-            elif excluded_difference is None:
-                excluded_difference = difference(first_excluded, excluded, "excluded_domains")
-            if expected_result is None and len(golden) == 1:
-                expected_result = golden[0]
-                (logs / "candidate.json").write_text(json.dumps(expected_result, indent=2) + "\n")
-            ledger_matches = golden == [expected_result]
-            if not ledger_matches and len(golden) == 1 and first_difference is None:
-                first_difference = difference(expected_result, golden[0])
-            shape_ok = ([row["day"] for row in diagnostics] == expected_days
-                        and len(bootstrap) == 1
-                        and all(isinstance(row.get("whole_economy_hash"), str)
-                                and row["whole_economy_hash"].isdigit() for row in diagnostics))
-        except (ValueError, KeyError, TypeError) as error:
-            errors.append(f"invalid diagnostic JSON: {error}")
-            diagnostics, bootstrap = [], []
-            ledger_matches = shape_ok = False
-        hashes = [row["whole_economy_hash"] for row in diagnostics] if shape_ok else []
-        valid = process.returncode == 0 and not errors and ledger_matches and shape_ok
-        row = {"run": index, "exit": process.returncode, "valid": valid,
-               "ledger_matches": ledger_matches, "economy_hashes": hashes, "errors": errors}
-        if valid:
-            row["ledger_chain"] = golden[0]["days"][-1]["chain"]
-            row["whole_economy_chain"] = golden[0]["days"][-1]["whole_economy_chain"]
-            row["domain_chain"] = golden[0]["days"][-1].get("domain_chain")
-            row["country_chain"] = golden[0]["days"][-1].get("country_chain")
-            row["domain_hashes"] = [day.get("domain_hashes", {}) for day in golden[0]["days"]]
-            row["resource_columns"] = bootstrap[0]["resource_columns"]
-            if first_hashes is None:
-                first_hashes = hashes
-            elif first_difference is None and hashes != first_hashes:
-                day = next(i for i, pair in enumerate(zip(first_hashes, hashes)) if pair[0] != pair[1])
-                first_difference = {"run": index, "day": expected_days[day],
-                                    "reference": first_hashes[day], "actual": hashes[day]}
-        runs.append(row)
-        failed = failed or not valid
-        summary = {"command": command, "capture_candidate": args.capture_candidate, "requested_runs": args.runs, "completed_runs": len(runs),
-                   "first_difference": first_difference, "excluded_domain_first_difference": excluded_difference, "runs": runs,
-                   "passed": len(runs) == args.runs and not failed and first_difference is None}
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            errors.append(f"invalid daily evidence: {error}")
+            bootstrap = []
+        if first is None and actual is not None and not errors:
+            first = actual
+            first_bootstrap = bootstrap
+            write_candidate(args.write_candidate, first)
+        repeated = difference(first, actual)
+        prior = difference(comparison, actual) if comparison is not None else None
+        bootstrap_diff = difference(first_bootstrap, bootstrap, "bootstrap")
+        diff = repeated or prior or bootstrap_diff
+        valid = actual is not None and not errors and diff is None
+        runs.append(dict(run=index, valid=valid, exit=process.returncode, errors=errors,
+                         repeat_difference=repeated, comparison_difference=prior,
+                         first_difference=diff))
+        summary = dict(command=command, requested_runs=args.runs, completed_runs=len(runs),
+                       compare_to=str(args.compare_to) if args.compare_to else None,
+                       passed=len(runs) == args.runs and all(row["valid"] for row in runs), runs=runs)
         (logs / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-        print(f"run {index}: valid={valid} baseline_matches={ledger_matches} "
-              f"domains={row.get('domain_chain')} first_difference={first_difference}", flush=True)
+        print(f"run {index}: valid={valid}; first_difference={diff}; errors={errors}", flush=True)
         if not valid:
-            print("Stopped: ledger mismatch, missing evidence, or Godot failure.")
             return 1
-    print(f"{'PASS' if summary['passed'] else 'FAIL'}: {len(runs)} runs; "
-          f"first_difference={first_difference}; summary={logs / 'summary.json'}")
-    return 0 if summary["passed"] else 1
+    print(f"PASS: {len(runs)} runs; summary={logs / 'summary.json'}")
+    return 0
 
 
 if __name__ == "__main__":

@@ -1747,46 +1747,6 @@ Dictionary DCWorldExt::get_trade_visual_snapshot(
     return out;
 }
 
-Dictionary DCWorldExt::capture_economy_trade_topology(
-        const PackedInt32Array &neighbor_indices, const PackedByteArray &terrain,
-        const PackedByteArray &trade_passable_lut,
-        const PackedInt32Array &trade_move_cost_lut, int64_t generation,
-        const PackedByteArray &landform, const PackedByteArray &has_river) {
-    if (_economy_runtime == nullptr) return unavailable();
-    Dictionary out;
-    if (neighbor_indices.size() != terrain.size() * 6 ||
-        trade_passable_lut.size() != 256 || trade_move_cost_lut.size() != 256) {
-        out["ok"] = false;
-        out["reason"] = "trade_topology_column_size_mismatch";
-        return out;
-    }
-    std::string error;
-    std::vector<uint8_t> empty_canal(static_cast<size_t>(terrain.size()), 0);
-    std::vector<float> empty_water(static_cast<size_t>(terrain.size()), 0.0f);
-    const uint8_t *landform_ptr = landform.size() == terrain.size() ? landform.ptr() : nullptr;
-    const uint8_t *river_ptr = has_river.size() == terrain.size() ? has_river.ptr() : nullptr;
-    const bool ok = runtime_from(_economy_runtime)->capture_trade_topology(
-        neighbor_indices.ptr(), terrain.ptr(), empty_canal.data(), empty_water.data(),
-        trade_passable_lut.ptr(),
-        trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation),
-        error, landform_ptr, river_ptr);
-    out["ok"] = ok;
-    if (!ok) out["reason"] = String(error.c_str());
-    return out;
-}
-
-Dictionary DCWorldExt::capture_economy_trade_visibility(
-        const PackedByteArray &visible, bool fog_solved) {
-    if (_economy_runtime == nullptr) return unavailable();
-    Dictionary out;
-    std::string error;
-    const bool ok = runtime_from(_economy_runtime)->capture_trade_visibility(
-        visible.ptr(), visible.size(), fog_solved, false, error);
-    out["ok"] = ok;
-    if (!ok) out["reason"] = String(error.c_str());
-    return out;
-}
-
 Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
@@ -1957,17 +1917,6 @@ Dictionary DCWorldExt::get_construction_command_receipts(
         [&] { return runtime->construction_command_receipts(after_receipt_id, limit); });
 }
 
-// Player construction cannot ride `submit_economy_commands`: that batch is
-// fail-closed as soon as StageOps is the effective production writer, which is
-// the shipping configuration. Queue the formal command on the economy owner's
-// inbox instead and let the next epoch apply it (same contract as the canal and
-// family-colonization lanes).
-Dictionary DCWorldExt::migrate_legacy_state_buildings(
-        const Array &states) {
-    if (_economy_runtime == nullptr) return unavailable();
-    return economy_api::migrate_legacy_state_buildings(*runtime_from(_economy_runtime),
-        states);
-}
 
 Dictionary DCWorldExt::queue_treasury_sponsored_build(
         int64_t country_handle, int cell_idx, int type_id,
@@ -2391,10 +2340,6 @@ Dictionary DCWorldExt::get_economy_read_view_status() const {
     return out;
 }
 
-Dictionary DCWorldExt::run_economy_fixed_math_probe(const Dictionary &vectors) const {
-    if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->fixed_math_probe(vectors);
-}
 
 Dictionary DCWorldExt::run_economy_production_climate_math_probe(
         const Dictionary &vectors) const {
@@ -2750,16 +2695,6 @@ Dictionary DCWorldExt::begin_economy_restore() {
     return out;
 }
 
-Dictionary DCWorldExt::begin_economy_restore_pkec_migrate() {
-    if (_economy_runtime == nullptr) {
-        return unavailable();
-    }
-    Dictionary out =
-        runtime_from(_economy_runtime)->begin_restore_pkec_migrate();
-    if (static_cast<bool>(out.get("ok", false)))
-        invalidate_economy_input_capture_cache(true);
-    return out;
-}
 
 String DCWorldExt::get_economy_restore_rejected_reason() const {
     if (_economy_runtime == nullptr) return String();

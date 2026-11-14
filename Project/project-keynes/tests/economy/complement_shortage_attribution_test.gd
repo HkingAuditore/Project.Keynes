@@ -109,12 +109,16 @@ func _configured_price_worker(compiled: Dictionary, seed: int) -> Object:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, climate)
 	for slot_name in [&"cell_moisture", &"cell_plant_available_water", &"cell_weather_precip",
-			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation",
+			&"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, zero_f)
 	var terrain := PackedByteArray([2])
 	var sid_t: int = ext.register_component(&"cell_terrain", 2, 1, false)
 	ext.write_u8_range(sid_t, 0, terrain)
+	for slot_name in [&"cell_weather_type", &"cell_cover"]:
+		var sid: int = ext.register_component(slot_name, 2, 1, false)
+		ext.write_u8_range(sid, 0, PackedByteArray([0]))
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	_expect("price-response country bootstraps",

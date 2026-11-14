@@ -46,7 +46,7 @@ func _build_ui() -> void:
 	if _card != null:
 		return
 
-	_backdrop = ColorRect.new()
+	_backdrop = UIControlParts.color_rect()
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_backdrop.color = Color(0.08, 0.065, 0.05, 0.72)
 	_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -58,13 +58,13 @@ func _build_ui() -> void:
 	_backdrop.material = desk_mat
 	add_child(_backdrop)
 
-	var center := CenterContainer.new()
+	var center := UIControlParts.center_container()
 	center.name = "Center"
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(center)
 
-	_card = PanelContainer.new()
+	_card = UIControlParts.panel_container()
 	_card.custom_minimum_size = Vector2(740.0, 520.0)
 	var sheet_style := EraNoteStyle.duplicate() as StyleBoxTexture
 	sheet_style.content_margin_left = 30.0
@@ -75,7 +75,7 @@ func _build_ui() -> void:
 	center.add_child(_card)
 	_sheet_wrap = _card
 
-	var underlay := Control.new()
+	var underlay := UIControlParts.control()
 	underlay.name = "Underlay"
 	underlay.show_behind_parent = true
 	underlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -112,16 +112,16 @@ func _build_ui() -> void:
 	_underlay_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	underlay.add_child(_underlay_page)
 
-	var main_vbox := VBoxContainer.new()
+	var main_vbox := UIControlParts.v_box_container()
 	main_vbox.add_theme_constant_override("separation", 10)
 	_card.add_child(main_vbox)
 
 	# Header Row
-	var header_hbox := HBoxContainer.new()
+	var header_hbox := UIControlParts.h_box_container()
 	header_hbox.add_theme_constant_override("separation", 12)
 	main_vbox.add_child(header_hbox)
 
-	var seal_icon := TextureRect.new()
+	var seal_icon := UIControlParts.texture_rect()
 	seal_icon.texture = SealBadgeTexture
 	seal_icon.custom_minimum_size = Vector2(52.0, 52.0)
 	seal_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -129,12 +129,12 @@ func _build_ui() -> void:
 	seal_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header_hbox.add_child(seal_icon)
 
-	var title_col := VBoxContainer.new()
+	var title_col := UIControlParts.v_box_container()
 	title_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_col.add_theme_constant_override("separation", 2)
 	header_hbox.add_child(title_col)
 
-	_title_label = Label.new()
+	_title_label = UIControlParts.label()
 	_title_label.text = "事件记录"
 	_title_label.add_theme_font_override("font", UITokensScript.annual_font("display"))
 	_title_label.add_theme_font_size_override("font_size", 32)
@@ -149,18 +149,18 @@ func _build_ui() -> void:
 	)
 	header_hbox.add_child(close_btn)
 
-	var rule := ColorRect.new()
+	var rule := UIControlParts.color_rect()
 	rule.custom_minimum_size = Vector2(0.0, 1.5)
 	rule.color = UITokensScript.DOSSIER_RULE_STRONG
 	main_vbox.add_child(rule)
 
 	# Chronicle Scroll List
-	_list_scroll = ScrollContainer.new()
+	_list_scroll = UIControlParts.scroll_container()
 	_list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	main_vbox.add_child(_list_scroll)
 
-	_list_vbox = VBoxContainer.new()
+	_list_vbox = UIControlParts.v_box_container()
 	_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_vbox.add_theme_constant_override("separation", 12)
 	_list_scroll.add_child(_list_vbox)
@@ -182,7 +182,7 @@ func _make_cut_tag_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
 
 
 func _make_cut_tag_button(label_text: String) -> Button:
-	var btn := Button.new()
+	var btn := UIControlParts.button()
 	btn.text = label_text
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -230,7 +230,7 @@ func set_records(records: Array) -> void:
 
 
 func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
-	var note := PanelContainer.new()
+	var note := UIControlParts.panel_container()
 	var style := EraNoteStyle.duplicate() as StyleBoxTexture
 	style.content_margin_left = 18.0
 	style.content_margin_right = 18.0
@@ -239,12 +239,12 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	style.modulate_color = Color(0.99, 0.96, 0.88, 1.0)
 	note.add_theme_stylebox_override("panel", style)
 
-	var hbox := HBoxContainer.new()
+	var hbox := UIControlParts.h_box_container()
 	hbox.add_theme_constant_override("separation", 14)
 	note.add_child(hbox)
 
 	# Colored-pencil chapter emblem on the left
-	var emblem := TextureRect.new()
+	var emblem := UIControlParts.texture_rect()
 	emblem.custom_minimum_size = Vector2(44.0, 44.0)
 	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -256,12 +256,12 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	emblem.texture = atlas
 	hbox.add_child(emblem)
 
-	var vbox := VBoxContainer.new()
+	var vbox := UIControlParts.v_box_container()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 4)
 	hbox.add_child(vbox)
 
-	var top_hbox := HBoxContainer.new()
+	var top_hbox := UIControlParts.h_box_container()
 	top_hbox.add_theme_constant_override("separation", 8)
 	vbox.add_child(top_hbox)
 
@@ -275,14 +275,14 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	var date_parts := PackedStringArray([date_text])
 	if not settlement.is_empty() and not title_text.contains(settlement):
 		date_parts.append(settlement)
-	var date_tag := Label.new()
+	var date_tag := UIControlParts.label()
 	date_tag.text = "  ·  ".join(date_parts)
 	date_tag.add_theme_font_override("font", UITokensScript.annual_font("label"))
 	date_tag.add_theme_font_size_override("font_size", 13)
 	date_tag.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
 	top_hbox.add_child(date_tag)
 
-	var title_lbl := Label.new()
+	var title_lbl := UIControlParts.label()
 	title_lbl.text = title_text
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_lbl.add_theme_font_override("font", UITokensScript.annual_font("display_soft"))
@@ -290,7 +290,7 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	title_lbl.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK)
 	vbox.add_child(title_lbl)
 
-	var choice_lbl := Label.new()
+	var choice_lbl := UIControlParts.label()
 	choice_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var prob_pct := int(rec.get("outcome_probability_percent", 100))
 	var outcome_str := String(rec.get("outcome_title", ""))
@@ -307,7 +307,7 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 
 	var effects: PackedStringArray = PackedStringArray(rec.get("applied_effects_summary", []))
 	if not effects.is_empty():
-		var eff_lbl := Label.new()
+		var eff_lbl := UIControlParts.label()
 		eff_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		eff_lbl.text = "  ·  ".join(effects)
 		eff_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans"))

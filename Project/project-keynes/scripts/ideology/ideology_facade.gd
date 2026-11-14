@@ -10,7 +10,7 @@ enum Opcode { DISCOVER_IDEOLOGY = 1, GRANT_IDEOLOGY_POINTS = 2, OPEN_IDEOLOGY_OF
 	PROMOTE_NATIONAL_SPIRIT = 7, ADD_UNDERSTANDING = 8, SET_IDEOLOGY_GATE = 9,
 	REROLL_IDEOLOGY_OFFER = 10, BAN_IDEOLOGY_CARD = 11, GRANT_FREE_DRAW = 12 }
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _catalog: Resource
 var _native_catalog: Dictionary = {}
 var _world_seed := 0
@@ -19,7 +19,7 @@ var _economy_catalog: Dictionary = {}
 var _configured := false
 var _receipt_cursor := 0
 
-func configure(world_ext: Object, country_catalog: Dictionary,
+func configure(world_ext: DCWorldExt, country_catalog: Dictionary,
 		catalog: Resource = null, economy_catalog: Dictionary = {},
 		world_seed: int = 0) -> Dictionary:
 	_world_seed = world_seed
@@ -27,7 +27,7 @@ func configure(world_ext: Object, country_catalog: Dictionary,
 	_country_catalog = country_catalog.duplicate(false)
 	_economy_catalog = economy_catalog.duplicate(false)
 	_catalog = catalog if catalog != null else IdeologyCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_ideologies"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt ideology API unavailable"}
 	if _catalog == null or not _catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "IdeologyCatalog unavailable"}
@@ -71,7 +71,7 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 	return _world_ext.submit_ideology_commands(batch)
 
 func drain_receipts(limit: int = 256) -> Dictionary:
-	if not _configured or not _world_ext.has_method("poll_ideology_receipts"):
+	if not _configured:
 		return {"ok": false, "reason": "ideology_receipts_unavailable"}
 	var result: Dictionary = _world_ext.poll_ideology_receipts(_receipt_cursor, limit)
 	if not bool(result.get("ok", false)):
@@ -116,7 +116,7 @@ func reroll_offer(handle: int, offer_generation: int, effective_day: int, sequen
 ## Read-only draw gate: can_draw/can_reroll, cost_q16, reroll_cost_q16,
 ## pool_size, points_q16 and a stable reason key. Never mutates state.
 func preview_offer_eligibility(handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("preview_ideology_offer_eligibility"):
+	if not _configured:
 		return {"ok": false, "can_draw": false, "can_reroll": false,
 			"reason": "ideology_runtime_unconfigured"}
 	return _world_ext.preview_ideology_offer_eligibility(handle)
@@ -141,21 +141,42 @@ func snapshot(handle: int) -> Dictionary: return _world_ext.get_ideology_snapsho
 func explain_ideology(handle: int, ideology_id) -> Dictionary: return _world_ext.explain_ideology(handle, _idea_id(ideology_id)) if _configured else {"ok": false, "reason": "ideology_runtime_unconfigured"}
 func explain_ideologies(handle: int, ideology_ids: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	return _world_ext.explain_ideologies(handle, ideology_ids) \
-		if _configured and _world_ext.has_method("explain_ideologies") \
+		if _configured \
 		else {"ok": false, "reason": "ideology_batch_explain_unavailable"}
 func report() -> Dictionary: return _world_ext.get_ideology_report() if _configured else {"configured": false}
-## Raw per-instance rows of this country's reconciled effect instances.
-##
-## Native has exposed this since the reconciliation path landed, but nothing in
-## GDScript ever asked for it, so the board could not say whether an equipped
-## card was projecting anything. `IdeologyEffectReport.summarize()` turns the
-## columns into per-card totals; nothing else should read the raw shape.
+## Raw per-target rows of where this country's held cards act, from both the
+## Effect instance backend and the derived cell layer (`backends` 0/1).
+## `IdeologyEffectReport.summarize()` turns the columns into per-card totals;
+## nothing else should read the raw shape.
 func effect_instances(handle: int) -> Dictionary:
-	return _world_ext.get_ideology_effect_instance_report(handle) \
-		if _configured and _world_ext.has_method("get_ideology_effect_instance_report") \
-		else {"ok": false, "reason": "ideology_effect_instance_report_unavailable"}
+	return _world_ext.get_ideology_effect_target_report(handle) \
+		if _configured \
+		else {"ok": false, "reason": "ideology_effect_target_report_unavailable"}
 func catalog_view() -> Dictionary: return _catalog.catalog_view(_country_catalog, _economy_catalog) if _catalog != null else {"ok": false}
 func native_catalog() -> Dictionary: return _native_catalog.duplicate(false)
+
+func step_instance_refresh(day_index: int) -> Dictionary:
+	return _world_ext.step_ideology_instance_refresh(day_index) if _world_ext != null else {
+		"ok": false, "code": "runtime_worker_api_missing"}
+
+func step_derived_rebuild(day_index: int) -> Dictionary:
+	return _world_ext.step_ideology_derived_rebuild(day_index) if _world_ext != null else {
+		"ok": false, "code": "runtime_worker_api_missing"}
+
+func capture_state() -> PackedByteArray:
+	return _world_ext.capture_ideology_state() if _world_ext != null else PackedByteArray()
+
+func restore_state(bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_ideology_state(bytes) if _world_ext != null else {
+		"ok": false, "reason": "ideology_provider_missing"}
+
+func clear_state() -> Dictionary:
+	return _world_ext.clear_ideology_state() if _world_ext != null else {
+		"ok": false, "reason": "ideology_provider_missing"}
+
+func should_run(day_index: int) -> bool:
+	return bool(_world_ext.ideology_should_run(day_index)) if _world_ext != null else false
+
 func world_ext() -> Object: return _world_ext
 func is_configured() -> bool: return _configured
 func _idea_command(opcode: int, handle: int, ideology_id, value_q16: int, effective_day: int, sequence: int) -> Dictionary:

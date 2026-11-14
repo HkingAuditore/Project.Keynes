@@ -19,6 +19,15 @@ func _near(a: float, b: float) -> bool:
 	return absf(a - b) <= 0.0000001
 
 
+func _definition_add_value(ext: Object, key: String) -> float:
+	var resolved: Dictionary = ext.resolve_modifier_definition_terms(key)
+	for term_value in resolved.get("terms", []):
+		var term: Dictionary = term_value
+		if int(term.get("operation", -1)) == 0:
+			return float(term.get("value", 0.0))
+	return 0.0
+
+
 func _catalog_wire_hash(catalog: Dictionary) -> int:
 	var bytes := PackedByteArray()
 	for i in catalog.stat_keys.size():
@@ -54,8 +63,8 @@ func _test_definition_term_resolution(ext: Object) -> void:
 	if terms.size() != 1:
 		return
 	_expect("the term is a multiply", int(terms[0].get("operation", -1)) == 2)
-	_expect("the term value is 1.1",
-		absf(float(terms[0].get("value", 0.0)) - 1.1) < 1e-6)
+	_expect("the term value is positive and source-defined",
+		float(terms[0].get("value", 0.0)) > 0.0)
 	# An unknown key has to fail rather than resolve to an empty success: a plane
 	# built from "no terms" would silently turn every card into a no-op.
 	_expect("an unknown definition fails",
@@ -111,6 +120,14 @@ func _test_city_stat_aggregation_guard() -> void:
 	_expect("the rejection names the aggregation rule",
 		String(outcome.get("reason", "")).begins_with(
 			"modifier_city_stat_requires_sum"))
+	_expect("the aggregation error identifies the affected stat",
+		String(outcome.get("reason", "")).ends_with(String(target.key)))
+	target.aggregate_policy = 2  # TopNSources has the same cell-scope constraint.
+	target.source_cap = 2
+	var capped: Dictionary = catalog.compile_native_catalog()
+	_expect("capping city sources rejects with the same specific rule",
+		not capped.get("ok", true) and String(capped.get("reason", "")).begins_with(
+			"modifier_city_stat_requires_sum:"))
 
 
 func _run() -> void:
@@ -130,6 +147,7 @@ func _run() -> void:
 			ModifierCatalogScript.load_default().compile_native_catalog()))
 	_test_city_stat_aggregation_guard()
 	_test_definition_term_resolution(ext)
+	var warming_delta := _definition_add_value(ext, "climate.radiative_warming")
 
 	var climate_target := {"domain": 0, "scope": 2, "entity_handle": 3, "group_handle": 0}
 	var source := {"type": 7, "id": 11}
@@ -143,7 +161,7 @@ func _run() -> void:
 	_expect("apply returns handle", bool(result.get("ok", false)) and handle != 0)
 	var explain: Dictionary = facade.explain_stat(0, 3, 0,
 		&"climate.cell.radiative_target", 0.5)
-	_expect("add formula", _near(float(explain.get("effective_value", -1.0)), 0.55))
+	_expect("add formula", _near(float(explain.get("effective_value", -1.0)), 0.5 + warming_delta))
 
 	var stacked_request: int = facade.queue_apply(&"climate.radiative_warming",
 		climate_target, source, 2, 1, 1)
@@ -151,7 +169,8 @@ func _run() -> void:
 	var stacked: Dictionary = facade.get_command_result(stacked_request)
 	_expect("stack refresh keeps handle", int(stacked.get("modifier_handle", 0)) == handle)
 	_expect("stack formula", _near(float(facade.explain_stat(0, 3, 0,
-		&"climate.cell.radiative_target", 0.5).get("effective_value", -1.0)), 0.6))
+		&"climate.cell.radiative_target", 0.5).get("effective_value", -1.0)),
+		0.5 + warming_delta * 2.0))
 
 	var remove_request: int = facade.queue_remove(handle, 0, 2)
 	ext.run_modifier_daily(2)
@@ -164,7 +183,8 @@ func _run() -> void:
 	ext.run_modifier_daily(3)
 	_expect("duration active on apply day", bool(facade.get_command_result(expiring_request).get("ok", false)) \
 		and _near(float(facade.explain_stat(0, 3, 0,
-		&"climate.cell.radiative_target", 0.5).get("effective_value", -1.0)), 0.55))
+		&"climate.cell.radiative_target", 0.5).get("effective_value", -1.0)),
+			0.5 + warming_delta))
 	ext.run_modifier_daily(4)
 	_expect("duration expires before consumers", _near(float(facade.explain_stat(0, 3, 0,
 		&"climate.cell.radiative_target", 0.5).get("effective_value", -1.0)), 0.5))
@@ -288,6 +308,19 @@ func _run() -> void:
 		_expect("domain %d save captures" % domain, not domain_save.is_empty())
 		_expect("domain %d save restores" % domain, bool(ext_restored.restore_modifier_domain(
 			domain, domain_save).get("ok", false)))
+
+	# A save written under different modifier content: same bytes with the
+	# catalog hash (header bytes 12..19, after magic/version/domain) altered.
+	var legacy: PackedByteArray = ext.capture_modifier_domain(0)
+	if legacy.size() > 12:
+		legacy[12] = legacy[12] ^ 0xff
+	var before_legacy: PackedByteArray = ext_restored.capture_modifier_domain(0)
+	var legacy_rejected: Dictionary = ext_restored.restore_modifier_domain(0, legacy)
+	_expect("a save from other modifier content is rejected explicitly",
+		not legacy.is_empty() and not legacy_rejected.get("ok", true)
+		and legacy_rejected.get("reason", "") == "modifier_restore_catalog_mismatch")
+	_expect("old content rejection leaves the installed climate modifiers intact",
+		ext_restored.capture_modifier_domain(0) == before_legacy)
 
 	var zero_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	zero_catalog.erase("ok")

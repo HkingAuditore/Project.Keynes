@@ -121,7 +121,7 @@ Read only the references needed for the task:
    generation moved on while it planned. Never hand the worker Godot objects.
 5. Upload ready chunks within the per-frame budget. Use resident management and the
    `lod_fraction` rank cutoff for LOD; do not replan or rebuild chunks on camera movement.
-6. Validate the visual result with `tests/_tmp_building_art_harness.tscn` (all 11 eras × 6
+6. Validate the visual result with `tests/probes/_tmp_building_art_harness.tscn` (all 11 eras × 6
    local economies with tier and wealth bands, snow row, night/dusk, `detail` close-ups,
    `wealth` sweep) before and after tuning. Read the screenshots; do not tune blind.
 7. Rebuild debug and release DLLs after C++ edits, run focused tests, the native stress

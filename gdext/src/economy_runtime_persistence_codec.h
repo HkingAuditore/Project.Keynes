@@ -96,16 +96,15 @@ inline godot::PackedByteArray make_save_chunk(
 // i32 cells, written only when the list is non-empty).
 inline bool read_cadence_footer(const std::vector<uint8_t> &bytes,
         size_t &cursor, int32_t cell_count, uint64_t &generation,
-        std::vector<int32_t> &pending) {
+        std::vector<int32_t> &pending, int64_t &derived_cache_day,
+        std::vector<TrackBDerivedCellWork> &derived_cache) {
     using binary_codec::read_le;
+    const uint32_t max_cells = static_cast<uint32_t>(std::max(0, cell_count));
     uint32_t count = 0;
     pending.clear();
+    derived_cache.clear();
     if (!read_le(bytes, cursor, generation) || generation == 0) return false;
-    if (cursor == bytes.size()) return true;
-    if (!read_le(bytes, cursor, count) || count == 0 ||
-        count > static_cast<uint32_t>(std::max(0, cell_count)) ||
-        bytes.size() - cursor != static_cast<size_t>(count) * sizeof(int32_t))
-        return false;
+    if (!read_le(bytes, cursor, count) || count > max_cells) return false;
     pending.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
         int32_t cell = -1;
@@ -113,7 +112,32 @@ inline bool read_cadence_footer(const std::vector<uint8_t> &bytes,
             return false;
         pending.push_back(cell);
     }
-    return true;
+    if (!read_le(bytes, cursor, derived_cache_day) ||
+        !read_le(bytes, cursor, count) || count > max_cells)
+        return false;
+    derived_cache.resize(count);
+    for (TrackBDerivedCellWork &work : derived_cache) {
+        uint8_t seeded = 0;
+        uint32_t goods = 0;
+        if (!read_le(bytes, cursor, seeded) || seeded > 1 ||
+            !read_le(bytes, cursor, work.edges) ||
+            !read_le(bytes, cursor, work.startup_calls) ||
+            !read_le(bytes, cursor, work.enqueued_goods) ||
+            !read_le(bytes, cursor, goods) ||
+            (bytes.size() - cursor) / 20 < goods)
+            return false;
+        work.seeded = seeded != 0;
+        work.goods.resize(goods);
+        work.quantities.resize(goods);
+        work.anchors.resize(goods);
+        for (uint32_t i = 0; i < goods; ++i) {
+            if (!read_le(bytes, cursor, work.goods[i]) ||
+                !read_le(bytes, cursor, work.quantities[i]) ||
+                !read_le(bytes, cursor, work.anchors[i]))
+                return false;
+        }
+    }
+    return cursor == bytes.size();
 }
 
 } // namespace pk::persistence_codec

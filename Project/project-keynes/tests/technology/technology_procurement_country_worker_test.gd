@@ -26,13 +26,14 @@ func _expect(label: String, condition: bool) -> void:
 
 func _register_environment(ext: Object) -> void:
 	var scalar := PackedFloat32Array([0.5])
-	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_temp_365d",
+			&"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, PackedByteArray([0]))
 
@@ -103,7 +104,9 @@ func _run() -> void:
 	stock.fill(0)
 	var points_good := (compiled.good_ids as PackedStringArray).find(
 		"technology_points")
-	stock[points_good] = 50000
+	# Keep the market fixture comfortably above the queued technology cost so
+	# this test exercises the Country/Economy handoff rather than a shortage.
+	stock[points_good] = 10000000
 	_expect("merchant market with technology stock bootstraps", bool(
 		ext.bootstrap_economy({
 			"cell_indices": PackedInt32Array([0]),

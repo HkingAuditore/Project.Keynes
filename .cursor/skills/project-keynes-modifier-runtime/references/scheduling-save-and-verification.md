@@ -20,10 +20,11 @@ Do not mutate a store from a worker or domain pass. SHADOW compares output only.
 
 - PKCM v1: Climate store.
 - PKCN v11: Country state, technology/research-signal identity, and Country store.
-- PKEC v33: Economy state, family-cell effects, BuildingIdentityStore, Economy store.
+- PKEC v41 / Modifier schema v3: Economy state, family/cell effects,
+  BuildingIdentityStore, exact-good/building stat identity, and Economy store.
 - PKGP v1: Gameplay identities/base plus Gameplay store.
 
-Restore dynamic world -> environment -> PKCM -> clock -> PKCN -> prepare economy -> PKEC ->
+Restore dynamic world -> environment -> PKCM -> clock -> PKCN -> PKEF -> prepare economy -> PKEC ->
 PKGP -> vision/journal/player. Older PKCN/PKEC schemas are rejected. Unknown keys, invalid numeric data,
 bad handles, invalid magnitude, and incompatible normalized terms fail. The current domain restore
 also requires an exact catalog hash; append-only compatibility needs an explicit migration path.
@@ -35,14 +36,25 @@ Cover math, magnitude add/factor interpolation, zero factor, non-finite rejectio
 `SET_MAGNITUDE`, expiry boundary, stale heap node,
 generation reuse, exact removal, target cleanup, global/group/entity, deterministic producer
 ordering, explain recomputation, journal events, domain isolation, climate insertion, economy
-actual/forecast parity, Gameplay base/effective separation, and all four save round-trips.
+actual/forecast parity, Family/Branch stale-handle rejection, exact-good sparse overrides,
+Gameplay base/effective separation, and all four save round-trips.
 
-Use `Project/project-keynes/tests/modifier_runtime_test.gd` as the focused entry. Also run country,
+Use `Project/project-keynes/tests/effect/modifier_runtime_test.gd` as the focused entry. Also run country,
 building/economy save tests and a Godot project parse.
 
 ## Performance
 
 Inspect active/peak/buckets/query/bucket-read/rebuild/snapshot/event/memory arrays, sorted error
 counts, and command/expiry/publish/bucket-update/bucket-rebuild times. A hot consumer should not
-query strings or parent stores per output line. Final acceptance
+query strings or parent stores per output line. Final acceptance also records exact-good
+shared/non-neutral/override counts and cache bytes, and
 requires same-machine 50+ day baseline/after: median regression <= 3 percent and p95 <= 5 percent.
+
+## World reconstruction (2026-11-10)
+
+`modifier_runtime_lifecycle.cpp` resets world stores, pending requests, journals, identities,
+base values, and the POD observation cursor while retaining rule definitions. Both configure
+and successful Country world reconstruction use this reset; same-world executor restart does
+not. The new Host retains validated definitions and the stable-key to dense-ID map, not old
+instances. Run `runtime_world_rules_rebuild_test.gd` for changed and reused definitions in
+worker and inline modes; assert the authored value and successful snapshot application.

@@ -17,7 +17,7 @@ Read the files relevant to the requested change before editing:
 - Native population, market, and building state/algorithms: `gdext/src/economy_runtime.{h,cpp}`.
 - Country technology/treasury bridge: `gdext/src/country_runtime.{h,cpp}` and `world_ext_country.cpp`.
 - DataCore environment/resource bridge: `gdext/src/world_ext_economy.cpp`.
-- GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_methods.cpp`.
+- GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_<模块>.cpp`.
 - Catalog/facade: `Project/project-keynes/scripts/economy/`.
 - Scheduler shell: `scripts/simulation/systems/economy_daily_system.gd`.
 - Clock continuation: `scripts/geography/map_generator.gd`, `world_clock.gd`.
@@ -236,7 +236,7 @@ share a Country cash cap after fiscal/research budgeting. Do not credit sales,
 withdrawal EMA or real cargo from a forecast. One-shot balances normalize over
 inventory days and rebuild after cancellation/departure/restore. No new schema.
 See `docs/cpp-dots-runtime/family-colonization-runtime.md` and
-`tests/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
+`tests/country/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
 each propagation entry: runtime-local visit generations can collide across
 worlds in the same process.
 
@@ -308,3 +308,5 @@ architecture development guide and validation record.
 ## Military procurement demand (2026-11-08)
 
 Economy opcode 36 retains a complete Military shortage-demand snapshot in the existing persisted pending-command queue. Reset is cell=-1/country=0/qty=0; rows name real SKU, owned market cell, quantity and normalization days. At epoch freeze recheck current treasury and other public procurement commitments; add the derived daily amounts through the generic procurement demand helpers. Do not count forecasts as sales, withdrawals, cash transfers or new stock. Derived demand vectors are rebuilt, not serialized.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

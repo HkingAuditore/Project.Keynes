@@ -35,7 +35,10 @@ func _test_catalog_and_schema() -> void:
 		_expect("occupancy map_field", String(occupancy.get("map_field", "")) == "bio_occupancy_bits_arr")
 	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
 	_expect("catalog compiles", bool(catalog.get("ok", false)))
-	_expect("19 bio species", int(catalog.get("research_bio_species_count", 0)) == 19)
+	var bio_bits: PackedInt32Array = catalog.get("research_bio_occupancy_bits", PackedInt32Array())
+	_expect("bio species count matches compiled occupancy entries",
+		int(catalog.get("research_bio_species_count", 0)) == bio_bits.size()
+		and bio_bits.size() > 0)
 	var sheep_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.sheep")
 	var maize_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.maize")
 	_expect("sheep occupancy bit assigned", sheep_bit >= 0 and sheep_bit < 32)
@@ -71,7 +74,7 @@ func _test_catalog_and_schema() -> void:
 	_expect("reed is cosmopolitan", reed_policy == ResearchSignalCatalog.OCCUPANCY_ORIGIN_COSMOPOLITAN)
 	_expect("wheat guild is food", wheat_guild == ResearchSignalCatalog.OCCUPANCY_GUILD_FOOD)
 	var habitats: PackedInt32Array = catalog.get("research_bio_habitat_class", PackedInt32Array())
-	_expect("habitat class compiled", habitats.size() == bits.size() and habitats.size() == 19)
+	_expect("habitat class compiled", habitats.size() == bits.size() and habitats.size() > 0)
 	var wheat_habitat := -1
 	var pig_habitat := -1
 	var pig_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.pig")

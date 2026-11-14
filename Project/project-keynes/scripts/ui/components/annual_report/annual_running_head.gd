@@ -24,7 +24,7 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size.y = AnnualReportTokens.RUNNING_HEAD_HEIGHT
 	# show_behind_parent：孩子先画，父节点 _draw() 的文字后画，文字才不会被渐变糊住。
-	_veil = ColorRect.new()
+	_veil = UIControlParts.color_rect()
 	_veil.name = "Veil"
 	_veil.show_behind_parent = true
 	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE

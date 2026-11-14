@@ -22,15 +22,28 @@ description: >
 `docs/architecture/current-state.md`（改动后必须同步更新）。
 开始任何生成相关改动前，先读它 + 本 skill，不要凭空假设。
 
+写作者地图脚本（`generate(ctx)` / PKAUTH / PKMAP / 自定义大陆河湖）时改用 `authored-map-authoring`，不要在本 skill 里发明作者语言。
+
 ## 关键文件
+
+base 归 `world_ext_generate_base.cpp`，post-base/full/publish 归
+`world_ext_generate.cpp`，季节阶段归 `world_ext_season_refresh.cpp`。
+几何编排归 `world_ext_bake.cpp`，编码与分块分别归
+`world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp`。
+脚本助手及输入边界见 `docs/architecture/source-module-splits.md`。
+2026-11-09 山地修复：所有尺寸统一冻结山脊基底与 p99 高度预算，仅顶部约 1%
+软收尾；烘焙增加可选 `cell_landform`、两圈区域起伏与山地/高峰下限。
+主脊/刻谷当前默认值读 `terrain_index_baker.gd::DEM_DEFAULTS`，
+旧 `MapBaker.RELIEF_AMP/K_CREST` 属于历史 fallback，不是 native DEM 参数。
+契约、参数和验证见 `docs/architecture/current-state.md` 的山地高度与烘焙起伏节。
 
 | 角色 | 路径 |
 |---|---|
 | 生成编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd` |
 | bake 编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/rendering/map_baker.gd` |
-| C++ 权威实现 | `Project.Keynes/gdext/src/world_ext.cpp`（注意：大文件，用 grep 定位，勿整文件重写） |
+| C++ 权威实现 | `gdext/src/world_ext_generate*.cpp`、`world_ext_season_refresh.cpp`、`world_ext_bake*.cpp`，按上述职责定位 |
 | C++ 方法声明 | `Project.Keynes/gdext/src/world_ext.h` |
-| C++ 方法绑定 | `Project.Keynes/gdext/src/world_ext_bind_methods.cpp` |
+| C++ 方法绑定 | `gdext/src/world_ext_bind_<模块>.cpp` |
 | 并行设施 | `Project.Keynes/gdext/src/parallel_dispatcher.h`（`pk::parallel_for_range`） |
 | 设计文档 | `docs/architecture/current-state.md` |
 
@@ -55,28 +68,11 @@ description: >
    │     └─ _physical_solve_native_oneshot()            [step3] 一次 run_physical_solve_pass：
    │           SLP → wind → PSI → upwelling（读 bound slot，仅生成期一次性路径）
    │           失败回退 _physical_solve_step_one 逐 stage loop
-   ├─ encode：encode_height_tex / enum_atlas / flow_tex / r8(volcano)（C++ byte → GDScript 上传）
-   │     cell_luts 不在这里烘 —— 它读 bound slot，此刻未 bind，见 ④
-   ├─ VisionSolver.bake_static_fields()                  静态视野场 cell_view_height / cell_view_block
-   │     此刻 SoA 未初始化（init_soa_from_bake 在 bake_world 返回后才跑），必须能从 HexCell 读
+   ├─ encode：encode_height_tex / enum_atlas / flow_tex / r8(volcano) / cell_luts（C++ byte → GDScript 上传）
    └─ _bake_initial_vector_buffers（风/洋流像素 buffer 光栅化）
 ④ _setup_sus → bind_map_data（DCWorld + DCWorldExt）
-   ├─ _publish_native_generation_from_slots → run_native_world_generate_pass  [C++] bind 后初始仿真温度场 republish
-   ├─ run_deferred_initial_physical_circulation()   bake 期 defer 下来的物理环流
-   └─ run_deferred_initial_cell_luts()              bake 期 defer 下来的四张 per-cell LUT
-         encode_cell_luts 走 C++（此刻已 bind），读到的是 publish 后的权威气候值；
-         enum_lut 是 RGBA8，A = 迷雾知识度 fog_k（未解算时恒 255）
+   └─ _publish_native_generation_from_slots → run_native_world_generate_pass  [C++] bind 后初始仿真温度场 republish
 ```
-
-**bind 前后是硬边界**：凡是读 bound slot 的东西（物理环流、`encode_cell_luts`）都不能在
-`bake_world` 内部算 —— `bind_map_data` 要等 `bake_world` 返回、`init_soa_from_bake` 跑完
-才发生，就地算 100% 退回 GDScript。统一用 defer 标志推到 ④，那里仍在 `generate()` 内，
-早于渲染器绑定纹理。新增此类 pass 时照抄 `_initial_physical_deferred` /
-`_initial_cell_luts_deferred` 这套模式，别在 bake 期临时判 `has_method` 了事。
-
-**defer 会改变数据快照时点**，要顺带检查依赖：`fog_k_arr` 在 `init_soa_from_bake` 后
-是"尺寸够但全 0"，与"全图未探索"无法区分，所以判据必须是 `MapData.fog_solved` 而不是
-数组大小（踩过：`enum_lut.a` 均值从 255 掉到 0，首帧全图黑）。
 
 ## C++↔GDScript 数据传输三种机制
 
@@ -135,8 +131,10 @@ display metadata; seeding does not read it.
   在 C++ 内串联，**不跨语言往返**；GDScript 只发一次 combined knobs + 解包。
 - **fallback 纪律**：用户要求"全 C++、不降级"时，wrapper 在 ext/方法缺失或返回 fallback 时
   `push_error` 返回空 buffer（不静默退回 GDScript 计算）；但**融合 pass 通常保留"融合优先 + 旧路径回退"**，
-  让 DLL 未 rebuild 时仍能跑。两者区别按任务要求定。
-- **三处必须同步**：`world_ext.h`（声明）+ `world_ext.cpp`（实现）+ `world_ext_bind_methods.cpp`（`ClassDB::bind_method`）。
+  让 DLL 未 rebuild 时仍能跑。两者区别按任务要求定。2026-11 的 map_generator 第2a批明确采用前者：
+  climate Pass-A/B、ocean water/land、sea ice、transpiration 的 wrapper 只打包/同步/报告，
+  native 失败时保留上一份字段并返回失败，不再执行 GDScript 全图热循环。
+- **三处必须同步**：`world_ext.h`（声明）+ `world_ext.cpp`（实现）+ `world_ext_bind_<模块>.cpp`（`ClassDB::bind_method`）。
   漏 bind → GDScript `has_method` 探测不到 → 走 fallback。
 - **knobs 键名唯一**：同一 Dictionary 里键不能重名（踩过坑：`height` 既当维度又当 buffer → 用 `height_buffer`）。
 - **bit-equal 不强求**：用户一般迁完自己验证；几何用 float 复刻 Godot `Vector2` real_t、scalar 用 double，
@@ -157,11 +155,9 @@ terrain-index 并行预计 4–8x。降 `derived_size` 分辨率会让 terrain+e
 ## SOP：新增一个生成期 bake pass
 
 1. **grounding**：读对应 GDScript ground-truth 实现 + 现有同范式 C++ pass + 设计文档。
-2. **C++**：在 `world_ext.h` 声明、`world_ext.cpp` 实现（buffer-encoder 范式）、`world_ext_bind_methods.cpp` 绑定。
+2. **C++**：在 `world_ext.h` 声明、`world_ext.cpp` 实现（buffer-encoder 范式）、`world_ext_bind_<模块>.cpp` 绑定。
 3. **GDScript wrapper**：native-first（`has_method` 探测）+ 按任务要求决定是否保留 fallback。
-4. **文档**：更新 `docs/architecture/current-state.md`（状态表 + 专节 + I/O 契约）。改到 LUT 通道布局、
-   `encode_cell_luts` 入参或迷雾/国界视觉时，同步 `vision-fog-and-borders.md`；
-   新增进存档的生成期产物时，同步 `docs/architecture/development-guide.md` 的 section 清单。
+4. **文档**：更新 `docs/architecture/current-state.md`（状态表 + 专节 + I/O 契约）。
 5. **校验**：`read_lints` 两侧 0 错误；grep 确认方法名跨 `.h`/`.cpp`/bind/GDScript/doc 对齐；交用户编译跑 A/B。
 
 ## 验证清单（交付给用户编译后看日志）
@@ -171,3 +167,5 @@ terrain-index 并行预计 4–8x。降 `derived_size` 分辨率会让 terrain+e
 - `[native_generation/base|post_base] path=gdext ...`
 - 无 `fallback` / `push_error` / `phys_field_nan_guard>0`
 - 视觉：地形/河流/火山辉光/海岸/洋流方向与迁移前一致
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

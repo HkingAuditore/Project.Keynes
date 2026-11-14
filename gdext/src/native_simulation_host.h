@@ -214,6 +214,11 @@ public:
     int64_t committed_day_value() const noexcept {
         return _committed_day.load(std::memory_order_acquire);
     }
+    // The only day publish_environment accepts under Climate authority: the day
+    // after the last published frame. Every main-thread publisher starts here.
+    int64_t next_environment_day() const noexcept {
+        return _environment_day.load(std::memory_order_acquire) + 1;
+    }
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -1204,9 +1209,19 @@ private:
     bool country_authority_drain_idle_locked() const;
     void queue_country_milestone_notifications_locked(
         const std::shared_ptr<const RuntimeCountryPodSnapshot> &snapshot);
-    bool execute_ideology_worker_stage(int64_t day,
-                                       RuntimeDayCommit &commit,
-                                       std::string &error);
+    // How one Ideology day ended. Only PARKED retries the day; FAULT means the
+    // stage's inputs can never arrive (no catalog, no Country snapshot, a day
+    // before the POD's committed day), so retrying would only hang.
+    enum class IdeologyStageOutcome : uint8_t {
+        COMMITTED,
+        ALREADY_COMMITTED,  // a parked day planned again; the POD settled it
+        AWAITING_OPINION,   // Economy has not committed an opinion yet
+        PARKED,
+        FAULT,
+    };
+    IdeologyStageOutcome execute_ideology_worker_stage(int64_t day,
+                                                       RuntimeDayCommit &commit,
+                                                       std::string &error);
     // Real Ideology -> Modifier bridge (replaced the synthetic OK ACK; used when the
     // worker also owns MODIFIER). Transition rows are resolved against the
     // Modifier catalog up front (all-or-nothing), submitted as one atomic
@@ -1536,7 +1551,6 @@ private:
     int64_t _ideology_catalog_mismatch_count = 0;
     uint64_t _ideology_last_reference_catalog_hash = 0;
     uint64_t _ideology_last_worker_catalog_hash = 0;
-    std::atomic<uint64_t> _ideology_worker_opinion_revision{0};
     // R9-1: which opinion the worker consumed for which day, as ONE record.
     //
     // Three independent atomics cannot express this: a reader can see plan_day
@@ -2105,6 +2119,7 @@ private:
     std::atomic<uint64_t> _ideology_pod_snapshot_generation{0};
     std::atomic<uint32_t> _ideology_pod_pending_transition_count{0};
     std::atomic<uint32_t> _ideology_pod_intent_count{0};
+    std::atomic<uint32_t> _ideology_opinion_wait_days{0};
     std::array<std::atomic<char>, 64> _ideology_pod_fallback_reason{};
     // H7/H8 Trigger transport. The POD authority itself lives in
     // _domain_authority_runner (shared with the SHADOW probe); these are the

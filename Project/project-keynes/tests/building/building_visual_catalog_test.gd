@@ -40,7 +40,9 @@ func _init() -> void:
 			"fired_brick_kiln": "kiln", "open_pottery_hearth": "kiln", "soap_plant": "chemical",
 			"steam_engine_works": "machinery", "computers_plant": "electronics",
 			"nuclear_power_plant": "energy", "classical_academy": "knowledge",
-			"merchant_post": "service",
+			"merchant_post": "service", "army_depot": "service", "martial_academy": "service",
+			"armor_plate_mill": "metallurgy", "spear_knapper": "workshop",
+			"nitric_acid_plant": "chemical", "mbt_works": "machinery", "drone_factory": "electronics",
 		}
 		var spot_ok := true
 		for type_id in spot:
@@ -59,6 +61,14 @@ func _init() -> void:
 			and layer._type_to_grade[paddy] == 0
 			and layer._type_to_grade[textile] > layer._type_to_grade[paddy]
 			and layer._type_to_grade[computers] > layer._type_to_grade[textile])
+		var table = preload("res://scripts/rendering/building_visual_family_table.gd").load_default()
+		var explicit: Dictionary = table.resolve("drone_factory", "manufacturing", 0,
+			PackedStringArray(), "", PackedStringArray(), "", PackedStringArray())
+		_expect("military types use authored presentation mappings", explicit.source == "type")
+		var unknown: Dictionary = table.resolve("unknown_military_factory", "manufacturing", 0,
+			PackedStringArray(), "", PackedStringArray(), "", PackedStringArray())
+		_expect("unknown military ids do not inherit a guessed family", unknown.family == -1)
+
 		layer.free()
 	var technology := TechnologyCatalogScript.compile_native_catalog()
 	_expect("technology catalog compiles", bool(technology.get("ok", false)))

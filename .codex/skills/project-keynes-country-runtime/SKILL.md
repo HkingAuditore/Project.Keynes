@@ -45,6 +45,10 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
 - Do not let mid-cycle country changes enter an already frozen economy cycle.
 - Do not let economy start a new frozen cycle while due country commands remain uncommitted.
 - Restore PKCN before PKEC and reject legacy countryless PKEC schemas precisely.
+- Before worker start, raise the shared request-ID allocator above restored
+  Economy terminal peer identities as well as Country receipts and pending
+  Host commands. Empty transport queues do not make historical IDs reusable;
+  never resolve a collision by clearing journals or relaxing identity checks.
 - Restore PKFG after PKCN, and never store exploration progress inside PKCN.
   Vision and country borders only consume `cell.country_slot`; they are not
   country authority. See `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
@@ -52,11 +56,7 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
   consumers subscribe to it; do not add a second notification path.
 - Add taxation only through the dedicated tax/fiscal contract: country owns policy and treasury;
   economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
-  deletion, or technology revocation as incidental behavior.
-- Foreign-country AI lives only in the Country AI runtime (`country_ai_*`, PKSV `pkai`) and acts
-  through player-equivalent commands. Do not add AI decisions or AI-only writes to the Country
-  runtime itself; load `project-keynes-country-ai-runtime` and
-  `docs/cpp-dots-runtime/country-ai-runtime.md` instead.
+  country AI, deletion, or technology revocation as incidental behavior.
 
 ## The Country POD plan window is not a leak
 

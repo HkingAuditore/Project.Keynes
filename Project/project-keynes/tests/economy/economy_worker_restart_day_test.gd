@@ -428,11 +428,6 @@ func _drive_day(w: Dictionary) -> Dictionary:
 	_service_peers(ext)
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	if clock.has_method("has_hard_barrier"):
-		var pulses := 0
-		while bool(clock.has_hard_barrier()) and pulses < 400:
-			clock.simulation_backpressure_pulse.emit(day)
-			pulses += 1
 	# Soft barrier: let the worker consume the day this tick just captured. A
 	# stalled or faulted worker must not hang the fixture, so it is a bounded
 	# wait, exactly like the production host's day wait.

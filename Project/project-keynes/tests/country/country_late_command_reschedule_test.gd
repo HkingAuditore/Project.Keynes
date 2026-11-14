@@ -187,7 +187,7 @@ func _run() -> void:
 	var states_before_early: PackedInt32Array = snap_before_early.get(
 		"technology_states", PackedInt32Array())
 	var tech_domains: PackedInt32Array = compiled.get(
-		"technology_domains", PackedInt32Array())
+		"technology_domain_indices", PackedInt32Array())
 	var early_tech_index := -1
 	for tech_index in range(states_before_early.size()):
 		if int(states_before_early[tech_index]) != 2:

@@ -289,9 +289,12 @@ static func _dump_economic_snapshots(generator, payload: Dictionary,
 	if DirAccess.make_dir_recursive_absolute(root) != OK:
 		result["error"] = "snapshot_directory_create_failed"
 		return result
-	var ext = generator.get_data_core_world_ext() \
-		if generator != null and generator.has_method("get_data_core_world_ext") else null
-	if ext == null:
+	var country = generator.get_country_facade() \
+		if generator != null and generator.has_method("get_country_facade") else null
+	var economy = generator.get_economy_facade() \
+		if generator != null and generator.has_method("get_economy_facade") else null
+	if country == null or economy == null \
+			or country.world_ext() == null or economy.world_ext() == null:
 		result["error"] = "world_ext_unavailable"
 		return result
 	var epoch_active := bool(payload.get("economy", {}).get("epoch_active", false))
@@ -300,9 +303,9 @@ static func _dump_economic_snapshots(generator, payload: Dictionary,
 	result["forensics_only"] = true
 	result["restore_eligible"] = false
 	result["files"]["country.pkcn"] = _write_native_save_stream(
-		ext, "country", root.path_join("country.pkcn"), 4 * 1024 * 1024)
+		country, root.path_join("country.pkcn"), 4 * 1024 * 1024)
 	result["files"]["economy.pkec"] = _write_native_save_stream(
-		ext, "economy", root.path_join("economy.pkec"), 4 * 1024 * 1024)
+		economy, root.path_join("economy.pkec"), 4 * 1024 * 1024)
 	var manifest := FileAccess.open(root.path_join("manifest.json"), FileAccess.WRITE)
 	if manifest != null:
 		manifest.store_string(JSON.stringify({
@@ -321,18 +324,9 @@ static func _dump_economic_snapshots(generator, payload: Dictionary,
 	return result
 
 
-static func _write_native_save_stream(ext, domain: String, path: String,
+static func _write_native_save_stream(facade, path: String,
 		chunk_bytes: int) -> Dictionary:
-	var begin_method := "begin_country_forensics_save" if domain == "country" \
-		else "begin_economy_forensics_save"
-	var read_method := "read_country_save_chunk" if domain == "country" \
-		else "read_economy_save_chunk"
-	var end_method := "end_country_save" if domain == "country" \
-		else "end_economy_save"
-	if not ext.has_method(begin_method) or not ext.has_method(read_method) \
-			or not ext.has_method(end_method):
-		return {"ok": false, "reason": "native_forensics_save_api_unavailable"}
-	var begun: Dictionary = ext.call(begin_method, chunk_bytes)
+	var begun: Dictionary = facade.begin_forensics_save(chunk_bytes)
 	if not bool(begun.get("ok", false)):
 		return {"ok": false, "reason": String(begun.get("reason", "begin_failed"))}
 	var file := FileAccess.open(path, FileAccess.WRITE)
@@ -341,7 +335,7 @@ static func _write_native_save_stream(ext, domain: String, path: String,
 	if file == null:
 		write_error = "snapshot_file_open_failed:%s" % error_string(FileAccess.get_open_error())
 	while true:
-		var chunk: PackedByteArray = ext.call(read_method, chunk_bytes)
+		var chunk: PackedByteArray = facade.read_forensics_save_chunk(chunk_bytes)
 		if chunk.is_empty():
 			break
 		if file != null and write_error.is_empty():
@@ -352,7 +346,7 @@ static func _write_native_save_stream(ext, domain: String, path: String,
 				bytes_written += chunk.size()
 	if file != null:
 		file.close()
-	var ended: Dictionary = ext.call(end_method)
+	var ended: Dictionary = facade.end_forensics_save()
 	if not write_error.is_empty():
 		return {"ok": false, "reason": write_error, "bytes": bytes_written}
 	return {"ok": bool(ended.get("ok", false)), "path": path,

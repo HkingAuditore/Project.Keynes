@@ -7,6 +7,21 @@ namespace pk {
 namespace economy_api { bool military_purchase_receipt(const NativeEconomyRuntime &e, int64_t s, int64_t &q, int64_t &c) { return e.military_purchase_receipt(s, q, c); } }
 namespace economy_api {
 
+godot::Dictionary detail_report(const NativeEconomyRuntime &economy) {
+    return economy.report();
+}
+bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
+    const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
+    const uint8_t *passable, const int32_t *move_cost, int32_t count,
+    uint64_t generation, std::string &error, const uint8_t *landform, const uint8_t *river) {
+    return economy.capture_trade_topology(neighbors, terrain, canal_mask, canal_water,
+        passable, move_cost, count, generation, error, landform, river);
+}
+bool capture_trade_visibility(NativeEconomyRuntime &economy, const uint8_t *visible,
+    int32_t count, bool solved, bool from_map, std::string &error) {
+    return economy.capture_trade_visibility(visible, count, solved, from_map, error);
+}
+
 bool valid_family_effect_entity_handle(const NativeEconomyRuntime &economy,
                                        uint64_t handle) {
     return economy.valid_family_effect_entity_handle(handle);
@@ -166,7 +181,6 @@ void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy) { economy.
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units) { return economy.military_read_state_buildings(out_cells, out_type_ids, out_state_roles, out_units); }
 godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_build(country_handle, cell_idx, type_id, effective_day, sequence, queue_for_worker); }
 godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_demolish(country_handle, cell_idx, type_id, count, effective_day, sequence, queue_for_worker); }
-godot::Dictionary migrate_legacy_state_buildings(NativeEconomyRuntime &economy, const godot::Array &states) { return economy.migrate_legacy_state_buildings(states); }
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp) { return economy.set_country_procurement_policy(country_handle, enabled, treasury_share_bp, research_share_bp, effective_day, sequence, era_share_bp, colonization_share_bp); }
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy) { return economy.trade_topology_ready_for_test(); }
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell) { return economy.trade_passable_for_test(cell); }

@@ -71,7 +71,7 @@ func settlement_core_buckets() -> PackedByteArray:
 
 func refresh_visible_cells(world_ext: Object, requested_cells: PackedInt32Array,
 		visible: PackedByteArray) -> Dictionary:
-	if world_ext == null or not world_ext.has_method("get_building_visual_snapshot"):
+	if world_ext == null:
 		return {"ok": false, "reason": "building_visual_native_api_unavailable",
 			"changed_cells": PackedInt32Array()}
 	var filtered := PackedInt32Array()

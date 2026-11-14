@@ -31,7 +31,7 @@ For native daily / system graph work, inspect:
 - `Project.Keynes/Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
 - `Project.Keynes/Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`
 - `Project.Keynes/gdext/src/world_ext.cpp`
-- `Project.Keynes/gdext/src/world_ext_bind_methods.cpp`
+- `gdext/src/world_ext_bind_<模块>.cpp`
 - `Project.Keynes/gdext/src/system_schedule.cpp`
 - `Project.Keynes/gdext/src/sus_scheduler_ext.cpp`
 
@@ -189,3 +189,5 @@ When reporting DOTS deepening work, state:
 - Which slots are read/written and which outputs are published.
 - Whether fallback remains and how it reports failures.
 - What parity, build, and runtime evidence was collected.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

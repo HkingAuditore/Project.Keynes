@@ -48,7 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_DIR = REPO_ROOT / "Project" / "project-keynes"
 DEFAULT_CATALOG = "res://data/country/default_country_ai.tres"
 APPLY_SCRIPT = "res://tools/country_ai_tune/apply_params.gd"
-PERF_SCRIPT = "res://tests/headless_perf_record.gd"
+PERF_SCRIPT = "res://tests/game/headless_perf_record.gd"
 DEFAULT_GODOT = os.environ.get(
     "GODOT_BIN",
     r"D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe",

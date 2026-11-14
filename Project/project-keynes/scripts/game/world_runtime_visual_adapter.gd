@@ -11,14 +11,14 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 	# failures and eventually crash before the first post-restore economy day.
 	# Keep country/research event ingress alive without constructing visual state.
 	if DisplayServer.get_name() == "headless":
-		host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host, )
-		host._player_country_slot = _resolve_player_country_slot(host, )
-		host._player_country_handle = _resolve_player_country_handle(host, )
-		_connect_country_committed(host, )
+		host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host)
+		host._player_country_slot = _resolve_player_country_slot(host)
+		host._player_country_handle = _resolve_player_country_handle(host)
+		_connect_country_committed(host)
 		# Keep monotonic exploration and discovery ingress identical to a visual
 		# session. Only texture/LUT/border publication is omitted.
 		host._loading_visual_step("_refresh_vision()")
-		_refresh_vision(host, )
+		_refresh_vision(host)
 		return
 	host._renderer.hex_size = host.hex_size
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
@@ -52,7 +52,7 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 	if not host._session_preparation_active():
 		return
 	WebTelemetry.emit("bind_step", {"s": "pre_bind_country"})
-	_bind_country_visuals(host, )
+	_bind_country_visuals(host)
 	WebTelemetry.emit("bind_step", {"s": "post_bind_country"})
 	# ---- Military layers
 	# Created after the world/renderer bind, configured by PlayerGame on
@@ -102,9 +102,9 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 	# 每 cell 开销被放大 10~50 倍）。它纯属观感层，改成进世界后再补。
 	if OS.has_feature("web"):
 		WebTelemetry.emit("bind_step", {"s": "settlement_labels_deferred"})
-		_defer_settlement_labels_after_ready(host, )
+		_defer_settlement_labels_after_ready(host)
 	else:
-		_bind_settlement_labels(host, )
+		_bind_settlement_labels(host)
 
 
 ## Web 专用：把定居点标签层推到进世界之后（逐 cell 建 Label 在 wasm 上 45s 量级）。
@@ -121,7 +121,7 @@ func _defer_settlement_labels_after_ready(host) -> void:
 	if host._exiting_tree or not host.is_inside_tree() or not session.is_current(token):
 		return
 	var started = Time.get_ticks_msec()
-	_bind_settlement_labels(host, )
+	_bind_settlement_labels(host)
 	var elapsed = Time.get_ticks_msec() - started
 	print("[settlement-labels] web deferred bind %dms" % elapsed)
 	WebTelemetry.emit("bind_step", {"s": "deferred_settlement_labels_done", "dur": elapsed})
@@ -140,12 +140,12 @@ func _bind_settlement_labels(host) -> void:
 ## NativeCountryRuntime 发布到 MapData，可以直接首解算。
 
 func _bind_country_visuals(host) -> void:
-	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host, )
-	host._player_country_slot = _resolve_player_country_slot(host, )
-	host._player_country_handle = _resolve_player_country_handle(host, )
+	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host)
+	host._player_country_slot = _resolve_player_country_slot(host)
+	host._player_country_handle = _resolve_player_country_handle(host)
 	if host._renderer != null and host._renderer.has_method("set_fog_of_war_enabled"):
 		host._renderer.set_fog_of_war_enabled(host._fog_of_war_enabled, host.fog_early_out_enabled)
-	_connect_country_committed(host, )
+	_connect_country_committed(host)
 	var report = refresh_country_visuals(host, "world_ready")
 	var vision: Dictionary = report.get("vision", {})
 	var border: Dictionary = report.get("border", {})
@@ -173,19 +173,19 @@ func _connect_country_committed(host) -> void:
 
 func _on_country_committed(host, report: Dictionary) -> void:
 	if host._player_country_slot < 0:
-		host._player_country_slot = _resolve_player_country_slot(host, )
+		host._player_country_slot = _resolve_player_country_slot(host)
 	if int(report.get("changed_cells", 0)) > 0:
 		# CLAIM may be published by the worker before the deferred visual refresh
 		# pulse. Push the immutable territory snapshot immediately so MapData,
 		# market-cell ownership and the border layer cannot observe the old owner.
-		_sync_country_territory_to_map(host, )
+		_sync_country_territory_to_map(host)
 		host._country_visual_refresh_pending = true
 		host._country_visual_refresh_reason = "country_territory_committed"
 		return
-	var capability_now = _has_remote_observation_capability(host, )
+	var capability_now = _has_remote_observation_capability(host)
 	if capability_now != host._remote_observation_capability:
 		host._remote_observation_capability = capability_now
-		var vision = _refresh_vision(host, )
+		var vision = _refresh_vision(host)
 		_republish_cell_luts(host, host._vision_dirty_indices)
 
 func _on_research_signal_discovered(host, event: Dictionary) -> void:
@@ -222,16 +222,16 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	# 若 country_committed 抢在 flush 之前触发，视野会用旧 country_slot_arr 解算，
 	# 国界/Inspector 随后看到新领土，邻格就只剩迷雾柔边「看起来亮了」。
 	var _cv_t = Time.get_ticks_usec()
-	out["territory_sync"] = _sync_country_territory_to_map(host, )
+	out["territory_sync"] = _sync_country_territory_to_map(host)
 	_cv_phase(host, "territory_sync", _cv_t)
 	if host._player_country_slot < 0:
-		host._player_country_slot = _resolve_player_country_slot(host, )
+		host._player_country_slot = _resolve_player_country_slot(host)
 	var previous_visible = host._current_map.visible_arr.duplicate()
 	# 首解前 enum_lut.a 按全知 255 编码，而 fog_dirty_indices 是对内存里全 0 的
 	# fog_k_arr 求差，只覆盖首都周边；首次发布必须全量重编码，否则其余格子保持全知。
 	var first_fog_publish = not host._current_map.fog_solved
 	var _cv_t2 = Time.get_ticks_usec()
-	out["vision"] = _refresh_vision(host, )
+	out["vision"] = _refresh_vision(host)
 	_cv_phase(host, "vision", _cv_t2)
 	if not out["vision"].has("newly_visible_cells"):
 		var changed = PackedInt32Array()
@@ -256,12 +256,12 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	var _cv_t3 = Time.get_ticks_usec()
 	out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices, first_fog_publish)
 	_cv_phase(host, "lut", _cv_t3)
-	_refresh_resource_visual_context(host, )
+	_refresh_resource_visual_context(host)
 	var _cv_t4 = Time.get_ticks_usec()
 	out["building_intel"] = _refresh_building_visual_intel(host, out["vision"])
 	_cv_phase(host, "building_intel", _cv_t4)
 	var _cv_t5 = Time.get_ticks_usec()
-	out["border"] = _refresh_country_borders(host, )
+	out["border"] = _refresh_country_borders(host)
 	_cv_phase(host, "borders", _cv_t5)
 	if host._settlement_label_layer != null:
 		host._settlement_label_layer.set_fog_enabled(host._fog_of_war_enabled)
@@ -305,14 +305,14 @@ func player_country_slot(host) -> int:
 ##     recoverable desync is not escalated into a load failure.
 
 func finalize_save_restore_visuals(host) -> Dictionary:
-	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host, )
-	var territory_sync: Dictionary = _sync_country_territory_to_map(host, )
-	host._player_country_slot = _resolve_player_country_slot(host, )
-	host._player_country_handle = _resolve_player_country_handle(host, )
+	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host)
+	var territory_sync: Dictionary = _sync_country_territory_to_map(host)
+	host._player_country_slot = _resolve_player_country_slot(host)
+	host._player_country_handle = _resolve_player_country_handle(host)
 	if host._renderer != null and host._renderer.has_method("set_fog_of_war_enabled"):
 		host._renderer.set_fog_of_war_enabled(
 			host._fog_of_war_enabled, host.fog_early_out_enabled)
-	var drift = _player_start_cell_drift(host, )
+	var drift = _player_start_cell_drift(host)
 	if not drift.is_empty():
 		push_warning("[save/restore] %s" % String(drift.get("detail", "")))
 		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
@@ -323,7 +323,7 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 	# 这种状态解算出来的视野是全黑的，继续跑还会被下一次自动存档写死，
 	# 所以直接让读档失败，而不是交出一张「全部未探索」的地图。
 	if host._fog_of_war_enabled and host._player_country_slot < 0:
-		var start_cell = _resolve_player_start_cell(host, )
+		var start_cell = _resolve_player_start_cell(host)
 		var mirror_slot = -2
 		if host._current_map != null and start_cell >= 0 \
 				and start_cell < host._current_map.country_slot_arr.size():
@@ -335,7 +335,7 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 			native_summary = JSON.stringify(
 				host._generator.get_country_facade().cell_summary(start_cell))
 		var unbound_detail = "start_cell=%d mirror_slot=%d saved_start_cell=%d territory_sync=%s native=%s" % [
-			start_cell, mirror_slot, _saved_player_start_cell(host, ),
+			start_cell, mirror_slot, _saved_player_start_cell(host),
 			JSON.stringify(territory_sync), native_summary]
 		push_warning("[save/restore] player country unbound %s" % unbound_detail)
 		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
@@ -384,8 +384,8 @@ func _report_player_start_cell(host) -> int:
 func _player_start_cell_drift(host) -> Dictionary:
 	if host._pending_load_bundle.is_empty():
 		return {}
-	var saved_cell = _saved_player_start_cell(host, )
-	var computed_cell = _report_player_start_cell(host, )
+	var saved_cell = _saved_player_start_cell(host)
+	var computed_cell = _report_player_start_cell(host)
 	if saved_cell < 0 or computed_cell < 0 or saved_cell == computed_cell:
 		return {}
 	var config_seed = -1
@@ -411,7 +411,7 @@ func is_fog_of_war_enabled(host) -> bool:
 func set_fog_of_war_enabled(host, enabled: bool) -> void:
 	host.fog_of_war_enabled = enabled
 	var previous_fog_enabled = host._fog_of_war_enabled
-	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host, )
+	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host)
 	if previous_fog_enabled != host._fog_of_war_enabled:
 		host._building_visual_force_full_refresh = true
 	if host._renderer != null and host._renderer.has_method("set_fog_of_war_enabled"):
@@ -438,13 +438,13 @@ func _resolve_fog_of_war_enabled(host) -> bool:
 		return false
 	if not host.fog_of_war_enabled:
 		return false
-	return _resolve_player_start_cell(host, ) >= 0
+	return _resolve_player_start_cell(host) >= 0
 
 
 func _resolve_player_country_slot(host) -> int:
 	if host._current_map == null:
 		return -1
-	var start_cell = _resolve_player_start_cell(host, )
+	var start_cell = _resolve_player_start_cell(host)
 	if start_cell < 0 or start_cell >= host._current_map.country_slot_arr.size():
 		return -1
 	return int(host._current_map.country_slot_arr[start_cell])
@@ -453,7 +453,7 @@ func _resolve_player_country_slot(host) -> int:
 func _resolve_player_country_handle(host) -> int:
 	if host._generator == null or not host._generator.has_method("get_country_facade"):
 		return 0
-	var start_cell = _resolve_player_start_cell(host, )
+	var start_cell = _resolve_player_start_cell(host)
 	var facade = host._generator.get_country_facade()
 	if facade == null or start_cell < 0:
 		return 0
@@ -467,10 +467,10 @@ func _resolve_player_country_handle(host) -> int:
 
 func _resolve_player_start_cell(host) -> int:
 	if not host._pending_load_bundle.is_empty():
-		var saved_cell = _saved_player_start_cell(host, )
+		var saved_cell = _saved_player_start_cell(host)
 		if saved_cell >= 0:
 			return saved_cell
-	var report_cell = _report_player_start_cell(host, )
+	var report_cell = _report_player_start_cell(host)
 	if report_cell >= 0:
 		return report_cell
 	var flow = host._game_flow_service()
@@ -485,7 +485,7 @@ func _resolve_player_start_cell(host) -> int:
 func _sync_country_territory_to_map(host) -> Dictionary:
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null \
 		and host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("sync_country_territory_to_map"):
+	if ext == null:
 		return {"ok": false, "reason": "sync_country_territory_unavailable"}
 	return ext.sync_country_territory_to_map()
 
@@ -505,7 +505,7 @@ func _refresh_vision(host) -> Dictionary:
 			host._vision_dirty_indices[cell] = cell
 		return fallback
 	var facade = host._generator.get_country_facade() if host._generator.has_method("get_country_facade") else null
-	host._remote_observation_capability = _has_remote_observation_capability(host, )
+	host._remote_observation_capability = _has_remote_observation_capability(host)
 	var result: Dictionary = ext.run_vision_research_pass({
 		"player_slot": host._player_country_slot,
 		"remote_observation": host._remote_observation_capability,
@@ -650,7 +650,7 @@ func _ensure_native_vision_configured(host, ext: Object) -> bool:
 
 func _has_remote_observation_capability(host) -> bool:
 	if host._player_country_handle == 0:
-		host._player_country_handle = _resolve_player_country_handle(host, )
+		host._player_country_handle = _resolve_player_country_handle(host)
 	var facade = host._generator.get_country_facade() if host._generator != null \
 		and host._generator.has_method("get_country_facade") else null
 	if facade == null or host._player_country_handle == 0:
@@ -678,7 +678,7 @@ func _submit_discovered_map_signals(host, previous: PackedByteArray) -> void:
 			or host._generator == null or not host._generator.has_method("get_country_facade"):
 		return
 	var facade = host._generator.get_country_facade()
-	var handle = _resolve_player_country_handle(host, )
+	var handle = _resolve_player_country_handle(host)
 	if facade == null or handle == 0:
 		return
 	var commands: Array[Dictionary] = []

@@ -42,13 +42,8 @@ func tick(ctx) -> Dictionary:
 			int(result.get("cursor_end", -1)), String(result.get("path", "?")),
 			int(result.get("active_visits", -1)), int(result.get("pending_transition_visits", -1))])
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
-		# Keep compatibility with an older DCWorldExt binary. The native method is
-		# the precise continuation gate when present; `not done` is the legacy
-		# equivalent and avoids a hard call failure until the extension is rebuilt.
-		var ideology_pending := not done
-		if facade.world_ext().has_method("ideology_needs_daily_continuation"):
-			ideology_pending = bool(facade.world_ext().ideology_needs_daily_continuation(
-				int(ctx.day_index) if ctx != null else 0))
+		var ideology_pending := bool(facade.world_ext().ideology_needs_daily_continuation(
+			int(ctx.day_index) if ctx != null else 0))
 		world_clock.request_simulation_backpressure(&"ideology_day_barrier",
 			ideology_pending)
 	return {"done": done, "work_done": int(result.get("commands_applied", 0)) + int(result.get("active_visits", 0)) + int(result.get("pending_transition_visits", 0)),

@@ -1,6 +1,7 @@
 extends Control
 class_name TechnologyWorkspace
 
+const TechnologyDetails = preload("res://scripts/ui/components/technology_workspace_details.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const NationalProcurementSliderScript = preload("res://scripts/ui/components/national_procurement_slider.gd")
@@ -1349,396 +1350,51 @@ func _rebuild_queue_rows(offsets: PackedInt32Array,
 
 
 func _refresh_detail(refresh_relations: bool = true) -> void:
-	var index := _selected_technology
-	if index < 0:
-		index = int(_available.selected_technology()) if _available != null else -1
-	if index < 0:
-		index = int(_tree.selected_technology()) if _tree != null else -1
-	if index < 0 or index >= _definitions.size():
-		_detail_signature = ""
-		_detail.show_empty()
-		return
-	_selected_technology = index
-	var research_states: PackedInt32Array = _research.get(
-		"technology_states", PackedInt32Array()).duplicate()
-	if not _optimistic_queue.is_empty():
-		var offsets: PackedInt32Array = _research.get(
-			"queue_offsets", PackedInt32Array()).duplicate()
-		var technologies: PackedInt32Array = _research.get(
-			"queue_technology_indices", PackedInt32Array()).duplicate()
-		_overlay_optimistic_into(research_states, offsets, technologies, false)
-	var states := _presentation_states(research_states)
-	var state := int(states[index]) if index < states.size() else 0
-	var definition: Dictionary = _definitions[index]
-	if _is_retired(index):
-		# Only a legacy queued token can be selected (via its queue row): show
-		# it with the remove action and nothing else.
-		_detail_signature = ""
-		if state == 3:
-			_detail.show_retired_queued(index, definition)
-		else:
-			_selected_technology = -1
-			_detail.show_empty()
-		return
-	if not TechnologyTreeView.presents_state(state):
-		_detail_signature = ""
-		_detail.show_unknown(_condition_items(index, states), state)
-		return
-	var progress: PackedInt64Array = _research.get(
-		"technology_progress", PackedInt64Array())
-	# Compare in the runtime's scaled units. cost_points is an integer point
-	# count and rounds to 0 for cheap nodes, which pinned their gauge at 0%.
-	var cost := maxf(1.0, float(definition.get("cost_points_scaled",
-		int(definition.get("cost_points", 1)) * POINT_SCALE)))
-	var earned := float(progress[index]) if index < progress.size() else 0.0
-	_detail.set_schedule(_schedule_text(index, state))
-	if not refresh_relations and not _detail_signature.is_empty():
-		_detail.update_progress(state, earned / cost, definition)
-		return
-	var relations := _relations_for(index, states)
-	# Relation rows are the only part that allocates nodes, so they are rebuilt
-	# only when the selection or any related state actually changed.
-	var signature := "%d:%d:%s" % [index, state, _relation_signature(relations)]
-	if signature == _detail_signature:
-		_detail.update_progress(state, earned / cost, definition)
-		return
-	_detail_signature = signature
-	var domain := _domain_index_of(definition)
-	_detail.show_technology(index, definition, state, earned / cost,
-		_domain_accent(domain),
-		String(_era_names.get(String(definition.get("era_id", "")),
-			String(definition.get("era_id", "")))),
-		_domain_name(domain), relations)
+	TechnologyDetails._refresh_detail(self, refresh_relations)
 
 
 func _relation_signature(relations: Dictionary) -> String:
-	var parts := PackedStringArray()
-	for group in ["prerequisites", "hard_successors", "branch_successors", "applications"]:
-		for entry in relations.get(group, []) as Array:
-			parts.append("%d" % int((entry as Dictionary).get("state", 0)))
-		parts.append("/")
-	for entry in relations.get("condition_items", []) as Array:
-		parts.append(String((entry as Dictionary).get("text", "")))
-		parts.append("|")
-	return "".join(parts)
+	return TechnologyDetails._relation_signature(self, relations)
 
 
 func _relations_for(index: int, states: PackedInt32Array) -> Dictionary:
-	var definition: Dictionary = _definitions[index]
-	var hard_ids: PackedStringArray = definition.get(
-		"prerequisite_ids", PackedStringArray())
-	if _is_application_definition(definition):
-		hard_ids = definition.get("required_technology_ids", definition.get(
-			"application_foundation_ids", PackedStringArray()))
-	var rationales: PackedStringArray = definition.get(
-		"prerequisite_rationales", PackedStringArray())
-	var prerequisites: Array = []
-	var prerequisite_ids: PackedStringArray = hard_ids
-	for prerequisite_cursor in range(prerequisite_ids.size()):
-		var prerequisite_id := String(prerequisite_ids[prerequisite_cursor])
-		var prerequisite_index := int(_technology_indices.get(prerequisite_id, -1))
-		if prerequisite_index < 0 or _is_retired(prerequisite_index):
-			continue
-		var reason := String(rationales[prerequisite_cursor]) \
-			if prerequisite_cursor < rationales.size() else ""
-		prerequisites.append(_relation_entry_with_rationale(
-			prerequisite_index, states, reason))
-	var hard_successors: Array = []
-	var selected_id := String(definition.get("id", ""))
-	for target_index in range(_definitions.size()):
-		if _is_retired(target_index):
-			continue
-		var target: Dictionary = _definitions[target_index]
-		var target_hard_ids: PackedStringArray = target.get(
-			"prerequisite_ids", PackedStringArray())
-		var rationale_index := target_hard_ids.find(selected_id)
-		if rationale_index < 0:
-			continue
-		var target_rationales: PackedStringArray = target.get(
-			"prerequisite_rationales", PackedStringArray())
-		var reason := String(target_rationales[rationale_index]) \
-			if rationale_index < target_rationales.size() else ""
-		hard_successors.append(_relation_entry_with_rationale(
-			target_index, states, reason))
-	var branch_successors := _authored_relation_entries(definition,
-		"branch_successor_ids", "branch_successor_rationales", states)
-	var applications := _authored_relation_entries(definition,
-		"application_target_ids", "application_target_rationales", states)
-	if not _is_application_definition(definition):
-		for target_index in range(_research_definition_count, _definitions.size()):
-			var application: Dictionary = _definitions[target_index]
-			var required_ids: PackedStringArray = application.get(
-				"required_technology_ids", PackedStringArray())
-			if required_ids.has(selected_id):
-				applications.append(_relation_entry(target_index, states))
-	return {
-		"prerequisites": prerequisites,
-		"hard_successors": hard_successors,
-		"branch_successors": branch_successors,
-		"applications": applications,
-		"condition_items": _condition_items(index, states),
-	}
+	return TechnologyDetails._relations_for(self, index, states)
 
 
 func _authored_relation_entries(definition: Dictionary, ids_key: String,
 		rationales_key: String, states: PackedInt32Array) -> Array:
-	var out: Array = []
-	var ids: PackedStringArray = definition.get(ids_key, PackedStringArray())
-	var rationales: PackedStringArray = definition.get(rationales_key, PackedStringArray())
-	for cursor in range(ids.size()):
-		var target_index := int(_technology_indices.get(String(ids[cursor]), -1))
-		if target_index < 0 or _is_retired(target_index):
-			continue
-		var rationale := String(rationales[cursor]) if cursor < rationales.size() else ""
-		out.append(_relation_entry_with_rationale(target_index, states, rationale))
-	return out
+	return TechnologyDetails._authored_relation_entries(self, definition, ids_key, rationales_key, states)
 
 
 func _relation_entry_with_rationale(index: int, states: PackedInt32Array,
 		rationale: String) -> Dictionary:
-	var entry := _relation_entry(index, states)
-	if not rationale.is_empty() and int(entry.get("state", 0)) > 0:
-		entry["name"] = "%s：%s" % [String(entry.name), rationale]
-	return entry
+	return TechnologyDetails._relation_entry_with_rationale(self, index, states, rationale)
 
 
 func _relation_entry(index: int, states: PackedInt32Array, prefix: String = "") -> Dictionary:
-	var state := int(states[index]) if index < states.size() else 0
-	if not TechnologyTreeView.presents_state(state):
-		return {"name": "未知科技", "state": 0}
-	var name := String((_definitions[index] as Dictionary).get("display_name", ""))
-	return {
-		"name": ("%s · %s" % [prefix, name]) if not prefix.is_empty() else name,
-		"state": state,
-	}
-
-
-func _relation_prefix(kind: String, outgoing: bool) -> String:
-	match kind:
-		"hard": return "随后解锁" if outgoing else "需要先完成"
-		"alternative": return "发现条件"
-		"application": return "应用"
-
-	return "相关科技"
+	return TechnologyDetails._relation_entry(self, index, states, prefix)
 
 
 func _condition_items(index: int, states: PackedInt32Array) -> Array:
-	if index < 0 or index >= _definitions.size():
-		return []
-	var definition: Dictionary = _definitions[index]
-	if _is_application_definition(definition):
-		return _application_condition_items(definition, states)
-	var items: Array = []
-	if _is_retired(index):
-		return items
-	var evidence := _signal_evidence()
-	var reveal_spec: Dictionary = definition.get("reveal_condition", {})
-	if not reveal_spec.is_empty():
-		var reveal_result := _evaluate_condition(reveal_spec, states, evidence)
-		var reveal_met := bool(reveal_result.get("met", false))
-		items.append({
-			"text": "发现条件 · %s" % ("已满足" if reveal_met else "未满足"),
-			"icon": &"technology.state.completed" if reveal_met else &"technology.state.locked",
-			"accent": UITokens.GOOD if reveal_met else UITokens.WARN,
-			"met": reveal_met,
-		})
-		for item_value in reveal_result.get("items", []) as Array:
-			var item: Dictionary = item_value
-			var inspiration := item.duplicate()
-			inspiration["text"] = "发现：%s" % String(item.get("text", ""))
-			items.append(inspiration)
-	var hard_ids: PackedStringArray = definition.get("prerequisite_ids", PackedStringArray())
-	for hard_id in hard_ids:
-		var hard_index := int(_technology_indices.get(String(hard_id), -1))
-		if _is_retired(hard_index):
-			continue
-		var hard_state := int(states[hard_index]) if hard_index >= 0 and hard_index < states.size() else 0
-		var hard_name := "未知科技"
-		if TechnologyTreeView.presents_state(hard_state) and hard_index >= 0:
-			hard_name = String((_definitions[hard_index] as Dictionary).get("display_name", hard_name))
-		var hard_met := hard_state >= 5
-		items.append({
-			"text": "需要先完成：%s · %s" % [hard_name, "已完成" if hard_met else "未完成"],
-			"icon": &"technology.state.completed" if hard_met else &"technology.state.locked",
-			"accent": UITokens.GOOD if hard_met else UITokens.WARN,
-			"met": hard_met,
-		})
-	var routes: Array = definition.get("research_routes", [])
-	if not routes.is_empty():
-		items.append({"text": "研究路线：完成以下任意一条路线", "icon": &"metric.technology"})
-	for route_value in routes:
-		var route: Dictionary = route_value
-		var route_result := _evaluate_condition(route.get("condition", {}) as Dictionary,
-			states, evidence)
-		var route_met := bool(route_result.get("met", false))
-		var presented := TechnologyTreeView.presents_state(int(states[index]) if index < states.size() else 0)
-		var route_name := String(route.get("display_name", "研究条件")) if presented \
-			else "路线 %d" % (routes.find(route_value) + 1)
-		var route_description := String(route.get("description", "")) if presented else ""
-		var route_text := "研究条件 · %s" % route_name
-		if not route_description.is_empty():
-			route_text += "：%s" % route_description
-		items.append({
-			"text": "%s · %s" % [route_text, "已满足" if route_met else "未满足"],
-			"icon": &"technology.state.completed" if route_met else &"technology.state.locked",
-			"accent": UITokens.GOOD if route_met else UITokens.WARN,
-			"met": route_met,
-		})
-		for route_item_value in route_result.get("items", []) as Array:
-			var route_item: Dictionary = (route_item_value as Dictionary).duplicate()
-			route_item["text"] = "条件 · %s：%s" % [route_name,
-				String(route_item.get("text", ""))]
-			items.append(route_item)
-	return items
+	return TechnologyDetails._condition_items(self, index, states)
 
 
 func _signal_evidence() -> Dictionary:
-	var snapshot: Dictionary = _research.get("research_signal_snapshot", {})
-	var dense_ids: PackedInt32Array = snapshot.get("signal_ids", PackedInt32Array())
-	var counts: PackedInt32Array = snapshot.get("counts", PackedInt32Array())
-	var first_days: PackedInt64Array = snapshot.get("first_days", PackedInt64Array())
-	var first_cells: PackedInt32Array = snapshot.get("first_cells", PackedInt32Array())
-	var evidence := {}
-	for cursor in range(dense_ids.size()):
-		evidence[int(dense_ids[cursor])] = {
-			"count": int(counts[cursor]) if cursor < counts.size() else 0,
-			"first_day": int(first_days[cursor]) if cursor < first_days.size() else -1,
-			"first_cell": int(first_cells[cursor]) if cursor < first_cells.size() else -1,
-		}
-	var development_progress: Dictionary = _development.get("progress_by_signal", {})
-	for stable_id in development_progress:
-		var signal_index := int(_signal_indices.get(String(stable_id), -1))
-		if signal_index < 0:
-			continue
-		var progress: Dictionary = development_progress[stable_id]
-		evidence[signal_index] = {
-			"count": 1 if int(progress.get("completed", 0)) > 0 else 0,
-			"development": progress,
-		}
-	return evidence
+	return TechnologyDetails._signal_evidence(self)
 
 
 func _evaluate_condition(spec: Dictionary, states: PackedInt32Array,
 		evidence: Dictionary) -> Dictionary:
-	if spec.has("kind"):
-		return _evaluate_condition_atom(spec, states, evidence)
-	var children: Array = spec.get("children", [])
-	var operator := int(spec.get("operator", ResearchConditionScript.Operator.ATOM))
-	if operator == ResearchConditionScript.Operator.ATOM:
-		return _evaluate_condition_atom(spec.get("atom", {}), states, evidence)
-	var child_results: Array = []
-	var met_count := 0
-	var items: Array = []
-	for child in children:
-		var result := _evaluate_condition(child as Dictionary, states, evidence)
-		child_results.append(result)
-		met_count += 1 if bool(result.get("met", false)) else 0
-		items.append_array(result.get("items", []))
-	var met := false
-	match operator:
-		ResearchConditionScript.Operator.ALL_OF:
-			met = met_count == children.size()
-		ResearchConditionScript.Operator.ANY_OF:
-			met = met_count > 0
-		ResearchConditionScript.Operator.AT_LEAST:
-			met = met_count >= int(spec.get("required_count", 1))
-		ResearchConditionScript.Operator.NOT:
-			met = child_results.size() == 1 and not bool(
-				(child_results[0] as Dictionary).get("met", false))
-	var rule := ""
-	match operator:
-		ResearchConditionScript.Operator.ALL_OF: rule = "以下条件全部满足"
-		ResearchConditionScript.Operator.ANY_OF: rule = "以下条件任意满足一项"
-		ResearchConditionScript.Operator.AT_LEAST:
-			rule = "以下条件至少满足 %d 项" % int(spec.get("required_count", 1))
-		ResearchConditionScript.Operator.NOT: rule = "以下条件不成立"
-	if not rule.is_empty():
-		items.push_front({"text": "%s（%s）" % [rule, "已满足" if met else "未满足"],
-			"met": met, "icon": &"technology.state.completed" if met else &"technology.state.locked",
-			"accent": UITokens.GOOD if met else UITokens.WARN})
-	return {"met": met, "items": items}
+	return TechnologyDetails._evaluate_condition(self, spec, states, evidence)
 
 
 func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 		evidence: Dictionary) -> Dictionary:
-	var kind := int(atom.get("kind", -1))
-	var stable_id := String(atom.get("id", atom.get("reference_id", "")))
-	var required := maxi(1, int(atom.get("value", 1)))
-	if kind == ResearchPredicateScript.Kind.TECH_COMPLETED:
-		var technology_index := int(_technology_indices.get(stable_id, -1))
-		var technology_state := int(states[technology_index]) \
-			if technology_index >= 0 and technology_index < states.size() else 0
-		var met := technology_state >= 5
-		var technology_name := "未知科技"
-		if TechnologyTreeView.presents_state(technology_state) \
-				and technology_index < _definitions.size():
-			technology_name = String((_definitions[technology_index] as Dictionary).get(
-				"display_name", technology_name))
-		return {
-			"met": met,
-			"items": [{
-				"text": "前置科技：%s（%s）" % [
-					technology_name, "已完成" if met else "未完成"],
-				"icon": &"technology.state.completed" if met else &"technology.state.locked",
-				"accent": UITokens.GOOD if met else UITokens.WARN,
-				"source_kind": "technology",
-				"met": met,
-			}],
-		}
-	if kind not in [ResearchPredicateScript.Kind.SIGNAL_PRESENT,
-			ResearchPredicateScript.Kind.SIGNAL_COUNT]:
-		return {"met": false, "items": []}
-	var signal_index := int(_signal_indices.get(stable_id, -1))
-	var row: Dictionary = evidence.get(signal_index, {})
-	if stable_id.begins_with("development."):
-		var development: Dictionary = row.get("development", {})
-		var definition := _development_definition(stable_id)
-		var qualifier := int(development.get("qualifier_threshold",
-			definition.get("qualifier_threshold", required)))
-		var current := int(development.get("current_value", 0))
-		var target_days := maxi(1, int(development.get("target_days",
-			definition.get("duration_days", 1))))
-		var consecutive := int(development.get("consecutive_days", 0))
-		var met := int(row.get("count", 0)) > 0 or int(development.get("completed", 0)) > 0 \
-			or (current >= qualifier and consecutive >= target_days)
-		var name := String(_signal_names.get(stable_id, stable_id))
-		return {
-			"met": met,
-			"items": [{
-				"text": "%s：%s" % [name, "已达成" if met else _development_value_text(
-					definition, current, qualifier, consecutive, target_days)],
-				"icon": &"technology.state.completed" if met else &"technology.state.locked",
-				"accent": UITokens.GOOD if met else UITokens.WARN,
-				"source_kind": "signal",
-				"met": met,
-			}],
-		}
-	var count := int(row.get("count", 0))
-	var target := required if kind == ResearchPredicateScript.Kind.SIGNAL_COUNT else 1
-	var met := count >= target
-	var name := String(_signal_names.get(stable_id, stable_id))
-	var source := ""
-	if count > 0:
-		source = "，首次记录：第 %d 日 / 地块 %d" % [
-			int(row.get("first_day", -1)), int(row.get("first_cell", -1))]
-	return {
-		"met": met,
-		"items": [{
-			"text": "%s：%s %d/%d%s" % [
-				"证据" if met else "阻塞", name, count, target, source],
-			"icon": &"technology.state.completed" if met else &"technology.state.locked",
-			"accent": UITokens.GOOD if met else UITokens.WARN,
-			"source_kind": "signal",
-			"met": met,
-		}],
-	}
+	return TechnologyDetails._evaluate_condition_atom(self, atom, states, evidence)
 
 
 func _development_definition(signal_id: String) -> Dictionary:
-	for definition in DevelopmentAchievementCatalogScript.definitions():
-		if String((definition as Dictionary).get("signal_id", "")) == signal_id:
-			return definition as Dictionary
-	return {}
+	return TechnologyDetails._development_definition(self, signal_id)
 
 
 func _on_available_selected(index: int) -> void:
@@ -1979,86 +1635,21 @@ func _presentation_progress(research_progress: PackedInt64Array) -> PackedInt64A
 
 func _application_state(definition: Dictionary,
 		research_states: PackedInt32Array) -> int:
-	if not _is_application_definition(definition):
-		return 0
-	var required: PackedStringArray = definition.get(
-		"required_technology_ids", definition.get(
-			"application_foundation_ids", PackedStringArray()))
-	if required.is_empty():
-		return 0
-	var all_completed := true
-	for technology_id in required:
-		var index := int(_technology_indices.get(String(technology_id), -1))
-		var state := int(research_states[index]) \
-			if index >= 0 and index < research_states.size() else 0
-		if not TechnologyTreeView.presents_state(state):
-			return 0
-		if state < 5:
-			all_completed = false
-	return 5 if all_completed else 2
+	return TechnologyDetails._application_state(self, definition, research_states)
 
 
 func _application_condition_items(definition: Dictionary,
 		states: PackedInt32Array) -> Array:
-	var items: Array = []
-	var required: PackedStringArray = definition.get(
-		"required_technology_ids", definition.get(
-			"application_foundation_ids", PackedStringArray()))
-	var primary_id := String(definition.get("primary_technology_id",
-		String(required[0]) if not required.is_empty() else ""))
-	for technology_id_value in required:
-		var technology_id := String(technology_id_value)
-		var index := int(_technology_indices.get(technology_id, -1))
-		var state := int(states[index]) if index >= 0 and index < states.size() else 0
-		var met := state >= 5
-		var name := "未知科技"
-		if index >= 0 and TechnologyTreeView.presents_state(state):
-			name = String((_definitions[index] as Dictionary).get(
-				"display_name", technology_id))
-		items.append({
-			"text": "%s：%s · %s" % [
-				"主科技" if technology_id == primary_id else "支撑科技",
-				name, "已完成" if met else "未完成"],
-			"icon": &"technology.state.completed" if met else &"technology.state.locked",
-			"accent": UITokens.GOOD if met else UITokens.WARN,
-			"met": met,
-		})
-	_append_application_constraints(items, definition,
-		"required_input_good_ids", "投入商品", "投产时核验")
-	_append_application_constraints(items, definition,
-		"required_resource_ids", "自然资源", "建设地点核验")
-	_append_application_constraints(items, definition,
-		"required_tile_condition_ids", "地块条件", "建设地点核验")
-	_append_application_constraints(items, definition,
-		"required_terrain_ids", "地块条件", "建设地点核验")
-	_append_application_constraints(items, definition,
-		"required_landform_ids", "地块条件", "建设地点核验")
-	return items
+	return TechnologyDetails._application_condition_items(self, definition, states)
 
 
 func _append_application_constraints(items: Array, definition: Dictionary,
 		field: String, category: String, verification: String) -> void:
-	for value in definition.get(field, []):
-		var label := ""
-		if value is Dictionary:
-			label = String((value as Dictionary).get("display_name",
-				(value as Dictionary).get("id", "")))
-		else:
-			label = str(value)
-		if label.is_empty():
-			continue
-		items.append({
-			"text": "%s：%s · %s" % [category, label, verification],
-			"icon": &"technology.state.locked",
-			"accent": UITokens.WARN,
-			"met": false,
-		})
+	TechnologyDetails._append_application_constraints(self, items, definition, field, category, verification)
 
 
 func _is_application_definition(definition: Dictionary) -> bool:
-	return bool(definition.get("is_application", false)) \
-		or String(definition.get("anchor_kind", "")) == "application" \
-		or String(definition.get("id", "")).begins_with("app.")
+	return TechnologyDetails._is_application_definition(self, definition)
 
 
 func _domain_index_of(definition: Dictionary) -> int:

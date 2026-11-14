@@ -1190,6 +1190,55 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     apply_military_deferred_cash(day);
     std::vector<MilitaryIntentReceipt> receipts;
     collect_military_receipts(day, receipts);
+    // Personnel commands settle on the Economy boundary after the original
+    // digest capture.  When a terminal personnel receipt is visible, refresh
+    // the small population view before Military reconciles its garrison lots;
+    // using the older digest here leaves the roster one command behind.
+    bool refresh_soldier_view = false;
+    for (const MilitaryIntentReceipt &receipt : receipts) {
+        if (receipt.kind == MILITARY_INTENT_ENLIST ||
+            receipt.kind == MILITARY_INTENT_LEVY ||
+            receipt.kind == MILITARY_INTENT_DISCHARGE ||
+            receipt.kind == MILITARY_INTENT_CASUALTY ||
+            receipt.kind == MILITARY_INTENT_ARMY_EMBARK ||
+            receipt.kind == MILITARY_INTENT_ARMY_DISEMBARK) {
+            refresh_soldier_view = true;
+            break;
+        }
+    }
+    if (refresh_soldier_view && _economy_runtime != nullptr) {
+        EconomyMilitaryCellView current_view;
+        economy_api::military_read_cell_view(
+            *static_cast<NativeEconomyRuntime *>(_economy_runtime),
+            current_view, core->catalog().economy_good_count);
+        digest.cell_population = current_view.population;
+        digest.cell_unemployed = current_view.unemployed;
+        digest.cell_soldiers = current_view.soldiers;
+        digest.cell_has_merchant = current_view.has_merchant;
+    }
+    // A discharge is booked out of the Military lots when its intent is
+    // emitted, while Economy applies the cohort conversion at effective_day.
+    // If the next Military day is admitted before that Economy day commits,
+    // the digest still contains the old soldier cohort.  Reuse the existing
+    // bridge rows as the in-flight record and subtract only rows whose
+    // effective day is still ahead of Economy's committed watermark.  Once the
+    // command has committed, the refresh above (or the normal next capture)
+    // supplies the post-conversion cohort, so it is never subtracted twice.
+    if (_economy_runtime != nullptr && !digest.cell_soldiers.empty()) {
+        const NativeEconomyRuntime &economy =
+            *static_cast<NativeEconomyRuntime *>(_economy_runtime);
+        const int64_t committed_day = economy_api::last_committed_day(economy);
+        for (const MilitaryPendingIntent &row : _military_pending_intents) {
+            if (row.authority != 2 || row.receipt_pending != 1 ||
+                row.kind != MILITARY_INTENT_DISCHARGE || row.cell < 0 ||
+                static_cast<size_t>(row.cell) >= digest.cell_soldiers.size() ||
+                row.effective_day <= committed_day)
+                continue;
+            const int64_t heads = std::max<int64_t>(0, row.count);
+            digest.cell_soldiers[static_cast<size_t>(row.cell)] = std::max<int64_t>(
+                0, digest.cell_soldiers[static_cast<size_t>(row.cell)] - heads);
+        }
+    }
     // ---- 3. The military day ----
     std::vector<MilitaryIntent> intents;
     intents.reserve(256);

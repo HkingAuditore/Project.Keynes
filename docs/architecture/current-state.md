@@ -1,170 +1,6 @@
 # 当前运行状态
 
-## 国库收支滚动窗口（2026-11-10）
-
-国库顶栏悬停卡与经济卷宗总览不再把「最近一次结算」冒充当天流水。
-`EconomyFiscalHistory` 现在同时保存逐已提交日国库现金与按财政 `sample_day`
-去重的结算事件；展示层默认显示近 30 日日均，总览可切换近 7 日/近 30 日。
-窗口内税种、补贴和非税支出先按真实结算事件汇总，净额再用国库现金首尾差校准，
-差额单列为「其他国库变动」。历史不足时按实际覆盖天数折算；不足两个现金样本时
-回退到最近一次结算，不补零、不伪造整月。折线保留逐日结算读数（未结算日沿用上次），
-用于观察波动；
-顶栏悬停与经济卷宗共用 `EconomyDossierViewModel.cashflow_from_history()`。
-
-验证：`tests/economy/economy_fiscal_history_rolling_test.gd` 覆盖结算去重、无结算日、
-7/30 日边界、历史不足、未归类现金变化和净额与国库差一致；`tests/ui/hud_status_card_test.gd`
-通过。`tests/economy/economy_dossier_view_model_test.gd` 的滚动窗口与切换断言通过，
-整页套件仍有一项既有的跨章区段滚动断言失败：断言硬编码要求滚动量大于 100，
-而本次空产业台账下页面最多只能滚到 74；跨章跳转本身已落到产业章投资段。
-C++、存档格式与存档字段未改。
-
-## 派遣来源目录、进度与筹备缩编（2026-11-10）
-
-已实现：目标入口直接按出发地分组列当地家族，使用地点与家族的组合身份；
-顶部派遣按钮打开全国进行中队伍，按日事件、控制器绑定与命令回执刷新。
-筹备详情保留当前队伍并显示三项实际物资进度、状态和采购阻碍；取消/召回放在
-详情底部。紧凑视口保留两栏，极窄视口才上下排列；顶部空间不足时缩紧留白与字号，
-派遣按钮保留文字入口，时代名回到宽视口显示。没有增加逐帧轮询或 UI 模拟权威。
-
-Economy 筹备重验取 `min(计划人数, 当前当地可派人数)`，保留最后族人/商人与军人
-排除规则；缩编后重算采购目标及进度分母。已有成交托管与在途采购续接保留，
-后续只补实际缺口。状态沿用既有远征列，存档布局、跨域财政契约和 cadence 不变。
-契约与回归入口见 [家族开拓运行时](../cpp-dots-runtime/family-colonization-runtime.md)。
-
-验证：Windows/Godot 4.6.2，Debug `dots_ext_dispatch_v3` 与 Release
-`dots_ext_dispatch_v2` 完成构建，人数缩减定向回归均零失败，实际出发后人口/货币/物资
-误差均为零。来源目录/刷新/取消/顶部入口及 workbench 回归通过；1280×720、
-2560×1080、1024×600 与移动 QA 档执行带渲染检查，含 125% UI 缩放和 10 倍速度。
-全项目编辑器脚本编译无 Parse Error / Failed to load script / SCRIPT ERROR。
-模块 API 与 C++ 依赖检查零违规。
-
-共享工作区随后将正式 Debug 库切到 `dots_ext_supply_chain_v4`，在该映射下复跑人数
-缩减专项仍为零失败。全项目编译时遇到同时新增经济历史脚本的两处数组元素类型推断
-错误，只补 `Dictionary` 注解后编译通过；其视图模型测试的章节跳转断言仍失败，未改
-相关导航逻辑，不把该测试报告为通过。
-
-完整家族旧套件仍有 12 项失败；修改前 `dots_ext_army_explore_v14` 在同一内容与脚本下
-也有全部这 12 项，另加本次新增缩编用例的 3 项失败；修复后这 3 项通过，没有新增失败。
-旧失败涉及 worker authority、旧存档断言、开工包内容/落成、效果奖励等，不能宣称完整套件
-已通过。PlayerController 旧契约测试仍有未改动的 `no frame polling` 失败。
-渲染进程另有既有 FMOD 调试器注册/退出日志；截图与 UI 断言正常完成。
-日志、基线对照与截图在 `.codex-temp/dispatch-20261110/`；UI 反模式扫描已人工复核
-本次新增行，未将全库机械命中数当作本次缺陷数。
-
-## 军事维护实物化（PKMI v6，2026-11-11）
-
-军事维护从“现金账单”改为“实物采购与消耗”：需求 → 国库付款给商人 → 物资交付与运输 →
-库存消耗 → 维修满足率 → 装备完好度或建筑失修。详见
-`docs/cpp-dots-runtime/military-runtime.md` §5.4 与 `docs/plans/military-physical-maintenance.md`。
-
-- Military 新增 `MilitaryMaintenanceRow`（按国家/地块/建筑类型与持有者/兵种分组）、
-  `run_maintenance`、`get_military_maintenance_snapshot`；固定点余量 `acc_q32` 与 5 日窗口进存档。
-- 采购走 opcode 37（`COMMAND_MILITARY_PURCHASE`）与 38/39 回执；`queue_purchase` 只登记订单，
-  `settle_purchase` 才入库/建车队/记账，订单身份进 PKMI section 24。
-- 预算顺序固定为 军饷预占 → 维护份额 → 一般采购，三者共用同一份冻结国库快照。
-- 经济侧新增 `kind == 3` 显式跳过（私营建筑维护不得为军事建筑买单）。
-- 验证：原生自检全绿（1500 日 AI soak `reconcile_max=0`）；三份维护验收用例
-  （snapshot / flow / conservation）均 0 failures；种子 1812289715 的 60×40 世界跑到第 5500 日
-  零错误、账目恒等式为 0。
-
-## 军事维护回执与经济审计（2026-11-10）
-
-`SPEND_CASH` 的 D+1 兼容路径仍调用 Country 财政 reserve/collect：先扣后加，
-国库现金净变化为零。军事桥不再将返回额登记为货币销毁，经济也不再暂存这类
-跨 epoch burn；正式 cohort burn 命令和零误差守恒故障保护保留。维护费真实终端
-支出尚未接入，不能把回执金额当作已销毁现金。C++ 权威、周期和存档布局不变。
-定向回归见 `tests/economy/military_deferred_cash_conservation_test.gd`。
-Windows/Godot 4.6.2：旧 DLL 稳定复现 `money_error=1000`；修复后 Debug/Release
-各通过 37 项检查，含待回执恢复、九日续跑和第十日真实 cohort burn。
-正式 Debug 加载的 `dots_ext_supply_chain_v2` 亦通过该回归；Release 加载
-`dots_ext_cash_audit_v1`。经济 cadence、parity（26 项）、merchant debt 回归通过；
-市场综合测试 246 项中唯一失败为旧的 2x 产出断言与当前 1.5x 配置不符，
-旧 DLL 同样失败。未宣称已恢复玩家当前被 fatal 锁住的进程或完整重放第 5447 日。
-模块 API 检查与定向 diff 检查通过；UTF-8 模式的依赖检查在并行修改的
-`economy_runtime_colonization.cpp` 报 FamilyMembershipEdge 7>6、总量 2182>2181，
-本次未修改该文件或放宽基线。验证日志在 `.codex-temp/military_deferred_*.log`、
-`.codex-temp/cash_audit_*.log`，构建日志在 `.codex-temp/military_cash_build_*.log`。
-
-## 降雪散点显示（2026-11-09）
-
-逐地块雪幕仍由 WeatherLayer 的 MultiMesh 和已发布 weather_lut 驱动。
-weather_cell_curtain.gdshader 将格心附近抖动改为全格散点，按 patch/layer
-旋转查找坐标，逐雪花独立摆动，并以 3×3 邻格补画跨格雪花；形状距离转回
-世界方向，保留俯视椭圆及三层大小/速度/密度。移动/Web 同样保留完整散点，
-不再缩小位置随机范围。没有新增模拟、存档或上传状态；性能验证项目 shader 同步。
-
-Godot 4.6.2 / RTX4080 隔离 GPU 检查：五种宏变体、三层深度的 15 组空间
-频谱集中峰值降为旧版的 0.004–0.174 倍；五组连续帧确认动画仍推进。
-3×3 与 5×5 邻域在三层、三个时刻（含 12006 秒）逐像素一致，45 项通过；
-五种变体实际天气 LUT/flag 雪幕路径均出图。上述 50 项在 OpenGL Compatibility
-与 D3D12/Mobile 各通过一次。隔离脚本和对照图位于
-.codex-temp/snow-scatter-20261109/。尚未覆盖实际手机、浏览器及正式会话长时间画面。
-
-## 山地高度与烘焙起伏（2026-11-09）
-
-原生 base 生成在 `world_ext_generate.cpp` 冻结山脊基底，按陆地 p99 分配统一增量比例；
-必要时基底以海平面为锚线性缩放。只有顶部约 1% 使用导数连续的软收尾，
-不再按地图尺寸混入旧的逐点指数压缩。`ridge_budget_scale`、`ridge_base_scale`、
-`ridge_tail_cells`、`ridge_land_cells`、`ridge_elevation_cap` 由 base/full 结果包返回。
-这一步改变权威初始 elevation，后续水文和气候仍在既有生成管线中重算。
-
-terrain-index/fused geometry/visual tile 共同读取可选 `cell_landform` U8 SoA。
-山地/高峰/火山将邻格起伏与两圈区域起伏合并，山地/高峰起伏下限为 0.055/0.080；
-高原内部减弱细纹，陡坎仍由邻格高差驱动。三中心插值保持地貌权重连续。
-主脊振幅系数 0.55、波长 2.4 hex、尖化指数 2.2、倍频增益 0.40；
-汇流谷深/谷壁系数为 1.4/5.0，保留只降不升与陆地不低于水面的约束。
-这些烘焙细节写视觉高度 buffer，不新增 DataCore slot 或存档列。
-缺少 landform 的旧调用可继续按邻格起伏烘焙，非空错误长度明确 fallback。
-
-Windows Debug/Release DLL 为 `dots_ext_relief_v1`，正式项目已切换加载路径。
-定向测试 `tests/world/mountain_relief_bake_test.gd` 61 项通过，覆盖三尺寸、
-三海平面、确定性、软收尾比例、平原/高原保护、经度周期与刻谷约束；
-原生生成接口 32 项、地形边界索引 11 项通过。具体画面待玩家新生成地图验收。
-扩大分块检查的 `visual_tile_native_bake_test.gd` 在地图边界尺寸不变性断言失败，
-旧 `dots_ext_military_demand_v7` 与新 DLL 均为 ref=-0.146431/got=-0.103137，
-未改该既有断言或将完整分块检查计为通过。
-仅在临时夹具跳过上述既有失败后，其余分块测试通过，覆盖载荷、确定性、
-分辨率一致性、边界距离、细节、运河补丁和 horizon 重采样；正式测试文件保持原样。
-
-2026-11-09 天气云方块修复：低/中及移动/Web的廉价值噪声改为无循环的三角格点
-梯度噪声，旋转第二层并取消零线折叠；保留分档/双相位。均匀天气GPU回归：
-旧方格轮廓反例失败，新LOW/MID/Web通过；7天气变体连续性检查通过。证据见
-[云Shader分档验证的后续修复](../cpp-dots-runtime/cloud-weather-shader-quality-2026-11-09.md#后续天气云方块修复)。
-
-2026-11-09 云 Shader 分档：云影桌面 128×64 / 256×128 / 512×256，移动/Web
-128×64 / 192×96 / 256×128；单相位云形采样2/4/6次。天气云LOW主云、MID加卷云、
-HIGH加低雾；移动/Web均编译掉解析噪声栈，高档光照不再重复计算邻域云密度。
-17个shader变体连续性检查119项与正式节点切档39项通过。RTX4080桌面GL、1600×900
-隔离天气云HIGH GPU平均4.5855→0.6353ms；真机移动和浏览器未验。详见
-[云Shader分档验证](../cpp-dots-runtime/cloud-weather-shader-quality-2026-11-09.md)。
-
-2026-11-09 云影/天气云视觉平流：删除全图累计位移，改用局地风 + 24 秒双相位有界
-位移和零权重重置；新旧风仅在显示端按天气提交间隔混合。天气云经 HexRenderer 的
-信号连接复用云影已上传风 LUT，中云/卷云/低雾均接入，Web 裁剪卷云移除固定东向漂移。
-Godot 4.6.2 / OpenGL Compatibility 隔离渲染探针：云影、桌面天气云、Web 裁剪天气云
-共 21 项通过，周期边界和 12006 秒换风起点的最大像素变化为 1/255。反例仅恢复
-风乘总时间，12006 秒换风变化达 0.768627，检查按预期失败。三个宿主脚本解析通过；
-尚未覆盖正式会话长时间画面、移动设备性能和浏览器实际渲染。机制见
-[云影的世界空间连续性](../cpp-dots-runtime/vision-fog-and-borders.md#云影的世界空间连续性)。
-
-核查日期：2026-11-09。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
-
-范围：正式玩家会话请求 ACTIVE、十二域掩码 `0xFFF`。“请求 ACTIVE”“实际授权”“POD_ACTIVE”是三件不同的事。
-
-2026-11-08 经济平衡：C++仍为唯一结算权威，生存/生活需求评分寄生于既有市场循环。
-基本生活采用75%需求均值与25%最弱项；适用且职业正权重的舒适/奢侈需求分别提供
-70%→100%与90%→100%的综合分上限。环境需求恰为零时不制造最小需求。
-正式失业计划补齐12类生活需求；开局规划已接入真实全局倍率并纠正软投入语义。
-没有新增保存列、调度阶段、跨模块写边或第二套评分。数值、运行证据及尚未覆盖的全时代
-校准范围见 [经济平衡记录](../cpp-dots-runtime/economy-balance-2026-11-08.md)。
-
-2026-11-09 永昼视觉：共享日照 shader 按当地纬度与当日赤纬取正午高度
-`max(10°, 90° - abs(latitude - declination))`，日内时角在 ±70° 内浮动，默认一个游戏年完成两个 Shader 日，按实际游戏日历进度映射，水面高光与实例层同源，GM 手动方向优先。
-生产与性能验证项目的日历映射回归各 26 项通过，覆盖 365/360/10 日年历及固定日历时的倍速/帧 delta 独立性。
-Shader 日/游戏年比例也已接入 HexRenderer.shader_days_per_game_year；生产/性能验证项目各42项通过，含小数比例跨年和运行时调参。
-永昼调参已集中到 HexRenderer 的角度 export；实际 renderer/渲染层传参检查和 GPU uniform 调整检查在 Compatibility、D3D12/Mobile 各 43 项通过。
-Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通过；
-地被桌面/移动/分块档回归 28 项通过。详见 [TOD 光照](../cpp-dots-runtime/vision-fog-and-borders.md#tod-光照)。
+本页只写运行架构的现状。单个功能的现状与验证记录见 [feature-status.md](feature-status.md)。
 
 ## 十二域
 
@@ -218,27 +54,10 @@ Economy 原生门控，UI 隐藏入口只负责展示体验。
 
 这些推进者与日表“同日对齐”的实验开关 `PK_EXPERIMENT_EXTERNAL_DAY_ALIGNMENT` 只供测试子类读取；产品默认未切换，见 [migration.md](migration.md) 的推迟项。
 
-## GM 界面与事件屏蔽
-
-正式玩家 GM 的 `ui.suppress_popups` 在 Host 设置后通过 `gm_toggle_changed` 同步到
-PlayerController 的年度报告、叙事、时代奖励、家族创立和理念抽取流程。所有流程在展示前
-拦截，并在开关运行时切换时清理已排队或已锁定的弹窗，恢复由弹窗持有的时钟暂停，避免
-“屏蔽事件”仍偶发暂停。时代晋升大典也会只同步基线而不创建暂停演出。
-另有 `ui.hide_all_except_gm` 开关，隐藏 HUD、面板、模态层和过场层，只保留 DebugLayer
-中的 GM 面板；关闭后恢复切换前的可见性。
-GM 总览的时钟诊断还显示 `last_pause_source`、`last_pause_day` 和
-`authority_fault_hold`，用于区分 UI 自动暂停与运行时故障保护。
-2026-11-09：修正叙事自动确认未持有暂停锁却恢复默认「暂停 / 1倍速」的问题
-（截图入口 `_restore_clock:125`）。恢复只消费真实弹窗或读档弹窗登记的
-`restore_pending`，并保留其他弹窗忙碌时的延后恢复。验证入口为
-`tests/game/narrative_popup_suppression_test.gd`（24 项通过）、
-`narrative_event_runtime_test.gd`（36 项通过）和 `gm_runtime_host_test.gd`（PASS）。
-GM 屏蔽开关返回补齐实际 `enabled`。未新增时钟或模拟权威；
-扩大检查的 `player_controller_contract_test.gd` 仍有既有的逐帧更新约束及两项殖民派遣文案失败，未计为通过。
-
 ## 跨模块交接
 
 - **已提交视图（9 条，`check_committed_views.py`）**：Economy←Climate、Trigger←Events、Ideology←Modifier、Modifier←Effect、Ideology←Economy 意见、年报←Ideology、Country AI←Economy、年报←Country、Family 指标←Economy 意见。所有者复制已提交数据，带 generation/day，消费处检查游标单调。
+- **经济意见到思想系统**：后台与原生 inline 在每日执行边界直接复制经济最后提交的意见，并按目标日固定到已有意见缓存；同日继续计算不能换成之后发布的意见。首份意见尚未提交时仍保留未就绪状态，现有测试专用输入也经过同一按日固定。主线程发布延迟不再决定思想点数，SHADOW 仍使用其成对的参考输入。完整读档安装成功时清除旧日期缓存及按发布编号查询的输入接收记录，同一世界执行器重启保留未完成日输入。诊断中的意见日期与版本来自同一条实际接收记录。
 - **只读查询**：Economy 读 Country 的 27 种查询经 `CountryReadView`（借用所有者的只读函数表，不保证多次查询共享同一快照）。税率、科技、领土仍在 `capture_country_epoch` 用 `copy_economy_snapshot` 冻结。
 - **写入请求**：Economy→Country 的写全部走所有者端口（财政返还/预留/征收、采购、现金与物资转移、科研、国库支出）；`country_writes` 预算为 0，直接调用、别名、成员指针都不能重新引入。
 - **请求队列**：Host 通用命令、Country 命令、Economy 命令（含军事 24/30–34）、Trigger 命令共享 `runtime_resolve_contract.h` 的入队与顺序键；Effect→Modifier/Events、Ideology→Modifier 和同步 Effect 批次仍用各自既有协议。请求与保存位置的对照见 [module-boundaries.md](module-boundaries.md#请求与提交)。
@@ -271,6 +90,8 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 
 正式保存入口按 `worker_day_inflight` 和 `inline_day_pending` 判断 inline 的真实日边界，不能把无后台线程更新的 RUNNING 状态当成仍在计算。inline 返回前同步首次提交授予的归属，关闭 Country/Economy 的旧同步写入口。正式策略重启由 `world_runtime_lifecycle.gd` 等待 `simulation_executor_exited` 后再捕获并启动，失败会传回设置入口。`get_runtime_thread_report` 提供 `executor_serial_only` 检查调用线程的并行配置。重复启动及 inline+SHADOW 冲突在修改执行方式、并行设置、绑定或消耗待恢复存档之前拒绝。
 
+复用对象读档时，已经验证的 PKSR 且旧执行器退出后，地图输入按待恢复存档的日期检查，独立暂存新输入；旧世界的日期与满队列不阻止这一步。启动用暂存输入重新建立队列，不读取旧队列的未来帧。没有待恢复存档或执行器仍运行时，原日期、递增编号和容量检查继续生效。
+
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
 | climate | CLM2 v9 | environment | — |
@@ -290,7 +111,7 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 继续态里容易漏的字段（每项都曾造成读档后分叉，已修复）：
 
-- ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
+- ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、采样降雨边沿与冻结门槛（OSOA4 块 13）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
 - PKMI4：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行；
   section 23 保存玩家自动探路任务（任务行、选点、seen/visited/blocked、观察点、日期、返程）。
   trail、冻结 explored、fog 和派生索引不入档，恢复时重建。`military_for_each_lot_ordered`
@@ -302,28 +123,15 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 - `simulation_state_hash` 每天只把日期混入前值，不是业务状态摘要；`runtime_day_waterfall.h` 记耗时与完成掩码，也不是状态链。气候 ACTIVE 的 `compute_hashes=false`。
 - 整体经济哈希还读同步国家对象与 Modifier 的 ECONOMY 序列；`get_country_state_hash` 取同步对象，`get_country_report` 取 worker 快照副本，二者不是同一提交边界。
-- 黄金五链（`tests/runtime/golden_*`，`check_golden_determinism.py`）：v1 开局账目、v2 整体经济、v3 七个 worker 域投影、v4 Country 追加链、v5 表外推进者（军事政策与资源恢复）。末日 domains 摘要 `ccccb169…2291`。这是投影，不是完整十二域状态。2026-11-06 合并上游 c849f255（军事、建造/投资/采购/仓储改动）后重录 v2–v5：v1 账目链 `2242b251` 不变；改变的是 v2 整体经济哈希、v3 中 EVENTS/MODIFIER/TRIGGER_INPUT 三域、v4 COUNTRY、v5 MILITARY；CLIMATE/IDEOLOGY/EFFECT/ECONOMY 和 v5 其余域不变。旧值见合并提交的第一父提交。
+- 黄金场景（`tests/runtime/golden_*`，`check_golden_determinism.py`）覆盖开局账目、整体经济、七个 worker 域投影、Country 追加链及表外推进者（军事、资源恢复、家族、人物、视野）。这是投影，不是完整十二域状态。
+- 2026-11-11 起按用户快速调参的决定，撤掉提交的黄金和七份 intent 基线；同一个二进制重复运行逐字段一致，不改行为的重构则用仓库外临时候选做改前/改后对照。场景内的守恒、存读档和同日提交检查保留；调参后不需重录基线。此前重录记录属于历史证据，见 migration。
 - 保存续跑（`check_committed_replay.py --checkpoint --trace`、`check_replay_matrix.py`）：不中断、重放、保存不中断、另进程读档四条轨迹逐日比较，读档后至少八日。默认矩阵 4 个场景：save1、calendar5、multicountry5、military20；`--military-annual` 单跑 military365（真实年度自动存档，受时序影响不稳定，见 migration 已知问题）；`--full` 另加 save2/5/9 与 mixed5；`--annual` 保存第 365 日；`--annual-neighbors` 保存 364/366（手动档）。
 - 未覆盖：其他种子与平台、实际占领与战斗（测试地图路径不可达，只有合成占领自测）、任意 worker 日内命令位置、真实浏览器 Web 导出、图形长跑。
 
-## 规模（2026-11-09）
+## 规模（2026-11-11）
 
-- 护栏扫描 967 个源码文件；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
+- 长度检查扫描 1018 个源码文件，0 违规；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
+- `DCWorldExt` 的 646 个脚本方法分在 15 个模块绑定文件，`world_ext_bind_methods.cpp` 只顺序调用各模块；`world_ext.h` 的绑定声明按同样顺序分段，头文件 4050 行。数据归属和实现不变，入口与模块文件由 `tools/ci/world_ext_binding_modules.json` 登记，`check_world_ext_bindings.py` 核对归属；阶段 1 的验证见 [feature-status.md](feature-status.md)。
+- 阶段 2 第 1–2 步已登记 15 模块的脚本访问目录，`check_script_native_access.py` 冻结现有越界并接入本地/PR 护栏；没有迁移调用或替换接口探测。匹配规则见 [feature-guides.md](feature-guides.md)，本轮数量和验证见 [feature-status.md](feature-status.md)。
 - `world_runtime_host.gd` 2943 行；`map_generator.gd` 22563 行（超限债务，未拆）。
 - `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2147 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
-
-## 部队指挥 UI（2026-11-10）
-
-已接入固定指挥区、路径/区域/探路草稿、显式确认/取消、停止任务与姿态。探路只生成中心 +
-半径的选点并提交 `army.explore`，不调用路径预览；Native 任务、战斗暂停/恢复、返程与
-PKMI v6 已落地（section 23 探路 / 24 采购订单 / 25 维护行），Host 只合并 explored-only trail。部队页为 520 设计像素单页，
-军事权威与存档边界不变。输入/接线、原生探路集成、视野、存档契约及 1280/1920/520/21:9
-真实渲染夹具已验证；100k 军事日 p95 与征兵 smoke fixture 仍未达标，详见
-[部队自动探路计划](../plans/army-auto-exploration-plan.md) 与
-[部队指挥交互](../ui/military-army-controls.md)。
-
-## 军需需求接入市场（2026-11-08）
-
-已接通零库存军需报价、受资金约束的未满足采购预测、D+1 替换命令和 Economy 通用采购需求汇总；商人补货目标、生产规划与投资共享该汇总。预测只传递购买意愿，实际货物/现金仍由原采购结算处理。装备成交桥改传真实商品编号。继续态复用现有命令队列，没有新增存档字段。定向回归覆盖提前生效、撤销/重复/替换、零国库、未来需求 ECP2 保存及十日逐日完整经济哈希一致，并运行原生军事自测。
-
-验证证据：Debug/Release GDExtension 均构建成功；军需定向用例（含完整原生军事自测）与整图 ACTIVE POD 用例通过。相同弓箭营地开局五日累计产量：无军需 12,745，有军需 15,895（GOODS_SCALE）。模块 API、C++ 依赖及 Resolve/Apply 检查均为 0 violations。本轮未跑全量性能/长年测试；行数护栏仍有 14 个未触及的既有脚本超限。殖民与科研采购的旧基线字节断言仍失败，但修复前 `dots_ext_equip_v1` DLL 与本次 DLL 的两份测试输出逐字段完全一致，未更新基线。

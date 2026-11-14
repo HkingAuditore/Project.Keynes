@@ -1,5 +1,7 @@
 extends PanelContainer
 class_name InspectorPanel
+const InspectorCategoryPatch = preload("res://scripts/ui/components/inspector_category_patch.gd")
+
 
 const ResourceListScene := preload("res://scenes/ui/resource_list.tscn")
 const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
@@ -939,61 +941,27 @@ func _apply_category_patch(data: Dictionary) -> void:
 
 
 func _apply_category_block_patch(data: Dictionary) -> void:
-	var block_id := String(data.get("id", "_root"))
-	var notes := _note_controls.get(block_id) as InspectorNoteList
-	if notes != null and data.has("insights"):
-		var insights: Array = data.get("insights", [])
-		notes.set_notes(insights)
-		notes.visible = not insights.is_empty()
-	var facts := _metric_controls.get(block_id) as InspectorFactGrid
-	if facts != null and data.has("metrics"):
-		var metrics: Array = data.get("metrics", [])
-		facts.set_facts(metrics)
-		facts.visible = not metrics.is_empty()
-	var meters := _gauge_controls.get(block_id) as InspectorMeterList
-	if meters != null and data.has("gauges"):
-		var gauges: Array = data.get("gauges", [])
-		meters.set_meters(gauges)
-		meters.visible = not gauges.is_empty()
-	var caption := _list_caption_controls.get(block_id) as InspectorNoteList
-	if caption != null and data.has("list_caption"):
-		_set_list_caption(caption, String(data.get("list_caption", "")))
-	var refs: Dictionary = _section_refs.get(block_id, {})
-	if not refs.is_empty():
-		_apply_section_texts(refs, data)
-	if _badge_row != null and data.has("badges"):
-		_badge_row.update_badges(data.get("badges", []))
-	if _military_ledger != null and data.has("military_cell"):
-		_military_ledger.set_model(data.get("military_cell", {}))
-	if _cohort_list != null and data.has("cohort_rows"):
-		_cohort_list.update_rows(data.get("cohort_rows", []))
-	if _family_list != null and data.has("family_rows"):
-		_family_list.update_rows(data.get("family_rows", []))
-	if _resource_list != null and data.has("resource_rows"):
-		_resource_list.update_rows(data.get("resource_rows", []))
-	if _building_list != null and data.has("building_rows"):
-		_building_list.update_rows(data.get("building_rows", []))
-	if _construction_workspace != null and data.has("construction_entry"):
-		var entry_data: Dictionary = data.get("construction_entry", {})
-		if is_instance_valid(_construction_entry_hint):
-			var hint := String(entry_data.get("hint", ""))
-			_construction_entry_hint.text = hint
-			_construction_entry_hint.visible = not hint.is_empty()
-	if _market_list != null and data.has("market_rows"):
-		_market_list.update_rows(data.get("market_rows", []))
-	for raw in data.get("charts", []):
-		var chart: Dictionary = raw
-		var spark := _chart_controls.get(String(chart.get("id", ""))) as SparklineChart
-		if spark != null:
-			spark.set_data(
-				String(chart.get("title", "")),
-				chart.get("values", []),
-				chart.get("accent", UITokens.ACCENT),
-				float(chart.get("min_value", NAN)),
-				float(chart.get("max_value", NAN)),
-				int(chart.get("window_size", 0)),
-				String(chart.get("value_text", ""))
-			)
+	InspectorCategoryPatch._apply_category_block_patch(
+		{
+			"_note_controls": _note_controls,
+			"_metric_controls": _metric_controls,
+			"_gauge_controls": _gauge_controls,
+			"_list_caption_controls": _list_caption_controls,
+			"_section_refs": _section_refs,
+			"_badge_row": _badge_row,
+			"_military_ledger": _military_ledger,
+			"_cohort_list": _cohort_list,
+			"_family_list": _family_list,
+			"_resource_list": _resource_list,
+			"_building_list": _building_list,
+			"_construction_workspace": _construction_workspace,
+			"_construction_entry_hint": _construction_entry_hint,
+			"_market_list": _market_list,
+			"_chart_controls": _chart_controls
+		},
+		_set_list_caption,
+		_apply_section_texts,
+		data)
 
 
 func _add_collapsible_section(section: Dictionary) -> VBoxContainer:

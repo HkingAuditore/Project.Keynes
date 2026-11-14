@@ -137,6 +137,7 @@ func _run() -> void:
 	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_incumbent_gathering_expansion_uses_revealed_livelihood(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile)
+	_test_owner_only_loss_enters_lifecycle(catalog, profile, true)
 	_test_recovery_failure_commits_next_cycle(catalog, profile)
 	_test_soft_input_missing_does_not_block_suspended_restart(catalog, profile)
 	_test_service_building_excluded_from_producer_lifecycle(catalog, profile)
@@ -223,7 +224,8 @@ func _run() -> void:
 	_expect("production cycle conserves money", int(day1.get("money_error", 1)) == 0)
 	_expect("production cycle conserves market goods", int(day1.get("goods_error", 1)) == 0)
 	buildings = ext.get_building_cell_snapshot(0)
-	_expect("building snapshot reports five-day production period", int(buildings.get("period_days", 0)) == 5)
+	_expect("building snapshot reports the configured production period",
+		int(buildings.get("period_days", 0)) == int(profile.market_cycle_days))
 	var filled_owner: PackedInt64Array = buildings.get("filled_owner", PackedInt64Array())
 	print("  all-tech day1 debug=", {"types": buildings.get("group_type_ids"), "counts": buildings.get("group_counts"), "owners": buildings.get("owner_signature_ids"), "filled": buildings.get("filled_owner"), "required": buildings.get("owner_required"), "openings": buildings.get("owner_openings"), "planned": buildings.get("planned_utilization_q16"), "funded": buildings.get("funded_capacity_q16"), "capacity": buildings.get("capacity_q16"), "state": buildings.get("operating_state"), "pop": ext.get_population_cell_snapshot(0).get("populations"), "owner_pop": ext.get_population_cell_snapshot(0).get("owner_employed_by_cohort"), "unemp": ext.get_population_cell_snapshot(0).get("unemployed_by_cohort")})
 	_expect("owner job filled", filled_owner.size() > 0 and int(filled_owner[0]) == 1)
@@ -3540,7 +3542,7 @@ func _test_incumbent_gathering_expansion_uses_revealed_livelihood(
 
 
 func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
-		source_profile: Dictionary) -> void:
+		source_profile: Dictionary, real_maintenance: bool = false) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
 	profile.starvation_death_rate_q32 = 0
@@ -3560,6 +3562,23 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 	default_prices[cloth_good] = 1
 	catalog.good_default_price = default_prices
 	_block_construction_except(catalog, PackedInt32Array(), _luxury_blocking_good(catalog))
+	if not real_maintenance:
+		# Isolate owner livelihood from the current recipe's real upkeep bill.
+		# The paired case retains that bill and must record an operating loss.
+		var offsets := PackedInt32Array([0])
+		var construction_goods := PackedInt32Array()
+		var construction_quantities := PackedInt64Array()
+		for type in range(building_ids.size()):
+			if type != loom_id:
+				for edge in range(catalog.building_construction_offsets[type],
+						catalog.building_construction_offsets[type + 1]):
+					construction_goods.append(catalog.building_construction_good_ids[edge])
+					construction_quantities.append(catalog.building_construction_quantities[edge])
+			offsets.append(construction_goods.size())
+		catalog.building_construction_offsets = offsets
+		catalog.building_construction_good_ids = construction_goods
+		catalog.building_construction_quantities = construction_quantities
+		_sync_construction_candidates(catalog)
 	var ext := _new_ext(catalog)
 	_expect("owner-only loss country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 289))
@@ -3592,8 +3611,21 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var group := (buildings.group_type_ids as PackedInt32Array).find(loom_id)
 	var loom_market: Dictionary = ext.get_market_cell_snapshot(0)
-	_expect("installed loom keeps logs construction reserve",
-		_good_value(loom_market, "construction_material_reserve", "logs") > 0)
+	_expect("loom reserve follows its actual construction bill",
+		(_good_value(loom_market, "construction_material_reserve", "logs") > 0) == real_maintenance)
+	if real_maintenance:
+		_expect("real maintenance is an operating expense and creates a loss",
+			group >= 0 and int(buildings.last_maintenance_cost[group]) > 0
+			and int(buildings.last_operating_cost[group]) == int(buildings.last_maintenance_cost[group])
+			and int(buildings.severe_loss_cycles[group]) > 0)
+		var maintained_report := _run_day(ext, 3)
+		_expect("real upkeep case conserves all ledgers",
+			int(maintained_report.get("population_error", 1)) == 0
+			and int(maintained_report.get("money_error", 1)) == 0
+			and int(maintained_report.get("goods_error", 1)) == 0)
+		return
+	_expect("owner-only case has no hidden maintenance cost",
+		group >= 0 and int(buildings.last_maintenance_cost[group]) == 0)
 	_expect("owner livelihood shortfall is not an invented operating expense",
 		group >= 0 and
 		int((buildings.last_input_cost as PackedInt64Array)[group]) == 0 and

@@ -126,17 +126,15 @@ func bind_world_ext(ext) -> void:
 	_world_ext = ext
 	_schema = {}
 	_runtime_snapshot_generation = 0
-	if is_available() and _world_ext.has_method("get_gameplay_event_schema"):
+	if is_available():
 		var res = _world_ext.get_gameplay_event_schema()
 		if res is Dictionary:
 			_schema = res
 
 
 func is_available() -> bool:
-	return _world_ext != null \
-		and _world_ext.has_method("publish_gameplay_events") \
-		and _world_ext.has_method("poll_gameplay_events") \
-		and _world_ext.has_method("ack_gameplay_events")
+	return _world_ext != null
+
 
 
 func schema() -> Dictionary:
@@ -216,7 +214,7 @@ func ack_events(consumer_id: StringName, up_to_event_id: int) -> Dictionary:
 
 
 func replay_events(start_tick: int, end_tick: int, event_type: int = 0, max_events: int = 0) -> Dictionary:
-	if not is_available() or not _world_ext.has_method("replay_gameplay_events"):
+	if not is_available():
 		return {"fallback": true, "reason": "world_ext_event_bus_unavailable", "count": 0}
 	return _world_ext.replay_gameplay_events({
 		"start_tick": start_tick,
@@ -227,25 +225,25 @@ func replay_events(start_tick: int, end_tick: int, event_type: int = 0, max_even
 
 
 func snapshot_journal(opts: Dictionary = {}) -> Dictionary:
-	if not is_available() or not _world_ext.has_method("snapshot_gameplay_event_journal"):
+	if not is_available():
 		return {"fallback": true, "reason": "world_ext_event_bus_unavailable"}
 	return _world_ext.snapshot_gameplay_event_journal(opts)
 
 
 func restore_journal(snapshot: Dictionary) -> Dictionary:
-	if not is_available() or not _world_ext.has_method("restore_gameplay_event_journal"):
+	if not is_available():
 		return {"fallback": true, "reason": "world_ext_event_bus_unavailable"}
 	return _world_ext.restore_gameplay_event_journal(snapshot)
 
 
 func clear(opts: Dictionary = {}) -> Dictionary:
-	if not is_available() or not _world_ext.has_method("clear_gameplay_events"):
+	if not is_available():
 		return {"fallback": true, "reason": "world_ext_event_bus_unavailable"}
 	return _world_ext.clear_gameplay_events(opts)
 
 
 func report() -> Dictionary:
-	if not is_available() or not _world_ext.has_method("get_gameplay_event_bus_report"):
+	if not is_available():
 		return {"available": false}
 	var res = _world_ext.get_gameplay_event_bus_report()
 	if res is Dictionary:
@@ -255,7 +253,7 @@ func report() -> Dictionary:
 
 
 func poll_runtime_snapshot() -> Dictionary:
-	if not is_available() or not _world_ext.has_method("poll_runtime_events_snapshot"):
+	if not is_available():
 		return {"ok": false, "available": false, "fallback": true,
 			"reason": "runtime_events_snapshot_api_missing"}
 	var result = _world_ext.poll_runtime_events_snapshot(_runtime_snapshot_generation)

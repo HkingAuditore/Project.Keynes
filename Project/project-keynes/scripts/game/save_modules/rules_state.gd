@@ -7,16 +7,15 @@ const EXECUTION_CONTRACT_KEY := "execution_contract_hash"
 func _can_modifier_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("modifier")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_modifier_domain") \
-		and ext.has_method("restore_modifier_domain") \
-		and ext.has_method("clear_modifier_domain")
+	var available: bool = ext != null
+
 	return _result(available, "ok" if available else "save_provider_missing",
 		"" if available else "Modifier provider 不可用。")
 
 func _write_modifier_provider(context: Dictionary, domain: int,
 		section_id: String) -> Dictionary:
 	var facade = context.modifier
-	var bytes: PackedByteArray = facade.world_ext().capture_modifier_domain(domain)
+	var bytes: PackedByteArray = facade.capture_domain_state(domain)
 	if bytes.is_empty():
 		return _result(false, "%s_save_failed" % section_id,
 			"Modifier domain 无法序列化。")
@@ -24,13 +23,12 @@ func _write_modifier_provider(context: Dictionary, domain: int,
 
 func _restore_modifier_provider(sections: Dictionary, context: Dictionary,
 		domain: int, section_id: String) -> Dictionary:
-	var ext = context.modifier.world_ext()
 	var bytes := PackedByteArray(sections.get(section_id, PackedByteArray()))
 	var result: Dictionary
 	if bytes.is_empty():
-		result = ext.clear_modifier_domain(domain)
+		result = context.modifier.clear_domain_state(domain)
 	else:
-		result = ext.restore_modifier_domain(domain, bytes)
+		result = context.modifier.restore_domain_state(domain, bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"%s_restore_failed" % section_id,
 		String(result.get("reason", "Modifier domain 恢复失败。")))
@@ -52,71 +50,65 @@ func _restore_gameplay_modifier_provider(sections: Dictionary,
 func _can_trigger_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("trigger")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_trigger_state") \
-		and ext.has_method("restore_trigger_state") and ext.has_method("clear_trigger_state")
+	var available: bool = ext != null
 	return _result(available, "ok" if available else "save_provider_missing",
 		"Trigger provider unavailable" if not available else "")
 
 func _write_trigger_provider(context: Dictionary) -> Dictionary:
 	var facade = context.trigger
-	var bytes: PackedByteArray = facade.world_ext().capture_trigger_state()
+	var bytes: PackedByteArray = facade.capture_state()
 	if bytes.is_empty():
 		return _result(false, "pktr_save_failed", "Trigger state serialization failed")
 	return {"ok": true, "sections": {"pktr": bytes}}
 
 func _restore_trigger_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var facade = context.trigger
-	var ext = facade.world_ext()
 	var bytes := PackedByteArray(sections.get("pktr", PackedByteArray()))
-	var result: Dictionary = ext.clear_trigger_state() if bytes.is_empty() else ext.restore_trigger_state(bytes)
+	var result: Dictionary = facade.clear_state() if bytes.is_empty() else facade.restore_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pktr_restore_failed", String(result.get("reason", "Trigger state restore failed")))
 
 func _can_effect_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("effect")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_effect_state") \
-		and ext.has_method("restore_effect_state") and ext.has_method("clear_effect_state")
+	var available: bool = ext != null
 	return _result(available, "ok" if available else "save_provider_missing",
 		"Effect provider unavailable" if not available else "")
 
 func _write_effect_provider(context: Dictionary) -> Dictionary:
 	var facade = context.effect
-	var bytes: PackedByteArray = facade.world_ext().capture_effect_state()
+	var bytes: PackedByteArray = facade.capture_state()
 	if bytes.is_empty():
 		return _result(false, "pkef_save_failed", "Effect state serialization failed")
 	return {"ok": true, "sections": {"pkef": bytes}}
 
 func _restore_effect_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var facade = context.effect
-	var ext = facade.world_ext()
 	var bytes := PackedByteArray(sections.get("pkef", PackedByteArray()))
-	var result: Dictionary = ext.clear_effect_state() if bytes.is_empty() else ext.restore_effect_state(bytes)
+	var result: Dictionary = facade.clear_state() if bytes.is_empty() else facade.restore_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkef_restore_failed", String(result.get("reason", "Effect state restore failed")))
 
 func _can_ideology_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("ideology")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_ideology_state") \
-		and ext.has_method("restore_ideology_state") and ext.has_method("clear_ideology_state")
+	var available: bool = ext != null
 	return _result(available, "ok" if available else "save_provider_missing",
 		"Ideology provider unavailable" if not available else "")
 
 func _write_ideology_provider(context: Dictionary) -> Dictionary:
 	var facade = context.ideology
-	var bytes: PackedByteArray = facade.world_ext().capture_ideology_state()
+	var bytes: PackedByteArray = facade.capture_state()
 	if bytes.is_empty():
 		return _result(false, "pkid_save_failed", "Ideology state serialization failed")
 	return {"ok": true, "sections": {"pkid": bytes}}
 
 func _restore_ideology_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var facade = context.ideology
-	var ext = facade.world_ext()
 	# PKID is intentionally an empty-state migration for saves made before the
 	# ideology runtime. New saves always contain a non-empty native PKID payload.
 	var bytes := PackedByteArray(sections.get("pkid", PackedByteArray()))
-	var result: Dictionary = ext.clear_ideology_state() if bytes.is_empty() else ext.restore_ideology_state(bytes)
+	var result: Dictionary = facade.clear_state() if bytes.is_empty() else facade.restore_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkid_restore_failed", String(result.get("reason", "Ideology state restore failed")))
 

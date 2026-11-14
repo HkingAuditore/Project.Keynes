@@ -440,7 +440,7 @@ func _restore_scroll(chapter_id: String, scheduled_value: int) -> void:
 
 
 ## 把视口滚到当前章的某个页内区段。页面用 section_offset(id) 报告区段相对自身的高度。
-## 等一帧再算：切章会改页头可见性，容器要重排，早一帧拿到的是旧高度。
+## 等布局完成再算：切章会改页头可见性，容器要重排，早一帧拿到的是旧高度。
 func _apply_pending_section() -> void:
 	var section := _pending_section
 	_pending_section = ""
@@ -448,15 +448,23 @@ func _apply_pending_section() -> void:
 	if section.is_empty() or page == null or not page.has_method("section_offset"):
 		return
 	var chapter := _chapter
-	await get_tree().process_frame
-	if chapter != _chapter:
-		return
-	var offset := float(page.call("section_offset", section))
-	if offset <= 0.0:
-		return
-	# 滚动量以 PageColumn 为坐标原点：PageStack 的自身偏移 + 页在该容器内的位置 + 区段偏移。
-	_viewport.scroll_vertical = maxi(0,
-		int(_page_stack.position.y + (page as Control).position.y + offset) - SECTION_SCROLL_PAD)
+	var target := 0
+	var max_scroll := 0.0
+	# 产业页的投资段还包含一层动态子页；连续等两帧让页和容器完成重排。
+	for _attempt in range(2):
+		await get_tree().process_frame
+		if chapter != _chapter:
+			return
+		var offset := float(page.call("section_offset", section))
+		if offset <= 0.0:
+			return
+		# 滚动量以 PageColumn 为坐标原点：PageStack 的自身偏移 + 页在该容器内的位置 + 区段偏移。
+		target = maxi(0, int(_page_stack.position.y + (page as Control).position.y + offset) - SECTION_SCROLL_PAD)
+		var scroll_bar := _viewport.get_v_scroll_bar()
+		# ScrollBar.max_value 包含 page 高度；ScrollContainer 能设置的实际
+		# scroll_vertical 上限是 max_value - page。
+		max_scroll = maxf(0.0, scroll_bar.max_value - scroll_bar.page)
+	_viewport.scroll_vertical = clampi(target, 0, int(max_scroll))
 
 
 func _update_layout_mode() -> void:

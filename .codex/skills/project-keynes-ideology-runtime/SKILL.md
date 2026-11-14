@@ -41,7 +41,7 @@ been done, so do not quote them as state.
 Inspect current source before editing:
 
 - `gdext/src/ideology_runtime.{h,cpp}`
-- `gdext/src/world_ext_ideology.cpp`, `world_ext.h`, `world_ext_bind_methods.cpp`
+- `gdext/src/world_ext_ideology.cpp`, `world_ext.h`, `world_ext_bind_<模块>.cpp`
 - `Project/project-keynes/scripts/ideology/`
 - `Project/project-keynes/scripts/simulation/systems/ideology_runtime_system.gd`
 - `Project/project-keynes/data/ideologies/default_ideology_catalog.tres`
@@ -343,3 +343,5 @@ main-boundary request: finish one before starting the other, stop polling comple
 and reset day markers for a new world. Never wait for a later daily tick to release a
 request that parks the worker. Run `tests/runtime/ideology_day_continuation_test.gd` and
 the production starter soak when changing this handoff; retain real Effect acknowledgments.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

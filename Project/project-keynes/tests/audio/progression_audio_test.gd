@@ -25,6 +25,11 @@ func check(ok: bool, message: String) -> void:
 func _run() -> void:
 	await process_frame
 	var audio := root.get_node("GameAudio")
+	if audio.status == "platform_disabled":
+		# 本平台没有打包音频后端（见 addons/FmodGodot/UPSTREAM.md），跳过而不是失败。
+		print("[SKIP] audio backend is not packaged for this platform")
+		quit(0)
+		return
 	check(audio.status == "ready", "FMOD backend ready")
 	if audio.status != "ready":
 		quit(1)

@@ -95,6 +95,6 @@ func definition_for(regime_id: StringName) -> PoliticalRegimeDefinition:
 
 static func _fnv_append(value: int, text: String) -> int:
 	var result := value
-	for byte_value in text.to_utf8():
+	for byte_value in text.to_utf8_buffer():
 		result = int((result ^ int(byte_value)) * 1099511628211) & 0x7fffffffffffffff
 	return result

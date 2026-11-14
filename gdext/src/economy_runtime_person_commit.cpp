@@ -659,28 +659,6 @@ const char *NativeEconomyRuntime::trade_plan_init_phase_name(
     return "unknown";
 }
 
-Dictionary NativeEconomyRuntime::fixed_math_probe(const Dictionary &vectors) const {
-    Dictionary out;
-    const std::vector<int64_t> a = packed_i64(vectors, "a");
-    const std::vector<int64_t> b = packed_i64(vectors, "b");
-    const std::vector<int64_t> divisors = packed_i64(vectors, "divisors");
-    if (a.size() != b.size() || a.size() != divisors.size()) {
-        out["ok"] = false;
-        out["reason"] = "fixed_math_vector_size_mismatch";
-        return out;
-    }
-    PackedInt64Array results;
-    results.resize(static_cast<int64_t>(a.size()));
-    int64_t saturation_count = 0;
-    for (size_t i = 0; i < a.size(); ++i) {
-        results.set(static_cast<int64_t>(i), mul_div_sat(a[i], b[i], divisors[i],
-                                                        saturation_count));
-    }
-    out["ok"] = true;
-    out["results"] = results;
-    out["saturation_count"] = saturation_count;
-    return out;
-}
 
 Dictionary NativeEconomyRuntime::production_climate_math_probe(
         const Dictionary &vectors) const {

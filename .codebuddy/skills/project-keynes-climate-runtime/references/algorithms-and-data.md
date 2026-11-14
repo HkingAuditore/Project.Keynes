@@ -260,7 +260,7 @@ zonal-envelope（2026-08-01）修复"草原系 48%、赤道无雨林、全图零
 - native daily slice
 - debug full-run/SHADOW
 - async climate pure kernel
-- GDScript fallback
+- native-only map_generator wrapper（失败只报错并保留上一份字段；不再做 GDScript 全图计算）
 - weather staged and combined/split
 - production profile knobs and base defaults
 

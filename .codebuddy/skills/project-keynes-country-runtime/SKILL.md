@@ -45,6 +45,10 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
 - Do not let mid-cycle country changes enter an already frozen economy cycle.
 - Do not let economy start a new frozen cycle while due country commands remain uncommitted.
 - Restore PKCN before PKEC and reject legacy countryless PKEC schemas precisely.
+- Before worker start, raise the shared request-ID allocator above restored
+  Economy terminal peer identities as well as Country receipts and pending
+  Host commands. Empty transport queues do not make historical IDs reusable;
+  never resolve a collision by clearing journals or relaxing identity checks.
 - Restore PKFG after PKCN, and never store exploration progress inside PKCN.
   Vision and country borders only consume `cell.country_slot`; they are not
   country authority. See `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
@@ -53,6 +57,23 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
 - Add taxation only through the dedicated tax/fiscal contract: country owns policy and treasury;
   economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
   country AI, deletion, or technology revocation as incidental behavior.
+
+## The Country POD plan window is not a leak
+
+`_country_pod_plan_active` stays true across pulses on purpose. `execute_country_worker_stage()`
+returns early at `country_economy_asset_results_pending` and the peer publish/prepare exits
+**without** discarding the plan, and re-entry checks `if (!_country_pod_plan_active)` before
+planning again. Clearing it on those exits — for example with an RAII guard — would replan the
+same day. Only `commit_day`, `discard_plan`, restore, and catalog publish close the window.
+
+The consequence for peers: any Economy-side operation that needs a mid-plan Country POD
+snapshot must treat an open window as **backpressure**, not as an error.
+`prepare_worker_cohort_cash()` returns `country_economy_asset_country_plan_pending` for it
+(a member of `runtime_country_asset_pending_reason()`), while wrong thread / domain not
+authoritative / illegal operation stay `country_worker_cohort_cash_boundary_invalid` and remain
+fatal. Merging the two classes back into one reason is what produced the day-2744 economy stop;
+`country_economy_asset_protocol_self_test()` now guards the split. See
+`docs/architecture/development-guide.md`.
 
 ## Research-signal evidence
 
@@ -78,3 +99,11 @@ From the repository root run:
 
 Use `-Build` for debug/release GDExtension builds and `-Godot` when a Godot executable is available.
 Report unrun gates explicitly, including performance gates that need the release benchmark scene.
+
+## Execution ownership versus admission (2026-11-03)
+
+Country treasury reads/transfers during a worker or inline call use the common
+Host predicate backed by `RuntimeExecutionContext`. Live stop admission can be
+zero while that call finishes against the same Country store. Do not substitute
+a raw public grant-mask check inside a fiscal transaction, and do not treat
+stop-request as transfer of the Country store to a stale synchronous mirror.

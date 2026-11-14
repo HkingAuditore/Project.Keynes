@@ -631,9 +631,10 @@ python tools/ci/check_save_contracts.py
   multi-cell trail、4 日 catch-up、save flush 失败保留 trail、外军拒绝、节点稳定。
 - `military_dossier_test.gd`：0 failures；`vision_solver_test.gd`：53 checks / 0 failures；
   `military_index_continuation_test.gd`：pass；`check_save_contracts.py`：0 violations。
-- `military_runtime_smoke_test.gd` 当前 8 个征兆兵/军饷断言失败：fixture 假设存在
-  “tech-free barracks”，当前目录所有兵营带科技门槛。失败不在探路代码路径；
-  探路 PKMI round-trip/state hash 与 120 日推进仍通过，未以改断言掩盖。
+- 2026-11-13：军事 smoke 已改用当前兵营建造链、当前科技键和 lane 接口；父编队在子编队
+  行军时的人数断言已收口。当前仍有三项运行期失败：Economy/Military 士兵读数会受 worker
+  提交窗口影响，编队回家前的 cohort drop 受同一时序影响，中立空格 station 后的回流读数仍为
+  空。原生 PKMI round-trip/state hash 与 120 日推进仍通过；这些失败没有通过放宽内容断言掩盖。
 - 改 C++ 后需重建 GDExtension；shader 改动 headless 无法验证。
 
 ## 12. 已知缺口 / 简化

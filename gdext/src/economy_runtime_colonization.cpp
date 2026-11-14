@@ -2707,10 +2707,10 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
             // two shortfalls are the ordinary day-by-day stockpiling states.
             if (kit.kit_unbuildable != 0)
                 blocker = "UNBUILDABLE";
-            else if (kit.place_buildings != 0 && kit.buildings.empty())
-                blocker = "NO_BUILDINGS";
             else if (material_missing > 0)
                 blocker = "MATERIALS";
+            else if (kit.place_buildings != 0 && kit.buildings.empty())
+                blocker = "NO_BUILDINGS";
             else if (bridge_missing > 0)
                 blocker = "BRIDGE";
             else if (!launchable)

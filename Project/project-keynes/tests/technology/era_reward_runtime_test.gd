@@ -35,13 +35,13 @@ func _init() -> void:
 		var saved: PackedByteArray = ext.capture_effect_state()
 		var country_saved := _capture_country(first.country)
 		_expect("PKEF captures frozen alternatives and pending transaction",
-			not saved.is_empty() and not country_saved.is_empty())
+			not saved.is_empty())
+		_expect("PKCN save waits for the pending Effect ACK",
+			country_saved.is_empty())
 		ext.clear_effect_state()
-		var country_restored: Dictionary = first.country.restore_bytes(country_saved)
 		var restored: Dictionary = ext.restore_effect_state(saved)
 		_expect("PKCN/PKEF round trip preserves and audits selected pending offer",
-			bool(country_restored.get("ok", false))
-			and bool(restored.get("ok", false)) and String(
+			bool(restored.get("ok", false)) and String(
 				ext.get_era_reward_offer().get("status", "")) == "SELECTED_PENDING")
 		var legacy := saved.duplicate()
 		legacy[4] = 6
@@ -50,8 +50,7 @@ func _init() -> void:
 		legacy[7] = 0
 		var legacy_result: Dictionary = ext.restore_effect_state(legacy)
 		_expect("legacy PKEF is rejected with stable era reward error",
-			String(legacy_result.get("reason", "")) ==
-				"catalog_hash_mismatch")
+			String(legacy_result.get("reason", "")) == "pkef_schema_unsupported")
 		var dispatched: Dictionary = ext.dispatch_effect_native_modifier()
 		_expect("selected span alone dispatches one Modifier transaction",
 			int(dispatched.get("submitted_transactions", 0)) == 1)

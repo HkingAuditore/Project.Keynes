@@ -11,7 +11,7 @@ const PROTOCOL_VERSION := 2
 const Q16_ONE := 65536
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _clock: WorldClock
 var _catalog: Resource
 var _configured := false
@@ -19,12 +19,12 @@ var _producer_sequence := 0
 var _last_event_id := 0
 
 
-func configure(world_ext: Object, cell_count: int, clock: WorldClock = null,
+func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
 		catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_clock = clock
 	_catalog = catalog if catalog != null else ModifierCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_modifiers"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt modifier API unavailable"}
 	if _catalog == null:
 		return {"ok": false, "reason": "ModifierCatalog unavailable"}
@@ -119,6 +119,20 @@ func explain_stat(domain: int, entity_handle: int, group_handle: int,
 
 func report() -> Dictionary:
 	return _world_ext.get_modifier_report() if _configured else {"configured": false}
+
+
+func capture_domain_state(domain: int) -> PackedByteArray:
+	return _world_ext.capture_modifier_domain(domain) if _world_ext != null else PackedByteArray()
+
+
+func clear_domain_state(domain: int) -> Dictionary:
+	return _world_ext.clear_modifier_domain(domain) if _world_ext != null else {
+		"ok": false, "reason": "modifier_provider_missing"}
+
+
+func restore_domain_state(domain: int, bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_modifier_domain(domain, bytes) if _world_ext != null else {
+		"ok": false, "reason": "modifier_provider_missing"}
 
 
 func dispatch_events() -> void:

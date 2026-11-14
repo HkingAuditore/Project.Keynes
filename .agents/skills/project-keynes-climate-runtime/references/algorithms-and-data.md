@@ -1,16 +1,5 @@
 # 气候算法与数据契约
 
-云影/天气云视觉平流（2026-11-09）：使用局地风 LUT 与 24 秒双相位有界位移，
-禁止以当前风乘总运行时间；上一份/当前风 LUT 只在显示端插值，不是仿真继续态。
-天气云经 HexRenderer 信号复用 CloudShadowField 上传的 LUT。契约与验证见
-`docs/cpp-dots-runtime/vision-fog-and-borders.md` 的云影连续性章节。
-云 Shader 必须编译期分档，移动/Web 使用廉价噪声，高档光照复用密度导数；
-切档需重建材质并恢复 LUT。预算/性能证据见
-`docs/cpp-dots-runtime/cloud-weather-shader-quality-2026-11-09.md`。
-天气云低/中与移动/Web不得退回四角值噪声的平台插值；轻量分支用三角格点梯度
-噪声与旋转细节，不折叠梯度零线。用实际GPU的 weather_noise_shape_test.gd 检查
-云形轴向轮廓，不能仅以编译/连续性测试证明视觉质量。
-
 ## 目录
 
 - 数值约定
@@ -271,7 +260,7 @@ zonal-envelope（2026-08-01）修复"草原系 48%、赤道无雨林、全图零
 - native daily slice
 - debug full-run/SHADOW
 - async climate pure kernel
-- GDScript fallback
+- native-only map_generator wrapper（失败只报错并保留上一份字段；不再做 GDScript 全图计算）
 - weather staged and combined/split
 - production profile knobs and base defaults
 

@@ -44,3 +44,25 @@ static func grant_draw_gates(host: WorldRuntimeHost, card_id: String, handle: in
 			return {"ok": false, "reason": String(granted.get(
 				"reason", "draw_gate_rejected"))}
 	return {"ok": true, "next_sequence": sequence}
+
+
+## True once every technology `grant_draw_gates` queued is visible on the Country
+## mirror. The grant is a queued Country command: under worker authority it lands a
+## day or more after submission, and a DISCOVER the pod applies before that is
+## refused with `ideology_discovery_not_allowed` (receipt), so the card never enters
+## the collection. Signal requirements are not checked here.
+static func draw_gates_landed(host: WorldRuntimeHost, card_id: String,
+		handle: int) -> bool:
+	var catalog: Resource = load("res://data/ideologies/default_ideology_catalog.tres")
+	var wanted := card_id if card_id.begins_with("idea.") else "idea.%s" % card_id
+	var facade = host.get_generator().get_country_facade()
+	for row in catalog.definitions:
+		if row == null or String(row.id) != wanted:
+			continue
+		for requirement in row.draw_requirements:
+			if requirement != null and int(requirement.kind) == 1 \
+					and not facade.has_completed_technology(handle,
+						facade._technology_index(StringName(String(requirement.key)))):
+				return false
+		return true
+	return false

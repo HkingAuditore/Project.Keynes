@@ -1004,10 +1004,12 @@ func _run() -> void:
 	var l2_interp: Dictionary = ext.evaluate_effect_program_magnitude(
 		program_l2, metrics)
 	var l2_magnitude := int(l2_interp.get("magnitude", -1))
-	print("[r1/control-C4] level-2 program %s -> %d/Q16 (authored 5243)"
+	var authored_l2_magnitude := _authored_program_constant_q16("public_hygiene_l2")
+	print("[r1/control-C4] level-2 program %s -> %d/Q16 (authored source)"
 		% [program_l2, l2_magnitude])
-	_expect("C4: the level-2 program evaluates to the authored 5243/Q16",
-		l2_magnitude == 5243, str(l2_interp))
+	_expect("C4: the level-2 program evaluates to its authored magnitude",
+		authored_l2_magnitude >= 0 and l2_magnitude == authored_l2_magnitude,
+		str(l2_interp))
 	_submit(ext, 8, dense, handle, 524288, 2)   # 524288 == the L2 understanding threshold
 	var level_day := 2
 	for _attempt in range(4):
@@ -1083,4 +1085,18 @@ func _run() -> void:
 	_expect("N6: an unknown stat key does not resolve to an id",
 		int(unresolved.get("stat_id", -1)) < 0, str(unresolved))
 
+
 	_finish(0 if _failures == 0 else 6)
+
+
+func _authored_program_constant_q16(definition_key: String) -> int:
+	var catalog: Resource = IdeologyEffectCatalogScript.load_default()
+	if catalog == null:
+		return -1
+	for program in catalog.effects:
+		if String(program.definition_key) != definition_key:
+			continue
+		for instruction in program.instructions:
+			if int(instruction.op) == 1:
+				return int(instruction.value_q16)
+	return -1

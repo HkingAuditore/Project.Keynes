@@ -60,12 +60,22 @@ func _run() -> void:
 	var milestones: PackedInt32Array = facade.era_milestone_indices()
 	var ids: PackedStringArray = facade.get("_catalog").get("technology_ids", PackedStringArray())
 	var milestone_id := String(ids[int(milestones[1])])
+	# The live HUD plays the era ceremony by pausing the clock. This headless
+	# barrier check only needs the committed era and ACK path, so use the
+	# existing popup suppression before the grant is observed by the UI.
+	if controller != null and controller.has_method("set_popups_suppressed"):
+		controller.set_popups_suppressed(true)
+	ui.set("_gm_popups_suppressed", true)
 	var granted: Dictionary = facade.grant_technology(handle, StringName(milestone_id),
 		int(clock.day_index()), 4242)
 	_expect("milestone grant is accepted", bool(granted.get("ok", false)), str(granted))
 	var grant_day := int(clock.day_index())
 	_expect("days keep committing after the milestone grant",
 		await _advance(clock, runtime, grant_day + POST_GRANT_DAYS), _fault_detail(runtime))
+	# The HUD refresh is deliberately debounced by GameUIManager; pull the same
+	# existing refresh synchronously so this headless check observes the committed
+	# era without waiting on an animation timer.
+	ui.call("_refresh_era_indicator")
 	_expect("the era advanced", int(facade.current_era_index(handle)) >= 1,
 		"era_index=%d" % int(facade.current_era_index(handle)))
 	_expect("the era badge followed the new era",

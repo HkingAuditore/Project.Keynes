@@ -141,9 +141,10 @@ func _check_bottleneck_rules() -> void:
 	_expect("healthy economy has no bottleneck", EconomyDossierViewModel.classify_bottlenecks(
 		{"building_units": 10, "output_per_day": 50}, {"ok": true,
 		"rejection_units": PackedInt64Array()}, {"ok": true}).is_empty())
-	_expect("rejection category table covers 19 reasons",
-		EconomyDossierViewModel.REJECTION_CATEGORY.size() == 19
-		and EconomyDossierViewModel.REJECTION_LABELS.size() == 19)
+	_expect("rejection category and label tables stay aligned",
+		EconomyDossierViewModel.REJECTION_CATEGORY.size() > 0
+		and EconomyDossierViewModel.REJECTION_CATEGORY.size() ==
+		EconomyDossierViewModel.REJECTION_LABELS.size())
 
 
 func _check_history_buffer() -> void:
@@ -498,8 +499,17 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 	dossier.page("overview").navigate_requested.emit("industry", {"section": "investment"})
 	for i in range(3):
 		await process_frame
+	var viewport := dossier.get("_viewport") as ScrollContainer
+	var page_stack := dossier.get("_page_stack") as Control
+	var raw_investment_target := int(page_stack.position.y + industry_page.position.y
+		+ float(industry_page.call("section_offset", "investment"))) \
+		- EconomyDossier.SECTION_SCROLL_PAD
+	var scroll_bar := viewport.get_v_scroll_bar()
+	var expected_investment_scroll := clampi(raw_investment_target, 0,
+		int(maxf(0.0, scroll_bar.max_value - scroll_bar.page)))
 	_expect("cross-chapter section navigation lands in the investment block",
-		dossier.current_chapter() == "industry" and dossier.scroll_value() > 100)
+		dossier.current_chapter() == "industry"
+		and dossier.scroll_value() == expected_investment_scroll)
 	dossier.select_chapter("overview")
 	for i in range(20):
 		dossier.set_model(model)

@@ -58,7 +58,7 @@ func should_run(ctx: SusTickContext) -> bool:
 			and bool(generator.runtime_graph_active()):
 		return false
 	var ext: Object = facade.world_ext()
-	return ext != null and ext.has_method("economy_should_run") \
+	return ext != null \
 		and bool(ext.economy_should_run(ctx.day_index))
 
 
@@ -66,7 +66,7 @@ func is_deadline_critical(ctx: SusTickContext) -> bool:
 	if facade == null or not facade.is_configured() or ctx == null:
 		return false
 	var ext: Object = facade.world_ext()
-	if ext != null and ext.has_method("economy_deadline_critical"):
+	if ext != null:
 		return bool(ext.economy_deadline_critical(ctx.day_index))
 	var report: Dictionary = facade.report()
 	if bool(report.get("epoch_active", false)):
@@ -106,13 +106,12 @@ func tick(ctx) -> Dictionary:
 	# cycle can still join LEDGER_APPLY. Newly arrived parties are enqueued
 	# inside run_economy_slice after process_due, then dispatched again.
 	var effect_dispatch_started_us := Time.get_ticks_usec()
-	if ext.has_method("dispatch_effect_native_economy"):
-		ext.dispatch_effect_native_economy()
+	ext.dispatch_effect_native_economy()
 	var effect_dispatch_ms := float(
 		Time.get_ticks_usec() - effect_dispatch_started_us) / 1000.0
 	# continuation 一直走 compact。其余 slice 也默认走 compact：只有诊断开启时才值得
 	# 为每个 slice 构造整份 450+ 键报告。
-	var compact_slice: bool = ext.has_method("run_economy_slice_compact") and (
+	var compact_slice: bool = true and (
 		not diagnostics_enabled or (ctx != null and ctx.source == &"country_economy_continuation"))
 	var native_call_started_us := Time.get_ticks_usec()
 	var result: Dictionary = ext.run_economy_slice_compact(native_ctx) if compact_slice \
@@ -120,8 +119,7 @@ func tick(ctx) -> Dictionary:
 	var native_call_ms := float(Time.get_ticks_usec() - native_call_started_us) / 1000.0
 	var effect_ack: Dictionary = {}
 	var effect_ack_started_us := Time.get_ticks_usec()
-	if ext.has_method("ack_effect_native_economy"):
-		effect_ack = ext.ack_effect_native_economy()
+	effect_ack = ext.ack_effect_native_economy()
 	var effect_ack_ms := float(Time.get_ticks_usec() - effect_ack_started_us) / 1000.0
 	# Full slice reports are newly allocated native dictionaries and remain
 	# immutable after this boundary. Continuations keep the last full diagnostic

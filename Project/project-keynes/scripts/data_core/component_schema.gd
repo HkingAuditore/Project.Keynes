@@ -130,8 +130,7 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.water_balance_30d",     cpp_name = "cell_water_balance_30d",     dtype = F32, track_prev = false, map_field = "water_balance_30d_arr",     prev_field = "", owner = "climate.feedback" },
 	# ─── B3b：植被动力学字段全量下沉 SoA（6 条，4 f32 + 2 i32）─────────────
 	# 消除 stage_b combined pass 的 pack/unpack hot loop（原 ~7ms wall 的 95%）。
-	# 命名严格 1:1 对齐 HexCell 字段名，方便阶段 3 把 _trigger_succession /
-	# legacy fallback 改成 `world.write_f32_range(slot_id, ...)` 时搜索/重构。
+	# 命名严格 1:1 对齐 HexCell 字段名，方便 native stage_b 直接读写 SoA。
 	{ name = &"cell.vegetation_vitality",        cpp_name = "cell_vegetation_vitality",        dtype = F32, track_prev = false, map_field = "vegetation_vitality_arr",        prev_field = "", owner = "climate.vegetation_dynamics" },
 	{ name = &"cell.vitality_low_streak",        cpp_name = "cell_vitality_low_streak",        dtype = I32, track_prev = false, map_field = "vitality_low_streak_arr",        prev_field = "", owner = "climate.vegetation_dynamics" },
 	{ name = &"cell.vitality_high_streak",       cpp_name = "cell_vitality_high_streak",       dtype = I32, track_prev = false, map_field = "vitality_high_streak_arr",       prev_field = "", owner = "climate.vegetation_dynamics" },

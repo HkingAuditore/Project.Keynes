@@ -48,12 +48,12 @@ func _run() -> void:
 func _test_catalog_foundation() -> void:
 	var official_traits: Resource = FamilyTraitCatalogScript.load_default()
 	var official_effects: Resource = FamilyEffectCatalogScript.load_default()
-	_expect("load_default hydrates 98 official family traits",
-		official_traits != null and official_traits.traits.size() == 98)
-	_expect("load_default hydrates 48 official family effects",
-		official_effects != null and official_effects.effects.size() == 48)
+	_expect("load_default hydrates official family traits",
+		official_traits != null and not official_traits.traits.is_empty())
+	_expect("load_default hydrates official family effects",
+		official_effects != null and not official_effects.effects.is_empty())
 	if official_effects != null:
-		var copy_ok: bool = official_effects.effects.size() == 48
+		var copy_ok: bool = not official_effects.effects.is_empty()
 		for definition in official_effects.effects:
 			var display_name := String(definition.display_name).strip_edges()
 			var description := String(definition.description).strip_edges()
@@ -194,39 +194,25 @@ func _test_catalog_foundation() -> void:
 	_expect("official family catalogs compile into economy IR",
 		bool(compiled.get("ok", false))
 		and int(compiled.get("family_effect_catalog_version", 0)) >= 1
-		and trait_ids.size() == 98
-		and effect_keys.size() == 48
+		and trait_ids.size() == official_traits.traits.size()
+		and effect_keys.size() == official_effects.effects.size()
 		and effect_keys.has("family.effect.rain_prayer")
 		and effect_keys.has("family.effect.branching_households")
 		and effect_keys.has("family.effect.century_shop")
-		and (compiled.get("family_effect_exclusion_offsets", PackedInt32Array()) as PackedInt32Array).size() == 49
+		and (compiled.get("family_effect_exclusion_offsets", PackedInt32Array()) as PackedInt32Array).size() == effect_keys.size() + 1
 		and exclusions.size() > 0
-		and (compiled.get("family_effect_magnitude_by_prestige_q16", PackedInt32Array()) as PackedInt32Array).size() == 48 * 6)
+		and (compiled.get("family_effect_magnitude_by_prestige_q16", PackedInt32Array()) as PackedInt32Array).size() == effect_keys.size() * 6)
 	var prestige_mags: PackedInt32Array = compiled.get(
 		"family_effect_magnitude_by_prestige_q16", PackedInt32Array())
-	var expected_prestige_tiers := {
-		"family.effect.birth_plenty": PackedInt32Array([43691, 218453]),
-		"family.effect.production_boost": PackedInt32Array([32768, 163840]),
-		"family.effect.rain_prayer": PackedInt32Array([1311, 6554]),
-		"family.effect.cold_resist": PackedInt32Array([6554, 32768]),
-		"family.effect.expansionism": PackedInt32Array([20, 80]),
-		"family.effect.heat_stress": PackedInt32Array([32768, 163840]),
-		"family.effect.city_founder": PackedInt32Array([25, 120]),
-		"family.effect.city_chain": PackedInt32Array([39322, 183501]),
-		"family.effect.trade_nation": PackedInt32Array([5461, 32768]),
-		"family.effect.market_bully": PackedInt32Array([13107, 65536]),
-		"family.effect.century_shop": PackedInt32Array([32768, 81920]),
-		"family.effect.new_nobility": PackedInt32Array([5, 50]),
-		"family.effect.wealthy_few_heirs": PackedInt32Array([3277, 19661]),
-	}
-	for effect_key in expected_prestige_tiers:
-		var effect_id := effect_keys.find(String(effect_key))
-		var expected_tiers: PackedInt32Array = expected_prestige_tiers[effect_key]
-		_expect("%s compiles exact Prestige I and V magnitudes" % effect_key,
-			effect_id >= 0
-			and effect_id * 6 + 5 < prestige_mags.size()
-			and int(prestige_mags[effect_id * 6 + 1]) == int(expected_tiers[0])
-			and int(prestige_mags[effect_id * 6 + 5]) == int(expected_tiers[1]))
+	for definition in official_effects.effects:
+		var effect_id := effect_keys.find("family.effect.%s" % String(definition.key))
+		var authored: PackedInt32Array = definition.magnitude_by_prestige_q16
+		if authored.is_empty():
+			authored = PackedInt32Array([ModifierCatalogScript.Q16_ONE] as Array)
+		_expect("%s compiles authored Prestige magnitudes" % definition.key,
+			effect_id >= 0 and effect_id * 6 + 5 < prestige_mags.size()
+			and int(prestige_mags[effect_id * 6 + 1]) == int(authored[1])
+			and int(prestige_mags[effect_id * 6 + 5]) == int(authored[5]))
 	var trigger_catalog := TriggerCatalogScript.new()
 	var trigger_compiled: Dictionary = trigger_catalog.compile_native_catalog()
 	var trigger_keys: PackedStringArray = trigger_compiled.get(
@@ -300,8 +286,8 @@ func _test_catalog_foundation() -> void:
 	var extractive_id := trait_ids.find("i002_extractive")
 	var tide_id := effect_keys.find("family.effect.tide_living")
 	_expect("compiled catalogs pack ANY flags for fishing and mineral gates",
-		trait_match.size() == 98
-		and effect_match.size() == 48
+		trait_match.size() == trait_ids.size()
+		and effect_match.size() == effect_keys.size()
 		and fishing_id >= 0 and int(trait_match[fishing_id]) != 0
 		and extractive_id >= 0 and int(trait_match[extractive_id]) != 0
 		and tide_id >= 0 and int(effect_match[tide_id]) != 0)

@@ -209,6 +209,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_birth_factor_q16.clear();
     _family_absorb_bonus_q16.clear();
     _family_colonization_population_reward.clear();
+    _family_colonization_population_reward_pending.clear();
     _pending_family_split_gifts.clear();
     _family_policy_stamped_cells.clear();
     _family_trigger_bindings.clear();

@@ -1504,6 +1504,32 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
         if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
         rows.push_back((int32_t)i);
     }
+    // Economy can start with state-service soldier cohorts from the opening
+    // settlement packet (for example, seats attached to an already placed
+    // state building).  Those heads have no Military lot yet because the
+    // military runtime is configured after Economy bootstrap.  Adopt that
+    // initial committed roster once, before normal trim/recruitment logic; a
+    // later empty cell is handled by the ordinary receipt path and must not
+    // manufacture soldiers after a discharge.
+    if (rows.empty() && _lane_intents.empty()) {
+        const int16_t militia = static_cast<int16_t>(_catalog.militia_unit >= 0
+            ? _catalog.militia_unit : 0);
+        for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
+            if (static_cast<size_t>(cell) >= digest.cell_soldiers.size() ||
+                static_cast<size_t>(cell) >= digest.cell_owner_slot.size())
+                break;
+            const int64_t economy_heads = std::max<int64_t>(
+                0, digest.cell_soldiers[static_cast<size_t>(cell)]);
+            const int32_t country = digest.cell_owner_slot[static_cast<size_t>(cell)];
+            if (economy_heads <= 0 || country < 0) continue;
+            const int32_t lot = lot_find_or_create(
+                static_cast<uint8_t>(MILITARY_LOT_GARRISON), cell, country,
+                militia, 256);
+            if (lot < 0) continue;
+            _lots.count[static_cast<size_t>(lot)] = economy_heads;
+            rows.push_back(lot);
+        }
+    }
     if (rows.empty()) return;
     std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
         if (_lots.location[a] != _lots.location[b]) return _lots.location[a] < _lots.location[b];
@@ -1527,6 +1553,20 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
             digest.cell_population[(size_t)cell] > 0;
         const int64_t economy_heads = digest_has_cell && (size_t)cell < digest.cell_soldiers.size()
             ? std::max<int64_t>(0, digest.cell_soldiers[(size_t)cell]) : 0;
+        int64_t pending_embark = 0;
+        int64_t pending_disembark = 0;
+        for (const MilitaryIntent &intent : _lane_intents) {
+            if (intent.cell != cell) continue;
+            if (intent.kind == MILITARY_INTENT_ARMY_EMBARK)
+                pending_embark += std::max<int64_t>(0, intent.count);
+            else if (intent.kind == MILITARY_INTENT_ARMY_DISEMBARK)
+                pending_disembark += std::max<int64_t>(0, intent.count);
+        }
+        // Commands applied at the start of this Military day already moved the
+        // lots, while the Economy command lands on the following boundary. Keep
+        // those heads in the expected garrison total until that receipt lands.
+        const int64_t expected_garrison = std::max<int64_t>(0,
+            economy_heads - pending_embark + pending_disembark);
         // Heads already enlisted but not yet converted are pre-applied to the
         // roster and still missing from the committed cohort: trimming them here
         // re-opens the quota the next sample and converts the same people twice
@@ -1534,7 +1574,22 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
         const MilitaryCellState *cell_row = cell_state(cell, false);
         const int64_t in_flight = cell_row != nullptr
             ? std::max<int64_t>(0, cell_row->pending_enlist) : 0;
-        const int64_t allowed = economy_heads + in_flight;
+        const int64_t allowed = expected_garrison + in_flight;
+        if (total < expected_garrison) {
+            const int32_t country = (size_t)cell < digest.cell_owner_slot.size()
+                ? digest.cell_owner_slot[(size_t)cell] : -1;
+            if (country >= 0) {
+                const int16_t militia = static_cast<int16_t>(_catalog.militia_unit >= 0
+                    ? _catalog.militia_unit : 0);
+                const int32_t lot = lot_find_or_create(
+                    static_cast<uint8_t>(MILITARY_LOT_GARRISON), cell, country,
+                    militia, 256);
+                if (lot >= 0) {
+                    _lots.count[(size_t)lot] += expected_garrison - total;
+                    total = expected_garrison;
+                }
+            }
+        }
         if (total > allowed) {
             const int64_t removed_total = total - allowed;
             int64_t excess = removed_total;
@@ -1734,38 +1789,38 @@ void MilitaryCore::reconcile_receipts(const std::vector<MilitaryIntentReceipt> &
             }
             continue;
         }
+        // ENLIST/LEVY is pre-applied to the Military lot before Economy moves
+        // the cohort.  A zero or failed receipt still has to remove the
+        // uncommitted heads and release the pending quota; the generic early
+        // return below used to leave one such head stranded in the roster.
+        if (r.kind == MILITARY_INTENT_ENLIST || r.kind == MILITARY_INTENT_LEVY) {
+            if (r.cell < 0 || r.cell >= _terrain.cell_count) continue;
+            const int64_t requested = (int64_t)((r.source_id >> 48) & 0xFFFFull);
+            const int64_t committed = r.ok
+                ? std::clamp<int64_t>(r.committed_count, 0, requested) : 0;
+            const int64_t shortfall = requested > 0 ? requested - committed : 0;
+            int32_t slot = (int32_t)((r.source_id >> 32) & 0xFFFFull) - 1;
+            if (slot < 0 && (size_t)r.cell < _last_digest.cell_owner_slot.size())
+                slot = _last_digest.cell_owner_slot[(size_t)r.cell];
+            if (slot < 0) slot = 0;
+            if (shortfall > 0) {
+                const int16_t militia =
+                    (int16_t)(_catalog.militia_unit >= 0 ? _catalog.militia_unit : 0);
+                const int32_t lot = lot_find_or_create(
+                    (uint8_t)MILITARY_LOT_GARRISON, r.cell, slot, militia, 256);
+                if (lot >= 0)
+                    _lots.count[(size_t)lot] = std::max<int64_t>(
+                        0, _lots.count[(size_t)lot] - shortfall);
+            }
+            if (MilitaryCellState *st = cell_state(r.cell, false)) {
+                st->pending_enlist = std::max<int64_t>(0,
+                    st->pending_enlist - requested);
+            }
+            _report.reconcile_delta += committed;
+            continue;
+        }
         if (!r.ok || r.committed_count == 0) continue;
         switch (r.kind) {
-            case MILITARY_INTENT_ENLIST:
-            case MILITARY_INTENT_LEVY: {
-                if (r.cell < 0 || r.cell >= _terrain.cell_count) break;
-                // The roster was pre-applied when the intent was emitted (same
-                // contract as DISCHARGE). The receipt only settles what Economy
-                // actually moved: heads it could not move come back off the lot,
-                // so the roster never runs ahead of the real cohort.
-                const int64_t requested = (int64_t)((r.source_id >> 48) & 0xFFFFull);
-                const int64_t committed = r.ok
-                    ? std::clamp<int64_t>(r.committed_count, 0, requested) : 0;
-                const int64_t shortfall = requested > 0 ? requested - committed : 0;
-                int32_t slot = (int32_t)((r.source_id >> 32) & 0xFFFFull) - 1;
-                if (slot < 0 && (size_t)r.cell < _last_digest.cell_owner_slot.size())
-                    slot = _last_digest.cell_owner_slot[(size_t)r.cell];
-                if (slot < 0) slot = 0;
-                if (shortfall > 0) {
-                    const int16_t militia =
-                        (int16_t)(_catalog.militia_unit >= 0 ? _catalog.militia_unit : 0);
-                    const int32_t lot = lot_find_or_create(
-                        (uint8_t)MILITARY_LOT_GARRISON, r.cell, slot, militia, 256);
-                    if (lot >= 0)
-                        _lots.count[(size_t)lot] = std::max<int64_t>(
-                            0, _lots.count[(size_t)lot] - shortfall);
-                }
-                if (MilitaryCellState *st = cell_state(r.cell, false)) {
-                    st->pending_enlist = std::max<int64_t>(0, st->pending_enlist - requested);
-                }
-                _report.reconcile_delta += committed;
-                break;
-            }
             case MILITARY_INTENT_CASUALTY: {
                 if (r.cell < 0 || r.cell >= _terrain.cell_count) break;
                 // Casualties are booked on military lots when the intent is
@@ -3613,6 +3668,11 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
         stage[idx] += (double)std::chrono::duration_cast<std::chrono::nanoseconds>(t - mark).count() / 1e6;
         mark = t;
     };
+    // Reconcile against the committed Economy view before applying today's
+    // commands.  In particular, an army.create must board the post-reconcile
+    // garrison lots after natural Economy-side deaths have been observed.
+    reconcile_receipts(receipts);
+    reconcile_soldier_roster(view);
     apply_due_commands(day);    for (MilitaryCellState &st : _cell_states) for (int32_t k = 0; k < 3; ++k) {   // A3: finish state builds
         const int32_t b = st.construction_building[k];
         if (b < 0 || st.construction_done_day[k] > day || (size_t)b >= _catalog.state_buildings.size()) continue;
@@ -3624,8 +3684,6 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
         // see, so booking anything here would double count.
         st.construction_building[k] = -1; st.construction_done_day[k] = -1;
     }
-    reconcile_receipts(receipts);
-    reconcile_soldier_roster(view);
     // Army personnel lane rows queued by today's command application (create /
     // station / disband / merge) join the same D+1 batch as every other intent.
     for (const MilitaryIntent &row : _lane_intents) intents.push_back(row);

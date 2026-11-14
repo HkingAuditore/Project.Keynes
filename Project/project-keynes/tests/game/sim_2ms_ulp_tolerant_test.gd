@@ -99,6 +99,7 @@ static func ulp_distance(a: float, b: float) -> int:
 # pass_a 写出的全部 SoA → MapData 字段（component_schema.gd 权威）。含 in/out 与纯 out；
 # A/B 前 snapshot + 后 restore 这组即可把 ext slot 复位到同一输入态。
 const PASS_A_OUT_F32: Array = [
+	"temp_arr",
 	"temp_baseline_arr", "temp_30d_arr", "temp_365d_arr", "temp_anomaly_arr",
 	"moisture_arr", "temp_season_offset_arr", "insolation_now_arr", "insolation_dev_arr",
 	"day_length_arr", "heat_input_arr", "thermal_energy_arr", "snowpack_arr",
@@ -142,6 +143,11 @@ func _run() -> void:
 		return
 	for day in range(1, 4):
 		generator.sus_tick_daily(null, day, float(day % 365) / 365.0)
+		# SUS may leave the native climate/bio graph in a same-day continuation.
+		# Let that graph publish before taking the scalar/thread snapshots; otherwise
+		# the two direct calls race the background slice and do not share one input.
+		while generator.native_daily_round_active() or generator.bio_occupancy_round_active():
+			await process_frame
 
 	var ext = generator.get_data_core_world_ext()
 	if ext == null or not ext.has_method("run_climate_pass_a_thread"):
@@ -163,7 +169,11 @@ func _run() -> void:
 		return
 	var ref_a: Dictionary = _snapshot(map, PASS_A_OUT_F32, PASS_A_OUT_U8)
 	_restore(ext, map, snap_a)
-	ext.run_climate_pass_a_thread(pa_struct, sp, sp, 0)
+	# The native bridge snapshots PackedArrays into the pass struct. Rebuild it
+	# after restoring the map so both paths consume the same input epoch.
+	var pa_struct_thread: Dictionary = generator._build_native_daily_climate_pass_a_struct(
+		map, profile, sp)
+	ext.run_climate_pass_a_thread(pa_struct_thread, sp, sp, 0)
 	var got_a: Dictionary = _snapshot(map, PASS_A_OUT_F32, PASS_A_OUT_U8)
 	_compare("pass_a scalar↔thread", ref_a, got_a, PASS_A_OUT_F32, PASS_A_OUT_U8, 0)
 

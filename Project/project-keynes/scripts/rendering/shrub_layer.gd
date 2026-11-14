@@ -1,5 +1,24 @@
 class_name ShrubLayer
 extends Node2D
+const VegetationNodeLifecycle = preload("res://scripts/rendering/vegetation_node_lifecycle.gd")
+const VegetationShaderVariants = preload("res://scripts/rendering/vegetation_shader_variants.gd")
+const ShrubScatter = preload("res://scripts/rendering/shrub/scatter.gd")
+const Lifecycle = preload("res://scripts/rendering/shrub/lifecycle.gd")
+const Diagnostics = preload("res://scripts/rendering/shrub/diagnostics.gd")
+const Material_inputs = preload("res://scripts/rendering/shrub/material_inputs.gd")
+const Cooperative_rebuild = preload("res://scripts/rendering/shrub/cooperative_rebuild.gd")
+const Family_materials = preload("res://scripts/rendering/shrub/family_materials.gd")
+const Chunk_nodes = preload("res://scripts/rendering/shrub/chunk_nodes.gd")
+const Chunk_budget = preload("res://scripts/rendering/shrub/chunk_budget.gd")
+const Chunk_refresh = preload("res://scripts/rendering/shrub/chunk_refresh.gd")
+
+# Kept on the host for the existing ShrubLayer API; the values are authored by
+# the stateless collaborators.
+const PK_WEB_ENABLE_VEG_NEAR_FORMS = Material_inputs.PK_WEB_ENABLE_VEG_NEAR_FORMS
+const PK_WEB_VEG_NEAR_FULL_FORMS = Material_inputs.PK_WEB_VEG_NEAR_FULL_FORMS
+const _SHADOW_BUFFER_STRIDE = Chunk_nodes._SHADOW_BUFFER_STRIDE
+const DECORATION_VEG_RESIDUAL = ShrubScatter.DECORATION_VEG_RESIDUAL
+
 
 const _WT_RAIN := 1
 const _WT_STORM := 2
@@ -68,23 +87,10 @@ static func crown_local_radius(count: int) -> float:
 # Body pass: a single quad per instance drawn as a top-down procedural form.
 # The shader lives in shaders/include/vegetation_impostor.gdshaderinc so the
 # family batches and every source layer compile exactly the same code.
-const _SHADER_CODE := """
-shader_type canvas_item;
-render_mode blend_mix, unshaded;
-
-#include "res://shaders/include/shader_quality.gdshaderinc"
-#define VF_CROWN_ART
-#include "res://shaders/include/vegetation_impostor.gdshaderinc"
-"""
+const _SHADER_CODE = VegetationShaderVariants._SHADER_CODE
 
 # Cast-shadow pass: soft sun-stretched ellipse per instance (unit-disc mesh).
-const _SHADOW_SHADER_CODE := """
-shader_type canvas_item;
-render_mode blend_mix, unshaded;
-
-#include "res://shaders/include/shader_quality.gdshaderinc"
-#include "res://shaders/include/vegetation_shadow.gdshaderinc"
-"""
+const _SHADOW_SHADER_CODE = VegetationShaderVariants._SHADOW_SHADER_CODE
 
 @export var profile: Resource = DEFAULT_PROFILE:
 	set(value):
@@ -118,6 +124,9 @@ var _last_scatter_path: String = "none"
 var _last_rebuild_ms: float = 0.0
 var _last_candidate_count: int = 0
 var _settlement_core_buckets := PackedByteArray()
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+var _family_materials: Array = []
 
 # Settlement core envelope mirrors the building density ladder without copying
 # individual building transforms.  The outer archetype ring is 0.54 hex and
@@ -137,7 +146,8 @@ const SETTLEMENT_DETAIL_FOOTPRINT_RADIUS := 0.85
 
 
 func set_settlement_core_buckets(value: PackedByteArray) -> void:
-	_settlement_core_buckets = value
+	return Lifecycle.set_settlement_core_buckets(self, value)
+
 var _last_wrap_edge_copy_count: int = 0
 var _last_rebuild_reason: String = ""
 var _last_incremental_cells: int = 0
@@ -234,318 +244,89 @@ var _instance_count: int = 0
 var _far_instance_count: int = 0
 
 
-func _ready() -> void:
-	z_as_relative = false
-	_ensure_resources()
 
+func _ready() -> void:
+	return Lifecycle._ready(self)
 
 func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visual_quality: int = 1) -> void:
-	_map = map
-	_world = world
-	_bounds = bounds
-	_hex_size = maxf(hex_size, 4.0)
-	_invalidate_chunk_spatial_cache()
-	_active_instance_count_valid = false
-	_visual_quality = clampi(visual_quality, 0, 2)
-	_native_offset_is_water_cache = PackedByteArray()
-	_native_offset_cache_dims = Vector2i.ZERO
-	_native_delta_common_knobs = {}
-	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
-	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
-	var probe_start := Time.get_ticks_usec()
-	_ensure_shader_matches_tiles()
-	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
-	# 首次绘制编译成本：此刻同级的 ShrubLayer 都已建好，能拿到真实的"共享层数"。
-	_report_veg_shader_cost()
-	probe_start = Time.get_ticks_usec()
-	if _defer_initial_rebuild and _chunked_multimesh_enabled:
-		clear()
-		_last_rebuild_reason = "deferred_until_prefetch"
-		print("[shrub-load] clear %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
-	else:
-		_rebuild_instances()
-
+	return Lifecycle.setup(self, map, world, bounds, hex_size, visual_quality)
 
 func set_defer_initial_rebuild(value: bool) -> void:
-	_defer_initial_rebuild = value
-
+	return Lifecycle.set_defer_initial_rebuild(self, value)
 
 func clear() -> void:
-	_instance_cell_indices = PackedInt32Array()
-	_instance_positions = PackedVector2Array()
-	_instance_rotations = PackedFloat32Array()
-	_instance_sizes = PackedFloat32Array()
-	_instance_seeds = PackedFloat32Array()
-	_instance_variants = PackedFloat32Array()
-	_instance_forms = PackedFloat32Array()
-	_instance_scores = PackedFloat32Array()
-	_instance_cells.clear()
-	_instance_count = 0
-	_far_instance_count = 0
-	_active_instance_count_cache = 0
-	_active_instance_count_valid = false
-	_cell_instance_lookup.clear()
-	_clear_chunk_nodes()
-	if _multimesh != null:
-		_multimesh.instance_count = 0
-		_multimesh.visible_instance_count = 0
-	if _shadow_multimesh != null:
-		_shadow_multimesh.instance_count = 0
-		_shadow_multimesh.visible_instance_count = 0
-	_shadow_built_total = 0
-	# _shadow_chunk_nodes 已由 _clear_chunk_nodes() 释放
-	if _shadow_mmi != null:
-		_shadow_mmi.visible = false
-	_sync_single_wrap_nodes()
-	_sync_single_shadow_wrap_nodes()
-	visible = false
-
+	return Lifecycle.clear(self)
 
 func set_world_time(v: float) -> void:
-	if _material != null:
-		_material.set_shader_parameter("world_time", v)
-
+	return Material_inputs.set_world_time(self, v)
 
 func set_season_phase(v: float) -> void:
-	if _material != null:
-		_material.set_shader_parameter("season_phase", v)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("season_phase", v)
-
+	return Material_inputs.set_season_phase(self, v)
 
 func set_day_phase(v: float) -> void:
-	var p := fposmod(v, 1.0)
-	if _material != null:
-		_material.set_shader_parameter("day_phase", p)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("day_phase", p)
-
+	return Material_inputs.set_day_phase(self, v)
 
 func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
-	_world = world
-	_bounds = bounds
-	_native_delta_common_knobs = {}
-	# 不能只看「_world 切换前后 tiled 是否变化」：setup 已把 _world 设成 tiled 后，
-	# 后续 _apply_uniforms 再调本函数时 was_tiled 已是 true，会永久跳过变体刷新，
-	# 植被 shader 卡在 legacy（采 map_index_atlas）而世界走 tiled（不绑 atlas）→ 全图消失。
-	_ensure_shader_matches_tiles()
-
+	return Material_inputs.set_world_material_inputs(self, world, bounds, _use_cell_indirection)
 
 func _visual_tiles_active() -> bool:
-	return _world != null and _world.visual_tiles != null \
-		and bool(_world.visual_tiles.ready) \
-		and String(_world.visual_tiles.layout.mode) == "tiled"
-
+	return Material_inputs._visual_tiles_active(self)
 
 func _shader_is_tiled_variant(mat: ShaderMaterial) -> bool:
-	return mat != null and mat.shader != null \
-		and mat.shader.code.begins_with("#define MAP_VISUAL_TILED")
+	return Material_inputs._shader_is_tiled_variant(self, mat)
 
-
-# 按当前 _visual_tiles_active() 对齐主/投影 shader 变体；不一致则重建，否则只 sync。
 func _ensure_shader_matches_tiles() -> void:
-	_ensure_resources()
-	var want_tiled := _visual_tiles_active()
-	var main_ok := _shader_is_tiled_variant(_material) == want_tiled
-	var shadow_ok := _shadow_material == null \
-		or _shader_is_tiled_variant(_shadow_material) == want_tiled
-	# _ready() 的早编是"远景保护变体"（见 _web_veg_form_defines()）。它不能只看
-	# tiled 位是否一致：world 不是 tiled 时 tiled 位恰好都是 false，会永久停在
-	# 远景观感，所以这里单独判一次。
-	if main_ok and shadow_ok and not _shader_is_web_far_prototype(_material):
-		_sync_world_material_inputs(true)
-	else:
-		_refresh_shader_variants()
+	return Material_inputs._ensure_shader_matches_tiles(self)
 
-
-# web 近景 form 打开时，_ready() 会先编一份 PK_VEG_FAR_ONLY 的便宜变体，
-# setup() 拿到 world 后必须换成真实档位（即使 tiled 位没变）。
 func _shader_is_web_far_prototype(mat: ShaderMaterial) -> bool:
-	if not (PK_WEB_ENABLE_VEG_NEAR_FORMS and OS.has_feature("web")):
-		return false
-	return mat != null and mat.shader != null \
-		and mat.shader.code.contains("#define PK_VEG_FAR_ONLY")
+	return Material_inputs._shader_is_web_far_prototype(self, mat)
 
-
-# [cylindrical-earth-daylight] 昼夜光照与地形同源（逐像素经纬度晨昏线）。
-# 昼夜色/昼夜系数已在 shader 内按本实例经纬度逐像素求解，这里只需同步全局曝光；
-# sun/ambient/night_factor 形参保留仅为调用方兼容，不再消费。
 func set_tod(_sun_color: Color, _ambient_color: Color, _night_factor: float, exposure: float) -> void:
-	if _material == null:
-		return
-	_material.set_shader_parameter("tod_exposure", exposure)
-
+	return Material_inputs.set_tod(self, _sun_color, _ambient_color, _night_factor, exposure)
 
 func set_world_sky_lighting(source: ShaderMaterial) -> void:
-	if _material == null or source == null:
-		return
-	for name in ["sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
-		var value: Variant = source.get_shader_parameter(name)
-		if value != null:
-			_material.set_shader_parameter(name, value)
-
+	return Material_inputs.set_world_sky_lighting(self, source)
 
 func set_tod_sun_dir(dir: Vector3) -> void:
-	var d := dir.normalized()
-	if d.length_squared() <= 0.000001:
-		d = Vector3(0.4, -0.7, 0.6).normalized()
-	if _material != null:
-		_material.set_shader_parameter("tod_sun_dir", d)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("tod_sun_dir", d)
-
+	return Material_inputs.set_tod_sun_dir(self, dir)
 
 func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
-	var p := Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
-	if _material != null:
-		_material.set_shader_parameter("tod_debug_sun_position_enabled", enabled)
-		_material.set_shader_parameter("tod_debug_sun_uv", p)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("tod_debug_sun_position_enabled", enabled)
-		_shadow_material.set_shader_parameter("tod_debug_sun_uv", p)
-
-
-var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
-var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+	return Material_inputs.set_tod_debug_sun_position(self, enabled, uv)
 
 func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
-	_eternal_min_elevation_rad = min_elevation
-	_eternal_max_hour_angle_rad = max_hour_angle
-	if _material != null:
-		_material.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
-		_material.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
-		_shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
-
+	return Material_inputs.set_eternal_daylight_parameters(self, min_elevation, max_hour_angle)
 
 func set_tod_debug_sun_height_scale(v: float) -> void:
-	var scale := clampf(v, 0.2, 1.5)
-	if _material != null:
-		_material.set_shader_parameter("tod_debug_sun_height_scale", scale)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("tod_debug_sun_height_scale", scale)
+	return Material_inputs.set_tod_debug_sun_height_scale(self, v)
 
-
-# 地轴倾角(rad)：与地形 axial_tilt_rad 同源，驱动晨昏线的季节赤纬。
 func set_axial_tilt_rad(v: float) -> void:
-	if _material != null:
-		_material.set_shader_parameter("axial_tilt_rad", v)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("axial_tilt_rad", v)
+	return Material_inputs.set_axial_tilt_rad(self, v)
 
-
-# 昼夜总开关：关闭时植被退化为永昼（与地形 day_night_enabled 一致）。
 func set_day_night_enabled(v: bool) -> void:
-	if _material != null:
-		_material.set_shader_parameter("day_night_enabled", v)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("day_night_enabled", v)
+	return Material_inputs.set_day_night_enabled(self, v)
 
-
-# 阶段 D：全局盛行风方向 + 实时天气附加风强（风暴/季风）。每帧由 hex_renderer 推送。
 func set_wind_field(dir: Vector2, boost: float) -> void:
-	if _material == null:
-		return
-	var d := dir if dir.length() > 0.0001 else Vector2(1.0, 0.18)
-	_material.set_shader_parameter("wind_dir", d.normalized())
-	_material.set_shader_parameter("weather_wind_boost", maxf(boost, 0.0))
-
+	return Material_inputs.set_wind_field(self, dir, boost)
 
 func set_terrain_horizon_inputs(tex: Texture2D, bound: bool, strength: float, softness: float,
 		max_angle: float, cast_floor: float, debug_view: int, coarse_normal_strength: float) -> void:
-	if _material == null:
-		return
-	# tiled 变体采 visual_horizon_tiles（由 _sync_world_material_inputs 绑定）；legacy tex 可空。
-	# bound 必须由调用方按实际就绪态传入，不能再隐含「tex!=null」。
-	if not _visual_tiles_active():
-		_material.set_shader_parameter("terrain_horizon_tex", tex)
-	_material.set_shader_parameter("terrain_horizon_tex_bound", bound)
-	_material.set_shader_parameter("terrain_horizon_strength", clampf(strength, 0.0, 1.5))
-	_material.set_shader_parameter("terrain_horizon_softness", clampf(softness, 0.01, 1.0))
-	_material.set_shader_parameter("terrain_horizon_max_angle", clampf(max_angle, 0.30, 1.5708))
-	_material.set_shader_parameter("terrain_horizon_cast_floor", clampf(cast_floor, 0.35, 1.0))
-	_material.set_shader_parameter("terrain_horizon_debug_view", clampi(debug_view, 0, 2))
-	_material.set_shader_parameter("hillshade_coarse_strength", clampf(coarse_normal_strength, 0.0, 3.0))
+	return Material_inputs.set_terrain_horizon_inputs(self, tex, bound, strength, softness, max_angle, cast_floor, debug_view, coarse_normal_strength)
 
-
-# [terrain-gi 2026-07-31] 天空可见度 LUT 与强度。lut 必须是 HexRenderer.build_gi_horizon_lut
-# 的产物（按同一 terrain_horizon_max_angle 预计算），否则植被与地形的 AO 会错位。
-# lut 为空 → gi_lut_bound=false → 植被退回启发式谷地 AO。
 func set_terrain_gi_inputs(lut: PackedVector3Array, ao_strength: float, ao_floor: float,
 		bent_strength: float, normal_floor: float) -> void:
-	if _material == null:
-		return
-	var bound: bool = lut.size() == 16
-	_material.set_shader_parameter("gi_lut_bound", bound)
-	if bound:
-		_material.set_shader_parameter("gi_horizon_lut", lut)
-	_material.set_shader_parameter("gi_ao_strength", clampf(ao_strength, 0.0, 1.0))
-	_material.set_shader_parameter("gi_ao_floor", clampf(ao_floor, 0.0, 1.0))
-	_material.set_shader_parameter("gi_bent_strength", clampf(bent_strength, 0.0, 1.0))
-	_material.set_shader_parameter("gi_normal_floor", clampf(normal_floor, 0.0, 1.0))
+	return Material_inputs.set_terrain_gi_inputs(self, lut, ao_strength, ao_floor, bent_strength, normal_floor)
 
-
-# 注入 C++ DCWorldExt。可传 null 关闭 native 路径（强制 GDScript fallback）。
 func set_world_ext(ext) -> void:
-	_world_ext = ext
-
+	return Material_inputs.set_world_ext(self, ext)
 
 func set_chunked_multimesh_enabled(enabled: bool, chunk_size_cells: int = 8) -> void:
-	var next_size := maxi(2, chunk_size_cells)
-	if _chunked_multimesh_enabled == enabled and _chunk_size_cells == next_size:
-		return
-	_chunked_multimesh_enabled = enabled
-	_chunk_size_cells = next_size
-	_invalidate_chunk_spatial_cache()
-	_active_instance_count_valid = false
-	if _map != null:
-		_rebuild_or_defer()
-
+	return Material_inputs.set_chunked_multimesh_enabled(self, enabled, chunk_size_cells)
 
 func set_visual_quality(q: int) -> void:
-	var next_q := clampi(q, 0, 2)
-	if _visual_quality == next_q:
-		return
-	var change_web_program := OS.has_feature("web") and ((_visual_quality >= 2) != (next_q >= 2))
-	_visual_quality = next_q
-	if change_web_program:
-		_refresh_shader_variants()
-	_native_delta_common_knobs = {}
-	if _map != null:
-		_rebuild_or_defer()
-
+	return Material_inputs.set_visual_quality(self, q)
 
 func set_camera_zoom(value: float) -> void:
-	var next_zoom := clampf(value, 0.01, 16.0)
-	if _camera_zoom_initialized and absf(next_zoom - _camera_zoom) < 0.001:
-		return
-	_camera_zoom = next_zoom
-	_camera_zoom_initialized = true
-	if _family_batch_suppressed:
-		_zoom_visible_fraction = _family_lod_fraction(_camera_zoom)
-		_lod_zoom_t = _zoom_visible_fraction
-		_lod_far_visible_fraction = _family_far_fraction()
-	else:
-		var thresholds := _resolved_lod_thresholds()
-		var start := thresholds.x
-		var finish := maxf(thresholds.y, start + 0.001)
-		_lod_zoom_t = smoothstep(start, finish, _camera_zoom)
-		var near_multiplier := _resolved_lod_near_density_multiplier()
-		_lod_far_visible_fraction = 1.0 / maxf(near_multiplier, 1.0)
-		_zoom_visible_fraction = lerpf(_lod_far_visible_fraction, 1.0, _lod_zoom_t)
-	_lod_alpha = 1.0
-	if _material != null:
-		_material.set_shader_parameter("lod_alpha", _lod_alpha)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
-
-	_camera_lod_hidden = _family_batch_suppressed and _zoom_visible_fraction <= 0.0001
-	_active_instance_count_valid = false
-	apply_visible_instance_fraction(_shadow_fraction)
-	# Shadows fade with zoom instead of switching off at one threshold.
-	_push_shadow_strength()
-
+	return Lifecycle.set_camera_zoom(self, value)
 
 func _family_far_fraction() -> float:
 	match detail_render_family():
@@ -605,280 +386,67 @@ func _family_lod_fraction_base(zoom_value: float) -> float:
 
 
 func detail_render_family() -> int:
-	var cfg := _profile()
-	if cfg != null and cfg.has_method("resolved_render_family"):
-		return int(cfg.resolved_render_family())
-	return 0
-
+	return Family_materials.detail_render_family(self)
 
 func detail_visual_form() -> int:
-	var cfg := _profile()
-	if cfg != null and cfg.has_method("resolved_visual_form"):
-		return int(cfg.resolved_visual_form())
-	return 3
+	return Family_materials.detail_visual_form(self)
 
-
-# Per-profile shading the impostor shader needs. Source layers push it as
-# uniforms; VegetationFamilyLayer writes it into the style LUT so a family
-# material draws each of its profiles with its own response.
 func detail_style_shading() -> Dictionary:
-	var cfg := _profile()
-	var arch := _detail_kind()
-	var is_deco := _is_decoration_archetype(arch)
-	var phenology_response := 1.0
-	var phenology_color_dominance := 0.68
-	var albedo_light_floor := 0.44
-	match arch:
-		DETAIL_TREE:
-			phenology_color_dominance = 0.84
-			albedo_light_floor = 0.60
-			# Dedicated-colour trees (cloud forest, monsoon) behave as evergreens.
-			if bool(cfg.base_color_override_enabled):
-				phenology_response = 0.22
-				phenology_color_dominance = 0.42
-		DETAIL_CONIFER:
-			phenology_response = 0.28
-			phenology_color_dominance = 0.46
-			albedo_light_floor = 0.60
-		DETAIL_PALM, DETAIL_CACTUS:
-			phenology_response = 0.16
-			phenology_color_dominance = 0.40
-			albedo_light_floor = 0.52
-		DETAIL_REED:
-			phenology_response = 0.72
-		DETAIL_ROCK, DETAIL_SNOW_MOUND, DETAIL_DEAD_SNAG:
-			phenology_response = 0.0
-			phenology_color_dominance = 0.0
-	var bloom := 0.0
-	match arch:
-		DETAIL_ALPINE_FLOWER: bloom = 0.85
-		DETAIL_SHRUB: bloom = 0.16
-		DETAIL_REED: bloom = 0.10
-		DETAIL_CACTUS: bloom = 0.35
-		DETAIL_GRASS: bloom = 0.12
-	var snow_burial_strength := 0.55
-	var snow_size_floor := 0.0
-	if arch == DETAIL_TREE:
-		snow_burial_strength = 0.0
-		snow_size_floor = 1.0
-	elif arch == DETAIL_CONIFER or arch == DETAIL_PALM:
-		snow_burial_strength = 0.0
-		snow_size_floor = 1.0
-	return {
-		"detail_form": detail_visual_form(),
-		"veg_response": 0.0 if is_deco else 1.0,
-		"phenology_response": phenology_response,
-		"phenology_color_dominance": phenology_color_dominance,
-		"albedo_light_floor": albedo_light_floor,
-		"aquatic_response": 1.0 if _spawn_domain() == SPAWN_WATER else 0.0,
-		"bloom_strength": bloom,
-		"snow_burial": 0.0 if is_deco else snow_burial_strength,
-		"snow_size_floor": snow_size_floor,
-		"snow_body_color_retention": float(cfg.snow_body_color_retention),
-		"color_saturation_gain": float(cfg.color_saturation_gain),
-		"color_value_gain": float(cfg.color_value_gain),
-		"shadow_foot_radius": _profile_float(&"shadow_foot_radius", 0.55),
-		"shadow_length_scale": _profile_float(&"shadow_length_scale", 1.0),
-		"shadow_strength": _profile_float(&"shadow_strength", 0.32),
-	}
-
+	return Family_materials.detail_style_shading(self)
 
 func detail_render_family_mask() -> int:
-	var family := detail_render_family()
-	return 0 if family <= 0 else (1 << (family - 1))
-
+	return Family_materials.detail_render_family_mask(self)
 
 func set_family_style_id(value: int) -> void:
-	_family_style_id = clampi(value, 0, 31)
-
+	return Family_materials.set_family_style_id(self, value)
 
 func family_style_id() -> int:
-	return _family_style_id
-
+	return Family_materials.family_style_id(self)
 
 func set_family_batch_suppressed(suppressed: bool) -> void:
-	if _family_batch_suppressed == suppressed:
-		return
-	_family_batch_suppressed = suppressed
-	# 家族批次要真的上屏了：之前为了省一次近景编译而用远景档的家族材质，必须
-	# 换回真实档位（VegetationFamilyLayer.configure() 会在这里之后才 rebuild_all，
-	# 所以换档赶得上第一帧）。
-	if suppressed:
-		_restore_family_material_near_forms()
-	# 两条渲染路径使用不同的 LOD 曲线。切换路径时即使 zoom 没变，也必须
-	# 重新计算实例比例；否则会把上一条路径的断崖式密度继续带到回退路径。
-	_camera_zoom_initialized = false
-	set_camera_zoom(_camera_zoom)
-	for raw_node in _chunk_nodes.values():
-		_set_family_source_node_attached(raw_node as MultiMeshInstance2D, not suppressed)
-	for raw_node in _shadow_chunk_nodes.values():
-		_set_family_source_node_attached(raw_node as MultiMeshInstance2D, not suppressed)
-	_set_family_source_node_attached(_mmi, not suppressed)
-	_set_family_source_node_attached(_shadow_mmi, not suppressed)
-	_refresh_chunk_visibility()
-	if suppressed:
-		if _mmi != null:
-			_mmi.visible = false
-		if _shadow_mmi != null:
-			_shadow_mmi.visible = false
-		for nodes in _chunk_wrap_nodes.values():
-			for raw_node in nodes:
-				var node := raw_node as MultiMeshInstance2D
-				if node != null and is_instance_valid(node):
-					node.visible = false
-		for nodes in _shadow_chunk_wrap_nodes.values():
-			for raw_node in nodes:
-				var node := raw_node as MultiMeshInstance2D
-				if node != null and is_instance_valid(node):
-					node.visible = false
-	else:
-		_refresh_chunk_visibility()
-
+	return Family_materials.set_family_batch_suppressed(self, suppressed)
 
 func _set_family_source_node_attached(node: MultiMeshInstance2D, attached: bool) -> void:
-	if node == null or not is_instance_valid(node):
-		return
-	if attached:
-		if node.get_parent() == null:
-			add_child(node)
-	elif node.get_parent() == self:
-		remove_child(node)
-
+	return Family_materials._set_family_source_node_attached(self, node, attached)
 
 func detail_family_chunk_payload(chunk_id: int) -> Dictionary:
-	if _chunk_cell_payloads.has(chunk_id):
-		var assembled: Dictionary = _chunk_assembled_payloads.get(chunk_id, {})
-		if assembled.is_empty():
-			assembled = _assemble_chunk_cell_payloads(_chunk_cell_payloads[chunk_id])
-			_chunk_assembled_payloads[chunk_id] = assembled
-		return {
-			"instance_count": int(assembled.get("instance_count", 0)),
-			"buffer": assembled.get("buffer", PackedFloat32Array()),
-			"style_id": _family_style_id,
-			"family": detail_render_family(),
-		}
-	var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
-	if node == null or not is_instance_valid(node) or node.multimesh == null:
-		return {"instance_count": 0, "buffer": PackedFloat32Array()}
-	return {
-		"instance_count": node.multimesh.instance_count,
-		"buffer": node.multimesh.buffer,
-		"style_id": _family_style_id,
-		"family": detail_render_family(),
-	}
-
+	return Family_materials.detail_family_chunk_payload(self, chunk_id)
 
 func detail_family_chunk_ids() -> Array:
-	var ids := {}
-	for raw_id in _chunk_nodes.keys():
-		ids[int(raw_id)] = true
-	for raw_id in _chunk_cell_payloads.keys():
-		ids[int(raw_id)] = true
-	return ids.keys()
-
+	return Family_materials.detail_family_chunk_ids(self)
 
 func detail_family_mesh() -> ArrayMesh:
-	return _cached_detail_mesh()
-
+	return Family_materials.detail_family_mesh(self)
 
 func detail_family_quality() -> int:
-	return _active_quality_tier()
-
+	return Family_materials.detail_family_quality(self)
 
 func detail_family_mesh_for_quality(quality: int) -> ArrayMesh:
-	var previous_quality := _visual_quality
-	_visual_quality = clampi(quality, 0, 2)
-	var mesh := _build_shrub_mesh()
-	_visual_quality = previous_quality
-	return mesh
-
+	return Family_materials.detail_family_mesh_for_quality(self, quality)
 
 func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
-	if _material == null:
-		_ensure_resources()
-	var out := _material.duplicate(true) as ShaderMaterial
-	out.shader = detail_family_shader(false)
-	out.set_shader_parameter("detail_style_lut", style_lut)
-	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
-	_track_family_material(out)
-	_push_cloud_shadow_uniforms_to(out)
-	return out
-
+	return Family_materials.detail_family_material(self, style_lut)
 
 func detail_family_shader(shadow_pass: bool) -> Shader:
-	if shadow_pass:
-		return _compiled_shader(
-			_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE,
-			"shadow")
-	return _compiled_shader(
-		_family_batch_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE,
-		"family")
+	return Family_materials.detail_family_shader(self, shadow_pass)
 
-
-# 家族批次材质的 define 前缀。家族批次没在画时（_family_batch_suppressed=false，
-# 也就是 detail_scatter_family_renderer_enabled=false 的默认配置）这份材质永远
-# 不上屏，web 上先用远景档 —— 否则 VegetationFamilyLayer.configure() 会白编一份
-# 同样大小的近景 shader，把首次编译耗时翻倍。真要画家族批次时由
-# set_family_batch_suppressed(true) 换回真实档位（见 _restore_family_material_near_forms）。
 func _family_batch_define_prefix() -> String:
-	if OS.has_feature("web") and PK_WEB_ENABLE_VEG_NEAR_FORMS and not _family_batch_suppressed:
-		var prefix := _shader_quality_define_prefix(true)
-		# Family batches add the style LUT. On Web HIGH, release the horizon
-		# sampler there; body instances retain horizon lighting and the family
-		# batch still uses PC forms, ground normals and soft shadows.
-		if _visual_quality >= 2:
-			prefix += "#define PK_SKIP_HORIZON_SHADOWS\n"
-		return prefix
-	return _shader_quality_define_prefix()
-
-
-# 家族批次材质引用（只记 web；上限 16 个，超了先丢掉旧的引用，避免多次 configure
-# 累积）。这些对象归 VegetationFamilyLayer 缓存，这里只用于"换档时改 shader"。
-var _family_materials: Array = []
-
+	return Family_materials._family_batch_define_prefix(self)
 
 func _track_family_material(mat: ShaderMaterial) -> void:
-	if not OS.has_feature("web"):
-		return
-	if _family_materials.size() >= 16:
-		_family_materials.clear()
-	_family_materials.append(mat)
-
+	return Family_materials._track_family_material(self, mat)
 
 func _restore_family_material_near_forms() -> void:
-	if _family_materials.is_empty():
-		return
-	var shader := _compiled_shader(
-		_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE, "family")
-	for raw_mat in _family_materials:
-		var mat := raw_mat as ShaderMaterial
-		if mat == null or mat.shader == shader:
-			continue
-		mat.shader = shader
-	_family_materials.clear()
-
+	return Family_materials._restore_family_material_near_forms(self)
 
 func detail_family_shadow_material(style_lut: Texture2D = null) -> ShaderMaterial:
-	if _shadow_material == null:
-		_ensure_resources()
-	var out := _shadow_material.duplicate(true) as ShaderMaterial
-	if style_lut != null:
-		out.shader = detail_family_shader(true)
-		out.set_shader_parameter("detail_style_lut", style_lut)
-		out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
-	_push_cloud_shadow_uniforms_to(out)
-	return out
-
+	return Family_materials.detail_family_shadow_material(self, style_lut)
 
 func detail_family_shadow_mesh() -> ArrayMesh:
-	if _shadow_blob_mesh == null:
-		_ensure_resources()
-	return _shadow_blob_mesh
-
+	return Family_materials.detail_family_shadow_mesh(self)
 
 func detail_family_casts_shadow() -> bool:
-	return _shadow_resources_enabled()
-
+	return Family_materials.detail_family_casts_shadow(self)
 
 func detail_change_affects_profile(
 		axis_mask: int,
@@ -886,19 +454,7 @@ func detail_change_affects_profile(
 		old_lf: int, new_lf: int,
 		old_cover: int, new_cover: int
 ) -> bool:
-	if (axis_mask & 0x80) != 0:
-		return true
-	if (axis_mask & 0x01) != 0 \
-			and (_vegetation_weight(old_veg) > 0.0 or _vegetation_weight(new_veg) > 0.0):
-		return true
-	if (axis_mask & 0x02) != 0 \
-			and (_landform_weight(old_lf) > 0.0 or _landform_weight(new_lf) > 0.0):
-		return true
-	if (axis_mask & 0x04) != 0 \
-			and (_cover_weight(old_cover) > 0.0 or _cover_weight(new_cover) > 0.0):
-		return true
-	return false
-
+	return Family_materials.detail_change_affects_profile(self, axis_mask, old_veg, new_veg, old_lf, new_lf, old_cover, new_cover)
 
 func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> void:
 	_camera_view_rect = world_rect
@@ -915,9 +471,7 @@ func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> v
 
 
 func set_lod_debug_view(enabled: bool) -> void:
-	if _material != null:
-		_material.set_shader_parameter("lod_debug_view", enabled)
-
+	return Lifecycle.set_lod_debug_view(self, enabled)
 
 func _resolved_lod_thresholds() -> Vector2:
 	var cfg := _profile()
@@ -963,133 +517,20 @@ func _resolved_lod_near_density_multiplier() -> float:
 
 
 func _effective_visible_instance_fraction() -> float:
-	if _instance_count <= 0:
-		return 0.0
-	return float(_lod_visible_count(_instance_count, _far_instance_count)) / float(_instance_count)
-
+	return Chunk_budget._effective_visible_instance_fraction(self)
 
 func active_instance_count() -> int:
-	if not _camera_view_initialized:
-		return clampi(int(round(float(_instance_count) * _zoom_visible_fraction)), 0, _instance_count)
-	if _chunked_multimesh_enabled and not _chunk_nodes.is_empty():
-		if _active_instance_count_valid:
-			return _active_instance_count_cache
-		var total := 0
-		for raw_chunk_id in _chunk_nodes.keys():
-			var chunk_id := int(raw_chunk_id)
-			if not detail_chunk_is_render_visible(chunk_id):
-				continue
-			var count := int(_chunk_instance_counts.get(chunk_id, 0))
-			total += clampi(int(round(float(count) * _zoom_visible_fraction)), 0, count)
-		_active_instance_count_cache = total
-		_active_instance_count_valid = true
-		_active_instance_count_scans += 1
-		return _active_instance_count_cache
-	if _multimesh == null:
-		return 0
-	return clampi(int(round(float(_instance_count) * _zoom_visible_fraction)), 0, _instance_count)
-
+	return Chunk_budget.active_instance_count(self)
 
 func _lod_visible_count(total: int, far_count: int) -> int:
-	if total <= 0:
-		return 0
-	if not _family_batch_suppressed:
-		var near_budget_count := clampi(int(floor(float(total) * _shadow_fraction)), 0, total)
-		var budgeted_far_count := mini(clampi(far_count, 0, total), near_budget_count)
-		return clampi(
-			int(round(lerpf(float(budgeted_far_count), float(near_budget_count), _lod_zoom_t))),
-			0,
-			total
-		)
-	var lod_count := clampi(int(round(float(total) * _zoom_visible_fraction)), 0, total)
-	if _zoom_visible_fraction > 0.0 and total > 0:
-		lod_count = maxi(1, lod_count)
-	var budget_count := clampi(int(floor(float(total) * _shadow_fraction)), 0, total)
-	return mini(lod_count, budget_count)
-
+	return Chunk_budget._lod_visible_count(self, total, far_count)
 
 func refresh_for_succession(_indices: PackedInt32Array) -> void:
-	if _map == null or _indices.is_empty():
-		return
-	if _chunked_multimesh_enabled and _refresh_chunked_for_succession(_indices):
-		return  # 分块：shadow chunk 已在 _apply_chunk_payload 内逐 chunk 镜像（O(脏chunk)）
-	_ensure_incremental_multimesh()
-	if _multimesh == null:
-		return
-	if _refresh_for_succession_native(_indices):
-		_sync_single_shadow()
-		return
-	var t0_us := Time.get_ticks_usec()
-	var cells_done := 0
-	var missing_slots := 0
-	var dropped := 0
-	var generated := 0
-	for ci in _indices:
-		var idx := int(ci)
-		var cell := _map.cell_at(idx)
-		if cell == null:
-			missing_slots += 1
-			continue
-		var payload := _generate_cell_instance_payload(cell, idx)
-		var transforms: Array = payload.get("transforms", [])
-		var colors: Array = payload.get("colors", [])
-		var customs: Array = payload.get("customs", [])
-		var next_count := transforms.size()
-		generated += next_count
-		var slots: Array = _cell_instance_lookup.get(idx, [])
-		if slots.size() < next_count:
-			var new_slots := _append_instance_slots(idx, next_count - slots.size())
-			for slot in new_slots:
-				slots.append(slot)
-			_cell_instance_lookup[idx] = slots
-		var write_count := mini(slots.size(), next_count)
-		for j in range(write_count):
-			var slot := int(slots[j])
-			_multimesh.set_instance_transform_2d(slot, transforms[j])
-			_multimesh.set_instance_color(slot, colors[j])
-			_multimesh.set_instance_custom_data(slot, customs[j])
-		for j in range(write_count, slots.size()):
-			var slot := int(slots[j])
-			_multimesh.set_instance_color(slot, Color(0, 0, 0, 0))
-		if next_count > slots.size():
-			dropped += next_count - slots.size()
-		cells_done += 1
-	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	_last_candidate_count = generated
-	_last_rebuild_reason = "incremental_cell_update"
-	_last_incremental_cells = cells_done
-	_last_incremental_missing_slots = missing_slots
-	_last_incremental_dropped_instances = dropped
-	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
-	_sync_single_wrap_nodes()
-	_sync_single_shadow()
+	return Chunk_refresh.refresh_for_succession(self, _indices)
 
 
 func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
-	if _map == null or _multimesh == null:
-		return false
-	var t0_us := Time.get_ticks_usec()
-	var payload := _encode_native_payload_for_indices(indices, 0)
-	if not bool(payload.get("ok", false)):
-		_last_rebuild_reason = str(payload.get("reason", "native_delta_fallback"))
-		return false
-	var res: Dictionary = payload.get("res", {})
-	var inst := int(res.get("instance_count", 0))
-	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
-	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
-	if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
-		_last_rebuild_reason = "native_delta_bad_payload"
-		return false
-	_apply_native_delta_payload(
-		payload.get("valid_indices", indices),
-		buffer,
-		cell_indices,
-		inst,
-		int(res.get("candidate_count", 0)),
-		int(res.get("wrap_edge_copy_count", 0)),
-		t0_us
-	)
-	return true
+	return Chunk_refresh._refresh_for_succession_native(self, indices)
 
 
 func _apply_native_delta_payload(
@@ -1100,61 +541,12 @@ func _apply_native_delta_payload(
 		candidate_count: int,
 		wrap_count: int,
 		t0_us: int) -> void:
-	var by_cell := {}
-	for i in range(inst):
-		var ci := int(cell_indices[i])
-		var srcs: Array = by_cell.get(ci, [])
-		srcs.append(i)
-		by_cell[ci] = srcs
-
-	var cells_done := 0
-	var missing_slots := 0
-	var dropped := 0
-	var generated := 0
-	for raw_idx in valid_indices:
-		var idx := int(raw_idx)
-		var src_indices: Array = by_cell.get(idx, [])
-		var slots: Array = _cell_instance_lookup.get(idx, [])
-		generated += src_indices.size()
-		if slots.size() < src_indices.size():
-			var new_slots := _append_instance_slots(idx, src_indices.size() - slots.size())
-			for slot in new_slots:
-				slots.append(slot)
-			_cell_instance_lookup[idx] = slots
-		var write_count := mini(slots.size(), src_indices.size())
-		for j in range(write_count):
-			_set_slot_from_native_buffer(int(slots[j]), buffer, int(src_indices[j]))
-		for j in range(write_count, slots.size()):
-			_multimesh.set_instance_color(int(slots[j]), Color(0, 0, 0, 0))
-		if src_indices.size() > slots.size():
-			dropped += src_indices.size() - slots.size()
-		if slots.is_empty() and src_indices.is_empty():
-			missing_slots += 1
-		cells_done += 1
-
-	_last_scatter_path = "gdext_delta"
-	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	_last_candidate_count = maxi(candidate_count, generated)
-	_last_wrap_edge_copy_count = wrap_count
-	_last_rebuild_reason = "incremental_cell_update"
-	_last_incremental_cells = cells_done
-	_last_incremental_missing_slots = missing_slots
-	_last_incremental_dropped_instances = dropped
-	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
-	_sync_single_wrap_nodes()
-	_sync_single_shadow()
+	return Chunk_refresh._apply_native_delta_payload(self, valid_indices, buffer, cell_indices,
+		inst, candidate_count, wrap_count, t0_us)
 
 
 func _set_slot_from_native_buffer(slot: int, buffer: PackedFloat32Array, src: int) -> void:
-	var b := src * 16
-	var xf := Transform2D(
-		Vector2(buffer[b + 0], buffer[b + 4]),
-		Vector2(buffer[b + 1], buffer[b + 5]),
-		Vector2(buffer[b + 3], buffer[b + 7])
-	)
-	_multimesh.set_instance_transform_2d(slot, xf)
-	_multimesh.set_instance_color(slot, Color(buffer[b + 8], buffer[b + 9], buffer[b + 10], buffer[b + 11]))
-	_multimesh.set_instance_custom_data(slot, Color(buffer[b + 12], buffer[b + 13], buffer[b + 14], buffer[b + 15]))
+	Chunk_refresh._set_slot_from_native_buffer(self, slot, buffer, src)
 
 
 func _native_offset_is_water(grid_w: int, grid_h: int) -> PackedByteArray:
@@ -1219,293 +611,30 @@ func _vegetation_climate_tables() -> Dictionary:
 
 
 func begin_detail_chunk_refresh() -> void:
-	_last_native_water_cache_ms = 0.0
-	_last_native_context_ms = 0.0
-	_last_native_knobs_ms = 0.0
-	_last_native_call_ms = 0.0
-	_last_native_apply_ms = 0.0
-	_last_cache_update_ms = 0.0
-	_last_assemble_ms = 0.0
-	_native_delta_common_knobs = {}
-
+	Chunk_refresh.begin_detail_chunk_refresh(self)
 
 func _build_native_delta_common_knobs() -> Dictionary:
-	var t0_us := Time.get_ticks_usec()
-	if _map == null:
-		_last_native_context_ms = 0.0
-		return {}
-	var grid_w: int = int(_map.width) if "width" in _map else 0
-	var grid_h: int = int(_map.height) if "height" in _map else 0
-	if grid_w <= 0 or grid_h <= 0:
-		_last_native_context_ms = 0.0
-		return {}
-	var cfg := _profile()
-	var veg_tables := _vegetation_climate_tables()
-	var override_color: Color = cfg.base_color_override
-	var common := {
-		"cell_pos_x": _map.cell_pos_x_arr,
-		"cell_pos_y": _map.cell_pos_y_arr,
-		"temp_arr": _map.temp_arr,
-		"moisture_arr": _map.moisture_arr,
-		"snow_cover_arr": _map.snow_cover_arr,
-		"weather_intensity_arr": _map.weather_intensity_arr,
-		"vegetation_vitality_arr": _map.vegetation_vitality_arr,
-		"vegetation_heat_stress_arr": _map.vegetation_heat_stress_arr,
-		"vegetation_drought_stress_arr": _map.vegetation_drought_stress_arr,
-		"vegetation_cold_stress_arr": _map.vegetation_cold_stress_arr,
-		"landform_arr": _map.landform_arr,
-		"vegetation_arr": _map.vegetation_arr,
-		"cover_arr": _map.cover_arr,
-		"weather_type_arr": _map.weather_type_arr,
-		"elevation_arr": _map.elevation_arr,
-		"soil_moisture_arr": _map.soil_moisture_arr,
-		"river_discharge_arr": _map.river_discharge_arr,
-		"wind_speed_arr": _map.wind_speed_arr,
-		"is_water_arr": _map.is_water_arr,
-		"has_river_arr": _map.has_river_arr,
-		"settlement_core_buckets": _settlement_core_buckets,
-		"veg_ideal_temp": veg_tables.get("ideal_temp", PackedFloat32Array()),
-		"veg_ideal_moist": veg_tables.get("ideal_moist", PackedFloat32Array()),
-		"veg_temp_tol": veg_tables.get("temp_tol", PackedFloat32Array()),
-		"veg_moist_tol": veg_tables.get("moist_tol", PackedFloat32Array()),
-		"veg_biomass": VegetationType.foliage_biomass_table(),
-		"hex_size": _hex_size,
-		"origin_x": _bounds.position.x,
-		"origin_y": _bounds.position.y,
-		"size_x": _bounds.size.x,
-		"size_y": _bounds.size.y,
-		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
-		"wrap_edge_margin": 0.0,
-		"grid_w": grid_w,
-		"grid_h": grid_h,
-		"offset_is_water": _native_offset_is_water(grid_w, grid_h),
-		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
-		"flow_w": int(_world.derived_size.x) if _world != null else 0,
-		"flow_h": int(_world.derived_size.y) if _world != null else 0,
-		"detail_kind": _detail_kind(),
-		"max_per_cell": _max_per_cell(),
-		"quality_density_scale": _quality_density_scale(),
-		"river_clear_threshold": cfg.river_clear_threshold,
-		"river_edge_density": cfg.river_edge_density,
-		"river_valley_boost": cfg.river_valley_boost,
-		"biomass_floor": cfg.biomass_floor,
-		"biomass_ceil": cfg.biomass_ceil,
-		"biomass_exponent": cfg.biomass_exponent,
-		"spawn_domain": _spawn_domain(),
-		"rotation_mode": _rotation_mode(),
-		"random_rotation_strength": _random_rotation_strength(),
-		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
-		"base_color_override_enabled": bool(cfg.base_color_override_enabled),
-		"base_color_r": override_color.r,
-		"base_color_g": override_color.g,
-		"base_color_b": override_color.b,
-		"base_color_a": override_color.a,
-		"vegetation_weight_overrides": cfg.vegetation_weight_overrides,
-		"landform_weight_overrides": cfg.landform_weight_overrides,
-		"cover_weight_overrides": cfg.cover_weight_overrides,
-		"spawn_radius_factor": _effective_spawn_radius_factor(),
-		"world_noise_warp_strength": cfg.world_noise_warp_strength,
-		"patch_frequency": cfg.patch_frequency,
-		"patch_cutoff": cfg.patch_cutoff,
-		"patch_contrast": cfg.patch_contrast,
-		"world_noise_mid_mix": cfg.world_noise_mid_mix,
-		"world_noise_fine_mix": cfg.world_noise_fine_mix,
-		"micro_gap_threshold": cfg.micro_gap_threshold,
-		"world_noise_acceptance": cfg.world_noise_acceptance,
-		"moisture_corridor_boost": cfg.moisture_corridor_boost,
-		"vitality_patch_boost": cfg.vitality_patch_boost,
-		"stress_hide_strength": cfg.stress_hide_strength,
-		"snow_hide_strength": cfg.snow_hide_strength,
-		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
-		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
-		"size_scale": _quality_size_scale(),
-		"vitality_dead_threshold": cfg.vitality_dead_threshold,
-		"vitality_sparse_threshold": cfg.vitality_sparse_threshold,
-		"vitality_healthy_threshold": cfg.vitality_healthy_threshold,
-		"vitality_density_power": cfg.vitality_density_power,
-		"vitality_alpha_power": cfg.vitality_alpha_power,
-		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
-		# LOD 前缀排序下沉：原生 encode 直接返回按 _lod_order_sources 语义排好序的
-		# buffer + far_count，chunk apply 免 GDScript 排序 + 免整段 buffer 重排。
-		"lod_order_enabled": native_lod_order_enabled,
-		"lod_near_density_multiplier": _resolved_lod_near_density_multiplier(),
-	}
-	common.merge(_form_knobs())
-	_last_native_context_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	return common
-
+	return Chunk_refresh._build_native_delta_common_knobs(self)
 
 func _ensure_incremental_multimesh() -> void:
-	_ensure_resources()
-	if _multimesh != null:
-		return
-	_multimesh = MultiMesh.new()
-	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
-	_multimesh.use_colors = true
-	_multimesh.use_custom_data = true
-	_multimesh.mesh = _cached_detail_mesh()
-	_multimesh.instance_count = 0
-	_multimesh.visible_instance_count = 0
-	_mmi.multimesh = _multimesh
-
+	Chunk_refresh._ensure_incremental_multimesh(self)
 
 func _rebuild_cell_instance_lookup() -> void:
-	_cell_instance_lookup.clear()
-	for i in range(_instance_cell_indices.size()):
-		var ci := int(_instance_cell_indices[i])
-		if ci < 0:
-			continue
-		var slots: Array = _cell_instance_lookup.get(ci, [])
-		slots.append(i)
-		_cell_instance_lookup[ci] = slots
-
+	Chunk_refresh._rebuild_cell_instance_lookup(self)
 
 func _append_instance_slots(cell_idx: int, count: int) -> Array:
-	var slots: Array = []
-	if count <= 0 or _multimesh == null:
-		return slots
-	var old_count := _instance_count
-	var next_count := old_count + count
-	var buffer := _multimesh.buffer
-	buffer.resize(next_count * 16)
-	_multimesh.instance_count = next_count
-	_multimesh.buffer = buffer
-	_multimesh.visible_instance_count = next_count
-	_instance_count = next_count
-	for i in range(old_count, next_count):
-		slots.append(i)
-		_instance_cell_indices.append(cell_idx)
-	return slots
-
+	return Chunk_refresh._append_instance_slots(self, cell_idx, count)
 
 func _generate_cell_instance_payload(cell, idx: int) -> Dictionary:
-	var state := _sample_cell_state(idx, cell)
-	var key := _cell_hash_key(cell, idx)
-	var suitability := _cell_suitability(cell, idx, key, state)
-	var transforms: Array = []
-	var colors: Array = []
-	var customs: Array = []
-	if suitability <= 0.0:
-		return {"transforms": transforms, "colors": colors, "customs": customs}
-	var quota := _cell_quota(suitability, maxi(1, _max_per_cell()))
-	var attempts := int(quota.x)
-	var accept_p := quota.y
-
-	var saved_cell_indices := _instance_cell_indices
-	var saved_positions := _instance_positions
-	var saved_rotations := _instance_rotations
-	var saved_sizes := _instance_sizes
-	var saved_seeds := _instance_seeds
-	var saved_variants := _instance_variants
-	var saved_forms := _instance_forms
-	var saved_scores := _instance_scores
-	var saved_cells := _instance_cells.duplicate()
-
-	_instance_cell_indices = PackedInt32Array()
-	_instance_positions = PackedVector2Array()
-	_instance_rotations = PackedFloat32Array()
-	_instance_sizes = PackedFloat32Array()
-	_instance_seeds = PackedFloat32Array()
-	_instance_variants = PackedFloat32Array()
-	_instance_forms = PackedFloat32Array()
-	_instance_scores = PackedFloat32Array()
-	_instance_cells = []
-
-	for attempt in range(attempts):
-		_try_append_instance(cell, idx, key, attempt, suitability, accept_p, state)
-	for i in range(_instance_cell_indices.size()):
-		var inst_idx := int(_instance_cell_indices[i])
-		var inst_cell = _instance_cells[i]
-		var inst_state := _sample_cell_state(inst_idx, inst_cell)
-		transforms.append(_instance_transform(i))
-		colors.append(_base_color_for_state(inst_state, _instance_variants[i]))
-		var uv := _world_uv(_instance_positions[i])
-		customs.append(Color(uv.x, uv.y, _instance_seeds[i], _instance_forms[i]))
-
-	_instance_cell_indices = saved_cell_indices
-	_instance_positions = saved_positions
-	_instance_rotations = saved_rotations
-	_instance_sizes = saved_sizes
-	_instance_seeds = saved_seeds
-	_instance_variants = saved_variants
-	_instance_forms = saved_forms
-	_instance_scores = saved_scores
-	_instance_cells = saved_cells
-
-	return {"transforms": transforms, "colors": colors, "customs": customs}
-
+	return Chunk_refresh._generate_cell_instance_payload(self, cell, idx)
 
 func instance_count() -> int:
 	return _instance_count
 
 
 func apply_visible_instance_fraction(fraction: float) -> void:
-	_shadow_fraction = clampf(fraction, 0.0, 1.0)
-	# [viewport-budget 2026-11-03] 均匀 fraction 会覆盖加权分配的每 chunk 计数，
-	# 算完必须让视口优先分配在下一拍重算，否则两者互相踩。
-	invalidate_viewport_budget_cache()
-	if _chunked_multimesh_enabled and not _chunk_nodes.is_empty():
-		var any_visible := false
-		var show_shadow := _shadow_should_render()
-		for chunk_id in _chunk_nodes.keys():
-			var node: MultiMeshInstance2D = _chunk_nodes[chunk_id]
-			if node == null or not is_instance_valid(node) or node.multimesh == null:
-				continue
-			var count := int(_chunk_instance_counts.get(chunk_id, 0))
-			var far_count := int(_chunk_far_instance_counts.get(chunk_id, count))
-			var next_visible := _lod_visible_count(count, far_count)
-			node.multimesh.visible_instance_count = next_visible
-			node.visible = not _family_batch_suppressed \
-				and detail_chunk_is_render_visible(int(chunk_id)) \
-				and _profile().enabled and not _camera_lod_hidden and next_visible > 0
-			_sync_chunk_wrap_nodes(int(chunk_id))
-			any_visible = any_visible or node.visible
-			# 逐帧 LOD 内联同步对应 shadow chunk 的可见数（仅 visible_instance_count，无 buffer 操作）
-			var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-			if snode != null and is_instance_valid(snode) and snode.multimesh != null:
-				snode.multimesh.visible_instance_count = clampi(next_visible, 0, snode.multimesh.instance_count)
-				snode.visible = show_shadow and node.visible and next_visible > 0
-				_sync_shadow_chunk_wrap_nodes(int(chunk_id))
-		visible = not _family_batch_suppressed and _profile().enabled \
-			and not _camera_lod_hidden and any_visible
-		if _shadow_mmi != null:
-			_shadow_mmi.visible = false
-		return
-	if _multimesh == null:
-		visible = false
-		_sync_single_shadow()
-		return
-	var next_visible := _lod_visible_count(_instance_count, _far_instance_count)
-	_multimesh.visible_instance_count = next_visible
-	visible = not _family_batch_suppressed and _profile().enabled \
-		and not _camera_lod_hidden and next_visible > 0
-	_sync_single_wrap_nodes()
-	_sync_single_shadow()
+	return Chunk_budget.apply_visible_instance_fraction(self, fraction)
 
-
-# ─── 视口优先的细节预算分配 [viewport-budget 2026-11-03] ──────────────────────
-# 背景：细节层原先把 hex_renderer 的全局 fraction 均匀摊到每个 chunk
-# （apply_visible_instance_fraction）。玩家放大到某片区域时，那片区域也被同一比例
-# 砍掉，近景反而比远景更荒。这里把「全局预算」改写成「视口优先」：视口内、离视口
-# 中心近、以及高缩放的 chunk 尽量保住自己的 LOD 天花板，裁剪压力按「离视口中心
-# 多远」分摊到视口边缘与外圈。
-#
-# 硬约束：Σ 可见 ≤ budget，其中
-#   budget = min(floor(global_fraction × active_instance_count()), Σ LOD 天花板)
-# 前一项正是 hex_renderer._apply_detail_global_budget 扫描 total 时用的口径
-# （active_instance_count 只累计 render-visible chunk 的 count×zoom_fraction），
-# 所以本函数给出的是「同样总预算内的重分配」，不可能突破全局预算。
-#
-# 与 _lod_visible_count 的组合顺序（叠加，不取代）：
-#   1) 先算 LOD 天花板 L_c = _lod_visible_count(count, far_count)：zoom / 远景密度
-#      倍数 / far_count 决定「这个 chunk 最多能显示多少」。实例顺序是「远景均衡前缀 +
-#      近景尾部」，visible_instance_count 截的是前缀，所以可见集永远是合法前缀。
-#   2) 再算视口权重 w_c，把 L_c 按 w_c 与预算压成 target_c（target_c ≤ L_c）。
-#      因为永不越过天花板，zoom 拉近时细节按 LOD 自然恢复，也不会出现「远景没铺满
-#      却先冒近景尾部」的破序。
-#   3) global_fraction 只当预算压缩强度，不再逐 chunk 直接相乘。
-# 注意 (1) 里屏蔽了 _shadow_fraction：否则「均匀 fraction」与「视口权重」会叠加成
-# 两次抽稀（旧路径每 chunk 先砍一刀，视口优先再砍一刀）。
 const VP_BUDGET_RECT_EPSILON := 24.0        # 视口中心/尺寸变化阈值（world units）
 const VP_BUDGET_ZOOM_EPSILON := 0.02        # 相对缩放变化阈值（2%）
 const VP_BUDGET_FRACTION_EPSILON := 0.0025  # 与 hex_renderer.DETAIL_BUDGET_FRACTION_EPSILON 对齐
@@ -1531,405 +660,52 @@ var _vp_budget_log_count: int = 0
 
 # 日志开关沿用 hex_renderer.detail_scatter_rebuild_log_enabled 的语义：
 # 由主 agent 在接线时透传，实际打印还要 PKLog.enabled 与 fraction<1 两个门。
+
 func set_viewport_budget_log_enabled(enabled: bool) -> void:
-	_vp_budget_log_enabled = enabled
+	return Chunk_budget.set_viewport_budget_log_enabled(self, enabled)
 
-
-# chunk 计数被任何路径改写（重建 chunk / 演替 / 驱逐 / 均匀 fraction）后调一次，
-# 下一次 apply 就会重算。只翻标志，O(1)。
 func invalidate_viewport_budget_cache() -> void:
-	_vp_budget_cache_valid = false
+	return Chunk_budget.invalidate_viewport_budget_cache(self)
 
-
-# 给 hex_renderer.detail_scatter_budget_report() 合并用的诊断（含缓存命中/耗时计数）。
 func viewport_budget_report() -> Dictionary:
-	var out := _vp_budget_cache_diag.duplicate(true)
-	out["valid"] = _vp_budget_cache_valid
-	out["applies"] = _vp_budget_applies
-	out["skips"] = _vp_budget_skips
-	out["last_ms"] = _vp_budget_last_ms
-	return out
+	return Chunk_budget.viewport_budget_report(self)
 
-
-# 视口优先预算分配（新增 API，不改变 apply_visible_instance_fraction 的行为）。
-# view_rect：相机当前可见世界矩形；pixel_world_size：一物理像素覆盖的世界单位数
-# （hex_renderer.pixel_world_size()，= 1/canvas_scale），用于判断「近景/总览」。
-# 返回诊断 Dictionary（同一对象被缓存复用，调用方只读）：kept / budget / chunks /
-# near_fraction_min / near_fraction_max / near_fraction_mean / far_fraction_mean /
-# rebalanced，外加 lod_total / kept_ratio / theta / boost / edge_falloff /
-# coverage_ratio / coverage_reserve / weight_min / weight_max / skipped_chunks / ms。
-# 只改 visible_instance_count（以及 node/shadow node 的 visible），不重建 MultiMesh、
-# 不逐实例 set_transform。
 func apply_visible_instance_fraction_weighted(
 		global_fraction: float,
 		view_rect: Rect2,
 		zoom: float,
 		pixel_world_size: float,
 		log_enabled: bool = false) -> Dictionary:
-	var t0_us := Time.get_ticks_usec()
-	var fraction := clampf(global_fraction, 0.0, 1.0)
-	var zoom_value := maxf(_camera_zoom, 0.01) if not is_finite(zoom) else clampf(zoom, 0.01, 16.0)
-	var px_world := pixel_world_size
-	if not is_finite(px_world) or px_world <= 0.0:
-		px_world = 1.0 / maxf(zoom_value, 0.0001)
-	var rect := view_rect
-	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
-		rect = _camera_view_rect
-	var use_view := rect.size.x > 0.0 and rect.size.y > 0.0
-	# 缓存：同样的 (view_rect, zoom, global_fraction) 不重复算，也不重复写
-	# visible_instance_count（避免每帧抖动）。
-	if _vp_budget_cache_valid and _vp_budget_signature_matches(rect, zoom_value, fraction):
-		_vp_budget_skips += 1
-		return _vp_budget_cache_diag
-	# 退化：单 MultiMesh（非分块）只能给一个前缀长度，退回原均匀行为。
-	# 小图 / mobile LOW（单层 ≤5000）常见，此时行为必须与旧路径一致。
-	if not _chunked_multimesh_enabled or _chunk_nodes.is_empty():
-		apply_visible_instance_fraction(fraction)
-		var degraded_kept := 0
-		if _multimesh != null:
-			degraded_kept = int(_multimesh.visible_instance_count)
-		var degraded := {
-			"kept": degraded_kept,
-			"budget": degraded_kept,
-			"chunks": 0,
-			"near_fraction_min": fraction,
-			"near_fraction_max": fraction,
-			"near_fraction_mean": fraction,
-			"far_fraction_mean": fraction,
-			"rebalanced": false,
-			"degraded": "single_multimesh",
-			"global_fraction": fraction,
-			"zoom": zoom_value,
-			"lod_total": _instance_count,
-			"ms": 0.0,
-		}
-		_vp_budget_last_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		_store_viewport_budget_cache(rect, zoom_value, fraction, degraded)
-		return degraded
-	# 加权分配接管预算后，_shadow_fraction 必须回到 1.0：它只在 _lod_visible_count
-	# 里当「均匀抽稀」用，留着旧值会让 chunk 重建路径再砍一刀。
-	_shadow_fraction = 1.0
-	var falloff := _vp_budget_edge_falloff(zoom_value, px_world)
-	var view_radius := maxf(rect.size.length() * 0.5, 0.0001)
-	var boost := VP_BUDGET_BOOST_MAX
-	if fraction > 0.000001:
-		boost = clampf(1.0 / fraction, 1.0, VP_BUDGET_BOOST_MAX)
-	var ids := PackedInt32Array()
-	var lods := PackedInt32Array()
-	var weights := PackedFloat32Array()
-	var ts := PackedFloat32Array()
-	var wants := PackedInt32Array()
-	var off_view := PackedInt32Array()   # [chunk_id, lod, ...] 视口外 chunk
-	var lod_total := 0
-	var w_max := 0.0
-	for raw_id in _chunk_nodes.keys():
-		var chunk_id := int(raw_id)
-		var node: MultiMeshInstance2D = _chunk_nodes[raw_id]
-		if node == null or not is_instance_valid(node) or node.multimesh == null:
-			continue
-		var count := mini(int(_chunk_instance_counts.get(chunk_id, 0)), node.multimesh.instance_count)
-		if count <= 0:
-			continue
-		var far_count := clampi(int(_chunk_far_instance_counts.get(chunk_id, count)), 0, count)
-		var lod := _vp_budget_lod_ceiling(count, far_count)
-		var t := 0.0
-		if use_view:
-			t = _vp_budget_chunk_distance_t(chunk_id, rect, view_radius)
-		elif not detail_chunk_is_render_visible(chunk_id):
-			t = -1.0
-		if t < 0.0:
-			# 视口外：本来就被 detail_chunk_is_render_visible 隐藏，不计入预算。
-			# 仍写回 LOD 天花板，避免它刚进视口时顶着 0 计数而闪一帧空白。
-			off_view.append(chunk_id)
-			off_view.append(lod)
-			continue
-		var weight := clampf(1.0 - falloff * t, 0.02, 1.0)
-		var want := 0
-		if lod > 0:
-			# 第一遍：ceil(LOD 天花板 × f × w × boost)。boost 让视口内 w≈1 的 chunk
-			# 在 f<1 时也能补到 100%（boost = 1/f，夹在 [1, 6]）。
-			want = clampi(int(ceil(float(lod) * fraction * weight * boost)), 0, lod)
-		ids.append(chunk_id)
-		lods.append(lod)
-		weights.append(weight)
-		ts.append(t)
-		wants.append(want)
-		lod_total += lod
-		w_max = maxf(w_max, weight)
-	# 预算：与 hex_renderer 扫描 total 同口径（只算 render-visible chunk 的
-	# count×zoom_fraction），再夹到本层 LOD 天花板合计。后者保证「不会显示超过 LOD」。
-	var budget := lod_total
-	if fraction < 1.0:
-		budget = mini(int(floor(float(active_instance_count()) * fraction)), lod_total)
-	budget = maxi(budget, 0)
-	# 覆盖保底：视口内每个有实例的 chunk 至少留 COVERAGE_FLOOR × 期望值，总保底不超过
-	# 预算的 60%（剩下的 40% 才用来做「近处优先」）。否则最靠近视口中心的 chunk 会
-	# 独占整个预算，视口其余部分整块变空 —— 那正是「近景更荒」的另一种形态。
-	var reserve_ratio := VP_BUDGET_COVERAGE_FLOOR
-	var reserve_raw := 0
-	for i in range(ids.size()):
-		reserve_raw += int(wants[i])
-	if reserve_raw > 0:
-		var base_reserve := 0
-		for i in range(ids.size()):
-			base_reserve += mini(int(wants[i]),
-				int(ceil(float(wants[i]) * VP_BUDGET_COVERAGE_FLOOR)))
-		var reserve_cap := int(floor(float(budget) * VP_BUDGET_COVERAGE_SHARE))
-		if base_reserve > reserve_cap:
-			reserve_ratio = VP_BUDGET_COVERAGE_FLOOR * float(reserve_cap) / float(base_reserve)
-	var reserves := PackedInt32Array()
-	var extras := PackedInt32Array()
-	var targets := PackedInt32Array()
-	var reserve_total := 0
-	var kept := 0
-	for i in range(ids.size()):
-		var want_i := int(wants[i])
-		var reserve_i := 0
-		if want_i > 0 and reserve_ratio > 0.0:
-			reserve_i = mini(want_i, int(ceil(float(want_i) * reserve_ratio)))
-		reserves.append(reserve_i)
-		extras.append(want_i - reserve_i)
-		targets.append(want_i)
-		reserve_total += reserve_i
-		kept += want_i
-	var rebalanced := false
-	var theta := 0.0
-	if kept > budget and not ids.is_empty():
-		# 第二遍：预算不够。只压「第一遍里可让的那部分」（extras = want - 保底），
-		# 按「离视口中心多远」做软阈值 θ：越远削得越深，距离相同则保留比例相同
-		# —— 不会出现「矩形块整块消失」的硬边。
-		var budget_extra := maxi(budget - reserve_total, 0)
-		theta = _vp_budget_solve_theta(w_max, extras, weights, budget_extra)
-		var denom := maxf(w_max - theta, 0.0001)
-		var compressed := 0
-		for i in range(ids.size()):
-			var ramp := 1.0
-			if theta > 0.000001:
-				ramp = clampf((weights[i] - theta) / denom, 0.0, 1.0)
-			var next_extra := clampi(
-				int(ceil(float(extras[i]) * ramp)), 0, int(extras[i]))
-			extras[i] = next_extra
-			targets[i] = int(reserves[i]) + next_extra
-			compressed += int(targets[i])
-		kept = compressed
-		rebalanced = true
-		if kept > budget and budget_extra > 0:
-			# 兜底 1：软阈值压不动的情况（一个贴近中心的 chunk 自己就吃满预算），
-			# 把可让部分整体等比缩放；保底那层不动，视口覆盖仍在。
-			var extra_kept := kept - reserve_total
-			var scale := float(budget_extra) / maxf(float(extra_kept), 1.0)
-			var scaled := 0
-			for i in range(ids.size()):
-				extras[i] = clampi(int(floor(float(extras[i]) * scale)), 0, int(extras[i]))
-				targets[i] = int(reserves[i]) + int(extras[i])
-				scaled += int(targets[i])
-			kept = scaled
-	var order := _vp_budget_weight_order(ids, weights)
-	var refilled := false
-	if kept < budget:
-		# 第三遍：还有余量，按权重从高到低回填（不超过各 chunk 的 LOD 天花板）。
-		var surplus := budget - kept
-		for k in range(order.size()):
-			if surplus <= 0:
-				break
-			var i := int(order[k])
-			var room := int(lods[i]) - int(targets[i])
-			if room <= 0:
-				continue
-			var add := mini(room, surplus)
-			targets[i] += add
-			surplus -= add
-			kept += add
-			refilled = true
-	if refilled and fraction < 0.999:
-		# f≈1 时的回填只是把「权重期望」还原成 LOD 原始结果，不算重分配。
-		rebalanced = true
-	# 兜底 2：无论如何都不许突破 budget（远端先削）。
-	if kept > budget and not order.is_empty():
-		for k in range(order.size() - 1, -1, -1):
-			if kept <= budget:
-				break
-			var i := int(order[k])
-			var cut := mini(int(targets[i]), kept - budget)
-			if cut <= 0:
-				continue
-			targets[i] -= cut
-			kept -= cut
-	# 落盘：只写 visible_instance_count / visible，复用现有 chunk 可见计数路径。
-	var layer_enabled: bool = bool(_profile().enabled)
-	var show_shadow := _shadow_should_render()
-	var any_visible := false
-	var visible_chunks := 0
-	for i in range(ids.size()):
-		var chunk_id := int(ids[i])
-		var next_visible := int(targets[i])
-		_apply_chunk_viewport_counts(chunk_id, next_visible, true, layer_enabled, show_shadow)
-		if next_visible > 0:
-			any_visible = true
-			visible_chunks += 1
-	for k in range(0, off_view.size(), 2):
-		_apply_chunk_viewport_counts(
-			int(off_view[k]), int(off_view[k + 1]), false, layer_enabled, show_shadow)
-	_visible_chunk_count = visible_chunks
-	visible = not _family_batch_suppressed and layer_enabled \
-		and not _camera_lod_hidden and any_visible
-	if _shadow_mmi != null:
-		_shadow_mmi.visible = false
-	var diag := _vp_budget_build_diag(
-		ids, lods, weights, ts, targets, kept, budget, lod_total, fraction,
-		zoom_value, px_world, falloff, boost, theta, rebalanced,
-		off_view.size() / 2)
-	diag["coverage_reserve"] = reserve_total
-	diag["coverage_ratio"] = reserve_ratio
-	diag["w_max"] = w_max
-	_vp_budget_applies += 1
-	_vp_budget_last_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	diag["ms"] = _vp_budget_last_ms
-	_store_viewport_budget_cache(rect, zoom_value, fraction, diag)
-	if (log_enabled or _vp_budget_log_enabled) and PKLog.enabled and fraction < 0.999:
-		_vp_budget_log_count += 1
-		if _vp_budget_log_count <= 8 or _vp_budget_log_count % 60 == 0:
-			print("[detail_scatter/VIEWPORT_BUDGET] layer=%s zoom=%.3f f=%.3f kept=%d/%d chunks=%d skip=%d near[min=%.2f max=%.2f mean=%.2f] far_mean=%.2f theta=%.3f boost=%.2f falloff=%.2f rebalanced=%s" % [
-				name,
-				float(diag.get("zoom", 0.0)),
-				fraction,
-				int(diag.get("kept", 0)),
-				int(diag.get("budget", 0)),
-				int(diag.get("chunks", 0)),
-				int(diag.get("skipped_chunks", 0)),
-				float(diag.get("near_fraction_min", 0.0)),
-				float(diag.get("near_fraction_max", 0.0)),
-				float(diag.get("near_fraction_mean", 0.0)),
-				float(diag.get("far_fraction_mean", 0.0)),
-				theta,
-				boost,
-				falloff,
-				str(rebalanced),
-			])
-	return diag
+	return Chunk_budget.apply_visible_instance_fraction_weighted(self, global_fraction, view_rect, zoom, pixel_world_size, log_enabled)
 
-
-# 诊断用：某 chunk 的 LOD 天花板（不含视口权重 / 不含全局 fraction）。
-# 供 hex_renderer 报告与 smoke 断言核对「保留率」用的分母。
 func detail_chunk_lod_ceiling(chunk_id: int) -> int:
-	var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
-	if node == null or not is_instance_valid(node) or node.multimesh == null:
-		return 0
-	var count := mini(int(_chunk_instance_counts.get(chunk_id, 0)), node.multimesh.instance_count)
-	if count <= 0:
-		return 0
-	return _vp_budget_lod_ceiling(
-		count, clampi(int(_chunk_far_instance_counts.get(chunk_id, count)), 0, count))
+	return Chunk_budget.detail_chunk_lod_ceiling(self, chunk_id)
 
-
-# LOD 天花板：与 _lod_visible_count 同一套 zoom / 远景分层，但屏蔽全局均匀
-# _shadow_fraction —— 预算压缩交给视口权重，LOD 只表达「拉远看远景 / 放大看细节」。
 func _vp_budget_lod_ceiling(count: int, far_count: int) -> int:
-	if count <= 0:
-		return 0
-	var saved := _shadow_fraction
-	_shadow_fraction = 1.0
-	var out := _lod_visible_count(count, far_count)
-	_shadow_fraction = saved
-	return clampi(out, 0, count)
+	return Chunk_budget._vp_budget_lod_ceiling(self, count, far_count)
 
-
-# 边缘衰减深度：一 hex 占的屏幕像素越多（越近景）衰减越浅，玩家在看细节时
-# 视口内圈与外圈的差距应该更小；总览时外圈（离视线中心远）可以让得更狠。
 func _vp_budget_edge_falloff(zoom_value: float, pixel_world_size: float) -> float:
-	var pixels_per_hex := _hex_size / maxf(pixel_world_size, 0.00001)
-	if not is_finite(pixels_per_hex) or pixels_per_hex <= 0.0:
-		return lerpf(VP_BUDGET_EDGE_FALLOFF_MAX, VP_BUDGET_EDGE_FALLOFF_MIN,
-			clampf((zoom_value - 0.20) / 1.30, 0.0, 1.0))
-	# log 尺度：6px/hex 以下算总览，48px/hex 以上算近景。
-	var near_t := clampf(
-		(log(maxf(pixels_per_hex, 0.001)) - log(6.0)) / (log(48.0) - log(6.0)), 0.0, 1.0)
-	return lerpf(VP_BUDGET_EDGE_FALLOFF_MAX, VP_BUDGET_EDGE_FALLOFF_MIN, near_t)
+	return Chunk_budget._vp_budget_edge_falloff(self, zoom_value, pixel_world_size)
 
-
-# chunk 中心到视口中心的归一化距离 t：0 = 视口中心，1 = 视口对角半径处。
-# 返回 < 0 表示该 chunk 与视口不相交（含东西环绕副本也不相交）→ 完全让出预算。
 func _vp_budget_chunk_distance_t(chunk_id: int, rect: Rect2, view_radius: float) -> float:
-	if not _chunk_intersects_rect(chunk_id, rect):
-		return -1.0
-	var bounds := _chunk_world_bounds(chunk_id)
-	if bounds.size == Vector2.ZERO:
-		return -1.0
-	var chunk_center := bounds.get_center()
-	var view_center := rect.get_center()
-	var dx := chunk_center.x - view_center.x
-	var period := _wrap_period_x()
-	if period > 0.0001:
-		dx = fposmod(dx + period * 0.5, period) - period * 0.5
-	var dy := chunk_center.y - view_center.y
-	return clampf(Vector2(dx, dy).length() / maxf(view_radius, 0.0001), 0.0, 1.0)
+	return Chunk_budget._vp_budget_chunk_distance_t(self, chunk_id, rect, view_radius)
 
-
-# 软阈值 θ 下「可让部分」还能保住多少实例（θ 越大保得越少，严格单调不增）。
-# 注意：这里刻意不调用 clampf/maxf/clampi —— 它会被二分调用 VP_BUDGET_BISECT_STEPS×N
-# 次，GDScript 里每一次函数调用都比几行内联算术贵一个量级。
 func _vp_budget_extra_at(
 		theta: float,
 		w_max: float,
 		extras: PackedInt32Array,
 		weights: PackedFloat32Array) -> int:
-	var total := 0
-	var denom := w_max - theta
-	if denom < 0.0001:
-		denom = 0.0001
-	for i in range(extras.size()):
-		var extra := int(extras[i])
-		if extra <= 0:
-			continue
-		var ramp := (weights[i] - theta) / denom
-		if ramp <= 0.0:
-			continue
-		if ramp > 1.0:
-			ramp = 1.0
-		var take := int(ceil(float(extra) * ramp))
-		if take > extra:
-			take = extra
-		total += take
-	return total
+	return Chunk_budget._vp_budget_extra_at(self, theta, w_max, extras, weights)
 
-
-# 二分出「刚好压进 budget_extra」的最小 θ（固定 VP_BUDGET_BISECT_STEPS 步 →
-# 同输入同结果）。θ 上界取 w_max：到那一步所有 chunk 的 ramp 都归零。
 func _vp_budget_solve_theta(
 		w_max: float,
 		extras: PackedInt32Array,
 		weights: PackedFloat32Array,
 		budget_extra: int) -> float:
-	if extras.is_empty():
-		return 0.0
-	if _vp_budget_extra_at(0.0, w_max, extras, weights) <= budget_extra:
-		return 0.0
-	var lo := 0.0
-	var hi := w_max if w_max > 0.0001 else 0.0001
-	for _step in range(VP_BUDGET_BISECT_STEPS):
-		var mid := (lo + hi) * 0.5
-		if _vp_budget_extra_at(mid, w_max, extras, weights) <= budget_extra:
-			hi = mid
-		else:
-			lo = mid
-	return hi
+	return Chunk_budget._vp_budget_solve_theta(self, w_max, extras, weights, budget_extra)
 
-
-# 权重降序 + chunk_id 升序的稳定顺序（回填/兜底削减都按它，跨帧确定）。
 func _vp_budget_weight_order(ids: PackedInt32Array, weights: PackedFloat32Array) -> Array:
-	var order: Array = []
-	order.resize(ids.size())
-	for i in range(ids.size()):
-		order[i] = i
-	if order.size() <= 1:
-		return order
-	order.sort_custom(func(a: int, b: int) -> bool:
-		if absf(weights[a] - weights[b]) > 0.000001:
-			return weights[a] > weights[b]
-		return ids[a] < ids[b]
-	)
-	return order
-
+	return Chunk_budget._vp_budget_weight_order(self, ids, weights)
 
 func _vp_budget_build_diag(
 		ids: PackedInt32Array,
@@ -1948,252 +724,47 @@ func _vp_budget_build_diag(
 		theta: float,
 		rebalanced: bool,
 		skipped_chunks: int) -> Dictionary:
-	var near_min := 1.0
-	var near_max := 0.0
-	var near_sum := 0.0
-	var near_n := 0
-	var far_sum := 0.0
-	var far_n := 0
-	var weight_min := 1.0
-	var weight_max := 0.0
-	for i in range(ids.size()):
-		weight_min = minf(weight_min, weights[i])
-		weight_max = maxf(weight_max, weights[i])
-		var lod := int(lods[i])
-		if lod <= 0:
-			continue
-		var kept_ratio := float(targets[i]) / float(lod)
-		if ts[i] <= VP_BUDGET_NEAR_T:
-			near_min = minf(near_min, kept_ratio)
-			near_max = maxf(near_max, kept_ratio)
-			near_sum += kept_ratio
-			near_n += 1
-		else:
-			far_sum += kept_ratio
-			far_n += 1
-	return {
-		"kept": kept,
-		"budget": budget,
-		"chunks": ids.size(),
-		"near_fraction_min": near_min if near_n > 0 else fraction,
-		"near_fraction_max": near_max if near_n > 0 else fraction,
-		"near_fraction_mean": (near_sum / float(near_n)) if near_n > 0 else fraction,
-		"far_fraction_mean": (far_sum / float(far_n)) if far_n > 0 else fraction,
-		"rebalanced": rebalanced,
-		"skipped_chunks": skipped_chunks,
-		"near_chunks": near_n,
-		"far_chunks": far_n,
-		"global_fraction": fraction,
-		"lod_total": lod_total,
-		"kept_ratio": (float(kept) / float(lod_total)) if lod_total > 0 else 0.0,
-		"edge_falloff": falloff,
-		"boost": boost,
-		"theta": theta,
-		"weight_min": weight_min,
-		"weight_max": weight_max,
-		"zoom": zoom_value,
-		"pixel_world_size": pixel_world_size,
-		"degraded": "",
-		"ms": 0.0,
-	}
-
+	return Chunk_budget._vp_budget_build_diag(self, ids, lods, weights, ts, targets, kept, budget, lod_total, fraction, zoom_value, pixel_world_size, falloff, boost, theta, rebalanced, skipped_chunks)
 
 func _vp_budget_signature_matches(rect: Rect2, zoom_value: float, fraction: float) -> bool:
-	if absf(fraction - _vp_budget_cache_fraction) >= VP_BUDGET_FRACTION_EPSILON:
-		return false
-	var zoom_eps := maxf(_vp_budget_cache_zoom * VP_BUDGET_ZOOM_EPSILON, 0.001)
-	if absf(zoom_value - _vp_budget_cache_zoom) > zoom_eps:
-		return false
-	var ref_extent := maxf(
-		maxf(_vp_budget_cache_rect.size.x, _vp_budget_cache_rect.size.y),
-		maxf(rect.size.x, rect.size.y))
-	var eps := maxf(VP_BUDGET_RECT_EPSILON, ref_extent * 0.02)
-	var delta := rect.get_center() - _vp_budget_cache_rect.get_center()
-	if absf(delta.x) > eps or absf(delta.y) > eps:
-		return false
-	if absf(rect.size.x - _vp_budget_cache_rect.size.x) > eps \
-			or absf(rect.size.y - _vp_budget_cache_rect.size.y) > eps:
-		return false
-	return true
-
+	return Chunk_budget._vp_budget_signature_matches(self, rect, zoom_value, fraction)
 
 func _store_viewport_budget_cache(
 		rect: Rect2,
 		zoom_value: float,
 		fraction: float,
 		diag: Dictionary) -> void:
-	_vp_budget_cache_rect = rect
-	_vp_budget_cache_zoom = zoom_value
-	_vp_budget_cache_fraction = fraction
-	_vp_budget_cache_diag = diag
-	_vp_budget_cache_valid = true
+	return Chunk_budget._store_viewport_budget_cache(self, rect, zoom_value, fraction, diag)
 
-
-# 写一个 chunk 的可见计数（植株 + 镜像 shadow chunk + 环绕副本）。只有
-# visible_instance_count / visible，不碰 buffer，不重建 MultiMesh。
 func _apply_chunk_viewport_counts(
 		chunk_id: int,
 		next_visible: int,
 		in_view: bool,
 		layer_enabled: bool,
 		show_shadow: bool) -> void:
-	var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
-	if node == null or not is_instance_valid(node) or node.multimesh == null:
-		return
-	var mm := node.multimesh
-	var applied := clampi(next_visible, 0, mm.instance_count)
-	mm.visible_instance_count = applied
-	node.visible = in_view and not _family_batch_suppressed \
-		and layer_enabled and not _camera_lod_hidden and applied > 0
-	_sync_chunk_wrap_nodes(chunk_id)
-	var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-	if snode == null or not is_instance_valid(snode) or snode.multimesh == null:
-		return
-	snode.multimesh.visible_instance_count = clampi(applied, 0, snode.multimesh.instance_count)
-	snode.visible = show_shadow and node.visible and applied > 0
-	_sync_shadow_chunk_wrap_nodes(chunk_id)
-
+	return Chunk_budget._apply_chunk_viewport_counts(self, chunk_id, next_visible, in_view, layer_enabled, show_shadow)
 
 func set_mobile_quality_tier(q: int) -> void:
-	var next_q := clampi(q, 0, 2)
-	if _mobile_quality_tier == next_q:
-		return
-	_mobile_quality_tier = next_q
-	_native_delta_common_knobs = {}
-	_refresh_shader_variants()
-	if OS.has_feature("mobile") and _map != null:
-		_rebuild_or_defer()
-
+	return Material_inputs.set_mobile_quality_tier(self, q)
 
 func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
 		wrap_origin_uv: float, wrap_period_uv: float) -> void:
-	var shader_changed := _cloud_shadow_direct != direct_enabled
-	_cloud_shadow_direct = direct_enabled
-	if texture != null:
-		_cloud_shadow_texture = texture
-	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
-	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
-	if shader_changed:
-		_refresh_shader_variants()
-	else:
-		_push_cloud_shadow_uniforms()
-	for raw_material in _family_materials:
-		_push_cloud_shadow_uniforms_to(raw_material as ShaderMaterial)
-
+	return Material_inputs.set_cloud_shadow_field(self, texture, direct_enabled, wrap_origin_uv, wrap_period_uv)
 
 func _push_cloud_shadow_uniforms() -> void:
-	_push_cloud_shadow_uniforms_to(_material)
-	_push_cloud_shadow_uniforms_to(_shadow_material)
-
+	return Material_inputs._push_cloud_shadow_uniforms(self)
 
 func _push_cloud_shadow_uniforms_to(material: ShaderMaterial) -> void:
-	if material == null or material.shader == null \
-			or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
-		return
-	if _cloud_shadow_texture != null:
-		material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
-	material.set_shader_parameter("cloud_shadow_field_bound",
-		_cloud_shadow_direct and _cloud_shadow_texture != null)
-	material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
-	material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
-
+	return Material_inputs._push_cloud_shadow_uniforms_to(self, material)
 
 func _rebuild_or_defer() -> void:
-	if _defer_initial_rebuild and _chunked_multimesh_enabled:
-		clear()
-		_last_rebuild_reason = "cache_invalidated_until_prefetch"
-	else:
-		_rebuild_instances()
-
+	return Material_inputs._rebuild_or_defer(self)
 
 func _ensure_resources() -> void:
-	if _mmi == null:
-		_mmi = MultiMeshInstance2D.new()
-		_mmi.name = "ShrubMultiMesh"
-		add_child(_mmi)
-	if _material == null:
-		var shader := _compiled_shader(_shader_quality_define_prefix() + _SHADER_CODE, "body")
-		_material = ShaderMaterial.new()
-		_material.shader = shader
-		_material.set_shader_parameter("world_time", 0.0)
-		_material.set_shader_parameter("season_phase", 1.0)
-		_material.set_shader_parameter("day_phase", 0.25)
-		_material.set_shader_parameter("axial_tilt_rad", 0.41)
-		_material.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
-		_material.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
-		_material.set_shader_parameter("day_night_enabled", true)
-		_bind_crown_art(_material)
-		_mmi.material = _material
-	if _shadow_material == null:
-		var shadow_shader := _compiled_shader(
-			_shader_quality_define_prefix() + _SHADOW_SHADER_CODE, "shadow")
-		_shadow_material = ShaderMaterial.new()
-		_shadow_material.shader = shadow_shader
-		_shadow_material.set_shader_parameter("season_phase", 1.0)
-		_shadow_material.set_shader_parameter("day_phase", 0.25)
-		_shadow_material.set_shader_parameter("axial_tilt_rad", 0.41)
-		_shadow_material.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
-		_shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
-		_shadow_material.set_shader_parameter("day_night_enabled", true)
-	if _shadow_blob_mesh == null:
-		_shadow_blob_mesh = _build_shadow_blob_mesh()
-	if _shadow_multimesh == null:
-		_shadow_multimesh = MultiMesh.new()
-		_shadow_multimesh.transform_format = MultiMesh.TRANSFORM_2D
-		_shadow_multimesh.use_colors = true
-		_shadow_multimesh.use_custom_data = true
-		_shadow_multimesh.mesh = _shadow_blob_mesh
-		_shadow_multimesh.instance_count = 0
-		_shadow_multimesh.visible_instance_count = 0
-	if _shadow_mmi == null:
-		_shadow_mmi = MultiMeshInstance2D.new()
-		_shadow_mmi.name = "ShrubShadowMultiMesh"
-		# 低 z（相对层 z 减 1）：渲染在地形之上、植株之下。
-		_shadow_mmi.z_index = -1
-		_shadow_mmi.material = _shadow_material
-		_shadow_mmi.multimesh = _shadow_multimesh
-		_shadow_mmi.visible = false
-		add_child(_shadow_mmi)
-	_apply_profile_uniforms()
-	_sync_world_material_inputs(false)
-	_push_cloud_shadow_uniforms()
+	return Material_inputs._ensure_resources(self)
 
-
-# ─── web 近景 vegetation form 开关（2026-10-31）──────────────────────────────
-# 背景：整套近景 form（broadleaf/conifer/palm/...）在 web 上首次绘制编译要 45s 级，
-# 当时的止损是把近景整段关掉 —— _shader_quality_define_prefix() 里给 web 加
-# PK_VEG_FAR_ONLY，vegetation_impostor 的 fragment 只剩 vf_far()，vegetation_forms
-# 里那一整套近景函数没人引用，编译器把它们全丢掉。
-#
-# 现在加载链路已经改成"进世界后分帧补 chunk"，唯一的风险回到"首次绘制 vegetation
-# shader 编译"这一项，所以把近景放回来，但默认只编 4 个主力家族（PK_VEG_NEAR_MIN）。
-#
-# 三个档位只改下面两个常量，不用动 shader：
-#   PK_WEB_ENABLE_VEG_NEAR_FORMS = false
-#       → 老行为：PK_VEG_FAR_ONLY，近景 0 个 form（远景软盘），编译最省。
-#   = true 且 PK_WEB_VEG_NEAR_FULL_FORMS = false（当前默认）
-#       → PK_VEG_NEAR_MIN：阔叶 / 针叶 / 灌木 / 草丛 4 个家族走近景，
-#         其余 13 个 form 直接落到 vf_far。
-#   = true 且 PK_WEB_VEG_NEAR_FULL_FORMS = true
-#       → 桌面同款全 17 个 form，最费编译时间（验证用，不要当默认）。
-# 回退：把 PK_WEB_ENABLE_VEG_NEAR_FORMS 改回 false，重新导出一版 web 即可，
-# shader 源文件不用改；首次编译成本仍然可以从 WebTelemetry 的 veg_shader 事件读。
-const PK_WEB_ENABLE_VEG_NEAR_FORMS := true
-const PK_WEB_VEG_NEAR_FULL_FORMS := false
-
-
-## 受限平台（web / mobile）共用的 compile-time 档位宏（shader_quality.gdshaderinc
-## 按这三个宏展开 PK_QUALITY_* / PK_MOBILE_ANY）。
-## 分支与改动前的 `match _mobile_quality_tier` 逐字一致（不 clamp：0→LOW / 2→HIGH /
-## 其余→MID），保证 mobile 侧的输出与改动前逐字节相同。
 static func quality_tier_defines(tier: int) -> String:
-	match tier:
-		0:
-			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
-		2:
-			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
-		_:
-			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+	return VegetationShaderVariants.quality_tier_defines(tier)
 
 
 ## [web-tier-pin 2026-10-31] web 上编译期档固定 LOW，与
@@ -2206,26 +777,12 @@ static func quality_tier_defines(tier: int) -> String:
 ## 必然不命中（2026-10-31 实测 veg_body 284:2668251923 vs 预热 284:2751745859）。
 ## 钉死之后源码不再取决于推档时机。Web 画质预算和 veg_shade_quality
 ## 走 `_visual_quality`，移动端继续走 `_mobile_quality_tier`。
-const WEB_SHADER_QUALITY_TIER := 0
+const WEB_SHADER_QUALITY_TIER = VegetationShaderVariants.WEB_SHADER_QUALITY_TIER
 
 
 ## web 运行期的近景 form 档位宏。`world_known=false` = `_world == null`（`_ready()` 早编）。
 static func web_form_defines(world_known: bool) -> String:
-	if not PK_WEB_ENABLE_VEG_NEAR_FORMS:
-		# 回退档：只走远景 LOD（fragment 只调 vf_far），编译器把 vegetation_forms
-		# 里的近景 form 函数整段丢掉。这就是"挡回 45s 卡死"的那一版行为。
-		return "#define PK_VEG_FAR_ONLY\n"
-	if not world_known:
-		# _ready() 早编：此刻还没有 world，先给几毫秒的远景变体，把近景预算留给
-		# setup()。这份同样是运行期会真编的一份，所以预热必须把它也列进去
-		# （见 web_warmup_shader_codes() 的 world_known=false 那格）。
-		return "#define PK_VEG_FAR_ONLY\n"
-	if PK_WEB_VEG_NEAR_FULL_FORMS:
-		# 全量档：与桌面同款，17 个 form 全编（仅在确认不再卡顿时打开）。
-		return ""
-	# 默认档：PK_VEG_NEAR_MIN，只编译阔叶/针叶/灌木/草丛 4 个主力家族，
-	# 其余 form 在 fragment 里直接落到 vf_far（详见 vegetation_forms.gdshaderinc）。
-	return "#define PK_VEG_NEAR_MIN\n"
+	return VegetationShaderVariants.web_form_defines(world_known)
 
 
 ## **纯函数**：web 运行期会用的 define 前缀。单一事实来源 —— 运行期
@@ -2236,162 +793,47 @@ static func web_form_defines(world_known: bool) -> String:
 ## `tests/rendering/veg_variant_parity_probe.gd`。
 static func web_define_prefix(tier: int, tiled: bool, world_known: bool,
 		force_far_only: bool = false, pc_high: bool = false) -> String:
-	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
-	if pc_high and world_known and not force_far_only:
-		# Full PC forms, 3px near LOD and analytic soft shadows; no mobile cuts.
-		return prefix + "#define PK_WEB_VEGETATION\n#define PK_WEB_PC_HIGH\n"
-	prefix += "#define PK_WEB_VEGETATION\n" + quality_tier_defines(tier)
-	# force_far_only：调用方自己保证这份材质暂时不上屏（家族批次材质），先用最省的档。
-	if force_far_only:
-		return prefix + "#define PK_VEG_FAR_ONLY\n"
-	return prefix + web_form_defines(world_known)
+	return VegetationShaderVariants.web_define_prefix(tier, tiled, world_known, force_far_only, pc_high)
 
 
 func _shader_quality_define_prefix(force_far_only: bool = false) -> String:
-	var tiled := _visual_tiles_active()
-	if OS.has_feature("web"):
-		var web_prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, _world != null, force_far_only,
-			_visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false)))
-		if _cloud_shadow_direct:
-			web_prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-		return web_prefix
-	# 非 web：桌面只有 tiled 前缀，与改动前逐字节相同；mobile 与 web 同属受限平台，
-	# 但档位来自推送值、form 档在非 web 上恒为空串（也逐字节同改动前）。
-	if not OS.has_feature("mobile"):
-		var desktop_prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
-		if _cloud_shadow_direct:
-			desktop_prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-		return desktop_prefix
-	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
-	prefix += quality_tier_defines(_mobile_quality_tier)
-	if _cloud_shadow_direct:
-		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-	return prefix
+	return Material_inputs._shader_quality_define_prefix(self, force_far_only)
 
-
-## 实例侧包装：非 web 恒空串。真逻辑在 `web_form_defines()`。
 func _web_veg_form_defines() -> String:
-	if not OS.has_feature("web"):
-		return ""
-	return web_form_defines(_world != null)
-
+	return Material_inputs._web_veg_form_defines(self)
 
 func _refresh_shader_variants() -> void:
-	if _material == null and _shadow_material == null:
-		return
-	var prefix := _shader_quality_define_prefix()
-	if _material != null:
-		var shader := _compiled_shader(prefix + _SHADER_CODE, "body")
-		_material.shader = shader
-		if _mmi != null:
-			_mmi.material = _material
-	if _shadow_material != null:
-		var shadow_shader := _compiled_shader(prefix + _SHADOW_SHADER_CODE, "shadow")
-		_shadow_material.shader = shadow_shader
-		if _shadow_mmi != null:
-			_shadow_mmi.material = _shadow_material
-	_apply_profile_uniforms()
-	_sync_world_material_inputs(false)
-	_push_cloud_shadow_uniforms()
-	for raw_material in _family_materials:
-		_push_cloud_shadow_uniforms_to(raw_material as ShaderMaterial)
-	# 运行期换档（tier / tiled）也要能看到编译成本；_map 为空说明还没进世界，
-	# 等 setup() 那次统一上报。
-	if _map != null:
-		_report_veg_shader_cost()
+	return Material_inputs._refresh_shader_variants(self)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		VegetationNodeLifecycle.release(self)
+
 
 
 func _clear_chunk_nodes() -> void:
-	for node in _chunk_nodes.values():
-		if node != null and is_instance_valid(node):
-			node.queue_free()
-	_chunk_nodes.clear()
-	_chunk_cell_payloads.clear()
-	_chunk_assembled_payloads.clear()
-	_chunk_dormant_since_msec.clear()
-	_clear_wrap_node_groups(_chunk_wrap_nodes)
-	_chunk_instance_counts.clear()
-	_chunk_far_instance_counts.clear()
-	_active_instance_count_cache = 0
-	_active_instance_count_valid = false
-	invalidate_viewport_budget_cache()
-	for snode in _shadow_chunk_nodes.values():
-		if snode != null and is_instance_valid(snode):
-			snode.queue_free()
-	_shadow_chunk_nodes.clear()
-	_clear_wrap_node_groups(_shadow_chunk_wrap_nodes)
-
+	return Chunk_nodes._clear_chunk_nodes(self)
 
 func _clear_wrap_node_groups(groups: Dictionary) -> void:
-	for nodes_value in groups.values():
-		var nodes: Array = nodes_value
-		for node_value in nodes:
-			var node := node_value as MultiMeshInstance2D
-			if node != null and is_instance_valid(node):
-				node.queue_free()
-	groups.clear()
-
+	return Chunk_nodes._clear_wrap_node_groups(self, groups)
 
 func _wrap_period_x() -> float:
-	if _map == null:
-		return 0.0
-	return HexUtils.wrap_period_x(_map.width, _hex_size)
+	return Chunk_nodes._wrap_period_x(self)
 
-
-# 循环副本只增加渲染节点，不复制 MultiMesh buffer。分块节点仍由 Godot 按各自 AABB 剔除。
 func _sync_wrap_nodes(source: MultiMeshInstance2D, nodes: Array, name_prefix: String) -> void:
-	var period_x := _wrap_period_x()
-	if source == null or not is_instance_valid(source) or source.multimesh == null \
-			or period_x <= 0.0001:
-		for node_value in nodes:
-			var disabled_node := node_value as MultiMeshInstance2D
-			if disabled_node != null and is_instance_valid(disabled_node):
-				disabled_node.visible = false
-				disabled_node.multimesh = source.multimesh if source != null \
-					and is_instance_valid(source) else null
-		return
-	var offsets := PackedFloat32Array([-period_x, period_x])
-	for i in range(offsets.size()):
-		var node: MultiMeshInstance2D = null
-		if i < nodes.size():
-			node = nodes[i] as MultiMeshInstance2D
-		if node == null or not is_instance_valid(node):
-			node = MultiMeshInstance2D.new()
-			node.name = "%s_%s" % [name_prefix, "Left" if i == 0 else "Right"]
-			add_child(node)
-			if i < nodes.size():
-				nodes[i] = node
-			else:
-				nodes.append(node)
-		node.position = Vector2(offsets[i], 0.0)
-		node.z_index = source.z_index
-		node.material = source.material
-		node.multimesh = source.multimesh
-		node.visible = source.visible and source.multimesh != null \
-			and source.multimesh.visible_instance_count != 0
-
+	return Chunk_nodes._sync_wrap_nodes(self, source, nodes, name_prefix)
 
 func _sync_single_wrap_nodes() -> void:
-	_sync_wrap_nodes(_mmi, _single_wrap_nodes, "DetailWrap")
-
+	return Chunk_nodes._sync_single_wrap_nodes(self)
 
 func _sync_single_shadow_wrap_nodes() -> void:
-	_sync_wrap_nodes(_shadow_mmi, _single_shadow_wrap_nodes, "DetailShadowWrap")
-
+	return Chunk_nodes._sync_single_shadow_wrap_nodes(self)
 
 func _sync_chunk_wrap_nodes(chunk_id: int) -> void:
-	var source: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
-	var nodes: Array = _chunk_wrap_nodes.get(chunk_id, [])
-	_sync_chunk_wrap_group(source, nodes, "DetailChunkWrap_%d" % chunk_id, chunk_id)
-	_chunk_wrap_nodes[chunk_id] = nodes
-
+	return Chunk_nodes._sync_chunk_wrap_nodes(self, chunk_id)
 
 func _sync_shadow_chunk_wrap_nodes(chunk_id: int) -> void:
-	var source: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-	var nodes: Array = _shadow_chunk_wrap_nodes.get(chunk_id, [])
-	_sync_chunk_wrap_group(source, nodes, "DetailShadowChunkWrap_%d" % chunk_id, chunk_id)
-	_shadow_chunk_wrap_nodes[chunk_id] = nodes
-
+	return Chunk_nodes._sync_shadow_chunk_wrap_nodes(self, chunk_id)
 
 func _sync_chunk_wrap_group(
 		source: MultiMeshInstance2D,
@@ -2399,639 +841,106 @@ func _sync_chunk_wrap_group(
 		name_prefix: String,
 		chunk_id: int
 ) -> void:
-	var period_x := _wrap_period_x()
-	var bounds := _chunk_world_bounds(chunk_id)
-	var offsets := PackedFloat32Array([-period_x, period_x])
-	for i in range(offsets.size()):
-		var should_show := source != null and is_instance_valid(source) \
-			and source.multimesh != null and source.visible and period_x > 0.0001
-		if should_show and _camera_view_initialized:
-			var shifted := Rect2(bounds.position + Vector2(offsets[i], 0.0), bounds.size)
-			should_show = shifted.intersects(_camera_view_rect, true)
-		var node: MultiMeshInstance2D = nodes[i] as MultiMeshInstance2D if i < nodes.size() else null
-		if not should_show:
-			if node != null and is_instance_valid(node):
-				node.visible = false
-			continue
-		if node == null or not is_instance_valid(node):
-			node = MultiMeshInstance2D.new()
-			node.name = "%s_%s" % [name_prefix, "Left" if i == 0 else "Right"]
-			add_child(node)
-			if i < nodes.size():
-				nodes[i] = node
-			else:
-				nodes.append(node)
-		node.position = Vector2(offsets[i], 0.0)
-		node.z_index = source.z_index
-		node.material = source.material
-		node.multimesh = source.multimesh
-		node.visible = true
+	return Chunk_nodes._sync_chunk_wrap_group(self, source, nodes, name_prefix, chunk_id)
 
-
-# 为某植株 chunk 准备/复用对应的 shadow chunk 节点（blob 网格 + shadow 材质 + 低 z）。
 func _ensure_shadow_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
-	var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-	if snode != null and is_instance_valid(snode):
-		return snode
-	if _shadow_material == null or _shadow_blob_mesh == null:
-		_ensure_resources()
-	snode = MultiMeshInstance2D.new()
-	snode.name = "DetailShadowChunk_%d" % chunk_id
-	snode.material = _shadow_material
-	snode.z_index = -1  # 地形之上、植株(z=0)之下
-	var smm := MultiMesh.new()
-	smm.transform_format = MultiMesh.TRANSFORM_2D
-	smm.use_colors = true
-	smm.use_custom_data = true
-	smm.mesh = _shadow_blob_mesh
-	smm.instance_count = 0
-	smm.visible_instance_count = 0
-	snode.multimesh = smm
-	snode.visible = false
-	if not _family_batch_suppressed:
-		add_child(snode)
-	_shadow_chunk_nodes[chunk_id] = snode
-	return snode
+	return Chunk_nodes._ensure_shadow_chunk_node(self, chunk_id)
 
-
-# 把某植株 chunk 的 buffer/count 镜像到对应 shadow chunk（仅该 chunk，O(chunk)）。
-# 投影方向/长度/强度/尺寸由 shadow 顶点着色器按 TOD 太阳方位实时算，故这里只需共享 transform+uv。
 func _mirror_shadow_chunk(chunk_id: int, buffer: PackedFloat32Array, inst: int) -> void:
-	if not _shadow_resources_enabled():
-		var ex: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-		if ex != null and is_instance_valid(ex):
-			ex.visible = false
-			_sync_shadow_chunk_wrap_nodes(chunk_id)
-		return
-	var snode := _ensure_shadow_chunk_node(chunk_id)
-	var smm := snode.multimesh
-	smm.instance_count = inst
-	if inst > 0:
-		smm.buffer = buffer
-		var far_count := int(_chunk_far_instance_counts.get(chunk_id, inst))
-		smm.visible_instance_count = _lod_visible_count(inst, far_count)
-	else:
-		smm.visible_instance_count = 0
-	snode.visible = _shadow_should_render() and visible and smm.visible_instance_count > 0
-	_sync_shadow_chunk_wrap_nodes(chunk_id)
+	return Chunk_nodes._mirror_shadow_chunk(self, chunk_id, buffer, inst)
 
-
-# 门控/全量重建时：把所有植株 chunk 重新镜像到 shadow chunk；门控关则全部隐藏。
 func _refresh_all_shadow_chunks() -> void:
-	if _shadow_resources_enabled():
-		for cid in _shadow_chunk_nodes.keys():
-			if not _chunk_nodes.has(cid):
-				var orphan: MultiMeshInstance2D = _shadow_chunk_nodes[cid]
-				if orphan != null and is_instance_valid(orphan):
-					orphan.queue_free()
-				_shadow_chunk_nodes.erase(cid)
-				var orphan_wrap_nodes: Array = _shadow_chunk_wrap_nodes.get(cid, [])
-				for node_value in orphan_wrap_nodes:
-					var orphan_wrap := node_value as MultiMeshInstance2D
-					if orphan_wrap != null and is_instance_valid(orphan_wrap):
-						orphan_wrap.queue_free()
-				_shadow_chunk_wrap_nodes.erase(cid)
-		for cid in _chunk_nodes.keys():
-			var pnode: MultiMeshInstance2D = _chunk_nodes[cid]
-			if pnode != null and is_instance_valid(pnode) and pnode.multimesh != null:
-				_mirror_shadow_chunk(int(cid), pnode.multimesh.buffer, pnode.multimesh.instance_count)
-	else:
-		for cid in _shadow_chunk_nodes.keys():
-			var snode: MultiMeshInstance2D = _shadow_chunk_nodes[cid]
-			if snode != null and is_instance_valid(snode):
-				snode.visible = false
-				_sync_shadow_chunk_wrap_nodes(int(cid))
+	return Chunk_nodes._refresh_all_shadow_chunks(self)
 
-
-# 单节点(非分块)回退模式的投影同步：仅在实例数变化(或强制)时复制 _multimesh.buffer。
 func _sync_single_shadow(force_rebuild: bool = false) -> void:
-	if _shadow_mmi == null or _shadow_multimesh == null:
-		return
-	if not _shadow_resources_enabled():
-		_shadow_multimesh.visible_instance_count = 0
-		_shadow_mmi.visible = false
-		_sync_single_shadow_wrap_nodes()
-		return
-	var total := (_multimesh.instance_count if _multimesh != null else 0)
-	if force_rebuild or total != _shadow_built_total:
-		if _multimesh != null and total > 0:
-			_shadow_multimesh.instance_count = total
-			_shadow_multimesh.buffer = _multimesh.buffer
-		else:
-			_shadow_multimesh.instance_count = 0
-		_shadow_built_total = total
-	if not _shadow_should_render() or not visible:
-		_shadow_multimesh.visible_instance_count = 0
-		_shadow_mmi.visible = false
-		_sync_single_shadow_wrap_nodes()
-		return
-	if _shadow_built_total <= 0:
-		_shadow_multimesh.visible_instance_count = 0
-		_shadow_mmi.visible = false
-		_sync_single_shadow_wrap_nodes()
-		return
-	var combined_fraction := _effective_visible_instance_fraction()
-	var vis := clampi(
-		int(floor(float(_shadow_built_total) * combined_fraction)),
-		0,
-		_shadow_built_total)
-	_shadow_multimesh.visible_instance_count = vis
-	_shadow_mmi.visible = vis > 0
-	_sync_single_shadow_wrap_nodes()
+	return Chunk_nodes._sync_single_shadow(self, force_rebuild)
 
-
-# ─── [veg-cast-shadow] 投影 pass：blob 网格 + 单节点 buffer 复制 + 门控 ───────────
-# 单位圆盘扇形：中心顶点(0,0, UV 中心) + 边缘顶点(cos,sin, UV 在半径 0.5 圆上)。
-# VERTEX 直接是单位圆坐标(供 shader 拉成椭圆)；UV 仅备用。三角扇连接。
 func _build_shadow_blob_mesh() -> ArrayMesh:
-	var seg := 20
-	var verts := PackedVector2Array()
-	var uvs := PackedVector2Array()
-	var cols := PackedColorArray()
-	var idx := PackedInt32Array()
-	verts.append(Vector2.ZERO)
-	uvs.append(Vector2(0.5, 0.5))
-	cols.append(Color(1.0, 1.0, 1.0, 1.0))
-	for i in range(seg):
-		var a := TAU * float(i) / float(seg)
-		var p := Vector2(cos(a), sin(a))
-		verts.append(p)
-		uvs.append(Vector2(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5))
-		cols.append(Color(1.0, 1.0, 1.0, 1.0))
-	for i in range(seg):
-		idx.append(0)
-		idx.append(1 + i)
-		idx.append(1 + ((i + 1) % seg))
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = cols
-	arrays[Mesh.ARRAY_INDEX] = idx
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
+	return Chunk_nodes._build_shadow_blob_mesh(self)
 
 func _archetype_casts_shadow() -> bool:
-	# 有高度的俯视 form 投影；水下（海带/珊瑚）和贴地（地衣/泥炭/草/雪堆）跳过。
-	match detail_visual_form():
-		ProfileScript.FORM_KELP, ProfileScript.FORM_CORAL, ProfileScript.FORM_LICHEN, \
-				ProfileScript.FORM_PEAT_TUFT:
-			return false
-		ProfileScript.FORM_ROCK:
-			return true
-	match _detail_kind():
-		DETAIL_TREE, DETAIL_SHRUB, DETAIL_CONIFER, DETAIL_PALM, DETAIL_CACTUS, DETAIL_REED, DETAIL_DEAD_SNAG, DETAIL_ALPINE_FLOWER:
-			return true
-		_:
-			return false
-
+	return Chunk_nodes._archetype_casts_shadow(self)
 
 func _shadow_resources_enabled() -> bool:
-	var cfg := _profile()
-	if not cfg.enabled:
-		return false
-	var on = cfg.get("cast_shadow_enabled")
-	if on != null and not bool(on):
-		return false
-	# Performance tiers: desktop LOW off, MID/HIGH zoom gated; mobile only HIGH.
-	if OS.has_feature("mobile"):
-		if _active_quality_tier() < 2:
-			return false
-	elif _active_quality_tier() < 1:
-		return false
-	return _archetype_casts_shadow()
-
+	return Chunk_nodes._shadow_resources_enabled(self)
 
 func _shadow_min_zoom() -> float:
-	var cfg := _profile()
-	var configured_min = cfg.get("shadow_min_zoom")
-	# Profiles default shadow_min_zoom to a negative value meaning "use the tier default".
-	if (configured_min is float or configured_min is int) and float(configured_min) > 0.0:
-		return float(configured_min)
-	if OS.has_feature("mobile"):
-		return 1.25
-	# [veg-lod-high 2026-10-18] 高画质在总览 zoom 也保留树影：树木在 0.45 以上仍有 89% 密度，
-	# 影子却到 0.80 才出现，拉远后整片森林没有投影，画面立刻变平。
-	return 0.45 if _active_quality_tier() >= 2 else 0.70
+	return Chunk_nodes._shadow_min_zoom(self)
 
-
-# [shadow-zoom-fade 2026-10-18] 投影不在某个 zoom 上硬开关：门槛就是开始淡入的位置，
-# 之后 0.15 zoom 内升到全强度。拉远时影子变淡而不是整片消失——原先 1.10 的硬门控会让
-# 森林投影在一步之内全部消失，画面立刻变平。
 func _shadow_zoom_gain() -> float:
-	var min_zoom := _shadow_min_zoom()
-	if min_zoom <= 0.0:
-		return 1.0
-	return smoothstep(min_zoom, min_zoom + 0.15, _camera_zoom)
-
+	return Chunk_nodes._shadow_zoom_gain(self)
 
 func _push_shadow_strength() -> void:
-	if _shadow_material == null:
-		return
-	_shadow_material.set_shader_parameter(
-		"shadow_strength", _shadow_strength_base * _shadow_zoom_gain())
-
+	return Chunk_nodes._push_shadow_strength(self)
 
 func _shadow_should_render() -> bool:
-	if not _shadow_resources_enabled() or _camera_lod_hidden:
-		return false
-	# Node visibility follows the same ramp as strength: no draw calls for shadows
-	# that would be multiplied down to nothing anyway.
-	return _shadow_zoom_gain() > 0.001
+	return Chunk_nodes._shadow_should_render(self)
 
-
-const _SHADOW_BUFFER_STRIDE := 16  # 2D transform(8) + color(4) + custom(4)
-
-
-# 投影层同步分发：分块模式下 buffer 已在 _apply_chunk_payload* 逐 chunk 镜像，这里只在 force
-# （门控/全量重建）时整体重镜像；单节点回退模式走 _sync_single_shadow。逐帧 LOD 在
-# apply_visible_instance_fraction 内联同步 shadow chunk 的 visible_instance_count（无 buffer 操作）。
 func _sync_shadow_layer(force_rebuild: bool = false) -> void:
-	if not _chunk_nodes.is_empty():
-		if _shadow_mmi != null:
-			_shadow_mmi.visible = false  # 分块模式不使用单节点投影
-		if force_rebuild:
-			_refresh_all_shadow_chunks()
-		return
-	_sync_single_shadow(force_rebuild)
-
+	return Chunk_nodes._sync_shadow_layer(self, force_rebuild)
 
 func _chunk_id_for_cell_idx(cell_idx: int) -> int:
-	if _map == null or cell_idx < 0:
-		return -1
-	var cell = _map.cell_at(cell_idx)
-	if cell == null:
-		return -1
-	var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
-	var cx := int(floor(float(off.x) / float(maxi(1, _chunk_size_cells))))
-	var cy := int(floor(float(off.y) / float(maxi(1, _chunk_size_cells))))
-	return cy * 100000 + cx
-
+	return Chunk_nodes._chunk_id_for_cell_idx(self, cell_idx)
 
 func _cell_indices_for_chunk(chunk_id: int) -> PackedInt32Array:
-	if _chunk_cell_indices_cache.has(chunk_id):
-		return _chunk_cell_indices_cache[chunk_id]
-	var out := PackedInt32Array()
-	if _map == null or chunk_id < 0:
-		return out
-	var chunk_x := chunk_id % 100000
-	var chunk_y := int(floor(float(chunk_id) / 100000.0))
-	var x0 := chunk_x * _chunk_size_cells
-	var y0 := chunk_y * _chunk_size_cells
-	var x1 := mini(int(_map.width), x0 + _chunk_size_cells)
-	var y1 := mini(int(_map.height), y0 + _chunk_size_cells)
-	for row in range(y0, y1):
-		for col in range(x0, x1):
-			var cube := HexUtils.offset_to_cube(col, row)
-			var cell = _map.get_cell(cube.x, cube.y)
-			if cell != null:
-				out.append(int(cell.index))
-	_chunk_cell_indices_cache[chunk_id] = out
-	_chunk_cell_cache_builds += 1
-	return out
-
+	return Chunk_nodes._cell_indices_for_chunk(self, chunk_id)
 
 func detail_chunk_cells(chunk_id: int) -> PackedInt32Array:
-	return _cell_indices_for_chunk(chunk_id)
-
+	return Chunk_nodes.detail_chunk_cells(self, chunk_id)
 
 func detail_chunk_id_for_cell(cell_idx: int) -> int:
-	return _chunk_id_for_cell_idx(cell_idx)
-
+	return Chunk_nodes.detail_chunk_id_for_cell(self, cell_idx)
 
 func _chunk_world_bounds(chunk_id: int) -> Rect2:
-	if _chunk_world_bounds_cache.has(chunk_id):
-		return _chunk_world_bounds_cache[chunk_id]
-	var indices := _cell_indices_for_chunk(chunk_id)
-	if indices.is_empty() or _map == null:
-		return Rect2()
-	var min_pos := Vector2(INF, INF)
-	var max_pos := Vector2(-INF, -INF)
-	for raw_idx in indices:
-		var idx := int(raw_idx)
-		if idx < 0 or idx >= _map.cell_pos_x_arr.size() or idx >= _map.cell_pos_y_arr.size():
-			continue
-		var p := Vector2(_map.cell_pos_x_arr[idx], _map.cell_pos_y_arr[idx]) * _hex_size
-		min_pos.x = minf(min_pos.x, p.x)
-		min_pos.y = minf(min_pos.y, p.y)
-		max_pos.x = maxf(max_pos.x, p.x)
-		max_pos.y = maxf(max_pos.y, p.y)
-	if min_pos.x == INF:
-		return Rect2()
-	var pad := Vector2.ONE * _hex_size * 1.5
-	var bounds := Rect2(min_pos - pad, max_pos - min_pos + pad * 2.0)
-	_chunk_world_bounds_cache[chunk_id] = bounds
-	_chunk_bounds_cache_builds += 1
-	return bounds
-
+	return Chunk_nodes._chunk_world_bounds(self, chunk_id)
 
 func _invalidate_chunk_spatial_cache() -> void:
-	_chunk_cell_indices_cache.clear()
-	_chunk_world_bounds_cache.clear()
-
+	return Chunk_nodes._invalidate_chunk_spatial_cache(self)
 
 func _chunk_intersects_rect(chunk_id: int, rect: Rect2) -> bool:
-	if not _camera_view_initialized:
-		return true
-	var bounds := _chunk_world_bounds(chunk_id)
-	if bounds.size == Vector2.ZERO:
-		return false
-	if bounds.intersects(rect, true):
-		return true
-	var period := _wrap_period_x()
-	if period <= 0.0001:
-		return false
-	return Rect2(bounds.position + Vector2(-period, 0.0), bounds.size).intersects(rect, true) \
-		or Rect2(bounds.position + Vector2(period, 0.0), bounds.size).intersects(rect, true)
-
+	return Chunk_nodes._chunk_intersects_rect(self, chunk_id, rect)
 
 func detail_chunk_is_in_prefetch(chunk_id: int) -> bool:
-	return not _camera_view_initialized or _chunk_intersects_rect(chunk_id, _camera_prefetch_rect)
-
+	return Chunk_nodes.detail_chunk_is_in_prefetch(self, chunk_id)
 
 func detail_chunk_is_render_visible(chunk_id: int) -> bool:
-	return not _camera_view_initialized or _chunk_intersects_rect(chunk_id, _camera_view_rect)
-
+	return Chunk_nodes.detail_chunk_is_render_visible(self, chunk_id)
 
 func detail_chunk_plan_for_view(world_rect: Rect2) -> Array:
-	var out: Array = []
-	if _map == null:
-		return out
-	var chunks_x := int(ceil(float(_map.width) / float(maxi(1, _chunk_size_cells))))
-	var chunks_y := int(ceil(float(_map.height) / float(maxi(1, _chunk_size_cells))))
-	for cy in range(chunks_y):
-		for cx in range(chunks_x):
-			var chunk_id := cy * 100000 + cx
-			if _chunk_intersects_rect(chunk_id, world_rect):
-				out.append({
-					"chunk_id": chunk_id,
-					"cell_indices": _cell_indices_for_chunk(chunk_id),
-				})
-	return out
-
+	return Chunk_nodes.detail_chunk_plan_for_view(self, world_rect)
 
 func detail_prefetch_chunk_plan() -> Array:
-	return detail_chunk_plan_for_view(_camera_prefetch_rect) if _camera_view_initialized else []
-
+	return Chunk_nodes.detail_prefetch_chunk_plan(self)
 
 func detail_chunk_has_resident_cache(chunk_id: int) -> bool:
-	return _chunk_cell_payloads.has(chunk_id)
-
+	return Chunk_nodes.detail_chunk_has_resident_cache(self, chunk_id)
 
 func evict_dormant_detail_chunks(now_msec: int, retention_msec: int) -> int:
-	var evicted := 0
-	for raw_chunk_id in _chunk_cell_payloads.keys():
-		var chunk_id := int(raw_chunk_id)
-		if detail_chunk_is_in_prefetch(chunk_id):
-			_chunk_dormant_since_msec.erase(chunk_id)
-			continue
-		if not _chunk_dormant_since_msec.has(chunk_id):
-			_chunk_dormant_since_msec[chunk_id] = now_msec
-			continue
-		if now_msec - int(_chunk_dormant_since_msec[chunk_id]) < retention_msec:
-			continue
-		_chunk_cell_payloads.erase(chunk_id)
-		_chunk_assembled_payloads.erase(chunk_id)
-		_chunk_dormant_since_msec.erase(chunk_id)
-		_chunk_instance_counts.erase(chunk_id)
-		_chunk_far_instance_counts.erase(chunk_id)
-		var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
-		if node != null and is_instance_valid(node) and node.multimesh != null:
-			node.visible = false
-			node.multimesh.instance_count = 0
-		var shadow: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-		if shadow != null and is_instance_valid(shadow) and shadow.multimesh != null:
-			shadow.visible = false
-			shadow.multimesh.instance_count = 0
-		evicted += 1
-	if evicted > 0:
-		_refresh_instance_totals_from_chunks()
-		invalidate_viewport_budget_cache()
-	return evicted
-
+	return Chunk_nodes.evict_dormant_detail_chunks(self, now_msec, retention_msec)
 
 func _refresh_chunk_visibility() -> void:
-	if not _chunked_multimesh_enabled:
-		return
-	var any_visible := false
-	_visible_chunk_count = 0
-	_prefetch_chunk_count = 0
-	for raw_chunk_id in _chunk_nodes.keys():
-		var chunk_id := int(raw_chunk_id)
-		var node: MultiMeshInstance2D = _chunk_nodes[raw_chunk_id]
-		if node == null or not is_instance_valid(node) or node.multimesh == null:
-			continue
-		var in_render := detail_chunk_is_render_visible(chunk_id)
-		var in_prefetch := detail_chunk_is_in_prefetch(chunk_id)
-		if in_prefetch:
-			_prefetch_chunk_count += 1
-		var count := node.multimesh.visible_instance_count
-		node.visible = not _family_batch_suppressed and in_render \
-			and _profile().enabled and not _camera_lod_hidden and count > 0
-		if node.visible:
-			_visible_chunk_count += 1
-			any_visible = true
-		_sync_chunk_wrap_nodes(chunk_id)
-		var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
-		if snode != null and is_instance_valid(snode):
-			snode.visible = node.visible and _shadow_should_render() \
-				and snode.multimesh != null and snode.multimesh.visible_instance_count > 0
-			_sync_shadow_chunk_wrap_nodes(chunk_id)
-	visible = not _family_batch_suppressed and _profile().enabled \
-		and not _camera_lod_hidden and any_visible
-
+	return Chunk_nodes._refresh_chunk_visibility(self)
 
 func _ensure_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
-	var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
-	if node != null and is_instance_valid(node):
-		return node
-	node = MultiMeshInstance2D.new()
-	node.name = "DetailChunk_%d" % chunk_id
-	node.material = _material
-	if not _family_batch_suppressed:
-		add_child(node)
-	_chunk_nodes[chunk_id] = node
-	return node
-
+	return Chunk_nodes._ensure_chunk_node(self, chunk_id)
 
 func _lod_order_sources(
 		src_indices: Array,
 		cell_indices: PackedInt32Array,
 		buffer: PackedFloat32Array) -> Dictionary:
-	# MultiMesh.visible_instance_count only exposes a prefix. Build that prefix as a
-	# stable, cell-stratified far field, then append per-cell near-detail layers.
-	# This prevents storage order (or nth_element cap order) from making whole hexes
-	# disappear while adjacent hexes retain every instance.
-	var by_cell := {}
-	for raw_src in src_indices:
-		var src := int(raw_src)
-		if src < 0 or src >= cell_indices.size():
-			continue
-		var cell_idx := int(cell_indices[src])
-		var group: Array = by_cell.get(cell_idx, [])
-		group.append(src)
-		by_cell[cell_idx] = group
-	var cell_ids: Array = by_cell.keys()
-	cell_ids.sort()
-	for raw_cell_id in cell_ids:
-		var group: Array = by_cell[raw_cell_id]
-		group.sort_custom(func(a, b) -> bool:
-			var ai := int(a) * 16 + 14
-			var bi := int(b) * 16 + 14
-			var av := buffer[ai] if ai >= 0 and ai < buffer.size() else float(a)
-			var bv := buffer[bi] if bi >= 0 and bi < buffer.size() else float(b)
-			return av < bv
-		)
-		# East/west wrap copies share the exact same seed. Keep them in one atomic
-		# cluster so a LOD prefix never shows the source without its seam copy.
-		var clusters: Array = []
-		var last_seed := -2.0
-		for raw_src in group:
-			var src := int(raw_src)
-			var seed_idx := src * 16 + 14
-			var seed := buffer[seed_idx] if seed_idx >= 0 and seed_idx < buffer.size() else float(src)
-			if clusters.is_empty() or absf(seed - last_seed) > 0.000001:
-				clusters.append([])
-			var cluster: Array = clusters[clusters.size() - 1]
-			cluster.append(src)
-			clusters[clusters.size() - 1] = cluster
-			last_seed = seed
-		by_cell[raw_cell_id] = clusters
-
-	var multiplier := maxf(_resolved_lod_near_density_multiplier(), 1.0)
-	var far_counts := {}
-	var max_far := 0
-	var max_total := 0
-	for raw_cell_id in cell_ids:
-		var clusters: Array = by_cell[raw_cell_id]
-		var far_count := mini(clusters.size(), maxi(1, int(ceil(float(clusters.size()) / multiplier))))
-		far_counts[raw_cell_id] = far_count
-		max_far = maxi(max_far, far_count)
-		max_total = maxi(max_total, clusters.size())
-
-	var ordered: Array = []
-	# Round-robin by cell: under an emergency global budget, one representative
-	# survives in as many occupied cells as possible before second/third instances.
-	for rank in range(max_far):
-		for raw_cell_id in cell_ids:
-			var clusters: Array = by_cell[raw_cell_id]
-			if rank < int(far_counts[raw_cell_id]):
-				var cluster: Array = clusters[rank]
-				for raw_src in cluster:
-					ordered.append(int(raw_src))
-	var far_total := ordered.size()
-	for rank in range(max_total):
-		for raw_cell_id in cell_ids:
-			var clusters: Array = by_cell[raw_cell_id]
-			var far_count := int(far_counts[raw_cell_id])
-			var local_idx := far_count + rank
-			if local_idx < clusters.size():
-				var cluster: Array = clusters[local_idx]
-				for raw_src in cluster:
-					ordered.append(int(raw_src))
-	return {
-		"order": ordered,
-		"far_count": far_total,
-	}
-
+	return Chunk_refresh._lod_order_sources(self, src_indices, cell_indices, buffer)
 
 func _lod_reorder_native_payload(
 		buffer: PackedFloat32Array,
 		cell_indices: PackedInt32Array,
 		inst: int) -> Dictionary:
-	var src_indices: Array = []
-	for i in range(inst):
-		src_indices.append(i)
-	var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
-	var ordered_sources: Array = lod_order.get("order", [])
-	inst = mini(inst, ordered_sources.size())
-	var ordered_buffer := PackedFloat32Array()
-	var ordered_cells := PackedInt32Array()
-	ordered_buffer.resize(inst * 16)
-	ordered_cells.resize(inst)
-	for dst in range(inst):
-		var src := int(ordered_sources[dst])
-		ordered_cells[dst] = cell_indices[src]
-		for k in range(16):
-			ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
-	return {
-		"buffer": ordered_buffer,
-		"cell_indices": ordered_cells,
-		"instance_count": inst,
-		"far_count": mini(int(lod_order.get("far_count", inst)), inst),
-	}
-
+	return Chunk_refresh._lod_reorder_native_payload(self, buffer, cell_indices, inst)
 
 func _reorder_generated_instances_for_lod() -> void:
-	var n := _instance_cell_indices.size()
-	if n <= 0:
-		_far_instance_count = 0
-		return
-	var src_indices: Array = []
-	var seed_buffer := PackedFloat32Array()
-	seed_buffer.resize(n * 16)
-	for i in range(n):
-		src_indices.append(i)
-		seed_buffer[i * 16 + 14] = _instance_seeds[i]
-	var lod_order := _lod_order_sources(src_indices, _instance_cell_indices, seed_buffer)
-	var order: Array = lod_order.get("order", [])
-	var next_cell_indices := PackedInt32Array()
-	var next_positions := PackedVector2Array()
-	var next_rotations := PackedFloat32Array()
-	var next_sizes := PackedFloat32Array()
-	var next_seeds := PackedFloat32Array()
-	var next_variants := PackedFloat32Array()
-	var next_forms := PackedFloat32Array()
-	var next_scores := PackedFloat32Array()
-	var next_cells: Array = []
-	for raw_src in order:
-		var src := int(raw_src)
-		next_cell_indices.append(_instance_cell_indices[src])
-		next_positions.append(_instance_positions[src])
-		next_rotations.append(_instance_rotations[src])
-		next_sizes.append(_instance_sizes[src])
-		next_seeds.append(_instance_seeds[src])
-		next_variants.append(_instance_variants[src])
-		next_forms.append(_instance_forms[src])
-		next_scores.append(_instance_scores[src])
-		next_cells.append(_instance_cells[src])
-	_instance_cell_indices = next_cell_indices
-	_instance_positions = next_positions
-	_instance_rotations = next_rotations
-	_instance_sizes = next_sizes
-	_instance_seeds = next_seeds
-	_instance_variants = next_variants
-	_instance_forms = next_forms
-	_instance_scores = next_scores
-	_instance_cells = next_cells
-	_far_instance_count = mini(int(lod_order.get("far_count", n)), n)
-
+	return Chunk_refresh._reorder_generated_instances_for_lod(self)
 
 func _prepare_chunk_multimesh(chunk_id: int, inst: int, far_count: int = -1) -> MultiMesh:
-	var node := _ensure_chunk_node(chunk_id)
-	var mm := node.multimesh
-	if mm == null:
-		mm = MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_2D
-		mm.use_colors = true
-		mm.use_custom_data = true
-		node.multimesh = mm
-	mm.mesh = _cached_detail_mesh()
-	mm.instance_count = inst
-	_chunk_instance_counts[chunk_id] = inst
-	_chunk_far_instance_counts[chunk_id] = clampi(far_count if far_count >= 0 else inst, 0, inst)
-	_active_instance_count_valid = false
-	# [viewport-budget 2026-11-03] chunk 计数被重建 → 视口优先分配必须重算，
-	# 否则这里写回的均匀 LOD 前缀会盖掉加权结果。
-	invalidate_viewport_budget_cache()
-	mm.visible_instance_count = _lod_visible_count(inst, int(_chunk_far_instance_counts[chunk_id]))
-	node.visible = not _family_batch_suppressed and detail_chunk_is_render_visible(chunk_id) \
-		and _profile().enabled and not _camera_lod_hidden and mm.visible_instance_count > 0
-	_sync_chunk_wrap_nodes(chunk_id)
-	return mm
-
+	return Chunk_refresh._prepare_chunk_multimesh(self, chunk_id, inst, far_count)
 
 func _apply_chunk_payload(
 		chunk_id: int,
@@ -3039,32 +948,7 @@ func _apply_chunk_payload(
 		src_indices: Array,
 		cell_indices: PackedInt32Array,
 		inst: int) -> void:
-	var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
-	var ordered_sources: Array = lod_order.get("order", [])
-	inst = mini(inst, ordered_sources.size())
-	var far_count := mini(int(lod_order.get("far_count", inst)), inst)
-	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
-	if inst > 0:
-		var chunk_buffer := PackedFloat32Array()
-		chunk_buffer.resize(inst * 16)
-		var ordered_cells := PackedInt32Array()
-		ordered_cells.resize(inst)
-		for dst in range(inst):
-			var src := int(ordered_sources[dst])
-			var src_b := src * 16
-			var dst_b := dst * 16
-			for k in range(16):
-				chunk_buffer[dst_b + k] = buffer[src_b + k]
-			ordered_cells[dst] = int(cell_indices[src])
-		mm.buffer = chunk_buffer
-		_cache_chunk_cell_payloads(chunk_id, chunk_buffer, ordered_cells, inst)
-		_mirror_shadow_chunk(chunk_id, chunk_buffer, inst)
-	else:
-		mm.buffer = PackedFloat32Array()
-		_chunk_cell_payloads[chunk_id] = {}
-		_chunk_assembled_payloads.erase(chunk_id)
-		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
-
+	return Chunk_refresh._apply_chunk_payload(self, chunk_id, buffer, src_indices, cell_indices, inst)
 
 func _apply_chunk_payload_direct(
 		chunk_id: int,
@@ -3073,79 +957,14 @@ func _apply_chunk_payload_direct(
 		inst: int,
 		native_far_count: int = -1,
 		cache_already_updated: bool = false) -> void:
-	var far_count := mini(native_far_count, inst)
-	if native_far_count < 0:
-		# 旧 DLL（无 lod_ordered）：GDScript 复刻排序兜底，与原生序同一语义契约。
-		var src_indices: Array = []
-		for i in range(inst):
-			src_indices.append(i)
-		var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
-		var ordered_sources: Array = lod_order.get("order", [])
-		inst = mini(inst, ordered_sources.size())
-		far_count = mini(int(lod_order.get("far_count", inst)), inst)
-		if inst > 0:
-			var ordered_buffer := PackedFloat32Array()
-			ordered_buffer.resize(inst * 16)
-			var ordered_cell_indices := PackedInt32Array()
-			ordered_cell_indices.resize(inst)
-			for dst in range(inst):
-				var src := int(ordered_sources[dst])
-				for k in range(16):
-					ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
-				ordered_cell_indices[dst] = int(cell_indices[src])
-			buffer = ordered_buffer
-			cell_indices = ordered_cell_indices
-	if _family_batch_suppressed:
-		_chunk_instance_counts[chunk_id] = inst
-		_chunk_far_instance_counts[chunk_id] = clampi(far_count, 0, inst)
-		_active_instance_count_valid = false
-		if not cache_already_updated:
-			_cache_chunk_cell_payloads(chunk_id, buffer, cell_indices, inst)
-		_chunk_assembled_payloads[chunk_id] = {
-			"buffer": buffer,
-			"cell_indices": cell_indices,
-			"instance_count": inst,
-			"far_count": far_count,
-		}
-		return
-	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
-	if inst > 0:
-		mm.buffer = buffer
-		if not cache_already_updated:
-			_cache_chunk_cell_payloads(chunk_id, buffer, cell_indices, inst)
-		_mirror_shadow_chunk(chunk_id, buffer, inst)
-	else:
-		mm.buffer = PackedFloat32Array()
-		_chunk_cell_payloads[chunk_id] = {}
-		_chunk_assembled_payloads.erase(chunk_id)
-		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
-
+	return Chunk_refresh._apply_chunk_payload_direct(self, chunk_id, buffer, cell_indices, inst, native_far_count, cache_already_updated)
 
 func _cache_chunk_cell_payloads(
 		chunk_id: int,
 		buffer: PackedFloat32Array,
 		cell_indices: PackedInt32Array,
 		inst: int) -> void:
-	var by_cell: Dictionary = {}
-	var safe_count := mini(inst, mini(cell_indices.size(), int(buffer.size() / 16)))
-	var run_start := 0
-	while run_start < safe_count:
-		var cell_idx := int(cell_indices[run_start])
-		var run_end := run_start + 1
-		while run_end < safe_count and int(cell_indices[run_end]) == cell_idx:
-			run_end += 1
-		var cell_buffer: PackedFloat32Array = by_cell.get(cell_idx, PackedFloat32Array())
-		cell_buffer.append_array(buffer.slice(run_start * 16, run_end * 16))
-		by_cell[cell_idx] = cell_buffer
-		run_start = run_end
-	_chunk_cell_payloads[chunk_id] = by_cell
-	_chunk_assembled_payloads[chunk_id] = {
-		"buffer": buffer,
-		"cell_indices": cell_indices,
-		"instance_count": safe_count,
-		"far_count": int(_chunk_far_instance_counts.get(chunk_id, safe_count)),
-	}
-
+	return Chunk_refresh._cache_chunk_cell_payloads(self, chunk_id, buffer, cell_indices, inst)
 
 func _replace_chunk_cell_payloads(
 		chunk_id: int,
@@ -3153,501 +972,44 @@ func _replace_chunk_cell_payloads(
 		buffer: PackedFloat32Array,
 		cell_indices: PackedInt32Array,
 		inst: int) -> Dictionary:
-	var cache_t0_us := Time.get_ticks_usec()
-	# 该缓存只由主线程的本 layer 持有；原地替换脏 cell 即可。旧实现 deep-copy
-	# 整个 superchunk 的所有 PackedFloat32Array，单格变化也会复制完整 chunk。
-	var by_cell: Dictionary = _chunk_cell_payloads.get(chunk_id, {})
-	for raw_idx in dirty_indices:
-		by_cell[int(raw_idx)] = PackedFloat32Array()
-	var safe_count := mini(inst, mini(cell_indices.size(), int(buffer.size() / 16)))
-	var run_start := 0
-	while run_start < safe_count:
-		var cell_idx := int(cell_indices[run_start])
-		var run_end := run_start + 1
-		while run_end < safe_count and int(cell_indices[run_end]) == cell_idx:
-			run_end += 1
-		var cell_buffer: PackedFloat32Array = by_cell.get(cell_idx, PackedFloat32Array())
-		cell_buffer.append_array(buffer.slice(run_start * 16, run_end * 16))
-		by_cell[cell_idx] = cell_buffer
-		run_start = run_end
-	_chunk_cell_payloads[chunk_id] = by_cell
-	_last_cache_update_ms = float(Time.get_ticks_usec() - cache_t0_us) / 1000.0
-	var assembled := _assemble_chunk_cell_payloads(by_cell)
-	_chunk_assembled_payloads[chunk_id] = assembled
-	return assembled
-
+	return Chunk_refresh._replace_chunk_cell_payloads(self, chunk_id, dirty_indices, buffer, cell_indices, inst)
 
 func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
-	var assemble_t0_us := Time.get_ticks_usec()
-	var ordered_cells: Array = by_cell.keys()
-	ordered_cells.sort()
-	var clusters_by_cell: Dictionary = {}
-	var far_clusters_by_cell: Dictionary = {}
-	var max_far_clusters := 0
-	var max_near_clusters := 0
-	var total_instances := 0
-	var multiplier := maxf(_resolved_lod_near_density_multiplier(), 1.0)
-	for raw_idx in ordered_cells:
-		var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
-		var cell_count := int(cell_buffer.size() / 16)
-		total_instances += cell_count
-		var clusters := PackedInt32Array()
-		var cluster_start := 0
-		while cluster_start < cell_count:
-			var seed := cell_buffer[cluster_start * 16 + 14]
-			var cluster_end := cluster_start + 1
-			while cluster_end < cell_count \
-					and absf(cell_buffer[cluster_end * 16 + 14] - seed) <= 0.000001:
-				cluster_end += 1
-			clusters.append(cluster_start)
-			clusters.append(cluster_end - cluster_start)
-			cluster_start = cluster_end
-		clusters_by_cell[raw_idx] = clusters
-		var cluster_count := int(clusters.size() / 2)
-		var far_clusters := mini(
-			cluster_count, maxi(1, int(ceil(float(cluster_count) / multiplier)))) \
-			if cluster_count > 0 else 0
-		far_clusters_by_cell[raw_idx] = far_clusters
-		max_far_clusters = maxi(max_far_clusters, far_clusters)
-		max_near_clusters = maxi(max_near_clusters, cluster_count - far_clusters)
-
-	# 一次性分配最终 buffer，并直接生成 cell-stratified LOD 前缀；避免随后再
-	# sort/copy 全 chunk，也避免每追加一株就 resize PackedArray。
-	var merged := PackedFloat32Array()
-	var merged_cell_indices := PackedInt32Array()
-	var write_instance := 0
-	for rank in range(max_far_clusters):
-		for raw_idx in ordered_cells:
-			var cell_idx := int(raw_idx)
-			var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
-			var far_clusters := int(far_clusters_by_cell.get(raw_idx, 0))
-			if rank >= far_clusters:
-				continue
-			var clusters: PackedInt32Array = clusters_by_cell[raw_idx]
-			var start := int(clusters[rank * 2])
-			var count := int(clusters[rank * 2 + 1])
-			merged.append_array(cell_buffer.slice(start * 16, (start + count) * 16))
-			for _local_instance in range(count):
-				merged_cell_indices.append(cell_idx)
-			write_instance += count
-	var far_instance_count := write_instance
-	for rank in range(max_near_clusters):
-		for raw_idx in ordered_cells:
-			var cell_idx := int(raw_idx)
-			var clusters: PackedInt32Array = clusters_by_cell[raw_idx]
-			var cluster_idx := int(far_clusters_by_cell.get(raw_idx, 0)) + rank
-			if cluster_idx >= int(clusters.size() / 2):
-				continue
-			var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
-			var start := int(clusters[cluster_idx * 2])
-			var count := int(clusters[cluster_idx * 2 + 1])
-			merged.append_array(cell_buffer.slice(start * 16, (start + count) * 16))
-			for _local_instance in range(count):
-				merged_cell_indices.append(cell_idx)
-			write_instance += count
-	_last_assemble_ms = float(Time.get_ticks_usec() - assemble_t0_us) / 1000.0
-	return {
-		"buffer": merged,
-		"cell_indices": merged_cell_indices,
-		"instance_count": write_instance,
-		"far_count": far_instance_count,
-	}
-
+	return Chunk_refresh._assemble_chunk_cell_payloads(self, by_cell)
 
 func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: PackedInt32Array, inst: int, cooperative: bool = false) -> void:
-	var slice_start := Time.get_ticks_usec()
-	_clear_chunk_nodes()
-	_mmi.multimesh = null
-	_multimesh = null
-	_sync_single_wrap_nodes()
-	var by_chunk := {}
-	for i in range(inst):
-		if cooperative and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await get_tree().process_frame
-			slice_start = Time.get_ticks_usec()
-		var chunk_id := _chunk_id_for_cell_idx(int(cell_indices[i]))
-		if chunk_id < 0:
-			continue
-		var srcs: Array = by_chunk.get(chunk_id, [])
-		srcs.append(i)
-		by_chunk[chunk_id] = srcs
-	for chunk_id in by_chunk.keys():
-		if cooperative and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await get_tree().process_frame
-			slice_start = Time.get_ticks_usec()
-		var src_indices: Array = by_chunk[chunk_id]
-		_apply_chunk_payload(int(chunk_id), buffer, src_indices, cell_indices, src_indices.size())
-	_refresh_instance_totals_from_chunks()
-	_last_dirty_chunks = by_chunk.size()
+	await Chunk_refresh._apply_chunked_native_full(self, buffer, cell_indices, inst, cooperative)
 
 func _refresh_instance_totals_from_chunks() -> void:
-	_instance_count = 0
-	_far_instance_count = 0
-	for chunk_id in _chunk_instance_counts.keys():
-		_instance_count += int(_chunk_instance_counts[chunk_id])
-		_far_instance_count += int(_chunk_far_instance_counts.get(chunk_id, _chunk_instance_counts[chunk_id]))
-	_active_instance_count_valid = false
-
+	Chunk_refresh._refresh_instance_totals_from_chunks(self)
 
 func detail_chunk_plan_for_indices(indices: PackedInt32Array) -> Array:
-	var dirty_chunks := {}
-	for raw_idx in indices:
-		var chunk_id := _chunk_id_for_cell_idx(int(raw_idx))
-		if chunk_id < 0:
-			continue
-		var dirty_indices: PackedInt32Array = dirty_chunks.get(chunk_id, PackedInt32Array())
-		dirty_indices.append(int(raw_idx))
-		dirty_chunks[chunk_id] = dirty_indices
-	var keys: Array = dirty_chunks.keys()
-	keys.sort()
-	var out: Array = []
-	for chunk_id in keys:
-		var dirty_indices: PackedInt32Array = dirty_chunks[chunk_id]
-		out.append({
-			"chunk_id": int(chunk_id),
-			"cell_indices": _cell_indices_for_chunk(int(chunk_id)),
-			"dirty_indices": dirty_indices,
-			"dirty_cells": dirty_indices.size(),
-		})
-	return out
-
+	return Chunk_refresh.detail_chunk_plan_for_indices(self, indices)
 
 func refresh_chunk_for_succession(
 		chunk_id: int,
 		chunk_cells: PackedInt32Array,
 		dirty_cell_count: int = 0,
 		dirty_indices: PackedInt32Array = PackedInt32Array()) -> bool:
-	if _map == null or chunk_id < 0:
-		return false
-	if chunk_cells.is_empty():
-		chunk_cells = _cell_indices_for_chunk(chunk_id)
-	var t0_us := Time.get_ticks_usec()
-	var has_resident_cache := _chunk_cell_payloads.has(chunk_id)
-	var sample_indices := dirty_indices if has_resident_cache and not dirty_indices.is_empty() else chunk_cells
-	var payload := _encode_native_payload_for_indices(sample_indices, 0)
-	if not bool(payload.get("ok", false)):
-		payload = _encode_gdscript_payload_for_indices(sample_indices)
-		if not bool(payload.get("ok", false)):
-			_last_rebuild_reason = str(payload.get("reason", "chunk_fallback_failed"))
-			return false
-	var res: Dictionary = payload.get("res", {})
-	var inst := int(res.get("instance_count", 0))
-	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
-	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
-	var cache_already_updated := false
-	var assembled_far_count := -1
-	if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
-		_last_rebuild_reason = "chunk_native_bad_payload"
-		return false
-	if has_resident_cache and sample_indices.size() < chunk_cells.size():
-		var assembled := _replace_chunk_cell_payloads(
-			chunk_id, sample_indices, buffer, cell_indices, inst)
-		buffer = assembled.get("buffer", PackedFloat32Array())
-		cell_indices = assembled.get("cell_indices", PackedInt32Array())
-		inst = int(assembled.get("instance_count", 0))
-		assembled_far_count = int(assembled.get("far_count", -1))
-		cache_already_updated = true
-	var apply_t0_us := Time.get_ticks_usec()
-	var native_far := assembled_far_count if cache_already_updated else (
-		int(res.get("far_count", -1)) if bool(res.get("lod_ordered", false)) else -1)
-	_apply_chunk_payload_direct(
-		chunk_id, buffer, cell_indices, inst, native_far, cache_already_updated)
-	_last_native_apply_ms = float(Time.get_ticks_usec() - apply_t0_us) / 1000.0
-	_refresh_instance_totals_from_chunks()
-	_last_scatter_path = str(payload.get("path", "gdext_event_cells"))
-	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	_last_candidate_count = int(res.get("candidate_count", 0))
-	_last_wrap_edge_copy_count = int(res.get("wrap_edge_copy_count", 0))
-	_last_native_sampled_cells = int(res.get("sampled_cell_count", sample_indices.size()))
-	_last_native_active_cells = int(res.get("active_cell_count", 0))
-	_last_rebuild_reason = "chunked_event_update"
-	_last_incremental_cells = dirty_cell_count if dirty_cell_count > 0 else sample_indices.size()
-	_last_dirty_chunks = 1
-	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
-	# 分块：shadow chunk 已在 _apply_chunk_payload_direct 内镜像（O(该chunk)）
-	return true
-
+	return Chunk_refresh.refresh_chunk_for_succession(self, chunk_id, chunk_cells, dirty_cell_count, dirty_indices)
 
 func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap: int = 0) -> Dictionary:
-	var t0_us := Time.get_ticks_usec()
-	var out := {"ok": false, "valid_indices": PackedInt32Array(), "res": {}}
-	if _world_ext == null or (not _world_ext.has_method("encode_detail_scatter_delta") \
-			and not _world_ext.has_method("encode_detail_scatter_family_cells")):
-		out["reason"] = "missing_detail_scatter_cell_encoder"
-		return out
-	if _map == null:
-		out["reason"] = "map_null"
-		return out
-	if _native_delta_common_knobs.is_empty():
-		_native_delta_common_knobs = _build_native_delta_common_knobs()
-	if _native_delta_common_knobs.is_empty():
-		out["reason"] = "bad_native_common_knobs"
-		return out
-	var knobs := _native_delta_common_knobs.duplicate(false)
-	knobs["sample_cell_indices"] = indices
-	knobs["instance_cap"] = instance_cap
-	knobs["family"] = detail_render_family()
-	knobs["style_id"] = _family_style_id
-	_last_native_knobs_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	var native_t0_us := Time.get_ticks_usec()
-	var res
-	var native_path := "gdext_event_cells"
-	if _world_ext.has_method("encode_detail_scatter_family_cells"):
-		var family_res = _world_ext.call("encode_detail_scatter_family_cells", {
-			"requests": [knobs],
-		})
-		if family_res is Dictionary:
-			var payloads: Array = family_res.get("payloads", [])
-			if not payloads.is_empty():
-				res = payloads[0]
-				native_path = "gdext_family_cells"
-	if res == null and _world_ext.has_method("encode_detail_scatter_delta"):
-		res = _world_ext.call("encode_detail_scatter_delta", knobs)
-	_last_native_call_ms = float(Time.get_ticks_usec() - native_t0_us) / 1000.0
-	if not (res is Dictionary):
-		out["reason"] = "bad_native_result"
-		return out
-	if bool(res.get("fallback", true)):
-		out["reason"] = str(res.get("reason", "native_delta_fallback"))
-		out["res"] = res
-		return out
-	out["ok"] = true
-	out["path"] = native_path
-	out["valid_indices"] = res.get("valid_indices", indices)
-	out["res"] = res
-	return out
-
+	return Chunk_refresh._encode_native_payload_for_indices(self, indices, instance_cap)
 
 func _encode_gdscript_payload_for_indices(indices: PackedInt32Array) -> Dictionary:
-	var transforms: Array = []
-	var colors: Array = []
-	var customs: Array = []
-	var cell_indices := PackedInt32Array()
-	for raw_idx in indices:
-		var cell_idx := int(raw_idx)
-		var cell = _map.cell_at(cell_idx) if _map != null else null
-		if cell == null:
-			continue
-		var payload := _generate_cell_instance_payload(cell, cell_idx)
-		var cell_transforms: Array = payload.get("transforms", [])
-		var cell_colors: Array = payload.get("colors", [])
-		var cell_customs: Array = payload.get("customs", [])
-		var count := mini(cell_transforms.size(), mini(cell_colors.size(), cell_customs.size()))
-		for i in range(count):
-			transforms.append(cell_transforms[i])
-			colors.append(cell_colors[i])
-			customs.append(cell_customs[i])
-			cell_indices.append(cell_idx)
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_2D
-	mm.use_colors = true
-	mm.use_custom_data = true
-	mm.instance_count = transforms.size()
-	for i in range(transforms.size()):
-		mm.set_instance_transform_2d(i, transforms[i])
-		mm.set_instance_color(i, colors[i])
-		mm.set_instance_custom_data(i, customs[i])
-	return {
-		"ok": true,
-		"path": "gdscript_event_cells",
-		"res": {
-			"fallback": false,
-			"instance_count": transforms.size(),
-			"buffer": mm.buffer,
-			"cell_indices": cell_indices,
-			"sampled_cell_count": indices.size(),
-			"active_cell_count": cell_indices.size(),
-		},
-	}
-
+	return Chunk_refresh._encode_gdscript_payload_for_indices(self, indices)
 
 func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
-	if _map == null or indices.is_empty():
-		return false
-	var dirty_chunks := {}
-	for raw_idx in indices:
-		var chunk_id := _chunk_id_for_cell_idx(int(raw_idx))
-		if chunk_id >= 0:
-			dirty_chunks[chunk_id] = true
-	if dirty_chunks.is_empty():
-		return false
-	var t0_us := Time.get_ticks_usec()
-	var chunk_count := 0
-	var total_inst := 0
-	var total_candidates := 0
-	var total_wrap := 0
-	var total_sampled := 0
-	var total_active := 0
-	for chunk_id in dirty_chunks.keys():
-		var chunk_cells := _cell_indices_for_chunk(int(chunk_id))
-		var payload := _encode_native_payload_for_indices(chunk_cells, 0)
-		if not bool(payload.get("ok", false)):
-			_last_rebuild_reason = str(payload.get("reason", "chunk_native_failed"))
-			return false
-		var res: Dictionary = payload.get("res", {})
-		var inst := int(res.get("instance_count", 0))
-		var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
-		var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
-		if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
-			_last_rebuild_reason = "chunk_native_bad_payload"
-			return false
-		var native_far := int(res.get("far_count", -1)) if bool(res.get("lod_ordered", false)) else -1
-		_apply_chunk_payload_direct(int(chunk_id), buffer, cell_indices, inst, native_far)
-		total_inst += inst
-		total_candidates += int(res.get("candidate_count", 0))
-		total_wrap += int(res.get("wrap_edge_copy_count", 0))
-		total_sampled += int(res.get("sampled_cell_count", chunk_cells.size()))
-		total_active += int(res.get("active_cell_count", 0))
-		chunk_count += 1
-	_refresh_instance_totals_from_chunks()
-	_last_scatter_path = "gdext_event_chunk"
-	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	_last_candidate_count = total_candidates
-	_last_wrap_edge_copy_count = total_wrap
-	_last_native_sampled_cells = total_sampled
-	_last_native_active_cells = total_active
-	_last_rebuild_reason = "chunked_event_update"
-	_last_incremental_cells = indices.size()
-	_last_dirty_chunks = chunk_count
-	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
-	# 分块：各脏 chunk 的 shadow 已在 _apply_chunk_payload 内镜像（O(脏chunk)）
-	return true
-
+	return Chunk_refresh._refresh_chunked_for_succession(self, indices)
 
 func _apply_profile_uniforms() -> void:
-	if _material == null:
-		return
-	var cfg := _profile()
-	z_index = int(cfg.render_z_index)
-	_material.set_shader_parameter("wind_strength", cfg.wind_strength)
-	_material.set_shader_parameter("dry_yellow_strength", cfg.dry_yellow_strength)
-	_material.set_shader_parameter("wet_green_strength", cfg.wet_green_strength)
-	_material.set_shader_parameter("lush_green_strength", cfg.lush_green_strength)
-	_material.set_shader_parameter("heat_red_strength", cfg.heat_red_strength)
-	_material.set_shader_parameter("autumn_red_strength", cfg.autumn_red_strength)
-	_material.set_shader_parameter("temperature_color_strength", cfg.temperature_color_strength)
-	_material.set_shader_parameter("moisture_color_strength", cfg.moisture_color_strength)
-	_material.set_shader_parameter("snow_white_strength", cfg.snow_white_strength)
-	_material.set_shader_parameter("stress_hide_strength", cfg.stress_hide_strength)
-	_material.set_shader_parameter("snow_hide_strength", cfg.snow_hide_strength)
-	_material.set_shader_parameter("disappear_alpha_threshold", cfg.disappear_alpha_threshold)
-	_material.set_shader_parameter("vitality_dead_threshold", cfg.vitality_dead_threshold)
-	_material.set_shader_parameter("vitality_healthy_threshold", cfg.vitality_healthy_threshold)
-	_material.set_shader_parameter("vitality_alpha_power", cfg.vitality_alpha_power)
-	_material.set_shader_parameter("vitality_size_min", cfg.vitality_size_min)
-	_material.set_shader_parameter("vitality_size_max", cfg.vitality_size_max)
-	_material.set_shader_parameter("vitality_low_color_strength", cfg.vitality_low_color_strength)
-	_material.set_shader_parameter("vitality_high_color_strength", cfg.vitality_high_color_strength)
-	_material.set_shader_parameter("vitality_color_contrast", cfg.vitality_color_contrast)
-	_material.set_shader_parameter("color_saturation_gain", cfg.color_saturation_gain)
-	_material.set_shader_parameter("color_value_gain", cfg.color_value_gain)
-	_material.set_shader_parameter("snow_body_color_retention", cfg.snow_body_color_retention)
-	_material.set_shader_parameter("snow_alpha_loss_strength", cfg.snow_alpha_loss_strength)
-	_material.set_shader_parameter("lod_alpha", _lod_alpha)
-	var style := detail_style_shading()
-	for param in ["detail_form", "veg_response", "phenology_response", "phenology_color_dominance",
-			"albedo_light_floor", "aquatic_response", "bloom_strength", "snow_burial",
-			"snow_size_floor"]:
-		_material.set_shader_parameter(param, style[param])
-
-	# [veg-normal-shading] 法线辅助着色 uniform + 性能分档（q2 才采高度图邻域算谷地 AO）。
-	var tier := _active_quality_tier()
-	var shading_on: bool = bool(cfg.get("shading_enabled")) if cfg.get("shading_enabled") != null else true
-	_material.set_shader_parameter("shading_enabled", 1.0 if shading_on else 0.0)
-	_material.set_shader_parameter("veg_shade_quality", tier)
-	_material.set_shader_parameter("terrain_normal_influence", _profile_float(&"terrain_normal_influence", 1.0))
-	_material.set_shader_parameter("sun_shade_strength", _profile_float(&"sun_shade_strength", 0.55))
-	_material.set_shader_parameter("ambient_floor", _profile_float(&"ambient_floor", 0.18))
-	_material.set_shader_parameter("contact_ao_strength", _profile_float(&"contact_ao_strength", 0.42))
-	_material.set_shader_parameter("terrain_valley_ao_strength", _profile_float(&"terrain_valley_ao_strength", 0.40))
-	_material.set_shader_parameter("terrain_valley_ao_gain", _profile_float(&"terrain_valley_ao_gain", 6.0))
-
-	# [veg-cast-shadow] 投影 pass 外观/淡出 uniform（与植株共享活力/积雪阈值，保证一致淡出）。
-	if _shadow_material != null:
-		var sc = cfg.get("shadow_color")
-		_shadow_material.set_shader_parameter("shadow_color", sc if sc is Color else Color(0.05, 0.06, 0.08, 1.0))
-		var shadow_strength := _profile_float(&"shadow_strength", 0.32)
-		if DCFeatureFlags.uses_shader_quality_tier() and _active_quality_tier() >= 2:
-			shadow_strength *= 0.5
-		_shadow_strength_base = shadow_strength
-		_push_shadow_strength()
-		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
-		_shadow_material.set_shader_parameter("shadow_length_scale", _profile_float(&"shadow_length_scale", 1.0))
-		_shadow_material.set_shader_parameter("shadow_max_len", _profile_float(&"shadow_max_length", 3.6))
-		_shadow_material.set_shader_parameter("shadow_min_sun_elevation", _profile_float(&"shadow_min_sun_elevation", 0.16))
-		_shadow_material.set_shader_parameter("shadow_foot_radius", _profile_float(&"shadow_foot_radius", 0.55))
-		_shadow_material.set_shader_parameter("shadow_edge_softness", _profile_float(&"shadow_edge_softness", 0.25))
-		_shadow_material.set_shader_parameter("vitality_dead_threshold", cfg.vitality_dead_threshold)
-		_shadow_material.set_shader_parameter("vitality_healthy_threshold", cfg.vitality_healthy_threshold)
-		_shadow_material.set_shader_parameter("vitality_alpha_power", cfg.vitality_alpha_power)
-		_shadow_material.set_shader_parameter("snow_hide_strength", cfg.snow_hide_strength)
-		_shadow_material.set_shader_parameter("aquatic_response", 1.0 if _spawn_domain() == SPAWN_WATER else 0.0)
-	_sync_shadow_layer(true)
-
+	return Material_inputs._apply_profile_uniforms(self)
 
 func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
-	if _material == null:
-		return
-	var bounds := _bounds
-	var wrap_period := HexUtils.wrap_period_x(_map.width, _hex_size) if _map != null else 0.0
-	_material.set_shader_parameter("world_origin", bounds.position)
-	_material.set_shader_parameter("world_size", bounds.size)
-	_material.set_shader_parameter("wrap_origin_x", 0.0)
-	_material.set_shader_parameter("wrap_period_x", wrap_period)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("world_origin", bounds.position)
-		_shadow_material.set_shader_parameter("world_size", bounds.size)
-		_shadow_material.set_shader_parameter("wrap_origin_x", 0.0)
-		_shadow_material.set_shader_parameter("wrap_period_x", wrap_period)
-	if _world == null:
-		_material.set_shader_parameter("lut_dims", Vector2.ONE)
-		if _shadow_material != null:
-			_shadow_material.set_shader_parameter("lut_dims", Vector2.ONE)
-		return
-	var tiled := _visual_tiles_active()
-	var tiles = _world.visual_tiles if tiled else null
-	if tiled:
-		_material.set_shader_parameter("visual_map_index_tiles", tiles.map_index)
-		_material.set_shader_parameter("visual_height_tiles", tiles.height)
-		_material.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
-		_material.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
-		_push_visual_tile_layout(_material, tiles.layout)
-	else:
-		_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
-	_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-	_material.set_shader_parameter("eco_lut", _world.eco_lut_tex)
-	_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
-	# [veg-normal-shading] 地形宏观法线 + 高度图（与地形 brdf 同源数据），植被 shader 用于 NdotL/谷地 AO。
-	if not tiled:
-		_material.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
-		_material.set_shader_parameter("height_tex", _world.height_tex)
-		_material.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
-	_material.set_shader_parameter("terrain_normal_tex_bound",
-		tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
-	_material.set_shader_parameter("hm_resolution", Vector2(tiles.layout.logical_size) if tiled \
-		else Vector2(_world.hm_size.x, _world.hm_size.y))
-	_material.set_shader_parameter("terrain_horizon_tex_bound",
-		bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
-	# [veg-cast-shadow] 投影 pass 需要 cell 索引/动态态做夜侧与枯死/积雪淡出。
-	if _shadow_material != null:
-		if tiled:
-			_shadow_material.set_shader_parameter("visual_map_index_tiles", tiles.map_index)
-			_push_visual_tile_layout(_shadow_material, tiles.layout)
-		else:
-			_shadow_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
-		_shadow_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-		_shadow_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
-
+	return Material_inputs._sync_world_material_inputs(self, _use_cell_indirection)
 
 func _push_visual_tile_layout(material: ShaderMaterial, layout) -> void:
-	material.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
-	material.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
-	material.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
-	material.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
-	material.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
-	material.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
-	material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
-
+	return Material_inputs._push_visual_tile_layout(self, material, layout)
 
 func _rebuild_instances() -> void:
 	_ensure_resources()
@@ -3777,7 +1139,7 @@ func _rebuild_via_native(
 		cell_suitabilities: PackedFloat32Array,
 		cell_attempts: PackedInt32Array,
 		cell_accepts: PackedFloat32Array) -> bool:
-	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
+	if _world_ext == null:
 		return false
 	if _map == null:
 		return false
@@ -3961,302 +1323,37 @@ func _rebuild_via_native(
 # 期望株数正比于 suitability² 而且丢掉了 max_per_cell 这一档，中低适宜度的格子
 # 因此变成纯抽签（河边季雨林的单格期望株数只有 0.05）。
 func _cell_quota(suitability: float, max_per_cell: int) -> Vector2:
-	var cap: int = maxi(1, max_per_cell)
-	var target: float = float(cap) * clampf(suitability, 0.0, 1.0)
-	var attempts: int = clampi(int(ceil(target)), 1, cap)
-	return Vector2(float(attempts), target / float(attempts))
-
+	return ShrubScatter._cell_quota(self, suitability, max_per_cell)
 
 func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
-	var cell_is_water := _is_water_cell(cell, idx)
-	var domain := _spawn_domain()
-	if domain == SPAWN_LAND and cell_is_water:
-		return 0.0
-	if domain == SPAWN_WATER and not cell_is_water:
-		return 0.0
+	return ShrubScatter._cell_suitability(self, cell, idx, _key, state)
 
-	var lf := int(state.get("landform", LandformType.LF.PLAIN))
-	var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
-	var cover := int(state.get("cover", CoverType.CV.NONE))
-	var river := _has_river_cell(cell, idx)
-	var arch := _detail_kind()
-
-	if cell_is_water:
-		return _aquatic_suitability(arch, lf, veg, cover, state)
-
-	# 点缀/地貌类 archetype（岩石/雪堆/枯立木）走独立 suitability：不依赖植被权重，
-	# 由地形/覆盖物/气候直接决定，能出现在植被权重为 0 的裸露/雪原/山巅。
-	if _is_decoration_archetype(arch):
-		return _decoration_suitability(arch, lf, cover, river, state)
-
-	var landform_weight := _landform_weight(lf)
-	if landform_weight <= 0.0:
-		return 0.0
-
-	var cover_weight := _cover_weight(cover)
-	if cover_weight <= 0.0:
-		return 0.0
-
-	var temp := float(state.get("temp", 0.5))
-	var moisture := float(state.get("moisture", 0.5))
-	var vitality := float(state.get("vitality", 0.7))
-	var stress := maxf(float(state.get("heat", 0.0)), maxf(float(state.get("drought", 0.0)), float(state.get("cold", 0.0))))
-	var compat := VegetationType.climate_compat_score(veg, temp, moisture)
-	var vitality_factor := _vitality_density_factor(state)
-
-	var suitability := _vegetation_weight(veg) * landform_weight * cover_weight
-	# 绝对生物量：_vegetation_weight 只表达"这一层的形态占该植被的多少比例"
-	# （沙漠灌木 100% 是灌木形态，雨林林下只有一部分），量级必须由 biomass 承担，
-	# 否则整条链全是相对适应度，沙漠会和雨林一样密。
-	suitability *= _biomass_factor(veg)
-	suitability *= vitality_factor
-	suitability *= lerpf(0.58, 1.0, clampf(compat, 0.0, 1.0))
-	suitability *= 1.0 - clampf(stress, 0.0, 1.0) * 0.38
-	suitability *= lerpf(0.08, 1.0, _scatter_presence(state))
-	suitability *= _cell_ecology_density_bias(state)
-	# archetype 生态位亲和（针叶/棕榈/仙人掌/芦苇/高山花）：把通用植被分布收束到各自气候带。
-	suitability *= _archetype_affinity(arch, veg, lf, cover, river, state)
-	# 阶段 C：海拔林线 + 强风折损。
-	suitability *= _elevation_modifier(arch, float(state.get("elevation", 0.4)))
-	suitability *= _wind_exposure_modifier(arch, float(state.get("wind_speed", 0.0)))
-	if river:
-		suitability *= _river_density_factor(state)
-	suitability *= _quality_density_scale()
-	return clampf(suitability, 0.0, 1.25)
-
-
-# 绝对生物量 → 密度乘子。曲线由 profile 的 biomass_floor / ceil / exponent 控制，
-# 让每层自己决定对生物量的敏感度：乔木层强正相关，草层几乎不敏感（草原恰恰长在
-# 树少的地方，它的选择性已经由 _grass_vegetation_weight 表达）。
 func _biomass_factor(veg: int) -> float:
-	var cfg := _profile()
-	var biomass := clampf(VegetationType.foliage_biomass(veg), 0.0, 1.0)
-	var shaped := pow(biomass, maxf(float(cfg.biomass_exponent), 0.01))
-	return lerpf(float(cfg.biomass_floor), float(cfg.biomass_ceil), shaped)
+	return ShrubScatter._biomass_factor(self, veg)
 
-
-# 河流格的密度系数。河道本体的像素已在候选点阶段被 _is_river_body_position 剔除，
-# 所以这里不该再对整格做一刀切惩罚：暖湿带的河谷是全图植被最密的地方，只有冷/旱带
-# 的河床才是负面地形。
 func _river_density_factor(state: Dictionary) -> float:
-	var cfg := _profile()
-	var temp := float(state.get("temp", 0.5))
-	var wet: float = maxf(float(state.get("moisture", 0.5)), float(state.get("soil_moisture", 0.4)))
-	var warm_wet: float = smoothstep(0.35, 0.72, temp) * smoothstep(0.28, 0.62, wet)
-	var dry_factor := float(cfg.river_edge_density)
-	var lush_factor: float = maxf(dry_factor, float(cfg.river_valley_boost))
-	return lerpf(dry_factor, lush_factor, warm_wet)
+	return ShrubScatter._river_density_factor(self, state)
 
-
-# 海拔林线：高海拔抑制乔木/棕榈，偏好高山花/针叶中带；低海拔归一。elevation∈[0,1]。
 func _elevation_modifier(arch: int, elev: float) -> float:
-	match arch:
-		DETAIL_TREE, DETAIL_PALM:
-			return smoothstep(0.92, 0.58, elev)
-		DETAIL_CONIFER:
-			return smoothstep(0.22, 0.55, elev) * smoothstep(0.97, 0.74, elev) + 0.25
-		DETAIL_ALPINE_FLOWER:
-			return clampf(smoothstep(0.46, 0.82, elev) + 0.12, 0.0, 1.2)
-		DETAIL_SHRUB, DETAIL_GRASS, DETAIL_CACTUS, DETAIL_REED:
-			return smoothstep(0.97, 0.62, elev)
-	return 1.0
+	return ShrubScatter._elevation_modifier(self, arch, elev)
 
-
-# 强风折损：脆弱高茎（棕榈/芦苇/枯立木/高山花）在大风带略减。wind_speed 物理量（~m/s）。
 func _wind_exposure_modifier(arch: int, wind_speed: float) -> float:
-	var w: float = clampf(wind_speed / 18.0, 0.0, 1.0)
-	match arch:
-		DETAIL_PALM, DETAIL_REED, DETAIL_ALPINE_FLOWER:
-			return lerpf(1.0, 0.7, w)
-		DETAIL_DEAD_SNAG:
-			return lerpf(1.0, 0.6, w)
-	return 1.0
+	return ShrubScatter._wind_exposure_modifier(self, arch, wind_speed)
 
-
-# 3..7 植被类 archetype 的生态位亲和乘子（legacy 0/1/2 恒返回 1.0）。
 func _archetype_affinity(arch: int, veg: int, lf: int, _cover: int, river: bool, state: Dictionary) -> float:
-	var temp := float(state.get("temp", 0.5))
-	var moisture := float(state.get("moisture", 0.5))
-	var soil := float(state.get("soil_moisture", moisture))
-	var discharge := float(state.get("river_discharge", 0.0))
-	# 实际地表湿润 = 气候湿度与土壤湿度的较强者（土壤更贴近根系可用水）。
-	var wet := maxf(moisture, soil)
-	var dry := minf(moisture, soil)
-	var big_river: float = clampf(discharge / 80.0, 0.0, 1.0)
-	match arch:
-		DETAIL_CONIFER:
-			# 寒带针叶林应成片：把生态位亲和拉高到能让 suitability 在针叶带饱和到 1.0。
-			var a := 0.10
-			match veg:
-				VegetationType.VEG.TAIGA:
-					a = 2.6
-				VegetationType.VEG.TEMPERATE_CONIFER:
-					a = 2.3
-				VegetationType.VEG.BOREAL_SHRUB:
-					a = 1.3
-				VegetationType.VEG.ALPINE_TUNDRA, VegetationType.VEG.TEMPERATE_DECIDUOUS:
-					a = 0.8
-			a *= smoothstep(0.82, 0.22, temp)  # 偏冷，冷带更宽
-			return a
-		DETAIL_PALM:
-			var a := 0.0
-			match veg:
-				VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-					a = 1.7
-				VegetationType.VEG.TROPICAL_DRY_FOREST, VegetationType.VEG.SAVANNA:
-					a = 1.1
-				VegetationType.VEG.MANGROVE, VegetationType.VEG.OASIS_VEG:
-					a = 1.4
-			a *= smoothstep(0.55, 0.85, temp)  # 偏暖
-			if lf == LandformType.LF.DELTA or lf == LandformType.LF.LOWLAND or river:
-				a *= 1.3
-			a *= lerpf(1.0, 1.45, big_river)  # 大河三角洲椰林
-			return a
-		DETAIL_CACTUS:
-			var a := 0.06
-			match veg:
-				VegetationType.VEG.DESERT_SCRUB:
-					a = 1.9
-				VegetationType.VEG.XERIC_DESERT:
-					a = 1.0
-				VegetationType.VEG.MEDITERRANEAN_SHRUB, VegetationType.VEG.SAVANNA:
-					a = 0.55
-				VegetationType.VEG.OASIS_VEG:
-					a = 0.75
-			a *= smoothstep(0.5, 0.85, temp) * smoothstep(0.55, 0.16, dry)  # 热且（气候+土壤）双干
-			return a
-		DETAIL_REED:
-			var a := 0.06
-			match veg:
-				VegetationType.VEG.MARSH:
-					a = 1.9
-				VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
-					a = 1.6
-				VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.SAVANNA:
-					a = 0.45
-			a *= smoothstep(0.45, 0.85, wet)  # 气候/土壤湿润取强
-			if river:
-				a *= 1.8
-			a *= lerpf(1.0, 1.6, big_river)  # 大河岸芦苇荡
-			if lf == LandformType.LF.DELTA:
-				a *= 1.4
-			return a
-		DETAIL_ALPINE_FLOWER:
-			var a := 0.06
-			match veg:
-				VegetationType.VEG.ALPINE_MEADOW:
-					a = 2.0
-				VegetationType.VEG.ALPINE_TUNDRA, VegetationType.VEG.TUNDRA:
-					a = 1.2
-				VegetationType.VEG.TEMPERATE_GRASSLAND:
-					a = 0.4
-			if lf == LandformType.LF.MOUNTAIN or lf == LandformType.LF.HILL:
-				a *= 1.25
-			a *= smoothstep(0.78, 0.32, temp)  # 偏冷凉
-			return a
-	return 1.0
-
+	return ShrubScatter._archetype_affinity(self, arch, veg, lf, _cover, river, state)
 
 func _is_decoration_archetype(arch: int) -> bool:
-	return arch == DETAIL_ROCK or arch == DETAIL_SNOW_MOUND or arch == DETAIL_DEAD_SNAG
-
+	return ShrubScatter._is_decoration_archetype(self, arch)
 
 func _aquatic_suitability(_arch: int, lf: int, veg: int, cover: int, state: Dictionary) -> float:
-	if _spawn_domain() != SPAWN_WATER:
-		return 0.0
-	if cover == CoverType.CV.SEA_ICE or cover == CoverType.CV.GLACIER:
-		return 0.0
-	var landform_weight := _landform_weight(lf)
-	var vegetation_weight := _vegetation_weight(veg)
-	var cover_weight := _cover_weight(cover)
-	if landform_weight <= 0.0 or vegetation_weight <= 0.0 or cover_weight <= 0.0:
-		return 0.0
-	var temp := float(state.get("temp", 0.5))
-	var moisture := float(state.get("moisture", 0.5))
-	var suitability := vegetation_weight * landform_weight * cover_weight
-	# 水域生态不使用陆地 vegetation_vitality 做密度闸门；由温度/水体类型和 profile 权重决定。
-	suitability *= lerpf(0.74, 1.15, clampf(moisture, 0.0, 1.0))
-	suitability *= lerpf(0.70, 1.05, VegetationType.climate_compat_score(veg, temp, moisture))
-	suitability *= _quality_density_scale()
-	return clampf(suitability, 0.0, 1.25)
+	return ShrubScatter._aquatic_suitability(self, _arch, lf, veg, cover, state)
 
-
-# 点缀/地貌类 archetype 的独立 suitability（不经植被权重）。
 func _decoration_suitability(arch: int, lf: int, cover: int, river: bool, state: Dictionary) -> float:
-	if LandformType.is_water(lf):
-		return 0.0
-	var temp := float(state.get("temp", 0.5))
-	var snow := float(state.get("snow", 0.0))
-	var vitality := float(state.get("vitality", 0.7))
-	var drought := float(state.get("drought", 0.0))
-	var cold := float(state.get("cold", 0.0))
-	var elev := float(state.get("elevation", 0.4))
-	var s := 0.0
-	match arch:
-		DETAIL_ROCK:
-			match lf:
-				LandformType.LF.MOUNTAIN, LandformType.LF.PEAK:
-					s = 1.1
-				LandformType.LF.VOLCANO:
-					s = 0.9
-				LandformType.LF.BADLANDS:
-					s = 0.95
-				LandformType.LF.HILL:
-					s = 0.5
-				LandformType.LF.SALT_FLAT:
-					s = 0.35
-				_:
-					s = 0.12
-			# 越裸露（活力低）岩石越显
-			s *= lerpf(1.25, 0.55, _vitality_normalized(vitality))
-			# 高海拔裸岩更多
-			s *= lerpf(0.85, 1.4, smoothstep(0.5, 0.95, elev))
-			if river:
-				s *= 0.6
-		DETAIL_SNOW_MOUND:
-			var snowy: float = maxf(snow, 1.0 if cover == CoverType.CV.SNOW or cover == CoverType.CV.PERMAFROST else 0.0)
-			if cover == CoverType.CV.GLACIER:
-				snowy = maxf(snowy, 0.85)
-			s = smoothstep(0.22, 0.7, snowy) * 1.1
-			s *= smoothstep(0.62, 0.2, temp)
-			# 高海拔雪线以上常年积雪堆增多
-			s *= lerpf(0.9, 1.3, smoothstep(0.55, 0.92, elev))
-		DETAIL_DEAD_SNAG:
-			# 低活力 + 旱/冷胁迫的"曾经有林"区域。枯立木点缀，适度可见即可。
-			var stress: float = maxf(drought, cold)
-			s = (1.0 - _vitality_normalized(vitality)) * lerpf(0.65, 1.5, clampf(stress, 0.0, 1.0))
-			match lf:
-				LandformType.LF.PLAIN, LandformType.LF.LOWLAND, LandformType.LF.HILL:
-					s *= 1.3
-				LandformType.LF.BADLANDS:
-					s *= 0.95
-				_:
-					s *= 0.55
-	s *= lerpf(0.18, 1.0, _climate_presence(state))
-	# 点缀层的形态由 archetype 决定，但配置了 vegetation_weight_overrides 的层
-	# （红树气生根、倒木、碎石坡）要靠它把自己收束到目标生物群系；不接进来的话
-	# 那几张表是死配置，红树根会按"枯立木"规则长满所有低活力旱地。
-	s *= _decoration_vegetation_filter(int(state.get("vegetation", VegetationType.VEG.NONE)))
-	s *= _quality_density_scale()
-	return clampf(s, 0.0, 1.25)
-
-
-# 点缀层没有 _vegetation_weight 那样的基准表，所以这里把非空 overrides 当白名单：
-# 列出的植被取表中权重，未列出的只留一点残量。倒木只该出现在林地、红树气生根只该
-# 出现在红树林——列表本身就是"该出现在哪"的完整表达。
-const DECORATION_VEG_RESIDUAL := 0.12
+	return ShrubScatter._decoration_suitability(self, arch, lf, cover, river, state)
 
 func _decoration_vegetation_filter(veg: int) -> float:
-	var overrides: Dictionary = _profile().vegetation_weight_overrides
-	if overrides.is_empty():
-		return 1.0
-	if overrides.has(veg):
-		return maxf(float(overrides[veg]), 0.0)
-	var key := str(veg)
-	if overrides.has(key):
-		return maxf(float(overrides[key]), 0.0)
-	return DECORATION_VEG_RESIDUAL
-
+	return ShrubScatter._decoration_vegetation_filter(self, veg)
 
 func _try_append_instance(
 		cell,
@@ -4266,1323 +1363,234 @@ func _try_append_instance(
 		cell_suitability: float,
 		accept_p: float,
 		state: Dictionary) -> void:
-	var cfg := _profile()
-	var climate_presence := _scatter_presence(state)
-	if climate_presence <= 0.02:
-		return
-	var vitality := clampf(float(state.get("vitality", 0.7)), 0.0, 1.0)
-	if vitality <= cfg.vitality_dead_threshold:
-		var dieback_noise := _hash01(key, 931 + attempt)
-		if dieback_noise < 1.0 - cfg.vitality_dieback_noise_strength:
-			return
-	var center := _cell_center(cell, idx)
-	var pos := _candidate_position(center, key, attempt)
-	var domain := _spawn_domain()
-	var world_noise := _world_noise_suitability(pos)
-	if world_noise <= 0.001:
-		return
-	var form := _candidate_form(key, attempt, world_noise, cell_suitability,
-		clampf(_sample_density_for_size(idx, cell), 0.0, 1.0))
-	var size := form.z
-	# Candidate discs intentionally overlap adjacent hexes. Check the actual
-	# destination cell and its six neighbours, not the source cell, so a canopy
-	# spawned across a boundary cannot intrude into a known settlement.
-	if domain != SPAWN_WATER and _overlaps_known_settlement(pos, size):
-		return
-	var candidate_is_water := _is_water_position(pos, cell, idx)
-	if domain == SPAWN_LAND and candidate_is_water:
-		return
-	if domain == SPAWN_WATER and not candidate_is_water:
-		return
-	if domain != SPAWN_WATER and _is_river_body_position(pos):
-		return
-	var micro_noise := _world_micro_gap(pos, key, attempt)
-	if micro_noise < cfg.micro_gap_threshold:
-		return
-	# world_noise_acceptance 现在只作用在斑块门上（决定噪声多快饱和到"满密度"），
-	# 不再乘进密度量级。它原本是用来补偿 suitability² 压缩的，配额化之后如果继续
-	# 乘在量级上，accept_p 只要超过 1/acceptance 就会被 clamp 到 1，顶端差异又被抹平。
-	var noise_gate := pow(clampf(world_noise, 0.0, 1.0), 1.35)
-	var patch_gate := clampf(noise_gate * cfg.world_noise_acceptance, 0.0, 1.0)
-	var local_acceptance := clampf(accept_p * patch_gate, 0.0, 1.0)
-	if _hash01(key, 9300 + attempt) > local_acceptance:
-		return
-	if _sub_form_enabled() and _overlaps_cell_instance(idx, pos, size):
-		return
-	var variant := _hash01(key, 300 + attempt)
-
-	_instance_cell_indices.append(idx)
-	_instance_cells.append(cell)
-	_instance_positions.append(pos)
-	_instance_rotations.append(_instance_rotation(key, attempt))
-	_instance_sizes.append(size)
-	_instance_seeds.append(_hash01(key, 600 + attempt))
-	_instance_variants.append(variant)
-	_instance_forms.append(pack_form(int(form.x), int(form.y)))
-	_instance_scores.append(world_noise * 0.66 + cell_suitability * 0.27 + _hash01(key, 7600 + attempt) * 0.07)
-
+	return ShrubScatter._try_append_instance(self, cell, idx, key, attempt, cell_suitability, accept_p, state)
 
 func _form_knobs() -> Dictionary:
-	var cfg := _profile()
-	return {
-		"sub_form_enabled": _sub_form_enabled(),
-		"crown_diameter_hex": float(cfg.get("crown_diameter_hex")),
-		"cluster_density_threshold": float(cfg.get("cluster_density_threshold")),
-		"grove_density_threshold": float(cfg.get("grove_density_threshold")),
-		"grove_crown_min": int(cfg.get("grove_crown_min")),
-		"grove_crown_max": int(cfg.get("grove_crown_max")),
-		"edge_single_bias": float(cfg.get("edge_single_bias")),
-		"element_count_min": int(cfg.get("element_count_min")),
-		"element_count_max": int(cfg.get("element_count_max")),
-		"impostor_quad_half": IMPOSTOR_QUAD_HALF,
-	}
-
+	return ShrubScatter._form_knobs(self)
 
 func _sub_form_enabled() -> bool:
-	var value = _profile().get("sub_form_enabled")
-	return value != null and bool(value)
+	return ShrubScatter._sub_form_enabled(self)
 
-
-# Instances of one cell are appended consecutively; canopy patches of the same
-# cell must not pile on each other (SAME_SOURCE: world_ext_detail.cpp).
 func _overlaps_cell_instance(idx: int, pos: Vector2, size: float) -> bool:
-	var radius := size * IMPOSTOR_QUAD_HALF * SUB_FORM_PATCH_RADIUS
-	var j := _instance_cell_indices.size() - 1
-	while j >= 0 and _instance_cell_indices[j] == idx:
-		var other := _instance_sizes[j] * IMPOSTOR_QUAD_HALF * SUB_FORM_PATCH_RADIUS
-		var limit := (radius + other) * SUB_FORM_OVERLAP
-		if pos.distance_squared_to(_instance_positions[j]) < limit * limit:
-			return true
-		j -= 1
-	return false
+	return ShrubScatter._overlaps_cell_instance(self, idx, pos, size)
 
-
-# Returns (sub_form, count, size). Canopy profiles pick single / cluster /
-# grove from local density and patch edge, and size the instance so each
-# crown keeps crown_diameter_hex; other profiles draw element_count elements
-# at their authored size. SAME_SOURCE: world_ext_detail.cpp candidate_form.
 func _candidate_form(key: int, attempt: int, world_noise: float, cell_suitability: float,
 		size_density: float) -> Vector3:
-	var cfg := _profile()
-	var size_hash := _hash01(key, 400 + attempt)
-	var count_hash := _hash01(key, 8100 + attempt)
-	if _sub_form_enabled():
-		var density := clampf(sqrt(clampf(world_noise, 0.0, 1.0)) * 0.6
-			+ minf(cell_suitability, 1.0) * 0.4, 0.0, 1.0)
-		var single_p := float(cfg.edge_single_bias) * (1.0 - smoothstep(0.15, 0.55, world_noise))
-		var edge_roll := _hash01(key, 8200 + attempt)
-		var sub_form := SUB_FORM_SINGLE
-		var count := 1
-		if density >= float(cfg.grove_density_threshold) and edge_roll >= single_p:
-			sub_form = SUB_FORM_GROVE
-			var t := (density - float(cfg.grove_density_threshold)) \
-				/ maxf(1.0 - float(cfg.grove_density_threshold), 0.001)
-			var lo := mini(int(cfg.grove_crown_min), int(cfg.grove_crown_max))
-			var hi := maxi(int(cfg.grove_crown_min), int(cfg.grove_crown_max))
-			count = int(round(lerpf(float(lo), float(hi), clampf(t * 0.8 + count_hash * 0.35, 0.0, 1.0))))
-			count = clampi(count, 5, FORM_COUNT_MAX)
-		elif density >= float(cfg.cluster_density_threshold) and edge_roll >= single_p:
-			sub_form = SUB_FORM_CLUSTER
-			count = 2 + int(floor(count_hash * 2.999))
-		var crown_world := float(cfg.crown_diameter_hex) * _hex_size
-		var size := crown_world / (2.0 * IMPOSTOR_QUAD_HALF * crown_local_radius(count))
-		size *= lerpf(0.88, 1.12, size_hash) * lerpf(0.92, 1.06, size_density)
-		size *= _quality_size_scale()
-		return Vector3(float(sub_form), float(count), size)
-	var min_size: float = minf(cfg.min_size_factor, cfg.max_size_factor)
-	var max_size: float = maxf(cfg.min_size_factor, cfg.max_size_factor)
-	var size := _hex_size * lerpf(min_size, max_size, size_hash)
-	size *= lerpf(0.85, 1.12, size_density)
-	size *= _quality_size_scale()
-	var lo_n := clampi(mini(int(cfg.element_count_min), int(cfg.element_count_max)), 1, FORM_COUNT_MAX)
-	var hi_n := clampi(maxi(int(cfg.element_count_min), int(cfg.element_count_max)), 1, FORM_COUNT_MAX)
-	var n := lo_n + int(floor(count_hash * float(hi_n - lo_n + 1) * 0.9999))
-	return Vector3(float(SUB_FORM_SINGLE), float(n), size)
-
+	return ShrubScatter._candidate_form(self, key, attempt, world_noise, cell_suitability, size_density)
 
 func _overlaps_known_settlement(pos: Vector2, candidate_size: float) -> bool:
-	if _map == null or _settlement_core_buckets.is_empty():
-		return false
-	var destination = HexUtils.world_to_wrapped_cell(_map, pos, _hex_size)
-	if destination == null:
-		return false
-	if _cell_overlaps_settlement(destination, pos, candidate_size):
-		return true
-	for neighbour in _map.get_neighbors(destination):
-		if _cell_overlaps_settlement(neighbour, pos, candidate_size):
-			return true
-	return false
-
+	return ShrubScatter._overlaps_known_settlement(self, pos, candidate_size)
 
 func _cell_overlaps_settlement(cell, pos: Vector2, candidate_size: float) -> bool:
-	if cell == null:
-		return false
-	var idx := _cell_index(cell, -1)
-	if idx < 0 or idx >= _settlement_core_buckets.size():
-		return false
-	var bucket := mini(15, int(_settlement_core_buckets[idx]))
-	if bucket <= 0:
-		return false
-	var canonical_center := HexUtils.cube_to_world(
-		int(cell.q), int(cell.r), _hex_size)
-	var period := HexUtils.wrap_period_x(int(_map.width), _hex_size)
-	var display_center := HexUtils.nearest_display_world(
-		canonical_center, pos.x, period)
-	var radius := _settlement_core_radius(bucket) \
-		+ maxf(0.0, candidate_size) * SETTLEMENT_DETAIL_FOOTPRINT_RADIUS
-	return pos.distance_squared_to(display_center) < radius * radius
-
+	return ShrubScatter._cell_overlaps_settlement(self, cell, pos, candidate_size)
 
 func _settlement_core_radius(bucket: int) -> float:
-	var density := clampf(float(bucket) / 15.0, 0.0, 1.0)
-	var spread := lerpf(
-		SETTLEMENT_BUILDING_SPREAD_MIN,
-		SETTLEMENT_BUILDING_SPREAD_MAX,
-		density)
-	var building_scale := lerpf(
-		SETTLEMENT_BUILDING_SCALE_MIN,
-		SETTLEMENT_BUILDING_SCALE_MAX,
-		density)
-	return (SETTLEMENT_OUTER_RING_FACTOR * spread
-		+ SETTLEMENT_ART_HALF_WIDTH * building_scale
-			* SETTLEMENT_BUILDING_VISUAL_SCALE) * _hex_size
-
+	return ShrubScatter._settlement_core_radius(self, bucket)
 
 func _apply_instance_cap() -> void:
-	var cap := _instance_cap()
-	if cap <= 0:
-		clear()
-		return
-	var n := _instance_cell_indices.size()
-	if n <= cap:
-		return
-	var order: Array[int] = []
-	order.resize(n)
-	for i in range(n):
-		order[i] = i
-	order.sort_custom(func(a: int, b: int) -> bool:
-		return _instance_scores[a] > _instance_scores[b]
-	)
-	var keep_lookup := {}
-	for i in range(cap):
-		keep_lookup[order[i]] = true
-	var next_cell_indices := PackedInt32Array()
-	var next_positions := PackedVector2Array()
-	var next_rotations := PackedFloat32Array()
-	var next_sizes := PackedFloat32Array()
-	var next_seeds := PackedFloat32Array()
-	var next_variants := PackedFloat32Array()
-	var next_forms := PackedFloat32Array()
-	var next_scores := PackedFloat32Array()
-	var next_cells: Array = []
-	for i in range(n):
-		if not keep_lookup.has(i):
-			continue
-		next_cell_indices.append(_instance_cell_indices[i])
-		next_positions.append(_instance_positions[i])
-		next_rotations.append(_instance_rotations[i])
-		next_sizes.append(_instance_sizes[i])
-		next_seeds.append(_instance_seeds[i])
-		next_variants.append(_instance_variants[i])
-		next_forms.append(_instance_forms[i])
-		next_scores.append(_instance_scores[i])
-		next_cells.append(_instance_cells[i])
-	_instance_cell_indices = next_cell_indices
-	_instance_positions = next_positions
-	_instance_rotations = next_rotations
-	_instance_sizes = next_sizes
-	_instance_seeds = next_seeds
-	_instance_variants = next_variants
-	_instance_forms = next_forms
-	_instance_scores = next_scores
-	_instance_cells = next_cells
-
+	return ShrubScatter._apply_instance_cap(self)
 
 func _candidate_position(center: Vector2, key: int, attempt: int) -> Vector2:
-	var cfg := _profile()
-	# R2 low-discrepancy sequence: successive attempts cover the hex disc evenly.
-	var angle: float = fposmod(_hash01(key, 101) + float(attempt) * 0.7548776662, 1.0) * TAU
-	var radius: float = sqrt(fposmod(_hash01(key, 200) + float(attempt) * 0.5698402910, 1.0)) \
-		* _hex_size * _effective_spawn_radius_factor()
-	var jitter: Vector2 = Vector2(cos(angle), sin(angle)) * radius
-	var base_pos: Vector2 = center + jitter
-	var warp: Vector2 = Vector2(
-		_value_noise2(base_pos.x * 0.033, base_pos.y * 0.033, 911) - 0.5,
-		_value_noise2(base_pos.x * 0.033, base_pos.y * 0.033, 977) - 0.5
-	) * (_hex_size * cfg.world_noise_warp_strength)
-	return base_pos + warp
-
+	return ShrubScatter._candidate_position(self, center, key, attempt)
 
 func _world_noise_suitability(world_pos: Vector2) -> float:
-	var cfg := _profile()
-	var p := world_pos / maxf(_hex_size, 1.0)
-	var warp := Vector2(
-		_value_noise2(p.x * cfg.patch_frequency * 0.55, p.y * cfg.patch_frequency * 0.55, 313) - 0.5,
-		_value_noise2(p.x * cfg.patch_frequency * 0.55, p.y * cfg.patch_frequency * 0.55, 719) - 0.5
-	) * 7.0
-	var coarse := _value_noise2((p.x + warp.x) * cfg.patch_frequency, (p.y + warp.y) * cfg.patch_frequency, 17)
-	var mid := _value_noise2(p.x * cfg.patch_frequency * 3.1 + 19.0, p.y * cfg.patch_frequency * 3.1 - 11.0, 41)
-	var fine := _value_noise2(p.x * cfg.patch_frequency * 8.5 - 37.0, p.y * cfg.patch_frequency * 8.5 + 23.0, 83)
-	var patch := smoothstep(cfg.patch_cutoff, 1.0, coarse)
-	patch = pow(patch, cfg.patch_contrast)
-	patch *= lerpf(1.0, lerpf(0.55, 1.35, mid), cfg.world_noise_mid_mix)
-	patch *= lerpf(1.0, lerpf(0.82, 1.18, fine), cfg.world_noise_fine_mix)
-	return clampf(patch, 0.0, 1.0)
-
+	return ShrubScatter._world_noise_suitability(self, world_pos)
 
 func _world_micro_gap(world_pos: Vector2, key: int, attempt: int) -> float:
-	var p := world_pos / maxf(_hex_size, 1.0)
-	var continuous := _value_noise2(p.x * 0.82 + 23.0, p.y * 0.82 - 17.0, 131)
-	var dither := _hash01(key, 9900 + attempt * 19)
-	return clampf(continuous * 0.72 + dither * 0.28, 0.0, 1.0)
-
+	return ShrubScatter._world_micro_gap(self, world_pos, key, attempt)
 
 func _instance_transform(i: int) -> Transform2D:
-	var rot := _instance_rotations[i]
-	var size := _instance_sizes[i]
-	var x_axis := Vector2(cos(rot), sin(rot)) * size
-	var y_axis := Vector2(-sin(rot), cos(rot)) * size
-	return Transform2D(x_axis, y_axis, _instance_positions[i])
-
+	return ShrubScatter._instance_transform(self, i)
 
 func _instance_rotation(key: int, attempt: int) -> float:
-	var full := _hash01(key, 500 + attempt) * TAU
-	match _rotation_mode():
-		ROT_UPRIGHT:
-			return 0.0
-		ROT_UPRIGHT_JITTER:
-			return (_hash01(key, 501 + attempt) * 2.0 - 1.0) * deg_to_rad(_upright_jitter_degrees())
-	var strength := _random_rotation_strength()
-	if strength >= 0.999:
-		return full
-	return (_hash01(key, 501 + attempt) * 2.0 - 1.0) * PI * strength
-
+	return ShrubScatter._instance_rotation(self, key, attempt)
 
 func _cached_detail_mesh() -> ArrayMesh:
-	if _mesh_cache.has("quad"):
-		return _mesh_cache["quad"]
-	var mesh := _build_shrub_mesh()
-	_mesh_cache["quad"] = mesh
-	return mesh
+	return ShrubScatter._cached_detail_mesh(self)
 
-
-# Every form is drawn procedurally on one quad (vegetation_forms.gdshaderinc).
-# Its half extent keeps the old mesh footprint so instance size, settlement
-# avoidance and wrap margins keep their meaning.
 func _build_shrub_mesh() -> ArrayMesh:
-	var h := IMPOSTOR_QUAD_HALF
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = PackedVector2Array([
-		Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)])
-	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([
-		Vector2(0.0, 0.0), Vector2(1.0, 0.0), Vector2(1.0, 1.0), Vector2(0.0, 1.0)])
-	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 0, 2, 3])
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-
+	return ShrubScatter._build_shrub_mesh(self)
 
 func _sample_cell_state(idx: int, cell = null) -> Dictionary:
-	return {
-		"temp": _f32(_map.temp_arr, idx, cell.temperature if cell != null else 0.5),
-		"moisture": _f32(_map.moisture_arr, idx, cell.moisture if cell != null else 0.5),
-		"snow": _f32(_map.snow_cover_arr, idx, cell.snow_cover if cell != null else 0.0),
-		"weather_intensity": _f32(_map.weather_intensity_arr, idx, cell.weather_intensity if cell != null else 0.0),
-		"vitality": _f32(_map.vegetation_vitality_arr, idx, cell.vegetation_vitality if cell != null else 0.7),
-		"heat": _f32(_map.vegetation_heat_stress_arr, idx, cell.vegetation_heat_stress if cell != null else 0.0),
-		"drought": _f32(_map.vegetation_drought_stress_arr, idx, cell.vegetation_drought_stress if cell != null else 0.0),
-		"cold": _f32(_map.vegetation_cold_stress_arr, idx, cell.vegetation_cold_stress if cell != null else 0.0),
-		"landform": _u8(_map.landform_arr, idx, cell.landform if cell != null else LandformType.LF.PLAIN),
-		"vegetation": _u8(_map.vegetation_arr, idx, cell.vegetation if cell != null else VegetationType.VEG.NONE),
-		"cover": _u8(_map.cover_arr, idx, cell.cover if cell != null else CoverType.CV.NONE),
-		"weather_type": _u8(_map.weather_type_arr, idx, cell.weather_type if cell != null else 0),
-		# 阶段 C：放置侧全量参数（归一化 / 物理量），喂入 archetype 亲和 + 林线 + 地貌 suitability。
-		"elevation": _f32(_map.elevation_arr, idx, cell.elevation if cell != null else 0.40),
-		"soil_moisture": _f32(_map.soil_moisture_arr, idx, cell.soil_moisture if cell != null else 0.40),
-		"river_discharge": _f32(_map.river_discharge_arr, idx, 0.0),
-		"wind_speed": _f32(_map.wind_speed_arr, idx, cell.wind_speed if cell != null else 0.0),
-		"snow_visual": 0.0,
-	}
-
+	return ShrubScatter._sample_cell_state(self, idx, cell)
 
 func _base_color_for_state(state: Dictionary, variant: float) -> Color:
-	var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
-	var base := _base_color_for_vegetation(veg)
-	var shade := (variant - 0.5) * 0.16
-	if shade >= 0.0:
-		base = base.lightened(shade)
-	else:
-		base = base.darkened(-shade)
-	return base
-
+	return ShrubScatter._base_color_for_state(self, state, variant)
 
 func _base_color_for_vegetation(veg: int) -> Color:
-	var cfg := _profile()
-	if bool(cfg.get("base_color_override_enabled")):
-		return cfg.get("base_color_override")
-	match _detail_kind():
-		DETAIL_TREE:
-			return _tree_base_color_for_vegetation(veg)
-		DETAIL_GRASS:
-			return _grass_base_color_for_vegetation(veg)
-		DETAIL_CONIFER:
-			return Color(0.12, 0.34, 0.21, 0.98)
-		DETAIL_PALM:
-			return Color(0.16, 0.40, 0.20, 0.96)
-		DETAIL_CACTUS:
-			return Color(0.30, 0.48, 0.32, 0.96)
-		DETAIL_REED:
-			return Color(0.42, 0.52, 0.24, 0.92)
-		DETAIL_ALPINE_FLOWER:
-			return Color(0.64, 0.68, 0.52, 0.98)
-		DETAIL_ROCK:
-			return Color(0.54, 0.54, 0.57, 1.0)
-		DETAIL_SNOW_MOUND:
-			return Color(0.95, 0.97, 1.0, 1.0)
-		DETAIL_DEAD_SNAG:
-			return Color(0.42, 0.36, 0.30, 0.98)
-	match veg:
-		VegetationType.VEG.BOREAL_SHRUB:
-			return Color(0.16, 0.33, 0.20, 0.90)
-		VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			return Color(0.34, 0.42, 0.22, 0.90)
-		VegetationType.VEG.DESERT_SCRUB:
-			return Color(0.42, 0.38, 0.22, 0.88)
-		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			return Color(0.31, 0.38, 0.25, 0.86)
-		VegetationType.VEG.SWAMP, VegetationType.VEG.MARSH:
-			return Color(0.13, 0.32, 0.20, 0.88)
-		VegetationType.VEG.SAVANNA, VegetationType.VEG.TEMPERATE_STEPPE:
-			return Color(0.32, 0.43, 0.21, 0.88)
-		_:
-			return Color(0.18, 0.39, 0.19, 0.88)
-
+	return ShrubScatter._base_color_for_vegetation(self, veg)
 
 func _tree_base_color_for_vegetation(veg: int) -> Color:
-	match veg:
-		VegetationType.VEG.TAIGA, VegetationType.VEG.TEMPERATE_CONIFER:
-			return Color(0.12, 0.36, 0.19, 0.96)
-		VegetationType.VEG.TEMPERATE_DECIDUOUS:
-			return Color(0.18, 0.48, 0.22, 0.96)
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return Color(0.08, 0.40, 0.20, 0.98)
-		VegetationType.VEG.TROPICAL_DRY_FOREST:
-			return Color(0.16, 0.36, 0.18, 0.92)
-		VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
-			return Color(0.08, 0.28, 0.18, 0.92)
-		VegetationType.VEG.SAVANNA:
-			return Color(0.18, 0.36, 0.18, 0.88)
-		_:
-			return Color(0.16, 0.42, 0.20, 0.94)
-
+	return ShrubScatter._tree_base_color_for_vegetation(self, veg)
 
 func _grass_base_color_for_vegetation(veg: int) -> Color:
-	match veg:
-		VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.ALPINE_MEADOW:
-			return Color(0.34, 0.58, 0.22, 0.72)
-		VegetationType.VEG.TEMPERATE_STEPPE, VegetationType.VEG.SAVANNA:
-			return Color(0.48, 0.54, 0.22, 0.70)
-		VegetationType.VEG.MARSH, VegetationType.VEG.SWAMP:
-			return Color(0.20, 0.48, 0.25, 0.74)
-		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			return Color(0.38, 0.44, 0.26, 0.66)
-		VegetationType.VEG.DESERT_SCRUB:
-			return Color(0.46, 0.42, 0.22, 0.60)
-		_:
-			return Color(0.30, 0.52, 0.22, 0.68)
-
+	return ShrubScatter._grass_base_color_for_vegetation(self, veg)
 
 func _profile_weight_override(prop: StringName, key: int, fallback: float) -> float:
-	var cfg := _profile()
-	var raw = cfg.get(prop)
-	if not (raw is Dictionary):
-		return fallback
-	var dict: Dictionary = raw
-	if dict.has(key):
-		return float(dict[key])
-	var key_str := str(key)
-	if dict.has(key_str):
-		return float(dict[key_str])
-	return fallback
-
+	return ShrubScatter._profile_weight_override(self, prop, key, fallback)
 
 func _vegetation_weight(veg: int) -> float:
-	var base := 0.0
-	match _detail_kind():
-		DETAIL_TREE:
-			base = _tree_vegetation_weight(veg)
-			return _profile_weight_override(&"vegetation_weight_overrides", veg, base)
-		DETAIL_GRASS:
-			base = _grass_vegetation_weight(veg)
-			return _profile_weight_override(&"vegetation_weight_overrides", veg, base)
-	match veg:
-		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			base = 1.15
-		VegetationType.VEG.DESERT_SCRUB:
-			base = 0.78
-		VegetationType.VEG.TAIGA, VegetationType.VEG.TROPICAL_DRY_FOREST:
-			base = 0.92
-		VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			base = 0.84
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			base = 0.70
-		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			base = 0.42
-		VegetationType.VEG.SAVANNA:
-			base = 0.62
-		VegetationType.VEG.TEMPERATE_STEPPE:
-			base = 0.46
-		VegetationType.VEG.SWAMP:
-			base = 0.56
-		VegetationType.VEG.MARSH:
-			base = 0.34
-		VegetationType.VEG.TEMPERATE_GRASSLAND:
-			base = 0.36
-		VegetationType.VEG.OASIS_VEG:
-			base = 0.58
-		VegetationType.VEG.XERIC_DESERT, VegetationType.VEG.POLAR_DESERT:
-			base = 0.02
-		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			base = 0.0
-		_:
-			base = 0.10
-	return _profile_weight_override(&"vegetation_weight_overrides", veg, base)
-
+	return ShrubScatter._vegetation_weight(self, veg)
 
 func _tree_vegetation_weight(veg: int) -> float:
-	match veg:
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return 1.22
-		VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			return 1.08
-		VegetationType.VEG.TAIGA:
-			return 0.98
-		VegetationType.VEG.TROPICAL_DRY_FOREST:
-			return 0.82
-		VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
-			return 0.64
-		VegetationType.VEG.SAVANNA:
-			return 0.28
-		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			return 0.12
-		VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.TEMPERATE_STEPPE:
-			return 0.05
-		VegetationType.VEG.DESERT_SCRUB, VegetationType.VEG.XERIC_DESERT:
-			return 0.0
-		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			return 0.0
-		_:
-			return 0.04
-
+	return ShrubScatter._tree_vegetation_weight(self, veg)
 
 func _grass_vegetation_weight(veg: int) -> float:
-	match veg:
-		VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.ALPINE_MEADOW:
-			return 1.22
-		VegetationType.VEG.TEMPERATE_STEPPE:
-			return 0.98
-		VegetationType.VEG.SAVANNA:
-			return 0.84
-		VegetationType.VEG.MARSH:
-			return 0.78
-		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			return 0.62
-		VegetationType.VEG.DESERT_SCRUB:
-			return 0.32
-		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			return 0.44
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return 0.24
-		VegetationType.VEG.TAIGA, VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			return 0.30
-		VegetationType.VEG.XERIC_DESERT, VegetationType.VEG.POLAR_DESERT:
-			return 0.02
-		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			return 0.0
-		_:
-			return 0.18
-
+	return ShrubScatter._grass_vegetation_weight(self, veg)
 
 func _landform_weight(lf: int) -> float:
-	var base := 0.0
-	match _detail_kind():
-		DETAIL_TREE:
-			base = _tree_landform_weight(lf)
-			return _profile_weight_override(&"landform_weight_overrides", lf, base)
-		DETAIL_GRASS:
-			base = _grass_landform_weight(lf)
-			return _profile_weight_override(&"landform_weight_overrides", lf, base)
-	match lf:
-		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			base = 1.0
-		LandformType.LF.HILL:
-			base = 0.84
-		LandformType.LF.DELTA:
-			base = 0.64
-		LandformType.LF.BADLANDS:
-			base = 0.42
-		LandformType.LF.SALT_FLAT:
-			base = 0.06
-		LandformType.LF.MOUNTAIN:
-			base = 0.14
-		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			base = 0.0
-		_:
-			base = 0.0 if LandformType.is_water(lf) else 0.55
-	return _profile_weight_override(&"landform_weight_overrides", lf, base)
-
+	return ShrubScatter._landform_weight(self, lf)
 
 func _tree_landform_weight(lf: int) -> float:
-	match lf:
-		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			return 1.0
-		LandformType.LF.HILL:
-			return 0.74
-		LandformType.LF.DELTA:
-			return 0.46
-		LandformType.LF.MOUNTAIN:
-			return 0.16
-		LandformType.LF.BADLANDS, LandformType.LF.SALT_FLAT:
-			return 0.0
-		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			return 0.0
-		_:
-			return 0.0 if LandformType.is_water(lf) else 0.38
-
+	return ShrubScatter._tree_landform_weight(self, lf)
 
 func _grass_landform_weight(lf: int) -> float:
-	match lf:
-		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			return 1.0
-		LandformType.LF.HILL:
-			return 0.82
-		LandformType.LF.DELTA:
-			return 0.72
-		LandformType.LF.BADLANDS:
-			return 0.26
-		LandformType.LF.SALT_FLAT:
-			return 0.04
-		LandformType.LF.MOUNTAIN:
-			return 0.32
-		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			return 0.0
-		_:
-			return 0.0 if LandformType.is_water(lf) else 0.58
-
+	return ShrubScatter._grass_landform_weight(self, lf)
 
 func _cover_weight(cover: int) -> float:
-	var base := 1.0
-	match cover:
-		CoverType.CV.GLACIER, CoverType.CV.SEA_ICE, CoverType.CV.PELAGIC_BLOOM:
-			base = 0.0
-		CoverType.CV.FLOODING:
-			base = 0.18
-		CoverType.CV.SNOW:
-			base = 0.48
-		CoverType.CV.PERMAFROST:
-			base = 0.62
-		_:
-			base = 1.0
-	return _profile_weight_override(&"cover_weight_overrides", cover, base)
-
+	return ShrubScatter._cover_weight(self, cover)
 
 func _sample_density_for_size(idx: int, cell = null) -> float:
-	var state := _sample_cell_state(idx, cell)
-	var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
-	var lf := int(state.get("landform", LandformType.LF.PLAIN))
-	var cover := int(state.get("cover", CoverType.CV.NONE))
-	return _vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover)
-
+	return ShrubScatter._sample_density_for_size(self, idx, cell)
 
 func _cell_ecology_density_bias(state: Dictionary) -> float:
-	var cfg := _profile()
-	var moisture := float(state.get("moisture", 0.5))
-	var vitality := float(state.get("vitality", 0.7))
-	var wet_corridor: float = smoothstep(0.46, 0.82, moisture) * cfg.moisture_corridor_boost
-	var vitality_boost: float = _vitality_normalized(vitality) * cfg.vitality_patch_boost
-	return clampf(0.68 + wet_corridor * 0.26 + vitality_boost * 0.30, 0.28, 1.35)
-
+	return ShrubScatter._cell_ecology_density_bias(self, state)
 
 func _climate_presence(state: Dictionary) -> float:
-	var cfg := _profile()
-	var moisture := float(state.get("moisture", 0.5))
-	var snow := float(state.get("snow", 0.0))
-	var vitality := float(state.get("vitality", 0.7))
-	var heat := float(state.get("heat", 0.0))
-	var drought := float(state.get("drought", 0.0))
-	var cold := float(state.get("cold", 0.0))
-	var wt := int(state.get("weather_type", 0))
-	var wi := float(state.get("weather_intensity", 0.0))
-	if wt == _WT_DROUGHT or wt == _WT_HEATWAVE:
-		drought = maxf(drought, wi * 0.65)
-		heat = maxf(heat, wi * 0.52)
-	elif wt == _WT_BLIZZARD:
-		snow = maxf(snow, wi * 0.85)
-		cold = maxf(cold, wi * 0.62)
-	elif wt == _WT_RAIN or wt == _WT_STORM or wt == _WT_MONSOON:
-		moisture = clampf(moisture + wi * 0.20, 0.0, 1.0)
-
-	var dry := clampf(maxf(drought, maxf(heat * 0.78, (0.34 - moisture) * 1.9)), 0.0, 1.0)
-	var snow_hide := clampf(maxf(snow, cold * 0.55), 0.0, 1.0)
-	var presence := pow(_vitality_normalized(vitality), cfg.vitality_alpha_power)
-	presence *= 1.0 - dry * cfg.stress_hide_strength
-	presence *= 1.0 - snow_hide * cfg.snow_hide_strength
-	return clampf(presence, 0.0, 1.0)
-
+	return ShrubScatter._climate_presence(self, state)
 
 func _scatter_presence(state: Dictionary) -> float:
-	if _spawn_domain() == SPAWN_WATER:
-		var cover := int(state.get("cover", CoverType.CV.NONE))
-		if cover == CoverType.CV.SEA_ICE or cover == CoverType.CV.GLACIER:
-			return 0.0
-		return 1.0
-	return _climate_presence(state)
-
+	return ShrubScatter._scatter_presence(self, state)
 
 func _vitality_normalized(vitality: float) -> float:
-	var cfg := _profile()
-	var dead: float = minf(cfg.vitality_dead_threshold, cfg.vitality_healthy_threshold - 0.001)
-	var healthy: float = maxf(cfg.vitality_healthy_threshold, dead + 0.001)
-	return clampf((clampf(vitality, 0.0, 1.0) - dead) / (healthy - dead), 0.0, 1.0)
-
+	return ShrubScatter._vitality_normalized(self, vitality)
 
 func _vitality_density_factor(state: Dictionary) -> float:
-	var cfg := _profile()
-	var vitality := clampf(float(state.get("vitality", 0.7)), 0.0, 1.0)
-	if vitality <= cfg.vitality_dead_threshold:
-		return 0.0
-	var normalized := _vitality_normalized(vitality)
-	var sparse_factor := lerpf(0.10, 0.62, smoothstep(
-		cfg.vitality_dead_threshold,
-		maxf(cfg.vitality_sparse_threshold, cfg.vitality_dead_threshold + 0.001),
-		vitality
-	))
-	var healthy_factor := lerpf(0.62, 1.20, pow(normalized, cfg.vitality_density_power))
-	return minf(sparse_factor, healthy_factor) if vitality < cfg.vitality_sparse_threshold else healthy_factor
-
+	return ShrubScatter._vitality_density_factor(self, state)
 
 func _vitality_size_scale(state: Dictionary) -> float:
-	var cfg := _profile()
-	var vitality := clampf(float(state.get("vitality", 0.7)), 0.0, 1.0)
-	var normalized := _vitality_normalized(vitality)
-	return lerpf(cfg.vitality_size_min, cfg.vitality_size_max, pow(normalized, 0.85))
-
+	return ShrubScatter._vitality_size_scale(self, state)
 
 func _is_water_cell(cell, idx: int) -> bool:
-	if idx >= 0 and idx < _map.is_water_arr.size() and _map.is_water_arr[idx] > 0:
-		return true
-	var lf := _u8(_map.landform_arr, idx, cell.landform if cell != null else LandformType.LF.OCEAN)
-	if LandformType.is_water(lf):
-		return true
-	if cell != null and LandformType.is_water(cell.landform):
-		return true
-	return false
-
+	return ShrubScatter._is_water_cell(self, cell, idx)
 
 func _has_river_cell(cell, idx: int) -> bool:
-	if idx >= 0 and idx < _map.has_river_arr.size():
-		return _map.has_river_arr[idx] > 0
-	return bool(cell.has_river) if cell != null else false
-
+	return ShrubScatter._has_river_cell(self, cell, idx)
 
 func _is_water_position(world_pos: Vector2, _fallback_cell, fallback_idx: int) -> bool:
-	if _map == null:
-		return false
-	var cell = HexUtils.world_to_wrapped_cell(_map, world_pos, _hex_size)
-	if cell == null:
-		return true
-	var idx := _cell_index(cell, fallback_idx)
-	return _is_water_cell(cell, idx)
-
+	return ShrubScatter._is_water_position(self, world_pos, _fallback_cell, fallback_idx)
 
 func _is_river_body_position(world_pos: Vector2) -> bool:
-	if _world == null or _world.flow_buffer.is_empty():
-		return false
-	return _world.sample_flow(world_pos) >= _profile().river_clear_threshold
-
+	return ShrubScatter._is_river_body_position(self, world_pos)
 
 func _cell_center(cell, idx: int) -> Vector2:
-	if idx >= 0 and idx < _map.cell_pos_x_arr.size() and idx < _map.cell_pos_y_arr.size():
-		return Vector2(_map.cell_pos_x_arr[idx], _map.cell_pos_y_arr[idx]) * _hex_size
-	return HexUtils.cube_to_world(int(cell.q), int(cell.r), _hex_size)
-
+	return ShrubScatter._cell_center(self, cell, idx)
 
 func _cell_index(cell, fallback: int) -> int:
-	var idx := int(cell.index)
-	return idx if idx >= 0 else -1
-
+	return ShrubScatter._cell_index(self, cell, fallback)
 
 func _cell_hash_key(cell, fallback: int) -> int:
-	if cell != null:
-		var idx := int(cell.index)
-		if idx >= 0:
-			return idx
-		return int(cell.q) * 4099 + int(cell.r) * 9176 + fallback
-	return fallback
-
+	return ShrubScatter._cell_hash_key(self, cell, fallback)
 
 func _base_max_per_cell() -> int:
-	var cfg := _profile()
-	if _limited_platform_density_tier():
-		match _active_quality_tier():
-			0:
-				return maxi(0, cfg.mobile_max_per_cell_quality0)
-			1:
-				return maxi(0, cfg.mobile_max_per_cell_quality1)
-			_:
-				return maxi(0, cfg.mobile_max_per_cell_quality2)
-	match _active_quality_tier():
-		0:
-			return maxi(0, cfg.desktop_max_per_cell_quality0)
-		1:
-			return maxi(0, cfg.desktop_max_per_cell_quality1)
-		_:
-			return maxi(0, cfg.desktop_max_per_cell_quality2)
-
+	return ShrubScatter._base_max_per_cell(self)
 
 func _max_per_cell() -> int:
-	var baseline := _base_max_per_cell()
-	return maxi(baseline, int(ceil(float(baseline) * _resolved_lod_near_density_multiplier())))
-
+	return ShrubScatter._max_per_cell(self)
 
 func _base_instance_cap() -> int:
-	var cfg := _profile()
-	if _limited_platform_density_tier():
-		match _active_quality_tier():
-			0:
-				return maxi(0, cfg.mobile_max_instances_quality0)
-			1:
-				return maxi(0, cfg.mobile_max_instances_quality1)
-			_:
-				return maxi(0, cfg.mobile_max_instances_quality2)
-	match _active_quality_tier():
-		0:
-			return maxi(0, cfg.desktop_max_instances_quality0)
-		1:
-			return maxi(0, cfg.desktop_max_instances_quality1)
-		_:
-			return maxi(0, cfg.desktop_max_instances_quality2)
-
+	return ShrubScatter._base_instance_cap(self)
 
 func _instance_cap() -> int:
-	var baseline := _base_instance_cap()
-	return maxi(baseline, int(ceil(float(baseline) * _resolved_lod_near_density_multiplier())))
-
+	return ShrubScatter._instance_cap(self)
 
 func _quality_lobe_count() -> int:
-	var cfg := _profile()
-	if OS.has_feature("mobile"):
-		match _active_quality_tier():
-			0:
-				return clampi(cfg.mobile_lobes_quality0, 2, 8)
-			1:
-				return clampi(cfg.mobile_lobes_quality1, 2, 8)
-			_:
-				return clampi(cfg.mobile_lobes_quality2, 2, 8)
-	match _active_quality_tier():
-		0:
-			return clampi(cfg.desktop_lobes_quality0, 2, 8)
-		1:
-			return clampi(cfg.desktop_lobes_quality1, 2, 8)
-		_:
-			return clampi(cfg.desktop_lobes_quality2, 2, 8)
-
+	return ShrubScatter._quality_lobe_count(self)
 
 func _quality_density_scale() -> float:
-	var cfg := _profile()
-	if _limited_platform_density_tier():
-		match _active_quality_tier():
-			0:
-				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality0)
-			1:
-				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality1)
-			_:
-				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality2)
-	match _active_quality_tier():
-		0:
-			return maxf(0.0, cfg.density_scale * cfg.desktop_density_multiplier_quality0)
-		1:
-			return maxf(0.0, cfg.density_scale * cfg.desktop_density_multiplier_quality1)
-		_:
-			return maxf(0.0, cfg.density_scale * cfg.desktop_density_multiplier_quality2)
-
+	return ShrubScatter._quality_density_scale(self)
 
 func _quality_size_scale() -> float:
-	var cfg := _profile()
-	if OS.has_feature("mobile"):
-		match _active_quality_tier():
-			0:
-				return maxf(0.0, cfg.mobile_size_scale_quality0)
-			1:
-				return maxf(0.0, cfg.mobile_size_scale_quality1)
-			_:
-				return maxf(0.0, cfg.mobile_size_scale_quality2)
-	match _active_quality_tier():
-		0:
-			return maxf(0.0, cfg.desktop_size_scale_quality0)
-		1:
-			return maxf(0.0, cfg.desktop_size_scale_quality1)
-		_:
-			return maxf(0.0, cfg.desktop_size_scale_quality2)
-
+	return ShrubScatter._quality_size_scale(self)
 
 func _active_quality_tier() -> int:
-	# Web's compile tier stays LOW for warmup parity. Instance budgets and
-	# shading/form uniforms must follow the user's runtime quality instead.
-	if OS.has_feature("web"):
-		return clampi(_visual_quality, 0, 2)
-	return clampi(
-		_mobile_quality_tier if DCFeatureFlags.uses_shader_quality_tier() else _visual_quality,
-		0, 2)
+	return ShrubScatter._active_quality_tier(self)
 
-
-# [web-mobile-density-halving 2026-10-30] 受限平台（浏览器 WebGL2 / 移动 GPU）共用
-# 同一套"性能换密度"档。web 之前走的是桌面档（density 1.0–1.35、每层上限
-# 14000–24000 实例），浏览器里根本跑不动；现在 web 自动拿到 Profile 上已有的
-# mobile_* 档（density 0.46–0.70、每层上限 1800–2600，约为桌面的 45%），
-# 移动端行为不变，桌面端仍然走 desktop_* 档、完全不受影响。
-# 只切"密度 / 每格上限 / 每层上限"这三项；尺寸档与 lobe 档仍按移动端原判定，
-# 避免在 web 上额外改变植株大小（那属于另一条视觉口径）。
 func _limited_platform_density_tier() -> bool:
-	return DCFeatureFlags.uses_shader_quality_tier()
-
+	return ShrubScatter._limited_platform_density_tier(self)
 
 func _detail_kind() -> int:
-	var cfg := _profile()
-	return clampi(int(cfg.detail_kind), DETAIL_SHRUB, DETAIL_DEAD_SNAG)
-
+	return ShrubScatter._detail_kind(self)
 
 func _profile() -> Resource:
-	return profile if profile != null else DEFAULT_PROFILE
-
+	return ShrubScatter._profile(self)
 
 func _effective_spawn_radius_factor() -> float:
-	var cfg := _profile()
-	var configured_floor = cfg.get("seamless_spawn_radius_floor")
-	var overlap_floor := 1.06 if configured_floor == null else float(configured_floor)
-	return maxf(float(cfg.spawn_radius_factor), clampf(overlap_floor, 0.85, 1.35))
-
+	return ShrubScatter._effective_spawn_radius_factor(self)
 
 func _profile_int(prop: StringName, fallback: int) -> int:
-	var v = _profile().get(prop)
-	return fallback if v == null else int(v)
-
+	return ShrubScatter._profile_int(self, prop, fallback)
 
 func _profile_float(prop: StringName, fallback: float) -> float:
-	var v = _profile().get(prop)
-	return fallback if v == null else float(v)
-
+	return ShrubScatter._profile_float(self, prop, fallback)
 
 func _spawn_domain() -> int:
-	return clampi(_profile_int(&"spawn_domain", SPAWN_LAND), SPAWN_LAND, SPAWN_ANY)
-
+	return ShrubScatter._spawn_domain(self)
 
 func _rotation_mode() -> int:
-	return clampi(_profile_int(&"rotation_mode", ROT_RANDOM_FULL), ROT_RANDOM_FULL, ROT_UPRIGHT_JITTER)
-
+	return ShrubScatter._rotation_mode(self)
 
 func _random_rotation_strength() -> float:
-	return clampf(_profile_float(&"random_rotation_strength", 1.0), 0.0, 1.0)
-
+	return ShrubScatter._random_rotation_strength(self)
 
 func _upright_jitter_degrees() -> float:
-	return clampf(_profile_float(&"upright_jitter_degrees", 6.0), 0.0, 35.0)
-
+	return ShrubScatter._upright_jitter_degrees(self)
 
 func get_scatter_diagnostics() -> Dictionary:
-	return {
-		"name": name,
-		"path": _last_scatter_path,
-		"instances": _instance_count,
-		"candidates": _last_candidate_count,
-		"wrap_edge_copies": _last_wrap_edge_copy_count,
-		"rebuild_ms": _last_rebuild_ms,
-		"reason": _last_rebuild_reason,
-		"incremental_cells": _last_incremental_cells,
-		"dirty_chunks": _last_dirty_chunks,
-		"native_sampled_cells": _last_native_sampled_cells,
-		"native_active_cells": _last_native_active_cells,
-		"native_water_cache_ms": _last_native_water_cache_ms,
-		"native_context_ms": _last_native_context_ms,
-		"native_knobs_ms": _last_native_knobs_ms,
-		"native_call_ms": _last_native_call_ms,
-		"native_apply_ms": _last_native_apply_ms,
-		"cache_update_ms": _last_cache_update_ms,
-		"assemble_ms": _last_assemble_ms,
-		"chunk_cell_cache_entries": _chunk_cell_indices_cache.size(),
-		"chunk_bounds_cache_entries": _chunk_world_bounds_cache.size(),
-		"chunk_cell_cache_builds": _chunk_cell_cache_builds,
-		"chunk_bounds_cache_builds": _chunk_bounds_cache_builds,
-		"active_instance_count_scans": _active_instance_count_scans,
-		"chunked": _chunked_multimesh_enabled,
-		"chunk_size_cells": _chunk_size_cells,
-		"missing_slots": _last_incremental_missing_slots,
-		"dropped_instances": _last_incremental_dropped_instances,
-		"spawn_domain": _spawn_domain(),
-		"detail_kind": _detail_kind(),
-		"render_family": detail_render_family(),
-		"camera_view_initialized": _camera_view_initialized,
-		"visible_chunks": _visible_chunk_count,
-		"prefetch_chunks": _prefetch_chunk_count,
-		"lod_near_density_multiplier": _resolved_lod_near_density_multiplier(),
-		"lod_far_visible_fraction": _lod_far_visible_fraction,
-		"lod_far_instance_count": _far_instance_count,
-		"lod_zoom_t": _lod_zoom_t,
-		"lod_effective_visible_fraction": _effective_visible_instance_fraction(),
-		"seamless_spawn_radius": _effective_spawn_radius_factor(),
-	}
+	return Diagnostics.get_scatter_diagnostics(self)
 
-
-# 可见性现场探针：实例存在但屏幕全无时用于区分 数据缺失 / 节点隐藏 / 可见数
-# 归零 / mesh 缺失 / profile 关闭 等失败模式。只读，不改变任何状态。
 func detail_visibility_probe() -> Dictionary:
-	var chunk_nodes := 0
-	var chunk_nodes_visible := 0
-	var chunk_mm_valid := 0
-	var chunk_mesh_valid := 0
-	var visible_sum := 0
-	var inst_sum := 0
-	var origin_samples: Array = []
-	for raw_id in _chunk_nodes.keys():
-		var node: MultiMeshInstance2D = _chunk_nodes[raw_id]
-		if node == null or not is_instance_valid(node):
-			continue
-		chunk_nodes += 1
-		if node.visible:
-			chunk_nodes_visible += 1
-		var mm := node.multimesh
-		if mm == null:
-			continue
-		chunk_mm_valid += 1
-		if mm.mesh != null:
-			chunk_mesh_valid += 1
-		visible_sum += mm.visible_instance_count
-		inst_sum += mm.instance_count
-		# 采样前几个实例的 origin（TRANSFORM_2D buffer: ox 在 +3、oy 在 +7），
-		# 用于区分"实例不可见"与"实例被放到屏幕外/原点"。
-		# 同时抽样编码器写入的存储 uv（world_ext_detail.cpp 布局：origin=buf[3]/buf[7]，
-		# custom uv=buf[12]/buf[13]）。uv 是 shader 实际消费的输入，与世界坐标分离采样
-		# 可直接区分"存储 uv 错"与"uniform/寻址错"。
-		if origin_samples.size() < 3 and mm.instance_count > 0:
-			var buf := mm.buffer
-			var take: int = mini(3 - origin_samples.size(), mm.instance_count)
-			for k in range(take):
-				if buf.size() >= (k + 1) * 16:
-					origin_samples.append({
-						"pos": Vector2(buf[k * 16 + 3], buf[k * 16 + 7]),
-						"uv": Vector2(buf[k * 16 + 12], buf[k * 16 + 13]),
-					})
-	return {
-		"name": name,
-		"in_tree": is_inside_tree(),
-		"layer_visible": visible,
-		"profile_enabled": bool(_profile().enabled),
-		"camera_lod_hidden": _camera_lod_hidden,
-		"shadow_fraction": _shadow_fraction,
-		"lod_zoom_t": _lod_zoom_t,
-		"lod_alpha": _lod_alpha,
-		"camera_zoom": _camera_zoom,
-		"instance_count": _instance_count,
-		"chunk_nodes": chunk_nodes,
-		"chunk_nodes_visible": chunk_nodes_visible,
-		"chunk_mm_valid": chunk_mm_valid,
-		"chunk_mesh_valid": chunk_mesh_valid,
-		"chunk_visible_sum": visible_sum,
-		"chunk_inst_sum": inst_sum,
-		"origin_samples": origin_samples,
-		"spawn_domain": _spawn_domain(),
-		"cid_probe": _cid_probe(origin_samples),
-		# [DEBUG-TEMP] chunk 材质 shader 变体 / 纹理绑定核查：duplicate(true) 深拷贝的
-		# chunk 材质在 _refresh_shader_variants 后可能滞留旧 shader 变体或缺纹理绑定。
-		"chunk_material_probe": _chunk_material_probe(),
-	}
+	return Diagnostics.detail_visibility_probe(self)
 
-
-# [DEBUG-TEMP] 一次性检查：chunk 节点共享材质 / shader 变体 / 关键纹理参数绑定核查。
 func _chunk_material_probe() -> Dictionary:
-	var out := {
-		"tiled_active": _visual_tiles_active(),
-		"base_shader_tiled": false,
-		"map_index_param": false,
-		"grid_size_param": "",
-		"interior_param": "",
-		"domain_origin_param": "",
-		"world_size_param": "",
-		"wrap_param": 0.0,
-		"chunk_count": _chunk_nodes.size(),
-		"chunk_material_shared": 0,
-		"chunk_material_other": 0,
-	}
-	if _material == null or _material.shader == null:
-		return out
-	out["base_shader_tiled"] = _material.shader.code.begins_with("#define MAP_VISUAL_TILED")
-	if bool(out["base_shader_tiled"]):
-		var tiles_param = _material.get_shader_parameter("visual_map_index_tiles")
-		out["map_index_param"] = tiles_param != null
-		if tiles_param != null:
-			out["map_index_layers"] = tiles_param.get_layers() if tiles_param.has_method("get_layers") else -1
-		out["grid_size_param"] = str(_material.get_shader_parameter("visual_grid_size"))
-		out["interior_param"] = str(_material.get_shader_parameter("visual_interior_size"))
-		out["domain_origin_param"] = str(_material.get_shader_parameter("visual_domain_origin"))
-	else:
-		out["map_index_param"] = _material.get_shader_parameter("map_index_atlas") != null
-	out["world_size_param"] = str(_material.get_shader_parameter("world_size"))
-	out["wrap_param"] = float(_material.get_shader_parameter("wrap_period_x"))
-	for chunk_id in _chunk_nodes.keys():
-		var node: MultiMeshInstance2D = _chunk_nodes[chunk_id]
-		if node != null and is_instance_valid(node):
-			if node.material == _material:
-				out["chunk_material_shared"] += 1
-			else:
-				out["chunk_material_other"] += 1
-	return out
+	return Diagnostics._chunk_material_probe(self)
 
-
-# tiled 模式端到端解码探针：对实例世界坐标按 shader 的 visual_tile_address 逻辑
-# 逐步寻址，从 map_index 数组读回 G/B 解码 cid，并与期望 cell 对照。cid=-1 或
-# 与期望不符即复现"presence=0 全灭"链路；同时抽样 normal/height 验证内容。
 func _cid_probe(samples: Array) -> Array:
-	var out: Array = []
-	if not _visual_tiles_active() or _map == null or samples.is_empty():
-		return out
-	var tiles = _world.visual_tiles
-	var layout = tiles.layout
-	var take: int = mini(2, samples.size())
-	for k in range(take):
-		var sample: Dictionary = samples[k]
-		var world_pos: Vector2 = sample["pos"]
-		var stored_uv: Vector2 = sample["uv"]
-		# 与原生编码器一致的世界坐标 → map_uv（world_ext_detail.cpp uvx/uvy 公式）。
-		var sample_x := world_pos.x
-		if _world.wrap_period_x > 0.0001:
-			sample_x = fposmod(world_pos.x, _world.wrap_period_x)
-		var map_uv := Vector2(
-			(sample_x - _bounds.position.x) / maxf(_bounds.size.x, 0.0001),
-			(world_pos.y - _bounds.position.y) / maxf(_bounds.size.y, 0.0001))
-		# 与 visual_tile_sampling.gdshaderinc::visual_tile_address 一致的寻址。
-		var wp := _bounds.position + map_uv * _bounds.size
-		if _world.wrap_period_x > 0.0001:
-			wp.x = fposmod(wp.x, _world.wrap_period_x)
-		var domain_uv: Vector2 = (wp - layout.visual_domain.position) / layout.visual_domain.size
-		domain_uv.x = fposmod(domain_uv.x, 1.0) if _world.wrap_period_x > 0.0001 else clampf(domain_uv.x, 0.0, 1.0)
-		domain_uv.y = clampf(domain_uv.y, 0.0, 1.0)
-		var scaled: Vector2 = domain_uv * Vector2(layout.grid_size)
-		var tile_xy := Vector2i(mini(int(floor(scaled.x)), layout.grid_size.x - 1),
-			mini(int(floor(scaled.y)), layout.grid_size.y - 1))
-		var local01: Vector2 = scaled - Vector2(tile_xy)
-		var gutter := float(layout.gutter_px)
-		var physical_px := Vector2(gutter, gutter) + local01 * Vector2(layout.interior_size)
-		var layer: int = tile_xy.y * layout.grid_size.x + tile_xy.x
-		var entry: Dictionary = {"world_pos": world_pos, "tile_xy": tile_xy,
-			"layer": layer, "physical_px": physical_px,
-			# 输入与中间量全量转储：静态推演与观测矛盾时的最终事实来源。
-			"in_bounds": str(_bounds), "in_wrap": _world.wrap_period_x,
-			"in_grid": str(layout.grid_size), "in_interior": str(layout.interior_size),
-			"in_domain": str(layout.visual_domain),
-			"wp": wp, "domain_uv": domain_uv, "scaled": scaled, "local01": local01,
-			"stored_uv": stored_uv}
-		if tiles.map_index != null:
-			var img := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), layer)
-			if img != null:
-				var px := img.get_pixelv(Vector2i(physical_px))
-				var lo := int(px.g * 255.0 + 0.5)
-				var hi := int(px.b * 255.0 + 0.5)
-				var cid := lo + hi * 256
-				entry["map_index_px"] = px
-				entry["cid"] = -1 if cid >= 65535 else cid
-				# 期望 cell：用地图最近 cell 对照（粗校验，容差一个 hex）。
-				entry["expect_cell"] = _nearest_cell_index(world_pos)
-			# 对照组：按"世界坐标→domain_uv 直接换算"的期望地址再采一次。
-			# 若此 cid ≈ expect_cell，则内容与公式正确，断裂在实例存储 uv；
-			# 若同样不符，则烘焙内容或 layout 契约本身有错。
-			var ref_uv := Vector2(
-				fposmod(world_pos.x, _world.wrap_period_x) / layout.visual_domain.size.x,
-				(world_pos.y - layout.visual_domain.position.y) / layout.visual_domain.size.y)
-			var ref_scaled: Vector2 = ref_uv * Vector2(layout.grid_size)
-			var ref_tile := Vector2i(mini(int(floor(ref_scaled.x)), layout.grid_size.x - 1),
-				mini(int(floor(ref_scaled.y)), layout.grid_size.y - 1))
-			var ref_local: Vector2 = ref_scaled - Vector2(ref_tile)
-			var ref_px := Vector2(gutter, gutter) + ref_local * Vector2(layout.interior_size)
-			var ref_layer: int = ref_tile.y * layout.grid_size.x + ref_tile.x
-			var ref_img := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), ref_layer)
-			if ref_img != null:
-				var rpx := ref_img.get_pixelv(Vector2i(ref_px))
-				var rcid := int(rpx.g * 255.0 + 0.5) + int(rpx.b * 255.0 + 0.5) * 256
-				entry["ref_tile_px"] = [ref_tile, ref_px]
-				entry["cid_ref"] = -1 if rcid >= 65535 else rcid
-			# shader 真实消费链：用实例存储 uv（编码器写入 buf[12]/[13]）走 uniform 寻址。
-			# 与 world_pos 链对照可区分"存储 uv 错"与"uniform/layout 错"。
-			var swp := _bounds.position + stored_uv * _bounds.size
-			if _world.wrap_period_x > 0.0001:
-				swp.x = fposmod(swp.x, _world.wrap_period_x)
-			var sdomain: Vector2 = (swp - layout.visual_domain.position) / layout.visual_domain.size
-			sdomain.x = fposmod(sdomain.x, 1.0) if _world.wrap_period_x > 0.0001 else clampf(sdomain.x, 0.0, 1.0)
-			sdomain.y = clampf(sdomain.y, 0.0, 1.0)
-			var sscaled: Vector2 = sdomain * Vector2(layout.grid_size)
-			var stile := Vector2i(mini(int(floor(sscaled.x)), layout.grid_size.x - 1),
-				mini(int(floor(sscaled.y)), layout.grid_size.y - 1))
-			var slocal: Vector2 = sscaled - Vector2(stile)
-			var spx := Vector2(gutter, gutter) + slocal * Vector2(layout.interior_size)
-			var slayer: int = stile.y * layout.grid_size.x + stile.x
-			var simg := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), slayer)
-			if simg != null:
-				var spp := simg.get_pixelv(Vector2i(spx))
-				var scid := int(spp.g * 255.0 + 0.5) + int(spp.b * 255.0 + 0.5) * 256
-				entry["shader_tile_px"] = [stile, spx]
-				entry["cid_shader"] = -1 if scid >= 65535 else scid
-		if tiles.terrain_normal != null:
-			var nimg := RenderingServer.texture_2d_layer_get(tiles.terrain_normal.get_rid(), layer)
-			if nimg != null:
-				entry["normal_px"] = nimg.get_pixelv(Vector2i(physical_px))
-		if tiles.height != null:
-			var himg := RenderingServer.texture_2d_layer_get(tiles.height.get_rid(), layer)
-			if himg != null:
-				entry["height_px"] = himg.get_pixelv(Vector2i(physical_px))
-		out.append(entry)
-	return out
-
+	return Diagnostics._cid_probe(self, samples)
 
 func _nearest_cell_index(world_pos: Vector2) -> int:
-	var best := -1
-	var best_d := INF
-	if _map == null:
-		return best
-	for cell in _map.all_cells():
-		if cell == null:
-			continue
-		var center := HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
-		var d: float = center.distance_squared_to(world_pos)
-		if d < best_d:
-			best_d = d
-			best = int(cell.index)
-	return best
-
+	return Diagnostics._nearest_cell_index(self, world_pos)
 
 func _world_uv(world_pos: Vector2) -> Vector2:
-	var size := _bounds.size
-	if size.x <= 0.001 or size.y <= 0.001:
-		return Vector2.ZERO
-	var period_x := HexUtils.wrap_period_x(_map.width, _hex_size) if _map != null else 0.0
-	var sample_x := world_pos.x
-	if period_x > 0.0001:
-		sample_x = fposmod(sample_x, period_x)
-	return Vector2(
-		clampf((sample_x - _bounds.position.x) / size.x, 0.0, 1.0),
-		clampf((world_pos.y - _bounds.position.y) / size.y, 0.0, 1.0)
-	)
-
+	return Diagnostics._world_uv(self, world_pos)
 
 func _f32(arr: PackedFloat32Array, idx: int, fallback: float) -> float:
-	if idx >= 0 and idx < arr.size():
-		return float(arr[idx])
-	return fallback
-
+	return Diagnostics._f32(self, arr, idx, fallback)
 
 func _u8(arr: PackedByteArray, idx: int, fallback: int) -> int:
-	if idx >= 0 and idx < arr.size():
-		return int(arr[idx])
-	return fallback
-
+	return Diagnostics._u8(self, arr, idx, fallback)
 
 func _hash01(idx: int, salt: int) -> float:
-	var x := sin(float(idx * 127 + salt * 311) * 12.9898) * 43758.5453123
-	return x - floor(x)
-
+	return Diagnostics._hash01(self, idx, salt)
 
 func _value_noise2(x: float, y: float, salt: int) -> float:
-	var ix := floori(x)
-	var iy := floori(y)
-	var fx := x - float(ix)
-	var fy := y - float(iy)
-	var sx := fx * fx * (3.0 - 2.0 * fx)
-	var sy := fy * fy * (3.0 - 2.0 * fy)
-	var a := _hash2i(ix, iy, salt)
-	var b := _hash2i(ix + 1, iy, salt)
-	var c := _hash2i(ix, iy + 1, salt)
-	var d := _hash2i(ix + 1, iy + 1, salt)
-	return lerpf(lerpf(a, b, sx), lerpf(c, d, sx), sy)
-
+	return Diagnostics._value_noise2(self, x, y, salt)
 
 func _hash2i(x: int, y: int, salt: int) -> float:
-	var n := x * 374761393 + y * 668265263 + salt * 1442695041
-	n = (n ^ (n >> 13)) * 1274126177
-	n = n ^ (n >> 16)
-	return float(n & 0x00ffffff) / float(0x01000000)
+	return Diagnostics._hash2i(self, x, y, salt)
 
-
-static var _compiled_shader_variants: Dictionary = {}
-# ─── web 首次绘制编译成本探针（2026-10-31）───────────────────────────────────
-# Shader.code 赋值就是 Compatibility(GLES3/WebGL2) 后端同步编译 GLSL 的地方，
-# 所以这一行的耗时≈"首帧那份 vegetation shader 编译"。只做内存聚合（按变体一行），
-# 不写文件、不 dump JSON；真正发事件在 _report_veg_shader_cost()，每个变体最多
-# 一条 WebTelemetry("veg_shader")，web 上整次加载一般只有 2–4 条。
-static var _shader_compile_stats: Dictionary = {}
-static var _shader_compile_reported: Dictionary = {}
-
-
-## Web 预热用：返回运行期在 web 上真正会编译的 shader 源码（body / shadow / family）。
-## 单一事实来源放在这里，避免 web_shader_warmup.gd 自己去拼前缀——拼错一个宏
-## 驱动就不认缓存，预热白做（这个坑已经踩过两次）。
 static func web_warmup_shader_codes() -> Dictionary:
-	# [2026-10-31 修正 1] 这里原来硬编码 `#define MAP_VISUAL_TILED`，注释说"Compatibility
-	# 渲染器在 web 上强制 tiled"——**这是错的**：map_baker 在 web 上直接把 visual_tiles
-	# 置 null（`map_baker.gd` 的 web 分支），运行期 `_visual_tiles_active()` 恒 false。
-	#
-	# [2026-10-31 修正 2 · 同长不同 hash] 前缀以前是**手抄**的档位串：
-	#   "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n" + near
-	# 手抄的是 LOW，而运行期 `_shader_quality_define_prefix()` 读 `_mobile_quality_tier`
-	# ——它在 `_ready()` 早编时还是初值 1(MID)。LOW / MID 两条宏串长度完全相同
-	# （各 27 字节 ×2 = 54 字节，`#define <18 字符宏>` 换行）、内容不同，于是预热与
-	# 运行期 fp 长度一样、hash 不一样，驱动缓存必然不命中
-	# （实测 veg_body 预热 284:2751745859 / 运行期 284:2668251923）。
-	# 现在：web 档位在 `_shader_quality_define_prefix()` 里钉死 LOW
-	# （`WEB_SHADER_QUALITY_TIER`），而这里的源码也由**同一个** `web_define_prefix()`
-	# 生成 —— 两边不再有第二份手抄串可以漂移。
-	#
-	# 要给哪几格：运行期会编 **两份** body/shadow —— `_ready()` 早编那一次
-	# （`_world == null`）和 `setup()` 之后那一次（`_world != null`）。现在
-	# 近景 form 已打开，两格都必须预热（label 用 body / body_setup）。
-	#
-	# tiled=false 是 web 上的运行期真值（见修正 1）；若哪天 web 也走 visual_tiles，
-	# 这里必须跟着加一份 tiled 变体。
-	var tiled := false
-	var out := {}
-	var high_prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, false, true, false, true)
-	out["body_high"] = high_prefix + _SHADER_CODE
-	out["shadow_high"] = high_prefix + _SHADOW_SHADER_CODE
-	out["family_high"] = high_prefix + "#define PK_SKIP_HORIZON_SHADOWS\n#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
-	for world_known in [false, true]:
-		var prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, world_known)
-		var suffix := "" if not world_known else "_setup"
-		_put_warmup_code(out, "body" + suffix, prefix + _SHADER_CODE)
-		_put_warmup_code(out, "shadow" + suffix, prefix + _SHADOW_SHADER_CODE)
-	# 家族批次材质：前缀来自 `_family_batch_define_prefix()`，再叠 `DETAIL_FAMILY_BATCH`。
-	# web 且近景 form 打开、且家族批次还没上屏时它走 `_shader_quality_define_prefix(true)`
-	# （档位 + FAR_ONLY）；其余情况与运行期前缀相同。configure() 建材质时 `_world`
-	# 已就绪，所以取 world_known=true。
-	# 这是第三份真正会被绘制的变体：以前没预热，它是在"第一次画出家族批次"那一帧
-	# 真编的（`material_variant` 指纹里的 veg_family MISS）。
-	var family_prefix := web_define_prefix(
-		WEB_SHADER_QUALITY_TIER, tiled, true, PK_WEB_ENABLE_VEG_NEAR_FORMS)
-	out["family"] = family_prefix + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
-	# A family can later become visible and restore its near-form program.
-	# Prewarm that exact program as well as the initially suppressed one.
-	if PK_WEB_ENABLE_VEG_NEAR_FORMS:
-		var near_prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, true)
-		_put_warmup_code(out, "family_near",
-			near_prefix + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE)
-	return out
+	return VegetationShaderVariants.web_warmup_shader_codes()
 
 
 ## 同一份源码只保留一个 label：预热每张都要单独跑两帧绘制，重复编就是白花时间。
 static func _put_warmup_code(out: Dictionary, key: String, code: String) -> void:
-	for existing in out.keys():
-		if String(out[existing]) == code:
-			return
-	out[key] = code
+	VegetationShaderVariants._put_warmup_code(out, key, code)
 
+
+static var _compiled_shader_variants: Dictionary = {}
+static var _shader_compile_stats: Dictionary = {}
+static var _shader_compile_reported: Dictionary = {}
 
 static func _compiled_shader(code: String, pass_tag: String = "body") -> Shader:
 	var cached := _compiled_shader_variants.get(code) as Shader
@@ -5627,46 +1635,11 @@ static func _record_shader_compile(pass_tag: String, code: String, elapsed_ms: f
 #   tiled  是否 tiled 变体
 #   h/l    变体标识（代码 hash / 代码长度），用来区分 legacy 与 tiled
 func _report_veg_shader_cost() -> void:
-	if _shader_compile_stats.is_empty():
-		return
-	if not WebTelemetry.enabled():
-		return
-	var share_layers := _shader_share_layer_count()
-	var keys: Array = _shader_compile_stats.keys()
-	keys.sort()
-	for key in keys:
-		if _shader_compile_reported.has(key):
-			continue
-		_shader_compile_reported[key] = true
-		var record: Dictionary = _shader_compile_stats[key]
-		WebTelemetry.emit("veg_shader", {
-			"s": String(record.get("s", "body")),
-			"ms": snappedf(float(record.get("ms", 0.0)), 0.01),
-			"n": int(record.get("n", 0)),
-			"layers": share_layers,
-			"near": String(record.get("near", "full")),
-			"tier": _mobile_quality_tier,
-			"tiled": bool(record.get("tiled", false)),
-			"h": int(record.get("h", 0)),
-			"l": int(record.get("l", 0)),
-		})
+	return Diagnostics._report_veg_shader_cost(self)
 
-
-# 共享同一份 vegetation shader 的层数：同一父节点下的 ShrubLayer 数量。只在首次
-# 编译上报时数一次，不逐帧调用。
 func _shader_share_layer_count() -> int:
-	var parent := get_parent()
-	if parent == null:
-		return 1
-	var count := 0
-	for child in parent.get_children():
-		if child is ShrubLayer:
-			count += 1
-	return maxi(count, 1)
+	return Diagnostics._shader_share_layer_count(self)
 
-
-# Generated single-tree crown and hardscape-rock sprites (resource_art/crown_atlas);
-# the body shader falls back to procedural forms when the art is missing.
 static func _bind_crown_art(mat: ShaderMaterial) -> void:
 	var art := ResourceArtLibrary.shared()
 	var bound := art.crown != null and art.crown_normal != null
@@ -5676,159 +1649,10 @@ static func _bind_crown_art(mat: ShaderMaterial) -> void:
 		mat.set_shader_parameter("crown_normal_art", art.crown_normal)
 
 func setup_cooperative(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visual_quality: int = 1) -> void:
-	_map = map
-	_world = world
-	_bounds = bounds
-	_hex_size = maxf(hex_size, 4.0)
-	_invalidate_chunk_spatial_cache()
-	_active_instance_count_valid = false
-	_visual_quality = clampi(visual_quality, 0, 2)
-	_native_offset_is_water_cache = PackedByteArray()
-	_native_offset_cache_dims = Vector2i.ZERO
-	_native_delta_common_knobs = {}
-	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
-	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
-	var probe_start := Time.get_ticks_usec()
-	_ensure_shader_matches_tiles()
-	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
-	# 首次绘制编译成本（与 setup() 同一个上报口，按变体去重）。
-	_report_veg_shader_cost()
-	probe_start = Time.get_ticks_usec()
-	if _defer_initial_rebuild and _chunked_multimesh_enabled:
-		clear()
-		_last_rebuild_reason = "deferred_until_prefetch"
-		print("[shrub-load] clear %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
-	else:
-		await _rebuild_instances_cooperative()
-
+	await Cooperative_rebuild.setup_cooperative(self, map, world, bounds, hex_size, visual_quality)
 
 func _rebuild_instances_cooperative() -> void:
-	_ensure_resources()
-	var t0_us := Time.get_ticks_usec()
-	var slice_start := Time.get_ticks_usec()
-	_last_candidate_count = 0
-	_last_wrap_edge_copy_count = 0
-	_last_rebuild_reason = ""
-	_last_incremental_cells = 0
-	_last_incremental_missing_slots = 0
-	_last_incremental_dropped_instances = 0
-	_last_dirty_chunks = 0
-	_last_native_sampled_cells = 0
-	_last_native_active_cells = 0
-	clear()
-	var cfg := _profile()
-	if not cfg.enabled or _map == null or _map.cell_count() <= 0:
-		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		return
-
-	var cells: Array = _map.iter_cells()
-	if cells.is_empty():
-		cells = _map.all_cells()
-	if cells.is_empty():
-		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		_last_rebuild_reason = "no_cells"
-		return
-
-	var cell_attempts := PackedInt32Array()
-	cell_attempts.resize(cells.size())
-	var cell_accepts := PackedFloat32Array()
-	cell_accepts.resize(cells.size())
-	var cell_states: Array = []
-	cell_states.resize(cells.size())
-	var cell_suitabilities := PackedFloat32Array()
-	cell_suitabilities.resize(cells.size())
-	var total_attempts: int = 0
-	var max_per_cell: int = maxi(1, _max_per_cell())
-	for order in range(cells.size()):
-		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await get_tree().process_frame
-			slice_start = Time.get_ticks_usec()
-		var cell = cells[order]
-		if cell == null:
-			continue
-		var idx := _cell_index(cell, order)
-		var key := _cell_hash_key(cell, order)
-		var state := _sample_cell_state(idx, cell)
-		var suitability := _cell_suitability(cell, idx, key, state)
-		if suitability <= 0.0:
-			continue
-		cell_states[order] = state
-		cell_suitabilities[order] = suitability
-		var quota := _cell_quota(suitability, max_per_cell)
-		var attempts: int = int(quota.x)
-		cell_attempts[order] = attempts
-		cell_accepts[order] = quota.y
-		total_attempts += attempts
-
-	if total_attempts <= 0:
-		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		_last_rebuild_reason = "no_attempts"
-		return
-
-	# C++ 优先：把"每实例候选生成 + 噪声门 + 接受 + cap + MultiMesh buffer 组装"
-	# 整段热循环下沉 DCWorldExt.encode_detail_scatter，GDScript 仅做上面这段
-	# per-cell（N≤2400）廉价预计算。失败 / 旧 DLL 无该方法时回退到下方 GDScript 路径。
-	if await _rebuild_via_native_cooperative(cells, cell_states, cell_suitabilities, cell_attempts, cell_accepts):
-		if _last_scatter_path.is_empty():
-			_last_scatter_path = "gdext"
-		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		_rebuild_cell_instance_lookup()
-		return
-	_last_scatter_path = "gdscript"
-
-	for order in range(cells.size()):
-		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await get_tree().process_frame
-			slice_start = Time.get_ticks_usec()
-		var cell = cells[order]
-		if cell == null:
-			continue
-		var idx := _cell_index(cell, order)
-		var key := _cell_hash_key(cell, order)
-		var suitability := cell_suitabilities[order]
-		if suitability <= 0.0:
-			continue
-		var state: Dictionary = cell_states[order]
-		var accept_p := cell_accepts[order]
-		for attempt in range(cell_attempts[order]):
-			_try_append_instance(cell, idx, key, attempt, suitability, accept_p, state)
-
-	_apply_instance_cap()
-	_reorder_generated_instances_for_lod()
-	_instance_count = _instance_cell_indices.size()
-	_rebuild_cell_instance_lookup()
-	if _instance_count <= 0:
-		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		_last_rebuild_reason = "no_instances"
-		return
-
-	_multimesh = MultiMesh.new()
-	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
-	_multimesh.use_colors = true
-	_multimesh.use_custom_data = true
-	_multimesh.mesh = _cached_detail_mesh()
-	_multimesh.instance_count = _instance_count
-	_multimesh.visible_instance_count = _lod_visible_count(_instance_count, _far_instance_count)
-	_mmi.multimesh = _multimesh
-
-	for i in range(_instance_count):
-		var xf := _instance_transform(i)
-		_multimesh.set_instance_transform_2d(i, xf)
-		var idx := _instance_cell_indices[i]
-		var state := _sample_cell_state(idx, _instance_cells[i])
-		_multimesh.set_instance_color(i, _base_color_for_state(state, _instance_variants[i]))
-		var uv := _world_uv(_instance_positions[i])
-		_multimesh.set_instance_custom_data(i, Color(
-			uv.x,
-			uv.y,
-			_instance_seeds[i],
-			_instance_forms[i]
-		))
-	visible = cfg.enabled and not _camera_lod_hidden and _instance_count > 0
-	_sync_single_wrap_nodes()
-	_sync_shadow_layer(true)
-	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	_last_candidate_count = _instance_scores.size()
+	await Cooperative_rebuild._rebuild_instances_cooperative(self)
 
 func _rebuild_via_native_cooperative(
 		cells: Array,
@@ -5836,190 +1660,4 @@ func _rebuild_via_native_cooperative(
 		cell_suitabilities: PackedFloat32Array,
 		cell_attempts: PackedInt32Array,
 		cell_accepts: PackedFloat32Array) -> bool:
-	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
-		return false
-	if _map == null:
-		return false
-	var grid_w: int = int(_map.width) if "width" in _map else 0
-	var grid_h: int = int(_map.height) if "height" in _map else 0
-	if grid_w <= 0 or grid_h <= 0:
-		return false
-	var cfg := _profile()
-
-	# offset 网格（odd-r）用于 C++ 端精确复刻 world_to_wrapped_cell：
-	# world_to_cube → cube_to_offset → 越界 / 横向环绕。水域空位预置 1
-	# （拒绝），cell 索引空位预置 -1。
-	var offset_is_water := PackedByteArray()
-	offset_is_water.resize(grid_w * grid_h)
-	offset_is_water.fill(1)
-	var offset_cell_indices := PackedInt32Array()
-	offset_cell_indices.resize(grid_w * grid_h)
-	offset_cell_indices.fill(-1)
-
-	# 每个"活跃 cell"（suitability>0 且 climate_presence>0.02）的廉价 per-cell 数据。
-	var keys := PackedInt32Array()
-	var native_cell_indices := PackedInt32Array()
-	var cx := PackedFloat32Array()
-	var cy := PackedFloat32Array()
-	var suit := PackedFloat32Array()
-	var att := PackedInt32Array()
-	var accp := PackedFloat32Array()
-	var vit := PackedFloat32Array()
-	var sized := PackedFloat32Array()
-	var col_r := PackedFloat32Array()
-	var col_g := PackedFloat32Array()
-	var col_b := PackedFloat32Array()
-	var col_a := PackedFloat32Array()
-
-	var slice_start := Time.get_ticks_usec()
-	for order in range(cells.size()):
-		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await get_tree().process_frame
-			slice_start = Time.get_ticks_usec()
-		var cell = cells[order]
-		if cell == null:
-			continue
-		var idx := _cell_index(cell, order)
-		# 填 is_water 栅格（所有 cell，含水域）。
-		var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
-		if off.x >= 0 and off.x < grid_w and off.y >= 0 and off.y < grid_h:
-			offset_is_water[off.y * grid_w + off.x] = (1 if _is_water_cell(cell, idx) else 0)
-			offset_cell_indices[off.y * grid_w + off.x] = idx
-		var suitability := cell_suitabilities[order]
-		if suitability <= 0.0:
-			continue
-		var state: Dictionary = cell_states[order]
-		if not (state is Dictionary):
-			continue
-		if _scatter_presence(state) <= 0.02:
-			continue
-		var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
-		var lf := int(state.get("landform", LandformType.LF.PLAIN))
-		var cover := int(state.get("cover", CoverType.CV.NONE))
-		var center := _cell_center(cell, idx)
-		var base := _base_color_for_vegetation(veg)
-		keys.append(_cell_hash_key(cell, order))
-		native_cell_indices.append(idx)
-		cx.append(center.x)
-		cy.append(center.y)
-		suit.append(suitability)
-		att.append(cell_attempts[order])
-		accp.append(cell_accepts[order])
-		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
-		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
-		col_r.append(base.r)
-		col_g.append(base.g)
-		col_b.append(base.b)
-		col_a.append(base.a)
-
-	if keys.is_empty():
-		return false
-
-	var knobs := {
-		"hex_size": _hex_size,
-		"origin_x": _bounds.position.x,
-		"origin_y": _bounds.position.y,
-		"size_x": _bounds.size.x,
-		"size_y": _bounds.size.y,
-		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
-		"wrap_edge_margin": 0.0,
-		"grid_w": grid_w,
-		"grid_h": grid_h,
-		"offset_is_water": offset_is_water,
-		"offset_cell_indices": offset_cell_indices,
-		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
-		"flow_w": int(_world.derived_size.x) if _world != null else 0,
-		"flow_h": int(_world.derived_size.y) if _world != null else 0,
-		"river_clear_threshold": cfg.river_clear_threshold,
-		"spawn_domain": _spawn_domain(),
-		"rotation_mode": _rotation_mode(),
-		"random_rotation_strength": _random_rotation_strength(),
-		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
-		"spawn_radius_factor": _effective_spawn_radius_factor(),
-		"world_noise_warp_strength": cfg.world_noise_warp_strength,
-		"patch_frequency": cfg.patch_frequency,
-		"patch_cutoff": cfg.patch_cutoff,
-		"patch_contrast": cfg.patch_contrast,
-		"world_noise_mid_mix": cfg.world_noise_mid_mix,
-		"world_noise_fine_mix": cfg.world_noise_fine_mix,
-		"micro_gap_threshold": cfg.micro_gap_threshold,
-		"world_noise_acceptance": cfg.world_noise_acceptance,
-		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
-		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
-		"size_scale": _quality_size_scale(),
-		"vitality_dead_threshold": cfg.vitality_dead_threshold,
-		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
-		"instance_cap": _instance_cap(),
-		"keys": keys,
-		"cell_indices": native_cell_indices,
-		"center_x": cx,
-		"center_y": cy,
-		"suitability": suit,
-		"attempts": att,
-		"accept_p": accp,
-		"vitality": vit,
-		"size_density": sized,
-		"color_r": col_r,
-		"color_g": col_g,
-		"color_b": col_b,
-		"color_a": col_a,
-	}
-	knobs.merge(_form_knobs())
-
-	var res: Dictionary = await NativeLoadingTasks.compute(_world_ext,"detail_scatter",knobs)
-	if not (res is Dictionary):
-		return false
-	if bool(res.get("fallback", true)):
-		_last_rebuild_reason = str(res.get("reason", "native_fallback"))
-		return false
-	_last_candidate_count = int(res.get("candidate_count", 0))
-	_last_wrap_edge_copy_count = int(res.get("wrap_edge_copy_count", 0))
-	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
-	var inst: int = int(res.get("instance_count", 0))
-	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
-	# 每实例 stride = transform2d(8) + color(4) + custom(4) = 16 float。
-	if inst <= 0 or buffer.size() < inst * 16:
-		clear()
-		_last_rebuild_reason = "native_empty"
-		return true
-	if cell_indices.size() < inst:
-		_last_rebuild_reason = "native_missing_cell_indices"
-		return false
-	var lod_payload := _lod_reorder_native_payload(buffer, cell_indices, inst)
-	buffer = lod_payload.get("buffer", PackedFloat32Array())
-	cell_indices = lod_payload.get("cell_indices", PackedInt32Array())
-	inst = int(lod_payload.get("instance_count", 0))
-	_far_instance_count = int(lod_payload.get("far_count", inst))
-
-	if _chunked_multimesh_enabled:
-		_instance_count = inst
-		_instance_cell_indices = cell_indices
-		visible = cfg.enabled and not _camera_lod_hidden and inst > 0  # 先定 visible，使 _apply_chunk_payload 内的 shadow 镜像取到正确可见性
-		await _apply_chunked_native_full(buffer, cell_indices, inst, true)
-		# shadow chunk 已随每个 _apply_chunk_payload 镜像完成（_clear_chunk_nodes 已清旧，无孤儿）
-		_last_scatter_path = "gdext_chunked"
-		return true
-
-	_instance_count = inst
-	_instance_cell_indices = cell_indices
-	_multimesh = MultiMesh.new()
-	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
-	_multimesh.use_colors = true
-	_multimesh.use_custom_data = true
-	_multimesh.mesh = _cached_detail_mesh()
-	_multimesh.instance_count = inst
-	_multimesh.buffer = buffer
-	_multimesh.visible_instance_count = _lod_visible_count(inst, _far_instance_count)
-	_mmi.multimesh = _multimesh
-	visible = cfg.enabled and not _camera_lod_hidden and inst > 0
-	_sync_single_wrap_nodes()
-	_sync_shadow_layer(true)
-	return true
-
-
-# 每格散布配额：x = 投放次数，y = 每次的接受概率基数。
-# 期望株数 = x * y = max_per_cell * suitability，对 suitability 线性。
-#
-# 旧实现是 attempts = ceil(max_per_cell * suit) 再对每次投放以 suit 为概率接受，
-# 期望株数正比于 suitability² 而且丢掉了 max_per_cell 这一档，中低适宜度的格子
-# 因此变成纯抽签（河边季雨林的单格期望株数只有 0.05）。
+	return await Cooperative_rebuild._rebuild_via_native_cooperative(self, cells, cell_states, cell_suitabilities, cell_attempts, cell_accepts)

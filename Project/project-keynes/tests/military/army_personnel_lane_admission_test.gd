@@ -123,9 +123,9 @@ func _run() -> void:
 	_expect("30/31/32/33 are not rejected at admission", rejected.is_empty())
 
 	# Neighbouring opcodes outside 1..23 and outside the lane set stay refused.
-	# 33 is now inside the lane set, so the upper neighbour moved to 34.
+	# 34 is the current army-pay lane opcode, so use 40 as the upper neighbour.
 	var reject_ids := PackedInt64Array([9400, 9401])
-	var reject_ops := PackedInt32Array([29, 34])
+	var reject_ops := PackedInt32Array([29, 40])
 	var reject_batch := {
 		"request_ids": reject_ids,
 		"opcodes": reject_ops,
@@ -135,16 +135,16 @@ func _run() -> void:
 		bool(ext.submit_economy_pod_commands(reject_batch).get("ok", false)))
 	var reject_poll: Dictionary = ext.poll_economy_pod_receipts(16)
 	var saw_29 := false
-	var saw_34 := false
+	var saw_40 := false
 	for row in reject_poll.get("receipts", []):
 		if int(row.get("code", 0)) != RECEIPT_PARAMS["RejectedAtAdmission"]:
 			continue
 		if int(row.get("opcode", 0)) == 29:
 			saw_29 = true
-		elif int(row.get("opcode", 0)) == 34:
-			saw_34 = true
+		elif int(row.get("opcode", 0)) == 40:
+			saw_40 = true
 	_expect("opcode 29 still RejectedAtAdmission", saw_29)
-	_expect("opcode 34 still RejectedAtAdmission", saw_34)
+	_expect("opcode 40 still RejectedAtAdmission", saw_40)
 
 	# Conservation half — not reachable until the bridge reads exist.
 	var has_bridge_reads: bool = ext.has_method("military_army_population") \

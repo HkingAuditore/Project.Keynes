@@ -34,7 +34,8 @@ func _run() -> int:
 	var final_packet: Dictionary = facade.cell_situation_snapshot(cells)
 	_expect("later commits refresh the same stable batch", int(final_packet.get("sample_day", -1)) > first_day,
 		"before=%d after=%d" % [first_day, int(final_packet.get("sample_day", -1))])
-	_expect("queries leave the production worker healthy", _worker_fault().is_empty(), _worker_fault())
+	var fault := String(_ext.get_runtime_thread_report().get("fault_code", ""))
+	_expect("queries leave the production worker healthy", fault.is_empty(), fault)
 	print("[situation-worker] max_128_cell_query_us=", max_us,
 		" source=", packet.get("read_view_source", ""),
 		" sample_day=", final_packet.get("sample_day", -1))

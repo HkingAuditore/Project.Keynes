@@ -170,20 +170,26 @@ func _average_normal_x(result: Dictionary, width: int, height: int) -> float:
 func _test_normal_map_size_invariance(ext: Object) -> bool:
 	var results: Array[Dictionary] = []
 	for map_size in [Vector2(40.0, 30.0), Vector2(60.0, 45.0), Vector2(100.0, 75.0)]:
-		var knobs := _make_knobs()
+		var knobs := _make_knobs(20, 16)
+		knobs["origin_x"] = 40.0
+		knobs["origin_y"] = 40.0
+		knobs["procedural_detail_gain"] = 0.0
 		knobs["wrap_period_x"] = 0.0
 		knobs["size_x"] = map_size.x
 		knobs["size_y"] = map_size.y
 		knobs["baseline_origin_x"] = 0.0
 		knobs["baseline_origin_y"] = 0.0
-		knobs["baseline_size_x"] = map_size.x
-		knobs["baseline_size_y"] = map_size.y
+		knobs["baseline_size_x"] = map_size.x + 80.0
+		knobs["baseline_size_y"] = map_size.y + 80.0
 		var baseline: PackedFloat32Array = knobs["baseline_height_buffer"]
 		var bw := int(knobs["baseline_width"])
 		var bh := int(knobs["baseline_height"])
 		for y in range(bh):
 			for x in range(bw):
-				baseline[y * bw + x] = 0.66 + 0.28 * float(x) / float(maxi(bw - 1, 1))
+				# Hold the world-space slope fixed while the map grows. A fixed
+				# normalized rise would describe a flatter mountain on a larger map.
+				var world_x: float = (map_size.x + 80.0) * (float(x) + 0.5) / float(bw)
+				baseline[y * bw + x] = 0.68 + 0.001 * world_x
 		knobs["baseline_height_buffer"] = baseline
 		var result: Dictionary = ext.run_bake_visual_tile_layer_pass(knobs)
 		if bool(result.get("fallback", true)):
@@ -191,6 +197,12 @@ func _test_normal_map_size_invariance(ext: Object) -> bool:
 			return false
 		results.append(result)
 	var reference := _average_normal_x(results[0], 20, 20)
+	# The fixture stays entirely above sea level and away from map edges.
+	# Assert the actual tilt too, so an accidentally flat plane cannot pass.
+	var expected := -0.021 / sqrt(1.0 + 0.021 * 0.021)
+	if absf(reference - expected) > 3.0 / 255.0:
+		push_error("visual_tile_native_bake_test: plane normal does not match its physical slope")
+		return false
 	for i in range(1, results.size()):
 		var value := _average_normal_x(results[i], 20, 20)
 		if absf(value - reference) > 3.0 / 255.0:
@@ -366,9 +378,7 @@ func _test_horizon_resample(ext: Object) -> bool:
 	return true
 
 
-func _make_knobs() -> Dictionary:
-	var map_width := 4
-	var map_height := 3
+func _make_knobs(map_width: int = 4, map_height: int = 3) -> Dictionary:
 	var n_cells := map_width * map_height
 	var elevation := PackedFloat32Array()
 	var moisture := PackedFloat32Array()

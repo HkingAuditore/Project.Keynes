@@ -22,13 +22,13 @@ func _restore_journal_provider(sections: Dictionary, context: Dictionary) -> Dic
 
 func _can_annual_provider(context: Dictionary) -> Dictionary:
 	var ext = context.get("annual")
-	return _result(ext != null and ext.has_method("capture_annual_report_state"),
+	return _result(ext != null,
 		"ok" if ext != null else "annual_provider_missing", "")
 
 func _write_annual_provider(context: Dictionary) -> Dictionary:
-	var ext = context.annual
-	var bytes: PackedByteArray = ext.capture_annual_report_state()
-	if bytes.is_empty() and bool(ext.get_annual_report_status().get("ok", false)):
+	var facade = context.annual
+	var bytes: PackedByteArray = facade.capture_annual_state()
+	if bytes.is_empty() and bool(facade.annual_status().get("ok", false)):
 		return _result(false, "annual_capture_failed", "年度报告存档失败。")
 	return {"ok": true, "sections": {"pkar": bytes}}
 
@@ -36,8 +36,8 @@ func _restore_annual_provider(sections: Dictionary, context: Dictionary) -> Dict
 	var bytes: PackedByteArray = sections.get("pkar", PackedByteArray())
 	if bytes.is_empty():
 		return {"ok": true}
-	var ext = context.annual
-	return ext.restore_annual_report_state(bytes)
+	var facade = context.annual
+	return facade.restore_annual_state(bytes)
 
 func _can_narrative_provider(context: Dictionary) -> Dictionary:
 	return _result(true, "ok", "")

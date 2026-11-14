@@ -12,6 +12,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  architecture-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Text-only guards: sources, scripts and agent skills; no assets or binaries.
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /tools/ci/
+            /gdext/src/
+            /gdext/tests/
+            /Project/project-keynes/**/*.gd
+            /Project/project-keynes/data/native_binding_manifest.json
+            /.*/skills/
+            /docs/architecture/
+            /.github/workflows/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Static architecture guards
+        working-directory: tools/ci
+        run: |
+          status=0
+          for guard in check_size_ratchet.py check_cpp_deps.py check_cross_domain_inventory.py \
+              check_runtime_advancers.py check_runtime_switches.py check_committed_views.py \
+              check_save_contracts.py check_module_contracts.py check_resolve_apply.py \
+              check_module_api.py check_skill_mirrors.py check_module_map.py world_ext_bindings.py check_world_ext_bindings.py check_script_native_access.py test_architecture_guards.py \
+              test_regression_evidence.py; do
+            echo "::group::$guard"
+            python "$guard" || { status=1; echo "::error::$guard failed"; }
+            echo "::endgroup::"
+          done
+          exit $status
   authoring-and-thread-lifetime:
     runs-on: ubuntu-latest
     steps:

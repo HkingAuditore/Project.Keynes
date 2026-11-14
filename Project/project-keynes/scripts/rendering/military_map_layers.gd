@@ -266,8 +266,8 @@ func _refresh_player_slot_binding() -> bool:
 func _resolve_ext():
 	if _host != null and _host.has_method("generator"):
 		var generator = _host.generator()
-		if generator != null and generator.has_method("get_data_core_world_ext"):
-			return generator.get_data_core_world_ext()
+		if generator != null and generator.has_method("get_military_facade"):
+			return generator.get_military_facade()
 	return null
 
 
@@ -275,8 +275,8 @@ func _configure_token_formation_visuals() -> void:
 	if token_layer == null:
 		return
 	var view: Dictionary = {}
-	if _ext != null and _ext.has_method("get_military_catalog_view"):
-		var native_view: Variant = _ext.get_military_catalog_view()
+	if _ext != null:
+		var native_view: Variant = _ext.catalog_view()
 		if native_view is Dictionary:
 			view = native_view
 	if not bool(view.get("ok", false)) and _host != null \

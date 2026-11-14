@@ -19,6 +19,7 @@ const OPINION_FLOOR_STAT := "country.ideology.opinion_factor_floor"
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const DrawGateHelper = preload("res://tests/ideology/ideology_draw_gate_helper.gd")
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 
 var _host: WorldRuntimeHost
 var _clock: WorldClock
@@ -134,6 +135,18 @@ func _test_social_media() -> bool:
 			str(with_card.get("point_ledger_population_q16", -1)),
 			str(baseline_population)])
 
+	# The point probe added equal population to every class, including technology
+	# which opposes repeal in the current catalog. Restore the actual class rows
+	# before testing removal, retaining the real support check and Effect ACK.
+	var live := _wait_committed_opinion("the repeal source")
+	if live.is_empty():
+		return false
+	_opinion_population = live.population.duplicate()
+	_opinion_satisfaction_q16 = live.satisfaction_q16.duplicate()
+	_opinion_weighted = live.satisfaction_weighted.duplicate()
+	if not _publish_opinion_source("restore real class rows for repeal"):
+		return false
+	_tick = _drive_days(1)
 	if not _unequip(CARD):
 		return false
 	_tick = _drive_days(2)
@@ -509,61 +522,11 @@ func _commands(rows: Array) -> Dictionary:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		var fault := _worker_fault()
-		if not fault.is_empty():
-			_require("the worker stays healthy before day %d" % (_tick + 1),
-				false, fault)
-			break
-		_tick += 1
-		_clock.current_day = float(_tick)
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before)
-		_wait_simulation_day(_tick)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
-
-
-func _wait_pod_day(before: int) -> void:
-	for _iteration in range(2000):
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		if int(report.get("ideology_pod_committed_day", -1)) > before:
-			return
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return
-
-
-func _wait_simulation_day(target: int) -> void:
-	for _iteration in range(2000):
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		if int(report.get("simulation_committed_day", -1)) >= target:
-			return
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return
 
 
 func _wait_worker_paused() -> bool:
@@ -593,17 +556,6 @@ func _wait_opinion_revision() -> bool:
 			_ext.capture_economy_day_inputs(-1)
 		OS.delay_msec(5)
 	return false
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
-
-
-func _worker_fault() -> String:
-	if _ext == null:
-		return ""
-	return String(_ext.get_runtime_thread_report().get("fault_code", ""))
 
 
 func _world_day() -> int:

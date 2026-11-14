@@ -122,7 +122,7 @@ func _apply_options(regime: Dictionary) -> void:
 			var regime_id := String(row.get("id", row.get("regime_id", "")))
 			if regime_id.is_empty():
 				continue
-			var button := Button.new()
+			var button := UIControlParts.button()
 			button.custom_minimum_size.y = 54 if not _compact else 48
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			button.focus_mode = Control.FOCUS_ALL
@@ -131,7 +131,7 @@ func _apply_options(regime: Dictionary) -> void:
 			_options.add_child(button)
 			_option_buttons[regime_id] = button
 		if _option_buttons.is_empty():
-			var note := Label.new()
+			var note := UIControlParts.label()
 			note.text = "体制目录尚未就绪。"
 			note.theme_type_variation = &"PKWorkspaceLabel"
 			_options.add_child(note)

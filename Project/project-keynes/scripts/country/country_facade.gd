@@ -78,14 +78,14 @@ var _political_regime_native_catalog: Dictionary = {}
 var _configured: bool = false
 var _last_event_id: int = 0
 
-func configure(world_ext: Object, cell_count: int, seed: int,
+func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
 		profile = null, compiled_catalog: Dictionary = {},
 		political_catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_profile = profile
 	if _profile == null:
 		_profile = ResourceLoader.load(DEFAULT_PROFILE_PATH, "Resource")
-	if _world_ext == null or not _world_ext.has_method("configure_country"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt country API unavailable"}
 	if _profile == null:
 		return {"ok": false, "reason": "CountryProfile unavailable"}
@@ -174,8 +174,7 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 ## generic runtime receipt queue used by other domains.
 func poll_worker_command_receipts(after_request_id: int = 0,
 		limit: int = 128) -> Dictionary:
-	if _world_ext == null or not _world_ext.has_method(
-			"poll_country_command_receipts"):
+	if _world_ext == null:
 		return {"ok": false, "code": "country_worker_receipt_api_missing"}
 	return _world_ext.poll_country_command_receipts(maxi(after_request_id, 0),
 		clampi(limit, 1, 4096))
@@ -558,13 +557,11 @@ func clear_cell_tax_policy(handle: int, cell: int, effective_day: int,
 
 func cell_tax_policy_snapshot(cell: int) -> Dictionary:
 	return _world_ext.get_country_cell_tax_policy_snapshot(cell) \
-		if _configured and _world_ext.has_method( \
-			"get_country_cell_tax_policy_snapshot") else {}
+		if _configured else {}
 
 
 func fiscal_snapshot(handle: int) -> Dictionary:
-	return _world_ext.get_country_fiscal_snapshot(handle) if _configured \
-			and _world_ext.has_method("get_country_fiscal_snapshot") else {}
+	return _world_ext.get_country_fiscal_snapshot(handle) if _configured  else {}
 
 
 func _tax_item_index(kind: int, item_id: StringName) -> int:
@@ -620,12 +617,11 @@ static func era_milestone_indices() -> PackedInt32Array:
 
 
 func research_signal_snapshot(handle: int) -> Dictionary:
-	return _world_ext.get_country_research_signal_snapshot(handle) if _configured \
-			and _world_ext.has_method("get_country_research_signal_snapshot") else {}
+	return _world_ext.get_country_research_signal_snapshot(handle) if _configured  else {}
 
 
 func has_completed_technology(handle: int, dense_id: int) -> bool:
-	return _configured and _world_ext.has_method("has_completed_country_technology") \
+	return _configured \
 		and _world_ext.has_completed_country_technology(handle, dense_id)
 
 func _technology_index(technology_id: StringName) -> int:
@@ -664,10 +660,10 @@ func has_political_capability(handle: int, capability: StringName) -> bool:
 	if regime_key.is_empty() or raw_regime_key is int:
 		var dense := int(snapshot.get("regime_id", -1))
 		if dense >= 0 and _political_regime_catalog != null:
-			var definitions: Array = _political_regime_catalog.get("definitions", [])
+			var definitions: Array = _political_regime_catalog.get("definitions")
 			if dense < definitions.size():
-				regime_key = String((definitions[dense] as Resource).get("id", ""))
-	var definition := _political_regime_catalog.definition_for(
+				regime_key = String((definitions[dense] as Resource).get("id"))
+	var definition: Resource = _political_regime_catalog.definition_for(
 		StringName(regime_key)) \
 		if _political_regime_catalog != null and \
 		_political_regime_catalog.has_method("definition_for") else null
@@ -688,31 +684,99 @@ func treasury_snapshot(handle: int) -> Dictionary:
 
 
 func bind_era_reward_player_country(handle: int) -> Dictionary:
-	return _world_ext.bind_era_reward_player_country(handle) if _configured \
-		and _world_ext.has_method("bind_era_reward_player_country") else {
+	return _world_ext.bind_era_reward_player_country(handle) if _configured  else {
 			"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 
 func era_reward_offer() -> Dictionary:
-	return _world_ext.get_era_reward_offer() if _configured \
-		and _world_ext.has_method("get_era_reward_offer") else {
+	return _world_ext.get_era_reward_offer() if _configured  else {
 			"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 
 func choose_era_reward(offer_generation: int, choice_index: int,
 		effective_day: int) -> Dictionary:
 	return _world_ext.choose_era_reward(offer_generation, choice_index,
-		effective_day) if _configured and _world_ext.has_method(
-			"choose_era_reward") else {
+		effective_day) if _configured else {
 				"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 func report() -> Dictionary:
 	return _world_ext.get_country_report() if _configured else {"configured": false}
 
 
+func peer_protocol_status() -> Dictionary:
+	return _world_ext.get_country_peer_protocol_status() if _world_ext != null else {}
+
+
+func should_run(day_index: int) -> bool:
+	return bool(_world_ext.country_should_run(day_index)) if _world_ext != null else false
+
+
+func capture_worker_pod_catalog() -> Dictionary:
+	return _world_ext.capture_country_pod_catalog() if _world_ext != null else {
+		"ok": false, "code": "runtime_worker_api_missing"}
+
+
+func capture_worker_runtime_snapshot() -> Dictionary:
+	return _world_ext.capture_country_runtime_snapshot() if _world_ext != null else {
+		"ok": false, "code": "runtime_worker_api_missing"}
+
+
+func worker_read_view(after_generation: int = 0) -> Dictionary:
+	return _world_ext.get_country_worker_read_view(maxi(after_generation, 0)) \
+		if _world_ext != null else {"ok": false, "code": "country_worker_read_view_api_missing"}
+
+
+func service_worker_peer_adapter(max_intents: int = 64,
+		shadow_replay: bool = true) -> Dictionary:
+	return _world_ext.service_country_worker_peer_adapter(
+		clampi(max_intents, 1, 4096), shadow_replay) if _world_ext != null else {
+		"ok": false, "code": "country_worker_adapter_api_missing"}
+
+
+func economy_asset_protocol_status() -> Dictionary:
+	return _world_ext.get_country_economy_asset_protocol_status() if _world_ext != null else {
+		"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+
+
+func poll_economy_asset_request() -> Dictionary:
+	return _world_ext.poll_country_economy_asset_request() if _world_ext != null else {
+		"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+
+
+func submit_economy_asset_result(result: Dictionary) -> Dictionary:
+	return _world_ext.submit_country_economy_asset_result(result) if _world_ext != null else {
+		"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+
+
+func capture_annual_state() -> PackedByteArray:
+	return _world_ext.capture_annual_report_state() if _world_ext != null else PackedByteArray()
+
+
+func annual_status() -> Dictionary:
+	return _world_ext.get_annual_report_status() if _world_ext != null else {"ok": false}
+
+
+func restore_annual_state(bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_annual_report_state(bytes) if _world_ext != null else {
+		"ok": false, "reason": "annual_provider_missing"}
+
+
+func begin_forensics_save(chunk_bytes: int) -> Dictionary:
+	return _world_ext.begin_country_forensics_save(chunk_bytes) if _world_ext != null else {
+		"ok": false, "reason": "country_provider_missing"}
+
+
+func read_forensics_save_chunk(chunk_bytes: int) -> PackedByteArray:
+	return _world_ext.read_country_save_chunk(chunk_bytes) if _world_ext != null else PackedByteArray()
+
+
+func end_forensics_save() -> Dictionary:
+	return _world_ext.end_country_save() if _world_ext != null else {
+		"ok": false, "reason": "country_provider_missing"}
+
+
 func ui_snapshot(handle: int, section_mask: int) -> Dictionary:
-	return _world_ext.get_country_ui_snapshot(handle, section_mask) if _configured \
-		and _world_ext.has_method("get_country_ui_snapshot") else {
+	return _world_ext.get_country_ui_snapshot(handle, section_mask) if _configured  else {
 			"ok": false, "reason": "country_ui_snapshot_unavailable"}
 
 func dispatch_committed_events(result: Dictionary) -> void:

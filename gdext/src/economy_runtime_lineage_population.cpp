@@ -503,10 +503,11 @@ bool NativeEconomyRuntime::apply_family_population_reward(
     if (cmd.i32_0 == -1) {
         ensure_family_policy_factors();
         if (family >= 0 && family < static_cast<int32_t>(
-                _family_colonization_population_reward.size()))
-            _family_colonization_population_reward[static_cast<size_t>(family)] =
-                static_cast<int32_t>(std::clamp<int64_t>(amount, 0,
-                    std::numeric_limits<int32_t>::max()));
+                _family_colonization_population_reward_pending.size()))
+            _family_colonization_population_reward_pending[
+                static_cast<size_t>(family)] = static_cast<int32_t>(
+                    std::clamp<int64_t>(amount, 0,
+                        std::numeric_limits<int32_t>::max()));
         return true;
     }
     if (cell < 0 || cell >= _cell_count.get() || amount <= 0) {
@@ -571,8 +572,9 @@ bool NativeEconomyRuntime::apply_family_population_reward(
         before, amount, _saturation_count), market_mutation_sink());
     const int64_t actual = population_store().population[target_slot] - before;
     if (actual <= 0) return true;
-    _external_population_delta = saturating_add(
-        _external_population_delta, actual, _saturation_count);
+    if (_epoch_active)
+        _external_population_delta = saturating_add(
+            _external_population_delta, actual, _saturation_count);
     _structural_touched_cells.push_back(cell);
 
     if (cmd.i32_0 == 0) {
@@ -673,6 +675,10 @@ void NativeEconomyRuntime::apply_family_colonization_population_reward(
         reward.target_handle = family_influences().handle_for_index(branch);
         std::string ignored;
         apply_family_population_reward(reward, ignored);
+        if (family < static_cast<int32_t>(
+                _family_colonization_population_reward_pending.size()))
+            _family_colonization_population_reward_pending[
+                static_cast<size_t>(family)] = 0;
         return;
     }
     int32_t target_slot = -1;
@@ -709,8 +715,9 @@ void NativeEconomyRuntime::apply_family_colonization_population_reward(
         before, amount, _saturation_count), market_mutation_sink());
     const int64_t actual = population_store().population[target_slot] - before;
     if (actual <= 0) return;
-    _external_population_delta = saturating_add(
-        _external_population_delta, actual, _saturation_count);
+    if (_epoch_active)
+        _external_population_delta = saturating_add(
+            _external_population_delta, actual, _saturation_count);
     _structural_touched_cells.push_back(destination);
     auto membership = std::find_if(family_memberships().begin(),
         family_memberships().end(), [&](const FamilyMembershipEdge &edge) {
@@ -729,6 +736,10 @@ void NativeEconomyRuntime::apply_family_colonization_population_reward(
         membership_row->population_basis = population_store().population[target_slot];
     }
     _family_indices_dirty = true;
+    if (family < static_cast<int32_t>(
+            _family_colonization_population_reward_pending.size()))
+        _family_colonization_population_reward_pending[
+            static_cast<size_t>(family)] = 0;
     std::vector<EventLeg> legs;
     if (trace_detail_for_cell(destination)) {
         legs.push_back({FIELD_COHORT_POPULATION, SUBJECT_COHORT,

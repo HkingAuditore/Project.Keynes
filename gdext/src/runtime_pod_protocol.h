@@ -1878,6 +1878,8 @@ struct RuntimeThreadReport {
     uint64_t ideology_pod_snapshot_generation = 0;
     uint32_t ideology_pod_pending_transition_count = 0;
     uint32_t ideology_pod_intent_count = 0;
+    // Worker days Ideology skipped because Economy had no committed opinion yet.
+    uint32_t ideology_opinion_wait_days = 0;
     // Day the worker last committed IDEOLOGY for. -1 means it never ran.
     //
     // `IdeologyParityReport` has a same-named field, but that one is assigned only

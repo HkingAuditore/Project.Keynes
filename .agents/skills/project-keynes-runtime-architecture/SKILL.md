@@ -37,7 +37,7 @@ For runtime architecture work, inspect:
 - `Project.Keynes/Project/project-keynes/scripts/simulation/systems/*.gd`
 - `Project.Keynes/gdext/src/world_ext*.cpp`
 - `Project.Keynes/gdext/src/world_ext.h`
-- `Project.Keynes/gdext/src/world_ext_bind_methods.cpp`
+- `gdext/src/world_ext_bind_<模块>.cpp`
 - `Project.Keynes/gdext/src/system_schedule.cpp`
 - `Project.Keynes/gdext/src/system_schedule.h`
 - `Project.Keynes/gdext/src/sus_scheduler_ext.cpp`
@@ -336,3 +336,5 @@ and precipitation history, collectible income, recruit savings on restart and
 cycle-flow expiry accounting. New tests must declare content-dependent premises
 and keep full ledger, worker/scalar and continuation checks. See the current
 architecture development guide and validation record.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

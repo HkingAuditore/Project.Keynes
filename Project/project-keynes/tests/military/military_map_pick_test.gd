@@ -31,7 +31,7 @@ var _cell_d := -1
 class FakeExt:
 	var snapshot: Dictionary = {}
 
-	func get_military_render_snapshot(_after_revision: int) -> Dictionary:
+	func render_snapshot(_after_revision: int) -> Dictionary:
 		return snapshot
 
 

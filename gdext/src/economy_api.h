@@ -548,6 +548,13 @@ bool military_army_lane_pay_supported(const NativeEconomyRuntime &economy);
 int32_t profession_count(const NativeEconomyRuntime &economy);
 int64_t last_committed_day(const NativeEconomyRuntime &economy);
 bool epoch_active(const NativeEconomyRuntime &economy);
+godot::Dictionary detail_report(const NativeEconomyRuntime &economy);
+bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
+    const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
+    const uint8_t *passable, const int32_t *move_cost, int32_t count,
+    uint64_t generation, std::string &error, const uint8_t *landform, const uint8_t *river);
+bool capture_trade_visibility(NativeEconomyRuntime &economy, const uint8_t *visible,
+    int32_t count, bool solved, bool from_map, std::string &error);
 godot::Dictionary poll_events(const NativeEconomyRuntime &economy, const godot::Dictionary &opts);
 godot::Dictionary trace_report(const NativeEconomyRuntime &economy);
 bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::string &tag_key, int32_t cell, bool on);
@@ -558,7 +565,6 @@ bool military_purchase_receipt(const NativeEconomyRuntime &economy, int64_t sequ
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units);
 godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
 godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
-godot::Dictionary migrate_legacy_state_buildings(NativeEconomyRuntime &economy, const godot::Array &states);
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy);
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell);

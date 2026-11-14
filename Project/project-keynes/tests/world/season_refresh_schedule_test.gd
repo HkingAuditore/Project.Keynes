@@ -20,7 +20,10 @@ func _init() -> void:
 func _run() -> void:
 	var map := MapData.new(1, 1)
 	var world := WorldData.new()
-	var system := SeasonRefreshSystem.new(RefCounted.new(), map, world)
+	# generator_context.gd intentionally stores only a weak reference. Keep the
+	# owner alive for the duration of this scheduler contract test.
+	var generator := RefCounted.new()
+	var system := SeasonRefreshSystem.new(generator, map, world)
 	system.period_ticks = 3
 	var ctx := SusTickContext.make(0, 0, 0.0, 1.0, &"schedule_test")
 

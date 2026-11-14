@@ -34,11 +34,8 @@ signals, and four environment signals. Population alive at the boundary enters e
 building input purchases, output sales, and income distribution then update funds and stock before
 household clearing. Producer-retained food fills one aggregate emergency calorie pool across staple,
 protein, and produce needs, while active owner lots protect next-period physical-input cash from
-household spending. Calculate the whole period from that frozen state using the
-cell's actual elapsed days (`clamp(day - cell_last_settlement_day, 1, 5)`), not
-a newly chosen N. Production locks market N in 1–5 at cycle boundaries.
-`market_cycle_days=0` is ignored and treated as the maximum 5; it does not
-select the retired 50/334 auto-fast-forward path.
+household spending. Calculate the whole N-day period from that state. The production default is N=5. Setting
+`market_cycle_days=0` selects scale-driven automatic N.
 
 This is an approximation, not N sequential daily integrations. Keep its state invisible until
 the period deadline. Commands arriving after sample day apply next period.
@@ -73,16 +70,18 @@ indivisible proportional bundle.
 Order needs by priority and constrain funded quantity by remaining cohort funds. Keep money rounding
 deterministic.
 
-For each component good, allocate shortage with cumulative prefix quotients:
+For each component good, allocate shelf capacity with cumulative prefix quotients:
 
 ```text
 allocation_i = floor(prefix_i * available / total)
              - floor(prefix_(i-1) * available / total)
 ```
 
-The minimum component capacity determines filled bundle units. If primary inventory is abundant,
-use the fused abundant path and avoid component-reference CSR construction. Only inventory shortage
-may trigger one same-period substitution fallback; budget-only unmet demand must not re-enter fallback.
+Own-shelf shortfall for good G is `max(0, component_demand_G − available_G)`. The minimum
+component capacity still determines filled bundle units, but shortage accounting uses only that
+own-shelf shortfall — not `1 − sales/demand`. If primary inventory is abundant, use the fused
+abundant path and avoid component-reference CSR construction. Only inventory shortage may trigger
+one same-period substitution fallback; budget-only unmet demand must not re-enter fallback.
 
 ## 5. Merchant settlement and satisfaction
 
@@ -96,14 +95,32 @@ merchant funds += population-weighted revenue share
 merchant epoch_income += revenue share
 ```
 
-Distribute merchant revenue once per market, not per order, and only across
-living merchant cohorts (`population > 0`). A zero-population merchant lane is
-not a market-maker: repair the cell from the largest non-merchant cohort before
-debiting household funds, then credit the live slots on the market's cells.
-Stale `_merchant_offsets[market]` ranges must not be the sole owner lookup.
-
-Compute total and worst-need satisfaction
+Distribute merchant revenue once per market, not per order. Compute total and worst-need satisfaction
 in one linear pass over need states; do not scan all need states once per cohort.
+
+That same pass keeps the four data-driven need-tier accumulators for detail attribution.
+Basic, comfort and luxury use realized consumption / normative living target
+(population × base quantity × elapsed days × environment × ethnicity), independent
+of wealth, price-elastic shrinkage and budget. Missing shelves retain the target;
+technology-inapplicable tiers return -1 in queries. Group budgets are consumption
+70%, finance 20%, tax 5%, development 5%; missing consumption tiers redistribute
+only within consumption. Subsistence uses the existing survival figure. Savings
+alone uses cash purchasing power, with missing cost basis scored zero. Composite
+is capped by survival (10% slack) and applicable basic living (20% slack).
+Income growth, savings, tax burden,
+and social development come from cohort ledgers and the epoch-boundary
+`_epoch_cell_development_q16` cache, so the hot loop only does multiply-add plus one
+`mul_div_sat`. Never add a second pass over need states, a string comparison, or a `Dictionary`
+here. `_population.composite_satisfaction` is the authoritative index for births, hire order,
+family branch promotion, and social-pressure events; `needs_satisfaction`
+(`SAT_DIM_SUBSISTENCE`) drives starvation mortality and nothing else. Full contract:
+`docs/cpp-dots-runtime/satisfaction-runtime.md`.
+
+Birth multiplier: composite/0.70 below the reference, then linear to `carrying_sat_cap_q16`
+(1.15) at `satisfaction_birth_bonus_reference_q16` (0.85); the part above 1 fades out as load goes
+from `carrying_soft_start_q16` to 1.0. Base natural death is 7.5%/year, multiplied by the frozen
+country stat `country.population.death_factor` (technology Modifier, floor 1/3, so 2.5% at full
+medicine). Use that same `base_death_rate_q32` for replacement fertility and starvation stacking.
 
 Merchants also submit household demand. Total cohort money does not change from purchases.
 
@@ -121,6 +138,43 @@ income_alpha = min(1, N / 8)
 Household demand remains market-major. Building input demand, offered supply, and production-cost
 anchors live in a sorted sparse `(cell, good)` signal store built from actual building input/output
 edges. Update those signals only after production so they feed the next frozen cycle.
+
+At each market sample boundary, after freezing realized business/supply/cost signals, run a sparse
+Leontief shadow pass over live cells: seed unmet deficits
+`max(household + realized_business + research - offered_supply, inventory_gap_daily)`, select the
+preferred unlocked producer via the investment good→type CSR, and explode hard/soft-required input
+edges as
+
+```text
+derived_B += deficit_A * input_qty_B_eff / output_qty_A * required_share_q16
+```
+
+Stamp-BFS continues upstream without cycles. Results land in `_epoch_derived_business_demand`
+(aligned to signal lanes; `ensure_market_signal_index` may create missing intermediate lanes). This
+column is recomputed each sample and is excluded from PKEC/hash. Price pressure folds
+
+```text
+business_for_price = realized_business + research
+                   + derived * derived_weight_q16   # default 1/2
+```
+
+so intermediate goods such as flint receive reverse pressure from finished-good shortages even when
+downstream workshops are vacant. Investment `startup_demand` uses the same deficit×BOM scaling and
+may include derived demand when seeding upstream candidates. Shadow demand never withdraws stock or
+mints money.
+
+Household `last_shortage_q16` is **own-shelf** fill failure, not bundle residual failure:
+
+```text
+stock_shortfall_G = Σ max(0, funded_component_demand_G − available_stock_G)
+shortage_G        = stock_shortfall_G / funded_component_demand_G   # 0 when demand_G = 0
+```
+
+`available_stock_G` is household-clearing stock after the production-input floor. When a Leontief
+bundle fails because a complement is missing, only that binding good accumulates shortfall.
+Abundant complements that remain unsold because another component bound must keep `shortage = 0`.
+Do not use `1 − sales/demand`: that contaminates substitutes and complements. `demand_ema` still
+tracks funded component demand for inventory/price levels; only the shortage term changes.
 
 Price pressure combines excess demand, target-inventory gap, shortage, a confidence-weighted soft
 cost anchor, and inactive-default-price reversion. Divide the combined pressure by the configured
@@ -177,12 +231,8 @@ and produce calorie pool; exact variants consume first and leftover self-produce
 emergency cross-food calories. Producers also retain the minimum clothing share implied by frozen
 cold exposure. All other and excess output enters the local market. Retained goods
 create no cashflow; consume them before paid household orders and attribute any unused amount
-to the source building's discarded output. Remaining offers sort by `(good, unit_cost, group)` and fill merchant quota
-from lowest unit cost; identical-cost offers at the marginal tier still share
-the leftover quota in proportion to sellable quantity. Unit cost allocates the group's current
-`last_operating_cost` across outputs. Producer-support mint only covers quota
-that cheaper offers did not already fill. Cost-anchor retail targets weight by
-`merchant_sold`, not offered quantity. Offers still use each good's configured merchant buy factor;
+to the source building's discarded output. Remaining offers sort by local retail price descending
+and use each good's configured merchant buy factor;
 merchant positive funds cap the normally purchased quantity. Put every remaining storable unit into
 merchant-owned inventory and issue the producer one-fifth of frozen local retail value; record that
 payment as explicit money mint rather than merchant spending. Non-storable cycle-flow remainder is

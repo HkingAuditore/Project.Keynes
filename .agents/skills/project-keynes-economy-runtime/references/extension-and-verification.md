@@ -120,3 +120,12 @@ columns, construction/input/output goods, referenced natural resources, postfix 
 condition stack, native behavior version, and a valid wage policy for employee-bearing roles. Wage amounts are discovered by the labor market. Building/save changes require
 PKEC v3 round-trip, employment conservation, merchant cash-cap/discard, resource delta, scalar hash,
 deadline, and large sparse-world performance tests.
+
+## Regression content contracts (2026-11-10)
+
+Diagnostic openings must use their declared technology policy, including every support gate.
+Use `building_placement_catalog.gd` for the validated catalog projection; test primary ANY
+and support ALL conditions with `bootstrap_catalog_contract_test.gd`. Keep livelihood-only
+fixtures free of real upkeep, and retain a paired upkeep/loss/conservation case. Content changes
+require reviewed, repeated full evidence through `check_intent_baselines.py`; never drop hashes
+or receipt fields to hide an old baseline mismatch.

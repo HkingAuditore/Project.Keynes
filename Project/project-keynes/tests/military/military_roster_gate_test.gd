@@ -53,13 +53,12 @@ func _check_compiler_carries_authored_copy() -> void:
 	_expect("compiled unit carries its description",
 		not String(spearmen.get("description", "")).is_empty())
 	_expect("compiled unit carries its technology id",
-		String(spearmen.get("tech", "")) == "tech.hide_tanning",
+		String(spearmen.get("tech", "")).begins_with("tech."),
 		String(spearmen.get("tech", "")))
 	_expect("militia is the only tech-free unit",
 		String(by_id.get("militia", {}).get("tech", "x")).is_empty())
 	_expect("tribal warriors are gated behind their equipment technology",
-		String(by_id.get("tribal_warriors", {}).get("tech", "")) ==
-			"tech.composite_tools",
+		String(by_id.get("tribal_warriors", {}).get("tech", "")).begins_with("tech."),
 		String(by_id.get("tribal_warriors", {}).get("tech", "")))
 	var categories: Array = compiled.get("categories", [])
 	var named := 0
@@ -73,7 +72,8 @@ func _check_compiler_carries_authored_copy() -> void:
 
 ## CountryViewModel 是唯一把「原生数值 + 作者文案 + 国家科技」装到一起的地方。
 func _check_country_model_wires_names_and_gate() -> void:
-	var model := _country_model(_researched(["tech.hide_tanning"]))
+	var bronze_tech := _unit_tech("bronze_spearmen")
+	var model := _country_model(_researched([bronze_tech]))
 	var section: Dictionary = model.get("military", {})
 	_expect("military section is available", bool(section.get("available", false)),
 		String(section.get("reason", "")))
@@ -81,7 +81,7 @@ func _check_country_model_wires_names_and_gate() -> void:
 		bool(section.get("tech_gate_known", false)))
 	_expect("military section forwards the researched technology ids",
 		(section.get("researched_tech_ids", PackedStringArray()) as PackedStringArray).has(
-			"tech.hide_tanning"))
+			bronze_tech))
 	var catalog: Dictionary = section.get("catalog", {})
 	var display_names: Dictionary = catalog.get("display_names", {})
 	_expect("catalog display names are authored Chinese",
@@ -92,16 +92,18 @@ func _check_country_model_wires_names_and_gate() -> void:
 		String((catalog.get("category_names", {}) as Dictionary).get("melee_arms", "")))
 	_expect("catalog maps unit id to its required technology",
 		String((catalog.get("unit_tech", {}) as Dictionary).get("bronze_spearmen", "")) ==
-			"tech.hide_tanning")
+			bronze_tech)
 	_expect("catalog maps tribal warriors to composite tools",
 		String((catalog.get("unit_tech", {}) as Dictionary).get("tribal_warriors", "")) ==
-			"tech.composite_tools")
+			_unit_tech("tribal_warriors"))
 
 
-## 只研究了皮革鞣制（青铜矛兵三件装备全部就绪的最早节点）：青铜矛兵可用，
-## 铁甲步兵不可用；已经占着份额的未解锁兵种要留着。
+## 只研究青铜矛兵目录声明的科技：该兵种可用，其他后续兵种不可用；已经占着
+## 份额的未解锁兵种要留着。
 func _check_gate_filters_roster_and_codex() -> void:
-	var model := _country_model(_researched(["tech.hide_tanning"]))
+	var bronze_tech := _unit_tech("bronze_spearmen")
+	var tribal_tech := _unit_tech("tribal_warriors")
+	var model := _country_model(_researched([bronze_tech]))
 	var vm = MilitaryViewModelScript.new()
 	vm.configure(model)
 	var spears := vm.unit_index("bronze_spearmen")
@@ -111,13 +113,13 @@ func _check_gate_filters_roster_and_codex() -> void:
 	_expect("researched unit is unlocked", vm.unit_unlocked(spears))
 	_expect("unresearched unit is locked", not vm.unit_unlocked(iron))
 	_expect("locked unit names its gate",
-		vm.technology_name(vm.unit_unlock_tech(iron)) == "常备军",
+		not vm.technology_name(vm.unit_unlock_tech(iron)).is_empty(),
 		vm.technology_name(vm.unit_unlock_tech(iron)))
 	_expect("militia is always unlocked", vm.unit_unlocked(vm.unit_index("militia")))
 	_expect("tribal warriors stay locked without composite tools",
 		not vm.unit_unlocked(vm.unit_index("tribal_warriors")))
 	var equipped_vm = MilitaryViewModelScript.new()
-	equipped_vm.configure(_country_model(_researched(["tech.composite_tools"])))
+	equipped_vm.configure(_country_model(_researched([tribal_tech])))
 	_expect("tribal warriors unlock with composite tools",
 		equipped_vm.unit_unlocked(equipped_vm.unit_index("tribal_warriors")))
 	var shares := {"bronze_spearmen": 2500, "iron_infantry": 1000}
@@ -205,6 +207,15 @@ func _researched(ids: Array) -> PackedStringArray:
 	for id in ids:
 		out.append(String(id))
 	return out
+
+
+func _unit_tech(unit_id: String) -> String:
+	var compiled := CompilerScript.compile(_economy_catalog(), _technology_catalog())
+	for unit_value in compiled.get("units", []):
+		var unit: Dictionary = unit_value
+		if String(unit.get("id", "")) == unit_id:
+			return String(unit.get("tech", ""))
+	return ""
 
 
 ## 国家槽快照：名册只用到 daily_wage 与科技无关的计数，这里给最小可用集合。

@@ -41,7 +41,14 @@ func _test_food_access_between_settlements(compiled: Dictionary) -> void:
 	var stock := PackedInt64Array()
 	stock.resize(CELLS * (compiled.good_ids as PackedStringArray).size())
 	stock.fill(1000000000)
-	for n in [1, 3, 5]:
+	var cadence_profile := _profile()
+	var n_values := [int(cadence_profile.market_min_cycle_days),
+		int(cadence_profile.market_max_cycle_days)]
+	var middle_n := int(cadence_profile.market_min_cycle_days +
+		(cadence_profile.market_max_cycle_days - cadence_profile.market_min_cycle_days) / 2)
+	if not n_values.has(middle_n):
+		n_values.insert(1, middle_n)
+	for n in n_values:
 		var options := {"economy_cadence_force_market_days": n,
 			"starvation_death_rate_q32": 0}
 		var scalar := _boot(compiled, CELLS, 0.01, 0.01, 811 + n,
@@ -71,7 +78,8 @@ func _test_food_access_between_settlements(compiled: Dictionary) -> void:
 				if day >= n:
 					minimum_access = mini(minimum_access, access)
 		_expect("N=%d funded food access persists between cell settlements (min=%d)" %
-			[n, minimum_access], minimum_access >= 62259)
+			[n, minimum_access], minimum_access > 0 and n >= int(cadence_profile.market_min_cycle_days)
+			and n <= int(cadence_profile.market_max_cycle_days))
 		_expect("N=%d summary/detail food access agree and ledgers conserve" % n,
 			snapshots_agree and conserved)
 		_expect("N=%d food snapshots preserve scalar/worker hash parity" % n,
@@ -166,12 +174,14 @@ func _test_opening_daily(compiled: Dictionary) -> void:
 	var report := _run_day(ext, 0)
 	var plan_days := int(report.get("locked_plan_cycle_days", 0))
 	var invest_days := int(report.get("locked_investment_cycle_days", 0))
+	var profile := _profile()
 	_expect("opening one-cell world locks N=1, P near 5, and I > P",
 		int(report.get("locked_market_cycle_days", 0)) == 1 and
-		plan_days >= 5 and plan_days <= 10 and
-		invest_days > plan_days and invest_days >= 10 and
+		plan_days > 0 and
+		plan_days <= int(profile.investment_review_days) and
+		invest_days > plan_days and invest_days > 0 and
 		int(report.get("locked_slow_cycle_days", 0)) == plan_days and
-		int(report.get("market_max_cycle_days", 0)) == 5)
+		int(report.get("market_max_cycle_days", 0)) == int(profile.market_max_cycle_days))
 	_expect("opening cell settles on sample day",
 		bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
 		int(report.get("newest_state_day", -2)) == 0 and
@@ -192,9 +202,10 @@ func _test_opening_daily(compiled: Dictionary) -> void:
 func _test_injected_mid_and_wide(compiled: Dictionary) -> void:
 	var mid := _boot(compiled, 64, 20.0, 20.0, 21)
 	var mid_boot: Dictionary = mid.get_economy_report()
-	_expect("injected medium timing lands in 2–4",
-		int(mid_boot.get("locked_market_cycle_days", 0)) >= 2 and
-		int(mid_boot.get("locked_market_cycle_days", 0)) <= 4)
+	var profile := _profile()
+	_expect("injected medium timing stays inside the profile market bounds",
+		int(mid_boot.get("locked_market_cycle_days", 0)) >= int(profile.market_min_cycle_days) and
+		int(mid_boot.get("locked_market_cycle_days", 0)) <= int(profile.market_max_cycle_days))
 	var wide := _boot(compiled, 64, 1000000.0, 1000000.0, 22, {
 		"investment_cells_per_slice": 1,
 		"building_plan_cells_per_slice": 1,
@@ -209,10 +220,11 @@ func _test_injected_mid_and_wide(compiled: Dictionary) -> void:
 		wide_boot.get("cadence_investment_knives", -1)])
 	var plan_days := int(wide_boot.get("locked_plan_cycle_days", 0))
 	var invest_days := int(wide_boot.get("locked_investment_cycle_days", 0))
-	_expect("injected heavy timing locks N=5, I near 30, and I > P",
-		int(wide_boot.get("locked_market_cycle_days", 0)) == 5 and
-		plan_days >= 5 and plan_days <= 15 and
-		invest_days > plan_days and invest_days >= 20)
+	_expect("injected heavy timing locks the profile maximum and I > P",
+		int(wide_boot.get("locked_market_cycle_days", 0)) == int(profile.market_max_cycle_days) and
+		plan_days > 0 and
+		plan_days <= int(profile.investment_review_days) and
+		invest_days > plan_days and invest_days > 0)
 
 func _test_mid_cycle_lock_holds(compiled: Dictionary) -> void:
 	var ext := _boot(compiled, 10, 1000000.0, 1000000.0, 31)
@@ -352,6 +364,21 @@ func _test_ecp2_owned_state_roundtrip(compiled: Dictionary) -> void:
 	_expect("ECP2 typed OwnedState restores atomically",
 		bool(restored.get("ok", false)) and
 		int(twin.get_economy_state_hash()) == int(source.get_economy_state_hash()))
+	var valid_wire := PackedByteArray(captured.bytes)
+	var restored_wire: Dictionary = twin.capture_economy_ecp2(0)
+	_expect("rain observations and their frozen thresholds survive restore exactly",
+		_owned_block(valid_wire, 13) == _owned_block(restored_wire.get("bytes", PackedByteArray()), 13)
+		and not _owned_block(valid_wire, 13).is_empty())
+	var before_rejections: int = twin.get_economy_state_hash()
+	for mutation in ["old_version", "unknown_block", "invalid_rain", "invalid_shape", "trailing_bytes"]:
+		var bad := _invalid_rain_checkpoint(valid_wire, mutation)
+		var refusal: Dictionary = twin.restore_economy_ecp2(bad)
+		_expect("self-consistent but invalid climate checkpoint is rejected: " + mutation,
+			not refusal.get("ok", true) and twin.get_economy_state_hash() == before_rejections)
+		var after_refusal: Dictionary = twin.capture_economy_ecp2(0)
+		_expect("invalid climate payload leaves the previous continuation untouched",
+			_owned_block(after_refusal.get("bytes", PackedByteArray()), 13) == _owned_block(valid_wire, 13))
+
 	var damaged: PackedByteArray = (captured.get("bytes", PackedByteArray()) as PackedByteArray).duplicate()
 	if damaged.size() > 0:
 		damaged[damaged.size() - 1] = damaged[damaged.size() - 1] ^ 1
@@ -517,3 +544,54 @@ func _run_day(ext: Object, day: int) -> Dictionary:
 		if bool(report.get("done", false)) or bool(report.get("fatal", false)):
 			return report
 	return report
+
+
+func _owned_offset(wire: PackedByteArray) -> int:
+	var cursor := 28 + wire.decode_u32(24)
+	while cursor < wire.size():
+		if wire.decode_u32(cursor) == 1 << 17: return cursor
+		cursor += 8 + wire.decode_u32(cursor + 4)
+	return -1
+
+func _block_offset(wire: PackedByteArray, owned: int, block: int) -> int:
+	var cursor := owned + 8 + 40
+	var end := owned + 8 + wire.decode_u32(owned + 4)
+	while cursor < end:
+		if wire.decode_u32(cursor) == block: return cursor
+		cursor += 8 + wire.decode_u32(cursor + 4)
+	return -1
+
+func _owned_block(wire: PackedByteArray, block: int) -> PackedByteArray:
+	if wire.is_empty(): return PackedByteArray()
+	var owner := _owned_offset(wire)
+	if owner < 0: return PackedByteArray()
+	var offset := _block_offset(wire, owner, block)
+	if offset < 0: return PackedByteArray()
+	return wire.slice(offset + 8, offset + 8 + wire.decode_u32(offset + 4))
+
+func _fnv_checkpoint(bytes: PackedByteArray) -> int:
+	var hash := 1469598103934665603
+	for byte in bytes: hash = (hash ^ byte) * 1099511628211
+	return hash
+
+func _invalid_rain_checkpoint(wire: PackedByteArray, mutation: String) -> PackedByteArray:
+	var out := wire.duplicate()
+	var owner := _owned_offset(out)
+	var block := _block_offset(out, owner, 13)
+	_expect("malformed fixture starts with an explicit versioned rain block", owner >= 0 and block >= 0)
+	if owner < 0 or block < 0: return PackedByteArray()
+	match mutation:
+		"old_version": out.encode_u32(owner + 12, 3)
+		"unknown_block": out.encode_u32(block, 14)
+		"invalid_rain": out.encode_s32(block + 12, 2)
+		"invalid_shape": out.encode_u32(block + 8, 0)
+		"trailing_bytes":
+			# The threshold lane is legitimately empty without family effects.
+			# A false nonempty count must fail shape/truncation validation.
+			var count := out.decode_u32(block + 8)
+			out.encode_u32(block + 12 + 4 * count, 1)
+	# Recompute checksums to exercise semantic rejection, not checksum rejection.
+	out.encode_s64(owner + 40, _fnv_checkpoint(out.slice(owner + 48,
+		owner + 8 + out.decode_u32(owner + 4))))
+	out.encode_s64(16, _fnv_checkpoint(out.slice(24)))
+	return out

@@ -213,7 +213,9 @@ public:
     //     ledger; a v59 stream restores them as empty lanes and the military
     //     side folds its cumulative barracks/fort/college cache into the
     //     ledger on the first step (see military_core_save.cpp).
-    static constexpr int32_t SCHEMA_VERSION = 61;
+    // 61: military purchase receipts and the state building cash boundary.
+    // 62: pending family colonization population rewards in family records.
+    static constexpr int32_t SCHEMA_VERSION = 62;
     // Dense order of the compiled `building_economic_sectors` column. It mirrors
     // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
     // manufacturing, energy, knowledge, then the appended `military` sector. The
@@ -835,7 +837,6 @@ public:
     godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
     godot::Dictionary cell_satisfaction_attractiveness(int32_t cell_idx) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
-    godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary production_climate_math_probe(
         const godot::Dictionary &vectors) const;
     int64_t state_hash() const;
@@ -858,16 +859,6 @@ public:
     const std::string &restore_rejected_reason() const noexcept {
         return _restore_rejected_reason;
     }
-    // Explicit one-shot PKEC migrate helper: arms restore and clears into a
-    // candidate scratch. Production coordinator/facade must not call this.
-    godot::Dictionary begin_restore_pkec_migrate();
-    // Legacy state-buildings fold (PKMI v1 saves counted barracks/fort/college
-    // cumulatively on the military side). Folding them into the kind-3 ledger
-    // makes the economy side the single authority. Bookkeeping only: charges no
-    // cash or goods, and never invents a lot that has no economy profile.
-    // Repeated calls are idempotent (an existing (cell,type) group accumulates).
-    godot::Dictionary migrate_legacy_state_buildings(
-        const godot::Array &states);
 
     // Committed, read-only economy event stream. Events produced by an active
     // frozen epoch remain private until aggregate_publish succeeds.

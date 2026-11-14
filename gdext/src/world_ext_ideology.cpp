@@ -643,14 +643,26 @@ Dictionary DCWorldExt::step_ideology_derived_rebuild(int64_t day_index) {
         boundary_lock.emplace(std::move(acquired));
     }
     NativeIdeologyRuntime *runtime = ideology_runtime_from(_ideology_runtime);
+    // Finish the rebuild inside this one boundary hold. The job is keyed by day and a
+    // new day discards a half-built one, while the host calls this once per day
+    // boundary (plus idle frames). Sliced across calls, the rebuild never finished
+    // once days advanced as fast as frames, so the front froze at its last install
+    // (x5, x6c, country_ramp, derived_pump W; 2026-11-14), and each slice took the
+    // lock separately, so one fold could read two economy epochs.
     std::string error;
-    const bool ok = runtime->step_derived_rebuild(day_index, error);
+    bool ok = false;
+    int32_t steps = 0;
+    do {
+        ok = runtime->step_derived_rebuild(day_index, error);
+        ++steps;
+    } while (!ok && error.empty() && runtime->derived_rebuild_pending() && steps < 4096);
     const bool pending = runtime->derived_rebuild_pending();
     Dictionary out;
     out["ok"] = ok;
     out["done"] = ok && !pending;
     out["pending"] = pending;
     out["day"] = day_index;
+    out["steps"] = steps;
     if (!ok) out["reason"] = error.c_str();
     return out;
 }
@@ -761,6 +773,11 @@ Dictionary DCWorldExt::get_ideology_snapshot(int64_t country_handle) const {
 Dictionary DCWorldExt::get_ideology_effect_instance_report(int64_t country_handle) const {
     return _ideology_runtime == nullptr ? unavailable()
         : ideology_runtime_from(_ideology_runtime)->effect_instance_report(country_handle);
+}
+
+Dictionary DCWorldExt::get_ideology_effect_target_report(int64_t country_handle) const {
+    return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->effect_target_report(country_handle);
 }
 
 

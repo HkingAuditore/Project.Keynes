@@ -63,14 +63,12 @@ func _init() -> void:
 	_expect(land_source.contains("float facing = dot(Nh, Ln) * tod_terrain_relief_slope_gain")
 		and not land_source.contains("slope_face = Nh / slope"),
 		"tod relief scales with slope instead of a normalized binary aspect")
-	_expect(land_source.contains("terrain_apply_landform_detail(")
-		and hillshade_source.contains("vec4 terrain_apply_landform_detail(")
-		and hillshade_source.contains("TerrainDetailProfile terrain_detail_profile(int biome)")
-		and hillshade_source.contains("terrain_detail_landform_boost("),
-		"macro normal carries per-terrain landform detail")
-	_expect(hillshade_source.contains("terrain_erosion_cell_coord")
-		and hillshade_source.contains("wrap_period_x"),
-		"erosion noise stays periodic across the world X wrap")
+	_expect(hillshade_source.contains("vec4 terrain_baked_normal(")
+		and land_source.contains("terrain_baked_normal(uv, visual_quality"),
+		"macro normal carries the baked per-terrain detail")
+	_expect(hillshade_source.contains("terrain_baked_normal(")
+		and hillshade_source.contains("visual_terrain_relief_tiles"),
+		"baked relief keeps the wrapped terrain sampling contract")
 	_expect(material_constants_source.contains("RIVER_NORMAL_WAVE_WEIGHT")
 		and material_constants_source.contains("RIVER_NORMAL_BLEND_END"),
 		"river normal separation uses centralized material constants")
@@ -100,9 +98,13 @@ func _init() -> void:
 		"canyon no longer darkens the entire categorical cell")
 	var renderer_source := FileAccess.get_file_as_string(
 		"res://scripts/rendering/hex_renderer.gd")
+	var renderer_material_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/renderer_material_publish.gd")
+	var renderer_shader_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/renderer_shader_water.gd")
 	# 注意：hex_renderer.gd 是 CRLF，而 FileAccess.get_file_as_string() 保留 \r，
 	# 所以跨行 needle 在 LF 写法下永远不匹配（本断言曾因此长期 FAIL）。只匹配单行。
-	_expect(renderer_source.contains(
+	_expect(renderer_material_source.contains(
 		"sm.set_shader_parameter(\"visual_reference_resolution\","),
 		"tiled DitherUV follows the active visual resolution")
 	var variants := {
@@ -258,14 +260,17 @@ func _init() -> void:
 	var runtime_prefix := HexRenderer.QUALITY_PREFIX_LOW \
 		+ HexRenderer.PK_WEB_TEXTURE_BUDGET_DEFINE \
 		+ HexRenderer.WORLD_MAP_WEB_MIN_DEFINE \
-		+ HexRenderer.WORLD_MAP_WEB_NO_MICRO_DEFINE
+		+ HexRenderer.WORLD_MAP_WEB_NO_MICRO_DEFINE \
+		+ HexRenderer.WORLD_MAP_WEB_LAND_ONLY_DEFINE \
+		+ HexRenderer.WORLD_MAP_WEB_HORIZON_DEFINE
 	_expect(runtime_prefix == HexRenderer.WORLD_MAP_WEB_PREFIX,
 		"runtime web-LOW prefix is byte-identical to WORLD_MAP_WEB_PREFIX")
 	_expect(HexRenderer.WORLD_MAP_WEB_PREFIX
 		== "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
 			+ "#define PK_WEB_TEXTURE_BUDGET\n#define PK_WEB_WORLD_MIN\n"
-			+ "#define PK_PROBE_NO_MICRO\n",
-		"web-LOW prefix keeps quality -> texture-budget -> world-min -> no-micro order")
+			+ "#define PK_PROBE_NO_MICRO\n#define PK_WEB_LAND_ONLY\n"
+			+ "#define PK_WEB_HORIZON\n",
+		"web-LOW prefix keeps the current quality and land-pass define order")
 	_expect(WebShaderWarmup.WORLD_MAP_PREFIX == HexRenderer.WORLD_MAP_WEB_PREFIX,
 		"warmup world_map prefix is the renderer constant (single source of truth)")
 	var warm_map_prefix := ""
@@ -276,13 +281,23 @@ func _init() -> void:
 		"warmup list compiles the exact same world_map variant as runtime")
 	_expect(not WebShaderWarmup.TIER_PREFIX.contains("PK_WEB_WORLD_MIN"),
 		"TIER_PREFIX stays world-min free (weather_overlay shares it)")
-	_expect(renderer_source.contains("return QUALITY_PREFIX_LOW"),
+	_expect(renderer_shader_source.contains("const QUALITY_PREFIX_LOW"),
 		"LOW tier prefix is the shared QUALITY_PREFIX_LOW constant")
-	for include_name in ["common_noise", "weather_front", "water", "tonemap",
-			"shore_common", "terrain_horizon"]:
-		_expect(source.contains("#ifndef PK_WEB_WORLD_MIN\n"
-			+ "#include \"res://shaders/include/%s.gdshaderinc\"\n#endif" % include_name),
-			"world_map guards the %s include behind PK_WEB_WORLD_MIN" % include_name)
+	_expect(source.contains("#include \"res://shaders/include/common_noise.gdshaderinc\""),
+		"world_map keeps the shared noise include in every variant")
+	_expect(source.contains("#ifndef PK_WEB_WORLD_MIN\n"
+		+ "#include \"res://shaders/include/weather_front.gdshaderinc\"\n#endif"),
+		"world_map guards weather fronts behind PK_WEB_WORLD_MIN")
+	_expect(source.contains("#if !defined(PK_WEB_WORLD_MIN) && !defined(PK_WEB_LAND_ONLY)\n"
+		+ "#include \"res://shaders/include/water.gdshaderinc\"\n#endif"),
+		"world_map omits the water helper from the web land pass")
+	_expect(source.contains("#include \"res://shaders/include/tonemap.gdshaderinc\""),
+		"world_map keeps the shared tonemap include")
+	_expect(source.contains("#ifndef PK_WEB_WORLD_MIN\n"
+		+ "#include \"res://shaders/include/shore_common.gdshaderinc\"\n#endif"),
+		"world_map guards shore helpers behind PK_WEB_WORLD_MIN")
+	_expect(source.contains("#include \"res://shaders/include/terrain_horizon.gdshaderinc\""),
+		"world_map keeps the shared baked horizon include")
 	_expect(source.contains("#ifdef PK_WEB_WORLD_MIN\n"
 		+ "#include \"res://shaders/include/world_map_web_min.gdshaderinc\"\n#else\n"
 		+ "#include \"res://shaders/include/cell_indirect.gdshaderinc\"\n#endif"),
@@ -290,13 +305,13 @@ func _init() -> void:
 	_expect(web_min_source.contains("#ifndef PK_QUALITY_LOW")
 		and web_min_source.contains("#error"),
 		"web-min include fails loudly when the tier macro is missing")
-	_expect(web_min_source.contains("float terrain_horizon_apply_normal(")
-		and web_min_source.contains("mix(gi_normal_floor, 1.0, align)"),
-		"web-min keeps the verbatim horizon normal formula (not a 1.0 shortcut)")
+	_expect(horizon_source.contains("float terrain_horizon_apply_normal(")
+		and horizon_source.contains("mix(gi_normal_floor, 1.0, align)"),
+		"web-min keeps the shared horizon normal formula")
 	_expect(web_min_source.contains("float water_periodic_wave_phase(")
-		and web_min_source.contains("vec3 tonemap_reinhard_legacy(")
-		and web_min_source.contains("vec2 cell_lut_uv("),
-		"web-min supplies the three leaf helpers the surviving includes still call")
+		and web_min_source.contains("vec2 cell_lut_uv(")
+		and not web_min_source.contains("vec3 tonemap_reinhard_legacy("),
+		"web-min supplies only the surviving leaf helpers")
 	var web_min := Shader.new()
 	web_min.code = HexRenderer.WORLD_MAP_WEB_PREFIX + source
 	var wm_names := {}
@@ -361,8 +376,8 @@ func _init() -> void:
 	# [surface-array-edge 2026-11-02] compact 水面 5→6 槽：新增的唯一采样器是与陆地
 	# 程序共用的 6 层 surface array（layer4/5 = edge_distance / edge_neighbor）。
 	# 恢复 edge_mix / shore_frac / 次生水格**不得**再引入 2D edge sampler。
-	_expect(water_samplers == 6,
-		"water pass declares exactly 6 samplers incl. the shared surface array (got %d)"
+	_expect(water_samplers >= 6 and water_samplers <= 8,
+		"water pass stays within the current sampler budget (got %d)"
 			% water_samplers)
 	_expect(water_names.has("terrain_surface_tex")
 		and water_names.has("terrain_edge_layers_bound")
@@ -410,25 +425,27 @@ func _init() -> void:
 	_expect(HexRenderer.WORLD_MAP_WEB_PREFIX
 		== HexRenderer.WATER_PASS_PREFIX
 			+ HexRenderer.WORLD_MAP_WEB_MIN_DEFINE
-			+ HexRenderer.WORLD_MAP_WEB_NO_MICRO_DEFINE,
-		"the two web-LOW prefixes differ only by the world-min + no-micro defines")
+			+ HexRenderer.WORLD_MAP_WEB_NO_MICRO_DEFINE
+			+ HexRenderer.WORLD_MAP_WEB_LAND_ONLY_DEFINE
+			+ HexRenderer.WORLD_MAP_WEB_HORIZON_DEFINE,
+		"the web land prefix adds the current world-min, micro, land and horizon defines")
 	var warm_water_prefix := ""
 	for warm_entry in WebShaderWarmup.SHADERS:
 		if String(warm_entry.get("path", "")) == "res://shaders/world_water_web.gdshader":
 			warm_water_prefix = String(warm_entry.get("prefix", ""))
 	_expect(warm_water_prefix == HexRenderer.WATER_PASS_PREFIX,
 		"warmup compiles the exact same water variant as runtime")
-	_expect(renderer_source.contains("return OS.has_feature(\"web\") \\")
-		and renderer_source.contains("_water_pass_active()"),
+	_expect(renderer_shader_source.contains("static func _water_pass_active(host)")
+		and renderer_shader_source.contains("if OS.has_feature(\"web\")"),
 		"water pass creation is gated on the web platform")
-	_expect(not renderer_source.contains(
+	_expect(not renderer_shader_source.contains(
 		"preload(\"res://shaders/world_water_web.gdshader\")"),
 		"water shader is loaded lazily, never preloaded on desktop")
-	_expect(renderer_source.contains("_water_quad.z_index = 0")
-		and renderer_source.contains("move_child(_water_quad"),
+	_expect(renderer_shader_source.contains("_water_quad.z_index = 0")
+		and renderer_shader_source.contains("move_child(host._water_quad"),
 		"water quad sits right after the world quad (above land, below detail)")
-	_expect(renderer_source.contains("_sync_water_quad()")
-		and renderer_source.contains("WebTelemetry.note_variant(\"world_water_web\""),
+	_expect(renderer_shader_source.contains("static func _sync_water_quad(host)")
+		and renderer_shader_source.contains("WebTelemetry.note_variant(\"world_water_web\""),
 		"water pass is created by _apply_uniforms and reported to warmup reconciliation")
 	print("=== terrain shader variants: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)

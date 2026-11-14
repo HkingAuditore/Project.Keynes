@@ -29,7 +29,7 @@ Inspect current code before editing:
 - `gdext/src/modifier_runtime.*`
 - `gdext/src/world_ext_modifier.cpp`
 - `gdext/src/world_ext.h`
-- `gdext/src/world_ext_bind_methods.cpp`
+- `gdext/src/world_ext_bind_<模块>.cpp`
 - `Project/project-keynes/scripts/modifier/`
 - `Project/project-keynes/scripts/simulation/systems/modifier_daily_system.gd`
 - the affected domain consumer and save provider
@@ -117,3 +117,5 @@ Rule definitions survive successful Host reconstruction. Modifier instances and 
 cursors belong to one world and reset through `modifier_runtime_lifecycle.cpp`; preserve
 them for a same-world executor restart. See the scheduling/save reference and run
 `runtime_world_rules_rebuild_test.gd` for both execution modes.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

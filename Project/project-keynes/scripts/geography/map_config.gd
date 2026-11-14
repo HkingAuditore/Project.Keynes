@@ -26,7 +26,7 @@ var map_source: String = "procedural"
 var pkmap_path: String = ""
 
 # --- Systemic Ocean Currents 开关 ──────────────────────────────────────
-# 主开关：关闭时跳过 _apply_ocean_heat_transport_pass、海冰的洋流修正、
+# 主开关：关闭时跳过 native ocean water/land pass、海冰的洋流修正、
 # 海洋生物的 upwelling 放宽、F7 调试层。仅保留视觉洋流（旧行为）。
 var enable_ocean_heat_transport: bool = true
 
@@ -39,7 +39,7 @@ var THERMOHALINE_WEIGHT: float = 0.25
 # 高纬冷水下沉判定温度阈值（单位与 baked_temperature_buffer 一致）。
 var COLD_SINK_TEMP: float = -0.05
 
-# _apply_ocean_heat_transport_pass 参数：
+# ocean native water/land 参数：
 # 沿 -ocean_current 回溯的最大 cell 数（越大传播越远，但耗时线性增长）。
 var OCEAN_HEAT_ADVECT_STEPS: int = 3
 # 每步与上游温度的混合系数。

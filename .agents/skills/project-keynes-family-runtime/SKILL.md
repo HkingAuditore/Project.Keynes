@@ -26,7 +26,7 @@ Read the current source before editing:
   25/35/40 prestige formula stays untouched.
 - Read `gdext/src/economy_runtime.{h,cpp}` for `FamilyStore`, trait rolls, cell influence,
   relationship edges, employment, lifecycle, queries, hashing, and PKEC.
-- Read `gdext/src/world_ext_economy.cpp`, `world_ext.h`, and `world_ext_bind_methods.cpp` for the
+- Read `gdext/src/world_ext_economy.cpp`, `world_ext.h`, and `world_ext_bind_<模块>.cpp` for the
   public bridge.
 - Read `Project/project-keynes/scripts/economy/economy_catalog.gd`, `economy_facade.gd`,
   `scripts/family/family_trait_catalog.gd`, trait definition/effect resources,
@@ -35,7 +35,7 @@ Read the current source before editing:
   boundaries.
 - Read `Project/project-keynes/scripts/ui/cell_inspector_view_model.gd` and
   `scripts/game/world_runtime_host.gd` for player-visible read paths.
-- Read `Project/project-keynes/tests/family_runtime_test.gd` before changing behavior or schemas.
+- Read `Project/project-keynes/tests/family/family_runtime_test.gd` before changing behavior or schemas.
 - Read `docs/architecture/development-guide.md` before changing persistence.
 
 Use `rg` to locate all family policy, query, report, and schema call sites. Do not infer the current
@@ -372,3 +372,5 @@ Only the choice gate may consult committed Country ownership in addition to the 
 territory acquired mid-epoch cannot automatically found a player family. Economic inputs stay frozen.
 Validate family_split_choice_runtime_test.gd and family_founding_dialog_ui_test.gd, conservation,
 pending/resolved save hashes, and v55 compatibility. See the authoritative notable-family-runtime.md.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

@@ -39,17 +39,6 @@ climate 图被抑制门挡住，MapData 由 `apply_runtime_climate_writeback` �
 执行序在 `_on_clock_day_changed` 里钉死：**回灌(day N) → season refresh → capture(day N+1 输入)**。
 这不是风格问题 —— 换序会让 season refresh 对回灌表内字段的写入全部作废。
 
-流水线模式（`pipeline_depth>0`）下主线程最多领先 worker 3 天，回灌落在哪一天取决于机器快慢。
-所以 worker 权威下 season refresh 不再按帧切片跑：到期时只挂起（`deferred_to_capture`），由
-`capture_runtime_inputs_for_worker` 先 `_drain_climate_writeback_for_season_refresh()` 把 MapData
-追到上一个捕获日的回写，再 `run_round_for_capture()` 一次跑完。授权也一样：worker 提交第一天时
-才授予 Climate，第二次捕获起若请求了 Climate 而未授权，`_wait_climate_authority_grant()` 等 worker
-提交上一个捕获日，切换日因此固定在第 2 天（与锁步一致）。授权落地前的窗口里主线程 Climate 日程同样
-抑制：native daily 两条路径的门都问 `DCWorldExt::climate_main_thread_suppressed()`（已授权，或 host
-`domain_grant_pending(CLIMATE)`：ACTIVE 请求了 Climate、worker 在跑、尚无提交覆盖它），不再只问
-`climate_worker_authoritative()`。否则主线程会在 worker 首日前跑一天 Climate 并写回 MapData，落在首次
-捕获之前时 worker 首日的种子就变了。stop/fault 时 pending 变 false，Climate 交还主线程。
-
 worker 侧的输入分三路，缺任何一路都不会报错：
 
 - **environment 快照**：per-cell lane，`capture_runtime_inputs` 从 DataCore `_slots` 取
@@ -119,14 +108,14 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 
 | 子系统 | 现状 | 主要风险/剩余边界 |
 | --- | --- | --- |
-| Pass-A | 湿度 = 地理基底 + 零均值日照季节（陆地暖季变干、海洋暖季变湿）+ 封顶天气偏差 | 季节振幅是公式常量，不在 ClimateProfile 里 |
+| Pass-A | C++ scalar/thread，native graph使用thread；annual-insolation cache | 内部timing历史可能低报；knob镜像与dt |
 | Pass-B | C++ scalar/SIMD/thread，native graph使用thread | 海冰尾循环/knob漏镜像历史风险；顺序不可回退 |
-| Ocean heat | C++ water/land，支持node-range/thread配置 | PackedArray JIT patch、半发布、fallback旧语义 |
+| Ocean heat | C++ water/land，支持node-range/thread配置；map_generator 第2a批已删除 GDScript water/land 计算回退 | PackedArray JIT patch、半发布、native failure report、slice 可见性 |
 | Wind heat | C++ air/surface；surface唯一写最终temp | 单位方向/速度混用、旧DLL temp packing |
-| Sea ice | C++ graph与独立fallback；dt-aware、迟滞、edge mix 不得反向抵消当日冻结/融化 | terrain flip/visual sync、cadence台阶 |
+| Sea ice | C++ graph；map_generator 第2a批删除 GDScript 热循环，保留 native state-machine/terrain flip 同步 | terrain flip/visual sync、cadence台阶、native failure report |
 | Transpiration | C++与async pure kernel | compute通常低，边界sync/dirty可能主导 |
 | Albedo/vegetation/feedback | C++ stage-b子pass | succession object/visual apply仍在GDScript |
-| Weather | ACTIVE worker 每个气候日跑 field+distribute；stage_b 仍按 stagger 轮 | Front object、LUT/upload、repair/readiness；主线程 weather_refresh 在权威下仍抑制 |
+| Weather | native field/commit/distribute/summary/split交易可ACTIVE | Front object、LUT/upload、repair/readiness |
 | Hydrology | native graph节点，生产profile开启 | weather有效降水顺序、parent拓扑、flush成本 |
 | Physical ocean | C++ SLP/wind/PSI/current/upwelling | visual raster/commit仍Godot；PSI不可随意range |
 | Native daily | slice continuation、owner/report/finalizer | bundle/JIT/round-trip、commit lag、finalizer |
@@ -158,7 +147,7 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 - OceanCurrents wrapper内部legacy job保留physical/visual状态与fallback。
 - Sea-ice独立system在async climate启用时必须避免与worker重复执行。
 - 旧DLL通过`has_method()`和能力探针回退；源码有方法不证明当前加载DLL已更新。
-- GDScript weather/ocean fallback部分仍可能使用旧合成语义；不要在无A/B时随意“顺手修齐”，也不要让其静默命中生产。
+- map_generator 的 climate/ocean/sea-ice/transpiration GDScript 计算回退已退休；wrapper 只做探测、打包、同步和失败报告。weather、stage-b 等其他 GDScript fallback 仍按各自边界处理，不要混为同一条路径。
 
 ## 已知风险
 
@@ -193,21 +182,6 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 17. **改一条 lane 前先查它有几个读者**：`sea_ice_frac` 同时是 sea_ice 与 ocean_water 的
     必需 lane，只按前者修会让整个 round 失败，而表象（`writeback_days` 掉到 1）与起因
     完全不像同一件事。
-18. **worker 不能读按时机变化的主线程状态**：快照里的 MapData 字段停在 worker 回写的哪一天、
-    GDScript 计数器被调用了几次，都随机器快慢变，长跑因此不可复现。已改为 worker 自持或按日确定：
-    - 土壤湿度、日照、热输入：worker 上一日提交态（`_committed_*`），等价于锁步快照。
-    - 地形：physics prepass、气旋、天气场、distribute 读 `current/next.terrain`，快照只用于冷启动播种。
-    - `refresh_convergence`：按捕获日 `convergence_refresh_due_on_day(day)`，不按 `_field_solve_tick`。
-    - `weather_transition_dt_days`（气旋 dt 也读它）：worker 每天解一次，固定 1.0。
-    - 热赤道 `weather_lat_te_norm`：内核用 worker 自己的温度重算（`thermal_equator_lat_norm`）。
-    - stage_b 节拍、season refresh 边沿：同日重试的捕获幂等，边沿在捕获成功后才消费。
-    - 授权切换：第二次捕获起等授权（固定第 2 天）；授权前主线程 Climate 日程按
-      `climate_main_thread_suppressed()` 抑制，worker 首日种子不受主线程那一跑的时机影响。
-
-    新加 worker 输入前先问"锁步与流水线下这个值相同吗"。快照里仍有不再被消费的字段（distribute
-    输入里的 heat/terrain/cover/soil、环境快照的 terrain/cover），它们在两次运行间不同是正常的。
-    排查用 `PK_SIM_DAY_TRACE`：比 `[climate-out]`（每个 stage 之后的 store 哈希）找第一个分叉的 stage，
-    再比 `[climate-round-in]` 看输入。
 
 ## 禁止重复的失败方向
 

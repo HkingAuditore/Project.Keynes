@@ -1,13 +1,5 @@
 # Market Algorithms and Numeric Contracts
 
-Investment cash preflight (2026-10-16): after freezing portfolio material bills,
-preview all sponsor transfers and proportional merchant loans, then ordered
-construction payments and merchant receipts, on cell-local scratch accounts.
-Shared sponsor/merchant/owner cohorts cannot spend the same cash twice. Trim the
-lowest-ranked tail until payable before any population or money mutation; keep
-construction drift guards and the existing capital-limited counter. Focused test:
-`building_portfolio_funds_regression_test.gd`. Authority/cadence/save ABI unchanged.
-
 ## Contents
 
 1. Numeric ABI
@@ -250,15 +242,6 @@ base wages use local living-cost and contract-wage anchors. Settle base wages fr
 cash, report any final shortfall without cancelling current production, and settle post-sale
 excess-profit bonuses without minting money. Households then spend same-period income against the
 post-production market stock.
-
-Optional soft-input purchases compare expected incremental output receipts with the input's
-buyer outlay, including transaction tax. Value incremental output retained for owner consumption
-at frozen retail price, but only above the same group's base output's share of the current
-retention target. Value the remaining output using the previous epoch's same-cell/good producer
-merchant-sold share at the effective merchant buy price; the residual share receives the producer
-support value (one-fifth of retail). A new lane without prior sellable output uses a full merchant
-share for its first estimate. The prior sellable and merchant-sold quantities are transient
-epoch-boundary snapshots aligned with sparse market-signal lanes, excluded from PKEC/hash.
 
 At epoch begin, compute each owner-lot's frozen expected producer revenue, input replacement cost,
 full wage obligation, and target-margin gap for diagnostics and post-sale profit sharing. Keep
