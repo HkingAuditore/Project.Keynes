@@ -24,6 +24,7 @@ jobs:
             /gdext/src/
             /gdext/tests/
             /Project/project-keynes/**/*.gd
+            /Project/project-keynes/data/native_binding_manifest.json
             /.*/skills/
             /docs/architecture/
             /.github/workflows/
