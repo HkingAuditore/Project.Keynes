@@ -174,6 +174,40 @@ inline int64_t equip_factor_q16(const MilitaryUnitType &u, int32_t quality_q8) {
     return acc / wsum;
 }
 
+// The lot's delivered kit is separate from its weakest quality because a
+// secondary slot may have been filled with a lower-quality substitute. Keep
+// the nominal quality factor for the visible tier, then apply the weighted
+// per-slot delivery factor to the same number used by combat and the cache.
+inline int64_t lot_equip_factor_q16(const MilitaryUnitType &u, int32_t quality_q8,
+                                    int32_t kit_q16) {
+    const int64_t kit = clamp64(kit_q16, 0, MILITARY_Q16);
+    return mul_div(equip_factor_q16(u, quality_q8), kit, MILITARY_Q16);
+}
+
+// Computes the training kit factor from the actual quality delivered to each
+// slot. A missing slot is only possible on an in-progress order; completed
+// orders have equipment_ready set after every category arrived.
+inline int32_t training_kit_factor_q16(const MilitaryUnitType &u,
+                                       const MilitaryTrainingOrder &order) {
+    if (u.slot_count <= 0) return MILITARY_Q16;
+    int64_t weighted = 0;
+    int64_t weight_sum = 0;
+    for (int32_t s = 0; s < u.slot_count && s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
+        const int64_t weight = u.slot_power_weight_q16[(size_t)s];
+        if (weight <= 0) continue;
+        const int32_t minq = clamp32((int32_t)u.slot_min_quality[(size_t)s], 1, 5);
+        const int32_t delivered = clamp32((int32_t)order.slot_delivered_quality[(size_t)s], 1, 5);
+        const int64_t contribution = std::min<int64_t>(MILITARY_Q16,
+            mul_div(quality_mult_q16(delivered), MILITARY_Q16,
+                    quality_mult_q16(minq)));
+        weighted += weight * contribution;
+        weight_sum += weight;
+    }
+    if (weight_sum <= 0) return MILITARY_Q16;
+    return (int32_t)std::max<int64_t>(0, std::min<int64_t>(MILITARY_Q16,
+        weighted / weight_sum));
+}
+
 // ------------------------------------------------------------ armies / lots
 
 inline bool army_alive(const MilitaryArmyStore &s, int32_t slot) {

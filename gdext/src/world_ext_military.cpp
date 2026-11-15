@@ -382,6 +382,7 @@ bool parse_unit(const Dictionary &row, MilitaryUnitType &unit, std::string &erro
             const Dictionary slot = equipment[s];
             const size_t lane = static_cast<size_t>(s);
             unit.slot_category[lane] = std::max(0, dict_i32(slot, "category", -1));
+            unit.slot_core[lane] = dict_i32(slot, "core", 0) != 0 ? 1 : 0;
             unit.slot_min_quality[lane] = static_cast<int8_t>(
                 std::clamp<int32_t>(dict_i32(slot, "min_quality", 1), 1, 5));
             unit.slot_qty_per_100[lane] =
@@ -2330,19 +2331,17 @@ void DCWorldExt::publish_military_ration_satisfaction(
     // Ratio = min(1, met / need) in q16. Garrisons are home-cell soldiers, so
     // the lane is per cell, which is what Economy reads. Terrain/consumption
     // multipliers scale need and consumption alike and are omitted.
-    // Cells whose garrison disappeared are reset to 1.0 so a stale shortage
-    // never lingers. Army lots are not home-cell cohorts in v1 (the soldier
+    // The published set replaces the previous one, so a cell whose garrison
+    // disappeared reads 1.0 again. Army lots are not home-cell cohorts in v1 (the soldier
     // cohort stays on its home cell), so only garrison lots are published.
     const int32_t cells_total = core.terrain().cell_count;
     if (cells_total <= 0) return;
     static thread_local std::vector<int64_t> heads;
     static thread_local std::vector<int64_t> met;
     static thread_local std::vector<int32_t> touched;
-    static thread_local std::vector<uint8_t> published_prev;
     if (heads.size() != static_cast<size_t>(cells_total)) {
         heads.assign(static_cast<size_t>(cells_total), 0);
         met.assign(static_cast<size_t>(cells_total), 0);
-        published_prev.assign(static_cast<size_t>(cells_total), 0);
     }
     touched.clear();
     const MilitaryLotStore &lots = core.lots();
@@ -2391,7 +2390,6 @@ void DCWorldExt::publish_military_ration_satisfaction(
     std::vector<int32_t> ratios;
     cells.reserve(touched.size());
     ratios.reserve(touched.size());
-    std::vector<uint8_t> now_published(published_prev.size(), 0);
     for (const int32_t cell : touched) {
         const size_t c = static_cast<size_t>(cell);
         const int64_t need = mul_q(heads[c], per_head);
@@ -2399,20 +2397,10 @@ void DCWorldExt::publish_military_ration_satisfaction(
         if (need > 0) ratio = std::min<int64_t>(MILITARY_Q, (met[c] * MILITARY_Q) / need);
         cells.push_back(cell);
         ratios.push_back(static_cast<int32_t>(std::max<int64_t>(0, ratio)));
-        now_published[c] = 1;
         heads[c] = 0;
         met[c] = 0;
     }
-    // Garrisons that vanished since the last publish go back to 1.0.
-    for (size_t c = 0; c < published_prev.size(); ++c) {
-        if (published_prev[c] == 0 || now_published[c] != 0) continue;
-        cells.push_back(static_cast<int32_t>(c));
-        ratios.push_back(MILITARY_Q);
-    }
-    published_prev.swap(now_published);
-    if (!cells.empty()) {
-        economy_api::set_military_ration_satisfaction(*economy, cells, ratios);
-    }
+    economy_api::set_military_ration_satisfaction(*economy, cells, ratios);
     // ---- army lanes (contract §2.2) --------------------------------------
     // A deployed formation is not a home-cell cohort: its people sit in an
     // Economy lane keyed by army handle, so the staple/protein satisfaction has
@@ -3563,6 +3551,7 @@ Dictionary DCWorldExt::get_military_catalog_view() const {
         for (int32_t s = 0; s < unit.slot_count && s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
             Dictionary slot;
             slot["category"] = static_cast<int64_t>(unit.slot_category[static_cast<size_t>(s)]);
+            slot["core"] = unit.slot_core[static_cast<size_t>(s)] != 0;
             slot["min_quality"] = static_cast<int64_t>(unit.slot_min_quality[static_cast<size_t>(s)]);
             slot["qty_per_100"] = unit.slot_qty_per_100[static_cast<size_t>(s)];
             slot["weight_q16"] = static_cast<int64_t>(

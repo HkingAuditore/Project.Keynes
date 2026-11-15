@@ -153,9 +153,8 @@ bool DCWorldExt::climate_worker_authoritative() const {
 }
 
 bool DCWorldExt::climate_main_thread_suppressed() const {
-    if (!_runtime_host) return false;
-    return _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::CLIMATE) ||
-           _runtime_host->domain_grant_pending(RuntimeDomainId::CLIMATE);
+    return _runtime_host &&
+           _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::CLIMATE);
 }
 
 bool DCWorldExt::climate_physics_authoritative() const {

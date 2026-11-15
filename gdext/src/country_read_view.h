@@ -113,7 +113,7 @@ public:
         bool (*copy_technology_domains)(const void *, std::vector<int32_t> &);
         bool (*has_research_signal)(const void *, int32_t, int32_t);
         int32_t (*research_signal_evidence_count)(const void *, int32_t, int32_t);
-        bool (*research_procurement_policy)(const void *, int32_t, bool &, int64_t &, int64_t &);
+        bool (*research_procurement_policy)(const void *, int32_t, bool &, int64_t &);
     };
 
     CountryReadView(const void *owner, const Queries &queries)
@@ -197,8 +197,8 @@ public:
     int32_t research_signal_evidence_count(int32_t slot, int32_t signal) const {
         return _queries.research_signal_evidence_count(_owner, slot, signal);
     }
-    bool research_procurement_policy(int32_t slot, bool &enabled, int64_t &cash_budget, int64_t &remaining_points) const {
-        return _queries.research_procurement_policy(_owner, slot, enabled, cash_budget, remaining_points);
+    bool research_procurement_policy(int32_t slot, bool &enabled, int64_t &remaining_points) const {
+        return _queries.research_procurement_policy(_owner, slot, enabled, remaining_points);
     }
 
     bool copy_economy_snapshot(Snapshot &out) const {

@@ -13,6 +13,7 @@
 #include "country_ai_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
+#include "modifier_api.h"
 #include "economy_hash.h"
 #include "effect_magnitude.h"
 #include "runtime_economy_ecp2.h"
@@ -397,6 +398,14 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
     return true;
 }
 
+void NativeSimulationHost::refresh_economy_modifier_view(
+        const RuntimeModifierPodSnapshot &snapshot) {
+    if (_economy_modifier_view == nullptr) return;
+    std::string error;
+    if (!modifier_api::apply_pod_snapshot(*_economy_modifier_view, snapshot, error))
+        set_fault(("economy_modifier_view_" + error).c_str());
+}
+
 
 bool NativeSimulationHost::execute_modifier_worker_stage(
         int64_t day, uint64_t input_generation,
@@ -568,6 +577,7 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
             modifier_slot_reserved = false;
             _modifier_pod_snapshot_generation.store(
                 modifier_snapshot.generation, std::memory_order_release);
+            refresh_economy_modifier_view(modifier_snapshot);
         }
     } else {
         authority_ok = false;

@@ -163,6 +163,23 @@ func _world(ai_catalog: Dictionary, arm: bool) -> Dictionary:
 		discovered_offsets.append(discovered.size())
 	packet["discovered_technology_offsets"] = discovered_offsets
 	packet["discovered_technology_indices"] = discovered
+	# Research conditions read observed signals; without any, nothing past the
+	# starting technology is ever available and the AI has nothing to queue.
+	var signal_count := (_catalog.get("research_signal_ids", PackedStringArray()) as PackedStringArray).size()
+	var signal_offsets := PackedInt32Array([0])
+	var signal_indices := PackedInt32Array()
+	var signal_cells := PackedInt32Array()
+	var signal_days := PackedInt64Array()
+	for country_cell in [0, 4, 8]:
+		for signal_index in range(signal_count):
+			signal_indices.append(signal_index)
+			signal_cells.append(country_cell)
+			signal_days.append(0)
+		signal_offsets.append(signal_indices.size())
+	packet["research_signal_offsets"] = signal_offsets
+	packet["research_signal_indices"] = signal_indices
+	packet["research_signal_cells"] = signal_cells
+	packet["research_signal_days"] = signal_days
 	var water := PackedByteArray()
 	water.resize(CELLS)
 	var bootstrapped: Dictionary = ext.bootstrap_country(packet, water)

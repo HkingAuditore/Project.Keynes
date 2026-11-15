@@ -247,6 +247,10 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     // Retained only in the v35 binary policy payload for layout compatibility;
     // the lifecycle no longer has a restart-cycle gate.
     _building_restart_cycles = 2;
+    _procurement_default_treasury_share_bp = std::clamp(
+        dict_num<int32_t>(profile, "procurement_default_treasury_share_bp", 200), 0, 10000);
+    _procurement_default_research_share_bp = std::clamp(
+        dict_num<int32_t>(profile, "procurement_default_research_share_bp", 5000), 0, 10000);
     _merchant_procurement_cash_reserve_q16 = std::clamp(
         dict_num<int32_t>(profile, "merchant_procurement_cash_reserve_q16", 8192),
         0, static_cast<int32_t>(Q16_ONE));

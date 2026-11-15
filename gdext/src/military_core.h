@@ -1,6 +1,6 @@
 #pragma once
 
-// NativeMilitaryRuntime core (v2 counters, PKMI v4 save).
+// NativeMilitaryRuntime core (v2 counters, PKMI v7 save).
 //
 // Pure C++: no Godot types, no Variant/Dictionary/String in hot loops, no
 // floating point in state that is hashed or saved. All state is SoA with
@@ -52,7 +52,7 @@ constexpr uint32_t PKMI_MAGIC = 0x494d4b50u;      // "PKMI"
 // exist, so interpreting it as settled would hand goods to nobody (or pay
 // twice), and the old cash `SPEND_CASH` upkeep must never be replayed as a
 // physical purchase.
-constexpr uint32_t PKMI_VERSION = 6u;
+constexpr uint32_t PKMI_VERSION = 7u;
 constexpr int32_t MILITARY_MAX_UNIT_TYPES = 64;
 constexpr int32_t MILITARY_MAX_EQUIP_SLOTS = 4;
 constexpr int32_t MILITARY_MAX_SUPPLY_CLASSES = 6;
@@ -191,6 +191,7 @@ struct MilitaryUnitType {
     int32_t training_days = 30;
     int32_t slot_count = 0;
     std::array<int32_t, MILITARY_MAX_EQUIP_SLOTS> slot_category{};      // equip category index
+    std::array<uint8_t, MILITARY_MAX_EQUIP_SLOTS> slot_core{};          // hard quality gate
     std::array<int8_t, MILITARY_MAX_EQUIP_SLOTS> slot_min_quality{};    // 1..5
     std::array<int64_t, MILITARY_MAX_EQUIP_SLOTS> slot_qty_per_100{};   // GOODS_SCALE
     std::array<int32_t, MILITARY_MAX_EQUIP_SLOTS> slot_power_weight_q16{};
@@ -284,6 +285,7 @@ struct MilitaryLotStore {
     std::vector<int32_t> country_slot;
     std::vector<int16_t> unit_type;
     std::vector<int16_t> equip_quality_q8;  // average actual quality * 256
+    std::vector<int32_t> kit_q16;           // weighted per-slot delivery factor
     std::vector<int32_t> condition_q16;     // equipment condition 0.5..1.0
     std::vector<int64_t> count;
     std::vector<int32_t> free_list;
@@ -303,6 +305,7 @@ struct MilitaryTrainingOrder {
     int16_t quality_q8 = 256;          // requested/policy quality (q8)
     int16_t delivered_quality_q8 = 0;  // weakest actually delivered slot (q8), 0 = none yet
     uint64_t equipped_slot_mask = 0;   // one bit per delivered equipment category
+    std::array<int8_t, MILITARY_MAX_EQUIP_SLOTS> slot_delivered_quality{};
 };
 
 struct MilitaryArmyStore {
@@ -930,7 +933,8 @@ public:
     int32_t create_army(int32_t country_slot, int32_t cell);
     void destroy_army(int32_t army_slot);
     int32_t lot_find_or_create(uint8_t kind, int32_t location, int32_t country_slot,
-                               int16_t unit, int16_t quality_q8);
+                               int16_t unit, int16_t quality_q8,
+                               int32_t kit_q16 = MILITARY_Q16);
     int64_t lot_remove_casualties(uint8_t kind, int32_t location, int64_t count); // proportional
     MilitaryCellState *cell_state(int32_t cell, bool create);
     // Military stock custody helpers (military_core_logistics.cpp).

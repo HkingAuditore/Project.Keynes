@@ -354,7 +354,6 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 			"queue_offsets": PackedInt32Array([0, 1, 1, 1, 1]),
 			"queue_technology_indices": PackedInt32Array([4]),
 			"auto_purchase_enabled": true,
-			"daily_procurement_budget": 10000000,
 			"technology_points_stock": 10000,
 			"country_cash": 500000000,
 			"last_research_day": 12,

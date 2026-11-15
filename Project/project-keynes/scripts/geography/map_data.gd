@@ -265,6 +265,9 @@ var country_slot_arr:       PackedInt32Array = PackedInt32Array()
 #            与迷雾层消费。纯派生量，不进 component schema、不存档。
 #            0 = 未探索，128 ≈ 已探索未可见，255 = 完全可见。
 var visible_arr:            PackedByteArray = PackedByteArray()
+# 玩家国家的真实视野（0/1），由视野解算写入。模拟（贸易门控、投资、殖民）只读
+# 这一份；visible_arr 是画面视野，关战争迷雾时会被写成全可见，不能进模拟。
+var physical_visible_arr:   PackedByteArray = PackedByteArray()
 ## Monotonic transient revision for player-visible route quote invalidation.
 ## It is intentionally excluded from world save authority and rebuilt by VisionSolver.
 var vision_revision: int = 0
@@ -811,6 +814,7 @@ func _prepare_bake_soa() -> PackedInt32Array:
 	var seed := hydro_parent_arr.duplicate()
 	_alloc_soa(n)
 	fog_solved = false
+	physical_visible_arr = PackedByteArray()
 	return seed
 
 func _copy_bake_cells(begin: int, end: int, hydro_parent_seed: PackedInt32Array) -> void:
@@ -1147,16 +1151,6 @@ func climate_dirty_ratio() -> float:
 			count += 1
 	return float(count) / float(n)
 
-func weather_dirty_ratio() -> float:
-	var n: int = weather_dirty_mask.size()
-	if n == 0:
-		return 0.0
-	var count: int = 0
-	for i in range(n):
-		if weather_dirty_mask[i] != 0:
-			count += 1
-	return float(count) / float(n)
-
 # --- 统计工具 ---
 
 ## 统计各地形数量，返回 Dictionary { TERRAIN: count }
@@ -1166,14 +1160,6 @@ func terrain_stats() -> Dictionary:
 		var t = cell.terrain
 		stats[t] = stats.get(t, 0) + 1
 	return stats
-
-## 按地形筛选地块列表
-func cells_of_terrain(terrain: TerrainType.TERRAIN) -> Array:
-	var result: Array = []
-	for cell in _cells.values():
-		if cell.terrain == terrain:
-			result.append(cell)
-	return result
 
 # --- Emergent Climate Coupling：慢层只读访问器 ──────────────────────────
 # 天气 / 快层 pass 应通过该访问器读取慢层字段，而不是直接读 cell.base_* /

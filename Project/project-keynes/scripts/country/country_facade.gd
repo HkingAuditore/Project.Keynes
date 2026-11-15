@@ -29,7 +29,7 @@ enum Opcode {
 	ENQUEUE_RESEARCH = 6,
 	REMOVE_RESEARCH = 7,
 	MOVE_RESEARCH = 8,
-	SET_RESEARCH_BUDGET = 9,
+	SET_RESEARCH_AUTO_PURCHASE = 9,
 	REVEAL_ALL_TECHNOLOGIES = 10,
 	SET_TAX_DEFAULT = 11,
 	SET_TAX_OVERRIDE = 12,
@@ -283,11 +283,11 @@ func move_research(handle: int, technology_id: StringName, domain: int,
 		"technology": technology, "domain": domain, "position": position,
 		"effective_day": effective_day, "sequence": sequence}])
 
-func set_research_budget(handle: int, enabled: bool, daily_cash_limit: int,
+## 科研日预算由国家购买政策（国库份额 × 科研份额）决定，这里只开关自动采购。
+func set_research_auto_purchase(handle: int, enabled: bool,
 		effective_day: int, sequence: int) -> Dictionary:
-	return submit([{"opcode": Opcode.SET_RESEARCH_BUDGET, "target_handle": handle,
-		"technology": 1 if enabled else 0, "value": maxi(0, daily_cash_limit),
-		"effective_day": effective_day, "sequence": sequence}])
+	return submit([{"opcode": Opcode.SET_RESEARCH_AUTO_PURCHASE, "target_handle": handle,
+		"technology": 1 if enabled else 0, "effective_day": effective_day, "sequence": sequence}])
 
 ## 时代晋升：一次 submit 原子提交 n 条 CONSUME_TREASURY_GOODS + 1 条 GRANT_TECHNOLOGY。
 ## 任一物资不足则整批（包括时代令牌授予）被拒绝。

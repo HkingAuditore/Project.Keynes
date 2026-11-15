@@ -12,7 +12,6 @@
 | ID | 参数 | facade 委托 | 规则 |
 | --- | --- | --- | --- |
 | `research.set_weights` | `weights_bp: PackedInt32Array` | `set_research_weights` | 恰好 4 项，非负，总和 10000 |
-| `research.set_budget` | `enabled: bool`, `daily_cash_limit: int` | `set_research_budget` | 参数齐全，现金上限非负 |
 | `research.enqueue` | `technology_id`, `domain` | `enqueue_research` | 科技 ID 非空，领域 0..3，位置由首项语义传 `-1` |
 | `research.remove` | `technology_id` | `remove_research` | 科技 ID 非空 |
 | `research.move` | `technology_id`, `domain`, `position` | `move_research` | 科技 ID 非空，领域 0..3，位置非负 |

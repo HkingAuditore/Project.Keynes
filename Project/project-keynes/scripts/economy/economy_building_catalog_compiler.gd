@@ -420,14 +420,14 @@ static func compile(
 		if construction_candidate_error != "":
 			return {"ok": false, "reason": "%s: %s" % [construction_candidate_error, stable_id]}
 		if not authored_construction_goods.is_empty():
-			var pooled_error := BuildingPlacementScript._append_pooled_construction(
+			var group_error := BuildingPlacementScript._append_construction_groups(
 				authored_construction_goods, authored_construction_quantities,
 				authored_candidate_offsets, authored_candidate_goods,
 				authored_candidate_efficiencies, construction_goods,
 				construction_quantities, construction_candidate_offsets,
 				construction_candidate_goods, construction_candidate_efficiencies)
-			if pooled_error != "":
-				return {"ok": false, "reason": "%s: %s" % [pooled_error, stable_id]}
+			if group_error != "":
+				return {"ok": false, "reason": "%s: %s" % [group_error, stable_id]}
 		construction_offsets.append(construction_goods.size())
 		# Design §7.3: a state lot is a pure treasury cash sink. Its upkeep is
 		# settled by the military runtime, so a material maintenance bill here

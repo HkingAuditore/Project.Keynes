@@ -223,7 +223,8 @@ Dictionary DCWorldExt::run_trigger_daily(int64_t day_index) {
     // H8: the worker owns the aggregation/emission day. Running the facade
     // kernel here would be a second writer and would also republish a reference
     // frame the worker can no longer diverge from.
-    if (trigger_worker_authoritative())
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::TRIGGER_INPUT))
         return trigger_worker_suppressed("trigger_evaluate", day_index);
     Dictionary out = runtime_from(_trigger_runtime)->run_daily(day_index);
     if (static_cast<bool>(out.get("ok", false)) && _runtime_host != nullptr) {
@@ -444,14 +445,6 @@ Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
         Dictionary completed = _trigger_handoff_completed;
         _trigger_handoff_completed = Dictionary();
         return completed;
-    }
-    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution() &&
-        _runtime_host->state() == RuntimeWorkerState::PAUSED) {
-        Dictionary out;
-        out["ok"] = true;
-        out["native_supported"] = true;
-        out["handed_off"] = 0;
-        return out;
     }
     // Economy may append builtin transactions to the same EffectRuntime from
     // its worker day. Delivery is main-thread transport, so defer rather than

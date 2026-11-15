@@ -1517,9 +1517,12 @@ func _print_country_technology(day: int, country, handles: PackedInt64Array,
 		var parts := PackedStringArray()
 		for i in mini(eras.size(), current + 2):
 			parts.append("%d:%d/%d/%d/%d" % [i, counts[i][0], counts[i][1], counts[i][2], counts[i][3]])
+		var economy_ext: Object = country.world_ext() if country.has_method("world_ext") else null
+		var procurement: Dictionary = economy_ext.country_procurement_snapshot(int(handle)) \
+			if economy_ext != null and economy_ext.has_method("country_procurement_snapshot") else {}
 		print("[headless-perf/tech] day=%d handle=%d era=%d %s budget=%d points=%d hidden_current=%d stuck=%s" % [
 			day, int(handle), current, " ".join(parts),
-			int(research.get("daily_procurement_budget", 0)),
+			int(procurement.get("research_daily_budget", 0)),
 			int(research.get("technology_points_stock", 0)), hidden, ",".join(stuck)])
 		# Hidden prerequisites of blocked nodes, ranked by how many blocked nodes
 		# they hold back. A ready set equal to the done set means research has
@@ -1586,13 +1589,13 @@ func _print_country_ai_summary(country_ai, finished: Dictionary) -> void:
 	handles.sort()
 	for handle in handles:
 		var row: Dictionary = last_by_handle[handle]
-		print("[headless-perf/country-ai/country] handle=%d day=%d personality=%s agenda=%s cash=%d reserve_days=%d population=%d territory=%d milestones=%d goal=%d gap=%d queued=%d budget=%d tax=%d/%d/%d expeditions=%d families=%d colonize=%d/%d emitted=%d rejected=%d" % [
+		print("[headless-perf/country-ai/country] handle=%d day=%d personality=%s agenda=%s cash=%d reserve_days=%d population=%d territory=%d milestones=%d goal=%d gap=%d queued=%d research_share_bp=%d tax=%d/%d/%d expeditions=%d families=%d colonize=%d/%d emitted=%d rejected=%d" % [
 			int(handle), int(row.get("day", -1)), str(row.get("personality", "")),
 			str(row.get("agenda", "")), int(row.get("cash", 0)), int(row.get("reserve_days", 0)),
 			int(row.get("population", 0)), int(row.get("territory", 0)),
 			int(row.get("completed_milestones", 0)), int(row.get("goal_milestone", -1)),
 			int(row.get("milestone_gap", 0)), int(row.get("queued_techs", 0)),
-			int(row.get("research_budget", 0)), int(row.get("tax_income_bp", 0)),
+			int(row.get("research_share_bp", -1)), int(row.get("tax_income_bp", 0)),
 			int(row.get("tax_consumption_bp", 0)), int(row.get("tax_business_bp", 0)),
 			int(row.get("expeditions", 0)), int(row.get("families", 0)),
 			int(row.get("colonize_started", 0)), int(row.get("colonize_failures", 0)),

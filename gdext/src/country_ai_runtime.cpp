@@ -59,6 +59,7 @@ void write_memory(Writer &w, const CountryAiMemory &m) {
     w.u32(m.commands_emitted); w.u32(m.commands_rejected); w.u32(m.colonize_intents);
     w.i32(m.colonize_last_target); w.u32(m.colonize_bad_cursor);
     for (const int32_t cell : m.colonize_bad_targets) w.i32(cell);
+    w.i32(m.research_share_bp);
 }
 
 CountryAiMemory read_memory(Reader &r) {
@@ -73,6 +74,7 @@ CountryAiMemory read_memory(Reader &r) {
     m.commands_emitted = r.u32(); m.commands_rejected = r.u32(); m.colonize_intents = r.u32();
     m.colonize_last_target = r.i32(); m.colonize_bad_cursor = r.u32();
     for (int32_t &cell : m.colonize_bad_targets) cell = r.i32();
+    m.research_share_bp = r.i32();
     return m;
 }
 
@@ -209,6 +211,7 @@ bool CountryAiRuntime::plan(int64_t day, const RuntimeCountryPodSnapshot &state,
             if (d.outcome == COUNTRY_AI_OUTCOME_EMITTED) d.outcome = COUNTRY_AI_OUTCOME_PROBE;
         _staged_out.commands.clear();
         _staged_out.colonization.clear();
+        _staged_out.procurement.clear();
     }
     commands = _staged_out.commands;
     _staged = true;
@@ -236,8 +239,11 @@ void CountryAiRuntime::reject_staged(int64_t day, const char *reason) {
         }
     }
     for (CountryAiDecision &d : _staged_out.decisions) {
+        // Colonization and procurement intents bypass the Country command
+        // queue, so a rejected command batch does not withdraw them.
         if (d.outcome != COUNTRY_AI_OUTCOME_EMITTED || d.module == COUNTRY_AI_MODULE_STRATEGY ||
-            d.module == COUNTRY_AI_MODULE_COLONIZE)
+            d.module == COUNTRY_AI_MODULE_COLONIZE ||
+            std::strcmp(d.reason.data(), "set_research_share") == 0)
             continue;
         d.outcome = COUNTRY_AI_OUTCOME_REJECTED;
         if (reason != nullptr) {
@@ -286,6 +292,7 @@ CountryAiCommitResult CountryAiRuntime::commit(int64_t day) {
     }
     result.committed = true;
     result.colonization = std::move(_staged_out.colonization);
+    result.procurement = std::move(_staged_out.procurement);
     const uint64_t signature = family_signature_locked(_memory);
     if (signature != _family_signature) {
         _family_signature = signature;
@@ -372,6 +379,24 @@ std::vector<CountryAiMemory> CountryAiRuntime::memory() const {
 std::vector<CountryAiFamilyPreferenceRow> CountryAiRuntime::family_preferences() const {
     std::lock_guard<std::mutex> lock(_mutex);
     return family_preferences_locked(_memory);
+}
+
+std::vector<CountryAiProcurementIntent> CountryAiRuntime::procurement_policies(int64_t day) const {
+    std::lock_guard<std::mutex> lock(_mutex);
+    std::vector<CountryAiProcurementIntent> rows;
+    if (!_configured || !_armed || _mode != CountryAiMode::ACTIVE) return rows;
+    for (const CountryAiMemory &m : _memory) {
+        if (m.controlled == 0 || m.handle == 0 || m.research_share_bp < 0) continue;
+        CountryAiProcurementIntent row;
+        row.day = day;
+        row.country_handle = m.handle;
+        row.research_share_bp = m.research_share_bp;
+        rows.push_back(row);
+    }
+    std::sort(rows.begin(), rows.end(), [](const auto &l, const auto &r) {
+        return l.country_handle < r.country_handle;
+    });
+    return rows;
 }
 
 std::vector<CountryAiFamilyPreferenceRow> CountryAiRuntime::family_preferences_locked(

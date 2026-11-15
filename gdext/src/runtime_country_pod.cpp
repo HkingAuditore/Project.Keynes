@@ -368,7 +368,6 @@ bool RuntimeCountryPodAdapter::validate_snapshot(
             static_cast<size_t>(snapshot.territory_offsets.empty()
                                     ? 0 : snapshot.territory_offsets.back()) ||
         snapshot.research_auto_purchase.size() != countries ||
-        snapshot.research_daily_budgets.size() != countries ||
         snapshot.research_deferred_points.size() != countries ||
         snapshot.research_progress_total.size() != countries ||
         snapshot.research_completed_total.size() != countries ||
@@ -485,7 +484,6 @@ bool RuntimeCountryPodAdapter::validate_snapshot(
             return false;
         }
         if (snapshot.research_auto_purchase[slot] > 1 ||
-            snapshot.research_daily_budgets[slot] < 0 ||
             snapshot.research_deferred_points[slot] < 0 ||
             snapshot.research_progress_total[slot] < 0 ||
             snapshot.research_completed_total[slot] < 0 ||
@@ -1581,7 +1579,6 @@ bool RuntimeCountryPodAuthority::encode_save(
     append_vector(payload, _state.research_queues);
     append_vector(payload, _state.research_queue_lengths);
     append_vector(payload, _state.research_weights_bp);
-    append_vector(payload, _state.research_daily_budgets);
     append_vector(payload, _state.research_deferred_points);
     append_vector(payload, _state.research_progress);
     append_vector(payload, _state.research_cost_factor);
@@ -1711,7 +1708,6 @@ bool RuntimeCountryPodAuthority::restore_save(
     if (!reader.vector(restored.research_queues, max_countries * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT * COUNTRY_QUEUE_SLOTS) ||
         !reader.vector(restored.research_queue_lengths, max_countries * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT) ||
         !reader.vector(restored.research_weights_bp, max_countries * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT) ||
-        !reader.vector(restored.research_daily_budgets, max_countries) ||
         !reader.vector(restored.research_deferred_points, max_countries) ||
         !reader.vector(restored.research_progress, max_countries * technology_count) ||
         !reader.vector(restored.research_cost_factor, max_countries) ||
@@ -1843,7 +1839,6 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     state.research_queue_lengths.assign(2 * 4, 0);
     state.research_weights_bp.assign(2 * 4, 2500);
     state.research_auto_purchase = {0, 0};
-    state.research_daily_budgets = {0, 0};
     state.research_deferred_points = {0, 0};
     state.research_progress.assign(2 * 4, 0);
     state.research_cost_factor = {1.0, 1.0};

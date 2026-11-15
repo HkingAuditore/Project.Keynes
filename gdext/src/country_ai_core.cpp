@@ -428,7 +428,11 @@ void think_research(ThinkContext &ctx, TechView &view) {
             decision.amount = weights[3];
         }
     }
-    // Daily budget: a fixed share of discretionary cash spread over a horizon.
+    // Daily budget: a fixed share of discretionary cash spread over a horizon,
+    // planned whether or not anything is queued yet (the queue above fills
+    // from the same evaluation). Economy procurement turns the share of cash
+    // into the epoch's research reservation, so the AI never writes an
+    // absolute daily amount.
     const int64_t cash = ctx.obs.cash;
     const int64_t burn = std::max<int64_t>(0, -ctx.mem.cash_delta_ema);
     const int64_t floor = catalog.reserve_floor_cash +
@@ -436,12 +440,8 @@ void think_research(ThinkContext &ctx, TechView &view) {
     const int64_t discretionary = std::max<int64_t>(0, cash - floor);
     int64_t share = agenda.research_share_bp;
     share = share * (5000 + ctx.personality.risk_bp) / 10000;
-    int64_t target = queued_total == 0 ? 0 :
-        clamp64(discretionary, 0, CASH_EMA_LIMIT * 100) / 10000 * share /
-            std::max(1, catalog.research_budget_horizon_days);
-    if (queued_total > 0) target = std::max(target, catalog.research_min_daily_budget);
-    if (catalog.research_max_daily_budget > 0)
-        target = std::min(target, catalog.research_max_daily_budget);
+    int64_t target = clamp64(discretionary, 0, CASH_EMA_LIMIT * 100) / 10000 * share /
+        std::max(1, catalog.research_budget_horizon_days);
     const CountryAiEconomyRow *row = ctx.obs.economy;
     if (row == nullptr || row->essentials_q16 < catalog.research_essentials_floor_q16 ||
         row->hungry_share_q16 >= catalog.research_hungry_share_max_q16) {
@@ -458,23 +458,40 @@ void think_research(ThinkContext &ctx, TechView &view) {
         else if (load > full)
             target = clamp64(target, 0, CASH_EMA_LIMIT) * (zero - load) / (zero - full);
     }
-    const int64_t current = state.research_daily_budgets[static_cast<size_t>(ctx.obs.slot)];
-    const uint8_t auto_purchase = state.research_auto_purchase[static_cast<size_t>(ctx.obs.slot)];
-    const int32_t want_auto = target > 0 ? 1 : static_cast<int32_t>(auto_purchase);
-    const int64_t delta = std::abs(target - current);
-    const bool budget_change = (target != current) &&
-        (current == 0 || target == 0 ||
-         delta * 10000 >= static_cast<int64_t>(catalog.research_budget_change_bp) *
-                              std::max<int64_t>(1, current) ||
-         want_auto != auto_purchase);
-    if (budget_change || (want_auto != auto_purchase)) {
-        CountryAiCommand &command = push_command(ctx, 9, COUNTRY_AI_MODULE_RESEARCH);
-        command.value = target;
-        command.aux = want_auto;
+    // The food and load gates only lower the share to its floor: a starter
+    // colony sits above the load cut-off for months and would otherwise never
+    // research at all.
+    const int64_t cash_unit = std::max<int64_t>(1, cash / 10000);
+    const int32_t share_bp = static_cast<int32_t>(clamp64(
+        (clamp64(target, 0, CASH_EMA_LIMIT * 100) + cash_unit - 1) / cash_unit,
+        std::max(0, catalog.research_min_share_bp),
+        std::max(catalog.research_min_share_bp, catalog.research_max_share_bp)));
+    const int32_t previous = ctx.mem.research_share_bp;
+    const int64_t delta = std::abs(static_cast<int64_t>(share_bp) - previous);
+    if (previous < 0 || (share_bp != previous &&
+            (previous == 0 || share_bp == 0 ||
+             delta * 10000 >= static_cast<int64_t>(catalog.research_budget_change_bp) *
+                                  std::max<int64_t>(1, previous)))) {
+        CountryAiProcurementIntent intent;
+        intent.day = ctx.input.day;
+        intent.country_handle = ctx.obs.handle;
+        intent.research_share_bp = share_bp;
+        intent.sequence = (static_cast<uint64_t>(ctx.input.day) << 12) |
+                          static_cast<uint64_t>(ctx.obs.slot & 0xfff);
+        ctx.out.procurement.push_back(intent);
+        ctx.mem.research_share_bp = share_bp;
         CountryAiDecision &decision = push_decision(ctx, COUNTRY_AI_MODULE_RESEARCH,
-            COUNTRY_AI_OUTCOME_EMITTED, -1, "set_budget");
+            COUNTRY_AI_OUTCOME_EMITTED, -1, "set_research_share");
         decision.amount = target;
-        decision.value = want_auto;
+        decision.value = share_bp;
+    }
+    const uint8_t auto_purchase = state.research_auto_purchase[static_cast<size_t>(ctx.obs.slot)];
+    if (auto_purchase == 0 && share_bp > 0) {
+        CountryAiCommand &command = push_command(ctx, 9, COUNTRY_AI_MODULE_RESEARCH);
+        command.aux = 1;
+        CountryAiDecision &decision = push_decision(ctx, COUNTRY_AI_MODULE_RESEARCH,
+            COUNTRY_AI_OUTCOME_EMITTED, -1, "enable_auto_purchase");
+        decision.value = 1;
     }
 }
 
@@ -998,7 +1015,7 @@ uint64_t country_ai_catalog_hash(const CountryAiCatalog &c) {
     mix(c.think_days); mix(c.strategy_days); mix(c.research_days); mix(c.tax_days);
     mix(c.colonize_days); mix(c.agenda_min_days); mix(c.agenda_inertia_bp);
     mix(c.decision_noise_bp); mix(c.research_budget_horizon_days);
-    mix(c.research_min_daily_budget); mix(c.research_max_daily_budget);
+    mix(c.research_min_share_bp); mix(c.research_max_share_bp);
     mix(c.research_tax_share_bp); mix(c.research_per_capita_budget);
     mix(c.research_essentials_floor_q16);
     mix(c.research_weight_threshold_bp); mix(c.research_max_enqueue_per_eval);
@@ -1223,7 +1240,7 @@ void country_ai_plan(const CountryAiCatalog &catalog, const CountryAiPlanInput &
         row.goal_milestone = mem.goal_milestone;
         row.milestone_gap = mem.milestone_gap;
         row.queued_techs = obs.queued_techs;
-        row.research_budget = state.research_daily_budgets[slot];
+        row.research_share_bp = mem.research_share_bp;
         row.tax_paid = obs.economy != nullptr ? obs.economy->tax_paid : 0;
         row.household_income = obs.economy != nullptr ? obs.economy->income : 0;
         if (obs.economy != nullptr) {
@@ -1264,7 +1281,8 @@ uint64_t country_ai_hash_memory(const std::vector<CountryAiMemory> &memory) {
             m.colonize_failures_seen, m.colonize_started_seen, m.commands_emitted,
             m.commands_rejected, m.colonize_intents,
             static_cast<uint64_t>(static_cast<int64_t>(m.colonize_last_target)),
-            m.colonize_bad_cursor};
+            m.colonize_bad_cursor,
+            static_cast<uint64_t>(static_cast<int64_t>(m.research_share_bp))};
         for (const uint64_t f : fields) h = fnv_u64(h, f);
         for (const int32_t cell : m.colonize_bad_targets)
             h = fnv_u64(h, static_cast<uint64_t>(static_cast<int64_t>(cell)));

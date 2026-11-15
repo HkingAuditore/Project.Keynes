@@ -650,6 +650,7 @@
     CountryReadView country_reads() const;
     void publish_country_ai_digest();
     void process_country_ai_colonization_intents(int64_t day_index);
+    void mark_country_ai_colonization_demand(std::vector<uint8_t> &demand) const;
     int32_t family_founding_ai_choice(const FamilyFoundingOffer &offer) const;
     uint64_t _class_opinion_cells_scanned = 0;
     uint64_t _class_opinion_slots_scanned = 0;

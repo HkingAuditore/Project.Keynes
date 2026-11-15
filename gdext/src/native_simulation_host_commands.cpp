@@ -80,8 +80,14 @@ bool NativeSimulationHost::enqueue_batch(
             return false;
         }
     }
+    // Every caller is a main-thread producer. A command takes effect no
+    // earlier than the first day whose inputs are not sealed yet, so it can
+    // never land on a day the worker already started.
+    const int64_t seal_day = command_seal_day();
     for (size_t index = 0; index < packets.size(); ++index) {
         RuntimeCommandPacket &packet = packets[index];
+        packet.envelope.effective_day =
+            std::max(packet.envelope.effective_day, seal_day);
         if (packet.submit_order == 0) {
             packet.submit_order = _command_submit_order.fetch_add(
                 1u, std::memory_order_relaxed) + 1u;
@@ -126,14 +132,21 @@ bool NativeSimulationHost::enqueue_batch(
 }
 
 void NativeSimulationHost::reserve_command_request_ids_through(uint64_t maximum) noexcept {
-    uint64_t observed = _command_request_id.load(std::memory_order_acquire);
+    const bool executor = (maximum & EXECUTOR_REQUEST_ID_TAG) != 0;
+    std::atomic<uint64_t> &counter = executor ? _executor_request_id : _command_request_id;
+    if (executor) maximum &= ~EXECUTOR_REQUEST_ID_TAG;
+    uint64_t observed = counter.load(std::memory_order_acquire);
     while (observed < maximum &&
-           !_command_request_id.compare_exchange_weak(
+           !counter.compare_exchange_weak(
                observed, maximum, std::memory_order_acq_rel,
                std::memory_order_acquire)) {}
 }
 
 uint64_t NativeSimulationHost::allocate_command_request_id() {
+    // 日执行者里取号的次数只由日内逻辑决定，不受主线程什么时候入队影响。
+    if (on_worker_thread())
+        return (_executor_request_id.fetch_add(1u, std::memory_order_relaxed) + 1u) |
+            EXECUTOR_REQUEST_ID_TAG;
     uint64_t value = _command_request_id.fetch_add(
         1u, std::memory_order_relaxed) + 1u;
     if (value == 0) {
@@ -266,6 +279,10 @@ void NativeSimulationHost::commit_country_ai_day(int64_t day) {
     if (!result.colonization.empty())
         _economy_production_runtime->queue_country_ai_colonization(
             std::move(result.colonization));
+    for (const auto &policy : result.procurement)
+        _economy_production_runtime->queue_research_procurement_policy(
+            policy.country_handle, policy.research_share_bp, policy.day,
+            static_cast<int64_t>(policy.sequence));
 }
 
 void NativeSimulationHost::publish_country_command_terminals(

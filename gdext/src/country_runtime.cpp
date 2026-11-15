@@ -326,7 +326,6 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _country_research_queue_lengths.clear();
     _country_research_weights_bp.clear();
     _country_research_auto_purchase.clear();
-    _country_research_daily_budgets.clear();
     _country_research_deferred_points.clear();
     _country_research_purchased_total.clear();
     _country_research_consumed_total.clear();
@@ -490,8 +489,6 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     const std::vector<int64_t> treasury_quantities = packed_i64(packet, "treasury_quantities");
     const std::vector<int32_t> research_weights =
         packed_i32(packet, "research_weights_bp");
-    const std::vector<int64_t> research_budgets =
-        packed_i64(packet, "research_daily_budgets");
     const std::vector<uint8_t> research_auto_purchase =
         packed_u8(packet, "research_auto_purchase");
 
@@ -513,7 +510,6 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _country_research_queue_lengths.clear();
     _country_research_weights_bp.clear();
     _country_research_auto_purchase.clear();
-    _country_research_daily_budgets.clear();
     _country_research_deferred_points.clear();
     _country_research_purchased_total.clear();
     _country_research_consumed_total.clear();
@@ -595,7 +591,6 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
              treasury_good_indices.size() != treasury_quantities.size())))
             return fail("country_bootstrap_csr_invalid");
         if ((!research_weights.empty() && research_weights.size() != ids.size() * 4U) ||
-            (!research_budgets.empty() && research_budgets.size() != ids.size()) ||
             (!research_auto_purchase.empty() &&
              research_auto_purchase.size() != ids.size()))
             return fail("country_bootstrap_research_shape_invalid");
@@ -673,11 +668,6 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                 }
                 if (total != 10000)
                     return fail("country_bootstrap_research_policy_invalid");
-            }
-            if (!research_budgets.empty()) {
-                if (research_budgets[slot] < 0)
-                    return fail("country_bootstrap_research_policy_invalid");
-                _country_research_daily_budgets[slot] = research_budgets[slot];
             }
             if (!research_auto_purchase.empty()) {
                 if (research_auto_purchase[slot] > 1)
@@ -897,7 +887,6 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _country_research_queue_lengths.clear();
     _country_research_weights_bp.clear();
     _country_research_auto_purchase.clear();
-    _country_research_daily_budgets.clear();
     _country_research_deferred_points.clear();
     _country_research_purchased_total.clear();
     _country_research_consumed_total.clear();

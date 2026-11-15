@@ -265,10 +265,11 @@ func _test_prospective_income_subsidy(compiled: Dictionary, catalog: Dictionary,
 		_sum_i64(fiscal.get("subsidy_paid", PackedInt64Array())) > 0)
 
 func _new_runtime(compiled: Dictionary, catalog: Dictionary,
-		profile: Dictionary, seed: int, stock_survival: bool = true) -> Object:
+		profile: Dictionary, seed: int, stock_survival: bool = true,
+		excluded_technology_ids: PackedStringArray = PackedStringArray()) -> Object:
 	var ext := _new_ext(compiled)
 	_expect("country configures", CountryTestHelper.configure_all_technologies(
-		ext, catalog, CELL_COUNT, seed))
+		ext, catalog, CELL_COUNT, seed, PackedByteArray(), excluded_technology_ids))
 	_expect("economy configures", bool(ext.configure_economy(
 		catalog, profile, CELL_COUNT, seed).get("ok", false)))
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")

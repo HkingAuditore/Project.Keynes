@@ -22,6 +22,7 @@ namespace pk {
 struct CountryAiCommitResult {
     bool committed = false;
     std::vector<CountryAiColonizationIntent> colonization;
+    std::vector<CountryAiProcurementIntent> procurement;
     bool family_preferences_changed = false;
     std::vector<CountryAiFamilyPreferenceRow> family_preferences;
 };
@@ -91,6 +92,9 @@ public:
     std::vector<CountryAiRecordRow> drain_records(size_t limit);
     std::vector<CountryAiMemory> memory() const;
     std::vector<CountryAiFamilyPreferenceRow> family_preferences() const;
+    // Current research shares of controlled countries, re-pushed to Economy
+    // after restore or a mode switch (procurement policies are not saved).
+    std::vector<CountryAiProcurementIntent> procurement_policies(int64_t day) const;
     const CountryAiCatalog *catalog_unlocked() const { return &_catalog; }
     uint64_t state_hash() const;
 

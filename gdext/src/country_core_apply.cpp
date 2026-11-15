@@ -411,7 +411,6 @@ bool country_core_apply_command(
             RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT, 0);
         state.research_weights_bp.insert(state.research_weights_bp.end(),
             RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT, 2500);
-        state.research_daily_budgets.push_back(1000 * 10000);
         state.research_deferred_points.push_back(0);
         state.research_progress_total.push_back(0);
         state.research_completed_total.push_back(0);
@@ -675,13 +674,12 @@ bool country_core_apply_command(
         plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
         return true;
     }
-    case 9: // budget and auto purchase
+    case 9: // research auto purchase
         if (!country_core_validate_target(state, command, slot, error)) return false;
-        if (command.value < 0 || (command.aux != 0 && command.aux != 1)) {
-            error = "country_research_budget_invalid";
+        if (command.aux != 0 && command.aux != 1) {
+            error = "country_research_auto_purchase_invalid";
             return false;
         }
-        state.research_daily_budgets[static_cast<size_t>(slot)] = command.value;
         state.research_auto_purchase[static_cast<size_t>(slot)] =
             static_cast<uint8_t>(command.aux);
         ++state.country_state_version[static_cast<size_t>(slot)];
@@ -1379,10 +1377,6 @@ bool country_core_first_business_difference(
         set_field("research_auto_purchase", 0);
         return true;
     }
-    if (reference.research_daily_budgets != worker.research_daily_budgets) {
-        set_field("research_daily_budgets", 0);
-        return true;
-    }
     if (reference.research_deferred_points != worker.research_deferred_points) {
         set_field("research_deferred_points", 0);
         return true;
@@ -1492,7 +1486,6 @@ uint64_t country_core_hash_business_state(const RuntimeCountryPodSnapshot &state
     hash_vector(state.research_queue_lengths);
     hash_vector(state.research_weights_bp);
     hash_vector(state.research_auto_purchase);
-    hash_vector(state.research_daily_budgets);
     hash_vector(state.research_deferred_points);
     hash_vector(state.research_progress);
     hash_vector(state.research_purchased_total);

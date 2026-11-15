@@ -356,7 +356,17 @@ void note_training_delivery(std::vector<MilitaryTrainingOrder> &orders,
         if (o.delivered_quality_q8 <= 0 || q8 < o.delivered_quality_q8)
             o.delivered_quality_q8 = static_cast<int16_t>(q8);
         if (o.to_unit >= 0 && o.to_unit < static_cast<int32_t>(catalog.units.size())) {
-            const uint64_t needed = equipment_slot_mask(catalog.units[(size_t)o.to_unit]);
+            const MilitaryUnitType &unit = catalog.units[(size_t)o.to_unit];
+            for (int32_t s = 0; s < unit.slot_count && s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
+                if (unit.slot_category[(size_t)s] != category) continue;
+                const int8_t delivered = static_cast<int8_t>(clamp32(quality, 1, 5));
+                if (o.slot_delivered_quality[(size_t)s] <= 0 ||
+                    delivered < o.slot_delivered_quality[(size_t)s]) {
+                    o.slot_delivered_quality[(size_t)s] = delivered;
+                }
+                break;
+            }
+            const uint64_t needed = equipment_slot_mask(unit);
             o.equipment_ready = (o.equipped_slot_mask & needed) == needed ? 1 : 0;
         }
         return;

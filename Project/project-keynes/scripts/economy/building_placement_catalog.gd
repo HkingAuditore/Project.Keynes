@@ -321,12 +321,10 @@ static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt
 	return ""
 
 
-## Construction BOM rows are authoring weights, not independent hard slots.
-## Compile every building to one effective-quantity group whose candidates are
-## the stable union of every authored row. Any mixture can therefore satisfy
-## the total bill, matching household food-basket substitution semantics.
+## Each authored construction row is its own material group: the planner
+## picks a candidate per group and meters it with that group's efficiency.
 
-static func _append_pooled_construction(authored_goods: PackedInt32Array,
+static func _append_construction_groups(authored_goods: PackedInt32Array,
 		authored_quantities: PackedInt64Array,
 		authored_candidate_offsets: PackedInt32Array,
 		authored_candidate_goods: PackedInt32Array,
@@ -339,29 +337,17 @@ static func _append_pooled_construction(authored_goods: PackedInt32Array,
 			or authored_goods.size() != authored_quantities.size() \
 			or authored_candidate_offsets.size() != authored_goods.size() + 1 \
 			or authored_candidate_goods.size() != authored_candidate_efficiencies.size():
-		return "invalid pooled construction columns"
-	var total_quantity := 0
-	for quantity in authored_quantities:
-		if int(quantity) <= 0 or total_quantity > 9223372036854775807 - int(quantity):
-			return "pooled construction quantity overflow"
-		total_quantity += int(quantity)
-	var candidate_position := {}
-	for candidate_index in range(authored_candidate_goods.size()):
-		var good_id := int(authored_candidate_goods[candidate_index])
-		var efficiency := int(authored_candidate_efficiencies[candidate_index])
-		if candidate_position.has(good_id):
-			var position := int(candidate_position[good_id])
-			# A material admitted through several authored roles keeps its most
-			# efficient valid conversion into generic construction quantity.
-			out_candidate_efficiencies[position] = maxi(
-				int(out_candidate_efficiencies[position]), efficiency)
-			continue
-		candidate_position[good_id] = out_candidate_goods.size()
-		out_candidate_goods.append(good_id)
-		out_candidate_efficiencies.append(efficiency)
-	out_goods.append(int(authored_goods[0]))
-	out_quantities.append(total_quantity)
-	out_candidate_offsets.append(out_candidate_goods.size())
+		return "invalid construction group columns"
+	for group in range(authored_goods.size()):
+		if int(authored_quantities[group]) <= 0:
+			return "invalid construction group quantity"
+		out_goods.append(int(authored_goods[group]))
+		out_quantities.append(int(authored_quantities[group]))
+		for candidate in range(authored_candidate_offsets[group],
+				authored_candidate_offsets[group + 1]):
+			out_candidate_goods.append(int(authored_candidate_goods[candidate]))
+			out_candidate_efficiencies.append(int(authored_candidate_efficiencies[candidate]))
+		out_candidate_offsets.append(out_candidate_goods.size())
 	return ""
 
 

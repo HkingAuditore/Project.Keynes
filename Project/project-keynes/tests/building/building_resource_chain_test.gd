@@ -55,11 +55,29 @@ func _run() -> void:
 		distinct_ratios[int(round(float(ratio) * 1000.0))] = true
 	_expect("extractors use multiple content-level conversion efficiencies",
 		distinct_ratios.size() >= 8 and _all_positive(conversion_ratios.values()))
-	_expect("mining efficiency improves across historical building tiers",
-		is_equal_approx(float(conversion_ratios.get("placer_gold_working", 0.0)), 2.0) and
-		is_equal_approx(float(conversion_ratios.get("gold_mine", 0.0)), 20.0) and
-		is_equal_approx(float(conversion_ratios.get("surface_silver_working", 0.0)), 5.0) and
-		is_equal_approx(float(conversion_ratios.get("silver_mine", 0.0)), 20.0))
+	# Within each upgrade family, a later extraction tier yields the same good
+	# and converts each unit of natural resource into more output.
+	var family_ids: PackedStringArray = compiled.building_upgrade_family_ids
+	var family_of: PackedInt32Array = compiled.building_upgrade_family_indices
+	var tier_of: PackedInt32Array = compiled.building_upgrade_tiers
+	var output_goods: PackedInt32Array = compiled.building_output_good_ids
+	var tier_violations := PackedStringArray()
+	var tiered_families := {}
+	for type_idx in range(types.size()):
+		var type_id := String(types[type_idx])
+		if family_of[type_idx] < 0 or not conversion_ratios.has(type_id):
+			continue
+		for other_idx in range(types.size()):
+			var other_id := String(types[other_idx])
+			if family_of[other_idx] != family_of[type_idx] or tier_of[other_idx] <= tier_of[type_idx] \
+					or not conversion_ratios.has(other_id):
+				continue
+			tiered_families[family_of[type_idx]] = true
+			if output_goods[output_offsets[other_idx]] != output_goods[output_offsets[type_idx]] \
+					or float(conversion_ratios[other_id]) <= float(conversion_ratios[type_id]):
+				tier_violations.append("%s:%s>=%s" % [family_ids[family_of[type_idx]], type_id, other_id])
+	_expect("mining efficiency improves across historical building tiers %s" % str(tier_violations),
+		tiered_families.size() >= 8 and tier_violations.is_empty())
 	_expect("farm uses capacity behavior without generated crop resource",
 		behavior_ids[farm_type] == 1 and
 		generation_offsets[farm_type + 1] == generation_offsets[farm_type])
@@ -72,8 +90,21 @@ func _run() -> void:
 		resources[production_resources[farm_begin]] == "arable_land" and
 		resources[production_resources[farm_begin + 1]] == "fertile_soil" and
 		production_modes[farm_begin] == 1 and production_modes[farm_begin + 1] == 1)
+	# Hard inputs are the ones the mill cannot run without; anything else must be
+	# optional (required share 0), and no natural resource is touched.
+	var input_required: PackedInt32Array = compiled.building_input_required_q16
+	var input_categories: PackedStringArray = compiled.building_input_category_ids
+	var textile_hard_categories := {}
+	var textile_optional_ok := true
+	for edge in range(input_offsets[textile_type], input_offsets[textile_type + 1]):
+		if input_required[edge] > 0:
+			textile_hard_categories[String(input_categories[edge])] = true
+		elif input_required[edge] != 0:
+			textile_optional_ok = false
 	_expect("textile mill consumes direct fiber, power, maintenance tools, and no natural resource",
-		input_offsets[textile_type + 1] - input_offsets[textile_type] == 3 and
+		textile_hard_categories.size() == 3 and textile_optional_ok and
+		textile_hard_categories.has("natural_spinnable_fiber") and
+		textile_hard_categories.has("solid_fuel") and textile_hard_categories.has("tools") and
 		resource_offsets[textile_type + 1] == resource_offsets[textile_type])
 
 	var ext := _new_ext(compiled)
@@ -181,8 +212,11 @@ func _run_local_fishery(catalog: Dictionary) -> bool:
 	map.set_cell(second_shore)
 	map._build_indices()
 	map.init_soa_from_bake()
-	map.res_marine_fish_reserve_arr[0] = 0.75
-	map.res_marine_fish_reserve_arr[2] = 0.75
+	# Renewable harvest scales with stock density (reserve / ecology capacity),
+	# so stock each shore at its catalog capacity rather than a token amount.
+	var local_reserve := _ecology_capacity_reserve(catalog, "marine_fish")
+	map.res_marine_fish_reserve_arr[0] = local_reserve
+	map.res_marine_fish_reserve_arr[2] = local_reserve
 	map.resource_habitat_mask_arr[0] = 9
 	map.resource_habitat_mask_arr[1] = 2
 	map.resource_habitat_mask_arr[2] = 9
@@ -245,8 +279,9 @@ func _run_local_fishery(catalog: Dictionary) -> bool:
 		(catalog.building_resource_offsets as PackedInt32Array)[fishery]])
 	return bool(report.get("done", false)) and group >= 0 and second_group >= 0 and \
 		total_output > 0 and first_extracted > 0 and second_extracted > 0 and \
-		first_extracted + second_extracted <= 1500 and \
-		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[fish_resource]) == 750
+		first_extracted + second_extracted <= 2 * roundi(local_reserve * 1000.0) and \
+		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[fish_resource]) == \
+			roundi(local_reserve * 1000.0)
 
 
 func _run_local_freshwater_fishery(catalog: Dictionary) -> bool:
@@ -261,8 +296,9 @@ func _run_local_freshwater_fishery(catalog: Dictionary) -> bool:
 	map.set_cell(lake)
 	map._build_indices()
 	map.init_soa_from_bake()
-	map.res_freshwater_fish_reserve_arr[0] = 0.75
-	map.res_freshwater_fish_reserve_arr[1] = 1.25
+	var local_reserve := _ecology_capacity_reserve(catalog, "freshwater_fish")
+	map.res_freshwater_fish_reserve_arr[0] = local_reserve
+	map.res_freshwater_fish_reserve_arr[1] = local_reserve * 5.0 / 3.0
 	map.resource_habitat_mask_arr[0] = 4
 	map.resource_habitat_mask_arr[1] = 4
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
@@ -311,9 +347,17 @@ func _run_local_freshwater_fishery(catalog: Dictionary) -> bool:
 		(catalog.building_resource_offsets as PackedInt32Array)[camp]])
 	return bool(report.get("done", false)) and group >= 0 and resource_idx >= 0 and \
 		int((building.last_resource as PackedInt64Array)[group]) > 0 and \
-		int((building.last_resource as PackedInt64Array)[group]) <= 750 and \
+		int((building.last_resource as PackedInt64Array)[group]) <= roundi(local_reserve * 1000.0) and \
 		int((building.last_output as PackedInt64Array)[group]) > 0 and \
-		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[resource_idx]) == 750
+		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[resource_idx]) == \
+			roundi(local_reserve * 1000.0)
+
+
+## Map-unit reserve equal to the resource's ecology capacity (catalog stores
+## it in GOODS_SCALE units, 1000 per map unit).
+func _ecology_capacity_reserve(catalog: Dictionary, resource_id: String) -> float:
+	var index := (catalog.building_resource_ids as PackedStringArray).find(resource_id)
+	return float((catalog.building_resource_ecology_capacity as PackedInt64Array)[index]) / 1000.0
 
 
 func _all_positive(values: Array) -> bool:

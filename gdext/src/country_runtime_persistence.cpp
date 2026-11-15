@@ -337,7 +337,6 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
     if (!_country_research_queues.empty()) hash_bytes(hash, _country_research_queues.data(), _country_research_queues.size() * sizeof(int32_t));
     if (!_country_research_queue_lengths.empty()) hash_bytes(hash, _country_research_queue_lengths.data(), _country_research_queue_lengths.size() * sizeof(uint8_t));
     if (!_country_research_weights_bp.empty()) hash_bytes(hash, _country_research_weights_bp.data(), _country_research_weights_bp.size() * sizeof(int32_t));
-    if (!_country_research_daily_budgets.empty()) hash_bytes(hash, _country_research_daily_budgets.data(), _country_research_daily_budgets.size() * sizeof(int64_t));
     if (!_country_research_deferred_points.empty()) hash_bytes(hash, _country_research_deferred_points.data(), _country_research_deferred_points.size() * sizeof(int64_t));
     if (!_country_tax_defaults.empty())
         hash_bytes(hash, _country_tax_defaults.data(),
@@ -480,9 +479,6 @@ int64_t NativeCountryRuntime::state_hash_v3_compat() const {
     if (!_country_research_weights_bp.empty())
         hash_bytes(hash, _country_research_weights_bp.data(),
                    _country_research_weights_bp.size() * sizeof(int32_t));
-    if (!_country_research_daily_budgets.empty())
-        hash_bytes(hash, _country_research_daily_budgets.data(),
-                   _country_research_daily_budgets.size() * sizeof(int64_t));
     if (!_country_research_deferred_points.empty())
         hash_bytes(hash, _country_research_deferred_points.data(),
                    _country_research_deferred_points.size() * sizeof(int64_t));
@@ -584,7 +580,6 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
     append_vector(out, _country_research_queue_lengths);
     append_vector(out, _country_research_weights_bp);
     append_vector(out, _country_research_auto_purchase);
-    append_vector(out, _country_research_daily_budgets);
     append_vector(out, _country_research_deferred_points);
     append_vector(out, _country_research_purchased_total);
     append_vector(out, _country_research_consumed_total);
@@ -826,7 +821,7 @@ bool NativeCountryRuntime::decode_save_in_place(
     std::vector<uint64_t> discovered, pending, signals;
     std::vector<int32_t> research_queues, research_weights;
     std::vector<uint8_t> research_queue_lengths, auto_purchase;
-    std::vector<int64_t> daily_budgets, deferred_points, purchased_total,
+    std::vector<int64_t> deferred_points, purchased_total,
         consumed_total, progress_total, completed_total;
     int64_t last_research_day = -1;
     const uint64_t countries_u64 = static_cast<uint64_t>(country_count);
@@ -909,13 +904,11 @@ bool NativeCountryRuntime::decode_save_in_place(
         research_weights.size() != static_cast<size_t>(country_count) * 4U ||
         !read_vector(bytes, cursor, auto_purchase, countries_u64) ||
         auto_purchase.size() != static_cast<size_t>(country_count) ||
-        !read_vector(bytes, cursor, daily_budgets, countries_u64) ||
         !read_vector(bytes, cursor, deferred_points, countries_u64) ||
         !read_vector(bytes, cursor, purchased_total, countries_u64) ||
         !read_vector(bytes, cursor, consumed_total, countries_u64) ||
         !read_vector(bytes, cursor, progress_total, countries_u64) ||
         !read_vector(bytes, cursor, completed_total, countries_u64) ||
-        daily_budgets.size() != static_cast<size_t>(country_count) ||
         deferred_points.size() != static_cast<size_t>(country_count) ||
         purchased_total.size() != static_cast<size_t>(country_count) ||
         consumed_total.size() != static_cast<size_t>(country_count) ||
@@ -966,7 +959,6 @@ bool NativeCountryRuntime::decode_save_in_place(
             weight_total += research_weights[index];
         }
         if (weight_total != 10000 || auto_purchase[static_cast<size_t>(slot)] > 1 ||
-            daily_budgets[static_cast<size_t>(slot)] < 0 ||
             deferred_points[static_cast<size_t>(slot)] < 0) {
             error = "country_save_research_policy_invalid";
             return false;
@@ -1571,7 +1563,6 @@ bool NativeCountryRuntime::decode_save_in_place(
     _country_research_queue_lengths = std::move(research_queue_lengths);
     _country_research_weights_bp = std::move(research_weights);
     _country_research_auto_purchase = std::move(auto_purchase);
-    _country_research_daily_budgets = std::move(daily_budgets);
     _country_research_deferred_points = std::move(deferred_points);
     _country_research_purchased_total = std::move(purchased_total);
     _country_research_consumed_total = std::move(consumed_total);

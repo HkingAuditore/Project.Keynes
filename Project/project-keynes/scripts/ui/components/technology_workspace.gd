@@ -737,7 +737,6 @@ func _research_state_signature() -> int:
 		int(_research.get("consumed_total", 0)),
 		int(_research.get("progress_total", 0)),
 		int(_research.get("deferred_unallocated_points", 0)),
-		int(_research.get("daily_procurement_budget", 0)),
 		bool(_research.get("auto_purchase_enabled", false)),
 		_research.get("technology_states", PackedInt32Array()),
 		_research.get("technology_progress", PackedInt64Array()),
@@ -1475,12 +1474,6 @@ func _daily_research_budget() -> int:
 			and int(_procurement.get("treasury_share_bp", -1)) == int(policy.treasury_share_bp) \
 			and int(_procurement.get("research_share_bp", -1)) == int(policy.research_share_bp):
 		return maxi(0, int(_procurement.get("research_daily_budget", 0)))
-	if String(policy.get("source", "")) == "default" \
-			and not bool(_procurement.get("available", false)):
-		# No procurement policy anywhere yet (older native): the legacy Country
-		# budget is still what the runtime spends.
-		return int(_research.get("daily_procurement_budget", 0)) \
-			if bool(_research.get("auto_purchase_enabled", false)) else 0
 	return int(round(float(_national_daily_budget(policy)) \
 		* float(int(policy.research_share_bp)) / 10000.0))
 

@@ -27,7 +27,14 @@
 - `CountryAiRuntime::to_runtime_command(command, day, index)` 生成 `RuntimeCountryCommand`：
   `effective_day = day`，`sequence = (day << 16) | index`（按日主序，同日内按发射顺序）。
 - 只使用玩家同样能提交的 opcode：`ENQUEUE_RESEARCH`(6)、`SET_RESEARCH_WEIGHTS`(5)、
-  `SET_RESEARCH_BUDGET`(9)、`SET_TAX_DEFAULT`(11，仅 percent 模式)。
+  `SET_RESEARCH_AUTO_PURCHASE`(9，只用来打开)、`SET_TAX_DEFAULT`(11，仅 percent 模式)。
+- 研究预算不走 Country 命令。内核按议程算出目标日额，换成现金份额（clamp 到
+  `research_min_share_bp`..`research_max_share_bp`），份额变化达到 `research_budget_change_bp`
+  时产出 `CountryAiProcurementIntent`。提交后由 `queue_country_ai_procurement` 写入采购政策收件箱，
+  等同玩家调 `set_country_procurement_policy(enabled, treasury 10000, research = 份额)`，下个周期生效。
+  configure、切模式、读档时 `procurement_policies(0)` 重推当前份额。
+- AI 殖民意图在周期开启时才转成 START 命令，晚于采购冻结；冻结时把收件箱里的意图也算作派遣需求
+  （`mark_country_ai_colonization_demand`），否则新队伍第一个周期的派遣储备额度为 0。
 - 开拓不走 Country 命令。内核产出 `CountryAiColonizationIntent`，经济周期开启时由
   `process_country_ai_colonization_intents` 先做报价预检，再转成普通
   `COMMAND_START_FAMILY_EXPEDITION`。其 `sequence` 带

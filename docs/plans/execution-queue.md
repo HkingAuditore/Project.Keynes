@@ -33,6 +33,8 @@
 | 10 | 文档对齐：按拆分后的实际结构更新 `module-map.md`、`development-guide.md`、`AGENTS.md` 和各模块 skill 里的文件路径与入口；已完成的计划文档改成结果记录或删除 | `docs/architecture/` | 完成（2026-11-14）：skill 与文档里的测试路径改到新子目录；`large-file-split.md` 删除，规则并入开发指南，结果记入 feature-status；上游文档引用的未提交测试（经济平衡 soak、军事采购/配置测试）未动 |
 | 11 | 汇报，等提交指令 | — | 完成（2026-11-14）：按用户指示合并上游后提交并更新 PR；第 9 项清单未清，已在 PR 说明中列出 |
 | 12 | 智能体开发框架的下一轮优化（见下） | — | 待做 |
+| 13 | 单一时间线迁移（见下） | `docs/architecture/design.md` 单一时间线 | 进行中（2026-11-14） |
+| 14 | 落实上游在 PR #6 的玩法决策并回应审查（见下） | `gameplay-pending-decisions.md` | 代码部分完成（2026-11-14）：全量回归只剩 military20 原始模式（12b）；内容与数值等上游定，见待定文档 |
 
 第 2 项排在拆分之前，是因为后面每一批都要跑回归，先缩短它最划算。
 
@@ -48,7 +50,8 @@
 - `visual_tile_horizon_smoke_test`（base level 未上传）、`visual_tile_layout_test`（mobile 三档布局变化）、`menu_atlas_visual_qa`（300 秒超时）：G2 前后表现相同
 - `effect_domain_integration_test`（technology modifier 缺失等 4 条）、`stat_key_family_test`（上游新增的 6 个 `military.cell.*` 键未归入 family）、`effect_native_modifier_bridge_test`（3 条断言后不退出，300 秒超时）：C3 前后相同
 - `natural_resource_init_deposit_test`（4 条）、`natural_resource_pass_test`（2 条）
-- `golden_day_hash_test` 偶发退出时 `ObjectDB instances leaked`（一次，重跑两次通过）
+- 不在默认回归里：`ideology_cell_layer_shard_test`（直接调 `begin_or_reuse_economy_input_epoch` 时崩溃，signal 11）、`ideology_x6a_worker_test`（factor 2.0 leaves building term unchanged）；2026-11-14 去掉经济输入预采集前后相同
+- `golden_day_hash_test` 偶发退出时 `ObjectDB instances leaked`（一次，重跑两次通过）；2026-11-14 annual 365 的 original 段在 3 路并发下也出现一次，所有检查通过、无数据差异，带 `--verbose` 并发 4 次未复现
 - 默认回归并行跑时偶发：`ideology_save_worker_authority_test`（DUR[3/4] worker 写回未发生）、`runtime_loading_exit_test`（frame 5 未释放加载世界）；C4 后各出现一次，单独连跑两次通过
 - `economy_dossier_view_model_test`（4 个职业 agronomist、aquaculturist、dyer、ship_officer 未映射阶层；投资区块跨章节导航）、`player_ui_view_model_test`（调用不存在的 `_decorate_construction_item`）：G3a 前后相同，与拆分无关
 - 高负载（load ~28）下第 1 天 ECONOMY/IDEOLOGY 哈希分叉，金样报 "Ideology commits after a prior opinion exists on day 1"；空闲时通过，拆分前同样如此。疑为续跑矩阵与年度自动存档 replay 分叉的根因
@@ -56,9 +59,9 @@
 - `runtime_economy_worker_restart_test` 偶发崩溃（exit -10/-11）
 - 拆分 C7 时的聚焦测试，改前改后同样失败：`colonization_starter_regression_test`、`colonization_workbench_ui_test`、`country_border_mesh_test`、`country_late_command_reschedule_test`、`country_reference_trace_test`、`settlement_runtime_test`、`economy_building_job_restore_test`
 - 拆分 G5、第二/三波时发现：`player_map_overlay_smoke_test`（未识别矿产/木材 1 条）、`income_tax_player_regression`（`GameFlow` 标识符缺失，编译不过）、terrain shader 测试 17 条、ideology card-face semantics 11 条、technology authoring editor smoke 2 条、modern economy catalog 内容失败
-- 续跑矩阵：multicountry5 checkpoint 的 EFFECT 偶发分叉；military20 resume 的 COUNTRY 分叉；第 1 天存档的首日视野顺序（见 `feature-status.md`）
+- 续跑矩阵：第 1 天存档的首日视野顺序（见 `feature-status.md`）；multicountry5 checkpoint EFFECT 与 military20 resume COUNTRY 分叉 2026-11-14 已修
 - `ideology_cell_layer_e2e_realworld_test` 的 B 项：开局是一格国家，没有国家超过 32 格，测试前提不成立（与理念代码无关）
-- golden 主路径偶发 COUNTRY 分叉（2026-11-14，4 次中 1 次）：主线程提交的第 17 条 Country 命令，一次由第 4 天的边界封口收进，另一次晚一天（输入清单 `command_watermark` 17 → 0），之后各天 COUNTRY 都不同，ECONOMY/IDEOLOGY/EFFECT/MODIFIER 不变。封口收的是"已到达"的命令，不按生效日，违反第 12 项规则 1。提交者疑为视野观测批（`submit_observation_batch`），未证实。该世界派生层无活动（`active=0`），与第 9e 项无关
+- ~~golden 主路径偶发 COUNTRY 分叉~~（2026-11-14 已修）：提交者是 Trigger 效果经 Effect 镜像出的 Country 命令，不是视野观测批。封口日改为日尾完成日 + 2，日尾标记前交接 Trigger 效果，见 `feature-status.md`
 
 ### 玩法待定
 
@@ -70,7 +73,7 @@
 - 已修（2026-11-14，第 9e 项）：ideology worker 测试剩余失败。lifecycle、x6c、country_ramp、x5、x6b、scalar、x12、x9b、restart_mask、cell_card、derived_pump 全过，根因见第 9e 项。剩 x6a 一条：夹具假设经济静止（见第 9c 项），断言没改。
 - Country 财政请求未完成并写回 worker 读视图（`economy_fiscal_reservation_continuation_test`，2 条）。
 - `trade_activity_runtime_integration_test` 访问 nil 的 `visual_tiles` 后一直等待。
-- `military_runtime_smoke_test` 剩 1 条：登船前基线 14 人、登船 13 人后本格剩 0，基线到登船之间经济侧少了 1 名士兵；疑似自然死亡，未实测证实。`military_native_binding_test` 自测里 army pay 一条断言失败。
+- `military_runtime_smoke_test`：2026-11-14 换成合并前的等价兵营配方后 0 失败，原先登船少 1 名士兵的那条没有复现；真实数据下卡在建兵营（待定 12b）。
 - `technology_refresh_latency_test` 剩 1 条：面板关闭的 6 天里研究进度没变，疑似排队的 3 项科技在测量阶段已研究完，未证实（2026-11-14 从玩法待定移来，原来的延迟问题已通过）。
 - `runtime_country_parity_test`：第 2 天起 `research_deferred_points` 在 Country POD 与主线程科研队列之间不一致，之后屏障超时。2026-11-14 复跑剩 2 条（生产调度没有封住每个推进日；D11 soak 没有产出可比的 Country 帧）。
 - 性能门槛：`military_native_binding_test`（10 万单位 p95 22ms / 门槛 2ms）、`resource_visual_perf_test`（p95 2.4ms / 1ms）、`cooperative_world_generation_test`（帧峰值 2.65s / 100ms）。
@@ -155,9 +158,53 @@ worker 缺环境帧的另一半已由第 9b 项消除：跳日的帧进不了环
 
 结果（2026-11-14，串行逐个跑）：x5、x6b、x6c、scalar、x12、x9b、lifecycle、country_ramp、x1b、x1b_source_count、restart_mask、derived_pump、cell_card（agrarian_reform），以及 cell_layer 的 catalog、ramp、ramp_materialize、e2e、realworld_over32、numeric、unbounded，加上 authority_parity、save_worker_authority、boundary_lock、card_content、social_media，全部 0 失败。剩 x6a 1 条（经济静止假设，第 9c 项）和 e2e_realworld 的 B 项（一格开局，记入第 9 项清单）。golden external-only 2/2 与基线一致；主路径 4 次中 3 次一致，1 次第 4 天 COUNTRY 分叉，原因与本项无关（见第 9 项清单）。size ratchet 0 违规。没有改存档段。
 
-## 之后：主线程镜像与 worker POD 双持状态（暂缓，先写计划）
+## 第 13 项：单一时间线迁移
 
-Country 一致性测试的 `research_deferred_points` 不一致、财政续跑写不回读视图，都源于两边同时写。范围大，要先写计划、按域明确数据归属，再决定是否立项；不顺手做。
+根因（2026-11-14 核对代码）：不一致和偶发失败来自线程分工，不在 DOTS 数据布局。
+
+1. 两个日历：命令生效日取提交瞬间 worker 的已提交日（`submit_runtime_command`、`enqueue_country_host_command_batch`），晚到的命令被 worker 改期到当天（Country 阶段）。
+2. 双持状态：worker POD 与主线程镜像靠快照和 peer intent 互相同步，一天中途要等主线程回执，因此有停等位、250 ms 轮询和 5 秒超时。
+3. 运行中切换权威：镜像齐了才把域交给 worker，切换日取决于时序。
+4. 表外推进者（军事、视野、资源恢复）每帧在主线程追赶 worker 已提交日。
+
+性能另算：worker 每天 20.4 ms，其中经济公式 16.6 ms，约 21% 是堆分配，与线程分工无关。
+
+步骤（每步独立交付，删的比加的多）：
+
+| 步 | 内容 | 状态 |
+|---|---|---|
+| 0 | 命令按日封口：生效日 = max(请求日, 主线程封口日 + 1)，删 worker 端改期；worker 先取第 D 天环境帧再收命令 | 完成（2026-11-14）：golden 空闲 4/4、负载约 26 下 6/6 一致；military20/multicountry5 第 13 天 EFFECT 分叉定位到科技效果跨线程回执，归第 2 步。之后加压又查出 Effect 镜像回 Country 的命令沿用 Effect 自己的生效日，可能落在已封口的一天，审查又查出事件和 Modifier 也不取封口日，于是封口统一放在命令环入口 `enqueue_batch`（调用方都在主线程）。Ideology 队列（worker 上的 Trigger 也写它，不能在命令环入口统一取）和 Economy POD 命令（`RuntimeEconomyPodCommand` 没有日期字段）当时没封口。golden 之后又分叉一次，原因是封口日取环境帧水位，而水位跟着帧时序跑在前面：有日尾闸门时封口日改为日尾完成日 + 2，Trigger 队列和 Ideology 队列的主线程入口也取封口日（worker 端写入不经过入口），日尾标记前交接 Trigger 效果，worker 启动时日尾完成日取起始已提交日（见 `feature-status.md`）。剩 Economy POD 命令没封口：默认整图加日尾闸门时它在第 D 天日尾提交、D+1 开头取走，次序固定；部分权威模式下仍依赖时序 |
+| 1 | 世界创建即 worker 权威：删运行中切换、SHADOW、对拍 | 部分完成（2026-11-14）：删了主线程那条与 worker 抢着把经济切到 POD_ACTIVE 的路径，只留 worker 在两天之间自己切（第 1 天提交后，镜像齐了就切，日期固定）；`runtime_economy_auto_pod_active` 默认打开，测试与正式会话同一条权威路径。SHADOW、对拍按 design.md 黄金回放一节"覆盖充分前保留"，没删；新世界仍要等首日提交才授权。授权前那段窗口里，主线程原来照常跑 Country、Effect、Modifier 等已请求的域，会往 Effect POD 排科技实例、往命令环镜像 Country AI 决策，进多少取决于 worker 首日何时提交；现在主线程从请求起就停推这些域（`domain_main_thread_suppressed`，见 `feature-status.md`） |
+| 2 | 去掉一天中途的跨线程请求（科技效果、经济输入采集、财政资产），每去一个删一种停等原因 | 部分完成（2026-11-14）：科技效果 ENSURE 在 worker 上解决；military20 主线程意图泵 0 次收到排队意图，剩下的国家停等（第 2、13、14 天）是 worker 内部等自己的 Effect 阶段回执。经济输入仍由 worker 在当天中途请求主线程从 MapData 采集：有了第 3 步的日尾闸门，采集读到的是第 D 天日尾之后的稳定状态，矩阵与加压 golden 一致；改成 worker 自取需要气候写回带温度历史（30 日、365 日）并把雾的可见格做成已提交视图，未做。财政资产停等在矩阵里 0 次出现 |
+| 3 | 表外推进者并入每日表，军事最后，边界改动先与上游商量 | 完成（2026-11-14，闸门方式）：worker 等主线程报告第 D 天日尾（军事、自然资源）做完才开始 D+1（`mark_runtime_day_tail_done`），Climate 授权前不等；军事仍在主线程跑，不动上游边界。删了外围同日对齐实验。试过在日尾顺手采集 D+1 的经济输入：checkpoint 与 resume 采集时机不同，military20 第 21 天 COUNTRY/ECONOMY 分叉，已撤回，归第 2 步 |
+| 4 | 各域快照合成每日一帧，界面改读帧，删主线程镜像 | 待做，已评估（2026-11-14）：Trigger、Ideology、Modifier、Effect、Country、Economy 六个域约 20 个 C++ 文件在主线程保留完整运行时，由 worker 快照重建（`apply_runtime_*_snapshot`、`mirror_*`），界面和 GDScript 直接读它们。要先给每个域定只读帧接口，再逐域把读方改过去，才能删镜像，单独立项 |
+| 5 | 测试改用同步推进 | 待做，已评估（2026-11-14）：21 个测试用第 9c 项的 `drive_worker_day` / `wait_committed` 等 worker，10 个测试已引用内联模式（`native_daily_inline`）。迁移是把前者逐个改成内联单步，单独立项 |
+| 经济 | 经济公式去掉每日分配、只遍历活动格，再并行 | 待做。2026-11-14 默认 60x40 图 60 天瀑布：worker 每天中位 20.4 ms，经济公式中位 17.2 ms，其余各段都在 0.3 ms 以下（气候 1.9 ms 除外）；`headless_perf_record` 的 50 天/秒检查点在本分支（约 32 天/秒）和改动前 HEAD（约 35 天/秒）都不达标，差距在经济公式 |
+
+验收：每步跑 golden 确定性检查（空闲与并行加压各若干次）和受影响测试。
+
+## 第 14 项：PR #6 上游决策落地
+
+2026-11-14 上游在 PR #6 对 `gameplay-pending-decisions.md` 逐条定了结论，另提 6 条审查意见、3 项要补的信息。按下表顺序做，小而独立的先做，合并任务不拆开。做完一条就把它从 `gameplay-pending-decisions.md` 删掉。
+
+| 步 | 内容（括号里是待定文档的节号） | 结论要点 | 状态 |
+|---|---|---|---|
+| R | 审查意见 1–6 | 删无人引用的 Windows 二进制；行数基线逐条说明并收紧；列出 17 个消失的绑定名；黄金基线、性能门槛、AGENTS.md 破例给结论 | 完成（2026-11-14）：Windows 产物已移出并加进 .gitignore；行数基线 14 条余量收紧、21 条调高逐条说明；17 个绑定 7 个改内部、10 个删除；性能门槛经同机 A/B 确认是测量门槛，不是回归 |
+| I | 补信息：结构效率公式（8⑤）、5 条打不开的科技路线归因（6a）、可达性审计抽样 20 条（8③） | 只读调查，写进回复 | 完成（2026-11-14）：结构效率原是按组折算；5 条路线都是测试过时；172/469 是审计把软投入当硬门槛，抽样 20 条全是误判 |
+| a | 6b `composite_tools` | 去掉 `support_only` 并改 rationale；断言失败立即退出（优先）；policy 与 expected_bindings 一致改为目录编译期校验 | 完成（2026-11-14）：policy 改为 single 并改 rationale；断言失败立即退出；policy 与 expected_bindings 不一致时目录编译失败，这条校验又查出 16 个同类节点，一并改了 policy |
+| b | 5 时代奖励 | 直接弹出；按新契约重写 7 条断言，延后路径的用例删掉；覆盖"大典播放时让位、下一轮重试"和 `SELECTED_PENDING` 单步推进 | 完成（2026-11-14）：测试按直接弹出重写，延后路径用例已删，覆盖大典让位重试和 `SELECTED_PENDING` 单步推进 |
+| c | 6a 王国资格 | 不需要农业里程碑；先归因（条件 IR 里另有门 / 该节点本身是里程碑 / 断言过时）；加护栏：普通节点的研究条件不得引用里程碑节点；里程碑字段不删 | 完成（2026-11-14）：测试夹具过时，代码无门；目录编译期禁止普通节点的硬前置和路线条件引用里程碑 |
+| d | 8② 作物 | 高原块茎田归 `highland_crop` 独立一档；土豆只要 `arable_land`；药草用 `plantation_land` + `fertile_soil` | 完成（2026-11-14）：作物数据与测试表按结论改，`crop_technology_parity_test` 通过 |
+| e | 8④ 开局经济 | 开局全员失业是预期状态；一包过渡库存可接受；UI 给一句说明 | 完成 3/4（2026-11-14）：开局零雇工按预期断言，界面加一句说明；"全员失业"的解读待上游确认（待定文档 12f）。剩检视面板 1 条：夹具不建国家，`TECHNOLOGY_IDS` 无人授予，中立格没有科技，上游同样失败，属夹具缺口 |
+| f | 8① 殖民包 | 工具未解锁就不放进殖民包（改 kit 数据） | 完成（2026-11-14）：工具未解锁时不进殖民包；根因是采购先因工具被拒（162），再因商品 122 现金不足 |
+| g | 8⑤ 国库建造 | 各组独立选替代品、各自计量；先给出结构效率公式 | 完成（2026-11-14）：去掉编译期合并，各组按自己的效率折算；`building_runtime_test` 0 失败。目录测试新增 43 个单候选组，待上游定（待定文档 12b） |
+| T4 | 10 + 11 资源链与储量 | 只保留一处缩放，标定参数上调 100 倍使储量持平；11 种矿产和海洋鱼逐格对比；量级断言 ±10%；资源链测试改成同族单调加跨字段校验，渔业两条随储量转绿 | 完成（2026-11-14）：缩放只在解析处定义一次；逐格对比 30/31 种资源一致，硫磺 9 格差 ≤1.1e-7（float32 舍入）；目标储量 12 条通过；渔业两条通过（根因是生态密度，不是 ×100）。剩 11 条微型矿层级（修前就失败）和铜矿升级效率倒挂，分别见待定文档 12c 与 6c |
+| T1 | 1 + 9 非玩家国家的采购政策 | AI 调 `set_country_procurement_policy`，预算先算、队再排；未下发 policy 的国家给默认份额并 clamp，任何路径不再读 1000 万绝对值；验证 `available()` 有内容 | 完成（2026-11-14）：AI 按份额（暂定 50–200 bp）下发采购政策，读档与切模式时重推；绝对预算全部删除，未下发政策的国家按默认 200/5000 bp；科研底线只在有研究需求时扣；补贴实测发放。AI 殖民意图在冻结前计入殖民需求。科技点供给太低导致 100 天内研究不完，见待定文档 12e |
+| h | 2 开局人口增长 | 第 100 天内开局聚落至少播一次增长；先改 `observe_development` 的 elif 与 `play_activity()` 的占位拒绝，再略调快；列出受影响测试并重跑 | 代码部分完成（2026-11-14）：建筑与人口各自判断，增长被占位或冷却挡住时保留旧基线、表现结束后补播。实测开局聚落 100 天内人口 40 → 39，一次没涨，所以集成测试仍失败；调快增长是数值改动，暂缓（待定文档第 2 节） |
+| i | 3 水路贸易 | 按 bug 查：真实地图输出港口/连通数、跨水订单数、货流、画面商队；补真实对局回归 | 完成（2026-11-14）：水路内核没问题，正式对局看不到商队是因为开局没有水运科技、365 天内也研究不到（待定文档 12e）。真实地图授予水运科技后：402 个港口、46244 条连线，第 54 天派出跨水订单，在途货物和货款冻结可见，第 58 天到达，画面层有水路路线，三项账本误差为 0；已加真实对局回归 `water_trade_real_map_test.gd`。合成夹具的问题是库存下标只写到第 0 个市场、对岸没有需求，按结论 B 在对岸加居民需求造出缺口 |
+| T2 | 4 + 6c 军事—经济目录对账 | 核心槽硬门槛、次要槽同类低品级替代（运行时行为）；战力按实际发放品级；升级后产量与效率必须更高（4 条按 bug 修，写进护栏）；同时代不得重复解锁雷同建筑（机械判据）；`natural_rubber` 分三段；民用消费要有数据位 | 代码完成（2026-11-14），内容暂缓：目录 49 个装备槽标 `core`，采购、交付、战力、AI 估价和 PKMI v7 存档按核心/次要规则运行；升级检查扩到三项，雷同建筑判据写进产业链测试（59 → 33）；民用消费用建筑软投入承载，不加数据位。剩 16 个装备槽无可生产商品、23 条升级倒挂、8 条时代不符、1 组雷同建筑、橡胶早期用途，都要改内容或数值，见待定文档第 4、6c 节。活世界烟测造不了兵营是 12b 的后果，不是 T2 运行时问题 |
+| T3 | 8③ + 6c 的 26 条 + 7 的消费者 可达性审计 | 先查审计是否系统性跳过采集/自营建筑（`wild_wheat_stand` 一例），解释清楚再谈其余 | 完成（2026-11-14）：审计跳过软投入作门槛（469 → 0、172 → 0），军队装备槽、维修品、补给接进审计作硬消费，26 条军械闭合。剩 14 条需求晚一个时代（待定文档 12a）；民用消费（猎人用弓）不缺数据位，建筑软投入就是承载字段，补内容归 T2 |
+| T5 | 7 + 10 的数值断言 测试口径 | 结构型保留并防空转；数值型改为反读目录加同族单调或区间，钉死数字的删掉；保留跨字段交叉校验；民用电不做，写进文档；账本不守恒与电力同周期供电单独修 | 完成（2026-11-14）。运行时测试 117 通过、0 失败：科技 id 和升级档位改为从目录反读；授予科技要满足建筑的三道门（标签、必需科技、依赖组），带 Modifier 的科技要配 Modifier 运行时；顺带修了 `configure_economy` 兜底建国时没挂 Modifier 运行时、这类科技永远停在待生效的问题（`world_ext_economy.cpp`）。原先的"账本不守恒"和"电力同周期供电"两条，根因都是夹具缺 3 个环境槽，补齐后通过；共享池那条对应的机制已退役，删除。目录测试 5301 通过、18 失败：军事 `state` 类建筑、消费计划、构建分组、气候档案等过时断言按现状改写，钉死的内容清单改成结构检查；剩下 18 条是数据问题，见待定 12b、12g。民用电核实：`home_energy` 本来就有 `electricity` 变体，家庭市场按 cycle-flow 结算，文档按事实写。 |
 
 ## 第 12 项：智能体开发框架
 

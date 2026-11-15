@@ -142,6 +142,8 @@ uint64_t committed_generation(const NativeEconomyRuntime &economy) {
     return economy.committed_generation();
 }
 
+int64_t state_hash(const NativeEconomyRuntime &economy) { return economy.state_hash(); }
+
 void notify_era_milestone_activated(NativeEconomyRuntime &economy,
                                     uint64_t country_handle) {
     economy.notify_era_milestone_activated(country_handle);

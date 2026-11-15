@@ -38,8 +38,6 @@ using namespace godot;
 
 namespace {
 
-// ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
-constexpr double kCellAreaResourceScale = 100.0;
 // knobs["scalars"] 每个资源占用的 float 槽位数（顺序即下面枚举）
 constexpr int kScalarStride = 32;
 
@@ -316,6 +314,13 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
     const PackedStringArray field_names = knobs.get("field_names", PackedStringArray());
     const PackedInt32Array habitat_codes = knobs.get("habitat_codes", PackedInt32Array());
     const PackedFloat32Array scalars = knobs.get("scalars", PackedFloat32Array());
+    // ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE is the only definition;
+    // every authored reserve is scaled by it exactly once, at parse time.
+    const double cell_area_scale = double(knobs.get("cell_area_resource_scale", 0.0));
+    if (!(cell_area_scale > 0.0)) {
+        out["reason"] = String("resource_deposit_cell_area_scale_missing");
+        return out;
+    }
     const int resource_count = int(field_names.size());
     if (resource_count <= 0 || resource_count > 256
             || habitat_codes.size() != resource_count
@@ -391,21 +396,21 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
         p.init_temp = double(scalar[kInitTemp]);
         p.init_moisture = double(scalar[kInitMoisture]);
         p.reserve_scale =
-                std::max(double(scalar[kInitReserveScale]), 0.0) * kCellAreaResourceScale;
+                std::max(double(scalar[kInitReserveScale]), 0.0) * cell_area_scale;
         p.floor_reserve =
-                std::max(double(scalar[kInitFloorReserve]), 0.0) * kCellAreaResourceScale;
+                std::max(double(scalar[kInitFloorReserve]), 0.0) * cell_area_scale;
         p.min_coverage = double(scalar[kInitMinCoverage]);
-        p.min_reserve = double(scalar[kInitMinReserve]);
+        p.min_reserve = double(scalar[kInitMinReserve]) * cell_area_scale;
         p.target_coverage = clampd(double(scalar[kInitTargetCoverage]), 0.0, 1.0);
         p.target_reserve_density = std::max(
-                double(scalar[kInitTargetReserveDensity]), 0.0) * kCellAreaResourceScale;
+                double(scalar[kInitTargetReserveDensity]), 0.0) * cell_area_scale;
         p.target_mean_reserve = std::max(
-                double(scalar[kInitTargetMeanReserve]), 0.0) * kCellAreaResourceScale;
+                double(scalar[kInitTargetMeanReserve]), 0.0) * cell_area_scale;
         p.richness_exponent = double(scalar[kInitRichnessExponent]);
         p.micro_coverage = clampd(double(scalar[kInitMicroCoverage]), 0.0, 1.0);
         p.micro_reserve_share = double(scalar[kInitMicroReserveShare]);
         p.micro_min_reserve = std::max(
-                double(scalar[kInitMicroMinReserve]), 0.0) * kCellAreaResourceScale;
+                double(scalar[kInitMicroMinReserve]), 0.0) * cell_area_scale;
         p.w_elev = double(scalar[kInitElevation]);
         p.w_river = double(scalar[kInitRiver]);
         p.w_volc = double(scalar[kInitVolcano]);
@@ -577,13 +582,13 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                         have_neighbors, n, micro_ranks);
 
                 const double minimum_reserve =
-                        std::max(p.floor_reserve, p.min_reserve * kCellAreaResourceScale);
+                        std::max(p.floor_reserve, p.min_reserve);
                 const double micro_minimum_reserve =
-                        std::max(p.micro_min_reserve, 0.0) * kCellAreaResourceScale;
+                        std::max(p.micro_min_reserve, 0.0);
                 const double reserve_density =
-                        std::max(p.target_reserve_density, 0.0) * kCellAreaResourceScale;
+                        std::max(p.target_reserve_density, 0.0);
                 const double target_mean_reserve =
-                        std::max(p.target_mean_reserve, 0.0) * kCellAreaResourceScale;
+                        std::max(p.target_mean_reserve, 0.0);
 
                 if (reserve_density > 0.0 || target_mean_reserve > 0.0) {
                     const double target_total_reserve = reserve_density > 0.0
@@ -620,7 +625,7 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                     }
                 }
             } else {
-                const double minimum = p.min_reserve * kCellAreaResourceScale;
+                const double minimum = p.min_reserve;
                 for (int rank = 0; rank < target_cells; ++rank) {
                     const int32_t cell = ranked[size_t(rank)].cell;
                     values[cell] = std::max(values[cell], float(minimum));

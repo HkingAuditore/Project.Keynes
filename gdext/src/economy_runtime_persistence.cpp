@@ -24,8 +24,6 @@ namespace pk {
 using namespace godot;
 using namespace persistence_codec;
 
-
-
 Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     Dictionary out;
     if (!_forensics_allow_fatal_export &&
@@ -1497,6 +1495,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         static_cast<int32_t>(_track_b_derived_cell_cache.size());
     _family_colonization_population_reward_pending.swap(
         _restore.family_colonization_population_reward_pending);
+    set_military_ration_satisfaction(_restore.military_ration_cells, _restore.military_ration_q16);
     if (_restore.committed_generation_seen) {
         _committed_generation = _restore.restored_committed_generation;
     } else if (++_committed_generation == 0) {
@@ -2197,6 +2196,5 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
     set_restore_rejected_reason(error);
     return false;
 }
-
 
 } // namespace pk

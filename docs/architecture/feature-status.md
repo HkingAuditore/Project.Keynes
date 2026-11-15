@@ -232,6 +232,22 @@ PKMI v6 已落地（section 23 探路 / 24 采购订单 / 25 维护行），Host
 worker 延迟下不同步且中立空格 station 回流未读到、装备科技生产链一致性测试的 17 个内容
 缺口。内容缺口保留给军事目录与科技树决策，不改基线。
 
+2026-11-14：`military_index_continuation_test` 的原生自测（`military_core_selftest.cpp`）失败于
+「army pay: 10 garrisoned at A, 40 with the formation」。单独编译 `military_core*.cpp` 跑自测：上游
+origin/master 全过，本分支 HEAD 失败。回归由合并提交 cf14a1842 带入的 11-13 花名册修复引起：
+`reconcile_soldier_roster` 新增的补齐分支（`total < expected_garrison` 时按 Economy 人数补 lot）
+在登船回执落地前会把已登船的人头补回驻地。同一提交把 reconcile 挪到 `apply_due_commands`
+之前，此时 `_lane_intents` 总为空，`pending_embark` / `pending_disembark` 的扣减不起作用。
+删掉补齐分支和这两个变量后，单独编译的自测全过。经确认已删（2026-11-14）。同日按负责人决定，开局收编分支也删除：士兵只经 Military 的 ENLIST/LEVY 进入，Economy 的 `building_employment` 不再给 soldier 岗位和国家业主席位挂招聘与流动目标。
+
+同日 `military_runtime_smoke_test` 的失败根因：ENLIST/LEVY 是 POD 行，worker 在发布第 E 天快照之后才执行
+`commit_pending_commands`，所以第 E 天生效的转换要到 E+1 的提交才可见。桥
+（`collect_military_economy_receipts`）在 committed == E 时回读到 0 人，末尾的纪元边界兜底块又把未结算的
+POD 行判为失败。结果是 Economy 已转换、军事名册却被剥掉，配额反复打开：Economy 累积 30 名士兵，名册为 0。
+此前的补齐/收编分支掩盖了这个错误。修复：POD 行等到 committed > E 再回读，兜底块只处理带 request_id 的旧入口行。
+烟测的名册一致断言按核心对账规则改为「已提交人数 + 在途入伍 = 名册」。修复后 10 个军事测试只剩 100k 基准
+p95 门槛失败（上游同样失败）；military 回放（22 天）与 military20 存档点续跑全部一致。
+
 ## 军需需求接入市场（2026-11-08）
 
 已接通零库存军需报价、受资金约束的未满足采购预测、D+1 替换命令和 Economy 通用采购需求汇总；商人补货目标、生产规划与投资共享该汇总。预测只传递购买意愿，实际货物/现金仍由原采购结算处理。装备成交桥改传真实商品编号。继续态复用现有命令队列，没有新增存档字段。定向回归覆盖提前生效、撤销/重复/替换、零国库、未来需求 ECP2 保存及十日逐日完整经济哈希一致，并运行原生军事自测。
@@ -371,5 +387,76 @@ excluded samples (10):
 未解决，推送前处理：
 
 - 第 1 天存档在新进程读档后，第 2 天的 ECONOMY 哈希不同，第 3 天起恢复一致。原因是首日的视野解算顺序：原始运行在第 1 天结束前还没按玩家国家解算过战争迷雾，全图可见；读档后立即解算，只有玩家周边可见，殖民逻辑读到的视野不同。没有持久状态分叉，所以矩阵默认用例由 save1 改为 save2，没有为它增加存档字段。
-- multicountry5 的 checkpoint 在最后一天 EFFECT 哈希偶发不同（三次中两次），与 `migration.md` 已记录的 Effect→Country 命令到达时机问题同类。
-- military20 的 resume 在读档后第一天 COUNTRY 哈希不同，尚未定位。
+- ~~multicountry5 的 checkpoint 在最后一天 EFFECT 哈希偶发不同；military20 的 resume 在读档后第一天 COUNTRY 哈希不同~~（2026-11-14 已修，原因是命令落地日取决于帧时序，见下文 golden 主路径一段）。
+
+2026-11-14 单时间线迁移后的审查（Codex）又查出三处存档与重启问题，已修：
+
+- worker 停在日尾闸门前时存档会照常出包：包的已提交日是 D，主线程第 D 天的日尾（军事、自然资源）却还没跑，读档又把日尾标成已做，军事与资源状态落后一天。现在 `service_save_request` 先等 `main_day_tail_pending()` 为假；主线程轮询存档时 `_process` 照跑，日尾会推进。
+- 存档丢掉预取的未来环境帧，却保留了它们的发布水位（自 bc5ca724b 起就有）：读档后 `next_environment_day()` 跳过 D+1，worker 一直等那一天。现在丢帧时水位退回已提交日。
+- 策略重启新 worker 时，主线程提交游标沿用旧 worker 的代数，新代数从 0 起，所有提交都被挡住，日尾闸门停住。现在启动前把 `_runtime_commit_generation` 清零。
+
+验证（宿主机）：19 个存档、重启、执行边界测试全过；探针显示丢帧路径在 `runtime_opinion_input_lifecycle` 里走到，等日尾路径这批测试没走到。
+
+未修：Economy 拿到的 Modifier 副本只在 worker 的 Modifier 阶段提交时刷新。Economy 归 worker、Modifier 留在主线程的部分权威模式下，主线程后来的 Modifier 改动不会进 Economy。默认整图两者都在 worker，不受影响。
+
+2026-11-14 golden 主路径偶发分叉已修。复现：同一 DLL 连跑 3 次，第 2 次第 4 天 COUNTRY 分叉，第 14 号操作（DISCOVER）一次在封口日 5 送达、另一次在 6。根因是 Trigger 效果的交接时机：worker 上的 Trigger 发出 `effective_day = 事件日 + 1` 的效果，主线程在某一帧交给 Effect，Effect 镜像成 Country 命令，ACK 走 Trigger 队列。交接发生在日尾标记前还是后取决于帧时序，旧封口日取 `next_environment_day()`，它按帧时序跑在前面，所以同一条命令落在不同的日子。改了四处：
+
+- 有日尾闸门时封口日 = `max(已提交日 + 1, 日尾完成日 + 2)`。worker 最多已开始日尾完成日 + 1，日尾完成日只由主线程推进，所以主线程在标记第 D 天日尾前从 D 派生的命令都落在 D+1。
+- Trigger 队列的主线程入口 `queue_trigger_pod_command` 也取封口日，原来是 0（尽快）。worker 端的事件转发不经过它。
+- `_mark_runtime_day_tail` 标记前先消费 Trigger 快照并交接全部待交效果（每次最多 512 条）；交接因拿不到边界锁而推迟时，日尾停在 D-1，下一帧重试。
+- 删掉 `handoff_trigger_effects` 在 worker 暂停时拒绝交接的分支：worker 等环境帧时处于暂停态，这个分支让交接是否发生取决于时序。
+
+新封口规则又带出三处问题，也已修：
+
+- 读档续跑第 4 天 COUNTRY 分叉（committed checkpoint 和 save2 的 resume 段）。worker 启动时，日尾完成日取的是调用方的日历日，读档后日历比已提交日多一天，封口日因此晚一天，第 3 天交出的 Trigger 效果落在第 5 天，原始运行落在第 4 天。现在 `start()` 把日尾完成日设为起始的已提交日；存档前已经等过日尾。
+- Ideology 队列的主线程入口 `submit_ideology_commands` 在 worker 拥有 Ideology 时也取封口日。原来按请求日执行，同一帧提交的 Country 科技授予被封口推后后，Ideology 的发现命令先执行，因前置不满足被拒（`runtime_economy_worker_restart_test` K3）。worker 上 Trigger 和 Effect 阶段写 Ideology 队列的路径不经过这个入口。
+- annual 365 的 checkpoint 段第 366 天 ECONOMY 偶发分叉（全量回归里一次，追踪里少了 worker 当天的 `[economy-input]`）。worker 没有在途日时，`capture_economy_day_inputs` 会替它预采下一天的经济输入，读的是主线程气候槽；worker 自采时叠的是当天已提交的 Climate。年度存档那几帧 worker 停着，主线程抢先采了第 366 天，worker 就跳过了自采。现在 worker 拥有 Economy 时主线程只响应它的采集请求，不预采。
+
+另有一处与封口无关：military20 两次全新运行从第 1 天起整体经济哈希就不同（12 次里 5 次），各域哈希和追踪都相同。分段探针定位到财政日志：同一笔 FISCAL_COLLECT 一次请求号 14/15，另一次 30/31，其他字段都一样。主线程入口（Country、Modifier 命令）和日执行者（Country AI、Economy 采购与资产请求）共用一个请求号计数器，开局主线程的 17 次取号插在 worker 取号之前还是之后取决于帧时序；请求号是财政日志的键，也进了哈希。现在日执行者用自己的计数器，号码打上第 62 位标记；两个游标都存进 TCQ1，读档时恢复出的号按标记回到各自的计数器。GDScript 按游标翻 Country 回执时 AI 回执本来就跳过，看到的仍只有主线程入口的号。
+
+请求号修好后 military20 仍偶发整体哈希不同，EFFECT、EVENTS、MODIFIER、TRIGGER_INPUT 从第 2 天起不同。把 worker 首日人为推迟 300 ms 能稳定复现：命令环里多出 12 条 Country AI 决策（生产者 AIC1），都在 worker 第 1 天之前提交。根因在授权窗口：ACTIVE 请求某域后，`authoritative_domain_mask()` 要等 worker 第一次日提交覆盖它才生效。这段时间里，Country、Effect、Modifier、Ideology、Trigger、Climate 的主线程日入口和日图只看已生效授权，照常推进；它们产出的命令进了 worker 的时间线，进多少取决于 worker 首日何时提交。Economy 本来就按请求停推，不受影响。现在这些入口统一改查 `domain_main_thread_suppressed()`，域已归 worker 或处于授权窗口都停推，原来的 `domain_grant_pending()` 并进了这个函数。Economy 输入采集仍只看已生效授权。主线程不再重复跑 worker 的域，基线哈希因此变了。worker 首日推迟 0、300、1000 ms 时前四天哈希一致，AIC1 命令为 0 条。
+
+验证（宿主机，授权窗口修复后）：military20 `--checkpoint` 4 并发 × 3 轮共 12 次，四段都一致，12 次全新运行的 28 天各域哈希逐字相同；golden 主路径 4/4 一致；意图基线 7 个夹具 × 3 次一致；`run_regression_checks.py --full` 90 项里 89 项通过，年度 365 天、续跑矩阵（save2、calendar5、military20、multicountry5）、committed checkpoint 都在内，只剩已知的 `military_index_continuation_test`（army pay 自测，见上文）；静态护栏全过。
+
+未修：玩家视野解算（`_service_country_visual_refresh_budgeted`）按帧预算延后，解出的观测（`submit_observation_batch`）和发现信号的落日、所用的已提交视图都取决于帧时序，测试中尚未观察到分叉。
+
+## 非玩家国家的采购政策（2026-11-14）
+
+PR #6 第 14 项 T1。外国 AI 不再设研究日预算：`think_research` 先按目标算出研究份额（每日可支配现金的 bp，暂定 clamp 到 50–200），发 `CountryAiProcurementIntent`，由 Economy 的 `queue_country_ai_procurement` 下发 `set_country_procurement_policy(国库 10000, 研究份额)`；只在要开自动采购时发 9 号命令。pkai 读档和切换模式时按记忆里的份额重推。Country 的绝对研究预算（原 `1000 × MONEY_SCALE` 兜底）、`SET_RESEARCH_BUDGET` 和玩家的 `research.set_budget` 全部删除。
+
+采购冻结为每国写 `_epoch_research_daily`：有政策且开着自动采购、还有未完成研究时按政策算；从未下发政策的国家按 profile 默认 200/5000 bp；关闭时为 0。财政的科研底线读同一个值，所以只在有研究排队时才扣。AI 当天的殖民意图在冻结前计入殖民需求，远征第一个周期不再拿到 0 预留。
+
+验证：`runtime_country_ai_test` 18/0（夹具补了研究信号，否则 `available()` 为空、AI 无科技可排）；`fiscal_reservation_cash_cap_regression_test` 改为按研究份额 0/1000/10000 和真实入队的科技验证，通过；补贴在有政策的国家实测发放。`runtime_country_parity_test` 5 条、`economy_fiscal_reservation_continuation_test` 2 条失败与改动前相同，属第 9 项。未覆盖：AI 研究速度受科技点供给限制（约 8–10 点/日，石器科技 2100–6800 点），见 `gameplay-pending-decisions.md` 12e。
+
+
+## 现代经济测试口径与默认国家的修正器挂接（2026-11-14）
+
+PR #6 第 14 项 T5。`configure_economy` 在没有调用 `configure_country` 时会建一个默认国家，这条兜底路径原来没有把 Modifier runtime 挂到国家上。带 Modifier 的科技只有在 Modifier 应用后才激活，所以在这条路径上会一直停在待定状态。`world_ext_economy.cpp` 已补上与 `configure_country` 相同的双向挂接。这个问题是 `modern_economy_runtime_test` 的科技授予用例查出来的。
+
+`modern_economy_runtime_test` 有两处改动：
+- 夹具补了三个环境槽：`cell_temp_365d`、`cell_weather_type`、`cell_cover`。之前缺槽会报 `required_environment_slot_missing`，后面的账本和电力断言跟着连锁失败。
+- 科技授予改为从目录反读解锁目标建筑的科技，补全前置后再授予；档位改为从升级族反读。
+
+验证：
+- `modern_economy_runtime_test` 117 条通过、0 条失败。
+- `modern_economy_catalog_test` 5301 条通过、18 条失败，失败都是内容问题，见 `gameplay-pending-decisions.md` 12b、12g。
+
+## 军事装备核心槽与低品级替代（2026-11-14）
+
+PR #6 第 14 项 T2 的代码部分。`military_catalog.json` 的 49 个装备槽标了 `core`，每个兵种至少一个。采购只给核心槽买达到 `min_quality` 的商品；次要槽在同类里先挑达标的，再按价格和行号挑，买不到达标的就用低品级。训练单按槽记录实际交付的最低品级，lot 的战力按这个品级折算（kit 因子）。AI 按（类别，最低品级）估价，核心槽没有达标报价时跳过这个兵种。PKMI 升到 v7，保存 lot 的 kit 和训练单逐槽品级。目录编译器的 `slot_accepted_goods` 是审计测试与原生解析共用的接受规则。
+
+产业链测试（`technology_industry_chain_balance_test`）的升级检查扩到单位工人产出、总产出、单位投入产出三项，并加了同时代雷同建筑的机械判据；军队装备槽算作硬消费后，26 条"商品没有消费者"闭合。现在剩 33 条，解锁一致性测试剩 16 个装备槽无可生产商品，都要改内容或数值，按维护者意见暂缓，见 `gameplay-pending-decisions.md` 第 4、6c 节。
+
+`military_runtime_smoke_test` 在真实数据下仍失败于建兵营（`construction_materials_insufficient`）。根因不在 T2：8⑤ 取消材料组合并后，`warrior_lodge` 的 turf_block 单独成组，而草皮的科技不在兵营前置里，见待定文档 12b。把配方临时换成合并前的等价组后全程 0 失败，PKMI 往返也通过，数据已还原。排查时还修了测试自身的一处问题：拆编把 4 人的军队拆成 3+1，部分转移后拆出的军队就空了，后面的整编转移报 `command_unknown_army`；现在拆出的军队至少留 2 人。
+
+同日 T1 引入的 5 处 Economy → Country 头文件依赖改为标量接口 `queue_research_procurement_policy`，`check_cpp_deps.py` 回到 0 违规。
+
+## 读档后外国 AI 采购政策丢失（2026-11-14）
+
+T1 之后 `check_replay_matrix.py --military` 的 military20 续跑在第 21 天起与检查点分歧，COUNTRY 与 ECONOMY 哈希每天都不同。用合并前的等价兵营配方跑检查点和续跑，逐日打印 `country_procurement_snapshot`：续跑后两个外国 AI 都变成 `policy_default`，研究份额从 50 bp 变成默认 5000 bp，研究日预算翻倍，第 21 天现金差 21，正好是一个居民组多出的收入。
+
+根因在读档顺序。PKEC 先恢复，PKAI 恢复后按记忆把研究份额重推进 Economy 的采购收件箱；宿主启动 worker 时 `EconomyAuthorityTransfer::restore_before_country` 又把同一份 ECP2 套用一次，`prepare_restore_candidate_scratch()` 里的 `clear_procurement_runtime_state(true)` 把收件箱清空。改法与同一函数里保留 `_trade_topology` 的做法一致：二次套用前取出收件箱，套用后放回，放在期间新排入的请求之前；`requested_policy`/`requested_era` 以期间新排入的为准。
+
+验证：同一场景 8 个续跑日的各域哈希和其余行字段与检查点全部一致。剩下的差异只有第 21 天快照里的 `research_cash_spent_last_epoch`，它是不存档的上期统计，不进哈希，第 22 天恢复。真实数据下 military20 的原始模式仍在建兵营一步失败，原因是待定文档 12b，与续跑无关。
+
+同期修了 `building_visual_catalog_test`：8⑤ 之后目录列出全部建造材料组，视觉档位按"材料里的最高档"算，纺织厂因为一行钢材变成钢结构档，与电脑厂相同。改为按第一种（主）材料定档，与 8⑤ 之前的视觉结果一致。

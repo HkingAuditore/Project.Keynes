@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 655,
+  "count": 656,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -349,6 +349,7 @@
     "is_native_daily_visual_commit_pending",
     "list_modifiers",
     "mark_annual_report_presented",
+    "mark_runtime_day_tail_done",
     "migrate_eco_persistent_from_gd",
     "military_should_run",
     "modifier_should_run",

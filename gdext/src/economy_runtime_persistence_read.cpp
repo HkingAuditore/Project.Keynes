@@ -2902,7 +2902,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     bytes, cursor, _cell_count.get(), generation,
                     _restore.track_b_investment_cells_pending,
                     _restore.track_b_derived_cell_cache_day,
-                    _restore.track_b_derived_cell_cache)) {
+                    _restore.track_b_derived_cell_cache,
+                    _restore.military_ration_cells, _restore.military_ration_q16)) {
                 error = "save_cadence_generation_footer_invalid";
                 return false;
             }
@@ -3107,7 +3108,5 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
     }
     return true;
 }
-
-
 
 } // namespace pk

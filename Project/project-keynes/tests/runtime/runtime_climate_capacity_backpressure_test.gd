@@ -34,7 +34,6 @@ class HostProbe extends WorldRuntimeHost:
 	func _apply_climate_writeback_if_authoritative(_report: Dictionary) -> void: pass
 	func _service_country_worker_transport() -> void: pass
 	func _consume_country_worker_read_view_if_authoritative() -> void: pass
-	func _try_promote_economy_pod_active() -> void: pass
 	func run_daily_tick(day: int, _phase: float) -> Dictionary:
 		ticks.append(day)
 		return {}

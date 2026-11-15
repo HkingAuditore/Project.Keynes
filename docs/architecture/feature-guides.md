@@ -58,6 +58,8 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 旧模型存档；只有新增持久列时才改字节 schema。当前模型为2、保存布局仍为60。
 验收与边界见 [经济平衡记录](../cpp-dots-runtime/economy-balance-2026-11-08.md)。
 
+改建筑的产出、投入或效率须运行 `tests/building/building_resource_chain_test.gd`（同族单调与跨字段校验）。
+
 上游经济需求修复须运行
 `tests/building/building_runtime_test.gd -- --supply-chain-only`。
 派生计算实现归 `gdext/src/economy_runtime_derived_demand.cpp`，仍是同一个

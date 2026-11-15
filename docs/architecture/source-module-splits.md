@@ -30,9 +30,13 @@ C++ 路径相对于 `gdext/src/`。
 | `ui/military_view_model.gd` | `ui/military_logistics_projection.gd`：运输显示 | 只读已提交模型、日期及名称查询；不保留世界引用 |
 | `world_ext_bake.cpp` | `world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp` | 成员函数原样迁移；声明、绑定、slot、对象所有者不变；无状态局部 helper 可复制 |
 | `economy_runtime_persistence.cpp` | `economy_runtime_continuation_checkpoint.cpp` 汇集已有继续段；`economy_runtime_climate_checkpoint.cpp` 独占降雨继续段 | 只通过 `EconomyAuthorityTransfer` 访问 Economy 状态，解码和验证后再安装 |
-| `world_ext_economy.cpp` | `world_ext_economy_topology.cpp`：交易地图和可见性绑定 | 只经公开 Economy 接口；调用者负责执行边界 |
+| `world_ext_economy.cpp` | `world_ext_economy_topology.cpp`：交易地图、可见性绑定和输入采集缓存失效 | 只经公开 Economy 接口；调用者负责执行边界 |
 | `ui/` 动态内容部件 | `ui_control_parts.gd` 与 `scenes/ui/parts/`：内建控件的类型与默认场景资源 | 数据、排列和回调仍归原组件；没有放宽禁止直接创建控件的检查 |
 | `world_ext_generate.cpp` | `world_ext_generate_base.cpp`、`world_ext_season_refresh.cpp` | base 生成与季节阶段各自成文件；post-base/full/publish 留在入口，继续游标仍归同一个 DCWorldExt |
+| `economy/technology_catalog.gd` | `economy/technology_catalog_validation.gd`：内容绑定与 support-only 建筑审核 | 只接收待编译行和绑定数组；编译顺序、缓存及错误结构仍归 catalog |
+| `military/military_catalog_compiler.gd` | `military/military_catalog_support.gd`：装备消费集合与 PKMI catalog hash | 纯静态计算；原编译器保留 `slot_accepted_goods` / `unit_consumed_goods` 薄转发，目录编译与测试调用契约不变 |
+| `economy_runtime_building_employment.cpp` | `economy_runtime_building_employment_metrics.cpp`：按 cell 替换已填岗位和失业汇总 | 同一 `NativeEconomyRuntime` 成员定义；只访问运行时已有指标数组，不新增调度或状态所有者 |
+| `economy_runtime_colonization_kit.cpp` | `economy_runtime_colonization_cargo.cpp`：物资合并、排序、绑定建筑计划和返还货物 | 四个同一 `NativeEconomyRuntime` 成员定义原样搬迁；既有货物范围、建造消耗和市场写入顺序不变 |
 
 ## 后续修改与验证
 

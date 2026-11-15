@@ -217,10 +217,17 @@ func _run() -> int:
 	# without a cohort (or the reverse) means a receipt was reconciled wrongly.
 	# The population read comes from the worker's committed view, so it is retried
 	# (`_cell_soldiers`): a single busy read reports 0 for every cell.
+	# An enlistment still in flight is already on the roster (pre-applied) and
+	# reaches the committed cohort one day later, so the roster is the cohort
+	# plus the barracks' pending enlistments, exactly as the core reconciles it.
 	var soldier_cohort := await _cell_soldiers(econ, capital)
+	var in_flight := 0
+	for barracks_row in snapshot.get("barracks", []):
+		in_flight += int((barracks_row as Dictionary).get("pending_enlist", 0))
 	_expect("Economy soldier cohort matches the military roster",
-		soldier_cohort >= 0 and soldier_cohort == int(snapshot.get("soldiers_total", 0)),
-		"economy=%d military=%d" % [soldier_cohort, int(snapshot.get("soldiers_total", 0))])
+		soldier_cohort >= 0 and soldier_cohort + in_flight == int(snapshot.get("soldiers_total", 0)),
+		"economy=%d in_flight=%d military=%d" % [soldier_cohort, in_flight,
+			int(snapshot.get("soldiers_total", 0))])
 
 	# --- army, target country, war, move ---
 	# Let the pipeline drain before freezing the recruit quota at the committed
@@ -449,9 +456,10 @@ func _run() -> int:
 				if unit_id < 0 or unit_heads < 2:
 					continue
 				split_unit = unit_id
-				split_heads = maxi(1, int(unit_heads / 3.0))
-				if split_heads >= unit_heads:
-					split_heads = unit_heads - 1
+				# The detached formation needs two heads so the partial transfer
+				# below leaves it alive for the whole-formation transfer.
+				split_heads = clampi(int(unit_heads / 3.0), mini(2, unit_heads - 1),
+					unit_heads - 1)
 				break
 			if split_unit >= 0 and split_heads > 0:
 				var split_result: Dictionary = facade.submit([{"op": "army.split",

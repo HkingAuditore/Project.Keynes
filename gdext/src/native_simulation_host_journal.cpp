@@ -597,14 +597,15 @@ bool NativeSimulationHost::restore_country_economy_asset_journal(
 
     const uint64_t current_session = _country_worker_session_epoch == 0
         ? 1u : _country_worker_session_epoch;
-    uint64_t max_request_id = 0;
+    std::vector<uint64_t> restored_request_ids;
+    restored_request_ids.reserve(requests.size() + results.size());
     for (auto &entry : requests) {
         entry.second.session_epoch = current_session;
-        max_request_id = std::max(max_request_id, entry.first);
+        restored_request_ids.push_back(entry.first);
     }
     for (auto &entry : results) {
         entry.second.session_epoch = current_session;
-        max_request_id = std::max(max_request_id, entry.first);
+        restored_request_ids.push_back(entry.first);
     }
     for (auto &entry : terminals) entry.second.session_epoch = current_session;
     protocol.recovered_transactions = static_cast<uint32_t>(
@@ -628,11 +629,8 @@ bool NativeSimulationHost::restore_country_economy_asset_journal(
         _economy_origin_asset_queue = std::move(origin_queue);
         _country_economy_asset_protocol = protocol;
     }
-    uint64_t observed = _command_request_id.load(std::memory_order_acquire);
-    while (observed < max_request_id &&
-           !_command_request_id.compare_exchange_weak(
-               observed, max_request_id, std::memory_order_acq_rel,
-               std::memory_order_acquire)) {}
+    for (const uint64_t id : restored_request_ids)
+        reserve_command_request_ids_through(id);
     (void)serialized_session;
     return true;
 }

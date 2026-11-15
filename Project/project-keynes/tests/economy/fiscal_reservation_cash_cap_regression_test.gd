@@ -1,5 +1,10 @@
 extends "res://tests/economy/economy_rolling_runtime_test.gd"
 
+# The one technology the fixture leaves unresearched, so research is queued
+# and the fiscal research floor applies.
+const RESEARCH_TECH := "tech.wild_maize_collection"
+const RESEARCH_SIGNAL := "bio.maize"
+
 
 func _init() -> void:
 	_run()
@@ -20,14 +25,17 @@ func _run() -> void:
 	profile.economy_cadence_force_market_days = 5
 	profile.economy_cadence_force_plan_days = 10
 	profile.economy_cadence_force_investment_days = 10
-	for research_daily in [0, 10001, 100001]:
-		_check_cash_cap(compiled, catalog, profile, research_daily)
-	_check_cash_cap(compiled, catalog, profile, 10001, true)
+	# Research cash is a share of the treasury (whole treasury x research
+	# share); 10000 bp asks for more than one epoch of cash can cover.
+	for research_share_bp in [0, 1000, 10000]:
+		_check_cash_cap(compiled, catalog, profile, research_share_bp)
+	_check_cash_cap(compiled, catalog, profile, 1000, true)
 
 
 func _check_cash_cap(compiled: Dictionary, catalog: Dictionary,
-		profile: Dictionary, research_daily: int, country_worker: bool = false) -> void:
-	var runtime := _new_runtime(compiled, catalog, profile, 104172, false)
+		profile: Dictionary, research_share_bp: int, country_worker: bool = false) -> void:
+	var runtime := _new_runtime(compiled, catalog, profile, 104172, false,
+		PackedStringArray([RESEARCH_TECH]))
 	if runtime == null:
 		return
 	var handle := int(runtime.get_country_cell_summary(0).country_handle)
@@ -41,8 +49,9 @@ func _check_cash_cap(compiled: Dictionary, catalog: Dictionary,
 	_validate_day(runtime, 0)
 	var opening_cash := int(runtime.get_country_treasury_snapshot(handle).cash)
 	_expect("cash cap fixture has exact treasury balance", opening_cash == 100001)
-	_expect("cash cap research policy commits", _set_research_cash_floor(
-		runtime, handle, research_daily))
+	_expect("cash cap research policy commits", _queue_research(
+		runtime, compiled, handle, research_share_bp))
+	var research_daily := opening_cash * research_share_bp / 10000
 	# The due cells request much more than the treasury can reserve. The
 	# original denominator allocated that entire request from capped escrow.
 	_expect("oversubscribed income subsidy commits", _set_tax_value(
@@ -96,18 +105,18 @@ func _check_cash_cap(compiled: Dictionary, catalog: Dictionary,
 	var actual_reserved := int(report.get("fiscal_reservation_last_reserved", -1))
 	var expected_reserved := maxi(0, opening_cash - research_daily * int(
 		report.get("epoch_days", 1)))
-	_expect("research=%d actual escrow obeys cash floor" % research_daily,
+	_expect("research_share=%d actual escrow obeys cash floor" % research_share_bp,
 		actual_reserved == expected_reserved)
-	_expect("research=%d lane budgets equal actual escrow" % research_daily,
+	_expect("research_share=%d lane budgets equal actual escrow" % research_share_bp,
 		reserved == actual_reserved)
-	_expect("research=%d subsidy payout stays inside escrow" % research_daily,
+	_expect("research_share=%d subsidy payout stays inside escrow" % research_share_bp,
 		paid >= 0 and paid <= actual_reserved)
-	_expect("research=%d settlement completes without fatal" % research_daily,
+	_expect("research_share=%d settlement completes without fatal" % research_share_bp,
 		not bool(report.get("fatal", true)) and int(report.get("newest_state_day", -1)) == 1)
-	_expect("research=%d treasury retains research cash" % research_daily,
+	_expect("research_share=%d treasury retains research cash" % research_share_bp,
 		int(runtime.get_country_treasury_snapshot(handle).cash) >=
 			mini(opening_cash, research_daily))
-	_expect("research=%d all conservation errors are zero" % research_daily,
+	_expect("research_share=%d all conservation errors are zero" % research_share_bp,
 		int(report.get("population_error", -1)) == 0 and
 		int(report.get("money_error", -1)) == 0 and
 		int(report.get("goods_error", -1)) == 0)
@@ -145,21 +154,43 @@ func _start_country_worker(runtime: Object) -> bool:
 	return false
 
 
-func _set_research_cash_floor(runtime: Object, handle: int, daily_cash: int) -> bool:
+func _queue_research(runtime: Object, compiled: Dictionary, handle: int,
+		research_share_bp: int) -> bool:
+	var signal_index := (compiled.get("research_signal_ids", PackedStringArray()) as
+		PackedStringArray).find(RESEARCH_SIGNAL)
+	var technology := (compiled.technology_ids as PackedStringArray).find(RESEARCH_TECH)
+	if signal_index < 0 or technology < 0:
+		return false
+	# Opcodes 14 / 6 / 9: discover the signal, queue the technology, turn
+	# auto purchase on. The budget itself comes from the procurement policy.
+	if not _submit_country(runtime, 14, 1, 2, signal_index, 0, 1) or \
+			not _submit_country(runtime, 6, 1, 3, technology, -1, 0) or \
+			not _submit_country(runtime, 9, 1, 4, 1, -1, 0) or \
+			not bool(runtime.run_country_slice({"day_index": 1}).get("ok", false)):
+		return false
+	var research: Dictionary = runtime.get_country_research_snapshot(handle)
+	var queued := (research.get("technology_states", PackedInt32Array()) as
+		PackedInt32Array)[technology] == 3
+	return queued and bool(runtime.set_country_procurement_policy(
+		handle, true, 10000, research_share_bp, 1, 5).get("ok", false))
+
+
+func _submit_country(runtime: Object, opcode: int, day: int, sequence: int,
+		aux: int, cell: int, value: int) -> bool:
 	return bool(runtime.submit_country_commands({
-		"opcodes": PackedInt32Array([9]),
-		"effective_days": PackedInt64Array([1]),
-		"sequences": PackedInt64Array([2]),
-		"target_handles": PackedInt64Array([handle]),
-		"cell_indices": PackedInt32Array([-1]),
-		"aux_i32": PackedInt32Array([1 if daily_cash > 0 else 0]),
-		"domain_i32": PackedInt32Array([-1]),
+		"opcodes": PackedInt32Array([opcode]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([int(runtime.get_country_cell_summary(0).country_handle)]),
+		"cell_indices": PackedInt32Array([cell]),
+		"aux_i32": PackedInt32Array([aux]),
+		"domain_i32": PackedInt32Array([0 if opcode == 6 else -1]),
 		"position_i32": PackedInt32Array([-1]),
 		"weight0_bp": PackedInt32Array([0]),
 		"weight1_bp": PackedInt32Array([0]),
 		"weight2_bp": PackedInt32Array([0]),
 		"weight3_bp": PackedInt32Array([0]),
-		"value_i64": PackedInt64Array([daily_cash]),
+		"value_i64": PackedInt64Array([value]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),
-	}).get("ok", false)) and bool(runtime.run_country_slice({"day_index": 1}).get("ok", false))
+	}).get("ok", false))

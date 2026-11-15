@@ -118,7 +118,6 @@ func _configure_runtime() -> void:
 	# 正式玩家会话：整图 worker ACTIVE（0xFFF）。Effect→Country ACK 与 soft-settle
 	# 已修好，不再用 0x806 把 Trigger 等留在主线程拖垮 50x 日历吞吐。
 	_runtime_host.runtime_climate_authority_enabled = true
-	_runtime_host.runtime_economy_auto_pod_active = true
 	if OS.is_debug_build() and Engine.has_meta(&"stage_c_auto_pod_active"):
 		_runtime_host.runtime_economy_auto_pod_active = bool(Engine.get_meta(&"stage_c_auto_pod_active"))
 		Engine.remove_meta(&"stage_c_auto_pod_active")

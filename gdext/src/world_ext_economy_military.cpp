@@ -212,6 +212,13 @@ void DCWorldExt::collect_military_economy_receipts(
             int64_t applied = 0;
             if (row.opcode == kEconomyOpChangeSignature ||
                 row.opcode == kEconomyOpConvertCohort) {
+                // The worker drains POD commands after it publishes day E
+                // (commit_pending_commands follows the snapshot publish), so a
+                // row effective on E is first visible in the day E+1 commit.
+                // Reading it back at committed == E sees no conversion and books
+                // a real enlistment as failed, which strips the heads Economy
+                // converts a day later.
+                if (row.effective_day >= committed) continue;
                 applied = economy_api::military_soldier_heads(*economy, row.cell);
             } else if (row.opcode == kEconomyOpArmyEmbark) {
                 // Army personnel lane: the row names the formation
@@ -384,6 +391,10 @@ void DCWorldExt::collect_military_economy_receipts(
     }
     for (MilitaryPendingIntent &row : _military_pending_intents) {
         if (row.authority != 2 || row.receipt_pending != 1) continue;
+        // POD rows (no request id) settle on the committed readback above,
+        // one day after their effective day; closing them here fails a real
+        // enlistment before Economy has converted it.
+        if (row.request_id == 0) continue;
         if (_military_economy_seen_day < row.effective_day) continue;
         if (row.settled_epoch != 0) {
             if (row.opcode != kEconomyOpChangeSignature) continue;

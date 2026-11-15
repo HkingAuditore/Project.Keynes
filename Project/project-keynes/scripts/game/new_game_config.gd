@@ -87,7 +87,6 @@ var world_controls: Dictionary = {}
 var climate: Dictionary = {}
 var research: Dictionary = {
 	"starting_country_cash": 100000000,
-	"procurement_budget_per_day": 10000000,
 	"domain_weights_bp": PackedInt32Array([2500, 2500, 2500, 2500]),
 	"auto_purchase_enabled": true,
 }
@@ -179,9 +178,8 @@ func validate() -> Dictionary:
 		layout_id = CUSTOM_LAND_LAYOUT
 	base.land_layout = layout_id
 	var starting_cash := int(research.get("starting_country_cash", -1))
-	var procurement_budget := int(research.get("procurement_budget_per_day", -1))
 	var weights: PackedInt32Array = research.get("domain_weights_bp", PackedInt32Array())
-	if starting_cash < 0 or procurement_budget < 0 or weights.size() != 4:
+	if starting_cash < 0 or weights.size() != 4:
 		return _error("research_policy_invalid", "科研财政配置无效。")
 	var weight_total := 0
 	for weight in weights:
@@ -191,7 +189,6 @@ func validate() -> Dictionary:
 	if weight_total != 10000:
 		return _error("research_weight_total_invalid", "科研权重总和必须为 100%。")
 	research.starting_country_cash = starting_cash
-	research.procurement_budget_per_day = procurement_budget
 	research.domain_weights_bp = weights
 	research.auto_purchase_enabled = bool(research.get("auto_purchase_enabled", true))
 	return {"ok": true, "code": "ok", "message": ""}

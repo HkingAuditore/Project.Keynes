@@ -2,8 +2,8 @@
   "version": 2,
   "metrics": {
     "header_exposed": 519,
-    "total": 2202,
-    "keys": 595,
+    "total": 2201,
+    "keys": 596,
     "domain_pairs": [
       "climate->economy",
       "climate->modifier",
@@ -125,10 +125,11 @@
     "gdext/src/economy_runtime_colonization.cpp|economy->family|type:FamilyExpeditionPayload": 6,
     "gdext/src/economy_runtime_colonization.cpp|economy->family|type:FamilyExpeditionProcurementContinuation": 5,
     "gdext/src/economy_runtime_colonization.cpp|economy->family|type:FamilyMembershipEdge": 6,
+    "gdext/src/economy_runtime_colonization_cargo.cpp|economy->family|type:FamilyExpeditionCargoLine": 4,
     "gdext/src/economy_runtime_colonization_kit.cpp|economy->country|type:CountryProcurementState": 1,
     "gdext/src/economy_runtime_colonization_kit.cpp|economy->country|type:CountryWorkerAssetRoute": 4,
     "gdext/src/economy_runtime_colonization_kit.cpp|economy->family|type:FamilyBuildingOwnership": 1,
-    "gdext/src/economy_runtime_colonization_kit.cpp|economy->family|type:FamilyExpeditionCargoLine": 24,
+    "gdext/src/economy_runtime_colonization_kit.cpp|economy->family|type:FamilyExpeditionCargoLine": 20,
     "gdext/src/economy_runtime_colonization_kit.cpp|economy->family|type:FamilyExpeditionKitBuilding": 5,
     "gdext/src/economy_runtime_colonization_kit.cpp|economy->family|type:FamilyExpeditionProcurementContinuation": 7,
     "gdext/src/economy_runtime_colonization_kit.cpp|economy->family|type:FamilyExpeditionProcurementRejection": 1,
@@ -313,7 +314,7 @@
     "gdext/src/economy_runtime_persistence_write.cpp|economy->family|type:FamilyMembershipEdge": 2,
     "gdext/src/economy_runtime_persistence_write.cpp|economy->family|type:FamilyTraitCommand": 1,
     "gdext/src/economy_runtime_persistence_write.cpp|economy->family|type:FamilyTraitRoll": 1,
-    "gdext/src/economy_runtime_procurement.cpp|economy->country|type:CountryProcurementState": 12,
+    "gdext/src/economy_runtime_procurement.cpp|economy->country|type:CountryProcurementState": 11,
     "gdext/src/economy_runtime_procurement.cpp|economy->country|type:CountryResearchProcurementCandidate": 4,
     "gdext/src/economy_runtime_procurement.cpp|economy->country|type:CountryResearchProcurementContinuation": 9,
     "gdext/src/economy_runtime_procurement.cpp|economy->country|type:CountryWorkerAssetRoute": 13,
@@ -2380,6 +2381,14 @@
       "source_after": 1,
       "target_before": 0,
       "moved_count": 1
+    },
+    "gdext/src/economy_runtime_colonization_cargo.cpp|economy->family|type:FamilyExpeditionCargoLine": {
+      "moved_from": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "mode": "reduction",
+      "source_before": 24,
+      "source_after": 20,
+      "target_before": 0,
+      "moved_count": 4
     }
   },
   "country_writes": {},

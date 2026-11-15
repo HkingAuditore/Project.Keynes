@@ -31,14 +31,8 @@ bool NativeSimulationHost::stage_country(DayExecution &day, RuntimeDomainPlan &s
             retire_country_ai_ingress(day_commands);
             const int64_t country_committed =
                 _country_pod_authority.committed_day();
-            // Country packets behind the POD committed day are no longer
-            // rejected here: execute_country_worker_stage reschedules them
-            // onto the day it is planning. A player stamps effective_day
-            // from the UI clock, which trails the worker clock at high
-            // speed, so dropping them silently discarded research/tax
-            // intents. Only malformed packets can still be terminal-ed,
-            // and that happens inside the stage.
-            (void)country_committed;
+            // Admission stamps every Country packet on the first unsealed
+            // day (command_seal_day), so none arrives behind the POD clock.
             // Country POD advances its committed_day as soon as the stage
             // succeeds (including commit_rejected_day). A later domain can
             // still fail the whole day and force a Host retry of the same

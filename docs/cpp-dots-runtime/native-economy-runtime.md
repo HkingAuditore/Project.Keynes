@@ -2332,9 +2332,8 @@ int32_t NativeEconomyRuntime::set_military_ration_satisfaction(
     const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
 ```
 
-稀疏 `(cell, q16)` 写入 `_military_ration_sat_q16`；**未出现的格保持上次值，初值
-Q16_ONE**，所以没有士兵的世界与军事版本前逐位一致。该列是派生瞬态，不进 PKEC、
-不进权威状态哈希，`reset()` 清空、`configure()` 按 `cell_count` 初值化为 1.0。
+稀疏 `(cell, q16)` 写入 `_military_ration_sat_q16`；每次调用是当天的完整驻军集合，
+**未出现的格回到 Q16_ONE**，所以没有士兵的世界与军事版本前逐位一致。
 DCWorldExt 侧是本文件所属的 `world_ext_economy_military.cpp` 与 `world_ext.h`
 的 `// ---- Economy military hooks` 块，绑定名 `set_military_ration_satisfaction`。
 

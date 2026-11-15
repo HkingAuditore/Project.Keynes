@@ -44,7 +44,28 @@ bool EconomyAuthorityTransfer::restore_before_country(NativeEconomyRuntime &runt
     // same-world binding across the owner handoff; a plain archive restore still
     // clears it and must bind its own map explicitly.
     auto topology = runtime._trade_topology;
+    // Procurement requests queued after the archive restore (PKAI re-sends the
+    // AI's research shares) are newer than the archive; the re-apply clears the
+    // inbox, so carry them across ahead of anything queued meanwhile.
+    auto &inbox = *runtime._procurement_inbox;
+    decltype(inbox.updates) updates;
+    decltype(inbox.requested_policy) requested_policy;
+    decltype(inbox.requested_era) requested_era;
+    {
+        std::lock_guard<std::mutex> lock(inbox.mutex);
+        updates.swap(inbox.updates);
+        requested_policy.swap(inbox.requested_policy);
+        requested_era.swap(inbox.requested_era);
+    }
     const bool restored = runtime.apply_ecp2_authority(state, error);
+    {
+        std::lock_guard<std::mutex> lock(inbox.mutex);
+        inbox.updates.insert(inbox.updates.begin(), std::make_move_iterator(updates.begin()),
+                             std::make_move_iterator(updates.end()));
+        // merge() keeps an existing key, so a request queued meanwhile wins.
+        inbox.requested_policy.merge(requested_policy);
+        inbox.requested_era.merge(requested_era);
+    }
     runtime._trade_topology = std::move(topology);
     if (restored) runtime._trade_topology.component_country_hash = 0;
     return restored;

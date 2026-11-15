@@ -4,6 +4,7 @@
 #include "economy_effect_forward.h"
 #include "modifier_api.h"
 #include "country_host_port.h"
+#include "runtime_text_hash.h"
 
 #include <algorithm>
 #include <array>
@@ -102,7 +103,6 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.research_queues = _country_research_queues;
     out.research_queue_lengths = _country_research_queue_lengths;
     out.research_weights_bp = _country_research_weights_bp;
-    out.research_daily_budgets = _country_research_daily_budgets;
     out.research_deferred_points = _country_research_deferred_points;
     out.research_progress_total = _country_research_progress_total;
     out.research_completed_total = _country_research_completed_total;
@@ -266,6 +266,10 @@ bool NativeCountryRuntime::export_pod_catalog(
         out.technology_effect_required[technology] =
             technology < _technology_modifier_definition_keys.size() &&
             !_technology_modifier_definition_keys[technology].empty() ? 1u : 0u;
+    out.technology_effect_key_hashes.resize(out.technology_count, 0);
+    for (size_t technology = 0; technology < out.technology_count; ++technology)
+        out.technology_effect_key_hashes[technology] =
+            runtime_text_hash(("technology." + _technology_ids[technology]).c_str());
     out.prerequisite_offsets = _technology_prerequisite_offsets;
     out.prerequisites = _technology_prerequisites;
     out.milestone_offsets = _technology_milestone_offsets;
@@ -965,8 +969,6 @@ Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
     out["domain_weights_bp"] = weights;
     out["auto_purchase_enabled"] =
         _country_research_auto_purchase[static_cast<size_t>(slot)] != 0;
-    out["daily_procurement_budget"] =
-        _country_research_daily_budgets[static_cast<size_t>(slot)];
     out["technology_points_stock"] = stock;
     out["country_cash"] =
         slot < _countries.cash.size() ? _countries.cash[slot] : 0;
@@ -978,35 +980,6 @@ Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
     out["completed_total"] = _country_research_completed_total[static_cast<size_t>(slot)];
     out["last_research_day"] = _last_research_day;
     out["generation"] = static_cast<int64_t>(_generation);
-    {
-        // One-shot probe: proves the UI research path is reading the worker
-        // replica (generation moves) rather than the frozen sync store.
-        static int s_ui_left = 16;
-        if (s_ui_left-- > 0) {
-            int32_t owned = 0;
-            int32_t pending = 0;
-            int32_t queued = 0;
-            int64_t nonzero_progress = 0;
-            for (int32_t tech = 0; tech < states.size(); ++tech) {
-                const int32_t state = states[tech];
-                if (state >= 5) ++owned;
-                else if (state == 4) ++pending;
-                else if (state == 3) ++queued;
-                if (progress[tech] != 0) ++nonzero_progress;
-            }
-            UtilityFunctions::print(vformat(
-                "[tech-ui-diag/research] handle=%d gen=%d day=%d "
-                "owned=%d pending=%d queued=%d progress_nonzero=%d stock=%d "
-                "deferred=%d consumed=%d cash=%d budget=%d auto=%d",
-                handle, static_cast<int64_t>(_generation), _last_research_day,
-                owned, pending, queued, nonzero_progress, stock,
-                _country_research_deferred_points[static_cast<size_t>(slot)],
-                _country_research_consumed_total[static_cast<size_t>(slot)],
-                slot < _countries.cash.size() ? _countries.cash[slot] : 0,
-                _country_research_daily_budgets[static_cast<size_t>(slot)],
-                _country_research_auto_purchase[static_cast<size_t>(slot)]));
-        }
-    }
     return out;
 }
 
@@ -1047,14 +1020,12 @@ Dictionary NativeCountryRuntime::research_signal_snapshot(int64_t handle) const 
 }
 
 bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, bool &enabled,
-                                                       int64_t &cash_budget,
                                                        int64_t &remaining_points) const {
     const auto worker = _simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
         ? _simulation_host->country_asset_snapshot() : nullptr;
     const auto &active = worker ? worker->country_active : _countries.active;
     const auto &_country_research_auto_purchase = worker ? worker->research_auto_purchase : this->_country_research_auto_purchase;
-    const auto &_country_research_daily_budgets = worker ? worker->research_daily_budgets : this->_country_research_daily_budgets;
     const auto &_country_research_queues = worker ? worker->research_queues : this->_country_research_queues;
     const auto &_country_research_queue_lengths = worker ? worker->research_queue_lengths : this->_country_research_queue_lengths;
     const auto &_country_research_deferred_points = worker ? worker->research_deferred_points : this->_country_research_deferred_points;
@@ -1069,14 +1040,12 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
         active[static_cast<size_t>(country_slot)] == 0) return false;
     const size_t slot = static_cast<size_t>(country_slot);
     if (slot >= _country_research_auto_purchase.size() ||
-        slot >= _country_research_daily_budgets.size() ||
         slot >= _country_research_deferred_points.size() ||
         _technology_points_good_id < 0 ||
         static_cast<size_t>(_technology_points_good_id) >= good_count) {
         return false;
     }
     enabled = _country_research_auto_purchase[slot] != 0;
-    cash_budget = _country_research_daily_budgets[slot];
     remaining_points = 0;
     for (int32_t domain = 0; domain < 4; ++domain) {
         const size_t length_index = slot * 4U + domain;
@@ -1383,8 +1352,6 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
         repaired.cell_tax_policy_ids.assign(cell_count, 0u);
     if (repaired.country_discovered.size() != country_count * technology_words)
         repaired.country_discovered.assign(country_count * technology_words, 0u);
-    if (repaired.research_daily_budgets.size() != country_count)
-        repaired.research_daily_budgets.assign(country_count, 0);
     if (repaired.research_deferred_points.size() != country_count)
         repaired.research_deferred_points.assign(country_count, 0);
     if (repaired.research_progress_total.size() != country_count)
@@ -1553,7 +1520,6 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     _country_research_queues = repaired.research_queues;
     _country_research_queue_lengths = repaired.research_queue_lengths;
     _country_research_weights_bp = repaired.research_weights_bp;
-    _country_research_daily_budgets = repaired.research_daily_budgets;
     _country_research_deferred_points = repaired.research_deferred_points;
     _country_research_progress_total = repaired.research_progress_total;
     _country_research_completed_total = repaired.research_completed_total;

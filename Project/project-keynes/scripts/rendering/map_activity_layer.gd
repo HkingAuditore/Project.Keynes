@@ -325,15 +325,18 @@ func _selected_cell_index() -> int:
 
 func observe_development(cell: int, population: int, buildings: int) -> void:
 	var previous: Dictionary = _history.get(cell, {})
+	var baseline := population
 	if not previous.is_empty():
 		if buildings > int(previous.buildings):
 			play_activity(cell, &"build", "扩建完成")
-		elif population > int(previous.population):
-			play_activity(cell, &"growth", "+%s 人" % UITokens.format_compact_number_cn(
-				float(population - int(previous.population))))
+		# 建筑与人口各自判断；增长没播出来（格上已有表现）就保留旧基线，等下次再播。
+		var grown := population - int(previous.population)
+		if grown > 0 and not play_activity(cell, &"growth", "+%s 人" % UITokens.format_compact_number_cn(
+				float(grown))):
+			baseline = int(previous.population)
 	if _history.size() >= HISTORY_CAP and not _history.has(cell):
 		_history.erase(_history.keys()[0])
-	_history[cell] = {"population": population, "buildings": buildings, "time": _time}
+	_history[cell] = {"population": baseline, "buildings": buildings, "time": _time}
 
 
 func _owned_visible(cell: int) -> bool:

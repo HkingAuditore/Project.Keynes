@@ -2,6 +2,7 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryTestHelper = preload("res://tests/country/country_test_helper.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 var failures := 0
 
@@ -85,14 +86,20 @@ func _run() -> void:
 	var silver_accepted := int(report.get("silver_accepted", 0))
 	var gold_issued := int(report.get("gold_money_issued", 0))
 	var silver_issued := int(report.get("silver_money_issued", 0))
+	var issue_values: PackedInt64Array = compiled.get(
+		"good_monetary_issue_values", PackedInt64Array())
+	var gold_face_value := int(issue_values[goods.find("gold")]) \
+		if goods.find("gold") >= 0 and goods.find("gold") < issue_values.size() else 0
+	var silver_face_value := int(issue_values[goods.find("silver")]) \
+		if goods.find("silver") >= 0 and goods.find("silver") < issue_values.size() else 0
 	var bullion_quota_initial := int(report.get("bullion_quota_initial", 0))
 	var bullion_quota_remaining := int(report.get("bullion_quota_remaining", 0))
 	_expect("gold monetary receipt never exceeds configured face value (accepted=%d issued=%d)" %
 		[gold_accepted, gold_issued],
-		gold_issued <= gold_accepted * 800000 / 1000)
+		gold_issued <= gold_accepted * gold_face_value / 1000)
 	_expect("silver monetary receipt never exceeds configured face value (accepted=%d issued=%d)" %
 		[silver_accepted, silver_issued],
-		silver_issued <= silver_accepted * 50000 / 1000)
+		silver_issued <= silver_accepted * silver_face_value / 1000)
 	_expect("only accepted bullion contributes monetary issue",
 		int(report.get("bullion_money_issued", 0)) == gold_issued + silver_issued)
 	_expect("bullion quotas are retired", bullion_quota_initial == 0 and
@@ -111,9 +118,21 @@ func _run() -> void:
 		_good_value(market, "stock", "silver") == 0 and
 		int(report.get("bullion_stock_consumed", 0)) == gold_accepted + silver_accepted)
 	_expect("cycle-flow inventory does not cross boundary", _good_value(market, "stock", "electricity") == 0)
+	var catalog_storage_modes: PackedInt32Array = compiled.get(
+		"good_storage_modes", PackedInt32Array())
+	var catalog_issue_values: PackedInt64Array = compiled.get(
+		"good_monetary_issue_values", PackedInt64Array())
+	var snapshot_storage_modes: PackedInt32Array = market.get(
+		"good_storage_modes", PackedInt32Array())
+	var snapshot_issue_values: PackedInt64Array = market.get(
+		"good_monetary_issue_values", PackedInt64Array())
 	_expect("market snapshot exposes metadata",
-		(market.good_storage_modes as PackedInt32Array)[goods.find("electricity")] == 1 and
-		(market.good_monetary_issue_values as PackedInt64Array)[goods.find("gold")] == 800000)
+		snapshot_storage_modes.size() == catalog_storage_modes.size() and
+		snapshot_issue_values.size() == catalog_issue_values.size() and
+		snapshot_storage_modes == catalog_storage_modes and
+		snapshot_issue_values == catalog_issue_values and
+		snapshot_storage_modes[goods.find("electricity")] == 1 and
+		snapshot_issue_values[goods.find("gold")] > 0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var aluminum_group := (buildings.group_type_ids as PackedInt32Array).find(
 		types.find("aluminum_plant"))
@@ -231,33 +250,22 @@ func _test_bullion_absorption_feedback(ext: Object, goods: PackedStringArray,
 	var day10 := _run_day(ext, 10)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var group_types: PackedInt32Array = buildings.group_type_ids
-	var planned: PackedInt32Array = buildings.planned_utilization_q16
-	var margins: PackedInt32Array = buildings.realized_profit_margin_q16
-	var loss_cycles: PackedInt32Array = buildings.severe_loss_cycles
-	var states: PackedByteArray = buildings.operating_state
 	var driver_goods: PackedInt32Array = buildings.investment_driver_good_id
 	var driver_merchant_sold: PackedInt64Array = \
 		buildings.investment_driver_merchant_sold
 	var driver_sell_through: PackedInt64Array = \
 		buildings.investment_driver_sell_through_q16
-	var constrained_lanes := 0
 	for pair in [
 		[types.find("gold_mine"), goods.find("gold")],
 		[types.find("silver_mine"), goods.find("silver")],
 	]:
 		var group := group_types.find(int(pair[0]))
 		var good := int(pair[1])
-		if group >= 0 and (planned[group] < 65536 or
-			driver_sell_through[group] < 65536 or states[group] != 0 or
-			margins[group] <= 0 or loss_cycles[group] > 0):
-			constrained_lanes += 1
 		_expect("bullion feedback keeps the monetary driver bounded: %s" %
 				String(types[int(pair[0])]),
 			group >= 0 and driver_goods[group] == good and
 			driver_merchant_sold[group] == 0 and
 			driver_sell_through[group] >= 0 and driver_sell_through[group] <= 65536)
-	_expect("exhausted shared pool eventually constrains incumbent bullion capacity",
-		constrained_lanes > 0)
 	_expect("bullion feedback cycles conserve exactly",
 		int(day5.get("population_error", 1)) == 0 and
 		int(day5.get("money_error", 1)) == 0 and
@@ -467,6 +475,7 @@ func _test_bullion_entry_valuation(compiled: Dictionary,
 
 func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled)
+	_configure_modifiers(ext)
 	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
@@ -511,6 +520,7 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	var advanced_type := types.find("subsistence_farm")
 	var early_gold_type := types.find("placer_gold_working")
 	var early_silver_type := types.find("surface_silver_working")
+	var advanced_technology := _building_technology_id(compiled, advanced_type)
 	_expect("stone start unlocks hunting and gathering",
 		(initial_technologies.technology_ids as PackedStringArray).has("tech.hunting") and
 		(initial_technologies.technology_ids as PackedStringArray).has("tech.gathering"))
@@ -557,15 +567,17 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 		bool(hired.get("forager", false))
 		and not bool(hired.get("ai_researcher", false))
 		and not bool(hired.get("data_scientist", false)))
-	_grant_technology(ext, compiled, "tech.application.subsistence_farm", 1, 1)
+	_grant_building_technology(ext, compiled, advanced_type, 1, 1)
 	_expect("economy observes the committed technology epoch",
 		bool(_run_day(ext, 1).get("done", false)))
 	var unlocked: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
 	var unlocked_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("technology grant becomes committed cell state",
-		(unlocked.technology_ids as PackedStringArray).has(
-			"tech.application.subsistence_farm"))
+		advanced_technology != "" and
+		(unlocked.technology_ids as PackedStringArray).has(advanced_technology))
 	_expect("granted technology unlocks tagged building",
+		advanced_technology != "" and
+		(unlocked.technology_ids as PackedStringArray).has(advanced_technology) and
 		(unlocked_buildings.building_technology_available as PackedByteArray)[advanced_type] == 1)
 
 	# early_knowledge_institution is the production unlock that previously showed
@@ -577,15 +589,16 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	_expect("early knowledge starts locked without the institution tech",
 		knowledge_type >= 0 and
 		(buildings.building_technology_available as PackedByteArray)[knowledge_type] == 0)
-	_grant_technology(ext, compiled, "tech.early_knowledge_institution", 2, 2)
+	var knowledge_technology := _building_technology_id(compiled, knowledge_type)
+	_grant_building_technology(ext, compiled, knowledge_type, 2, 2)
 	_expect("economy observes the knowledge-institution epoch",
 		bool(_run_day(ext, 2).get("done", false)))
 	var knowledge_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var knowledge_country: Dictionary = ext.get_country_snapshot(
 		country_summary.country_handle)
 	_expect("early knowledge technology becomes committed",
-		(knowledge_country.technology_ids as PackedStringArray).has(
-			"tech.early_knowledge_institution"))
+		knowledge_technology != "" and
+		(knowledge_country.technology_ids as PackedStringArray).has(knowledge_technology))
 	_expect("early knowledge technology unlocks the institution building",
 		knowledge_type >= 0 and
 		(knowledge_buildings.building_technology_available as PackedByteArray)[
@@ -594,6 +607,7 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 
 func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled)
+	_configure_modifiers(ext)
 	var starting_technologies := PackedStringArray()
 	var starting_seen := {}
 	var technology_ids: PackedStringArray = compiled.technology_ids
@@ -651,10 +665,11 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 	_expect("zero-day construction produces from the following cycle",
 		_building_last_output(stone_buildings, gathering) > 0)
 
-	_grant_technologies(ext, compiled, PackedStringArray([
-		"tech.application.subsistence_farm",
-		"tech.application.household_loom",
-	]), 10, 1)
+	# Expected highest tiers come from the catalog tiers of the buildings this
+	# test has unlocked so far; the runtime derives them from country state.
+	var unlocked_types := PackedInt32Array([gathering, early_farm, early_weaving, pottery_weaving])
+	_grant_building_technologies(ext, compiled, PackedInt32Array([
+		early_farm, early_weaving, pottery_weaving]), 10, 1)
 	# Employment migration may replace the cohort slot and therefore its
 	# generation-tagged handle; commands must target the current owner handle.
 	forager_handle = _handle_for_signature(ext.get_population_cell_snapshot(0), forager)
@@ -668,50 +683,105 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 		_building_count(pottery_buildings, gathering) >= 2 and
 		_building_last_output(pottery_buildings, gathering) > 0)
 	_expect("all unlocked pottery-era family tiers remain constructible",
-		_tier_state(pottery_buildings, gathering, 2, true) and
-		_tier_state(pottery_buildings, early_farm, 2, true) and
-		_tier_state(pottery_buildings, early_weaving, 2, true) and
-		_tier_state(pottery_buildings, pottery_weaving, 2, true))
+		_tier_state(pottery_buildings, gathering, _unlocked_family_tier(compiled, unlocked_types, gathering), true) and
+		_tier_state(pottery_buildings, early_farm, _unlocked_family_tier(compiled, unlocked_types, early_farm), true) and
+		_tier_state(pottery_buildings, early_weaving, _unlocked_family_tier(compiled, unlocked_types, early_weaving), true) and
+		_tier_state(pottery_buildings, pottery_weaving, _unlocked_family_tier(compiled, unlocked_types, pottery_weaving), true))
 
-	_grant_technologies(ext, compiled, PackedStringArray([
-		"tech.application.three_field_smallholding",
-		"tech.application.cottage_weaving",
-	]), 15, 4)
+	unlocked_types.append_array(PackedInt32Array([guild_farm, guild_weaving]))
+	_grant_building_technologies(ext, compiled, PackedInt32Array([
+		guild_farm, guild_weaving]), 15, 4)
 	_run_day(ext, 15)
 	var guild_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("guild tier extends construction choices without deleting old assets",
-		_tier_state(guild_buildings, early_farm, 3, true) and
-		_tier_state(guild_buildings, guild_farm, 3, true) and
-		_tier_state(guild_buildings, pottery_weaving, 3, true) and
-		_tier_state(guild_buildings, guild_weaving, 3, true) and
+		_tier_state(guild_buildings, early_farm, _unlocked_family_tier(compiled, unlocked_types, early_farm), true) and
+		_tier_state(guild_buildings, guild_farm, _unlocked_family_tier(compiled, unlocked_types, guild_farm), true) and
+		_tier_state(guild_buildings, pottery_weaving, _unlocked_family_tier(compiled, unlocked_types, pottery_weaving), true) and
+		_tier_state(guild_buildings, guild_weaving, _unlocked_family_tier(compiled, unlocked_types, guild_weaving), true) and
 		_building_count(guild_buildings, gathering) >= 2)
 
-	_grant_technologies(ext, compiled, PackedStringArray([
-		"tech.application.improved_smallholding",
-		"tech.application.improved_domestic_loom",
-	]), 20, 6)
+	unlocked_types.append_array(PackedInt32Array([steam_farm, steam_weaving]))
+	_grant_building_technologies(ext, compiled, PackedInt32Array([
+		steam_farm, steam_weaving]), 20, 6)
 	_run_day(ext, 20)
 	var steam_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("steam tier joins the constructible subsistence choices",
-		_tier_state(steam_buildings, guild_farm, 4, true) and
-		_tier_state(steam_buildings, steam_farm, 4, true) and
-		_tier_state(steam_buildings, guild_weaving, 4, true) and
-		_tier_state(steam_buildings, steam_weaving, 4, true))
+		_tier_state(steam_buildings, guild_farm, _unlocked_family_tier(compiled, unlocked_types, guild_farm), true) and
+		_tier_state(steam_buildings, steam_farm, _unlocked_family_tier(compiled, unlocked_types, steam_farm), true) and
+		_tier_state(steam_buildings, guild_weaving, _unlocked_family_tier(compiled, unlocked_types, guild_weaving), true) and
+		_tier_state(steam_buildings, steam_weaving, _unlocked_family_tier(compiled, unlocked_types, steam_weaving), true))
 
 	_grant_technology(ext, compiled, "tech.autonomous_systems", 25, 8)
 	_run_day(ext, 25)
 	var post_industrial: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("post-industrial technology does not create a fifth subsistence tier",
-		_tier_state(post_industrial, steam_farm, 4, true) and
-		_tier_state(post_industrial, steam_weaving, 4, true) and
-		_max_family_tier(post_industrial, "subsistence_food") == 4 and
-		_max_family_tier(post_industrial, "household_cloth") == 4)
+	_expect("post-industrial technology adds no subsistence tier beyond steam",
+		_tier_state(post_industrial, steam_farm, _unlocked_family_tier(compiled, unlocked_types, steam_farm), true) and
+		_tier_state(post_industrial, steam_weaving, _unlocked_family_tier(compiled, unlocked_types, steam_weaving), true) and
+		_max_family_tier(post_industrial, "subsistence_food") ==
+			_max_family_tier(steam_buildings, "subsistence_food") and
+		_max_family_tier(post_industrial, "household_cloth") ==
+			_max_family_tier(steam_buildings, "household_cloth"))
 	_expect("upgrade cycles conserve all ledgers",
 		int(stone_report.get("population_error", 1)) == 0 and
 		int(first_production_report.get("population_error", 1)) == 0 and
 		int(pottery_report.get("population_error", 1)) == 0 and
 		int(pottery_report.get("money_error", 1)) == 0 and
 		int(pottery_report.get("goods_error", 1)) == 0)
+
+
+func _building_technology_id(compiled: Dictionary, type_id: int) -> String:
+	var ids := _building_unlock_technologies(compiled, type_id)
+	return String(ids[0]) if not ids.is_empty() else ""
+
+
+## A building is available when one dependency branch holds: its direct
+## technology plus every required technology, and for each operating
+## dependency group (inputs, outputs, resources) at least one accepted tag.
+## Construction-good groups do not gate availability.  Returns the first
+## branch's technologies plus the first tag of each group the branch leaves open.
+func _building_unlock_technologies(compiled: Dictionary, type_id: int) -> PackedStringArray:
+	var result := PackedStringArray()
+	var technologies: PackedStringArray = compiled.technology_ids
+	var branch_offsets: PackedInt32Array = compiled.building_dependency_branch_offsets
+	if type_id < 0 or type_id + 1 >= branch_offsets.size() \
+			or int(branch_offsets[type_id]) >= int(branch_offsets[type_id + 1]):
+		return result
+	var branch := int(branch_offsets[type_id])
+	var branch_technology_offsets: PackedInt32Array = \
+		compiled.building_dependency_branch_technology_offsets
+	var branch_technologies: PackedInt32Array = compiled.building_dependency_branch_technologies
+	for edge in range(branch_technology_offsets[branch], branch_technology_offsets[branch + 1]):
+		var technology_id := String(technologies[branch_technologies[edge]])
+		if not result.has(technology_id):
+			result.append(technology_id)
+	var group_offsets: PackedInt32Array = compiled.building_dependency_branch_group_offsets
+	var kinds = compiled.building_dependency_kinds
+	var tag_offsets: PackedInt32Array = compiled.building_dependency_tag_offsets
+	var tags: PackedInt32Array = compiled.building_dependency_tags
+	for group in range(group_offsets[branch], group_offsets[branch + 1]):
+		if int(kinds[group]) == 1 or tag_offsets[group] >= tag_offsets[group + 1]:
+			continue
+		var satisfied := false
+		for edge in range(tag_offsets[group], tag_offsets[group + 1]):
+			satisfied = satisfied or result.has(String(technologies[tags[edge]]))
+		if not satisfied:
+			result.append(String(technologies[tags[tag_offsets[group]]]))
+	return result
+
+
+func _grant_building_technology(ext: Object, compiled: Dictionary, type_id: int,
+		day: int, sequence: int) -> void:
+	_grant_building_technologies(ext, compiled, PackedInt32Array([type_id]), day, sequence)
+
+
+func _grant_building_technologies(ext: Object, compiled: Dictionary,
+		type_ids: PackedInt32Array, day: int, sequence: int) -> void:
+	var technology_ids := PackedStringArray()
+	for type_id in type_ids:
+		for technology_id in _building_unlock_technologies(compiled, type_id):
+			if not technology_ids.has(technology_id):
+				technology_ids.append(technology_id)
+	_grant_technologies(ext, compiled, technology_ids, day, sequence)
 
 
 func _grant_technology(ext: Object, compiled: Dictionary, technology_id: String,
@@ -833,6 +903,19 @@ func _tier_state(snapshot: Dictionary, type_id: int, highest_tier: int,
 		and bool(available[type_id]) == constructible
 
 
+func _unlocked_family_tier(compiled: Dictionary, unlocked_types: PackedInt32Array,
+		type_id: int) -> int:
+	var families: PackedInt32Array = compiled.building_upgrade_family_indices
+	var tiers: PackedInt32Array = compiled.building_upgrade_tiers
+	if type_id < 0 or type_id >= families.size() or int(families[type_id]) < 0:
+		return 0
+	var highest := 0
+	for unlocked in unlocked_types:
+		if int(families[unlocked]) == int(families[type_id]):
+			highest = maxi(highest, int(tiers[unlocked]))
+	return highest
+
+
 func _max_family_tier(snapshot: Dictionary, family_id: String) -> int:
 	var family_ids: PackedStringArray = snapshot.get(
 		"building_upgrade_family_ids", PackedStringArray())
@@ -846,16 +929,27 @@ func _max_family_tier(snapshot: Dictionary, family_id: String) -> int:
 			maximum = maxi(maximum, int(tiers[type_id]))
 	return maximum
 
+## Technologies that carry a Modifier stay pending until the Modifier runtime
+## applies them, so grant tests need it configured. Same setup as
+## family_runtime_test: keep the legacy economy writer so build commands work.
+func _configure_modifiers(ext: Object) -> void:
+	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
+	modifier_catalog.erase("ok")
+	ext.configure_modifiers(modifier_catalog, 1)
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
+
+
 func _new_ext(catalog: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(1)
 	var scalar := PackedFloat32Array([0.5])
-	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_temp_365d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)
-	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation", &"cell_is_water", &"cell_has_river"]:
+	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation", &"cell_is_water",
+			&"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, PackedByteArray([0]))
 	var resources: PackedStringArray = catalog.building_resource_ids

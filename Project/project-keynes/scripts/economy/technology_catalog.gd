@@ -5,6 +5,7 @@ const ResearchSignalCatalogScript = preload("res://scripts/research/research_sig
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
+const ValidationScript = preload("res://scripts/economy/technology_catalog_validation.gd")
 
 const NETWORK_DATA_PATH := "res://data/technology/technology_network.json"
 
@@ -352,6 +353,9 @@ static func compile_native_catalog() -> Dictionary:
 		if row.has("content_effects") and not _validate_content_effects(content_effects,
 				(row.get("expected_bindings", []) as Array)):
 			return {"ok": false, "reason": "technology_content_effect_invalid", "id": row_id}
+		if not _building_review_matches_bindings(row):
+			return {"ok": false, "reason": "technology_support_only_unlocks_building",
+				"id": row_id}
 		if not reveal_spec.is_empty():
 			reveal_condition_specs[row_id] = reveal_spec
 	var era_ids_out := PackedStringArray()
@@ -598,33 +602,12 @@ static func _condition_references_technology(condition_value: Variant,
 	return false
 
 
+static func _building_review_matches_bindings(row: Dictionary) -> bool:
+	return ValidationScript._building_review_matches_bindings(row)
+
+
 static func _validate_content_effects(effects: Array, expected_bindings: Array) -> bool:
-	var expected := {}
-	for binding_value in expected_bindings:
-		var binding: Dictionary = binding_value
-		expected["%d|%s" % [int(binding.get("kind", 0)), String(binding.get("id", ""))]] = false
-	for effect_value in effects:
-		if not effect_value is Dictionary:
-			return false
-		var effect: Dictionary = effect_value
-		var effect_id := String(effect.get("id", "")).strip_edges()
-		if String(effect.get("kind", "")).strip_edges().is_empty() or effect_id.is_empty() \
-				or String(effect.get("subject", "")).is_empty() \
-				or String(effect.get("attribute", "")).is_empty() \
-				or String(effect.get("operation", "")).is_empty() \
-				or String(effect.get("implementation", "")).is_empty() \
-				or String(effect.get("status", "")).is_empty():
-			return false
-		var binding_kind := int(effect.get("binding_kind", 0))
-		if binding_kind > 0:
-			var key := "%d|%s" % [binding_kind, effect_id]
-			if not expected.has(key):
-				return false
-			expected[key] = true
-	for key in expected:
-		if not bool(expected[key]):
-			return false
-	return true
+	return ValidationScript._validate_content_effects(effects, expected_bindings)
 
 
 static func _compile_research_conditions(nodes: Array, technology_ids: PackedStringArray,
@@ -662,6 +645,7 @@ static func _compile_research_conditions(nodes: Array, technology_ids: PackedStr
 				node.get("route_exemption_reason", "")).strip_edges().is_empty():
 			return {"ok": false, "reason": "technology_route_exemption_reason_missing",
 				"technology_id": technology_id}
+		var ordinary_node := not bool(node.get("is_milestone", false))
 		var route_type_seen := {}
 		for route_value in routes:
 			if not route_value is Dictionary:
@@ -701,6 +685,12 @@ static func _compile_research_conditions(nodes: Array, technology_ids: PackedStr
 					return {"ok": false,
 						"reason": "technology_research_route_reference_later_era",
 						"technology_id": technology_id, "route_id": route_id}
+				# Era milestones are internal era tokens (era-advancement-runtime
+				# section 0); an ordinary node must never be gated on one.
+				if ordinary_node and bool(referenced_node.get("is_milestone", false)):
+					return {"ok": false,
+						"reason": "technology_research_route_references_milestone",
+						"technology_id": technology_id, "route_id": route_id}
 			route_condition_offsets.append(route_ops.size())
 			route_ids.append(route_id)
 			route_names.append(route_name)
@@ -729,6 +719,11 @@ static func _compile_research_conditions(nodes: Array, technology_ids: PackedStr
 		var milestone_end := int(milestone_offsets[technology + 1])
 		var child_count := 0
 		for edge in range(hard_begin, hard_end):
+			if ordinary_node and bool((nodes[int(prerequisites[edge])] as Dictionary).get(
+					"is_milestone", false)):
+				return {"ok": false,
+					"reason": "technology_prerequisite_references_milestone",
+					"technology_id": technology_id}
 			total_ops.append(CONDITION_PUSH_TECH_COMPLETED)
 			total_refs.append(int(prerequisites[edge]))
 			total_values.append(1)

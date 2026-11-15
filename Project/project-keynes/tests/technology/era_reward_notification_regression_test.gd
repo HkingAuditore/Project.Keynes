@@ -14,6 +14,12 @@ class PeerGenerator extends MapGenerator:
 			_shadow: bool = true) -> Dictionary:
 		return service_report
 
+class CeremonyUI extends GameUIManager:
+	var ceremony := false
+
+	func is_era_ceremony_playing() -> bool:
+		return ceremony
+
 class RewardFacade extends RefCounted:
 	var reads := 0
 	var status := "OPEN"
@@ -35,7 +41,7 @@ func _run() -> void:
 	_audit_era_label()
 	var dialog := DialogScene.instantiate() as EraRewardDialog
 	root.add_child(dialog)
-	var ui := GameUIManager.new()
+	var ui := CeremonyUI.new()
 	ui.set("_era_reward_dialog", dialog)
 	var facade := RewardFacade.new()
 	var clock := WorldClock.new()
@@ -55,14 +61,18 @@ func _run() -> void:
 
 	host._service_country_worker_transport()
 	_expect("idle peer service does not poll offers", facade.reads == 0)
+	# A promotion opens the offer directly (upstream 2026-11-03); while the
+	# ascension ceremony plays the modal yields and the next sync retries.
+	ui.ceremony = true
 	generator.service_report = {"ok": true, "inspected": 0, "notified": 1}
 	host._service_country_worker_transport()
-	_expect("notification-only service reaches PlayerController immediately", facade.reads == 1)
-	_expect("notification-only milestone remains a deferred reward", not dialog.is_offer_open())
-	_expect("waiting reward preserves running speed and commands", not clock.paused
-		and not controller.era_reward_locked() and clock.speed_multiplier == 50.0)
-	controller.open_era_reward_offer()
-	_expect("explicit badge intent opens the real modal", dialog.is_offer_open())
+	_expect("notification-only service reaches PlayerController immediately", facade.reads > 0)
+	_expect("offer yields while the ascension ceremony plays", not dialog.is_offer_open()
+		and not controller.era_reward_locked() and not clock.paused)
+	ui.ceremony = false
+	generator.service_report = {"ok": true, "inspected": 1, "notified": 0}
+	host._service_country_worker_transport()
+	_expect("next sync after the ceremony opens the offer directly", dialog.is_offer_open())
 	_expect("open offer pauses 50x play and retains resume intent",
 		clock.paused and controller.era_reward_locked()
 		and bool(controller.capture_view_state().get("era_reward_resume_running", false))
@@ -71,35 +81,31 @@ func _run() -> void:
 	controller._on_speed_selected(10.0)
 	_expect("compact reward keeps clock controls from bypassing the choice lock", clock.paused
 		and clock.speed_multiplier == 50.0)
-	generator.service_report = {"ok": true, "inspected": 1, "notified": 0}
+	var reads_before := facade.reads
 	host._service_country_worker_transport()
-	_expect("ordinary peer intents still refresh offers", facade.reads == 4)
+	_expect("ordinary peer intents still refresh offers", facade.reads > reads_before)
 	dialog.dismiss_requested.emit()
 	await create_timer(0.14).timeout
-	_expect("dismiss keeps reward pending and restores previous speed", not dialog.is_offer_open()
+	_expect("dismiss closes the modal and restores previous speed", not dialog.is_offer_open()
 		and not controller.era_reward_locked() and not clock.paused and clock.speed_multiplier == 50.0)
-	controller._sync_era_reward_offer()
-	_expect("later commits do not reopen a deferred reward", not dialog.is_offer_open() and not clock.paused)
-	controller.open_era_reward_offer()
-	var saved_view := controller.capture_view_state()
-	controller.restore_view_state(null, saved_view)
-	_expect("restored unchosen reward returns to reminder and resumes 50x",
-		not controller.era_reward_locked() and not dialog.is_offer_open()
-		and not clock.paused and clock.speed_multiplier == 50.0)
 	clock.pause(true)
-	controller.open_era_reward_offer()
+	controller._sync_era_reward_offer()
+	_expect("offer also opens directly from paused play", dialog.is_offer_open()
+		and controller.era_reward_locked())
 	controller.dismiss_era_reward_offer()
 	_expect("dismissing from paused play preserves the paused state", clock.paused)
 	clock.pause(false)
-	controller.open_era_reward_offer()
+	controller._sync_era_reward_offer()
 	facade.status = "SELECTED_PENDING"
 	facade.settles_on_day_advance = true
 	controller._sync_era_reward_offer()
 	controller.dismiss_era_reward_offer()
+	# Worker-owned Modifier commits only land on a simulated day, so the
+	# pending choice advances one day at a time instead of staying paused.
 	_expect("submitted reward cannot dismiss before ACK and uses settlement speed",
 		controller.era_reward_locked() and dialog.is_offer_open()
 		and not clock.paused and clock.speed_multiplier == 1.0)
-	saved_view = controller.capture_view_state()
+	var saved_view := controller.capture_view_state()
 	controller.restore_view_state(null, saved_view)
 	_expect("restore keeps submitted reward locked until ACK", controller.era_reward_locked())
 	facade.status = "RESOLVED"

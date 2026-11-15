@@ -16,7 +16,7 @@ func _on_era_reward_choice_requested(host, generation: int, choice_index: int) -
 
 
 func open_era_reward_offer(host) -> void:
-	# 点击纸徽才进入暂停选择；待领奖励本身不锁住会话。
+	# 晋升后由 _sync_era_reward_offer 直接调用；纸徽点击也走这里。打开即暂停并锁住其他指令。
 	if host._popups_suppressed or host._country_facade == null or host._ui_manager == null or host._family_founding_locked \
 			or host.ideology_draw_locked() or host._annual_report_flow.is_open():
 		return
@@ -464,7 +464,8 @@ func restore_view_state(host, map, state: Dictionary) -> void:
 	host._era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
 	host._era_reward_generation = int(state.get("era_reward_generation", 0))
 	host._era_reward_locked = bool(state.get("era_reward_locked", false))
-	# 读档恢复待领取提醒；已提交事务仍继续排空，未选择的旧弹窗不强制重开。
+	# 未选择的奖励先按存档的时钟意图解锁，末尾的 _sync_era_reward_offer 会重新直接弹出；
+	# 已提交事务保持锁定继续排空。
 	if host._era_reward_locked and host._country_facade != null:
 		var restored_offer: Dictionary = host._country_facade.era_reward_offer()
 		if bool(restored_offer.get("ok", false)) and String(restored_offer.get("status", "NONE")) in ["OPEN", "ERROR"]:

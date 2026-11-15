@@ -113,8 +113,7 @@ Dictionary enqueue_country_host_command_batch(
         }
     }
 
-    const RuntimeThreadReport report = host.report();
-    const int64_t first_allowed_day = report.committed_day + 1;
+    const int64_t first_allowed_day = host.command_seal_day();
     std::vector<RuntimeCommandPacket> packets;
     packets.reserve(static_cast<size_t>(count));
     PackedInt64Array request_ids;
@@ -134,17 +133,12 @@ Dictionary enqueue_country_host_command_batch(
             out["code"] = "country_worker_command_day_invalid";
             return out;
         }
-        // A player stamps effective_day from the UI clock. At high speed that
-        // stamp can trail *or* lead the worker: capacity stalls let WorldClock
-        // run ahead while Country is still finishing peers. Always schedule on
-        // the earliest day the worker can still honour (committed+1). Using
-        // max(ui, first_allowed) previously parked ahead-of-worker research
-        // enqueue on a future day, so the UI said "submitted" while the left
-        // queue stayed empty until the worker caught up — if ever.
-        // requested_day below keeps the original UI stamp for audit.
+        // Player commands go on the first unsealed day; the UI stamp is kept
+        // in requested_day for audit only. Mirrored commands keep their own
+        // day unless it is already sealed.
         const int64_t scheduled_day = enforce_committed_day
             ? first_allowed_day
-            : effective_days[index];
+            : std::max<int64_t>(effective_days[index], first_allowed_day);
         RuntimeCountryCommand command;
         command.request_id = host.allocate_command_request_id();
         request_ids[index] = static_cast<int64_t>(command.request_id);
@@ -1650,11 +1644,6 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
             notification_error);
     out["notified"] = notified;
     out["notification_error"] = notification_error;
-    // Effect may catchup-fire after ENSURE left PENDING (not re-queued). Promote
-    // any fire-acked tech peers so Country can leave country_worker_peer_results_pending.
-    const uint32_t promoted =
-        _runtime_host->resolve_pending_country_effect_peers();
-    out["promoted_pending"] = static_cast<int64_t>(promoted);
 
     const NativeSimulationHost::CountryWorkerProtocolStatus status =
         _runtime_host->country_worker_protocol_status();
@@ -1756,7 +1745,7 @@ void DCWorldExt::set_country_sync_store_writes_forbidden(bool forbidden) {
 
 Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
     if (_country_runtime == nullptr) return country_unavailable();
-    if (_runtime_host != nullptr && _runtime_host->domain_is_worker_authoritative(
+    if (_runtime_host != nullptr && _runtime_host->domain_main_thread_suppressed(
             RuntimeDomainId::COUNTRY)) {
         Dictionary out;
         out["ok"] = false;

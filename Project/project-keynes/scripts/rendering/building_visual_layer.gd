@@ -298,7 +298,7 @@ func configure_catalog(catalog: Dictionary) -> Dictionary:
 				slots += int(employee_slots[edge]) if edge < employee_slots.size() else 0
 		_type_to_scale[i] = clampi(roundi(8.0 * sqrt(float(maxi(1, slots)))), 8, 255)
 		_type_to_grade[i] = table.grade_for(_csr_names(
-			construction_offsets, construction_goods, good_names, i, ids.size())) \
+			construction_offsets, construction_goods, good_names, i, ids.size()).slice(0, 1)) \
 			if construction_offsets.size() == ids.size() + 1 else 255
 		if _type_to_archetype[i] < 0 or _type_to_archetype[i] >= ARCHETYPE_COUNT:
 			unresolved.append(ids[i])

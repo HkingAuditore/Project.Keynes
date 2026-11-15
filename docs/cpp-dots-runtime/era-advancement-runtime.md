@@ -98,13 +98,16 @@ effective_day, sequence) -> Dictionary`
 
 - 设置了政策（enabled）的国家：
   - `national_daily = country_cash × treasury_share_bp / 10000`（周期开始冻结；周期预算 = 日额 × epoch_days）。
-  - `research_daily = national_daily × research_share_bp / 10000`；研究采购使用它代替 Country 的
-    `research_daily_budgets`（Country 的 auto_purchase 开关仍是总开关）。
+  - `research_daily = national_daily × research_share_bp / 10000`，只在 auto_purchase 打开且队列还有
+    未购科技点时计算，否则为 0；研究采购和财政研究保底都读它（Country 的 auto_purchase 是总开关）。
   - `other_daily = national_daily - research_daily`；若该国本周期无研究需求，研究份额并入 other。
   - other 由「时代收购」与「派遣储备」共享：两者都有需求时各 50%，只有一方时全给该方。
   - 派遣储备（`refresh_epoch_colonization_demand` 预算与筹备期实际国库采购）受派遣份额上限约束
     （按日补充的额度，未用完不累积超过 1 个周期）。
-- 未设置政策的国家（外国 AI）保持旧行为。
+- 从未下发政策的国家（AI 关闭、脚本国家）：研究按 profile 默认份额
+  （`procurement_default_treasury_share_bp` 200 × `procurement_default_research_share_bp` 5000），
+  时代收购和派遣储备不设上限。外国 AI 自己下发政策（见 `country-ai-runtime.md` §2）。
+  Country 已没有绝对研究预算，任何路径都不再读 `1000 × MONEY_SCALE` 兜底值。
 
 ### 2.3 经济命令：时代收购目标
 

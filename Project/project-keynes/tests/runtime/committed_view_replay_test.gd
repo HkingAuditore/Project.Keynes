@@ -203,7 +203,7 @@ func _run() -> void:
 				"economy_switch_reason": diagnostics.get("economy_authority_switch_reason"),
 				"economy_ready": diagnostics.get("economy_pod_active_ready"),
 				"event_ingress": ext.get_gameplay_event_bus_report().get("next_event_id")}))
-		rows.append({"day": day, "domains": domains, "whole_economy_hash": str(ext.get_economy_state_hash()),
+		rows.append({"day": day, "domains": domains, "whole_economy_hash": _whole_economy_hash,
 			"military": _canonical(army), "resources": _resource_state(ext).hash})
 		if scenario == "military":
 			rows[-1]["field_armies"] = _canonical(military.armies(handle))

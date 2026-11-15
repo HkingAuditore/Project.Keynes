@@ -154,6 +154,39 @@ bool NativeSimulationHost::has_pending_climate_input() const {
     return _environment_ring.size() > 0u;
 }
 
+int64_t NativeSimulationHost::command_seal_day() const noexcept {
+    const int64_t worker_next = _committed_day.load(std::memory_order_acquire) + 1;
+    const bool sealed =
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    if (!sealed) return worker_next;
+    // Under the tail gate the worker has started at most tail_done+1, and only
+    // the main thread moves tail_done. Sealing at tail_done+2 lands everything
+    // the main thread derives from day D, before it marks D's tail, on D+1.
+    // The environment watermark runs ahead on frame timing, so it cannot be
+    // the seal here.
+    if (_main_day_tail_gate.load(std::memory_order_acquire))
+        return std::max(worker_next,
+                        _main_day_tail_done.load(std::memory_order_acquire) + 2);
+    return std::max(worker_next, next_environment_day());
+}
+
+void NativeSimulationHost::set_main_day_tail_gate(bool enabled) noexcept {
+    std::lock_guard<std::mutex> control_lock(_control_mutex);
+    _main_day_tail_gate.store(enabled, std::memory_order_release);
+    _control_cv.notify_all();
+}
+
+void NativeSimulationHost::mark_main_day_tail_done(int64_t day) noexcept {
+    {
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        if (day > _main_day_tail_done.load(std::memory_order_acquire))
+            _main_day_tail_done.store(day, std::memory_order_release);
+    }
+    _control_cv.notify_all();
+}
+
 bool NativeSimulationHost::environment_ring_full() const {
     return !_environment_ring.has_capacity();
 }
@@ -432,6 +465,19 @@ void NativeSimulationHost::worker_main() {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 const int64_t from_day = _committed_day.load(std::memory_order_acquire);
                 const int64_t day = from_day + 1;
+                const auto tail_ready = [&] { return !main_day_tail_pending(); };
+                if (!tail_ready()) {
+                    std::unique_lock<std::mutex> control_lock(_control_mutex);
+                    _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
+                    _control_cv.wait(control_lock, [&] {
+                        return tail_ready() ||
+                            _stop_requested.load(std::memory_order_acquire) ||
+                            _save_requested.load(std::memory_order_acquire);
+                    });
+                    _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+                    // A save or stop is served at the day boundary first.
+                    if (!tail_ready()) break;
+                }
                 // Yield between days until every main-thread requester has
                 // completed its protected inbox service; no authority lock is
                 // held while waiting. Country commands are drained afterwards.

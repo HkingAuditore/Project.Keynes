@@ -30,11 +30,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/starter_economy_planner.gd": {
-      "lines": 1291,
+      "lines": 1269,
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/technology_catalog.gd": {
-      "lines": 1182,
+      "lines": 1177,
       "limit": 800
     },
     "Project/project-keynes/scripts/effect/effect_domain_catalog.gd": {
@@ -50,7 +50,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/player_controller.gd": {
-      "lines": 1695,
+      "lines": 1688,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/start_location_policy.gd": {
@@ -58,7 +58,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part1.gd": {
-      "lines": 1646,
+      "lines": 1621,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_generation_adapter.gd": {
@@ -70,7 +70,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
-      "lines": 1599,
+      "lines": 1590,
       "limit": 600
     },
     "Project/project-keynes/scripts/geography/hex_cell.gd": {
@@ -78,11 +78,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_data.gd": {
-      "lines": 1226,
+      "lines": 1212,
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
-      "lines": 1143,
+      "lines": 1142,
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd": {
@@ -114,7 +114,7 @@
       "limit": 600
     },
     "Project/project-keynes/scripts/military/military_catalog_compiler.gd": {
-      "lines": 1186,
+      "lines": 1122,
       "limit": 800
     },
     "Project/project-keynes/scripts/military/military_facade.gd": {
@@ -378,7 +378,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/technology_workspace.gd": {
-      "lines": 1678,
+      "lines": 1671,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/country_view_model.gd": {
@@ -414,7 +414,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/perf_recorder.gd": {
-      "lines": 967,
+      "lines": 966,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/tile_data_recorder.gd": {
@@ -458,7 +458,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_building_employment.cpp": {
-      "lines": 3802,
+      "lines": 3771,
       "limit": 2000
     },
     "gdext/src/economy_runtime_building_production.cpp": {
@@ -471,10 +471,6 @@
     },
     "gdext/src/economy_runtime_colonization.cpp": {
       "lines": 2781,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_colonization_kit.cpp": {
-      "lines": 2064,
       "limit": 2000
     },
     "gdext/src/economy_runtime_diagnostics.cpp": {
@@ -490,11 +486,11 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2202,
+      "lines": 2200,
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence_read.cpp": {
-      "lines": 3113,
+      "lines": 3112,
       "limit": 2000
     },
     "gdext/src/economy_runtime_queries_market_building.cpp": {
@@ -506,11 +502,11 @@
       "limit": 2000
     },
     "gdext/src/military_core.cpp": {
-      "lines": 4199,
+      "lines": 4165,
       "limit": 2000
     },
     "gdext/src/military_core_save.cpp": {
-      "lines": 2163,
+      "lines": 2148,
       "limit": 2000
     },
     "gdext/src/military_core_selftest.cpp": {
@@ -522,7 +518,7 @@
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
-      "lines": 2162,
+      "lines": 2161,
       "limit": 600
     },
     "gdext/src/runtime_climate_kernel.cpp": {
@@ -538,7 +534,7 @@
       "limit": 2000
     },
     "gdext/src/runtime_country_pod.cpp": {
-      "lines": 2081,
+      "lines": 2076,
       "limit": 2000
     },
     "gdext/src/runtime_economy_pod.cpp": {
@@ -546,7 +542,7 @@
       "limit": 2000
     },
     "gdext/src/runtime_effect_pod.cpp": {
-      "lines": 3389,
+      "lines": 3383,
       "limit": 2000
     },
     "gdext/src/runtime_ideology_pod.cpp": {
@@ -554,7 +550,7 @@
       "limit": 2000
     },
     "gdext/src/runtime_pod_protocol.h": {
-      "lines": 2003,
+      "lines": 2002,
       "limit": 2000
     },
     "gdext/src/trigger_runtime.cpp": {
@@ -578,7 +574,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_country.cpp": {
-      "lines": 2152,
+      "lines": 2141,
       "limit": 2000
     },
     "gdext/src/world_ext_daily_sim.cpp": {
@@ -586,7 +582,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_economy.cpp": {
-      "lines": 2795,
+      "lines": 2793,
       "limit": 2000
     },
     "gdext/src/world_ext_generate.cpp": {
@@ -594,7 +590,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_military.cpp": {
-      "lines": 3925,
+      "lines": 3914,
       "limit": 2000
     },
     "gdext/src/world_ext_physical.cpp": {

@@ -111,8 +111,8 @@ bool parse_catalog(const Dictionary &d, CountryAiCatalog &c, std::vector<std::st
     c.agenda_inertia_bp = dict_i32(d, "agenda_inertia_bp", c.agenda_inertia_bp);
     c.decision_noise_bp = dict_i32(d, "decision_noise_bp", c.decision_noise_bp);
     c.research_budget_horizon_days = dict_i32(d, "research_budget_horizon_days", c.research_budget_horizon_days);
-    c.research_min_daily_budget = dict_i64(d, "research_min_daily_budget", c.research_min_daily_budget);
-    c.research_max_daily_budget = dict_i64(d, "research_max_daily_budget", c.research_max_daily_budget);
+    c.research_min_share_bp = dict_i32(d, "research_min_share_bp", c.research_min_share_bp);
+    c.research_max_share_bp = dict_i32(d, "research_max_share_bp", c.research_max_share_bp);
     c.research_weight_threshold_bp = dict_i32(d, "research_weight_threshold_bp", c.research_weight_threshold_bp);
     c.research_max_enqueue_per_eval = dict_i32(d, "research_max_enqueue_per_eval", c.research_max_enqueue_per_eval);
     c.research_budget_change_bp = dict_i32(d, "research_budget_change_bp", c.research_budget_change_bp);
@@ -271,7 +271,13 @@ void DCWorldExt::push_country_ai_family_preferences() {
         economy->set_country_ai_family_preferences({});
         return;
     }
-    economy->set_country_ai_family_preferences(ai_from(_country_ai_runtime)->family_preferences());
+    CountryAiRuntime *runtime = ai_from(_country_ai_runtime);
+    economy->set_country_ai_family_preferences(runtime->family_preferences());
+    // Procurement policies are transient Economy state: restore and mode
+    // switches re-send the AI's current research shares.
+    for (const auto &policy : runtime->procurement_policies(0))
+        economy->queue_research_procurement_policy(policy.country_handle,
+            policy.research_share_bp, policy.day, static_cast<int64_t>(policy.sequence));
 }
 
 Dictionary DCWorldExt::configure_country_ai(const Dictionary &catalog) {
@@ -469,7 +475,7 @@ Dictionary DCWorldExt::drain_country_ai_record_rows(int limit) {
         row["goal_milestone"] = r.goal_milestone;
         row["milestone_gap"] = r.milestone_gap;
         row["queued_techs"] = r.queued_techs;
-        row["research_budget"] = r.research_budget;
+        row["research_share_bp"] = r.research_share_bp;
         row["tax_paid"] = r.tax_paid;
         row["household_income"] = r.household_income;
         row["carrying_k_eff"] = r.carrying_k_eff;
@@ -685,6 +691,9 @@ void DCWorldExt::country_ai_sync_finish(int64_t day, bool ok, Dictionary &out) {
         economy->set_country_ai_family_preferences(std::move(result.family_preferences));
     if (!result.colonization.empty())
         economy->queue_country_ai_colonization(std::move(result.colonization));
+    for (const auto &policy : result.procurement)
+        economy->queue_research_procurement_policy(policy.country_handle,
+            policy.research_share_bp, policy.day, static_cast<int64_t>(policy.sequence));
 }
 
 bool DCWorldExt::runtime_country_ai_self_test() const {
@@ -745,7 +754,6 @@ bool DCWorldExt::runtime_country_ai_self_test() const {
     state.research_queues.assign(2 * 4 * 8, -1);
     state.research_queue_lengths.assign(8, 0);
     state.research_weights_bp = {2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500};
-    state.research_daily_budgets = {0, 0};
     state.research_auto_purchase = {0, 0};
     state.country_tax_defaults.assign(10, 0);
     state.country_tax_default_modes.assign(10, 0);

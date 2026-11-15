@@ -176,16 +176,43 @@ func _test_cash_failure_is_atomic(catalog: Dictionary, profile: Dictionary) -> v
 		int(report.get("goods_error", 1)) == 0)
 
 
-func _test_grouped_material_planner(catalog: Dictionary,
+func _test_grouped_material_planner(source_catalog: Dictionary,
 		profile: Dictionary) -> void:
-	var reed_id := (catalog.good_ids as PackedStringArray).find("reed_bundle")
-	var building_id := (catalog.building_type_ids as PackedStringArray).find(
+	# Design 8⑤: each construction group picks and meters its own material,
+	# physical = ceil(quantity * Q16 / efficiency) per group. Halve reed_bundle
+	# in the first group only; a pooled bill would charge both groups at the
+	# better efficiency and come out short of this total. The bill is kept
+	# small so the fixture market's own agents never draw on that stock.
+	var reed_id := (source_catalog.good_ids as PackedStringArray).find("reed_bundle")
+	var building_id := (source_catalog.building_type_ids as PackedStringArray).find(
 		"bast_wrap_shelter")
 	_expect("grouped-material fixture IDs exist", reed_id >= 0 and building_id >= 0)
 	if reed_id < 0 or building_id < 0:
 		return
+	var catalog := source_catalog.duplicate(true)
+	var offsets: PackedInt32Array = catalog.building_construction_offsets
+	var quantities: PackedInt64Array = catalog.building_construction_quantities
+	var candidate_offsets: PackedInt32Array = catalog.building_construction_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_construction_candidate_good_ids
+	var efficiencies: PackedInt32Array = catalog.building_construction_candidate_efficiency_q16
+	var bill := 0
+	var reed_groups := 0
+	for group in range(offsets[building_id], offsets[building_id + 1]):
+		quantities[group] = 20
+		for candidate in range(candidate_offsets[group], candidate_offsets[group + 1]):
+			if candidate_goods[candidate] != reed_id:
+				continue
+			if group == offsets[building_id]:
+				efficiencies[candidate] = 32768
+			var efficiency := int(efficiencies[candidate])
+			bill += (int(quantities[group]) * 65536 + efficiency - 1) / efficiency
+			reed_groups += 1
+	catalog.building_construction_quantities = quantities
+	catalog.building_construction_candidate_efficiency_q16 = efficiencies
+	_expect("grouped-material fixture has two groups that both admit reed_bundle",
+		offsets[building_id + 1] - offsets[building_id] == 2 and reed_groups == 2)
 	var funded := _fixture(catalog, profile, 1000000000000,
-		{"reed_bundle": 60})
+		{"reed_bundle": bill})
 	_expect("grouped-material funded fixture bootstraps", funded != null)
 	if funded == null:
 		return
@@ -199,13 +226,13 @@ func _test_grouped_material_planner(catalog: Dictionary,
 		"material_good_ids", PackedInt32Array())
 	var material_required: PackedInt64Array = quote.get(
 		"material_required", PackedInt64Array())
-	_expect("AND/OR planner selects one shared substitute and aggregates both groups",
+	_expect("each group picks reed_bundle and the quote sums both groups' bills",
 		bool(quote.get("ok", false)) and
 		(quote.get("eligible", PackedByteArray()) as PackedByteArray) ==
 			PackedByteArray([1]) and
 		material_offsets == PackedInt32Array([0, 1]) and
 		material_goods == PackedInt32Array([reed_id]) and
-		material_required == PackedInt64Array([60]))
+		material_required == PackedInt64Array([bill]))
 	var before := _market_good_stock(funded, "reed_bundle")
 	_expect("grouped-material command queues", bool(_submit(funded,
 		int(country.country_handle), building_id, 703).get("ok", false)))
@@ -214,17 +241,17 @@ func _test_grouped_material_planner(catalog: Dictionary,
 		0, 8).get("receipts", [])
 	var funded_receipt: Dictionary = funded_receipts[0] \
 		if not funded_receipts.is_empty() else {}
-	_expect("50-percent structure efficiency and cross-group total deduct exactly 60",
-		bool(funded_receipt.get("ok", false)) and before == 60 and
+	_expect("half-efficiency group costs double and the build deducts exactly the bill",
+		bool(funded_receipt.get("ok", false)) and before == bill and
 		_market_good_stock(funded, "reed_bundle") == 0 and
-		int(funded_receipt.get("market_goods_used", -1)) == 60)
+		int(funded_receipt.get("market_goods_used", -1)) == bill)
 	_expect("grouped-material success preserves economy conservation",
 		int(funded_report.get("population_error", 1)) == 0 and
 		int(funded_report.get("money_error", 1)) == 0 and
 		int(funded_report.get("goods_error", 1)) == 0)
 
 	var blocked := _fixture(catalog, profile, 1000000000000,
-		{"reed_bundle": 59})
+		{"reed_bundle": bill - 1})
 	_expect("grouped-material blocked fixture bootstraps", blocked != null)
 	if blocked == null:
 		return

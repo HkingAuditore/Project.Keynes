@@ -17,7 +17,9 @@ const TARGETS := {
 	},
 	"potatoes": {
 		"buildings": ["highland_tuber_plot", "potato_collector", "tenant_potato_field", "potato_estate", "method_potato_farm_r5", "method_potato_collector_r6", "method_potato_farm_r8", "method_potato_farm_r10"],
-		"climate": "dryland_crop", "resources": ["arable_land", "fertile_soil"]
+		# Highland tubers are their own climate tier, not a dryland crop.
+		"climate": "dryland_crop", "building_climates": {"highland_tuber_plot": "highland_crop"},
+		"resources": ["arable_land"]
 	},
 	"seed_cotton": {
 		"buildings": ["cotton_garden", "cotton_collector", "method_cotton_collector_r6", "cotton_smallholding", "method_cotton_collector_r8", "method_cotton_collector_r10"],
@@ -40,6 +42,8 @@ const TARGETS := {
 		"climate": "plantation_crop", "resources": ["plantation_land", "fertile_soil"]
 	},
 }
+
+const LAND_RESOURCES := ["arable_land", "fertile_soil", "paddy_land", "plantation_land"]
 
 const STAGE_BUILDINGS := {
 	"wheat_grain": {"foundation": ["rainfed_wheat_plot"], "managed": ["method_wheat_farm_r3", "method_wheat_farm_r5"], "industrial": ["method_wheat_farm_r6"], "digital": ["method_wheat_farm_r8", "method_wheat_farm_r10"]},
@@ -83,6 +87,8 @@ func _run() -> void:
 			if not is_wild_collection:
 				_expect("%s/%s is agriculture" % [good_id, building_id], String(profile.economic_sector_id) == "agriculture")
 			var climates: Array = spec.get("climates", [spec.get("climate", "")])
+			if spec.get("building_climates", {}).has(building_id):
+				climates = [spec.building_climates[building_id]]
 			_expect("%s/%s has correct climate" % [good_id, building_id],
 				climates.has(String(profile.production_climate_profile_id)))
 			var actual_resources := Array(profile.resource_ids)
@@ -90,6 +96,8 @@ func _run() -> void:
 			_expect("%s/%s has correct land resources" % [good_id, building_id],
 				(is_wild_collection or actual_resources.has(required_land)) and
 				(required_land == "paddy_land" or not actual_resources.has("paddy_land")))
+			var extra_land := actual_resources.filter(func(resource): return LAND_RESOURCES.has(resource) and not Array(spec.resources).has(resource))
+			_expect("%s/%s uses no land resource outside its table" % [good_id, building_id], extra_land.is_empty())
 			_expect("%s/%s outputs only its dedicated good" % [good_id, building_id],
 				Array(profile.output_good_ids) == [good_id])
 			_expect("%s/%s does not use generic grain/vegetables outputs" % [good_id, building_id],

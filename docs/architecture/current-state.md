@@ -45,14 +45,12 @@ Economy 原生门控，UI 隐藏入口只负责展示体验。
 
 | 推进者 | 线程 | 读写与交接 |
 | --- | --- | --- |
-| military | 主线程 | 每帧追赶已提交日期，`facade.run_daily` 同步运行；读 Country/Economy 已提交数据，写军事实体，后续意图走 D+1 |
-| natural_resource_recovery | 主线程 | 追赶已提交日期，写资源 slot 与 MapData；与经济自身消耗资源是两个入口 |
+| military | 主线程 | 每帧追赶已提交日期，`facade.run_daily` 同步运行；读 Country/Economy 已提交数据，写军事实体，后续意图走 D+1。后台 worker 在主线程报告第 D 天日尾完成（`mark_runtime_day_tail_done`）后才开始 D+1，Climate 授权前不等 |
+| natural_resource_recovery | 主线程 | 追赶已提交日期，写资源 slot 与 MapData；与经济自身消耗资源是两个入口；与 military 同受日尾闸门约束 |
 | family / person | 执行线程 | 在经济 FAMILY_COMMIT / PERSON_COMMIT 内运行，没有独立日域 |
 | vision | 主线程 | 读地形/领地/研究信号与已提交的玩家部队位置，写可见性，并提交 Country 观察意图；部队使用低于城市的移动视野预算 |
 | visual_delivery | 主线程 | 消费已发布的脏类别补丁，写显示与 MapData |
 | climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
-
-这些推进者与日表“同日对齐”的实验开关 `PK_EXPERIMENT_EXTERNAL_DAY_ALIGNMENT` 只供测试子类读取；产品默认未切换，见 [migration.md](migration.md) 的推迟项。
 
 ## 跨模块交接
 
@@ -116,7 +114,7 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
   section 23 保存玩家自动探路任务（任务行、选点、seen/visited/blocked、观察点、日期、返程）。
   trail、冻结 explored、fog 和派生索引不入档，恢复时重建。`military_for_each_lot_ordered`
   不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
-- PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1）、军事事件转发进度（MDJ1）。
+- PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1，主线程入口与日执行者两个游标）、军事事件转发进度（MDJ1）。
 - CLM2 v9：权威 extras 与天气初始化状态。
 
 ## 哈希与验证范围

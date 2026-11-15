@@ -59,15 +59,14 @@ RuntimeIdeologyOpinionSnapshot copy_opinion_snapshot(
 // "The worker owns IDEOLOGY, or will as soon as its first day commits".
 //
 // `domain_is_worker_authoritative` alone is the WRONG predicate for a load: the grant is
-// DEFERRED (it reads 0x000 until a day commits, see `domain_grant_pending`), and a load
+// DEFERRED (it reads 0x000 until a day commits, see `domain_main_thread_suppressed`), and a load
 // happens BEFORE the first commit of the new worker lifetime -- so checking only the live
 // grant would skip the import exactly when it is needed and leave the restore to be
 // overwritten. A world with no ideology grant (the main-thread path) answers false on
 // both counts, which is what keeps that path untouched.
 bool ideology_worker_owns_or_is_pending(NativeSimulationHost *host) {
-    if (host == nullptr) return false;
-    return host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY) ||
-        host->domain_grant_pending(RuntimeDomainId::IDEOLOGY);
+    return host != nullptr &&
+        host->domain_main_thread_suppressed(RuntimeDomainId::IDEOLOGY);
 }
 
 // ── the worker-side IMPORT of a restored save ────────────────────────────────
@@ -287,6 +286,9 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
     }
     bool mirrored = true;
     std::string error;
+    // Main-thread ingress to the worker's queue is sealed like every other lane.
+    // The worker's own Trigger and Effect stages queue Ideology commands directly.
+    const int64_t seal_day = worker_authoritative ? _runtime_host->command_seal_day() : 0;
     for (int32_t index = 0; index < opcodes.size(); ++index) {
         RuntimeIdeologyPodCommand command;
         command.producer_id = producers.is_empty() ? 1u :
@@ -299,7 +301,7 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
             command.sequence, static_cast<uint16_t>(command.opcode),
             command.country_handle);
         command.requested_day = days[index];
-        command.effective_day = days[index];
+        command.effective_day = std::max(days[index], seal_day);
         command.ideology_id = ideology_ids[index];
         command.value_q16 = values[index];
         command.offer_generation = static_cast<uint32_t>(
@@ -410,7 +412,7 @@ Dictionary DCWorldExt::poll_ideology_receipts(int64_t after_receipt_id,
 Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
     if (_ideology_runtime == nullptr) return unavailable();
     if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY)) {
+        _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::IDEOLOGY)) {
         Dictionary out;
         out["ok"] = true;
         out["suppressed"] = true;

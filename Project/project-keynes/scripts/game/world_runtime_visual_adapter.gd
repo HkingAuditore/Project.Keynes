@@ -499,7 +499,7 @@ func _refresh_vision(host) -> Dictionary:
 			or not _ensure_native_vision_configured(host, ext):
 		var fallback = VisionSolver.solve(host._current_map, host._world_data,
 			host._player_country_slot, host._military_vision_source_cells)
-		host._physical_visible_arr = host._current_map.visible_arr.duplicate()
+		host._current_map.physical_visible_arr = host._current_map.visible_arr.duplicate()
 		host._vision_dirty_indices.resize(host._current_map.cell_count())
 		for cell in host._current_map.cell_count():
 			host._vision_dirty_indices[cell] = cell
@@ -511,18 +511,20 @@ func _refresh_vision(host) -> Dictionary:
 		"remote_observation": host._remote_observation_capability,
 		"country_slots": host._current_map.country_slot_arr,
 		"military_source_cells": host._military_vision_source_cells,
-		"visible": host._physical_visible_arr,
+		"visible": host._current_map.physical_visible_arr,
 		"explored": host._current_map.explored_arr,
 		"fog_k": host._current_map.fog_k_arr,
 		"bio_occupancy_bits": host._current_map.bio_occupancy_bits_arr,
 	})
 	if not bool(result.get("ok", false)):
-		return VisionSolver.solve(host._current_map, host._world_data,
+		var solved = VisionSolver.solve(host._current_map, host._world_data,
 			host._player_country_slot, host._military_vision_source_cells)
-	host._physical_visible_arr = result.get("physical_visible", PackedByteArray())
+		host._current_map.physical_visible_arr = host._current_map.visible_arr.duplicate()
+		return solved
+	host._current_map.physical_visible_arr = result.get("physical_visible", PackedByteArray())
 	host._current_map.explored_arr = result.get("explored_arr", PackedByteArray())
 	host._current_map.fog_k_arr = result.get("fog_k_arr", PackedByteArray())
-	host._current_map.visible_arr = host._physical_visible_arr.duplicate()
+	host._current_map.visible_arr = host._current_map.physical_visible_arr.duplicate()
 	host._vision_dirty_indices = result.get("fog_dirty_indices", PackedInt32Array())
 	if not host._fog_of_war_enabled:
 		# 渲染直通不写回物理视野，也不把历史探索伪造成研究资格。
@@ -644,7 +646,7 @@ func _ensure_native_vision_configured(host, ext: Object) -> bool:
 	if bool(configured.get("ok", false)):
 		host._native_vision_configured_n = n
 		host._native_vision_configured_map_id = map_id
-		host._physical_visible_arr = PackedByteArray()
+		host._current_map.physical_visible_arr = PackedByteArray()
 	return bool(configured.get("ok", false))
 
 

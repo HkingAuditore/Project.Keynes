@@ -389,8 +389,8 @@ func _test_controller_lock() -> void:
 	_expect("non-player offers are never presented",
 		int(ui.shown.get("queue_remaining", -1)) == 0)
 	var blocked: Dictionary = controller.request_command(
-		PlayerControllerScript.COMMAND_RESEARCH_SET_BUDGET,
-		{"enabled": true, "daily_cash_limit": 1})
+		PlayerControllerScript.COMMAND_RESEARCH_SET_WEIGHTS,
+		{"weights_bp": PackedInt32Array([2500, 2500, 2500, 2500])})
 	_expect("other player commands wait for the founding choice",
 		String(blocked.get("code", "")) == "family_founding_choice_required")
 	var stale: Dictionary = controller.request_command(

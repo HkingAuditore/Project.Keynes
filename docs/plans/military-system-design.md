@@ -324,15 +324,15 @@ class_name UnitTypeProfile extends Resource
 
 **兵营岗位是普通雇员岗。** 兵营建筑组的雇员角色是 `soldier`，工资政策为新值 `"state_payroll"`，工资 = 国家军饷（§9.6），由国库支付。
 
-**自愿入伍**：直接复用现有 `building_employment`。
-- 失业者和其他职业的 cohort 比较「税后军饷 − 生活成本」与当前的机会收益，军饷更有吸引力时就转职为士兵。
-- 存款门槛、家族偏好（职业轴，见 J023/J025）全部照旧生效。
+**自愿入伍**：只走 Military 的 ENLIST 意图（2026-11-14 负责人决定）。
+- 每个采样日 Military 按配额从本格失业者发 ENLIST，失业者不够时发 LEVY（见下文缺员征召）。
+- Economy 的 `building_employment` 不给 soldier 岗位和国家业主席位挂招聘或流动目标，不自行产生士兵。
 
 **士兵不能主动转出**：soldier cohort 不参与雇员↔雇员、雇员→业主、失业回流、家族开拓抽人、迁徙等全部**向外**转职路径。
 
 **超编不裁员**：`soldier 人口 > 本格兵额` 时，就业对账**不会**把士兵打回失业池，只是不再招人。例如兵营被拆除、外地部队进驻都会造成超编。
 
-**招兵配额**：Military 在 epoch 开始前冻结每格配额，Economy 按配额填岗。
+**招兵配额**：Military 每个采样日冻结每格配额，并按配额发 ENLIST/LEVY，由 Economy 执行转换。
 
 ```text
 present(cell) = pop(cell, soldier) + Σ 位于 cell 的部队随军人口（不论从哪里开来）

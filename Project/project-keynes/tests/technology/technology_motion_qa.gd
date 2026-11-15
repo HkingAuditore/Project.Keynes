@@ -65,7 +65,7 @@ func _run() -> void:
 			"domain_weights_bp": PackedInt32Array([2500, 2500, 2500, 2500]),
 			"queue_offsets": offsets, "queue_technology_indices": queue,
 			"technology_points_stock": 125000, "country_cash": 540000000,
-			"last_research_day": 12, "daily_procurement_budget": 10000000,
+			"last_research_day": 12,
 			"auto_purchase_enabled": true}}
 	var host := Panel.new()
 	host.theme = load("res://assets/themes/player_session_theme.tres") as Theme

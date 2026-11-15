@@ -182,6 +182,12 @@ bool NativeEconomyRuntime::commit_ready_construction(
             fact.payload = {static_cast<int32_t>(type_hash), pending.type_id,
                 pending.owner_signature_id,
                 static_cast<int32_t>(pending.sponsor_family_handle & 0x7fffffffULL)};
+            // Same registry the economy rows use, so a trigger effect aimed at
+            // this building lands on the handle production evaluates.
+            if (_modifier_runtime != nullptr)
+                fact.entity_handle = modifier_api::ensure_building_identity(
+                    *_modifier_runtime, pending.cell, pending.type_id,
+                    pending.owner_signature_id);
             _staging_gameplay_facts.push_back(fact);
         }
     }

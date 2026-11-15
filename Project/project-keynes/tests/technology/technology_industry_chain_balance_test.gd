@@ -47,6 +47,7 @@ func _init() -> void:
 	_audit_productivity(catalog, failures)
 	_audit_early_farm_capacity(catalog, failures)
 	_audit_automation_inputs(catalog, failures)
+	_audit_same_era_duplicates(catalog, failures)
 	_assert_negative_fixtures(catalog)
 	for failure in failures:
 		push_error(JSON.stringify(failure))
@@ -83,6 +84,15 @@ func _audit_good_sinks(catalog: Dictionary, failures: Array) -> void:
 					catalog.building_input_candidate_offsets[edge + 1]):
 				var good := int(catalog.building_input_candidate_good_ids[candidate_edge])
 				sink_era[good] = mini(int(sink_era.get(good, era)), era)
+	var military: Dictionary = MilitaryCatalogCompiler.compile(catalog,
+		TechnologyCatalog.compile_native_catalog())
+	assert(bool(military.get("ok", false)), str(military))
+	for unit_value in military.units:
+		var unit: Dictionary = unit_value
+		var tech := technology_ids.find(String(unit.tech))
+		var era := int(technology_eras[tech]) if tech >= 0 else int(unit.era)
+		for good in MilitaryCatalogCompiler.unit_consumed_goods(military, unit):
+			sink_era[good] = mini(int(sink_era.get(good, era)), era)
 	for good in catalog.component_good_ids:
 		sink_era[int(good)] = -1
 	for good_value in producer_era:
@@ -287,10 +297,15 @@ func _audit_productivity(catalog: Dictionary, failures: Array) -> void:
 			era_productivity[era_id] = era_rows
 		if not precious_id.is_empty():
 			(precious_rows[precious_id] as Array).append(productivity)
+		var input_value := 0.0
+		for edge in range(input_offsets[building], input_offsets[building + 1]):
+			if int(input_required[edge]) > 0 and int(input_goods[edge]) >= 0:
+				input_value += float(input_quantities[edge]) * float(prices[int(input_goods[edge])])
 		var family := int(family_indices[building])
 		if family >= 0:
 			var rows: Array = family_rows.get(family, [])
 			rows.append({"tier": int(tiers[building]), "productivity": productivity,
+				"output_value": value, "input_value": input_value,
 				"food_capacity": food_capacity, "food": food_output > 0.0,
 				"building": String(building_ids[building])})
 			family_rows[family] = rows
@@ -316,13 +331,26 @@ func _audit_productivity(catalog: Dictionary, failures: Array) -> void:
 						"later": (rows[index] as Dictionary).building, "ratio": ratio})
 			continue
 		for index in range(1, rows.size()):
-			var ratio := float((rows[index] as Dictionary).productivity) / maxf(1.0,
-				float((rows[index - 1] as Dictionary).productivity))
-			if ratio <= 1.0:
-				failures.append({"kind": "upgrade_productivity_gap",
-					"family": String(family_ids[int(family)]),
-					"earlier": (rows[index - 1] as Dictionary).building,
-					"later": (rows[index] as Dictionary).building, "ratio": ratio})
+			var earlier: Dictionary = rows[index - 1]
+			var later: Dictionary = rows[index]
+			# 升级须在单位工人产出、总产出、单位投入产出三项上都高于前一级；
+			# 开采效率由 building_resource_chain_test 按同族单调检查。
+			var ratios := {
+				"upgrade_productivity_gap": float(later.productivity) / maxf(1.0,
+					float(earlier.productivity)),
+				"upgrade_output_gap": float(later.output_value) / maxf(1.0,
+					float(earlier.output_value)),
+			}
+			if float(earlier.input_value) > 0.0 and float(later.input_value) > 0.0:
+				ratios["upgrade_input_yield_gap"] = (float(later.output_value) /
+					float(later.input_value)) / (float(earlier.output_value) /
+					float(earlier.input_value))
+			for kind in ratios:
+				if float(ratios[kind]) <= 1.0:
+					failures.append({"kind": kind,
+						"family": String(family_ids[int(family)]),
+						"earlier": earlier.building, "later": later.building,
+						"ratio": ratios[kind]})
 
 	var stone_median := _median_float(era_productivity.get("stone", []))
 	for era_id in ["information", "intelligent"]:
@@ -427,6 +455,46 @@ func _audit_automation_inputs(catalog: Dictionary, failures: Array) -> void:
 			if not _has_required_input(catalog, building_id, good_id):
 				failures.append({"kind": "automated_farm_missing_required_input",
 					"building": building_id, "good": good_id})
+
+
+# 同一时代解锁、投入产出、地形依赖、资源和职业构成都相同的两种建筑算雷同：
+# 后一种不给玩家新选择，只是重复解锁。
+func _audit_same_era_duplicates(catalog: Dictionary, failures: Array) -> void:
+	var ids: PackedStringArray = catalog.building_type_ids
+	var groups := {}
+	for b in ids.size():
+		var key := [_building_era_id(catalog, b), catalog.building_owner_profession_ids[b]]
+		for column in [
+				["building_output_offsets", "building_output_good_ids"],
+				["building_dependency_tag_offsets", "building_dependency_tags"],
+				["building_resource_offsets", "building_production_resource_ids"],
+				["building_employee_offsets", "building_employee_profession_ids"]]:
+			var values := []
+			for e in range(catalog[column[0]][b], catalog[column[0]][b + 1]):
+				values.append(str(catalog[column[1]][e]))
+			values.sort()
+			key.append(values)
+		var inputs := []
+		for e in range(catalog.building_input_offsets[b], catalog.building_input_offsets[b + 1]):
+			if int(catalog.building_input_required_q16[e]) > 0:
+				inputs.append("%d/%d" % [int(catalog.building_input_good_ids[e]),
+					int(catalog.building_input_category_ids[e])])
+		inputs.sort()
+		key.append(inputs)
+		var text := str(key)
+		if not groups.has(text):
+			groups[text] = {"era": key[0], "buildings": []}
+		groups[text].buildings.append(ids[b])
+	var compared := 0
+	for text in groups:
+		var members: Array = groups[text].buildings
+		compared += members.size()
+		if members.size() > 1:
+			failures.append({"kind": "same_era_duplicate_buildings",
+				"era": groups[text].era, "buildings": members})
+	if compared != ids.size() or ids.is_empty():
+		failures.append({"kind": "same_era_duplicate_audit_vacuous", "compared": compared,
+			"buildings": ids.size()})
 
 
 func _has_required_input(catalog: Dictionary, building_id: String, good_id: String) -> bool:

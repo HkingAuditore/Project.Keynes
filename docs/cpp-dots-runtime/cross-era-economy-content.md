@@ -15,7 +15,7 @@
 - 每个 need 最多支持 4 个替代 variant。32 个职业映射到 survival、agrarian、extractive、
   industrial_worker、artisan、technical、merchant、owner 八套计划；共同覆盖主食、衣着、住房、
   蛋白质、果蔬、卫生与医疗，并按职业加入工作装备、交通、耐用品、奢侈品和身份消费。
-  `survival_household` 同时是自适应工资的生活成本基准。电力在专门家庭公用事业结算完成前不进入家庭能源替代。
+  `survival_household` 同时是自适应工资的生活成本基准。`home_energy` 已含 `electricity` 变体，家庭市场按 cycle-flow 同周期消费，不进跨周期库存。按 2026-11-14 上游结论，民用电不再扩展，这不是待办。
 - 建筑输入槽可使用精确 good、category 或显式候选 CSR，三者逐槽互斥。显式候选携带配方级 Q16
   效率并按 stable good ID 编译；native 继续使用既有 InputCandidate 选择逻辑，不新增配方运行时。
   建筑 snapshot 额外报告每个 group/input slot 上次实际选品，供 Inspector 展示；该诊断不持久化。

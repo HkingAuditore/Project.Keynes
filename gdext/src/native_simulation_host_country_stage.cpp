@@ -59,42 +59,14 @@ bool NativeSimulationHost::execute_country_worker_stage(
         return false;
     }
 
-    // Convert the sealed Country packet set once for terminal reporting. The
-    // worker may reject the whole semantic batch before a POD plan exists, so
-    // terminal receipts cannot depend only on RuntimeCountryPodPlan.commands.
-    // A malformed packet still gets an execution rejection identified by its
-    // transport envelope; it is never silently lost after admission.
-    std::vector<RuntimeCountryCommand> sealed_country_commands;
-    sealed_country_commands.reserve(day_commands.size());
-    for (const RuntimeCommandPacket &packet : day_commands) {
-        if (packet.envelope.domain !=
-                static_cast<uint16_t>(RuntimeDomainId::COUNTRY)) {
-            continue;
-        }
-        RuntimeCountryCommand command;
-        std::string command_error;
-        if (!RuntimeCountryPodAdapter::decode_command(
-                packet, command, command_error)) {
-            command.request_id = packet.envelope.request_id;
-            command.producer_id = packet.envelope.producer_id;
-            command.sequence = packet.envelope.sequence;
-            command.requested_day = packet.envelope.requested_day;
-            command.effective_day = packet.envelope.effective_day;
-            command.opcode = packet.envelope.opcode;
-            command.submit_order = packet.submit_order;
-        }
-        sealed_country_commands.push_back(command);
-    }
-    (void)sealed_country_commands;
-
     if (!_country_pod_plan_active) {
         // Only unwind commands this attempt newly pushed. Packets already in
         // _pending (mid-plan late admit / prior retain) must survive a
         // sibling decode failure or plan_day reject.
         std::vector<uint64_t> newly_queued_ids;
         std::vector<RuntimeCountryCommand> newly_queued_commands;
-        newly_queued_ids.reserve(sealed_country_commands.size());
-        newly_queued_commands.reserve(sealed_country_commands.size());
+        newly_queued_ids.reserve(day_commands.size());
+        newly_queued_commands.reserve(day_commands.size());
         CountryAiRuntime *country_ai = country_ai_for_worker();
         for (const RuntimeCommandPacket &packet : day_commands) {
             if (packet.envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY))
@@ -130,11 +102,6 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 command.opcode = packet.envelope.opcode;
                 command.submit_order = packet.submit_order;
             }
-            // The submitter's clock trails this worker's. Reschedule a late
-            // intent onto the day being planned instead of refusing it;
-            // requested_day still records what the player asked for.
-            if (decoded && command.effective_day < day)
-                command.effective_day = day;
             if (!decoded ||
                 !_country_pod_authority.queue_command(command, command_error)) {
                 error = command_error.empty()
@@ -203,6 +170,12 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
         _country_pod_plan_active = true;
         _country_peer_wait_preview_published = false;
+        // With Effect on this thread, technology effects are queued here,
+        // before today's Effect stage, instead of round-tripping through the
+        // main thread.
+        const bool effect_in_worker = effect_pod_transport_ready() &&
+            domain_main_thread_suppressed(RuntimeDomainId::EFFECT);
+        std::vector<CountryPeerIntent> worker_effect_peers;
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
             ++_country_worker_seal.boundary_id;
@@ -270,7 +243,11 @@ bool NativeSimulationHost::execute_country_worker_stage(
                     break;
                 }
                 _country_worker_intents[peer.request_id] = peer;
-                _country_worker_intent_queue.push_back(peer.request_id);
+                if (effect_in_worker &&
+                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT)
+                    worker_effect_peers.push_back(peer);
+                else
+                    _country_worker_intent_queue.push_back(peer.request_id);
                 ++_country_worker_continuation_index;
             }
             if (error.empty()) {
@@ -282,6 +259,22 @@ bool NativeSimulationHost::execute_country_worker_stage(
                                      std::numeric_limits<uint32_t>::max()));
                 _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
                 bind_shadow_country_peer_mirrors_locked();
+            }
+        }
+        if (error.empty()) {
+            for (const CountryPeerIntent &peer : worker_effect_peers) {
+                const CountryPeerResult result =
+                    resolve_country_technology_effect(peer);
+                std::lock_guard<std::mutex> lock(_country_transport_mutex);
+                _country_worker_results[peer.request_id] = result;
+                if (result.code == CountryPeerResultCode::PENDING) continue;
+                _country_worker_terminal_results[peer.request_id] = result;
+                if (result.code == CountryPeerResultCode::REJECTED) {
+                    ++_country_worker_protocol.rejected_intents;
+                    country_peer_copy_reason(
+                        _country_worker_protocol.rejection_reason,
+                        result.reason.data());
+                }
             }
         }
         if (!error.empty()) {

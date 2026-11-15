@@ -14,11 +14,15 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
 ## Non-negotiable boundaries
 
 - The AI is a **player-equivalent producer**. It only emits commands the player can submit
-  (`ENQUEUE_RESEARCH`, `SET_RESEARCH_WEIGHTS`, `SET_RESEARCH_BUDGET`, `SET_TAX_DEFAULT`, and
+  (`ENQUEUE_RESEARCH`, `SET_RESEARCH_WEIGHTS`, `SET_RESEARCH_AUTO_PURCHASE`, `SET_TAX_DEFAULT`, and
   `SET_TAX_OVERRIDE`/`CLEAR_TAX_OVERRIDE` on business tax for the food subsidy) with
   `COUNTRY_AI_PRODUCER_ID`, or ordinary `COMMAND_START_FAMILY_EXPEDITION` with
   `COUNTRY_AI_COLONIZATION_SEQUENCE_TAG`. Never add an AI-only state write, never mint resources,
   never let difficulty grant resources.
+- The research budget is not a Country command. The AI sends a research share as a
+  `CountryAiProcurementIntent`, which Economy applies like the player's
+  `set_country_procurement_policy` (treasury 10000 bp, research = the share, clamped to
+  `research_min_share_bp`..`research_max_share_bp`). Restore and mode switches re-push it.
 - Scope is `foreign_only`. The player handle is excluded and restored with `pkai`; an unarmed
   runtime never plans. Do not hand the player country to the AI.
 - No fog cheating: colonization quotes are prechecked with the intent's visibility list.

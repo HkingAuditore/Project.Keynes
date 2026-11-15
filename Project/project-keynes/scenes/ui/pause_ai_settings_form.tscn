@@ -1,0 +1,107 @@
+[gd_scene format=3]
+[node name="AiSettingsForm" type="ScrollContainer"]
+custom_minimum_size = Vector2(0, 380)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+[node name="Column" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+[node name="Enabled" type="CheckButton" parent="Column"]
+layout_mode = 2
+text = "启用 AI 生成事件"
+[node name="LlmUrl" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Label" type="Label" parent="Column/LlmUrl"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+text = "接口地址"
+theme_type_variation = &"PKMutedLabel"
+[node name="Edit" type="LineEdit" parent="Column/LlmUrl"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "https://api.deepseek.com/v1/chat/completions"
+[node name="LlmModel" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Label" type="Label" parent="Column/LlmModel"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+text = "模型"
+theme_type_variation = &"PKMutedLabel"
+[node name="Edit" type="LineEdit" parent="Column/LlmModel"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "deepseek-chat"
+[node name="LlmKey" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Label" type="Label" parent="Column/LlmKey"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+text = "API 密钥"
+theme_type_variation = &"PKMutedLabel"
+[node name="Edit" type="LineEdit" parent="Column/LlmKey"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "sk-..."
+secret = true
+[node name="Separator" type="HSeparator" parent="Column"]
+layout_mode = 2
+[node name="ImageEnabled" type="CheckButton" parent="Column"]
+layout_mode = 2
+text = "启用 AI 插画（失败时用内置题图）"
+[node name="ImageUrl" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Label" type="Label" parent="Column/ImageUrl"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+text = "生图接口"
+theme_type_variation = &"PKMutedLabel"
+[node name="Edit" type="LineEdit" parent="Column/ImageUrl"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "https://api.openai.com/v1/images/generations"
+[node name="ImageModel" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Label" type="Label" parent="Column/ImageModel"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+text = "生图模型"
+theme_type_variation = &"PKMutedLabel"
+[node name="Edit" type="LineEdit" parent="Column/ImageModel"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "dall-e-3"
+[node name="ImageKey" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Label" type="Label" parent="Column/ImageKey"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+text = "生图密钥"
+theme_type_variation = &"PKMutedLabel"
+[node name="Edit" type="LineEdit" parent="Column/ImageKey"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "sk-..."
+secret = true
+[node name="Note" type="Label" parent="Column"]
+layout_mode = 2
+text = "密钥只保存在本机 user://ai_credentials.cfg，不会写进存档。"
+theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 3
+[node name="Status" type="Label" parent="Column"]
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 3
