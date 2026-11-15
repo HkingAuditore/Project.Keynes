@@ -842,7 +842,7 @@ Dictionary DCWorldExt::query_effect_instance_metric(int64_t instance_id,
 Dictionary DCWorldExt::run_effect_daily(int64_t day_index) {
     if (_effect_runtime == nullptr) return unavailable();
     if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::EFFECT)) {
         Dictionary out;
         out["ok"] = true;
         out["suppressed"] = true;

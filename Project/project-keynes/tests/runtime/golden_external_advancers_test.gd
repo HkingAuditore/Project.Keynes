@@ -114,7 +114,7 @@ func _run() -> void:
 				offset += 64
 		_expect("v5 populated family/person coverage", not families.is_empty() and not people.is_empty())
 		var map := host.get_current_map()
-		var vision: Array = [host._physical_visible_arr.hex_encode(), map.explored_arr.hex_encode(), map.fog_k_arr.hex_encode()]
+		var vision: Array = [map.physical_visible_arr.hex_encode(), map.explored_arr.hex_encode(), map.fog_k_arr.hex_encode()]
 		var hashes := {"MILITARY": _digest(_canonical(army)), "NATURAL_RESOURCE": resource.hash,
 			"FAMILY": _digest(families), "PERSON": _digest(people), "VISION": _digest(vision)}
 		if OS.get_environment("PK_GOLDEN_DIAGNOSTICS") == "1":

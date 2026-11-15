@@ -331,6 +331,12 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
          _runtime_host->country_authority_owner_is_worker());
     const bool economy_worker_authoritative = _runtime_host != nullptr &&
         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY);
+    // 主线程是否停推某域：含授权窗口（已请求、worker 首日未提交）。下面的日推进和
+    // 日屏障都用它；Economy 输入捕获仍只看已生效授权。
+    const auto suppressed = [&](RuntimeDomainId domain) {
+        return _runtime_host != nullptr &&
+            _runtime_host->domain_main_thread_suppressed(domain);
+    };
     sync_runtime_domain_ownership();
     // Worker ACTIVE owns economy mutation via compact slices, but MapData /
     // DataCore environment + building context still live on the main thread.
@@ -381,7 +387,8 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     while (iterations++ < 64 && !over_budget()) {
         bool progressed = false;
         Dictionary ctx = ctx_for();
-        if (!country_worker_authoritative && _country_runtime != nullptr &&
+        if (!country_worker_authoritative && !suppressed(RuntimeDomainId::COUNTRY) &&
+            _country_runtime != nullptr &&
             static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_country();
             Dictionary country_result = run_country_slice(ctx);
@@ -409,7 +416,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         // Gate handoff on a non-empty facade effect queue after writeback — not
         // on should_run()'s day-lag clause, which stays hot whenever the facade
         // clock trails the worker and would re-enter every pulse for nothing.
-        const bool trigger_worker_owns_day = trigger_worker_authoritative();
+        const bool trigger_worker_owns_day = suppressed(RuntimeDomainId::TRIGGER_INPUT);
         TriggerRuntime *trigger_runtime = _trigger_runtime != nullptr
             ? static_cast<TriggerRuntime *>(_trigger_runtime) : nullptr;
         const bool trigger_facade_due = trigger_runtime != nullptr &&
@@ -476,9 +483,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         // G8: publish_ideology_worker_inputs above still runs under worker
         // authority — the worker needs the opinion snapshot either way — but
         // the synchronous day must not.
-        const bool ideology_worker_authoritative = _runtime_host != nullptr &&
-            _runtime_host->domain_is_worker_authoritative(
-                RuntimeDomainId::IDEOLOGY);
+        const bool ideology_worker_authoritative = suppressed(RuntimeDomainId::IDEOLOGY);
         if (!ideology_worker_authoritative && _ideology_runtime != nullptr &&
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->should_run(day)) {
             ran(run_ideology_daily(day), DIRTY_COUNTRY_STATE | DIRTY_EVENTS);
@@ -486,15 +491,11 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         }
         if (over_budget()) break;
         if (_effect_runtime != nullptr) {
-            const bool effect_worker_authoritative = _runtime_host != nullptr &&
-                _runtime_host->domain_is_worker_authoritative(
-                    RuntimeDomainId::EFFECT);
+            const bool effect_worker_authoritative = suppressed(RuntimeDomainId::EFFECT);
             if (!effect_worker_authoritative &&
                 static_cast<EffectRuntime *>(_effect_runtime)->should_run(day)) {
                 ran(run_effect_daily(day), DIRTY_EVENTS);
-                if (!(_runtime_host != nullptr &&
-                      _runtime_host->domain_is_worker_authoritative(
-                          RuntimeDomainId::MODIFIER))) {
+                if (!suppressed(RuntimeDomainId::MODIFIER)) {
                     dispatch_effect_native_modifier();
                 }
                 dispatch_effect_native_gameplay();
@@ -520,18 +521,14 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             dispatch_effect_native_economy();
             ack_effect_native_economy();
             if (!effect_worker_authoritative) {
-                if (!(_runtime_host != nullptr &&
-                      _runtime_host->domain_is_worker_authoritative(
-                          RuntimeDomainId::MODIFIER))) {
+                if (!suppressed(RuntimeDomainId::MODIFIER)) {
                     ack_effect_native_modifier();
                 }
                 ack_effect_native_gameplay();
             }
         }
         if (over_budget()) break;
-        const bool modifier_worker_authoritative = _runtime_host != nullptr &&
-            _runtime_host->domain_is_worker_authoritative(
-                RuntimeDomainId::MODIFIER);
+        const bool modifier_worker_authoritative = suppressed(RuntimeDomainId::MODIFIER);
         if (!modifier_worker_authoritative && _modifier_runtime != nullptr &&
             static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_modifier();
@@ -562,7 +559,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         // compact mutation slice here would create a second writer on the
         // same NativeEconomyRuntime and can execute an unpreemptible economy
         // range on the main thread.
-        if (!economy_worker_authoritative &&
+        if (!suppressed(RuntimeDomainId::ECONOMY) &&
             _economy_runtime != nullptr && economy_should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_economy();
             Dictionary economy_result = run_economy_slice_compact(ctx);
@@ -604,13 +601,9 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // escape the Country worker gate entirely — that pinned
     // country_day_barrier/economy_day_barrier with economy_slices=0.
     const bool country_worker_owns_barrier =
-        _runtime_host != nullptr &&
-        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
-         _runtime_host->country_authority_owner_is_worker());
-    const bool effect_worker_owns_barrier = _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
-    const bool modifier_worker_owns_barrier = _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::MODIFIER);
+        country_worker_authoritative || suppressed(RuntimeDomainId::COUNTRY);
+    const bool effect_worker_owns_barrier = suppressed(RuntimeDomainId::EFFECT);
+    const bool modifier_worker_owns_barrier = suppressed(RuntimeDomainId::MODIFIER);
     const bool pending =
         ideology_needs_daily_continuation(day) ||
         (!country_worker_owns_barrier && _country_runtime != nullptr &&
@@ -621,7 +614,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
          static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day)) ||
         (!effect_worker_owns_barrier && _effect_runtime != nullptr &&
          gameplay_effect_should_run(day)) ||
-        (!economy_worker_authoritative && _economy_runtime != nullptr &&
+        (!suppressed(RuntimeDomainId::ECONOMY) && _economy_runtime != nullptr &&
          economy_should_run(day));
     if (pending) status = 3;
     if (country_peer_adapter_fault) status = 3;
@@ -1433,7 +1426,6 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["environment_frames_ahead"] = 0;
     out["country_peer_resolved_in_worker"] = 0;
     out["country_peer_resolved_by_main"] = 0;
-    out["country_deferred_peer_count"] = 0;
     if (_runtime_host) {
         const RuntimeThreadReport host = _runtime_host->report();
         out["simulation_thread_mode"] = runtime_effective_mode_name(
@@ -1481,8 +1473,6 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             host.country_peer_resolved_in_worker);
         out["country_peer_resolved_by_main"] = static_cast<int64_t>(
             host.country_peer_resolved_by_main);
-        out["country_deferred_peer_count"] = static_cast<int64_t>(
-            host.country_deferred_peer_count);
         out["authoritative_domain_mask"] =
             static_cast<int64_t>(host.authoritative_domain_mask);
         out["active_evidence_mask"] =

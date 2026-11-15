@@ -203,14 +203,6 @@ Dictionary economy_input_generation_dictionary(
 
 } // namespace
 
-void DCWorldExt::invalidate_economy_input_capture_cache(bool force_full) {
-    _economy_capture_generation = {};
-    _economy_capture_generation_valid = false;
-    _economy_capture_cached = false;
-    _economy_capture_force_full = force_full;
-    _economy_capture_cached_report.clear();
-}
-
 Dictionary DCWorldExt::get_economy_checkpoint_format() const {
     Dictionary out;
     out["abi_version"] = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
@@ -248,6 +240,13 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
         // forwarder has to be in place before that call, not after it.
         static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_forwarder(
             _effect_forwarder.get());
+        // Same attachment as configure_country: without it, technologies that
+        // carry a Modifier stay pending forever on this fallback path.
+        if (_modifier_runtime != nullptr)
+            static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
+                static_cast<NativeCountryRuntime *>(_country_runtime));
+        static_cast<NativeCountryRuntime *>(_country_runtime)->attach_modifier_runtime(
+            static_cast<ModifierRuntime *>(_modifier_runtime));
         PackedByteArray all_land;
         all_land.resize(cell_count);
         all_land.fill(0);
@@ -268,6 +267,7 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
             runtime_from(_economy_runtime));
     runtime_from(_economy_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
+    _economy_modifier_view_attached = false;
     runtime_from(_economy_runtime)->attach_trigger_runtime(
         static_cast<TriggerRuntime *>(_trigger_runtime));
     if (_effect_runtime != nullptr)
@@ -637,7 +637,11 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
         if (requested < 0) {
             // 主线程发布下一日环境前可预先冻结同一批 slots；只允许严格
             // 下一日且 worker 无在途日，不能改写一个已开始的 epoch。
-            if (day_index < 0 || _economy_runtime == nullptr) return pending;
+            // worker 拥有 Economy 时不预采：它从环境帧自采，并叠上当天已提交的
+            // Climate；这里读的主线程槽落后几天取决于时序，预采后 worker 会跳过自采。
+            if (day_index < 0 || _economy_runtime == nullptr ||
+                _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY))
+                return pending;
             const auto report = _runtime_host->report();
             if (report.worker_day_inflight != 0 ||
                 day_index != report.committed_day + 1 ||
@@ -874,7 +878,7 @@ Dictionary DCWorldExt::begin_or_reuse_economy_input_epoch(
                 static_cast<bool>(fog_variant);
             if (fog_solved) {
                 const Variant visible_variant =
-                    _map_data->get(StringName("visible_arr"));
+                    _map_data->get(StringName("physical_visible_arr"));
                 if (visible_variant.get_type() == Variant::PACKED_BYTE_ARRAY) {
                     visible_bytes = visible_variant;
                     visible_ptr = visible_bytes.ptr();
@@ -1124,12 +1128,6 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             if (!NativeEconomyRuntime::gameplay_fact_event(fact.kind, event_type,
                                                            payload_schema))
                 continue;
-            if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_CONSTRUCTION_COMPLETED &&
-                _modifier_runtime != nullptr) {
-                fact.entity_handle = static_cast<ModifierRuntime *>(
-                    _modifier_runtime)->ensure_building_identity(
-                        fact.cell, fact.payload[1], fact.payload[2]);
-            }
             if (_emit_gameplay_event(day_index, 9, event_type, 1, fact.flags,
                     fact.entity_handle, fact.entity_id, fact.cell, payload_schema,
                     fact.value, fact.payload[0], fact.payload[1], fact.payload[2],

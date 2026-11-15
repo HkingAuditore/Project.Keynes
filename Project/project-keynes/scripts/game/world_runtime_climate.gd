@@ -2,32 +2,6 @@ extends RefCounted
 
 ## Climate authority policy and worker handoff. Mutable state remains on the host.
 
-func _try_promote_economy_pod_active(host) -> void:
-	if not host.runtime_economy_auto_pod_active:
-		return
-	if host._generator == null or not host._generator.has_method("get_data_core_world_ext"):
-		return
-	var ext = host._generator.get_data_core_world_ext()
-	if ext == null:
-		return
-	var report: Dictionary = host._generator.get_runtime_thread_report() \
-		if host._generator.has_method("get_runtime_thread_report") else {}
-	if String(report.get("simulation_thread_mode", "OFF")) != "ACTIVE":
-		return
-	if not bool(report.get("economy_pod_active_ready", false)):
-		return
-	# Already bound OwnedState means POD_ACTIVE promotion has landed.
-	if String(report.get("economy_formula_backing", "")) == "owned_state":
-		return
-	# Cheap prefilter; C++ still try_locks because this races with the worker.
-	if int(report.get("worker_day_inflight", 0)) != 0 \
-			or int(report.get("economy_inflight_mutations", 0)) != 0:
-		return
-	var switched: Dictionary = ext.switch_economy_authority("POD_ACTIVE")
-	if bool(switched.get("ok", false)):
-		print("[runtime-worker] Economy authority promoted to POD_ACTIVE")
-
-
 ## 运行时开关 Climate|Country 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，
 ## 主线程立刻恢复算 climate/country。打开则相反。不需要重新生成世界。
 ## B8-4：这个入口现在等价于 force_on / force_off；想回到 auto 用

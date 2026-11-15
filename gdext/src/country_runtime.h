@@ -428,7 +428,7 @@ public:
     int64_t transfer_good_from_market(int64_t country_handle, int32_t good_id,
                                       int64_t offered);
     bool research_procurement_policy(int32_t country_slot, bool &enabled,
-                                     int64_t &cash_budget, int64_t &remaining_points) const;
+                                     int64_t &remaining_points) const;
     bool purchase_research_points(int32_t country_slot, int64_t quantity,
                                   int64_t total_cost);
     int32_t technology_points_good_id() const { return _technology_points_good_id; }
@@ -599,7 +599,6 @@ private:
         std::vector<uint8_t> research_queue_lengths;
         std::vector<int32_t> research_weights_bp;
         std::vector<uint8_t> research_auto_purchase;
-        std::vector<int64_t> research_daily_budgets;
         std::vector<int64_t> research_deferred_points;
         std::vector<uint64_t> signals;
         std::vector<std::vector<uint64_t>> signal_cells;
@@ -997,7 +996,6 @@ private:
     std::vector<uint8_t> _country_research_queue_lengths;
     std::vector<int32_t> _country_research_weights_bp;
     std::vector<uint8_t> _country_research_auto_purchase;
-    std::vector<int64_t> _country_research_daily_budgets;
     std::vector<int64_t> _country_research_deferred_points;
     std::vector<int64_t> _country_research_purchased_total;
     std::vector<int64_t> _country_research_consumed_total;

@@ -10,15 +10,11 @@ extends SceneTree
 ## 现在 tribal_warriors 挂在 `tech.composite_tools`（硬前置含 stone_knapping），
 ## 民兵没有任何兵种专属物资需求。
 ##
-## 第二轮（全兵种）：每个有科技门的兵种，其**每一个装备槽、按作者指定的
-## min_quality 那一档 goods**，在解锁时都必须既有生产许可、又有已解锁的
-## 产出建筑。不能用同类别里更早解锁的低档货蒙混：火枪兵的 melee_arms
-## 类别里 stone_spears 很早就有，但它指定的 Q3 是 iron_weapons；核心装备
-## firearms Q1 是 matchlocks，两者缺一不可。为此给兵种科技补了装备链硬前置，
-## 并把 bronze_spearmen 挂到能覆盖三件装备的最早节点 hide_tanning。
+## 第二轮（全兵种）：核心槽在解锁时必须有一个达到 min_quality 的商品既
+## 有生产许可、又有已解锁的产出建筑；次要槽则要求类别中至少一个商品可用。
 ##
 ## 校验走正式目录（军事 JSON + 经济目录 + 建筑 .tres + 科技树），并带负例
-## （回退部落战士门槛 / 删掉火枪兵的冶铁前置）证明不是假 PASS。
+## （回退部落战士门槛 / 火枪兵挂到早期科技门）证明不是假 PASS。
 ##
 ##   godot --headless --path Project/project-keynes \
 ##       -s res://tests/military/military_unit_unlock_consistency_test.gd
@@ -47,7 +43,6 @@ func _init() -> void:
 	_check_day_zero_unlock_contract()
 	_check_all_unit_equipment_reachable()
 	_check_tribal_warriors_gate()
-	_check_special_cases()
 	_check_musketeers_example()
 	_check_guard_detects_regression()
 	_report_supply_gaps()
@@ -224,36 +219,25 @@ func _producer_ready(good_id: String, closure: Dictionary) -> bool:
 	return false
 
 
-## 槽位指定的那一档 goods（quality == min_quality）。运行时采购只按类别找货，
-## 但作者指定的档位才是这个兵种成立的门槛，不能用类别里的低档货替代。
-func _exact_good(raw: Dictionary, category: String, quality: int) -> String:
-	for category_value in raw.get("equipment_categories", []):
-		if not category_value is Dictionary:
-			continue
-		var entry: Dictionary = category_value
-		if str(entry.get("id", "")) != category:
-			continue
-		for good_value in entry.get("goods", []):
-			if good_value is Dictionary \
-					and int((good_value as Dictionary).get("quality", 0)) == quality:
-				return str((good_value as Dictionary).get("good", ""))
-	return ""
-
-
-## 一个恒解锁兵种引用到的物资：精确档装备 + 所有有非零需求的补给类候选。
+## 一个恒解锁兵种引用到的物资：槽接受的装备 + 所有有非零需求的补给类候选。
 func _referenced_goods(raw: Dictionary, compiled: Dictionary, unit: Dictionary) -> Array:
 	var seen := {}
 	var out: Array = []
+	var categories_by_id := _categories_by_id(compiled)
+	var good_ids := _economy_good_ids()
 	for slot_value in unit.get("equipment", []):
 		if not slot_value is Dictionary:
 			continue
 		var slot: Dictionary = slot_value
-		var good_id := _exact_good(raw, str(slot.get("category", "")),
-			int(slot.get("min_quality", 1)))
-		if not good_id.is_empty() and not seen.has(good_id):
-			seen[good_id] = true
-			out.append(good_id)
-	var good_ids := _economy_good_ids()
+		var category: Dictionary = categories_by_id.get(String(slot.get("category", "")), {})
+		for good_value in CompilerScript.slot_accepted_goods(slot, category):
+			var good_index := int(good_value)
+			if good_index < 0 or good_index >= good_ids.size():
+				continue
+			var good_id := String(good_ids[good_index])
+			if not seen.has(good_id):
+				seen[good_id] = true
+				out.append(good_id)
 	var rows: Array = compiled.get("supply_goods", [])
 	var idle: Dictionary = unit.get("supply_idle", {})
 	var combat: Dictionary = unit.get("supply_combat", {})
@@ -304,12 +288,18 @@ func _day_zero_violations(raw: Dictionary, compiled: Dictionary,
 	return violations
 
 
-## 全兵种硬契约：每个有科技门的兵种、每个装备槽、按作者指定档位，
-## 解锁瞬间必须「物资许可 + 产出建筑许可」同时成立。
+## 全兵种硬契约：核心槽在解锁瞬间必须有一个达标商品可生产；次要槽
+## 则必须有一个同类别商品可生产。
 func _equipment_violations(raw: Dictionary, graph: Dictionary,
 		good_tags: Dictionary) -> Array:
 	var violations: Array = []
 	_slots_checked = 0
+	var compiled := _compile(raw)
+	if not bool(compiled.get("ok", false)):
+		violations.append("catalog does not compile: %s" % String(compiled.get("reason", "")))
+		return violations
+	var categories_by_id := _categories_by_id(compiled)
+	var good_ids := _economy_good_ids()
 	for unit_value in raw.get("units", []):
 		if not unit_value is Dictionary:
 			continue
@@ -328,25 +318,32 @@ func _equipment_violations(raw: Dictionary, graph: Dictionary,
 			var slot: Dictionary = slot_value
 			var category := str(slot.get("category", ""))
 			var quality := int(slot.get("min_quality", 1))
-			var good_id := _exact_good(raw, category, quality)
 			_slots_checked += 1
-			if good_id.is_empty():
-				violations.append("%s/%sQ%d has no exact-quality good"
-					% [unit_id, category, quality])
-				continue
-			var tags: PackedStringArray = good_tags.get(good_id, PackedStringArray())
-			var unlocked := false
-			for tag in tags:
-				if closure.has(String(tag)):
-					unlocked = true
-			if not unlocked:
-				violations.append("%s/%sQ%d good %s is locked at unlock (tags=%s)"
-					% [unit_id, category, quality, good_id, str(tags)])
-				continue
-			if not _producer_ready(good_id, closure):
-				violations.append("%s/%sQ%d good %s has no unlocked producer"
-					% [unit_id, category, quality, good_id])
+			var accepted_ids := PackedStringArray()
+			for good_value in CompilerScript.slot_accepted_goods(slot,
+					categories_by_id.get(category, {})):
+				if int(good_value) >= 0 and int(good_value) < good_ids.size():
+					accepted_ids.append(String(good_ids[int(good_value)]))
+			var ready := false
+			for good_id in accepted_ids:
+				var tags: PackedStringArray = good_tags.get(good_id, PackedStringArray())
+				if Array(tags).any(func(tag) -> bool: return closure.has(String(tag))) \
+						and _producer_ready(good_id, closure):
+					ready = true
+					break
+			if not ready:
+				var slot_kind := "core" if bool(slot.get("core", false)) else "secondary"
+				violations.append("%s/%sQ%d %s slot has no unlocked producible accepted good (accepted=%s)"
+					% [unit_id, category, quality, slot_kind, str(accepted_ids)])
 	return violations
+
+
+func _categories_by_id(compiled: Dictionary) -> Dictionary:
+	var out := {}
+	for category_value in compiled.get("categories", []):
+		if category_value is Dictionary:
+			out[String((category_value as Dictionary).get("id", ""))] = category_value
+	return out
 
 
 func _compile(raw: Dictionary) -> Dictionary:
@@ -420,32 +417,8 @@ func _check_tribal_warriors_gate() -> void:
 		_expect("composite tools unlocks %s" % good_id, not hit.is_empty(), str(tags))
 
 
-## bronze_spearmen 的 hide_tanning 门槛是特例：三件装备（青铜兵器 / 皮甲 /
-## 弓）分布在三条链上，而科技表按 dense id 拓扑排序，不能给 bronze_casting
-## 挂排在它后面的 hide_tanning 前置。hide_tanning 补 bronze_casting 前置后
-## 是唯一能同时覆盖三件装备的最早节点。
-func _check_special_cases() -> void:
-	var raw := _read_json(MILITARY_PATH)
-	if raw.is_empty() or _nodes.is_empty():
-		return
-	var spears := _unit_by_id(raw, "bronze_spearmen")
-	_expect("bronze spearmen gate covers all three equipment chains",
-		String(spears.get("tech", "")) == "tech.hide_tanning",
-		String(spears.get("tech", "")))
-	var closure := _closure_of("tech.hide_tanning", _nodes)
-	var good_tags := _good_technology_tags()
-	for good_id in ["bronze_weapons", "hide_armor", "bows"]:
-		var tags: PackedStringArray = good_tags.get(String(good_id), PackedStringArray())
-		var hit := false
-		for tag in tags:
-			if closure.has(String(tag)):
-				hit = true
-		_expect("hide_tanning closure unlocks %s" % good_id, hit, str(tags))
-
-
-## 用户举的例子：火枪兵的 melee_arms 类别里 stone_spears 很早解锁，但它指定的
-## Q3 是 iron_weapons；核心装备 firearms Q1 是 matchlocks。两件都必须可用。
-## 负例把 gunpowder_weapons 的冶铁前置删掉，防线必须报出 iron_weapons 缺口。
+## 用户举的例子：火枪兵的核心 firearms 槽必须有可生产的达标商品；melee_arms
+## 是次要槽，删掉冶铁前置后不应再把 iron_weapons 当成硬门槛。
 func _check_musketeers_example() -> void:
 	var raw := _read_json(MILITARY_PATH)
 	if raw.is_empty() or _nodes.is_empty():
@@ -459,19 +432,15 @@ func _check_musketeers_example() -> void:
 		String(musketeers.get("tech", "")))
 	var slots: Array = musketeers.get("equipment", [])
 	_expect("musketeers carry two equipment slots", slots.size() == 2, str(slots.size()))
-	_expect("musketeers need matchlocks (firearms Q1)",
-		_exact_good(raw, "firearms", 1) == "matchlocks")
-	_expect("musketeers need iron weapons (melee Q3, not stone spears)",
-		_exact_good(raw, "melee_arms", 3) == "iron_weapons")
 	var closure := _closure_of(MUSKETEER_TECH, _nodes)
 	var good_tags := _good_technology_tags()
-	for good_id in ["matchlocks", "iron_weapons"]:
+	for good_id in ["matchlocks"]:
 		var tags: PackedStringArray = good_tags.get(String(good_id), PackedStringArray())
 		var hit := false
 		for tag in tags:
 			if closure.has(String(tag)):
 				hit = true
-		_expect("gunpowder weapons unlocks %s" % good_id, hit, str(tags))
+		_expect("gunpowder weapons unlocks core good %s" % good_id, hit, str(tags))
 		_expect("%s has an unlocked producer" % good_id,
 			_producer_ready(String(good_id), closure))
 	var regressed: Dictionary = _nodes.duplicate(true)
@@ -485,8 +454,18 @@ func _check_musketeers_example() -> void:
 	for violation in violations:
 		if String(violation).contains("musketeers") and String(violation).contains("iron_weapons"):
 			found = true
-	_expect("guard rejects a musketeer unlocked without iron weapons", found,
-		str(violations))
+	_expect("secondary musketeer melee slot accepts lower quality after iron prerequisite removal",
+		not found, str(violations))
+	# 负例：把火枪兵挂到部落战士的科技门上，核心 firearms 槽必须报缺口。
+	var early := raw.duplicate(true)
+	for unit_value in early.get("units", []):
+		if unit_value is Dictionary and String((unit_value as Dictionary).get("id", "")) == "musketeers":
+			(unit_value as Dictionary)["tech"] = TRIBAL_TECH
+	var core_gap := false
+	for violation in _equipment_violations(early, _nodes, good_tags):
+		if String(violation).begins_with("musketeers/firearms") and String(violation).contains("core slot"):
+			core_gap = true
+	_expect("guard rejects musketeers whose core firearms slot is unproducible", core_gap)
 
 
 ## 把 tribal_warriors 的门槛改回空串，防线必须报出石矛 / 弓 / upkeep 的违规。

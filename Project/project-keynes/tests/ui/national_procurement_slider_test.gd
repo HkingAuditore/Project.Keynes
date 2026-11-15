@@ -2,7 +2,7 @@ extends SceneTree
 
 ## 国家购买预算滑条（国库页）与科技占比滑条（科技页）的交互回归：
 ## 拖动预览不提交、松手提交一次、最左端关闭、文本格式、提交经 PlayerController
-## 的 procurement.set_policy，以及 unsupported_command 时科技页回退 research.set_budget。
+## 的 procurement.set_policy，以及 unsupported_command 的识别。
 ##
 ## godot --headless --path Project/project-keynes --script res://tests/ui/national_procurement_slider_test.gd
 

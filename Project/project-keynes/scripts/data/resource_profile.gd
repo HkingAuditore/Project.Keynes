@@ -153,11 +153,11 @@ var habitat_mode: String = "legacy"
 ## When positive together with init_target_coverage, bootstrap normalizes total
 ## reserve to valid_cell_count * this value * cell-area scale. Coverage can
 ## therefore change concentration without accidentally changing world supply.
-@export_range(0.0, 100000000.0, 1.0) var init_target_reserve_density: float = 0.0
+@export_range(0.0, 10000000000.0, 1.0) var init_target_reserve_density: float = 0.0
 ## Optional retained-deposit mean for resources whose total should follow
 ## occupied habitat rather than whole-world habitat (for example fisheries).
 ## Mineral profiles should prefer init_target_reserve_density.
-@export_range(0.0, 100000000.0, 1.0) var init_target_mean_reserve: float = 0.0
+@export_range(0.0, 10000000000.0, 1.0) var init_target_mean_reserve: float = 0.0
 ## Shapes enrichment inside the retained region without changing its coverage
 ## or total reserve. Values above 1 concentrate more reserve in the best cells.
 @export_range(0.1, 8.0, 0.1) var init_richness_exponent: float = 1.0
@@ -165,7 +165,7 @@ var habitat_mode: String = "legacy"
 ## Their reserve is carved out of the same world total rather than added to it.
 @export_range(0.0, 1.0, 0.001) var init_micro_coverage: float = 0.0
 @export_range(0.0, 0.5, 0.001) var init_micro_reserve_share: float = 0.0
-@export_range(0.0, 100000000.0, 1.0) var init_micro_min_reserve: float = 0.0
+@export_range(0.0, 10000000000.0, 1.0) var init_micro_min_reserve: float = 0.0
 
 # ─── 扩展初始储量因子（「地块自身情况」，map generation 仅一次）──────────
 # 默认 0 / {} → 不参与，保持与旧公式逐位一致（向后兼容）。

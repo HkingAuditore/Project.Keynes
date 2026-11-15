@@ -1,4 +1,4 @@
-// military_core_save.cpp - PKMI v4 encode/restore of the whole Military state
+// military_core_save.cpp - PKMI v7 encode/restore of the whole Military state
 // (owner: A1).
 //
 // Layout: every record is a little-endian fixed-width field sequence (no struct
@@ -60,7 +60,6 @@ constexpr uint16_t kSection_End = 0xFFFF;
 
 // Sanity caps so a corrupt length can never trigger an enormous allocation.
 constexpr uint32_t kMaxRows = 4u * 1024u * 1024u;
-constexpr uint32_t kMaxStrings = 4096u;
 
 class Writer {
 public:
@@ -81,15 +80,6 @@ public:
     void i16(int16_t v) { u16((uint16_t)v); }
     void i32(int32_t v) { u32((uint32_t)v); }
     void i64(int64_t v) { u64((uint64_t)v); }
-    void f64(double v) {
-        uint64_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(bits));
-        u64(bits);
-    }
-    void str(const std::string &s) {
-        u32((uint32_t)s.size());
-        out.insert(out.end(), s.begin(), s.end());
-    }
     void begin(uint16_t id) {
         u16(id);
         u32(0);   // patched by end()
@@ -148,23 +138,6 @@ public:
     int16_t i16() { return (int16_t)u16(); }
     int32_t i32() { return (int32_t)u32(); }
     int64_t i64() { return (int64_t)u64(); }
-    double f64() {
-        const uint64_t bits = u64();
-        double v = 0.0;
-        std::memcpy(&v, &bits, sizeof(v));
-        return v;
-    }
-    std::string str() {
-        const uint32_t n = u32();
-        if (n > kMaxStrings * 64u) {
-            _ok = false;
-            return std::string();
-        }
-        if (!need(n)) return std::string();
-        std::string s((const char *)(_data + _pos), n);
-        _pos += n;
-        return s;
-    }
     uint32_t open_section() {
         const uint16_t id = u16();
         const uint32_t len = u32();
@@ -208,6 +181,7 @@ void write_lots(Writer &w, const MilitaryLotStore &s) {
         w.i32(s.country_slot[i]);
         w.i16(s.unit_type[i]);
         w.i16(s.equip_quality_q8[i]);
+        w.i32(s.kit_q16[i]);
         w.i32(s.condition_q16[i]);
         w.i64(s.count[i]);
     }
@@ -301,6 +275,7 @@ void write_index_continuation(Writer &w, const MilitaryCore &c) {
     write_index_vector(w, c._lots.country_slot);
     write_index_vector(w, c._lots.unit_type);
     write_index_vector(w, c._lots.equip_quality_q8);
+    write_index_vector(w, c._lots.kit_q16);
     write_index_vector(w, c._lots.condition_q16);
     write_index_vector(w, c._lots.count);
     write_index_vector(w, c._lots.free_list);
@@ -320,6 +295,7 @@ bool read_index_continuation(Reader &r, MilitaryCore &c) {
         !read_index_vector(r, c._lots.country_slot) ||
         !read_index_vector(r, c._lots.unit_type) ||
         !read_index_vector(r, c._lots.equip_quality_q8) ||
+        !read_index_vector(r, c._lots.kit_q16) ||
         !read_index_vector(r, c._lots.condition_q16) ||
         !read_index_vector(r, c._lots.count) ||
         !read_index_vector(r, c._lots.free_list)) return false;
@@ -334,7 +310,8 @@ bool valid_index_continuation(const MilitaryCore &c) {
     const size_t n = c._lots.active.size();
     if (c._lots.location_kind.size() != n || c._lots.location.size() != n ||
         c._lots.country_slot.size() != n || c._lots.unit_type.size() != n ||
-        c._lots.equip_quality_q8.size() != n || c._lots.condition_q16.size() != n ||
+        c._lots.equip_quality_q8.size() != n || c._lots.kit_q16.size() != n ||
+        c._lots.condition_q16.size() != n ||
         c._lots.count.size() != n || c._armies.generation.size() != c._armies.active.size()) return false;
     auto valid_free = [](const auto &free, const auto &active) {
         std::vector<uint8_t> seen(active.size(), 0);
@@ -445,6 +422,7 @@ std::vector<uint8_t> MilitaryCore::encode() const {
         w.u8(o.equipment_ready);
         w.u8(o.manual);
         w.i16(o.quality_q8);
+        for (int8_t quality : o.slot_delivered_quality) w.i8(quality);
         w.i16(o.delivered_quality_q8);
         w.u64(o.equipped_slot_mask);
     }
@@ -944,6 +922,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                         tmp._lots.country_slot.push_back(-1);
                         tmp._lots.unit_type.push_back(-1);
                         tmp._lots.equip_quality_q8.push_back(256);
+                        tmp._lots.kit_q16.push_back(MILITARY_Q16);
                         tmp._lots.condition_q16.push_back(MILITARY_Q16);
                         tmp._lots.count.push_back(0);
                         tmp._lots.free_list.push_back((int32_t)i);
@@ -954,11 +933,13 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     const int32_t cslot = r.i32();
                     const int16_t unit = r.i16();
                     const int16_t quality = r.i16();
+                    const int32_t kit = r.i32();
                     const int32_t cond = r.i32();
                     const int64_t count = r.i64();
                     if (!r.ok()) break;
                     if (kind > (uint8_t)MILITARY_LOT_ARMY || cslot < 0 ||
-                        unit < 0 || (size_t)unit >= tmp._catalog.units.size() || count < 0) {
+                        unit < 0 || (size_t)unit >= tmp._catalog.units.size() ||
+                        kit < 0 || kit > MILITARY_Q16 || count < 0) {
                         error = "pkmi_bad_lot_row";
                         return false;
                     }
@@ -968,6 +949,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     tmp._lots.country_slot.push_back(cslot);
                     tmp._lots.unit_type.push_back(unit);
                     tmp._lots.equip_quality_q8.push_back(quality);
+                    tmp._lots.kit_q16.push_back(kit);
                     tmp._lots.condition_q16.push_back(cond);
                     tmp._lots.count.push_back(count);
                 }
@@ -994,9 +976,14 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     o.equipment_ready = r.u8();
                     o.manual = r.u8();
                     o.quality_q8 = r.i16();
-                    if (version >= 3u) {
-                        o.delivered_quality_q8 = r.i16();
-                        o.equipped_slot_mask = r.u64();
+                    for (int8_t &quality : o.slot_delivered_quality) quality = r.i8();
+                    o.delivered_quality_q8 = r.i16();
+                    o.equipped_slot_mask = r.u64();
+                    for (int8_t quality : o.slot_delivered_quality) {
+                        if (quality < 0 || quality > 5) {
+                            error = "pkmi_bad_training_quality";
+                            return false;
+                        }
                     }
                     if (!r.ok()) break;
                     tmp._training.push_back(o);
@@ -1155,10 +1142,8 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     s.origin_cell = r.i32();
                     s.current_cell = r.i32();
                     s.good = r.i32();
-                    if (version >= 3u) {
-                        s.real_good = r.i32();
-                        s.quality = r.i8();
-                    }
+                    s.real_good = r.i32();
+                    s.quality = r.i8();
                     s.qty = r.i64();
                     s.value = r.i64();
                     s.departure_day = r.i64();

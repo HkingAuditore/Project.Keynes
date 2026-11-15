@@ -445,7 +445,7 @@ func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 		"neighbor_indices": map_ref.neighbor_indices_packed(),
 		"field_names": field_names,
 		"habitat_codes": habitat_codes,
-		"scalars": scalars,
+		"scalars": scalars, "cell_area_resource_scale": ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE,
 		"lf_keys": lf_keys,
 		"lf_vals": lf_vals,
 		"lf_offsets": lf_offsets,

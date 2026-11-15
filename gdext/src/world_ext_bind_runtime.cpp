@@ -68,6 +68,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::poll_runtime_receipts, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("poll_runtime_commit", "after_generation"),
                          &DCWorldExt::poll_runtime_commit, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("mark_runtime_day_tail_done", "day"),
+                         &DCWorldExt::mark_runtime_day_tail_done);
     ClassDB::bind_method(D_METHOD("consume_runtime_visual_patch", "generation", "family", "cursor", "max_items"),
                          &DCWorldExt::consume_runtime_visual_patch, DEFVAL(0), DEFVAL(0), DEFVAL(0));
     ClassDB::bind_method(D_METHOD("profile_runtime_save_window", "active"), &DCWorldExt::profile_runtime_save_window);

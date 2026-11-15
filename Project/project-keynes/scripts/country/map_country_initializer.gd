@@ -506,7 +506,6 @@ func _build_gameplay_country_packet() -> Dictionary:
 	var discovered_offsets := PackedInt32Array([0])
 	var all_discovered_indices := PackedInt32Array()
 	var research_weights := PackedInt32Array()
-	var research_budgets := PackedInt64Array()
 	var research_auto_purchase := PackedByteArray()
 	var configured_weights: PackedInt32Array = research_config.get(
 		"domain_weights_bp", PackedInt32Array([2500, 2500, 2500, 2500]))
@@ -578,8 +577,6 @@ func _build_gameplay_country_packet() -> Dictionary:
 		treasury_offsets.append(treasury_good_indices.size())
 		for weight in configured_weights:
 			research_weights.append(weight)
-		research_budgets.append(int(research_config.get(
-			"procurement_budget_per_day", 10000000)))
 		research_auto_purchase.append(
 			1 if bool(research_config.get("auto_purchase_enabled", true)) else 0)
 	return {
@@ -601,7 +598,6 @@ func _build_gameplay_country_packet() -> Dictionary:
 		"treasury_good_indices": treasury_good_indices,
 		"treasury_quantities": treasury_quantities,
 		"research_weights_bp": research_weights,
-		"research_daily_budgets": research_budgets,
 		"research_auto_purchase": research_auto_purchase,
 	}
 

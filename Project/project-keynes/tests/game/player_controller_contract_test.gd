@@ -78,7 +78,7 @@ func _init() -> void:
 	_expect("PlayerController has no frame polling", not controller.has_method("_process"))
 	_expect("unknown player command is rejected", _code(controller.request_command(&"gm.teleport")) == "unsupported_command")
 	_expect("known player command is session gated",
-		_code(controller.request_command(PlayerControllerScript.COMMAND_RESEARCH_SET_BUDGET)) == "runtime_unavailable")
+		_code(controller.request_command(PlayerControllerScript.COMMAND_RESEARCH_SET_WEIGHTS)) == "runtime_unavailable")
 	_expect("construction command is session gated",
 		_code(controller.request_command(PlayerControllerScript.COMMAND_CONSTRUCTION_BUILD, {
 			"cell_idx": 0,

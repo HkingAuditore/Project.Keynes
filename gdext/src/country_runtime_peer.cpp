@@ -864,9 +864,7 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
         // e.g. for a GRANT_TECHNOLOGY submitted on the first game day.
         const bool effect_worker_authoritative = _simulation_host != nullptr &&
             _simulation_host->effect_pod_transport_ready() &&
-            (_simulation_host->domain_is_worker_authoritative(
-                 RuntimeDomainId::EFFECT) ||
-             _simulation_host->domain_grant_pending(RuntimeDomainId::EFFECT));
+            _simulation_host->domain_main_thread_suppressed(RuntimeDomainId::EFFECT);
         {
             // Unconditional entry probe: tells us the adapter actually ran and
             // which branch it picked. Rate limited.

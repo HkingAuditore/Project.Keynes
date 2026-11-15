@@ -265,6 +265,7 @@ uint64_t catalog_hash(const MilitaryCatalog &c) {
         h = mix_scalar<int32_t>(h, u.slot_count);
         for (int32_t s = 0; s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
             h = mix_scalar<int32_t>(h, u.slot_category[(size_t)s]);
+            h = mix_scalar<uint8_t>(h, u.slot_core[(size_t)s]);
             h = mix_scalar<int8_t>(h, u.slot_min_quality[(size_t)s]);
             h = mix_scalar<int64_t>(h, u.slot_qty_per_100[(size_t)s]);
             h = mix_scalar<int32_t>(h, u.slot_power_weight_q16[(size_t)s]);
@@ -1063,7 +1064,8 @@ void military_lot_index_link(MilitaryCore &c, int32_t lot) {
 }
 
 int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t country_slot,
-                                         int16_t unit, int16_t quality_q8) {
+                                         int16_t unit, int16_t quality_q8,
+                                         int32_t kit_q16) {
     const size_t n = _lots.active.size();
     int32_t found = -1;
     military_for_each_lot(*this, kind, location, [&](int32_t i) {
@@ -1072,6 +1074,7 @@ int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t
         if (_lots.country_slot[s] != country_slot) return;
         if (_lots.unit_type[s] != unit) return;
         if (std::abs((int32_t)_lots.equip_quality_q8[s] - (int32_t)quality_q8) > 16) return;
+        if (std::abs(_lots.kit_q16[s] - kit_q16) > MILITARY_Q16 / 64) return;
         found = i;
     });
     if (found >= 0) return found;
@@ -1087,6 +1090,7 @@ int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t
         _lots.country_slot.push_back(-1);
         _lots.unit_type.push_back(-1);
         _lots.equip_quality_q8.push_back(256);
+        _lots.kit_q16.push_back(MILITARY_Q16);
         _lots.condition_q16.push_back(MILITARY_Q16);
         _lots.count.push_back(0);
     }
@@ -1098,6 +1102,7 @@ int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t
     _lots.country_slot[s] = country_slot;
     _lots.unit_type[s] = unit;
     _lots.equip_quality_q8[s] = quality_q8;
+    _lots.kit_q16[s] = std::clamp(kit_q16, 0, MILITARY_Q16);
     _lots.condition_q16[s] = MILITARY_Q16;
     _lots.count[s] = 0;
     military_lot_index_link(*this, slot);
@@ -1361,7 +1366,8 @@ void MilitaryCore::refresh_army_cache(int32_t army_slot) {
         const int64_t cnt = _lots.count[i];
         if (cnt <= 0) continue;
         head += cnt;
-        const int64_t eq = equip_factor_q16(u, _lots.equip_quality_q8[i]);
+        const int64_t eq = lot_equip_factor_q16(u, _lots.equip_quality_q8[i],
+                                                _lots.kit_q16[i]);
         const int64_t cond = clamp64(_lots.condition_q16[i], MILITARY_Q16 / 2, MILITARY_Q16);
         const int64_t cond_factor = MILITARY_Q16 / 2 + cond / 2;   // 0.5 + 0.5 * condition
         const int64_t power = mul_div(cnt * eq, cond_factor, MILITARY_Q16);   // heads * factors
@@ -1494,7 +1500,8 @@ void MilitaryCore::update_force_targets(const MilitaryWorldDigest &digest) {
 // equal the cell's committed soldier cohort; when Economy has fewer people than
 // the lots claim (deaths, or people leaving the soldier lane), the excess is
 // trimmed proportionally and booked as non-combat attrition. Economy is never
-// written here, so the reconcile is a pure read-and-trim.
+// written here, so the reconcile is a pure read-and-trim. Soldiers only enter
+// through ENLIST/LEVY (design 5.4), so the roster never needs to adopt heads.
 void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
     if (digest.cell_soldiers.size() != (size_t)_terrain.cell_count) return;
     static thread_local std::vector<int32_t> rows;
@@ -1503,32 +1510,6 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
         if (_lots.active[i] == 0) continue;
         if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
         rows.push_back((int32_t)i);
-    }
-    // Economy can start with state-service soldier cohorts from the opening
-    // settlement packet (for example, seats attached to an already placed
-    // state building).  Those heads have no Military lot yet because the
-    // military runtime is configured after Economy bootstrap.  Adopt that
-    // initial committed roster once, before normal trim/recruitment logic; a
-    // later empty cell is handled by the ordinary receipt path and must not
-    // manufacture soldiers after a discharge.
-    if (rows.empty() && _lane_intents.empty()) {
-        const int16_t militia = static_cast<int16_t>(_catalog.militia_unit >= 0
-            ? _catalog.militia_unit : 0);
-        for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
-            if (static_cast<size_t>(cell) >= digest.cell_soldiers.size() ||
-                static_cast<size_t>(cell) >= digest.cell_owner_slot.size())
-                break;
-            const int64_t economy_heads = std::max<int64_t>(
-                0, digest.cell_soldiers[static_cast<size_t>(cell)]);
-            const int32_t country = digest.cell_owner_slot[static_cast<size_t>(cell)];
-            if (economy_heads <= 0 || country < 0) continue;
-            const int32_t lot = lot_find_or_create(
-                static_cast<uint8_t>(MILITARY_LOT_GARRISON), cell, country,
-                militia, 256);
-            if (lot < 0) continue;
-            _lots.count[static_cast<size_t>(lot)] = economy_heads;
-            rows.push_back(lot);
-        }
     }
     if (rows.empty()) return;
     std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
@@ -1553,20 +1534,6 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
             digest.cell_population[(size_t)cell] > 0;
         const int64_t economy_heads = digest_has_cell && (size_t)cell < digest.cell_soldiers.size()
             ? std::max<int64_t>(0, digest.cell_soldiers[(size_t)cell]) : 0;
-        int64_t pending_embark = 0;
-        int64_t pending_disembark = 0;
-        for (const MilitaryIntent &intent : _lane_intents) {
-            if (intent.cell != cell) continue;
-            if (intent.kind == MILITARY_INTENT_ARMY_EMBARK)
-                pending_embark += std::max<int64_t>(0, intent.count);
-            else if (intent.kind == MILITARY_INTENT_ARMY_DISEMBARK)
-                pending_disembark += std::max<int64_t>(0, intent.count);
-        }
-        // Commands applied at the start of this Military day already moved the
-        // lots, while the Economy command lands on the following boundary. Keep
-        // those heads in the expected garrison total until that receipt lands.
-        const int64_t expected_garrison = std::max<int64_t>(0,
-            economy_heads - pending_embark + pending_disembark);
         // Heads already enlisted but not yet converted are pre-applied to the
         // roster and still missing from the committed cohort: trimming them here
         // re-opens the quota the next sample and converts the same people twice
@@ -1574,22 +1541,7 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
         const MilitaryCellState *cell_row = cell_state(cell, false);
         const int64_t in_flight = cell_row != nullptr
             ? std::max<int64_t>(0, cell_row->pending_enlist) : 0;
-        const int64_t allowed = expected_garrison + in_flight;
-        if (total < expected_garrison) {
-            const int32_t country = (size_t)cell < digest.cell_owner_slot.size()
-                ? digest.cell_owner_slot[(size_t)cell] : -1;
-            if (country >= 0) {
-                const int16_t militia = static_cast<int16_t>(_catalog.militia_unit >= 0
-                    ? _catalog.militia_unit : 0);
-                const int32_t lot = lot_find_or_create(
-                    static_cast<uint8_t>(MILITARY_LOT_GARRISON), cell, country,
-                    militia, 256);
-                if (lot >= 0) {
-                    _lots.count[(size_t)lot] += expected_garrison - total;
-                    total = expected_garrison;
-                }
-            }
-        }
+        const int64_t allowed = economy_heads + in_flight;
         if (total > allowed) {
             const int64_t removed_total = total - allowed;
             int64_t excess = removed_total;
@@ -2098,7 +2050,8 @@ int64_t garrison_heads_for_unit(const MilitaryLotStore &lots, int32_t cell, int3
 
 // Moves heads between garrison lots in one cell, preserving total heads.
 int64_t transfer_garrison(MilitaryCore &core, int32_t cell, int32_t from_country, int32_t to_country,
-                          int16_t from_unit, int16_t to_unit, int16_t quality_q8, int64_t count) {
+                          int16_t from_unit, int16_t to_unit, int16_t quality_q8,
+                          int32_t kit_q16, int64_t count) {
     if (count <= 0) return 0;
     int64_t left = count;
     for (size_t i = 0; i < core._lots.active.size() && left > 0; ++i) {
@@ -2111,7 +2064,7 @@ int64_t transfer_garrison(MilitaryCore &core, int32_t cell, int32_t from_country
         if (take <= 0) continue;
         core._lots.count[i] -= take;
         const int32_t lot = core.lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, cell, to_country,
-                                                    to_unit, quality_q8);
+                                                    to_unit, quality_q8, kit_q16);
         if (lot < 0) {
             core._lots.count[i] += take;
             break;
@@ -2140,9 +2093,13 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
         // heads become the target unit, at the quality actually bought.
         const int16_t delivered_q8 = o.delivered_quality_q8 > 0
             ? o.delivered_quality_q8 : o.quality_q8;
+        const int32_t kit_q16 = (o.to_unit >= 0 &&
+                (size_t)o.to_unit < _catalog.units.size())
+            ? training_kit_factor_q16(_catalog.units[(size_t)o.to_unit], o)
+            : MILITARY_Q16;
         if (o.from_unit >= 0) {
             transfer_garrison(*this, o.cell, o.country_slot, o.country_slot,
-                              o.from_unit, o.to_unit, delivered_q8, o.count);
+                              o.from_unit, o.to_unit, delivered_q8, kit_q16, o.count);
         }
         o.count = 0;
     }
@@ -2393,7 +2350,8 @@ void MilitaryCore::run_reinforcement(const MilitaryWorldDigest &digest) {
                 if (take <= 0) continue;
                 _lots.count[i] -= take;
                 const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, slot, owner,
-                                                        (int16_t)unit, _lots.equip_quality_q8[i]);
+                                                        (int16_t)unit, _lots.equip_quality_q8[i],
+                                                        _lots.kit_q16[i]);
                 if (dest < 0) {
                     _lots.count[i] += take;
                     break;
@@ -2654,7 +2612,8 @@ int64_t transfer_army_to_army(MilitaryCore &core, int32_t from, int32_t to, int3
         core._lots.count[i] -= take;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, to,
                                                      core._lots.country_slot[i], core._lots.unit_type[i],
-                                                     core._lots.equip_quality_q8[i]);
+                                                     core._lots.equip_quality_q8[i],
+                                                     core._lots.kit_q16[i]);
         if (dest < 0) {
             core._lots.count[i] += take;
             break;
@@ -2716,7 +2675,8 @@ int32_t military_embark_army(MilitaryCore &core, int32_t owner, int32_t cell, in
         const int64_t take = std::min(left, core._lots.count[i]);
         core._lots.count[i] -= take;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army, owner,
-                                                     core._lots.unit_type[i], core._lots.equip_quality_q8[i]);
+                                                     core._lots.unit_type[i], core._lots.equip_quality_q8[i],
+                                                     core._lots.kit_q16[i]);
         if (dest < 0) {
             core._lots.count[i] += take;
             break;
@@ -2765,7 +2725,8 @@ bool military_disembark_army(MilitaryCore &core, int32_t army) {
         if (core._lots.location_kind[i] != (uint8_t)MILITARY_LOT_ARMY) continue;
         if (core._lots.location[i] != army) continue;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, cell, owner,
-                                                     core._lots.unit_type[i], core._lots.equip_quality_q8[i]);
+                                                     core._lots.unit_type[i], core._lots.equip_quality_q8[i],
+                                                     core._lots.kit_q16[i]);
         if (dest < 0) break;
         core._lots.count[(size_t)dest] += core._lots.count[i];
         core._lots.count[i] = 0;
@@ -3342,7 +3303,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                     if (_lots.location[i] != other) continue;
                     const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army_slot,
                                                             _lots.country_slot[i], _lots.unit_type[i],
-                                                            _lots.equip_quality_q8[i]);
+                                                            _lots.equip_quality_q8[i], _lots.kit_q16[i]);
                     if (dest < 0) continue;
                     _lots.count[(size_t)dest] += _lots.count[i];
                     _lots.count[i] = 0;
@@ -3929,6 +3890,7 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<int32_t>(h, _lots.country_slot[i]);
         h = mix_scalar<int16_t>(h, _lots.unit_type[i]);
         h = mix_scalar<int16_t>(h, _lots.equip_quality_q8[i]);
+        h = mix_scalar<int32_t>(h, _lots.kit_q16[i]);
         h = mix_scalar<int32_t>(h, _lots.condition_q16[i]);
         h = mix_scalar<int64_t>(h, _lots.count[i]);
     }
@@ -3990,6 +3952,10 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<uint8_t>(h, o.equipment_ready);
         h = mix_scalar<uint8_t>(h, o.manual);
         h = mix_scalar<int16_t>(h, o.quality_q8);
+        for (int8_t quality : o.slot_delivered_quality)
+            h = mix_scalar<int8_t>(h, quality);
+        h = mix_scalar<int16_t>(h, o.delivered_quality_q8);
+        h = mix_scalar<uint64_t>(h, o.equipped_slot_mask);
     }
     h = mix_scalar<uint64_t>(h, (uint64_t)_stocks.size());
     for (const MilitaryStockRow &r : _stocks) {

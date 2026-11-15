@@ -186,6 +186,10 @@ DCWorldExt::~DCWorldExt() {
         delete static_cast<EffectRuntime *>(_effect_runtime);
         _effect_runtime = nullptr;
     }
+    if (_economy_modifier_view != nullptr) {
+        delete static_cast<ModifierRuntime *>(_economy_modifier_view);
+        _economy_modifier_view = nullptr;
+    }
     if (_modifier_runtime != nullptr) {
         delete static_cast<ModifierRuntime *>(_modifier_runtime);
         _modifier_runtime = nullptr;

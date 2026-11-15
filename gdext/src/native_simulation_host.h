@@ -41,6 +41,7 @@
 namespace pk {
 struct RuntimeGoldenSnapshot;
 class NativeEconomyRuntime;
+class ModifierRuntime;
 class CountryAiRuntime;
 class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort {
 public:
@@ -119,19 +120,6 @@ public:
     }
     bool inline_day_pending() const noexcept {
         return _inline_day_pending.load(std::memory_order_acquire);
-    }
-    // P2：Country peer 由 worker 自己发起（deferred）。默认 false ⇒ 今天的行为
-    // 逐字节不变：intent 只入 `_country_worker_intent_queue`，由主线程泵执行。
-    //
-    // 打开后：目标域是 worker 权威的 intent 由 **worker 自己**写进对应 POD 的
-    // 入队 API，并在 `_country_worker_results` 里落一条 PENDING；主线程不再需要
-    // 为这些 intent 做"投递"这一步。真正的 promote（PENDING→READY）仍是既有的
-    // `resolve_pending_country_effect_peers()`，它本来就在 worker 线程上跑。
-    void set_country_deferred_peers(bool enabled) noexcept {
-        _country_deferred_peers.store(enabled, std::memory_order_release);
-    }
-    bool country_deferred_peers() const noexcept {
-        return _country_deferred_peers.load(std::memory_order_acquire);
     }
     // 一次内联日尝试的结果。只有 committed=true 表示这一天真的提交并发布了；
     // continuation_pending=true 表示屏障缺 peer 结果（调用方应在同一线程上泵一轮
@@ -219,6 +207,10 @@ public:
     int64_t next_environment_day() const noexcept {
         return _environment_day.load(std::memory_order_acquire) + 1;
     }
+    // First day a command submitted now may take effect. With the main-day tail
+    // gate it is tail_done+2; otherwise the first day whose environment frame
+    // is not yet sealed (Climate authority), else committed+1.
+    int64_t command_seal_day() const noexcept;
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -336,10 +328,6 @@ public:
     bool worker_run_stage_ops_slice(int64_t day, uint64_t input_generation,
                                     std::string &error, bool *done = nullptr,
                                     bool *pending_input = nullptr);
-    // Prefer set_economy_execution_mode(); this remains for probe-only tests.
-    void set_economy_shadow_probe_enabled(bool enabled) {
-        _economy_shadow_probe_enabled.store(enabled, std::memory_order_release);
-    }
     bool economy_shadow_probe_enabled() const {
         return _economy_shadow_probe_enabled.load(std::memory_order_acquire);
     }
@@ -403,9 +391,9 @@ public:
     // Lifecycle boundary only: do not detach/reset the command executor while
     // a worker can still use it. request_stop() does not join that worker.
     void attach_economy_production_runtime(class NativeEconomyRuntime *rt) noexcept;
-    NativeEconomyRuntime *economy_production_runtime() const noexcept {
-        return _economy_production_runtime;
-    }
+    // Worker economy's own ModifierRuntime (owned by DCWorldExt), refreshed by
+    // the modifier stage so economy day D reads modifier day D.
+    void attach_economy_modifier_view(ModifierRuntime *view) noexcept { _economy_modifier_view = view; }
     bool economy_production_runtime_attached() const noexcept {
         return _economy_production_runtime != nullptr;
     }
@@ -503,6 +491,21 @@ public:
         return (_main_boundary_service_requested.load(std::memory_order_acquire) &
                 main_boundary_client_bit(client)) != 0;
     }
+    // Main-thread day tail (Military, natural-resource recovery) reads day D
+    // and writes inputs for D+1; with the gate on, the worker starts D+1 only
+    // after that tail is reported done. Set before start; start() counts the
+    // start day's tail as done.
+    void set_main_day_tail_gate(bool enabled) noexcept;
+    void mark_main_day_tail_done(int64_t day) noexcept;
+    // The committed day's main-thread tail has not run yet. Before the Climate
+    // grant the main thread may be waiting for it without running a tail.
+    bool main_day_tail_pending() const noexcept {
+        return _main_day_tail_gate.load(std::memory_order_acquire) &&
+            (_authority_control.snapshot().granted_mask &
+             runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u &&
+            _main_day_tail_done.load(std::memory_order_acquire) <
+                _committed_day.load(std::memory_order_acquire);
+    }
     std::unique_lock<std::mutex> try_lock_economy_read_boundary() const {
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
@@ -514,9 +517,6 @@ public:
             _economy_input_signal.fetch_add(1, std::memory_order_release);
         }
         _control_cv.notify_all();
-    }
-    bool economy_sync_writes_forbidden() const noexcept {
-        return _economy_sync_writes_forbidden.load(std::memory_order_acquire);
     }
     bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
                                  std::string &error);
@@ -760,9 +760,6 @@ public:
     bool try_acquire_trigger_snapshot(uint64_t after_generation, uint32_t &slot);
     const RuntimeTriggerSnapshot &trigger_snapshot_buffer(uint32_t slot) const;
     void release_trigger_snapshot(uint32_t slot);
-    uint64_t trigger_snapshot_drop_count() const {
-        return _trigger_snapshots.publish_drop_count();
-    }
     // H8 real-ACK transport. Trigger effect intents require a peer ACK before
     // the day commits; the worker Effect stage drains them in-worker when EFFECT
     // is granted in the same session, and this pair is the main-thread protocol
@@ -815,10 +812,6 @@ public:
         return _events_snapshots.read_buffer(slot);
     }
     void release_events_snapshot(uint32_t slot) { _events_snapshots.release(slot); }
-    uint64_t events_snapshot_drop_count() const {
-        return _events_snapshots.publish_drop_count();
-    }
-    bool events_authority_self_test() const;
     bool configure_effect_pod(const RuntimeEffectPodCatalog &catalog,
                               std::string &error);
     bool encode_effect_pod_save(std::vector<uint8_t> &bytes,
@@ -892,6 +885,10 @@ public:
     // must become READY without re-queue (re-queue spun the main-thread pump).
     // Removing Country soft-commit made this same-day promote mandatory.
     uint32_t resolve_pending_country_effect_peers();
+    // Worker-side ENSURE_TECHNOLOGY_EFFECT, queued by the Country stage before
+    // the same day's Effect stage, so the fire day never depends on the main thread.
+    CountryPeerResult resolve_country_technology_effect(
+            const CountryPeerIntent &intent);
     // Describes why a technology Effect instance has not fire-ACKed yet. The
     // caller prints it through Godot so the text reaches the editor Output
     // panel; this translation unit stays free of Godot headers.
@@ -1109,13 +1106,13 @@ public:
         return (RuntimeExecutionContext::domains_for(this,
                     authoritative_domain_mask()) & runtime_domain_mask(domain)) != 0u;
     }
-    // ACTIVE 请求了该域、worker 仍在跑、但还没有一日提交覆盖它。这段窗口里主线程
-    // 若照常跑该域，写进 MapData 的结果会被 worker 首日当作种子读走，而它落在首次
-    // capture 之前还是之后取决于线程时机。stop/fault 撤销授权时这里同样变 false，
-    // 域交还主线程。
-    bool domain_grant_pending(RuntimeDomainId domain) const override {
-        if (domain_is_worker_authoritative(domain) ||
-            _mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
+    // 主线程是否停推这个域：worker 已权威，或 ACTIVE 请求了该域、worker 仍在跑、但还
+    // 没有一日提交覆盖它（授权窗口）。窗口里主线程若照常跑该域，它写进 MapData 的结果
+    // 和镜像进命令环的命令（如 Country AI 决策）会被 worker 首日读走，读走多少取决于
+    // 线程时机。stop/fault 撤销授权时窗口关闭，域交还主线程。
+    bool domain_main_thread_suppressed(RuntimeDomainId domain) const override {
+        if (domain_is_worker_authoritative(domain)) return true;
+        if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
             (_requested_authority_mask.load(std::memory_order_acquire) &
              runtime_domain_mask(domain)) == 0u ||
             _stop_requested.load(std::memory_order_acquire)) {
@@ -1360,8 +1357,6 @@ private:
     std::atomic<RuntimeSimulationMode> _mode{RuntimeSimulationMode::OFF};
     // native_daily_inline：单线程内联日。见公开区同名注释。
     std::atomic<bool> _inline_daily_mode{false};
-    // P2：Country peer 由 worker 自己发起。见公开区同名注释。
-    std::atomic<bool> _country_deferred_peers{false};
     // 内联日分域计时累加器。只在内联模式下写（worker 日恒为 0），执行者恒是
     // 同一个调用线程，所以不需要原子；run_inline_day() 在每次尝试开始时清零、
     // 结束时抄进 InlineDayOutcome。
@@ -1434,6 +1429,11 @@ private:
     // same-day tie-breaker.
     std::atomic<uint64_t> _command_submit_order{0};
     std::atomic<uint64_t> _command_request_id{0};
+    // 日执行者（worker，或内联模式的日事务）自己分配的请求号单独计数，并打上
+    // EXECUTOR_REQUEST_ID_TAG。和主线程入口共用一个计数器时，两边谁先取号取决于
+    // 帧时序，号码又进了 Economy 财政日志和哈希。
+    static constexpr uint64_t EXECUTOR_REQUEST_ID_TAG = 1ull << 62;
+    std::atomic<uint64_t> _executor_request_id{0};
     std::array<CommandQueueSlot, RUNTIME_COMMAND_QUEUE_CAPACITY> _command_slots{};
     std::array<std::atomic<uint64_t>, 256> _producer_sequences{};
     std::atomic<uint64_t> _fallback_producer_sequence{0};
@@ -1510,10 +1510,6 @@ private:
     // day -> reference snapshot. The country pair keeps whole snapshots for the
     // same reason: a hash says "different", only the snapshot says "which row,
     // which field". Bounded to 128 days exactly like the country map.
-    // R9-1: the day-keyed `std::map<int64_t, RuntimeIdeologyPodSnapshot>
-    // _ideology_references` was removed. Nothing ever read it -- comparisons
-    // consume `_ideology_reference_fifo` by exact day -- so it was a second full
-    // copy of every reference snapshot kept purely for memory growth.
     // Published references in publish order. The worker consumes them FIFO: the
     // main thread keys by driver tick and the worker by its own calendar, so a
     // raw day lookup never matched (observed ref_day=5 vs worker_day=2).
@@ -1843,6 +1839,8 @@ private:
     // `request_main_boundary_service` / `complete_main_boundary_service`. See those
     // two for why one shared bool parked the worker permanently.
     std::atomic<uint32_t> _main_boundary_service_requested{0};
+    std::atomic<bool> _main_day_tail_gate{false};
+    std::atomic<int64_t> _main_day_tail_done{-1};
     std::atomic<int64_t> _economy_input_requested_day{-1};
     // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
     std::atomic<uint32_t> _day_stall_reason_mask{0};
@@ -1860,7 +1858,6 @@ private:
     // 并行起来的分水岭，所以必须在报告里是可数的，而不是靠日志猜。
     std::atomic<uint64_t> _country_peer_resolved_in_worker{0};
     std::atomic<uint64_t> _country_peer_resolved_by_main{0};
-    std::atomic<uint32_t> _country_deferred_peer_count{0};
     // 为什么某个域的阶段今天没完成。有些 park 分支（Effect 等 Climate、Effect
     // 目录未就绪）只是 `stage.completed = 0; continue;`，既不设 stall 位也不写
     // fallback reason，日志里完全无痕；这一对字段把它们点名。
@@ -1907,6 +1904,8 @@ private:
     std::unique_ptr<EconomyPodCommandExecutor> _economy_pod_command_executor;
     // Non-owning: DCWorldExt's NativeEconomyRuntime, ACTIVE production only.
     NativeEconomyRuntime *_economy_production_runtime = nullptr;
+    ModifierRuntime *_economy_modifier_view = nullptr;
+    void refresh_economy_modifier_view(const RuntimeModifierPodSnapshot &snapshot);
     // Consolidated SHADOW domain runner diagnostics. These values describe a
     // worker-only plan/replay transaction and never unlock ACTIVE.
     std::atomic<uint32_t> _domain_authority_planned_mask{0};

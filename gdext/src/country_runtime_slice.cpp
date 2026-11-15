@@ -651,7 +651,6 @@ bool NativeCountryRuntime::prepare_country_slice(
             _command_batch.research_queue_lengths = _country_research_queue_lengths;
             _command_batch.research_weights_bp = _country_research_weights_bp;
             _command_batch.research_auto_purchase = _country_research_auto_purchase;
-            _command_batch.research_daily_budgets = _country_research_daily_budgets;
             _command_batch.research_deferred_points = _country_research_deferred_points;
         }
         if (_command_batch.stage_research || _command_batch.stage_signals) {

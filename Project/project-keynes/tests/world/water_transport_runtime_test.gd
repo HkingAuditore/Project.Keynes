@@ -210,7 +210,7 @@ func _run_trade_across_strait_conserves(catalog: Dictionary) -> void:
 	var blocked_orders := _wait_for_trade_orders(blocked.ext)
 	var open_orders := _wait_for_trade_orders(open.ext)
 	var open_report: Dictionary = open.ext.get_economy_report()
-	_expect("no domestic order crosses an unexplored strait",
+	_expect("no cross-water order crosses an unexplored strait",
 		int(blocked_orders.get("total", -1)) == 0)
 	if int(open_orders.get("total", 0)) <= 0:
 		print("open trade report=", {
@@ -221,12 +221,23 @@ func _run_trade_across_strait_conserves(catalog: Dictionary) -> void:
 			"portals": open_report.get("trade_water_portal_count", -1),
 			"portal_edges": open_report.get("trade_water_portal_edges", -1),
 		})
-	_expect("shallow-sea tech lets the same strait dispatch a domestic order",
+	_expect("shallow-sea tech lets the same strait dispatch a cross-water order",
 		int(open_orders.get("total", 0)) > 0)
+	_expect("cross-water order dispatch is recorded",
+		int(open_report.get("trade_orders_dispatched", 0)) > 0)
+	_expect("cross-water source and destination signals are positive",
+		int(open_orders.get("max_source_signals", 0)) > 0
+		and int(open_orders.get("max_destination_signals", 0)) > 0)
+	var arrived := _wait_for_trade_arrival(open.ext, open_orders)
+	var arrival_report: Dictionary = open.ext.get_economy_report()
+	_expect("cross-water order arrives at the destination market",
+		bool(arrived))
 	_expect("water-corridor trade keeps goods and money conservation at zero",
 		not bool(open_report.get("fatal", true))
-		and int(open_report.get("goods_error", 1)) == 0
-		and int(open_report.get("money_error", 1)) == 0)
+		and not bool(arrival_report.get("fatal", true))
+		and int(arrival_report.get("population_error", 1)) == 0
+		and int(arrival_report.get("money_error", 1)) == 0
+		and int(arrival_report.get("goods_error", 1)) == 0)
 
 
 func _quote_total(catalog: Dictionary, seed: int, tech_ids: PackedStringArray,
@@ -397,7 +408,7 @@ func _make_trade_world(catalog: Dictionary, seed: int, tech_ids: PackedStringArr
 	var scalar := PackedFloat32Array()
 	scalar.resize(cells)
 	scalar.fill(0.5)
-	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_temp_365d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
@@ -408,7 +419,7 @@ func _make_trade_world(catalog: Dictionary, seed: int, tech_ids: PackedStringArr
 	zero_bytes.fill(0)
 	for slot_name in [&"cell_terrain", &"cell_base_terrain", &"cell_landform",
 			&"cell_base_landform", &"cell_vegetation", &"cell_is_water",
-			&"cell_has_river"]:
+			&"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		var payload := terrain
 		if slot_name == &"cell_landform" or slot_name == &"cell_base_landform":
@@ -479,6 +490,7 @@ func _make_trade_world(catalog: Dictionary, seed: int, tech_ids: PackedStringArr
 	var gathered := goods.find("gathered_plants")
 	var signatures: PackedStringArray = catalog.signature_keys
 	var merchant := signatures.find("merchant|default")
+	var forager := signatures.find("forager|default")
 	var stock := PackedInt64Array()
 	var prices := PackedInt32Array()
 	stock.resize(goods.size() * cells)
@@ -488,13 +500,15 @@ func _make_trade_world(catalog: Dictionary, seed: int, tech_ids: PackedStringArr
 		for good in range(goods.size()):
 			prices[cell * goods.size() + good] = int(
 				(catalog.good_default_price as PackedInt32Array)[good])
-	stock[gathered] = 100000000
-	prices[gathered] = maxi(1, int((catalog.good_default_price as PackedInt32Array)[gathered]) / 10)
+	stock[0 * goods.size() + gathered] = 100000000
+	stock[2 * goods.size() + gathered] = 1
+	prices[0 * goods.size() + gathered] = maxi(1,
+		int((catalog.good_default_price as PackedInt32Array)[gathered]) / 10)
 	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 2]),
-		"signature_ids": PackedInt32Array([merchant, merchant]),
-		"population": PackedInt64Array([100, 100]),
-		"funds": PackedInt64Array([1000000000, 1000000000]),
+		"cell_indices": PackedInt32Array([0, 2, 2]),
+		"signature_ids": PackedInt32Array([merchant, merchant, forager]),
+		"population": PackedInt64Array([100, 100, 10]),
+		"funds": PackedInt64Array([1000000000, 1000000000, 1000000000]),
 	}, {"stock": stock, "price": prices})
 	if not bool(boot.get("ok", false)):
 		_expect("two shore markets bootstrap", false)
@@ -505,12 +519,54 @@ func _make_trade_world(catalog: Dictionary, seed: int, tech_ids: PackedStringArr
 
 func _wait_for_trade_orders(ext: Object) -> Dictionary:
 	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
+	var max_source_signals := 0
+	var max_destination_signals := 0
 	for day in range(0, 16):
+		var before: Dictionary = ext.get_economy_report()
+		max_source_signals = maxi(max_source_signals,
+			int(before.get("trade_source_signals", 0)))
+		max_destination_signals = maxi(max_destination_signals,
+			int(before.get("trade_destination_signals", 0)))
 		if int(orders.get("total", 0)) > 0:
+			var departure_days: PackedInt64Array = orders.get(
+				"departure_days", PackedInt64Array())
+			if not departure_days.is_empty():
+				orders["water_departure_day"] = int(departure_days[0])
+			orders["max_source_signals"] = max_source_signals
+			orders["max_destination_signals"] = max_destination_signals
 			return orders
 		_advance_day(ext, day)
+		var after: Dictionary = ext.get_economy_report()
+		max_source_signals = maxi(max_source_signals,
+			int(after.get("trade_source_signals", 0)))
+		max_destination_signals = maxi(max_destination_signals,
+			int(after.get("trade_destination_signals", 0)))
 		orders = ext.get_trade_orders_for_cell(0, 0, 64)
+	var final_departure_days: PackedInt64Array = orders.get(
+		"departure_days", PackedInt64Array())
+	if not final_departure_days.is_empty():
+		orders["water_departure_day"] = int(final_departure_days[0])
+	orders["max_source_signals"] = max_source_signals
+	orders["max_destination_signals"] = max_destination_signals
 	return orders
+
+
+func _wait_for_trade_arrival(ext: Object, dispatched_orders: Dictionary) -> bool:
+	var departure_day := int(dispatched_orders.get("water_departure_day", 0))
+	var arrived_events := 0
+	for day in range(departure_day + 1, departure_day + 16):
+		var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
+		if int(orders.get("total", 0)) == 0:
+			var destination: Dictionary = ext.get_market_cell_snapshot(2)
+			var stock: PackedInt64Array = destination.get("stock", PackedInt64Array())
+			var good_ids: PackedStringArray = destination.get("good_ids", PackedStringArray())
+			var gathered := good_ids.find("gathered_plants")
+			return arrived_events > 0 and gathered >= 0 and gathered < stock.size() \
+				and int(stock[gathered]) > 0
+		_advance_day(ext, day)
+		arrived_events = maxi(arrived_events,
+			int(ext.get_economy_report().get("trade_orders_arrived", 0)))
+	return false
 
 
 func _advance_day(ext: Object, day: int) -> Dictionary:

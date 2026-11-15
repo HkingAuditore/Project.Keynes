@@ -419,7 +419,8 @@ public:
     bool annual_observes_cell(int32_t cell) const;
     void record_annual_event(int32_t cell, AnnualMetric metric, int64_t value);
     void record_annual_production(int32_t cell);
-    uint64_t asset_peer_request_high_watermark() const noexcept;
+    // 只统计 (id & tag) 是否非零与 tagged 一致的请求号：主线程入口与日执行者各有一套号。
+    uint64_t asset_peer_request_high_watermark(uint64_t tag, bool tagged) const noexcept;
     void attach_csv_recorder(EconomyCsvRecorder *recorder) { _csv_recorder = recorder; }
     void set_sync_writes_forbidden(bool forbidden) {
         _sync_writes_forbidden = forbidden;
@@ -545,9 +546,6 @@ public:
     // OwnedState when bound (see resource_stock_lanes()).
     void bind_resource_store(RuntimeEconomyResourceStore *store) noexcept {
         _resource_store_alias = store;
-    }
-    RuntimeEconomyResourceStore *bound_resource_store() const noexcept {
-        return _resource_store_alias;
     }
     EconomyTrackedColumn<int64_t> &resource_stock_lanes() noexcept;
     const EconomyTrackedColumn<int64_t> &resource_stock_lanes() const noexcept;
@@ -1184,9 +1182,6 @@ public:
         return index < _epoch_country_technologies.size()
             ? static_cast<int64_t>(_epoch_country_technologies[index]) : 0;
     }
-    void refresh_technology_metrics_for_test() {
-        refresh_technology_metrics();
-    }
     // Bounded, read-only payload used by the Effect gameplay adapter. The
     // route remains Economy-owned until the Effect transaction is ACKED.
     bool canal_project_commit_payload(uint64_t project_handle,
@@ -1222,6 +1217,11 @@ public:
     std::shared_ptr<const struct CountryAiEconomyDigest> country_ai_digest() const;
     void set_country_ai_family_preferences(std::vector<struct CountryAiFamilyPreferenceRow> rows);
     void queue_country_ai_colonization(std::vector<struct CountryAiColonizationIntent> intents);
+    // AI research shares become ordinary procurement policies (whole treasury
+    // as the national envelope, legacy era/colonization split).
+    void queue_research_procurement_policy(uint64_t country_handle,
+                                           int32_t research_share_bp,
+                                           int64_t effective_day, int64_t sequence);
     void export_country_ai_pending(
         std::vector<CountryAiColonizationIntent> &intents,
         std::vector<CountryAiColonizationStat> &stats,
@@ -1363,8 +1363,8 @@ public:
     // ─── Military voucher: state service professions / state buildings ───────
     // Publishes the per-cell military ration satisfaction Military owns. Needs
     // listed in a profession's `state_supplied_need_ids` never enter market
-    // purchase; their satisfaction is set from these Q16 values. Cells absent
-    // from `cells` fall back to the previous value (initially 1.0), so a world
+    // purchase; their satisfaction is set from these Q16 values. Each call is
+    // the whole day's set: cells absent from `cells` read 1.0, so a world
     // without soldiers is unchanged. Returns the number of cells written.
     int32_t set_military_ration_satisfaction(
         const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);

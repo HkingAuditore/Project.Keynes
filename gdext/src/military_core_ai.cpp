@@ -63,6 +63,7 @@ constexpr int64_t kPeaceWhiteLongDays = 2 * 365;
 constexpr int64_t kPeaceWhiteLosingDays = 90;
 constexpr int32_t kMaxCedeTerms = 16;
 constexpr int32_t kArtilleryShareBp = 1000;
+constexpr int64_t kEquipmentUnavailable = 0x3fffffffffffffffll;
 
 struct AiScratch {
     int32_t cap = 0;
@@ -74,7 +75,7 @@ struct AiScratch {
     std::vector<int64_t> owned_cells;
     std::vector<int64_t> strength;
     std::vector<uint8_t> adjacent;     // owner-based, cap * cap
-    std::vector<int64_t> category_price;
+    std::vector<std::array<int64_t, 6>> category_price;
     std::vector<int32_t> frontier;
     std::vector<std::pair<int64_t, int32_t>> ranked;
     std::vector<int32_t> armies;
@@ -158,21 +159,27 @@ void build_scratch(const MilitaryCore &core, const MilitaryWorldDigest &digest, 
         if (unit == core._catalog.militia_unit) ad = mul_div(ad, era_factor_militia_q16(core.militia_era(slot)), MILITARY_Q16);
         s.strength[(size_t)slot] += mul_div(lots.count[i], ad, 2 * (int64_t)MILITARY_Q16);
     }
-    // Cheapest market price per equipment category (MONEY_SCALE per 1.0 good).
+    // Cheapest market price for every (category, minimum quality) threshold.
     const size_t ncat = core._catalog.categories.size();
-    s.category_price.assign(ncat, -1);
+    s.category_price.resize(ncat);
+    for (auto &prices : s.category_price) prices.fill(-1);
     for (size_t row = 0; row < digest.market_cell.size(); ++row) {
         const int32_t good = row < digest.market_good.size() ? digest.market_good[row] : -1;
         const int64_t price = row < digest.market_price.size() ? digest.market_price[row] : 0;
         if (good < 0 || price <= 0) continue;
         for (size_t k = 0; k < ncat; ++k) {
-            const std::vector<int32_t> &ids = core._catalog.categories[k].good_ids;
-            if (std::find(ids.begin(), ids.end(), good) == ids.end()) continue;
-            if (s.category_price[k] < 0 || price < s.category_price[k]) s.category_price[k] = price;
+            const MilitaryEquipCategory &category = core._catalog.categories[k];
+            for (size_t g = 0; g < category.good_ids.size(); ++g) {
+                if (category.good_ids[g] != good) continue;
+                const int32_t quality = g < category.good_quality.size()
+                    ? clamp32(category.good_quality[g], 1, 5) : 1;
+                for (int32_t minimum = 1; minimum <= quality; ++minimum) {
+                    int64_t &best = s.category_price[k][(size_t)minimum];
+                    if (best < 0 || price < best) best = price;
+                }
+                break;
+            }
         }
-    }
-    for (int64_t &p : s.category_price) {
-        if (p <= 0) p = MILITARY_MONEY_SCALE;
     }
 }
 
@@ -185,8 +192,15 @@ int64_t equipment_value(const MilitaryCore &core, const AiScratch &s, const Mili
         if (cat < 0 || (size_t)cat >= s.category_price.size()) continue;
         const int64_t qty = u.slot_qty_per_100[(size_t)k];
         if (qty <= 0) continue;
-        int64_t v = mul_div(qty, s.category_price[(size_t)cat], MILITARY_GOODS_SCALE);
-        v = mul_div(v, quality_mult_q16(u.slot_min_quality[(size_t)k]), MILITARY_Q16);
+        const int32_t minimum = clamp32((int32_t)u.slot_min_quality[(size_t)k], 1, 5);
+        int64_t unit_price = s.category_price[(size_t)cat][(size_t)minimum];
+        if (unit_price <= 0 && u.slot_core[(size_t)k] == 0)
+            unit_price = s.category_price[(size_t)cat][1];
+        if (unit_price <= 0) {
+            if (u.slot_core[(size_t)k] != 0) return kEquipmentUnavailable;
+            unit_price = MILITARY_MONEY_SCALE;
+        }
+        const int64_t v = mul_div(qty, unit_price, MILITARY_GOODS_SCALE);
         value += v;
     }
     (void)core;
@@ -236,7 +250,9 @@ void decide_config(MilitaryCore &core, const MilitaryWorldDigest &digest, AiScra
         const MilitaryUnitType &t = c.units[(size_t)u];
         if (!unlocked(digest, slot, t.unlock_bit)) continue;
         const int64_t power = (int64_t)t.attack_q16 + (int64_t)t.defense_q16;
-        const int64_t score = mul_div(power, (int64_t)1 << 24, std::max<int64_t>(1, equipment_value(core, s, t)));
+        const int64_t equipment = equipment_value(core, s, t);
+        if (equipment >= kEquipmentUnavailable) continue;
+        const int64_t score = mul_div(power, (int64_t)1 << 24, std::max<int64_t>(1, equipment));
         if (t.unit_class == (uint8_t)MILITARY_CLASS_ARTILLERY) {
             if (score > best_art_score) {
                 best_art_score = score;

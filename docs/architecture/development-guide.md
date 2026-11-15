@@ -157,7 +157,6 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 | 单场景续跑 | `check_committed_replay.py --checkpoint --trace --days 10` | 定位首个差异 |
 | 气候存档 | `check_committed_replay.py --godot … --checkpoint --trace --days 10 --log-dir <新>` | 改 CLM2 或经济发布块 |
 | 军费专用库 | 用 `gdext/tests/SConstruct.military_fiscal_probe` 构建，回归加 `--military-fiscal-probe <绝对路径>` | 改军饷、财政端口 |
-| 外围同日对齐实验 | `check_external_day_alignment.py --runs 3`（不进默认回归，不写基线） | 只在评估对齐方案时 |
 
 测试必须用固定经济周期：黄金场景、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败；生产仍按真实耗时自适应。
 

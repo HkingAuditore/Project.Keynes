@@ -14,6 +14,8 @@ ModifierRuntimeCopy copy_runtime(const ModifierRuntime &source) {
 void replace_runtime(ModifierRuntime &live, ModifierRuntime &&staged) { live = std::move(staged); }
 void attach_country_runtime(ModifierRuntime &modifier, void *runtime) { modifier.attach_country_runtime(static_cast<NativeCountryRuntime *>(runtime)); }
 void attach_economy_runtime(ModifierRuntime &modifier, void *runtime) { modifier.attach_economy_runtime(static_cast<NativeEconomyRuntime *>(runtime)); }
+bool apply_pod_snapshot(ModifierRuntime &modifier, const RuntimeModifierPodSnapshot &snapshot, std::string &error) { return modifier.apply_pod_snapshot(snapshot, error); }
+void reset_pod_snapshot_generation(ModifierRuntime &modifier) { modifier.reset_pod_snapshot_generation(); }
 
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 double effective_value(const ModifierRuntime &modifier, int32_t domain, int32_t stat_id, uint64_t entity_handle, uint64_t group_handle, double base_value) { return modifier.effective_value(domain, stat_id, entity_handle, group_handle, base_value); }

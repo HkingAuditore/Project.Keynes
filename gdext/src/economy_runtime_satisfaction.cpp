@@ -119,7 +119,6 @@ int64_t NativeEconomyRuntime::epoch_research_demand_daily_for_market(
 int32_t NativeEconomyRuntime::set_military_ration_satisfaction(
         const std::vector<int32_t> &cells, const std::vector<int32_t> &q16) {
     const size_t count = std::min(cells.size(), q16.size());
-    if (count == 0) return 0;
     // The lane is owned by Military and only meaningful for configured worlds.
     // Size it lazily so an unconfigured runtime is a no-op.
     if (_cell_count.get() > 0 &&
@@ -127,6 +126,14 @@ int32_t NativeEconomyRuntime::set_military_ration_satisfaction(
         _military_ration_sat_q16.assign(static_cast<size_t>(_cell_count.get()),
                                         static_cast<int32_t>(Q16_ONE));
         _military_ration_sat_present.assign(static_cast<size_t>(_cell_count.get()), 0);
+    }
+    // Each call is the whole day's garrison set: a cell missing from it lost
+    // its garrison and reads 1.0 again. The economy owns this state, so a
+    // restored world needs no Military-side memory of the last publish.
+    for (size_t cell = 0; cell < _military_ration_sat_present.size(); ++cell) {
+        if (_military_ration_sat_present[cell] == 0) continue;
+        _military_ration_sat_q16[cell] = static_cast<int32_t>(Q16_ONE);
+        _military_ration_sat_present[cell] = 0;
     }
     int32_t written = 0;
     for (size_t i = 0; i < count; ++i) {

@@ -361,6 +361,12 @@ func _has_hard_ancestor_producer(catalog: Dictionary, building_index: int,
 			_add_technology_with_hard_ancestors(catalog,
 					String(catalog.technology_ids[int(catalog.technology_prerequisites[edge])]),
 					ancestors)
+	# Required technologies gate the building as hard as its own technology, so
+	# producers they unlock are already available when it first becomes buildable.
+	var required_offsets: PackedInt32Array = catalog.building_required_technology_tag_offsets
+	for edge in range(required_offsets[building_index], required_offsets[building_index + 1]):
+		_add_technology_with_hard_ancestors(catalog,
+				String(catalog.building_required_technology_tags[edge]), ancestors)
 	for producer_index in range((catalog.building_type_ids as PackedStringArray).size()):
 		if producer_index == building_index or not _any_index_in_set(
 				_building_direct_technology_indices(catalog, producer_index), ancestors):

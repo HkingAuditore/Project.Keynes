@@ -383,15 +383,79 @@ bool NativeSimulationHost::submit_effect_pod_ack(
     return true;
 }
 
-int32_t NativeSimulationHost::effect_pod_program_id_for_key(
-        const char *key) const {
-    if (!_effect_pod_configured || key == nullptr || key[0] == '\0') return -1;
-    const uint64_t hash = RuntimeEffectPodAuthority::hash_text(key);
-    for (size_t i = 0; i < _effect_pod_catalog.definitions.size(); ++i) {
-        if (_effect_pod_catalog.definitions[i].key_hash == hash)
+namespace {
+
+int32_t effect_program_id_for_hash(const RuntimeEffectPodCatalog &catalog,
+                                   uint64_t hash) {
+    for (size_t i = 0; i < catalog.definitions.size(); ++i) {
+        if (catalog.definitions[i].key_hash == hash)
             return static_cast<int32_t>(i);
     }
     return -1;
+}
+
+} // namespace
+
+int32_t NativeSimulationHost::effect_pod_program_id_for_key(
+        const char *key) const {
+    if (!_effect_pod_configured || key == nullptr || key[0] == '\0') return -1;
+    return effect_program_id_for_hash(
+        _effect_pod_catalog, RuntimeEffectPodAuthority::hash_text(key));
+}
+
+CountryPeerResult NativeSimulationHost::resolve_country_technology_effect(
+        const CountryPeerIntent &intent) {
+    CountryPeerResult result;
+    result.protocol_version = intent.protocol_version;
+    result.opcode = intent.opcode;
+    result.request_id = intent.request_id;
+    result.session_epoch = intent.session_epoch;
+    result.country_generation = intent.country_generation;
+    result.peer_generation = intent.peer_generation;
+    result.committed_peer_generation = intent.peer_generation;
+    result.day = intent.day;
+    result.continuation_index = intent.continuation_index;
+    result.country_slot = intent.country_slot;
+    result.technology = intent.technology;
+    result.target_handle = intent.target_handle;
+    const auto reject = [&](const char *reason) {
+        result.code = CountryPeerResultCode::REJECTED;
+        country_peer_copy_reason(result.reason, reason);
+        return result;
+    };
+    const auto &hashes = _country_pod_catalog.technology_effect_key_hashes;
+    if (intent.technology < 0 ||
+        static_cast<size_t>(intent.technology) >= hashes.size())
+        return reject("country_peer_intent_target_invalid");
+    if (intent.effect_instance_id == 0 || intent.effect_generation == 0 ||
+        intent.effect_generation != static_cast<uint32_t>(intent.target_handle >> 32U))
+        return reject("country_peer_effect_generation_invalid");
+    const int32_t program_id = effect_program_id_for_hash(
+        _effect_pod_catalog, hashes[static_cast<size_t>(intent.technology)]);
+    if (program_id < 0) {
+        // No Effect program for this technology: nothing to wait for.
+        result.technology_flags = COUNTRY_PEER_EFFECT_EXISTS |
+            COUNTRY_PEER_EFFECT_FIRE_ACKED;
+        result.code = CountryPeerResultCode::READY;
+        return result;
+    }
+    std::string error;
+    if (!ensure_effect_pod_technology_instance(
+            static_cast<int64_t>(intent.effect_instance_id),
+            intent.effect_generation, program_id, intent.target_handle,
+            intent.effect_generation, intent.day, error))
+        return reject(error.empty() ? "country_peer_effect_pod_queue_rejected"
+                                    : error.c_str());
+    result.technology_flags = COUNTRY_PEER_EFFECT_EXISTS;
+    if (effect_pod_instance_fire_acked(
+            static_cast<int64_t>(intent.effect_instance_id),
+            intent.effect_generation)) {
+        result.technology_flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+        result.code = CountryPeerResultCode::READY;
+    } else {
+        result.code = CountryPeerResultCode::PENDING;
+    }
+    return result;
 }
 
 bool NativeSimulationHost::ensure_effect_pod_technology_instance(

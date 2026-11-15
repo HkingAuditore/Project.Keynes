@@ -20,7 +20,9 @@ func _run() -> void:
 		await flow.ready
 	await process_frame
 	# 此测试的宽/窄断言使用 1:1 逻辑视口；缩放覆盖由截图 QA 单独验证。
-	root.content_scale_factor = 1.0
+	# 经 MobileUIScaling 设成 100%：它在窗口改尺寸时按本机设置重算缩放，
+	# 直接写 content_scale_factor 会被下面的 root.size 冲掉。
+	root.get_node("GameSettings/MobileUIScaling").call("configure", 100)
 	for argument in OS.get_cmdline_user_args():
 		var normalized := argument.trim_prefix("--")
 		if normalized.begins_with("capture_dir="):

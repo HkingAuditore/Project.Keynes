@@ -37,7 +37,6 @@ void NativeCountryRuntime::initialize_country_research(int32_t slot) {
     _country_research_queue_lengths.resize(countries * 4U, 0);
     _country_research_weights_bp.resize(countries * 4U, 2500);
     _country_research_auto_purchase.resize(countries, 1);
-    _country_research_daily_budgets.resize(countries, 1000 * MONEY_SCALE);
     _country_research_deferred_points.resize(countries, 0);
     _country_research_purchased_total.resize(countries, 0);
     _country_research_consumed_total.resize(countries, 0);

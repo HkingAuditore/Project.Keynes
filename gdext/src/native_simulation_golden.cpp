@@ -1,6 +1,7 @@
 #include "native_simulation_host.h"
 #include "runtime_golden_diagnostics.h"
 #include "country_core_apply.h"
+#include "economy_api.h"
 #include <cstring>
 #include <type_traits>
 #include <cstdlib>
@@ -331,7 +332,6 @@ void trace_country(const RuntimeCountryPodSnapshot &state) {
     column("research_queues", state.research_queues);
     column("research_queue_lengths", state.research_queue_lengths);
     column("research_weights_bp", state.research_weights_bp);
-    column("research_daily_budgets", state.research_daily_budgets);
     column("research_deferred_points", state.research_deferred_points);
     column("research_progress_total", state.research_progress_total);
     column("research_completed_total", state.research_completed_total);
@@ -529,6 +529,10 @@ RuntimeGoldenSnapshot NativeSimulationHost::golden_snapshot() const {
     const auto &events = _events_authority.snapshot();
     if (events.committed_day >= 0)
         add("EVENTS", "committed_event_log_and_ack_state_v1", events.committed_day, events_hash(events));
+    if (_economy_production_runtime != nullptr) {
+        out.whole_economy_hash = static_cast<uint64_t>(economy_api::state_hash(*_economy_production_runtime));
+        out.whole_economy_ready = true;
+    }
     out.ready = true;
     return out;
 }

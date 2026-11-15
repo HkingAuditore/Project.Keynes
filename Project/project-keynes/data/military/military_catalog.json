@@ -29,18 +29,21 @@
       "equipment": [
         {
           "category": "melee_arms",
+          "core": true,
           "min_quality": 2,
           "per_100": 12.0,
           "weight": 0.6
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.25
         },
         {
           "category": "missile_arms",
+          "core": false,
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 0.15
@@ -94,18 +97,21 @@
       "equipment": [
         {
           "category": "mounts",
+          "core": true,
           "min_quality": 1,
           "per_100": 25.0,
           "weight": 0.5
         },
         {
           "category": "melee_arms",
+          "core": false,
           "min_quality": 3,
           "per_100": 8.0,
           "weight": 0.35
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 0.15
@@ -159,12 +165,14 @@
       "equipment": [
         {
           "category": "mounts",
+          "core": true,
           "min_quality": 1,
           "per_100": 28.0,
           "weight": 0.6
         },
         {
           "category": "melee_arms",
+          "core": false,
           "min_quality": 2,
           "per_100": 6.0,
           "weight": 0.4
@@ -218,18 +226,21 @@
       "equipment": [
         {
           "category": "armored_vehicles",
+          "core": true,
           "min_quality": 2,
           "per_100": 4.0,
           "weight": 0.4
         },
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 4,
           "per_100": 8.0,
           "weight": 0.4
         },
         {
           "category": "ammunition",
+          "core": false,
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.2
@@ -279,12 +290,14 @@
       "equipment": [
         {
           "category": "mounts",
+          "core": false,
           "min_quality": 1,
           "per_100": 25.0,
           "weight": 0.4
         },
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 2,
           "per_100": 8.0,
           "weight": 0.6
@@ -338,6 +351,7 @@
       "equipment": [
         {
           "category": "drones",
+          "core": true,
           "min_quality": 1,
           "per_100": 10.0,
           "weight": 1.0
@@ -387,6 +401,7 @@
       "equipment": [
         {
           "category": "armored_vehicles",
+          "core": true,
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 1.0
@@ -440,18 +455,21 @@
       "equipment": [
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 5,
           "per_100": 10.0,
           "weight": 0.5
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 4,
           "per_100": 10.0,
           "weight": 0.3
         },
         {
           "category": "ammunition",
+          "core": false,
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 0.2
@@ -501,12 +519,14 @@
       "equipment": [
         {
           "category": "ordnance",
+          "core": true,
           "min_quality": 2,
           "per_100": 6.0,
           "weight": 0.8
         },
         {
           "category": "mounts",
+          "core": false,
           "min_quality": 1,
           "per_100": 10.0,
           "weight": 0.2
@@ -556,6 +576,7 @@
       "equipment": [
         {
           "category": "ordnance",
+          "core": true,
           "min_quality": 3,
           "per_100": 12.0,
           "weight": 1.0
@@ -605,18 +626,21 @@
       "equipment": [
         {
           "category": "mounts",
+          "core": true,
           "min_quality": 1,
           "per_100": 30.0,
           "weight": 0.5
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 3,
           "per_100": 15.0,
           "weight": 0.3
         },
         {
           "category": "melee_arms",
+          "core": false,
           "min_quality": 3,
           "per_100": 8.0,
           "weight": 0.2
@@ -666,18 +690,21 @@
       "equipment": [
         {
           "category": "melee_arms",
+          "core": true,
           "min_quality": 3,
           "per_100": 12.0,
           "weight": 0.5
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 2,
           "per_100": 8.0,
           "weight": 0.35
         },
         {
           "category": "missile_arms",
+          "core": false,
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.15
@@ -727,18 +754,21 @@
       "equipment": [
         {
           "category": "melee_arms",
+          "core": true,
           "min_quality": 3,
           "per_100": 12.0,
           "weight": 0.45
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 3,
           "per_100": 12.0,
           "weight": 0.4
         },
         {
           "category": "missile_arms",
+          "core": false,
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.15
@@ -788,6 +818,7 @@
       "equipment": [
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 2,
           "per_100": 12.0,
           "weight": 1.0
@@ -837,6 +868,7 @@
       "equipment": [
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 4,
           "per_100": 14.0,
           "weight": 1.0
@@ -890,18 +922,21 @@
       "equipment": [
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 4,
           "per_100": 10.0,
           "weight": 0.55
         },
         {
           "category": "armored_vehicles",
+          "core": false,
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.25
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 4,
           "per_100": 6.0,
           "weight": 0.2
@@ -988,12 +1023,14 @@
       "equipment": [
         {
           "category": "ordnance",
+          "core": true,
           "min_quality": 5,
           "per_100": 4.0,
           "weight": 0.7
         },
         {
           "category": "ammunition",
+          "core": false,
           "min_quality": 4,
           "per_100": 4.0,
           "weight": 0.3
@@ -1043,12 +1080,14 @@
       "equipment": [
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 1,
           "per_100": 10.0,
           "weight": 0.75
         },
         {
           "category": "melee_arms",
+          "core": false,
           "min_quality": 3,
           "per_100": 4.0,
           "weight": 0.25
@@ -1098,6 +1137,7 @@
       "equipment": [
         {
           "category": "firearms",
+          "core": true,
           "min_quality": 3,
           "per_100": 10.0,
           "weight": 1.0
@@ -1147,6 +1187,7 @@
       "equipment": [
         {
           "category": "ordnance",
+          "core": true,
           "min_quality": 1,
           "per_100": 20.0,
           "weight": 1.0
@@ -1200,12 +1241,14 @@
       "equipment": [
         {
           "category": "ordnance",
+          "core": true,
           "min_quality": 4,
           "per_100": 8.0,
           "weight": 0.8
         },
         {
           "category": "armored_vehicles",
+          "core": false,
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 0.2
@@ -1259,6 +1302,7 @@
       "equipment": [
         {
           "category": "armored_vehicles",
+          "core": true,
           "min_quality": 2,
           "per_100": 8.0,
           "weight": 1.0
@@ -1308,12 +1352,14 @@
       "equipment": [
         {
           "category": "melee_arms",
+          "core": true,
           "min_quality": 1,
           "per_100": 10.0,
           "weight": 0.7
         },
         {
           "category": "missile_arms",
+          "core": false,
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.3
@@ -1363,18 +1409,21 @@
       "equipment": [
         {
           "category": "melee_arms",
+          "core": true,
           "min_quality": 2,
           "per_100": 10.0,
           "weight": 0.45
         },
         {
           "category": "body_armor",
+          "core": false,
           "min_quality": 2,
           "per_100": 12.0,
           "weight": 0.4
         },
         {
           "category": "missile_arms",
+          "core": false,
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 0.15

@@ -6117,7 +6117,7 @@
 			"research_routes": [
 				{
 					"id": "research_route.flint_identification.knowledge_institution",
-					"display_name": "统一知识机构传承",
+					"display_name": "自然观察方法",
 					"route_type": "institution",
 					"description": "以自然观察所建立的观察方法作为研究资格；没有方法就没有辨识。",
 					"condition": {
@@ -6478,8 +6478,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放新建筑，它作为后续生产方式的可见知识前提或以数值效果体现。"
+				"policy": "single",
+				"rationale": "本科技直接开放弓匠营地，把复合工具技艺落实为弓的生产。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -8756,8 +8756,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -10028,8 +10028,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -13922,8 +13922,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放新建筑，它作为后续生产方式的可见知识前提或以数值效果体现。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -19706,8 +19706,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放新建筑，它作为后续生产方式的可见知识前提或以数值效果体现。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -25609,8 +25609,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "paired",
+				"rationale": "两个直接解锁属于同一能力层级的成对生产方式，未把后续升级集中在单一科技。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -27349,8 +27349,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -40281,8 +40281,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -44424,8 +44424,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放新建筑，它作为后续生产方式的可见知识前提或以数值效果体现。"
+				"policy": "paired",
+				"rationale": "两个直接解锁属于同一能力层级的成对生产方式，未把后续升级集中在单一科技。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -46064,8 +46064,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -49445,8 +49445,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放新建筑，它作为后续生产方式的可见知识前提或以数值效果体现。"
+				"policy": "paired",
+				"rationale": "两个直接解锁属于同一能力层级的成对生产方式，未把后续升级集中在单一科技。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -50772,8 +50772,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放新建筑，它作为后续生产方式的可见知识前提或以数值效果体现。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -52640,8 +52640,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -56858,8 +56858,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -57563,8 +57563,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -60155,8 +60155,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接开放建筑，以制度或知识效果推动后续路线。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -71591,8 +71591,8 @@
 				]
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
 			},
 			"knowledge_basis": {
 				"required_ids": [

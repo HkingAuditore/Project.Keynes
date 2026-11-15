@@ -31,8 +31,7 @@ static void append_economy_fact_event_packets(
             const NativeEconomyRuntime::CommittedGameplayFact &fact = facts[index];
             int32_t event_type = 0;
             int32_t payload_schema = 0;
-            if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_CONSTRUCTION_COMPLETED ||
-                !NativeEconomyRuntime::gameplay_fact_event(fact.kind, event_type,
+            if (!NativeEconomyRuntime::gameplay_fact_event(fact.kind, event_type,
                                                            payload_schema))
                 continue;
             put_u64(static_cast<uint64_t>(day));

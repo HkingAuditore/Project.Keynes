@@ -47,6 +47,8 @@ std::vector<uint8_t> NativeSimulationHost::encode_trigger_transport() const {
     out.field(published);
     auto request_cursor = _command_request_id.load(std::memory_order_acquire);
     out.field(request_cursor);
+    auto executor_request_cursor = _executor_request_id.load(std::memory_order_acquire);
+    out.field(executor_request_cursor);
     uint32_t count = static_cast<uint32_t>(_trigger_intents.size());
     out.field(count);
     for (auto item : _trigger_intents) fields(out, item);
@@ -60,12 +62,12 @@ bool NativeSimulationHost::restore_trigger_transport(const std::vector<uint8_t> 
     Reader in{bytes};
     uint32_t magic = 0, count = 0;
     int64_t published = 0;
-    uint64_t request_cursor = 0;
+    uint64_t request_cursor = 0, executor_request_cursor = 0;
     std::deque<RuntimeTriggerEffectIntent> intents;
     std::deque<RuntimeDomainAck> acks;
     auto invalid = [&]() { error = "trigger_transport_continuation_invalid"; return false; };
     if (!in.field(magic) || magic != 0x31514354u || !in.field(published) || published < 0 ||
-        !in.field(request_cursor) || !in.field(count) || count > RUNTIME_DOMAIN_INTENT_CAPACITY || count > (bytes.size() - in.cursor) / 108u) return invalid();
+        !in.field(request_cursor) || !in.field(executor_request_cursor) || !in.field(count) || count > RUNTIME_DOMAIN_INTENT_CAPACITY || count > (bytes.size() - in.cursor) / 108u) return invalid();
     for (uint32_t i = 0; i < count; ++i) {
         RuntimeTriggerEffectIntent item;
         if (!fields(in, item) || item.id <= 0 || item.id > published || item.effective_day < 0) return invalid();
@@ -87,6 +89,7 @@ bool NativeSimulationHost::restore_trigger_transport(const std::vector<uint8_t> 
         // Journals also contain caller-supplied IDs from separate namespaces.
         // Their maximum is not the Host allocator's continuation cursor.
         _command_request_id.store(request_cursor, std::memory_order_release);
+        _executor_request_id.store(executor_request_cursor, std::memory_order_release);
     }
     return true;
 }

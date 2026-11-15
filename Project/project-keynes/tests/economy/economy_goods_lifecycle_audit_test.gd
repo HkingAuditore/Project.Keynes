@@ -8,6 +8,7 @@ const ERA_IDS := [
 	"intelligent",
 ]
 const UNAVAILABLE := 1 << 20
+const Q16_ONE := 65536
 const SYSTEM_DEMAND_GOODS := {
 	"technology_points": "country_research_procurement",
 }
@@ -92,6 +93,8 @@ static func audit(catalog: Dictionary) -> Dictionary:
 			continue
 		_record_building_good_demands(catalog, building, era, demand_eras,
 			demand_kinds)
+	_record_military_demands(catalog, technology_ids, technology_eras,
+		demand_eras, demand_kinds)
 	var monetary_values: PackedInt64Array = catalog.good_monetary_issue_values
 	for good in range(good_ids.size()):
 		if monetary_values[good] > 0:
@@ -221,8 +224,13 @@ static func _building_closure_era(catalog: Dictionary, building: int,
 		if group_era >= UNAVAILABLE:
 			return UNAVAILABLE
 		era = maxi(era, group_era)
+	var input_required: PackedInt32Array = catalog.building_input_required_q16
 	for edge in range(catalog.building_input_offsets[building],
 			catalog.building_input_offsets[building + 1]):
+		# A soft input (required below 1.0) only scales throughput at runtime;
+		# it never stops a building from operating, so it is not a gate here.
+		if int(input_required[edge]) < Q16_ONE:
+			continue
 		var group_era := _candidate_group_era(edge,
 			catalog.building_input_good_ids,
 			catalog.building_input_candidate_offsets,
@@ -279,6 +287,25 @@ static func _record_building_good_demands(catalog: Dictionary, building: int,
 			else:
 				_record_demand(int(preferred_ids[edge]), era, String(spec[4]),
 					demand_eras, demand_kinds)
+
+
+# The army is the hard consumer of equipment (decision 6c-1): every good a unit
+# slot accepts, every repair good and every supply-class good it draws is
+# demanded from the era the unit unlocks. Production inputs are already counted
+# through building soft inputs (`input_required_q16` < 1) above; currently no
+# hunting building uses bows as an input.
+static func _record_military_demands(catalog: Dictionary,
+		technology_ids: PackedStringArray, technology_eras: PackedInt32Array,
+		demand_eras: PackedInt32Array, demand_kinds: Array) -> void:
+	var military: Dictionary = MilitaryCatalogCompiler.compile(catalog,
+		TechnologyCatalog.compile_native_catalog())
+	assert(bool(military.get("ok", false)), str(military))
+	for unit_value in military.units:
+		var unit: Dictionary = unit_value
+		var tech := technology_ids.find(String(unit.tech))
+		var era := int(technology_eras[tech]) if tech >= 0 else int(unit.era)
+		for good in MilitaryCatalogCompiler.unit_consumed_goods(military, unit):
+			_record_demand(good, era, "military_supply", demand_eras, demand_kinds)
 
 
 static func _record_demand(good: int, era: int, kind: String,

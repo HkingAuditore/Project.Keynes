@@ -206,6 +206,10 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
+    // The start day's tail is done: a save waits for it before packing. The
+    // caller's calendar is a day ahead after a load, and the seal is
+    // tail_done+2, so taking it would land the first day's commands a day late.
+    _main_day_tail_done.store(start_day, std::memory_order_release);
     _speed_days_per_second.store(std::max(0.0, start_speed),
                                  std::memory_order_release);
     _paused.store(start_paused, std::memory_order_release);
@@ -858,28 +862,24 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         }
     }
     if (restore_pending) {
-        uint64_t restored_request_id = _command_request_id.load(
-            std::memory_order_relaxed);
         for (const RuntimeCommandPacket &packet : _executor_pending_commands)
-            restored_request_id = std::max(restored_request_id,
-                                           packet.envelope.request_id);
+            reserve_command_request_ids_through(packet.envelope.request_id);
         if (restored_country_checkpoint_valid) {
             for (const CountryCommandReceipt &receipt :
-                     restored_country_checkpoint.request_states) {
-                restored_request_id = std::max(restored_request_id,
-                                               receipt.request_id);
-            }
+                     restored_country_checkpoint.request_states)
+                reserve_command_request_ids_through(receipt.request_id);
         }
-        _command_request_id.store(restored_request_id,
-                                  std::memory_order_release);
     }
     // Economy persists terminal peer identities independently of the Host's
     // live transport queues. A quiescent save may have no Host request states
     // while its PKEC journal still owns thousands of request IDs. Seed from
     // both authorities before any new worker or facade request is allocated.
-    if (_economy_production_runtime != nullptr)
-        reserve_command_request_ids_through(
-            _economy_production_runtime->asset_peer_request_high_watermark());
+    if (_economy_production_runtime != nullptr) {
+        for (const bool executor : {false, true})
+            reserve_command_request_ids_through(
+                _economy_production_runtime->asset_peer_request_high_watermark(
+                    EXECUTOR_REQUEST_ID_TAG, executor));
+    }
     // Country is initialized from the immutable main-thread capture exactly
     // once per worker lifetime. The worker never calls NativeCountryRuntime;
     // it owns this POD authority and its continuation state after bootstrap.
@@ -995,6 +995,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _modifier_pod_state_hash.store(
             _modifier_pod_authority.snapshot().state_hash,
             std::memory_order_release);
+        refresh_economy_modifier_view(_modifier_pod_authority.snapshot());
         _modifier_pod_ready.store(true, std::memory_order_release);
     } else {
         _modifier_pod_ready.store(false, std::memory_order_release);

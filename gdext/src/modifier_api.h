@@ -9,6 +9,7 @@
 
 namespace pk {
 class ModifierRuntime;
+struct RuntimeModifierPodSnapshot;
 struct ModifierApi {
     enum Domain : int32_t { CLIMATE = 0, COUNTRY = 1, ECONOMY = 2, GAMEPLAY = 3, DOMAIN_COUNT = 4 };
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
@@ -60,6 +61,9 @@ ModifierRuntimeCopy copy_runtime(const ModifierRuntime &source);
 void replace_runtime(ModifierRuntime &live, ModifierRuntime &&staged);
 void attach_country_runtime(ModifierRuntime &modifier, void *runtime);  // NativeCountryRuntime*; untyped to keep the header free of peer names
 void attach_economy_runtime(ModifierRuntime &modifier, void *runtime);  // NativeEconomyRuntime*
+// Worker economy's view (world_ext_simulation_host.cpp, native_simulation_host_modifier.cpp).
+bool apply_pod_snapshot(ModifierRuntime &modifier, const RuntimeModifierPodSnapshot &snapshot, std::string &error);
+void reset_pod_snapshot_generation(ModifierRuntime &modifier);
 
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 double effective_value(const ModifierRuntime &modifier, int32_t domain, int32_t stat_id, uint64_t entity_handle, uint64_t group_handle, double base_value);

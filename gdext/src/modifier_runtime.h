@@ -234,6 +234,8 @@ public:
     uint64_t pod_snapshot_generation() const {
         return _pod_snapshot_generation;
     }
+    // A copy that follows a new worker lifetime restarts its generation count.
+    void reset_pod_snapshot_generation() { _pod_snapshot_generation = 0; }
     // Bumps on every apply/remove/expire/set-stacks mutation of the domain
     // store. Callers may use it as an exact invalidation token for caches keyed
     // on that domain's effective values.

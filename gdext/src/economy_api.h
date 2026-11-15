@@ -520,6 +520,7 @@ uint64_t effect_input_revision(const NativeEconomyRuntime &economy);
 
 // Country: committed-day watermark and era-milestone notification.
 uint64_t committed_generation(const NativeEconomyRuntime &economy);
+int64_t state_hash(const NativeEconomyRuntime &economy);
 void notify_era_milestone_activated(NativeEconomyRuntime &economy,
                                     uint64_t country_handle);
 

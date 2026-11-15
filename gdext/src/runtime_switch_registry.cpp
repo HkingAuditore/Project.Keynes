@@ -104,7 +104,6 @@ constexpr RuntimeSwitchDescriptor switches[] = {
     {"PK_WEB_PARALLEL", "关闭覆盖；原调用点解析", "允许 Web 线程池", false},
     {"PK_WS_PROBE_CELL", "-1（不追踪）", "指定地块地表风探针", true},
     {"PK_X16_PROBE", "关闭；任意已设置值（含空串）开启", "冻结 Modifier 职业容忍参数诊断", true},
-    {"PK_EXPERIMENT_EXTERNAL_DAY_ALIGNMENT", "关闭；仅精确字符串 1 开启", "仅测试宿主：同日空闲边界执行军事与资源；正式宿主无入口", true},
     {"PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK", "关闭；脚本导出属性或精确字符串 1 开启", "Web 原生执行器不可用时允许旧脚本日推进；桌面不读取", false},
 };
 static_assert(sizeof(switches) / sizeof(switches[0]) == static_cast<std::size_t>(RuntimeSwitch::COUNT));

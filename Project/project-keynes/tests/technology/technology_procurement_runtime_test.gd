@@ -43,7 +43,7 @@ func _init() -> void:
 		{"day_index": 0}).get("done", false)))
 	_expect("research demand and budget queue", bool(country.enqueue_research(
 		handle, &"tech.wild_maize_collection", 0, -1, 1, 10).get("ok", false))
-		and bool(country.set_research_budget(handle, true, 10000000, 1, 11).get("ok", false)))
+		and bool(country.set_research_auto_purchase(handle, true, 1, 11).get("ok", false)))
 	_expect("policy commits before market settlement",
 		bool(ext.run_country_slice({"day_index": 1}).get("done", false)))
 
@@ -241,7 +241,7 @@ func _test_dead_merchant_skips_procurement_without_fatal(compiled: Dictionary) -
 		{"day_index": 0}).get("done", false)))
 	_expect("dead-merchant research demand and budget queue", bool(country.enqueue_research(
 		handle, &"tech.wild_maize_collection", 0, -1, 1, 10).get("ok", false))
-		and bool(country.set_research_budget(handle, true, 10000000, 1, 11).get("ok", false)))
+		and bool(country.set_research_auto_purchase(handle, true, 1, 11).get("ok", false)))
 	_expect("dead-merchant policy commits",
 		bool(ext.run_country_slice({"day_index": 1}).get("done", false)))
 	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()

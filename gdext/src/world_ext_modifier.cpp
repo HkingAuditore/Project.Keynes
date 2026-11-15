@@ -41,6 +41,7 @@ Dictionary DCWorldExt::configure_modifiers(const Dictionary &catalog,
         static_cast<NativeCountryRuntime *>(_country_runtime)->attach_modifier_runtime(runtime);
     if (_economy_runtime != nullptr)
         static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_modifier_runtime(runtime);
+    _economy_modifier_view_attached = false;
     Dictionary result = runtime->configure(catalog, cell_count);
     if (!static_cast<bool>(result.get("ok", false))) return result;
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
@@ -190,7 +191,7 @@ Dictionary DCWorldExt::submit_modifier_commands(const Dictionary &packed_batch) 
 Dictionary DCWorldExt::run_modifier_daily(int64_t day_index) {
     if (_modifier_runtime == nullptr) return unavailable();
     if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(
+        _runtime_host->domain_main_thread_suppressed(
             RuntimeDomainId::MODIFIER)) {
         Dictionary out;
         out["ok"] = true;
@@ -1182,9 +1183,9 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
         out["reason"] = "modifier_not_worker_authoritative";
         return out;
     }
-    // Worker Economy reads the shared ModifierRuntime under this boundary for
-    // the whole day. Rebuild only between days so effective_value / bucket
-    // vectors cannot be torn under the hot loop.
+    // This copy serves main-thread readers; the worker economy has its own
+    // (attach_economy_modifier_view). Still rebuild only between days: peers
+    // captured under this boundary read it too.
     auto boundary_lock = _runtime_host->try_lock_economy_input_capture();
     if (!boundary_lock.owns_lock()) {
         out["ok"] = true;

@@ -34,10 +34,25 @@ void NativeSimulationHost::seed_executor_command_orders() {
 bool NativeSimulationHost::service_save_request(
         std::vector<RuntimeCommandPacket> &pending_commands) {
     if (!_save_requested.load(std::memory_order_acquire)) return false;
+    // A bundle at committed day D carries the main thread's day-D tail
+    // (Military, resource recovery): restore marks that tail done. The main
+    // thread keeps running it while it polls for the bundle.
+    if (main_day_tail_pending()) {
+        std::unique_lock<std::mutex> control_lock(_control_mutex);
+        _control_cv.wait(control_lock, [&] {
+            return !main_day_tail_pending() ||
+                _stop_requested.load(std::memory_order_acquire);
+        });
+        if (main_day_tail_pending()) return false;
+    }
     // Pending environment frames describe future days and are regenerated on
     // restore. The caller must first finish any day that already consumed one.
+    // Dropping them moves the publish watermark back to the committed day, so
+    // the bundle and the live publisher both continue from D+1.
     if (has_pending_climate_input() && _environment_ring.pop_while_day_at_most(
             std::numeric_limits<int64_t>::max()) > 0u) {
+        _environment_day.store(_committed_day.load(std::memory_order_acquire),
+                               std::memory_order_release);
         _climate_wait_cv.notify_all();
         _control_cv.notify_all();
     }

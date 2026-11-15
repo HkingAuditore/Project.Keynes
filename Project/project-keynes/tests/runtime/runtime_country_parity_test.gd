@@ -108,9 +108,9 @@ func _run() -> int:
 			"target_handle": handle_a,
 			"weights_bp": PackedInt32Array([4000, 3000, 2000, 1000]),
 			"effective_day": 3, "sequence": 30}]},
-		{"label": "research budget", "day": 4, "commands": [{
-			"opcode": CountryFacadeScript.Opcode.SET_RESEARCH_BUDGET,
-			"target_handle": handle_a, "technology": 1, "value": 250,
+		{"label": "research auto purchase", "day": 4, "commands": [{
+			"opcode": CountryFacadeScript.Opcode.SET_RESEARCH_AUTO_PURCHASE,
+			"target_handle": handle_a, "technology": 1,
 			"effective_day": 4, "sequence": 40}]},
 		{"label": "tax default", "day": 5, "commands": [{
 			"opcode": CountryFacadeScript.Opcode.SET_TAX_DEFAULT,

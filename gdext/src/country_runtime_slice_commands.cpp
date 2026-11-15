@@ -241,8 +241,6 @@ bool NativeCountryRuntime::preflight_country_slice(
             batch.research_queue_lengths.resize(static_cast<size_t>(new_slot + 1) * 4U, 0);
             batch.research_weights_bp.resize(static_cast<size_t>(new_slot + 1) * 4U, 2500);
             batch.research_auto_purchase.resize(static_cast<size_t>(new_slot + 1), 1);
-            batch.research_daily_budgets.resize(static_cast<size_t>(new_slot + 1),
-                                                1000 * MONEY_SCALE);
             batch.research_deferred_points.resize(static_cast<size_t>(new_slot + 1), 0);
             batch.signals.resize(static_cast<size_t>(new_slot + 1) * _research_signal_words, 0);
             batch.signal_cells.resize(static_cast<size_t>(new_slot + 1));
@@ -701,13 +699,12 @@ bool NativeCountryRuntime::preflight_country_slice(
             mark_country(slot);
             event_country_handle = command.target_handle;
             event_new_country_slot = slot;
-        } else if (command.opcode == COMMAND_SET_RESEARCH_BUDGET) {
+        } else if (command.opcode == COMMAND_SET_RESEARCH_AUTO_PURCHASE) {
             int32_t slot = -1;
             if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
-            if (command.value < 0 || (command.aux != 0 && command.aux != 1)) {
-                error = "country_research_budget_invalid"; break;
+            if (command.aux != 0 && command.aux != 1) {
+                error = "country_research_auto_purchase_invalid"; break;
             }
-            batch.research_daily_budgets[static_cast<size_t>(slot)] = command.value;
             batch.research_auto_purchase[static_cast<size_t>(slot)] = static_cast<uint8_t>(command.aux);
             ++batch.countries.state_version[static_cast<size_t>(slot)];
             mark_country(slot);
@@ -1051,7 +1048,6 @@ bool NativeCountryRuntime::commit_country_slice(
     std::vector<uint8_t> staged_research_queue_lengths = std::move(batch.research_queue_lengths);
     std::vector<int32_t> staged_research_weights = std::move(batch.research_weights_bp);
     std::vector<uint8_t> staged_auto_purchase = std::move(batch.research_auto_purchase);
-    std::vector<int64_t> staged_daily_budgets = std::move(batch.research_daily_budgets);
     std::vector<int64_t> staged_deferred_points = std::move(batch.research_deferred_points);
     std::vector<uint64_t> staged_signals = std::move(batch.signals);
     auto staged_signal_cells = std::move(batch.signal_cells);
@@ -1144,7 +1140,6 @@ bool NativeCountryRuntime::commit_country_slice(
         _country_research_queue_lengths = std::move(staged_research_queue_lengths);
         _country_research_weights_bp = std::move(staged_research_weights);
         _country_research_auto_purchase = std::move(staged_auto_purchase);
-        _country_research_daily_budgets = std::move(staged_daily_budgets);
         _country_research_deferred_points = std::move(staged_deferred_points);
         const size_t country_count = _countries.active.size();
         _country_research_purchased_total.resize(country_count, 0);

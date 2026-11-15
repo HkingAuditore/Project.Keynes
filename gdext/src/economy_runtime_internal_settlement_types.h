@@ -578,6 +578,8 @@
         std::vector<int32_t> track_b_investment_cells_pending;
         int64_t track_b_derived_cell_cache_day = -1000000;
         std::vector<TrackBDerivedCellWork> track_b_derived_cell_cache;
+        std::vector<int32_t> military_ration_cells;
+        std::vector<int32_t> military_ration_q16;
         bool settlement_names_seen = false;
         int32_t restored_families = 0;
         int32_t restored_family_memberships = 0;
@@ -1226,6 +1228,12 @@
         std::make_unique<ProcurementInbox>();
     // Owner-thread state keyed by generation-safe country handle.
     std::map<uint64_t, CountryProcurementState> _country_procurement;
+    // Research cash per day frozen at epoch open for every country slot: an
+    // enabled policy's research share, the profile default shares when the
+    // country never sent a policy, 0 when its policy is disabled.
+    std::vector<int64_t> _epoch_research_daily;
+    int32_t _procurement_default_treasury_share_bp = 200;
+    int32_t _procurement_default_research_share_bp = 5000;
     // Transient monotone trade-order counters indexed by country slot and
     // stamped with the handle that owns the slot.
     std::vector<std::pair<uint64_t, int64_t>> _country_trade_orders_by_slot;
@@ -1277,7 +1285,7 @@
     void clear_procurement_runtime_state(bool clear_pending);
     CountryProcurementState *procurement_state_for_slot(int32_t country);
     const CountryProcurementState *procurement_state_for_slot(int32_t country) const;
-    // Country research_procurement_policy with the national budget override.
+    // Country research demand plus the frozen per-day research budget.
     bool research_procurement_policy_for(int32_t country, bool &enabled,
                                          int64_t &daily_budget,
                                          int64_t &remaining_points) const;

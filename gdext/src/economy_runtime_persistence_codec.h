@@ -97,7 +97,8 @@ inline godot::PackedByteArray make_save_chunk(
 inline bool read_cadence_footer(const std::vector<uint8_t> &bytes,
         size_t &cursor, int32_t cell_count, uint64_t &generation,
         std::vector<int32_t> &pending, int64_t &derived_cache_day,
-        std::vector<TrackBDerivedCellWork> &derived_cache) {
+        std::vector<TrackBDerivedCellWork> &derived_cache,
+        std::vector<int32_t> &ration_cells, std::vector<int32_t> &ration_q16) {
     using binary_codec::read_le;
     const uint32_t max_cells = static_cast<uint32_t>(std::max(0, cell_count));
     uint32_t count = 0;
@@ -136,6 +137,19 @@ inline bool read_cadence_footer(const std::vector<uint8_t> &bytes,
                 !read_le(bytes, cursor, work.anchors[i]))
                 return false;
         }
+    }
+    // Military garrison ration satisfaction (cell, q16). Older footers end here.
+    ration_cells.clear();
+    ration_q16.clear();
+    if (cursor == bytes.size()) return true;
+    if (!read_le(bytes, cursor, count) || count > max_cells) return false;
+    for (uint32_t i = 0; i < count; ++i) {
+        int32_t cell = -1, q16 = 0;
+        if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= cell_count ||
+            !read_le(bytes, cursor, q16))
+            return false;
+        ration_cells.push_back(cell);
+        ration_q16.push_back(q16);
     }
     return cursor == bytes.size();
 }

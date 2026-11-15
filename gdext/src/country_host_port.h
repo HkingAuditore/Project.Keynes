@@ -28,7 +28,7 @@ public:
     virtual bool country_pod_configured() const = 0;
     virtual bool domain_is_worker_authoritative(
             RuntimeDomainId domain) const = 0;
-    virtual bool domain_grant_pending(RuntimeDomainId domain) const = 0;
+    virtual bool domain_main_thread_suppressed(RuntimeDomainId domain) const = 0;
     virtual bool country_authority_handoff_prepare_pending() const = 0;
 
     // Published Country snapshots used by Country/Economy boundaries.

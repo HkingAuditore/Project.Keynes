@@ -101,7 +101,7 @@ var runtime_events_probe_enabled: bool = false
 var runtime_economy_execution_mode: String = "ACTIVE_ONLY"
 ## Keep auto POD_ACTIVE off for player sessions until Effect ACK under worker
 ## ownership no longer pins country/economy day barriers.
-var runtime_economy_auto_pod_active: bool = false
+var runtime_economy_auto_pod_active: bool = true
 ## 把 Climate 域交给 worker 当权威（per-domain ACTIVE），其余十一个域留在主线程。
 ## 打开后 dispatch_system_schedule 一次性抑制 14 个 climate 节点，MapData 由
 ## _consume_runtime_commit_if_ready 里的回灌写。
@@ -355,7 +355,6 @@ var _last_frame_wall_ms: float = 0.0
 var _fog_of_war_enabled: bool = false
 var _player_country_slot: int = -1
 var _player_country_handle: int = 0
-var _physical_visible_arr: PackedByteArray = PackedByteArray()
 var _vision_dirty_indices: PackedInt32Array = PackedInt32Array()
 ## Committed military positions used as low-budget vision sources. The source
 ## list is refreshed only when the military render revision changes.
@@ -430,7 +429,6 @@ var _sched_day_climate_wait_ms: float = 0.0
 var _sched_day_capture_ms: float = 0.0
 var _sched_day_country_peer_ms: float = 0.0
 var _sched_day_country_read_ms: float = 0.0
-var _sched_day_promote_ms: float = 0.0
 ## Web 单日成本探针的 host 侧分段（见 world_clock.gd 的 _dcp_seg 契约）。
 ## 只在 day_cost_probe_on 为真时被写入；桌面恒 0，且没有任何语句依赖它们。
 var _dcp_inline_ms: float = 0.0
@@ -1039,8 +1037,6 @@ func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 	_daily_adapter._apply_climate_writeback_if_authoritative(self, report)
 func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
 	return _daily_adapter.wait_for_climate_consumed(self, after_environment_generation)
-func _try_promote_economy_pod_active() -> void:
-	_climate_runtime._try_promote_economy_pod_active(self)
 func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
 	return _climate_runtime.set_runtime_climate_authority_enabled(self, enabled)
 func _restart_worker_with_current_policy() -> Dictionary:

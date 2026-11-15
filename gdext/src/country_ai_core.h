@@ -123,8 +123,11 @@ struct CountryAiCatalog {
     int32_t decision_noise_bp = 500;
     // Research.
     int32_t research_budget_horizon_days = 360;
-    int64_t research_min_daily_budget = 0;
-    int64_t research_max_daily_budget = 0;  // 0 = unbounded
+    // The research budget is sent to Economy procurement as a share of cash
+    // per day; the bounds keep a starter colony researching and stop a rich
+    // treasury from draining into technology points.
+    int32_t research_min_share_bp = 50;
+    int32_t research_max_share_bp = 200;
     int32_t research_weight_threshold_bp = 1500;
     int32_t research_max_enqueue_per_eval = 3;
     int32_t research_budget_change_bp = 2500;
@@ -248,7 +251,7 @@ struct CountryAiMemory {
     uint32_t commands_emitted = 0;
     uint32_t commands_rejected = 0;
     uint32_t colonize_intents = 0;
-    uint32_t reserved = 0;
+    int32_t research_share_bp = -1;    // last share sent to Economy procurement; -1 = none
     // A failed expedition is attributed to the last intent target (one intent
     // in flight per think); recent failures are skipped by target selection.
     int32_t colonize_last_target = -1;
@@ -271,6 +274,15 @@ struct CountryAiCommand {
     int32_t tax_mode = 0;
     int64_t value = 0;
     int32_t tax_item = -1;
+};
+
+// Research budget as an Economy procurement policy: the whole treasury is the
+// national envelope and research takes research_share_bp of it per day.
+struct CountryAiProcurementIntent {
+    int64_t day = -1;
+    uint64_t country_handle = 0;
+    int32_t research_share_bp = 0;
+    uint64_t sequence = 0;
 };
 
 struct CountryAiColonizationIntent {
@@ -327,7 +339,7 @@ struct CountryAiRecordRow {
     int32_t goal_milestone = -1;
     int32_t milestone_gap = 0;
     int32_t queued_techs = 0;
-    int64_t research_budget = 0;
+    int32_t research_share_bp = -1;
     int64_t tax_paid = 0;
     int64_t household_income = 0;
     int64_t carrying_k_eff = 0;
@@ -384,6 +396,7 @@ struct CountryAiPlanInput {
 struct CountryAiPlanOutput {
     std::vector<CountryAiCommand> commands;
     std::vector<CountryAiColonizationIntent> colonization;
+    std::vector<CountryAiProcurementIntent> procurement;
     std::vector<CountryAiDecision> decisions;
     std::vector<CountryAiRecordRow> records;
     uint32_t countries_thought = 0;

@@ -1052,6 +1052,14 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 	# The production consumer now runs during the day waits. Its cursor only
 	# advances after apply_runtime_ideology_snapshot reports applied=true, so
 	# observe that real handoff instead of forcing an older ring entry with -1.
+	# While the worker's parked day holds the boundary, the consumer answers
+	# economy_day_inflight and production tries again next frame; give it those
+	# frames (no further day is driven) before reading the cursor.
+	var handoff_deadline := Time.get_ticks_msec() + POD_WAIT_MS
+	while int(w["host"]._ideology_worker_snapshot_generation) <= writeback_generation_before \
+			and Time.get_ticks_msec() < handoff_deadline:
+		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec(), false)
+		OS.delay_msec(2)
 	var writeback_generation_after := int(w["host"]._ideology_worker_snapshot_generation)
 	print("[R][AFTER-DAY] production write-back generation %d -> %d" % [
 		writeback_generation_before, writeback_generation_after])
@@ -1650,6 +1658,9 @@ func _drive_day(w: Dictionary) -> Dictionary:
 	var day := int(w["tick"])
 	clock.current_day = float(day)
 	_service_peers(ext)
+	# As each production frame does: consume the committed day, which also
+	# reports the main-thread day tail the worker waits for (main_day_tail_gate).
+	host._consume_runtime_commit_if_ready()
 	if ext.has_method("publish_ideology_worker_inputs"):
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))

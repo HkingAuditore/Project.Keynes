@@ -613,29 +613,7 @@ static func _construction_groups(profile) -> Array[Dictionary]:
 				"efficiency_q16": Q16_ONE})
 		authored_groups.append({"preferred_good_id": String(good_ids[group_index]),
 			"quantity": int(quantities[group_index]), "candidates": candidates})
-	if authored_groups.is_empty():
-		return authored_groups
-	var pooled_quantity := 0
-	var pooled_candidates: Array[Dictionary] = []
-	var candidate_positions := {}
-	for group in authored_groups:
-		pooled_quantity += int(group.quantity)
-		for candidate in group.candidates:
-			var good_id := String(candidate.good_id)
-			var efficiency := int(candidate.efficiency_q16)
-			if candidate_positions.has(good_id):
-				var position := int(candidate_positions[good_id])
-				pooled_candidates[position].efficiency_q16 = maxi(
-					int(pooled_candidates[position].efficiency_q16), efficiency)
-				continue
-			candidate_positions[good_id] = pooled_candidates.size()
-			pooled_candidates.append({"good_id": good_id,
-				"efficiency_q16": efficiency})
-	return [{
-		"preferred_good_id": String(authored_groups[0].preferred_good_id),
-		"quantity": pooled_quantity,
-		"candidates": pooled_candidates,
-	}]
+	return authored_groups
 
 
 static func _construction_category_candidates(category_id: String,

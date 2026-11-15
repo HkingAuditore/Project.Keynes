@@ -4,8 +4,6 @@ extends RefCounted
 
 const COMMAND_RESEARCH_SET_WEIGHTS := &"research.set_weights"
 
-const COMMAND_RESEARCH_SET_BUDGET := &"research.set_budget"
-
 const COMMAND_RESEARCH_ENQUEUE := &"research.enqueue"
 
 const COMMAND_RESEARCH_REMOVE := &"research.remove"
@@ -144,11 +142,6 @@ static func _validate_command_args(
 				total += weight
 			if total != 10000:
 				return _result(false, "invalid_args", "研究权重总和必须为 10000。")
-		COMMAND_RESEARCH_SET_BUDGET:
-			if not args.has("enabled") or not args.has("daily_cash_limit"):
-				return _result(false, "invalid_args", "研究预算参数不完整。")
-			if int(args.get("daily_cash_limit", -1)) < 0:
-				return _result(false, "invalid_args", "研究预算不能为负。")
 		COMMAND_RESEARCH_ENQUEUE, COMMAND_RESEARCH_REMOVE, COMMAND_RESEARCH_MOVE:
 			var technology_id := StringName(args.get("technology_id", &""))
 			if technology_id.is_empty():

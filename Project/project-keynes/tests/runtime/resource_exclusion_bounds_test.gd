@@ -18,6 +18,7 @@ func _initialize() -> void:
 		"vegetation": PackedByteArray([0, 1, 255]),
 		"field_names": PackedStringArray(["a", "b"]),
 		"habitat_codes": PackedInt32Array([0, 0]), "scalars": scalars,
+		"cell_area_resource_scale": ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE,
 		"lf_offsets": PackedInt32Array([0, 0, 0]),
 		"veg_offsets": PackedInt32Array([0, 0, 0]),
 		"noise": [null, null], "province_noise": [null, null], "belt_noise": [null, null]}

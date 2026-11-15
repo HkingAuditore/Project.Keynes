@@ -877,7 +877,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 	host._sched_day_capture_ms = 0.0
 	host._sched_day_country_peer_ms = 0.0
 	host._sched_day_country_read_ms = 0.0
-	host._sched_day_promote_ms = 0.0
 	# Web 单日成本探针的 host 分段（未开探针时这几行只是置 0，全部是本类私有
 	# 字段，没有任何生产读取点）。
 	host._dcp_inline_ms = 0.0
@@ -991,9 +990,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 		# day_changed inflated day_cost_ema and collapsed 50x throughput while the
 		# worker sat in input_wait. Peer pump above is enough for the day barrier.
 		host._sched_day_country_read_ms = 0.0
-		segment_usec = Time.get_ticks_usec()
-		host._try_promote_economy_pod_active()
-		host._sched_day_promote_ms += host._sched_elapsed_ms(segment_usec)
 		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
 		return
 	# Climate 在 worker 手上时，先把它上一天的结果落进 MapData，再跑这一天的 tick。
@@ -1269,7 +1265,6 @@ func _publish_fast_tick_perf_sample(host,
 		"sched_day_capture_ms": host._sched_day_capture_ms,
 		"sched_day_country_peer_ms": host._sched_day_country_peer_ms,
 		"sched_day_country_read_ms": host._sched_day_country_read_ms,
-		"sched_day_promote_ms": host._sched_day_promote_ms,
 		"sched_proc_frames": host._sched_proc_frames,
 		"sched_proc_economy_input_ms": host._sched_proc_economy_input_ms,
 		"sched_proc_peer_ms": host._sched_proc_peer_ms,

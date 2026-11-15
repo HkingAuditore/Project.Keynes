@@ -24,6 +24,9 @@ void append_runtime_golden_report(const NativeSimulationHost *host, godot::Dicti
         domains[domain.id] = row;
     }
     out["domains"] = domains;
+    if (snapshot.whole_economy_ready)
+        out["whole_economy_hash"] = godot::String(std::to_string(
+            static_cast<int64_t>(snapshot.whole_economy_hash)).c_str());
     report["golden_domains"] = out;
 }
 } // namespace pk

@@ -54,7 +54,7 @@ bool NativeSimulationHost::resume_same_world_executor(double speed, bool paused)
 bool NativeSimulationHost::launch_executor(bool paused) {
     // native_daily_inline：不要 worker 线程。日屏障改由调用线程逐日执行
     // （run_inline_day）。这里必须先把状态发布成 RUNNING —— 命令准入
-    // （enqueue_batch）、`domain_grant_pending()` 的主线程抑制窗口、报告里的
+    // （enqueue_batch）、`domain_main_thread_suppressed()` 的授权窗口、报告里的
     // state 都读它；留在 STOPPED 会让内联模式收不到任何命令、也不抑制主线程。
     //
     // 内联只对 ACTIVE 有意义：SHADOW 的定义就是"worker 侧影子对拍"，没有线程

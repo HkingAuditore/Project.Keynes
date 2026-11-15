@@ -15,6 +15,14 @@ Dictionary unavailable() {
 }
 }
 
+void DCWorldExt::invalidate_economy_input_capture_cache(bool force_full) {
+    _economy_capture_generation = {};
+    _economy_capture_generation_valid = false;
+    _economy_capture_cached = false;
+    _economy_capture_force_full = force_full;
+    _economy_capture_cached_report.clear();
+}
+
 Dictionary DCWorldExt::capture_economy_trade_topology(
         const PackedInt32Array &neighbor_indices, const PackedByteArray &terrain,
         const PackedByteArray &trade_passable_lut,

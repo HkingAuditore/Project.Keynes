@@ -83,7 +83,11 @@ func _run() -> void:
 				_expect("Ideology consumes the latest committed opinion on day %d" % day,
 					int(runtime.get("ideology_parity_worker_opinion_committed_day", -2)) ==
 					int(opinion_before.get("commit_day", -3)))
-			var whole_hash := str(economy.world_ext().get_economy_state_hash())
+			var domains := await _read_domains(economy.world_ext(), day)
+			var whole_hash := _whole_economy_hash
+			var repeated := await _read_domains(economy.world_ext(), day)
+			_expect("golden diagnostic read is repeatable", domains == repeated)
+			_expect("golden diagnostic does not change economy", whole_hash == _whole_economy_hash)
 			if OS.get_environment("PK_GOLDEN_DIAGNOSTICS") == "1":
 				# These live compatibility hashes diagnose E1; they are not yet a
 				# complete per-domain state contract. In particular Country's
@@ -115,11 +119,6 @@ func _run() -> void:
 			whole_chain = (whole_chain + ":" + whole_hash).sha256_text()
 			var row := {"day": day, "values": values, "economy_hash": digest, "chain": chain,
 				"whole_economy_hash": whole_hash, "whole_economy_chain": whole_chain}
-			var domains := await _read_domains(economy.world_ext(), day)
-			var repeated := await _read_domains(economy.world_ext(), day)
-			_expect("golden diagnostic read is repeatable", domains == repeated)
-			_expect("golden diagnostic does not change economy",
-				whole_hash == str(economy.world_ext().get_economy_state_hash()))
 			_expect("golden all available domain summaries", domains.size() == DOMAINS.size() + 1)
 			var ordered: Array = []
 			for domain in DOMAINS:
@@ -166,10 +165,15 @@ func _wait_golden_read_boundary(host: WorldRuntimeHost, economy, day: int) -> bo
 	return false
 
 
+## Whole economy hash from the same boundary snapshot as the last _read_domains.
+var _whole_economy_hash := ""
+
+
 func _read_domains(world, day: int) -> Dictionary:
 	for _slice in range(MAX_SLICES_PER_DAY):
 		var report: Dictionary = world.get_runtime_perf_snapshot(3).get("golden_domains", {})
 		if bool(report.get("ready", false)) and int(report.get("day", -1)) == day:
+			_whole_economy_hash = String(report.get("whole_economy_hash", ""))
 			var all_domains: Dictionary = report.get("domains", {})
 			_expect("golden domain inventory", all_domains.size() == DOMAINS.size() + 1)
 			for excluded in EXCLUDED_DOMAINS:

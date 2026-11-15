@@ -134,6 +134,7 @@ func _start_production_shadow_worker() -> void:
 	# spawn 线程，而调用方还以为 worker 起了 —— 那是最难查的一种"起来了但没跑"。
 	var want_inline := climate_authority_active and web_wants_inline
 	config["native_daily_inline"] = want_inline
+	config["main_day_tail_gate"] = climate_authority_active and not want_inline
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		_web_worker_start_ok = false

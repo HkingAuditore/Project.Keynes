@@ -216,7 +216,7 @@ func maintenance_row_texts() -> Array:
 
 ## 维护通道下的实物明细：表头 + 固定 8 行 + 一句占位。节点只建一次。
 func _build_maintenance_detail(channel: VBoxContainer) -> void:
-	_maintenance_box = VBoxContainer.new()
+	_maintenance_box = UIControlParts.v_box_container()
 	_maintenance_box.name = "MaintenanceDetail"
 	_maintenance_box.mouse_filter = Control.MOUSE_FILTER_PASS
 	_maintenance_box.add_theme_constant_override("separation", 1)
@@ -242,7 +242,7 @@ func _build_maintenance_detail(channel: VBoxContainer) -> void:
 			"days": cells.get("Days"),
 			"inbound": cells.get("Inbound"),
 		})
-	_maintenance_note = Label.new()
+	_maintenance_note = UIControlParts.label()
 	_maintenance_note.name = "MaintenanceNote"
 	_maintenance_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_maintenance_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -255,11 +255,11 @@ func _build_maintenance_detail(channel: VBoxContainer) -> void:
 ## 一行明细：对象名（吃掉剩余宽度）+ 规模 / 满足率 / 可用天数 / 在途。
 ## `header` 只换文案与墨色，尺寸与列宽完全一致，表头与数据行不会错位。
 func _make_maintenance_row(header: bool) -> HBoxContainer:
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.name = "MaintenanceHeader" if header else "MaintenanceRow"
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 6)
-	var name_label := Label.new()
+	var name_label := UIControlParts.label()
 	name_label.name = "Name"
 	name_label.text = "对象" if header else ""
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -273,7 +273,7 @@ func _make_maintenance_row(header: bool) -> HBoxContainer:
 	row.add_child(name_label)
 	for spec in [["Units", "规模", MAINT_UNITS_WIDTH], ["Ratio", "满足", MAINT_STAT_WIDTH],
 			["Days", "可用", MAINT_DAYS_WIDTH], ["Inbound", "在途", MAINT_STAT_WIDTH]]:
-		var value := Label.new()
+		var value := UIControlParts.label()
 		value.name = String(spec[0])
 		value.text = String(spec[1]) if header else "—"
 		value.mouse_filter = Control.MOUSE_FILTER_IGNORE

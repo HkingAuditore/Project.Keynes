@@ -54,7 +54,6 @@ const TechnologyCatalogForPlayerScript = preload("res://scripts/economy/technolo
 var _era_advancement = EraAdvancementServiceScript.new()
 
 const COMMAND_RESEARCH_SET_WEIGHTS = PlayerCommandValidation.COMMAND_RESEARCH_SET_WEIGHTS
-const COMMAND_RESEARCH_SET_BUDGET = PlayerCommandValidation.COMMAND_RESEARCH_SET_BUDGET
 const COMMAND_RESEARCH_ENQUEUE = PlayerCommandValidation.COMMAND_RESEARCH_ENQUEUE
 const COMMAND_RESEARCH_REMOVE = PlayerCommandValidation.COMMAND_RESEARCH_REMOVE
 const COMMAND_RESEARCH_MOVE = PlayerCommandValidation.COMMAND_RESEARCH_MOVE
@@ -121,7 +120,6 @@ const CLOCK_CALLBACKS := {
 
 const SUPPORTED_COMMANDS := {
 	COMMAND_RESEARCH_SET_WEIGHTS: true,
-	COMMAND_RESEARCH_SET_BUDGET: true,
 	COMMAND_RESEARCH_ENQUEUE: true,
 	COMMAND_RESEARCH_REMOVE: true,
 	COMMAND_RESEARCH_MOVE: true,
@@ -342,11 +340,6 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_RESEARCH_SET_WEIGHTS:
 			var weights := args.get("weights_bp", PackedInt32Array()) as PackedInt32Array
 			result = facade.set_research_weights(_player_country_handle, weights, effective_day, sequence)
-		COMMAND_RESEARCH_SET_BUDGET:
-			var limit := int(args.get("daily_cash_limit", -1))
-			result = facade.set_research_budget(_player_country_handle,
-				bool(args.get("enabled", false)), limit,
-				effective_day, sequence)
 		COMMAND_RESEARCH_ENQUEUE:
 			result = _request_research_queue(facade, "enqueue", args, effective_day, sequence)
 		COMMAND_RESEARCH_REMOVE:

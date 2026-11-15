@@ -1,5 +1,6 @@
 #include "runtime_effect_pod.h"
 #include "effect_magnitude.h"
+#include "runtime_text_hash.h"
 
 #include <algorithm>
 #include <array>
@@ -172,14 +173,7 @@ void RuntimeEffectPodAuthority::reset(uint32_t instance_capacity,
 }
 
 uint64_t RuntimeEffectPodAuthority::hash_text(const char *text) noexcept {
-    uint64_t hash = FNV_OFFSET;
-    if (text == nullptr) return hash;
-    for (const uint8_t *cursor = reinterpret_cast<const uint8_t *>(text);
-         *cursor != 0; ++cursor) {
-        hash ^= *cursor;
-        hash *= FNV_PRIME;
-    }
-    return hash;
+    return runtime_text_hash(text);
 }
 
 uint64_t RuntimeEffectPodAuthority::hash_mix(uint64_t hash, const void *data,

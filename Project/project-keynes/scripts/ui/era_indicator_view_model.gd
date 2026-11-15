@@ -58,7 +58,8 @@ static func build_alerts(economy: Dictionary) -> Array[Dictionary]:
 	if population > 0 and unemployed * 10 >= population:
 		alerts.append(_alert("unemployment", "situation.unemployment", "失业率偏高",
 			float(unemployed) / float(population), 0.10,
-			"失业人口 ÷ 全国人口；触发线 10%。"))
+			"失业人口 ÷ 全国人口；触发线 10%。\n开局时只有业主在自家地块干活，其余人靠过渡库存度日，"
+			+ "等新建筑开工招人，这时失业率高是正常的。"))
 	if population > 0 and int(economy.get("survival_satisfaction_q16", -1)) >= 0 \
 			and int(economy.get("survival_satisfaction_q16", -1)) <= 49152:
 		alerts.append(_alert("survival", "situation.food_shortage", "生存满意度不足",

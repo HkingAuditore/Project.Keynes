@@ -157,7 +157,8 @@ int64_t sum_lot_value(const MilitaryCore &core, size_t army_slot, bool attack) {
         const int64_t factor = 32768 + mul_q(32768, condition);
         // v3: fold the *actually delivered* equipment quality into live combat,
         // exactly as refresh_army_cache does for the UI / AI numbers.
-        const int64_t eq = equip_factor_q16(type, core._lots.equip_quality_q8[s]);
+        const int64_t eq = lot_equip_factor_q16(type, core._lots.equip_quality_q8[s],
+                                                core._lots.kit_q16[s]);
         const int64_t per = attack ? type.attack_q16 : type.defense_q16;
         sum += mul_q(mul_q(mul_q(core._lots.count[s], per), factor), eq);
     });
@@ -969,7 +970,8 @@ void MilitaryCore::capture_cell(int32_t index, const MilitaryWorldDigest &digest
                         const int64_t move = _lots.count[(size_t)i];
                         const int32_t to = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army,
                                                               previous, _lots.unit_type[(size_t)i],
-                                                              _lots.equip_quality_q8[(size_t)i]);
+                                                              _lots.equip_quality_q8[(size_t)i],
+                                                              _lots.kit_q16[(size_t)i]);
                         if (to < 0) return;
                         _lots.count[(size_t)to] += move;
                         _lots.count[(size_t)i] = 0;
@@ -1023,7 +1025,7 @@ void MilitaryCore::retreat_or_annihilate(int32_t army, int32_t from_cell, int32_
             if (_lots.location[i] != army) continue;
             const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, from_cell,
                                                     _lots.country_slot[i], _lots.unit_type[i],
-                                                    _lots.equip_quality_q8[i]);
+                                                    _lots.equip_quality_q8[i], _lots.kit_q16[i]);
             if (dest < 0) continue;
             _lots.count[(size_t)dest] += _lots.count[i];
             _lots.count[i] = 0;

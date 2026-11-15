@@ -389,8 +389,6 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         _country_peer_resolved_in_worker.load(std::memory_order_acquire);
     out.country_peer_resolved_by_main =
         _country_peer_resolved_by_main.load(std::memory_order_acquire);
-    out.country_deferred_peer_count =
-        _country_deferred_peer_count.load(std::memory_order_acquire);
     out.day_park_domain_mask = _day_park_domain_mask.load(std::memory_order_acquire);
     for (size_t i = 0; i + 1 < sizeof(out.day_park_reason); ++i) {
         out.day_park_reason[i] = _day_park_reason[i].load(std::memory_order_acquire);

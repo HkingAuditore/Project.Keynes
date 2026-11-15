@@ -355,8 +355,7 @@ func _start_production_shadow_worker(host) -> void:
 	if String(host.runtime_economy_execution_mode) != "ACTIVE_WITH_PARITY":
 		config["economy_stage_ops_mutate"] = true
 		config["economy_production_writer"] = "stage_ops"
-		# Host requests auto POD_ACTIVE. The worker records the flag only;
-		# WorldRuntimeHost performs the actual switch on an idle boundary.
+		# The worker promotes Economy to POD_ACTIVE itself, between days.
 		config["economy_auto_pod_active"] = host.runtime_economy_auto_pod_active
 	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
@@ -391,12 +390,13 @@ func _start_production_shadow_worker(host) -> void:
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
 		config["authoritative_domain_mask"] = host.runtime_authority_domain_mask
-	# native_daily_inline：把"日屏障由谁执行"从 worker 线程换成调用线程。
-	# 只有 ACTIVE 请求才谈得上内联日（SHADOW 的定义就是 worker 侧影子对拍）。
-	# 显式写 false 而不是"不写"：同一个 key 若被遗留状态置真，host 会直接不
-	# spawn 线程，而调用方还以为 worker 起了 —— 那是最难查的一种"起来了但没跑"。
+	# native_daily_inline：日屏障改在调用线程执行，只对 ACTIVE 有意义。显式写 false：
+	# 遗留的 true 会让 host 不 spawn 线程，而调用方以为 worker 起了。
 	var want_inline = climate_authority_active and web_wants_inline
 	config["native_daily_inline"] = want_inline
+	# worker 等本线程跑完第 D 天的军事、资源恢复再开始 D+1。
+	config["main_day_tail_gate"] = climate_authority_active and not want_inline
+	host._runtime_commit_generation = 0  # 新 worker 代数从 0 起，旧游标会挡住提交、停住日尾闸门
 	var started: Dictionary = host._generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		host._web_worker_start_ok = false

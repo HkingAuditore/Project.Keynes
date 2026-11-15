@@ -97,6 +97,10 @@ func _run() -> void:
 	activity.observe_development(1, 102, 4)
 	_expect("扩建优先于同格增长", activity._effects.size() == 1 and activity._effects[0].kind == &"build")
 	activity._effects.clear()
+	activity.observe_development(1, 102, 4)
+	_expect("被扩建挡住的增长在表现结束后补播",
+		activity._effects.size() == 1 and activity._effects[0].kind == &"growth")
+	activity._effects.clear()
 	map.visible_arr[2] = 0
 	_expect("当前不可见时不产生反馈", not activity.play_activity(2, &"colony"))
 	map.visible_arr[2] = 1

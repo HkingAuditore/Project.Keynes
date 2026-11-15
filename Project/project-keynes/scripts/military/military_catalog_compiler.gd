@@ -13,7 +13,7 @@ extends RefCounted
 ##   units: Array[Dictionary]  { id, name, description, tech, class, militia,
 ##                               era, unlock_bit, attack, defense, speed,
 ##                               fortification_ignore, training_days,
-##                               equipment:[{category, min_quality, per_100, weight}],
+##                               equipment:[{category, core, min_quality, per_100, weight}],
 ##                               supply_idle / supply_combat:
 ##                               PackedFloat32Array(6) in MILITARY_SUPPLY_* order }
 ##                               -> order: ration, fodder, ammunition, fuel,
@@ -40,6 +40,7 @@ extends RefCounted
 ## 3 fuel, 4 upkeep, 5 equipment.
 
 const CATALOG_PATH := "res://data/military/military_catalog.json"
+const SupportScript = preload("res://scripts/military/military_catalog_support.gd")
 const SCHEMA_VERSION := 1
 const Q16_ONE := 65536
 
@@ -86,6 +87,14 @@ const REPAIR_Q32_ONE := 4294967296.0
 const REPAIR_MILLI_GOODS := 1000.0
 ## `default_price` is authored in money subunits per 1.0 good (MONEY_SCALE).
 const REPAIR_MONEY_SCALE := 10000.0
+
+
+static func slot_accepted_goods(slot: Dictionary, category: Dictionary) -> PackedInt32Array:
+	return SupportScript.slot_accepted_goods(slot, category)
+
+
+static func unit_consumed_goods(military: Dictionary, unit: Dictionary) -> PackedInt32Array:
+	return SupportScript.unit_consumed_goods(military, unit)
 
 ## Authoring magnitude ceilings, not gameplay caps. Every float column in the
 ## catalog is authored human-readable and scaled exactly once (compiler ->
@@ -445,6 +454,7 @@ static func _compile_units(raw_units, category_index: Dictionary,
 		var equipment_rows: Array = raw.get("equipment", [])
 		if equipment_rows.size() > MAX_EQUIP_SLOTS:
 			return _fail("military_unit_equipment_slots_exceeded: %s" % unit_id)
+		var seen_slot_categories := {}
 		for row_value in equipment_rows:
 			if not row_value is Dictionary:
 				return _fail("military_unit_equipment_not_object: %s" % unit_id)
@@ -452,12 +462,20 @@ static func _compile_units(raw_units, category_index: Dictionary,
 			var category_id := String(row.get("category", "")).strip_edges()
 			if not category_index.has(category_id):
 				return _fail("military_equipment_category_unknown: %s" % category_id)
+			if seen_slot_categories.has(category_id):
+				return _fail("military_unit_equipment_category_duplicate: %s.%s"
+					% [unit_id, category_id])
+			seen_slot_categories[category_id] = true
 			equipment.append({
 				"category": int(category_index[category_id]),
+				"core": bool(row.get("core", false)),
 				"min_quality": clampi(int(row.get("min_quality", 1)), 1, 5),
 				"per_100": maxf(0.0, float(row.get("per_100", 0.0))),
 				"weight": maxf(0.0, float(row.get("weight", 1.0))),
 			})
+		if not equipment.is_empty() and not equipment.any(
+				func(slot: Dictionary) -> bool: return bool(slot.core)):
+			return _fail("military_unit_equipment_core_missing: %s" % unit_id)
 		var idle := _supply_vector(raw.get("supply_idle", {}), unit_id)
 		var combat := _supply_vector(raw.get("supply_combat", {}), unit_id)
 		if idle.is_empty() or combat.is_empty():
@@ -1069,93 +1087,11 @@ static func _compile_supply(raw_supply, good_index: Dictionary,
 
 static func _catalog_hash(compiled: Dictionary, good_ids: PackedStringArray,
 		tech_ids: PackedStringArray) -> int:
-	# Stable across machines and dictionary insertion order: FNV-1a over the
-	# resolved dense columns only (an authored rename that keeps the same dense
-	# ids must not change the hash).
-	var hasher := HashingContext.new()
-	hasher.start(HashingContext.HASH_SHA256)
-	hash_mix(hasher, "pkmi.catalog.v1")
-	hash_mix(hasher, str(compiled.get("economy_good_count", 0)))
-	hash_mix(hasher, str(compiled.get("soldier_profession_id", -1)))
-	hash_mix(hasher, str(compiled.get("unemployed_profession_id", -1)))
-	hash_mix(hasher, str(compiled.get("ration_need_per_head", 0)))
-	for unit_value in compiled.get("units", []):
-		var unit: Dictionary = unit_value
-		hash_mix(hasher, String(unit.get("id", "")))
-		hash_mix(hasher, str(int(unit.get("class", 0))))
-		hash_mix(hasher, str(int(unit.get("unlock_bit", -1))))
-		hash_mix(hasher, str(int(unit.get("era", 0))))
-		for row_value in unit.get("equipment", []):
-			var row: Dictionary = row_value
-			hash_mix(hasher, "%d:%d:%.6f:%.6f" % [int(row.get("category", -1)),
-				int(row.get("min_quality", 1)), float(row.get("per_100", 0.0)),
-				float(row.get("weight", 1.0))])
-		var idle: PackedFloat32Array = unit.get("supply_idle", PackedFloat32Array())
-		var combat: PackedFloat32Array = unit.get("supply_combat", PackedFloat32Array())
-		for k in range(mini(SUPPLY_CLASS_COUNT, idle.size())):
-			hash_mix(hasher, "i%.6f" % float(idle[k]))
-		for k in range(mini(SUPPLY_CLASS_COUNT, combat.size())):
-			hash_mix(hasher, "c%.6f" % float(combat[k]))
-		# Physical repair recipe: size first (so an empty row and a row of
-		# zero-rate entries hash differently), then every dense good id with
-		# its frozen rate.
-		var repair_goods: PackedInt32Array = unit.get("repair_goods",
-			PackedInt32Array())
-		var repair_rate: PackedInt64Array = unit.get("repair_rate_q32",
-			PackedInt64Array())
-		hash_mix(hasher, "r%d" % repair_goods.size())
-		for k in range(repair_goods.size()):
-			hash_mix(hasher, "%d:%d" % [int(repair_goods[k]),
-				int(repair_rate[k]) if k < repair_rate.size() else 0])
-	for category_value in compiled.get("categories", []):
-		var category: Dictionary = category_value
-		hash_mix(hasher, String(category.get("id", "")))
-		var goods: PackedInt32Array = category.get("goods", PackedInt32Array())
-		var qualities: PackedInt32Array = category.get("qualities", PackedInt32Array())
-		for k in range(goods.size()):
-			hash_mix(hasher, "%d:%d" % [int(goods[k]),
-				int(qualities[k]) if k < qualities.size() else 1])
-	for building_value in compiled.get("state_buildings", []):
-		var building: Dictionary = building_value
-		hash_mix(hasher, String(building.get("id", "")))
-		hash_mix(hasher, str(int(building.get("role", 0))))
-		hash_mix(hasher, str(int(building.get("capacity", 0))))
-		# The economy bridge is part of the identity. Two catalogs that point
-		# the same lot at different economy building types describe different
-		# worlds, and `MilitaryCore::catalog_hash()` (military_core.cpp) mixes
-		# this column too: leaving it out here would let a bridge-only edit look
-		# content-identical on this side while PKMI loads keep failing.
-		hash_mix(hasher, str(int(building.get("economy_building_id", -1))))
-		var repair_goods: PackedInt32Array = building.get("repair_goods",
-			PackedInt32Array())
-		var repair_rate: PackedInt64Array = building.get("repair_rate_q32",
-			PackedInt64Array())
-		hash_mix(hasher, "r%d" % repair_goods.size())
-		for k in range(repair_goods.size()):
-			hash_mix(hasher, "%d:%d" % [int(repair_goods[k]),
-				int(repair_rate[k]) if k < repair_rate.size() else 0])
-	var unlock: PackedInt32Array = compiled.get("unlock_tech_ids", PackedInt32Array())
-	for dense in unlock:
-		hash_mix(hasher, "%d:%s" % [int(dense),
-			String(tech_ids[int(dense)]) if int(dense) < tech_ids.size() else ""])
-	for supply_class in range(SUPPLY_CLASS_COUNT):
-		var goods: PackedInt32Array = (compiled.get("supply_goods", []) as Array)[
-			supply_class]
-		var yields: PackedInt32Array = (compiled.get("supply_yield_q16", []) as Array)[
-			supply_class]
-		for k in range(goods.size()):
-			hash_mix(hasher, "s%d:%d:%d" % [supply_class, int(goods[k]),
-				int(yields[k]) if k < yields.size() else 0])
-	var digest := hasher.finish()
-	var value := 0
-	for byte in digest:
-		value = (value * 1099511628211 + int(byte)) & 0x7FFFFFFFFFFFFFFF
-	return value
+	return SupportScript._catalog_hash(compiled, good_ids, tech_ids)
 
 
 static func hash_mix(hasher: HashingContext, text: String) -> void:
-	hasher.update(text.to_utf8_buffer())
-	hasher.update(PackedByteArray([0]))
+	SupportScript.hash_mix(hasher, text)
 
 
 static func _read_json(path: String) -> Dictionary:

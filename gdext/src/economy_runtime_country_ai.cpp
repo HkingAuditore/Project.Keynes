@@ -64,6 +64,23 @@ void NativeEconomyRuntime::queue_country_ai_colonization(
         _country_ai->colonization_inbox.push_back(std::move(intent));
 }
 
+void NativeEconomyRuntime::queue_research_procurement_policy(
+        uint64_t country_handle, int32_t research_share_bp,
+        int64_t effective_day, int64_t sequence) {
+    PendingProcurementUpdate update;
+    update.kind = 1;
+    update.country_handle = country_handle;
+    update.flag = true;
+    update.treasury_share_bp = 10000;
+    update.research_share_bp = std::clamp(research_share_bp, 0, 10000);
+    update.effective_day = std::max<int64_t>(0, effective_day);
+    update.sequence = sequence;
+    std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
+    update.order = _procurement_inbox->next_order++;
+    _procurement_inbox->requested_policy[update.country_handle] = update;
+    _procurement_inbox->updates.push_back(std::move(update));
+}
+
 void NativeEconomyRuntime::export_country_ai_pending(
         std::vector<CountryAiColonizationIntent> &intents,
         std::vector<CountryAiColonizationStat> &stats,
@@ -255,6 +272,21 @@ void NativeEconomyRuntime::publish_country_ai_digest() {
     digest->cell_population = std::move(cell_people);
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
     _country_ai->digest = std::move(digest);
+}
+
+void NativeEconomyRuntime::mark_country_ai_colonization_demand(
+        std::vector<uint8_t> &demand) const {
+    // The procurement freeze runs before these intents become START commands
+    // in the same epoch start. Counting them keeps the expedition's first
+    // epoch from getting a zero colonization reserve allowance.
+    std::lock_guard<std::mutex> lock(_country_ai->mutex);
+    for (const auto &intent : _country_ai->colonization_inbox) {
+        const int32_t slot = static_cast<int32_t>(intent.country_handle & 0xffffffffULL);
+        if (slot >= 0 && static_cast<size_t>(slot) < demand.size() &&
+            static_cast<size_t>(slot) < _epoch_country_handles.size() &&
+            _epoch_country_handles[static_cast<size_t>(slot)] == intent.country_handle)
+            demand[static_cast<size_t>(slot)] = 1;
+    }
 }
 
 void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_index) {

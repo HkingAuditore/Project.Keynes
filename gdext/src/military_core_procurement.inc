@@ -30,6 +30,7 @@ constexpr int32_t PROCURE_MARKETS = 4;
 struct ReachRow {
     int32_t row = -1;
     int64_t price_q16 = 0;      // price per need unit (q16 of MONEY_SCALE)
+    uint8_t quality_priority = 0; // secondary below-minimum quality sorts last
 };
 // One need class (or equipment category) of one demander.
 struct DemandEntry {
@@ -40,6 +41,7 @@ struct DemandEntry {
     int32_t cls = -1;           // supply class (equipment: -1)
     int32_t category = -1;
     int32_t min_quality = 0;
+    uint8_t core = 0;
     int64_t want = 0;           // need units (equipment: GOODS_SCALE)
     int64_t sourced = 0;
     int64_t in_flight = 0;
@@ -104,6 +106,20 @@ struct DemandScratch {
 DemandScratch &demand_scratch() {
     static thread_local DemandScratch s;
     return s;
+}
+
+bool equipment_candidate_allowed(const MilitaryCatalog &catalog,
+                                 const DemandEntry &entry, int32_t good) {
+    if (entry.cls >= 0) return true;
+    const int32_t quality = equip_good_quality(catalog, good);
+    if (quality <= 0) return false;
+    return entry.core == 0 || quality >= entry.min_quality;
+}
+
+uint8_t equipment_quality_priority(const MilitaryCatalog &catalog,
+                                   const DemandEntry &entry, int32_t good) {
+    if (entry.cls >= 0) return 0;
+    return equip_good_quality(catalog, good) < entry.min_quality ? 1 : 0;
 }
 int64_t class_units_of(int64_t goods, int32_t yield_q16) {
     if (goods <= 0) return 0;
@@ -352,6 +368,7 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 e.cls = -1;
                 e.category = category;
                 e.min_quality = type.slot_min_quality[(size_t)si];
+                e.core = type.slot_core[(size_t)si];
                 e.want = qty;
                 entries.push_back(e);
             }
@@ -412,12 +429,16 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                     const int32_t y = (size_t)index < yields.size() ? yields[(size_t)index] : MILITARY_Q16;
                     price = price_per_unit_q16(_md_row_price[(size_t)row], y);
                 } else {
-                    if (category_of_good(_catalog, _md_row_good[(size_t)row]) != e.category) continue;
+                    const int32_t good = _md_row_good[(size_t)row];
+                    if (category_of_good(_catalog, good) != e.category) continue;
+                    if (!equipment_candidate_allowed(_catalog, e, good)) continue;
                     price = _md_row_price[(size_t)row];
                 }
                 ReachRow rr;
                 rr.row = row;
                 rr.price_q16 = price;
+                rr.quality_priority = equipment_quality_priority(
+                    _catalog, e, _md_row_good[(size_t)row]);
                 ds.reach.push_back(rr);
             }
         }
@@ -428,8 +449,10 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
             int32_t b = a;
             while (b > e.reach_begin) {
                 const ReachRow &prev = ds.reach[(size_t)(b - 1)];
-                if (prev.price_q16 < key.price_q16 ||
-                    (prev.price_q16 == key.price_q16 && prev.row <= key.row)) {
+                if (prev.quality_priority < key.quality_priority ||
+                    (prev.quality_priority == key.quality_priority &&
+                     (prev.price_q16 < key.price_q16 ||
+                      (prev.price_q16 == key.price_q16 && prev.row <= key.row)))) {
                     break;
                 }
                 ds.reach[(size_t)b] = prev;
@@ -731,8 +754,9 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                         entry.category))) continue;
         }
         int32_t candidate = entry.reach_begin;
-        while (candidate < entry.reach_end && entry.cls < 0 &&
-            equip_good_quality(_catalog, _md_row_good[(size_t)ds.reach[(size_t)candidate].row]) < entry.min_quality)
+        while (candidate < entry.reach_end &&
+            !equipment_candidate_allowed(_catalog, entry,
+                _md_row_good[(size_t)ds.reach[(size_t)candidate].row]))
             ++candidate;
         if (candidate >= entry.reach_end) continue;
         const int32_t row = ds.reach[(size_t)candidate].row;

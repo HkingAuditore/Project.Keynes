@@ -5,6 +5,7 @@
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
+#include "modifier_api.h"
 #include "runtime_protocol_guard.h"
 #include "runtime_ideology_pod.h"
 #include "runtime_economy_pod.h"
@@ -772,12 +773,43 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         // cannot double-write beside worker_run_compact_slice.
         _runtime_host->attach_economy_stage_ops(
             economy->make_graph_stage_ops(/*mutate=*/economy_stage_ops_mutate));
+        auto *main_modifier = static_cast<ModifierRuntime *>(_modifier_runtime);
+        if (economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY &&
+            main_modifier != nullptr) {
+            // The worker economy must not read the main-thread ModifierRuntime:
+            // the main thread rebuilds it from worker snapshots at its own
+            // pace, so a day could see a stale generation (resume diverged on
+            // exactly that). Start from the main copy -- after configure or
+            // restore it holds the building identities -- and let the modifier
+            // stage refresh it. A restart of the same world keeps the view: its
+            // identities are the ones the economy rows already reference.
+            auto *view = static_cast<ModifierRuntime *>(_economy_modifier_view);
+            if (view == nullptr) {
+                view = modifier_api::copy_runtime(*main_modifier).release();
+                _economy_modifier_view = view;
+            } else if (!_economy_modifier_view_attached) {
+                modifier_api::replace_runtime(
+                    *view, std::move(*modifier_api::copy_runtime(*main_modifier)));
+            }
+            modifier_api::reset_pod_snapshot_generation(*view);
+            economy->attach_modifier_runtime(view);
+            _runtime_host->attach_economy_modifier_view(view);
+        } else {
+            economy->attach_modifier_runtime(main_modifier);
+            _runtime_host->attach_economy_modifier_view(nullptr);
+        }
+        _economy_modifier_view_attached =
+            economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY &&
+            main_modifier != nullptr;
         if (economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY) {
             _runtime_host->attach_economy_production_runtime(economy);
         } else {
             _runtime_host->attach_economy_production_runtime(nullptr);
         }
     }
+    // The inline executor already runs each day between main-thread frames.
+    _runtime_host->set_main_day_tail_gate(
+        !native_daily_inline && static_cast<bool>(config.get("main_day_tail_gate", false)));
     if (!_runtime_host->start(mode, complete, day, speed, paused,
                               requested_authority_mask)) {
         out["ok"] = false;
@@ -1173,9 +1205,8 @@ Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
     packet.envelope.requested_day = requested_day;
     packet.envelope.domain = static_cast<uint16_t>(domain);
     packet.envelope.opcode = static_cast<uint16_t>(opcode);
-    const RuntimeThreadReport report = _runtime_host->report();
     packet.envelope.effective_day = std::max<int64_t>(
-        packet.envelope.requested_day, report.committed_day + 1);
+        packet.envelope.requested_day, _runtime_host->command_seal_day());
     PackedByteArray payload;
     if (command.has("payload")) {
         const Variant payload_value = command["payload"];
@@ -1240,6 +1271,10 @@ Dictionary DCWorldExt::poll_runtime_receipts(int max_items) {
     out["receipts"] = receipts;
     out["count"] = receipts.size();
     return out;
+}
+
+void DCWorldExt::mark_runtime_day_tail_done(int64_t day) {
+    if (_runtime_host) _runtime_host->mark_main_day_tail_done(day);
 }
 
 Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {

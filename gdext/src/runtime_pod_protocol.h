@@ -1192,7 +1192,6 @@ struct RuntimeCountryPodSnapshot {
     std::vector<int32_t> research_queues;
     std::vector<uint8_t> research_queue_lengths;
     std::vector<int32_t> research_weights_bp;
-    std::vector<int64_t> research_daily_budgets;
     std::vector<int64_t> research_deferred_points;
     std::vector<int64_t> research_progress_total;
     std::vector<int64_t> research_completed_total;
@@ -1290,6 +1289,8 @@ struct RuntimeCountryPodCatalog {
     // Modifier activation requirement. String definition keys stay main-thread
     // catalog data and never cross into the worker.
     std::vector<uint8_t> technology_effect_required;
+    // hash_text("technology.<id>"): the worker's key for the Effect program.
+    std::vector<uint64_t> technology_effect_key_hashes;
     std::vector<int32_t> prerequisite_offsets;
     std::vector<int32_t> prerequisites;
     std::vector<int32_t> milestone_offsets;
@@ -1941,8 +1942,6 @@ struct RuntimeThreadReport {
     // 就是"peer 谁都没在推进"，必须能看见。
     uint64_t country_peer_resolved_in_worker = 0;
     uint64_t country_peer_resolved_by_main = 0;
-    // worker 自己发起、当日仍为 PENDING 的 deferred peer 数（P2）。
-    uint32_t country_deferred_peer_count = 0;
     char fault_code[64]{};
 };
 

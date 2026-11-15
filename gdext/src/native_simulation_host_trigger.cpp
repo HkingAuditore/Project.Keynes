@@ -47,7 +47,11 @@ bool NativeSimulationHost::configure_trigger_pod(
 
 bool NativeSimulationHost::queue_trigger_pod_command(
         const RuntimeTriggerCommand &command, std::string &error) {
-    return _domain_authority_runner.queue_trigger_command(command, error);
+    // Main-thread ingress: seal like every other command lane, so the day a
+    // command lands on never depends on how far the worker has run.
+    RuntimeTriggerCommand sealed = command;
+    sealed.effective_day = std::max(sealed.effective_day, command_seal_day());
+    return _domain_authority_runner.queue_trigger_command(sealed, error);
 }
 
 void NativeSimulationHost::forward_committed_events_to_trigger(int64_t day) {

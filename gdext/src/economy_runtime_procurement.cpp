@@ -166,6 +166,7 @@ Dictionary NativeEconomyRuntime::set_era_procurement_target(
 
 void NativeEconomyRuntime::clear_procurement_runtime_state(bool clear_pending) {
     _country_procurement.clear();
+    _epoch_research_daily.clear();
     _country_trade_orders_by_slot.clear();
     reset_era_procurement_epoch();
     _epoch_era_demand_by_cell.clear();
@@ -265,18 +266,18 @@ NativeEconomyRuntime::procurement_state_for_slot(int32_t country) const {
 bool NativeEconomyRuntime::research_procurement_policy_for(
         int32_t country, bool &enabled, int64_t &daily_budget,
         int64_t &remaining_points) const {
+    daily_budget = 0;
     if (_country_runtime == nullptr ||
-        !country_reads().research_procurement_policy(
-            country, enabled, daily_budget, remaining_points))
+        !country_reads().research_procurement_policy(country, enabled, remaining_points))
         return false;
-    const CountryProcurementState *state = procurement_state_for_slot(country);
-    if (state != nullptr && state->policy_enabled)
-        daily_budget = std::max<int64_t>(0, state->research_daily);
+    if (country >= 0 && static_cast<size_t>(country) < _epoch_research_daily.size())
+        daily_budget = _epoch_research_daily[static_cast<size_t>(country)];
     return true;
 }
 
 void NativeEconomyRuntime::freeze_epoch_procurement_budgets() {
-    if (_country_procurement.empty() || _country_runtime == nullptr) return;
+    _epoch_research_daily.assign(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    if (_country_runtime == nullptr) return;
     const int64_t days = std::max(1, _epoch_days.get());
     // Roll per-epoch spend counters first so "last epoch" reads stay stable
     // for the whole following cycle.
@@ -306,22 +307,33 @@ void NativeEconomyRuntime::freeze_epoch_procurement_budgets() {
             _epoch_country_handles[static_cast<size_t>(slot)] == handle)
             colonization_demand[static_cast<size_t>(slot)] = 1;
     }
+    mark_country_ai_colonization_demand(colonization_demand);
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
         CountryProcurementState *state = procurement_state_for_slot(country);
-        if (state == nullptr || !state->policy_enabled) continue;
+        if (state != nullptr && !state->policy_enabled) continue;
         const int64_t cash = std::max<int64_t>(0, country_reads().cash_for_slot(country));
-        state->national_daily = mul_div_sat(cash, state->treasury_share_bp, 10000,
-                                            _saturation_count);
         bool research_enabled = false;
-        int64_t ignored_daily = 0;
         int64_t research_remaining = 0;
         const bool research_demand = country_reads().research_procurement_policy(
-                country, research_enabled, ignored_daily, research_remaining) &&
+                country, research_enabled, research_remaining) &&
             research_enabled && research_remaining > 0;
+        if (state == nullptr) {
+            // No policy was ever sent (AI off, scripted countries): research
+            // at the profile default shares; the other channels stay legacy.
+            if (research_demand)
+                _epoch_research_daily[static_cast<size_t>(country)] = mul_div_sat(
+                    mul_div_sat(cash, _procurement_default_treasury_share_bp, 10000,
+                                _saturation_count),
+                    _procurement_default_research_share_bp, 10000, _saturation_count);
+            continue;
+        }
+        state->national_daily = mul_div_sat(cash, state->treasury_share_bp, 10000,
+                                            _saturation_count);
         state->research_daily = research_demand
             ? mul_div_sat(state->national_daily, state->research_share_bp, 10000,
                           _saturation_count)
             : 0;
+        _epoch_research_daily[static_cast<size_t>(country)] = state->research_daily;
         state->other_daily = std::max<int64_t>(0, state->national_daily - state->research_daily);
         bool era_demand = false;
         if (state->era_active) {
@@ -926,8 +938,15 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
             }
         }
     }
+    // A country that never sent a policy researches at the profile defaults.
+    const bool policy_default = state == nullptr && !policy_pending;
+    if (policy_default) {
+        treasury_bp = _procurement_default_treasury_share_bp;
+        research_bp = _procurement_default_research_share_bp;
+    }
     out["ok"] = true;
     out["policy_enabled"] = policy_enabled;
+    out["policy_default"] = policy_default;
     out["policy_pending"] = policy_pending;
     out["treasury_share_bp"] = treasury_bp;
     out["research_share_bp"] = research_bp;
@@ -941,6 +960,9 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
         other = state->other_daily;
         era_daily = state->era_daily;
         colonization = state->colonization_daily;
+    } else if (policy_default) {
+        if (slot >= 0 && static_cast<size_t>(slot) < _epoch_research_daily.size())
+            research = _epoch_research_daily[static_cast<size_t>(slot)];
     } else if (policy_enabled) {
         int64_t sat = 0;
         const int64_t cash = std::max<int64_t>(0, country_reads().cash_for_slot(slot));

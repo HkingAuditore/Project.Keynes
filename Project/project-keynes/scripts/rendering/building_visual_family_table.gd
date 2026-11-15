@@ -15,7 +15,8 @@ const DEFAULT_PATH := "res://data/rendering/building_visual_families.tres"
 ## industry chain and output goods) in table order.
 @export var families: Array[Dictionary] = []
 ## Construction good id -> build grade (0 primitive, 1 classical, 2 industrial,
-## 3 steel frame). A type's grade is the highest grade among its goods.
+## 3 steel frame). A type's grade is that of its primary (first authored)
+## construction good: one steel row in a mill's bill is not a steel frame.
 @export var grade_goods: Dictionary = {}
 
 static var _default: Resource = null

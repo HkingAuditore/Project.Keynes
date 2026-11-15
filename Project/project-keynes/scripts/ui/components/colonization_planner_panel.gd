@@ -249,7 +249,7 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_update_workflow()
 	if _search.is_visible_in_tree():
 		_search.grab_focus()
-	else:
+	elif is_inside_tree():
 		(get_node("%CloseButton") as Button).grab_focus()
 
 

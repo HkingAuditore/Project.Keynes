@@ -20,6 +20,8 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		return
 	if not bool(report.get("simulation_worker_ready", report.get(
 			"authority_ready", false))):
+		# Nothing below runs before the grant, so no tail holds the worker.
+		_mark_runtime_day_tail(host, int(report.get("simulation_committed_day", -1)))
 		return
 	if report_override.is_empty():
 		host._apply_climate_writeback_if_authoritative(report)
@@ -78,7 +80,6 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			commit_usec = Time.get_ticks_usec()
 		else:
 			host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
-		host._try_promote_economy_pod_active()
 	else:
 		host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 		commit_usec = Time.get_ticks_usec()
@@ -102,6 +103,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	# boundary lock is involved. Same-frame budget as the resource drain.
 	var military_usec = Time.get_ticks_usec()
 	host._drain_runtime_military_commits()
+	_mark_runtime_day_tail(host, host._runtime_commit_day)
 	host._runtime_military_ms = float(Time.get_ticks_usec() - military_usec) / 1000.0
 	if dcp:
 		host._dcp_military_ms = host._runtime_military_ms
@@ -187,6 +189,30 @@ func _drain_runtime_natural_resource_commits(host) -> void:
 	if host._runtime_natural_resource_last_commit_day >= target_day:
 		host._runtime_natural_resource_pending_target_day = -1
 
+
+
+## The worker starts day D+1 only after the Military and resource tails of
+## day D ran here (native `main_day_tail_gate`). A tail with nothing queued
+## does not hold it.
+func _mark_runtime_day_tail(host, committed_day: int) -> void:
+	var ext = host._generator.get_data_core_world_ext() if committed_day >= 0 \
+		and host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("mark_runtime_day_tail_done"):
+		return
+	var done = committed_day
+	# Trigger effects emitted through day D go out before D's tail is marked,
+	# so their commands and delivery ACKs are sealed on D+1. A lost boundary
+	# lock defers the handoff; the tail waits for it.
+	host._consume_trigger_worker_snapshot_if_authoritative()
+	var trigger = host._generator.get_trigger_facade() \
+		if host._generator.has_method("get_trigger_facade") else null
+	if trigger != null and bool(trigger.handoff_effect_batch(512).get("deferred", false)):
+		done = mini(done, committed_day - 1)
+	if host._runtime_military_pending_target_day >= 0:
+		done = mini(done, host._runtime_military_last_commit_day)
+	if host._runtime_natural_resource_pending_target_day >= 0:
+		done = mini(done, host._runtime_natural_resource_last_commit_day)
+	ext.mark_runtime_day_tail_done(done)
 
 
 func _queue_runtime_military_commit(host, day: int) -> void:

@@ -10,7 +10,7 @@ const COLUMNS := [
 	"day", "slot", "handle", "personality", "agenda", "cash", "cash_delta_ema",
 	"reserve_days", "satisfaction_q16", "essentials_q16", "population", "territory",
 	"frontier", "completed_milestones", "goal_milestone", "milestone_gap",
-	"queued_techs", "research_budget", "tax_paid", "household_income",
+	"queued_techs", "research_share_bp", "tax_paid", "household_income",
 	"carrying_k_eff", "carrying_k_geo", "carrying_load_q16",
 	"tax_income_bp", "tax_consumption_bp",
 	"tax_business_bp", "expeditions", "families", "colonize_started",

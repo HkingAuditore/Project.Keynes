@@ -1,10 +1,12 @@
 #include "economy_runtime.h"
 
 namespace pk {
-uint64_t NativeEconomyRuntime::asset_peer_request_high_watermark() const noexcept {
+uint64_t NativeEconomyRuntime::asset_peer_request_high_watermark(
+        uint64_t tag, bool tagged) const noexcept {
     uint64_t maximum = 0;
     for (const auto &entry : _asset_peer_journal)
-        maximum = std::max(maximum, entry.first);
+        if (((entry.first & tag) != 0) == tagged)
+            maximum = std::max(maximum, entry.first);
     return maximum;
 }
 

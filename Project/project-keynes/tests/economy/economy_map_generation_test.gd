@@ -1,5 +1,7 @@
 extends SceneTree
 
+const TestStartPolicy = preload("res://scripts/economy/bootstrap/test_start_policy.gd")
+
 var failures := 0
 
 
@@ -47,7 +49,7 @@ func _init() -> void:
 			_expect("generated economy includes building groups",
 				_sum_i64(buildings.get("building_counts_by_type", PackedInt64Array())) > 0)
 			_expect("building snapshot is committed", bool(buildings.get("committed", false)))
-		_expect("generated economy starts with one bridge stock packet and unemployed people",
+		_expect("generated economy starts with one bridge stock packet and no hired workers",
 			_all_populated_cells_start_bridged_and_unemployed(map, facade))
 		_expect("resource-tiered land includes tens through ten-thousands populations",
 			_land_population_distribution_valid(map, facade))
@@ -164,9 +166,12 @@ func _all_populated_cells_start_bridged_and_unemployed(map: MapData, facade) -> 
 		if total <= 0:
 			continue
 		populated_count += 1
-		if _sum_i64(population.get("owner_employed_by_cohort", PackedInt64Array())) != 0 or \
-				_sum_i64(population.get("employee_employed_by_cohort", PackedInt64Array())) != 0 or \
-				_sum_i64(population.get("unemployed_by_cohort", PackedInt64Array())) != total:
+		# Nobody is hired at the opening. Owners are pre-seated on their own lots
+		# (economy bootstrap, 2026-09-15) so installed groups produce on the
+		# first epoch; everyone else starts unemployed on the bridge stock.
+		var owners := _sum_i64(population.get("owner_employed_by_cohort", PackedInt64Array()))
+		if _sum_i64(population.get("employee_employed_by_cohort", PackedInt64Array())) != 0 or \
+				owners + _sum_i64(population.get("unemployed_by_cohort", PackedInt64Array())) != total:
 			return false
 		var market: Dictionary = facade.market_cell_snapshot(cell)
 		if _sum_i64(market.get("stock", PackedInt64Array())) <= 1750 or \
@@ -187,6 +192,9 @@ func _inspector_visibility_respects_technology(
 	var cell := map.cell_at(cell_idx)
 	if cell == null:
 		return false
+	# This checks technology gating, not fog: make the cell visible first.
+	map.visible_arr[cell_idx] = 1
+	map.explored_arr[cell_idx] = 1
 	var view_model := CellInspectorViewModel.new()
 	view_model.set_context(map, generator, null, null, 0.45, 10.0)
 	var market_snapshot: Dictionary = facade.market_cell_snapshot(cell_idx)
@@ -229,11 +237,13 @@ func _find_resource(resources: Array, stable_id: StringName) -> Dictionary:
 	return {}
 
 
+# The goldsmith's metal input is an explicit gold/silver candidate group with
+# no category (data since 2026-08-26); its tools input is a category slot.
 func _substitution_metadata_valid(facade) -> bool:
 	var goldsmith: Dictionary = facade.building_placement_spec(&"goldsmith_workshop")
 	if not bool(goldsmith.get("ok", false)) \
 			or goldsmith.get("input_category_ids", PackedStringArray()) != \
-				PackedStringArray(["precious_metal", "tools"]) \
+				PackedStringArray(["", "tools"]) \
 			or not goldsmith.get("input_candidate_good_ids", PackedStringArray()).has("gold") \
 			or not goldsmith.get("input_candidate_good_ids", PackedStringArray()).has("silver"):
 		return false
@@ -253,8 +263,8 @@ func _building_is_mid_stone(facade, building_id: StringName) -> bool:
 		return false
 	for tag in spec.get("technology_tags", PackedStringArray()):
 		var technology := String(tag)
-		if technology.begins_with("tech.") and technology not in [
-				"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control"]:
+		# The fixture's authored capability list, not a copy that drifts from it.
+		if technology.begins_with("tech.") and technology not in TestStartPolicy.TECHNOLOGY_IDS:
 			return false
 	return true
 

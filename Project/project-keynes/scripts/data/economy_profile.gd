@@ -182,6 +182,11 @@ extends Resource
 @export_range(0, 65536, 1) var building_restart_margin_q16: int = 6554
 ## Merchants keep 12.5% of frozen opening cash while procurement is active.
 @export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 8192
+## Research procurement for a country that never sent a procurement policy:
+## treasury share per day, then the research share of it (same defaults as the
+## player's national procurement slider).
+@export_range(0, 10000, 1) var procurement_default_treasury_share_bp: int = 200
+@export_range(0, 10000, 1) var procurement_default_research_share_bp: int = 5000
 ## Base inventory horizon before each good's configured target ratio is applied.
 ## 3932160 is 60 deterministic Q16 days: twelve production cycles and four
 ## default trade-response windows.
@@ -423,6 +428,8 @@ func to_native_profile() -> Dictionary:
 		"building_severe_loss_cycles": building_severe_loss_cycles,
 		"building_restart_margin_q16": building_restart_margin_q16,
 		"merchant_procurement_cash_reserve_q16": merchant_procurement_cash_reserve_q16,
+		"procurement_default_treasury_share_bp": procurement_default_treasury_share_bp,
+		"procurement_default_research_share_bp": procurement_default_research_share_bp,
 		"merchant_market_making_days_q16": merchant_market_making_days_q16,
 		"merchant_credit_runtime_mode": merchant_credit_runtime_mode,
 		"merchant_credit_exposure_q16": merchant_credit_exposure_q16,

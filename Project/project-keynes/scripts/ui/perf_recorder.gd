@@ -156,7 +156,6 @@ const FIXED_COLUMNS: Array = [
 	"sched_day_capture_ms",
 	"sched_day_country_peer_ms",
 	"sched_day_country_read_ms",
-	"sched_day_promote_ms",
 	"sched_proc_frames",
 	"sched_proc_economy_input_ms",
 	"sched_proc_peer_ms",

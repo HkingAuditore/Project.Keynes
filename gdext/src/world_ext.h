@@ -655,6 +655,7 @@ public:
     godot::Dictionary poll_runtime_receipts(int max_items = 128);
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
     godot::Dictionary poll_runtime_commit(int64_t after_generation);
+    void mark_runtime_day_tail_done(int64_t day);
     godot::Dictionary consume_runtime_visual_patch(int64_t generation, int family,
                                                     int cursor, int max_items);
     godot::Dictionary request_runtime_save(int64_t request_id);
@@ -3262,7 +3263,6 @@ private:
     pk_async_climate::ClimateInputBuf          _captured_climate_round_input;
     bool                                       _captured_climate_round_input_valid = false;
     int64_t                                    _captured_climate_round_input_day = -1;
-    int64_t                                    _pass_a_call_count = 0;
     int64_t                                    _capture_call_count = 0;
 
     // ---- S3: pass_a 输出 → reference 边界诊断 -----------------------------
@@ -3323,7 +3323,6 @@ private:
     int _phys_sid_upwelling = -1;
     int _phys_sid_elev = -1;  // NS 化 Phase 4:洋流深度耦合/地形转向读 elevation slot
     bool     _phys_is_water_lut[256];
-    bool     _phys_is_water_valid = false;
     uint64_t _phys_static_fp = 0;
     bool     _phys_static_valid = false;
 
@@ -3750,7 +3749,6 @@ private:
     bool submit_military_economy_commands(
         const std::vector<MilitaryEconomyCommand> &commands,
         std::vector<MilitaryPendingIntent> &pending, std::string &error);
-    int64_t runtime_host_last_receipt_cursor() const;
     void collect_military_receipts(int64_t day, std::vector<MilitaryIntentReceipt> &out);
     // Folds Economy command settlements (trace events) into receipts for the
     // authority-2 pending rows (world_ext_economy_military.cpp).
@@ -3798,6 +3796,8 @@ private:
     mutable void *_country_query_runtime = nullptr;
     mutable std::shared_ptr<const RuntimeCountryPodSnapshot> _country_query_snapshot;
     void                                     *_modifier_runtime       = nullptr;
+    void                                     *_economy_modifier_view  = nullptr;
+    bool _economy_modifier_view_attached = false;  // economy reads the view, not main
     void                                     *_trigger_runtime         = nullptr;
     void                                     *_effect_runtime          = nullptr;
     // M2a: single write path for declarative Effect instances. Declared here as

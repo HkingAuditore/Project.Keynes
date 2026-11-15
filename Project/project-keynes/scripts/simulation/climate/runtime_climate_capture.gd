@@ -638,7 +638,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		"canal_water": map.canal_water_arr,
 		"trade_passable_lut": trade_passable,
 		"trade_move_cost_lut": trade_cost,
-		"visible": map.visible_arr,
+		"visible": map.physical_visible_arr,
 		"building_resource_reserve": building_reserve,
 		"building_resource_extra": building_extra,
 		# S3：生产 Climate round 的输入缓冲。worker 用它调共享纯内核，替代原来

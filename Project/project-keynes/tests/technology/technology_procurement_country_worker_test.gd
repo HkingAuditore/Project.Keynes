@@ -78,15 +78,14 @@ func _run() -> void:
 		{"day_index": 0}).get("done", false)))
 	_expect("research demand and budget queue", bool(country.enqueue_research(
 		handle, &"tech.wild_maize_collection", 0, -1, 1, 10).get("ok", false))
-		and bool(country.set_research_budget(handle, true, 10000000, 1, 11).get(
+		and bool(country.set_research_auto_purchase(handle, true, 1, 11).get(
 			"ok", false)))
 	_expect("policy commits before market settlement", bool(ext.run_country_slice(
 		{"day_index": 1}).get("done", false)))
 	var pre_worker := country.research_snapshot(handle)
 	_expect("research queue is live before Country ACTIVE handoff",
 		(pre_worker.queue_technology_indices as PackedInt32Array).size() > 0
-		and bool(pre_worker.auto_purchase_enabled)
-		and int(pre_worker.daily_procurement_budget) > 0)
+		and bool(pre_worker.auto_purchase_enabled))
 
 	var native_catalog := compiled.duplicate(false)
 	native_catalog.erase("ok")

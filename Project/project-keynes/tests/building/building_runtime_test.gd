@@ -183,11 +183,13 @@ func _run() -> void:
 	stock.fill(10000000)
 	# 采购闭环夹具必须从煤炭缺口开始；超出30天目标的库存本就不应强迫商人继续收购。
 	stock[goods.find("coal")] = 0
+	# Each construction group is billed with its own material (~1.07e8 here:
+	# lumber plus two industrial-grade groups), so fund the owner past it.
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([landlord_sig, worker_sig, manager_sig, merchant_sig]),
 		"population": PackedInt64Array([1, 14, 2, 1]),
-		"funds": PackedInt64Array([100000000, 1000000, 1000000, 10000000]),
+		"funds": PackedInt64Array([200000000, 1000000, 1000000, 10000000]),
 	}, {"stock": stock})
 	_expect("building population bootstraps", bool(boot.get("ok", false)))
 	var untracked_pop: Dictionary = ext.get_population_cell_snapshot(0)
@@ -3579,6 +3581,11 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 		catalog.building_construction_good_ids = construction_goods
 		catalog.building_construction_quantities = construction_quantities
 		_sync_construction_candidates(catalog)
+	else:
+		# The loom's derived upkeep (~0.23 money/day) sits right at the -0.25
+		# severe-loss margin over the MONEY_SCALE floor; quadruple it so the
+		# paired case observes an unambiguous loss, not a rounding edge.
+		profile.building_maintenance_cost_factor_q16 = 4 * 65536
 	var ext := _new_ext(catalog)
 	_expect("owner-only loss country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 289))

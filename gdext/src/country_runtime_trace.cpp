@@ -75,7 +75,6 @@ NativeCountryRuntime::compute_reference_hashes() const {
     hash_vector(out.research, _country_research_queue_lengths);
     hash_vector(out.research, _country_research_weights_bp);
     hash_vector(out.research, _country_research_auto_purchase);
-    hash_vector(out.research, _country_research_daily_budgets);
     hash_vector(out.research, _country_research_deferred_points);
     hash_vector(out.research, _country_research_purchased_total);
     hash_vector(out.research, _country_research_consumed_total);

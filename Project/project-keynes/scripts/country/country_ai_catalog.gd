@@ -40,9 +40,11 @@ const Q16 := 65536
 
 @export_group("Research")
 @export_range(1, 3650, 1) var research_budget_horizon_days: int = 360
-@export var research_min_daily_budget: int = 0
-## 0 means no cap.
-@export var research_max_daily_budget: int = 0
+## Research budget bounds, as a share of treasury cash per day sent to the
+## economy procurement policy. The floor keeps a starter colony researching
+## through the food and carrying-load gates.
+@export_range(0, 10000, 1) var research_min_share_bp: int = 50
+@export_range(0, 10000, 1) var research_max_share_bp: int = 200
 @export_range(0, 20000, 1) var research_weight_threshold_bp: int = 1500
 @export_range(1, 32, 1) var research_max_enqueue_per_eval: int = 3
 @export_range(0, 10000, 1) var research_budget_change_bp: int = 2500
@@ -158,8 +160,8 @@ func compile_native_catalog(seed: int) -> Dictionary:
 		"agenda_inertia_bp": agenda_inertia_bp,
 		"decision_noise_bp": clampi(roundi(decision_noise_bp * noise_scale), 0, 5000),
 		"research_budget_horizon_days": research_budget_horizon_days,
-		"research_min_daily_budget": research_min_daily_budget,
-		"research_max_daily_budget": research_max_daily_budget,
+		"research_min_share_bp": research_min_share_bp,
+		"research_max_share_bp": research_max_share_bp,
 		"research_weight_threshold_bp": research_weight_threshold_bp,
 		"research_max_enqueue_per_eval": research_max_enqueue_per_eval,
 		"research_budget_change_bp": research_budget_change_bp,

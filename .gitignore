@@ -90,3 +90,7 @@ worklog/.index/
 # internal-tool 是 user-scope 的团队工具（manifest 里 install_scope=user），
 # 内含内网 SVN 地址与同事账号，属于本机环境而不是项目源码：不进仓库。
 **/<internal-tool>/
+
+# Windows 的 dots_ext 由本机构建（.gdextension 指向 dots_ext_maint_v1 / dots_ext_relief_v1），
+# 不进仓库；历史上入库的一次性调试构建已于 2026-11-14 清理。
+Project/*/addons/dots_ext/bin/windows/
