@@ -1,9 +1,9 @@
 {
   "version": 2,
   "metrics": {
-    "header_exposed": 525,
-    "total": 2215,
-    "keys": 604,
+    "header_exposed": 520,
+    "total": 2204,
+    "keys": 599,
     "domain_pairs": [
       "climate->economy",
       "climate->modifier",
@@ -469,15 +469,7 @@
     "gdext/src/trigger_runtime.h|trigger->effect|type:EffectDefinition": 3,
     "gdext/src/trigger_runtime.h|trigger->effect|type:EffectRuntime": 2,
     "gdext/src/trigger_runtime.h|trigger->effect|type:EffectValueMode": 1,
-    "gdext/src/trigger_runtime.h|trigger->ideology|type:NativeIdeologyRuntime": 2,
-    "gdext/src/ideology_pod_selector.cpp|ideology->effect|include:effect_runtime.h": 1,
-    "gdext/src/ideology_pod_selector.cpp|ideology->effect|type:EffectRuntime": 2,
-    "gdext/src/ideology_pod_selector.cpp|ideology->family|type:FamilyEffectMetadataPod": 1,
-    "gdext/src/ideology_pod_selector.h|ideology->effect|type:EffectRuntime": 2,
-    "gdext/src/ideology_support_incidence.cpp|ideology->country|type:CountryClassOpinionSnapshot": 2,
-    "gdext/src/ideology_support_incidence.cpp|ideology->economy|type:EconomyApi": 2,
-    "gdext/src/ideology_support_incidence.h|ideology->country|type:CountryClassOpinionSnapshot": 2,
-    "gdext/src/ideology_support_incidence.h|ideology->economy|type:EconomyApi": 2
+    "gdext/src/trigger_runtime.h|trigger->ideology|type:NativeIdeologyRuntime": 2
   },
   "contract_references": {
     "gdext/src/country_runtime_peer.cpp|country->economy|include:economy_api.h": 1,
@@ -618,6 +610,8 @@
     "gdext/src/effect_runtime_programs.cpp|effect->economy|include:economy_api.h": 1,
     "gdext/src/effect_runtime_programs.cpp|effect->economy|type:EconomyApi": 4,
     "gdext/src/effect_runtime_programs.cpp|effect->modifier|include:modifier_api.h": 1,
+    "gdext/src/ideology_condition_gate.cpp|ideology->economy|include:economy_api.h": 1,
+    "gdext/src/ideology_condition_gate.cpp|ideology->economy|type:EconomyApi": 1,
     "gdext/src/ideology_opinion_bridge.h|ideology->country|type:CountryClassOpinionSnapshot": 1,
     "gdext/src/ideology_opinion_bridge.h|ideology->economy|include:economy_api.h": 1,
     "gdext/src/ideology_opinion_bridge.h|ideology->economy|type:EconomyApi": 1,
@@ -642,6 +636,7 @@
     "gdext/src/modifier_runtime.cpp|modifier->economy|include:economy_api.h": 1,
     "gdext/src/runtime_economy_army_personnel.cpp|economy->country|include:country_api.h": 1,
     "gdext/src/runtime_economy_army_personnel.cpp|economy->country|type:CountryApi": 2,
+    "gdext/src/runtime_ideology_incidence.h|ideology->economy|include:economy_api.h": 1,
     "gdext/src/trigger_runtime.cpp|trigger->economy|include:economy_api.h": 1,
     "gdext/src/trigger_runtime.cpp|trigger->economy|type:EconomyApi": 6
   },
