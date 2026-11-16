@@ -2614,3 +2614,29 @@ NON-GREEN:
 - 四份待开票的产品缺口（见第 128 轮）：reconcile 错误被吞、死计数器、mask 静默陷阱、
   drain 的重置不透明。
 
+## 第 130 轮：第 128 轮留下的四条产品缺口已修（2026-11-16）
+
+四条缺口的共同点不是算错，而是**让失败读起来像成功**——同一份报告，用来看会得出相反
+结论。修法与验证如下（现状与证据已同步进 `docs/architecture/feature-status.md`）。
+
+| # | 缺口 | 根因（代码路径） | 修法 | 证据 |
+| --- | --- | --- | --- | --- |
+| 1 | reconcile 错误被吞 | `step_effect_instance_refresh` 用局部 `std::string ignored` 接错误；失败时 `last_error` 仍为空 | 错误写进 `_last_error`，并计 `effect_reconcile_failures`；`reconcile_country_effect_activations` 同一静默一并修 | `ideology_effect_worker_forward` 127/0（reconcile 后 `last_error` 仍为空） |
+| 2 | 三个死计数器 | `_derived_collect_count/_rows/_ideas` 声明 + 导出、从不赋值，报告永远读 0 | 在 `step_derived_rebuild` 的 collect 分支一次性写入，并与 `_derived_collect_ms` 一起按天清零 | B10 `collect=3200 rows=2 ideas=2` |
+| 3 | mask 静默陷阱 | 产品门是 `domain_main_thread_suppressed`（含授权窗口），调用方只读 `authoritative_domain_mask` | 启动回复 / `get_runtime_thread_report()` / `thread_report` / perf snapshot 导出 `main_thread_suppressed_domain_mask`、`authority_window_domain_mask`、`authority_window_blocker` | tagstress `suppressed=0x802 window=0x802 granted=0x0 blocker=awaiting_first_commit` |
+| 4 | drain 重置不透明 | `step_derived_rebuild` 跨天清空 fold，`drain` 只看剩下的 pending | 新增 `derived_rebuild_day()`；跨天返回 `reset:true reason:"day_changed"`，并报出被丢掉的 `step_error` | tagstress `reset=true reason=day_changed discarded=31 requested=30` |
+
+关键在于每一处都给了"下一步该怀疑什么"的名字：第 3 条用逐域调用谓词本身算掩码（不是
+第二份实现），第 4 条连丢弃的是哪一天一起报出来。**没有放宽任何既有断言**：tagstress
+38 → 43 条（新增 5 条），B10 22 → 24 条（新增 2 条），原断言一字未改，两文件全 0 failures。
+
+实现细节上有一处取舍值得记：`main_thread_suppressed_domain_mask` 没有加进
+`RuntimeThreadReport` POD。`native_simulation_host.h` 与 `runtime_pod_protocol.h` 都已超
+`check_size_ratchet.py` 的基线，往里加字段会让两个文件继续变长；导出的三个键改由
+`gdext/src/world_ext_simulation_host_internal.h` 里的内联 helper 生成，宿主侧只读公开
+谓词。`check_size_ratchet.py` 因而仍是 0 违规。
+
+尚未覆盖：`effect_reconcile_failures` 的正例（真被拒绝的一次 reconcile）与
+`authority_window_blocker` 的"当日授权计划失败原因"分支都没有夹具主动触发，只由代码
+路径保证；两者都记在 `feature-status.md` 的同一节。
+

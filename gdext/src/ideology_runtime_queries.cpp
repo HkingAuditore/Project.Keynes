@@ -913,6 +913,10 @@ Dictionary NativeIdeologyRuntime::report() const {
     out["managed_idea_count"] = static_cast<int64_t>(_managed_active_total);
     out["instance_refresh_visits"] =
         static_cast<int64_t>(_instance_refresh_visits);
+    // Non-zero means a reconcile was ATTEMPTED and refused; read it together with
+    // `last_error`, which carries the reason of the most recent failure.
+    out["effect_reconcile_failures"] =
+        static_cast<int64_t>(_effect_reconcile_failures);
     out["cell_plane_rebuilds"] = static_cast<int64_t>(_cell_plane_builds);
     out["synergy_scale_lookups"] = static_cast<int64_t>(_synergy_scale_lookups);
     out["synergy_scale_scans"] = static_cast<int64_t>(_synergy_scale_scans);

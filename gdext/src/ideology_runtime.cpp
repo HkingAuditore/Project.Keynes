@@ -78,6 +78,7 @@ void NativeIdeologyRuntime::reset_runtime_state() {
     _instance_refresh_dirty = false;
     _instance_refresh_country_cursor = 0;
     _instance_refresh_visits = 0;
+    _effect_reconcile_failures = 0;
     _instance_refresh_skips = 0;
     _instance_refresh_passes = 0;
     _instance_refresh_lag_revisions = 0;

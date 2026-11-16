@@ -80,6 +80,10 @@ const COUNTRY_SCENE_KEYS := [
 const RUNTIME_THREAD_KEYS := [
 	"simulation_host_state", "state", "fault_code", "worker_fault_count",
 	"authoritative_domain_mask", "requested_authority_mask",
+	# 同 Project/project-keynes：只看已获得掩码无法区分"worker 已拥有"与"worker 正在
+	# 挡住"，请求了却拿不到的域会静默地永久丢失。
+	"main_thread_suppressed_domain_mask", "authority_window_domain_mask",
+	"authority_window_blocker",
 	"climate_worker_authoritative", "country_worker_authoritative",
 	"simulation_committed_day", "committed_day", "climate_committed_day",
 	"generation", "state_hash",

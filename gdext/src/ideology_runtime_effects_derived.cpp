@@ -568,8 +568,22 @@ bool NativeIdeologyRuntime::step_effect_instance_refresh(
                 ++_instance_refresh_skips;
                 continue;
             }
-            std::string ignored;
-            reconcile_effect_activations(country, state, day, ignored);
+            // The error must NOT be dropped. A rejected submit (invalid columns, a
+            // refused row, `effect_runtime_unavailable`) leaves `effect_instances`
+            // untouched and never stamps the signature, so the visit is counted,
+            // NOTHING is created, and the card is retried only when the inputs move
+            // again -- while the reason stayed invisible in `get_ideology_report()`,
+            // the one place a caller looks. Stored in `_last_error` exactly as the
+            // command path does, and counted, so "this card matched cells but
+            // produced no instance" has a name instead of reading as "the card does
+            // nothing".
+            std::string reconcile_error;
+            if (!reconcile_effect_activations(country, state, day, reconcile_error)) {
+                _last_error = reconcile_error.empty()
+                    ? std::string("ideology_effect_instance_refresh_failed")
+                    : reconcile_error;
+                ++_effect_reconcile_failures;
+            }
             --visit_budget;
             ++_instance_refresh_visits;
         }
@@ -617,8 +631,16 @@ void NativeIdeologyRuntime::reconcile_country_effect_activations(
         }
     }
     for (IdeaState &state : country.ideas) {
-        std::string ignored;
-        reconcile_effect_activations(country, state, day, ignored);
+        // Same rule as the refresh path: a reconcile that failed is the difference
+        // between "this card has no instances" and "this card's instances were
+        // refused", and only `_last_error` can say which.
+        std::string reconcile_error;
+        if (!reconcile_effect_activations(country, state, day, reconcile_error)) {
+            _last_error = reconcile_error.empty()
+                ? std::string("ideology_effect_reconcile_failed")
+                : reconcile_error;
+            ++_effect_reconcile_failures;
+        }
     }
 }
 
@@ -809,6 +831,13 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
         // collect read 1.377 ms at 6400 against a per-day 0.69 ms, and the difference
         // looked like a regression that was not there).
         _derived_collect_ms = 0.0;
+        // Same scope as `_derived_collect_ms`: the collect counters describe THIS
+        // day's collect. Zero them with it so a day whose collect was refused (the
+        // §9.3 eligibility gate below) reads 0 instead of repeating the previous
+        // day's numbers.
+        _derived_collect_count = 0;
+        _derived_collect_rows = 0;
+        _derived_collect_ideas = 0;
         _derived_rebuild_contributions.clear();
     _collect_pod_fail_keys.clear();
     _collect_pod_ok_keys.clear();
@@ -847,14 +876,54 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
         // against 6400 in M4-18.
         if (_active_progress_day == day) return false;
         _derived_rebuild_contributions.clear();
+        // ── THE COLLECT COUNTERS ARE WRITTEN HERE, AT THE COLLECT ─────────────
+        //
+        // `cell_layer_collect_count` / `_rows` / `_ideas` were declared, exported
+        // (`ideology_runtime_queries.cpp`) and NEVER assigned, so the report said
+        // `cell_layer_collect_count=0` on every run -- which reads as "the collect
+        // step never ran" and is the false trail this assignment removes. All three
+        // are written together, on the one pass that fills the accumulator, with one
+        // meaning each:
+        //   ideas = cards that emitted at least one row
+        //   rows  = distinct (country, card, level, program) rows emitted
+        //   count = target-cell rows handed to the fold
+        int64_t collect_ideas = 0;
         for (const CountryState &country : _countries) {
             if (country.handle == 0) continue;
             for (const IdeaState &state : country.ideas) {
                 if (state.location == INACTIVE || state.level < 0) continue;
+                const size_t contributions_before =
+                    _derived_rebuild_contributions.size();
                 std::vector<EffectActivation> throwaway;
                 collect_effect_activations(country, state, throwaway,
                     &_derived_rebuild_contributions);
+                if (_derived_rebuild_contributions.size() != contributions_before)
+                    ++collect_ideas;
             }
+        }
+        _derived_collect_count =
+            static_cast<int64_t>(_derived_rebuild_contributions.size());
+        _derived_collect_ideas = collect_ideas;
+        {
+            // A program emits one row per TARGET CELL, so the raw count above cannot
+            // answer "how many programs fed the fold". The collector appends one
+            // program's rows CONSECUTIVELY (it builds `per_target` and appends it
+            // whole, `ideology_runtime_effects.cpp`), so a group boundary is exactly
+            // "this row's program differs from the previous row's" -- O(1) memory,
+            // no key set allocated in the day's collect step.
+            int64_t collect_rows = 0;
+            const DerivedProgramContribution *previous = nullptr;
+            for (const DerivedProgramContribution &contribution :
+                    _derived_rebuild_contributions) {
+                if (previous == nullptr ||
+                        previous->source_country != contribution.source_country ||
+                        previous->ideology_id != contribution.ideology_id ||
+                        previous->level != contribution.level ||
+                        previous->program_hash != contribution.program_hash)
+                    ++collect_rows;
+                previous = &contribution;
+            }
+            _derived_collect_rows = collect_rows;
         }
         _derived_rebuild_collected = true;
         // Plan §18.2: record the basis this projection is being built from. Done HERE,

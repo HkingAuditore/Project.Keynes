@@ -983,6 +983,16 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
     }
     // NON-const: draining advances the rebuild.
     auto *ideology = static_cast<NativeIdeologyRuntime *>(_ideology_runtime);
+    // A drain for a day the in-flight job does not belong to DESTROYS that job:
+    // `step_derived_rebuild` reads "different day" as "the epoch's inputs moved" and
+    // resets the accumulator and the fold. Reporting `{ok:true, complete:true}` for
+    // that made a caller's wrong argument look like an empty layer -- measured in
+    // `ideology_tag_snapshot_stress_test`, where `drain(0)` threw away a day-30 fold
+    // and the resulting `layer_installed=false` read as "the layer is broken".
+    // Capture what is about to be discarded, then report it as `reset`.
+    const bool had_job = ideology->derived_rebuild_pending();
+    const int64_t job_day = ideology->derived_rebuild_day();
+    std::string first_error;
     // Bounded: a rebuild needs at most (contributions / min_batch) steps, and a
     // runaway loop here would hang a day rather than fail it.
     int32_t steps = 0;
@@ -990,11 +1000,30 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
         // A local, not `*new std::string()`: that leaked one string per step.
         std::string step_error;
         ideology->step_derived_rebuild(day_index, step_error);
+        // Keep the FIRST error: the loop keeps stepping, and the last one is often a
+        // follow-on (`derived_cell_layer_finish_failed` after the real refusal).
+        if (first_error.empty() && !step_error.empty())
+            first_error = step_error;
         ++steps;
     }
     out["ok"] = true;
     out["steps"] = steps;
     out["complete"] = !ideology->derived_rebuild_pending();
+    // `reset` is the honest answer to "did this call throw work away?". A caller
+    // that asked for the wrong day gets `reset: true` plus the day it discarded,
+    // instead of a green `complete` over a layer nobody built.
+    const bool reset = had_job && job_day != day_index;
+    out["reset"] = reset;
+    if (reset) {
+        out["reason"] = "day_changed";
+        out["discarded_day"] = job_day;
+        out["requested_day"] = day_index;
+    }
+    // The step error used to be dropped here while `complete` was still computed
+    // from the leftover state, so a refused install looked like success. Named, not
+    // swallowed.
+    if (!first_error.empty())
+        out["error"] = String(first_error.c_str());
     return out;
 }
 

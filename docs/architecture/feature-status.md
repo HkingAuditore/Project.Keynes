@@ -460,3 +460,25 @@ T1 之后 `check_replay_matrix.py --military` 的 military20 续跑在第 21 天
 验证：同一场景 8 个续跑日的各域哈希和其余行字段与检查点全部一致。剩下的差异只有第 21 天快照里的 `research_cash_spent_last_epoch`，它是不存档的上期统计，不进哈希，第 22 天恢复。真实数据下 military20 的原始模式仍在建兵营一步失败，原因是待定文档 12b，与续跑无关。
 
 同期修了 `building_visual_catalog_test`：8⑤ 之后目录列出全部建造材料组，视觉档位按"材料里的最高档"算，纺织厂因为一行钢材变成钢结构档，与电脑厂相同。改为按第一种（主）材料定档，与 8⑤ 之前的视觉结果一致。
+
+## 理念派生日志层的四处静默失败（2026-11-16）
+
+`docs/plans/agent-notes-tagstress.md` 在第 128 轮留下四条「顺手记录、未修」的产品缺口。四条都不是算错，而是**让失败读起来像成功**：一次被拒绝的 reconcile 在报告里和「这张卡什么都不做」没有区别；一个永远为 0 的计数器被当成「这一步没跑」；一个只被请求、永远拿不到授权的域在主线程上永久消失且没有任何报错；一次丢掉了在途折叠的 drain 返回 `{ok:true, complete:true}`。现在四处一起修。
+
+**1. `step_effect_instance_refresh` 吞掉 reconcile 错误。** `ideology_runtime_effects_derived.cpp` 用局部 `std::string ignored` 接收 `reconcile_effect_activations` 的错误，失败时 `get_ideology_report()["last_error"]` 仍为空：`submit_instances` 被拒（列非法、行被拒、authority 不可用）时实例集合没变、签名也不会盖章，于是这次访问被计进 `instance_refresh_visits`、什么都没建，而报告一个字都不提。现在错误写进 `_last_error`（与命令路径同一规则），并新增 `effect_reconcile_failures` 计数。同一个静默也存在于 `reconcile_country_effect_activations`（读档收尾与 `reconcile_effects_for_test` 的入口），一并修掉。计数与 `last_error` 分开保留：`last_error` 会被后续无关错误覆盖，「曾经失败过」只能靠计数回答。
+
+**2. `cell_layer_collect_count/_rows/_ideas` 是死计数器。** 三个成员在 `ideology_runtime.h` 声明、初值 0、在 `ideology_runtime_queries.cpp` 导出，**从来没有赋值**，报告因此永远读 0，会被读成「collect 这一步没跑」。现在在 `step_derived_rebuild` 的 collect 分支一次性写入，语义写死：`count` = 交给 fold 的目标格行数，`rows` = 去重后的（国家、卡、等级、program）行数，`ideas` = 至少产出一行的卡数；三者与 `_derived_collect_ms` 一起按天清零，所以「当天的 collect 没跑」读 0 是真话，而不是上一天的数字。
+
+**3. `authoritative_domain_mask` 与 `domain_main_thread_suppressed` 的差异是静默陷阱。** 产品门是后者：ACTIVE 请求了某域、worker 还活着、还没有一日提交覆盖它时同样为真（授权窗口）。只按前者判断的调用方会对一个已经停推的域回答「主线程还拥有它」；而一个永远拿不到授权的请求（本会话没有一天提交）会把这个域永久丢掉，且没有任何报错——tagstress 的 12 条命令就是这样排队 30 天。现在启动回复、`get_runtime_thread_report()`、`thread_report` 与 perf snapshot 都导出 `main_thread_suppressed_domain_mask` 与 `authority_window_domain_mask`，外加具名的 `authority_window_blocker`（优先当日授权计划的失败原因，否则 `awaiting_first_commit` / `awaiting_domain_commit`）。掩码由逐域调用 `domain_main_thread_suppressed()` 本身算出，导出值不可能与真正抑制工作的门不一致。实现放在 `world_ext_simulation_host_internal.h`：`native_simulation_host.h` 与 `runtime_pod_protocol.h` 都已超 `check_size_ratchet.py` 的基线，往报告 POD 里加字段会让它们继续变长。
+
+**4. `drain_derived_cell_layer(day)` 在静默重置后仍返回 `{ok:true, complete:true}`。** `step_derived_rebuild` 把「day 不一致」当成「epoch 输入变了」，清空累加器与 fold；drain 却只看剩下的 `derived_rebuild_pending()`。现在 drain 动手前记下在建的那一天（新增 `NativeIdeologyRuntime::derived_rebuild_day()`），跨天时返回 `reset:true, reason:"day_changed", discarded_day, requested_day`；循环里第一步的 `step_error` 过去被直接丢掉，现在作为 `error` 报出。
+
+验证：
+
+- `gdext` `platform=windows target=template_debug` 构建通过。
+- `ideology_tag_snapshot_stress_test` **43 checks / 0 failures**（38 → 43，原有 38 条未改一字）：新增断言看到 `suppressed=0x802 window=0x802 granted=0x0 blocker=awaiting_first_commit`（0x2 CLIMATE 与宿主自动加入的 0x800 COMMIT 都在窗口里，未请求的 IDEOLOGY 不在），以及错误日 drain 的 `reset=true reason=day_changed discarded=31 requested=30`。
+- `ideology_b10_multi_country_test` **24 checks / 0 failures**（+2）：`cell_layer_collect_count/rows/ideas = 3200/2/2`（两个国家、两张卡、各 1600 格），正确日的 drain `reset=false`。
+- 静态护栏 `check_size_ratchet.py`、`check_cpp_deps.py`、`check_module_api.py`、`check_module_map.py`、`check_world_ext_bindings.py`、`check_script_native_access.py`、`check_module_contracts.py`、`check_committed_views.py`、`check_runtime_switches.py`、`check_save_contracts.py`、`check_cross_domain_inventory.py`、`check_resolve_apply.py` 全 0 违规。`test_architecture_guards.py` 42/43 通过：失败的 `test_control_wakeup_check_to_wait_transition` 与 `test_trace_paths_and_artifact_detection` 都要求用 `clang++`/`g++` 现编 `gdext/tests/*.cpp`，本机没有这两个编译器（`shutil.which` 返回 None），改前改后一致。
+- 回归对照：`ideology_b1_many_countries_test` 有 3 条失败（`last_error='ideology_support_threshold_not_met'`、每国 8 张而非 12 张、总计 512 而非 768），**与本次改动无关**——把 `gdext/src` 暂存回基线重建后逐字相同，属既有内容/阈值问题，另行处理。
+
+未覆盖：`effect_reconcile_failures` 的正例（一次真被拒绝的 reconcile）没有夹具主动触发，只由代码路径保证；`authority_window_blocker` 的「当日授权计划失败原因」分支同样没有夹具（现有夹具都停在 `awaiting_first_commit`）。
