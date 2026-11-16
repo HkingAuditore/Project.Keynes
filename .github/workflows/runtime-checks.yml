@@ -27,6 +27,7 @@ jobs:
             /Project/project-keynes/data/native_binding_manifest.json
             /.*/skills/
             /docs/architecture/
+            /docs/plans/
             /.github/workflows/
       - uses: actions/setup-python@v5
         with:
