@@ -98,10 +98,11 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
   knowledge cap) PROBE stays at 7.5% death because it never researches; compare ACTIVE/PROBE
   ratios, not absolute totals, against older runs. Remaining ACTIVE famine cells show empty hunting
   camps and knapping workshops with stone tools at 0 stock; read `[headless-perf/groups]` first.
-- Long soaks with automatic economy cadence are not reproducible, PROBE included: the cadence
-  follows machine load, so reruns differed by 10–25% in year-25 population and a busy batch grows
-  slower overall. For A/B runs set `PK_ECONOMY_FORCE_CADENCE=1,5,10`; repeats are then
-  byte-identical and batches with different concurrency are comparable.
+- Production economy periods now follow fixed game days; machine load must not choose them.
+  Leave `PK_ECONOMY_FORCE_CADENCE` unset when checking production consistency. Setting it to
+  `1,5,10` explicitly changes the experiment's market/plan/investment periods. Older year-25
+  population differences and fixed-period parity runs describe the former adaptive implementation,
+  not validation of the current long-run behavior. See `docs/architecture/feature-status.md`.
   `PK_HEADLESS_WATCH_CELLS` / `PK_HEADLESS_WATCH_EVERY` print per-cell jobs, savings, satisfaction
   and every built group (state, opportunity income, recovery cooldown/failed reviews, delinquent
   merchant debt); the run log is UTF-16 when produced by the runner script.
