@@ -1803,6 +1803,7 @@ private:
     void note_family_expedition_audit_invalidation();
     AuditTotals incremental_audit_totals() const;
     AuditTotals audit_totals_from_shadow(const AuditTotals &baseline) const;
+    int64_t country_cash_for_audit(int64_t raw) const;
     void commit_incremental_audit_shadow();
     void diagnose_incremental_audit_mismatch(const AuditTotals &full);
     void capture_goods_audit_candidates();

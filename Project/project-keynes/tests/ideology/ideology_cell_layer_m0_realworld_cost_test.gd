@@ -237,7 +237,12 @@ func _equip_cell_cards(generator) -> int:
 		print("[realworld-cost] player handle unavailable; injecting on cells 0..N")
 	var owned := _player_cell_count(generator)
 	var cover := _cover_cells()
-	var target := cover if owned <= 0 else mini(cover, owned)
+	# 本用例测的是「读取 N 行 scope 的成本」，与国土大小无关：即使国家只拥有锚点格，
+	# 也要铺满 cover 行，否则样本会因为 rows 太少而落在噪声里（合并后 owned 变成 1，
+	# 旧写法 mini(cover, owned) 直接把它压成 1）。
+	var target := cover
+	if owned > 0 and owned < 8:
+		print("[realworld-cost] note: owned=%d < 8, injecting %d rows anyway" % [owned, cover])
 
 	# One batch, no per-row round trip: the point is the READ cost, not the
 	# submit cost.
@@ -546,7 +551,8 @@ func _player_cell_count(generator) -> int:
 	if country == null:
 		return 0
 	var report: Dictionary = country.report()
-	for key in ["player_cell_count", "territory_cell_count", "owned_cell_count"]:
+	for key in ["player_cell_count", "territory_cell_count", "owned_cell_count",
+			"slot0_cell_count"]:
 		if report.has(key):
 			return int(report[key])
 	# Last resort: the anchor cell tells us whether the country has ANY territory,
@@ -556,6 +562,15 @@ func _player_cell_count(generator) -> int:
 	var eco = generator.get_economy_facade()
 	if eco != null and eco.has_method("player_territory_cell_count"):
 		return int(eco.player_territory_cell_count())
+	# 合并后的基线把国土归属搬到国家域：经济报告里以 slot0_cell_count
+	# （country_cell_count(0)）暴露国家 0 的领土格数。
+	# 合并后的基线把「国土平面」单独暴露成 get_economy_territory_plane()：
+	# slot0_cell_count = country_cell_count(0)（world_ext_country.cpp:900）。
+	var ext = generator.get_data_core_world_ext()
+	if ext != null and ext.has_method("get_economy_territory_plane"):
+		var plane: Dictionary = ext.get_economy_territory_plane()
+		if bool(plane.get("ok", false)):
+			return int(plane.get("slot0_cell_count", -2))
 	# No aggregate accessor. Ask the anchor instead: `anchor >= 0` means the
 	# country owns at least one cell, which is the question that matters; the exact
 	# count is reported separately by the injection step.

@@ -1723,6 +1723,11 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
                 return false;
             }
         }
+        if (collected_total > 0) {
+            int64_t pending_sat = 0;
+            _country_pending_credit = saturating_add(
+                _country_pending_credit, collected_total, pending_sat);
+        }
         _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), 0, market_mutation_sink());
         for (int32_t tariff_kind = 0; tariff_kind < 2; ++tariff_kind) {
             const size_t index = static_cast<size_t>(country) * 2U +

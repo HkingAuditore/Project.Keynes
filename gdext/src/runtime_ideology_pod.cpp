@@ -1,3 +1,4 @@
+#include "runtime_switch_registry.h"
 #include "runtime_ideology_pod.h"
 
 #include "runtime_ideology_draw_kernel.h"
@@ -751,6 +752,13 @@ bool RuntimeIdeologyPodAuthority::support_allows(
         const RuntimeIdeologyOpinionSnapshot &opinion, uint32_t slot,
         int32_t ideology_id, uint32_t direction) const {
     (void)state;
+    // `PK_DISABLE_SUPPORT_GATE` 是文档化的模拟开关（runtime_switch_registry.cpp:28），
+    // 主线程路径已经在 world_ext_ideology.cpp:164 应用它；worker/pod 路径若忽略它，
+    // 同一开关就会在不同权威形态下表现不一致（x6c 实测：fixture 设了开关仍然被拒）。
+    if (pk::runtime_switch_value(
+            pk::RuntimeSwitch::PK_DISABLE_SUPPORT_GATE) != nullptr) {
+        return true;
+    }
     const auto &d = _catalog.definitions[static_cast<size_t>(ideology_id)];
     if (d.stance_count == 0) return true;
     int64_t total = 0;

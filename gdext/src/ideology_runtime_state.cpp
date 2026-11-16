@@ -1,4 +1,5 @@
 #include "ideology_runtime.h"
+#include "runtime_switch_registry.h"
 #include "ideology_runtime_internal.h"
 #include "ideology_runtime_common.inc"
 #include <cstdio>
@@ -147,6 +148,13 @@ NativeIdeologyRuntime::SupportResult NativeIdeologyRuntime::evaluate_support(
 bool NativeIdeologyRuntime::support_gate(CountryState &country,
         int32_t ideology_id, SupportDirection direction,
         std::string &error) {
+            // 与 ext 的 configure 期清理（world_ext_ideology.cpp:164）和 pod 侧
+            // （runtime_ideology_pod.cpp support_allows）保持一致：同一个开关在三条路径上
+            // 都必须生效，否则测试在 fixture 内设置它时会时灵时不灵。
+            if (pk::runtime_switch_value(
+                    pk::RuntimeSwitch::PK_DISABLE_SUPPORT_GATE) != nullptr) {
+                return true;
+            }
     const SupportResult result =
         evaluate_support(country, ideology_id, direction);
     if (!result.available) {

@@ -76,8 +76,9 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
     auto &gameplay_event_commands = day.gameplay_event_commands;
     if (stage.domain == RuntimeDomainId::ECONOMY &&
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
-        (_requested_authority_mask.load(std::memory_order_acquire) &
-         runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u &&
+        ((_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u ||
+            !domain_is_worker_authoritative(RuntimeDomainId::ECONOMY)) &&
         !plan.context.freeze_reads.register_read(
             runtime_domain_mask(RuntimeDomainId::ECONOMY), plan.context.frozen_input,
             plan.context.day, plan.context.input_generation)) {
@@ -87,8 +88,9 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
     if (stage.domain == RuntimeDomainId::ECONOMY &&
         _mode.load(std::memory_order_acquire) ==
             RuntimeSimulationMode::ACTIVE &&
-        (_requested_authority_mask.load(std::memory_order_acquire) &
-         runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u) {
+        ((_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u ||
+            !domain_is_worker_authoritative(RuntimeDomainId::ECONOMY))) {
         AtomicCounterScope economy_scope(_economy_inflight_mutations);
         // ACTIVE Economy production: compact_slice (default) or StageOps
         // Host day loop when effective writer is STAGE_OPS (opt-in; start

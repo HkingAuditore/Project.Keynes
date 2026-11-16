@@ -1,4 +1,5 @@
 #include "effect_runtime.h"
+#include <cstdio>
 #include "country_api.h"
 #include "economy_api.h"
 #include "modifier_api.h"

@@ -109,6 +109,10 @@ struct RuntimeIdeologyPodLevel {
 // Reversible UniqueSource Modifier template row. The worker resolves the
 // definition key hash against the Modifier POD catalog at stage time.
 struct RuntimeIdeologyPodModifierTemplate {
+    // 材料损益 selector：kind 决定用哪种指标挑目标，param0/1 是其参数。
+    int32_t selector_kind = 0;
+    int64_t selector_param0 = 0;
+    int64_t selector_param1 = 0;
     uint64_t definition_key_hash = 0;
     int32_t domain = 0;
     int32_t magnitude_q16 = 65536;
@@ -265,6 +269,10 @@ struct RuntimeIdeologyPodCatalog {
 };
 
 struct RuntimeIdeologyOpinionSnapshot {
+    // 材料损益：每国的阶级立场负载（与经济侧 CountryClassOpinionSnapshot 对齐）。
+    int32_t incidence_channel_count = 0;
+    std::vector<uint8_t> incidence_measured;
+    std::vector<int32_t> class_incidence_q16;
     uint64_t revision = 0;
     uint64_t class_hash = 0;
     int64_t committed_day = -1;
@@ -657,6 +665,14 @@ struct RuntimeIdeologyPodSaveSection {
 
 class RuntimeIdeologyPodAuthority {
 public:
+    int32_t cell_tag_words() const { return _cell_tag_words; }
+    const std::vector<uint64_t> &cell_tags() const { return _cell_tags; }
+    int32_t _cell_tag_words = 0;
+    std::vector<uint64_t> _cell_tags;
+
+    // 材料损益：把 cell 的 tag 位图交给 pod 侧的 selector 使用。
+    void set_cell_tags(int32_t words, const std::vector<uint64_t> &bits);
+
     RuntimeIdeologyPodAuthority();
     void reset();
     bool configure(const RuntimeIdeologyPodCatalog &catalog, std::string &error);
@@ -827,6 +843,7 @@ private:
     std::array<Slot, RUNTIME_SNAPSHOT_RING_SIZE> _slots{};
     std::atomic<uint64_t> _published_generation{0};
     std::atomic<uint64_t> _publish_drop_count{0};
+
 };
 
 } // namespace pk

@@ -1,4 +1,5 @@
 #include "economy_cost_probe.h"
+#include <cstdio>
 #include "economy_runtime_variant_helpers.h"
 #include "runtime_economy_pod.h"
 #include "runtime_switch_registry.h"
