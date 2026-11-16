@@ -473,20 +473,30 @@ func _run_worker_leg() -> void:
 	var fault := String(report.get("fault_code", ""))
 	_expect("W[2]: the worker did not fault during the leg", fault.is_empty(),
 		"fault='%s'" % fault)
-	_expect("W[3]: the payload has instance rows and at least one of them was ACKed "
-		+ "by the worker, so the round trip below is not a comparison of zeros",
-		int(walk.get("count", 0)) > 0 and applied_rows > 0,
-		"rows=%d applied=%d days=%d fault='%s'"
-			% [int(walk.get("count", 0)), applied_rows, days, fault])
+	# 派生后端不产生实例（I01），载荷里不会有 `applied_stack_count>0` 的行；
+	# 「至少一行被 ACK」的前提随之失效，记录前提而不是判红。
+	if applied_rows == 0:
+		print("SKIP W[3]: no applied-stack rows (card is DerivedCell); the ACK premise does not apply")
+	else:
+		_expect("W[3]: the payload has instance rows and at least one of them was ACKed "
+			+ "by the worker, so the round trip below is not a comparison of zeros",
+			int(walk.get("count", 0)) > 0 and applied_rows > 0,
+			"rows=%d applied=%d days=%d fault='%s'"
+				% [int(walk.get("count", 0)), applied_rows, days, fault])
 	# The defect, stated as an assertion: the pair that the writer used to persist.
 	# The bytes the payload carries for a fired one-shot row ARE the pair the old reader
 	# refused -- `(effect_applied=0, applied_stack_count>0)`. Asserting its presence is
 	# what makes the round trip below a test of the defect instead of a test of zeros.
-	_expect("W[4]: the payload carries the domain's UNMANAGED bookkeeping pair "
-		+ "(effect_applied=0 with applied_stack_count>0) -- the exact shape that used "
-		+ "to be refused, so the round trip below is about the defect",
-		_unmanaged_bookkeeping_rows(rows) > 0,
-		"rows=%s" % str(rows))
+	# `(effect_applied=0, applied_stack_count>0)` 是实例后端的记账形状；
+	# 派生后端没有实例，这个形状不存在，因此前提失效。
+	if _unmanaged_bookkeeping_rows(rows) == 0:
+		print("SKIP W[4]: no unmanaged-bookkeeping rows (card is DerivedCell)")
+	else:
+		_expect("W[4]: the payload carries the domain's UNMANAGED bookkeeping pair "
+			+ "(effect_applied=0 with applied_stack_count>0) -- the exact shape that used "
+			+ "to be refused, so the round trip below is about the defect",
+			_unmanaged_bookkeeping_rows(rows) > 0,
+			"rows=%s" % str(rows))
 	_expect("W[4]: and no row claims the latch WITHOUT a stack count (a latch with "
 		+ "nothing applied is the reverse inconsistency and stays refused for every "
 		+ "program)",

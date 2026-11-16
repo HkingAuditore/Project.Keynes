@@ -298,7 +298,7 @@ func _run() -> void:
 	var per_country_cap := mini(CELL_COUNT, SELECTOR_MAX_CELLS)
 	_expect("tag-filtered card has no target before the flip (before=%d)"
 			% instances_before_flip, instances_before_flip == 0)
-	# ── What this asserts, and why it changed ─────────────────────────────
+	# 鈹€鈹€ What this asserts, and why it changed 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 	#
 	# The intent is "the tag flip is OBSERVED by the card's target resolution".
 	# It used to be asserted as an INSTANCE count (`after == 192`), which was valid
@@ -311,11 +311,21 @@ func _run() -> void:
 	# covering the tagged cells. Asserting only the instance path would re-encode
 	# the very bug I01 forbids.
 	# The derived rebuild is a SLICE STAGE; drain it before reading the layer.
+	#
+	# The drain MUST be asked for the day the rebuild belongs to. `step_derived_rebuild`
+	# resets its whole job when `day != _derived_rebuild_day` (it treats a different day
+	# as "the epoch's inputs changed, splicing two days would be wrong"), so draining
+	# with a PAST day throws away the in-flight fold and reports `complete: true` with
+	# nothing installed -- which is exactly the `front_cells=0` this test used to read.
+	var drain: Dictionary = {}
 	if _ext.has_method("drain_derived_cell_layer"):
-		_ext.drain_derived_cell_layer(0)
+		drain = _ext.drain_derived_cell_layer(MEASURED_DAYS)
 	var layer_report: Dictionary = _ext.get_derived_cell_layer_report() \
 		if _ext.has_method("get_derived_cell_layer_report") else {}
 	var front_cells := int(layer_report.get("cell_count", 0))
+	print("  [drain d%d] steps=%d complete=%s layer_installed=%s"
+		% [MEASURED_DAYS, int(drain.get("steps", -1)),
+			str(drain.get("complete", "?")), str(layer_report.get("installed", "?"))])
 	# M4: measure what a FULL tag-snapshot rebuild costs. This is the number that
 	# decides whether "per-tag changed words" (an incremental update) is worth
 	# building -- if a full rebuild is already cheap, an incremental path is pure
@@ -874,14 +884,34 @@ func _configure_effects() -> bool:
 	# which is what makes `tag_snapshot_needed()` true for the ONLY legitimate reason
 	# (a card reads a metric) instead of the tag table alone.
 	#
-	# `arg0` is the DENSE index into `metric_keys`, not the global
-	# `FamilyEffectMetricId` (13 for `cell.population`) -- the catalog's own naming is
-	# the trap here: a tag row names a metric KEY, while a condition/instruction row
-	# names an INDEX. Passing 13 where `metric_keys` holds one entry fails the build
-	# with `effect_condition_metric_invalid`.
+	# 鈹€鈹€ `arg0` is a DENSE index, and the dense table is the PRODUCTION one 鈹€鈹€
+	#
+	# A tag row names a metric KEY (`"cell.population"`); a condition/instruction
+	# row names an INDEX into `metric_keys`. The two indexings are only the same
+	# number when `metric_keys` holds exactly the metrics the fixture uses --
+	# which is why `arg0 = 0` used to be right and is now WRONG.
+	#
+	# `catalog.metric_keys` below is deliberately the production table in
+	# production order (see the long note at `catalog.metric_keys`), because the
+	# TAG row's dense index must equal the `FamilyEffectMetricId` enum for the
+	# sampler to line up. In that table `cell.population` is index 9, so
+	# `arg0 = 0` named `metric_keys[0]` -- some other metric, constant here --
+	# and the condition `metric_keys[0] >= 400 << 16` was FALSE for every cell.
+	#
+	# Measured symptom before this was fixed: the tag table flipped correctly
+	# (`[probe d15] tagged_cells=6`), target resolution returned the 6 tagged
+	# cells (`own_pushed_raw` 6 -> 636), and then EVERY target was filtered by
+	# the condition, so `collect_derived_emitted` stayed 0, the derived front
+	# stayed empty (`front_cells=0`) and no instance ever appeared. The consumer
+	# mask also carried the wrong bit: `metrics[0].revision` advanced once while
+	# `metrics[9].revision` never moved, which is the fingerprint of a condition
+	# reading the wrong metric.
+	#
+	# Deriving the index from the SAME table the catalog ships makes the two
+	# indexings agree by construction instead of by coincidence.
 	var gate: Resource = preload("res://scripts/effect/effect_condition.gd").new()
 	gate.op = 2                                 # METRIC_GTE
-	gate.arg0 = 0                               # dense id of TAG_METRIC_KEY
+	gate.arg0 = _metric_dense_index()           # dense id of TAG_METRIC_KEY
 	gate.value_q16 = TAG_POPULATION * Q16_ONE
 	var conditions: Array[Resource] = [gate]
 	program.conditions = conditions
@@ -958,6 +988,24 @@ func _production_metric_keys() -> PackedStringArray:
 	return keys
 
 
+## The DENSE index of `TAG_METRIC_KEY` in `metric_keys`.
+##
+## A tag row names a metric KEY, but a condition row names an INDEX into the same
+## table. Hard-coding that index is what broke this fixture: it was 0 while the
+## table was a one-entry list, and stayed 0 after the table became the production
+## one, where `cell.population` is at 9. Deriving it from the table makes the two
+## indexings agree by construction -- if the production order ever moves, the tag
+## row and the condition move together instead of the condition silently reading a
+## different metric.
+func _metric_dense_index() -> int:
+	var keys := _production_metric_keys()
+	for index in range(keys.size()):
+		if String(keys[index]) == TAG_METRIC_KEY:
+			return index
+	push_error("[FAIL] %s missing from the metric table" % TAG_METRIC_KEY)
+	return 9
+
+
 ## The single tag the fixture declares: `cell.population >= TAG_POPULATION`.
 ##
 ## `TAG_INDEX` (1) is the 1-based id the selector's `param[1]` carries, and the
@@ -979,21 +1027,47 @@ func _start_worker() -> bool:
 	var started: Dictionary = _ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE",
 		"graph_coverage_complete": true,
-		# IDEOLOGY ONLY (bit 0x10). NOT 0xFFF.
+		# CLIMATE ONLY (bit 0x2). NOT IDEOLOGY, and NOT 0xFFF.
 		#
-		# With CLIMATE (bit 0x1) in the mask the worker becomes `climate_driven`
-		# (`native_simulation_host.cpp:15226`) and parks in the control wait until
-		# `has_pending_climate_input()` is true. This fixture never captures a climate
-		# trace -- there is no MapGenerator here -- so a 0xFFF mask leaves the worker
-		# parked for the whole run: `authoritative_domain_mask` stays 0,
-		# `ideology_pod_committed_day` never advances, and every assertion below would
-		# be measuring a stopped worker.
+		# 鈹€鈹€ Why the request must exclude IDEOLOGY 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 		#
-		# The card state is still owned by the POD (IDEOLOGY granted) and the instance
-		# refresh path still runs on the main thread, which is what this test exists
-		# to stress. `ideology_worker_benchmark.gd` uses the same single bit for the
-		# same reason.
-		"authoritative_domain_mask": 0x10,
+		# This fixture can never GRANT the worker a domain: the grant needs one
+		# fully committed day and a bare `DCWorldExt` world has no climate trace to
+		# complete one. So `authoritative_domain_mask` stays 0 and the main thread
+		# keeps doing the work -- which is what the tag assertions below rely on.
+		#
+		# But the main-thread gate is `NativeSimulationHost::domain_main_thread_suppressed`
+		# (`native_simulation_host.h:1113`), and it is NOT "is this domain
+		# authoritative". It is a three-way OR:
+		#
+		#   * authoritative                                  -> suppressed;
+		#   * mode != ACTIVE, or `_stop_requested`            -> NOT suppressed;
+		#   * REQUESTED bit clear                            -> NOT suppressed;
+		#   * otherwise (requested + worker STARTING/RUNNING/PAUSED/SAVE_PENDING)
+		#                                                    -> SUPPRESSED.
+		#
+		# The last arm is the "authorization window": while the worker has asked for
+		# a domain and is still alive, the main thread must not push into it. With
+		# `authoritative_domain_mask = 0x10` that window opens on IDEOLOGY at start
+		# and NEVER closes (no day can commit), so `run_ideology_daily` answers
+		# `{suppressed: true, path: "IDEOLOGY_WORKER"}` forever. Measured before this
+		# comment was written: 12 staged commands (6 DISCOVER + 6 EQUIP) sat in
+		# `_commands` for all 30 days, `commands_applied=0`, `managed_idea_count=0`,
+		# `refresh_visits=0`, `_countries` empty. The card was never equipped, so no
+		# selector ever ran and `tag_changes` could not move no matter how the tag
+		# bits flipped (and they DID flip: `[probe d15] tagged_cells=6`).
+		#
+		# Requesting a domain this fixture never drives from the main thread keeps a
+		# live worker thread (the boundary lock `step_ideology_instance_refresh`
+		# takes is still a real lock) while leaving IDEOLOGY to the main thread,
+		# which is the authority split the assertions below actually measure.
+		#
+		# CLIMATE specifically: with CLIMATE in the mask the worker becomes
+		# `climate_driven` and parks in the control wait because this fixture never
+		# publishes a climate trace. A parked worker holds no boundary lock, so
+		# `lock_skips` stays 0 -- which the lock assertions below tolerate by design
+		# (`>= 0`, and `max_consecutive <= MAX_CONSECUTIVE_SKIPS`).
+		"authoritative_domain_mask": 0x2,
 		"day": 0,
 		# The worker only advances when its clock is running: `paused` false is not
 		# enough, `speed_days_per_second` must be > 0 or the loop lands in the

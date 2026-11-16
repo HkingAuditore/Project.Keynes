@@ -137,9 +137,22 @@ func _test_settlement_world(native: Dictionary, dense: int) -> void:
 		int(report.get("count", -1)) == cells,
 		"count=%d cells=%d" % [int(report.get("count", -1)), cells])
 	var submitted := int(fixture["dispatch"].get("submitted_commands", -1))
-	_expect("settlement world: two modifier commands per target cell",
-		submitted == cells * COMMANDS_PER_CELL,
-		"submitted=%d expected=%d" % [submitted, cells * COMMANDS_PER_CELL])
+	# 目标格的后端决定该有多少条 modifier 命令：
+	#   * effect 实例后端（backends=0）：每个目标格 2 条（birth + consumption）；
+	#   * 派生地块层（backends=1）：**不创建实例、不提交命令**，成本在读取侧而不是调度侧。
+	# 合并后的基线让该卡走派生层，所以这里必须按实际后端断言，而不是固定期望 24 条。
+	var derived_targets := 0
+	var backends: PackedByteArray = report.get("backends", PackedByteArray())
+	for backend in backends:
+		if int(backend) == 1:
+			derived_targets += 1
+	if derived_targets == cells and cells > 0:
+		_expect("settlement world: derived targets need no modifier dispatch",
+			submitted == 0, "submitted=%d expected=0 (all %d targets are derived)" % [submitted, cells])
+	else:
+		_expect("settlement world: two modifier commands per target cell",
+			submitted == cells * COMMANDS_PER_CELL,
+			"submitted=%d expected=%d" % [submitted, cells * COMMANDS_PER_CELL])
 
 
 ## 3. The switch is the tag, not the population. Re-point the program at
@@ -249,7 +262,10 @@ func _fixture(native_ideology: Dictionary, dense: int, population: int,
 			best_dispatch = day_dispatch
 		ext.run_modifier_daily(day)
 		ext.ack_effect_native_modifier()
-	var report: Dictionary = ext.get_ideology_effect_instance_report(handle)
+	# 合并后的基线里，卡片程序走派生地块层：`effect_instance_report` 只包含 effect 实例，
+	# 派生行由 `effect_target_report` 追加（见 ideology_runtime_queries.cpp:141-179）。
+	# 目标格断言测的是「程序的覆盖格」，所以取后者（它是前者的超集）。
+	var report: Dictionary = ext.get_ideology_effect_target_report(handle)
 	return {"ext": ext, "report": report, "dispatch": best_dispatch}
 
 

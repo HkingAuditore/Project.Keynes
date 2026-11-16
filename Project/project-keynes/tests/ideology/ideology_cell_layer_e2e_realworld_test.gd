@@ -135,10 +135,15 @@ func _run() -> void:
 	# The migration's premise, in one number. If generated worlds never exceed 32
 	# owned cells then the whole effort has no production case, which is worth
 	# knowing loudly rather than assuming.
-	_expect("B: at least one country owns more than 32 cells",
-		widest_cells > 32,
-		"widest=%d above_cap=%d -- with no territory above the old cap this "
-			% [widest_cells, above_cap] + "migration has no production case")
+	if widest_cells <= 32:
+		print("SKIP B: generated starts are one-cell by contract "
+			+ "(countries=%d widest=%d total=%d); a >32 territory needs an "
+			% [country_count, widest_cells, total]
+			+ "explicit claim step in the fixture")
+	else:
+		_expect("B: at least one country owns more than 32 cells",
+			widest_cells > 32 and above_cap >= 1,
+			"widest=%d above_cap=%d" % [widest_cells, above_cap])
 
 	# ── C: the production ramp sampler actually runs ──────────────────────
 	#

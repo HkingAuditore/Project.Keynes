@@ -414,6 +414,11 @@ struct EconomyApi {
     };
 
     struct CountryClassOpinionSnapshot {
+        // 材料损益：每国的阶级立场数据（channels 来自表结构；measured 标记该国是否有数据；
+        // class_incidence_q16 按 [country][class][channel] 展平）。
+        int32_t incidence_channel_count = 0;
+        std::vector<uint8_t> incidence_measured;
+        std::vector<int32_t> class_incidence_q16;
         uint64_t revision = 0;
         uint64_t class_hash = 0;
         // Hash of the country-level values derived for metrics 77/78. Revision

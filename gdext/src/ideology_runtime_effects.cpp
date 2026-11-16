@@ -994,10 +994,11 @@ bool NativeIdeologyRuntime::collect_effect_activations(
                         condition_metrics.data(), metadata.metric_mask);
                     bool passes = false;
                     std::string condition_error;
-                    if (!_effect_runtime->evaluate_program_conditions_for_metrics(
+                    const bool condition_ok =
+                        _effect_runtime->evaluate_program_conditions_for_metrics(
                             program, condition_metrics.data(), count, passes,
-                            condition_error) || !passes)
-                        continue;
+                            condition_error);
+                    if (!condition_ok || !passes) continue;
                 }
                 DerivedProgramContribution single;
                 single.source_country = country.handle;

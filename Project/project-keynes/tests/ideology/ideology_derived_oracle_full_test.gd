@@ -288,6 +288,10 @@ func _run() -> void:
 		# grant -> discover -> understanding -> equip. Opcodes are
 		# ideology_runtime.h:66-79; `run_ideology_daily` day indices must be MONOTONIC
 		# for the whole session.
+		# metric 68（净纳税额占比）驱动 subsidy_state 的条件「不超过 8%」；
+		# 合成世界默认 0，条件本就成立。显式钉住，避免默认值变化影响这张卡。
+		_ext.set_effect_metric_override_for_test(68, 0, true)
+		_ext.refresh_effect_input_digest_for_test()
 		_ext.submit_ideology_commands(_commands([
 			{"op": 2, "day": _day, "handle": handle, "idea": -1, "value": 64 * Q16_ONE}]))
 		_ext.submit_ideology_commands(_commands([

@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include <cstdio>
 #include "runtime_switch_registry.h"
 #include <cstdlib>
 #include <cassert>

@@ -1,4 +1,8 @@
 #include "runtime_switch_registry.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
+#include <string>
 #include <cassert>
 #include <cstdlib>
 #include <filesystem>
@@ -162,7 +166,24 @@ const char *runtime_switch_value(RuntimeSwitch id) noexcept {
     assert(index < static_cast<std::size_t>(RuntimeSwitch::COUNT));
     // Do not normalize unset/empty values or cache here. The existing reader
     // owns both decisions and receives the same environment-owned pointer.
+    // Windows 的 CRT `getenv` 读的是进程启动时抓到的一份环境块副本，
+    // `SetEnvironmentVariableW`（Godot 的 `OS.set_environment` 走这条）改了 OS 的环境，
+    // 但 CRT 看不到。测试在脚本里动态设开关时就会「设了却不起作用」——
+    // x6c 实测：fixture 内 `OS.set_environment("PK_DISABLE_SUPPORT_GATE","1")` 无效，
+    // 而父进程设同一个变量立刻生效。这里在 Windows 上直接问 OS。
+#ifdef _WIN32
+    static thread_local std::string env_buffer;
+    const DWORD needed = GetEnvironmentVariableA(switches[index].name, nullptr, 0);
+    if (needed == 0) return nullptr;
+    env_buffer.resize(static_cast<size_t>(needed));
+    const DWORD written = GetEnvironmentVariableA(
+        switches[index].name, env_buffer.data(), needed);
+    if (written == 0) return nullptr;
+    env_buffer.resize(static_cast<size_t>(written));
+    const char *value = env_buffer.c_str();
+#else
     const char *value = std::getenv(switches[index].name);
+#endif
     const bool file_path = id == RuntimeSwitch::PK_SIM_DAY_TRACE ||
         id == RuntimeSwitch::PK_GOLDEN_COUNTRY_TRACE ||
         id == RuntimeSwitch::PK_ECONOMY_COST_CSV ||

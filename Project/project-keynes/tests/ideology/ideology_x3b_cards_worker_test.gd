@@ -234,29 +234,30 @@ func _test_trade_unions() -> bool:
 		return false
 	if not _set_metric(WORKER_SATISFACTION, 10):
 		return false
-	var low_opinion := _wait_cell(0, MANUFACTURING_STAT, 1.0001, 5)
+	var low_opinion := _wait_cell(0, MANUFACTURING_STAT, 1.10, 5)
 	_expect("trade_unions L1 at 26% / worker opinion 0.10 gives +10%",
-		low_opinion > still_below, "base=%.5f low=%.5f" % [still_below, low_opinion])
+		_is_close(low_opinion, 1.10) and low_opinion > still_below,
+		"base=%.5f low=%.5f" % [still_below, low_opinion])
 	if not _set_metric(WORKER_SATISFACTION, 30):
 		return false
-	var high_opinion := _wait_cell(0, MANUFACTURING_STAT, 1.0001, 5)
+	var high_opinion := _wait_cell(0, MANUFACTURING_STAT, 1.20, 5)
 	_expect("worker opinion >=0.2 doubles trade_unions to +20% at L1",
-		high_opinion > low_opinion, "%.5f" % high_opinion)
+		_is_close(high_opinion, 1.20), "%.5f" % high_opinion)
 	_expect("trade_unions charges +3% national production input",
 		_read_country(INPUT_STAT) > input_baseline,
 		"base=%.5f current=%.5f" % [input_baseline, _read_country(INPUT_STAT)])
 	if not _raise_level("trade_unions", 2):
 		return false
-	var l2 := _wait_cell(0, MANUFACTURING_STAT, 1.0001, 5)
+	var l2 := _wait_cell(0, MANUFACTURING_STAT, 1.28, 5)
 	_expect("trade_unions L2 at high opinion gives +28%",
-		l2 >= low_opinion, "%.5f" % l2)
+		_is_close(l2, 1.28), "%.5f" % l2)
 	if not _raise_level("trade_unions", 3):
 		return false
 	if not _set_metric(INDUSTRIAL_SHARE, 22):
 		return false
-	var l3 := _wait_cell(0, MANUFACTURING_STAT, 1.0001, 5)
+	var l3 := _wait_cell(0, MANUFACTURING_STAT, 1.28, 5)
 	_expect("trade_unions L3 fires at 22% industrial share",
-		l3 >= l2, "%.5f" % l3)
+		_is_close(l3, 1.28), "%.5f" % l3)
 	if not _unequip("trade_unions"):
 		return false
 	_expect("unequipping trade_unions restores manufacturing",
@@ -493,6 +494,12 @@ func _run_day() -> bool:
 
 func _wait_cell(cell: int, stat_key: String, expected: float,
 		days: int) -> float:
+	# `expected` must be the factor the card authors, NOT a near-1.0 sentinel.
+	# The early exit is `_is_close(value, expected)` with a 0.0005 tolerance, so a
+	# target such as 1.0001 is already satisfied by the 1.0 baseline: the loop
+	# would return before advancing a single day and every metric override the
+	# caller just wrote would read back as unapplied (measured: this fixture
+	# reported `base=1.00000 low=1.00000` while the card was in fact working).
 	var value := _read_cell(cell, stat_key)
 	for _index in range(days):
 		if _is_close(value, expected):

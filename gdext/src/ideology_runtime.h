@@ -33,6 +33,10 @@ class EffectInstanceForwarder;
 // existing domain ownership.
 class NativeIdeologyRuntime {
 public:
+    // 派生目标条件门：判断某程序的激活条件在指定 cell 的采样下是否成立（fail-open）。
+    bool derived_target_conditions_hold(const std::string &program,
+        int32_t cell) const;
+
     static constexpr int32_t PROTOCOL_VERSION = 1;
     // v5 adds per-country `unlocked_era` (era-aware draw weighting) and widens
     // gate_bits to the full registered gate-key list, so v4 saves are rejected

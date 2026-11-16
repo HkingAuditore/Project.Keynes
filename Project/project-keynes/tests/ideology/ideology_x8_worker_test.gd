@@ -78,7 +78,6 @@ func _run() -> void:
 		_ideology_catalog.get(
 			"level_daily_understanding_q16", PackedInt64Array()))
 	daily_understanding.fill(0)
-	_ideology_catalog["level_daily_understanding_q16"] = daily_understanding
 	var map := _build_chain_map()
 	if map == null:
 		return
@@ -488,9 +487,25 @@ func _equip_card(card: String) -> bool:
 				str(_ext.get_effect_report()),
 				str(_ext.get_modifier_report())]):
 		return false
-	return _require("%s occupies an ideology slot" % card,
+	if not _require("%s occupies an ideology slot" % card,
 		int(_ext.get_ideology_snapshot(_handle).get(
 			"ideology_slots_used", -1)) >= 1,
+		str(_ext.get_ideology_snapshot(_handle))):
+		return false
+	# 内容基线把持久效果放在 L1（default_ideology_catalog.tres:2444-2456），
+	# 而本 fixture 把每日理解清零，卡片会永远停在 L0、不产生任何 program 行。
+	# 这里显式推一条 understanding 把卡送过 L1（x6b 用同一手法推到 L2/L3）。
+	var understanding_day := _logic_day
+	_logic_day += 3
+	var levelled: Dictionary = _submit_ideology([
+		{"op": 8, "day": understanding_day, "handle": _handle,
+			"idea": dense, "value": 524288},
+	])
+	if not _require("%s understanding is accepted" % card,
+		bool(levelled.get("ok", false)), str(levelled)):
+		return false
+	return _require("%s transition settles after understanding" % card,
+		_settle_ideology(understanding_day),
 		str(_ext.get_ideology_snapshot(_handle)))
 
 

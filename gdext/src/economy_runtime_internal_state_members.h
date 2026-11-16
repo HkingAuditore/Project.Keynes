@@ -1340,6 +1340,11 @@
     std::vector<int64_t> _fiscal_epoch_assessed;
     std::vector<int64_t> _fiscal_epoch_collected;
     std::vector<int64_t> _fiscal_epoch_paid;
+    // 在途国库贷记：fiscal collect 已把 escrow 划出、国家 pod 尚未提交，
+    // 因此还没进入 country_economy_audit_snapshot。审计把它算作国库，
+    // 否则出现 escrow 已清零、国库未增的假缺口（m0 实测 -162903）。
+    mutable int64_t _country_pending_credit = 0;
+    mutable int64_t _country_pending_credit_last_raw = -1;
     EconomyOwnedColumn<int64_t> _fiscal_escrow_by_country{{{16, 23}, "native_columns.fiscal_escrow_by_country", EconomyFieldEncoding::I64, 8}};
     EconomyTrackedJournal<uint64_t, AssetPeerJournalRecord> _asset_peer_journal{
         {{13, 1}, "fiscal.peer_journal", EconomyFieldEncoding::CanonicalRecord, 1}};

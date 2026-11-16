@@ -425,6 +425,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _technology_metric_input_override_enabled = false;
     _technology_metric_source_hash = 0;
     _technology_metric_rebuilds.store(0, std::memory_order_relaxed);
+    _country_pending_credit = 0;
+    _country_pending_credit_last_raw = -1;
     _epoch_cell_neighbor_distinct_goods.clear();
     _neighbor_distinct_goods_source_hash = 0;
     _neighbor_distinct_goods_rebuilds.store(0, std::memory_order_relaxed);

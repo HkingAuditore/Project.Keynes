@@ -1,4 +1,5 @@
 ﻿#include "world_ext.h"
+#include <cstdio>
 
 #include "country_runtime.h"
 #include "economy_runtime.h"

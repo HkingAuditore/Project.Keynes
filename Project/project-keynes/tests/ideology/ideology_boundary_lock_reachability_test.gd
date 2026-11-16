@@ -58,6 +58,24 @@ extends SceneTree
 ## the per-day `state` and `worker_time_execute/input_wait` deltas printed below
 ## measure. `economy_day_inflight` is a LIVE-CONTENTION answer, not the normal one.
 ##
+## RE-MEASURED 2026-11-16, after the day step was given its production lockstep wait
+## (see "WHY THE DAY STEP WAITS" below; the 2026-10-29 run above predates it and its
+## 25/48 was measured with a worker that had not actually advanced through the
+## window):
+##
+##   leg A  synchronous, no yield   48 calls, 0 inflight, 48 ACQUIRED, 6/6 days
+##   leg B  polled, OS.delay_msec(2) 6 calls, 0 inflight, 6 acquired, 6/6 days,
+##          first success on attempt 1 after 1 ms
+##   lock_skips += 12 in BOTH legs, all 12 from the production call site inside
+##   `run_daily_tick` (`host_skips == lock_skips`), i.e. the host's own refresh lost
+##   the boundary on those days while this fixture's calls never did.
+##
+## The sign is unchanged and is what the assertions test: the boundary lock IS
+## reachable from GDScript, a synchronous drive reaches it too, and polling is not
+## what makes it reachable. What moved is the count, and it moved for the reason the
+## paragraph above already gives -- once the worker really runs a day per published
+## climate day it is parked in PAUSED (holding no lock) at every burst.
+##
 ## LEG A (negative control) drives N days by calling the day functions back to back
 ## and then fires LEG_A_CALLS_PER_DAY refresh calls with NO yielding whatsoever
 ## between them: no `OS.delay_msec`, no `await`, no `process_frame`. Expectation:
@@ -86,6 +104,7 @@ extends SceneTree
 ## `ideology_worker_authority_parity_test.gd:_drive_day` (same construction, same
 ## world, same card): clock day -> `_service_peers` -> `publish_ideology_worker_inputs`
 ## -> `run_daily_tick` -> `finish_daily_tick` ->
+## `WorkerWaitHelper.wait_committed(day - 1)` ->
 ## `run_ideology_daily` -> (only when NOT suppressed) `run_effect_daily` ->
 ## `dispatch_effect_native_modifier` -> `run_modifier_daily` ->
 ## `ack_effect_native_modifier` -> `drain_derived_cell_layer(CURRENT day)`.
@@ -96,7 +115,10 @@ extends SceneTree
 ##   1. NO `_wait_pod_day`. That helper calls `set_runtime_clock(false/true)`, i.e. it
 ##      PAUSES the worker, and pauses it exactly between the day step and the next
 ##      refresh call -- which is the variable under test. Leaving it in would make
-##      Leg A stop being a "no window" control.
+##      Leg A stop being a "no window" control. The lockstep wait that IS taken
+##      (`wait_committed`, see below) never pauses: it only waits, so the worker's
+##      state at the next refresh call is whatever the worker chose, not a state
+##      this file put it in.
 ##   2. `run_daily_tick` itself calls `_step_ideology_instance_refresh_if_authoritative`
 ##      once per day (`world_runtime_host.gd:960`). That call is NOT mine and cannot
 ##      be disabled without editing an existing file, so it is left in and ACCOUNTED
@@ -105,6 +127,35 @@ extends SceneTree
 ##      production call site took in the same window. If `host_skips == 0` the
 ##      production call site won the boundary on every one of those days, which is
 ##      itself an answer to "is the lock reachable from the main thread".
+##
+## WHY THE DAY STEP WAITS FOR `wait_committed(day - 1)` (added 2026-11-16)
+##
+## This file used to drive day N+1 immediately after publishing day N, i.e. it ran
+## the main thread arbitrarily far ahead of the worker (measured: host at day 22
+## while the worker was still on day 2). That is not a state the game can produce --
+## `WorldClock` holds the next day behind the day barrier until the worker commits --
+## and it is fatal to the worker, not merely unusual:
+##
+##   * day 2 raises the Country pod's first technology-effect peer (`op=1`
+##     ENSURE_TECHNOLOGY_EFFECT). It resolves in-worker, and stays PENDING until
+##     the Effect POD fires the instance and the Modifier stage ACKs the
+##     MODIFIER_COMMAND bit of that transaction (required mask 0x11, EVENTS bit
+##     0x10 present, MODIFIER bit 0x01 missing -> `effect_pod_instance_fire_acked`
+##     false).
+##   * the peer IS eventually promoted to READY
+##     (`[tech-ack-diag/promote] pending->READY count=1`), so the handshake itself
+##     works. But by then the host had published later environments, so the retried
+##     day failed the climate gate first (`active_climate_ok` false) and the Country
+##     stage was skipped before it could consume its own promoted result.
+##   * net effect: `country_worker_peer_results_pending` for the rest of the run,
+##     `ideology_pod_committed_day == -1`, the card never equips, the Climate ring
+##     fills (`[capture] ... code=climate_environment_pending`), and the boundary
+##     numbers become meaningless because the worker never runs a day.
+##
+## With the wait, the worker commits every day, the ideology pod's committed day
+## tracks the host (pod_day == day - 1 in the per-day log), and the card equips.
+## The wait changes WHEN the burst runs relative to the worker, never WHETHER the
+## burst yields: Leg A's calls are still back to back with no yield of any kind.
 ##
 ## WHAT THIS FIXTURE DOES NOT DO
 ##
@@ -172,6 +223,9 @@ const LEG_A_CALLS_PER_DAY := 8
 const LEG_B_POLL_GUARD_MS := 4000
 ## Whole-run guard. Two worker worlds cost ~340 s of generation alone.
 const GLOBAL_BUDGET_MS := 900000
+## Per-day hang guard for the production lockstep wait after each day step. Not a
+## performance gate: a healthy worker commits the published day in a few frames.
+const DAY_COMMIT_GUARD_MS := 8000
 ## The Country peer transport is bounded per call (`max_results`) and the worker
 ## faults a day at `RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS = 5000`
 ## (`runtime_pod_protocol.h:54`) when nothing services it -- which matters most
@@ -810,6 +864,37 @@ func _step_day(w: Dictionary) -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
+	# PRODUCTION LOCKSTEP, and the only way this file differs from "drive N days
+	# as fast as possible". In the game the clock does not start a new day until
+	# the worker has committed the day the host just published, and the host pumps
+	# `WorldRuntimeHost._process` (Country peer transport, Effect/Modifier settle,
+	# snapshots) while it waits. This wait does the same and does NOT pause the
+	# worker, so nothing about the boundary-lock measurement changes.
+	#
+	# Measured on 2026-11-16 without it (mask 0xFFF, this world, this card): the
+	# host reached day 22 while the worker was still on day 2, because the Country
+	# pod's day-2 technology-effect peer only reaches READY after the Effect POD
+	# fires its instance and the Modifier stage ACKs the MODIFIER_COMMAND bit of
+	# that transaction. Meanwhile the host's own environment overtook the retried
+	# day, so `active_climate_ok` went false and the Country stage was skipped
+	# from then on: the already-promoted peer result was never consumed, the day
+	# never closed, `ideology_pod_committed_day` stayed -1, and the card could not
+	# equip -- which is exactly the 6 failures this file reported. The day barrier
+	# is load-bearing state, not a formality; a fixture that outruns it measures a
+	# state the game never enters.
+	var committed := WorkerWaitHelper.wait_committed(host, ext, maxi(0, day - 1),
+		DAY_COMMIT_GUARD_MS)
+	if not bool(committed.get("ok", false)) and int(w.get("commit_misses", 0)) < 3:
+		w["commit_misses"] = int(w.get("commit_misses", 0)) + 1
+		print("[STEP/%s] day=%d: the worker did NOT commit day %d in %d ms "
+			% [String(w["leg"]), day, day - 1, DAY_COMMIT_GUARD_MS]
+			+ "(code=%s committed=%d day_stall=0x%X missing=0x%X). Everything "
+			% [String(committed.get("code", "?")),
+				int(committed.get("committed_day", -1)),
+				int(committed.get("day_stall_reason_mask", -1)),
+				int(committed.get("day_wait_missing_mask", -1))]
+			+ "measured below is only about a RUNNING worker; this line is why it "
+			+ "may not be.")
 	var ideology: Dictionary = {}
 	var slices := 0
 	for _slice in range(MAX_SLICES_PER_DAY):

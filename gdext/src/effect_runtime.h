@@ -39,6 +39,16 @@ struct RuntimeEffectPodSnapshot;
 // resulting transactions at their safe commit boundaries.
 class EffectRuntime {
 public:
+    // 材料损益：判断某个 effect 程序的激活条件在当前指标下是否成立。
+    // metrics 由调用方按需提供（family / card / incidence 各有自己的指标集）；
+    // has_scope_value=false 表示该作用域没有标量（例如全局条件）。
+    bool program_conditions_hold(int32_t program_id, const int64_t *metrics,
+        int32_t metric_count, int64_t scope_value,
+        bool has_scope_value) const;
+    bool program_conditions_hold(const std::string &program_key,
+        const int64_t *metrics, int32_t metric_count, int64_t scope_value,
+        bool has_scope_value) const;
+
     static constexpr int32_t PROTOCOL_VERSION = 1;
     // 12: Effect instances carry the per-instance magnitude scale (L3-9).
     // 13: the latch is persisted. "One cadence self-heals" was only true while

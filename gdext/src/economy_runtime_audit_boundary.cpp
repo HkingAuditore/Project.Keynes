@@ -42,6 +42,22 @@ namespace pk {
 using namespace godot;
 using namespace variant_helpers;
 
+int64_t NativeEconomyRuntime::country_cash_for_audit(int64_t raw) const {
+    if (_country_pending_credit == 0) {
+        _country_pending_credit_last_raw = raw;
+        return raw;
+    }
+    if (raw != _country_pending_credit_last_raw) {
+        // 镜像相对上一次审计读数变了：这笔钱已经落地，不要再重复计入。
+        _country_pending_credit = 0;
+        _country_pending_credit_last_raw = raw;
+        return raw;
+    }
+    _country_pending_credit_last_raw = raw;
+    int64_t pending_sat = 0;
+    return saturating_add(raw, _country_pending_credit, pending_sat);
+}
+
 NativeEconomyRuntime::AuditTotals
 NativeEconomyRuntime::audit_totals_from_shadow(const AuditTotals &baseline) const {
     AuditTotals totals = baseline;
@@ -64,8 +80,8 @@ NativeEconomyRuntime::audit_totals_from_shadow(const AuditTotals &baseline) cons
         totals.goods_stock +=
             market_store().stock[index] - _audit_shadow_market_stock[index];
     }
-    totals.country_cash =
-        _country_runtime == nullptr ? 0 : country_reads().total_cash();
+    totals.country_cash = country_cash_for_audit(
+        _country_runtime == nullptr ? 0 : country_reads().total_cash());
     totals.merchant_cash = 0;
     for (const int32_t slot : _merchant_slots) {
         if (slot >= 0 &&
@@ -151,7 +167,7 @@ void NativeEconomyRuntime::resync_closing_country_goods_audit() {
     _closing_totals.goods_stock +=
         country_goods - _closing_totals.country_goods;
     _closing_totals.country_goods = country_goods;
-    _closing_totals.country_cash = country_cash;
+    _closing_totals.country_cash = country_cash_for_audit(country_cash);
     _country_research_goods_consumed =
         research_consumed >= _country_research_consumed_opening
             ? research_consumed - _country_research_consumed_opening : 0;
@@ -208,7 +224,8 @@ NativeEconomyRuntime::AuditTotals NativeEconomyRuntime::audit_totals() const {
                 valuation_sat);
         }
     }
-    totals.country_cash = _country_runtime == nullptr ? 0 : country_reads().total_cash();
+    totals.country_cash = country_cash_for_audit(
+        _country_runtime == nullptr ? 0 : country_reads().total_cash());
     for (int32_t market = 0; market < market_store().market_count.get(); ++market) {
         for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             const int64_t index = market_store().index(market, good);

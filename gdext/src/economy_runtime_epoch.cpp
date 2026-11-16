@@ -1337,7 +1337,9 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         _opening_totals.goods_stock +=
             opening_country_goods - _opening_totals.country_goods;
         _opening_totals.country_goods = opening_country_goods;
-        _opening_totals.country_cash = opening_country_cash;
+        _opening_totals.country_cash = _country_runtime != nullptr
+        ? country_cash_for_audit(opening_country_cash)
+        : opening_country_cash;
     }
     _country_research_consumed_opening = opening_research_consumed;
     _opening_audit_force_full = false;
@@ -1676,7 +1678,10 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
         _executed_stage = Stage::EPOCH_BEGIN;
         if (!start_epoch(day_index, error)) {
             if (error == "same_day_environment_not_captured" ||
-                error == "same_day_building_context_not_captured") {
+                error == "same_day_building_context_not_captured" ||
+                // 分片构建未完成是软屏障，与 compact 路径一致
+                // （economy_runtime_stage_execution.cpp:283-296）。
+                error == "city_factor_shard_pending") {
                 _stage = Stage::IDLE;
                 _executed_stage = Stage::IDLE;
                 mark_pending(error);
