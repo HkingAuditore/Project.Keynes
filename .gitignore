@@ -78,6 +78,8 @@ __pycache__/
 # 且每次构建内容全变。改由 CI 构建并通过 artifact / Release 分发，
 # 构建方法见 docs/build-from-source.md。
 /WebBuild/
+# 调试导出目录：同样是一次性的 pck / wasm 大二进制，只用于本地验证。
+/WebBuildDebug/
 /Build/
 worklog/.index/
 
