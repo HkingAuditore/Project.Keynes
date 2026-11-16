@@ -25,29 +25,6 @@ struct SupportEvaluation {
     bool available = false;
 };
 
-// Reads Economy's published class shares and this level's compiled channel row.
-// `class_influence` is per class, already built by the caller from the same
-// snapshot (the vision of "who matters" is shared with the point accrual).
-SupportEvaluation evaluate_material_support(
-    const IdeologyIncidenceTable &table,
-    const EconomyApi::CountryClassOpinionSnapshot &snapshot,
-    const std::vector<int64_t> &class_influence, int32_t country_slot,
-    int32_t level_index, int64_t total_influence,
-    std::vector<int32_t> *out_delta_q16 = nullptr,
-    std::vector<int32_t> *out_stance_q16 = nullptr);
-
-// Per-class breakdown for the panel: one delta and the three directional stances
-// for every class (not just the card's authored stance rows, which the material
-// model no longer reads). `delta_q16` is one entry per class; the stance arrays
-// have the same length. Directions only differ by sign for repeal.
-void explain_breakdown(
-    const IdeologyIncidenceTable &table,
-    const EconomyApi::CountryClassOpinionSnapshot &snapshot,
-    const std::vector<int64_t> &class_influence, int32_t country_slot,
-    int32_t level_index, std::vector<int32_t> &delta_q16,
-    std::vector<int32_t> &adopt_q16, std::vector<int32_t> &repeal_q16,
-    std::vector<int32_t> &promote_q16);
-
 // Reads `incidence_*` and the profile's support-model fields out of the compiled
 // ideology catalog. Returns false with a named reason on any shape/range error:
 // a table that does not match `level_count * channel_count` must never reach
