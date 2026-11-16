@@ -88,10 +88,9 @@ Also use `civ-grounded-development` for repository changes. Add
 `hard_prerequisite_ids` contains only irreplaceable core knowledge. Authoring-side
 `research_condition` is forbidden: the compiler must reject it when non-empty. Optional
 `research_routes[]` packages contain stable route IDs, Chinese names, route types, explanations and
-conditions. Formal eligibility is every hard prerequisite completed AND (no route
-package OR one complete route). Era-milestone nodes additionally require the
-previous-era milestone. A route may substitute for professional knowledge, but
-never for core principles or for an era-milestone node's previous-era gate. Geography, resources, contact and
+conditions. Formal eligibility is previous-era milestone completed AND every hard prerequisite
+completed AND (no route package OR one complete route). A route may substitute for professional
+knowledge, but never for the era milestone or core principles. Geography, resources, contact and
 practice signals can reveal a problem; development, institutional and practice signals can also be
 part of a route when they express the capability used to solve it. Reveal and route conditions must
 not reuse the same signal atom.
@@ -113,6 +112,14 @@ be treated as goods inventory or cross-country technology transfer. `pending` te
 activation remains unchanged and must not re-check a gate.
 
 ## Verify
+
+Player era advancement is owned by `EraAdvancementCatalog` / `EraAdvancementService`, separate from
+researchable technology costs. Technology completion at 80% is mandatory, plus any two of population,
+completed building units and current-era trade orders. Economic gates use base + per-cell × owned
+territory; procurement uses an era multiplier and additive base + per-cell quantities. Preserve frozen
+purchase orders across pause/restore, including orders started under earlier balance values. Run
+`tests/technology/era_advancement_service_test.gd` when changing these rules and synchronize
+`docs/cpp-dots-runtime/era-advancement-runtime.md`.
 
 Full-graph ACTIVE still needs the host Trigger transport pump to hand research signals through
 Effect to Country. Bound delivery, protect in-flight Effect facade transactions from worker

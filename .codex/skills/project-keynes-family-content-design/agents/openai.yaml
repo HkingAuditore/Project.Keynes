@@ -1,0 +1,5 @@
+interface:
+  display_name: "Project.Keynes 家族内容设计"
+  short_description: "设计并审查家族偏好、威望效果、构筑联动与平衡表"
+  default_prompt: "Use $project-keynes-family-content-design to design or rebalance a grounded family preference and prestige-effect catalog for Project.Keynes."
+

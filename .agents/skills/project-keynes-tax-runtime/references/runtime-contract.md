@@ -14,15 +14,6 @@
 
 ## 1. Authority and source map
 
-At fiscal commit, fold completed cell lanes into country escrow exactly once:
-`unused subsidy + collected tax` (including tariff lanes), before RETURN/COLLECT
-peer validation. Opening reservations are not the settlement balance. Workers
-must continue writing only their cell lanes; do not bypass escrow validation.
-Under Economy worker authority, consume fiscal terminals through
-`finish_worker_country_asset()` before auditing, to commit Country's side and
-publish the updated immutable treasury snapshot. Actual Country worker grant
-takes precedence over the main-thread compatibility sync-write flag.
-
 Taxation is not a separate runtime.
 
 | Concern | Authority |
@@ -75,24 +66,26 @@ Commands:
 - `SET/CLEAR_CELL_TAX_OVERRIDE`
 - `CLEAR_CELL_TAX_POLICY`
 
-Command columns include `tax_kinds`, `tax_item_indices`, and `tax_rate_percent`. The facade validates
-stable IDs and converts them to dense IDs before submission. `CountryDailySystem` commits commands
+Command columns include `tax_kinds`, `tax_item_indices`, and the legacy-named
+`tax_rate_percent` column whose native payload is basis points. The facade validates stable IDs,
+converts user-facing whole percentages to basis points, and converts them to dense IDs before
+submission. `CountryDailySystem` commits commands
 at the effective day before the economy freezes the next epoch.
 
 Stat keys:
 
 ```text
-country.tax.income.<profession>.rate_pct
-country.tax.consumption.<good>.rate_pct
-country.tax.business.<building>.rate_pct
-country.tax.import.<good>.rate_pct
-country.tax.export.<good>.rate_pct
+country.tax.income.<profession>.rate_bp
+country.tax.consumption.<good>.rate_bp
+country.tax.business.<building>.rate_bp
+country.tax.import.<good>.rate_bp
+country.tax.export.<good>.rate_bp
 ```
 
 The country policy and Modifier catalogs must use the same sorted profession/good/building IDs.
 Reject duplicate keys and shape/hash mismatches. The economy resolves stat IDs outside workers,
-batch-queries each country once per epoch, rounds half away from zero, clamps to `[-100,100]`, and
-stores contiguous `int8` arrays.
+batch-queries each country once per epoch, rounds half away from zero, clamps to `[-100000,10000]`,
+and stores contiguous basis-point arrays.
 
 Cell precedence is cell item → cell kind default → country item → country kind
 default, followed by Country Modifier. Economy compiles only used
@@ -108,7 +101,7 @@ original settlement/prediction fast path and skip unnecessary fiscal drafts.
 Unified formula:
 
 ```text
-amount = floor(base * abs(rate_percent) / 100)
+amount = floor(base * abs(rate_bp) / 10000)
 ```
 
 Use saturating `int64` fixed-point helpers. Positive rates transfer payer cash to the cell's country
@@ -273,9 +266,9 @@ paid/unmet subsidy, fulfillment, cumulative values, and inactive tariff state.
 
 Current schemas:
 
-- PKCN v11: tax policy, policy version, country Modifier persistence.
-- PKEC v33: previous subsidy requests, generation-safe country history, fiscal cumulative values,
-  and deterministic hash.
+- PKCN v12: tax policy, policy version, country Modifier persistence.
+- PKEC v46: previous subsidy requests, generation-safe country history, fiscal cumulative values,
+  deterministic hash, and transaction-tax order transfers; v45/v44/v43/v42/v41 remain readable.
 
 PKCN v3/PKEC v22 migrate explicitly to zero rates and empty fiscal history. Modifier catalog
 extension during this migration must validate every old stable stat key, definition version, and
@@ -300,8 +293,13 @@ default rate, search/filter, overrides-only mode, base rate, effective rate, and
 Submit one command only when a SpinBox/input is confirmed, not for every key or drag frame. Display
 next-day pending state until the effective day, a newer policy version, and the live snapshot
 actually show the submitted rate (or cleared override). Day and version alone must not snap the
-editor back to an inherited 0%. Import
-and export remain editable with a foreign-trade-not-connected message.
+editor back to an inherited 0%. Import and export remain editable with a
+foreign-trade-not-connected message.
+
+Cell Inspector tax editors share that confirm-then-pending rule. Arrow, drag, Enter, and focus-loss
+all confirm; Enter and focus-loss submit the LineEdit text, not a stale SpinBox value. Live patches
+must keep the draft or pending rate and must not write the inherited default back over an
+in-progress or still-uncommitted edit.
 
 Cache rows and update visible values in place. Do not rebuild the node tree or reset scroll position
 on daily refresh. Keep the workspace usable at 1280×720.

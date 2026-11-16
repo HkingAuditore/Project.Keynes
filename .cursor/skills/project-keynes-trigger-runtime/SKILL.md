@@ -16,15 +16,6 @@ packed catalog evaluation and cumulative trigger state. It must not mutate Modif
 Country, Economy, Gameplay, DataCore, or a conserved ledger. Domain adapters enqueue
 typed commands and apply them at safe boundaries.
 
-Under ACTIVE the worker owns both ends: the Economy stage turns committed facts into
-Events `APPEND_BATCH` packets and `forward_committed_events_to_trigger` feeds new
-journal rows to the Trigger POD as `INGEST_EVENT`. The Trigger -> Effect handoff
-still reads the facade, which only `MapGenerator.apply_runtime_trigger_snapshot`
-refreshes (the host probes `MapGenerator`, not `DCWorldExt`; Modifier/Effect
-forwarders are intentionally absent because enabling both crashes). When triggers "never fire", check in order: `events_pod_event_count > 0`,
-worker development progress, then whether the host write-back generation advances.
-An invalid ingest fails the whole Trigger day, so filter by catalog source/type span.
-
 ## Hot-path contract
 
 Compile Resources/JSON/GDScript into dense IDs and packed columns. Native loops use
@@ -53,3 +44,20 @@ domain consumers, expose standard scheduler diagnostics, and document fallback a
 ACTIVE/SHADOW behavior. Add focused tests for aggregation, crossing/one-shot/cooldown,
 dedupe/gap, target handles, effect ACK ordering, PKTR round-trip, replay parity, and
 load migration. Run `quick_validate.py`, `git diff --check`, and the native build.
+
+## Research evidence delivery and recovery (2026-10-19)
+
+Effect IDs follow ingress order, while delivery follows canonical business order. ACK the exact
+`handoff_trigger_effects().effect_ids` via `ACK_EFFECT_IDS`; never use a batch's maximum ID as a
+successful-delivery cursor. Merge exact ACKs as a bounded ID union and preserve pending commands
+through save/restore. Keep the gap-free legacy cursor below every pending effect ID.
+
+On the first unpaused session delivery, reconcile completed ONE_SHOT development achievements
+against `country_query_runtime()` permanent signals. Missing evidence is replayed through the
+existing Trigger -> Effect -> Country boundary, with valid country generation and no duplicate
+pending effect. Do not reset achievement completion or grant technology. Record recovery at the
+current boundary with a representative owned cell, without fabricating historical provenance.
+Run `technology_development_delivery_test.gd`, `trigger_effect_id_ack_test.gd`,
+`trigger_research_replay_test.gd`, `runtime_trigger_pod_test.gd`, and
+`runtime_trigger_save_roundtrip_test.gd`; the isolated `trigger_replay_manual2_audit.gd` validates
+the eight historical missing signals and four recovered research opportunities.

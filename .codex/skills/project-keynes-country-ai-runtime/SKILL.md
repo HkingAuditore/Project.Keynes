@@ -14,7 +14,8 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
 ## Non-negotiable boundaries
 
 - The AI is a **player-equivalent producer**. It only emits commands the player can submit
-  (`ENQUEUE_RESEARCH`, `SET_RESEARCH_WEIGHTS`, `SET_RESEARCH_AUTO_PURCHASE`, `SET_TAX_DEFAULT`) with
+  (`ENQUEUE_RESEARCH`, `SET_RESEARCH_WEIGHTS`, `SET_RESEARCH_AUTO_PURCHASE`, `SET_TAX_DEFAULT`, and
+  `SET_TAX_OVERRIDE`/`CLEAR_TAX_OVERRIDE` on business tax for the food subsidy) with
   `COUNTRY_AI_PRODUCER_ID`, or ordinary `COMMAND_START_FAMILY_EXPEDITION` with
   `COUNTRY_AI_COLONIZATION_SEQUENCE_TAG`. Never add an AI-only state write, never mint resources,
   never let difficulty grant resources.
@@ -48,7 +49,9 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
 2. Edit native catalog IR and `country_ai_catalog.gd` together; keep `.tres` and hash in sync.
 3. Run the native self-test `runtime_country_ai_self_test()` and
    `tests/runtime_country_ai_test.gd` (determinism, PROBE/ACTIVE equivalence, save/restore),
-   plus `tests/game_save_roundtrip_test.gd`.
+   plus `tests/game_save_roundtrip_test.gd`. The round trip runs as a real session
+   (`PK_GAME_SAVE_ROUNDTRIP_TEST=1`, `PK_SAVE_DIR=<scratch dir>`, no `--script`); with `--script`
+   it hangs without autoloads.
 4. Build `cd gdext; scons platform=windows target=template_debug dev_build=no -j16`.
 5. Soak with the headless perf runner:
    `run_headless_perf.ps1 -Days 3650 -ForeignCount 5 -CountryAi ACTIVE -Speed 200 -Label <label>`.
@@ -85,14 +88,20 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
   Compare `research_budget` with `household_income` in the record CSV: treasury-paid procurement
   far above household income inflates prices, and an early colony drains its homeland. Some start
   cells starve even under PROBE; that is not an AI decision problem.
+- Digest money flows (`tax_paid`, `income`, `expense`, `subsidy_received`) are per day: divide
+  each cohort's epoch accumulator by `cell_elapsed_days(cell)`. Epoch totals made the research cap
+  several times the real daily tax and fed a treasury-to-tax loop. Read hunger from
+  `hungry_share_q16`, not from the population-weighted essentials mean.
 - Country records are staggered: each slot writes on its own day. Aggregate per slot with the last
   row at or before the target day, never by summing rows of one calendar day.
 - After the 2026-10 rule changes (base death 7.5% lowered by technology, savings gate, no
   knowledge cap) PROBE stays at 7.5% death because it never researches; compare ACTIVE/PROBE
   ratios, not absolute totals, against older runs. Remaining ACTIVE famine cells show empty hunting
   camps and knapping workshops with stone tools at 0 stock; read `[headless-perf/groups]` first.
-- Long soaks are not reproducible, PROBE included: same seed and code differed by 10–25% in
-  year-25 population across reruns. Run each configuration at least 3 times and compare means.
+- Long soaks with automatic economy cadence are not reproducible, PROBE included: the cadence
+  follows machine load, so reruns differed by 10–25% in year-25 population and a busy batch grows
+  slower overall. For A/B runs set `PK_ECONOMY_FORCE_CADENCE=1,5,10`; repeats are then
+  byte-identical and batches with different concurrency are comparable.
   `PK_HEADLESS_WATCH_CELLS` / `PK_HEADLESS_WATCH_EVERY` print per-cell jobs, savings, satisfaction
   and every built group (state, opportunity income, recovery cooldown/failed reviews, delinquent
   merchant debt); the run log is UTF-16 when produced by the runner script.

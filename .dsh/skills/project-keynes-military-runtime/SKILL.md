@@ -1,6 +1,6 @@
 ---
 name: project-keynes-military-runtime
-description: Guide Project.Keynes native military runtime work covering MilitaryCore SoA stores (soldier lots, training, armies, paths, engagements, wars, truces, reparations, cell controller, military stocks and convoys), the D-day committed digest and D+1 Country/Economy intent bridge, military_daily scheduling and whole-graph ACTIVE catch-up, pathfinding/supply/threat fields, plan-then-replay battles, incremental fronts, peace/annex treaties, military AI, PKMI v1 save ordering, render snapshot and z5-11 map layers, events 40-47, performance and validation. Use when changing military_core*.cpp/.h, military_bridge.h, world_ext_military.cpp, MilitaryFacade, MilitaryCatalogCompiler, military_catalog.json, MilitaryDailySystem, military map layers/shaders, military UI commands, or military-related Country/Economy opcodes.
+description: Guide Project.Keynes native military runtime work covering MilitaryCore SoA stores (soldier lots, training, armies, paths, engagements, wars, truces, reparations, cell controller, military stocks and convoys), the D-day committed digest and D+1 Country/Economy intent bridge, military_daily scheduling and whole-graph ACTIVE catch-up, pathfinding/supply/threat fields, player-only army auto-exploration and explored-only vision trail, plan-then-replay battles, incremental fronts, peace/annex treaties, military AI, PKMI v4 save ordering, render snapshot and z5-11 map layers, events 40-47, performance and validation. Use when changing military_core*.cpp/.h, military_bridge.h, world_ext_military.cpp, MilitaryFacade, MilitaryCatalogCompiler, military_catalog.json, MilitaryDailySystem, military map layers/shaders, military UI commands, or military-related Country/Economy opcodes.
 ---
 
 # Project.Keynes Military Runtime
@@ -11,10 +11,18 @@ command packing and read-only UI/rendering.
 
 ## When to use
 
+The D+1 `SPEND_CASH` compatibility adapter is cash-neutral: fiscal reserve
+debits Country and fiscal collect credits the same Country. Never register its
+receipt as an Economy money burn. A real terminal upkeep sink is not integrated.
+Run `tests/economy/military_deferred_cash_conservation_test.gd` after editing this
+path; receipt-only tests miss the next-epoch conservation failure.
+
 - Any edit to `gdext/src/military_*`, `world_ext_military.cpp`, `world_ext_economy_military.cpp`.
 - Military catalog (`data/military/military_catalog.json`, `military_catalog_compiler.gd`), units,
   equipment categories, state buildings, supply classes.
 - `military_daily` scheduling, `WorldRuntimeHost` military catch-up, PKMI save/restore.
+- Player auto-exploration: `military_core_explore.cpp`, `army.explore`, exploration trail/view,
+  `world_runtime_host.gd` pre-day hook, or the save-time trail flush.
 - Military map layers (`scripts/rendering/military_*`, `shaders/military_*`) or military panel commands.
 - Country opcodes 21/23/24/27 or Economy hooks used by Military.
 
@@ -158,6 +166,67 @@ embark/disembark; no naval units or blockade; the 100k-cell bench is still over 
 Naval cost: sea steps are 1.5x a land step divided by `MSTAT_NAVAL_TRANSPORT` ("海运运力", clamped to
 [1/8, 8], never cheaper than a land step), and `preview_path` scales its day count the same way.
 
+## Player army auto-exploration (`army.explore`, PKMI v4 section 23)
+
+Auto-exploration is a **player-only movement task**, not a second military tick and not an occupation
+loop. `MilitaryCore` owns the task state machine in `military_core_explore.cpp`; the host supplies a
+copy of `MapData.explored_arr` and drains an explored-only movement trail.
+
+- **Command and authority**: `MCMD_ARMY_EXPLORE=33`, `MILITARY_MISSION_EXPLORE=3`, facade op
+  `army.explore`, payload `{army, cell=anchor, cells, radius=1..6}`. The host installs the player slot
+  with `set_military_exploration_observer()`; core rejects any army whose owner differs. AI/foreign
+  armies have no view and cannot reuse the player's explored map.
+- **Task storage**: fixed `MilitaryExplorationTask` rows (≤256 cells/task, ≤256 tasks) plus a
+  `_exploration_by_army` derived index. Do not add per-army exploration columns or GDScript task state.
+  A new command validates capacity/ownership/engagement **before** replacing the army's old task.
+- **Passability**: exploration has its own A* policy. Land is legal only when the effective controller
+  is the owner or neutral; a foreign-controlled cell is refused even at war. Water keeps the existing
+  transport-tech and consecutive-water-run gates. An army already standing on foreign soil may leave
+  it, but every later step obeys the same rule. Path results are `OK`, `UNREACHABLE`,
+  `DAILY_BUDGET_EXHAUSTED`, `INVALID`; budget exhaustion is temporary and must not become `blocked`.
+- **State machine**: `ACTIVE → RETURNING → COMPLETE`, with `PAUSED_BATTLE` and
+  `FAILED_NO_RETURN`. `prepare_exploration_day()` runs after due commands and before movement: refresh
+  `seen` from the frozen explored view, resolve already-visible selected cells, plan the nearest
+  unresolved target and choose up to three observation cells (radius ≤2). `seen` / `visited` /
+  `blocked` are mutually exclusive per selected ordinal. When every target is resolved, return to the
+  origin or the nearest friendly cell; if no safe route exists, fail in place rather than cross foreign
+  territory.
+- **Battle pause**: entering a foreign-controlled cell while an exploration task is live sets
+  `PAUSED_BATTLE`, saves `resume_phase`, clears the remaining route, and keeps
+  `mission=EXPLORE`. It resumes only after the engagement ends and the stance returns from
+  retreat/embarked.
+- **Cancellation matrix**: new `explore`; `move`, `area_control`, `stop`, `stance`, `station`,
+  `disband`; merge/split/transfer sources; and `destroy_army()` must cancel the task, set
+  `CANCELLED`, clear the route and remove the derived index. A cancelled row is historical, not live.
+- **Budgets**: per country/day, at most 8 tasks plan and at most 16 exploration A* calls; each task
+  gets at most 2 A* calls. Exploration shares the global 32 path-request budget and leaves at least 16
+  for area control. A valid installed route costs no new A*. Only a task that actually reaches A*
+  updates `last_plan_day`, so budget-starved rows retry fairly next day.
+- **Vision boundary**: every actual cell entered by a player army is appended to a dense-stamped
+  trail; multi-cell days record each step. The trail is explored-only, is not saved or hashed, and
+  never writes `visible_arr` / `fog_k_arr`. `WorldRuntimeHost._prepare_military_exploration_day()`
+  drains it before each military day in inline, legacy and whole-graph catch-up paths (once per
+  replayed day), merges it into `MapData.explored_arr`, reuses the existing `_refresh_vision()` only
+  when needed, then pushes a copied frozen explored snapshot to native. The army's final cell remains
+  the ordinary low-budget vision source. `GameSaveCoordinator` flushes the trail after the safe
+  boundary and before provider collection; a flush failure must reject the save.
+- **Persistence**: `PKMI_VERSION=4`, bridge `MILB` wrapper version 4, and section 23 must always be
+  present (empty tasks are `count=0`). Empty tables skip state-hash mixing so exploration-free worlds
+  remain hash-compatible; non-empty rows hash all persistent fields. Restore validates unique army,
+  cell ordering/range, mask/phase combinations and dates, then rebuilds the derived index. v3 is
+  explicitly rejected.
+- **UI**: the dossier's `Explore` action uses the existing radius row, `E` to open, `Enter` to confirm,
+  `Esc`/right-click to cancel, and the fixed focus chain Locate ↔ Move ↔ Area ↔ Explore ↔ Stop. Draft
+  selection computes cells only: **never call `preview_path()`** and do not require the anchor to be
+  reachable. Show counts/phase/return/pause/blocked state only; no ETA or fabricated route.
+
+Known performance/acceptance gaps are real: the 2400/400/64/60-day bench is within budget
+(~`0.2198 ms` avg / `0.3053 ms` p95), but the existing 100k/2048/4096/30-day military-day bench is
+still ~`8.63 ms` avg / `20.16 ms` p95 (target 2 ms) and is not caused by exploration alone.
+`military_runtime_smoke_test.gd` currently reports 8 fixture failures because no tech-free barracks
+exists in the current catalog; its PKMI round-trip and 120-day continuation checks still pass. Do not
+mask either issue with weaker assertions.
+
 ## Peace window (`MilitaryPeaceWindow`)
 
 Peace is a **separate docked, non-modal window**, not a card in the country shell. It owns the term draft and
@@ -298,39 +367,6 @@ command silently no-ops. `PlayerController` re-checks `unlock_tech_id` against
 and the selftest. `barracks_tiers` is indexed by tier with tier 8 clamped to 7, so demolish only
 needs `role+tier`.
 
-## Physical maintenance (PKMI v6)
-
-Buildings and equipment are maintained by BUYING AND CONSUMING GOODS, never by paying cash.
-The chain is `need -> treasury pays the merchant -> goods delivered/transported -> stock
-consumed -> repair satisfaction -> equipment condition or building disrepair`.
-`SPEND_CASH` no longer carries building upkeep (only the legacy adapter remains, retired).
-
-Where things live:
-
-| piece | file | what to know |
-| --- | --- | --- |
-| recipes | `data/military/military_catalog.json` `repair.goods[{good, weight}]` -> compiler -> `repair_goods` / `repair_rate_q32` | `rate_q32` is q32 of ONE MILLI-GOOD per day (buildings per building, units per 100 heads). Buildings derive it as `upkeep x weight / default_price`; units use the supply `upkeep` intensity x ratio. Never re-derive at runtime. |
-| rows + engine | `military_core_maintenance.inc` | `run_maintenance` = REBUILD (from the committed economy ledger + live lots) -> DEMAND (`acc_q32 += rate x units`, `need = acc >> 32`) -> CONSUME (ratio = MIN over components, draw `need x ratio`, book `_ledger_consumed`) -> EFFECT (5-day window for buildings, daily ratio for equipment condition) -> BUY (coverage-ordered, 5/10-day policy, maintenance share of the envelope). |
-| stock holder | `MILITARY_LOT_MAINTENANCE = 3`, `holder = cell * 64 + catalog index` | Each building group owns its inventory, so two building types on one cell are judged separately. Quoted only because `capture_military_digest` now includes every repair material in the market read - omitting that makes the buy pass silently unable to see any market row. |
-| purchase | `queue_purchase` / `settle_purchase` | `queue_purchase` only records an order with a STABLE `request_id` (PKMI section 24). `settle_purchase` is the only place stock/convoy/ledger moves, and only the real filled quantity/amount counts. A receipt naming an unknown id is a duplicate. |
-| bridge | opcode 37/38/39 | The purchase sequence is `2^40 + request_id` and the POD lane must preserve it (`command_from_pod` maps `request_id -> sequence` for 36 AND 37); otherwise Economy stores the receipt under 0, the bridge never matches it, and every purchase silently times out after 8 days. |
-| budget | `wage_planned_today` / `maintenance_planned_today` | Payroll is planned FIRST, then maintenance, then general procurement, all against one frozen treasury snapshot. Procurement also cash-fits every take (channel quota alone is not enough). |
-| report/snapshot | `get_military_report()` + `get_military_maintenance_snapshot(country)` | 0 or -1 = all countries. Published columns are `*_goods` spellings plus `shortage_reason` in 0..3. `maintenance_disrepair_rows` counts objects CURRENTLY in disrepair, not today's flips. |
-
-Invariants that took real debugging:
-
-- **`_ledger_received` moves only at handover**; clearing a holder's stock (army destroyed, garrison
-  disbanded, training order dropped) must add the cleared quantity to `_ledger_returned`, or a long
-  run drifts. Two measured leaks came from exactly this: a purchase refunded to a dead formation
-  booked only `returned` (missing `received`), and `stock_clear_holder` booked nothing at all.
-- **No market row, no repair**: the digest only quotes goods it collects. Repair materials belong to
-  no supply class, so they must be added explicitly or every maintenance purchase reports
-  "no reachable market" forever.
-- **Cash is one pool**: after payroll reserves its plan, maintenance and procurement each subtract
-  what was already promised; a country whose payroll equals its treasury legitimately buys nothing.
-- The selftests that prove this: `test_maintenance` (carry: 1/3 milli-good/day must sum to
-  `floor(days/3)`; trade: buy -> consume -> `reconcile_delta == 0` -> `ratio_bp == 10000`).
-
 ## Verification
 
 1. Static: `rg` for changed op names/intents/fields across C++, GDScript and docs; `git diff --check`.
@@ -338,24 +374,36 @@ Invariants that took real debugging:
    Bump `DOTS_EXT_OUTPUT_BASENAME` instead of overwriting a DLL Godot has loaded, then repoint
    `dots_ext.gdextension` (`template_debug` / `template_release`, exact file names).
 3. `godot --headless --path Project/project-keynes -s res://tests/military/military_native_binding_test.gd`
-   (self test, bench p95 ≤ 0.5 ms @ 2400/400 — met; the 100k/2048/4096 budget of 2 ms is **not** met,
-   ~7 ms avg / ~18 ms p95, dominated by market-index cold start and consumption).
-4. `res://tests/military/military_runtime_smoke_test.gd` — full-world acceptance (must end `0 failures`):
-   barracks, recruitment, army.create, war declare, movement, and a PKMI round trip **after** the seasonal
-   terrain refresh (day 31). This is the test that proves the enlistment pipeline above.
-5. `res://tests/military/military_living_world_probe.gd` (`-- --days=N`) — reporting probe, not assertions:
+   (self test, bench p95 ≤ 0.5 ms @ 2400/400 — met at ~`0.3053 ms`; the 100k/2048/4096 budget of
+   2 ms is **not** met at ~`20.16 ms` p95, dominated by pre-existing market-index cold start and
+   consumption).
+4. `res://tests/military/military_runtime_smoke_test.gd` — full-world acceptance target is `0 failures`
+   (barracks, recruitment, army.create, war declare, movement, and PKMI round trip after the seasonal
+   refresh). Current checkout reports 8 fixture failures: the test assumes a tech-free barracks while
+   every catalog barracks has a technology gate. Its PKMI encode/restore/hash and 120-day continuation
+   still pass. Report those failures explicitly; do not weaken assertions or alter the catalog to hide
+   them.
+5. Auto-exploration/UI/vision/save gates:
+   `res://tests/military/military_auto_exploration_test.gd`,
+   `res://tests/military/military_dossier_test.gd`,
+   `res://tests/ui/vision_solver_test.gd`,
+   `res://tests/runtime/military_index_continuation_test.gd`,
+   `python tools/ci/check_save_contracts.py`, and the rendered
+   `res://tests/qa/military_dossier_screenshot_qa.gd` (1280 / 1920 / 21:9 / ~520 px; draft,
+   active, paused, completed, blocked). Headless-only screenshots are not sufficient.
+6. `res://tests/military/military_living_world_probe.gd` (`-- --days=N`) — reporting probe, not assertions:
    per-5-day JSON of military report, country/cell snapshots and the capital's profession populations. Use it
    to see soldiers accumulate (day 60: `soldier=12`) and to reproduce in the running game (drop `--headless`).
-6. `res://tests/military/economy_day_progress_probe.gd` — proves whether the Economy day (and therefore a POD
+7. `res://tests/military/economy_day_progress_probe.gd` — proves whether the Economy day (and therefore a POD
    command's plan) actually advances: prints `last_committed_day`, epoch/busy state and military
    `pending_intents`. Use it before blaming the bridge when nothing lands.
-7. For schedule changes: run a session in both legacy/domain ACTIVE and whole-graph ACTIVE and confirm one
+8. For schedule changes: run a session in both legacy/domain ACTIVE and whole-graph ACTIVE and confirm one
    military step per committed day (`last_step_day`, no `military_day_already_stepped` storms).
-8. Peace window: `res://tests/military/military_peace_window_test.gd` (view model + window + launcher card +
+9. Peace window: `res://tests/military/military_peace_window_test.gd` (view model + window + launcher card +
    `PlayerController` highlight contract, headless) and `res://tests/qa/military_peace_window_screenshot_qa.gd`
    (rendered, 1280/1920 UI width × white-peace/picked). `ui_scene_structure_test.gd` must keep passing
    `ModalLayer/MilitaryPeaceWindow` and the two `military_peace_*` scene trees.
-9. Sync docs: `military-runtime.md`, `docs/architecture/current-state.md`, `docs/architecture/current-state.md`,
+10. Sync docs: `military-runtime.md`, `docs/architecture/current-state.md`,
    `vision-fog-and-borders.md`, `docs/architecture/development-guide.md`, `references/system-map.md`, this skill.
    Report unrun gates explicitly.
 

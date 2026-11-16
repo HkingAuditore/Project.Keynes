@@ -48,6 +48,14 @@ Also use `civ-grounded-development` for repository changes. Add
 - Keep `Project/project-keynes/data/technology/technology_network.json` as the sole authoring source.
   `TechnologyCatalog` remains the sole compiled/runtime authority; do not restore parallel row constants
   or route-based Modifier inference.
+- Schema v4 keeps researchable state in `nodes[]` with `tech.*` IDs. `application_intersections[]`
+  use `app.*` IDs, have zero research cost, become active only when their complete requirement set is
+  met, and are static presentation/content bindings rather than research state. They never enter dense
+  IDs, queues, progress, Effect, Modifier, milestones, or PKCN/PKEC.
+- A `BuildingProfile` has one primary `technology_tags` ANY gate and optional
+  `required_technology_tags` ALL support gates. An intersection's requirement set must exactly match
+  the building's complete gate. Building progression metadata is cold catalog data; researching a
+  higher step never disables, deletes, or makes an earlier facility unconstructible.
 - Do not store technology strings in runtime hot paths or dense progress for every
   `country × technology`.
 - Do not move research queues, progress, discovery, completion, policy, or technology treasury
@@ -63,22 +71,29 @@ Also use `civ-grounded-development` for repository changes. Add
 - Do not use Modifiers to directly create/delete cash, inventory, or technology points.
 - Resolve exact-building technology stats at catalog/configuration time and freeze their country×type
   Q16 factors at the economy epoch boundary; never look up `building_id` strings in production loops.
-- Do not reveal unknown technology names, effects, prerequisites, connection labels, tooltips, search
+- Unknown frontier details may explain discovery/research conditions at the player's request,
+  masking unknown prerequisite names and authored route names/descriptions.
+- Do not reveal unknown technology names, effects, connection labels, tooltips, search
   text, or accessibility text.
 - Keep player-facing Chinese names, effect summaries, and route labels in the
   `public_definitions()` presentation layer. Translation-only edits must not change stable `tech.*`
   IDs, compiled native catalog rows, or exact catalog identity.
-- Restore PKCN before PKEC. PKCN v11, PKEF v9 and PKTR v4 use exact schema/catalog identity and
+- Restore PKCN before PKEC. PKCN v12, PKEF v11, PKTR v6 and PKEC v51 use exact schema/catalog identity and
   return `catalog_hash_mismatch` for older trees rather than silently defaulting state.
 - Do not add taxes, cross-country technology trade, research diplomacy, or AI research policy as
   incidental scope.
 
 ## Research-signal discovery contract
 
-Completed technologies in `prerequisite_ids` are the sole research-eligibility gate. Authoring-side
-`research_condition` must remain empty unless a future design explicitly introduces a second hard
-gate. Geography, resources, contact and practice signals belong in `reveal_condition`: they inspire
-and reveal a technology but never substitute for required knowledge.
+`hard_prerequisite_ids` contains only irreplaceable core knowledge. Authoring-side
+`research_condition` is forbidden: the compiler must reject it when non-empty. Optional
+`research_routes[]` packages contain stable route IDs, Chinese names, route types, explanations and
+conditions. Formal eligibility is previous-era milestone completed AND every hard prerequisite
+completed AND (no route package OR one complete route). A route may substitute for professional
+knowledge, but never for the era milestone or core principles. Geography, resources, contact and
+practice signals can reveal a problem; development, institutional and practice signals can also be
+part of a route when they express the capability used to solve it. Reveal and route conditions must
+not reuse the same signal atom.
 
 The currently active v1 operators are `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`,
 `ALL_OF`, `ANY_OF`, `AT_LEAST`, and `NOT`. Treat `COUNTRY_FLAG`, `COUNTRY_STAT`,
@@ -98,6 +113,21 @@ activation remains unchanged and must not re-check a gate.
 
 ## Verify
 
+Player era advancement is owned by `EraAdvancementCatalog` / `EraAdvancementService`, separate from
+researchable technology costs. Technology completion at 80% is mandatory, plus any two of population,
+completed building units and current-era trade orders. Economic gates use base + per-cell × owned
+territory; procurement uses an era multiplier and additive base + per-cell quantities. Preserve frozen
+purchase orders across pause/restore, including orders started under earlier balance values. Run
+`tests/technology/era_advancement_service_test.gd` when changing these rules and synchronize
+`docs/cpp-dots-runtime/era-advancement-runtime.md`.
+
+Full-graph ACTIVE still needs the host Trigger transport pump to hand research signals through
+Effect to Country. Bound delivery, protect in-flight Effect facade transactions from worker
+write-back, retry rejected cursor admission, and service deferred handoff in the existing Economy
+boundary inbox. Trigger admission reserves one slot for coalesced delivery ACKs. Catalog identity
+and save layout stay unchanged. Cover congestion/restore with `runtime_trigger_pod_test.gd` and
+`technology_signal_delivery_test.gd`.
+
 From the repository root run:
 
 ```powershell
@@ -110,3 +140,20 @@ From the repository root run:
 Add `-Build` to compile the debug GDExtension first. Run the 50-day headless performance workflow for
 changes to research or procurement hot loops and compare country/economy/modifier timing plus
 population, money, goods, and technology conservation.
+
+## Research evidence delivery and recovery (2026-10-19)
+
+Effect IDs follow ingress order, while delivery follows canonical business order. ACK the exact
+`handoff_trigger_effects().effect_ids` via `ACK_EFFECT_IDS`; never use a batch's maximum ID as a
+successful-delivery cursor. Merge exact ACKs as a bounded ID union and preserve pending commands
+through save/restore. Keep the gap-free legacy cursor below every pending effect ID.
+
+On the first unpaused session delivery, reconcile completed ONE_SHOT development achievements
+against `country_query_runtime()` permanent signals. Missing evidence is replayed through the
+existing Trigger -> Effect -> Country boundary, with valid country generation and no duplicate
+pending effect. Do not reset achievement completion or grant technology. Record recovery at the
+current boundary with a representative owned cell, without fabricating historical provenance.
+Run `technology_development_delivery_test.gd`, `trigger_effect_id_ack_test.gd`,
+`trigger_research_replay_test.gd`, `runtime_trigger_pod_test.gd`, and
+`runtime_trigger_save_roundtrip_test.gd`; the isolated `trigger_replay_manual2_audit.gd` validates
+the eight historical missing signals and four recovered research opportunities.

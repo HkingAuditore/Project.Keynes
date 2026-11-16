@@ -7,12 +7,15 @@
    `tools/build_technology_network_authoring.gd` workflow. `TechnologyCatalog` is the compiler, not a
    second hand-maintained catalog.
 2. Preserve every existing stable ID unless the user explicitly authorizes a compatibility break; the
-   360-node rebuild is an intentional exact-hash break with no migration.
+   technology-industry v2 rebuild is an intentional exact-hash break with no migration. Use the stable
+   ID/content manifest for the current counts and hashes instead of hard-coding a node total.
 3. Define era, domain, cost, core prerequisites, research routes, milestone flags/candidates, public summary, route tags,
    unique Effect recipe and explicit Modifier terms together.
-4. Keep prerequisite and route technology references acyclic and era-monotonic. Verify each milestone has eight
-   candidates, requires four, and remains reachable across the resource-poor, inland, low-trade,
-   low-urbanization and specialist-industry scenarios.
+4. Keep prerequisite and route technology references acyclic and era-monotonic. Regenerate milestone
+   candidates only from substantive `tech.*` definitions; required counts are
+   `4/4/4/4/5/5/5/6/6/7/7`. Keep milestones reachable across resource-poor, inland, low-trade,
+   low-urbanization and specialist-industry scenarios. Validate `app.*` intersections separately as
+   zero-cost static bindings with complete building-gate parity.
 5. Add or update the generated permanent Modifier definition and a real domain consumer when adding a
    numerical effect. A definition with no consumer is incomplete.
 6. Update Good/Building/Resource bindings and compile `EconomyCatalog`; professions must not carry a
@@ -20,6 +23,11 @@
 7. Consider catalog-hash and old-save behavior deliberately.
 8. Update focused catalog, reachability, activation, UI, and save tests plus the repository technology
    document.
+
+Application intersections are never paid research and never substitute for a missing production
+step. Higher progression steps improve a choice through their authored recipes, jobs, inputs, or
+conditions while earlier facilities remain valid and constructible; do not model progression by
+retiring duplicate buildings or by adding a same-name paid shell.
 
 Do not add a second catalog, fallback taxonomy, or string-based runtime lookup.
 

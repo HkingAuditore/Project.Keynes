@@ -68,8 +68,9 @@ thins from its edge. Do not copy or mutate instances on camera movement or weath
 ## Budgets
 
 Resident limits are 128 chunks on desktop and 48 on Web. Body caps q0/q1/q2 are
-6,000/18,000/36,000. Lots per cell are `NEAR_CAP = [8, 16, 24]`, infill houses
-`[4, 10, 18]`. q0 has no ground decals; Web has no cast shadows.
+6,000/18,000/36,000. Per cell and quality q0/q1/q2: industry lots `[6, 12, 20]`, houses
+`[6, 16, 30]` (tier table `[0, 3, 6, 10, 15, 20, 26, 32]`), at most 4 villas and 5 shanties,
+outer fields `[0, 8, 16]`. q0 has no ground decals; Web has no cast shadows.
 
 ## Shader cost
 
@@ -98,6 +99,9 @@ builds, the art harness, and:
 ```powershell
 git diff --check -- .agents/skills/building-visual-pcg Project/project-keynes/scripts/rendering Project/project-keynes/shaders gdext/src/world_ext_building_visual.cpp gdext/src/building_visual_cache.h docs/cpp-dots-runtime/building-visual-runtime.md
 ```
+
+When economy-side social bands change, also run the headless perf skill for 50 days and
+confirm dirty cells per day stay near the count of cells whose tier or band really moved.
 
 Record the worker per-cell time and the main-thread submit/assemble times printed by the
 native bridge test. Native numbers are local samples, not a device guarantee; real rendered

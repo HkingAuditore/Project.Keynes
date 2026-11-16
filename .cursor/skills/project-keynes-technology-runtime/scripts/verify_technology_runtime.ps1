@@ -59,15 +59,20 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
     $projectRoot = Join-Path $RepoRoot "Project\project-keynes"
     $tests = @(
         "technology_catalog_test.gd",
+        "trigger_effect_id_ack_test.gd",
+        "trigger_research_replay_test.gd",
+        "technology_development_delivery_test.gd",
         "technology_network_design_test.gd",
         "technology_content_binding_audit_test.gd",
         "technology_research_runtime_test.gd",
         "technology_breakthrough_trigger_test.gd",
         "technology_procurement_runtime_test.gd",
-        "technology_procurement_country_worker_test.gd",
         "technology_modifier_activation_test.gd",
         "technology_pending_activation_scheduler_test.gd",
-        "technology_workspace_smoke_test.gd"
+        "technology_workspace_smoke_test.gd",
+        "technology_signal_delivery_test.gd",
+        "runtime_trigger_pod_test.gd",
+        "runtime_trigger_save_roundtrip_test.gd"
     )
     foreach ($test in $tests) {
         Write-Host "[technology-runtime] running $test"

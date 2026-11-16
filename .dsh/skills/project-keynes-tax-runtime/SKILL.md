@@ -51,19 +51,20 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
 
 ## Preserve hard invariants
 
-- Keep rates as deterministic integer percentages in `[-100,100]`; negative means subsidy.
+- Keep rates as deterministic integer basis points in `[-100000,10000]`; negative means subsidy.
 - Resolve stable IDs before commands enter native code. Workers use dense IDs and frozen arrays.
 - Keep Modifier targets country handles. Do not add composite country-item entities.
 - Generate tax stat keys from the same sorted economy catalog used by policy arrays.
 - Quantize Modifier-effective rates half away from zero, then clamp.
-- Compute `floor(base * abs(rate) / 100)` with saturating fixed-point helpers. For negative income
+- Compute `floor(base * abs(rate_bp) / 10000)` with saturating fixed-point helpers. For negative income
   rates only, aggregate cohort taxable income and floor its base at the frozen local
   `survival_household` living cost times population and epoch days.
 - Withhold positive tax at the source. Never depend on a later payer cash balance.
 - Exclude transfers, minting, capital principal, tax subsidies, and losses from income tax bases.
 - Deduct positive business tax from owner operating income; never tax a business subsidy again.
-- Tax household consumption only, not building inputs, government procurement, or domestic
-  merchant relocation.
+- Tax final household/enterprise purchases and domestic transaction quotes; do not tax government
+  procurement or inventory-only relocation. Negative transaction tax is paid only at final
+  absorption, never by closed inventory loops.
 - Keep subsidies treasury-capped. First consumption/business negative-rate batch with no history
   pays zero; a negative income lane may seed its first reservation from the current frozen
   minimum-living request. Family purchase discounts share that same subsidy/escrow lane; they are
@@ -93,7 +94,8 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
 ## Keep actual and predicted behavior consistent
 
 - Purchases use tax/subsidy-adjusted order prices.
-- Employee choices use profession-specific after-tax retention without changing zero-tax ordering.
+- Employee choices use profession-specific after-tax retention without changing zero-tax ordering;
+  owner mobility uses after-tax operating income minus explicit migration cost.
 - Owner mobility uses expected after-tax operating income.
 - Investment gates use after-tax revenue, margin, payback, and owner income improvement.
 - Negative taxes enter predictions only at the fulfillment ratio supported by the previous request

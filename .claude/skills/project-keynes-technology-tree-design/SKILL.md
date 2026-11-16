@@ -33,9 +33,13 @@ Do not turn a design request into implementation unless the user asks for change
 
 For the current Project.Keynes implementation, start from
 `Project/project-keynes/data/technology/technology_network.json`. It is the sole authoring source;
-`TechnologyCatalog` remains the compiled/runtime authority. The current network contract is 361 stable
-IDs, eleven eras, four backbones, twenty-four dynamic branch families, eight candidates per era, and a four-node
-milestone threshold. Do not reintroduce keyword-selected anchors or generated route-based effects.
+`TechnologyCatalog` remains the compiled/runtime authority. The current network contract is schema v4:
+`nodes[]` contains only researchable `tech.*` definitions and `application_intersections[]` contains
+zero-cost automatic `app.*` bindings. Read current ID sets, counts, and hashes from
+`tools/technology_tree/technology_industry_v2_stable_id_manifest.json`; do not duplicate a historical
+node total. The network has eleven eras, four backbones, twenty-four dynamic branch families, and
+milestone thresholds `4/4/4/4/5/5/5/6/6/7/7`, with candidates regenerated only from substantive
+technologies. Do not reintroduce keyword-selected anchors or generated route-based effects.
 
 Inspect the authoritative source rather than relying on prior diagrams or prose:
 
@@ -53,7 +57,9 @@ Build three interacting layers:
 
 - **Backbones**: reliable long-horizon industrial or institutional progression. A backbone must remain viable without researching every branch.
 - **Sustained branches**: specialized paths with their own descendants, economic identity, and late-era payoff.
-- **Application intersections**: optional cross-links where one path unlocks a production method, substitutes for evidence, or strengthens another path without becoming a universal hard gate.
+- **Application intersections**: static zero-cost cards that expose a building or method once every
+  listed knowledge requirement is complete. They never substitute for research evidence and never
+  become researchable nodes.
 
 Apply these rules:
 
@@ -64,6 +70,12 @@ Apply these rules:
 - Use hard prerequisite edges for indispensable knowledge and research eligibility. Keep optional
   industrial intersections as application bindings rather than fake research gates.
 - Treat application feedback as content gating, not as a backward research prerequisite.
+- Give each industry an explicit sequence of real production steps. Record
+  `industry_chain_id`, `progression_step`, seven-stage `maturity_rank`, role, predecessors, and any
+  terminal reason on BuildingProfile cold data. Do not invent nearly identical buildings just to fill
+  a stage.
+- Higher knowledge may unlock a more productive method but must not retire, disable, or remove the
+  earlier facility. Let recipes, labor, capital, inputs, geography, and profitability determine adoption.
 
 ## Design Prerequisites And Discovery
 

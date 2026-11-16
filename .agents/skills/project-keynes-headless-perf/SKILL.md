@@ -28,6 +28,10 @@ without `-UseSavedSetup`.
 
 Use `-ClosingAuditMode FULL|PROBE|INCREMENTAL` for an explicit audit A/B.
 Use `-WorkerMode ON|OFF` for deterministic worker/scalar A/B.
+`-PipelineDepth 0..3` sets how many days the driver may lead the worker (default 3, like the
+player scene). `0` is the one-day lockstep: slower, but climate inputs become reproducible.
+Long runs are not reproducible at any depth yet (resource reserves still follow frame timing);
+see `docs/cpp-dots-runtime/country-ai-runtime.md` §9 and `PK_SIM_DAY_TRACE` for divergence tracing.
 The runner uses the formal `NewGameConfig` multi-country start by default. Use
 `-ForeignCount`, `-ImportTariffRate`, and `-ExportTariffRate` for a comparable
 cross-country tariff A/B. `-SyntheticTestEconomy` is an explicit legacy/synthetic

@@ -147,11 +147,6 @@ Government procurement:
 
 - executes after private demand;
 - scans owned markets in stable `(price, cell_id)` order;
-- buys only from markets that still have a living merchant (`population > 0`);
-  zero-population merchant CSR lanes are not market-makers. Household deaths can
-  empty a merchant cohort before `STRUCTURAL_REMOVE_EMPTY` and merchant repair;
-  those markets skip this cycle instead of debiting country treasury and failing
-  the economy graph. `purchase_research_points` has no rollback.
 - is limited by budget, country cash, market stock, and remaining queued research demand;
 - debits country cash, pays local merchants, removes market stock, and credits country goods treasury;
 - participates in demand EMA, prices, authoritative hashes, and cash/goods conservation;
@@ -172,9 +167,13 @@ Each researchable technology maps to a permanent country Modifier definition:
 
 Consumers include four domain research efficiencies, research cost, research-institution output, five
 economic-sector outputs, every production-family output, generated exact-building-type output stats,
-four climate-loss factors, construction cost/time, and domestic-trade capacity/speed. Economy freezes
-country×family, country×building-type, and climate factors at epoch capture rather than creating one
-Country Modifier per building instance.
+four country climate-loss factors, 24 generated production-profile climate-loss factors,
+construction cost/time, and domestic-trade capacity/speed. Economy freezes country×family,
+country×building-type, country×hazard, and country×production-profile×hazard factors at epoch capture
+rather than creating one Country Modifier per building instance. Only `tech.*` definitions may own
+technology Modifier terms; `app.*` intersections cannot. Exact term counts remain part of the catalog
+identity rather than a duplicated documentation constant. Catalog hash changes remain a
+strict old-save rejection; there is no PKCN/PKEF/PKEC migration for this content revision.
 
 Modifiers may alter production results, consumed-points-to-progress conversion, construction
 parameters, or trade capacity. They must not directly mutate ledger quantities.
@@ -202,6 +201,9 @@ undiscovered route names and future era columns, so neither the catalog size nor
 is observable. Unknown names and effects stay masked in visible and assistive channels. Selected
 frontier details explain missing discovery/research gates, logical grouping, and anonymous routes;
 unknown prerequisite names and authored route names/descriptions remain masked.
+Development achievements appear only in the selected technology’s discovery or research conditions,
+including current values and consecutive-day progress. Do not show a global development-objective
+board in the policy/queue rail or imply every achievement is required for era advancement.
 Domain color is only supplemental; pair states with icon, border, and text.
 
 All revealed technology names, effect summaries, route badges, prerequisite names, and research-signal
@@ -230,6 +232,27 @@ Key files:
 - `Project/project-keynes/scripts/ui/components/section_placeholder_screen.gd`
 - `Project/project-keynes/scripts/ui/country_view_model.gd`
 
+## Era HUD and deferred reward presentation
+
+`EraIndicatorViewModel` reads the player's committed research snapshot and catalog milestone indices.
+The badge only peeks/scales on hover and fully expands on click. Its caption is removed. Click opens a
+compact paper overview (year-to-date GDP from the shared ledger, treasury cash, population, territory),
+with three separate torn-paper reward choices underneath when an offer is available. No full-screen shade.
+ACK removes the choices but keeps the overview. Existing transaction and clock ownership still apply.
+Only state 5 advances the displayed era; state 4 fills the milestone progress mask while waiting for
+ACK. The central paper badge shows a top-down 50%-opacity progress overlay, peeks on hover and expands on click,
+and celebrates live advancement. Light travels to the calendar's era label before that label changes.
+World reset/load establishes a baseline without replaying the ceremony. Committed-day/country/offer
+events coalesce through one 100ms timer; the HUD does not poll simulation every frame.
+
+Native offer state remains authoritative. OPEN/ERROR only highlights the badge; it does not pause or
+open a modal. Explicit badge activation asks PlayerController to preserve the clock and present the
+three choices. Escape before selection restores the clock while retaining the offer. SELECTED_PENDING
+keeps the existing transaction/ACK drain and session lock; resolution restores the preserved clock.
+Restore of an unchosen OPEN/ERROR offer returns to the reminder, while a submitted offer stays locked.
+No native/save schema changes. Regressions: `era_indicator_ui_test.gd` and
+`era_reward_notification_regression_test.gd` in the UI/technology test directories.
+
 ## Save and startup contract
 
 Current versions:
@@ -246,3 +269,13 @@ Current versions:
 
 Restore PKCN before PKEC. Reject old PKCN/PKEF/PKTR schemas and any related catalog identity change
 with `catalog_hash_mismatch`. Do not silently migrate IDs or populate defaults during restore.
+
+## First research construction reserve
+
+A cash-backed frozen research demand reserves one selected unlocked institution's construction
+bundle in the existing construction-material lane until local research capacity exists. Rebuild
+from current epoch policy; disabled/empty procurement releases the extra reserve. Research
+investment must report material rejection (12) rather than bypassing the material plan and quoting
+zero construction cost. Unrelated owner vacancies do not veto this research greenfield review;
+normal sponsor, livelihood, population and batch constraints still apply. Regression:
+`building_runtime_test.gd -- --research-only`.

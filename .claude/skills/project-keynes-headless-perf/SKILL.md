@@ -28,6 +28,10 @@ without `-UseSavedSetup`.
 
 Use `-ClosingAuditMode FULL|PROBE|INCREMENTAL` for an explicit audit A/B.
 Use `-WorkerMode ON|OFF` for deterministic worker/scalar A/B.
+`-PipelineDepth 0..3` sets how many days the driver may lead the worker (default 3, like the
+player scene). `0` is the one-day lockstep: slower, but climate inputs become reproducible.
+Long runs are not reproducible at any depth yet (resource reserves still follow frame timing);
+see `docs/cpp-dots-runtime/country-ai-runtime.md` §9 and `PK_SIM_DAY_TRACE` for divergence tracing.
 The runner uses the formal `NewGameConfig` multi-country start by default. Use
 `-ForeignCount`, `-ImportTariffRate`, and `-ExportTariffRate` for a comparable
 cross-country tariff A/B. `-SyntheticTestEconomy` is an explicit legacy/synthetic
@@ -51,6 +55,30 @@ The wrapper must fail unless:
 Godot's dummy renderer may print RID/resource cleanup warnings after a successful headless run.
 Treat the verified marker, process exit code, CSV checks, and economy validation as authoritative;
 do not report those shutdown-only warnings as a benchmark failure.
+
+## Replaying a player save (different tool, different question)
+
+`headless_perf_record.gd` always starts a **new** game. When the question is "reproduce
+what the player hit", use the save replay harness instead:
+
+```powershell
+& .\tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60
+& .\tools\runtime\Invoke-SaveReplay.ps1 -SavePath C:\tmp\day2740.pksv -Days 20 -Speed 10
+```
+
+It loads through the production `GameFlow.begin_load_game` path and fails on an economy
+fatal, a stalled day, or a failed restore, writing a forensics JSON under `tmp/` for each.
+`-SavePath` stages the file in a scratch directory via `PK_SAVE_DIR`, so it never
+overwrites the player's slots. Parse the single `[save-replay/result] {...}` line; the
+wrapper already does and trusts it over the exit code.
+
+Do not read `use_saved_setup` as "load the player's save": it only reads
+`user://world_setup_settings.json` (map size, seed, climate knobs), not PKSV progress.
+
+A run that advances N days is **not** a pass by itself. The harness also asserts that
+country/economy are bootstrapped, the host is not STOPPED/FAULTED, and
+`newest_state_day` advanced — a failed PKSR restore lets the clock free-run to the target
+day with nothing simulating. Keep those assertions if you extend the harness.
 
 ## Build boundary
 

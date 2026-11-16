@@ -28,6 +28,8 @@ param(
     [string]$ClosingAuditMode = '',
     [ValidateSet('', 'ON', 'OFF')]
     [string]$WorkerMode = '',
+    [ValidateSet('', 'OFF', 'SHADOW', 'ACTIVE')]
+    [string]$RuntimeGraphMode = '',
     [ValidateSet('', 'OFF', 'PROBE', 'ACTIVE')]
     [string]$CountryAi = '',
     [ValidateSet('', 'easy', 'normal', 'hard')]
@@ -42,7 +44,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $RepoRoot).Path
 $project = Join-Path $root 'Project\project-keynes'
-$runner = Join-Path $project 'tests\headless_perf_record.gd'
+$runner = Join-Path $project 'tests\game\headless_perf_record.gd'
 $tmp = Join-Path $root 'tmp'
 
 if (-not (Test-Path -LiteralPath $GodotExe)) {
@@ -82,6 +84,7 @@ if ($ClosingAuditMode -ne '') {
     $godotArgs += "closing_audit_mode=$ClosingAuditMode"
 }
 if ($WorkerMode -ne '') { $godotArgs += "worker_mode=$WorkerMode" }
+if ($RuntimeGraphMode -ne '') { $godotArgs += "runtime_graph_mode=$RuntimeGraphMode" }
 if ($CountryAi -ne '') { $godotArgs += "country_ai=$CountryAi" }
 if ($CountryAiDifficulty -ne '') { $godotArgs += "country_ai_difficulty=$CountryAiDifficulty" }
 if ($PipelineDepth -ge 0) { $godotArgs += "pipeline_depth=$PipelineDepth" }

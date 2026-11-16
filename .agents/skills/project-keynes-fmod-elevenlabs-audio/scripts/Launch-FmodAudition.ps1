@@ -18,10 +18,10 @@ if (-not (Test-Path -LiteralPath $audExe)) {
 
 Stop-Process -Name "PKMusicAudition" -Force -ErrorAction SilentlyContinue
 
-foreach ($rel in @("addons\FmodGodot", "assets\audio\banks\Desktop", "scripts\audio", "tests\audio")) {
+foreach ($rel in @("addons\FmodGodot", "assets\audio\banks\Desktop", "scripts\audio", "scripts\ui", "tests\audio")) {
     $dst = Join-Path $audDir $rel
     New-Item -ItemType Directory -Force -Path $dst | Out-Null
-    Copy-Item -Path (Join-Path $srcProj "$rel\*") -Destination $dst -Recurse -Force
+    Copy-Item -Path (Join-Path $srcProj "$rel\*") -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
 }
 foreach ($relFile in @("scripts\game\game_settings_service.gd", "scripts\ui\ui_audio_feedback.gd")) {
     $dstFile = Join-Path $audDir $relFile
