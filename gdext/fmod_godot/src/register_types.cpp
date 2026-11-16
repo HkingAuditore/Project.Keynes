@@ -1,0 +1,273 @@
+#include "register_types.h"
+#include "binding/studio/bus.h"
+#include "binding/studio/event_description.h"
+#include "binding/studio/event_instance.h"
+#include "binding/studio/studio_system.h"
+#include "classes/engine_debugger.hpp"
+#include "core/binder_common.hpp"
+#include <fmod_studio_common.h>
+
+#include "audio_streams/fmod_event_audio_stream.h"
+#include "audio_streams/fmod_event_audio_stream_playback.h"
+#include "binding/studio/bank.h"
+#include "binding/studio/vca.h"
+#include "classes/global_constants.hpp"
+#include "core/class_db.hpp"
+#include "core/error_macros.hpp"
+#include "core/memory.hpp"
+#include "core/property_info.hpp"
+#include "fmod_audio_server.h"
+#include "fmod_bank_format_loader.h"
+#include "fmod_bank_loader.h"
+#include "fmod_common.h"
+#include "fmod_enums.h"
+#include "fmod_errors.h"
+#include "fmod_event_emitter_2d.h"
+#include "fmod_event_emitter_3d.h"
+#include "fmod_listener_2d.h"
+#include "fmod_listener_3d.h"
+#include "fmod_string_names.h"
+#include "variant/array.hpp"
+#include "variant/variant.hpp"
+#include <classes/engine.hpp>
+#include <classes/project_settings.hpp>
+#include <gdextension_interface.h>
+#include <godot.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
+#include <godot_cpp/classes/resource_saver.hpp>
+#include <godot_cpp/core/defs.hpp>
+#include <godot_cpp/variant/typed_dictionary.hpp>
+#ifdef TOOLS_ENABLED
+#include "bank_inspector_plugin.h"
+#include "event_browser_menu_button.h"
+#include "fmod_bank_importer.h"
+#include "fmod_console.h"
+#include "fmod_editor_interface.h"
+#include "fmod_editor_plugin.h"
+#include "fmod_event_browser.h"
+#include "fmod_event_guid_selector_property.h"
+#include "fmod_event_panner.h"
+#include "fmod_event_path_selector_property.h"
+#include "fmod_event_previewer.h"
+#include "fmod_installer.h"
+#include "fmod_object_details.h"
+#include "fmod_object_selector.h"
+#include "fmod_project_explorer.h"
+#include "fmod_script_client.h"
+#include "fmod_selector_inspector_plugin.h"
+#include "live_update_indicator.h"
+#include "mute_button.h"
+#include <classes/editor_interface.hpp>
+#include <classes/editor_plugin_registration.hpp>
+#include <classes/editor_settings.hpp>
+#include <fmod_event_panner.h>
+#endif
+
+#ifdef DEBUG_ENABLED
+#include "fmod_debugger_client.h"
+#endif
+
+using namespace godot;
+using namespace FmodGodot;
+
+static FmodAudioServer *audio_server;
+Ref<FmodBankFormatLoader> bank_format_loader;
+#ifdef TOOLS_ENABLED
+FmodEditorInterface *editor_interface;
+#endif
+
+#ifdef DEBUG_ENABLED
+FmodDebuggerClient *debugger_client;
+#endif
+
+namespace FmodGodot
+{
+static_assert(sizeof(RID) >= sizeof(FmodGodot::Handle));
+void loadSettings()
+{
+    GLOBAL_DEF_RST_BASIC(PropertyInfo(Variant::Type::INT, LIVE_UPDATE, godot::PROPERTY_HINT_ENUM,
+                                      "Disabled:0, Enabled:1, Development Build Only:2"),
+                         0);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::INT, LIVE_UPDATE_PORT, godot::PROPERTY_HINT_RANGE, "0,65536"), 9264);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::INT, LIVE_UPDATE_PORT + String(".editor_hint"),
+                                  godot::PROPERTY_HINT_RANGE, "0,65536"),
+                     9265);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, SAMPLE_RATE, PROPERTY_HINT_RANGE, "8000,192000"), 48000);
+    GLOBAL_DEF_BASIC(REAL_COUNT, 64);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::INT, VIRTUAL_COUNT, PROPERTY_HINT_RANGE, "0,4095"), 1024);
+    GLOBAL_DEF_BASIC(BUFFER_LENGTH, 1024);
+    GLOBAL_DEF_BASIC(BUFFER_COUNT, 4);
+    GLOBAL_DEF_BASIC(DOPPLER_SCALE, 1.0);
+    GLOBAL_DEF_BASIC(DISTANCE_FACTOR, 1.0);
+    GLOBAL_DEF_BASIC(ROLLOFF_SCALE, 1.0);
+
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::INT, SOURCE_TYPE, PROPERTY_HINT_ENUM,
+                                  "Single Platform Build:0, "
+                                  "Multiple Platform Build(Experimental):1"),
+                     0);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::STRING, FMOD_STUDIO_PATH, PROPERTY_HINT_GLOBAL_FILE, ""), "");
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::STRING, FMOD_PROJECT_PATH, PROPERTY_HINT_GLOBAL_FILE, ""), "");
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, BANK_DIRECTORY, PROPERTY_HINT_DIR, ""), "res://banks");
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::INT, LOAD_BANKS, PROPERTY_HINT_ENUM, "None:0,Specified:1,All:2"), 0);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::Type::INT, LOAD_BANKS + String(".editor_hint"), PROPERTY_HINT_ENUM,
+                                  "None:0,Specified:1 ,All:2"),
+                     2);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::ARRAY, SPECIFIED_BANKS, PROPERTY_HINT_TYPE_STRING,
+                                  vformat("%d/%d:*.bank", Variant::STRING, PROPERTY_HINT_FILE)),
+                     Array());
+    GLOBAL_DEF_BASIC(LOAD_SAMPLE_DATA, false);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, ENCRYPTION_KEY, godot::PROPERTY_HINT_PASSWORD, ""), "");
+
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, LOGGING_LEVEL, PROPERTY_HINT_ENUM, "NONE:0,ERROR:1,WARNING:2 ,LOG:4"),
+                     1);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, DEBUG_TYPE, PROPERTY_HINT_FLAGS,
+                                  "MEMORY:256,FILE:512,CODEC:1024,TRACE:2048, VIRTUAL:4096"),
+                     0);
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, DEBUG_DISPLAY, PROPERTY_HINT_FLAGS,
+                                  "TIMESTAMPS:65536,LINENUMBERS:131072,THREAD:262144"),
+                     0);
+
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, PLUGIN_PATH, PROPERTY_HINT_DIR, ""), "");
+    GLOBAL_DEF_BASIC(PropertyInfo(Variant::DICTIONARY, PLUGINS, PROPERTY_HINT_TYPE_STRING,
+                                  vformat("%d/%d:;%d/%d:0,100,or_greater,suffix:priority", Variant::STRING,
+                                          PROPERTY_HINT_FILE, Variant::INT, PROPERTY_HINT_RANGE)),
+                     (TypedDictionary<String, int>()));
+}
+} // namespace FmodGodot
+  //
+void initialize_fmod_module(ModuleInitializationLevel p_level)
+{
+    if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS)
+    {
+        loadSettings();
+        GDREGISTER_CLASS(FmodAudioServer);
+        audio_server = memnew(FmodAudioServer);
+        FmodAudioServer::singleton = audio_server;
+        FMOD_RESULT result = audio_server->init_with_project_settings();
+        if (FMOD_OK != result)
+        {
+            ERR_PRINT(vformat("%s %s", "Failed to initialize FmodAudioServer with error.", FMOD_ErrorString(result)));
+        }
+        Engine::get_singleton()->register_singleton("FmodAudioServer", audio_server);
+
+#if DEBUG_ENABLED
+        GDREGISTER_INTERNAL_CLASS(FmodDebuggerClient);
+        debugger_client = memnew(FmodDebuggerClient);
+        debugger_client->init(p_level);
+#endif
+    }
+    if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE)
+    {
+
+        GDREGISTER_CLASS(FmodListener2D);
+        GDREGISTER_CLASS(FmodListener3D);
+        GDREGISTER_ABSTRACT_CLASS(Fmod)
+        GDREGISTER_ABSTRACT_CLASS(FmodBank);
+        GDREGISTER_ABSTRACT_CLASS(FmodGodot::Studio::StudioBank)
+        GDREGISTER_ABSTRACT_CLASS(FmodGodot::Studio::StudioSystem)
+        GDREGISTER_ABSTRACT_CLASS(FmodGodot::Studio::StudioVCA)
+        GDREGISTER_ABSTRACT_CLASS(FmodGodot::Studio::StudioBus)
+        GDREGISTER_ABSTRACT_CLASS(FmodGodot::Studio::StudioEventInstance)
+        GDREGISTER_ABSTRACT_CLASS(FmodGodot::Studio::StudioEventDescription)
+        GDREGISTER_INTERNAL_CLASS(FmodBankFormatLoader);
+        GDREGISTER_CLASS(FmodEventEmitter2D);
+        GDREGISTER_CLASS(FmodEventEmitter3D);
+        GDREGISTER_CLASS(FmodEventAudioStream);
+        GDREGISTER_INTERNAL_CLASS(FmodEventAudioStreamPlayback);
+        bank_format_loader.instantiate();
+        ResourceLoader::get_singleton()->add_resource_format_loader(bank_format_loader);
+
+        GDREGISTER_CLASS(FmodBankLoader);
+#ifdef TOOLS_ENABLED
+        if (!Engine::get_singleton()->is_editor_hint())
+        {
+            audio_server->_load_start_up_banks();
+        }
+#else
+        audio_server->_load_start_up_banks();
+#endif
+
+#if DEBUG_ENABLED
+        debugger_client->init(p_level);
+#endif
+    }
+
+    if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR)
+    {
+#ifdef TOOLS_ENABLED
+        GDREGISTER_INTERNAL_CLASS(MuteButton);
+        GDREGISTER_INTERNAL_CLASS(FmodObjectSelector);
+        GDREGISTER_INTERNAL_CLASS(FmodObjectTree);
+
+        GDREGISTER_INTERNAL_CLASS(FmodScriptClient)
+        GDREGISTER_INTERNAL_CLASS(FmodEditorInterface);
+        editor_interface = memnew(FmodEditorInterface);
+        Engine::get_singleton()->register_singleton("FmodEditorInterface", editor_interface);
+        if (Engine::get_singleton()->is_editor_hint())
+        {
+            editor_interface->refresh(true);
+        }
+
+        GDREGISTER_INTERNAL_CLASS(FmodDebuggerPlugin)
+        GDREGISTER_INTERNAL_CLASS(FmodEditorPlugin)
+        GDREGISTER_INTERNAL_CLASS(FmodSelectorInspector)
+        GDREGISTER_INTERNAL_CLASS(FmodPathSelectorProperty)
+        GDREGISTER_INTERNAL_CLASS(FmodGUIDSelectorProperty)
+        GDREGISTER_INTERNAL_CLASS(FmodBankImporter);
+        GDREGISTER_INTERNAL_CLASS(BankInspectorPlugin);
+        GDREGISTER_INTERNAL_CLASS(FmodObjectDetails);
+        GDREGISTER_INTERNAL_CLASS(FmodEventBrowser);
+        GDREGISTER_INTERNAL_CLASS(FmodEventPanner);
+        GDREGISTER_INTERNAL_CLASS(FmodEventPreviewer);
+        GDREGISTER_INTERNAL_CLASS(FmodProjectExplorer);
+        GDREGISTER_INTERNAL_CLASS(FmodConsole);
+        GDREGISTER_INTERNAL_CLASS(CommandInput);
+        GDREGISTER_INTERNAL_CLASS(EventBrowserMenuButton);
+        GDREGISTER_INTERNAL_CLASS(LiveUpdateIndicator);
+        GDREGISTER_CLASS(FmodInstaller);
+        EditorPlugins::add_by_type<FmodEditorPlugin>();
+#endif // TOOLS_ENABLED
+    }
+}
+void uninitialize_fmod_module(ModuleInitializationLevel p_level)
+{
+    if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS)
+    {
+        audio_server->finish();
+        Engine::get_singleton()->unregister_singleton("FmodAudioServer");
+        memdelete(audio_server);
+#ifdef DEBUG_ENABLED
+        memdelete(debugger_client);
+#endif
+        return;
+    }
+    if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR)
+    {
+#ifdef TOOLS_ENABLED
+        Engine::get_singleton()->unregister_singleton("FmodEditorInterface");
+        memdelete(editor_interface);
+#endif // TOOLS_ENABLED
+    }
+    if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE)
+    {
+        ResourceLoader::get_singleton()->remove_resource_format_loader(bank_format_loader);
+        bank_format_loader.unref();
+    }
+}
+
+extern "C"
+{
+    // Initialization.
+    GDExtensionBool GDE_EXPORT fmod_library_init(GDExtensionInterfaceGetProcAddress p_get_proc_address,
+                                                 const GDExtensionClassLibraryPtr p_library,
+                                                 GDExtensionInitialization *r_initialization)
+    {
+        godot::GDExtensionBinding::InitObject init_obj(p_get_proc_address, p_library, r_initialization);
+
+        init_obj.register_initializer(initialize_fmod_module);
+        init_obj.register_terminator(uninitialize_fmod_module);
+        init_obj.set_minimum_library_initialization_level(MODULE_INITIALIZATION_LEVEL_CORE);
+
+        return init_obj.init();
+    }
+}
