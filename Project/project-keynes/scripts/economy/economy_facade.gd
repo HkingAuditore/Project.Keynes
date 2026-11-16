@@ -1494,12 +1494,6 @@ func settlement_display_name(cell: int) -> String:
 	return EconomyFacadeDisplayScript.settlement_display_name(self, cell)
 
 func _load_family_effect_displays() -> void:
-
-
-## Headless A/B only: PK_ECONOMY_FORCE_CADENCE="market,plan,investment" (days)
-## replaces the measured-ms cadence, which otherwise varies with machine load
-## and makes two runs of the same seed diverge.
-
 	EconomyFacadeDisplayScript.load_family_effect_displays(self)
 
 static func _load_display_names(directory: String) -> Dictionary:

@@ -425,8 +425,8 @@ static func family_max_prestige_level(host, family_handle: int) -> int:
 
 
 ## Headless A/B only: PK_ECONOMY_FORCE_CADENCE="market,plan,investment" (days)
-## replaces the measured-ms cadence, which otherwise varies with machine load
-## and makes two runs of the same seed diverge.
+## Explicitly overrides the fixed game-day periods for experiments.
+## Production periods do not depend on measured machine time.
 
 static func apply_forced_cadence_env(profile: Dictionary) -> void:
 	var parts := OS.get_environment("PK_ECONOMY_FORCE_CADENCE").split(",", false)
