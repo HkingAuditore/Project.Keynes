@@ -117,6 +117,7 @@ TESTS = (
     "tests/runtime/environment_save_continuation_test.gd",
     "tests/runtime/runtime_clock_overload_recovery_test.gd",
     "tests/world/season_refresh_schedule_test.gd",
+    "tests/world/season_refresh_consumer_test.gd",
     "tests/runtime/runtime_event_restore_cursor_test.gd",
     "tests/country/country_runtime_test.gd",
     "tests/runtime/runtime_country_peer_bridge_test.gd",

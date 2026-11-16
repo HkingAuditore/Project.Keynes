@@ -244,4 +244,16 @@ func _run() -> void:
 	_expect("read view advances after the queued command commits",
 		bool(view.get("ok", false)) and bool(view.get("available", false))
 		and int(view.get("generation", 0)) > generation_before)
+	# A scheduled batch may include an undated immediate command. Each row
+	# must retain its own admission date; the flag does not share a batch date.
+	var future_day := int(ext.get_runtime_thread_report().get("simulation_committed_day", 0)) + 256
+	var mixed: Dictionary = country.submit([
+		{"opcode": CountryFacadeScript.Opcode.RENAME_COUNTRY, "target_handle": handle,
+		 "display_name": "Future", "effective_day": future_day},
+		{"opcode": CountryFacadeScript.Opcode.RENAME_COUNTRY, "target_handle": handle,
+		 "display_name": "Immediate"}], true)
+	var dates: PackedInt64Array = mixed.get("effective_days", PackedInt64Array())
+	_expect("mixed dated and undated commands keep independent admission dates",
+		bool(mixed.get("ok", false)) and dates.size() == 2 and
+		dates[0] == future_day and dates[1] < future_day)
 	ext.request_runtime_stop()

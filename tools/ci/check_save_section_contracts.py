@@ -23,6 +23,12 @@ def violations(root: Path) -> list[str]:
         errors.append("every section needs a positive integer version")
     if len(set(tags)) != len(set((row.get("tag"), row.get("owner")) for row in rows)):
         errors.append("same tag is used by incompatible owners")
+    versions = {}
+    for row in rows:
+        tag = row.get("tag")
+        if tag in versions and versions[tag] != row.get("version"):
+            errors.append("same tag has inconsistent versions")
+        versions[tag] = row.get("version")
     known = {row.get("owner") for row in rows}
     for row in rows:
         source = root / row["source"]

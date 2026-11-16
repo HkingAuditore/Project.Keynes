@@ -774,6 +774,12 @@ class GuardsTest(unittest.TestCase):
                 target.write_text((saves.ROOT / row["source"]).read_text())
             self.assertFalse(saves.cpp_section_violations(root))
             broken = json.loads(json.dumps(registry))
+            family = next(row for row in broken["sections"] if row["domain"] == "family")
+            economy = next(row for row in broken["sections"] if row["domain"] == "economy")
+            family["version"] = economy["version"] + 1
+            (root / "tools/ci/cpp_save_section_contracts.json").write_text(json.dumps(broken))
+            self.assertIn("same tag has inconsistent versions", saves.cpp_section_violations(root))
+            broken = json.loads(json.dumps(registry))
             broken["restore_order"] = list(reversed(broken["restore_order"]))
             (root / "tools/ci/cpp_save_section_contracts.json").write_text(
                 json.dumps(broken))

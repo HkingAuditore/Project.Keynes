@@ -57,7 +57,7 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
 		# 因为这套计数器每 stride 天才推进一次。
 		var stage_b: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_stage_b_knobs(
-			map, cp_now, _generator._runtime_climate_worker_stage_b_call_index, float(stride))
+			map, cp_now, _generator._runtime_climate_worker_stage_b_call_index, float(stride), day + 1)
 		if not stage_b.is_empty():
 			out["stage_b"] = stage_b
 	# distribute 是 stage 11 的后半段，也是 snow_cover / snowpack /
