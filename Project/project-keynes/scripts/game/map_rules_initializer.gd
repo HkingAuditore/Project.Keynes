@@ -1,5 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 
+const LoadingCatalogContextScript = preload("res://scripts/game/loading_catalog_context.gd")
+
 const ModifierDailySystemScript = preload("res://scripts/simulation/systems/modifier_daily_system.gd")
 const TriggerDailySystemScript = preload("res://scripts/simulation/systems/trigger_daily_system.gd")
 const IdeologyRuntimeSystemScript = preload("res://scripts/simulation/systems/ideology_runtime_system.gd")
@@ -146,3 +148,58 @@ func _forward_runtime_snapshot_apply(method: StringName, after_generation: int) 
 	if _generator._data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _generator._data_core_world_ext.call(method, after_generation)
+
+
+func _setup_effect_runtime(cp_sched) -> void:
+	# EffectRuntime is independent from Country/Economy. Configure and register
+	# it before economy bootstrap, whose valid early returns must not starve it.
+	_generator._effect_facade = null
+	_generator._effect_daily_job = null
+	_generator._gameplay_effect_job = null
+	if _generator._data_core_world_ext != null:
+		var effect_facade = _generator.EffectFacadeScript.new()
+		await _generator._yield_generation_frame()
+		_generator._loading_profile_step("effect_catalog")
+		var catalog_context = LoadingCatalogContextScript.for_generator(_generator)
+		var effect_catalog = await _generator.EffectDomainCatalogScript.build_cooperative(catalog_context)
+		if catalog_context.canceled:
+			return
+		await _generator._yield_generation_frame()
+		_generator._loading_profile_step("effect_configure")
+		if effect_catalog == null:
+			push_error("[effect] domain catalog build failed")
+		else:
+			var effect_columns: Dictionary = await effect_catalog.compile_native_catalog_cooperative(catalog_context)
+			if catalog_context.canceled:
+				return
+			await _generator._yield_generation_frame()
+			if catalog_context.canceled:
+				return
+			_generator._loading_profile_step("effect_native_configure")
+			var effect_configured: Dictionary = effect_facade.configure(
+				_generator._data_core_world_ext, _generator._world_clock_ref, effect_catalog, effect_columns)
+			if bool(effect_configured.get("ok", false)):
+				# `ok` 只代表主线程 EffectRuntime 吃下了目录。worker 侧还有第二份
+				# POD 目录：编译失败时 `_effect_pod_catalog` 保持空，Effect 阶段就
+				# 在 `effect_stage_enabled == false` 那一行无条件放弃、不设 stall 位、
+				# 不写日志，于是整局只表现为「日历推不动」。这里必须响。
+				if not bool(effect_configured.get("effect_pod_ready", true)):
+					push_error(
+						"[effect] native POD catalog not ready (%s) — worker Effect stage will park every day" % [
+							String(effect_configured.get(
+								"effect_pod_fallback_reason", "unknown"))])
+				_generator._effect_facade = effect_facade
+				_generator._effect_daily_job = _generator.EffectRuntimeSystemScript.new(_generator._effect_facade)
+				_generator._sus.configure_job_from_profile(
+					_generator._effect_daily_job, cp_sched, false, &"effect_runtime", 1)
+				_generator._runtime_register_system(_generator._effect_daily_job)
+				_generator._gameplay_effect_job = _generator.GameplayEffectSystemScript.new(_generator._effect_facade)
+				_generator._sus.configure_job_from_profile(
+					_generator._gameplay_effect_job, cp_sched, false, &"gameplay_effect", 1)
+				_generator._runtime_register_system(_generator._gameplay_effect_job)
+			else:
+				push_error("[effect] configure failed: %s" % String(
+					effect_configured.get("reason", "unknown")))
+
+func _release_loading_catalog_context() -> void:
+	LoadingCatalogContextScript.release_generator(_generator)

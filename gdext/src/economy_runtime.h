@@ -220,7 +220,9 @@ public:
     // 63: sparse (cell, profession) stratum mobilization rows (section 37).
     //     A v62 stream has no section and restores an empty table, which is the
     //     correct pre-feature state (no organization had accumulated yet).
-    static constexpr int32_t SCHEMA_VERSION = 63;
+    // 64: market signals also preserve current/previous producer sales. These
+    // observations drive the next input purchase and owner opportunity quotes.
+    static constexpr int32_t SCHEMA_VERSION = 64;
     // Dense order of the compiled `building_economic_sectors` column. It mirrors
     // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
     // manufacturing, energy, knowledge, then the appended `military` sector. The
@@ -848,6 +850,9 @@ public:
         const godot::Dictionary &vectors) const;
     int64_t state_hash() const;
     int64_t state_hash_legacy() const;
+    // Diagnostic only; caller must hold the complete simulation-day boundary.
+    uint64_t golden_population_market_hash(int64_t sample_day,
+                                           int64_t committed_day) const;
     godot::Dictionary reset(const godot::String &reason);
 
     godot::Dictionary begin_save(int32_t chunk_bytes);
@@ -2133,19 +2138,11 @@ private:
     void apply_locked_slow_days();
     void note_completed_epoch_cadence_ms();
     void synthesize_cadence_locks_from_legacy_save();
-    int32_t choose_locked_market_cycle_days(int32_t current_n) const;
-    int32_t choose_locked_slow_cycle_days(int32_t current_s, int32_t n) const;
-    int32_t choose_locked_investment_cycle_days(int32_t current_i, int32_t n,
-                                                int32_t plan_days) const;
-    int32_t choose_locked_cycle_days(int32_t current, int32_t n, int32_t knives,
-                                     double ema, double injected_ms,
-                                     int32_t lo, int32_t hi) const;
     int32_t longer_investment_cycle_days(int32_t plan_days, int32_t n,
                                          int32_t candidate) const;
     int32_t snap_slow_days_to_market_multiple(int32_t s, int32_t n) const;
     int32_t snap_cycle_days(int32_t value, int32_t n, int32_t lo,
                             int32_t hi) const;
-    int32_t apply_cadence_hysteresis(int32_t current, int32_t raw) const;
     int32_t knives_per_day(double ms_per_knife) const;
     double quantized_ms_per_knife(double cycle_ms, int32_t knives) const;
     int32_t building_slice_end(int32_t active_begin) const;
@@ -2167,14 +2164,6 @@ private:
     static int64_t saturating_add(int64_t a, int64_t b, int64_t &saturation_count);
     static int64_t saturating_sub(int64_t a, int64_t b, int64_t &saturation_count);
     static int64_t saturating_mul(int64_t a, int64_t b, int64_t &saturation_count);
-    // Ephemeral bill: sum exact q*p/GOODS_SCALE, then round once. No save state.
-    friend struct EconomyPricingTests;
-    struct GoodsBill {
-        int64_t charged = 0;
-        int32_t remainder = 0;
-        int64_t add(int64_t quantity, int64_t price, int64_t &sat);
-        int64_t total(int64_t &sat) const;
-    };
     static int64_t inventory_adjusted_cost_pressure(int64_t cost, int64_t inventory, int64_t &sat);
     static int64_t goods_cost(int64_t quantity, int64_t price, int64_t &sat);
     static int64_t mul_div_sat(int64_t a, int64_t b, int64_t divisor,
@@ -2249,20 +2238,6 @@ private:
                                          int64_t &saturation_count);
     static void formula_income_price_linear(const FormulaBatchInput &in, int64_t *out,
                                             int64_t &saturation_count);
-
-    bool decode_restore_chunk(const std::vector<uint8_t> &bytes, std::string &error);
-    bool begin_restore_internal(std::string &error);
-    bool end_restore_internal(std::string &error);
-    // Clears live SoA into an empty candidate rebuild surface. Must only run
-    // after apply_ecp2_authority has captured a rollback backup (or from the
-    // explicit PKEC migrate helper).
-    void prepare_restore_candidate_scratch();
-    bool apply_ecp2_authority_internal(const RuntimeEconomyEcp2State &in,
-                                       std::string &error);
-    void set_restore_rejected_reason(const std::string &reason);
-    bool validate_ecp2_candidate(const RuntimeEconomyEcp2State &in,
-                                 std::string &error) const;
-    bool validate_restored_committed_snapshot(std::string &error) const;
 
     // ECP2 mid-epoch export bypasses the committed-boundary gate in begin_save.
     mutable bool _ecp2_allow_mid_epoch_export = false;
@@ -2408,16 +2383,6 @@ inline int64_t NativeEconomyRuntime::goods_cost(
                             (price % GOODS_SCALE)) % GOODS_SCALE != 0;
     return saturating_add(whole, fractional ? 1 : 0, sat);
 }
-
-// Synthetic-grid self check for NativeEconomyRuntime::collect_effect_target_cells().
-// Lives outside the runtime so the production class keeps a single friend line
-// instead of an in-class test surface. Defined in
-// economy_runtime_effect_selector_tests.cpp.
-struct EconomyTargetSelectorTests {
-    // Returns true when every selector assertion holds. On failure `error`
-    // names the exact assertion that broke.
-    static bool run(std::string &error);
-};
 
 } // namespace pk
 

@@ -67,7 +67,8 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _commands_per_slice = std::clamp(dict_num<int32_t>(profile, "commands_per_slice", 16384), 1, 1 << 20);
     // market_cycle_days is the longest market interval (1-5). Native locks N
     // for a full cycle from populated work plus previous-cycle machine timing.
-    // market_cycle_days=0 is not the retired 50/334 auto-fast-forward path.
+    // Retained bounds describe explicit historical fixture periods only.
+    // Production settlement is daily regardless of these former auto controls.
     int32_t configured_cycle = dict_num<int32_t>(
         profile, "market_cycle_days", MARKET_CYCLE_MAX_DAYS);
     if (configured_cycle <= 0) configured_cycle = MARKET_CYCLE_MAX_DAYS;

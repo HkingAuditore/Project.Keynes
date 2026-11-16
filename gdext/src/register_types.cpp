@@ -7,6 +7,7 @@
 
 #include "world_ext.h"
 #include "building_visual_cache.h"
+#include "resource_visual_builder.h"
 #include "knobs_struct.h"
 #include "sus_scheduler_ext.h"
 #include "environment_runtime.h"
@@ -32,6 +33,7 @@ void initialize_dots_ext_module(ModuleInitializationLevel p_level) {
     // tasks while GDScript remains the high-level scheduler.
     ClassDB::register_class<pk::EnvironmentRuntime>();
     ClassDB::register_class<pk::NativeBuildingVisualCache>();
+    ClassDB::register_class<pk::NativeResourceVisualBuilder>();
 }
 
 void uninitialize_dots_ext_module(ModuleInitializationLevel p_level) {

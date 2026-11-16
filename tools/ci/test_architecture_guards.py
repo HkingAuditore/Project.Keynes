@@ -21,6 +21,7 @@ import world_ext_bindings
 import check_world_ext_bindings as binding_guard
 import check_script_native_access as script_access
 import runtime_test_hygiene as hygiene
+import main_boundary_wakeup_fixture
 import subprocess
 import os
 import json
@@ -38,6 +39,7 @@ class GuardsTest(unittest.TestCase):
                             str(resolve_apply.ROOT / 'gdext/tests/runtime_control_wakeup_test.cpp'),
                             '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True, timeout=10)
+            main_boundary_wakeup_fixture.verify(compiler, resolve_apply.ROOT, Path(directory))
 
     def test_resolve_apply_actual_source_negatives(self):
         data=json.loads((resolve_apply.ROOT/resolve_apply.REGISTRY).read_text())
@@ -54,6 +56,9 @@ class GuardsTest(unittest.TestCase):
                 self.assertTrue(resolve_apply.violations(root,data)); p.write_text(original)
             for row in data['apply']:
                 p=root/row['source']; original=p.read_text()
+                p.write_text(original.replace(row['function'], 'MovedApply::missing_owner', 1))
+                self.assertIn('missing Apply surface '+row['source'], resolve_apply.violations(root,data))
+                p.write_text(original)
                 start=original.index('{',original.index(row['function']))+1
                 for mutation in (row['readonly_members'][0]+' = {};', '_foreign_store.cash = 1;', 'alias->collect_fiscal_cash();',
                                  'auto fn = &NativeCountryRuntime::reserve_fiscal_cash;'):
@@ -111,7 +116,7 @@ class GuardsTest(unittest.TestCase):
             source.with_name("annual_development_host.cpp").write_text(annual_good)
             source.with_name("native_simulation_host_ideology.cpp").write_text("copy_committed_view(); assert(_modifier_pod_authority.observe_committed_view(modifier_view));" + opinion_good)
             source.with_name("native_simulation_host_modifier.cpp").write_text("copy_committed_view(); assert(_effect_pod_authority.observe_committed_view(effect_view));")
-            source.with_name("economy_runtime_family_buff.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
+            source.with_name("economy_runtime_family_effect_inputs.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
             self.assertFalse(views.violations(root))
             for bypass in ["const auto &s = _climate_authority.store();",
                            "auto &owner = _climate_authority; owner.store();",
@@ -135,7 +140,7 @@ class GuardsTest(unittest.TestCase):
             ideology_source.write_text("copy_committed_view(); assert(_modifier_pod_authority.observe_committed_view(modifier_view));" + opinion_good)
             modifier_source.write_text("copy_committed_view(); assert(_effect_pod_authority.observe_committed_view(effect_view));")
             source.write_text(good)
-            source.with_name("economy_runtime_family_buff.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
+            source.with_name("economy_runtime_family_effect_inputs.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
             self.assertFalse(views.violations(root))
             ideology_source.write_text("_modifier_pod_authority.snapshot().buckets;")
             self.assertTrue(views.violations(root))
@@ -154,7 +159,7 @@ class GuardsTest(unittest.TestCase):
                     path.write_text(original + bypass)
                     self.assertTrue(views.violations(root), bypass)
                 path.write_text(original)
-                source.with_name("economy_runtime_family_buff.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
+                source.with_name("economy_runtime_family_effect_inputs.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
             self.assertFalse(views.violations(root))
 
 
@@ -402,6 +407,41 @@ class GuardsTest(unittest.TestCase):
                       target.replace("economy_runtime_internal", "country_internal")):
             with self.assertRaises(ValueError):
                 deps.updated_baseline({wrong: 2}, base, {wrong: origin})
+
+    def test_family_cpp_relocation_preserves_owner_and_reduction(self):
+        origin = "gdext/src/economy_runtime_family_buff.cpp"
+        source = origin + "|family->effect|type:EffectInputConsumers"
+        target = source.replace("family_buff.cpp", "family_effect_inputs.cpp")
+        second = target.replace("family_effect_inputs.cpp", "family_metrics.cpp")
+        baseline = {"version": 1, "references": {source: 2}}
+        moved = deps.updated_baseline({source: 1, target: 1}, baseline, {target: origin})
+        self.assertEqual(moved["metrics"]["total"], 2)
+        self.assertEqual(moved["metrics"]["header_exposed"], 0)
+        self.assertEqual(moved["relocations"][target]["moved_from"], origin)
+        self.assertFalse(deps.baseline_errors(moved))
+        for current, moves in (
+                ({source: 2, target: 1}, {target: origin}),
+                ({source: 1, target: 2}, {target: origin}),
+                ({source: 1, target: 1, second: 1},
+                 {target: origin, second: origin}),
+                ({target: 2}, {})):
+            with self.subTest(current=current):
+                with self.assertRaises(ValueError):
+                    deps.updated_baseline(current, baseline, moves)
+        for wrong in (
+                target.replace("economy_runtime_family_effect_inputs", "economy_runtime_orders"),
+                target.replace("economy_runtime_family_effect_inputs", "effect_runtime_inputs"),
+                target.replace("gdext/src/", "gdext/other/"),
+                target.replace("family_effect_inputs.cpp", "family_effect_inputs.h"),
+                target.replace("EffectInputConsumers", "EffectMetricOverrideSet")):
+            with self.subTest(target=wrong):
+                with self.assertRaises(ValueError):
+                    deps.updated_baseline({wrong: 2}, baseline, {wrong: origin})
+        # A later baseline edit cannot erase the original source-reduction
+        # requirement after this move has been accepted.
+        moved["references"][source] = 2
+        moved["metrics"] = deps.metrics(moved["references"])
+        self.assertTrue(deps.baseline_errors(moved))
 
     def test_economy_leaf_reads_and_public_header_regressions(self):
         with tempfile.TemporaryDirectory() as directory:

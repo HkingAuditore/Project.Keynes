@@ -143,6 +143,10 @@ uint64_t committed_generation(const NativeEconomyRuntime &economy) {
 }
 
 int64_t state_hash(const NativeEconomyRuntime &economy) { return economy.state_hash(); }
+uint64_t golden_population_market_hash(const NativeEconomyRuntime &economy,
+                                      int64_t sample_day, int64_t committed_day) {
+    return economy.golden_population_market_hash(sample_day, committed_day);
+}
 
 void notify_era_milestone_activated(NativeEconomyRuntime &economy,
                                     uint64_t country_handle) {

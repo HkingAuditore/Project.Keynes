@@ -120,6 +120,9 @@ public:
     bool install_derived_cell_layer(DerivedCellFront front,
                                     uint64_t expected_generation,
                                     bool &skipped, std::string &error);
+    // Publish the completed main-thread layer to its Economy read replica.
+    // Caller holds the Economy input boundary; this never installs new terms.
+    void copy_derived_cell_layer_from(const ModifierRuntime &source);
     // Read access. Returns nullptr when no front is installed, which readers must
     // treat as "no derived term", never as a zero contribution.
     const DerivedCellFront *derived_cell_front() const {

@@ -306,46 +306,7 @@ bool read_index_continuation(Reader &r, MilitaryCore &c) {
         read_index_vector(r, c._armies.generation) && read_index_vector(r, c._armies.free_list) &&
         read_index_vector(r, c._army_lane_pending);
 }
-bool valid_index_continuation(const MilitaryCore &c) {
-    const size_t n = c._lots.active.size();
-    if (c._lots.location_kind.size() != n || c._lots.location.size() != n ||
-        c._lots.country_slot.size() != n || c._lots.unit_type.size() != n ||
-        c._lots.equip_quality_q8.size() != n || c._lots.kit_q16.size() != n ||
-        c._lots.condition_q16.size() != n ||
-        c._lots.count.size() != n || c._armies.generation.size() != c._armies.active.size()) return false;
-    auto valid_free = [](const auto &free, const auto &active) {
-        std::vector<uint8_t> seen(active.size(), 0);
-        for (int32_t row : free) {
-            if (row < 0 || (size_t)row >= active.size() || active[(size_t)row] || seen[(size_t)row]) return false;
-            seen[(size_t)row] = 1;
-        }
-        for (size_t i = 0; i < active.size(); ++i) if (!active[i] && !seen[i]) return false;
-        return true;
-    };
-    if (!valid_free(c._lots.free_list, c._lots.active) || !valid_free(c._armies.free_list, c._armies.active)) return false;
-    for (size_t i = 0; i < n; ++i) {
-        if (c._lots.active[i] && (c._lots.location_kind[i] > MILITARY_LOT_ARMY ||
-            c._lots.country_slot[i] < 0 || c._lots.unit_type[i] < 0 ||
-            (size_t)c._lots.unit_type[i] >= c._catalog.units.size() || c._lots.count[i] < 0)) return false;
-    }
-    if (!c._lot_index_ok) return true;
-    if (c._lot_next.size() != n || c._lot_link_kind.size() != n || c._lot_link_loc.size() != n ||
-        c._lot_army_head.size() != c._armies.active.size() ||
-        c._lot_cell_head.size() != (size_t)c._terrain.cell_count) return false;
-    std::vector<uint8_t> seen(n, 0);
-    auto walk = [&](const auto &heads, uint8_t kind) {
-        for (size_t loc = 0; loc < heads.size(); ++loc) {
-            for (int32_t row = heads[loc]; row != -1; row = c._lot_next[(size_t)row]) {
-                if (row < 0 || (size_t)row >= n || seen[(size_t)row]) return false;
-                seen[(size_t)row] = 1;
-                if (c._lot_link_kind[(size_t)row] != kind || c._lot_link_loc[(size_t)row] != (int32_t)loc) return false;
-            }
-        }
-        return true;
-    };
-    return walk(c._lot_army_head, (uint8_t)MILITARY_LOT_ARMY) &&
-        walk(c._lot_cell_head, (uint8_t)MILITARY_LOT_GARRISON);
-}
+
 
 } // namespace
 
@@ -1881,7 +1842,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         error = "pkmi_exploration_section_missing";
         return false;
     }
-    if (!saw_index_continuation || !valid_index_continuation(tmp)) {
+    if (!saw_index_continuation || !military_valid_index_continuation(tmp)) {
         error = "pkmi_index_continuation_missing_or_invalid"; return false;
     }
     if (!saw_end) {
@@ -2054,6 +2015,7 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     if (tmp._cell_controller.size() != cells) tmp._cell_controller.resize(cells, -1);
 
     // ---- commit (transactional swap)
+    military_market_reuse_cancel(*this);
     _seed = tmp._seed;
     _last_day = tmp._last_day;
     _next_sequence = tmp._next_sequence;
@@ -2069,6 +2031,7 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _lot_army_head = std::move(tmp._lot_army_head);
     _lot_cell_head = std::move(tmp._lot_cell_head);
     _lot_index_ok = tmp._lot_index_ok;
+    _lot_garrison_lookup_complete = tmp._lot_garrison_lookup_complete;
     _army_lane_pending = std::move(tmp._army_lane_pending);
     _lots = std::move(tmp._lots);
     _training = std::move(tmp._training);
@@ -2111,11 +2074,12 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _exploration_trail_stamp.clear();
     _exploration_trail_gen = 1;
 
-    // ---- rebuild every derived scratch structure
+    invalidate_engagement_members(); // Rebuild derived state only after successful commit.
     _cell_head.assign(cells, -1);
     _cell_engagement_mask.assign(cells, 0);
     _front_edge_set.assign(cells * 6, 0);
     _front_edges.clear();
+    _front_edge_pos.clear();
     _threat.assign(cells, 0);
     _guard.assign(cells, 0);
     _threat_stamp.assign(cells, 0);

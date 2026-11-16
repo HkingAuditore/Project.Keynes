@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -798,7 +799,25 @@ Dictionary DCWorldExt::get_effective_stat_value(const String &stat_key,
         out["reason"] = "modifier_runtime_unavailable";
         return out;
     }
-    auto *runtime = static_cast<const ModifierRuntime *>(_modifier_runtime);
+    // Inspect the actual Economy reader. A UI mirror can have a correct value
+    // while the simulation still consumes a different published generation.
+    std::optional<std::unique_lock<std::mutex>> boundary;
+    const auto *runtime = static_cast<const ModifierRuntime *>(_modifier_runtime);
+    if (_economy_modifier_view_attached && _economy_modifier_view != nullptr) {
+        if (_runtime_host != nullptr) {
+            auto acquired = _runtime_host->try_lock_economy_input_capture();
+            if (!acquired.owns_lock()) {
+                out["pending"] = true;
+                out["reason"] = "economy_day_inflight";
+                return out;
+            }
+            boundary.emplace(std::move(acquired));
+        }
+        runtime = static_cast<const ModifierRuntime *>(_economy_modifier_view);
+        out["read_source"] = "economy_worker_view";
+    } else {
+        out["read_source"] = "main_runtime";
+    }
     const int32_t stat_id = runtime->stat_id_for_key(std::string(stat_key.utf8().get_data()));
     if (stat_id < 0) {
         out["reason"] = "stat_unknown";

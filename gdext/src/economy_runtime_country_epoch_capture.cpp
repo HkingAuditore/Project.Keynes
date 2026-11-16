@@ -1,4 +1,4 @@
-// NativeEconomyRuntime::capture_country_epoch, extracted from economy_runtime.cpp; body is token-preserved.
+// Capture the frozen Country input and prepare Economy's derived country views.
 #include "economy_cost_probe.h"
 #include "economy_effect_forward.h"
 #include "economy_runtime.h"
@@ -110,6 +110,13 @@ double elapsed_ms(const Clock::time_point &start) {
 
 bool NativeEconomyRuntime::capture_country_epoch(
         std::string &error, bool *out_pending_city_factors) {
+    auto phase_started = Clock::now();
+    const auto record_phase = [&](const char *name) {
+        const auto now = Clock::now();
+        EconomyCostProbe::record(name, _current_day.get(),
+            std::chrono::duration<double, std::milli>(now - phase_started).count());
+        phase_started = now;
+    };
     if (out_pending_city_factors != nullptr)
         *out_pending_city_factors = false;
     _technology_words = static_cast<int32_t>((_technology_ids.size() + 63) / 64);
@@ -132,6 +139,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
         error = "country_snapshot_shape_invalid";
         return false;
     }
+    record_phase("country_capture.snapshot");
     _epoch_cell_country = std::move(snapshot.cell_country_slot);
     _epoch_country_handles = std::move(snapshot.country_handles);
     _epoch_country_political_regime_capabilities = std::move(
@@ -177,11 +185,12 @@ bool NativeEconomyRuntime::capture_country_epoch(
     // the day. The refresh itself reuses the rows when the source revision has
     // not advanced.
     refresh_class_opinion_metrics();
+    record_phase("country_capture.technology_metrics");
     // Must run right after _epoch_country_count so the CSR slice count matches
     // the ownership column it was derived from. Landing here (instead of at the
     // end of the capture) means a later capture failure leaves a territory index
     // that is stale in exactly the same way as the rest of the epoch state.
-    rebuild_country_territory_index();
+    refresh_country_territory_cache();
     // X13 residual: one pass over the same ownership column the CSR was built
     // from. `advance_climate_day_columns` has already updated today's hazard
     // counters, so this is the frozen country answer every metric sample reads.
@@ -211,18 +220,8 @@ bool NativeEconomyRuntime::capture_country_epoch(
                         Q16_ONE / owned, 0, Q16_ONE));
         }
     }
-    // X12 consumes both the territory hash and the canal topology. Compute the
-    // hash before the tag snapshot so the derived geography columns are current
-    // when tag rows sample metrics 75/76.
-    uint64_t topology_hash = 1469598103934665603ULL;
-    for (const int32_t country : _epoch_cell_country) {
-        const uint32_t value = static_cast<uint32_t>(country);
-        for (int32_t byte = 0; byte < 4; ++byte) {
-            topology_hash ^= static_cast<uint8_t>((value >> (byte * 8)) & 0xffU);
-            topology_hash *= 1099511628211ULL;
-        }
-    }
-    _epoch_country_topology_hash = (topology_hash & 0x7fffffffffffffffULL) | 1ULL;
+    // X12 consumes the territory hash refreshed with the index above and the
+    // canal topology. Keep geography current before tag rows sample 75/76.
     rebuild_epoch_geo_columns();
     // X9-a reads the branch table frozen by the previous FAMILY_COMMIT. Refresh
     // the aggregate columns before tag evaluation so day-one `cell.clan` and
@@ -320,11 +319,13 @@ bool NativeEconomyRuntime::capture_country_epoch(
     // R-3, stated precisely: the tag tables are safe to read concurrently because
     // they are immutable snapshots swapped by atomic store, NOT because this whole
     // function is atomic. The territory index right above
-    // (`rebuild_country_territory_index`) is still rewritten IN PLACE -- it always
-    // was -- so a reader that needs territory and tags together must hold the input
+    // (`refresh_country_territory_cache`) is rewritten IN PLACE when ownership
+    // changes, so a reader that needs territory and tags together must hold the input
     // capture boundary lock, which is why `step_ideology_instance_refresh` takes it.
     // Reading only the tag snapshot needs no lock at all.
+    record_phase("country_capture.derived_metrics");
     rebuild_epoch_tag_snapshot();
+    record_phase("country_capture.tags");
     _epoch_country_generation = snapshot.generation;
     _epoch_country_hash = snapshot.state_hash;
     _epoch_tax_policy_version = snapshot.tax_policy_version;
@@ -365,205 +366,9 @@ bool NativeEconomyRuntime::capture_country_epoch(
         error = "country_cell_tax_snapshot_shape_invalid";
         return false;
     }
-    const auto requirements_available = [&](int32_t country, int32_t begin,
-                                             int32_t end,
-                                             const std::vector<int32_t> &requirements) {
-        if (begin < 0 || end < begin ||
-            end > static_cast<int32_t>(requirements.size())) return false;
-        if (begin == end) return true;
-        for (int32_t i = begin; i < end; ++i) {
-            const int32_t technology_id = requirements[i];
-            if (technology_id < 0 ||
-                technology_id >= static_cast<int32_t>(_technology_ids.size()))
-                return false;
-            const size_t word_index = static_cast<size_t>(country) *
-                _epoch_country_technology_words + technology_id / 64;
-            if (word_index < _epoch_country_technologies.size() &&
-                (_epoch_country_technologies[word_index] &
-                 (uint64_t{1} << (technology_id % 64))) != 0) return true;
-        }
-        return false;
-    };
-    const auto all_requirements_available = [&](int32_t country, int32_t begin,
-                                                 int32_t end,
-                                                 const std::vector<int32_t> &requirements) {
-        if (begin < 0 || end < begin ||
-            end > static_cast<int32_t>(requirements.size())) return false;
-        for (int32_t i = begin; i < end; ++i) {
-            const int32_t technology_id = requirements[i];
-            if (technology_id < 0 ||
-                technology_id >= static_cast<int32_t>(_technology_ids.size())) return false;
-            const size_t word_index = static_cast<size_t>(country) *
-                _epoch_country_technology_words + technology_id / 64;
-            if (word_index >= _epoch_country_technologies.size() ||
-                (_epoch_country_technologies[word_index] &
-                 (uint64_t{1} << (technology_id % 64))) == 0) return false;
-        }
-        return true;
-    };
-    const auto dependency_requirements_available = [&](int32_t country,
-                                                        int32_t type_id) {
-        if (type_id < 0 || type_id + 1 >= static_cast<int32_t>(
-                _building_dependency_branch_offsets.size())) return false;
-        const int32_t branch_begin = _building_dependency_branch_offsets[
-            static_cast<size_t>(type_id)];
-        const int32_t branch_end = _building_dependency_branch_offsets[
-            static_cast<size_t>(type_id + 1)];
-        auto has_technology = [&](int32_t technology_id) {
-            if (technology_id < 0 || technology_id >= static_cast<int32_t>(
-                    _technology_ids.size())) return false;
-            const size_t word_index = static_cast<size_t>(country) *
-                _epoch_country_technology_words + technology_id / 64;
-            return word_index < _epoch_country_technologies.size() &&
-                (_epoch_country_technologies[word_index] &
-                 (uint64_t{1} << (technology_id % 64))) != 0;
-        };
-        for (int32_t branch = branch_begin; branch < branch_end; ++branch) {
-            const int32_t tech_begin = _building_dependency_branch_technology_offsets[
-                static_cast<size_t>(branch)];
-            const int32_t tech_end = _building_dependency_branch_technology_offsets[
-                static_cast<size_t>(branch + 1)];
-            bool branch_ready = true;
-            for (int32_t edge = tech_begin; edge < tech_end; ++edge) {
-                if (!has_technology(_building_dependency_branch_technologies[
-                        static_cast<size_t>(edge)])) {
-                    branch_ready = false;
-                    break;
-                }
-            }
-            if (!branch_ready) continue;
-            const int32_t group_begin = _building_dependency_branch_group_offsets[
-                static_cast<size_t>(branch)];
-            const int32_t group_end = _building_dependency_branch_group_offsets[
-                static_cast<size_t>(branch + 1)];
-            for (int32_t group = group_begin; group < group_end; ++group) {
-                if (!building_dependency_group_required_for_operation(group))
-                    continue;
-                bool group_ready = false;
-                for (int32_t tag = _building_dependency_tag_offsets[
-                        static_cast<size_t>(group)];
-                     tag < _building_dependency_tag_offsets[
-                        static_cast<size_t>(group + 1)]; ++tag) {
-                    if (has_technology(_building_dependency_tags[
-                            static_cast<size_t>(tag)])) {
-                        group_ready = true;
-                        break;
-                    }
-                }
-                if (!group_ready) {
-                    branch_ready = false;
-                    break;
-                }
-            }
-            if (branch_ready) return true;
-        }
-        return false;
-    };
-    _epoch_country_good_available.assign(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) *
-            _good_ids.size(), 0);
-    _epoch_country_market_available.assign(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) *
-            _good_ids.size(), 0);
-    _epoch_country_profession_available.assign(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) *
-            _profession_ids.size(), 0);
-    _epoch_country_variant_available.assign(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) *
-            _variants.size(), 0);
-    for (int32_t country = 0; country < _epoch_country_count; ++country) {
-        for (int32_t good = 0;
-             good < static_cast<int32_t>(_good_ids.size()); ++good) {
-            const bool available =
-                good + 1 < static_cast<int32_t>(
-                    _good_technology_offsets.size()) &&
-                requirements_available(country,
-                    _good_technology_offsets[good],
-                    _good_technology_offsets[good + 1],
-                    _good_required_technologies);
-            _epoch_country_good_available[
-                static_cast<size_t>(country) * _good_ids.size() + good] =
-                    available ? 1 : 0;
-            const bool market_available = available ||
-                (good < static_cast<int32_t>(_good_trade_enabled.size()) &&
-                 _good_trade_enabled[good] != 0 &&
-                 good < static_cast<int32_t>(_good_storage_modes.size()) &&
-                 _good_storage_modes[good] == 0);
-            _epoch_country_market_available[
-                static_cast<size_t>(country) * _good_ids.size() + good] =
-                    market_available ? 1 : 0;
-        }
-        for (int32_t profession = 0;
-             profession < static_cast<int32_t>(_profession_ids.size());
-             ++profession) {
-            const bool available =
-                profession + 1 < static_cast<int32_t>(
-                    _profession_technology_offsets.size()) &&
-                requirements_available(country,
-                    _profession_technology_offsets[profession],
-                    _profession_technology_offsets[profession + 1],
-                    _profession_required_technologies);
-            _epoch_country_profession_available[
-                static_cast<size_t>(country) * _profession_ids.size() +
-                profession] = available ? 1 : 0;
-        }
-        for (int32_t variant = 0;
-             variant < static_cast<int32_t>(_variants.size()); ++variant) {
-            const VariantChoice &choice = _variants[variant];
-            bool available = true;
-            for (int32_t component = 0;
-                 component < choice.component_count; ++component) {
-                const int32_t good = _components[
-                    choice.component_begin + component].good_id;
-                const size_t good_index = static_cast<size_t>(country) *
-                    _good_ids.size() + static_cast<size_t>(std::max(0, good));
-                if (good < 0 ||
-                    good >= static_cast<int32_t>(_good_ids.size()) ||
-                    good_index >= _epoch_country_good_available.size() ||
-                    _epoch_country_good_available[good_index] == 0) {
-                    available = false;
-                    break;
-                }
-            }
-            _epoch_country_variant_available[
-                static_cast<size_t>(country) * _variants.size() + variant] =
-                    available ? 1 : 0;
-        }
-    }
-    _epoch_country_building_available.assign(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) *
-            _building_types.size(), 0);
-    _epoch_country_building_type_offsets.assign(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) + 1, 0);
-    _epoch_country_building_type_indices.clear();
-    _epoch_country_building_type_indices.reserve(
-        static_cast<size_t>(std::max(0, _epoch_country_count)) *
-            _building_types.size());
-    for (int32_t country = 0; country < _epoch_country_count; ++country) {
-        for (int32_t type_id = 0;
-             type_id < static_cast<int32_t>(_building_types.size()); ++type_id) {
-            const bool available = type_id + 1 < static_cast<int32_t>(
-                    _building_technology_offsets.size()) &&
-                requirements_available(country,
-                    _building_technology_offsets[type_id],
-                    _building_technology_offsets[type_id + 1],
-                    _building_required_technologies) &&
-                type_id + 1 < static_cast<int32_t>(
-                    _building_all_technology_offsets.size()) &&
-                all_requirements_available(country,
-                    _building_all_technology_offsets[type_id],
-                    _building_all_technology_offsets[type_id + 1],
-                    _building_all_required_technologies) &&
-                dependency_requirements_available(country, type_id);
-            const size_t cache_index = static_cast<size_t>(country) *
-                _building_types.size() + static_cast<size_t>(type_id);
-            _epoch_country_building_available[cache_index] = available ? 1 : 0;
-            if (available)
-                _epoch_country_building_type_indices.push_back(type_id);
-        }
-        _epoch_country_building_type_offsets[country + 1] =
-            static_cast<int32_t>(_epoch_country_building_type_indices.size());
-    }
+    record_phase("country_capture.tax_snapshot");
+    refresh_country_availability_cache();
+    record_phase("country_capture.availability");
     _epoch_country_merchant_population.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     _epoch_country_population.assign(
@@ -682,6 +487,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_construction_time_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    record_phase("country_capture.population_and_defaults");
     const auto city_factor_started = Clock::now();
     // The city-factor reader can now yield mid-work-set (plan §14.3). Report it
     // so the caller parks and resumes instead of treating a yield as success:
@@ -693,6 +499,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
     const bool city_factors_done = refresh_city_modifier_factors();
     const bool output_factors_done = refresh_city_output_modifier_factors();
     _epoch_begin_city_factor_ms = elapsed_ms(city_factor_started);
+    record_phase("country_capture.city_modifiers");
     if (!city_factors_done || !output_factors_done) {
         if (out_pending_city_factors != nullptr)
             *out_pending_city_factors = true;
@@ -960,6 +767,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
                         _epoch_country_handles[static_cast<size_t>(country)]));
         }
     }
+    record_phase("country_capture.country_modifiers");
     // R-4 metric 69: treasury reserve ratio per country, in percentage points.
     //
     // ONE pass over the cohorts, not one pass per country: the per-country version
@@ -1005,6 +813,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
             }
         }
     }
+    record_phase("country_capture.reserves");
     const auto cell_tax_compile_started = Clock::now();
     _epoch_cell_compiled_tax_policy.assign(
         static_cast<size_t>(_cell_count.get()), 0);
@@ -1356,10 +1165,12 @@ bool NativeEconomyRuntime::capture_country_epoch(
             sizeof(CompiledCellTaxDefaultRow) +
         _epoch_compiled_cell_tax_default_rates.size() * sizeof(int32_t));
     _epoch_cell_tax_compile_ms = elapsed_ms(cell_tax_compile_started);
+    record_phase("country_capture.cell_tax");
     const auto building_factor_started = Clock::now();
     refresh_building_modifier_factors();
     _epoch_begin_building_factor_ms = elapsed_ms(building_factor_started);
     refresh_epoch_development();
+    record_phase("country_capture.building_factors_and_development");
     return true;
 }
 

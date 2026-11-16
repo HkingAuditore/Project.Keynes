@@ -663,6 +663,14 @@ Dictionary DCWorldExt::step_ideology_derived_rebuild(int64_t day_index) {
         ++steps;
     } while (!ok && error.empty() && runtime->derived_rebuild_pending() && steps < 4096);
     const bool pending = runtime->derived_rebuild_pending();
+    if (ok && !pending && _economy_modifier_view_attached &&
+        _economy_modifier_view != nullptr && _modifier_runtime != nullptr) {
+        // POD instance snapshots intentionally exclude this layer. Publish it
+        // separately while the same boundary still protects the completed fold.
+        static_cast<ModifierRuntime *>(_economy_modifier_view)
+            ->copy_derived_cell_layer_from(
+                *static_cast<const ModifierRuntime *>(_modifier_runtime));
+    }
     Dictionary out;
     out["ok"] = ok;
     out["done"] = ok && !pending;

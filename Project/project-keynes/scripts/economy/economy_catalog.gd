@@ -1,6 +1,8 @@
 class_name EconomyCatalog
 extends RefCounted
 
+const CarryingCompiler = preload("res://scripts/economy/economy_carrying_catalog_compiler.gd")
+
 const PROFESSION_DIR := "res://data/economy/professions"
 const ETHNICITY_DIR := "res://data/economy/ethnicities"
 const PLAN_DIR := "res://data/economy/consumption_plans"
@@ -75,18 +77,32 @@ const SIGNAL_IDS := {
 static func compile_native_catalog(
 		family_effect_catalog_override: Resource = null,
 		family_trait_catalog_override: Resource = null) -> Dictionary:
+	return _compile_native_catalog.call(null, family_effect_catalog_override, family_trait_catalog_override)
+
+static func compile_native_catalog_cooperative(context,
+		family_effect_catalog_override: Resource = null,
+		family_trait_catalog_override: Resource = null) -> Dictionary:
+	return await context.dictionary("economy",
+		[family_effect_catalog_override, family_trait_catalog_override],
+		_compile_native_catalog, [family_effect_catalog_override, family_trait_catalog_override])
+
+static func _compile_native_catalog(context,
+		family_effect_catalog_override: Resource,
+		family_trait_catalog_override: Resource) -> Dictionary:
 	if family_trait_catalog_override == null and family_effect_catalog_override == null:
 		var precompiled := LoadingCatalogCache.economy_catalog()
 		if not precompiled.is_empty():
 			return precompiled
-	var professions := _load_resources(PROFESSION_DIR)
-	var ethnicities := _load_resources(ETHNICITY_DIR)
-	var plans := _load_resources(PLAN_DIR)
-	var needs := _load_resources(NEED_DIR)
-	var curves := _load_resources(CURVE_DIR)
+	var professions := await _load_resources_impl(PROFESSION_DIR, context)
+	var ethnicities := await _load_resources_impl(ETHNICITY_DIR, context)
+	var plans := await _load_resources_impl(PLAN_DIR, context)
+	var needs := await _load_resources_impl(NEED_DIR, context)
+	var curves := await _load_resources_impl(CURVE_DIR, context)
 	if professions.is_empty() or ethnicities.is_empty() or plans.is_empty() or needs.is_empty():
 		return {"ok": false, "reason": "market v2 catalog is incomplete"}
 
+	if context != null:
+		context.stage("goods_columns")
 	var good_columns: Dictionary = GoodProfileRegistry.compile_native_columns()
 	if not bool(good_columns.get("ok", false)):
 		return good_columns
@@ -103,6 +119,10 @@ static func compile_native_catalog(
 	var need_semantic_tag_offsets := PackedInt32Array([0])
 	var need_semantic_tags := PackedStringArray()
 	for need in needs:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var living_weight := int(need.living_cost_weight_q16)
 		if living_weight < 0 or living_weight > Q16_ONE:
 			return {"ok": false, "reason": "invalid living cost weight: %s" % String(need.id)}
@@ -135,6 +155,10 @@ static func compile_native_catalog(
 	var curve_signal_ids := PackedInt32Array()
 	var curve_values := PackedInt32Array()
 	for curve in curves:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var curve_id := String(curve.id)
 		var signal_name := String(curve.signal_id)
 		if not SIGNAL_IDS.has(signal_name) or curve.values_q16.size() != 17:
@@ -148,6 +172,10 @@ static func compile_native_catalog(
 	var plan_ids := PackedStringArray()
 	var plan_index := {}
 	for i in range(plans.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var stable_id := String(plans[i].id)
 		if stable_id == "" or plan_index.has(stable_id):
 			return {"ok": false, "reason": "invalid or duplicate plan id: %s" % stable_id}
@@ -175,6 +203,10 @@ static func compile_native_catalog(
 	var component_qty := PackedInt64Array()
 
 	for plan in plans:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var need_count: int = plan.need_ids.size()
 		if need_count > 20 or plan.priorities.size() != need_count \
 				or plan.base_qty_per_person.size() != need_count \
@@ -278,6 +310,10 @@ static func compile_native_catalog(
 	var profession_need_weight_q16 := PackedInt32Array()
 	var profession_index := {}
 	for i in range(professions.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var stable_id := String(professions[i].id)
 		if stable_id == "" or profession_index.has(stable_id) \
 				or not plan_index.has(String(professions[i].default_consumption_plan_id)):
@@ -348,6 +384,10 @@ static func compile_native_catalog(
 	var ethnicity_culture_group_ids := PackedStringArray()
 	var ethnicity_need_factor := PackedInt32Array()
 	for ethnicity in ethnicities:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var stable_id := String(ethnicity.id)
 		if stable_id == "" or ethnicity_ids.has(stable_id) \
 				or ethnicity.need_modifier_ids.size() != ethnicity.need_quantity_factors_q16.size():
@@ -376,6 +416,10 @@ static func compile_native_catalog(
 	var signature_satisfaction_dimension_weights := PackedInt32Array()
 	var signature_keys := PackedStringArray()
 	for profession_idx in range(professions.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var profession = professions[profession_idx]
 		var dimension_weights: PackedInt32Array = profession.satisfaction_dimension_weights_q16
 		if not dimension_weights.is_empty() \
@@ -469,6 +513,10 @@ static func compile_native_catalog(
 				return String(value).to_lower())),
 	}
 	for key in good_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		catalog[key] = good_columns[key]
 	# Military v1 columns are newer than every compat hash. Strip them from all
 	# of the historical hash inputs so an unchanged pre-military catalog keeps
@@ -510,11 +558,11 @@ static func compile_native_catalog(
 			market_v7_columns, market_v6_columns]:
 		for key in MILITARY_V1_COLUMNS:
 			compat_columns.erase(key)
-	var market_compat_hash_v6 := _catalog_hash(market_v6_columns)
-	catalog["market_catalog_hash"] = _catalog_hash(catalog)
-	catalog["market_catalog_compat_hash_v8"] = _catalog_hash(market_v8_columns)
-	var building_columns := BuildingColumnsCompilerScript.compile(
-		_load_resources(BUILDING_DIR), _load_resources(PRODUCTION_CLIMATE_DIR),
+	var market_compat_hash_v6 := await _catalog_hash_impl(market_v6_columns, context)
+	catalog["market_catalog_hash"] = await _catalog_hash_impl(catalog, context)
+	catalog["market_catalog_compat_hash_v8"] = await _catalog_hash_impl(market_v8_columns, context)
+	var building_columns := await BuildingColumnsCompilerScript.compile_cooperative(context,
+		await _load_resources_impl(BUILDING_DIR, context), await _load_resources_impl(PRODUCTION_CLIMATE_DIR, context),
 		profession_index, good_index, good_columns.good_storage_modes,
 		good_columns.good_monetary_issue_values,
 		good_columns.good_substitution_category_offsets,
@@ -525,6 +573,8 @@ static func compile_native_catalog(
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
 	building_columns.erase("ok")
+	if context != null:
+		context.stage("technology_columns")
 	var technology_catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	if not bool(technology_catalog.get("ok", false)):
 		return technology_catalog
@@ -538,14 +588,26 @@ static func compile_native_catalog(
 	var technology_binding_rows: Array = []
 	technology_binding_rows.resize(technology_ids.size())
 	for technology_index_value in range(technology_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var technology_id := String(technology_ids[technology_index_value])
 		technology_set[technology_id] = true
 		technology_index[technology_id] = technology_index_value
 		technology_binding_rows[technology_index_value] = []
 	var building_type_set := {}
 	for building_id in building_columns.building_type_ids:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		building_type_set[String(building_id)] = true
 	for intersection_value in technology_catalog.get("technology_application_intersections", []):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var intersection: Dictionary = intersection_value
 		for building_value in intersection.get("building_ids", []):
 			var building_id := String(building_value)
@@ -554,6 +616,10 @@ static func compile_native_catalog(
 					"id": String(intersection.get("id", "")), "building_id": building_id}
 	var good_tag_offsets: PackedInt32Array = good_columns.good_technology_tag_offsets
 	for good_index_value in range(good_columns.good_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var good_binding_count := 0
 		for tag_index in range(good_tag_offsets[good_index_value],
 				good_tag_offsets[good_index_value + 1]):
@@ -570,6 +636,10 @@ static func compile_native_catalog(
 			return {"ok": false, "reason": "good_technology_binding_missing",
 				"id": String(good_columns.good_ids[good_index_value])}
 	for profession_index_value in range(profession_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		for tag_index in range(profession_technology_tag_offsets[profession_index_value],
 				profession_technology_tag_offsets[profession_index_value + 1]):
 			var tag := String(profession_technology_tags[tag_index]).strip_edges()
@@ -584,6 +654,10 @@ static func compile_native_catalog(
 	var building_output_good_ids: PackedInt32Array = building_columns.building_output_good_ids
 	var production_permit_keys := {}
 	for building_index_value in range(building_columns.building_type_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var building_binding_count := 0
 		var direct_building_technology_ids := PackedStringArray()
 		for tag_index in range(building_tag_offsets[building_index_value],
@@ -623,6 +697,10 @@ static func compile_native_catalog(
 				production_permit_keys["%s|%s" % [
 					direct_technology_id, output_good_id]] = true
 	for good_index_value in range(good_columns.good_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var good_id := String(good_columns.good_ids[good_index_value])
 		for tag_index in range(good_tag_offsets[good_index_value],
 				good_tag_offsets[good_index_value + 1]):
@@ -637,6 +715,10 @@ static func compile_native_catalog(
 	var resource_tag_offsets := PackedInt32Array([0])
 	var resource_technology_tags := PackedStringArray()
 	for resource in ResourceRegistryScript.ordered():
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		resource_ids.append(String(resource.id))
 		var resource_binding_count := 0
 		for tag in resource.discovery_technology_tags:
@@ -657,6 +739,8 @@ static func compile_native_catalog(
 			return {"ok": false, "reason": "resource_technology_binding_missing",
 				"id": String(resource.id)}
 		resource_tag_offsets.append(resource_technology_tags.size())
+	if context != null:
+		context.stage("building_dependencies")
 	var dependency_columns := _compile_building_dependency_columns(
 		building_columns, good_columns, building_columns.building_resource_ids,
 		building_columns.building_resource_technology_tag_offsets,
@@ -665,6 +749,10 @@ static func compile_native_catalog(
 	if not bool(dependency_columns.get("ok", false)):
 		return dependency_columns
 	for technology_index_value in range(technology_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var binding_count: int = technology_binding_rows[technology_index_value].size()
 		var technology_id := String(technology_ids[technology_index_value])
 		var is_milestone := (int(technology_catalog.technology_flags[technology_index_value]) \
@@ -680,6 +768,10 @@ static func compile_native_catalog(
 		technology_catalog.technology_modifier_term_offsets
 	var recipe_ids: PackedStringArray = technology_catalog.technology_effect_recipe_ids
 	for technology_index_value in range(technology_ids.size()):
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		for binding in technology_binding_rows[technology_index_value]:
 			technology_binding_kinds.append(int(binding[0]))
 			technology_binding_ids.append(String(binding[1]))
@@ -725,9 +817,17 @@ static func compile_native_catalog(
 		"building_dependency_tags": dependency_columns.building_dependency_tags,
 	}
 	for key in technology_catalog:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if key != "ok":
 			catalog[key] = technology_catalog[key]
 	for key in development_catalog:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if key != "ok":
 			catalog[key] = development_catalog[key]
 	for key in ["technology_content_binding_offsets", "technology_content_binding_kinds",
@@ -750,9 +850,9 @@ static func compile_native_catalog(
 			"reason": "trigger_catalog_missing"}
 	if not bool(trigger_catalog.get("ok", false)):
 		return trigger_catalog
-	catalog["technology_catalog_identity_hash"] = _catalog_hash(technology_catalog)
-	catalog["technology_content_binding_hash"] = _catalog_hash(content_binding_summary)
-	catalog["technology_trigger_definition_hash"] = _catalog_hash(trigger_catalog)
+	catalog["technology_catalog_identity_hash"] = await _catalog_hash_impl(technology_catalog, context)
+	catalog["technology_content_binding_hash"] = await _catalog_hash_impl(content_binding_summary, context)
+	catalog["technology_trigger_definition_hash"] = await _catalog_hash_impl(trigger_catalog, context)
 	var building_v7_columns := building_columns.duplicate(true)
 	for key in [
 		"building_upgrade_family_ids", "building_upgrade_family_indices",
@@ -776,12 +876,18 @@ static func compile_native_catalog(
 		"building_output_cost_share_offsets", "building_output_cost_shares_q16",
 	]:
 		building_v6_columns.erase(key)
-	catalog["building_catalog_hash"] = _catalog_hash(building_columns)
-	var carrying_columns := _compile_carrying_columns(catalog, building_columns, good_columns)
+	catalog["building_catalog_hash"] = await _catalog_hash_impl(building_columns, context)
+	if context != null:
+		context.stage("carrying_columns")
+	var carrying_columns := CarryingCompiler.compile(catalog, building_columns, good_columns, _index_ids)
 	if not bool(carrying_columns.get("ok", false)):
 		return carrying_columns
 	carrying_columns.erase("ok")
 	for key in carrying_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		catalog[key] = carrying_columns[key]
 	var building_v13_columns := building_columns.duplicate(true)
 	for key in [
@@ -809,29 +915,37 @@ static func compile_native_catalog(
 		"building_resource_moisture_signal",
 	]:
 		building_v13_columns.erase(key)
-	var building_compat_hash_v13 := _catalog_hash(building_v13_columns)
+	var building_compat_hash_v13 := await _catalog_hash_impl(building_v13_columns, context)
 	catalog["market_catalog_compat_hash_v6"] = market_compat_hash_v6
-	catalog["market_catalog_compat_hash_v7"] = _catalog_hash(market_v7_columns)
-	catalog["building_catalog_compat_hash_v6"] = _catalog_hash(building_v6_columns)
-	catalog["building_catalog_compat_hash_v7"] = _catalog_hash(building_v7_columns)
+	catalog["market_catalog_compat_hash_v7"] = await _catalog_hash_impl(market_v7_columns, context)
+	catalog["building_catalog_compat_hash_v6"] = await _catalog_hash_impl(building_v6_columns, context)
+	catalog["building_catalog_compat_hash_v7"] = await _catalog_hash_impl(building_v7_columns, context)
 	for key in building_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		catalog[key] = building_columns[key]
 	var catalog_v13 := catalog.duplicate(true)
 	for key in building_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if not building_v13_columns.has(key):
 			catalog_v13.erase(key)
 	catalog_v13["building_catalog_hash"] = building_compat_hash_v13
 	catalog["building_catalog_compat_hash_v13"] = building_compat_hash_v13
-	catalog["catalog_compat_hash_v13"] = _catalog_hash(catalog_v13)
+	catalog["catalog_compat_hash_v13"] = await _catalog_hash_impl(catalog_v13, context)
 	var catalog_v10 := catalog.duplicate(true)
 	catalog_v10.erase("good_trade_enabled")
 	catalog_v10.erase("good_transport_load_per_unit_q16")
-	catalog_v10["market_catalog_hash"] = _catalog_hash(market_v10_columns)
-	catalog_v10["market_catalog_compat_hash_v8"] = _catalog_hash(market_v10_v8_columns)
-	catalog_v10["market_catalog_compat_hash_v7"] = _catalog_hash(market_v10_v7_columns)
-	catalog_v10["market_catalog_compat_hash_v6"] = _catalog_hash(market_v10_v6_columns)
-	catalog["catalog_compat_hash_v10"] = _catalog_hash(catalog_v10)
-	catalog["catalog_hash"] = _catalog_hash(catalog)
+	catalog_v10["market_catalog_hash"] = await _catalog_hash_impl(market_v10_columns, context)
+	catalog_v10["market_catalog_compat_hash_v8"] = await _catalog_hash_impl(market_v10_v8_columns, context)
+	catalog_v10["market_catalog_compat_hash_v7"] = await _catalog_hash_impl(market_v10_v7_columns, context)
+	catalog_v10["market_catalog_compat_hash_v6"] = await _catalog_hash_impl(market_v10_v6_columns, context)
+	catalog["catalog_compat_hash_v10"] = await _catalog_hash_impl(catalog_v10, context)
+	catalog["catalog_hash"] = await _catalog_hash_impl(catalog, context)
 	var settlement_profile = load(DEFAULT_SETTLEMENT_PROFILE_PATH)
 	if settlement_profile == null or not settlement_profile.has_method("compile_native_columns"):
 		return {"ok": false, "reason": "default settlement profile is unavailable"}
@@ -839,6 +953,10 @@ static func compile_native_catalog(
 	if not bool(settlement_columns.get("ok", false)):
 		return settlement_columns
 	for key in settlement_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if key != "ok":
 			catalog[key] = settlement_columns[key]
 	var family_pack = load(DEFAULT_FAMILY_SURNAME_PACK_PATH)
@@ -848,6 +966,10 @@ static func compile_native_catalog(
 	if not bool(family_columns.get("ok", false)):
 		return family_columns
 	for key in family_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if key != "ok":
 			catalog[key] = family_columns[key]
 	var person_pack = load(DEFAULT_PERSON_GIVEN_NAME_PACK_PATH)
@@ -857,6 +979,10 @@ static func compile_native_catalog(
 	if not bool(person_columns.get("ok", false)):
 		return person_columns
 	for key in person_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if key != "ok":
 			catalog[key] = person_columns[key]
 	var trait_catalog = family_trait_catalog_override
@@ -869,6 +995,8 @@ static func compile_native_catalog(
 		family_effect_catalog = FamilyEffectCatalogScript.load_default()
 	if family_effect_catalog == null or not family_effect_catalog is FamilyEffectCatalogScript:
 		return {"ok": false, "reason": "family effect catalog is unavailable"}
+	if context != null:
+		context.stage("family_effect_columns")
 	var family_effect_ir: Dictionary = family_effect_catalog.compile_native_catalog(
 		catalog.get("technology_ids", PackedStringArray()))
 	if not bool(family_effect_ir.get("ok", false)):
@@ -876,6 +1004,10 @@ static func compile_native_catalog(
 	family_effect_ir.erase("ok")
 	family_effect_ir.erase("definitions")
 	for key in family_effect_ir:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		catalog[key] = family_effect_ir[key]
 	var trait_columns: Dictionary = trait_catalog.compile_native_columns(
 		catalog, family_effect_ir.get("family_effect_keys", PackedStringArray()),
@@ -883,6 +1015,10 @@ static func compile_native_catalog(
 	if not bool(trait_columns.get("ok", false)):
 		return trait_columns
 	for key in trait_columns:
+		if context != null:
+			await context.checkpoint("economy")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if key != "ok":
 			catalog[key] = trait_columns[key]
 	var family_v39_columns := {
@@ -902,271 +1038,29 @@ static func compile_native_catalog(
 		catalog_v39.erase(key)
 	catalog_v39["family_catalog_hash"] = family_v39_hash
 	catalog["family_catalog_compat_hash_v39"] = family_v39_hash
-	catalog["catalog_compat_hash_v39"] = _catalog_hash(catalog_v39)
+	catalog["catalog_compat_hash_v39"] = await _catalog_hash_impl(catalog_v39, context)
 	# Final identity includes family traits and the consumption model version.
-	catalog["catalog_hash"] = _catalog_hash(catalog)
+	catalog["catalog_hash"] = await _catalog_hash_impl(catalog, context)
 	catalog["ok"] = true
 	return catalog
 
 
 static func need_display_names() -> Dictionary:
+	return _need_display_names_impl.call(null)
+
+static func _need_display_names_impl(context) -> Dictionary:
 	var names := {}
-	for need in _load_resources(NEED_DIR):
+	for need in await _load_resources_impl(NEED_DIR, context):
+		if context != null:
+			await context.checkpoint("need_displays")
+			if context.canceled:
+				return {}
 		var stable_id := String(need.id)
 		if stable_id == "":
 			continue
 		var display_name := String(need.display_name)
 		names[stable_id] = display_name if display_name != "" else stable_id
 	return names
-
-static func _compile_carrying_columns(catalog: Dictionary, building_columns: Dictionary,
-		good_columns: Dictionary) -> Dictionary:
-	const FAMILY_SPECS := [
-		["staple", "staple_food"],
-		["protein", "protein"],
-		["produce", "produce"],
-		["clothing", "clothing"],
-		["housing", "housing"],
-		["household", "household_goods"],
-		["hygiene", "hygiene"],
-		["healthcare", "healthcare"],
-		["energy", "home_energy"],
-		["transport", "transport"],
-		["communication", "communication"],
-		["education", "education_culture"],
-		["recreation", "recreation"],
-		["durables", "durable_goods"],
-		["work_tools", "work_equipment"],
-		["luxury", "luxury"],
-		["status", "status_goods"],
-	]
-	const PRODUCER_SPECS := [
-		["construction", [
-			"primitive_construction", "masonry_material", "plant_construction",
-			"construction_components", "raw_stone", "lumber"]],
-		["mill_tools", ["tools", "tool_metal"]],
-		["metals", ["ferrous_stock", "structural_metal", "tool_metal"]],
-		["bullion", ["precious_metal"]],
-	]
-	const SUPPORT_RESOURCE_IDS := [
-		"arable_land", "paddy_land", "pasture", "plantation_land",
-		"wild_game", "freshwater_fish", "marine_fish",
-	]
-	var need_ids: PackedStringArray = catalog.get("need_ids", PackedStringArray())
-	var need_index := _index_ids(need_ids)
-	var family_ids := PackedStringArray()
-	var family_need_stable := PackedInt32Array()
-	var family_good_offsets := PackedInt32Array([0])
-	var family_goods := PackedInt32Array()
-	var household_goods := {}
-	for spec in FAMILY_SPECS:
-		var family_id := String(spec[0])
-		var need_id := String(spec[1])
-		if not need_index.has(need_id):
-			return {"ok": false, "reason": "carrying_need_family_missing:%s" % need_id}
-		var need_stable := int(need_index[need_id])
-		var goods := _carrying_need_goods(need_stable, catalog)
-		family_ids.append(family_id)
-		family_need_stable.append(need_stable)
-		for good_id in goods:
-			household_goods[int(good_id)] = true
-			family_goods.append(int(good_id))
-		family_good_offsets.append(family_goods.size())
-	var category_goods := _carrying_category_goods(
-		good_columns.get("good_substitution_category_offsets", PackedInt32Array()),
-		good_columns.get("good_substitution_category_ids", PackedStringArray()),
-		int((good_columns.get("good_ids", PackedStringArray()) as PackedStringArray).size()))
-	if bool(category_goods.get("ok", true)) == false:
-		return category_goods
-	var used_producer_goods := {}
-	for spec in PRODUCER_SPECS:
-		var family_id := String(spec[0])
-		var categories: Array = spec[1]
-		var collected := PackedInt32Array()
-		var seen := {}
-		for category_id in categories:
-			var members: PackedInt32Array = category_goods.get(String(category_id), PackedInt32Array())
-			for good_id in members:
-				var gid := int(good_id)
-				if household_goods.has(gid) or used_producer_goods.has(gid) or seen.has(gid):
-					continue
-				seen[gid] = true
-				collected.append(gid)
-		collected.sort()
-		for gid in collected:
-			used_producer_goods[int(gid)] = true
-			family_goods.append(int(gid))
-		family_ids.append(family_id)
-		family_need_stable.append(-1)
-		family_good_offsets.append(family_goods.size())
-	var resource_ids: PackedStringArray = building_columns.get(
-		"building_resource_ids", PackedStringArray())
-	var resource_index := _index_ids(resource_ids)
-	var support_resource_ids := PackedInt32Array()
-	for resource_id in SUPPORT_RESOURCE_IDS:
-		support_resource_ids.append(int(resource_index.get(String(resource_id), -1)))
-	var food_need_stables := PackedInt32Array()
-	for need_id in ["staple_food", "protein", "produce"]:
-		food_need_stables.append(int(need_index[need_id]))
-	var survival_food_goods := {}
-	for need_stable in food_need_stables:
-		for good_id in _carrying_need_goods(int(need_stable), catalog):
-			survival_food_goods[int(good_id)] = true
-	var fertile_soil_id := int(resource_index.get("fertile_soil", -1))
-	var yield_offsets := PackedInt32Array()
-	yield_offsets.resize(SUPPORT_RESOURCE_IDS.size() + 1)
-	yield_offsets.fill(0)
-	var yield_building := PackedInt32Array()
-	var yield_resource := PackedInt32Array()
-	var yield_secondary := PackedInt32Array()
-	var yield_food := PackedInt64Array()
-	var yield_qty := PackedInt64Array()
-	var yield_secondary_qty := PackedInt64Array()
-	var yield_modes := PackedInt32Array()
-	var building_type_ids: PackedStringArray = building_columns.get(
-		"building_type_ids", PackedStringArray())
-	var output_offsets: PackedInt32Array = building_columns.get(
-		"building_output_offsets", PackedInt32Array())
-	var output_goods: PackedInt32Array = building_columns.get(
-		"building_output_good_ids", PackedInt32Array())
-	var output_qty: PackedInt64Array = building_columns.get(
-		"building_output_quantities", PackedInt64Array())
-	var resource_offsets: PackedInt32Array = building_columns.get(
-		"building_resource_offsets", PackedInt32Array())
-	var production_resources: PackedInt32Array = building_columns.get(
-		"building_production_resource_ids", PackedInt32Array())
-	var production_qty: PackedInt64Array = building_columns.get(
-		"building_production_resource_quantities", PackedInt64Array())
-	var production_modes: PackedInt32Array = building_columns.get(
-		"building_production_resource_modes", PackedInt32Array())
-	if output_offsets.size() != building_type_ids.size() + 1 \
-			or resource_offsets.size() != building_type_ids.size() + 1:
-		return {"ok": false, "reason": "carrying_food_yield_building_shape_invalid"}
-	var rows_by_support: Array = []
-	rows_by_support.resize(SUPPORT_RESOURCE_IDS.size())
-	for support_idx in range(SUPPORT_RESOURCE_IDS.size()):
-		rows_by_support[support_idx] = []
-	for type_id in range(building_type_ids.size()):
-		var food_output := 0
-		for output_idx in range(int(output_offsets[type_id]), int(output_offsets[type_id + 1])):
-			if output_idx < 0 or output_idx >= output_goods.size() \
-					or output_idx >= output_qty.size():
-				return {"ok": false, "reason": "carrying_food_yield_output_invalid"}
-			if survival_food_goods.has(int(output_goods[output_idx])):
-				food_output += int(output_qty[output_idx])
-		if food_output <= 0:
-			continue
-		var primary_support := -1
-		var primary_resource := -1
-		var primary_qty := 0
-		var primary_mode := 1
-		var secondary_resource := -1
-		var secondary_qty := 0
-		for edge in range(int(resource_offsets[type_id]), int(resource_offsets[type_id + 1])):
-			if edge < 0 or edge >= production_resources.size() \
-					or edge >= production_qty.size() or edge >= production_modes.size():
-				return {"ok": false, "reason": "carrying_food_yield_resource_invalid"}
-			var resource_id := int(production_resources[edge])
-			if resource_id == fertile_soil_id:
-				secondary_resource = resource_id
-				secondary_qty = int(production_qty[edge])
-				continue
-			for support_idx in range(support_resource_ids.size()):
-				if int(support_resource_ids[support_idx]) == resource_id and primary_support < 0:
-					primary_support = support_idx
-					primary_resource = resource_id
-					primary_qty = int(production_qty[edge])
-					primary_mode = int(production_modes[edge])
-		if primary_support < 0 or primary_qty <= 0:
-			continue
-		rows_by_support[primary_support].append({
-			"building": type_id,
-			"resource": primary_resource,
-			"secondary": secondary_resource,
-			"food": food_output,
-			"qty": primary_qty,
-			"secondary_qty": secondary_qty,
-			"mode": primary_mode,
-		})
-	for support_idx in range(rows_by_support.size()):
-		yield_offsets[support_idx] = yield_building.size()
-		for row in rows_by_support[support_idx]:
-			yield_building.append(int(row.building))
-			yield_resource.append(int(row.resource))
-			yield_secondary.append(int(row.secondary))
-			yield_food.append(int(row.food))
-			yield_qty.append(int(row.qty))
-			yield_secondary_qty.append(int(row.secondary_qty))
-			yield_modes.append(int(row.mode))
-	yield_offsets[SUPPORT_RESOURCE_IDS.size()] = yield_building.size()
-	return {
-		"ok": true,
-		"carrying_family_ids": family_ids,
-		"carrying_family_need_stable_ids": family_need_stable,
-		"carrying_family_good_offsets": family_good_offsets,
-		"carrying_family_good_ids": family_goods,
-		"carrying_support_resource_ids": support_resource_ids,
-		"carrying_food_yield_offsets": yield_offsets,
-		"carrying_food_yield_building_type_ids": yield_building,
-		"carrying_food_yield_resource_ids": yield_resource,
-		"carrying_food_yield_secondary_resource_ids": yield_secondary,
-		"carrying_food_yield_food_output": yield_food,
-		"carrying_food_yield_resource_qty": yield_qty,
-		"carrying_food_yield_secondary_qty": yield_secondary_qty,
-		"carrying_food_yield_modes": yield_modes,
-	}
-
-
-static func _carrying_need_goods(need_stable: int, catalog: Dictionary) -> PackedInt32Array:
-	var need_stable_ids: PackedInt32Array = catalog.get("need_stable_ids", PackedInt32Array())
-	var need_variant_offsets: PackedInt32Array = catalog.get("need_variant_offsets", PackedInt32Array())
-	var variant_component_offsets: PackedInt32Array = catalog.get(
-		"variant_component_offsets", PackedInt32Array())
-	var component_good_ids: PackedInt32Array = catalog.get("component_good_ids", PackedInt32Array())
-	var seen := {}
-	if need_variant_offsets.size() != need_stable_ids.size() + 1:
-		return PackedInt32Array()
-	for entry in range(need_stable_ids.size()):
-		if int(need_stable_ids[entry]) != need_stable:
-			continue
-		var variant_begin := int(need_variant_offsets[entry])
-		var variant_end := int(need_variant_offsets[entry + 1])
-		for variant_id in range(variant_begin, variant_end):
-			if variant_id < 0 or variant_id + 1 >= variant_component_offsets.size():
-				continue
-			var component_begin := int(variant_component_offsets[variant_id])
-			var component_end := int(variant_component_offsets[variant_id + 1])
-			for component_idx in range(component_begin, component_end):
-				if component_idx >= 0 and component_idx < component_good_ids.size():
-					seen[int(component_good_ids[component_idx])] = true
-	var goods := PackedInt32Array()
-	for good_id in seen.keys():
-		goods.append(int(good_id))
-	goods.sort()
-	return goods
-
-
-static func _carrying_category_goods(offsets: PackedInt32Array, ids: PackedStringArray,
-		good_count: int) -> Dictionary:
-	var out := {}
-	if offsets.size() != good_count + 1 or offsets.is_empty() or int(offsets[0]) != 0 \
-			or int(offsets[-1]) != ids.size():
-		return {"ok": false, "reason": "carrying_substitution_category_shape_invalid"}
-	for good_idx in range(good_count):
-		var begin := int(offsets[good_idx])
-		var end := int(offsets[good_idx + 1])
-		if begin < 0 or end < begin or end > ids.size():
-			return {"ok": false, "reason": "carrying_substitution_category_offsets_invalid"}
-		for edge in range(begin, end):
-			var category_id := String(ids[edge])
-			if category_id.is_empty():
-				continue
-			var members: PackedInt32Array = out.get(category_id, PackedInt32Array())
-			members.append(good_idx)
-			out[category_id] = members
-	out["ok"] = true
-	return out
-
 
 static func validate_building_progression_profiles(profiles: Array) -> Dictionary:
 
@@ -1408,6 +1302,9 @@ static func _append_construction_candidates(profile: Resource,
 		out_offsets, out_goods, out_efficiencies)
 
 static func _load_resources(dir_path: String) -> Array:
+	return _load_resources_impl.call(dir_path, null)
+
+static func _load_resources_impl(dir_path: String, context) -> Array:
 	# [pk-export-remap] DirAccess.get_files_at() 在导出/打包工程里看到的是 pck
 	# 目录项原名（会带 .remap 后缀，如 x.tres.remap），后缀过滤永远命不中，导
 	# 致整个目录被判定为空——这不是 web 专属坑，任何导出包（含桌面 exe）都会
@@ -1415,11 +1312,19 @@ static func _load_resources(dir_path: String) -> Array:
 	# 在两种场景下都返回逻辑名（x.tres），是 Godot 4.3+ 专门为此提供的 API。
 	var paths := PackedStringArray()
 	for file_name in ResourceLoader.list_directory(dir_path):
+		if context != null:
+			await context.checkpoint("catalog_resources")
+			if context.canceled:
+				return []
 		if file_name.get_extension().to_lower() == "tres":
 			paths.append("%s/%s" % [dir_path, file_name])
 	paths.sort()
 	var out := []
 	for path in paths:
+		if context != null:
+			await context.checkpoint("catalog_resources")
+			if context.canceled:
+				return []
 		var resource = ResourceLoader.load(path, "Resource")
 		if resource != null and String(resource.get("id")) != "":
 			out.append(resource)
@@ -1440,10 +1345,17 @@ static func _optional_index(index: Dictionary, id_value: String) -> int:
 	return int(index.get(id_value, -2))
 
 static func _catalog_hash(catalog: Dictionary) -> int:
+	return _catalog_hash_impl.call(catalog, null)
+
+static func _catalog_hash_impl(catalog: Dictionary, context) -> int:
 	var keys := catalog.keys()
 	keys.sort_custom(func(a, b) -> bool: return String(a) < String(b))
 	var canonical := "economy-catalog-v2\n"
 	for key in keys:
+		if context != null:
+			await context.checkpoint("catalog_hash")
+			if context.canceled:
+				return 0
 		canonical += "%s=%s\n" % [String(key), var_to_str(catalog[key])]
 	var hashing := HashingContext.new()
 	hashing.start(HashingContext.HASH_SHA256)
@@ -1451,5 +1363,9 @@ static func _catalog_hash(catalog: Dictionary) -> int:
 	var digest := hashing.finish()
 	var value: int = 0
 	for i in range(7):
+		if context != null:
+			await context.checkpoint("catalog_hash")
+			if context.canceled:
+				return 0
 		value = (value << 8) | int(digest[i])
 	return maxi(1, value)

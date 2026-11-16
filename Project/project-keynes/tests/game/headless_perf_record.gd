@@ -702,6 +702,19 @@ func _run() -> int:
 		int(economy_report.get("memory_bytes", 0)), rows, expected_rows, output_path,
 	])
 	var climate_authority_on := host.runtime_climate_authority_enabled
+	# Final report only: these are the last tag snapshot's work and cumulative
+	# cache activity, not fabricated per-day CSV samples. Older builds omit them.
+	print("[headless-perf/economy-inputs] tag_snapshot_sampled_cells=%d tag_snapshot_requested_metrics=%d tag_catalog_metrics=%d country_availability_cache_hits=%d country_availability_cache_rebuilds=%d country_territory_cache_hits=%d country_territory_cache_rebuilds=%d building_upgrade_catalog_builds=%d building_upgrade_catalog_rows=%d" % [
+		int(economy_report.get("tag_snapshot_sampled_cells", -1)),
+		int(economy_report.get("tag_snapshot_requested_metrics", -1)),
+		int(economy_report.get("tag_catalog_metrics", -1)),
+		int(economy_report.get("country_availability_cache_hits", -1)),
+		int(economy_report.get("country_availability_cache_rebuilds", -1)),
+		int(economy_report.get("country_territory_cache_hits", -1)),
+		int(economy_report.get("country_territory_cache_rebuilds", -1)),
+		int(economy_report.get("building_upgrade_catalog_builds", -1)),
+		int(economy_report.get("building_upgrade_catalog_rows", -1)),
+	])
 	print("[headless-perf/climate] enabled=%s worker_authoritative=%s writeback_days=%d writeback_last_day=%d mask=0x%X" % [
 		str(climate_diag.get("enabled", false)),
 		str(climate_diag.get("worker_authoritative", false)),

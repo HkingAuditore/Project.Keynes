@@ -50,6 +50,7 @@ const DOMAIN_ECONOMY := 2
 var _checks := 0
 var _failures := 0
 var _country_ir: Dictionary = {}
+var _map_stub: MapStub
 
 
 func _init() -> void:
@@ -232,7 +233,10 @@ func _build(covered: int) -> Object:
 	# `environment_snapshot`, `capture_country_epoch` never runs, and the shard
 	# cursor stays at -1 -- which is exactly how an earlier version of this
 	# fixture reported work_cells=0 while claiming to test sharding.
-	ext.bind_map_data(MapStub.new(CELLS))
+	# DCWorldExt borrows MapData. Keep the RefCounted stand-in alive through
+	# all slices in _run(), including those after _build() returns.
+	_map_stub = MapStub.new(CELLS)
+	ext.bind_map_data(_map_stub)
 
 	# One economy day to start the epoch and run the first shard.
 	# day_index must EXCEED `_last_committed_day` or `start_epoch` returns early

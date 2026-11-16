@@ -16,6 +16,7 @@ const FamilyEffectCatalogScript = preload("res://scripts/family/family_effect_ca
 const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
+const EconomyFacadeConfigurationScript = preload("res://scripts/economy/economy_facade_configuration.gd")
 const EconomyFacadeDisplayScript = preload(
 	"res://scripts/economy/economy_facade_display.gd")
 ## 与原生 SAT_DIM_* 枚举同序，供 Inspector 与溯源面板直接展示。
@@ -95,47 +96,15 @@ func building_visual_catalog() -> Dictionary:
 			out[key] = _catalog[key]
 	return out
 
-func configure(world_ext: DCWorldExt, cell_count: int, seed: int, profile = null) -> Dictionary:
-	_world_ext = world_ext
-	_profile = profile
-	if _profile == null:
-		_profile = ResourceLoader.load(DEFAULT_PROFILE_PATH, "Resource")
-	if _world_ext == null:
-		return {"ok": false, "reason": "DCWorldExt economy API unavailable"}
-	if _profile == null:
-		return {"ok": false, "reason": "EconomyProfile unavailable"}
-	_catalog = EconomyCatalogScript.compile_native_catalog()
-	if not bool(_catalog.get("ok", false)):
-		return _catalog
-	var native_catalog := _catalog.duplicate()
-	native_catalog.erase("ok")
-	var precompiled_display := LoadingCatalogCache.economy_display()
-	if not precompiled_display.is_empty():
-		for field in precompiled_display:
-			set(field,precompiled_display[field])
-	else:
-		_profession_display_names = EconomyFacadeDisplayScript.load_display_names(EconomyCatalogScript.PROFESSION_DIR)
-		_ethnicity_display_names = EconomyFacadeDisplayScript.load_display_names(EconomyCatalogScript.ETHNICITY_DIR)
-		_building_display_names = EconomyFacadeDisplayScript.load_display_names(EconomyCatalogScript.BUILDING_DIR)
-		_need_display_names = EconomyCatalogScript.need_display_names()
-		_good_display_names = EconomyFacadeDisplayScript.load_display_names(GOOD_PROFILE_DIR)
-		EconomyFacadeDisplayScript.load_family_effect_displays(self)
-	EconomyFacadeDisplayScript.register_modifier_display_names(self)
-	var native_profile: Dictionary = _profile.to_native_profile()
-	EconomyFacadeDisplayScript.apply_forced_cadence_env(native_profile)
-	var result: Dictionary = _world_ext.configure_economy(
-		native_catalog, native_profile, cell_count, seed)
-	_configured = bool(result.get("ok", false))
-	if _configured:
-		var natural: Dictionary = _world_ext.configure_economy_natural_resources(
-			ResourceProfileRegistry.build_pass_knobs())
-		if not bool(natural.get("ok", false)):
-			push_warning("EconomyFacade: worker natural resources not configured: %s" % [
-				str(natural.get("code", ""))])
-	_construction_receipt_cursor = 0
-	_colonization_receipt_cursors.clear()
-	_canal_receipt_cursors.clear()
-	return result
+func configure(world_ext: DCWorldExt, cell_count: int, seed: int, profile = null,
+		compiled_catalog: Dictionary = {}) -> Dictionary:
+	return EconomyFacadeConfigurationScript.configure.call(null, self, world_ext,
+		cell_count, seed, profile, compiled_catalog)
+
+func configure_cooperative(context, world_ext: DCWorldExt, cell_count: int, seed: int,
+		profile = null, compiled_catalog: Dictionary = {}) -> Dictionary:
+	return await EconomyFacadeConfigurationScript.configure(context, self, world_ext,
+		cell_count, seed, profile, compiled_catalog)
 
 func bootstrap(population_packet: Dictionary = {}, market_packet: Dictionary = {},
 		building_packet: Dictionary = {}) -> Dictionary:

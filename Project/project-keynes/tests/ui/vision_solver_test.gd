@@ -94,6 +94,20 @@ func _test_native_vision_research_boundary() -> void:
 	VisionSolver.solve(reference, reference_world, 0)
 	_expect("native visible matches GDScript fallback",
 		PackedByteArray(owned_only.physical_visible) == reference.visible_arr)
+	var expected_revealed := PackedInt32Array()
+	for cell in n:
+		if owned_only.physical_visible[cell] != 0:
+			expected_revealed.append(cell)
+	_expect("native resource notification includes every newly visible cell",
+		PackedInt32Array(owned_only.get("resource_visual_visible_cells", PackedInt32Array())) == expected_revealed)
+	var repeated: Dictionary = ext.run_vision_research_pass({
+		"player_slot": 0, "remote_observation": false,
+		"country_slots": map.country_slot_arr, "visible": owned_only.physical_visible,
+		"explored": owned_only.explored_arr, "fog_k": owned_only.fog_k_arr,
+		"bio_occupancy_bits": occupancy,
+	})
+	_expect("unchanged native visibility does not repeat resource observations",
+		bool(repeated.get("ok", false)) and PackedInt32Array(repeated.get("resource_visual_visible_cells", PackedInt32Array())).is_empty())
 	_expect("native fog blur matches GDScript fallback",
 		PackedByteArray(owned_only.fog_k_arr) == reference.fog_k_arr)
 	# The native pass requires the full owner/explored shapes; use a separate
@@ -145,6 +159,7 @@ func _test_save_restore_resolves_pending_player_context() -> void:
 		host._resolve_player_country_slot() == 3)
 	_expect("load enables fog from pending player_context before providers",
 		host._resolve_fog_of_war_enabled())
+	host.free()
 
 
 ## 平原上：源格必可见，可见集连通且远小于全图，边界不可见。

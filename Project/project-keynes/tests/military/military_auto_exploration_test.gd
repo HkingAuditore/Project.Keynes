@@ -272,6 +272,7 @@ func _test_player_explore_order() -> void:
 	host.facade = facade
 	host.map = map
 	var controller := ExploreController.new()
+	controller.add_child(host)
 	get_root().add_child(controller)
 	controller._runtime_host = host
 	controller._player_country_handle = 4294967296  # generation 1, slot 0

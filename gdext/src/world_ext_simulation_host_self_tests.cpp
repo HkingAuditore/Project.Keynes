@@ -5,6 +5,7 @@
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
+#include "economy_runtime_test_access.h"
 #include "runtime_protocol_guard.h"
 #include "runtime_ideology_pod.h"
 #include "runtime_economy_pod.h"

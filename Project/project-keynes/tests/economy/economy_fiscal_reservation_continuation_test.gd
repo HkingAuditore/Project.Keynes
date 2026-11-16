@@ -356,23 +356,35 @@ func _run_country_active_fiscal_bridge(catalog: Dictionary, merchant: int) -> vo
 		bool(worker_view_before.get("available", false)) and
 		worker_cash_before.size() == 1 and int(worker_cash_before[0]) >= 0)
 	var saw_pending := false
-	var saw_terminal := false
+	var saw_completed := false
 	var saw_country_apply := false
 	var no_fatal := true
+	var reserved_cash := 0
 	for step in range(96):
 		ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
 		var status: Dictionary = ext.get_country_economy_asset_protocol_status()
 		saw_pending = saw_pending or int(status.get("pending_requests", 0)) > 0
-		saw_terminal = saw_terminal or int(status.get("terminal_requests", 0)) > 0
 		var economy_report: Dictionary = ext.get_runtime_graph_last_economy_report()
 		no_fatal = no_fatal and not bool(economy_report.get("fatal", false))
+		reserved_cash = maxi(reserved_cash, int(economy_report.get(
+			"fiscal_reservation_last_reserved", 0)))
 		var worker_view: Dictionary = ext.get_country_worker_read_view(-1)
 		var worker_cash: PackedInt64Array = worker_view.get(
 			"country_cash", PackedInt64Array())
 		if worker_cash.size() == 1 and worker_cash_before.size() == 1:
-			saw_country_apply = saw_country_apply or int(worker_cash[0]) < int(worker_cash_before[0])
-		if saw_terminal and saw_country_apply and not bool(economy_report.get(
-			"fiscal_reservation_continuation_active", true)):
+			saw_country_apply = saw_country_apply or (
+				reserved_cash > 0 and int(worker_cash[0]) ==
+				int(worker_cash_before[0]) - reserved_cash)
+		# terminal_requests is the current unconsumed queue, not a completed
+		# counter: the same pulse may acknowledge and remove its terminal.
+		# Completion requires both the admitted reserve and its Country debit.
+		saw_completed = saw_completed or (
+			saw_pending and saw_country_apply and
+			int(economy_report.get("fiscal_reservation_country_cursor", 0)) == 1 and
+			int(economy_report.get("fiscal_reservation_continuation_phase", 0)) == 2 and
+			not bool(status.get("has_save_barrier", true)) and
+			int(status.get("rejected_results", -1)) == 0)
+		if saw_completed:
 			break
 		ext.set_runtime_clock(false, 1000.0)
 		OS.delay_msec(3)
@@ -380,7 +392,7 @@ func _run_country_active_fiscal_bridge(catalog: Dictionary, merchant: int) -> vo
 	_expect("fiscal bridge publishes pending work instead of a sync Country write",
 		saw_pending and no_fatal)
 	_expect("Economy fiscal peer completes a Country-authorized request",
-		saw_terminal and no_fatal)
+		saw_completed and no_fatal)
 	_expect("Country worker applies fiscal debit into its immutable read-view",
 		saw_country_apply)
 	var worker_view_after_terminal: Dictionary = ext.get_country_worker_read_view(-1)

@@ -84,13 +84,26 @@ func _run() -> void:
 		_finish()
 		return
 	var economy = generator.get_economy_facade()
-	_expect("replay cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(economy.world_ext()))
+	if OS.get_environment("PK_COMMITTED_REPLAY_PRODUCTION_CADENCE") == "1":
+		var cadence: Dictionary = economy.world_ext().get_economy_report()
+		_expect("replay uses production cadence without timing injection",
+			not bool(cadence.get("cadence_timing_injected", true)))
+	else:
+		_expect("replay cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(economy.world_ext()))
 	var cell := int(generator.gameplay_start_report().get("cell", -1))
 	var ext: Object = economy.world_ext()
 	if not OS.get_environment("PK_SIM_DAY_TRACE").is_empty():
 		print("REPLAY_INGRESS_START=" + str(ext.get_gameplay_event_bus_report().get("next_event_id")))
 	var military = generator.get_military_facade()
 	var handle := int(ext.get_country_cell_summary(cell).get("country_handle", 0))
+	var military_construction := {}
+	var military_material_quantity := 0
+	if scenario == "military":
+		economy.construction_command_settled.connect(func(result: Dictionary) -> void:
+			if int(result.get("sequence", -1)) == 900001:
+				military_construction.merge(result, true)
+		)
+	var militia_unit: int = military.unit_ids().find("militia")
 	var military_enemy := 0
 	var military_target_cell := -1
 	var rows: Array = []
@@ -133,11 +146,59 @@ func _run() -> void:
 					state_building = int(item.index)
 					building_id = StringName(economy_ids[economy_type])
 					break
-			_expect("military state building paid", state_building >= 0 and bool(economy.treasury_sponsored_build(
+			# The old fixture queued a paid build without supplying materials.
+			# The actual day-5 receipt rejected it, so no barracks or soldiers
+			# existed at day 20. Supply the authoritative recipe on the same
+			# day before construction settles; keep the real ten-day build.
+			var profile: Resource = load("res://data/economy/buildings/warrior_lodge.tres")
+			var material_ids: PackedStringArray = profile.construction_good_ids
+			var material_qty: PackedInt64Array = profile.construction_quantities
+			_expect("military fixture has a real construction recipe",
+				not material_ids.is_empty() and material_ids.size() == material_qty.size())
+			var market: Dictionary = economy.market_cell_snapshot(cell)
+			var market_id := int(market.get("market_id", -1))
+			var good_ids: PackedStringArray = economy.good_ids()
+			_expect("military construction market exists", market_id >= 0)
+			for material in range(material_ids.size()):
+				var good := good_ids.find(material_ids[material])
+				var request_id := 800000 + material
+				military_material_quantity += material_qty[material]
+				# The active runtime rejects the legacy facade ADD_STOCK lane.
+				# Use its owned command lane, as the maintenance fixtures do.
+				_expect("military construction material admitted", market_id >= 0 and good >= 0
+					and bool(ext.submit_economy_pod_commands({
+						"request_ids": PackedInt64Array([request_id]),
+						"opcodes": PackedInt32Array([EconomyFacade.Opcode.ADD_STOCK]),
+						"payload0s": PackedInt64Array([material_qty[material]]),
+						"target_cells": PackedInt32Array([market_id]),
+						"target_countries": PackedInt64Array([good]),
+					}).get("ok", false)))
+			_expect("military state building request admitted", state_building >= 0 and bool(economy.treasury_sponsored_build(
 				handle, cell, building_id, day + 1, 900001).get("ok", false)))
 			_expect("military state building admitted", state_building >= 0 and bool(military.build_state_building(handle, cell, state_building).get("ok", false)))
 		if scenario == "military" and day == 20:
-			_expect("military army admitted", bool(military.create_army(handle, cell, {0: 5}).get("ok", false)))
+			# Settlement has its own committed-read publication boundary. The
+			# receipt must prove actual day-5 settlement before army creation;
+			# a queued request or an ephemeral POD receipt is not that proof.
+			economy.dispatch_construction_command_receipts()
+			_expect("military construction actually settled on day five",
+				bool(military_construction.get("ok", false))
+				and int(military_construction.get("sequence", -1)) == 900001
+				and int(military_construction.get("settled_day", -1)) == 5)
+			_expect("military construction consumed the real recipe",
+				int(military_construction.get("treasury_goods_used", 0))
+				+ int(military_construction.get("market_goods_used", 0)) == military_material_quantity)
+			# A single warrior lodge has four posts. Dense unit zero is bronze
+			# spearmen, not the militia recruited here; resolve its stable id.
+			var local: Dictionary = military.cell_snapshot(cell, handle)
+			var militia_heads := 0
+			for lot in local.get("garrison_lots", []):
+				if int(lot.get("unit", -1)) == militia_unit:
+					militia_heads += int(lot.get("count", 0))
+			_expect("military completed barracks has posts", int(local.get("post_count", 0)) >= 4)
+			_expect("military recruited four local militia", militia_unit >= 0 and militia_heads >= 4)
+			_expect("military army admitted", militia_unit >= 0 and bool(
+				military.create_army(handle, cell, {militia_unit: 4}).get("ok", false)))
 		if scenario == "military" and day == 21:
 			for candidate in range(config.base.map_width * config.base.map_height):
 				var candidate_handle := int(ext.get_country_cell_summary(candidate).get("country_handle", 0))
@@ -158,6 +219,8 @@ func _run() -> void:
 			gm_receipt = host.execute_gm_command("country.rename", {
 				"country_handle": handle, "name": "Replay day %d" % day, "day": day + 2})
 			_expect("GM command admitted", bool(gm_receipt.get("ok", false)))
+			_expect("GM receipt preserves the explicitly requested future day",
+				int(gm_receipt.get("effective_day", -1)) == day + 2)
 		if scenario == "calendar" or annual:
 			# Keep the headless daily driver; exercise actual calendar callbacks separately.
 			var next_season := clock.season_index_for_day(day + 1)
@@ -187,6 +250,14 @@ func _run() -> void:
 				break
 			await process_frame
 		_expect("external boundary", caught_up)
+		if scenario == "military" and day == 20:
+			var formations: Array = military.armies(handle)
+			var field_heads := 0
+			for formation in formations:
+				for lot in military.army(int(formation.handle)).get("composition", []):
+					if int(lot.get("unit", -1)) == militia_unit:
+						field_heads += int(lot.get("count", 0))
+			_expect("military checkpoint contains four embarked militia", field_heads == 4)
 		var army: Dictionary = military.country_snapshot(handle)
 		_expect("command changes authoritative target", int(army.get("target_value", -1)) == int(command.value))
 		if scenario == "military" and day >= 40:
@@ -208,7 +279,13 @@ func _run() -> void:
 		if scenario == "military":
 			rows[-1]["field_armies"] = _canonical(military.armies(handle))
 			rows[-1]["military_control"] = _canonical(military.control_snapshot())
-		if scenario == "mixed": rows[-1]["gm_receipt"] = gm_receipt
+		if scenario == "mixed":
+			rows[-1]["gm_receipt"] = gm_receipt
+			# Observe the actual name after the day's commit, not only admission.
+			var actual_name := String(ext.get_country_cell_summary(cell).get("country_name", ""))
+			var expected_name: String = "Replay day %d" % (day - 2) if day >= 3 else config.country.name
+			_expect("dated rename takes effect on its requested day", actual_name == expected_name)
+			rows[-1]["country_name"] = actual_name
 		if scenario == "calendar":
 			rows[-1]["calendar"] = [clock._last_season, clock._last_year,
 				clock.climate_anomaly, str(clock._rng.state)]

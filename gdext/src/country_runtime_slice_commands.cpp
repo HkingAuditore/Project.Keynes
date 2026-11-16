@@ -221,6 +221,7 @@ bool NativeCountryRuntime::preflight_country_slice(
             batch.countries.stable_id.push_back(command.stable_id);
             batch.countries.display_name.push_back(command.display_name);
             batch.countries.territory_count.push_back(1);
+            batch.countries.capital_cell.push_back(command.cell);
             batch.countries.cash.push_back(0);
             batch.countries.state_version.push_back(1);
             const auto early_regime = _political_regime_index.find("early_clan");

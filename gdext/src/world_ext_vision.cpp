@@ -253,10 +253,14 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
     }
     std::vector<uint8_t> fog(static_cast<size_t>(n));
     std::vector<int32_t> dirty;
+    std::vector<int32_t> resource_visible;
     std::vector<uint64_t> observations;
     const int32_t *offsets = state->signal_offsets.ptr();
     const int32_t *signal_ids = state->signal_ids.ptr();
     for (int32_t cell = 0; cell < n; ++cell) {
+        if (visible[size_t(cell)] != 0 &&
+            (previous_visible.size() != n || previous_visible[cell] == 0))
+            resource_visible.push_back(cell);
         fog[size_t(cell)] = uint8_t(std::clamp<int32_t>(
             int32_t(std::lround((0.5f * exp_a[size_t(cell)] +
                                  0.5f * vis_a[size_t(cell)]) * 255.0f)), 0, 255));
@@ -289,6 +293,7 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
     out["explored_arr"] = packed_u8(explored);
     out["fog_k_arr"] = packed_u8(fog);
     out["fog_dirty_indices"] = packed_i32(dirty);
+    out["resource_visual_visible_cells"] = packed_i32(resource_visible);
     out["visible"] = visible_count;
     out["explored"] = explored_count;
     out["sources"] = source_count;

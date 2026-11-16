@@ -19,7 +19,6 @@ namespace {
 constexpr double kCadenceEmaAlpha = 0.35;
 constexpr double kCadenceMsQuantum = 0.1;
 constexpr double kColdStartKnivesPerDay = 64.0;
-constexpr double kDenserSlack = 1.25;
 constexpr int64_t kFixedStageMargin = 4;
 constexpr int64_t kBuildingMarketScans = 2;
 
@@ -53,7 +52,11 @@ const char *cadence_reason_name(int32_t reason) {
 } // namespace
 
 int32_t NativeEconomyRuntime::locked_market_cycle_days() const {
-    return std::clamp(_locked_market_cycle_days.get(), _min_epoch_days, _max_epoch_days);
+    // Production always settles a complete game day. Wider periods are an
+    // explicit fixture-only approximation, never selected by machine timing.
+    return _forced_market_cycle_days > 0
+        ? std::clamp(_locked_market_cycle_days.get(), MARKET_CYCLE_MIN_DAYS, MARKET_CYCLE_MAX_DAYS)
+        : 1;
 }
 
 int32_t NativeEconomyRuntime::locked_slow_cycle_days() const {
@@ -211,6 +214,9 @@ PackedInt32Array NativeEconomyRuntime::economy_live_cells_query() {
 }
 
 int32_t NativeEconomyRuntime::workset_elapsed_days(int64_t day_index) const {
+    // A newly populated cell and the opening day each receive exactly one
+    // transition. Historical inactive days are not accumulated as work debt.
+    if (locked_market_cycle_days() == 1) return 1;
     int32_t elapsed = 1;
     bool any = false;
     const int32_t cap = MARKET_CYCLE_MAX_DAYS;
@@ -219,7 +225,8 @@ int32_t NativeEconomyRuntime::workset_elapsed_days(int64_t day_index) const {
         const int64_t last = cell < static_cast<int32_t>(
             _cell_last_settlement_day.size())
             ? _cell_last_settlement_day[cell] : day_index - 1;
-        const int32_t cell_elapsed = clamp_i32(day_index - last, 1, cap);
+        const int32_t cell_elapsed = locked_market_cycle_days() == 1
+            ? 1 : clamp_i32(day_index - last, 1, cap);
         if (!any || cell_elapsed < elapsed) elapsed = cell_elapsed;
         any = true;
     }
@@ -227,9 +234,8 @@ int32_t NativeEconomyRuntime::workset_elapsed_days(int64_t day_index) const {
 }
 
 void NativeEconomyRuntime::capture_cell_elapsed_days(int64_t day_index) {
-    // 每格自己的未结算天数。全局 _epoch_days 取的是这些值的最小值，落后格的
-    // 差额目前被直接丢弃。休眠分级会把这个差额从「偶发」变成「常态」，所以先把
-    // per-cell 值与丢失量落地成可观测量，再决定消费侧改造范围。
+    // Production is daily, including the first settlement and newly live cells.
+    // Keep elapsed-day diagnostics for explicitly forced historical fixtures.
     if (static_cast<int32_t>(_cell_elapsed_days.size()) != _cell_count.get())
         _cell_elapsed_days.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 1);
     const int32_t cap = MARKET_CYCLE_MAX_DAYS;
@@ -241,7 +247,8 @@ void NativeEconomyRuntime::capture_cell_elapsed_days(int64_t day_index) {
         const int64_t last = cell < static_cast<int32_t>(
             _cell_last_settlement_day.size())
             ? _cell_last_settlement_day[cell] : day_index - 1;
-        const int32_t cell_elapsed = clamp_i32(day_index - last, 1, cap);
+        const int32_t cell_elapsed = locked_market_cycle_days() == 1
+            ? 1 : clamp_i32(day_index - last, 1, cap);
         _cell_elapsed_days[static_cast<size_t>(cell)] = cell_elapsed;
         if (cell_elapsed > _epoch_elapsed_days_max)
             _epoch_elapsed_days_max = cell_elapsed;
@@ -421,12 +428,6 @@ double NativeEconomyRuntime::quantized_ms_per_knife(double cycle_ms,
                     std::round(raw / kCadenceMsQuantum) * kCadenceMsQuantum);
 }
 
-int32_t NativeEconomyRuntime::apply_cadence_hysteresis(int32_t current,
-                                                       int32_t raw) const {
-    if (raw >= current) return raw;
-    return current;
-}
-
 int32_t NativeEconomyRuntime::snap_cycle_days(int32_t value, int32_t n,
                                               int32_t lo, int32_t hi) const {
     n = std::max(1, n);
@@ -539,77 +540,6 @@ void NativeEconomyRuntime::refresh_cadence_estimates() {
     _workload_cycle_clamped = false;
 }
 
-int32_t NativeEconomyRuntime::choose_locked_market_cycle_days(
-        int32_t current_n) const {
-    const int32_t min_n = std::max(_min_epoch_days, MARKET_CYCLE_MIN_DAYS);
-    const int32_t max_n = std::min(_max_epoch_days, MARKET_CYCLE_MAX_DAYS);
-    const int32_t m = std::max(1, _estimated_populated_market_knives);
-    double ms_per_knife = _market_ms_per_knife_ema;
-    if (_injected_cycle_market_ms >= 0.0) {
-        ms_per_knife = quantized_ms_per_knife(_injected_cycle_market_ms, m);
-    }
-    const int32_t capacity = knives_per_day(ms_per_knife);
-    const int32_t raw = clamp_i32(
-        ceil_div_nonneg(m, std::max(1, capacity)), min_n, max_n);
-    if (raw >= current_n) return raw;
-    const double target = std::max(0.1, _cadence_target_ms);
-    const double denser_budget =
-        target * static_cast<double>(std::max(1, current_n - 1));
-    const double needed = static_cast<double>(m) *
-        std::max(ms_per_knife, kCadenceMsQuantum) * kDenserSlack;
-    if (ms_per_knife <= 0.0 || needed <= denser_budget) return raw;
-    return current_n;
-}
-
-int32_t NativeEconomyRuntime::choose_locked_cycle_days(
-        int32_t current, int32_t n, int32_t knives, double ema,
-        double injected_ms, int32_t lo, int32_t hi) const {
-    const int32_t b = std::max(1, knives);
-    lo = std::max(1, lo);
-    hi = std::max(lo, hi);
-    double ms_per_knife = ema;
-    if (injected_ms >= 0.0) {
-        ms_per_knife = quantized_ms_per_knife(injected_ms, b);
-    }
-    const int32_t capacity = knives_per_day(ms_per_knife);
-    int32_t best = hi;
-    for (int32_t s = lo; s <= hi; ++s) {
-        if (n > 1 && (s % n) != 0) continue;
-        if (ceil_div_nonneg(b, s) <= std::max(1, capacity)) {
-            best = s;
-            break;
-        }
-    }
-    best = snap_cycle_days(best, n, lo, hi);
-    if (best >= current) return best;
-    const double target = std::max(0.1, _cadence_target_ms);
-    const double denser_budget =
-        target * static_cast<double>(std::max(1, current / std::max(1, n)));
-    const double daily_knives = static_cast<double>(b) /
-        static_cast<double>(std::max(1, best));
-    const double needed = daily_knives *
-        std::max(ms_per_knife, kCadenceMsQuantum) * kDenserSlack;
-    if (ms_per_knife <= 0.0 || needed <= denser_budget) return best;
-    return snap_cycle_days(current, n, lo, hi);
-}
-
-int32_t NativeEconomyRuntime::choose_locked_slow_cycle_days(
-        int32_t current_s, int32_t n) const {
-    return choose_locked_cycle_days(
-        current_s, n, _estimated_slow_knives, _slow_ms_per_knife_ema,
-        _injected_cycle_slow_ms, PLAN_CYCLE_MIN_DAYS, PLAN_CYCLE_MAX_DAYS);
-}
-
-int32_t NativeEconomyRuntime::choose_locked_investment_cycle_days(
-        int32_t current_i, int32_t n, int32_t plan_days) const {
-    const int32_t lo = std::min(_invest_cycle_max_days,
-        std::max(_invest_cycle_min_days, plan_days + 1));
-    return choose_locked_cycle_days(
-        current_i, n, _estimated_investment_knives,
-        _investment_ms_per_knife_ema, _injected_cycle_investment_ms,
-        lo, _invest_cycle_max_days);
-}
-
 void NativeEconomyRuntime::apply_locked_slow_days() {
     _building_plan_days = locked_plan_cycle_days();
     _investment_review_days = locked_investment_cycle_days();
@@ -620,8 +550,6 @@ void NativeEconomyRuntime::lock_market_cycle(int64_t day_index) {
     const int32_t current = std::clamp(_locked_market_cycle_days.get(),
                                        MARKET_CYCLE_MIN_DAYS,
                                        MARKET_CYCLE_MAX_DAYS);
-    const bool had_timing = _market_ms_per_knife_ema > 0.0 ||
-        _injected_cycle_market_ms >= 0.0;
     if (_cycle_market_ms_accum > 0.0 && _injected_cycle_market_ms < 0.0) {
         const double sample = quantized_ms_per_knife(
             _cycle_market_ms_accum, _estimated_populated_market_knives);
@@ -633,17 +561,9 @@ void NativeEconomyRuntime::lock_market_cycle(int64_t day_index) {
         }
     }
     const int32_t next = _forced_market_cycle_days > 0
-        ? std::clamp(_forced_market_cycle_days, _min_epoch_days, _max_epoch_days)
-        : choose_locked_market_cycle_days(current);
-    if (!_cadence_initialized) _cadence_change_reason = 1;
-    else if (next == current) _cadence_change_reason = 0;
-    else if (!had_timing) _cadence_change_reason = 1;
-    else if (next > current) _cadence_change_reason = 2;
-    else _cadence_change_reason = 3;
-    if (next < current && next == choose_locked_market_cycle_days(next) &&
-        apply_cadence_hysteresis(current, next) == current) {
-        _cadence_change_reason = 4;
-    }
+        ? std::clamp(_forced_market_cycle_days, MARKET_CYCLE_MIN_DAYS, MARKET_CYCLE_MAX_DAYS)
+        : 1;
+    _cadence_change_reason = !_cadence_initialized || next != current ? 1 : 0;
     _locked_market_cycle_days = next;
     _market_cycle_start_day = day_index;
     _cadence_machine_knives_per_day = knives_per_day(
@@ -662,7 +582,6 @@ void NativeEconomyRuntime::lock_slow_cycle(int64_t day_index) {
 void NativeEconomyRuntime::lock_plan_cycle(int64_t day_index) {
     refresh_cadence_estimates();
     const int32_t n = locked_market_cycle_days();
-    const int32_t current = locked_plan_cycle_days();
     if (_cycle_slow_ms_accum > 0.0 && _injected_cycle_slow_ms < 0.0) {
         const double sample = quantized_ms_per_knife(
             _cycle_slow_ms_accum, _estimated_slow_knives);
@@ -676,10 +595,11 @@ void NativeEconomyRuntime::lock_plan_cycle(int64_t day_index) {
     _locked_slow_cycle_days = _forced_slow_cycle_days > 0
         ? snap_cycle_days(_forced_slow_cycle_days, n,
                           PLAN_CYCLE_MIN_DAYS, PLAN_CYCLE_MAX_DAYS)
-        : choose_locked_slow_cycle_days(current, n);
+        : snap_cycle_days(_building_plan_days.get(), n,
+                          PLAN_CYCLE_MIN_DAYS, PLAN_CYCLE_MAX_DAYS);
     const int32_t phase = cycle_phase(day_index, _market_cycle_start_day.get(), n);
     _slow_cycle_start_day = day_index - phase;
-    apply_locked_slow_days();
+    _building_plan_days = locked_plan_cycle_days();
     _cadence_slow_knives_per_day = knives_per_day(
         _injected_cycle_slow_ms >= 0.0
             ? quantized_ms_per_knife(_injected_cycle_slow_ms,
@@ -696,7 +616,6 @@ void NativeEconomyRuntime::lock_investment_cycle(int64_t day_index) {
     refresh_cadence_estimates();
     const int32_t n = locked_market_cycle_days();
     const int32_t plan_days = locked_plan_cycle_days();
-    const int32_t current = locked_investment_cycle_days();
     if (_cycle_investment_ms_accum > 0.0 &&
         _injected_cycle_investment_ms < 0.0) {
         const double sample = quantized_ms_per_knife(
@@ -711,10 +630,10 @@ void NativeEconomyRuntime::lock_investment_cycle(int64_t day_index) {
     _locked_investment_cycle_days = _forced_investment_cycle_days > 0
         ? snap_cycle_days(_forced_investment_cycle_days, n,
                           _invest_cycle_min_days, _invest_cycle_max_days)
-        : choose_locked_investment_cycle_days(current, n, plan_days);
+        : longer_investment_cycle_days(plan_days, n, _investment_review_days.get());
     const int32_t phase = cycle_phase(day_index, _market_cycle_start_day.get(), n);
     _investment_cycle_start_day = day_index - phase;
-    apply_locked_slow_days();
+    _investment_review_days = locked_investment_cycle_days();
     _cadence_investment_knives_per_day = knives_per_day(
         _injected_cycle_investment_ms >= 0.0
             ? quantized_ms_per_knife(_injected_cycle_investment_ms,
@@ -724,7 +643,7 @@ void NativeEconomyRuntime::lock_investment_cycle(int64_t day_index) {
 }
 
 void NativeEconomyRuntime::maybe_lock_cadence_cycles(int64_t day_index) {
-    // PK_SIM_DAY_TRACE：周期天数取决于实测耗时，经济在两次运行间分叉时先看这一行。
+    // Timing is diagnostic only; fixed game-day periods and their phases are state.
     struct CadenceTrace {
         NativeEconomyRuntime *self; int64_t day; int32_t n0, p0, i0;
         ~CadenceTrace() {
@@ -789,7 +708,8 @@ void NativeEconomyRuntime::note_completed_epoch_cadence_ms() {
 }
 
 void NativeEconomyRuntime::synthesize_cadence_locks_from_legacy_save() {
-    _locked_market_cycle_days = MARKET_CYCLE_MAX_DAYS;
+    _locked_market_cycle_days = _forced_market_cycle_days > 0
+        ? _forced_market_cycle_days : 1;
     _market_cycle_start_day = align_cycle_start(
         _last_committed_day.get(), _locked_market_cycle_days.get());
     _locked_slow_cycle_days = snap_slow_days_to_market_multiple(
@@ -915,6 +835,7 @@ void NativeEconomyRuntime::write_cadence_report(Dictionary &out) const {
     out["cadence_timing_injected"] = _injected_cycle_market_ms >= 0.0 ||
         _injected_cycle_slow_ms >= 0.0 ||
         _injected_cycle_investment_ms >= 0.0;
+    out["cadence_policy"] = "fixed_game_days";
     out["cadence_forced"] = _forced_market_cycle_days > 0 ||
         _forced_slow_cycle_days > 0 ||
         _forced_investment_cycle_days > 0;

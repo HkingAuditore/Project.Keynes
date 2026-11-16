@@ -199,6 +199,9 @@ static func register_modifier_display_names(host) -> void:
 	ModifierCatalogScript.register_display_names(&"need", host._need_display_names)
 
 static func load_family_effect_displays(host) -> void:
+	_load_family_effect_displays.call(null, host)
+
+static func _load_family_effect_displays(context, host) -> void:
 	host._family_trait_descriptions.clear()
 	host._family_trait_copy.clear()
 	host._family_trait_effect_keys.clear()
@@ -208,6 +211,10 @@ static func load_family_effect_displays(host) -> void:
 	var trait_catalog = FamilyTraitCatalogScript.load_default()
 	if trait_catalog != null:
 		for definition in trait_catalog.traits:
+			if context != null:
+				await context.checkpoint("economy_displays")
+				if context.canceled:
+					return
 			if definition == null:
 				continue
 			var trait_key := String(definition.key).strip_edges()
@@ -230,6 +237,10 @@ static func load_family_effect_displays(host) -> void:
 			var effect_keys := PackedStringArray()
 			var seen := {}
 			for effect in definition.modifiers:
+				if context != null:
+					await context.checkpoint("economy_displays")
+					if context.canceled:
+						return
 				if effect == null:
 					continue
 				var modifier_key := String(effect.definition_key).strip_edges()
@@ -238,9 +249,17 @@ static func load_family_effect_displays(host) -> void:
 				seen[modifier_key] = true
 				effect_keys.append(modifier_key)
 			for binding in definition.triggers:
+				if context != null:
+					await context.checkpoint("economy_displays")
+					if context.canceled:
+						return
 				if binding == null:
 					continue
 				for raw_key in binding.definition_keys_by_tier:
+					if context != null:
+						await context.checkpoint("economy_displays")
+						if context.canceled:
+							return
 					var trigger_key := String(raw_key).strip_edges()
 					if trigger_key.is_empty() or seen.has(trigger_key):
 						continue
@@ -250,16 +269,32 @@ static func load_family_effect_displays(host) -> void:
 	var effect_catalog = FamilyEffectCatalogScript.load_default()
 	if effect_catalog != null:
 		for definition in effect_catalog.effects:
+			if context != null:
+				await context.checkpoint("economy_displays")
+				if context.canceled:
+					return
 			store_family_effect_display(host, definition)
 	var modifier_catalog = ModifierCatalogScript.load_default()
 	if modifier_catalog != null:
 		for definition in modifier_catalog.definitions:
+			if context != null:
+				await context.checkpoint("economy_displays")
+				if context.canceled:
+					return
 			store_effect_display(host._family_modifier_displays, definition)
 	var trigger_catalog = TriggerCatalogScript.load_default()
 	if trigger_catalog != null:
 		for definition in trigger_catalog.definitions:
+			if context != null:
+				await context.checkpoint("economy_displays")
+				if context.canceled:
+					return
 			store_effect_display(host._family_trigger_displays, definition)
 		for definition in TriggerCatalogScript._family_buff_definitions():
+			if context != null:
+				await context.checkpoint("economy_displays")
+				if context.canceled:
+					return
 			store_effect_display(host._family_trigger_displays, definition)
 
 static func store_effect_display(table: Dictionary, definition: Resource) -> void:
@@ -402,16 +437,27 @@ static func apply_forced_cadence_env(profile: Dictionary) -> void:
 	profile["economy_cadence_force_investment_days"] = int(parts[2])
 
 static func load_display_names(directory: String) -> Dictionary:
+	return _load_display_names.call(null, directory)
+
+static func _load_display_names(context, directory: String) -> Dictionary:
 	var result := {}
 	# [pk-export-remap] 见 economy_catalog.gd::_load_resources() 同名注释——导出
 	# 包里 DirAccess 看到的是带 .remap 后缀的目录项，用 ResourceLoader.list_directory()
 	# 才能拿到 x.tres 逻辑名。
 	var paths := PackedStringArray()
 	for file_name in ResourceLoader.list_directory(directory):
+		if context != null:
+			await context.checkpoint("economy_displays")
+			if context.canceled:
+				return {}
 		if file_name.get_extension().to_lower() == "tres":
 			paths.append("%s/%s" % [directory, file_name])
 	paths.sort()
 	for path in paths:
+		if context != null:
+			await context.checkpoint("economy_displays")
+			if context.canceled:
+				return {}
 		var profile = ResourceLoader.load(path, "Resource")
 		if profile == null:
 			continue
@@ -421,3 +467,25 @@ static func load_display_names(directory: String) -> Dictionary:
 		var display_name := String(profile.get("display_name"))
 		result[stable_id] = display_name if display_name != "" else stable_id
 	return result
+
+
+static func configure_displays(host) -> void:
+	_configure_displays.call(null, host)
+
+static func _configure_displays(context, host) -> void:
+	var precompiled_display := LoadingCatalogCache.economy_display()
+	if not precompiled_display.is_empty():
+		for field in precompiled_display:
+			if context != null:
+				await context.checkpoint("economy_displays")
+				if context.canceled:
+					return
+			host.set(field,precompiled_display[field])
+	else:
+		host._profession_display_names = await _load_display_names(context, host.EconomyCatalogScript.PROFESSION_DIR)
+		host._ethnicity_display_names = await _load_display_names(context, host.EconomyCatalogScript.ETHNICITY_DIR)
+		host._building_display_names = await _load_display_names(context, host.EconomyCatalogScript.BUILDING_DIR)
+		host._need_display_names = await host.EconomyCatalogScript._need_display_names_impl(context)
+		host._good_display_names = await _load_display_names(context, host.GOOD_PROFILE_DIR)
+		await _load_family_effect_displays(context, host)
+	register_modifier_display_names(host)

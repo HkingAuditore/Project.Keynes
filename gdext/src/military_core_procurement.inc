@@ -87,8 +87,10 @@ struct DemandScratch {
     // against cash, not against a quota.
     std::vector<int64_t> quota_left;
     std::vector<int64_t> cash_left;
-    using FlightKey = std::tuple<int32_t, uint8_t, int32_t, int32_t>;
+    using FlightKey = MilitaryFlightSums::Key;
     std::vector<std::pair<FlightKey, int64_t>> in_flight;
+    MilitaryFlightSums flight_sums;
+    bool flight_sums_ready = false;
     std::vector<std::pair<uint64_t, int32_t>> training_in_flight;
     void clear() {
         holders.clear();
@@ -100,6 +102,8 @@ struct DemandScratch {
         quota_left.clear();
         cash_left.clear();
         in_flight.clear();
+        flight_sums.clear();
+        flight_sums_ready = false;
         training_in_flight.clear();
     }
 };
@@ -208,7 +212,14 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                     ? yields[(size_t)index] : MILITARY_Q16)});
         }
     }
-    std::sort(ds.in_flight.begin(), ds.in_flight.end());
+    _report.procurement_inflight_rows += (int64_t)ds.in_flight.size();
+    ds.flight_sums_ready = ds.flight_sums.build(ds.in_flight);
+    if (ds.flight_sums_ready) {
+        _report.procurement_inflight_keys += (int64_t)ds.flight_sums.size();
+    } else {
+        ++_report.procurement_inflight_sort_fallbacks;
+        std::sort(ds.in_flight.begin(), ds.in_flight.end());
+    }
     std::sort(ds.training_in_flight.begin(), ds.training_in_flight.end());
     for (size_t slot = 0; slot < _policies.size() && (int32_t)slot < capacity; ++slot) {
         if (_policies[slot].budget_share_bp <= 0) continue;
@@ -312,17 +323,23 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         add_demander((uint8_t)MILITARY_LOT_ARMY, a, _armies.owner_slot[(size_t)a],
                      _armies.cell[(size_t)a], _armies.engagement[(size_t)a] >= 0);
     }
-    for (size_t c = 0; c < _lot_cell_head.size(); ++c) {
-        if (_lot_cell_head[c] < 0) continue;
-        const int32_t cell = (int32_t)c;
+    auto add_garrison = [&](int32_t cell) {
+        ++_report.procurement_garrison_heads_visited;
+        if (_lot_cell_head[(size_t)cell] < 0) return;
         int32_t country = -1;
         military_for_each_lot(*this, (uint8_t)MILITARY_LOT_GARRISON, cell, [&](int32_t i) {
             if (_lots.count[(size_t)i] <= 0) return;
             const int32_t slot = _lots.country_slot[(size_t)i];
             if (country < 0 || slot < country) country = slot;
         });
-        if (country < 0) continue;
+        if (country < 0) return;
         add_demander((uint8_t)MILITARY_LOT_GARRISON, cell, country, cell, false);
+    };
+    static thread_local std::vector<int32_t> garrison_cells;
+    if (military_garrison_candidate_cells(*this, garrison_cells)) {
+        for (int32_t cell : garrison_cells) add_garrison(cell);
+    } else {
+        for (size_t c = 0; c < _lot_cell_head.size(); ++c) add_garrison((int32_t)c);
     }
     // Training orders waiting for equipment (design 5.6): one delivery each,
     // sourced from the same 3-cell market ring as the garrison that trains.
@@ -385,11 +402,15 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 e.kind = h.kind;
                 e.cls = cls;
                 const DemandScratch::FlightKey key{h.country, h.kind, h.holder, cls};
-                auto cargo = std::lower_bound(ds.in_flight.begin(), ds.in_flight.end(), key,
-                    [](const auto &row, const auto &value) { return row.first < value; });
-                while (cargo != ds.in_flight.end() && cargo->first == key) {
-                    e.in_flight += cargo->second;
-                    ++cargo;
+                if (ds.flight_sums_ready) {
+                    e.in_flight = ds.flight_sums.get(key);
+                } else {
+                    auto cargo = std::lower_bound(ds.in_flight.begin(), ds.in_flight.end(), key,
+                        [](const auto &row, const auto &value) { return row.first < value; });
+                    while (cargo != ds.in_flight.end() && cargo->first == key) {
+                        e.in_flight += cargo->second;
+                        ++cargo;
+                    }
                 }
                 e.want = missing;
                 entries.push_back(e);
@@ -409,8 +430,8 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     for (size_t ei = 0; ei < entries.size(); ++ei) {
         DemandEntry &e = entries[(size_t)ei];
         e.reach_begin = (int32_t)ds.reach.size();
-        const int32_t begin = _ring_off[(size_t)e.cell];
-        const int32_t end = _ring_off[(size_t)e.cell + 1];
+        int32_t begin = 0, end = 0;
+        military_supply_ring(*this, e.cell, begin, end);
         for (int32_t i = begin; i < end && i < begin + ring_cells; ++i) {
             const int32_t at = _ring_cells[(size_t)i];
             const int32_t first = _md_cell_off[(size_t)at];

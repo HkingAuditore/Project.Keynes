@@ -122,6 +122,13 @@ func _run() -> void:
 		"touched=%s untouched=%s" % [str(touched.get("value", "?")),
 			str(untouched.get("value", "?"))])
 
+	# A new world must not inherit a derived front, even with the same catalog.
+	var reset: Dictionary = ext.configure_modifiers(mod_ir, CELLS)
+	_expect("the next world configures", bool(reset.get("ok", false)), str(reset))
+	var fresh: Dictionary = ext.get_effective_stat_value(stat_key, TOUCHED, 0, 1.0)
+	_expect("the next world has no stale derived contribution",
+		not bool(fresh.get("derived_present", true)) and
+		float(fresh.get("value", -1.0)) == baseline, str(fresh))
 	_finish(0 if _failures == 0 else 3)
 
 

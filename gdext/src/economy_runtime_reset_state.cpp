@@ -52,6 +52,9 @@ int64_t NativeEconomyRuntime::state_hash_legacy() const {
 Dictionary NativeEconomyRuntime::reset(const String &reason) {
     if (++_committed_generation == 0) _committed_generation = 1;
     _configured = false;
+    _building_upgrade_required_tiers.clear();
+    _building_upgrade_catalog_builds = 0;
+    _building_upgrade_catalog_rows = 0;
     _bootstrapped = false;
     _epoch_active = false;
     _fatal = false;
@@ -467,6 +470,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _resource_current_generation = 0;
     _last_published_resource_deltas.clear();
     _epoch_cell_country.clear();
+    _country_availability_cache.reset();
+    _country_territory_cache.reset();
     _epoch_country_cell_offsets.clear();
     _epoch_country_cells.clear();
     // R-3: drop the published tag snapshot with one atomic store. A reader that has

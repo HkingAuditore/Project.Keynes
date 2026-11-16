@@ -147,24 +147,16 @@ func _ready() -> void:
 	_population_button.mouse_exited.connect(
 		func() -> void: status_hovered.emit("population", false))
 	_population_button.pressed.connect(func() -> void: status_pressed.emit("population"))
-	# Programmatic third plate: no scene change, and it only appears when at
-	# least one owned cell is in 示威/叛乱, so the top bar stays quiet.
-	_unrest_button = Button.new()
-	_unrest_button.name = "UnrestButton"
-	_unrest_button.flat = true
-	_unrest_button.focus_mode = Control.FOCUS_NONE
-	_unrest_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	# The third plate is scene-owned and only appears when an owned cell is
+	# in 示威/叛乱, so the top bar stays quiet.
+	_unrest_button = %UnrestButton
 	_unrest_button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
-	_unrest_button.add_theme_font_size_override("font_size", 16)
 	_unrest_button.add_theme_color_override("font_color", UITokens.HUD_INK)
-	_unrest_button.tooltip_text = "离心：本地组织度已进入示威或叛乱的地块数"
-	_unrest_button.visible = false
 	_unrest_button.pressed.connect(func() -> void: status_pressed.emit("unrest"))
 	_unrest_button.mouse_entered.connect(
 		func() -> void: status_hovered.emit("unrest", true))
 	_unrest_button.mouse_exited.connect(
 		func() -> void: status_hovered.emit("unrest", false))
-	$Margin/Row/CountryStatus.add_child(_unrest_button)
 	_update_status_plates()
 	_update_date_block_width()
 

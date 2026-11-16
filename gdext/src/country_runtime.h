@@ -47,10 +47,6 @@ public:
     using TaxAssessmentMode = CountryApi::TaxAssessmentMode;
 
     using CommandOpcode = CountryApi::CommandOpcode;
-    static constexpr bool command_opcode_reserved(int32_t opcode) {
-        return opcode == COMMAND_RESERVED_22 || opcode == COMMAND_RESERVED_25 ||
-               opcode == COMMAND_RESERVED_26;
-    }
     static constexpr uint64_t receiver_handle_from_payload(int32_t cell,
                                                            int32_t aux) {
         return (static_cast<uint64_t>(static_cast<uint32_t>(aux)) << 32U) |
