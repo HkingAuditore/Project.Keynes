@@ -213,6 +213,10 @@ static func solve(map: MapData, world: WorldData, player_slot: int,
 	map.fog_k_arr = _compute_fog_k(map, visible, explored, n)
 	map.fog_solved = true
 	map.vision_revision += 1
+	if not newly_visible_cells.is_empty():
+		map.publish_resource_visual_inputs(
+			MapData.RESOURCE_VISUAL_BANDS | MapData.RESOURCE_VISUAL_CLIMATE |
+			MapData.RESOURCE_VISUAL_GEOMETRY, newly_visible_cells)
 
 	report.ok = true
 	report.visible = visible_count
@@ -278,6 +282,10 @@ static func mark_all_visible(map: MapData) -> Dictionary:
 		map.fog_k_arr[i] = 255
 	map.fog_solved = true
 	map.vision_revision += 1
+	if not newly_visible.is_empty():
+		map.publish_resource_visual_inputs(
+			MapData.RESOURCE_VISUAL_BANDS | MapData.RESOURCE_VISUAL_CLIMATE |
+			MapData.RESOURCE_VISUAL_GEOMETRY, newly_visible)
 	return {
 		"ok": true, "reason": "fog_disabled", "visible": n, "explored": n,
 		"sources": 0, "cells": n, "elapsed_ms": 0.0,

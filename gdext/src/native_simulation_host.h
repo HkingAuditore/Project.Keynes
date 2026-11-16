@@ -1,5 +1,4 @@
 #pragma once
-#include <functional>
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
 #include "runtime_thread_retirement.h"
@@ -121,15 +120,6 @@ public:
     }
     bool inline_day_pending() const noexcept {
         return _inline_day_pending.load(std::memory_order_acquire);
-    }
-    // Runs the provider-country peer adapter ON THE CALLING (main) THREAD while the
-    // day loop waits. The country stage can leave a peer intent in the transport
-    // queue; only the ext can execute it, and the ext cannot run while this loop
-    // blocks -- the day would wait for an answer only it could produce.
-    // Measured: [plan-intent] d=4 n=1 q=1 req=10 dom=6 op=1 known=0, then 120 s
-    // later country_worker_peer_stall_timeout.
-    void set_country_peer_pump(std::function<void()> pump) {
-        _country_peer_pump = std::move(pump);
     }
     // 一次内联日尝试的结果。只有 committed=true 表示这一天真的提交并发布了；
     // continuation_pending=true 表示屏障缺 peer 结果（调用方应在同一线程上泵一轮
@@ -473,18 +463,7 @@ public:
     // Clears ONE client's turn (its own). Idempotent: a client that never asked,
     // or that already completed, changes nothing. When the last client completes
     // the worker's wait predicate goes false and `notify_all` releases it.
-    void complete_main_boundary_service(MainBoundaryClient client) noexcept {
-        const uint32_t bit = main_boundary_client_bit(client);
-        uint32_t observed = _main_boundary_service_requested.load(
-            std::memory_order_acquire);
-        while ((observed & bit) != 0) {
-            if (_main_boundary_service_requested.compare_exchange_weak(observed,
-                    observed & ~bit, std::memory_order_acq_rel,
-                    std::memory_order_acquire))
-                break;
-        }
-        _control_cv.notify_all();
-    }
+    void complete_main_boundary_service(MainBoundaryClient client) noexcept;
     // Diagnostic: outstanding requesters, as a count. Exported so a parked worker
     // can be told apart from one subsystem starving on another's bit.
     uint32_t main_boundary_service_requests() const noexcept {
@@ -952,7 +931,7 @@ public:
     // capacity before publishing any packet and assigns submit_order in the
     // same critical section, so transport chunking cannot split a business
     // batch or change its tie-break order.
-    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets) override;
+    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets, std::vector<int64_t> *effective_days = nullptr) override;
     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
     uint64_t allocate_command_request_id() override;
     void reserve_command_request_ids_through(uint64_t maximum) noexcept;
@@ -1663,9 +1642,6 @@ private:
     CountryPeerProtocolStatus _country_worker_protocol{};
     RuntimeCountryPodPlan _country_pod_plan;
     std::deque<uint64_t> _country_worker_intent_queue;
-    // See set_country_peer_pump(): the ext installs a pump here so the worker's
-    // day loop can service the provider-country peer adapter on this thread.
-    std::function<void()> _country_peer_pump;
     std::unordered_map<uint64_t, CountryPeerIntent> _country_worker_intents;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_results;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_terminal_results;

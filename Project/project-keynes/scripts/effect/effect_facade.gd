@@ -20,7 +20,7 @@ func _adapter_ack_bit(action: int) -> int:
 	return (1 << (action - 1)) if action >= 1 and action <= 6 else 0
 
 func configure(world_ext: DCWorldExt, clock: WorldClock = null,
-		catalog: Resource = null) -> Dictionary:
+		catalog: Resource = null, compiled_catalog: Dictionary = {}) -> Dictionary:
 	_world_ext = world_ext
 	_clock = clock
 	_catalog = catalog if catalog != null else EffectCatalogScript.load_default()
@@ -28,7 +28,8 @@ func configure(world_ext: DCWorldExt, clock: WorldClock = null,
 		return {"ok": false, "reason": "DCWorldExt effect API unavailable"}
 	if _catalog == null or not _catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "EffectCatalog unavailable"}
-	var compiled: Dictionary = _catalog.compile_native_catalog()
+	var compiled: Dictionary = compiled_catalog.duplicate(true) if not compiled_catalog.is_empty() \
+		else _catalog.compile_native_catalog()
 	if not bool(compiled.get("ok", false)):
 		return compiled
 	compiled.erase("ok")

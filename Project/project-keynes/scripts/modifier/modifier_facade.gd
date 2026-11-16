@@ -23,7 +23,7 @@ var _compiled_catalog: Dictionary = {}
 
 
 func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
-		catalog: Resource = null) -> Dictionary:
+		catalog: Resource = null, compiled_catalog: Dictionary = {}) -> Dictionary:
 	_world_ext = world_ext
 	_clock = clock
 	_catalog = catalog if catalog != null else ModifierCatalogScript.load_default()
@@ -31,7 +31,8 @@ func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
 		return {"ok": false, "reason": "DCWorldExt modifier API unavailable"}
 	if _catalog == null:
 		return {"ok": false, "reason": "ModifierCatalog unavailable"}
-	var compiled: Dictionary = _catalog.compile_native_catalog()
+	var compiled: Dictionary = compiled_catalog.duplicate(true) if not compiled_catalog.is_empty() \
+		else _catalog.compile_native_catalog()
 	if not bool(compiled.get("ok", false)):
 		return compiled
 	compiled.erase("ok")

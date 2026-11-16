@@ -11,6 +11,9 @@ extends Resource
 @export var resident_chunks_mobile := 48
 @export_range(0.05, 1.0) var observation_budget_ms := 0.30
 @export_range(0.05, 1.0) var build_budget_ms := 0.45
+## Combined CPU allowance: observation, cover, geometry and the later upload call.
+## Existing phase budgets remain upper bounds within this shared allowance.
+@export_range(0.05, 1.0) var frame_budget_ms := 0.8
 @export_range(0.0, 1.0) var river_clear_threshold := 0.54
 # 实景是美术点缀而非识别标志：小件主体（碎石/兽群/作物丛）直径，单位为格。
 # 确切种类由资源透镜徽章承担。

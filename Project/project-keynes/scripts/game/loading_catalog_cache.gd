@@ -8,6 +8,7 @@ class_name LoadingCatalogCache
 ## 缓存不命中的代价：新开游戏要现场编译 effect/economy 目录，实测多花 4–5 秒。
 ## 不命中的原因一定会在下面的 push_warning 里写明（清单缺失 / 指纹不一致 /
 ## 快照文件缺失 / 加载失败 / economy 快照 ok=false），照着提示重烘即可。
+const ResourceRequest = preload("res://scripts/game/loading_resource_request.gd")
 const DIRECTORY := "res://data/loading_catalog_v1/"
 const PREBAKE_SCRIPT := "res://tools/prebake_loading_catalogs.gd"
 const SNAPSHOT_FILES := [
@@ -76,28 +77,12 @@ static func prepare(ext: Object, frame_gate = null) -> void:
 	if not missing.is_empty():
 		_miss("快照文件缺失：%s" % ", ".join(missing))
 		return
-	var tree := Engine.get_main_loop() as SceneTree
+	var paths := PackedStringArray()
 	for filename: String in SNAPSHOT_FILES:
-		ResourceLoader.load_threaded_request(DIRECTORY+filename)
-	var resources: Array[Resource] = []
-	for filename: String in SNAPSHOT_FILES:
-		var path := DIRECTORY+filename
-		while tree != null and ResourceLoader.load_threaded_get_status(path)==ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-			if frame_gate != null and frame_gate.canceled:
-				for pending in SNAPSHOT_FILES:
-					var status := ResourceLoader.load_threaded_get_status(DIRECTORY+pending)
-					if status in [ResourceLoader.THREAD_LOAD_IN_PROGRESS, ResourceLoader.THREAD_LOAD_LOADED]:
-						ResourceLoader.load_threaded_get(DIRECTORY+pending)
-				return
-			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
-		if ResourceLoader.load_threaded_get_status(path)!=ResourceLoader.THREAD_LOAD_LOADED:
-			_miss("快照加载失败：%s" % path)
-			return
-		var loaded := ResourceLoader.load_threaded_get(path)
-		if loaded == null:
-			_miss("快照加载结果为 null：%s" % path)
-			return
-		resources.append(loaded)
+		paths.append(DIRECTORY + filename)
+	var resources: Array[Resource] = await _load_snapshots(paths, frame_gate)
+	if resources.size() != SNAPSHOT_FILES.size():
+		return
 	_economy = resources[0].get("columns")
 	_effect = resources[1]
 	_display = resources[2].get("columns")
@@ -109,6 +94,28 @@ static func prepare(ext: Object, frame_gate = null) -> void:
 	_ready = bool(_economy.get("ok",false)) and _effect != null
 	if not _ready:
 		_miss("economy 快照无效（ok=false），快照可能来自不完整的 bake")
+
+## All requests own their completion independently. Failure or cancellation can
+## return immediately without synchronously waiting for the remaining files.
+static func _load_snapshots(paths: PackedStringArray, frame_gate = null) -> Array[Resource]:
+	if frame_gate != null and frame_gate.canceled:
+		return []
+	var requests: Array = []
+	for path in paths:
+		requests.append(ResourceRequest.new(path))
+	var resources: Array[Resource] = []
+	var tree := Engine.get_main_loop() as SceneTree
+	for index in range(requests.size()):
+		var request = requests[index]
+		while not request.finished:
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return []
+		if request.result == null:
+			_miss("快照加载失败：%s" % paths[index])
+			return []
+		resources.append(request.result)
+	return resources
 
 ## 命中失败的唯一出口：写清原因，并给出可直接照抄的重烘命令。
 static func _miss(reason: String) -> void:

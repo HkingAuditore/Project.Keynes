@@ -301,6 +301,7 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _next_event_id = 1;
     _last_committed_day = -1;
     _countries = {};
+    _starting_country_slot = -1;
     _cell_country_slot.assign(static_cast<size_t>(_cell_count), NEUTRAL_SLOT);
     _country_cell_offsets.clear();
     _country_cells.clear();
@@ -498,6 +499,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
         packed_u8(packet, "research_auto_purchase");
 
     _countries = {};
+    _starting_country_slot = -1;
     std::fill(_cell_country_slot.begin(), _cell_country_slot.end(), NEUTRAL_SLOT);
     _country_technologies.clear();
     _country_goods.clear();
@@ -870,6 +872,7 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _bootstrapped = false;
     _state_hash_cache_valid = false;
     _countries = {};
+    _starting_country_slot = -1;
     _cell_country_slot.assign(static_cast<size_t>(std::max(0, _cell_count)), NEUTRAL_SLOT);
     _country_cell_offsets.clear();
     _country_cells.clear();

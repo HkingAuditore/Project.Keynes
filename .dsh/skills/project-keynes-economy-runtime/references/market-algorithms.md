@@ -34,11 +34,11 @@ signals, and four environment signals. Population alive at the boundary enters e
 building input purchases, output sales, and income distribution then update funds and stock before
 household clearing. Producer-retained food fills one aggregate emergency calorie pool across staple,
 protein, and produce needs, while active owner lots protect next-period physical-input cash from
-household spending. Calculate the whole N-day period from that state. The production default is N=5. Setting
-`market_cycle_days=0` selects scale-driven automatic N.
-
-This is an approximation, not N sequential daily integrations. Keep its state invisible until
-the period deadline. Commands arriving after sample day apply next period.
+household spending. Production computes exactly one game-day transition from
+that state; the next day freezes fresh inputs. Machine timing never selects N.
+The legacy interval fields and explicitly forced multi-day fixtures do not change
+this production contract. Keep in-progress state invisible until the same-day
+commit; commands arriving after input sealing apply at their admitted future date.
 
 ## 3. Need and variant demand
 

@@ -118,16 +118,17 @@ static func _gm_execute_country_command(command_id: String, args: Dictionary,
 	var facade = _generator.get_country_facade() if _generator.has_method("get_country_facade") else null
 	if facade == null:
 		return {"ok": false, "reason": "country_facade_unavailable"}
+	var scheduled := args.has("day")
 	var handle := int(args.get("country_handle", int(selected_country.call())))
 	match command_id:
 		"country.rename":
-			return facade.rename_country(handle, String(args.name), effective_day, sequence)
+			return facade.rename_country(handle, String(args.name), effective_day, sequence, scheduled)
 		"country.grant_technology":
-			return facade.grant_technology(handle, StringName(args.technology_id), effective_day, sequence)
+			return facade.grant_technology(handle, StringName(args.technology_id), effective_day, sequence, scheduled)
 		"country.reveal_all_technologies":
-			return facade.reveal_all_technologies(handle, effective_day, sequence)
+			return facade.reveal_all_technologies(handle, effective_day, sequence, scheduled)
 		"country.transfer_territory":
-			return facade.transfer_territory(int(resolve_cell.call(args)), handle, effective_day, sequence)
+			return facade.transfer_territory(int(resolve_cell.call(args)), handle, effective_day, sequence, scheduled)
 	return {"ok": false, "reason": "unsupported_country_command"}
 
 
@@ -193,4 +194,27 @@ static func _gm_day_arg() -> Dictionary:
 static func _gm_error(code: String, message: String, data: Dictionary = {}) -> Dictionary:
 	return HostValueHelpers._gm_error(code, message, data)
 
+
+
+
+static func submit_simulation_command(host, command_id: String, args: Dictionary) -> Dictionary:
+	if host._generator == null or host._world_clock == null:
+		return host._gm_error("world_not_ready", "世界尚未生成，无法提交该指令。")
+	var effective_day = int(args.get("day", host._world_clock.day_index() + 1))
+	if effective_day <= host._world_clock.day_index():
+		return host._gm_error("effective_day_invalid", "生效日必须晚于当前游戏日。")
+	var sequence = host._gm_sequence
+	host._gm_sequence += 2 if command_id == "economy.mint_to_treasury" else 1
+	var result: Dictionary
+	if command_id.begins_with("country."):
+		result = host._gm_execute_country_command(command_id, args, effective_day, sequence)
+	else:
+		result = host._gm_execute_economy_command(command_id, args, effective_day, sequence)
+	if not bool(result.get("ok", false)):
+		return host._gm_error(String(result.get("reason", "command_rejected")),
+			"指令被运行时拒绝：%s" % String(result.get("reason", "unknown")), result)
+	var admitted_day := int(result.get("effective_day", effective_day))
+	var response = host._gm_ok("指令已排入第 %d 日的权威命令队列。" % admitted_day, true, admitted_day)
+	response["data"] = result
+	return response
 

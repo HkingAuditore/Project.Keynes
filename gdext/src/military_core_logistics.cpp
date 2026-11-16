@@ -15,6 +15,7 @@
 
 #include "military_core.h"
 #include "military_core_internal.h"
+#include "military_core_flight_sums.h"
 
 #include <algorithm>
 #include <chrono>
@@ -518,73 +519,12 @@ void MilitaryCore::stock_clear_holder(uint8_t holder_kind, int32_t holder) {
 // ========================================================= supply indexes
 // Design 9.3 (user decision): a demander (garrison cell, army cell, training
 // order) may only buy from markets in cells it OWNS and CONTROLS within hex
-// distance <= MILITARY_SUPPLY_RADIUS (at most 19 cells). Nothing here is a
-// per-country field and nothing ever scans all markets: the market rows of the
-// committed digest are bucketed once per day (O(rows)) and every ring is
-// precomputed once per topology.
+// distance <= MILITARY_SUPPLY_RADIUS. General procurement retains its first-19
+// BFS-entry limit; maintenance and supply probes use the whole row. Market rows
+// are bucketed once per day (O(rows)); each requested center is built once per
+// topology, after the first logistics request has prepared the index.
 
 namespace {
-// Wrap-aware BFS over the neighbour table; neighbours already carry the wrap,
-// so this is the exact hex distance on the wrapped map. Built once per topology
-// change (MILITARY_SUPPLY_RADIUS rings, at most 19 cells).
-void build_rings(MilitaryCore &core) {
-    const int32_t cells = core._terrain.cell_count;
-    core._ring_off.assign((size_t)std::max(0, cells) + 1, 0);
-    core._ring_len.assign((size_t)std::max(0, cells), 0);
-    core._ring_cells.clear();
-    core._ring_dist.clear();
-    if (cells <= 0) return;
-    core._ring_cells.reserve((size_t)cells * (size_t)MILITARY_SUPPLY_RING_CELLS);
-    core._ring_dist.reserve((size_t)cells * (size_t)MILITARY_SUPPLY_RING_CELLS);
-    static thread_local std::vector<int32_t> dist;
-    static thread_local std::vector<uint32_t> stamp;
-    static thread_local uint32_t gen = 0;
-    static thread_local std::vector<int32_t> queue;
-    if ((int32_t)stamp.size() < cells) {
-        stamp.assign((size_t)cells, 0);
-        dist.assign((size_t)cells, 0);
-        gen = 0;
-    }
-    const int32_t neighbor_total = (int32_t)core._terrain.neighbors.size();
-    const int32_t *neighbours = core._terrain.neighbors.data();
-    for (int32_t cell = 0; cell < cells; ++cell) {
-        core._ring_off[(size_t)cell] = (int32_t)core._ring_cells.size();
-        ++gen;
-        if (gen == 0) {
-            std::fill(stamp.begin(), stamp.end(), 0u);
-            gen = 1;
-        }
-        queue.clear();
-        queue.push_back(cell);
-        stamp[(size_t)cell] = gen;
-        dist[(size_t)cell] = 0;
-        int32_t head = 0;
-        while (head < (int32_t)queue.size()) {
-            const int32_t at = queue[(size_t)head++];
-            const int32_t d = dist[(size_t)at];
-            core._ring_cells.push_back(at);
-            core._ring_dist.push_back((uint8_t)d);
-            if (d >= MILITARY_SUPPLY_RADIUS) continue;
-            if (at * 6 + 5 >= neighbor_total) continue;
-            for (int32_t k = 0; k < 6; ++k) {
-                const int32_t nb = neighbours[(size_t)(at * 6 + k)];
-                if (nb < 0 || nb >= cells) continue;
-                if (stamp[(size_t)nb] == gen) continue;
-                stamp[(size_t)nb] = gen;
-                dist[(size_t)nb] = d + 1;
-                queue.push_back(nb);
-            }
-        }
-        core._ring_len[(size_t)cell] = (uint8_t)(queue.size() > 255 ? 255 : queue.size());
-    }
-    core._ring_off[(size_t)cells] = (int32_t)core._ring_cells.size();
-}
-bool rings_ready(const MilitaryCore &core) {
-    const size_t cells = (size_t)std::max(0, core._terrain.cell_count);
-    if (cells <= 0) return false;
-    if (core._ring_off.size() != cells + 1 || core._ring_len.size() != cells) return false;
-    return (size_t)core._ring_off[cells] <= core._ring_cells.size();
-}
 // Market-good slot of a digest good id: the frozen digest carries one dense
 // good id per economy good, so the good id itself is the slot (ids below 128).
 int32_t market_good_slot(const MilitaryWorldDigest &digest, int32_t good) {
@@ -597,6 +537,8 @@ int32_t market_good_slot(const MilitaryWorldDigest &digest, int32_t good) {
 void build_market_csr(MilitaryCore &core, const MilitaryWorldDigest &digest) {
     const int32_t cells = core._terrain.cell_count;
     const size_t n = (size_t)std::max(0, cells);
+    ++core._report.market_index_builds;
+    core._report.market_index_cells += (int64_t)n;
     const size_t rows = digest.market_cell.size();
     core._md_row_cell.clear();
     core._md_row_good.clear();
@@ -660,6 +602,7 @@ void market_csr_drop(MilitaryCore &core) {
 }
 } // namespace
 void military_market_reset(MilitaryCore &core) {
+    military_market_reuse_cancel(core);
     market_csr_drop(core);
     core._connected_valid = false;
     core._connected_day = -1;
@@ -669,22 +612,75 @@ void military_market_reset(MilitaryCore &core) {
     core._conn_mark_cells.clear();
     core._cache_rows.clear();
 }
+MilitaryMarketDayReuse::MilitaryMarketDayReuse(MilitaryCore &c, const MilitaryWorldDigest &d)
+    : core(c), digest(d), cells(c._terrain.cell_count) {
+    core._market_day_reuse = this;
+}
+MilitaryMarketDayReuse::~MilitaryMarketDayReuse() {
+    // Return the large column capacities to the original scratch before this
+    // stack context dies. No cached values or borrowed input outlive step_day.
+    if (parked) exchange_columns();
+    market_csr_drop(core);
+    core._market_day_reuse = nullptr;
+}
+void MilitaryMarketDayReuse::exchange_columns() {
+    cell_off.swap(core._md_cell_off);
+    cell_rows.swap(core._md_cell_rows);
+    row_cell.swap(core._md_row_cell);
+    row_good.swap(core._md_row_good);
+    row_sellable.swap(core._md_row_sellable);
+    row_price.swap(core._md_row_price);
+    cell_has_merchant.swap(core._md_cell_has_merchant);
+}
+void MilitaryMarketDayReuse::invalidate() {
+    allowed = parked = active_rows = false;
+    cell_off.clear(); cell_rows.clear(); row_cell.clear(); row_good.clear();
+    row_sellable.clear(); row_price.clear(); cell_has_merchant.clear();
+    initial_sellable.clear();
+}
+void military_market_reuse_cancel(MilitaryCore &core) {
+    if (core._market_day_reuse != nullptr) core._market_day_reuse->invalidate();
+}
 MilitaryCore::MarketDayScope::MarketDayScope(MilitaryCore &c) : core(c) {}
 MilitaryCore::MarketDayScope::~MarketDayScope() {
     // The indexes are per day (design 9.3: built once, dropped for the rest of
     // the day), so a day without a demander and without a disconnection probe
     // pays nothing at all.
+    MilitaryMarketDayReuse *reuse = core._market_day_reuse;
+    if (reuse != nullptr && reuse->allowed && reuse->active_rows &&
+        reuse->cells == core._terrain.cell_count && market_csr_current(core, reuse->digest)) {
+        reuse->exchange_columns();
+        reuse->parked = true;
+        reuse->active_rows = false;
+    }
     market_csr_drop(core);
 }
 void MilitaryCore::MarketDayScope::ensure(const MilitaryWorldDigest &digest) {
-    if (!rings_ready(core)) build_rings(core);
+    military_prepare_supply_rings(core);
     if (market_csr_current(core, digest)) return;
     market_csr_drop(core);
-    build_market_csr(core, digest);
+    MilitaryMarketDayReuse *reuse = core._market_day_reuse;
+    const bool same_input = reuse != nullptr && reuse->allowed &&
+        &digest == &reuse->digest && reuse->cells == core._terrain.cell_count;
+    if (same_input && reuse->parked) {
+        reuse->exchange_columns();
+        reuse->parked = false;
+        // Maintenance writes sellable. The former separate scopes each rebuilt
+        // the original quota, so sharing that mutation would change purchases.
+        core._md_row_sellable = reuse->initial_sellable;
+        ++core._report.market_index_reuses;
+    } else {
+        build_market_csr(core, digest);
+        if (same_input) reuse->initial_sellable = core._md_row_sellable;
+    }
+    if (reuse != nullptr) reuse->active_rows = same_input;
     core._md_day = digest.day;
     core._connected_valid = false;   // the connectivity marks follow the rows
 }
-void MilitaryCore::MarketDayScope::drop() { market_csr_drop(core); }
+void MilitaryCore::MarketDayScope::drop() {
+    military_market_reuse_cancel(core);
+    market_csr_drop(core);
+}
 bool military_owns_cell(const MilitaryCore &core, const MilitaryWorldDigest &digest, int32_t cell,
                         int32_t slot) {
     if (cell < 0 || slot < 0) return false;
@@ -760,14 +756,14 @@ bool military_connectivity_connected(const MilitaryCore &cc, const MilitaryWorld
 }
 // Cheap disconnection probe of design 9.3: the ring of the cell holds at least
 // one market cell of the same country (owned AND controlled). No day CSR and no
-// BFS is needed, so a requisition / last-stand probe never builds global state.
+// global BFS is needed; an unseen center builds only its own cached row.
 bool military_supply_connected(const MilitaryCore &core, const MilitaryWorldDigest &digest, int32_t slot,
                                int32_t cell) {
     if (slot < 0 || cell < 0 || cell >= core._terrain.cell_count) return false;
-    if (!rings_ready(core)) return false;
+    if (!military_supply_rings_ready(core)) return false;
     const bool have_rows = market_csr_current(core, digest);
-    const int32_t begin = core._ring_off[(size_t)cell];
-    const int32_t end = core._ring_off[(size_t)cell + 1];
+    int32_t begin = 0, end = 0;
+    if (!military_supply_ring(const_cast<MilitaryCore &>(core), cell, begin, end)) return false;
     for (int32_t i = begin; i < end; ++i) {
         const int32_t at = core._ring_cells[(size_t)i];
         if (have_rows && core._md_cell_off[(size_t)at + 1] <= core._md_cell_off[(size_t)at]) continue;

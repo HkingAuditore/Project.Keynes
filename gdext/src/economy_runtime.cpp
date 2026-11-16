@@ -143,9 +143,7 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
             // Peer completion has debited Economy escrow, but Country's
             // terminal commit/read snapshot must also be visible to this
             // worker before the same epoch's conservation audit.
-            if (_simulation_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) &&
-                !_simulation_host->finish_worker_country_asset(
-                    *transport_request_id, terminal, error))
+            if (!finish_country_fiscal_asset(*transport_request_id, terminal, error))
                 return false;
             committed = terminal.committed_quantity > 0
                 ? terminal.committed_quantity : terminal.committed_cash;

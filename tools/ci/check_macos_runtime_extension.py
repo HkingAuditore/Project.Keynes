@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load a specific macOS arm64 library in isolation and exercise save/restore.
+"""Load a specific macOS arm64 library and exercise save/restore and rendering.
 
 The editor normally loads the debug library, so its regression results cannot
 establish that a checked-in release library implements the same save protocol.
@@ -30,7 +30,10 @@ FIXTURES = (
     ("formal_inline_restart", "tests/runtime/runtime_inline_coordinator_save_test.gd", "inline coordinator save:"),
     ("world_rules", "tests/runtime/runtime_world_rules_rebuild_test.gd", "runtime world rules rebuild:"),
     ("opinion_inputs", "tests/runtime/runtime_opinion_input_lifecycle_test.gd", "runtime opinion input lifecycle:"),
+    ("bounce_lut", "tests/ui/bounce_lut_native_test.gd", "=== bounce LUT native:"),
+    ("resource_visual_native", "tests/economy/resource_visual_native_test.gd", "resource visual native:"),
 )
+FIXTURE_SUMMARY_ENDINGS = {"bounce_lut": ", 0 failures ==="}
 
 
 def main() -> int:
@@ -84,7 +87,8 @@ def main() -> int:
             errors = [line for line in lines if is_engine_error(line) or
                       "SCRIPT ERROR:" in line or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
             if not any(
-                    line.startswith(result_prefix) and line.endswith(", 0 failures")
+                    line.startswith(result_prefix) and line.endswith(
+                        FIXTURE_SUMMARY_ENDINGS.get(name, ", 0 failures"))
                     for line in lines):
                 errors.append(name + " fixture did not report success")
             passed = result.returncode == 0 and not errors

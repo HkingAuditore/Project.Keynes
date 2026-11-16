@@ -3,14 +3,35 @@ extends RefCounted
 
 const Catalog = preload("res://scripts/rendering/resource_visual_catalog.gd")
 const Registry = preload("res://scripts/data/resource_profile_registry.gd")
+const ABUNDANCE_BOUNDARIES := [0.25, 0.70, 1.50]
+const ABUNDANCE_LIMITS := [0.0, 0.25, 0.70, 1.50, INF]
 var rows: Dictionary = {}
 var revision := 0
 var cell_count := 0
 var styles: Array[Dictionary] = []
+# Catalog-only inputs, rebuilt with configure. Live reserve arrays are never
+# retained here: each observation reads the currently published MapData.
+var _occupancy_masks := PackedInt64Array()
+var _habitat_masks := PackedInt64Array()
+var _has_profile := PackedByteArray()
+var _reserve_fields: Array[StringName] = []
+var _references := PackedFloat64Array()
 
 func configure(count: int) -> void:
 	cell_count = count
 	styles = Catalog.entries()
+	_occupancy_masks.clear()
+	_habitat_masks.clear()
+	_has_profile.clear()
+	_reserve_fields.clear()
+	_references.clear()
+	for entry in styles:
+		var bit := int(entry.bit)
+		_occupancy_masks.append((1 << bit) if bit >= 0 else 0)
+		_habitat_masks.append(int(entry.get("habitat_mask", 0)))
+		_has_profile.append(1 if entry.profile != null else 0)
+		_reserve_fields.append(StringName(entry.get("reserve_field", "")))
+		_references.append(maxf(0.0001, float(entry.get("reference", 1.0))))
 	rows.clear()
 	revision += 1
 
@@ -30,35 +51,55 @@ func observe(map: MapData, cell: int, allowed: PackedByteArray, gm: bool = false
 	for i in styles.size():
 		if allowed[i] == 0:
 			continue
-		var e := styles[i]
-		if int(e.bit) >= 0:
-			bands[i] = 2 if (occupancy & (1 << int(e.bit))) != 0 else 0
-		elif e.profile != null and (int(e.habitat_mask) == 0 or (habitat & int(e.habitat_mask)) != 0):
-			# Schema lookup and profile normalization are cold catalog work. Never
-			# rescan the component schema for each visible cell and resource.
-			var values = map.get(e.reserve_field)
-			var reserve := float(values[cell]) if values != null and cell < values.size() else 0.0
-			var ratio := maxf(0.0, reserve) / maxf(0.0001, float(e.reference))
+		var occupancy_mask := _occupancy_masks[i]
+		var habitat_mask := _habitat_masks[i]
+		if occupancy_mask != 0:
+			bands[i] = 2 if (occupancy & occupancy_mask) != 0 else 0
+		elif _has_profile[i] != 0 and (habitat_mask == 0 or (habitat & habitat_mask) != 0):
+			var published = map.get(_reserve_fields[i])
+			var reserve := 0.0
+			if published != null:
+				var values: PackedFloat32Array = published
+				if cell < values.size():
+					reserve = float(values[cell])
+			var ratio := maxf(0.0, reserve) / _references[i]
 			var old_band := int(old[i]) if i < old.size() else 0
 			bands[i] = abundance_band(ratio, old_band)
-	var climate := Color(_value(map.temp_arr, cell, 0.5), _value(map.moisture_arr, cell, 0.5),
-		_value(map.snow_cover_arr, cell, 0.0), _value(map.vegetation_vitality_arr, cell, 1.0))
 	var changed := old != bands
-	rows[cell] = {"bands": bands, "climate": climate}
+	if changed or previous.is_empty():
+		rows[cell] = {"bands": bands, "climate": _climate(map, cell)}
+	else:
+		previous["climate"] = _climate(map, cell)
 	if changed:
 		revision += 1
 	return changed
+
+## Climate publication does not rebuild the 51-entry abundance row or geometry.
+## Unknown visible cells still need their first full observation.
+func observe_climate(map: MapData, cell: int, gm: bool = false) -> bool:
+	if cell < 0 or cell >= cell_count or not rows.has(cell):
+		return false
+	if not gm and (cell >= map.visible_arr.size() or map.visible_arr[cell] == 0):
+		return false
+	var climate := _climate(map, cell)
+	if rows[cell].climate == climate:
+		return false
+	rows[cell].climate = climate
+	return true
+
+static func _climate(map: MapData, cell: int) -> Color:
+	return Color(_value(map.temp_arr, cell, 0.5), _value(map.moisture_arr, cell, 0.5),
+		_value(map.snow_cover_arr, cell, 0.0), _value(map.vegetation_vitality_arr, cell, 1.0))
 
 static func abundance_band(ratio: float, previous: int = 0) -> int:
 	if ratio <= 0.000001:
 		return 0
 	var band := 1
-	for boundary in [0.25, 0.70, 1.50]:
+	for boundary in ABUNDANCE_BOUNDARIES:
 		if ratio >= float(boundary):
 			band += 1
 	if previous > 0 and previous != band:
-		var limits := [0.0, 0.25, 0.70, 1.50, INF]
-		if ratio >= float(limits[previous - 1]) * 0.9 and ratio <= float(limits[previous]) * 1.1:
+		if ratio >= float(ABUNDANCE_LIMITS[previous - 1]) * 0.9 and ratio <= float(ABUNDANCE_LIMITS[previous]) * 1.1:
 			return previous
 	return band
 

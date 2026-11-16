@@ -3,6 +3,7 @@ extends PanelContainer
 ## Read-only presentation of catalog effects and committed native support facts.
 const Art = preload("res://scripts/ui/components/ideology_art.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const BREAKDOWN_ROW = preload("res://scenes/ui/ideology_breakdown_row.tscn")
 const Q16 := 65536.0
 const WIDTH := 448.0
 ## 手写体标题字用带随包 fallback 的 display_handwritten（web 无系统字体兜底）。
@@ -224,21 +225,23 @@ func _effects(title: String, lines: PackedStringArray, future: bool) -> void:
 
 
 func _breakdown_row(data: Dictionary) -> void:
-	var row := HBoxContainer.new()
-	row.name = "BreakdownRow"
-	var label := Art.label(String(data.get("label", "")), 14, Art.INK,
-		HORIZONTAL_ALIGNMENT_LEFT)
-	label.custom_minimum_size.x = 84
-	row.add_child(label)
+	var row := BREAKDOWN_ROW.instantiate() as HBoxContainer
+	var label := row.get_node("ClassLabel") as Label
+	label.text = String(data.get("label", ""))
+	label.add_theme_font_size_override("font_size", maxi(UITokens.FONT_SMALL, 14))
+	label.add_theme_font_override("font", UITokens.dossier_font("sans"))
+	label.add_theme_color_override("font_color", Art.INK)
 	var delta := int(data.get("delta_q16", 0))
 	var stance := int(data.get("stance_q16", 0))
 	var tone := Art.school_color("harmony") if delta > 0 \
 		else (Art.VERMILION if delta < 0 else Art.INK_MUTED)
-	var copy := Art.label("收入 %+.1f%%   立场 %+.2f   影响力 %d" % [
+	var copy := row.get_node("Figures") as Label
+	copy.text = "收入 %+.1f%%   立场 %+.2f   影响力 %d" % [
 		float(delta) / Q16 * 100.0, float(stance) / Q16,
-		int(data.get("influence", 0))], 13, tone, HORIZONTAL_ALIGNMENT_RIGHT)
-	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(copy)
+		int(data.get("influence", 0))]
+	copy.add_theme_font_size_override("font_size", maxi(UITokens.FONT_SMALL, 13))
+	copy.add_theme_font_override("font", UITokens.dossier_font("sans"))
+	copy.add_theme_color_override("font_color", tone)
 	_column.add_child(row)
 
 

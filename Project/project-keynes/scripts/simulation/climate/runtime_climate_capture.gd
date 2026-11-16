@@ -57,7 +57,7 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
 		# 因为这套计数器每 stride 天才推进一次。
 		var stage_b: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_stage_b_knobs(
-			map, cp_now, _generator._runtime_climate_worker_stage_b_call_index, float(stride))
+			map, cp_now, _generator._runtime_climate_worker_stage_b_call_index, float(stride), day + 1)
 		if not stage_b.is_empty():
 			out["stage_b"] = stage_b
 	# distribute 是 stage 11 的后半段，也是 snow_cover / snowpack /
@@ -540,14 +540,11 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	# and how much of it landed before the capture depended on machine speed.
 	if bool(thread_report.get("climate_worker_authoritative", false)) \
 			and _generator._season_refresh_job != null:
-		if _generator._season_refresh_job.has_method("has_capture_round_pending") \
-				and _generator._season_refresh_job.has_capture_round_pending():
-			# 不在这里等回灌：worker 可能正等主线程服务它的下一个 continuation，
-			# 而主线程就在这个调用里，等待会死锁。这一轮读到的是当前 MapData
-			# （预发布时最多滞后 K 天），见 tmp/next/day_barrier_protocol.md §3.1.3。
-			_generator._season_refresh_job.run_round_for_capture()
-		elif _generator._season_refresh_job.has_method("finish_round_now"):
-			_generator._season_refresh_job.finish_round_now()
+		# Eligibility comes from this game's date, not how often SUS had enough
+		# frame budget to probe the job. CLM2 restores the completed boundary.
+		_generator._season_refresh_job.run_due_round_for_capture(day)
+		if bool(_generator._season_refresh_job.season_refresh_state_snapshot().get("round_active", false)):
+			return _runtime_climate_failure("season_refresh_incomplete", "Season refresh has not completed for this input day", day)
 	var next_generation := maxi(1, _generator._runtime_input_generation + 1)
 	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
 	var topology_generation := _runtime_climate_topology_generation_for_map(map)

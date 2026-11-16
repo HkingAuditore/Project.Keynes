@@ -62,7 +62,27 @@ func _run() -> void:
 		and bytes.size() > 32
 		and bytes[0] == 0x50 and bytes[1] == 0x4b
 		and bytes[2] == 0x43 and bytes[3] == 0x4e)
+	_test_cold_restore_identity(catalog, checkpoint, first_frames.back())
 	_test_atomic_admission(catalog)
+
+
+func _test_cold_restore_identity(catalog: Dictionary, checkpoint: Dictionary,
+		expected: Dictionary) -> void:
+	# Formal loading configures a fresh runtime without bootstrapping it.
+	# A warm roundtrip hid the missing starting-country reconstruction.
+	var restored: Object = ClassDB.instantiate("DCWorldExt")
+	restored.create_entities(3)
+	var profile := {"country_runtime_mode": "ACTIVE",
+		"starting_technology_ids": PackedStringArray(["tech.hunting"])}
+	_expect("cold restore configures", bool(restored.configure_country(
+		catalog, profile, 3, 20260908).get("ok", false)))
+	restored.configure_country_reference_trace(true, 8)
+	_expect("cold restore begins", bool(restored.begin_country_restore().get("ok", false)))
+	restored.feed_country_restore_chunk(checkpoint.bytes)
+	_expect("cold restore completes", bool(restored.end_country_restore().get("ok", false)))
+	var frames: Array = restored.poll_country_reference_trace(0, 8).get("frames", [])
+	_expect("cold restore preserves starting-country identity immediately",
+		frames.size() == 1 and int(frames[0].identity_hash) == int(expected.identity_hash))
 
 
 func _test_atomic_admission(catalog: Dictionary) -> void:

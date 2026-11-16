@@ -131,6 +131,7 @@ func _test_saved_shares_are_repushed_after_load() -> void:
 		int((controller.capture_view_state().get("military_budget", {}) as Dictionary)
 			.get("procurement_bp", 0)) == 2000)
 	_run_repush_without_native()
+	controller.free()
 
 
 ## 旧原生 DLL 缺席（或加载的是没有 `policy.set_budget` 的旧版本）时，读档重推
@@ -183,6 +184,7 @@ func _run_repush_without_native() -> void:
 	_expect("the shares are still remembered when the native side is absent",
 		int((bare.capture_view_state().get("military_budget", {}) as Dictionary)
 			.get("wage_bp", 0)) == 5000)
+	bare.free()
 
 	# 2) 旧 DLL 不认这个 op：拒绝原样浮上来，但会话不崩，也不标记已推，
 	#    这样换成新 DLL 再绑定时还能补一次。
@@ -195,6 +197,7 @@ func _run_repush_without_native() -> void:
 	_expect("a rejected repush keeps the player's shares intact",
 		int((rejecting.capture_view_state().get("military_budget", {}) as Dictionary)
 			.get("total_bp", 0)) == 2500)
+	rejecting.free()
 
 
 ## Facade 是 UI 的唯一出口：set_budget 必须把 -1 原样送到桥接，不能被

@@ -118,55 +118,12 @@ func bootstrap(is_water: PackedByteArray, packet: Dictionary = {}) -> Dictionary
 		return {"ok": false, "reason": "country facade is not configured"}
 	return _world_ext.bootstrap_country(packet, is_water)
 
-func submit(commands: Array[Dictionary]) -> Dictionary:
+func submit(commands: Array[Dictionary], preserve_effective_days: bool = false) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "country facade is not configured"}
-	var batch := {
-		"opcodes": PackedInt32Array(),
-		"effective_days": PackedInt64Array(),
-		"sequences": PackedInt64Array(),
-		"target_handles": PackedInt64Array(),
-		"cell_indices": PackedInt32Array(),
-		"aux_i32": PackedInt32Array(),
-		"domain_i32": PackedInt32Array(),
-		"position_i32": PackedInt32Array(),
-		"weight0_bp": PackedInt32Array(),
-		"weight1_bp": PackedInt32Array(),
-		"weight2_bp": PackedInt32Array(),
-		"weight3_bp": PackedInt32Array(),
-		"value_i64": PackedInt64Array(),
-		"tax_kinds": PackedInt32Array(),
-		"tax_item_indices": PackedInt32Array(),
-		"tax_rate_basis_points": PackedInt32Array(),
-		"tax_assessment_modes": PackedInt32Array(),
-		"stable_ids": PackedStringArray(),
-		"display_names": PackedStringArray(),
-	}
-	for command in commands:
-		batch.opcodes.append(int(command.get("opcode", 0)))
-		batch.effective_days.append(int(command.get("effective_day", 0)))
-		batch.sequences.append(int(command.get("sequence", 0)))
-		batch.target_handles.append(int(command.get("target_handle", 0)))
-		batch.cell_indices.append(int(command.get("cell", -1)))
-		batch.aux_i32.append(int(command.get("signal", command.get("technology", -1))))
-		batch.domain_i32.append(int(command.get("domain", -1)))
-		batch.position_i32.append(int(command.get("position", -1)))
-		var weights: PackedInt32Array = command.get("weights_bp",
-			PackedInt32Array([0, 0, 0, 0]))
-		for domain in range(4):
-			batch["weight%d_bp" % domain].append(
-				int(weights[domain]) if domain < weights.size() else 0)
-		batch.value_i64.append(int(command.get("value", 0)))
-		batch.tax_kinds.append(int(command.get("tax_kind", -1)))
-		batch.tax_item_indices.append(int(command.get("tax_item", -1)))
-		batch.tax_rate_basis_points.append(int(command.get(
-			"tax_rate_basis_points",
-			int(command.get("tax_rate_percent", 0)) * 100)))
-		batch.tax_assessment_modes.append(int(command.get(
-			"tax_assessment_mode", TAX_MODE_PERCENT_BP)))
-		batch.stable_ids.append(String(command.get("stable_id", "")))
-		batch.display_names.append(String(command.get("display_name", "")))
-	return _world_ext.submit_country_commands(batch)
+	return _world_ext.submit_country_commands(preload(
+		"res://scripts/country/country_command_batch.gd").pack(
+		commands, preserve_effective_days, TAX_MODE_PERCENT_BP))
 
 
 ## Returns only terminal worker receipts for Country commands admitted through
@@ -226,23 +183,23 @@ func create_country(stable_id: StringName, display_name: String, first_cell: int
 		"effective_day": effective_day, "sequence": sequence}])
 
 func rename_country(handle: int, display_name: String,
-		effective_day: int, sequence: int) -> Dictionary:
+		effective_day: int, sequence: int, preserve_effective_days: bool = false) -> Dictionary:
 	return submit([{"opcode": Opcode.RENAME_COUNTRY, "target_handle": handle,
-		"display_name": display_name, "effective_day": effective_day, "sequence": sequence}])
+		"display_name": display_name, "effective_day": effective_day, "sequence": sequence}], preserve_effective_days)
 
 func transfer_territory(cell: int, target_handle: int,
-		effective_day: int, sequence: int) -> Dictionary:
+		effective_day: int, sequence: int, preserve_effective_days: bool = false) -> Dictionary:
 	return submit([{"opcode": Opcode.TRANSFER_TERRITORY, "target_handle": target_handle,
-		"cell": cell, "effective_day": effective_day, "sequence": sequence}])
+		"cell": cell, "effective_day": effective_day, "sequence": sequence}], preserve_effective_days)
 
 func grant_technology(handle: int, technology_id: StringName,
-		effective_day: int, sequence: int) -> Dictionary:
+		effective_day: int, sequence: int, preserve_effective_days: bool = false) -> Dictionary:
 	var ids: PackedStringArray = _catalog.get("technology_ids", PackedStringArray())
 	var technology := ids.find(String(technology_id))
 	if technology < 0:
 		return {"ok": false, "reason": "unknown technology id: %s" % String(technology_id)}
 	return submit([{"opcode": Opcode.GRANT_TECHNOLOGY, "target_handle": handle,
-		"technology": technology, "effective_day": effective_day, "sequence": sequence}])
+		"technology": technology, "effective_day": effective_day, "sequence": sequence}], preserve_effective_days)
 
 func set_research_weights(handle: int, weights_bp: PackedInt32Array,
 		effective_day: int, sequence: int) -> Dictionary:
@@ -318,9 +275,9 @@ func advance_era(handle: int, milestone_technology_id: StringName,
 	return submit(commands)
 
 func reveal_all_technologies(handle: int, effective_day: int,
-		sequence: int) -> Dictionary:
+		sequence: int, preserve_effective_days: bool = false) -> Dictionary:
 	return submit([{"opcode": Opcode.REVEAL_ALL_TECHNOLOGIES,
-		"target_handle": handle, "effective_day": effective_day, "sequence": sequence}])
+		"target_handle": handle, "effective_day": effective_day, "sequence": sequence}], preserve_effective_days)
 
 ## 把国家句柄拆成 (slot, generation) 编入 cell/aux 两个 32 位通道。
 static func _receiver_payload(command: Dictionary, receiver_handle: int) -> Dictionary:

@@ -19,7 +19,7 @@ public:
     // Command transport and terminal receipts.
     virtual uint64_t allocate_command_request_id() = 0;
     virtual uint64_t allocate_producer_sequence(uint32_t producer_id) = 0;
-    virtual bool enqueue_batch(std::vector<RuntimeCommandPacket> packets) = 0;
+    virtual bool enqueue_batch(std::vector<RuntimeCommandPacket> packets, std::vector<int64_t> *effective_days = nullptr) = 0;
     virtual bool try_country_command_terminal(
             uint64_t request_id, CountryCommandReceipt &out) = 0;
 

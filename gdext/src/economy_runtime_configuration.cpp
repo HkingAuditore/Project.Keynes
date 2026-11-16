@@ -18,6 +18,22 @@ namespace pk {
 using namespace godot;
 using namespace variant_helpers;
 
+void NativeEconomyRuntime::rebuild_building_upgrade_requirements() {
+    _building_upgrade_required_tiers.assign(_building_upgrade_family_ids.size(), 0);
+    for (size_t type = 0; type < _building_upgrade_family_indices.size(); ++type) {
+        const int32_t family = _building_upgrade_family_indices[type];
+        const int32_t tier = type < _building_upgrade_tiers.size()
+            ? _building_upgrade_tiers[type] : -1;
+        if (family < 0 ||
+            static_cast<size_t>(family) >= _building_upgrade_required_tiers.size() ||
+            tier < 0 || tier >= 32) continue;
+        _building_upgrade_required_tiers[static_cast<size_t>(family)] |=
+            uint32_t{1} << static_cast<uint32_t>(tier);
+    }
+    ++_building_upgrade_catalog_builds;
+    _building_upgrade_catalog_rows += _building_upgrade_family_indices.size();
+}
+
 Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dictionary &profile,
                                            int32_t cell_count, int64_t seed) {
     reset("reconfigure");
@@ -37,6 +53,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         out["reason"] = String(error.c_str());
         return out;
     }
+    rebuild_building_upgrade_requirements();
     const auto resolve_tax_stats = [&](const char *kind,
                                        const std::vector<std::string> &item_ids,
                                        std::vector<int32_t> &out_ids) {

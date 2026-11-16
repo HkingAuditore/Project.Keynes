@@ -289,24 +289,8 @@ func execute_gm_command(host, command_id: String, raw_args: Dictionary) -> Dicti
 		host.on_clock_running_changed(true)
 		return host._gm_ok("速度已设为 %d 倍。" % int(speed), false, -1)
 
-	if host._generator == null or host._world_clock == null:
-		return host._gm_error("world_not_ready", "世界尚未生成，无法提交该指令。")
-	var effective_day = int(args.get("day", host._world_clock.day_index() + 1))
-	if effective_day <= host._world_clock.day_index():
-		return host._gm_error("effective_day_invalid", "生效日必须晚于当前游戏日。")
-	var sequence = host._gm_sequence
-	host._gm_sequence += 2 if command_id == "economy.mint_to_treasury" else 1
-	var result: Dictionary
-	if command_id.begins_with("country."):
-		result = host._gm_execute_country_command(command_id, args, effective_day, sequence)
-	else:
-		result = host._gm_execute_economy_command(command_id, args, effective_day, sequence)
-	if not bool(result.get("ok", false)):
-		return host._gm_error(String(result.get("reason", "command_rejected")),
-			"指令被运行时拒绝：%s" % String(result.get("reason", "unknown")), result)
-	var response = host._gm_ok("指令已排入第 %d 日的权威命令队列。" % effective_day, true, effective_day)
-	response["data"] = result
-	return response
+	return preload("res://scripts/game/world_runtime_gm_commands.gd").submit_simulation_command(
+		host, command_id, args)
 
 
 

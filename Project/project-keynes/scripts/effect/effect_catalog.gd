@@ -68,6 +68,18 @@ static func load_default() -> Resource:
 	return catalog_script.new() if catalog_script != null else null
 
 func compile_native_catalog() -> Dictionary:
+	return _compile_native_catalog.call(null)
+
+func compile_native_catalog_cooperative(context) -> Dictionary:
+	if context.canceled:
+		return {"ok": false, "reason": "loading_canceled"}
+	# The source may be edited while the compiler yields; compile one version.
+	var frozen: Resource = duplicate_deep(Resource.DEEP_DUPLICATE_ALL)
+	# These value-only columns are deliberately not exported Resource properties.
+	frozen.native_extensions = native_extensions.duplicate(true)
+	return await frozen._compile_native_catalog(context)
+
+func _compile_native_catalog(context) -> Dictionary:
 	var out := {
 		"protocol_version": PROTOCOL_VERSION,
 		"max_instances": max_instances,
@@ -116,6 +128,10 @@ func compile_native_catalog() -> Dictionary:
 	# metric id 1 (int(true)) instead of the id the author named.
 	var metric_seen := {}
 	for metric_index in range(metric_keys.size()):
+		if context != null:
+			await context.checkpoint("effect_columns")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		var key := String(metric_keys[metric_index])
 		if key.is_empty() or metric_seen.has(key):
 			return {"ok": false, "reason": "effect_metric_key_invalid_or_duplicate"}
@@ -124,6 +140,10 @@ func compile_native_catalog() -> Dictionary:
 	var any_managed := false
 	var any_selector_params := false
 	for definition in definitions:
+		if context != null:
+			await context.checkpoint("effect_columns")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if definition != null and definition is EffectDefinitionScript:
 			if bool(definition.managed):
 				any_managed = true
@@ -132,6 +152,10 @@ func compile_native_catalog() -> Dictionary:
 			if any_managed and any_selector_params:
 				break
 	for definition in definitions:
+		if context != null:
+			await context.checkpoint("effect_columns")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if definition == null or not definition is EffectDefinitionScript:
 			return {"ok": false, "reason": "effect_definition_resource_invalid"}
 		if definition.key == &"" or definition_seen.has(definition.key) \
@@ -263,6 +287,10 @@ func compile_native_catalog() -> Dictionary:
 	# metric read by a COUNTRY program returns whatever the anchor cell happens
 	# to hold. The native validator cannot see this at all -- it only knows ids.
 	for definition in definitions:
+		if context != null:
+			await context.checkpoint("effect_columns")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if definition == null or not definition is EffectDefinitionScript:
 			continue
 		var domain := int(definition.target_domain)
@@ -291,6 +319,10 @@ func compile_native_catalog() -> Dictionary:
 					"reason": "effect_cell_metric_on_country_domain:" + metric_key}
 	out.ok = true
 	for extension_key in native_extensions:
+		if context != null:
+			await context.checkpoint("effect_columns")
+			if context.canceled:
+				return {"ok": false, "reason": "loading_canceled"}
 		if out.has(extension_key):
 			return {"ok": false, "reason": "effect_native_extension_key_collision"}
 		out[extension_key] = native_extensions[extension_key]

@@ -24,6 +24,7 @@ func _run() -> void:
 	if not bool(compiled.get("ok", false)):
 		return
 	_test_opening_daily(compiled)
+	_test_timing_invariance(compiled)
 	_test_injected_mid_and_wide(compiled)
 	_test_mid_cycle_lock_holds(compiled)
 	_test_no_missed_cells_on_n3(compiled)
@@ -115,20 +116,20 @@ func _test_food_shortage_and_cadence_change(compiled: Dictionary) -> void:
 	var changing := _boot(compiled, 10, 1000000.0, 1000000.0, 822, {}, {"stock": stock})
 	var stable := true
 	var saw_daily := false
-	var saw_five := false
+	var stayed_daily := true
 	for day in range(15):
 		if day == 4:
 			changing.inject_economy_cadence_timing(0.01, 0.01)
 		var report := _run_day(changing, day)
 		var n := int(report.get("locked_market_cycle_days", 0))
 		saw_daily = saw_daily or n == 1
-		saw_five = saw_five or n == 5
+		stayed_daily = stayed_daily and n == 1
 		if day >= 5:
 			for cell in range(10):
 				stable = stable and int(changing.get_population_cell_summary(cell).get(
 					"food_access_q16", 0)) >= 62259
-	_expect("food access stays correct when cadence relocks from N=5 to N=1",
-		stable and saw_daily and saw_five)
+	_expect("food access stays correct while timing changes and settlement stays daily",
+		stable and saw_daily and stayed_daily)
 
 func _test_food_production_between_settlements(compiled: Dictionary) -> void:
 	# A workshop with ample inputs emits food so this test isolates snapshot
@@ -175,13 +176,12 @@ func _test_opening_daily(compiled: Dictionary) -> void:
 	var plan_days := int(report.get("locked_plan_cycle_days", 0))
 	var invest_days := int(report.get("locked_investment_cycle_days", 0))
 	var profile := _profile()
-	_expect("opening one-cell world locks N=1, P near 5, and I > P",
+	_expect("opening world uses daily settlement and configured fixed reviews",
 		int(report.get("locked_market_cycle_days", 0)) == 1 and
-		plan_days > 0 and
-		plan_days <= int(profile.investment_review_days) and
-		invest_days > plan_days and invest_days > 0 and
+		plan_days == int(profile.building_plan_days) and
+		invest_days == int(profile.investment_review_days) and
 		int(report.get("locked_slow_cycle_days", 0)) == plan_days and
-		int(report.get("market_max_cycle_days", 0)) == int(profile.market_max_cycle_days))
+		int(report.get("epoch_days", 0)) == 1)
 	_expect("opening cell settles on sample day",
 		bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
 		int(report.get("newest_state_day", -2)) == 0 and
@@ -200,34 +200,50 @@ func _test_opening_daily(compiled: Dictionary) -> void:
 		market_ms <= 0.0 or last_market <= 0.0 or market_ms < maxf(8.0, last_market * 8.0))
 
 func _test_injected_mid_and_wide(compiled: Dictionary) -> void:
-	var mid := _boot(compiled, 64, 20.0, 20.0, 21)
-	var mid_boot: Dictionary = mid.get_economy_report()
 	var profile := _profile()
-	_expect("injected medium timing stays inside the profile market bounds",
-		int(mid_boot.get("locked_market_cycle_days", 0)) >= int(profile.market_min_cycle_days) and
-		int(mid_boot.get("locked_market_cycle_days", 0)) <= int(profile.market_max_cycle_days))
-	var wide := _boot(compiled, 64, 1000000.0, 1000000.0, 22, {
-		"investment_cells_per_slice": 1,
-		"building_plan_cells_per_slice": 1,
-	})
-	var wide_boot: Dictionary = wide.get_economy_report()
-	print("  [info] heavy lock N=%s P=%s I=%s knives=%s plan_knives=%s invest_knives=%s" % [
-		wide_boot.get("locked_market_cycle_days", -1),
-		wide_boot.get("locked_plan_cycle_days", -1),
-		wide_boot.get("locked_investment_cycle_days", -1),
-		wide_boot.get("cadence_populated_knives", -1),
-		wide_boot.get("cadence_plan_knives", -1),
-		wide_boot.get("cadence_investment_knives", -1)])
-	var plan_days := int(wide_boot.get("locked_plan_cycle_days", 0))
-	var invest_days := int(wide_boot.get("locked_investment_cycle_days", 0))
-	_expect("injected heavy timing locks the profile maximum and I > P",
-		int(wide_boot.get("locked_market_cycle_days", 0)) == int(profile.market_max_cycle_days) and
-		plan_days > 0 and
-		plan_days <= int(profile.investment_review_days) and
-		invest_days > plan_days and invest_days > 0)
+	for timing in [20.0, 1000000.0]:
+		var ext := _boot(compiled, 64, timing, timing, 21, {
+			"investment_cells_per_slice": 1, "building_plan_cells_per_slice": 1})
+		var report := _run_day(ext, 1)
+		_expect("timing %s does not change daily settlement or fixed review periods" % timing,
+			int(report.get("locked_market_cycle_days", 0)) == 1 and
+			int(report.get("epoch_days", 0)) == 1 and
+			int(report.get("due_cells", 0)) == 64 and
+			int(report.get("locked_plan_cycle_days", 0)) == int(profile.building_plan_days) and
+			int(report.get("locked_investment_cycle_days", 0)) == int(profile.investment_review_days))
+
+func _test_timing_invariance(compiled: Dictionary) -> void:
+	# The old implementation must fail this: machine time selected different
+	# settlement cells. Compare every day through both fixed review boundaries.
+	var options := {"building_plan_days": 7, "investment_review_days": 23,
+		"starvation_death_rate_q32": 0}
+	var reference := _boot(compiled, 12, 0.01, 0.01, 24,
+		options.merged({"worker_enabled": false}))
+	var loaded := _boot(compiled, 12, 1000000.0, 1000000.0, 24,
+		options.merged({"worker_enabled": true, "worker_market_threshold": 1,
+			"worker_tasks_hint": 4, "building_plan_cells_per_slice": 1,
+			"investment_cells_per_slice": 1}))
+	for day in range(1, 34):
+		var cost := 0.01 if day % 2 == 0 else 1000000.0
+		loaded.inject_economy_cadence_timing(cost, cost, cost)
+		var a := _run_day(reference, day)
+		var b := _run_day(loaded, day)
+		for report in [a, b]:
+			_expect("day %d covers every live cell once under fixed rules" % day,
+				bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
+				int(report.get("epoch_days", 0)) == 1 and int(report.get("due_cells", 0)) == 12 and
+				int(report.get("locked_market_cycle_days", 0)) == 1 and
+				int(report.get("locked_plan_cycle_days", 0)) == 7 and
+				int(report.get("locked_investment_cycle_days", 0)) == 23 and
+				int(report.get("population_error", 1)) == 0 and
+				int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0)
+		_expect("day %d state agrees across timing, worker and slice sizes" % day,
+			reference.get_economy_state_hash() == loaded.get_economy_state_hash())
+
 
 func _test_mid_cycle_lock_holds(compiled: Dictionary) -> void:
-	var ext := _boot(compiled, 10, 1000000.0, 1000000.0, 31)
+	var ext := _boot(compiled, 10, 1000000.0, 1000000.0, 31,
+		{"economy_cadence_force_market_days": 5})
 	_expect("forced five-day lock at bootstrap",
 		int(ext.get_economy_report().get("locked_market_cycle_days", 0)) == 5)
 	var before_plan := int(ext.get_economy_report().get("locked_plan_cycle_days", 0))
@@ -241,9 +257,10 @@ func _test_mid_cycle_lock_holds(compiled: Dictionary) -> void:
 		int(day1.get("locked_investment_cycle_days", 0)) == before_invest)
 
 func _test_no_missed_cells_on_n3(compiled: Dictionary) -> void:
-	var ext := _boot(compiled, 9, 20.0, 20.0, 41)
+	var ext := _boot(compiled, 9, 20.0, 20.0, 41,
+		{"economy_cadence_force_market_days": 3})
 	var n := int(ext.get_economy_report().get("locked_market_cycle_days", 0))
-	_expect("nine-cell fixture uses a 2–4 day lock", n >= 2 and n <= 4)
+	_expect("explicit legacy fixture uses a three-day lock", n == 3)
 	var seen := {}
 	for day in range(n):
 		var report := _run_day(ext, day)
@@ -257,7 +274,8 @@ func _test_no_missed_cells_on_n3(compiled: Dictionary) -> void:
 		total += int(seen[day])
 	_expect("one cycle covers every populated cell once", total == 9)
 	var hash_a: int = ext.get_economy_state_hash()
-	var twin := _boot(compiled, 9, 20.0, 20.0, 41)
+	var twin := _boot(compiled, 9, 20.0, 20.0, 41,
+		{"economy_cadence_force_market_days": 3})
 	for day in range(n):
 		_run_day(twin, day)
 	_expect("injected timing makes N/P/I sequence repeatable",
@@ -320,7 +338,10 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 	catalog.erase("ok")
 	CountryTestHelper.configure_all_technologies(restored, catalog, 10, 51)
 	_expect("PKCN restore matches", _restore_country(restored, country_chunks))
-	restored.configure_economy(catalog, _profile(), 10, 51)
+	var changed_profile := _profile()
+	changed_profile.building_plan_days = before_plan + 10
+	changed_profile.investment_review_days = before_invest + 10
+	restored.configure_economy(catalog, changed_profile, 10, 51)
 	restored.begin_economy_restore()
 	for chunk in chunks:
 		restored.feed_economy_restore_chunk(chunk)

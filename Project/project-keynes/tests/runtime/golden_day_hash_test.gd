@@ -9,6 +9,14 @@ const DOMAINS := ["CLIMATE", "TRIGGER_INPUT", "IDEOLOGY",
 	"EFFECT", "MODIFIER", "ECONOMY", "EVENTS"]
 
 
+func _install_observation_cadence(ext: Object) -> void:
+	_expect("replay cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(ext))
+
+
+func _observation_days() -> int:
+	return GOLDEN_DAYS
+
+
 func _run() -> void:
 	OS.set_environment("PK_GOLDEN_DOMAINS", "1")
 	var config := NewGameConfig.create_default()
@@ -37,7 +45,7 @@ func _run() -> void:
 	var start: Dictionary = generator.gameplay_start_report()
 	var cell := int(start.get("cell", -1))
 	var economy = generator.get_economy_facade()
-	_expect("replay cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(economy.world_ext()))
+	_install_observation_cadence(economy.world_ext())
 	_expect("golden has a populated starter", bool(start.get("ok", false)) and cell >= 0)
 	if OS.get_environment("PK_GOLDEN_DIAGNOSTICS") == "1":
 		var map := host.get_current_map()
@@ -58,14 +66,18 @@ func _run() -> void:
 			"research_signal_ids": Array(map.cell_research_signal_ids),
 			"research_signal_values": Array(map.cell_research_signal_values)}))
 	var rows: Array = []
-	var country_chain := "keynes-country-v4:seed=20260727:days1-8"
-	var domain_chain := "keynes-domains-v3:seed=20260727:days1-8"
-	var whole_chain := "keynes-whole-economy-v2:seed=20260727:days1-8"
-	var chain := "keynes-economy-golden-v1:seed=20260727:commands=bootstrap,days1-8"
+	var days := _observation_days()
+	var country_chain := "keynes-country-v4:seed=20260727:days1-%d" % days
+	var domain_chain := "keynes-domains-v3:seed=20260727:days1-%d" % days
+	var whole_chain := "keynes-whole-economy-v2:seed=20260727:days1-%d" % days
+	var chain := "keynes-economy-golden-v1:seed=20260727:commands=bootstrap,days1-%d" % days
 	if cell >= 0 and economy != null and economy.is_configured():
 		clock.pause(false)
-		for day in range(1, GOLDEN_DAYS + 1):
-			var opinion_before: Dictionary = economy.world_ext().get_country_class_opinion_snapshot()
+		# Startup can finish day 1 before this observer enters the loop. A live
+		# snapshot read before _run_day is therefore not necessarily a prior-day
+		# opinion. Retain each exact completed day's snapshot for the next day.
+		var opinion_before: Dictionary = {}
+		for day in range(1, days + 1):
 			var report := await _run_day(host, economy, clock, day)
 			if bool(report.get("done", false)):
 				var settled := await _wait_golden_read_boundary(host, economy, day)
@@ -76,13 +88,21 @@ func _run() -> void:
 			if not bool(report.get("done", false)):
 				break
 			var runtime: Dictionary = generator.get_runtime_thread_report()
-			if int(opinion_before.get("revision", 0)) > 0:
+			if day > 1:
+				_expect("previous completed day has an opinion on day %d" % day,
+					int(opinion_before.get("revision", 0)) > 0 and
+					int(opinion_before.get("commit_day", -1)) == day - 1)
 				_expect("Ideology commits after a prior opinion exists on day %d" % day,
 					int(runtime.get("ideology_pod_committed_day", -1)) == day)
 			if int(runtime.get("ideology_pod_committed_day", -1)) == day:
 				_expect("Ideology consumes the latest committed opinion on day %d" % day,
 					int(runtime.get("ideology_parity_worker_opinion_committed_day", -2)) ==
 					int(opinion_before.get("commit_day", -3)))
+			var opinion_after: Dictionary = economy.world_ext().get_country_class_opinion_snapshot()
+			_expect("Economy publishes the completed day's opinion on day %d" % day,
+				int(opinion_after.get("revision", 0)) > 0 and
+				int(opinion_after.get("commit_day", -1)) == day)
+			opinion_before = opinion_after
 			var domains := await _read_domains(economy.world_ext(), day)
 			var whole_hash := _whole_economy_hash
 			var repeated := await _read_domains(economy.world_ext(), day)
@@ -134,9 +154,9 @@ func _run() -> void:
 			row["domain_hashes"] = domains
 			row["domain_chain"] = domain_chain
 			rows.append(row)
-	_expect("golden sampled every day", rows.size() == GOLDEN_DAYS)
+	_expect("golden sampled every day", rows.size() == days)
 	var result := {"version": 2, "seed": 20260727, "scope": "starter_ledger_and_whole_economy_at_same_day_writeback",
-		"commands": "formal bootstrap; run_daily_tick/finish_daily_tick days 1..8; no player mutations",
+		"commands": "formal bootstrap; run_daily_tick/finish_daily_tick days 1..%d; no player mutations" % days,
 		"days": rows}
 	result["version"] = 4
 	result["excluded_domains"] = EXCLUDED_DOMAINS

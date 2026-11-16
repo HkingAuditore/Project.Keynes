@@ -38,6 +38,8 @@
 
 namespace pk {
 
+struct MilitaryMarketDayReuse;
+
 constexpr uint32_t PKMI_MAGIC = 0x494d4b50u;      // "PKMI"
 // v2: state buildings are counted through the economy ledger (kind-3 rows)
 // instead of a cumulative barracks/fort/college cache. v1 streams still load
@@ -635,6 +637,36 @@ struct MilitaryReport {
     int32_t procure_markets_used = 0;
     // Supply connectivity: disconnection probes answered (0 = no probe).
     int32_t supply_probes = 0;
+    // Actual work performed this day, never saved or hashed.
+    int64_t supply_ring_requests = 0;
+    int64_t supply_ring_cache_hits = 0;
+    int64_t supply_ring_centers_built = 0;
+    int64_t supply_ring_cells_visited = 0;
+    int64_t payroll_lots_visited = 0;
+    int64_t payroll_holders_visited = 0;
+    int64_t war_cells_visited = 0;
+    int64_t engagement_index_slots_visited = 0;
+    int64_t engagement_members_cleared = 0;
+    int64_t front_position_lookups = 0;
+    int64_t front_position_rows = 0;
+    int64_t front_removal_fallback_rows = 0;
+    mutable int64_t garrison_queries = 0;
+    mutable int64_t garrison_lots_visited = 0;
+    mutable int64_t garrison_scan_fallbacks = 0;
+    int64_t event_evictions = 0;
+    int64_t event_index_rows_visited = 0;
+    int64_t procurement_inflight_rows = 0;
+    int64_t procurement_inflight_keys = 0;
+    int64_t procurement_inflight_sort_fallbacks = 0;
+    int64_t battle_plan_value_queries = 0;
+    int64_t battle_plan_value_builds = 0;
+    int64_t battle_plan_fort_queries = 0;
+    int64_t battle_plan_fort_builds = 0;
+    int64_t market_index_builds = 0;
+    int64_t market_index_reuses = 0;
+    int64_t market_index_cells = 0;
+    int64_t procurement_garrison_links_visited = 0;
+    int64_t procurement_garrison_heads_visited = 0;
     // The day's payroll as actually planned, split by holder (army-pay contract
     // §2.3). `payroll_garrison` is what the cell rows sent to the garrison
     // cohorts and `payroll_army` what the MILITARY_INTENT_ARMY_PAY rows sent to
@@ -1022,6 +1054,8 @@ public:
     void run_requisition(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     // military_core_war.cpp
     void run_wars(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
+    // step_day has already captured the identical frozen digest and revenue.
+    void run_wars_prepared(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     void run_engagements(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     void run_area_missions(const MilitaryWorldDigest &digest);
     void update_front_cells(const std::vector<int32_t> &touched_cells);
@@ -1045,6 +1079,9 @@ public:
                         const std::vector<int64_t> &longs, int32_t proposer_slot, int64_t day,
                         std::vector<MilitaryIntent> &out);
     void close_engagement(int32_t index);
+    void invalidate_engagement_members();
+    void ensure_engagement_members();
+    void set_army_engagement(int32_t army, int32_t engagement);
     void capture_cell(int32_t index, const MilitaryWorldDigest &digest,
                       std::vector<MilitaryIntent> &out);
     void retreat_or_annihilate(int32_t army, int32_t from_cell, int32_t victor,
@@ -1070,8 +1107,6 @@ public:
     int64_t annual_revenue_q16(int32_t slot) const;
     int64_t country_power(int32_t slot) const;
     int64_t annex_price_q16(int32_t receiver, const MilitaryWar &war) const;
-    void track_full_occupation(MilitaryWar &war, const MilitaryWorldDigest &digest);
-    void update_war_score(MilitaryWar &war, const MilitaryWorldDigest &digest);
     // military_core_ai.cpp
     void run_country_ai(const MilitaryWorldDigest &digest);
     void set_ai_country(int32_t slot, bool ai) ;
@@ -1194,6 +1229,7 @@ public:
     std::vector<uint8_t> _cell_owner_dirty;   // per cell, owner/control moved this day
     std::vector<int64_t> _country_annual_revenue;   // by slot, MONEY_SCALE (digest mirror)
     MilitaryWorldDigest _last_digest;         // last day's committed view (cold queries)
+    MilitaryMarketDayReuse *_market_day_reuse = nullptr; // borrowed only within step_day
     std::vector<int32_t> _country_era;        // by slot, era index mirror (militia scaling)
     std::vector<int32_t> _cell_state_index;   // cell -> row in _cell_states, -1 none (derived)
     std::vector<MilitaryIntent> _war_intents;      // treaty batch queued by war commands
@@ -1238,11 +1274,16 @@ public:
     std::vector<int32_t> _lot_army_head;       // by army slot
     std::vector<int32_t> _lot_cell_head;       // by cell
     bool _lot_index_ok = false;
+    // PKMI preserves linked lists verbatim and accepts incomplete coverage.
+    // Only use them for formerly full-scan garrison queries when complete.
+    // Derived, never saved/hashed; a false value retains the original scan.
+    bool _lot_garrison_lookup_complete = false;
     // Stock row index: open addressing over rows of _stocks keyed by
     // (holder_kind, holder, country, good); -1 = empty.
     std::vector<int32_t> _stock_rows;
     bool _stock_index_ok = false;
-    // Front edge key -> position in _front_edges (-1 none); sorted on demand.
+    // Front key -> vector position (-1 absent, -2 duplicate). Duplicate keys
+    // retain the historical first-match removal; daily compaction/sort stays.
     std::vector<int32_t> _front_edge_pos;
     bool _front_unsorted = false;
     // Full canonical front recompute pending: 0 none, 1 recompute (bumps the
@@ -1276,13 +1317,24 @@ public:
     std::vector<uint8_t> _ct_conflict;
 
     // ---- daily logistics indexes (design 9.3 / 21.4; never saved or hashed).
-    // Wrap-aware rings of hex distance <= MILITARY_SUPPLY_RADIUS, built once
-    // per topology change. Offsets are per cell into _ring_cells / _ring_dist;
-    // _ring_dist is the row-major hex distance from the ring's centre.
+    // Wrap-aware BFS rows, built for requested centers after logistics first
+    // prepares the index. Missing rows have offset -1. Rows may be appended in
+    // any center order; use offset + length, never the next center's offset.
     std::vector<int32_t> _ring_off;
-    std::vector<uint8_t> _ring_len;
+    std::vector<int32_t> _ring_len;
     std::vector<int32_t> _ring_cells;
     std::vector<uint8_t> _ring_dist;
+    std::vector<uint32_t> _ring_visit_stamp;
+    uint32_t _ring_visit_generation = 0;
+    std::vector<int32_t> _ring_build_queue;
+    std::vector<uint8_t> _ring_build_distance;
+    // Reverse membership of authoritative _armies.engagement. Slot-indexed,
+    // rebuilt after restore; all live assignments go through set_army_engagement.
+    bool _engagement_members_valid = false;
+    bool _engagement_members_unresolved = false;
+    std::vector<int32_t> _engagement_army_head;
+    std::vector<int32_t> _army_engagement_prev;
+    std::vector<int32_t> _army_engagement_next;
     // Market rows of the current day grouped by cell (CSR over _md_row_*).
     std::vector<int32_t> _md_cell_off;      // size cells + 1
     std::vector<int32_t> _md_cell_rows;     // row ids ascending by (cell, row)

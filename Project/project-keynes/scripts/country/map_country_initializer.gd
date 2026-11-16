@@ -1,5 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 
+const LoadingCatalogContextScript = preload("res://scripts/game/loading_catalog_context.gd")
+
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 const TriggerFacadeScript = preload("res://scripts/trigger/trigger_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
@@ -38,11 +40,18 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		print("[economy] native DCWorldExt economy API unavailable; economy disabled")
 		return
 	var seed_value := int(cfg.seed) if cfg != null else 0
+	var catalog_context = LoadingCatalogContextScript.for_generator(_generator)
+	var modifier_catalog: Resource = ModifierFacadeScript.ModifierCatalogScript.load_default()
+	var modifier_columns: Dictionary = {"ok": false, "reason": "ModifierCatalog unavailable"}
+	if modifier_catalog != null:
+		modifier_columns = await modifier_catalog.compile_native_catalog_cooperative(catalog_context)
+	if catalog_context.canceled:
+		return
 	_generator._modifier_facade = ModifierFacadeScript.new()
 	await _generator._yield_generation_frame()
 	_generator._loading_profile_step("_modifier_facade.configure(")
 	var modifier_configured: Dictionary = _generator._modifier_facade.configure(
-		_generator._data_core_world_ext, map.cell_count(), _generator._world_clock_ref)
+		_generator._data_core_world_ext, map.cell_count(), _generator._world_clock_ref, modifier_catalog, modifier_columns)
 	if not bool(modifier_configured.get("ok", false)):
 		push_error("[modifier] configure failed: %s" % String(
 			modifier_configured.get("reason", "unknown")))
@@ -81,9 +90,17 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			country_profile.country_pending_queue_enabled = bool(
 				Engine.get_meta(&"country_pending_queue_enabled"))
 	await _generator._yield_generation_frame()
-	_generator._loading_profile_step("_country_facade.configure(")
+	_generator._loading_profile_step("country_catalog")
+	var country_catalog: Dictionary = await EconomyFacadeScript.EconomyCatalogScript.compile_native_catalog_cooperative(catalog_context)
+	if catalog_context.canceled:
+		return
+	await _generator._yield_generation_frame()
+	if catalog_context.canceled:
+		return
+	_generator._loading_profile_step("country_native_configure")
 	var country_configured: Dictionary = _generator._country_facade.configure(
-		_generator._data_core_world_ext, map.cell_count(), seed_value, country_profile)
+		_generator._data_core_world_ext, map.cell_count(), seed_value, country_profile,
+		country_catalog, null, modifier_columns)
 	if not bool(country_configured.get("ok", false)):
 		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
 		_generator._country_facade = null
@@ -264,15 +281,18 @@ func _load_ideology_catalog_cooperative() -> Resource:
 	# occupy one render frame; the catalog remains the same runtime authority.
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null:
-		return ResourceLoader.load(IDEOLOGY_CATALOG_PATH, "Resource") as Resource
+		return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
 	ResourceLoader.load_threaded_request(IDEOLOGY_CATALOG_PATH, "Resource")
 	while ResourceLoader.load_threaded_get_status(IDEOLOGY_CATALOG_PATH) == \
 			ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 		await _generator._yield_generation_frame()
 	if ResourceLoader.load_threaded_get_status(IDEOLOGY_CATALOG_PATH) == \
 			ResourceLoader.THREAD_LOAD_LOADED:
-		return ResourceLoader.load_threaded_get(IDEOLOGY_CATALOG_PATH) as Resource
-	return ResourceLoader.load(IDEOLOGY_CATALOG_PATH, "Resource") as Resource
+		var loaded: Resource = ResourceLoader.load_threaded_get(IDEOLOGY_CATALOG_PATH)
+		# Preserve the catalog's profile/test hook after its threaded load. The
+		# local reference keeps ResourceLoader's cached object alive here.
+		return IdeologyFacadeScript.IdeologyCatalogScript.load_default() if loaded != null else null
+	return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
 
 
 func _configure_economy_runtime(map: MapData, seed_value: int) -> Dictionary:
@@ -606,12 +626,23 @@ func _configure_economy_runtime_cooperative(map: MapData, seed_value: int) -> Di
 	if map == null or _generator._data_core_world_ext == null:
 		return {"ok": false, "reason": "economy_world_unavailable"}
 	_generator._economy_facade = EconomyFacadeScript.new()
-	var configured: Dictionary = _generator._economy_facade.configure(
-		_generator._data_core_world_ext, map.cell_count(), seed_value)
+	var catalog_context = LoadingCatalogContextScript.for_generator(_generator)
+	_generator._loading_profile_step("economy_catalog")
+	var compiled: Dictionary = await EconomyFacadeScript.EconomyCatalogScript.compile_native_catalog_cooperative(catalog_context)
+	if catalog_context.canceled:
+		return {"ok": false, "reason": "loading_canceled"}
+	await _generator._yield_generation_frame()
+	if catalog_context.canceled:
+		return {"ok": false, "reason": "loading_canceled"}
+	_generator._loading_profile_step("economy_native_configure")
+	var configured: Dictionary = await _generator._economy_facade.configure_cooperative(
+		catalog_context, _generator._data_core_world_ext, map.cell_count(), seed_value, null, compiled)
 	if not bool(configured.get("ok", false)):
 		_generator._economy_facade = null
 		return configured
 	await _generator._yield_generation_frame()
+	if catalog_context.canceled:
+		return {"ok": false, "reason": "loading_canceled"}
 	var trade_topology := _capture_economy_trade_topology(map)
 	if not bool(trade_topology.get("ok", false)):
 		_generator._economy_facade = null

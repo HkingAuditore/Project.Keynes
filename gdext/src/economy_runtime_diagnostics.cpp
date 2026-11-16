@@ -570,7 +570,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_maintenance_author_goods);
     cap(_building_maintenance_goods);
 	cap(_building_upgrade_family_ids); cap(_building_upgrade_family_indices);
-	cap(_building_upgrade_tiers);
+	cap(_building_upgrade_tiers); cap(_building_upgrade_required_tiers);
     cap(_building_inputs); cap(_building_input_candidates);
     cap(_building_outputs); cap(_building_resources);
 	cap(_building_output_cost_shares_q16);
@@ -1407,6 +1407,12 @@ Dictionary NativeEconomyRuntime::report() const {
     out["tag_declared_tags"] = tag_declared_tag_count();
     out["tag_active_tags"] = tag_active_tag_count();
     out["tag_consumed_tags"] = tag_consumed_tag_count();
+    out["tag_snapshot_sampled_cells"] =
+        _tag_snapshot_sampled_cells.load(std::memory_order_relaxed);
+    out["tag_snapshot_requested_metrics"] =
+        _tag_snapshot_requested_metrics.load(std::memory_order_relaxed);
+    out["tag_catalog_metrics"] =
+        _tag_catalog_metrics.load(std::memory_order_relaxed);
     // R-3b (item 4): every `tag_snapshot()` load in the epoch. A tag selector that
     // loads once per SCAN keeps this proportional to the number of scans; the pre-fix
     // shape called it once per CELL, so a 6400-cell country cost 6400 loads per query.
@@ -2929,15 +2935,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["period_transactions"] = true;
     out["max_command_latency_days"] = locked_market_cycle_days();
     out["pending_commands"] = static_cast<int64_t>(_pending_commands.size());
-    out["catalog_hash"] = _catalog_hash.get();
-    out["building_catalog_hash"] = _building_catalog_hash.get();
-    out["environment_day"] = _environment_day.get();
-    out["environment_hash"] = _environment_hash.get();
+    append_epoch_input_report(out);
     out["country_schema_version"] = CountryApi::SCHEMA_VERSION;
-    out["country_generation"] = static_cast<int64_t>(_epoch_country_generation);
-    out["country_state_hash"] = static_cast<int64_t>(_epoch_country_hash);
-    out["country_commands_due"] = _country_runtime != nullptr &&
-        country_reads().should_run(_current_day.get());
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = _merchant_repairs;
     out["price_cap_hits"] = _price_cap_hits;

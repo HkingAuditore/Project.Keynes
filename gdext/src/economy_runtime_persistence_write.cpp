@@ -510,7 +510,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.audit_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_SIGNALS) {
-        constexpr int32_t record_bytes = 36;
+        constexpr int32_t record_bytes = 68;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(
             static_cast<int32_t>(_market_signals.good_ids.size()),
@@ -532,6 +532,15 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                _market_signals.realized_withdrawal_ema[_save.signal_cursor]);
             append_le<int32_t>(payload,
                                _market_signals.cost_anchor_price[_save.signal_cursor]);
+            const auto append_observation = [&](const std::vector<int64_t> &values) {
+                append_le<int64_t>(payload,
+                    static_cast<size_t>(_save.signal_cursor) < values.size()
+                        ? values[_save.signal_cursor] : 0);
+            };
+            append_observation(_epoch_producer_sellable_current);
+            append_observation(_epoch_producer_merchant_sold_current);
+            append_observation(_epoch_previous_producer_sellable);
+            append_observation(_epoch_previous_producer_merchant_sold);
         }
         if (_save.signal_cursor >= static_cast<int32_t>(_market_signals.good_ids.size()))
             ++_save.section;

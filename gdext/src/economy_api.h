@@ -542,6 +542,10 @@ uint64_t effect_input_revision(const NativeEconomyRuntime &economy);
 // Country: committed-day watermark and era-milestone notification.
 uint64_t committed_generation(const NativeEconomyRuntime &economy);
 int64_t state_hash(const NativeEconomyRuntime &economy);
+// Diagnostic only: caller owns the complete day boundary. Uses the current
+// formula owner, including before its stores move into POD authority.
+uint64_t golden_population_market_hash(const NativeEconomyRuntime &economy,
+                                      int64_t sample_day, int64_t committed_day);
 void notify_era_milestone_activated(NativeEconomyRuntime &economy,
                                     uint64_t country_handle);
 

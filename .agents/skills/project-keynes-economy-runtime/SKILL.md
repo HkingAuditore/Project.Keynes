@@ -162,13 +162,13 @@ Details: `docs/architecture/current-state.md`, section
 
 ## Treat cadence as a gameplay/performance contract
 
-Market settlement locks N in 1–5. Production plans lock P in 5–15. Investment
-locks I in 10–30 and must be longer than the current P. Each changes only at
-its own completed cycle boundary, using populated work plus previous-cycle
-machine timing for that side. `market_cycle_days=5` is the production
-maximum and late-game stagger cap, not a start-of-game fixed period. Do not
-restore `market_cycle_days=0` 50/334 auto-fast-forward. Do not present those
-historical N=50/N=334 figures as default behavior.
+Production settlement is daily (N=1), independent of machine timing and slice
+sizes. Planning uses configured fixed P in 5–15; investment uses fixed I in
+10–30, longer than P (defaults 10/30). Timings remain diagnostics only. Explicit
+force-period hooks are historical test approximations, not production policy.
+The first settlement and newly populated cells each execute one day. Do not
+accumulate missed wall time as game-day debt or replace sequential daily
+updates with multiplied multi-day demand/production.
 
 When changing cadence or approximation:
 
@@ -177,12 +177,12 @@ When changing cadence or approximation:
   funds/stock before household clearing; mid-cycle gameplay writes must remain deferred.
 - Freeze building ownership, role fills, construction readiness, geographic/resource context, and
   production inputs for the same cycle boundary; do not let mid-cycle gameplay writes leak into it.
-- Multiply period demand by that cell's actual elapsed days (clamped 1–5) and
-  normalize demand/income EMA inputs back to daily values. Do not multiply by a
-  newly chosen N.
-- Keep `wait_commit` until `sample_day + N - 1`.
-- Allow normal day progression before the deadline.
-- Raise `economy_day_barrier` only when `commit_due && !done`, then catch up on real-frame pulses.
+- Production demand, output and EMA updates use one day, including opening day.
+- Complete and publish the same day's full transaction before advancing it.
+- Explicit multi-day fixture hooks retain their existing deadline/elapsed-day
+  checks; never use those approximations to pass a production consistency test.
+- Resume unfinished same-day work through existing continuation pulses; do not
+  enqueue missed wall-clock days while waiting.
 - Publish `market_cycle_days`, deadline, command latency, approximation model, and error evidence.
 - Compare against N=1 reference; never infer accuracy only from conservation.
 
