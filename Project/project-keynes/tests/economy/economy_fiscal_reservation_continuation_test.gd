@@ -398,11 +398,16 @@ func _run_country_active_fiscal_bridge(catalog: Dictionary, merchant: int) -> vo
 	var worker_view_after_terminal: Dictionary = ext.get_country_worker_read_view(-1)
 	var worker_cash_after_terminal: PackedInt64Array = worker_view_after_terminal.get(
 		"country_cash", PackedInt64Array())
+	var economy_before_pulses: Dictionary = ext.get_economy_report()
 	for step in range(12):
 		ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
 		ext.set_runtime_clock(false, 1000.0)
 		OS.delay_msec(2)
 		ext.set_runtime_clock(true, 1000.0)
+	var economy_after_pulses: Dictionary = ext.get_economy_report()
+	_expect("Country-only pulses do not advance the Economy epoch",
+		economy_before_pulses.has("epoch_id") and economy_after_pulses.has("epoch_id") and
+		int(economy_before_pulses.epoch_id) == int(economy_after_pulses.epoch_id))
 	var worker_view_after_replay: Dictionary = ext.get_country_worker_read_view(-1)
 	var worker_cash_after_replay: PackedInt64Array = worker_view_after_replay.get(
 		"country_cash", PackedInt64Array())

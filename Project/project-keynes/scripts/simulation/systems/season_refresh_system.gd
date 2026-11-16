@@ -189,7 +189,9 @@ func run_due_round_for_capture(day: int) -> int:
 	# An authority switch can inherit a round begun by the main-thread path.
 	# Finish that work before testing eligibility for a new periodic round.
 	if _round_active:
-		return finish_round_now()
+		var continued := finish_round_now()
+		_record_capture_completion(day, continued)
+		return continued
 	if _uses_legacy_signal():
 		return run_round_for_capture() if _capture_round_pending else finish_round_now()
 	if day <= 1 or posmod(day - 1, maxi(1, period_ticks)) != 0:
@@ -198,12 +200,16 @@ func run_due_round_for_capture(day: int) -> int:
 		return 0
 	_capture_round_pending = true
 	var slices := run_round_for_capture()
-	if not _round_active:
-		# Use the input's date even if a caller is preparing it ahead of the
-		# visible clock. A rejected capture can reuse this completed round.
+	_record_capture_completion(day, slices)
+	return slices
+
+
+func _record_capture_completion(day: int, slices: int) -> void:
+	if slices > 0 and not _round_active:
+		# Coordinator writes WorldClock dates. Worker input d represents clock
+		# date d+1, including prefetch and same-day continuation.
 		generator.set("_last_season_refresh_day", day + 1)
 		_finished_outside_scheduler = true
-	return slices
 
 
 ## Runs a deferred round start to finish. The caller must have brought the

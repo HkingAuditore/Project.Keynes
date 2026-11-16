@@ -56,9 +56,11 @@ def identity():
 
 def load_snapshot():
     # Process names only: unrelated command arguments may contain private data.
-    output = subprocess.check_output(["ps", "-Ao", "pid,ppid,pcpu,comm", "-r"], text=True)
+    output = subprocess.check_output(["ps", "-Ao", "pid,ppid,pcpu,comm"], text=True)
+    lines = output.splitlines()
+    processes = sorted(lines[1:], key=lambda row: float(row.split(None, 3)[2]), reverse=True)
     return {"monotonic": time.monotonic(), "load_average": os.getloadavg(),
-            "top_processes": output.splitlines()[:21]}
+            "top_processes": lines[:1] + processes[:20]}
 
 
 def pressure_worker(ready_fd):

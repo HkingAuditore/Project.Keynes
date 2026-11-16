@@ -47,7 +47,7 @@ func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
 	}
 
 func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int,
-		elapsed_days_per_call: float = 1.0) -> Dictionary:
+		elapsed_days_per_call: float = 1.0, calendar_day: int = -1) -> Dictionary:
 	if map == null or cp_now == null:
 		return {}
 	var n_cells: int = map.cell_count()
@@ -59,9 +59,10 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int,
 	var run_albedo: bool = (call_index % albedo_stride) == 0
 	var run_veg_dyn: bool = (call_index % veg_dyn_stride) == 0
 	var run_feedback: bool = (call_index % feedback_stride) == 0 and bool(cp_now.fast_slow_layering_enabled)
-	if run_veg_dyn and _generator._world_clock_ref != null and _generator._world_clock_ref.has_method("day_index"):
-		if int(_generator._world_clock_ref.day_index()) == _generator._last_season_refresh_day:
-			run_veg_dyn = false
+	if calendar_day < 0 and _generator._world_clock_ref != null and _generator._world_clock_ref.has_method("day_index"):
+		calendar_day = int(_generator._world_clock_ref.day_index())
+	if calendar_day >= 0 and calendar_day == _generator._last_season_refresh_day:
+		run_veg_dyn = false
 	if not (run_albedo or run_veg_dyn or run_feedback):
 		return {}
 	var knobs: Dictionary = {
@@ -81,8 +82,7 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int,
 		knobs["albedo_table"] = _generator._build_albedo_donor_table()
 	if run_veg_dyn:
 		_generator._ensure_vegdyn_lut()
-		# stage_b 的 stride 以“调用次数”计，而原生 daily graph 本身也可能跨多天调用。
-		# 两层 cadence 必须相乘，才能让 vitality / succession streak 按真实游戏日推进。
+		# 两层调用间隔相乘，得到植被实际经过的游戏天数。
 		var veg_dyn_scale_raw: float = float(veg_dyn_stride) * maxf(elapsed_days_per_call, 1.0)
 		var veg_dyn_scale_eff: float = maxf(veg_dyn_scale_raw, 1.0)
 		knobs["day_scale"] = veg_dyn_scale_raw

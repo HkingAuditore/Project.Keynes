@@ -130,7 +130,7 @@
       "domain": "family",
       "owner": "economy",
       "tag": "ECP2",
-      "version": 62,
+      "version": 63,
       "source": "gdext/src/runtime_economy_family_store.cpp",
       "tokens": [
         "runtime_economy_family_store"
@@ -144,7 +144,7 @@
       "domain": "technology",
       "owner": "country",
       "tag": "PKCN",
-      "version": 14,
+      "version": 16,
       "source": "gdext/src/country_runtime_persistence.cpp",
       "tokens": [
         "PKCN",

@@ -17,6 +17,8 @@ func _run() -> void:
 	var ext := DCWorldExt.new()
 	# Matches runtime_economy_ecp2.h through the native descriptor, not PKEC's schema.
 	var checkpoint_format: Dictionary = ext.get_economy_checkpoint_format()
+	_expect("published ECP2 contract remains ABI4/schema63",
+		int(checkpoint_format.abi_version) == 4 and int(checkpoint_format.schema_version) == 63)
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW", "graph_coverage_complete": false,
 		"day": 0, "speed_days_per_second": 0.0, "paused": true})

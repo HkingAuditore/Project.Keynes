@@ -338,7 +338,10 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 	catalog.erase("ok")
 	CountryTestHelper.configure_all_technologies(restored, catalog, 10, 51)
 	_expect("PKCN restore matches", _restore_country(restored, country_chunks))
-	restored.configure_economy(catalog, _profile(), 10, 51)
+	var changed_profile := _profile()
+	changed_profile.building_plan_days = before_plan + 10
+	changed_profile.investment_review_days = before_invest + 10
+	restored.configure_economy(catalog, changed_profile, 10, 51)
 	restored.begin_economy_restore()
 	for chunk in chunks:
 		restored.feed_economy_restore_chunk(chunk)

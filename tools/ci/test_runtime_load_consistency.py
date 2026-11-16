@@ -2,9 +2,10 @@
 import copy
 import json
 import unittest
+from unittest.mock import patch
 
 from check_runtime_load_consistency import (DAILY_DAYS, COMMAND_DAYS, EXPECTED_DOMAINS,
-    command_coverage, compare, daily_coverage, pressure_errors)
+    command_coverage, compare, daily_coverage, pressure_errors, load_snapshot)
 from check_golden_determinism import read_result
 
 
@@ -32,6 +33,13 @@ def command_result():
 
 
 class LoadEvidenceTests(unittest.TestCase):
+    def test_process_snapshot_sorts_cpu_without_bsd_only_ps_flag(self):
+        listing = "PID PPID %CPU COMM\n1 0 2.0 idle\n2 0 90.0 busy process\n"
+        with patch("check_runtime_load_consistency.subprocess.check_output", return_value=listing) as ps:
+            result = load_snapshot()
+        ps.assert_called_once_with(["ps", "-Ao", "pid,ppid,pcpu,comm"], text=True)
+        self.assertEqual(result["top_processes"], listing.splitlines()[:1] + listing.splitlines()[1:][::-1])
+
     def test_full_daily_and_command_evidence_is_accepted(self):
         self.assertEqual(daily_coverage(*daily()), [])
         self.assertEqual(command_coverage(command_result(), range(1, COMMAND_DAYS + 1)), [])
