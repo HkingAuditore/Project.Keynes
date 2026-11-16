@@ -56,6 +56,13 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 开局规划须读取真实 profile，软投入按基础100%加额外增产处理。
 满意度公式更改应提升 `EconomyCatalog.SATISFACTION_MODEL_VERSION`，由内容身份拒绝
 旧模型存档；只有新增持久列时才改字节 schema。当前模型为2、保存布局仍为60。
+满意度**内容幅度**（政体、理念、事件、家族、科技的 bp）不属于公式改动：不必提升模型版本，
+但要同步 `tests/economy/satisfaction_sources_runtime_test.gd` 的出厂表，并按
+[满意度幅度梯](../cpp-dots-runtime/satisfaction-runtime.md) 取级——政体这类无成本、
+全民、永久的来源，核心受益阶层应落在 ±450~750 bp，受损阶层至少 −450 bp。
+政体还可挂任意 COUNTRY 定义（`regime.*.charter`）：条目用 MULTIPLY，每组至少写一条代价，
+幅度按 2~8% 给，不要按满意度点数直觉放大；卡面「国策」行由
+`RegimePresenter.charter_for()` 自动列出，加新条目不需要改 UI。
 验收与边界见 [经济平衡记录](../cpp-dots-runtime/economy-balance-2026-11-08.md)。
 
 改建筑的产出、投入或效率须运行 `tests/building/building_resource_chain_test.gd`（同族单调与跨字段校验）。

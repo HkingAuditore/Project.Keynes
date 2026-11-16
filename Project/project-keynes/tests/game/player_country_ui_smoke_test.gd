@@ -180,11 +180,11 @@ func _run() -> void:
 	var politics_workspace := panel.get("_politics_workspace") as Control
 	if politics_workspace != null and politics_workspace.has_method("select_tab"):
 		politics_workspace.select_tab("ideology")
-	var ideology_workspace := politics_workspace.get_node_or_null("Root/Ideology") as Control \
+	var ideology_workspace := politics_workspace.get_node_or_null("Root/Pages/IdeologyScroll/Ideology") as Control \
 		if politics_workspace != null else null
 	var ideology_model: Dictionary = panel.get("_model").get("politics", {}).get("ideology", {})
 	_expect("politics workspace opens for the politics action",
-		politics_workspace != null and ideology_workspace != null and ideology_workspace.visible \
+		politics_workspace != null and ideology_workspace != null and ideology_workspace.is_visible_in_tree() \
 			and panel.current_section() == "politics")
 	_expect("ideology section snapshot is available",
 		bool(ideology_model.get("available", false)))

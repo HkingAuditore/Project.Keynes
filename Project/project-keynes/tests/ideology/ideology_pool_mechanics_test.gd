@@ -32,7 +32,6 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
-const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const Q16_ONE := 65536
 const BAN_OPCODE := 11
 

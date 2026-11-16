@@ -2,6 +2,9 @@ extends VBoxContainer
 class_name CohortList
 
 const CohortRowScene := preload("res://scenes/ui/cohort_row.tscn")
+## 与 cohort_row.tscn 中 Button 最小高度、Header 上下内边距一致。
+const ROW_MIN_HEIGHT := 44.0
+const HEADER_INSET := 4.0
 
 signal details_requested(request: Dictionary)
 
@@ -57,10 +60,13 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var refs := {"panel": panel, "button": button,
 		"icon": panel.get_node("Body/Button/Header/Icon"),
 		"living_icon": living_icon, "name": panel.get_node("Body/Button/Header/Identity/Name"),
-		"meta": panel.get_node("Body/Button/Header/Identity/Meta"),
+		"meta": panel.get_node("Body/Button/Header/Identity/MetaRow/Meta"),
+		"satisfaction": panel.get_node("Body/Button/Header/Identity/MetaRow/Satisfaction"),
 		"population": panel.get_node("Body/Button/Header/Population"),
 		"wealth": panel.get_node("Body/Button/Header/Balance/Wealth"),
-		"net": panel.get_node("Body/Button/Header/Balance/Net")}
+		"net": panel.get_node("Body/Button/Header/Balance/Net"),
+		"header": panel.get_node("Body/Button/Header"),
+		"unrest": panel.get_node("Body/Button/Unrest")}
 	_apply_row(row_id, refs, data)
 	return refs
 
@@ -92,6 +98,7 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 		meta_parts.append(identity)
 	meta_parts.append(living_text)
 	(refs.get("meta") as Label).text = " · ".join(meta_parts)
+	_apply_satisfaction(refs.get("satisfaction") as Label, data)
 	(refs.get("population") as Label).text = String(data.get("population", ""))
 	(refs.get("wealth") as Label).text = String(data.get("wealth", "")).trim_prefix("人均 ")
 	var card_net_label := refs.get("net") as Label
@@ -99,3 +106,39 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	card_net_label.add_theme_color_override("font_color",
 		UITokens.DOSSIER_VERDIGRIS if bool(data.get("net_positive", true)) \
 			else UITokens.DOSSIER_OXBLOOD)
+	# 民情：只有该阶层出现组织活动时才露出下沿一条，其余行保持原高度。
+	var unrest_strip := refs.get("unrest") as CohortUnrestStrip
+	if unrest_strip != null:
+		unrest_strip.set_unrest(data.get("unrest", {}))
+		var extra := CohortUnrestStrip.STRIP_HEIGHT if unrest_strip.visible else 0.0
+		var button := refs.get("button") as Button
+		button.custom_minimum_size.y = ROW_MIN_HEIGHT + extra
+		button.tooltip_text = unrest_strip.tooltip_text
+		(refs.get("header") as Control).offset_bottom = -HEADER_INSET - extra
+
+
+## 生活水平后面紧跟综合满意度，按高低着色；悬停给出精确值与最短板。
+func _apply_satisfaction(label: Label, data: Dictionary) -> void:
+	if label == null:
+		return
+	if not data.has("satisfaction_float"):
+		label.visible = false
+		return
+	var sat := clampf(float(data.get("satisfaction_float", 0.0)), 0.0, 1.0)
+	label.visible = true
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.text = "满意 %d%%" % roundi(sat * 100.0)
+	label.add_theme_color_override("font_color", satisfaction_ink(sat))
+	var tip := "综合满意度 %.1f%%" % (sat * 100.0)
+	var worst := String(data.get("worst_dimension", ""))
+	if not worst.is_empty() and int(data.get("worst_dimension_index", -1)) >= 0:
+		tip += "\n最短板：%s" % worst
+	label.tooltip_text = tip
+
+
+static func satisfaction_ink(sat: float) -> Color:
+	if sat < 0.22:
+		return UITokens.DOSSIER_OXBLOOD
+	if sat < 0.45:
+		return UITokens.DOSSIER_BRASS
+	return UITokens.DOSSIER_VERDIGRIS

@@ -1,5 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/cohort_unrest_strip.gd" id="2_unrest"]
 [node name="CohortRow" type="PanelContainer"]
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierRow"
@@ -41,9 +42,18 @@ layout_mode = 2
 size_flags_horizontal = 3
 text_overrun_behavior = 3
 theme_type_variation = &"PKDossierRowText"
-[node name="Meta" type="Label" parent="Body/Button/Header/Identity"]
+[node name="MetaRow" type="HBoxContainer" parent="Body/Button/Header/Identity"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+[node name="Meta" type="Label" parent="Body/Button/Header/Identity/MetaRow"]
+layout_mode = 2
+size_flags_horizontal = 1
+theme_type_variation = &"PKDossierMuted"
+[node name="Satisfaction" type="Label" parent="Body/Button/Header/Identity/MetaRow"]
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 1
 text_overrun_behavior = 3
 theme_type_variation = &"PKDossierMuted"
 [node name="LivingIcon" parent="Body/Button/Header" instance=ExtResource("1_icon")]
@@ -77,3 +87,17 @@ horizontal_alignment = 2
 theme_type_variation = &"PKDossierMuted"
 clip_text = true
 text_overrun_behavior = 3
+
+[node name="Unrest" type="Control" parent="Body/Button"]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -24.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("2_unrest")
