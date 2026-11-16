@@ -18,6 +18,10 @@ const EVENT_RESEARCH_EVIDENCE_CHANGED: int = 12
 const EVENT_TECHNOLOGY_ADOPTED: int = 13
 const EVENT_TECHNOLOGY_PRACTICE: int = 14
 const EVENT_TARIFF_SUBSIDY_INTENT: int = 15
+## Sparse stratum organization (mobilization) stage change. payload 26:
+## i0=stage, i1=previous stage, i2=profession, i3=country slot;
+## value=mobilization Q16, entity_id=profession population, flags=player|capital.
+const EVENT_STRATUM_MOBILIZATION: int = 18
 
 ## Military facts (design §19.1). Published by the Military daily stage through
 ## `poll_military_events`, never by GDScript gameplay code directly.
@@ -60,6 +64,7 @@ const PAYLOAD_ECONOMY_TRADE_V2: int = 8
 ## i0=天气规则，i1=合格领土地块数，i2=第一证据地块，i3=观测协议版本；
 ## value=最大强度 Q16，entity_handle=国家句柄。
 const PAYLOAD_WEATHER_OBSERVED_V1: int = 9
+const PAYLOAD_STRATUM_MOBILIZATION_V1: int = 26
 ## 军事 payload（20–25）。字段布局与 `military_bridge.h` 的 MilitaryEvent 一致
 ## （cell/i0..i3/value 原样转发；以 military_core*.cpp 的 push_event 为准）。
 ## WAR_V1：

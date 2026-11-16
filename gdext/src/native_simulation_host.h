@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
 #include "runtime_thread_retirement.h"
@@ -120,6 +121,15 @@ public:
     }
     bool inline_day_pending() const noexcept {
         return _inline_day_pending.load(std::memory_order_acquire);
+    }
+    // Runs the provider-country peer adapter ON THE CALLING (main) THREAD while the
+    // day loop waits. The country stage can leave a peer intent in the transport
+    // queue; only the ext can execute it, and the ext cannot run while this loop
+    // blocks -- the day would wait for an answer only it could produce.
+    // Measured: [plan-intent] d=4 n=1 q=1 req=10 dom=6 op=1 known=0, then 120 s
+    // later country_worker_peer_stall_timeout.
+    void set_country_peer_pump(std::function<void()> pump) {
+        _country_peer_pump = std::move(pump);
     }
     // 一次内联日尝试的结果。只有 committed=true 表示这一天真的提交并发布了；
     // continuation_pending=true 表示屏障缺 peer 结果（调用方应在同一线程上泵一轮
@@ -919,6 +929,9 @@ public:
             uint64_t generation) const;
     bool queue_ideology_pod_command(const RuntimeIdeologyPodCommand &command,
                                     std::string &error);
+    // Per-cell tag bitmap for the worker's condition selector. Transient: the
+    // economy republishes it every epoch, so it is never serialised.
+    void set_ideology_cell_tags(int32_t words, const std::vector<uint64_t> &bits);
     // Effect custom-domain grants are a semantic batch: validate and reserve
     // the whole batch before publishing any command to the Ideology transport.
     bool queue_ideology_pod_commands(
@@ -1650,6 +1663,9 @@ private:
     CountryPeerProtocolStatus _country_worker_protocol{};
     RuntimeCountryPodPlan _country_pod_plan;
     std::deque<uint64_t> _country_worker_intent_queue;
+    // See set_country_peer_pump(): the ext installs a pump here so the worker's
+    // day loop can service the provider-country peer adapter on this thread.
+    std::function<void()> _country_peer_pump;
     std::unordered_map<uint64_t, CountryPeerIntent> _country_worker_intents;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_results;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_terminal_results;

@@ -12,8 +12,15 @@ namespace pk {
 class NativeEconomyRuntime;
 
 constexpr uint32_t RUNTIME_ECONOMY_ECP2_MARKER = 0x32504345u; // "ECP2"
-constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 3u;
-constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 60;
+// 4: the publication block gained the class-incidence table (channel count,
+// per-country measured flags, and the country x class x channel Q16 shares) so
+// Ideology can compute material support from committed facts. An ABI-3 reader
+// would stop after `period_days` and reject on the trailing bytes, but the
+// version is what makes that a named rejection instead of a shape error.
+constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 4u;
+// 62: same change as the PKEC bump; PKEC carries section 37 (sparse stratum
+// mobilization rows). The publication block is unchanged.
+constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 62;
 
 enum EconomyEcp2Domain : uint32_t {
     ECP2_DOMAIN_ENVELOPE = 1u << 0,

@@ -39,6 +39,9 @@ inline RuntimeIdeologyOpinionSnapshot ideology_opinion_from_economy(
     out.country_buildings_installed = source.country_buildings_installed;
     out.country_trade_base_value = source.country_trade_base_value;
     out.period_days = std::max<int64_t>(1, source.period_days);
+    out.incidence_channel_count = source.incidence_channel_count;
+    out.incidence_measured = source.incidence_measured;
+    out.class_incidence_q16 = source.class_incidence_q16;
     // No frozen floor is published yet: the worker-side host freezes it from
     // Modifier after this conversion, and an empty vector means the 0.5 default.
     return out;

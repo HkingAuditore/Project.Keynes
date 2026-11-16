@@ -37,10 +37,13 @@ func validate() -> String:
 	return ""
 
 func compile_native_catalog(_country_catalog: Dictionary = {},
-		_modifier_catalog: Dictionary = {}) -> Dictionary:
+		modifier_catalog: Dictionary = {}) -> Dictionary:
 	var error := validate()
 	if not error.is_empty():
 		return {"ok": false, "reason": error}
+	var known_definitions := {}
+	for key in modifier_catalog.get("definition_keys", PackedStringArray()):
+		known_definitions[String(key)] = true
 	var ordered: Array[Resource] = definitions.duplicate()
 	ordered.sort_custom(func(a: Resource, b: Resource) -> bool:
 		return String((a as PoliticalRegimeDefinition).id) < \
@@ -63,6 +66,16 @@ func compile_native_catalog(_country_catalog: Dictionary = {},
 		bits.append(capability_bits)
 		catalog_hash = _fnv_append(catalog_hash, id)
 		catalog_hash = _fnv_append(catalog_hash, ":%d;" % capability_bits)
+		# A regime may only reference definitions the Modifier catalog actually
+		# carries. The cross-catalog check runs here rather than at apply time so
+		# a typo fails the world compile instead of silently doing nothing.
+		var modifier_keys := PackedStringArray(definition.modifier_definition_keys)
+		modifier_keys.sort()
+		for raw_key in modifier_keys:
+			var key := String(raw_key).strip_edges()
+			if not known_definitions.is_empty() and not known_definitions.has(key):
+				return {"ok": false, "reason": "political_regime_modifier_definition_unknown:%s" % key}
+			catalog_hash = _fnv_append(catalog_hash, "@" + key)
 	return {
 		"ok": true,
 		"political_regime_ids": ids,

@@ -232,6 +232,9 @@ func _compile(level_count: int, program: Resource, profile: Resource,
 	card.id = &"probe_card"
 	card.school_id = &"industry"
 	card.route_tag = &"mining"
+	# The compiler resolves every card's school against the fixed SCHOOLS table;
+	# an unset school_id is the empty string and fails the whole catalog.
+	card.school_id = &"industry"
 	var levels: Array[Resource] = []
 	for index in maxi(level_count, 1):
 		var level: Resource = IdeologyLevelDefinitionScript.new()

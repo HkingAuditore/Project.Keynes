@@ -29,6 +29,7 @@ extends SceneTree
 
 const CountryTestHelper = preload("res://tests/country/country_test_helper.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
@@ -41,6 +42,9 @@ var _sequence := 1
 
 
 func _init() -> void:
+	# Support gate is a different authority with its own fixtures; this one
+	# exercises its own mechanism, so configure the material model as absent.
+	IdeologyCatalog.support_gate_enabled = false
 	_run()
 	print("ideology pool mechanics: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
@@ -251,8 +255,12 @@ func _boot(base: Resource, economy_ir: Dictionary, rows: int) -> Dictionary:
 	if effect_catalog == null or not bool(
 			ext.configure_effects(effect_catalog.compile_native_catalog()).get("ok", false)):
 		return {"ok": false, "reason": "effect_configure_failed"}
-	if not bool(ext.configure_ideologies(config).get("ok", false)):
-		return {"ok": false, "reason": "ideology_configure_failed"}
+	var ideology_outcome: Dictionary = ext.configure_ideologies(config)
+	if not bool(ideology_outcome.get("ok", false)):
+		# Name the native reason: a bare failure sends the next reader into the
+		# catalog compiler instead of at the field the runtime rejected.
+		return {"ok": false, "reason": "ideology_configure_failed:%s" % String(
+			ideology_outcome.get("reason", ""))}
 	var country: Dictionary = ext.get_country_cell_summary(0)
 	var handle := int(country.get("country_handle", 0))
 	if handle == 0:
@@ -268,28 +276,11 @@ func _boot(base: Resource, economy_ir: Dictionary, rows: int) -> Dictionary:
 ## Minimal Effect catalog: the ideology runtime only needs the command program to
 ## exist so an equip/transition can complete. Progression is not under test here.
 func _effect_catalog() -> Resource:
-	var catalog := EffectCatalog.new()
-	var definition := EffectDefinition.new()
-	definition.key = &"ideology.command"
-	definition.cadence_days = 3650
-	var end := EffectInstruction.new()
-	end.op = 12
-	var instruction_list: Array[Resource] = [end]
-	definition.instructions = instruction_list
-	var command := EffectCommand.new()
-	command.action = 1
-	command.domain = 1
-	command.opcode = 1
-	command.target_resolver = 1
-	command.value_mode = 0
-	command.command_key = &"ideology.persistent"
-	command.definition_key = &"ideology.command"
-	var command_list: Array[Resource] = [command]
-	definition.commands = command_list
-	var definition_list: Array[Resource] = [definition]
-	catalog.definitions = definition_list
-	return catalog
-
+	# The REAL Effect catalog, not a one-program stub: the ideology catalog declares
+	# synergy magnitude overrides whose tag names must resolve against the shared
+	# tag table, and a stub table makes configure_ideologies fail with
+	# ideology_synergy_override_tag_unknown before pool mechanics are reached.
+	return EffectDomainCatalogScript.build()
 
 func _commands(rows: Array) -> Dictionary:
 	var out := {"opcodes": PackedInt32Array(), "effective_days": PackedInt64Array(),

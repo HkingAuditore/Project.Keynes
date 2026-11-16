@@ -161,7 +161,6 @@ var _detail_close: Button
 var _detail_ideology_id := -1
 var _detail_is_offer := false
 
-
 func _ready() -> void:
 	_bind_nodes()
 	TouchUI.watch(_offer_layer)
@@ -171,7 +170,6 @@ func _ready() -> void:
 		_empty_icon.set_semantic(&"country.politics", UITokens.ACCENT)
 	call_deferred("_play_workspace_intro")
 	call_deferred("_focus_initial_action")
-
 
 func _bind_nodes() -> void:
 	if _offer_button != null:
@@ -237,7 +235,6 @@ func _bind_nodes() -> void:
 	_build_promotion_overlay()
 	_build_detail_overlay()
 	_build_dynamic_parts()
-
 
 ## The stock ConfirmationDialog belongs to the debug theme and flashes a
 ## rectangular grey window over the paper workspace. Build the promotion
@@ -791,19 +788,12 @@ func _support_summary(live: Dictionary, direction: int) -> String:
 
 
 func _support_tooltip(live: Dictionary, direction: int) -> String:
-	var lines := PackedStringArray([_support_summary(live, direction),
-		"支持评分由各阶层的影响力与对此操作的态度加权得出。推行、撤回、晋升分别判断。"])
-	var class_ids: PackedStringArray = _catalog.get("political_class_ids", PackedStringArray())
-	var names := {"general": "一般阶层", "farmer": "农民阶层",
-		"worker": "工人阶层", "technology": "学者阶层"}
-	for row in live.get("classes", []) as Array:
-		var info := row as Dictionary
-		var index := int(info.get("class_index", -1))
-		var contributions: Array = info.get("contributions", [])
-		var contribution := int(contributions[direction]) if direction >= 0 and direction < contributions.size() else 0
-		var id := String(class_ids[index]) if index >= 0 and index < class_ids.size() else ""
-		lines.append("%s · 加权贡献 %+.2f" % [String(names.get(id, "其他阶层")), float(contribution) / Q16_ONE])
-	return "\n".join(lines)
+	# The old per-class "加权贡献" line printed `influence x stance`, a raw product
+	# whose unit the player could not read. The real per-class numbers are the
+	# income change and the resulting stance, shown in the detail sheet where one
+	# native call per card is affordable.
+	return "%s\n%s" % [_support_summary(live, direction),
+		"支持评分 = 各阶层立场按影响力加权；立场 = 该阶层收入变化 × 5。"]
 
 
 func _display_name(metadata: Dictionary, ideology_id: int) -> String:

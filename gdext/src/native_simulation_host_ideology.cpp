@@ -571,6 +571,27 @@ bool NativeSimulationHost::publish_ideology_opinion_snapshot(
         error = "ideology_opinion_snapshot_shape_invalid";
         return false;
     }
+    // Incidence table: absent (channel count 0) or exactly one measured flag per
+    // country plus one share row per (country, class). A partial table would let
+    // the worker read a neighbour row's shares, which presents as a business
+    // divergence rather than a shape error.
+    if (snapshot.incidence_channel_count < 0) {
+        error = "ideology_opinion_snapshot_shape_invalid";
+        return false;
+    }
+    if (snapshot.incidence_channel_count == 0) {
+        if (!snapshot.class_incidence_q16.empty() ||
+            (!snapshot.incidence_measured.empty() &&
+             snapshot.incidence_measured.size() != snapshot.country_count)) {
+            error = "ideology_opinion_snapshot_shape_invalid";
+            return false;
+        }
+    } else if (snapshot.incidence_measured.size() != snapshot.country_count ||
+               snapshot.class_incidence_q16.size() !=
+                   lanes * static_cast<size_t>(snapshot.incidence_channel_count)) {
+        error = "ideology_opinion_snapshot_shape_invalid";
+        return false;
+    }
     auto copy = std::make_shared<RuntimeIdeologyOpinionSnapshot>(snapshot);
     // The ordinary worker path reads the latest committed input. SHADOW parity
     // separately pins the input at the reference's actual daily entry; it never
@@ -579,6 +600,12 @@ bool NativeSimulationHost::publish_ideology_opinion_snapshot(
         std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>(std::move(copy)),
         std::memory_order_release);
     return true;
+}
+
+void NativeSimulationHost::set_ideology_cell_tags(
+        int32_t words, const std::vector<uint64_t> &bits) {
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    _ideology_pod_authority.set_cell_tags(words, bits);
 }
 
 bool NativeSimulationHost::queue_ideology_pod_command(

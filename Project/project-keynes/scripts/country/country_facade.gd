@@ -80,7 +80,8 @@ var _last_event_id: int = 0
 
 func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
 		profile = null, compiled_catalog: Dictionary = {},
-		political_catalog: Resource = null) -> Dictionary:
+		political_catalog: Resource = null,
+		modifier_catalog: Dictionary = {}) -> Dictionary:
 	_world_ext = world_ext
 	_profile = profile
 	if _profile == null:
@@ -99,7 +100,7 @@ func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
 		or not _political_regime_catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "political_regime_catalog_unavailable"}
 	_political_regime_native_catalog = _political_regime_catalog.compile_native_catalog(
-		_catalog)
+		_catalog, modifier_catalog)
 	if not bool(_political_regime_native_catalog.get("ok", false)):
 		return _political_regime_native_catalog
 	for key in ["political_regime_ids", "political_regime_capability_bits",
@@ -662,6 +663,8 @@ func has_political_capability(handle: int, capability: StringName) -> bool:
 		if dense >= 0 and _political_regime_catalog != null:
 			var definitions: Array = _political_regime_catalog.get("definitions")
 			if dense < definitions.size():
+				# `Resource.get` takes a property name only; the two-argument form
+				# is Dictionary's. The dense row IS a PoliticalRegimeDefinition.
 				regime_key = String((definitions[dense] as Resource).get("id"))
 	var definition: Resource = _political_regime_catalog.definition_for(
 		StringName(regime_key)) \

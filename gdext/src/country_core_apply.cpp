@@ -385,6 +385,11 @@ bool country_core_apply_command(
         state.country_stable_ids.push_back(stable_id);
         state.country_display_names.push_back(display_name);
         state.territory_count.push_back(1);
+        // Legacy diagnostic fixtures may omit capital_cell; normalize to the
+        // already-existing slots before appending the new one.
+        if (state.capital_cell.size() != static_cast<size_t>(new_slot))
+            state.capital_cell.resize(static_cast<size_t>(new_slot), -1);
+        state.capital_cell.push_back(command.cell);
         state.country_state_version.push_back(1);
         int32_t default_regime = 0;
         for (size_t regime = 0; regime < catalog.political_regime_ids.size(); ++regime) {
@@ -1461,6 +1466,7 @@ uint64_t country_core_hash_business_state(const RuntimeCountryPodSnapshot &state
     // differ when production batches internal writes differently from SHADOW,
     // without any difference in the canonical Country business values.
     hash_vector(state.territory_count);
+    hash_vector(state.capital_cell);
     hash_vector(state.country_political_regime_ids);
     hash_vector(state.country_political_regime_capabilities);
     hash_vector(state.country_cash);

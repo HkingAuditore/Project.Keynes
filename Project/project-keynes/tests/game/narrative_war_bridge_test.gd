@@ -10,6 +10,7 @@ const NarrativeContextSamplerScript = preload("res://scripts/narrative/narrative
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
 const NarrativeStateProbeCatalogScript = preload("res://scripts/narrative/narrative_state_probe_catalog.gd")
 const NarrativeAiPromptBuilderScript = preload("res://scripts/narrative/ai/narrative_ai_prompt_builder.gd")
+const NarrativeAiValidatorScript = preload("res://scripts/narrative/ai/narrative_ai_validator.gd")
 
 var _checks := 0
 var _failures := 0
@@ -166,9 +167,32 @@ func _test_prompt_context() -> void:
 	if messages.size() < 2:
 		return
 	var user := String((messages[1] as Dictionary).get("content", ""))
-	_expect("AI prompt carries the dominant family", user.contains("本地最大族")
-		and user.contains("西街周氏"))
+	_expect("AI prompt carries family structure without the name",
+		user.contains("本地最大族") and user.contains("门风")
+		and not user.contains("西街周氏") and user.contains("不要写族名"))
 	_expect("AI prompt carries the war situation", user.contains("战事")
 		and user.contains("在战"))
 	_expect("AI prompt carries the technology list", user.contains("已掌握科技")
 		and user.contains("tech.irrigation"))
+
+	var base_event := {
+		"title": "粮价飞涨",
+		"body_text": "粮价飞涨，三人因囤积被拘。",
+		"options": [{
+			"text": "开仓平粜",
+			"outcomes": [{
+				"probability_percent": 100,
+				"outcome_title": "市面稍安",
+				"effects": [],
+			}],
+		}],
+	}
+	var chinese_digits := NarrativeAiValidatorScript.validate_and_sanitize(base_event, {})
+	_expect("validator accepts Chinese numerals", bool(chinese_digits.get("ok", false)))
+
+	var arabic_event := base_event.duplicate(true)
+	arabic_event["body_text"] = "粮价飞涨，3 人因囤积被拘。"
+	var arabic_digits := NarrativeAiValidatorScript.validate_and_sanitize(arabic_event, {})
+	_expect("validator rejects Arabic digits in narrative",
+		not bool(arabic_digits.get("ok", true))
+		and String(arabic_digits.get("code", "")) == "arabic_digits_in_narrative")

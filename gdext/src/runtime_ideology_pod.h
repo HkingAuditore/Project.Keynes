@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime_ideology_draw_kernel.h"
+#include "runtime_ideology_incidence.h"
 #include "runtime_pod_protocol.h"
 
 #include <algorithm>
@@ -38,7 +39,12 @@ namespace pk {
 // 11: mandate_of_heaven freezes one global strength multiplier per school into
 // the opinion snapshot. The card's school index also joins the catalog contract
 // so the host and worker agree on which lane an equipped card consumes.
-constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 11u;
+// 12: the opinion snapshot carries Economy's class-incidence table (channel
+// count, per-country measured flags, country x class x channel Q16 shares). The
+// support gate now derives each class's stance from that table instead of the
+// authored stance rows, so an ABI-11 payload describes a different support model
+// and must be rejected by version.
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 12u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_IDEAS = 65536u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COMMANDS = 1u << 20;
@@ -116,6 +122,17 @@ struct RuntimeIdeologyPodModifierTemplate {
     uint64_t definition_key_hash = 0;
     int32_t domain = 0;
     int32_t magnitude_q16 = 65536;
+    // Appended for the conditional / cell-scoped expansion
+    // (docs/plans/ideology-worker-pod-conditions-plan.md, 阶段 A). Nothing reads
+    // these yet: they stay at their defaults until the compiler emits them and the
+    // plan path consumes them, so adding them now cannot change behaviour.
+    //
+    // `selector_kind` mirrors `EffectRuntime::SELECTOR_*`; `tag_*` and `condition_*`
+    // are CSR windows into the catalog's own requirement tables.
+    uint32_t tag_begin = 0;
+    uint32_t tag_count = 0;
+    uint32_t condition_begin = 0;
+    uint32_t condition_count = 0;
 };
 
 struct RuntimeIdeologyPodCapacityUnlock {
@@ -179,6 +196,9 @@ struct RuntimeIdeologyPodSynergy {
 struct RuntimeIdeologyPodCatalog {
     uint32_t abi_version = RUNTIME_IDEOLOGY_POD_ABI_VERSION;
     uint64_t catalog_hash = 0;
+    // Material support model (shared with the main runtime). Empty channel table
+    // means the catalog predates the model, which the support gate rejects.
+    ideology_incidence::IdeologyIncidenceTable incidence;
     // World seed the offer RNG is mixed with. Must be identical on both sides; it
     // is carried in the catalog for that reason. Without it the card order only
     // depended on the country handle, so every session of the same map drew the
@@ -665,16 +685,18 @@ struct RuntimeIdeologyPodSaveSection {
 
 class RuntimeIdeologyPodAuthority {
 public:
-    int32_t cell_tag_words() const { return _cell_tag_words; }
-    const std::vector<uint64_t> &cell_tags() const { return _cell_tags; }
-    int32_t _cell_tag_words = 0;
-    std::vector<uint64_t> _cell_tags;
-
-    // 材料损益：把 cell 的 tag 位图交给 pod 侧的 selector 使用。
-    void set_cell_tags(int32_t words, const std::vector<uint64_t> &bits);
-
     RuntimeIdeologyPodAuthority();
     void reset();
+    // Per-cell tag bitmap published by the economy (`TagSnapshot`, tag-major:
+    // [tag * words + word]). Kept OUT of `RuntimeCountryPodSnapshot` on purpose:
+    // that struct has a save codec (`runtime_country_pod.cpp`), and the tags are
+    // rebuilt from the economy on every epoch anyway.
+    //
+    // Stage B of docs/plans/ideology-worker-pod-conditions-plan.md. Nothing reads
+    // these yet; the per-cell expansion arrives in stage D.
+    void set_cell_tags(int32_t words, const std::vector<uint64_t> &bits);
+    int32_t cell_tag_words() const { return _cell_tag_words; }
+    const std::vector<uint64_t> &cell_tags() const { return _cell_tags; }
     bool configure(const RuntimeIdeologyPodCatalog &catalog, std::string &error);
     bool bootstrap(const RuntimeCountryPodSnapshot &country,
                    const RuntimeIdeologyOpinionSnapshot &opinion,
@@ -806,6 +828,10 @@ private:
     RuntimeIdeologyPodCatalog _catalog;
     RuntimeIdeologyPodSnapshot _current;
     RuntimeIdeologyPodSnapshot _planned;
+    // Stage B inputs (see the public setter). Transient: rebuilt from the economy
+    // every epoch, never serialised.
+    int32_t _cell_tag_words = 0;
+    std::vector<uint64_t> _cell_tags;
     bool _configured = false;
     bool _plan_ready = false;
     // Armed by `restore` (a save install, whether this POD's own bytes or the runtime

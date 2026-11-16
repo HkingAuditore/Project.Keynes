@@ -97,6 +97,9 @@ var _checks := 0
 
 
 func _init() -> void:
+	# Support gate is a different authority with its own fixtures; this one
+	# exercises its own mechanism, so configure the material model as absent.
+	IdeologyCatalog.support_gate_enabled = false
 	var fixture := _fixture()
 	var controller = fixture.controller
 	var clock: ClockStub = fixture.clock

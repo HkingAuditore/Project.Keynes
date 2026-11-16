@@ -1072,6 +1072,25 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
     }
     mix_u64(0x534f4350524553ULL); // "SOCPRES"
     hash = economy_hash_lanes<true>(hash, _cell_social_pressure_level);
+    // Sparse stratum mobilization: hash every persisted field explicitly so
+    // struct padding can never affect the saved-state hash.
+    mix_u64(0x4d4f42494c495a45ULL); // "MOBILIZE"
+    mix_u64(static_cast<uint64_t>(_stratum_mobilization.rows.size()));
+    for (const StratumMobilizationRow &row : _stratum_mobilization.rows) {
+        mix_u64(static_cast<uint64_t>(static_cast<uint32_t>(row.cell)));
+        mix_u64(static_cast<uint64_t>(row.profession));
+        mix_u64(static_cast<uint64_t>(static_cast<uint32_t>(row.owner_slot)));
+        mix_u64(static_cast<uint64_t>(row.mobilization_q16));
+        mix_u64(static_cast<uint64_t>(row.satisfaction_ema_q16));
+        mix_u64(static_cast<uint64_t>(row.share_q16));
+        mix_u64(static_cast<uint64_t>(row.local_sat_q16));
+        mix_u64(static_cast<uint64_t>(row.stage));
+        mix_u64(static_cast<uint64_t>(row.flags));
+        mix_u64(static_cast<uint64_t>(static_cast<uint32_t>(row.next_check_day)));
+        mix_u64(static_cast<uint64_t>(static_cast<uint32_t>(row.cooldown_until_day)));
+        mix_u64(static_cast<uint64_t>(static_cast<uint32_t>(row.last_event_day)));
+        mix_u64(static_cast<uint64_t>(row.trauma_q16));
+    }
     mix_u64(0x4249525448524553ULL); // "BIRTHRES"
     hash = economy_hash_lanes<true>(hash, _birth_residual_q32);
     mix_u64(0x53555050454d41ULL); // "SUPPEMA"

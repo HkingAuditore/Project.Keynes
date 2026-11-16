@@ -29,7 +29,7 @@
       "domain": "country",
       "owner": "country",
       "tag": "PKCN",
-      "version": 15,
+      "version": 16,
       "source": "gdext/src/country_runtime_persistence.cpp",
       "tokens": [
         "SCHEMA_VERSION",
@@ -43,7 +43,7 @@
       "domain": "economy",
       "owner": "economy",
       "tag": "ECP2",
-      "version": 60,
+      "version": 62,
       "source": "gdext/src/runtime_economy_ecp2.cpp",
       "tokens": [
         "RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION",
@@ -130,7 +130,7 @@
       "domain": "family",
       "owner": "economy",
       "tag": "ECP2",
-      "version": 60,
+      "version": 62,
       "source": "gdext/src/runtime_economy_family_store.cpp",
       "tokens": [
         "runtime_economy_family_store"

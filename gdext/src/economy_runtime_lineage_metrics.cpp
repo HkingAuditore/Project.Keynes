@@ -321,4 +321,33 @@ bool NativeEconomyRuntime::family_free_building_resources_legal(
     return true;
 }
 
+
+int32_t NativeEconomyRuntime::mobilization_family_backing_q16(
+        int32_t cell) const {
+    if (cell < 0) return 0;
+    int64_t weight_sum = 0;
+    int64_t value_sum = 0;
+    const auto &influences = family_influences();
+    for (int32_t branch = 0;
+         branch < static_cast<int32_t>(influences.active.size()); ++branch) {
+        if (influences.active[static_cast<size_t>(branch)] == 0 ||
+            influences.cell[static_cast<size_t>(branch)] != cell)
+            continue;
+        const int32_t prestige =
+            influences.prestige_level[static_cast<size_t>(branch)];
+        if (prestige < 4) continue;
+        const int64_t weight = static_cast<int64_t>(prestige) *
+            std::max(0, influences.score_q16[static_cast<size_t>(branch)]);
+        if (weight <= 0) continue;
+        const int64_t satisfaction = std::clamp<int64_t>(
+            influences.satisfaction_q16[static_cast<size_t>(branch)], 0,
+            Q16_ONE);
+        weight_sum += weight;
+        value_sum += weight * (2 * satisfaction - Q16_ONE);
+    }
+    if (weight_sum <= 0) return 0;
+    return static_cast<int32_t>(std::clamp<int64_t>(
+        value_sum / weight_sum, -Q16_ONE, Q16_ONE));
+}
+
 } // namespace pk

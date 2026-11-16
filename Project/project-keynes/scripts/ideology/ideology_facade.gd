@@ -4,6 +4,7 @@ extends RefCounted
 signal command_settled(result: Dictionary)
 
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
+const LocalSupportScript = preload("res://scripts/ideology/ideology_local_support.gd")
 
 enum Opcode { DISCOVER_IDEOLOGY = 1, GRANT_IDEOLOGY_POINTS = 2, OPEN_IDEOLOGY_OFFER = 3,
 	CHOOSE_IDEOLOGY_OFFER = 4, EQUIP_IDEOLOGY = 5, UNEQUIP_IDEOLOGY = 6,
@@ -139,6 +140,56 @@ func set_gate(handle: int, gate_id, enabled: bool, effective_day: int, sequence:
 		"value_q16": 1 if enabled else 0, "effective_day": effective_day, "sequence": sequence }])
 func snapshot(handle: int) -> Dictionary: return _world_ext.get_ideology_snapshot(handle) if _configured else {"ok": false, "reason": "ideology_runtime_unconfigured"}
 func explain_ideology(handle: int, ideology_id) -> Dictionary: return _world_ext.explain_ideology(handle, _idea_id(ideology_id)) if _configured else {"ok": false, "reason": "ideology_runtime_unconfigured"}
+## Cell-level support for one card: the same influence-weighted stance as the
+## national score, evaluated with each cell's own class mix. Display only -- the
+## gate stays national so a card cannot be pushed through by pleasing the capital.
+##
+## Economy owns the composition, so this asks the composed root for the bounded
+## per-cell class query instead of scanning cohorts.
+func local_support(handle: int, ideology_id, cells: PackedInt32Array,
+		direction := 0) -> Dictionary:
+	if not _configured or cells.is_empty():
+		return {"ok": false, "reason": "ideology_local_support_unavailable"}
+	if not _world_ext.has_method("get_cell_situation_snapshot"):
+		return {"ok": false, "reason": "economy_cell_query_unavailable"}
+	var breakdown: Dictionary = explain_ideology_support(handle, ideology_id)
+	if not bool(breakdown.get("ok", false)):
+		return breakdown
+	var keys := ["support_class_adopt_q16", "support_class_repeal_q16",
+		"support_class_promote_q16"]
+	var stances: PackedInt32Array = breakdown.get(keys[clampi(int(direction), 0, 2)],
+		PackedInt32Array())
+	var situation: Dictionary = _world_ext.get_cell_situation_snapshot(cells)
+	if not bool(situation.get("ok", false)):
+		return {"ok": false, "reason": String(situation.get("reason",
+			"economy_cell_query_unavailable"))}
+	var class_count := int(situation.get("class_count", 0))
+	var population: PackedInt64Array = situation.get("class_population",
+		PackedInt64Array())
+	var rows: Array[Dictionary] = LocalSupportScript.rows(stances, population,
+		class_count, cells.size())
+	for i in rows.size():
+		rows[i]["cell"] = int(cells[i])
+	return {"ok": true, "rows": rows}
+## Material-support breakdown for one card: per class delta / stance / influence.
+## Separate from `explain_ideology` so the panel pays for it only when opened.
+func explain_ideology_support(handle: int, ideology_id) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "ideology_runtime_unconfigured"}
+	var full: Dictionary = explain_ideology(handle, ideology_id)
+	if not bool(full.get("ok", false)):
+		return full
+	return {
+		"ok": true,
+		"ideology_id": int(full.get("ideology_id", 0)),
+		"class_influence": full.get("class_influence", PackedInt64Array()),
+		"support_class_delta_q16": full.get("support_class_delta_q16", PackedInt32Array()),
+		"support_class_adopt_q16": full.get("support_class_adopt_q16", PackedInt32Array()),
+		"support_class_repeal_q16": full.get("support_class_repeal_q16", PackedInt32Array()),
+		"support_class_promote_q16": full.get("support_class_promote_q16", PackedInt32Array()),
+		"support_q16": full.get("support_q16", PackedInt32Array()),
+		"support_thresholds_q16": full.get("support_thresholds_q16", PackedInt32Array()),
+	}
 func explain_ideologies(handle: int, ideology_ids: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	return _world_ext.explain_ideologies(handle, ideology_ids) \
 		if _configured \

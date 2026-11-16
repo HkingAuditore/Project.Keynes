@@ -17,6 +17,9 @@ var _catalog: Resource
 var _configured := false
 var _producer_sequence := 0
 var _last_event_id := 0
+# Compiled columns from the last `configure()`, kept so a later cold-path owner
+# (country regime catalog validation) can reuse them instead of recompiling.
+var _compiled_catalog: Dictionary = {}
 
 
 func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
@@ -32,9 +35,28 @@ func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
 	if not bool(compiled.get("ok", false)):
 		return compiled
 	compiled.erase("ok")
+	# Shared reference, not a copy: the column set is large and every consumer is
+	# read-only (see `compiled_catalog()`).
+	_compiled_catalog = compiled
 	var result: Dictionary = _world_ext.configure_modifiers(compiled, cell_count)
 	_configured = bool(result.get("ok", false))
 	return result
+
+
+## The compiled columns of the last successful `configure()`, or an empty
+## dictionary before the first one. Read-only consumers must not mutate it.
+func compiled_catalog() -> Dictionary:
+	return _compiled_catalog
+
+
+## Attach to a Modifier runtime that another owner already configured. Cold-path
+## owners (regime effects, tests) must be able to queue commands against the live
+## store without re-running `configure_modifiers`, which would reset it.
+func attach_existing(world_ext: Object, clock: WorldClock = null) -> void:
+	_world_ext = world_ext
+	_clock = clock
+	_configured = world_ext != null \
+		and world_ext.has_method("submit_modifier_commands")
 
 
 func queue_apply(definition_key: StringName, target: Dictionary, source: Dictionary,

@@ -155,7 +155,10 @@ def main() -> int:
     for index in range(1, args.runs + 1):
         environment = os.environ.copy()
         environment["PK_GOLDEN_DIAGNOSTICS"] = "1"
-        environment["PK_SIM_DAY_TRACE"] = str(logs / f"trace-{index}.log")
+        # Godot's OS.set_environment does not reach the GDExtension CRT env on
+        # Windows, so the domain diagnostics switch must be set here too.
+        environment["PK_GOLDEN_DOMAINS"] = "1"
+        environment["PK_SIM_DAY_TRACE"] = str((logs / f"trace-{index}.log").resolve())
         log = logs / f"run-{index}.log"
         with log.open("w") as output:
             process = subprocess.run(command + ["--log-file", str(logs / f"engine-{index}.log")],

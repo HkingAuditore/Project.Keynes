@@ -42,6 +42,9 @@ var _seq := 0
 
 
 func _init() -> void:
+	# Support gate is a different authority with its own fixtures; this one
+	# exercises its own mechanism, so configure the material model as absent.
+	IdeologyCatalog.support_gate_enabled = false
 	_run()
 
 
@@ -184,7 +187,31 @@ func _run() -> void:
 	print("[d4] country day advances completed: %d (last_error=%s)"
 		% [advanced, last_error])
 
-	var after: Dictionary = ext.get_country_territory_counts()
+	# The economy plane's counts only refresh on an epoch, so a claim committed a
+	# moment ago still reads widest=1 there (measured: 49 owned cells in the
+	# replica vs widest=1 from the plane). The authoritative reader is the cell
+	# ownership replica -- ideology_cell_layer_realworld_over32_test reads the same
+	# one and documents this exact trap.
+	if ext.has_method("capture_country_runtime_snapshot"):
+		ext.capture_country_runtime_snapshot()
+	var by_slot := {}
+	var owned_total := 0
+	for cell in range(cell_count):
+		var row: Dictionary = ext.get_country_cell_summary(cell)
+		if not bool(row.get("owned", false)):
+			continue
+		owned_total += 1
+		var slot := int(row.get("country_slot", -1))
+		by_slot[slot] = int(by_slot.get(slot, 0)) + 1
+	var widest_scan := 0
+	for slot in by_slot:
+		widest_scan = maxi(widest_scan, int(by_slot[slot]))
+	var after := {
+		"widest": widest_scan,
+		"above_old_cap": widest_scan if widest_scan > 32 else 0,
+		"total_cells": owned_total,
+		"country_count": by_slot.size(),
+	}
 	print("[d4] after: countries=%s widest=%s above_old_cap=%s total=%s"
 		% [str(after.get("country_count", "?")), str(after.get("widest", "?")),
 			str(after.get("above_old_cap", "?")), str(after.get("total_cells", "?"))])

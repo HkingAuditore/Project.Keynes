@@ -630,6 +630,18 @@
     // without soldiers is bit-identical to the pre-military behaviour.
     std::vector<int32_t> _military_ration_sat_q16;
     std::vector<uint8_t> _military_ration_sat_present;
+    // Military-owned per-cell garrison heads/ration inputs for the rebellion
+    // suppression odds. Sparse-writing Military pushes only cells with lots.
+    std::vector<int32_t> _cell_garrison_heads;
+    std::vector<uint8_t> _cell_garrison_present;
+    // Sparse (cell, profession) organization state. Rows exist only where a
+    // profession is aggrieved or a chain is active; see
+    // runtime_economy_stratum_mobilization.h.
+    StratumMobilizationStore _stratum_mobilization;
+    // Per-profession static content compiled once from the profession catalog.
+    std::vector<uint16_t> _profession_mobilization_floor_q16;
+    std::vector<uint16_t> _profession_political_weight_q16;
+    std::vector<uint8_t> _profession_mobilization_config_ready;
 
     enum StateBuildingRole : int32_t {
         STATE_ROLE_NONE = 0,
@@ -639,6 +651,10 @@
     };
     std::vector<std::string> _carrying_class_ids;
     std::vector<int32_t> _profession_political_class_index;
+    // Profession x need Q16 spending basket, from each profession's consumption
+    // plan. Published as the need-spend incidence channels; never written by
+    // gameplay and never part of the conserved ledgers.
+    std::vector<int32_t> _profession_need_weight_q16;
     std::vector<std::string> _political_class_ids;
     uint64_t _political_class_hash = 0;
     RuntimeCommittedViewVersion _lineage_opinion_view_version;
@@ -1080,6 +1096,18 @@
     // Swapping is therefore safe against a concurrent read by construction. Derived,
     // never persisted, never hashed.
     std::shared_ptr<const TagSnapshot> _tag_snapshot;
+    // Test switch mirroring PK_TAG_FORCE_ALL: the epoch bitset normally narrows to the
+    // tags some program consumes (M4-22), which makes a tag nobody consumes
+    // unqueryable (`x13a` asserts exactly such a tag).
+    bool _tag_force_all_for_test = false;
+public:
+    void set_tag_force_all_for_test(bool force) {
+        if (_tag_force_all_for_test == force) return;
+        _tag_force_all_for_test = force;
+        rebuild_epoch_tag_snapshot();
+    }
+
+private:
     // Monotone publish counter, so a snapshot can say which epoch it describes.
     //
     // R-3b: SINGLE WRITER. Assigned only inside `rebuild_epoch_tag_snapshot`, which
@@ -1229,6 +1257,10 @@
     std::vector<uint64_t> _epoch_country_technologies;
     EconomyOwnedColumn<uint64_t> _epoch_country_handles{{{16, 18}, "native_columns.epoch_country_handles", EconomyFieldEncoding::U64, 8}};
     std::vector<uint32_t> _epoch_country_political_regime_capabilities;
+    // Derived per-epoch read of Country's capital cells (PKCN v16). Not an
+    // owned/persisted Economy column: it is re-captured from Country every
+    // epoch, so it never needs a save section or state-hash mix.
+    std::vector<int32_t> _epoch_country_capital_cells;
     // Catalog-resolved tax stat ids and the per-epoch effective integer rates.
     // Only configure/capture touches ModifierRuntime; workers read these dense arrays.
     std::vector<int32_t> _income_tax_stat_ids;
@@ -1343,6 +1375,7 @@
     // 在途国库贷记：fiscal collect 已把 escrow 划出、国家 pod 尚未提交，
     // 因此还没进入 country_economy_audit_snapshot。审计把它算作国库，
     // 否则出现 escrow 已清零、国库未增的假缺口（m0 实测 -162903）。
+    // 清零判据：国库镜像相对「上一次审计读到的值」发生了变化（说明钱已落地）。
     mutable int64_t _country_pending_credit = 0;
     mutable int64_t _country_pending_credit_last_raw = -1;
     EconomyOwnedColumn<int64_t> _fiscal_escrow_by_country{{{16, 23}, "native_columns.fiscal_escrow_by_country", EconomyFieldEncoding::I64, 8}};

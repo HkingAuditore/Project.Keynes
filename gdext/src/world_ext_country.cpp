@@ -1004,6 +1004,7 @@ Dictionary DCWorldExt::capture_country_runtime_snapshot() {
         return out;
     }
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    if (_runtime_host) _runtime_host->set_country_peer_pump([this] { service_country_worker_peer_adapter(64, true); });
     if (!committed && !_runtime_host->publish_country_snapshot(snapshot)) {
         out["ok"] = false;
         out["code"] = "country_snapshot_validation_failed";
@@ -1103,6 +1104,7 @@ Dictionary DCWorldExt::capture_country_pod_catalog() {
     out["reveal_condition_refs"] = reveal_refs;
     out["reveal_condition_values"] = reveal_values;
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    if (_runtime_host) _runtime_host->set_country_peer_pump([this] { service_country_worker_peer_adapter(64, true); });
     std::string publish_error;
     if (!_runtime_host->publish_country_catalog(catalog, publish_error)) {
         out["ok"] = false;

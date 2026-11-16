@@ -82,7 +82,6 @@ EconomyFamilyCellInfluenceStore &EconomyFamilyCellInfluenceStore::operator=(Econ
     return *this;
 }
 
-
 using namespace godot;
 using namespace variant_helpers;
 
@@ -625,7 +624,6 @@ bool EconomyFamilyCellInfluenceStore::valid_handle(
 
 // Storage implementation moved to economy_runtime_storage.cpp.
 
-
 bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::string &error) {
     _profession_ids = packed_strings(catalog, "profession_ids");
     _ethnicity_ids = packed_strings(catalog, "ethnicity_ids");
@@ -826,6 +824,14 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         }
     }
 
+    _profession_need_weight_q16.clear();  // Ideology material-support baskets
+    if (catalog.has("profession_need_weight_q16")) {
+        const std::vector<int32_t> weights = packed_i32(catalog, "profession_need_weight_q16");
+        if (weights.size() != _profession_ids.size() * catalog_need_ids.size()) {
+            error = "profession_need_weight_columns_invalid"; return false;
+        }
+        _profession_need_weight_q16 = weights;
+    }
     _good_default_price = packed_i32(catalog, "good_default_price");
     _good_default_stock = packed_i64(catalog, "good_initial_stock");
     if (catalog.has("good_min_price")) {
@@ -1804,7 +1810,6 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     return compile_development_catalog(catalog, error);
 }
 
-
 bool NativeEconomyRuntime::compile_development_catalog(
         const Dictionary &catalog, std::string &error) {
     _development_metric_signal_indices = packed_i32(
@@ -1886,7 +1891,6 @@ bool NativeEconomyRuntime::compile_development_catalog(
     return true;
 }
 
-
 bool NativeEconomyRuntime::compile_family_catalog(
         const Dictionary &catalog, std::string &error) {
     _family_surname_pack_id = dict_string(
@@ -1967,7 +1971,6 @@ bool NativeEconomyRuntime::compile_family_catalog(
     return compile_family_trait_catalog(catalog, error);
 }
 
-
 bool NativeEconomyRuntime::compile_person_catalog(
         const Dictionary &catalog, std::string &error) {
     _person_given_name_pack_id = dict_string(
@@ -2001,7 +2004,6 @@ bool NativeEconomyRuntime::compile_person_catalog(
     }
     return true;
 }
-
 
 bool NativeEconomyRuntime::compile_settlement_catalog(
         const Dictionary &catalog, std::string &error) {
@@ -2133,7 +2135,6 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
     }
     return true;
 }
-
 
 bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                                                      std::string &error) {
@@ -3015,6 +3016,5 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     }
     return true;
 }
-
 
 } // namespace pk

@@ -491,6 +491,8 @@
         // BEGIN army personnel lane (contract §1.5): PKEC section 36 cursor.
         int32_t army_personnel_cursor = 0;
         // END army personnel lane
+        // Schema 62: PKEC section 37 sparse mobilization row cursor.
+        int32_t stratum_mobilization_cursor = 0;
         std::vector<int32_t> family_founding_cells;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
@@ -507,6 +509,7 @@
         // BEGIN army personnel lane (contract §1.5): section 36 scratch guard.
         bool army_personnel_seen = false;
         // END army personnel lane
+        bool stratum_mobilization_seen = false;
         bool header_seen = false;
         bool end_seen = false;
         bool ceilings_seen = false;

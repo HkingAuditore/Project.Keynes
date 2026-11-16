@@ -37,4 +37,59 @@
 
 本轮只修改作者文本、生成器的展示文案编译和 GDScript 展示，不修改 C++ 权威状态、效果指令、选择器、触发条件、数值、抽取费用或卡池。三个生成目录去除展示字段后，逐字比较与修改前一致；PKID/PKEF/Modifier 协议及目录的可执行内容保持不变。
 
+## 回归状态核查（2026-11-14）
+
+`tests/ideology/ideology_card_face_semantics_test.gd` 曾报 11 处失败，定位后有**两个不同原因**，
+都已处理：
+
+1. **两个 fixture 互相矛盾（已解决）**。禁用表里有 12 个 stat 标签（`全社会`、`国内贸易容量`、
+   `贸易速度`、`*部门产出`、`*领域研究效率`），但
+   `ModifierCatalog.IDEOLOGY_PLAIN_STAT_NAMES` 明确把它们定为**理念卡面专用措辞**
+   （注释原文："keep this map separate from the shared stat labels so other panels keep
+   their established terms"），而 `ideology_content_test` 又把 `"农业部门产出 +6%"` 这类字符串
+   **逐字断言为期望文案**。也就是说禁用表过期了，不是文案回退。已把这 12 条从 `OBSOLETE_OR_OPAQUE_PHRASES`
+   移除，其余条目（`每有 1 个来源`、`最多计算`、`繁市`、`大邑`、`家族聚落`…）保留不动。
+   结果：`ideology_card_face_semantics_test` 2101 checks / **0 failures**。
+
+2. **程序数被钉成快照（已解决）**。`program_count == 280` 把内容总量写进断言，任何新增程序都会让
+   这个"卡面语义"测试变红，却说明不了卡面有什么问题。改成 `program_count >= 280`（审计时的基线），
+   保留"覆盖到了全部可见程序"的护栏，同时把实际值打进断言文案。
+
+3. **仍未处理**：线上卡目录确实陈旧。把 `generate_ideology_catalog.py:main()` 的输出重定向到临时目录
+   实跑一次，生成 16,515 行 / **134 张卡**，线上是 15,455 行 / **132 张卡**，diff 约 2 万行。
+   重生成属于内容审核，需要单独决定；它和上面的卡面语义问题是两件事。
+
+### 重生成不是一个脚本的事（2026-11-14 实测）
+
+把生成结果实际装进去试了一次（先备份、可回滚）：
+
+- `ideology_mechanism_matrix_test` 10 → **3** failures。程序形状漂移确实靠重生成修（军事系
+  CONST+EMIT 那 7 条全好）。所以方向是对的。
+- 但 `ideology_content_test` 报"publish 了 113 张"而不是 132。原因是**卡池是两步产出的**：
+  `generate_ideology_catalog.py` 只产出 113 张，另外 **19 张军事卡**由
+  `tools/ideology/add_military_cards.gd` 追加。只跑生成器会把 19 张军事卡静默删掉。
+- 因此已回滚到原文件（`git status` 对 `data/ideologies` 无改动），等两步一起跑再做内容审核。
+
+**下次要重生成，必须两步都跑，并在装之前核对 `ideology_ids` 数量 132 → 预期值。**
+
+### 两步流水线的真实冲突（2026-11-14 第二轮实测）
+
+两步都跑之后又测了一遍，结论比上一轮更明确：
+
+| 步骤 | `mechanism_matrix` | `content` |
+| --- | --- | --- |
+| 只跑生成器（113 卡，军事卡丢失） | 3 failures | 0 |
+| 生成器 + `add_military_cards.gd`（132 卡） | **10 failures** | 0 |
+
+原因：`add_military_cards.gd` 会用**它自己的旧形状**重写那 7 个军事程序
+（`fortress_city_self/ring`、`military_farms_*`、`arsenal_city_*`、`frontier_garrison_border`），
+把生成器刚写好的新形状覆盖掉；而 `mechanism_matrix` 断言的正是生成器的新形状。工具头部注释已经
+承认这一点："Re-running that generator drops this content unless it is ported there; re-run this
+tool afterwards (it is idempotent) **until the port happens**"。
+
+所以那 7 条断言的真正前置条件是**把军事卡移植进生成器**，不是重生成、也不是改断言。移植完成前，
+"线上卡目录陈旧"和"卡池完整"这两件事无法同时满足。本轮已把四个目录全部回滚到原状
+（`data/ideologies` 与 `data/triggers` 对 HEAD 无改动；`data/modifiers` 的 +186 行属于并行改动，
+与本轮无关）。
+
 未增加住房、污染、发钱、关税或其他新模拟机制，也未发布暂存卡。

@@ -62,7 +62,10 @@ inline constexpr uint16_t SAVE_SECTION_FAMILY_FOUNDING = 35;
 // Schema 59: army personnel lanes (contract §1.5). Optional: a pre-59 stream
 // has no embarked people, and an absent section simply restores zero lanes.
 inline constexpr uint16_t SAVE_SECTION_ARMY_PERSONNEL = 36;
-inline constexpr uint16_t SAVE_SECTION_LAST_EXTENSION = SAVE_SECTION_ARMY_PERSONNEL;
+// Schema 62: sparse (cell, profession) stratum mobilization rows.
+inline constexpr uint16_t SAVE_SECTION_STRATUM_MOBILIZATION = 37;
+inline constexpr uint16_t SAVE_SECTION_LAST_EXTENSION =
+    SAVE_SECTION_STRATUM_MOBILIZATION;
 inline constexpr uint16_t SAVE_SECTION_END_V33 = 27;
 inline constexpr uint16_t SAVE_SECTION_END_V26 = 18;
 inline constexpr uint16_t SAVE_SECTION_END_V24_TO_V25 = 15;

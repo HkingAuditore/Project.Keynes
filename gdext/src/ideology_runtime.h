@@ -18,6 +18,7 @@
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
 #include "derived_cell_materializer.h"
+#include "runtime_ideology_incidence.h"
 #include "selector_ownership.h"
 #include "runtime_ideology_pod.h"
 
@@ -1229,6 +1230,14 @@ private:
     std::vector<EffectTemplate> _on_enter_templates;
     std::vector<EffectTemplate> _synergy_templates;
     std::vector<ClassStance> _class_stances;
+    // Material support model: one dense Q16 channel row per card level, plus the
+    // profile knobs. Empty (channel_count == 0) falls back to the authored stance
+    // rows, which is what an older catalog compiles to.
+    ideology_incidence::IdeologyIncidenceTable _incidence;
+    // Reused by evaluate_support so the explain path can report per-class deltas
+    // without allocating on every gate check. Sized class_count, never persisted.
+    std::vector<int32_t> _support_delta_scratch;
+    std::vector<int32_t> _support_stance_scratch;
     std::vector<SynergyRequirement> _synergy_requirements;
     // L3-9 synergy magnitude overrides, flattened. Kept as three parallel arrays
     // (program key, scale, per-synergy span on Synergy) rather than a map so the

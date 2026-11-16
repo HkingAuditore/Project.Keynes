@@ -34,7 +34,6 @@ var _fiscal_history := EconomyFiscalHistory.new()
 var _gdp_ledger: EconomyGdpLedger = null
 var _strata_table: SocialStrataTable
 
-
 ## `map` 是会话的 `MapData`。必须显式传入：`MapGenerator` 没有公开的 map getter，
 ## 而军事/外交章要读领土镜像（`country_slot_arr`）、邻接与视野数组。
 func set_context(generator, map = null) -> void:
@@ -51,23 +50,18 @@ func set_context(generator, map = null) -> void:
 	_economy_history.reset()
 	_fiscal_history.reset()
 
-
 ## 年度产值账本由 GameUIManager 持有并推进；这里只持有引用，供卷宗横幅读取。
 func set_gdp_ledger(ledger: EconomyGdpLedger) -> void:
 	_gdp_ledger = ledger
 
-
 func gdp_ledger() -> EconomyGdpLedger:
 	return _gdp_ledger
-
 
 func economy_history() -> EconomyHistoryBuffer:
 	return _economy_history
 
-
 func fiscal_history() -> EconomyFiscalHistory:
 	return _fiscal_history
-
 
 ## 每个已提交日推进一次国库收支序列。财政快照用来拆分税种，国库现金用来
 ## 校准多日结算造成的真实净变化；两者都不做逐格聚合，面板关闭时也继续采样。
@@ -91,12 +85,10 @@ func sample_fiscal_history(committed_day: int = -1) -> bool:
 			treasury_cash = int(treasury.get("cash", 0))
 	return _fiscal_history.sample(handle, fiscal, treasury_cash, committed_day)
 
-
 func strata_table() -> SocialStrataTable:
 	if _strata_table == null:
 		_strata_table = SocialStrataTable.load_default()
 	return _strata_table
-
 
 ## 每个经济提交批次调用一次；同一已提交日只记录一个趋势点。
 func sample_economy_history() -> bool:
@@ -106,7 +98,6 @@ func sample_economy_history() -> bool:
 		return false
 	return _economy_history.sample(_generator.get_economy_facade(),
 		int(context.country_handle), int(context.summary.get("cash", 0)), strata_table())
-
 
 func invalidate_cache(domains: int = -1) -> void:
 	if domains < 0:
@@ -129,10 +120,8 @@ func invalidate_cache(domains: int = -1) -> void:
 		_section_cache.erase("diplomacy")
 		_section_cache_revisions.erase("diplomacy")
 
-
 func cached_section(section_id: String) -> Dictionary:
 	return _section_cache.get(section_id, {})
-
 
 func build_static_catalog() -> Dictionary:
 	if _static_catalog_cache.is_empty():
@@ -156,7 +145,6 @@ func build_static_catalog() -> Dictionary:
 			"research_signal_definitions": ResearchSignalCatalogScript.public_metadata(),
 		}
 	return _static_catalog_cache
-
 
 static func _application_definitions(raw_applications: Array, lanes: Array) -> Array:
 	var building_content := _tax_content("building")
@@ -278,7 +266,6 @@ static func _application_definitions(raw_applications: Array, lanes: Array) -> A
 		})
 	return out
 
-
 func player_completed_technology_ids() -> PackedStringArray:
 	if _generator == null or not _generator.has_method("gameplay_start_report") \
 			or not _generator.has_method("get_country_facade"):
@@ -297,7 +284,6 @@ func player_completed_technology_ids() -> PackedStringArray:
 		return PackedStringArray()
 	return snapshot.get("technology_ids", PackedStringArray())
 
-
 # Lightweight player research states for HUD completion toasts. Avoids building the
 # full technology workspace model when the country panel is closed.
 func player_research_states() -> PackedInt32Array:
@@ -310,7 +296,6 @@ func player_research_states() -> PackedInt32Array:
 	var research: Dictionary = facade.research_snapshot(int(context.country_handle))
 	var states = research.get("technology_states", null)
 	return states if states is PackedInt32Array else PackedInt32Array()
-
 
 func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	var normalized_section := "politics" if section_id == "ideology" else section_id
@@ -405,11 +390,9 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	_section_cache_revisions[normalized_section] = revision_components
 	return model
 
-
 func build_legacy(section_id: String = "technology") -> Dictionary:
 	# Explicit A/B/debug entry point. Production event-driven callers use build().
 	return _build_full_legacy(section_id)
-
 
 func _country_context() -> Dictionary:
 	if _generator == null or not _generator.has_method("gameplay_start_report") \
@@ -431,14 +414,12 @@ func _country_context() -> Dictionary:
 		"country_handle": int(summary.get("country_handle", 0)),
 	}
 
-
 func _section_mask(section_id: String) -> int:
 	# 军事没有原生 country_ui_snapshot 分片（它走自己的 facade），给 0 表示
 	# 「不需要国家快照」，国家壳数据仍由 summary 提供。外交同理：它读的是
 	# 领土镜像 + 军事快照，不读国家快照分片。
 	return int({"technology": 1, "economy": 2, "politics": 12, "ideology": 12, "military": 0,
 		"diplomacy": 0}.get(section_id, 1))
-
 
 func build_summary_snapshot(country_handle: int, summary: Dictionary,
 		ui_snapshot: Dictionary = {}) -> Dictionary:
@@ -473,7 +454,6 @@ func build_summary_snapshot(country_handle: int, summary: Dictionary,
 		"current_day": published_day,
 	}
 
-
 func build_technology_snapshot(country_handle: int, facade,
 		ui_snapshot: Dictionary) -> Dictionary:
 	var compact_ok := bool(ui_snapshot.get("ok", false))
@@ -496,7 +476,6 @@ func build_technology_snapshot(country_handle: int, facade,
 		"research": research,
 		"development": _development_model(country_handle, research),
 	}
-
 
 func build_economy_snapshot(country_handle: int, facade, economy_facade,
 		ui_snapshot: Dictionary, start_cell: int) -> Dictionary:
@@ -528,7 +507,6 @@ func build_economy_snapshot(country_handle: int, facade, economy_facade,
 		"trade_summary": trade_summary,
 	}
 
-
 func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Dictionary:
 	var native_ideology: Dictionary = ui_snapshot.get("ideology", {})
 	var ideology_facade = _generator.get_ideology_facade() \
@@ -551,7 +529,6 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 			}),
 		}
 	return {"ideology": _ideology_model(country_handle)}
-
 
 func build_politics_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Dictionary:
 	var ideology := build_ideology_snapshot(country_handle, ui_snapshot)
@@ -579,7 +556,6 @@ func build_politics_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 		# child payload here avoids rebuilding or duplicating the ideology UI.
 		"ideology": ideology.get("ideology", {}),
 	}
-
 
 static func _present_political_regime(snapshot: Dictionary,
 		catalog: Dictionary) -> Dictionary:
@@ -637,7 +613,6 @@ static func _present_political_regime(snapshot: Dictionary,
 		"feature_gates": gates,
 		"revision": int(snapshot.get("revision", snapshot.get("state_version", 0))),
 	}
-
 
 func build(section_id: String = "technology") -> Dictionary:
 	var normalized_section := "politics" if section_id == "ideology" else section_id
@@ -716,7 +691,6 @@ func build(section_id: String = "technology") -> Dictionary:
 		"revision_components", {}).duplicate(false)
 	return model
 
-
 ## 「军事一起不可用」的兜底段：国家壳都没就绪时也要给军事面板一个可读原因。
 func _unavailable_military_section(country_handle: int, reason: String) -> Dictionary:
 	return {
@@ -726,7 +700,6 @@ func _unavailable_military_section(country_handle: int, reason: String) -> Dicti
 		"facade": null,
 		"country_handle": country_handle,
 	}
-
 
 ## 军事章节的模型。军事面板有自己的视图模型（MilitaryViewModel），这里只负责
 ## 把「国家上下文 + 军事 facade + 目录 + 快照」装成它认识的那一份，并在
@@ -821,7 +794,6 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 	model["military"] = section
 	return section
 
-
 ## 维护实物化（docs/plans/military-physical-maintenance.md D7 / S4-6）的模型入口。
 ##
 ## 两次门面调用（`maintenance_summary()` + `maintenance_snapshot()`）共享 facade 的
@@ -839,7 +811,6 @@ func _military_maintenance_model(facade, country_handle: int) -> Dictionary:
 		"summary": summary if summary is Dictionary else {},
 		"rows": rows if rows is Array else [],
 	}
-
 
 ## 军事支出视图（财政页只读板块用）。输入 `get_military_country_snapshot` 的
 ## 原始快照，输出三个通道的日均实付与招募集训的等待装备计数。
@@ -938,7 +909,6 @@ static func military_spending_model(snapshot: Dictionary,
 		"maintenance_signature": maintenance_signature(maintenance_rows, summary),
 	}
 
-
 ## 逐对象明细的展示投影。原生行保留 `*_goods` / `*_bp` / `*_x10` 后缀（毫单位、
 ## 万分比、十分之一日），这里改成面板读得懂的短键，并附上整数换算好的文本。
 ## 口径不变：`need` / `stock` / `inbound` 仍是 GOODS_SCALE，`ratio` 仍是万分比，
@@ -973,7 +943,6 @@ static func maintenance_detail_rows(rows) -> Array:
 		})
 	return out
 
-
 ## GOODS_SCALE（1000）毫单位 → 一位小数的纯整数文本。「—」表示没有量，
 ## 不是 0：维护行里 0 和「没有需求」是两件事。
 static func goods_text(milli: int) -> String:
@@ -984,7 +953,6 @@ static func goods_text(milli: int) -> String:
 		return "%d" % (value / 1000)
 	return "%d.%d" % [value / 1000, (value % 1000) / 100]
 
-
 ## 可用天数（十分之一日，-1 = 无需求）→ 「3.5 日」。整数运算，不用浮点。
 static func cover_days_text(days_cover_x10: int) -> String:
 	if days_cover_x10 < 0:
@@ -992,7 +960,6 @@ static func cover_days_text(days_cover_x10: int) -> String:
 	if days_cover_x10 % 10 == 0:
 		return "%d 日" % (days_cover_x10 / 10)
 	return "%d.%d 日" % [days_cover_x10 / 10, days_cover_x10 % 10]
-
 
 ## 明细 + 汇总的变更签名。只取整数与短串，不给每帧比较造大字符串。
 static func maintenance_signature(rows: Array, summary: Dictionary) -> int:
@@ -1008,8 +975,6 @@ static func maintenance_signature(rows: Array, summary: Dictionary) -> int:
 		signature = signature * 31 + int(entry.get("shortage_reason", 0))
 	signature = signature * 31 + int(summary.get("weighted_ratio_bp", 0))
 	return signature
-
-
 
 ## 外交章的模型。它自己不算任何东西：名单、档案与战事都由 DiplomacyViewModel 从
 ## 「已提交的国家壳 + 领土镜像 + 军事快照」里算。这里只把这条通路上要用的几个
@@ -1031,7 +996,6 @@ func build_diplomacy_model(country_handle: int, model: Dictionary, facade) -> Di
 	model["diplomacy"] = section
 	return section
 
-
 ## 「外交一起不可用」的兜底段：国家壳都没就绪时也要给外交面板一个可读原因。
 func _unavailable_diplomacy_section(reason: String) -> Dictionary:
 	return {
@@ -1045,7 +1009,6 @@ func _unavailable_diplomacy_section(reason: String) -> Dictionary:
 		"military_reason": "",
 	}
 
-
 ## 军务档案（右栏部队/战线页）的模型上下文：只装 MilitaryViewModel 需要的那几项，
 ## 不走地块档案那条查询链。打开档案与每日刷新各调用一次，O(armies)，不进热循环。
 func military_dossier_context(country_handle: int) -> Dictionary:
@@ -1058,7 +1021,6 @@ func military_dossier_context(country_handle: int) -> Dictionary:
 		"generator": _generator,
 		"map": _map,
 	}
-
 
 ## 目录合并：dense 数值取原生（真值），显示名/描述/所需科技取编译目录。
 ## 原生行的 `id` 是稳定 id（String），所以合并是「按 id 对齐」而不是按位置。
@@ -1116,14 +1078,12 @@ func _merge_military_catalog(native_catalog: Dictionary, view: Dictionary) -> Di
 		merged["ok"] = true
 	return merged
 
-
 ## dense good id → 稳定 id。GoodProfileRegistry 的 good_ids 就是 EconomyCatalog 的
 ## dense 顺序，军事目录里的装备类别用的是同一套 dense id。
 static func _good_stable_ids() -> PackedStringArray:
 	var columns: Dictionary = GoodProfileRegistryScript.compile_native_columns()
 	var ids = columns.get("good_ids", PackedStringArray())
 	return ids if ids is PackedStringArray else PackedStringArray()
-
 
 func _tax_availability(economy_facade, cell: int) -> Dictionary:
 	var availability := {}
@@ -1196,7 +1156,6 @@ func _tax_availability(economy_facade, cell: int) -> Dictionary:
 		availability["profession"] = professions
 	return availability
 
-
 func _development_model(country_handle: int, research: Dictionary) -> Dictionary:
 	const era_ids := DevelopmentAchievementCatalogScript.ERA_IDS
 	var definitions: Array[Dictionary] = DevelopmentAchievementCatalogScript.definitions()
@@ -1250,7 +1209,6 @@ func _development_model(country_handle: int, research: Dictionary) -> Dictionary
 	# Development progress is explained only by the selected technology gates.
 	return {"ok": true, "progress_by_signal": progress_by_signal}
 
-
 func _ideology_model(country_handle: int) -> Dictionary:
 	if _generator == null or not _generator.has_method("get_ideology_facade"):
 		return {"available": false, "reason": "理念事务暂不可用。"}
@@ -1266,13 +1224,11 @@ func _ideology_model(country_handle: int) -> Dictionary:
 		"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog,
 	})
 
-
 func _decorate_ideology(ideology: Dictionary) -> Dictionary:
 	var presentation := present_ideology(
 		ideology.get("snapshot", {}), ideology.get("catalog", {}))
 	ideology["presentation"] = presentation
 	return ideology
-
 
 static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dictionary:
 	return IdeologyPresentation.present_ideology(snapshot, catalog)
@@ -1282,10 +1238,8 @@ static func present_ideology_card(metadata: Dictionary, level: int = 0,
 		effect_row: Dictionary = {}) -> Dictionary:
 	return IdeologyPresentation.present_ideology_card(metadata, level, effect_row)
 
-
 static func ideology_player_reason(reason: String) -> String:
 	return IdeologyPresentation.ideology_player_reason(reason)
-
 
 ## 国家购买预算快照（EconomyFacade.country_procurement_snapshot）。原生接口缺席或
 ## 查询失败时返回 {available: false}，UI 退回按国库现金估算，不显示实付分项。
@@ -1295,7 +1249,6 @@ static func procurement_model(economy_facade, country_handle: int) -> Dictionary
 		return {"available": false}
 	var snapshot = economy_facade.country_procurement_snapshot(country_handle)
 	return present_procurement(snapshot if snapshot is Dictionary else {})
-
 
 static func present_procurement(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or (snapshot.has("ok") and not bool(snapshot.get("ok", false))):
@@ -1315,12 +1268,10 @@ static func present_procurement(snapshot: Dictionary) -> Dictionary:
 		out[key] = int(snapshot.get(key, -1))
 	return out
 
-
 func _treasury_model(facade, country_handle: int) -> Dictionary:
 	if facade == null or not facade.has_method("treasury_snapshot"):
 		return _unavailable_treasury("国家国库查询暂不可用")
 	return present_treasury(facade.treasury_snapshot(country_handle))
-
 
 static func present_treasury(snapshot: Dictionary) -> Dictionary:
 	if not bool(snapshot.get("ok", false)):
@@ -1367,7 +1318,6 @@ static func present_treasury(snapshot: Dictionary) -> Dictionary:
 		"goods": goods,
 	}
 
-
 # Tax pages list only content available to the country at the selected starting
 # cell.  The native economy masks include dependency branches that static
 # profile tags cannot express; completed technologies remain the deterministic
@@ -1375,7 +1325,6 @@ static func present_treasury(snapshot: Dictionary) -> Dictionary:
 static func present_tax_policy(tax_policy: Dictionary, completed_technologies,
 		availability: Dictionary = {}) -> Dictionary:
 	return _present_tax_policy(tax_policy, completed_technologies, availability)
-
 
 static func _present_tax_policy(tax_policy: Dictionary, completed_technologies,
 		availability: Dictionary) -> Dictionary:
@@ -1421,7 +1370,6 @@ static func _present_tax_policy(tax_policy: Dictionary, completed_technologies,
 		"absolute_amounts": tax_policy.get("absolute_amounts", {}),
 	}
 
-
 static func _present_items(ids: PackedStringArray, kind: String,
 		completed: Dictionary, allow_tradeable: bool = false,
 		tradeable_only: bool = false, available_ids: Dictionary = {},
@@ -1459,7 +1407,6 @@ static func _present_items(ids: PackedStringArray, kind: String,
 			"icon_key": String(item.get("icon_key", "")),
 		})
 	return {"unlocked": unlocked, "total_count": ids.size()}
-
 
 static func _tax_content(kind: String) -> Dictionary:
 	if _tax_content_cache.has(kind):
@@ -1505,7 +1452,6 @@ static func _tax_content(kind: String) -> Dictionary:
 	_tax_content_cache[kind] = content
 	return content
 
-
 static func _content_entry(stable_id, display_name: String, icon_key: String,
 		technology_tags: PackedStringArray, tradeable: bool = false,
 		required_technology_tags: PackedStringArray = PackedStringArray()) -> Dictionary:
@@ -1528,7 +1474,6 @@ static func _content_entry(stable_id, display_name: String, icon_key: String,
 		"tradeable": tradeable,
 	}
 
-
 static func _load_profiles(dir_path: String) -> Array:
 	# [pk-export-remap] 见 economy_catalog.gd::_load_resources() 同名注释——导出
 	# 包里 DirAccess 看到的是带 .remap 后缀的目录项，用 ResourceLoader.list_directory()
@@ -1546,10 +1491,8 @@ static func _load_profiles(dir_path: String) -> Array:
 	profiles.sort_custom(func(a, b) -> bool: return String(a.id) < String(b.id))
 	return profiles
 
-
 func _unavailable_treasury(reason: String) -> Dictionary:
 	return _unavailable_treasury_static(reason)
-
 
 static func _unavailable_treasury_static(reason: String) -> Dictionary:
 	return {
@@ -1560,7 +1503,6 @@ static func _unavailable_treasury_static(reason: String) -> Dictionary:
 		"nonzero_good_count": 0,
 		"goods": [],
 	}
-
 
 func _unavailable_model(reason: String) -> Dictionary:
 	return {

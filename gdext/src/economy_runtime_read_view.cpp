@@ -79,6 +79,10 @@ Dictionary NativeEconomyRuntime::evaluate_read_query(const ReadKey &key) {
         return explain_cohort_satisfaction(a[0]);
     case ReadQuery::CELL_SATISFACTION_ATTRACTIVENESS:
         return cell_satisfaction_attractiveness(i32(a[0]));
+    case ReadQuery::CELL_MOBILIZATION_SNAPSHOT:
+        return cell_mobilization_snapshot(i32(a[0]));
+    case ReadQuery::COUNTRY_MOBILIZATION_SUMMARY:
+        return country_mobilization_summary(i32(a[0]));
     case ReadQuery::FISCAL_SNAPSHOT:
         return fiscal_snapshot(a[0]);
     case ReadQuery::COUNTRY_TRADE_SNAPSHOT:

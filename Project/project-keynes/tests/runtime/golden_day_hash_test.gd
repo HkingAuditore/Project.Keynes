@@ -170,8 +170,10 @@ var _whole_economy_hash := ""
 
 
 func _read_domains(world, day: int) -> Dictionary:
+	var last_report := {}
 	for _slice in range(MAX_SLICES_PER_DAY):
-		var report: Dictionary = world.get_runtime_perf_snapshot(3).get("golden_domains", {})
+		last_report = world.get_runtime_perf_snapshot(3)
+		var report: Dictionary = last_report.get("golden_domains", {})
 		if bool(report.get("ready", false)) and int(report.get("day", -1)) == day:
 			_whole_economy_hash = String(report.get("whole_economy_hash", ""))
 			var all_domains: Dictionary = report.get("domains", {})
@@ -184,4 +186,9 @@ func _read_domains(world, day: int) -> Dictionary:
 				all_domains.erase(excluded)
 			return all_domains
 		await process_frame
+	if OS.get_environment("PK_GOLDEN_DIAGNOSTICS") == "1":
+		print("GOLDEN_DOMAINS_NOT_READY=" + JSON.stringify({
+			"day": day, "report": last_report.get("golden_domains", {}),
+			"worker": last_report.get("runtime_graph_worker", {}),
+		}))
 	return {}

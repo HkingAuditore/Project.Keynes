@@ -525,6 +525,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     // soldiers keeps the pre-military result bit-for-bit.
     _military_ration_sat_q16.assign(cell_count, static_cast<int32_t>(Q16_ONE));
     _military_ration_sat_present.assign(cell_count, 0);
+    _cell_garrison_heads.assign(cell_count, 0);
+    _cell_garrison_present.assign(cell_count, 0);
+    _stratum_mobilization.clear(cell_count);
     _cell_carrying_family_surplus_q16.assign(
         static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, Q16_ONE);
         _cell_carrying_family_bindable.assign(

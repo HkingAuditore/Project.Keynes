@@ -311,6 +311,18 @@ static func sample_cell_context(
 				ctx["satisfaction"] = clampf(float(sat_q16) / 65536.0, 0.0, 1.0)
 				ctx["satisfaction_norm"] = ctx["satisfaction"]
 
+	# `population_cell_summary()` exposes the population but not the composite
+	# (its `satisfaction_q16` is the survival value). Read the committed cell
+	# aggregate so `SATISFACTION_GTE/LTE` conditions stop seeing the 0.65
+	# placeholder. Cold path: one query per sampled cell, same as the summary.
+	if economy_facade.has_method("cell_satisfaction_attractiveness"):
+		var attractiveness: Dictionary = economy_facade.cell_satisfaction_attractiveness(cell_idx)
+		if bool(attractiveness.get("ok", false)) and attractiveness.has("composite_q16"):
+			var composite_q16 := int(attractiveness.get("composite_q16", 42598))
+			ctx["satisfaction_q16"] = composite_q16
+			ctx["satisfaction"] = clampf(float(composite_q16) / 65536.0, 0.0, 1.0)
+			ctx["satisfaction_norm"] = ctx["satisfaction"]
+
 	if economy_facade.has_method("population_cell_snapshot"):
 		# 人口明细是「事件写人」的前提：贫困、缺口、失业、职业构成都只能从 cohort 表里读。
 		# native 的明细快照只遍历该格队列（通常个位数），20 天一次抽样 8 格，成本可忽略；

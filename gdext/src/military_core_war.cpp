@@ -407,13 +407,15 @@ int32_t MilitaryCore::next_war_id() {
 
 void MilitaryCore::apply_war_command(const MilitaryCommand &cmd, int64_t day) {
     switch (cmd.op) {
+        case MCMD_WAR_DECLARE_FORCED:
         case MCMD_WAR_DECLARE: {
             const int32_t attacker = country_slot_for_handle(cmd.country);
             const int32_t defender = country_slot_for_handle(cmd.other);
             if (attacker < 0 || defender < 0 || attacker == defender) return;
             if (at_war(attacker, defender)) return;
             if (truce_active(attacker, defender, day)) return;
-            if (country_soldiers(attacker) <= 0) return;
+            if (cmd.op == MCMD_WAR_DECLARE && country_soldiers(attacker) <= 0)
+                return;
             MilitaryWar war;
             war.id = next_war_id();
             war.attacker_slot = attacker;
@@ -1129,7 +1131,11 @@ int64_t MilitaryCore::garrison_heads_at(int32_t cell, int32_t country_slot) cons
 
 void MilitaryCore::transfer_garrison_owner(int32_t cell, int32_t from, int32_t to) {
     military_for_each_lot(*this, (uint8_t)MILITARY_LOT_GARRISON, cell, [&](int32_t i) {
-        if (_lots.country_slot[(size_t)i] != from) return;
+        // Cession does not know the previous owner, so it calls this with
+        // `from = -1`. Treat a negative source as "every garrison lot in the
+        // cell"; the previous exact match made the cession path a silent no-op
+        // and left the old owner's roster in a cell it no longer owned.
+        if (from >= 0 && _lots.country_slot[(size_t)i] != from) return;
         _lots.country_slot[(size_t)i] = to;
     });
 }

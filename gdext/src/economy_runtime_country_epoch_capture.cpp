@@ -123,6 +123,9 @@ bool NativeEconomyRuntime::capture_country_epoch(
     if (!country_reads().copy_economy_snapshot(snapshot) ||
         snapshot.cell_country_slot.size() != static_cast<size_t>(_cell_count.get()) ||
         snapshot.country_handles.size() != static_cast<size_t>(snapshot.country_count) ||
+        (!snapshot.country_capital_cells.empty() &&
+         snapshot.country_capital_cells.size() !=
+             static_cast<size_t>(snapshot.country_count)) ||
         snapshot.country_political_regime_capabilities.size() !=
             static_cast<size_t>(snapshot.country_count) ||
         snapshot.technology_words != _technology_words) {
@@ -133,6 +136,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
     _epoch_country_handles = std::move(snapshot.country_handles);
     _epoch_country_political_regime_capabilities = std::move(
         snapshot.country_political_regime_capabilities);
+    _epoch_country_capital_cells = std::move(snapshot.country_capital_cells);
     _epoch_player_country_slot = country_reads().starting_country_slot();
     _epoch_country_technologies = std::move(snapshot.country_technologies);
     _epoch_country_count = snapshot.country_count;

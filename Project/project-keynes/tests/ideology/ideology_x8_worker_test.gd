@@ -46,6 +46,10 @@ var _next_sequence := 1
 
 
 func _init() -> void:
+	# Support gate is a different authority with its own fixtures; this one
+	# exercises bronze_casting, so configure the material model as absent. The gate
+	# otherwise refuses the equip with ideology_class_opinion_unavailable.
+	IdeologyCatalog.support_gate_enabled = false
 	_run()
 	print("=== ideology x8 worker: %d checks, %d failures ===" % [
 		_checks, _failures])
@@ -679,6 +683,13 @@ func _wait_manufacturing(cell: int, expected: float, days: int) -> float:
 			return value
 		if not _run_day():
 			return value
+		# The derived cell layer is only adopted once its eligibility day passes, and the
+		# rebuild is stepped explicitly (see `ideology_worker_derived_pump_test`). Without
+		# this the front is never installed and every cell-scope card reads 1.0.
+		for _pump in range(4):
+			var stepped: Dictionary = _ext.step_ideology_derived_rebuild(_day)
+			if bool(stepped.get("done", false)) and not bool(stepped.get("pending", false)):
+				break
 		value = _manufacturing(cell)
 	return value
 

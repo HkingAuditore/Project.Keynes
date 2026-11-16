@@ -1,4 +1,5 @@
 #include "economy_cost_probe.h"
+#include <cstdio>
 #include "economy_runtime.h"
 #include "economy_csv_recorder.h"
 #include "economy_host_port.h"

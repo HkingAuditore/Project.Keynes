@@ -1,4 +1,4 @@
-﻿class_name NarrativeEventCatalog
+class_name NarrativeEventCatalog
 extends Resource
 
 ## 默认事件库。所有玩家可见文本只写事实与数值：
@@ -135,6 +135,16 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 								"magnitude_q16": 9830,
 								"duration_days": 90,
 								"custom_label": "本地农业产出 +15%，90 日",
+							},
+							{
+								# Satisfaction is a country x profession Modifier stat, so
+								# this is the definition that carries the basis points.
+								# magnitude 1.0 applies the authored value unchanged.
+								"kind": Kind.COUNTRY_MODIFIER,
+								"target_key": "narrative.relief.agrarian_satisfaction",
+								"magnitude_q16": 65536,
+								"duration_days": 120,
+								"custom_label": "农耕各阶层满意度 +3.5~4，120 日",
 							},
 						],
 					},

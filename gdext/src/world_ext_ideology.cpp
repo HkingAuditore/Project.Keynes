@@ -325,6 +325,10 @@ Dictionary DCWorldExt::publish_ideology_worker_inputs() {
         out["code"] = "ideology_worker_inputs_unavailable";
         return out;
     }
+    // Stage B: hand the pod the economy's cell tag bitmap (transient, never saved).
+    if (const auto tags = static_cast<NativeEconomyRuntime *>(_economy_runtime)
+            ->published_tag_snapshot())
+        _runtime_host->set_ideology_cell_tags(tags->tag_words, tags->tag_bits);
     RuntimeIdeologyOpinionSnapshot snapshot = copy_opinion_snapshot(
         *static_cast<NativeEconomyRuntime *>(_economy_runtime));
     // Do NOT accrue here.

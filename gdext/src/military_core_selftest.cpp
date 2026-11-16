@@ -534,6 +534,21 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     ST_CHECK(sim.enlist_by_cell[(size_t)A] + sim.enlist_by_cell[(size_t)B] == enlisted_before,
              "no enlistment after target reached");
     ST_CHECK(sim.core.country_soldiers(1) == 0, "other countries untouched");
+    // Cession path: `from < 0` means every garrison lot in the cell. The old
+    // exact-match version made this a silent no-op and left the previous
+    // owner's roster behind after a territory transfer.
+    {
+        const int64_t gA_before = garrison_at(sim.core, A);
+        sim.core.transfer_garrison_owner(A, -1, 1);
+        ST_CHECK(garrison_at(sim.core, A) == gA_before &&
+                     sim.core.garrison_heads_at(A, 1) == gA_before &&
+                     sim.core.garrison_heads_at(A, 0) == 0,
+                 "cession transfer (from=-1) moves every garrison lot at the cell");
+        sim.core.transfer_garrison_owner(A, 1, 0);
+        ST_CHECK(sim.core.garrison_heads_at(A, 0) == gA_before &&
+                     sim.core.garrison_heads_at(A, 1) == 0,
+                 "explicit source transfer moves the lots back");
+    }
     // Army from A's whole garrison marches to B (3 hexes east).
     const int64_t gA = garrison_at(sim.core, A);
     {
@@ -576,6 +591,17 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     ST_CHECK(sim.enlist_by_cell[(size_t)B] == b0, "army presence at B suppresses B's quota");
     ST_CHECK(sim.enlist_by_cell[(size_t)A] > a0, "emptied barracks A recruits again");
     ST_CHECK(sim.max_abs_reconcile == 0, "ledger reconcile_delta == 0 every day (recruit run)");
+    // A sovereign with no soldiers can still be forced into a rebellion war:
+    // this is the "朝廷讨伐" path used after a cell secedes.
+    {
+        MilitaryCommand forced;
+        forced.other = handle_for(0);
+        ST_CHECK(sim.submit(MCMD_WAR_DECLARE_FORCED, 1, forced),
+                 "war.declare_forced accepted for a soldier-less country");
+        ST_STEP(sim, sim.day + 1);
+        ST_CHECK(sim.core.at_war(1, 0),
+                 "soldier-less country is at war after a forced declaration");
+    }
     hash_out = sim.core.state_hash();
     return true;
 }

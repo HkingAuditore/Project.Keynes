@@ -265,6 +265,8 @@ const MilitaryOpName kMilitaryOps[] = {
     {"army.disband", MCMD_ARMY_DISBAND},
     {"army.explore", MCMD_ARMY_EXPLORE},
     {"war.declare", MCMD_WAR_DECLARE},
+    {"war.declare_forced", MCMD_WAR_DECLARE_FORCED},
+    {"garrison.transfer_cell", MCMD_GARRISON_TRANSFER_CELL},
     {"peace.propose", MCMD_PEACE_PROPOSE},
     {"peace.respond", MCMD_PEACE_RESPOND},
 };
@@ -2339,9 +2341,11 @@ void DCWorldExt::publish_military_ration_satisfaction(
     static thread_local std::vector<int64_t> heads;
     static thread_local std::vector<int64_t> met;
     static thread_local std::vector<int32_t> touched;
+    static thread_local std::vector<uint8_t> published_prev;
     if (heads.size() != static_cast<size_t>(cells_total)) {
         heads.assign(static_cast<size_t>(cells_total), 0);
         met.assign(static_cast<size_t>(cells_total), 0);
+        published_prev.assign(static_cast<size_t>(cells_total), 0);
     }
     touched.clear();
     const MilitaryLotStore &lots = core.lots();
@@ -2388,8 +2392,13 @@ void DCWorldExt::publish_military_ration_satisfaction(
     std::sort(touched.begin(), touched.end());
     std::vector<int32_t> cells;
     std::vector<int32_t> ratios;
+    std::vector<int32_t> garrison_cells;
+    std::vector<int32_t> garrison_heads_list;
     cells.reserve(touched.size());
     ratios.reserve(touched.size());
+    garrison_cells.reserve(touched.size());
+    garrison_heads_list.reserve(touched.size());
+    std::vector<uint8_t> now_published(published_prev.size(), 0);
     for (const int32_t cell : touched) {
         const size_t c = static_cast<size_t>(cell);
         const int64_t need = mul_q(heads[c], per_head);
@@ -2397,10 +2406,30 @@ void DCWorldExt::publish_military_ration_satisfaction(
         if (need > 0) ratio = std::min<int64_t>(MILITARY_Q, (met[c] * MILITARY_Q) / need);
         cells.push_back(cell);
         ratios.push_back(static_cast<int32_t>(std::max<int64_t>(0, ratio)));
+        garrison_cells.push_back(cell);
+        garrison_heads_list.push_back(static_cast<int32_t>(std::min<int64_t>(
+            heads[c], std::numeric_limits<int32_t>::max())));
+        now_published[c] = 1;
         heads[c] = 0;
         met[c] = 0;
     }
-    economy_api::set_military_ration_satisfaction(*economy, cells, ratios);
+    // Garrisons that vanished since the last publish go back to 1.0.
+    for (size_t c = 0; c < published_prev.size(); ++c) {
+        if (published_prev[c] == 0 || now_published[c] != 0) continue;
+        cells.push_back(static_cast<int32_t>(c));
+        ratios.push_back(MILITARY_Q);
+    }
+    published_prev.swap(now_published);
+    if (!cells.empty()) {
+        economy_api::set_military_ration_satisfaction(*economy, cells, ratios);
+    }
+    // Suppression odds need the same per-cell garrison headcount. This is a
+    // sparse push (only cells that hold garrison lots this day); Economy keeps
+    // the dense read lane itself.
+    if (!garrison_cells.empty()) {
+        economy_api::set_military_cell_garrison(
+            *economy, garrison_cells, garrison_heads_list);
+    }
     // ---- army lanes (contract §2.2) --------------------------------------
     // A deployed formation is not a home-cell cohort: its people sit in an
     // Economy lane keyed by army handle, so the staple/protein satisfaction has

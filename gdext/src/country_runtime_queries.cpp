@@ -63,6 +63,7 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.country_display_names = _countries.display_name;
     out.research_active_country_slots = _research_active_country_slots;
     out.territory_count = _countries.territory_count;
+    out.capital_cell = _countries.capital_cell;
     out.country_state_version = _countries.state_version;
     out.country_cash = _countries.cash;
     out.country_goods = _country_goods;
@@ -357,6 +358,9 @@ Dictionary NativeCountryRuntime::country_summary(int64_t handle) const {
         : String();
     out["political_regime_capability_bits"] = static_cast<int64_t>(
         _countries.political_regime_capability_bits[static_cast<size_t>(slot)]);
+    out["capital_cell"] = static_cast<int64_t>(slot) <
+            static_cast<int64_t>(_countries.capital_cell.size())
+        ? _countries.capital_cell[static_cast<size_t>(slot)] : -1;
     Dictionary politics;
     politics["regime_id"] = _countries.political_regime_id[static_cast<size_t>(slot)];
     politics["regime_key"] = out["political_regime_key"];
@@ -1329,6 +1333,16 @@ int64_t NativeCountryRuntime::good_for_slot(int32_t country_slot,
     return index < goods.size() ? goods[index] : 0;
 }
 
+int32_t NativeCountryRuntime::capital_cell_for_slot(int32_t country_slot) const {
+    // Capital is a political fact, not a territory claim. It is static between
+    // commands and is copied into the worker snapshot at the same boundary as
+    // the rest of the country record, so the committed sync store is the
+    // authoritative read here.
+    return country_slot >= 0 &&
+           country_slot < static_cast<int32_t>(_countries.capital_cell.size())
+        ? _countries.capital_cell[static_cast<size_t>(country_slot)] : -1;
+}
+
 bool NativeCountryRuntime::apply_committed_read_snapshot(
         const RuntimeCountryPodSnapshot &snapshot) {
     // A read replica must never partially install a malformed worker commit.
@@ -1504,6 +1518,9 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     _countries.display_name = repaired.country_display_names;
     _research_active_country_slots = repaired.research_active_country_slots;
     _countries.territory_count = repaired.territory_count;
+    _countries.capital_cell = repaired.capital_cell;
+    if (_countries.capital_cell.size() != _countries.active.size())
+        _countries.capital_cell.assign(_countries.active.size(), -1);
     _countries.state_version = repaired.country_state_version;
     _countries.political_regime_id = repaired.country_political_regime_ids;
     _countries.political_regime_capability_bits =

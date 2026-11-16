@@ -58,6 +58,9 @@ var _failures := 0
 
 
 func _init() -> void:
+	# Support gate is a different authority with its own fixtures; this one
+	# exercises its own mechanism, so configure the material model as absent.
+	IdeologyCatalog.support_gate_enabled = false
 	_run()
 
 
@@ -459,6 +462,7 @@ func _sample_epochs(label: String) -> Array:
 		# are impossible for a counter reset in `clear_epoch_metrics`, so treat
 		# them as the stale-data signal they are.
 		if bool(report.get("fatal", false)):
+			var probe_ext: Object = generator.get_data_core_world_ext()
 			_require("%s: economy still healthy" % label, false,
 				"economy went fatal; every reading after this is stale")
 			return samples

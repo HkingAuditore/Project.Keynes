@@ -417,6 +417,7 @@ int32_t NativeCountryRuntime::append_country(const std::string &stable_id,
             _political_regime_capability_bits.size()
             ? _political_regime_capability_bits[static_cast<size_t>(default_regime)]
             : 0u);
+    _countries.capital_cell.push_back(-1);
     _economy_asset_reserved_cash.resize(_countries.active.size(), 0);
     _economy_asset_reserved_goods.resize(
         _countries.active.size() * _good_ids.size(), 0);
@@ -470,6 +471,10 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     const std::vector<int64_t> cash = packed_i64(packet, "country_cash");
     const std::vector<int32_t> territory_offsets = packed_i32(packet, "territory_offsets");
     const std::vector<int32_t> territory_cells = packed_i32(packet, "territory_cells");
+    // Optional v16 addendum: one capital cell per country. Absent in legacy
+    // fixtures; the bootstrap then falls back to each country's first territory
+    // cell so the "capital cannot secede" rule still has a stable anchor.
+    const std::vector<int32_t> capital_cells = packed_i32(packet, "capital_cells");
     const std::vector<int32_t> tech_offsets = packed_i32(packet, "technology_offsets");
     const std::vector<int32_t> tech_indices = packed_i32(packet, "technology_indices");
     const std::vector<int32_t> discovered_offsets =
@@ -573,6 +578,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     } else {
         if (names.size() != ids.size() || (!cash.empty() && cash.size() != ids.size()) ||
             (!regime_ids.empty() && regime_ids.size() != ids.size()) ||
+            (!capital_cells.empty() && capital_cells.size() != ids.size()) ||
             territory_offsets.size() != ids.size() + 1 || territory_offsets.front() != 0 ||
             territory_offsets.back() != static_cast<int32_t>(territory_cells.size()))
             return fail("country_bootstrap_shape_invalid");
@@ -627,6 +633,13 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                 _cell_country_slot[static_cast<size_t>(cell)] = static_cast<int32_t>(slot);
                 ++_countries.territory_count[slot];
             }
+            const int32_t capital = capital_cells.empty()
+                ? territory_cells[static_cast<size_t>(territory_offsets[slot])]
+                : capital_cells[slot];
+            if (capital < 0 || capital >= _cell_count ||
+                _cell_country_slot[static_cast<size_t>(capital)] != static_cast<int32_t>(slot))
+                return fail("country_bootstrap_capital_invalid");
+            _countries.capital_cell[slot] = capital;
             if (tech_offsets.empty()) {
                 for (int32_t tech : _starting_technologies)
                     _country_technologies[slot * _technology_words + tech / 64] |= 1ULL << (tech % 64);

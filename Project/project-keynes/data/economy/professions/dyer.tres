@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"dyer"
+profession_class_id = &"worker"
 satisfaction_dimension_weights_q16 = PackedInt32Array(58982, 45875, 26214, 9830, 26214, 22938, 22938, 16384)
 display_name = "染工"
 semantic_tags = PackedStringArray("activity.chemical", "activity.craft")

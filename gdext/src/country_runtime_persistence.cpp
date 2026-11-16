@@ -314,6 +314,8 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
         hash_bytes(hash, &_countries.state_version[slot], sizeof(uint64_t));
         hash_bytes(hash, &_countries.political_regime_id[slot], sizeof(int32_t));
         hash_bytes(hash, &_countries.political_regime_capability_bits[slot], sizeof(uint32_t));
+        if (slot < _countries.capital_cell.size())
+            hash_bytes(hash, &_countries.capital_cell[slot], sizeof(int32_t));
     }
     if (!_cell_country_slot.empty()) hash_bytes(hash, _cell_country_slot.data(), _cell_country_slot.size() * sizeof(int32_t));
     if (!_country_technologies.empty()) hash_bytes(hash, _country_technologies.data(), _country_technologies.size() * sizeof(uint64_t));
@@ -555,6 +557,8 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         append_le<uint64_t>(out, _countries.state_version[slot]);
         append_le<int32_t>(out, _countries.political_regime_id[slot]);
         append_le<uint32_t>(out, _countries.political_regime_capability_bits[slot]);
+        append_le<int32_t>(out, static_cast<size_t>(slot) < _countries.capital_cell.size()
+            ? _countries.capital_cell[slot] : -1);
     }
     append_vector(out, _cell_country_slot);
     append_vector(out, _country_technologies);
@@ -771,6 +775,7 @@ bool NativeCountryRuntime::decode_save_in_place(
     countries.state_version.resize(country_count);
     countries.political_regime_id.resize(country_count, 0);
     countries.political_regime_capability_bits.resize(country_count, 0);
+    countries.capital_cell.resize(country_count, -1);
     std::unordered_set<std::string> stable_ids;
     for (int32_t slot = 0; slot < country_count; ++slot) {
         if (!read_le(bytes, cursor, countries.active[slot]) || !read_le(bytes, cursor, countries.generation[slot]) ||
@@ -788,6 +793,11 @@ bool NativeCountryRuntime::decode_save_in_place(
                 countries.political_regime_capability_bits[slot] !=
                     _political_regime_capability_bits[static_cast<size_t>(countries.political_regime_id[slot])]) {
                 error = "country_save_political_regime_invalid";
+                return false;
+            }
+            if (version >= 16 &&
+                !read_le(bytes, cursor, countries.capital_cell[slot])) {
+                error = "country_save_country_record_truncated";
                 return false;
             }
         } else {

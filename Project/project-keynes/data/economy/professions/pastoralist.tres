@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"pastoralist"
+profession_class_id = &"farmer"
 display_name = "牧民"
 semantic_tags = PackedStringArray("activity.pastoral")
 default_consumption_plan_id = &"agrarian_household"

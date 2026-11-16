@@ -257,7 +257,11 @@ struct CountryPendingCommandProtocol {
 };
 
 constexpr uint32_t COUNTRY_CHECKPOINT_ABI_VERSION = 2u;
-constexpr uint32_t COUNTRY_CHECKPOINT_SCHEMA_VERSION = 15u;
+// Must track CountryApi::SCHEMA_VERSION (country_api.h), which is what
+// NativeCountryRuntime::encode_save stamps into the PKCN header. The two drifted
+// (16 vs 15), so country_checkpoint_pkcn_header_mismatch fired for EVERY save:
+// the wrapper compared its own stale copy against the payload it wraps.
+constexpr uint32_t COUNTRY_CHECKPOINT_SCHEMA_VERSION = 16u;
 constexpr uint32_t COUNTRY_CHECKPOINT_SCHEMA_MIN_VERSION = 11u;
 
 // CPD2 wraps the exact canonical PKCN payload captured at the save boundary.

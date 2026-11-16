@@ -17,6 +17,7 @@
 #include <unordered_set>
 #include <vector>
 #include "runtime_chunk_hash.h"
+#include "runtime_economy_stratum_mobilization.h"
 #include "runtime_published_view.h"
 #include "runtime_switch_registry.h"
 #include <godot_cpp/variant/dictionary.hpp>
@@ -145,6 +146,7 @@ public:
     using NotablePersonStore = EconomyNotablePersonStore;
     using PersonNeedState = EconomyPersonNeedState;
     using FamilyMembershipEdge = EconomyFamilyMembershipEdge;
+    std::shared_ptr<const TagSnapshot> published_tag_snapshot() const { return tag_snapshot(); }
     using FamilyBuildingOwnership = EconomyFamilyBuildingOwnership;
     using FamilyTraitRoll = EconomyFamilyTraitRoll;
     using FamilyCellInfluenceStore = EconomyFamilyCellInfluenceStore;
@@ -215,7 +217,10 @@ public:
     //     ledger on the first step (see military_core_save.cpp).
     // 61: military purchase receipts and the state building cash boundary.
     // 62: pending family colonization population rewards in family records.
-    static constexpr int32_t SCHEMA_VERSION = 62;
+    // 63: sparse (cell, profession) stratum mobilization rows (section 37).
+    //     A v62 stream has no section and restores an empty table, which is the
+    //     correct pre-feature state (no organization had accumulated yet).
+    static constexpr int32_t SCHEMA_VERSION = 63;
     // Dense order of the compiled `building_economic_sectors` column. It mirrors
     // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
     // manufacturing, energy, knowledge, then the appended `military` sector. The
@@ -317,7 +322,6 @@ public:
     static constexpr int32_t SAT_TIER_COUNT = 4;
     static constexpr int32_t SAT_DEVELOPMENT_INPUT_COUNT = 3;
     static constexpr int32_t SAT_PRESSURE_LEVEL_COUNT = 5;
-
 
     static constexpr uint16_t FAMILY_FLAG_SPLIT_RETAIN_ONLY = 1u;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_BONUS_WEIGHT = 2u;
@@ -834,6 +838,11 @@ public:
     // and are only safe to call between native slices.
     godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
     godot::Dictionary cell_satisfaction_attractiveness(int32_t cell_idx) const;
+    // Per-cell stratum-mobilization rows (organization/stage/cooldown). Returns
+    // an empty list when the cell has no aggrieved profession.
+    godot::Dictionary cell_mobilization_snapshot(int32_t cell_idx) const;
+    // Bounded country-level summary for the top bar/alerts.
+    godot::Dictionary country_mobilization_summary(int32_t country_slot) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
     godot::Dictionary production_climate_math_probe(
         const godot::Dictionary &vectors) const;
@@ -934,6 +943,7 @@ public:
         GAMEPLAY_FACT_INFRASTRUCTURE_COMPLETED = 7,
         GAMEPLAY_FACT_REPEATED_CROP_FAILURE = 8,
         GAMEPLAY_FACT_COUNTRY_DEVELOPMENT_METRIC = 9,
+        GAMEPLAY_FACT_STRATUM_MOBILIZATION = 10,
     };
     enum TechnologyPracticeRule : int32_t {
         PRACTICE_MAIZE_SELECTION = 0,
@@ -1274,6 +1284,8 @@ public:
         COUNTRY_ECONOMY_OVERVIEW,
         SITUATION_VISUAL_SNAPSHOT,
         COUNTRY_PROCUREMENT_SNAPSHOT,
+        CELL_MOBILIZATION_SNAPSHOT,
+        COUNTRY_MOBILIZATION_SUMMARY,
     };
     struct ReadKey {
         ReadQuery query = ReadQuery::NONE;
@@ -1368,6 +1380,21 @@ public:
     // without soldiers is unchanged. Returns the number of cells written.
     int32_t set_military_ration_satisfaction(
         const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
+    // Military-owned per-cell garrison headcount for suppression odds. Public
+    // like the ration seam: Military pushes it through economy_api and never
+    // touches the runtime layout.
+    int32_t set_military_cell_garrison(const std::vector<int32_t> &cells,
+                                       const std::vector<int32_t> &heads);
+    // Player-facing rebellion odds. `action` is 0 concede / 1 bribe / 2 repress /
+    // 3 ignore / 4 amnesty / 5 abandon; `spend_bp` is the share of treasury the
+    // player is committing (basis points). Returns p_success_q16, cost_bp and the
+    // additive terms so the UI and the resolution use one formula.
+    godot::Dictionary mobilization_odds(int32_t cell, int32_t profession,
+                                        int32_t action, int64_t spend_bp) const;
+    // Applies an already-rolled outcome. Called at the paused narrative boundary;
+    // it only mutates the sparse row and never touches conserved ledgers.
+    bool apply_mobilization_result(int32_t cell, int32_t profession,
+                                   int32_t action, bool success);
     // Convenience read used by the ration path and by diagnostics.
     int32_t military_ration_satisfaction_q16(int32_t cell) const {
         return cell >= 0 &&

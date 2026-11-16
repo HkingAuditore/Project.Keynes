@@ -413,6 +413,22 @@ struct EconomyApi {
         EFFECT_PREFLIGHT_REJECT = 2,
     };
 
+    // Incidence channel layout shared by Economy's published class shares and
+    // Ideology's material support kernel. Fixed prefix, then one channel per
+    // need in `need_ids` order:
+    //   [0..5]  sector income share      (BUILDING_SECTOR_IDS order)
+    //   [6]     input-cost share         (cost paid / class income)
+    //   [7]     owner-profit share       (gross surplus / class income)
+    //   [8]     merchant-income share    (merchant cohorts / class income)
+    //   [9]     birth channel            (always 1.0: demographic effects apply
+    //   [10]    death channel             to every measured class equally)
+    //   [11..]  need spend share         (spend / class expense)
+    // `incidence_channel_count` = kIncidencePrefixChannelCount + need_count.
+    static constexpr int32_t kIncidenceSectorCount = 6;
+    static constexpr int32_t kIncidencePrefixChannelCount = 11;
+    static constexpr int32_t kIncidenceBirthChannel = 9;
+    static constexpr int32_t kIncidenceDeathChannel = 10;
+
     struct CountryClassOpinionSnapshot {
         // 材料损益：每国的阶级立场数据（channels 来自表结构；measured 标记该国是否有数据；
         // class_incidence_q16 按 [country][class][channel] 展平）。
@@ -546,6 +562,7 @@ int32_t military_signature_for(const NativeEconomyRuntime &economy, int32_t prof
 int64_t military_collect_cash(NativeEconomyRuntime &economy, int64_t country_handle, int64_t amount);
 bool military_command_window_open(const NativeEconomyRuntime &economy);
 int32_t set_military_ration_satisfaction(NativeEconomyRuntime &economy, const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
+int32_t set_military_cell_garrison(NativeEconomyRuntime &economy, const std::vector<int32_t> &cells, const std::vector<int32_t> &heads);
 void set_military_army_ration(NativeEconomyRuntime &economy, uint64_t army_handle, int32_t ration_q16);
 int64_t military_army_population(const NativeEconomyRuntime &economy, uint64_t army_handle);
 int64_t military_army_funds(const NativeEconomyRuntime &economy, uint64_t army_handle);

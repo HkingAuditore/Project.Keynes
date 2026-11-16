@@ -376,7 +376,7 @@ func _test_ai_sandbox_and_image_cache() -> void:
 		bool(numeric_res.get("ok", false))
 		and String(numeric_event.get("body_text", "")) == "本地气温 {temperature}，粮价飞涨，三人因囤积被拘。")
 	_expect("system prompt spells out the no-data-readings rule",
-		String((messages[0] as Dictionary).get("content", "")).find("数据读数") >= 0
+		String((messages[0] as Dictionary).get("content", "")).find("阿拉伯数字") >= 0
 		and String((messages[0] as Dictionary).get("content", "")).find("{temperature}") >= 0)
 
 	# Test AI validator against fenced JSON with out-of-bounds numbers and unknown modifier key

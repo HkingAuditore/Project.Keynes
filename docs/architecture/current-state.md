@@ -39,6 +39,19 @@ Economy 原生门控，UI 隐藏入口只负责展示体验。
 - 模块表之前有气候实际提交，之后有 Events 补调用、覆盖检查和日故障点。这不是全域原子提交，COMMIT 完成位也不证明每个域都推进了业务状态。
 - Ideology 的日内续跑门闩由 `DCWorldExt.ideology_needs_daily_continuation(day)` 提供；`map_generator.gd` 和 `IdeologyRuntimeSystem` 在旧版扩展缺少该绑定时探测回退，分别使用 runtime graph 的硬 pending 和当前 slice 的 `done`，避免保存边界因 DLL 与脚本不同步而中止。
 
+## 阶层组织度（2026-11-13，M1 原生核心）
+
+Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizationStore`，`runtime_economy_stratum_mobilization.h`）。行只在职业有不满或曾在链中时存在；更新复用 `publish_country_development_facts()` 既有的 `_market_cells × for_each_in_cell` 扫描，不新增全图循环，也不新增日域。阶段 0–4 与触发哈希在 `economy_runtime_stratum_mobilization.cpp`；跨阶发 `GAMEPLAY_FACT_STRATUM_MOBILIZATION`（事件 18 / payload 26）。
+
+- 存档：PKEC `SCHEMA_VERSION` 62，`SAVE_SECTION_STRATUM_MOBILIZATION = 37`（稀疏行，跨 chunk）。
+- Country：PKCN v16 新增每国 `capital_cell`；bootstrap 包可选 `capital_cells`，缺省回退首块领地；`CREATE_COUNTRY` 把首都设为新格。首都格的组织度封顶在示威（stage 3），不会走独立。
+- Military：每日 ration 发布时顺带 sparse 推送 per-cell 驻军人数到 Economy 的 `_cell_garrison_heads`；割地路径的 `transfer_garrison_owner(from<0)` 修复为"该格全部驻军 lot"。
+- 查询：`get_cell_mobilization_snapshot` / `get_country_mobilization_summary`；GDScript 见 `economy_facade.gd`。
+- M2 玩家链：`get_mobilization_odds` / `apply_mobilization_result`；`scripts/politics/stratum_unrest_service.gd` 投递四阶事件、按 `chain_salt` 掷骰、付让步成本并处理独立队列；地块档案新增「民情」页签，地图告警层新增第 9 个组织度图标，顶栏新增「离心 N」纸签（stage 3+4 计数）。AI 阶段在 native epoch 更新里自动决议（有驻军镇压、否则无视），不依赖时钟暂停。
+- 军事：`MCMD_WAR_DECLARE_FORCED = 43`（跳过攻方必须有兵）与 `MCMD_GARRISON_TRANSFER_CELL = 44`（清 controller、驻军随城转移）；独立后由原主权国强制宣战。
+- 已验证：`country_capital_test.gd` 16/0、`satisfaction_runtime_test.gd` 58/0（含 9 项组织度/概率/结算）、`military_native_binding_test.gd` 自测 PASS（含割地转移与强制宣战）、`narrative_event_runtime_test.gd` 71/0、`stratum_unrest_service_test.gd` 7/0；地块档案与地图层 parse PASS。
+- 未实现：无（长跑平衡校准可作为后续平衡工作）。黄金 v4/v2/v3 与外部位移 v5 已按 5 次捕获更新并通过：`golden_day_hash_test` 176/0、`golden_external_advancers_test` 338/0。详见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md)。
+
 ## 十二域以外的推进
 
 登记在 `tools/ci/runtime_advancers.json`（生成 `runtime_external_advancers.h`），登记不拥有调度权。
@@ -93,10 +106,10 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
 | climate | CLM2 v9 | environment | — |
-| country | PKCN v15 | country | environment |
+| country | PKCN v16 | country | environment |
 | military | PKMI v6 | country | country |
 | effect | PKEF v14 | rules | military |
-| economy | ECP2 schema 60 | economy | country、effect |
+| economy | ECP2 schema 62 | economy | country、effect |
 | family | 在 ECP2 内 | economy | economy |
 | technology | 在 PKCN 内 | country | country |
 | modifier | PKMD v3 | rules | effect |
