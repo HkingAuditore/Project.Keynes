@@ -35,6 +35,7 @@
     ],
     "country": [
       "world_ext_country.cpp",
+      "world_ext_country_commands.cpp",
       "world_ext_country_ai.cpp",
       "world_ext_annual.cpp"
     ],
@@ -70,6 +71,7 @@
     ],
     "visual": [
       "world_ext_atlas.cpp",
+      "world_ext_cell_luts.cpp",
       "world_ext_bake_visual_tiles.cpp",
       "world_ext_building_visual.cpp",
       "world_ext_trade_visual.cpp",

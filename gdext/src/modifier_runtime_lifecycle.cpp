@@ -2,6 +2,17 @@
 
 namespace pk {
 
+void ModifierRuntime::copy_derived_cell_layer_from(const ModifierRuntime &source) {
+    const auto &front = source._derived_cell_front;
+    if (_derived_cell_front.generation == front.generation &&
+        _derived_cell_front.world_identity == front.world_identity &&
+        _derived_cell_front.map_generation == front.map_generation) return;
+    // Copy an empty front as well: removing the last contribution must reach
+    // the consumer with the same generation as an ordinary replacement.
+    _derived_cell_front = front;
+    _derived_layer_generation = source._derived_layer_generation;
+}
+
 void ModifierRuntime::reset_runtime_state(int32_t cell_count) {
     _cell_count = cell_count;
     _current_day = -1;
@@ -24,6 +35,11 @@ void ModifierRuntime::reset_runtime_state(int32_t cell_count) {
     _bucket_update_ms_total = 0.0;
     _bucket_rebuild_ms_total = 0.0;
     _error_counts.clear();
+    _derived_cell_front = DerivedCellFront{};
+    _derived_layer_generation = 0;
+    _derived_layer_installs = 0;
+    _derived_layer_install_skips = 0;
+    _derived_layer_int8_bytes = 0.0;
     for (int32_t domain = 0; domain < DOMAIN_COUNT; ++domain) clear_domain(domain);
     _gameplay_base_by_stat.assign(_stats.size(), {});
 }

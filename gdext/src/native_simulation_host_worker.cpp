@@ -817,9 +817,6 @@ void NativeSimulationHost::worker_main() {
                             economy_input_requested_day(),
                             static_cast<int64_t>(_environment_ring.size()),
                             country_fallback);
-                            // See set_country_peer_pump: the ext can execute the pending country intent,
-                            // and this loop is on the main thread, so it is safe (and necessary) to pump here.
-                            if (_country_peer_pump) _country_peer_pump();
                         // Economy incomplete with no stall bit has no CV wake
                         // source once Climate capacity fills. Arm a peer stall
                         // so the timeout fault surfaces instead of a silent hang.

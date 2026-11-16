@@ -195,6 +195,10 @@ static func bake_height_biome_moisture(
 	var lookup: Array = []
 	lookup.resize(pix_count)
 	world.pixel_to_cell_lookup = lookup
+	var owner_indices := PackedInt64Array()
+	owner_indices.resize(pix_count)
+	var owner_present := PackedByteArray()
+	owner_present.resize(pix_count)
 
 	# 阶段 P：桶式收集每个 cell 覆盖的像素 index，循环结束后批量打包成 PackedInt32Array。
 	# 与 lookup 同源，零额外的 cube_round / noise 计算开销。
@@ -386,11 +390,16 @@ static func bake_height_biome_moisture(
 			cover_buf[idx] = cover_self & 0xFF
 			# v9.perf：缓存 cell 引用，rebake 时直接 lookup[idx].cover/vegetation
 			lookup[idx] = self_cell
+			if self_cell != null:
+				owner_indices[idx] = int(self_cell.index)
+				owner_present[idx] = 1
 			# 阶段 P：同步把该像素 index 收进 cell 桶（仅非空 cell，map 外 None 跳过）
 			if self_cell != null:
 				if not cell_pixel_buckets.has(self_cell):
 					cell_pixel_buckets[self_cell] = []
 				(cell_pixel_buckets[self_cell] as Array).push_back(idx)
+
+	world.publish_pixel_lookup(lookup, owner_indices, owner_present)
 
 	# 阶段 P：把桶批量打包成 PackedInt32Array（一次 memcpy，避开 push_back 的反复扩容）。
 	# 这就是 rebake_cover_tex_only / rebake_vegetation_tex_only 增量路径的核心反向索引。
@@ -707,27 +716,7 @@ static func _bake_terrain_index_native_legacy(baker: MapBaker, map: MapData, hex
 	#   pixel_to_cell_lookup（Array[HexCell]）+ cell_pixel_lists（Dict HexCell→PackedInt32Array）。
 	# 两者均按无抖动硬主 cell 归属，保证动态 LUT 与交互索引一致。
 	var p2c: PackedInt32Array = rep.get("pixel_to_cell_index", PackedInt32Array())
-	var lookup: Array = []; lookup.resize(pix_count)
-	if p2c.size() == pix_count:
-		for i in range(pix_count):
-			var ci2: int = p2c[i]
-			lookup[i] = cells_by_index[ci2] if ci2 >= 0 and ci2 < n_cells else null
-	world.pixel_to_cell_lookup = lookup
-	var lists: Dictionary = {}
-	if first_px.size() >= n_cells and pcount.size() >= n_cells:
-		var flat_n: int = flat.size()
-		for ci3 in range(n_cells):
-			var cnt: int = pcount[ci3]
-			if cnt <= 0:
-				continue
-			var st: int = first_px[ci3]
-			if st < 0 or st + cnt > flat_n:
-				continue
-			var cell2: HexCell = cells_by_index[ci3]
-			if cell2 == null:
-				continue
-			lists[cell2] = flat.slice(st, st + cnt)
-	world.cell_pixel_lists = lists
+	world.publish_pixel_lookup_indices(p2c, cells_by_index, pix_count, n_cells)
 	return true
 
 

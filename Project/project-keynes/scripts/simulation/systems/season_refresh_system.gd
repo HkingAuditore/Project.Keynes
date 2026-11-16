@@ -42,9 +42,8 @@ var _ticks_since_last_round: int = 0
 # continuation tick that arrives without a should_run() call must then report
 # done instead of starting the next round.
 var _finished_outside_scheduler: bool = false
-# Climate worker-authoritative: a due round is not sliced across frames but run
-# whole by the next worker input capture, after the generator has drained the
-# worker's climate writeback (see MapGenerator.capture_runtime_inputs_for_worker).
+# Legacy signal mode can defer a round to capture. In ordinary worker mode,
+# capture owns fixed game-day eligibility; scheduler observations do not count.
 var _capture_round_pending: bool = false
 
 
@@ -148,15 +147,12 @@ func should_run(_ctx: SusTickContext) -> bool:
 		return false
 	if _round_active:
 		return true
+	if _defers_rounds_to_capture() and not _uses_legacy_signal():
+		return false
 	if _capture_round_pending:
 		return false
 	# 兼容开关：保留旧"信号脉冲驱动"路径供回归对照。
-	var legacy_signal: bool = false
-	if generator.has_method("_c"):
-		var cp = generator._c()
-		if cp != null and "season_refresh_legacy_signal" in cp:
-			legacy_signal = bool(cp.season_refresh_legacy_signal)
-	if legacy_signal:
+	if _uses_legacy_signal():
 		if not generator.has_method("has_pending_season_refresh"):
 			return false
 		return bool(generator.has_pending_season_refresh())
@@ -186,6 +182,30 @@ func has_capture_round_pending() -> bool:
 	return _capture_round_pending
 
 
+## Capture days are consecutive simulation days. Refresh after each complete
+## period: 31, 61, ... for period 30. The completed boundary is already saved
+## by CLM2, in WorldClock's day+1 convention; no unsaved tick counter is needed.
+func run_due_round_for_capture(day: int) -> int:
+	# An authority switch can inherit a round begun by the main-thread path.
+	# Finish that work before testing eligibility for a new periodic round.
+	if _round_active:
+		return finish_round_now()
+	if _uses_legacy_signal():
+		return run_round_for_capture() if _capture_round_pending else finish_round_now()
+	if day <= 1 or posmod(day - 1, maxi(1, period_ticks)) != 0:
+		return 0
+	if int(generator.get("_last_season_refresh_day")) >= day + 1:
+		return 0
+	_capture_round_pending = true
+	var slices := run_round_for_capture()
+	if not _round_active:
+		# Use the input's date even if a caller is preparing it ahead of the
+		# visible clock. A rejected capture can reuse this completed round.
+		generator.set("_last_season_refresh_day", day + 1)
+		_finished_outside_scheduler = true
+	return slices
+
+
 ## Runs a deferred round start to finish. The caller must have brought the
 ## climate fields in MapData to a fixed worker day first.
 func run_round_for_capture() -> int:
@@ -205,15 +225,17 @@ func _defers_rounds_to_capture() -> bool:
 		and bool(generator.season_refresh_defers_to_capture())
 
 
+func _uses_legacy_signal() -> bool:
+	if generator != null and generator.has_method("_c"):
+		var cp = generator._c()
+		return cp != null and bool(cp.get("season_refresh_legacy_signal"))
+	return false
+
+
 func _begin_round() -> void:
 	# 新路径优先：周期自驱调用 begin_periodic_season_refresh；legacy_signal
 	# 模式下走 begin_pending_season_refresh 消费 pending flag（与旧行为一致）。
-	var legacy_signal: bool = false
-	if generator.has_method("_c"):
-		var cp = generator._c()
-		if cp != null and "season_refresh_legacy_signal" in cp:
-			legacy_signal = bool(cp.season_refresh_legacy_signal)
-	if legacy_signal and generator.has_method("begin_pending_season_refresh"):
+	if _uses_legacy_signal() and generator.has_method("begin_pending_season_refresh"):
 		_season_idx = int(generator.begin_pending_season_refresh())
 	elif generator.has_method("begin_periodic_season_refresh"):
 		_season_idx = int(generator.begin_periodic_season_refresh())

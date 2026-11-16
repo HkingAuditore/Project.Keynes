@@ -1295,51 +1295,19 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _generator._weather_system != null and _generator._weather_system.has_method("configure_gdext_acceleration"):
 		var cp_f1 = _generator._c()
 		_generator._weather_system.configure_gdext_acceleration(_generator._data_core_world_ext, true, cp_f1, _generator._data_core_world)
-	# EffectRuntime is independent from Country/Economy. Configure and register
-	# it before economy bootstrap, whose valid early returns must not starve it.
-	_generator._effect_facade = null
-	_generator._effect_daily_job = null
-	_generator._gameplay_effect_job = null
-	if _generator._data_core_world_ext != null:
-		var effect_facade = _generator.EffectFacadeScript.new()
-		await _generator._yield_generation_frame()
-		_generator._loading_profile_step("effect_catalog")
-		var effect_catalog = _generator.EffectDomainCatalogScript.build()
-		await _generator._yield_generation_frame()
-		_generator._loading_profile_step("effect_configure")
-		if effect_catalog == null:
-			push_error("[effect] domain catalog build failed")
-		else:
-			var effect_configured: Dictionary = effect_facade.configure(
-				_generator._data_core_world_ext, _generator._world_clock_ref, effect_catalog)
-			if bool(effect_configured.get("ok", false)):
-				# `ok` 只代表主线程 EffectRuntime 吃下了目录。worker 侧还有第二份
-				# POD 目录：编译失败时 `_effect_pod_catalog` 保持空，Effect 阶段就
-				# 在 `effect_stage_enabled == false` 那一行无条件放弃、不设 stall 位、
-				# 不写日志，于是整局只表现为「日历推不动」。这里必须响。
-				if not bool(effect_configured.get("effect_pod_ready", true)):
-					push_error(
-						"[effect] native POD catalog not ready (%s) — worker Effect stage will park every day" % [
-							String(effect_configured.get(
-								"effect_pod_fallback_reason", "unknown"))])
-				_generator._effect_facade = effect_facade
-				_generator._effect_daily_job = _generator.EffectRuntimeSystemScript.new(_generator._effect_facade)
-				_generator._sus.configure_job_from_profile(
-					_generator._effect_daily_job, cp_sched, false, &"effect_runtime", 1)
-				_generator._runtime_register_system(_generator._effect_daily_job)
-				_generator._gameplay_effect_job = _generator.GameplayEffectSystemScript.new(_generator._effect_facade)
-				_generator._sus.configure_job_from_profile(
-					_generator._gameplay_effect_job, cp_sched, false, &"gameplay_effect", 1)
-				_generator._runtime_register_system(_generator._gameplay_effect_job)
-			else:
-				push_error("[effect] configure failed: %s" % String(
-					effect_configured.get("reason", "unknown")))
+	await _generator._get_map_rules_initializer()._setup_effect_runtime(cp_sched)
+	if _generator._loading_frames.canceled:
+		_generator._get_map_rules_initializer()._release_loading_catalog_context()
+		return
 	# Independent ECONOMY_GRAPH is registered after EffectRuntime and before the
 	# native/legacy daily fork, so both environmental authority modes share one
 	# economy schedule.
 	await _generator._yield_generation_frame()
 	_generator._loading_profile_step("_setup_economy_runtime")
 	await _generator._get_map_country_initializer()._setup_economy_runtime(map, cfg, cp_sched)
+	_generator._get_map_rules_initializer()._release_loading_catalog_context()
+	if _generator._loading_frames.canceled:
+		return
 	_generator._season_refresh_job = _generator.SeasonRefreshSystemScript.new(_generator, map, world)
 	_generator._sus.configure_job_from_profile(_generator._season_refresh_job, cp_sched)
 	_generator._runtime_register_system(_generator._season_refresh_job)

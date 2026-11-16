@@ -48,7 +48,9 @@ bool NativeSimulationHost::enqueue(RuntimeCommandPacket packet) {
 }
 
 bool NativeSimulationHost::enqueue_batch(
-        std::vector<RuntimeCommandPacket> packets) {
+        std::vector<RuntimeCommandPacket> packets,
+        std::vector<int64_t> *effective_days) {
+    if (effective_days != nullptr) effective_days->clear();
     if (packets.empty()) return false;
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED ||
@@ -84,10 +86,13 @@ bool NativeSimulationHost::enqueue_batch(
     // earlier than the first day whose inputs are not sealed yet, so it can
     // never land on a day the worker already started.
     const int64_t seal_day = command_seal_day();
+    if (effective_days != nullptr) effective_days->reserve(packets.size());
     for (size_t index = 0; index < packets.size(); ++index) {
         RuntimeCommandPacket &packet = packets[index];
         packet.envelope.effective_day =
             std::max(packet.envelope.effective_day, seal_day);
+        if (effective_days != nullptr)
+            effective_days->push_back(packet.envelope.effective_day);
         if (packet.submit_order == 0) {
             packet.submit_order = _command_submit_order.fetch_add(
                 1u, std::memory_order_relaxed) + 1u;

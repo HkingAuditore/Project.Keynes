@@ -119,3 +119,12 @@ them for a same-world executor restart. See the scheduling/save reference and ru
 `runtime_world_rules_rebuild_test.gd` for both execution modes.
 
 脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。
+
+## Economy worker reader (2026-11-16)
+
+Choose the private Economy modifier reader from the validated startup authority mask,
+not the Host grant before start. Ordinary instance POD snapshots omit derived cell
+layers: publish the completed layer, including empty removal and its generation, to
+that reader under the existing Economy input boundary. Diagnose through the actual
+consumer (`get_effective_stat_value`), then run the worker derived pump and cold
+military save/replay checks. See the scheduling/save reference.

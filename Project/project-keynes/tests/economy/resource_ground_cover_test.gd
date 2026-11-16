@@ -72,6 +72,7 @@ func run() -> void:
 		empty = empty and cover.read_cell(cell) == Color(0, 0, 0, 0)
 	_expect("unobserved cells stay empty", empty)
 	map.bio_occupancy_bits_arr[3] = 1 << int(styles[wheat].bit)
+	map.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS, PackedInt32Array([3]))
 	for frame in 4:
 		layer._observe_until(Time.get_ticks_usec() + 20000)
 	_expect("observing a wheat cell writes its community", cover.read_cell(3).r8 / 16 == art.cover_layer("bio.wheat") and cover.read_cell(3).g8 > 0)
@@ -87,11 +88,13 @@ func run() -> void:
 	layer.set_context(true, 11)
 	map.visible_arr[3] = 0
 	map.bio_occupancy_bits_arr[3] = 0
+	map.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS, PackedInt32Array([3]))
 	for frame in 3:
 		layer._observe_until(Time.get_ticks_usec() + 20000)
 		layer._drain_cover_pending(Time.get_ticks_usec() + 20000)
 	_expect("hidden cell keeps remembered community under fog", cover.read_cell(3).g8 > 0)
 	map.visible_arr[3] = 1
+	map.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS, PackedInt32Array([3]))
 	for frame in 3:
 		layer._observe_until(Time.get_ticks_usec() + 20000)
 	_expect("re-observed extinct community is cleared", cover.read_cell(3).g8 == 0)

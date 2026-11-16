@@ -1413,9 +1413,8 @@ const _BOUNCE_DRY := Color(0.58, 0.50, 0.32)
 # 高反照率面，保留参与——雪山邻谷的色彩溢出正是最容易看出效果的场景之一。
 const _BOUNCE_WATER_TERRAINS: Array = [0, 1, 18, 19, 21]
 
-# 从已编码的 enum/dyn LUT 字节直接派生弹射色，因此 C++ 与 GDScript 两条 LUT 路径
-# 自动共用同一份公式，也不需要为此 rebuild GDExtension。O(n_cells) 纯字节循环，
-# 6400 cell 下相对 enum/dyn/eco 的编码开销可忽略。
+# 弹射色从已编码的 enum/dyn 字节派生，包含 LUT 尾部填充格。C++ 执行字节循环，
+# GDScript 保留参考/回退；两条路径都从上面的同一组颜色与水面定义取参数。
 # [qa-skip-lut-publish 2026-11-02] 二分"渲染线程崩溃是否与每日 LUT 纹理上传有关"。
 # 只有在 user://pk_debug.cfg 里写 `[render] skip_lut_publish=true` 才生效；正常玩家
 # 没有这个文件 ⇒ 恒为 false，行为与改动前一致。

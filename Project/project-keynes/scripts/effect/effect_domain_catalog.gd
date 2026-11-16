@@ -21,6 +21,8 @@ const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 const TargetTagDictionaryScript = preload("res://scripts/effect/target_tag_dictionary.gd")
 
+const MetricKeys = preload("res://scripts/effect/effect_metric_keys.gd")
+
 const Q16_ONE := 65536
 
 ## Ideology-local scalar ids appended after NativeEconomyRuntime's metric range.
@@ -56,198 +58,32 @@ const SCALAR_METRIC_KEYS := [
 ## would be dead code that only the helper's unit test ever touches.
 static func build(family_effect_catalog_override: Resource = null,
 		ideology_effect_catalog_override: Resource = null) -> Resource:
+	return _build.call(null, family_effect_catalog_override, ideology_effect_catalog_override)
+
+static func build_cooperative(context, family_effect_catalog_override: Resource = null,
+		ideology_effect_catalog_override: Resource = null) -> Resource:
+	var family_input: Resource = family_effect_catalog_override.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) \
+		if family_effect_catalog_override != null else null
+	var ideology_input: Resource = ideology_effect_catalog_override.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) \
+		if ideology_effect_catalog_override != null else null
+	return await _build(context, family_input, ideology_input)
+
+static func _build(context, family_effect_catalog_override: Resource,
+		ideology_effect_catalog_override: Resource) -> Resource:
 	if family_effect_catalog_override == null \
 			and ideology_effect_catalog_override == null:
 		var precompiled := LoadingCatalogCache.effect_catalog()
 		if precompiled != null:
 			return precompiled
-	var catalog: Resource = EffectCatalogScript.load_default()
+	var source_catalog: Resource = EffectCatalogScript.load_default()
+	var catalog: Resource = source_catalog.duplicate(true) \
+		if source_catalog != null and context != null else source_catalog
 	if catalog == null:
 		catalog = EffectCatalogScript.new()
 	# Metric zero remains the legacy family branch magnitude used by existing
 	# Modifier programs. Additional typed metrics are reserved for declarative
 	# FamilyEffect conditions and keep the same stable dense ordering.
-	catalog.metric_keys = PackedStringArray([
-		"family.magnitude_q16",
-		"family.population",
-		"family.cash_claim",
-		"branch.prestige_q16",
-		"branch.population",
-		"cell.temperature_q16",
-		"cell.precipitation_q16",
-		"cell.resource_shortage_q16",
-		"cell.trade_events",
-		"cell.population",
-		"cell.landform",
-		"cell.essentials_shortage_q16",
-		"branch.is_local_prestige_max",
-		"cell.rain_event",
-		"cell.resource_abundance_q16",
-		"family.has_owned_manufacturing",
-		"family.distinct_sector_count",
-		"family.dominant_sector_id",
-		"family.dominant_sector_share_q16",
-		"family.complete_chain_count",
-		"family.max_local_chain_share_q16",
-		"family.max_chain_upgrade_family_id",
-		"cell.unemployment_q16",
-		"cell.resource_class_count",
-		"cell.manufacturing_building_count",
-		"cell.distinct_sector_count",
-		"cell.dominant_sector_id",
-		"cell.dominant_sector_share_q16",
-		"cell.complete_chain_count",
-		"cell.has_extractive_resource",
-		"cell.legal_building_type_count",
-		"cell.vacant_profession_count",
-		"family.branch_count",
-		"family.remote_branch_count",
-		"family.cash_per_capita_vs_cell_q16",
-		"cell.knowledge_building_class_count",
-		"cell.can_produce_corn",
-		# --- Output-share metrics (ids 37..46) -----------------------------
-		# The *_SECTOR_SHARE_Q16 rows above count BUILDINGS, so raising a sector
-		# output coefficient leaves them unmoved. These are aggregated from
-		# group.last_output (already net of the output factor), so an
-		# "industry share >= X -> boost" condition actually closes the loop.
-		# Index order below MUST match the C++ FamilyEffectMetricId enum, since
-		# the array index is the metric id.
-		"cell.sector_output_share.agriculture_q16",
-		"cell.sector_output_share.extractive_q16",
-		"cell.sector_output_share.manufacturing_q16",
-		"cell.sector_output_share.energy_q16",
-		"cell.sector_output_share.knowledge_q16",
-		"cell.dominant_sector_output_share_q16",
-		# Resources (building_resource_ids: iron, corn, ...) and goods
-		# (building_outputs[].good_id) are separate id spaces. The stock rows
-		# answer "this cell is rich in iron"; the output rows answer "this cell
-		# mostly produces X".
-		"cell.dominant_resource_id",
-		"cell.dominant_resource_stock_share_q16",
-		"cell.dominant_output_good_id",
-		"cell.top_output_good_share_q16",
-		# --- Country scalars (ids 47..49) -----------------------------------
-		# Read from the frozen CountryClassOpinionSnapshot, the same source
-		# ideology point accrual uses, so a condition never samples a country
-		# mid-write. research_speed / build_speed are intentionally absent: the
-		# project models neither, and a metric that always reads 0 would make
-		# such a card silently inert.
-		"country.population_q16",
-		"country.buildings_installed",
-		"country.trade_base_value_q16",
-		# --- Terrain axis (id 50) -------------------------------------------
-		# NOT the same id space as `cell.landform` (id 10): that one is the
-		# LandformType axis (plain / hills / delta / ...), this one is
-		# TerrainType (grassland / floodplain / ...). 「河谷」is a floodplain
-		# TERRAIN, so it could not be tagged at all while only landform existed.
-		"cell.terrain",
-		# --- X3: the cell's profession mix (ids 51..53) ----------------------
-		# One id for "this is a hunters' camp", one share for "single-profession
-		# town >= 80%", one count for diversity. Deliberately not one metric per
-		# profession: the profession list is data-driven, and an enum edited on
-		# every content change rots.
-		"cell.dominant_profession_id",
-		"cell.dominant_profession_share_q16",
-		"cell.profession_count",
-		# --- X2: the neighbourhood (id 54) ----------------------------------
-		# Sum of the six neighbours' populations. The cheap half of X2: O(6) per
-		# sample instead of walking every neighbour's buildings.
-		"cell.neighbor_population_q16",
-		# --- X11: what the state takes (id 55) ------------------------------
-		# Mean income-tax rate across professions, basis points (10000 = 100%).
-		"country.income_tax_burden_bp",
-		# --- X7: how much of the country looks a certain way (ids 56..61) ---
-		# Counts of the country's OWN cells matching a compiled-in tag list
-		# (economy_runtime_family_buff.cpp `kCountryTagCountSlots`). Slot order
-		# is the metric order; appending a tag means appending an id.
-		"country.agriculture_cell_count",
-		"country.extractive_cell_count",
-		"country.manufacturing_cell_count",
-		"country.chained_cell_count",
-		"country.specialized_cell_count",
-		"country.market_cell_count",
-		"country.settlement_cell_count",
-		# Per-good counts reuse the same slot table: `cell.produces.<good>` is
-		# "dominant output good == that good", so a slot is the whole feature.
-		"country.silver_cell_count",
-		"country.salt_cell_count",
-		"country.iron_ore_cell_count",
-		"country.coal_cell_count",
-		# Distinct goods with at least one specialized cell (share >= 60%).
-		# Cannot be derived from tag counts: duplicates must collapse.
-		"country.distinct_specialized_good_count",
-		# R-4: net tax burden of this cell's cohorts over the current epoch, as a
-		# Q16 ratio (0 = untaxed, Q16_ONE = every unit of income taken).
-		"cell.net_tax_burden_q16",
-		# R-4: country treasury cash as a percentage of one year of national income,
-		# as a COUNT of percentage points (1 point = 1%). A ramp's `per` is a fraction
-		# of the value, so a count here is what the generator's lint expects.
-		"country.treasury_reserve_ratio_pct",
-		# --- 19 §3.2 reservation (ids 70..86) ---------------------------------
-		# Placeholders: the owning lane renames its key to the real metric name when
-		# it implements the sampler. A reserved.* key is never bound by the generator.
-		"cell.temperature_annual_q16",
-		"cell.dry_streak_days",
-		"cell.hazard_today_mask",
-		"cell.days_since_hazard",
-		"cell.temperature_anomaly_q16",
-		"cell.geo_flags",
-		"cell.waterway_component_size",
-		"country.class_satisfaction_q16",
-		"country.weighted_satisfaction_q16",
-		"country.completed_tech_count",
-		"country.completed_tech_count.agriculture",
-		"country.completed_tech_count.engineering",
-		"country.completed_tech_count.science",
-		"country.completed_tech_count.society",
-		"cell.family_branch_count",
-		"cell.max_branch_prestige_q16",
-		"cell.family_asset_share_q16",
-		"cell.neighbor_distinct_goods",
-		"country.hazard_free_cell_share_q16",
-		# X14 extension: committed `farmer` class satisfaction. This is a
-		# separate row from metric 77 (general) so petition_box can gate on the
-		# class the design names.
-		"country.farmer_satisfaction_q16",
-		# X9-b: country-level family aggregates rebuilt at FAMILY_COMMIT.
-		"country.family_remote_branch_count",
-		"country.families_with_at_least_3_branches",
-		"country.max_family_age_days",
-		"country.avg_family_age_days",
-		# X2 extension: count of the six neighbours whose agriculture output
-		# share is at least 50%. 95 remains a reserved X3-b slot.
-		"cell.neighbor_agriculture_count",
-		"reserved.x3b_95",
-		# X3-b profession shares, measured across the cell's known-profession
-		# population (the same denominator as metrics 51..53).
-		"cell.profession_share_farmer_q16",
-		"cell.profession_share_industrial_q16",
-		"cell.profession_share_cooperative_q16",
-		# X14 extension used by trade_unions: committed `worker` class satisfaction.
-		"country.worker_class_satisfaction_q16",
-		"reserved.x3b_100",
-		"reserved.x3b_101",
-		# X7-b: committed country counts for infrastructure/science cards.
-		"country.energy_cell_count",
-		"country.abundant_mountain_forest_cell_count",
-		"country.landform_signal_count",
-		"country.weather_signal_count",
-		"country.bio_signal_count",
-		# The allocation reserves 102-107 for X7-b but names only five
-		# mechanics; keep the final slot explicit rather than shifting a count.
-		"reserved.x7b_107",
-		# NOTE (military §17.1): the `cell.barracks` / `cell.fortified` /
-		# `cell.military_industry` / `cell.garrisoned` / `cell.occupied_by_*`
-		# tags do NOT add metric ids here. Economy's sampler caps its row count
-		# at `FAMILY_METRIC_COUNT` (a constant owned by economy_runtime.h), so an
-		# id past 107 would compile in this catalog and then read as 0 forever --
-		# a tag that validates and never matches. Military publishes those tags
-		# through Economy's `CellTagOverrideSet` instead
-		# (gdext/src/world_ext_military_cell_stats.cpp), which forces the bit
-		# after predicate evaluation. Their dictionary rows therefore point at a
-		# metric that is true for every cell, and the override is what narrows
-		# the set.
-	])
+	catalog.metric_keys = PackedStringArray(MetricKeys.KEYS)
 	# --- Ideology-local scalars -------------------------------------------
 	# These are not Economy metrics and are never sampled by
 	# NativeEconomyRuntime. NativeIdeologyRuntime fills them into the same
@@ -256,6 +92,10 @@ static func build(family_effect_catalog_override: Resource = null,
 	# They append to whatever Economy declares: Economy owns the prefix and
 	# may grow without forcing this lane to guess or reserve a base id.
 	for scalar_metric_key in SCALAR_METRIC_KEYS:
+		if context != null:
+			await context.checkpoint("effect")
+			if context.canceled:
+				return null
 		catalog.metric_keys.append(String(scalar_metric_key))
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
@@ -278,6 +118,10 @@ static func build(family_effect_catalog_override: Resource = null,
 			or technology_recipe_versions.size() != technology_ids.size():
 		return _reject("effect_catalog_technology_recipe_shape_invalid")
 	for i in range(mini(technology_ids.size(), technology_modifiers.size())):
+		if context != null:
+			await context.checkpoint("effect")
+			if context.canceled:
+				return null
 		if i < technology_flags.size() and (int(technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
 		var modifier_key := String(technology_modifiers[i])
@@ -289,6 +133,10 @@ static func build(family_effect_catalog_override: Resource = null,
 			int(technology_recipe_versions[i]), String(technology_ids[i]), modifier_key,
 			i, int(technology_catalog.technology_domain_indices[i])))
 	for row in TriggerCatalogScript.breakthrough_effect_rows():
+		if context != null:
+			await context.checkpoint("effect")
+			if context.canceled:
+				return null
 		var program_key := "trigger.country.%s" % String(row.signal_id)
 		if definition_seen.has(program_key):
 			return _reject("effect_catalog_trigger_country_key_duplicate")
@@ -300,6 +148,10 @@ static func build(family_effect_catalog_override: Resource = null,
 	if not bool(era_reward_ir.get("ok", false)):
 		return _reject("effect_catalog_era_reward_unavailable")
 	for reward_definition in EraRewardCatalogScript.effect_definitions():
+		if context != null:
+			await context.checkpoint("effect")
+			if context.canceled:
+				return null
 		var reward_key := String(reward_definition.key)
 		if definition_seen.has(reward_key):
 			return _reject("effect_catalog_era_reward_key_duplicate")
@@ -323,6 +175,10 @@ static func build(family_effect_catalog_override: Resource = null,
 			return _reject("effect_catalog_family_effect_unavailable")
 		var family_definitions: Array = family_effect_ir.get("definitions", [])
 		for definition in family_definitions:
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			var family_key := String(definition.key)
 			if definition_seen.has(family_key):
 				return _reject("effect_catalog_family_effect_key_duplicate")
@@ -331,10 +187,15 @@ static func build(family_effect_catalog_override: Resource = null,
 		family_effect_ir.erase("ok")
 		family_effect_ir.erase("definitions")
 		for extension_key in family_effect_ir:
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			catalog.native_extensions[extension_key] = family_effect_ir[extension_key]
 
-	var economy_catalog := EconomyCatalogScript.compile_native_catalog(
-		family_effect_catalog)
+	var economy_catalog: Dictionary = EconomyCatalogScript.compile_native_catalog(
+		family_effect_catalog) if context == null else await EconomyCatalogScript.compile_native_catalog_cooperative(
+		context, family_effect_catalog_override)
 	# 标签词典（设计文档 §1 / §27）必须建在**理念效果编译之前**：卡面写的
 	# `target_selector_tag` 要在 to_effect_definition() 之后、入表之前解析成
 	# `param[1]` 的 1-based id（L5-14）。空表等于「没有标签」，原生侧据此
@@ -343,6 +204,8 @@ static func build(family_effect_catalog_override: Resource = null,
 	var tag_ids := {}
 	if bool(economy_catalog.get("ok", false)):
 		var tag_dictionary: Dictionary = TargetTagDictionaryScript.build(economy_catalog)
+		if context != null:
+			await context.checkpoint("target_tags")
 		if not bool(tag_dictionary.get("ok", false)):
 			return _reject("effect_catalog_target_tag_dictionary_invalid:%s" % String(
 				tag_dictionary.get("reason", "")))
@@ -352,6 +215,10 @@ static func build(family_effect_catalog_override: Resource = null,
 		# untyped so callers can build it cheaply, so the conversion happens once
 		# here — the single place that crosses the typed boundary.
 		for tag in tag_dictionary.get("tags", []):
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			tag_list.append(tag)
 		tag_ids = TargetTagDictionaryScript.tag_id_map(tag_list)
 	if bool(economy_catalog.get("ok", false)):
@@ -369,6 +236,10 @@ static func build(family_effect_catalog_override: Resource = null,
 				var targets: PackedInt32Array = trait_columns.get(
 					"family_trait_modifier_targets", PackedInt32Array())
 				for i in range(keys.size()):
+					if context != null:
+						await context.checkpoint("effect_rows")
+						if context.canceled:
+							return null
 					if String(keys[i]).is_empty() or (i < targets.size() and int(targets[i]) != 0):
 						continue
 					var program_key := "family.modifier.%s" % String(keys[i])
@@ -380,8 +251,14 @@ static func build(family_effect_catalog_override: Resource = null,
 	# Materialize them before either IdeologyCatalog.compile_native_catalog()
 	# call below can embed the dictionary size, and append only (ids are contract).
 	if bool(economy_catalog.get("ok", false)):
+		var rewrite_source: Resource = IdeologyCatalogScript.load_default() if context == null \
+			else await context.default_resource(IdeologyCatalogScript.DEFAULT_PATH, IdeologyCatalogScript.load_default)
+		if context != null and context.canceled:
+			return null
 		var rewrite_tags_error := _append_ideology_rewrite_tags(
-			tag_list, tag_ids)
+			tag_list, tag_ids, rewrite_source)
+		if context != null:
+			await context.checkpoint("ideology_rewrite_tags")
 		if not rewrite_tags_error.is_empty():
 			return _reject(rewrite_tags_error)
 
@@ -390,12 +267,16 @@ static func build(family_effect_catalog_override: Resource = null,
 	# program; PersonStore still owns person state and these rows keep stable
 	# definition keys out of the native evaluation loop.
 	var modifier_catalog_resource: Resource = ModifierCatalogScript.load_default()
-	var modifier_catalog: Dictionary = modifier_catalog_resource.compile_native_catalog() \
-		if modifier_catalog_resource != null else {"ok": false}
+	var modifier_catalog: Dictionary = {"ok": false}
+	if modifier_catalog_resource != null:
+		modifier_catalog = modifier_catalog_resource.compile_native_catalog() if context == null \
+			else await modifier_catalog_resource.compile_native_catalog_cooperative(context)
 	if family_effect_catalog != null:
 		var family_domain_validation: Dictionary = \
 			family_effect_catalog.validate_domain_bindings(
 				economy_catalog, modifier_catalog)
+		if context != null:
+			await context.checkpoint("family_domain_validation")
 		if not bool(family_domain_validation.get("ok", false)):
 			return _reject("effect_catalog_family_domain_binding_invalid:%s" % String(
 				family_domain_validation.get("reason", "")))
@@ -405,6 +286,10 @@ static func build(family_effect_catalog_override: Resource = null,
 		var modifier_domains: PackedInt32Array = modifier_catalog.get(
 			"definition_domains", PackedInt32Array())
 		for i in range(modifier_keys.size()):
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			if i >= modifier_domains.size() or int(modifier_domains[i]) not in [2, 3]:
 				continue
 			var person_program := "person.modifier.%s" % String(modifier_keys[i])
@@ -416,6 +301,10 @@ static func build(family_effect_catalog_override: Resource = null,
 		# executable command row per existing Modifier definition keeps stable
 		# definition keys in the cold catalog and avoids runtime string lookup.
 		for i in range(modifier_keys.size()):
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			if i >= modifier_domains.size():
 				continue
 			var trigger_modifier_key := String(modifier_keys[i])
@@ -429,6 +318,10 @@ static func build(family_effect_catalog_override: Resource = null,
 			definitions.append(_trigger_modifier_definition(
 				trigger_modifier_key, int(modifier_domains[i])))
 	for economy_row in _trigger_economy_command_rows():
+		if context != null:
+			await context.checkpoint("effect")
+			if context.canceled:
+				return null
 		var economy_program := "trigger.economy.%s" % String(economy_row.command_key)
 		if definition_seen.has(economy_program):
 			continue
@@ -439,11 +332,15 @@ static func build(family_effect_catalog_override: Resource = null,
 		definitions.append(_person_definition(""))
 	# Ideology owns progression, but its authored command templates must be
 	# compiled by EffectRuntime so domain mutation remains ACK-gated there.
-	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
-	var ideology_country_catalog := EconomyCatalogScript.compile_native_catalog()
+	var ideology_catalog: Resource = IdeologyCatalogScript.load_default() if context == null \
+		else await context.default_resource(IdeologyCatalogScript.DEFAULT_PATH, IdeologyCatalogScript.load_default)
+	var ideology_country_catalog: Dictionary = EconomyCatalogScript.compile_native_catalog() if context == null \
+		else await EconomyCatalogScript.compile_native_catalog_cooperative(context)
 	if ideology_catalog != null and bool(ideology_country_catalog.get("ok", false)):
 		var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(
 			ideology_country_catalog, ideology_country_catalog)
+		if context != null:
+			await context.checkpoint("ideology_columns")
 		if not bool(ideology_ir.get("ok", false)):
 			return _reject("effect_catalog_ideology_command_unavailable:%s" % String(
 				ideology_ir.get("reason", "")))
@@ -451,6 +348,10 @@ static func build(family_effect_catalog_override: Resource = null,
 		# A route with no scalar row would compile to an id that is never
 		# published, so enforce the pairing where both tables are available.
 		for route_key in ideology_ir.get("route_keys", PackedStringArray()):
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			var route_metric := "ideology.scalar.route_count.%s" % String(route_key)
 			if not catalog.metric_keys.has(route_metric):
 				return _reject("effect_catalog_ideology_route_scalar_missing:%s"
@@ -464,6 +365,10 @@ static func build(family_effect_catalog_override: Resource = null,
 		ideology_effects = IdeologyEffectCatalogScript.load_default()
 	if ideology_effects != null:
 		for effect in ideology_effects.effects:
+			if context != null:
+				await context.checkpoint("effect_rows")
+				if context.canceled:
+					return null
 			if effect == null or not effect is IdeologyEffectDefinitionScript:
 				continue
 			# Re-run the card's own rulebook rather than re-deriving it here.
@@ -511,7 +416,6 @@ static func build(family_effect_catalog_override: Resource = null,
 	catalog.target_tags = tag_list
 	return catalog
 
-
 ## Collect every distinct TAG rewrite replacement and append its union to the
 ## shared dictionary. Returns "" on success or a fully-qualified rejection.
 ##
@@ -519,10 +423,12 @@ static func build(family_effect_catalog_override: Resource = null,
 ## catalog, because compilation resolves override targets and route membership.
 ## It deliberately tolerates a missing catalog (bare effect tests) and does not
 ## mutate anything it cannot validate.
-static func _append_ideology_rewrite_tags(tag_list: Array, tag_ids: Dictionary) -> String:
+static func _append_ideology_rewrite_tags(tag_list: Array, tag_ids: Dictionary,
+		ideology_catalog: Resource = null) -> String:
 	if tag_list.is_empty() or tag_ids.is_empty():
 		return ""
-	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
+	if ideology_catalog == null:
+		ideology_catalog = IdeologyCatalogScript.load_default()
 	if ideology_catalog == null or not ideology_catalog is IdeologyCatalogScript:
 		return ""
 	var expressions := PackedStringArray()

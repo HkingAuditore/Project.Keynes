@@ -1559,6 +1559,10 @@ bool NativeCountryRuntime::decode_save_in_place(
     }
 
     _countries = std::move(countries);
+    // Both bootstrap forms put the starting country in the first stable slot.
+    // PKCN preserves that slot ordering (including inactive/annexed records).
+    // A cold load skips bootstrap, so rebuild this derived identity here.
+    _starting_country_slot = _countries.active.empty() ? -1 : 0;
     _cell_country_slot = std::move(owners);
     _country_technologies = std::move(technologies);
     _country_goods = std::move(goods);

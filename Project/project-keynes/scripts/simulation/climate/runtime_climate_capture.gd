@@ -540,14 +540,11 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	# and how much of it landed before the capture depended on machine speed.
 	if bool(thread_report.get("climate_worker_authoritative", false)) \
 			and _generator._season_refresh_job != null:
-		if _generator._season_refresh_job.has_method("has_capture_round_pending") \
-				and _generator._season_refresh_job.has_capture_round_pending():
-			# 不在这里等回灌：worker 可能正等主线程服务它的下一个 continuation，
-			# 而主线程就在这个调用里，等待会死锁。这一轮读到的是当前 MapData
-			# （预发布时最多滞后 K 天），见 tmp/next/day_barrier_protocol.md §3.1.3。
-			_generator._season_refresh_job.run_round_for_capture()
-		elif _generator._season_refresh_job.has_method("finish_round_now"):
-			_generator._season_refresh_job.finish_round_now()
+		# Eligibility comes from this game's date, not how often SUS had enough
+		# frame budget to probe the job. CLM2 restores the completed boundary.
+		_generator._season_refresh_job.run_due_round_for_capture(day)
+		if bool(_generator._season_refresh_job.season_refresh_state_snapshot().get("round_active", false)):
+			return _runtime_climate_failure("season_refresh_incomplete", "Season refresh has not completed for this input day", day)
 	var next_generation := maxi(1, _generator._runtime_input_generation + 1)
 	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
 	var topology_generation := _runtime_climate_topology_generation_for_map(map)

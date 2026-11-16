@@ -36,7 +36,39 @@ static func _ensure_cell_lut_dims(baker: MapBaker, map: MapData, world: WorldDat
 # 色相偏差不可见；而维护一份精确镜像意味着 biome_color / 物候 / 环境调色的每次改动
 # 都要同步改这里，代价远大于收益。参见 docs/cpp-dots-runtime/terrain-gi-bake.md。
 
+# Native byte encoding and script reference share the same palette and upload
+# boundary. A short input leaves the existing cache/texture untouched in both.
 static func _publish_bounce_lut(baker: MapBaker, enum_data: PackedByteArray, dyn_data: PackedByteArray,
+		world: WorldData, lw: int, lh: int,
+		dirty_indices: PackedInt32Array = PackedInt32Array(),
+		force_full: bool = true) -> bool:
+	if baker._world_ext != null:
+		var out: Dictionary = baker._world_ext.encode_cell_luts({
+			"bounce_only": true,
+			"lut_w": lw, "lut_h": lh,
+			"enum_lut": enum_data, "dyn_lut": dyn_data,
+			"bounce_lut": baker._cell_bounce_lut_bytes_cache,
+			"dirty_indices": dirty_indices,
+			"force_full_encode": force_full or world.bounce_lut_tex == null,
+			"bounce_palette": baker._BOUNCE_ALBEDO,
+			"bounce_fallback": baker._BOUNCE_FALLBACK,
+			"bounce_dry": baker._BOUNCE_DRY,
+			"bounce_snow": baker._BOUNCE_SNOW,
+			"bounce_water_terrains": baker._BOUNCE_WATER_TERRAINS,
+		})
+		if not bool(out.get("fallback", true)):
+			if not bool(out.get("bounce_lut_changed", false)):
+				return false
+			baker._cell_bounce_lut_bytes_cache = out["bounce_lut"]
+			world.bounce_lut_tex = baker._lut_tex_from_data(
+				baker._cell_bounce_lut_bytes_cache, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
+			return true
+		if not str(out.get("reason", "")).is_empty():
+			push_warning("[cell-lut] native bounce fallback: %s" % str(out["reason"]))
+	return _publish_bounce_lut_gd(baker, enum_data, dyn_data, world, lw, lh, dirty_indices, force_full)
+
+
+static func _publish_bounce_lut_gd(baker: MapBaker, enum_data: PackedByteArray, dyn_data: PackedByteArray,
 		world: WorldData, lw: int, lh: int,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
 		force_full: bool = true) -> bool:
@@ -440,7 +472,7 @@ static func _bake_cell_luts_gd(baker: MapBaker, map: MapData, world: WorldData, 
 	world.dyn_lut_tex = baker._lut_tex_from_data(
 		dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = baker._lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
-	baker._publish_bounce_lut(enum_data, dyn_data, world, lw, lh)
+	_publish_bounce_lut_gd(baker, enum_data, dyn_data, world, lw, lh)
 	if publish_weather_lut:
 		baker._publish_weather_lut_bytes(weather_data, world, lw, lh)
 

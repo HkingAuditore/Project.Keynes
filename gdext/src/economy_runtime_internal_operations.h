@@ -574,9 +574,15 @@
     // park and resume rather than fail, because failing would abort the day.
     bool capture_country_epoch(std::string &error,
                                bool *out_pending_city_factors = nullptr);
+    // Catalog inputs are immutable between configure/reset calls. Compare the
+    // actual frozen columns exactly; broad Country generations include cash.
+    void refresh_country_availability_cache();
+    void refresh_country_territory_cache();
+    void rebuild_building_upgrade_requirements();
+    void append_epoch_input_report(godot::Dictionary &out) const;
     // Rebuilds _epoch_country_cell_offsets / _epoch_country_cells from
-    // _epoch_cell_country. Counting sort in three linear passes, called once per
-    // epoch capture rather than per selector query. Clears both columns when the
+    // _epoch_cell_country. Counting sort in three linear passes, called when
+    // captured ownership changes rather than per selector query. Clears both columns when the
     // ownership column is absent or no country count is known, which is what
     // makes the consumers' linear-scan fallback kick in.
     void rebuild_country_territory_index();
@@ -1220,6 +1226,9 @@
         int32_t country, int32_t operation, int64_t amount,
         int64_t &committed, std::string &error,
         uint64_t *transport_request_id = nullptr);
+    bool finish_country_fiscal_asset(
+        uint64_t request_id, RuntimeEconomyAssetResult &terminal,
+        std::string &error);
     // M1+ peer service. Economy consumes Country-authorized asset requests and
     // never writes the Country store. Fiscal ops mutate escrow; non-fiscal ops
     // (when the D7 gate is open) apply local cohort/market side effects then
@@ -1522,3 +1531,20 @@ private:
         std::vector<int32_t> &out_cells,
         const std::string &definition_key = std::string(),
         int32_t prestige_level = 1) const;
+
+    // Save candidate validation and decoding.
+    bool decode_restore_chunk(const std::vector<uint8_t> &bytes, std::string &error);
+    bool decode_restore_header(const std::vector<uint8_t> &bytes, size_t &cursor,
+                               uint16_t schema, uint32_t records, std::string &error);
+    bool begin_restore_internal(std::string &error);
+    bool end_restore_internal(std::string &error);
+    // Clears live SoA into an empty candidate rebuild surface. Must only run
+    // after apply_ecp2_authority has captured a rollback backup (or from the
+    // explicit PKEC migrate helper).
+    void prepare_restore_candidate_scratch();
+    bool apply_ecp2_authority_internal(const RuntimeEconomyEcp2State &in,
+                                       std::string &error);
+    void set_restore_rejected_reason(const std::string &reason);
+    bool validate_ecp2_candidate(const RuntimeEconomyEcp2State &in,
+                                 std::string &error) const;
+    bool validate_restored_committed_snapshot(std::string &error) const;

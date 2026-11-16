@@ -46,6 +46,7 @@ using persistence_codec::SAVE_SECTION_PERSON_RECORDS;
 using persistence_codec::SAVE_SECTION_PRICE_CEILINGS;
 using persistence_codec::SAVE_SECTION_SETTLEMENT_NAMES;
 using persistence_codec::SAVE_SECTION_SIGNALS;
+using persistence_codec::SAVE_SECTION_STRATUM_MOBILIZATION;
 using persistence_codec::SAVE_SECTION_TARIFF_HISTORY;
 using persistence_codec::SAVE_SECTION_TRADE_FLOWS;
 using persistence_codec::SAVE_SECTION_TRADE_ORDERS;
@@ -319,6 +320,7 @@ uint32_t ecp2_domain_for_pkec_section(uint16_t section) noexcept {
     case SAVE_SECTION_HEADER:
         return ECP2_DOMAIN_ENVELOPE;
     case SAVE_SECTION_PAGES:
+    case SAVE_SECTION_STRATUM_MOBILIZATION:
         return ECP2_DOMAIN_POPULATION;
     case SAVE_SECTION_MARKETS:
     case SAVE_SECTION_PRICE_CEILINGS:
@@ -512,7 +514,7 @@ bool decode_ecp2(const uint8_t *data, size_t size,
         return false;
     }
     if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION)) {
-        error = "ecp2_schema_version_incompatible_expected_60";
+        error = "ecp2_schema_version_incompatible";
         return false;
     }
     constexpr uint32_t known_domains = ECP2_DOMAIN_FULL_AUTHORITY |
@@ -601,7 +603,7 @@ bool runtime_economy_ecp2_self_test(std::string &error) {
         auto old_wire = wire;
         binary_codec::store_le(old_wire.data() + 8u, old_schema);
         if (decode_ecp2(old_wire.data(), old_wire.size(), roundtrip, error) ||
-            error != "ecp2_schema_version_incompatible_expected_60") {
+            error != "ecp2_schema_version_incompatible") {
             error = "ecp2_old_publication_schema_not_rejected";
             return false;
         }

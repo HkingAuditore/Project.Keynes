@@ -286,8 +286,8 @@
     int64_t _derived_business_demand_edges = 0;
     std::vector<int64_t> _epoch_offered_supply_ema;
     // Current and previous-cycle producer absorption observations, aligned to
-    // sparse (cell, good) market-signal lanes. These are transient and excluded
-    // from PKEC and the authoritative state hash.
+    // sparse (cell, good) market-signal lanes. Quotes read the previous cycle,
+    // so both generations belong to PKEC64 and the authoritative state hash.
     std::vector<int64_t> _epoch_producer_sellable_current;
     std::vector<int64_t> _epoch_producer_merchant_sold_current;
     std::vector<int64_t> _epoch_previous_producer_sellable;
@@ -998,6 +998,11 @@
 	std::vector<std::string> _building_upgrade_family_ids;
 	std::vector<int32_t> _building_upgrade_family_indices;
 	std::vector<int32_t> _building_upgrade_tiers;
+    // Immutable derived catalog, shared by every cell's chain metric. It is
+    // rebuilt at configure, not while sampling a cell or switching OwnedState.
+    std::vector<uint32_t> _building_upgrade_required_tiers;
+    uint64_t _building_upgrade_catalog_builds = 0;
+    uint64_t _building_upgrade_catalog_rows = 0;
 	std::vector<int32_t> _building_technology_tag_offsets;
 	std::vector<std::string> _building_technology_tags;
 	std::vector<int32_t> _building_required_technology_tag_offsets;
@@ -1064,9 +1069,9 @@
     EffectInstanceForwarder *_effect_forwarder = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
-    // Country territory CSR, rebuilt from _epoch_cell_country by
-    // rebuild_country_territory_index() at the same moment the ownership column
-    // is taken. Derived: never persisted, never hashed.
+#include "economy_runtime_internal_country_cache.h"
+    // Country territory CSR, refreshed at the ownership capture boundary;
+    // unchanged exact inputs reuse it. Derived: never persisted, never hashed.
     //
     // Why a copy on this side instead of reading the country pod's own CSR: the
     // pod rebuilds on its own schedule, and a target set that disagrees with the
@@ -1144,6 +1149,12 @@ private:
     // fallback), so this is the number that explains why the sweep did or did not
     // narrow.
     mutable std::atomic<int64_t> _tag_consumed_tag_count{0};
+    // Last tag-bit build's deterministic work, excluding the separate
+    // specialized-good count pass. Requested metrics differ from catalog
+    // metrics when the consumer set names only part of the tag table.
+    std::atomic<int64_t> _tag_snapshot_sampled_cells{0};
+    std::atomic<int64_t> _tag_snapshot_requested_metrics{0};
+    std::atomic<int64_t> _tag_catalog_metrics{0};
     int64_t tag_declared_tag_count() const {
         return _tag_declared_tag_count.load(std::memory_order_relaxed);
     }

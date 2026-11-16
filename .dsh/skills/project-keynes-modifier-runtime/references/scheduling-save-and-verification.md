@@ -58,3 +58,14 @@ and successful Country world reconstruction use this reset; same-world executor 
 not. The new Host retains validated definitions and the stable-key to dense-ID map, not old
 instances. Run `runtime_world_rules_rebuild_test.gd` for changed and reused definitions in
 worker and inline modes; assert the authored value and successful snapshot application.
+
+## Worker derived publication
+
+The main thread owns derived-cell generation; the Economy worker owns a read replica.
+`step_ideology_derived_rebuild` finishes and publishes under one existing input boundary.
+Copy only completed generations, including an empty layer; ordinary instance snapshots
+must neither erase that layer nor be mistaken for publishing it. A new world clears
+it, while a same-world executor restart preserves it. `get_effective_stat_value`
+reports the actual reader and refuses an in-flight day. Verify authored values and
+per-cell parity with `ideology_worker_derived_pump_test.gd`, then cold continuation
+with `check_replay_matrix.py --military`.

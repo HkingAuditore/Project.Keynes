@@ -15,6 +15,8 @@ func _init() -> void:
 
 func _run() -> void:
 	var ext := DCWorldExt.new()
+	# Matches runtime_economy_ecp2.h through the native descriptor, not PKEC's schema.
+	var checkpoint_format: Dictionary = ext.get_economy_checkpoint_format()
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW", "graph_coverage_complete": false,
 		"day": 0, "speed_days_per_second": 0.0, "paused": true})
@@ -42,12 +44,12 @@ func _run() -> void:
 	var prefix := PackedByteArray()
 	prefix.resize(24 + 4 + 128)
 	prefix.encode_u32(0, 0x32504345)
-	prefix.encode_u32(4, 3)
-	prefix.encode_u32(8, 60)
+	prefix.encode_u32(4, int(checkpoint_format.abi_version))
+	prefix.encode_u32(8, int(checkpoint_format.schema_version))
 	prefix.encode_u32(12, 0x2ffff)
 	prefix.encode_u32(24, 128)
-	prefix.encode_u32(28, 60)
-	prefix.encode_u32(32, 3)
+	prefix.encode_u32(28, int(checkpoint_format.schema_version))
+	prefix.encode_u32(32, int(checkpoint_format.abi_version))
 	prefix.encode_u32(152, 2) # envelope hash_version
 	var suffix := PackedByteArray()
 	var zero_count := LIMIT + 17

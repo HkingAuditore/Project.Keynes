@@ -203,25 +203,4 @@ static func _apply_csr(world: WorldData, map: MapData, report: Dictionary,
 	var n_cells: int = int(inputs.get("n_cells", map.cell_count()))
 	var cells_by_index: Array = inputs.get("cells_by_index", [])
 	var p2c: PackedInt32Array = report.get("pixel_to_cell_index", PackedInt32Array())
-	var lookup: Array = []
-	lookup.resize(pix_count)
-	if p2c.size() == pix_count:
-		for i in range(pix_count):
-			var ci: int = p2c[i]
-			lookup[i] = cells_by_index[ci] if ci >= 0 and ci < cells_by_index.size() else null
-	world.pixel_to_cell_lookup = lookup
-	var lists: Dictionary = {}
-	if first_px.size() >= n_cells and pcount.size() >= n_cells:
-		var flat_n: int = flat.size()
-		for ci in range(n_cells):
-			var count: int = pcount[ci]
-			if count <= 0:
-				continue
-			var start: int = first_px[ci]
-			if start < 0 or start + count > flat_n:
-				continue
-			var cell: HexCell = cells_by_index[ci] if ci < cells_by_index.size() else null
-			if cell == null:
-				continue
-			lists[cell] = flat.slice(start, start + count)
-	world.cell_pixel_lists = lists
+	world.publish_pixel_lookup_indices(p2c, cells_by_index, pix_count, n_cells)

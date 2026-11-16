@@ -5,6 +5,7 @@
 #include "cell_program_eligibility.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
+#include "resource_visual_publication.h"
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
 #include "economy_runtime.h"           // Independent ECONOMY_GRAPH authority
@@ -997,6 +998,7 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
                     break;
                 }
             }
+            pk::notify_resource_visual_publication(_map_data, BIND_TABLE[i].property_name);
             if (any_visual_dirty || _pending_visual_dirty_dense) {
                 _pending_mark_dirty_all = true;
                 _native_dirty_report["flush_dirty_reason"] =

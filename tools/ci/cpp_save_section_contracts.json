@@ -43,7 +43,7 @@
       "domain": "economy",
       "owner": "economy",
       "tag": "ECP2",
-      "version": 62,
+      "version": 63,
       "source": "gdext/src/runtime_economy_ecp2.cpp",
       "tokens": [
         "RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION",

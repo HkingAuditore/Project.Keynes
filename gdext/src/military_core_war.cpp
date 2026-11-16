@@ -497,7 +497,7 @@ void MilitaryCore::open_engagement(int32_t from_cell, int32_t to_cell, int32_t a
         if (!e.active) continue;
         if (e.cell_a != a || e.cell_b != b) continue;
         if (_armies.engagement[(size_t)attacker_slot] < 0) {
-            _armies.engagement[(size_t)attacker_slot] = (int32_t)i;
+            set_army_engagement(attacker_slot, (int32_t)i);
         }
         return;
     }
@@ -513,13 +513,13 @@ void MilitaryCore::open_engagement(int32_t from_cell, int32_t to_cell, int32_t a
     e.active = 1;
     _engagements.push_back(e);
     const int32_t index = (int32_t)_engagements.size() - 1;
-    _armies.engagement[(size_t)attacker_slot] = index;
+    set_army_engagement(attacker_slot, index);
     for (int32_t other = _cell_head[(size_t)to_cell]; other >= 0;
          other = _armies.next_in_cell[(size_t)other]) {
         if (!_armies.active[(size_t)other]) continue;
         if (_armies.owner_slot[(size_t)other] != defender_slot) continue;
         if (_armies.engagement[(size_t)other] >= 0) continue;
-        _armies.engagement[(size_t)other] = index;
+        set_army_engagement(other, index);
     }
     update_front_cells({from_cell, to_cell});
 }
@@ -528,8 +528,11 @@ void MilitaryCore::close_engagement(int32_t index) {
     if (index < 0 || (size_t)index >= _engagements.size()) return;
     if (!_engagements[(size_t)index].active) return;
     _engagements[(size_t)index].active = 0;
-    for (size_t a = 0; a < _armies.engagement.size(); ++a) {
-        if (_armies.engagement[a] == index) _armies.engagement[a] = -1;
+    ensure_engagement_members();
+    while (_engagement_army_head[(size_t)index] >= 0) {
+        const int32_t army = _engagement_army_head[(size_t)index];
+        set_army_engagement(army, -1);
+        ++_report.engagement_members_cleared;
     }
     update_front_cells({_engagements[(size_t)index].cell_a, _engagements[(size_t)index].cell_b});
 }
@@ -576,6 +579,39 @@ void MilitaryCore::run_engagements(const MilitaryWorldDigest &digest,
 
     // ---- Plan: pure reads, thread-safe, no shared mutation.
     // ---- Plan: pure reads, thread-safe, no shared mutation.
+    // These three lot-derived values are frozen throughout Plan. Each first
+    // query keeps the original walk and arithmetic; Replay never reads this cache.
+    struct ArmyPlanValues {
+        int64_t attack = 0;
+        int64_t defense = 0;
+        int32_t fort_ignore = 0;
+        uint8_t valid = 0;
+    };
+    std::vector<ArmyPlanValues> army_values(army_count);
+    int64_t value_queries = 0, value_builds = 0;
+    int64_t fort_queries = 0, fort_builds = 0;
+    auto lot_value = [&](size_t army, bool attack) -> int64_t {
+        ++value_queries;
+        ArmyPlanValues &values = army_values[army];
+        const uint8_t bit = attack ? 1 : 2;
+        int64_t &value = attack ? values.attack : values.defense;
+        if ((values.valid & bit) == 0) {
+            value = sum_lot_value(*this, army, attack);
+            values.valid |= bit;
+            ++value_builds;
+        }
+        return value;
+    };
+    auto fort_ignore_value = [&](size_t army) -> int32_t {
+        ++fort_queries;
+        ArmyPlanValues &values = army_values[army];
+        if ((values.valid & 4) == 0) {
+            values.fort_ignore = army_fort_ignore_q16(*this, army);
+            values.valid |= 4;
+            ++fort_builds;
+        }
+        return values.fort_ignore;
+    };
     std::vector<Plan> plans;
     plans.reserve(order.size());
     for (size_t oi = 0; oi < order.size(); ++oi) {
@@ -614,16 +650,16 @@ void MilitaryCore::run_engagements(const MilitaryWorldDigest &digest,
             // v5: 攻/防科技加成此前从未参与结算（MSTAT_ATTACK/DEFENSE 无读取点）。
             // 每支守军按自己的国家乘一次，避免与 rules.attack_q16 重复相乘。
             defender_attack += mul_q(
-                mul_q(mul_q(sum_lot_value(*this, (size_t)other, true), cohesion),
+                mul_q(mul_q(lot_value((size_t)other, true), cohesion),
                       rules.attack_q16),
                 stat_q16(digest, other_owner, MSTAT_ATTACK));
             defender_defence += mul_q(
-                mul_q(mul_q(sum_lot_value(*this, (size_t)other, false), cohesion),
+                mul_q(mul_q(lot_value((size_t)other, false), cohesion),
                       rules.defense_q16),
                 stat_q16(digest, other_owner, MSTAT_DEFENSE));
         }
         const int32_t attacker_cohesion = cohesion_q16(_armies, (size_t)e.attacker_slot);
-        int64_t attacker_attack = mul_q(sum_lot_value(*this, (size_t)e.attacker_slot, true),
+        int64_t attacker_attack = mul_q(lot_value((size_t)e.attacker_slot, true),
                                         attacker_cohesion);
         // v5: 攻/防科技加成（同 defenders 侧，只乘这一次）。
         attacker_attack = mul_q(attacker_attack, stat_q16(digest, attacker, MSTAT_ATTACK));
@@ -656,7 +692,7 @@ void MilitaryCore::run_engagements(const MilitaryWorldDigest &digest,
         }
 
         // T_b = terrain_def * fort^(1-ignore) * river penalty.
-        const int32_t fort_ignore = army_fort_ignore_q16(*this, (size_t)e.attacker_slot);
+        const int32_t fort_ignore = fort_ignore_value((size_t)e.attacker_slot);
         const int32_t fort = fort_q16(*this, far_cell);
         int64_t fort_term = fort;
         if (fort_ignore > 0) {
@@ -747,6 +783,11 @@ void MilitaryCore::run_engagements(const MilitaryWorldDigest &digest,
         }
         plans.push_back(plan);
     }
+
+    _report.battle_plan_value_queries += value_queries;
+    _report.battle_plan_value_builds += value_builds;
+    _report.battle_plan_fort_queries += fort_queries;
+    _report.battle_plan_fort_builds += fort_builds;
 
     // ---- Replay in ascending edge key. All shared mutation happens here.
     int32_t battle_events = 0;
@@ -1118,13 +1159,27 @@ int32_t MilitaryCore::nearest_friendly_cell(int32_t from, int32_t owner,
 }
 
 int64_t MilitaryCore::garrison_heads_at(int32_t cell, int32_t country_slot) const {
+    ++_report.garrison_queries;
     int64_t total = 0;
-    for (size_t i = 0; i < _lots.active.size(); ++i) {
-        if (!_lots.active[i]) continue;
-        if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
-        if (_lots.location[i] != cell) continue;
-        if (country_slot >= 0 && _lots.country_slot[i] != country_slot) continue;
+    auto add = [&](size_t i) {
+        ++_report.garrison_lots_visited;
+        if (!_lots.active[i]) return;
+        if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) return;
+        if (_lots.location[i] != cell) return;
+        if (country_slot >= 0 && _lots.country_slot[i] != country_slot) return;
         total += _lots.count[i];
+    };
+    if (_lot_index_ok && _lot_garrison_lookup_complete &&
+        _lot_next.size() == _lots.active.size() && cell >= 0 &&
+        (size_t)cell < _lot_cell_head.size()) {
+        for (int32_t row = _lot_cell_head[(size_t)cell]; row >= 0; row = _lot_next[(size_t)row]) {
+            add((size_t)row);
+        }
+    } else {
+        // Do not rebuild here: unlike other lot consumers this query never
+        // changed saved continuation lists, including accepted incomplete ones.
+        ++_report.garrison_scan_fallbacks;
+        for (size_t i = 0; i < _lots.active.size(); ++i) add(i);
     }
     return total;
 }
@@ -1255,46 +1310,30 @@ int64_t MilitaryCore::annex_price_q16(int32_t receiver, const MilitaryWar &war) 
     return total;
 }
 
-void MilitaryCore::track_full_occupation(MilitaryWar &war, const MilitaryWorldDigest &digest) {
-    const auto assess = [&](int32_t slot) -> int64_t {
-        if (slot < 0) return -1;
-        bool owns = false;
-        bool occupied = false;
-        for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
-            if (owner_of_cell(digest, cell) != slot) continue;
-            owns = true;
-            if (effective_controller(*this, digest, cell) != slot) {
-                occupied = true;
-                break;
-            }
-        }
-        if (!owns) return -1;
-        return occupied ? digest.day : -1;
-    };
-    war.fully_occupied_since_a = assess(war.attacker_slot);
-    war.fully_occupied_since_b = assess(war.defender_slot);
+namespace {
+struct WarOccupationTotals {
+    bool participant = false;
+    bool occupied = false;
+    int64_t value = 0;
+    int64_t lost = 0;
+};
+
+void track_full_occupation(MilitaryWar &war, int64_t day,
+                           const WarOccupationTotals &a, const WarOccupationTotals &b) {
+    // Preserve the existing rule despite the field name: any lost owned cell
+    // sets today's date; no lost cells (including no territory) sets -1.
+    war.fully_occupied_since_a = a.occupied ? day : -1;
+    war.fully_occupied_since_b = b.occupied ? day : -1;
 }
 
-void MilitaryCore::update_war_score(MilitaryWar &war, const MilitaryWorldDigest &digest) {
+void update_war_score(MilitaryWar &war,
+                      const WarOccupationTotals &a, const WarOccupationTotals &b) {
     // Occupation component (sec 12.2): +-60 scaled by value lost / total value.
-    int64_t a_value = 0;
-    int64_t b_value = 0;
-    int64_t a_lost = 0;
-    int64_t b_lost = 0;
-    for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
-        const int32_t owner = owner_of_cell(digest, cell);
-        if (owner != war.attacker_slot && owner != war.defender_slot) continue;
-        int64_t value = cell_value_q16(cell);
-        if ((size_t)cell < digest.cell_population.size()) value += digest.cell_population[(size_t)cell];
-        const bool lost = effective_controller(*this, digest, cell) != owner;
-        if (owner == war.attacker_slot) {
-            a_value += value;
-            if (lost) a_lost += value;
-        } else {
-            b_value += value;
-            if (lost) b_lost += value;
-        }
-    }
+    const int64_t a_value = a.value;
+    const int64_t a_lost = a.lost;
+    // The original if/else credited a shared attacker/defender slot only to A.
+    const int64_t b_value = war.attacker_slot == war.defender_slot ? 0 : b.value;
+    const int64_t b_lost = war.attacker_slot == war.defender_slot ? 0 : b.lost;
     const int64_t total = std::max<int64_t>(a_value + b_value, 1);
     war.score_annihilation_q16 = (int32_t)clamp64(
         mul_div((int64_t)war.score_annihilation_q16 + mul_div(b_lost - a_lost, 60 * MILITARY_Q16, total),
@@ -1303,8 +1342,48 @@ void MilitaryCore::update_war_score(MilitaryWar &war, const MilitaryWorldDigest 
     war.score_attrition_q16 = (int32_t)clamp64(war.score_attrition_q16, -10 * MILITARY_Q16,
                                                10 * MILITARY_Q16);
 }
+} // namespace
 
 // ================================================================ front
+
+namespace {
+void index_front_positions(MilitaryCore &core) {
+    for (size_t i = 0; i < core._front_edges.size(); ++i) {
+        ++core._report.front_position_rows;
+        const uint32_t key = core._front_edges[i];
+        if ((size_t)key >= core._front_edge_pos.size()) continue;
+        int32_t &position = core._front_edge_pos[(size_t)key];
+        position = position == -1 ? (int32_t)i : -2;
+    }
+}
+
+void remove_front_edge(MilitaryCore &core, int32_t key) {
+    ++core._report.front_position_lookups;
+    const int32_t position = core._front_edge_pos[(size_t)key];
+    if (position == -1) return;
+    if (position >= 0 && (size_t)position < core._front_edges.size() &&
+        core._front_edges[(size_t)position] == (uint32_t)key) {
+        const uint32_t moved = core._front_edges.back();
+        core._front_edges[(size_t)position] = moved;
+        core._front_edges.pop_back();
+        if ((size_t)moved < core._front_edge_pos.size() && core._front_edge_pos[(size_t)moved] >= 0)
+            core._front_edge_pos[(size_t)moved] = position;
+        core._front_edge_pos[(size_t)key] = -1;
+        return;
+    }
+    // Runtime additions are unique and PKMI does not contain front vectors.
+    // Still preserve the old first-match swap/pop if derived input has repeats.
+    for (size_t i = 0; i < core._front_edges.size(); ++i) {
+        ++core._report.front_removal_fallback_rows;
+        if (core._front_edges[i] != (uint32_t)key) continue;
+        core._front_edges[i] = core._front_edges.back();
+        core._front_edges.pop_back();
+        break;
+    }
+    std::fill(core._front_edge_pos.begin(), core._front_edge_pos.end(), -1);
+    index_front_positions(core);
+}
+} // namespace
 
 void MilitaryCore::update_front_cells(const std::vector<int32_t> &touched_cells) {
     if (touched_cells.empty()) return;
@@ -1312,6 +1391,10 @@ void MilitaryCore::update_front_cells(const std::vector<int32_t> &touched_cells)
     if (cells <= 0) return;
     const size_t edge_total = (size_t)cells * 6;
     if (_front_edge_set.size() < edge_total) _front_edge_set.assign(edge_total, 0);
+    if (_front_edge_pos.size() != edge_total) {
+        _front_edge_pos.assign(edge_total, -1);
+        index_front_positions(*this);
+    }
     const int32_t neighbor_total = (int32_t)_terrain.neighbors.size();
     bool changed = false;
     for (int32_t cell : touched_cells) {
@@ -1333,15 +1416,11 @@ void MilitaryCore::update_front_cells(const std::vector<int32_t> &touched_cells)
             _front_edge_set[(size_t)key] = front ? 1 : 0;
             changed = true;
             if (front) {
+                int32_t &position = _front_edge_pos[(size_t)key];
+                position = position == -1 ? (int32_t)_front_edges.size() : -2;
                 _front_edges.push_back((uint32_t)key);
             } else {
-                for (size_t i = 0; i < _front_edges.size(); ++i) {
-                    if ((int32_t)_front_edges[i] == key) {
-                        _front_edges[i] = _front_edges.back();
-                        _front_edges.pop_back();
-                        break;
-                    }
-                }
+                remove_front_edge(*this, key);
             }
             ++_report.front_edges_touched;
         }
@@ -1391,7 +1470,6 @@ void MilitaryCore::on_cells_ceded_or_annexed(const std::vector<int32_t> &cells, 
 // ================================================================ wars day
 
 void MilitaryCore::run_wars(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out) {
-    _event_counter_control = 0;
     _last_digest = digest;
     if (_country_annual_revenue.size() < digest.country_annual_revenue.size()) {
         _country_annual_revenue.resize(digest.country_annual_revenue.size(), 0);
@@ -1399,24 +1477,60 @@ void MilitaryCore::run_wars(const MilitaryWorldDigest &digest, std::vector<Milit
     for (size_t slot = 0; slot < digest.country_annual_revenue.size(); ++slot) {
         _country_annual_revenue[slot] = digest.country_annual_revenue[slot];
     }
+    run_wars_prepared(digest, out);
+}
+
+void MilitaryCore::run_wars_prepared(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out) {
+    _event_counter_control = 0;
     // Treaty batches queued by commands flush here, before the daily passes.
     if (!_war_intents.empty()) {
         out.insert(out.end(), _war_intents.begin(), _war_intents.end());
         _report.intents_emitted += (int32_t)_war_intents.size();
         _war_intents.clear();
     }
-    // Close wars whose participants no longer exist.
+    // Scratch is rebuilt from today's owner, controller, tier and population
+    // inputs. It survives neither a day boundary nor a restored world.
+    static thread_local std::vector<WarOccupationTotals> totals;
+    totals.assign(_policy_handle.size(), {});
+    bool has_war = false;
+    // Close wars whose participants no longer exist. This also validates both
+    // indices before they may address the dense per-country scratch below:
+    // country_handle_for_slot returns zero for negative/out-of-range slots.
     for (MilitaryWar &war : _wars) {
         if (!war.active) continue;
         if (country_handle_for_slot(war.attacker_slot) == 0 ||
             country_handle_for_slot(war.defender_slot) == 0) {
             war.active = 0;
+            continue;
+        }
+        totals[(size_t)war.attacker_slot].participant = true;
+        totals[(size_t)war.defender_slot].participant = true;
+        has_war = true;
+    }
+    if (has_war) {
+        // Every country's additions retain ascending cell order, matching the
+        // former per-war scan, including the population's original units.
+        for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
+            ++_report.war_cells_visited;
+            const int32_t owner = owner_of_cell(digest, cell);
+            if (owner < 0 || (size_t)owner >= totals.size()) continue;
+            WarOccupationTotals &sum = totals[(size_t)owner];
+            if (!sum.participant) continue;
+            int64_t value = cell_value_q16(cell);
+            if ((size_t)cell < digest.cell_population.size()) value += digest.cell_population[(size_t)cell];
+            sum.value += value;
+            if (effective_controller(*this, digest, cell) != owner) {
+                sum.occupied = true;
+                sum.lost += value;
+            }
         }
     }
     for (MilitaryWar &war : _wars) {
         if (!war.active) continue;
-        track_full_occupation(war, digest);
-        update_war_score(war, digest);
+        const WarOccupationTotals &a = totals[(size_t)war.attacker_slot];
+        const WarOccupationTotals &b = totals[(size_t)war.defender_slot];
+        track_full_occupation(war, digest.day, a, b);
+        update_war_score(war, a, b);
     }
     front_rebuild(digest);
     // Expire old truce rows so the save stays small.
@@ -1427,10 +1541,13 @@ void MilitaryCore::run_wars(const MilitaryWorldDigest &digest, std::vector<Milit
 
 void MilitaryCore::front_rebuild(const MilitaryWorldDigest &digest) {
     (void)digest;
+    if (_front_edge_pos.size() != _front_edge_set.size())
+        _front_edge_pos.assign(_front_edge_set.size(), -1);
     // The incremental set is already authoritative; only drop stale keys.
     size_t write = 0;
     for (size_t i = 0; i < _front_edges.size(); ++i) {
         const uint32_t key = _front_edges[i];
+        if ((size_t)key < _front_edge_pos.size()) _front_edge_pos[(size_t)key] = -1;
         if ((size_t)key < _front_edge_set.size() && _front_edge_set[(size_t)key] != 0) {
             _front_edges[write++] = key;
         }
@@ -1440,6 +1557,7 @@ void MilitaryCore::front_rebuild(const MilitaryWorldDigest &digest) {
         _front_revision += 1;
     }
     std::sort(_front_edges.begin(), _front_edges.end());
+    index_front_positions(*this);
 }
 
 // ============================================================ area tasks

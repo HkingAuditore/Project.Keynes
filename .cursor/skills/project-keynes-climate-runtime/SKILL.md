@@ -19,6 +19,7 @@ description: Develop, review, tune, migrate, optimize, or diagnose the Project.K
 6. 不先调物理系数来修复未发布、旧 DLL、错误 cadence、错误 `dt_days`、slot stale 或 recorder 取错 report 的问题。
 7. 不新增平行气候状态。优先扩展 `ClimateProfile`、现有 schema slot、现有 pass、native daily bundle/report 和现有验证工具。
 8. 变更机制、图顺序、slot、owner、report、fallback、默认 profile 或视觉边界时，同步更新当前 runtime 文档与本 skill。
+9. 普通 Climate ACTIVE 慢层刷新按输入游戏日到期，周期30日时为31、61……日；入口是 `SeasonRefreshSystem.run_due_round_for_capture`，完成日期由既有 CLM2 游标保存。不可再按调度器探测次数计日；冷读档比较须跨过刷新边界，见 `tests/world/season_refresh_schedule_test.gd` 和 `check_runtime_load_consistency.py`。非 worker 与显式 legacy-signal 路径另行核对。
 
 ## 必做 Grounding
 

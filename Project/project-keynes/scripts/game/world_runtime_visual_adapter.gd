@@ -535,6 +535,13 @@ func _refresh_vision(host) -> Dictionary:
 			host._vision_dirty_indices[cell] = cell
 	host._current_map.fog_solved = true
 	host._current_map.vision_revision += 1
+	var revealed: PackedInt32Array = result.get("resource_visual_visible_cells", PackedInt32Array())
+	# Disabling fog already requests a full observation through set_context.
+	# Physical vision commits must not restart that full sweep every day.
+	if host._fog_of_war_enabled and not revealed.is_empty():
+		host._current_map.publish_resource_visual_inputs(
+			MapData.RESOURCE_VISUAL_BANDS | MapData.RESOURCE_VISUAL_CLIMATE |
+			MapData.RESOURCE_VISUAL_GEOMETRY, revealed)
 	_submit_native_observations(host, facade, result)
 	return result
 

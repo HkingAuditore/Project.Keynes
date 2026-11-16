@@ -106,4 +106,3 @@ gdext/.wip/
 # 本机编译日志。
 gdext/build_*.log
 gdext/*.err.log
-

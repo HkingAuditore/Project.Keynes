@@ -103,7 +103,7 @@ func _run() -> void:
 	_test_survival_labor_and_mortality(stable_catalog)
 	_test_demand_preview_query(stable_catalog)
 	_test_cycle_approximation(stable_catalog)
-	_test_cycle_deadline_catchup(stable_catalog)
+	_test_daily_continuation_under_pressure(stable_catalog)
 	_test_worker_scalar_equivalence(catalog)
 	_test_satisfaction_driven_births(catalog)
 	_finish()
@@ -191,19 +191,19 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 		int(boot.get("locked_market_cycle_days", 0)) == 1 and
 		int(boot.get("locked_slow_cycle_days", 0)) >= 5 and
 		int(boot.get("locked_slow_cycle_days", 0)) <= 30)
-	_expect("profile market cycle is the 1–5 cap, not a forced five-day lock",
-		int(boot.get("market_configured_cycle_days", -1)) == 5 and
+	_expect("production profile fixes daily settlement independently of timing",
+		int(boot.get("market_configured_cycle_days", -1)) == 1 and
 		int(boot.get("market_min_cycle_days", 0)) == 1 and
-		int(boot.get("market_max_cycle_days", 0)) == 5 and
+		int(boot.get("market_max_cycle_days", 0)) == 1 and
 		bool(boot.get("workload_deadline_feasible", false)))
 	var scaled_ext: Object = _new_ext(1200, 0.5)
 	_expect("scaled auto profile configures", bool(scaled_ext.configure_economy(
 		catalog, profile.to_native_profile(), 1200, 2).get("ok", false)))
 	var scaled_boot: Dictionary = scaled_ext.bootstrap_economy({}, {})
-	_expect("empty large maps still lock daily because only populated work counts",
+	_expect("large maps preserve the same fixed daily settlement policy",
 		int(scaled_boot.get("market_cycle_days", 0)) == 1 and
 		int(scaled_boot.get("settlement_phase_count", 0)) == 1 and
-		int(scaled_boot.get("market_max_cycle_days", 0)) == 5 and
+		int(scaled_boot.get("market_max_cycle_days", 0)) == 1 and
 		bool(scaled_boot.get("workload_deadline_feasible", false)))
 	_expect("default merchant inventory baseline is sixty days",
 		int(ext.get_economy_report().get("merchant_market_making_days_q16", 0)) == 3932160)
@@ -924,7 +924,7 @@ func _configured_cycle_worker(compiled: Dictionary, cycle_days: int, seed: int) 
 		"funds": PackedInt64Array([100000000])}, {})
 	return ext
 
-func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
+func _test_daily_continuation_under_pressure(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(10, 0.5)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
@@ -955,23 +955,23 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 		day0_slice += 1
 		day0 = ext.run_economy_slice({"day_index": 0, "tick_index": day0_slice})
 	if bool(day0.done) or not bool(day0.commit_due) or bool(day0.fatal) or \
-			int(day0.due_cells) != 2:
+			int(day0.due_cells) != cells.size():
 		print("  catchup first slice done=%s commit_due=%s fatal=%s due=%d processed=%d deferred=%d stage=%s substage=%s" % [
 			str(day0.get("done", false)), str(day0.get("commit_due", false)),
 			str(day0.get("fatal", false)), int(day0.get("due_cells", -1)),
 			int(day0.get("processed_due_cells", -1)),
 			int(day0.get("deferred_cells", -1)), String(day0.get("stage", "")),
 			String(day0.get("executed_substage", ""))])
-	_expect("day zero phase enters bounded catchup without a fatal barrier",
+	_expect("high measured cost still schedules every populated cell today",
 		not bool(day0.done) and bool(day0.commit_due) and not bool(day0.fatal) and
-		int(day0.due_cells) == 2)
+		int(day0.due_cells) == cells.size())
 	for slice in range(day0_slice + 1, 128):
 		day0 = ext.run_economy_slice({"day_index": 0, "tick_index": slice})
 		if bool(day0.done):
 			break
 	_expect("day zero phase completes through continuation",
 		bool(day0.done) and not bool(day0.commit_due) and
-		int(day0.due_cells) == 2 and int(day0.processed_due_cells) == 2 and
+		int(day0.due_cells) == cells.size() and int(day0.processed_due_cells) == cells.size() and
 		int(day0.deferred_cells) == 0)
 	var day1: Dictionary = ext.run_economy_slice({"day_index": 1, "tick_index": 1})
 	for slice in range(2, 128):
@@ -980,8 +980,8 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 		day1 = ext.run_economy_slice({"day_index": 1, "tick_index": slice})
 	_expect("next daily phase also completes through continuation",
 		bool(day1.done) and not bool(day1.commit_due) and
-		int(day1.due_cells) == 2 and int(day1.processed_due_cells) == 2 and
-		int(day1.deferred_cells) == 0 and int(day1.max_state_age_days) <= 4)
+		int(day1.due_cells) == cells.size() and int(day1.processed_due_cells) == cells.size() and
+		int(day1.deferred_cells) == 0 and int(day1.max_state_age_days) == 0)
 
 func _test_worker_scalar_equivalence(compiled: Dictionary) -> void:
 	var scalar: Object = _configured_many_workers(compiled, false, 96)
@@ -1155,7 +1155,7 @@ func _single_command(opcode: int, day: int, target_handle: int, i32_0: int,
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report: Dictionary = {}
-	var simulation_day := day * 5
+	var simulation_day := day
 	for slice in range(128):
 		report = ext.run_economy_slice({"day_index": simulation_day, "tick_index": slice})
 		if bool(report.get("done", false)):

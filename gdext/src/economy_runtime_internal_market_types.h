@@ -1379,3 +1379,12 @@
         SUBJECT_FAMILY_BRANCH = 8,
     };
 
+
+    // Ephemeral bill: sum exact q*p/GOODS_SCALE, then round once. No save state.
+    friend struct EconomyPricingTests;
+    struct GoodsBill {
+        int64_t charged = 0;
+        int32_t remainder = 0;
+        int64_t add(int64_t quantity, int64_t price, int64_t &sat);
+        int64_t total(int64_t &sat) const;
+    };

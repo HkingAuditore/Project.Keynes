@@ -118,6 +118,11 @@ struct CountryApi {
         COMMAND_OPCODE_MAX = COMMAND_SET_POLITICAL_REGIME,
     };
 
+    static constexpr bool command_opcode_reserved(int32_t opcode) {
+        return opcode == COMMAND_RESERVED_22 || opcode == COMMAND_RESERVED_25 ||
+               opcode == COMMAND_RESERVED_26;
+    }
+
     enum AssetOperation : int32_t {
         ECONOMY_ASSET_RESEARCH_PURCHASE = 1,
         ECONOMY_ASSET_FISCAL_RESERVE = 2,
@@ -158,6 +163,7 @@ struct CountryApi {
 using CountryEconomySnapshot = CountryReadView::Snapshot;
 
 namespace country_api {
+godot::Dictionary submit_commands(NativeCountryRuntime &country, const godot::Dictionary &batch);
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 bool copy_economy_snapshot(const NativeCountryRuntime &country, CountryEconomySnapshot &out);
 int64_t cash_for_slot(const NativeCountryRuntime &country, int32_t country_slot);

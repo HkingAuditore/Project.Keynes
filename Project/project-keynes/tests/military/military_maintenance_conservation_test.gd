@@ -88,6 +88,7 @@ var _build_wait_days := DEFAULT_BUILD_WAIT_DAYS
 var _capital := -1
 var _player := 0
 var _seq := 300
+var _advance_failed := false
 
 
 func _init() -> void:
@@ -285,7 +286,8 @@ func _section_world() -> void:
 			% [_capital, _player, barracks])
 		return
 
-	await _advance_to(6)
+	if not await _advance_to(6):
+		return
 	_facade.set_target(_player, 0, 8)
 	# The economy bills construction from the cell's market and refuses a building
 	# whose gate technology is not researched (`construction_technology_locked`),
@@ -293,7 +295,8 @@ func _section_world() -> void:
 	# settle on the next economy epoch. `state.build` alone only books a cache.
 	await _stock_goods(_capital, _material_goods(barracks), "build")
 	_grant_gate_tech(barracks)
-	await _advance_to(_day + 3)
+	if not await _advance_to(_day + 3):
+		return
 	var built: Dictionary = _build_state_building(barracks)
 	print("[maintenance-conservation] build queued=%s" % JSON.stringify(
 		_compact(built)))
@@ -302,7 +305,8 @@ func _section_world() -> void:
 		posts = int(_facade.country_snapshot(_player).get("post_count", 0))
 		if posts > 0:
 			break
-		await _advance_to(_day + 1)
+		if not await _advance_to(_day + 1):
+			return
 	if posts <= 0:
 		_skip("world accounting", "no barracks completed within %d days, so no "
 			% _build_wait_days + "maintenance purchase can ever be made "
@@ -317,7 +321,8 @@ func _section_world() -> void:
 	var max_cash := 0
 	var backlog_days := 0
 	for _i in range(_world_days):
-		await _advance_to(_day + 1)
+		if not await _advance_to(_day + 1):
+			return
 		var report: Dictionary = _facade.report()
 		var daily: Dictionary = _facade.last_daily_report()
 		if int(report.get("reconcile_delta", -1)) != 0:
@@ -372,7 +377,8 @@ func _section_world() -> void:
 	# --- continue after the restore --------------------------------------
 	var continued_bad := PackedStringArray()
 	for _i in range(POST_RESTORE_DAYS):
-		await _advance_to(_day + 1)
+		if not await _advance_to(_day + 1):
+			return
 		var report: Dictionary = _facade.report()
 		if int(report.get("reconcile_delta", -1)) != 0:
 			continued_bad.append("day%d delta=%d" % [_day,
@@ -428,7 +434,9 @@ func _boot_world() -> bool:
 	return true
 
 
-func _advance_to(target_day: int) -> void:
+func _advance_to(target_day: int) -> bool:
+	if not _economy_is_healthy():
+		return false
 	var generator := _host.get_generator()
 	while _day < target_day:
 		_day += 1
@@ -439,6 +447,8 @@ func _advance_to(target_day: int) -> void:
 			while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
 					and Time.get_ticks_usec() < capacity_deadline:
 				_host._consume_runtime_commit_if_ready()
+				if not _economy_is_healthy():
+					return false
 				await process_frame
 			_host._consume_runtime_commit_if_ready()
 		_host.run_daily_tick(_day, phase)
@@ -447,6 +457,8 @@ func _advance_to(target_day: int) -> void:
 			var deadline := Time.get_ticks_usec() + 60000000
 			while Time.get_ticks_usec() < deadline:
 				_host._consume_runtime_commit_if_ready()
+				if not _economy_is_healthy():
+					return false
 				var progress: Dictionary = generator.get_runtime_thread_report()
 				if int(progress.get("simulation_committed_day",
 						progress.get("committed_day", -1))) >= _day - 1 - PIPELINE_DEPTH:
@@ -457,19 +469,35 @@ func _advance_to(target_day: int) -> void:
 			_clock.simulation_backpressure_pulse.emit(_day)
 			pulses += 1
 			await process_frame
+			if not _economy_is_healthy():
+				return false
 		if _has_hard_barrier():
 			_expect("hard barrier drains at day %d" % _day, false)
-			return
-		if bool(generator.get_economy_report().get("fatal", false)):
-			_expect("economy stays non-fatal (day %d)" % _day, false,
-				str(generator.get_economy_report().get("fatal_reason", "")))
-			return
+			_advance_failed = true
+			return false
+		if not _economy_is_healthy():
+			return false
 	for _frame in range(64):
 		_host._consume_runtime_commit_if_ready()
 		if _facade == null or int(_facade.report().get("last_step_day", -1)) \
 				>= _day - 1 - PIPELINE_DEPTH:
 			break
 		await process_frame
+		if not _economy_is_healthy():
+			return false
+	return _economy_is_healthy()
+
+
+func _economy_is_healthy() -> bool:
+	if _advance_failed:
+		return false
+	var report: Dictionary = _host.get_generator().get_economy_report()
+	if bool(report.get("fatal", false)):
+		_advance_failed = true
+		_expect("economy stays non-fatal (day %d)" % _day, false,
+			str(report.get("fatal_reason", "")))
+		return false
+	return true
 
 
 func _has_hard_barrier() -> bool:

@@ -4,6 +4,7 @@
 
 namespace pk {
 namespace country_api {
+godot::Dictionary submit_commands(NativeCountryRuntime &country, const godot::Dictionary &batch) { return country.submit_commands(batch); }
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 bool copy_economy_snapshot(const NativeCountryRuntime &country, CountryEconomySnapshot &out) { return country.copy_economy_snapshot(out); }
 int64_t cash_for_slot(const NativeCountryRuntime &country, int32_t country_slot) { return country.cash_for_slot(country_slot); }

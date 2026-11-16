@@ -9,9 +9,9 @@ building_maintenance_cost_factor_q16 = 131072
 # Keep plan evaluation below the 5 ms native slice target on the production
 # 6400-cell profile. Zero remains available for benchmark/custom auto ranges.
 building_plan_cells_per_slice = 128
-market_cycle_days = 5
+market_cycle_days = 1
 market_min_cycle_days = 1
-market_max_cycle_days = 5
+market_max_cycle_days = 1
 investment_review_days = 30
 investment_max_growth_share_q16 = 16384
 investment_new_type_seed_buildings = 1

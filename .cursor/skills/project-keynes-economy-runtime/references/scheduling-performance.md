@@ -40,11 +40,10 @@ Do not publish half-computed market rows. Do not run market work inside the envi
 `max_slices_per_tick=1`, `use_job_should_run=true`, starvation threshold 2, and declares reads for
 temperature, moisture, snow, and weather intensity.
 
-An active frozen period is expected to span days. Do not raise backpressure merely because
-`done=false`.
+Production's frozen period is one game day. Scheduling may take multiple real
+frames while retaining the same inputs and cursors.
 
-- Before deadline: allow normal WorldClock progression.
-- At deadline with unfinished work: report `commit_due=true` and request `economy_day_barrier`.
+- With unfinished work due today: report `commit_due=true` and request `economy_day_barrier`.
 - During barrier: stop new simulation days but emit `simulation_backpressure_pulse` every real frame.
 - Continue the same system/day through `DCSystemScheduler.continue_system` until commit.
 - Release both economy backpressure sources on commit/reset.
@@ -55,29 +54,27 @@ Current production defaults:
 
 ```text
 market_runtime_mode = ACTIVE
-market_cycle_days = 5   # maximum market interval; native locks N in 1–5
+market_cycle_days = 1   # production always settles daily
 market_min_cycle_days = 1
-market_max_cycle_days = 5
-building_plan_days = 5–15        # locked P, not shared with investment
-investment_review_days = 10–30   # locked I, must be longer than P
+market_max_cycle_days = 1
+building_plan_days = 10          # fixed P, supported range 5–15
+investment_review_days = 30      # fixed I, range 10–30 and longer than P
 economy_cadence_target_ms = 8
 worker_market_threshold = 64
 trade_runtime_mode = PROBE
 ```
 
-`market_cycle_days=0` is ignored (treated as 5). It does not restore 50/334
-auto-fast-forward. N, P, and I are chosen at their own cycle boundaries from live
-economy cells (population > 0, or a building, or pending construction) plus
-previous-cycle machine timing. Cadence milliseconds are accumulated only when
-`aggregate_publish` COMMIT finishes the day. The daily workset is live cells ∩
-the market bucket; empty wilderness is not settled.
-Tests inject fixed cycle milliseconds, or set
-`economy_cadence_force_market_days` / `economy_cadence_force_plan_days`
-(`economy_cadence_force_slow_days` is a plan alias) /
-`economy_cadence_force_investment_days` (0 keeps
-automatic locking) when a small fixture must reproduce a historical 5/10/30
-bucket. Those force keys are test-only and never part of production profiles.
-Forcing plan without forcing investment still yields I > P.
+Production N is 1 even if older content supplies a larger legacy interval.
+P and I come from configured game-day periods; measured timing and work estimates
+are diagnostic only. All live economy cells (population, buildings or pending
+construction) settle daily; empty wilderness does not run settlement. First-day
+and newly live cells receive exactly one day, not accumulated inactive time.
+Tests can explicitly set `economy_cadence_force_market_days` /
+`economy_cadence_force_plan_days` (`force_slow_days` is an alias) /
+`economy_cadence_force_investment_days` to exercise historical approximation
+contracts. Those keys never appear in production profiles. Timing injection alone
+must not change any business result. Validate each daily state across timing,
+worker counts, slice sizes, and cold save continuation.
 
 Trade planning limits are deterministic work units. Never use measured wall time
 to decide how far the simulation advances. An unfinished trade planning slice

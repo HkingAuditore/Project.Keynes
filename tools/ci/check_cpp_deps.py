@@ -225,8 +225,17 @@ def relocation_source(key: str, origin: str) -> str:
                         source.name.startswith(('ideology_runtime', 'country_runtime', 'effect_runtime')) and
                         domain_of(source.name) == domain_of(target.name) and
                         domain_of(source.name) is not None)
+    # Family leaves use the economy_runtime prefix but have their own measured
+    # owner. Permit a split within that family, retaining the same symbol and
+    # source-reduction evidence checked by updated_baseline below.
+    family_move = (source.suffix == '.cpp' and target.suffix in {'.cpp', '.inc'} and
+                   source != target and
+                   source.name.startswith('economy_runtime_family_') and
+                   target.name.startswith('economy_runtime_family_') and
+                   pair.split('->')[0] == 'family' and
+                   domain_of(source.name) == domain_of(target.name) == 'family')
     if (source.parent != target.parent or
-            not (internal_header_move or bridge_move or same_domain_move or
+            not (internal_header_move or bridge_move or same_domain_move or family_move or
                  (target.suffix == '.cpp' and (header_move or economy_move)))):
         raise ValueError(f"invalid relocation: {origin} -> {path}")
     return f"{origin}|{pair}|{symbol}"

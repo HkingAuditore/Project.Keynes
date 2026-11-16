@@ -50,7 +50,8 @@
 - `visual_tile_horizon_smoke_test`（base level 未上传）、`visual_tile_layout_test`（mobile 三档布局变化）、`menu_atlas_visual_qa`（300 秒超时）：G2 前后表现相同
 - `effect_domain_integration_test`（technology modifier 缺失等 4 条）、`stat_key_family_test`（上游新增的 6 个 `military.cell.*` 键未归入 family）、`effect_native_modifier_bridge_test`（3 条断言后不退出，300 秒超时）：C3 前后相同
 - `natural_resource_init_deposit_test`（4 条）、`natural_resource_pass_test`（2 条）
-- 不在默认回归里：`ideology_cell_layer_shard_test`（直接调 `begin_or_reuse_economy_input_epoch` 时崩溃，signal 11）、`ideology_x6a_worker_test`（factor 2.0 leaves building term unchanged）；2026-11-14 去掉经济输入预采集前后相同
+- `ideology_cell_layer_shard_test` 崩溃已于 2026-11-14 修复：测试把临时 `RefCounted` MapStub 交给只持弱引用的 `bind_map_data`，下一次采集读取了已释放对象；改为测试成员持有至所有切片结束。经济性能改造前二进制复现同一 signal 11；同一修复脚本在改前、改后二进制均为 6 checks / 0 failures（`/tmp/keynes-perf-redesign-20261114/{before/shard-repro,after/focused}/ideology_cell_layer_shard_lifetime_fix.log`），未放宽断言。
+- 不在默认回归里：`ideology_x6a_worker_test`（factor 2.0 leaves building term unchanged）；2026-11-14 去掉经济输入预采集前后相同
 - `golden_day_hash_test` 偶发退出时 `ObjectDB instances leaked`（一次，重跑两次通过）；2026-11-14 annual 365 的 original 段在 3 路并发下也出现一次，所有检查通过、无数据差异，带 `--verbose` 并发 4 次未复现
 - 默认回归并行跑时偶发：`ideology_save_worker_authority_test`（DUR[3/4] worker 写回未发生）、`runtime_loading_exit_test`（frame 5 未释放加载世界）；C4 后各出现一次，单独连跑两次通过
 - `economy_dossier_view_model_test`（4 个职业 agronomist、aquaculturist、dyer、ship_officer 未映射阶层；投资区块跨章节导航）、`player_ui_view_model_test`（调用不存在的 `_decorate_construction_item`）：G3a 前后相同，与拆分无关
@@ -71,12 +72,12 @@
 
 - 已修（2026-11-14）：环满时气候输入采集失败，主线程下一拍跳到 D+1，worker 停在 D 等不到对应的环境帧，5 秒后报 `day_wait_peer_stall_timeout`，看起来像 Country peer 卡死。当时在 `mapgen_native_daily_runtime.gd` 给 SUS_TICK 输入日加了钳位，第 9b 项改成 C++ 游标后钳位已删除。lifecycle 连跑 4 次 0 次卡死（修前约每 2 次 1 次）。x5、x6b 的每日等待去掉 120 秒下限、基线改在推进当天之前读取，从 300 秒超时变为约 30 秒跑完。外包的 E2 补丁没有修掉问题，还放宽了断言，没有采用。
 - 已修（2026-11-14，第 9e 项）：ideology worker 测试剩余失败。lifecycle、x6c、country_ramp、x5、x6b、scalar、x12、x9b、restart_mask、cell_card、derived_pump 全过，根因见第 9e 项。剩 x6a 一条：夹具假设经济静止（见第 9c 项），断言没改。
-- Country 财政请求未完成并写回 worker 读视图（`economy_fiscal_reservation_continuation_test`，2 条）。
+- 已修（2026-11-15）：Country 财政请求在 Economy 主线程路径中先确认消费、后落国家账，导致回执提前删除。现按既有执行边界先应用国家账并发布读视图，再确认；加强后的 `economy_fiscal_reservation_continuation_test` 为 57/57，旧二进制仍失败同 2 条。
 - `trade_activity_runtime_integration_test` 访问 nil 的 `visual_tiles` 后一直等待。
 - `military_runtime_smoke_test`：2026-11-14 换成合并前的等价兵营配方后 0 失败，原先登船少 1 名士兵的那条没有复现；真实数据下卡在建兵营（待定 12b）。
 - `technology_refresh_latency_test` 剩 1 条：面板关闭的 6 天里研究进度没变，疑似排队的 3 项科技在测量阶段已研究完，未证实（2026-11-14 从玩法待定移来，原来的延迟问题已通过）。
 - `runtime_country_parity_test`：第 2 天起 `research_deferred_points` 在 Country POD 与主线程科研队列之间不一致，之后屏障超时。2026-11-14 复跑剩 2 条（生产调度没有封住每个推进日；D11 soak 没有产出可比的 Country 帧）。
-- 性能门槛：`military_native_binding_test`（10 万单位 p95 22ms / 门槛 2ms）、`resource_visual_perf_test`（p95 2.4ms / 1ms）、`cooperative_world_generation_test`（帧峰值 2.65s / 100ms）。
+- 性能门槛（2026-11-15 更新）：军事大场景为 99,974 地块、2,048 部队、4,096 初始交战边，并非 10 万部队；第二轮 p95 三次中位降至 3.174 ms，仍高于 2 ms，继续优化重复准备。资源视觉的第一轮仍超过 1 ms，且 8,000 格固定帧数内完工量不足，不能计作等量性能提升，第二轮仍在验证。加载已完成冷热、两种地图的 24 次对照，改后 12 次均通过原 p95 ≤33 / max ≤100 ms 门槛，冷大图最长帧中位 2.489 s →86.5 ms；暖缓存总时间没有改善。见 `feature-status.md`。
 
 ## 第 9b 项：worker 环境帧按日交接
 
@@ -167,7 +168,7 @@ worker 缺环境帧的另一半已由第 9b 项消除：跳日的帧进不了环
 3. 运行中切换权威：镜像齐了才把域交给 worker，切换日取决于时序。
 4. 表外推进者（军事、视野、资源恢复）每帧在主线程追赶 worker 已提交日。
 
-性能另算：worker 每天 20.4 ms，其中经济公式 16.6 ms，约 21% 是堆分配，与线程分工无关。
+性能另算：早期瀑布曾测得 worker 每天 20.4 ms，其中经济公式 16.6 ms；这些阶段计时不能证明其中 21% 来自堆分配。2026-11-15 同机交替对照确认完整建筑链指标在每格重复整理固定目录是主要成本；改为配置时整理一次后，标签阶段三轮均值的中位从 14.824 降至 0.756 ms。完整经济对照与吞吐门槛的未达项见下表。
 
 步骤（每步独立交付，删的比加的多）：
 
@@ -179,7 +180,7 @@ worker 缺环境帧的另一半已由第 9b 项消除：跳日的帧进不了环
 | 3 | 表外推进者并入每日表，军事最后，边界改动先与上游商量 | 完成（2026-11-14，闸门方式）：worker 等主线程报告第 D 天日尾（军事、自然资源）做完才开始 D+1（`mark_runtime_day_tail_done`），Climate 授权前不等；军事仍在主线程跑，不动上游边界。删了外围同日对齐实验。试过在日尾顺手采集 D+1 的经济输入：checkpoint 与 resume 采集时机不同，military20 第 21 天 COUNTRY/ECONOMY 分叉，已撤回，归第 2 步 |
 | 4 | 各域快照合成每日一帧，界面改读帧，删主线程镜像 | 待做，已评估（2026-11-14）：Trigger、Ideology、Modifier、Effect、Country、Economy 六个域约 20 个 C++ 文件在主线程保留完整运行时，由 worker 快照重建（`apply_runtime_*_snapshot`、`mirror_*`），界面和 GDScript 直接读它们。要先给每个域定只读帧接口，再逐域把读方改过去，才能删镜像，单独立项 |
 | 5 | 测试改用同步推进 | 待做，已评估（2026-11-14）：21 个测试用第 9c 项的 `drive_worker_day` / `wait_committed` 等 worker，10 个测试已引用内联模式（`native_daily_inline`）。迁移是把前者逐个改成内联单步，单独立项 |
-| 经济 | 经济公式去掉每日分配、只遍历活动格，再并行 | 待做。2026-11-14 默认 60x40 图 60 天瀑布：worker 每天中位 20.4 ms，经济公式中位 17.2 ms，其余各段都在 0.3 ms 以下（气候 1.9 ms 除外）；`headless_perf_record` 的 50 天/秒检查点在本分支（约 32 天/秒）和改动前 HEAD（约 35 天/秒）都不达标，差距在经济公式 |
+| 经济 | 按实际消费者采样指标、复用固定目录与未变化的国家输入 | 经济重设计与三轮对照完成（2026-11-15）：固定目录改为配置时整理一次，国家输入按精确变化重建，地理标签仍覆盖空地。CORE 中位 28.707→51.749 天/秒（+80.3%），但仅 2/3 次达到 50；DETAIL 27.934→48.271（+72.8%），标签阶段均值的三轮中位 14.824→0.756 ms。黄金/表外/意图逐字段一致；第一轮仅收窄指标的收益在噪声内，不能归功于它。线程完成通知与库存命令的独立缺陷已完成定向验证；合并版补测 CORE 为 48.934/48.410/48.791 天/秒（均未达 50），不另宣称这些修复带来吞吐收益。最终军事/视觉版本尚待全整合验收。 |
 
 验收：每步跑 golden 确定性检查（空闲与并行加压各若干次）和受影响测试。
 
@@ -251,3 +252,8 @@ worker 缺环境帧的另一半已由第 9b 项消除：跳日的帧进不了环
 ## 队列之后
 
 外部推进器的日期对齐、Web 回退第 2 步、R5 多种子与战争覆盖。这三项不阻塞提交，队列走完后再排。
+
+
+### 2026-11-15 本轮性能收尾更新
+
+经济、军事、资源显示及加载的重设计已接入共同上游 `c7db86b75`。按用户要求减少验证并先汇报：双配置构建和13组关键检查通过，军事150天/1747操作/3份存档对照相同；仅做一对受外部负载影响的经济、军事与资源显示计时。军事本次仍未达2ms，加载本轮未重测，修后完整回归及多轮性能验收未完成。此前各轮数字是阶段历史，不代表当前最终验收。真实结果与剩余事项见 `feature-status.md` 文末；用户选择沿用上游新存档格式。

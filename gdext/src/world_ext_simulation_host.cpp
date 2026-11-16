@@ -782,12 +782,17 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         _runtime_host->attach_economy_stage_ops(
             economy->make_graph_stage_ops(/*mutate=*/economy_stage_ops_mutate));
         auto *main_modifier = static_cast<ModifierRuntime *>(_modifier_runtime);
-    // 只有「经济确实由 worker 拥有」时才必须读 view：view 由 MODIFIER 阶段从主线程副本刷新，
-    // MODIFIER 不在 worker 权威里时那个阶段不跑，view 会一直空着——m0 实测
-    // `collect_scope_ids` 看到 buckets=0，而 `submit_modifier_commands` 报告 applied=2000。
-    if (_runtime_host->domain_is_worker_authoritative(
-            RuntimeDomainId::ECONOMY) &&
-        main_modifier != nullptr) {
+        // start() has not granted authority yet on a cold world. Select the
+        // consumer from the validated upcoming configuration, not the previous
+        // lifetime's grant: otherwise Economy keeps reading the main-thread
+        // copy and its first post-load production sees stale Country factors.
+        const uint32_t economy_modifier_mask =
+            runtime_domain_mask(RuntimeDomainId::ECONOMY) |
+            runtime_domain_mask(RuntimeDomainId::MODIFIER);
+        const bool use_economy_modifier_view =
+            mode == RuntimeSimulationMode::ACTIVE && main_modifier != nullptr &&
+            (requested_authority_mask & economy_modifier_mask) == economy_modifier_mask;
+        if (use_economy_modifier_view) {
             // The worker economy must not read the main-thread ModifierRuntime:
             // the main thread rebuilds it from worker snapshots at its own
             // pace, so a day could see a stale generation (resume diverged on
@@ -810,9 +815,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             economy->attach_modifier_runtime(main_modifier);
             _runtime_host->attach_economy_modifier_view(nullptr);
         }
-        _economy_modifier_view_attached =
-            economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY &&
-            main_modifier != nullptr;
+        _economy_modifier_view_attached = use_economy_modifier_view;
         if (economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY) {
             _runtime_host->attach_economy_production_runtime(economy);
         } else {

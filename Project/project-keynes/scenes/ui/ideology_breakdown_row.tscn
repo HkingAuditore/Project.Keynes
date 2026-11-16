@@ -1,0 +1,15 @@
+[gd_scene format=3]
+
+[node name="BreakdownRow" type="HBoxContainer"]
+
+[node name="ClassLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(84, 0)
+layout_mode = 2
+mouse_filter = 2
+horizontal_alignment = 0
+
+[node name="Figures" type="Label" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+horizontal_alignment = 2

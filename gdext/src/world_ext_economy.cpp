@@ -2431,7 +2431,6 @@ Dictionary DCWorldExt::run_economy_stage_ops_day(int64_t day_index) {
 void DCWorldExt::set_economy_stage_ops_soak_parity_ok(bool ok) {
     if (!_runtime_host) {
         _runtime_host = std::make_unique<NativeSimulationHost>();
-    if (_runtime_host) _runtime_host->set_country_peer_pump([this] { service_country_worker_peer_adapter(64, true); });
     }
     _runtime_host->set_economy_stage_ops_soak_parity_ok(ok);
 }

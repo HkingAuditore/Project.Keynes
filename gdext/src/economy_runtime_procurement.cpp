@@ -1568,10 +1568,16 @@ bool NativeEconomyRuntime::pull_owned_command_result(
             saturating_add(_explicit_money_burn, settled, _saturation_count);
         break;
     case COMMAND_ADD_STOCK:
+        // OwnedState has already changed the stock. Retain its audit preimage
+        // so an idle command is included in the next epoch's opening totals.
+        audit_touch_market_lane(static_cast<size_t>(market_store().index(
+            command.target_cell, static_cast<int32_t>(command.target_country))));
         _explicit_stock_delta =
             saturating_add(_explicit_stock_delta, settled, _saturation_count);
         break;
     case COMMAND_REMOVE_STOCK:
+        audit_touch_market_lane(static_cast<size_t>(market_store().index(
+            command.target_cell, static_cast<int32_t>(command.target_country))));
         _explicit_stock_delta =
             saturating_sub(_explicit_stock_delta, settled, _saturation_count);
         break;
