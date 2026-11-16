@@ -1,0 +1,39 @@
+#!/usr/bin/env python
+"""SCons for the FMOD-Android JNI bootstrap extension.
+
+Why this exists
+---------------
+FMOD's Android runtime caches the JavaVM inside its `JNI_OnLoad`, which only runs
+when the library is loaded through Java's `System.loadLibrary()`. Godot loads
+GDExtension dependencies with `dlopen`, so `FMOD_Studio_System_Create` fails with
+`JNI_OnLoad has not run ...` (see Build/PK_AUDIO_FMOD_ANDROID_REPORT.md).
+
+This extension is deliberately tiny and has **no FMOD headers dependency**: it
+resolves `JNI_OnLoad` / `FMOD_Android_JNI_Init` out of libfmod*.so at runtime, so
+it compiles against the NDK alone.
+
+Build (run from this directory, gdext/fmod_bootstrap/):
+    scons platform=android target=template_debug arch=x86_64 ndk_version=<ndk>
+    scons platform=android target=template_release arch=arm64 ndk_version=<ndk>
+"""
+import os
+
+# All paths below are relative to this SConstruct's directory (the CWD SCons is
+# invoked from). `__file__` is not defined inside SCons SConstruct scripts.
+env = SConscript("../godot-cpp/SConstruct")
+env.Append(CPPPATH=["src/"])
+
+if env["platform"] != "android":
+    print("[fmod_bootstrap] only built for platform=android; skipping %s" % env["platform"])
+    Return()
+
+sources = ["src/fmod_bootstrap.cpp"]
+
+out_dir = os.path.abspath(os.path.join(
+    "..", "..", "Project", "project-keynes", "addons",
+    "fmod_android_bootstrap", "bin", "android"))
+lib_name = "libFmodBootstrap.android.%s.%s%s" % (
+    env["target"], env["arch"], env.subst("$SHLIBSUFFIX"))
+
+library = env.SharedLibrary(os.path.join(out_dir, lib_name), source=sources)
+Default(library)
