@@ -203,3 +203,11 @@ epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回�
 ## 军需市场需求（2026-11-08）
 
 军事缺货预测走 Military intent 17 → Economy opcode 36 的既有 D+1 命令桥。每批先 reset 再按真实 SKU/市场格写入缺口；不要伪造销售、消费、财政扣款或库存。Economy 在 epoch 冻结时核对国家句柄、归属与可用国库资金，扣除其他公共采购承诺，并按 10 天窗口折算到通用采购需求。最新快照复用已保存/哈希的 pending command 队列，派生日需求缓存不入档，不增加保存 schema。验证入口：`tests/runtime/military_procurement_demand_test.gd`、`military_procurement_pod_test.gd`。
+
+## 运行时诊断字段与主线程抑制门（2026-11-16）
+
+- 诊断字段必须写入。只声明 + 导出、从不赋值的计数器比没有更坏：它把「这一步没跑」伪装成事实（`cell_layer_collect_count/_rows/_ideas` 就这样误导过一轮排查）。新增诊断要么在产生它的那一步写，要么不要导出。
+- 主线程域门只认 `domain_main_thread_suppressed()`。外部读 `main_thread_suppressed_domain_mask` / `authority_window_domain_mask`（启动回复、`get_runtime_thread_report()`、`thread_report`、perf snapshot）；`authoritative_domain_mask` 只回答「worker 已证明拥有哪些域」，不能回答「主线程是否该跑」。请求了却拿不到的域会静默永久丢失，`authority_window_blocker` 是它的名字。
+- `drain_derived_cell_layer(day)` 必须传在建的那一天。`reset:true` + `reason:"day_changed"` 表示这次调用丢弃了别的天的折叠，`error` 是被漏掉的 step 错误。
+- reconcile 失败必须落 `last_error` 并计进 `effect_reconcile_failures`；不要用局部 `std::string ignored` 接住。
+- 新增导出键时不要往 `runtime_pod_protocol.h` / `native_simulation_host.h` 里加字段（两者已超 `check_size_ratchet.py` 基线），放模块自己的内部头文件，见 `world_ext_simulation_host_internal.h`。

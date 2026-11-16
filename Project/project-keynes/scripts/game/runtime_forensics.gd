@@ -81,6 +81,11 @@ const COUNTRY_SCENE_KEYS := [
 const RUNTIME_THREAD_KEYS := [
 	"simulation_host_state", "state", "fault_code", "worker_fault_count",
 	"authoritative_domain_mask", "requested_authority_mask",
+	# 主线程真正必须停推的域，以及其中只被"授权窗口"挡住的那部分。只看
+	# authoritative_domain_mask 无法区分"worker 已拥有"和"worker 正在挡住"，
+	# 请求了却永远拿不到的域会静默地永久丢失。
+	"main_thread_suppressed_domain_mask", "authority_window_domain_mask",
+	"authority_window_blocker",
 	"climate_worker_authoritative", "country_worker_authoritative",
 	"simulation_committed_day", "committed_day", "climate_committed_day",
 	"generation", "state_hash",

@@ -4,6 +4,10 @@ Status: **fixed**. `=== ideology tag snapshot stress: 38 checks, 0 failures ===`
 (was `38 checks, 2 failures`). Check count unchanged — no assertion was weakened,
 added or removed.
 
+> 2026-11-16 follow-up: the four product gaps this round recorded at the bottom are
+> fixed in C++, and this fixture now also asserts them — `43 checks, 0 failures`
+> (the original 38 untouched). See "2026-11-16 follow-up" at the end of this file.
+
 File touched: `Project/project-keynes/tests/ideology/ideology_tag_snapshot_stress_test.gd`
 only. No C++ / no `scons` / no `data/**.tres` change.
 
@@ -168,7 +172,7 @@ half of that assertion can pass, and it does.
 
 ---
 
-## Observations for the product owners (NOT fixed here — no C++ edits made)
+## Observations for the product owners (all four fixed on 2026-11-16)
 
 These are honest gaps the debug round exposed. None blocked the test once the
 fixture was correct, but each one cost a round of investigation:
@@ -203,6 +207,46 @@ fixture was correct, but each one cost a round of investigation:
    a caller's wrong argument look like success. Reporting
    `{reset: true, reason: "day_changed"}` would have turned a silent empty layer
    into one obvious line.
+
+---
+
+## 2026-11-16 follow-up: all four are fixed, and this fixture asserts them
+
+This is the first change to product code in this file's subject. Four independent
+defects, each one "a failure that reads as success":
+
+* **1 (swallowed reconcile error).** `step_effect_instance_refresh` and
+  `reconcile_country_effect_activations` now record the reason in `_last_error` and
+  count it in the new `effect_reconcile_failures` (exported from
+  `get_ideology_report()`). Counter and string are separate on purpose: `last_error`
+  is sticky and gets overwritten, so "did this ever fail" needs a number.
+* **2 (dead collect counters).** Written at the collect site in
+  `step_derived_rebuild`, with a fixed meaning each: `count` = target-cell rows
+  handed to the fold, `rows` = distinct (country, card, level, program) rows,
+  `ideas` = cards that emitted at least one row. They are reset with
+  `_derived_collect_ms`, so a refused collect reads 0 instead of last day's numbers.
+* **3 (mask trap).** `get_runtime_thread_report()` (also the start reply,
+  `thread_report` and the perf snapshot) now exports
+  `main_thread_suppressed_domain_mask`, `authority_window_domain_mask` and a named
+  `authority_window_blocker`. The masks are computed by calling
+  `domain_main_thread_suppressed()` itself, twelve times, so they cannot drift from
+  the gate that suppresses work.
+* **4 (silent drain reset).** `drain_derived_cell_layer(day)` reports
+  `reset: true, reason: "day_changed", discarded_day, requested_day`, and surfaces
+  the step error it used to drop as `error`.
+
+New assertions in this fixture (the original 38 checks are untouched; 38 → 43):
+
+* the requested domain is blocked, not owned: `suppressed=0x802 window=0x802
+  granted=0x0` (0x2 CLIMATE and the 0x800 COMMIT the host adds to any ACTIVE
+  request; IDEOLOGY is NOT in the window, which is why the main thread keeps it);
+* the open window names its blocker: `awaiting_first_commit`;
+* the drain that matches the in-flight day reports `reset=false`;
+* a drain for a different day reports
+  `reset=true reason=day_changed discarded=31 requested=30` — the exact argument
+  mistake this file made in root cause 3.
+
+`=== ideology tag snapshot stress: 43 checks, 0 failures ===`
 
 ---
 

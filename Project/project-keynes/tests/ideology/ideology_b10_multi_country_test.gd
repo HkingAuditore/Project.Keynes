@@ -230,9 +230,16 @@ func _run() -> void:
 	# The derived rebuild is a SLICE STAGE: one `run_ideology_daily` no longer
 	# publishes it, so a fixture that reads the layer straight away sees an EMPTY
 	# front. Drain it explicitly rather than guessing a call count.
+	var drained: Dictionary = {}
 	if ext.has_method("drain_derived_cell_layer"):
-		var drained: Dictionary = ext.drain_derived_cell_layer(_day)
+		drained = ext.drain_derived_cell_layer(_day)
 		print("[B10] drained steps=" + str(drained.get("steps", "?")) + " complete=" + str(drained.get("complete", "?")))
+		# ISSUE 4: a drain for the day the fold belongs to must NOT report that it
+		# discarded the fold. (`reset`/`reason` exist because a drain for another day
+		# used to answer a green `complete` over a thrown-away job.)
+		_expect("B: the drain belongs to the fold's own day, so nothing was discarded "
+				+ "(reset=%s)" % str(drained.get("reset", "?")),
+			not bool(drained.get("reset", true)))
 	var report: Dictionary = ext.get_derived_cell_layer_report()
 	var covered := int(report.get("cell_count", 0))
 	print("[B10] derived front cells=%d stat_count=%d"
@@ -265,6 +272,22 @@ func _run() -> void:
 			str(ir.get("cell_layer_rebuild_ms", "?"))])
 	_expect("B: the provenance bridge reports", bool(multi.get("ok", false)),
 		str(multi))
+	# ISSUE 2: the three collect counters used to be exported and NEVER assigned, so
+	# they read 0 on every run -- which reads as "the collect step never ran" and sent
+	# at least one investigation down that false trail. They are written at the
+	# collect site now, and their shape here is arithmetic, not magic: one card per
+	# country, one derived program each, 1600 owned cells per country.
+	#   count = 3200 target rows (CELLS, both halves)
+	#   rows  = 2 program rows (one per country)
+	#   ideas = 2 cards (one per country)
+	_expect("B: the collect counters are written, not dead "
+			+ "(count=%s rows=%s ideas=%s expected=%d/2/2)" % [
+				str(ir.get("cell_layer_collect_count", "?")),
+				str(ir.get("cell_layer_collect_rows", "?")),
+				str(ir.get("cell_layer_collect_ideas", "?")), CELLS],
+		int(ir.get("cell_layer_collect_count", 0)) == CELLS
+			and int(ir.get("cell_layer_collect_rows", 0)) == 2
+			and int(ir.get("cell_layer_collect_ideas", 0)) == 2)
 	# The front is keyed by (stat, cell), so a cell covered by BOTH countries folds
 	# into ONE contribution. `contributor_count` is the only field that can tell that
 	# apart from a single-country row: two sources contributing 0.5 + 0.5 resolve

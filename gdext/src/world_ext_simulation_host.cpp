@@ -67,7 +67,12 @@ static bool parse_runtime_mode(const Dictionary &config,
     return true;
 }
 
-static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report) {
+// `host` is optional and only used for the two main-thread suppression masks: they
+// are answered by `domain_main_thread_suppressed()` on the live host, not derivable
+// from the report POD, and `thread_report` is the dictionary a caller reads when it
+// wants to know whether the main thread may still run a domain.
+static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report,
+                                               const NativeSimulationHost *host) {
     Dictionary out;
     out["domain_abi_version"] = static_cast<int>(report.domain_abi_version);
     out["pod_domain_abi_version"] = static_cast<int>(report.pod_domain_abi_version);
@@ -85,6 +90,9 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["implemented_domain_mask"] = static_cast<int64_t>(report.implemented_domain_mask);
     out["missing_domain_mask"] = static_cast<int64_t>(report.missing_domain_mask);
     out["active_evidence_mask"] = static_cast<int64_t>(report.active_evidence_mask);
+    // The masks a caller must gate on, next to the one it must not gate on alone.
+    // `authority_window_blocker` says WHY a requested domain is still blocked.
+    if (host != nullptr) append_main_thread_suppression(*host, report, out);
     out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(report.completion_gate_missing_domain_mask);
     out["active_gate_blocked"] = report.active_gate_blocked;
     out["graph_coverage_state"] = String(report.graph_coverage_state);
@@ -457,7 +465,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         rejected["ok"] = false;
         rejected["pending"] = false;
         rejected["code"] = "runtime_thread_mode_hot_switch_forbidden";
-        rejected["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        rejected["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
         return rejected;
     }
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
@@ -499,7 +507,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["ok"] = false;
         out["pending"] = false;
         out["code"] = mode_error;
-        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
         return out;
     }
     const bool complete = static_cast<bool>(config.get("graph_coverage_complete", false));
@@ -559,7 +567,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
                 out["code"] = "runtime_worker_config_invalid";
                 out["message"] = "economy_production_writer_out_of_range";
                 out["thread_report"] =
-                    runtime_report_to_dictionary(_runtime_host->report());
+                    runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
                 return out;
             }
             economy_production_writer =
@@ -575,7 +583,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
                 out["code"] = "runtime_worker_config_invalid";
                 out["message"] = "economy_production_writer_invalid";
                 out["thread_report"] =
-                    runtime_report_to_dictionary(_runtime_host->report());
+                    runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
                 return out;
             }
         }
@@ -591,7 +599,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
                 out["code"] = "runtime_worker_config_invalid";
                 out["message"] = "economy_execution_mode_out_of_range";
                 out["thread_report"] =
-                    runtime_report_to_dictionary(_runtime_host->report());
+                    runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
                 return out;
             }
             economy_execution_mode =
@@ -606,7 +614,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
                 out["code"] = "runtime_worker_config_invalid";
                 out["message"] = "economy_execution_mode_invalid";
                 out["thread_report"] =
-                    runtime_report_to_dictionary(_runtime_host->report());
+                    runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
                 return out;
             }
         }
@@ -615,7 +623,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["ok"] = false;
         out["pending"] = false;
         out["code"] = "runtime_worker_config_invalid";
-        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
         return out;
     }
     if (native_daily_inline && mode == RuntimeSimulationMode::SHADOW) {
@@ -643,7 +651,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             out["pending"] = false;
             out["code"] = "runtime_worker_config_invalid";
             out["message"] = "authoritative_domain_mask_not_int";
-            out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+            out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
             return out;
         }
         const int64_t value = static_cast<int64_t>(raw);
@@ -652,7 +660,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             out["pending"] = false;
             out["code"] = "runtime_worker_config_invalid";
             out["message"] = "authoritative_domain_mask_out_of_range";
-            out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+            out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
             return out;
         }
         requested_authority_mask =
@@ -679,7 +687,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["completion_gate_missing_domain_mask"] =
             static_cast<int64_t>(missing_requested);
         out["active_gate_blocked"] = true;
-        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
         return out;
     }
     if (economy_execution_mode == EconomyExecutionMode::LEGACY_ONLY) {
@@ -709,7 +717,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             out["code"] = "runtime_worker_config_invalid";
             out["message"] = "economy_production_writer_parity_conflict";
             out["thread_report"] =
-                runtime_report_to_dictionary(_runtime_host->report());
+                runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
             return out;
         }
         if (!economy_stage_ops_mutate) {
@@ -718,7 +726,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             out["code"] = "runtime_worker_config_invalid";
             out["message"] = "economy_production_writer_requires_mutate";
             out["thread_report"] =
-                runtime_report_to_dictionary(_runtime_host->report());
+                runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
             return out;
         }
         // Phase-2.4.5: StageOps writer is production-ready after dual-path soak
@@ -739,7 +747,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             out["economy_stage_ops_readiness_missing"] =
                 static_cast<int64_t>(missing);
             out["thread_report"] =
-                runtime_report_to_dictionary(_runtime_host->report());
+                runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
             return out;
         }
     }
@@ -819,7 +827,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["ok"] = false;
         out["pending"] = false;
         out["code"] = "runtime_worker_start_failed";
-        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report(), _runtime_host.get());
         return out;
     }
     // A DCWorldExt instance may be reused for a second world after the prior
@@ -862,14 +870,24 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // a RESTART additionally reports the per-host ledger it just re-published, so a
     // caller can tell "the grant carried over" from "the grant is still pending"
     // without waiting for a day to commit.
+    //
+    // ONE report construction for all of it: `report()` builds timers, queues and
+    // domain snapshots, and this reply used to build three of them.
+    const RuntimeThreadReport start_report = _runtime_host->report();
     out["requested_authority_mask"] =
-        static_cast<int64_t>(_runtime_host->report().requested_authority_mask);
+        static_cast<int64_t>(start_report.requested_authority_mask);
     out["authoritative_domain_mask"] =
         static_cast<int64_t>(_runtime_host->authoritative_domain_mask());
+    // A FRESH start is exactly where the trap opens: the domains in the request are
+    // already suppressed on the main thread (`domain_main_thread_suppressed`) while
+    // `authoritative_domain_mask` is still 0, so a caller reading only the grant
+    // cannot tell "not granted yet" from "not mine to run". Report both masks here.
+    append_main_thread_suppression(*_runtime_host, start_report, out);
     out["lifetime_granted_mask"] =
         static_cast<int64_t>(_runtime_host->lifetime_granted_mask());
     out["native_daily_inline"] = native_daily_inline;
-    out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+    out["thread_report"] =
+        runtime_report_to_dictionary(start_report, _runtime_host.get());
     return out;
 }
 

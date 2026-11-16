@@ -171,13 +171,33 @@ func _run() -> void:
 	# worker-concurrent variant is a separate item; a `_require` that can never pass
 	# would be a test that neither passes nor verifies anything.
 	var started := _start_worker()
-	var mask := int(_ext.get_runtime_thread_report().get(
-		"authoritative_domain_mask", 0))
+	var thread: Dictionary = _ext.get_runtime_thread_report()
+	var mask := int(thread.get("authoritative_domain_mask", 0))
 	var worker_authoritative := (mask & 0x10) != 0
-	print("  [worker] started=%s authoritative=%s mask=0x%X "
-			% [str(started), str(worker_authoritative), mask]
+	# ISSUE 3 REGRESSION: the 0x2 request is suppressed on the main thread from
+	# `start_runtime_worker` on, while the GRANTED mask stays 0. Before these masks
+	# were exported, a caller could only see the grant, so it had to re-derive
+	# `domain_main_thread_suppressed` by hand -- and a request that can never earn a
+	# grant (this fixture has no climate trace, so no day commits) looked like "the
+	# main thread still owns the domain" for the whole run, with no error anywhere.
+	var suppressed := int(thread.get("main_thread_suppressed_domain_mask", 0))
+	var window := int(thread.get("authority_window_domain_mask", 0))
+	var window_blocker := String(thread.get("authority_window_blocker", ""))
+	print("  [worker] started=%s authoritative=%s mask=0x%X suppressed=0x%X "
+			% [str(started), str(worker_authoritative), mask, suppressed]
+			+ "window=0x%X blocker='%s' " % [window, window_blocker]
 			+ "(grant needs one committed day, and a DCWorldExt-only fixture has no "
 			+ "climate trace -- see the comment at the top of _run)")
+	if started:
+		_expect("the requested domain is BLOCKED, not owned "
+				+ "(suppressed=0x%X window=0x%X granted=0x%X)" % [
+					suppressed, window, mask],
+			(suppressed & 0x2) != 0 and (window & 0x2) != 0 and (mask & 0x2) == 0)
+		_expect("the open window names its blocker instead of failing silently "
+				+ "(blocker='%s')" % window_blocker, not window_blocker.is_empty())
+		_expect("a domain this fixture did NOT request stays on the main thread "
+				+ "(suppressed=0x%X, IDEOLOGY must be clear)" % suppressed,
+			(suppressed & 0x10) == 0)
 	_equip_cell_card()
 	# The main-thread daily owns the command queue unless the worker was granted, so
 	# this is required here and a no-op under worker authority (world_ext_ideology.cpp
@@ -320,6 +340,11 @@ func _run() -> void:
 	var drain: Dictionary = {}
 	if _ext.has_method("drain_derived_cell_layer"):
 		drain = _ext.drain_derived_cell_layer(MEASURED_DAYS)
+	# ISSUE 4, the negative half: a drain for the day the fold belongs to must NOT
+	# claim it discarded anything.
+	_expect("the drain matches the in-flight day, so nothing was discarded "
+			+ "(reset=%s)" % str(drain.get("reset", "?")),
+		not bool(drain.get("reset", true)))
 	var layer_report: Dictionary = _ext.get_derived_cell_layer_report() \
 		if _ext.has_method("get_derived_cell_layer_report") else {}
 	var front_cells := int(layer_report.get("cell_count", 0))
@@ -374,6 +399,30 @@ func _run() -> void:
 			+ "(builds=%d skips=%d)" % [snapshot_builds, snapshot_skips],
 		snapshot_builds > 0 and snapshot_skips == 0)
 	_test_selector_loads_are_constant_per_scan()
+	# ── ISSUE 4, the positive half: a wrong-day drain must SAY it reset ─────────
+	#
+	# `step_derived_rebuild` reads "a different day" as "the epoch's inputs moved" and
+	# throws the in-flight job away. Reporting `{ok:true, complete:true}` over the
+	# discarded fold is how a caller's wrong argument (`drain(0)`) read as "the layer
+	# is empty". Day MEASURED_DAYS+1 is started on purpose: ONE `run_ideology_daily`
+	# performs the collect step and leaves the fold in flight, so draining the OLD day
+	# is exactly the discard case.
+	_ext.run_ideology_daily(MEASURED_DAYS + 1)
+	var wrong_day: Dictionary = {}
+	if _ext.has_method("drain_derived_cell_layer"):
+		wrong_day = _ext.drain_derived_cell_layer(MEASURED_DAYS)
+	print("  [drain wrong-day] steps=%s complete=%s reset=%s reason=%s discarded=%s "
+			% [str(wrong_day.get("steps", "?")), str(wrong_day.get("complete", "?")),
+				str(wrong_day.get("reset", "?")), str(wrong_day.get("reason", "")),
+				str(wrong_day.get("discarded_day", "?"))]
+			+ "requested=%s" % str(wrong_day.get("requested_day", "?")))
+	_expect("a wrong-day drain reports the reset instead of a green complete "
+			+ "(reset=%s reason=%s discarded=%s)" % [
+				str(wrong_day.get("reset", "?")), str(wrong_day.get("reason", "")),
+				str(wrong_day.get("discarded_day", "?"))],
+		bool(wrong_day.get("reset", false))
+			and String(wrong_day.get("reason", "")) == "day_changed"
+			and int(wrong_day.get("discarded_day", -1)) == MEASURED_DAYS + 1)
 	_ext.request_runtime_stop()
 	_test_no_consumer_epochs_are_free()
 

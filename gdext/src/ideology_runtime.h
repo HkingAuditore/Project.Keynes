@@ -216,6 +216,13 @@ public:
     bool derived_rebuild_pending() const {
         return _derived_rebuild_day >= 0;
     }
+    // The day the in-flight rebuild belongs to, or -1 when nothing is in flight.
+    //
+    // `step_derived_rebuild` treats "a different day" as "the epoch's inputs moved"
+    // and DISCARDS the half-built job. A caller that drives the rebuild by hand
+    // (`drain_derived_cell_layer`) cannot report that it destroyed someone else's
+    // fold without knowing which day it was for.
+    int64_t derived_rebuild_day() const { return _derived_rebuild_day; }
     // Last materializer report, for §12.4 diagnostics. `truncated` must be 0.
     const DerivedMaterializeReport &derived_materialize_report() const {
         return _last_derived_materialize;
@@ -1440,6 +1447,13 @@ private:
     // Distinguishes "the gate held" from "nothing ever tried to rebuild".
     int64_t _derived_rebuild_gated_by_eligibility = 0;
     int64_t _derived_rebuild_steps = 0;
+    // The LAST collect of the current day (see `step_derived_rebuild`), written at
+    // the collect site itself. They were declared and exported but never assigned
+    // until 2026-11-16, so all three read 0 on every run and "the collect never ran"
+    // was the conclusion drawn from a permanently-zero diagnostic.
+    //   count = target-cell rows handed to the fold
+    //   rows  = distinct (country, card, level, program) rows
+    //   ideas = cards that emitted at least one row
     int64_t _derived_collect_count = 0;
     int64_t _derived_collect_rows = 0;
     int64_t _derived_collect_ideas = 0;
@@ -1592,6 +1606,17 @@ private:
     bool _instance_refresh_dirty = false;
     int32_t _instance_refresh_country_cursor = 0;
     uint64_t _instance_refresh_visits = 0;
+    // Reconcile attempts that FAILED (submit refused / rejected / authority
+    // unavailable). Both entry points that reconcile increment it --
+    // `step_effect_instance_refresh` and `reconcile_country_effect_activations` --
+    // and both record the reason in `_last_error`.
+    //
+    // WHY A COUNTER AND NOT ONLY `last_error`: `last_error` is sticky and shared, so
+    // the next unrelated rejection overwrites it, and a report read after a
+    // successful later pass cannot tell "never failed" from "failed and recovered".
+    // A visit that fails is also invisible in `instance_refresh_visits`, which counts
+    // attempts, not successes.
+    uint64_t _effect_reconcile_failures = 0;
     // Doc 03 §6.2 wants this at 0 on an idle day. It counts builds, not publishes:
     // a build with no publisher still costs the per-card string lookups, which is
     // exactly the idle overhead the threshold is about.

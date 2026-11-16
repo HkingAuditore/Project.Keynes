@@ -4,6 +4,7 @@
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "native_simulation_host.h"
+#include "world_ext_simulation_host_internal.h"
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
 #include "modifier_runtime.h"
@@ -750,6 +751,14 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             static_cast<int64_t>(host.requested_authority_mask);
         out["active_evidence_mask"] =
             static_cast<int64_t>(host.active_evidence_mask);
+        // The gate, next to the ledger it is NOT identical to. `suppressed` is what
+        // `domain_main_thread_suppressed()` answers, domain by domain; `window` is the
+        // part of it held only by the authorization window, i.e. requested but not yet
+        // granted. A caller that gates on `authoritative_domain_mask` alone runs
+        // domains the product has already stopped -- and one that reads 0 there while
+        // the window is open drops the domain it asked for, silently, which is the
+        // trap these two masks remove.
+        append_main_thread_suppression(*_runtime_host, host, out);
         out["simulation_worker_blocker"] = String(host.coverage_blocker).is_empty()
             ? String(host.fault_code)
             : String(host.coverage_blocker);
@@ -1477,6 +1486,9 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             static_cast<int64_t>(host.authoritative_domain_mask);
         out["active_evidence_mask"] =
             static_cast<int64_t>(host.active_evidence_mask);
+        // Same spelling and meaning as `get_runtime_thread_report()`: the perf
+        // snapshot must not be the one place that quotes the granted mask alone.
+        append_main_thread_suppression(*_runtime_host, host, out);
         out["climate_worker_authoritative"] =
             (host.authoritative_domain_mask &
              runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
