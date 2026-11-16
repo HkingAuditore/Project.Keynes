@@ -1,0 +1,148 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/regime_charter_card.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+
+[node name="RegimeCharterCard" type="PanelContainer"]
+size_flags_horizontal = 3
+theme_type_variation = &"PKPaperCard"
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Column" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Icon" parent="Margin/Column/Head" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Titles" type="VBoxContainer" parent="Margin/Column/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+
+[node name="Status" type="Label" parent="Margin/Column/Head/Titles"]
+layout_mode = 2
+text = "现行体制"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="Name" type="Label" parent="Margin/Column/Head/Titles"]
+layout_mode = 2
+text = "体制"
+text_overrun_behavior = 3
+theme_type_variation = &"PKWorkspaceTitle"
+
+[node name="Detail" type="Label" parent="Margin/Column"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKWorkspaceLabel"
+
+[node name="PowersRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Caption" type="Label" parent="Margin/Column/PowersRow"]
+custom_minimum_size = Vector2(60, 26)
+layout_mode = 2
+size_flags_vertical = 0
+vertical_alignment = 1
+text = "国家权能"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Powers" type="HFlowContainer" parent="Margin/Column/PowersRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 2
+
+[node name="CharterRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Caption" type="Label" parent="Margin/Column/CharterRow"]
+custom_minimum_size = Vector2(60, 26)
+layout_mode = 2
+size_flags_vertical = 0
+vertical_alignment = 1
+text = "国策"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Charter" type="HFlowContainer" parent="Margin/Column/CharterRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 2
+
+[node name="SupportRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Caption" type="Label" parent="Margin/Column/SupportRow"]
+custom_minimum_size = Vector2(60, 26)
+layout_mode = 2
+size_flags_vertical = 0
+vertical_alignment = 1
+text = "拥护"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="People" type="HFlowContainer" parent="Margin/Column/SupportRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 2
+
+[node name="OpposeRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Caption" type="Label" parent="Margin/Column/OpposeRow"]
+custom_minimum_size = Vector2(60, 26)
+layout_mode = 2
+size_flags_vertical = 0
+vertical_alignment = 1
+text = "反对"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="People" type="HFlowContainer" parent="Margin/Column/OpposeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 2
+
+[node name="Filler" type="Control" parent="Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Footer" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Hint" type="Label" parent="Margin/Column/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Action" type="Button" parent="Margin/Column/Footer"]
+custom_minimum_size = Vector2(132, 44)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_default_cursor_shape = 2
+text = "改行此制"
+theme_type_variation = &"PKPrimaryButton"

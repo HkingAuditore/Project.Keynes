@@ -7,18 +7,18 @@
 script = ExtResource("2_definition")
 id = &"early_clan"
 display_name = "早期氏族"
-detail = "氏族议事决定国库用途，允许以国库资源发起营造。血缘与庇护让农耕各层稍有凭依，商贾则在亲族分产中吃亏。"
+detail = "氏族议事决定国库用途，允许以国库资源发起营造。血缘与庇护让农耕各层有了实在凭依，商贾则在亲族分产中吃大亏。"
 icon_key = &"country.politics"
 capability_keys = PackedStringArray("treasury_construction")
-modifier_definition_keys = PackedStringArray("regime.early_clan.cohesion")
+modifier_definition_keys = PackedStringArray("regime.early_clan.cohesion", "regime.early_clan.charter")
 
 [sub_resource type="Resource" id="RegimeLocalCouncil"]
 script = ExtResource("2_definition")
 id = &"local_council"
 display_name = "地方议会"
-detail = "地方议会尚未建立统一的国库营造权。市镇与工场在议事中有了声音，地主则要让出部分利益。"
+detail = "地方议会尚未建立统一的国库营造权。市镇与工场在议事中声势大涨，工商各层因此得势，地主则要让出相当一部分利益。"
 icon_key = &"country.politics"
-modifier_definition_keys = PackedStringArray("regime.local_council.cohesion")
+modifier_definition_keys = PackedStringArray("regime.local_council.cohesion", "regime.local_council.charter")
 
 [resource]
 script = ExtResource("1_catalog")

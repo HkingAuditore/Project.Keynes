@@ -35,6 +35,51 @@ const FAMILY_PATRONAGE := "family.country.patronage_satisfaction"
 const ALL_KEYS := [RELIEF, LEVY, REGIME_EARLY,
 	"regime.local_council.cohesion", FAMILY_PATRONAGE]
 
+## Shipped regime balance, in bp (100 bp = 1.0 satisfaction point out of 100).
+## A regime is the only free, nationwide, permanent satisfaction source, so its
+## core estate must sit in the ±450~750 bp band — the old ±100~200 bp sat below a
+## single timelimited narrative event and read as rounding noise in the charter
+## card. Changing a number here is a deliberate content decision: edit the
+## catalog and this table together. Ladder:
+## docs/cpp-dots-runtime/satisfaction-runtime.md.
+const REGIME_BALANCE_BP := {
+	"regime.early_clan.cohesion": {
+		"tenant_farmer": 600,
+		"serf": 600,
+		"household_farmer": 450,
+		"subsistence_farmer": 450,
+		"landlord": 300,
+		"merchant": -600,
+	},
+	"regime.local_council.cohesion": {
+		"merchant": 750,
+		"industrialist": 600,
+		"artisan": 450,
+		"journeyman": 450,
+		"worker": 300,
+		"landlord": -600,
+	},
+}
+const SATISFACTION_STAT_PATTERN := \
+	"^economy\\.profession\\.([a-z0-9_]+)\\.satisfaction_bp$"
+
+## Shipped structural terms, one MULTIPLY factor per stat. A regime's other half
+## is not mood: it moves national output / trade / construction cost, and those
+## multiply through the whole epoch, so the exact factors are pinned here for the
+## same reason as the bp table.
+const REGIME_CHARTER := {
+	"regime.early_clan.charter": {
+		"country.construction.cost_factor": 0.94,
+		"country.output.agriculture_factor": 1.04,
+		"country.research.society_efficiency": 0.95,
+	},
+	"regime.local_council.charter": {
+		"country.trade.capacity_factor": 1.08,
+		"country.output.manufacturing_factor": 1.04,
+		"country.construction.cost_factor": 1.06,
+	},
+}
+
 var _checks := 0
 var _failures := 0
 
@@ -98,6 +143,8 @@ func _run() -> void:
 		return
 	_test_definitions(modifiers)
 	_test_regime_declarations(modifiers)
+	_test_regime_balance(modifiers)
+	_test_regime_charter(modifiers)
 	_test_family_effect_binding(economy, modifiers)
 	_test_adapter_calling_convention()
 	if ClassDB.class_exists("DCWorldExt"):
@@ -167,13 +214,14 @@ func _test_regime_declarations(modifiers: Dictionary) -> void:
 		_expect("regime %s declares at least one modifier definition" % String(
 			definition.get("id")), not keys.is_empty())
 		declared += keys.size()
-	_expect("the shipped regimes declare both cohesion definitions (%d)" % declared,
-		declared == 2)
+	_expect("the shipped regimes declare cohesion + charter definitions (%d)" % declared,
+		declared == 4)
 	# The binding reads the *view*, so pin the view shape it depends on.
 	var view: Dictionary = regime_catalog.catalog_view()
 	_expect("catalog view exposes the declared definition keys",
 		RegimeEffectBindingScript.definition_keys_for(view, "early_clan") ==
-			PackedStringArray(["regime.early_clan.cohesion"]))
+			PackedStringArray(["regime.early_clan.cohesion",
+				"regime.early_clan.charter"]))
 	_expect("an unknown regime exposes no definition keys",
 		RegimeEffectBindingScript.definition_keys_for(view, "no_such_regime").is_empty())
 	_expect("a dense regime id resolves to its stable key",
@@ -198,6 +246,80 @@ func _test_regime_declarations(modifiers: Dictionary) -> void:
 			not bool(rejected.get("ok", true)) and String(
 				rejected.get("reason", "")).begins_with(
 					"political_regime_modifier_definition_unknown"))
+
+
+## The charter card only reports what these terms say, so a silently shrunken
+## regime (a term dropped, a value left at the old ±1~2 points) would still read
+## as "the regime works". Pin the whole shipped table per estate.
+func _test_regime_balance(modifiers: Dictionary) -> void:
+	var definition_keys: PackedStringArray = modifiers.get(
+		"definition_keys", PackedStringArray())
+	var offsets: PackedInt32Array = modifiers.get(
+		"definition_term_offsets", PackedInt32Array())
+	var stat_ids: PackedInt32Array = modifiers.get("term_stat_ids", PackedInt32Array())
+	var values: PackedFloat64Array = modifiers.get("term_values", PackedFloat64Array())
+	var stat_keys: PackedStringArray = modifiers.get("stat_keys", PackedStringArray())
+	var pattern := RegEx.create_from_string(SATISFACTION_STAT_PATTERN)
+	for key in REGIME_BALANCE_BP:
+		var index := definition_keys.find(String(key))
+		if not _expect("regime balance definition %s is compiled" % key, index >= 0):
+			continue
+		var actual := {}
+		for term in range(offsets[index], offsets[index + 1]):
+			var stat_id := int(stat_ids[term])
+			if stat_id < 0 or stat_id >= stat_keys.size():
+				continue
+			var hit := pattern.search(String(stat_keys[stat_id]))
+			if hit != null:
+				actual[hit.get_string(1)] = int(round(values[term]))
+		var expected: Dictionary = REGIME_BALANCE_BP[key]
+		_expect("%s covers exactly %d estates (%s)" % [
+				key, expected.size(), str(actual.keys())],
+			actual.size() == expected.size())
+		for profession in expected:
+			_expect("%s %s = %d bp (catalog %d)" % [key, profession,
+					int(expected[profession]), int(actual.get(profession, 0))],
+				int(actual.get(profession, 0)) == int(expected[profession]))
+
+
+## The non-satisfaction half: every term must be a COUNTRY-domain MULTIPLY on the
+## stat the table names. An ADD term here would land on a factor of 1.0 and read
+## as a rounding error instead of the shipped multiplier.
+func _test_regime_charter(modifiers: Dictionary) -> void:
+	var definition_keys: PackedStringArray = modifiers.get(
+		"definition_keys", PackedStringArray())
+	var domains: PackedInt32Array = modifiers.get(
+		"definition_domains", PackedInt32Array())
+	var offsets: PackedInt32Array = modifiers.get(
+		"definition_term_offsets", PackedInt32Array())
+	var stat_ids: PackedInt32Array = modifiers.get("term_stat_ids", PackedInt32Array())
+	var operations: PackedInt32Array = modifiers.get(
+		"term_operations", PackedInt32Array())
+	var values: PackedFloat64Array = modifiers.get("term_values", PackedFloat64Array())
+	var stat_keys: PackedStringArray = modifiers.get("stat_keys", PackedStringArray())
+	for key in REGIME_CHARTER:
+		var index := definition_keys.find(String(key))
+		if not _expect("regime charter %s is compiled" % key, index >= 0):
+			continue
+		_expect("%s is a COUNTRY-domain definition" % key, int(domains[index]) == 1)
+		var actual := {}
+		var multiply_only := true
+		for term in range(offsets[index], offsets[index + 1]):
+			if int(operations[term]) != 2:
+				multiply_only = false
+			var stat_id := int(stat_ids[term])
+			if stat_id >= 0 and stat_id < stat_keys.size():
+				actual[String(stat_keys[stat_id])] = float(values[term])
+		_expect("%s holds only MULTIPLY terms" % key, multiply_only)
+		var expected: Dictionary = REGIME_CHARTER[key]
+		_expect("%s covers exactly %d stats (%s)" % [
+				key, expected.size(), str(actual.keys())],
+			actual.size() == expected.size())
+		for stat_key in expected:
+			var want := float(expected[stat_key])
+			var got := float(actual.get(stat_key, 0.0))
+			_expect("%s %s = %.2f (catalog %.2f)" % [key, stat_key, want, got],
+				is_equal_approx(got, want))
 
 
 ## Family effects reach satisfaction through the same definition, and the
@@ -508,12 +630,16 @@ func _test_regime_binding(ext: Object, handle: int,
 	_run_economy_day(ext, 7)
 	var report: Dictionary = ext.get_epoch_profession_report(_country_slot(ext))
 	var frozen: PackedInt64Array = report.get("satisfaction_bp", PackedInt64Array())
-	_expect("early clan raises the landlord bias by 100 bp (%d -> %d)" % [
-			landlord_before, int(frozen[landlord_slot])],
-		int(frozen[landlord_slot]) - landlord_before == 100)
-	_expect("early clan lowers the merchant bias by 100 bp (%d -> %d)" % [
-			merchant_before, int(frozen[merchant_slot])],
-		int(frozen[merchant_slot]) - merchant_before == -100)
+	# Channel property, not a balance number: the frozen table must move by
+	# exactly the declared term. `_test_regime_balance` pins the values.
+	var early_landlord := int(REGIME_BALANCE_BP[REGIME_EARLY]["landlord"])
+	var early_merchant := int(REGIME_BALANCE_BP[REGIME_EARLY]["merchant"])
+	_expect("early clan moves the landlord bias by %d bp (%d -> %d)" % [
+			early_landlord, landlord_before, int(frozen[landlord_slot])],
+		int(frozen[landlord_slot]) - landlord_before == early_landlord)
+	_expect("early clan moves the merchant bias by %d bp (%d -> %d)" % [
+			early_merchant, merchant_before, int(frozen[merchant_slot])],
+		int(frozen[merchant_slot]) - merchant_before == early_merchant)
 	# Switch: the previous regime's rows must disappear, not accumulate.
 	var switched: Dictionary = RegimeEffectBindingScript.reconcile(facade, handle,
 		PackedStringArray(["regime.local_council.cohesion"]), 8)
@@ -533,12 +659,16 @@ func _test_regime_binding(ext: Object, handle: int,
 	_run_economy_day(ext, 9)
 	report = ext.get_epoch_profession_report(_country_slot(ext))
 	frozen = report.get("satisfaction_bp", PackedInt64Array())
-	_expect("local council raises the merchant bias by 200 bp (%d -> %d)" % [
-			merchant_before, int(frozen[merchant_slot])],
-		int(frozen[merchant_slot]) - merchant_before == 200)
-	_expect("local council lowers the landlord bias by 150 bp (%d -> %d)" % [
-			landlord_before, int(frozen[landlord_slot])],
-		int(frozen[landlord_slot]) - landlord_before == -150)
+	var council_merchant := int(
+		REGIME_BALANCE_BP["regime.local_council.cohesion"]["merchant"])
+	var council_landlord := int(
+		REGIME_BALANCE_BP["regime.local_council.cohesion"]["landlord"])
+	_expect("local council moves the merchant bias by %d bp (%d -> %d)" % [
+			council_merchant, merchant_before, int(frozen[merchant_slot])],
+		int(frozen[merchant_slot]) - merchant_before == council_merchant)
+	_expect("local council moves the landlord bias by %d bp (%d -> %d)" % [
+			council_landlord, landlord_before, int(frozen[landlord_slot])],
+		int(frozen[landlord_slot]) - landlord_before == council_landlord)
 
 
 func _count_regime_rows(listed: Dictionary) -> int:

@@ -144,13 +144,39 @@ O(1) 下标读取，冻结期也沿用既有的批量 `effective_values()`，不
 并钳制在 `[-2500, +2500]`。偏置**加在天花板之前**（`min(raw + bias, ceiling)`），
 所以任何来源都无法把基本生活不足的阶层推成“满意”。
 
-| 来源 | 通道 | 现状（2026-11-14） |
+### 幅度梯（2026-11-16 校准）
+
+政体是唯一「无成本、全民、永久、可切换」的满意度来源，但它原来的幅度只有
+±100~200 bp，低于一张限时叙事事件（±350~500 bp），在体制章程卡上读作四舍五入噪声。
+现行梯级（取自当前目录的实际取值区间）：
+
+| 梯级 | 幅度 | 来源与生效范围 |
+| --- | ---: | --- |
+| 结构性 | ±300~750 bp | 政体：全民永久，改行时整组换行 |
+| 理念 | ±200~1000 bp | 理念卡等级项（最高档如土地税改 −1000 bp），需要理念点与解锁 |
+| 事件 | ±350~500 bp | 叙事事件，120~240 日后自动到期 |
+| 局部 | ±100~440 bp | 家族效果（±100~150）与科技节点（±200~440） |
+
+规范：政体的核心受益阶层落在 **±450~750 bp**，受损阶层至少 **−450 bp**；
+不要用 100~200 bp 写政体。幅度是**上限**——bias 加在天花板之前，实际增量是
+`min(raw+bias, ceiling) − min(raw, ceiling)`，基本生活或舒适不足的阶层会被封顶吃掉
+一部分；也因此不能靠加大单源去硬顶低生活水平。多个来源叠加后仍受上面 ±2500 bp 的
+冻结钳制，单源不要超过 800 bp。
+
+| 来源 | 通道 | 现状（2026-11-16） |
 | --- | --- | --- |
 | 理念卡 | 定义由理念目录自带 | 已在用：`labour_legislation.l3` +400bp、`land_tax_reform.l1` −800bp 等 |
 | 科技 | 同族 stat | 已在用：9 个节点（士兵、工人、矿工、产业工人、佃农） |
 | 叙事事件 | `COUNTRY_MODIFIER` 应用定义 | **已接**：`narrative.relief.agrarian_satisfaction`、`narrative.levy.labor_satisfaction` |
-| 政体 | `PoliticalRegimeDefinition.modifier_definition_keys` → 切换时应用/移除 | **已接**：`regime.early_clan.cohesion`（地主 +100／商人 −100）、`regime.local_council.cohesion`（商人 +200／地主 −150） |
+| 政体 | `PoliticalRegimeDefinition.modifier_definition_keys` → 切换时应用/移除 | **已接**：`regime.early_clan.cohesion`（佃农/农奴 +600、家庭小农/自给农民 +450、地主 +300、商人 −600）、`regime.local_council.cohesion`（商人 +750、工业资本家 +600、工匠/熟练工 +450、工人 +300、地主 −600） |
 | 家族效果 | 家族效果 program 指向定义 | **已接**：`family.country.patronage_satisfaction` ← 官方效果 `patronage_house`（门客之家，COUNTRY/ADD，威望 Ⅰ→Ⅴ 时匠户与学者 +1.2→+2.0、书吏与雇工 +0.8→+1.3） |
+
+政体还挂**非满意度**的 COUNTRY 定义（`regime.*.charter`），走同一个
+`modifier_definition_keys` 通道：早期氏族 `0.94` 建设成本、`1.04` 农业产出、`0.95`
+社会领域研究效率；地方议会 `1.08` 国内贸易容量、`1.04` 制造产出、`1.06` 建设成本。
+这些是 epoch 冻结的国家乘数，改行时与满意度条目一起整组换行；卡面「国策」行由
+`RegimePresenter.charter_for()` 用 `ModifierCatalog.present_stat_delta()` 生成，与理念/
+科技卡同一套措辞。加条目时不要只给好处：每组至少留一条代价，否则政体变成无脑最优解。
 
 政体的键在 `PoliticalRegimeCatalog.compile_native_catalog(country, modifier_catalog)` 里对
 `modifier_catalog.definition_keys` 校验：未知 key 直接让世界编译失败并返回

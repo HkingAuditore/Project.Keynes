@@ -412,7 +412,7 @@ func _position_tod_sun_handle(host) -> void:
 		return
 	var uv: Vector2 = host.get_debug_tod_sun_uv()
 	var world_pos := bounds.position + Vector2(uv.x * bounds.size.x, uv.y * bounds.size.y)
-	var screen_pos := host._world_to_screen(world_pos)
+	var screen_pos: Vector2 = host._world_to_screen(world_pos)
 	host._tod_sun_handle_btn.position = screen_pos - host._tod_sun_handle_btn.size * 0.5
 
 func _screen_to_sun_uv(host, screen_pos: Vector2) -> Vector2:
@@ -421,7 +421,7 @@ func _screen_to_sun_uv(host, screen_pos: Vector2) -> Vector2:
 	var bounds: Rect2 = host._renderer.get_world_bounds()
 	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
 		return host.get_debug_tod_sun_uv()
-	var world_pos := host._screen_to_world(screen_pos)
+	var world_pos: Vector2 = host._screen_to_world(screen_pos)
 	var u := (world_pos.x - bounds.position.x) / bounds.size.x
 	var v := (world_pos.y - bounds.position.y) / bounds.size.y
 	return Vector2(fposmod(u, 1.0), clampf(v, 0.0, 1.0))
@@ -429,13 +429,13 @@ func _screen_to_sun_uv(host, screen_pos: Vector2) -> Vector2:
 func _screen_to_world(host, screen_pos: Vector2) -> Vector2:
 	if host._camera == null:
 		return Vector2.ZERO
-	var vp_center := host.get_viewport().get_visible_rect().size * 0.5
+	var vp_center: Vector2 = host.get_viewport().get_visible_rect().size * 0.5
 	return host._camera.position + (screen_pos - vp_center) / host._camera.zoom.x
 
 func _world_to_screen(host, world_pos: Vector2) -> Vector2:
 	if host._camera == null:
 		return Vector2.ZERO
-	var vp_center := host.get_viewport().get_visible_rect().size * 0.5
+	var vp_center: Vector2 = host.get_viewport().get_visible_rect().size * 0.5
 	return vp_center + (world_pos - host._camera.position) * host._camera.zoom.x
 
 # ─── 地块选择 / 信息面板 ─────────────────────────────────────────────────
@@ -466,12 +466,12 @@ func _cell_display_world(host, cell: HexCell) -> Vector2:
 	if cell == null:
 		return Vector2.ZERO
 	var canonical := HexUtils.cube_to_world(cell.q, cell.r, host.hex_size)
-	var ref_x := host._camera.position.x if host._camera != null else canonical.x
+	var ref_x: float = host._camera.position.x if host._camera != null else canonical.x
 	return HexUtils.nearest_display_world(canonical, ref_x, host._map_wrap_period_x())
 
 func _select_cell(host, cell: HexCell) -> void:
 	host._selected_cell = cell
-	var display_world := host._cell_display_world(cell)
+	var display_world: Vector2 = host._cell_display_world(cell)
 	host._highlight.set_cell_display(cell, host.hex_size, display_world, host._map_wrap_period_x())
 	host._right_panel.visible = true
 	# 0.4.2 — controller 持有自己的 _selected_cell 副本；这里同步推一次。
@@ -516,7 +516,7 @@ func _clear_selection(host) -> void:
 # 被 fit_to_viewport 使用，保证整张地图都落在未被 UI 覆盖的矩形内。
 
 func _map_safe_area(host) -> Rect2:
-	var vp := host.get_viewport().get_visible_rect().size
+	var vp: Vector2 = host.get_viewport().get_visible_rect().size
 	var top_h: float = 40.0  # TopBar = PanelContainer offset_bottom=36 + 少量安全边距
 	if OS.has_feature("mobile"):
 		top_h = host.MOBILE_TOPBAR_SAFE_TOP + host.MOBILE_TOPBAR_HEIGHT

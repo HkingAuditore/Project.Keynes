@@ -34,6 +34,8 @@
 - `*.tres`：Godot `AtlasTexture` 切片；保留源图像像素和 alpha，不重新绘制图案。
 - `manifest.json`：语义 ID、初始完整提示词、实际行数和逐图标切片范围。
 - `revision-prompts.json`：矿石/建筑/木板/蒸汽机等语义修正提示词。
+- `ui_population_01.png`：单图纸贴 `population.crowd`（人群），地块档案「人口」页签图标；
+  生图输出为烘焙棋盘格的 RGB，已按「近中性浅色 + 边缘连通」抠成透明后缩到 320px。
 
 生成图集不是精确像素网格。`tools/art/build_paper_icon_atlases.py` 分析透明间隙和
 纸贴的连通边界，只生成切片元数据，避免邻格碎片进入图标，不修改 PNG。

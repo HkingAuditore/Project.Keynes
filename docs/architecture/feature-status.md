@@ -801,3 +801,80 @@ Economy、Modifier、Effect 目录、Effect 扩展和十一项显示资料；覆
 证据：`/tmp/keynes-perf-redesign-20261114/limited-closeout/{validation.json,quick-performance.json,military-one-pair/comparison.json}`；完整失败与中止记录继续保留在上级upstream-final-validation、upstream-fixed-validation和upstream-fixed-build-interrupted-size。最终主工作区同步以 ../final-main-sync/applied.json 为准。未提交或推送。
 
 主工作区已完成454项内容同步；分支、暂存区与用户universal库保留，未提交/推送。5945份已验证源码/资源及两份库身份复核一致；主目录资源导入与97项动员存档检查均通过。最终差异空白检查通过。
+
+## 政体满意度幅度校准（2026-11-16）
+
+体制章程卡的「拥护／反对」只读 Modifier 定义里的 satisfaction 条目，而两份政体条目原本是
+±100~200 bp（100 bp = 满意度 1.0 点，满分 100 点）：低于一张限时叙事事件（±250~500 bp），
+也低于理念卡等级项（±200~600 bp）。政体是唯一「无成本、全民、永久」的来源，但玩家在卡上
+读到的只是 1~2 个点，改行前后难以察觉。本轮只改内容幅度与配套文案，**公式、通道、钳制、
+存档列均未改动**：
+
+| 阶层 | 早期氏族（旧 → 新） | 地方议会（旧 → 新） |
+| --- | --- | --- |
+| 佃农 / 农奴 | +150 → **+600** | — |
+| 家庭小农 / 自给农民 | +100 → **+450** | — |
+| 地主 | +100 → **+300** | −150 → **−600** |
+| 商人 | −100 → **−600** | +200 → **+750** |
+| 工业资本家 | — | +150 → **+600** |
+| 工匠 / 熟练工 | — | +150 → **+450** |
+| 工人 | — | +100 → **+300** |
+
+改行一次的职业间落差因此为：商人 +13.5 点、地主 −9 点、佃农/农奴 −6 点、小农 −4.5 点、
+工匠/熟练工 +4.5 点、工业资本家 +6 点、工人 +3 点（满分 100 点，社会压力五档分界为
+20/40/60/80，可跨一档）。幅度梯与「政体核心阶层 ±450~750 bp、受损阶层至少 −450 bp」的
+写作规范写进 [satisfaction-runtime.md](../cpp-dots-runtime/satisfaction-runtime.md)。
+
+改动文件：`data/modifiers/default_modifier_catalog.tres`（12 条 term 与两条 description）、
+`data/country/default_political_regime_catalog.tres`（两段 detail 文案）、
+`tools/add_satisfaction_source_definitions.py`（生成器与目录同值，避免二次运行写出旧值）。
+
+验证：`satisfaction_sources_runtime_test.gd` **107 checks / 0 failures**（原 91，新增
+`_test_regime_balance` 逐阶层钉住出厂表 16 项）；`country_regime_runtime_test.gd`
+**0 failures**；`politics_workspace_test.gd` **0 failures**（真实 Modifier 目录经
+`RegimePresenter` 渲染，卡面显示 +6% / +4.5% / +3% / +7.5% / −6%）。
+`tests/probes/probe_regime_balance.gd` 打印玩家可见表与改行落差，作为人工复核入口。
+
+边界：bias 加在天花板之前，实际增量是 `min(raw+bias, ceiling) − min(raw, ceiling)`，
+基本生活或舒适不足的阶层会被封顶吃掉一部分，所以名义幅度是上限；本轮没有跑正式开局长跑，
+±6~7.5 点是否适合长期节奏仍需实际开局校准。内容身份改变会让旧档按既有规则被拒绝加载。
+
+## 政体国策条目与卡面「国策」行（2026-11-16）
+
+满意度是情绪通道，本身有天花板，撑不起「换一种国家」。上一节把幅度调到 ±6~7.5 点之后，
+政体的另一半改成结构性乘数：`PoliticalRegimeDefinition` 的 `modifier_definition_keys`
+本来就接受任意 COUNTRY 定义，`RegimeEffectBinding.reconcile` 也只按 key 应用、不筛统计量，
+所以这次只加内容与展示，**没有改 C++**——六个统计量早已在 epoch 边界冻结成国家表
+（`modifier_runtime.cpp` 的 `country_sector_output_factor` / `country_construction_cost_factor`
+/ `country_trade_capacity_factor` 等），加行不产生热循环成本。
+
+| 政体 | 国策条目（全部 MULTIPLY，常驻） |
+| --- | --- |
+| 早期氏族 | 全国建设成本 ×0.94（−6%）、农业部门产出 ×1.04（+4%）、社会领域研究效率 ×0.95（−5%） |
+| 地方议会 | 国内贸易容量 ×1.08（+8%）、制造部门产出 ×1.04（+4%）、全国建设成本 ×1.06（+6%） |
+
+两组各带一条代价（社会研究效率、建设成本），避免政体变成无脑最优解；地方议会的
+建设成本上浮同时呼应它没有国库营造权。
+
+展示链路：`RegimePresenter.charter_for()` 读同一批定义，用 `ModifierCatalog.present_stat_delta()`
+生成「全国建设成本 −6%」这类文案（与理念/科技卡同一套措辞），并在 `LOWER_IS_BETTER`
+里翻转成本/死亡率类的收益配色。卡面新增 `Margin/Column/CharterRow/Charter` 一行
+（HFlowContainer 芯片，绿=收益、红=代价，悬停注明「体制常驻，相乘叠加」）。
+权能行仍只列本国拥有的权能，失去的权能由改行代价提示说明。
+
+验证：`satisfaction_sources_runtime_test.gd` **121 checks / 0 failures**（107 → 121，
+新增 `_test_regime_charter` 14 项，钉住两份定义均为 COUNTRY 域、仅 MULTIPLY、六个系数逐值）；
+`politics_workspace_test.gd` **0 failures**（真实目录渲染，地方议会卡恰好 3 条国策，
+文案含「贸易容量」「全国建设成本」）；`country_regime_runtime_test.gd` **0 failures**；
+`_probe_satisfaction_definitions.gd` **PASS**（目录仍全部可编译）。
+
+改动文件：`data/modifiers/default_modifier_catalog.tres`（`regime.*.charter` 两组定义、6 条 term）、
+`data/country/default_political_regime_catalog.tres`（两份体制各声明 cohesion + charter）、
+`scripts/ui/regime_presenter.gd`、`scripts/ui/components/regime_charter_card.gd`、
+`scenes/ui/regime_charter_card.tscn`、以及对应测试与 `tests/probes/probe_regime_balance.gd`。
+
+边界：乘数与理念、科技、时代奖励同表相乘，2~8% 的实际价值远高于同点数的满意度，
+所以没有按满意度的点数直觉给；本轮同样没有开局长跑，`1.08` 贸易容量若要收敛，先降到
+`1.05` 再观察。满意度条目与国策条目共用一条「改行时整组换行」的生命周期，读档不重放。
+
+

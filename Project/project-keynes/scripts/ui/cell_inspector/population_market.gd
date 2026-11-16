@@ -156,9 +156,9 @@ func _population_category(host, snapshot: Dictionary, market_snapshot: Dictionar
 	if host._snapshot_pending(snapshot):
 		return host._pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
-		return {"insights": [{"id": "population_unavailable", "text": "人口情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
+		return {"insights": [{"id": "population_unavailable", "text": "人口情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "population.crowd"}]}
 	if not snapshot.has("populations"):
-		return {"insights": [{"id": "population_details_unavailable", "text": "无法读取最新人口明细。", "accent": UITokens.RISK, "icon": "growth"}]}
+		return {"insights": [{"id": "population_details_unavailable", "text": "无法读取最新人口明细。", "accent": UITokens.RISK, "icon": "population.crowd"}]}
 	var list_only = not bool(snapshot.get("demand_preview_included", true))
 	var rows = []
 	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
@@ -499,6 +499,27 @@ func _population_category(host, snapshot: Dictionary, market_snapshot: Dictionar
 	if not mixed_identity:
 		for row in rows:
 			(row as Dictionary)["cohort_identity"] = ""
+	# 民情并入阶层行：组织状态按职业挂在该职业的第一行上，不再单开页签。
+	var unrest_by_profession: Dictionary = MobilizationCategoryModel.by_profession(
+		host._economy_facade(), cell_idx if cell_idx >= 0 else pop_cell_idx)
+	var unrest_names_by_stage = {}
+	for row in rows:
+		var row_dict: Dictionary = row
+		var pid = String(row_dict.get("profession_id", ""))
+		if not unrest_by_profession.has(pid):
+			continue
+		var unrest: Dictionary = unrest_by_profession[pid]
+		unrest_by_profession.erase(pid)
+		row_dict["unrest"] = unrest
+		row_dict["status"] = "%s\n%s" % [String(row_dict.get("status", "")),
+			String(unrest.get("tooltip", ""))]
+		var stage = int(unrest.get("stage", 0))
+		var names: PackedStringArray = unrest_names_by_stage.get(stage, PackedStringArray())
+		names.append(String(row_dict.get("name", "")))
+		unrest_names_by_stage[stage] = names
+	var escalation = MobilizationCategoryModel.escalation_insight(unrest_names_by_stage)
+	if not escalation.is_empty():
+		insights.append(escalation)
 	var local_metrics = [
 		# 存款只给总额；本期结余挪进提示，不再在数值右边挂一串副行文字。
 		{"id": "population_funds", "title": "居民存款", "money": true, "value": h._money_text(int(snapshot.get("funds", 0))), "subtitle": "", "accent": UITokens.ACCENT, "icon": "resource",
@@ -511,7 +532,7 @@ func _population_category(host, snapshot: Dictionary, market_snapshot: Dictionar
 		"gauges": gauges,
 		"metrics": local_metrics,
 		"cohort_rows": rows,
-		"list_header": {"lead": "阶层 · 族群 · 生活水平" if mixed_identity else "阶层 · 生活水平",
+		"list_header": {"lead": "阶层 · 族群 · 生活水平 · 满意度" if mixed_identity else "阶层 · 生活水平 · 满意度",
 			"indent": 41.0, "columns": [
 			{"text": "人口", "width": 54.0}, {"text": "存款/净收", "width": 72.0}]},
 	}

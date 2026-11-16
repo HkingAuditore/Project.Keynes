@@ -548,7 +548,8 @@ func build_politics_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 		catalog = country_facade.political_regime_catalog_view()
 		if bool(catalog.get("ok", false)):
 			_political_regime_catalog_cache = catalog
-	var regime := _present_political_regime(native, catalog)
+	var regime := _present_political_regime(native, catalog,
+		_present_profession_ids(country_handle))
 	return {
 		"politics": {"available": bool(regime.get("available", false)),
 			"regime": regime, "ideology": ideology.get("ideology", {})},
@@ -557,11 +558,30 @@ func build_politics_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 		"ideology": ideology.get("ideology", {}),
 	}
 
+## 本国当前实际存在的职业（有人口队列）。读不到时返回 null，调用方不做过滤。
+func _present_profession_ids(country_handle: int):
+	var economy = _generator.get_economy_facade() \
+		if _generator != null and _generator.has_method("get_economy_facade") else null
+	if economy == null or not economy.has_method("country_economy_overview"):
+		return null
+	var page: Dictionary = economy.country_economy_overview(country_handle, "professions")
+	if not bool(page.get("ok", false)):
+		return null
+	var present := {}
+	var ids: PackedStringArray = page.get("profession_stable_ids", PackedStringArray())
+	var population: PackedInt64Array = page.get("population", PackedInt64Array())
+	for i in range(ids.size()):
+		if i >= population.size() or int(population[i]) > 0:
+			present[String(ids[i])] = true
+	return present
+
+
 static func _present_political_regime(snapshot: Dictionary,
-		catalog: Dictionary) -> Dictionary:
+		catalog: Dictionary, present_professions = null) -> Dictionary:
 	if not bool(catalog.get("ok", false)):
 		return {"available": false, "reason": "体制目录尚未就绪。"}
-	var definitions: Array = catalog.get("definitions", [])
+	var definitions: Array = RegimePresenter.enrich(catalog.get("definitions", []),
+		present_professions)
 	var raw_regime_key = snapshot.get("regime_key",
 		snapshot.get("regime_stable_id", ""))
 	var regime_id := String(raw_regime_key)

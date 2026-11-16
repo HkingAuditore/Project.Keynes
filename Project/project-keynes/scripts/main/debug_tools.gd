@@ -2,6 +2,10 @@ extends RefCounted
 
 # G5 collaborator. The host owns all mutable state; it is passed per call.
 
+# 镜像 main.gd 的 SOAK_AB_MODE_*：同一 preload 链上不能反向引用 main.gd（会成环），
+# 且跨文件常量不能当默认参数用。两边编号必须一致：0 = SAME_SOURCE，1 = VS_LEGACY。
+const SOAK_AB_MODE_SAME_SOURCE := 0
+
 func toggle_debug_console(host) -> void:
 	if host._debug_console != null:
 		host._debug_console.visible = not host._debug_console.visible
@@ -542,7 +546,7 @@ func _run_demo_tg_via_ecs(host, ext: Object, w: int, h: int, iter_count: int, kr
 		runner = Callable(host, "_dc_ecs_run_demo_complex")
 		arch_filter = -1
 
-	var job := host.DCEcsJob.new(
+	var job: RefCounted = host.DCEcsJob.new(
 		&"demo_thermal_gradient",
 		[cid_temp, cid_elev],
 		[cid_out],
@@ -649,7 +653,7 @@ func diagnose_selected_temperature(host) -> void:
 	if host._selected_cell == null:
 		print("[Temp] diagnose: no selection")
 		return
-	var cell := host._selected_cell
+	var cell: HexCell = host._selected_cell
 	# B.1：通过 ViewAdapter 读 schema-mirrored 字段
 	var diag_idx: int = int(cell.index)
 	var diag_ad: DCViewAdapter = host._view_adapter
