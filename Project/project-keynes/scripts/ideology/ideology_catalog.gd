@@ -19,6 +19,8 @@ const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_eff
 ## constant that drifted the last three times this project tried it.
 const IdeologyEffectDefinitionScript = preload(
 	"res://scripts/ideology/ideology_effect_definition.gd")
+const IdeologyIncidenceCompilerScript = preload(
+	"res://scripts/ideology/ideology_incidence_compiler.gd")
 const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
 const ResourceProfileRegistryScript = preload(
 	"res://scripts/data/resource_profile_registry.gd")
@@ -53,8 +55,17 @@ const LEVEL_LABELS := ["初识", "通晓", "化育"]
 ## default catalog, so a project without authored programs keeps the old shape.
 @export var effect_programs: Resource
 
+## TEST HOOK, not a gameplay knob. A fixture that is not about the support gate
+## sets this to false before generating a world; `load_default()` then hands out a
+## catalog whose profile disables the gate. Production never touches it.
+static var support_gate_enabled := true
+
 static func load_default() -> Resource:
 	var loaded := ResourceLoader.load(DEFAULT_PATH, "Resource")
+	if loaded != null and not support_gate_enabled and loaded.profile != null:
+		var profile: Resource = loaded.profile.duplicate()
+		profile.support_gate_enabled = false
+		loaded.profile = profile
 	return loaded
 
 func compile_native_catalog(country_catalog: Dictionary,
@@ -142,6 +153,9 @@ func compile_native_catalog(country_catalog: Dictionary,
 	var ordered: Array[Resource] = definitions.duplicate()
 	ordered.sort_custom(func(a, b) -> bool:
 		return String(a.id) < String(b.id) if a != null and b != null else a != null)
+	# Material support: one dense Q16 channel row per level, in this same order.
+	var incidence := IdeologyIncidenceCompilerScript.compile(
+		ordered, program_resource, economy_catalog)
 	var gates := {}
 	for definition in ordered:
 		if definition == null or not definition is IdeologyDefinitionScript:
@@ -185,6 +199,14 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"max_active_visits_per_slice": effective_profile.max_active_visits_per_slice,
 		"opinion_owner_influence_weight": effective_profile.opinion_owner_influence_weight,
 		"opinion_funds_per_influence": effective_profile.opinion_funds_per_influence,
+		"support_model": effective_profile.support_model,
+		"incidence_gain_q16": effective_profile.incidence_gain_q16,
+		"incidence_veto_q16": effective_profile.incidence_veto_q16,
+		"incidence_veto_min_influence_q16":
+			effective_profile.incidence_veto_min_influence_q16,
+		"incidence_threshold_scale_q16":
+			effective_profile.incidence_threshold_scale_q16,
+		"support_gate_enabled": effective_profile.support_gate_enabled,
 		"ideology_capacity_max": maxi(effective_profile.ideology_capacity,
 			effective_profile.ideology_capacity_max),
 		"national_spirit_capacity_max": maxi(effective_profile.national_spirit_capacity,
@@ -592,13 +614,16 @@ func compile_native_catalog(country_catalog: Dictionary,
 	out["concurrency_slots"] = concurrency_slots
 	out["max_instances_per_card"] = widest_card_instances
 	out["worst_case_concurrent_instances"] = worst_live_instances
+	# Material support model. The channel count must be identical to Economy's
+	# published incidence_channel_count, so both sides derive it from the same
+	# need_ids column instead of a literal.
+	out["incidence_channel_count"] = incidence["channel_count"]
+	out["incidence_level_channels_q16"] = incidence["rows"]
+	out["incidence_level_measured"] = incidence["measured"]
+	out["incidence_unmapped_stat_count"] = incidence["unmapped"]
 	out.ok = true
 	return out
 
-
-## Turn one authored rewrite into the PROGRAM/TAG rows the native runtime can
-## index. ROUTE never crosses into native: it becomes one PROGRAM row per card
-## carrying that route, in dense card order so the output is deterministic.
 static func _expand_override_rows(override: Resource, declared_programs: Dictionary,
 		route_index: Dictionary, ordered_definitions: Array[Resource],
 		selector_kind_by_program: Dictionary) -> Dictionary:
@@ -932,7 +957,6 @@ func catalog_view(country_catalog: Dictionary = {},
 		"offer_cost_growth_percent": int(compiled.get("offer_cost_growth_percent", 100)),
 		"starting_points_q16": int(compiled.get("starting_points_q16", 0))}
 
-
 ## Expands a route-tag synergy selector into the concrete dense card ids it
 ## covers. Pure: it takes the already-built route index and returns either the
 ## member list or a rejection that names the route and the numbers involved.
@@ -964,7 +988,6 @@ static func _expand_route_synergy_members(route_tag: String,
 			"ideology_synergy_route_tag_min_count_exceeds_members:%s:%d>%d" % [
 				route_key, min_count, members.size()]}
 	return {"ok": true, "members": members, "route_tag": route_key}
-
 
 ## How many live Effect instances one program row can own at once.
 ##
@@ -1002,13 +1025,11 @@ static func _program_live_target_cap(program: Resource) -> int:
 			cells = mini(declared_cap, IdeologyEffectDefinitionScript.SELECTOR_MAX_CELLS)
 	return layers * cells
 
-
 static func school_name(school_id: String) -> String:
 	for school in SCHOOLS:
 		if String(school.id) == school_id:
 			return String(school.name)
 	return school_id
-
 
 ## Display names for the build routes (体系) that route-tag synergies are keyed
 ## by. Ids are the contract; these strings are presentation only and falling
@@ -1031,10 +1052,8 @@ const ROUTE_DISPLAY_NAMES := {
 	"terrain": "山河",
 }
 
-
 static func route_display_name(route_tag: String) -> String:
 	return String(ROUTE_DISPLAY_NAMES.get(route_tag, route_tag))
-
 
 static func _route_display_names(tags: PackedStringArray) -> PackedStringArray:
 	var names := PackedStringArray()
@@ -1042,9 +1061,7 @@ static func _route_display_names(tags: PackedStringArray) -> PackedStringArray:
 		names.append(route_display_name(String(tag)))
 	return names
 
-
 static var _technology_names := {}
-
 
 ## Cold-path display name for a technology key (slot unlock captions and draw
 ## requirements). Reads the cached authoring network once.
@@ -1060,9 +1077,7 @@ static func technology_display_name(technology_key: String) -> String:
 		_technology_names[""] = ""
 	return String(_technology_names.get(technology_key, technology_key))
 
-
 static var _research_signal_names: Dictionary = {}
-
 
 static func research_signal_display_name(signal_key: String) -> String:
 	if _research_signal_names.is_empty():
@@ -1072,9 +1087,7 @@ static func research_signal_display_name(signal_key: String) -> String:
 		_research_signal_names[""] = ""
 	return String(_research_signal_names.get(signal_key, signal_key))
 
-
 static var _era_rows_cache: Array = []
-
 
 ## Ordered era table read from the authoring network once. Era index -> entry
 ## milestone, display name and decay display all resolve through here so the
@@ -1090,13 +1103,11 @@ static func era_rows() -> Array:
 		_era_rows_cache = rows
 	return _era_rows_cache
 
-
 static func era_display_name(era_index: int) -> String:
 	var rows := era_rows()
 	if era_index < 0 or era_index >= rows.size():
 		return ""
 	return String((rows[era_index] as Dictionary).get("display_name", ""))
-
 
 ## Technology that must be completed before the player counts as "in" this era,
 ## i.e. the era's own entry gate. Empty for era 0 (no gate).
@@ -1106,20 +1117,17 @@ static func era_entry_technology_key(era_index: int) -> String:
 		return ""
 	return String((rows[era_index] as Dictionary).get("entry_milestone_id", ""))
 
-
 func _display_name(definition) -> String:
 	var name_key := String(definition.name_key)
 	if not name_key.is_empty() and not name_key.contains("."):
 		return name_key
 	return String(definition.id)
 
-
 func _display_name_for_id(ideology_id: String) -> String:
 	for definition in definitions:
 		if definition != null and String(definition.id) == ideology_id:
 			return _display_name(definition)
 	return ideology_id
-
 
 func _exclusion_rivals(definition) -> PackedStringArray:
 	var rivals := PackedStringArray()
@@ -1133,20 +1141,17 @@ func _exclusion_rivals(definition) -> PackedStringArray:
 		rivals.append(_display_name(other))
 	return rivals
 
-
 func _synergy_resource(synergy_id: String):
 	for synergy in synergies:
 		if synergy != null and String(synergy.id) == synergy_id:
 			return synergy
 	return null
 
-
 func _synergy_display_name(synergy) -> String:
 	var display := String(synergy.display_name).strip_edges()
 	if not display.is_empty():
 		return display
 	return String(synergy.id)
-
 
 func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
 		effects: Array[Resource], on_enter_effects: Array[Resource] = []) -> PackedStringArray:
@@ -1193,7 +1198,6 @@ func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
 			lines.append(line)
 	return lines
 
-
 func _present_rule_lines(card_id: String, level_index: int) -> PackedStringArray:
 	var lines := PackedStringArray()
 	if card_id.is_empty():
@@ -1220,7 +1224,6 @@ func _present_rule_lines(card_id: String, level_index: int) -> PackedStringArray
 			if not lines.has(note):
 				lines.append(note)
 	return lines
-
 
 ## Player-facing summary of the managed program named by `definition_key`.
 ##
@@ -1263,12 +1266,10 @@ func _present_on_enter_effect(effect: Resource) -> String:
 			return "首次达到化育等级时：免费获得 %d 次理念抽取。该奖励只能领取一次。" % count
 	return ""
 
-
 func _append_clean_line(lines: PackedStringArray, raw_line: Variant) -> void:
 	var line := _clean_card_face_text(String(raw_line))
 	if not line.is_empty() and not lines.has(line):
 		lines.append(line)
-
 
 func _clean_card_face_text(raw: String) -> String:
 	var text := raw.strip_edges()

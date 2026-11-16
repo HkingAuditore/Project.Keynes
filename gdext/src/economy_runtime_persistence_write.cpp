@@ -1563,10 +1563,46 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             }
             ++_save.army_personnel_cursor;
         }
-        if (_save.army_personnel_cursor >= _army_personnel.size())
-            _save.section = SAVE_SECTION_END;
+        if (_save.army_personnel_cursor >= _army_personnel.size()) {
+            _save.section = SAVE_SECTION_STRATUM_MOBILIZATION;
+            _save.stratum_mobilization_cursor = 0;
+        }
         return make_save_chunk(SAVE_SECTION_ARMY_PERSONNEL,
             static_cast<uint32_t>(_save.army_personnel_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_STRATUM_MOBILIZATION) {
+        const int32_t begin = _save.stratum_mobilization_cursor;
+        const auto &rows = _stratum_mobilization.rows;
+        while (_save.stratum_mobilization_cursor <
+               static_cast<int32_t>(rows.size())) {
+            const StratumMobilizationRow &row =
+                rows[static_cast<size_t>(_save.stratum_mobilization_cursor)];
+            std::vector<uint8_t> record;
+            append_le<int32_t>(record, row.cell);
+            append_le<uint16_t>(record, row.profession);
+            append_le<int32_t>(record, row.owner_slot);
+            append_le<uint16_t>(record, row.mobilization_q16);
+            append_le<uint16_t>(record, row.satisfaction_ema_q16);
+            append_le<uint16_t>(record, row.share_q16);
+            append_le<uint16_t>(record, row.local_sat_q16);
+            append_le<uint8_t>(record, row.stage);
+            append_le<uint8_t>(record, row.flags);
+            append_le<int32_t>(record, row.next_check_day);
+            append_le<int32_t>(record, row.cooldown_until_day);
+            append_le<int32_t>(record, row.last_event_day);
+            append_le<uint16_t>(record, row.trauma_q16);
+            if (!payload.empty() &&
+                payload.size() + record.size() + 16U > static_cast<size_t>(budget))
+                break;
+            payload.insert(payload.end(), record.begin(), record.end());
+            ++_save.stratum_mobilization_cursor;
+        }
+        if (_save.stratum_mobilization_cursor >=
+            static_cast<int32_t>(rows.size()))
+            _save.section = SAVE_SECTION_END;
+        return make_save_chunk(SAVE_SECTION_STRATUM_MOBILIZATION,
+            static_cast<uint32_t>(_save.stratum_mobilization_cursor - begin),
+            payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

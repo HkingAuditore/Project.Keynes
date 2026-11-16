@@ -254,6 +254,7 @@ bool NativeEconomyRuntime::gameplay_fact_event(int32_t kind, int32_t &event_type
         case GAMEPLAY_FACT_TECHNOLOGY_CONTACT: event_type = 16; payload_schema = 7; break;
         case GAMEPLAY_FACT_REPEATED_CROP_FAILURE: event_type = 11; payload_schema = 9; break;
         case GAMEPLAY_FACT_COUNTRY_DEVELOPMENT_METRIC: event_type = 17; payload_schema = 10; break;
+        case GAMEPLAY_FACT_STRATUM_MOBILIZATION: event_type = 18; payload_schema = 26; break;
         default: event_type = 0; payload_schema = 0; return false;
     }
     return true;

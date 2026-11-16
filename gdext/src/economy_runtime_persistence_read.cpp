@@ -35,7 +35,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
     }
     // The current PKEC format is strict: historical layouts are intentionally
     // rejected because family records now carry the pending population reward.
-    if (schema != SCHEMA_VERSION) {
+    // 63 only appends the optional stratum-mobilization section, so a v62
+    // stream restores that table empty and is still readable.
+    if (schema != SCHEMA_VERSION && schema != 62) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }
@@ -3084,6 +3086,46 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
         }
         // END army personnel lane
+    } else if (section == SAVE_SECTION_STRATUM_MOBILIZATION) {
+        if (!_restore.stratum_mobilization_seen) {
+            _stratum_mobilization.clear(_cell_count.get());
+            _restore.stratum_mobilization_seen = true;
+        }
+        for (uint32_t record = 0; record < records; ++record) {
+            StratumMobilizationRow row;
+            if (!read_le(bytes, cursor, row.cell) ||
+                !read_le(bytes, cursor, row.profession) ||
+                !read_le(bytes, cursor, row.owner_slot) ||
+                !read_le(bytes, cursor, row.mobilization_q16) ||
+                !read_le(bytes, cursor, row.satisfaction_ema_q16) ||
+                !read_le(bytes, cursor, row.share_q16) ||
+                !read_le(bytes, cursor, row.local_sat_q16) ||
+                !read_le(bytes, cursor, row.stage) ||
+                !read_le(bytes, cursor, row.flags) ||
+                !read_le(bytes, cursor, row.next_check_day) ||
+                !read_le(bytes, cursor, row.cooldown_until_day) ||
+                !read_le(bytes, cursor, row.last_event_day) ||
+                !read_le(bytes, cursor, row.trauma_q16)) {
+                error = "save_stratum_mobilization_record_truncated";
+                return false;
+            }
+            if (row.cell < 0 || row.cell >= _cell_count.get() ||
+                row.profession >= _profession_political_class_index.size() ||
+                row.owner_slot < -1 || row.stage > 4 ||
+                row.mobilization_q16 >= Q16_ONE ||
+                row.satisfaction_ema_q16 >= Q16_ONE ||
+                row.share_q16 >= Q16_ONE ||
+                row.local_sat_q16 >= Q16_ONE ||
+                row.trauma_q16 >= Q16_ONE ||
+                row.last_event_day < -1) {
+                error = "save_stratum_mobilization_row_invalid";
+                return false;
+            }
+            _stratum_mobilization.rows.push_back(row);
+        }
+        // Rebuilt per chunk: the writer emits rows in (cell, profession) order,
+        // so an append preserves the CSR invariant even across chunk boundaries.
+        _stratum_mobilization.rebuild_offsets(_cell_count.get());
     } else if (section == SAVE_SECTION_FAMILY_FOUNDING) {
         if (!read_family_founding_save_records(bytes, cursor, records, error))
             return false;

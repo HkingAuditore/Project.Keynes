@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"technician"
+profession_class_id = &"worker"
 display_name = "技术员"
 default_consumption_plan_id = &"technical_household"
 technology_tags = PackedStringArray()

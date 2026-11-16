@@ -1238,6 +1238,13 @@ Dictionary DCWorldExt::set_family_target_min_branches_override_for_test(
     return out;
 }
 
+void DCWorldExt::set_tag_force_all_for_test(bool force) {
+    if (_economy_runtime == nullptr) return;
+    static_cast<NativeEconomyRuntime *>(_economy_runtime)
+        ->set_tag_force_all_for_test(force);
+}
+
+
 Dictionary DCWorldExt::set_cell_tag_override_for_test(
         const String &tag_key, int32_t cell, bool on) {
     Dictionary out;
@@ -1672,6 +1679,39 @@ Dictionary DCWorldExt::get_cell_satisfaction_attractiveness(int cell_idx) const 
     return committed_read(_runtime_host.get(), runtime,
         read_key(ReadQuery::CELL_SATISFACTION_ATTRACTIVENESS, {cell_idx}),
         [&] { return runtime->cell_satisfaction_attractiveness(cell_idx); });
+}
+
+Dictionary DCWorldExt::get_cell_mobilization_snapshot(int cell_idx) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::CELL_MOBILIZATION_SNAPSHOT, {cell_idx}),
+        [&] { return runtime->cell_mobilization_snapshot(cell_idx); });
+}
+
+Dictionary DCWorldExt::get_country_mobilization_summary(int country_slot) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::COUNTRY_MOBILIZATION_SUMMARY, {country_slot}),
+        [&] { return runtime->country_mobilization_summary(country_slot); });
+}
+
+Dictionary DCWorldExt::get_mobilization_odds(
+        int cell_idx, int profession, int action, int64_t spend_bp) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    // Odds depend on the caller's spend, so this is a direct cold read rather
+    // than a cached committed read view.
+    return runtime->mobilization_odds(cell_idx, profession, action, spend_bp);
+}
+
+bool DCWorldExt::apply_mobilization_result(
+        int cell_idx, int profession, int action, bool success) {
+    if (_economy_runtime == nullptr) return false;
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return runtime->apply_mobilization_result(cell_idx, profession, action,
+                                              success);
 }
 
 Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {
@@ -2391,6 +2431,7 @@ Dictionary DCWorldExt::run_economy_stage_ops_day(int64_t day_index) {
 void DCWorldExt::set_economy_stage_ops_soak_parity_ok(bool ok) {
     if (!_runtime_host) {
         _runtime_host = std::make_unique<NativeSimulationHost>();
+    if (_runtime_host) _runtime_host->set_country_peer_pump([this] { service_country_worker_peer_adapter(64, true); });
     }
     _runtime_host->set_economy_stage_ops_soak_parity_ok(ok);
 }

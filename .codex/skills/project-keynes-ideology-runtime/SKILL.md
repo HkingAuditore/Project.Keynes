@@ -91,10 +91,17 @@ or a second Modifier writer for equipped ideas.
 - Read Economy's committed `CountryClassOpinionSnapshot` only for structural
   commands and explain. Same-day ideology commands use the previous COMMIT
   revision. Do not scan class opinion on the quiescent daily path.
-- Compute support as
-  `Σ(class_influence × directional_stance) / Σ(class_influence)`. Absent stance
-  rows contribute zero. Optional critical-class floors (`>= -65536`) block even
-  when the weighted average passes. Empty stances bypass the gate.
+- Compute support from **material incidence**, not authored stances:
+  `delta_u_c = Σ_ch share[c][ch] × delta[ch]` (Economy publishes `share`,
+  the catalog compiles `delta` per level), `stance_c = clamp(gain × delta_u_c)`,
+  then `Σ(class_influence × stance) / Σ(class_influence)`. Repeal is the same
+  delta negated. `support_model=0` (the authored rows) is retired and rejected
+  by `configure`. Any class whose income falls past `veto_q16` (default −20%)
+  and holds at least `veto_min_influence_q16` (default 2%) vetoes, replacing the
+  hand-authored `*_min_support_q16` floors. A catalog with
+  `incidence_channel_count == 0` evaluates no support and does not gate; the
+  production catalog asserts the table exists in
+  `tests/ideology/ideology_incidence_probe.gd`.
 - Visit only reverse-CSR synergy candidates after equip/unequip/level/promotion.
   Do not scan the synergy catalog.
 - Keep daily work on pending ACK refs, ideology-ID-sorted `active_state_indices`,

@@ -94,6 +94,9 @@ CountryReadView NativeCountryRuntime::read_view() const {
         [](const void *owner, int32_t slot, bool &enabled, int64_t &remaining_points) {
             return static_cast<const NativeCountryRuntime *>(owner)->research_procurement_policy(slot, enabled, remaining_points);
         },
+    [](const void *owner) {
+        return static_cast<const NativeCountryRuntime *>(owner)->last_committed_day();
+    },
     };
     return CountryReadView(this, queries);
 }

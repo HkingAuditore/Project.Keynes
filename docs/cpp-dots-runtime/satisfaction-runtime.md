@@ -126,6 +126,69 @@ composite        = min(raw, ceiling)
 采用70%实际生活权重后，正常生活仍能越过0.70出生参考，饥饿约束仍使严重不足者低于参考。
 应以正式开局长跑继续校准，不能仅用零出生的公式测试声称人口平衡已经完成。
 
+## 外部来源：事件效果 / 政体 / 家族效果
+
+三者都**只能经 Modifier 定义**进入满意度，没有第二套写入口。内核读取的仍然是那份
+epoch 起点冻结的 `(国家 × 职业)` 表，所以新增来源不改热循环：每个 cohort 依旧是一次
+O(1) 下标读取，冻结期也沿用既有的批量 `effective_values()`，不产生按格或按 cohort 的
+新增遍历。
+
+要新增一个来源，authoring 侧只需要一条定义，term 写成 ADD：
+
+```text
+定义 key（任意命名空间）
+  term: economy.profession.<profession_id>.satisfaction_bp   operation=ADD   value=<bp>
+```
+
+`100 bp = 满意度 1.0 点`（满分 100 点），冻结时按 `bp × Q16_ONE / 10000` 转 Q16，
+并钳制在 `[-2500, +2500]`。偏置**加在天花板之前**（`min(raw + bias, ceiling)`），
+所以任何来源都无法把基本生活不足的阶层推成“满意”。
+
+| 来源 | 通道 | 现状（2026-11-14） |
+| --- | --- | --- |
+| 理念卡 | 定义由理念目录自带 | 已在用：`labour_legislation.l3` +400bp、`land_tax_reform.l1` −800bp 等 |
+| 科技 | 同族 stat | 已在用：9 个节点（士兵、工人、矿工、产业工人、佃农） |
+| 叙事事件 | `COUNTRY_MODIFIER` 应用定义 | **已接**：`narrative.relief.agrarian_satisfaction`、`narrative.levy.labor_satisfaction` |
+| 政体 | `PoliticalRegimeDefinition.modifier_definition_keys` → 切换时应用/移除 | **已接**：`regime.early_clan.cohesion`（地主 +100／商人 −100）、`regime.local_council.cohesion`（商人 +200／地主 −150） |
+| 家族效果 | 家族效果 program 指向定义 | **已接**：`family.country.patronage_satisfaction` ← 官方效果 `patronage_house`（门客之家，COUNTRY/ADD，威望 Ⅰ→Ⅴ 时匠户与学者 +1.2→+2.0、书吏与雇工 +0.8→+1.3） |
+
+政体的键在 `PoliticalRegimeCatalog.compile_native_catalog(country, modifier_catalog)` 里对
+`modifier_catalog.definition_keys` 校验：未知 key 直接让世界编译失败并返回
+`political_regime_modifier_definition_unknown:<key>`，不会静默变成“换了政体但没效果”。
+`country_facade.configure()` 目前只传第一个参数，运行期这道校验因此跳过；测试按完整签名覆盖，
+后续把已编译的 Modifier 列传进去即可在启动时真正拦截。
+
+政体效果的应用时机见 `RegimeEffectBinding`：`reconcile()` 按 REGIME 源类型清掉该国所有政体行、
+再应用新政体声明的定义；`PlayerController._sync_regime_effects()` 在 `country_committed`
+（已确认的国家提交）上比较 `political_regime_snapshot` 的体制 key，**只在体制真的变化时**执行，
+稳态下每次提交只多一次快照读取、零条命令。行随 PKCM 持久化，读档不需要重放；读档后首次提交
+会做一次幂等对齐（旧档在该功能之前产生，缺行时正好补上）。
+
+**家族效果为什么先在“校验”这一步收口**：家族效果 program 的 `target_domain` 决定它只能绑定
+同域定义（COUNTRY→domain 1）。`validate_domain_bindings()` 会拒绝把 COUNTRY 家族效果绑到
+`economy.city.*` 一类 ECONOMY 定义上；测试同时覆盖正例与反例，并额外断言**官方 49 条效果
+全部能对真实 economy/modifier 列通过绑定**，所以后续写内容不会出现“效果静默不生效”。
+
+家族效果的内容源是 `data/economy/family_official_buffs.json` 的 `effects` 数组（
+`default_family_effects.tres` 只是薄包装，由 `FamilyOfficialCatalog.hydrate_effect_catalog()`
+填充）。`patronage_house` 是该数组里第二条 COUNTRY 域效果，模板与 `trade_nation` 一致：
+`source_kind=1`（随机池）、`target_domain=3`、`operation=0`（ADD）、
+`target_selector_kind=3`（按家族所在国），`magnitude_by_prestige_q16` 沿用官方目录当前的
+统一威望曲线（0.82→1.30），因此描述里的点数是按该曲线换算后的值。
+
+**调用约定**：这些定义自带绝对 bp，调用方必须传 `magnitude_q16 = 65536`（1.0）。
+传百分数（例如 `magnitude_q16 = 9830`）会把作者的 bp 乘成 15%，不是错误但语义不同；
+AI 生成事件走 `magnitude_percent`（5–50），即按定义量级取百分比强度。
+
+叙事侧现状：`evt.climate.severe_drought` 的「开仓赈济」选项给农耕各层 +400bp / 120 日；
+`canal` 链「征发民夫」选项给力役与雇工 −400~−500bp / 240 日。两者的 key 已进
+`narrative_ai_validator.SAFE_COUNTRY_MODIFIER_KEYS` 与提示词白名单。
+
+验收：`tests/economy/satisfaction_sources_runtime_test.gd`（51 项）验证定义全部是 ADD、
+只落在 `.satisfaction_bp` 上，adapter 原样转发 key 且 `magnitude_q16 = 1.0`，以及原生侧
+「应用 → Modifier 提交 → 下一个 epoch 冻结 → `raw + bias` 进入 composite」的
+`+400bp / −400bp` 精确增量与职业隔离。
+
 ## 计算位置与查询
 
 `economy_runtime_market.cpp` 在既有 need 归约中累计三档生活满足率；科技适用性在同一市场
@@ -232,7 +295,7 @@ payload 布局：`i0` 新等级、`i1` 最差维度、`i2` 最差需求、`i3` �
   `epoch_tax_paid`(i64)、`epoch_subsidy_received`(i64)。
 - `SAVE_SECTION_FAMILY_INFLUENCES` 追加 `satisfaction_q16`。
 - `SAVE_SECTION_CELLS` 追加已发布的社会压力等级。
-- 上述是 v30 的历史布局接入；当前 writer 为 v60，reader 允许 v56～v60，并继续校验目录
+- 上述是 v30 的历史布局接入；当前 writer 为 **v61**，reader 允许 v56～v61，并继续校验目录
   与内容身份。消费模型 v2 与本轮消费计划修改会改变 catalog hash，不能因保存列未变就认为
   旧内容存档可以加载。
 - restore 校验维度值与 `worst_dimension_id` 的范围；越界即拒绝整个存档。

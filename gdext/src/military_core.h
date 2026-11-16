@@ -737,6 +737,12 @@ enum MilitaryCommandOp : uint16_t {
     MCMD_WAR_DECLARE = 40,            // country -> other(country handle)
     MCMD_PEACE_PROPOSE = 41,          // other(war id), ints/longs terms
     MCMD_PEACE_RESPOND = 42,          // other(war id), count=accept
+    // Rebellion-only declaration: same payload as WAR_DECLARE but a soldier-less
+    // sovereign (a freshly independent rebel state) may still be at war.
+    MCMD_WAR_DECLARE_FORCED = 43,
+    // Moves every garrison lot in `cell` to `other` (country handle) and clears
+    // the military controller. Used when a rebel cell changes sovereign.
+    MCMD_GARRISON_TRANSFER_CELL = 44,
 };
 
 // Peace term encoding inside MilitaryCommand.ints (kind, a, b) triples and

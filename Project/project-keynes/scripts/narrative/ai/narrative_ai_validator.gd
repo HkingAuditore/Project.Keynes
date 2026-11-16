@@ -58,6 +58,11 @@ const SAFE_COUNTRY_MODIFIER_KEYS := {
 	"ideology.country.construction.cost_factor.cut": "ideology.country.construction.cost_factor.cut",
 	"ideology.country.research.cost_factor.cut": "ideology.country.research.cost_factor.cut",
 	"family.country.trade_capacity": "family.country.trade_capacity",
+	# Satisfaction definitions. Their terms are ADD basis points on
+	# `economy.profession.<pid>.satisfaction_bp`, so an AI event scales them with
+	# `magnitude_percent` instead of authoring a new stat key.
+	"narrative.relief.agrarian_satisfaction": "narrative.relief.agrarian_satisfaction",
+	"narrative.levy.labor_satisfaction": "narrative.levy.labor_satisfaction",
 }
 
 const DEFAULT_KNOWN_GOODS := [
@@ -121,6 +126,14 @@ static func validate_and_sanitize(
 	# 就地改写成 `{temperature}` 交给引擎填充，其余文本原样放行。
 	var title := normalize_temperature_readings(raw_title)
 	var body_text := normalize_temperature_readings(raw_body_text)
+	var digit_field := _digit_offender(title, body_text, parsed_dict)
+	if not digit_field.is_empty():
+		return {
+			"ok": false,
+			"code": "arabic_digits_in_narrative",
+			"reason": "AI 事件叙事文本含阿拉伯数字（%s）；叙事文本只许用汉字数量词，气温写 {temperature}。" % digit_field,
+			"event_dict": {},
+		}
 
 	var raw_options: Variant = parsed_dict.get("options", [])
 	if not (raw_options is Array) or (raw_options as Array).is_empty():
@@ -240,6 +253,38 @@ static func _extract_outer_json_object(s: String) -> String:
 	if start >= 0 and end > start:
 		return s.substr(start, end - start + 1)
 	return ""
+
+
+## 叙事文本禁用阿拉伯数字：数量词用汉字（三人、数十户、三成），气温用 `{temperature}`。
+## `custom_label` 不在检查范围（它本来就该写数字）。
+static func _digit_offender(title: String, body_text: String, parsed: Dictionary) -> String:
+	if _contains_arabic_digit(title):
+		return "title"
+	if _contains_arabic_digit(body_text):
+		return "body_text"
+	var raw_options: Variant = parsed.get("options", [])
+	if raw_options is Array:
+		for raw_opt in raw_options:
+			if not raw_opt is Dictionary:
+				continue
+			var opt: Dictionary = raw_opt
+			if _contains_arabic_digit(String(opt.get("text", ""))):
+				return "options.text"
+			var raw_outcomes: Variant = opt.get("outcomes", [])
+			if raw_outcomes is Array:
+				for raw_out in raw_outcomes:
+					if raw_out is Dictionary and _contains_arabic_digit(
+							String((raw_out as Dictionary).get("outcome_title", ""))):
+						return "outcomes.outcome_title"
+	return ""
+
+
+static func _contains_arabic_digit(text: String) -> bool:
+	for i in range(text.length()):
+		var code := text.unicode_at(i)
+		if code >= 48 and code <= 57:
+			return true
+	return false
 
 
 ## 数字不一定是数据：「三人」「三成」「第 3 条」都是叙述，不能因为出现数字就删句子。

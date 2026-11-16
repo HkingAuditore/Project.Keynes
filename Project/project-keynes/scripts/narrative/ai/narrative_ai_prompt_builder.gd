@@ -45,6 +45,11 @@ const COUNTRY_MODIFIER_KEYS := [
 	"ideology.country.output.energy_factor.gain",
 	"ideology.country.output.knowledge_factor.gain",
 	"ideology.country.trade.capacity_factor.gain",
+	# Absolute-value satisfaction definitions. Their terms already carry the
+	# basis points, so the effect must pass magnitude_q16 = 65536 (1.0) instead
+	# of a percent factor; the prompt states this next to the key list.
+	"narrative.relief.agrarian_satisfaction",
+	"narrative.levy.labor_satisfaction",
 ]
 
 const ERA_NAMES := [
@@ -188,7 +193,7 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
       "require_treasury_cash": 0,
       "outcomes": [
         {
-          "probability_percent": 70,
+          "probability_percent": 100,
           "outcome_title": "结果（4-8字）",
           "effects": [
             {
@@ -215,6 +220,7 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"   - `COUNTRY_MODIFIER`（全国修正）：",
 		"     允许的 `target_key`：%s。" % country_mods_joined,
 		"     参数：`magnitude_percent`（5 到 50）和 `duration_days`（15 到 365）。",
+		"     `narrative.relief.*` / `narrative.levy.*` 是阶层满意度定义：`magnitude_percent` 表示按定义内已写定的满意度量级取百分比（5 到 50），正负方向由定义本身决定，不要写负数。",
 		"   - `TREASURY_CASH_TO_COHORT`（国库拨款赈济本地民众）与 `COHORT_CASH_TO_TREASURY`（本地民间筹款上缴国库）：",
 		"     参数：可使用 `ratio_bp`（100..2000，代表 1%..20% 资金比例）或 `int_value`（正整数金额）。",
 		"   - `COUNTRY_GOOD_TO_MARKET`（国家储备投放本地市场）、`MARKET_GOOD_TO_COUNTRY`（本地市场征调入国库）、`MARKET_ADD_STOCK`（本地市场新增商品库存）、`MARKET_REMOVE_STOCK`（本地市场损耗商品库存）：",
@@ -224,9 +230,9 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"   - `ADD_EVENT_WEIGHT_BIAS`（调整后续同类事件触发权重）：设置 `tag_key`（如 `famine`, `trade`, `unrest`, `harvest`, `plague`, `climate`）、`int_value`（-200..400）及 `duration_days`（30..365）。",
 		"   - `SCHEDULE_FOLLOWUP_EVENT`（预约多阶段后续事件链）：设置 `target_key`（后续事件标识或链条名）、`duration_days`（多少日后触发，15..180）以及 `ai_followup_prompt`（后续事件的走向要点）。",
 		"4. 可参考的建筑类型列表：[%s]。" % buildings_note,
-		"5. **叙事文本只写处境与后果，不写可测的数据读数**：`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里禁止写气温、降水量、价格、库存、人口、满意度、百分比起伏、金额、具体日期或持续天数这类读取值——这些事件会被缓存数月后复用，读数一定过期。叙述需要的泛指数量照常写：三人、数十户、三成、半数都可以。确实要指代气温时写占位符 `{temperature}`（已含单位，不要再补 ℃ 或「度」）。`custom_label` 是唯一例外，按第 2 条写「对象 + 幅度 + 时长」。",
+		"5. **叙事文本禁用阿拉伯数字**：`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里不许出现 0–9 任何一个阿拉伯数字，也不许写百分号；气温统一写占位符 `{temperature}`（引擎会填，不要再补 ℃ 或「度」）。要写数量一律用汉字模糊表达：三人、数十户、三成、半数。`custom_label` 是唯一例外，按第 2 条写「对象 + 幅度 + 时长」。",
 		"6. 文风要求：只写事实与后果，用最短句子；不得使用修辞、比喻、典故、感叹、场景铺陈与人物对白；不得出现超越当前时代的现代词汇；严禁输出 JSON 之外的任何文本。",
-		"7. 若状态快照给出「本地最大族」或「战事」，事件必须落到具体的人与具体的代价上：写族里谁在争、谁在出钱、谁在等消息；写仗打到哪里、谁家少了人。不要只写“民心不稳”这类空泛判断。",
+		"7. 若状态快照给出「本地最大族」或「战事」，事件必须落到具体的人与具体的代价上：写族里谁在争、谁在出钱、谁在等消息；写仗打到哪里、谁家少了人。**不要写族名，也不要写军营番号**——事件会被缓存复用，写死名字会穿帮；用「族里」「营里」指代即可。不要只写“民心不稳”这类空泛判断。",
 	])
 	return "\n".join(lines)
 
@@ -314,22 +320,18 @@ static func _build_user_prompt(
 
 	# 家族/战事/科技：让生成的事件能落到具体的人与具体的事，而不是空泛的“民心”。
 	if bool(cell_ctx.get("family_available", false)):
-		var family_name := String(cell_ctx.get("primary_family_name", "")).strip_edges()
-		if not family_name.is_empty():
-			var trait_names: PackedStringArray = cell_ctx.get(
-				"primary_family_trait_names", PackedStringArray())
-			var trait_text := "无记载"
-			if trait_names.size() > 0:
-				trait_text = "、".join(trait_names.slice(0, mini(4, trait_names.size())))
-			lines.append("- 本地最大族：%s（人口占比 %.0f%%，威望档 %d，拥有建筑 %d 处，名人 %d 位，门风：%s）" % [
-				family_name,
-				float(cell_ctx.get("primary_family_population_share", 0.0)) * 100.0,
-				int(cell_ctx.get("primary_family_prestige", 0)),
-				int(cell_ctx.get("primary_family_owned_buildings", 0)),
-				int(cell_ctx.get("primary_family_notable_people", 0)),
-				trait_text,
-			])
-
+		var trait_names: PackedStringArray = cell_ctx.get(
+			"primary_family_trait_names", PackedStringArray())
+		var trait_text := "无记载"
+		if trait_names.size() > 0:
+			trait_text = "、".join(trait_names.slice(0, mini(4, trait_names.size())))
+		lines.append("- 本地最大族：人口占比 %.0f%%，威望档 %d，拥有建筑 %d 处，名人 %d 位，门风：%s（不要写族名）" % [
+			float(cell_ctx.get("primary_family_population_share", 0.0)) * 100.0,
+			int(cell_ctx.get("primary_family_prestige", 0)),
+			int(cell_ctx.get("primary_family_owned_buildings", 0)),
+			int(cell_ctx.get("primary_family_notable_people", 0)),
+			trait_text,
+		])
 	if bool(cell_ctx.get("military_available", false)):
 		lines.append("- 战事：%s（战争 %d 场，兵员 %d，随军 %d，最差战果 %.2f，累计损失 %d）" % [
 			"在战" if bool(cell_ctx.get("at_war", false)) else "未战",

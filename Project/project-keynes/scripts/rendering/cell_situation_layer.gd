@@ -2,13 +2,15 @@ extends Control
 
 ## 常驻近景告警。仅投影屏幕内可见格，批量读 committed economy；不推进模拟。
 const TITLES := ["生活物资短缺", "工业品短缺", "消费品短缺", "阶层不满",
-    "正在干旱", "正在洪泛", "失业率高", "建筑岗位空缺"]
+    "正在干旱", "正在洪泛", "失业率高", "建筑岗位空缺", "阶层组织度"]
 const CLASS_NAMES := {"general": "一般居民", "farmer": "农民", "worker": "工人",
     "technology": "知识阶层", "merchant": "商人", "capitalist": "资本所有者",
     "landowner": "地主", "aristocrat": "贵族", "artisan": "工匠"}
 const ICON_KEYS := [&"situation.food_shortage", &"situation.industry_shortage",
     &"situation.consumer_shortage", &"situation.discontent", &"situation.drought",
-    &"situation.flood", &"situation.unemployment", &"situation.vacant_jobs"]
+    &"situation.flood", &"situation.unemployment", &"situation.vacant_jobs",
+    &"situation.discontent"]
+const MOBILIZATION_STAGE_LABELS := ["平息", "不满", "抗议", "示威", "叛乱"]
 
 var _map: MapData
 var _camera: Camera2D
@@ -257,6 +259,8 @@ func apply_snapshot(packet: Dictionary) -> void:
     var classes: PackedInt32Array = packet.get("worst_class_ids", PackedInt32Array())
     var class_ids: PackedStringArray = packet.get("class_ids", PackedStringArray())
     var days: PackedInt64Array = packet.get("state_days", PackedInt64Array())
+    var mobilization: PackedInt32Array = packet.get(
+        "mobilization_stage", PackedInt32Array())
     if cells.size() != flags.size() or severity.size() != cells.size() * 8 \
             or causes.size() != cells.size() * 3 or classes.size() != cells.size() \
             or days.size() != cells.size():
@@ -272,6 +276,7 @@ func apply_snapshot(packet: Dictionary) -> void:
             "causes": causes.slice(index * 3, index * 3 + 3),
             "class_id": String(class_ids[class_id]) if class_id >= 0 \
                 and class_id < class_ids.size() else "",
+            "mobilization": int(mobilization[index]) if index < mobilization.size() else 0,
             "day": int(days[index])}
     queue_redraw()
 
@@ -348,7 +353,7 @@ func _screen_center(cell: int) -> Vector2:
 
 func _draw() -> void:
     _hits.clear()
-    if not _near or _map == null or _icons.size() != 8:
+    if not _near or _map == null or _icons.size() != 9:
         return
     # [situation-icon-space 2026-11-03] 本层是 UI/CanvasLayer 下的 Control —— 绘制空间
     # 本来就是**屏幕空间**，_screen_center() 也已经乘过 canvas_transform，所以这里不能
@@ -366,9 +371,13 @@ func _draw() -> void:
             continue
         var row: Dictionary = _rows[cell]
         var kinds: Array[int] = []
-        for kind in range(8):
-            if int(row.flags) & (1 << kind):
-                kinds.append(kind)
+        for kind in range(9):
+            if kind == 8:
+                if int(row.get("mobilization", 0)) <= 0:
+                    continue
+            elif not (int(row.flags) & (1 << kind)):
+                continue
+            kinds.append(kind)
         if kinds.is_empty():
             continue
         var center := _screen_center(int(cell))
@@ -416,8 +425,12 @@ func tooltip_for(cell: int, kind: int) -> String:
     var row: Dictionary = _rows.get(cell, {})
     if row.is_empty():
         return ""
-    var score := float(row.severity[kind]) * 100.0 / 65536.0
     var text := String(TITLES[kind])
+    if kind == 8:
+        var stage := clampi(int(row.get("mobilization", 0)), 0, 4)
+        return "%s\n最高阶段：%s\n点开地块查看各阶层的组织度明细。" % [
+            text, MOBILIZATION_STAGE_LABELS[stage]]
+    var score := float(row.severity[kind]) * 100.0 / 65536.0
     if kind < 3:
         var good := int(row.causes[kind])
         var name := String(_economy.good_display_name(good)) if _economy != null and good >= 0 else ""

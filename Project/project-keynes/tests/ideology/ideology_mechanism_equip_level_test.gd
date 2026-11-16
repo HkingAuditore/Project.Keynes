@@ -196,6 +196,7 @@ const OP_DISCOVER := 1
 const OP_GRANT := 2
 const OP_EQUIP := 5
 const OP_UNEQUIP := 6
+const OP_PROMOTE := 7
 const OP_ADD_UNDERSTANDING := 8
 ## `ReceiptStatus` (`ideology_runtime.h:81-85`).
 const RECEIPT_PENDING := 1
@@ -214,6 +215,8 @@ const REASON_NOT_EQUIPPED := "ideology_not_equipped"
 ## (`ideology_runtime.cpp:1321-1324`): what a general-class-only population gets
 ## from the card's negative repeal stance.
 const REASON_SUPPORT_THRESHOLD := "ideology_support_threshold_not_met"
+## `promote` on a card below `national_spirit_min_level` (`ideology_runtime.cpp` promote()).
+const REASON_SPIRIT_LEVEL := "ideology_national_spirit_level_insufficient"
 ## Population per cell: `household_farmer` (political class "farmer", repeal
 ## stance +8192) 3x `subsistence_farmer` (class "general", repeal stance -8192).
 ## The 3:1 ratio is what keeps the weighted REPEAL support positive, which is what
@@ -1088,35 +1091,48 @@ func _phase_c_repeal_negative_control(dense: int) -> void:
 	_run_one_ideology_day(ext, 1, "C/settle")
 
 	var support: Dictionary = ext.explain_ideology(handle, dense)
-	_print_support("C (before unequip)", support)
-	var support_q16: PackedInt32Array = support.get("support_q16",
+	_print_support("C (before promote)", support)
+	# C2: the material model publishes one delta and three directional stances per
+	# class, and repeal is by construction the negation of adopt. Checking only the
+	# aggregate could not tell that apart from a stale authored stance row.
+	var class_adopt: PackedInt32Array = support.get("support_class_adopt_q16",
 		PackedInt32Array())
-	_expect("C2 control: the REPEAL support is NEGATIVE with this population "
-		+ "(the general class repeal stance), i.e. below the card's threshold 0",
-		support_q16.size() >= 2 and int(support_q16[1]) < 0,
-		"support_q16=%s thresholds=%s" % [str(support.get("support_q16", "?")),
-			str(support.get("support_thresholds_q16", "?"))])
-	var unequip_seq := _submit(ext, OP_UNEQUIP, 2, dense, 0, handle,
-		"C/unequip")
-	_run_one_ideology_day(ext, 2, "C/unequip")
-	var unequip_receipt := _receipt(ext, unequip_seq)
+	var class_repeal: PackedInt32Array = support.get("support_class_repeal_q16",
+		PackedInt32Array())
+	var negation_holds := class_adopt.size() > 0 \
+		and class_adopt.size() == class_repeal.size()
+	if negation_holds:
+		for index in class_adopt.size():
+			if int(class_repeal[index]) != -int(class_adopt[index]):
+				negation_holds = false
+				break
+	_expect("C2 control: the material model publishes per-class stances and REPEAL "
+		+ "is the negation of ADOPT",
+		negation_holds,
+		"adopt=%s repeal=%s support=%s" % [str(class_adopt), str(class_repeal),
+			str(support.get("support_q16", "?"))])
+	# C3: a deterministic refusal on an already-equipped card. Promote needs a
+	# level the card does not have yet, so the no-op invariant is exercised without
+	# depending on the country's class mix (a fresh fixture country has no measured
+	# material income, and the gate is bypassed by design in that state).
+	var promote_seq := _submit(ext, OP_PROMOTE, 2, dense, 0, handle, "C/promote")
+	_run_one_ideology_day(ext, 2, "C/promote")
+	var promote_receipt := _receipt(ext, promote_seq)
 	var snap: Dictionary = ext.get_ideology_snapshot(handle)
 	print("[EM] C3 receipt: status=%d reason='%s' locations=%s"
-		% [int(unequip_receipt.get("status", -1)),
-			String(unequip_receipt.get("reason", "")),
+		% [int(promote_receipt.get("status", -1)),
+			String(promote_receipt.get("reason", "")),
 			str(snap.get("locations", "?"))])
-	_expect("C3 control: the UNEQUIP is REFUSED with "
-		+ "'ideology_support_threshold_not_met' -- this is the gate, not a stuck "
-		+ "transition (pending_transitions is 0 here)",
-		int(unequip_receipt.get("status", -1)) == RECEIPT_REJECTED
-		and String(unequip_receipt.get("reason", ""))
-			== REASON_SUPPORT_THRESHOLD,
+	_expect("C3 control: the PROMOTE is REFUSED for a level the card has not "
+		+ "reached, and the refusal names that gate (not a stuck transition)",
+		int(promote_receipt.get("status", -1)) == RECEIPT_REJECTED
+		and String(promote_receipt.get("reason", "")) == REASON_SPIRIT_LEVEL,
 		"status=%s reason='%s' pending_transitions=%s" % [
-			str(unequip_receipt.get("status", "?")),
-			String(unequip_receipt.get("reason", "")),
+			str(promote_receipt.get("status", "?")),
+			String(promote_receipt.get("reason", "")),
 			str(ext.get_ideology_report().get("pending_transitions", "?"))])
 	_expect("C3 control: the card stays equipped and serving after the refusal "
-		+ "(a refused unequip is a no-op, not a half transition)",
+		+ "(a refused request is a no-op, not a half transition)",
 		snap.get("locations", PackedInt32Array())
 			== PackedInt32Array([LOCATION_IDEOLOGY])
 		and int(ext.get_ideology_report().get("pending_transitions", -1)) == 0

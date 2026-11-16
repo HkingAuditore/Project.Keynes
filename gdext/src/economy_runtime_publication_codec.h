@@ -50,7 +50,17 @@ bool fields(Codec &io, uint64_t &revision, std::vector<uint64_t> &handles,
         io.lanes(view.funds) && io.lanes(view.owner_employed) &&
         io.lanes(view.satisfaction_weighted) && io.lanes(view.satisfaction_q16) &&
         io.lanes(view.country_population) && io.lanes(view.country_buildings_installed) &&
-        io.lanes(view.country_trade_base_value) && io.scalar(view.period_days);
+        io.lanes(view.country_trade_base_value) && io.scalar(view.period_days) &&
+        io.scalar(view.incidence_channel_count) &&
+        io.lanes(view.incidence_measured) && io.lanes(view.class_incidence_q16);
+}
+
+// Overflow-safe rows x channels, used by the incidence shape check.
+inline size_t incidence_lane_count(size_t rows, size_t channels) {
+    if (rows == 0 || channels == 0) return 0;
+    if (rows > std::numeric_limits<size_t>::max() / channels)
+        return std::numeric_limits<size_t>::max();
+    return rows * channels;
 }
 
 template<typename PublishedView>
@@ -74,6 +84,23 @@ bool valid(uint64_t revision, const std::vector<uint64_t> &handles,
         view.satisfaction_q16.size() != rows || view.country_population.size() != countries ||
         view.country_buildings_installed.size() != countries || view.country_trade_base_value.size() != countries)
         return false;
+    // The incidence table is optional only in the sense that a catalog without
+    // any need channels publishes `incidence_channel_count == 0`. Once the count
+    // is positive the table must be exactly rows x channels, and the per-country
+    // measured flags must exist: a short table would make Ideology read a
+    // neighbour class's shares.
+    if (view.incidence_channel_count < 0) return false;
+    if (view.incidence_channel_count == 0) {
+        if (!view.class_incidence_q16.empty()) return false;
+        if (!view.incidence_measured.empty() &&
+            view.incidence_measured.size() != countries) return false;
+    } else {
+        if (incidence_lane_count(rows, static_cast<size_t>(
+                view.incidence_channel_count)) != view.class_incidence_q16.size())
+            return false;
+        if (view.incidence_measured.size() != countries) return false;
+        for (uint8_t value : view.incidence_measured) if (value > 1) return false;
+    }
     for (size_t i = 0; i < countries; ++i)
         if (view.country_generations[i] != static_cast<uint32_t>(view.country_handles[i] >> 32u)) return false;
     return true;

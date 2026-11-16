@@ -3,6 +3,8 @@ class_name CellInspectorViewModel
 const FamilyWorkspaceProjection = preload("res://scripts/ui/family_workspace_projection.gd")
 
 
+const MobilizationCategoryModelScript = preload("res://scripts/ui/mobilization_category_model.gd")
+
 const TEMPERATURE_HISTORY_CAPACITY := 32
 const TEMPERATURE_HISTORY_CACHE_LIMIT := 64
 const DETAIL_HISTORY_CAPACITY := 48
@@ -285,6 +287,7 @@ func build(cell: HexCell) -> Dictionary:
 		tabs.append_array([
 			{"id": "population", "label": "人口", "icon": "growth"},
 			{"id": "families", "label": "家族", "icon": "family.house"},
+			{"id": "mobilization", "label": "民情", "icon": "status.warning"},
 			{"id": "market", "label": "市场", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
 		])
@@ -518,6 +521,8 @@ func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 				visibility)
 		"military":
 			return _military_category(idx)
+		"mobilization":
+			return MobilizationCategoryModelScript.build(_economy_facade(), idx)
 		"geography":
 			var terrain_v := _terrain(cell, idx)
 			var landform_v := _landform(cell, idx)

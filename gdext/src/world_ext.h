@@ -1835,6 +1835,10 @@ public:
     godot::Dictionary set_cell_tag_override_for_test(
         const godot::String &tag_key, int32_t cell, bool on);
     godot::Dictionary clear_cell_tag_overrides_for_test();
+    // Test switch mirroring PK_TAG_FORCE_ALL: compute EVERY tag's bit instead of
+    // narrowing to the tags some program consumes (M4-22). Lets a fixture query a tag
+    // no program uses yet.
+    void set_tag_force_all_for_test(bool force);
     // X14: the committed source revision/epoch and content hash the current
     // class-metric copy was taken from, plus the exact ids the copy used.
     godot::Dictionary get_class_metric_source_for_test() const;
@@ -3759,6 +3763,15 @@ private:
     void publish_military_ration_satisfaction(const MilitaryCore &core,
                                               const MilitaryWorldDigest &digest,
                                               const std::vector<MilitaryIntent> &intents);
+    // ---- Stratum mobilization (rebellion) surface
+    godot::Dictionary get_cell_mobilization_snapshot(int cell_idx) const;
+    godot::Dictionary get_country_mobilization_summary(int country_slot) const;
+    godot::Dictionary get_mobilization_odds(int cell_idx, int profession,
+                                            int action, int64_t spend_bp) const;
+    // Synchronous at the paused narrative boundary: applies an already-rolled
+    // rebellion outcome to the sparse row. Never touches conserved ledgers.
+    bool apply_mobilization_result(int cell_idx, int profession, int action,
+                                   bool success);
     void translate_military_intent(const MilitaryIntent &intent, int64_t effective_day,
                                    const MilitaryWorldDigest &digest,
                                    std::vector<MilitaryCountryCommand> &country,

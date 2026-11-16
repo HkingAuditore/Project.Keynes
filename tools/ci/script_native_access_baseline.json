@@ -117,5 +117,8 @@
   },
   "Project/project-keynes/scripts/util/pk_log.gd": {
     "core": 3
+  },
+  "Project/project-keynes/scripts/ideology/ideology_facade.gd": {
+    "economy": 2
   }
 }

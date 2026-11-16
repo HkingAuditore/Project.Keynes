@@ -34,7 +34,7 @@ struct CountryEffectCommand {
 };
 struct CountryApi {
     // v15: inactive records plus persistent political regime state.
-    static constexpr int32_t SCHEMA_VERSION = 15;
+    static constexpr int32_t SCHEMA_VERSION = 16;
     static constexpr uint32_t CAP_TREASURY_CONSTRUCTION = 1u << 0u;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;

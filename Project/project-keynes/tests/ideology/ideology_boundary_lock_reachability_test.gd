@@ -254,6 +254,9 @@ var _effect_cursor := 0
 
 
 func _init() -> void:
+	# Support gate is a different authority with its own fixtures; this one
+	# exercises its own mechanism, so configure the material model as absent.
+	IdeologyCatalog.support_gate_enabled = false
 	call_deferred("_run_and_finish")
 
 

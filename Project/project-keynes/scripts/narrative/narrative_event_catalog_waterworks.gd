@@ -144,6 +144,15 @@ static func append_waterworks_events(catalog) -> void:
 								"custom_label": "全国建设成本 -5%，240 日",
 							},
 							{
+								# The corvée itself is the cost: laboring cohorts lose
+								# satisfaction for as long as the works run.
+								"kind": Kind.COUNTRY_MODIFIER,
+								"target_key": "narrative.levy.labor_satisfaction",
+								"magnitude_q16": 65536,
+								"duration_days": 240,
+								"custom_label": "力役与雇工阶层满意度 -4，240 日",
+							},
+							{
 								"kind": Kind.SET_STORY_FLAG,
 								"target_key": String(FLAG_AUTHORIZED),
 								"duration_days": 1825,

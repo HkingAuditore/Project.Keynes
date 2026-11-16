@@ -94,3 +94,16 @@ worklog/.index/
 # Windows 的 dots_ext 由本机构建（.gdextension 指向 dots_ext_maint_v1 / dots_ext_relief_v1），
 # 不进仓库；历史上入库的一次性调试构建已于 2026-11-14 清理。
 Project/*/addons/dots_ext/bin/windows/
+
+# 智能体工作区/审计副本：整份项目快照，纯冗余，永不入库。
+.codex-temp/
+.dsh/tmp/
+# GDExtension 增量编译产物。
+gdext/src/*.obj
+gdext/src/*.pdb
+# 被挪出源码树、尚未接线的实现（harness 停放区）。
+gdext/.wip/
+# 本机编译日志。
+gdext/build_*.log
+gdext/*.err.log
+

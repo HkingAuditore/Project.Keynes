@@ -1313,12 +1313,11 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
             std::atomic_load_explicit(&_effect_input_consumers,
                 std::memory_order_acquire);
         // Test switch: force the "all tags" fallback so the narrowing can be A/B'd
-        // with ONE binary. Without a switch the two arms are different builds, and a
-        // build-to-build timing comparison confounds the change with the build.
-        static const bool force_all_tags = []() {
+        static const bool env_force_all = []() {
             const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_TAG_FORCE_ALL);
             return value != nullptr && value[0] == '1';
         }();
+        const bool force_all_tags = env_force_all || _tag_force_all_for_test;
         const std::vector<int32_t> *consumed =
             (consumers == nullptr || force_all_tags)
                 ? nullptr : &consumers->tag_ids;

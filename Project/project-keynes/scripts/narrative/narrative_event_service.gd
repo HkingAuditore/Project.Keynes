@@ -67,7 +67,7 @@ const STATE_PROBE_INTERVAL_DAYS := 7
 const MAX_STATE_PROBE_CELLS := 8
 const AI_POOL_MAX_ENTRIES := 24
 const AI_POOL_MAX_PER_STATE := 2
-const AI_POOL_TTL_DAYS := 730
+const AI_POOL_TTL_DAYS := 365
 const AI_POOL_FLUSH_LIMIT := 4
 
 var pulse_interval_days: int = DEFAULT_PULSE_INTERVAL_DAYS
@@ -769,6 +769,12 @@ func _try_fire_pooled_event(state_id: StringName, cell_idx: int, day: int) -> bo
 		if String(entry.get("state_id", "")) != key_str:
 			index += 1
 			continue
+		# 池里的 AI 事件带着生成时的地块上下文（族/战事/产业），只能回原格；
+		# 跨格复用会让“本地最大族”“前线”这类具体指涉穿帮。
+		var entry_cell := int(entry.get("cell_idx", -1))
+		if entry_cell >= 0 and entry_cell != cell_idx:
+			index += 1
+			continue
 		var def = NarrativeEventDefinitionScript.from_dict(entry.get("def_dict", {}))
 		if def == null or def.event_id == &"":
 			_ai_event_pool.remove_at(index)
@@ -1129,7 +1135,10 @@ func enqueue_event_offer(
 		day: int,
 		chain_id: StringName = &"",
 		bypass_gap: bool = false,
-		custom_ctx: Dictionary = {}
+		custom_ctx: Dictionary = {},
+		probability_overrides: Dictionary = {},
+		chain_salt: int = 0,
+		meta: Dictionary = {}
 ) -> Dictionary:
 	if def == null:
 		return {}
@@ -1176,6 +1185,11 @@ func enqueue_event_offer(
 			continue
 		var elig := opt.check_eligibility(cell_ctx)
 		var norm_probs := opt.normalized_probabilities_q16()
+		if probability_overrides.has(opt_idx):
+			var override: Variant = probability_overrides[opt_idx]
+			if override is PackedInt32Array and \
+					(override as PackedInt32Array).size() == opt.outcomes.size():
+				norm_probs = override as PackedInt32Array
 		var outcomes_payload: Array[Dictionary] = []
 		for out_idx in range(opt.outcomes.size()):
 			var out_res: NarrativeOutcome = opt.outcomes[out_idx] as NarrativeOutcome
@@ -1226,6 +1240,8 @@ func enqueue_event_offer(
 		"ai_visual_prompt": def.ai_visual_prompt,
 		"tags": Array(def.tags),
 		"chain_id": String(chain_id),
+		"chain_salt": chain_salt,
+		"meta": meta.duplicate(true),
 		"bypass_pacing": bypass_gap,
 		"is_ai_generated": def.is_ai_generated,
 		"one_shot": def.one_shot,
@@ -1304,7 +1320,8 @@ func choose_option(
 		var weights := PackedInt64Array()
 		for out_item in outcomes:
 			weights.append(maxi(1, int((out_item as Dictionary).get("probability_q16", Q16_ONE))))
-		var salt := offer_id * 131 + option_index * 17 + 7
+		var chain_salt := int(_active_offer.get("chain_salt", 0))
+		var salt := (chain_salt if chain_salt != 0 else offer_id) * 131 + option_index * 17 + 7
 		outcome_idx = NarrativeRngScript.pick_weighted_index(
 			weights, _world_seed, effective_day, _player_country_handle, cell_idx, salt)
 		outcome_idx = clampi(outcome_idx, 0, outcomes.size() - 1)
@@ -1345,6 +1362,7 @@ func choose_option(
 		"image_path": String(_active_offer.get("image_path", "")),
 		"tags": _active_offer.get("tags", []),
 		"chain_id": String(_active_offer.get("chain_id", "")),
+		"meta": (_active_offer.get("meta", {}) as Dictionary).duplicate(true),
 		"is_ai_generated": bool(_active_offer.get("is_ai_generated", false)),
 		"chosen_option_index": option_index,
 		"chosen_option_text": String(chosen_opt.get("text", "")),

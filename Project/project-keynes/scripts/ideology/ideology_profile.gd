@@ -46,6 +46,40 @@ extends Resource
 @export_range(1, 1000000, 1) var max_active_visits_per_slice: int = 1024
 @export_range(0, 64, 1) var opinion_owner_influence_weight: int = 2
 @export_range(1, 2147483647, 1) var opinion_funds_per_influence: int = 1000000
+## Material support model (see docs/plans/ideology-material-support-incidence.md).
+## 1 = each class's stance is the relative change in its real income caused by
+## the card's compiled stat keys. 0 (the retired authored-stance model) is
+## rejected by the native catalog so a stale profile fails loudly.
+@export_enum("Material:1") var support_model: int = 1
+## How strongly a relative income change turns into a stance.
+## gain = 10 means "+10% income" reads as a full +1.0 stance. Calibrated from
+## `tests/ideology/ideology_incidence_calibration_probe.gd`: with the current
+## channel coverage this lands adopt at ~40% of cards per archetype; raising it
+## further mostly widens the gap between a one-sector card and a universal one.
+@export_range(0, 655360, 1) var incidence_gain_q16: int = 655360
+## Any class that loses at least this share of its income vetoes the operation,
+## regardless of the weighted average. Replaces the hand-authored
+## `*_min_support_q16` critical-class floors.
+@export_range(-65536, 0, 1) var incidence_veto_q16: int = -13107
+## A class below this share of national influence cannot veto: a rounding-sized
+## class must not hold the country hostage.
+@export_range(0, 65536, 1) var incidence_veto_min_influence_q16: int = 1311
+## Multiplier applied to every authored adopt/repeal/promote threshold before the
+## comparison. The thresholds were calibrated against the old authored stances
+## (0.125-0.625); material stances are an order of magnitude smaller because a
+## class only owns a share of the affected flow, so the raw thresholds would block
+## most cards.
+##
+## Calibrated with `tests/ideology/ideology_incidence_calibration_probe.gd`:
+## scale 1.00 gives 49-62/132 adopt per archetype, 0.35 gives 55-72/132 with
+## promote at 36-48%. Lowering it further stops helping because ~26 cards have no
+## mapped channel at all and ~15 have an effect too small to clear any threshold.
+@export_range(6554, 262144, 1) var incidence_threshold_scale_q16: int = 22938
+## TEST HOOK, not a gameplay knob. When false the native runtime configures as if
+## the catalog had no incidence table, so the support gate never blocks a
+## transition. Fixtures that exercise slots/effects/saves (not the gate) set
+## `IdeologyCatalog.support_gate_enabled = false` before generating a world.
+@export var support_gate_enabled: bool = true
 ## Slot growth: capacity starts at ideology_capacity/national_spirit_capacity and
 ## grows by the deltas below once the paired technology is owned.
 @export_range(0, 64, 1) var ideology_capacity_max: int = 6

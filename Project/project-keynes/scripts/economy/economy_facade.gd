@@ -355,6 +355,37 @@ func cell_satisfaction_attractiveness(cell_idx: int) -> Dictionary:
 	return attractiveness
 
 
+func cell_mobilization_snapshot(cell_idx: int) -> Dictionary:
+	if not _configured \
+			or not _world_ext.has_method("get_cell_mobilization_snapshot"):
+		return {"ok": false, "reason": "mobilization API unavailable"}
+	return _world_ext.get_cell_mobilization_snapshot(cell_idx)
+
+
+func country_mobilization_summary(country_slot: int) -> Dictionary:
+	if not _configured \
+			or not _world_ext.has_method("get_country_mobilization_summary"):
+		return {"ok": false, "reason": "mobilization API unavailable"}
+	return _world_ext.get_country_mobilization_summary(country_slot)
+
+
+func mobilization_odds(cell_idx: int, profession: int, action: int,
+		spend_bp: int = 0) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_mobilization_odds"):
+		return {"ok": false, "reason": "mobilization API unavailable"}
+	return _world_ext.get_mobilization_odds(cell_idx, profession, action,
+		spend_bp)
+
+
+func apply_mobilization_result(cell_idx: int, profession: int, action: int,
+		success: bool) -> bool:
+	if not _configured \
+			or not _world_ext.has_method("apply_mobilization_result"):
+		return false
+	return bool(_world_ext.apply_mobilization_result(cell_idx, profession,
+		action, success))
+
+
 func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64,
 		good_index: int = -1) -> Dictionary:
 	if not _configured:

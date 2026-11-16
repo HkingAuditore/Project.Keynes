@@ -16,11 +16,14 @@ const PlayerControllerMilitaryScript = preload("res://scripts/game/player_contro
 const PlayerControllerProgressionScript = preload("res://scripts/game/player_controller/progression.gd")
 const PlayerControllerSelectionScript = preload("res://scripts/game/player_controller/selection.gd")
 const PlayerControllerNarrativeScript = preload("res://scripts/game/player_controller/narrative.gd")
+const StratumUnrestServiceScript = preload("res://scripts/politics/stratum_unrest_service.gd")
+const RegimeEffectBindingScript = preload("res://scripts/country/regime_effect_binding.gd")
 var _annual_report_flow = AnnualReportFlowScript.new()
 var _music_situation = MusicSituationAggregatorScript.new()
 var _music_playback: Node
 var _narrative_service = NarrativeEventServiceScript.new()
 var _narrative_flow = NarrativeEventFlowScript.new()
+var _stratum_unrest = StratumUnrestServiceScript.new()
 var _narrative_ai_client: Node = null
 var _military_component = PlayerControllerMilitaryScript.new()
 var _progression_component = PlayerControllerProgressionScript.new()
@@ -191,6 +194,12 @@ var _pause_before_menu := false
 var _country_facade = null
 var _economy_facade = null
 var _ideology_facade = null
+var _modifier_facade = null
+# Regime effects: the last (country, regime) pair whose Modifier rows were
+# reconciled. Empty means "not reconciled yet", so the first commit after a
+# bind applies the initial regime's definitions.
+var _regime_effect_key := ""
+var _regime_effect_handle := 0
 var _era_reward_locked := false
 var _era_reward_resume_running := false
 var _era_reward_previous_speed := 1.0
@@ -915,11 +924,51 @@ func get_player_country_handle() -> int:
 
 func _on_country_committed(report: Dictionary) -> void:
 	country_committed.emit(report)
+	_sync_regime_effects()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_era_music()
 	# Country ACK of advance_era raises current_era_index here.
 	_refresh_era_advancement(true)
+
+
+## Apply the political regime's Modifier definitions once per regime change.
+##
+## The regime itself is native country state; its effects are ordinary COUNTRY
+## Modifier rows. Reconciling here (on a confirmed commit) rather than per frame
+## keeps the cost at one snapshot read per commit and zero commands while the
+## regime stays the same. Rows persist with PKCM, so a reload does not need a
+## replay unless the regime key changed.
+func _sync_regime_effects() -> void:
+	if _country_facade == null or _modifier_facade == null \
+			or _player_country_handle == 0:
+		return
+	if not _modifier_facade.has_method("is_configured") \
+			or not bool(_modifier_facade.is_configured()):
+		return
+	var snapshot: Dictionary = _country_facade.political_regime_snapshot(
+		_player_country_handle)
+	if not bool(snapshot.get("ok", false)):
+		return
+	var regime_view: Dictionary = _country_facade.political_regime_catalog_view()
+	var regime_key := RegimeEffectBindingScript.regime_key_from_snapshot(
+		snapshot, regime_view)
+	if regime_key.is_empty():
+		return
+	if regime_key == _regime_effect_key \
+			and _player_country_handle == _regime_effect_handle:
+		return
+	var keys: PackedStringArray = RegimeEffectBindingScript.definition_keys_for(
+		regime_view, regime_key)
+	var result: Dictionary = RegimeEffectBindingScript.reconcile(
+		_modifier_facade, _player_country_handle, keys)
+	if not bool(result.get("ok", false)):
+		# Leave the marker empty so the next commit retries instead of silently
+		# treating a failed apply as done.
+		push_warning("regime_effect_apply_failed: %s" % str(result))
+		return
+	_regime_effect_key = regime_key
+	_regime_effect_handle = _player_country_handle
 
 
 func _on_construction_command_settled(result: Dictionary) -> void:

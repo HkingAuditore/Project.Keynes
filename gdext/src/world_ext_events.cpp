@@ -26,6 +26,7 @@ constexpr int PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED = 6;
 constexpr int PK_EVENT_ECONOMY_TRADE_ARRIVED = 7;
 constexpr int PK_EVENT_ECONOMY_SOCIAL_PRESSURE = 8;
 constexpr int PK_EVENT_TARIFF_SUBSIDY_INTENT = 15;
+constexpr int PK_EVENT_STRATUM_MOBILIZATION = 18;
 
 constexpr int PK_EVENT_SOURCE_NATIVE = 1;
 constexpr int PK_EVENT_SOURCE_GDSCRIPT = 2;
@@ -50,6 +51,9 @@ constexpr int PK_PAYLOAD_ECONOMY_TRADE_V1 = 4; // i0=source, i1=destination, i2=
 // value=population-weighted composite Q16, entity_id=population, flags=1 when
 // the level fell.
 constexpr int PK_PAYLOAD_SOCIAL_PRESSURE_V1 = 5;
+// cell, i0=stage, i1=previous_stage, i2=profession, i3=country slot;
+// value=mobilization Q16, entity_id=profession population, flags=player|capital.
+constexpr int PK_PAYLOAD_STRATUM_MOBILIZATION_V1 = 26;
 // cell=destination, entity_id=order, value=quantity; i0=source,
 // i1=source country slot, i2=destination country slot, i3=good.
 constexpr int PK_PAYLOAD_ECONOMY_TRADE_V2 = 8;
@@ -726,6 +730,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     payloads["ECONOMY_TRADE_V1"] = PK_PAYLOAD_ECONOMY_TRADE_V1;
     payloads["ECONOMY_TRADE_V2"] = PK_PAYLOAD_ECONOMY_TRADE_V2;
     payloads["SOCIAL_PRESSURE_V1"] = PK_PAYLOAD_SOCIAL_PRESSURE_V1;
+    payloads["STRATUM_MOBILIZATION_V1"] = PK_PAYLOAD_STRATUM_MOBILIZATION_V1;
     schema["payload_schemas"] = payloads;
     schema["fields"] = Array::make(
         "event_id", "tick", "phase", "type", "source", "flags", "entity_handle",

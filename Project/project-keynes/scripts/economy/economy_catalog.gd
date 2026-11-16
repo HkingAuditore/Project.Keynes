@@ -270,6 +270,12 @@ static func compile_native_catalog(
 	var profession_technology_tags := PackedStringArray()
 	var profession_semantic_tag_offsets := PackedInt32Array([0])
 	var profession_semantic_tags := PackedStringArray()
+	# Per-profession spending basket, used by Ideology's material support model:
+	# one Q16 need-share row per profession, normalized to 65536. Derived from the
+	# profession's own consumption plan so an industrial household and a scholar
+	# household can react differently to the same consumption-cost card without
+	# measuring live market purchases.
+	var profession_need_weight_q16 := PackedInt32Array()
 	var profession_index := {}
 	for i in range(professions.size()):
 		var stable_id := String(professions[i].id)
@@ -314,6 +320,29 @@ static func compile_native_catalog(
 		normalized_semantic_tags.sort()
 		profession_semantic_tags.append_array(normalized_semantic_tags)
 		profession_semantic_tag_offsets.append(profession_semantic_tags.size())
+		var basket := PackedInt64Array()
+		basket.resize(need_ids.size())
+		basket.fill(0)
+		var plan = plans[int(plan_index[String(professions[i].default_consumption_plan_id)])]
+		for k in range(plan.need_ids.size()):
+			var basket_need := String(plan.need_ids[k])
+			if not need_index.has(basket_need):
+				return {"ok": false, "reason":
+					"plan references missing need: %s / %s" % [stable_id, basket_need]}
+			var basket_need_index := int(need_index[basket_need])
+			var quantity := maxi(0, int(plan.base_qty_per_person[k]))
+			# Living-cost weight is the only catalog-level price proxy, so it is
+			# what turns physical quantities into a spending share. Without it a
+			# "3 units of clothing" and "550 units of grain" would be compared as
+			# if they cost the same.
+			basket[basket_need_index] += quantity * maxi(1, int(
+				need_living_cost_weights[basket_need_index]))
+		var basket_total := 0
+		for quantity in basket:
+			basket_total += quantity
+		for need_slot in range(basket.size()):
+			profession_need_weight_q16.append(0 if basket_total <= 0 else int(
+				basket[need_slot] * Q16_ONE / basket_total))
 
 	var ethnicity_ids := PackedStringArray()
 	var ethnicity_culture_group_ids := PackedStringArray()
@@ -387,6 +416,7 @@ static func compile_native_catalog(
 		"profession_technology_tags": profession_technology_tags,
 		"profession_semantic_tag_offsets": profession_semantic_tag_offsets,
 		"profession_semantic_tags": profession_semantic_tags,
+		"profession_need_weight_q16": profession_need_weight_q16,
 		"ethnicity_ids": ethnicity_ids,
 		"ethnicity_culture_group_ids": ethnicity_culture_group_ids,
 		"need_ids": need_ids,

@@ -70,6 +70,22 @@ void DCWorldExt::_bind_economy_methods() {
                          &DCWorldExt::set_cell_tag_override_for_test);
     ClassDB::bind_method(D_METHOD("clear_cell_tag_overrides_for_test"),
                          &DCWorldExt::clear_cell_tag_overrides_for_test);
+    ClassDB::bind_method(D_METHOD("set_tag_force_all_for_test", "force"),
+                         &DCWorldExt::set_tag_force_all_for_test);
+    ClassDB::bind_method(
+        D_METHOD("get_cell_mobilization_snapshot", "cell_idx"),
+        &DCWorldExt::get_cell_mobilization_snapshot);
+    ClassDB::bind_method(
+        D_METHOD("get_country_mobilization_summary", "country_slot"),
+        &DCWorldExt::get_country_mobilization_summary);
+    ClassDB::bind_method(
+        D_METHOD("get_mobilization_odds", "cell_idx", "profession", "action",
+                 "spend_bp"),
+        &DCWorldExt::get_mobilization_odds);
+    ClassDB::bind_method(
+        D_METHOD("apply_mobilization_result", "cell_idx", "profession",
+                 "action", "success"),
+        &DCWorldExt::apply_mobilization_result);
     ClassDB::bind_method(D_METHOD("refresh_effect_input_digest_for_test"),
                          &DCWorldExt::refresh_effect_input_digest_for_test);
     ClassDB::bind_method(D_METHOD("get_class_metric_source_for_test"),

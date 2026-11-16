@@ -56,6 +56,8 @@ public:
     struct Snapshot {
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
+        // Country capital cells (PKCN v16). Consumers must treat -1 as "unset".
+        std::vector<int32_t> country_capital_cells;
         std::vector<int32_t> country_political_regime_ids;
         std::vector<uint32_t> country_political_regime_capabilities;
         std::vector<uint64_t> country_technologies;
@@ -114,11 +116,13 @@ public:
         bool (*has_research_signal)(const void *, int32_t, int32_t);
         int32_t (*research_signal_evidence_count)(const void *, int32_t, int32_t);
         bool (*research_procurement_policy)(const void *, int32_t, bool &, int64_t &);
+        int64_t (*committed_day)(const void *);
     };
 
     CountryReadView(const void *owner, const Queries &queries)
         : _owner(owner), _queries(queries) {}
     int64_t total_cash() const { return _queries.total_cash(_owner); }
+    int64_t committed_day() const { return _queries.committed_day(_owner); }
     int64_t cash_for_slot(int32_t slot) const {
         return _queries.cash_for_slot(_owner, slot);
     }

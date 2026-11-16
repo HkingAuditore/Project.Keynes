@@ -1,4 +1,4 @@
-﻿class_name MilitaryFacade
+class_name MilitaryFacade
 extends RefCounted
 
 ## Cold-path GDScript wrapper around the native military bindings on DCWorldExt.
@@ -484,6 +484,17 @@ func has_military_exploration_work() -> bool:
 func declare_war(country: int, target_country: int) -> Dictionary:
 	return submit([{"op": "war.declare", "country": country,
 		"other": target_country}])
+
+
+func declare_war_forced(country: int, target_country: int) -> Dictionary:
+	return submit([{"op": "war.declare_forced", "country": country,
+		"other": target_country}])
+
+
+func transfer_cell_garrison(country: int, cell: int,
+		new_owner: int) -> Dictionary:
+	return submit([{"op": "garrison.transfer_cell", "country": country,
+		"cell": cell, "other": new_owner}])
 
 
 func propose_peace(country: int, war: int, terms: Array) -> Dictionary:

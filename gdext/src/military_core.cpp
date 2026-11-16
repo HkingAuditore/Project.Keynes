@@ -3080,9 +3080,21 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             break;
         }
         case MCMD_WAR_DECLARE:
+        case MCMD_WAR_DECLARE_FORCED:
         case MCMD_PEACE_PROPOSE:
         case MCMD_PEACE_RESPOND:
             if (!need_country()) return false;
+            break;
+        case MCMD_GARRISON_TRANSFER_CELL:
+            if (!need_country()) return false;
+            if (command.cell < 0 || command.cell >= _terrain.cell_count) {
+                error = "command_bad_cell";
+                return false;
+            }
+            if (country_slot_for_handle(command.other) < 0) {
+                error = "command_country_unknown";
+                return false;
+            }
             break;
         default:
             error = "command_unknown_op";
@@ -3128,6 +3140,18 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
     MilitaryCountryPolicy &policy = _policies[(size_t)country];
     int32_t army_slot = -1;
     switch (cmd.op) {
+        case MCMD_GARRISON_TRANSFER_CELL: {
+            const int32_t new_owner = country_slot_for_handle(cmd.other);
+            if (cmd.cell < 0 || cmd.cell >= _terrain.cell_count || new_owner < 0)
+                return;
+            // Occupation is void once the cell changes sovereign, and every
+            // garrison lot at the cell follows it (from < 0 = all lots).
+            clear_controller(cmd.cell);
+            transfer_garrison_owner(cmd.cell, -1, new_owner);
+            if ((size_t)cmd.cell < _cell_owner_dirty.size())
+                _cell_owner_dirty[(size_t)cmd.cell] = 1;
+            return;
+        }
         case MCMD_FORCE_SET_TARGET:
             policy.target_mode = (uint8_t)cmd.count;
             policy.target_value = cmd.value;

@@ -56,6 +56,7 @@ var _treasury_value: Label
 var _population_button: Button
 var _population_icon: TextureRect
 var _population_value: Label
+var _unrest_button: Button
 var _pause_button: Button
 var _speed_button: Button
 var _day_night_button: Button
@@ -146,6 +147,24 @@ func _ready() -> void:
 	_population_button.mouse_exited.connect(
 		func() -> void: status_hovered.emit("population", false))
 	_population_button.pressed.connect(func() -> void: status_pressed.emit("population"))
+	# Programmatic third plate: no scene change, and it only appears when at
+	# least one owned cell is in 示威/叛乱, so the top bar stays quiet.
+	_unrest_button = Button.new()
+	_unrest_button.name = "UnrestButton"
+	_unrest_button.flat = true
+	_unrest_button.focus_mode = Control.FOCUS_NONE
+	_unrest_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_unrest_button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	_unrest_button.add_theme_font_size_override("font_size", 16)
+	_unrest_button.add_theme_color_override("font_color", UITokens.HUD_INK)
+	_unrest_button.tooltip_text = "离心：本地组织度已进入示威或叛乱的地块数"
+	_unrest_button.visible = false
+	_unrest_button.pressed.connect(func() -> void: status_pressed.emit("unrest"))
+	_unrest_button.mouse_entered.connect(
+		func() -> void: status_hovered.emit("unrest", true))
+	_unrest_button.mouse_exited.connect(
+		func() -> void: status_hovered.emit("unrest", false))
+	$Margin/Row/CountryStatus.add_child(_unrest_button)
 	_update_status_plates()
 	_update_date_block_width()
 
@@ -289,10 +308,23 @@ func era_name_target() -> Control:
 
 ## 悬浮卡贴在对应纸签下方，所以要把纸签的真实矩形交给卡片。
 func status_anchor(kind: String) -> Rect2:
+	if kind == "unrest":
+		return _unrest_button.get_global_rect() if _unrest_button != null else Rect2()
 	var button := _population_button if kind == "population" else _treasury_button
 	if button == null:
 		return Rect2()
 	return button.get_global_rect()
+
+
+## Count of owned cells at stage >= 3 (示威/叛乱). 0 hides the plate.
+func set_unrest_status(count: int) -> void:
+	if _unrest_button == null:
+		return
+	var value := maxi(0, count)
+	_unrest_button.visible = value > 0
+	_unrest_button.text = "离心 %d" % value
+	_unrest_button.add_theme_color_override("font_color",
+		UITokens.RISK if value > 0 else UITokens.HUD_INK)
 
 
 func set_era_name(era_name: String, celebrate: bool = false) -> void:

@@ -57,6 +57,12 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
     PackedByteArray flags;
     PackedInt32Array severity, causes, worst_classes;
     PackedInt64Array state_days;
+    // Per-cell class headcount, row-major (requested cell x political class). The
+    // ideology panel turns this into cell-level support: the same
+    // influence-weighted stance, just with the local class mix instead of the
+    // national one. Bounded by the requested cells, never a global table.
+    PackedInt64Array class_population;
+    PackedInt32Array mobilization_stage, mobilization_org;
     const int32_t count = static_cast<int32_t>(requested_cells.size());
     flags.resize(count);
     severity.resize(count * STRIDE);
@@ -72,6 +78,24 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
         const int32_t cell = requested_cells[row];
         const int32_t base = row * STRIDE;
         state_days[row] = _cell_last_settlement_day[cell];
+        int32_t mob_stage = 0;
+        int32_t mob_org = 0;
+        if (_stratum_mobilization.cell_offsets.size() ==
+            static_cast<size_t>(_cell_count.get()) + 1u) {
+            const int32_t mob_begin =
+                _stratum_mobilization.cell_offsets[static_cast<size_t>(cell)];
+            const int32_t mob_end =
+                _stratum_mobilization.cell_offsets[static_cast<size_t>(cell) + 1u];
+            for (int32_t i = mob_begin; i < mob_end; ++i) {
+                const StratumMobilizationRow &mob_row =
+                    _stratum_mobilization.rows[static_cast<size_t>(i)];
+                if (mob_row.stage > mob_stage) mob_stage = mob_row.stage;
+                if (mob_row.mobilization_q16 > mob_org)
+                    mob_org = mob_row.mobilization_q16;
+            }
+        }
+        mobilization_stage.append(mob_stage);
+        mobilization_org.append(mob_org);
         std::fill(class_pop.begin(), class_pop.end(), 0);
         std::fill(class_sat.begin(), class_sat.end(), 0);
         int64_t people = 0, unemployed = 0, sat = 0;
@@ -94,6 +118,8 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
             class_sat[cls] = saturating_add(class_sat[cls], saturating_mul(pop,
                 population_store().composite_satisfaction[slot], sat), sat);
         });
+        for (int32_t cls = 0; cls < static_cast<int32_t>(class_pop.size()); ++cls)
+            class_population.append(class_pop[cls]);
         const int32_t market = market_store().cell_to_market[cell];
         if (people > 0) {
             severity[base + 6] = static_cast<int32_t>(std::clamp<int64_t>(
@@ -174,7 +200,11 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
     out["cause_good_ids"] = causes;
     out["worst_class_ids"] = worst_classes;
     out["class_ids"] = class_ids;
+    out["class_count"] = static_cast<int32_t>(_political_class_ids.size());
+    out["class_population"] = class_population;
     out["state_days"] = state_days;
+    out["mobilization_stage"] = mobilization_stage;
+    out["mobilization_q16"] = mobilization_org;
     out["scanned_cohorts"] = scanned_cohorts;
     out["scanned_goods"] = scanned_goods;
     out["scanned_groups"] = scanned_groups;

@@ -141,6 +141,12 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _cell_carrying_sat_q16.clear();
     _military_ration_sat_q16.clear();
     _military_ration_sat_present.clear();
+    _cell_garrison_heads.clear();
+    _cell_garrison_present.clear();
+    _stratum_mobilization.clear(_cell_count.get());
+    _profession_mobilization_floor_q16.clear();
+    _profession_political_weight_q16.clear();
+    _profession_mobilization_config_ready.clear();
     _cell_carrying_family_surplus_q16.clear();
     _cell_carrying_family_bindable.clear();
     _cell_food_output_eq_period.clear();

@@ -1168,6 +1168,9 @@ struct RuntimeCountryPodSnapshot {
     // means the adapter must conservatively scan all country slots.
     std::vector<int32_t> research_active_country_slots;
     std::vector<int32_t> territory_count;
+    // Per-country capital cell (v16). -1 means "no capital" (legacy fixture or
+    // a country whose capital was lost); a valid capital is a land cell.
+    std::vector<int32_t> capital_cell;
     std::vector<uint64_t> country_state_version;
     std::vector<int64_t> country_cash;
     std::vector<int64_t> country_goods;

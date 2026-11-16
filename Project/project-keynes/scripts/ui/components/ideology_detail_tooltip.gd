@@ -43,6 +43,29 @@ func setup(data: Dictionary) -> void:
 		_caption("操作条件")
 		for support in supports:
 			_support(support)
+	# Material support model: who gains and who pays, in the class's own unit
+	# (relative income change), not an opaque "weighted contribution".
+	var breakdown: Array = data.get("breakdown", [])
+	if not breakdown.is_empty():
+		_rule()
+		_caption("阶层损益")
+		for row in breakdown:
+			_breakdown_row(row)
+	# Cell-level support: the same stance re-weighted by each hit cell's class mix.
+	var local: Array = data.get("local_support", [])
+	if not local.is_empty():
+		_rule()
+		_caption("地块支持")
+		var total := 0
+		var lowest := 1 << 30
+		for row in local:
+			var value := int((row as Dictionary).get("support_q16", 0))
+			total += value
+			lowest = mini(lowest, value)
+		var count := maxi(1, local.size())
+		_copy("命中 %d 格：平均 %+.2f，最低 %+.2f" % [local.size(),
+			float(total) / float(count) / Q16, float(lowest) / Q16],
+			14, Art.INK_MUTED)
 	var notes: PackedStringArray = data.get("notes", PackedStringArray())
 	if not notes.is_empty():
 		_rule()
@@ -94,6 +117,11 @@ func _estimate_height(data: Dictionary) -> float:
 	var supports: Array = data.get("supports", [])
 	if not supports.is_empty():
 		height += 52 + 74 * supports.size()
+	var breakdown: Array = data.get("breakdown", [])
+	if not breakdown.is_empty():
+		height += 52 + 22 * breakdown.size()
+	if not (data.get("local_support", []) as Array).is_empty():
+		height += 64
 	var notes: PackedStringArray = data.get("notes", PackedStringArray())
 	if not notes.is_empty():
 		height += 32
@@ -193,6 +221,25 @@ func _effects(title: String, lines: PackedStringArray, future: bool) -> void:
 		copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(copy)
 		rows.add_child(row)
+
+
+func _breakdown_row(data: Dictionary) -> void:
+	var row := HBoxContainer.new()
+	row.name = "BreakdownRow"
+	var label := Art.label(String(data.get("label", "")), 14, Art.INK,
+		HORIZONTAL_ALIGNMENT_LEFT)
+	label.custom_minimum_size.x = 84
+	row.add_child(label)
+	var delta := int(data.get("delta_q16", 0))
+	var stance := int(data.get("stance_q16", 0))
+	var tone := Art.school_color("harmony") if delta > 0 \
+		else (Art.VERMILION if delta < 0 else Art.INK_MUTED)
+	var copy := Art.label("收入 %+.1f%%   立场 %+.2f   影响力 %d" % [
+		float(delta) / Q16 * 100.0, float(stance) / Q16,
+		int(data.get("influence", 0))], 13, tone, HORIZONTAL_ALIGNMENT_RIGHT)
+	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(copy)
+	_column.add_child(row)
 
 
 func _support(data: Dictionary) -> void:

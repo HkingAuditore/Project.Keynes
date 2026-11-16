@@ -2,7 +2,6 @@
 #include "runtime_ideology_pod.h"
 
 #include "runtime_ideology_draw_kernel.h"
-
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -600,6 +599,18 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         opinion.satisfaction_q16.size() != lanes) {
         error = "ideology_opinion_snapshot_shape_invalid"; return false;
     }
+    // The incidence table drives the support gate, so a malformed one must be a
+    // named rejection here rather than an out-of-range read in support_allows().
+    if (opinion.incidence_channel_count < 0 ||
+        (opinion.incidence_channel_count == 0
+             ? (!opinion.class_incidence_q16.empty() ||
+                (!opinion.incidence_measured.empty() &&
+                 opinion.incidence_measured.size() != country.country_count))
+             : (opinion.incidence_measured.size() != country.country_count ||
+                opinion.class_incidence_q16.size() !=
+                    lanes * static_cast<size_t>(opinion.incidence_channel_count)))) {
+        error = "ideology_opinion_snapshot_shape_invalid"; return false;
+    }
     for (uint32_t slot = 0; slot < country.country_count; ++slot) {
         if (opinion.country_generations[slot] != country.country_generation[slot] ||
             opinion.country_handles[slot] != country_handle(country, slot)) {
@@ -751,7 +762,9 @@ bool RuntimeIdeologyPodAuthority::support_allows(
         const RuntimeIdeologyPodSnapshot &state,
         const RuntimeIdeologyOpinionSnapshot &opinion, uint32_t slot,
         int32_t ideology_id, uint32_t direction) const {
-    (void)state;
+    if (ideology_id < 0 ||
+        static_cast<size_t>(ideology_id) >= _catalog.definitions.size())
+        return false;
     // `PK_DISABLE_SUPPORT_GATE` 是文档化的模拟开关（runtime_switch_registry.cpp:28），
     // 主线程路径已经在 world_ext_ideology.cpp:164 应用它；worker/pod 路径若忽略它，
     // 同一开关就会在不同权威形态下表现不一致（x6c 实测：fixture 设了开关仍然被拒）。
@@ -761,31 +774,18 @@ bool RuntimeIdeologyPodAuthority::support_allows(
     }
     const auto &d = _catalog.definitions[static_cast<size_t>(ideology_id)];
     if (d.stance_count == 0) return true;
-    int64_t total = 0;
-    int64_t weighted = 0;
-    for (uint32_t class_index = 0; class_index < _catalog.class_count; ++class_index) {
-        const size_t lane = static_cast<size_t>(slot) * _catalog.class_count + class_index;
-        int64_t influence = std::max<int64_t>(0, opinion.population[lane]);
-        influence = add_sat(influence, mul_sat(std::max<int64_t>(0, opinion.owner_employed[lane]), _catalog.owner_influence_weight));
-        influence = add_sat(influence, std::max<int64_t>(0, opinion.funds[lane]) / _catalog.funds_per_influence);
-        total = add_sat(total, influence);
-    }
-    if (total <= 0) return false;
-    for (uint32_t row = 0; row < d.stance_count; ++row) {
-        const auto &stance = _catalog.class_stances[d.stance_begin + row];
-        const size_t lane = static_cast<size_t>(slot) * _catalog.class_count + static_cast<uint32_t>(stance.class_index);
-        int64_t influence = std::max<int64_t>(0, opinion.population[lane]);
-        influence = add_sat(influence, mul_sat(std::max<int64_t>(0, opinion.owner_employed[lane]), _catalog.owner_influence_weight));
-        influence = add_sat(influence, std::max<int64_t>(0, opinion.funds[lane]) / _catalog.funds_per_influence);
-        const int32_t stance_value = stance.stance_q16[direction];
-        weighted = add_sat(weighted, mul_sat(influence, stance_value));
-        const int32_t critical = stance.critical_min_q16[direction];
-        if (critical >= -65536 && (influence <= 0 || stance_value < critical)) return false;
-    }
-    const int64_t support = std::clamp<int64_t>(weighted / total, -Q16_ONE, Q16_ONE);
-    return support >= d.support_threshold_q16[direction];
+    if (_catalog.incidence.channel_count <= 0) return true;  // no model yet
+    int32_t level = 0;
+    if (slot < state.countries.size() &&
+        static_cast<size_t>(ideology_id) < state.countries[slot].ideas.size())
+        level = std::max<int32_t>(0,
+            state.countries[slot].ideas[static_cast<size_t>(ideology_id)].level);
+    if (!_catalog.incidence.level_has_effect(level)) return true;
+    return ideology_incidence::support_allows_material(_catalog.incidence,
+        opinion, slot, _catalog.class_count, static_cast<uint32_t>(level),
+        d.support_threshold_q16[direction], _catalog.owner_influence_weight,
+        _catalog.funds_per_influence);
 }
-
 int32_t RuntimeIdeologyPodAuthority::unlocked_level(
         const RuntimeIdeologyPodIdeaState &idea, int32_t ideology_id) const {
     const auto &d = _catalog.definitions[static_cast<size_t>(ideology_id)];

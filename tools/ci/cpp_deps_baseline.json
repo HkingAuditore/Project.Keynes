@@ -1,9 +1,9 @@
 {
   "version": 2,
   "metrics": {
-    "header_exposed": 519,
-    "total": 2201,
-    "keys": 596,
+    "header_exposed": 525,
+    "total": 2215,
+    "keys": 604,
     "domain_pairs": [
       "climate->economy",
       "climate->modifier",
@@ -469,7 +469,15 @@
     "gdext/src/trigger_runtime.h|trigger->effect|type:EffectDefinition": 3,
     "gdext/src/trigger_runtime.h|trigger->effect|type:EffectRuntime": 2,
     "gdext/src/trigger_runtime.h|trigger->effect|type:EffectValueMode": 1,
-    "gdext/src/trigger_runtime.h|trigger->ideology|type:NativeIdeologyRuntime": 2
+    "gdext/src/trigger_runtime.h|trigger->ideology|type:NativeIdeologyRuntime": 2,
+    "gdext/src/ideology_pod_selector.cpp|ideology->effect|include:effect_runtime.h": 1,
+    "gdext/src/ideology_pod_selector.cpp|ideology->effect|type:EffectRuntime": 2,
+    "gdext/src/ideology_pod_selector.cpp|ideology->family|type:FamilyEffectMetadataPod": 1,
+    "gdext/src/ideology_pod_selector.h|ideology->effect|type:EffectRuntime": 2,
+    "gdext/src/ideology_support_incidence.cpp|ideology->country|type:CountryClassOpinionSnapshot": 2,
+    "gdext/src/ideology_support_incidence.cpp|ideology->economy|type:EconomyApi": 2,
+    "gdext/src/ideology_support_incidence.h|ideology->country|type:CountryClassOpinionSnapshot": 2,
+    "gdext/src/ideology_support_incidence.h|ideology->economy|type:EconomyApi": 2
   },
   "contract_references": {
     "gdext/src/country_runtime_peer.cpp|country->economy|include:economy_api.h": 1,

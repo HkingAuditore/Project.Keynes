@@ -166,6 +166,7 @@ int32_t military_signature_for(const NativeEconomyRuntime &economy, int32_t prof
 int64_t military_collect_cash(NativeEconomyRuntime &economy, int64_t country_handle, int64_t amount) { return economy.military_collect_cash(country_handle, amount); }
 bool military_command_window_open(const NativeEconomyRuntime &economy) { return economy.military_command_window_open(); }
 int32_t set_military_ration_satisfaction(NativeEconomyRuntime &economy, const std::vector<int32_t> &cells, const std::vector<int32_t> &q16) { return economy.set_military_ration_satisfaction(cells, q16); }
+int32_t set_military_cell_garrison(NativeEconomyRuntime &economy, const std::vector<int32_t> &cells, const std::vector<int32_t> &heads) { return economy.set_military_cell_garrison(cells, heads); }
 void set_military_army_ration(NativeEconomyRuntime &economy, uint64_t army_handle, int32_t ration_q16) { economy.set_military_army_ration(army_handle, ration_q16); }
 int64_t military_army_population(const NativeEconomyRuntime &economy, uint64_t army_handle) { return economy.military_army_population(army_handle); }
 int64_t military_army_funds(const NativeEconomyRuntime &economy, uint64_t army_handle) { return economy.military_army_funds(army_handle); }

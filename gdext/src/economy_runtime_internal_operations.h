@@ -739,6 +739,21 @@
     // distressed band and 4 is contentment.
     int32_t social_pressure_level_for(int64_t composite_q16) const;
     void publish_social_pressure_facts();
+    // Sparse stratum-mobilization (organization) state. Compiled profession
+    // floors/weights are initialized lazily from the profession stable ids.
+    void ensure_mobilization_profession_config();
+    void advance_cell_mobilization(
+        int32_t cell, int32_t country, int64_t cell_population,
+        int64_t cell_satisfaction, const std::vector<int32_t> &touched,
+        const std::vector<int64_t> &profession_population,
+        const std::vector<int64_t> &profession_satisfaction);
+    // Military-owned per-cell garrison input for suppression odds. Public in
+    // economy_runtime.h because Military pushes it through economy_api.
+    void reset_stratum_mobilization();
+    // Family-domain helper: prestige-weighted support proxy for a cell, in
+    // [-Q16, Q16]. Lives in a lineage_* translation unit so the mobilization
+    // file does not name a family type across the domain boundary.
+    int32_t mobilization_family_backing_q16(int32_t cell) const;
     void rebuild_building_visual_social();
     // Returns true when a presentation band of `cell` changed.
     bool update_building_visual_social(int32_t cell, int64_t population,

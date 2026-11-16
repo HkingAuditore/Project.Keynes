@@ -254,6 +254,8 @@ public:
     // Country asset snapshot; otherwise territory ownership drifts from UI.
     int32_t country_slot_for_cell(int32_t cell) const;
     int32_t starting_country_slot() const { return _starting_country_slot; }
+    // Capital cell for a dense country slot; -1 when unset/invalid.
+    int32_t capital_cell_for_slot(int32_t country_slot) const;
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
     int64_t total_cash() const;
@@ -480,6 +482,10 @@ private:
         std::vector<std::string> stable_id;
         std::vector<std::string> display_name;
         std::vector<int32_t> territory_count;
+        // Capital cell (PKCN v16). Set from the bootstrap start cell and from
+        // CREATE_COUNTRY; -1 means unset/legacy. It is a political fact, not a
+        // territory claim: a country may lose its capital and keep the cell id.
+        std::vector<int32_t> capital_cell;
         std::vector<int64_t> cash;
         std::vector<uint64_t> state_version;
         std::vector<int32_t> political_regime_id;
