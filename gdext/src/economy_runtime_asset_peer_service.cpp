@@ -42,6 +42,21 @@ namespace pk {
 using namespace godot;
 using namespace variant_helpers;
 
+bool NativeEconomyRuntime::finish_country_fiscal_asset(
+        uint64_t request_id, RuntimeEconomyAssetResult &terminal,
+        std::string &error) {
+    if (_simulation_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY))
+        return _simulation_host->finish_worker_country_asset(
+            request_id, terminal, error);
+    // Country-only ACTIVE: run_economy_slice_internal holds the worker's
+    // execution boundary. Apply through the owning host and publish before
+    // acknowledgement removes the terminal the Country side still needs.
+    return _simulation_host->flush_country_economy_asset_commits(
+               error, request_id) &&
+           _simulation_host->publish_country_worker_snapshot(
+               RUNTIME_DIRTY_COUNTRY_STATE, error);
+}
+
 bool NativeEconomyRuntime::service_country_economy_asset_peer(
         uint32_t max_requests, std::string &error) {
     error.clear();

@@ -1,6 +1,10 @@
 class_name ResourceVisualLayer
 extends Node2D
 const ResourceInstancePlan = preload("res://scripts/rendering/resource_instance_plan.gd")
+const Materials = preload("res://scripts/rendering/resource_visual_materials.gd")
+const Geometry = preload("res://scripts/rendering/resource_visual_geometry.gd")
+const ChunkInputs = preload("res://scripts/rendering/resource_visual_chunk_inputs.gd")
+const ObservationQueue = preload("res://scripts/rendering/resource_visual_work_queue.gd")
 
 const ResourceShaderVariants = preload("res://scripts/rendering/resource_shader_variants.gd")
 
@@ -11,22 +15,22 @@ const DEFAULT_PROFILE = preload("res://data/visual/resource_default.tres")
 const RESOURCE_SHADER = ResourceShaderVariants.RESOURCE_SHADER
 const GroundCover = preload("res://scripts/rendering/resource_ground_cover.gd")
 const FAMILY_COUNT := 4
-const INSTANCE_SCALE_MIN := 0.82
-const INSTANCE_SCALE_MAX := 1.22
-const INSTANCE_ASPECT_MIN := 0.78
-const INSTANCE_ASPECT_MAX := 1.28
+const INSTANCE_SCALE_MIN = Geometry.INSTANCE_SCALE_MIN
+const INSTANCE_SCALE_MAX = Geometry.INSTANCE_SCALE_MAX
+const INSTANCE_ASPECT_MIN = Geometry.INSTANCE_ASPECT_MIN
+const INSTANCE_ASPECT_MAX = Geometry.INSTANCE_ASPECT_MAX
 # Batches 0..3 = prop subjects per family (3 = submerged cues); 4 = ground decals,
 # drawn first so props always sit on top of their own scar/soil patch.
 const BATCH_COUNT := 5
-const DECAL_BATCH := 4
+const DECAL_BATCH = Geometry.DECAL_BATCH
 const STRIDE = ResourceInstancePlan.STRIDE
 const RESOURCE_Z := 1 # 与植被共用父级：地表(0) < 资源(1) < 树冠(2)。
 # Instance kind lives in COLOR.a: integer part = kind, +0.5 = not the lens badge carrier.
-const KIND_PROP := 1.0
-const KIND_DECAL := 2.0
-const KIND_SUBMERGED := 3.0
-const KIND_BADGE_ONLY := 4.0
-const NON_CARRIER := 0.5
+const KIND_PROP = Geometry.KIND_PROP
+const KIND_DECAL = Geometry.KIND_DECAL
+const KIND_SUBMERGED = Geometry.KIND_SUBMERGED
+const KIND_BADGE_ONLY = Geometry.KIND_BADGE_ONLY
+const NON_CARRIER = Geometry.NON_CARRIER
 const PLAN_PROP = ResourceInstancePlan.PLAN_PROP
 const PLAN_DECAL = ResourceInstancePlan.PLAN_DECAL
 const PLAN_SUBMERGED = ResourceInstancePlan.PLAN_SUBMERGED
@@ -104,11 +108,12 @@ static func web_warmup_shader_codes() -> Dictionary:
 	return ResourceShaderVariants.web_warmup_shader_codes()
 
 
-@export var profile: Resource = DEFAULT_PROFILE
+@export var profile: ResourceVisualProfile = DEFAULT_PROFILE
 var _map: MapData
 var _world: WorldData
 var _intel: BuildingVisualIntelCache
 var _styles: Array[Dictionary] = []
+var _geometry_styles: Geometry.StyleInputs
 var _allowed := PackedByteArray()
 var _hex := 22.0
 var _quality := 1
@@ -126,14 +131,21 @@ var _center := Vector2.ZERO
 var _zoom := 1.0
 var _chunks: Dictionary = {}
 var _cell_chunk: Array[Vector2i] = []
+var _chunk_inputs := ChunkInputs.new()
 var _active: Dictionary = {}
 var _resident: Dictionary = {}
 var _dirty: Dictionary = {}
+var _build_round: Dictionary = {}
+var _chunk_revisions: Dictionary = {}
+var _published_chunk_revisions: Dictionary = {}
 var _job: Dictionary = {}
 var _uploads: Array[Dictionary] = []
-var _scan_cursor := 0
+var _upload_turn := 0
 var _near_cells: Array[int] = []
-var _near_cursor := 0
+var _observation_queue := ObservationQueue.new()
+var _frame_work_usec := 0
+var _frame_budget_usec := 0
+var _frame_budget_active := false
 var _material: ShaderMaterial
 ## 矿物 batch 专用材质（web 上是 geology pass 那份程序；桌面与 _material 指向同一资源）。
 var _material_geo: ShaderMaterial
@@ -162,9 +174,12 @@ var _last_intel: Object
 var _cover: ResourceGroundCover
 var _cover_pending: Array[int] = []
 var _cover_pending_cursor := 0
+var _cover_queued: Dictionary = {}
 var _stats := {"observed_cells": 0, "rebuilt_chunks": 0, "uploads": 0,
 	"last_observe_ms": 0.0, "last_build_ms": 0.0, "last_upload_ms": 0.0,
-	"max_upload_ms": 0.0, "stale_jobs": 0}
+	"max_upload_ms": 0.0, "stale_jobs": 0, "built_cells": 0,
+	"last_setup_ms": 0.0, "last_cover_ms": 0.0, "last_observed_cells": 0,
+	"last_built_cells": 0, "last_build_steps": 0, "last_packed_batches": 0, "last_cover_cells": 0}
 
 func _ready() -> void:
 	# 不能 top_level：它会脱离 HexRenderer 的绘制子树（show_behind_parent）。
@@ -184,17 +199,21 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 		intel: BuildingVisualIntelCache) -> Dictionary:
 	_configured = false
 	_clear_geometry()
+	if _map != null and _map.resource_visual_inputs_changed.is_connected(notify_resource_inputs):
+		_map.resource_visual_inputs_changed.disconnect(notify_resource_inputs)
 	_map = map
 	_world = world
 	_intel = intel
 	_hex = maxf(4.0, hex_size)
-	_scan_cursor = 0
-	_near_cursor = 0
+	_observation_queue.configure(_map.cell_count() if _map != null else 0)
 	_near_cells.clear()
+	_chunk_inputs.clear()
 	_styles = Catalog.entries()
+	_geometry_styles = Geometry.StyleInputs.new(_styles)
 	var audit := Catalog.audit(_styles)
 	if not bool(audit.ok) or _map == null or _intel == null:
 		return audit if not bool(audit.ok) else {"ok": false, "reason": "resource_visual_context_missing"}
+	_map.resource_visual_inputs_changed.connect(notify_resource_inputs)
 	_allowed = Catalog.presence_mask(_styles)
 	_chunks.clear()
 	_cell_chunk.resize(_map.cell_count())
@@ -238,62 +257,25 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 	return audit
 
 func _sync_terrain_textures() -> void:
-	if _material == null or _material_geo == null or _world == null:
-		return
-	var tiles = _world.visual_tiles
-	var tiled := tiles != null and bool(tiles.ready) and String(tiles.layout.mode) == "tiled"
-	var prefix := shader_variant_prefix(tiled, _cloud_shadow_direct)
-	var geo_prefix := geology_variant_prefix(tiled, _cloud_shadow_direct)
-	if tiled != _shader_tiled or prefix != _shader_prefix or geo_prefix != _shader_geo_prefix:
-		_shader_tiled = tiled
-		_shader_prefix = prefix
-		_shader_geo_prefix = geo_prefix
-		_assign_variant(_material, prefix)
-		_assign_variant(_material_geo, geo_prefix)
-	for material in _materials():
-		_bind_terrain_textures(material, tiles, tiled)
-	_push_cloud_shadow_uniforms()
+	Materials._sync_terrain_textures(self)
+
 
 
 func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
 		wrap_origin_uv: float, wrap_period_uv: float) -> void:
-	var changed := _cloud_shadow_direct != direct_enabled
-	_cloud_shadow_direct = direct_enabled
-	if texture != null:
-		_cloud_shadow_texture = texture
-	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
-	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
-	if changed:
-		_sync_terrain_textures()
-	_push_cloud_shadow_uniforms()
-	if _cover != null:
-		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
-			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
+	Materials.set_cloud_shadow_field(self, texture, direct_enabled, wrap_origin_uv, wrap_period_uv)
+
 
 
 func _push_cloud_shadow_uniforms() -> void:
-	for material in [_material, _material_geo]:
-		if material == null or material.shader == null \
-				or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
-			continue
-		if _cloud_shadow_texture != null:
-			material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
-		material.set_shader_parameter("cloud_shadow_field_bound",
-			_cloud_shadow_direct and _cloud_shadow_texture != null)
-		material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
-		material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
+	Materials._push_cloud_shadow_uniforms(self)
+
 
 ## 桌面（且未 tiled，prefix 为空）：与改动前逐字相同，直接把源文件资源交给材质，
 ## 不产生任何新的 Shader 实例 ⇒ 桌面走的就是 preload 的那一份。
 func _assign_variant(target: ShaderMaterial, prefix: String) -> void:
-	if target == null:
-		return
-	if prefix.is_empty():
-		target.shader = RESOURCE_SHADER
-	else:
-		var shader := Shader.new()
-		shader.code = prefix + RESOURCE_SHADER.code
-		target.shader = shader
+	Materials._assign_variant(self, target, prefix)
+
 
 
 ## 每个 uniform 都要推到**两份** impostor 材质上：web 的两份程序共享同一套 uniform，
@@ -301,80 +283,31 @@ func _assign_variant(target: ShaderMaterial, prefix: String) -> void:
 ## 注意不包含 ground cover：那是另一张 shader（resource_ground_cover.gdshader），
 ## 它的 uniform 集合不同，由 _bind_terrain_textures / configure 单独推。
 func _set_param(name: String, value) -> void:
-	if _material != null:
-		_material.set_shader_parameter(name, value)
-	if _material_geo != null:
-		_material_geo.set_shader_parameter(name, value)
+	Materials._set_param(self, name, value)
+
 
 
 func _material_for(family: int) -> ShaderMaterial:
-	# batch 2 = 矿物道具（rt_geology_solid）；桌面两份材质指向同一资源，等价。
-	return _material_geo if family == MINERAL_BATCH and _material_geo != null else _material
+	return Materials._material_for(self, family)
+
 
 
 func _materials() -> Array[ShaderMaterial]:
-	var out: Array[ShaderMaterial] = []
-	if _material != null:
-		out.append(_material)
-	if _material_geo != null:
-		out.append(_material_geo)
-	if _cover != null:
-		out.append(_cover.material())
-	return out
+	return Materials._materials(self)
+
 
 func _bind_terrain_textures(target: ShaderMaterial, tiles, tiled: bool) -> void:
-	if tiled:
-		target.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
-		target.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
-		target.set_shader_parameter("visual_height_tiles", tiles.height)
-		var layout = tiles.layout
-		target.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
-		target.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
-		for pair in [["visual_grid_size", layout.grid_size], ["visual_interior_size", layout.interior_size],
-			["visual_layer_size", layout.layer_size], ["visual_logical_resolution", layout.logical_size]]:
-			target.set_shader_parameter(pair[0], Vector2(pair[1]))
-		target.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
-	else:
-		target.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
-		target.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
-		target.set_shader_parameter("height_tex", _world.height_tex)
-	var height_bound := tiles.height != null if tiled else _world.height_tex != null
-	target.set_shader_parameter("has_height_tex", height_bound)
-	target.set_shader_parameter("has_flow_tex", height_bound and not _world.flow_buffer.is_empty())
-	target.set_shader_parameter("sea_level", _world.sea_level)
-	target.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
-	target.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+	Materials._bind_terrain_textures(self, target, tiles, tiled)
+
 
 # 复用地形/树木的参数；同时覆盖异步 horizon bake 完成后的重新绑定。
 func set_terrain_lighting(source: ShaderMaterial) -> void:
-	if source == null or _material == null:
-		return
-	_sync_terrain_textures()
-	for name in ["terrain_horizon_strength", "terrain_horizon_softness", "terrain_horizon_max_angle",
-		"terrain_horizon_cast_floor", "terrain_horizon_debug_view", "gi_horizon_lut", "gi_lut_bound",
-		"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor",
-		"sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
-		var value = source.get_shader_parameter(name)
-		if value != null:
-			for material in _materials():
-				material.set_shader_parameter(name, value)
+	Materials.set_terrain_lighting(self, source)
+
 
 func _apply_profile() -> void:
-	for name in ["vitality_dead_threshold", "vitality_power", "climate_response", "snow_response",
-		"wind_strength", "animal_motion", "detailed_pixels", "simple_pixels", "fade_pixels",
-		"palette_saturation", "badge_px", "decal_opacity", "submerged_opacity",
-		"outline_strength", "contact_shadow", "cast_shadow", "luma_compress", "luma_range",
-			"area_feather", "area_edge_noise", "solid_edge_softness", "decal_edge_softness",
-			"decal_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
-		_set_param(name, profile.get(name))
-	for name in ["herd_size_min", "herd_size_max", "animal_length_hex", "animal_min_pixels"]:
-		_set_param(name, profile.get(name))
-	_set_param("herd_radius_hex", herd_radius_hex())
-	_set_param("visual_quality", quality())
-	_set_param("filter_style", _filter_style)
-	if _cover != null:
-		_cover.apply_profile(profile)
-		_cover.set_quality(quality(), _mobile_tier)
+	Materials._apply_profile(self)
+
 
 ## Herd instance radius in hexes: room for herd_size_max animals of animal_length_hex.
 func herd_radius_hex() -> float:
@@ -390,7 +323,10 @@ func set_context(fog_enabled: bool, seed_value: int = 0) -> void:
 		_allowed = Catalog.presence_mask(_styles)
 	if _material != null:
 		_set_param("fog_enabled", _fog)
-	_scan_cursor = 0
+	_observation_queue.request(ObservationQueue.ALL)
+	_observation_queue.request(ObservationQueue.ALL, PackedInt32Array(_near_cells))
+	if _map != null and _intel != null:
+		_chunk_inputs.prepare_view(_map, _near_cells, _cell_chunk, _intel.resource_observations.rows, _fog)
 	# Herd traces follow world presence, which depends on the layout seed.
 	_queue_cover_rewrite()
 	_invalidate()
@@ -498,11 +434,17 @@ func set_camera_view(rect: Rect2, center: Vector2, zoom_value: float) -> void:
 		if not _resident.has(key):
 			_dirty[key] = true
 	if old_active != _active or _near_cells.is_empty():
+		_build_round.clear()
 		_near_cells.clear()
 		for key in _active:
 			for cell in _chunks[key]:
 				_near_cells.append(int(cell))
-		_near_cursor = 0
+		# Prioritize entering the camera without restarting the global sweep.
+		if not _near_cells.is_empty():
+			var unknown: PackedInt32Array = _chunk_inputs.prepare_view(_map, _near_cells,
+				_cell_chunk, _intel.resource_observations.rows, _fog)
+			if not unknown.is_empty():
+				_observation_queue.request(ObservationQueue.ALL, unknown)
 	for key in _resident.keys():
 		if not _active.has(key):
 			_evict(key)
@@ -518,6 +460,13 @@ func _chunk_distance(key: Vector2i) -> float:
 
 # CPU work is cell/chunk based. Never walk instances for weather or animation.
 func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
+	var frame_begin := Time.get_ticks_usec()
+	_frame_work_usec = 0
+	for field in ["last_observed_cells", "last_built_cells", "last_build_steps", "last_packed_batches", "last_cover_cells"]:
+		_stats[field] = 0
+	_stats.last_upload_ms = 0.0
+	_frame_budget_usec = int(float(profile.frame_budget_ms) * 1000.0)
+	_frame_budget_active = true
 	if _last_profile_enabled != bool(profile.enabled):
 		_last_profile_enabled = bool(profile.enabled)
 		for key in _resident:
@@ -548,44 +497,52 @@ func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
 		_cover.set_frame_state(time, cover_state, _memory_texture)
 	_sync_restored_memory()
 	var begin := Time.get_ticks_usec()
-	_observe_until(begin + int(float(profile.observation_budget_ms) * 1000.0))
-	_drain_cover_pending(begin + int(float(profile.observation_budget_ms) * 1000.0) + 200)
-	_stats.last_observe_ms = float(Time.get_ticks_usec() - begin) / 1000.0
-	if _cover != null:
-		_cover.flush()
+	_stats.last_setup_ms = float(begin - frame_begin) / 1000.0
+	var deadline := frame_begin + _frame_budget_usec
+	# Leave room for building and the separately scheduled upload. Each phase
+	# uses the same CPU allowance; idle time between callers is not charged.
+	var observe_deadline := mini(deadline, frame_begin + mini(
+		int(float(profile.observation_budget_ms) * 1000.0), int(_frame_budget_usec * 0.45)))
+	_drain_cover_pending(mini(observe_deadline, begin + int(_frame_budget_usec * 0.10)))
+	_stats.last_cover_ms = float(Time.get_ticks_usec() - begin) / 1000.0
 	begin = Time.get_ticks_usec()
-	_build_until(begin + int(float(profile.build_budget_ms) * 1000.0))
+	_observe_until(observe_deadline)
+	_stats.last_observe_ms = float(Time.get_ticks_usec() - begin) / 1000.0
+	begin = Time.get_ticks_usec()
+	# Reserve CPU only for an upload that is actually due. An empty upload
+	# slot belongs to construction; the shared allowance itself is unchanged.
+	_build_until(mini(deadline - _upload_reserve_usec(Time.get_ticks_msec()),
+		begin + int(float(profile.build_budget_ms) * 1000.0)))
 	_stats.last_build_ms = float(Time.get_ticks_usec() - begin) / 1000.0
+	_frame_work_usec = Time.get_ticks_usec() - frame_begin
+	_stats.last_frame_work_ms = float(_frame_work_usec) / 1000.0
 
 func _observe_until(deadline: int) -> void:
 	if _allowed.size() != _styles.size():
 		return
 	var observations = _intel.resource_observations
-	var n := _map.cell_count()
-	var visited := 0
-	while visited < n and Time.get_ticks_usec() < deadline:
-		var cell := _scan_cursor
-		# Most observation time goes to the camera's resident cells; a quarter
-		# continues the global visible-cell sweep, including offscreen sensors.
-		if visited % 4 != 3 and not _near_cells.is_empty():
-			cell = _near_cells[_near_cursor % _near_cells.size()]
-			_near_cursor += 1
-		else:
-			_scan_cursor = (_scan_cursor + 1) % maxi(1, n)
-		visited += 1
+	while _observation_queue.pending() and Time.get_ticks_usec() < deadline:
+		var task: Vector2i = _observation_queue.take()
+		var cell := task.x
+		if cell < 0:
+			break
+		_chunk_inputs.complete(cell)
 		if _fog and (cell >= _map.visible_arr.size() or _map.visible_arr[cell] == 0):
 			continue
-		var changed: bool = observations.observe(_map, cell, _allowed, not _fog)
+		var full: bool = (task.y & ObservationQueue.BANDS) != 0 or not observations.rows.has(cell)
+		var changed := false
+		if full:
+			changed = observations.observe(_map, cell, _allowed, not _fog)
+			_stats.observed_cells = int(_stats.observed_cells) + 1
+		else:
+			observations.observe_climate(_map, cell, not _fog)
+			_stats.climate_observed_cells = int(_stats.get("climate_observed_cells", 0)) + 1
+		_stats.last_observed_cells = int(_stats.last_observed_cells) + 1
 		var row: Dictionary = observations.rows.get(cell, {})
 		_write_memory_pixel(cell, row.get("climate", Color(0.5, 0.5, 0, 1)))
-		_stats.observed_cells = int(_stats.observed_cells) + 1
-		if changed:
+		if changed or (task.y & ObservationQueue.GEOMETRY) != 0:
 			_write_cover(cell)
-			_dirty[_cell_chunk[cell]] = true
-			# Only cancel work for this chunk, without starving other chunks.
-			if not _job.is_empty() and _job.key == _cell_chunk[cell]:
-				_job.clear()
-				_stats.stale_jobs = int(_stats.stale_jobs) + 1
+			_mark_chunk_dirty(_cell_chunk[cell])
 
 func _sync_restored_memory() -> void:
 	if _last_intel == _intel.resource_observations:
@@ -593,10 +550,13 @@ func _sync_restored_memory() -> void:
 	if _last_intel != null:
 		_clear_geometry()
 	_last_intel = _intel.resource_observations
+	_observation_queue.configure(_map.cell_count())
+	_observation_queue.request(ObservationQueue.ALL)
+	_chunk_inputs.prepare_view(_map, _near_cells, _cell_chunk, _intel.resource_observations.rows, _fog)
+	if not _near_cells.is_empty():
+		_observation_queue.request(ObservationQueue.ALL, PackedInt32Array(_near_cells))
 	_memory_image.fill(Color(0, 0, 0, 0))
 	_memory_dirty = true
-	for cell in _last_intel.rows:
-		_write_memory_pixel(int(cell), _last_intel.rows[cell].climate)
 	if _cover != null:
 		_cover.clear_cells()
 	_queue_cover_rewrite()
@@ -606,14 +566,21 @@ func _sync_restored_memory() -> void:
 func _queue_cover_rewrite() -> void:
 	_cover_pending.clear()
 	_cover_pending_cursor = 0
+	_cover_queued.clear()
 	if _intel == null or _cover == null:
 		return
 	for cell in _intel.resource_observations.rows:
 		_cover_pending.append(int(cell))
+		_cover_queued[int(cell)] = true
 
 func _drain_cover_pending(deadline: int) -> void:
 	while _cover_pending_cursor < _cover_pending.size() and Time.get_ticks_usec() < deadline:
-		_write_cover(_cover_pending[_cover_pending_cursor])
+		var cell := _cover_pending[_cover_pending_cursor]
+		_cover_queued.erase(cell)
+		var row: Dictionary = _intel.resource_observations.rows.get(cell, {})
+		if not row.is_empty():
+			_write_memory_pixel(cell, row.climate)
+		_write_cover(cell)
 		_cover_pending_cursor += 1
 	if _cover_pending_cursor >= _cover_pending.size() and not _cover_pending.is_empty():
 		_cover_pending.clear()
@@ -628,6 +595,7 @@ func _write_cover(cell: int) -> void:
 	var water := cell < _map.is_water_arr.size() and _map.is_water_arr[cell] != 0
 	var cores := _intel.settlement_core_buckets()
 	var core := int(cores[cell]) if cell < cores.size() else 0
+	_stats.last_cover_cells = int(_stats.last_cover_cells) + 1
 	_cover.write_cell(cell, _cover.encode_cell(bands, water, core,
 		func(style: int, band: int) -> bool: return world_presence_allowed(cell, style, band)))
 
@@ -645,91 +613,45 @@ func _write_memory_pixel(cell: int, value: Color) -> void:
 func notify_cells(cells: PackedInt32Array) -> void:
 	for cell in cells:
 		if cell >= 0 and cell < _cell_chunk.size():
-			_dirty[_cell_chunk[cell]] = true
+			_mark_chunk_dirty(_cell_chunk[cell])
 			# Settlement cores clear wild cover; re-encode the changed cells.
 			if _intel != null and _intel.resource_observations.rows.has(cell):
-				_write_cover(cell)
+				if not _cover_queued.has(cell):
+					_cover_pending.append(cell)
+					_cover_queued[cell] = true
+
+func notify_resource_inputs(flags: int, cells: PackedInt32Array = PackedInt32Array()) -> void:
+	_observation_queue.request(flags, cells)
+
+func _mark_chunk_dirty(key: Vector2i) -> void:
+	_dirty[key] = true
+	_chunk_revisions[key] = int(_chunk_revisions.get(key, 0)) + 1
+	# Finish the current chunk and its five uploads. Later observations coalesce
+	# into one redo behind existing dirty chunks, never discard a built prefix.
+	# Uploads reject generations older than one already visible, not merely
+	# older than inputs that still need to be built.
 
 func _invalidate() -> void:
 	_revision += 1
+	_build_round.clear()
 	_job.clear()
 	_uploads.clear()
 	for key in _active:
 		_dirty[key] = true
 
 func _build_until(deadline: int) -> void:
-	if not _detail_visible():
-		return
-	if not _uploads.is_empty():
-		return
-	if _job.is_empty():
-		for key in _active:
-			if _dirty.has(key):
-				_dirty.erase(key)
-				_job = {"key": key, "cursor": 0, "buffers": [[], [], [], [], []], "revision": _revision}
-				break
-	if _job.is_empty():
-		return
-	var cells: Array = _chunks[_job.key]
-	while int(_job.cursor) < cells.size() and Time.get_ticks_usec() < deadline:
-		_append_cell(int(cells[int(_job.cursor)]), _job.buffers)
-		_job.cursor = int(_job.cursor) + 1
-	if int(_job.cursor) >= cells.size():
-		for family in BATCH_COUNT:
-			_uploads.append({"key": _job.key, "family": family,
-				"buffer": PackedFloat32Array(_job.buffers[family]), "revision": _revision})
-		_job.clear()
-		_stats.rebuilt_chunks = int(_stats.rebuilt_chunks) + 1
+	Geometry._build_until(self, deadline)
+
 
 func selected_styles(cell: int) -> PackedInt32Array:
-	var row: Dictionary = _intel.resource_observations.rows.get(cell, {})
-	var bands: PackedByteArray = row.get("bands", PackedByteArray())
-	var source_water := cell < _map.is_water_arr.size() and _map.is_water_arr[cell] != 0
-	var candidates: Array[Dictionary] = []
-	for i in mini(bands.size(), _styles.size()):
-		if bands[i] == 0 or i >= _allowed.size() or _allowed[i] == 0:
-			continue
-		var e := _styles[i]
-		if visual_plan(e, source_water) == 0:
-			continue
-		if not lens_enabled() and not world_presence_allowed(cell, i, bands[i]):
-			continue
-		var override: Dictionary = profile.style_overrides.get(e.id, {})
-		var score := float(override.get("priority", e.priority)) + float(bands[i]) * 0.18 + _hash(cell, i) * 0.08
-		if String(e.id) == _filter or "resource." + String(e.id) == _filter:
-			score += 100.0
-		candidates.append({"style": i, "family": int(e.family), "score": score})
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return float(a.score) > float(b.score))
-	var result := PackedInt32Array()
-	var families := {}
-	var limit: int = profile.type_cap(quality())
-	for candidate in candidates:
-		if result.size() >= limit:
-			break
-		if families.has(candidate.family):
-			continue
-		result.append(int(candidate.style))
-		families[candidate.family] = true
-	for candidate in candidates:
-		if result.size() >= limit:
-			break
-		if not result.has(int(candidate.style)):
-			result.append(int(candidate.style))
-	return result
+	return Geometry.selected_styles(self, cell)
+
 
 # 概率按格/资源固定，只判定一次，不能放进候选位置重试，否则八次尝试会抹平稀疏度。
 # 这里只控制实景；观测、资源列表、储量和生物占领完全不变。
 func world_presence_allowed(cell: int, style: int, band: int) -> bool:
-	if band <= 0:
-		return false
-	var e := _styles[style]
-	if int(e.family) == 0 or int(e.family) == 3 or int(e.form) == 22:
-		return true
-	var probability := float(profile.animal_presence) if int(e.family) == 1 else float(profile.mineral_presence)
-	if int(e.family) == 2 and band < int(profile.mineral_min_abundance_band):
-		return false
-	return _hash(cell, style * 211 + _layout_seed + 4217) < probability
+	return Geometry.world_presence_allowed(self, cell, style, band)
+
 
 # 世界实景只做美术点缀：土地类是软边地面贴花，矿床是“裸露矿斑贴花 + 小件碎石”，
 # 动物是真实比例的小兽群，水产与水下油气是水下贴花。植物不再是实例：它们是
@@ -738,309 +660,99 @@ static func visual_plan(entry: Dictionary, source_water: bool) -> int:
 	return ResourceInstancePlan.visual_plan(entry, source_water)
 
 func _append_cell(cell: int, buffers: Array) -> void:
-	var selected := selected_styles(cell)
-	var row: Dictionary = _intel.resource_observations.rows.get(cell, {})
-	var bands: PackedByteArray = row.get("bands", PackedByteArray())
-	var core := int(_intel.settlement_core_buckets()[cell])
-	var cell_center := cell_position(cell)
-	var cap: int = profile.cell_cap(quality())
-	var source_water := cell < _map.is_water_arr.size() and _map.is_water_arr[cell] != 0
-	# x, y = centre, z = footprint radius used for spacing.
-	var occupied: Array[Vector3] = []
-	for rank in selected.size():
-		if occupied.size() >= cap:
-			break
-		var style := selected[rank]
-		var e := _styles[style]
-		var plan := visual_plan(e, source_water)
-		if plan == 0:
-			continue
-		var render_family := int(e.family)
-		var override: Dictionary = profile.style_overrides.get(e.id, {})
-		var size_scale := float(override.get("size_scale", 1.0))
-		var prop_diameter := float(profile.plant_diameter_hex) if render_family == 0 and int(e.form) != 26 else float(profile.patch_diameter_hex)
-		var ground_diameter := float(profile.fertility_diameter_hex) if int(e.form) == 22 else float(profile.decal_diameter_hex)
-		var variation := _hash(cell, style)
-		var instance_scale := _instance_scale(cell, style, render_family)
-		var prop_radius := Vector2.ONE * _hex * prop_diameter * 0.5 * size_scale * instance_scale
-		if render_family == 1:
-			# Real-scale herd: the quad only has to contain herd_size_max animals.
-			prop_radius = Vector2.ONE * _hex * herd_radius_hex() * size_scale * instance_scale
-		var decal_radius := Vector2.ONE * _hex * ground_diameter * 0.5 * size_scale * instance_scale
-		var submerged := (plan & PLAN_SUBMERGED) != 0
-		var has_prop := (plan & (PLAN_PROP | PLAN_BADGE)) != 0
-		var prop_foot := maxf(prop_radius.x, prop_radius.y)
-		var decal_foot := maxf(decal_radius.x, decal_radius.y)
-		var foot := prop_foot if has_prop else decal_foot * 0.55
-		var domain_family := 3 if submerged else render_family
-		var accepted := false
-		var point := cell_center
-		for attempt in 8:
-			var seed_value := style * 211 + attempt * 17 + _layout_seed
-			var angle := _hash(cell, seed_value) * TAU
-			var radial := sqrt(_hash(cell, seed_value + 1)) * _hex * (0.40 + float(profile.cluster_spread) * 0.45)
-			point = cell_center + Vector2.from_angle(angle) * radial
-			if core > 0 and point.distance_to(cell_center) < _hex * (0.32 + minf(core / 15.0, 1.0) * 0.25) + foot:
-				continue
-			var collides := false
-			for other in occupied:
-				if Vector2(other.x, other.y).distance_to(point) < (foot + other.z) * 0.82:
-					collides = true
-					break
-			if collides or not candidate_allowed(point, domain_family, 1 if source_water else 0):
-				continue
-			var patch := 1.0 - float(profile.patch_noise_strength) + float(profile.patch_noise_strength) * _patch_noise(point)
-			if _hash(cell, seed_value + 5) > minf(1.0, float(profile.density_scale) * patch):
-				continue
-			accepted = true
-			break
-		if not accepted:
-			continue
-		occupied.append(Vector3(point.x, point.y, foot))
-		var importance := (3.0 - float(rank)) * 2.0 + float(bands[style]) * 0.2 + _patch_noise(point)
-		if submerged:
-			# Fish are everywhere at sea; only a few cells show a shoal.
-			if render_family == 3 and _hash(cell, style + 577) > float(profile.shoal_density):
-				continue
-			var transmission := _water_transmission(cell)
-			if transmission < 0.06:
-				continue
-			_emit(buffers[3], point, decal_radius, rank, cell, style, variation, bands[style], importance, KIND_SUBMERGED, transmission)
-			continue
-		if (plan & PLAN_DECAL) != 0:
-			var kind := KIND_DECAL + (NON_CARRIER if has_prop else 0.0)
-			_emit(buffers[DECAL_BATCH], point, decal_radius, rank, cell, style, variation, bands[style], importance, kind)
-		if (plan & PLAN_PROP) != 0:
-			# Pebbles sit slightly off-centre on their own scar, never dead centre.
-			var offset := Vector2.from_angle(_hash(cell, style + 913) * TAU) * decal_foot * 0.12
-			_emit(buffers[render_family], point + offset, prop_radius, rank, cell, style, variation, bands[style], importance + 0.5, KIND_PROP)
-		elif (plan & PLAN_BADGE) != 0:
-			_emit(buffers[render_family], point, prop_radius, rank, cell, style, variation, bands[style], importance, KIND_BADGE_ONLY)
+	Geometry._append_cell(self, cell, buffers)
+
 
 # Axis-aligned quad with independent X/Y radii; the shader rotates the material
 # sampling internally so footprints keep no rotated collision corners.
 # COLOR.g carries light transmission through water (1 on land).
 func _emit(buffer: Array, point: Vector2, radius: Vector2, rank: int, cell: int, style: int,
 		variation: float, band: int, importance: float, kind: float, transmission: float = 1.0) -> void:
-	buffer.append_array([radius.x, 0.0, 0.0, point.x, 0.0, radius.y, 0.0, point.y,
-		float(rank), transmission, importance, kind,
-		float(cell), float(style), variation, float(band)])
+	Geometry._emit(self, buffer, point, radius, rank, cell, style, variation, band, importance, kind, transmission)
+
 
 # Deterministic silhouette variation. Herds keep a square quad because their bitmap
 # sprites already vary heading and body scale; props/decals use area-preserving aspect.
 func _instance_scale(cell: int, style: int, family: int) -> Vector2:
-	var size_scale := lerpf(INSTANCE_SCALE_MIN, INSTANCE_SCALE_MAX,
-		_hash(cell, style * 457 + 1223))
-	if family == 1:
-		return Vector2.ONE * size_scale
-	var aspect := lerpf(INSTANCE_ASPECT_MIN, INSTANCE_ASPECT_MAX,
-		_hash(cell, style * 719 + 1571))
-	var axis := sqrt(aspect)
-	return Vector2(size_scale * axis, size_scale / axis)
+	return Geometry._instance_scale(self, cell, style, family)
+
 
 # Deep water hides the seabed: same falloff the old terrain-shader path used.
 func _water_transmission(cell: int) -> float:
-	if _map == null or cell >= _map.elevation_arr.size() or _map.is_water_arr[cell] == 0:
-		return 1.0
-	var sea := clampf(_world.sea_level if _world != null else 0.42, 0.01, 1.0)
-	var depth := clampf((sea - _map.elevation_arr[cell]) / sea, 0.0, 1.0)
-	return exp(-depth * float(profile.water_depth_falloff))
+	return Geometry._water_transmission(self, cell)
+
 
 func candidate_allowed(point: Vector2, family: int, source_domain: int = -1) -> bool:
-	var flow := _world.sample_flow(point) if _world != null else 0.0
-	var water := source_domain == 1
-	if _world != null and not _world.biome_buffer.is_empty():
-		var terrain := _world.sample_biome(point)
-		water = terrain in [TerrainType.TERRAIN.OCEAN, TerrainType.TERRAIN.COAST,
-			TerrainType.TERRAIN.LAKE, TerrainType.TERRAIN.SEA_ICE]
-	elif _world != null and not _world.pixel_to_cell_lookup.is_empty():
-		# Active tiled rendering can retire biome_buffer. Its static pixel→cell
-		# lookup is still authoritative; an empty old atlas never means all land.
-		var uv := _world._world_to_uv(point)
-		var x := clampi(roundi(uv.x * float(_world.derived_size.x - 1)), 0, _world.derived_size.x - 1)
-		var y := clampi(roundi(uv.y * float(_world.derived_size.y - 1)), 0, _world.derived_size.y - 1)
-		var index := y * _world.derived_size.x + x
-		if index < 0 or index >= _world.pixel_to_cell_lookup.size():
-			return false
-		var owner_cell = _world.pixel_to_cell_lookup[index]
-		if owner_cell == null:
-			return false
-		var owner_index := int(owner_cell.index)
-		water = owner_index >= 0 and owner_index < _map.is_water_arr.size() and _map.is_water_arr[owner_index] != 0
-	if family == 3:
-		return water or flow > 0.78
-	return not water and flow < float(profile.river_clear_threshold)
+	return Geometry.candidate_allowed(self, point, family, source_domain)
+
 
 func _patch_noise(point: Vector2) -> float:
-	var p := point / (_hex * 5.0)
-	var x := floori(p.x)
-	var y := floori(p.y)
-	var f := Vector2(p.x - float(x), p.y - float(y))
-	f = f * f * (Vector2(3.0, 3.0) - f * 2.0)
-	return lerpf(lerpf(_hash(x, y + _layout_seed), _hash(x + 1, y + _layout_seed), f.x),
-		lerpf(_hash(x, y + 1 + _layout_seed), _hash(x + 1, y + 1 + _layout_seed), f.x), f.y)
+	return Geometry._patch_noise(self, point)
+
+
+func _upload_reserve_usec(now_msec: int) -> int:
+	var due := ((_cover != null and _cover.can_flush(now_msec))
+		or (_memory_dirty and now_msec - _last_texture_msec >= 100))
+	return int(_frame_budget_usec * 0.20) if due else 0
 
 # Called by HexRenderer only when the shared detail scheduler grants an upload.
 func drain_one_upload() -> bool:
 	if not _configured or not profile.enabled:
 		return false
+	if _frame_budget_active and _frame_work_usec >= _frame_budget_usec:
+		return false
 	var begin := Time.get_ticks_usec()
-	if _memory_dirty and Time.get_ticks_msec() - _last_texture_msec >= 100:
-		_memory_texture.update(_memory_image)
-		_memory_dirty = false
-		_last_texture_msec = Time.get_ticks_msec()
-		return true
-	if _uploads.is_empty():
-		return false
-	if not _detail_visible():
-		return false
-	var task: Dictionary = _uploads.pop_front()
-	if int(task.revision) != _revision or not _active.has(task.key):
-		return false
-	var key: Vector2i = task.key
-	var family := int(task.family)
-	if not _resident.has(key):
-		_resident[key] = {}
-	var family_nodes: Dictionary = _resident[key]
-	var previous := 0
-	if family_nodes.has(family):
-		previous = family_nodes[family].multimesh.instance_count
-	var buffer: PackedFloat32Array = task.buffer
-	var remaining: int = profile.instance_cap(quality(), _mobile_tier >= 0) - _instance_count + previous
-	var count := mini(buffer.size() / STRIDE, maxi(0, remaining))
-	if count > 0 and count < buffer.size() / STRIDE:
-		buffer = _keep_important_instances(buffer, count)
-	else:
-		buffer.resize(count * STRIDE)
-	if count == 0:
-		if family_nodes.has(family):
-			_remove_node(family_nodes[family])
-			family_nodes.erase(family)
-		_instance_count -= previous
-		return true
-	var node: MultiMeshInstance2D
-	if family_nodes.has(family):
-		node = family_nodes[family]
-	else:
-		node = MultiMeshInstance2D.new()
-		node.name = "Resource_%d_%d_%d" % [key.x, key.y, family]
-		node.z_index = RESOURCE_Z
-		node.material = _material_for(family)
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_2D
-		mm.use_colors = true
-		mm.use_custom_data = true
-		mm.mesh = _mesh
-		node.multimesh = mm
-		add_child(node)
-		if family == DECAL_BATCH:
-			move_child(node, 0)
-		family_nodes[family] = node
-		var copies: Array[MultiMeshInstance2D] = []
-		if _world != null and _world.wrap_period_x > 0.0:
-			for side in [-1, 1]:
-				var copy := MultiMeshInstance2D.new()
-				copy.z_index = RESOURCE_Z
-				copy.material = _material_for(family)
-				copy.multimesh = mm
-				copy.position.x = float(side) * _world.wrap_period_x
-				add_child(copy)
-				if family == DECAL_BATCH:
-					move_child(copy, 0)
-				copies.append(copy)
-		node.set_meta("wraps", copies)
-	node.multimesh.instance_count = count
-	node.multimesh.buffer = buffer
-	_instance_count += count - previous
-	_sync_wrap_visibility(key)
-	_stats.uploads = int(_stats.uploads) + 1
-	_stats.last_upload_ms = float(Time.get_ticks_usec() - begin) / 1000.0
+	var uploaded := _drain_one_upload()
+	var elapsed := Time.get_ticks_usec() - begin
+	_frame_work_usec += elapsed
+	_stats.last_upload_ms = float(elapsed) / 1000.0
 	_stats.max_upload_ms = maxf(float(_stats.max_upload_ms), float(_stats.last_upload_ms))
-	return true
+	_stats.last_frame_work_ms = float(_frame_work_usec) / 1000.0
+	return uploaded
+
+func _drain_one_upload() -> bool:
+	return Geometry._drain_one_upload(self)
+
 
 static func _keep_important_instances(buffer: PackedFloat32Array, count: int) -> PackedFloat32Array:
 	return ResourceInstancePlan._keep_important_instances(buffer, count)
 
 func _sync_wrap_visibility(key: Vector2i) -> void:
-	var size := Vector2(_hex * 16.0 * sqrt(3.0), _hex * 24.0)
-	var bounds := Rect2(Vector2(key) * size, size).grow(_hex)
-	for node in _resident[key].values():
-		node.visible = _detail_visible() and _camera.intersects(bounds)
-		for copy in node.get_meta("wraps", []):
-			copy.visible = _detail_visible() and _camera.intersects(Rect2(bounds.position + copy.position, bounds.size))
+	Geometry._sync_wrap_visibility(self, key)
+
 
 func _detail_visible() -> bool:
-	if not profile.enabled:
-		return false
-	if _lens_amount > 0.001:
-		return true
-	var diameter := maxf(maxf(float(profile.patch_diameter_hex), float(profile.decal_diameter_hex)),
-		maxf(float(profile.plant_diameter_hex), float(profile.fertility_diameter_hex)))
-	return _hex * diameter * 0.5 * _max_style_scale * _zoom > float(profile.fade_pixels)
+	return Geometry._detail_visible(self)
+
 
 func _remove_node(node: MultiMeshInstance2D) -> void:
-	for copy in node.get_meta("wraps", []):
-		copy.visible = false
-		copy.queue_free()
-	node.visible = false
-	node.queue_free()
+	Geometry._remove_node(self, node)
+
 
 func _evict(key: Vector2i) -> void:
-	for node in _resident[key].values():
-		_instance_count -= node.multimesh.instance_count
-		_remove_node(node)
-	_resident.erase(key)
+	Geometry._evict(self, key)
+
 
 func _clear_geometry() -> void:
-	for key in _resident.keys():
-		_evict(key)
-	_job.clear()
-	_uploads.clear()
-	_dirty.clear()
-	_instance_count = 0
-	_revision += 1
+	Geometry._clear_geometry(self)
+
 
 func _build_style_texture() -> void:
-	# shader在第143-144行从X=0.25和X=0.75采样
-	# 在4像素宽的纹理中：0.25→像素1(颜色)，0.75→像素3(元数据)
-	var image := Image.create(4, 64, false, Image.FORMAT_RGBAF)
-	_max_style_scale = 1.0
-	for i in _styles.size():
-		var e := _styles[i]
-		var override: Dictionary = profile.style_overrides.get(e.id, {})
-		_max_style_scale = maxf(_max_style_scale, float(override.get("size_scale", 1.0)))
-		var art := ResourceArtLibrary.shared()
-		var material_cell := art.material_cell(e.id)
-		# X=0.125采样（像素0）：specular、材质图集格+1、是否绑定位图、metallic。
-		image.set_pixel(0, i, Color(float(e.get("specular", 0.0)),
-			float(material_cell + 1), 1.0 if material_cell >= 0 else 0.0,
-			float(e.get("metallic", 0.0))))
-		# X=0.25采样（像素1）：颜色数据
-		var color_val = override.get("color", e.color) if override.has("color") else e.color
-		image.set_pixel(1, i, color_val)
-		# X=0.75采样（像素3）：元数据(form, family, sub_style, metallic)
-		image.set_pixel(3, i, Color(float(e.form), float(e.family), float(e.get("sub_style", i % 4)), float(e.get("metallic", 0.0))))
-		# X=0.625采样（像素2）：动物/鱼位图（-, 图集层+1, 图集精灵数, -）；0 = 无位图。
-		# 植物位图由 ResourceGroundCover 自己的 LUT 映射。
-		var fauna_layer := art.fauna_layer(e.id)
-		image.set_pixel(2, i, Color(0.0, float(fauna_layer + 1),
-			float(art.fauna_count) if fauna_layer >= 0 else 0.0, 0.0))
-	_set_param("style_lut", ImageTexture.create_from_image(image))
-	_bind_art()
+	Materials._build_style_texture(self)
+
 
 func _bind_art() -> void:
-	var art := ResourceArtLibrary.shared()
-	_set_param("art_fauna_bound", art.fauna != null)
-	if art.fauna != null:
-		_set_param("art_fauna", art.fauna)
-	_set_param("art_material_bound", art.material != null)
-	if art.material != null:
-		_set_param("art_material", art.material)
+	Materials._bind_art(self)
+
 
 func diagnostics() -> Dictionary:
 	var result := _stats.duplicate()
+	result.merge(_observation_queue.diagnostics())
 	result.merge({"instances": _instance_count, "resident_chunks": _resident.size(),
 		"pending_uploads": _uploads.size(), "dirty_chunks": _dirty.size(),
+		"initial_observation_cells": _chunk_inputs.pending_cells(),
+		"job_cursor": int(_job.get("cursor", 0)),
+		"job_cells": _chunks[_job.key].size() if not _job.is_empty() else 0,
 		"known_cells": _intel.resource_observations.rows.size() if _intel != null else 0,
 		"ground_cover": _cover.diagnostics() if _cover != null else {},
 		"quality": quality(), "mobile": _mobile_tier >= 0, "catalog": Catalog.audit(_styles)})

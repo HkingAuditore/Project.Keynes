@@ -79,7 +79,7 @@
     },
     {
       "domain": "military",
-      "source": "gdext/src/military_core.cpp",
+      "source": "gdext/src/military_core_personnel.cpp",
       "function": "MilitaryCore::reconcile_receipts",
       "writes": "Military lots, barracks, army caches, intents and receipts",
       "scope": "Reviewed owner Apply entry; member access superset, not transitive alias proof",

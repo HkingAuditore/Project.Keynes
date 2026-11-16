@@ -1401,6 +1401,13 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
         mix_u64(static_cast<uint64_t>(_market_signals.offered_supply_ema[i]));
         mix_u64(static_cast<uint64_t>(_market_signals.realized_withdrawal_ema[i]));
         mix_u64(static_cast<uint32_t>(_market_signals.cost_anchor_price[i]));
+        const auto mix_observation = [&](const std::vector<int64_t> &values) {
+            mix_u64(static_cast<uint64_t>(i < values.size() ? values[i] : 0));
+        };
+        mix_observation(_epoch_producer_sellable_current);
+        mix_observation(_epoch_producer_merchant_sold_current);
+        mix_observation(_epoch_previous_producer_sellable);
+        mix_observation(_epoch_previous_producer_merchant_sold);
     }
     auto hash_building_role_lanes = [&](const std::vector<int64_t> &lanes) {
         for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {

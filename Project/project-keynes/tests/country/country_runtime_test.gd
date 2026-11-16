@@ -144,6 +144,8 @@ func _run() -> void:
 	_expect("create atomically transfers first territory",
 		bool(create_report.get("ok", false)) and int(create_report.changed_cells) == 1)
 	var beta: Dictionary = ext.get_country_cell_summary(1)
+	_expect("new country capital is the creation cell",
+		int(beta.get("capital_cell", -1)) == 1)
 	_expect("new country inherits source technology",
 		(ext.get_country_snapshot(beta.country_handle).technology_ids as PackedStringArray).has("tech.hunting"))
 
@@ -395,6 +397,8 @@ func _run() -> void:
 	tax_matrix_ext.submit_country_commands(create_cell_owner)
 	tax_matrix_ext.run_country_slice({"day_index": 7})
 	var cell_beta: Dictionary = tax_matrix_ext.get_country_cell_summary(2)
+	_expect("sparse policy country keeps its creation capital",
+		int(cell_beta.get("capital_cell", -1)) == 2)
 	var transfer_local_cell := _commands([{
 		"opcode": 3, "day": 8, "sequence": 1,
 		"handle": int(cell_beta.country_handle), "cell": 0, "aux": -1,
@@ -428,6 +432,11 @@ func _run() -> void:
 			int(tax_matrix_ext.get_country_state_hash()) and
 		int(cell_restored.get_country_cell_tax_policy_snapshot(1).
 			has_local_default[1]) == 1)
+	_expect("PKCN sparse policy payload round-trips byte exactly",
+		_country_save_bytes(cell_restored) == _join_country_chunks(cell_save_chunks))
+	_expect("restored capitals preserve both creation and lost territory identity",
+		int(cell_restored.get_country_cell_summary(2).get("capital_cell", -1)) == 2
+		and int(cell_restored.get_country_cell_summary(1).get("capital_cell", -1)) == 0)
 	var river_valley := (compiled.research_signal_ids as PackedStringArray).find(
 		"landform.river_valley")
 	var signal_commands := _commands([
@@ -507,6 +516,10 @@ func _run() -> void:
 	for chunk in chunks: restored.feed_country_restore_chunk(chunk)
 	_expect("PKCN round-trip hash exact", bool(restored.end_country_restore().get("ok", false)) and
 		ext.get_country_state_hash() == restored.get_country_state_hash())
+	_expect("PKCN round-trip payload byte exact",
+		_country_save_bytes(restored) == _join_country_chunks(chunks))
+	_expect("PKCN preserves the created country's capital",
+		int(restored.get_country_cell_summary(1).get("capital_cell", -1)) == 1)
 	if not chunks.is_empty():
 		var truncated := _new_ext(4)
 		truncated.configure_country(catalog, profile, 4, 99)
@@ -565,6 +578,26 @@ func _test_dense_observation_batch(catalog: Dictionary, profile: Dictionary,
 		int(snapshot.counts[0]) == CELL_COUNT)
 	_expect("dense observation batch emits one aggregate signal event",
 		deltas.size() == 1 and int(deltas[0]) == CELL_COUNT)
+
+func _join_country_chunks(chunks: Array[PackedByteArray]) -> PackedByteArray:
+	var bytes := PackedByteArray()
+	for chunk in chunks:
+		bytes.append_array(chunk)
+	return bytes
+
+func _country_save_bytes(ext: Object) -> PackedByteArray:
+	var bytes := PackedByteArray()
+	var begin: Dictionary = ext.begin_country_save(65536)
+	_expect("comparison PKCN capture begins", bool(begin.get("ok", false)))
+	if not bool(begin.get("ok", false)):
+		return bytes
+	while true:
+		var chunk: PackedByteArray = ext.read_country_save_chunk(65536)
+		if chunk.is_empty():
+			break
+		bytes.append_array(chunk)
+	_expect("comparison PKCN capture ends", bool(ext.end_country_save().get("ok", false)))
+	return bytes
 
 func _new_ext(cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

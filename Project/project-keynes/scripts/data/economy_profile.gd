@@ -23,17 +23,16 @@ extends Resource
 ## Global building output efficiency. It scales goods output only; construction,
 ## production inputs, natural-resource use, and wages keep their catalog values.
 @export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 98304
-## Longest market interval (1–5). Native locks N for a full cycle from populated
-## work plus previous-cycle machine timing. 5 is the late-game stagger cap, not
-## a start-of-game fixed period. 0 is ignored and treated as 5; the retired
-## 50/334 auto-fast-forward path is not restored.
+## Production settles one complete game day at a time. The legacy market
+## interval fields remain readable for old content and explicit test fixtures;
+## they never select settlement periods from machine timing.
 ## Price V6: continuous effective-shortage confirmation and daily basis-point rates.
 @export_range(1, 365, 1) var price_ceiling_confirm_days: int = 30
 @export_range(1, 100, 1) var price_ceiling_expand_bp: int = 50
 @export_range(1, 100, 1) var price_ceiling_recover_bp: int = 10
-@export_range(1, 5, 1) var market_cycle_days: int = 5
+@export_range(1, 5, 1) var market_cycle_days: int = 1
 @export_range(1, 5, 1) var market_min_cycle_days: int = 1
-@export_range(1, 5, 1) var market_max_cycle_days: int = 5
+@export_range(1, 5, 1) var market_max_cycle_days: int = 1
 ## Per-native-call cohort guard retained for custom tests. Production rolling
 ## settlement normally completes its entire due phase in one call.
 @export_range(0, 1000000, 1000) var market_target_cohorts_per_slice: int = 0

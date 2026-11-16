@@ -212,7 +212,12 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     int64_t cell_population = 0;
     int64_t cell_employed = 0;
     int64_t cell_funds = 0;
-    std::vector<uint8_t> employed_professions;
+    // Scratch is private to the calling thread, and no reader retains it.
+    // Clear the logical sizes on every call so a different metric mask or
+    // another world on the same thread cannot reuse previous-cell values.
+    // The optional recursive full-metric check runs after these arrays' last use.
+    thread_local std::vector<uint8_t> employed_professions;
+    employed_professions.clear();
     // X3: the profession mix needs per-profession population, which is the same
     // walk the unemployment rows already do. One extra accumulator beats a
     // second pass over the cell's cohorts.
@@ -226,8 +231,10 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_COOPERATIVE_Q16);
     const bool wants_profession_mix =
         wants_dominant_profession || wants_profession_shares;
-    std::vector<int64_t> profession_people;
-    std::vector<int64_t> employed_profession_people;
+    thread_local std::vector<int64_t> profession_people;
+    thread_local std::vector<int64_t> employed_profession_people;
+    profession_people.clear();
+    employed_profession_people.clear();
     if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) ||
         requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
         requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) ||
@@ -512,7 +519,8 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     int32_t extractive_groups = 0;
     bool can_produce_corn = false;
     int32_t vacant_professions = 0;
-    std::vector<uint8_t> demanded_professions;
+    thread_local std::vector<uint8_t> demanded_professions;
+    demanded_professions.clear();
     if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
         demanded_professions.assign(_profession_ids.size(), 0);
     const bool needs_building_scan =
@@ -695,21 +703,9 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     }
     if (requested(FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT)) {
         int32_t complete = 0;
-        if (building_csr) {
+        if (building_csr &&
+            _building_cell_offsets[cell] < _building_cell_offsets[cell + 1]) {
             std::unordered_map<int32_t, uint32_t> owned_tiers;
-            std::unordered_map<int32_t, int32_t> catalog_tier_count;
-            std::unordered_map<int32_t, uint32_t> catalog_tiers;
-            for (size_t type = 0; type < _building_upgrade_family_indices.size();
-                 ++type) {
-                const int32_t family = _building_upgrade_family_indices[type];
-                const int32_t tier = type < _building_upgrade_tiers.size()
-                    ? _building_upgrade_tiers[type] : -1;
-                if (family < 0 || tier < 0 || tier >= 32) continue;
-                const uint32_t bit = 1u << static_cast<uint32_t>(tier);
-                if ((catalog_tiers[family] & bit) == 0)
-                    ++catalog_tier_count[family];
-                catalog_tiers[family] |= bit;
-            }
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1]; ++group_index) {
                 const auto group = building_view(static_cast<size_t>(static_cast<size_t>(group_index)));
@@ -726,9 +722,11 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
                 owned_tiers[family] |= 1u << static_cast<uint32_t>(tier);
             }
             for (const auto &owned : owned_tiers) {
-                const uint32_t required = catalog_tiers[owned.first];
-                const int32_t required_count = catalog_tier_count[owned.first];
-                if (required_count >= 2 && required != 0 &&
+                const uint32_t required = static_cast<size_t>(owned.first) <
+                        _building_upgrade_required_tiers.size()
+                    ? _building_upgrade_required_tiers[static_cast<size_t>(owned.first)] : 0;
+                // At least two DISTINCT tiers, preserving the original rule.
+                if (required != 0 && (required & (required - 1u)) != 0 &&
                     (owned.second & required) == required)
                     ++complete;
             }

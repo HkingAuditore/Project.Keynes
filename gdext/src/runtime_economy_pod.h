@@ -321,6 +321,7 @@ public:
     }
     RuntimeEconomyOwnedState &state() noexcept { return _state; }
     const RuntimeEconomyOwnedState &state() const noexcept { return _state; }
+    uint64_t golden_population_market_hash() const;
     bool state_initialized() const noexcept {
         return _state.market.market_count > 0 &&
             _state.market.good_count > 0 &&

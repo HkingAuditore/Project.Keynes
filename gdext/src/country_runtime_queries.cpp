@@ -1513,6 +1513,7 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     _last_research_day = repaired.last_research_day;
     _session_epoch = repaired.session_epoch;
     _countries.active = repaired.country_active;
+    _starting_country_slot = _countries.active.empty() ? -1 : 0;
     _countries.generation = repaired.country_generation;
     _countries.stable_id = repaired.country_stable_ids;
     _countries.display_name = repaired.country_display_names;

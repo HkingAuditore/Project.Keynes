@@ -39,6 +39,25 @@
 
 namespace pk {
 
+void NativeSimulationHost::complete_main_boundary_service(MainBoundaryClient client) noexcept {
+    const uint32_t bit = main_boundary_client_bit(client);
+    {
+        // Pair predicate publication with the worker's check-to-wait
+        // transition. Atomics alone can lose this notification before
+        // wait_for enters its wait, leaving the 5 ms timeout to wake it.
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        uint32_t observed = _main_boundary_service_requested.load(
+            std::memory_order_acquire);
+        while ((observed & bit) != 0) {
+            if (_main_boundary_service_requested.compare_exchange_weak(observed,
+                    observed & ~bit, std::memory_order_acq_rel,
+                    std::memory_order_acquire))
+                break;
+        }
+    }
+    _control_cv.notify_all();
+}
+
 NativeSimulationHost::ControlState NativeSimulationHost::control_state() const {
     ControlState out;
     out.state = _state.load(std::memory_order_acquire);

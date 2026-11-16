@@ -386,7 +386,10 @@ PKEC 和经济状态 hash。
        worker 捕获时从槽位（读档时从存档储量）播种一次；之后采集在提交时并入 worker 通道，自然再生在每次
        捕获时用 worker 气候按天结算（详见 `docs/architecture/current-state.md`「worker 自持资源储量」）。
        修后锁步 64 天 `[econ-data]` 全部字段一致。
-    4. 经济自适应节拍（保留，不修）。市场/计划/投资周期天数由工作量估计除以实测每刀毫秒（EMA）决定，
+    4. 经济自适应节拍（以下为旧实现记录，已由固定逐日规则取代）。生产、消费、价格现在逐日计算，
+       规划/投资使用固定游戏日周期；正式一致性验证不设置 `PK_ECONOMY_FORCE_CADENCE`。
+       下述旧长跑结果不代表新实现已通过多年验证，当前证据见 `docs/architecture/feature-status.md`。
+       旧实现的市场/计划/投资周期天数由工作量估计除以实测每刀毫秒（EMA）决定，
        实测值随机器快慢变，周期一旦选得不同，结算工作集就不同。`[econ-cadence]` 行记录每次周期变化。
        负载越高周期越长，增长越慢：12 局并发时每局第 5 年人口都低于少量并发。做 A/B 比较时设
        `PK_ECONOMY_FORCE_CADENCE=1,5,10`（市场/计划/投资天数，`EconomyFacade._apply_forced_cadence_env`

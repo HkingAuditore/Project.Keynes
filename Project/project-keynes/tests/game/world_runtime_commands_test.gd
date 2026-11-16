@@ -8,13 +8,25 @@ var failures := 0
 class Facade extends RefCounted:
 	var calls: Array = []
 	var reject := false
+	var scheduled_requests: Array = []
+	var admitted_day := -1
 	func receipt(values: Array) -> Dictionary:
 		calls.append(values)
-		return {"ok": not reject, "reason": "probe_rejected" if reject else "accepted", "receipt": values}
-	func rename_country(h, n, d, s): return receipt(["rename", h, n, d, s])
-	func grant_technology(h, t, d, s): return receipt(["technology", h, t, d, s])
-	func reveal_all_technologies(h, d, s): return receipt(["reveal", h, d, s])
-	func transfer_territory(c, h, d, s): return receipt(["transfer", c, h, d, s])
+		var result := {"ok": not reject, "reason": "probe_rejected" if reject else "accepted", "receipt": values}
+		if admitted_day >= 0: result["effective_day"] = admitted_day
+		return result
+	func rename_country(h, n, d, s, scheduled := false):
+		scheduled_requests.append(scheduled)
+		return receipt(["rename", h, n, d, s])
+	func grant_technology(h, t, d, s, scheduled := false):
+		scheduled_requests.append(scheduled)
+		return receipt(["technology", h, t, d, s])
+	func reveal_all_technologies(h, d, s, scheduled := false):
+		scheduled_requests.append(scheduled)
+		return receipt(["reveal", h, d, s])
+	func transfer_territory(c, h, d, s, scheduled := false):
+		scheduled_requests.append(scheduled)
+		return receipt(["transfer", c, h, d, s])
 	func mint_to_treasury(h, c, q, d, s): return receipt(["treasury", h, c, q, d, s])
 	func add_stock(c, g, q, d, s): return receipt(["stock", c, g, q, d, s])
 	func mint_to_cohort(h, q, d, s): return receipt(["mint", h, q, d, s])
@@ -113,6 +125,15 @@ func _run() -> void:
 				_check("sequence", old._gm_sequence == current._gm_sequence)
 				_check("exact request day/sequence/amount", old._generator.facade.calls == current._generator.facade.calls)
 				_check("lazy resolver order", old.resolutions == current.resolutions)
+	current._generator.facade.reject = false
+	current._generator.facade.admitted_day = 7
+	var admitted: Dictionary = current.execute_gm_command("country.rename", {"name": "Dated", "day": 5})
+	_check("explicit date is marked for preservation", current._generator.facade.scheduled_requests.back() == true)
+	_check("reply uses admitted date after a sealed-day reschedule", int(admitted.get("effective_day", -1)) == 7)
+	current.execute_gm_command("country.rename", {"name": "Immediate"})
+	_check("ordinary action remains immediate", current._generator.facade.scheduled_requests.back() == false)
+	# The two extra admission probes consumed two sequence numbers.
+	old._gm_sequence += 2
 	for host in [old, current]:
 		host._runtime_worker_fault_paused = true
 		host._runtime_last_fault_diagnostics = {"fault_code": "fixture"}

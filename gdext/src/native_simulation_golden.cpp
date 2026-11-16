@@ -414,66 +414,7 @@ uint64_t events_hash(const RuntimeEventsSnapshot &state) {
     }
     return hash.value;
 }
-uint64_t economy_columns_hash(const RuntimeEconomyOwnedState &state) {
-    // Scope is explicitly population/market columns, not the whole economy.
-    LogicalHash hash;
-    hash.add(state.sample_day); hash.add(state.committed_day);
-    trace_continuation_column("ECONOMY", state.committed_day, "sample_day", std::array<int64_t, 1>{state.sample_day});
-    hash.column(state.population.cell_first_page);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.cell_first_page", state.population.cell_first_page);
-    hash.column(state.population.page_next);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.page_next", state.population.page_next);
-    hash.column(state.population.page_cell);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.page_cell", state.population.page_cell);
-    hash.column(state.population.free_pages);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.free_pages", state.population.free_pages);
-    hash.column(state.population.active);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.active", state.population.active);
-    hash.column(state.population.reserved);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.reserved", state.population.reserved);
-    hash.column(state.population.reservation_owner);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.reservation_owner", state.population.reservation_owner);
-    hash.column(state.population.signature_id);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.signature_id", state.population.signature_id);
-    hash.column(state.population.generation);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.generation", state.population.generation);
-    hash.column(state.population.population);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.population", state.population.population);
-    hash.column(state.population.funds);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.funds", state.population.funds);
-    hash.column(state.population.epoch_income);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.epoch_income", state.population.epoch_income);
-    hash.column(state.population.epoch_expense);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.epoch_expense", state.population.epoch_expense);
-    hash.column(state.population.income_ema);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.income_ema", state.population.income_ema);
-    hash.column(state.population.epoch_tax_paid);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.epoch_tax_paid", state.population.epoch_tax_paid);
-    hash.column(state.population.epoch_subsidy_received);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.epoch_subsidy_received", state.population.epoch_subsidy_received);
-    hash.column(state.population.income_baseline_ema);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.income_baseline_ema", state.population.income_baseline_ema);
-    hash.column(state.population.needs_satisfaction);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.needs_satisfaction", state.population.needs_satisfaction);
-    hash.column(state.population.worst_need_id);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.worst_need_id", state.population.worst_need_id);
-    hash.column(state.population.composite_satisfaction);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.composite_satisfaction", state.population.composite_satisfaction);
-    hash.column(state.population.satisfaction_dims);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.satisfaction_dims", state.population.satisfaction_dims);
-    hash.column(state.population.worst_dimension_id);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.worst_dimension_id", state.population.worst_dimension_id);
-    hash.column(state.population.flags);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.flags", state.population.flags);
-    hash.column(state.population.demography_residual);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.demography_residual", state.population.demography_residual);
-    hash.column(state.population.owner_employed);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.owner_employed", state.population.owner_employed);
-    hash.column(state.population.employee_employed);
-    trace_continuation_column("ECONOMY", state.committed_day, "population.employee_employed", state.population.employee_employed);
-    state.market.visit_registered_columns([&](const auto &column) { hash.column(column); });
-    return hash.value;
-}
+
 } // namespace
 
 bool RuntimeDomainAuthorityRunner::copy_trigger_snapshot(
@@ -522,10 +463,18 @@ RuntimeGoldenSnapshot NativeSimulationHost::golden_snapshot() const {
         const auto &modifier = _modifier_pod_authority.snapshot();
         add("MODIFIER", "committed_entries_and_buckets_v1", modifier.committed_day, modifier_hash(modifier));
     }
+    // Before the formula-store handoff, the POD ledger mirror intentionally
+    // carries only a subset of population columns. Sampling that mirror made
+    // the first two days depend on whether the worker had already acquired the
+    // handoff lock. Read the actual formula owner under this same boundary.
     const auto &economy = _economy_pod_authority.state();
     if (economy.committed_day >= 0)
         add("ECONOMY", "committed_population_market_columns_v1", economy.committed_day,
-            economy_columns_hash(economy));
+            _economy_production_runtime != nullptr
+                ? economy_api::golden_population_market_hash(
+                    *_economy_production_runtime, economy.sample_day,
+                    economy.committed_day)
+                : _economy_pod_authority.golden_population_market_hash());
     const auto &events = _events_authority.snapshot();
     if (events.committed_day >= 0)
         add("EVENTS", "committed_event_log_and_ack_state_v1", events.committed_day, events_hash(events));

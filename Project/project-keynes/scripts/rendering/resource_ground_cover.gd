@@ -255,13 +255,17 @@ func clear_cells() -> void:
 func dirty() -> bool:
 	return _dirty
 
-## Throttled GPU upload (ground_cover_upload_hz). Returns true when the texture changed.
-func flush(force: bool = false) -> bool:
+## Same readiness predicate is used by the layer's CPU reservation and upload.
+func can_flush(now_msec: int, force: bool = false) -> bool:
 	if not _dirty or _texture == null:
 		return false
 	var hz := maxf(0.1, float(profile.ground_cover_upload_hz) if profile != null else 4.0)
+	return force or now_msec - _last_upload_msec >= int(1000.0 / hz)
+
+## Throttled GPU upload (ground_cover_upload_hz). Returns true when the texture changed.
+func flush(force: bool = false) -> bool:
 	var now := Time.get_ticks_msec()
-	if not force and now - _last_upload_msec < int(1000.0 / hz):
+	if not can_flush(now, force):
 		return false
 	_texture.update(_image)
 	_dirty = false

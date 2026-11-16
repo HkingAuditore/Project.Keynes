@@ -43,7 +43,7 @@ Economy 原生门控，UI 隐藏入口只负责展示体验。
 
 Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizationStore`，`runtime_economy_stratum_mobilization.h`）。行只在职业有不满或曾在链中时存在；更新复用 `publish_country_development_facts()` 既有的 `_market_cells × for_each_in_cell` 扫描，不新增全图循环，也不新增日域。阶段 0–4 与触发哈希在 `economy_runtime_stratum_mobilization.cpp`；跨阶发 `GAMEPLAY_FACT_STRATUM_MOBILIZATION`（事件 18 / payload 26）。
 
-- 存档：PKEC `SCHEMA_VERSION` 62，`SAVE_SECTION_STRATUM_MOBILIZATION = 37`（稀疏行，跨 chunk）。
+- 存档：PKEC `SCHEMA_VERSION` 64，`SAVE_SECTION_STRATUM_MOBILIZATION = 37`（稀疏行，跨 chunk）。
 - Country：PKCN v16 新增每国 `capital_cell`；bootstrap 包可选 `capital_cells`，缺省回退首块领地；`CREATE_COUNTRY` 把首都设为新格。首都格的组织度封顶在示威（stage 3），不会走独立。
 - Military：每日 ration 发布时顺带 sparse 推送 per-cell 驻军人数到 Economy 的 `_cell_garrison_heads`；割地路径的 `transfer_garrison_owner(from<0)` 修复为"该格全部驻军 lot"。
 - 查询：`get_cell_mobilization_snapshot` / `get_country_mobilization_summary`；GDScript 见 `economy_facade.gd`。
@@ -146,3 +146,10 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 - 阶段 2 第 1–2 步已登记 15 模块的脚本访问目录，`check_script_native_access.py` 冻结现有越界并接入本地/PR 护栏；没有迁移调用或替换接口探测。匹配规则见 [feature-guides.md](feature-guides.md)，本轮数量和验证见 [feature-status.md](feature-status.md)。
 - `world_runtime_host.gd` 2943 行；`map_generator.gd` 22563 行（超限债务，未拆）。
 - `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2147 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
+
+## 加载期目录编译入口
+
+2026-11-15：加载期目录编译通过请求级 `LoadingCatalogContext` 复用实际相同输入，
+源目录行循环可让出帧，同步调用仍走同一编译过程。Effect 初始化编排归
+`map_rules_initializer.gd`。实现契约与验收入口见 feature-guides 的“加载期目录准备”；
+是否达到加载帧耗时目标以 feature-status 的实际测试记录为准。

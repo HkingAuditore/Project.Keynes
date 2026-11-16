@@ -56,6 +56,8 @@ TESTS = (
     "tests/runtime/runtime_worker_stop_lifetime_test.gd",
     "tests/runtime/runtime_resource_lifetime_test.gd",
     "tests/runtime/runtime_loading_exit_test.gd",
+    "tests/world/loading_catalog_cooperative_test.gd",
+    "tests/world/loading_snapshot_cancel_test.gd",
     "tests/runtime/runtime_inline_save_restore_test.gd",
     "tests/runtime/runtime_executor_boundary_test.gd",
     "tests/runtime/native_world_handshake_test.gd",
@@ -67,6 +69,7 @@ TESTS = (
     "tests/game/player_clock_event_test.gd",
     "tests/runtime/runtime_economy_worker_restart_test.gd",
     "tests/ideology/ideology_execution_contract_manifest_test.gd",
+    "tests/ideology/ideology_target_selector_test.gd",
     "tests/ideology/ideology_save_worker_authority_test.gd",
     "tests/ideology/ideology_save_transaction_states_test.gd",
     "tests/ideology/ideology_save_basis_and_midmaterialize_test.gd",
@@ -78,6 +81,16 @@ TESTS = (
     "tests/economy/bootstrap_catalog_contract_test.gd",
     "tests/economy/goods_storage_schema_test.gd",
     "tests/economy/economy_cadence_runtime_test.gd",
+    "tests/economy/economy_fiscal_reservation_continuation_test.gd",
+    "tests/economy/economy_stratum_save_restore_test.gd",
+    "tests/economy/resource_visual_layer_test.gd",
+    "tests/economy/resource_ground_cover_test.gd",
+    "tests/economy/resource_visual_update_test.gd",
+    "tests/economy/resource_visual_native_test.gd",
+    "tests/economy/resource_visual_chunk_inputs_test.gd",
+    "tests/economy/resource_visual_observation_reference_test.gd",
+    "tests/ui/cell_lut_incremental_test.gd",
+    "tests/ui/bounce_lut_native_test.gd",
     "tests/economy/economy_worker_restart_day_test.gd",
     "tests/runtime/runtime_economy_stage_ops_soak_parity_test.gd",
     "tests/runtime/runtime_economy_parity_test.gd",
@@ -102,6 +115,9 @@ TESTS = (
     "tests/runtime/colonization_intent_test.gd",
     "tests/runtime/inflight_save_boundary_test.gd",
     "tests/runtime/environment_save_continuation_test.gd",
+    "tests/runtime/runtime_clock_overload_recovery_test.gd",
+    "tests/world/season_refresh_schedule_test.gd",
+    "tests/world/season_refresh_consumer_test.gd",
     "tests/runtime/runtime_event_restore_cursor_test.gd",
     "tests/country/country_runtime_test.gd",
     "tests/runtime/runtime_country_peer_bridge_test.gd",
@@ -150,11 +166,29 @@ EXPECTED_ERRORS = {
 
 
 def fixture_errors(name: str, lines: list[str]) -> list[str]:
-    expected = EXPECTED_ERRORS.get(name, ())
+    expected = list(EXPECTED_ERRORS.get(name, ()))
+    declarations = []
+    if name == "economy_stratum_save_restore_test":
+        success_pattern = r"=== stratum save roundtrip: [1-9][0-9]* checks, 0 failures ==="
+        if sum(bool(re.fullmatch(success_pattern, line)) for line in lines) != 1:
+            declarations.append("expected exactly one successful stratum save roundtrip summary")
+    if name == "loading_snapshot_cancel_test":
+        # This test intentionally loads one malformed resource. Only the two
+        # exact diagnostics for its declared temporary path are permitted.
+        marker = "[loading-snapshot-cancel] broken_resource="
+        paths = [line[len(marker):] for line in lines if line.startswith(marker)]
+        if len(paths) != 1 or not re.fullmatch(
+                r"user://loading_snapshot_cleanup_[0-9]+/broken\.tres", paths[0]):
+            declarations.append("expected exactly one valid broken-resource declaration")
+        else:
+            expected.extend((
+                f"ERROR: {paths[0]}:1 - Parse Error: Expected '['.",
+                f"ERROR: Failed loading resource: {paths[0]}.",
+            ))
     errors = [line for line in lines if (
-        "SCRIPT ERROR:" in line or "[FAIL]" in line or
+        "SCRIPT ERROR:" in line or "[FAIL]" in line or line.startswith("FAIL:") or
         is_engine_error(line) or SHUTDOWN_LEAK.search(line)
-    ) and line not in expected]
+    ) and line not in expected] + declarations
     for diagnostic in expected:
         count = lines.count(diagnostic)
         if count != 1:

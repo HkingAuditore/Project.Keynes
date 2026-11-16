@@ -409,10 +409,8 @@ void MilitaryCore::run_maintenance(const MilitaryWorldDigest &digest,
             // Cheapest reachable market inside the supply ring, one market at a
             // time; the day quota is shared with the general procurement pass so
             // the two can never oversell the same row.
-            const int32_t ring_begin = (size_t)row.cell + 1 < _ring_off.size()
-                                           ? _ring_off[(size_t)row.cell] : 0;
-            const int32_t ring_end = (size_t)row.cell + 1 < _ring_off.size()
-                                         ? _ring_off[(size_t)row.cell + 1] : 0;
+            int32_t ring_begin = 0, ring_end = 0;
+            military_supply_ring(*this, row.cell, ring_begin, ring_end);
             int32_t best_row = -1;
             int64_t best_price = 0;
             for (int32_t r = ring_begin; r < ring_end && missing > 0; ++r) {

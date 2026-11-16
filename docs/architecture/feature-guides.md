@@ -70,6 +70,102 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 验证缺少下游与上游建筑时仍能形成原料价格和首座生产者机会；细节见
 [经济公式](../cpp-dots-runtime/economy-fixed-point-ledger-formulas.md)。
 
+## 经济冻结输入与标签采样
+
+`capture_country_epoch()` 仍在原结算边界冻结 Country 输入。科技可用性表、领土索引
+及其拓扑 hash 由 `gdext/src/economy_runtime_country_cache.cpp` 维护，状态归同一个
+`NativeEconomyRuntime`，私有字段在 `economy_runtime_internal_country_cache.h`。
+这里只复用派生结果，不延长输入的有效期，也不改变结算频率、采样顺序或保存格式。
+
+- 科技可用性必须精确比较国家数量、每国科技位表宽度、完整国家句柄数组和实际科技
+  位表；结果表的大小和建筑类型索引端点也须有效。国家综合 generation 会因现金、
+  税务或研究进度变化而增长，不能代替这些输入；科技指标自己的缓存身份也不能借用，
+  因为科技测试入口可先更新那份指标。命中时复用物资、市场、职业、需求变体和建筑表。
+- 领土索引必须精确比较国家数量、地块数量、完整国家句柄数组和完整归属数组，
+  并检查索引形状。各国地块保持升序；拓扑 hash 的字节顺序和算法不变，
+  只复用其结果，不能凭 hash 相等判定输入相同。
+- 目录在两次 `configure()` 之间保持不变；重新配置先 `reset()`，连同新世界一起
+  清空缓存及计数。读档候选安装和失败回滚均经
+  `economy_runtime_restore_scratch.cpp::prepare_restore_candidate_scratch()` 使缓存失效；
+  国家槽复用、领土转移、科技授权或撤销由实际输入比较触发重建。缓存及其计数
+  不写入存档、OwnedState 或业务状态 hash。其他动态指标沿用各自原有刷新契约。
+
+标签及效果输入准备归 `gdext/src/economy_runtime_family_effect_inputs.cpp`。
+`rebuild_epoch_tag_snapshot()` 从本轮实际使用且有条件行的标签收集指标集合，
+只采样这些条件需要的指标；声明需要标签但未给出具体列表时，仍覆盖全部有条件的标签。
+直接指标查询保持自己的请求集合，按国家统计的专业化物资数量也保持独立的需求开关。
+标签覆盖值、国家标签计数与不可变快照的整体发布顺序不变。可复用的线程内工作数组
+每次按当前世界尺寸准备并清空，不得把上一个地块或世界的数值带入下一次采样。
+
+建筑完整升级链所需的等级集合属于固定目录：`configure()` 成功解析目录后，在
+`rebuild_building_upgrade_requirements()` 中整理一次。地块采样只遍历当地现存建筑，
+空地直接为 0；同一级的多个类型只计一个等级，至少两个不同等级且全部存在才算完整。
+新世界或重新配置会清空并重建；读档沿用已验证的同一目录，不保存这份派生表。
+建筑新增、拆除和数量变化仍在采样时读取，不能缓存成旧地块答案。
+
+报告字段的口径如下；它们仅用于诊断，不驱动模拟。精确比较计数时应在准备完成后读取，
+不把并发读取的多个独立字段当作同一份已提交快照。
+
+| 字段 | 含义 |
+|---|---|
+| `country_availability_cache_hits` / `country_availability_cache_rebuilds` | 自最近一次 reset 起，科技可用性复用和重建次数 |
+| `country_territory_cache_hits` / `country_territory_cache_rebuilds` | 自最近一次 reset 起，领土索引及拓扑 hash 复用和重建次数；读档失效本身不清零 |
+| `tag_snapshot_sampled_cells` | 最近一次标签位表准备实际采样的地块数 |
+| `tag_snapshot_requested_metrics` | 该次标签位表准备所需的不同指标数，不是逐格采样次数 |
+| `tag_catalog_metrics` | 该次准备中全标签目录引用的不同指标数；未运行标签位表分支时为 0 |
+| `building_upgrade_catalog_builds` / `building_upgrade_catalog_rows` | 自 reset 起，固定建筑升级目录的整理次数及读过的类型行数；地块采样不增加 |
+| `building_upgrade_catalog_bytes` | 固定等级集合的已分配空间，字节 |
+
+现有 `PK_ECONOMY_COST_CSV` 可记录 `country_capture.*` 分项：snapshot、
+technology_metrics、derived_metrics（领土、地理和家族指标）、tags、tax_snapshot、
+availability、population_and_defaults、city_modifiers、country_modifiers、reserves、
+cell_tax、building_factors_and_development。它们测量本次准备各段的墙钟时间；
+提前返回时只有已走过的分项，不能把它们当成整日耗时。比较前后结果须使用相同探针、
+相同完整采样日和输入；默认 CSV 按线程和日期汇总，最后未刷新的一日不计入比较，
+`PK_ECONOMY_COST_CSV_FULL` 逐样本模式不用于吞吐量结论。
+
+验证入口为 `tests/ideology/ideology_target_selector_test.gd`（调用
+`economy_runtime_country_cache_tests.cpp`、`economy_runtime_building_metrics_tests.cpp`
+和 `economy_runtime_effect_selector_tests.cpp`
+中的原生用例）、`tests/ideology/ideology_tag_snapshot_stress_test.gd`、
+`tests/runtime/runtime_inline_save_restore_test.gd` 及
+`tests/runtime/runtime_large_ecp2_save_test.gd`；还须按开发指南完成失败回滚、
+重复运行一致及与改前结果的对照。测试声明集中在 `economy_runtime_test_access.h`，
+生产入口头只保留既有 friend，不增加脚本绑定。
+
+当前 ECP2（ABI 4、schema 63）必须携带 PKEC 64 的动员段 37，归入人口域；
+即使没有动员记录，writer 也写入零记录段。缺段不能证明空表，恢复必须在修改候选前
+明确拒绝。候选准备先清空原对象的动员表，再安装保存的全部行，防止另一世界的数据
+残留。已有直接 PKEC 62 读取路径无此段时初始化为空；这不是旧 PKSV 迁移许可。
+`tests/economy/economy_stratum_save_restore_test.gd` 用正式捕获/恢复入口核对全部
+13 个保存字段、完整状态 hash、冷热目标、合法空段、缺段拒绝和坏校验值拒绝。
+
+生产者当期/上期可售数量与商人实际买入数量影响下一日投入购买和家族机会报价，属于
+必须保存并参与完整状态摘要的计算输入。PKEC64 的 SIGNALS 每行增加四个 i64，恢复时
+检查非负及买入量不超过可售量；空候选先清空四列，避免暖恢复掩盖漏项。已有62/63
+结构读取默认这些列为0，仍须匹配当前目录；ECP263 严格要求当前格式。
+`economy_runtime_producer_continuation_tests.cpp` 通过真实写入/解码入口核对冷恢复与暖清理。
+
+Economy 与 Modifier 均由后台执行时，启动前按已验证的请求配置选择专用加成读取副本；
+不能用尚未授予的旧权限判断，否则冷启动会误读主线程显示副本。普通实例由 Modifier
+每日阶段发布；Ideology 的地块派生加成不在实例快照内，必须在既有经济输入边界内
+完成生成后一并复制到同一读取副本，包括清空结果和版本。复制不重新计算、不生成
+新的权威结果。`get_effective_stat_value` 检查实际计算副本并报告来源，日内忙时返回
+pending；`ideology_worker_derived_pump_test.gd` 比较每格实际数值与主线程参考。
+
+黄金诊断读取必须位于完整每日边界内，并从当前公式数据的所有者获取完整人口和市场列。
+开局接管前的 POD 账本镜像只包含部分人口列，不能用它代替完整列做散列；是否恰好完成
+接管不应改变当天诊断。`economy_golden.cpp` 保持原字段、顺序及 POD 日戳，仅统一
+真实数据来源；无生产运行时的纯 POD 用例仍读取自身状态。此诊断不推进或修改模拟。
+
+财政回执的 `terminal_requests` 是尚未消费的终态队列长度，不是累计完成次数。
+Country 在后台、Economy 在主线程执行时，财政请求完成后必须先通过宿主应用
+Country 账目并发布不可变读视图，再确认消费回执；确认会同时删除请求与终态，
+不能让它早于国家落账。此路径沿用 `run_economy_slice_internal()` 持有的执行边界，
+不得从未持锁的入口直接调用。`economy_fiscal_reservation_continuation_test.gd`
+核对已预留金额、国家现金的精确扣减、请求清空和重复脉冲不重复扣款；
+不依赖观察一个可能在同次调用内消失的终态队列项。
+
 ## 天气与光照 Shader
 
 - 降雪散点归 weather_cell_curtain.gdshader：全格位置随机与独立摆动必须配合
@@ -91,11 +187,55 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
   Shader 日/游戏年的比例在 HexRenderer 的 `shader_days_per_game_year` 调整，默认2，允许0和小数；renderer 经窄 Callable 配置 WorldClock，默认相位按累计年进度映射，跨年不重置小数比例。
   永昼最大时角和最低高度在 HexRenderer 的“永昼太阳”分组通过 `eternal_max_hour_angle_deg` / `eternal_min_elevation_deg` 调整（默认 70°/10°）；setter 统一换算弧度并推送各材质，初始化/重建时重放，不随日相位重复推送。
 
+## 逐格弹射色 LUT
+
+- `MapBaker` 的颜色表、枯黄/积雪/备用色和水面枚举是唯一参数来源。原生 `encode_cell_luts` 的 `bounce_only` 请求只接收 enum/dyn 字节和这些值，不读取或写入模拟状态。
+- 两次颜色插值通过 builtin ptrcall 调用引擎的 `Color.lerp`，与脚本使用同一实现，避免 godot-cpp 本地内联因编译器融合乘加而差 1 字节。权重按脚本 double 计算，由引擎转 float；颜色分量最后转 double 做 clamp、乘 255 和整数截断。逐字节测试以保留的 `_publish_bounce_lut_gd` 原实现为准。
+- 完整重建包含 `lut_w * lut_h` 的全部槽位与尾部填充，仍要发布同值完整重建；局部更新只处理原 dirty 列表，重复允许、越界忽略，未请求位置不变。短输入不得改变 cache 或 texture。
+- 原生主 LUT 编码失败或扩展不可用时仍走完整 GDScript 路径。贴图上传位置、对象原地更新和天气发布顺序不变；`bounce_lut_ms` 包含实际编码与上传，不以 headless 或测试模式跳过工作。
+- `tests/ui/bounce_lut_native_test.gd` 覆盖实际 dispatcher、完整 GDScript 路径、全部地形字节、雪/活力组合、padding、局部更新、缓存/贴图恢复和短输入。
+
 ## 时代晋升
 
 - 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 80% 必达，人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；条件投影运行 `tests/game/module_projection_boundaries_test.gd`，玩家界面运行 `tests/game/player_country_ui_smoke_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
 
 ## 军事界面命令
+
+军事纯 C++ 热路径的行为约束见
+[`military-performance-redesign-20261114.md`](../plans/military-performance-redesign-20261114.md)：
+采购周边按中心首次访问计算，首次物流准备前的断供探测仍返回 false；普通采购保留前
+19 个 BFS 项，维护和断供探测遍历完整半径三行。工资按国家、驻军格、部队槽升序付款，
+缺钱时优先级不变；战争汇总使用交战之后的当日所有权、控制、人口和聚落等级。
+交战反向索引必须随每次部队关联、销毁、槽位复用更新，成功读档后从权威字段重建。
+这些派生索引和计数不进 PKMI v7，也不进哈希。
+
+战线删除用反向位置表保持原 swap-pop 顺序，日末排序和每次修改的 revision 不变。
+驻军人数查询只有在链表完整覆盖实际驻军位置时使用位置索引；旧档允许的不完整或错位链
+保留原全量扫描。采购候选格按已验证链上的位置收集、排序去重，不按士兵是否活动或当前
+位置另行筛除，确保包含旧档原先可见的非空 head；未准备或形状异常时走原遍历。
+
+市场结构只在一次 `step_day` 的同一个冻结输入内复用，每个维护、采购、征用步骤仍分别
+从原始可售量开始。步骤结束后公开临时列清空；缓存停放的列和输入引用不跨日存活。
+不能将注释里的“每日上限”解释为允许合并原本独立的步骤额度。直接调用 `run_wars`
+仍捕获自己的输入和国家收入；每日入口已捕获一次时才走复用内部体。
+
+战斗 Plan 在单次调用内按部队分别复用原攻击、原防御、忽略防御工事比例，每项独立标记。
+首次仍调用原函数，遍历与整数运算不变；不能替换成规则不同的显示用战力缓存。结果不供
+Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告。当前循环仍为串行；未来
+并行化须先明确这个临时表的归属与同步。
+
+在途采购量保留原四字段键与转换后的金额行，只对非负且总和可由 int64 表示的键建立
+单次查询表。表的遍历顺序不参与需求或采购输出；负值或总和溢出风险仍走原排序与加法，
+不裁剪输入、不修正旧算术规则。商品换算、训练排序、付款额度及需求发出顺序保持不变。
+该表随既有 thread_local 暂存保留容量和旧内容，但每次有效采购计算先清空，不跨调用复用结果。
+
+`MilitaryReport` 的 `supply_ring_requests/cache_hits/centers_built/cells_visited`
+分别计实际行请求、缓存命中、新建中心和 BFS 取出格数；`payroll_lots_visited`、
+`payroll_holders_visited` 计读取 lot 和有效付款对象组；`war_cells_visited` 计每日汇总扫描格数；
+`engagement_index_slots_visited`、`engagement_members_cleared` 计重建所扫槽和关闭所清成员。
+全部随 `step_day` 清零，直接调用内部步骤的测试可手动清报告。纯 C++ bench 输出累计/首日
+两组计数；Godot 的既有报告映射尚未添加这些字段。验证要求逐日哈希、逐条意图顺序及完整
+存档字节对照，不能只比较终态哈希或平均耗时。
 
 - 军事兵种份额：玩家局部修改经 `MilitaryFacade.submit` 将稳定 id 解析为完整 `int_pairs` 后提交；原生 `config.set` 是整表替换。改动此链路时运行 `tests/ui/military_config_command_test.gd`，避免空命令或清除其他兵种配比。
 - 军事部队编成：地块军事页从格快照中的本国驻军 lots 形成 `army.create` 请求；PlayerController 复核本国领土与占领状态，GDScript 不直接改写驻军或部队。入口与请求契约见 `docs/ui/military-cell-tab.md`。
@@ -204,6 +344,84 @@ epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回�
 
 军事缺货预测走 Military intent 17 → Economy opcode 36 的既有 D+1 命令桥。每批先 reset 再按真实 SKU/市场格写入缺口；不要伪造销售、消费、财政扣款或库存。Economy 在 epoch 冻结时核对国家句柄、归属与可用国库资金，扣除其他公共采购承诺，并按 10 天窗口折算到通用采购需求。最新快照复用已保存/哈希的 pending command 队列，派生日需求缓存不入档，不增加保存 schema。验证入口：`tests/runtime/military_procurement_demand_test.gd`、`military_procurement_pod_test.gd`。
 
+## 库存命令与结算审计
+
+OwnedState 已应用的 ADD_STOCK / REMOVE_STOCK 命令，在经济侧接回结果时必须通知
+`audit_touch_market_lane`，再保留原有显式增减记账。通知只登记变化位置，不重新写库存或
+再次计算成交量；同一轮同一位置去重。两轮之间的库存修改也必须进入下一轮期初总量，
+不能在清空当轮计数后丢失。`economy_runtime_command_audit_tests.cpp` 使用真实命令应用与
+结果接回路径检查闲置期、活动期、限量移除、下一轮与恢复后的派生状态。
+
+## 主线程服务完成与工作线程唤醒
+
+`complete_main_boundary_service` 清除自身请求位时持有工作线程等待使用的
+`_control_mutex`，释放锁后通知。原子位操作不能替代这一互斥约束：完成操作若插进
+“检查条件”与“进入等待”之间，通知会丢失。Trigger 和 Ideology 各清自己的位，重复完成
+无副作用；不修改请求生成顺序、服务调用位置或日尾边界。架构检查抽取实际生产方法体，
+用受控线程交错验证，并确认移除锁的负例会失败。
+
+## 资源视觉的变化通知与逐帧工作
+
+`MapData.resource_visual_inputs_changed(flags, cells)` 在数据数组安装后发布；空 `cells` 表示整图。`BANDS=1` 对应资源储量、生物占领和适生区，`CLIMATE=2` 对应温度、湿度、积雪和活力记忆，`GEOMETRY=4` 对应水陆和海拔。原生 slot→MapData 发布统一经过 `resource_visual_publication.h`；原生及脚本视野只通知新可见格，生成/GM 的生物占领发布也通知。通知只入队，接收者在下一帧读取完整批次，不在发布调用中采样。
+
+`resource_visual_work_queue.gd` 合并整图请求并保留扫描位置，扫描中再次发布会安排补扫；稀疏变化去重，连续稀疏变化仍给整图扫描四分之一的取项机会。初始化、配置、视野模式或资源记忆替换安排一次完整扫描，扫描结束后无变化不再采样。隐藏格不读现值，再次可见时补采；气候独立发布只刷新已有记忆的气候值，不重建 51 项丰度，也不触发实例重建。
+
+`ResourceVisualLayer.prepare_frame` 与 `drain_one_upload` 合用 `ResourceVisualProfile.frame_budget_ms`（默认 0.8 ms）。原有 observation/build 各自预算仍为上限；只为本帧真实到期的纹理上传预留时间，预算用完保留游标/队列。构建在样式之间、五个批次打包之间可续接；单次 GPU 上传不可中断。地表、记忆和几何上传按轮次取得机会，各自频率上限与几何批次 FIFO 不变，持续到期的地表不能饿死几何。性能验收仍为每帧 prepare+upload 的 p95 ≤1 ms，并核对固定帧数内的实际完工量。
+
+样式选择、密度、位置、实例内容和画质规则不变。固定目录的类型、形态和默认优先级在配置时整理；profile 标量与嵌套覆盖每个同步片段重读，非空覆盖先复制小数组，不污染共用目录。候选分数有限且互不相等时用数值排序；精确同分、NaN 或 Inf 保留原排序算法及其取舍。
+
+丰度观察的字段名、生物位、适生区及参考储量在配置时整理成只读列，重新配置必须全部
+清空重建；实际储量数组只在同步观察调用内借用，隐藏地块仍不读现值。
+
+`NativeResourceVisualBuilder` 仅计算样式选择和单样式布局，输入为值和数组，不持有地图、
+世界、节点或回调。`resource_visual_native_slice.gd` 在单个同步构建片段内创建它，大数组
+引用随片段结束释放，跨帧只留原单格进度。向量与数学内置函数走引擎同源运算，标量保持
+原逐步舍入，整数哈希显式回绕；最终实例浮点数组按字节对照。扩展缺失、旧版或自定义
+输入不受支持时仍走完整 GDScript 算法；原生入口拒绝前不得部分追加输出。
+
+`WorldData.pixel_owner_indices/pixel_owner_present` 是烘焙时与原像素对象表一起发布的派生列，
+额外占每像素 9 字节，不入存档。null 像素与非 null 但编号无效的对象必须区分；原 biome
+数据优先级不变。整数组替换自动使数值列失效；显式原地修改像素对象表或对象 index 时须
+调用 `invalidate_pixel_owner_snapshot()`，直到重烘后才恢复原生路径。生产路径仅在三处
+烘焙发布点写表，其余只读；不能声称能自动检测任意 Array 原地改写。
+
+`resource_visual_chunk_inputs.gd` 在现有相机遍历中统计当前区域首次未知的可见格。只在
+该区域输入齐备后创建新构建任务，不越过相机/全局上限顺序，不等待整张地图。取出观察
+任务时先完成计数再检查隐藏，避免中途隐藏留下永久等待；已知隐藏记忆立即可用。
+切换视角不取消已有任务，重配、恢复与 GM 边界重建派生计数，持续变化仍沿用公平重做队列。
+
+构建中再次变化只合并重做请求，允许已完成前缀继续；每轮按当前相机顺序处理尚未做过的脏块，避免一个持续变化块独占构建。第一批安装时推进该块的已发布版本（即使是空批），后续拒绝比它旧的批，接受同版本其余批。隐藏格仍不采集现值，几何只读取已观察的记忆；上传轮次不放开迷雾显示约束。
+
+验证入口为 `tests/economy/resource_visual_layer_test.gd`、`resource_ground_cover_test.gd`、`resource_visual_update_test.gd`、`resource_visual_perf_test.gd`（常规及 `--large`）；更新测试检查完整实例数组、记忆/地表纹理、空闲停止、定点变化、隐藏/重新可见及恢复。`resource_visual_trace.gd` 可原样放进改前与改后目录，输出六个变化阶段的完整实例/样式/记忆/纹理字节作前后对照。CPU 测试不能替代图形环境下的 shader/画面检查。
+`resource_visual_native_test.gd` 对照原生与脚本的选择、占位和实例字节；
+`resource_visual_observation_reference_test.gd` 对照原观察算法；
+`resource_visual_chunk_inputs_test.gd` 检查初次输入就绪、隐藏和生命周期。显式 release 库
+检查同时运行原生资源布局与 bounce 字节用例，普通 headless 测试默认加载的是 debug 库。
+
+## 加载期目录准备
+
+`LoadingCatalogContext` 只属于一次 `MapGenerator.generate` 请求，以该请求的
+`LoadingFrameGate` 区分下一次生成；不向后续世界保留源编译结果。Economy、Modifier、
+Effect 的同步公开入口与协作入口共用一份编译实现。协作入口在实际资源/目录行循环中
+按 4 ms 工作预算让出帧，取消返回失败且不保存半成品；预算只控制完成时间，不裁掉数据。
+
+默认资源在一次生成请求内只读，生成期间不得热改默认目录；下一次生成建立新上下文。
+默认经济目录在 Effect、Modifier、Country、Economy 配置之间复用。显式 FamilyEffect /
+FamilyTrait / Modifier / Effect 资源在可让帧工作开始前用 `duplicate_deep(DEEP_DUPLICATE_ALL)` 取得独立副本（含外部 .tres 子资源），并按全部保存属性建立内容键；
+同一资源实例被修改后必须重新编译。默认输入与显式覆盖各有独立身份，不能仅凭实例编号
+或参数为空就把不同内容视为相同。缓存仅保存成功结果，每个消费者拿到独立 Dictionary。
+
+Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成后才调用原生安装接口；
+同步调用方仍使用原公开 API。`loading_catalog_cooperative_test.gd` 比较同步/协作全部
+目录列、Effect 扩展与显示文字，并覆盖调用方修改返回值、同实例覆盖输入修改、
+开始前取消与中途取消。大型理念源资源通过 ResourceLoader 自带的异步加载入口准备，
+由请求上下文保留引用，避免同一请求多次解析；不在自建线程里访问共享资源或运行时。
+取消时不等待文件读取。`loading_resource_request.gd` 在引擎报告完成后取走结果并释放请求，
+其临时待回收表只持加载请求，不持生成器、世界或取消闸门。暖快照六个文件也走同一回收
+入口：取消或任一失败立刻拒绝整批，其余请求自行完成后回收；齐备后才发布缓存。
+显示目录准备也在真实行循环中让帧，原生安装保持原来的主线程顺序。所有规则安装完成
+后即释放上下文的目录产物和源资源，不把它们保留到游戏运行期。
+
 ## 运行时诊断字段与主线程抑制门（2026-11-16）
 
 - 诊断字段必须写入。只声明 + 导出、从不赋值的计数器比没有更坏：它把「这一步没跑」伪装成事实（`cell_layer_collect_count/_rows/_ideas` 就这样误导过一轮排查）。新增诊断要么在产生它的那一步写，要么不要导出。
@@ -211,3 +429,43 @@ epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回�
 - `drain_derived_cell_layer(day)` 必须传在建的那一天。`reset:true` + `reason:"day_changed"` 表示这次调用丢弃了别的天的折叠，`error` 是被漏掉的 step 错误。
 - reconcile 失败必须落 `last_error` 并计进 `effect_reconcile_failures`；不要用局部 `std::string ignored` 接住。
 - 新增导出键时不要往 `runtime_pod_protocol.h` / `native_simulation_host.h` 里加字段（两者已超 `check_size_ratchet.py` 基线），放模块自己的内部头文件，见 `world_ext_simulation_host_internal.h`。
+
+
+## 固定经济游戏日、预约命令与冷启动读档
+
+- 正式经济每天对所有存活经济地块结算一次，开局首日及新出现人口的地块也只算一天。
+  生产、消费、价格与按日平滑不以本机耗时选择 1/3/5 日近似。计时与工作量估计仅供诊断。
+- 规划采用配置的固定 5—15 日周期，投资采用固定 10—30 日周期并长于规划；默认 10/30 日。
+  日期、地块顺序和周期位置继续保存。旧周期强制键仅用于明确的历史近似夹具，不进入正式配置。
+- Country 普通操作仍排到最早尚未封好的日期；明确预约的批次设置 `preserve_effective_days`，
+  不能提前。入队在同一锁内回传实际日期，GM 回执使用该日期；已封好的日期只能向后调整。
+- 开局两种国家创建路径均把开局国家放在第一个稳定槽位，吞并也不重排槽位。
+  PKCN16 已保存这个顺序；冷启动恢复和只读副本安装须从它重建 `starting_country_slot`，
+  配置及重置须清除旧值。不能依靠曾经执行过 bootstrap 的旧对象残留内存。
+- Climate ACTIVE 的普通慢层刷新由输入采集按固定游戏日期触发，周期30日时为31、61……日。
+  `SeasonRefreshSystem.run_due_round_for_capture` 复用 CLM2 已保存的完成边界，采用时钟的
+  `输入日+1` 约定；同日重试不能重算。调度器探测次数、帧预算和冷启动不能改变到期日。
+  刷新完整完成后才采集环境；非 worker 与显式 legacy-signal 对照路径仍沿用原入口。
+- 一致性验收逐日比较正式周期下全部模块、完整经济状态、收支和命令实际效果；
+  冷启动恢复至少跨过规划/投资及气候慢层边界，不能只测保存后的第一天或终值。
+
+## 季节输入日期与经济恢复周期
+
+`WorldClock.day_changed(d)` 的普通输入采集使用 `d-1`；CLM2 的季节完成日期保持
+WorldClock 日期。因此输入31对应完成日期32，并非两个日期基准。提前准备输入时，
+植被重复计算的判断必须使用该输入的日期，不能读可能领先或落后的显示时钟。
+跨调用完成的季节轮也必须保存同一个输入日期；未完成时阻止发布，后续继续同一天，
+不能跳到下一个输入日消费旧字段。4096只是单次调用已有切片上限，不是失败次数上限；
+测试用有限4100次续算验证可继续、完成后不再启动同一轮。真正不收敛仍应停留并报告，
+不靠任意重试次数或带旧数据推进来掩盖。
+
+规划和投资周期及相位是存档模拟状态。profile 为新世界提供初始值，读档以保存值为准，
+确保相同存档得到相同继续结果；调整现有世界须另设计明确的迁移或玩法命令。生产、消费、
+价格逐日是固定计算规则，正常格式存档的市场周期为1，不受 profile 的慢周期更改影响。
+PKEC62/63容忍仅用于直接分段解码的结构兼容检查，不代表历史PKSV可读；正式ECP2只收63。
+
+Country `preserve_effective_days` 表示逐条保留提供的日期，并不让整批共享一个日期；
+未指定的行打包为0，按入队边界移到最早可执行日。混排验证在
+`country_late_command_reschedule_test.gd`；Country-only 不推进经济轮次的检查在财政续算用例。
+`cell_tier` / `cell_next_review_day` 目前保留为存档及诊断列，不再决定每日结算参与范围；
+删除每日维护需另做存档和状态摘要迁移，不在此轮改变。

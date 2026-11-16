@@ -158,7 +158,7 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 | 气候存档 | `check_committed_replay.py --godot … --checkpoint --trace --days 10 --log-dir <新>` | 改 CLM2 或经济发布块 |
 | 军费专用库 | 用 `gdext/tests/SConstruct.military_fiscal_probe` 构建，回归加 `--military-fiscal-probe <绝对路径>` | 改军饷、财政端口 |
 
-测试必须用固定经济周期：黄金场景、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败；生产仍按真实耗时自适应。
+黄金场景、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败。正式运行的生产、消费和价格固定逐日计算，规划与投资使用配置的固定游戏日周期；实际耗时只作诊断，不改变这些周期。
 
 ## 运行回归与内容变化
 

@@ -236,9 +236,13 @@ int32_t military_cell_garrison_slot(const MilitaryCore &core, int32_t cell);
 // pre-index full-table order, so callers that mutate the lot (lot_find_or_create,
 // removal) see exactly the rows the former scan saw.
 enum MilitaryLotOrder : uint8_t { MILITARY_LOT_ASC = 0, MILITARY_LOT_DESC = 1 };
+bool military_valid_index_continuation(MilitaryCore &core);
 void military_lot_index_rebuild(const MilitaryCore &core);
 void military_lot_index_link(MilitaryCore &core, int32_t lot);
 void military_lot_index_unlink(MilitaryCore &core, int32_t lot);
+// Collect linked cell heads, including inactive/misplaced continuation rows.
+// False requests the original dense pass (in particular, before lazy rebuild).
+bool military_garrison_candidate_cells(MilitaryCore &core, std::vector<int32_t> &cells);
 
 inline int32_t military_lot_head(const MilitaryCore &core, uint8_t kind, int32_t loc) {
     if (!core._lot_index_ok || core._lot_next.size() != core._lots.active.size()) military_lot_index_rebuild(core);
@@ -290,7 +294,33 @@ constexpr uint8_t MILITARY_LOT_MAINTENANCE = 3;
 // markets in cells OWNED and CONTROLLED by its country within hex distance
 // <= 3 of its cell. Market rows are indexed per cell once per day.
 constexpr int32_t MILITARY_SUPPLY_RADIUS = 3;
-constexpr int32_t MILITARY_SUPPLY_RING_CELLS = 19;    // rings of radius 3
+constexpr int32_t MILITARY_SUPPLY_RING_CELLS = 19;    // general procurement's existing row limit
+// Stack lifetime is one step_day over its private, immutable normalized view.
+// Only structural market columns are reused. Between passes the public scratch
+// is still empty, and every pass receives the original independent sale quota.
+struct MilitaryMarketDayReuse {
+    MilitaryCore &core;
+    const MilitaryWorldDigest &digest;
+    const int32_t cells;
+    bool parked = false;
+    bool active_rows = false;
+    bool allowed = true;
+    std::vector<int32_t> cell_off, cell_rows, row_cell, row_good;
+    std::vector<int64_t> row_sellable, row_price, initial_sellable;
+    std::vector<uint8_t> cell_has_merchant;
+    MilitaryMarketDayReuse(MilitaryCore &core, const MilitaryWorldDigest &digest);
+    ~MilitaryMarketDayReuse();
+    MilitaryMarketDayReuse(const MilitaryMarketDayReuse &) = delete;
+    MilitaryMarketDayReuse &operator=(const MilitaryMarketDayReuse &) = delete;
+    void exchange_columns();
+    void invalidate();
+};
+void military_market_reuse_cancel(MilitaryCore &core);
+bool military_supply_rings_ready(const MilitaryCore &core);
+void military_prepare_supply_rings(MilitaryCore &core);
+void military_clear_supply_rings(MilitaryCore &core);
+// Does not prepare a cold index: a cold supply probe retains its old result.
+bool military_supply_ring(MilitaryCore &core, int32_t cell, int32_t &begin, int32_t &end);
 // True when a stocked ration market of `slot` lies within the supply radius of
 // `cell` (design 9.3 connectivity; no global field, O(19 x rows in ring)).
 bool military_supply_connected(const MilitaryCore &core, const MilitaryWorldDigest &digest, int32_t slot,

@@ -250,7 +250,69 @@ var lut_dims: Vector2i = Vector2i.ZERO
 # rebake_*_only / rebake_biome_axes_only 不再需要重跑 noise 与 cube_round —— 
 # 只是 O(W*H) 的纯 array indexing + cell 字段读取（~2-3ms vs 重跑的 ~25-30ms）。
 # 注意：hex_size 改变会让 lookup 失效；MapBaker.bake_world 重跑时会重建。
-var pixel_to_cell_lookup: Array = []  # Array[HexCell]，null 表示该像素落在 map 外
+# These side arrays are built in the same bake loop as the object lookup.
+# A present owner keeps its actual signed index, including an invalid index;
+# an absent owner must remain distinct because resource candidates reject it.
+var pixel_owner_indices := PackedInt64Array()
+var pixel_owner_present := PackedByteArray()
+var pixel_to_cell_lookup: Array = []:  # Array[HexCell], null means outside the map.
+	set(value):
+		pixel_to_cell_lookup = value
+		invalidate_pixel_owner_snapshot()
+
+
+# Direct replacement remains supported by the script sampler. It disables the
+# native snapshot until a bake publishes matching arrays. A caller editing an
+# existing Array element or a referenced HexCell.index must invalidate explicitly.
+func invalidate_pixel_owner_snapshot() -> void:
+	pixel_owner_indices = PackedInt64Array()
+	pixel_owner_present = PackedByteArray()
+
+
+func publish_pixel_lookup(lookup: Array, indices: PackedInt64Array,
+		present: PackedByteArray) -> void:
+	pixel_to_cell_lookup = lookup
+	pixel_owner_indices = indices
+	pixel_owner_present = present
+
+
+# Both native terrain paths already build their object lookup from these rows.
+# Build its numeric snapshot in that same loop, then retain the existing CSR
+# reverse-list publication order. No renderer slice scans the raster to convert it.
+func publish_pixel_lookup_indices(p2c: PackedInt32Array, cells_by_index: Array,
+		pixel_count: int, n_cells: int = -1) -> void:
+	var lookup: Array = []
+	lookup.resize(pixel_count)
+	var indices := PackedInt64Array()
+	indices.resize(pixel_count)
+	var present := PackedByteArray()
+	present.resize(pixel_count)
+	if p2c.size() == pixel_count:
+		for i in range(pixel_count):
+			var ci: int = p2c[i]
+			var cell: HexCell = cells_by_index[ci] if ci >= 0 and ci < cells_by_index.size() else null
+			lookup[i] = cell
+			if cell != null:
+				indices[i] = int(cell.index)
+				present[i] = 1
+	publish_pixel_lookup(lookup, indices, present)
+	var count_cells: int = cells_by_index.size() if n_cells < 0 else n_cells
+	var lists: Dictionary = {}
+	if cell_first_px_arr.size() >= count_cells and cell_px_count_arr.size() >= count_cells:
+		var flat_n: int = flat_px_indices_arr.size()
+		for ci in range(count_cells):
+			var count: int = cell_px_count_arr[ci]
+			if count <= 0:
+				continue
+			var start: int = cell_first_px_arr[ci]
+			if start < 0 or start + count > flat_n:
+				continue
+			var cell: HexCell = cells_by_index[ci] if ci < cells_by_index.size() else null
+			if cell == null:
+				continue
+			lists[cell] = flat_px_indices_arr.slice(start, start + count)
+	cell_pixel_lists = lists
+
 
 # Daily-sim perf opt：water cell → PackedInt32Array(像素 index 列表) 反向索引。
 # 在 _bake_height_biome_moisture 的同一次循环里，pixel_to_cell_lookup 写入时

@@ -94,7 +94,7 @@ def violations(root):
     ai_path = root / "gdext/src/native_simulation_host_country_stage.cpp"
     errors += country_ai_violations(code_only(ai_path.read_text()))
     errors += annual_country_violations(consumer_body(annual_code, "commit_annual_worker_day"))
-    family = code_only((root / "gdext/src/economy_runtime_family_buff.cpp").read_text())
+    family = code_only((root / "gdext/src/economy_runtime_family_effect_inputs.cpp").read_text())
     errors += lineage_opinion_violations(consumer_body(family, "refresh_class_opinion_metrics"))
     return errors
 

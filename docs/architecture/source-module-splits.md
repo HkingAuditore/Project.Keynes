@@ -28,8 +28,15 @@ C++ 路径相对于 `gdext/src/`。
 | `ui/game_ui_manager.gd` | `ui/game_hud_layout.gd`：HUD 排版和地图安全区；`ui/game_ui/{country_routes,era_progression,overlays}.gd`：国家卷宗路由、时代/奖励和覆盖层流程 | 每次刷新借用的独立控件；协作者接收 manager，不持有整个 manager；信号和动态节点仍绑定宿主 |
 | `ui/components/ideology_workspace.gd` | `ui/components/ideology_workspace_presentation.gd`：工作区节点构造、布局、模型索引和牌面刷新 | 宿主保留引擎回调、动画/命令入口和可变状态；显示协作者每次接收 workspace，动态回调仍绑定宿主 |
 | `ui/military_view_model.gd` | `ui/military_logistics_projection.gd`：运输显示 | 只读已提交模型、日期及名称查询；不保留世界引用 |
+| `world_ext_atlas.cpp` | `world_ext_cell_luts.cpp`：逐格 enum/dyn/eco/weather LUT 与 bounce 字节编码；共享量化/signature 在 `world_ext_internal_cell_luts.h` | `encode_cell_luts` 签名、绑定不变；原 prev 状态仍归 `AtlasPipelineState`；颜色参数与贴图上传仍归 MapBaker |
+| `rendering/resource_visual_geometry.gd` | `gdext/src/resource_visual_builder.h`、`gdext/src/resource_visual_builder.cpp`：纯值选择与单样式布局；`rendering/resource_visual_native_slice.gd`：单片段适配 | 原脚本算法保留作兼容路径及字节对照；预算、单格进度、发布顺序与状态归属仍在原宿主，大数组不跨帧持有 |
+| `rendering/resource_visual_layer.gd` | `rendering/resource_visual_chunk_inputs.gd`：首次未知可见格的区域准备计数 | 只限制新任务创建，不取消进行中的任务；当前区域准备完成即可推进，不等待整图 |
+| `rendering/bakers/terrain_baker.gd`、`terrain_index_baker.gd` | `geography/world_data.gd`：像素对象表、数值归属列与反向列表发布 | 原三处烘焙写入顺序与对象仍一致；数值列是可失效的显示派生数据，不进入存档 |
 | `world_ext_bake.cpp` | `world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp` | 成员函数原样迁移；声明、绑定、slot、对象所有者不变；无状态局部 helper 可复制 |
-| `economy_runtime_persistence.cpp` | `economy_runtime_continuation_checkpoint.cpp` 汇集已有继续段；`economy_runtime_climate_checkpoint.cpp` 独占降雨继续段 | 只通过 `EconomyAuthorityTransfer` 访问 Economy 状态，解码和验证后再安装 |
+| `economy_runtime_persistence.cpp` | `economy_runtime_continuation_checkpoint.cpp` 汇集已有继续段；`economy_runtime_climate_checkpoint.cpp` 独占降雨继续段；`economy_runtime_restore_scratch.cpp` 清理读档候选所需的运行时暂存并使冻结输入缓存失效 | 继续段通过 `EconomyAuthorityTransfer` 访问 Economy 状态，解码和验证后再安装；scratch 仍是同一 `NativeEconomyRuntime` 的成员定义，安装与失败回滚顺序归原 persistence |
+| `economy_runtime_country_epoch_capture.cpp` | `economy_runtime_country_cache.cpp`：科技可用性、领土索引与拓扑 hash 的精确输入复用、重建及输入报告；`economy_runtime_internal_country_cache.h`：私有缓存身份与诊断计数 | 原 capture 保留采样和准备顺序；缓存及结果归同一运行时，完整比较输入，新世界/配置 reset 与读档准备使其失效，不进入存档或业务 hash |
+| `economy_runtime_family_buff.cpp` | `economy_runtime_family_effect_inputs.cpp`：领土查询、不可变标签快照、地理/家族/科技等指标准备、效果输入声明与测试输入覆盖 | 同一 `NativeEconomyRuntime` 成员定义；家族效果执行留在原文件，输入准备仍在原冻结边界，标签发布与读取的共享快照契约不变 |
+| `economy_runtime.h` | `economy_runtime_test_access.h`：原生选择器及缓存测试的访问结构声明；`economy_runtime_country_cache_tests.cpp`：缓存输入与失效用例 | 仅测试实现与既有自测绑定实现包含测试声明头；运行时保留原 friend，脚本接口和业务状态布局不由测试头定义 |
 | `world_ext_economy.cpp` | `world_ext_economy_topology.cpp`：交易地图、可见性绑定和输入采集缓存失效 | 只经公开 Economy 接口；调用者负责执行边界 |
 | `ui/` 动态内容部件 | `ui_control_parts.gd` 与 `scenes/ui/parts/`：内建控件的类型与默认场景资源 | 数据、排列和回调仍归原组件；没有放宽禁止直接创建控件的检查 |
 | `world_ext_generate.cpp` | `world_ext_generate_base.cpp`、`world_ext_season_refresh.cpp` | base 生成与季节阶段各自成文件；post-base/full/publish 留在入口，继续游标仍归同一个 DCWorldExt |
@@ -37,6 +44,11 @@ C++ 路径相对于 `gdext/src/`。
 | `military/military_catalog_compiler.gd` | `military/military_catalog_support.gd`：装备消费集合与 PKMI catalog hash | 纯静态计算；原编译器保留 `slot_accepted_goods` / `unit_consumed_goods` 薄转发，目录编译与测试调用契约不变 |
 | `economy_runtime_building_employment.cpp` | `economy_runtime_building_employment_metrics.cpp`：按 cell 替换已填岗位和失业汇总 | 同一 `NativeEconomyRuntime` 成员定义；只访问运行时已有指标数组，不新增调度或状态所有者 |
 | `economy_runtime_colonization_kit.cpp` | `economy_runtime_colonization_cargo.cpp`：物资合并、排序、绑定建筑计划和返还货物 | 四个同一 `NativeEconomyRuntime` 成员定义原样搬迁；既有货物范围、建造消耗和市场写入顺序不变 |
+| `military_core.cpp` | `military_core_store.cpp`、`military_core_personnel.cpp`、`military_core_commands.cpp`、`military_core_payroll.cpp` | 同一 MilitaryCore 的存储/查询、人员、命令和工资职责；共享无状态人员 helper 在 `military_core_personnel_internal.h`，有状态局部变量保持单一原职责所有者。采购范围和交战成员派生索引分别在 `military_core_supply_index.cpp`、`military_core_engagement_index.cpp` |
+| `military_core_save.cpp` | `military_core_store.cpp` | 保存的驻军/部队位置链校验移到位置链所有者，完整校验体保持不变；保存入口仍先验证再安装，不扩展 PKMI 格式 |
+| `military_core_procurement.inc` | `military_core_flight_sums.h`：单次采购使用的在途数量查询表 | 完整四字段键；只替换满足整数求和等价条件的排序查询，不决定采购顺序、不跨调用复用结果；原始行与原排序路径保留 |
+| `native_simulation_host.h` | `native_simulation_host.cpp` | 主线程服务完成方法的实现移出公共头，公开签名和请求位行为不变；受控唤醒测试直接抽取该实现体 |
+| `military_core_selftest.cpp` | `military_core_navigation_selftest.inc`、`military_core_performance_selftest.inc`、`military_core_payroll_selftest.inc` | 原导航/探路用例按原文移出，新性能用例仍由唯一 `self_test` 入口执行；共享 Sim 夹具不复制、不改变保存字段 |
 
 ## 后续修改与验证
 
@@ -97,6 +109,12 @@ C++ 路径相对于 `gdext/src/`。
 
 ## 本轮验证
 
+2026-11-15 性能改造补充：经济黄金检查的人口和市场字段计算移到
+`economy_golden.cpp`，字段顺序、计算方法与日期元数据保持原样；正式运行时从
+实际持有完整数据的经济对象读取，纯数据测试仍读取其自身列。旧检查在开局交接前
+读取部分镜像，可能随线程时机产生假差异。`GoodsBill` 私有类型及原友元声明
+机械移到已有 `economy_runtime_internal_market_types.h`，不改变可见性和成员布局。
+
 最初拆分阶段的源码对照确认 115 段搬迁内容、102 组常量、110 组原参数和 2,546 个
 未搬迁函数保持一致；后续功能修复不再声称逐字节等同于拆分前行为。
 
@@ -104,3 +122,28 @@ C++ 路径相对于 `gdext/src/`。
 相关显示与规则测试、重复黄金链、交易保存回放、八场景与真实年度续跑，以及 Debug/Release
 构建和独立 Release 实载。实际结果在工作记录与 PR 中给出；命令整体通过才算通过。
 其他平台构建、完整导出和实际画面对比不在本次本地验证范围内。
+
+### 资源视觉职责
+
+`ResourceVisualLayer` 保留配置、变化队列、预算、记忆与 chunk 生命周期；`resource_visual_geometry.gd` 承载不改变规则的实例选择/摆放/上传，`resource_visual_materials.gd` 承载 shader、纹理及样式绑定，`resource_visual_work_queue.gd` 管理稀疏队列与完整扫描进度。`MapData` 的只读统计和慢层查询由 `map_data_queries.gd` 实现，原接口保持。生成器的生物占领日志汇总移入 `map_generation/bio_occupancy_summary.gd`，原生写回入口仍留在 `terrain_gen.gd`。
+
+### 加载期目录准备
+
+- `economy_building_catalog_compiler.gd` 保留同步/协作公开入口，
+  `economy_building_catalog_compile_steps.gd` 拥有唯一的建筑目录编译过程。
+- `economy_carrying_catalog_compiler.gd` 拥有承载力目录列，EconomyCatalog 仍负责总目录组合。
+- `effect_metric_keys.gd` 保留 Effect 与 C++ 对齐的稳定指标顺序；
+  `modifier_catalog_stat_tables.gd` 保留科技与军事固定属性表的稳定顺序。
+- `map_rules_initializer.gd` 接管 Effect 的加载编译与安装，`map_runtime_bridge.gd` 按原位置调用。
+- `economy_facade_display.gd` 接管加载显示名称，状态继续归 EconomyFacade。
+
+- `economy_facade_configuration.gd` 拥有经济冷配置的共同实现；Facade 保留同步与协作薄入口，显示目录准备归 `economy_facade_display.gd`，原生安装顺序不变。
+
+- `loading_resource_request.gd` 只管理一个引擎异步资源请求的完成回收，与加载上下文/世界取消生命周期分离。
+
+### Economy 保存头校验（2026-11-16）
+
+`economy_runtime_persistence_read.cpp` 的保存头验证与候选列准备移入
+`economy_runtime_persistence_header.cpp`；875行原方法体仅改变缩进，读取顺序、返回与
+校验保持不变。原文件从3168行降至2291行，新文件896行。私有恢复声明归入既有
+`economy_runtime_internal_operations.h`，不增加状态所有者或脚本入口。
