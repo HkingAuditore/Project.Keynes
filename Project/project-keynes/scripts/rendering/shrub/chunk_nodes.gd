@@ -137,7 +137,9 @@ static func _ensure_shadow_chunk_node(host, chunk_id: int) -> MultiMeshInstance2
 	snode = MultiMeshInstance2D.new()
 	snode.name = "DetailShadowChunk_%d" % chunk_id
 	snode.material = host._shadow_material
-	snode.z_index = -1  # 地形之上、植株(z=0)之下
+	# 影子是植株层的子节点，用相对 z。层带抬升后不能再写死 -1：树冠层在 3 时
+	# -1 会落回 2，与建筑主体同层，树影就糊在屋顶上。钉在绝对 1，但不许往上抬。
+	snode.z_index = mini(-1, 1 - int(host._profile().render_z_index))
 	var smm = MultiMesh.new()
 	smm.transform_format = MultiMesh.TRANSFORM_2D
 	smm.use_colors = true

@@ -212,9 +212,34 @@ river_rejected/buffer/decal_buffer/far_count/elapsed_ms`。同步包装的可选
 
 ## 地名层序
 
-建筑 Body 的绝对 z 为 3，会盖住格内其他内容。`SettlementLabelLayer` 因此显式取
-`z_as_relative=false` 与 `z_index=LABEL_Z_INDEX=7`，让地名压在建筑、天气(4)、数据叠加(5)
-与国界(6)之上；选中高亮(10)与迷雾(12)仍然遮挡地名。
+世界层带（绝对 z，`top_level + z_as_relative=false`）：
+
+| z | 内容 |
+|---:|---|
+| 0 | 地形、水面、资源根、地力贴花 |
+| 1 | 建筑贴花（广场/街面）、建筑投影壳体、远景 Macro、灌木/岩石/水生、资源主体 |
+| 2 | **建筑主体** |
+| 3 | **树冠**、雨幕 |
+| 4 / 5 / 6 | 天气与云影 / 数据叠加 / 国界 |
+| 7 | 地名 |
+
+`SettlementLabelLayer` 显式取 `z_as_relative=false` 与 `z_index=LABEL_Z_INDEX=7`，
+让地名压在树冠、建筑、天气(4)、数据叠加(5)与国界(6)之上；选中高亮(10)与迷雾(12)
+仍然遮挡地名。
+
+**树冠(3) 高于建筑主体(2) 是刻意的**：植被只被排除在 settlement core 半径内，外圈
+与邻格的树冠本来就会伸到屋顶上；建筑排在树冠之上时，每栋房子都像贴在森林上的一块
+贴纸。建筑投影与远景 Macro 留在 1，所以树冠、树影都不会糊到屋顶上（树影同层 1，
+由 `VegetationFamilyLayer._family_shadow_z()` 单独钉住，不能再退回 `_family_z - 1`）。
+
+**两个植被渲染器都要遵守这条层带**。`detail_scatter_family_renderer_enabled` 默认
+`false`（"默认保持旧渲染器，避免未验收路径直接影响玩家"），场景也不覆盖它，所以实际
+跑的是 `ShrubLayer`；它的 z 直接来自 `data/visual/*.tres` 的 `render_z_index`，由
+`shrub/material_inputs.gd` 写到层节点上。只改 `VegetationFamilyLayer._family_z()` 不会
+影响屏幕——树类 profile 必须一起站在 3；跟着抬的还有植株影子的相对偏移，写死 `-1`
+会从 1 落到 2，正好压到屋顶上，所以影子钉 `mini(-1, 1 - render_z_index)`。
+`tests/rendering/world_draw_band_order_test.gd` 同时守代码常量与 profile 数据：任何
+profile 都不许占用建筑主体那一层。
 
 ## DLL 同步
 

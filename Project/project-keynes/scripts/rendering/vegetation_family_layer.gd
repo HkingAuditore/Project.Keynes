@@ -12,6 +12,10 @@ const FAMILY_BRUSH := 2
 const FAMILY_CANOPY := 3
 const FAMILY_HARDSCAPE := 4
 const FAMILY_AQUATIC := 5
+# 绝对 z（与 building_visual_layer 的 Z_BAND_* 成对维护，树冠必须压住屋顶）：
+# 地形 0 < 贴花/灌木/资源/建筑投影 1 < 建筑主体 2 < 树冠 3。
+const Z_BAND_CANOPY := 3
+const Z_BAND_CANOPY_SHADOW := 1
 const BUFFER_STRIDE := 16
 const STYLE_LUT_WIDTH = VegetationFamilyStyleLut.STYLE_LUT_WIDTH
 const STYLE_LUT_HEIGHT = VegetationFamilyStyleLut.STYLE_LUT_HEIGHT
@@ -570,7 +574,7 @@ func _update_shadow_entry(family: int, chunk_id: int, source_mm: MultiMesh) -> v
 	if shadow == null or not is_instance_valid(shadow):
 		shadow = MultiMeshInstance2D.new()
 		shadow.name = "VegetationFamilyShadow_%d" % chunk_id
-		shadow.z_index = _family_z(family) - 1
+		shadow.z_index = _family_shadow_z(family)
 		shadow.material = _shadow_materials.get(family, null)
 		var smm := MultiMesh.new()
 		smm.transform_format = MultiMesh.TRANSFORM_2D
@@ -740,8 +744,14 @@ func _mesh_for_lod(family: int, lod: int) -> Mesh:
 func _family_z(family: int) -> int:
 	match family:
 		FAMILY_GROUND: return 0
-		FAMILY_CANOPY: return 2
+		FAMILY_CANOPY: return Z_BAND_CANOPY
 		_: return 1
+
+
+## 树冠主体抬到 3 后不能再用 `_family_z - 1`：那会落到 2，与建筑主体平层，树影就糊在屋顶上。
+## 树冠影钉在 1，其余家族沿用 -1，数值与改动前逐位一致。
+func _family_shadow_z(family: int) -> int:
+	return Z_BAND_CANOPY_SHADOW if family == FAMILY_CANOPY else _family_z(family) - 1
 
 
 func _entry_key(family: int, chunk_id: int) -> String:
