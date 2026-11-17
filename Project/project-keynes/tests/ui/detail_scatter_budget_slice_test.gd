@@ -15,9 +15,36 @@ var _failures: int = 0
 class ForcedRefreshLayer:
 	extends Node
 	var refresh_calls: int = 0
+	var full_setup_calls: int = 0
+
+	func instance_count() -> int:
+		return 0
+
+	func setup(_map, _world, _bounds, _hex_size, _quality) -> void:
+		full_setup_calls += 1
 
 	func refresh_for_succession(_indices: PackedInt32Array) -> void:
 		refresh_calls += 1
+
+
+class IdleFillHost:
+	extends RefCounted
+	const DEFERRED_DETAIL_FILL_RESCUE_SECONDS := 0.0
+	const DETAIL_PLAN_IDLE := 0
+	var _deferred_fill_rescued := false
+	var _deferred_fill_watchdog_msec := 1
+	var _detail_refresh_queue := []
+	var _detail_plan_phase := 0
+	var _detail_refresh_batches := []
+	var _map := MapData.new(1, 1)
+	var _world := WorldData.new()
+	var _detail_layers := []
+	var hex_size := 22.0
+	var visual_quality := 0
+	func _mark_detail_budget_total_dirty() -> void:
+		pass
+	func _apply_detail_global_budget(_force: bool) -> void:
+		pass
 
 
 class PlanningLayer:
@@ -192,6 +219,37 @@ func _run() -> void:
 	renderer._drain_detail_refresh_queue()
 	_expect("visible timeout forces exactly one task per frame",
 		forced_layer.refresh_calls == 1 and renderer._detail_refresh_queue.size() == 3)
+
+	# An empty visible patch is valid (ocean/desert/offscreen vegetation).
+	# Reproduce the old idle watchdog boundary without waiting eight seconds.
+	renderer._detail_refresh_queue.clear()
+	renderer._detail_refresh_batches.clear()
+	renderer._reset_detail_refresh_plan()
+	if renderer.has_method("_poll_deferred_detail_fill_watchdog"):
+		var idle := IdleFillHost.new()
+		idle._detail_layers.append(forced_layer)
+		var loading = load("res://scripts/rendering/renderer_loading_vegetation.gd")
+		loading._poll_deferred_detail_fill_watchdog(idle)
+	renderer._drain_detail_refresh_queue()
+	_expect("an empty completed patch never triggers an unbudgeted full setup",
+		forced_layer.full_setup_calls == 0)
+
+	# Missing native scatter already falls back within the requested chunk. A
+	# legitimate zero-instance result must still be remembered as completed.
+	var empty_layer = ShrubLayerScript.new()
+	var empty_map := _make_cache_map(2, 2)
+	empty_map.is_water_arr = PackedByteArray([1, 1, 1, 1])
+	var empty_world := WorldData.new()
+	empty_world.world_bounds = Rect2(0, 0, 100, 100)
+	empty_layer.set_chunked_multimesh_enabled(true, 2)
+	empty_layer.set_defer_initial_rebuild(true)
+	empty_layer.setup(empty_map, empty_world, empty_world.world_bounds, 22.0, 0)
+	var filled: bool = empty_layer.refresh_chunk_for_succession(0, PackedInt32Array([0, 1, 2, 3]))
+	_expect("native-unavailable chunk fill completes through the existing script path",
+		filled and empty_layer.get_scatter_diagnostics().get("path", "") == "gdscript_event_cells")
+	_expect("empty water chunk is cached as completed, not missing vegetation",
+		empty_layer.instance_count() == 0 and empty_layer.detail_chunk_has_resident_cache(0))
+	empty_layer.free()
 
 	renderer._detail_layers.clear()
 	renderer.free()

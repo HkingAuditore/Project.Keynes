@@ -188,7 +188,37 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 核对已预留金额、国家现金的精确扣减、请求清空和重复脉冲不重复扣款；
 不依赖观察一个可能在同次调用内消失的终态队列项。
 
+## 移动端帧预算与分块显示
+
+- Android/iOS 默认由现有 native worker 执行十二域日计划，主线程负责输入和已提交
+  结果的显示。`RuntimeClockBinding` 在启动后立即同步暂停/速度，后续订阅控制变化；
+  不用 UI 刷新或等待时长唤醒。`PK_MOBILE_NATIVE_WORKER=0` 显式诊断旧 inline 路径，
+  `=1` 或未设置走后台；通用 `PK_NATIVE_DAILY_INLINE=1` 仍可显式选 inline。
+  执行方式不能改变日序、输入、命令日期、存档边界或结果。验证：
+  `tests/runtime/mobile_runtime_worker_test.gd` 比较 Android/iOS 平台选择、实际执行器、
+  暂停恢复及 30 日全部已有摘要；`-- --reference-inline` 生成同输入的 inline 对照。
+  完整对照命令：`python3 tools/ci/check_mobile_runtime_consistency.py --godot /opt/homebrew/bin/godot --log-dir <新目录> --workers 2`，同时核对原生库/源码身份、观察覆盖和实际压力。
+
+- Android/iOS 的 `WorldClock.sim_budget_ms()` 与桌面一样使用配置的帧预算，不按
+  快进倍速放大。倍速仍是目标天数，过载时实际推进放慢；不跳过游戏日，不改变
+  同日继续、命令日期或结算屏障。单个同步日调用不能被这个预算中断。Web 保留
+  原来的独立预算策略。验证：`tests/runtime/mobile_clock_budget_test.gd`、
+  `tests/runtime/runtime_clock_overload_recovery_test.gd` 及 game 下的时钟绑定/事件测试。
+- 植被初次补齐只走现有分块队列。原生散布不可用时，在同一个块内用脚本生成；
+  没有植被也是有效且可缓存的结果，不能按等待时长或零实例数触发整图重建。
+  验证：`tests/ui/detail_scatter_budget_slice_test.gd`、`detail_scatter_visibility_test.gd`。
+- 触摸端显式低画质关闭 2D MSAA；自动、中、高档保留 2×，避免默认视图的边缘
+  闪烁回归。地图纹理密度仍为低/中/高 12/16/20、自动 16，界面缩放和实际绘制
+  分辨率不是同一件事。验证：`tests/rendering/mobile_msaa_policy_test.gd` 和
+  `tests/ui/visual_tile_layout_test.gd`。
+
 ## 天气与光照 Shader
+
+- 天气雨雪幕的天气/视野 LUT 在实例内恒定，放在顶点读取后用 flat varying 传递；
+  完全不可见的实例收成退化三角形，透明边缘不进入雨雪计算。雪花候选可按最大
+  晕圈、投影短轴和完整摆动范围提前排除，但必须保留原来的位置、摆动、形状计算
+  顺序。用 `tests/rendering/weather_curtain_culling_test.gd` 在真实图形环境逐像素
+  对照未裁剪的 5×5 邻域；`-- --reference=<改前 shader 绝对路径>` 另对照完整改前效果。
 
 - 降雪散点归 weather_cell_curtain.gdshader：全格位置随机与独立摆动必须配合
   邻格补画，不能把随机偏移再次乘小系数缩回格心。查找坐标的旋转不应旋转

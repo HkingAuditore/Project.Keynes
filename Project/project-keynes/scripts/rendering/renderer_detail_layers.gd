@@ -15,11 +15,6 @@ const WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO: float = 0.5
 const DETAIL_LOADING_LAYERS_PER_YIELD: int = 4
 const DETAIL_LOADING_YIELD_BUDGET_MS: float = 12.0
 
-# 兜底救援窗口：defer 之后若运行期补齐在这么久之内一株都没建出来（而且刷新管线
-# 已经空闲，说明不是"还在排队"），就退回老的"一次性全量构建"。宁可卡一下，
-# 也不能让地图永远光秃秃。
-const DEFERRED_DETAIL_FILL_RESCUE_SECONDS: float = 8.0
-
 static func _after_visual_profile(host) -> void:
 
 	host._rebuild_detail_layers_if_default()

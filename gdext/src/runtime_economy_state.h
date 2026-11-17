@@ -14,6 +14,7 @@
 #include "runtime_economy_family_store.h"
 #include "runtime_economy_live_tables.h"
 #include "runtime_economy_family_side_tables.h"
+#include "runtime_economy_person_store.h"
 #include "economy_tracked_records.h"
 #include "economy_keyed_variable_records.h"
 

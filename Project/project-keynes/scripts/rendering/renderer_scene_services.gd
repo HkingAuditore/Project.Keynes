@@ -206,8 +206,6 @@ static func _process(host, delta: float) -> void:
 	host._resource_visual_cpu_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
 	host._drain_detail_refresh_queue()
 	host._last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
-	# 加载期把散布构建 defer 给这条运行期路径，所以这里必须有一个"永不出现"的兜底。
-	host._poll_deferred_detail_fill_watchdog()
 	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
 	if host._perf_sampler != null:
 		host._perf_sampler.push_frame_ms(delta * 1000.0)

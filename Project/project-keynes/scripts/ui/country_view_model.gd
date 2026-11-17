@@ -1,6 +1,8 @@
 class_name CountryViewModel
 extends RefCounted
 
+const MaintenancePresentation = preload("res://scripts/ui/military_maintenance_presentation.gd")
+
 const IdeologyPresentation = preload("res://scripts/ui/country_ideology_presentation.gd")
 
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
@@ -934,67 +936,21 @@ static func military_spending_model(snapshot: Dictionary,
 ## 口径不变：`need` / `stock` / `inbound` 仍是 GOODS_SCALE，`ratio` 仍是万分比，
 ## `days_cover` 仍是「十分之一日」（-1 = 无需求）。
 static func maintenance_detail_rows(rows) -> Array:
-	var out: Array = []
-	if not rows is Array:
-		return out
-	for row_value in (rows as Array):
-		if not row_value is Dictionary:
-			continue
-		var row: Dictionary = row_value
-		var days_cover := int(row.get("days_cover_x10", -1))
-		out.append({
-			"id": String(row.get("id", "")),
-			"name": String(row.get("name", "")),
-			"kind": int(row.get("kind", 0)),
-			"kind_name": String(row.get("kind_name", "")),
-			"cell": int(row.get("cell", -1)),
-			"units": maxi(0, int(row.get("units", 0))),
-			"need": maxi(0, int(row.get("daily_need_goods", 0))),
-			"stock": maxi(0, int(row.get("stock_goods", 0))),
-			"inbound": maxi(0, int(row.get("inbound_goods", 0))),
-			"ratio": clampi(int(row.get("ratio_bp", 0)), 0, 10000),
-			"days_cover": days_cover,
-			"days_text": cover_days_text(days_cover),
-			"disrepair": int(row.get("disrepair", 0)) != 0,
-			"shortage_reason": int(row.get("shortage_reason", 0)),
-			"reason_text": String(row.get("reason_text", "—")),
-			"need_text": goods_text(int(row.get("daily_need_goods", 0))),
-			"inbound_text": goods_text(int(row.get("inbound_goods", 0))),
-		})
-	return out
+	return MaintenancePresentation.maintenance_detail_rows(rows)
+
 
 ## GOODS_SCALE（1000）毫单位 → 一位小数的纯整数文本。「—」表示没有量，
 ## 不是 0：维护行里 0 和「没有需求」是两件事。
 static func goods_text(milli: int) -> String:
-	var value := maxi(0, milli)
-	if value <= 0:
-		return "—"
-	if value >= 10000000:
-		return "%d" % (value / 1000)
-	return "%d.%d" % [value / 1000, (value % 1000) / 100]
+	return MaintenancePresentation.goods_text(milli)
 
 ## 可用天数（十分之一日，-1 = 无需求）→ 「3.5 日」。整数运算，不用浮点。
 static func cover_days_text(days_cover_x10: int) -> String:
-	if days_cover_x10 < 0:
-		return "—"
-	if days_cover_x10 % 10 == 0:
-		return "%d 日" % (days_cover_x10 / 10)
-	return "%d.%d 日" % [days_cover_x10 / 10, days_cover_x10 % 10]
+	return MaintenancePresentation.cover_days_text(days_cover_x10)
 
 ## 明细 + 汇总的变更签名。只取整数与短串，不给每帧比较造大字符串。
 static func maintenance_signature(rows: Array, summary: Dictionary) -> int:
-	var signature := 17
-	for row in rows:
-		var entry: Dictionary = row
-		signature = signature * 31 + int(entry.get("need", 0))
-		signature = signature * 31 + int(entry.get("stock", 0))
-		signature = signature * 31 + int(entry.get("inbound", 0))
-		signature = signature * 31 + int(entry.get("ratio", 0))
-		signature = signature * 31 + int(entry.get("days_cover", -1))
-		signature = signature * 31 + (1 if bool(entry.get("disrepair", false)) else 0)
-		signature = signature * 31 + int(entry.get("shortage_reason", 0))
-	signature = signature * 31 + int(summary.get("weighted_ratio_bp", 0))
-	return signature
+	return MaintenancePresentation.maintenance_signature(rows, summary)
 
 ## 外交章的模型。它自己不算任何东西：名单、档案与战事都由 DiplomacyViewModel 从
 ## 「已提交的国家壳 + 领土镜像 + 军事快照」里算。这里只把这条通路上要用的几个

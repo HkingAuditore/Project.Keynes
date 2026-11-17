@@ -1,4 +1,6 @@
 extends Node
+
+const BackendPolicy = preload("res://scripts/audio/audio_backend_policy.gd")
 ## Presentation-only audio boundary: FMOD on Windows/Android; Web keeps its own path.
 
 const NativeBackend := preload("res://scripts/audio/native_audio_backend.gd")
@@ -294,31 +296,13 @@ func _uses_native_audio() -> bool:
 ## Web（HTML5 side module）。只有显式强制开关才用 portable 混音。
 static func native_backend_reason_for(platform: String, _is_web: bool, is_android: bool,
 		forced: bool) -> String:
-	if forced:
-		return "forced"
-	# Android 走 FMOD。设备实测（emulator-5554）证明扩展能在 Android 上加载，
-	# 卡点是 FMOD 的 JNI：`JNI_OnLoad` 会 FindClass("org.fmod.FMOD")，缺这个 Java 类
-	# 时 JNI 直接 abort 整个进程（"JNI DETECTED ERROR ... ClassNotFoundException:
-	# org.fmod.FMOD"）。现在由三件事兜住：
-	#   - addons/0_fmod_bootstrap 在加载扩展前执行 JNI_OnLoad /
-	#     FMOD_Android_JNI_Init；
-	#   - org.fmod.* 由 tools/fmod_java_stub 提供（secondary dex 注入 APK）；
-	#   - prime() 先探测类、失败返回非 0，_ready() 见到非 0 就显式失败。
-	# Android 不接受 portable fallback；PK_AUDIO_FORCE_NATIVE 仅用于桌面/Web 调试。
-	if is_android or platform == "Android":
-		return ""
-	return ""
+	return BackendPolicy.native_backend_reason_for(platform, _is_web, is_android, forced)
 
 
 ## FMOD 后端可用的平台。Web 暂不在此列：FmodGodot 上游 v1.1.3 没有 html5 目标，
 ## HTML5 运行库接入完成后再打开（见 docs/audio/fmod-integration.md 平台边界一节）。
 static func fmod_platform_supported(platform: String, is_web: bool) -> bool:
-	# Web 用 FMOD HTML5 side module（gdext/fmod_godot 从 SDK 源码编译）。
-	if is_web:
-		return true
-	if platform == "Android" or OS.has_feature("android"):
-		return true
-	return platform == "Windows"
+	return BackendPolicy.fmod_platform_supported(platform, is_web)
 
 
 func _native_backend_reason() -> String:
