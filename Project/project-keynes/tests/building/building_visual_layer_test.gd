@@ -4,6 +4,7 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const IntelCacheScript = preload(
 	"res://scripts/rendering/building_visual_intel_cache.gd")
 const LayerScript = preload("res://scripts/rendering/building_visual_layer.gd")
+const VegetationLayer = preload("res://scripts/rendering/vegetation_family_layer.gd")
 
 var _checks := 0
 var _failures := 0
@@ -77,6 +78,16 @@ func _run() -> void:
 		and shadow.multimesh.mesh.surface_get_array_len(0) == 9)
 	var first_buffer: PackedFloat32Array = body.multimesh.buffer.duplicate() \
 		if body is MultiMeshInstance2D else PackedFloat32Array()
+	# 层级契约（不只是常量）：落盘的批次必须让树冠盖住屋顶，投影和贴花留在主体之下。
+	# 常量写在两个文件里，调用点才是真正生效的地方，这里读的是真实节点。
+	var body_z: int = int(body.z_index) if body is MultiMeshInstance2D else -999
+	_expect("chunk body draws below the vegetation canopy band",
+		body is MultiMeshInstance2D and body_z < VegetationLayer.Z_BAND_CANOPY)
+	_expect("chunk shadow hull stays below the body it belongs to",
+		shadow is MultiMeshInstance2D and int(shadow.z_index) < body_z)
+	_expect("chunk ground decal stays below the body it supports",
+		nodes.get("decal") is MultiMeshInstance2D
+		and int(nodes["decal"].z_index) < body_z)
 
 	layer.update_intel(intel, PackedInt32Array([0, 1]))
 	layer.wait_for_layout(5000)

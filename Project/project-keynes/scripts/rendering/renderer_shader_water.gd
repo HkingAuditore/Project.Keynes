@@ -685,7 +685,7 @@ static func _create_water_quad(host, prefix: String, kind: String) -> void:
 	host._water_quad = MeshInstance2D.new()
 	host._water_quad.name = "WorldWaterQuad"
 	# z_index 与 _world_quad 同为 0（CanvasItem 先按 z_index、再按树序绘制），树序由
-	# move_child 钉死在 _world_quad 紧后面 ⇒ 水面盖住陆地、又被植被(z=1)/建筑(z=3)盖住。
+	# move_child 钉死在 _world_quad 紧后面 ⇒ 水面盖住陆地、又被灌草(1)/建筑(2)/树冠(3)盖住。
 	# 必须 move_child 而不是依赖 add_child 顺序：画质从 MID 换回 LOW 时本节点是**后来**
 	# 才创建的，直接 add_child 会排到植被层后面 → 水面盖住整片植被。
 	host._water_quad.z_index = 0

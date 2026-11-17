@@ -31,6 +31,14 @@ const UPLOADS_PER_FRAME := 4
 const UPLOAD_BUDGET_USEC := 1500
 const BODY_SHADER_PATH := "res://shaders/building_compound.gdshader"
 const DECAL_SHADER_PATH := "res://shaders/building_ground_decal.gdshader"
+# 绝对绘制层带（top_level + z_as_relative=false，见 _ready），与 vegetation_family_layer.gd
+# 的 Z_BAND_* 成对维护：地形 0 < 贴花/投影/灌木/资源 1 < 建筑主体 2 < 树冠 3。
+# 树冠必须压住屋顶——植被只被排除在 settlement core 半径内，外圈和邻格的树冠天生就会
+# 伸到屋顶上；建筑排在树冠之上时，每栋房子都像贴在森林上的一块贴纸。
+const Z_BAND_DECAL := 1
+const Z_BAND_SHADOW := 1
+const Z_BAND_BODY := 2
+const Z_BAND_MACRO := 1
 # Strength parameters copied from the terrain material. Both shaders decode the
 # same packed 4-bit horizon, so the numbers must be identical or a roof and the
 # ground it stands on disagree about where the mountain shadow ends.
@@ -124,7 +132,9 @@ func _ready() -> void:
 	# behind the terrain on one of the two entry paths.
 	top_level = true
 	z_as_relative = false
-	z_index = 3
+	# 本层自己不绘制（只有子批次画东西，且都是绝对 z），这里留 0 只是不让
+	# "建筑排在 3" 这种过时读数继续误导下一个读者。真正的层带见 Z_BAND_*。
+	z_index = 0
 	_quad_mesh = _make_quad_mesh()
 	_shadow_hull_mesh = _make_shadow_hull_mesh()
 	_body_material = _shader_material(BODY_SHADER_PATH)
@@ -140,7 +150,7 @@ func _ready() -> void:
 	_macro_quad = MeshInstance2D.new()
 	_macro_quad.name = "BuildingMacro"
 	_macro_quad.z_as_relative = false
-	_macro_quad.z_index = 1
+	_macro_quad.z_index = Z_BAND_MACRO
 	_macro_quad.material = _macro_material
 	add_child(_macro_quad)
 	set_process(true)
@@ -664,16 +674,19 @@ func _upload_chunk_buffers(chunk_id: int) -> void:
 		_recount_instances()
 		return
 	var nodes: Dictionary = _chunk_nodes.get(chunk_id, {})
-	_put_batch(nodes, "body", "Body", _body_material, buffer, instance_count, null, 3)
+	_put_batch(nodes, "body", "Body", _body_material, buffer, instance_count, null,
+		Z_BAND_BODY)
 	var detailed := _visual_quality > 0
 	if detailed and decal_count > 0 and decal_buffer.size() >= decal_count * 16:
 		_put_batch(nodes, "decal", "GroundDecal", _decal_material,
-			decal_buffer, decal_count, null, 1)
+			decal_buffer, decal_count, null, Z_BAND_DECAL)
 	else:
 		_drop_batch(nodes, "decal")
 	if detailed and not OS.has_feature("web"):
+		# 投影必须留在贴花那一层（贴着地面、压在建筑主体之下）。跟着 body 一起
+		# 抬到 2 会让深色壳体刷在屋顶上。
 		_put_batch(nodes, "shadow", "Shadow", _shadow_material,
-			buffer, instance_count, _shadow_hull_mesh, 2)
+			buffer, instance_count, _shadow_hull_mesh, Z_BAND_SHADOW)
 	else:
 		_drop_batch(nodes, "shadow")
 	_chunk_nodes[chunk_id] = nodes

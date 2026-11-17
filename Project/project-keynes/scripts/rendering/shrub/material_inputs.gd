@@ -368,8 +368,9 @@ static func _ensure_resources(host) -> void:
 	if host._shadow_mmi == null:
 		host._shadow_mmi = MultiMeshInstance2D.new()
 		host._shadow_mmi.name = "ShrubShadowMultiMesh"
-		# 低 z（相对层 z 减 1）：渲染在地形之上、植株之下。
-		host._shadow_mmi.z_index = -1
+		# 相对 z。层带抬升后不能再写死 -1：树冠层在 3 时 -1 会落回 2，与建筑
+		# 主体同层，树影就糊在屋顶上。钉在绝对 1，但不许往上抬。
+		host._shadow_mmi.z_index = mini(-1, 1 - int(host._profile().render_z_index))
 		host._shadow_mmi.material = host._shadow_material
 		host._shadow_mmi.multimesh = host._shadow_multimesh
 		host._shadow_mmi.visible = false

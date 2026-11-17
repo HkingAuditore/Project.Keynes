@@ -24,7 +24,7 @@ const INSTANCE_ASPECT_MAX = Geometry.INSTANCE_ASPECT_MAX
 const BATCH_COUNT := 5
 const DECAL_BATCH = Geometry.DECAL_BATCH
 const STRIDE = ResourceInstancePlan.STRIDE
-const RESOURCE_Z := 1 # 与植被共用父级：地表(0) < 资源(1) < 树冠(2)。
+const RESOURCE_Z := 1 # 与植被共用父级：地表(0) < 资源/建筑投影(1) < 建筑主体(2) < 树冠(3)。
 # Instance kind lives in COLOR.a: integer part = kind, +0.5 = not the lens badge carrier.
 const KIND_PROP = Geometry.KIND_PROP
 const KIND_DECAL = Geometry.KIND_DECAL
