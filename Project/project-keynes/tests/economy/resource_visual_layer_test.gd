@@ -132,7 +132,11 @@ func run() -> void:
 			within = within and Vector2(buffer[base + 3], buffer[base + 7]).distance_to(layer.cell_position(0)) <= 22.0 * 0.73
 	_expect("candidate positions use renderer hex scale", within and _count(buffers) > 0)
 	layer.set_quality(0, 2)
-	_expect("mobile tier remains independent of terrain quality", layer.quality() == 2 and layer.profile.instance_cap(layer.quality(), true) == 4000)
+	_expect("high shader tier does not override runtime low quality", layer.quality() == 0)
+	layer.set_quality(2, 0)
+	_expect("runtime high quality survives the mobile low shader tier",
+		layer.quality() == 2 and layer.profile.instance_cap(layer.quality(), true)
+			== layer.profile.mobile_instance_caps[2])
 	layer.profile.mobile_instance_caps = PackedInt32Array([2, 2, 2])
 	for frame in 40:
 		layer._build_until(Time.get_ticks_usec() + 10000)

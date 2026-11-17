@@ -1555,3 +1555,10 @@ private:
     bool validate_ecp2_candidate(const RuntimeEconomyEcp2State &in,
                                  std::string &error) const;
     bool validate_restored_committed_snapshot(std::string &error) const;
+
+    bool reserve_family_expedition_payload_slots(
+        int32_t expedition, uint32_t begin, uint32_t end, bool stop_on_failure);
+
+    bool decode_restore_family_tables(
+        const std::vector<uint8_t> &bytes, size_t &cursor, uint16_t schema,
+        uint16_t section, uint32_t records, std::string &error);

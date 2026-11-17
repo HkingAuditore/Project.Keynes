@@ -1,6 +1,8 @@
 class_name NarrativeEventService
 extends RefCounted
 
+const CalendarText = preload("res://scripts/narrative/narrative_calendar.gd")
+
 signal offer_ready(offer: Dictionary)
 signal offer_resolved(record: Dictionary)
 signal chronicle_updated()
@@ -931,20 +933,7 @@ func _days_per_year() -> int:
 ## 事件弹窗与史册只显示日历（第 N 年 · M 月 D 日），不显示第几天、地貌与气温。
 ## 没有时钟时退回「第 N 日」，只出现在无会话的测试/诊断路径。
 func _format_calendar_date(day: int) -> String:
-	if _world_clock != null and _world_clock.has_method("calendar_date_for_day"):
-		var cal: Dictionary = _world_clock.calendar_date_for_day(day)
-		var year_no := 1
-		if _world_clock.has_method("year_index_for_day"):
-			year_no = int(_world_clock.year_index_for_day(day)) + 1
-		return "第%d年 · %d月%d日" % [
-			year_no, int(cal.get("month", 1)), int(cal.get("day_of_month", 1))]
-	if _world_clock != null and _world_clock.has_method("calendar_date"):
-		var cal_now: Dictionary = _world_clock.calendar_date()
-		var year_now := int(_world_clock.year_index()) + 1 \
-			if _world_clock.has_method("year_index") else 1
-		return "第%d年 · %d月%d日" % [
-			year_now, int(cal_now.get("month", 1)), int(cal_now.get("day_of_month", 1))]
-	return "第 %d 日" % day
+	return CalendarText._format_calendar_date(_world_clock, day)
 
 
 func _cell_year_key(cell_idx: int, day: int) -> String:
