@@ -17,6 +17,10 @@ func _observation_days() -> int:
 	return GOLDEN_DAYS
 
 
+func _create_host() -> WorldRuntimeHost:
+	return WorldRuntimeHost.new()
+
+
 func _run() -> void:
 	OS.set_environment("PK_GOLDEN_DOMAINS", "1")
 	var config := NewGameConfig.create_default()
@@ -33,7 +37,7 @@ func _run() -> void:
 	clock.auto_start = false
 	root.add_child(clock)
 	clock.set_process(false)
-	var host := WorldRuntimeHost.new()
+	var host := _create_host()
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)

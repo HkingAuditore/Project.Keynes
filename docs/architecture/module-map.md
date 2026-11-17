@@ -104,3 +104,10 @@ Climate ACTIVE 慢层刷新日期归 `scripts/simulation/systems/season_refresh_
 经 `rendering/resource_visual_native_slice.gd` 接入单个同步片段；首次区域输入准备归
 `rendering/resource_visual_chunk_inputs.gd`。像素对象表与数值列的发布归 `WorldData`，三处
 terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模拟状态，也不增加存档字段。
+
+天气风场纹理由 `Project/project-keynes/scripts/rendering/weather_wind_source.gd` 按天气发布更新，
+由 `cloud_shadow_field.gd` 持有并将同一份纹理提供给云影和天气云；关闭云影只停止绘制。
+云影向地表、水面和细节层的材质绑定归 `renderer_lighting_bindings.gd`；水面入口只转发，
+仍使用当前纹理和绑定到渲染宿主的回调，不保存世界或跨帧状态。
+回归入口：`tests/rendering/cloud_weather_quality_test.gd`。手机执行方式与逐日对照见
+`Project/project-keynes/tests/runtime/mobile_runtime_worker_test.gd`。

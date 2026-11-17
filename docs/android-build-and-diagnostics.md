@@ -99,9 +99,15 @@ build_install_android.bat          rem 或 capture_android_log.bat
 worker 停在"等环境帧"（`ring=0`、`attempt_slices=0`），主线程在等 worker 提交 —— 互锁。
 Windows 上同一份代码靠启动时序能抢过去，安卓上抢不过。
 
-修法：**移动端改用内联日执行者**（`world_runtime_host._native_daily_inline_requested()` 对
+当时的临时修法：**移动端改用内联日执行者**（`world_runtime_host._native_daily_inline_requested()` 对
 mobile 返回 true），即 web 上已验证多年的"主线程跑 12 域"路径，不依赖 worker 线程与
-环境环。想恢复实验性 worker：`PK_MOBILE_NATIVE_WORKER=1`。
+环境环。
+
+当前代码已取消这一默认绕路。会话的 `RuntimeClockBinding` 在启动后立即同步暂停与
+速度，并订阅后续控制变化，手机默认使用现有后台执行器。`PK_MOBILE_NATIVE_WORKER=0`
+仅用于显式对照旧 inline 路径；`=1` 或未设置使用后台。桌面镜像 Android/iOS 平台选择
+与逐日对照见 `tests/runtime/mobile_runtime_worker_test.gd`；真机验收仍须单独执行。
+下方保留的是旧 inline 修复时的设备日志。
 
 修后同一回路实测：
 

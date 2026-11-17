@@ -45,22 +45,21 @@ const int FLAG_FOG_BREATHE = 16;
 
 varying vec4 v_custom;
 varying vec2 v_world;
+varying flat vec4 v_weather;
+varying flat float v_fog_vis;
 
+// [cell-curtain-quality 2026-11-17] 三档以前**全部** return 0（遗留的 debug pin），
+// 于是任何平台、任何画质都拿不到更密的雨幕/雪幕。这一档只改密度与行数
+// （drop_cols / drop_rows 的缩放，见 rain_curtain），不增加采样次数、不加循环，
+// 成本恒定 —— 因此允许编译期档给上限后按运行期 cell_curtain_quality 取值。
 int effective_cell_curtain_quality() {
 #if defined(PK_QUALITY_LOW)
-	return 0;
+	return min(cell_curtain_quality, 1);
 #elif defined(PK_QUALITY_MID)
-	return 0;
-#elif defined(PK_QUALITY_HIGH)
-	return 0;
+	return min(cell_curtain_quality, 2);
 #else
 	return cell_curtain_quality;
 #endif
-}
-
-void vertex() {
-	v_custom = INSTANCE_CUSTOM;
-	v_world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 
 float hash21(vec2 p) {
@@ -100,6 +99,19 @@ vec4 sample_weather(int cid) {
 		cur.gba = mix(prev.gba, cur.gba, weather_lerp);
 	}
 	return cur;
+}
+
+void vertex() {
+	v_custom = INSTANCE_CUSTOM;
+	v_world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
+	// 天气和视野在整个实例上恒定，每个顶点读一次即可，不逐像素重复读 LUT。
+	int cid = decode_cell_id(INSTANCE_CUSTOM);
+	v_weather = sample_weather(cid);
+	v_fog_vis = fog_mask_enabled
+		? smoothstep(0.5, 1.0, texture(enum_lut, cell_lut_uv(cid)).a) : 1.0;
+	if (v_fog_vis <= 0.0 || lut_dims.x < 1.0 || weather_strength <= 0.001) {
+		VERTEX = vec2(0.0);
+	}
 }
 
 float edge_fade(vec2 uv) {
@@ -262,6 +274,14 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 			vec2 id = base_cell + offset;
 			vec3 position_random = snow_hash23(id + seed * 17.0);
 			vec3 shape_random = snow_hash23(id + vec2(13.1, 71.7) + seed * 29.0);
+			// SNOW_CULL_BEGIN: 与未裁剪的 5x5 邻域逐像素对照。
+			// 最大晕圈按投影短轴放大，再包含完整摆动；只跳过贡献必为零的候选。
+			float search_extent = mix(0.07, 0.04, depth) * 1.28 * flake_scale * 2.4 / min(1.0, mix(1.65, 0.85, layer_depth) * (0.6 + fall_visibility * 0.8)) + sway_amp;
+			if (shape_random.y < mix(0.40, 0.06, strength)
+					|| any(greaterThan(abs(f - offset - position_random.xy), vec2(search_extent)))) {
+				continue;
+			}
+			// SNOW_CULL_END
 			float phase = position_random.z * 6.2831853;
 			vec2 center = offset + position_random.xy + vec2(
 				sin(t * mix(0.35, 0.80, shape_random.z) + phase) * sway_amp,
@@ -301,15 +321,12 @@ float lightning_flash(float seed, float intensity) {
 }
 
 void fragment() {
-	if (lut_dims.x < 1.0 || weather_strength <= 0.001) {
+	float edge = edge_fade(UV);
+	if (lut_dims.x < 1.0 || weather_strength <= 0.001 || v_fog_vis <= 0.0 || edge <= 0.0) {
 		COLOR = vec4(0.0);
 	} else {
-		int cid = decode_cell_id(v_custom);
-		float fog_vis = 1.0;
-		if (fog_mask_enabled) {
-			fog_vis = smoothstep(0.5, 1.0, texture(enum_lut, cell_lut_uv(cid)).a);
-		}
-		vec4 wx = sample_weather(cid);
+		float fog_vis = v_fog_vis;
+		vec4 wx = v_weather;
 		int wt = int(wx.r * 255.0 + 0.5);
 		float intensity = wx.g;
 		float precip = clamp(smoothstep(0.010, 0.48, wx.g) * 1.38, 0.0, 1.0);
@@ -317,7 +334,6 @@ void fragment() {
 		int flags = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_flags[wt] : 0;
 		float seed = v_custom.b;
 		float depth = v_custom.a;
-		float edge = edge_fade(UV);
 
 		float rain = ((flags & FLAG_RAIN_STREAK) != 0) ? rain_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;
 		float snow = ((flags & FLAG_SNOW_GRAIN) != 0) ? snow_curtain(UV, v_world, seed, depth, precip, wx_strength) : 0.0;

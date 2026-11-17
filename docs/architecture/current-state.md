@@ -52,6 +52,12 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 - 已验证：`country_capital_test.gd` 16/0、`satisfaction_runtime_test.gd` 58/0（含 9 项组织度/概率/结算）、`military_native_binding_test.gd` 自测 PASS（含割地转移与强制宣战）、`narrative_event_runtime_test.gd` 71/0、`stratum_unrest_service_test.gd` 7/0；地块档案与地图层 parse PASS。
 - 未实现：无（长跑平衡校准可作为后续平衡工作）。黄金 v4/v2/v3 与外部位移 v5 已按 5 次捕获更新并通过：`golden_day_hash_test` 176/0、`golden_external_advancers_test` 338/0。详见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md)。
 
+Android/iOS 与桌面现在默认使用同一 native worker 执行十二域日计划，取消手机默认
+同步执行整日的特殊分支；时钟仍由会话持有的 `RuntimeClockBinding` 在执行器启动后
+同步并持续通知。主线程的输入采集、显示回灌及下表列出的日尾工作仍在原处。诊断时
+`PK_MOBILE_NATIVE_WORKER=0` 或 `PK_NATIVE_DAILY_INLINE=1` 可选已有 inline 路径。
+执行器及数据所有者没有新增，公式、日计划和保存格式不变；验证范围见 feature-status。
+
 ## 十二域以外的推进
 
 登记在 `tools/ci/runtime_advancers.json`（生成 `runtime_external_advancers.h`），登记不拥有调度权。
