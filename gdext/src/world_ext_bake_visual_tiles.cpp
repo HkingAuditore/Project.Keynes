@@ -23,6 +23,7 @@
 #include <godot_cpp/variant/variant.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -274,12 +275,27 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     residual_noise->set_frequency(float(0.42 / hex_size));
     residual_noise->set_fractal_type(godot::FastNoiseLite::FRACTAL_FBM);
     residual_noise->set_fractal_octaves(3);
-    auto periodic_noise = [&](double wx, double wy) -> double {
-        if (wrap_period_x <= 0.0001) return double(residual_noise->get_noise_2d(wx, wy));
+    using NoiseColumn = std::array<double, 2>;
+    const bool wrap_noise = wrap_period_x > 0.0001;
+    auto noise_column = [&](double wx) -> NoiseColumn {
+        if (!wrap_noise) return {wx, 0.0};
         const double phase = wrap_world_x(wx) / wrap_period_x * (2.0 * M_PI);
         const double radius = wrap_period_x / (2.0 * M_PI);
-        return double(residual_noise->get_noise_3d(
-                std::cos(phase) * radius, std::sin(phase) * radius, wy));
+        return {std::cos(phase) * radius, std::sin(phase) * radius};
+    };
+    std::vector<std::array<NoiseColumn, 3>> residual_columns;
+    if (residual_amp > 0.0) {
+        residual_columns.reserve(WW);
+        for (int x = 0; x < WW; ++x) {
+            const double wx = work_origin_x + (double(x) + 0.5) * step_x;
+            residual_columns.push_back({noise_column(wx),
+                noise_column(wx - residual_filter_radius),
+                noise_column(wx + residual_filter_radius)});
+        }
+    }
+    auto periodic_noise = [&](const NoiseColumn &column, double wy) -> double {
+        if (!wrap_noise) return double(residual_noise->get_noise_2d(column[0], wy));
+        return double(residual_noise->get_noise_3d(column[0], column[1], wy));
     };
 
     PackedFloat32Array height_work;
@@ -287,37 +303,42 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     float * const HW = height_work.ptrw();
     const float * const PH = procedural_height.ptr();
     const uint8_t * const BIOME_W = biome_work.ptr();
-    for (int y = 0; y < WH; ++y) {
-        const double wy = work_origin_y + (double(y) + 0.5) * step_y;
-        for (int x = 0; x < WW; ++x) {
-            const int i = y * WW + x;
-            const double wx = work_origin_x + (double(x) + 0.5) * step_x;
-            const double base = sample_base_height(wx, wy);
-            const bool water = pk_is_water_terrain(BIOME_W[i]);
-            double procedural_detail = 0.0;
-            if (!water && BASE_P != nullptr && procedural_detail_gain > 0.0) {
-                procedural_detail = std::max(-procedural_detail_max, std::min(procedural_detail_max,
-                        (double(PH[i]) - sample_base_bicubic(BASE_P, wx, wy)) * procedural_detail_gain));
+    auto height_rows = [&](int first_row, int end_row) {
+        for (int y = first_row; y < end_row; ++y) {
+            const double wy = work_origin_y + (double(y) + 0.5) * step_y;
+            for (int x = 0; x < WW; ++x) {
+                const int i = y * WW + x;
+                const double wx = work_origin_x + (double(x) + 0.5) * step_x;
+                const double base = sample_base_height(wx, wy);
+                const bool water = pk_is_water_terrain(BIOME_W[i]);
+                double procedural_detail = 0.0;
+                if (!water && BASE_P != nullptr && procedural_detail_gain > 0.0) {
+                    procedural_detail = std::max(-procedural_detail_max, std::min(procedural_detail_max,
+                            (double(PH[i]) - sample_base_bicubic(BASE_P, wx, wy)) * procedural_detail_gain));
+                }
+                double residual = 0.0;
+                if (!water && residual_amp > 0.0) {
+                    const auto &columns = residual_columns[x];
+                    const double n0 = periodic_noise(columns[0], wy);
+                    const double navg = 0.25 * (
+                            periodic_noise(columns[1], wy) +
+                            periodic_noise(columns[2], wy) +
+                            periodic_noise(columns[0], wy - residual_filter_radius) +
+                            periodic_noise(columns[0], wy + residual_filter_radius));
+                    const double relief_gate = std::max(0.12, std::min(1.0,
+                            std::fabs(double(PH[i]) - base) / 0.06));
+                    residual = std::max(-residual_amp, std::min(residual_amp,
+                            (n0 - navg) * residual_amp * 3.0 * relief_gate));
+                }
+                double h = std::max(0.0, std::min(1.0, base + procedural_detail + residual));
+                if (water) h = std::min(h, sea_level);
+                else h = std::max(h, sea_level);
+                HW[i] = float(h);
             }
-            double residual = 0.0;
-            if (!water && residual_amp > 0.0) {
-                const double n0 = periodic_noise(wx, wy);
-                const double navg = 0.25 * (
-                        periodic_noise(wx - residual_filter_radius, wy) +
-                        periodic_noise(wx + residual_filter_radius, wy) +
-                        periodic_noise(wx, wy - residual_filter_radius) +
-                        periodic_noise(wx, wy + residual_filter_radius));
-                const double relief_gate = std::max(0.12, std::min(1.0,
-                        std::fabs(double(PH[i]) - base) / 0.06));
-                residual = std::max(-residual_amp, std::min(residual_amp,
-                        (n0 - navg) * residual_amp * 3.0 * relief_gate));
-            }
-            double h = std::max(0.0, std::min(1.0, base + procedural_detail + residual));
-            if (water) h = std::min(h, sea_level);
-            else h = std::max(h, sea_level);
-            HW[i] = float(h);
         }
-    }
+    };
+    pk::parallel_for_range("pk_bake_visual_tile_height", WH, bake_row_tasks(WH),
+            64, height_rows);
 
     Dictionary river = run_bake_river_sdf_pass(work_knobs);
     PackedFloat32Array flow_work = river.get("out_buf", PackedFloat32Array());

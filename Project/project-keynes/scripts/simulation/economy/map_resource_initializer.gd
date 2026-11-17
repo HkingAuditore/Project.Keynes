@@ -1019,10 +1019,8 @@ func collect_natural_resource_pass_cells(day: int, live_cells: PackedInt32Array)
 		cell_indices.append(idx)
 		cell_dt_days.append(_generator._natural_resource_dt_for_cell(idx, day, true))
 	var bucket: int = posmod(day, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
-	for idx in range(n_cells):
+	for idx in range(bucket, n_cells, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE):
 		if live_set.has(idx):
-			continue
-		if posmod(idx, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE) != bucket:
 			continue
 		if int(_generator._natural_resource_last_day[idx]) >= day:
 			continue

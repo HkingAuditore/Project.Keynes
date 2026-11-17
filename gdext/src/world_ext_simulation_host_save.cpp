@@ -1260,12 +1260,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
           snapshot.neighbor_offsets.size() == cells + 1u) ||
          (snapshot.neighbor_offsets.empty() &&
           snapshot.neighbor_indices.size() == cells * 6u));
-    std::string validation_error;
-    if (!validate_runtime_environment_snapshot(snapshot, validation_error)) {
-        out["ok"] = false;
-        out["code"] = String(validation_error.c_str());
-        return out;
-    }
     std::string publish_error;
     // economy_input is a main-thread copy of the geographic/climate slots that
     // the ACTIVE economy worker consumes for its day input. It is NOT part of
@@ -1370,22 +1364,24 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         }
         snapshot.economy_input = std::move(economy_input);
     }
-    if (!_runtime_host->publish_environment(snapshot, publish_error)) {
+    const float captured_dt_days = snapshot.dt_days;
+    const bool complete = snapshot.climate_input_complete;
+    if (!_runtime_host->publish_environment(std::move(snapshot), publish_error)) {
         out["ok"] = false;
         out["code"] = String(publish_error.empty()
             ? "runtime_input_publish_failed" : publish_error.c_str());
-        out["generation"] = static_cast<int64_t>(snapshot.generation);
-        out["day"] = snapshot.day;
+        out["generation"] = generation;
+        out["day"] = day;
         out["expected_day"] = _runtime_host->next_environment_day();
         return out;
     }
     _climate_physics_capture_ready = physics_capture_ready;
     out["physics_ready"] = physics_capture_ready;
     out["ok"] = true;
-    out["generation"] = static_cast<int64_t>(snapshot.generation);
-    out["day"] = snapshot.day;
-    out["dt_days"] = snapshot.dt_days;
-    out["climate_input_complete"] = snapshot.climate_input_complete;
+    out["generation"] = generation;
+    out["day"] = day;
+    out["dt_days"] = captured_dt_days;
+    out["climate_input_complete"] = complete;
     out["cell_count"] = static_cast<int64_t>(cells);
     return out;
 }

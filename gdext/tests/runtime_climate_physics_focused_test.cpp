@@ -5,6 +5,10 @@
 #include <limits>
 #ifdef PK_TEST_CLIMATE_WORKER
 #include "runtime_climate_kernel.h"
+
+namespace pk {
+std::FILE *pk_sim_trace_file() { return nullptr; }
+}
 #endif
 
 using namespace pk::pk_async_physics;
@@ -144,6 +148,27 @@ static bool psi_alias(bool all_land) {
 }
 
 #ifdef PK_TEST_CLIMATE_WORKER
+static bool validate_large_environment() {
+    constexpr int cells = 4097;
+    pk::RuntimeEnvironmentSnapshot input;
+    input.day = 0;
+    input.cell_count = cells;
+    input.cell_temp.assign(cells, -0.0f);
+    input.hydro_parent.resize(cells);
+    for (int32_t cell = 0; cell < cells - 1; ++cell) input.hydro_parent[cell] = cell + 1;
+    input.hydro_parent.back() = -1;
+    std::string error;
+    CHECK(pk::validate_runtime_environment_snapshot(input, error));
+    input.cell_temp.back() = std::numeric_limits<float>::infinity();
+    CHECK(!pk::validate_runtime_environment_snapshot(input, error));
+    CHECK(error == "runtime_input_non_finite");
+    input.cell_temp.back() = 0.0f;
+    input.hydro_parent.back() = cells / 2;
+    CHECK(!pk::validate_runtime_environment_snapshot(input, error));
+    CHECK(error == "runtime_input_hydro_cycle");
+    return true;
+}
+
 static bool worker_progress(bool all_land) {
     constexpr int n = 12;
     pk::RuntimeEnvironmentSnapshot in;
@@ -243,6 +268,9 @@ static bool worker_progress(bool all_land) {
 int main() {
     std::string error;
     if (!self_test(error)) { std::fprintf(stderr, "%s\n", error.c_str()); return 1; }
+#ifdef PK_TEST_CLIMATE_WORKER
+    if (!validate_large_environment()) return 1;
+#endif
     if (!state_roundtrip() || !forcing_and_divergence() || !psi_alias(false) || !psi_alias(true)) return 1;
 #ifdef PK_TEST_CLIMATE_WORKER
     if (!worker_progress(false) || !worker_progress(true)) return 1;

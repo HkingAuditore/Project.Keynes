@@ -186,7 +186,7 @@ public:
     bool ideology_parity_enabled() const {
         return _ideology_parity_enabled.load(std::memory_order_acquire);
     }
-    bool publish_environment(const RuntimeEnvironmentSnapshot &snapshot,
+    bool publish_environment(RuntimeEnvironmentSnapshot &&snapshot,
                              std::string &error);
     // worker：ring 内仍有未评估输入（有活可干）。
     bool has_pending_climate_input() const;

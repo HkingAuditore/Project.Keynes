@@ -7,6 +7,7 @@
 // 不得 include godot_cpp。这一条约束就是“worker 可用”的全部含义。
 
 #include "runtime_climate_passes.h"
+#include "parallel_dispatcher.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
@@ -192,6 +193,12 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     float *POANOM = out.ocean_thermal_anomaly.data();
     float *PLANOM = out.local_thermal_anomaly.data();
 
+    // A map row normally shares a latitude. Reuse the exact solar results
+    // within this pass while still allowing arbitrary per-cell latitudes.
+    uint32_t last_latitude_bits = 0;
+    float insol_now = 0.0f;
+    float day_length = 0.0f;
+    float annual_mean_fallback = 0.0f;
     // ── 主循环（1:1 镜像 sync run_range body） ──
     for (int i = 0; i < n; ++i) {
         const float ny = PLN[i];
@@ -201,18 +208,24 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
 
         // (a) dev_today + insolation
         const float ny_clamped = dc_clamp01f(ny);
-        const float insol_now = dc_insolation_now(ny_clamped, season_phase, axial_tilt_deg, daylen_amp);
+        uint32_t latitude_bits;
+        std::memcpy(&latitude_bits, &ny_clamped, sizeof(latitude_bits));
+        if (i == 0 || latitude_bits != last_latitude_bits) {
+            last_latitude_bits = latitude_bits;
+            insol_now = dc_insolation_now(ny_clamped, season_phase, axial_tilt_deg, daylen_amp);
+            day_length = dc_day_length_norm(ny_clamped, season_phase, axial_tilt_deg);
+            if (INSOL_MEAN_BAKED == nullptr)
+                annual_mean_fallback = dc_insolation_annual_mean(
+                    ny_clamped, axial_tilt_deg, daylen_amp);
+        }
         // perf (Item 4, 2026-07-05): insol_mean 是年均、season-无关。主线程 kick 时已把
         // dc_insolation_annual_mean(dc_clamp01f(ny),...) 预烘焙进 in.insol_annual_mean（持锁、
         // 主线程算，避免 worker 触 member 缓存的 data race）。命中即读 → bit-equal；字段缺失/
         // 尺寸不符时回退 inline 重算（旧行为，向后兼容旧调用方）。
-        const float insol_mean = INSOL_MEAN_BAKED
-            ? INSOL_MEAN_BAKED[i]
-            : dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
+        const float insol_mean = INSOL_MEAN_BAKED ? INSOL_MEAN_BAKED[i] : annual_mean_fallback;
         float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
         if (dev_today < insol_dev_min) dev_today = insol_dev_min;
         else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
-        const float day_length = dc_day_length_norm(ny_clamped, season_phase, axial_tilt_deg);
         const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
         // (b) moisture. Geographic base stays the annual mean. Insolation
@@ -1138,7 +1151,9 @@ bool _async_wind_air_kernel_pure(const ClimateInputBuf &in,
     }
     wa_lanes.air_anomaly = out.air_mass_temp_anomaly.data();
 
-    wind_air_pure(wa_knobs, wa_lanes, 0, n);
+    pk::parallel_for_range("pk_climate_wind_air", n, 0, 2048, [&](int begin, int end) {
+        wind_air_pure(wa_knobs, wa_lanes, begin, end);
+    });
     return true;
 }
 

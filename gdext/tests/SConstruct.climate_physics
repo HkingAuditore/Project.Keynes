@@ -13,9 +13,14 @@ worker = ARGUMENTS.get('worker', '0') == '1'
 sources = ['runtime_climate_physics.cpp', 'runtime_climate_formulas.cpp']
 if worker:
     env.Append(CPPDEFINES=['PK_TEST_CLIMATE_WORKER'])
-    sources += ['runtime_climate_kernel.cpp', 'runtime_climate_passes.cpp',
-                'runtime_authoritative_domains.cpp', 'runtime_climate_parity.cpp',
-                ]
+    sources += [
+        'runtime_climate_kernel.cpp', 'runtime_climate_input_hash.cpp',
+        'runtime_climate_passes.cpp', 'runtime_climate_passes_kernels.cpp',
+        'runtime_climate_passes_cyclone.cpp', 'runtime_climate_passes_hydrology.cpp',
+        'runtime_climate_passes_stage_b.cpp', 'runtime_climate_passes_weather.cpp',
+        'runtime_authoritative_domains.cpp', 'runtime_climate_parity.cpp',
+        'native_parallel_executor.cpp', 'runtime_switch_registry.cpp',
+    ]
 objects = [env.Object(str(build / name.replace('.cpp', '')), str(root / 'src' / name))
            for name in sources]
 objects.append(env.Object(str(build / ('worker_test' if worker else 'physics_test')),
