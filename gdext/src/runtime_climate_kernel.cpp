@@ -1,5 +1,6 @@
 #include "runtime_climate_kernel.h"
 #include "economy_cost_probe.h"
+#include "parallel_dispatcher.h"
 #include "runtime_climate_formulas.h"
 // S3：生产 Climate pass 的共享纯内核。worker 不再维护第二套 stage 实现。
 #include "runtime_climate_parity.h"
@@ -21,19 +22,14 @@ namespace {
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
 
+bool same_float_bits(const std::vector<float> &a, const std::vector<float> &b) {
+    return a.size() == b.size() && (a.empty() ||
+        std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+}
+
 uint64_t mix(uint64_t value, uint64_t input) noexcept {
     value ^= input + 0x9e3779b97f4a7c15ull + (value << 6u) + (value >> 2u);
     return value * FNV_PRIME;
-}
-
-template <typename T>
-uint64_t mix_vector(uint64_t hash, const std::vector<T> &values) noexcept {
-    hash = mix(hash, values.size());
-    for (const T &value : values) {
-        const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
-        for (size_t i = 0; i < sizeof(T); ++i) hash = mix(hash, bytes[i]);
-    }
-    return hash;
 }
 
 float read_or(const std::vector<float> &values, size_t index, float fallback) noexcept {
@@ -701,116 +697,6 @@ bool RuntimeClimateKernel::compile_catalog(const RuntimeEnvironmentSnapshot &inp
     return true;
 }
 
-uint64_t RuntimeClimateKernel::input_hash(const RuntimeEnvironmentSnapshot &input) {
-    uint64_t hash = mix(FNV_OFFSET, input.generation);
-    hash = mix(hash, static_cast<uint64_t>(input.day));
-    hash = mix(hash, input.cell_count);
-    hash = mix(hash, input.climate_catalog_abi_version);
-    hash = mix(hash, input.climate_catalog_hash);
-    hash = mix(hash, input.climate_map_width);
-    hash = mix(hash, input.climate_map_height);
-    hash = mix(hash, input.topology_generation);
-    hash = mix(hash, input.vision_revision);
-    hash = mix(hash, input.topology_validated ? 1u : 0u);
-    hash = mix(hash, input.fog_solved ? 1u : 0u);
-    hash = mix(hash, input.climate_input_complete ? 1u : 0u);
-    uint32_t dt_bits = 0;
-    std::memcpy(&dt_bits, &input.dt_days, sizeof(input.dt_days));
-    hash = mix(hash, dt_bits);
-    uint64_t season_bits = 0;
-    uint64_t anomaly_bits = 0;
-    std::memcpy(&season_bits, &input.season_phase, sizeof(input.season_phase));
-    std::memcpy(&anomaly_bits, &input.climate_anomaly, sizeof(input.climate_anomaly));
-    hash = mix(hash, season_bits);
-    hash = mix(hash, anomaly_bits);
-    hash = mix_vector(hash, input.cell_temp);
-    hash = mix_vector(hash, input.cell_temp_30d);
-    hash = mix_vector(hash, input.cell_temp_365d);
-    hash = mix_vector(hash, input.cell_temp_baseline_year);
-    hash = mix_vector(hash, input.cell_base_moisture);
-    hash = mix_vector(hash, input.cell_moisture);
-    hash = mix_vector(hash, input.cell_plant_available_water);
-    hash = mix_vector(hash, input.cell_soil_moisture);
-    hash = mix_vector(hash, input.cell_water_balance_30d);
-    hash = mix_vector(hash, input.cell_weather_precip);
-    hash = mix_vector(hash, input.cell_snow_cover);
-    hash = mix_vector(hash, input.cell_weather_intensity);
-    hash = mix_vector(hash, input.cell_weather_vapor);
-    hash = mix_vector(hash, input.cell_weather_cloud_water);
-    hash = mix_vector(hash, input.cell_weather_cloud);
-    hash = mix_vector(hash, input.cell_weather_type);
-    hash = mix_vector(hash, input.cell_weather_transition);
-    hash = mix_vector(hash, input.cell_sea_ice_frac_prev);
-    hash = mix_vector(hash, input.cell_river_discharge_30d);
-    hash = mix_vector(hash, input.cell_vegetation_vitality);
-    hash = mix_vector(hash, input.cell_insolation_dev);
-    hash = mix_vector(hash, input.cell_heat_input);
-    hash = mix_vector(hash, input.cell_wind_x);
-    hash = mix_vector(hash, input.cell_wind_y);
-    hash = mix_vector(hash, input.cell_wind_speed);
-    hash = mix_vector(hash, input.cell_ocean_current_x);
-    hash = mix_vector(hash, input.cell_ocean_current_y);
-    hash = mix_vector(hash, input.cell_air_mass_temp_anomaly);
-    hash = mix_vector(hash, input.cell_ocean_thermal_anomaly);
-    hash = mix_vector(hash, input.cell_local_thermal_anomaly);
-    hash = mix_vector(hash, input.cell_temperature_transport_anomaly);
-    hash = mix_vector(hash, input.cell_ema_initialized);
-    hash = mix_vector(hash, input.cell_elevation);
-    hash = mix_vector(hash, input.cell_lat_norm);
-    hash = mix_vector(hash, input.cell_geometry_area);
-    hash = mix_vector(hash, input.cell_wind_band);
-    hash = mix_vector(hash, input.cell_ocean_heat_capacity);
-    hash = mix_vector(hash, input.neighbor_offsets);
-    hash = mix_vector(hash, input.neighbor_indices);
-    hash = mix_vector(hash, input.hydro_parent);
-    hash = mix_vector(hash, input.terrain);
-    hash = mix_vector(hash, input.landform);
-    hash = mix_vector(hash, input.vegetation);
-    hash = mix_vector(hash, input.cover);
-    hash = mix_vector(hash, input.is_water);
-    hash = mix_vector(hash, input.has_river);
-    hash = mix_vector(hash, input.canal_edge_mask);
-    hash = mix_vector(hash, input.canal_water);
-    hash = mix_vector(hash, input.trade_passable_lut);
-    hash = mix_vector(hash, input.trade_move_cost_lut);
-    hash = mix_vector(hash, input.visible);
-    hash = mix_vector(hash, input.building_resource_reserve);
-    hash = mix_vector(hash, input.building_resource_extra);
-    hash = mix_vector(hash, input.cell_pos_x); hash = mix_vector(hash, input.cell_pos_y);
-    hash = mix_vector(hash, input.climate_physics_seed_slp);
-    hash = mix_vector(hash, input.climate_physics_seed_psi);
-    hash = mix_vector(hash, input.climate_physics_seed_upwelling);
-    // 按语义字段哈希，不能读取 POD padding（会破坏重试确定性）。
-    const auto &p = input.climate_physics_knobs;
-    const double physics_scalars[] = {
-        p.slp_lat_amp, p.slp_land_amp, p.slp_water_damp, p.slp_interior_boost, p.slp_coast_damp,
-        p.slp_thermal_weight, p.slp_ice_high_weight, p.slp_snow_high_weight, p.slp_moist_low_weight,
-        p.slp_response_rate, p.slp_synoptic_amp, p.slp_target_p95, double(p.slp_mobile_low_count),
-        p.slp_mobile_low_amp, p.slp_mobile_low_sigma, p.slp_mobile_low_period_days,
-        double(p.slp_smooth_passes), double(p.slp_recenter), p.wind_response_rate,
-        p.wind_max_turn_deg_per_day, p.wind_min_flux_for_dir_update, p.wind_synoptic_amp,
-        p.wind_synoptic_period_days, double(p.wind_terrain_aware), double(p.wind_belt_only_debug),
-        p.wind_momentum_advect_w, p.wind_momentum_diffuse_w_daily, double(p.wind_traj_table_enabled),
-        p.wind_traj_pos_scale, p.wind_traj_dt_days, double(p.wind_traj_weather_share), p.wind_div_damp_alpha,
-        double(p.thermal_monsoon_enabled), p.thermal_monsoon_lat_limit, p.thermal_monsoon_deadband,
-        p.thermal_monsoon_full_contrast, p.thermal_monsoon_gain, p.thermal_monsoon_breeze_floor,
-        double(p.days_per_year), p.axial_tilt_deg, p.insolation_daylen_amp, double(p.lat_lut_bins),
-        double(p.land_lf_mountain), double(p.land_lf_peak), double(p.land_lf_hill),
-        double(p.daily_split), double(p.daily_period_days), double(p.ocean_period_days), double(p.world_seed),
-        p.wrap_origin_x, p.wrap_period_x, double(p.enabled), double(p.ready), double(p.psi_warm_start),
-        double(p.psi.total_iters), p.psi.omega, p.psi.r_base, p.psi.beta_floor, p.psi.source_scale,
-        p.psi.oc_scale, p.psi.oc_max_mag, p.psi.thermohaline_weight, p.psi.upwelling_highlat_abs,
-        p.psi.cold_sink_temp, p.psi.response_rate, p.psi.thermal_current_weight, p.psi.density_cold_weight,
-        p.psi.density_ice_weight, p.psi.depth_curl_damp, p.psi.sea_level, p.psi.depth_ref, p.psi.topo_steer_w,
-        double(p.psi.early_exit), double(p.psi.min_iters), double(p.psi.check_every), p.psi.residual_epsilon,
-        p.upwelling.ekman_gain, p.upwelling.cold_sink_gain, p.upwelling.highlat_abs, p.upwelling.cold_sink_temp,
-    };
-    for (double v : physics_scalars) { uint64_t bits; std::memcpy(&bits, &v, sizeof(bits)); hash = mix(hash, bits); }
-    hash = mix(hash, p.water_id_count);
-    for (uint8_t id : p.water_terrain_ids) hash = mix(hash, id);
-    return hash;
-}
-
 bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapshot &input,
                                     const RuntimeClimateCatalog &catalog,
                                     const RuntimeClimateStore &current,
@@ -910,10 +796,6 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     const bool same_geometry = same_neighbors &&
         _physics_cache_terrain == physics_terrain &&
         _physics_cache_water_ids == physics_knobs.water_terrain_ids;
-    auto same_float_bits = [](const std::vector<float> &a, const std::vector<float> &b) {
-        return a.size() == b.size() && (a.empty() ||
-            std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
-    };
     const bool same_trajectory_inputs = same_neighbors &&
         same_float_bits(_physics_cache_pos_x, input.cell_pos_x) &&
         same_float_bits(_physics_cache_pos_y, input.cell_pos_y) &&
@@ -2558,25 +2440,37 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 state.traj_idx = wx.traj_idx.data();
                 state.traj_w = wx.traj_w.data();
             }
-            // 几何缓存由 worker 自己按 pos + wrap 重建：内核里缓存命中与 _xy 现算
-            // 是同序同式，bit-equal，所以这块纯粹是省时间。
-            const size_t geom_n = cells * 6u;
-            if (_weather_geom_dx.size() != geom_n) {
-                _weather_geom_dx.assign(geom_n, 0.0f);
-                _weather_geom_dy.assign(geom_n, 0.0f);
-                _weather_geom_invd.assign(geom_n, 0.0f);
+            // Derived only from these four inputs, including on a replay or
+            // when the worker briefly switches back to captured weather data.
+            if (_weather_geom_neighbors != neighbors ||
+                    !same_float_bits(_weather_geom_pos_x, wx.pos_x) ||
+                    !same_float_bits(_weather_geom_pos_y, wx.pos_y) ||
+                    std::memcmp(&_weather_geom_wrap, &knobs.weather_wrap_width_x,
+                        sizeof(_weather_geom_wrap)) != 0) {
+                const size_t geom_n = cells * 6u;
+                _weather_geom_dx.resize(geom_n);
+                _weather_geom_dy.resize(geom_n);
+                _weather_geom_invd.resize(geom_n);
+                pk_async_climate::weather_field_geometry_cache_pure(
+                    static_cast<int>(cells), neighbors.data(), wx.pos_x.data(),
+                    wx.pos_y.data(), knobs.weather_wrap_width_x,
+                    _weather_geom_dx.data(), _weather_geom_dy.data(),
+                    _weather_geom_invd.data());
+                _weather_geom_neighbors = neighbors;
+                _weather_geom_pos_x = wx.pos_x;
+                _weather_geom_pos_y = wx.pos_y;
+                _weather_geom_wrap = knobs.weather_wrap_width_x;
             }
-            pk_async_climate::weather_field_geometry_cache_pure(
-                static_cast<int>(cells), neighbors.data(), wx.pos_x.data(),
-                wx.pos_y.data(), knobs.weather_wrap_width_x,
-                _weather_geom_dx.data(), _weather_geom_dy.data(),
-                _weather_geom_invd.data());
             state.geom_dx = _weather_geom_dx.data();
             state.geom_dy = _weather_geom_dy.data();
             state.geom_invd = _weather_geom_invd.data();
 
-            pk_async_climate::weather_field_solve_pure(
-                knobs, lanes, state, 0, static_cast<int>(cells));
+            // The staged solve reads frozen neighbors and writes only the
+            // current cell, including its convection inhibition value.
+            pk::parallel_for_range("pk_weather_field", static_cast<int>(cells),
+                0, 2048, [&](int begin, int end) {
+                    pk_async_climate::weather_field_solve_pure(knobs, lanes, state, begin, end);
+                });
 
             // weather_commit：把 next buffer 落到 store，并解析 display_type /
             // transition 三条 / field_init。生产 native daily 的 weather_commit 节点
@@ -3114,6 +3008,22 @@ void RuntimeClimateKernel::accept_committed_physics(const RuntimeClimateStore &s
 }
 
 bool RuntimeClimateKernel::self_test(std::string &error) {
+    {
+        RuntimeEnvironmentSnapshot input;
+        input.cell_temp = {0.0f, 0.0f, 0.0f};
+        const uint64_t original = input_hash(input);
+        input.cell_temp.front() = -0.0f;
+        const bool first_word_changed = input_hash(input) != original;
+        input.cell_temp.front() = 0.0f;
+        input.cell_temp.back() = 0.5f;
+        const bool tail_changed = input_hash(input) != original;
+        input.cell_temp.back() = 0.0f;
+        input.cell_temp.pop_back();
+        if (!first_word_changed || !tail_changed || input_hash(input) == original) {
+            error = "climate_input_hash_missing_word_tail_or_length";
+            return false;
+        }
+    }
     // 驻留缓存与完整解码逐日对拍，覆盖空闲日、海陆翻转、邻接、坐标与轨迹参数变化。
     {
         constexpr int n = 4;

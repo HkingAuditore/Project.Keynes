@@ -74,6 +74,8 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 
 气候每日 Pass-A、Pass-B、ocean water/land、sea ice 和 transpiration 现在由各自 simulation 协作者承载 native dispatch 与切片实现；`map_generator.gd` 只保留公开入口、协作者组合，以及游标、缓存、统计和 slot/MapData 状态所有权。入口仍负责 `has_method`/签名探测、knob 打包、发布与失败处理；native 不可用或返回失败时用 `push_error` 保留上一份字段并返回失败。SHADOW、PROBE、A/B 和诊断入口继续保留，但不再计算一份 GDScript 热循环。
 
+气候封包摘要归 `gdext/src/runtime_climate_input_hash.cpp`，宿主在发布不可变输入时计算，Climate 内核和日输入记录共用这个定义。
+
 军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。
 
 经济冷配置的共同实现位于 `scripts/economy/economy_facade_configuration.gd`，显示目录准备位于 `scripts/economy/economy_facade_display.gd`。

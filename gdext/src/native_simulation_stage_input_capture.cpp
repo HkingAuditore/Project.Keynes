@@ -22,11 +22,11 @@ bool NativeSimulationHost::stage_input_capture(DayExecution &day, RuntimeDomainP
         // without a matching FIFO frame — Climate will not re-read it.
         const int64_t climate_committed_for_input =
             _climate_authority.store().committed_day;
-        std::string input_error;
+        // The FIFO and retained day share the immutable frame already checked
+        // by publish_environment, including the restore bootstrap frame.
         const bool input_ok = environment != nullptr &&
             environment->generation == plan.context.input_generation &&
-            environment->day == plan.context.day &&
-            validate_runtime_environment_snapshot(*environment, input_error);
+            environment->day == plan.context.day;
         if (!input_ok) {
             if (climate_authority_requested &&
                 climate_committed_for_input >= plan.context.day) {

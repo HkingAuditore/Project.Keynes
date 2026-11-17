@@ -79,4 +79,4 @@ jobs:
       - name: Standalone climate compilation
         run: |
           printf '#include "runtime_climate_pass_math.h"\n' | g++ -std=c++17 -fsyntax-only -x c++ -Igdext/src -
-          g++ -std=c++17 -fsyntax-only -Igdext/src gdext/src/runtime_climate_kernel.cpp
+          g++ -std=c++17 -fsyntax-only -Igdext/src gdext/src/runtime_climate_kernel.cpp gdext/src/runtime_climate_input_hash.cpp

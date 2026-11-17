@@ -34,15 +34,20 @@ func _init() -> void:
 		"terrain edge blend contains an explicit coast-domain guard")
 	_expect(surface_source.contains("terrain_hybrid_static_weight"),
 		"desktop terrain combines distance-field blending with zoom-aware DitherUV")
-	_expect(source.contains("water_static_edge_mix = water_edge_w"),
+	_expect(source.contains("water_static_edge_mix = edge_weight")
+		and source.contains("water_edge = is_water && edge_weight > 0.0001;"),
 		"MID/HIGH ocean forwards a continuous distance-field weight")
-	_expect(source.contains("#if !defined(PK_QUALITY_LOW)"),
+	_expect(source.contains("#if !defined(PK_QUALITY_LOW)\n\t\twater_edge ="),
 		"LOW compiles out secondary water-cell lookup")
-	_expect(source.contains("terrain_static_biome_is_water(candidate_biome)"),
+	_expect(source.contains("secondary_water = terrain_static_biome_is_water(secondary_biome)")
+		and source.contains("if (water_edge && secondary_water)"),
 		"continuous ocean blending cannot cross the land/water domain")
-	_expect(not source.contains(
-		"terrain_mobile_dither_uv_threshold(uv, wp) < water_edge_w"),
+	_expect(source.count("water_edge =") == 2
+		and source.contains("bool water_edge = false;"),
 		"ocean no longer converts its distance field to binary DitherUV")
+	_expect(source.count("decode_edge_secondary_index(uv)") == 1
+		and land_source.contains("compute_terrain_static_material(biome, elev, wp, uv, terrain_edge)"),
+		"land, water and fog share the fragment's secondary cell lookup")
 	_expect(water_source.contains("water_ctx_special_weights"),
 		"water categories consume continuous primary/secondary weights")
 	_expect(water_source.contains("continuous_sea_depth"),
@@ -76,7 +81,8 @@ func _init() -> void:
 		"full land material pipeline consumes a DitherUV-selected visual biome")
 	_expect(source.contains("visual_land_veg") and source.contains("visual_land_cover"),
 		"land DitherUV selects static biome/vegetation/cover axes together")
-	_expect(source.contains("!terrain_static_biome_is_water(land_secondary_biome)"),
+	_expect(source.contains("if (land_edge && !secondary_water)")
+		and source.contains("if (land_material_edge && !secondary_water)"),
 		"land DitherUV cannot cross the land/water domain")
 	_expect(surface_source.contains("terrain_land_dither_zoom_strength"),
 		"land DitherUV has an explicit close-view zoom fade")
@@ -84,7 +90,8 @@ func _init() -> void:
 		"close land view has no non-zero DitherUV floor")
 	_expect(surface_source.contains("TERRAIN_DITHER_THRESHOLD_MARGIN"),
 		"terrain Bayer rank tails are compressed to prevent elongated teeth")
-	_expect(source.contains("land_dither_probability"),
+	_expect(source.contains("? edge_weight * terrain_land_dither_zoom_strength() : 0.0;")
+		and source.contains("land_edge = land_edge && dither < land_probability"),
 		"full land visual cell selection shares the close-view zoom fade")
 	var biome_detail_source := FileAccess.get_file_as_string(
 		"res://shaders/include/biome_detail.gdshaderinc")

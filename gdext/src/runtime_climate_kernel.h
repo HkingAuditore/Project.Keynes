@@ -367,6 +367,10 @@ private:
     // commit 的 dirty 标记：worker 不需要它的下游（视觉脏区），但内核要一块可写。
     mutable std::vector<uint8_t> _weather_dirty_scratch;
     // 邻域几何缓存。可由 pos + wrap 完全重建，所以不进 store、也不从生产记录抄。
+    mutable std::vector<int32_t> _weather_geom_neighbors;
+    mutable std::vector<float> _weather_geom_pos_x;
+    mutable std::vector<float> _weather_geom_pos_y;
+    mutable float _weather_geom_wrap = 0.0f;
     mutable std::vector<float> _weather_geom_dx;
     mutable std::vector<float> _weather_geom_dy;
     mutable std::vector<float> _weather_geom_invd;

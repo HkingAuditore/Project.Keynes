@@ -212,6 +212,10 @@ func _mark_runtime_day_tail(host, committed_day: int) -> void:
 		done = mini(done, host._runtime_military_last_commit_day)
 	if host._runtime_natural_resource_pending_target_day >= 0:
 		done = mini(done, host._runtime_natural_resource_last_commit_day)
+	if done == committed_day and host._ideology_refresh_pending_day >= 0:
+		# Retry the already queued refresh while the worker is at the day boundary.
+		# Its requested date stays the same and the normal frame pump handles a retry.
+		host._step_ideology_instance_refresh_if_authoritative(host._ideology_refresh_pending_day)
 	ext.mark_runtime_day_tail_done(done)
 
 
