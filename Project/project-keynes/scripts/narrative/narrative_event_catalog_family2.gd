@@ -416,7 +416,9 @@ static func append(catalog) -> void:
 				"南门的宅子空了，井台上长了草。李氏在城外的新地开了渠，第二年秋天的粮价没往上走。韦顺在册子上把李氏的名字划掉，划得很轻。",
 				[
 					_grant("i025_pioneer", "拓荒者"),
-					Shared.birth(-4, 540),
+					# 人真的跟着族走了：族占城中人口三到四成，走一半即全城减两成。
+					# 这是守恒的人口迁出，不是「出生率下降」——改写 birth(-4) 是错位代理。
+					Shared.population_rate(-20, "本地人口 -20%（李氏一族迁出）"),
 					Shared.agriculture(3, 360),
 				]),
 			Shared.option(
@@ -424,6 +426,7 @@ static func append(catalog) -> void:
 				"宅子没卖成",
 				"宅子没卖成，李七在祠堂里坐了一夜。第二天，一半人走了，一半人留下。留下的那半，见了官府的人就低头。",
 				[
+					Shared.population_rate(-10, "本地人口 -10%（半数族人不告而去）"),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.manufacturing(2, 360),
 				]),

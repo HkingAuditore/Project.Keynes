@@ -24,12 +24,12 @@ func _check_view_model_contract(failures: PackedStringArray) -> void:
 		failures.append("family workspace typography fell below the readable size floor")
 	elif not family_theme.default_font is FontVariation or \
 			(family_theme.default_font as FontVariation).base_font.resource_path \
-			!= "res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf":
+			!= "res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2":
 		failures.append("family workspace body does not use the shared complete CJK regular font")
 	if family_theme != null:
 		var metric_font := family_theme.get_font("font", "FamilyMetricValue") as FontVariation
 		if metric_font == null or metric_font.base_font.resource_path \
-				!= "res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf":
+				!= "res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.woff2":
 			failures.append("family numeric readouts do not use the true bold face")
 	if family_theme != null:
 		var card_style := family_theme.get_stylebox(&"panel", &"FamilyCard")

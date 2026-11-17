@@ -84,7 +84,7 @@
 
 ---
 
-## 2. 效果：15 种 `Kind` 与它们的真实语义
+## 2. 效果：16 种 `Kind` 与它们的真实语义
 
 ### 2.1 种类速查
 
@@ -105,6 +105,7 @@
 | `SCHEDULE_FOLLOWUP_EVENT` | N 日后在本地块触发指定事件 | — | 定时事件直接入队，不看条件 |
 | `GRANT_FAMILY_TRAIT` | 给本格最大族授一个特质 | — | `target_key` = 特质 id（如 `i005_knowledge`）；已存在则改强度，core 特质跳过 |
 | `REMOVE_FAMILY_TRAIT` | 从最大族撤一个特质 | — | 只删非 core；无族/无 key 静默 simulated |
+| `ADD_POPULATION` | 本地人口迁入 / 迁出 | **守恒人口** | `int_value` = 人数（负数迁出），或 `ratio_bp` = 占本地现有人口的万分比（负数迁出）；加到「人数最多的那一群」，当天就进入吃饭与就业结算 |
 
 > 家族与战争是最近两座桥：家族效果只作用于**本格最大族**（快照第一条），不写家族现金/威望；
 > 战争只读军事快照（`AT_WAR` / 兵员 / 战果），不写军队状态。契约分别见
@@ -166,6 +167,7 @@
 | 发 6 单位小麦 | 实存可能只有 0.6，数量会被截断；写死数字会骗人 | 用比例（三成 / 四成），或写「至多 N 单位」 |
 | 平抑 / 抬升粮价 | **没有**直接改价格的效果；价格仍由市场结算 | 不写价格结论，只写供需动作（投放 / 征调） |
 | 减赋 / 抵扣赋税 | **没有**减税效果；税政在 Country 运行时 | 不写减赋；要补贴就写「国库 → 人群现金」 |
+| 收留游民 / 编入户籍 / 有人进城 | 人口不是修正量，`CITY_MODIFIER` 的产出与 `economy.city.birth_factor` 的出生率都不会让人真的多出来 | 用 `ADD_POPULATION`：`ratio_bp: 1200` 表示本地人口 +12%，标签写「本地人口 +12%（流民编入户籍）」。**文案收了人、效果里就必须有这一条**，否则数值上空转 |
 
 - 物资名一律走 `GoodProfileRegistry`（`NarrativeEffectSpec._friendly_good_name`），
   不要手写「麦粮」这种非游戏名——`wheat_grain` 的游戏名是**小麦**。
@@ -188,6 +190,7 @@
 | `require_good_id` / `require_good_qty` | 门槛把「本地市场 + 国库」相加；效果却只从各自来源扣 | 用 `COUNTRY_GOOD_TO_MARKET` 时门槛与效果不同源，容易「可选但空转」 |
 | `DISCOVER_RESEARCH_SIGNAL` | target 必须是 `research_signal_ids` 里的 id，否则静默模拟 | 用目录里的真实信号 id |
 | `SET_STORY_FLAG` / `CLEAR_STORY_FLAG` | 写入是真实持久化；但只有被 `required_story_flags` / `blocked_story_flags` / `HAS_STORY_FLAG` 读取才算机制 | 纯档案标记不要写进卡面期望 |
+| `ADD_POPULATION` | 只能加到「人数最多的那一群」，新人当天是失业状态、当天就要吃饭；`int_value` 与 `ratio_bp` 同时给时以人数为准 | 只写一种。比例按现有人口折算，小聚落会保底搬 1 人，不会算成 0 而静默失效 |
 | `scope` | 只决定冷却键粒度（CELL/COUNTRY），不会把事件变成全国事件 | 跨格影响用 `COUNTRY_MODIFIER` 或全国修正 |
 | `version` / `image_key` | 只做存档/档案元数据，运行时没有消费者 | 不要依赖它们改变 UI 或逻辑 |
 | `{good_name}` | 解析「当前价格比最高的商品」，不是事件指定的商品 | 要写具体商品用 `{settlement_name}` 之外的固定文案 |

@@ -760,6 +760,14 @@ static func _configure_cloud_shadow_field(host) -> void:
 
 	if host._cloud_shadow_field == null:
 		return
+	# [mobile-drop-cloud-shadow 2026-11-17] 移动端不跑云影：clear_inputs() 会把
+	# SubViewport 设成 UPDATE_DISABLED 并隐藏合成 quad，再推一次材质参数把
+	# cloud_shadow_field_bound 置 false —— 于是所有地表/水面/建筑 shader 里的
+	# cloud_shadow_direct_visibility() 都走"无云影"短路，一次采样都不发。
+	if not DCFeatureFlags.cloud_shadow_enabled():
+		host._cloud_shadow_field.clear_inputs()
+		_push_cloud_shadow_material_inputs(host)
+		return
 	if host._weather_layer != null and not host._cloud_shadow_field.wind_lut_changed.is_connected(host._weather_layer.set_wind_luts):
 		host._cloud_shadow_field.wind_lut_changed.connect(host._weather_layer.set_wind_luts)
 	if host._world == null or host._map == null:

@@ -202,6 +202,9 @@ static func sample_cell_context(
 	# 没有 map 或没有领土时保持空数组——叙事效果不会越权影响外国格。
 	ctx["nearby_owned_cells_r1"] = PackedInt32Array()
 	ctx["nearby_owned_cells_r2"] = PackedInt32Array()
+	# 邻城概况：城内事件需要知道「近旁还有谁、过得怎么样」，否则只能写孤立的一城。
+	# 无类型 Array 是有意的——`Array[Dictionary]` 赋给空 Array 会抛 SCRIPT ERROR 并静默中止整函数。
+	ctx["neighbor_settlements"] = []
 
 	var merged_flags: Dictionary = ctx.get("story_flags", {}).duplicate()
 	var cell_prefix := "cell:%d:" % cell_idx
@@ -512,7 +515,70 @@ static func sample_cell_context(
 	# 家族上下文与 cohort 明细同一条契约：只在扫描/结算路径取，入队汇总不取。
 	if include_cohort_details and economy_facade.has_method("family_cell_snapshot"):
 		_sample_primary_family(economy_facade, cell_idx, ctx)
+	# 邻城概况与 cohort 明细同一契约：只走扫描/结算路径。最多三处，人口 + 行情各一次查询。
+	if include_cohort_details:
+		ctx["neighbor_settlements"] = _sample_neighbor_settlements(
+			economy_facade,
+			ctx.get("nearby_owned_cells_r1", PackedInt32Array()),
+			ctx.get("nearby_owned_cells_r2", PackedInt32Array()),
+			3)
 	return ctx
+
+
+## 邻城概况：给「城内事件」一个横向参照，让模型能写「邻城也在涨」「上游的城先封了渡口」。
+## 只取名称、人口、最紧的一项商品——不搬整张市场表，prompt 侧也只用这三样。
+## 失败一律降级为空数组：叙事事件宁可少一条参照，也不能因为邻城查询中断采样。
+static func _sample_neighbor_settlements(
+		economy_facade,
+		ring1,
+		ring2,
+		max_count: int = 3
+) -> Array:
+	var out: Array = []
+	if economy_facade == null or max_count <= 0:
+		return out
+	var candidates: Array = []
+	for idx in ring1:
+		candidates.append(int(idx))
+	for idx in ring2:
+		candidates.append(int(idx))
+	if candidates.is_empty():
+		return out
+	var limit := mini(candidates.size(), max_count)
+	for i in range(limit):
+		var neighbor_idx := int(candidates[i])
+		if neighbor_idx < 0:
+			continue
+		var entry := {"cell_idx": neighbor_idx, "name": "", "population": 0, "shortage_good": ""}
+		if economy_facade.has_method("settlement_display_name"):
+			var sname := String(economy_facade.settlement_display_name(neighbor_idx)).strip_edges()
+			if not sname.is_empty():
+				entry["name"] = sname
+		if economy_facade.has_method("population_cell_summary"):
+			var pop_sum: Dictionary = economy_facade.population_cell_summary(neighbor_idx)
+			entry["population"] = maxi(0, int(pop_sum.get("population", 0)))
+		if economy_facade.has_method("market_cell_snapshot"):
+			var m_snap: Dictionary = economy_facade.market_cell_snapshot(neighbor_idx)
+			var g_ids: PackedStringArray = m_snap.get("good_stable_ids",
+				m_snap.get("good_ids", PackedStringArray()))
+			var prices: PackedInt64Array = m_snap.get("prices", PackedInt64Array())
+			var base_prices: PackedInt64Array = m_snap.get("base_prices", PackedInt64Array())
+			var worst_ratio := 1.0
+			var worst_good := ""
+			for g in range(mini(g_ids.size(), mini(prices.size(), base_prices.size()))):
+				var base := int(base_prices[g])
+				if base <= 0:
+					continue
+				var ratio := float(prices[g]) / float(base)
+				if ratio > worst_ratio:
+					worst_ratio = ratio
+					worst_good = String(g_ids[g])
+			if worst_ratio >= 1.30 and not worst_good.is_empty():
+				entry["shortage_good"] = worst_good
+		# 人口为零的格子不是聚落，不占名额。
+		if int(entry["population"]) > 0 or not String(entry["name"]).is_empty():
+			out.append(entry)
+	return out
 
 
 ## 本格最大族 = 快照第一条（原生已按 population desc, stable_id asc 排序）。

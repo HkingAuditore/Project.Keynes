@@ -4,7 +4,13 @@ shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
-#if defined(PK_WEB_WEATHER_MIN) || defined(PK_MOBILE_ANY) || defined(PK_WEATHER_LOW) || defined(PK_WEATHER_MID)
+// [mobile-high-full 2026-11-17] HIGH 档取消了 PK_MOBILE_ANY（见 shader_quality.gdshaderinc），
+// 但**天气云**的全量 4/3/2 octave fbm + 域扭曲是这份 shader 里最贵的部分，而且和
+// 玩家抱怨的"光照丑 / 迷雾没细节"不是同一条路径（那是 water / land / vegetation /
+// fog 的 `!PK_MOBILE_ANY` 段）。所以这里单独把天气云留在廉价噪声上，避免"高画质"
+// 一开就掉到个位数帧。要验证全量天气云，前置 `#define PK_WEATHER_FULL_CLOUDS`。
+#if defined(PK_WEB_WEATHER_MIN) || defined(PK_MOBILE_ANY) || defined(PK_WEATHER_LOW) || defined(PK_WEATHER_MID) \
+		|| (defined(PK_MOBILE_HIGH_SLIM) && !defined(PK_WEATHER_FULL_CLOUDS))
 #define PK_WEATHER_CHEAP_NOISE
 #endif
 

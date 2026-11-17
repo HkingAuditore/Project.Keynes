@@ -583,8 +583,11 @@ func _request_ai_generation(
 	if ctx.is_empty():
 		var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 			_map, _generator, _player_country_handle, day, _story_flags)
+		# AI 路径必须开 cohort 明细：职业构成、温饱缺口、失业率、主 cohort 职业名
+		# 都只在 include_cohort_details=true 时成立。关着的话 prompt 只能说「满意度若干」，
+		# 说不出「谁在不满」，事件就只能写成没有人的通稿。
 		ctx = NarrativeContextSamplerScript.sample_cell_context(
-			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 	ai_generation_requested.emit({
 		"ai_request_seq": seq,
 		"day": day,
@@ -985,12 +988,18 @@ func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
 	if ai_enabled:
 		var target_cell := int(sampled_cells[0])
 		if target_cell >= 0 and _ai_request_allowed(day):
-			var ai_cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
+			# 掷骰只吃局势压力（紧缺 / 溢价 / 满意度 / 气候），这些在轻量采样里就够。
+			# 明细采样（cohort 构成、家族、邻城）留到命中之后再补，否则每次脉冲都要
+			# 为一个九成会被拒的骰子跑三到六次原生查询。
+			var ai_probe_ctx := NarrativeContextSamplerScript.sample_cell_context(
 				target_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
-			var ai_chance := _ai_chance_q16(ai_slot_chance_q16, ai_cell_ctx)
+			var ai_chance := _ai_chance_q16(ai_slot_chance_q16, ai_probe_ctx)
 			var ai_roll := NarrativeRngScript.roll_q16(
 				_world_seed, day, _player_country_handle, target_cell, 0x4149)
 			if ai_roll < ai_chance:
+				# 命中后才补采：prompt 要写人，必须知道这座城里是谁在过活、邻城什么光景。
+				var ai_cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
+					target_cell, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 				_request_ai_generation(day, target_cell, "", "", "", day + 1, false, ai_cell_ctx)
 
 	var pulse_defs := catalog().events_for_channel(NarrativeEventDefinitionScript.TriggerChannel.PULSE_SAMPLED)

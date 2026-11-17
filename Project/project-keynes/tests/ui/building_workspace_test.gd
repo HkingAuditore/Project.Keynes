@@ -37,6 +37,7 @@ func _run() -> void:
 		_finish()
 		return
 	host.add_child(workspace)
+	workspace.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	await process_frame
 	await process_frame
 
@@ -82,6 +83,22 @@ func _run() -> void:
 	_expect("row hover opens the structured detail card",
 		workspace._hover_card.visible
 		and String(workspace._hover_card._payload.get("tooltip", "")).contains("国库"))
+	_expect("eligible hover hides the empty shortage section",
+		not workspace._hover_card._materials.visible)
+	_expect("hover detail stays inside the construction column",
+		host.get_global_rect().grow(0.5).encloses(
+			workspace._hover_card.get_global_rect()))
+	workspace._on_row_hover_ended()
+	workspace._on_row_hover_started(blocked_row._row_data, blocked_row)
+	await process_frame
+	_expect("blocked hover explains missing amount and market cause",
+		workspace._hover_card._materials.visible
+		and String(workspace._hover_card._material_rows.get_child(0)
+			.get_node("Label").text).contains("还差")
+		and String(workspace._hover_card._material_rows.get_child(0)
+			.get_node("Label").text).contains("市场无货")
+		and (workspace._hover_card._material_rows.get_child(0)
+			.get_node("Icon") as IconBadge).icon_key == &"good.lumber")
 	workspace._on_row_hover_ended()
 	_expect("page has no KPI band: sorting chips and rows carry the decisions",
 		workspace.get_node_or_null("%Summary") == null
@@ -222,6 +239,12 @@ func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 		"cash_required": cash,
 		"cash_text": "%.1f" % (float(cash) / 10000.0),
 		"market_used": 600,
+		"material_status": [{
+			"name": "木材", "missing": not eligible,
+			"icon": "good.lumber",
+			"missing_text": "0.6", "reason": "市场无货",
+		}],
+		"cash_blocked": reason == "资金不足",
 		"tooltip": "%s\n木材 · 需 2.4 / 国库 1.8 / 市购 0.6\n合计需现金 %.1f" % [
 			display_name, float(cash) / 10000.0],
 	}

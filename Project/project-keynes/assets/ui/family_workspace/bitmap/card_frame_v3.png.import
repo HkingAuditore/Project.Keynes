@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/card_frame_v3.png-736f524d517479ca88ea0b5aae8
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
-compress/lossy_quality=0.7
+compress/mode=1
+compress/high_quality=true
+compress/lossy_quality=0.75
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

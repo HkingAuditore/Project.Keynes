@@ -5,7 +5,7 @@ extends EditorPlugin
 ##
 ## 平台矩阵（2026-11-01 设备实测通过的部分）：
 ##   Windows : addons/FmodGodot/bin/windows/x86_64/*.dll + bank
-##   Android : lib/<abi>/ 里的 libFmodGodot + libfmod(L) + libfmodstudio(L) + JNI 引导扩展 + bank
+##   Android : lib/<abi>/ 里的 FMOD libraries + JNI bootstrap + Mobile bank
 ##   Web     : 未完成 —— 见文件末尾说明
 ##
 ## 两个 addon 都带 `.gdignore`（不参与资源扫描、不会被引擎自动加载），所以描述符与
@@ -55,10 +55,13 @@ class AudioExport extends EditorExportPlugin:
 		var is_web := features.has("web")
 		if not (is_windows or is_android or is_web):
 			return
-		# bank 三个平台都要（Web 走 tools/export_web_with_fmod.ps1：那个脚本会临时
+		# Desktop bank 只给 Windows/Web；Android 使用 FMOD 的 Mobile 平台 bank。
+		# Web 走 tools/export_web_with_fmod.ps1：那个脚本会临时
 		# 去掉两个 addon 的 .gdignore，让引擎在启动时自动加载 FmodGodot —— 浏览器里
 		# 运行期 load_extension 会死锁主线程，所以 web 不能靠描述符进 PCK 这条路）。
 		var banks := "res://assets/audio/banks/Desktop/"
+		if is_android:
+			banks = "res://assets/audio/banks/Mobile/"
 		for name in DirAccess.get_files_at(banks):
 			if name.ends_with(".bank"):
 				add_file(banks + name, FileAccess.get_file_as_bytes(banks + name), false)
@@ -101,16 +104,22 @@ class AudioExport extends EditorExportPlugin:
 
 	func _export_file(path: String, _type: String, features: PackedStringArray) -> void:
 		if path.begins_with("res://assets/audio/banks/"):
+			# Banks are injected by _export_begin. Never let Desktop banks leak into Android.
+			if features.has("android"):
+				skip()
+				return
 			for feature in ["windows", "android", "web"]:
 				if features.has(feature):
 					return
 			skip()
 			return
 		if path.begins_with("res://assets/audio/native/"):
-			# portable 全混音是 Android 上 FMOD 起不来时的兜底，必须一起进 APK。
-			for feature in ["web", "android"]:
-				if features.has(feature):
-					return
+			# Android is FMOD-only; do not ship the portable OGG fallback.
+			if features.has("android"):
+				skip()
+				return
+			if features.has("web"):
+				return
 			skip()
 
 var _audio_export: AudioExport

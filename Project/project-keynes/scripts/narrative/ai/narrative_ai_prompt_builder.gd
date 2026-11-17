@@ -184,7 +184,7 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"必须且只能输出严格的 JSON 对象，严格遵循以下 Schema：",
 		"""{
   "title": "事件标题（4-10字）",
-  "body_text": "触发事实（20-50字：只写条件、现状与影响，不写场景与修辞）",
+  "body_text": "事件正文（60-140字：写清楚谁在做什么、看见什么、东西是什么样子）",
   "ai_visual_prompt": "English visual prompt for period-appropriate historical illustration, no text/letters",
   "tags": ["climate", "economy"],
   "options": [
@@ -195,6 +195,7 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
         {
           "probability_percent": 100,
           "outcome_title": "结果（4-8字）",
+          "outcome_narrative": "结果正文（20-50字：写这件事落到谁头上、后来变成了什么样）",
           "effects": [
             {
               "kind": "CITY_MODIFIER",
@@ -212,7 +213,8 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"",
 		"【设计规范与安全白名单】",
 		"1. 每个事件提供 2 到 3 个具有真实权衡的选项（`options`）。绝大多数常规选项应当是**确定性结果**（即 `outcomes` 数组只有 1 项，`probability_percent: 100`）；仅当某个选项确实属于「高风险博弈/勘探奇遇/强行弹压」时，才为该选项设计 2 个概率分支结果（同一选项下所有 `outcomes` 的 `probability_percent` 之和必须等于 100）。",
-		"2. 所有 `custom_label` 必须是「对象 + 幅度 + 时长」的短句，例如：`本地农业产出 +15%，90 日`、`国库转出 4% 资金给本地居民`、`标记「凛冬考验」，90 日`。不得写文学化描述。",
+		"2. 所有 `custom_label` 必须是「对象 + 幅度 + 时长」的短句，例如：`本地农业产出 +15%，90 日`、`国库转出 4% 资金给本地居民`、`标记「凛冬考验」，90 日`。不得写文学化描述。**`custom_label` 里的商品写中文名（粮、布、铁、盐），不写 `grain` 这种 id。**",
+		"2b. **每个 `outcome` 都必须写 `outcome_narrative`**：结果页只显示这一段，缺了玩家就只能看到一句标题。写二十到五十字，落到具体的人或具体的物上（谁松了口气、谁家少了什么、东西最后放在哪儿），不要写「局势得到改善」这种总结。",
 		"3. 允许使用的 `effects[].kind` 及其合法 `target_key` 白名单如下：",
 		"   - `CITY_MODIFIER`（本地城市修正）：",
 		"     允许的 `target_key`：%s，或者单品产出修正 `economy.city.good.<good_id>.output_factor` 与减益 `economy.city.good.<good_id>.output_factor.cut`（其中 `<good_id>` 必须来自允许商品列表）。减益一律用 `.cut` 键，不要写负的 `magnitude_percent`。" % city_mods_joined,
@@ -229,10 +231,23 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"   - `SET_STORY_FLAG`（记录叙事态势标记）：`target_key` 为英文蛇形命名标记（如 `grain_relief_promised`），`duration_days` 为持续天数（15..365）。",
 		"   - `ADD_EVENT_WEIGHT_BIAS`（调整后续同类事件触发权重）：设置 `tag_key`（如 `famine`, `trade`, `unrest`, `harvest`, `plague`, `climate`）、`int_value`（-200..400）及 `duration_days`（30..365）。",
 		"   - `SCHEDULE_FOLLOWUP_EVENT`（预约多阶段后续事件链）：设置 `target_key`（后续事件标识或链条名）、`duration_days`（多少日后触发，15..180）以及 `ai_followup_prompt`（后续事件的走向要点）。",
+		"   - `ADD_POPULATION`（本地人口迁入/迁出，唯一真实改变人数的效果）：",
+		"     参数二选一：`int_value`（迁入人数，负数为迁出，范围 -3000..3000）或 `ratio_bp`（占本地现有人口的万分比，如 1200 表示 +12%，负数为迁出，范围 -3000..3000）。`duration_days` 无意义，固定写 1。",
+		"     **只要文案里出现了「收留」「编入户籍」「进城」「迁走」「逃荒来投」这类真的改变本地人数的情节，就必须配一条 `ADD_POPULATION`。**只用 `CITY_MODIFIER` 的农业产出、或 `economy.city.birth_factor` 的出生率来代替，属于文案收人、数值不认账。",
+		"     反面例子：写「开门收容难民」却只给本地农业 +5%——人没有真的进来，粮食压力也不会变。",
 		"4. 可参考的建筑类型列表：[%s]。" % buildings_note,
-		"5. **叙事文本禁用阿拉伯数字**：`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里不许出现 0–9 任何一个阿拉伯数字，也不许写百分号；气温统一写占位符 `{temperature}`（引擎会填，不要再补 ℃ 或「度」）。要写数量一律用汉字模糊表达：三人、数十户、三成、半数。`custom_label` 是唯一例外，按第 2 条写「对象 + 幅度 + 时长」。",
-		"6. 文风要求：只写事实与后果，用最短句子；不得使用修辞、比喻、典故、感叹、场景铺陈与人物对白；不得出现超越当前时代的现代词汇；严禁输出 JSON 之外的任何文本。",
+		"5. **叙事文本禁用阿拉伯数字，但允许汉字数量词**：`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里不许出现 0–9 任何一个阿拉伯数字，也不许写百分号；气温统一写占位符 `{temperature}`（引擎会填，不要再补 ℃ 或「度」）。要写数量就用汉字：三个人、两亩地、数十户、三成、半数、半尺布。**数字不是数据**——「三个人」「四十一年」照写，只有读数、百分比、金额要用汉字模糊掉。`custom_label` 是唯一例外，按第 2 条写「对象 + 幅度 + 时长」。",
+		"6. 文风要求：写具体的动作、具体的物、具体的身体感受。**可以写场景，可以写一两句对白，可以用比喻**——但比喻必须是当时的人想得到的东西（农事、器物、天时、牲畜），不要用现代意象。**不要写评价与总结**：不出现「这体现了」「由此可见」「民心因此不稳」这类判断句；把判断留给事实本身。不得出现超越当前时代的现代词汇。严禁输出 JSON 之外的任何文本。",
+		"6b. **写人不写名**：事件会被跨城复用，所以正文里不出现具体人名、族名、国名、城名（城名一律用 `{settlement_name}` 占位符）。要指代人时用身份与处境：「管库的老吏」「接生的」「守门的」「粮行的伙计」「从北边回来的兵」。身份比名字更有信息量，也不会穿帮。",
+		"6c. **写一件事，不写一份通报**：正文里至少要有一样具体的东西——一辆车、一只桶、一本册子、半块饼、一条白布、一张告示。物是读者相信这件事发生过的凭据。",
 		"7. 若状态快照给出「本地最大族」或「战事」，事件必须落到具体的人与具体的代价上：写族里谁在争、谁在出钱、谁在等消息；写仗打到哪里、谁家少了人。**不要写族名，也不要写军营番号**——事件会被缓存复用，写死名字会穿帮；用「族里」「营里」指代即可。不要只写“民心不稳”这类空泛判断。",
+		"8. 若快照给出「本地主要生计」「温饱缺口」「失业」，事件要落在那个行当的具体难处上：农户怕的是青黄不接和征夫，渔户怕的是汛期和盐引，匠户怕的是料价和工期，伙计怕的是裁员。不要写「百姓困苦」这种不落在行当上的话。",
+		"",
+		"【文风样例（本项目已通过验收的手写事件，只学密度与具体性，不要照抄其中的人名地名）】",
+		"例一：河边渡口最先病倒的是个挑水的，第二天他隔壁两家也躺下了。县里来人，把三条巷子的口用板子拦住，拦板一人高的地方系一条白布条。有人被派去送饭，一天两趟，饭桶放在巷口的石墩上，人退开十步，等里面的人自己来提。他手里有一本记名册，谁家几口人，谁家昨天没出来提饭，都要画一笔。",
+		"例二：渠线只挖了一半。工棚空了，挖出来的土堆在河边，被雨水冲出一道道沟。邻国的使者送来贺礼，话说得很客气：贵国终于懂得爱惜民力。议事的时候，没有人再提那卷图。它还在库房里，落着灰，压在一摞旧账本下面。只有管库的老吏记得它——每年夏天翻晒的时候，他会把图抽出来，抖一抖灰，再放回去。",
+		"例三：更楼的梆子一夜敲五遍，敲了四十一年，入冬后左膝先不听话。桥头入秋丢了三回东西：一家字号丢了一串钱，一家栈房丢挂在檐下的两块腊肉，一家药铺丢的是一屉药材。掌柜在柜台后头算完账，说添一个人，按铺面大小摊，一家摊得下来。打更的听见「添一个人」，把手从膝盖上拿开，说这活他孙子也能干。散场时他把梆子从钉子上取下来，用袖子擦了一遍，又挂回去，挂得比原来高半寸。",
+		"这三条的共同点：没有一个人名，没有一句评价，但每一条都有具体的物、具体的手上动作、一个没被说破的处境。照这个密度写，长度自然在六十到一百四十字之间。",
 	])
 	return "\n".join(lines)
 
@@ -283,6 +298,60 @@ static func _build_user_prompt(
 			population, satisfaction * 100.0, treasury_cash, cohort_cash,
 		],
 	])
+
+	# ─── 人的构成 ───────────────────────────────────────────────────────────
+	# 只有「满意度七成」是写不出人的：得知道这七成是谁、靠什么过活、谁在缺口上。
+	# 这些字段采样器早就采到了，此前一直没接进 prompt。
+	if bool(cell_ctx.get("human_context_available", false)):
+		var dominant_name := String(cell_ctx.get("dominant_profession_name", "")).strip_edges()
+		var dominant_share := float(cell_ctx.get("dominant_profession_share", 0.0))
+		if not dominant_name.is_empty():
+			lines.append("- 城里的主要生计：%s，约占本城人口%s" % [
+				dominant_name, _share_to_cn(dominant_share)])
+		var hardship := PackedStringArray()
+		var shortfall_ratio := float(cell_ctx.get("subsistence_shortfall_ratio", 0.0))
+		var unemployment_ratio := float(cell_ctx.get("unemployment_ratio", 0.0))
+		if shortfall_ratio >= 0.03:
+			hardship.append("约%s的人干着活却养不活家" % _share_to_cn(shortfall_ratio))
+		if unemployment_ratio >= 0.03:
+			hardship.append("约%s的人没活干" % _share_to_cn(unemployment_ratio))
+		if not hardship.is_empty():
+			lines.append("- 民生压力：%s" % "；".join(hardship))
+		var primary_prof := String(cell_ctx.get("primary_cohort_profession_name", "")).strip_edges()
+		if not primary_prof.is_empty():
+			lines.append("- 本城人数最多的一群人：%s，手上现钱 %d" % [primary_prof, cohort_cash])
+
+	# ─── 本城在本国的位置 ───────────────────────────────────────────────────
+	# 大城与边邑写出来的事件不该一样：前者有衙门、行会、粮栈，后者只有渡口与土墙。
+	var territory_count := 0
+	var territory_raw: Variant = cell_ctx.get("territory_cells", null)
+	if territory_raw is PackedInt32Array:
+		territory_count = (territory_raw as PackedInt32Array).size()
+	elif territory_raw is Array:
+		territory_count = (territory_raw as Array).size()
+	if territory_count > 0:
+		lines.append("- 本国规模：共 %d 处领土格，本城 %d 口" % [territory_count, population])
+
+	# ─── 邻城概况 ───────────────────────────────────────────────────────────
+	# 让事件能写「邻城也在涨」「上游先封了渡口」，而不是把这座城当孤岛。
+	var neighbors: Variant = cell_ctx.get("neighbor_settlements", [])
+	if neighbors is Array and not (neighbors as Array).is_empty():
+		var neighbor_parts := PackedStringArray()
+		for raw_neighbor in (neighbors as Array):
+			if not (raw_neighbor is Dictionary):
+				continue
+			var nd: Dictionary = raw_neighbor
+			var n_name := String(nd.get("name", "")).strip_edges()
+			if n_name.is_empty():
+				n_name = "邻邑"
+			var n_desc := "%s（%d 口" % [n_name, int(nd.get("population", 0))]
+			var n_short := String(nd.get("shortage_good", "")).strip_edges()
+			if not n_short.is_empty():
+				n_desc += "，%s 紧俏" % n_short
+			n_desc += "）"
+			neighbor_parts.append(n_desc)
+		if not neighbor_parts.is_empty():
+			lines.append("- 邻近的己方聚落：%s" % "、".join(neighbor_parts))
 
 	var b_counts: Variant = cell_ctx.get("building_counts_by_id", cell_ctx.get("building_counts", {}))
 	if b_counts is Dictionary and not (b_counts as Dictionary).is_empty():
@@ -395,5 +464,21 @@ static func _build_user_prompt(
 	lines.append("允许使用的商品 ID（allowed_goods）：[%s]" % ", ".join(goods_list))
 	if not buildings_list.is_empty():
 		lines.append("允许参考的建筑 ID（allowed_buildings）：[%s]" % ", ".join(buildings_list))
+	lines.append("")
+	lines.append("注意：上面快照里的数字（日期、人口、库存、价格比、兵员、损失）只作判断依据，"
+		+ "`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里一律不得照抄任何阿拉伯数字，"
+		+ "要用汉字数量词（三百余人、四成、数十车）。")
 	lines.append("请直接输出符合 Schema 的 JSON 对象。")
 	return "\n".join(lines)
+
+
+## 把 0..1 的比例写成汉字「成」——prompt 禁止阿拉伯数字，比例必须靠汉字表达。
+## 粒度到一成：模型不需要知道是 12.4% 还是 13.1%，它需要知道「一成多」还是「三成」。
+static func _share_to_cn(ratio: float) -> String:
+	var tenths := int(round(clampf(ratio, 0.0, 1.0) * 10.0))
+	if tenths <= 0:
+		return "极少数"
+	if tenths >= 10:
+		return "几乎全部"
+	var cn := ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+	return "%s成" % cn[tenths]

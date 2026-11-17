@@ -832,6 +832,12 @@ func _update_start_enabled() -> void:
 		or int(_population.value) > int(_selected_quote.get("maximum_population", 1))
 	var count := int(_population.value) if has_selection else 0
 	var count_text := UITokens.format_compact_number_cn(float(count), 0)
+	# 随行平民按固定编制（每 2 名族人 1 人），上限由原生报价给出。
+	var anonymous_count := mini(int(_selected_quote.get("anonymous_maximum", 0)), count / 2)
+	var party_text := count_text
+	if has_selection and anonymous_count > 0:
+		party_text = "%s + 随行 %s" % [count_text,
+			UITokens.format_compact_number_cn(float(anonymous_count), 0)]
 	var kit_partial := bool(_selected_quote.get("kit_partial", false))
 	var place_buildings := bool(_selected_quote.get("kit_place_buildings", false))
 	var kit_ids: PackedInt32Array = _selected_quote.get(
@@ -841,16 +847,16 @@ func _update_start_enabled() -> void:
 	if _target_cell < 0 or _target_picking:
 		_start.text = "请先选择目的地"
 	elif _economy_busy:
-		_start.text = "排队派遣 %s 人" % count_text if has_selection else "排队派遣"
+		_start.text = "排队派遣 %s 人" % party_text if has_selection else "排队派遣"
 		_start.tooltip_text = "经济正在结算。现在确认后会排队，提交完成后自动出发。"
 	elif complete_kit:
-		_start.text = "派遣 %s 人并安家" % count_text if has_selection else "确认派遣"
+		_start.text = "派遣 %s 人并安家" % party_text if has_selection else "确认派遣"
 		_start.tooltip_text = _kit_summary_text(_selected_quote)
 	elif preparing_kit:
-		_start.text = "开始筹备 %s 人" % count_text if has_selection else "开始筹备"
+		_start.text = "开始筹备 %s 人" % party_text if has_selection else "开始筹备"
 		_start.tooltip_text = "占用目标；人留在源地继续生产，每日把源地可用现货收进队伍库存，凑齐后自动出发。"
 	else:
-		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
+		_start.text = "派遣 %s 人" % party_text if has_selection else "确认派遣"
 		_start.tooltip_text = "基础物资不足，只携带当前可用物资" if kit_partial \
 			else _kit_summary_text(_selected_quote)
 	if has_selection and kit_partial and not preparing_kit \
@@ -1032,6 +1038,8 @@ func _quotes_for_source(page: Dictionary) -> Array:
 	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
 	var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
 	var maximums: PackedInt64Array = page.get("maximum_populations", PackedInt64Array())
+	var anonymous_maximums: PackedInt64Array = page.get(
+		"anonymous_maximums", PackedInt64Array())
 	var costs: PackedInt32Array = page.get("route_costs", PackedInt32Array())
 	var days: PackedInt32Array = page.get("travel_days", PackedInt32Array())
 	var tokens: PackedInt64Array = page.get("quote_tokens", PackedInt64Array())
@@ -1050,6 +1058,7 @@ func _quotes_for_source(page: Dictionary) -> Array:
 			"source_cell": int(sources[index]) if index < sources.size() else 0,
 			"target_cell": _target_cell,
 			"maximum_population": int(maximums[index]) if index < maximums.size() else 0,
+			"anonymous_maximum": int(anonymous_maximums[index]) if index < anonymous_maximums.size() else 0,
 			"route_cost": int(costs[index]) if index < costs.size() else 0,
 			"travel_days": int(days[index]) if index < days.size() else 1,
 			"quote_token": int(tokens[index]) if index < tokens.size() else 0,
@@ -1361,7 +1370,8 @@ func _get_source_quotes() -> Dictionary:
 		if handles.is_empty():
 			break
 		for key in ["family_handles", "source_cells", "maximum_populations", "route_costs",
-				"travel_days", "quote_tokens", "surnames", "surname_disambiguators", "source_settlement_names"]:
+				"travel_days", "quote_tokens", "surnames", "surname_disambiguators",
+				"anonymous_maximums", "source_settlement_names"]:
 			if page.has(key) and next.has(key):
 				var values: Variant = page[key]
 				values.append_array(next[key])

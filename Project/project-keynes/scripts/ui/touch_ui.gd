@@ -75,29 +75,42 @@ static func units(dp: float) -> float:
 	return dp / dp_per_unit()
 
 
-## 一个命中区目标的下限（设计像素）。触摸档之外返回 0。
+## 视觉尺寸下限（设计像素）。
+##
+## [pc-fit 2026-11-17] **恒返回 0**：触摸档不再抬高任何控件的视觉尺寸。
+## 旧值 34dp ⇒ 68 设计像素塞进 custom_minimum_size，而 PC 的按钮只有 32~40，
+## 抬完比 PC 高七成；`maxf(原值, min_units())` 遍布 category_tabs / dossier_* /
+## ideology / 殖民面板等十几处，合起来就是玩家说的「按钮离奇地高、布局和 PC 对不上」。
+## 保留这个入口（而不是删掉调用点）是为了让所有调用方零改动地退回设计原值。
 static func min_units(options: Dictionary = {}) -> float:
-	return units(float(options.get("min_dp", TOUCH_MIN_DP)))
+	return 0.0
 
 
 ## 滚动条目标宽度（设计像素）。触摸档之外返回 0。
+## 这一条**保留**：滚动条不占主布局，加宽只影响 ScrollContainer 内部，不会破坏版式。
 static func scrollbar_units(options: Dictionary = {}) -> float:
 	return units(float(options.get("scrollbar_dp", SCROLLBAR_MIN_DP)))
 
 
-## 密集数据区的次级命中高度（设计像素）。
+## 密集数据区的次级下限（设计像素）。同 min_units，恒返回 0。
 static func dense_units(options: Dictionary = {}) -> float:
-	return units(float(options.get("dense_dp", TOUCH_DENSE_DP)))
+	return 0.0
 
 
-## 命中区间距（设计像素）。只用于容器 separation。
+## 命中区间距（设计像素）。恒返回 0，保持容器 separation 与 PC 一致。
 static func gap_units(options: Dictionary = {}) -> float:
-	return units(float(options.get("gap_dp", TOUCH_GAP_DP)))
+	return 0.0
 
 
 ## 用长边/短边判断「手机横屏」：2670×1200@1.375 → 逻辑 1942×873。
-## 触摸档下逻辑短边 < 1000 设计像素就认为纵向空间吃紧（桌面 1600×960 是 960，
+## 触摸档下逻辑短边 < 960（= 设计基准高度）就认为纵向空间吃紧（桌面 1600×960 是 960，
 ## 但桌面 is_touch=false，所以这条分支永不影响桌面）。
+##
+## [pc-fit 2026-11-17] 阈值 1000 → 960。旧策略把手机逻辑高压到 785~873（< 1000），
+## 所以恒判「纵向吃紧」走紧凑档：工作台收起摘要卡、科技页收掉左右侧栏，
+## 于是和 PC 版式完全是两套排版 —— 玩家反馈的「排版完全错乱」有一半来自这里。
+## 现在逻辑画布恒为 1600×960（= 设计基准），纵向不再吃紧，紧凑档只在真正的
+## 小窗（< 960）才触发。
 static func is_short_viewport(height: float = -1.0) -> bool:
 	if not is_touch():
 		return false
@@ -113,7 +126,7 @@ static func is_short_viewport(height: float = -1.0) -> bool:
 		if tree == null or tree.root == null:
 			return false
 		h = tree.root.get_visible_rect().size.y
-	return h < 1000.0
+	return h < 960.0
 
 
 ## 面板版面是否该走紧凑档：触摸档 + 纵向吃紧。以前只有宽度断点
@@ -145,9 +158,8 @@ static func watch(root: Node, options: Dictionary = {}) -> void:
 static func apply_tree(root: Node, options: Dictionary = {}) -> int:
 	if root == null or not is_touch():
 		return 0
-	var target := min_units(options)
-	if target <= 0.0:
-		return 0
+	# 注意：这里不再用 min_units 提前 return —— 即使不再抬任何尺寸，
+	# 滚动条加宽（widen_scrollbars）仍要遍历整棵树。
 	var skip := _skip_names(options)
 	var applied := 0
 	var stack: Array[Node] = [root]
@@ -165,32 +177,16 @@ static func apply_tree(root: Node, options: Dictionary = {}) -> int:
 
 
 ## 单个控件套用命中区。返回是否真的动过尺寸（给 QA 计数用）。
+##
+## [pc-fit 2026-11-17] 触摸档**不再抬高任何控件的视觉尺寸**。
+## 旧行为把 34dp ÷ 0.5 = 68 设计像素塞进 custom_minimum_size，而 PC 的按钮只有 32~40；
+## 玩家的原话是「按钮变得特别离奇地高、布局和 PC 对不上」。视觉尺寸一动，版式就不再是
+## PC 版式的等比缩放，而是另一套 —— 这才是「丑」的来源。
+## 可点性改由**不占布局**的命中带承担：页签/整行按钮在 .tscn 里挂 touch_hit_button
+## （_has_point 外扩，视觉不变）。需要更大命中区的地方应当显式挂，不做全局抬高。
 static func apply_control(node: Node, options: Dictionary = {}) -> bool:
 	if node == null or not is_touch():
 		return false
-	var target := min_units(options)
-	if target <= 0.0:
-		return false
-	var control := node as Control
-	if control == null:
-		return false
-	# 自带命中带策略的控件（touch_hit_button）已经把「本体 + _has_point 扩展」算好了；
-	# 这里再抬本体只会把视觉撑大（实测：经济页签被撑到 88，比设计的 56 高 57%）。
-	if control.has_method("touch_hit_padding"):
-		return false
-	if node is BaseButton:
-		var button := node as BaseButton
-		# 纯图标按钮（关闭 / 折叠 / 箭头）两个方向都要够大，
-		# 文字按钮只抬高度——抬宽度会把整条工具栏挤断。
-		var square := _looks_icon_only(button)
-		raise_min_size(control, target, target if square else 0.0)
-		if node.has_method("get_popup"):
-			raise_popup_items(node.call("get_popup"), target)
-		return true
-	if node is LineEdit or node is TextEdit or node is SpinBox \
-			or node is HSlider or node is VSlider or node is TabBar:
-		raise_min_size(control, target, 0.0)
-		return true
 	return false
 
 

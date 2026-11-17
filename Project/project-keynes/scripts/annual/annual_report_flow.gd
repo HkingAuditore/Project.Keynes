@@ -2,10 +2,12 @@ extends RefCounted
 class_name AnnualReportFlow
 
 const ViewModel = preload("res://scripts/ui/annual_report_view_model.gd")
+const ScribeScript = preload("res://scripts/annual/annual_chronicle_scribe.gd")
 var _controller
 var _host
 var _clock
 var _ui
+var _scribe = null
 var _queued: int = 0
 var _report_id: int = 0
 var _open: bool = false
@@ -46,6 +48,28 @@ func configure(controller, host, clock, ui) -> void:
 		_ui.annual_report_closed.connect(_on_closed)
 		_ui.annual_report_selected.connect(_select_report)
 		_ui.annual_history_page_requested.connect(_load_history)
+	_ensure_scribe()
+
+
+## 年度纪事需要一个能 add_child 的宿主，而 PlayerController 上已经挂着叙事用的
+## NarrativeAiClient。复用它，不再建第二个客户端——凭据、endpoint 归一化、超时全在那一份里。
+## 客户端由叙事运行时配置，可能晚于年报流程；所以每次用前再试一次，不在 configure 里一次定生死。
+func _ensure_scribe() -> void:
+	if _scribe != null:
+		return
+	if _controller == null or not (_controller is Node):
+		return
+	var client = null
+	# 用 get() 而不是 `in`：属性不存在时两者都返回空，但 get() 不会因为
+	# 属性名写错而在运行时抛「Invalid get index」之外的东西，读起来也更直白。
+	client = _controller.get("_narrative_ai_client")
+	if client == null:
+		return
+	var node = ScribeScript.new()
+	node.name = "AnnualChronicleScribe"
+	_controller.add_child(node)
+	node.configure(client)
+	_scribe = node
 
 func is_open() -> bool:
 	return _open
@@ -55,8 +79,27 @@ func queue_report(id: int) -> void:
 		if _host != null and _host.has_method("mark_annual_report_presented"):
 			_host.mark_annual_report_presented(id)
 		return
+	# 纪事在「报告就绪」时预生成：从就绪到玩家开卷通常隔几秒以上，异步请求基本赶得上。
+	# 赶不上的话本次不显示，下次开卷自然就有——历史报告也一样命中缓存。
+	_prewarm_chronicle(id)
 	_queued = id
 	try_present()
+
+
+func _prewarm_chronicle(id: int) -> void:
+	_ensure_scribe()
+	if _scribe == null or id <= 0 or _host == null:
+		return
+	if not _scribe.cached_text(id).is_empty():
+		return
+	if not _host.has_method("annual_report_snapshot") \
+			or not _host.has_method("annual_report_catalogs"):
+		return
+	var report: Dictionary = _host.annual_report_snapshot(id)
+	if not bool(report.get("ok", false)):
+		return
+	var previous: Dictionary = _host.annual_report_snapshot(id - 1) if id > 1 else {}
+	_scribe.request(ViewModel.build(report, previous, _host.annual_report_catalogs()))
 
 func _busy() -> bool:
 	return _controller.era_reward_locked() or _controller.family_founding_locked() \
@@ -126,7 +169,14 @@ func _select_report(id: int, ceremonial: bool = false) -> void:
 	# 第一次开卷那一刻把资源栏永久钉死。这里不是热路径（开卷一次、换年一次），
 	# 每次重取。
 	_catalogs = _host.annual_report_catalogs()
-	_ui.show_annual_report(ViewModel.build(report, previous, _catalogs), ceremonial)
+	var model: Dictionary = ViewModel.build(report, previous, _catalogs)
+	# 纪事是末章，只加文字。没有缓存就不加，报告与今天完全一致。
+	var chronicle := ""
+	if _scribe != null:
+		chronicle = _scribe.cached_text(id)
+	if not chronicle.is_empty():
+		ViewModel.append_chronicle_chapter(model, chronicle)
+	_ui.show_annual_report(model, ceremonial)
 
 func _load_history(offset: int) -> void:
 	_history_offset = maxi(0, offset)

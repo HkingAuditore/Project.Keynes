@@ -1002,9 +1002,15 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 	var subsidy_rev = float(finance.get("subsidy_float", 0.0))
 	var total_rev = float(finance.get("revenue_float", _parse_leading_float(rev_text, cash_rev + in_kind_rev)))
 	var input_cost_val = float(finance.get("input_cost_float", 0.0))
-	var wages_val = float(finance.get("wages_paid_float", 0.0))
-	var tax_val = float(finance.get("business_tax_float", 0.0))
-	var total_cost = float(finance.get("cost_float", _parse_leading_float(cost_text, input_cost_val + wages_val + tax_val)))
+	var wages_val = float(finance.get("wages_cost_float", finance.get("wages_paid_float", 0.0)))
+	var maintenance_val = float(finance.get("maintenance_float", 0.0))
+	var tax_val = maxf(0.0, float(finance.get("business_tax_float", 0.0)))
+	var operating_cost = float(finance.get("cost_float", _parse_leading_float(cost_text, input_cost_val + wages_val)))
+	# last_revenue is the producer receipt after business tax.  Add the
+	# separately published tax back only for the player-facing gross-income /
+	# total-expense comparison; profit itself remains the authoritative net value.
+	var gross_revenue = total_rev + tax_val
+	var total_cost = operating_cost + tax_val
 
 	# 兼容未携带细分浮点字段的旧字典（按 breakdown 解析）
 	if cash_rev <= 0.0 and in_kind_rev <= 0.0 and total_rev > 0.0:
@@ -1012,9 +1018,10 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 	var revenue_segments = []
 	if cash_rev > 0.0001:
 		revenue_segments.append({
-			"label": "市场销售",
-			"value": cash_rev,
-			"text": String(finance.get("cash_revenue_text", UITokens.format_compact_number_cn(cash_rev, 2))),
+			"label": "市场销售（税前）",
+			"value": cash_rev + tax_val,
+			"text": String(finance.get("gross_cash_revenue_text",
+				UITokens.format_compact_number_cn(cash_rev + tax_val, 2))),
 			"color": UITokens.DOSSIER_VERDIGRIS,
 		})
 	if in_kind_rev > 0.0001:
@@ -1035,17 +1042,24 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 	var cost_segments = []
 	if input_cost_val > 0.0001:
 		cost_segments.append({
-			"label": "原料采购",
+			"label": "原材料成本",
 			"value": input_cost_val,
 			"text": String(finance.get("input_cost_text", UITokens.format_compact_number_cn(input_cost_val, 2))),
 			"color": UITokens.DOSSIER_OXBLOOD,
 		})
 	if wages_val > 0.0001:
 		cost_segments.append({
-			"label": "雇员工资",
+			"label": "工资成本",
 			"value": wages_val,
-			"text": String(finance.get("wages_paid_text", UITokens.format_compact_number_cn(wages_val, 2))),
+			"text": String(finance.get("wages_cost_text", UITokens.format_compact_number_cn(wages_val, 2))),
 			"color": UITokens.DOSSIER_BRASS,
+		})
+	if maintenance_val > 0.0001:
+		cost_segments.append({
+			"label": "维护支出",
+			"value": maintenance_val,
+			"text": String(finance.get("maintenance_text", UITokens.format_compact_number_cn(maintenance_val, 2))),
+			"color": UITokens.DOSSIER_SLATE,
 		})
 	if tax_val > 0.0001:
 		cost_segments.append({
@@ -1056,8 +1070,20 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		})
 
 	var finance_note = ""
-	if cost_segments.is_empty() and not finance.is_empty():
-		finance_note = "本期无外购原料、雇员薪资与营业税支出（业主自营收益已计入总收入）。"
+	var loss_visible := profit_val < -0.0001 and not is_halted and not finance.is_empty()
+	var largest_cost_label := ""
+	var largest_cost_value := 0.0
+	for segment in cost_segments:
+		var segment_value := float(segment.get("value", 0.0))
+		if segment_value > largest_cost_value:
+			largest_cost_value = segment_value
+			largest_cost_label = String(segment.get("label", ""))
+	var loss_summary := ""
+	if loss_visible:
+		loss_summary = "每日亏损 %s；最大支出：%s %s" % [
+			String(finance.get("profit_loss_text", UITokens.format_compact_number_cn(absf(profit_val), 2))),
+			largest_cost_label, String(finance.get("largest_cost_text",
+				UITokens.format_compact_number_cn(largest_cost_value, 2)))]
 
 	return {
 		"kpis": kpis,
@@ -1067,17 +1093,28 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		"production_bars": production_bars,
 		"unused_inputs_summary": unused_inputs_summary,
 		"finance_diverging_bar": {
-			"left_label": "本期总成本",
+			"left_label": "含税总支出",
 			"left_value": total_cost,
-			"left_text": cost_text if cost_text != "—" else "0",
-			"right_label": "税后总收入",
-			"right_value": total_rev,
-			"right_text": rev_text if rev_text != "—" else "0",
+			"left_text": String(finance.get("total_cost_with_tax_text", UITokens.format_compact_number_cn(total_cost, 2))),
+			"right_label": "税前总收入",
+			"right_value": gross_revenue,
+			"right_text": String(finance.get("gross_revenue_text", UITokens.format_compact_number_cn(gross_revenue, 2))),
 		},
 		"revenue_segments": revenue_segments,
 		"cost_segments": cost_segments,
 		"finance_note": finance_note,
 		"finance_warning": String(finance.get("warning", "")),
+		"loss_visible": loss_visible,
+		"loss_summary": loss_summary,
+		"loss_cost_segments": cost_segments,
+		"loss_diverging_bar": {
+			"left_label": "含税总支出",
+			"left_value": total_cost,
+			"left_text": String(finance.get("total_cost_with_tax_text", UITokens.format_compact_number_cn(total_cost, 2))),
+			"right_label": "税前总收入",
+			"right_value": gross_revenue,
+			"right_text": String(finance.get("gross_revenue_text", UITokens.format_compact_number_cn(gross_revenue, 2))),
+		},
 	}
 
 
@@ -1309,6 +1346,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 	var last_input_cost: PackedInt64Array = snapshot.get("last_input_cost", PackedInt64Array())
 	var last_wages: PackedInt64Array = snapshot.get("last_wages_paid", PackedInt64Array())
 	var last_wages_due: PackedInt64Array = snapshot.get("last_wages_due", PackedInt64Array())
+	var last_maintenance_cost: PackedInt64Array = snapshot.get("last_maintenance_cost", PackedInt64Array())
 	var last_operating_cost: PackedInt64Array = snapshot.get("last_operating_cost", PackedInt64Array())
 	var last_in_kind: PackedInt64Array = snapshot.get(
 		"last_in_kind_livelihood_value", PackedInt64Array())
@@ -1350,6 +1388,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 		var input_cost = int(last_input_cost[i]) if i < last_input_cost.size() else 0
 		var wages = int(last_wages[i]) if i < last_wages.size() else 0
 		var wages_due = int(last_wages_due[i]) if i < last_wages_due.size() else wages
+		var maintenance = int(last_maintenance_cost[i]) if i < last_maintenance_cost.size() else 0
 		var operating_cost = int(last_operating_cost[i]) if i < last_operating_cost.size() else input_cost + wages_due
 		# In-kind owner retention is part of the same economic income as cash
 		# receipts. A host-consuming producer must not be shown as loss-making# receipts. A self-consuming producer must not be shown as loss-making
@@ -1437,30 +1476,40 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 				production_rows.append({"id": "climate_lost_output", "name": "气候减产",
 					"value": climate_lost_daily_text,
 					"icon": "warning", "accent": UITokens.WARN})
-		var finance_breakdown = "现金 %s · 自用折算 %s · 原料 %s · 工资 %s · 营业税 %s" % [
+		var finance_breakdown = "现金 %s · 自用折算 %s · 原料 %s · 工资成本 %s · 维护 %s · 营业税 %s" % [
 			host._money_text(revenue), host._money_text(in_kind_income), host._money_text(input_cost),
-			host._money_text(wages), host._money_text(business_tax)]
+			host._money_text(wages_due), host._money_text(maintenance), host._money_text(business_tax)]
 		if business_subsidy > 0:
 			finance_breakdown += " · 经营补贴 %s" % h._money_text(business_subsidy)
 		var finance = {
 			"revenue": h._money_text(revenue + in_kind_income),
 			"revenue_float": float(revenue + in_kind_income) / 10000.0,
+			"gross_revenue_text": h._money_text(revenue + in_kind_income + maxi(0, business_tax)),
+			"gross_revenue_float": float(revenue + in_kind_income + maxi(0, business_tax)) / 10000.0,
 			"cash_revenue_float": float(revenue) / 10000.0,
 			"cash_revenue_text": h._money_text(revenue),
+			"gross_cash_revenue_text": h._money_text(revenue + maxi(0, business_tax)),
 			"in_kind_float": float(in_kind_income) / 10000.0,
 			"in_kind_text": h._money_text(in_kind_income),
 			"subsidy_float": float(business_subsidy) / 10000.0,
 			"subsidy_text": h._money_text(business_subsidy),
 			"cost": h._money_text(operating_cost),
 			"cost_float": float(operating_cost) / 10000.0,
+			"total_cost_with_tax_text": h._money_text(operating_cost + maxi(0, business_tax)),
+			"total_cost_with_tax_float": float(operating_cost + maxi(0, business_tax)) / 10000.0,
 			"input_cost_float": float(input_cost) / 10000.0,
 			"input_cost_text": h._money_text(input_cost),
 			"wages_paid_float": float(wages) / 10000.0,
 			"wages_paid_text": h._money_text(wages),
+			"wages_cost_float": float(wages_due) / 10000.0,
+			"wages_cost_text": h._money_text(wages_due),
+			"maintenance_float": float(maintenance) / 10000.0,
+			"maintenance_text": h._money_text(maintenance),
 			"business_tax_float": float(business_tax) / 10000.0,
 			"business_tax_text": h._money_text(business_tax),
 			"profit": "%s%s" % ["+" if profit > 0 else "", h._money_text(profit)],
 			"profit_float": float(profit) / 10000.0,
+			"profit_loss_text": h._money_text(absi(profit)),
 			"profit_positive": profit >= 0,
 			"breakdown": finance_breakdown,
 			"revenue_label": "税后总收入（含自用）",

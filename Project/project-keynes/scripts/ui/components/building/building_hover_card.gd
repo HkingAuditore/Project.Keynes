@@ -9,8 +9,8 @@ class_name BuildingHoverCard
 
 const EDGE_MARGIN := 8.0
 const POINTER_GAP := 12.0
-const CARD_MAX_HEIGHT := 520.0
-const CARD_WIDTH := 500.0
+const CARD_MAX_HEIGHT := 360.0
+const CARD_WIDTH := 440.0
 
 @onready var _icon: IconBadge = $Body/Header/Icon
 @onready var _title: Label = $Body/Header/Identity/Title
@@ -24,7 +24,8 @@ const CARD_WIDTH := 500.0
 @onready var _flow: PanelContainer = $Body/Sections/Flow
 @onready var _flow_text: Label = $Body/Sections/Flow/Text
 @onready var _materials: PanelContainer = $Body/Sections/Materials
-@onready var _materials_text: Label = $Body/Sections/Materials/Text
+@onready var _materials_text: Label = $Body/Sections/Materials/Content/Text
+@onready var _material_rows: VBoxContainer = $Body/Sections/Materials/Content/Rows
 @onready var _summary: Label = $Body/Summary
 
 var _source: Control
@@ -91,7 +92,8 @@ func _apply_payload() -> void:
 	_icon.set_semantic(icon, UITokens.DOSSIER_BRASS if eligible else UITokens.DOSSIER_UMBER)
 	_title.text = name
 	_subtitle.text = _subtitle_text()
-	_status.text = "可营造" if eligible else String(_payload.get("reason_text", "暂不可营造"))
+	_status.text = "可营造" if eligible else "暂不可营造"
+	_status.add_theme_font_size_override("font_size", 15)
 	_status.add_theme_color_override("font_color",
 		UITokens.DOSSIER_VERDIGRIS if eligible else UITokens.DOSSIER_OXBLOOD)
 	_cost.text = String(_payload.get("cash_text", "—"))
@@ -100,32 +102,18 @@ func _apply_payload() -> void:
 	var score := int(_payload.get("score", 0))
 	_profit.text = _money_text(score) if score != 0 else "—"
 	_profit.add_theme_color_override("font_color", _profit_color())
+	# 毛利只是排序启发式，建造前的关键决定是缺什么、为什么缺；不在悬停卡
+	# 里抢占首屏空间。
+	_profit.get_parent().get_parent().visible = false
 
 	var lines := _tooltip_lines()
-	var employment := _lines_with_prefix(lines, "岗位：")
-	var inputs := _lines_with_prefix(lines, "投入：")
-	var outputs := _lines_with_prefix(lines, "产出：")
-	var material_lines := _lines_with_prefix(lines, "建材：")
-	var stock_lines := _lines_with_prefix(lines, "现货：")
-	var flow_lines := PackedStringArray()
-	for line in inputs + outputs:
-		flow_lines.append(line)
-	_set_section(_employment, _employment_text, employment,
-		"♟  岗位配置\n%s" % "\n".join(employment))
-	_set_section(_flow, _flow_text, flow_lines,
-		"↗  生产链路\n%s" % "\n".join(flow_lines))
-	var material_all := material_lines + stock_lines
-	_set_section(_materials, _materials_text, material_all,
-		"▣  营造资源\n%s" % "\n".join(material_all))
-	var facts := _lines_with_prefix(lines, "概况：")
-	var reason := _lines_with_prefix(lines, "不满足：")
-	var summary_parts := PackedStringArray()
-	for item in facts + reason:
-		summary_parts.append(item)
-	_summary.text = " · ".join(summary_parts)
-	_summary.visible = not summary_parts.is_empty()
-	_summary.add_theme_color_override("font_color",
-		UITokens.DOSSIER_OXBLOOD if not reason.is_empty() else UITokens.DOSSIER_INK_MUTED)
+	# 详情卡只保留建造决策所需信息：缺口数量和缺口来源。岗位、投入产出
+	# 等完整配方仍由目录行和经济详情承担，避免一张 hover 卡变成长账单。
+	_employment.visible = false
+	_flow.visible = false
+	_apply_issue_rows(_issue_rows(lines, eligible))
+	_summary.text = ""
+	_summary.visible = false
 
 
 func _subtitle_text() -> String:
@@ -156,6 +144,55 @@ func _lines_with_prefix(lines: PackedStringArray, prefix: String) -> PackedStrin
 	return result
 
 
+func _issue_rows(lines: PackedStringArray, eligible: bool) -> Array:
+	if eligible:
+		return []
+	var result: Array = []
+	var material_rows: Array = _payload.get("material_status", [])
+	for raw in material_rows:
+		if not raw is Dictionary or not bool((raw as Dictionary).get("missing", false)):
+			continue
+		var material: Dictionary = raw
+		var name := String(material.get("name", "建材"))
+		var missing := String(material.get("missing_text", ""))
+		var reason := String(material.get("reason", "市场无货"))
+		result.append({
+			"icon": StringName(material.get("icon", &"metric.goods")),
+			"text": "%s 还差 %s · %s" % [name, missing, reason],
+		})
+	if bool(_payload.get("cash_blocked", false)):
+		var cash := String(_payload.get("cash_text", ""))
+		result.append({
+			"icon": &"metric.treasury",
+			"text": "现金 %s · 买不起" % cash if not cash.is_empty() else "现金不足 · 买不起",
+		})
+	if result.is_empty():
+		var reason_text := String(_payload.get("reason_text", "")).strip_edges()
+		if not reason_text.is_empty():
+			result.append({"icon": &"status.warning", "text": reason_text})
+		else:
+			var stock_lines := _lines_with_prefix(lines, "现货：")
+			for line in stock_lines:
+				result.append({"icon": &"metric.goods", "text": "%s · 市场无货" % line})
+	return result
+
+
+func _apply_issue_rows(rows: Array) -> void:
+	_materials.visible = not rows.is_empty()
+	_materials_text.text = "缺口与原因"
+	for index in range(_material_rows.get_child_count()):
+		var row := _material_rows.get_child(index) as HBoxContainer
+		var visible := index < rows.size()
+		row.visible = visible
+		if not visible:
+			continue
+		var data: Dictionary = rows[index]
+		var icon := row.get_node("Icon") as IconBadge
+		icon.set_semantic(StringName(data.get("icon", &"metric.goods")),
+			UITokens.DOSSIER_OXBLOOD)
+		(row.get_node("Label") as Label).text = String(data.get("text", ""))
+
+
 func _set_section(panel: PanelContainer, label: Label, lines: PackedStringArray,
 		value: String) -> void:
 	panel.visible = not lines.is_empty()
@@ -183,13 +220,17 @@ func _place_card() -> void:
 	if not visible or _source == null or _workspace == null \
 			or not is_instance_valid(_source) or not is_instance_valid(_workspace):
 		return
-	var viewport := get_viewport_rect().size
-	var safe := Rect2(Vector2(EDGE_MARGIN, EDGE_MARGIN),
-		viewport - Vector2(EDGE_MARGIN * 2.0, EDGE_MARGIN * 2.0))
-	# 普通地块档案的详情列只有约 424px；卡片在宽屏时可展开，窄栏时
-	# 自动收窄，避免被 DetailShell 的 clip_contents 截掉右侧数字。
-	var available_width := maxf(320.0, _workspace.size.x - EDGE_MARGIN * 2.0)
-	var desired_width := minf(CARD_WIDTH, available_width)
+	var viewport_rect := get_viewport_rect()
+	# 悬停卡挂在 DetailShell 内，安全区必须跟随当前建造栏，而不是整个
+	# viewport。否则指针靠近栏的右侧/顶部时，卡片会越过 DetailShell，压住
+	# 旁边的地块详情，或被父容器的 clip_contents 截掉。
+	var safe := _workspace.get_global_rect().intersection(viewport_rect)
+	safe = safe.grow(-EDGE_MARGIN)
+	if safe.size.x <= 0.0 or safe.size.y <= 0.0:
+		return
+	# 普通地块档案的详情列只有约 424px；宽屏时卡片可展开，窄栏时按
+	# 当前栏宽收窄，保证纸笺完整落在 DetailShell 内。
+	var desired_width := minf(CARD_WIDTH, safe.size.x)
 	custom_minimum_size.x = desired_width
 	size.x = desired_width
 	var source_rect := Rect2(_source.get_global_position(), _source.size)

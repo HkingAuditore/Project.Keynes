@@ -17,6 +17,7 @@ const NarrativeStateProbeScript = preload("res://scripts/narrative/narrative_sta
 const NarrativeStateProbeCatalogScript = preload("res://scripts/narrative/narrative_state_probe_catalog.gd")
 const NarrativeEventDialogScript = preload("res://scripts/ui/components/narrative_event_dialog.gd")
 const NarrativeChroniclePanelScript = preload("res://scripts/ui/components/narrative_chronicle_panel.gd")
+const NarrativeEffectAdapterScript = preload("res://scripts/narrative/narrative_effect_adapter.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 
 var _checks := 0
@@ -24,6 +25,7 @@ var _failures := 0
 
 class CashEconomyStub extends RefCounted:
 	var transfers: Array[Dictionary] = []
+	var population_deltas: Array[Dictionary] = []
 	var details_requested := false
 	func is_configured() -> bool: return true
 	func population_cell_snapshot(_cell: int, include_details: bool = true) -> Dictionary:
@@ -37,6 +39,10 @@ class CashEconomyStub extends RefCounted:
 		transfers.append({"country": country, "cohort": cohort, "amount": amount,
 			"day": day, "sequence": sequence})
 		return {"ok": true}
+	func add_population(cohort: int, amount: int, day: int, sequence: int) -> Dictionary:
+		population_deltas.append({"cohort": cohort, "amount": amount,
+			"day": day, "sequence": sequence})
+		return {"ok": true, "settled_value": amount}
 
 class CashCountryStub extends RefCounted:
 	func treasury_snapshot(_country: int) -> Dictionary:
@@ -115,6 +121,7 @@ func _run() -> void:
 	_test_state_probe_and_ai_pool()
 	_test_ui_dialog_and_chronicle_panel()
 	_test_player_controller_integration()
+	_test_population_effect_lever()
 	print("=== narrative event runtime test: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -133,6 +140,252 @@ func _test_frost_cash_transfer() -> void:
 		var transfer: Dictionary = generator.economy.transfers[0]
 		_expect("frost aid sends 3 percent to the largest local cohort at the effective day",
 			transfer.country == 1 and transfer.cohort == 102 and transfer.amount == 3000 and transfer.day == 501)
+
+## 「收留游民」「编入户籍」这类文案必须真的改人口。
+## 这条杠杆之前不存在，作者只能拿 agriculture/birth 糊弄，于是字面在收人、数值上空转。
+func _test_population_effect_lever() -> void:
+	var Kind = NarrativeEffectSpecScript.Kind
+	# ── 文案：有符号，人数与占比两种说法 ──
+	var plus := NarrativeEffectSpecScript.from_dict({
+		"kind": Kind.ADD_POPULATION, "int_value": 12, "duration_days": 1})
+	plus.clamp_safe()
+	_expect("population effect prints a signed head count",
+		plus.describe() == "本地人口 +12 人")
+	var minus := NarrativeEffectSpecScript.from_dict({
+		"kind": Kind.ADD_POPULATION, "int_value": -30, "duration_days": 1})
+	minus.clamp_safe()
+	_expect("negative population survives clamping instead of collapsing to zero",
+		minus.int_value == -30 and minus.describe() == "本地人口 -30 人")
+	var pct := NarrativeEffectSpecScript.from_dict({
+		"kind": Kind.ADD_POPULATION, "ratio_bp": -2000, "duration_days": 1})
+	pct.clamp_safe()
+	_expect("population ratio keeps its sign and reads as a percentage",
+		pct.ratio_bp == -2000 and pct.describe() == "本地人口 -20.0%")
+	var runaway := NarrativeEffectSpecScript.from_dict({
+		"kind": Kind.ADD_POPULATION, "int_value": 99999, "ratio_bp": 9000,
+		"duration_days": 1})
+	runaway.clamp_safe()
+	_expect("runaway population magnitudes clamp to the allowed band",
+		runaway.int_value == 5000 and runaway.ratio_bp == 5000)
+	var unknown := NarrativeEffectSpecScript.from_dict({
+		"kind": 99, "int_value": 10, "duration_days": 1})
+	unknown.clamp_safe()
+	_expect("unknown future kind degrades to a harmless city modifier, not a family trait removal",
+		unknown.kind == Kind.CITY_MODIFIER)
+
+	# ── 结算：比例按本地现有人口折算，真调 add_population ──
+	var generator := CashGeneratorStub.new()
+	var ctx := {
+		"population": 200,
+		"primary_cohort_handle": 102,
+		"settlement_name": "测试邑",
+	}
+	var seq := func() -> int: return 1
+	NarrativeEffectAdapterScript.apply_effects(
+		[{"kind": Kind.ADD_POPULATION, "ratio_bp": 1000, "duration_days": 1,
+			"custom_label": "本地人口 +10%"}],
+		ctx, null, generator, 1, 7, 800, seq)
+	_expect("population ratio resolves against local head count and reaches the economy facade",
+		generator.economy.population_deltas.size() == 1
+		and int(generator.economy.population_deltas[0]["amount"]) == 20
+		and int(generator.economy.population_deltas[0]["cohort"]) == 102)
+	_expect("applied population is written back into the cell context",
+		int(ctx.get("population", 0)) == 220)
+
+	# 迁出同样走同一条路径，不会被「只许为正」的老夹紧吃掉。
+	generator.economy.population_deltas.clear()
+	ctx["population"] = 200
+	NarrativeEffectAdapterScript.apply_effects(
+		[{"kind": Kind.ADD_POPULATION, "ratio_bp": -1500, "duration_days": 1}],
+		ctx, null, generator, 1, 7, 800, seq)
+	_expect("population outflow is dispatched as a negative delta",
+		generator.economy.population_deltas.size() == 1
+		and int(generator.economy.population_deltas[0]["amount"]) == -30)
+
+	# 四十口的小聚落按 1% 会算成 0.4 人：保底搬动一人，否则「收留」是空操作。
+	generator.economy.population_deltas.clear()
+	ctx["population"] = 40
+	NarrativeEffectAdapterScript.apply_effects(
+		[{"kind": Kind.ADD_POPULATION, "ratio_bp": 100, "duration_days": 1}],
+		ctx, null, generator, 1, 7, 800, seq)
+	_expect("a tiny settlement still moves at least one person",
+		generator.economy.population_deltas.size() == 1
+		and int(generator.economy.population_deltas[0]["amount"]) == 1)
+
+	# 没有 cohort 句柄时静默模拟，不炸，也不写坏数据。
+	generator.economy.population_deltas.clear()
+	var res: Dictionary = NarrativeEffectAdapterScript.apply_effects(
+		[{"kind": Kind.ADD_POPULATION, "int_value": 5, "duration_days": 1}],
+		{"population": 200, "primary_cohort_handle": 0}, null, generator, 1, 7, 800, seq)
+	_expect("missing cohort degrades to a simulated no-op",
+		generator.economy.population_deltas.is_empty()
+		and bool((res.get("results", [{}])[0] as Dictionary).get("simulated", false)))
+
+	# ── 内容契约：字面收人的选项必须带真实人口效果 ──
+	var catalog := NarrativeEventCatalogScript.build_default_catalog()
+	var required := {
+		&"evt.people.gruel_aftermath": &"register_as_tenants",
+		&"evt.war.refugees": &"open_the_gate",
+		&"evt.war.army_lost": &"take_the_survivors_in",
+		&"evt.war.aftermath": &"settle_the_fields",
+	}
+	for event_id in required.keys():
+		var def = catalog.get_event(event_id)
+		if def == null:
+			_expect("event %s exists" % event_id, false)
+			continue
+		var found := false
+		for opt in def.options:
+			if opt == null or opt.option_id != required[event_id]:
+				continue
+			for outcome in opt.outcomes:
+				if outcome == null:
+					continue
+				for eff in outcome.effects:
+					if eff != null and int(eff.kind) == int(Kind.ADD_POPULATION):
+						found = true
+		_expect("option %s/%s really changes local population" % [event_id, required[event_id]],
+			found)
+
+	# 迁族：写「走一半人」就不能只掉出生率。
+	var migration = catalog.get_event(&"evt.family2.migration")
+	var outflow_found := false
+	if migration != null:
+		for opt in migration.options:
+			if opt == null or opt.option_id != &"let_them_go":
+				continue
+			for outcome in opt.outcomes:
+				for eff in outcome.effects:
+					if eff != null and int(eff.kind) == int(Kind.ADD_POPULATION) \
+							and eff.ratio_bp < 0:
+						outflow_found = true
+	_expect("clan migration 'let them go' carries a real population outflow", outflow_found)
+
+	# ── AI 链路：模型写 ADD_POPULATION 必须过白名单，负号不能被「只做加项」的夹紧抹掉 ──
+	var ai_ctx := {
+		"settlement_name": "测试邑", "population": 120,
+		"primary_profession_name": "农户", "day": 300,
+	}
+	var ai_raw := {
+		"title": "城下的人",
+		"body_text": "北边来的人堵在城门口，说要进去。守门的把门闩抬起来，又放下。",
+		"ai_visual_prompt": "refugees crowding a city gate at dusk",
+		"tags": ["people"],
+		"options": [{
+			"text": "开门收容",
+			"outcomes": [{
+				"probability_percent": 100,
+				"outcome_title": "城门开了",
+				"outcome_narrative": "城门开了一条缝，人挤着进来，庙里铺了草。",
+				"effects": [{"kind": "ADD_POPULATION", "ratio_bp": 1200, "duration_days": 1}],
+			}],
+		}],
+	}
+	var ai_res := NarrativeAiValidatorScript.validate_and_sanitize(
+		ai_raw, ai_ctx, PackedStringArray(), "evt.ai.refugee")
+	var ai_event: Dictionary = ai_res.get("event_dict", {})
+	var ai_effects: Array = []
+	var ai_options: Array = ai_event.get("options", [])
+	if not ai_options.is_empty():
+		var ai_outcomes: Array = (ai_options[0] as Dictionary).get("outcomes", [])
+		if not ai_outcomes.is_empty():
+			ai_effects = (ai_outcomes[0] as Dictionary).get("effects", [])
+	_expect("AI-generated population effect survives validation",
+		bool(ai_res.get("ok", false)) and ai_effects.size() == 1
+		and int((ai_effects[0] as Dictionary).get("kind", -1)) == int(Kind.ADD_POPULATION)
+		and int((ai_effects[0] as Dictionary).get("ratio_bp", 0)) == 1200)
+	_expect("AI population effect gets a readable fallback label",
+		ai_effects.size() == 1
+		and String((ai_effects[0] as Dictionary).get("custom_label", "")) == "本地人口 +12.0%")
+
+	# 模型说了「迁走」却写负数：负号要留住，不能被抹成 0。
+	var ai_out_raw := ai_raw.duplicate(true)
+	var out_options: Array = ai_out_raw.get("options", [])
+	if not out_options.is_empty():
+		var out_outcomes: Array = (out_options[0] as Dictionary).get("outcomes", [])
+		if not out_outcomes.is_empty():
+			(out_outcomes[0] as Dictionary)["effects"] = [
+				{"kind": "ADD_POPULATION", "ratio_bp": -900, "duration_days": 1}]
+	var ai_out_res := NarrativeAiValidatorScript.validate_and_sanitize(
+		ai_out_raw, ai_ctx, PackedStringArray(), "evt.ai.exodus")
+	var ai_out_effects: Array = []
+	var ai_out_options: Array = (ai_out_res.get("event_dict", {}) as Dictionary).get("options", [])
+	if not ai_out_options.is_empty():
+		var ocs: Array = (ai_out_options[0] as Dictionary).get("outcomes", [])
+		if not ocs.is_empty():
+			ai_out_effects = (ocs[0] as Dictionary).get("effects", [])
+	_expect("AI negative population ratio keeps its sign",
+		ai_out_effects.size() == 1
+		and int((ai_out_effects[0] as Dictionary).get("ratio_bp", 0)) == -900)
+
+	# ── 城市场景 prompt：人的构成、民生压力、邻城都必须进快照 ──
+	# 只给「满意度五成四」是写不出人的；这三样是「写谁」的最小前提。
+	var prompt_ctx := {
+		"day": 900, "country_name": "临漳", "settlement_name": "柳湾", "cell_idx": 431,
+		"era_index": 4, "era_name": "帝国与封建时代",
+		"terrain_name": "平原", "landform_name": "河漫滩",
+		"temperature_c": 9.0, "moisture": 0.6, "precipitation": 0.1, "snow_cover": 0.0,
+		"elevation": 0.3, "has_river": true, "is_coastal": false,
+		"population": 380, "satisfaction_norm": 0.54,
+		"treasury_cash": 12000, "primary_cohort_cash": 860,
+		"territory_cells": PackedInt32Array([1, 2, 3]),
+		"human_context_available": true,
+		"dominant_profession_name": "佃农",
+		"dominant_profession_share": 0.44,
+		"subsistence_shortfall_ratio": 0.17,
+		"unemployment_ratio": 0.05,
+		"primary_cohort_profession_name": "佃农",
+		"neighbor_settlements": [
+			{"name": "上河渡", "population": 210, "shortage_good": "grain"},
+		],
+	}
+	var prompt_msgs := NarrativeAiPromptBuilderScript.build_messages(prompt_ctx)
+	var system_prompt := String((prompt_msgs[0] as Dictionary).get("content", ""))
+	var user_prompt := String((prompt_msgs[1] as Dictionary).get("content", ""))
+	_expect("prompt carries the dominant livelihood",
+		user_prompt.contains("主要生计：佃农"))
+	_expect("prompt carries subsistence pressure",
+		user_prompt.contains("养不活家") and user_prompt.contains("二成"))
+	_expect("prompt carries neighbor settlements",
+		user_prompt.contains("上河渡") and user_prompt.contains("210 口"))
+	_expect("system prompt carries prose few-shot",
+		system_prompt.contains("文风样例") and system_prompt.contains("渠线只挖了一半"))
+	_expect("system prompt drops the anti-prose ban",
+		not system_prompt.contains("不写场景与修辞"))
+
+	# ── 正文长度：六十到一百四十字必须原样保留 ──
+	# 早先 validator 的 left(160) 会把正常长度的叙事腰斩，改完之后不能再回到那个状态。
+	var long_body := ""
+	for _i in range(4):
+		long_body += "渠线只挖了一半，工棚空了，挖出来的土堆在河边，被雨水冲出一道道沟。"
+	var long_raw: Dictionary = ai_raw.duplicate(true)
+	long_raw["body_text"] = long_body
+	var long_res := NarrativeAiValidatorScript.validate_and_sanitize(
+		long_raw, ai_ctx, PackedStringArray(), "evt.ai.long_body")
+	var long_event: Dictionary = long_res.get("event_dict", {})
+	_expect("long narrative body survives validation intact",
+		bool(long_res.get("ok", false))
+		and String(long_event.get("body_text", "")).length() == long_body.length())
+
+	# ── LLM endpoint 归一化 ──
+	# 设置界面允许只填 host，直接 POST 会 404，而且失败只有一行 HTTP 404，
+	# 看起来像「服务不可用」。这条回归守住三种明显不完整的写法。
+	_expect("bare host endpoint gets the chat path",
+		NarrativeAiClientScript.normalize_llm_endpoint("https://api.deepseek.com")
+		== "https://api.deepseek.com/v1/chat/completions")
+	_expect("trailing slash endpoint gets the chat path",
+		NarrativeAiClientScript.normalize_llm_endpoint("https://api.deepseek.com/")
+		== "https://api.deepseek.com/v1/chat/completions")
+	_expect("version-only endpoint gets the chat path",
+		NarrativeAiClientScript.normalize_llm_endpoint("https://api.deepseek.com/v1")
+		== "https://api.deepseek.com/v1/chat/completions")
+	_expect("complete endpoint is left untouched",
+		NarrativeAiClientScript.normalize_llm_endpoint("https://api.deepseek.com/v1/chat/completions")
+		== "https://api.deepseek.com/v1/chat/completions")
+	_expect("custom gateway path is never guessed",
+		NarrativeAiClientScript.normalize_llm_endpoint("https://gw.example.com/openai")
+		== "https://gw.example.com/openai")
+
 
 func _test_shared_event_quota() -> void:
 	var catalog := NarrativeEventCatalogScript.build_default_catalog()

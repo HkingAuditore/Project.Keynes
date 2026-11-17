@@ -382,6 +382,9 @@ func _build_tail() -> void:
 	var details: Array = _chapter.get("details", [])
 	if details.is_empty():
 		return
+	# 纪事是一整章正文，不是数据脚注：用墨色、略大、行距更松。
+	# 其余章节的 details 仍是账目附注，保持灰字小号。
+	var is_prose := bool(_chapter.get("details_ink", false))
 	for detail in details:
 		var label := UIControlParts.rich_text_label()
 		label.bbcode_enabled = false
@@ -392,10 +395,12 @@ func _build_tail() -> void:
 		label.custom_minimum_size = Vector2(_measure, 0.0)
 		label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		label.text = String(detail)
-		label.add_theme_font_override("normal_font", UITokens.annual_font("body_soft"))
-		label.add_theme_font_size_override("normal_font_size", 15)
-		label.add_theme_color_override("default_color", Color(UITokens.CHRONICLE_MUTED.r, UITokens.CHRONICLE_MUTED.g, UITokens.CHRONICLE_MUTED.b, 1.0))
-		label.add_theme_constant_override("line_separation", 5)
+		label.add_theme_font_override("normal_font",
+			UITokens.annual_font("body" if is_prose else "body_soft"))
+		label.add_theme_font_size_override("normal_font_size", 17 if is_prose else 15)
+		var ink: Color = UITokens.CHRONICLE_INK if is_prose else UITokens.CHRONICLE_MUTED
+		label.add_theme_color_override("default_color", Color(ink.r, ink.g, ink.b, 1.0))
+		label.add_theme_constant_override("line_separation", 9 if is_prose else 5)
 		_column.add_child(label)
 		_spacer(6.0)
 	var tail := UIControlParts.color_rect()

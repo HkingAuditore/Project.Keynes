@@ -145,11 +145,24 @@ extends Resource
 ## `birth_factor = 1 - satisfaction_birth_weight * (1 - birth_input)`, so an
 ## early-era cohort with no luxuries, savings, or development does not collapse
 ## its own birth rate.
-@export_range(1, 65536, 1) var satisfaction_birth_reference_q16: int = 45875
+##
+## The reference must stay inside what an early-era cohort can actually reach,
+## otherwise the "early era is not punished" intent above silently fails. A
+## stone-age cohort can only score the dimensions it has goods for
+## (subsistence, basic, tax burden); comfort, luxury, income growth, savings and
+## development all sit near zero. Against the authored dimension weights that
+## ceiling is 0.52 for `worker` (62915+45875+26214 of 240000) and 0.60 for
+## `forager`. The previous 0.70 therefore capped every starter settlement below
+## full fertility — the reference was unreachable by construction. 0.55 sits
+## just above the `worker` ceiling, so a fed, low-tax settlement breeds at the
+## authored 20%/year and only genuinely deprived cohorts fall short.
+@export_range(1, 65536, 1) var satisfaction_birth_reference_q16: int = 36045
 ## Composite at which the birth multiplier reaches `carrying_sat_cap_q16`.
 ## Between the two references the bonus above 1.0 rises linearly, and it fades
 ## back to 1.0 as carrying load moves from the soft start to full capacity.
-@export_range(1, 65536, 1) var satisfaction_birth_bonus_reference_q16: int = 55706
+## This keeps the former 0.70 full-rate threshold as the point where the 1.15x
+## bonus starts instead of discarding it.
+@export_range(1, 65536, 1) var satisfaction_birth_bonus_reference_q16: int = 45875
 ## Composite thresholds (Q16, ascending) separating the five social-pressure
 ## levels. A cell publishes `EVENT_ECONOMY_SOCIAL_PRESSURE` only when its
 ## population-weighted level crosses one of these boundaries.

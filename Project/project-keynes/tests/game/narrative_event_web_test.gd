@@ -435,6 +435,10 @@ func _cost_markers(option) -> Array:
 			elif kind == int(NarrativeEffectSpecScript.Kind.ADD_EVENT_WEIGHT_BIAS) \
 					and int(eff.magnitude_q16) > 65536:
 				out.append("risk:" + target + String(eff.tag_key))
+			elif kind == int(NarrativeEffectSpecScript.Kind.ADD_POPULATION) \
+					and (int(eff.int_value) < 0 or int(eff.ratio_bp) < 0):
+				# 人口迁出是真代价：城空了，田没人种。别把它当成「没有成本的增益」。
+				out.append("people_out")
 	return out
 
 

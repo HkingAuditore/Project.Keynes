@@ -422,9 +422,8 @@ func _apply_responsive_layout() -> void:
 
 	var slip_widths: Array[float] = [282.0, 270.0, 260.0, 250.0]
 	var slip_heights := PackedFloat32Array([44.0, 42.0, 42.0, 42.0]) if short_h else PackedFloat32Array([52.0, 48.0, 48.0, 48.0])
-	if touch:
-		# 触摸命中区：56 设计像素 × content_scale ≈ 48dp（440dpi 档），桌面短窗口不变。
-		slip_heights = PackedFloat32Array([56.0, 54.0, 54.0, 54.0])
+	# [pc-fit 2026-11-17] 触摸档不再把纸签抬高到 56/54/54/54：那让主菜单按钮比 PC 高 4~6，
+	# 且和下方表单的 52 高控件堆在一起，整列高度全变 —— 玩家说的「布局和 PC 对不上」。
 	var cmd_idx := 0
 	for node in get_tree().get_nodes_in_group("main_menu_commands"):
 		if node is Button:
@@ -438,9 +437,11 @@ func _apply_responsive_layout() -> void:
 				(slip.material as ShaderMaterial).set_shader_parameter("button_size", Vector2(target_w, target_h))
 			cmd_idx += 1
 	if touch:
-		# 触摸端其余可点控件（开始/返回/应用、下拉、输入框、滑块、存档行按钮）统一抬高到
-		# 52 设计像素；它们的高度原本由主题 content_margin + 字号决定，只有 29~44。
-		_enforce_touch_targets()
+		# [pc-fit 2026-11-17] 这里原本把开始/返回/应用、下拉、输入框、滑块、存档行按钮
+		# 统一抬到 52 设计像素（它们的主题高度只有 29~44）。结果是手机上的下拉框比 PC
+		# 高 80%、整列表单高度全变，和「按 PC 排版等比缩放」的诉求直接冲突。
+		# 现在统一回到主题高度；要放大命中区请在 .tscn 里挂 touch_hit_button（不占布局）。
+		pass
 
 
 ## 触摸端最小命中区（设计像素）。52 × 2.39 ≈ 45dp（440dpi 档位）。
@@ -600,8 +601,18 @@ func _show_settings() -> void:
 		Vector2i(current.resolution_width, current.resolution_height))
 	_configure_option(_settings_controls.render_quality,
 		["自动", "低", "中", "高"], ["auto", "low", "medium", "high"], current.render_quality)
-	_configure_option(_settings_controls.ui_scale,
-		["80%", "100%", "125%", "150%"], [80, 100, 125, 150], current.ui_scale_percent)
+	# 触摸档：布局策略三档（fit/fill/dense）。桌面档：百分比缩放。
+	var layout_active := _ui_layout_mode_active()
+	if layout_active:
+		_configure_option(_settings_controls.ui_scale,
+			["完整 · PC 版式", "铺满 · 无黑边", "紧凑 · 更小更多"],
+			["fit", "fill", "dense"], String(current.get("ui_layout_mode", "fit")))
+	else:
+		_configure_option(_settings_controls.ui_scale,
+			["80%", "100%", "125%", "150%"], [80, 100, 125, 150], current.ui_scale_percent)
+	var scale_label := get_node_or_null("%UIScaleLabel") as Label
+	if scale_label != null:
+		scale_label.text = "界面布局" if layout_active else "界面缩放"
 	_settings_controls.vsync.button_pressed = bool(current.vsync)
 	_settings_controls.volume.value = float(current.master_volume)
 	if _volume_value_label != null:
@@ -1122,15 +1133,29 @@ func _load_slot(slot_id: String) -> void:
 
 func _apply_settings() -> void:
 	var resolution: Vector2i = _settings_controls.resolution.get_selected_metadata()
-	var result := GameSettings.update({
+	var picked_scale = _settings_controls.ui_scale.get_selected_metadata()
+	var payload := {
 		"window_mode": _settings_controls.window_mode.get_selected_metadata(),
 		"resolution_width": resolution.x,
 		"resolution_height": resolution.y,
 		"vsync": _settings_controls.vsync.button_pressed,
 		"render_quality": _settings_controls.render_quality.get_selected_metadata(),
-		"ui_scale_percent": _settings_controls.ui_scale.get_selected_metadata(),
 		"master_volume": _settings_controls.volume.value,
 		"master_muted": _settings_controls.muted.button_pressed,
 		"reduce_motion": _settings_controls.reduce_motion.button_pressed,
-	})
+	}
+	# 同一个下拉在触摸档装的是布局档位（String），桌面档装的是百分比（int）。
+	if picked_scale is String:
+		payload["ui_layout_mode"] = picked_scale
+	else:
+		payload["ui_scale_percent"] = picked_scale
+	var result := GameSettings.update(payload)
 	_status_label.text = "设置已应用。" if bool(result.get("ok", false)) else String(result.message)
+
+
+## 当前设备是否走「布局策略」而不是「百分比缩放」——与 mobile_ui_scaling 同一判定。
+func _ui_layout_mode_active() -> bool:
+	var scaling = GameSettings.ui_scaling() if GameSettings.has_method("ui_scaling") else null
+	if scaling == null or not scaling.has_method("is_touch_profile"):
+		return false
+	return bool(scaling.call("is_touch_profile"))

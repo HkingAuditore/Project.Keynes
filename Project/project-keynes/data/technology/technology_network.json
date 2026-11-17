@@ -4296,7 +4296,7 @@
 					"value": 1.0,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": true
 				},
 				{
@@ -4312,7 +4312,7 @@
 					"display_name": "野生韧皮纤维营地"
 				}
 			],
-			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：野生韧皮纤维营地",
+			"effect_summary": "解锁物资：亚麻杆；解锁建筑：野生韧皮纤维营地",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "野生韧皮采集是纤维、纺织、服装与合成纤维在当前目录中的应用端点，其终点效果由bast_fiber、clothing、bast_fiber_camp、bast_wrap_shelter消费",
@@ -7085,7 +7085,24 @@
 				"tech.composite_tools"
 			],
 			"reveal_condition": {
-
+				"operator": 2.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "resource.wild_game",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "bio.horse",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "bio.cattle",
+						"value": 1.0
+					}
+				]
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -7210,7 +7227,24 @@
 				"tech.animal_tracking"
 			],
 			"reveal_condition": {
-
+				"operator": 2.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "landform.marsh",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "landform.forest",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "landform.conifer_forest",
+						"value": 1.0
+					}
+				]
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -7542,7 +7576,19 @@
 					"name": "制皂工坊"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.herd_management.practice",
+					"display_name": "畜牧与屠宰实践",
+					"route_type": "practice",
+					"description": "本行当要求先把畜牧与屠宰实践的规模做起来：合计日产出维持在 0.81 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.livestock_practice_812_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "石器时代节点“畜群管理”的对象与处理阶段不同",
 			"topology_review": {
@@ -8212,7 +8258,19 @@
 					"name": "佃作马铃薯田"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.potato_propagation.practice",
+					"display_name": "谷物经营实践",
+					"route_type": "practice",
+					"description": "本行当要求先把谷物经营实践的规模做起来：合计日产出维持在 0.80 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.grain_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "石器时代节点“块茎繁育”的对象与处理阶段不同",
 			"topology_review": {
@@ -8892,10 +8950,20 @@
 					"route_type": "institution",
 					"description": "完成早期知识机构后，由稳定的记录与传承制度支持该研究。",
 					"condition": {
-						"operator": 0.0,
-						"kind": 0.0,
-						"id": "tech.early_knowledge_institution",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"operator": 0.0,
+								"kind": 0.0,
+								"id": "tech.early_knowledge_institution",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.timber_practice_541_180d",
+								"value": 1.0
+							}
+						]
 					}
 				}
 			],
@@ -9877,35 +9945,45 @@
 					"route_type": "institution",
 					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
-						"operator": 2.0,
+						"operator": 1.0,
 						"children": [
 							{
-								"kind": 0.0,
-								"id": "tech.oral_memory_practice",
-								"value": 1.0
+								"operator": 2.0,
+								"children": [
+									{
+										"kind": 0.0,
+										"id": "tech.oral_memory_practice",
+										"value": 1.0
+									},
+									{
+										"kind": 0.0,
+										"id": "tech.phenology_observation",
+										"value": 1.0
+									},
+									{
+										"kind": 0.0,
+										"id": "tech.flood_calendar_practice",
+										"value": 1.0
+									},
+									{
+										"kind": 0.0,
+										"id": "tech.pastoral_route_memory",
+										"value": 1.0
+									},
+									{
+										"kind": 0.0,
+										"id": "tech.tide_observation",
+										"value": 1.0
+									}
+								],
+								"required_count": 1.0
 							},
 							{
-								"kind": 0.0,
-								"id": "tech.phenology_observation",
-								"value": 1.0
-							},
-							{
-								"kind": 0.0,
-								"id": "tech.flood_calendar_practice",
-								"value": 1.0
-							},
-							{
-								"kind": 0.0,
-								"id": "tech.pastoral_route_memory",
-								"value": 1.0
-							},
-							{
-								"kind": 0.0,
-								"id": "tech.tide_observation",
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
 								"value": 1.0
 							}
-						],
-						"required_count": 1.0
+						]
 					}
 				}
 			],
@@ -11857,12 +11935,12 @@
 				"children": [
 					{
 						"kind": 1.0,
-						"id": "resource.arable_land",
+						"id": "bio.maize",
 						"value": 1.0
 					},
 					{
 						"kind": 1.0,
-						"id": "weather.drought",
+						"id": "contact.maize",
 						"value": 1.0
 					}
 				]
@@ -11919,7 +11997,19 @@
 					"name": "工业榨油厂"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.maize_garden.practice",
+					"display_name": "玉米园圃实践",
+					"route_type": "practice",
+					"description": "在玉米地连续经营、稳定收穗满 180 日之后，园圃式的密植与除草才有可依循的经验。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.grain_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“玉米园圃”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12013,7 +12103,19 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.swidden_maize.practice",
+					"display_name": "火种玉米实践",
+					"route_type": "practice",
+					"description": "先有稳定的谷物收成，才谈得上判断哪片林地烧过之后能连种几年。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.grain_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“刀耕火种玉米”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12059,12 +12161,12 @@
 				"children": [
 					{
 						"kind": 1.0,
-						"id": "resource.arable_land",
+						"id": "bio.wheat",
 						"value": 1.0
 					},
 					{
 						"kind": 1.0,
-						"id": "weather.drought",
+						"id": "contact.wheat",
 						"value": 1.0
 					}
 				]
@@ -12121,7 +12223,19 @@
 					"name": "小麦农场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.rainfed_wheat.practice",
+					"display_name": "雨养麦田实践",
+					"route_type": "practice",
+					"description": "靠雨水种麦不是看会了就会：要连着几季稳定收麦，才知道哪种墒情能撑到抽穗。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.grain_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“雨养小麦田”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12411,7 +12525,19 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.upland_rice.practice",
+					"display_name": "旱稻实践",
+					"route_type": "practice",
+					"description": "在无水层的坡地上繁育稻种，必须先有稳定的稻作收成作对照。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.rice_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“旱稻繁育”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12518,7 +12644,19 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wetland_rice.practice",
+					"display_name": "湿地稻作实践",
+					"route_type": "practice",
+					"description": "湿地围埂、控水的分寸来自反复的稻作经营，不是一次观察能得来的。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.rice_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“湿地稻园”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12619,7 +12757,19 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.ridge_tuber.practice",
+					"display_name": "垄作块茎实践",
+					"route_type": "practice",
+					"description": "起垄的深浅与排水角度，只有在连续种过块茎作物之后才判断得准。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.grain_practice_800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“垄作块茎”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12790,7 +12940,19 @@
 					"name": "精准亚麻农场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.flax_retting.practice",
+					"display_name": "沤麻实践",
+					"route_type": "practice",
+					"description": "沤麻的火候取决于纤维本身的状态，必须先有稳定的韧皮纤维收成。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.fiber_practice_1800_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“沤麻”保留其专属地理与实践对象",
 			"topology_review": {
@@ -12935,7 +13097,19 @@
 					"name": "裁缝铺"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.hand_spinning.practice",
+					"display_name": "纺织成衣实践",
+					"route_type": "practice",
+					"description": "本行当要求先把纺织成衣实践的规模做起来：合计日产出维持在 0.41 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.textile_practice_406_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“手工纺纱”保留其专属地理与实践对象",
 			"topology_review": {
@@ -13080,7 +13254,19 @@
 					"name": "无烟火药厂"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.cotton_ginning.practice",
+					"display_name": "棉田实践",
+					"route_type": "practice",
+					"description": "本行当要求先把棉田实践的规模做起来：合计日产出维持在 0.70 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.cotton_practice_700_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“棉花去籽”保留其专属地理与实践对象",
 			"topology_review": {
@@ -13125,12 +13311,12 @@
 				"children": [
 					{
 						"kind": 1.0,
-						"id": "resource.arable_land",
+						"id": "bio.cotton",
 						"value": 1.0
 					},
 					{
 						"kind": 1.0,
-						"id": "weather.heatwave",
+						"id": "contact.cotton",
 						"value": 1.0
 					}
 				]
@@ -13220,7 +13406,19 @@
 					"name": "精准棉花农场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.cotton_gardening.practice",
+					"display_name": "棉田实践",
+					"route_type": "practice",
+					"description": "棉花园圃要的是整枝、打顶、分批拾花的手上功夫——得先在能长棉的地方连着种满 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.cotton_practice_700_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“棉花园圃”保留其专属地理与实践对象",
 			"topology_review": {
@@ -13359,7 +13557,19 @@
 					"name": "商品香料园"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.spice_shade.practice",
+					"display_name": "香料园实践",
+					"route_type": "practice",
+					"description": "遮阴、控湿、逐年修枝，都是靠持续采收香料才摸出来的分寸。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.spice_practice_180_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“遮阴香料园”保留其专属地理与实践对象",
 			"topology_review": {
@@ -13675,7 +13885,19 @@
 					"name": "钢制工具厂"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.timber_sawing.practice",
+					"display_name": "木料采制实践",
+					"route_type": "practice",
+					"description": "本行当要求先把木料采制实践的规模做起来：合计日产出维持在 0.54 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.timber_practice_541_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“手工锯木”保留其专属地理与实践对象",
 			"topology_review": {
@@ -13807,7 +14029,19 @@
 					"name": "精梳羊毛作坊"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wool_husbandry.practice",
+					"display_name": "畜牧与屠宰实践",
+					"route_type": "practice",
+					"description": "本行当要求先把畜牧与屠宰实践的规模做起来：合计日产出维持在 0.81 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.livestock_practice_812_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“毛用畜牧”保留其专属地理与实践对象",
 			"topology_review": {
@@ -13913,7 +14147,19 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.felt_making.practice",
+					"display_name": "纺织成衣实践",
+					"route_type": "practice",
+					"description": "本行当要求先把纺织成衣实践的规模做起来：合计日产出维持在 0.41 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.textile_practice_406_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "石器时代节点“羊毛毡制”的对象与处理阶段不同",
 			"topology_review": {
@@ -14205,7 +14451,19 @@
 					"name": "制皂工坊"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.salt_preservation.practice",
+					"display_name": "制盐实践",
+					"route_type": "practice",
+					"description": "本行当要求先把制盐实践的规模做起来：合计日产出维持在 0.62 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.salt_practice_625_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“盐渍保存”保留其专属地理与实践对象",
 			"topology_review": {
@@ -15119,6 +15377,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -15139,6 +15402,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
 								"value": 1.0
 							}
 						]
@@ -15288,9 +15556,19 @@
 					"display_name": "专业知识整合",
 					"route_type": "professional_knowledge",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.manufacturing.10_90d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.manufacturing.10_90d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.spice_practice_180_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「家庭生产」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				},
@@ -15309,6 +15587,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.manufacturing.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.spice_practice_180_180d",
 								"value": 1.0
 							}
 						]
@@ -16015,6 +16298,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -16035,6 +16323,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
 								"value": 1.0
 							}
 						]
@@ -16182,6 +16475,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -16202,6 +16500,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
 								"value": 1.0
 							}
 						]
@@ -16326,6 +16629,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -16346,6 +16654,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
 								"value": 1.0
 							}
 						]
@@ -16505,6 +16818,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.rice_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -16525,6 +16843,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.rice_practice_800_180d",
 								"value": 1.0
 							}
 						]
@@ -16970,6 +17293,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -16990,6 +17318,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
 								"value": 1.0
 							}
 						]
@@ -17285,7 +17618,19 @@
 					"name": "乳制品厂"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.dairy_processing.practice",
+					"display_name": "畜牧与屠宰实践",
+					"route_type": "practice",
+					"description": "本行当要求先把畜牧与屠宰实践的规模做起来：合计日产出维持在 0.81 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.livestock_practice_812_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“乳品加工”保留其专属地理与实践对象",
 			"topology_review": {
@@ -17673,6 +18018,11 @@
 								"kind": 1.0,
 								"id": "development.employment.manufacturing.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.livestock_practice_812_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -17693,6 +18043,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.manufacturing.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.livestock_practice_812_180d",
 								"value": 1.0
 							}
 						]
@@ -18617,9 +18972,19 @@
 					"display_name": "专业知识整合",
 					"route_type": "professional_knowledge",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.extractive.10_90d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.extractive.10_90d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「铜退火」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				},
@@ -18628,9 +18993,19 @@
 					"display_name": "组织与经营能力",
 					"route_type": "institutional_capacity",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.output.manufacturing.100_180d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.output.manufacturing.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「窑烧控制」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				}
@@ -18755,7 +19130,19 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.solar_evaporation.practice",
+					"display_name": "制盐实践",
+					"route_type": "practice",
+					"description": "本行当要求先把制盐实践的规模做起来：合计日产出维持在 0.62 以上并保持 180 日。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.salt_practice_625_180d",
+						"value": 1.0
+					}
+				}
+			],
 			"route_exemption_reason": "候选替代条件均被不可替代前置知识蕴含；保留核心知识路径，省略冗余路线。",
 			"reveal_template_reason": "农耕节点“盐渍保存”保留其专属地理与实践对象",
 			"topology_review": {
@@ -21452,6 +21839,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.rice_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -21462,9 +21854,19 @@
 					"display_name": "组织与经营能力",
 					"route_type": "institutional_capacity",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.output.agriculture.100_180d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.rice_practice_800_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「记事制度」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				}
@@ -21745,6 +22147,11 @@
 								"kind": 1.0,
 								"id": "development.employment.extractive.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -21765,6 +22172,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.manufacturing.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
 								"value": 1.0
 							}
 						]
@@ -22306,9 +22718,19 @@
 					"display_name": "专业知识整合",
 					"route_type": "professional_knowledge",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.extractive.10_90d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.extractive.10_90d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.fuel_practice_1083_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「磨制石器」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				},
@@ -22327,6 +22749,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.extractive.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.fuel_practice_1083_180d",
 								"value": 1.0
 							}
 						]
@@ -22611,7 +23038,29 @@
 				"tech.bronze_casting"
 			],
 			"reveal_condition": {
-
+				"operator": 1.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "bio.horse",
+						"value": 1.0
+					},
+					{
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "landform.steppe_plain",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "landform.grassland",
+								"value": 1.0
+							}
+						]
+					}
+				]
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -25378,6 +25827,11 @@
 								"kind": 1.0,
 								"id": "development.employment.extractive.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -25388,9 +25842,19 @@
 					"display_name": "组织与经营能力",
 					"route_type": "institutional_capacity",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.output.manufacturing.100_180d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.output.manufacturing.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「窑烧控制」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				}
@@ -28245,9 +28709,19 @@
 					"display_name": "专业知识整合",
 					"route_type": "professional_knowledge",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.extractive.10_90d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.extractive.10_90d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.fuel_practice_1083_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「磨制石器」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				},
@@ -28266,6 +28740,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.extractive.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.fuel_practice_1083_180d",
 								"value": 1.0
 							}
 						]
@@ -28398,9 +28877,19 @@
 					"display_name": "专业知识整合",
 					"route_type": "professional_knowledge",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.extractive.10_90d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.extractive.10_90d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.fuel_practice_1083_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「磨制石器」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				},
@@ -28419,6 +28908,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.output.extractive.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.fuel_practice_1083_180d",
 								"value": 1.0
 							}
 						]
@@ -28867,6 +29361,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -28877,9 +29376,19 @@
 					"display_name": "组织与经营能力",
 					"route_type": "institutional_capacity",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.output.agriculture.100_180d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.grain_practice_800_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「记事制度」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				}
@@ -29008,6 +29517,11 @@
 								"kind": 1.0,
 								"id": "development.employment.agriculture.10_90d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.rice_practice_800_180d",
+								"value": 1.0
 							}
 						]
 					},
@@ -29018,9 +29532,19 @@
 					"display_name": "组织与经营能力",
 					"route_type": "institutional_capacity",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.output.agriculture.100_180d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.output.agriculture.100_180d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.rice_practice_800_180d",
+								"value": 1.0
+							}
+						]
 					},
 					"description": "以「记事制度」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				}
@@ -29313,7 +29837,29 @@
 				"tech.iron_smelting"
 			],
 			"reveal_condition": {
-
+				"operator": 1.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "bio.horse",
+						"value": 1.0
+					},
+					{
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "resource.pasture",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "landform.steppe_plain",
+								"value": 1.0
+							}
+						]
+					}
+				]
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -29894,7 +30440,19 @@
 				"tech.horse_domestication"
 			],
 			"reveal_condition": {
-
+				"operator": 1.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "bio.horse",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "resource.pasture",
+						"value": 1.0
+					}
+				]
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -33503,6 +34061,11 @@
 								"kind": 1.0,
 								"id": "development.employment.extractive.250_360d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
+								"value": 1.0
 							}
 						]
 					}
@@ -33523,6 +34086,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.buildings.active_8_360d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.ore_metal_practice_542_180d",
 								"value": 1.0
 							}
 						]
@@ -33976,6 +34544,11 @@
 								"kind": 1.0,
 								"id": "development.commodity_crop_variety_2",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.latex_practice_2900_180d",
+								"value": 1.0
 							}
 						]
 					}
@@ -33986,9 +34559,19 @@
 					"route_type": "industrial_practice",
 					"description": "在已有核心知识基础上，以“农业就业达到250人并持续360日”验证商品作物管理的生产经营实践；核心硬前置仍须全部完成。",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.agriculture.250_360d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.agriculture.250_360d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.latex_practice_2900_180d",
+								"value": 1.0
+							}
+						]
 					}
 				},
 				{
@@ -34007,6 +34590,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.trade.quantity_100",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.latex_practice_2900_180d",
 								"value": 1.0
 							}
 						]
@@ -38244,10 +38832,10 @@
 					"value": 1.0,
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "水泥厂"
+					"display_name": "土法水泥窑"
 				}
 			],
-			"effect_summary": "解锁物资：水泥；解锁建筑：水泥厂；旱灾损失 -10%；洪灾损失 -10%",
+			"effect_summary": "解锁物资：水泥；解锁建筑：土法水泥窑；旱灾损失 -10%；洪灾损失 -10%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [
 				"tech.electric_generation",
@@ -51659,6 +52247,11 @@
 								"kind": 1.0,
 								"id": "development.employment.knowledge.1250_720d",
 								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.livestock_practice_812_180d",
+								"value": 1.0
 							}
 						]
 					}
@@ -51669,9 +52262,19 @@
 					"route_type": "industrial_practice",
 					"description": "掌握畜群管理，并以“农业就业达到1250人并持续720日”验证现代畜牧的生产经营实践；核心硬前置仍须全部完成。",
 					"condition": {
-						"kind": 1.0,
-						"id": "development.employment.agriculture.1250_720d",
-						"value": 1.0
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 1.0,
+								"id": "development.employment.agriculture.1250_720d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.livestock_practice_812_180d",
+								"value": 1.0
+							}
+						]
 					}
 				},
 				{
@@ -51690,6 +52293,11 @@
 							{
 								"kind": 1.0,
 								"id": "development.buildings.active_32_720d",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.livestock_practice_812_180d",
 								"value": 1.0
 							}
 						]

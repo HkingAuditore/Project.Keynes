@@ -3,6 +3,19 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 营造悬停卡的遮挡与缺口信息（2026-11-16）
+
+`BuildingHoverCard` 的定位安全区改为当前 `BuildingWorkspace` 与 viewport 的交集，
+不再让纸笺越过 `DetailShell` 压住右侧地块详情或在顶部被裁切。卡片收窄为建造决策摘要：
+保留建造现金与工期，隐藏岗位/生产链长账单；不可营造时只列建材缺口数量及“市场无货”，
+现金不足则标为“买不起”。缺口行由同一份已提交报价的 `materials` 与本地市场现货生成，
+未改变经济字段、命令或存档契约。
+
+验证入口为 `tests/ui/building_workspace_test.gd`（0 failures，包含卡片栏内约束、
+可建空缺口、不可建缺口数量/原因和语义图标断言）与 `tests/ui/ui_scene_structure_test.gd`
+（0 failures）。本机非 headless OpenGL 截图探针未能启动窗口，headless 探针只能完成
+布局指标、无法保存纹理截图；未据此宣称完成图形验收，完整回归仍待后续批次执行。
+
 ## PR #7 审查后的季节日期与验证补齐（2026-11-16）
 
 独立核对真实调用链后确认：输入日为WorldClock日期减一，因此完成日期写入 `day+1`
@@ -878,3 +891,17 @@ Economy、Modifier、Effect 目录、Effect 扩展和十一项显示资料；覆
 `1.05` 再观察。满意度条目与国策条目共用一条「改行时整组换行」的生命周期，读档不重放。
 
 
+
+## 建筑亏损成因首屏可视化（2026-11-16）
+
+建筑详情的“生产与岗位”页新增按需渲染的“亏损成因”纸片卡。卡片复用既有对冲条和堆叠条，显示税前总收入、含税总支出，以及原料采购、工资成本、维护支出和营业税费；只有当前经营期利润为负且建筑仍在经营时显示，亏损停产继续显示停产原因。
+
+显示层沿用已发布经济快照：`last_revenue` 为营业税后实收，`last_operating_cost` 为原料、工资应付和维护，`last_business_tax_paid` 单独提供营业税。视图将正营业税同时加回收入和计入支出，保证图形的收支缺口与已发布利润一致。未改 C++、DataCore、存档字段或每日调度。
+
+验证：`tests/building/building_inspector_state_test.gd` PASS；`tests/ui/ui_scene_structure_test.gd` 0 failures；编辑器脚本编译 exit=0 且无 Parse Error / Failed to load script / SCRIPT ERROR；`tests/qa/cell_inspector_screenshot_qa.gd` 已生成建筑页截图，并用临时负利润详情 payload 做了 1280×720 GPU 截图复核。
+
+## 亚麻杆物资名与石器建材替代（2026-11-16）
+
+`good.bast_fiber` 的玩家显示名由“亚麻秆/韧皮原料”改为“亚麻杆”，并同步科技网络、理念摘要和 perf-validation 镜像；稳定 ID、价格、科技标签和存档键保持不变。`primitive_lashing` 建材组仍由 `bast_fiber` 与 `reed_bundle` 共同候选，运行时按当地市场库存择一，不要求两者同时存在。
+
+开局规划读取编译后的建材候选组，并将选中的候选材料写入出生地 bootstrap 库存；所以出生地没有亚麻杆时，只要芦苇候选可达，开局建造不会卡住。现有目录回归已覆盖建材候选展开，殖民建材回归覆盖“仅有芦苇、没有原木和亚麻杆也能出发”的路径。本轮未改 C++、目录 ABI、存档字段或调度。

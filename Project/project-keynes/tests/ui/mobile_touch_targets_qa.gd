@@ -104,6 +104,8 @@ var _rows: Array[Dictionary] = []
 var _failures: Array[String] = []
 var _touch_ui: GDScript
 var _debug := false
+## 触摸档布局策略覆盖（fit/fill/dense）。空 = 不覆盖。
+var _layout_mode := ""
 
 
 func _initialize() -> void:
@@ -128,6 +130,8 @@ func _parse_args() -> void:
 				_size = Vector2i(int(pair[0]), int(pair[1]))
 		elif arg == "--debug-layout":
 			_debug = true
+		elif arg.begins_with("--layout="):
+			_layout_mode = String(arg.trim_prefix("--layout="))
 	if _out_dir.is_empty():
 		_out_dir = "user://mobile_touch_qa"
 	_touch_ui = load(TOUCH_UI_SCRIPT) as GDScript
@@ -142,8 +146,10 @@ func _run() -> void:
 			"resolution_width": 1600, "resolution_height": 960}, false)
 		var scaling = settings.call("ui_scaling")
 		if scaling != null:
-			scaling.call("set_qa_override", {"profile": _profile, "dpi": _dpi,
-				"safe_area": null})
+			var override := {"profile": _profile, "dpi": _dpi, "safe_area": null}
+			if not _layout_mode.is_empty():
+				override["layout"] = _layout_mode
+			scaling.call("set_qa_override", override)
 			settings.call("apply")
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_size(_size)

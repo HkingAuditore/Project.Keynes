@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://ob2q0rcuc6oo"
-path="res://.godot/imported/SweiGothicLegCJKsc-Regular.ttf-7d47eebc4632dd067930b1957662e83c.fontdata"
+uid="uid://byvrvsy3dvhk3"
+path="res://.godot/imported/SweiGothicLegCJKsc-Regular.woff2-cf4ed42a9b7dee981efefcc20af0c007.fontdata"
 
 [deps]
 
-source_file="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf"
-dest_files=["res://.godot/imported/SweiGothicLegCJKsc-Regular.ttf-7d47eebc4632dd067930b1957662e83c.fontdata"]
+source_file="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2"
+dest_files=["res://.godot/imported/SweiGothicLegCJKsc-Regular.woff2-cf4ed42a9b7dee981efefcc20af0c007.fontdata"]
 
 [params]
 

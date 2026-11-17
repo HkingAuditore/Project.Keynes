@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/technology_tree_backdrop_v1.png-cf92d017f7119
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
-compress/lossy_quality=0.7
+compress/mode=1
+compress/high_quality=true
+compress/lossy_quality=0.75
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

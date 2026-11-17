@@ -24,6 +24,39 @@ func _run() -> void:
 	var model: Dictionary = ViewModel.build(raw)
 	var text: String = model.get("full_text", "")
 	_expect("nine data chapters", model.get("chapters", []).size() == 9)
+
+	# ── 年度纪事：末章追加、幂等、并入复制全文、空文本不造空章 ──
+	var chronicle_model: Dictionary = ViewModel.build(raw)
+	ViewModel.append_chronicle_chapter(chronicle_model,
+		"是年春，渠成，水自西来。民夫蹲在渠边看水，也看工头的脸色。")
+	var chapters_now: Array = chronicle_model.get("chapters", [])
+	var tenth: Dictionary = chapters_now[9] if chapters_now.size() > 9 else {}
+	_expect("chronicle chapter appended as the tenth chapter",
+		chapters_now.size() == 10 and String(tenth.get("title", "")) == "纪事")
+	_expect("chronicle body lands in details",
+		(tenth.get("details", []) as Array).size() == 1)
+	_expect("chronicle joins the copied full text",
+		String(chronicle_model.get("full_text", "")).contains("民夫蹲在渠边看水"))
+	# 报告重绘会再走一次同一支：只能替换正文，不能再追加一章。
+	ViewModel.append_chronicle_chapter(chronicle_model, "是年秋，仓廪稍盈。")
+	chapters_now = chronicle_model.get("chapters", [])
+	var tenth_again: Dictionary = chapters_now[9] if chapters_now.size() > 9 else {}
+	var again_details: Array = tenth_again.get("details", [])
+	_expect("chronicle append is idempotent",
+		chapters_now.size() == 10 and again_details.size() == 1
+		and String(again_details[0]) == "是年秋，仓廪稍盈。")
+	var untouched: Dictionary = ViewModel.build(raw)
+	ViewModel.append_chronicle_chapter(untouched, "   ")
+	_expect("empty chronicle does not create an empty chapter",
+		(untouched.get("chapters", []) as Array).size() == 9)
+
+	# 简报只递已格式化的句子；原始账目段（Q16 / 1/10000）绝不能进 prompt。
+	var ScribeScriptProbe = load("res://scripts/annual/annual_chronicle_scribe.gd")
+	var brief: String = ScribeScriptProbe.build_brief(model)
+	_expect("chronicle brief carries formatted chapter details",
+		not brief.strip_edges().is_empty() and brief.contains("："))
+	_expect("chronicle brief never leaks the raw ledger block",
+		not brief.contains("原始年度账目") and not brief.contains("1/10000"))
 	_expect("copy includes scoring and chapter titles", text.contains("发展考核") and text.contains("GDP 增长") and text.contains("资源与年度问题"))
 	_expect("chapter leads do not duplicate their charts and ledgers",
 		model.chapters.all(func(chapter: Dictionary) -> bool: return String(chapter.get("lead", "")).is_empty()))

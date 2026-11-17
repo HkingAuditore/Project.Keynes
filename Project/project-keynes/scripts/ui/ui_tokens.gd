@@ -14,8 +14,8 @@ const ERA_POPUP_GAP := 8.0
 const ERA_BADGE_ADVANCE_SECONDS := 2.8
 const ERA_BADGE_GOLD := Color(1.0, 0.79, 0.30)
 
-const UI_FONT: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
-const UI_FONT_BOLD: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
+const UI_FONT: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2")
+const UI_FONT_BOLD: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.woff2")
 const UI_DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
 ## 2026-11-11：正文字体统一到 Swei。原来这里挂的是思源宋体，与 UI 正文是两套字形，
 ## web 包为此多背了 1.32 MB。名字保留（调用点几十处），内容改成 Swei Regular。

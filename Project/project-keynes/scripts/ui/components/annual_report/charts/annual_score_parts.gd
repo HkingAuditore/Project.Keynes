@@ -38,8 +38,6 @@ func _draw() -> void:
 	var count: int = mini(_parts.size(), _labels.size())
 	# 口径说明：每行右侧是「得分 / 满分」，条长按本页最大权重统一缩放。
 	_caption(Vector2(0.0, 2.0), "得分 / 满分")
-	_right_text(w, 2.0, "条长按本页最大权重统一缩放", 11,
-		Color(_muted.r, _muted.g, _muted.b, 0.85))
 
 	var max_weight: float = 1.0
 	for weight in _weights:

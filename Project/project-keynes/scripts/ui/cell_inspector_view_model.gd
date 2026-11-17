@@ -1131,6 +1131,11 @@ func _construction_page_rows(entries: Array, quotes: Dictionary,
 func _construction_materials_text(materials: Array) -> String:
 	return _Construction_delegate._construction_materials_text(self, materials)
 
+func _construction_material_status_rows(materials: Array,
+		local_stock: Dictionary) -> Array:
+	return _Construction_delegate._construction_material_status_rows(
+		self, materials, local_stock)
+
 func _construction_reason_text(code: String, materials: Array,
 		local_stock: Dictionary) -> String:
 	return _Construction_delegate._construction_reason_text(self, code, materials, local_stock)

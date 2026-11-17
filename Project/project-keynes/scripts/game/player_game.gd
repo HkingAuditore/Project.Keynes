@@ -493,19 +493,24 @@ func _shader_quality_define_from_setting(quality: String) -> String:
 	# 启用四类近景形态与法线着色。切档只改 uniform/实例预算，不换程序。
 	if OS.has_feature("web"):
 		return "MOBILE_QUALITY_LOW"
-	# [mobile-pin-low 2026-11-02] 安卓真机实测（小米 15 / 2670x1200 / 2400 格，同图同视角）：
+	# [mobile-pin-low 2026-11-02 → quality-tier-unpin 2026-11-17] 安卓真机实测
+	# （小米 15 / 2670x1200 / 2400 格，同图同视角）：
 	#   MOBILE_QUALITY_MID  → 31~33 fps，单日成本 28~36ms
 	#   MOBILE_QUALITY_HIGH → 26.5 fps
-	#   MOBILE_QUALITY_LOW + visual_quality=2（运行期 PBR/线性光照/ACES 全开）
-	#                        → 56~61 fps，单日成本 7~9ms
-	# 也就是说「中/高编译期档」在移动 GPU 上多出来的那些每像素分支
-	# （water_pipeline / world_map / country_border / hex_edge_overlay 的
-	# `#if !defined(PK_QUALITY_LOW)` 段）几乎吃掉一半帧率，而运行期画质档
-	# （PBR/光照/ACES）几乎免费。Web 早就是这么做的（上面的注释），移动端现在对齐：
-	# 编译期固定 LOW，画质由 visual_quality 决定。
+	#   MOBILE_QUALITY_LOW + visual_quality=2 → 56~61 fps，单日成本 7~9ms
+	# 当时的结论是"编译期档固定 LOW、画质交给 visual_quality"。但那个结论有前提缺陷：
+	# 大量光照细节（水面 SSS / 闪点 / 海藻 / 河面法线 / 山体阴影 / 地形像素噪声 /
+	# 云的 fbm 层）是 **`#if !defined(PK_MOBILE_ANY)` 的编译期裁剪**，visual_quality
+	# 根本够不到它们 —— 于是"高画质"只剩 bare 光照，真机反馈"各种光照极其丑陋"。
 	#
-	# 逃生口：pk_debug.cfg 里 `[render] mobile_shader_tier="MOBILE_QUALITY_MID|HIGH"`
-	# 或环境变量 PK_MOBILE_SHADER_TIER，可回退到旧行为做对比测试。
+	# 现在的分配：
+	#   auto / low → LOW   （默认档，帧率优先，与 2026-11-02 的结论一致）
+	#   medium     → MID
+	#   high       → HIGH  （HIGH 档在 shader_quality.gdshaderinc 里已改为不再
+	#                        定义 PK_MOBILE_ANY，即走桌面同款光照路径）
+	# 代价：切到中/高会换 program（首帧编译 + 帧率按上表下降），这是玩家显式选择的
+	# 取舍。要回到旧的"一律 LOW"用 pk_debug.cfg 的 `[render] mobile_shader_tier`
+	# 或环境变量 PK_MOBILE_SHADER_TIER 覆盖。
 	var tier_override := OS.get_environment("PK_MOBILE_SHADER_TIER").strip_edges()
 	if tier_override == "":
 		var debug_cfg := ConfigFile.new()
@@ -513,14 +518,11 @@ func _shader_quality_define_from_setting(quality: String) -> String:
 			tier_override = String(debug_cfg.get_value("render", "mobile_shader_tier", "")).strip_edges()
 	if tier_override != "":
 		return tier_override
-	return "MOBILE_QUALITY_LOW"
 	match quality:
 		"medium":
 			return "MOBILE_QUALITY_MID"
 		"high":
 			return "MOBILE_QUALITY_HIGH"
-		"auto", "low":
-			return "MOBILE_QUALITY_LOW"
 		_:
 			return "MOBILE_QUALITY_LOW"
 

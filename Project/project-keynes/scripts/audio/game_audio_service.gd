@@ -1,5 +1,5 @@
 extends Node
-## Presentation-only audio boundary: Windows FMOD, Web/Android Godot/Vorbis full mixes.
+## Presentation-only audio boundary: FMOD on Windows/Android; Web keeps its own path.
 
 const NativeBackend := preload("res://scripts/audio/native_audio_backend.gd")
 var _native: NativeBackend
@@ -12,7 +12,8 @@ const FORCE_NATIVE_ARG := "--audio-native"
 const EXTENSION := "res://addons/FmodGodot/FmodGodot.gdextension"
 ## Android 专用：在加载 FmodGodot 之前把 FMOD 的 JNI_OnLoad 跑起来。
 const BOOTSTRAP_EXTENSION := "res://addons/0_fmod_bootstrap/fmod_bootstrap.gdextension"
-const BANK_ROOT := "res://assets/audio/banks/Desktop/"
+const DESKTOP_BANK_ROOT := "res://assets/audio/banks/Desktop/"
+const MOBILE_BANK_ROOT := "res://assets/audio/banks/Mobile/"
 ## 四个时代各一个 bank（拆包见 tools/audio/split_music_banks.py）。
 ## 它们不进 web 的 boot pck：每个 8~10 MB，而一局只会用到其中一个。
 const ERA_BANK_NAMES: Array[String] = ["Music_stone", "Music_agrarian", "Music_kingdom", "Music_empire"]
@@ -143,6 +144,11 @@ var _event_next_ms: Dictionary = {}
 var _spatial_enabled := false
 
 
+## Android 的 bank 目录与桌面不同：FMOD Mobile 平台单独构建（见 tools/audio/Build-FmodBanks.ps1）。
+func _bank_root() -> String:
+	return MOBILE_BANK_ROOT if OS.has_feature("android") else DESKTOP_BANK_ROOT
+
+
 func _ready() -> void:
 	# [android-fmod 2026-11-01] Android 走 FMOD，但带"能补 JNI 才走"的硬门禁：
 	#   * 设备实测已确认：扩展能在 Android 上加载、prime() 能返回 0；
@@ -192,7 +198,7 @@ func _ready() -> void:
 	_system = int(Engine.get_singleton("FmodAudioServer").call("get_studio"))
 	for name in ["Master.strings", "Master", "Music", "UI"]:
 		var bank := int(ClassDB.class_call_static("StudioSystem", "load_bank_file", _system,
-			BANK_ROOT + name + ".bank", 0))
+			_bank_root() + name + ".bank", 0))
 		if bank == 0:
 			_release_banks()
 			_fmod_init_failed("bank_load_failed:" + name)
@@ -252,14 +258,14 @@ func _prime_fmod_jni() -> int:
 ## FMOD 初始化失败的统一落点。
 ##
 ## Android 的 FMOD 运行库如果没有先跑过 `JNI_OnLoad`（见 `_prime_fmod_jni`），
-## `FMOD_Studio_System_Create` 会直接返回错误。真出现这种情况时不要静默：
-## 退到 portable 混音保证有声音，同时把原因写进 status / logcat。
+## `FMOD_Studio_System_Create` 会直接返回错误。Android 不退到 portable：包内不带
+## OGG 资源，失败必须写入 status / logcat 并保持 FMOD 后端失败态。
 func _fmod_init_failed(reason: String) -> void:
 	status = reason
 	if OS.has_feature("android"):
-		_start_native_backend("fmod_failed:" + reason)
-		push_warning("[audio] FMOD unavailable on Android (%s); fell back to portable mixes" % reason)
-		print("[audio] backend=native platform=%s reason=fmod_failed:%s" % [OS.get_name(), reason])
+		backend = "disabled"
+		push_error("[audio] FMOD unavailable on Android: %s" % reason)
+		print("[audio] backend=fmod platform=%s status=failed reason=%s" % [OS.get_name(), reason])
 		return
 	push_warning("[audio] " + reason)
 
@@ -297,8 +303,8 @@ static func native_backend_reason_for(platform: String, _is_web: bool, is_androi
 	#   - addons/0_fmod_bootstrap 在加载扩展前执行 JNI_OnLoad /
 	#     FMOD_Android_JNI_Init；
 	#   - org.fmod.* 由 tools/fmod_java_stub 提供（secondary dex 注入 APK）；
-	#   - prime() 先探测类、失败返回非 0，_ready() 见到非 0 就直接回退 portable。
-	# 想强制 portable：PK_AUDIO_FORCE_NATIVE=1 / --audio-native。
+	#   - prime() 先探测类、失败返回非 0，_ready() 见到非 0 就显式失败。
+	# Android 不接受 portable fallback；PK_AUDIO_FORCE_NATIVE 仅用于桌面/Web 调试。
 	if is_android or platform == "Android":
 		return ""
 	return ""
@@ -316,11 +322,15 @@ static func fmod_platform_supported(platform: String, is_web: bool) -> bool:
 
 
 func _native_backend_reason() -> String:
+	if OS.has_feature("android"):
+		return ""
 	return native_backend_reason_for(OS.get_name(), OS.has_feature("web"),
 		OS.has_feature("android"), _force_native_requested())
 
 
 func _force_native_requested() -> bool:
+	if OS.has_feature("android"):
+		return false
 	if _truthy(OS.get_environment(FORCE_NATIVE_ENV)):
 		return true
 	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
@@ -735,7 +745,7 @@ func _ensure_era_bank(era: int) -> bool:
 		return false
 	var name := ERA_BANK_NAMES[era]
 	var bank := int(ClassDB.class_call_static("StudioSystem", "load_bank_file", _system,
-		BANK_ROOT + name + ".bank", 0))
+		_bank_root() + name + ".bank", 0))
 	if bank == 0:
 		_era_bank_failed[era] = "load_failed"
 		push_warning("[audio] era bank load failed: %s" % name)
@@ -1383,3 +1393,4 @@ func _release_banks() -> void:
 func _exit_tree() -> void:
 	stop_music()
 	_release_banks()
+

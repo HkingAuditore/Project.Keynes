@@ -1,7 +1,7 @@
 extends DossierPage
 
 ## 贸易：上一结算日进出口对冲、贸易伙伴净额、逐物资进出口账簿。
-## 贸易是国家口径，单城市范围下仍显示全国数据并给出提示。
+## 贸易是国家口径，单城市范围下仍显示全国数据，不再另写一行口径声明。
 ## 已作为「市场」章的下半段（market_page.tscn 里的 TradeSection）嵌入，
 ## chapter_id 由宿主指定，本场景不自带。
 
@@ -18,7 +18,6 @@ const GOODS_COLUMNS := [
 @onready var _top: GridContainer = %Top
 @onready var _balance: DossierDivergingBar = %BalanceBar
 @onready var _balance_note: Label = %BalanceNote
-@onready var _scope_note: Label = %ScopeNote
 @onready var _partners: DossierBarList = %PartnerList
 @onready var _partner_empty: Label = %PartnerEmpty
 @onready var _content: Control = %Content
@@ -44,7 +43,6 @@ func refresh(vm: EconomyDossierViewModel, _filter = null) -> void:
 		_show_empty(_empty, _content, hint)
 		return
 	_show_empty(_empty, _content, "")
-	_scope_note.visible = vm.scope_cell >= 0
 	var imports := float(model.imports)
 	var exports := float(model.exports)
 	_balance.set_values("进口", imports, money(imports), "出口", exports, money(exports))

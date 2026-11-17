@@ -18,9 +18,9 @@ const SYNTHETIC_FEED_SCRIPT := preload(
 const THEME: Theme = preload("res://assets/themes/player_session_theme.tres")
 const DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
 const SANS_BOLD: Font = preload(
-	"res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
+	"res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.woff2")
 const SANS: Font = preload(
-	"res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
+	"res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2")
 
 const ARMY_COUNT := 6
 const SEQUENCE_CROP_SIZE := 720

@@ -323,6 +323,8 @@ static func append(catalog) -> void:
 				"石桥底下支起摊子",
 				"关老闷第一天就接了七只桶，箍到天黑，手上全是铁锈。铁砧社的人来看了一眼，回去把门关上了，门闩落得很响。",
 				[
+					# 逃荒来的箍桶匠从此在镇上落了脚：一户人，按 3 人（本人+家口）算。
+					Shared.population(3, "本地人口 +3 人（逃荒匠户落籍）"),
 					Shared.country_sector("manufacturing", 4, 540),
 					Shared.tools(-6, 540),
 					Shared.manufacturing(-2, 360),

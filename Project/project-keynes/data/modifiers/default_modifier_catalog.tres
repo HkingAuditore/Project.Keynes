@@ -8074,16 +8074,21 @@ script = ExtResource("4_term")
 stat_key = &"economy.profession.merchant.satisfaction_bp"
 value = -600
 
+[sub_resource type="Resource" id="TermRegimeEarlyClanCohesion6"]
+script = ExtResource("4_term")
+stat_key = &"economy.profession.unemployed.satisfaction_bp"
+value = 450
+
 [sub_resource type="Resource" id="DefRegimeEarlyClanCohesion"]
 script = ExtResource("3_definition")
 key = &"regime.early_clan.cohesion"
 display_name = "政体·氏族庇护"
-description = "早期氏族以血缘分配田土与庇护：佃农、农奴与小农的满意度大幅上升，商贾明显受损。"
+description = "早期氏族以血缘分配田土与庇护：佃农、农奴、小农与无业者的满意度大幅上升，商贾明显受损。"
 domain = 1
 stack_policy = 1
 max_stacks = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermRegimeEarlyClanCohesion0"), SubResource("TermRegimeEarlyClanCohesion1"), SubResource("TermRegimeEarlyClanCohesion2"), SubResource("TermRegimeEarlyClanCohesion3"), SubResource("TermRegimeEarlyClanCohesion4"), SubResource("TermRegimeEarlyClanCohesion5")])
+terms = Array[Resource]([SubResource("TermRegimeEarlyClanCohesion0"), SubResource("TermRegimeEarlyClanCohesion1"), SubResource("TermRegimeEarlyClanCohesion2"), SubResource("TermRegimeEarlyClanCohesion3"), SubResource("TermRegimeEarlyClanCohesion4"), SubResource("TermRegimeEarlyClanCohesion5"), SubResource("TermRegimeEarlyClanCohesion6")])
 
 [sub_resource type="Resource" id="TermRegimeLocalCouncilCohesion0"]
 script = ExtResource("4_term")

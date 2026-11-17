@@ -1412,8 +1412,8 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 [综合满意度运行时](./satisfaction-runtime.md)。周期开始时仍存活人口先就业和生产；默认 50%
 是消费后的饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death
 审计和结构回收路径。默认职业年出生/基础自然死亡率为 20.0%/7.5%；自然死亡率乘国家科技 stat
-`country.population.death_factor`（下限 1/3，科技叠满到 2.5%）。出生乘数在 composite 0.70→0.85 间
-从 1.0 升到 1.15，负载 0.9→1.0 渐退，石器开局净增长约 15.5%/年；
+`country.population.death_factor`（下限 1/3，科技叠满到 2.5%）。出生乘数在 composite 0.55→0.70 间
+从 1.0 升到 1.15，负载 0.9→1.0 渐退，石器开局净增长约 19–21%/年（旧参考 0.70 时为 15.5%）；
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。

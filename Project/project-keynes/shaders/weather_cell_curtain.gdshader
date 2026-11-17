@@ -46,13 +46,15 @@ const int FLAG_FOG_BREATHE = 16;
 varying vec4 v_custom;
 varying vec2 v_world;
 
+// [cell-curtain-quality 2026-11-17] 三档以前**全部** return 0（遗留的 debug pin），
+// 于是任何平台、任何画质都拿不到更密的雨幕/雪幕。这一档只改密度与行数
+// （drop_cols / drop_rows 的缩放，见 rain_curtain），不增加采样次数、不加循环，
+// 成本恒定 —— 因此允许编译期档给上限后按运行期 cell_curtain_quality 取值。
 int effective_cell_curtain_quality() {
 #if defined(PK_QUALITY_LOW)
-	return 0;
+	return min(cell_curtain_quality, 1);
 #elif defined(PK_QUALITY_MID)
-	return 0;
-#elif defined(PK_QUALITY_HIGH)
-	return 0;
+	return min(cell_curtain_quality, 2);
 #else
 	return cell_curtain_quality;
 #endif

@@ -526,10 +526,10 @@ void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &prof
                           12),
         1, 256);
     _satisfaction_birth_reference_q16 = std::clamp(
-        dict_num<int32_t>(profile, "satisfaction_birth_reference_q16", 45875),
+        dict_num<int32_t>(profile, "satisfaction_birth_reference_q16", 36045),
         1, static_cast<int32_t>(Q16_ONE));
     _satisfaction_birth_bonus_reference_q16 = std::clamp(
-        dict_num<int32_t>(profile, "satisfaction_birth_bonus_reference_q16", 55706),
+        dict_num<int32_t>(profile, "satisfaction_birth_bonus_reference_q16", 45875),
         _satisfaction_birth_reference_q16 + 1, static_cast<int32_t>(Q16_ONE));
     const std::vector<int32_t> thresholds = packed_i32(
         profile, "satisfaction_pressure_thresholds_q16");

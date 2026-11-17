@@ -32,6 +32,7 @@ EconomyFamilyExpeditionStore::EconomyFamilyExpeditionStore()
       speed(changes, {{8, 11}, "expedition.speed", EconomyFieldEncoding::I32, 4}),
       state(changes, {{8, 12}, "expedition.state", EconomyFieldEncoding::U8, 1}),
       population(changes, {{8, 13}, "expedition.population", EconomyFieldEncoding::I64, 8}),
+      anonymous(changes, {{8, 30}, "expedition.anonymous", EconomyFieldEncoding::I64, 8}),
       route_begin(changes, {{8, 14}, "expedition.route_begin", EconomyFieldEncoding::U32, 4}),
       route_count(changes, {{8, 15}, "expedition.route_count", EconomyFieldEncoding::U32, 4}),
       payload_begin(changes, {{8, 16}, "expedition.payload_begin", EconomyFieldEncoding::U32, 4}),
@@ -65,6 +66,7 @@ EconomyFamilyExpeditionStore &EconomyFamilyExpeditionStore::operator=(const Econ
     speed.assign(other.speed.values());
     state.assign(other.state.values());
     population.assign(other.population.values());
+    anonymous.assign(other.anonymous.values());
     route_begin.assign(other.route_begin.values());
     route_count.assign(other.route_count.values());
     payload_begin.assign(other.payload_begin.values());
@@ -101,6 +103,7 @@ EconomyFamilyExpeditionStore &EconomyFamilyExpeditionStore::operator=(EconomyFam
     speed.move_from(other.speed);
     state.move_from(other.state);
     population.move_from(other.population);
+    anonymous.move_from(other.anonymous);
     route_begin.move_from(other.route_begin);
     route_count.move_from(other.route_count);
     payload_begin.move_from(other.payload_begin);
@@ -165,6 +168,7 @@ void EconomyFamilyExpeditionStore::clear() {
     country_handle.clear(); family_handle.clear(); source_cell.clear();
     target_cell.clear(); departure_day.clear(); due_day.clear();
     route_cost.clear(); speed.clear(); state.clear(); population.clear();
+    anonymous.clear();
     route_begin.clear(); route_count.clear(); payload_begin.clear();
     payload_count.clear(); cargo_begin.clear(); cargo_count.clear();
     kit_building_begin.clear(); kit_building_count.clear();
@@ -195,6 +199,7 @@ int32_t EconomyFamilyExpeditionStore::allocate() {
         departure_day.push_back(-1); due_day.push_back(-1);
         route_cost.push_back(0); speed.push_back(COLONIZATION_SPEED);
         state.push_back(EXPEDITION_OUTBOUND); population.push_back(0);
+        anonymous.push_back(0);
         route_begin.push_back(0); route_count.push_back(0);
         payload_begin.push_back(0); payload_count.push_back(0);
         cargo_begin.push_back(0); cargo_count.push_back(0);
@@ -216,6 +221,7 @@ void EconomyFamilyExpeditionStore::release(int32_t index) {
     active.write_scalar(index, 0);
     country_handle.write_scalar(index, 0); family_handle.write_scalar(index, 0);
     population.write_scalar(index, 0); effect_transaction_id.write_scalar(index, 0);
+    anonymous.write_scalar(index, 0);
     free_indices.push_back(index);
     --active_count;
 }
@@ -307,6 +313,48 @@ int64_t NativeEconomyRuntime::family_dispatchable_population_in_cell(
         living_merchant_population(cell) - 1);
     return std::max<int64_t>(0, std::min(total - 1,
         civilians - std::max<int64_t>(0, merchants - merchant_capacity)));
+}
+
+int64_t NativeEconomyRuntime::anonymous_population_in_cell(int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count.get()) return 0;
+    int64_t total = 0, sat = 0;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        total = saturating_add(total, std::max<int64_t>(0,
+            population_store().population[slot] - family_people_on_slot(slot)),
+            sat);
+    });
+    return total;
+}
+
+int64_t NativeEconomyRuntime::colonization_party_anonymous(
+        uint64_t family_handle, int32_t cell, int64_t family_people) const {
+    if (family_people <= 0 || cell < 0 || cell >= _cell_count.get()) return 0;
+    const int64_t ratio_cap = family_people / COLONIZATION_ANONYMOUS_PER_FAMILY;
+    if (ratio_cap <= 0) return 0;
+    int32_t family = -1;
+    const bool have_family = families_store().valid_handle(family_handle, family);
+    // 随行平民必须是同一族裔：家族份额与招收都按族裔人口计算，跨族裔会把
+    // 目标地的份额分母混成两本账。
+    const int32_t ethnicity = have_family
+        ? families_store().origin_ethnicity[family] : -1;
+    int64_t available = 0, sat = 0;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        int64_t people = std::max<int64_t>(0,
+            population_store().population[slot] - family_people_on_slot(slot));
+        // 商人队列是本格市场的资产负债所有者：每个活着的商人队列至少留一人。
+        if (is_merchant_slot(slot)) people = std::max<int64_t>(0, people - 1);
+        if (people <= 0) return;
+        if (ethnicity >= 0) {
+            const int32_t signature = static_cast<int32_t>(
+                population_store().signature_id[slot]);
+            if (signature < 0 ||
+                signature >= static_cast<int32_t>(_signatures.size()) ||
+                _signatures[signature].ethnicity_id != ethnicity) return;
+        }
+        available = saturating_add(available, people, sat);
+    });
+    // 无家族人口是源地的雇工池与创业赞助池，最多带走一半；再套固定编制上限。
+    return std::max<int64_t>(0, std::min(ratio_cap, available / 2));
 }
 
 bool NativeEconomyRuntime::colonization_target_owner_allowed(
@@ -722,7 +770,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     });
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(candidates.size(), offset + limit);
-    PackedInt64Array families, maximums, tokens;
+    PackedInt64Array families, maximums, tokens, anonymous_maximums;
     PackedInt32Array sources, costs, days, surname_disambiguators;
     PackedStringArray surnames;
     for (int32_t i = offset; i < end; ++i) {
@@ -740,6 +788,9 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         }
         sources.push_back(candidates[i].source);
         maximums.push_back(candidates[i].maximum);
+        anonymous_maximums.push_back(colonization_party_anonymous(
+            candidates[i].family, candidates[i].source,
+            candidates[i].maximum));
         costs.push_back(candidates[i].cost); days.push_back(candidates[i].days);
         tokens.push_back(static_cast<int64_t>(candidates[i].token));
     }
@@ -751,6 +802,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     out["surnames"] = surnames;
     out["surname_disambiguators"] = surname_disambiguators;
     out["maximum_populations"] = maximums; out["route_costs"] = costs;
+    out["anonymous_maximums"] = anonymous_maximums;
     out["travel_days"] = days; out["quote_tokens"] = tokens;
     out["offset"] = offset; out["limit"] = limit;
     out["total"] = static_cast<int32_t>(candidates.size());
@@ -799,6 +851,9 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
         country_reads().country_handle_for_cell(quote.target_cell) == 0
         ? String("colonize") : String("relocate");
     out["maximum_population"] = quote.maximum_population;
+    out["anonymous_maximum"] = colonization_party_anonymous(
+        quote.family_handle, quote.source_cell, quote.maximum_population);
+    out["anonymous_per_family"] = COLONIZATION_ANONYMOUS_PER_FAMILY;
     out["route_cost"] = quote.route_cost; out["travel_days"] = quote.travel_days;
     out["route_cells"] = route; out["cumulative_costs"] = cumulative;
     std::vector<int64_t> profession_totals(_profession_ids.size(), 0);
@@ -1169,7 +1224,9 @@ int64_t NativeEconomyRuntime::family_expedition_displayed_population(
         family_expeditions_store().active[expedition] == 0)
         return 0;
     if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING)
-        return std::max<int64_t>(0, family_expeditions_store().population[expedition]);
+        return std::max<int64_t>(0,
+            family_expeditions_store().population[expedition] +
+            family_expeditions_store().anonymous[expedition]);
     return family_expedition_payload_people(expedition);
 }
 
@@ -1363,6 +1420,9 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
     const uint64_t family = family_expeditions_store().family_handle[expedition];
     const int64_t people = std::min(family_expeditions_store().population[expedition],
         family_dispatchable_population_in_cell(family, source));
+    // 随行平民跟随族人数一起缩编：家族减员时，固定编制下的随行额也要重算。
+    const int64_t anonymous_people = colonization_party_anonymous(
+        family, source, std::max<int64_t>(0, people));
     if (!colonization_target_owner_allowed(country, target)) {
         abort_preparing_family_expedition(expedition, day, 3,
             "TARGET_LOST_RETURNING");
@@ -1433,9 +1493,15 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         }
         error.clear();
     }
-    const bool population_reduced = people != family_expeditions_store().population[expedition];
+    const bool family_reduced = people != family_expeditions_store().population[expedition];
+    const bool anonymous_changed =
+        anonymous_people != family_expeditions_store().anonymous[expedition];
+    const bool population_reduced = family_reduced || anonymous_changed;
     if (population_reduced) {
-        family_expeditions_store().population.write_scalar(expedition, people, market_mutation_sink());
+        if (family_reduced)
+            family_expeditions_store().population.write_scalar(expedition, people, market_mutation_sink());
+        if (anonymous_changed)
+            family_expeditions_store().anonymous.write_scalar(expedition, anonymous_people, market_mutation_sink());
         note_family_expedition_audit_invalidation();
     }
     // Stock up day by day. A cell that never holds a whole kit at once can
@@ -1453,8 +1519,8 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         (family_expeditions_store().route_cost[expedition] +
          std::max(1, family_expeditions_store().speed[expedition]) - 1) /
         std::max(1, family_expeditions_store().speed[expedition]));
-    if (!plan_colonization_kit(source, target, people, travel, false, kit,
-            false, &reserve)) {
+    if (!plan_colonization_kit(source, target, people + anonymous_people, travel,
+            false, kit, false, &reserve)) {
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
     }
@@ -1483,7 +1549,7 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         push_family_expedition_due(expedition);
         return true;
     }
-    if (preparing_kit_launchable(kit, people))
+    if (preparing_kit_launchable(kit, people + anonymous_people))
         return launch_preparing_family_expedition(expedition, day, kit, error);
     store_preparing_missing_goods(expedition, kit);
     family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
@@ -1504,8 +1570,14 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
             quote.target_cell)) {
         error = "colonization_family_cell_capacity"; return false;
     }
+    // 固定编制：每两名族人随行一名无家族人口。人数在提交时一次算定，筹备期
+    // 只随可派人数缩编，避免开工包分母天天跳。
+    const int64_t family_people = std::max<int64_t>(1, cmd.i64_0);
+    const int64_t anonymous_people = colonization_party_anonymous(
+        quote.family_handle, quote.source_cell, family_people);
+    const int64_t party_people = family_people + anonymous_people;
     ColonizationKitPlan kit;
-    plan_colonization_kit(quote.source_cell, quote.target_cell, cmd.i64_0,
+    plan_colonization_kit(quote.source_cell, quote.target_cell, party_people,
         quote.travel_days, _epoch_active, kit);
     if (!_epoch_active && kit.dest_identity != quote.dest_kit_identity) {
         error = "colonization_kit_requote_required"; return false;
@@ -1522,7 +1594,8 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     family_expeditions_store().due_day.write_scalar(expedition, cmd.effective_day +
         std::max(1, quote.travel_days), market_mutation_sink());
     family_expeditions_store().state.write_scalar(expedition, EXPEDITION_OUTBOUND, market_mutation_sink());
-    family_expeditions_store().population.write_scalar(expedition, cmd.i64_0, market_mutation_sink());
+    family_expeditions_store().population.write_scalar(expedition, family_people, market_mutation_sink());
+    family_expeditions_store().anonymous.write_scalar(expedition, anonymous_people, market_mutation_sink());
     // Freeze the stocking denominator at expedition creation.  The live
     // market may re-plan substitutes later, but that must never make an
     // already funded party appear to lose progress.
@@ -1544,7 +1617,7 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         static_cast<uint64_t>(cmd.sequence));
     family_expeditions_store().idempotency_key.write_scalar(expedition, idempotency_key == 0 ? 1 : idempotency_key, market_mutation_sink());
     const bool needs_complete_kit = kit.place_buildings != 0 &&
-        cmd.i64_0 >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
+        party_people >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
     const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
     auto occupy_preparing = [&]() {
         family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
@@ -1583,7 +1656,7 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         if (error.empty()) error = "colonization_kit_materials_short";
         return false;
     }
-    if (!extract_family_expedition_payload(expedition, cmd.i64_0, error)) {
+    if (!extract_family_expedition_payload(expedition, family_people, error)) {
         std::string ignored;
         restore_family_expedition_cargo(expedition, quote.source_cell, false,
             ignored);
@@ -1652,6 +1725,8 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
                 return edge.family_handle == family_handle &&
                     edge.cohort_handle == payload.source_cohort_handle;
             });
+        // 随行平民从未离开家族边，回滚时也不能凭空造出一条成员边。
+        if (payload.anonymous != 0) continue;
         if (membership == family_memberships().end()) {
             family_memberships().push_back({family_handle,
                 payload.source_cohort_handle, payload.people, payload.cash_claim,
@@ -1683,6 +1758,7 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
         family_expedition_person_handles().resize(person_begin);
     family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
     family_expeditions_store().population.write_scalar(expedition, 0, market_mutation_sink());
+    family_expeditions_store().anonymous.write_scalar(expedition, 0, market_mutation_sink());
     _family_indices_dirty = true;
     _person_indices_dirty = true;
 }
@@ -1710,6 +1786,165 @@ void NativeEconomyRuntime::clip_cell_employment_and_defer_reconcile(
     // re-derived from the moved people, which only the structural reconcile
     // does. Inside an epoch the touched list reaches it before it is cleared.
     if (!_epoch_active) _deferred_population_reconcile_cells.push_back(cell);
+}
+
+bool NativeEconomyRuntime::extract_family_expedition_anonymous_lanes(
+        int32_t expedition, std::string &error) {
+    if (expedition < 0 || expedition >= static_cast<int32_t>(
+            family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0) {
+        error = "colonization_expedition_invalid";
+        return false;
+    }
+    const int64_t requested = std::max<int64_t>(0,
+        family_expeditions_store().anonymous[expedition]);
+    if (requested <= 0) return true;
+    const uint64_t family_handle =
+        family_expeditions_store().family_handle[expedition];
+    const int32_t source_cell = family_expeditions_store().source_cell[expedition];
+    int32_t family = -1;
+    if (!families_store().valid_handle(family_handle, family)) {
+        error = "colonization_family_invalid";
+        return false;
+    }
+    const int32_t ethnicity = families_store().origin_ethnicity[family];
+    struct Candidate { int32_t slot; int64_t people; uint64_t stable; };
+    std::vector<Candidate> candidates;
+    // 家族载荷抽离会同时扣减 cohort 人口与成员边，匿名余量不变，因此这里
+    // 看到的就是家族走后的无家族人口。
+    population_store().for_each_in_cell(source_cell, [&](int32_t slot) {
+        int64_t people = std::max<int64_t>(0,
+            population_store().population[slot] - family_people_on_slot(slot));
+        if (is_merchant_slot(slot)) people = std::max<int64_t>(0, people - 1);
+        if (people <= 0) return;
+        const int32_t signature = static_cast<int32_t>(
+            population_store().signature_id[slot]);
+        if (signature < 0 ||
+            signature >= static_cast<int32_t>(_signatures.size())) return;
+        // 军人不随行，与家族派遣同一规则。
+        if (profession_is_state_service_only(_signatures[signature].profession_id))
+            return;
+        if (ethnicity >= 0 && _signatures[signature].ethnicity_id != ethnicity)
+            return;
+        candidates.push_back({slot, people,
+            population_store().handle_for_slot(slot)});
+    });
+    std::sort(candidates.begin(), candidates.end(),
+        [](const Candidate &a, const Candidate &b) {
+            if (a.people != b.people) return a.people > b.people;
+            return a.stable < b.stable;
+        });
+    int64_t remaining = requested;
+    for (const Candidate &candidate : candidates) {
+        if (remaining <= 0) break;
+        const int64_t take = std::min(candidate.people, remaining);
+        if (take <= 0) continue;
+        const int32_t slot = candidate.slot;
+        const int64_t source_population = std::max<int64_t>(1,
+            population_store().population[slot]);
+        FamilyExpeditionPayload payload;
+        payload.anonymous = 1;
+        payload.source_cohort_handle = population_store().handle_for_slot(slot);
+        payload.signature = static_cast<int32_t>(
+            population_store().signature_id[slot]);
+        payload.people = take;
+        payload.funds = mul_div_sat(population_store().funds[slot], take,
+            source_population, _saturation_count);
+        payload.epoch_income = mul_div_sat(population_store().epoch_income[slot],
+            take, source_population, _saturation_count);
+        payload.epoch_expense = mul_div_sat(population_store().epoch_expense[slot],
+            take, source_population, _saturation_count);
+        payload.epoch_in_kind_income = mul_div_sat(
+            population_store().epoch_in_kind_income[slot], take,
+            source_population, _saturation_count);
+        payload.income_ema = mul_div_sat(population_store().income_ema[slot],
+            take, source_population, _saturation_count);
+        payload.epoch_tax_paid = mul_div_sat(population_store().epoch_tax_paid[slot],
+            take, source_population, _saturation_count);
+        payload.epoch_subsidy_received = mul_div_sat(
+            population_store().epoch_subsidy_received[slot], take,
+            source_population, _saturation_count);
+        payload.income_baseline_ema = mul_div_sat(
+            population_store().income_baseline_ema[slot], take,
+            source_population, _saturation_count);
+        payload.demography_residual = mul_div_sat(
+            population_store().demography_residual[slot], take,
+            source_population, _saturation_count);
+        // 无家族人口不持有现金权益：资金按人口比例随行，落在目标格的匿名余款里。
+        payload.cash_claim = 0;
+        const int64_t source_owner = std::clamp<int64_t>(
+            population_store().owner_employed[slot], 0, source_population);
+        payload.owner_employed = std::min<int64_t>(take, mul_div_sat(
+            source_owner, take, source_population, _saturation_count));
+        const int64_t source_employee = std::clamp<int64_t>(
+            population_store().employee_employed[slot], 0,
+            std::max<int64_t>(0, source_population - source_owner));
+        payload.employee_employed = std::min<int64_t>(
+            std::max<int64_t>(0, take - payload.owner_employed),
+            mul_div_sat(source_employee, take, source_population,
+                _saturation_count));
+        payload.needs_satisfaction = population_store().needs_satisfaction[slot];
+        payload.worst_need_id = population_store().worst_need_id[slot];
+        payload.composite_satisfaction =
+            population_store().composite_satisfaction[slot];
+        payload.worst_dimension_id = population_store().worst_dimension_id[slot];
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+            payload.satisfaction_dims[dim] = population_store().satisfaction_dims[
+                static_cast<size_t>(slot) * SAT_DIM_COUNT + dim];
+        payload.person_begin = static_cast<uint32_t>(
+            family_expedition_person_handles().size());
+        payload.person_count = 0;
+        audit_touch_population_lane(slot);
+        population_store().population.write_scalar(slot,
+            population_store().population[slot] - take, market_mutation_sink());
+        population_store().owner_employed.write_scalar(slot, saturating_sub(
+            population_store().owner_employed[slot], payload.owner_employed,
+            _saturation_count), market_mutation_sink());
+        population_store().employee_employed.write_scalar(slot, saturating_sub(
+            population_store().employee_employed[slot],
+            payload.employee_employed, _saturation_count), market_mutation_sink());
+        population_store().funds.write_scalar(slot,
+            population_store().funds[slot] - payload.funds,
+            market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot,
+            population_store().epoch_income[slot] - payload.epoch_income,
+            market_mutation_sink());
+        population_store().epoch_expense.write_scalar(slot,
+            population_store().epoch_expense[slot] - payload.epoch_expense,
+            market_mutation_sink());
+        population_store().epoch_in_kind_income.write_scalar(slot,
+            population_store().epoch_in_kind_income[slot] -
+                payload.epoch_in_kind_income, market_mutation_sink());
+        population_store().income_ema.write_scalar(slot,
+            population_store().income_ema[slot] - payload.income_ema,
+            market_mutation_sink());
+        population_store().epoch_tax_paid.write_scalar(slot,
+            population_store().epoch_tax_paid[slot] - payload.epoch_tax_paid,
+            market_mutation_sink());
+        population_store().epoch_subsidy_received.write_scalar(slot,
+            population_store().epoch_subsidy_received[slot] -
+                payload.epoch_subsidy_received, market_mutation_sink());
+        population_store().income_baseline_ema.write_scalar(slot,
+            population_store().income_baseline_ema[slot] -
+                payload.income_baseline_ema, market_mutation_sink());
+        population_store().demography_residual.write_scalar(slot,
+            population_store().demography_residual[slot] -
+                payload.demography_residual, market_mutation_sink());
+        shift_family_ledger_basis(slot, -payload.funds);
+        family_expedition_payloads().push_back(payload);
+        family_expeditions_store().payload_count.write_scalar(expedition,
+            static_cast<uint32_t>(family_expedition_payloads().size()) -
+                family_expeditions_store().payload_begin[expedition],
+            market_mutation_sink());
+        remaining -= take;
+    }
+    // 源池可能在提交与出发之间缩小（别的队伍先走了），按实际人数成行而不是
+    // 让整条命令失败：家族人数才是玩家的意图。
+    const int64_t actual = requested - remaining;
+    if (actual != family_expeditions_store().anonymous[expedition])
+        family_expeditions_store().anonymous.write_scalar(expedition, actual,
+            market_mutation_sink());
+    return true;
 }
 
 bool NativeEconomyRuntime::extract_family_expedition_payload(
@@ -1993,6 +2228,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         family_expeditions_store().payload_count.write_scalar(expedition, static_cast<uint32_t>(family_expedition_payloads().size()) -
             family_expeditions_store().payload_begin[expedition], market_mutation_sink());
     }
+    if (!extract_family_expedition_anonymous_lanes(expedition, error)) {
+        unwind_family_expedition_payload_extract(expedition);
+        return false;
+    }
     // The departing payload is a structural outflow, not a ledger delta.
     for (const auto &shift : basis_shifts)
         shift_family_ledger_basis(shift.first, -shift.second);
@@ -2026,7 +2265,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             return false;
         }
     }
-    family_expeditions_store().population.write_scalar(expedition, family_expedition_payload_people(expedition), market_mutation_sink());
+    family_expeditions_store().population.write_scalar(expedition,
+        family_expedition_payload_family_people(expedition), market_mutation_sink());
+    family_expeditions_store().anonymous.write_scalar(expedition,
+        family_expedition_anonymous_people(expedition), market_mutation_sink());
     _family_indices_dirty = true; _person_indices_dirty = true;
     _structural_touched_cells.push_back(source_cell);
     if (!repair_cell_merchant_and_rebuild(source_cell, error)) {
@@ -2129,10 +2371,14 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
         }
         const uint64_t cohort_handle = population_store().handle_for_slot(slot);
         shift_family_ledger_basis(slot, payload.funds);
-        family_memberships().push_back({family_handle, cohort_handle,
-            payload.people, payload.cash_claim, merged_population,
-            family_ledger_basis_for_slot(slot), incoming_owner_employed,
-            incoming_employee_employed});
+        // 随行平民落地后仍是本地无家族人口：登记成员边会凭空把移民变成族人，
+        // 也会污染目标地的家族份额。他们只能经招收/absorb 正常入籍。
+        if (payload.anonymous == 0) {
+            family_memberships().push_back({family_handle, cohort_handle,
+                payload.people, payload.cash_claim, merged_population,
+                family_ledger_basis_for_slot(slot), incoming_owner_employed,
+                incoming_employee_employed});
+        }
         if (static_cast<size_t>(payload.person_begin) + payload.person_count >
                 family_expedition_person_handles().size()) {
             error = "colonization_person_payload_range_invalid"; return false;
@@ -2538,7 +2784,7 @@ Dictionary NativeEconomyRuntime::family_expeditions(
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(rows.size(), offset + limit);
     PackedInt64Array handles, families, populations, departures, dues,
-        missing_identities;
+        missing_identities, anonymous_populations;
     PackedInt32Array sources, targets, costs, states;
     for (int32_t p = offset; p < end; ++p) {
         const int32_t i = rows[p];
@@ -2549,6 +2795,8 @@ Dictionary NativeEconomyRuntime::family_expeditions(
         sources.push_back(family_expeditions_store().source_cell[i]);
         targets.push_back(family_expeditions_store().target_cell[i]);
         populations.push_back(family_expedition_displayed_population(i));
+        anonymous_populations.push_back(
+            family_expeditions_store().anonymous[i]);
         departures.push_back(family_expeditions_store().departure_day[i]);
         dues.push_back(family_expeditions_store().due_day[i]);
         costs.push_back(family_expeditions_store().route_cost[i]);
@@ -2559,6 +2807,7 @@ Dictionary NativeEconomyRuntime::family_expeditions(
     out["ok"] = true; out["expedition_handles"] = handles;
     out["family_handles"] = families; out["source_cells"] = sources;
     out["target_cells"] = targets; out["populations"] = populations;
+    out["anonymous_populations"] = anonymous_populations;
     out["departure_days"] = departures; out["due_days"] = dues;
     out["route_costs"] = costs; out["states"] = states;
     out["kit_missing_stock_identities"] = missing_identities;
@@ -2592,6 +2841,8 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     out["source_cell"] = family_expeditions_store().source_cell[expedition];
     out["target_cell"] = family_expeditions_store().target_cell[expedition];
     out["population"] = family_expedition_displayed_population(expedition);
+    out["family_population"] = family_expeditions_store().population[expedition];
+    out["anonymous_population"] = family_expeditions_store().anonymous[expedition];
     out["departure_day"] = family_expeditions_store().departure_day[expedition];
     out["due_day"] = family_expeditions_store().due_day[expedition];
     out["route_cost"] = family_expeditions_store().route_cost[expedition];
@@ -2659,7 +2910,8 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         if (plan_colonization_kit(
                 family_expeditions_store().source_cell[expedition],
                 family_expeditions_store().target_cell[expedition],
-                family_expeditions_store().population[expedition], travel,
+                family_expeditions_store().population[expedition] +
+                    family_expeditions_store().anonymous[expedition], travel,
                 _epoch_active, kit, false, &reserve)) {
             if (bridge_required <= 0)
                 bridge_required = kit.bridge_required_units;
@@ -2693,7 +2945,8 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
             // Escrow totals pool every bridge group, so surplus food can hide
             // a clothing or tool shortfall the planner still reports.
             const bool launchable = preparing_kit_launchable(kit,
-                family_expeditions_store().population[expedition]);
+                family_expeditions_store().population[expedition] +
+                    family_expeditions_store().anonymous[expedition]);
             if (!launchable) {
                 bridge_missing = std::max(bridge_missing, std::min(
                     std::max<int64_t>(1, bridge_required),

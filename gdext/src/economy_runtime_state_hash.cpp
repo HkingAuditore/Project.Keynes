@@ -1209,6 +1209,7 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
         mix_u64(static_cast<uint32_t>(family_expeditions_store().speed[i]));
         mix_u64(family_expeditions_store().state[i]);
         mix_u64(static_cast<uint64_t>(family_expeditions_store().population[i]));
+        mix_u64(static_cast<uint64_t>(family_expeditions_store().anonymous[i]));
         mix_u64(static_cast<uint64_t>(
             family_expeditions_store().kit_bridge_required_units[i]));
         mix_u64(static_cast<uint64_t>(
@@ -1239,6 +1240,7 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
             mix_u64(static_cast<uint64_t>(payload.income_baseline_ema));
             mix_u64(static_cast<uint64_t>(payload.demography_residual));
             mix_u64(static_cast<uint64_t>(payload.cash_claim));
+            mix_u64(payload.anonymous);
             mix_u64(static_cast<uint64_t>(payload.owner_employed));
             mix_u64(static_cast<uint64_t>(payload.employee_employed));
             mix_u64(payload.needs_satisfaction); mix_u64(payload.worst_need_id);

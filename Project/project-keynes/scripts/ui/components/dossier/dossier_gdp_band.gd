@@ -31,8 +31,6 @@ var _days_counted := 0
 var _days_per_year := 365
 var _year_index := 0
 var _has_data := false
-var _backfilled := false
-var _partial := false
 var _reason := ""
 
 
@@ -57,8 +55,6 @@ func set_headline(data: Dictionary) -> void:
 	_days_counted = int(data.get("days_counted", 0))
 	_days_per_year = maxi(1, int(data.get("days_per_year", 365)))
 	_year_index = int(data.get("year_index", 0))
-	_backfilled = bool(data.get("backfilled", false))
-	_partial = bool(data.get("partial", false))
 	tooltip_text = _tooltip()
 	_start_animation()
 
@@ -192,12 +188,7 @@ func _tooltip() -> String:
 		lines.append("人均产值：%s" % _money(_per_capita))
 	if _days_counted > 0:
 		lines.append("日均产值：%s" % _money(_value / float(_days_counted)))
-	lines.append("逐格累加，各聚落之和即全国值。")
 	var start_day := _year_index * _days_per_year
 	lines.append("第 %d 年起算于第 %d 日，当前第 %d / %d 天。" % [
 		_year_index + 1, start_day, _days_counted, _days_per_year])
-	if _backfilled:
-		lines.append("年初至首次结算的那几天按当时速率折算，之后逐日累计。")
-	if _partial:
-		lines.append("聚落过多，逐格累计未覆盖全部村落；全国值取自全国汇总值。")
 	return "\n".join(lines)

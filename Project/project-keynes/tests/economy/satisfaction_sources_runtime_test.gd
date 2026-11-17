@@ -50,6 +50,7 @@ const REGIME_BALANCE_BP := {
 		"subsistence_farmer": 450,
 		"landlord": 300,
 		"merchant": -600,
+		"unemployed": 450,
 	},
 	"regime.local_council.cohesion": {
 		"merchant": 750,

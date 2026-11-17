@@ -544,7 +544,9 @@ func _chapter_emblem_for_tags(tags: Array) -> Texture2D:
 	atlas.atlas = ChapterEmblemsTexture
 	var col_idx := idx % 3
 	var row_idx := idx / 3
-	atlas.region = Rect2(float(col_idx) * 512.0, float(row_idx) * 512.0, 512.0, 512.0)
+	# 3x3 网格，格边长按纹理实际宽度换算——贴图降分辨率后写死 512 会切错位。
+	var cell := float(ChapterEmblemsTexture.get_width()) / 3.0
+	atlas.region = Rect2(float(col_idx) * cell, float(row_idx) * cell, cell, cell)
 	return atlas
 
 

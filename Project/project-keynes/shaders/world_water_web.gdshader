@@ -596,10 +596,16 @@ void fragment() {
 			col = shade_water_web(col, uv, ice_full);
 		}
 
-		// 已探索但当前不可见 → 去饱和 + 压暗。逐字复制 world_map:423-427。
+		// 已探索但当前不可见 → "褪色的记忆"（提亮+去饱和，向纸色靠）。
+		// 与 world_map 同公式：那边改了压暗为提亮之后，这里必须同步，
+		// 否则 web 的水面仍会出现近黑的脏环。
 		if (fog_gray_enabled) {
 			float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
-			col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))) * 0.82, gray_amt);
+			float mem_l = dot(col, vec3(0.299, 0.587, 0.114));
+			vec3 memory = vec3(mem_l) * vec3(1.02, 1.00, 0.96);
+			memory = mix(memory, vec3(0.88, 0.86, 0.82), 0.22);
+			memory = max(memory, vec3(mem_l) * 0.86 + 0.10);
+			col = mix(col, memory, gray_amt);
 		}
 
 		// apply_global_adjustments 的 web-min 收口：只有羊皮纸 tint 一项真正生效

@@ -67,6 +67,21 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 
 改建筑的产出、投入或效率须运行 `tests/building/building_resource_chain_test.gd`（同族单调与跨字段校验）。
 
+石器时代建材组必须通过 `construction_category_ids` 声明可替代材料；`primitive_lashing`
+当前由 `bast_fiber`（玩家显示名“亚麻杆”）与 `reed_bundle` 共同组成。开局规划器会从编译后的
+候选组选择本地可达材料，并将所选建材写入 bootstrap 库存；因此出生地没有亚麻杆时，不能把
+亚麻杆当作唯一硬依赖而阻塞开局。修改该类建材时运行
+`tests/ui/modern_economy_catalog_test.gd` 与 `tests/family/family_colonization_runtime_test.gd`，
+保留“仅有芦苇也能完成建材组”的替代回归。
+
+建筑详情的亏损成因属于显示域：数据只读建筑已提交快照，不能在 UI 重新计算经营结果或写回
+经济状态。`last_revenue` 是营业税后的实收，`last_operating_cost` 是原料、工资应付与维护成本；
+营业税从 `last_business_tax_paid` 单独读取。图表展示时须将正营业税加回收入并计入总支出，
+使「税前收入 − 含税支出」与已发布利润相等；成本堆叠必须保留原料、工资、维护和营业税分段。
+亏损卡只在当前经营期确有负利润时渲染，停产状态只显示停产原因，不用零流量伪造亏损。
+验证入口为 `tests/building/building_inspector_state_test.gd`、`tests/ui/ui_scene_structure_test.gd`，
+以及 `tests/qa/cell_inspector_screenshot_qa.gd` 的建筑详情截图。
+
 上游经济需求修复须运行
 `tests/building/building_runtime_test.gd -- --supply-chain-only`。
 派生计算实现归 `gdext/src/economy_runtime_derived_demand.cpp`，仍是同一个

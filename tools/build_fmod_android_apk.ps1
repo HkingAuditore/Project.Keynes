@@ -1,5 +1,12 @@
 # Build an installable Android APK that carries FMOD (extension + banks + Java stubs).
 #
+# Two build modes are supported, picked by export_presets.cfg:
+#   use_gradle_build=true  -> org.fmod is compiled from android/build/src/main/java,
+#                             native libs are compressed by AGP. No post-processing.
+#   use_gradle_build=false -> plain APK export, org.fmod arrives via a secondary dex
+#                             (inject_fmod_java_stub.py) and libs stay STORED; run
+#                             tools/android_repack_libs.py afterwards to compress them.
+#
 # Why a loop: export_presets.cfg is written by other processes too (another agent,
 # the editor). Setting the ABI and exporting once is a race; this script sets the
 # ABI, exports, checks the APK's lib/<abi>/ directory, and retries if the preset
@@ -30,6 +37,18 @@ try {
     $apkPath = Join-Path (Resolve-Path 'Build').Path ([IO.Path]::GetFileName($Out))
     $libDir = if ($Abi -eq 'arm64') { 'arm64-v8a' } else { 'x86_64' }
 
+    # Gradle build compiles org.fmod from the template's java source set instead of
+    # injecting a secondary dex afterwards. android/ is gitignored and the template
+    # can be reinstalled at any time, so sync the sources on every build.
+    $gradleBuild = (Select-String -Path 'Project\project-keynes\export_presets.cfg' `
+        -Pattern 'gradle_build/use_gradle_build=true' -Quiet)
+    if ($gradleBuild) {
+        $javaDir = Join-Path $projectPath 'android\build\src\main\java\org\fmod'
+        $null = New-Item -ItemType Directory -Force -Path $javaDir
+        Copy-Item 'tools\fmod_java_stub\org\fmod\*.java' $javaDir -Force
+        Write-Host '[build] gradle build: org.fmod java sources synced into template'
+    }
+
     for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
         Write-Host "[build] attempt $attempt/$Attempts : abi=$Abi"
         python tools/set_android_abi.py $Abi | ForEach-Object { Write-Host "  $_" }
@@ -51,7 +70,13 @@ try {
 
     if (-not (Test-Path $apkPath)) { throw 'no apk produced' }
 
-    if (-not $SkipStubs) {
+    # With use_gradle_build=true the APK already carries org.fmod in classes*.dex.
+    # Injecting again would add a second copy of the same classes, so probe first.
+    $stubState = python -c "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print('yes' if any(b'org/fmod' in z.read(n).lower() for n in z.namelist() if n.endswith('.dex')) else 'no')" $apkPath
+    if ($SkipStubs -or "$stubState".Trim() -eq 'yes') {
+        Write-Host "[build] dex already carries org.fmod; skipping secondary-dex injection"
+    }
+    else {
         $jni = [IO.Path]::ChangeExtension($apkPath, '.jni.apk')
         python tools/inject_fmod_java_stub.py $apkPath -o $jni 2>&1 |
             Select-String -Pattern 'injected|signed apk|failed' | ForEach-Object { Write-Host "  $($_.Line)" }

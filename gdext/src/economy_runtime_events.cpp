@@ -739,22 +739,31 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     // once per type rather than once per (group row, metric): the development
     // scan visits every building group each committed day and the subject scans
     // inside metric_matches_group() dominated that loop.
-    thread_local std::vector<uint32_t> type_metric_mask;
+    // The mask used to be a single uint32_t per building type. Once the authored
+    // catalog grew past 32 metrics the shift aliased (metric i shared bit i%32
+    // with metric i-32), and because ANY-subject metrics always match, they kept
+    // those aliased bits lit for every building: every SECTOR/BUILDING/GOOD
+    // filtered metric silently aggregated the whole country. Pack one bit per
+    // metric across as many 64-bit words as the catalog needs.
+    const size_t metric_words = (metric_count + 63U) / 64U;
+    thread_local std::vector<uint64_t> type_metric_mask;
     thread_local int32_t type_metric_mask_config = -1;
+    thread_local size_t type_metric_mask_words = 0;
     const int32_t metric_config_token = static_cast<int32_t>(metric_count) * 7919 +
         (development_columns_invalid ? 1 : 0);
     if (type_metric_mask_config != metric_config_token ||
-        type_metric_mask.size() != _building_types.size()) {
+        type_metric_mask_words != metric_words ||
+        type_metric_mask.size() != _building_types.size() * metric_words) {
         type_metric_mask_config = metric_config_token;
-        type_metric_mask.assign(_building_types.size(), 0u);
+        type_metric_mask_words = metric_words;
+        type_metric_mask.assign(_building_types.size() * metric_words, 0U);
         for (size_t type_id = 0; type_id < _building_types.size(); ++type_id) {
-            uint32_t mask = 0u;
+            const size_t base = type_id * metric_words;
             for (size_t metric = 0; metric < metric_count; ++metric) {
                 if (metric_matches_group(metric, static_cast<int32_t>(type_id),
                                          _building_types[type_id]))
-                    mask |= 1u << metric;
+                    type_metric_mask[base + metric / 64] |= uint64_t{1} << (metric % 64);
             }
-            type_metric_mask[type_id] = mask;
         }
     }
 
@@ -1058,12 +1067,21 @@ void NativeEconomyRuntime::publish_country_development_facts() {
         const BuildingType &type = _building_types[static_cast<size_t>(group.type_id)];
         const bool active = group.count > 0 && group.last_output > 0 &&
             group.last_capacity_q16 > 0;
-        const uint32_t metric_mask =
-            type_metric_mask[static_cast<size_t>(group.type_id)];
-        if (metric_mask == 0u) continue;
+        const uint64_t *metric_mask = metric_words > 0U
+            ? &type_metric_mask[static_cast<size_t>(group.type_id) * metric_words]
+            : nullptr;
+        if (metric_mask == nullptr) continue;
+        bool metric_mask_empty = true;
+        for (size_t word = 0; word < metric_words; ++word) {
+            if (metric_mask[word] != 0U) {
+                metric_mask_empty = false;
+                break;
+            }
+        }
+        if (metric_mask_empty) continue;
         int64_t employment = -1;
         for (size_t metric = 0; metric < metric_count; ++metric) {
-            if ((metric_mask & (1u << metric)) == 0u) continue;
+            if ((metric_mask[metric / 64] & (uint64_t{1} << (metric % 64))) == 0U) continue;
             const int32_t metric_type = _development_metric_types[metric];
             if (metric_type == METRIC_BUILDING_INSTALLED) {
                 metric_at(country, metric).value = saturating_add(

@@ -3,6 +3,19 @@ render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
+// [fog-runtime-quality 2026-11-17] 编译期 tier 只裁特征，运行期画质归玩家设置。
+//
+// PK_WEB_FOG_RUNTIME 是历史名字（web 先落地），语义其实是"忽略编译期档，把
+// fog_quality 夹到 2"。移动端必须共用它：安卓的编译期档被 player_game 钉死在
+// MOBILE_QUALITY_LOW（性能决定，换档 = 换 program），而迷雾的
+// `MOBILE_QUALITY_LOW → return 0` 会让设置里的"最高画质"变成空操作 —— q0 只有一层
+// 灰蓝底色加起伏，没有分层云海 / TOD 光照 / 自阴影，远看就是一块灰板。
+//
+// web 的旧宏保留为别名，两份程序逐字节不变；新代码一律用 PK_FOG_RUNTIME。
+#if defined(PK_WEB_FOG_RUNTIME) && !defined(PK_FOG_RUNTIME)
+#define PK_FOG_RUNTIME
+#endif
+
 // ════════════════════════════════════════════════════════════════════════
 // fog_of_war.gdshader — 三态视野迷雾（体积云）
 //
@@ -158,13 +171,23 @@ uniform float night_darkness : hint_range(0.2, 1.0) = 0.60;
 varying vec2 v_world;
 
 int effective_fog_quality() {
-#if defined(PK_WEB_FOG_RUNTIME)
+#if defined(PK_FOG_RUNTIME)
+	// 运行期档权威：编译期 tier 只决定编进来的特征集。
+	//
+	// [mobile-high-full 2026-11-17] HIGH 档不再是"移动平台精简档"（见
+	// shader_quality.gdshaderinc 里为什么 HIGH 不再定义 PK_MOBILE_ANY），
+	// 所以它和桌面一样可以吃到 q3（第二层域扭曲 + 球谐天光）。
+	// LOW/MID 仍夹到 2：它们的每像素分支预算就是按 q2 定的。
+#if defined(MOBILE_QUALITY_HIGH)
+	return clamp(fog_quality, 0, 3);
+#else
 	return min(fog_quality, 2);
+#endif
 #elif defined(MOBILE_QUALITY_LOW)
 	return 0;
-#elif defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_FOG_RUNTIME)
+#elif defined(MOBILE_QUALITY_MID)
 	return min(fog_quality, 1);
-#elif defined(MOBILE_QUALITY_HIGH) && !defined(PK_WEB_FOG_RUNTIME)
+#elif defined(MOBILE_QUALITY_HIGH)
 	return min(fog_quality, 2);
 #else
 	return clamp(fog_quality, 0, 3);
@@ -250,11 +273,11 @@ float fog_edge_secondary_weight(vec2 uv, int q) {
 	float edge_distance = visual_sample_edge_distance(fog_wrap_uv(uv)).r;
 	float one_screen_pixel = max(fwidth(edge_distance), 1.0 / 255.0);
 	float quality_scale;
-// Web 的编译期档被 player_game 钉死在 LOW（换档 = 换 program = 换驱动缓存，见
-// player_game._shader_quality_define_from_setting），但运行时画质由 PK_WEB_FOG_RUNTIME
-// 放开到 q2。所以 web 上必须按**运行时 q**取边宽，而不是按 MOBILE_QUALITY_LOW 的 0.58：
+// Web / mobile 的编译期档被 player_game 钉死在 LOW（换档 = 换 program = 换驱动缓存，见
+// player_game._shader_quality_define_from_setting），但运行时画质由 PK_FOG_RUNTIME
+// 放开到 q2。所以这两条路径上必须按**运行时 q**取边宽，而不是按 MOBILE_QUALITY_LOW 的 0.58：
 // 否则高画质的迷雾边界只有中档的 58%，既细又毛糙。
-#if defined(PK_WEB_FOG_RUNTIME)
+#if defined(PK_FOG_RUNTIME)
 	quality_scale = (q <= 0) ? 0.68 : ((q == 1) ? 0.82 : ((q == 2) ? 0.92 : 1.0));
 #elif defined(MOBILE_QUALITY_LOW)
 	quality_scale = 0.58;
@@ -570,12 +593,13 @@ void fragment() {
 		// cid < 0 是极地外侧的烘焙 padding：不可交互，按未探索处理，顺带把
 		// 人造边界藏进云里。
 		float k = 0.0;
-#if defined(PK_MOBILE_ANY) && !defined(PK_WEB_FOG_RUNTIME)
+#if defined(PK_MOBILE_ANY) && !defined(PK_FOG_RUNTIME)
 		// Mobile DitherUV selects one visual cell before the LUT lookup. This keeps
 		// the old distant transition character without paying for two LUT samples.
-		// Web 不走这条路径：web 的编译期档同样是 MOBILE_QUALITY_LOW，但运行时可以到
-		// q2，用 Bayer 选格会在迷雾边缘留下 4–8px 的棋盘 dither（高画质下非常显眼）。
-		// web 直接走下面的平滑双采样 mix，代价只是边缘像素多一次 LUT 采样。
+		// 运行期档（web / 移动端高画质）不走这条路径：编译期档同样是 MOBILE_QUALITY_LOW，
+		// 但运行时可以到 q2，用 Bayer 选格会在迷雾边缘留下 4–8px 的棋盘 dither
+		// （高画质下非常显眼）。运行期档直接走下面的平滑双采样 mix，代价只是边缘像素
+		// 多一次 LUT 采样。
 		int visual_cid = cid;
 		if (visual_cid >= 0) {
 			float edge_w = fog_edge_secondary_weight(uv, q);

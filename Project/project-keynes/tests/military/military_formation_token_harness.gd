@@ -11,8 +11,8 @@ const TOKEN_SCRIPT = preload("res://scripts/rendering/military_army_token_layer.
 const FEED_SCRIPT = preload("res://scripts/rendering/military_render_feed.gd")
 const THEME: Theme = preload("res://assets/themes/player_session_theme.tres")
 const DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
-const SANS_BOLD: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
-const SANS: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
+const SANS_BOLD: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.woff2")
+const SANS: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2")
 
 const MILITARY_CATALOG_PATH := "res://data/military/military_catalog.json"
 const CAPTURE_DIR := "res://tmp/military_formation_token_harness"

@@ -21,7 +21,15 @@ enum Kind {
 	# ── 家族维度（2026-11）：只作用于本格最大族；无族/无 key 时静默模拟 ──
 	GRANT_FAMILY_TRAIT = 14,
 	REMOVE_FAMILY_TRAIT = 15,
+	# ── 人口（2026-11）：守恒量，走 EconomyFacade.add_population；负数表示迁出 ──
+	# 「收留游民」「编入户籍」这类文案必须有这一条，否则字面在收人、数值上空转。
+	ADD_POPULATION = 16,
 }
+
+## clamp_safe() 的合法上限。**新增 Kind 必须同步这里**，以及
+## narrative_ai_validator._parse_allowed_kind() 的白名单——
+## 只把新值加进 enum 而漏掉这两处，效果会被静默夹回 CITY_MODIFIER。
+const KIND_LAST: int = Kind.ADD_POPULATION
 
 const GOOD_LABELS: Dictionary = {
 	"grain": "混合谷物",
@@ -108,10 +116,16 @@ const TAG_LABELS: Dictionary = {
 @export var falloff: int = 0
 
 func clamp_safe() -> NarrativeEffectSpec:
-	kind = clampi(kind, Kind.CITY_MODIFIER, Kind.REMOVE_FAMILY_TRAIT)
+	# 越界值不能夹到「最后一个枚举」上：旧版本读到新版本的存档时，
+	# 未知 kind 会被夹成 REMOVE_FAMILY_TRAIT —— 那是会真删家族特质的破坏性效果。
+	# 未知一律退化成无害的本地修正。
+	if kind < Kind.CITY_MODIFIER or kind > KIND_LAST:
+		kind = Kind.CITY_MODIFIER
 	magnitude_q16 = clampi(magnitude_q16, 655, 131072)
 	duration_days = clampi(duration_days, 1, 1825)
-	ratio_bp = clampi(ratio_bp, 0, 5000)
+	# 只夹幅度，不夹符号：人口允许负数（迁出）。钱与物资的读取方一律按
+	# `ratio_bp > 0` 判断，负数在那里等价于「没设置」，所以放开符号是安全的。
+	ratio_bp = clampi(ratio_bp, -5000, 5000)
 	radius_cells = clampi(radius_cells, 0, 2)
 	falloff = clampi(falloff, 0, 1)
 	if kind != Kind.CITY_MODIFIER:
@@ -119,6 +133,11 @@ func clamp_safe() -> NarrativeEffectSpec:
 		radius_cells = 0
 		falloff = 0
 	match kind:
+		Kind.ADD_POPULATION:
+			# 人口是守恒量，允许负数（迁出/流散）。绝对值封 ±5000 人，
+			# 比例封 ±50%——一次事件搬空半座城已经是叙事极限。
+			int_value = clampi(int_value, -5000, 5000)
+			ratio_bp = clampi(ratio_bp, -5000, 5000)
 		Kind.ADD_EVENT_WEIGHT_BIAS:
 			int_value = clampi(int_value, -500, 1000)
 		Kind.TREASURY_CASH_TO_COHORT, Kind.COHORT_CASH_TO_TREASURY:
@@ -198,8 +217,20 @@ func describe() -> String:
 			return "本地最大族获特质「%s」，永久" % _friendly_key_name(target_key)
 		Kind.REMOVE_FAMILY_TRAIT:
 			return "本地最大族失去特质「%s」" % _friendly_key_name(target_key)
+		Kind.ADD_POPULATION:
+			return describe_population_delta(int_value, ratio_bp)
 		_:
 			return "无效果"
+
+
+## 人口标签的唯一写法。-N 写「-N 人」，不要写「迁出 N 人」——卡面统一是
+## 「对象 + 有符号幅度」，同一行里既有迁入也有迁出时读者才不用切换语感。
+static func describe_population_delta(people: int, bp: int) -> String:
+	if people != 0:
+		return "本地人口 %s%d 人" % ["+" if people > 0 else "-", absi(people)]
+	if bp != 0:
+		return "本地人口 %s%.1f%%" % ["+" if bp > 0 else "-", absf(float(bp) / 100.0)]
+	return "本地人口不变"
 
 static func _format_modifier_change(stat_label: String, mag_q16: int, days: int,
 		key: String = "") -> String:

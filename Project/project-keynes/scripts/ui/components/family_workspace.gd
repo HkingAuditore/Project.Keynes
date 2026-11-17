@@ -574,11 +574,6 @@ func _add_overview_preferences_card(host: Control, items: Array) -> void:
 	bar_list.row_selected.connect(func(_row_id: Variant) -> void:
 		_select_page("preferences", true))
 	body.add_child(bar_list)
-	var foot := FamilyLabelScene.instantiate() as Label
-	foot.name = "PrefScaleNote"
-	foot.text = "中线为 100% 常规基线 · 铜绿为偏爱，暗红为抑制"
-	foot.theme_type_variation = &"PKDossierCaption"
-	body.add_child(foot)
 
 
 func _build_preference_bar_rows(items: Array) -> Array:

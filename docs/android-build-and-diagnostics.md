@@ -207,7 +207,69 @@ dps=10.09 speed=10x cap=1.26d/f cost=32ms fps=23.5
 
 即 ×10 真的跑到 ~10 天/秒，代价是 fps 从 ~30 掉到 ~18-24（玩家按倍速时的预期取舍）。
 
-### 2.11.1 移动端编译期档固定 LOW（2026-11-02 落地）
+### 2.10.1 移动端默认关掉的两个重型视觉效果（2026-11-17）
+
+真机（Adreno 830 / 2670×1200 / 高画质）跑通后仍"卡"，作者确认可以接受砍掉这两项：
+
+| 效果 | 关掉后失去 | 省下 |
+| --- | --- | --- |
+| 云影 `CloudShadowField` | 云在地面上的移动阴影 | 一个每帧渲染的 SubViewport + 地形/水面/建筑/植被**每像素一次**阴影采样 |
+| Flowmap | 水面缓慢的流向蠕动、海洋环流漂移 | 每水像素 1~2 次纹理采样 + 一套 flow 解码 + 环流图采样 |
+
+实现（`DCFeatureFlags.cloud_shadow_enabled()` / `water_flowmap_enabled()`）：
+
+- 云影：`_configure_cloud_shadow_field()` 在移动端直接 `clear_inputs()`（把 SubViewport 设为
+  `UPDATE_DISABLED`、隐藏合成 quad），再推一次材质参数把 `cloud_shadow_field_bound` 置 false，
+  于是所有 shader 的 `cloud_shadow_direct_visibility()` 走无云影短路。
+- Flowmap：`has_flow_tex` / `ocean_current_flow_tex_bound` 在两个材质推送点统一按开关置 false/null。
+  波浪、深浅、岸线、SSS、阳光闪点**不受影响**。
+
+两者都是「移动端默认关、桌面/Web 默认开」，但**可在同一份 APK 里逐项覆盖**（省一次 20 分钟的打包）：
+
+```ini
+# user://pk_debug.cfg
+[render]
+cloud_shadow=0      # 0/1（也接受 off/on、false/true）
+flowmap=0
+```
+
+### 2.11.2 「高画质」不再是移动平台精简档（2026-11-17 反转 2.11.1 的结论）
+
+真机反馈：「各种光照都极其丑陋，战争迷雾的细节也全没了」。查下来根因不是参数，
+是**档位语义错了**：`PK_MOBILE_ANY` 原来是"这台机器是移动平台"的判据，被当成
+"该少画点"用，全工程 20 多处 `#if !defined(PK_MOBILE_ANY)` 因此**在任何移动档位都
+不编译** —— 包括玩家主动选"高"的时候。旧 HIGH 只是"每像素分支多一点"，光照细节
+照样没有。
+
+具体被砍掉的东西（`!PK_MOBILE_ANY` / `PK_QUALITY_LOW` 段）：
+
+| 层 | 被砍内容 |
+| --- | --- |
+| 水面 `water_pipeline` / `water.gdshaderinc` | 波浪方向 B、细节法线、macro 明暗、次表面散射(SSS)、阳光闪点(sparkle)、海藻 / 海冰 / 礁石、泛光带、极端天气地面效果、zone noise；`PK_QUALITY_LOW` 还有 `waves_on = false`（波浪完全不动） |
+| 陆地 `land_pipeline` / `terrain_surface_detail` / `world_map` | 河流与运河的流动、河面法线（直接置 `(0,0,1)` 平水面）、像素噪声退化成中性灰、水面 cell id 混合、覆盖度与群系过渡细节 |
+| 植被 `vegetation_impostor` | 地平线遮蔽（＝山体阴影）、生态态采样、自阴影；`far` 阈值 3→6 px |
+| 天气 `weather_overlay` | 4/3/2 octave fbm + 域扭曲退化成单层低频、云层遮挡、卷云层 |
+| 迷雾 `fog_of_war` | 只有 DitherUV 一条（`PK_FOG_RUNTIME` 已经绕开），但 q 被夹到 2，吃不到 q3 的第二层域扭曲 + 球谐天光 |
+
+改法：
+
+1. `shader_quality.gdshaderinc`：**HIGH 档不再定义 `PK_MOBILE_ANY`**。于是上面那一整
+   列光照路径在高档全部编进来，等价于桌面路径；LOW / MID 逐字节不变。
+2. `player_game._shader_quality_define_from_setting()` 恢复「设置 → 编译档」映射：
+   `auto/low → LOW`、`medium → MID`、`high → HIGH`。默认 auto 仍落在 LOW，
+   2.11.1 的帧率默认值不受影响；中/高是玩家显式选择。
+3. `fog_of_war`：HIGH 档 `effective_fog_quality()` 放开到 q3（LOW/MID 仍 ≤2），
+   层侧的映射与 cap 同步（`_fog_quality_for` / `effective_quality`）。
+4. 天气云单独留在廉价噪声：`PK_MOBILE_HIGH_SLIM` 时仍定义 `PK_WEATHER_CHEAP_NOISE`，
+   除非前置 `PK_WEATHER_FULL_CLOUDS`。它是最贵的一块，且与"光照丑"无关。
+
+⚠ **2.11.1 的 fps 表对 HIGH 已失效**：现在的 HIGH 比旧 HIGH（26.5 fps）更重，
+必定更低。中档（MID）是"有编译期光照裁剪 + 运行期全开"的折中。
+二分：`pk_debug.cfg [render] visual_quality=0|1|2` 量运行期档，
+`[render] mobile_shader_tier=MOBILE_QUALITY_LOW|MID|HIGH`（或环境变量
+`PK_MOBILE_SHADER_TIER`）量编译期档；桌面上设后者还能直接复现移动程序。
+
+### 2.11.1 移动端编译期档固定 LOW（2026-11-02 落地，HIGH 部分见 2.11.2）
 
 真机同图同视角（小米 15 / 2670×1200 / 2400 格 / ×1）逐项二分后的结论：
 
@@ -228,6 +290,73 @@ dps=10.09 speed=10x cap=1.26d/f cost=32ms fps=23.5
 `MOBILE_QUALITY_LOW`（Web 早就是这个策略），画质由 `visual_quality`（0/1/2）决定。
 实测把设置切到"高"后：**26.5 fps → 60 fps**，单日成本 28~36ms → 7~10ms。
 逃生口：`pk_debug.cfg` 的 `[render] mobile_shader_tier` 或环境变量 `PK_MOBILE_SHADER_TIER`。
+
+### 2.12 「最高画质」曾经对迷雾/点缀完全无效（2026-11-17 修复）
+
+真机反馈：设置在「高」时画面依旧很差 —— 未探索区是一片均匀灰板（没有分层云海、没有
+TOD 光照），地面点缀变成一块块纯色方块。
+
+根因不是画质没调，而是**两处把编译期 tier 当成了运行期画质**：
+
+| 位置 | 症状 |
+| --- | --- |
+| `fog_of_war.gdshader:effective_fog_quality()` | `MOBILE_QUALITY_LOW → return 0`，而移动端编译期档恒为 LOW ⇒ 迷雾永远是 q0（纯色 + 起伏） |
+| `shrub/scatter.gd:_active_quality_tier()` / `resource_visual_layer.gd:quality()` | 移动端取 `_mobile_quality_tier`（=0）而不是玩家的 `visual_quality` ⇒ 植被/道具的实例预算、LOD 密度、form 档全按 quality0，`resource_impostor` 的 `visual_quality` uniform 恒 0 ⇒ `detailed_view` 永远 false |
+
+Web 侧早在 2026-10-31 就按「编译档保持 LOW、运行期档归玩家」改过了
+（见 `shrub/scatter.gd` 注释与 `PK_WEB_FOG_RUNTIME`），移动端当时漏了。
+
+修复（都不动 `_shader_quality_define_from_setting` 的 LOW pin，那才是 26 fps 的成因）：
+
+1. 迷雾：新增 `PK_FOG_RUNTIME`（`PK_WEB_FOG_RUNTIME` 保留为别名，web 程序逐字节不变），
+   移动端 `_load_shader()` 追加该宏 ⇒ 运行期档权威，`fog_quality` 夹到 2。
+   同时 `effective_quality()` / `supports_terrain_early_out()` 与 shader 同口径
+   （q>0 必须关掉主地形早退，否则早退常量色会在半透明云缘下露死斑）。
+   移动端档位映射改成 `0/1/2 → q0/q1/q2`（中档吃到专为移动端准备的 q1 分层云海）。
+2. 点缀/植被：`_active_quality_tier()` 与 `resource_visual_layer.quality()` 改为跟随
+   玩家的 `visual_quality`；`_mobile_tier` 只保留「受限平台」语义（分块驻留、实例预算分支）。
+3. 雨幕/雪幕：`weather_cell_curtain.gdshader:effective_cell_curtain_quality()` 三档
+   原本**全部** return 0（遗留 debug pin），改为按档给上限；该参数只改雨滴密度，
+   不加采样、不加循环，成本恒定。
+
+⚠ **2.11.1 那张 fps 表要重测**：`MOBILE_QUALITY_LOW + visual_quality=1/2` 的 60.7 / 56~61
+是在上面两处「设置无效」的前提下量的，即迷雾始终 q0、点缀始终 LOD0。修好之后同一档
+会真的画出 q2 云海与近景点缀，帧率必然下降。
+二分手段：量运行期档用 `pk_debug.cfg [render] visual_quality`，量编译期分支用
+`tier_override`（后者不再影响画面档位）。桌面上设 `PK_MOBILE_SHADER_TIER` 可直接
+复现移动端程序（`DCFeatureFlags.uses_shader_quality_tier()` 会因此返回 true）。
+
+### 2.12.1 点缀变成纯色方块的真因：style_lut 落在纹素边界上
+
+上面那条只解释「设置无效」。真机上点缀**每个都是过曝青色硬边方块**，是另一个 bug，
+在 `resource_impostor.gdshader` 的 vertex()：
+
+`style_lut` 是一张 **4 列 × 64 行的 RGBAF 表**，列间没有 padding：
+
+| 列 | 内容 |
+| --- | --- |
+| 0 | `(specular, material_cell+1, art_bound, metallic)` |
+| 1 | 颜色 |
+| 2 | 动物/鱼位图 `(0, fauna_layer+1, count, 0)` |
+| 3 | `(form, family, sub_style, metallic)` |
+
+旧代码用 `texture(style_lut, vec2(0.25, ...))` / `vec2(0.75, ...)` 取第 1、3 列 ——
+**这两个 u 正好落在纹素边界上**（`0.25*4 = 1.0`，`0.75*4 = 3.0`）。边界归谁是驱动实现
+细节：有的按 `round(u*W - 0.5)` 取整，正好命中 .5 时向偶数侧收敛 ⇒ 取到**左列**。
+
+安卓真机上就错位一格，两项叠加：
+
+- 颜色读到第 0 列 ⇒ albedo = `(0.2~0.3, ≥1, 1)`，乘日照后 R 停在 sRGB≈0.45、G/B 顶满
+  = **过曝青色**（真机实测 `#72F6FC`，与这个形状逐通道吻合）。
+- 元数据读到第 2 列 ⇒ `form=0`、`family=0..N` ⇒ 形体退化成 `rt_crops` 的有机斑块，
+  铺满整个 quad ⇒ **看起来就是纯色矩形片**。
+
+桌面没事，因为 exact boundary 在 D3D 上落到上侧纹素。
+
+修复：四个采样点全部改 `texelFetch(style_lut, ivec2(col, row), 0)`（整数格寻址，
+不经过采样器，不受 filter / wrap / 半纹素约定影响），行列都 clamp 防越界。
+⚠ 以后往这张表加列/改列序，务必用 `texelFetch` 或 `(col+0.5)/width`，不要写 `0.25` 这类
+边界值。
 
 ### 2.13 安卓真机渲染线程崩溃（VkThread 栈溢出）
 

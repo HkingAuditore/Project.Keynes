@@ -14,6 +14,19 @@ extends RefCounted
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
+
+## 这几类信号的运行期发布者是一张显式规则表，因此可以静态核对。地图派生的
+## bio./landform./resource. 不在其列：它们由地形与资源生成 pass 按格写入。
+const PUBLISHED_SIGNAL_FAMILIES := ["weather.", "contact.", "breakthrough.", "development."]
+
+## 这三个资源档案都是 temp_lo=0 / temp_hi=1 / init_min_coverage=0.6，任何陆地
+## 国家任意气候都有六成格子命中。它们只能表达「脚下有地」，不能当作证据。
+const ZERO_THRESHOLD_LAND_SIGNALS := [
+	"resource.arable_land", "resource.fertile_soil", "resource.pasture",
+]
 
 const SEVERITY_ERROR := "error"
 const SEVERITY_WARNING := "warning"
@@ -675,7 +688,100 @@ static func validate(payload: Dictionary) -> Dictionary:
 				"节点 %s 是终点但未填写 terminal_reason。" % id, id, "terminal_reason"))
 
 	stats.alternative_edges = _count_route_technology_atoms(nodes)
+	var signal_findings := _condition_signal_findings(nodes)
+	findings.append_array(signal_findings)
 	return _result(findings, stats)
+
+
+## 条件里引用的天气 / 接触 / 突破 / 发展信号必须真的有人发。历史上
+## weather.heatwave、weather.freeze_thaw、weather.prolonged_wet_season 与
+## contact.medicinal_herb 都在词典里，却没有任何发布者，于是引用它们的发现
+## 条件永远不成立，而 UI 只把那一行显示成「阻塞：… 0/1」。
+static func _condition_signal_findings(nodes: Array) -> Array[Dictionary]:
+	var findings: Array[Dictionary] = []
+	var published := {}
+	for row in TriggerCatalogScript.WEATHER_RULES:
+		published[String(row[2])] = true
+	for row in TriggerCatalogScript.CONTACT_RULES:
+		published[String(row[2])] = true
+	for row in TriggerCatalogScript.BREAKTHROUGH_RULES:
+		published[String(row[2])] = true
+	for definition in DevelopmentAchievementCatalogScript.definitions():
+		published[String(definition.signal_id)] = true
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		var id := String(node.get("id", ""))
+		var referenced: Array[String] = []
+		_collect_condition_signals(node.get("reveal_condition", {}), referenced)
+		for route_value in node.get("research_routes", []):
+			_collect_condition_signals((route_value as Dictionary).get("condition", {}),
+				referenced)
+		for signal_id in referenced:
+			var watched := false
+			for prefix in PUBLISHED_SIGNAL_FAMILIES:
+				if signal_id.begins_with(String(prefix)):
+					watched = true
+					break
+			if not watched or published.has(signal_id):
+				continue
+			findings.append(finding("technology_condition_signal_never_published:%s" % signal_id,
+				"节点 %s 的条件引用了没有运行期发布者的信号 %s。" % [id, signal_id],
+				id, "reveal_condition"))
+		if bool(node.get("is_starting", false)) \
+				or String(node.get("network_role", "")) == "backbone":
+			continue
+		if _reveal_is_zero_threshold_land(node.get("reveal_condition", {})):
+			findings.append(finding("technology_reveal_condition_tautology:%s" % id,
+				"节点 %s 的发现条件化简后恒真：只有「脚下有地」，不构成观察证据。" % id,
+				id, "reveal_condition", SEVERITY_WARNING))
+	return findings
+
+
+static func _collect_condition_signals(condition, out: Array[String]) -> void:
+	if not condition is Dictionary:
+		return
+	var spec: Dictionary = condition
+	if spec.has("children"):
+		for child in spec.get("children", []):
+			_collect_condition_signals(child, out)
+		return
+	var kind := int(spec.get("kind", -1))
+	if kind != ResearchPredicateScript.Kind.SIGNAL_PRESENT \
+			and kind != ResearchPredicateScript.Kind.SIGNAL_COUNT:
+		return
+	var signal_id := String(spec.get("id", ""))
+	if not signal_id.is_empty() and not out.has(signal_id):
+		out.append(signal_id)
+
+
+static func _reveal_is_zero_threshold_land(condition) -> bool:
+	if not condition is Dictionary:
+		return false
+	var spec: Dictionary = condition
+	if spec.is_empty():
+		return false
+	if not spec.has("children"):
+		return _is_zero_threshold_land_atom(spec)
+	if int(spec.get("operator", 0)) != ResearchConditionScript.Operator.ANY_OF:
+		return false
+	var children: Array = spec.get("children", [])
+	if children.is_empty():
+		return false
+	for child in children:
+		if not _is_zero_threshold_land_atom(child):
+			return false
+	return true
+
+
+static func _is_zero_threshold_land_atom(atom) -> bool:
+	if not atom is Dictionary:
+		return false
+	var spec: Dictionary = atom
+	if spec.has("children"):
+		return false
+	if int(spec.get("kind", -1)) != ResearchPredicateScript.Kind.SIGNAL_PRESENT:
+		return false
+	return ZERO_THRESHOLD_LAND_SIGNALS.has(String(spec.get("id", "")))
 
 
 ## Editor-only pass. The headless gate never runs this, so gate output stays

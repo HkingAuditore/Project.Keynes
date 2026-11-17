@@ -541,6 +541,13 @@ func _process(delta: float) -> void:
 		for i in _sections.size():
 			if _sections[i].position.y <= cursor:
 				active = i
+	# 滚到底时那条「视口三成」的线可能还压在前一章上——末章内容短，顶不到上沿。
+	# 玩家明明在读末章，目录却高亮前一章。到底就认末章。
+	var bar := _scroll.get_v_scroll_bar()
+	if bar != null and not _sections.is_empty():
+		var max_scroll := maxf(0.0, bar.max_value - bar.page)
+		if max_scroll > 0.0 and top >= max_scroll - 2.0:
+			active = _sections.size() - 1
 	_update_chapter(active)
 
 

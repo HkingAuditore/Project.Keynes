@@ -28,9 +28,15 @@ var _failures := 0
 class PeopleEconomyStub extends RefCounted:
 	var _catalog := {"profession_ids": PackedStringArray(["farmer", "artisan"])}
 	var transfers: Array[Dictionary] = []
+	var population_deltas: Array[Dictionary] = []
 
 	func is_configured() -> bool:
 		return true
+
+	func add_population(cohort: int, amount: int, day: int, sequence: int) -> Dictionary:
+		population_deltas.append({"cohort": cohort, "amount": amount,
+			"day": day, "sequence": sequence})
+		return {"ok": true, "settled_value": amount}
 
 	func settlement_display_name(_cell: int) -> String:
 		return "测试邑"

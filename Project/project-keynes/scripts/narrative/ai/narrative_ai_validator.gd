@@ -190,8 +190,9 @@ static func validate_and_sanitize(
 		"event_id": event_id_str,
 		"version": int(parsed_dict.get("version", 1)),
 		"title": title.left(32),
-		# 界面只放两行事实：模型若写成大段叙事，这里直接截断。
-		"body_text": body_text.left(160),
+		# 正文目标长度 60–140 字（对齐手写事件），上限留在 220 只作兜底：
+		# 早先的 160 是按「两行事实」定的，会把正常长度的叙事腰斩。
+		"body_text": body_text.left(220),
 		"image_key": String(parsed_dict.get("image_key", "")),
 		"image_path": String(parsed_dict.get("image_path", "")),
 		"ai_visual_prompt": ai_visual_prompt.left(500),
@@ -539,6 +540,26 @@ static func _sanitize_single_effect(
 				if ratio_bp <= 0 and int_val == 0:
 					ratio_bp = 500
 
+		Kind.ADD_POPULATION:
+			resolved_target = ""
+			scope_to_cell = true
+			# 人口允许负值（迁出），而 _extract_clamped_ratio_bp() 会把负数抹成 0，
+			# 所以这里直接读原始字段，不复用上面那份「只做加项」的夹紧值。
+			var raw_people := int(raw_eff.get("int_value",
+				raw_eff.get("amount", raw_eff.get("people", 0))))
+			var raw_bp := int(raw_eff.get("ratio_bp",
+				roundi(float(raw_eff.get("ratio_percent", 0.0)) * 100.0)))
+			if raw_people != 0:
+				int_val = clampi(raw_people, -3000, 3000)
+				ratio_bp = 0
+			else:
+				int_val = 0
+				ratio_bp = clampi(raw_bp, -3000, 3000)
+				if ratio_bp == 0:
+					# 模型说了「收留/迁走」却没给数：按一小批人算，
+					# 别把整条效果丢掉——丢掉就等于文案收人、数值空转。
+					ratio_bp = 800
+
 		Kind.SET_STORY_FLAG, Kind.CLEAR_STORY_FLAG:
 			var flag_key := _sanitize_identifier(raw_target)
 			if flag_key.is_empty():
@@ -579,6 +600,8 @@ static func _sanitize_single_effect(
 		]
 		if kind_val == Kind.CITY_MODIFIER and radius_cells > 0:
 			custom_label += "（周边 %d 环）" % radius_cells
+	if custom_label.is_empty() and kind_val == Kind.ADD_POPULATION:
+		custom_label = NarrativeEffectSpecScript.describe_population_delta(int_val, ratio_bp)
 
 	return {
 		"kind": kind_val,
@@ -613,6 +636,7 @@ static func _parse_allowed_kind(raw_kind: Variant) -> int:
 			Kind.CLEAR_STORY_FLAG,
 			Kind.ADD_EVENT_WEIGHT_BIAS,
 			Kind.SCHEDULE_FOLLOWUP_EVENT,
+			Kind.ADD_POPULATION,
 		]:
 			return k
 		return -1

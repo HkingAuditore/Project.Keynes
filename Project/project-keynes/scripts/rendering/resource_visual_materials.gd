@@ -96,7 +96,8 @@ static func _bind_terrain_textures(host, target: ShaderMaterial, tiles, tiled: b
 		target.set_shader_parameter("height_tex", host._world.height_tex)
 	var height_bound = tiles.height != null if tiled else host._world.height_tex != null
 	target.set_shader_parameter("has_height_tex", height_bound)
-	target.set_shader_parameter("has_flow_tex", height_bound and not host._world.flow_buffer.is_empty())
+	target.set_shader_parameter("has_flow_tex",
+		DCFeatureFlags.water_flowmap_enabled() and height_bound and not host._world.flow_buffer.is_empty())
 	target.set_shader_parameter("sea_level", host._world.sea_level)
 	target.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else host._world.terrain_horizon_tex != null)
 	target.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else host._world.terrain_normal_tex != null)

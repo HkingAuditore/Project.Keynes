@@ -410,7 +410,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_SEA_DRYDOCK),
 		"title": "{settlement_name}·船坞",
-		"body_text": "白螺口没有坞，船要修就得趁涨潮拖上滩，再等潮水把它浮起来。阮六在滩上量过三回，说修一座石砌的坞，船能横着拖上去，龙骨晾得干。石料要从上游放排下来，工钱得管两百个人的饭。祁阿满说坞修起来，外邦的船也来修，钱能挣回来。霍三娘把一截烂缆绳扔在他脚边，说船底再烂两年，缆绳也不用买了。盛德昌在旁边算，说这笔钱够买两条新船。潮水正退，滩上露出一道旧船底的印子，像一条压扁的鱼。",
+		"body_text": "白螺口没有坞，船要修就得趁涨潮拖上滩，再等潮水把它浮起来。阮六在滩上量过三回，说修一座石砌的坞，船能横着拖上去，龙骨晾得干。石料要从上游放排下来，工钱得管几十个人的饭。祁阿满说坞修起来，外邦的船也来修，钱能挣回来。霍三娘把一截烂缆绳扔在他脚边，说船底再烂两年，缆绳也不用买了。盛德昌在旁边算，说这笔钱够买两条新船。潮水正退，滩上露出一道旧船底的印子，像一条压扁的鱼。",
 		"image_key": "economy.building.shipyard",
 		"ai_visual_prompt": "A tidal beach with a ship careened on its side, men measuring a stone dock line, a coil of rotten rope at their feet, an old keel print in the sand",
 		"tags": ["sea", "labor"],

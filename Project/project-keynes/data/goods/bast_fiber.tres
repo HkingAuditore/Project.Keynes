@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"bast_fiber"
-display_name = "亚麻秆/韧皮原料"
+display_name = "亚麻杆"
 semantic_tags = PackedStringArray()
 category_id = &"spinnable_fiber"
 substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber", "primitive_lashing")

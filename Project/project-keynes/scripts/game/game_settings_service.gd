@@ -13,6 +13,9 @@ const DEFAULTS := {
 	"vsync": true,
 	"render_quality": "auto",
 	"ui_scale_percent": 100,
+	## 触摸档的界面布局：fit（KEEP 1600×960，PC 版式）/ fill（EXPAND 铺满）/ dense（EXPAND+0.85）。
+	## 桌面档忽略。见 scripts/ui/mobile_ui_scaling.gd:LAYOUT_MODES。
+	"ui_layout_mode": "fit",
 	"reduce_motion": false,
 	"master_volume": 0.8,
 	"master_muted": false,
@@ -121,7 +124,8 @@ func apply() -> void:
 	# 用户 UI 缩放（80/100/125/150%）不再直接写 content_scale_factor：
 	# 移动端必须再乘上「设计像素 → dp」的设备倍率，否则 100% 在安卓上等于不缩放。
 	if _ui_scaling != null:
-		_ui_scaling.call("configure", int(_settings.ui_scale_percent))
+		_ui_scaling.call("configure", int(_settings.ui_scale_percent),
+			String(_settings.get("ui_layout_mode", "fit")))
 	else:
 		get_tree().root.content_scale_factor = float(_settings.ui_scale_percent) / 100.0
 	var bus := AudioServer.get_bus_index("Master")
@@ -140,6 +144,8 @@ func _validate() -> void:
 		_settings.render_quality = "auto"
 	if int(_settings.ui_scale_percent) not in [80, 100, 125, 150]:
 		_settings.ui_scale_percent = 100
+	if String(_settings.get("ui_layout_mode", "fit")) not in ["fit", "fill", "dense"]:
+		_settings.ui_layout_mode = "fit"
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
 	_settings.autosave_enabled = bool(_settings.autosave_enabled)
 	_settings.reduce_motion = bool(_settings.reduce_motion)

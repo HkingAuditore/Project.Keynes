@@ -247,6 +247,8 @@ static func append(catalog) -> void:
 				"庙门从里面关上了",
 				"庙门从里面关上了，门口留了一只水缸。第三天，缸空了。韦顺让人又送了一缸，没问里面还有几个人。",
 				[
+					# 留在庙里的活人从此算本地人口；「不问了」是不管，不是不存在。
+					Shared.population_rate(3, "本地人口 +3%（伤兵留居本地）"),
 					Shared.manufacturing(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
@@ -342,11 +344,13 @@ static func append(catalog) -> void:
 		"options": [
 			Shared.option(
 				"take_the_survivors_in", "开门收容",
-				"城门外站着几十个人",
-				"城门外站着几十个人，甲都卸了，有人光着脚。韦顺让人支起锅，先给口热的。点名的时候，点到一半，名册上的人应不出来。",
+				"城门外站着一群人",
+				"城门外站着一群人，甲都卸了，有人光着脚。韦顺让人支起锅，先给口热的。点名的时候，点到一半，名册上的人应不出来。",
 				[
+					# 「先给口热的」之后活下来的人留在城里；birth(2) 说的是往后十年多生，
+					# 跟这些当下就要吃饭的人不是一件事。
+					Shared.population_rate(25, "本地人口 +25%（溃兵收容）"),
 					Shared.cash_out(1.5, 360),
-					Shared.birth(2, 540),
 				]),
 			Shared.option(
 				"blame_the_general", "追责主将",
@@ -639,6 +643,7 @@ static func append(catalog) -> void:
 				"城门开了一条缝",
 				"城门开了一条缝，人挤着进来。当天夜里，城里的米价又涨了一回。韦顺让人在庙里铺草，草不够，有人睡在街上。",
 				[
+					Shared.population_rate(15, "本地人口 +15%（难民入城）"),
 					Shared.staple(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
@@ -761,6 +766,8 @@ static func append(catalog) -> void:
 				"荒田插了木牌",
 				"荒田插了木牌，写着谁开归谁。第一批去的是没分到地的人，第二批是从北边回来的。犁不够，有人用锄头翻。",
 				[
+					# 「从北边回来的」是真的往回填人：荒田得有人种，人才算真回来。
+					Shared.population_rate(10, "本地人口 +10%（回流农户落籍垦荒）"),
 					Shared.cash_out(1.5, 360),
 					Shared.agriculture(4, 540),
 					Shared.manufacturing(-2, 360),

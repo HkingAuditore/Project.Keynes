@@ -1,5 +1,16 @@
 # 移动端 UI 缩放验收 harness
 
+> **2026-11-17 起，触摸档不再用百分比缩放，改用三档布局策略**（`--layout=fit|fill|dense`）：
+>
+> | 档位 | content_scale_aspect | 逻辑画布（2160×1080） | 说明 |
+> | --- | --- | --- | --- |
+> | `fit`（默认） | KEEP | 1600×960 | 与 PC 逐像素一致，左右留黑边（约 8%） |
+> | `fill` | EXPAND | 1920×960 | 铺满无黑边，多出的宽度给地图；左右 anchor 的容器会被拉开 |
+> | `dense` | EXPAND + 0.85 | 2258×1129 | 元素再小 15%，纵向多约 24% 空间，同屏多一屏内容 |
+>
+> 桌面档仍是 `--ui-scale=80/100/125/150`（`content_scale_mode=DISABLED`，factor=百分比）。
+> 设置界面按平台自动切换：「界面布局」三档 / 「界面缩放」百分比。
+
 问题 1/3（安卓包「按钮特别小、点不中」）的验收工具。它在**真实窗口**里跑主菜单，
 按尺寸档位截图并实测关键控件的 `get_global_rect()`，再换算成物理像素与 dp。
 
@@ -49,6 +60,7 @@ python tests/tools/image_diff.py test_output/mobile_ui/before test_output/mobile
 | `--safe=x,y,w,h` | 安全区覆盖（物理像素，屏幕坐标）。桌面模拟时默认按无刘海处理 |
 | `--sizes=WxH,...` | 尺寸清单，默认 `2400x1080,2220x1080,1600x960,1280x720` |
 | `--ui-scale=<80\|100\|125\|150>` | 设置里的 UI 缩放（persist=false，不会写用户存档） |
+| `--layout=fit\|fill\|dense` | 触摸档布局策略（2026-11-17 起取代百分比缩放）。fit=KEEP 1600×960；fill=EXPAND 铺满；dense=EXPAND+0.85 |
 
 ## 输出
 
