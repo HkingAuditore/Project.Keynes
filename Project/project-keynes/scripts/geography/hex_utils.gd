@@ -3,7 +3,7 @@
 # 坐标系约定：
 #   Cube 坐标 (q, r, s)，约束 q + r + s = 0
 #   Offset 坐标 (col, row)，使用"奇数行右移"（odd-r）布局
-#   屏幕坐标以 flat-top（尖顶朝上）六边形为准
+#   屏幕坐标以 pointy-top（尖顶朝上）六边形为准，与下方 cube_to_world / world_to_cube 同一约定
 
 class_name HexUtils
 

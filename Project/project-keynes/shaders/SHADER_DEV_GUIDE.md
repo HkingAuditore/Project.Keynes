@@ -939,7 +939,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | `fog_of_war.gdshader` | fog quality 钳到 0：1 octave、无光照，只出纯色 + 起伏 | fog quality 钳到 1（3 频段分层密度 + 平滑法线，无域扭曲/质量探针）；High tier 钳到 2（4 频段 + 1 层扭曲 + 2 个质量探针） |
 | `country_border.gdshader` | 跳过沿边 wobble 噪声 | 保留 |
 | `shrub_layer.gd` 内联 shader | 跳过生态 LUT、地形法线/高度贴图 shading、horizon shadow，阴影 pass 输出透明 | 跳过 horizon shadow 与细节 shading |
-| `hex_terrain.gdshader` / `hex_edge_overlay.gdshader` | 跳过 erosion warp、边缘噪声、地/水内部细节 | 保留旧行为 |
+| ~~`hex_terrain.gdshader`~~ / ~~`hex_edge_overlay.gdshader`~~ | 已退役（2026-11-17）：无任何引用，不参与画质分档；保留仅为历史参考 | — |
 
 **B/C 方案（v3 收尾）Web 运行时增量**（全部按档位门控，LOW 恒为 0 采样）：
 

@@ -3,6 +3,18 @@ render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
+// ═══════════════════════════════════════════════════════════════════════════
+// [deprecated 2026-11-17] 已退役，**运行期不会被编译**。
+// 全仓没有材质 / 场景 / 脚本引用它（2026-11-17 grep 判据：只命中本文件、仓库内
+// docs/plan 历史文档、以及 shaders/SHADER_DEV_GUIDE.md §14.2 的历史表格）。
+// 它依赖的几何已不存在：COLOR.rgb=覆盖色 / COLOR.a=中心线透明度 / UV.x=kind /
+// UV.y=edge seed 的边缘 ribbon mesh 由旧 hex_renderer._append_edge_overlay() 生成，
+// 该函数全仓已无。地形交界与海岸现在由 world_map.gdshader 在像素阶段完成
+// （edge_distance 距离场 + ecotone 混合 + shore halo）；六边形轮廓只在
+// cell_highlight.gd / cell_highlight_set.gd 的 _draw 里画。
+// 保留原因：柔化边界 / 海岸泡沫 / 低透明晕染的算法参考。
+// ═══════════════════════════════════════════════════════════════════════════
+
 // 地形交界覆盖层 shader v4.8
 // 核心：低透明宽晕染 + 连续噪声溶解，弱化六边形硬分界。
 // COLOR.rgb = 覆盖色，COLOR.a = 中心线透明度（两侧顶点为 0 自动渐隐）
