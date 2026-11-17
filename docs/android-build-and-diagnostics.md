@@ -239,6 +239,31 @@ cloud_shadow=0      # 0/1（也接受 off/on、false/true）
 flowmap=0
 ```
 
+### 2.10.2 移动端另外三处降载（2026-11-17，作者定夺）
+
+| 项 | 做法 | 省在哪 | 代价 |
+| --- | --- | --- | --- |
+| 点缀/植被密度降一档 | `_density_tier()` / `density_quality()`：只有每格上限、实例上限、密度倍率、叶瓣数读"档位−1"，`veg_shade_quality` / `visual_quality` 仍拿真实的 2 | 实例数量减半（顶点 + 提交 + 散射 CPU） | 数量少，但每个仍然有 HIGH 的着色与光照 |
+| 迷雾半分辨率 | `FogOfWarLayer` 把四边形画进 1/2 的 `SubViewport`，再用 `Sprite2D` 铺满屏幕（`canvas_transform` 取主画布的 0.5 倍） | 迷雾填充成本降到 1/4 | 云边缘略软（低频内容几乎看不出） |
+| 渲染分辨率降采样 | `content_scale_mode` 从 `CANVAS_ITEMS` 换成 `VIEWPORT`：2D 场景只在逻辑画布 1600×960 上着色，再上采样到 2670×1200 | 全屏填充 −52%，**所有 shader 一起受益** | 整体变软，UI 文字最明显 |
+
+覆盖键（同一份 APK 内可逐项开关，无需重新打包）：
+
+```ini
+[render]
+density_trim=0      # 1 = 密度降一档（移动端默认 1）
+fog_half_res=0      # 1 = 迷雾半分辨率（移动端默认 1）
+render_viewport=1   # 默认 0；=1 才启用 VIEWPORT 降采样，且要求界面缩放 100%
+```
+
+⚠ `render_viewport` **默认关闭**，因为它和「界面缩放」耦合：Godot 2D 没有独立于版式的
+render scale —— VIEWPORT 模式下逻辑画布 == 渲染尺寸，`content_scale_factor` 又是渲染目标倍率。
+`mobile_ui_scaling._apply()` 只在 `factor == 1`（界面缩放 100%）时才切 VIEWPORT，否则自动退回
+`CANVAS_ITEMS`（此时该开关是空操作）。真机实测：作者机子跑 80%，开关写了也没生效，
+`[mobile-ui-scaling] total=1.000 logical=2670x1200` 就是这个状态。
+要用：设置里把界面缩放调到 **100%**，再写 `render_viewport=1` —— 桌面 QA（`--profile=mobile
+--layout=fit`）在该组合下 108 项 0 失败。
+
 ### 2.11.2 「高画质」不再是移动平台精简档（2026-11-17 反转 2.11.1 的结论）
 
 真机反馈：「各种光照都极其丑陋，战争迷雾的细节也全没了」。查下来根因不是参数，

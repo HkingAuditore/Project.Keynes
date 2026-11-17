@@ -36,6 +36,9 @@ func _ready() -> void:
 	# tests/probes/_tmp_autoplay.gd（PK_AUTOPLAY_PROBE=1）。
 	_attach_headless_runner("PK_AUTOPLAY_PROBE",
 		"res://tests/probes/_tmp_autoplay.gd")
+	# 跨年（第二年 1 月 1 日）卡死复现入口：见 tests/probes/_tmp_year_rollover_probe.gd。
+	_attach_headless_runner("PK_YEAR_ROLLOVER_PROBE",
+		"res://tests/probes/_tmp_year_rollover_probe.gd")
 	_attach_headless_runner("PK_CONSTRUCTION_PROBE",
 		"res://tests/probes/_tmp_construction_probe.gd")
 
@@ -197,8 +200,9 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 		for i in mini(missing.size(), 20):
 			preview.append(String(missing[i]))
 		var suffix := ", …" if missing.size() > preview.size() else ""
-		overlay.show_failure("原生扩展版本与脚本不一致，缺少 %d 个方法（%s%s）" % [
-			missing.size(), ", ".join(preview), suffix])
+		# 标题行给玩家看，方法清单留在可复制的详情区与日志里。
+		overlay.show_failure_detailed("游戏组件版本不匹配，无法启动。请更新或重新安装游戏。",
+			"缺少 %d 个方法（%s%s）" % [missing.size(), ", ".join(preview), suffix])
 		_transition_active = false
 		return
 	await LoadingCatalogCache.prepare(ext, frames)

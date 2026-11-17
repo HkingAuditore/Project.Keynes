@@ -1113,14 +1113,14 @@ static func _base_max_per_cell(host) -> int:
 
 	var cfg = _profile(host)
 	if _limited_platform_density_tier(host):
-		match _active_quality_tier(host):
+		match _density_tier(host):
 			0:
 				return maxi(0, cfg.mobile_max_per_cell_quality0)
 			1:
 				return maxi(0, cfg.mobile_max_per_cell_quality1)
 			_:
 				return maxi(0, cfg.mobile_max_per_cell_quality2)
-	match _active_quality_tier(host):
+	match _density_tier(host):
 		0:
 			return maxi(0, cfg.desktop_max_per_cell_quality0)
 		1:
@@ -1141,14 +1141,14 @@ static func _base_instance_cap(host) -> int:
 
 	var cfg = _profile(host)
 	if _limited_platform_density_tier(host):
-		match _active_quality_tier(host):
+		match _density_tier(host):
 			0:
 				return maxi(0, cfg.mobile_max_instances_quality0)
 			1:
 				return maxi(0, cfg.mobile_max_instances_quality1)
 			_:
 				return maxi(0, cfg.mobile_max_instances_quality2)
-	match _active_quality_tier(host):
+	match _density_tier(host):
 		0:
 			return maxi(0, cfg.desktop_max_instances_quality0)
 		1:
@@ -1169,14 +1169,14 @@ static func _quality_lobe_count(host) -> int:
 
 	var cfg = _profile(host)
 	if OS.has_feature("mobile"):
-		match _active_quality_tier(host):
+		match _density_tier(host):
 			0:
 				return clampi(cfg.mobile_lobes_quality0, 2, 8)
 			1:
 				return clampi(cfg.mobile_lobes_quality1, 2, 8)
 			_:
 				return clampi(cfg.mobile_lobes_quality2, 2, 8)
-	match _active_quality_tier(host):
+	match _density_tier(host):
 		0:
 			return clampi(cfg.desktop_lobes_quality0, 2, 8)
 		1:
@@ -1190,14 +1190,14 @@ static func _quality_density_scale(host) -> float:
 
 	var cfg = _profile(host)
 	if _limited_platform_density_tier(host):
-		match _active_quality_tier(host):
+		match _density_tier(host):
 			0:
 				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality0)
 			1:
 				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality1)
 			_:
 				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality2)
-	match _active_quality_tier(host):
+	match _density_tier(host):
 		0:
 			return maxf(0.0, cfg.density_scale * cfg.desktop_density_multiplier_quality0)
 		1:
@@ -1240,6 +1240,18 @@ static func _active_quality_tier(host) -> int:
 	# 注意二分手段：要量"运行期档"的代价用 pk_debug.cfg 的 `[render] visual_quality`，
 	# 要量"编译期分支"的代价用 `tier_override` —— 后者不再影响本函数。
 	return clampi(host._visual_quality, 0, 2)
+
+
+## 密度档：移动端整体降一档，着色档不变。
+##
+## [mobile-density-trim 2026-11-17] 作者定夺：点缀/植被数量可以少一半，但 HIGH 的
+## 着色与光照要保留。所以只有"每格上限 / 实例上限 / 密度倍率 / 叶瓣数"读这个函数，
+## `veg_shade_quality` 仍然读 `_active_quality_tier()`。
+static func _density_tier(host) -> int:
+	var tier := _active_quality_tier(host)
+	if DCFeatureFlags.density_trim_enabled():
+		return mini(tier, 1)
+	return tier
 
 
 # [web-mobile-density-halving 2026-10-30] 受限平台（浏览器 WebGL2 / 移动 GPU）共用

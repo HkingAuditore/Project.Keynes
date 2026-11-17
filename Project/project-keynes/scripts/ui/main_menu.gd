@@ -237,6 +237,7 @@ func _bind_settings_controls() -> void:
 		"vsync": %Vsync,
 		"render_quality": %RenderQuality,
 		"ui_scale": %UIScale,
+		"ui_layout": %UILayout,
 		"volume": %Volume,
 		"muted": %Muted,
 		"reduce_motion": %ReduceMotion,
@@ -479,7 +480,11 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 ## 移动端设置页只保留「真正有用」的项：窗口模式/分辨率/垂直同步在安卓上由系统决定，
 ## game_settings.apply() 也已经跳过这些调用，UI 上继续显示只会让人以为"改了没生效"。
 func _apply_settings_platform_visibility() -> void:
-	var touch := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	# [pc-fit] 用 _ui_layout_mode_active() 而不是裸 OS.has_feature：
+	# 窗口模式/分辨率/垂直同步要隐藏的平台，与「是否走触摸档布局」必须同一个判据。
+	# 否则桌面 QA（模拟 profile=mobile）看到的是「五项都在」，真机却是「隐藏三项」，
+	# 截图和真机对不上，排查时会被误导。
+	var touch := _ui_layout_mode_active()
 	for node_name in ["WindowModeLabel", "WindowMode", "ResolutionLabel", "Resolution", "Vsync"]:
 		var node := find_child(node_name, true, false) as Control
 		if node != null:
@@ -498,18 +503,32 @@ func _show_settings() -> void:
 		Vector2i(current.resolution_width, current.resolution_height))
 	_configure_option(_settings_controls.render_quality,
 		["自动", "低", "中", "高"], ["auto", "low", "medium", "high"], current.render_quality)
-	# 触摸档：布局策略三档（fit/fill/dense）。桌面档：百分比缩放。
+	# 触摸档：布局策略三档（fit/fill/dense）+ 布局之上的再缩放（50/75/100）。
+	# 桌面档：只有百分比缩放（80/100/125/150），布局行隐藏。
 	var layout_active := _ui_layout_mode_active()
+	var scale_label := get_node_or_null("%UIScaleLabel") as Label
+	var layout_label := get_node_or_null("%UILayoutLabel") as Label
 	if layout_active:
+		if scale_label != null:
+			scale_label.text = "界面缩放"
+		if layout_label != null:
+			layout_label.visible = true
 		_configure_option(_settings_controls.ui_scale,
+			["50%（更小）", "75%", "100%（原大）", "125%", "150%", "200%"],
+			[50, 75, 100, 125, 150, 200],
+			int(current.get("ui_layout_scale", 100)))
+		_settings_controls.ui_layout.visible = true
+		_configure_option(_settings_controls.ui_layout,
 			["完整 · PC 版式", "铺满 · 无黑边", "紧凑 · 更小更多"],
 			["fit", "fill", "dense"], String(current.get("ui_layout_mode", "fit")))
 	else:
+		if scale_label != null:
+			scale_label.text = "界面缩放"
+		if layout_label != null:
+			layout_label.visible = false
+		_settings_controls.ui_layout.visible = false
 		_configure_option(_settings_controls.ui_scale,
 			["80%", "100%", "125%", "150%"], [80, 100, 125, 150], current.ui_scale_percent)
-	var scale_label := get_node_or_null("%UIScaleLabel") as Label
-	if scale_label != null:
-		scale_label.text = "界面布局" if layout_active else "界面缩放"
 	_settings_controls.vsync.button_pressed = bool(current.vsync)
 	_settings_controls.volume.value = float(current.master_volume)
 	if _volume_value_label != null:
@@ -1041,9 +1060,11 @@ func _apply_settings() -> void:
 		"master_muted": _settings_controls.muted.button_pressed,
 		"reduce_motion": _settings_controls.reduce_motion.button_pressed,
 	}
-	# 同一个下拉在触摸档装的是布局档位（String），桌面档装的是百分比（int）。
-	if picked_scale is String:
-		payload["ui_layout_mode"] = picked_scale
+	# 触摸档：UIScale 装缩放百分比（int）、UILayout 装布局档位（String）。
+	# 桌面档：UIScale 装桌面百分比（int），UILayout 隐藏。
+	if _ui_layout_mode_active():
+		payload["ui_layout_scale"] = picked_scale
+		payload["ui_layout_mode"] = _settings_controls.ui_layout.get_selected_metadata()
 	else:
 		payload["ui_scale_percent"] = picked_scale
 	var result := GameSettings.update(payload)

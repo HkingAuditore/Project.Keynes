@@ -180,19 +180,29 @@ func _show_settings() -> void:
 		if entry.id == current.render_quality: quality.select(quality.item_count - 1)
 	var scale := form.get_node("Scale") as OptionButton
 	scale.clear()
-	# 与主菜单同一口径：触摸档给布局策略（fit/fill/dense），桌面档给百分比。
+	var layout := form.get_node_or_null("Layout") as OptionButton
+	# 与主菜单同一口径：触摸档给「布局档位 + 再缩放」，桌面档只给百分比。
 	var layout_active := false
 	if settings_service != null and settings_service.has_method("ui_scaling"):
 		var scaling = settings_service.call("ui_scaling")
 		layout_active = scaling != null and bool(scaling.call("is_touch_profile"))
+	if layout != null:
+		layout.visible = layout_active
+		layout.clear()
 	if layout_active:
-		for entry in [{"label": "界面布局 · 完整", "id": "fit"},
-				{"label": "界面布局 · 铺满", "id": "fill"},
-				{"label": "界面布局 · 紧凑", "id": "dense"}]:
-			scale.add_item(String(entry.label))
-			scale.set_item_metadata(scale.item_count - 1, entry.id)
-			if String(entry.id) == String(current.get("ui_layout_mode", "fit")):
+		for value in [50, 75, 100, 125, 150, 200]:
+			scale.add_item("界面缩放 %d%%" % value)
+			scale.set_item_metadata(scale.item_count - 1, value)
+			if value == int(current.get("ui_layout_scale", 100)):
 				scale.select(scale.item_count - 1)
+		if layout != null:
+			for entry in [{"label": "界面布局 · 完整", "id": "fit"},
+					{"label": "界面布局 · 铺满", "id": "fill"},
+					{"label": "界面布局 · 紧凑", "id": "dense"}]:
+				layout.add_item(String(entry.label))
+				layout.set_item_metadata(layout.item_count - 1, entry.id)
+				if String(entry.id) == String(current.get("ui_layout_mode", "fit")):
+					layout.select(layout.item_count - 1)
 	else:
 		for value in [80, 100, 125, 150]:
 			scale.add_item("界面缩放 %d%%" % value)
@@ -212,9 +222,11 @@ func _show_settings() -> void:
 			var payload := {"render_quality": quality.get_selected_metadata(),
 				"master_volume": volume.value,
 				"master_muted": mute.button_pressed, "reduce_motion": reduce_motion.button_pressed}
-			# 同一个下拉在触摸档装布局档位（String），桌面档装百分比（int）。
-			if picked is String:
-				payload["ui_layout_mode"] = picked
+			# 触摸档：Scale 装缩放百分比，Layout 装布局档位。桌面档：只有百分比。
+			if layout_active:
+				payload["ui_layout_scale"] = picked
+				if layout != null:
+					payload["ui_layout_mode"] = layout.get_selected_metadata()
 			else:
 				payload["ui_scale_percent"] = picked
 			settings_service.update(payload)

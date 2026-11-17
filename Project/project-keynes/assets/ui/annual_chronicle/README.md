@@ -28,9 +28,11 @@
 |---|---|
 | chronicle_pencil_scene.png | 封面综合文明村落题图；透明剪刀边，Godot 按 alpha 裁切 |
 | chronicle_pencil_badge.png | 封面评级奖章；红面、金边和纸片轮廓由贴图提供，评级字母仍由 Godot 实时绘制 |
-| chronicle_chapter_emblems.png | 九枚章节徽记；1536×1536 透明九宫格，每格 512×512，按阅读顺序排列 |
+| chronicle_chapter_emblems.png | 九枚章节徽记；1152×1152 透明九宫格，每格 384×384，按阅读顺序排列 |
 
 九枚章节徽记依次表示：年度总览、国民经济、人口与民生、产业与建设、城乡与国土、科技与文明、市场与财政、资源与年度问题、发展考核。正文通过 `draw_texture_rect_region` 从图集裁取每个章节对应的区域，不把标题、数值或评级烘焙进图像。
+
+**切图不许写死格边长。** 这张图生成时是 1536×1536（每格 512），后为体积降到 1152×1152（每格 384）；凡是把 512 写进代码的地方就会同时切进右邻与下邻——2026-11-17 年度报告的章首徽记因此多出半截麦穗和两座尖顶。三处消费者（`annual_section.gd` / `narrative_chronicle_panel.gd` / `narrative_event_dialog.gd`）现在都按 `texture.get_width() / 3.0` 现算；`annual_report_ui_test` 的 `chapter emblems slice only their own cell` 与 `chapter emblem cells stay isolated from their neighbours` 两条断言守着这件事。
 
 最终封面题图提示：
 

@@ -52,8 +52,8 @@ func set_retired(retired: bool) -> void:
 		return
 	_retired = retired
 	if retired:
-		_eta = "已停用 · 请移出队列"
-		tooltip_text = "%s\n时代晋升已改由顶栏时代徽记办理；此项只能移出" % display_name
+		_eta = "已停用"
+		tooltip_text = "%s\n已停用，只能移出" % display_name
 	queue_redraw()
 
 

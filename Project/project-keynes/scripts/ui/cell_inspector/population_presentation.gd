@@ -26,9 +26,9 @@ static func _gdp_metrics(host, cell_idx: int) -> Array:
 	var comparison = ""
 	if not is_nan(national_per_capita) and national_per_capita > 0.0:
 		var gap = (per_capita - national_per_capita) / national_per_capita * 100.0
-		comparison = "全国人均 %s（本地%s%.0f%%）" % [
+		comparison = "全国人均 %s · 本地 %s%.0f%%" % [
 			host._money_text(int(round(national_per_capita))),
-			"高于" if gap >= 0.0 else "低于", absf(gap)]
+			"+" if gap >= 0.0 else "-", absf(gap)]
 	metrics.append({
 		"id": "population_gdp_per_capita", "title": "人均年度产值", "money": true,
 		"value": h._money_text(int(round(per_capita))),

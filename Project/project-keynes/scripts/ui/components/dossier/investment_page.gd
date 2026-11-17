@@ -81,7 +81,7 @@ func _refresh_pressure(pressure: Array) -> void:
 			"tooltip": "%s：短缺 %s，供给覆盖需求 %s，价格为成本锚的 %.2f 倍" % [
 				row.name, percent(float(row.shortage)), percent(float(row.cover)), float(row.price_index)]})
 	_pressure.set_rows(rows)
-	_show_empty(_pressure_empty, _pressure, "" if not rows.is_empty() else "供需大体平衡，没有明显的投资缺口")
+	_show_empty(_pressure_empty, _pressure, "" if not rows.is_empty() else "供需平衡")
 
 
 func _refresh_categories(categories: Array) -> void:
@@ -111,12 +111,14 @@ func _refresh_categories(categories: Array) -> void:
 func _refresh_reason(category: Dictionary) -> void:
 	if category.is_empty():
 		_reason_title.text = "扩产顺畅"
-		_reason_advice.text = "所有考察过的扩产机会都已落地或产能已足够。"
+		_reason_advice.text = ""
+		_reason_advice.visible = false
 		_reasons.set_rows([])
 		_sectors.set_rows([])
 		return
 	_reason_title.text = String(category.label)
 	_reason_advice.text = String(category.advice)
+	_reason_advice.visible = true
 	var total := maxf(1.0, float(category.total))
 	var reason_rows: Array = []
 	for reason in category.reasons:

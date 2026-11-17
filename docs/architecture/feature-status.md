@@ -1044,3 +1044,20 @@ Economy、Modifier、Effect 目录、Effect 扩展和十一项显示资料；覆
 `good.bast_fiber` 的玩家显示名由“亚麻秆/韧皮原料”改为“亚麻杆”，并同步科技网络、理念摘要和 perf-validation 镜像；稳定 ID、价格、科技标签和存档键保持不变。`primitive_lashing` 建材组仍由 `bast_fiber` 与 `reed_bundle` 共同候选，运行时按当地市场库存择一，不要求两者同时存在。
 
 开局规划读取编译后的建材候选组，并将选中的候选材料写入出生地 bootstrap 库存；所以出生地没有亚麻杆时，只要芦苇候选可达，开局建造不会卡住。现有目录回归已覆盖建材候选展开，殖民建材回归覆盖“仅有芦苇、没有原木和亚麻杆也能出发”的路径。本轮未改 C++、目录 ABI、存档字段或调度。
+
+> **更正（2026-11-17）**：上一段“只要芦苇候选可达”的前提不成立——`tech.reed_harvesting` 是 6800 点的非起始节点，开局不可达。详见下条。
+
+## 石器绑扎槽的开局死锁与采集营地改单槽（2026-11-17）
+
+八个起始科技（思考、狩猎、采集、早期贸易、枯枝采集、河滩淘金、地表银矿拣采、生皮刮制）能产出的货物只有原木、生皮、毛皮、野味、采集植物食物、衣物、黄金、白银和科技值，**没有任何纤维或捆扎材料**。而 `primitive_lashing` 池的两个成员都要研究：`bast_fiber` 需 `tech.wild_flax_collection`（3800，前置亚麻辨识 2100）、`reed_bundle` 需 `tech.reed_harvesting`（6800）。在起始科技内可营造的建筑共 3 个——采集营地、河滩淘金场、露天银矿——**三个都挂了绑扎槽**，即三个都造不出来。开局规划器把种子建筑的候选建材注入 bootstrap 库存只是第一座的一次性补贴，玩家自建第二座时照样死锁。
+
+改动两处：
+
+- `gathering_ground.tres` 去掉绑扎槽，建材改为纯 `primitive_construction` 单槽（`logs` 8686，数量不变）。它是最早的食物建筑，与狩猎营地、早期知识机构、早期商栈的写法对齐。
+- `good.raw_hide` 的 `substitution_category_ids` 增加 `primitive_lashing`，作为绑扎槽唯一起始可得的兜底（`tech.hunting`）。默认价 24000 是亚麻杆 7000 的 3.4 倍，运行时按有效成本择优，有纤维时自然让位。已验证没有任何生产配方把 `primitive_lashing` 当投入类别，扩池不影响生产链；弓箭营地的第二槽 category 为空，不受影响。同步 `tools/construction_substitution_migrate.py` 的 `POOL_MEMBERS`（不加进 `ERA_INDEPENDENT`，以免改写建筑的槽解析）与 perf-validation 镜像。
+
+验证：`tests/family/family_colonization_runtime_test.gd` 全过（含“仅靠芦苇开工包出发”“没有原木和亚麻杆仍能出发”）；`tests/ui/modern_economy_catalog_test.gd` 建材候选展开项全过，`pooled` 1339→1338（采集营地少一组），`every construction material group offers a substitute` 报的 15 个单候选材料与改动前逐项一致（`raw_hide` 来自弓箭营地，属既有）；`tests/building/building_resource_chain_test.gd` 的唯一失败项 `mining efficiency ... copper_ore_collector>=early_copper_mine` 与本次无关，亦为既有。未改 C++、目录 ABI、存档字段或调度。
+
+遗留：河滩淘金场与露天银矿仍是双槽，目前靠 `raw_hide` 兜底（成本较高）；若按“起始建筑不挂绑扎槽”的规则统一，需一并改单槽并补结构槽数量。
+
+

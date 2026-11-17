@@ -85,6 +85,8 @@ var _is_touch := false
 var _dpi := 96.0
 ## 触摸档布局策略（fit / fill / dense）。桌面档无效。
 var _layout_mode := "fit"
+## 触摸档在布局之上的再缩放（%）。50/75/100 —— 只往下，>100 会压小画布并触发 compact。
+var _layout_scale := 100
 ## 设备倍率（[pc-fit 2026-11-17] 触摸档恒 1.0，只作诊断字段保留）。
 var _device_scale := 1.0
 ## 实际绘制缩放 = 物理像素 / 设计像素（KEEP 下 = base_stretch × 用户倍率）。
@@ -136,15 +138,25 @@ func _on_window_resized() -> void:
 ## GameSettings 调用的唯一入口。
 ## user_percent：桌面档的「界面缩放」百分比（80/100/125/150）。
 ## layout_mode：触摸档的布局策略（fit / fill / dense），桌面档忽略。见 LAYOUT_MODES。
-func configure(user_percent: int, layout_mode: String = "fit") -> void:
+## layout_scale_percent：触摸档在布局之上的**再缩放**（50/75/100/125/150/200）。传 -1 表示跟随 user_percent。
+##   乘在档位系数上：total = base_stretch × (layout_scale/100) × mode_factor。
+##   >100 会把逻辑画布压到 1600×960 以下（200% ⇒ 800×480），`is_short_viewport()` 随之变 true，
+##   各工作台切 compact 版式 —— 这是放大档的既定代价（玩家自己选「大 UI + 紧凑版式」）。
+func configure(user_percent: int, layout_mode: String = "fit", layout_scale_percent: int = -1) -> void:
 	_user_percent = clampi(user_percent, 50, 400)
 	_layout_mode = layout_mode if layout_mode in LAYOUT_MODES else "fit"
+	_layout_scale = clampi(layout_scale_percent, 50, 200) if layout_scale_percent > 0 else _user_percent
 	_apply()
 
 
 ## 当前布局策略（触摸档）。桌面档恒 "fit"，调用方不必分支。
 func layout_mode() -> String:
 	return _layout_mode
+
+
+## 触摸档在布局之上的再缩放百分比。
+func layout_scale_percent() -> int:
+	return _layout_scale
 
 
 ## 兼容旧调用名。
@@ -281,6 +293,10 @@ func _apply() -> void:
 	_dpi = _resolve_dpi(win)
 	var user := float(_user_percent) / 100.0
 	if _is_touch:
+		# [layout-scale 2026-11-17] 触摸档的缩放来自独立的「界面缩放」档（50/75/100），
+		# 与桌面百分比解耦：同一台机器切到触屏/鼠标不该互相改写对方的设置。
+		user = float(_layout_scale) / 100.0
+	if _is_touch:
 		# [pc-fit 2026-11-17] 排版优先：不做 dpi 反推放大，总缩放 = EXPAND 基准等比拉伸。
 		# 逻辑画布由 fit/fill/dense 三档决定（见 LAYOUT_MODES）。
 		_device_scale = 1.0
@@ -294,7 +310,19 @@ func _apply() -> void:
 				mode_factor = DENSE_SCALE
 		# 桌面档的「界面缩放」把用户倍率直接叠进 factor；触摸档默认 100%。
 		var factor := user * mode_factor
-		window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+		# [render-scale 2026-11-17] 移动端渲染分辨率降采样：用 VIEWPORT 模式让 2D 场景
+		# 在**逻辑画布**（1600×960）上着色，再由引擎上采样到物理分辨率
+		# （2670×1200 → 1600×960，填充量 −52%，所有全屏 shader 一起受益）。
+		#
+		# 只在 factor == 1 的档位（fit / fill 默认 100%）启用：
+		#   VIEWPORT 模式下 `content_scale_factor` 是**渲染目标**的倍率，factor≠1 时
+		#   （dense 档的 0.85）画布尺寸也会跟着变，逻辑画布与 _total_scale 的换算会失配。
+		#   这种情况下退回 CANVAS_ITEMS（物理像素着色），保证版式正确。
+		# 代价：整体变软，UI 文字最明显（1.25~1.67× 上采样）。
+		var use_viewport := DCFeatureFlags.render_viewport_enabled() \
+			and is_equal_approx(factor, 1.0)
+		window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT if use_viewport \
+			else Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		window.content_scale_size = REFERENCE_SIZE
 		window.content_scale_aspect = aspect
 		_base_stretch = maxf(minf(float(win.x) / VIEWPORT_WIDTH, float(win.y) / VIEWPORT_HEIGHT),

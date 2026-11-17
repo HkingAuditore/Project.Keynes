@@ -383,13 +383,15 @@ static func compile_native_catalog() -> Dictionary:
 			era_entry_milestones.append(int(id_to_index[entry_milestone_id]))
 	var technology_entry_milestones := PackedInt32Array()
 	for technology in range(ids.size()):
-		# Ordinary nodes may already be revealed and researched without the
-		# previous-era milestone. Only the era milestone itself keeps that gate.
-		if (int(flags[technology]) & FLAG_MILESTONE) != 0:
-			technology_entry_milestones.append(
-				era_entry_milestones[int(era_index[String(era_ids[technology])])])
-		else:
-			technology_entry_milestones.append(-1)
+		# 时代闸只放行「下一时代」：时代 N（N ≥ 2）的普通节点一律要求已晋升到
+		# N-1，也就是持有 eras[N-1] 的里程碑；时代 0/1 不设闸，石器时代可以直接
+		# 预研农耕时代。里程碑节点保持原判据（内部时代令牌），见
+		# docs/cpp-dots-runtime/technology-tree-runtime.md「时代闸」。
+		var era_position := int(era_index[String(era_ids[technology])])
+		var is_milestone_node := (int(flags[technology]) & FLAG_MILESTONE) != 0
+		var era_gated := era_position >= 2 or (is_milestone_node and era_position >= 1)
+		technology_entry_milestones.append(
+			era_entry_milestones[era_position] if era_gated else -1)
 	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
 	var conditions := _compile_research_conditions(technology_rows, ids, signal_ids, era_index,
 			prerequisite_offsets, prerequisites, milestone_offsets, milestone_candidates,

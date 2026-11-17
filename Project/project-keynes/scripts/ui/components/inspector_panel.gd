@@ -656,7 +656,7 @@ func _build_page_tax_section(context: Dictionary) -> void:
 	lanes.visible = not defaults.is_empty()
 	_reset_tax_button = ActionButtonScene.instantiate() as Button
 	_reset_tax_button.text = "重置本栏税收设置"
-	_reset_tax_button.tooltip_text = "清除此栏税种在本地的默认税率和全部单项覆盖，恢复沿用国家政策；次日生效。"
+	_reset_tax_button.tooltip_text = "清除此栏税种在本地的默认税率和全部单项覆盖，恢复沿用国家政策。"
 	_reset_tax_button.pressed.connect(_request_category_tax_reset)
 	body.add_child(_reset_tax_button)
 	_update_reset_tax_button()
@@ -909,7 +909,7 @@ func _request_category_tax_reset() -> void:
 		"targets": targets.duplicate(true)}
 	_clear_tax_confirmation.title = "重置本栏税收设置"
 	_clear_tax_confirmation.dialog_text = (
-		"将清除本格%s的默认税率和全部单项覆盖，恢复沿用国家政策，次日生效。"
+		"将清除本格%s的默认税率和全部单项覆盖，恢复沿用国家政策。"
 		% _page_tax_title(_current_tab).trim_prefix("此地"))
 	_clear_tax_confirmation.popup_centered(Vector2i(480, 220))
 

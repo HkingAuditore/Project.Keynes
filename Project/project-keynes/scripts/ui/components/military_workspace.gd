@@ -874,7 +874,7 @@ func _refresh_fronts(data: Dictionary) -> void:
 	var front_source_missing := not bool(data.get("front_source", true))
 	_front_empty.visible = rows.is_empty() and front_source_missing
 	if front_source_missing:
-		_front_empty.text = "暂时读不到战线情报，明日再来看。"
+		_front_empty.text = "暂时读不到战线情报。"
 	if _changed("fronts", rows):
 		var list_rows: Array = []
 		for row in rows:
@@ -908,9 +908,9 @@ func _request(id: StringName, args: Dictionary) -> void:
 		return
 	var result: Dictionary = _player_controller.request_command(id, args)
 	if bool(result.get("ok", false)):
-		_flash(String(result.get("message", "已下达，次日生效。")), false)
+		_flash(String(result.get("message", "已下达。")), false)
 	else:
-		_flash(String(result.get("message", "命令未生效：原因未返回，请重试或查看军情。")), true)
+		_flash(String(result.get("message", "命令未生效，请重试或查看军情。")), true)
 
 
 func _flash(text: String, danger: bool) -> void:

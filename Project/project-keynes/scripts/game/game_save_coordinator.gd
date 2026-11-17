@@ -245,7 +245,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 			SaveRepositoryScript.LEGACY_INDUSTRY_REASON)
 	if not _manifest_compatible(manifest):
 		return _result(false, "save_provider_incompatible",
-			"存档运行时 provider 缺失或版本不兼容。")
+			"存档版本与当前游戏不兼容，无法读取。")
 	var bytes_by_id: Dictionary = container.get("section_bytes", {})
 	# Plan 11.5. This runs in the session request, before a world exists, so the
 	# running contract usually reads 0 here and the verdict defers; the refusal
@@ -280,7 +280,7 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 	var sections: Dictionary = _pending_load.sections
 	var generator := host.generator()
 	if generator == null:
-		return _result(false, "load_runtime_missing", "地图运行时尚未建立。")
+		return _result(false, "load_runtime_missing", "地图尚未载入。")
 	# Plan 11.5, the authoritative whole-package gate: the world now exists, so
 	# the running contract is a real number and this refusal still precedes every
 	# `provider.restore_sections` call, i.e. it refuses before anything mutates.
@@ -306,14 +306,14 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 			return provider_result
 	if not generator.has_method("finalize_save_restore_runtime"):
 		return _result(false, "load_runtime_finalize_missing",
-			"地图运行时缺少读档收尾接口。")
+			"地图未能完成读档，请重试。")
 	var finalized: Dictionary = generator.finalize_save_restore_runtime()
 	if not bool(finalized.get("ok", false)):
 		return _result(false, "load_runtime_finalize_failed",
 			String(finalized.get("reason", "读档后调度器初始化失败。")))
 	if not host.has_method("finalize_save_restore_visuals"):
 		return _result(false, "load_visual_finalize_missing",
-			"地图运行时缺少读档后视野重绑接口。")
+			"地图未能完成读档，请重试。")
 	var visual_finalized: Dictionary = host.finalize_save_restore_visuals()
 	var vision: Dictionary = visual_finalized.get("vision", {})
 	if not bool(vision.get("ok", false)):
@@ -352,7 +352,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		return _result(false, "save_busy", "已有存档请求正在处理。")
 	var generation := _runtime_generation
 	if not _session_active(generation):
-		return _result(false, "save_runtime_missing", "游戏运行时尚未就绪。")
+		return _result(false, "save_runtime_missing", "游戏尚未就绪。")
 	var capture: Dictionary = _runtime_host.begin_state_capture()
 	if not bool(capture.get("ok", false)):
 		return _result(false, "save_runtime_not_ready", "游戏仍在准备或关闭中，暂时无法保存。")

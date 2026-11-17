@@ -457,13 +457,21 @@ class _ChapterEmblem extends Control:
 		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		queue_redraw()
 
+	## 3x3 网格里这一格对应的图集区域。
+	## 格边长按纹理实际宽度换算：图集可能被降分辨率（当前 1152×1152，每格 384），
+	## 写死 512 会同时切进右边和下边的邻居——画面上会多出半截麦穗与两座尖顶。
+	func source_region() -> Rect2:
+		if atlas == null:
+			return Rect2()
+		var cell := float(atlas.get_width()) / 3.0
+		return Rect2(
+			float(index % 3) * cell,
+			floorf(float(index) / 3.0) * cell,
+			cell,
+			cell,
+		)
+
 	func _draw() -> void:
 		if atlas == null:
 			return
-		var source := Rect2(
-			(float(index % 3) * 512.0),
-			(float(index / 3) * 512.0),
-			512.0,
-			512.0,
-		)
-		draw_texture_rect_region(atlas, Rect2(Vector2.ZERO, size), source)
+		draw_texture_rect_region(atlas, Rect2(Vector2.ZERO, size), source_region())

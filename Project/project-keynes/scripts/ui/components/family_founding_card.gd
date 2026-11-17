@@ -131,7 +131,7 @@ func set_candidate(candidate: Dictionary) -> void:
 		_badges.visible = false
 		_clear_rows(_traits_list)
 		_clear_rows(_effect_tiers_box)
-		_effect_title.text = "独特效果 · 无"
+		_effect_title.visible = false
 		_effect_context.visible = false
 		_choose.disabled = true
 		_details_toggle.disabled = true
@@ -267,7 +267,8 @@ func _refresh_details(candidate: Dictionary) -> void:
 	var tiers: PackedStringArray = candidate.get("effect_prestige_descriptions", PackedStringArray())
 	if tiers.is_empty() and not raw_description.is_empty():
 		tiers = FamilyBuffCopyScript.prestige_statements(raw_description)
-	_effect_title.text = "独特效果 · %s" % effect_name if not effect_name.is_empty() else "独特效果 · 无"
+	_effect_title.text = "独特效果 · %s" % effect_name
+	_effect_title.visible = not effect_name.is_empty()
 	_clear_rows(_effect_tiers_box)
 	var presentation := FamilyBuffCopyScript.founding_effect_rows(tiers)
 	var context := String(presentation.get("context", ""))
@@ -278,6 +279,8 @@ func _refresh_details(candidate: Dictionary) -> void:
 			_add_effect_row(row)
 	if _effect_tiers_box.get_child_count() == 0 and not raw_description.is_empty():
 		_add_copy(_effect_tiers_box, raw_description)
+	# 标题跟着内容走：没有效果正文时整节不渲染，不留一行空标题。
+	_effect_title.visible = _effect_title.visible and _effect_tiers_box.get_child_count() > 0
 
 
 func _effect_summary_bbcode(candidate: Dictionary, compact: bool) -> String:

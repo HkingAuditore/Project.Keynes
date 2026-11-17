@@ -299,7 +299,7 @@ func set_command_result(result: Dictionary) -> void:
 		_set_busy_status(true)
 		_update_start_enabled()
 		if message.is_empty():
-			_feedback.text = "经济正在结算，提交完成后即可派遣。"
+			_feedback.text = EconomyStatusCopy.BUSY
 		_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 		return
 	_feedback.add_theme_color_override("font_color", UITokens.RISK)
@@ -425,7 +425,7 @@ func _show_quotes() -> void:
 		_clear_list()
 		_quotes_identity = ""
 		_set_busy_status(false)
-		_add_note("玩家控制器尚未就绪。", UITokens.RISK)
+		_add_note("游戏尚未就绪。", UITokens.RISK)
 		_update_start_enabled()
 		return
 	if _target_cell < 0:
@@ -447,7 +447,7 @@ func _show_quotes() -> void:
 				return
 			_clear_list()
 			_quotes_identity = ""
-			_add_note("正在等待经济提交完成后显示可派遣家族。", UITokens.ARCHIVE_INK_MUTED)
+			_add_note(EconomyStatusCopy.BUSY, UITokens.ARCHIVE_INK_MUTED)
 			_update_start_enabled()
 			return
 		_clear_list()
@@ -466,7 +466,7 @@ func _show_quotes() -> void:
 			_add_note("请选择出发城市，然后选择该城要派遣的家族。", UITokens.ARCHIVE_INK_MUTED)
 		elif _economy_busy:
 			_sources_loaded = false
-			_add_note("经济正在结算，提交后刷新可派遣的城市与家族。", UITokens.ARCHIVE_INK_MUTED)
+			_add_note(EconomyStatusCopy.BUSY, UITokens.ARCHIVE_INK_MUTED)
 		elif int(page.get("total", 0)) <= 0:
 			# 城市列表为空不是「没有家族」，而是没有城市能连通这个目标：
 			# 水面在拓扑里不可走，只能靠航道门户跳跃，缺科技时整片水就是墙。
@@ -501,7 +501,7 @@ func _show_quotes() -> void:
 	if quotes.is_empty():
 		_clear_list()
 		if _economy_busy:
-			_add_note("经济正在结算。家族列表将在提交后刷新，也可先查看在途队伍。",
+			_add_note(EconomyStatusCopy.BUSY,
 				UITokens.ARCHIVE_INK_MUTED)
 		elif int(page.get("total", 0)) <= 0 and _source_city.item_count <= 1:
 			# 全国都没城市能到达：换出发城市没有意义，直接点出航道门槛。
@@ -738,7 +738,7 @@ func _set_busy_status(busy: bool) -> void:
 		return
 	_status.visible = busy
 	_status.text = "结算中 · 派遣与取消将排队执行" if busy else ""
-	_status.tooltip_text = "经济正在结算，提交完成后自动执行排队命令。"
+	_status.tooltip_text = EconomyStatusCopy.BUSY
 	_status.add_theme_color_override("font_color", UITokens.WARN)
 
 
@@ -759,7 +759,7 @@ func _refresh_selected_kit() -> void:
 		_update_start_enabled()
 		var detail_code := String(detail.get("code", "command_rejected"))
 		if _transient_query_failure(detail_code, detail):
-			_feedback.text = "经济正在结算，提交完成后即可派遣。"
+			_feedback.text = EconomyStatusCopy.BUSY
 			_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 			return
 		_feedback.text = _reason_text(detail_code)
@@ -811,7 +811,7 @@ func _update_start_enabled() -> void:
 		_start.text = "请先选择目的地"
 	elif _economy_busy:
 		_start.text = "排队派遣 %s 人" % party_text if has_selection else "排队派遣"
-		_start.tooltip_text = "经济正在结算。现在确认后会排队，提交完成后自动出发。"
+		_start.tooltip_text = EconomyStatusCopy.BUSY
 	elif complete_kit:
 		_start.text = "派遣 %s 人并安家" % party_text if has_selection else "确认派遣"
 		_start.tooltip_text = _kit_summary_text(_selected_quote)

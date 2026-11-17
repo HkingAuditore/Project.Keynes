@@ -589,7 +589,7 @@ unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(138, 30)
 layout_mode = 2
-tooltip_text = "决定大陆块数与海洋分隔，而不是只改地图尺寸。"
+tooltip_text = "决定大陆块数与海洋分隔。"
 
 [node name="LayoutCardsRow" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField" unique_id=1662652646]
 unique_name_in_owner = true
@@ -745,6 +745,7 @@ theme_override_font_sizes/font_size = 24
 text = "设置"
 
 [node name="SettingsScroll" type="ScrollContainer" parent="PageMargin/PageStack/SettingsPage/Column" unique_id=1810278940]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
@@ -812,6 +813,17 @@ theme_type_variation = &"PKDossierBody"
 text = "界面缩放"
 
 [node name="UIScale" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=528493351]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="UILayoutLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=807138997]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+text = "界面布局"
+
+[node name="UILayout" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=528493352]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

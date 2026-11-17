@@ -18,8 +18,9 @@ func _init() -> void:
 	_expect("stable technology manifest is present", ids.size() > 0)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
-	# Ordinary next-era nodes: reveal, hard prerequisites and one complete route
-	# are enough. The previous-era milestone is not a research gate.
+	# 时代闸只放行下一时代：时代 N 的节点要求持有 eras[N-1] 的里程碑。
+	# 王国时代（N=2）的普通节点因此必须有 agrarian_society 才能入队；
+	# 揭示、硬前置与一条完整路线只是另外两道门。
 	var writing_revealed_only := _fixture(PackedStringArray([
 		"tech.celestial_calendars", "tech.gathering", "tech.oral_memory_practice",
 	]), PackedStringArray(["development.population.500_90d"]))
@@ -32,11 +33,11 @@ func _init() -> void:
 		"development.population.500_90d",
 		"development.employment.knowledge.10_90d",
 	]))
-	_expect("revealed kingdom node is researchable without the agrarian milestone",
-		_state(writing_without_era, "tech.writing") == 2)
-	_attempt_enqueue(writing_without_era, "tech.writing", int(writing_without_era.day))
-	_expect("kingdom node can enter the queue without the agrarian milestone",
-		_state(writing_without_era, "tech.writing") == 3)
+	_expect("kingdom node stays era-locked without the agrarian milestone",
+		_state(writing_without_era, "tech.writing") == 1)
+	_reject_enqueue(writing_without_era, "tech.writing", int(writing_without_era.day))
+	_expect("kingdom node cannot enter the queue without the agrarian milestone",
+		_state(writing_without_era, "tech.writing") == 1)
 
 	var revealed := _fixture(PackedStringArray([
 		"tech.agrarian_society", "tech.celestial_calendars",
@@ -235,6 +236,16 @@ func _attempt_enqueue(fixture: Dictionary, technology_id: String, day: int) -> v
 	_expect("eligible enqueue command submits", bool(submitted.get("ok", false)))
 	var report: Dictionary = (fixture.ext as Object).run_country_slice({"day_index": day})
 	_expect("eligible enqueue command commits", bool(report.get("ok", false)))
+
+
+func _reject_enqueue(fixture: Dictionary, technology_id: String, day: int) -> void:
+	var technology_index := (_compiled.technology_ids as PackedStringArray).find(technology_id)
+	var domain := int((_compiled.technology_domain_indices as PackedInt32Array)[technology_index])
+	# 拒绝发生在提交后的原生 slice 里，这里只负责把命令真的送进去；
+	# 是否被挡由调用方用 technology_states 判定。
+	(fixture.facade as Object).enqueue_research(int(fixture.handle), StringName(technology_id),
+		domain, -1, day, 1000 + day)
+	(fixture.ext as Object).run_country_slice({"day_index": day})
 
 
 func _state(fixture: Dictionary, technology_id: String) -> int:

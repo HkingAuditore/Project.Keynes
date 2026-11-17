@@ -32,7 +32,6 @@ const T_RISE := 2.25
 const T_RISE_END := 3.45
 const T_TITLE := 3.25
 const T_TITLE_END := 4.05
-const T_SUB := 3.85
 const T_BUFF_HEAD := 4.3
 const BUFF_STEP := 0.26
 const FLY_MIN := 5.6
@@ -61,7 +60,6 @@ const OUTLINE_INK := Color(0.16, 0.08, 0.03, 0.92)
 @onready var _text: VBoxContainer = $Text
 @onready var _kicker: Label = %Kicker
 @onready var _title: Label = %Title
-@onready var _subtitle: Label = %Subtitle
 @onready var _buff_heading: Control = %BuffHeading
 @onready var _buff_label: Label = %BuffHeadingLabel
 @onready var _buff_rows: VBoxContainer = %BuffRows
@@ -116,8 +114,6 @@ func play(config: Dictionary) -> void:
 	_new.texture = new_texture
 	_kicker.text = "时代晋升"
 	_title.text = "进入 %s" % String(config.get("new_era_name", "新时代"))
-	_subtitle.text = String(config.get("subtitle", ""))
-	_subtitle.visible = not _subtitle.text.is_empty()
 	_buff_label.text = "时代加成"
 	set_buffs(PackedStringArray(config.get("buffs", PackedStringArray())))
 	_rng_shards(hash(String(config.get("new_era_id", ""))))
@@ -283,9 +279,6 @@ func _style_text() -> void:
 	_title.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.55))
 	_kicker.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	_kicker.add_theme_color_override("font_color", Color(UITokens.HUD_BRASS_GLOW, 0.92))
-	_subtitle.add_theme_font_override("font", UITokens.DOSSIER_SERIF)
-	_subtitle.add_theme_color_override("font_color", UITokens.CHRONICLE_PAPER)
-	_subtitle.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
 	_buff_label.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	_buff_label.add_theme_color_override("font_color", UITokens.HUD_BRASS_GLOW)
 	for child in _buff_heading.get_children():
@@ -317,7 +310,6 @@ func _layout() -> void:
 	_title.add_theme_constant_override("outline_size", maxi(4, roundi(12.0 * _scale)))
 	_title.add_theme_constant_override("shadow_offset_y", roundi(4.0 * _scale))
 	_kicker.add_theme_font_size_override("font_size", roundi(20.0 * _scale))
-	_subtitle.add_theme_font_size_override("font_size", roundi(27.0 * _scale))
 	_buff_label.add_theme_font_size_override("font_size", roundi(21.0 * _scale))
 	for child in _buff_heading.get_children():
 		if child is ColorRect:
@@ -501,8 +493,6 @@ func _apply(_delta: float) -> void:
 	var brush := _smooth(_seg(t, T_TITLE, T_TITLE_END))
 	(_title.material as ShaderMaterial).set_shader_parameter("progress", brush)
 	_title.modulate.a = 1.0 if brush > 0.0 else 0.0
-	_subtitle.modulate.a = _seg(t, T_SUB, T_SUB + 0.5)
-	_subtitle.visible_ratio = _seg(t, T_SUB, T_SUB + 0.6)
 	_buff_heading.modulate.a = _seg(t, T_BUFF_HEAD, T_BUFF_HEAD + 0.35)
 	for i in range(_buff_rows.get_child_count()):
 		var row := _buff_rows.get_child(i) as Control

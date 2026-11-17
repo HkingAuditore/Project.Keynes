@@ -109,12 +109,14 @@ func show_unknown(condition_items: Array = [], state: int = 0) -> void:
 	_name.text = "未知科技"
 	_state_label.text = STATE_NAMES[clampi(state, 0, 1)]
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	_placeholder.visible = true
+	_placeholder.visible = not condition_items.is_empty()
 	_placeholder.text = "完成以下条件以发现该科技"
 	_detail_block.visible = true
 	for child in _detail_block.get_children():
 		child.visible = child == _condition_title or child == _conditions
 	_condition_title.text = "发现与研究条件"
+	_condition_title.visible = not condition_items.is_empty()
+	_conditions.visible = not condition_items.is_empty()
 	_conditions.set_items(condition_items)
 	_action.visible = false
 
@@ -129,8 +131,7 @@ func show_retired_queued(index: int, definition: Dictionary) -> void:
 	_name.text = String(definition.get("display_name", "已停用的研究项"))
 	_state_label.text = "已停用"
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	_placeholder.visible = true
-	_placeholder.text = "该项已不再通过研究获得，时代晋升请点击顶栏时代徽记。请将其移出队列。"
+	_placeholder.visible = false
 	_detail_block.visible = false
 	_action.visible = true
 	_action.disabled = false
@@ -189,7 +190,7 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	if is_application:
 		_prerequisite_title.text = "应用所需科技"
 	else:
-		_prerequisite_title.text = "需要先完成"
+		_prerequisite_title.text = "前置科技"
 	_prerequisite_title.visible = not prerequisites.is_empty()
 	_fill_relation_rows(_prerequisites, prerequisites)
 	var hard_successors: Array = relations.get("hard_successors", [])
@@ -298,7 +299,7 @@ func _progress_caption(definition: Dictionary, fraction: float, state: int) -> S
 	if state >= 5:
 		return "已掌握"
 	if state == 4:
-		return "研究完成 · 次日生效"
+		return "研究完成"
 	if state <= 1:
 		return "尚未开始"
 	# Derive from the scaled cost: cost_points is an integer point count and
@@ -366,6 +367,8 @@ func _restore_scroll(saved_scroll: Vector2i) -> void:
 
 
 func _apply_action(state: int) -> void:
+	# 按钮只写动作；「为什么不能点」由上方逐条带图标的条件列表回答，禁用原因留在 tooltip。
+	_action.tooltip_text = ""
 	match state:
 		2:
 			_action.visible = true
@@ -378,7 +381,8 @@ func _apply_action(state: int) -> void:
 		1:
 			_action.visible = true
 			_action.disabled = true
-			_action.text = "前置尚未完成"
+			_action.text = "加入研究队列"
+			_action.tooltip_text = "研究条件尚未满足"
 		_:
 			_action.visible = false
 			_action.disabled = true
@@ -391,7 +395,7 @@ func mark_submitted() -> void:
 		return
 	_submitted = true
 	_action.disabled = true
-	_action.text = "已提交 · 次日生效"
+	_action.text = "已提交"
 
 
 func mark_rejected(message: String) -> void:

@@ -15,6 +15,8 @@ signal close_requested()
 signal history_page_requested(offset: int)
 signal report_selected(report_id: int)
 
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
+
 var _scroll: ScrollContainer
 var _body: VBoxContainer
 var _cover: AnnualCoverView
@@ -145,6 +147,17 @@ func _link_button(text: String, callback: Callable, cue: StringName = &"page") -
 	button.text = text
 	button.focus_mode = Control.FOCUS_ALL
 	button.custom_minimum_size.y = 26.0
+	# [year-fence-deadlock 2026-11-17] 年报页脚这三条文字链是**关掉报告的唯一触摸入口**。
+	# 桌面 26 设计像素够用；440dpi 手机上它只有约 12dp 高、十几 dp 宽，手指压不中。
+	# 关不掉 = AnnualReportFlow 永远等不到 _on_closed → _restore_clock()，
+	# 而开卷时 WorldClock 已被暂停 —— 玩家看到的就是"第二年 1 月 1 日模拟卡死"。
+	# 这里只抬**命中区**（custom_minimum_size，样式是透明文字链，视觉不变），
+	# 字号、字距、页脚排布都不动。
+	if TouchUI.is_touch():
+		var hit_units: float = TouchUI.units(44.0)
+		button.custom_minimum_size.x = maxf(button.custom_minimum_size.x, hit_units)
+		button.custom_minimum_size.y = maxf(button.custom_minimum_size.y, hit_units)
+		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_link_style(button)
 	button.pressed.connect(callback)
 	_footer.add_child(button)

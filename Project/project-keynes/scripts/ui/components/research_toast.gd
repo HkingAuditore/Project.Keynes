@@ -42,7 +42,7 @@ func show_research_completed(display_name: String) -> void:
 		_dismiss_oldest(now)
 	_entries.append({
 		"kind": "research",
-		"text": "「%s」研究完成 · 次日生效" % display_name,
+		"text": "「%s」研究完成" % display_name,
 		"start": now,
 		"until": now + DISPLAY_MSEC,
 	})

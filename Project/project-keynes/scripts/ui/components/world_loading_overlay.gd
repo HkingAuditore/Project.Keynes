@@ -35,7 +35,7 @@ const STAGE_LABELS := {
 	"resources": "勘测自然资源",
 	"ecology_bind": "播种生态分布",
 	"gameplay_bind": "初始化玩法系统",
-	"runtime_bind": "启动仿真运行时",
+	"runtime_bind": "启动世界模拟",
 	"done": "即将进入世界",
 	# ── 生成器返回后的渲染/视觉层装载（world_runtime_host）──
 	"bind": "绑定世界状态",

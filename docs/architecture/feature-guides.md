@@ -68,9 +68,19 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 改建筑的产出、投入或效率须运行 `tests/building/building_resource_chain_test.gd`（同族单调与跨字段校验）。
 
 石器时代建材组必须通过 `construction_category_ids` 声明可替代材料；`primitive_lashing`
-当前由 `bast_fiber`（玩家显示名“亚麻杆”）与 `reed_bundle` 共同组成。开局规划器会从编译后的
-候选组选择本地可达材料，并将所选建材写入 bootstrap 库存；因此出生地没有亚麻杆时，不能把
-亚麻杆当作唯一硬依赖而阻塞开局。修改该类建材时运行
+当前由 `bast_fiber`（玩家显示名“亚麻杆”）、`reed_bundle` 与 `raw_hide` 共同组成。
+
+**起始科技即可营造的建筑，不得把需要研究的材料列为必需建材。** 八个起始科技能产出的货物
+只有原木、生皮、毛皮、野味、采集植物食物、衣物、黄金、白银和科技值；`bast_fiber`
+（`tech.wild_flax_collection`，3800 点）与 `reed_bundle`（`tech.reed_harvesting`，6800 点）
+都要先研究，所以在开局六件套之外给它们排建材槽等于锁死那一栋。`raw_hide`（`tech.hunting`）
+因此是石器绑扎槽唯一开局可达的兜底，默认价约为亚麻杆的 3.4 倍——有纤维时按有效成本择优会
+自然让位，只在没有纤维时顶上。采集营地已改为纯 `primitive_construction` 单槽，不再依赖绑扎
+材料；新增石器建筑时按同一条规则自查 `technology_tags` 与 `construction_category_ids` 的交集。
+
+开局规划器会把种子建筑的候选建材写入 bootstrap 库存，**那只是第一座建筑的一次性补贴，
+不能拿来证明该类建筑在开局可反复营造**——判据是"起始科技能否持续产出该货物"，不是
+"出生地有没有被塞过一份"。修改该类建材时运行
 `tests/ui/modern_economy_catalog_test.gd` 与 `tests/family/family_colonization_runtime_test.gd`，
 保留“仅有芦苇也能完成建材组”的替代回归。
 

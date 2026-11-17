@@ -115,6 +115,16 @@ static func modifier_delta(term: Dictionary) -> String:
 	return NetworkPresentation.modifier_delta(term)
 
 
+## 单项修饰的效果增量（+0.07 表示 +7%），供同主语多项相加后再统一格式化。
+static func modifier_delta_fraction(term: Dictionary) -> float:
+	return NetworkPresentation.modifier_delta_fraction(term)
+
+
+## 把已求和的增量格式化为玩家文案。`_bp` 类统计的量纲是 1/100，单独折算。
+static func modifier_delta_text(delta: float, stat: String) -> String:
+	return NetworkPresentation.modifier_delta_text(delta, stat)
+
+
 ## Rebuilds the deterministic visual-edge projection from authored relations.
 static func build_visual_edges(payload: Dictionary) -> Array[Dictionary]:
 	var nodes: Array = payload.get("nodes", [])

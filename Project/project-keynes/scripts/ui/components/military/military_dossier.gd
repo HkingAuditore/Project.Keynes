@@ -122,7 +122,7 @@ func _ready() -> void:
 	for label in ["固守", "推进", "强攻", "撤退", "海运中"]:
 		_stance.add_item(label)
 	_stance.set_item_disabled(4, true)
-	_stance.tooltip_text = "固守重防御，推进用于常规作战，强攻承担更高风险；撤退用于脱离战斗。海运由行军自动切换。"
+	_stance.tooltip_text = "固守重防御，推进用于常规作战，强攻承担更高风险；撤退用于脱离战斗。"
 	_stance.item_selected.connect(func(index: int) -> void:
 		_emit_action(&"stance", {"stance": index}))
 	_radius.value_changed.connect(func(value: float) -> void:

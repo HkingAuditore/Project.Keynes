@@ -78,6 +78,8 @@ var _has_safe_override := false
 var _ui_scale_percent := 100
 ## 触摸档布局策略覆盖（fit/fill/dense）。空 = 不覆盖。
 var _layout_mode := ""
+## 触摸档在布局之上的再缩放（50/75/100）。
+var _layout_scale := 100
 var _sizes: Array[Vector2i] = []
 var _failures: Array[String] = []
 var _records: Array[Dictionary] = []
@@ -112,6 +114,8 @@ func _parse_args() -> void:
 			_ui_scale_percent = int(arg.trim_prefix("--ui-scale="))
 		elif arg.begins_with("--layout="):
 			_layout_mode = String(arg.trim_prefix("--layout="))
+		elif arg.begins_with("--layout-scale="):
+			_layout_scale = int(arg.trim_prefix("--layout-scale="))
 	for item in sizes_text.split(","):
 		var pair := String(item).split("x")
 		if pair.size() == 2:
@@ -129,6 +133,8 @@ func _run() -> void:
 		settings.call("update", {
 			"ui_scale_percent": _ui_scale_percent, "window_mode": "windowed",
 			"resolution_width": 1600, "resolution_height": 960,
+			"ui_layout_scale": _layout_scale,
+			"ui_layout_mode": _layout_mode if not _layout_mode.is_empty() else "fit",
 		}, false)
 		var scaling = settings.call("ui_scaling") if settings.has_method("ui_scaling") else null
 		if scaling != null:
@@ -311,8 +317,11 @@ func _record(target_size: Vector2i, actual: Vector2i, page: String, control: Con
 		"font_dp": _dp(float(font_size) * scale),
 	})
 	_records.append(entry)
+	# [pc-fit 2026-11-17] 触摸档会隐藏「窗口模式 / 分辨率 / 垂直同步」（移动端无意义），
+	# 这是设计行为，不是失败。曾经把它算成 failures，害得每次移动档都报 2 条假红。
 	if not control.is_visible_in_tree():
-		_failures.append("%s/%s 不可见" % [page, human])
+		if not _touch_profile_active():
+			_failures.append("%s/%s 不可见" % [page, human])
 	elif not inside:
 		_failures.append("%s/%s 被裁 %s ⊄ %s" % [page, human, rect, view])
 	elif rect.size.x < 1.0 or rect.size.y < 1.0:

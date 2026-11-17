@@ -157,7 +157,7 @@ static func _show_expeditions(host) -> void:
 				return
 			host._clear_list()
 			host._expeditions_identity = ""
-			host._add_note("正在等待经济提交完成后显示在途队伍。", UITokens.ARCHIVE_INK_MUTED)
+			host._add_note(EconomyStatusCopy.BUSY, UITokens.ARCHIVE_INK_MUTED)
 			return
 		host._clear_list()
 		host._expeditions_identity = ""
@@ -178,7 +178,7 @@ static func _show_expeditions(host) -> void:
 		host._expedition_cancel.visible = false
 		host._show_preview_cards(false, false, false, false, false)
 		if host._economy_busy:
-			host._add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.ARCHIVE_INK_MUTED)
+			host._add_note(EconomyStatusCopy.BUSY, UITokens.ARCHIVE_INK_MUTED)
 		else:
 			host._add_note("活动开拓队：无", UITokens.ARCHIVE_INK_MUTED)
 		return

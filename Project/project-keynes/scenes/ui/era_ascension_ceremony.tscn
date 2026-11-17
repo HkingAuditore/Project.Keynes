@@ -248,11 +248,6 @@ material = SubResource("TitleMaterial")
 layout_mode = 2
 horizontal_alignment = 1
 
-[node name="Subtitle" type="Label" parent="Text"]
-unique_name_in_owner = true
-layout_mode = 2
-horizontal_alignment = 1
-
 [node name="Gap" type="Control" parent="Text"]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2

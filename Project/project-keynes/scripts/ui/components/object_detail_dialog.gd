@@ -359,7 +359,7 @@ func _facts_for_row(kind: String, row: Dictionary) -> Array:
 			return [
 				{"label": "栋数", "value": String(row.get("count", "—")), "accent": UITokens.DOSSIER_INK},
 				{"label": "状态", "value": String(row.get("status", "—")), "accent": _dossier_accent(row.get("accent", UITokens.DOSSIER_INK))},
-				{"label": String(row.get("profit_label", "利润")), "value": String(row.get("profit", "—")),
+				{"label": String(row.get("profit_label", "净额")), "value": String(row.get("profit", "—")),
 					"accent": _dossier_accent(row.get("accent", UITokens.DOSSIER_INK))},
 			]
 		"good":

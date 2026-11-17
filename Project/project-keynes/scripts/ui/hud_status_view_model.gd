@@ -57,7 +57,7 @@ static func build_treasury(cash_valid: bool, cash: int, fiscal: Dictionary,
 		"expense_bar": {},
 		"net_text": "",
 		"net_positive": true,
-		"footer": "点击查看国家经济 · 总览",
+		"footer": "经济总览",
 	}
 	if not bool(flow.get("ok", false)):
 		model["note"] = "本日结算尚未发布，收支明细稍后可见。"
@@ -106,7 +106,7 @@ static func build_population(professions: Dictionary, summary: Dictionary) -> Di
 		"note": "",
 		"share_bar": {},
 		"rows": [],
-		"footer": "点击查看国家经济 · 阶层民生",
+		"footer": "阶层民生",
 	}
 	if not bool(professions.get("ok", false)):
 		model["note"] = String(professions.get("reason", "人口快照暂不可用"))

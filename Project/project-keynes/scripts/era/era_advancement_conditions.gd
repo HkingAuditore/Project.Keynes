@@ -18,9 +18,6 @@ static func _conditions(
 	out.append(_condition("tech", int(tech.completed), tech_target, tech_met,
 		"%d / %d 项" % [int(tech.completed), tech_target]))
 	out[out.size() - 1]["mandatory"] = true
-	out[out.size() - 1]["tooltip"] = "本时代共 %d 项科技，需完成 %d%%（%d 项）；当前已完成 %d 项。" % [
-		int(tech.total), int(round(CatalogScript.TECH_COMPLETION_RATIO * 100.0)),
-		tech_target, int(tech.completed)]
 	var summary := _summary
 	var territory := _territory
 	var population := int(summary.get("population", 0))
@@ -35,10 +32,6 @@ static func _conditions(
 	out.append(_condition("trade", _trade_accumulated, trade_target,
 		_trade_accumulated >= trade_target,
 		"%d / %d 次" % [_trade_accumulated, trade_target]))
-	for row in out:
-		if String(row.key) != "tech":
-			row["tooltip"] = "%s：需达到 %d；按当前持有的 %d 个地块计算，领土扩大时门槛同步提高。" % [
-				String(row.label), int(row.target), territory]
 	return out
 
 

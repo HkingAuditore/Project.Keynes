@@ -14,6 +14,12 @@ shadow. This prevents source art from being clipped at nominal cell edges.
 Each sticker is bound by an `AtlasTexture` at `assets/military/<key>.tres`
 and referenced through `IconCatalog`.
 
+**导入时不许缩小这张图集。** 运行时贴图必须是 2560×1920：`AtlasTexture.region`
+写的是贴图像素坐标，`.import` 里 `process/size_limit` 一旦生效，格距就会变小，
+82 枚纸贴全部错位（2026-11-17 这里被设成 1792，运行时 1792×1344，`plan_*` /
+`ledger_*` 的格子甚至超出图外）。现固定 `process/size_limit=0`；
+`tests/ui/icon_catalog_audit_test.gd` 会拦住任何被 `AtlasTexture` 引用却带导入缩放的贴图。
+
 | key | cell (x, y, w, h) |
 | --- | --- |
 | `military.army.attack` | 0, 0, 320, 320 |

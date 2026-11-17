@@ -194,6 +194,35 @@ func _run() -> void:
 	_expect("chapter emblems use a complete transparent 3x3 atlas",
 		cover_reader.sections()[0].find_child("ChapterEmblem", true, false).atlas
 			.get_image().detect_alpha() != Image.ALPHA_NONE)
+	# 切片契约：每一格只许切自己那九分之一，格边长由纹理宽度推出。
+	# 2026-11-17 图集从 1536 降到 1152（每格 384）后，写死 512 的切图把右邻的麦穗
+	# 和下邻的尖顶一起画进了章首徽记 —— 画面上像一枚被撕坏的图标。
+	var emblem_atlas: Texture2D = cover_reader.sections()[0].find_child(
+		"ChapterEmblem", true, false).atlas
+	var atlas_w: float = float(emblem_atlas.get_width())
+	var atlas_h: float = float(emblem_atlas.get_height())
+	var cell: float = atlas_w / 3.0
+	var slice_ok: bool = absf(atlas_w - atlas_h) <= 0.5
+	for section_index in cover_reader.sections().size():
+		var region: Rect2 = cover_reader.sections()[section_index].find_child(
+			"ChapterEmblem", true, false).source_region()
+		slice_ok = slice_ok and absf(region.size.x - cell) <= 0.5 \
+			and absf(region.size.y - cell) <= 0.5 and region.position.x >= -0.5 \
+			and region.position.y >= -0.5 and region.end.x <= atlas_w + 0.5 \
+			and region.end.y <= atlas_h + 0.5
+	_expect("chapter emblems slice only their own cell", slice_ok)
+	# 资产契约：格右缘与下缘全透明，进画面的一定只有自己那一枚徽记。
+	var atlas_image: Image = emblem_atlas.get_image()
+	var side: int = int(cell)
+	var bleed := false
+	for cell_index in 9:
+		var origin := Vector2i(int(cell_index % 3) * side,
+			int(floorf(float(cell_index) / 3.0)) * side)
+		for step in range(0, side, 4):
+			if atlas_image.get_pixel(origin.x + side - 1, origin.y + step).a > 0.0 \
+				or atlas_image.get_pixel(origin.x + step, origin.y + side - 1).a > 0.0:
+				bleed = true
+	_expect("chapter emblem cells stay isolated from their neighbours", not bleed)
 	var badge: TextureRect = cover_reader.cover().get("_seal_art")
 	_expect("cover keeps the generated rosette colours",
 		float(badge.material.get_shader_parameter("grit")) == 0.0

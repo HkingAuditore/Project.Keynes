@@ -83,7 +83,7 @@ class Context:
 		rows = host._intel.resource_observations.rows
 		seed = host._layout_seed
 		hex = host._hex
-		quality = host.quality()
+		quality = host.density_quality()
 		filter_id = host._filter
 		lens = host.lens_enabled()
 		herd_radius = host.herd_radius_hex()
@@ -520,7 +520,7 @@ static func _install_upload(host, task: Dictionary) -> bool:
 	if family_nodes.has(family):
 		previous = family_nodes[family].multimesh.instance_count
 	var buffer: PackedFloat32Array = task.buffer
-	var remaining: int = host.profile.instance_cap(host.quality(), host._mobile_tier >= 0) - host._instance_count + previous
+	var remaining: int = host.profile.instance_cap(host.density_quality(), host._mobile_tier >= 0) - host._instance_count + previous
 	var count = mini(buffer.size() / host.STRIDE, maxi(0, remaining))
 	if count > 0 and count < buffer.size() / host.STRIDE:
 		buffer = host._keep_important_instances(buffer, count)

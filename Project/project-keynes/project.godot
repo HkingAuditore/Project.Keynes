@@ -34,6 +34,7 @@ window/size/viewport_height=960
 window/size/mode=2
 window/stretch/aspect="expand"
 window/handheld/orientation=4
+window/handheld/quit_on_go_back=false
 
 [editor]
 

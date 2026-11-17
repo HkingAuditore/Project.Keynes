@@ -6,7 +6,6 @@ extends SceneTree
 
 var failures := 0
 const STATUSES := ["locked", "ready", "purchasing", "paused", "completing", "max"]
-const RuleCatalog = preload("res://scripts/era/era_advancement_catalog.gd")
 
 
 func _initialize() -> void:
@@ -182,20 +181,21 @@ func _all_buffs_drawn(panel: EraAdvancementPanel, snapshot: Dictionary) -> bool:
 	return true
 
 
-## 规则/计数/时代名/状态在整张纸上各出现一次。
+## 时代名与状态签在整张纸上各出现一次；规则句与差额提示已按「不复述」原则移除。
 func _check_once(panel: EraAdvancementPanel, status: String) -> void:
 	await process_frame
+	var chip := String(panel.model().get("status_chip", ""))
 	var counts := {
-		"规则": _drawn_count(panel, RuleCatalog.CONDITIONS_RULE_TEXT),
-		"已满足": _drawn_count(panel, "已满足"),
 		"时代晋升": _drawn_count(panel, "时代晋升"),
 		"农耕时代": _drawn_count(panel, "农耕时代"),
-		"status": _drawn_count(panel, String(panel.model().get("status_chip", "?"))),
 	}
-	var expected := {"规则": 1, "已满足": 0, "时代晋升": 1, "农耕时代": 1, "status": 1}
+	var expected := {"时代晋升": 1, "农耕时代": 1}
+	if not chip.is_empty():
+		counts["status"] = _drawn_count(panel, chip)
+		expected["status"] = 1
 	if status == "max":
-		expected = {"规则": 0, "已满足": 0, "时代晋升": 1, "农耕时代": 0, "status": 1}
-	_check("%s: rule, count, era name and status each drawn exactly once %s" % [status, str(counts)],
+		expected["农耕时代"] = 0
+	_check("%s: era name and status each drawn exactly once %s" % [status, str(counts)],
 		counts == expected)
 
 
@@ -214,11 +214,9 @@ func _check_panel(panel: EraAdvancementPanel, badge: EraIndicator) -> void:
 		and _tip(panel, "年度 GDP"))
 	_check("pending reward shows a single 领取时代奖励 button",
 		(panel.get_node("%RewardLink") as Button).visible)
-	_check("locked: start disabled; hint names the nearest missing condition only",
+	_check("locked: start disabled, and no hint restates the gap",
 		action.visible and action.text == "开始晋升" and action.disabled
-		and panel.action_hint() == "差 22 座建筑" and not panel.action_hint().contains("任选"))
-	_check("locked: condition count reads 已满足 1/2",
-		String(panel.model().get("conditions_text", "")) == "已满足 1/2")
+		and panel.action_hint().is_empty())
 	await _check_once(panel, "locked")
 	_check("condition values use 'n / m 单位'", _drawn_has(panel, "18 / 40 座")
 		and _drawn_has(panel, "4200 / 3000 人"))
@@ -228,8 +226,8 @@ func _check_panel(panel: EraAdvancementPanel, badge: EraIndicator) -> void:
 	_check("budget readout is not repeated in the sheet (it lives in the treasury panel)",
 		not _drawn_contains(panel, "时代收购") and not _drawn_contains(panel, "每日"))
 	_check("locked draws no upgrade percentage", not _drawn_contains(panel, "45%"))
-	_check("territory note lives only in the kicker tooltip",
-		_tip(panel, "12 个地块") and not _drawn_contains(panel, "地块计价")
+	_check("no territory pricing note anywhere (it explained the formula, not the state)",
+		not _tip(panel, "个地块") and not _drawn_contains(panel, "地块计价")
 		and not _drawn_contains(panel, "地块预估"))
 	_check("every buff is listed in full, no '等 N 项'", _all_buffs_drawn(panel, _snapshot("locked"))
 		and not _drawn_contains(panel, "等 "))
@@ -238,7 +236,6 @@ func _check_panel(panel: EraAdvancementPanel, badge: EraIndicator) -> void:
 
 	panel.set_snapshot(_snapshot("ready"))
 	_check("ready: start enabled", action.text == "开始晋升" and not action.disabled)
-	_check("ready: count clamps to 2/2", String(panel.model().get("conditions_text", "")) == "已满足 2/2")
 	action.emit_signal("pressed")
 	_check("ready: press emits era.advance.start",
 		commands.size() == 1 and commands[0] == &"era.advance.start")
@@ -251,8 +248,6 @@ func _check_panel(panel: EraAdvancementPanel, badge: EraIndicator) -> void:
 
 	panel.set_snapshot(_snapshot("purchasing"))
 	_check("purchasing: pause button", action.text == "暂停升级" and not action.disabled)
-	_check("purchasing: frozen territory note",
-		String(panel.model().get("territory_note", "")) == "按 12 个地块计价")
 	await process_frame
 	_check("purchasing: status chip carries state and the single percentage", _drawn_has(panel, "升级中 45%")
 		and panel.action_hint().is_empty())
@@ -294,8 +289,8 @@ func _check_panel(panel: EraAdvancementPanel, badge: EraIndicator) -> void:
 	panel.treasury_requested.connect(func() -> void: opened[0] += 1)
 	link.emit_signal("pressed")
 	await process_frame
-	_check("zero budget shows a clickable 尚未分配预算 link instead of 0",
-		link.visible and link.text.contains("尚未分配预算") and opened[0] == 1
+	_check("zero budget shows a clickable 设置晋升预算 link instead of 0",
+		link.visible and link.text.contains("设置晋升预算") and opened[0] == 1
 		and not _drawn_has(panel, "时代收购 · 每日 "))
 	_check("zero budget link sits in its own row above 晋升后获得 (no overlap)",
 		link.visible and link.get_rect().end.y <= panel.buff_head_y())
@@ -400,8 +395,8 @@ func _check_view_model() -> void:
 			and not String(row.name).contains("_") and not String(row.name).is_empty()
 	_check("every cost name is a Chinese display name, not its good_id", names_ok
 		and String(long_model.costs[2].name) == "野味" and String(long_model.costs[4].name) == "金属工具")
-	_check("delta hint: 2 missing → '还差 2 项条件'", EraIndicatorViewModel.delta_hint("locked",
-		[], 0, 2) == "还差 2 项条件")
+	_check("vm exposes no derived delta hint or condition count (the tiles say it)",
+		not long_model.has("delta_hint") and not long_model.has("conditions_text"))
 	_check("vm converts budget from MONEY_SCALE", is_equal_approx(float(model.era_daily), 6.125))
 	_check("vm progress is formatted once in the status chip",
 		is_equal_approx(float(model.progress), 0.45) and String(model.status_chip).ends_with("45%"))
@@ -423,8 +418,7 @@ func _check_ceremony(host: Control, badge: EraIndicator) -> void:
 	ceremony.finished.connect(func() -> void: finished[0] += 1)
 	var buffs := PackedStringArray(["粮食产出 +10%", "定居点人口上限 +15%", "解锁时代奖励三选一"])
 	ceremony.play({"old_era_id": "stone", "new_era_id": "agrarian", "new_era_name": "农耕时代",
-		"subtitle": EraIndicatorViewModel.era_flavor("agrarian"), "buffs": buffs,
-		"target": badge.icon_origin()})
+		"buffs": buffs, "target": badge.icon_origin()})
 	var total: float = ceremony.total_duration()
 	_check("ceremony lasts 6-8 s", total >= 6.0 and total <= 8.0)
 	_check("ceremony is modal (stops mouse)", ceremony.mouse_filter == Control.MOUSE_FILTER_STOP)

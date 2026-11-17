@@ -488,7 +488,7 @@ theme_type_variation = &"PKDossierNote"
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 autowrap_mode = 3
-text = "尚无野战部队。在有驻军的兵营格上，从地块面板编成部队。"
+text = "在有驻军的兵营格上，从地块面板编成部队。"
 
 [node name="LogisticsGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage"]
 unique_name_in_owner = true
@@ -576,7 +576,7 @@ theme_type_variation = &"PKDossierNote"
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 autowrap_mode = 3
-text = "当前没有战争。战争结束后的停战期内无法再次宣战。"
+text = "战争结束后的停战期内无法再次宣战。"
 
 [node name="WarLowerGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage"]
 unique_name_in_owner = true

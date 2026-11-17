@@ -1074,12 +1074,19 @@ good-level Q16 效率。每个建造组内 category 与 explicit 候选互斥，
 | 池 | 成员 | 用于 |
 | --- | --- | --- |
 | `primitive_construction` | turf_block / reed_bundle / adobe_brick / logs / raw_stone / clay | 石器带结构槽 |
-| `primitive_lashing` | bast_fiber / reed_bundle | 石器带绑扎槽 |
+| `primitive_lashing` | bast_fiber / reed_bundle / raw_hide | 石器带绑扎槽 |
 | `classical_construction` | lumber / bricks / raw_stone | 古典带 |
 | `industrial_construction` | construction_components / concrete / bricks / glass | 工业与现代带 |
 | `structural_metal` | steel / stainless_steel / aluminum | 金属结构槽 |
 | `conductor_metal` | copper / aluminum | 电气导体槽 |
 | `tools`（min_quality 2） | bronze_tools / tools / precision_tools | 手工业建筑装配槽 |
+
+`raw_hide` 是"同池价格接近"这条规则的**刻意例外**：它是石器绑扎槽唯一由起始科技
+（`tech.hunting`）产出的成员，默认价约为 `bast_fiber` 的 3.4 倍。这个价差不是待修的失衡，
+而是让它在有纤维时按有效成本自然落选、只在纤维尚未解锁时兜底的机制。把它的价格压到与亚麻杆
+相当，它会反向抢走绑扎槽并抽干制革与衣物原料。八个起始科技产出的货物里没有任何纤维，
+所以没有这个例外，石器绑扎槽在 `tech.wild_flax_collection`（3800）或 `tech.reed_harvesting`
+（6800）之前是完全无解的。
 
 配方的时代由它自己命名的材料推出：含 concrete/construction_components/steel 即工业带，含
 lumber/bricks 即古典带，其余为石器带。`raw_stone` 与 `bricks` 因此按上下文落入不同的池。

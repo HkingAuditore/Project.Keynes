@@ -16,6 +16,10 @@ const DEFAULTS := {
 	## 触摸档的界面布局：fit（KEEP 1600×960，PC 版式）/ fill（EXPAND 铺满）/ dense（EXPAND+0.85）。
 	## 桌面档忽略。见 scripts/ui/mobile_ui_scaling.gd:LAYOUT_MODES。
 	"ui_layout_mode": "fit",
+	## 触摸档在布局之上的再缩放（%）。50~200 六档。
+	## >100 会把逻辑画布压到 1600×960 以下（200% ⇒ 800×480），`is_short_viewport()` 变 true，
+	## 各工作台自动切 compact 版式（收摘要卡/科技侧栏）—— 这是放大档的既定代价，不是 bug。
+	"ui_layout_scale": 100,
 	"reduce_motion": false,
 	"master_volume": 0.8,
 	"master_muted": false,
@@ -125,7 +129,8 @@ func apply() -> void:
 	# 移动端必须再乘上「设计像素 → dp」的设备倍率，否则 100% 在安卓上等于不缩放。
 	if _ui_scaling != null:
 		_ui_scaling.call("configure", int(_settings.ui_scale_percent),
-			String(_settings.get("ui_layout_mode", "fit")))
+			String(_settings.get("ui_layout_mode", "fit")),
+			int(_settings.get("ui_layout_scale", 100)))
 	else:
 		get_tree().root.content_scale_factor = float(_settings.ui_scale_percent) / 100.0
 	var bus := AudioServer.get_bus_index("Master")
@@ -146,6 +151,8 @@ func _validate() -> void:
 		_settings.ui_scale_percent = 100
 	if String(_settings.get("ui_layout_mode", "fit")) not in ["fit", "fill", "dense"]:
 		_settings.ui_layout_mode = "fit"
+	if int(_settings.get("ui_layout_scale", 100)) not in [50, 75, 100, 125, 150, 200]:
+		_settings.ui_layout_scale = 100
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
 	_settings.autosave_enabled = bool(_settings.autosave_enabled)
 	_settings.reduce_motion = bool(_settings.reduce_motion)

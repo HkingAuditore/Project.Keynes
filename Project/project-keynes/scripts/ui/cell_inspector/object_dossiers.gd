@@ -207,9 +207,9 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 	var price_index_caption = "贴近成本锚"
 	if has_anchor:
 		if price_index > 1.05:
-			price_index_caption = "高于成本锚 %.0f%%" % minf(999.0, (price_index - 1.0) * 100.0)
+			price_index_caption = "成本锚 +%.0f%%" % minf(999.0, (price_index - 1.0) * 100.0)
 		elif price_index < 0.95:
-			price_index_caption = "低于成本锚 %.0f%%" % ((1.0 - price_index) * 100.0)
+			price_index_caption = "成本锚 -%.0f%%" % ((1.0 - price_index) * 100.0)
 	else:
 		price_index_caption = ""
 
@@ -227,9 +227,9 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 	var net_supply = supply_units - total_demand
 	var balance_caption = "日均供需持平"
 	if net_supply < -0.01:
-		balance_caption = "日缺口 %s" % UITokens.format_compact_number_cn(absf(net_supply), 2)
+		balance_caption = "-%s/日" % UITokens.format_compact_number_cn(absf(net_supply), 2)
 	elif net_supply > 0.01:
-		balance_caption = "日盈余 +%s" % UITokens.format_compact_number_cn(net_supply, 2)
+		balance_caption = "+%s/日" % UITokens.format_compact_number_cn(net_supply, 2)
 	elif delta_text != "—":
 		balance_caption = "日变 %s" % delta_text
 
@@ -1177,7 +1177,8 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			state_meta += (" · " if not state_meta.is_empty() else "") + "下期恢复正常经营"
 		elif pending_state == 1 and operating_state != 1:
 			state_meta += (" · " if not state_meta.is_empty() else "") + "下期转入亏损停产"
-		var headline_profit_label = "利润" if profit >= 0 else "亏损"
+		# 方向由数值符号与颜色表达，标签只说明这是什么数。
+		var headline_profit_label = "净额"
 		var headline_profit = "%s%s" % ["+" if profit > 0 else "", h._money_text(profit)]
 		# A vacant but executable owner-operated group has no realized cash flow
 		# yet. Do not present that zero settlement as an already-realized loss;

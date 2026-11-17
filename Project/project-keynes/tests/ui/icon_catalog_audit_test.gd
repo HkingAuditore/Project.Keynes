@@ -32,6 +32,7 @@ func _init() -> void:
 	_audit_semantic_contracts()
 	_audit_paper_controls()
 	_audit_military_paper_cutouts()
+	_audit_atlas_import_limits()
 	if _failures.is_empty():
 		print("[icon-catalog-audit] PASS")
 		quit(0)
@@ -363,6 +364,35 @@ func _audit_military_paper_cutouts() -> void:
 	if unique_textures.size() != 57:
 		_failures.append("military paper atlas must expose 57 unique stickers, got %d" % \
 			unique_textures.size())
+
+
+## 图集 + 导入缩放 = 全表静默错位。
+##
+## `AtlasTexture.region` 用的是**贴图自身像素**坐标。一旦源 PNG 在导入时被
+## `process/size_limit` 缩小，同一份 region 就会落到别的格子上：格子变密、
+## 图标缩水、右边和下边还带进邻格的碎片。2026-11-17 军事纸贴就是这样坏的
+## （2048 的图集被导成 1432，57 枚徽记全部错位）。缩到整数倍也躲不过去——
+## 那时 `region` 仍在图内、现有越界断言查不出来，所以这里从 .tres 反查源头。
+func _audit_atlas_import_limits() -> void:
+	var checked := {}
+	for root in ["res://assets/military", "res://assets/icons"]:
+		for path in _files_recursive(root, ".tres"):
+			var resource := ResourceLoader.load(path) as AtlasTexture
+			if resource == null or resource.atlas == null:
+				continue
+			var source_path := resource.atlas.resource_path
+			if source_path.is_empty() or checked.has(source_path):
+				continue
+			checked[source_path] = true
+			var config := ConfigFile.new()
+			if config.load(source_path + ".import") != OK:
+				continue
+			var limit := int(config.get_value("params", "process/size_limit", 0))
+			if limit > 0:
+				_failures.append(
+					"atlas texture must import at native size (size_limit=%d): %s"
+					% [limit, source_path])
+	print("[icon-catalog-audit] checked %d atlased texture(s) for import scaling" % checked.size())
 
 
 func _files_recursive(root: String, suffix: String) -> PackedStringArray:

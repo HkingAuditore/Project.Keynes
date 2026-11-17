@@ -562,7 +562,7 @@ func _apply_sheet_actions(sheet: Dictionary) -> void:
 	var enabled := bool(gate.get("enabled", false)) and not pending
 	_declare_button.disabled = not enabled
 	_declare_button.tooltip_text = "向%s递交宣战" % String(sheet.name) if enabled \
-		else ("已递交 · 次日生效" if pending else String(gate.get("reason", "")))
+		else ("已递交" if pending else String(gate.get("reason", "")))
 	_declare_button.set_meta(&"handle", handle)
 
 
@@ -717,7 +717,7 @@ func _on_declare_pressed() -> void:
 	if bool(result.get("ok", false)):
 		_declare_pending_slot = int(sheet.get("slot", -1))
 		_declare_pending_day = _vm.day()
-		_flash("已递交宣战 · 次日生效", false)
+		_flash("已递交宣战", false)
 	else:
 		_flash(String(result.get("message", "命令被拒绝。")), true)
 	_refresh_countries()

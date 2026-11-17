@@ -93,12 +93,10 @@ func _apply_state() -> void:
 	_action.text = "确认改行" if _armed else (
 		"待生效" if _state == "pending" else "改行此制")
 	_action.tooltip_text = "" if _state == "available" else (
-		"已排队，将在下一次国家结算后生效。" if _state == "pending"
+		"已排队。" if _state == "pending"
 		else "另一项体制改行尚未生效。")
 	($Margin/Column/Footer as Control).visible = _state != "current"
-	if _state == "pending":
-		_hint.text = "将在下一次国家结算后生效。"
-	elif _armed:
+	if _armed:
 		_hint.text = _switch_summary
 	else:
 		_hint.text = ""

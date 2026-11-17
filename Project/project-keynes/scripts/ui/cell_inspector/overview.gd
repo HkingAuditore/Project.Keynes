@@ -196,7 +196,7 @@ func _kpis(host,
 			"caption": ownership, "tooltip": ownership,
 		}, {
 			"id": "kpi_population", "title": "人口", "icon": &"family.metric.population", "kind": "text",
-			"text": "读取中", "caption": "下一日刷新",
+			"text": "—", "caption": "",
 		}]
 	if population <= 0 or not bool(population_summary.get("ok", false)):
 		var owned = bool(country_summary.get("owned", false))

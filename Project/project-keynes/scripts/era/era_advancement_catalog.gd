@@ -23,8 +23,6 @@ const GOODS_SCALE := 1000
 ## 0.6 时必修约 60%，每代留下 20–40% 的可放弃空间，构筑才真正存在。
 const TECH_COMPLETION_RATIO := 0.6
 const CONDITIONS_REQUIRED := 3
-const CONDITIONS_RULE_TEXT := "科技必达 · 其余三选二"
-const CONDITIONS_HELP_TEXT := "须完成本时代 60% 科技，并满足人口、建筑、贸易中的至少两项。"
 const MIN_TARGET_ERA := 1
 const MAX_ERA_INDEX := 10
 
@@ -186,29 +184,52 @@ static func prelude_milestone_ids(target_era: int) -> Array[StringName]:
 
 ## Player-facing buff lines from a milestone's explicit modifier terms.
 static func milestone_buff_lines(milestone_technology_id: StringName) -> PackedStringArray:
-	var out := PackedStringArray()
+	var ids: Array[StringName] = [milestone_technology_id]
+	return _aggregate_buff_lines(ids)
+
+
+static func _milestone_terms(milestone_technology_id: StringName) -> Array:
 	for definition in TechnologyCatalogScript.public_definitions():
-		if StringName(definition.get("id", "")) != milestone_technology_id:
-			continue
-		for term_value in definition.get("modifier_terms", []):
+		if StringName(definition.get("id", "")) == milestone_technology_id:
+			return definition.get("modifier_terms", [])
+	return []
+
+
+## 多个里程碑的修饰词按「主语 + 统计项」累加后再出文案：首次晋升会同时授予
+## 石器前置里程碑与目标里程碑，两边常出现同一主语（如全社会经济产出两次 +7%），
+## 平铺出来会像笔误，也让玩家无法判断是否叠加。
+static func _aggregate_buff_lines(ids: Array[StringName]) -> PackedStringArray:
+	var order: Array[String] = []
+	var cells := {}
+	for id in ids:
+		for term_value in _milestone_terms(id):
 			var term: Dictionary = term_value
-			out.append("%s %s" % [ValidatorScript.modifier_effect_subject(term),
-				ValidatorScript.modifier_delta(term)])
-		break
+			var subject := ValidatorScript.modifier_effect_subject(term)
+			var stat := String(term.get("stat", ""))
+			var key := subject + "|" + stat
+			if not cells.has(key):
+				cells[key] = {"subject": subject, "stat": stat, "delta": 0.0}
+				order.append(key)
+			cells[key]["delta"] = float(cells[key]["delta"]) \
+				+ ValidatorScript.modifier_delta_fraction(term)
+	var out := PackedStringArray()
+	for key in order:
+		var cell: Dictionary = cells[key]
+		out.append("%s %s" % [String(cell.subject), ValidatorScript.modifier_delta_text(
+			float(cell.delta), String(cell.stat))])
 	return out
 
 
 ## Buffs granted by advancing into `target_era`. `include_prelude` adds the
 ## stone milestone lines when that milestone will be granted too.
 static func buff_lines(target_era: int, include_prelude: bool = false) -> PackedStringArray:
-	var out := PackedStringArray()
 	if not is_valid_target(target_era):
-		return out
+		return PackedStringArray()
+	var ids: Array[StringName] = []
 	if include_prelude:
-		for prelude in prelude_milestone_ids(target_era):
-			out.append_array(milestone_buff_lines(prelude))
-	out.append_array(milestone_buff_lines(milestone_id(target_era)))
-	return out
+		ids.append_array(prelude_milestone_ids(target_era))
+	ids.append(milestone_id(target_era))
+	return _aggregate_buff_lines(ids)
 
 
 ## Every good id referenced by the rules (for catalog validation tests).

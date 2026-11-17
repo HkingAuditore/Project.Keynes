@@ -11,9 +11,13 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("catalog compiles", bool(_compiled.get("ok", false)))
 	var starters: PackedStringArray = _compiled.starter_eligible_technology_ids
+	# 这几个目标节点都在王国时代：时代闸只放行下一时代，所以基线里必须先持有
+	# 农耕里程碑，否则测到的是时代闸而不是知识机构这道硬前置。
+	var base := starters.duplicate()
+	base.append("tech.agrarian_society")
 	var signals := PackedStringArray(["resource.iron_ore", "resource.coal", "resource.timber",
 		"development.trade.goods_2", "development.buildings.active_4_180d"])
-	var blocked := _fixture(starters, signals)
+	var blocked := _fixture(base, signals)
 	_expect("early knowledge institution is already a starter technology",
 		_state(blocked, "tech.early_knowledge_institution") == 5)
 	for id in ["tech.iron_ore_identification", "tech.coal_outcrop_identification"]:
@@ -27,14 +31,14 @@ func _init() -> void:
 	blocked.day = int(blocked.day) + 1
 	_expect("trade evidence admits market institutions", _state(blocked,
 		"tech.market_institutions") == 3)
-	var completed := starters.duplicate()
+	var completed := base.duplicate()
 	completed.append("tech.early_knowledge_institution")
 	completed.append("tech.stone_knapping")
 	completed.append("tech.natural_observation")
 	completed.append("tech.fire_control")
 	var ready := _fixture(completed, signals)
 	for id in ["tech.iron_ore_identification", "tech.coal_outcrop_identification", "tech.market_institutions"]:
-		_expect("institution and tools enable research without an era milestone: %s" % id,
+		_expect("institution and tools enable research once the era gate is met: %s" % id,
 			_state(ready, id) == 2)
 		_attempt_enqueue(ready, id, int(ready.day))
 		ready.day = int(ready.day) + 1

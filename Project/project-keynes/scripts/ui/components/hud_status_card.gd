@@ -156,6 +156,7 @@ func _apply(model: Dictionary) -> void:
 	_value_icon.visible = bool(model.get("value_money", false)) and shown_value != "—"
 	_meta.text = String(model.get("meta", ""))
 	_footer.text = String(model.get("footer", ""))
+	_footer.visible = not _footer.text.is_empty()
 	var treasury := _kind == "treasury"
 	_treasury_body.visible = treasury
 	_population_body.visible = not treasury

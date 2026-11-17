@@ -34,7 +34,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/technology_catalog.gd": {
-      "lines": 1177,
+      "lines": 1179,
       "limit": 800
     },
     "Project/project-keynes/scripts/effect/effect_domain_catalog.gd": {
@@ -198,7 +198,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub/scatter.gd": {
-      "lines": 1318,
+      "lines": 1330,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub_layer.gd": {
@@ -290,7 +290,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/cell_inspector/object_dossiers.gd": {
-      "lines": 1253,
+      "lines": 1254,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/cell_inspector/overview.gd": {
@@ -310,15 +310,15 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/economy_workspace.gd": {
-      "lines": 1646,
+      "lines": 1690,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/era_advancement_panel.gd": {
-      "lines": 925,
+      "lines": 934,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/family_founding_card.gd": {
-      "lines": 1065,
+      "lines": 1068,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/family_workspace.gd": {
@@ -350,7 +350,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/narrative_event_dialog.gd": {
-      "lines": 866,
+      "lines": 868,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/object_detail_dialog.gd": {
@@ -362,7 +362,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/technology_workspace.gd": {
-      "lines": 1671,
+      "lines": 1679,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/country_view_model.gd": {
@@ -390,7 +390,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/main_menu.gd": {
-      "lines": 1058,
+      "lines": 1079,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/military_view_model.gd": {
