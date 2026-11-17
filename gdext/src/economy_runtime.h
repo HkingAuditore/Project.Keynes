@@ -240,11 +240,9 @@ public:
     static constexpr uint8_t EXPEDITION_CARGO_CONSTRUCTION = 0;
     static constexpr uint8_t EXPEDITION_CARGO_BUFFER = 1;
     static constexpr int32_t COLONIZATION_KIT_MIN_OWNER_SLOTS = 3;
-    // Fixed party composition: one unaffiliated colonist per this many family
-    // members. Chosen so a party lands at 67% family share, just under
-    // FAMILY_TARGET_SHARE_TOTAL_Q16 (70%), and the family stays the identity
-    // carrier of the expedition.
-    static constexpr int32_t COLONIZATION_ANONYMOUS_PER_FAMILY = 2;
+    // A party is either a family branch (population = family people) or a plain
+    // settler caravan (family_handle 0, population = 0, anonymous = people).
+    // Both fly the same payload/kit/arrival path.
     static constexpr int32_t COLONIZATION_KIT_FOOD_COVERAGE_Q16 = 72090;
     static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
     // Bump when preparing-kit buffer demand changes so in-flight PREPARING

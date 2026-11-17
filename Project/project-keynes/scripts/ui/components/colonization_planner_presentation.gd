@@ -92,11 +92,9 @@ static func _sync_quote_rows(host, quotes: Array, keep_population: int) -> bool:
 		row.set_meta("quote", quote)
 		var local_people = int(quote.get("population", maximum + 1))
 		var prestige_level = int(quote.get("prestige_level", 0))
-		var anonymous_maximum = int(quote.get("anonymous_maximum", 0))
-		var dispatch_text := "可派 %s 人" % UITokens.format_compact_number_cn(float(maximum), 0)
-		if anonymous_maximum > 0:
-			dispatch_text += " · 随行 %s" % UITokens.format_compact_number_cn(
-				float(anonymous_maximum), 0)
+		var caravan := int(quote.get("family_handle", 0)) == 0
+		var dispatch_text := ("可移 %s 人" if caravan else "可派 %s 人") % \
+			UITokens.format_compact_number_cn(float(maximum), 0)
 		row.set_compact_summary({
 			"name": String(quote.get("display_name", "家族")),
 			"population": local_people,
@@ -247,8 +245,12 @@ static func _sync_expedition_rows(host, page: Dictionary) -> void:
 			"tooltip": host._expedition_row_tooltip(expedition_handle, state,
 				int(dues[index]) if index < dues.size() else -1),
 		})
+		var anonymous_populations: PackedInt64Array = page.get(
+			"anonymous_populations", PackedInt64Array())
 		row.set_meta("expedition_view", {"name": String(view.get("display_name", "家族")),
 			"population": int(populations[index]) if index < populations.size() else 0,
+			"anonymous_population": int(anonymous_populations[index]) \
+				if index < anonymous_populations.size() else 0,
 			"state": state, "due_day": int(dues[index]) if index < dues.size() else -1})
 	var stale: Array = []
 	for handle_value in host._expedition_row_refs.keys():
@@ -285,9 +287,12 @@ static func _refresh_expedition_detail(host) -> void:
 	host._expedition_cancel.focus_neighbor_top = host._expedition_cancel.get_path_to(row)
 	host._preview_title.text = String(view.get("name", "家族"))
 	var anonymous_people = int(snap.get("anonymous_population", view.get("anonymous_population", 0)))
-	if anonymous_people > 0:
-		var family_people = int(snap.get("family_population", maxi(0, people - anonymous_people)))
-		host._preview_metrics.text = "队伍 %s 人 · 族人 %s · 随行 %s" % [
+	var family_people = int(snap.get("family_population", maxi(0, people - anonymous_people)))
+	if family_people <= 0:
+		host._preview_metrics.text = "移民队 %s 人（无家族）" % \
+			UITokens.format_compact_number_cn(float(people), 0)
+	elif anonymous_people > 0:
+		host._preview_metrics.text = "队伍 %s 人 · 族人 %s · 平民 %s" % [
 			UITokens.format_compact_number_cn(float(people), 0),
 			UITokens.format_compact_number_cn(float(family_people), 0),
 			UITokens.format_compact_number_cn(float(anonymous_people), 0)]
@@ -357,7 +362,12 @@ static func _show_family_preview(host, quote: Dictionary, hovering: bool = false
 	var key = host._quote_key(quote)
 	var preview: Dictionary = host._preview_cache.get(key, {})
 	if preview.is_empty():
-		if host._controller != null and host._controller.has_method("get_family_dispatch_preview"):
+		if host._preview_family == 0:
+			# 无家族移民没有家族档案可读，摘要直接用报价口径。
+			preview = {"ok": true, "traits": {},
+				"branch": {"populations": int(quote.get("maximum_population", 0)),
+					"owned_buildings": "—", "cash_claims": 0}}
+		elif host._controller != null and host._controller.has_method("get_family_dispatch_preview"):
 			preview = host._controller.get_family_dispatch_preview(host._preview_family, preview_source)
 		else:
 			preview = {"ok": true, "traits": {}}
@@ -374,17 +384,21 @@ static func _show_family_preview(host, quote: Dictionary, hovering: bool = false
 		host._paint_waiting_guide()
 		return
 	var branch: Dictionary = preview.get("branch", {})
-	var anonymous_maximum = int(quote.get("anonymous_maximum", 0))
-	host._preview_metrics.text = "当地族人 %s · 可派 %s
-随行平民 %s（每 2 名族人带 1 人）
+	if host._preview_family == 0:
+		host._preview_metrics.text = "当地平民 %s 人 · 可移 %s 人
+不带家族：落地后仍是本地无家族人口
+不占目的地家族名额，也不产生族人" % [
+			UITokens.format_compact_number_cn(float(quote.get("population", 0)), 0),
+			UITokens.format_compact_number_cn(float(quote.get("maximum_population", 0)), 0)]
+	else:
+		host._preview_metrics.text = "当地族人 %s · 可派 %s
 威望 %s · 产业 %s
 资金归属 %s" % [
-		UITokens.format_compact_number_cn(float(branch.get("populations", quote.get("population", int(quote.get("maximum_population", 0)) + 1))), 0),
-		UITokens.format_compact_number_cn(float(quote.get("maximum_population", 0)), 0),
-		UITokens.format_compact_number_cn(float(anonymous_maximum), 0),
-		str(branch.get("prestige_levels", quote.get("prestige_level", "—"))),
-		str(branch.get("owned_buildings", quote.get("owned_buildings", "—"))),
-		UITokens.format_compact_number_cn(float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0, 2)]
+			UITokens.format_compact_number_cn(float(branch.get("populations", quote.get("population", int(quote.get("maximum_population", 0)) + 1))), 0),
+			UITokens.format_compact_number_cn(float(quote.get("maximum_population", 0)), 0),
+			str(branch.get("prestige_levels", quote.get("prestige_level", "—"))),
+			str(branch.get("owned_buildings", quote.get("owned_buildings", "—"))),
+			UITokens.format_compact_number_cn(float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0, 2)]
 	var traits: Dictionary = preview.get("traits", {})
 	# 只替换预览副本的显示列，原始偏好仍由原生家族运行时持有。
 	traits = traits.duplicate()

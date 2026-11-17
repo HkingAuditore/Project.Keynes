@@ -609,6 +609,10 @@
     // Days of the cell's per-capita living cost a cohort must hold per person
     // before members may move into this profession from a lower-entry one.
     std::vector<int32_t> _profession_entry_savings_days;
+    // Days of owner living cost and maintenance a private investment must
+    // pre-fund for this profession. Authored per tier: a few days for entry
+    // collectors, a full month for capital-intensive professions.
+    std::vector<int32_t> _profession_startup_capital_days;
     // Military v1 (design §5.1). `state_service_only` professions (the soldier)
     // may only be filled as employee roles of state buildings and never transfer
     // OUT of their own signature along any recruitment/reflux/migration lane.

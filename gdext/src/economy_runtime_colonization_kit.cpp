@@ -1714,11 +1714,13 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     const uint64_t family_handle =
         family_expeditions_store().family_handle[expedition];
     int32_t family = -1;
-    if (!families_store().valid_handle(family_handle, family)) {
+    // 无家族移民队也会安家：族裔取目标格已有住户，产业不登记到任何家族名下。
+    const bool caravan = family_handle == 0;
+    if (!caravan && !families_store().valid_handle(family_handle, family)) {
         error = "colonization_family_invalid";
         return false;
     }
-    int32_t ethnicity = families_store().origin_ethnicity[family];
+    int32_t ethnicity = caravan ? -1 : families_store().origin_ethnicity[family];
     if (ethnicity < 0) {
         population_store().for_each_in_cell(destination_cell, [&](int32_t slot) {
             if (ethnicity >= 0) return;
@@ -1954,7 +1956,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             if (owner_slot >= 0)
                 population_store().owner_employed.write_scalar(owner_slot, std::max(
                     population_store().owner_employed[owner_slot], filled), market_mutation_sink());
-            if (buildings_store().modifier_handle[group_index] != 0) {
+            if (!caravan && buildings_store().modifier_handle[group_index] != 0) {
                 bool found = false;
                 for (size_t edge_row = 0; edge_row < family_ownerships().size(); ++edge_row) {
         auto edge_write = family_ownerships().edit_row(edge_row, market_mutation_sink());

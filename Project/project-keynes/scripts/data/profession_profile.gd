@@ -14,6 +14,14 @@ extends Resource
 ## per-capita living cost. Moves from a profession with an equal or higher gate
 ## are exempt, so lateral and downward mobility stay free.
 @export_range(0, 36500, 1) var entry_savings_days: int = 0
+## Days of the cell's per-capita living cost that a new owner must bring as
+## working capital when private investment opens a building for this
+## profession. This is a startup buffer, not an entry gate: entry professions
+## (forager/miner/tenant farmer) need only a few days, while capital-intensive
+## professions need a full month. It scales the owner-livelihood and
+## maintenance terms of `required_capital`; the sponsor's own reserve continues
+## to use `entry_savings_days`.
+@export_range(0, 36500, 1) var startup_capital_days: int = 30
 ## Optional cold-path labels for family/job selectors.
 @export var semantic_tags: PackedStringArray = PackedStringArray()
 ## Executable availability requirements. Only `tech.*` tags are interpreted by

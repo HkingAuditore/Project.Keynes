@@ -260,7 +260,7 @@ extends Resource
 ## Each ascending cell-population milestone founds at most one notable family.
 ## Changing the list invalidates PKEC restores.
 @export var family_milestone_populations: PackedInt64Array = PackedInt64Array([
-	100, 200, 500, 1000, 2000, 5000, 10000, 20000,
+	60, 100, 200, 500, 1000, 2000, 5000, 10000, 20000,
 ])
 ## New families need this many founders; only the opening capital's starter
 ## household is exempt.
