@@ -108,3 +108,11 @@ gdext/.wip/
 # 本机编译日志。
 gdext/build_*.log
 gdext/*.err.log
+
+# ==== 构建产物与验证输出（2026-11-17：从索引移除，只停止跟踪，工作区文件不动）====
+# Gradle 输出与缓存。android/build 里的 templates 源码（build.gradle / src / res）仍要跟踪，
+# 它下面这一层 build/ 与 .gradle/ 是纯产物（单次 APK 构建就会塞进 8 份 libgodot_android.so）。
+**/android/build/build/
+**/android/build/.gradle/
+# SCons 签名数据库：每次编译整份改写，纯缓存（单个 52MB）。
+*.sconsign.dblite
