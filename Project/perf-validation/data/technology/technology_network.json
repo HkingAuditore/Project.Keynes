@@ -5308,10 +5308,10 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料"
+					"display_name": "亚麻杆"
 				}
 			],
-			"effect_summary": "解锁建筑：野生韧皮纤维营地；解锁物资：亚麻秆/韧皮原料；作为必要支撑：亚麻农场、家庭亚麻试种圃",
+			"effect_summary": "解锁建筑：野生韧皮纤维营地；解锁物资：亚麻杆；作为必要支撑：亚麻农场、家庭亚麻试种圃",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "野生韧皮采集是纤维、纺织、服装与合成纤维在当前目录中的应用端点，其终点效果由bast_fiber、clothing、bast_fiber_camp、bast_wrap_shelter消费",
@@ -11950,7 +11950,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				},
 				{
@@ -15705,7 +15705,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				},
 				{
@@ -33155,7 +33155,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				}
 			],
@@ -34129,7 +34129,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				}
 			],
@@ -46656,7 +46656,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				},
 				{
@@ -53756,7 +53756,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				},
 				{
@@ -58957,7 +58957,7 @@
 					"value": 1,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "catalog_rebind",
-					"display_name": "亚麻秆/韧皮原料",
+					"display_name": "亚麻杆",
 					"summary_visible": false
 				},
 				{

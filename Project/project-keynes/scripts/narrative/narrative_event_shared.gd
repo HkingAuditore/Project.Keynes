@@ -105,6 +105,37 @@ static func birth(value: float, days: int, label: String = "") -> Dictionary:
 	return city(STAT_BIRTH, value, days, "人口出生率", 0, 0, label)
 
 
+# ── 人口迁移（守恒量，不是修正）─────────────────────────────────────────────
+# 「收留游民」「编入户籍」「迁族」这类文案必须配一条 population()/population_rate()，
+# 光给 agriculture()/birth() 只是假装人来了：数值上人口没变，粮食压力也没变。
+
+## 直接迁入/迁出若干人。负数 = 迁出。
+static func population(people: int, label: String = "") -> Dictionary:
+	var text := label.strip_edges()
+	if text.is_empty():
+		text = NarrativeEffectSpecScript.describe_population_delta(people, 0)
+	return {
+		"kind": NarrativeEffectSpecScript.Kind.ADD_POPULATION,
+		"int_value": people,
+		"duration_days": 1,
+		"custom_label": text,
+	}
+
+## 按现有人口的百分比迁入/迁出。传 12 表示 +12%，传 -30 表示 -30%。
+## 小聚落会保底搬动 1 人，不会因为取整变成空操作。
+static func population_rate(percent_value: float, label: String = "") -> Dictionary:
+	var bp := int(round(percent_value * 100.0))
+	var text := label.strip_edges()
+	if text.is_empty():
+		text = NarrativeEffectSpecScript.describe_population_delta(0, bp)
+	return {
+		"kind": NarrativeEffectSpecScript.Kind.ADD_POPULATION,
+		"ratio_bp": bp,
+		"duration_days": 1,
+		"custom_label": text,
+	}
+
+
 # ── 全国修正 ────────────────────────────────────────────────────────────────
 
 static func country_sector(sector: String, value: float, days: int,

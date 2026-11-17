@@ -211,6 +211,10 @@ struct EconomyFamilyExpeditionPayload {
     int64_t income_baseline_ema = 0;
     int64_t demography_residual = 0;
     int64_t cash_claim = 0;
+    // Unaffiliated townsfolk the party carries: they leave the source cell with
+    // the family, hold no claim, and land as anonymous population instead of a
+    // family membership edge. Colonization only.
+    uint8_t anonymous = 0;
     int64_t owner_employed = 0;
     int64_t employee_employed = 0;
     uint32_t person_begin = 0;
@@ -254,6 +258,10 @@ struct EconomyFamilyExpeditionStore {
     EconomyTrackedColumn<int32_t> speed;
     EconomyTrackedColumn<uint8_t> state;
     EconomyTrackedColumn<int64_t> population;
+    // Colonists carried outside any family membership edge. `population` stays
+    // the dispatched family headcount so preparation shrink keeps its meaning;
+    // the party size is always population + anonymous.
+    EconomyTrackedColumn<int64_t> anonymous;
     EconomyTrackedColumn<uint32_t> route_begin;
     EconomyTrackedColumn<uint32_t> route_count;
     EconomyTrackedColumn<uint32_t> payload_begin;
@@ -300,6 +308,7 @@ struct EconomyFamilyExpeditionStore {
         visit(speed);
         visit(state);
         visit(population);
+        visit(anonymous);
         visit(route_begin);
         visit(route_count);
         visit(payload_begin);
@@ -365,6 +374,7 @@ template<class Visitor> void economy_visit_record(const EconomyFamilyExpeditionP
     visit(row.income_baseline_ema);
     visit(row.demography_residual);
     visit(row.cash_claim);
+    visit(row.anonymous);
     visit(row.owner_employed);
     visit(row.employee_employed);
     visit(row.person_begin);

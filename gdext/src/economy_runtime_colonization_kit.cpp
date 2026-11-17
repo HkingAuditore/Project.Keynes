@@ -148,7 +148,9 @@ void NativeEconomyRuntime::refresh_epoch_colonization_demand() {
         const int32_t travel = std::max(1,
             (family_expeditions_store().route_cost[expedition] + speed - 1) / speed);
         if (!plan_colonization_kit(source, target,
-                family_expeditions_store().population[expedition], travel, true, kit, false, &reserve) ||
+                family_expeditions_store().population[expedition] +
+                    family_expeditions_store().anonymous[expedition], travel,
+                true, kit, false, &reserve) ||
             kit.kit_unbuildable != 0) continue;
         std::vector<int64_t> wanted(held.size(), 0);
         for (const auto &line : kit.cargo)
@@ -1788,7 +1790,8 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             _saturation_count), _saturation_count);
     }
     const int64_t remaining_slots = std::max<int64_t>(0,
-        family_expeditions_store().population[expedition] - used_slots);
+        family_expeditions_store().population[expedition] +
+            family_expeditions_store().anonymous[expedition] - used_slots);
     if (remaining_slots > 0 &&
         plan_colonization_kit(destination_cell, destination_cell,
             remaining_slots, 1, true, extra, true) &&

@@ -49,6 +49,9 @@ var _clock_speed_multiplier: float = 1.0
 # 质量：编译期 tier 卡上限（低端机整段代码不编进去），运行时 _fog_quality 在上限内再降。
 var _mobile_quality_tier_define: String = ""
 var _fog_quality: int = 3
+## 玩家画质档（0..2）。档位映射要用到它，且 set_mobile_quality_tier 晚于
+## set_visual_quality 到达时必须能重算，所以单独存一份。
+var _visual_quality: int = 0
 
 # TOD：earth_daylight 的三个相位 uniform 与调试项，与 WeatherLayer 同套。
 var _day_night_enabled: bool = true
@@ -64,6 +67,11 @@ func _ready() -> void:
 	z_index = 12
 	top_level = true
 	visible = false
+	# 运行期档平台的首帧兜底：_fog_quality 的成员初值 3 是桌面语义（全效果）。
+	# 移动端在玩家画质档推下来之前不该先按 q3 画一帧——auto 档本来就解出 0。
+	# 只在"还没人推过档"（仍是初值 3）时兜底，避免覆盖先于 _ready 到来的设置。
+	if _fog_runtime_mapping_graded() and _fog_quality == 3:
+		_fog_quality = 0
 	_ensure_nodes()
 	set_process(true)
 
@@ -123,13 +131,32 @@ func _load_shader() -> Shader:
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
 	if OS.has_feature("web"):
-		# Keep the full fog shader's q1/q2 branches available to runtime settings;
-		# the Web page still uses the same two edge samplers and no new textures.
+		# web：把 full fog shader 的 q1/q2 分支留给运行期设置；采样器与纹理不变。
+		# ⚠ 宏名必须与 WebShaderWarmup.SHADERS 里那条前缀**逐字节一致**（预热 = 运行期
+		# 是驱动缓存命中的前提），所以 web 保留历史名字 PK_WEB_FOG_RUNTIME，
+		# 由 shader 内的别名转成 PK_FOG_RUNTIME。
 		prefix += "#define PK_WEB_FOG_RUNTIME\n"
+	elif _fog_runtime_quality_override():
+		# [fog-runtime-quality 2026-11-17] 编译期 tier 只裁特征，运行期画质归玩家设置。
+		# 之前只有 web 追加这条宏，移动端因此永远停在 MOBILE_QUALITY_LOW 的 q0：
+		# 设置里的"最高画质"对迷雾是空操作（见 shader 里 effective_fog_quality）。
+		# 这里不新增采样、不换程序：q1..q3 的分支本来就全部编进了低档程序，只是
+		# 被 effective_fog_quality 钳成 0、永不执行。
+		prefix += "#define PK_FOG_RUNTIME\n"
 	if not prefix.is_empty():
 		sh = sh.duplicate() as Shader
 		sh.code = prefix + sh.code
 	return sh
+
+
+## 是否让运行期画质（玩家设置）权威，而不是编译期 tier。
+##
+## 判据与"这个平台会不会 prepend 编译期 tier"同一个开关（DCFeatureFlags.uses_shader_quality_tier）：
+## 只要 prepend 了 MOBILE_QUALITY_*，就必须给一条运行期出口，否则设置里的画质档被
+## 编译期档吃掉。web / mobile 都被钉死在 LOW；桌面上设 PK_MOBILE_SHADER_TIER 做
+## 移动变体二分时同样适用（此时 layer 与 shader 必须同口径，见 _load_shader 的两个分支）。
+func _fog_runtime_quality_override() -> bool:
+	return DCFeatureFlags.uses_shader_quality_tier()
 
 
 func set_visual_tiles(tiles) -> void:
@@ -179,6 +206,10 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	if _mobile_quality_tier_define == tier_define:
 		return
 	_mobile_quality_tier_define = tier_define
+	# 档位变了，映射与 cap 都可能变（HIGH = 桌面同款 q3 / 其余 = 等距 q0..q2），
+	# 必须按同一个 visual_quality 重算一次 _fog_quality，否则先推画质后推档位时
+	# 会停在旧映射上（例如 低档 2 号档 = q1，切成高档后应该变成 q3）。
+	_fog_quality = _fog_quality_for(_visual_quality)
 	if _shader_mat != null:
 		var sh := _load_shader()
 		if sh != null:
@@ -315,34 +346,51 @@ func set_clock_running(running: bool) -> void:
 ## 桌面端跳过 q1：q1 是无域扭曲/无质量阴影探针的分层云海，存在的意义是给移动端
 ## 中档兜底（编译期 tier 会把上限卡在 q1）。桌面端要么便宜到 q0，要么就该拿到
 ## q2/q3 的完整分层密度、散射与柔和自阴影，中间档没有意义。
+##
+## 移动端改走 0/1/2 → q0/q1/q2 的等距映射：编译期档被钉死 LOW，若仍按桌面跳档，
+## "中"会直接落到 q2 的完整散射（移动 GPU 上最贵的一档），而 q1 这个专为移动端
+## 中档准备的分层云海反而永远拿不到。web 保持原映射，避免二次动它的性能基线。
 func set_visual_quality(quality: int) -> void:
-	var q := clampi(quality, 0, 2)
-	_fog_quality = [0, 2, 3][q]
+	_visual_quality = clampi(quality, 0, 2)
+	_fog_quality = _fog_quality_for(_visual_quality)
 	_push_quality()
+
+
+## visual_quality(0..2) → 迷雾内部档位(0..3)。映射取决于编译档，见两个 helper。
+func _fog_quality_for(quality: int) -> int:
+	var q := clampi(quality, 0, 2)
+	return [0, 1, 2][q] if _fog_runtime_mapping_graded() else [0, 2, 3][q]
+
+
+## 运行期档是否需要"移动端等距映射"（见 set_visual_quality）。
+##
+## HIGH 编译档不算：它已经不按移动平台裁光照（见 shader_quality.gdshaderinc），
+## 迷雾也就能和桌面一样吃到 q3，所以映射直接用桌面那套 [0,2,3]。
+func _fog_runtime_mapping_graded() -> bool:
+	return OS.has_feature("mobile") and _mobile_quality_tier_define != "MOBILE_QUALITY_HIGH"
+
+
+## 移动端 HIGH 档是否等价于桌面（fog 可到 q3）。
+func _fog_high_tier_full() -> bool:
+	return _mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
 
 
 ## 当前实际生效的档位 = min(编译期 tier 上限, 运行时档)。
 ##
 ## 必须与 shader 的 effective_fog_quality() 逐档一致：
-##   · Web：_load_shader() 追加 PK_WEB_FOG_RUNTIME，shader 忽略编译期 tier、按运行时
-##     fog_quality 夹到 2。而 web 的编译期档被钉死在 MOBILE_QUALITY_LOW，若这里仍按
-##     tier cap=0 计算，就会得出 effective_quality()==0，supports_terrain_early_out()
-##     随之放行 —— 但 shader 实际画的是 q2 云海，主地形的早退常量色会在半透明云缘
-##     下露成死斑（见 fog_of_war.gdshader / docs vision-fog-and-borders「主地形早退」）。
-##   · mobile：无该宏，仍按编译期 tier 夹。
+##   · 运行期档（web / mobile，_load_shader() 追加 PK_FOG_RUNTIME）：shader 忽略编译期
+##     tier、按运行时 fog_quality 夹到 2。这两端的编译期档被钉死在 MOBILE_QUALITY_LOW，
+##     若这里仍按 tier cap=0 计算，就会得出 effective_quality()==0，
+##     supports_terrain_early_out() 随之放行 —— 但 shader 实际画的是 q2 云海，
+##     主地形的早退常量色会在半透明云缘下露成死斑
+##     （见 fog_of_war.gdshader / docs vision-fog-and-borders「主地形早退」）。
+##   · 桌面：不 prepend 任何 tier define，cap 恒 3。
 func effective_quality() -> int:
-	var cap := 3
-	if OS.has_feature("web"):
-		cap = 2
-	elif _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
-		match _mobile_quality_tier_define:
-			"MOBILE_QUALITY_LOW":
-				cap = 0
-			"MOBILE_QUALITY_HIGH":
-				cap = 2
-			_:
-				cap = 1
-	return mini(_fog_quality, cap)
+	if _fog_runtime_quality_override():
+		# 与 shader 的 effective_fog_quality() 逐档一致：
+		#   HIGH 编译档 = 桌面同款，可到 q3；其余运行期档夹到 2。
+		return clampi(_fog_quality, 0, 3) if _fog_high_tier_full() else mini(_fog_quality, 2)
+	return mini(_fog_quality, 3)
 
 
 ## 主地形能否对未探索像素早退。
@@ -408,8 +456,20 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 # --- 内部 -----------------------------------------------------
 
 func _push_quality() -> void:
-	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("fog_quality", _fog_quality)
+	if _shader_mat == null:
+		return
+	_shader_mat.set_shader_parameter("fog_quality", _fog_quality)
+	# [fog-quality-diag 2026-11-17] 一行可 grep 的实际档位。真机排查"迷雾画质没变"
+	# 时需要区分三件事：设置没推下来 / 推了但被 tier 夹住 / shader 根本没生效。
+	#   adb logcat | grep "\\[fog\\]"
+	if _fog_quality != _logged_fog_quality:
+		_logged_fog_quality = _fog_quality
+		print("[fog] fog_quality=%d effective=%d runtime_override=%s tier=%s" % [
+			_fog_quality, effective_quality(), _fog_runtime_quality_override(),
+			_mobile_quality_tier_define if not _mobile_quality_tier_define.is_empty() else "desktop"])
+
+
+var _logged_fog_quality: int = -1
 
 
 func _push_tod() -> void:
@@ -427,11 +487,16 @@ func _push_tod() -> void:
 
 
 func _update_visibility() -> void:
+	var was_visible := visible
 	visible = _enabled \
 		and _has_valid_shader \
 		and _has_atlas \
 		and _bounds.size.x > 0.0 \
 		and _bounds.size.y > 0.0
+	# [fog-quality-diag 2026-11-17] 只在翻转时打一行：区分"迷雾没开"与"迷雾画不出来"。
+	if was_visible != visible:
+		print("[fog] visible=%s enabled=%s shader_ok=%s atlas_ok=%s bounds=%s" % [
+			visible, _enabled, _has_valid_shader, _has_atlas, _bounds.size])
 
 
 func _build_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:

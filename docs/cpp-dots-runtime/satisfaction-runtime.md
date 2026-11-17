@@ -114,7 +114,7 @@ composite        = min(raw, ceiling)
 | `satisfaction_tax_tolerance_q16` | 22938 | 净税负达到毛收入35%时税负分归零 |
 | `satisfaction_development_weights_q16` | `[26214,26214,13107]` | 聚落 / 科技 / 产业权重 |
 | `satisfaction_development_variety_target` | 12 | 产业种类饱和点 |
-| `satisfaction_birth_reference_q16` / `_bonus_reference_q16` | 45875 / 55706 | 出生乘数1.0 / 最高奖励参考 |
+| `satisfaction_birth_reference_q16` / `_bonus_reference_q16` | 36045 / 45875 | 出生乘数1.0 / 最高奖励参考 |
 | `satisfaction_pressure_thresholds_q16` | `[13107,26214,39322,52429]` | 社会压力五档分界 |
 
 四个 `satisfaction_comfort_*_months_q16` / `satisfaction_luxury_*_months_q16` 已移除。
@@ -122,8 +122,12 @@ composite        = min(raw, ceiling)
 返回 `purchasing_power_basis_valid=false`。基础篮子当前仍受可购库存覆盖率影响，后续的
 稳定缺货估价、经营资金扣除、实际收入指数与时代化发展评分尚未实施。
 
-收入、税负、社会发展公式延用原实现。本轮没有改其权威列或出生、家族、社会压力阈值；
-采用70%实际生活权重后，正常生活仍能越过0.70出生参考，饥饿约束仍使严重不足者低于参考。
+收入、税负、社会发展公式延用原实现。本轮没有改其权威列或出生、家族、社会压力阈值。
+**出生参考值已从 0.70 降到 0.55（奖励参考 0.85→0.70）**：0.70 高于石器时代 cohort 的
+结构上限——它只有生存、基本、税负三个维度拿得到分，按职业权重折算上限是 `worker` 0.52、
+`forager` 0.60，所以旧参考让每个开局聚落**必然**拿不到满额出生率，与「早期不应掐死出生」的
+本意相反。0.55 略高于 `worker` 上限，吃饱且税轻的早期 cohort 即可满额繁殖，严重匮乏者仍低于
+参考。改后石器开局净增长由约 15.5%/年升到 19–21%/年（composite 0.35 时约 11.6%）。
 应以正式开局长跑继续校准，不能仅用零出生的公式测试声称人口平衡已经完成。
 
 ## 外部来源：事件效果 / 政体 / 家族效果
@@ -168,7 +172,7 @@ O(1) 下标读取，冻结期也沿用既有的批量 `effective_values()`，不
 | 理念卡 | 定义由理念目录自带 | 已在用：`labour_legislation.l3` +400bp、`land_tax_reform.l1` −800bp 等 |
 | 科技 | 同族 stat | 已在用：9 个节点（士兵、工人、矿工、产业工人、佃农） |
 | 叙事事件 | `COUNTRY_MODIFIER` 应用定义 | **已接**：`narrative.relief.agrarian_satisfaction`、`narrative.levy.labor_satisfaction` |
-| 政体 | `PoliticalRegimeDefinition.modifier_definition_keys` → 切换时应用/移除 | **已接**：`regime.early_clan.cohesion`（佃农/农奴 +600、家庭小农/自给农民 +450、地主 +300、商人 −600）、`regime.local_council.cohesion`（商人 +750、工业资本家 +600、工匠/熟练工 +450、工人 +300、地主 −600） |
+| 政体 | `PoliticalRegimeDefinition.modifier_definition_keys` → 切换时应用/移除 | **已接**：`regime.early_clan.cohesion`（佃农/农奴 +600、家庭小农/自给农民/失业者 +450、地主 +300、商人 −600）、`regime.local_council.cohesion`（商人 +750、工业资本家 +600、工匠/熟练工 +450、工人 +300、地主 −600） |
 | 家族效果 | 家族效果 program 指向定义 | **已接**：`family.country.patronage_satisfaction` ← 官方效果 `patronage_house`（门客之家，COUNTRY/ADD，威望 Ⅰ→Ⅴ 时匠户与学者 +1.2→+2.0、书吏与雇工 +0.8→+1.3） |
 
 政体还挂**非满意度**的 COUNTRY 定义（`regime.*.charter`），走同一个
@@ -255,7 +259,7 @@ AI 生成事件走 `magnitude_percent`（5–50），即按定义量级取百分
 - **出生率**：格级 `sat_cell` 进入承载力 `K_eff`；cohort 只乘
   `cohort_sat_residual = clamp(rescale(cohort) / sat_cell)`。
   `rescale` 仍按 `satisfaction_birth_reference_q16` 重标定，否则早期 cohort
-  （按构造在奢侈、储蓄、发展上必然得零分）会自己掐死自己的出生率。composite 在 0.70–0.85
+  （按构造在奢侈、储蓄、发展上必然得零分）会自己掐死自己的出生率。composite 在 0.55–0.70
   之间线性升到 1.15，负载超过 `carrying_soft_start_q16` 后超出 1 的部分渐退。
   贴上 `K_eff` 后 `fertility_land` 落到更替，未解锁 need 不进物资族分母。
 - **饥饿死亡只读 `SAT_DIM_SUBSISTENCE`**，代码里写成显式不变量与注释：

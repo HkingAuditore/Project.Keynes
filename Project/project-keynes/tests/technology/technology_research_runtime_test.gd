@@ -72,7 +72,16 @@ func _init() -> void:
 		and bool(facade.discover_research_signal(
 			handle, &"resource.clay", 0, 1, 0, 4).get("ok", false))
 		and bool(facade.discover_research_signal(
-			handle, &"breakthrough.kiln_temperature", 0, 1, 0, 5).get("ok", false)))
+			handle, &"breakthrough.kiln_temperature", 0, 1, 0, 5).get("ok", false))
+		# tech.maize_garden_horticulture now reveals on the crop itself and carries
+		# a practice route: the fixture must have seen maize and own the
+		# grain-practice achievement, otherwise its queue entry never advances and
+		# the allocation assertions below would measure a stalled domain.
+		and bool(facade.discover_research_signal(
+			handle, &"bio.maize", 0, 1, 0, 6).get("ok", false))
+		and bool(facade.discover_research_signal(
+			handle, &"development.grain_practice_800_180d", 0, 1, 0, 7).get(
+			"ok", false)))
 	_expect("discovery inspiration commits", bool(ext.run_country_slice(
 		{"day_index": 0}).get("done", false)))
 	var revealed_snapshot: Dictionary = facade.research_snapshot(handle)
@@ -253,7 +262,13 @@ func _expect_equal_weight_progress_accumulates(compiled: Dictionary, profile: Re
 		and bool(facade.discover_research_signal(
 			handle, &"landform.coast", 0, 1, 0, 2).get("ok", false))
 		and bool(facade.discover_research_signal(
-			handle, &"resource.silica_sand", 0, 1, 0, 3).get("ok", false)))
+			handle, &"resource.silica_sand", 0, 1, 0, 3).get("ok", false))
+		# Crop sighting + practice achievement gate tech.maize_garden_horticulture.
+		and bool(facade.discover_research_signal(
+			handle, &"bio.maize", 0, 1, 0, 4).get("ok", false))
+		and bool(facade.discover_research_signal(
+			handle, &"development.grain_practice_800_180d", 0, 1, 0, 5).get(
+			"ok", false)))
 	_expect("equal-weight discovery commits", bool(ext.run_country_slice(
 		{"day_index": 0}).get("done", false)))
 	_expect("equal-weight enqueue keeps default 25/25/25/25", bool(facade.enqueue_research(
@@ -334,7 +349,14 @@ func _expect_elevated_cost_progress_roundtrip(compiled: Dictionary, profile: Res
 		1, handle, 0, "country.research.cost_factor", 1.0))
 	_expect("industry era penalty raises research cost_factor", cost_factor > 1.0)
 	_expect("elevated-cost discovery queues", bool(facade.discover_research_signal(
-		handle, &"resource.arable_land", 0, 1, 0, 1).get("ok", false)))
+		handle, &"resource.arable_land", 0, 1, 0, 1).get("ok", false))
+		# Same fixture requirement as above: the crop sighting reveals the node,
+		# the practice achievement lets research advance.
+		and bool(facade.discover_research_signal(
+			handle, &"bio.maize", 0, 1, 0, 2).get("ok", false))
+		and bool(facade.discover_research_signal(
+			handle, &"development.grain_practice_800_180d", 0, 1, 0, 3).get(
+			"ok", false)))
 	_expect("elevated-cost discovery commits", bool(ext.run_country_slice(
 		{"day_index": 0}).get("done", false)))
 	_drain_modifier_idle(ext, 0)

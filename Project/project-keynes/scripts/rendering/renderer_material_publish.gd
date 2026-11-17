@@ -251,7 +251,8 @@ static func _apply_uniforms(host) -> void:
 	# [height-flow-pack 2026-08-06] Legacy/Tiled flow 都在 height*.B，不再绑独立 flow sampler。
 	# has_flow_tex：height 纹理就绪且 flow_buffer 齐 = 已打包。
 	sm.set_shader_parameter("has_flow_tex",
-		(visual_tiles.height != null if tiled else host._world.height_tex != null)
+		DCFeatureFlags.water_flowmap_enabled()
+		and (visual_tiles.height != null if tiled else host._world.height_tex != null)
 		and host._world.flow_buffer.size() >= host._world.hm_size.x * host._world.hm_size.y
 		and host._world.hm_size.x > 0 and host._world.hm_size.y > 0)
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
@@ -260,7 +261,8 @@ static func _apply_uniforms(host) -> void:
 	if not tiled:
 		sm.set_shader_parameter("water_depth_tex", host._world.water_depth_tex)
 	sm.set_shader_parameter("ocean_current_flow_tex", host._world.ocean_current_flow_tex)
-	sm.set_shader_parameter("ocean_current_flow_tex_bound", host._world.ocean_current_flow_tex != null)
+	sm.set_shader_parameter("ocean_current_flow_tex_bound",
+		DCFeatureFlags.water_flowmap_enabled() and host._world.ocean_current_flow_tex != null)
 	sm.set_shader_parameter("has_water_depth_tex",
 		visual_tiles.water_depth != null if tiled else host._world.water_depth_tex != null)
 	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。

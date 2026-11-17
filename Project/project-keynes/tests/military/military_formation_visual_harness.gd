@@ -7,8 +7,8 @@ const PREVIEW_LAYER_SCRIPT = preload(
 	"res://scripts/rendering/military_formation_preview_layer.gd")
 const THEME: Theme = preload("res://assets/themes/player_session_theme.tres")
 const DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
-const SANS_BOLD: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
-const SANS: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
+const SANS_BOLD: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.woff2")
+const SANS: Font = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2")
 
 const INK := Color("2b2118")
 const MUTED := Color("6b5742")

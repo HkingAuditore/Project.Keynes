@@ -22,8 +22,12 @@
     Windows  : 不得排除 `assets/audio/banks/`
 
   产物层（`--apk` 按 FMOD 档、`--pck` 按 native 档）：
-    FMOD 档  : `.bank` = 4、`lib/<abi>/` 三件套齐全、无 native vorbis
+    FMOD 档  : `.bank` = 8（基础 4 + 时代 4）、`lib/<abi>/` 三件套齐全、无 native vorbis、
+               dex 里有 `org.fmod` 的 Java stub
     native 档: era 音轨 = 4、transition = 3、`.bank` = 0、`assets/audio/native/**` 的 `.import` 存在
+
+  Android 自 2026-11 起是 **FMOD-only**（不再退 portable），对应 `fmod_only` 档；
+  `fmod_fallback` 是旧契约（bank + OGG 双份），只用来对照旧产物。
 
 用法：
     python tools/verify_audio_packaging.py                     # 只查预设
@@ -180,18 +184,38 @@ def names_from_pck(path: pathlib.Path) -> list[str]:
 
 PROFILES = {
     # 产物档位：FMOD 平台（Windows/Android）看 bank + lib，Web 看 native vorbis。
-    "fmod": {"era": 0, "trans": 0, "banks": 4, "imports": 0},
+    # bank 数 = 基础 4（Master.strings/Master/Music/UI）+ 时代 4（Music_<era>）。
+    "fmod": {"era": 0, "trans": 0, "banks": 8, "imports": 0},
     "native": {"era": 4, "trans": 3, "banks": 0, "imports": -1},
-    # Android 现状：主 FMOD，初始化失败时退到 portable 混音，所以两套资源都得在。
+    # Android 现役契约（2026-11 起）：FMOD-only。Mobile 平台 bank，不打包 OGG，
+    # 且游戏不再退到 portable 混音——所以 dex 里必须有 org.fmod 的 Java stub。
+    "fmod_only": {"era": 0, "trans": 0, "banks": 8, "imports": 0},
+    # 旧契约：FMOD 主 + 初始化失败退 portable，因此 bank 与 OGG 两套都得在。
+    # 已废弃，仅留作对照旧产物。
     "fmod_fallback": {"era": 4, "trans": 3, "banks": 4, "imports": -1},
 }
+
+
+def has_fmod_stub(path: pathlib.Path) -> bool:
+    """APK 的任一 dex 里是否存在 org.fmod 的 Java 类。
+
+    FMOD 的 Android 运行库在 `JNI_OnLoad` 里 `FindClass("org/fmod/FMOD")`，
+    缺这个类时 CheckJNI 会 abort 进程；而 GameAudio 的 `_prime_fmod_jni()` 探测
+    不到类会把后端置为 disabled。没有 stub 的包在真机上就是没声音。
+    """
+    with zipfile.ZipFile(path) as archive:
+        for name in archive.namelist():
+            if name.endswith(".dex") and b"org/fmod" in archive.read(name).lower():
+                return True
+    return False
 
 
 def report(counts: dict, label: str, profile: str, overrides: dict) -> list[str]:
     problems: list[str] = []
     if profile == "auto":
         # 按产物实际内容判断该走哪个档：有 bank 就是 FMOD 模式，否则 portable。
-        profile = "fmod_fallback" if counts["banks"] else "native"
+        # 新契约下 FMOD 档不再带 OGG 兜底，所以默认落到 fmod_only。
+        profile = "fmod_only" if counts["banks"] else "native"
     expected = dict(PROFILES[profile])
     for key, value in overrides.items():
         if value >= 0:
@@ -202,6 +226,9 @@ def report(counts: dict, label: str, profile: str, overrides: dict) -> list[str]
     print(f"  .bank files     {len(counts['banks']):2d}")
     print(f"  native .import  {len(counts['imports']):2d}")
     print(f"  oggvorbisstr    {len(counts['vorbis']):2d}")
+    stub = counts.get("stub")
+    if stub is not None:
+        print(f"  java stub       {'yes' if stub else 'NO'}")
     if counts["libs"]:
         for abi, libs in sorted(counts["libs"].items()):
             print(f"  lib/{abi:9s} {len(libs):2d} {sorted(libs)}")
@@ -232,6 +259,10 @@ def report(counts: dict, label: str, profile: str, overrides: dict) -> list[str]
                 problems.append(f"{label}: lib/{abi} 缺 {missing}")
             if not any("libFmodBootstrap.android." in name for name in libs):
                 problems.append(f"{label}: lib/{abi} 缺 JNI 引导扩展 libFmodBootstrap")
+        # 没有 org.fmod 的 Java 类，libfmod 的 JNI_OnLoad 会 abort / 后端被禁。
+        if stub is False:
+            problems.append(
+                f"{label}: dex 里没有 org.fmod.FMOD（FMOD 在 Android 上会初始化失败 → 无声）")
     return problems
 
 
@@ -292,8 +323,9 @@ def main() -> int:
         if not path.exists():
             problems.append(f"缺产物: {path}")
             continue
-        problems.extend(report(classify(names_from_apk(path)), path.name,
-                               args.apk_profile, overrides))
+        counts = classify(names_from_apk(path))
+        counts["stub"] = has_fmod_stub(path)
+        problems.extend(report(counts, path.name, args.apk_profile, overrides))
     for pck in args.pck:
         path = pathlib.Path(pck)
         if not path.exists():

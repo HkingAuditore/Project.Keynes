@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/fx_red_seal.png-332a90c4d09d9c3175c9ae082a159
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
-compress/lossy_quality=0.7
+compress/mode=1
+compress/high_quality=true
+compress/lossy_quality=0.75
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

@@ -1295,13 +1295,16 @@ static func _quality_size_scale(host) -> float:
 
 static func _active_quality_tier(host) -> int:
 
-	# Web's compile tier stays LOW for warmup parity. Instance budgets and
-	# shading/form uniforms must follow the user's runtime quality instead.
-	if OS.has_feature("web"):
-		return clampi(host._visual_quality, 0, 2)
-	return clampi(
-		host._mobile_quality_tier if DCFeatureFlags.uses_shader_quality_tier() else host._visual_quality,
-		0, 2)
+	# [android-runtime-quality 2026-11-17] 受限平台（web / mobile）的编译期档都保持
+	# LOW：web 为了预热缓存命中，mobile 为了每像素分支成本（见
+	# player_game._shader_quality_define_from_setting 的实测注释）。**实例预算、LOD
+	# 密度与 form/着色档必须跟随玩家的运行期画质**，否则设置里的"最高画质"在植被/
+	# 点缀上是空操作：所有层按 quality0 的每格上限散布，道具全走 !detailed 的简化
+	# 形体，远看就是一块块纯色方块。
+	#
+	# 注意二分手段：要量"运行期档"的代价用 pk_debug.cfg 的 `[render] visual_quality`，
+	# 要量"编译期分支"的代价用 `tier_override` —— 后者不再影响本函数。
+	return clampi(host._visual_quality, 0, 2)
 
 
 # [web-mobile-density-halving 2026-10-30] 受限平台（浏览器 WebGL2 / 移动 GPU）共用

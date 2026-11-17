@@ -641,8 +641,9 @@ func _build_page_tax_section(context: Dictionary) -> void:
 		hint.text = "仅可查看该国当前政策。"
 		hint.visible = true
 	else:
-		hint.text = "未单独设档的项目适用此地税率，次日生效。"
-		hint.visible = true
+		# 可用时不写常驻说明：默认税率与待生效状态各自由税行自己给出。
+		hint.text = ""
+		hint.visible = false
 	var lanes := section.get_node("Lanes") as VBoxContainer
 	for raw in defaults:
 		var lane: Dictionary = raw

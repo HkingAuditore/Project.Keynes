@@ -1275,6 +1275,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             uint64_t country_handle = 0, family_handle = 0,
                 idempotency_key = 0;
             int32_t route_cost = 0, speed = 0;
+            int64_t anonymous_population = 0;
+            // schema 65 carries the unaffiliated headcount right after the
+            // dispatched family headcount; older records never had any.
             if (!read_le(bytes, cursor, index) ||
                 !read_le(bytes, cursor, active) ||
                 !read_le(bytes, cursor, generation) ||
@@ -1289,6 +1292,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, speed) ||
                 !read_le(bytes, cursor, state) ||
                 !read_le(bytes, cursor, population) ||
+                (schema >= 65 && !read_le(bytes, cursor, anonymous_population)) ||
                 !read_le(bytes, cursor, kit_bridge_required) ||
                 !read_le(bytes, cursor, kit_material_required) ||
                 !read_le(bytes, cursor, transaction_id) ||
@@ -1331,7 +1335,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_family_expedition_state_invalid"; return false;
                 }
                 const bool preparing = state == EXPEDITION_PREPARING;
-                if (population < 1 || kit_bridge_required < 0 ||
+                if (population < 1 || anonymous_population < 0 ||
+                    kit_bridge_required < 0 ||
                     kit_material_required < 0 ||
                     (preparing ? payload_count != 0 : payload_count < 1)) {
                     error = "save_family_expedition_payload_header_invalid"; return false;
@@ -1354,6 +1359,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             family_expeditions_store().speed.push_back(speed);
             family_expeditions_store().state.push_back(state);
             family_expeditions_store().population.push_back(population);
+            family_expeditions_store().anonymous.push_back(anonymous_population);
             family_expeditions_store().kit_bridge_required_units.push_back(
                 kit_bridge_required);
             family_expeditions_store().kit_material_required_units.push_back(
@@ -1383,6 +1389,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 family_expedition_payloads().size()));
             family_expeditions_store().payload_count.push_back(payload_count);
             int64_t payload_population = 0;
+            int64_t payload_anonymous = 0;
             for (uint32_t payload_index = 0; payload_index < payload_count;
                  ++payload_index) {
                 FamilyExpeditionPayload lane;
@@ -1413,6 +1420,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                         error = "save_family_expedition_payload_truncated";
                         return false;
                     }
+                if (schema >= 65 &&
+                    !read_le(bytes, cursor, lane.anonymous)) {
+                    error = "save_family_expedition_payload_truncated";
+                    return false;
+                }
+                if (lane.anonymous > 1) {
+                    error = "save_family_expedition_payload_invalid";
+                    return false;
+                }
                 if (!read_le(bytes, cursor, lane.person_count) || active == 0 ||
                     lane.signature < 0 || lane.signature >= static_cast<int32_t>(
                         _signatures.size()) || lane.people <= 0 || lane.funds < 0 ||
@@ -1436,10 +1452,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     family_expedition_person_handles().push_back(person_handle);
                 }
                 payload_population += lane.people;
+                if (lane.anonymous != 0) payload_anonymous += lane.people;
                 family_expedition_payloads().push_back(lane);
             }
             if (active != 0 && state != EXPEDITION_PREPARING &&
-                payload_population != population) {
+                (payload_population != population + anonymous_population ||
+                 payload_anonymous != anonymous_population)) {
                 error = "save_family_expedition_population_mismatch";
                 return false;
             }

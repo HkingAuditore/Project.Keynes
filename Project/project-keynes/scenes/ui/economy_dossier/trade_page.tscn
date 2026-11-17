@@ -22,13 +22,6 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 18
 
-[node name="ScopeNote" type="Label" parent="Content" unique_id=1582856244]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKDossierCaption"
-text = "贸易按国家结算，以下为全国数据。"
-
 [node name="Top" type="GridContainer" parent="Content" unique_id=466305474]
 unique_name_in_owner = true
 layout_mode = 2

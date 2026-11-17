@@ -50,7 +50,7 @@ static func append_people_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_HUNGRY),
 		"title": "{settlement_name}·城门外的人",
-		"body_text": "城门外聚了几百个人。脸是黄的，眼睛陷进去，站都站不直。他们说是从下游来的，井干了，东家也跑了，一路走到这里。守门的兵把门闩上，不敢开，也不敢赶。城墙上的人往下看，谁都没说话。王顺在门洞底下站了很久，手里的册子翻来翻去，一页也没写。他把册子合上，又翻开，笔尖在纸上洇出一个点，还是没落下去。",
+		"body_text": "城门外聚着一群人。脸是黄的，眼睛陷进去，站都站不直。他们说是从下游来的，井干了，东家也跑了，一路走到这里。守门的兵把门闩上，不敢开，也不敢赶。城墙上的人往下看，谁都没说话。王顺在门洞底下站了很久，手里的册子翻来翻去，一页也没写。他把册子合上，又翻开，笔尖在纸上洇出一个点，还是没落下去。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Hungry rural families waiting outside the mud walls of an ancient town gate at dusk",
 		"tags": ["society", "famine", "unrest", "people"],
@@ -237,6 +237,12 @@ static func append_people_events(catalog) -> void:
 						"outcome_title": "他们有了户籍",
 						"outcome_narrative": "棚屋换成了土墙房，孩子被记进新册。秋后，这批人缴了第一回租；城里的老户在背后叫他们「粥棚户」。王顺听见了，没管。",
 						"effects": [
+							{
+								"kind": Kind.ADD_POPULATION,
+								"ratio_bp": 1200, # +12%：册上真多了人，当天就要吃饭
+								"duration_days": 1,
+								"custom_label": "本地人口 +12%（流民编入户籍）",
+							},
 							{
 								"kind": Kind.CITY_MODIFIER,
 								"target_key": "economy.city.building.agriculture_output_factor",

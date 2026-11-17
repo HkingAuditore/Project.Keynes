@@ -40190,7 +40190,7 @@
           "value": 1,
           "implementation": "BuildingProfile.technology_tags",
           "status": "catalog_rebind",
-          "display_name": "水泥厂"
+          "display_name": "土法水泥窑"
         },
         {
           "kind": "building",
@@ -80777,8 +80777,8 @@
     },
     {
       "id": "app.cement_plant",
-      "display_name": "水泥厂",
-      "description": "水泥厂由11项已掌握知识自动形成，不消耗研究点。",
+      "display_name": "土法水泥窑",
+      "description": "土法水泥窑由11项已掌握知识自动形成，不消耗研究点。",
       "era_id": "electrical",
       "domain_id": "engineering",
       "industry_chain_id": "branch.water_wind",

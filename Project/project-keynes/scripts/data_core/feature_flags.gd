@@ -436,8 +436,75 @@ static func is_web() -> bool:
 
 ## 是否启用与 mobile 同套的 shader 编译期质量档（MOBILE_QUALITY_*）。
 ## Web 与 mobile 同属受限平台：auto 默认 LOW，设置里的低/中/高驱动 compile-time define。
+##
+## [tier-sim 2026-11-17] 桌面上设了 `PK_MOBILE_SHADER_TIER` 也返回 true，用来**在桌面
+## 复现移动端程序**做画质二分（真机迭代一次要打 APK，太慢）。在此之前这个环境变量在
+## 桌面上是空操作：tier define 只在 uses_shader_quality_tier() 为真时才会被 prepend
+## （见各图层的 _load_shader），所以设了环境变量也拿不到移动变体。
 static func uses_shader_quality_tier() -> bool:
+	# 环境变量只读一次：本函数在散布/材质热路径上会被反复调用，OS.get_environment
+	# 每次都要跨到引擎层。
+	if _mobile_tier_sim < 0:
+		_mobile_tier_sim = 1 if OS.get_environment("PK_MOBILE_SHADER_TIER").strip_edges() != "" else 0
+	if _mobile_tier_sim == 1:
+		return true
 	return OS.has_feature("mobile") or is_web()
+
+
+## -1 = 尚未读环境变量；0 = 未设；1 = 已设（桌面复现移动端程序用）。
+static var _mobile_tier_sim: int = -1
+
+
+## 移动端云影（CloudShadowField）是否启用。
+##
+## [mobile-drop-cloud-shadow 2026-11-17] 真机（Adreno 830 / 2670x1200 / 高画质）
+## 实测：云影 = 一个 SubViewport 每帧渲染 + 地形/水面/建筑/植被每种像素再采样一次。
+## 作者确认"移动端可以接受取消云影"，所以按平台默认关掉：
+## 云影是纯装饰，关掉不影响任何玩法信息，省下的是一整张视口的渲染 + 每个地表像素的采样。
+##
+## 覆盖方式（不必重新打包）：pk_debug.cfg 里 `[render] cloud_shadow=0|1`。
+static func cloud_shadow_enabled() -> bool:
+	return _heavy_visual_enabled("cloud_shadow")
+
+
+## 移动端 Flowmap（高度图 B 通道的流速场 + 海洋环流图）是否启用。
+##
+## [mobile-drop-flowmap 2026-11-17] 同上，作者确认可接受。关掉后水面失去缓慢的流向蠕动
+## 与环流漂移，但波浪、深浅、岸线、SSS/闪点都保留；省的是每个水像素 1~2 次纹理采样
+## 加一套 flow 解码。
+##
+## 覆盖方式：pk_debug.cfg 里 `[render] flowmap=0|1`。
+static func water_flowmap_enabled() -> bool:
+	return _heavy_visual_enabled("flowmap")
+
+
+## 重型视觉效果的最终开关：显式覆盖 > 平台默认（移动端关、桌面/Web 开）。
+##
+## 为什么要留覆盖口：这两个开关的收益和画质代价都得在真机上量，而真机迭代一次要
+## 打 20 分钟的包。用 pk_debug.cfg 就能在同一份 APK 里逐项 A/B。
+static func _heavy_visual_enabled(key: String) -> bool:
+	var override := _debug_render_flag(key)
+	if override >= 0:
+		return override == 1
+	return not OS.has_feature("mobile")
+
+
+## 读 pk_debug.cfg 的 `[render]` 段：返回 -1（未设置）/ 0 / 1。进程内缓存。
+static func _debug_render_flag(key: String) -> int:
+	if not _debug_render_flags_loaded:
+		_debug_render_flags_loaded = true
+		var cfg := ConfigFile.new()
+		if cfg.load("user://pk_debug.cfg") == OK:
+			for name in ["cloud_shadow", "flowmap"]:
+				if cfg.has_section_key("render", name):
+					# 手写配置的取值形态不固定：0/1、true/false、off/on 都接受。
+					var raw := String(str(cfg.get_value("render", name))).strip_edges().to_lower()
+					_debug_render_flags[name] = 0 if raw in ["0", "false", "off", "no"] else 1
+	return int(_debug_render_flags.get(key, -1))
+
+
+static var _debug_render_flags_loaded := false
+static var _debug_render_flags := {}
 
 ## 地图宽度上限（桌面 500 / web 收紧）。新游戏校验与世界配置面板共用。
 static func max_map_width() -> int:

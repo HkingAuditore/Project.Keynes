@@ -252,7 +252,9 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	var atlas := AtlasTexture.new()
 	atlas.atlas = ChapterEmblemsTexture
 	var em_idx := (idx * 2 + 1) % 9
-	atlas.region = Rect2(float(em_idx % 3) * 512.0, float(em_idx / 3) * 512.0, 512.0, 512.0)
+	# 3x3 网格，格边长按纹理实际宽度换算——贴图降分辨率后写死 512 会切错位。
+	var cell := float(ChapterEmblemsTexture.get_width()) / 3.0
+	atlas.region = Rect2(float(em_idx % 3) * cell, float(em_idx / 3) * cell, cell, cell)
 	emblem.texture = atlas
 	hbox.add_child(emblem)
 

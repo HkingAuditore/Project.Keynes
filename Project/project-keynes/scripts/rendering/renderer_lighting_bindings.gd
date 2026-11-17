@@ -35,7 +35,7 @@ static func _apply_water_uniforms(
 			sm.set_shader_parameter("noise_tex", _world.noise_tex)
 		if not _visual_tiles_active.call() and _world.water_depth_tex != null:
 			sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
-		if _world.ocean_current_flow_tex != null:
+		if DCFeatureFlags.water_flowmap_enabled() and _world.ocean_current_flow_tex != null:
 			sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
 			sm.set_shader_parameter("ocean_current_flow_tex_bound", true)
 	var tiled: bool = _visual_tiles_active.call()
@@ -88,7 +88,8 @@ static func _apply_water_uniforms(
 		sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
 	sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
-	sm.set_shader_parameter("ocean_current_flow_tex_bound", _world.ocean_current_flow_tex != null)
+	sm.set_shader_parameter("ocean_current_flow_tex_bound",
+		DCFeatureFlags.water_flowmap_enabled() and _world.ocean_current_flow_tex != null)
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))

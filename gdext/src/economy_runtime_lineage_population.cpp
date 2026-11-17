@@ -187,7 +187,12 @@ void NativeEconomyRuntime::sync_owned_family_store(
         out.expedition_route_cost.push_back(family_expeditions_store().route_cost[i]);
         out.expedition_speed.push_back(family_expeditions_store().speed[i]);
         out.expedition_state.push_back(family_expeditions_store().state[i]);
-        out.expedition_population.push_back(family_expeditions_store().population[i]);
+        // The mirror reports party headcount (family + unaffiliated colonists);
+        // the split itself stays in the authoritative expedition store, PGEC and
+        // the family-expedition snapshot.
+        out.expedition_population.push_back(
+            family_expeditions_store().population[i] +
+            family_expeditions_store().anonymous[i]);
         out.expedition_effect_transaction_id.push_back(
             family_expeditions_store().effect_transaction_id[i]);
         out.expedition_idempotency_key.push_back(

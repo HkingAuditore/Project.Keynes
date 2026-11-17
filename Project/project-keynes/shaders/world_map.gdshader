@@ -560,11 +560,23 @@ void fragment() {
 		int visual_surface_cover = is_water ? cover : visual_land_cover;
 		int visual_surface_veg = is_water ? veg : visual_land_veg;
 
-		// 已探索但当前不可见 → 去饱和 + 压暗。k=0.5 处最灰，k=1 归零。
-		// 零新增采样，只是几条 ALU。
+		// 已探索但当前不可见 → "褪色的记忆"，不是"压暗的脏块"。
+		// k=0.5 处最强，k=1 归零。零新增采样，只是几条 ALU。
+		//
+		// [fog-memory-wash 2026-11-17] 原来是 `mix(col, 灰, amt) * 0.82`：整体压暗 18%
+		// 再全去饱和。深色海面上这直接变成一圈近黑的脏环，而且把地形烘焙的块状边缘
+		// 一起放大 —— 真机"迷雾很丑"的观感有一半来自这里（关掉迷雾那一帧的同区域
+		// 是明亮的浅海）。记忆层应该是**提亮+褪色**：往纸色靠，明度不低于原图，
+		// 顺便把块状边缘糊掉，和手绘纸本的底子也更搭。
 		if (fog_gray_enabled) {
 			float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
-			col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))) * 0.82, gray_amt);
+			float mem_l = dot(col, vec3(0.299, 0.587, 0.114));
+			// 去饱和后的中性灰，稍微偏暖（纸），再向纸色提一档。
+			vec3 memory = vec3(mem_l) * vec3(1.02, 1.00, 0.96);
+			memory = mix(memory, vec3(0.88, 0.86, 0.82), 0.22);
+			// 暗部抬得比亮部多：海面/山影不再塌成黑块，亮部基本不动。
+			memory = max(memory, vec3(mem_l) * 0.86 + 0.10);
+			col = mix(col, memory, gray_amt);
 		}
 
 		// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。

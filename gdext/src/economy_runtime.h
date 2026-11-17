@@ -222,7 +222,9 @@ public:
     //     correct pre-feature state (no organization had accumulated yet).
     // 64: market signals also preserve current/previous producer sales. These
     // observations drive the next input purchase and owner opportunity quotes.
-    static constexpr int32_t SCHEMA_VERSION = 64;
+    // 65: colonization parties carry unaffiliated colonists (anonymous lanes)
+    // next to the family headcount, so the party size is family + anonymous.
+    static constexpr int32_t SCHEMA_VERSION = 65;
     // Dense order of the compiled `building_economic_sectors` column. It mirrors
     // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
     // manufacturing, energy, knowledge, then the appended `military` sector. The
@@ -238,6 +240,11 @@ public:
     static constexpr uint8_t EXPEDITION_CARGO_CONSTRUCTION = 0;
     static constexpr uint8_t EXPEDITION_CARGO_BUFFER = 1;
     static constexpr int32_t COLONIZATION_KIT_MIN_OWNER_SLOTS = 3;
+    // Fixed party composition: one unaffiliated colonist per this many family
+    // members. Chosen so a party lands at 67% family share, just under
+    // FAMILY_TARGET_SHARE_TOTAL_Q16 (70%), and the family stays the identity
+    // carrier of the expedition.
+    static constexpr int32_t COLONIZATION_ANONYMOUS_PER_FAMILY = 2;
     static constexpr int32_t COLONIZATION_KIT_FOOD_COVERAGE_Q16 = 72090;
     static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
     // Bump when preparing-kit buffer demand changes so in-flight PREPARING
@@ -1832,6 +1839,8 @@ private:
     void sum_family_expedition_holdings(int64_t &population, int64_t &funds,
                                         int64_t &goods, int64_t &saturation) const;
     int64_t family_expedition_payload_people(int32_t expedition) const;
+    int64_t family_expedition_payload_family_people(int32_t expedition) const;
+    int64_t family_expedition_anonymous_people(int32_t expedition) const;
     void note_family_expedition_audit_invalidation();
     AuditTotals incremental_audit_totals() const;
     AuditTotals audit_totals_from_shadow(const AuditTotals &baseline) const;

@@ -138,6 +138,65 @@ static func definitions() -> Array[Dictionary]:
 			"累计贸易价值 %d" % (int(row[0]) * 10), row[1],
 			"累计贸易基础价值达到 %d" % (int(row[0]) * 10), MetricType.TRADE_BASE_VALUE,
 			SubjectKind.ANY, [], int(row[0]) * 10, 1)
+
+	# ─── 作物实践经验 ────────────────────────────────────────────────────────
+	# 这是一类「干过才算懂」的门槛，供 research_routes 引用：主体是货物，指标是
+	# 该货物所属建筑的合计日产出。阈值取「一阶采集建筑额定日产量的约 50%」：
+	#   玉米/小麦/块茎/稻 1718 → 800，韧皮 3714 → 1800，香料 375 → 180，乳胶 5850 → 2900。
+	# 之所以不用 100%：劳动力与投入不足时实际产出低于额定，取半额才不会误伤正常
+	# 经营的暖区国家。
+	# 棉花是例外，取 700 而不是 50%（593）：野生棉丛走 foraging_plants 气候档
+	# （floor 0.35，temp±0.45），寒带开局仍能以 35% 地板产出约 415/日。700 把门槛
+	# 推到 temp≈0.37 以上，刚好把 cold_highland（≤0.34）挡在外面——这正是本条
+	# 门槛存在的理由。
+	_add(out, "development.cotton_practice_700_180d", "棉花种植实践", "agrarian",
+		"保持棉类建筑合计日产出达到 0.7 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["seed_cotton", "cotton_fiber"], 700, 180)
+	_add(out, "development.fiber_practice_1800_180d", "纤维作物收制实践", "agrarian",
+		"保持纤维类建筑合计日产出达到 1.8 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["flax_fiber", "bast_fiber"], 1800, 180)
+	_add(out, "development.spice_practice_180_180d", "香料园圃实践", "agrarian",
+		"保持香料类建筑合计日产出达到 0.18 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["spices"], 180, 180)
+	_add(out, "development.rice_practice_800_180d", "稻作经营实践", "agrarian",
+		"保持稻作建筑合计日产出达到 0.8 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["rice_grain"], 800, 180)
+	_add(out, "development.grain_practice_800_180d", "谷物经营实践", "agrarian",
+		"保持谷物建筑合计日产出达到 0.8 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["wheat_grain", "corn_grain", "potatoes"], 800, 180)
+	_add(out, "development.latex_practice_2900_180d", "树液采割实践", "exploration",
+		"保持乳胶采集建筑合计日产出达到 2.9 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["latex"], 2900, 180)
+
+	# ─── 产业族实践经验 ──────────────────────────────────────────────────────
+	# 作物之外的产业分支按「货物族」合并成一条信号：一族一条，而不是一建筑一条。
+	# 原因是 max_state_instances 是全局 (definition, country) 上限，每个新 definition
+	# 都会乘上国家数；逐建筑展开会直接顶爆。阈值同样取该族最低阶建筑的 50%。
+	_add(out, "development.stone_clay_practice_1300_180d", "石料与黏土采制实践", "agrarian",
+		"保持石料/黏土类建筑合计日产出达到 1.3 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["raw_stone", "clay"], 1300, 180)
+	_add(out, "development.ore_metal_practice_542_180d", "矿石与金属冶炼实践", "agrarian",
+		"保持矿石/金属类建筑合计日产出达到 0.54 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["wrought_iron", "copper", "tin_ore", "iron_ore", "lead_ore"], 542, 180)
+	_add(out, "development.timber_practice_541_180d", "木料采制实践", "agrarian",
+		"保持木料类建筑合计日产出达到 0.54 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["logs", "lumber"], 541, 180)
+	_add(out, "development.salt_practice_625_180d", "制盐实践", "agrarian",
+		"保持制盐建筑合计日产出达到 0.63 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["salt"], 625, 180)
+	_add(out, "development.livestock_practice_812_180d", "畜牧与屠宰实践", "agrarian",
+		"保持畜牧/屠宰类建筑合计日产出达到 0.81 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["game_meat", "livestock_products", "meat", "wool", "leather",
+			"dairy_products"], 812, 180)
+	_add(out, "development.textile_practice_406_180d", "纺织成衣实践", "agrarian",
+		"保持纺织/成衣类建筑合计日产出达到 0.41 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["cloth", "clothing"], 406, 180)
+	_add(out, "development.ceramic_glass_practice_1772_180d", "陶器与玻璃烧制实践", "agrarian",
+		"保持陶器/玻璃类建筑合计日产出达到 1.77 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["pottery", "glass"], 1772, 180)
+	_add(out, "development.fuel_practice_1083_180d", "燃料烧制与采掘实践", "agrarian",
+		"保持燃料类建筑合计日产出达到 1.08 以上共 180 日", MetricType.INDUSTRY_OUTPUT,
+		SubjectKind.GOOD, ["charcoal", "coal", "coke"], 1083, 180)
 	return out
 
 

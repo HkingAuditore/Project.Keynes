@@ -271,6 +271,44 @@ int64_t NativeEconomyRuntime::family_expedition_payload_people(
     return people;
 }
 
+int64_t NativeEconomyRuntime::family_expedition_payload_family_people(
+        int32_t expedition) const {
+    if (expedition < 0 ||
+        expedition >= static_cast<int32_t>(family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0)
+        return 0;
+    int64_t people = 0;
+    const uint32_t begin = family_expeditions_store().payload_begin[expedition];
+    const uint32_t end = std::min<uint32_t>(
+        static_cast<uint32_t>(family_expedition_payloads().size()),
+        begin + family_expeditions_store().payload_count[expedition]);
+    for (uint32_t payload = begin; payload < end; ++payload) {
+        const FamilyExpeditionPayload &lane = family_expedition_payloads()[payload];
+        if (lane.anonymous != 0) continue;
+        people += std::max<int64_t>(0, lane.people);
+    }
+    return people;
+}
+
+int64_t NativeEconomyRuntime::family_expedition_anonymous_people(
+        int32_t expedition) const {
+    if (expedition < 0 ||
+        expedition >= static_cast<int32_t>(family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0)
+        return 0;
+    int64_t people = 0;
+    const uint32_t begin = family_expeditions_store().payload_begin[expedition];
+    const uint32_t end = std::min<uint32_t>(
+        static_cast<uint32_t>(family_expedition_payloads().size()),
+        begin + family_expeditions_store().payload_count[expedition]);
+    for (uint32_t payload = begin; payload < end; ++payload) {
+        const FamilyExpeditionPayload &lane = family_expedition_payloads()[payload];
+        if (lane.anonymous == 0) continue;
+        people += std::max<int64_t>(0, lane.people);
+    }
+    return people;
+}
+
 void NativeEconomyRuntime::note_family_expedition_audit_invalidation() {
     _opening_audit_force_full = true;
     _closing_audit_force_full = true;

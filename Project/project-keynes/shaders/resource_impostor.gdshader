@@ -128,10 +128,21 @@ varying flat vec3 v_direct;
 varying flat vec3 v_sun;
 varying flat vec2 v_axis;
 varying flat vec2 v_rank;
+
+// style_lut 的列寻址：夹到 [0, width-1]。见 vertex() 里 texelFetch 那段的说明。
+int rv_style_col(int col, int width) {
+	return clamp(col, 0, max(width - 1, 0));
+}
 varying flat vec4 v_sky;
 varying flat vec3 v_terrain;
 varying flat vec3 v_day;
-varying flat float v_horizon;
+// [canvas-varying-budget 2026-11-17] Adreno 的 canvas varying 上限只有 28（桌面 32）。
+// 这份 shader 原来用了 29 个，**整份在真机上编译失败**：
+//   SHADER ERROR: Too many varyings used in shader (29 used, maximum supported is 28)
+//   ERROR: Shader compilation failed.  @ resource_visual_layer._ready
+// 后果是资源/点缀全部退化成纯色方块（真机截图里的青蓝色块），而且每帧刷
+// version_get_shader 为 null。三个 flat 标量合成一个 vec3，省两个名额。
+varying flat vec3 v_misc;   // x = horizon visibility, y = transmission, z = radius_world
 varying vec2 v_world_position;
 #ifdef PK_WEB_RESOURCE_MIN
 // [web-two-pass] 仅 web/GLES3：把「同一 fragment 里 5 条着色来源二选一」拆成两份程序。
@@ -170,9 +181,7 @@ varying vec2 v_world_position;
 // y = 1 when this instance carries the resource's lens badge.
 varying flat vec2 v_kind;
 // Light transmission through water for submerged cues (1 on land).
-varying flat float v_transmission;
 // World-space radius of the instance quad (for real-scale sprites).
-varying flat float v_radius_world;
 
 float rv_hash(float n) {
 	return fract(sin(n * 12.9898 + 78.233) * 43758.5453);
@@ -273,17 +282,34 @@ void vertex() {
 	vec4 ecology = texture(eco_lut, cell_uv);
 	v_ecology = mix(vec2(memory.a, 1.0 - memory.a), ecology.rg, has_ecology_lut ? live : 0.0);
 	float style = INSTANCE_CUSTOM.g;
-	v_style = texture(style_lut, vec2(0.25, (style + 0.5) / 64.0));
-	v_material = texture(style_lut, vec2(0.125, (style + 0.5) / 64.0));
-	vec4 meta = texture(style_lut, vec2(0.75, (style + 0.5) / 64.0));
-	v_art = texture(style_lut, vec2(0.625, (style + 0.5) / 64.0));
+	// [style-lut-texel 2026-11-17] style_lut 是 4 列 × 64 行、列间没有 padding 的 RGBAF 表：
+	//   col0 = (specular, material_cell+1, art_bound, metallic)
+	//   col1 = 颜色   col2 = 动物/鱼位图   col3 = (form, family, sub_style, metallic)
+	// 原先用 texture() 取 x=0.25 / x=0.75 —— 这两个 u **正好落在纹素边界上**
+	// （0.25*4 = 1.0，0.75*4 = 3.0）。边界归谁由驱动决定：有的实现按
+	// `round(u*W - 0.5)` 取整，正好命中 .5 时向偶数侧收敛 ⇒ 取到左列。
+	//
+	// 安卓真机上就是这样错位一格：颜色取到 col0（0.2~0.3, ≥1, 1）⇒ 所有道具变成
+	// 过曝青色（实测 #72F6FC，R 停在 sRGB 0.45 而 G/B 顶满，正是 "两个分量 ≥1 + 一个
+	// 0.2" 被日照压暗后的形状）；元数据取到 col2 ⇒ form=0 / family=0..N ⇒ 形体退化成
+	// 铺满整个 quad 的有机斑块。两项叠加就是"地面点缀全成了纯色方块"。
+	//
+	// 改用 texelFetch：整数格寻址，不经过采样器，不受 filter / wrap / 半纹素约定影响。
+	// 列号也夹一次 —— 越界 texelFetch 是 UB，而 style_lut 万一没绑（兜底 1×1 白纹）
+	// 时列 1..3 就越界了，宁可整列退化成读第 0 列。
+	ivec2 style_size = max(textureSize(style_lut, 0), ivec2(1, 1));
+	int style_row = clamp(int(style + 0.5), 0, style_size.y - 1);
+	v_style = texelFetch(style_lut, ivec2(rv_style_col(1, style_size.x), style_row), 0);
+	v_material = texelFetch(style_lut, ivec2(rv_style_col(0, style_size.x), style_row), 0);
+	vec4 meta = texelFetch(style_lut, ivec2(rv_style_col(3, style_size.x), style_row), 0);
+	v_art = texelFetch(style_lut, ivec2(rv_style_col(2, style_size.x), style_row), 0);
 	vec2 model_scale = vec2(length(MODEL_MATRIX[0].xy), length(MODEL_MATRIX[1].xy));
 	vec2 model_px_scale = model_scale * camera_zoom;
 	float radius_px_world = max(model_px_scale.x, model_px_scale.y);
-	v_radius_world = max(model_scale.x, model_scale.y);
+	v_misc.z = max(model_scale.x, model_scale.y);
 	float radius_px = mix(radius_px_world, badge_px * 0.5, clamp(lens_amount, 0.0, 1.0));
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
-	v_transmission = COLOR.g;
+	v_misc.y = COLOR.g;
 	v_sub = vec2(meta.b, style);
 	v_rank = vec2(INSTANCE_CUSTOM.a, radius_px);
 	vec2 center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xy;
@@ -294,7 +320,7 @@ void vertex() {
 	v_direct = anchor_daylight.direct;
 	v_day = anchor_daylight.day;
 	RvHorizonState anchor_horizon = rv_sample_horizon(map_uv, v_sun);
-	v_horizon = anchor_horizon.direct_visibility;
+	v_misc.x = anchor_horizon.direct_visibility;
 	v_sky = anchor_horizon.sky;
 	v_terrain = rv_terrain_normal_at(map_uv);
 	v_axis = normalize(MODEL_MATRIX[0].xy);
@@ -354,7 +380,7 @@ vec4 rv_herd(vec2 p, float layer, float count, float seed, float band, float t, 
 	int n = int(clamp(hmin + floor(pick * (hmax - hmin + 1.0)), hmin, hmax));
 	float cnt = clamp(count, 1.0, 8.0);
 	// Sprite cell spans 2*sc in p units; the animal fills ~94% of its 128px cell.
-	float sc = body_hex * hex_size / max(v_radius_world, 0.001) * 0.535;
+	float sc = body_hex * hex_size / max(v_misc.z, 0.001) * 0.535;
 	float spread = clamp(sc * 1.45 * sqrt(float(n)) * spread_scale, sc, 1.0 - sc);
 	float lod = clamp(log2(128.0 / max(2.0 * sc * v_rank.y, 1.0)), 0.0, 5.0);
 	vec2 sun_away = -normalize(v_sun.xy + vec2(0.0001));
@@ -532,7 +558,7 @@ void fragment() {
 	vec3 direct_color = v_direct;
 	vec3 day_state = v_day;
 	vec4 sky_state = v_sky;
-	float horizon_visibility = v_horizon;
+	float horizon_visibility = v_misc.x;
 	vec3 terrain_normal = v_terrain;
 	if (pixel_surface_lighting) {
 		vec2 surface_uv = visual_static_wrap_uv(
@@ -829,7 +855,7 @@ void fragment() {
 		vec3 col = mix(shoal.rgb, vec3(0.16, 0.30, 0.36), 0.40) * flat_light;
 		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
 		world_rgb = col;
-		world_a = shoal.a * clamp(submerged_opacity * 1.5, 0.0, 0.85) * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
+		world_a = shoal.a * clamp(submerged_opacity * 1.5, 0.0, 0.85) * strength * mix(0.6, 1.0, live) * clamp(v_misc.y, 0.0, 1.0);
 #endif // PK_PROBE_NO_HERD
 	} else if (kind == 3 && material_art && (form == 21 || form == 25)) {
 		mat2 material_xform = rv_material_instance_xform(seed);
@@ -850,7 +876,7 @@ void fragment() {
 		col *= flat_light * response * mix(1.0, surf.a, 0.55);
 		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
 		world_rgb = col;
-		world_a = material_coverage * submerged_opacity * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
+		world_a = material_coverage * submerged_opacity * strength * mix(0.6, 1.0, live) * clamp(v_misc.y, 0.0, 1.0);
 	} else if (kind == 3) {
 #ifdef PK_PROBE_NO_SUBMERGED
 		// [probe] 把 rd_submerged()（kind == 3 的程序化水下贴花）换成常量。
@@ -860,7 +886,7 @@ void fragment() {
 		vec4 w = rd_submerged(p, form, family, sub_style, seed, motion);
 		world_rgb = w.rgb * flat_light;
 		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
-		world_a = w.a * submerged_opacity * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
+		world_a = w.a * submerged_opacity * strength * mix(0.6, 1.0, live) * clamp(v_misc.y, 0.0, 1.0);
 #endif // PK_PROBE_NO_SUBMERGED
 	} else if (kind >= 4) {
 		world_a = 0.0;

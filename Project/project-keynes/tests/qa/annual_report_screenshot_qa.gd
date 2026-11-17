@@ -13,6 +13,9 @@ const Fixture = preload("res://tests/ui/annual_report_test.gd")
 const Model = preload("res://scripts/ui/annual_report_view_model.gd")
 const Scene = preload("res://scenes/ui/annual_report_workspace.tscn")
 const OUTPUT := "res://tmp/annual_report_qa"
+## 末章纪事的固定样张（取自真实生成结果，一百八十七字，含三段与空行）。
+## 用它而不是随便一句短句，是为了让截图能暴露「多段正文在 details 里的行距与段距」。
+const FIXTURE_CHRONICLE := "是年开春，新聚落立起来，夯土为墙，搬进去的多是佃户；另有一处旧聚落升了格，换了界石。丁口添了不少，添的多在佃农家里。\n\n铁匠铺的炉子整年没熄。打出的铁器上了市，实付的工钱却只有那么些，铁匠蹲在门槛上数完，揣进怀里，又进去拉风箱。\n\n入冬，管仓的清点陶土，说挖得狠了，堆场上剩的不多，土坯得省着用。市面上的货不齐整，粮行的、押车的都在门口等。新册子压在旧册子上面，边角还空着。"
 var _failures: int = 0
 
 
@@ -34,7 +37,10 @@ func _run() -> void:
 			root.content_scale_factor = scale_value
 			root.size = viewport_size
 			DisplayServer.window_set_size(viewport_size)
-			workspace.present(Model.build(Fixture.fixture()), true)
+			var first_model: Dictionary = Model.build(Fixture.fixture())
+			# 末章「纪事」由 AI 写、后到追加；这里塞一段固定文本，让排版被截图覆盖。
+			Model.append_chronicle_chapter(first_model, FIXTURE_CHRONICLE)
+			workspace.present(first_model, true)
 			workspace.set_history([{"id": 1, "year": 0, "grade": "S"}], 0, false)
 			await create_timer(1.6).timeout
 			workspace.finish_opening()
@@ -45,6 +51,10 @@ func _run() -> void:
 			await _capture(workspace, "reader_mid_%dx%d_%d" % [viewport_size.x, viewport_size.y, int(scale_value * 100)], 4)
 			workspace.reader().scroll_to_chapter(8, false)
 			await _capture(workspace, "reader_end_%dx%d_%d" % [viewport_size.x, viewport_size.y, int(scale_value * 100)], 4)
+			# 末章纪事：这是唯一一段整章由 AI 写的正文，排版必须与手写章节同规格。
+			# 多等几帧：第 10 章是懒加载补建出来的，滚动目标要等它布局完才算得准。
+			workspace.reader().scroll_to_chapter(9, false)
+			await _capture(workspace, "reader_chronicle_%dx%d_%d" % [viewport_size.x, viewport_size.y, int(scale_value * 100)], 10)
 			# 卷末：滚到底。纸的下沿与它下面那段桌面都必须进画面 ——
 			# 读者要能看见"这份报告到此为止"，而不是"文字到此为止"。
 			var tail: ScrollContainer = workspace.get("_scroll")

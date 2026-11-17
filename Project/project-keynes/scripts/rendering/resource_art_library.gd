@@ -96,6 +96,26 @@ func _load() -> void:
 		_material_cell[String(mids[i])] = i
 	if not mids.is_empty():
 		material = _array(ROOT + String(ma.file), 2)
+	# [resource-art-diagnostics 2026-11-17] 一行可 grep 的到货清单。
+	#
+	# 起因：真机上"地面点缀全部变成纯色方块"，而 _array() 失败只 push_warning ——
+	# 导出版里 push_warning 没有任何出口（无控制台、不进 user://logs），于是"图集
+	# 没进包"与"图集在但画质档被压到 0"这两种完全不同的故障在玩家侧长得一模一样。
+	# 这条 print 走 stdout，`adb logcat | grep resource_art` 就能一眼分开：
+	#   cover=16 fauna=9 crown=5 material=2  → 图集正常，问题在渲染档位
+	#   FAILED=...                          → 图集缺失/格式不符，点缀必然退化成色块
+	print("[resource_art] v%d cover=%d fauna=%d crown=%d material=%d%s" % [
+		version, _layer_count(cover_albedo), _layer_count(fauna),
+		_layer_count(crown), _layer_count(material),
+		"" if _array_failures.is_empty() else " FAILED=" + ", ".join(PackedStringArray(_array_failures))])
+
+
+static func _layer_count(tex: TextureLayered) -> int:
+	return (tex.get_layers() if tex != null else -1)
+
+
+## 本次进程内加载失败的图集路径（只用于上面那行诊断输出）。
+static var _array_failures: Array[String] = []
 
 func _array(path: String, slices: int) -> TextureLayered:
 	if ResourceLoader.exists(path):
@@ -103,9 +123,13 @@ func _array(path: String, slices: int) -> TextureLayered:
 		if imported is TextureLayered and (imported as TextureLayered).get_layers() == slices:
 			return imported
 	# Fallback: slice the vertical strip ourselves.
+	# 注意：APK/IPA 里资源在包内，globalize_path 得到的不是可读文件，这条路只对
+	# 编辑器与源码目录有效。导出包走到这里就是要失败 —— 记进 _array_failures，
+	# 由 _load() 的收尾 print 暴露出来，不要指望 push_warning 有人看得到。
 	var image := Image.load_from_file(ProjectSettings.globalize_path(path))
 	if image == null or image.is_empty() or image.get_height() % slices != 0:
 		push_warning("resource art missing or malformed: " + path)
+		_array_failures.append(path.get_file())
 		return null
 	if image.get_format() != Image.FORMAT_RGBA8:
 		image.convert(Image.FORMAT_RGBA8)

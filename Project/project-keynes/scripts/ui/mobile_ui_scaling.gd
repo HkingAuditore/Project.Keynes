@@ -9,7 +9,7 @@ extends Node
 ##   桌面 1600×960 下 1 物理像素 ≈ 1 设计像素，观感正常，所以这不是「UI 设计得太小」，
 ##   而是「设计像素没有按 dp 换算到物理像素」。
 ##
-## 策略（一个公式，桌面/移动共用一条代码路径，但设备倍率不同）
+## 策略（旧版：按 dpi 反推总缩放，2026-11-17 起被下面的 [pc-fit] 取代，仅存档案意义）
 ##   目标总缩放 S = 物理像素 / 设计像素 = DESIGN_DP_PER_UNIT × (dpi / 160)
 ##     → 1 设计像素恒等于 0.55dp，与分辨率、宽高比无关；
 ##     → 52px 按钮 = 28.6dp、18px 正文 = 9.9dp（440dpi 口径）。
@@ -31,22 +31,49 @@ extends Node
 ## 安全区：DisplayServer.get_display_safe_area() 是**屏幕物理像素**，除以总缩放换成设计像素，
 ##         由各 UI 根节点（主菜单 PageMargin、游戏内 UIRoot）取用。
 ##
+## [pc-fit 2026-11-17] 排版优先档（当前生效）
+##   玩家反馈：安卓端「排版完全错乱」，明确表示「能接受字变小，希望直接按 PC 端排版缩放」。
+##   根因不是缩放本身，而是**旧策略的放大倍率压缩了逻辑画布**：
+##     总缩放 S = 1.375（440dpi）⇒ 逻辑画布 = 物理 / S = 2220/1.375 = 1614×785，
+##     而所有版式常量都是按 1600×960 写的（右面板 460、详情面板最小 860、财政摘要卡片行、
+##     工作台页脚……），高度少 18% 之后只能被压扁或溢出屏幕。
+##   现在：content_scale_aspect = KEEP + factor = 用户倍率 ⇒
+##     逻辑画布**恒为 1600×960**，与 PC 完全同一套版式，只是整体等比缩放到屏幕并居中。
+##     2220×1080 上 scale = min(2220/1600, 1080/960) = 1.125，内容区 1800×1080，左右各留
+##     210 物理像素边（约 9.5%）。20:9 比 PC 的 16.67:9 更宽，多出来的宽度进黑边，
+##     而不是把版式拉开 —— EXPAND 会把科技页统计行、工作台页脚这类左右 anchor 的容器拉散。
+##   代价：1 设计像素 = 1.125 物理像素 ≈ 0.41dp（旧 0.5），18px 正文从 9dp 降到 7.4dp，
+##     这是玩家明确接受了的交换。
+##   连带：逻辑高 = 960 = 设计基准，TouchUI.is_short_viewport 的阈值随之从 1000 降到 960，
+##     否则手机仍会判「纵向吃紧」而收起摘要卡 / 科技页侧栏，跑的是 compact 版式而非 PC 版式。
+##   触摸不再靠全局倍率撑：touch_ui 的命中带按固定设计像素换算（dp_per_unit 在触摸档
+##   返回 DESIGN_DP_PER_UNIT，不跟随本分支的总缩放），所以排版回到 PC 后不会反过来把按钮撑大。
+##
 ## 本类刻意不写 class_name：新脚本还没进 global_script_class_cache 时裸类名会编译失败
 ## （见 scripts/ui/main_menu.gd 里 WebAutotestScript 的同类注释），统一用 preload。
 
 const REFERENCE_SIZE := Vector2i(1600, 960)
 const VIEWPORT_WIDTH := 1600.0
 const VIEWPORT_HEIGHT := 960.0
-## 1 设计像素目标等于多少 dp。0.5 → 440dpi 上总缩放 ≈1.375、52px 按钮 ≈26dp。
-## 这个值直接决定「手机上 UI 比桌面大多少」：
-##   0.85（第一版）→ 总缩放 2.34、逻辑 950×462：真机反馈「按钮太大、面板被裁、完全没法用」；
-##   0.50（现在）  → 总缩放 1.375、逻辑 ≈1942×873（2670×1200@440dpi）：接近桌面排版，
-##                   只把命中区整体抬 37%，比改动前的 19dp 明显好按，又不会把版面挤爆。
+## 1 设计像素折算多少 dp —— **只用于触摸命中区的换算**（touch_ui / game_ui_manager），
+## 不再参与 content_scale 的倍率计算。
+## 0.5 ⇒ 34dp 视觉下限 = 68 设计像素、44dp 命中带 = 88 设计像素。
+## 保持这个标定 = 触摸目标不随「全局缩放模式」漂移；改这里的值会立刻改变全站按钮尺寸。
 const DESIGN_DP_PER_UNIT := 0.5
+
+## 触摸档布局策略（设置里的「界面布局」三档）。桌面档恒为 fit，不读这个值。
+##   fit   ：KEEP 1600×960 —— 与 PC 逐像素一致，20:9 上两侧留黑边。默认，版式最正。
+##   fill  ：EXPAND —— 铺满整屏无黑边，多出来的宽度给地图；代价是左右 anchor 的容器会被拉开。
+##   dense ：EXPAND + 0.85 —— 元素再小 15%，逻辑画布比 fit 高约 24%，同屏多显示一屏内容。
+const LAYOUT_MODES := ["fit", "fill", "dense"]
+## dense 档的额外缩小系数。0.85 时 18px 正文 ≈ 6.3dp —— 已经是可读下限，
+## 再小就需要 token 级字阶（单独缩字号/行高），而不是继续压缩放。
+const DENSE_SCALE := 0.85
 ## dpi 不可信时的兜底：按 6.5 英寸对角线反推。
 const FALLBACK_DIAGONAL_INCH := 6.5
 const FALLBACK_DPI := 400.0
-## 逻辑短边的允许区间（设计像素）。下限越大 = UI 越大；560 对应「桌面排版的 1/1.2」。
+## [pc-fit 2026-11-17] 以下四个常量已不参与计算（旧「按 dpi 反推总缩放」策略的夹取区间）。
+## 保留是为了改回旧策略时不丢标定值，新增代码不要再引用。
 const LOGICAL_SHORT_SIDE_MIN := 560.0
 const LOGICAL_SHORT_SIDE_MAX := 1600.0
 const MAX_TOTAL_SCALE := 2.0
@@ -56,9 +83,13 @@ const SAFE_AREA_MAX_RATIO := 0.25
 
 var _is_touch := false
 var _dpi := 96.0
-## 设备倍率（dp 换算，不含用户 UI 缩放）与最终总缩放（含用户 UI 缩放）。
+## 触摸档布局策略（fit / fill / dense）。桌面档无效。
+var _layout_mode := "fit"
+## 设备倍率（[pc-fit 2026-11-17] 触摸档恒 1.0，只作诊断字段保留）。
 var _device_scale := 1.0
+## 实际绘制缩放 = 物理像素 / 设计像素（KEEP 下 = base_stretch × 用户倍率）。
 var _total_scale := 1.0
+## KEEP 的等比基准拉伸 min(w/1600, h/960)，仅供诊断。
 var _base_stretch := 1.0
 var _user_percent := 100
 var _last_signature := ""
@@ -102,10 +133,18 @@ func _on_window_resized() -> void:
 	_apply()
 
 
-## GameSettings 调用的唯一入口。user_percent ∈ {80,100,125,150}（设置里的 UI 缩放）。
-func configure(user_percent: int) -> void:
+## GameSettings 调用的唯一入口。
+## user_percent：桌面档的「界面缩放」百分比（80/100/125/150）。
+## layout_mode：触摸档的布局策略（fit / fill / dense），桌面档忽略。见 LAYOUT_MODES。
+func configure(user_percent: int, layout_mode: String = "fit") -> void:
 	_user_percent = clampi(user_percent, 50, 400)
+	_layout_mode = layout_mode if layout_mode in LAYOUT_MODES else "fit"
 	_apply()
+
+
+## 当前布局策略（触摸档）。桌面档恒 "fit"，调用方不必分支。
+func layout_mode() -> String:
+	return _layout_mode
 
 
 ## 兼容旧调用名。
@@ -123,7 +162,15 @@ func total_scale() -> float:
 
 
 ## 1 设计像素折算成多少 dp。用于报告/诊断与验收口径。
+##
+## [pc-fit 2026-11-17] 触摸档返回**固定标定值**，不再由 total_scale 反推 —— 因为
+## 总缩放现在只表示「PC 等比拉伸」，跟触摸目标的物理大小解绑。若仍走反推公式，
+## 2220×1080 上会算出 0.364dp/单位，touch_ui 的 34dp 目标就变成 93 设计像素，
+## 排版刚回到 PC 就被撑爆。固定 0.5 让 34dp = 68 设计像素、44dp 命中带 = 88 设计像素，
+## 物理上比旧档小 18%（26dp → 21dp 视觉、36dp 命中带），仍远好于改动前的 17dp。
 func dp_per_unit() -> float:
+	if _is_touch:
+		return DESIGN_DP_PER_UNIT
 	if _total_scale <= 0.0:
 		return 1.0
 	return _total_scale * 160.0 / maxf(_dpi, 1.0)
@@ -137,7 +184,11 @@ func dpi() -> float:
 	return _dpi
 
 
-## 安全区（设计像素）。left/top/right/bottom 都是「离屏幕边多少设计像素要留白」。
+## 安全区（设计像素）。left/top/right/bottom 都是「离内容区边缘多少设计像素要留白」。
+##
+## [pc-fit 2026-11-17] KEEP 模式内容区居中、两侧有黑边，安全区常常整块落在黑边里
+## （刘海/挖孔在屏幕最外侧）。所以先算出内容区在屏幕上的左上角，再拿安全区去夹 ——
+## 否则会把「已经被黑边让开」的边距再内缩一次，白吃几十像素。
 func safe_insets() -> Dictionary:
 	var insets := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
 	if not _is_touch:
@@ -150,17 +201,31 @@ func safe_insets() -> Dictionary:
 		return insets
 	var origin := DisplayServer.window_get_position()
 	var scale := maxf(_total_scale, 0.01)
-	var logical_w := float(window.x) / scale
-	var logical_h := float(window.y) / scale
-	var limit_x := logical_w * SAFE_AREA_MAX_RATIO
-	var limit_y := logical_h * SAFE_AREA_MAX_RATIO
-	insets.left = clampf(float(safe.position.x - origin.x) / scale, 0.0, limit_x)
-	insets.top = clampf(float(safe.position.y - origin.y) / scale, 0.0, limit_y)
-	insets.right = clampf(float(origin.x + window.x - safe.position.x - safe.size.x) / scale,
-		0.0, limit_x)
-	insets.bottom = clampf(float(origin.y + window.y - safe.position.y - safe.size.y) / scale,
-		0.0, limit_y)
+	# 把安全区统一到**窗口坐标**：
+	#   真实移动端 DisplayServer.get_display_safe_area() 是屏幕坐标 → 减 origin；
+	#   QA/桌面模拟走 _safe_area_pixels() 的 override，本身就是窗口坐标 → 不减。
+	# 两种语义混用会让右侧凭空多出 origin.x 像素的内缩（实测 1600 宽窗口算出 20）。
+	var safe_pos := Vector2(safe.position)
+	if not _safe_area_is_window_local():
+		safe_pos -= Vector2(origin)
+	var safe_end := safe_pos + Vector2(safe.size)
+	# 内容区（1600×960 等比缩放后）在窗口内的原点。KEEP 下横向一般有黑边。
+	var content := Vector2(REFERENCE_SIZE) * scale
+	var content_origin := (Vector2(window) - content) * 0.5
+	var limit := Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT) * SAFE_AREA_MAX_RATIO * scale
+	insets.left = clampf(safe_pos.x - content_origin.x, 0.0, limit.x) / scale
+	insets.top = clampf(safe_pos.y - content_origin.y, 0.0, limit.y) / scale
+	insets.right = clampf(content_origin.x + content.x - safe_end.x, 0.0, limit.x) / scale
+	insets.bottom = clampf(content_origin.y + content.y - safe_end.y, 0.0, limit.y) / scale
 	return insets
+
+
+## _safe_area_pixels() 这次返回的是不是「窗口坐标」。
+## override 显式给了 safe_area，或桌面模拟 mobile（用 window_get_size 造出来的），都算窗口坐标。
+func _safe_area_is_window_local() -> bool:
+	if _qa_override.get("safe_area", null) is Rect2i:
+		return true
+	return String(_qa_override.get("profile", "auto")) == "mobile"
 
 
 ## 诊断快照（harness / 日志用）。
@@ -168,6 +233,7 @@ func report() -> Dictionary:
 	var insets := safe_insets()
 	return {
 		"profile": "touch" if _is_touch else "desktop",
+		"layout_mode": _layout_mode,
 		"dpi": _dpi,
 		"device_scale": _device_scale,
 		"total_scale": _total_scale,
@@ -177,8 +243,10 @@ func report() -> Dictionary:
 		"user_percent": _user_percent,
 		"dp_per_unit": dp_per_unit(),
 		"window": [DisplayServer.window_get_size().x, DisplayServer.window_get_size().y],
-		"logical": [float(DisplayServer.window_get_size().x) / maxf(_total_scale, 0.01),
-			float(DisplayServer.window_get_size().y) / maxf(_total_scale, 0.01)],
+		# [pc-fit 2026-11-17] 直接读视口，而不是 window/total_scale —— KEEP 模式
+		# 横向有黑边，除法算出来会把黑边算进「逻辑宽度」。
+		"logical": [_content_scale_window().get_visible_rect().size.x,
+			_content_scale_window().get_visible_rect().size.y],
 		"insets": insets,
 		"safe_area_pixels": [DisplayServer.get_display_safe_area().position.x,
 			DisplayServer.get_display_safe_area().position.y,
@@ -206,22 +274,35 @@ func _apply() -> void:
 	if win.x <= 0 or win.y <= 0:
 		win = Vector2i(int(VIEWPORT_WIDTH), int(VIEWPORT_HEIGHT))
 	_is_touch = _resolve_touch()
+	if _qa_override.has("layout"):
+		var forced_mode := String(_qa_override.get("layout"))
+		if forced_mode in LAYOUT_MODES:
+			_layout_mode = forced_mode
 	_dpi = _resolve_dpi(win)
 	var user := float(_user_percent) / 100.0
 	if _is_touch:
-		var desired := DESIGN_DP_PER_UNIT * (maxf(_dpi, 1.0) / 160.0)
-		var short_side := float(mini(win.x, win.y))
-		desired = clampf(desired, short_side / LOGICAL_SHORT_SIDE_MAX,
-			short_side / LOGICAL_SHORT_SIDE_MIN)
-		_device_scale = clampf(desired, MIN_TOTAL_SCALE, MAX_TOTAL_SCALE)
-		# 用户倍率只乘一次：设备倍率（dp 换算）与用户 UI 缩放相乘后写进 content_scale_factor。
-		_total_scale = _device_scale * user
+		# [pc-fit 2026-11-17] 排版优先：不做 dpi 反推放大，总缩放 = EXPAND 基准等比拉伸。
+		# 逻辑画布由 fit/fill/dense 三档决定（见 LAYOUT_MODES）。
+		_device_scale = 1.0
+		var mode_factor := 1.0
+		var aspect := Window.CONTENT_SCALE_ASPECT_KEEP
+		match _layout_mode:
+			"fill":
+				aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+			"dense":
+				aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+				mode_factor = DENSE_SCALE
+		# 桌面档的「界面缩放」把用户倍率直接叠进 factor；触摸档默认 100%。
+		var factor := user * mode_factor
 		window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		window.content_scale_size = REFERENCE_SIZE
-		window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+		window.content_scale_aspect = aspect
 		_base_stretch = maxf(minf(float(win.x) / VIEWPORT_WIDTH, float(win.y) / VIEWPORT_HEIGHT),
 			0.01)
-		window.content_scale_factor = _device_scale / _base_stretch * user
+		# _total_scale = 实际绘制缩放（物理像素 / 设计像素）。safe_insets 与地图相机补偿
+		# 都要用它；用户倍率只乘一次。
+		_total_scale = _base_stretch * factor
+		window.content_scale_factor = factor
 	else:
 		# 桌面/Web：与改动前完全一致——拉伸关闭，factor 只表示用户 UI 缩放。
 		_device_scale = 1.0
@@ -229,15 +310,20 @@ func _apply() -> void:
 		_base_stretch = 1.0
 		window.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 		window.content_scale_factor = user
-	var signature := "%s|%.1f|%.3f|%.3f|%d|%s" % ["touch" if _is_touch else "desktop", _dpi,
-		_device_scale, _total_scale, win.x, win.y]
+	var signature := "%s|%s|%.1f|%.3f|%.3f|%d|%s" % ["touch" if _is_touch else "desktop",
+		_layout_mode, _dpi, _device_scale, _total_scale, win.x, win.y]
 	if signature == _last_signature:
 		return
 	_last_signature = signature
-	print("[mobile-ui-scaling] %s dpi=%.0f device=%.3f total=%.3f dp_per_unit=%.2f logical=%dx%d"
-		% ["touch" if _is_touch else "desktop", _dpi, _device_scale, _total_scale, dp_per_unit(),
-			int(float(win.x) / maxf(_total_scale, 0.01)),
-			int(float(win.y) / maxf(_total_scale, 0.01))])
+	# fit（KEEP）的逻辑画布就是 REFERENCE_SIZE；fill/dense（EXPAND）与桌面档按窗口/总缩放换算。
+	var keep_logical := _is_touch and _layout_mode == "fit"
+	var logical_w := REFERENCE_SIZE.x if keep_logical \
+		else int(float(win.x) / maxf(_total_scale, 0.01))
+	var logical_h := REFERENCE_SIZE.y if keep_logical \
+		else int(float(win.y) / maxf(_total_scale, 0.01))
+	print("[mobile-ui-scaling] %s layout=%s dpi=%.0f device=%.3f total=%.3f dp_per_unit=%.2f logical=%dx%d"
+		% ["touch" if _is_touch else "desktop", _layout_mode, _dpi, _device_scale,
+			_total_scale, dp_per_unit(), logical_w, logical_h])
 
 
 func _content_scale_window() -> Window:

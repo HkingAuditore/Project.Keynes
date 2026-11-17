@@ -313,12 +313,11 @@ func _patch_tax_section(context_value: Variant, row: Dictionary) -> bool:
 	var editable := bool(context.get("editable", false))
 	(_tax_section.get_node("Head/Readonly") as Control).visible = not editable
 	var hint := _tax_section.get_node("Hint") as Label
-	if not bool(context.get("available", true)):
-		hint.text = String(context.get("reason", ""))
-		hint.visible = not hint.text.is_empty()
-	else:
-		hint.text = _tax_hint(_payload_kind)
-		hint.visible = true
+	# 可用时不写常驻说明：待生效状态由税行自己的注脚给出（见 TaxLaneEditor._refresh_note）。
+	var reason := "" if bool(context.get("available", true)) \
+			else String(context.get("reason", ""))
+	hint.text = reason
+	hint.visible = not reason.is_empty()
 	for raw in item_lanes:
 		var lane: Dictionary = raw
 		var item_key := String(lane.get("item_id", ""))
@@ -478,12 +477,10 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 	readonly_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	var hint := _tax_section.get_node("Hint") as Label
 	hint.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	if not bool(context.get("available", true)):
-		hint.text = String(context.get("reason", ""))
-		hint.visible = not hint.text.is_empty()
-	else:
-		hint.text = _tax_hint(kind)
-		hint.visible = true
+	var reason := "" if bool(context.get("available", true)) \
+			else String(context.get("reason", ""))
+	hint.text = reason
+	hint.visible = not reason.is_empty()
 	for raw in item_lanes:
 		var lane: Dictionary = raw
 		var editor := TaxLaneScene.instantiate() as TaxLaneEditor
@@ -517,14 +514,6 @@ func _tax_title(kind: String) -> String:
 		"good": "本物资交易税与关税",
 		"building": "本建筑营业税",
 	}.get(kind, "税收调整")
-
-
-func _tax_hint(kind: String) -> String:
-	return {
-		"cohort": "次日生效。",
-		"good": "次日生效。",
-		"building": "次日生效。",
-	}.get(kind, "次日生效。")
 
 
 func set_embedded(embedded: bool = true) -> void:
@@ -1026,6 +1015,10 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
 	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
 	var notes := root.get_node("%Notes") as InspectorNoteList
+	var loss_card := root.get_node("%LossCard") as PanelContainer
+	var loss_summary := root.get_node("%LossCard/Box/Summary") as Label
+	var loss_diverging_bar := root.get_node("%LossCard/Box/DivergingBar") as DossierDivergingBar
+	var loss_cost_bar := root.get_node("%LossCard/Box/CostBar") as DossierStackedBar
 	var capacity_bars := root.get_node("%CapacityBars") as DossierBarList
 	var job_kicker := root.get_node("%JobKicker") as Label
 	var job_bars := root.get_node("%JobBars") as DossierBarList
@@ -1052,6 +1045,10 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 		"overview_page": overview_page,
 		"operations_page": operations_page,
 		"notes": notes,
+		"loss_card": loss_card,
+		"loss_summary": loss_summary,
+		"loss_diverging_bar": loss_diverging_bar,
+		"loss_cost_bar": loss_cost_bar,
 		"capacity_bars": capacity_bars,
 		"job_kicker": job_kicker,
 		"job_bars": job_bars,
@@ -1083,6 +1080,30 @@ func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
 		var insights: Array = dossier.get("insights", [])
 		notes.set_notes(insights)
 		notes.visible = not insights.is_empty()
+	var loss_card := _building_refs.get("loss_card") as PanelContainer
+	var loss_summary := _building_refs.get("loss_summary") as Label
+	var loss_diverging_bar := _building_refs.get("loss_diverging_bar") as DossierDivergingBar
+	var loss_cost_bar := _building_refs.get("loss_cost_bar") as DossierStackedBar
+	var loss_visible := bool(dossier.get("loss_visible", false))
+	if loss_card != null:
+		loss_card.visible = loss_visible
+	if loss_summary != null:
+		loss_summary.text = String(dossier.get("loss_summary", ""))
+		loss_summary.visible = loss_visible
+	if loss_visible:
+		var loss_fd: Dictionary = dossier.get("loss_diverging_bar", {})
+		if loss_diverging_bar != null:
+			loss_diverging_bar.set_values(
+				String(loss_fd.get("left_label", "含税总支出")),
+				float(loss_fd.get("left_value", 0.0)),
+				String(loss_fd.get("left_text", "0")),
+				String(loss_fd.get("right_label", "税前总收入")),
+				float(loss_fd.get("right_value", 0.0)),
+				String(loss_fd.get("right_text", "0")))
+		if loss_cost_bar != null:
+			var loss_segments: Array = dossier.get("loss_cost_segments", [])
+			loss_cost_bar.set_segments("支出构成", loss_segments,
+				String(loss_fd.get("left_text", "0")), true)
 	var cap_bars := _building_refs.get("capacity_bars") as DossierBarList
 	if cap_bars != null:
 		var cbars: Array = dossier.get("capacity_bars", [])
@@ -1137,7 +1158,7 @@ func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
 		var rev_segs: Array = dossier.get("revenue_segments", [])
 		rev_stacked.visible = not rev_segs.is_empty()
 		if not rev_segs.is_empty():
-			rev_stacked.set_segments("收入构成（含自用折算）", rev_segs,
+			rev_stacked.set_segments("收入构成（税前）", rev_segs,
 				String(fd.get("right_text", "0")), true)
 	var cost_stacked := _building_refs.get("cost_stacked_bar") as DossierStackedBar
 	if cost_stacked != null:

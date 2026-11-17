@@ -16,7 +16,7 @@ const ATLAS: Texture2D = preload(
 const SHADER: Shader = preload("res://shaders/military_formation_sprite.gdshader")
 const DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
 const SANS_FONT: Font = preload(
-	"res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
+	"res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2")
 const INSTANCE_CAP := 128
 const ONE_SHOT_MEMBER_STAGGER_SECONDS := 0.025
 const PAPER := Color("eee3c9")

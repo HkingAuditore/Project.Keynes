@@ -806,6 +806,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="UIScaleLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=807138996]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "界面缩放"

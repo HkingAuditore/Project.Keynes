@@ -90,6 +90,11 @@ static func _sync_quote_rows(host, quotes: Array, keep_population: int) -> bool:
 		row.set_meta("quote", quote)
 		var local_people = int(quote.get("population", maximum + 1))
 		var prestige_level = int(quote.get("prestige_level", 0))
+		var anonymous_maximum = int(quote.get("anonymous_maximum", 0))
+		var dispatch_text := "可派 %s 人" % UITokens.format_compact_number_cn(float(maximum), 0)
+		if anonymous_maximum > 0:
+			dispatch_text += " · 随行 %s" % UITokens.format_compact_number_cn(
+				float(anonymous_maximum), 0)
 		row.set_compact_summary({
 			"name": String(quote.get("display_name", "家族")),
 			"population": local_people,
@@ -99,7 +104,7 @@ static func _sync_quote_rows(host, quotes: Array, keep_population: int) -> bool:
 			"accent": UITokens.DOSSIER_OXBLOOD if prestige_level >= 3 else UITokens.DOSSIER_BRASS,
 			"bar_ratio": clampf(float(maximum) / float(maxi(local_people, 1)), 0.0, 1.0),
 			"bar_color": UITokens.DOSSIER_VERDIGRIS if maximum > 0 else UITokens.DOSSIER_OXBLOOD,
-			"effect": "可派 %s 人" % UITokens.format_compact_number_cn(float(maximum), 0),
+			"effect": dispatch_text,
 		})
 		row.disabled = maximum <= 0
 		var selected = not host._selected_quote.is_empty() and host._quote_key(host._selected_quote) == key
@@ -277,7 +282,15 @@ static func _refresh_expedition_detail(host) -> void:
 		"取消筹备，退回已购物资" if state == 4 else "队伍将按当前行程返程")
 	host._expedition_cancel.focus_neighbor_top = host._expedition_cancel.get_path_to(row)
 	host._preview_title.text = String(view.get("name", "家族"))
-	host._preview_metrics.text = "派遣 %s 人" % UITokens.format_compact_number_cn(float(people), 0)
+	var anonymous_people = int(snap.get("anonymous_population", view.get("anonymous_population", 0)))
+	if anonymous_people > 0:
+		var family_people = int(snap.get("family_population", maxi(0, people - anonymous_people)))
+		host._preview_metrics.text = "队伍 %s 人 · 族人 %s · 随行 %s" % [
+			UITokens.format_compact_number_cn(float(people), 0),
+			UITokens.format_compact_number_cn(float(family_people), 0),
+			UITokens.format_compact_number_cn(float(anonymous_people), 0)]
+	else:
+		host._preview_metrics.text = "派遣 %s 人" % UITokens.format_compact_number_cn(float(people), 0)
 	host._preview_effects.text = host._preparing_missing_text(host._selected_expedition, state, snap, false)
 	var due = int(snap.get("due_day", view.get("due_day", -1)))
 	host._preview_route.text = "第 %d 日抵达" % due if state != 4 and due >= 0 else ""
@@ -359,11 +372,14 @@ static func _show_family_preview(host, quote: Dictionary, hovering: bool = false
 		host._paint_waiting_guide()
 		return
 	var branch: Dictionary = preview.get("branch", {})
+	var anonymous_maximum = int(quote.get("anonymous_maximum", 0))
 	host._preview_metrics.text = "当地族人 %s · 可派 %s
+随行平民 %s（每 2 名族人带 1 人）
 威望 %s · 产业 %s
 资金归属 %s" % [
 		UITokens.format_compact_number_cn(float(branch.get("populations", quote.get("population", int(quote.get("maximum_population", 0)) + 1))), 0),
 		UITokens.format_compact_number_cn(float(quote.get("maximum_population", 0)), 0),
+		UITokens.format_compact_number_cn(float(anonymous_maximum), 0),
 		str(branch.get("prestige_levels", quote.get("prestige_level", "—"))),
 		str(branch.get("owned_buildings", quote.get("owned_buildings", "—"))),
 		UITokens.format_compact_number_cn(float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0, 2)]

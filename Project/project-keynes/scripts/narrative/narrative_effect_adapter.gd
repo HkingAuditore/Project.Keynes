@@ -264,6 +264,25 @@ static func _apply_single_effect(
 				_alloc_seq(sequence_alloc))
 			return {"ok": true, "kind": spec.kind}
 
+		Kind.ADD_POPULATION:
+			# 人口是守恒量：走 ADD_POPULATION 原语加到「本地人数最多的那一群」，
+			# 让它当天就进入吃饭/就业结算，而不是靠出生率、产出这类代理杠杆假装人来了。
+			var cohort_handle := int(ctx.get("primary_cohort_handle", 0))
+			var base_population := maxi(0, int(ctx.get("population", 0)))
+			var delta := spec.int_value
+			if delta == 0 and spec.ratio_bp != 0:
+				delta = _scaled_population_delta(base_population, spec.ratio_bp)
+			if economy_facade == null or not economy_facade.is_configured() \
+					or delta == 0 or cohort_handle == 0 or cell_idx < 0:
+				return {"ok": true, "simulated": true, "kind": spec.kind,
+					"population_delta": delta}
+			var seq := _alloc_seq(sequence_alloc)
+			var res: Dictionary = economy_facade.add_population(
+				cohort_handle, delta, effective_day, seq)
+			ctx["population"] = maxi(0, base_population + delta)
+			res["population_delta"] = delta
+			return res
+
 		Kind.SET_STORY_FLAG:
 			if service != null and service.has_method("set_story_flag"):
 				service.set_story_flag(
@@ -354,3 +373,15 @@ static func _alloc_seq(sequence_alloc: Callable) -> int:
 	if sequence_alloc.is_valid():
 		return int(sequence_alloc.call())
 	return 1
+
+
+## 按现有人口折算人数。向零截断：迁出不会多赶人，迁入也不会多出人。
+## 人少的聚落（开局一城才四十口）1% 会算成 0，那等于「收留」在文案上成立、
+## 数值上是空操作——所以保底搬动 1 个人。
+static func _scaled_population_delta(base_population: int, ratio_bp: int) -> int:
+	if base_population <= 0 or ratio_bp == 0:
+		return 0
+	var delta := int(float(base_population) * float(ratio_bp) / 10000.0)
+	if delta == 0:
+		delta = 1 if ratio_bp > 0 else -1
+	return delta

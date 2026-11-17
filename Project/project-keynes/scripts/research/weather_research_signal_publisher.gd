@@ -10,10 +10,29 @@ const RULE_DROUGHT := 2
 const RULE_MONSOON := 3
 const RULE_FROST := 4
 const RULE_STORM_SURGE := 5
+# 6 is reserved: trigger_catalog.gd WEATHER_RULES[6] is weather.repeated_crop_failure
+# and that row is fed by the native economy path, not by this publisher. Rule ids
+# must match WEATHER_RULES row[0] one for one — the trigger selector is payload_i0.
+const RULE_HEATWAVE := 7
+const RULE_FREEZE_THAW := 8
+const RULE_PROLONGED_WET_SEASON := 9
 
 const WEATHER_INTENSITY_THRESHOLD := 0.50
 const FROST_TEMPERATURE_THRESHOLD := 0.18
 const STRONG_WIND_THRESHOLD := 0.62
+# Heatwave intensity is structurally low: (temp - 0.65) * 2.2 + max(0, 0.32 - vapor)
+# peaks around 0.15-0.55 for cells that already passed the strict classification
+# gates (temp anomaly > 0.04, precip < 0.012, cloud < 0.24, vapor < 0.12). Reusing
+# the generic 0.50 gate would make the signal unreachable in practice.
+const HEATWAVE_INTENSITY_THRESHOLD := 0.30
+# Freeze-thaw is a crossing, not a level: the cell was at or below the frost line
+# on the previous day and is above it now. temp_arr_prev is the committed previous
+# climate snapshot, so this fires on the thaw leg of the cycle.
+const FREEZE_THAW_TEMPERATURE_THRESHOLD := 0.18
+# "Prolonged wet season" needs a sustained monsoon, so it asks for an above-typical
+# monsoon intensity plus waterlogged soil instead of merely any monsoon day.
+const WET_SEASON_INTENSITY_THRESHOLD := 0.62
+const WET_SEASON_SOIL_MOISTURE_THRESHOLD := 0.55
 
 
 static func publish(map: MapData, country_facade, event_bus, day: int,
@@ -46,12 +65,28 @@ static func build_batch(map: MapData, country_facade, day: int,
 		var cover := int(map.cover_arr[cell]) if cell < map.cover_arr.size() else -1
 		var wind := float(map.wind_speed_arr[cell]) \
 			if cell < map.wind_speed_arr.size() else 0.0
+		var temperature_prev := float(map.temp_arr_prev[cell]) \
+			if cell < map.temp_arr_prev.size() else temperature
+		var soil_moisture := float(map.soil_moisture_arr[cell]) \
+			if cell < map.soil_moisture_arr.size() else 1.0
 		if weather_type == int(WeatherType.WT.DROUGHT) \
 				and intensity >= WEATHER_INTENSITY_THRESHOLD:
 			_add_evidence(evidence, handle, RULE_DROUGHT, cell, intensity)
 		if weather_type == int(WeatherType.WT.MONSOON) \
 				and intensity >= WEATHER_INTENSITY_THRESHOLD:
 			_add_evidence(evidence, handle, RULE_MONSOON, cell, intensity)
+		if weather_type == int(WeatherType.WT.MONSOON) \
+				and intensity >= WET_SEASON_INTENSITY_THRESHOLD \
+				and soil_moisture >= WET_SEASON_SOIL_MOISTURE_THRESHOLD:
+			_add_evidence(evidence, handle, RULE_PROLONGED_WET_SEASON, cell,
+				maxf(intensity, soil_moisture))
+		if weather_type == int(WeatherType.WT.HEATWAVE) \
+				and intensity >= HEATWAVE_INTENSITY_THRESHOLD:
+			_add_evidence(evidence, handle, RULE_HEATWAVE, cell, intensity)
+		if temperature_prev <= FREEZE_THAW_TEMPERATURE_THRESHOLD \
+				and temperature > FREEZE_THAW_TEMPERATURE_THRESHOLD:
+			_add_evidence(evidence, handle, RULE_FREEZE_THAW, cell,
+				temperature - FREEZE_THAW_TEMPERATURE_THRESHOLD)
 		if temperature <= FROST_TEMPERATURE_THRESHOLD:
 			_add_evidence(evidence, handle, RULE_FROST, cell,
 				FROST_TEMPERATURE_THRESHOLD - temperature)

@@ -7,7 +7,7 @@
 script = ExtResource("2_definition")
 id = &"early_clan"
 display_name = "早期氏族"
-detail = "氏族议事决定国库用途，允许以国库资源发起营造。血缘与庇护让农耕各层有了实在凭依，商贾则在亲族分产中吃大亏。"
+detail = "氏族议事决定国库用途，允许以国库资源发起营造。血缘与庇护让农耕各层与无业者有了实在凭依，商贾则在亲族分产中吃大亏。"
 icon_key = &"country.politics"
 capability_keys = PackedStringArray("treasury_construction")
 modifier_definition_keys = PackedStringArray("regime.early_clan.cohesion", "regime.early_clan.charter")

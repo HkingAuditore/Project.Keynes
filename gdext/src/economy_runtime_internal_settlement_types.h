@@ -788,8 +788,8 @@
     std::array<int32_t, SAT_DEVELOPMENT_INPUT_COUNT>
         _satisfaction_development_weights_q16 = {26214, 26214, 13107};
     int32_t _satisfaction_development_variety_target = 12;
-    int32_t _satisfaction_birth_reference_q16 = 45875;
-    int32_t _satisfaction_birth_bonus_reference_q16 = 55706;
+    int32_t _satisfaction_birth_reference_q16 = 36045;
+    int32_t _satisfaction_birth_bonus_reference_q16 = 45875;
     int64_t _carrying_k_habitat_ref = 40;
     int64_t _carrying_k_floor = 8;
     int32_t _carrying_river_bonus_q16 = 72090;

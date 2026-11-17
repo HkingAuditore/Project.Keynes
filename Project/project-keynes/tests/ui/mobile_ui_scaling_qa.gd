@@ -76,6 +76,8 @@ var _fake_dpi := 0.0
 var _safe_override := Rect2i()
 var _has_safe_override := false
 var _ui_scale_percent := 100
+## 触摸档布局策略覆盖（fit/fill/dense）。空 = 不覆盖。
+var _layout_mode := ""
 var _sizes: Array[Vector2i] = []
 var _failures: Array[String] = []
 var _records: Array[Dictionary] = []
@@ -108,6 +110,8 @@ func _parse_args() -> void:
 			sizes_text = arg.trim_prefix("--sizes=")
 		elif arg.begins_with("--ui-scale="):
 			_ui_scale_percent = int(arg.trim_prefix("--ui-scale="))
+		elif arg.begins_with("--layout="):
+			_layout_mode = String(arg.trim_prefix("--layout="))
 	for item in sizes_text.split(","):
 		var pair := String(item).split("x")
 		if pair.size() == 2:
@@ -128,11 +132,15 @@ func _run() -> void:
 		}, false)
 		var scaling = settings.call("ui_scaling") if settings.has_method("ui_scaling") else null
 		if scaling != null:
-			scaling.call("set_qa_override", {
+			var override := {
 				"profile": _profile,
 				"dpi": _fake_dpi,
 				"safe_area": _safe_override if _has_safe_override else null,
-			})
+			}
+			# 触摸档布局策略（fit/fill/dense）。留空 = 沿用设置里的值。
+			if not _layout_mode.is_empty():
+				override["layout"] = _layout_mode
+			scaling.call("set_qa_override", override)
 			settings.call("apply")
 		else:
 			print("[mobile-ui-qa] 无 MobileUIScaling（旧的：按物理像素绘制）profile=%s dpi=%.0f"
@@ -215,12 +223,14 @@ func _capture_hud() -> void:
 	var action_bar := (load(ACTION_BAR_SCENE) as PackedScene).instantiate() as Control
 	host.add_child(top_bar)
 	host.add_child(action_bar)
-	# 与 GameUIManager._apply_touch_hud_metrics() 同一口径：移动端把栏内按钮抬到 52。
+	# 与 GameUIManager._apply_touch_hud_metrics() 同一口径：TOUCH_MIN_HEIGHT 已改为 0
+	# （2026-11-17 pc-fit：不再抬高栏内按钮，保持与 PC 同版式）。这里跟着传 0，
+	# 否则 QA 会模拟出一个真机上已经不存在的「按钮比栏还高」的状态。
 	var touch := _touch_profile_active()
 	if touch:
 		for bar in [top_bar, action_bar]:
 			if bar.has_method("apply_touch_metrics"):
-				bar.call("apply_touch_metrics", 52.0)
+				bar.call("apply_touch_metrics", 0.0)
 	for target_size in _sizes:
 		await _set_window(target_size)
 		var actual := DisplayServer.window_get_size()

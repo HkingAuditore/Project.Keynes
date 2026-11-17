@@ -1,11 +1,11 @@
 [gd_resource type="Theme" format=3 uid="uid://bs08dfbumcqrp"]
 
-[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" id="1_font"]
+[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.woff2" id="1_font"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_normal_bitmap.tres" id="2_tab_normal"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_active_bitmap.tres" id="3_tab_active"]
 [ext_resource type="FontVariation" path="res://assets/fonts/muyao/display_handwritten.tres" id="4_serif"]
 [ext_resource type="Texture2D" uid="uid://ccrb06urnvs1j" path="res://assets/ui/family_workspace/bitmap/card_frame_clean_v4.png" id="5_card_frame"]
-[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf" id="ui_swei_bold"]
+[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.woff2" id="ui_swei_bold"]
 
 [sub_resource type="StyleBoxEmpty" id="Empty"]
 
@@ -79,10 +79,10 @@ content_margin_top = 10.0
 content_margin_right = 12.0
 content_margin_bottom = 10.0
 texture = ExtResource("5_card_frame")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
+texture_margin_left = 18.0
+texture_margin_top = 16.5
+texture_margin_right = 18.0
+texture_margin_bottom = 16.5
 modulate_color = Color(1, 0.99, 0.96, 0.88)
 
 [sub_resource type="StyleBoxFlat" id="MetricCell"]
@@ -140,10 +140,10 @@ content_margin_top = 10.0
 content_margin_right = 12.0
 content_margin_bottom = 10.0
 texture = ExtResource("5_card_frame")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
+texture_margin_left = 18.0
+texture_margin_top = 16.5
+texture_margin_right = 18.0
+texture_margin_bottom = 16.5
 modulate_color = Color(1, 1, 1, 0.66)
 
 [sub_resource type="StyleBoxFlat" id="TierActive"]

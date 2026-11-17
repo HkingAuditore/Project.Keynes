@@ -73,6 +73,39 @@ const STOCKS := ["funds", "population", "employed", "satisfaction", "survival", 
 
 
 ## 分段与报告同口径：旧存档（scoring_version = 1）按 V1 阈值，其余按当前阈值。
+## 追加「纪事」末章。AI 写的年度纪事只有这一段文字，不参与任何指标。
+## 单独成章而不是塞进第九章的尾注，是为了让卷首目录里能看见它、能直接跳过去。
+##
+## 幂等：重复调用只替换正文，不会追加第二遍——报告重绘时这一支会被再走一次。
+static func append_chronicle_chapter(model: Dictionary, text: String) -> void:
+	var body := text.strip_edges()
+	if body.is_empty():
+		return
+	var raw_chapters: Variant = model.get("chapters", null)
+	if not (raw_chapters is Array) or (raw_chapters as Array).is_empty():
+		return
+	var chapters: Array = raw_chapters
+	for raw in chapters:
+		if raw is Dictionary and String((raw as Dictionary).get("title", "")) == "纪事":
+			(raw as Dictionary)["details"] = [body]
+			return
+	chapters.append({
+		"title": "纪事",
+		"number": chapters.size() + 1,
+		"lead": "史官记本年之事。",
+		"rows": [], "details": [body],
+		"figures": [], "visuals": [], "margin_notes": [],
+		"has_previous": false,
+		# 这一章的 details 是正文而不是账目附注：section 据此换成墨色大字。
+		"details_ink": true,
+	})
+	# 「复制全文」走的是 full_text，它在 build 里就拼好了；纪事后到，得自己补上，
+	# 否则玩家复制出来的报告会少掉这一段。
+	var full := String(model.get("full_text", "")).strip_edges()
+	if not full.is_empty():
+		model["full_text"] = "%s\n\n纪事\n%s" % [full, body]
+
+
 static func grade_bands(scoring_version: int) -> Array:
 	return GRADE_BANDS_V1 if scoring_version == 1 else GRADE_BANDS_V2
 

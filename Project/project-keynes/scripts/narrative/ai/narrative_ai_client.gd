@@ -68,6 +68,30 @@ static func has_image_api_key() -> bool:
 	return not get_image_api_key().is_empty()
 
 
+## 设置界面允许只填 host（`https://api.deepseek.com`），直接拿去 POST 会 404，
+## 而且失败只有一行 HTTP 404，看起来像「服务不可用」，很难查。
+## 这里只修「明显不完整」的三种形态：裸 host、只有 `/`、只有 `/v1`。
+## 已有自定义路径的一律原样放行——内网网关常用 `/openai/v1/chat/completions`，
+## 猜错路径比不猜更糟。
+static func normalize_llm_endpoint(raw: String) -> String:
+	const FALLBACK := "https://api.deepseek.com/v1/chat/completions"
+	var url := raw.strip_edges()
+	if url.is_empty():
+		return FALLBACK
+	if url.contains("/chat/completions"):
+		return url
+	var trimmed := url.rstrip("/")
+	# 路径起点：scheme 之后第一个斜杠。
+	var scheme_at := trimmed.find("://")
+	var path_at := trimmed.find("/", scheme_at + 3) if scheme_at >= 0 else trimmed.find("/")
+	if path_at < 0:
+		return "%s/v1/chat/completions" % trimmed
+	var path := trimmed.substr(path_at)
+	if path == "/v1":
+		return "%s/chat/completions" % trimmed
+	return url
+
+
 func _read_settings() -> Dictionary:
 	var settings_node := get_node_or_null("/root/GameSettings") if is_inside_tree() else null
 	if settings_node == null:
@@ -148,7 +172,8 @@ func request_event_generation(
 		return req_id
 
 	var vals := _read_settings()
-	var endpoint := String(vals.get("ai_llm_base_url", "https://api.deepseek.com/v1/chat/completions")).strip_edges()
+	var endpoint := normalize_llm_endpoint(
+		String(vals.get("ai_llm_base_url", "https://api.deepseek.com/v1/chat/completions")))
 	var model := String(vals.get("ai_llm_model", "deepseek-chat")).strip_edges()
 
 	var http := HTTPRequest.new()
@@ -214,6 +239,105 @@ func request_event_generation(
 			on_complete.call(start_fail)
 		event_generated.emit(req_id, start_fail)
 	return req_id
+
+
+## 纯文本请求：不给 response_format，不做事件校验。用于编年史、纪事这类
+## 「只要一段话」的场景。凭据 / settings / endpoint 归一化与事件生成共用。
+func request_text(
+		messages: Array,
+		routing: Dictionary = {},
+		temperature: float = 0.85,
+		timeout_sec: float = 30.0,
+		on_complete: Callable = Callable()
+) -> int:
+	var req_id := _next_request_id
+	_next_request_id += 1
+
+	var active_mock := _mock_llm_responder if _mock_llm_responder.is_valid() else _mock_responder
+	if active_mock.is_valid():
+		var raw_reply: Variant = active_mock.call(routing, messages)
+		var mock_text := String(raw_reply) if raw_reply is String or raw_reply is StringName else ""
+		var mock_res := {
+			"ok": not mock_text.strip_edges().is_empty(),
+			"code": "ok" if not mock_text.strip_edges().is_empty() else "empty_text",
+			"text": mock_text,
+		}
+		mock_res.merge(routing, true)
+		if on_complete.is_valid():
+			on_complete.call(mock_res)
+		return req_id
+
+	var keys := load_api_keys()
+	var api_key := String(keys.get("llm_api_key", ""))
+	if api_key.is_empty() or not is_inside_tree():
+		var key_fail := {"ok": false, "code": "ai_key_missing", "text": ""}
+		key_fail.merge(routing, true)
+		if on_complete.is_valid():
+			on_complete.call(key_fail)
+		return req_id
+
+	var vals := _read_settings()
+	var endpoint := normalize_llm_endpoint(
+		String(vals.get("ai_llm_base_url", "https://api.deepseek.com/v1/chat/completions")))
+	var model := String(vals.get("ai_llm_model", "deepseek-chat")).strip_edges()
+
+	var http := HTTPRequest.new()
+	http.timeout = timeout_sec
+	add_child(http)
+	var body := JSON.stringify({
+		"model": model,
+		"messages": messages,
+		"temperature": temperature,
+	})
+	var headers := PackedStringArray([
+		"Content-Type: application/json",
+		"Authorization: Bearer %s" % api_key,
+	])
+
+	http.request_completed.connect(func(result_code: int, response_code: int, _headers: PackedStringArray, body_bytes: PackedByteArray) -> void:
+		http.queue_free()
+		if result_code != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
+			var http_fail := {
+				"ok": false, "code": "ai_http_error", "text": "",
+				"reason": "LLM 请求失败 (HTTP %d)" % response_code,
+			}
+			http_fail.merge(routing, true)
+			if on_complete.is_valid():
+				on_complete.call(http_fail)
+			return
+		var text := extract_chat_content(body_bytes.get_string_from_utf8())
+		var done := {
+			"ok": not text.strip_edges().is_empty(),
+			"code": "ok" if not text.strip_edges().is_empty() else "empty_text",
+			"text": text,
+		}
+		done.merge(routing, true)
+		if on_complete.is_valid():
+			on_complete.call(done)
+	)
+
+	var req_err := http.request(endpoint, headers, HTTPClient.METHOD_POST, body)
+	if req_err != OK:
+		http.queue_free()
+		var start_fail := {"ok": false, "code": "ai_request_start_failed", "text": ""}
+		start_fail.merge(routing, true)
+		if on_complete.is_valid():
+			on_complete.call(start_fail)
+	return req_id
+
+
+## 从 Chat Completions 响应体里取 `choices[0].message.content`；
+## 若响应本身就是纯文本（某些网关的兜底格式），原样返回。
+static func extract_chat_content(raw_body: String) -> String:
+	var envelope := JSON.new()
+	if envelope.parse(raw_body) != OK or not (envelope.data is Dictionary):
+		return raw_body.strip_edges()
+	var choices: Variant = (envelope.data as Dictionary).get("choices", [])
+	if choices is Array and not (choices as Array).is_empty() and choices[0] is Dictionary:
+		var msg: Variant = (choices[0] as Dictionary).get("message", {})
+		if msg is Dictionary:
+			return String((msg as Dictionary).get("content", "")).strip_edges()
+	return raw_body.strip_edges()
 
 
 func request_event_illustration(

@@ -380,8 +380,17 @@ func _update_lens() -> void:
 		for key in _resident:
 			_sync_wrap_visibility(key)
 
+## 当前运行期画质档（推给 resource_impostor / resource_ground_cover 的 visual_quality）。
+##
+## [android-runtime-quality 2026-11-17] `_mobile_tier` 只表示"受限平台"：分块驻留、
+## 实例预算走 mobile 分支（见 _resident_cap / instance_cap 的第二个参数）。它**不再
+## 兼任画质档**——那是编译期 shader tier，被 player_game 钉死在 LOW，拿它当画质会让
+## 设置里的"最高画质"在资源/点缀上完全无效：visual_quality 恒为 0 ⇒ `detailed_view`
+## 永远 false ⇒ 道具只剩 !detailed 的简化形体（远看就是一块块纯色方块），
+## cell_cap/type_cap/instance_cap 也全按 quality0 取值。
+## web 侧一直是运行期档权威（见 shrub/scatter.gd 同款注释），移动端向它对齐。
 func quality() -> int:
-	return clampi(_mobile_tier if _mobile_tier >= 0 else _quality, 0, 2)
+	return clampi(_quality, 0, 2)
 
 func set_quality(value: int, mobile_tier: int = -1) -> void:
 	if _quality == value and _mobile_tier == mobile_tier:

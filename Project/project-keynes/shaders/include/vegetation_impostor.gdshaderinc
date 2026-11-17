@@ -142,9 +142,18 @@ varying flat vec4 v_g;  // instance x axis, terrain normal xy
 varying flat vec4 v_h;  // sun direction, valley ao
 varying flat vec4 v_i;  // local day, sun high, moon, horizon visibility
 varying flat vec4 v_j;  // bent normal, sky visibility
-#ifdef VEG_TERRAIN_SHADING
+// [veg-ground-uv-uncond 2026-11-17] v_ground_uv 必须是**无条件** varying。
+// 它原来和 VEG_TERRAIN_SHADING 一起被 #ifdef 包着，但 fragment 里的
+// cloud_shadow_direct_visibility(shrub_wrap_map_uv(v_ground_uv), ...) 是**无条件**调用的。
+// 于是 VEG_TERRAIN_SHADING 没定义的那些档位（= PK_SKIP_VEGETATION_SHADING，
+// 也就是 PK_MOBILE_ANY 的 LOW / MID）整份植被 shader 编译失败：
+//   SHADER ERROR: Unknown identifier in expression: 'v_ground_uv'
+//   ERROR: Shader compilation failed.
+// 真机上表现为所有植被实例退化成纯色方块 + 之后每帧刷
+//   ERROR: Parameter "version" is null. (version_get_shader)
+// ——「各种光照都极其丑陋 / 点缀变成色块」有一半是这个，不是分级参数。
+// 一个 vec2 varying 的成本远低于这条分叉，所以直接无条件声明/写入。
 varying vec2 v_ground_uv; // 不在顶点 wrap，避免跨地图接缝时插值穿过整张图。
-#endif
 
 float shrub_decode_height(vec2 uv) {
 	vec2 rg = visual_sample_height(uv).rg;
@@ -420,10 +429,9 @@ void vertex() {
 	scale *= 1.0 - bury * 0.36;
 	bool hidden = body_alpha < disappear_alpha_threshold;
 	VERTEX *= hidden ? 0.0 : scale;
-#ifdef VEG_TERRAIN_SHADING
+	// 与声明同源：无条件写，见 varying 处的说明（fragment 无条件要用它）。
 	v_ground_uv = ((MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy - world_origin)
 		/ max(world_size, vec2(0.00001));
-#endif
 
 	vec2 wdir = normalize(wind_dir + vec2(0.0001, 0.0));
 	vec2 wdir_local = vec2(dot(wdir, bx), dot(wdir, by));

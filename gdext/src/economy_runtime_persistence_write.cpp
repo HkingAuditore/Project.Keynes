@@ -991,6 +991,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint8_t>(record, family_expeditions_store().state[i]);
             append_le<int64_t>(record, family_expeditions_store().population[i]);
             append_le<int64_t>(record,
+                family_expeditions_store().anonymous[i]);
+            append_le<int64_t>(record,
                 family_expeditions_store().kit_bridge_required_units[i]);
             append_le<int64_t>(record,
                 family_expeditions_store().kit_material_required_units[i]);
@@ -1036,6 +1038,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<uint8_t>(record, lane.worst_dimension_id);
                 for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
                     append_le<uint16_t>(record, lane.satisfaction_dims[dim]);
+                append_le<uint8_t>(record, lane.anonymous);
                 append_le<uint32_t>(record, lane.person_count);
                 for (uint32_t person = 0; person < lane.person_count; ++person)
                     append_le<uint64_t>(record,

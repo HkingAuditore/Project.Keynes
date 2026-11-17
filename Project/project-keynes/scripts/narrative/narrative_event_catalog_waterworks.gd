@@ -619,8 +619,16 @@ static func append_waterworks_events(catalog) -> void:
 					{
 						"probability_q16": 65536,
 						"outcome_title": "村里立了碑",
-						"outcome_narrative": "官府按户发了贴补，村里立了碑，碑上刻着督工官吏的名字，没有民夫的名字。粮册上没添几笔，村口的名册上多了十一户。",
+						"outcome_narrative": "官府按户发了贴补，村里立了碑，碑上刻着督工官吏的名字，没有民夫的名字。粮册上没添几笔，村口的名册上多了几户。",
 						"effects": [
+							{
+								# 「名册上多了几户」是有人真的落了籍：光给产出与出生率，
+								# 册子上的人不会多出来。
+								"kind": Kind.ADD_POPULATION,
+								"ratio_bp": 1500,
+								"duration_days": 1,
+								"custom_label": "本地人口 +15%（贴补后新户落籍）",
+							},
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 300,

@@ -126,7 +126,7 @@ func _gdp_metrics(host, cell_idx: int) -> Array:
 		"value": h._money_text(int(round(ytd))),
 		"subtitle": "",
 		"accent": UITokens.ECO, "icon": "metric.treasury",
-		"tooltip": "收入法：建筑营收 − 中间投入 − 维护（= 工资 + 营业盈余，不含营业税）。本年度逐经济周期累计，与全国口径一致；已计 %d/%d 天，日均 %s。" % [
+		"tooltip": "已计 %d/%d 天 · 日均 %s" % [
 			days, days_per_year, host._money_text(int(round(per_day)))],
 	}]
 	var per_capita = float(gdp.get("per_capita", NAN))

@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/cover_normal.png-ef70213947e1e4212fcb6b2728c3
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
-compress/lossy_quality=0.7
+compress/mode=1
+compress/high_quality=true
+compress/lossy_quality=0.9
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

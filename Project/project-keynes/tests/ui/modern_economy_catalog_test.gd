@@ -446,8 +446,12 @@ func _audit(catalog: Dictionary) -> void:
 		_range_positive(stone_hunting.output_quantities_per_day) and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
-		stone_hunting.output_quantities_per_day[1] ==
+		# 毛皮是有毛的优质皮，是同一张皮的上等品相，不能与生皮 1:1 重复计量：
+		# 否则一家狩猎营附赠的毛皮就能顶掉本村全部衣着需求，生皮失去买家。
+		stone_hunting.output_quantities_per_day[1] >
 			stone_hunting.output_quantities_per_day[2] and
+		stone_hunting.output_quantities_per_day[2] * 3 >=
+			stone_hunting.output_quantities_per_day[1] and
 		stone_hunting.resource_quantities_per_day.size() == 1 and
 		stone_hunting.resource_quantities_per_day[0] > 0 and
 		stone_hunting.owner_slots_per_building > 0)

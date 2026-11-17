@@ -43,22 +43,17 @@ func _ready() -> void:
 func _apply_touch_layout() -> void:
 	if _rows_scroll != null or _frame == null or _center == null or _panel == null:
 		return
-	var host := _center.get_parent()
-	if host == null:
-		return
-	_center.remove_child(_frame)
-	host.add_child(_frame)
-	_frame.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_frame.offset_left = 28.0
-	_frame.offset_right = -28.0
-	_frame.offset_top = 14.0
-	_frame.offset_bottom = -14.0
-	_frame.custom_minimum_size = Vector2(320.0, 240.0)
+	# [pc-fit 2026-11-17] 不再把 Frame 移出 CenterContainer、铺满视口。
+	# 旧做法得到的是一个 1544×932 的空框：内容只占上半屏，下半屏全空（真机截图里的「丑」）。
+	# 现在面板保持 pause_menu.tscn 的 390×540 居中不动，只把按钮列塞进 ScrollContainer，
+	# 用固定高度上限换取「存档再多也关得掉」——这才是当初加滚动的原因，不是要撑满屏。
 	_rows_scroll = UIControlParts.scroll_container()
 	_rows_scroll.name = "RowsScroll"
 	_rows_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_rows_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rows_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# 给列表一个高度上限（540 减去标题/状态/分隔线）。超出才滚，不超出就按内容高。
+	_rows_scroll.custom_minimum_size = Vector2(0.0, 380.0)
 	_rows.get_parent().remove_child(_rows)
 	_rows_scroll.add_child(_rows)
 	# ScrollContainer 不会把子节点在「非滚动轴」上撑满，只按最小宽度摆（实测按钮塌成 8px）。
@@ -184,10 +179,25 @@ func _show_settings() -> void:
 		quality.set_item_metadata(quality.item_count - 1, entry.id)
 		if entry.id == current.render_quality: quality.select(quality.item_count - 1)
 	var scale := form.get_node("Scale") as OptionButton
-	for value in [80, 100, 125, 150]:
-		scale.add_item("界面缩放 %d%%" % value)
-		scale.set_item_metadata(scale.item_count - 1, value)
-		if value == int(current.ui_scale_percent): scale.select(scale.item_count - 1)
+	scale.clear()
+	# 与主菜单同一口径：触摸档给布局策略（fit/fill/dense），桌面档给百分比。
+	var layout_active := false
+	if settings_service != null and settings_service.has_method("ui_scaling"):
+		var scaling = settings_service.call("ui_scaling")
+		layout_active = scaling != null and bool(scaling.call("is_touch_profile"))
+	if layout_active:
+		for entry in [{"label": "界面布局 · 完整", "id": "fit"},
+				{"label": "界面布局 · 铺满", "id": "fill"},
+				{"label": "界面布局 · 紧凑", "id": "dense"}]:
+			scale.add_item(String(entry.label))
+			scale.set_item_metadata(scale.item_count - 1, entry.id)
+			if String(entry.id) == String(current.get("ui_layout_mode", "fit")):
+				scale.select(scale.item_count - 1)
+	else:
+		for value in [80, 100, 125, 150]:
+			scale.add_item("界面缩放 %d%%" % value)
+			scale.set_item_metadata(scale.item_count - 1, value)
+			if value == int(current.ui_scale_percent): scale.select(scale.item_count - 1)
 	var volume := form.get_node("Volume") as HSlider
 	volume.value = float(current.master_volume)
 	var mute := form.get_node("Mute") as CheckBox
@@ -198,9 +208,16 @@ func _show_settings() -> void:
 	_add_button("AI 生成设置", "settings", _show_ai_settings)
 	_add_button("应用", "confirm", func() -> void:
 		if settings_service != null:
-			settings_service.update({"render_quality": quality.get_selected_metadata(),
-				"ui_scale_percent": scale.get_selected_metadata(), "master_volume": volume.value,
-				"master_muted": mute.button_pressed,"reduce_motion":reduce_motion.button_pressed})
+			var picked = scale.get_selected_metadata()
+			var payload := {"render_quality": quality.get_selected_metadata(),
+				"master_volume": volume.value,
+				"master_muted": mute.button_pressed, "reduce_motion": reduce_motion.button_pressed}
+			# 同一个下拉在触摸档装布局档位（String），桌面档装百分比（int）。
+			if picked is String:
+				payload["ui_layout_mode"] = picked
+			else:
+				payload["ui_scale_percent"] = picked
+			settings_service.update(payload)
 		_show_main())
 	_add_button("返回", "back", _show_main)
 

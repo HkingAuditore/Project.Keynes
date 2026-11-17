@@ -17,6 +17,15 @@ func _init() -> void:
 		print("=== family colonization population shrink: %d failures ===" % _failures)
 		quit(0 if _failures == 0 else 1)
 		return
+	if OS.get_cmdline_user_args().has("--anonymous-only"):
+		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
+		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
+		if bool(compiled.get("ok", false)):
+			compiled.erase("ok")
+			_run_anonymous_colonists(compiled)
+		print("=== family colonization anonymous colonists: %d failures ===" % _failures)
+		quit(0 if _failures == 0 else 1)
+		return
 	if OS.get_cmdline_user_args().has("--soft-tools-only"):
 		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
@@ -2071,6 +2080,85 @@ func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 	return {"ext": ext, "map": map, "country_handle": country_handle}
 
 
+func _run_anonymous_colonists(catalog: Dictionary) -> void:
+	# 固定编制：每 2 名族人随行 1 名无家族人口。平民随队出发，落地后仍是目标格的
+	# 无家族人口，不建成员边，也不把家族份额提前顶到上限。
+	var fixture := _make_fixture(catalog, 260880, 1000000, {},
+		PackedStringArray(), 1, 1000000000000,
+		# 户均人口压小，创始家族才不会把整格吞成族产，留下可随行的平民。
+		{"family_household_people_per_owner_slot": 8}, false, 0, false,
+		PackedInt64Array([40, 2]))
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var source_before := int(ext.get_population_cell_snapshot(0).population)
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("anonymous fixture has a founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1:
+		_expect("anonymous fixture has a quote", false)
+		print("anonymous_quotes=", quotes)
+		return
+	var maximum := int((quotes.maximum_populations as PackedInt64Array)[0])
+	var anonymous_maximum := int((quotes.anonymous_maximums as PackedInt64Array)[0])
+	_expect("quote advertises an anonymous allowance for the fixed ratio",
+		maximum > 1 and anonymous_maximum > 0
+		and anonymous_maximum <= maximum / 2)
+	if maximum <= 1 or anonymous_maximum <= 0:
+		print("anonymous_quote maximum=", maximum, " anonymous=", anonymous_maximum,
+			" source=", source_before, " families=", families, " quotes=", quotes)
+		return
+	var start_day := _economy_command_day(ext)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, maximum,
+		int((quotes.quote_tokens as PackedInt64Array)[0]), start_day, 2450)
+	_expect("a party carrying unaffiliated colonists starts",
+		bool(started.get("ok", false)))
+	if not bool(started.get("ok", false)):
+		print("anonymous_start=", started)
+		return
+	var expedition := int(started.get("expedition_handle", 0))
+	var snap: Dictionary = ext.get_family_expedition_snapshot(
+		country_handle, expedition)
+	_expect("party snapshot separates family and anonymous headcounts",
+		int(snap.get("family_population", 0)) == maximum
+		and int(snap.get("anonymous_population", 0)) == anonymous_maximum
+		and int(snap.get("population", 0)) == maximum + anonymous_maximum)
+	var source_after := int(ext.get_population_cell_snapshot(0).population)
+	_expect("departure removes both books from the source cell",
+		source_before - source_after == maximum + anonymous_maximum)
+	var arrival := int(started.get("arrival_day", start_day + 4))
+	_settle_unowned_expedition(ext, country_handle, expedition, arrival)
+	var dest_total := int(ext.get_population_cell_snapshot(2).population)
+	var dest_family_people := 0
+	var dest_families: Dictionary = ext.get_family_cell_snapshot(2, 0, 64)
+	var dest_handles: PackedInt64Array = dest_families.get(
+		"family_handles", PackedInt64Array())
+	var dest_populations: PackedInt64Array = dest_families.get(
+		"populations", PackedInt64Array())
+	for index in range(dest_handles.size()):
+		if index < dest_populations.size() \
+				and int(dest_handles[index]) == family_handle:
+			dest_family_people += int(dest_populations[index])
+	_expect("landing keeps the carried colonists anonymous at the destination",
+		dest_total == maximum + anonymous_maximum
+		and dest_family_people >= maximum
+		and dest_family_people < dest_total)
+	var report: Dictionary = ext.get_economy_report()
+	_expect("anonymous landing keeps the population ledger closed",
+		int(report.get("population_error", -1)) == 0
+		and int(report.get("money_error", -1)) == 0
+		and not bool(report.get("fatal", false)))
+	if dest_total != maximum + anonymous_maximum or dest_family_people != maximum:
+		print("anonymous_landing dest=", dest_total, " family=", dest_family_people,
+			" sent=", maximum, "+", anonymous_maximum, " report=", report)
+
+
 func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		stock_overrides: Dictionary = {},
 		granted_technology_ids: PackedStringArray = PackedStringArray(),
@@ -2078,7 +2166,8 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		country_cash: int = 0, profile_overrides: Dictionary = {},
 		preserve_birth_rates: bool = false,
 		anonymous_destination_buildings: int = 0,
-		defer_economy: bool = false) -> Dictionary:
+		defer_economy: bool = false,
+		source_population: PackedInt64Array = PackedInt64Array()) -> Dictionary:
 	var map := MapData.new(3, 1)
 	for q in range(3):
 		var cell := HexCell.new(q, 0)
@@ -2187,7 +2276,8 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
 		"signature_ids": PackedInt32Array([forager, merchant]),
-		"population": PackedInt64Array([10, 2]),
+		"population": source_population if source_population.size() == 2 \
+			else PackedInt64Array([10, 2]),
 		"funds": PackedInt64Array([1000000, 1000000]),
 		"forced_named_cells": PackedInt32Array([0]),
 	}, {

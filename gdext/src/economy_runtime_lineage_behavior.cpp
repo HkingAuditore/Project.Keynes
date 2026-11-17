@@ -55,7 +55,8 @@ int64_t NativeEconomyRuntime::family_population(uint64_t family_handle) const {
             if (family_expeditions_store().active[i] != 0 &&
                 family_expeditions_store().family_handle[i] == family_handle)
                 total = saturating_add(total,
-                    family_expedition_payload_people(static_cast<int32_t>(i)),
+                    family_expedition_payload_family_people(
+                        static_cast<int32_t>(i)),
                     sat);
         }
         return total;

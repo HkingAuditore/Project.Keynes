@@ -725,7 +725,12 @@ func _apply_ui_safe_area() -> void:
 ## 两条栏的高度是 anchor+offset 写死的（80 / 86），按钮再高就会溢出栏外；
 ## 真要抬到 44dp 必须同时改 PlayerTopBar.BAR_HEIGHT、CountryActionBar.BAR_HEIGHT
 ## 和 _base_map_safe_area()，属于 HUD 另一条线的工作。面板类控件统一走 TouchUI。
-const TOUCH_MIN_HEIGHT := 52.0
+## [pc-fit 2026-11-17] 0 = 不再抬高栏内按钮：顶栏/主操作栏的高度是 anchor+offset
+## 写死的 80 / 86 设计像素，PC 上的按钮就是长在那个框里的。触摸档把按钮抬到 52
+## 会让它们比栏体还高、上下顶出边框 —— 玩家说的「按钮离奇地高」有一部分来自这里。
+## 保留这个调用是为了让栏自身仍能在尺寸变化时走一遍（apply_touch_metrics 用 maxf，
+## 传 0 等于不设下限）。
+const TOUCH_MIN_HEIGHT := 0.0
 
 
 ## 手机横屏：顶栏的日期块/资源块原本只有 48 设计像素高（≈40dp），主操作栏 66（≈59dp）已经够。

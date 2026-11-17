@@ -345,6 +345,8 @@
     bool extract_family_expedition_payload(int32_t expedition,
                                            int64_t requested,
                                            std::string &error);
+    bool extract_family_expedition_anonymous_lanes(int32_t expedition,
+                                                   std::string &error);
     void clip_cell_employment_and_defer_reconcile(int32_t cell);
     bool preparing_kit_launchable(const ColonizationKitPlan &kit,
                                   int64_t people) const;
@@ -408,6 +410,11 @@
                                       int32_t cell) const;
     int64_t family_dispatchable_population_in_cell(uint64_t family_handle,
         int32_t cell) const;
+    // Unaffiliated (no family membership edge) people in a cell. Colonization
+    // parties may carry them as colonists; they never become family members.
+    int64_t anonymous_population_in_cell(int32_t cell) const;
+    int64_t colonization_party_anonymous(uint64_t family_handle, int32_t cell,
+        int64_t family_people) const;
     bool colonization_target_owner_allowed(uint64_t country_handle,
                                            int32_t cell) const;
     bool colonization_destination_family_allowed(uint64_t family_handle,

@@ -41,7 +41,7 @@ content_margin_left = 9.0
 content_margin_top = 7.0
 content_margin_right = 9.0
 content_margin_bottom = 7.0
-bg_color = Color(0.94, 0.88, 0.74, 0.34)
+bg_color = Color(0.94, 0.88, 0.74, 0.58)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
@@ -100,6 +100,7 @@ text_overrun_behavior = 3
 [node name="Status" type="Label" parent="Body/Header"]
 layout_mode = 2
 size_flags_vertical = 1
+custom_minimum_size = Vector2(92, 34)
 theme_type_variation = &"PKPaperTag"
 theme_override_font_sizes/font_size = 11
 horizontal_alignment = 1
@@ -207,8 +208,62 @@ visible = false
 layout_mode = 2
 theme_override_styles/panel = SubResource("SectionCard")
 
-[node name="Text" type="Label" parent="Body/Sections/Materials"]
+[node name="Content" type="VBoxContainer" parent="Body/Sections/Materials"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Text" type="Label" parent="Body/Sections/Materials/Content"]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 2
+
+[node name="Rows" type="VBoxContainer" parent="Body/Sections/Materials/Content"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Row0" type="HBoxContainer" parent="Body/Sections/Materials/Content/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Icon" parent="Body/Sections/Materials/Content/Rows/Row0" instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="Body/Sections/Materials/Content/Rows/Row0"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="Row1" type="HBoxContainer" parent="Body/Sections/Materials/Content/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Icon" parent="Body/Sections/Materials/Content/Rows/Row1" instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="Body/Sections/Materials/Content/Rows/Row1"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="Row2" type="HBoxContainer" parent="Body/Sections/Materials/Content/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Icon" parent="Body/Sections/Materials/Content/Rows/Row2" instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="Body/Sections/Materials/Content/Rows/Row2"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_type_variation = &"PKDossierBody"
 autowrap_mode = 2
 

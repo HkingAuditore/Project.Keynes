@@ -178,6 +178,7 @@ const CONTACT_RULES := [
 	[8, "tin", "contact.tin"],
 	[9, "maritime_vessel", "contact.maritime_vessel"],
 	[10, "bast_fiber", "contact.bast_fiber"],
+	[11, "medicinal_herb", "contact.medicinal_herb"],
 ]
 
 const WEATHER_RULES := [
@@ -188,10 +189,21 @@ const WEATHER_RULES := [
 	[4, "frost", "weather.frost", SOURCE_GDSCRIPT, AGG_COUNT, 1],
 	[5, "storm_surge", "weather.storm_surge", SOURCE_GDSCRIPT, AGG_COUNT, 1],
 	[6, "repeated_crop_failure", "weather.repeated_crop_failure", SOURCE_NATIVE, AGG_SUM, 3],
+	# 7-9 are published by scripts/research/weather_research_signal_publisher.gd.
+	# row[0] must equal the publisher's RULE_* constant: it becomes the trigger
+	# selector on payload_i0.
+	[7, "heatwave", "weather.heatwave", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[8, "freeze_thaw", "weather.freeze_thaw", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[9, "prolonged_wet_season", "weather.prolonged_wet_season", SOURCE_GDSCRIPT, AGG_COUNT, 1],
 ]
 
 @export var definitions: Array[Resource] = []
-@export var max_state_instances: int = 4096
+## One state per (definition, country). Development achievements alone contribute
+## one definition per metric, so the ceiling scales with metrics × countries:
+## 97 metrics at ~40 countries is already ~3900, and weather/contact/breakthrough
+## rules share the same array. 4096 left no headroom; overflow shows up as
+## trigger_state_capacity_exhausted and a frozen calendar day.
+@export var max_state_instances: int = 8192
 @export var max_pending_events: int = 8192
 @export var distinct_capacity: int = 64
 @export var source_count: int = 64

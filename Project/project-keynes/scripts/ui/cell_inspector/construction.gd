@@ -504,6 +504,10 @@ func _construction_military_row(host, facade, index: int, row: Dictionary,
 		"cash_required": cash_required,
 		"cash_text": h._money_text(cash_required) if cash_required > 0 else "",
 		"market_used": 0,
+		"material_status": host._construction_material_status_rows(
+			cost.get("materials", []), market_stock),
+		"cash_blocked": String(cost.get("reason_code", ""))
+			== "construction_treasury_cash_insufficient",
 		"tooltip": "\n".join(tooltip_lines),
 	}
 
@@ -825,6 +829,7 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 		var job_spec: Dictionary = economy.building_job_spec(
 			StringName(building_id)) if economy.has_method("building_job_spec") else {}
 		var cash = int(entry.get("cash_required", 0))
+		var material_status = host._construction_material_status_rows(materials, local_stock)
 		rows.append({
 			"building_id": building_id,
 			"type_id": type_id,
@@ -841,6 +846,9 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 			"score": int(entry.get("score", 0)),
 			"maturity": maturity,
 			"market_used": int(entry.get("market_used", 0)),
+			"material_status": material_status,
+			"cash_blocked": String(entry.get("reason_code", ""))
+				== "construction_treasury_cash_insufficient",
 			"tooltip": h._construction_tooltip(entry, item, materials, local_stock,
 				placement, job_spec, unlocked_goods, int(entry.get("days", 0)),
 				maturity, reason_text),
@@ -862,6 +870,31 @@ func _construction_materials_text(host, materials: Array) -> String:
 	if materials.size() > parts.size():
 		text += " 等 %d 项" % materials.size()
 	return text
+
+
+## 建造卡只需要展示真正的缺口：国库先覆盖一部分后，市场仍缺多少，
+## 以及本地市场现货是否足够。数量仍沿用报价的 GOODS_SCALE，展示换算留在 UI。
+func _construction_material_status_rows(host, materials: Array,
+		local_stock: Dictionary) -> Array:
+	var h = host
+	var rows: Array = []
+	for raw in materials:
+		var material: Dictionary = raw
+		var good_id := String(material.get("good_id", ""))
+		var market_need := int(material.get("market", 0))
+		var market_stock := int(local_stock.get(good_id, 0))
+		var missing := maxi(0, market_need - market_stock)
+		rows.append({
+			"name": String(material.get("name", "建材")),
+			"good_id": good_id,
+			"icon": String(IconCatalog.good_semantic(good_id)),
+			"missing": missing > 0,
+			"missing_text": h._goods_scaled(missing),
+			"market_stock_text": h._goods_scaled(market_stock),
+			"market_need_text": h._goods_scaled(market_need),
+			"reason": "市场无货" if missing > 0 else "",
+		})
+	return rows
 
 
 

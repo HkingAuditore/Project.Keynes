@@ -108,12 +108,13 @@ static func append(catalog) -> void:
 				]),
 			Shared.option(
 				"settle_farmers", "募民来种，官府给粮",
-				"车拉来三十户人家",
-				"车拉来三十户人家，锅碗和种子一起卸在堡外。头一冬他们住的是地窨子，开春才垒墙。霍连去看过两回，第二回带了一扇猪肉。",
+				"车拉来几户人家",
+				"车拉来几户人家，锅碗和种子一起卸在堡外。头一冬他们住的是地窨子，开春才垒墙。霍连去看过两回，第二回带了一扇猪肉。",
 				[
+					# 募来的民户是真迁入：之前只给 agriculture + birth，人在册上根本没多。
+					Shared.population_rate(20, "本地人口 +20%（募民落籍屯垦）"),
 					Shared.cash_out(2.5, 360),
 					Shared.agriculture(3, 540),
-					Shared.birth(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.option(

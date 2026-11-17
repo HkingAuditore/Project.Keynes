@@ -2456,7 +2456,7 @@ op = 11
 [sub_resource type="Resource" id="ProgHouseholdWeavingL1"]
 script = ExtResource("2_effect")
 definition_key = &"household_weaving_l1"
-summary = "本国主产亚麻秆/韧皮原料，且当地就业人口的职业至少 2 种的地块：布料产出提高 12%；作用于全部领土格"
+summary = "本国主产亚麻杆，且当地就业人口的职业至少 2 种的地块：布料产出提高 12%；作用于全部领土格"
 target_domain = 2
 operation = 1
 stack_key = &"household_weaving_l1"
@@ -2495,7 +2495,7 @@ op = 11
 [sub_resource type="Resource" id="ProgHouseholdWeavingL2"]
 script = ExtResource("2_effect")
 definition_key = &"household_weaving_l2"
-summary = "本国主产亚麻秆/韧皮原料，且当地就业人口的职业至少 2 种的地块：布料产出提高 15%；作用于全部领土格"
+summary = "本国主产亚麻杆，且当地就业人口的职业至少 2 种的地块：布料产出提高 15%；作用于全部领土格"
 target_domain = 2
 operation = 1
 stack_key = &"household_weaving_l2"
@@ -2534,7 +2534,7 @@ op = 11
 [sub_resource type="Resource" id="ProgHouseholdWeavingL3"]
 script = ExtResource("2_effect")
 definition_key = &"household_weaving_l3"
-summary = "本国主产亚麻秆/韧皮原料，且当地就业人口的职业至少 2 种的地块：布料产出提高 18%；作用于全部领土格"
+summary = "本国主产亚麻杆，且当地就业人口的职业至少 2 种的地块：布料产出提高 18%；作用于全部领土格"
 target_domain = 2
 operation = 1
 stack_key = &"household_weaving_l3"
