@@ -38,6 +38,18 @@ func _init() -> void:
 	var index: int = catalog.building_type_ids.find("household_weaving_shelter")
 	invalid.building_required_technology_tag_offsets[index + 1] = invalid.building_required_technology_tags.size() + 1
 	_expect("out-of-range support requirements reject", not BuildingPlacement.query(invalid, &"household_weaving_shelter").get("ok", true))
+	var profession_ids: PackedStringArray = catalog.profession_ids
+	var startup_days: PackedInt32Array = catalog.profession_startup_capital_days
+	var forager_index := profession_ids.find("forager")
+	var artisan_index := profession_ids.find("artisan")
+	var industrialist_index := profession_ids.find("industrialist")
+	_expect("entry profession authors a short startup buffer",
+		forager_index >= 0 and startup_days.size() == profession_ids.size() and
+		startup_days[forager_index] == 5)
+	_expect("artisan tier authors an intermediate startup buffer",
+		artisan_index >= 0 and startup_days[artisan_index] == 15)
+	_expect("capital-intensive professions keep the one-month default",
+		industrialist_index >= 0 and startup_days[industrialist_index] == 30)
 	_expect("all catalog contract scenarios ran", _checks >= 30)
 	print("bootstrap catalog contract: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)

@@ -763,6 +763,14 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         _profession_entry_savings_days.assign(_profession_ids.size(), 0);
     for (int32_t &days : _profession_entry_savings_days)
         days = std::clamp<int32_t>(days, 0, 36500);
+    // Startup buffer for private investment. Legacy catalogs without the
+    // column keep the historical one-month buffer.
+    _profession_startup_capital_days = packed_i32(
+        catalog, "profession_startup_capital_days");
+    if (_profession_startup_capital_days.size() != _profession_ids.size())
+        _profession_startup_capital_days.assign(_profession_ids.size(), 30);
+    for (int32_t &days : _profession_startup_capital_days)
+        days = std::clamp<int32_t>(days, 0, 36500);
     // Military v1 (design §5.1). Both columns are optional so every legacy
     // catalog keeps compiling with "no state service, no ration needs".
     const std::vector<int32_t> state_service_only = packed_i32(

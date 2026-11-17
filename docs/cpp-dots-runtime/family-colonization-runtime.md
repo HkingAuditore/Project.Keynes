@@ -1,31 +1,31 @@
 # 家族远程开拓与领土扩张运行时
 
-## 随行平民（固定编制，2026-11-16）
+## 无家族移民队（2026-11-17）
 
-开拓队现在同时携带源地的无家族人口。编制**固定不可调**：每 2 名族人随行 1 名平民
-（`COLONIZATION_ANONYMOUS_PER_FAMILY`），向下取整；玩家滑条仍然只编辑族人数，
-`FamilyExpeditionStore.population` 继续表示**族人**，新增 `anonymous` 列表示随行平民，
-队伍人数一律是两者之和（`family_expedition_displayed_population`）。
+开拓/迁移有两条互斥的派遣路：**家族分支**（原有）和**无家族移民队**（新增）。
+两者共用报价、路线、开工包、载荷与抵达流程，区别只在"谁走"。
 
-- 来源与限制：只取**同族裔**（家族 `origin_ethnicity` 对应的 cohort 签名）、非军人
-  （`profession_is_state_service_only`）；每个活着的商人队列至少留 1 人；并且至多带走
-  当地可比匿名人口的一半（`colonization_party_anonymous`）。匿名人口是源地的雇工池与
-  `find_entrepreneur_source` 的赞助池，抽干等于废掉源地创业。
-- 落地身份：随行平民**不建成员边**（`payload.anonymous != 0` 跳过
-  `family_memberships().push_back`），落地即目标格的无家族人口，资金来源是随行时按人口
-  比例带出的匿名余款（`cash_claim = 0`）。他们只能经 `recruit_family_dependents`
-  （每 30 日吸收份额缺口的 2%）或 `family.absorb_anonymous` 正常入籍，所以家族在殖民地
-  的份额从 67% 起步、一般不会立刻触顶。
-- 开工包按 `族人 + 平民` 规划（口粮桥是 `(旅行日 + 15) × 每人日耗`），绿地
-  `N >= COLONIZATION_KIT_MIN_OWNER_SLOTS` 的闸门同样用队伍人数；筹备期家族缩编时
-  随行额按同一编制重算，分母同步更新。
-- 守恒：两条道都以 `FamilyExpeditionPayload` 行走，在途人口/资金审计把它们一并计入
-  `transit_population`；`family_population()` 只加族人道，否则家族总人数会被移民灌水。
-- 存档：PKEC v65 在队伍记录里 `population` 之后写 `anonymous`，并在每条载荷的满意度
-  维度之后写 `anonymous` 标记；非 PREPARING 队伍要求
-  `Σ载荷 = population + anonymous` 且 `Σ匿名载荷 = anonymous`。
-- UI：报价行显示「可派 N 人 · 随行 M」（新增 `anonymous_maximums`），详情多一行
-  「随行平民」，确认按钮写成「N + 随行 M」，在途详情显示「队伍 X · 族人 Y · 随行 Z」。
+- 报价：`family_colonization_quotes` 以 `family_handle = 0` 表示移民队，`source_filter`
+  之外每个可达出发城各一行，`maximum_population` = `anonymous_dispatchable_in_cell(source)`，
+  另带 `caravan_populations`（该城全部无家族人口）供面板写「当地平民 X · 可移 Y」。
+  指定了 `family_filter` 时不返回移民队行（家族入口不知道也不需要它）。
+- 上限：**当地无家族人口可以整批迁走**（不再限制一半）。只有"还有人留下"时
+  （`pool < cell_people`）才给商人队列保留最后一人——空格不需要商人，
+  见 `rebuild_merchant_ranges` 的 `population > 0` 判断；军人
+  （`profession_is_state_service_only`）不参与。移民队不做族裔筛选——族裔份额只对
+  家族有意义，每条载荷自带原 cohort 的签名。抽离时非商人队列先抽、商人队列留到最后，
+  才能精确控制剩余人数。
+- 身份：队伍人数记在 `FamilyExpeditionStore.anonymous`，`population`（家族）为 0；
+  `family_expedition_displayed_population` 与开工包/业主槽闸门一律用两者之和。
+  落地**不建成员边**，移民只能是目标格的无家族人口，也不可能登记进 `family_ownerships`。
+- 家族队不再自动随行平民：两条路彻底分开，家族行只搬族人。
+- 目标格限容（`_family_max_per_cell`）只约束家族分支；移民队不占家族坑位，因此
+  一座城可以先由移民队落脚、后由家族迁入。
+- 存档：PKEC v65 的 `anonymous` 列承载移民队，`population` 允许为 0；
+  `family_handle = 0` 通过 `save_family_expedition_family_handle_invalid` 校验，
+  命令入口（`command_entry_valid`、存档 pending 校验）同样接受 `target_handle = 0`。
+- 验证：`family_colonization_runtime_test.gd -- --caravan-only` 覆盖报价行、
+  出发守恒、落地无家族、账本闭合。
 
 ## 派遣来源与筹备缩编（2026-11-10）
 

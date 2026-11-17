@@ -100,35 +100,35 @@ int64_t NativeEconomyRuntime::anonymous_population_in_cell(int32_t cell) const {
     return total;
 }
 
-int64_t NativeEconomyRuntime::colonization_party_anonymous(
-        uint64_t family_handle, int32_t cell, int64_t family_people) const {
-    if (family_people <= 0 || cell < 0 || cell >= _cell_count.get()) return 0;
-    const int64_t ratio_cap = family_people / COLONIZATION_ANONYMOUS_PER_FAMILY;
-    if (ratio_cap <= 0) return 0;
-    int32_t family = -1;
-    const bool have_family = families_store().valid_handle(family_handle, family);
-    // 随行平民必须是同一族裔：家族份额与招收都按族裔人口计算，跨族裔会把
-    // 目标地的份额分母混成两本账。
-    const int32_t ethnicity = have_family
-        ? families_store().origin_ethnicity[family] : -1;
-    int64_t available = 0, sat = 0;
+int64_t NativeEconomyRuntime::anonymous_dispatchable_in_cell(int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count.get()) return 0;
+    int64_t pool = 0, cell_people = 0, merchant_pool = 0, merchant_people = 0,
+        sat = 0;
     population_store().for_each_in_cell(cell, [&](int32_t slot) {
-        int64_t people = std::max<int64_t>(0,
-            population_store().population[slot] - family_people_on_slot(slot));
-        // 商人队列是本格市场的资产负债所有者：每个活着的商人队列至少留一人。
-        if (is_merchant_slot(slot)) people = std::max<int64_t>(0, people - 1);
-        if (people <= 0) return;
-        if (ethnicity >= 0) {
-            const int32_t signature = static_cast<int32_t>(
-                population_store().signature_id[slot]);
-            if (signature < 0 ||
-                signature >= static_cast<int32_t>(_signatures.size()) ||
-                _signatures[signature].ethnicity_id != ethnicity) return;
+        const int64_t people = std::max<int64_t>(0,
+            population_store().population[slot]);
+        const int64_t anonymous = std::max<int64_t>(0,
+            people - family_people_on_slot(slot));
+        cell_people = saturating_add(cell_people, people, sat);
+        if (is_merchant_slot(slot)) {
+            merchant_people = saturating_add(merchant_people, people, sat);
+            merchant_pool = saturating_add(merchant_pool, anonymous, sat);
         }
-        available = saturating_add(available, people, sat);
+        if (anonymous <= 0) return;
+        const int32_t signature = static_cast<int32_t>(
+            population_store().signature_id[slot]);
+        if (signature < 0 ||
+            signature >= static_cast<int32_t>(_signatures.size())) return;
+        // 军人不随行，与家族派遣同一规则。
+        if (profession_is_state_service_only(_signatures[signature].profession_id))
+            return;
+        pool = saturating_add(pool, anonymous, sat);
     });
-    // 无家族人口是源地的雇工池与创业赞助池，最多带走一半；再套固定编制上限。
-    return std::max<int64_t>(0, std::min(ratio_cap, available / 2));
+    // 无家族人口可以整批迁走；只在"还有人留下"时才给商人队列留最后一人
+    // （空格不需要商人，见 rebuild_merchant_ranges 的 population > 0 判断）。
+    if (pool < cell_people && merchant_people > 0 && merchant_pool >= merchant_people)
+        pool = std::max<int64_t>(0, pool - 1);
+    return pool;
 }
 
 bool NativeEconomyRuntime::colonization_target_owner_allowed(
@@ -349,8 +349,16 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
         out["ok"] = false; out["code"] = "colonization_duplicate_target";
         return out;
     }
-    if (family_population_in_cell(static_cast<uint64_t>(family_handle_value),
-                                  source_cell) <= population) {
+    // 无家族移民队直接搬当地无家族人口，因此校验口径是匿名可派上限；
+    // 家族队仍然按可派族人校验，并至少给源地留一人。
+    if (static_cast<uint64_t>(family_handle_value) == 0) {
+        if (population > anonymous_dispatchable_in_cell(source_cell)) {
+            out["ok"] = false; out["code"] = "colonization_population_insufficient";
+            return out;
+        }
+    } else if (family_population_in_cell(
+                   static_cast<uint64_t>(family_handle_value),
+                   source_cell) <= population) {
         out["ok"] = false; out["code"] = "colonization_population_insufficient";
         return out;
     }
@@ -788,17 +796,20 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
     const int32_t target = family_expeditions_store().target_cell[expedition];
     const uint64_t country = family_expeditions_store().country_handle[expedition];
     const uint64_t family = family_expeditions_store().family_handle[expedition];
-    const int64_t people = std::min(family_expeditions_store().population[expedition],
+    const bool caravan = family == 0;
+    // 家族队按可派族人缩编；移民队按可派无家族人口缩编。
+    const int64_t people = caravan ? 0 : std::min(
+        family_expeditions_store().population[expedition],
         family_dispatchable_population_in_cell(family, source));
-    // 随行平民跟随族人数一起缩编：家族减员时，固定编制下的随行额也要重算。
-    const int64_t anonymous_people = colonization_party_anonymous(
-        family, source, std::max<int64_t>(0, people));
+    const int64_t anonymous_people = caravan ? std::min(
+        family_expeditions_store().anonymous[expedition],
+        anonymous_dispatchable_in_cell(source)) : 0;
     if (!colonization_target_owner_allowed(country, target)) {
         abort_preparing_family_expedition(expedition, day, 3,
             "TARGET_LOST_RETURNING");
         return true;
     }
-    if (people <= 0) {
+    if (people <= 0 && anonymous_people <= 0) {
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
     }
@@ -936,15 +947,21 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     }
     const ColonizationQuoteCacheEntry &quote =
         _colonization_quote_cache[found->second];
-    if (!colonization_destination_family_allowed(quote.family_handle,
+    const bool caravan = quote.family_handle == 0;
+    // 目标格按家族分支数限容；纯移民队不占家族坑位。
+    if (!caravan && !colonization_destination_family_allowed(quote.family_handle,
             quote.target_cell)) {
         error = "colonization_family_cell_capacity"; return false;
     }
-    // 固定编制：每两名族人随行一名无家族人口。人数在提交时一次算定，筹备期
-    // 只随可派人数缩编，避免开工包分母天天跳。
-    const int64_t family_people = std::max<int64_t>(1, cmd.i64_0);
-    const int64_t anonymous_people = colonization_party_anonymous(
-        quote.family_handle, quote.source_cell, family_people);
+    // 家族队只搬族人；无家族移民队只搬当地无家族人口。人数口径都记在
+    // `population`（家族）与 `anonymous`（平民）两条账上，队伍人数是两者之和。
+    const int64_t requested_people = std::max<int64_t>(1, cmd.i64_0);
+    const int64_t family_people = caravan ? 0 : requested_people;
+    const int64_t anonymous_people = caravan ? std::min<int64_t>(
+        requested_people, anonymous_dispatchable_in_cell(quote.source_cell)) : 0;
+    if (anonymous_people <= 0 && family_people <= 0) {
+        error = "colonization_population_insufficient"; return false;
+    }
     const int64_t party_people = family_people + anonymous_people;
     ColonizationKitPlan kit;
     plan_colonization_kit(quote.source_cell, quote.target_cell, party_people,

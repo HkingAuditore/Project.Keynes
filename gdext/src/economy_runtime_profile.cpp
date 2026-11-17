@@ -417,7 +417,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
                 milestones.push_back(value);
         }
         if (milestones.empty())
-            milestones = {100, 200, 500, 1000, 2000, 5000, 10000, 20000};
+            milestones = {60, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
         if (milestones.size() > 255) {
             error = "family_milestone_populations_too_long";
             return false;

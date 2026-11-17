@@ -151,7 +151,7 @@
     // Ascending committed-population thresholds; each one crossed by a cell
     // produces one founding offer. Starter capital founders do not count.
     std::vector<int64_t> _family_milestone_populations{
-        100, 200, 500, 1000, 2000, 5000, 10000, 20000};
+        60, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
     EconomyTrackedScalar<int64_t> _family_min_founder_people{_metadata_changes, {{15, 43}, "config.family_min_founder_people", EconomyFieldEncoding::I64, 8}, 30};
     int32_t _family_founding_choice_mode = 1; // 0=AUTO, 1=PLAYER.
     EconomyTrackedScalar<int64_t> _family_split_population_threshold{_metadata_changes, {{15, 46}, "config.family_split_population_threshold", EconomyFieldEncoding::I64, 8}, 100};
@@ -410,11 +410,10 @@
                                       int32_t cell) const;
     int64_t family_dispatchable_population_in_cell(uint64_t family_handle,
         int32_t cell) const;
-    // Unaffiliated (no family membership edge) people in a cell. Colonization
-    // parties may carry them as colonists; they never become family members.
+    // Unaffiliated (no family membership edge) people in a cell. A family-less
+    // settler party moves exactly these people; they never become family members.
     int64_t anonymous_population_in_cell(int32_t cell) const;
-    int64_t colonization_party_anonymous(uint64_t family_handle, int32_t cell,
-        int64_t family_people) const;
+    int64_t anonymous_dispatchable_in_cell(int32_t cell) const;
     bool colonization_target_owner_allowed(uint64_t country_handle,
                                            int32_t cell) const;
     bool colonization_destination_family_allowed(uint64_t family_handle,

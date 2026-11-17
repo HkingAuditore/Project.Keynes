@@ -1346,6 +1346,27 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             saturating_add(daily_input_cost, daily_wages, _saturation_count),
             daily_maintenance, _saturation_count), utilization_q16,
             Q16_ONE, _saturation_count);
+        // Zero-material entry collectors are starter infrastructure, not
+        // industrial capital. Their owner profession authors no entry-savings
+        // gate, so the 15% target-margin hurdle would reject a profitable
+        // one-building livelihood merely for earning less than the industrial
+        // return target. Require only a positive daily profit; the owner
+        // livelihood, capital, payback, sponsor, resource and input gates
+        // still apply unchanged.
+        const int32_t owner_entry_days =
+            type.owner_profession_id >= 0 && type.owner_profession_id <
+                    static_cast<int32_t>(_profession_entry_savings_days.size())
+                ? _profession_entry_savings_days[
+                    static_cast<size_t>(type.owner_profession_id)]
+                : 0;
+        const int64_t owner_startup_days =
+            type.owner_profession_id >= 0 && type.owner_profession_id <
+                    static_cast<int32_t>(_profession_startup_capital_days.size())
+                ? std::max<int64_t>(0, _profession_startup_capital_days[
+                    static_cast<size_t>(type.owner_profession_id)])
+                : 30;
+        const bool entry_zero_build_margin_exempt =
+            type.construction_count == 0 && owner_entry_days == 0;
         for (int32_t ethnicity = 0; ethnicity < static_cast<int32_t>(
                 _ethnicity_ids.size()); ++ethnicity) {
             ++_investment_ethnicity_evaluations;
@@ -1606,7 +1627,9 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                 reject(INVESTMENT_REJECTION_OWNER_LIVELIHOOD);
                 continue;
             }
-            if (daily_economic_revenue < required_revenue || daily_profit <= 0) {
+            if (daily_profit <= 0 ||
+                (daily_economic_revenue < required_revenue &&
+                 !entry_zero_build_margin_exempt)) {
                 reject(INVESTMENT_REJECTION_TARGET_MARGIN);
                 continue;
             }
@@ -1627,9 +1650,9 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                     _investment_operating_cycles.get() * std::max(1, _epoch_days.get()),
                     _saturation_count), saturating_add(saturating_mul(
                         daily_wages, std::max(1, _epoch_days.get()), _saturation_count),
-                        saturating_add(saturating_mul(owner_livelihood, 30,
+                        saturating_add(saturating_mul(owner_livelihood, owner_startup_days,
                             _saturation_count), saturating_mul(
-                                daily_maintenance, 30, _saturation_count),
+                                daily_maintenance, owner_startup_days, _saturation_count),
                             _saturation_count),
                         _saturation_count), _saturation_count), _saturation_count);
             if (diagnostic != nullptr) {

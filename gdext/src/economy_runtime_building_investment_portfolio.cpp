@@ -46,11 +46,21 @@ bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
         const size_t source = account_index(static_cast<int32_t>(
             population_store().signature_id[plan.sponsor]));
         const size_t owner = account_index(plan.owner_signature_id);
-        const int64_t capital = saturating_mul(
+        const int64_t required_capital = saturating_mul(
             plan.allocated_count, plan.funding_capital, sat);
         if (source != owner) {
             const int64_t people = saturating_mul(plan.allocated_count,
                 std::max<int64_t>(1, _building_types[plan.type_id].owner_slots_per_building), sat);
+            // Money follows people: the actual move is their proportional
+            // cohort claim, which may exceed the building's minimum
+            // required_capital. Preflight that real transfer, not just the
+            // minimum, so a second portfolio item cannot spend the same cash.
+            const int64_t proportional = accounts[source].population > 0
+                ? mul_div_sat(accounts[source].funds, people,
+                    accounts[source].population, sat)
+                : 0;
+            const int64_t capital = std::max<int64_t>(
+                required_capital, proportional);
             // Sponsor selection protects one source occupant. Reject an
             // overlapping allocation that would invalidate its stable slot.
             if (people >= accounts[source].population ||
@@ -818,31 +828,27 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
                 owner_population, _saturation_count);
             _building_investment_capital_transferred = saturating_add(
                 _building_investment_capital_transferred,
-                required_capital, _saturation_count);
+                carried, _saturation_count);
         } else if (profession_transition) {
-            // `carried` is the ledger delta on the destination. When the
-            // destination already held a negative balance, that delta can
-            // exceed the post-move liquid funds on the slot; only the
-            // non-negative balance is refundable surplus.
+            // Money follows people. `carried` is the wealth the movers bring
+            // from their old cohort (their per-capita/family claim). It is a
+            // minimum funding input, not a cap: any surplus above
+            // required_capital stays with the new owner cohort instead of
+            // being refunded to the profession they left. When the movers'
+            // own claim is short, the sponsor group (family or anonymous
+            // remainder) pools the difference, exactly as it was selected in
+            // find_entrepreneur_source.
             const int64_t owner_funds_after =
                 population_store().funds[owner_slot];
             const int64_t carried = owner_funds_after - target_funds_before;
-            int64_t correction = required_capital - carried;
+            const int64_t correction = std::max<int64_t>(
+                0, required_capital - carried);
             if (correction > 0 &&
                 population_store().funds[candidate.plan.sponsor] < correction) {
                 error = "building_investment_capital_preflight_drift";
                 return false;
             }
-            if (correction < 0) {
-                const int64_t refund = -correction;
-                const int64_t payable = std::min<int64_t>(
-                    refund, std::max<int64_t>(0, owner_funds_after));
-                // Unpayable surplus patched a destination deficit and
-                // stays absorbed there; sponsor already lost it via the
-                // move and will therefore pay more than required_capital.
-                correction = -payable;
-            }
-            if (correction != 0) {
+            if (correction > 0) {
                 touch_accounting_slot(candidate.plan.sponsor);
                 touch_accounting_slot(owner_slot);
                 population_store().funds.write_scalar(candidate.plan.sponsor,
@@ -862,11 +868,9 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
             }
             const int64_t sponsor_paid = source_funds_before -
                 population_store().funds[candidate.plan.sponsor];
-            // Must fund the building; overpay is allowed only when a
-            // destination deficit absorbed unpayable refund surplus.
-            if (sponsor_paid < required_capital ||
-                (sponsor_paid != required_capital &&
-                    correction == required_capital - carried)) {
+            // The building must receive its minimum capital. Overpay is the
+            // movers' own carried wealth and is deliberately not refunded.
+            if (sponsor_paid < required_capital) {
                 error = "building_investment_capital_transfer_drift";
                 return false;
             }
@@ -876,7 +880,7 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
                 owner_population, _saturation_count);
             _building_investment_capital_transferred = saturating_add(
                 _building_investment_capital_transferred,
-                required_capital, _saturation_count);
+                sponsor_paid, _saturation_count);
         }
         if (profession_transition && trace_detail_for_cell(cell)) {
             const int64_t target_handle =

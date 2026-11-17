@@ -4,6 +4,7 @@
 script = ExtResource("1")
 id = &"fisher"
 profession_class_id = &"farmer"
+startup_capital_days = 5
 display_name = "渔民"
 semantic_tags = PackedStringArray("activity.fishing")
 default_consumption_plan_id = &"agrarian_household"

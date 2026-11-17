@@ -327,9 +327,13 @@ resource physically present; service capacity follows population/trade
 topology policy. Bullion collectors therefore cannot expand from price alone.
 Service buildings remain excluded.
 
-Investment V5 leaves owner vacancies to the employment pass. Every cohort with
-cash above its 30-day household reserve may sponsor construction, including the
-target owner profession and merchant cohorts with more than one person.
+Investment V5 leaves owner vacancies to the employment pass. Every cohort whose
+per-capita funds exceed the target profession's authored `entry_savings_days`
+of living cost may sponsor construction, including the target owner profession
+and merchant cohorts with more than one person. Entry professions such as
+forager, miner and tenant farmer author zero days, so their zero-cost starter
+collectors no longer require a separate 30-day sponsor reserve; skilled
+professions keep their 30-day gate.
 Projected owner income must exceed current per-capita income; the relative gain
 is sampled as a deterministic fixed-point probability. A winning sponsor moves
 to the configured owner profession only when it is not already there.
@@ -339,7 +343,20 @@ discard, target margin, owner livelihood, payback, sponsor capital, relative
 income and probability checks all pass.
 Primitive collectors with no construction recipe participate with zero
 construction cost, but retain the existing operating-capital, owner-livelihood,
-profitability, payback, probability, and bullion gates.
+profitability, payback, probability, and bullion gates. When such a collector
+also targets an entry profession (`entry_savings_days == 0`), it is exempt from
+the 15% target-margin hurdle and needs only a positive daily profit; owner
+livelihood, capital, payback, sponsor, resource and input gates still apply.
+`required_capital` pre-funds owner living cost and maintenance using the target
+profession's authored `startup_capital_days` (default one month; entry
+professions author a few days, artisan tiers an intermediate value) instead of
+a single hardcoded 30. The funded amount is a minimum, not a cap: when a cohort
+moves people into the owner profession, their per-capita/family cash claim
+follows them, and any surplus above `required_capital` stays with the new owner
+cohort rather than being refunded to the profession they left. The sponsor is
+the family or anonymous remainder as a group, so when the movers' own claim is
+short the same group pools the difference; individual members inside that
+group are not separately capitalized.
 
 Default merchant inventory coverage is 60 days before applying each good's
 ratio. Procurement, trade, and bootstrap merchant funding retain that full

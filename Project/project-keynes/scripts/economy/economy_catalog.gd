@@ -295,6 +295,7 @@ static func _compile_native_catalog(context,
 	var profession_ids := PackedStringArray()
 	var profession_class_ids := PackedStringArray()
 	var profession_entry_savings_days := PackedInt32Array()
+	var profession_startup_capital_days := PackedInt32Array()
 	var profession_state_service_only := PackedInt32Array()
 	var profession_state_supplied_need_offsets := PackedInt32Array([0])
 	var profession_state_supplied_need_ids := PackedInt32Array()
@@ -323,6 +324,9 @@ static func _compile_native_catalog(context,
 		if int(professions[i].entry_savings_days) < 0:
 			return {"ok": false, "reason": "invalid profession entry savings: %s" % stable_id}
 		profession_entry_savings_days.append(int(professions[i].entry_savings_days))
+		if int(professions[i].startup_capital_days) < 0:
+			return {"ok": false, "reason": "invalid profession startup capital days: %s" % stable_id}
+		profession_startup_capital_days.append(int(professions[i].startup_capital_days))
 		# Military v1: state-service professions may only fill state-building
 		# roles, and their listed needs are supplied in kind by Military.
 		var state_service_only := bool(professions[i].state_service_only)
@@ -452,6 +456,7 @@ static func _compile_native_catalog(context,
 		"profession_ids": profession_ids,
 		"profession_class_ids": profession_class_ids,
 		"profession_entry_savings_days": profession_entry_savings_days,
+		"profession_startup_capital_days": profession_startup_capital_days,
 		"profession_state_service_only": profession_state_service_only,
 		"profession_state_supplied_need_offsets":
 			profession_state_supplied_need_offsets,

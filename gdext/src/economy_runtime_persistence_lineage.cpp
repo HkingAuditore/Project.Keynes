@@ -409,7 +409,9 @@ bool NativeEconomyRuntime::decode_restore_family_tables(
                     error = "save_family_expedition_country_identity_invalid";
                     return false;
                 }
-                if (!families_store().valid_handle(family_handle, family)) {
+                // family_handle 0 是无家族移民队：队伍人数全记在 anonymous 上。
+                if (family_handle != 0 &&
+                    !families_store().valid_handle(family_handle, family)) {
                     error = "save_family_expedition_family_handle_invalid";
                     return false;
                 }
@@ -430,7 +432,8 @@ bool NativeEconomyRuntime::decode_restore_family_tables(
                     error = "save_family_expedition_state_invalid"; return false;
                 }
                 const bool preparing = state == EXPEDITION_PREPARING;
-                if (population < 1 || anonymous_population < 0 ||
+                if (population < 0 || anonymous_population < 0 ||
+                    population + anonymous_population < 1 ||
                     kit_bridge_required < 0 ||
                     kit_material_required < 0 ||
                     (preparing ? payload_count != 0 : payload_count < 1)) {

@@ -818,7 +818,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)
             : expedition_player
             ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
-                ? (families_store().valid_handle(cmd.target_handle, family) &&
+                ? ((cmd.target_handle == 0 ||
+                    families_store().valid_handle(cmd.target_handle, family)) &&
                    cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                    cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() &&
                    cmd.i64_0 >= 1)

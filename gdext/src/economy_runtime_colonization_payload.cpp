@@ -158,20 +158,32 @@ bool NativeEconomyRuntime::extract_family_expedition_anonymous_lanes(
     const uint64_t family_handle =
         family_expeditions_store().family_handle[expedition];
     const int32_t source_cell = family_expeditions_store().source_cell[expedition];
-    int32_t family = -1;
-    if (!families_store().valid_handle(family_handle, family)) {
-        error = "colonization_family_invalid";
-        return false;
+    // 无家族移民队：整支队伍都是匿名道，没有族裔筛选（族裔份额只对家族有意义）。
+    int32_t ethnicity = -1;
+    if (family_handle != 0) {
+        int32_t family = -1;
+        if (!families_store().valid_handle(family_handle, family)) {
+            error = "colonization_family_invalid";
+            return false;
+        }
+        ethnicity = families_store().origin_ethnicity[family];
     }
-    const int32_t ethnicity = families_store().origin_ethnicity[family];
-    struct Candidate { int32_t slot; int64_t people; uint64_t stable; };
+    struct Candidate { int32_t slot; int64_t people; uint64_t stable;
+        bool merchant; };
     std::vector<Candidate> candidates;
     // 家族载荷抽离会同时扣减 cohort 人口与成员边，匿名余量不变，因此这里
-    // 看到的就是家族走后的无家族人口。
+    // 看到的就是家族走后的无家族人口。整批人都可以被迁走，只有"还有人留下"
+    // 时才需要给商人队列保留最后一人。
+    int64_t merchant_pool = 0, cell_people = 0, pool_saturation = 0;
     population_store().for_each_in_cell(source_cell, [&](int32_t slot) {
-        int64_t people = std::max<int64_t>(0,
+        const int64_t people = std::max<int64_t>(0,
             population_store().population[slot] - family_people_on_slot(slot));
-        if (is_merchant_slot(slot)) people = std::max<int64_t>(0, people - 1);
+        const bool merchant = is_merchant_slot(slot);
+        cell_people = saturating_add(cell_people, std::max<int64_t>(0,
+            population_store().population[slot]), pool_saturation);
+        if (merchant)
+            merchant_pool = saturating_add(merchant_pool, people,
+                pool_saturation);
         if (people <= 0) return;
         const int32_t signature = static_cast<int32_t>(
             population_store().signature_id[slot]);
@@ -183,18 +195,28 @@ bool NativeEconomyRuntime::extract_family_expedition_anonymous_lanes(
         if (ethnicity >= 0 && _signatures[signature].ethnicity_id != ethnicity)
             return;
         candidates.push_back({slot, people,
-            population_store().handle_for_slot(slot)});
+            population_store().handle_for_slot(slot), merchant});
     });
+    // 非商人队列先抽，商人队列留到最后，才能精确控制"剩几个人"。
     std::sort(candidates.begin(), candidates.end(),
         [](const Candidate &a, const Candidate &b) {
+            if (a.merchant != b.merchant) return !a.merchant;
             if (a.people != b.people) return a.people > b.people;
             return a.stable < b.stable;
         });
+    int64_t merchant_budget = merchant_pool;
+    if (cell_people > requested && merchant_pool > 0)
+        merchant_budget = std::max<int64_t>(0, merchant_pool - 1);
+    int64_t merchant_taken = 0;
     int64_t remaining = requested;
     for (const Candidate &candidate : candidates) {
         if (remaining <= 0) break;
-        const int64_t take = std::min(candidate.people, remaining);
+        int64_t take = std::min(candidate.people, remaining);
+        if (candidate.merchant)
+            take = std::min(take,
+                std::max<int64_t>(0, merchant_budget - merchant_taken));
         if (take <= 0) continue;
+        if (candidate.merchant) merchant_taken += take;
         const int32_t slot = candidate.slot;
         const int64_t source_population = std::max<int64_t>(1,
             population_store().population[slot]);
@@ -312,13 +334,17 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         bool unemployed; uint64_t stable; int64_t selected = 0; };
     std::vector<Candidate> candidates;
     int32_t family = -1;
-    if (!families_store().valid_handle(family_handle, family)) {
+    // 无家族移民队没有成员边可抽：整支队伍走匿名道（见下方 anonymous lanes）。
+    const bool caravan = family_handle == 0;
+    if (!caravan && !families_store().valid_handle(family_handle, family)) {
         error = "colonization_family_invalid"; return false;
     }
     const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
-    const int32_t begin = csr ? _family_member_offsets[family] : 0;
-    const int32_t end = csr ? _family_member_offsets[family + 1]
-        : static_cast<int32_t>(family_memberships().size());
+    const int32_t begin = caravan ? 0
+        : (csr ? _family_member_offsets[family] : 0);
+    const int32_t end = caravan ? 0
+        : (csr ? _family_member_offsets[family + 1]
+               : static_cast<int32_t>(family_memberships().size()));
     for (int32_t p = begin; p < end; ++p) {
         const int32_t edge_index = csr ? _family_member_edge_indices[p] : p;
         const FamilyMembershipEdge &edge = family_memberships()[edge_index];

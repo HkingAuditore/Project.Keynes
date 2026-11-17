@@ -795,12 +795,9 @@ func _update_start_enabled() -> void:
 		or int(_population.value) > int(_selected_quote.get("maximum_population", 1))
 	var count := int(_population.value) if has_selection else 0
 	var count_text := UITokens.format_compact_number_cn(float(count), 0)
-	# 随行平民按固定编制（每 2 名族人 1 人），上限由原生报价给出。
-	var anonymous_count := mini(int(_selected_quote.get("anonymous_maximum", 0)), count / 2)
-	var party_text := count_text
-	if has_selection and anonymous_count > 0:
-		party_text = "%s + 随行 %s" % [count_text,
-			UITokens.format_compact_number_cn(float(anonymous_count), 0)]
+	# 无家族移民队（family_handle 0）换动词：它搬的是平民，不是族人或随从。
+	var caravan := has_selection and int(_selected_quote.get("family_handle", 0)) == 0
+	var verb := "迁移" if caravan else "派遣"
 	var kit_partial := bool(_selected_quote.get("kit_partial", false))
 	var place_buildings := bool(_selected_quote.get("kit_place_buildings", false))
 	var kit_ids: PackedInt32Array = _selected_quote.get(
@@ -810,16 +807,16 @@ func _update_start_enabled() -> void:
 	if _target_cell < 0 or _target_picking:
 		_start.text = "请先选择目的地"
 	elif _economy_busy:
-		_start.text = "排队派遣 %s 人" % party_text if has_selection else "排队派遣"
+		_start.text = ("排队%s %s 人" % [verb, count_text]) if has_selection else "排队%s" % verb
 		_start.tooltip_text = EconomyStatusCopy.BUSY
 	elif complete_kit:
-		_start.text = "派遣 %s 人并安家" % party_text if has_selection else "确认派遣"
+		_start.text = ("%s %s 人并%s" % [verb, count_text, "建村" if caravan else "安家"]) if has_selection else "确认%s" % verb
 		_start.tooltip_text = _kit_summary_text(_selected_quote)
 	elif preparing_kit:
-		_start.text = "开始筹备 %s 人" % party_text if has_selection else "开始筹备"
+		_start.text = ("开始筹备%s %s 人" % [verb, count_text]) if has_selection else "开始筹备"
 		_start.tooltip_text = "占用目标；人留在源地继续生产，每日把源地可用现货收进队伍库存，凑齐后自动出发。"
 	else:
-		_start.text = "派遣 %s 人" % party_text if has_selection else "确认派遣"
+		_start.text = ("%s %s 人" % [verb, count_text]) if has_selection else "确认%s" % verb
 		_start.tooltip_text = "基础物资不足，只携带当前可用物资" if kit_partial \
 			else _kit_summary_text(_selected_quote)
 	if has_selection and kit_partial and not preparing_kit \
@@ -992,8 +989,8 @@ func _quotes_for_source(page: Dictionary) -> Array:
 	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
 	var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
 	var maximums: PackedInt64Array = page.get("maximum_populations", PackedInt64Array())
-	var anonymous_maximums: PackedInt64Array = page.get(
-		"anonymous_maximums", PackedInt64Array())
+	var caravan_populations: PackedInt64Array = page.get(
+		"caravan_populations", PackedInt64Array())
 	var costs: PackedInt32Array = page.get("route_costs", PackedInt32Array())
 	var days: PackedInt32Array = page.get("travel_days", PackedInt32Array())
 	var tokens: PackedInt64Array = page.get("quote_tokens", PackedInt64Array())
@@ -1012,12 +1009,13 @@ func _quotes_for_source(page: Dictionary) -> Array:
 			"source_cell": int(sources[index]) if index < sources.size() else 0,
 			"target_cell": _target_cell,
 			"maximum_population": int(maximums[index]) if index < maximums.size() else 0,
-			"anonymous_maximum": int(anonymous_maximums[index]) if index < anonymous_maximums.size() else 0,
+			"anonymous_population": int(caravan_populations[index]) if index < caravan_populations.size() else 0,
 			"route_cost": int(costs[index]) if index < costs.size() else 0,
 			"travel_days": int(days[index]) if index < days.size() else 1,
 			"quote_token": int(tokens[index]) if index < tokens.size() else 0,
 			"surname": surname,
-			"display_name": _family_display_name(surname, disambiguator),
+			"display_name": "无家族移民" if handle == 0 \
+				else _family_display_name(surname, disambiguator),
 		}
 		quotes.append(candidate)
 	quotes.sort_custom(func(a, b) -> bool:
@@ -1061,6 +1059,10 @@ func _family_view_for(family_handle: int, fallback_people: int) -> Dictionary:
 		"trait_badges": [],
 		"effect_text": "特性：无",
 	}
+	# 无家族移民队的 family_handle 是 0：没有族谱可读，直接给固定名。
+	if family_handle == 0:
+		view["display_name"] = "无家族移民"
+		return view
 	if _controller != null and _controller.has_method("get_family_snapshot"):
 		var snapshot: Dictionary = _controller.get_family_snapshot(family_handle)
 		if bool(snapshot.get("ok", false)):
@@ -1325,7 +1327,7 @@ func _get_source_quotes() -> Dictionary:
 			break
 		for key in ["family_handles", "source_cells", "maximum_populations", "route_costs",
 				"travel_days", "quote_tokens", "surnames", "surname_disambiguators",
-				"anonymous_maximums", "source_settlement_names"]:
+				"caravan_populations", "source_settlement_names"]:
 			if page.has(key) and next.has(key):
 				var values: Variant = page[key]
 				values.append_array(next[key])

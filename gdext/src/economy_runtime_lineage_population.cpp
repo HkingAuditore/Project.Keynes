@@ -349,6 +349,18 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
         building_type_id >= static_cast<int32_t>(_building_types.size()) ||
         target_income_per_day <= 0 || owner_slots_per_building <= 0) return -1;
     const Signature &target = _signatures[target_signature];
+    // The target profession's own entry-savings gate is the only savings
+    // hurdle a sponsor must clear.  A flat 30-day reserve duplicated that
+    // gate and made zero-cost entry businesses (forager/miner/tenant-farmer
+    // collectors) unfundable for the unemployed cohorts they exist to absorb.
+    // Skilled professions keep their authored 30-day gate here unchanged.
+    const int64_t sponsor_reserve_days =
+        target.profession_id >= 0 && target.profession_id <
+                static_cast<int32_t>(_profession_entry_savings_days.size())
+            ? std::max<int64_t>(0,
+                _profession_entry_savings_days[
+                    static_cast<size_t>(target.profession_id)])
+            : 0;
     int32_t best_slot = -1;
     int64_t best_improvement_q16 = std::numeric_limits<int64_t>::min();
     int64_t best_transferable = -1;
@@ -381,7 +393,7 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
         const int64_t source_living_cost = cached_living_cost >= 0 ? cached_living_cost :
             living_cost_for_signature(cell, source_signature, -1, sat);
         const int64_t reserve = saturating_mul(saturating_mul(
-            source_living_cost, population, sat), 30, sat);
+            source_living_cost, population, sat), sponsor_reserve_days, sat);
         const int64_t transferable = std::max<int64_t>(
             0, population_store().funds[slot] - reserve);
         if (transferable < required_capital) return;
@@ -455,7 +467,10 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
             }
         };
         // Families and the anonymous remainder compete as separate sponsors,
-        // each paying from its own claim net of a month of living cost.
+        // each paying from its own claim net of the authored reserve days.
+        // The sponsor is the group, not the individual mover: a family or the
+        // anonymous remainder pools its own claim, and the investment commit
+        // tops the movers up to required_capital from that same pool.
         int64_t family_people = 0, family_claim = 0;
         if (_family_runtime_mode.get() == 2 && _family_cohort_offsets.size() ==
                 population_store().active.size() + 1) {
@@ -471,7 +486,7 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
                 family_claim = saturating_add(family_claim, claim, sat);
                 consider(edge.family_handle, people, saturating_sub(claim,
                     saturating_mul(saturating_mul(source_living_cost, people, sat),
-                                   30, sat), sat));
+                                   sponsor_reserve_days, sat), sat));
             }
         }
         const int64_t anonymous_people = std::max<int64_t>(0,
@@ -479,7 +494,7 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
         consider(0, anonymous_people, saturating_sub(saturating_sub(
             population_store().funds[slot], family_claim, sat),
             saturating_mul(saturating_mul(source_living_cost, anonymous_people, sat),
-                           30, sat), sat));
+                           sponsor_reserve_days, sat), sat));
     });
     if (best_slot >= 0) {
         willing_population = best_willing;

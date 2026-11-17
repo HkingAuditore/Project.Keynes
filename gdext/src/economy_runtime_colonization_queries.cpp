@@ -179,101 +179,117 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     struct Candidate { uint64_t family; int32_t source; int64_t maximum;
         int32_t cost; int32_t days; uint64_t token; };
     std::vector<Candidate> candidates;
+    // One emitter for both kinds of party: a family branch (family_handle != 0)
+    // and a plain settler caravan (family_handle == 0). The route, token and
+    // quote cache are identical; only who travels differs.
+    auto emit_candidate = [&](uint64_t family_handle, int32_t source,
+                              int64_t maximum_population,
+                              uint64_t source_stock_identity) {
+        std::vector<int32_t> route;
+        std::vector<int32_t> cumulative;
+        int32_t cursor = source;
+        int64_t running = 0;
+        route.push_back(cursor); cumulative.push_back(0);
+        uint64_t route_hash = 1469598103934665603ULL;
+        route_hash = trace_hash_mix(route_hash, static_cast<uint32_t>(cursor));
+        route_hash = trace_hash_mix(route_hash, 0);
+        while (cursor != target_cell) {
+            if (_colonization_parent_stamp[cursor] != stamp) {
+                route.clear(); break;
+            }
+            const int32_t from = cursor;
+            cursor = _colonization_parent[cursor];
+            const size_t before = route.size();
+            if (!append_colonization_route_step(
+                    from, cursor, cap, _colonization_distance[from],
+                    _colonization_distance[cursor], route, cumulative, running)) {
+                route.clear();
+                break;
+            }
+            for (size_t i = before; i < route.size(); ++i) {
+                route_hash = trace_hash_mix(route_hash,
+                    static_cast<uint32_t>(route[i]));
+                route_hash = trace_hash_mix(route_hash,
+                    static_cast<uint32_t>(cumulative[i]));
+            }
+        }
+        if (route.empty()) return;
+        uint64_t token = 1469598103934665603ULL;
+        for (const uint64_t value : {country_handle, family_handle,
+                static_cast<uint64_t>(static_cast<uint32_t>(source)),
+                static_cast<uint64_t>(static_cast<uint32_t>(target_cell)),
+                _trade_topology.topology_generation, country_snapshot.generation,
+                vision_hash, route_hash, dest_kit_identity,
+                source_stock_identity})
+            token = trace_hash_mix(token, value);
+        token &= 0x7fffffffffffffffULL;
+        if (token == 0) token = 1;
+        if (_colonization_quote_cache.size() >= COLONIZATION_QUOTE_CACHE_LIMIT &&
+            !has_pending_family_expedition_player_command()) {
+            _colonization_quote_cache.clear();
+            _colonization_quote_index.clear();
+            _colonization_quote_route_cells.clear();
+            _colonization_quote_route_costs.clear();
+        }
+        ColonizationQuoteCacheEntry entry;
+        entry.token = token; entry.country_handle = country_handle;
+        entry.family_handle = family_handle; entry.source_cell = source;
+        entry.target_cell = target_cell;
+        entry.maximum_population = maximum_population;
+        entry.route_cost = static_cast<int32_t>(running);
+        entry.travel_days = std::max(1, (entry.route_cost +
+            COLONIZATION_SPEED - 1) / COLONIZATION_SPEED);
+        entry.topology_generation = _trade_topology.topology_generation;
+        entry.country_generation = country_snapshot.generation;
+        entry.vision_hash = vision_hash; entry.route_hash = route_hash;
+        entry.dest_kit_identity = dest_kit_identity;
+        entry.source_stock_identity = source_stock_identity;
+        entry.route_begin = static_cast<uint32_t>(
+            _colonization_quote_route_cells.size());
+        entry.route_count = static_cast<uint32_t>(route.size());
+        _colonization_quote_route_cells.insert(
+            _colonization_quote_route_cells.end(), route.begin(), route.end());
+        _colonization_quote_route_costs.insert(
+            _colonization_quote_route_costs.end(), cumulative.begin(), cumulative.end());
+        const auto existing = _colonization_quote_index.find(token);
+        if (existing == _colonization_quote_index.end()) {
+            _colonization_quote_index[token] = static_cast<int32_t>(
+                _colonization_quote_cache.size());
+            _colonization_quote_cache.push_back(entry);
+        } else {
+            _colonization_quote_cache[existing->second] = entry;
+        }
+        candidates.push_back({family_handle, source,
+            maximum_population, entry.route_cost, entry.travel_days, token});
+    };
     for (const int32_t source : reached_sources) {
-        if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
-            continue;
+        if (source == target_cell) continue;
         ColonizationKitPlan source_preview;
         plan_colonization_kit(source, target_cell, 1, 1, false, source_preview);
         const uint64_t source_stock_identity =
             source_preview.source_stock_identity == 0
             ? 1 : source_preview.source_stock_identity;
+        // 不带家族的移民队：只搬当地无家族人口。家族筛选指定了具体家族时不出现。
+        if (family_filter == 0) {
+            const int64_t caravan = anonymous_dispatchable_in_cell(source);
+            if (caravan > 0)
+                emit_candidate(0, source, caravan, source_stock_identity);
+        }
+        if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
+            continue;
         for (int32_t p = _family_cell_offsets[source];
              p < _family_cell_offsets[source + 1]; ++p) {
             const int32_t family = _family_cell_indices[p];
             const uint64_t family_handle = families_store().handle_for_index(family);
-            if (family_handle == 0 || source == target_cell ||
+            if (family_handle == 0 ||
                 (family_filter != 0 && family_handle != family_filter) ||
                 !colonization_destination_family_allowed(family_handle,
                     target_cell)) continue;
             const int64_t maximum_population = family_dispatchable_population_in_cell(
                 family_handle, source);
             if (maximum_population <= 0) continue;
-            std::vector<int32_t> route;
-            std::vector<int32_t> cumulative;
-            int32_t cursor = source;
-            int64_t running = 0;
-            route.push_back(cursor); cumulative.push_back(0);
-            uint64_t route_hash = 1469598103934665603ULL;
-            route_hash = trace_hash_mix(route_hash, static_cast<uint32_t>(cursor));
-            route_hash = trace_hash_mix(route_hash, 0);
-            while (cursor != target_cell) {
-                if (_colonization_parent_stamp[cursor] != stamp) {
-                    route.clear(); break;
-                }
-                const int32_t from = cursor;
-                cursor = _colonization_parent[cursor];
-                const size_t before = route.size();
-                if (!append_colonization_route_step(
-                        from, cursor, cap, _colonization_distance[from],
-                        _colonization_distance[cursor], route, cumulative, running)) {
-                    route.clear();
-                    break;
-                }
-                for (size_t i = before; i < route.size(); ++i) {
-                    route_hash = trace_hash_mix(route_hash,
-                        static_cast<uint32_t>(route[i]));
-                    route_hash = trace_hash_mix(route_hash,
-                        static_cast<uint32_t>(cumulative[i]));
-                }
-            }
-            if (route.empty()) continue;
-            uint64_t token = 1469598103934665603ULL;
-            for (const uint64_t value : {country_handle, family_handle,
-                    static_cast<uint64_t>(static_cast<uint32_t>(source)),
-                    static_cast<uint64_t>(static_cast<uint32_t>(target_cell)),
-                    _trade_topology.topology_generation, country_snapshot.generation,
-                    vision_hash, route_hash, dest_kit_identity,
-                    source_stock_identity})
-                token = trace_hash_mix(token, value);
-            token &= 0x7fffffffffffffffULL;
-            if (token == 0) token = 1;
-            if (_colonization_quote_cache.size() >= COLONIZATION_QUOTE_CACHE_LIMIT &&
-                !has_pending_family_expedition_player_command()) {
-                _colonization_quote_cache.clear();
-                _colonization_quote_index.clear();
-                _colonization_quote_route_cells.clear();
-                _colonization_quote_route_costs.clear();
-            }
-            ColonizationQuoteCacheEntry entry;
-            entry.token = token; entry.country_handle = country_handle;
-            entry.family_handle = family_handle; entry.source_cell = source;
-            entry.target_cell = target_cell;
-            entry.maximum_population = maximum_population;
-            entry.route_cost = static_cast<int32_t>(running);
-            entry.travel_days = std::max(1, (entry.route_cost +
-                COLONIZATION_SPEED - 1) / COLONIZATION_SPEED);
-            entry.topology_generation = _trade_topology.topology_generation;
-            entry.country_generation = country_snapshot.generation;
-            entry.vision_hash = vision_hash; entry.route_hash = route_hash;
-            entry.dest_kit_identity = dest_kit_identity;
-            entry.source_stock_identity = source_stock_identity;
-            entry.route_begin = static_cast<uint32_t>(
-                _colonization_quote_route_cells.size());
-            entry.route_count = static_cast<uint32_t>(route.size());
-            _colonization_quote_route_cells.insert(
-                _colonization_quote_route_cells.end(), route.begin(), route.end());
-            _colonization_quote_route_costs.insert(
-                _colonization_quote_route_costs.end(), cumulative.begin(), cumulative.end());
-            const auto existing = _colonization_quote_index.find(token);
-            if (existing == _colonization_quote_index.end()) {
-                _colonization_quote_index[token] = static_cast<int32_t>(
-                    _colonization_quote_cache.size());
-                _colonization_quote_cache.push_back(entry);
-            } else {
-                _colonization_quote_cache[existing->second] = entry;
-            }
-            candidates.push_back({family_handle, source,
-                maximum_population, entry.route_cost, entry.travel_days, token});
+            emit_candidate(family_handle, source, maximum_population,
+                source_stock_identity);
         }
     }
     std::sort(candidates.begin(), candidates.end(), [](const Candidate &a,
@@ -283,7 +299,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     });
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(candidates.size(), offset + limit);
-    PackedInt64Array families, maximums, tokens, anonymous_maximums;
+    PackedInt64Array families, maximums, tokens, caravan_populations;
     PackedInt32Array sources, costs, days, surname_disambiguators;
     PackedStringArray surnames;
     for (int32_t i = offset; i < end; ++i) {
@@ -301,9 +317,9 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         }
         sources.push_back(candidates[i].source);
         maximums.push_back(candidates[i].maximum);
-        anonymous_maximums.push_back(colonization_party_anonymous(
-            candidates[i].family, candidates[i].source,
-            candidates[i].maximum));
+        // 移民队行额外给出源地全部无家族人口，供面板写「当地平民 X · 可移 Y」。
+        caravan_populations.push_back(candidates[i].family == 0
+            ? anonymous_population_in_cell(candidates[i].source) : 0);
         costs.push_back(candidates[i].cost); days.push_back(candidates[i].days);
         tokens.push_back(static_cast<int64_t>(candidates[i].token));
     }
@@ -315,7 +331,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     out["surnames"] = surnames;
     out["surname_disambiguators"] = surname_disambiguators;
     out["maximum_populations"] = maximums; out["route_costs"] = costs;
-    out["anonymous_maximums"] = anonymous_maximums;
+    out["caravan_populations"] = caravan_populations;
     out["travel_days"] = days; out["quote_tokens"] = tokens;
     out["offset"] = offset; out["limit"] = limit;
     out["total"] = static_cast<int32_t>(candidates.size());
@@ -364,9 +380,8 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
         country_reads().country_handle_for_cell(quote.target_cell) == 0
         ? String("colonize") : String("relocate");
     out["maximum_population"] = quote.maximum_population;
-    out["anonymous_maximum"] = colonization_party_anonymous(
-        quote.family_handle, quote.source_cell, quote.maximum_population);
-    out["anonymous_per_family"] = COLONIZATION_ANONYMOUS_PER_FAMILY;
+    // family_handle 0 means the party carries the cell's unaffiliated people.
+    out["caravan"] = quote.family_handle == 0;
     out["route_cost"] = quote.route_cost; out["travel_days"] = quote.travel_days;
     out["route_cells"] = route; out["cumulative_costs"] = cumulative;
     std::vector<int64_t> profession_totals(_profession_ids.size(), 0);

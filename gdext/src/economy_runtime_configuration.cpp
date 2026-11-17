@@ -1655,7 +1655,9 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     if (expedition_player) {
         if (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION) {
             int32_t family = -1;
-            if (!families_store().valid_handle(cmd.target_handle, family) ||
+            // target_handle 0 是合法输入：无家族移民队。
+            if ((cmd.target_handle != 0 &&
+                 !families_store().valid_handle(cmd.target_handle, family)) ||
                 cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() ||
                 cmd.i32_1 < 0 || cmd.i32_1 >= _cell_count.get() ||
                 cmd.i64_0 < 1) {
