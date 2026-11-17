@@ -536,7 +536,10 @@ static func _debug_render_flag(key: String) -> int:
 	if not _debug_render_flags_loaded:
 		_debug_render_flags_loaded = true
 		var cfg := ConfigFile.new()
-		if cfg.load("user://pk_debug.cfg") == OK:
+		# 只有文件里真写了 `[render]` 才去枚举它的键：ConfigFile 对不存在的段会直接
+		# 抛 ERROR（get_section_keys），而手机上多数 pk_debug.cfg 根本没这一段，
+		# 每次启动都刷一条假警报，掩盖真正的渲染开关问题。
+		if cfg.load("user://pk_debug.cfg") == OK and cfg.has_section("render"):
 			for name in cfg.get_section_keys("render"):
 				# 手写配置的取值形态不固定：0/1、true/false、off/on 都接受。
 				var raw := String(str(cfg.get_value("render", name))).strip_edges().to_lower()
