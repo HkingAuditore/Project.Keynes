@@ -8,6 +8,7 @@ const FiscalBudgetPageScript = preload("res://scripts/ui/components/fiscal_budge
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
 const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
+const TouchValueFieldScript := preload("res://scripts/ui/components/touch_value_field.gd")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 const TradeRowScene := preload("res://scenes/ui/economy_trade_row.tscn")
 
@@ -304,7 +305,7 @@ func _apply_model(now_msec: int) -> void:
 		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
 		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income", true)
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		("本批未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
+		("未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
 		 else "昨日申请 · 预留 %s" % _money(reserved)),
 		UITokens.ACCENT, "", "tax.default")
 	_country_label.text = String(_model.get("country_name", ""))
@@ -345,7 +346,7 @@ func _on_procurement_committed(treasury_share_bp: int, research_share_bp := -1,
 		treasury_share_bp, research_share, era_share_bp, colonization_share_bp)
 	var ok := bool(result.get("ok", false))
 	if ok:
-		_set_status("预算份额已提交 · 次日生效")
+		_set_status("预算份额已提交")
 	else:
 		var message := String(result.get("message", result.get("reason", ""))).strip_edges()
 		if NationalProcurementSliderScript.is_unsupported(result):
@@ -384,9 +385,9 @@ func _on_military_budget_committed(total_bp: int, wage_bp: int, upkeep_bp: int,
 				int(total_bp), wage_bp, upkeep_bp, procurement_bp)
 			_fiscal_page.refresh_live(_model)
 		if wage_bp >= 0 or upkeep_bp >= 0 or procurement_bp >= 0:
-			_set_status("军事预算与通道份额已提交 · 次日生效")
+			_set_status("军事预算与通道份额已提交")
 		else:
-			_set_status("军事预算已提交 · 次日生效")
+			_set_status("军事预算已提交")
 		return
 	var message := String(result.get("message", result.get("reason", ""))).strip_edges()
 	var code := String(result.get("code", ""))
@@ -716,7 +717,7 @@ func _apply_default_summary_cards() -> void:
 		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
 		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income", true)
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		("本批未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
+		("未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
 		 else "昨日申请 · 预留 %s" % _money(reserved)),
 		UITokens.ACCENT, "", "tax.default")
 
@@ -747,6 +748,35 @@ func _kind_page(kind: String) -> String:
 
 func _default_title() -> String:
 	return "默认物资税率" if _page == "consumption" else "默认税率"
+
+
+## 触摸键盘的标题：卡片名 + 可见的税种名。单一税种时那一列本来就不渲染，
+## 标题只留卡片名，免得写成「所得税 · 所得税」。
+func _pad_title(label: String, kind_label: Label) -> String:
+	if kind_label != null and kind_label.visible and not kind_label.text.is_empty():
+		return "%s · %s" % [label, kind_label.text]
+	return label
+
+
+## 当前这条税率行用的口径（给触摸键盘定位选中态）。
+func _pad_mode(key: String, kind: String) -> int:
+	var card: Dictionary = _rows.get(key, {})
+	if card.is_empty():
+		return TAX_MODE_PERCENT_BP
+	return _card_mode(card, kind)
+
+
+## 只改口径、不提交：下拉随之同步，SpinBox 的量程/单位换到新口径并归零。
+## 真正的税率由调用方随后一条命令提交。
+func _apply_tax_mode(card: Dictionary, kind: String, spin: SpinBox, mode: int) -> void:
+	(card.assessment_modes as Dictionary)[kind] = mode
+	var button := (card.modes as Dictionary).get(kind) as OptionButton
+	if button != null:
+		var index := button.get_item_index(mode)
+		if index >= 0 and button.selected != index:
+			button.select(index)
+	_configure_spin_for_mode(spin, mode)
+	_set_spin_basis_points(spin, 0, mode)
 
 
 func _item_ids(policy: Dictionary) -> PackedStringArray:
@@ -881,9 +911,6 @@ func _ensure_card(page: String, item_id: String, label: String,
 	name_label.text = label
 	name_label.add_theme_font_override("font", UITokens.font_with_weight(600))
 	var sub_label := panel.get_node("Body/Sub") as Label
-	if is_default:
-		sub_label.text = "未单独设置的项目适用"
-		sub_label.visible = true
 	var spins := {}
 	var modes := {}
 	var resets := {}
@@ -918,6 +945,18 @@ func _ensure_card(page: String, item_id: String, label: String,
 			_on_rate_focus_exited.bind(key, kind))
 		spin.value_changed.connect(_on_rate_preview.bind(key, kind))
 		spins[kind] = spin
+		# 触摸档：数字那一块盖一层命中区，点开游戏内数字键盘；桌面档不挂，行为逐像素不变。
+		if TouchUI.is_touch():
+			var field := TouchValueFieldScript.new()
+			field.attach(spin, {
+				"title": _pad_title(label, kind_label),
+				"mode": func() -> int: return _pad_mode(key, kind),
+				"hint": func() -> String:
+					return "国家默认 %s" % TaxLaneEditor._format_value(
+						_default_rate(kind), _default_mode(kind)),
+				"commit": func(text: String, mode: int) -> void:
+					_on_rate_confirmed(text, key, kind, mode),
+			})
 		var reset := kind_row.get_node("Reset") as Button
 		IconButton.apply(reset, &"action.reset", IconButton.SMALL, "重置为默认税率")
 		reset.pressed.connect(_on_reset_pressed.bind(key, kind))
@@ -1075,7 +1114,7 @@ func _refresh_treasury_insights() -> void:
 	if gap > 0:
 		items.append({
 			"id": "subsidy_gap",
-			"text": ("补贴申请已记账 %s；本批未预留，后续按国库可用预算兑现。" % _money(gap)
+			"text": ("补贴申请已记账 %s；本次结算未预留，后续按国库可用预算兑现。" % _money(gap)
 				if reserved <= 0 else "补贴缺口 %s，当前预留不足。" % _money(gap)),
 			"accent": UITokens.RISK,
 			"icon": "tax.income",
@@ -1124,10 +1163,15 @@ func _animate_cards_in() -> void:
 	UIAnimation.crossfade(_scroll, UITokens.ANIM_FAST)
 
 
-func _on_rate_confirmed(text: String, key: String, kind: String) -> void:
+func _on_rate_confirmed(text: String, key: String, kind: String,
+		mode_override: int = -1) -> void:
 	var card: Dictionary = _rows.get(key, {})
 	if not card.is_empty() and (card.spins as Dictionary).has(kind):
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
+		if mode_override >= 0 and mode_override != _card_mode(card, kind):
+			# 玩家在键盘上换了口径：先把下拉与解析口径对齐，再按新量纲解析，
+			# 最后只落一条命令 —— 不必先发一条「归零」再发真正的税率。
+			_apply_tax_mode(card, kind, spin, mode_override)
 		var mode := _card_mode(card, kind)
 		var fallback_value := TaxLaneEditor.currency_to_absolute_amount(float(spin.value)) \
 			if mode == TAX_MODE_ABSOLUTE else TaxLaneEditor.percent_to_basis_points(float(spin.value))
@@ -1523,7 +1567,7 @@ func _apply_filter() -> void:
 		if control.visible:
 			visible_count += 1
 	if visible_count == 0 and needle.is_empty():
-		_empty_label.text = "当前科技尚未解锁相关项目"
+		_empty_label.text = "当前科技未解锁任何项目"
 		_empty_label.visible = true
 	else:
 		_empty_label.visible = false

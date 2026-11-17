@@ -177,11 +177,11 @@ func push_policy(effective_day: int, sequence: int) -> Dictionary:
 	if _economy == null or _handle == 0 \
 			or not _economy.has_method("set_country_procurement_policy"):
 		return _result(true, "policy_stored_runtime_pending",
-			"国家购买预算已记录，等待经济运行时接口就绪。")
+			"国家购买预算已记录。")
 	var result: Dictionary = _economy.set_country_procurement_policy(_handle, true,
 		_treasury_share_bp, _research_share_bp, effective_day, sequence,
 		_era_share_bp, _colonization_share_bp)
-	return _normalized(result, "国家购买预算已更新，将在下一个经济周期生效。")
+	return _normalized(result, "国家购买预算已更新。")
 
 
 ## Re-pushes policy and (when purchasing) the era target. Used at session start
@@ -208,8 +208,7 @@ func start(effective_day: int, sequence: int) -> Dictionary:
 		STATUS_PURCHASING, STATUS_PAUSED, STATUS_COMPLETING:
 			return _result(false, "era_advance_in_progress", "时代晋升已在进行中。")
 		STATUS_LOCKED:
-			return _result(false, "era_advance_conditions_unmet",
-				CatalogScript.CONDITIONS_HELP_TEXT)
+			return _result(false, "era_advance_conditions_unmet", "晋升条件未满足。")
 	var current := int(model.current_era_index)
 	var target := current + 1
 	_target_era = target

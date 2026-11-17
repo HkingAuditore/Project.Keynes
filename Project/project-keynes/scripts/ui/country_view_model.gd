@@ -1229,7 +1229,7 @@ static func procurement_model(economy_facade, country_handle: int) -> Dictionary
 static func present_procurement(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or (snapshot.has("ok") and not bool(snapshot.get("ok", false))):
 		return {"available": false,
-			"reason": String(snapshot.get("reason", "国家购买快照暂不可用"))}
+			"reason": String(snapshot.get("reason", "国家购买数据暂不可用"))}
 	var out := {"available": true}
 	for key in ["policy_enabled", "era_active"]:
 		out[key] = bool(snapshot.get(key, false))
@@ -1252,7 +1252,7 @@ func _treasury_model(facade, country_handle: int) -> Dictionary:
 static func present_treasury(snapshot: Dictionary) -> Dictionary:
 	if not bool(snapshot.get("ok", false)):
 		return _unavailable_treasury_static(
-			String(snapshot.get("reason", "国家国库快照暂不可用")))
+			String(snapshot.get("reason", "国库数据暂不可用")))
 	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
 	var quantities: PackedInt64Array = snapshot.get("quantities", PackedInt64Array())
 	if good_ids.size() != quantities.size():

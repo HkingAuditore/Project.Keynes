@@ -441,7 +441,7 @@ func _request_promotion(ideology_id: int) -> void:
 	if _promotion_layer == null or ideology_id < 0:
 		return
 	_pending_promotion_id = ideology_id
-	_promotion_copy.text = "将「%s」晋升为民族精神？" \
+	_promotion_copy.text = "将「%s」晋升为民族精神？\n现有国策槽位将转为民族精神，此操作不可撤销。" \
 		% _display_name(_metadata.get(ideology_id, {}), ideology_id)
 	_promotion_layer.visible = true
 	_promotion_confirm.grab_focus()
@@ -500,9 +500,7 @@ func _on_ideology_draw_state_changed(phase: String, detail: Dictionary) -> void:
 
 
 func _show_result(result: Dictionary) -> void:
-	if bool(result.get("ok", false)):
-		_flash_hint("明日生效")
-	else:
+	if not bool(result.get("ok", false)):
 		_flash_hint(CountryViewModel.ideology_player_reason(String(
 			result.get("reason", result.get("message", "理念命令被拒绝。")))))
 		if _compact:
@@ -778,8 +776,7 @@ func _support_summary(live: Dictionary, direction: int) -> String:
 	var support: Dictionary = rows[direction]
 	if not bool(support.get("available", false)):
 		return "%s支持条件待结算" % action
-	var result := "已满足" if bool(support.get("allowed", false)) else "未满足"
-	var line := "%s支持条件%s · 评分 %s / 门槛 %s" % [action, result,
+	var line := "%s支持条件 · 评分 %s / 门槛 %s" % [action,
 		_q16_signed(int(support.get("support_q16", 0))),
 		_q16_signed(int(support.get("threshold_q16", 0)))]
 	if int(support.get("blocking_class", -1)) >= 0:

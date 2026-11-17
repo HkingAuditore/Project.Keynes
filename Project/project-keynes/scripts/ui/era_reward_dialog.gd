@@ -142,7 +142,7 @@ func _update_alerts(alerts: Array) -> void:
 	var clear_icon := clear_chip.get_node("Icon") as IconBadge
 	if clear_icon.icon_key != &"control.checkbox_checked":
 		clear_icon.set_semantic(&"control.checkbox_checked")
-	clear_chip.tooltip_text = "目前没有达到提示阈值的突出问题。"
+	clear_chip.tooltip_text = ""
 	clear_chip.visible = visible_alerts.is_empty()
 	clear_chip.modulate.a = 1.0
 	if not added.is_empty():

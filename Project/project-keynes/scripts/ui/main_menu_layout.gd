@@ -84,6 +84,12 @@ static func _apply_responsive_layout(host) -> void:
 		host._right_column.custom_minimum_size.x = 0.0 if compact_spread else avail_w * right_ratio
 	if host._settings_spread != null:
 		host._settings_spread.vertical = compact_spread
+	# 大缩放档（125%/150%/200%）把逻辑画布压到 640/480 高，设置页的 ScrollContainer
+	# 会被挤到接近 0，表单整块不可见（实测 200% 只剩标题和按钮）。给一个最低高度兜底：
+	# 宁可让 Column 溢出到页面外由外层裁切，也不能让玩家看不到选项。
+	var settings_scroll := host.get_node_or_null("%SettingsScroll") as ScrollContainer
+	if settings_scroll != null:
+		settings_scroll.custom_minimum_size.y = 0.0 if compact_spread else 220.0
 
 	var slip_widths: Array[float] = [282.0, 270.0, 260.0, 250.0]
 	var slip_heights := PackedFloat32Array([44.0, 42.0, 42.0, 42.0]) if short_h else PackedFloat32Array([52.0, 48.0, 48.0, 48.0])

@@ -49,6 +49,11 @@ var _clock_speed_multiplier: float = 1.0
 # 质量：编译期 tier 卡上限（低端机整段代码不编进去），运行时 _fog_quality 在上限内再降。
 var _mobile_quality_tier_define: String = ""
 var _fog_quality: int = 3
+## [fog-half-res 2026-11-17] 迷雾画到 1/2 分辨率的 SubViewport 再上采样。
+## 迷雾是覆盖全屏的低频云海：半分辨率的画质损失几乎看不出，填充成本降到 1/4。
+var _half_res := false
+var _sub_viewport: SubViewport = null
+var _blit_sprite: Sprite2D = null
 ## 玩家画质档（0..2）。档位映射要用到它，且 set_mobile_quality_tier 晚于
 ## set_visual_quality 到达时必须能重算，所以单独存一份。
 var _visual_quality: int = 0
@@ -72,6 +77,7 @@ func _ready() -> void:
 	# 只在"还没人推过档"（仍是初值 3）时兜底，避免覆盖先于 _ready 到来的设置。
 	if _fog_runtime_mapping_graded() and _fog_quality == 3:
 		_fog_quality = 0
+	_half_res = DCFeatureFlags.fog_half_res_enabled()
 	_ensure_nodes()
 	set_process(true)
 
@@ -82,6 +88,36 @@ func _process(delta: float) -> void:
 	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
 	_world_time += delta * visual_time_scale
 	_shader_mat.set_shader_parameter("world_time", _world_time)
+	if _half_res:
+		_sync_half_res_target()
+
+
+## 半分辨率目标同步：尺寸取主视口的一半，canvas_transform 取主画布变换的 0.5 倍。
+##
+## 迷雾四边形本来就是"顶点 = 世界坐标"，靠画布变换跟相机走。所以只要让子视口的
+## canvas_transform 等于主画布的缩放版，子视口里画出来的就是同一张图，只是采样密度
+## 减半。着色器里的 FRAGCOORD / SCREEN_PIXEL_SIZE / fwidth 都会按子视口尺寸走，
+## 归一化坐标不变，屏幕空间假视差因此保持一致。
+func _sync_half_res_target() -> void:
+	if _sub_viewport == null or _blit_sprite == null:
+		return
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var vp_size := vp.get_visible_rect().size
+	var half := Vector2i(maxi(1, int(vp_size.x * 0.5)), maxi(1, int(vp_size.y * 0.5)))
+	if _sub_viewport.size != half:
+		_sub_viewport.size = half
+	var ct := vp.canvas_transform
+	_sub_viewport.canvas_transform = Transform2D(ct.x * 0.5, ct.y * 0.5, ct.origin * 0.5)
+	# 上采样 sprite 直接铺满屏幕：画布变换的逆把局部坐标压回屏幕坐标，
+	# 再乘上"屏幕尺寸 / 纹理尺寸"的缩放（半分辨率时就是 2×）。
+	var tex_size := _sub_viewport.get_texture().get_size()
+	if tex_size.x <= 0.0 or tex_size.y <= 0.0:
+		return
+	var upscale := Vector2(vp_size.x / tex_size.x, vp_size.y / tex_size.y)
+	_blit_sprite.transform = ct.affine_inverse() \
+		* Transform2D(Vector2(upscale.x, 0.0), Vector2(0.0, upscale.y), Vector2.ZERO)
 
 
 func _ensure_nodes() -> void:
@@ -90,7 +126,11 @@ func _ensure_nodes() -> void:
 	_mesh_inst = MeshInstance2D.new()
 	_mesh_inst.name = "FogQuad"
 	_mesh_inst.texture = DataOverlayBaker.get_empty_texture()
-	add_child(_mesh_inst)
+	# 半分辨率时四边形挂在子视口里，否则直接挂在本层。
+	if _half_res:
+		_build_half_res_target()
+	else:
+		add_child(_mesh_inst)
 
 	var sh: Shader = _load_shader()
 	if sh == null:
@@ -106,10 +146,42 @@ func _ensure_nodes() -> void:
 	_shader_mat.set_shader_parameter("fog_enabled", true)
 	_shader_mat.set_shader_parameter("unexplored_color", UNEXPLORED_COLOR)
 	_mesh_inst.material = _shader_mat
+	if _half_res:
+		_build_half_res_target()
 	_has_valid_shader = true
 	_push_quality()
 	_push_tod()
 	_push_edge_transition_data()
+
+
+## 半分辨率管线：SubViewport(1/2) 画迷雾 → 全屏 TextureRect 上采样。
+func _build_half_res_target() -> void:
+	if _sub_viewport != null:
+		return
+	_sub_viewport = SubViewport.new()
+	_sub_viewport.name = "FogHalfRes"
+	_sub_viewport.transparent_bg = true
+	_sub_viewport.disable_3d = true
+	_sub_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_sub_viewport.gui_disable_input = true
+	_sub_viewport.size = Vector2i(2, 2)
+	add_child(_sub_viewport)
+	if _mesh_inst.get_parent() == null:
+		_sub_viewport.add_child(_mesh_inst)
+	# 上采样用 Sprite2D 而不是 TextureRect：Control 的 transform 不是可写属性
+	# （只能改 position/scale/size，且受 anchors 约束），而 Sprite2D 直接吃
+	# canvas 变换的逆，能精确铺满屏幕。
+	# 它留在主画布（canvas 0）里才能参与 z_index 排序：迷雾要在世界之上、UI 之下；
+	# 换 CanvasLayer 会跳出画布 0，反而盖住 HUD。
+	_blit_sprite = Sprite2D.new()
+	_blit_sprite.name = "FogBlit"
+	_blit_sprite.centered = false
+	_blit_sprite.texture = _sub_viewport.get_texture()
+	_blit_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_blit_sprite.top_level = true
+	_blit_sprite.z_index = 12
+	_blit_sprite.visible = false
+	add_child(_blit_sprite)
 
 
 ## 编译期质量档：mobile/web 共用 MOBILE_QUALITY_*；桌面不 prepend。
@@ -497,6 +569,8 @@ func _update_visibility() -> void:
 	if was_visible != visible:
 		print("[fog] visible=%s enabled=%s shader_ok=%s atlas_ok=%s bounds=%s" % [
 			visible, _enabled, _has_valid_shader, _has_atlas, _bounds.size])
+	if _blit_sprite != null:
+		_blit_sprite.visible = visible
 
 
 func _build_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:

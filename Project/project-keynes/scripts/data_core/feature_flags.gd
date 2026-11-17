@@ -483,10 +483,52 @@ static func water_flowmap_enabled() -> bool:
 ## 为什么要留覆盖口：这两个开关的收益和画质代价都得在真机上量，而真机迭代一次要
 ## 打 20 分钟的包。用 pk_debug.cfg 就能在同一份 APK 里逐项 A/B。
 static func _heavy_visual_enabled(key: String) -> bool:
+	return _mobile_default_flag(key, false)
+
+
+## 移动端默认启用 / 禁用的通用开关。key 对应 pk_debug.cfg `[render]` 段里的键名。
+##   mobile_default = true  → 移动端默认开、桌面默认关
+##   mobile_default = false → 移动端默认关、桌面默认开
+static func _mobile_default_flag(key: String, mobile_default: bool) -> bool:
 	var override := _debug_render_flag(key)
 	if override >= 0:
 		return override == 1
-	return not OS.has_feature("mobile")
+	if OS.has_feature("mobile"):
+		return mobile_default
+	return not mobile_default
+
+
+## 移动端点缀/植被密度是否整体降一档（着色档不变）。key: `density_trim`
+##
+## [mobile-density-trim 2026-11-17] 作者定夺：数量可以少一半，但 HIGH 的着色与光照
+## 保留。所以只在"每格上限 / 实例上限 / 密度倍率"三处把档位夹到 1，
+## `veg_shade_quality` 与 `visual_quality` 仍然拿真实的 2。
+static func density_trim_enabled() -> bool:
+	return _mobile_default_flag("density_trim", true)
+
+
+## 迷雾是否走半分辨率（画到 1/2 SubViewport 再上采样）。key: `fog_half_res`
+##
+## [fog-half-res 2026-11-17] 迷雾是覆盖全屏的低频云海，半分辨率的画质损失几乎看不出，
+## 但填充成本直接降到 1/4。移动端默认开。
+static func fog_half_res_enabled() -> bool:
+	return _mobile_default_flag("fog_half_res", true)
+
+
+## 触摸端是否让 2D 场景在逻辑画布（1600×960）上着色再上采样，而不是按物理像素着色。
+## key: `render_viewport`
+##
+## [render-scale 2026-11-17] 这是"渲染分辨率降采样"的实现方式：`content_scale_mode`
+## 从 CANVAS_ITEMS 换成 VIEWPORT，于是 2670×1200 的屏幕只着色 1600×960（−52% 像素），
+## 再由引擎上采样。
+##
+## ⚠ 它和「界面缩放」是耦合的：VIEWPORT 模式下 `content_scale_factor` 是**渲染目标**
+## 倍率，逻辑画布 = 渲染尺寸。所以只有界面缩放 = 100%（factor==1）时才启用，
+## 否则 `mobile_ui_scaling._apply()` 会自动退回 CANVAS_ITEMS —— 此时这个开关是空操作。
+## 真机默认值因此设为 false（作者的机子跑 80%，开了也不会生效，开了反而容易误判）。
+## 要用：设置里把界面缩放调到 100%，再写 `[render] render_viewport=1`。
+static func render_viewport_enabled() -> bool:
+	return _mobile_default_flag("render_viewport", false)
 
 
 ## 读 pk_debug.cfg 的 `[render]` 段：返回 -1（未设置）/ 0 / 1。进程内缓存。
@@ -495,11 +537,10 @@ static func _debug_render_flag(key: String) -> int:
 		_debug_render_flags_loaded = true
 		var cfg := ConfigFile.new()
 		if cfg.load("user://pk_debug.cfg") == OK:
-			for name in ["cloud_shadow", "flowmap"]:
-				if cfg.has_section_key("render", name):
-					# 手写配置的取值形态不固定：0/1、true/false、off/on 都接受。
-					var raw := String(str(cfg.get_value("render", name))).strip_edges().to_lower()
-					_debug_render_flags[name] = 0 if raw in ["0", "false", "off", "no"] else 1
+			for name in cfg.get_section_keys("render"):
+				# 手写配置的取值形态不固定：0/1、true/false、off/on 都接受。
+				var raw := String(str(cfg.get_value("render", name))).strip_edges().to_lower()
+				_debug_render_flags[name] = 0 if raw in ["0", "false", "off", "no"] else 1
 	return int(_debug_render_flags.get(key, -1))
 
 

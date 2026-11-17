@@ -110,15 +110,19 @@ static func modifier_effect_subject(term: Dictionary) -> String:
 	return subject
 
 
-static func modifier_delta(term: Dictionary) -> String:
-	var stat := String(term.get("stat", ""))
+## 单项修饰的效果增量（+0.07 表示 +7%），供同主语多项相加后再统一格式化。
+static func modifier_delta_fraction(term: Dictionary) -> float:
 	var operation := int(term.get("operation", 0))
 	var value := float(term.get("value", 0.0))
-	var delta := value
 	match operation:
-		1: delta = -value
-		2: delta = value - 1.0
-		3: delta = 1.0 / value - 1.0 if not is_zero_approx(value) else 0.0
+		1: return -value
+		2: return value - 1.0
+		3: return 1.0 / value - 1.0 if not is_zero_approx(value) else 0.0
+	return value
+
+
+## 把已求和的增量格式化为玩家文案。`_bp` 类统计的量纲是 1/100，单独折算。
+static func modifier_delta_text(delta: float, stat: String) -> String:
 	var percent := delta * 100.0
 	# 基准点（_bp）类统计：值的单位是 0.01%，直接乘 100 会变成 +20000% 这种胡话。
 	if stat.ends_with("_bp"):
@@ -128,6 +132,10 @@ static func modifier_delta(term: Dictionary) -> String:
 		return "%s%s%%" % ["+" if percent >= 0.0 else "-", points]
 	var amount := ("%.1f" % absf(percent)).rstrip("0").rstrip(".")
 	return "%s%s%%" % ["+" if percent >= 0.0 else "-", amount]
+
+
+static func modifier_delta(term: Dictionary) -> String:
+	return modifier_delta_text(modifier_delta_fraction(term), String(term.get("stat", "")))
 
 
 static func audit_report(payload: Dictionary, stats: Dictionary) -> String:

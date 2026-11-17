@@ -177,6 +177,16 @@ func _select_report(id: int, ceremonial: bool = false) -> void:
 	if not chronicle.is_empty():
 		ViewModel.append_chronicle_chapter(model, chronicle)
 	_ui.show_annual_report(model, ceremonial)
+	# 开卷之后 UI 必须真的可见。present() 是同步的，它中途任何一步抛错
+	# （GDScript 的 SCRIPT ERROR 不冒泡，只让整个函数返回）都会把 visible 停在 false，
+	# 而时钟已经在 _show 开头被 _pause_clock() 停下。此时 `_on_closed` 永远不会来，
+	# 玩家看到的就是"跨年那一刻日历永久停住"——既没有报告可看，也没有关闭按钮。
+	# 宁可这次不展示报告，也要把时钟放回去。
+	if _ui.has_method("is_annual_report_open") and not bool(_ui.is_annual_report_open()):
+		push_error("[annual] report workspace failed to open for id=%d; restoring clock" % id)
+		_open = false
+		_restore_pending = true
+		_restore_clock()
 
 func _load_history(offset: int) -> void:
 	_history_offset = maxi(0, offset)

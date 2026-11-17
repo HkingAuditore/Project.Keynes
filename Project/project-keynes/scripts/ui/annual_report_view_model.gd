@@ -243,7 +243,7 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 	var reward_text: String = points_text(int(report.get("reward_q16", 0)))
 	_attach_figures(chapters, totals, before, opening, avg_sat, avg_survival, new_tech, gdp, population, births, deaths, score_value, String(report.get("grade", "—")), reward_text)
 	_attach_visuals(chapters, report, tiers, old_tiers, dimensions, old_dimensions, industry_rows, resource_rows, parts, score_value)
-	_attach_notes(chapters, totals, has_previous)
+	_attach_notes(chapters, totals)
 
 	var title: String = "第 %d 年 · 年度报告" % year
 	var full_lines: Array[String] = [String(report.get("country_name", "本国")), title, "文明阶段：" + ERA_NAMES[era], ""]
@@ -392,14 +392,10 @@ static func _attach_visuals(chapters: Array[Dictionary], report: Dictionary, tie
 
 # ── 边注（短句，只在真正有话说时才出现） ────────────────────────────────────
 
-static func _attach_notes(chapters: Array[Dictionary], totals: Dictionary, has_previous: bool) -> void:
-	if not has_previous:
-		chapters[0].margin_notes.append("首年：以年初为期初基准，不列同比。")
-		chapters[1].margin_notes.append("首年：期初即基准，增减栏留空。")
-		chapters[2].margin_notes.append("首年：期初即基准，增减栏留空。")
+static func _attach_notes(chapters: Array[Dictionary], totals: Dictionary) -> void:
 	var revenue: float = float(totals.get("revenue", 0))
 	if revenue > 0.0:
-		chapters[1].margin_notes.append("工资实付占经营收入 %.1f%%，中间投入与维护合计 %.1f%%。" % [float(totals.get("wages", 0)) * 100.0 / revenue, (float(totals.get("input_cost", 0)) + float(totals.get("maintenance", 0))) * 100.0 / revenue])
+		chapters[1].margin_notes.append("工资占收入 %.1f%%，中间投入与维护 %.1f%%。" % [float(totals.get("wages", 0)) * 100.0 / revenue, (float(totals.get("input_cost", 0)) + float(totals.get("maintenance", 0))) * 100.0 / revenue])
 	var gdp: float = float(totals.get("gdp", 0))
 	if gdp > 0.0:
 		chapters[6].margin_notes.append("税收合计相当于增加值的 %.1f%%。" % [(float(totals.get("income_tax", 0)) + float(totals.get("consumption_tax", 0)) + float(totals.get("business_tax", 0)) + float(totals.get("import_tax", 0)) + float(totals.get("export_tax", 0))) * 100.0 / gdp])

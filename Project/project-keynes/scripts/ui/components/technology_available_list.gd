@@ -191,7 +191,7 @@ func _rebuild_if_needed() -> void:
 		_sections.append({"title": "可立即研究", "caption": "加入队列后按研究投入比例推进",
 			"groups": groups})
 	if not pending.is_empty():
-		_sections.append({"title": "待生效", "caption": "已完成研究，次日起生效",
+		_sections.append({"title": "待生效", "caption": "",
 			"groups": [{"domain": -1, "members": pending}]})
 	_relayout()
 

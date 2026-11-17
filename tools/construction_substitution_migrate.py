@@ -33,9 +33,13 @@ TOOLS = "tools"
 
 # Pool membership. Members of one pool are near enough in price that the
 # cheapest-effective-cost planner will not permanently ignore the others.
+# `primitive_lashing` deliberately admits raw_hide at roughly 3.4x the fibre
+# price: it is the only lashing material reachable from the starting
+# technologies, so it exists to stop stone-age construction from deadlocking,
+# not to compete with bast fibre once flax or reeds are researched.
 POOL_MEMBERS = {
     PRIMITIVE: ["turf_block", "reed_bundle", "adobe_brick", "logs", "raw_stone", "clay"],
-    LASHING: ["bast_fiber", "reed_bundle"],
+    LASHING: ["bast_fiber", "reed_bundle", "raw_hide"],
     CLASSICAL: ["lumber", "bricks", "raw_stone"],
     INDUSTRIAL: ["construction_components", "concrete", "bricks", "glass"],
     METAL: ["steel", "stainless_steel", "aluminum"],

@@ -22,6 +22,15 @@ Source sheets live in `source/`; rebuild with:
 python tools/ui/build_military_codex_icons.py
 ```
 
+**导入时不许缩小这张图集。** `AtlasTexture.region` 用的是贴图自身像素坐标，
+所以 `.import` 里的 `process/size_limit` 一旦大于 0，格距就从 256 变成
+`2048 × limit / 2048`，57 枚纸贴会整体错位：图标缩水、右边和下边还带进邻格的碎片。
+2026-11-17 这张图集被设成 `size_limit=1432`（运行时 1432×1432，格距 179），
+建筑行里的图标全部变成残片。现在固定 `process/size_limit=0`；
+`tests/ui/icon_catalog_audit_test.gd` 的 `_audit_atlas_import_limits()` 会从
+`.tres` 反查源头 PNG，禁止任何被 `AtlasTexture` 引用的贴图带导入缩放。
+要省显存请改 `compress/mode`，不要动尺寸。
+
 | semantic | cell (x, y, w, h) |
 | --- | --- |
 | `military.army.attack` | 0, 1536, 256, 256 |

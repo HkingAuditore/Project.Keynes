@@ -180,8 +180,29 @@ func _audit_retired_milestones(definitions: Array, eras: Array, domains: Array) 
 				leaked = true
 	_expect("detail relation rows never list an era milestone", not leaked)
 	var condition_items: Array = workspace._condition_items(5, workspace._presentation_states(states))
-	_expect("detail conditions no longer mention milestone gates",
-		not _items_contain(condition_items, "里程碑") and not _items_contain(condition_items, "时代门槛"))
+	_expect("detail conditions never leak a milestone token",
+		not _items_contain(condition_items, "里程碑"))
+	# 时代闸只放行下一时代：王国节点的详情必须点名要晋升到的**时代**，
+	# 不能把内部里程碑令牌（tech.*）暴露给玩家；石器节点不该出现这一行。
+	var writing := -1
+	var stone_node := -1
+	for index in range(definitions.size()):
+		var technology_id := String((definitions[index] as Dictionary).get("id", ""))
+		if technology_id == "tech.writing":
+			writing = index
+		elif technology_id == "tech.hunting":
+			stone_node = index
+	_expect("era-gate sample nodes resolve", writing >= 0 and stone_node >= 0)
+	if writing >= 0 and stone_node >= 0:
+		var era_locked_items: Array = workspace._condition_items(
+			writing, workspace._presentation_states(states))
+		_expect("kingdom detail names the era gate by era, never by milestone token",
+			_items_contain(era_locked_items, "时代门槛")
+			and _items_contain(era_locked_items, "农耕时代")
+			and not _items_contain(era_locked_items, "agrarian_society"))
+		_expect("stone detail carries no era gate",
+			not _items_contain(workspace._condition_items(
+				stone_node, workspace._presentation_states(states)), "时代门槛"))
 	# A legacy save may still queue a milestone: show it, removal only.
 	var queued := model.duplicate(true)
 	var queued_states: PackedInt32Array = (queued.research.technology_states as PackedInt32Array).duplicate()

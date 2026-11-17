@@ -217,7 +217,7 @@ func set_command_result(result: Dictionary) -> void:
 		_submitted_day = maxi(_submitted_day, _current_day())
 		_set_status("和约已递交，次日答复。", false)
 	else:
-		_set_status(String(result.get("message", "议和未递交：原因未返回，请稍后重试。")), true)
+		_set_status(String(result.get("message", "议和未递交，请稍后重试。")), true)
 	_refresh_now()
 
 

@@ -553,10 +553,10 @@ func _refresh_channel_note(note: Label, channel_id: String, share: int,
 	elif share <= 0:
 		text = "份额为 0，该通道暂停。"
 	elif overspend > 0:
-		text = "需求超过份额，已紧急超支 %s（高优先级不拦截）。" % amount_text(overspend)
+		text = "需求超过份额，已紧急超支 %s。" % amount_text(overspend)
 		colour = UITokens.RISK
 	elif deferred > 0 and channel_id == KIND_PROCUREMENT:
-		text = "配额用尽，尚有 %d 件待购（低优先级只截断，不透支）。" % deferred
+		text = "配额用尽，尚有 %d 件待购。" % deferred
 		colour = UITokens.DOSSIER_OXBLOOD
 	note.text = text
 	note.visible = not text.is_empty()

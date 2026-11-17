@@ -618,9 +618,11 @@ func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
 	title_row.add_child(opt_title)
 
 	var eligible := bool(opt_dict.get("eligible", true))
-	if not eligible:
+	# 选项本身已经显示为不可点；只有具体原因才值得占一行，「条件未满足」等于没说。
+	var ineligible_reason := String(opt_dict.get("ineligible_reason", "")).strip_edges()
+	if not eligible and not ineligible_reason.is_empty():
 		var reason_lbl := UIControlParts.label()
-		reason_lbl.text = "不可选：" + String(opt_dict.get("ineligible_reason", "条件未满足"))
+		reason_lbl.text = ineligible_reason
 		reason_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans"))
 		reason_lbl.add_theme_font_size_override("font_size", 13)
 		reason_lbl.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)

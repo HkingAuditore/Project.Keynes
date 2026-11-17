@@ -6,6 +6,7 @@ signal reset_requested(scope: String, kind: String, item_id: String)
 signal editing_finished()
 
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const TouchValueFieldScript = preload("res://scripts/ui/components/touch_value_field.gd")
 const COMMIT_DELAY_SEC := 0.18
 const TAX_RATE_MIN_BP := -100000
 const TAX_RATE_MAX_BP := 10000
@@ -31,6 +32,7 @@ var _clock: Control
 var _note: Label
 var _label: Label
 var _commit_timer: Timer
+var _touch_field: Control
 
 
 func _ready() -> void:
@@ -59,6 +61,27 @@ func _ready() -> void:
 	_spin.get_line_edit().focus_exited.connect(_on_focus_exited)
 	_spin.value_changed.connect(_on_value_changed)
 	_reset.pressed.connect(_on_reset_pressed)
+	# 触摸档：点这一格不再唤起系统输入法（它会在横屏下盖掉整屏），
+	# 改成打开游戏内数字键盘；提交仍走 _on_text_submitted 这条既有入口。
+	if TouchUI.is_touch():
+		_touch_field = TouchValueFieldScript.new()
+		_touch_field.attach(_spin, {
+			"title": func() -> String: return _label.text,
+			"hint": func() -> String:
+				var prefix := "国家默认" if String(_data.get("scope", "item")) == "default" \
+					else "此地默认"
+				return "%s %s" % [prefix, _format_value(
+					int(_data.get("default_rate", 0)),
+					int(_data.get("default_mode", TAX_MODE_PERCENT_BP)))],
+			# 口径随「确定」一起交回来：先对齐下拉与量程，再走既有的提交入口。
+			"mode": func() -> int: return _current_mode(),
+			"commit": func(text: String, mode: int) -> void:
+				if mode != _current_mode() and _mode_button != null:
+					_mode_button.select(mode)
+					_set_spin_value(0, mode)
+				_on_text_submitted(text)
+				editing_finished.emit(),
+		})
 	IconButton.apply(_reset, &"action.reset", IconButton.SMALL, "恢复继承税率")
 	_commit_timer = Timer.new()
 	_commit_timer.one_shot = true
@@ -278,7 +301,7 @@ func _refresh_note() -> void:
 	var effective_mode := int(_data.get("effective_mode", mode))
 	var prefix := "国家默认" if String(_data.get("scope", "item")) == "default" else "此地默认"
 	if _pending:
-		_note.text = "当前有效 %s · 待生效 %s · 次日生效" % [
+		_note.text = "当前有效 %s · 待生效 %s" % [
 			_format_value(effective, effective_mode),
 			_format_value(_pending_rate, _pending_mode)]
 		return

@@ -487,9 +487,9 @@ func _construction_military_row(host, facade, index: int, row: Dictionary,
 		if not cash_text.is_empty():
 			tooltip_lines.append("现金：%s（一次性）" % cash_text)
 		if not reason.is_empty():
-			tooltip_lines.append("卡点：%s" % reason)
+			tooltip_lines.append("受阻：%s" % reason)
 	else:
-		tooltip_lines.append("卡点：%s" % reason)
+		tooltip_lines.append("受阻：%s" % reason)
 	return {
 		"building_id": building_id,
 		"military_index": index,

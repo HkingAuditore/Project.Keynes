@@ -145,7 +145,7 @@ func set_expanded(expanded: bool) -> void:
 	_update_reveal()
 
 func _update_tooltip() -> void:
-	var lines := PackedStringArray([String(_model.get("era_name", "时代")), "点击打开时代晋升"])
+	var lines := PackedStringArray([String(_model.get("era_name", "时代"))])
 	match _advancement_status:
 		"ready":
 			lines.append("前提条件已满足，可以开始晋升")

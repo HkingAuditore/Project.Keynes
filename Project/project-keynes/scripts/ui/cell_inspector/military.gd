@@ -787,7 +787,7 @@ func _state_building_cost_tooltip(host, display_name: String, effect: String,
 		lines.append("工期：%s" % days_text)
 	var reason = String(cost.get("reason_text", ""))
 	if not reason.is_empty():
-		lines.append("卡点：%s" % reason)
+		lines.append("受阻：%s" % reason)
 	return "\n".join(lines)
 
 

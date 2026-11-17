@@ -277,5 +277,5 @@ static func _append_resource_generation_rows(host, rows: Array, snapshot: Dictio
 		var actual = int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
 		rows.append({"id": "natural_generation_%d" % cursor,
 			"name": "培育 · %s" % h._resource_display_name(stable_id),
-			"value": "%s · 待资源周期生效" % h._actual_daily_rate(actual, building_count, period_days),
+			"value": "%s · 待资源到位" % h._actual_daily_rate(actual, building_count, period_days),
 			"icon": "growth", "accent": UITokens.GOOD})

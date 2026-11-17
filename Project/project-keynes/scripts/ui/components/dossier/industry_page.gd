@@ -164,7 +164,7 @@ static func diagnose(row: Dictionary) -> PackedStringArray:
 		var meta: Dictionary = EconomyDossierViewModel.BOTTLENECK_META.get(category, {})
 		lines.append("· 扩产受阻：%s（%s）" % [row.blocker, meta.get("advice", "")])
 	if lines.is_empty():
-		lines.append("· 运营正常，没有明显卡点")
+		lines.append("· 运营正常")
 	return lines
 
 

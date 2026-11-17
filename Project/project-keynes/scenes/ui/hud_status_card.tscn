@@ -238,4 +238,4 @@ color = Color(0.42, 0.29, 0.16, 0.3)
 [node name="FooterLabel" type="Label" parent="Paper/Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "点击查看国家经济 · 总览"
+text = "经济总览"

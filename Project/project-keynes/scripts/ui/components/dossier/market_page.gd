@@ -59,15 +59,8 @@ func _refresh_market(vm: EconomyDossierViewModel, filter = null) -> void:
 	var cells: Array = model.cells
 	_show_empty(_empty, _grid, "")
 	_sample_prices(vm, cells)
-	var short_count := 0
-	var surplus_count := 0
 	var selected: Dictionary = {}
 	for cell in cells:
-		var heat := float(cell.heat)
-		if heat >= 0.02:
-			short_count += 1
-		elif heat <= -0.02:
-			surplus_count += 1
 		cell["status"] = _status_text(cell)
 		cell["tooltip"] = "%s\n需求 %s · 供给 %s\n价格指数 %.2f" % [cell.name,
 			count(float(cell.demand)), count(float(cell.supply)), float(cell.price_index)]
@@ -79,7 +72,7 @@ func _refresh_market(vm: EconomyDossierViewModel, filter = null) -> void:
 			if _attention(cell) > _attention(selected):
 				selected = cell
 		_selected = String(selected.id)
-	_count_label.text = "%d 种物资 · 短缺 %d · 积压 %d" % [cells.size(), short_count, surplus_count]
+	_count_label.text = "%d 种物资" % cells.size()
 	_grid.selected_id = _selected
 	_grid.set_cells(model.groups, cells)
 	_refresh_detail(selected)

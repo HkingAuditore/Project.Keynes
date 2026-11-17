@@ -148,8 +148,7 @@ func _switch_summary(current: Dictionary, target: Dictionary) -> String:
 	if not unhappy.is_empty():
 		parts.append("%s不满" % "、".join(unhappy))
 	var head := "；".join(parts)
-	return "%s。下次国家结算后生效。" % head if not head.is_empty() \
-		else "下次国家结算后生效。"
+	return head
 
 
 func _on_card_armed(regime_id: StringName) -> void:

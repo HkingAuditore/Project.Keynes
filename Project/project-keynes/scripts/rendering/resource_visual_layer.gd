@@ -392,6 +392,16 @@ func _update_lens() -> void:
 func quality() -> int:
 	return clampi(_quality, 0, 2)
 
+
+## 密度档：移动端整体降一档，着色仍用 quality()。
+##
+## [mobile-density-trim 2026-11-17] 作者定夺：点缀数量可以少一半，但保留 HIGH 的
+## 着色与光照。只有 cell_cap / type_cap / instance_cap 读这个函数；
+## `visual_quality` uniform（= quality()）不变。
+func density_quality() -> int:
+	var q := quality()
+	return mini(q, 1) if DCFeatureFlags.density_trim_enabled() else q
+
 func set_quality(value: int, mobile_tier: int = -1) -> void:
 	if _quality == value and _mobile_tier == mobile_tier:
 		return

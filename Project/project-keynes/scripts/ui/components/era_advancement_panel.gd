@@ -35,20 +35,19 @@ const BAND_CENTER := 114.0
 const OLD_EMBLEM := 64.0
 const NEW_EMBLEM := 80.0
 const RING_RADIUS := 47.0
-const COND_HEAD_Y := 176.0
-const COND_TOP := 186.0
+const COND_TOP := 170.0
 const COND_H := 32.0
 const COND_GAP := 6.0
-const COST_HEAD_Y := 276.0
-const COST_TOP := 286.0
+const COST_HEAD_Y := 260.0
+const COST_TOP := 270.0
 const COST_H := 38.0
 # 零预算提示独占一行，夹在物资小签与「晋升后获得」之间；有预算时这一行不存在。
-const BUDGET_TOP := 330.0
+const BUDGET_TOP := 314.0
 const BUDGET_H := 22.0
 const BUDGET_GAP := 16.0
 # 右栏内容的最小下沿：加成条数很少时纸笺不塌缩。
-const CONTENT_FLOOR := 398.0
-const BUFF_HEAD_Y := 340.0
+const CONTENT_FLOOR := 382.0
+const BUFF_HEAD_Y := 324.0
 const BUFF_LINE := 19.0
 const BUFF_MAX_ROWS := 5
 # 操作行：笺线分隔，按钮与纸笺撕边之间留 BOTTOM_CLEAR。
@@ -121,8 +120,8 @@ func _ready() -> void:
 	_treasury_link.add_theme_color_override("font_focus_color", UITokens.DOSSIER_OXBLOOD)
 	_treasury_link.mouse_entered.connect(_canvas.queue_redraw)
 	_treasury_link.mouse_exited.connect(_canvas.queue_redraw)
-	_treasury_link.tooltip_text = "国家购买预算份额在国库面板设置"
-	_reward_link.tooltip_text = "打开时代奖励三选一"
+	_treasury_link.tooltip_text = ""
+	_reward_link.tooltip_text = ""
 	_style_action_button()
 	resized.connect(_layout)
 	get_viewport().size_changed.connect(_layout)
@@ -149,9 +148,19 @@ func set_snapshot(snapshot: Dictionary) -> void:
 
 
 func set_overview(overview: Dictionary) -> void:
+	var had_single := _single_alert()
 	_overview = overview
 	if is_node_ready():
-		_canvas.queue_redraw()
+		# 单条问题时标题不画、纸签上移，行位必须跟着重算。
+		if had_single != _single_alert():
+			_layout()
+		else:
+			_canvas.queue_redraw()
+
+
+## 只有一个问题时标题「国家问题」比内容还长，直接出纸签。
+func _single_alert() -> bool:
+	return (_overview.get("alerts", []) as Array).size() == 1
 
 
 func model() -> Dictionary:
@@ -221,11 +230,9 @@ func action_button() -> Button:
 	return _action
 
 
-## 按钮左侧只写增量：指令错误优先，其次是还缺的条件。
+## 按钮左侧只写指令错误；「还缺什么」由条件格自己回答。
 func action_hint() -> String:
-	if not _error.is_empty():
-		return _error
-	return String(_model.get("delta_hint", ""))
+	return _error
 
 
 func _apply_model() -> void:
@@ -348,8 +355,8 @@ func _compute_rows() -> Dictionary:
 	# 左栏：指标两行一格，问题纸贴紧跟其后，笺线取两栏较高者。
 	var metric_h := METRIC_ROW
 	var metrics_bottom := METRIC_TOP + 4.0 * metric_h
-	var alert_head_y := metrics_bottom + 18.0
-	var alert_top := alert_head_y + 12.0
+	var alert_head_y := metrics_bottom + (12.0 if _single_alert() else 18.0)
+	var alert_top := alert_head_y if _single_alert() else alert_head_y + 12.0
 	content_end = maxf(content_end, alert_top + ALERT_H)
 	var rule_y := content_end + RULE_GAP
 	# 奖励按钮与主操作同一行：主操作贴右，奖励排在它左侧。
@@ -625,7 +632,10 @@ func _draw_overview(x: float, w: float) -> void:
 			vx += MoneyDisplay.draw_on_baseline(_canvas, Vector2(vx, row_top + 36.0), SIZE_BODY + 1, numeral)
 		_text(Vector2(vx, row_top + 36.0), value, numeral, value_size, UITokens.DOSSIER_INK,
 			cx + cell_w - vx)
-		_region(Rect2(cx, cy, cell_w, metric_h), String(o.get("%s_tooltip" % String(spec[0]), label)))
+		# 没有额外说明的指标不登记提示区：同文 tooltip 只是把标签再说一遍。
+		var tip := String(o.get("%s_tooltip" % String(spec[0]), ""))
+		if not tip.is_empty():
+			_region(Rect2(cx, cy, cell_w, metric_h), tip)
 	_draw_alerts(x, w)
 
 
@@ -636,8 +646,9 @@ func _draw_alerts(x: float, w: float) -> void:
 	if alerts.is_empty():
 		return
 	var alert_top: float = _rows.get("alert_top", 0.0)
-	_text(Vector2(x, _rows.get("alert_head_y", 0.0)), "国家问题", strong, SIZE_BODY, UITokens.DOSSIER_INK,
-		w * 0.5)
+	if alerts.size() > 1:
+		_text(Vector2(x, _rows.get("alert_head_y", 0.0)), "国家问题", strong, SIZE_BODY,
+			UITokens.DOSSIER_INK, w * 0.5)
 	var cx := x
 	var shown := 0
 	for i in range(alerts.size()):
@@ -812,7 +823,6 @@ func _draw_conditions(x: float, w: float) -> void:
 	var strong := UITokens.dossier_font("sans_strong")
 	var sans := UITokens.dossier_font("sans")
 	var numeral := UITokens.dossier_font("numeral")
-	_text(Vector2(x, COND_HEAD_Y), String(_model.get("conditions_heading", "")), strong, SIZE_BODY, UITokens.DOSSIER_INK, w)
 	var rows: Array = m.get("conditions", [])
 	var tile_w := floorf((w - COND_GAP) * 0.5)
 	for i in range(mini(rows.size(), 4)):
@@ -835,9 +845,10 @@ func _draw_conditions(x: float, w: float) -> void:
 		_text(Vector2(rect.position.x + 30.0, baseline), label, strong if met else sans, SIZE_MINOR, colour,
 			rect.size.x - 30.0 - value_w - 12.0)
 		_text(Vector2(rect.end.x - value_w - 8.0, baseline), value, numeral, SIZE_MINOR, colour, value_w + 1.0)
+		# 勾选框已经表达满足与否，不再用 tooltip 复述「已满足 / 未满足」。
 		var tip := String(row.get("tooltip", ""))
-		_region(rect, "%s：%s（%s）%s" % [label, value, "已满足" if met else "未满足",
-			"" if tip.is_empty() else "\n" + tip])
+		if not tip.is_empty():
+			_region(rect, tip)
 
 
 func _draw_costs(x: float, w: float) -> void:
@@ -849,8 +860,6 @@ func _draw_costs(x: float, w: float) -> void:
 	if costs.is_empty():
 		return
 	_text(Vector2(x, COST_HEAD_Y), "晋升物资", strong, SIZE_BODY, UITokens.DOSSIER_INK, w)
-	_region(Rect2(x, COST_HEAD_Y - 16.0, 80.0, 22.0),
-		"%s；物资齐备后自动从国库扣除" % String(m.get("territory_note", "")))
 	var overflow := costs.size() > MAX_COST_CHIPS
 	var shown := MAX_COST_CHIPS - 1 if overflow else costs.size()
 	# 签宽按实际签数均分：固定 4 等分时中文名（如「采集植物食物」）会被截断。

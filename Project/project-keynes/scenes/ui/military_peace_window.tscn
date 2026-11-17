@@ -335,10 +335,10 @@ autowrap_mode = 3
 
 [node name="Hint" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 autowrap_mode = 3
-text = "未勾选的占领格会随和约自动交还；割地只写进和约的格才会易主。"
 
 [node name="Footer" type="HBoxContainer" parent="Frame/Box"]
 layout_mode = 2

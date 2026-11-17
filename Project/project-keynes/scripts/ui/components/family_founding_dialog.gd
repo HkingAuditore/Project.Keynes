@@ -147,7 +147,7 @@ func present_offer(offer: Dictionary) -> void:
 		_locate_button.tooltip_text = "定位%s并查看详情" % settlement
 	if _prompt != null:
 		if split:
-			_prompt.text = "%s在%s的分支已具备独立条件。保留原姓氏，择定一套家风与效果；本地整支族人、产业和名人统一转入新家族，原家族在其他城市继续存在。" % [
+			_prompt.text = "%s在%s的分支已可独立立族：保留原姓氏，选定家风与效果。\n本地整支族人、产业与名人一并转入；原家族在其他城市继续存在。" % [
 				String(offer.get("source_family_name", "原家族")), settlement]
 		else:
 			_prompt.text = "%s人口已达 %s。择一户扶持，其余两户将不再出现。" % [

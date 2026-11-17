@@ -489,22 +489,21 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		result["message"] = "修建命令已排队，将在下一个经济结算边界执行。"
 	if id == COMMAND_POLITICAL_REGIME_SET and bool(result.get("ok", false)):
 		result["code"] = String(result.get("code", "queued"))
-		result["message"] = "体制调整已排队，将在下一次国家结算后生效。"
+		result["message"] = "体制调整已排队。"
 	if (id == COMMAND_FAMILY_COLONIZATION_START or \
 			id == COMMAND_FAMILY_COLONIZATION_CANCEL) \
 			and bool(result.get("ok", false)):
 		var queued_code := String(result.get("code", ""))
 		if queued_code == "colonization_queued":
-			result["message"] = "派遣已排队，将在经济结算完成后出发。"
+			result["message"] = "派遣已排队。"
 		elif queued_code == "colonization_cancel_queued":
-			result["message"] = "取消已排队，将在经济结算完成后执行。"
+			result["message"] = "取消已排队。"
 	if (id == COMMAND_FAMILY_COLONIZATION_START or \
 			id == COMMAND_FAMILY_COLONIZATION_CANCEL) \
 			and not bool(result.get("ok", false)):
 		var colonize_code := String(result.get("code", ""))
 		if colonize_code == "economy_busy_retry":
-			result["message"] = "经济正在结算。可先排队，提交完成后会自动%s。" % \
-				("派遣" if id == COMMAND_FAMILY_COLONIZATION_START else "取消")
+			result["message"] = EconomyStatusCopy.BUSY
 		elif String(result.get("message", "")).strip_edges().is_empty():
 			result["message"] = _colonization_command_message(colonize_code)
 	if not result.has("message"):
@@ -1370,10 +1369,10 @@ var _military_order_message := ""
 
 static func _colonization_command_message(code: String) -> String:
 	return {
-		"economy_busy_retry": "经济正在结算。可先排队，提交完成后会自动派遣。",
-		"colonization_queued": "派遣已排队，将在经济结算完成后出发。",
-		"colonization_cancel_queued": "取消已排队，将在经济结算完成后执行。",
-		"economy_paused": "经济已因守恒失败暂停，无法派遣。",
+		"economy_busy_retry": EconomyStatusCopy.BUSY,
+		"colonization_queued": "派遣已排队。",
+		"colonization_cancel_queued": "取消已排队。",
+		"economy_paused": "经济模拟已暂停，无法派遣。",
 		"economy_not_available": "经济系统尚未就绪，请稍后再试。",
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
 		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
@@ -1384,7 +1383,7 @@ static func _colonization_command_message(code: String) -> String:
 		"colonization_population_insufficient": "源分支人口不足，必须至少留下一人。",
 		"colonization_duplicate_target": "本国已有一支开拓队前往该目标。",
 		"colonization_family_cell_capacity": "目标地块的家族数量已达上限。",
-		"colonization_expedition_invalid": "开拓队已结束或句柄已过期。",
+		"colonization_expedition_invalid": "开拓队已结束或已过期。",
 		"colonization_command_invalid": "开拓命令参数不完整。",
 		"colonization_country_snapshot_unavailable": "国家快照尚未就绪，请稍后再试。",
 	}.get(code, "当前无法执行开拓。")

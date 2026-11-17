@@ -279,7 +279,7 @@ func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String)
 
 	if bool(row.get("locked", false)):
 		var gate := String(row.get("unlock_label", ""))
-		column.add_child(_tooltip_label("需研究 " + (gate if not gate.is_empty() else "相关军事科技"),
+		column.add_child(_tooltip_label("需研究 " + (gate if not gate.is_empty() else "军事科技"),
 			12, UITokens.DOSSIER_OXBLOOD, "sans_strong", TextServer.AUTOWRAP_OFF))
 	elif not action.is_empty() or not _hover_disabled.is_empty():
 		column.add_child(_tooltip_label(fallback_text, 11,
@@ -443,7 +443,7 @@ func _disabled_action_at(index: int, point: Vector2) -> String:
 func _disabled_reason(row: Dictionary, action: String) -> String:
 	if bool(row.get("locked", false)):
 		var gate := String(row.get("unlock_label", ""))
-		return "需研究 %s 才能编入" % (gate if not gate.is_empty() else "相关军事科技")
+		return "需研究 %s 才能编入" % (gate if not gate.is_empty() else "军事科技")
 	if action == "raise":
 		return "编制份额已占满 100%：先从其它兵种调低，才有余量加到这里"
 	return "%s 当前没有份额" % String(row.get("name", ""))
@@ -690,7 +690,7 @@ static func _tooltip(row: Dictionary, action: String) -> String:
 			var chip: Dictionary = chip_value
 			parts.append("%s %s" % [String(chip.get("label", "")),
 				_per_person(float(chip.get("value", 0.0)))])
-		lines.append("维护物资（每人每日 / 人·日）")
+		lines.append("维护物资 · 每人每日")
 		lines.append("　" + "　".join(parts))
 	var equipment: Array = row.get("equipment", [])
 	if not equipment.is_empty():
@@ -703,5 +703,5 @@ static func _tooltip(row: Dictionary, action: String) -> String:
 				_per_person(per_100)])
 	if bool(row.get("locked", false)):
 		var gate := String(row.get("unlock_label", ""))
-		lines.append("需研究 " + (gate if not gate.is_empty() else "相关军事科技"))
+		lines.append("需研究 " + (gate if not gate.is_empty() else "军事科技"))
 	return "\n".join(lines)

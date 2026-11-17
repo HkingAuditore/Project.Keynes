@@ -306,7 +306,7 @@ func _build_unexplored_model(cell: HexCell) -> Dictionary:
 		"header": {
 			"kicker": "区域 %d, %d" % [off.x + 1, off.y + 1],
 			"title": "未探索区域",
-			"subtitle": "尚未进入视野，地理、人口与市场皆不可知",
+			"subtitle": "尚未进入视野",
 		},
 		"kpis": [],
 		"tabs": [],

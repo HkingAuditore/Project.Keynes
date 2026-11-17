@@ -106,6 +106,8 @@ var _touch_ui: GDScript
 var _debug := false
 ## 触摸档布局策略覆盖（fit/fill/dense）。空 = 不覆盖。
 var _layout_mode := ""
+## 触摸档在布局之上的再缩放（50/75/100）。
+var _layout_scale := 100
 
 
 func _initialize() -> void:
@@ -132,6 +134,8 @@ func _parse_args() -> void:
 			_debug = true
 		elif arg.begins_with("--layout="):
 			_layout_mode = String(arg.trim_prefix("--layout="))
+		elif arg.begins_with("--layout-scale="):
+			_layout_scale = int(arg.trim_prefix("--layout-scale="))
 	if _out_dir.is_empty():
 		_out_dir = "user://mobile_touch_qa"
 	_touch_ui = load(TOUCH_UI_SCRIPT) as GDScript
@@ -143,7 +147,9 @@ func _run() -> void:
 	var settings := root.get_node_or_null("/root/GameSettings")
 	if settings != null and settings.has_method("ui_scaling"):
 		settings.call("update", {"ui_scale_percent": 100, "window_mode": "windowed",
-			"resolution_width": 1600, "resolution_height": 960}, false)
+			"resolution_width": 1600, "resolution_height": 960,
+			"ui_layout_scale": _layout_scale,
+			"ui_layout_mode": _layout_mode if not _layout_mode.is_empty() else "fit"}, false)
 		var scaling = settings.call("ui_scaling")
 		if scaling != null:
 			var override := {"profile": _profile, "dpi": _dpi, "safe_area": null}

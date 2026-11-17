@@ -1141,7 +1141,7 @@ func _schedule_text(index: int, state: int) -> String:
 				return eta
 			return "队列第 %d 位%s" % [position + 1, (" · %s" % eta) if not eta.is_empty() else ""]
 		4:
-			return "次日生效"
+			return "待生效"
 		2:
 			return "未在队列中"
 	return ""
@@ -1267,6 +1267,14 @@ func _scan_era_label(states: PackedInt32Array) -> String:
 		if states[index] >= 5 and bool(definition.get("is_milestone", false)):
 			reached = maxi(reached, _era_index(String(definition.get("era_id", ""))))
 	return String((_eras[reached] as Dictionary).get("display_name", "—"))
+
+
+## 里程碑 ID → 时代显示名。时代闸只说「要升到哪个时代」，不点名里程碑本身。
+func _era_label_for_milestone(milestone_id: String) -> String:
+	for era in _eras:
+		if String((era as Dictionary).get("milestone_id", "")) == milestone_id:
+			return String((era as Dictionary).get("display_name", milestone_id))
+	return milestone_id
 
 
 func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,
@@ -1583,7 +1591,7 @@ func _remove_from_queue(index: int) -> void:
 
 func _research_command_message(code: String) -> String:
 	return {
-		"country_research_already_queued": "该科技已在研究队列中（或已提交、次日生效）。",
+		"country_research_already_queued": "该科技已在研究队列中。",
 		"country_research_technology_unavailable": "该科技当前不可研究。",
 		"country_research_requirements_incomplete": "前置条件尚未完成。",
 		"country_research_domain_mismatch": "科技领域与队列不匹配。",
@@ -1591,7 +1599,7 @@ func _research_command_message(code: String) -> String:
 		"country_research_not_queued": "该科技不在研究队列中。",
 		"country_research_queue_argument_invalid": "研究队列参数无效。",
 		"era_reward_choice_required": "必须先完成时代奖励选择。",
-		"technology_milestone_retired": "时代晋升已改由顶栏时代徽记办理，不再通过研究完成。",
+		"technology_milestone_retired": "此科技已停用，请在顶栏时代徽记中晋升。",
 	}.get(code, "当前无法加入研究队列。")
 
 

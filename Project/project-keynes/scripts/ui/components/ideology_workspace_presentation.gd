@@ -54,10 +54,6 @@ func _build_promotion_overlay(host) -> void:
 	host._promotion_copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	host._promotion_copy.custom_minimum_size.y = 62
 	column.add_child(host._promotion_copy)
-	var note = host.ArtScript.label("晋升不可逆，现有国策槽位将转为民族精神。", 14,
-		host.ArtScript.VERMILION, HORIZONTAL_ALIGNMENT_CENTER)
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(note)
 	var actions = HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 12)
@@ -1211,7 +1207,7 @@ func _slot_row_data(host, ideology_id: int, kind: int) -> Dictionary:
 	var min_spirit_level = int(meta.get("min_spirit_level", 99))
 	var can_promote = location == 1 and level >= min_spirit_level \
 		and bool(live.get("promote_allowed", true)) and not pending
-	var promote_tooltip = "晋升为民族精神（不可逆）"
+	var promote_tooltip = "晋升为民族精神"
 	if location == 1 and level < min_spirit_level:
 		promote_tooltip = "需达到境界 %d 才能晋升" % (min_spirit_level + 1)
 	return {
@@ -1534,7 +1530,7 @@ func _detail_data(host, ideology_id: int, offer := false) -> Dictionary:
 		supports = host._support_details(live, location)
 	var notes = PackedStringArray()
 	if not offer and location == 1:
-		notes.append("晋升民族精神需达到第 %d 境，晋升不可逆。" % (int(meta.get("min_spirit_level", 2)) + 1))
+		notes.append("晋升民族精神需达到第 %d 境。" % (int(meta.get("min_spirit_level", 2)) + 1))
 	var requirements: PackedStringArray = meta.get("required_technology_names", PackedStringArray())
 	if not requirements.is_empty():
 		notes.append("需要科技：%s" % "、".join(requirements))

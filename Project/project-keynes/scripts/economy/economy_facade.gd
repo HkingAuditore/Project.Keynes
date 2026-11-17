@@ -591,7 +591,7 @@ func treasury_sponsored_build(country_handle: int, cell_idx: int,
 			and String(legacy.get("reason", "")) == "economy_legacy_ingress_disabled":
 		# 旧 DLL 没有专用入口，而当前生产写入边界拒绝旧批量提交。
 		legacy["code"] = "construction_ingress_unavailable"
-		legacy["message"] = "原生扩展过旧：营造入口不可用，请重建 GDExtension。"
+		legacy["message"] = "游戏组件版本过旧，营造功能不可用。请更新游戏。"
 	return legacy
 
 
@@ -619,7 +619,7 @@ func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
 	# 而不是退回到一条永远够不到官营建筑组的普通拆除。
 	return {"ok": false, "code": "demolish_ingress_unavailable",
 		"reason": "demolish_ingress_unavailable",
-		"message": "原生扩展过旧：拆除入口不可用，请重建 GDExtension。",
+		"message": "游戏组件版本过旧，拆除功能不可用。请更新游戏。",
 		"effective_day": effective_day, "sequence": sequence}
 
 
@@ -634,7 +634,7 @@ static func _demolish_result_message(code: String) -> String:
 		"demolish_owned_count_insufficient": "该地块的这座建筑座数不足。",
 		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
 		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",
-		"economy_fatal": "经济运行时已停止，无法执行拆除。",
+		"economy_fatal": "经济模拟已停止，无法执行拆除。",
 		"save_restore_active": "存档正在读写，稍后再试。",
 	}.get(code, "拆除命令未能执行。")
 
@@ -858,7 +858,7 @@ static func _construction_result_message(code: String) -> String:
 		"construction_treasury_preflight_drift": "国库结算与营造报价不一致，请重试。",
 		"country_economy_asset_host_pending": "国库结算尚未完成，请稍后重试。",
 		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",
-		"economy_fatal": "经济运行时已停止，无法营造。",
+		"economy_fatal": "经济模拟已停止，无法营造。",
 		"save_restore_active": "存档正在读写，稍后再试。",
 		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
 	}.get(code, "修建命令未能执行（%s）。" % code)

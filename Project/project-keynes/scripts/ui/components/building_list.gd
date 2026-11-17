@@ -82,7 +82,7 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	# 列头已标“利润”，常规行不再重复；机会收益、停产等例外状态仍写明。
 	var profit_label := String(data.get("profit_label", "利润"))
 	(refs.profit_label as Label).text = profit_label
-	(refs.profit_label as Label).visible = profit_label != "利润"
+	(refs.profit_label as Label).visible = profit_label != "净额"
 	(refs.profit as Label).text = String(data.get("profit", ""))
 	(refs.profit as Label).add_theme_color_override("font_color",
 		InspectorFactGrid.tone_color(accent))

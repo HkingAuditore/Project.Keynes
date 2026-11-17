@@ -651,7 +651,7 @@ func _on_military_dossier_action_requested(action: StringName, payload: Dictiona
 			return
 	# 行军 / 区域控制成功也要给回执：否则确认键按下后档案毫无变化，玩家以为按钮坏了。
 	var accepted := bool(result.get("ok", false))
-	var fallback := "命令已下达，次日生效。" if accepted else "命令未生效：原因未返回，请重试。"
+	var fallback := "命令已下达。" if accepted else "命令未生效，请重试。"
 	_right_panel.set_military_dossier_feedback(
 		String(result.get("message", fallback)), accepted)
 
@@ -823,7 +823,6 @@ func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArra
 	_era_ceremony.play({
 		"old_era_id": _era_indicator_view_model.era_id_for(old_index),
 		"new_era_id": new_id, "new_era_name": new_name,
-		"subtitle": EraIndicatorViewModel.era_flavor(new_id),
 		"buffs": buffs,
 		"target": _era_indicator.icon_origin() if _era_indicator != null else null,
 	})

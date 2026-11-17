@@ -5,6 +5,8 @@ theme_override_constants/separation = 8
 layout_mode = 2
 [node name="Scale" type="OptionButton" parent="."]
 layout_mode = 2
+[node name="Layout" type="OptionButton" parent="."]
+layout_mode = 2
 [node name="VolumeLabel" type="Label" parent="."]
 layout_mode = 2
 text = "主音量"

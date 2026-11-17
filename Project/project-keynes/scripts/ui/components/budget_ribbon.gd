@@ -185,7 +185,7 @@ func _draw_legend(x: float, width: float) -> void:
 			return
 
 
-func _draw_right_column(x: float, width: float, compact: bool) -> void:
+func _draw_right_column(x: float, width: float, _compact: bool) -> void:
 	# 竖向虚线：军事是另一个池，视觉上也隔开。
 	var line_x := x - 8.0
 	var y := 8.0
@@ -204,7 +204,7 @@ func _draw_right_column(x: float, width: float, compact: bool) -> void:
 		else UITokens.DOSSIER_INK_MUTED
 	draw_string(numeral, Vector2(x, 36.0), amount,
 		HORIZONTAL_ALIGNMENT_LEFT, width, 18, Color(colour, 1.0))
-	var note := "另计 · 不与左侧相加" if not compact else "另计"
+	var note := "另计"
 	draw_string(sans, Vector2(x, 56.0), note,
 		HORIZONTAL_ALIGNMENT_LEFT, width, 11, muted)
 

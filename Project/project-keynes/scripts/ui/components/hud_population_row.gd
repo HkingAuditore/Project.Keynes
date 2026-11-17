@@ -49,10 +49,8 @@ func set_data(row: Dictionary) -> void:
 		color)
 	_living_icon.visible = not String(row.get("living_icon", "")).is_empty()
 	_living.text = String(row.get("living_text", "—"))
-	tooltip_text = "%s\n人口 %s（占 %s）\n满意度 %s\n生活水平 %s\n%s" % [
+	tooltip_text = "%s\n人口 %s（占 %s）\n满意度 %s\n生活水平 %s" % [
 		String(row.get("name", "")), String(row.get("population_text", "—")),
 		String(row.get("share_text", "—")), String(row.get("satisfaction_text", "—")),
 		String(row.get("living_text", "—")),
-		"其中含未单列的较小职业，数值为合计。" if bool(row.get("folded", false)) \
-			else "点击上方的纸签可进入民生页查看全部职业。",
 	]

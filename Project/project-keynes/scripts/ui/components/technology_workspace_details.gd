@@ -183,7 +183,7 @@ static func _condition_items(host, index: int, states: PackedInt32Array) -> Arra
 		var reveal_result = host._evaluate_condition(reveal_spec, states, evidence)
 		var reveal_met = bool(reveal_result.get("met", false))
 		items.append({
-			"text": "发现条件 · %s" % ("已满足" if reveal_met else "未满足"),
+			"text": "发现条件",
 			"icon": &"technology.state.completed" if reveal_met else &"technology.state.locked",
 			"accent": UITokens.GOOD if reveal_met else UITokens.WARN,
 			"met": reveal_met,
@@ -193,6 +193,9 @@ static func _condition_items(host, index: int, states: PackedInt32Array) -> Arra
 			var inspiration = item.duplicate()
 			inspiration["text"] = "发现：%s" % String(item.get("text", ""))
 			items.append(inspiration)
+	var era_gate: Dictionary = _era_gate_item(host, definition, states)
+	if not era_gate.is_empty():
+		items.append(era_gate)
 	var hard_ids: PackedStringArray = definition.get("prerequisite_ids", PackedStringArray())
 	for hard_id in hard_ids:
 		var hard_index = int(host._technology_indices.get(String(hard_id), -1))
@@ -204,14 +207,14 @@ static func _condition_items(host, index: int, states: PackedInt32Array) -> Arra
 			hard_name = String((host._definitions[hard_index] as Dictionary).get("display_name", hard_name))
 		var hard_met = hard_state >= 5
 		items.append({
-			"text": "需要先完成：%s · %s" % [hard_name, "已完成" if hard_met else "未完成"],
+			"text": "需要先完成：%s" % hard_name,
 			"icon": &"technology.state.completed" if hard_met else &"technology.state.locked",
 			"accent": UITokens.GOOD if hard_met else UITokens.WARN,
 			"met": hard_met,
 		})
 	var routes: Array = definition.get("research_routes", [])
 	if not routes.is_empty():
-		items.append({"text": "研究路线：完成以下任意一条路线", "icon": &"metric.technology"})
+		items.append({"text": "研究路线 · 任意一条", "icon": &"metric.technology"})
 	for route_value in routes:
 		var route: Dictionary = route_value
 		var route_result = host._evaluate_condition(route.get("condition", {}) as Dictionary,
@@ -225,7 +228,7 @@ static func _condition_items(host, index: int, states: PackedInt32Array) -> Arra
 		if not route_description.is_empty():
 			route_text += "：%s" % route_description
 		items.append({
-			"text": "%s · %s" % [route_text, "已满足" if route_met else "未满足"],
+			"text": route_text,
 			"icon": &"technology.state.completed" if route_met else &"technology.state.locked",
 			"accent": UITokens.GOOD if route_met else UITokens.WARN,
 			"met": route_met,
@@ -236,6 +239,24 @@ static func _condition_items(host, index: int, states: PackedInt32Array) -> Arra
 				String(route_item.get("text", ""))]
 			items.append(route_item)
 	return items
+
+
+## 时代闸：只有已晋升到上一时代的国家才能研究本代科技。满足时不占一行——
+## 卡片顶部已经写了「时代」，再复述「已满足」只是噪音。
+static func _era_gate_item(host, definition: Dictionary,
+		states: PackedInt32Array) -> Dictionary:
+	var entry_id := String(definition.get("era_entry_milestone_id", ""))
+	if entry_id.is_empty():
+		return {}
+	var entry_index := int(host._technology_indices.get(entry_id, -1))
+	if entry_index >= 0 and entry_index < states.size() and int(states[entry_index]) >= 5:
+		return {}
+	return {
+		"text": "时代门槛：先晋升至「%s」" % host._era_label_for_milestone(entry_id),
+		"icon": &"technology.state.locked",
+		"accent": UITokens.WARN,
+		"met": false,
+	}
 
 
 static func _signal_evidence(host) -> Dictionary:
@@ -299,7 +320,7 @@ static func _evaluate_condition(host, spec: Dictionary, states: PackedInt32Array
 			rule = "以下条件至少满足 %d 项" % int(spec.get("required_count", 1))
 		host.ResearchConditionScript.Operator.NOT: rule = "以下条件不成立"
 	if not rule.is_empty():
-		items.push_front({"text": "%s（%s）" % [rule, "已满足" if met else "未满足"],
+		items.push_front({"text": rule,
 			"met": met, "icon": &"technology.state.completed" if met else &"technology.state.locked",
 			"accent": UITokens.GOOD if met else UITokens.WARN})
 	return {"met": met, "items": items}
@@ -323,8 +344,7 @@ static func _evaluate_condition_atom(host, atom: Dictionary, states: PackedInt32
 		return {
 			"met": met,
 			"items": [{
-				"text": "前置科技：%s（%s）" % [
-					technology_name, "已完成" if met else "未完成"],
+				"text": "前置科技：%s" % technology_name,
 				"icon": &"technology.state.completed" if met else &"technology.state.locked",
 				"accent": UITokens.GOOD if met else UITokens.WARN,
 				"source_kind": "technology",
@@ -351,7 +371,7 @@ static func _evaluate_condition_atom(host, atom: Dictionary, states: PackedInt32
 		return {
 			"met": met,
 			"items": [{
-				"text": "%s：%s" % [name, "已达成" if met else host._development_value_text(
+				"text": "%s：%s" % [name, host._development_value_text(
 					definition, current, qualifier, consecutive, target_days)],
 				"icon": &"technology.state.completed" if met else &"technology.state.locked",
 				"accent": UITokens.GOOD if met else UITokens.WARN,
@@ -426,9 +446,8 @@ static func _application_condition_items(host, definition: Dictionary,
 			name = String((host._definitions[index] as Dictionary).get(
 				"display_name", technology_id))
 		items.append({
-			"text": "%s：%s · %s" % [
-				"主科技" if technology_id == primary_id else "支撑科技",
-				name, "已完成" if met else "未完成"],
+			"text": "%s：%s" % [
+				"主科技" if technology_id == primary_id else "支撑科技", name],
 			"icon": &"technology.state.completed" if met else &"technology.state.locked",
 			"accent": UITokens.GOOD if met else UITokens.WARN,
 			"met": met,

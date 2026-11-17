@@ -209,7 +209,7 @@ static func _paint_route_card(host, quote: Dictionary) -> void:
 	var waiting = host._target_cell < 0
 	if host._route_ready_pill != null:
 		if waiting:
-			host._route_ready_pill.text = "待定"
+			host._route_ready_pill.text = "待选点"
 		elif bool(quote.get("kit_partial", false)) and bool(quote.get("kit_place_buildings", false)):
 			host._route_ready_pill.text = "先筹备"
 		elif bool(quote.get("kit_partial", false)):
