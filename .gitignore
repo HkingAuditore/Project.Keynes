@@ -60,6 +60,9 @@ __pycache__/
 # 编辑器临时脚本（评审用过即弃，命名以 tmp_ 开头且位于项目根）
 /Project/project-keynes/tmp_*.gd
 /Project/project-keynes/tmp_*.gd.uid
+# 同上，一次性复现探针（tests/probes/_tmp_*.gd）：要长期保留请去掉 _tmp_ 前缀再入库
+/Project/project-keynes/tests/probes/_tmp_*.gd
+/Project/project-keynes/tests/probes/_tmp_*.gd.uid
 
 # 构建/编辑器写入过程中的「~ 前缀」临时备份（如重编 GDExtension 时对 dll 做的副本）
 ~*
