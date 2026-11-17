@@ -35,14 +35,17 @@ const CONDITION_LABELS := {
 }
 
 ## Index = target era (0 unused). Population / built units / trade orders.
-const POPULATION_THRESHOLDS := [0, 250, 750, 2000, 5000, 12500, 30000, 75000,
-	187500, 450000, 1000000]
-const BUILDING_THRESHOLDS := [0, 1000, 2000, 4000, 7000, 12000, 20000, 32000, 50000, 75000, 110000]
+## v6：人口与建筑的基数、每格要求一律降到 v5 的 1/3（原值 ÷3 后四舍五入取整），
+## 贸易次数不变。三项经济条件依旧是「基数 + 每格 × 地块数」，曲线形状与原版一致。
+const POPULATION_THRESHOLDS := [0, 83, 250, 667, 1667, 4167, 10000, 25000, 62500,
+	150000, 333333]
+const BUILDING_THRESHOLDS := [0, 333, 667, 1333, 2333, 4000, 6667, 10667, 16667, 25000,
+	36667]
 const TRADE_ORDER_THRESHOLDS := [0, 250, 750, 2000, 5000, 11000, 22500, 45000, 90000,
 	175000, 350000]
 ## Total gate = national base above + per-cell requirement × currently owned cells.
-const POPULATION_PER_CELL := [0, 50, 100, 200, 375, 625, 1000, 1500, 2250, 3000, 4500]
-const BUILDINGS_PER_CELL := [0, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200]
+const POPULATION_PER_CELL := [0, 17, 33, 67, 125, 208, 333, 500, 750, 1000, 1500]
+const BUILDINGS_PER_CELL := [0, 67, 100, 133, 167, 200, 233, 267, 300, 333, 400]
 const TRADE_ORDERS_PER_CELL := [0, 50, 100, 200, 400, 800, 1500, 3000, 6000, 12000, 24000]
 ## Scale the authored goods basket by 50× in the first transition up to 265× in the last.
 const PROCUREMENT_MULTIPLIERS := [0, 50, 60, 75, 90, 110, 135, 160, 190, 225, 265]
