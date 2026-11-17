@@ -367,15 +367,13 @@ func _request_exit_game() -> void:
 func _push_visual_toggles() -> void:
 	if _renderer == null:
 		return
-	# [mobile-msaa 2026-11-03] 真机反馈"六边形边缘/海陆边界在移动时闪烁"：静态截图逐字节
-	# 相同（不是重建/动画），移动时闪 ⇒ 几何边缘的走样。触摸档开 2x MSAA 直接抗掉这类
-	# 细线/边缘抖动；桌面保持默认（不开），避免影响既有截图与性能基线。
-	var viewport := get_viewport()
-	if viewport != null:
-		viewport.msaa_2d = Viewport.MSAA_2X if _touch_profile() else Viewport.MSAA_DISABLED
 	var settings: Node = _game_settings()
 	var quality_values: Dictionary = settings.values() if settings != null else {}
 	var quality_setting := String(quality_values.get("render_quality", "auto"))
+	# 默认触摸档保留 2x 抗锯齿来抑制地图边缘闪烁；显式低档关闭额外采样。
+	var viewport := get_viewport()
+	if viewport != null:
+		viewport.msaa_2d = msaa_for_quality(quality_setting, _touch_profile())
 	visual_quality = _resolved_visual_quality(quality_setting)
 	# mobile/web：编译期 MOBILE_QUALITY_* 档必须在 set_visual_quality 之前推送。
 	if DCFeatureFlags.uses_shader_quality_tier() and _renderer.has_method("set_mobile_quality_tier"):
@@ -468,6 +466,10 @@ func _resolved_visual_quality(quality: String) -> int:
 		_:
 			# auto：mobile/web 默认 LOW；桌面默认 HIGH。
 			return 0 if DCFeatureFlags.uses_shader_quality_tier() else 2
+
+
+static func msaa_for_quality(quality: String, touch: bool) -> Viewport.MSAA:
+	return Viewport.MSAA_2X if touch and quality != "low" else Viewport.MSAA_DISABLED
 
 
 func _mobile_quality_tier_to_define(tier: int) -> String:
