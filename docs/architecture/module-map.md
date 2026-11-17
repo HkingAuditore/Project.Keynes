@@ -111,3 +111,12 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 仍使用当前纹理和绑定到渲染宿主的回调，不保存世界或跨帧状态。
 回归入口：`tests/rendering/cloud_weather_quality_test.gd`。手机执行方式与逐日对照见
 `Project/project-keynes/tests/runtime/mobile_runtime_worker_test.gd`。
+
+提交前整理的脚本职责位置见 [源文件职责拆分](source-module-splits.md) 的“移动端 PR 提交前的长度与依赖修复”。
+原生开拓的存储、查询、人口载荷分别在 `gdext/src/economy_runtime_colonization_store.cpp`、
+`gdext/src/economy_runtime_colonization_queries.cpp`、`gdext/src/economy_runtime_colonization_payload.cpp`，
+共同无状态工具在 `gdext/src/economy_runtime_colonization_internal.h`。
+人物列与需求记录声明在 `gdext/src/runtime_economy_person_store.h`，家族专用声明仍在
+`gdext/src/runtime_economy_family_side_tables.h`；两者仍由 `gdext/src/runtime_economy_state.h` 组合拥有。
+交易收付款、到货与发运在 `gdext/src/economy_runtime_trade_settlement.cpp`；家族/人物存档解码在
+`gdext/src/economy_runtime_persistence_lineage.cpp`；金额内联实现在 `gdext/src/economy_runtime_internal_arithmetic.h`。

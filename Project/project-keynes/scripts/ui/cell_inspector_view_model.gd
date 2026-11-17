@@ -1,5 +1,7 @@
-extends RefCounted
 class_name CellInspectorViewModel
+extends RefCounted
+
+const PopulationPresentation = preload("res://scripts/ui/cell_inspector/population_presentation.gd")
 const FamilyWorkspaceProjection = preload("res://scripts/ui/family_workspace_projection.gd")
 
 
@@ -213,23 +215,7 @@ func set_gdp_ledger(ledger: EconomyGdpLedger) -> void:
 ## 本地年度产值快照。纯内存读取，不触发任何原生查询；未跟踪的格返回空字典，
 ## 调用方据此决定是否渲染这两格（他国 / 无主 / 无人聚落都不给）。
 func _local_gdp(cell_idx: int) -> Dictionary:
-	if _gdp_ledger == null or not _gdp_ledger.ready():
-		return {}
-	if not _gdp_ledger.tracks_cell(cell_idx):
-		return {}
-	var population := _gdp_ledger.cell_population(cell_idx)
-	if population <= 0:
-		return {}
-	return {
-		"ytd": _gdp_ledger.cell_ytd(cell_idx),
-		"per_day": _gdp_ledger.cell_per_day(cell_idx),
-		"population": population,
-		"per_capita": _gdp_ledger.cell_per_capita(cell_idx),
-		"national_per_capita": _gdp_ledger.national_per_capita(),
-		"days_counted": _gdp_ledger.days_counted(),
-		"days_per_year": _gdp_ledger.days_per_year(),
-		"year_index": _gdp_ledger.year_index(),
-	}
+	return PopulationPresentation._local_gdp(_gdp_ledger, cell_idx)
 
 
 func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:

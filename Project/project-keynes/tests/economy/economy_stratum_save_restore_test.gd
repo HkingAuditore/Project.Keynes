@@ -50,8 +50,14 @@ func _execute() -> void:
 	if country.is_empty() or original.is_empty():
 		return
 	var schema := original[0].decode_u16(4)
-	if not _check("fixture uses current PKEC64", schema == 64):
+	if not _check("fixture uses current PKEC65", schema == 65):
 		return
+	# PKEC65 adds fields to expedition rows. This fixture has no expeditions,
+	# so its PKEC62 variant only needs the signal-layout conversion below.
+	for chunk in original:
+		if chunk.decode_u16(6) == 23:
+			if not _check("legacy fixture has no expedition rows", chunk.decode_u32(8) == 0):
+				return
 	var expected := _payload(profession, false)
 	var other := _payload(profession, true)
 	var seeded := _replace_mobilization(original, expected, schema)
