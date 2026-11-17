@@ -190,3 +190,52 @@ static func push_world_lighting_profile(host) -> void:
 		host._global_sky_day_weight,
 		host._push_world_uniform,
 		host._shader_declares_uniform)
+
+
+## Cloud shadows share the same material and visual-layer binding boundary.
+static func push_cloud_shadow_material_inputs(
+		_cloud_shadow_field,
+		_shader_mat,
+		_water_mat,
+		cloud_shadow_ambient_weight,
+		cloud_shadow_water_scale,
+		_building_visual_layer,
+		_resource_visual_layer,
+		_for_each_vegetation_layer: Callable,
+		_detail_family_layer,
+		_cloud_shadow_direct_active: Callable) -> void:
+
+	if _cloud_shadow_field == null:
+		return
+	var direct_enabled = _cloud_shadow_direct_active.call()
+	var has_source: bool = _cloud_shadow_field.has_weather_source()
+	var field_texture: Texture2D = _cloud_shadow_field.get_field_texture() if has_source else null
+	var wrap_origin_uv: float = _cloud_shadow_field.get_wrap_origin_uv()
+	var wrap_period_uv: float = _cloud_shadow_field.get_wrap_period_uv()
+	for material in [_shader_mat, _water_mat]:
+		if material == null or material.shader == null:
+			continue
+		if material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+			if field_texture != null:
+				material.set_shader_parameter("cloud_shadow_tex", field_texture)
+			material.set_shader_parameter("cloud_shadow_field_bound", direct_enabled and has_source)
+			material.set_shader_parameter("cloud_shadow_strength", _cloud_shadow_field.get_strength())
+			material.set_shader_parameter("cloud_shadow_ambient_weight", cloud_shadow_ambient_weight)
+			material.set_shader_parameter("cloud_shadow_water_scale", cloud_shadow_water_scale)
+			material.set_shader_parameter("cloud_shadow_wrap_origin_uv", wrap_origin_uv)
+			material.set_shader_parameter("cloud_shadow_wrap_period_uv", wrap_period_uv)
+	if _building_visual_layer != null and _building_visual_layer.has_method("set_cloud_shadow_field"):
+		_building_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+	if _resource_visual_layer != null and _resource_visual_layer.has_method("set_cloud_shadow_field"):
+		_resource_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+	_for_each_vegetation_layer.call(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_cloud_shadow_field"):
+			layer.set_cloud_shadow_field(field_texture, direct_enabled,
+				wrap_origin_uv, wrap_period_uv)
+	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
+			and _detail_family_layer.has_method("set_cloud_shadow_field"):
+		_detail_family_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)

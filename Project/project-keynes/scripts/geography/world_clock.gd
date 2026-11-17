@@ -95,14 +95,9 @@ var _visual_shader_days_per_year: float = 2.0
 ## 上限 60 ms：再高就会让单帧超过 100 ms，浏览器开始接近"无响应"的观感。
 func sim_budget_ms() -> float:
 	if not OS.has_feature("web"):
-		# [mobile-sim-budget 2026-11-02] 移动端也按倍速放大预算。
-		# 安卓单日成本实测 50~70ms（2400 格、内联日），而这里固定 8ms 会让
-		# 吞吐上限 = 8/60 ≈ 0.13 天/帧，×10 倍速实际只有 ~5 天/秒
-		# （真机 [heartbeat] 实测 5.4 天/秒）。放大后 ×10 才有机会跑满 10 天/秒，
-		# 代价是快进时单帧变长、帧率下降——这正是玩家按下倍速时想要的取舍。
-		if OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios"):
-			return clampf(sim_frame_budget_ms * maxf(1.0, speed_multiplier * 0.5),
-				sim_frame_budget_ms, 60.0)
+		# 手机与桌面都给输入/绘制保留同一份帧预算；倍速只提高目标天数。
+		# 不把 8ms 随快进放大到 60ms。单日调用仍不可抢占，过载时降低
+		# 实际推进速度；日期顺序、同日继续与结算屏障保持原样。
 		return sim_frame_budget_ms
 	return clampf(sim_frame_budget_ms * maxf(1.0, speed_multiplier * 0.5),
 		sim_frame_budget_ms, 60.0)

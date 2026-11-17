@@ -283,9 +283,7 @@ int64_t NativeEconomyRuntime::family_expedition_payload_family_people(
         static_cast<uint32_t>(family_expedition_payloads().size()),
         begin + family_expeditions_store().payload_count[expedition]);
     for (uint32_t payload = begin; payload < end; ++payload) {
-        const FamilyExpeditionPayload &lane = family_expedition_payloads()[payload];
-        if (lane.anonymous != 0) continue;
-        people += std::max<int64_t>(0, lane.people);
+        people += family_expedition_payloads()[payload].people_in_group(false);
     }
     return people;
 }
@@ -302,9 +300,7 @@ int64_t NativeEconomyRuntime::family_expedition_anonymous_people(
         static_cast<uint32_t>(family_expedition_payloads().size()),
         begin + family_expeditions_store().payload_count[expedition]);
     for (uint32_t payload = begin; payload < end; ++payload) {
-        const FamilyExpeditionPayload &lane = family_expedition_payloads()[payload];
-        if (lane.anonymous == 0) continue;
-        people += std::max<int64_t>(0, lane.people);
+        people += family_expedition_payloads()[payload].people_in_group(true);
     }
     return people;
 }

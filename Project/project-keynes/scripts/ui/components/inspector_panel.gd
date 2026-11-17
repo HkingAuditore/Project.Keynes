@@ -1,5 +1,7 @@
-extends PanelContainer
 class_name InspectorPanel
+extends PanelContainer
+
+const InspectorStructure = preload("res://scripts/ui/components/inspector_structure.gd")
 const InspectorCategoryPatch = preload("res://scripts/ui/components/inspector_category_patch.gd")
 
 
@@ -28,8 +30,7 @@ const DENSE_KPI_MAX_HEIGHT := 500.0
 ## 标题字号区间：地名越长越降，最低 18px；不靠省略号截断。
 const TITLE_FONT_BASE := 34
 const TITLE_FONT_MIN := 18
-const ROW_LIST_KEYS := ["family_rows", "cohort_rows", "resource_rows",
-	"market_rows", "building_rows"]
+const ROW_LIST_KEYS = InspectorStructure.ROW_LIST_KEYS
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
@@ -1377,33 +1378,11 @@ func _request_tab_data_if_missing(tab_id: String) -> void:
 
 
 func _category_structure(data: Dictionary) -> String:
-	var parts := PackedStringArray()
-	for key in ["insights", "metrics", "gauges", "construction_entry", "military_cell"] \
-			+ ROW_LIST_KEYS:
-		if data.has(key):
-			parts.append(String(key))
-	if not (data.get("badges", []) as Array).is_empty():
-		parts.append("badges:%d" % (data["badges"] as Array).size())
-	for key in ROW_LIST_KEYS:
-		if data.has("list_header") and not (data.get(key, []) as Array).is_empty():
-			parts.append("header:%s:%s" % [key, str(data.get("list_header", {}))])
-	if data.has("list_caption"):
-		parts.append("caption")
-	for chart in data.get("charts", []):
-		parts.append("chart:%s" % String((chart as Dictionary).get("id", "")))
-	for section in data.get("sections", []):
-		parts.append("section:%s:%s" % [String((section as Dictionary).get("id", "")),
-			_category_structure(section)])
-	parts.append("tax:%s" % str((data.get("tax_context", {}) as Dictionary).get("available", false)))
-	return "|".join(parts)
+	return InspectorStructure._category_structure(data)
 
 
 func _tabs_signature(tabs: Array) -> String:
-	var ids := PackedStringArray()
-	for raw in tabs:
-		var tab: Dictionary = raw
-		ids.append(String(tab.get("id", "")))
-	return "|".join(ids)
+	return InspectorStructure._tabs_signature(tabs)
 
 
 func _has_tab(tabs: Array, tab_id: String) -> bool:

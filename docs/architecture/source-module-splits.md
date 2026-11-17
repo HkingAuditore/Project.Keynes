@@ -147,3 +147,27 @@ C++ 路径相对于 `gdext/src/`。
 `economy_runtime_persistence_header.cpp`；875行原方法体仅改变缩进，读取顺序、返回与
 校验保持不变。原文件从3168行降至2291行，新文件896行。私有恢复声明归入既有
 `economy_runtime_internal_operations.h`，不增加状态所有者或脚本入口。
+
+### 移动端 PR 提交前的长度与依赖修复
+
+本轮按现有职责拆分上游增长超限文件。公开脚本方法继续转发；协作者没有世界、
+界面节点或任务状态的第二份所有权，也没有新增计时器、延迟回调或推进入口。
+
+| 原入口 | 实现位置 | 保持的边界 |
+|---|---|---|
+| `audio/game_audio_service.gd`、`main/debug_tools.gd` | `audio/audio_backend_policy.gd`、`main/temperature_diagnostics.gd` | 平台选择与只读温度诊断；音频实例、设置和场景生命周期仍在原入口 |
+| `narrative/narrative_event_catalog_war.gd`、`narrative_event_service.gd` | `narrative_event_catalog_war_pulse.gd`、`narrative_calendar.gd` | 事件注册顺序、内容和日历文字保持原样；脉冲包不拥有服务状态 |
+| `rendering/shrub/scatter.gd` | `rendering/shrub/vegetation_colors.gd` | 只整理原有颜色选择；采样、随机数、预算和缓存仍归原层 |
+| `technology/technology_network_validator.gd`、`trigger/trigger_catalog.gd` | `technology/technology_network_presentation.gd`、`trigger/trigger_research_definitions.gd` | 说明文字与研究触发目录；校验顺序、目录编号和规则不变，共用常量仅保留一份定义 |
+| `ui/cell_inspector/{construction,object_dossiers,population_market}.gd`、`cell_inspector_view_model.gd` | 同目录 `construction_recipes.gd`、`building_dossier.gd`、`population_presentation.gd` | 配方、建筑卷宗、需求分组和 GDP 显示；输入仍由原宿主提供 |
+| `ui/components/colonization_planner_{panel,presentation}.gd` | 同目录 `colonization_planner_labels.gd`、`colonization_preview_cards.gd` | 原提示和预览卡构造；信号、选择、命令、动画回调仍绑定原面板 |
+| `ui/components/{inspector_panel,narrative_event_dialog,object_detail_dialog}.gd` | 同目录 `inspector_structure.gd`、`narrative_chapter_style.gd`、`dossier_ledger_facts.gd` | 显示结构签名、纸签样式和账目文字，原公开入口保留 |
+| `ui/{country_view_model,icon_catalog,game_ui_manager,main_menu}.gd` | `military_maintenance_presentation.gd`、`paper_building_icon.gd`、`game_ui/touch_metrics.gd`、`main_menu_layout.gd` | 维护显示、图标选择和现有布局计算；布局协作者每次借用宿主，不捕获节点 |
+| `economy_runtime_colonization.cpp` | `economy_runtime_colonization_{store,queries,payload}.cpp` 与 `economy_runtime_colonization_internal.h` | 同一运行时的存储、查询与人口迁移定义；无状态工具保持原算法，预留目标人口槽的重复遍历合并，失败时停止或继续的策略由原调用方明确传入 |
+| `runtime_economy_family_side_tables.h` | `runtime_economy_person_store.h` | 人物列和人物需求遍历从家族专用声明中分开；仍由同一 `RuntimeEconomyOwnedState` 持有，字段顺序和登记编号不变。载荷自己提供按归属分组的人数，审计不再解释载荷标志 |
+| `economy_runtime_trade.cpp` | `economy_runtime_trade_settlement.cpp` | 收付款、到货和发运的原成员定义；计算次序、舍入与账目不变 |
+| `economy_runtime_persistence_read.cpp` | `economy_runtime_persistence_lineage.cpp` | 家族与人物保存段的原解码分支；调用方仍持有游标、版本检查与末尾长度检查，不改变保存格式 |
+| `economy_runtime.h` | `economy_runtime_internal_arithmetic.h` | 原内联金额算法，仅移动定义位置，保持内联与极值处理 |
+
+长度基线只收紧，跨模块引用的搬迁使用检查器登记来源，原引用同步减少。
+改前和改后对照、编译与运行结果见 `feature-status.md`。

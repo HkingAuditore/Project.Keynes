@@ -73,8 +73,6 @@ static func _rebuild_cooperative(host) -> void:
 	host._apply_detail_global_budget(true)
 	WebTelemetry.emit("rebuild_phase", {"p": "detail_budget_coop", "dur": int(float(Time.get_ticks_usec()-_t_budget2)/1000.0)})
 	host._log_detail_scatter_rebuild_summary("renderer_rebuild")
-	if deferred_layers > 0:
-		_arm_deferred_detail_fill_watchdog(host, )
 	if host._shader_mat == null:
 		return
 	host._apply_uniforms()
@@ -232,47 +230,3 @@ static func _detail_chunk_probe_layer(host):
 				and layer.has_method("detail_chunk_cells"):
 			return layer
 	return null
-
-
-
-static func _arm_deferred_detail_fill_watchdog(host) -> void:
-
-	host._deferred_fill_watchdog_msec = Time.get_ticks_msec()
-	host._deferred_fill_rescued = false
-
-
-## 兜底：defer 之后若刷新管线已经空闲、却在救援窗口内一株都没建出来（原生
-## encode_detail_scatter_delta 缺失 / chunk 计划失败等），退回一次性全量构建。
-
-static func _poll_deferred_detail_fill_watchdog(host) -> void:
-
-	if host._deferred_fill_rescued or host._deferred_fill_watchdog_msec <= 0:
-		return
-	if Time.get_ticks_msec() - host._deferred_fill_watchdog_msec \
-			< int(host.DEFERRED_DETAIL_FILL_RESCUE_SECONDS * 1000.0):
-		return
-	if not host._detail_refresh_queue.is_empty() or host._detail_plan_phase != host.DETAIL_PLAN_IDLE \
-			or not host._detail_refresh_batches.is_empty():
-		# 还在排队：只是慢，不是坏了，继续等。
-		return
-	host._deferred_fill_watchdog_msec = 0
-	host._deferred_fill_rescued = true
-	if host._map == null or host._world == null or host._detail_layers.is_empty():
-		return
-	var built = 0
-	for layer in host._detail_layers:
-		if layer != null and layer.has_method("instance_count"):
-			built += int(layer.instance_count())
-	if built > 0:
-		return
-	push_warning("[detail_scatter] 分帧补齐在救援窗口内没有任何植被实例，回退全量构建")
-	print("[detail_scatter/DEFER_RESCUE] fallback=full_rebuild layers=%d" % host._detail_layers.size())
-	for layer in host._detail_layers:
-		if layer == null or not is_instance_valid(layer):
-			continue
-		if layer.has_method("set_defer_initial_rebuild"):
-			layer.set_defer_initial_rebuild(false)
-		layer.setup(host._map, host._world, host._world.world_bounds, host.hex_size, host.visual_quality)
-	host._mark_detail_budget_total_dirty()
-	host._apply_detail_global_budget(true)
-

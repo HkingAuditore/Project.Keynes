@@ -1060,13 +1060,12 @@ func _native_daily_inline_requested(host) -> bool:
 		return false
 	if host._is_web_build():
 		return true
-	# [android-inline 2026-11-01] 移动端默认内联（与 web 同一执行者）。安卓上
-	# worker 线程路径会停在 day 1：worker state=PAUSED / attempt_slices=0 /
-	# environment ring=0，而主线程又在等它提交（真机与模拟器均可复现）。
-	# 内联日由主线程直接跑 12 域，不依赖 worker 线程与 env 环，web 上已验证多年。
-	# 想恢复实验性 worker：PK_MOBILE_NATIVE_WORKER=1。
+	# Mobile uses the same native worker and session-owned clock binding as desktop.
+	# The old forced-inline workaround predates RuntimeClockBinding: it kept an
+	# entire twelve-domain day on the render thread even after clock startup was fixed.
+	# An explicit diagnostic override can still select the existing inline executor.
 	if (OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")) \
-			and OS.get_environment("PK_MOBILE_NATIVE_WORKER") != "1":
+			and OS.get_environment("PK_MOBILE_NATIVE_WORKER") == "0":
 		return true
 	return OS.get_environment("PK_NATIVE_DAILY_INLINE") == "1"
 

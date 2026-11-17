@@ -58,8 +58,7 @@ var _last_lut_update_usec := -1
 var _last_lut_change_usec := 0
 var _commit_interval_usec := 500000.0
 var _last_pushed_lerp := -1.0
-var _last_uploaded_wind_update_usec := -1
-var _wind_lut_texture: Texture2D
+var _wind_source := preload("res://scripts/rendering/weather_wind_source.gd").new()
 var _last_composite_strength := -1.0
 var _last_night_visibility := -1.0
 var _strength_high := CLOUD_SHADOW_STRENGTH_HIGH
@@ -124,8 +123,7 @@ static func direct_mode_for_quality(quality: int, mobile_or_web: bool,
 
 
 static func encode_wind(direction: Vector2, speed: float) -> Color:
-	var dir := direction.normalized() if direction.length_squared() > 0.000001 else Vector2.ZERO
-	return Color(dir.x * 0.5 + 0.5, dir.y * 0.5 + 0.5, clampf(speed / 20.0, 0.0, 1.0), 1.0)
+	return preload("res://scripts/rendering/weather_wind_source.gd").encode_wind(direction, speed)
 
 
 static func interpolated_cloud_amount(previous_cloud: float, previous_vapor: float,
@@ -180,10 +178,9 @@ func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
 	_push_static_inputs()
 	if world_changed:
 		_last_lut_update_usec = -1
-		_last_uploaded_wind_update_usec = -1
-		_wind_lut_texture = null
 		_weather_lerp = 1.0
 		_last_pushed_lerp = -1.0
+	_wind_source.bind(world, map)
 	_sync_weather_sources(not _configured or world_changed)
 	_sync_wind_lut(not _configured or map_changed or shader_changed)
 	if shader_changed or geometry_changed or world_changed or map_changed:
@@ -305,11 +302,20 @@ func has_weather_source() -> bool:
 	return _has_weather_source
 
 
+func configure_wind_inputs(world: WorldData, map: MapData) -> void:
+	_wind_source.bind(world, map)
+	_sync_wind_lut(true)
+
+
 func clear_inputs() -> void:
+	_wind_source.bind(null, null)
+	_sync_wind_lut(true)
+	clear_shadow_inputs()
+
+
+func clear_shadow_inputs() -> void:
 	_world = null
 	_map = null
-	_wind_lut_texture = null
-	wind_lut_changed.emit(null, null, false)
 	_visual_tiles = null
 	_has_weather_source = false
 	_direct_mode = false
@@ -327,6 +333,7 @@ func get_quality_resolution() -> Vector2i:
 
 
 func _process(delta: float) -> void:
+	_sync_wind_lut(false)
 	if _world == null:
 		return
 	if not _world_time_external:
@@ -576,46 +583,15 @@ func _sync_weather_sources(force: bool) -> void:
 
 
 func _sync_wind_lut(force: bool) -> void:
-	if _field_material == null or _map == null:
+	var changed: bool = _wind_source.update()
+	if not changed and not force:
 		return
-	var stamp := int(_world.weather_lut_update_usec) if _world != null else 0
-	if not force and stamp == _last_uploaded_wind_update_usec:
-		return
-	var image := _build_wind_lut_image(_map, _world.lut_dims if _world != null else Vector2i.ZERO)
-	if image != null:
-		var previous := _wind_lut_texture
-		_wind_lut_texture = ImageTexture.create_from_image(image)
-		_field_material.set_shader_parameter("wind_lut", _wind_lut_texture)
-		_field_material.set_shader_parameter("wind_lut_prev", previous if previous != null else _wind_lut_texture)
-		_field_material.set_shader_parameter("has_wind_prev", previous != null and not force)
-		_field_material.set_shader_parameter("has_local_wind", true)
-		wind_lut_changed.emit(_wind_lut_texture, previous if previous != null else _wind_lut_texture, previous != null and not force)
-	else:
-		_field_material.set_shader_parameter("has_local_wind", false)
-		wind_lut_changed.emit(null, null, false)
-	_last_uploaded_wind_update_usec = stamp
-
-
-func _build_wind_lut_image(map: MapData, dims: Vector2i) -> Image:
-	if map == null or dims.x <= 0 or dims.y <= 0 \
-			or map.wind_x_arr.size() == 0 or map.wind_y_arr.size() != map.wind_x_arr.size():
-		return null
-	var n := mini(map.wind_x_arr.size(), dims.x * dims.y)
-	if n <= 0:
-		return null
-	var speed_arr := map.wind_speed_arr
-	var image := Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
-	for i in range(dims.x * dims.y):
-		var wind := Vector2.ZERO
-		var speed := 0.0
-		if i < n:
-			wind = Vector2(map.wind_x_arr[i], map.wind_y_arr[i])
-			if wind.length_squared() > 0.000001:
-				wind = wind.normalized()
-			if i < speed_arr.size():
-				speed = float(speed_arr[i])
-		image.set_pixel(i % dims.x, int(i / dims.x), encode_wind(wind, speed))
-	return image
+	if _field_material != null:
+		_field_material.set_shader_parameter("wind_lut", _wind_source.current)
+		_field_material.set_shader_parameter("wind_lut_prev", _wind_source.previous)
+		_field_material.set_shader_parameter("has_wind_prev", _wind_source.has_previous)
+		_field_material.set_shader_parameter("has_local_wind", _wind_source.current != null)
+	wind_lut_changed.emit(_wind_source.current, _wind_source.previous, _wind_source.has_previous)
 
 
 func _strength_for_quality() -> float:
@@ -628,7 +604,7 @@ func _strength_for_quality() -> float:
 
 func _mark_dirty() -> void:
 	_dirty = true
-	if _viewport != null and not _direct_mode:
+	if _viewport != null and _world != null and not _direct_mode:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 

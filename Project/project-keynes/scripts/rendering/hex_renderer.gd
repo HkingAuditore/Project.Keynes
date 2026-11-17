@@ -1299,13 +1299,10 @@ func _log_detail_scatter_rebuild_summary(reason: String) -> void:
 const WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO: float = RendererDetailLayers.WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO
 const DETAIL_LOADING_LAYERS_PER_YIELD: int = RendererDetailLayers.DETAIL_LOADING_LAYERS_PER_YIELD
 const DETAIL_LOADING_YIELD_BUDGET_MS: float = RendererDetailLayers.DETAIL_LOADING_YIELD_BUDGET_MS
-const DEFERRED_DETAIL_FILL_RESCUE_SECONDS: float = RendererDetailLayers.DEFERRED_DETAIL_FILL_RESCUE_SECONDS
 
 # 受限平台判定覆盖：-1 = 跟随引擎特性；0 = 强制桌面；1 = 强制受限平台。
 # 只给临时验证脚本 / A-B 调试用，正常游戏流程不会改它。
 var _force_platform_limited_render: int = -1
-var _deferred_fill_watchdog_msec: int = 0
-var _deferred_fill_rescued: bool = false
 # 保留比例运行期覆盖：<0 = 用常量 WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO。
 # 只给临时验证脚本 / A-B 调试用，正常流程不会改它。
 var _web_mobile_layer_keep_ratio_override: float = -1.0
@@ -1692,9 +1689,3 @@ func _seed_deferred_detail_chunks_for_deferred_fill() -> void:
 
 func _detail_chunk_probe_layer():
 	return RendererLoadingVegetation._detail_chunk_probe_layer(self)
-
-func _arm_deferred_detail_fill_watchdog() -> void:
-	return RendererLoadingVegetation._arm_deferred_detail_fill_watchdog(self)
-
-func _poll_deferred_detail_fill_watchdog() -> void:
-	return RendererLoadingVegetation._poll_deferred_detail_fill_watchdog(self)
