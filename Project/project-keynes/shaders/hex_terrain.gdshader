@@ -3,6 +3,21 @@ render_mode unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
+// ═══════════════════════════════════════════════════════════════════════════
+// [deprecated 2026-11-17] 已退役，**运行期不会被编译**。
+// 全仓没有材质 / 场景 / 脚本引用它（2026-11-17 grep 判据：只命中本文件、仓库内
+// docs/plan 历史文档、以及 shaders/SHADER_DEV_GUIDE.md §14.2 的历史表格）。
+// 现在的地形由 world_map.gdshader（陆地 program / PK_WATER_ONLY 水面 program）+
+// world_water_web.gdshader 绘制：一块世界坐标 quad + 生成期烘焙纹理，逐像素着色，
+// **不逐 hex 建网格**（见 docs/plans/terrain-land-water-split-assessment.md §1.1）。
+// 保留原因：下方「顶点属性契约」是逐 hex 网格方案唯一的书面约定
+// （COLOR.r=tid/15、COLOR.g=elevation、COLOR.b=coastal、COLOR.a=seed、
+//   UV.xy=格内局部坐标、CUSTOM0/1=邻居地形与混合权重）。
+// 复活路径见 docs/plans/terrain-hex-mesh-implementation-plan.md（2026-11-17）：
+// 新方案用 fan + 顶点携带格属性，**不再需要** per-pixel cube_round/discard（无 warp）。
+// 复活前提：需要重新接线——当前没有任何代码构造这些顶点属性，也没有节点挂本材质。
+// ═══════════════════════════════════════════════════════════════════════════
+
 // 纸质地图册风格地形 shader (Atlas v1)
 // 设计原则：
 //   - 不画方向性光照，不画庄稼行/沙丘等周期性图案
