@@ -3,6 +3,25 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 时代晋升人口与建筑门槛降到 1/3（2026-11-17）
+
+`EraAdvancementCatalog` 的 `POPULATION_THRESHOLDS`、`POPULATION_PER_CELL`、
+`BUILDING_THRESHOLDS`、`BUILDINGS_PER_CELL` 四张表按原值 ÷3 四舍五入下调（如首次晋升 10 格：
+人口 750→253、建筑 3,000→1,003）。贸易次数、物资篮子与倍率、科技比例（0.6）均未改动；
+服务层、条件投影、界面文案与存档格式不变，条件行仍读模型算出的门槛，已启动的晋升继续用
+冻结地块数与冻结物资订单。规则表与 `docs/cpp-dots-runtime/era-advancement-runtime.md` §3.2
+同步；同时把该文档与 `docs/architecture/feature-guides.md` 里残留的「科技 80%」改为当前代码
+的 60%。
+
+顺带修正 `tests/era/era_advancement_service_test.gd` 两条过期断言：HEAD 的 4015c5a89 引入
+`_aggregate_buff_lines`（同主语+统计项跨里程碑相加）后，首次晋升文案由 6 条并为 4 条
+（全社会经济产出 +14%），断言仍按 6 条写，导致该测试在本次改动前即 2 failures。现在改为
+校验 4 条且含合并后的 +14% 行，`era_advanced` 载荷直接与预览逐字比较。
+
+验证：`tests/era/era_advancement_service_test.gd` 0 failures；
+`tests/technology/era_advancement_service_test.gd` 135 checks / 0 failures（两套均 headless 跑通）。
+未覆盖：没有在实机存档上跑完整一代，无法确认新门槛下「三选二」是否被人口+建筑长期包办。
+
 ## 移动端 PR 提交前检查修复（2026-11-16，最终验收）
 
 本节是下面两轮移动端记录之后的提交前状态。移动端优化本身沿用现有日计算；

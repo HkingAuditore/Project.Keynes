@@ -168,8 +168,11 @@ func _init() -> void:
 		bool(_condition(model, "tech").met))
 	_expect("tech + two economy conditions make era ready",
 		String(model.status) == "ready" and int(model.conditions_met) == 3 and bool(model.can_start))
+	# 石器前置与农耕里程碑都带「全社会经济产出 +7%」，聚合后压成一行 +14%，
+	# 所以四条文案而不是六条：重复的主语+统计项按加法合并（见 _aggregate_buff_lines）。
+	var preview: PackedStringArray = model.buffs_preview
 	_expect("buff preview lists stone prelude and agrarian buffs",
-		(model.buffs_preview as PackedStringArray).size() == 6)
+		preview.size() == 4 and preview.has("全社会经济产出 +14%"))
 
 	# --- trade counter --------------------------------------------------------
 	# Day 0 sampled trade_orders_total = 0 as the session baseline.
@@ -285,7 +288,7 @@ func _init() -> void:
 	model = service.refresh(10)
 	_expect("era_advanced emitted once with buffs", _advanced.size() == 1
 		and int(_advanced[0][0]) == 0 and int(_advanced[0][1]) == 1
-		and (_advanced[0][2] as PackedStringArray).size() == 6)
+		and _advanced[0][2] == preview)
 	_expect("after advancement the next era is evaluated fresh",
 		int(model.current_era_index) == 1 and int(model.next_era_index) == 2
 		and String(model.status) in ["locked", "ready"]
