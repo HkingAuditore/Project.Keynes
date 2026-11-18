@@ -47,6 +47,55 @@ standalone、fused geometry、visual tile 都传 `cell_landform`，不得只修�
 DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有编辑器锁定，
 构建完成后再切换 `.gdextension` 的 debug/release 映射；不要结束用户编辑器进程。
 
+### 烘焙期侵蚀 knobs（2026-11-18，19 项 + 1 诊断项）
+
+默认值的**唯一来源**是 `terrain_index_baker.gd::DEM_DEFAULTS`（经 `dem_landform_knobs()` 并入融合几何 pass 的
+knobs），可用 `project_keynes/rendering/dem/<去 dem_ 前缀>` 逐项覆盖。C++ 侧另有一套缺省值，
+两边原值一致；**改默认只改 GDScript 表**。
+
+| knob | 默认 | 单位 | 作用 |
+|---|---|---|---|
+| `dem_erosion_mode` | `"spl"` | — | `carve`/`spl`/`spl+carve`/`droplet`；C++ 缺省恒 `carve` |
+| `dem_erosion_max_dim` | 1024 | px（长边） | 侵蚀计算栅格上限；基线长边超过它时按整数因子盒式下采样 |
+| `dem_spl_iters` | 6 | 轮 | 把总侵蚀时间切成几步；只影响离散误差，不改宏观强度 |
+| `dem_spl_k` | 0.50 | 无量纲（总侵蚀时间） | 下切总量；以 `spl_p99_drop ∈ [0.01, 0.08]` 标定 |
+| `dem_spl_m` | 0.45 | — | 汇水面积指数（地貌学区间 0.4–0.6） |
+| `dem_spl_min_area_hex` | 0.03 | hex² | 汇水面积低于它不下切（坡面交给限坡） |
+| `dem_slope_limit_per_relief` | 5.0 | 高度/hex（× 局地起伏） | 坡限系数；默认与 carve 谷壁 `dem_valley_wall_per_relief` 相同 |
+| `dem_slope_limit_relief_floor` | 0.04 | 高度 | 起伏下限，避免平原区坡限趋 0 |
+| `dem_slope_limit_cap_per_relief` | 1.4 | 高度（× 局地起伏） | 单像素最大削减（= carve `dem_valley_depth_per_relief`） |
+| `dem_crest_round` | 0.0 | 强度 | 凸脊磨圆；只取负值 Laplacian，不填谷 |
+| `dem_dep_enabled` | `false` | — | P3a 输运受限沉积开关（默认关，等 A/B 裁决） |
+| `dem_dep_kc` | 0.02 | — | 搬运能力系数（与 SPL 同面积指数） |
+| `dem_dep_rate` | 0.5 | 比例/像素 | 超载部分每像素填回比例 |
+| `dem_dep_min_area_hex` | 0.5 | hex² | 只在成形河道上沉积 |
+| `dem_floor_widen` | `false` | — | P3b 谷底展宽开关（默认关） |
+| `dem_floor_width_hex` | 0.04 | hex | 展宽半宽系数：半宽 = 它 · `A_hex^0.5` |
+| `dem_floor_slope` | 0.002 | 高度/hex | 谷底横坡 |
+| `dem_floor_min_area_hex` | 2.0 | hex² | 展宽起点汇水面积 |
+| `dem_spl_carve_scale` | 0.40 | 比例 | 仅 `spl+carve`：叠加的浅刻谷按此比例缩放谷深 |
+| `dem_erosion_pit_audit` | `false` | — | 诊断：让合并管线额外算 `pits_out`；不改地形，但会多一次填洼（约 60 ms） |
+
+三条硬约束（动这些值之前先读）：
+
+1. **长度 / 面积参数一律以 hex 为单位**（不是像素、不是归一化高度）：像素量由 C++ 乘 `hex_px` 换算，
+   分辨率 / 平台（desktop 1024、Web 512–2048）变化时不改 knob。
+2. **迭代次数（`dem_spl_iters`）只按分辨率分档，禁止按耗时自适应或提前退出**：同一 seed 必须逐位复现，
+   机器负载只能改变耗时，不能改变地形结果。
+3. **C++ 缺省永远是 `carve`**（逐位回退基线）；`spl` 只能由 GDScript `DEM_DEFAULTS` 显式开启，不改 C++。
+   旧 `dem_valley_*` 在所有模式下语义不变；`dem_valley_river_outlet_flow` 在所有模式下都决定河心出口。
+
+**回退方法**：把 `dem_erosion_mode` 改为 `"carve"`——改一行、**无需重编**（C++ 缺省本就是 `carve`）；
+也可临时用 ProjectSettings 覆盖 `project_keynes/rendering/dem/erosion_mode = "carve"`。
+`carve` 输出由 FNV-1a 32-bit hash 门禁守逐位一致（三组基线用例见
+[terrain-erosion-spl-plan.md §6 P0](../plans/terrain-erosion-spl-plan.md)）。
+
+侵蚀相关验收：`tests/world/erosion_spl_bake_test.gd` 的 A1–A11（不变量 / 确定性 / 分辨率无关 / 回退 / 沉积），
+加六个既有回归（`mountain_relief_bake_test`、`terrain_index_edge_bake_test`、`terrain_detail_continuity_test`、
+`bake_encoder_cpp_parity_test`、`native_generation_equivalence_test`、`visual_tile_native_bake_test`）；
+性能看「同图同次运行的 carve vs spl 成对对照」，不要只看单模式绝对值
+（desktop `spl` 约 233–265 ms，同机多次运行波动约 ±15%）。
+
 ## 经济平衡调参
 
 经济平衡调整先用 `tests/economy/economy_balance_soak.gd` 跑固定种子的正式多国开局，

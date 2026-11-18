@@ -14,13 +14,16 @@ const MIN_TEXELS_PER_HEX := 1.0
 const DENSITY_DEGRADE_FACTOR := 0.90
 # height 4 (RGBA8: RG=elev16, B=flow) + terrain_normal 4 + terrain_relief 4
 # + map_index 4 + water_depth 4 + terrain_detail 1 + edge_neighbor 2 + edge_distance 4
-# + horizon 4 + gi_occluder 4 = 35.
+# + boundary_warp 2 (RG8: 边界扭曲场 xy) + horizon 4 + gi_occluder 4 = 37.
+# [cell-field 2026-11-18] tiled 新增 boundary_warp 瓦片（RG8，契约 §2/§4.2，
+#   与 visual_tile_set.FIELD_FORMATS 的 boundary_warp 同步）：35→37。
+#   漏改会让 resolver 低估显存、把本该降级的地图放行到超预算。
 # [static-bake 2026-10-10] 运行期不变的细节法线 / 海岸邻域 / 水面软权重改为烘焙：23→36；
 #   海岸邻域随后并入 edge_distance.ba、terrain_detail 回到 R8：36→35。
 # [height-flow-pack 2026-08-06] height 2→4、去掉独立 flow 1：22→23。
 # [terrain-gi 2026-07-31] gi_occluder 使这一项由 18 升到 22；漏改会让 resolver 低估
 # 显存占用，把本该降级的大地图放行到超预算。
-const BYTES_PER_PHYSICAL_TEXEL := 35
+const BYTES_PER_PHYSICAL_TEXEL := 37
 # terrain_relief 按 relief_scale 倍分辨率存（RGBA8），超出基础 4 字节的部分另计。
 const RELIEF_BYTES_PER_TEXEL := 4
 # Local RenderingDevice keeps a duplicate RG8 input, a float max pyramid and
@@ -50,6 +53,13 @@ var gutter_px: int = DEFAULT_GUTTER_PX
 #   同样内存下等效 texel 密度 −13.6%，96/128 MB 上限内会把 100x64 high 从 12.09 压到
 #   ~9.8）。本轮玩家反馈的根因是 texel 稀疏而不是 relief 分辨率，故不为它挤占密度预算；
 #   要开就在调用方 options 里显式传 relief_scale=2。
+# [relief-cost 2026-11-18] 桌面默认也从 2 降到 1。实测 100x64 / 16 texels：relief 段
+#   1790ms，占 24 层瓦片烘焙（3892ms）的 46%，是 loading 里最大的一项；降到 1 后这段
+#   按面积变成 1/4。同一次改动还顺带省掉 12 bytes/texel 的常驻内存（24 层约 -55MB），
+#   对 200x150 级大地图相当于把密度预算从 47B/texel 放回 35B/texel。
+#   想回到细一档：ProjectSettings 里把
+#   `project_keynes/rendering/map_tiles/relief_supersample` 设成 2（或在调用方
+#   options 里传 relief_scale=2），不需要改代码。
 var relief_scale: int = 1
 var layer_size: Vector2i = Vector2i.ZERO
 var logical_size: Vector2i = Vector2i.ZERO
@@ -106,7 +116,7 @@ static func resolve(
 		layout.hex_size / layout.requested_texels_per_hex)
 
 	layout.gutter_px = maxi(1, int(options.get("gutter_px", DEFAULT_GUTTER_PX)))
-	layout.relief_scale = clampi(int(options.get("relief_scale", 1 if mobile else 2)), 1, 4)
+	layout.relief_scale = clampi(int(options.get("relief_scale", _configured_relief_scale())), 1, 4)
 	var tile_edge := clampi(int(options.get("tile_edge", DEFAULT_TILE_EDGE)), 64, 2048)
 	var layer_cap := DEFAULT_LAYER_CAP if mobile else DESKTOP_LAYER_CAP
 	var max_layers := mini(layer_cap, maxi(1, int(options.get(
@@ -301,7 +311,7 @@ static func _configured_mode() -> String:
 ## 继续抬到 128/160 还能让 150x100 拿到 8.8、200x150 到 5.9，但中低端机的显存峰值
 ## 风险大于收益，本轮不采用。
 ## 结构性上限：200x150 级地图在 96/128 下仍拿不到 8 texels/hex——这是「整图全驻留、
-## 不许流式」的必然结果（1 px 稳态 35 B、峰值 51 B）。要再提只能做可见区分块/流式高精度，
+## 不许流式」的必然结果（1 px 稳态 37 B、峰值 53 B）。要再提只能做可见区分块/流式高精度，
 ## 不在本轮范围。
 static func _default_resident_cap_mb(mobile: bool) -> float:
 	return 96.0 if mobile else 512.0
@@ -309,6 +319,14 @@ static func _default_resident_cap_mb(mobile: bool) -> float:
 
 static func _default_peak_cap_mb(mobile: bool) -> float:
 	return 128.0 if mobile else 768.0
+
+
+## terrain_relief 的超采样倍数。默认 1（桌面与移动同一档）。
+## 设 2 能拿回近景细节坡度，代价是 relief 烘焙耗时按面积 ×4（实测 100x64 +1.3s）
+## 外加 12 bytes/texel 常驻内存。见 relief_scale 字段上方的 [relief-cost] 注释。
+static func _configured_relief_scale() -> int:
+	return clampi(int(ProjectSettings.get_setting(
+		"project_keynes/rendering/map_tiles/relief_supersample", 1)), 1, 4)
 
 
 static func _configured_texels_per_hex(quality: String, mobile: bool) -> float:

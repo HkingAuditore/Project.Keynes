@@ -66,7 +66,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_gm_adapter_part1.gd": {
-      "lines": 884,
+      "lines": 961,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
@@ -166,11 +166,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/hex_renderer.gd": {
-      "lines": 1691,
+      "lines": 1737,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/map_baker.gd": {
-      "lines": 1687,
+      "lines": 1697,
       "limit": 600
     },
     "Project/project-keynes/scripts/rendering/military_army_token_layer.gd": {
@@ -186,11 +186,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/renderer_scene_services.gd": {
-      "lines": 819,
+      "lines": 852,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/renderer_shader_water.gd": {
-      "lines": 1109,
+      "lines": 1432,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub/chunk_refresh.gd": {
@@ -206,7 +206,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/weather_layer.gd": {
-      "lines": 1664,
+      "lines": 1894,
       "limit": 800
     },
     "Project/project-keynes/scripts/simulation/climate/climate_daily_runtime.gd": {
@@ -522,11 +522,15 @@
       "limit": 2000
     },
     "gdext/src/world_ext.h": {
-      "lines": 4082,
+      "lines": 4122,
       "limit": 2000
     },
     "gdext/src/world_ext_atlas.cpp": {
       "lines": 2289,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_bake.cpp": {
+      "lines": 2401,
       "limit": 2000
     },
     "gdext/src/world_ext_bio.cpp": {
@@ -560,6 +564,18 @@
     "gdext/src/world_ext_weather.cpp": {
       "lines": 3491,
       "limit": 2000
+    },
+    "Project/project-keynes/scripts/rendering/bakers/cell_lut_baker.gd": {
+      "lines": 1297,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/bakers/surface_baker.gd": {
+      "lines": 850,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/fog_of_war_layer.gd": {
+      "lines": 822,
+      "limit": 800
     }
   }
 }

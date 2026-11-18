@@ -80,7 +80,11 @@ const float NDOTL_BIAS          = 0.0005;
 //   NIGHT_BRIGHTNESS_FLOOR ：夜晚最暗系数（旧 mix(1, 0.55, night)）
 //   SUN_INTENSITY_GAIN     ：阳光增益（线性空间下的 sun radiance multiplier）
 // ─────────────────────────────────────────────────────────────────────
-const float AMBIENT_FLOOR_LAND     = 0.18;
+// [dead-shadow 2026-11-18] 0.18 → 0.22。这个地板是**乘 albedo 之前**的绝对值，所以
+// 深色地表（森林 0.22 档）实际下限只有 0.18×0.22 ≈ 0.04；一旦坡面背光、dot(N,L) 归零，
+// 直射全灭就只剩这 0.04，读作死黑。只补间接光，不动直射与中间调。
+// 0.26 试过一档：暗部是起来了，但整体 meanL 抬了约 17%，画面开始发灰，回落到 0.22。
+const float AMBIENT_FLOOR_LAND     = 0.22;
 const float AMBIENT_FLOOR_WATER    = 0.22;
 const float HILLSHADE_BASE_LIFT    = 0.55;
 const float NIGHT_BRIGHTNESS_FLOOR = 0.68;

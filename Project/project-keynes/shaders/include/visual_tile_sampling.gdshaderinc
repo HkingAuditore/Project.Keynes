@@ -73,7 +73,12 @@ uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
 #define TS_LAYER_OCCLUDER 3.0
 #define TS_LAYER_EDGE_DISTANCE 4.0
 #define TS_LAYER_EDGE_NEIGHBOR 5.0
-// 运行期实际层数（2 = 旧的两层图；3 = +detail；4 = +occluder；6 = +edge 两层）。
+// [cell-field 2026-11-18] layer6 = boundary_warp（RG = 扭曲场 xy 的 RG8 编码，BA 预留；
+// LINEAR）。格界形状的唯一来源：与 CPU 高程 / 海滩坡烘焙逐位同源（同一个 buffer），
+// 所以山影海岸、海滩坡与颜色边界不会错开。方案 §3.5。
+#define TS_LAYER_BOUNDARY_WARP 6.0
+// 运行期实际层数（2 = 旧的两层图；3 = +detail；4 = +occluder；6 = +edge 两层；
+// 7 = +boundary_warp）。
 uniform int terrain_surface_layer_count = 2;
 uniform bool terrain_detail_layer_bound = false;
 uniform bool terrain_occluder_layer_bound = false;
@@ -82,6 +87,7 @@ uniform bool terrain_occluder_layer_bound = false;
 // **绝不采样越界层**（GLES3 对越界 layer 的返回值未定义）。
 uniform bool terrain_edge_layers_bound = false;
 #endif
+
 
 #ifdef VT_USE_TERRAIN_NORMAL
 #ifdef MAP_VISUAL_TILED
@@ -362,6 +368,68 @@ vec4 visual_sample_edge_distance(vec2 uv) {
 #else
 uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
 vec4 visual_sample_edge_distance(vec2 uv) { return texture(terrain_edge_distance_tex, visual_static_wrap_uv(uv)); }
+#endif
+#endif
+
+// [cell-field 2026-11-18] per-cell 属性表 + 扭曲场。只在 PK_CELL_FIELD 变体里定义
+// VT_USE_CELL_TABLE / VT_USE_BOUNDARY_WARP（见 world_map.gdshader 的预算分配块）。
+// 关闭 PK_CELL_FIELD 时下面的代码被预处理器整段剔除 ⇒ 与今日逐像素一致。
+#ifdef VT_USE_CELL_TABLE
+// offset 空间的 per-cell 表（map_w × map_h，1 texel = 1 格，4 层 RGBA8）。
+// **必须 texelFetch**：1 texel 就是 1 格，任何插值都会跨格混字节。
+// 一个 sampler 替换掉 map_index_atlas + enum_lut + dyn_lut 三个 ⇒ 净省 2 槽。
+// 层号常量 0/1/2 在 hex_cell_field.gdshaderinc（PK_CELL_LAYER_CLASS/STATE/AUX）；
+// layer3 的常量与门控在本文件（见下），因为它的唯一读者在 brdf 里，而 brdf 只保证
+// include 过 visual_tile_sampling。
+uniform sampler2DArray cell_table : filter_nearest, repeat_disable;
+uniform vec2 cell_table_size = vec2(1.0, 1.0);
+uniform bool cell_table_bound = false;
+// [cell-field-web 2026-11-18] layer3 = class_by_index：**按 cell.index 排列**的 class
+// 镜像（第 i 格放在 (i % W, i / W)），内容就是今天 enum_lut 的 RGBA。layer0..2 是
+// offset 空间，而 GI 弹射的遮挡层存的是 cell.index —— 有了这一层，弹射色就可以不再
+// 依赖 map_index_atlas / enum_lut（方案 §3.1）。与 GDScript
+// `DCCellTableCodec.LAYER_CLASS_BY_INDEX = 3` 同值，改一处必须改另一处。
+#define PK_CELL_LAYER_CLASS_BY_INDEX 3
+// layer3 是否真的烘出来了。**必须门控，不能靠"读出来大概是 0"**：GLES3 对越界 layer
+// 的 texelFetch 返回值未定义（与 terrain_edge_layers_bound 同一类防线）。false
+// （旧图 / 烘失败 / 层数不足）⇒ brdf 的弹射色返回 vec3(0.0)，等价于"无弹射"。
+uniform bool cell_class_index_bound = false;
+#if !defined(VT_USE_MAP_INDEX) && !defined(MAP_VISUAL_TILED)
+// [cell-field-web 2026-11-18] visual_static_texture_size() 原来只在上面的
+// VT_USE_MAP_INDEX 块里定义（= textureSize(map_index_atlas, 0) = derived_size）。
+// 预算变体启用场函数后 map_index 整张退役，该定义会一起消失 —— 这里补一个**同值**定义：
+// derived_resolution 推的就是同一份尺寸（非 tiled：world.derived_size，而
+// map_index_atlas = world.enum_atlas_tex 正是按 derived_size 生成的；见
+// renderer_material_publish.gd:404-405 与 map_baker.gd:774/916）。语义 = "静态地图栅格
+// 的像素尺寸"，与 map_index 是否绑定无关。
+// tiled 路径在上面的 MAP_VISUAL_TILED 块里已经有定义（visual_logical_resolution），
+// 这里绝不重复定义；VT_USE_MAP_INDEX 仍在时也由那边的定义负责。
+vec2 visual_static_texture_size() { return derived_resolution; }
+#endif
+#endif
+
+#ifdef VT_USE_BOUNDARY_WARP
+// layer6 / warp tile 是否真的烘出来了。false ⇒ pk_boundary_warp_world() 恒返回 0，
+// 格界退化成直边六边形归属（仍与 CPU cube_round 逐点一致，只是没有侵蚀弯曲观感）。
+// **必须声明在 VT_USE_BOUNDARY_WARP 里**：Web 水面精简程序的 uniform 集合有逐项断言
+// 守着（tests/world/web_water_pass_node_test.gd 的 "compact uniform set"），
+// 无条件声明会把它从 67 推到 68。
+uniform bool terrain_warp_layer_bound = false;
+#ifdef MAP_VISUAL_TILED
+uniform sampler2DArray visual_warp_tiles : filter_linear, repeat_disable;
+vec4 visual_sample_boundary_warp(vec2 uv) { return texture(visual_warp_tiles, visual_tile_address(uv)); }
+#elif defined(VT_USE_TERRAIN_SURFACE_ARRAY)
+// layer6：RG = 扭曲向量，LINEAR 采样（双线性保证场连续；量化误差 ≈ 0.1 wu）。
+// 未烘焙时返回中性值 0.5（解码成 0 偏移）⇒ 格界退化成直边，绝不采样越界层。
+vec4 visual_sample_boundary_warp(vec2 uv) {
+	if (!terrain_warp_layer_bound) {
+		return vec4(0.5, 0.5, 0.0, 0.0);
+	}
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_BOUNDARY_WARP));
+}
+#else
+uniform sampler2D terrain_boundary_warp_tex : filter_linear, repeat_disable;
+vec4 visual_sample_boundary_warp(vec2 uv) { return texture(terrain_boundary_warp_tex, visual_static_wrap_uv(uv)); }
 #endif
 #endif
 

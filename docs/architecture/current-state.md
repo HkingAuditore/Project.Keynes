@@ -159,3 +159,30 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 源目录行循环可让出帧，同步调用仍走同一编译过程。Effect 初始化编排归
 `map_rules_initializer.gd`。实现契约与验收入口见 feature-guides 的“加载期目录准备”；
 是否达到加载帧耗时目标以 feature-status 的实际测试记录为准。
+
+## 地形烘焙 pass（2026-11-18）
+
+视觉地形烘焙的 pass 清单多了一条**侵蚀模式分支**，并新增一个 buffer-encoder pass（均在 bake 期，
+运行期零开销、无存档格式变更）：
+
+| pass | 入口 | 现状 |
+| --- | --- | --- |
+| 融合几何 pass `run_bake_geometry_fields_pass` | `gdext/src/world_ext_bake.cpp` | 进程内串起 terrain-index → 侵蚀 → 河流 SDF → 海岸 SDF → 纬度；**侵蚀阶段新增 `dem_erosion_mode` 分支** |
+| `run_bake_erosion_spl_pass`（**新增**） | 同上 | 与融合 pass 共用同一份 `pk_erosion` 管线实现（不复制算法）；只给测试 / A/B probe 喂合成高度场，生产走融合 pass |
+| `run_bake_erosion_pass`（液滴，保留） | 同上 | ABI 不变；只在 `carve` / `droplet` 与 legacy 回退路径执行 |
+
+生成链路里的分支：`MapBaker.bake_world()` 优先调融合几何 pass；侵蚀阶段按 `dem_erosion_mode` 走
+
+- `carve`：几何刻谷（Priority-Flood 填洼 → MFD 汇水 → `log(A)` 映射谷深 → 倒角谷壁）+ 液滴，**逐位回退基线**；
+- `spl`（**出货默认**）：建树（填洼 + 最陡受体 + 汇水面积）→ 系数预计算 → 隐式下切 → [沉积/展宽] → 限坡；不跑刻谷、不跑液滴；
+- `spl+carve`：SPL 管线 + 浅刻谷（`dem_spl_carve_scale`），诊断模式；
+- `droplet`：仅液滴（历史对照）。
+
+**C++ 缺省恒为 `carve`**（不认识 / 缺省的模式串一律回退 `carve`），`spl` 只能由
+`terrain_index_baker.gd::DEM_DEFAULTS` 显式开启；`dem_dep_enabled` / `dem_floor_widen` 仍为 `false`。
+fused 返回 fallback 时回退 legacy per-pass 编排（terrain-index 或 GDScript ground-truth +
+`bake_hydraulic_erosion` + 河流 SDF）。
+
+绑定与清单：`native_binding_manifest.json` 计数 661 → 662（只多 `run_bake_erosion_spl_pass`），
+`check_world_ext_bindings.py` 0 problems。改动摘要、验证证据与未覆盖范围见
+[feature-status.md](feature-status.md)。

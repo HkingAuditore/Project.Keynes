@@ -119,6 +119,7 @@ static func _apply_profile(host) -> void:
 	for name in ["vitality_dead_threshold", "vitality_power", "climate_response", "snow_response",
 		"wind_strength", "animal_motion", "detailed_pixels", "simple_pixels", "fade_pixels",
 		"palette_saturation", "badge_px", "decal_opacity", "submerged_opacity",
+		"decal_slope_fit", "decal_ground_tint",
 		"outline_strength", "contact_shadow", "cast_shadow", "luma_compress", "luma_range",
 			"area_feather", "area_edge_noise", "solid_edge_softness", "decal_edge_softness",
 			"decal_edge_noise", "plant_cluster_density", "river_clear_threshold"]:

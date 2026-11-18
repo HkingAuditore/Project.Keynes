@@ -244,6 +244,70 @@ var weather_lut_tex: ImageTexture
 var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值减两次更新间横跳)
 var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
 var lut_dims: Vector2i = Vector2i.ZERO
+# ─── [cell-field-overlays 2026-11-18] 天气/风的 offset 空间表（方案 §3.3）─────────────
+# weather_table：Texture2DArray（RGBA8，**4 层**，map_w × map_h，1 texel = 1 格，
+# **offset 空间**，texel 线性下标 = row * map_w + col）。存在的理由只有一个：让天气
+# overlay 的场函数（`pk_hex_tri` 给出的是 offset 坐标）能用 **texelFetch** 直接三格取值，
+# 不再经 `map_index_atlas` 的 `cell.index` 间接寻址（那段是依赖读 + 每张表都多一次）。
+#
+#   layer 0 / 1  ：天气 A / B —— R=type G=intensity B=cloud A=vapor，
+#                  与 `weather_lut_tex` **逐字节同源**（同一份 index 空间字节按 o2i 重排）
+#   layer 2 / 3  ：风 A / B   —— 与 `cloud_shadow_field` 的 `wind_lut` 同编码
+#                  （RG = 单位风向 *0.5+0.5，B = speed/20，A = 1；
+#                   编码器唯一实现是 `weather_wind_source.encode_wind()`）
+#
+# **双缓冲靠层号，不拷贝数据**：每次天气提交只用 `Texture2DArray.update_layer()` 写
+# 「当前没在当 cur 的那一层」（旧层），然后翻转一个 int uniform。所以
+#   cur  = weather_table_cur        （0 或 1，-1 = 还没有任何一次成功提交）
+#   prev = 1 - weather_table_cur
+#   wind_cur = 2 + cur / wind_prev = 2 + prev
+# 翻转语义等价于今天 weather_lut_tex / weather_lut_prev_tex 两张独立纹理，但少一次整图上传。
+# `weather_table_valid == false` 时 shader 必须退化成旧 LUT 路径（不得读未初始化纹理）。
+# 只由 `cell_lut_baker._publish_weather_table()` 写，其它模块只读。
+var weather_table_tex: Texture2DArray = null
+var weather_table_dims: Vector2i = Vector2i.ZERO   # (map_w, map_h)，与 cell_table_dims 同源
+var weather_table_cur: int = -1                    # 当前天气层号 0/1；-1 = 未提交
+var weather_table_valid: bool = false              # 成败标志（失败时 shader 走旧路径）
+# ─── [cell-field 2026-11-18] per-cell 属性表（方案 §3.4 / 契约 §3、§5.1）───────────
+# cell_table：Texture2DArray（RGBA8，**4 层**，map_w × map_h，1 texel = 1 格）。
+# layer0/1/2 是 **offset 空间**（texel 线性下标 = row * map_w + col，**不是** cell.index
+# 空间——cell.index 是 _cells 字典的插入顺序，shader 由 hex 坐标推不出来）；
+# layer3 是 **cell.index 空间**（Web 方案 §3.1：第 i 格放在 (i % map_w, i / map_w)）。
+#   由 cell_lut_baker 在发布 enum_lut / dyn_lut 的同一次 refresh 里**追加**产出
+#   （不改三张 LUT 的字节与时机），层布局见契约 §3 + Web 方案 §3.1：
+#     layer0 class          = biome / vegetation / cover / landform（生成期或地形改变时重写）
+#     layer1 state          = temp / wet / snow / vitality|sea_ice（与 dyn_lut 逐字节同源，每日）
+#     layer2 aux            = fog_k / water_depth / flags（预留）/ 0（探索或水深变化时）
+#     layer3 class_by_index = 同 layer0 的四个通道，**不重排**（与 layer0 同一次判定刷新；
+#                             前提 n_cells ≤ map_w × map_h，装不下时整层占位、不对外承诺）
+#   cell_table_tex == null 或 cell_table_bound == false ⇒ shader 必须按"无表"退化
+#   （不得读未初始化纹理）。cell_table_dims 是 shader 推 offset 的模数（回绕列走
+#   posmod），必须与实际纹理尺寸一致；上面这几个字段只由发布器写，其它模块只读。
+var cell_table_tex: Texture2DArray          # 4 层 RGBA8，map_w × map_h
+var cell_table_dims: Vector2i = Vector2i.ZERO
+var cell_table_bound: bool = false
+# [cell-field-web 2026-11-18] cell_table **实际可读**的层数（0 = 未发布）：
+#   0 = 没有可用的表（发布失败 / 旧存档 / 旧图）；
+#   3 = 只有 offset 空间的三层（layer3 因 n_cells > map_w*map_h 不可发布，第 4 层是占位）；
+#   4 = 含 layer3 class_by_index，shader 可以按 cell.index 查 biome（GI 弹射色）。
+# 语义是"这一版数据里 shader 允许读哪些层"，**不是** 纹理的 get_layers()——降级时纹理
+# 仍然是 4 层，只是第 4 层没人能读。唯一写点：cell_lut_baker._publish_cell_table；
+# 消费点：渲染推送的 `cell_class_index_bound = cell_table_layers >= 4`（陆地 + 水面两片
+# program 各推一次，必须同值）。初始化就是 0，所以旧存档天然"不读 layer3"。
+var cell_table_layers: int = 0
+# [cell-field 2026-11-18] 边界扭曲场（方案 §3.5 / 契约 §2、§5.1）：C++ 的
+# run_bake_terrain_index_pass 顺手输出的 RG8 逐像素场（W*H*2，R=x/G=y，
+# v = clamp((warp+hi)/range, -1, 1)，byte = round((v*0.5+0.5)*255)）。
+# terrain_index_baker 只做尺寸校验 + 暂存（_stash_boundary_warp），真正的消费者是
+# 非 tiled 的 surface_baker（扩进 terrain_surface_tex.layer6）与 tiled 的 visual_tile_set
+# （warp kind）。渲染器把 range 推成 shader 的 terrain_warp_range uniform，**不在 shader 里硬编码**。
+var boundary_warp_buf: PackedByteArray = PackedByteArray()
+var boundary_warp_range: float = 1.6        # C++ PK_WARP_RANGE
+var boundary_warp_clamped: int = 0
+# [cell-field 2026-11-18] terrain_surface_tex 的 layer6（boundary_warp）是否真的烘出来了。
+# 层数不足 7 / 该层被中性化时为 false，shader 的 VT_USE_BOUNDARY_WARP 退化成直边六边形
+# （仍与 CPU cube_round 逐点一致，只是没有弯曲格界）。
+var terrain_warp_layer_bound: bool = false
 
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。
 # 在 _bake_height_biome_moisture 里第一遍 warp + cube_round 时顺手填好；之后

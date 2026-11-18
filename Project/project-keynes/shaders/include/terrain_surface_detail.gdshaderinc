@@ -135,6 +135,12 @@ float terrain_bayer2_digit(vec2 bit_xy) {
 // at the cell boundary while keeping every Dither island compact.
 const float TERRAIN_DITHER_THRESHOLD_MARGIN = 0.18;
 
+// [cell-field 2026-11-18] DitherUV 整族在 PK_CELL_FIELD 下编译剔除（方案 §3.6 末条）：
+// 网格化 Bayer 网点是本方案要消除的纹素化产物（§2.1），场函数用「每格世界锚定噪声
+// argmax」（pk_cell_field_gate_class）取代它。四个函数及其注释整段不进预处理产物，
+// 所有调用点（本文件的 compute_terrain_static_material、world_map 的 SETUP）同样按
+// define 守好；关闭 PK_CELL_FIELD 时逐字不变。
+#ifndef PK_CELL_FIELD
 // 移动端恢复 atlas-texel 锚定的 8x8 Bayer DitherUV。它只选择视觉主/副材质，
 // 不改写 map_index_atlas.GB、CSR 或任何权威 cell 状态。
 float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
@@ -214,6 +220,17 @@ float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 #endif
 	return mix(edge_w, dither_w, dither_strength);
 }
+#endif // PK_CELL_FIELD（DitherUV 整族）
+
+// [cell-field 2026-11-18] 方案 §3.2 带宽上限：解析格界的对偶三角形切换时，第三格在
+// 共享边上的 gap ≥ 0.5·√3 ≈ 0.866；带宽一旦超过它，第三格会在共享边一侧有权重、
+// 另一侧突然消失 ⇒ 沿穿过格中心的那些线出现接缝。0.86 留 0.6% 余量。
+// 取值必须与 hex_cell_field.gdshaderinc 的 `PK_FIELD_BAND_MAX` 逐位相同 —— 但那个
+// const 在**本文件之后**才 include（契约 §4.3 的 include 顺序），此处取不到，故用本
+// 文件的别名常量；改一处必须同改两处（契约文档 §1「带宽上限」行）。
+#ifdef PK_CELL_FIELD
+const float PK_LAND_FIELD_BAND_MAX = 0.86;
+#endif
 
 // The inner fwidth band removes raster stair-steps. A wider world-space ecotone
 // provides a shared visual anchor for the final land pipeline; cell-owned
@@ -243,17 +260,30 @@ float terrain_edge_secondary_weight_d(float distance_to_edge, vec2 wp) {
 	float quality_scale = 1.0;
 	quality_scale = (visual_quality <= 0) ? 0.68 : ((visual_quality == 1) ? 0.92 : 1.0);
 	float base_width = clamp(terrain_ecotone_width * quality_scale, 0.0, 0.96);
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 噪声扩宽不得越过解析格界的带宽上限（方案 §3.2）。
+	float max_width = min(PK_LAND_FIELD_BAND_MAX, min(0.98,
+			base_width * (1.0 + abs(terrain_ecotone_noise))));
+#else
 	float max_width = min(0.98, base_width * (1.0 + abs(terrain_ecotone_noise)));
+#endif
 	if (distance_to_edge >= max_width || base_width <= 0.0001) {
 		return aa_weight;
 	}
 	float width_noise = texture(
 			noise_tex,
 			terrain_periodic_world_uv(wp, 96.0) + vec2(0.173, 0.491)).r * 2.0 - 1.0;
+#ifdef PK_CELL_FIELD
+	float natural_width = clamp(
+			base_width * (1.0 + width_noise * terrain_ecotone_noise),
+			min(aa_band, PK_LAND_FIELD_BAND_MAX),
+			PK_LAND_FIELD_BAND_MAX);
+#else
 	float natural_width = clamp(
 			base_width * (1.0 + width_noise * terrain_ecotone_noise),
 			min(aa_band, 0.98),
 			0.98);
+#endif
 	float ecotone_weight = 0.5 * (1.0 - smoothstep(
 			0.0, max(natural_width, 0.0001), distance_to_edge));
 	return max(aa_weight, ecotone_weight);
@@ -287,6 +317,11 @@ float terrain_biome_micro_strength(int biome) {
 	return 0.40; // organic terrain
 }
 
+// [cell-field 2026-11-18] 本函数依赖上面那段已随 DitherUV 整族编译剔除的混合权重
+// 函数，因此 PK_CELL_FIELD 变体里整段不进预处理产物。场版本在
+// terrain_cell_field_detail.gdshaderinc::compute_terrain_static_material_field()，
+// 由 land_pipeline 按同一个 define 二选一调用。
+#ifndef PK_CELL_FIELD
 TerrainStaticMaterial compute_terrain_static_material(
 		int primary_biome,
 		float elev,
@@ -372,6 +407,7 @@ TerrainStaticMaterial compute_terrain_static_material(
 			static_w);
 	return out_mat;
 }
+#endif // PK_CELL_FIELD —— 场版本见 terrain_cell_field_detail.gdshaderinc
 
 // [pixel-scale-detail 2026-11-03] micro 淡入口径：camera_zoom → hex_px
 //   hex_px = hex_size × pk_px_per_world_unit()（一个 hex 占多少物理像素，
@@ -562,6 +598,18 @@ vec3 terrain_index_debug_color(int cid) {
 	return fract(vec3(0.1031, 0.11369, 0.13787) * f + vec3(0.17, 0.43, 0.71));
 }
 
+// [cell-field-web 2026-11-18] 预算变体启用场函数后（PK_CELL_FIELD_NO_LEGACY_LUT），
+// 下面这段调试视图 1–10 **整段剔除**：它们逐个直读 map_index / enum_lut / dyn_lut /
+// edge 次生 id / micro —— 那 5 条通道在该组合下全部退役（前三条的声明已被删掉），
+// 保留它们只会让编译失败或读出垃圾。按方案 §2 表的要求改为输出品红占位：
+// 品红 = "这一档在本变体里不可用"（与 terrain_index_debug_color 的 cid<0 品红同语义，
+// 但这里是**编译期**决定，不是运行期数据异常）。真正的诊断改走场函数专有的 18–23 档
+// （world_map.gdshader 的 PK_CELL_FIELD 段）。
+#ifdef PK_CELL_FIELD_NO_LEGACY_LUT
+vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
+	return vec3(1.0, 0.0, 1.0);
+}
+#else
 vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 	if (terrain_surface_debug_view == 1) {
 		return terrain_index_debug_color(primary_id);
@@ -630,3 +678,4 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 	}
 	return vec3(terrain_micro_zoom_alpha());
 }
+#endif // PK_CELL_FIELD_NO_LEGACY_LUT —— 预算 + 场函数组合下整段调试视图改用场函数档 18–23

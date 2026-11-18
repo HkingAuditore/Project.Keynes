@@ -47,6 +47,10 @@ const WATER_SHADER_PATH = RendererShaderWater.WATER_SHADER_PATH
 const WATER_PASS_PREFIX = RendererShaderWater.WATER_PASS_PREFIX
 const SPLIT_LAND_ONLY_DEFINE = RendererShaderWater.SPLIT_LAND_ONLY_DEFINE
 const SPLIT_WATER_ONLY_DEFINE = RendererShaderWater.SPLIT_WATER_ONLY_DEFINE
+## [cell-field 2026-11-18] 解析格界的 define 片段与项目设置键：预热清单（WebShaderWarmup）
+## 与测试都从这里取，保证「预热 = 运行期」用的是同一行字节（不在预热文件里写宏字面量）。
+const CELL_FIELD_DEFINE = RendererShaderWater.CELL_FIELD_DEFINE
+const CELL_FIELD_SETTING = RendererShaderWater.CELL_FIELD_SETTING
 const WORLD_MAP_SHADER_PATH = RendererShaderWater.WORLD_MAP_SHADER_PATH
 const WATER_PARAM_NAMES: Array[StringName] = RendererShaderWater.WATER_PARAM_NAMES
 const _HORIZON_BAKE_SHADER_PATH = RendererTerrainHorizon._HORIZON_BAKE_SHADER_PATH
@@ -372,10 +376,20 @@ var _wind_strength: float = 0.15
 ## A/B switch for the HIGH terrain material-array path. This is intentionally
 ## not exposed as a player-facing setting; false restores the legacy path.
 var terrain_materials_enabled: bool = true
-@export_range(0, 17, 1) var terrain_surface_debug_view: int = 0:
+## 地表诊断视图 id（0 = 正常画面）。0..17 为既有视图，18..23 是
+## [cell-field 2026-11-18] 新增的六个解析格界对照视图（只在 PK_CELL_FIELD 变体里编得出来）：
+##   18 = dom 一致性（解析格归属 vs 烘焙 map_index，不一致处标红）
+##   19 = 三格权重 RGB（权重直接上屏，看对偶三角是否连续）
+##   20 = gap 差值（解析 gap vs edge_distance.R）
+##   21 = warp 可视化（扭曲场 rg → 屏幕向量）
+##   22 = dom offset 编码（R,G=col 低/高字节，B=row 低字节，A=1.0；
+##        tests/world/cell_field_gpu_parity_probe.gd 回读后逐像素与 DCHexCellField.dom_at 比对）
+##   23 = 实际带宽 band 灰阶（band/0.86；经线接缝整列变白 = 导数取在已回绕坐标上的回归信号）
+## 上限必须与 clampi、GM 面板条目、shader 里的 `terrain_surface_debug_view == 2x` 同步改。
+@export_range(0, 23, 1) var terrain_surface_debug_view: int = 0:
 	set(value):
 		var was_split := _split_active()
-		terrain_surface_debug_view = clampi(value, 0, 17)
+		terrain_surface_debug_view = clampi(value, 0, 23)
 		RendererShaderWater._apply_surface_debug_view(self, was_split)
 
 ## 陆地 / 水面双 program 总开关，可用于远程 inspector 的 A/B。
@@ -396,6 +410,23 @@ var terrain_materials_enabled: bool = true
 			return
 		terrain_coverage_mesh_enabled = value
 		RendererTerrainHorizon._apply_coverage_mesh_enabled(self)
+
+## [cell-field 2026-11-18] 解析格界总开关（方案 §3.10「一个 define + 一个导出开关」）。
+## **出货默认开**（2026-11-18 第二轮末尾打开；`project.godot` 里显式写 true）。
+## 关闭时 shader 前缀一个字节都不变 ⇒ 与加这套功能之前逐像素一致，这是回退保证。
+## 作用域 = 桌面 Vulkan / 移动 **+ Web / 桌面 Compatibility**：后者要先过 boot 自检
+## （`cell_field_boot_allows()`），自检不过自动退回旧路径并在 `Engine` meta 里记 fail。
+## 两个口：
+##   · 项目设置 project_keynes/rendering/map_tiles/terrain_cell_field_enabled —— 部署期
+##     默认值，_init() 读它作为本变量的初值（"setting + export" 惯例）；
+##   · 本变量 —— 运行期权威，GM 面板 / 远程 inspector 可热切。
+## 切换会重编 shader 变体（define 是编译期的）：见 RendererShaderWater._apply_cell_field_enabled()。
+@export var terrain_cell_field_enabled: bool = true:
+	set(value):
+		if terrain_cell_field_enabled == value:
+			return
+		terrain_cell_field_enabled = value
+		RendererShaderWater._apply_cell_field_enabled(self)
 
 # 材质族参数暴露给 Inspector；运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效，
 # _rebuild 全量推送也读这组值。
@@ -1070,6 +1101,21 @@ var _building_visual_layer: BuildingVisualLayer = null
 
 
 func get_last_detail_drain_ms() -> float: return RendererSceneServices.get_last_detail_drain_ms(self)
+
+## [cell-field 2026-11-18] 项目设置侧的解析格界开关（转发给 RendererShaderWater）。
+## 与 _init() 的 export 初值走同一个函数，保证「部署期默认值」与「运行期实际行为」
+## 读的是同一个设置。注意 v1 它只对桌面 Vulkan / 移动有效（见 terrain_cell_field_enabled
+## 与 RendererShaderWater._cell_field_active 的注释）。
+static func cell_field_setting_enabled() -> bool:
+	return RendererShaderWater.cell_field_setting_enabled()
+
+## [cell-field 2026-11-18] 项目设置只作为**初值**来源：部署期配置决定默认，运行期权威
+## 仍是 export 变量（GM 面板要能双向热切，见 terrain_cell_field_enabled 的注释）。
+## 放在 _init 而不是 _ready：_ready 时 set_map / shader 装配已经开始，改开关会与
+## 首帧的变体装配抢时序。此处的赋值命中 setter，但此时还不在树上，
+## _apply_cell_field_enabled() 里的 _refresh_split_configuration() 会安全早退。
+func _init() -> void:
+	terrain_cell_field_enabled = cell_field_setting_enabled()
 
 func _ready() -> void:
 	RendererSceneServices._ready(self)

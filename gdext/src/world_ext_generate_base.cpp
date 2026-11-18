@@ -111,6 +111,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     const double dist_field_weight = getd(profile, "dist_field_weight", 0.55);
     const double noise_weight = getd(profile, "noise_weight", 0.45);
     const double ridge_boost_amp = getd(profile, "ridge_boost_amp", 0.68);  // macro-relief：0.50→0.68（更高耸连片山系）
+    // [P5-0 诊断 2026-11-18] 可选导出脊信号场，供 ridge_drainage_metrics_test.gd 计算 M1
+    // （陆地格 Spearman(ridge_add, log 汇水面积)）。**纯诊断**：只在 profile 传 ridge_debug_dump=1 时
+    // 分配并返回，不参与任何计算、不改变任何输出数组 → 不设此键时行为逐位不变（有 hash 门禁验证）。
+    // 生产与 perf-validation 都不传该键。
+    const bool ridge_debug_dump = geti(profile, "ridge_debug_dump", 0) != 0;
+    PackedFloat32Array ridge_add_diag;
     const double meso_weight = getd(profile, "meso_weight", 0.40);   // 2026-06-19 回退：保留多块大陆+岛屿群（用户认可的形状）
     const double offshore_amp = getd(profile, "offshore_amp", 0.45);  // 2026-06-19 回退：保留近海点缀岛屿/群岛
     // [macro-relief 2026-06-19] 低频大尺度起伏权重。meso(400×高频)负责海岸破碎/群岛(用户认可，
@@ -680,25 +686,89 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         }
     }
 
-    // ── 2.5 水力液滴侵蚀 + 热力坍塌（terrain-overhaul Phase 1）────────────────
-    // 移植 map_baker.gd::_hydraulic_erosion 液滴模型，改为作用于 cell 海拔(hex 6 邻域最陡
-    // 下降)，置于 normalize 之后、地形决策之前。产出河谷/山脊线/冲积平原，让地貌更连续、河网
-    // 更自然；热力坍塌(talus 角)软化过陡坡。迭代上限参数化以控生成耗时(<几百 ms@15000 格)。
+    // ── R. [P5-1.1 2026-11-18] 脊信号前置：构造抬升场 ────────────────────────────────
+    // 旧 §5 在 SPL **之后**把一份与汇水完全无关的脊噪声直接加到 E 上：脊线横跨河谷、在谷中筑坝，
+    // 坝后盆地被 post-base 的 Priority-Flood 识别成湖盆（terrain-ridge-uplift-plan §1.2 问题 1/2）。
+    // 新做法把同一份脊信号搬到 SPL **之前**算成抬升场 U 的一部分，让山脊在「抬升 vs 下切」的
+    // 准平衡里自己长出来：脊信号强、汇水小的格 U/C 大 → 高出下游 → 成脊；穿过山带的大河 A/C 大
+    // → 抬升被下切抵消 → 峡谷（先成河）；无脊信号的地台只剩 u_relief·relief0 的轻微抬升 → 平缓。
+    // **输入必须冻结在 SPL 入口的 E0**：先拷一份 e0_frozen 再算，绝不读随后会被 SPL 改写的 E
+    // （否则 ridge_add 取决于迭代次数/顺序，破坏「同种子逐位一致」不变量 1）。
+    // 公式与常量逐字沿用旧 §5（噪声 180/220×feature_scale、偏移 71.3/-33.7 与 -50.7/91.1、
+    // pow(max,1.4)、land_factor^1.5、slope_gate=clamp(slope×8, 0.30, 1.0)、×ridge_boost_amp），
+    // 只把输入换成 E0；海洋格 ridge_add = 0。
+    // 高度预算口径（契约 §D-2，与 §5 同值，不新造）：§2.4' 末尾预算与 §5' 尾巴共用这两个常量。
+    const double land_elev_cap = std::max(0.93, sea_level + (1.0 - sea_level) * 0.94);
+    const double soft_max = land_elev_cap - (land_elev_cap - sea_level) * 0.06;
+    const double denom_lf = std::max(1.0 - sea_level, 0.001);
+    std::vector<float> ridge_add(size_t(n), 0.0f);
+    if (ridge_boost_amp > 0.0) {
+        std::vector<float> e0_frozen(size_t(n), 0.0f);
+        std::copy(E, E + n, e0_frozen.begin());
+        for (int row = 0; row < height; ++row) {
+            for (int col = 0; col < width; ++col) {
+                const int idx = row * width + col;
+                if (double(e0_frozen[size_t(idx)]) < sea_level) continue;  // 海洋格 ridge_add=0
+                const double ny2 = double(row) * inv_h;
+                // [cylindrical-earth-daylight] 山脊噪声圆柱采样 → 山脉跨接缝东西无缝；
+                // 经度 period=width（col/width），col=0 与 col=width-1 相邻不重合。
+                const double th2 = PK_TWO_PI * (double(col) / double(width));
+                const double ct2 = std::cos(th2);
+                const double st2 = std::sin(th2);
+                const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0 * feature_scale, 71.3, -33.7, 0.0));
+                const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0 * feature_scale, -50.7, 91.1, 0.0));
+                const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
+                double lowest = double(e0_frozen[size_t(idx)]);
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
+                    if (ni >= 0 && double(e0_frozen[size_t(ni)]) < lowest) lowest = double(e0_frozen[size_t(ni)]);
+                }
+                const double slope = double(e0_frozen[size_t(idx)]) - lowest;
+                double slope_gate = slope * 8.0;
+                if (slope_gate < 0.30) slope_gate = 0.30;
+                else if (slope_gate > 1.0) slope_gate = 1.0;
+                double land_factor = (double(e0_frozen[size_t(idx)]) - sea_level) / denom_lf;
+                land_factor = std::pow(land_factor, 1.5);
+                ridge_add[size_t(idx)] = float(ridge_signal * land_factor * slope_gate * ridge_boost_amp);
+            }
+        }
+    }
+    // [P5-0 诊断 2026-11-18] 导出**未乘 §5' 预算缩放 g** 的脊增量场：lead 的 M1（Spearman(ridge_add,
+    // log 汇水面积)）与全部标定都读它。纯诊断，不参与计算（ridge_boost_amp=0 时导出全 0）。
+    if (ridge_debug_dump) {
+        ridge_add_diag.resize(n);
+        for (int i = 0; i < n; ++i) ridge_add_diag[i] = ridge_add[size_t(i)];
+    }
+
+    // ── 2.4' [P5-1/P5-2/P5-3 2026-11-18] Stream-Power 河流侵蚀：抬升场 + 坡面扩散 + 最陡受体 ──
+    // 原 §2.4 SPL 与 §2.5 液滴/热力坍塌合并为本节：液滴与热力坍塌分支已删除（坡面扩散承担软化
+    // 陡坡与圆脊的职责，见 §3.3）。置于 normalize + 洋底之后、地形决策之前。
     {
         // ── 2.4 Stream-Power 河流侵蚀 (Cordonnier et al. 2016；隐式、无条件稳定) ──────
         // 学术界标准做法：构造抬升 + 河流(stream-power)侵蚀达准平衡 → 自然产生连贯山脉脊线、
-        // 流域、树状河网。每轮：priority-flood 求填洼后的下游指针+处理序(全程排水) → 汇水面积 A
-        // 沿下游累积 → 隐式 SPL 下切：
-        //     E[i] = (E[i] + U[i] + C·E[down]) / (1+C),   C = K·(A/Ā)^m
-        // U=抬升回补(维持山体不被侵平)。proc 升序(下游先)⇒更新 E[i] 时 E[down] 本轮已就绪，
-        // 且 E[i]≥E[down] 恒成立(加权平均) ⇒ 不倒灌、不发散。产出：高汇水处下切成树状河谷
-        // (长干流+支流、Strahler↑)、低汇水脊线保留(宏观山脉/高原读得出)、杂散闭流洼地被抬填
-        // (减少内陆碎水，并修复运行时"盆地凭空灌满水")。性能：O(n log n)×iters，15000格几十ms。
-        // 一键回退：spl_iters=0（退回随机液滴侵蚀）。
+        // 流域、树状河网。每轮：priority-flood 求填洼面 filled 与处理序 proc → 取**最陡受体** rcv
+        // → 汇水面积 A 沿 rcv 累积 → 隐式 SPL 下切：
+        //     E[i] = (E[i] + U[i] + C·E[rcv]) / (1+C),   C = K·(A/Ā)^m
+        // U = spl_uplift_rate·relief0 + spl_ridge_uplift·ridge_add（[P5-1.2] 构造抬升场，每轮施加）。
+        // proc 升序(下游先)⇒更新 E[i] 时 E[rcv] 本轮已就绪，且 E[i]≥E[rcv] 恒成立(加权平均)
+        // ⇒ 不倒灌、不发散。每轮下切后再做一步坡面扩散（[P5-2.1]，见循环末尾）。
+        // 产出：高汇水处下切成树状河谷(长干流+支流、Strahler↑)、低汇水脊线保留(宏观山脉/高原
+        // 读得出)、杂散闭流洼地被抬填(减少内陆碎水，并修复运行时"盆地凭空灌满水")。
+        // 性能：O(n log n)×iters，15000格几十ms。一键回退：spl_iters=0（回到「无侵蚀」基线）。
         const int spl_iters = std::max(0, geti(profile, "spl_iters", 14));
         const double spl_k = std::max(0.0, getd(profile, "spl_erodibility", 1.2));
         const double spl_m = getd(profile, "spl_area_exp", 0.45);
         const double spl_uplift_rate = std::max(0.0, getd(profile, "spl_uplift_rate", 0.10));
+        // [P5-1.2 2026-11-18] 每轮脊抬升系数（契约 §A.1，默认 0.012）：14 轮累计抬升 ≈14×该值×ridge_add，
+        // 由计划 §4 标定到与改动前的 p99 陆地高度一致。0 = 完全内生（山脊只由 u_relief 与水系决定）。
+        // [P5 标定 2026-11-18] 0.012（计划初值）实测过弱（M1 几乎不动），0.06/0.10 会把 p90 抬到基线 +23%/+24%
+    // 并让闭合洼地回升。取 0.03：大图闭合洼地 -36%、小图 -31%，land p50 偏差 -6.4%（大图），M1 ≈ 基线。
+    // 必须与 climate_profile.gd::spl_ridge_uplift 同值（漏传时兜底不同值会成隐形陷阱）。
+    // 标定扫描与取舍依据见 docs/plans/terrain-ridge-uplift-checklist.md 附 B。
+    const double spl_ridge_uplift = std::max(0.0, getd(profile, "spl_ridge_uplift", 0.03));
+        // [P5-2.1 2026-11-18] 坡面扩散 κ（契约 §A.1，默认 0.08）。显式扩散稳定上界 κ<1，契约范围
+        // [0, 0.45] 留足余量；夹取既防 profile 传入失控值把山磨平（K4），也保证确定性。
+        const double spl_diffusion = std::clamp(getd(profile, "spl_hillslope_diffusion", 0.08), 0.0, 0.45);
         // [spl-scale 2026-10-12] 准平衡满足 E[i] = E[down] + U/C，逐格成立 → 内陆高度 ≈ 海岸起
         // 格数 × U/C。格数 ∝ sqrt(N)，不缩放时 200x150 内陆整片顶到 land_elev_cap 成纯平高原。
         // 物理一致：每格高差 ∝ 1/s，故 C ×s；汇水面积 A∝s²、均值 Ā∝s，(A/Ā)/s 换回参考格距。
@@ -710,9 +780,26 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             for (int i = 0; i < n; ++i) relief0[size_t(i)] = std::max(0.0f, float(double(E[i]) - sea_level));
             std::vector<float> filled(size_t(n), 0.0f);
             std::vector<int32_t> down(size_t(n), -1);
+            // [P5-3.1 2026-11-18] 最陡受体（取代 Priority-Flood 的「关闭者」down）。down 仍保留：
+            // 无严格更低邻点的平地格必须回落到它，否则平地上面积无法下传、河流断流。
+            std::vector<int32_t> rcv(size_t(n), -1);
             std::vector<int> proc; proc.reserve(size_t(n));
             std::vector<uint8_t> pf_seen(size_t(n), 0);
             std::vector<double> area(size_t(n), 0.0);
+            // [P5-2.1] 坡面扩散双缓冲：读 E 写 e_diff，整步结束后一次拷回（不就地累加）。
+            std::vector<float> e_diff;
+            if (spl_diffusion > 0.0) e_diff.assign(size_t(n), 0.0f);
+            // [P5-2.1/P5-3.1 性能] 6 邻索引表（n×6，= -1 表示缺行边界），只依赖 Q/R/width/height
+            // （整段不变）→ 建一次。最陡受体与坡面扩散每轮各要扫一遍 6 邻，若逐次重算
+            // index_for_qr，14 轮 × n × 6 × 2 会多出数百万次整数取模，把 +10 ms 预算吃满；
+            // 用表后两次扫描各只剩一次顺序读 + 一次 E 读。语义与 index_for_qr 逐位相同。
+            std::vector<int32_t> nb6(size_t(n) * 6, -1);
+            for (int i = 0; i < n; ++i) {
+                const int qi = Q[i], ri = R[i];
+                for (int d = 0; d < 6; ++d) {
+                    nb6[size_t(i) * 6 + size_t(d)] = index_for_qr(qi + DQ[d], ri + DR[d]);
+                }
+            }
             for (int it = 0; it < spl_iters; ++it) {
                 std::fill(pf_seen.begin(), pf_seen.end(), uint8_t(0));
                 for (int i = 0; i < n; ++i) down[size_t(i)] = -1;
@@ -742,29 +829,75 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                         pq.push(std::make_pair(sp, ni));
                     }
                 }
+                // ── 最陡受体 [P5-3.1] ────────────────────────────────────────────────
+                // rcv[i] = argmax_d( filled[i] − filled[nb_d] )，只取**严格更低**的邻点；平局取 d 小者
+                // （下面用严格 > 比较，先到者即 d 小者）；无严格更低邻点 → 沿用 Priority-Flood 的
+                // 关闭者 down[i]，即平地 ε 路径。**这一条不能漏**：漏了平地格就无受体，面积下传
+                // 断裂、河流在这些格上断流。
+                // 拓扑合法性：filled 严格更低的邻点必然更早出栈（PQ 按 filled 单调弹出）⇒ proc 仍是
+                // 合法拓扑序，下切循环里 E[rcv] 本轮已就绪；落差严格 > 0 ⇒ 受体链不可能成环。
+                for (int i = 0; i < n; ++i) {
+                    const float fi = filled[size_t(i)];
+                    int best = down[size_t(i)];
+                    float best_drop = 0.0f;
+                    const int32_t *nbp = &nb6[size_t(i) * 6];
+                    for (int d = 0; d < 6; ++d) {
+                        const int ni = nbp[d];
+                        if (ni < 0) continue;
+                        const float drop = fi - filled[size_t(ni)];
+                        if (drop > best_drop) { best_drop = drop; best = ni; }  // 严格 > ⇒ 平局取 d 小者
+                    }
+                    rcv[size_t(i)] = best;
+                }
                 for (int i = 0; i < n; ++i) area[size_t(i)] = 1.0;
                 for (int k = int(proc.size()) - 1; k >= 0; --k) {
-                    const int i = proc[k]; const int d = down[size_t(i)];
+                    const int i = proc[k]; const int d = rcv[size_t(i)];
                     if (d >= 0) area[size_t(d)] += area[size_t(i)];
                 }
                 double area_mean = 0.0;
                 for (int i = 0; i < n; ++i) area_mean += area[size_t(i)];
                 const double inv_area_mean = 1.0 / std::max(1.0, area_mean / double(std::max(1, n)));
                 for (int k = 0; k < int(proc.size()); ++k) {
-                    const int i = proc[k]; const int d = down[size_t(i)];
+                    const int i = proc[k]; const int d = rcv[size_t(i)];
                     if (d < 0) continue;
                     if (double(E[i]) < sea_level) continue; // 海洋不侵蚀
                     const double C = spl_k * spl_res_scale
                             * std::pow(area[size_t(i)] * inv_area_mean / spl_res_scale, spl_m);
-                    const double U = spl_uplift_rate * double(relief0[size_t(i)]);
+                    // [P5-1.2] 每轮抬升 = 残余地势回补 + 构造脊抬升场（ridge_add 由 §R 在冻结的 E0 上算得）。
+                    const double U = spl_uplift_rate * double(relief0[size_t(i)])
+                            + spl_ridge_uplift * double(ridge_add[size_t(i)]);
                     double z = (double(E[i]) + U + C * double(E[d])) / (1.0 + C);
                     if (z < double(E[d])) z = double(E[d]);
                     E[i] = float(z);
                 }
+                // ── 坡面扩散 [P5-2.1]：E'_i = E_i + κ·Σ_{6邻}(E_nb − E_i)/6，每轮一次，仅陆地 ──
+                // 海洋格自身不动，但按它自己的 E 当固定边界参与邻点求和；行边界外缺失的邻点不计入
+                // 求和（仍除 6）→ 只让极行扩散略弱，稳定性不受影响。
+                // **双缓冲**：整步只读 E、写 e_diff，循环结束后一次拷回 —— 就地累加会让结果依赖
+                // 遍历方向，破坏不变量 1（同种子逐位一致、与线程数无关）。目的：削尖圆脊，让山顶不
+                // 再需要膝点硬压缩（后者才是「分水岭平坦高海拔 → 高原候选」的来源）。
+                if (spl_diffusion > 0.0) {
+                    std::copy(E, E + n, e_diff.begin());
+                    for (int i = 0; i < n; ++i) {
+                        const double ei = double(E[i]);
+                        if (ei < sea_level) continue;  // 海洋固定边界：自身高度不变
+                        double sum = 0.0;
+                        const int32_t *nbp = &nb6[size_t(i) * 6];
+                        for (int d = 0; d < 6; ++d) {
+                            const int ni = nbp[d];
+                            if (ni >= 0) sum += double(E[ni]);
+                        }
+                        e_diff[size_t(i)] = float(ei + spl_diffusion * (sum - 6.0 * ei) / 6.0);
+                    }
+                    std::copy(e_diff.begin(), e_diff.end(), E);
+                }
             }
-            // 内陆高度沿流路逐格累加，高海平面 + 大陆地图上会冲出 1.0，硬截后内陆成整片平顶。
-            // 超出余量时把膝点以上的陆地高度线性压进 [knee, headroom]，p99 落在 headroom；
-            // 膝点以下（低地/中山的群系分布）不动，未超出的地图逐位不变。
+            // ── 高度预算 [P5-1.3 / 契约 §D-2]：取消膝点压缩，改为一次「只压不抬」的线性缩放 ──
+            // 旧膝点压缩把 knee 以上的高度整体挤进 [knee, headroom] → 山顶被压成平顶（旧问题 3）。
+            // 新做法：只对陆地相对海平面高度 h = E − sea 乘**同一个**系数，使 p99(h) 落到
+            // target = sea + (soft_max − sea)·spl_headroom_frac。统一缩放保序（高程序与地貌阈值
+            // 含义不变）；p99 > target 时系数恒 < 1，代码里再夹一次 ≤1 ⇒ 从不放大，未超预算的地图
+            // 逐位不变。land_elev_cap / soft_max 定义在 §R（契约 §D-2 原式，与 §5' 共用）。
             {
                 std::vector<float> land_h;
                 land_h.reserve(size_t(n));
@@ -772,19 +905,18 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     const double e = double(E[i]);
                     if (e >= sea_level) land_h.push_back(float(e - sea_level));
                 }
-                // 大图对齐山脊 pass 的 land_elev_cap(0.93)，否则 SPL 已占满上限、山脊无处可加。
-                const double spl_top = spl_res_scale > 1.0 ? 0.93 : 1.0;
-                const double headroom = (spl_top - sea_level) * std::clamp(getd(profile, "spl_headroom_frac", 0.97), 0.5, 1.0);
-                if (!land_h.empty() && headroom > 1e-4) {
+                const double headroom_frac = std::clamp(getd(profile, "spl_headroom_frac", 0.97), 0.5, 1.0);
+                const double budget_target = sea_level + (soft_max - sea_level) * headroom_frac;
+                if (!land_h.empty() && budget_target > sea_level + 1e-4) {
                     const size_t k99 = std::min(land_h.size() - 1, size_t(double(land_h.size()) * 0.99));
                     std::nth_element(land_h.begin(), land_h.begin() + std::ptrdiff_t(k99), land_h.end());
                     const double p99 = double(land_h[k99]);
-                    const double knee = headroom * std::clamp(getd(profile, "spl_headroom_knee", 0.7), 0.0, 0.95);
-                    if (p99 > headroom) {
-                        const double f = (headroom - knee) / (p99 - knee);
+                    if (p99 > budget_target) {
+                        double scale = (budget_target - sea_level) / std::max(p99 - sea_level, 1e-6);
+                        if (scale > 1.0) scale = 1.0;  // 只压不抬（p99>target 时上式恒 <1，此处仅作保险）
                         for (int i = 0; i < n; ++i) {
                             const double h = double(E[i]) - sea_level;
-                            if (h > knee) E[i] = float(sea_level + knee + (h - knee) * f);
+                            if (h > 0.0) E[i] = float(sea_level + h * scale);
                         }
                     }
                 }
@@ -795,85 +927,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             }
         }
 
-        const double erosion_droplet_factor = std::max(0.0, getd(profile, "erosion_droplet_factor", 0.6)); // 2026-06-19 回退到 0.6（河谷/沟壑下切，助宏观地貌可读）
-        // SPL 开启时跳过随机液滴侵蚀，避免双重侵蚀互相打架（SPL 的下切更连贯）。
-        const int erosion_droplets = (spl_iters > 0) ? 0 : std::max(0, int(double(n) * erosion_droplet_factor));
-        const int erosion_lifetime = std::max(1, geti(profile, "erosion_max_lifetime", 30));
-        const double ero_capacity = getd(profile, "erosion_capacity", 4.0);
-        const double ero_deposit = pk_clamp01(getd(profile, "erosion_deposit_rate", 0.3));
-        const double ero_erode = pk_clamp01(getd(profile, "erosion_erode_rate", 0.3));
-        const double ero_evap = pk_clamp01(getd(profile, "erosion_evaporation", 0.02));
-        const double ero_gravity = getd(profile, "erosion_gravity", 4.0);
-        const double ero_min_slope = getd(profile, "erosion_min_slope", 0.01);
-        const int thermal_iters = std::max(0, geti(profile, "erosion_thermal_iters", 2));
-        const double thermal_talus = std::max(0.001, getd(profile, "erosion_thermal_talus", 0.04));
-        const double thermal_rate = pk_clamp01(getd(profile, "erosion_thermal_rate", 0.5));
-
-        if (erosion_droplets > 0) {
-            Ref<RandomNumberGenerator> erng;  erng.instantiate();
-            if (erng.is_valid()) erng->set_seed(uint64_t(seed) + 5500ull);
-            for (int drop = 0; drop < erosion_droplets; ++drop) {
-                int pos = erng.is_valid() ? int(erng->randi_range(0, n - 1)) : (drop % n);
-                if (double(E[pos]) < sea_level) continue; // 仅从陆地起步
-                double water = 1.0, speed = 1.0, sediment = 0.0;
-                for (int life = 0; life < erosion_lifetime; ++life) {
-                    int best = -1; double best_e = double(E[pos]);
-                    for (int d = 0; d < 6; ++d) {
-                        const int ni = index_for_qr(Q[pos] + DQ[d], R[pos] + DR[d]);
-                        if (ni < 0) continue;
-                        if (double(E[ni]) < best_e) { best_e = double(E[ni]); best = ni; }
-                    }
-                    if (best < 0) { // 局部洼地 → 全部沉积
-                        E[pos] = float(double(E[pos]) + sediment);
-                        break;
-                    }
-                    const double dh = double(E[best]) - double(E[pos]); // <0 下坡
-                    const double capacity = std::max(-dh, ero_min_slope) * speed * water * ero_capacity;
-                    if (sediment > capacity) {
-                        const double dep = (sediment - capacity) * ero_deposit;
-                        E[pos] = float(double(E[pos]) + dep);
-                        sediment -= dep;
-                    } else {
-                        const double ero = std::min((capacity - sediment) * ero_erode, -dh);
-                        if (ero > 0.0) {
-                            E[pos] = float(double(E[pos]) - ero);
-                            sediment += ero;
-                        }
-                    }
-                    speed = std::sqrt(std::max(speed * speed + (-dh) * ero_gravity, 0.0));
-                    water *= (1.0 - ero_evap);
-                    pos = best;
-                    if (double(E[pos]) < sea_level) { // 入海 → 沉积(冲积/三角洲)
-                        E[pos] = float(double(E[pos]) + sediment * 0.5);
-                        break;
-                    }
-                }
-            }
-        }
-        // 热力坍塌：超 talus 角的坡差向最低邻居转移部分物质，软化陡崖。
-        for (int it = 0; it < thermal_iters; ++it) {
-            for (int i = 0; i < n; ++i) {
-                if (double(E[i]) < sea_level) continue;
-                int low = -1; double low_e = double(E[i]);
-                for (int d = 0; d < 6; ++d) {
-                    const int ni = index_for_qr(Q[i] + DQ[d], R[i] + DR[d]);
-                    if (ni < 0) continue;
-                    if (double(E[ni]) < low_e) { low_e = double(E[ni]); low = ni; }
-                }
-                if (low < 0) continue;
-                const double diff = double(E[i]) - low_e;
-                if (diff > thermal_talus) {
-                    const double move = (diff - thermal_talus) * 0.5 * thermal_rate;
-                    E[i] = float(double(E[i]) - move);
-                    E[low] = float(double(E[low]) + move);
-                }
-            }
-        }
-        for (int i = 0; i < n; ++i) {
-            double e = double(E[i]);
-            if (e < 0.0) e = 0.0; else if (e > 1.0) e = 1.0;
-            E[i] = float(e);
-        }
+        // [P5-2.2 / P5-2.3 2026-11-18] 液滴侵蚀与热力坍塌分支已整体删除：
+        // 坡面扩散（§2.4' 每轮一步）承担软化陡坡与圆脊的职责，旧「SPL 之后再来 6000 滴 + 2 轮
+        // talus」既与 SPL 抢同一条谷、又就地扫描依赖遍历方向。对应 profile 键
+        // erosion_droplet_factor / erosion_max_lifetime / erosion_capacity / erosion_deposit_rate /
+        // erosion_erode_rate / erosion_evaporation / erosion_gravity / erosion_min_slope /
+        // erosion_thermal_iters / erosion_thermal_talus / erosion_thermal_rate 不再读取
+        // （计划 §2.3 明确不保留旧算法，故这里不留若 SPL 关闭就回液滴的分支）。
     }
 
     // ── 2.6 [P1 hypsometric Layer B 2026-06-25] 高程分段重映射（粗，定结构）──────────────
@@ -982,45 +1042,21 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (!changed) break;
     }
 
-    // ── 5. 山脊高度预算：先冻结基底，再按同一比例分配增量，最后只收尾极少数尖峰。──
+    // ── 5'. [P5-2.3 2026-11-18] 脊线残差：只给脊顶一点锐度，山脊主体已由 §2.4' 内生 ─────────
+    // 旧 §5 是「侵蚀之后再叠脊噪声」的整段加法：脊信号与汇水完全无关 → 脊线横跨河谷、在谷中筑坝
+    // （后文 post-base Priority-Flood 再把坝后谷判成湖盆）。现在 ridge_add 已前移到 §R（输入 E0
+    // 冻结）并作为 §2.4' 的抬升场参与「抬升 vs 下切」平衡；本节只保留同一份 ridge_add 的**残差**：
+    // 加法乘 ridge_residual_frac（契约 §A.1：默认 0.15、上限 0.30 —— 再高就重新筑坝；0 = 完全内生）。
+    // ridge_boost_amp 现在既是 ridge_add 的幅度，残差幅度 = 它 × 残差比例，故这里不再乘 amp。
+    // 其余按计划 §3.1「§5' 只改加法」保持原样：冻结基底 ridge_pre、p99 二分预算求全局缩放 g、
+    // 6% 尾巴指数软上限，以及 ridge_budget_scale / ridge_base_scale 等诊断键都不变。
     if (ridge_boost_amp > 0.0) {
-        const double denom_lf = std::max(1.0 - sea_level, 0.001);
-        const double land_elev_cap = std::max(0.93, sea_level + (1.0 - sea_level) * 0.94);
-        // 顶部只预留 6% 高度空间作 C1 收尾；99% 陆地使用线性预算，不压缩峰肩高差。
-        const double soft_max = land_elev_cap - (land_elev_cap - sea_level) * 0.06;
-        // 所有尺寸统一使用冻结输入，避免按扫描顺序读到已抬升邻格。
+        const double ridge_resid = std::clamp(getd(profile, "ridge_residual_frac", 0.15), 0.0, 0.30);
+        // 所有尺寸统一使用冻结输入，避免按扫描顺序读到已抬升邻格（脊加法已不再读邻格，但 ridge_pre
+        // 仍需独立冻结：下面的 base_scale 与 p99 预算必须按未抬升的基底算）。
         std::vector<float> ridge_pre(size_t(n), -1.0f);
-        std::vector<float> ridge_frozen(size_t(n), 0.0f);
-        std::copy(E, E + n, ridge_frozen.begin());
-        std::vector<float> ridge_add(ridge_pre.size(), 0.0f);
-        for (int row = 0; row < height; ++row) {
-            for (int col = 0; col < width; ++col) {
-                const int idx = row * width + col;
-                if (double(E[idx]) < sea_level) continue;
-                const double ny2 = double(row) * inv_h;
-                // [cylindrical-earth-daylight] 山脊噪声圆柱采样 → 山脉跨接缝东西无缝；
-                // 经度 period=width（col/width），col=0 与 col=width-1 相邻不重合。
-                const double th2 = PK_TWO_PI * (double(col) / double(width));
-                const double ct2 = std::cos(th2);
-                const double st2 = std::sin(th2);
-                const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0 * feature_scale, 71.3, -33.7, 0.0));
-                const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0 * feature_scale, -50.7, 91.1, 0.0));
-                const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
-                double lowest = double(ridge_frozen[size_t(idx)]);
-                for (int d = 0; d < 6; ++d) {
-                    const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
-                    if (ni >= 0 && double(ridge_frozen[size_t(ni)]) < lowest) lowest = double(ridge_frozen[size_t(ni)]);
-                }
-                const double slope = double(ridge_frozen[size_t(idx)]) - lowest;
-                double slope_gate = slope * 8.0;
-                if (slope_gate < 0.30) slope_gate = 0.30;
-                else if (slope_gate > 1.0) slope_gate = 1.0;
-                double land_factor = (double(E[idx]) - sea_level) / denom_lf;
-                land_factor = std::pow(land_factor, 1.5);
-                const double addition = ridge_signal * land_factor * slope_gate * ridge_boost_amp;
-                ridge_pre[size_t(idx)] = E[idx];
-                ridge_add[size_t(idx)] = float(addition);
-            }
+        for (int i = 0; i < n; ++i) {
+            if (double(E[i]) >= sea_level) ridge_pre[size_t(i)] = E[i];  // -1 = 非陆地，不加脊残差
         }
         if (!ridge_pre.empty()) {
             std::vector<int> land_idx;
@@ -1043,7 +1079,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 auto p99_at = [&](double g) -> double {
                     for (size_t j = 0; j < land_idx.size(); ++j) {
                         const size_t i = size_t(land_idx[j]);
-                        scratch[j] = float(double(ridge_pre[i]) + g * double(ridge_add[i]));
+                        scratch[j] = float(double(ridge_pre[i]) + g * ridge_resid * double(ridge_add[i]));
                     }
                     std::nth_element(scratch.begin(), scratch.begin() + std::ptrdiff_t(k99), scratch.end());
                     return double(scratch[k99]);
@@ -1059,7 +1095,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 }
                 int tail_count = 0;
                 for (const int i : land_idx) {
-                    double h = double(ridge_pre[size_t(i)]) + g * double(ridge_add[size_t(i)]);
+                    double h = double(ridge_pre[size_t(i)]) + g * ridge_resid * double(ridge_add[size_t(i)]);
                     if (h > soft_max) {
                         const double span = land_elev_cap - soft_max;
                         h = soft_max + span * (1.0 - std::exp(-(h - soft_max) / span));
@@ -1471,6 +1507,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     out["r_arr"] = r_arr;
     out["s_arr"] = s_arr;
     out["elevation_arr"] = elevation_arr;
+    // [P5-0 诊断] 仅在 profile.ridge_debug_dump=1 时返回（见上方 ridge_debug_dump 注释）。
+    if (ridge_debug_dump && ridge_add_diag.size() == n) out["ridge_add_arr"] = ridge_add_diag;
     out["moisture_arr"] = moisture_arr;
     out["base_moisture_arr"] = base_moisture_arr;
     out["temp_arr"] = temp_arr;

@@ -10,6 +10,9 @@
 //                                   输出法线 / 波高；冰面剔除。
 //   - water_shade_lines           : 湖面横向波痕（水面管线仍在用）
 //   - water_biome_weights         : 3×3 邻域 biome 软权重
+//                                   （[cell-field 2026-11-18] PK_CELL_FIELD 下换成
+//                                    water_biome_weights_field：三格 class + 锐化权重，
+//                                    不再读 map_index）
 //   （water_domain_warp / water_calm_brightness / water_calm_tint 已确认零调用，2026-11 清理删除）
 //
 // Dependencies (caller-side MUST declare BEFORE #include):
@@ -530,6 +533,31 @@ float water_shade_lines(vec2 wp, float t, float freq_scale, int quality) {
 // Returns vec4: (w_lake, w_reef, w_kelp, w_ice); ocean/coast remains implicit.
 // blend_radius controls the sample footprint in atlas texels. 0 is handled by
 // the caller as a hard-cut fallback; values above 1 widen the transition band.
+// [cell-field 2026-11-18] PK_CELL_FIELD 下这段 3×3 邻域（9 次 map_index 采样）整段
+// 编译掉：水型是**类别量**，由三格 class + 锐化权重 w 直接给出（方案 §3.3 / §3.8）。
+// 关闭 PK_CELL_FIELD 时下面 #ifdef 分支不存在 ⇒ 与今日逐字节一致。
+#ifdef PK_CELL_FIELD
+// weights = field.w（Σ=1）；e0/e1/e2 = 三格 class（SETUP 已 texelFetch 取好，零新增采样）。
+// 返回口径与旧 3×3 版一致（各水型占比，Σ ≤ 1）⇒ 调用方公式不变。
+vec4 water_biome_weights_field(vec3 weights, vec4 e0, vec4 e1, vec4 e2) {
+	int b0 = int(e0.r * 255.0 + 0.5);
+	int b1 = int(e1.r * 255.0 + 0.5);
+	int b2 = int(e2.r * 255.0 + 0.5);
+	float lake = ((b0 == B_LAKE) ? weights.x : 0.0)
+			+ ((b1 == B_LAKE) ? weights.y : 0.0)
+			+ ((b2 == B_LAKE) ? weights.z : 0.0);
+	float reef = ((b0 == B_REEF) ? weights.x : 0.0)
+			+ ((b1 == B_REEF) ? weights.y : 0.0)
+			+ ((b2 == B_REEF) ? weights.z : 0.0);
+	float kelp = ((b0 == B_KELP) ? weights.x : 0.0)
+			+ ((b1 == B_KELP) ? weights.y : 0.0)
+			+ ((b2 == B_KELP) ? weights.z : 0.0);
+	float ice  = ((b0 == B_SEA_ICE) ? weights.x : 0.0)
+			+ ((b1 == B_SEA_ICE) ? weights.y : 0.0)
+			+ ((b2 == B_SEA_ICE) ? weights.z : 0.0);
+	return vec4(lake, reef, kelp, ice);
+}
+#else
 vec4 water_biome_weights(vec2 uv, vec2 tx, float blend_radius) {
 	float radius = clamp(blend_radius, 0.25, 4.0);
 	vec2 step_uv = tx * radius;
@@ -555,3 +583,4 @@ vec4 water_biome_weights(vec2 uv, vec2 tx, float blend_radius) {
 	}
 	return vec4(cnt_lake, cnt_reef, cnt_kelp, cnt_ice) / max(total_w, 0.001);
 }
+#endif // PK_CELL_FIELD
