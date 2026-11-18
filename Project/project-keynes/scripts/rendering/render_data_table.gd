@@ -20,6 +20,9 @@ func configure(parent: Node, dimensions: Vector2i, program: Shader) -> void:
 	_quad.material = material
 	add_child(_quad)
 	parent.add_child(self)
+
+func _enter_tree() -> void:
+	# Reparenting the surface can recreate its viewport attachments at the same input time.
 	refresh()
 
 func resize_table(dimensions: Vector2i) -> void:

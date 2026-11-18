@@ -170,10 +170,22 @@ func _fog_quality_changes() -> void:
 		_expect(fog._gradient_table == null, "low fog starts without a gradient table")
 		fog.set_visual_quality(2)
 		var table := fog._gradient_table
-		var consumer: Node = fog._sub_viewport if half_res else fog
-		_expect(table != null and table.get_parent() == consumer
+		var consumer: Viewport = fog._sub_viewport if half_res else root
+		_expect(table != null and table.get_parent() == fog._mesh_inst
+			and fog._mesh_inst.get_viewport() == consumer
 			and fog._shader_mat.get_shader_parameter("fog_gradient_lattice") == table.get_texture(),
 			"high fog binds its table under its drawing viewport (half size %s)" % half_res)
+		var reference := await _read(table)
+		for scale_percent in [100, 75, 50, 100]:
+			fog.set_render_scale(scale_percent)
+			await process_frame
+			await RenderingServer.frame_post_draw
+			consumer = root if scale_percent == 100 else fog._sub_viewport
+			var bound: Texture2D = fog._shader_mat.get_shader_parameter("fog_gradient_lattice")
+			_expect(is_instance_valid(table) and fog._gradient_table == table
+				and table.get_parent() == fog._mesh_inst and fog._mesh_inst.get_viewport() == consumer
+				and bound == table.get_texture() and bound.get_image().get_data() == reference.get_data(),
+				"changing fog to %d%% preserves its bound gradient pixels" % scale_percent)
 		fog.set_visual_quality(0)
 		_expect(table != null and table.is_queued_for_deletion() and fog._gradient_table == null,
 			"lowering fog quality releases the table")

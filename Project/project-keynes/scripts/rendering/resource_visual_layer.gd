@@ -117,6 +117,7 @@ var _geometry_styles: Geometry.StyleInputs
 var _allowed := PackedByteArray()
 var _hex := 22.0
 var _quality := 1
+var _density_detail := -1
 var _mobile_tier := -1
 var _fog := true
 var _filter := ""
@@ -399,8 +400,20 @@ func quality() -> int:
 ## 着色与光照。只有 cell_cap / type_cap / instance_cap 读这个函数；
 ## `visual_quality` uniform（= quality()）不变。
 func density_quality() -> int:
+	if _density_detail >= 0:
+		return _density_detail
 	var q := quality()
 	return mini(q, 1) if DCFeatureFlags.density_trim_enabled() else q
+
+func set_density_detail(detail: int) -> void:
+	var next_detail := clampi(detail, -1, 2)
+	if next_detail == _density_detail:
+		return
+	var previous_density := density_quality()
+	_density_detail = next_detail
+	if previous_density != density_quality():
+		_clear_geometry()
+		_invalidate()
 
 func set_quality(value: int, mobile_tier: int = -1) -> void:
 	if _quality == value and _mobile_tier == mobile_tier:

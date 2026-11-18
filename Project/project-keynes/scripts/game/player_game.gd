@@ -4,6 +4,7 @@ class_name PlayerGame
 const MAIN_MENU_SCENE_PATH := "res://scenes/main_menu.tscn"
 # Web 自动测试跟车节点（URL autotest=1 才启用）。preload 避免依赖 class_name 缓存。
 const WebAutotestScript = preload("res://scripts/game/web_autotest.gd")
+const GraphicsQualitySettings = preload("res://scripts/game/graphics_quality_settings.gd")
 const DEFAULT_DAY_NIGHT_ENABLED := true
 
 # 桌面玩家场景默认高画质；mobile/web 由 GameSettings.render_quality 驱动
@@ -374,16 +375,22 @@ func _push_visual_toggles() -> void:
 	var settings: Node = _game_settings()
 	var quality_values: Dictionary = settings.values() if settings != null else {}
 	var quality_setting := String(quality_values.get("render_quality", "auto"))
+	var mobile := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	var graphics := GraphicsQualitySettings.resolve(quality_values, mobile)
 	# 默认触摸档保留 2x 抗锯齿来抑制地图边缘闪烁；显式低档关闭额外采样。
+	var msaa := msaa_for_quality(quality_setting, _touch_profile())
 	var viewport := get_viewport()
 	if viewport != null:
-		viewport.msaa_2d = msaa_for_quality(quality_setting, _touch_profile())
+		viewport.msaa_2d = msaa
 	visual_quality = _resolved_visual_quality(quality_setting)
 	# mobile/web：编译期 MOBILE_QUALITY_* 档必须在 set_visual_quality 之前推送。
 	if DCFeatureFlags.uses_shader_quality_tier() and _renderer.has_method("set_mobile_quality_tier"):
 		_renderer.set_mobile_quality_tier(_shader_quality_define_from_setting(quality_setting))
 	if _renderer.has_method("set_visual_quality"):
 		_renderer.set_visual_quality(visual_quality)
+	if not OS.has_feature("web"):
+		_renderer.set_graphics_details(graphics)
+		_renderer.set_terrain_render_scale(int(graphics["map_render_scale"]), msaa)
 	if _trade_activity != null:
 		_trade_activity.set_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):

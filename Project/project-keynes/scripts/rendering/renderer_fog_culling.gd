@@ -18,6 +18,7 @@ var _buffer_rect: Rect2
 var _sample_padding: float
 var _fog_bounds: Rect2
 var _uses_blit: bool
+var _terrain_canvas_transform: Transform2D
 
 var _land_draw := TerrainFogMesh.DrawCommand.new()
 var _water_draw := TerrainFogMesh.DrawCommand.new()
@@ -74,7 +75,7 @@ func _update_surface_visibility() -> void:
 	if detail_enabled and (obscured or partial):
 		var fog_draw: CanvasItem = fog._blit_sprite if _uses_blit else fog._mesh_inst
 		_detail.update(host, fog_draw, _screen_rect, _covers_screen.bind(world, fog._hex_size),
-			obscured, land, _regions)
+			obscured, _terrain_canvas_transform, _regions)
 	else:
 		_detail.clear()
 
@@ -84,25 +85,40 @@ func _prepare_partial_meshes(host, land: MeshInstance2D, water: MeshInstance2D,
 	if water == null or land.mesh != host._coverage_land_mesh or water.mesh != host._coverage_water_mesh \
 			or not host._coverage_mesh_result.has("land_vertices"):
 		return false
-	var viewport := land.get_viewport()
-	if viewport != fog.get_viewport() or viewport != water.get_viewport():
+	var viewport := fog.get_viewport()
+	var surfaces := land.get_viewport()
+	if surfaces == null or surfaces != water.get_viewport() or land.get_canvas() != water.get_canvas():
 		return false
-	var canvas_transform := land.get_global_transform_with_canvas()
-	var to_screen := viewport.get_global_canvas_transform() * canvas_transform
-	if not to_screen.is_finite() or is_zero_approx(to_screen.determinant()) \
-			or water.get_global_transform_with_canvas() != canvas_transform:
+	var surface_padding := 0.0
+	if surfaces == viewport:
+		_terrain_canvas_transform = land.get_global_transform_with_canvas()
+		if land.get_canvas() != fog.get_canvas() \
+				or water.get_global_transform_with_canvas() != _terrain_canvas_transform:
+			return false
+	else:
+		var surface_parent: Node2D = host._graphics_details.scaled_surface_parent(land)
+		if surface_parent == null or surface_parent.get_viewport() != viewport \
+				or surface_parent.get_canvas() != fog.get_canvas() or water.get_parent() != land.get_parent() \
+				or land.top_level or water.top_level or water.transform != land.transform:
+			return false
+		_terrain_canvas_transform = surface_parent.get_global_transform_with_canvas() * land.transform
+		# A source texel can contribute to a neighbouring pixel through the terrain blit's linear filter.
+		var texel := _screen_rect.size / surfaces.get_visible_rect().size
+		surface_padding = maxf(texel.x, texel.y)
+	var to_screen := viewport.get_global_canvas_transform() * _terrain_canvas_transform
+	if not to_screen.is_finite() or is_zero_approx(to_screen.determinant()):
 		return false
 	var world: WorldData = host._world
 	# A new upload may still have a pending source image when the full screen
 	# reaches outside the fog geometry and the first proof skips the index.
 	var key := [world.cell_table_fog_coverage_source, world.cell_table_fog_coverage,
 		land.mesh, water.mesh, to_screen, _screen_rect, _screen_to_buffer, _buffer_to_world,
-		_buffer_rect, _sample_padding, _fog_bounds, _uses_blit, fog._hex_size]
+		_buffer_rect, _sample_padding, _fog_bounds, _uses_blit, fog._hex_size, surface_padding]
 	if key == _selection_key:
 		return _has_partial_coverage
 	_selection_key = key
-	var view := to_screen.affine_inverse() * _screen_rect
-	var regions := _visible_regions(view, to_screen, world, fog._hex_size)
+	var view := to_screen.affine_inverse() * _screen_rect.grow(surface_padding)
+	var regions := _visible_regions(view, to_screen, world, fog._hex_size, surface_padding)
 	_has_partial_coverage = not regions.is_empty()
 	if not _has_partial_coverage:
 		return false
@@ -116,7 +132,7 @@ func _prepare_partial_meshes(host, land: MeshInstance2D, water: MeshInstance2D,
 
 
 func _visible_regions(view: Rect2, to_screen: Transform2D, world: WorldData,
-		hex_size: float) -> Array[Rect2]:
+		hex_size: float, surface_padding: float) -> Array[Rect2]:
 	# Use larger world tiles when zoomed far out. World-aligned edges let the
 	# draw meshes survive small camera movements without a geometry upload.
 	var tile := MIN_TILE_SIZE
@@ -131,7 +147,7 @@ func _visible_regions(view: Rect2, to_screen: Transform2D, world: WorldData,
 		var start := first.x
 		for x in range(first.x, end.x):
 			var rect := Rect2(origin + Vector2(x, y) * tile, Vector2.ONE * tile)
-			var samples := (to_screen * rect).intersection(_screen_rect)
+			var samples := (to_screen * rect).grow(surface_padding).intersection(_screen_rect)
 			if samples.has_area() and _covers_screen(samples, world, hex_size):
 				if x > start:
 					kept.append(Rect2(origin + Vector2(start, y) * tile, Vector2(x - start, 1) * tile))
@@ -167,7 +183,7 @@ func _prepare_fog_view(fog: FogOfWarLayer, world: WorldData) -> bool:
 			or fog._mesh_inst.material != fog._shader_mat or not fog._mesh_inst.is_visible_in_tree():
 		return false
 	if fog._mesh_inst.modulate.a != 1.0 or fog._mesh_inst.self_modulate.a != 1.0 \
-			or (not fog._half_res and fog.modulate.a != 1.0):
+			or fog.modulate.a != 1.0:
 		return false
 	var debug_view: Variant = fog._shader_mat.get_shader_parameter("fog_debug_view")
 	if debug_view != null and int(debug_view) != 0:
@@ -183,7 +199,7 @@ func _prepare_fog_view(fog: FogOfWarLayer, world: WorldData) -> bool:
 		return false
 	_screen_to_buffer = Transform2D.IDENTITY
 	_sample_padding = 1.0
-	_uses_blit = fog._half_res
+	_uses_blit = fog._sub_viewport != null
 	_buffer_rect = fog_viewport.get_visible_rect()
 	if _uses_blit:
 		if fog._blit_sprite == null or not fog._blit_sprite.is_visible_in_tree() \

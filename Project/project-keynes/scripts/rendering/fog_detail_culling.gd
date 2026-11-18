@@ -10,7 +10,7 @@ var _macro := ClippedOverlay.new()
 
 
 func update(host, fog_draw: CanvasItem, screen: Rect2, covers: Callable,
-		whole_screen: bool, terrain: MeshInstance2D = null,
+		whole_screen: bool, terrain_canvas: Transform2D = Transform2D.IDENTITY,
 		kept: Array[Rect2] = []) -> void:
 	if not _unclipped_fog(fog_draw):
 		clear()
@@ -30,8 +30,8 @@ func update(host, fog_draw: CanvasItem, screen: Rect2, covers: Callable,
 			cover = ground_cover._mesh_inst
 	if host._building_visual_layer != null:
 		macro = host._building_visual_layer._macro_quad
-	_update_plane(_ground, cover, fog_draw, fog_z, whole_screen, terrain, kept)
-	_update_plane(_macro, macro, fog_draw, fog_z, whole_screen, terrain, kept)
+	_update_plane(_ground, cover, fog_draw, fog_z, whole_screen, terrain_canvas, kept)
+	_update_plane(_macro, macro, fog_draw, fog_z, whole_screen, terrain_canvas, kept)
 	for id in _hidden:
 		if not _next_hidden.has(id):
 			_restore(id)
@@ -75,14 +75,14 @@ func _consider(item: CanvasItem, fog_draw: CanvasItem, fog_z: int, screen: Rect2
 
 
 func _update_plane(plane: ClippedOverlay, item: MeshInstance2D, fog: CanvasItem, fog_z: int,
-		whole_screen: bool, terrain: MeshInstance2D, kept: Array[Rect2]) -> void:
+		whole_screen: bool, terrain_canvas: Transform2D, kept: Array[Rect2]) -> void:
 	if not _below_fog(item, fog, fog_z):
 		plane.clear()
 	elif whole_screen:
 		plane.clear()
 		_hide(item)
-	elif terrain != null and item.get_viewport() == terrain.get_viewport():
-		plane.clip(item, terrain, kept)
+	elif not kept.is_empty():
+		plane.clip(item, terrain_canvas, kept)
 	else:
 		plane.clear()
 
@@ -133,9 +133,8 @@ class ClippedOverlay:
 	func clear() -> void:
 		_draw.detach()
 
-	func clip(item: MeshInstance2D, terrain: MeshInstance2D, kept: Array[Rect2]) -> void:
+	func clip(item: MeshInstance2D, source: Transform2D, kept: Array[Rect2]) -> void:
 		var target := item.get_global_transform_with_canvas()
-		var source := terrain.get_global_transform_with_canvas()
 		if target.x != source.x or target.y != source.y or not target.is_finite() \
 				or not source.is_finite() or is_zero_approx(target.determinant()):
 			clear()

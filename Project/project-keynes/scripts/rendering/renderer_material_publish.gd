@@ -278,7 +278,7 @@ static func _apply_uniforms(host) -> void:
 		sm.set_shader_parameter("water_depth_tex", host._world.water_depth_tex)
 	sm.set_shader_parameter("ocean_current_flow_tex", host._world.ocean_current_flow_tex)
 	sm.set_shader_parameter("ocean_current_flow_tex_bound",
-		DCFeatureFlags.water_flowmap_enabled() and host._world.ocean_current_flow_tex != null)
+		host._graphics_details.water_flowmap_enabled() and host._world.ocean_current_flow_tex != null)
 	sm.set_shader_parameter("has_water_depth_tex",
 		visual_tiles.water_depth != null if tiled else host._world.water_depth_tex != null)
 	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。

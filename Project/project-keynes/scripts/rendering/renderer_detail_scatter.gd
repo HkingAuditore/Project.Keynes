@@ -798,10 +798,10 @@ static func detail_scatter_layer_reports(host) -> Array:
 
 
 static func _detail_total_instance_budget(host) -> int:
-
+	var detail: int = host._graphics_details.vegetation_detail
 	if OS.has_feature("mobile"):
 		var mobile_high = maxi(0, host.detail_scatter_mobile_total_instance_budget)
-		match host._mobile_quality_tier_from_define(host._mobile_quality_tier_define):
+		match detail if detail >= 0 else host._mobile_quality_tier_from_define(host._mobile_quality_tier_define):
 			0:
 				return mini(mobile_high, 5000)
 			1:
@@ -809,7 +809,7 @@ static func _detail_total_instance_budget(host) -> int:
 			_:
 				return mobile_high
 	var desktop_high = maxi(0, host.detail_scatter_desktop_total_instance_budget)
-	match host.visual_quality:
+	match host.visual_quality if detail < 0 else detail:
 		0:
 			return mini(desktop_high, 35000)
 		1:

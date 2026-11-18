@@ -154,6 +154,7 @@ static func _spawn_detail_layers(host) -> void:
 		layer.name = _detail_layer_name(host, prof, i)
 		layer.profile = prof
 		layer.set_mobile_quality_tier(veg_tier)
+		layer.set_density_detail(host._graphics_details.vegetation_detail)
 		if layer.has_method("set_defer_initial_rebuild"):
 			layer.set_defer_initial_rebuild(host.detail_scatter_family_renderer_enabled)
 		if layer.has_method("set_chunked_multimesh_enabled"):

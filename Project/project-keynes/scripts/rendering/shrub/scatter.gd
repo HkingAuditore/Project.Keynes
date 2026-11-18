@@ -1248,10 +1248,10 @@ static func _active_quality_tier(host) -> int:
 ## 着色与光照要保留。所以只有"每格上限 / 实例上限 / 密度倍率 / 叶瓣数"读这个函数，
 ## `veg_shade_quality` 仍然读 `_active_quality_tier()`。
 static func _density_tier(host) -> int:
+	if host._density_detail >= 0:
+		return host._density_detail
 	var tier := _active_quality_tier(host)
-	if DCFeatureFlags.density_trim_enabled():
-		return mini(tier, 1)
-	return tier
+	return mini(tier, 1) if DCFeatureFlags.density_trim_enabled() else tier
 
 
 # [web-mobile-density-halving 2026-10-30] 受限平台（浏览器 WebGL2 / 移动 GPU）共用

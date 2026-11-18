@@ -123,6 +123,12 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 回归入口：`tests/rendering/cloud_weather_quality_test.gd`。手机执行方式与逐日对照见
 `Project/project-keynes/tests/runtime/mobile_runtime_worker_test.gd`。
 
+玩家画质预设与自定义选项保存在 `scripts/game/game_settings_service.gd`，档位解析在
+`scripts/game/graphics_quality_settings.gd`。主菜单和暂停菜单共用
+`scenes/ui/graphics_quality_options.tscn`。应用到地图和显示层的入口在
+`scripts/rendering/renderer_graphics_settings.gd`，陆地和水面绘制尺寸归同目录的
+`terrain_render_scale.gd`。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
+
 水面波纹、迷雾梯度和天气新旧值的数值纹理共用 `rendering/render_data_table.gd`。更新入口依次在 `renderer_shader_water.gd`、`fog_of_war_layer.gd`、`weather_layer.gd`。地面读取、植被与建筑的着色入口见 [地图绘制中的共享计算](feature-guides.md#地图绘制中的共享计算)，数据校验见 `tests/rendering/render_data_tables_test.gd`。
 
 提交前整理的脚本职责位置见 [源文件职责拆分](source-module-splits.md) 的“移动端 PR 提交前的长度与依赖修复”。
