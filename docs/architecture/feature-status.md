@@ -3,6 +3,70 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 地形两计划跟进：门禁补强 · 归因排查 · 叠加验证（2026-11-18）
+
+方案：[terrain-followup-verification-plan.md](../plans/terrain-followup-verification-plan.md)；勾选与完整实测表见
+[terrain-followup-verification-checklist.md](../plans/terrain-followup-verification-checklist.md)（附 B1–B9）。
+**S1 / S2 / S4 完成；S3 的计划诊断被实验推翻、代码修正未做；S5 只有 §6.2 明确不触发；S6 全部未做。**
+本轮**没有改地形生成行为**：只加测试/门禁，另加一处纯诊断输出（不改高度）。
+
+改动摘要：
+
+- 新增世界指纹：`tests/world/world_fingerprint.gd`（**616 行**，共用实现）+ `tests/world/world_fingerprint_test.gd`
+  （**175 行**）+ 基线 `tests/world/baselines/world_fingerprint.json`（**6 条种子记录 / 13.7 KB**，生成 302 ms）。
+  hash 为 5 条数组的 FNV-1a-64（`elevation` / `terrain` / `landform` / `has_river` / `hydro_parent`）；
+  stats 为 `land_h` p10–p99 + terrain / landform 直方图 + 5 个计数。规则：hash 严格、统计 5% 容差，
+  `FINGERPRINT_HASH=0` 只比统计、`FINGERPRINT_WRITE=1` 重写基线。**bake `height_buffer` 的 hash 尚未覆盖**（代码注释已记为已知缺口）。
+- 三个 golden 测试挂上指纹前置校验：`golden_day_hash_test`、`golden_external_advancers_test`、
+  `native_generation_equivalence_test` 开头即报「世界指纹漂移」。
+- `ridge_drainage_metrics_test` 删除 `P5_STRICT` 全局开关，改 `GATES` 逐项声明（M1 / M5 = `record`，M2 / M2b / M3 / M4 = `hard`，
+  M2b、M4 按当时实测取 ±20% 回归线：M2b 阈值 −840%、M4 阈值 1.0121）。
+- 新增诊断 knob `dem_erosion_area_dump`（raw profile 键，**纯诊断**）：融合 pass 返回 `area_hex_buffer`（620544 值，hex²），
+  用于量像素层汇水；`erosion_spl_bake_test` 新增 **A12**（+555 / −0，A1–A11 逐字节未动，`checks=12`）。
+
+结论表：
+
+| 步 | 结论 | 关键数字 |
+|---|---|---|
+| S1 门禁补强 | **完成** | 变异检测：`ridge_residual_frac` 0.15→0.16 ⇒ `checks=6 failures=6` exit 1 并逐种子指名 `hash DRIFT elevation`，同时报「stats 全部在容差内」；恢复 exit 0。三个 golden checks 32→33 / 202→203 / 337→338，均 exit 0。门禁拆分后 `checks=7 failures=1 skips=1`：M1 `[RECORD-ONLY]`、M2 PASS(425≤510)、M2b PASS(−700%≥−840%)、M4 PASS(1.2145≥1.0121)、M5 SKIP、**M3 FAIL(0.6931>0.65)** |
+| S2 叠加验证 | **完成，结果否定** | **X1 = 0.8273 / 0.8316（均值 0.8294）< 0.95 ⇒ FAIL**；X2 = 0.2415 / 0.2413；X3 = 0.3259 / 0.3414。根因：像素层汇水在流到第一个 wet/河心像素时被截断（陆地 `A_hex` p50 = 0.00752 hex² = 2.0 px、河心 1.0 px） |
+| S3 M2b 工序 | **诊断被推翻，修正未做** | 关残差 33.5 → **35.5（不降反升）**、关脊抬升 34.5、关扩散 38.0、三者全关 42.0（200×150，2 种子）。真因：两版 `ridge_add` 不是同一个场（p75 0.0369→0.1602 等，幅值 3–5 倍、场相关 0.40–0.52、高脊格 Jaccard 0.31–0.43）⇒ 旧基线 vs 新值不可比 |
+| S4 归因 | **完成（5 个实验）** | M1' = 0.3792 vs 零假设 0.3097 ⇒ **+0.0695（目标 ≥0.20）未达**；轮数 14/28/40 的 `delta` +0.050/+0.110/+0.159 但 M1' 非单调、`land_p50` 0.0592→0.0257（混杂）、base 7.6→13.4 ms（+76%）；高地格数只降 12.7%/16.9% 而 `highland_river_count` 降 55%/73%、r4 0.625/1.000/1.000；`A_hex` p99 = 1.54629 hex²（411 px）；**M5a = 0.7240 / M5b ≈ 0.0019** |
+
+三个关键更正（都会影响后续引用）：
+
+1. **X1 未达标，不是达标**：真实地图河心落谷率 0.83（0.8273 / 0.8316）< 0.95 门禁；
+   而 0.95 这条线来自**合成单锥坡**上的 0.9809，本身不是真实地图读数。**「cell 河流落进 bake 像素谷」这个叠加收益不成立。**
+2. **山顶是圆的，不是平的**：M5a = 0.7240（72% 凸曲率集中在顶部 20% 格）、M5b ≈ 0.0019（几乎没有平坦面）。
+   脊抬升计划原来的「M5_p90 变差 ⇒ 变平」是**伪信号** —— 旧指标把「扩散磨小局地起伏」误读成「变平」。
+3. **`dem_spl_k` 的量级假设错了 65 倍，不是单位 bug**：计划按干流 `A_hex ≈ 100`（= 26580 px）估算，
+   实测 p99 只有 1.54629 hex²（411 px）、p50 只有 2 px；手算 `C(DL=1) = 1.653`、6 轮逼近 99.7%，
+   实测该像素 `rel_drop = 0.0471`，实现（`unit_area` / `K_iter` / `dx_hex`）与契约一致 ⇒ 只修订量级核算，不改代码。
+
+未做项（本轮范围外，不得当作已完成）：
+
+- **S5 只做了一半的裁决**：§6.2 非线性扩散**明确不触发**（山顶是圆顶）；§6.1 D1 汇水自反馈**暂不触发**
+  （轮数实验倾向「演化时间不够」但证据混杂、M1' 本身未达标）；§6.3 三 knob 联合重标**未做**
+  （需先裁决「优先分布保真还是脊线突出」），只给出初值改正 `u ≈ 0.020`（当前 0.03）。
+- **S6 全部未做**：游戏内视觉 A/B（需人工 GUI 视角）、`template_release` 性能重测、Web high 真浏览器实测、
+  `Project/perf-validation` 基线重录、`dem_dep_enabled` / `dem_floor_widen` 默认值决定。
+  ⇒ 现有性能数字**仍然全部是 `template_debug`**；沉积与谷底展宽**维持 `false`**。
+
+两条规范已写进 [feature-guides.md](feature-guides.md) §结构指标阈值与地图指纹基线：
+「**结构指标必须先量基线再定阈值**」（本轮 M1 / M2b / M5 三个阈值因此作废）、
+「**改世界的 PR 必须重写指纹基线**」（`FINGERPRINT_WRITE=1`，提交说明附分布差异摘要）。
+
+已知偏差 / 口径说明：
+
+1. **M1 / M2b 的「旧基线 vs 新值」比较不成立**：两版 `ridge_add` 不是同一个场（旧版在 SPL 后用最终 E 算，
+   新版在 SPL 前用 E0 算），判据的格子集合换了 60%+ ⇒ 结构指标只能做同版本内对照。
+2. **M1' 的零假设小图天然偏高**（35–38%，图幅小、流域碎），绝对门槛不能定太高；本轮 +0.0695 仍算未达标。
+3. **r4 口径未固化**：主口径（6 邻中位数以下）与备选口径（`has_river ∧ land_h≥0.30`）最大差 0.2，用前先定口径。
+4. **M3 的 FAIL 是单种子越界**：assert 集合里某个 200×150 种子 0.6931 > 0.65，全量均值 0.6415 仍在带内；
+   没有为了让门禁变绿而改阈值。
+5. **本轮未测**：release 性能、Web high 内存、perf-validation 基线、游戏内截图、峡谷数量、
+   `up_count ≥ river_headwater_init_cells` 的格数、terrain / landform 直方图等分布带补测项。
+
 ## cell 级地形重构：脊噪声 → 构造抬升场（2026-11-18）
 
 方案：[terrain-ridge-uplift-plan.md](../plans/terrain-ridge-uplift-plan.md)；接口契约与勾选分别是
@@ -10,6 +74,9 @@
 [terrain-ridge-uplift-checklist.md](../plans/terrain-ridge-uplift-checklist.md)。
 **P5-1 / P5-2 / P5-3 已实现并编译通过，P5-4 标定完成。结果是「部分达标」，不是全绿**：
 M2（闭合洼地）/ M4（流路直线度）/ 性能达标，**M1（脊是分水岭）与 M5（平顶率）未达成**，M2b（高脊洼地）**变差**。
+
+> 同日后续（见上一节）：M1 已换口径 **M1'**（实测 +0.0695 未达标）、M5 已换口径 **M5a / M5b**（实测为**圆顶**），
+> 且两版 `ridge_add` 不是同一个场 ⇒ 本节里的 M1 / M5_p90 / M2b 数字**不能做跨版本比较**，按原文保留为历史记录。
 
 > ⚠ **本版本起 `E[]` 变化 ⇒ 旧存档作废，需新开局**（计划 §1.3 已接受：不加 `compatibility_hash`、
 > 不加版本号、不做迁移；读档按种子重建世界，重建结果与旧档不再一致）。
@@ -111,6 +178,10 @@ M2（闭合洼地）/ M4（流路直线度）/ 性能达标，**M1（脊是分�
 [terrain-erosion-spl-contracts.md](../plans/terrain-erosion-spl-contracts.md)、
 [terrain-erosion-spl-checklist.md](../plans/terrain-erosion-spl-checklist.md)。
 **P0 / P1 / P2 / P3 已实现并验证；P4 未实现（计划标「可选，下一轮」）。**
+
+> 同日后续（见本节上方的「地形两计划跟进」条目）：新增纯诊断 knob `dem_erosion_area_dump` 与测试 **A12**，
+> 真实地图河心落谷率实测 **0.83 < 0.95 门禁（FAIL）**；`dem_spl_k = 0.50` 的主因已查明为计划量级假设
+> （`A_hex ≈ 100`）比实测（p99 = 1.55 hex²）大 65 倍，**不是单位 bug**；本节性能数字全部是 `template_debug`，release 未测。
 
 改动摘要：
 

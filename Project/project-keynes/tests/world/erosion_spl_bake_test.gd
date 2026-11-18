@@ -33,6 +33,18 @@ extends SceneTree
 #   · relief = |∇h|（height / hex，hex 空间中心差分）→ 与栅格分辨率无关（计划 §4.2）。
 #   · 尺寸都按「测试要快」压到 128×96 / 128×80 / 256×160 / 256×192；A9、A11 保留 2× 倍数
 #     关系（计划 §8.1 写 512/1024 与 2048/1024，测试等比缩小但判据不变）。
+#
+# ── A12 叠加验证（2026-11-18 新增；规格 docs/plans/terrain-followup-verification-plan.md §3）──
+#   「cell 河流是否落进 bake 像素谷」：在**真实生成的地图**（60×40 cell / 桌面 hm 1024×606）上量 X1–X3。
+#   · 链路：base → post_base（填 ext 内部 _gen_river_* 拓扑）→ run_bake_geometry_fields_pass
+#     （knobs 带 dem_erosion_area_dump=true → 额外返回 area_hex_buffer）。与
+#     tests/world/ridge_drainage_metrics_test.gd::_measure() 同源；**不碰** A1–A11 的合成输入。
+#   · 河心像素 = flow_buffer >= 0.6（与 carve 的 dem_valley_river_outlet_flow 缺省一致）。
+#   · X1 河心落谷率（硬门禁 >= 0.95）：河心高度 <= 其 7×7（±3 px）陆地邻域中位数 的比例。
+#   · X2 河道–汇流对齐（只记录）：河心 area_hex 在**全部陆地像素** area_hex 分布中的分位数中位数。
+#   · X3 河岸坡对称性（只记录）：河心东西各 4 px 高度差 |Δh| / 局地起伏 的中位数。
+#   · 缺 area_hex_buffer / flow_buffer / 河心样本 → 打印 "A12: SKIP reason=..." 并计入 skips，
+#     **不假装通过**；合法输入下 pass 直接 fallback 属真实缺陷 → FAIL（同下方 SKIP 策略）。
 # ─────────────────────────────────────────────────────────────────────────────
 
 const SEA := 0.64                      # sea_level：与计划 §4.10 / carve 缺省同值
@@ -47,6 +59,69 @@ const DX := [1, -1, 0, 0, 1, 1, -1, -1]
 const DY := [0, 0, 1, -1, 1, -1, 1, -1]
 const DL := [1.0, 1.0, 1.0, 1.0, 1.4142135623730951, 1.4142135623730951,
 		1.4142135623730951, 1.4142135623730951]
+
+# ── A12（真实地图叠加验证）常量 ───────────────────────────────────────────────
+const A12_SEEDS := [20260718, 20260719]      # 计划 §3：2 个种子（与 ridge 指标测试同 SEED_BASE）
+const A12_MAP_W := 60
+const A12_MAP_H := 40
+const A12_HEX_SIZE := 22.0                   # main.gd / world_runtime_host.gd 的缺省 hex_size
+const A12_HM_MAX_DIM := 1024                 # map_baker.gd::HM_MAX_DIM_DESKTOP（桌面 1024×606）
+const A12_RIVER_FLOW := 0.6                  # 河心判据（carve 的 dem_valley_river_outlet_flow 缺省）
+const A12_WIN := 3                           # 邻域半径 ±3 px ⇒ 7×7
+const A12_SIDE := 4                          # X3 两侧采样距离（px）
+const A12_MIN_WINDOW := 9                    # 邻域有效陆地像素下限（< 9 ⇒ 窗口退化，不计样本）
+const A12_X1_GATE := 0.95                    # X1 硬门禁（计划 §3）
+const A12_RIVER_STROKE_HEX_FACTOR := 0.048   # map_baker.gd::RIVER_STROKE_HEX_FACTOR
+const A12_SDF_MAX_DIST_PX := 3.5             # map_baker.gd::SDF_MAX_DIST_PX
+const A12_RIVER_CR_STEP := 12                # map_baker.gd::RIVER_CR_STEP
+const A12_SHORE_CARVE_AMP := 0.06            # map_baker.gd::SHORE_CARVE_AMP
+const A12_SHORE_CARVE_BAND := 6              # map_baker.gd::SHORE_CARVE_BAND
+const A12_COAST_SDF_MAX_DIST_PX := 8.0       # map_baker.gd::COAST_SDF_MAX_DIST_PX
+# DCTerrainIndexBaker.DEM_DEFAULTS 的镜像（terrain_index_baker.gd:74–146）。测试不 preload 该脚本
+# 是为了「只改一个文件、零跨文件依赖」；缺省值变动时同步这张表（C++ 侧缺省与它同值）。
+const A12_DEM_DEFAULTS := {
+	"dem_relief_lo": 0.006,
+	"dem_relief_hi": 0.120,
+	"dem_relief_cap": 0.25,
+	"dem_ridge_amp_per_relief": 0.55,
+	"dem_ridge_wavelength_hex": 2.4,
+	"dem_ridge_crest_exp": 2.2,
+	"dem_mountain_relief_floor": 0.055,
+	"dem_peak_relief_floor": 0.080,
+	"dem_amp_per_relief": 0.1,
+	"dem_base_wavelength_hex": 1.0,
+	"dem_octaves": 4,
+	"dem_gain_wet": 0.48,
+	"dem_gain_dry": 0.62,
+	"dem_ridge_gain": 0.40,
+	"dem_valley_depth_per_relief": 1.4,
+	"dem_valley_wall_per_relief": 5.0,
+	"dem_valley_area_lo": 8.0,
+	"dem_valley_area_hi": 4000.0,
+	"dem_valley_depth_exp": 0.8,
+	"dem_valley_mfd_exponent": 6.0,
+	"dem_valley_river_outlet_flow": 0.6,
+	"dem_erosion_mode": "spl",
+	"dem_erosion_max_dim": 1024,
+	"dem_spl_iters": 6,
+	"dem_spl_k": 0.50,
+	"dem_spl_m": 0.45,
+	"dem_spl_min_area_hex": 0.03,
+	"dem_slope_limit_per_relief": 5.0,
+	"dem_slope_limit_relief_floor": 0.04,
+	"dem_slope_limit_cap_per_relief": 1.4,
+	"dem_crest_round": 0.0,
+	"dem_dep_enabled": false,
+	"dem_dep_kc": 0.02,
+	"dem_dep_rate": 0.5,
+	"dem_dep_min_area_hex": 0.5,
+	"dem_floor_widen": false,
+	"dem_floor_width_hex": 0.04,
+	"dem_floor_slope": 0.002,
+	"dem_floor_min_area_hex": 2.0,
+	"dem_spl_carve_scale": 0.40,
+	"dem_erosion_pit_audit": false,
+}
 
 var _checks := 0
 var _failures := 0
@@ -89,6 +164,7 @@ func _run() -> void:
 	_test_a9()
 	_test_a10()
 	_test_a11()
+	_test_a12()
 
 
 # 基线：主地形跑一次 SPL 管线，A1/A2/A4/A7/A10 共用（同 knobs 的第一次结果即「P2 基线」）。
@@ -596,6 +672,485 @@ func _test_a11() -> void:
 			int(auto_rep.get("erosion_grid_w", -1)), int(auto_rep.get("erosion_grid_h", -1)),
 			worst, float(auto_rep.get("upsample_ms", -1.0))])
 	_expect(same_grid and worst < 2.0e-6, label)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# A12 叠加验证：cell 河流是否落进 bake 像素谷（计划 §3 X1–X3）
+#
+# 口径（全部只用 bake 输出，不复制 C++ 算法）：
+#   · 空间：真实链路 base → post_base → run_bake_geometry_fields_pass，地图 60×40 cell、
+#     桌面 hm 1024×606（HM_MAX_DIM_DESKTOP）；像素索引 i = y * hm_w + x。
+#   · 水体：biome_buffer[i] ∈ {0,1,18,19,20,21}（pk_is_water_terrain 同集合，与融合 pass 构造
+#     侵蚀出口集合 wet 用的是同一判据）。水体高度不代表河谷 ⇒ 7×7 邻域、局地起伏、X3 两侧
+#     采样点都把它剔除。
+#   · 河心：flow_buffer[i] >= 0.6（river SDF 归一化 1=河上、0=离河 >= SDF_MAX_DIST_PX）。
+#   · X1：河心像素 height_buffer[i] <= 其 7×7 邻域（**排除自身**）**陆地**像素中位数 的比例。
+#     邻域内**其他**河心像素仍计入样本（同一条河道）：与计划 §3 的字面口径一致；河宽只有
+#     ~2×1.4 px（flow>=0.6 ⇒ 距河心 <= 0.4×SDF_MAX_DIST_PX），对 48 个样本的中位数影响有限。
+#   · X2：河心像素 area_hex_buffer[i] 在「全部陆地像素 area_hex」升序分布中的**中位分位**
+#     （lower_bound/upper_bound 取中，并列值算同一位：pct = (lo+hi)/2/n_land，1.0 = 最高）。
+#   · X3：河心像素东西各 4 px 的 |Δh| / 局地起伏；局地起伏 = 与 X1 同一 7×7 陆地邻域的
+#     高度 range（计划 §3 允许 dem_relief_buffer 或 ±3px range，取后者以保证与 X1 同窗口可复算）。
+#     ⚠ 口径提示（记录项，非门禁）：东西向采样对**南北走向**的河段量的是跨谷两侧（正是「河贴
+#     谷壁」想看的量），对**东西走向**的河段量的是沿河方向的高低差（与谷壁无关，偏小）。要换成
+#     沿河法向需引入河道拓扑/Hessian，超出计划 §3 的「东西或梯度垂直」二选一，故保持东西向。
+#   · 边界：7×7 与 X3 的采样一律**跳过越界样本**（不复制边缘像素，避免边界重复加权）；
+#     x < 4 或 x >= hm_w-4 的河心像素没有两侧样本 ⇒ 计入 x3_edge，不进 X3 样本。
+#   · 中位数：偶数个样本取中间两个的算术平均（标准定义）。
+#   · 打印格式固定（lead 用同一探针跑旧地形对照）：
+#       [erosion-spl/A12] seed=20260718 X1=0.9721(n_px=312) X2_pct=0.8130 X3=0.0411
+#       [erosion-spl/A12/aux] ...（诊断，不参与判定）
+#       [erosion-spl/A12/mean] n_seeds=2 X1_mean=... X1_min=... X2_pct_mean=... X3_mean=...
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _test_a12() -> void:
+	var tag := "A12"
+	var label := tag + ": 真实地图河心落谷率 X1 >= %.2f（7×7 陆地邻域中位数、跳过水体）" % A12_X1_GATE
+	if not _has_fused:
+		_skip(tag, "run_bake_geometry_fields_pass 未导出（DLL 未重编？）")
+		return
+	if not _ext.has_method("run_native_world_generate_base_pass") \
+			or not _ext.has_method("run_native_world_generate_post_base_pass"):
+		_skip(tag, "真实生成链路方法缺失（run_native_world_generate_base_pass / post_base_pass 未导出）")
+		return
+	var rows: Array = []
+	var skip_reason := ""
+	var fatal_reason := ""
+	for seed_v in A12_SEEDS:
+		var r: Dictionary = _a12_measure(int(seed_v))
+		rows.append(r)
+		if bool(r.get("ok", false)):
+			print("[erosion-spl/A12] seed=%d X1=%.4f(n_px=%d) X2_pct=%.4f X3=%.4f"
+					% [int(seed_v), float(r["x1"]), int(r["n_px"]), float(r["x2"]),
+					float(r["x3"])])
+			print("[erosion-spl/A12/aux] seed=%d hm=%dx%d hex_px=%.2f land_px=%d wet_px=%d river_px=%d x1_n=%d x1_miss=%d x3_n=%d x3_edge=%d x3_water=%d x3_flat=%d land_area_p50=%.5f river_area_p50=%.5f grid=%dx%d factor=%d mode=%s wall_ms=%.0f"
+					% [int(seed_v), int(r["hm_w"]), int(r["hm_h"]), float(r["hex_px"]),
+					int(r["n_land"]), int(r["n_wet"]), int(r["n_px"]), int(r["x1_n"]),
+					int(r["x1_miss"]), int(r["x3_n"]), int(r["x3_edge"]),
+					int(r["x3_water"]), int(r["x3_flat"]), float(r["land_area_p50"]),
+					float(r["river_area_p50"]), int(r["grid_w"]), int(r["grid_h"]),
+					int(r["factor"]), str(r["mode"]), float(r["wall_ms"])])
+		else:
+			print("[erosion-spl/A12/aux] seed=%d ok=false stage=%s reason=%s"
+					% [int(seed_v), str(r.get("stage", "?")), str(r.get("reason", "?"))])
+			if bool(r.get("fatal", false)):
+				if fatal_reason == "":
+					fatal_reason = "seed=%d %s: %s" % [int(seed_v),
+							str(r.get("stage", "?")), str(r.get("reason", "?"))]
+			elif skip_reason == "":
+				skip_reason = "seed=%d %s: %s" % [int(seed_v),
+						str(r.get("stage", "?")), str(r.get("reason", "?"))]
+	var n_ok := 0
+	var sum_x1 := 0.0
+	var sum_x2 := 0.0
+	var sum_x3 := 0.0
+	var min_x1 := 1.0
+	var n_px_total := 0
+	for r in rows:
+		if not bool(r.get("ok", false)):
+			continue
+		n_ok += 1
+		sum_x1 += float(r["x1"])
+		sum_x2 += float(r["x2"])
+		sum_x3 += float(r["x3"])
+		min_x1 = minf(min_x1, float(r["x1"]))
+		n_px_total += int(r["n_px"])
+	if n_ok > 0:
+		var inv_n := 1.0 / float(n_ok)
+		print("[erosion-spl/A12/mean] n_seeds=%d X1_mean=%.4f X1_min=%.4f X2_pct_mean=%.4f X3_mean=%.4f river_px_total=%d gate>=%.2f"
+				% [n_ok, sum_x1 * inv_n, min_x1, sum_x2 * inv_n, sum_x3 * inv_n,
+				n_px_total, A12_X1_GATE])
+	if fatal_reason != "":
+		print("[erosion-spl/A12] FAIL reason=%s" % fatal_reason)
+		# 合法输入下 pass fallback / 尺寸错位 = 真实缺陷（文件头 SKIP 策略），不能当 SKIP 放过。
+		_expect(false, label)
+		return
+	if skip_reason != "":
+		_skip(tag, skip_reason)
+		return
+	_expect(n_ok == A12_SEEDS.size() and n_px_total > 0 and min_x1 >= A12_X1_GATE, label)
+
+
+# 单种子真实链路：base → post_base → bake（带 dem_erosion_area_dump）→ X1/X2/X3。
+# 返回 {ok, fatal, stage, reason, x1, x2, x3, n_px, ...}；ok=false 时 stage 指出断在哪一步。
+func _a12_measure(seed_v: int) -> Dictionary:
+	var out := {"ok": false, "fatal": false, "stage": "", "reason": "",
+			"x1": 0.0, "x2": 0.0, "x3": 0.0, "n_px": 0,
+			"x1_n": 0, "x1_miss": 0, "x3_n": 0, "x3_edge": 0, "x3_water": 0,
+			"x3_flat": 0, "n_land": 0, "n_wet": 0,
+			"land_area_p50": 0.0, "river_area_p50": 0.0,
+			"hm_w": 0, "hm_h": 0, "hex_px": 0.0,
+			"grid_w": -1, "grid_h": -1, "factor": -1, "mode": "", "wall_ms": 0.0}
+	var t0 := Time.get_ticks_msec()
+	var bounds := _a12_bounds()
+	var hm := _a12_hm_size(bounds)
+	var n_pix := int(hm.x) * int(hm.y)
+	out["hm_w"] = int(hm.x)
+	out["hm_h"] = int(hm.y)
+	out["hex_px"] = A12_HEX_SIZE * sqrt(3.0) / (bounds.size.x / float(hm.x))
+	var cfg := _a12_cfg(seed_v)
+	var profile := _a12_profile()
+	# ① base：真实程序生成（种子 → 大陆/高程/气候/地形）
+	var base_v = _ext.call("run_native_world_generate_base_pass", seed_v, cfg, profile)
+	if not (base_v is Dictionary):
+		out["stage"] = "base"
+		out["reason"] = "run_native_world_generate_base_pass 未返回 Dictionary"
+		out["fatal"] = true
+		return out
+	var base: Dictionary = base_v
+	if int(base.get("rc", -1)) != 0 or bool(base.get("fallback", true)):
+		out["stage"] = "base"
+		out["reason"] = "rc=%d fallback=%s reason=%s" % [int(base.get("rc", -1)),
+				str(bool(base.get("fallback", true))), str(base.get("reason", ""))]
+		out["fatal"] = true
+		return out
+	# ② post_base：填 ext 内部 _gen_river_* 拓扑（river SDF 的 flow 前置），并产出最终 cell SoA
+	var post_v = _ext.call("run_native_world_generate_post_base_pass", seed_v, cfg, profile, base)
+	if not (post_v is Dictionary):
+		out["stage"] = "post_base"
+		out["reason"] = "run_native_world_generate_post_base_pass 未返回 Dictionary"
+		out["fatal"] = true
+		return out
+	var post: Dictionary = post_v
+	if int(post.get("rc", -1)) != 0 or bool(post.get("fallback", true)):
+		out["stage"] = "post_base"
+		out["reason"] = "rc=%d fallback=%s reason=%s" % [int(post.get("rc", -1)),
+				str(bool(post.get("fallback", true))), str(post.get("reason", ""))]
+		out["fatal"] = true
+		return out
+	# ③ bake 几何场（terrain-index → 侵蚀 spl → river SDF → latitude），额外导出像素层 area_hex
+	# post_base 的 cell SoA 是 bake 的输入；尺寸不足说明 DLL 版本不匹配 ⇒ SKIP（不是缺陷）
+	var n_cells := A12_MAP_W * A12_MAP_H
+	var cell_elev: PackedFloat32Array = post.get("elevation_arr", PackedFloat32Array())
+	var cell_moist: PackedFloat32Array = post.get("moisture_arr", PackedFloat32Array())
+	var cell_terr: PackedByteArray = post.get("terrain_arr", PackedByteArray())
+	var cell_veg: PackedByteArray = post.get("vegetation_arr", PackedByteArray())
+	var cell_cov: PackedByteArray = post.get("cover_arr", PackedByteArray())
+	if cell_elev.size() < n_cells or cell_moist.size() < n_cells \
+			or cell_terr.size() < n_cells or cell_veg.size() < n_cells \
+			or cell_cov.size() < n_cells:
+		out["stage"] = "post_base/cell_soa"
+		out["reason"] = "cell SoA 过短（elev=%d moist=%d terr=%d veg=%d cov=%d < %d）" % [
+				cell_elev.size(), cell_moist.size(), cell_terr.size(), cell_veg.size(),
+				cell_cov.size(), n_cells]
+		return out
+	var knobs := _a12_bake_knobs(post, seed_v, hm, bounds)
+	var rep_v = _ext.call("run_bake_geometry_fields_pass", knobs)
+	if not (rep_v is Dictionary):
+		out["stage"] = "bake"
+		out["reason"] = "run_bake_geometry_fields_pass 未返回 Dictionary"
+		out["fatal"] = true
+		return out
+	var rep: Dictionary = rep_v
+	out["wall_ms"] = float(Time.get_ticks_msec() - t0)
+	out["grid_w"] = int(rep.get("erosion_grid_w", -1))
+	out["grid_h"] = int(rep.get("erosion_grid_h", -1))
+	out["factor"] = int(rep.get("erosion_grid_factor", -1))
+	out["mode"] = str(rep.get("erosion_mode", ""))
+	if bool(rep.get("fallback", true)):
+		out["stage"] = "bake"
+		out["reason"] = "fallback reason=%s" % str(rep.get("reason", ""))
+		out["fatal"] = true
+		return out
+	var height: PackedFloat32Array = rep.get("height_buffer", PackedFloat32Array())
+	var flow: PackedFloat32Array = rep.get("flow_buffer", PackedFloat32Array())
+	var biome: PackedByteArray = rep.get("biome_buffer", PackedByteArray())
+	var area_hex: PackedFloat32Array = rep.get("area_hex_buffer", PackedFloat32Array())
+	if height.size() != n_pix:
+		out["stage"] = "bake/height_buffer"
+		out["reason"] = "尺寸 %d != %d" % [height.size(), n_pix]
+		out["fatal"] = true
+		return out
+	# 缺 area_hex_buffer / flow_buffer ⇒ 探针无法测量 ⇒ SKIP（不假装通过）
+	if area_hex.size() != n_pix:
+		out["stage"] = "area_hex_buffer"
+		out["reason"] = "尺寸 %d != %d（dem_erosion_area_dump 未生效 / DLL 未含 S2 诊断）" % [area_hex.size(), n_pix]
+		return out
+	if flow.size() != n_pix:
+		out["stage"] = "flow_buffer"
+		out["reason"] = "尺寸 %d != %d（river_ok=%s reason=%s）" % [flow.size(), n_pix,
+				str(bool(rep.get("river_ok", false))), str(rep.get("river_reason", ""))]
+		return out
+	if biome.size() != n_pix:
+		out["stage"] = "biome_buffer"
+		out["reason"] = "尺寸 %d != %d" % [biome.size(), n_pix]
+		return out
+	var st := _a12_state(height, flow, area_hex, biome, int(hm.x), int(hm.y))
+	out["n_px"] = int(st["n_riv"])
+	out["x1"] = float(st["x1"])
+	out["x2"] = float(st["x2"])
+	out["x3"] = float(st["x3"])
+	out["x1_n"] = int(st["n_x1"])
+	out["x1_miss"] = int(st["x1_miss"])
+	out["x3_n"] = int(st["x3_n"])
+	out["x3_edge"] = int(st["x3_edge"])
+	out["x3_water"] = int(st["x3_water"])
+	out["x3_flat"] = int(st["x3_flat"])
+	out["n_land"] = int(st["n_land"])
+	out["n_wet"] = int(st["n_wet"])
+	out["land_area_p50"] = float(st["land_area_p50"])
+	out["river_area_p50"] = float(st["river_area_p50"])
+	if int(st["n_riv"]) == 0:
+		out["stage"] = "river_center"
+		out["reason"] = "河心像素为 0（flow>=%.2f 无样本；river_ok=%s）" % [A12_RIVER_FLOW,
+				str(bool(rep.get("river_ok", false)))]
+		return out
+	if int(st["n_x1"]) == 0:
+		out["stage"] = "x1_window"
+		out["reason"] = "全部河心像素的 7×7 陆地邻域样本 < %d" % A12_MIN_WINDOW
+		return out
+	out["ok"] = true
+	return out
+
+
+# X1/X2/X3 的纯计算（输入只有 bake 输出与尺寸；旧地形对照可直接复用这一份口径）。
+func _a12_state(height: PackedFloat32Array, flow: PackedFloat32Array,
+		area: PackedFloat32Array, biome: PackedByteArray, w: int, h: int) -> Dictionary:
+	var n := w * h
+	var st := {"n_wet": 0, "n_land": 0, "n_riv": 0, "x1": 0.0, "x2": 0.0, "x3": 0.0,
+			"n_x1": 0, "x1_miss": 0, "x3_n": 0, "x3_edge": 0, "x3_water": 0,
+			"x3_flat": 0, "land_area_p50": 0.0, "river_area_p50": 0.0}
+	var water := PackedByteArray()
+	water.resize(n)
+	var land_area := PackedFloat32Array()
+	var riv := PackedInt32Array()
+	var n_wet := 0
+	for i in range(n):
+		# pk_is_water_terrain（world_ext_internal.h:306）：0 海洋 / 1 海岸 / 18 湖 / 19 礁 /
+		# 20 海藻 / 21 海冰。水体高度不代表河谷 ⇒ 邻域与局地起伏都剔掉。
+		var t := int(biome[i])
+		if t == 0 or t == 1 or t == 18 or t == 19 or t == 20 or t == 21:
+			water[i] = 1
+			n_wet += 1
+		else:
+			land_area.append(float(area[i]))
+		if float(flow[i]) >= A12_RIVER_FLOW:
+			riv.append(i)
+	land_area.sort()
+	var n_land := land_area.size()
+	var n_riv := riv.size()
+	st["n_wet"] = n_wet
+	st["n_land"] = n_land
+	st["n_riv"] = n_riv
+	if n_land == 0 or n_riv == 0:
+		return st
+	var river_area := PackedFloat32Array()
+	for k in range(n_riv):
+		river_area.append(float(area[riv[k]]))
+	st["land_area_p50"] = _a12_median(land_area)
+	st["river_area_p50"] = _a12_median(river_area)
+	var buf := PackedFloat32Array()
+	var pcts := PackedFloat32Array()
+	var ratios := PackedFloat32Array()
+	var x1_hit := 0
+	var n_x1 := 0
+	var x3_edge := 0
+	var x3_water := 0
+	var x3_flat := 0
+	for k in range(n_riv):
+		var idx := riv[k]
+		var x := idx % w
+		var y := (idx - x) / w
+		var self_h := float(height[idx])
+		# ── 7×7 邻域（排除自身；越界样本跳过；跳过水体）→ 中位数 + 局地起伏 ──
+		buf.clear()
+		var lo_h := 1.0e30
+		var hi_h := -1.0e30
+		for dy in range(-A12_WIN, A12_WIN + 1):
+			var yy := y + dy
+			if yy < 0 or yy >= h:
+				continue
+			var row := yy * w
+			for dx in range(-A12_WIN, A12_WIN + 1):
+				if dx == 0 and dy == 0:
+					continue
+				var xx := x + dx
+				if xx < 0 or xx >= w:
+					continue
+				var j := row + xx
+				if water[j] != 0:
+					continue
+				var v := float(height[j])
+				buf.append(v)
+				if v < lo_h:
+					lo_h = v
+				if v > hi_h:
+					hi_h = v
+		if buf.size() < A12_MIN_WINDOW:
+			continue
+		var med := _a12_median(buf)
+		n_x1 += 1
+		if self_h <= med:
+			x1_hit += 1
+		# ── X2：河心 area_hex 在陆地 area_hex 分布中的分位（并列算同一位）──
+		var a := float(area[idx])
+		var rank_lo := _a12_lower_bound(land_area, a)
+		var rank_hi := _a12_upper_bound(land_area, a)
+		pcts.append((float(rank_lo) + float(rank_hi)) * 0.5 / float(n_land))
+		# ── X3：东西各 4 px 高度差 / 同一 7×7 陆地邻域的局地起伏 ──
+		if x < A12_SIDE or x >= w - A12_SIDE:
+			x3_edge += 1
+			continue
+		var jl := idx - A12_SIDE
+		var jr := idx + A12_SIDE
+		if water[jl] != 0 or water[jr] != 0:
+			x3_water += 1
+			continue
+		var relief := hi_h - lo_h
+		if relief <= 1.0e-6:
+			x3_flat += 1
+			continue
+		ratios.append(absf(float(height[jr]) - float(height[jl])) / relief)
+	st["n_x1"] = n_x1
+	st["x1_miss"] = n_x1 - x1_hit
+	st["x3_n"] = ratios.size()
+	st["x3_edge"] = x3_edge
+	st["x3_water"] = x3_water
+	st["x3_flat"] = x3_flat
+	st["x1"] = float(x1_hit) / float(maxi(n_x1, 1))
+	st["x2"] = _a12_median(pcts)
+	st["x3"] = _a12_median(ratios)
+	return st
+
+
+# 真实生成链路的 bake knobs：照 scripts/rendering/bakers/terrain_baker.gd::_bake_geometry_fields_native
+# 的键与算式逐条对齐（origin/size/hex_size/wrap_period_x/inv_world/stroke_radius + DEM 缺省）。
+func _a12_bake_knobs(post: Dictionary, seed_v: int, hm: Vector2i, bounds: Rect2) -> Dictionary:
+	var n_cells := A12_MAP_W * A12_MAP_H
+	var o2i := PackedInt32Array()
+	o2i.resize(n_cells)
+	for i in range(n_cells):
+		o2i[i] = i                     # 生成期 cell.index 就是 row*width+col（world_ext_generate_base.cpp）
+	var inv_world := Vector2(float(hm.x) / bounds.size.x, float(hm.y) / bounds.size.y)
+	var stroke_radius_px := maxf(A12_HEX_SIZE * A12_RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
+	var knobs := {
+		"width": int(hm.x), "height": int(hm.y),
+		"origin_x": bounds.position.x, "origin_y": bounds.position.y,
+		"hex_size": A12_HEX_SIZE, "seed": seed_v,
+		"map_width": A12_MAP_W, "map_height": A12_MAP_H, "n_cells": n_cells,
+		"size_x": bounds.size.x, "size_y": bounds.size.y,
+		"wrap_period_x": float(A12_MAP_W) * sqrt(3.0) * A12_HEX_SIZE,
+		"sea_level": SEA,
+		"cell_elevation": post.get("elevation_arr", PackedFloat32Array()),
+		"cell_moisture": post.get("moisture_arr", PackedFloat32Array()),
+		"cell_terrain": post.get("terrain_arr", PackedByteArray()),
+		"cell_landform": post.get("landform_arr", PackedByteArray()),
+		"cell_vegetation": post.get("vegetation_arr", PackedByteArray()),
+		"cell_cover": post.get("cover_arr", PackedByteArray()),
+		"cell_water_depth": post.get("water_depth_arr", PackedFloat32Array()),
+		"offset_to_index": o2i,
+		# 侵蚀：dem_* 走下面镜像的 DEM 缺省（dem_erosion_mode=spl）；droplet 在 spl 模式下不执行
+		"num_drops": 0, "brush_radius": 2,
+		# river SDF
+		"inv_world_x": inv_world.x, "inv_world_y": inv_world.y,
+		"base_radius_px": stroke_radius_px,
+		"sdf_max_dist_px": A12_SDF_MAX_DIST_PX,
+		"cr_step": A12_RIVER_CR_STEP,
+		# coast SDF carve
+		"shore_carve_amp": A12_SHORE_CARVE_AMP,
+		"shore_carve_band": A12_SHORE_CARVE_BAND,
+		"coast_sdf_max_dist_px": A12_COAST_SDF_MAX_DIST_PX,
+	}
+	for key in A12_DEM_DEFAULTS:
+		knobs[key] = A12_DEM_DEFAULTS[key]
+	# [S2] 诊断开关：额外返回 area_hex_buffer（像素层汇水面积，hex²；不影响高度）。
+	# C++ 从 **bake knobs** 读它（world_ext_bake.cpp:855），不是从 profile。
+	knobs["dem_erosion_area_dump"] = true
+	return knobs
+
+
+# 60×40 / hex_size=22 的世界包围盒（= MapBaker.compute_world_bounds / surface_baker.gd:848）。
+func _a12_bounds() -> Rect2:
+	var px := sqrt(3.0) * A12_HEX_SIZE * (float(A12_MAP_W) + 0.5)
+	var py := 1.5 * A12_HEX_SIZE * float(A12_MAP_H) + 0.5 * A12_HEX_SIZE
+	return Rect2(Vector2(-A12_HEX_SIZE * 2.0, -A12_HEX_SIZE * 2.0),
+			Vector2(px + A12_HEX_SIZE * 4.0, py + A12_HEX_SIZE * 4.0))
+
+
+# 桌面 hm 尺寸（= TerrainBaker._resolve_hm_size / terrain_baker.gd:459：长边 1024、短边按 aspect、取偶）。
+func _a12_hm_size(bounds: Rect2) -> Vector2i:
+	var hm_w := A12_HM_MAX_DIM
+	var hm_h := A12_HM_MAX_DIM
+	if bounds.size.x >= 0.01 and bounds.size.y >= 0.01:
+		var aspect := bounds.size.x / bounds.size.y
+		if aspect >= 1.0:
+			hm_w = A12_HM_MAX_DIM
+			hm_h = roundi(float(A12_HM_MAX_DIM) / aspect)
+		else:
+			hm_h = A12_HM_MAX_DIM
+			hm_w = roundi(float(A12_HM_MAX_DIM) * aspect)
+	hm_w = (hm_w / 2) * 2
+	hm_h = (hm_h / 2) * 2
+	return Vector2i(maxi(hm_w, 256), maxi(hm_h, 256))
+
+
+# 生成 cfg：与 tests/world/ridge_drainage_metrics_test.gd::_cfg() 逐字一致（contracts §D-1）。
+func _a12_cfg(seed_v: int) -> Dictionary:
+	return {
+		"num_continents": 3,
+		"continent_size": 0.9,
+		"sea_level": SEA,
+		"river_count": 12,
+		"width": A12_MAP_W,
+		"height": A12_MAP_H,
+		"seed": seed_v,
+	}
+
+
+# 生成 profile：与 ridge_drainage_metrics_test.gd::_profile() 同源（contracts §D-1 的代表 profile）；
+# 多出的 dem_erosion_area_dump 只对 bake 有效（生成 pass 忽略未知键），写在这里是为了让「同一份
+# profile 自证包含该开关」，真正的读取点是 _a12_bake_knobs() 的 knobs。
+func _a12_profile() -> Dictionary:
+	return {
+		"native_generation_mode": 2,
+		"ridge_boost_amp": 0.60,
+		"spl_iters": 14,
+		"spl_erodibility": 1.2,
+		"spl_area_exp": 0.45,
+		"spl_uplift_rate": 0.08,
+		"spl_ridge_uplift": 0.03,
+		"spl_hillslope_diffusion": 0.08,
+		"ridge_residual_frac": 0.15,
+		"ridge_debug_dump": 1,
+		"dem_erosion_area_dump": true,
+	}
+
+
+# 升序切片上第一个 >= v 的下标（并列值共享下界）。
+func _a12_lower_bound(sorted_vals: PackedFloat32Array, v: float) -> int:
+	var lo := 0
+	var hi := sorted_vals.size()
+	while lo < hi:
+		var mid := (lo + hi) / 2
+		if float(sorted_vals[mid]) < v:
+			lo = mid + 1
+		else:
+			hi = mid
+	return lo
+
+
+# 升序切片上第一个 > v 的下标。
+func _a12_upper_bound(sorted_vals: PackedFloat32Array, v: float) -> int:
+	var lo := 0
+	var hi := sorted_vals.size()
+	while lo < hi:
+		var mid := (lo + hi) / 2
+		if float(sorted_vals[mid]) <= v:
+			lo = mid + 1
+		else:
+			hi = mid
+	return lo
+
+
+# 中位数（原地升序；偶数取中间两个的算术平均）。
+func _a12_median(values: PackedFloat32Array) -> float:
+	var m := values.size()
+	if m == 0:
+		return 0.0
+	values.sort()
+	if m % 2 == 1:
+		return float(values[(m - 1) / 2])
+	return (float(values[m / 2 - 1]) + float(values[m / 2])) * 0.5
 
 
 # ═════════════════════════════════════════════════════════════════════════════

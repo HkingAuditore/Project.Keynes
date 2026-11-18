@@ -90,11 +90,41 @@ knobs），可用 `project_keynes/rendering/dem/<去 dem_ 前缀>` 逐项覆盖�
 `carve` 输出由 FNV-1a 32-bit hash 门禁守逐位一致（三组基线用例见
 [terrain-erosion-spl-plan.md §6 P0](../plans/terrain-erosion-spl-plan.md)）。
 
-侵蚀相关验收：`tests/world/erosion_spl_bake_test.gd` 的 A1–A11（不变量 / 确定性 / 分辨率无关 / 回退 / 沉积），
+侵蚀相关验收：`tests/world/erosion_spl_bake_test.gd` 的 A1–A11（不变量 / 确定性 / 分辨率无关 / 回退 / 沉积）、
+A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95 门禁，属已知 FAIL），
 加六个既有回归（`mountain_relief_bake_test`、`terrain_index_edge_bake_test`、`terrain_detail_continuity_test`、
 `bake_encoder_cpp_parity_test`、`native_generation_equivalence_test`、`visual_tile_native_bake_test`）；
 性能看「同图同次运行的 carve vs spl 成对对照」，不要只看单模式绝对值
-（desktop `spl` 约 233–265 ms，同机多次运行波动约 ±15%）。
+（desktop `spl` 约 233–265 ms，同机多次运行波动约 ±15%；**全部是 `template_debug`，release 未测**）。
+
+### 结构指标阈值与地图指纹基线（2026-11-18）
+
+地形两计划跟进时，结构指标（M1 / M2b / M5）的三个阈值先后作废、而世界漂移当时没有任何门禁。由此固化两条规矩：
+
+1. **结构指标必须先量基线再定阈值。** 判据要同时满足三件事：**同一版本内可对照**、**口径可测**、**方向已知**。
+   反例都在本轮发生：`M1` 的门禁「Spearman ≤ −0.3」基于「基线预计 ≈ 0」的假设，实测基线是 −0.2863 / −0.3485；
+   `M2b` 的「≤ 旧基线 ×2」拿旧实现的数字比新实现，而两版 `ridge_add` 根本不是一个场（幅值差 3–5 倍、
+   高脊格集合 Jaccard 只有 0.31–0.43）；`M5` 的「`land_h > 0.6` 且局地起伏小」在本工程永远不成立
+   （`sea_level = 0.64` 且 `E ≤ 1` ⇒ `land_h ≤ 0.36`），而换成 `M5_p90` 后又把「扩散磨小起伏」误判成「变平」。
+   所以：**先在同一版本上把指标的分布跑出来、确认口径可测，再定阈值**；跨版本只能做同版本内对照
+   （vs 零假设、vs 关 knob）或换 DLL 法并同时报告判据集合一致度，否则数字不可引用。
+   结构指标新增/改口径时，判据先进测试的 `GATES` 表（`ridge_drainage_metrics_test.gd`，逐项 `hard` / `record`），
+   不要用一个全局严格开关；未定口径的指标先记 `record`，定了再转 `hard`。
+2. **改世界的 PR 必须重写指纹基线。** 世界指纹测试由 `tests/world/world_fingerprint.gd`（共用实现）+
+   `tests/world/world_fingerprint_test.gd`（用例）+ `tests/world/baselines/world_fingerprint.json`（基线）组成，
+   已挂在 `golden_day_hash_test` / `golden_external_advancers_test` / `native_generation_equivalence_test` 开头
+   （世界不一致时直接报「世界指纹漂移」，而不是继续跑出一组无法比对的经济 hash）。
+   有意改动生成结果（高程、地形、地貌、河流、`hydro_parent`）的 PR 必须在**同一提交**里用 `FINGERPRINT_WRITE=1`
+   重写基线，并在提交说明附**分布差异摘要**（`land_h` p10/p50/p90/p99、terrain / landform 直方图、
+   `river_count` / `lake_count` / `highland_river_count` / `peak_count` / `plateau_count` 的新旧值），
+   否则下一个 PR 会看到一团无法归因的 drift。hash 严格、分布统计 5% 容差；精确 hash 只在**同平台同编译配置**下比，
+   其他配置用 `FINGERPRINT_HASH=0` 只比统计。**注意覆盖边界**：现有指纹只盖 cell 级 5 条数组
+   （`elevation` / `terrain` / `landform` / `has_river` / `hydro_parent`），bake 的 `height_buffer` hash **尚未覆盖**，
+   改了烘焙期侵蚀/限坡参数不会被这把锁抓到，别以为已经盖住了 bake。
+
+诊断输出按需要临时导出即可，但一律用 **raw profile 键**（`ridge_debug_dump` → `ridge_add_arr`、
+`dem_erosion_area_dump` → `area_hex_buffer`），**不要加进 `DEM_DEFAULTS` / `ClimateProfile` export**：
+纯诊断、不改任何输出数组，避免把测试开关放进玩家可见的 profile。
 
 ## 经济平衡调参
 

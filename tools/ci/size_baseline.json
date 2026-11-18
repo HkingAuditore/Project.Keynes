@@ -530,7 +530,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_bake.cpp": {
-      "lines": 2401,
+      "lines": 2432,
       "limit": 2000
     },
     "gdext/src/world_ext_bio.cpp": {

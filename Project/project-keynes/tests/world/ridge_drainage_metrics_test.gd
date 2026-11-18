@@ -7,10 +7,23 @@ extends SceneTree
 #   docs/plans/terrain-ridge-uplift-contracts.md §C（M1–M5 定义）、§D-1（种子/cfg/profile 契约）
 #   docs/plans/terrain-ridge-uplift-plan.md       §6.2（阈值）、§6.3（分布回归带）
 #
-# ⚠ 结果状态（2026-11-18）：本实现落地后实测 **M4 达成、M1 / M2b / M3 未达成、M5 阈值不可达**，
-#   用户已接受「部分达标」（详见 docs/plans/terrain-ridge-uplift-checklist.md 附 A/附 B）。
-#   因此 M1–M5 目标默认**只记录不判定**（打印 [TARGET-MISS]、计入 targets_missed，退出码仍为 0）；
-#   `P5_STRICT=1` 可恢复为硬门禁。确定性 / 原生成功 / 指标可算是不变量，始终硬门禁。
+# ── 门禁分级（2026-11-18 起：**逐项声明**，不再是 P5_STRICT 一个全局开关）──────────────
+# 来源：docs/plans/terrain-followup-verification-plan.md §2.3（拆分门禁）+ 2026-11-18 实测值。
+#   硬门禁（判据有效 / 不变量）：
+#     · M2   闭合洼地总数（陆地 pit 格数合计）≤ 2026-11-18 实测 × 1.2 的回归线
+#     · M3   Hack 指数 ∈ [0.5, 0.65]（只有 M3_points >= 100 的图参与判定）
+#     · T3-1 原生成功（rc=0、无 fallback）、T3-2 同种子两次逐位一致
+#   硬门禁（回归线 = 2026-11-18 实测 × 1.2，只防「进一步恶化」）：
+#     · M2b  降幅 ≥ 实测降幅 × 1.2（实测 −700% ⇒ 回归线 −840%；**负值 = 恶化**，取绝对值放宽）
+#     · M4   流路直线度 ≥ 实测 / 1.2（实测 1.2145 ⇒ 回归线 1.0121；**越高越好**，故向下放宽）
+#   只记录（打印 [RECORD-ONLY]，计入 targets_hit/missed，**不影响退出码**）：
+#     · M1   Spearman(ridge_add, log10 A)（计划 §5.1 要换成 M1'）
+#     · M5   平顶率（字面阈值恒空集；计划 §5.5 要换成 M5a/M5b）
+# 背景不变：2026-11-18 实测 M1 / M2b / M3 未达成、M5 阈值不可达，用户已接受「部分达标」
+# （详见 docs/plans/terrain-ridge-uplift-checklist.md 附 A/附 B）。上一轮（F10）把 M1–M5
+# **整体**降级为「只记录」被判定为约束力过度削弱，故这次按上表逐项拆分而不是一刀切。
+# ⚠ 已知后果：M3 实测 0.6931 已超出 0.65 ⇒ M3 是硬门禁时本测试会 FAIL —— 那是 200×150
+#   assert 种子的真实结论，不是门禁坏了；要等计划 §6 的重标定落地才可能转绿。
 #
 # 跑法（root 统一编译 + 执行；本文件**不**自行启动 Godot / scons）：
 #   # 门禁（缺省 assert 模式）
@@ -52,31 +65,36 @@ extends SceneTree
 #      **M1 的现状**（平均秩，P5-0 全量基线）：60×40 均值 −0.286（单图 −0.148…−0.380）、
 #      200×150 均值 −0.349。即 §6.2 的「≤ −0.3」在基线上**已经基本达成**（60×40 差 0.014），
 #      作为 P5-1 的「改善证据」几乎没有余量 —— 若标定后仍想证明改善，建议改成
-#      「相对基线再降 ΔM1 ≥ 0.05」。本文件按 §6.2 原样设门禁（`P5_T_M1` 可覆盖），并在
-#      输出里同时打印基线均值与 Δ，便于 lead 换判据。
+#      「相对基线再降 ΔM1 ≥ 0.05」。本文件把 M1 列为**只记录**（计划 §2.3），T_M1 只当参考线
+#      打印（`P5_T_M1` 可覆盖），输出里同时打印基线均值与 Δ，便于 lead 换判据。
 #
-# ── 阈值（§6.2；可用环境变量覆盖，免得为调参改代码）───────────────────────────────
-#   M1 ≤ P5_T_M1（缺省 −0.3）
-#   M2(b) 较基线降 ≥ P5_T_M2_DROP（缺省 0.5，即 50%）
-#   M3 ∈ [P5_T_M3_LO, P5_T_M3_HI]（缺省 [0.5, 0.65]）
-#   M4 较基线上升；M5 较基线下降
+# ── 阈值（具名常量，来源 = 2026-11-18 实测 + 计划 §2.3；**不要凭空改数**）──────────────
+#   M2   ≤ MEASURED_M2_PITS × GATE_SLACK        = 425 × 1.2 = 510（实测 425，基线 614）
+#   M2b  降幅 ≥ MEASURED_M2B_DROP × GATE_SLACK   = −700% × 1.2 = −840%（实测 6 → 48）
+#   M3   ∈ [T_M3_LO, T_M3_HI]                    = [0.5, 0.65]（§6.2 原阈值；实测 0.6931）
+#   M4   ≥ MEASURED_M4 / GATE_SLACK              = 1.2145 / 1.2 = 1.0121（基线 1.1194）
+#   M1   只记录：T_M1 仅作参考线打印（§6.2 原目标，不参与退出码）
+# 环境变量覆盖：P5_T_M3_LO / P5_T_M3_HI / P5_T_M1 仍可用（调参不改代码）；
+# M2 / M2b / M4 的回归线不允许用环境变量放宽 —— 它们就是「不许再恶化」的下限。
 #
-# ── 基线来源（M2(b)/M4/M5 的「较基线」需要它）────────────────────────────────────
+# ── 基线来源（M2/M2b/M4 的对照打印、M5 的较基线判定需要它）────────────────────────
 #   按顺序尝试：`P5_BASELINE`（JSON 路径）→ `tmp/p5_calib/baseline/metrics_gd.json`
 #   （本脚本 baseline 模式产出）→ `tmp/p5_calib/baseline/metrics_py.json`（lead 的 python 版）。
 #   都读不到时退回文件内的 `BASELINE_FALLBACK` 常量 —— 那是 2026-11-18 由
 #   `_p5_freeze_baseline.gd` 冻结、`tmp/p5_calib/metrics.py` 算出的**全量种子均值**
 #   （60×40 32 个种子 / 200×150 8 个种子），与 assert 模式的 4+1 个种子不是同一集合，
 #   只作量级参照（打印时明确标注 fallback）。**基线一旦重冻结，请优先用上面两个 JSON 路径。**
+#   硬门禁 M2 / M4 用**绝对回归线**判定，没有基线也能判（不因缺基线 SKIP）。
 #
 # ── SKIP 清单（不假装通过；每条都打印 `<tag>: SKIP reason=...` 并计入 _skips）──────────
 #   · ridge_add_arr 缺失（DLL 未含 P5-0.1 诊断输出）→ M1 / M2(b) 全 SKIP
-#   · M2(b) 基线合计为 0 → 「降 50%」无定义 → SKIP
-#   · M4 / M5 无基线可用 → SKIP
+#   · M2(b) 基线合计为 0 → 「较基线降幅」无定义 → SKIP
+#   · M5 无基线可用 → SKIP
 #   · M5 候选格 = 0（字面阈值恒空集）→ SKIP
 #   · M3：样本 < 8（A ≥ 100 的格太少）→ 该图 M3 落 null；样本 < 100 → 只作参考不判定；
 #     没有一张图达到 100 → 整体 SKIP
 #   · base pass fallback / rc != 0 → 该行指标不可信：T3-1 直接 FAIL（合法输入不该 fallback）
+#   （注：M4 不再因缺基线 SKIP —— 它的门禁是绝对回归线）
 #
 # ── 实现要点 ───────────────────────────────────────────────────────────────────
 #   · 排水网：D6 邻接与 `gdext/src/world_ext_generate_base.cpp` 的 `index_for_qr` 逐字一致
@@ -123,10 +141,27 @@ const STEM_MIN_AREA := 100.0        # 契约 §C M3/M4：A >= 100
 const MIN_SAMPLE := 8               # 与 metrics.py 同：样本 < 8 不下结论
 const M3_JUDGE_MIN_POINTS := 100    # M3 只在样本足够的图上判定（见 _check_m3 注释）
 
-const T_M1 := -0.3
-const T_M3_LO := 0.5
+# ── 门禁阈值：具名常量（来源 2026-11-18 实测 + 计划 §2.3，见文件头「阈值」）──────────────
+const GATE_SLACK := 1.2            # 计划 §2.3：回归线 = 2026-11-18 实测值 × 1.2
+const MEASURED_M2_PITS := 425.0    # 实测：assert 集（4×60×40 + 1×200×150）陆地 pit 格数合计
+const MEASURED_M2B_DROP := -7.0    # 实测：ridge>=p75 的 pit 合计 6 → 48，降幅 −700% = −7.0
+const MEASURED_M4 := 1.2145        # 实测：assert 集配对均值（基线 1.1194）
+
+const T_M1 := -0.3                 # 只记录的参考线（§6.2 原目标；不参与退出码）
+const T_M3_LO := 0.5               # 硬门禁：§6.2 的 Hack 指数区间
 const T_M3_HI := 0.65
-const T_M2_DROP := 0.5
+
+# 逐项门禁声明（计划 §2.3，取代原 P5_STRICT 全局开关）：item → hard / record
+const GATE_HARD := "hard"
+const GATE_RECORD := "record"
+const GATES := {
+	"M1": GATE_RECORD,      # 判据待计划 §5.1 修订（M1'），修订后转硬
+	"M2": GATE_HARD,        # 判据有效，且是 P5 主收益
+	"M2b": GATE_HARD,       # 硬，回归线 = 实测 × 1.2（只防更差；§4 会修工序）
+	"M3": GATE_HARD,        # 判据有效
+	"M4": GATE_HARD,        # 硬，回归线 = 实测 / 1.2
+	"M5": GATE_RECORD,      # 判据待计划 §5.5 修订（M5a/M5b），修订后转硬
+}
 
 # 量纲：高度 0..1。LEVEL_* 只用于堆键排序，RANK_SCALE 只用于秩排序，都不参与指标数值。
 const LEVEL_SCALE := 1073741824.0    # 2^30
@@ -152,10 +187,9 @@ const BASELINE_FALLBACK := {
 var _checks := 0
 var _failures := 0
 var _skips := 0
-# 计划 §6.2 的「目标达成度」计数：默认**只记录不判定**（见 _gate 注释）。
+# 只记录项（M1 / M5）的达成度计数：默认不影响退出码，见 _gate 与文件头「门禁分级」。
 var _targets_hit := 0
 var _targets_missed := 0
-var _strict := false
 var _mode := "assert"
 var _label := "run"
 var _sea_level := SEA_FALLBACK
@@ -169,7 +203,6 @@ var _heap_n := 0
 func _init() -> void:
 	_mode = _resolve_mode()
 	_label = _sanitize_label(OS.get_environment("P5_LABEL"))
-	_strict = OS.get_environment("P5_STRICT").strip_edges() == "1"
 	print("[ridge-metrics] mode=%s label=%s sea_level=%.4f godot=%s"
 			% [_mode, _label, _sea_level, str(Engine.get_version_info().get("string", "?"))])
 	match _mode:
@@ -179,8 +212,8 @@ func _init() -> void:
 			_run_baseline()
 		_:
 			_run_assert()
-	print("[ridge-metrics] checks=%d failures=%d skips=%d targets_hit=%d targets_missed=%d strict=%s"
-			% [_checks, _failures, _skips, _targets_hit, _targets_missed, str(_strict)])
+	print("[ridge-metrics] checks=%d failures=%d skips=%d targets_hit=%d targets_missed=%d"
+			% [_checks, _failures, _skips, _targets_hit, _targets_missed])
 	quit(0 if _failures == 0 else 1)
 
 
@@ -258,13 +291,11 @@ func _run_assert() -> void:
 		det_ok = det_ok and ok_run and elev_same and ridge_same
 	_expect(det_ok, "T3-2: 同 seed 两次 elevation_arr / ridge_add_arr 逐位一致")
 
-	# 读法提示（2026-11-18 更新）：M1–M5 是计划 §6.2 的**设计目标**，不是不变量。
-	# 实测 M1/M2b/M3 未达成、M5 的阈值本身不可达（`land_h ≤ 0.36` 恒空集）；用户已接受
-	# 「部分达标」的落地结果（见 docs/plans/terrain-ridge-uplift-checklist.md 附 A/附 B）。
-	# 因此默认**只记录**目标达成度（[TARGET-HIT] / [TARGET-MISS] → targets_hit/targets_missed），
-	# 不参与退出码；要当硬门禁跑 `P5_STRICT=1`。确定性 / 原生成功 / 指标可算 始终是硬门禁。
-	print("[ridge-metrics] 说明：M1–M5 目标默认只记录（P5_STRICT=1 才作硬门禁）。"
-			+ "2026-11-18 实测 M1/M2b/M3 未达成、M5 阈值不可达，已由用户接受。")
+	# 门禁声明提示（2026-11-18 更新，取代原 P5_STRICT 全局开关）：M1–M5 逐项声明 hard / record，
+	# 见文件头「门禁分级」与 GATES 表。M2 / M2b / M3 / M4 是硬门禁（失败计退出码），
+	# M1 / M5 只记录（判据待计划 §5 修订）。T3-1 / T3-2 是不变量，始终硬门禁。
+	print("[ridge-metrics] 说明：逐项门禁 hard=%s record=%s（计划 §2.3）。"
+			% [_items_with_gate(GATE_HARD), _items_with_gate(GATE_RECORD)])
 
 	# M1 / M2(b) 前置：ridge_add_arr 必须存在（P5-0.1 的 opt-in 诊断）
 	var ridge_ok := true
@@ -306,7 +337,8 @@ func _check_m1(rows: Array) -> void:
 				float(pair[1]), int(pair[2])]
 	print("[ridge-metrics/M1] per-seed %smean=%.4f n=%d thr<=%.3f %s"
 			% [line, mean, n, thr, delta])
-	_gate(mean <= thr, "M1: 陆地 Spearman(ridge_add, log10 A) 均值 %.4f <= %.3f" % [mean, thr])
+	# M1 只记录（计划 §2.3）：thr 只是 §6.2 原目标的参考线，不影响退出码。
+	_gate("M1", mean <= thr, "M1: 陆地 Spearman(ridge_add, log10 A) 均值 %.4f <= %.3f" % [mean, thr])
 
 
 func _check_m2(rows: Array) -> void:
@@ -317,22 +349,32 @@ func _check_m2(rows: Array) -> void:
 		rid_new += int(r.get("M2_ridge_pits", 0))
 	var pair_pit := _paired_sum(rows, "M2_pits")
 	var pair_rid := _paired_sum(rows, "M2_ridge_pits")
-	print("[ridge-metrics/M2a] 陆地 pit 格数 新=%d 基线=%s 配对图=%d（信息项：§6.2 只对 M2(b) 设阈值）"
-			% [pit_new, _fmt_sum(float(pair_pit[1])), int(pair_pit[2])])
+	# M2 硬门禁（计划 §2.3）：闭合洼地总数不得超过 2026-11-18 实测 × 1.2 的回归线。
+	# 方向：越少越好 ⇒ 只设上限；基线只用于打印对照（无基线也能判，少一个 SKIP）。
+	var m2_limit := MEASURED_M2_PITS * GATE_SLACK
+	print("[ridge-metrics/M2a] 陆地 pit 格数 新=%d 基线=%s 配对图=%d 回归线<=%.0f（M2 硬门禁）"
+			% [pit_new, _fmt_sum(float(pair_pit[1])), int(pair_pit[2]), m2_limit])
+	_gate("M2", float(pit_new) <= m2_limit,
+			"M2: 闭合洼地总数 %d <= %.0f（2026-11-18 实测 %.0f × %.1f 回归线）"
+			% [pit_new, m2_limit, MEASURED_M2_PITS, GATE_SLACK])
 	if int(pair_rid[2]) == 0:
 		_skip("M2b", "无基线行可对齐（先跑 P5_MODE=baseline，或用 P5_BASELINE 指定 JSON）")
 		return
 	var rid_base := float(pair_rid[1])
 	var rid_paired := int(round(float(pair_rid[0])))
 	if rid_base <= 0.0:
-		_skip("M2b", "基线 ridge 高分位 pit 合计=0，「降 50%%」无定义；新值=%d" % rid_new)
+		_skip("M2b", "基线 ridge 高分位 pit 合计=0，「较基线降幅」无定义；新值=%d" % rid_new)
 		return
 	var drop := (rid_base - float(rid_paired)) / rid_base
-	var thr := _env_float("P5_T_M2_DROP", T_M2_DROP)
-	print("[ridge-metrics/M2b] ridge>=p75 的 pit 合计 基线=%.2f 新=%d（同图集合计；全图集新值=%d）降幅=%.1f%% thr>=%.0f%% 来源=%s"
-			% [rid_base, rid_paired, rid_new, drop * 100.0, thr * 100.0, _baseline_src])
-	_gate(drop >= thr, "M2b: ridge>=p75 的 pit 格数较基线降 %.1f%% >= %.0f%%"
-			% [drop * 100.0, thr * 100.0])
+	# M2b 硬门禁（计划 §2.3）：降幅不得低于「2026-11-18 实测降幅 × 1.2」。
+	# drop 为负 = 相比基线恶化（实测 −700%）；取绝对值放宽 1.2 倍 ⇒ 回归线 −840%，
+	# 即 new <= 基线 × (1 + 8.4) 才过；再差就 FAIL。
+	var drop_limit := MEASURED_M2B_DROP * GATE_SLACK
+	print("[ridge-metrics/M2b] ridge>=p75 的 pit 合计 基线=%.2f 新=%d（同图集合计；全图集新值=%d）降幅=%.1f%% 回归线>=%.0f%% 来源=%s"
+			% [rid_base, rid_paired, rid_new, drop * 100.0, drop_limit * 100.0, _baseline_src])
+	_gate("M2b", drop >= drop_limit,
+			"M2b: ridge>=p75 的 pit 格数较基线降 %.1f%% >= %.0f%%（2026-11-18 实测 %.0f%% × %.1f）"
+			% [drop * 100.0, drop_limit * 100.0, MEASURED_M2B_DROP * 100.0, GATE_SLACK])
 
 
 func _check_m3(rows: Array) -> void:
@@ -357,7 +399,7 @@ func _check_m3(rows: Array) -> void:
 		_skip("M3", "没有 M3_points>=%d 的图（60×40 上 A>=%.0f 的样本只有 3–13 个，斜率标准误 ±0.1~0.4，不构成判定）"
 				% [M3_JUDGE_MIN_POINTS, STEM_MIN_AREA])
 		return
-	_gate(bad == "", "M3: Hack 指数 ∈ [%.2f, %.2f]（越界: %s）" % [lo, hi, bad])
+	_gate("M3", bad == "", "M3: Hack 指数 ∈ [%.2f, %.2f]（越界: %s）" % [lo, hi, bad])
 
 
 func _check_m4(rows: Array) -> void:
@@ -366,16 +408,20 @@ func _check_m4(rows: Array) -> void:
 		_skip("M4", "所有种子 M4 样本 < %d" % MIN_SAMPLE)
 		return
 	var pair := _paired_mean(rows, "M4")
-	if int(pair[2]) == 0:
-		print("[ridge-metrics/M4] 新均值=%.4f（无基线均值，无法判「上升」）" % new_mean)
-		_skip("M4", "无基线（P5_MODE=baseline 或 P5_BASELINE 未就绪）")
-		return
-	var base_mean := float(pair[1])
-	var paired_new := float(pair[0])
-	print("[ridge-metrics/M4] 流路直线度 基线=%.4f 新=%.4f Δ=%+.4f 配对图=%d 来源=%s"
-			% [base_mean, paired_new, paired_new - base_mean, int(pair[2]), _baseline_src])
-	_gate(paired_new > base_mean + 1.0e-6, "M4: 流路直线度较基线上升（%.4f > %.4f）"
-			% [paired_new, base_mean])
+	# M4 硬门禁（计划 §2.3）：不得低于「2026-11-18 实测 / 1.2」的回归线。
+	# 方向：流路直线度**越高越好** ⇒ 1.2 倍放宽要向下用（实测 1.2145 ⇒ 回归线 1.0121）；
+	# 基线均值只用于打印 Δ，不再作为判定依据（无基线也能判，少一个 SKIP）。
+	var m4_limit := MEASURED_M4 / GATE_SLACK
+	if int(pair[2]) > 0:
+		print("[ridge-metrics/M4] 流路直线度 基线=%.4f 新=%.4f Δ=%+.4f 配对图=%d 回归线>=%.4f 来源=%s"
+				% [float(pair[1]), float(pair[0]), float(pair[0]) - float(pair[1]),
+				int(pair[2]), m4_limit, _baseline_src])
+	else:
+		print("[ridge-metrics/M4] 流路直线度 新均值=%.4f（无基线可比，按绝对回归线判定）回归线>=%.4f"
+				% [new_mean, m4_limit])
+	_gate("M4", new_mean >= m4_limit,
+			"M4: 流路直线度均值 %.4f >= %.4f（2026-11-18 实测 %.4f / %.1f）"
+			% [new_mean, m4_limit, MEASURED_M4, GATE_SLACK])
 
 
 func _check_m5(rows: Array) -> void:
@@ -406,7 +452,8 @@ func _check_m5(rows: Array) -> void:
 	var base_mean := float(pair[1])
 	print("[ridge-metrics/M5] 平顶率 基线=%.4f 新=%.4f Δ=%+.4f 配对图=%d"
 			% [base_mean, float(pair[0]), float(pair[0]) - base_mean, int(pair[2])])
-	_gate(float(pair[0]) < base_mean - 1.0e-9, "M5: 平顶率较基线下降（%.4f < %.4f）"
+	# M5 只记录（计划 §2.3）：判据待 §5.5 换成 M5a/M5b 后再转硬门禁。
+	_gate("M5", float(pair[0]) < base_mean - 1.0e-9, "M5: 平顶率较基线下降（%.4f < %.4f）"
 			% [float(pair[0]), base_mean])
 
 
@@ -1359,23 +1406,29 @@ func _expect(ok: bool, label: String) -> void:
 		push_error("  [FAIL] %s" % label)
 
 
-# 计划 §6.2 的 M1–M5 目标判定。
-# 默认 **只记录不判定**：这些阈值是设计阶段的估计，2026-11-18 实测 M1/M2b/M3 未达成、
-# M5 阈值本身不可达；用户已接受「部分达标」的落地结果（见 docs/plans/terrain-ridge-uplift-checklist.md）。
-# 若把它们当硬门禁，本测试会永久常红，失去回归价值。故：
-#   · 默认：打印 [TARGET-HIT] / [TARGET-MISS] 并计入 targets_missed，**不影响退出码**；
-#   · `P5_STRICT=1`：恢复为硬门禁（下一轮迭代收敛后应改为默认硬门禁）。
-# 「确定性 / 原生成功 / 指标可算」这些**不变量**始终是硬门禁（见 T3-0/T3-1/T3-2）。
-func _gate(ok: bool, label: String) -> void:
-	if _strict:
+# 按项查表（GATES）决定 hard / record —— 取代原来的全局 P5_STRICT 开关（计划 §2.3）。
+#   hard   → 走 _expect：失败计入 _failures / 影响退出码
+#   record → 打印 [RECORD-ONLY]，只累计 targets_hit / targets_missed，**不影响退出码**
+# 「确定性 / 原生成功 / 指标可算」是**不变量**，不在这张表里，始终走 _expect（见 T3-1/T3-2）。
+func _gate(item: String, ok: bool, label: String) -> void:
+	if String(GATES.get(item, GATE_RECORD)) == GATE_HARD:
 		_expect(ok, label)
 		return
 	if ok:
 		_targets_hit += 1
-		print("  [TARGET-HIT] %s" % label)
+		print("  [RECORD-ONLY] hit  %s（只记录，不计失败）" % label)
 	else:
 		_targets_missed += 1
-		print("  [TARGET-MISS] %s" % label)
+		print("  [RECORD-ONLY] miss %s（只记录，不计失败；判据待计划 §5 修订）" % label)
+
+
+# 打印门禁表用：按 GATES 的声明顺序列出属于某一档的指标。
+func _items_with_gate(kind: String) -> String:
+	var names := ""
+	for key in GATES.keys():
+		if String(GATES[key]) == kind:
+			names += "%s " % String(key)
+	return names.strip_edges()
 
 
 func _skip(tag: String, reason: String) -> void:
