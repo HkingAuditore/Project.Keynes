@@ -10,7 +10,7 @@ const OPTION_LABELS := {
 	"vegetation_detail": ["植被与点缀", ["稀疏", "标准", "茂密"]],
 	"weather_detail": ["天气表现", ["简洁", "标准", "精细"]],
 	"cloud_shadow": ["地面云影", ["关闭", "开启"]],
-	"frame_rate_limit": ["帧率上限", ["30 帧/秒", "60 帧/秒", "跟随屏幕"]],
+	"frame_rate_limit": ["帧率上限", ["30 帧/秒", "60 帧/秒", "跟随屏幕", "操作 60 帧 / 静止 30 帧"]],
 }
 
 var _preset: OptionButton

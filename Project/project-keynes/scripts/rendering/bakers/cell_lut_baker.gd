@@ -836,6 +836,7 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 			tex.update_layer(state_image, CellTableCodecScript.LAYER_STATE)
 			updated_layers.append("state")
 	if need_static:
+		world.land_base_revision += 1
 		world.cell_table_fog_coverage_source = aux_image
 		world.cell_table_fog_coverage = null
 	world.cell_table_dims = dims

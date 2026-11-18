@@ -2,6 +2,7 @@ extends RefCounted
 
 ## Render quality remains the preset used by existing map texture baking. Custom
 ## controls override the individual display settings above that preset.
+const ADAPTIVE_FPS := -1
 const PRESET_IDS := ["auto", "low", "medium", "high"]
 const DETAIL_LEVEL := {"low": 0, "medium": 1, "high": 2}
 const OPTION_VALUES := {
@@ -11,7 +12,7 @@ const OPTION_VALUES := {
 	"vegetation_detail": [0, 1, 2],
 	"weather_detail": [0, 1, 2],
 	"cloud_shadow": [false, true],
-	"frame_rate_limit": [30, 60, 0],
+	"frame_rate_limit": [30, 60, 0, ADAPTIVE_FPS],
 }
 
 
@@ -40,6 +41,8 @@ static func resolve(settings: Dictionary, mobile: bool) -> Dictionary:
 		"cloud_shadow": detail >= (2 if mobile else 1),
 		"frame_rate_limit": (30 if preset == "low" else 60) if mobile else 0,
 	}
+	if mobile and preset == "auto":
+		result.frame_rate_limit = ADAPTIVE_FPS
 	var custom = settings.get("graphics_custom", false)
 	if custom is bool and custom:
 		for key in OPTION_VALUES:

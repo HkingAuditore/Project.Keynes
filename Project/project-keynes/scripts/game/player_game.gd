@@ -168,8 +168,11 @@ func _connect_signals() -> void:
 	_ui_manager.return_main_menu_requested.connect(_request_return_main_menu)
 	_ui_manager.exit_game_requested.connect(_request_exit_game)
 	var settings: Node = _game_settings()
-	if settings != null and not settings.settings_changed.is_connected(_on_settings_changed):
-		settings.settings_changed.connect(_on_settings_changed)
+	if settings != null:
+		if not OS.has_feature("web"):
+			settings.follow_map_camera(_camera)
+		if not settings.settings_changed.is_connected(_on_settings_changed):
+			settings.settings_changed.connect(_on_settings_changed)
 
 
 func _on_world_ready(

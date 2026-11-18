@@ -5,7 +5,16 @@ shader_type canvas_item;
 // WebGL2) 16 单元预算下是纯浪费。其余同类全屏 canvas shader
 // （data_overlay/fog_of_war/country_border/hex_edge_overlay）都已带 unshaded，
 // 这里补齐。
+#if defined(PK_BAKE_LAND_COLOR) || defined(PK_BAKE_LAND_NORMAL)
+render_mode blend_disabled, unshaded;
+#else
 render_mode blend_mix, unshaded;
+#endif
+#ifdef PK_READ_LAND_BASE
+uniform sampler2D land_base_color : filter_nearest, repeat_disable;
+uniform sampler2D land_base_normal : filter_nearest, repeat_disable;
+varying vec2 land_base_uv;
+#endif
 
 // ═══════════════════════════════════════════════════════════════════════════
 // [land-water-split 2026-11-02] 陆地 / 水面双 program 的宏归一（**只做别名，不动前缀**）。
@@ -409,6 +418,9 @@ void vertex() {
 }
 
 void fragment() {
+#ifdef PK_READ_LAND_BASE
+	land_base_uv = SCREEN_UV;
+#endif
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 0：Atlas 采样 / 通道解码
 	// ───────────────────────────────────────────────────────────────────────
@@ -796,6 +808,15 @@ void fragment() {
 	// 植被 / 雪 / 海冰 / 深海色温分支都消费同一组温度值。
 	// ═══════════════════════════════════════════════════════════════════════
 	// ─── Phase 1：季节相位 + 当前温度（每帧由 WorldClock 驱动） ───────────
+#if defined(PK_BAKE_LAND_COLOR) || defined(PK_BAKE_LAND_NORMAL)
+	TerrainStaticMaterial base = compute_terrain_static_material_field(
+		cell_field, cell_e0, cell_e1, cell_e2, visual_land_biome, elev, wp, uv);
+#ifdef PK_BAKE_LAND_COLOR
+	COLOR = vec4(base.color * 0.5, base.micro_strength * 0.5);
+#else
+	COLOR = vec4(base.material_normal_xy * 0.5 + 0.5, base.roughness, 1.0);
+#endif
+#else
 	float lat_signed = lat_norm * 2.0 - 1.0;            // [-1, 1]
 	// True Insolation-Driven：CPU / GPU 同源日照偏移；兼容 bool 不再切换 legacy 分支。
 	float season_offset = season_offset_unified(lat_signed, season_phase);
@@ -1061,4 +1082,5 @@ void fragment() {
 #endif // PK_PROBE_NO_GLOBAL_ADJ
 		}
 	}
+#endif // static land bake
 }

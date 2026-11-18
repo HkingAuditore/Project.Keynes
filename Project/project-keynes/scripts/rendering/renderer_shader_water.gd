@@ -614,6 +614,8 @@ static func _water_program_prefix(host, kind: String) -> String:
 static func _push_world_uniform(host, key: Variant, value: Variant) -> void:
 
 	var key_name = StringName(key)
+	if host._land_base_cache != null:
+		host._land_base_cache.parameter_changed(key_name, value)
 	if host._shader_mat != null:
 		host._shader_mat.set_shader_parameter(key_name, value)
 	if host._water_mat != null and not host._water_uniform_names.is_empty() \

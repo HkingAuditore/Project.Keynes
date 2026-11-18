@@ -880,6 +880,8 @@ var _simulation_speed_multiplier: float = 1.0
 @export var global_darken: float = 0.0
 
 var _world_quad: MeshInstance2D
+const LandBaseCache = preload("res://scripts/rendering/land_base_cache.gd")
+var _land_base_cache: LandBaseCache
 var _graphics_details := preload("res://scripts/rendering/renderer_graphics_settings.gd").new()
 var _shader_mat: ShaderMaterial
 var _sky_background: Node

@@ -139,6 +139,13 @@ func _init() -> void:
 		"mobile_high": "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n",
 	}
 	for label in variants:
+		for mode in ["PK_BAKE_LAND_COLOR", "PK_BAKE_LAND_NORMAL", "PK_READ_LAND_BASE"]:
+			var land_cache_shader := Shader.new()
+			land_cache_shader.code = "#define %s\n#define PK_LAND_ONLY\n#define PK_CELL_FIELD\n" % mode + String(variants[label]) + source
+			var cache_uniforms := land_cache_shader.get_shader_uniform_list()
+			_expect(not cache_uniforms.is_empty()
+				and cache_uniforms.any(func(u): return u.name == &"land_base_color") == (mode == "PK_READ_LAND_BASE"),
+				"%s %s compiles with the expected cache input" % [label, mode])
 		var shader := Shader.new()
 		shader.code = String(variants[label]) + source
 		var uniforms: Array = shader.get_shader_uniform_list()
