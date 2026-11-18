@@ -7,6 +7,11 @@ extends SceneTree
 # implemented as a C++ DOTS publish pass after MapData binding; without a bound
 # MapData it must report an explicit fallback instead of the old unimplemented
 # stub.
+#
+# 计划 §2.2：跑 smoke 之前先比一次「世界指纹」（共用 tests/world/world_fingerprint.gd）。
+# 世界漂移 → 打印 DRIFT + 差异明细并计 FAIL；拿不到 ext / 基线缺失 → SKIP（不计失败）。
+
+const WORLD_FINGERPRINT := preload("res://tests/world/world_fingerprint.gd")
 
 var _checks: int = 0
 var _failures: int = 0
@@ -25,6 +30,11 @@ func _run() -> void:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	if ext == null:
 		_skip("DCWorldExt instantiate returned null")
+		return
+
+	# 计划 §2.2：先确认世界本身没变，再跑 API smoke。
+	if not _world_fingerprint_precheck(ext):
+		_finish()
 		return
 
 	_expect("start_native_generation exported", ext.has_method("start_native_generation"))
@@ -89,6 +99,31 @@ func _run() -> void:
 func _skip(reason: String) -> void:
 	print("  [SKIP] %s" % reason)
 	_finish()
+
+
+# 计划 §2.2：「世界指纹」前置校验（与 golden 两个测试共用 tests/world/world_fingerprint.gd）。
+# · 一致 → PASS，继续跑原有的 API smoke（原有断言与流程一行不改）
+# · 拿不到 ext / 基线文件缺失 → 打印 SKIP reason=...，**不计失败**，继续跑
+# · 世界漂移 → 打印 DRIFT + 差异明细，计一次 FAIL，返回 false（调用方 _finish() 后退出）
+# · 指纹生成失败（rc != 0 / fallback）→ 同样计 FAIL：合法输入不该失败，不伪装成 SKIP
+func _world_fingerprint_precheck(ext: Object) -> bool:
+	var result: Dictionary = WORLD_FINGERPRINT.precheck(ext)
+	var status := str(result.get("status", "skip"))
+	if status == "ok":
+		_expect("world fingerprint matches baseline", true)
+		return true
+	if status == "skip":
+		print("[world-fingerprint] SKIP reason=%s" % str(result.get("reason", "?")))
+		return true
+	if status == "drift":
+		print("[world-fingerprint] DRIFT seed=%d %dx%d"
+				% [int(result.get("seed", -1)), int(result.get("w", -1)),
+				int(result.get("h", -1))])
+		print(WORLD_FINGERPRINT.format_report(result))
+	else:
+		print("[world-fingerprint] ERROR reason=%s" % str(result.get("reason", "?")))
+	_expect("world fingerprint matches baseline", false)
+	return false
 
 
 func _finish() -> void:

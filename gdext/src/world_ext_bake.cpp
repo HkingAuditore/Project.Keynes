@@ -815,6 +815,7 @@ struct ErosionKnobs {
     int max_dim = 1024;              // 计算栅格长边上限（像素）；<=0 → 不下采样
     double carve_scale = 0.40;       // 仅 spl+carve：浅刻谷深度系数
     bool pit_audit = false;          // 诊断：额外算 pits_out（默认关，不改变高度）
+    bool area_dump = false;          // 诊断：额外导出像素层 A_hex（默认关，不改变高度）
 };
 
 // ── 侵蚀 knobs 解析：缺省值 = 计划 §4.10 的「C++ 缺省」列，与 DEM_DEFAULTS 原值一致 ──
@@ -848,6 +849,10 @@ ErosionKnobs pk_parse_erosion_knobs(const Dictionary &knobs) {
     ek.carve_scale = double(knobs.get("dem_spl_carve_scale", 0.40));
     // 测试/诊断：让合并管线额外算 pits_out
     ek.pit_audit = bool(knobs.get("dem_erosion_pit_audit", false));
+    // [S2/S4.4 诊断 2026-11-18] 导出像素层汇水面积 A_hex（单位 hex²），供
+    //   X2「河心是否走在像素汇流主干上」与 §5.4「dem_spl_k 为什么需要 17 倍」的量级核算。
+    //   纯诊断：只在传此键时分配并返回，不参与任何计算、不改变高度输出。
+    ek.area_dump = bool(knobs.get("dem_erosion_area_dump", false));
     return ek;
 }
 
@@ -884,7 +889,8 @@ static SplPipelineReport pk_run_erosion_spl_pipeline(
         double hex_px_hi, double sea_level, int max_dim,
         const pk_erosion::SplParams &sp, const pk_erosion::DepParams &dp,
         const pk_erosion::LimParams &lp,
-        bool pit_audit = false, pk_dem::FillResult *fill_out = nullptr) {
+        bool pit_audit = false, pk_dem::FillResult *fill_out = nullptr,
+        PackedFloat32Array *area_out = nullptr) {
     SplPipelineReport rep;
     if (H == nullptr || relief == nullptr || wet == nullptr || w <= 2 || h <= 2) {
         rep.reason = "invalid grid";
@@ -996,6 +1002,23 @@ static SplPipelineReport pk_run_erosion_spl_pipeline(
     pk_erosion::build_flow(g, flow, &st);
     std::vector<float> coeff;
     pk_erosion::precompute_coeff(g, flow, sp, coeff);
+    if (area_out != nullptr) {
+        // [S2/S4.4 诊断] 把计算栅格的 area_hex 映射回基线栅格（最近邻；别名列回绕到周期本体）。
+        // factor==1 时等价于直拷（lo 栅格就是 hi_w×h），factor>1 时按整数因子取上游格。
+        // 语义：汇水面积，单位 hex²（单像素初值 1/hex_px²）。纯诊断，不影响下切。
+        const int hw = hi_w;
+        area_out->resize(w * h);
+        float * const AO = area_out->ptrw();
+        for (int y = 0; y < h; ++y) {
+            const int ly = std::min(gh - 1, y / factor);
+            const size_t lrow = size_t(ly) * size_t(gw);
+            const size_t hrow = size_t(y) * size_t(w);
+            for (int x = 0; x < w; ++x) {
+                const int lx = std::min(gw - 1, (x % hw) / factor);
+                AO[hrow + size_t(x)] = flow.area_hex[lrow + size_t(lx)];
+            }
+        }
+    }
     rep.flow_ms = std::chrono::duration<double, std::milli>(
             std::chrono::high_resolution_clock::now() - t_flow0).count();
 
@@ -1204,10 +1227,12 @@ godot::Dictionary DCWorldExt::run_bake_erosion_spl_pass(godot::Dictionary knobs)
     auto t0 = std::chrono::high_resolution_clock::now();
 
     pk_dem::CarveStats carve_stats;   // spl+carve 时回填（未跑时全 -1）
+    PackedFloat32Array area_diag;     // [S2/S4.4 诊断] 仅 dem_erosion_area_dump=1 时填充
     SplPipelineReport rep = pk_run_erosion_spl_pipeline(
             height_out.ptrw(), relief.ptr(), wet.ptr(), w, h, wrap_cols,
             hex_px, sea_level, ek.max_dim, ek.sp, ek.dep, ek.lim,
-            ek.pit_audit, nullptr);
+            ek.pit_audit, nullptr,
+            ek.area_dump ? &area_diag : nullptr);
 
     // spl+carve：叠浅刻谷（深度 × dem_spl_carve_scale）。诊断 pass 不复用填洼（factor>1 也无法复用；
     // 复用路径在融合 pass 里通过 fill_out 拿到）。
@@ -1265,6 +1290,8 @@ godot::Dictionary DCWorldExt::run_bake_erosion_spl_pass(godot::Dictionary knobs)
     out["spl_nan"] = int(rep.stats.nan);
     out["pits_in"] = int(rep.stats.pits_in);
     out["pits_out"] = int(rep.stats.pits_out);
+    // [S2/S4.4 诊断] 像素层汇水面积（hex²）。仅 dem_erosion_area_dump=1 时非空。
+    if (ek.area_dump && area_diag.size() == n) out["area_hex_buffer"] = area_diag;
     out["format"] = String("F32");
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     return out;
@@ -1463,6 +1490,7 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     double erosion_stage_ms = -1.0;      // spl*：整个侵蚀阶段（管线 [+ 浅刻谷]）
     pk_dem::CarveStats carve_stats;      // 未跑 carve 时全 -1（=「未执行」）
     SplPipelineReport spl_rep;           // 未跑 SPL 时 ok=false、分项全 -1
+    PackedFloat32Array area_hex_diag;    // [S2/S4.4 诊断] 仅 dem_erosion_area_dump=1 时填充
 
     // 出口集合 wet = 水体 ∪ 河心像素（carve 与 SPL 共用的汇流出口，沿用 carve 约定 R4）。
     // 计时起点仍在出口集合构造之前：carve 模式下 valley_ms 的语义与改动前一致。
@@ -1507,7 +1535,8 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
             spl_rep = pk_run_erosion_spl_pipeline(
                     height_buf.ptrw(), dem_relief.ptr(), wet.data(), w, h, bake_wrap_cols,
                     bake_hex_px, bake_sea_level, ek.max_dim, ek.sp, ek.dep, ek.lim,
-                    ek.pit_audit, mode_spl_carve ? &fill_reuse : nullptr);
+                    ek.pit_audit, mode_spl_carve ? &fill_reuse : nullptr,
+                    ek.area_dump ? &area_hex_diag : nullptr);
             if (mode_spl_carve && spl_rep.ok) {
                 // 浅刻谷：只叠一层浅谷形（深度 × dem_spl_carve_scale），不跑 droplet。
                 const double carve_depth = depth_per_relief * ek.carve_scale;
@@ -1772,6 +1801,8 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     out["spl_nan"] = spl_rep.ok ? int(spl_rep.stats.nan) : -1;
     out["pits_in"] = spl_rep.ok ? int(spl_rep.stats.pits_in) : -1;
     out["pits_out"] = spl_rep.ok ? int(spl_rep.stats.pits_out) : -1;
+    // [S2/S4.4 诊断] 像素层汇水面积（hex²）。仅 dem_erosion_area_dump=1 时非空。
+    if (!area_hex_diag.is_empty()) out["area_hex_buffer"] = area_hex_diag;
     // 诊断：spl* 分支为什么没跑（尺寸不符等）；正常为空串。
     out["erosion_reason"] = String(spl_rep.ok ? "" : spl_rep.reason);
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t_all1 - t_all0).count();
