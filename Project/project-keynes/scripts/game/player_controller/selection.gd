@@ -165,6 +165,20 @@ func sync_ui(host) -> void:
 	host._narrative_flow.try_present()
 
 
+func sync_time_ui(host) -> void:
+	var clock = host._world_clock
+	if host._ui_manager == null or clock == null:
+		return
+	var day := int(clock.day_index())
+	if host._runtime_host is WorldRuntimeHost:
+		var presented_day: int = host._runtime_host.presented_worker_day()
+		if presented_day >= 0:
+			day = presented_day
+	var date: Dictionary = clock.calendar_date_for_day(day)
+	host._ui_manager.update_time_state(clock.year_index_for_day(day), int(date.month),
+		int(date.day_of_month), clock.paused, clock.speed_multiplier)
+
+
 
 func refresh_country_binding(host) -> void:
 	var generator: Variant = host._runtime_host.generator() if host._runtime_host != null else null

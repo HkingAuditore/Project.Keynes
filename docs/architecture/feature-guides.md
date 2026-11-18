@@ -230,6 +230,10 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   顺序。用 `tests/rendering/weather_curtain_culling_test.gd` 在真实图形环境逐像素
   对照未裁剪的 5×5 邻域；`-- --reference=<改前 shader 绝对路径>` 另对照完整改前效果。
 
+- 雨雪幕按当前天气类型的绘制标记及插值后的强度判断是否完全透明。雾和闪电按
+  各自的阈值跳过；雨雪在低强度时仍可能有可见贡献，保留原形状计算。两个项目的
+  雨雪 Shader 一起更新。高档水面的细碎闪光随屏幕上尺寸平滑淡出，保留较宽的反光。
+
 - 降雪散点归 weather_cell_curtain.gdshader：全格位置随机与独立摆动必须配合
   邻格补画，不能把随机偏移再次乘小系数缩回格心。查找坐标的旋转不应旋转
   雪花投影形状；桌面与移动/Web 使用同一散点算法，保留天气 LUT、视野门控、
@@ -248,6 +252,20 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 - 永昼视觉日照统一使用 `earth_daylight.gdshaderinc::compute_eternal_visual_sun_dir`，高度以当地当日正午为基线，日内时角在 ±70° 浮动并保留 10° 下限；默认一个游戏年完成两个 Shader 日，按实际游戏日历进度映射。水面 specials 和各实例层不能另算全局光向。修改时运行 `tests/ui/dynamic_eternal_day_direction_test.gd`（`-- --render-noon` 验证实际 shader）及地被光照测试，GM 覆盖仍优先。
   Shader 日/游戏年的比例在 HexRenderer 的 `shader_days_per_game_year` 调整，默认2，允许0和小数；renderer 经窄 Callable 配置 WorldClock，默认相位按累计年进度映射，跨年不重置小数比例。
   永昼最大时角和最低高度在 HexRenderer 的“永昼太阳”分组通过 `eternal_max_hour_angle_deg` / `eternal_min_elevation_deg` 调整（默认 70°/10°）；setter 统一换算弧度并推送各材质，初始化/重建时重放，不随日相位重复推送。
+
+## 电脑和手机画质设置
+
+- 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
+  `graphics_quality_settings.gd`，单项修改从当前预设复制显示值并切到自定义。
+  `GameSettings` 保存预设及自定义选项到 `user://settings.cfg`，用同一份解析结果
+  应用帧率上限。地图贴图烘焙仍读取原预设，地图清晰度单独决定陆地/水面绘制尺寸。
+- 地图清晰度低于 100% 时，`terrain_render_scale.gd` 只缩放陆地和水面平面，
+  合成图放回地图原绘制位置。相机、选区、地图标记与界面继续使用主画布。切回
+  100% 归还两个平面；水面材质重建后也放入当前绘制目标。渲染验证使用
+  `tests/rendering/terrain_render_scale_test.gd`，检查图层顺序、缩放、平移和调整窗口。
+- 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
+  关闭云影仍保留天气云的风场输入。切档验证入口为
+  `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
 
 ## 逐格弹射色 LUT
 

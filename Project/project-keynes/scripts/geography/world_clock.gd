@@ -311,14 +311,7 @@ func _emit_initial_signals() -> void:
 	# [cylindrical-earth-daylight] 初始视觉昼夜相位推送一次，让 shader/TOD 立即就位。
 	visual_day_phase_changed.emit(visual_day_phase)
 
-# best-effort-sim-stepping（plan/best-effort-sim-stepping）：推进"一个已模拟日"。
-# 等价于旧 _process while 循环体：_last_day += 1、发 day_changed，并按需发
-# season_changed / year rollover。注意 _last_day 始终连续 +1、不跳整数日——过载时
-# 是"少推进几天"（有效倍速降级、日历推进变慢），而非跳过某天，所以 season/year
-# 边界都会被精确命中。（intra-tick 的 sea_ice dt_days>1 来自各 job 自身 stride，与此无关。）
 func _advance_one_sim_day() -> void:
-	# Web 单日成本探针：上一天的桶到这里一定已经跑完（day_changed 是同步派发），
-	# 先把它发出去，再为新的一天开桶并记下派发起点。桌面恒 false → 两行都不执行。
 	if day_cost_probe_on:
 		day_cost_flush()
 		_dcp_day = _last_day + 1
@@ -631,15 +624,12 @@ func day_in_year() -> int:
 func day_of_year() -> int:
 	return day_in_year() + 1
 
-# 北半球日历季节：0=冬 1=春 2=夏 3=秋。物理上南半球会自然反相，
-# UI 顶栏只显示全局日历季节，不参与气候计算。
 func season_index() -> int:
 	return int(floor(season_phase())) & 3
 
 func year_index() -> int:
 	return int(floor(current_day / float(days_per_year())))
 
-# 浮点季节相位 ∈ [0, 4)，给 shader 做平滑插值
 func season_phase() -> float:
 	var dpy := days_per_year()
 	var day := fposmod(current_day, float(dpy))
@@ -661,13 +651,23 @@ func seed_annual_climate(world_seed: int) -> void:
 		_rng = RandomNumberGenerator.new()
 	_rng.seed = world_seed
 
+func climate_anomaly_for_day(day_idx: int) -> float:
+	if _rng == null or _last_year < 0 or year_index_for_day(day_idx) <= _last_year:
+		return climate_anomaly
+	# The next year's input can be frozen before the calendar emits year_changed.
+	var rng_state := _rng.state
+	var anomaly := _sample_annual_climate_anomaly()
+	_rng.state = rng_state
+	return anomaly
+
 func _apply_year_rollover(year_idx: int) -> void:
-	# Phase 4：年度气候漂移（pink-noise 风格随机游走）
-	climate_anomaly = clampf(
-		climate_anomaly + _rng.randf_range(-climate_random_drift, climate_random_drift),
-		-climate_anomaly_max, climate_anomaly_max
-	)
+	climate_anomaly = _sample_annual_climate_anomaly()
 	year_changed.emit(year_idx)
+
+func _sample_annual_climate_anomaly() -> float:
+	return clampf(
+		climate_anomaly + _rng.randf_range(-climate_random_drift, climate_random_drift),
+		-climate_anomaly_max, climate_anomaly_max)
 
 # 任务 2：昼夜相位 ∈ [0, 1)
 # 映射：0.0=日出, 0.25=正午, 0.5=日落, 0.75=午夜。

@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 661,
+  "count": 662,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -366,6 +366,7 @@
     "native_ocean_physical_begin",
     "native_ocean_physical_finish",
     "native_ocean_physical_step",
+    "natural_resource_slots_are_worker_owned",
     "patch_enum_atlas_axes",
     "phys_field_nan_guard",
     "poll_country_ai_decisions",

@@ -545,6 +545,7 @@ static func _push_water_params_to(host, sm: ShaderMaterial) -> void:
 		return
 	for n in host.WATER_PARAM_NAMES:
 		sm.set_shader_parameter(n, host.get(n))
+	sm.set_shader_parameter("water_detail_override", host._graphics_details.water_detail)
 
 
 
@@ -691,9 +692,7 @@ static func _create_water_quad(host, prefix: String, kind: String) -> void:
 	host._water_quad.z_index = 0
 	# FPS 探针（toggle_world_shader_disabled）关闭主 shader 时，两片必须一起关。
 	host._water_quad.material = null if host._shader_disabled_by_toggle else host._water_mat
-	host.add_child(host._water_quad)
-	if is_instance_valid(host._world_quad):
-		host.move_child(host._water_quad, mini(host._world_quad.get_index() + 1, host.get_child_count() - 1))
+	host._graphics_details.attach_water_surface(host)
 	# 预热对账：label 必须与 WebShaderWarmup 清单里那份（文件名去扩展名）逐字一致，
 	# 否则 material_variant 事件永远对不上 warmup_shader 的 fp。桌面/移动拆分变体
 	# 没有预热条目（不在 web 上编），不打 label。
@@ -731,7 +730,8 @@ static func _apply_water_uniforms(host) -> void:
 		host._push_water_lighting_uniforms,
 		host._push_water_params_to,
 		host._visual_tiles_active,
-		host._wrap_period_x)
+		host._wrap_period_x,
+		host._graphics_details.water_flowmap_enabled())
 
 
 
@@ -763,7 +763,7 @@ static func _configure_cloud_shadow_field(host) -> void:
 	if host._weather_layer != null and not host._cloud_shadow_field.wind_lut_changed.is_connected(host._weather_layer.set_wind_luts):
 		host._cloud_shadow_field.wind_lut_changed.connect(host._weather_layer.set_wind_luts)
 	host._cloud_shadow_field.configure_wind_inputs(host._world, host._map)
-	if not DCFeatureFlags.cloud_shadow_enabled():
+	if not host._graphics_details.cloud_shadow_enabled():
 		host._cloud_shadow_field.clear_shadow_inputs()
 		_push_cloud_shadow_material_inputs(host)
 		return
@@ -842,7 +842,7 @@ static func _push_cloud_shadow_material_inputs(host) -> void:
 		host._resource_visual_layer,
 		host._for_each_vegetation_layer,
 		host._detail_family_layer,
-		host._cloud_shadow_direct_active)
+		host._cloud_shadow_direct_active() and host._graphics_details.cloud_shadow_enabled())
 
 
 ## 迷雾口径与主地形**同一批值**：fog_k 来自同一张 enum_lut 的 A 通道，

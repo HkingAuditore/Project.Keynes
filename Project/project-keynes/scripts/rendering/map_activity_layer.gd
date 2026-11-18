@@ -74,8 +74,8 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 	_dirty = true
 	_next_sample = _time
 	_host.daily_tick_completed.connect(_on_committed_day)
-	if _host.has_signal("simulation_committed"):
-		_host.simulation_committed.connect(_on_simulation_committed)
+	if _host.has_signal("simulation_view_updated"):
+		_host.simulation_view_updated.connect(_on_simulation_view_updated)
 	_intel = _host.building_visual_intel_cache()
 	if _intel != null:
 		_intel.visible_rows_updated.connect(_on_visible_rows_updated)
@@ -107,9 +107,9 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 func _disconnect_context() -> void:
 	if is_instance_valid(_host) and _host.daily_tick_completed.is_connected(_on_committed_day):
 		_host.daily_tick_completed.disconnect(_on_committed_day)
-	if is_instance_valid(_host) and _host.has_signal("simulation_committed") \
-			and _host.simulation_committed.is_connected(_on_simulation_committed):
-		_host.simulation_committed.disconnect(_on_simulation_committed)
+	if is_instance_valid(_host) and _host.has_signal("simulation_view_updated") \
+			and _host.simulation_view_updated.is_connected(_on_simulation_view_updated):
+		_host.simulation_view_updated.disconnect(_on_simulation_view_updated)
 	if _intel != null and _intel.visible_rows_updated.is_connected(_on_visible_rows_updated):
 		_intel.visible_rows_updated.disconnect(_on_visible_rows_updated)
 	if is_instance_valid(_player) and _player.command_settled.is_connected(_on_command_settled):
@@ -124,7 +124,7 @@ func _on_committed_day(_report: Dictionary) -> void:
 	_dirty = true
 
 
-func _on_simulation_committed(_from_day: int, _to_day: int, _generation: int) -> void:
+func _on_simulation_view_updated(_from_day: int, _to_day: int, _generation: int) -> void:
 	_dirty = true
 
 

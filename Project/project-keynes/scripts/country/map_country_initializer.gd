@@ -133,6 +133,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	var ideology_facade := IdeologyFacadeScript.new()
 	await _generator._yield_generation_frame()
 	var ideology_catalog: Resource = await _load_ideology_catalog_cooperative()
+	if _generator._loading_frames.canceled:
+		return
 	_generator._loading_profile_step("ideology_facade.configure(")
 	var ideology_configured: Dictionary = ideology_facade.configure(
 		_generator._data_core_world_ext, _generator._country_facade.native_catalog(), ideology_catalog,
@@ -282,16 +284,14 @@ func _load_ideology_catalog_cooperative() -> Resource:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null:
 		return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
-	ResourceLoader.load_threaded_request(IDEOLOGY_CATALOG_PATH, "Resource")
-	while ResourceLoader.load_threaded_get_status(IDEOLOGY_CATALOG_PATH) == \
-			ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+	if _generator._loading_frames.canceled:
+		return null
+	var request := preload("res://scripts/game/loading_resource_request.gd").new(IDEOLOGY_CATALOG_PATH)
+	while not request.finished:
 		await _generator._yield_generation_frame()
-	if ResourceLoader.load_threaded_get_status(IDEOLOGY_CATALOG_PATH) == \
-			ResourceLoader.THREAD_LOAD_LOADED:
-		var loaded: Resource = ResourceLoader.load_threaded_get(IDEOLOGY_CATALOG_PATH)
-		# Preserve the catalog's profile/test hook after its threaded load. The
-		# local reference keeps ResourceLoader's cached object alive here.
-		return IdeologyFacadeScript.IdeologyCatalogScript.load_default() if loaded != null else null
+		if _generator._loading_frames.canceled:
+			return null
+	# Keep the result alive while load_default applies the profile/test hook.
 	return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
 
 

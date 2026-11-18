@@ -1052,15 +1052,15 @@ func _refresh_player_discovery_context(host) -> void:
 	host.set_resource_discovery_context(technology_ids, true)
 
 
-func notify_committed_day(host) -> void:
-	host._queue_era_indicator_refresh()
-	# 年度产值账本必须在面板关闭时也继续累计，否则中途打开会缺少年初到此刻的流量。
-	# sample() 自带 sample_day 去重与墙钟合流，重复调用无额外开销。
-	var committed_day := int(host._world_clock.day_index()) if host._world_clock != null else -1
+func record_committed_day(host, committed_day: int) -> void:
+	# 面板关闭时也继续记录产值与财政收支。
 	host._gdp_ledger.sample(committed_day)
-	# 国库收支序列与产值账本同一节拍：面板关闭时也要连续，否则中途打开只有一点。
 	if host._country_view_model != null:
 		host._country_view_model.sample_fiscal_history(committed_day)
+
+
+func refresh_committed_view(host) -> void:
+	host._queue_era_indicator_refresh()
 	if host._country_panel != null and host._country_panel.is_panel_open() \
 			and host._country_panel.current_section() == "economy":
 		host._mark_country_panel_dirty(host.COUNTRY_DIRTY_ECONOMY, "economy_day")

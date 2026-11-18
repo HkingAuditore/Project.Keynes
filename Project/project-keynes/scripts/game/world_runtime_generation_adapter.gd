@@ -396,6 +396,7 @@ func _start_production_shadow_worker(host) -> void:
 	# worker 等本线程跑完第 D 天的军事、资源恢复再开始 D+1。
 	config["main_day_tail_gate"] = climate_authority_active and not want_inline
 	host._runtime_commit_generation = 0  # 新 worker 代数从 0 起，旧游标会挡住提交、停住日尾闸门
+	host._presentation.reset_worker_views()
 	var started: Dictionary = host._generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		host._web_worker_start_ok = false

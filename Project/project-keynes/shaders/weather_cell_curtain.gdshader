@@ -47,6 +47,7 @@ varying vec4 v_custom;
 varying vec2 v_world;
 varying flat vec4 v_weather;
 varying flat float v_fog_vis;
+varying flat int v_flags;
 
 // [cell-curtain-quality 2026-11-17] 三档以前**全部** return 0（遗留的 debug pin），
 // 于是任何平台、任何画质都拿不到更密的雨幕/雪幕。这一档只改密度与行数
@@ -107,9 +108,17 @@ void vertex() {
 	// 天气和视野在整个实例上恒定，每个顶点读一次即可，不逐像素重复读 LUT。
 	int cid = decode_cell_id(INSTANCE_CUSTOM);
 	v_weather = sample_weather(cid);
-	v_fog_vis = fog_mask_enabled
+	int wt = int(v_weather.r * 255.0 + 0.5);
+	v_flags = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_flags[wt] : 0;
+	// 雨和雪在零强度仍有粒子；雾和闪电则随插值后的强度归零。
+	bool has_effect = (v_flags & (FLAG_RAIN_STREAK | FLAG_SNOW_GRAIN)) != 0;
+#if !defined(PK_MOBILE_ANY)
+	has_effect = has_effect || (v_weather.g > 0.0
+		&& (v_flags & (FLAG_FOG_BREATHE | FLAG_LIGHTNING)) != 0);
+#endif
+	v_fog_vis = fog_mask_enabled && has_effect
 		? smoothstep(0.5, 1.0, texture(enum_lut, cell_lut_uv(cid)).a) : 1.0;
-	if (v_fog_vis <= 0.0 || lut_dims.x < 1.0 || weather_strength <= 0.001) {
+	if (!has_effect || v_fog_vis <= 0.0 || lut_dims.x < 1.0 || weather_strength <= 0.001) {
 		VERTEX = vec2(0.0);
 	}
 }
@@ -327,11 +336,10 @@ void fragment() {
 	} else {
 		float fog_vis = v_fog_vis;
 		vec4 wx = v_weather;
-		int wt = int(wx.r * 255.0 + 0.5);
 		float intensity = wx.g;
 		float precip = clamp(smoothstep(0.010, 0.48, wx.g) * 1.38, 0.0, 1.0);
 		float wx_strength = clamp(max(precip, intensity * 0.82) * mix(0.68, 1.48, intensity), 0.0, 1.0);
-		int flags = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_flags[wt] : 0;
+		int flags = v_flags;
 		float seed = v_custom.b;
 		float depth = v_custom.a;
 

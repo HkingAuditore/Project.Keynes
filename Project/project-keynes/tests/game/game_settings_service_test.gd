@@ -1,5 +1,8 @@
 extends SceneTree
 
+const GraphicsQualitySettings := preload("res://scripts/game/graphics_quality_settings.gd")
+const GraphicsOptionsScene := preload("res://scenes/ui/graphics_quality_options.tscn")
+
 var _checks := 0
 var _failures := 0
 
@@ -57,7 +60,66 @@ func _run() -> void:
 	_expect("numeric settings clamp", int(validated.resolution_width) == 800 \
 		and int(validated.resolution_height) == 4320 \
 		and is_equal_approx(float(validated.master_volume), 1.0))
+	_check_graphics_options(service)
 	_finish()
+
+
+func _check_graphics_options(service: Node) -> void:
+	var older_file := ConfigFile.new()
+	older_file.set_value("settings", "render_quality", "medium")
+	_expect("legacy fixture is written", older_file.save("user://settings.cfg") == OK)
+	_expect("legacy settings load successfully", service.load_settings().get("ok", false))
+	_expect("settings file from before individual controls still loads",
+		service.values().render_quality == "medium" and not service.values().graphics_custom)
+	var desktop := GraphicsQualitySettings.resolve({}, false)
+	var mobile := GraphicsQualitySettings.resolve({}, true)
+	_expect("desktop automatic uses full detail and follows the display",
+		desktop.render_quality == "high" and desktop.map_render_scale == 100 \
+		and desktop.fog_render_scale == 100 and desktop.cloud_shadow and desktop.frame_rate_limit == 0)
+	_expect("mobile automatic saves work and keeps map clarity",
+		mobile.render_quality == "low" and mobile.map_render_scale == 100 \
+		and mobile.fog_render_scale == 50 and not mobile.cloud_shadow and mobile.frame_rate_limit == 60)
+	var legacy := GraphicsQualitySettings.resolve({"render_quality": "medium"}, true)
+	_expect("an existing preset remains valid without new fields",
+		legacy.render_quality == "medium" and legacy.water_detail == 1)
+
+	var options := GraphicsOptionsScene.instantiate()
+	root.add_child(options)
+	options.configure({"render_quality": "medium"}, true)
+	var preset := options.get_node("RenderQuality") as OptionButton
+	var water := options.get_node("WaterDetail") as OptionButton
+	water.select(2)
+	water.item_selected.emit(2)
+	var draft: Dictionary = options.settings_payload()
+	_expect("changing one field starts a custom profile from the displayed preset",
+		preset.get_selected_metadata() == "custom" and draft.graphics_custom \
+		and draft.render_quality == "medium" and draft.water_detail == 2 \
+		and draft.fog_render_scale == legacy.fog_render_scale \
+		and draft.vegetation_detail == legacy.vegetation_detail)
+	preset.select(1)
+	preset.item_selected.emit(1)
+	_expect("selecting a preset again resets the individual values in the form",
+		options.settings_payload() == {"render_quality": "low", "graphics_custom": false} \
+		and water.get_selected_metadata() == 0)
+	options.free()
+
+	draft.frame_rate_limit = 30
+	draft.map_render_scale = 85
+	draft.cloud_shadow = true
+	_expect("custom settings and frame cap apply",
+		bool(service.update(draft).get("ok", false)) and Engine.max_fps == 30)
+	service._settings = service.DEFAULTS.duplicate(true)
+	_expect("custom settings survive reload", bool(service.load_settings().get("ok", false)) \
+		and GraphicsQualitySettings.resolve(service.values(), true).map_render_scale == 85 \
+		and GraphicsQualitySettings.resolve(service.values(), true).water_detail == 2 \
+		and GraphicsQualitySettings.resolve(service.values(), true).cloud_shadow)
+	service.update({"map_render_scale": 82, "cloud_shadow": 7}, false)
+	var fallbacks := GraphicsQualitySettings.resolve(service.values(), true)
+	_expect("unsupported individual settings fall back to their base preset",
+		fallbacks.map_render_scale == legacy.map_render_scale and not fallbacks.cloud_shadow \
+		and fallbacks.water_detail == 2)
+	service.update({"render_quality": "high"}, false)
+	_expect("older preset callers can still leave custom mode", not service.values().graphics_custom)
 
 
 func _expect(label: String, condition: bool) -> void:

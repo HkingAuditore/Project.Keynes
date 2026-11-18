@@ -5,8 +5,8 @@ signal world_generation_started()
 signal world_generation_failed(reason: String)
 signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator, view_adapter: DCViewAdapter)
 signal daily_tick_completed(report: Dictionary)
-## 后台 worker 完整日提交通知。该信号只用于展示和诊断，订阅者不得推进模拟。
 signal simulation_committed(from_day: int, to_day: int, generation: int)
+signal simulation_view_updated(from_day: int, to_day: int, generation: int)
 signal country_peer_serviced(report: Dictionary)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
@@ -806,6 +806,9 @@ func uses_worker_day_commits() -> bool:
 	var state := _runtime_control_state()
 	return state.get("simulation_thread_mode", "OFF") == "ACTIVE" and bool(state.get("authority_ready", false))
 
+func presented_worker_day() -> int:
+	return _presentation.presented_worker_day()
+
 
 func set_day_night_enabled(enabled: bool) -> void:
 	day_night_enabled = enabled
@@ -941,6 +944,7 @@ func _emit_web_beat(frame_usec: int) -> void:
 	_daily_adapter._emit_web_beat(self, frame_usec)
 func _process(_delta: float) -> void:
 	_daily_adapter._process(self, _delta)
+	_presentation.publish_worker_view(simulation_view_updated.emit)
 func _service_worker_lead_and_prefetch() -> void:
 	_daily_adapter._service_worker_lead_and_prefetch(self)
 func _prefetch_diag_tick_prep() -> void:

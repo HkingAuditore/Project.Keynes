@@ -777,10 +777,9 @@ func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
 	var values := {"season_idx": 0, "anomaly": 0.0, "season_phase": default_phase}
 	if clock == null:
 		return values
-	var anomaly = clock.get("climate_anomaly")
-	if anomaly != null:
-		values["anomaly"] = float(anomaly)
-	var date: int = _generator._get_runtime_climate_capture().calendar_day
+	var capture = _generator._get_runtime_climate_capture()
+	values["anomaly"] = capture.sample_anomaly()
+	var date: int = capture.calendar_day
 	if date >= 0:
 		values["season_idx"] = clock.season_index_for_day(date)
 		values["season_phase"] = clock.season_phase_for_day(date)

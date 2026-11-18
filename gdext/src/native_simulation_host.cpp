@@ -120,9 +120,6 @@ NativeSimulationHost::NativeSimulationHost(uint64_t previous_country_session_epo
     for (uint64_t i = 0; i < RUNTIME_COMMAND_QUEUE_CAPACITY; ++i) {
         _command_slots[i].sequence.store(i, std::memory_order_relaxed);
     }
-    for (auto &generation : _dirty_family_generations) {
-        generation.store(0, std::memory_order_relaxed);
-    }
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     _fault_injection_armed.store(false, std::memory_order_relaxed);
     _fault_injection_trip_count.store(0, std::memory_order_relaxed);

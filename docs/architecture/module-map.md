@@ -78,7 +78,7 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 
 天气场的一日输入在 `gdext/src/runtime_climate_weather_input.h`。物理场的只读交付、校验和存档编解码在 `gdext/src/runtime_climate_physics_state.cpp`。
 
-军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。
+军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。自然资源的日期检查与后台已结算时的跳过入口在 `scripts/simulation/economy/natural_resource_recovery.gd`。
 
 经济冷配置的共同实现位于 `scripts/economy/economy_facade_configuration.gd`，显示目录准备位于 `scripts/economy/economy_facade_display.gd`。
 异步资源请求的完成回收归 `scripts/game/loading_resource_request.gd`，取消世界不会阻塞等待解析。
@@ -115,6 +115,12 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 仍使用当前纹理和绑定到渲染宿主的回调，不保存世界或跨帧状态。
 回归入口：`tests/rendering/cloud_weather_quality_test.gd`。手机执行方式与逐日对照见
 `Project/project-keynes/tests/runtime/mobile_runtime_worker_test.gd`。
+
+玩家画质预设与自定义选项保存在 `scripts/game/game_settings_service.gd`，档位解析在
+`scripts/game/graphics_quality_settings.gd`。主菜单和暂停菜单共用
+`scenes/ui/graphics_quality_options.tscn`。应用到地图和显示层的入口在
+`scripts/rendering/renderer_graphics_settings.gd`，陆地和水面绘制尺寸归同目录的
+`terrain_render_scale.gd`。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
 
 提交前整理的脚本职责位置见 [源文件职责拆分](source-module-splits.md) 的“移动端 PR 提交前的长度与依赖修复”。
 原生开拓的存储、查询、人口载荷分别在 `gdext/src/economy_runtime_colonization_store.cpp`、

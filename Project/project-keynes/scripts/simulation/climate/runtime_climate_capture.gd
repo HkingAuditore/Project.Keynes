@@ -14,6 +14,15 @@ func sample_day() -> float:
 	var clock = _generator._world_clock_ref
 	return float(clock.current_day) if clock != null else 0.0
 
+func sample_anomaly() -> float:
+	var clock = _generator._world_clock_ref
+	if clock == null:
+		return 0.0
+	if calendar_day >= 0 and clock.has_method("climate_anomaly_for_day"):
+		return float(clock.climate_anomaly_for_day(calendar_day))
+	var value = clock.get("climate_anomaly")
+	return float(value) if value != null else 0.0
+
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		authoritative: bool, defer_thermal_equator: bool = false) -> Dictionary:
 	if not authoritative or map == null:
@@ -252,11 +261,7 @@ func _build_runtime_climate_round_scalar_knobs(
 	d["si_dt_days"] = float(_generator._consume_sea_ice_dt_days()) if _generator.has_method("_consume_sea_ice_dt_days") else 1.0
 	# 生产在调 sea_ice pass 之前把 t_form/t_melt 各减去 climate_anomaly * 0.10
 	# （_generator._apply_sea_ice_daily_pass）。worker 要用同一组阈值，所以这个偏移要在这里做。
-	var ca_now: float = 0.0
-	if _generator._world_clock_ref != null:
-		var ca_v = _generator._world_clock_ref.get("climate_anomaly")
-		if ca_v != null:
-			ca_now = float(ca_v)
+	var ca_now := sample_anomaly()
 	if not is_equal_approx(ca_now, 0.0):
 		si_t_form = clampf(si_t_form - 0.10 * ca_now, 0.0, 1.0)
 		si_t_melt = clampf(si_t_melt - 0.10 * ca_now, 0.0, 1.0)
@@ -547,11 +552,6 @@ func _capture_environment(map: MapData, day: int, phase: float,
 	var next_generation := maxi(1, _generator._runtime_input_generation + 1)
 	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
 	var topology_generation := _runtime_climate_topology_generation_for_map(map)
-	var anomaly := 0.0
-	if _generator._world_clock_ref != null:
-		var anomaly_value = _generator._world_clock_ref.get("climate_anomaly")
-		if anomaly_value != null:
-			anomaly = float(anomaly_value)
 	var hydro_parent: PackedInt32Array = map.hydro_parent_arr
 	var geometry_area = _runtime_climate_optional_array(
 		map, "cell_geometry_area_arr", TYPE_PACKED_FLOAT32_ARRAY)
@@ -580,7 +580,7 @@ func _capture_environment(map: MapData, day: int, phase: float,
 		"climate_map_height": int(map.height),
 		"day": day,
 		"season_phase": phase,
-		"climate_anomaly": anomaly,
+		"climate_anomaly": sample_anomaly(),
 		"topology_generation": topology_generation,
 		"vision_revision": map.vision_revision,
 		"fog_solved": map.fog_solved,

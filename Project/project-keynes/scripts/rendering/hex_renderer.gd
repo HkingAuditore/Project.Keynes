@@ -849,26 +849,18 @@ var _simulation_speed_multiplier: float = 1.0
 @export var global_darken: float = 0.0
 
 var _world_quad: MeshInstance2D
+var _graphics_details := preload("res://scripts/rendering/renderer_graphics_settings.gd").new()
 var _shader_mat: ShaderMaterial
 var _sky_background: Node
-## [web-water-pass] web/Compatibility/LOW 档的**水面第二 pass** 节点与材质
-## （见 shaders/world_water_web.gdshader）。桌面、以及 web 的中/高档恒为 null ——
-## 那些情况下 world_map 自己就把水面画了，再画一遍就是双份水面。
-## 创建/销毁唯一入口是 _sync_water_quad()（由 _apply_uniforms() 末尾驱动）。
+## 拆分绘制使用独立水面节点与材质，由 _apply_uniforms() 调用 _sync_water_quad() 管理。
 var _water_quad: MeshInstance2D
 var _water_mat: ShaderMaterial
-## 已编进 _water_mat 的变体前缀（"" 或 "#define MAP_VISUAL_TILED\n"）。tiled 布局
-# 切换会换掉 sampler 类型，前缀变了必须重编变体，不能复用旧的材质。
+## 记录当前水面材质前缀。贴图布局或分档变更时据此判断是否重编。
 var _water_variant_prefix: String = ""
 var _forced_water_program_kind: String = ""
-## 第二 pass 的 shader 在 shader 语言层编不过（get_shader_uniform_list 为空）。
-## 记住这一条，避免每次 _apply_uniforms 都重编 + 重复报同一条错。
+## 缓存第二遍绘制的编译失败，避免每次推送材质时重试。
 var _water_pass_failed: bool = false
-## 水面 program 的源码种类：
-##   "web_min" = Web LOW/MID 的紧凑水面程序（world_water_web.gdshader + WATER_PASS_PREFIX）；
-##   "high"    = Web HIGH 的 PC 水面程序（world_map.gdshader + WATER_WEB_HIGH_PREFIX）；
-##   "split"   = 桌面 / 移动的 PC 水面程序（world_map.gdshader + SPLIT_WATER_ONLY_DEFINE）。
-## 决定 uniform 对齐方式（"web_min" 之外都要从主材质整表拷贝）。
+## 紧凑 Web 水面用 web_min。high（Web 高档）和 split（电脑、手机）复用地表材质参数。
 var _water_program_kind: String = ""
 var _water_variant_kind: String = ""
 ## 当前水面 program 是否走 world_map.gdshader（= 能整表复用主材质的 uniform）。
@@ -1434,6 +1426,12 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 
 func set_visual_quality(q: int) -> void:
 	RendererSceneServices.set_visual_quality(self, q)
+
+func set_graphics_details(settings: Dictionary) -> void:
+	_graphics_details.apply(self, settings)
+
+func set_terrain_render_scale(percent: int, msaa: Viewport.MSAA) -> void:
+	_graphics_details.apply_terrain_scale(self, percent, msaa)
 
 func set_terrain_materials_enabled(enabled: bool) -> void:
 	RendererSceneServices.set_terrain_materials_enabled(self, enabled)

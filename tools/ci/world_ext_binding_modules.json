@@ -94,7 +94,7 @@
     "ideology": ["scripts/ideology", "scripts/simulation/systems/ideology_runtime_system.gd"],
     "trigger": ["scripts/trigger", "scripts/simulation/systems/trigger_daily_system.gd"],
     "events": ["scripts/narrative", "scripts/data_core/gameplay_event_bus.gd", "scripts/simulation/systems/gameplay_effect_system.gd"],
-    "generation": ["scripts/geography", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers", "scripts/simulation/economy/map_resource_initializer.gd", "scripts/simulation/climate/mapgen_climate_passes_a.gd"],
+    "generation": ["scripts/geography", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers", "scripts/simulation/economy/map_resource_initializer.gd", "scripts/simulation/economy/natural_resource_recovery.gd", "scripts/simulation/climate/mapgen_climate_passes_a.gd"],
     "bake_encoders": ["scripts/rendering/bakers", "scripts/rendering/renderer_terrain_horizon.gd"],
     "visual": ["scripts/rendering", "scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd"],
     "demo": ["scripts/main.gd", "scripts/main/debug_tools.gd"]

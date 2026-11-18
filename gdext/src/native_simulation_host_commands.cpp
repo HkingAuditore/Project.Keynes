@@ -374,69 +374,10 @@ bool NativeSimulationHost::try_country_command_terminal(
 }
 
 bool NativeSimulationHost::poll_commit(uint64_t after_generation, RuntimeCommit &out) {
-    const uint64_t latest_generation = _generation.load(std::memory_order_acquire);
-    uint32_t index = 0;
-    if (_snapshots.try_acquire_latest(after_generation, index)) {
-        RuntimeCommit candidate = _snapshots.read_buffer(index);
-        _snapshots.release(index);
-        // Visual publication is intentionally throttled.  A READY buffer may
-        // therefore describe an older generation than the authoritative scalar
-        // header. Never move the facade backwards just because the newest
-        // visual buffer is still within the 20 Hz window; return the scalar
-        // boundary below and let visual patch consumption remain generation
-        // aware.
-        if (candidate.header.generation >= latest_generation) {
-            out = std::move(candidate);
-            return true;
-        }
-    }
-    // The visual ring is allowed to drop intents under backpressure, but a
-    // dropped buffer must not erase the authoritative commit boundary.
-    const uint64_t generation = _generation.load(std::memory_order_acquire);
-    // A throttled visual publication still advances the authoritative
-    // generation. Return the scalar header even when no READY buffer exists;
-    // the caller can then observe progress while visual patch consumption
-    // remains generation-aware and may legitimately report no intents.
-    if (generation == 0 || generation <= after_generation) return false;
-    out = RuntimeCommit{};
-    out.header.generation = generation;
-    out.header.from_day = _latest_from_day.load(std::memory_order_acquire);
-    out.header.committed_day = _latest_committed_day.load(std::memory_order_acquire);
-    out.header.produced_at_us = _latest_produced_at_us.load(std::memory_order_acquire);
-    out.header.dirty_families = _latest_dirty_families.load(std::memory_order_acquire);
-    out.header.state_hash = _state_hash.load(std::memory_order_acquire);
-    out.header.command_receipt_count = _latest_receipt_count.load(std::memory_order_acquire);
-    for (size_t family_index = 0; family_index < RUNTIME_DIRTY_FAMILY_COUNT; ++family_index) {
-        out.header.dirty_family_generations[family_index] =
-            _dirty_family_generations[family_index].load(std::memory_order_acquire);
-    }
-    return true;
-}
-
-bool NativeSimulationHost::poll_commit_generation(uint64_t generation, RuntimeCommit &out) {
-    uint32_t index = 0;
-    if (_snapshots.try_acquire_generation(generation, index)) {
-        out = _snapshots.read_buffer(index);
-        _snapshots.release(index);
-        return true;
-    }
-    // Exact lookup is only reconstructible for the newest scalar header. A
-    // throttled generation has no visual buffer, but the current generation
-    // is still a valid authoritative commit boundary.
-    if (generation == 0 ||
-        generation != _generation.load(std::memory_order_acquire)) return false;
-    out = RuntimeCommit{};
-    out.header.generation = generation;
-    out.header.from_day = _latest_from_day.load(std::memory_order_acquire);
-    out.header.committed_day = _latest_committed_day.load(std::memory_order_acquire);
-    out.header.produced_at_us = _latest_produced_at_us.load(std::memory_order_acquire);
-    out.header.dirty_families = _latest_dirty_families.load(std::memory_order_acquire);
-    out.header.state_hash = _state_hash.load(std::memory_order_acquire);
-    out.header.command_receipt_count = _latest_receipt_count.load(std::memory_order_acquire);
-    for (size_t family_index = 0; family_index < RUNTIME_DIRTY_FAMILY_COUNT; ++family_index) {
-        out.header.dirty_family_generations[family_index] =
-            _dirty_family_generations[family_index].load(std::memory_order_acquire);
-    }
+    const auto latest = std::atomic_load_explicit(&_latest_commit,
+                                                  std::memory_order_acquire);
+    if (!latest || latest->header.generation <= after_generation) return false;
+    out = *latest;
     return true;
 }
 
@@ -781,9 +722,8 @@ void NativeSimulationHost::publish_day(
             static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.resources.stock)));
         std::fflush(day_trace);
     }
-    // Publish scalar header fields before the generation release store. A
-    // non-blocking reader that observes this generation therefore cannot see
-    // metadata from the preceding day even when the visual ring is saturated.
+    // The authoritative header advances on every day, independent of the
+    // visual payload's throttle and buffer occupancy.
     const uint64_t generation = _generation.load(std::memory_order_relaxed) + 1;
     constexpr std::array<uint32_t, RUNTIME_DIRTY_FAMILY_COUNT> FAMILY_BITS{
         RUNTIME_DIRTY_CLOCK,
@@ -796,46 +736,45 @@ void NativeSimulationHost::publish_day(
         RUNTIME_DIRTY_EVENTS,
         RUNTIME_DIRTY_OVERLAY,
     };
-    for (size_t family_index = 0; family_index < FAMILY_BITS.size(); ++family_index) {
-        if ((day_commit.dirty_families & FAMILY_BITS[family_index]) != 0) {
-            _dirty_family_generations[family_index].store(
-                generation, std::memory_order_relaxed);
-        }
-    }
-    _latest_from_day.store(from_day, std::memory_order_relaxed);
-    _latest_committed_day.store(day, std::memory_order_relaxed);
-    _latest_dirty_families.store(day_commit.dirty_families, std::memory_order_relaxed);
-    _latest_receipt_count.store(static_cast<uint32_t>(
-        std::min<size_t>(day_receipts.size(), std::numeric_limits<uint32_t>::max())),
-        std::memory_order_relaxed);
+    const auto previous = std::atomic_load_explicit(&_latest_commit,
+                                                    std::memory_order_acquire);
+    auto published = std::make_shared<RuntimeCommit>();
+    RuntimeCommitHeader &header = published->header;
     const uint64_t produced_at_us = now_us();
-    _latest_produced_at_us.store(produced_at_us, std::memory_order_release);
+    header.generation = generation;
+    header.from_day = from_day;
+    header.committed_day = day;
+    header.produced_at_us = produced_at_us;
+    header.dirty_families = day_commit.dirty_families;
+    header.state_hash = next_hash;
+    header.command_receipt_count = static_cast<uint32_t>(
+        std::min<size_t>(day_receipts.size(), std::numeric_limits<uint32_t>::max()));
+    if (previous) header.dirty_family_generations = previous->header.dirty_family_generations;
+    for (size_t family_index = 0; family_index < FAMILY_BITS.size(); ++family_index) {
+        if ((day_commit.dirty_families & FAMILY_BITS[family_index]) != 0)
+            header.dirty_family_generations[family_index] = generation;
+    }
+    const bool visual_published = prepare_day_visuals(*published, day_receipts);
+    std::atomic_store_explicit(&_latest_commit,
+        std::shared_ptr<const RuntimeCommit>(std::move(published)),
+        std::memory_order_release);
     _generation.store(generation, std::memory_order_release);
     _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);
+    if (visual_published) try_fault_injection("day.commit.after");
+}
+
+bool NativeSimulationHost::prepare_day_visuals(
+        RuntimeCommit &commit,
+        const std::vector<RuntimeCommandReceipt> &day_receipts) {
+    const RuntimeCommitHeader &header = commit.header;
     const uint64_t last_visual = _last_visual_publish_us.load(std::memory_order_relaxed);
     // Visual state is capped at 20 Hz. Commands and non-clock dirty families
     // bypass the cap so a user action or major event is visible immediately.
     const bool force_visual = !day_receipts.empty() ||
-        (day_commit.dirty_families & ~RUNTIME_DIRTY_CLOCK) != 0;
-    if (!force_visual && last_visual != 0 && produced_at_us - last_visual < 50000u) {
+        (header.dirty_families & ~RUNTIME_DIRTY_CLOCK) != 0;
+    if (!force_visual && last_visual != 0 && header.produced_at_us - last_visual < 50000u) {
         _snapshot_publish_throttled_count.fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
-    uint32_t index = 0;
-    if (!_snapshots.try_begin_write(index)) return;
-    RuntimeCommit &commit = _snapshots.write_buffer(index);
-    commit.header = RuntimeCommitHeader{};
-    commit.header.generation = generation;
-    commit.header.from_day = from_day;
-    commit.header.committed_day = day;
-    commit.header.produced_at_us = produced_at_us;
-    commit.header.dirty_families = day_commit.dirty_families;
-    commit.header.state_hash = _state_hash.load(std::memory_order_acquire);
-    commit.header.command_receipt_count = static_cast<uint32_t>(
-        std::min<size_t>(day_receipts.size(), std::numeric_limits<uint32_t>::max()));
-    for (size_t family_index = 0; family_index < FAMILY_BITS.size(); ++family_index) {
-        commit.header.dirty_family_generations[family_index] =
-            _dirty_family_generations[family_index].load(std::memory_order_acquire);
+        return false;
     }
     // VISUAL is a committed intent boundary. Sort and deduplicate worker
     // intents before exposing them, so consumers never observe order that
@@ -853,28 +792,16 @@ void NativeSimulationHost::publish_day(
                    a.field_id == b.field_id && a.value_i32 == b.value_i32 &&
                    a.value_f32 == b.value_f32;
         }), _pod_visual_intents.end());
-    _visual_intent_generation.store(generation, std::memory_order_release);
+    _visual_intent_generation.store(header.generation, std::memory_order_release);
     _visual_intent_count.store(static_cast<uint32_t>(
         std::min<size_t>(_pod_visual_intents.size(),
                          std::numeric_limits<uint32_t>::max())),
         std::memory_order_release);
-    _visual_full_refresh.store(_snapshots.publish_drop_count() != 0,
-                               std::memory_order_release);
-    commit.visual_intents.clear();
-    commit.visual_intents.reserve(_pod_visual_intents.size());
-    commit.visual_intents.insert(commit.visual_intents.end(),
-                                 _pod_visual_intents.begin(),
-                                 _pod_visual_intents.end());
-    commit.receipts.clear();
-    commit.receipts.reserve(day_receipts.size());
-    for (const RuntimeCommandReceipt &receipt : day_receipts) {
-        commit.receipts.push_back(receipt);
-    }
-    _snapshots.publish(index);
-    _last_visual_publish_us.store(produced_at_us, std::memory_order_release);
-    _last_commit_produced_at_us.store(commit.header.produced_at_us,
-                                      std::memory_order_release);
-    try_fault_injection("day.commit.after");
+    _visual_full_refresh.store(false, std::memory_order_release);
+    commit.visual_intents = _pod_visual_intents;
+    commit.receipts = day_receipts;
+    _last_visual_publish_us.store(header.produced_at_us, std::memory_order_release);
+    return true;
 }
 
 void NativeSimulationHost::publish_economy_tax_diag(

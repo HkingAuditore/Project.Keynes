@@ -24,12 +24,22 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		# Nothing below runs before the grant, so no tail holds the worker.
 		_mark_runtime_day_tail(host, int(report.get("simulation_committed_day", -1)))
 		return
-	if report_override.is_empty():
-		host._apply_climate_writeback_if_authoritative(report)
 	var commit: Dictionary = host._generator.poll_runtime_commit(host._runtime_commit_generation)
 	var received_new_commit = bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > host._runtime_commit_generation
+	var commit_day := int(commit.get("committed_day", -1))
+	if received_new_commit and bool(report.get("climate_worker_authoritative", false)):
+		# A worker can commit between the status read and the commit poll.
+		# Apply the weather for the polled day before exposing that day to scripts.
+		if int(report.get("simulation_committed_day", -1)) != commit_day:
+			report = report.duplicate(false)
+			report["simulation_committed_day"] = commit_day
+		host._apply_climate_writeback_if_authoritative(report)
+		if host._runtime_climate_writeback_last_day < commit_day:
+			return
+	elif report_override.is_empty():
+		host._apply_climate_writeback_if_authoritative(report)
 	var whole_graph_commit = received_new_commit and bool(report.get("authority_ready", false))
 	var economy_worker_authoritative = (
 			int(report.get("authoritative_domain_mask", 0)) &
@@ -60,11 +70,8 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			host._pending_tick_render_ms = 0.0
 			if dcp:
 				host._dcp_publish_ms = float(Time.get_ticks_usec() - publish_started_usec) / 1000.0
-		# 只通知一次最新完整日提交；后续帧仅继续消费尚未应用的视觉 patch。
-		host.simulation_committed.emit(
-			int(commit.get("from_day", host._runtime_commit_day)),
-			host._runtime_commit_day,
-			host._runtime_commit_generation)
+		var from_day := int(commit.get("from_day", host._runtime_commit_day))
+		host.simulation_committed.emit(from_day, host._runtime_commit_day, generation)
 		if whole_graph_commit:
 			host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 			var dcp_finish_usec: int = Time.get_ticks_usec() if dcp else 0
@@ -77,10 +84,9 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	else:
 		host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 		commit_usec = Time.get_ticks_usec()
-	# Economy ACTIVE mutates resource deltas on the worker-owned runtime. Drain
-	# them only after a committed boundary is visible, then run the same natural
-	# resource pass that SUS would have run on the synchronous path. If the worker
-	# still owns the boundary lock, keep the day queued and retry next frame.
+	# Mirror the committed resource changes. The scheduled pass still handles
+	# slots that the worker does not own. If the commit lock is busy, retain
+	# this day for the next frame.
 	var resource_usec = Time.get_ticks_usec()
 	if economy_worker_authoritative and host._runtime_natural_resource_pending_target_day >= 0 \
 			and host._generator.has_method("flush_runtime_economy_resource_writeback"):
@@ -101,18 +107,23 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	host._runtime_military_ms = float(Time.get_ticks_usec() - military_usec) / 1000.0
 	if dcp:
 		host._dcp_military_ms = host._runtime_military_ms
-	if host._runtime_pending_visual_generation <= 0 \
+	if host._runtime_military_pending_target_day >= 0 \
+			or host._runtime_natural_resource_pending_target_day >= 0 \
+			or host._runtime_pending_visual_generation <= 0 \
 			or host._runtime_pending_visual_generation != host._runtime_commit_generation:
 		return
 	var visual_started_us = Time.get_ticks_usec()
-	if whole_graph_commit:
-		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
-				host._renderer, host._generator._baker, host._world_data)
-		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload)
-		if host._renderer != null:
-			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
-			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-		host.mark_map_overlay_dirty(&"worker_committed")
+	if host._presentation.needs_worker_view(host._runtime_commit_generation):
+		if bool(report.get("authority_ready", false)):
+			var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
+					host._renderer, host._generator._baker, host._world_data)
+			host._generator.publish_worker_climate_visuals(defer_cell_lut_upload)
+			if host._renderer != null:
+				host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
+				host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
+			host.mark_map_overlay_dirty(&"worker_committed")
+		host._presentation.queue_worker_commit(int(host._runtime_last_commit.get("from_day", host._runtime_commit_day)),
+				host._runtime_commit_day, host._runtime_commit_generation)
 	# 当前 skeleton 的 COMMIT 阶段可能没有 visual intents；仍走同一消费边界，
 	# 以后新增 family 时无需把 worker 对象暴露给主线程。交互期间缩小预算，
 	# 但不等待或取消 worker，只把剩余 patch 留到下一渲染帧。

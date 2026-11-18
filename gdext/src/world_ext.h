@@ -2680,6 +2680,8 @@ public:
     //     resource_count, n_cells, total_delta, native_ms, compute_ms,
     //     fallback_reason（失败时）}。
     godot::Dictionary run_natural_resource_pass(const godot::Dictionary &knobs);
+    bool natural_resource_slots_are_worker_owned(
+        const godot::PackedStringArray &reserve_slots) const;
     godot::Dictionary get_natural_resource_regen_factors(
         const godot::PackedStringArray &resource_ids, int32_t n_cells);
     // cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year 的权威 C++ 烘焙。

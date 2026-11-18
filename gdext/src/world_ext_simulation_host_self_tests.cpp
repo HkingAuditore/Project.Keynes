@@ -1,5 +1,6 @@
 #include "world_ext.h"
 #include "native_simulation_host.h"
+#include "runtime_snapshot_ring.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
 #include "runtime_country_pod.h"
