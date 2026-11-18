@@ -1,7 +1,5 @@
 extends RefCounted
 
-## Stateless collaborator for ShrubLayer.
-
 ## [cell-field-web 2026-11-18 / W6] boot 自检入口（方案 §3.5：判定必须在首次构建世界
 ## 材质之前）。preload 而不是按名 new：它与 renderer_shader_water.gd 共用同一个三态
 ## meta 契约（`CellFieldWebProbe` 自己已 preload 那个模块，这里不重复拼字符串）。
@@ -159,6 +157,7 @@ static func _ready(host) -> void:
 		host._fog_layer = FogOfWarLayer.new()
 	host._fog_layer.name = "FogOfWarLayer"
 	host.add_child(host._fog_layer)
+	host.add_child(preload("res://scripts/rendering/renderer_fog_culling.gd").new())
 	# [cell-field-web 2026-11-18 / W6] 桌面 Compatibility 的 boot 自检调用点。
 	# 为什么必须有：W4 的 `CellFieldWebProbe.ensure_decided()` 此前只在
 	# `WebShaderWarmup.run()` 里被调用，而那个入口对非 web 直接 return ⇒ 桌面

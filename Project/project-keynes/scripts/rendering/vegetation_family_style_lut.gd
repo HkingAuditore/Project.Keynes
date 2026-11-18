@@ -2,6 +2,7 @@ extends RefCounted
 
 ## Encodes the family style texture from source-layer profiles; owns no batch or LOD state.
 
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 const STYLE_LUT_WIDTH := 16
 
 const STYLE_LUT_HEIGHT := 32
@@ -9,6 +10,7 @@ const STYLE_LUT_HEIGHT := 32
 static func _build_style_lut(_sources: Array) -> ImageTexture:
 	var image := Image.create(STYLE_LUT_WIDTH, STYLE_LUT_HEIGHT, false, Image.FORMAT_RGBAF)
 	image.fill(Color(0.0, 1.0, 1.0, 0.0))
+	var maxima := Vector3.ONE
 	for layer in _sources:
 		if layer == null or not is_instance_valid(layer):
 			continue
@@ -42,7 +44,11 @@ static func _build_style_lut(_sources: Array) -> ImageTexture:
 			float(shading.get("snow_size_floor", 0.6)),
 			float(shading.get("color_saturation_gain", 1.0)),
 			float(shading.get("color_value_gain", 1.0))))
-	return ImageTexture.create_from_image(image)
+		var shadow := image.get_pixel(2, style_id)
+		maxima = maxima.max(Vector3(absf(shadow.g), absf(shadow.b), absf(image.get_pixel(5, style_id).g)))
+	var texture := ImageTexture.create_from_image(image)
+	texture.set_meta(FogDrawBounds.STYLE_MAXIMA, maxima)
+	return texture
 
 
 static func _style_shape_scale(detail_kind: int) -> Vector2:

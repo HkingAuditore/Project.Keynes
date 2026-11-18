@@ -1,5 +1,6 @@
 class_name VegetationFamilyLayer
 extends Node2D
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 const VegetationFamilyStyleLut = preload("res://scripts/rendering/vegetation_family_style_lut.gd")
 
 
@@ -240,7 +241,7 @@ func rebuild_family_chunk(family: int, chunk_id: int) -> void:
 	_last_assemble_ms = float(Time.get_ticks_usec() - assemble_t0) / 1000.0
 	var upload_t0 := Time.get_ticks_usec()
 	mm.instance_count = total
-	mm.buffer = merged
+	FogDrawBounds.upload(mm, merged, FogDrawBounds.Kind.VEGETATION)
 	_active_instance_count_valid = false
 	_last_upload_ms = float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	_update_entry_lod_and_visibility(key)
@@ -587,7 +588,8 @@ func _update_shadow_entry(family: int, chunk_id: int, source_mm: MultiMesh) -> v
 	var mm := shadow.multimesh
 	var upload_t0 := Time.get_ticks_usec()
 	mm.instance_count = source_mm.instance_count
-	mm.buffer = source_mm.buffer if source_mm.instance_count > 0 else PackedFloat32Array()
+	FogDrawBounds.upload(mm, source_mm.buffer if source_mm.instance_count > 0 else PackedFloat32Array(),
+		FogDrawBounds.Kind.FAMILY_SHADOW, source_mm)
 	_last_upload_ms = float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	_update_shadow_visibility(key)
 

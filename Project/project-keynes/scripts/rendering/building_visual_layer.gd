@@ -1,5 +1,6 @@
 class_name BuildingVisualLayer
 extends Node2D
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 const BuildingVisualAssets = preload("res://scripts/rendering/building_visual_assets.gd")
 
 
@@ -675,18 +676,19 @@ func _upload_chunk_buffers(chunk_id: int) -> void:
 		return
 	var nodes: Dictionary = _chunk_nodes.get(chunk_id, {})
 	_put_batch(nodes, "body", "Body", _body_material, buffer, instance_count, null,
-		Z_BAND_BODY)
+		Z_BAND_BODY, FogDrawBounds.Kind.BUILDING_BODY)
 	var detailed := _visual_quality > 0
 	if detailed and decal_count > 0 and decal_buffer.size() >= decal_count * 16:
 		_put_batch(nodes, "decal", "GroundDecal", _decal_material,
-			decal_buffer, decal_count, null, Z_BAND_DECAL)
+			decal_buffer, decal_count, null, Z_BAND_DECAL, FogDrawBounds.Kind.BUILDING_DECAL)
 	else:
 		_drop_batch(nodes, "decal")
 	if detailed and not OS.has_feature("web"):
 		# 投影必须留在贴花那一层（贴着地面、压在建筑主体之下）。跟着 body 一起
 		# 抬到 2 会让深色壳体刷在屋顶上。
 		_put_batch(nodes, "shadow", "Shadow", _shadow_material,
-			buffer, instance_count, _shadow_hull_mesh, Z_BAND_SHADOW)
+			buffer, instance_count, _shadow_hull_mesh, Z_BAND_SHADOW,
+			FogDrawBounds.Kind.BUILDING_SHADOW, nodes.body.multimesh)
 	else:
 		_drop_batch(nodes, "shadow")
 	_chunk_nodes[chunk_id] = nodes
@@ -694,19 +696,29 @@ func _upload_chunk_buffers(chunk_id: int) -> void:
 	_recount_instances()
 
 
-func _put_batch(nodes: Dictionary, key: String, name: String, material: Material,
+func _put_batch(nodes: Dictionary, key: String, node_name: String, material: Material,
 		buffer: PackedFloat32Array, instance_count: int, mesh: Mesh,
-		layer_z: int) -> void:
-	var node = nodes.get(key)
-	if node is MultiMeshInstance2D and is_instance_valid(node) and node.multimesh != null:
+		layer_z: int, kind: FogDrawBounds.Kind, same_geometry: MultiMesh = null) -> void:
+	var node := nodes.get(key) as MultiMeshInstance2D
+	if is_instance_valid(node) and node.multimesh != null:
 		node.multimesh.instance_count = instance_count
-		node.multimesh.buffer = buffer
+		FogDrawBounds.upload(node.multimesh, buffer, kind, same_geometry)
 		return
-	var created := _make_multimesh_instance(name, material, buffer, instance_count, mesh)
-	created.z_as_relative = false
-	created.z_index = layer_z
-	add_child(created)
-	nodes[key] = created
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_2D
+	mm.use_colors = true
+	mm.use_custom_data = true
+	mm.mesh = mesh if mesh != null else _quad_mesh
+	mm.instance_count = instance_count
+	FogDrawBounds.upload(mm, buffer, kind, same_geometry)
+	node = MultiMeshInstance2D.new()
+	node.name = node_name
+	node.multimesh = mm
+	node.material = material
+	node.z_as_relative = false
+	node.z_index = layer_z
+	add_child(node)
+	nodes[key] = node
 
 
 func _drop_batch(nodes: Dictionary, key: String) -> void:
@@ -782,26 +794,6 @@ func _is_water_cell(cell: int) -> bool:
 	if cell < _map.landform_arr.size():
 		return LandformType.is_water(int(_map.landform_arr[cell]))
 	return false
-
-
-## MultiMesh 2D layout is transform(8) + color(4) + custom(4). Body and Shadow
-## share one immutable buffer; the shaders expand the unit quad themselves.
-func _make_multimesh_instance(name: String, material: Material,
-		buffer: PackedFloat32Array, instance_count: int,
-		mesh: Mesh = null) -> MultiMeshInstance2D:
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_2D
-	mm.use_colors = true
-	mm.use_custom_data = true
-	mm.mesh = mesh if mesh != null else _quad_mesh
-	mm.instance_count = maxi(0, instance_count)
-	if mm.instance_count > 0:
-		mm.buffer = buffer
-	var node := MultiMeshInstance2D.new()
-	node.name = name
-	node.multimesh = mm
-	node.material = material
-	return node
 
 
 ## Each body carries its rank in its cell's importance order (civic core

@@ -4,8 +4,8 @@ extends RefCounted
 ## [terrain-split 2026-11-01] 主地形 land / water 保守覆盖网格生成器。
 ##
 ## 由 HexRenderer 在 set_map / _rebuild（一次性）调用，产出两张 ArrayMesh：
-##   - land_mesh ：覆盖「可能出现陆地像素」的 block 集合（每 block 一个 quad）
-##   - water_mesh：覆盖「可能出现水面像素」的 block 集合（每 block 一个 quad）
+##   - land_mesh ：覆盖「可能出现陆地像素」的 block 集合
+##   - water_mesh：覆盖「可能出现水面像素」的 block 集合
 ## 渲染器把陆地 program 挂到 _world_quad（mesh=land_mesh）、水面 program 挂到
 ## _water_quad（mesh=water_mesh）；shader 仍按逐像素 is_water 互补 discard，所以这
 ## 两张网格只是**保守超集**：纯区域只光栅化自己那条 program，混合 block 两边都画，
@@ -25,7 +25,7 @@ extends RefCounted
 ##      因此 block 尺寸小于 texel 时也不会漏）就进该类 mesh；随后两张 mesh 各自按
 ##      8 邻域外扩 MARGIN_BLOCKS 个 block，吸收 CPU 掩码与 tiled bake / 索引图的
 ##      边界差异。边界 block 的 quad 裁剪到世界矩形内。
-##   4) 每个 block 一个 quad（4 顶点 / 2 三角形，ARRAY_INDEX 索引绘制），顶点是
+##   4) 同一行连续入选的 block 合成一个 quad，覆盖范围是原方块的并集，顶点是
 ##      world 坐标（与现有整张 quad 同语义；canvas_item 里 MODEL_MATRIX * VERTEX）；
 ##      一条 ArrayMesh 一个 surface；不新建材质、不新增 sampler。
 ##   5) 一次性构建，运行期不重建（陆地/水面分类在运行期不变，海冰翻转两侧都是水）。
@@ -35,6 +35,7 @@ extends RefCounted
 ## 成功返回：
 ##   {ok: true, reason: "",
 ##    land_mesh: ArrayMesh, water_mesh: ArrayMesh,
+##    land_vertices / water_vertices: 四顶点一组的 CPU 绘制坐标，
 ##    stats: {build_ms, blocks_x, blocks_y, block_world, land_blocks, water_blocks,
 ##            mixed_blocks, land_tris, water_tris, wrap_copies, margin_blocks}}
 ## stats 语义（与测试/报告对齐）：
@@ -201,7 +202,7 @@ static func build(world: WorldData, world_bounds: Rect2,
 	var water_flags := PackedByteArray(); water_flags.resize(total_blocks)
 	_expand_flags(raw, bx_count, by_count, land_flags, water_flags)
 
-	# ── 5) 几何：每个入选 block 一个裁剪后的 quad；wrap 时整个几何复制 3 份 ──
+	# ── 5) 几何：每行合并连续入选的 block；wrap 时整个几何复制 3 份 ──
 	var land_result := _emit_mesh(land_flags, bx_count, by_count,
 			gx, gy, gsx, gsy, block, wrap_offsets)
 	if not bool(land_result.get("ok", false)):
@@ -215,14 +216,16 @@ static func build(world: WorldData, world_bounds: Rect2,
 	var water_blocks: int = int(water_result.get("blocks", 0))
 	stats["land_blocks"] = land_blocks
 	stats["water_blocks"] = water_blocks
-	stats["land_tris"] = land_blocks * 2 * wrap_copies
-	stats["water_tris"] = water_blocks * 2 * wrap_copies
+	stats["land_tris"] = land_result["triangles"]
+	stats["water_tris"] = water_result["triangles"]
 	stats["build_ms"] = _elapsed_ms(t0_us)
 	return {
 		"ok": true,
 		"reason": "",
 		"land_mesh": land_result.get("mesh", null),
 		"water_mesh": water_result.get("mesh", null),
+		"land_vertices": land_result["vertices"],
+		"water_vertices": water_result["vertices"],
 		"stats": stats,
 	}
 
@@ -300,62 +303,64 @@ static func _expand_flags(raw: PackedByteArray, bx_count: int, by_count: int,
 
 
 # ─── 几何生成 ────────────────────────────────────────────────────────────
-# 返回 {ok: bool, reason: String, mesh: ArrayMesh, blocks: int}。
-# blocks = 入选 block 数（不含 wrap 副本）；mesh 里三角形数 = blocks * 2 * wrap_copies。
+# blocks = 入选 block 数（不含 wrap 副本），triangles = 合并后的三角形数。
 static func _emit_mesh(flags: PackedByteArray, bx_count: int, by_count: int,
 		gx: float, gy: float, gsx: float, gsy: float, block: float,
 		wrap_offsets: PackedFloat32Array) -> Dictionary:
-	var base_blocks: int = 0
-	for i in range(flags.size()):
-		if flags[i] != 0:
-			base_blocks += 1
-	var mesh := ArrayMesh.new()
-	if base_blocks == 0:
-		# 空 mesh 合法：MeshInstance2D 挂无 surface 的 ArrayMesh = 什么都不画。
-		return {"ok": true, "reason": "", "mesh": mesh, "blocks": 0}
+	# x/y store the first and last column of each run. z stores its row.
+	var runs: Array[Vector3i] = []
+	var base_blocks := 0
+	for by in range(by_count):
+		var row_base: int = by * bx_count
+		var bx := 0
+		while bx < bx_count:
+			if flags[row_base + bx] == 0:
+				bx += 1
+				continue
+			var first := bx
+			while bx < bx_count and flags[row_base + bx] != 0:
+				bx += 1
+			runs.append(Vector3i(first, bx - 1, by))
+			base_blocks += bx - first
 
-	var copies: int = wrap_offsets.size()
-	var total_quads: int = base_blocks * copies
-	var verts := PackedVector2Array(); verts.resize(total_quads * 4)
-	var indices := PackedInt32Array(); indices.resize(total_quads * 6)
+	var mesh := ArrayMesh.new()
+	var total_quads: int = runs.size() * wrap_offsets.size()
+	var verts := PackedVector2Array()
+	var indices := PackedInt32Array()
+	verts.resize(total_quads * 4)
+	indices.resize(total_quads * 6)
 	var right: float = gx + gsx
 	var bottom: float = gy + gsy
-	var quads: int = 0
-	for copy in range(copies):
-		var ox: float = float(wrap_offsets[copy])
-		for by in range(by_count):
-			var y0: float = gy + float(by) * block
+	var quads := 0
+	for ox in wrap_offsets:
+		for run in runs:
+			var x0: float = gx + float(run.x) * block
+			var last_x0: float = gx + float(run.y) * block
+			var x1: float = minf(last_x0 + block, right)
+			var y0: float = gy + float(run.z) * block
 			var y1: float = minf(y0 + block, bottom)
-			if y1 <= y0:
+			if x1 <= x0 or y1 <= y0:
 				continue
-			var row_base: int = by * bx_count
-			for bx in range(bx_count):
-				if flags[row_base + bx] == 0:
-					continue
-				var x0: float = gx + float(bx) * block
-				var x1: float = minf(x0 + block, right)
-				if x1 <= x0:
-					continue
-				var wx0: float = x0 + ox
-				var wx1: float = x1 + ox
-				if not (is_finite(wx0) and is_finite(wx1) and is_finite(y0) and is_finite(y1)):
-					return {"ok": false, "reason": "non_finite_vertex", "mesh": null, "blocks": 0}
-				var vi: int = quads * 4
-				var ii: int = quads * 6
-				verts[vi] = Vector2(wx0, y0)
-				verts[vi + 1] = Vector2(wx1, y0)
-				verts[vi + 2] = Vector2(wx1, y1)
-				verts[vi + 3] = Vector2(wx0, y1)
-				# 与 HexRenderer._build_world_quad_mesh() 相同的三角形/绕序。
-				indices[ii] = vi
-				indices[ii + 1] = vi + 1
-				indices[ii + 2] = vi + 2
-				indices[ii + 3] = vi
-				indices[ii + 4] = vi + 2
-				indices[ii + 5] = vi + 3
-				quads += 1
+			var wx0: float = x0 + ox
+			var wx1: float = x1 + ox
+			if not (is_finite(wx0) and is_finite(wx1) and is_finite(y0) and is_finite(y1)):
+				return {"ok": false, "reason": "non_finite_vertex", "mesh": null, "blocks": 0}
+			var vi: int = quads * 4
+			var ii: int = quads * 6
+			verts[vi] = Vector2(wx0, y0)
+			verts[vi + 1] = Vector2(wx1, y0)
+			verts[vi + 2] = Vector2(wx1, y1)
+			verts[vi + 3] = Vector2(wx0, y1)
+			indices[ii] = vi
+			indices[ii + 1] = vi + 1
+			indices[ii + 2] = vi + 2
+			indices[ii + 3] = vi
+			indices[ii + 4] = vi + 2
+			indices[ii + 5] = vi + 3
+			quads += 1
 	if quads == 0:
-		return {"ok": true, "reason": "", "mesh": mesh, "blocks": base_blocks}
+		return {"ok": true, "reason": "", "mesh": mesh, "blocks": base_blocks,
+			"triangles": 0, "vertices": PackedVector2Array()}
 	if quads < total_quads:
 		verts.resize(quads * 4)
 		indices.resize(quads * 6)
@@ -364,7 +369,8 @@ static func _emit_mesh(flags: PackedByteArray, bx_count: int, by_count: int,
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_INDEX] = indices
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return {"ok": true, "reason": "", "mesh": mesh, "blocks": base_blocks}
+	return {"ok": true, "reason": "", "mesh": mesh, "blocks": base_blocks,
+		"triangles": quads * 2, "vertices": verts}
 
 
 # ─── 小工具 ──────────────────────────────────────────────────────────────
