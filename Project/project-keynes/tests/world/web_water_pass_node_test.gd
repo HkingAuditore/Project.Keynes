@@ -429,18 +429,21 @@ func _check_cell_field_variant() -> void:
 	_expect(scene_services.contains("host._world_quad.z_index = 0"),
 		"draw order evidence: the land quad is created first with z_index 0")
 	var water_renderer := FileAccess.get_file_as_string(RENDERER_SHADER_WATER_PATH)
-	_expect(water_renderer.contains("move_child(host._water_quad")
-		and water_renderer.contains("host._water_quad.z_index = 0"),
-		"draw order evidence: the water quad is moved right after the land quad")
-	# Web 与桌面共用同一段**定序**代码 ⇒ 绘制顺序相同（平台分支只允许出现在编译失败
-	# 的回退里，不能出现在"谁盖谁"这段）。截取 z_index→move_child 之间的片段检查。
-	var order_a := water_renderer.find("host._water_quad.z_index = 0")
-	var order_b := water_renderer.find("move_child(host._water_quad", order_a)
-	var order_block := water_renderer.substr(order_a, order_b - order_a) \
-		if order_a >= 0 and order_b > order_a else ""
-	_expect(not order_block.is_empty() and not order_block.contains("has_feature"),
-		"the draw-order statements carry no platform branch ⇒ Web draws in the same"
-			+ " order as desktop (land below, water above)")
+	var order_host := HexRenderer.new()
+	order_host._world_quad = MeshInstance2D.new()
+	order_host.add_child(order_host._world_quad)
+	order_host.add_child(Node2D.new())
+	order_host._water_quad = MeshInstance2D.new()
+	order_host._graphics_details.attach_water_surface(order_host)
+	_expect(water_renderer.contains("host._water_quad.z_index = 0")
+		and water_renderer.contains("host._graphics_details.attach_water_surface(host)")
+		and order_host._water_quad.get_index() == order_host._world_quad.get_index() + 1,
+		"the production water insertion puts it directly above land")
+	order_host.free()
+	var settings_code := FileAccess.get_file_as_string("res://scripts/rendering/renderer_graphics_settings.gd")
+	var insertion := settings_code.get_slice("func attach_water_surface(host) -> void:", 1).get_slice("\nfunc ", 0)
+	_expect(insertion.contains("move_child(host._water_quad") and not insertion.contains("has_feature"),
+		"Web and desktop use the same canvas order")
 
 	# ⑧ 注入点：宏必须跟随**陆地 program 的数据源**，不能自己判平台/画质。
 	_check_injection_point(water_renderer, field_expanded)

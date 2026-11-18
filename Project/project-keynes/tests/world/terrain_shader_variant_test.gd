@@ -556,16 +556,24 @@ func _init() -> void:
 	fake_cell_field_off.terrain_cell_field_enabled = false
 	var fake_cell_field_on := FakeShaderHost.new()
 	fake_cell_field_on.terrain_cell_field_enabled = true
+	# Compatibility waits for its startup capability check before enabling the field.
+	RendererShaderWaterScript.reset_cell_field_boot_state()
+	var budget_prefix := ""
+	if DCFeatureFlags.is_compatibility_renderer():
+		budget_prefix = "#define PK_WEB_TEXTURE_BUDGET\n"
+		_expect(not _land_variant_prefix(fake_cell_field_on, SHADER_PATH).contains(cell_field_define),
+			"Compatibility waits for the startup verdict")
+	RendererShaderWaterScript.set_cell_field_boot_verdict(RendererShaderWaterScript.CELL_FIELD_VERDICT_PASS)
 	var land_prefix_off := _land_variant_prefix(fake_cell_field_off, SHADER_PATH)
 	var land_prefix_on := _land_variant_prefix(fake_cell_field_on, SHADER_PATH)
 	var water_prefix_off := RendererShaderWaterScript._water_program_prefix(
 		fake_cell_field_off, "split")
 	var water_prefix_on := RendererShaderWaterScript._water_program_prefix(
 		fake_cell_field_on, "split")
-	_expect(land_prefix_off == "#define PK_LAND_ONLY\n",
+	_expect(land_prefix_off == budget_prefix + "#define PK_LAND_ONLY\n",
 		"cell field off keeps the land prefix byte-identical (got %s)"
 			% land_prefix_off.replace("\n", "|"))
-	_expect(water_prefix_off == "#define PK_WATER_ONLY\n",
+	_expect(water_prefix_off == budget_prefix + "#define PK_WATER_ONLY\n",
 		"cell field off keeps the water prefix byte-identical (got %s)"
 			% water_prefix_off.replace("\n", "|"))
 	_expect(land_prefix_on == land_prefix_off + cell_field_define,
