@@ -64,3 +64,19 @@ static func build_image(map: MapData, dims: Vector2i) -> Image:
 				speed = float(speed_arr[i])
 		image.set_pixel(i % dims.x, int(i / dims.x), encode_wind(wind, speed))
 	return image
+
+
+# [cell-field-overlays 2026-11-18] 与 build_image() **逐字节相同**的原始字节（index 空间，
+# 长度 = dims.x * dims.y * 4，按 cell.index 排列）。
+#
+# 为什么需要它：cloud_shadow_field / weather_layer 只消费 `Texture2D`（set_wind_luts 拿到
+# 的是纹理），拿不到像素字节；weather_table 的 layer2/3 必须在 CPU 侧重排到 offset 空间。
+# 这里**不新写一份编码**：直接复用 build_image() 再 get_data()，所以量化口径（Color→RGBA8
+# 的取整、speed/20 的归一、风向 normalize 的阈值）不可能与 wind_lut 分叉。
+# 读取上游（map.wind_x_arr / wind_y_arr / wind_speed_arr）的时机与 update() 完全一致：
+# 都是天气 LUT 换字节的那一次提交（weather_lut_update_usec 变化）。
+static func build_bytes(map: MapData, dims: Vector2i) -> PackedByteArray:
+	var image := build_image(map, dims)
+	if image == null:
+		return PackedByteArray()
+	return image.get_data()

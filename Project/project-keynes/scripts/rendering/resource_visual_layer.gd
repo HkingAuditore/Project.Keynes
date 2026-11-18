@@ -185,6 +185,14 @@ var _stats := {"observed_cells": 0, "rebuilt_chunks": 0, "uploads": 0,
 func _ready() -> void:
 	# 不能 top_level：它会脱离 HexRenderer 的绘制子树（show_behind_parent）。
 	z_index = 0
+	# [world-z-absolute 2026-11-18] 世界层一律用绝对 z（z_as_relative = false）。
+	# 植被（ShrubLayer / VegetationFamilyLayer）、建筑、云影、天气、迷雾都已经是绝对口径；
+	# 本层原先保留相对 z，两种口径混在同一个 CanvasLayer 里时，绘制顺序取决于各自的
+	# 父级链而不只是数字大小 —— 实测迷雾（相对 12）被植被（绝对 3）压住，未探索厚云里
+	# 浮出树点。资源的 1 与树冠的 3 也必须在同一口径下比较，否则同一份层带数据会解出
+	# 不同的先后。
+	# 只改 z 口径，不动 top_level：它仍然留在 HexRenderer 的绘制子树里。
+	z_as_relative = false
 	_material = ShaderMaterial.new()
 	_material.shader = RESOURCE_SHADER
 	_material_geo = ShaderMaterial.new()

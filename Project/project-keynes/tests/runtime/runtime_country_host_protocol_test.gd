@@ -34,7 +34,7 @@ func _run() -> void:
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	_expect("country configures", bool(country.configure(
-		ext, 1, 20260909, load("res://data/country/default_country.tres"),
+		ext, 2, 20260909, load("res://data/country/default_country.tres"),
 		compiled).get("ok", false)))
 	var boot_packet := {
 		"country_ids": PackedStringArray(["country.host_protocol"]),
@@ -49,7 +49,7 @@ func _run() -> void:
 		"treasury_quantities": PackedInt64Array(),
 	}
 	_expect("country bootstraps", bool(country.bootstrap(
-		PackedByteArray([0]), boot_packet).get("ok", false)))
+		PackedByteArray([0, 0]), boot_packet).get("ok", false)))
 	_expect("worker capture APIs are exported",
 		ext.has_method("capture_country_pod_catalog")
 		and ext.has_method("capture_country_runtime_snapshot")
@@ -113,7 +113,7 @@ func _run() -> void:
 	_expect("Country Host terminal self-test is exported and passes",
 		ext.has_method("runtime_country_host_receipt_self_test")
 		and bool(ext.runtime_country_host_receipt_self_test()))
-	_expect("Country Host rejection retry self-test is exported and passes",
+	_expect("Country Host rejection retry and territory publication self-test passes",
 		ext.has_method("runtime_country_host_rejection_self_test")
 		and bool(ext.runtime_country_host_rejection_self_test()))
 	_expect("Country SHADOW formula parity self-test is exported and passes",

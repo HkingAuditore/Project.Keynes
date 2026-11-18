@@ -226,12 +226,39 @@ static func detail_family_material(host, style_lut: Texture2D) -> ShaderMaterial
 		host._ensure_resources()
 	var out = host._material.duplicate(true) as ShaderMaterial
 	out.shader = detail_family_shader(host, false)
-	out.set_shader_parameter("detail_style_lut", style_lut)
-	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+	bind_body_style(out, style_lut)
+	# [veg-fog-knowledge 2026-11-18] duplicate 只复制**当时**的参数。若源材质那时还没
+	# 绑上 enum_lut（世界未烘完），family 材质会永远拿不到知识度表，整批树冠都不会淡出。
+	# 显式补一次；后续漂移仍走 set_world_material_inputs / rebind 那条链。
+	if host._world != null and host._world.enum_lut_tex != null:
+		out.set_shader_parameter("enum_lut", host._world.enum_lut_tex)
 	_track_family_material(host, out)
 	host._push_cloud_shadow_uniforms_to(out)
 	return out
 
+
+
+## The native GL family needs this texture unit for normal-mapped crown art.
+## All batches share an immutable style table for a given configuration. Read
+## its four body columns once at setup. Other renderers sample the texture.
+static func bind_body_style(material: ShaderMaterial, style_lut: Texture2D) -> void:
+	if OS.has_feature("web") or RenderingServer.get_current_rendering_method() != "gl_compatibility":
+		material.set_shader_parameter("detail_style_lut", style_lut)
+		material.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+		return
+	if style_lut == null:
+		material.set_shader_parameter("detail_style_rows", null)
+		return
+	const ROWS := &"vegetation_gl_body_rows"
+	var rows: PackedVector4Array = style_lut.get_meta(ROWS, PackedVector4Array())
+	if rows.is_empty():
+		var image := style_lut.get_image()
+		for style in 32:
+			for slot in [0, 3, 4, 5]:
+				var c := image.get_pixel(slot, style)
+				rows.append(Vector4(c.r, c.g, c.b, c.a))
+		style_lut.set_meta(ROWS, rows)
+	material.set_shader_parameter("detail_style_rows", rows)
 
 
 static func detail_family_shader(host, shadow_pass: bool) -> Shader:

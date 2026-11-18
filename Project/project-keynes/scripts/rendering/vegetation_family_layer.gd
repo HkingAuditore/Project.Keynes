@@ -1,5 +1,6 @@
 class_name VegetationFamilyLayer
 extends Node2D
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 const VegetationFamilyStyleLut = preload("res://scripts/rendering/vegetation_family_style_lut.gd")
 
 
@@ -61,6 +62,15 @@ var _last_assemble_ms := 0.0
 var _last_upload_ms := 0.0
 var _last_wind_dir := Vector2(INF, INF)
 var _last_wind_boost := INF
+
+
+## [world-z-absolute 2026-11-18] 世界层 z 一律用绝对口径（与 fog_of_war_layer /
+## resource_visual_layer / building_visual_layer 同一个约定）。本层原先没有设过
+## z_as_relative，默认相对父 HexRenderer（z=0），于是 `_family_z()` 写的 3 是相对值，
+## 和绝对 12 的迷雾混在同一 CanvasLayer 时会抢错先后 —— 未探索厚云上会浮出树冠。
+## 父 z 恒为 0，改成绝对不改变任何数值，只是把两种口径统一。
+func _ready() -> void:
+	z_as_relative = false
 
 
 func configure(sources: Array, enabled: bool) -> void:
@@ -240,7 +250,7 @@ func rebuild_family_chunk(family: int, chunk_id: int) -> void:
 	_last_assemble_ms = float(Time.get_ticks_usec() - assemble_t0) / 1000.0
 	var upload_t0 := Time.get_ticks_usec()
 	mm.instance_count = total
-	mm.buffer = merged
+	FogDrawBounds.upload(mm, merged, FogDrawBounds.Kind.VEGETATION)
 	_active_instance_count_valid = false
 	_last_upload_ms = float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	_update_entry_lod_and_visibility(key)
@@ -587,7 +597,8 @@ func _update_shadow_entry(family: int, chunk_id: int, source_mm: MultiMesh) -> v
 	var mm := shadow.multimesh
 	var upload_t0 := Time.get_ticks_usec()
 	mm.instance_count = source_mm.instance_count
-	mm.buffer = source_mm.buffer if source_mm.instance_count > 0 else PackedFloat32Array()
+	FogDrawBounds.upload(mm, source_mm.buffer if source_mm.instance_count > 0 else PackedFloat32Array(),
+		FogDrawBounds.Kind.FAMILY_SHADOW, source_mm)
 	_last_upload_ms = float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	_update_shadow_visibility(key)
 

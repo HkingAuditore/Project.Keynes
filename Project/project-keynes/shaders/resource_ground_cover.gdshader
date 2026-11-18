@@ -57,6 +57,11 @@ uniform float lens_amount = 0.0;
 uniform float lens_dim = 0.35;
 uniform float trace_opacity = 0.45;
 uniform float far_opacity = 0.65;
+// [cover-ground-fit 2026-11-18] 地被贴合地表。
+// slope_fit：坡面面积变形的增益（俯视下斜面的 1 单位只投影 nz，沿坡 /nz）。
+// ground_tint：草地色温向脚下 hypsometric 地表色靠拢的比例（只取相对色偏，不动明度）。
+uniform float cover_slope_fit = 1.0;
+uniform float cover_ground_tint = 0.35;
 // The art is tone-matched for neutral light; the map palette is warmer and more saturated.
 uniform float cover_saturation = 1.45;
 uniform float cover_gain = 1.22;
@@ -250,10 +255,13 @@ void fragment() {
 #endif
 
 		// Gentle wind sway, phase-shifted across the meadow.
+		// [cover-ground-fit 2026-11-18] 相位频率提高：0.7 / 0.45 hex → 0.26 / 0.17 hex。
+		// 原来一个波长覆盖 0.7 格，整片区域近似同相，UV 平移读作"纹样在爬"而不是
+		// "草在摇"。频率提高后每 0.2 格独立摆动，才像细碎草浪。
 		vec2 w = normalize(wind_dir + vec2(0.0001));
-		float gust = sin(world_time * 1.15 + dot(wp, w) / (hex_size * 0.7))
-			+ 0.4 * sin(world_time * 2.3 + dot(wp, vec2(-w.y, w.x)) / (hex_size * 0.45));
-		vec2 sway = w * gust * 0.0045 * (0.5 + wind_strength + weather_wind_boost * 0.6);
+		float gust = sin(world_time * 1.15 + dot(wp, w) / (hex_size * 0.26))
+			+ 0.4 * sin(world_time * 2.3 + dot(wp, vec2(-w.y, w.x)) / (hex_size * 0.17));
+		vec2 sway = w * gust * 0.0055 * (0.5 + wind_strength + weather_wind_boost * 0.6);
 
 		vec4 a = textureGrad(cover_albedo, vec3(uv + sway, layer_p), dx, dy);
 #ifndef PK_MOBILE_ANY
@@ -274,7 +282,10 @@ void fragment() {
 		float plant_a = mix(a.a, b.a, mix_s);
 		float abundance = mix(ab_p, ab_s, mix_s);
 		// Coverage is sharpened so plant clumps read as solid foliage, gaps as open ground.
-		plant_a = smoothstep(0.08, 0.62, plant_a);
+		// [cover-ground-fit 2026-11-18] 0.08–0.62 → 0.06–0.74。原区间把图集里
+		// 半透明的叶簇直接切成二值斑点（0.62 以上全实、0.08 以下全空），中间没有
+		// 过渡，读作"贴纸碎片"。放宽后保留叶簇之间的渐变，群落才连得起来。
+		plant_a = smoothstep(0.06, 0.74, plant_a);
 		plant_a *= abundance * edge * mix(1.0 - clump_strength, 1.0, smoothstep(0.28, 0.68, clump));
 		plant_a *= mix(0.25, 1.0, health)
 			* smoothstep(vitality_dead_threshold * 0.3, vitality_dead_threshold, climate.a);
@@ -295,6 +306,19 @@ void fragment() {
 		plant = mix(plant, vec3(cool_l) * vec3(0.96, 1.0, 1.06), cool * climate_response * 0.30);
 		plant = mix(plant, vec3(0.56, 0.47, 0.29) * (0.7 + 0.6 * dot(plant, vec3(0.333))), dry * climate_response * 0.45);
 		plant = mix(plant, vec3(0.84, 0.88, 0.92), snow * 0.45);
+		// [cover-ground-fit 2026-11-18] 地表色继承。群落原本只有一套固定的
+		// cover_saturation/gain/grade 全局调色，与它脚下是什么地无关 —— 这是
+		// "两张图叠在一起"的直接来源。这里按已绑定的 height 推一个 hypsometric
+		// 地表色（低地沃土偏暖黄、高地偏灰褐），只取**相对色偏**（除以自身明度）
+		// 调制色温，不动明度，所以不会把深色群落洗灰。零新增采样。
+		if (has_height_tex && cover_ground_tint > 0.001) {
+			vec4 gsample = visual_sample_height(gc_map_uv(wp));
+			float gh = (gsample.r * 256.0 + gsample.g) / 257.0;
+			float upland = smoothstep(sea_level + 0.02, 0.86, gh);
+			vec3 ground_col = mix(vec3(0.66, 0.64, 0.40), vec3(0.76, 0.70, 0.58), upland);
+			vec3 ground_shift = ground_col / max(dot(ground_col, vec3(0.299, 0.587, 0.114)), 0.02);
+			plant *= mix(vec3(1.0), ground_shift, cover_ground_tint);
+		}
 
 		// Grazing trace underneath (trampled paths, rooting mud, caravan prints).
 		vec4 t = vec4(0.0);

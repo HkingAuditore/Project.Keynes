@@ -183,22 +183,22 @@ text = "—"
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Employment" type="PanelContainer" parent="Body/Sections"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("SectionCard")
-
-[node name="Text" type="Label" parent="Body/Sections/Employment"]
-layout_mode = 2
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 2
-
 [node name="Flow" type="PanelContainer" parent="Body/Sections"]
 visible = false
 layout_mode = 2
 theme_override_styles/panel = SubResource("SectionCard")
 
 [node name="Text" type="Label" parent="Body/Sections/Flow"]
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="Employment" type="PanelContainer" parent="Body/Sections"]
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("SectionCard")
+
+[node name="Text" type="Label" parent="Body/Sections/Employment"]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 autowrap_mode = 2

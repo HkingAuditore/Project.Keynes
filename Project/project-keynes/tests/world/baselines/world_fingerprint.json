@@ -1,0 +1,612 @@
+{
+  "schema": "world_fingerprint",
+  "version": 2,
+  "written_utc": "2026-11-18T07:57:14",
+  "godot": "4.6.2-stable (official)",
+  "platform": "Windows",
+  "hash_algo": "fnv1a-64 over to_byte_array()（只在同平台/同编译配置下比）",
+  "stat_tol_default": 0.05,
+  "stat_rule": "高度分位按相对容差；直方图/计数按 cell 数，容差 = max(1 格, tol × 期望)",
+  "bake_rule": "hashes.bake_height = 融合几何 pass（base→post_base→run_bake_geometry_fields_pass） 的 height_buffer 整场 FNV-1a-64；stats.bake_h_p50/p90/p99 = 该高度场陆地像素（height >= sea_level）分位，按高度分位的相对容差比。分辨率固定 desktop 档（BAKE_HM_MAX_DIM=1024 常量 + bounds 长宽比 ⇒ 60×40 时为 1024×606），**不读** map_baker.gd::_hm_max_dim() 的平台判断。只覆盖 BAKE_SEEDS 里的种子。",
+  "bake_seeds": [
+    20260718
+  ],
+  "bake_hm_max_dim": 1024,
+  "seed_set": [
+    {
+      "seed": 20260718,
+      "w": 60,
+      "h": 40
+    },
+    {
+      "seed": 20260719,
+      "w": 60,
+      "h": 40
+    },
+    {
+      "seed": 20260720,
+      "w": 60,
+      "h": 40
+    },
+    {
+      "seed": 20260721,
+      "w": 60,
+      "h": 40
+    },
+    {
+      "seed": 20260718,
+      "w": 200,
+      "h": 150
+    },
+    {
+      "seed": 20260719,
+      "w": 200,
+      "h": 150
+    }
+  ],
+  "row_count": 6,
+  "rows": [
+    {
+      "seed": 20260718,
+      "w": 60,
+      "h": 40,
+      "ok": true,
+      "reason": "",
+      "missing": [],
+      "hashes": {
+        "elevation": "e02d070cf48174df",
+        "terrain": "e492802e4f08ec92",
+        "landform": "a17745f2888c7c8d",
+        "has_river": "cae44036538d9968",
+        "hydro_parent": "5633912579c18a0f",
+        "bake_height": "56396c9dded203df"
+      },
+      "stats": {
+        "land_h_p10": 0.0141155878081918,
+        "land_h_p50": 0.056080773472786,
+        "land_h_p90": 0.193838998675346,
+        "land_h_p99": 0.317572844028473,
+        "terrain_hist": {
+          "0": 0.300833333333333,
+          "1": 0.1475,
+          "3": 0.055,
+          "4": 0.0858333333333333,
+          "7": 0.127083333333333,
+          "8": 0.0666666666666667,
+          "9": 0.00125,
+          "11": 0.01,
+          "12": 0.0775,
+          "13": 0.0354166666666667,
+          "14": 0.07625,
+          "26": 0.0166666666666667
+        },
+        "landform_hist": {
+          "0": 0.0816666666666667,
+          "1": 0.219166666666667,
+          "2": 0.1475,
+          "4": 0.149583333333333,
+          "5": 0.288333333333333,
+          "6": 0.11375
+        },
+        "river_count": 247,
+        "lake_count": 29,
+        "highland_river_count": 10,
+        "peak_count": 0,
+        "plateau_count": 54,
+        "bake_h_p50": 0.698327779769897,
+        "bake_h_p90": 0.835592496395111,
+        "bake_h_p99": 0.950799341201782
+      },
+      "meta": {
+        "seed": 20260718,
+        "w": 60,
+        "h": 40,
+        "n_cells": 2400,
+        "sea_level": 0.64,
+        "base_ms": 8.265,
+        "post_ms": 1.659,
+        "cfg": {
+          "num_continents": 3,
+          "continent_size": 0.9,
+          "sea_level": 0.64,
+          "river_count": 12,
+          "width": 60,
+          "height": 40,
+          "seed": 20260718
+        },
+        "profile": {
+          "native_generation_mode": 2,
+          "ridge_boost_amp": 0.6,
+          "spl_iters": 14,
+          "spl_erodibility": 1.2,
+          "spl_area_exp": 0.45,
+          "spl_uplift_rate": 0.08,
+          "spl_ridge_uplift": 0.01,
+          "spl_hillslope_diffusion": 0.08,
+          "ridge_residual_frac": 0.15,
+          "ridge_debug_dump": 1
+        },
+        "notes": [],
+        "bake": {
+          "measured": true,
+          "ok": true,
+          "reason": "",
+          "hash": "56396c9dded203df",
+          "w": 1024,
+          "h": 606,
+          "ms": 224.444,
+          "land_px": 275727,
+          "mode": "spl",
+          "grid_w": 978,
+          "grid_h": 606,
+          "grid_factor": 1
+        }
+      }
+    },
+    {
+      "seed": 20260719,
+      "w": 60,
+      "h": 40,
+      "ok": true,
+      "reason": "",
+      "missing": [],
+      "hashes": {
+        "elevation": "4b5a7c6ce71b575e",
+        "terrain": "39073aff8314ffc5",
+        "landform": "8bb269a51c121ab3",
+        "has_river": "701f4ec2d6bab711",
+        "hydro_parent": "51a0fb4732bb878e"
+      },
+      "stats": {
+        "land_h_p10": 0.0150869349017739,
+        "land_h_p50": 0.0662118047475815,
+        "land_h_p90": 0.203214749693871,
+        "land_h_p99": 0.301786553859711,
+        "terrain_hist": {
+          "0": 0.255,
+          "1": 0.177916666666667,
+          "3": 0.05375,
+          "4": 0.0920833333333333,
+          "7": 0.13125,
+          "8": 0.0675,
+          "9": 0.000833333333333333,
+          "11": 0.0375,
+          "12": 0.05375,
+          "13": 0.03125,
+          "14": 0.0716666666666667,
+          "26": 0.0275
+        },
+        "landform_hist": {
+          "0": 0.0458333333333333,
+          "1": 0.209166666666667,
+          "2": 0.177916666666667,
+          "4": 0.141666666666667,
+          "5": 0.273333333333333,
+          "6": 0.152083333333333
+        },
+        "river_count": 254,
+        "lake_count": 20,
+        "highland_river_count": 2,
+        "peak_count": 0,
+        "plateau_count": 49
+      },
+      "meta": {
+        "seed": 20260719,
+        "w": 60,
+        "h": 40,
+        "n_cells": 2400,
+        "sea_level": 0.64,
+        "base_ms": 9.479,
+        "post_ms": 1.633,
+        "cfg": {
+          "num_continents": 3,
+          "continent_size": 0.9,
+          "sea_level": 0.64,
+          "river_count": 12,
+          "width": 60,
+          "height": 40,
+          "seed": 20260719
+        },
+        "profile": {
+          "native_generation_mode": 2,
+          "ridge_boost_amp": 0.6,
+          "spl_iters": 14,
+          "spl_erodibility": 1.2,
+          "spl_area_exp": 0.45,
+          "spl_uplift_rate": 0.08,
+          "spl_ridge_uplift": 0.01,
+          "spl_hillslope_diffusion": 0.08,
+          "ridge_residual_frac": 0.15,
+          "ridge_debug_dump": 1
+        },
+        "notes": [],
+        "bake": {
+          "measured": false,
+          "ok": false,
+          "reason": "not_covered",
+          "hash": "",
+          "w": 0,
+          "h": 0,
+          "ms": -1.0,
+          "land_px": 0,
+          "mode": "",
+          "grid_w": -1,
+          "grid_h": -1,
+          "grid_factor": -1
+        }
+      }
+    },
+    {
+      "seed": 20260720,
+      "w": 60,
+      "h": 40,
+      "ok": true,
+      "reason": "",
+      "missing": [],
+      "hashes": {
+        "elevation": "ff395ed5bc6ce19d",
+        "terrain": "acd5cef937b1fa82",
+        "landform": "3d85c5929160793e",
+        "has_river": "d2c7e82cc6193cc7",
+        "hydro_parent": "0ed9a004cc5544e7"
+      },
+      "stats": {
+        "land_h_p10": 0.0162870436906815,
+        "land_h_p50": 0.0713634043931961,
+        "land_h_p90": 0.2087232619524,
+        "land_h_p99": 0.31805411875248,
+        "terrain_hist": {
+          "0": 0.247916666666667,
+          "1": 0.145416666666667,
+          "3": 0.05,
+          "4": 0.0795833333333333,
+          "7": 0.175416666666667,
+          "8": 0.0716666666666667,
+          "9": 0.005,
+          "11": 0.0370833333333333,
+          "12": 0.0416666666666667,
+          "13": 0.035,
+          "14": 0.0854166666666667,
+          "26": 0.0258333333333333
+        },
+        "landform_hist": {
+          "0": 0.0429166666666667,
+          "1": 0.205,
+          "2": 0.145416666666667,
+          "4": 0.13875,
+          "5": 0.300416666666667,
+          "6": 0.1675
+        },
+        "river_count": 274,
+        "lake_count": 147,
+        "highland_river_count": 5,
+        "peak_count": 0,
+        "plateau_count": 61
+      },
+      "meta": {
+        "seed": 20260720,
+        "w": 60,
+        "h": 40,
+        "n_cells": 2400,
+        "sea_level": 0.64,
+        "base_ms": 8.292,
+        "post_ms": 1.476,
+        "cfg": {
+          "num_continents": 3,
+          "continent_size": 0.9,
+          "sea_level": 0.64,
+          "river_count": 12,
+          "width": 60,
+          "height": 40,
+          "seed": 20260720
+        },
+        "profile": {
+          "native_generation_mode": 2,
+          "ridge_boost_amp": 0.6,
+          "spl_iters": 14,
+          "spl_erodibility": 1.2,
+          "spl_area_exp": 0.45,
+          "spl_uplift_rate": 0.08,
+          "spl_ridge_uplift": 0.01,
+          "spl_hillslope_diffusion": 0.08,
+          "ridge_residual_frac": 0.15,
+          "ridge_debug_dump": 1
+        },
+        "notes": [],
+        "bake": {
+          "measured": false,
+          "ok": false,
+          "reason": "not_covered",
+          "hash": "",
+          "w": 0,
+          "h": 0,
+          "ms": -1.0,
+          "land_px": 0,
+          "mode": "",
+          "grid_w": -1,
+          "grid_h": -1,
+          "grid_factor": -1
+        }
+      }
+    },
+    {
+      "seed": 20260721,
+      "w": 60,
+      "h": 40,
+      "ok": true,
+      "reason": "",
+      "missing": [],
+      "hashes": {
+        "elevation": "142be7e7183741a9",
+        "terrain": "6e70446666b66a4e",
+        "landform": "de2f5719bdab0406",
+        "has_river": "8edf4897decd2feb",
+        "hydro_parent": "c5af51621994664f"
+      },
+      "stats": {
+        "land_h_p10": 0.0150273183360696,
+        "land_h_p50": 0.0584892481565475,
+        "land_h_p90": 0.229161176085472,
+        "land_h_p99": 0.318057415485382,
+        "terrain_hist": {
+          "0": 0.299166666666667,
+          "1": 0.190416666666667,
+          "3": 0.0533333333333333,
+          "4": 0.103333333333333,
+          "7": 0.0875,
+          "8": 0.0675,
+          "9": 0.00916666666666667,
+          "11": 0.04125,
+          "12": 0.03375,
+          "13": 0.0429166666666667,
+          "14": 0.0633333333333333,
+          "26": 0.00833333333333333
+        },
+        "landform_hist": {
+          "0": 0.0433333333333333,
+          "1": 0.255833333333333,
+          "2": 0.190416666666667,
+          "4": 0.14,
+          "5": 0.225416666666667,
+          "6": 0.145
+        },
+        "river_count": 200,
+        "lake_count": 7,
+        "highland_river_count": 8,
+        "peak_count": 0,
+        "plateau_count": 85
+      },
+      "meta": {
+        "seed": 20260721,
+        "w": 60,
+        "h": 40,
+        "n_cells": 2400,
+        "sea_level": 0.64,
+        "base_ms": 7.77,
+        "post_ms": 1.427,
+        "cfg": {
+          "num_continents": 3,
+          "continent_size": 0.9,
+          "sea_level": 0.64,
+          "river_count": 12,
+          "width": 60,
+          "height": 40,
+          "seed": 20260721
+        },
+        "profile": {
+          "native_generation_mode": 2,
+          "ridge_boost_amp": 0.6,
+          "spl_iters": 14,
+          "spl_erodibility": 1.2,
+          "spl_area_exp": 0.45,
+          "spl_uplift_rate": 0.08,
+          "spl_ridge_uplift": 0.01,
+          "spl_hillslope_diffusion": 0.08,
+          "ridge_residual_frac": 0.15,
+          "ridge_debug_dump": 1
+        },
+        "notes": [],
+        "bake": {
+          "measured": false,
+          "ok": false,
+          "reason": "not_covered",
+          "hash": "",
+          "w": 0,
+          "h": 0,
+          "ms": -1.0,
+          "land_px": 0,
+          "mode": "",
+          "grid_w": -1,
+          "grid_h": -1,
+          "grid_factor": -1
+        }
+      }
+    },
+    {
+      "seed": 20260718,
+      "w": 200,
+      "h": 150,
+      "ok": true,
+      "reason": "",
+      "missing": [],
+      "hashes": {
+        "elevation": "6b5f4ee50b67c1d7",
+        "terrain": "6006b91a330688e2",
+        "landform": "7b7184fb37c45dcb",
+        "has_river": "f84c7732327d4b09",
+        "hydro_parent": "a96c54c0b0ca7b55"
+      },
+      "stats": {
+        "land_h_p10": 0.0195772796869278,
+        "land_h_p50": 0.0890009850263596,
+        "land_h_p90": 0.242024329304695,
+        "land_h_p99": 0.318091864585876,
+        "terrain_hist": {
+          "0": 0.3271,
+          "1": 0.0551,
+          "3": 0.0904666666666667,
+          "4": 0.107666666666667,
+          "7": 0.116933333333333,
+          "8": 0.0907,
+          "9": 0.0109,
+          "11": 0.00786666666666667,
+          "12": 0.0496333333333333,
+          "13": 0.0484333333333333,
+          "14": 0.0759333333333333,
+          "26": 0.0192666666666667
+        },
+        "landform_hist": {
+          "0": 0.214333333333333,
+          "1": 0.112766666666667,
+          "2": 0.0551,
+          "4": 0.104533333333333,
+          "5": 0.2945,
+          "6": 0.218766666666667
+        },
+        "river_count": 1320,
+        "lake_count": 456,
+        "highland_river_count": 15,
+        "peak_count": 0,
+        "plateau_count": 2000
+      },
+      "meta": {
+        "seed": 20260718,
+        "w": 200,
+        "h": 150,
+        "n_cells": 30000,
+        "sea_level": 0.64,
+        "base_ms": 107.73,
+        "post_ms": 17.552,
+        "cfg": {
+          "num_continents": 3,
+          "continent_size": 0.9,
+          "sea_level": 0.64,
+          "river_count": 12,
+          "width": 200,
+          "height": 150,
+          "seed": 20260718
+        },
+        "profile": {
+          "native_generation_mode": 2,
+          "ridge_boost_amp": 0.6,
+          "spl_iters": 14,
+          "spl_erodibility": 1.2,
+          "spl_area_exp": 0.45,
+          "spl_uplift_rate": 0.08,
+          "spl_ridge_uplift": 0.01,
+          "spl_hillslope_diffusion": 0.08,
+          "ridge_residual_frac": 0.15,
+          "ridge_debug_dump": 1
+        },
+        "notes": [],
+        "bake": {
+          "measured": false,
+          "ok": false,
+          "reason": "not_covered",
+          "hash": "",
+          "w": 0,
+          "h": 0,
+          "ms": -1.0,
+          "land_px": 0,
+          "mode": "",
+          "grid_w": -1,
+          "grid_h": -1,
+          "grid_factor": -1
+        }
+      }
+    },
+    {
+      "seed": 20260719,
+      "w": 200,
+      "h": 150,
+      "ok": true,
+      "reason": "",
+      "missing": [],
+      "hashes": {
+        "elevation": "5d54313444d770de",
+        "terrain": "21208189f38cbdbc",
+        "landform": "665607f9b9840cdc",
+        "has_river": "97e9494139f22f16",
+        "hydro_parent": "aeb4d9a211e1336c"
+      },
+      "stats": {
+        "land_h_p10": 0.019655629992485,
+        "land_h_p50": 0.0853034108877182,
+        "land_h_p90": 0.234308376908302,
+        "land_h_p99": 0.317979589104652,
+        "terrain_hist": {
+          "0": 0.295233333333333,
+          "1": 0.0655666666666667,
+          "3": 0.0869,
+          "4": 0.1231,
+          "7": 0.123633333333333,
+          "8": 0.0829,
+          "9": 0.0133,
+          "11": 0.0126,
+          "12": 0.0534333333333333,
+          "13": 0.0579666666666667,
+          "14": 0.0642666666666667,
+          "26": 0.0211
+        },
+        "landform_hist": {
+          "0": 0.161633333333333,
+          "1": 0.1336,
+          "2": 0.0655666666666667,
+          "4": 0.108966666666667,
+          "5": 0.327566666666667,
+          "6": 0.202666666666667
+        },
+        "river_count": 1347,
+        "lake_count": 2368,
+        "highland_river_count": 21,
+        "peak_count": 0,
+        "plateau_count": 1748
+      },
+      "meta": {
+        "seed": 20260719,
+        "w": 200,
+        "h": 150,
+        "n_cells": 30000,
+        "sea_level": 0.64,
+        "base_ms": 119.491,
+        "post_ms": 17.888,
+        "cfg": {
+          "num_continents": 3,
+          "continent_size": 0.9,
+          "sea_level": 0.64,
+          "river_count": 12,
+          "width": 200,
+          "height": 150,
+          "seed": 20260719
+        },
+        "profile": {
+          "native_generation_mode": 2,
+          "ridge_boost_amp": 0.6,
+          "spl_iters": 14,
+          "spl_erodibility": 1.2,
+          "spl_area_exp": 0.45,
+          "spl_uplift_rate": 0.08,
+          "spl_ridge_uplift": 0.01,
+          "spl_hillslope_diffusion": 0.08,
+          "ridge_residual_frac": 0.15,
+          "ridge_debug_dump": 1
+        },
+        "notes": [],
+        "bake": {
+          "measured": false,
+          "ok": false,
+          "reason": "not_covered",
+          "hash": "",
+          "w": 0,
+          "h": 0,
+          "ms": -1.0,
+          "land_px": 0,
+          "mode": "",
+          "grid_w": -1,
+          "grid_h": -1,
+          "grid_factor": -1
+        }
+      }
+    }
+  ]
+}

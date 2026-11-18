@@ -20,21 +20,27 @@ extends RefCounted
 ##   - 植被的家族批次变体（FAR_ONLY + DETAIL_FAMILY_BATCH）根本没进过清单。
 ##
 ## 前缀的真源在各自的 owner 里，本文件只引用，不自己拼宏串：
-##   - world_map（Web LOW 陆地程序）：`HexRenderer.WORLD_MAP_WEB_PREFIX`
-##     （quality + texture_budget + world_min + no_micro + land_only + horizon；
-##      [terrain-web-baked-surface-A 2026-11-01] normal+relief 合并进 terrain_surface_tex
-##      （B 方案固定 4 层：normal/relief/detail/occluder）后腾出的材质槽还给 noise_tex，
-##      前缀里不再有"无噪声"宏；
-##      [B 2026-11-01] surface array 扩到 4 层（detail/occluder）+ material array 第 5 层
-##      micro + GI packed bounce 全部走**已有 sampler**，所以前缀不变、仍 8 槽；
-##      水面 depth 的 VT 宏在 shader 源码里定义，水面 pass 前缀也不变）
-##   - PC-HIGH world_map 陆地 / 水面：`WORLD_MAP_WEB_HIGH_PREFIX` / `WATER_WEB_HIGH_PREFIX`
-##   - world_water_web（Web LOW 水面第二 pass）：`HexRenderer.WATER_PASS_PREFIX`
-##     （quality + texture_budget）
+##   - world_map（Web LOW 陆地程序）/ world_water_web（Web LOW 水面第二 pass）/
+##     PC-HIGH 陆地与水面：`RendererShaderWater.web_warmup_program_prefixes()`
+##     （[cell-field-web 2026-11-18] 三组前缀**统一**由它给出，因为它同时管 micro 开关与
+##      PK_CELL_FIELD 的 boot 自检结论；本文件只转发，一个宏字面量都不写）
+##     （world_map 那一段 = quality + texture_budget + world_min + [no_micro] + land_only
+##      + horizon；[terrain-web-baked-surface-A 2026-11-01] normal+relief 合并进
+##      terrain_surface_tex（B 方案固定 4 层：normal/relief/detail/occluder）后腾出的材质槽
+##      还给 noise_tex，前缀里不再有"无噪声"宏；[B 2026-11-01] surface array 扩到 4 层
+##      （detail/occluder）+ material array 第 5 层 micro + GI packed bounce 全部走
+##      **已有 sampler**，所以前缀不变、仍 8 槽；水面 depth 的 VT 宏在 shader 源码里定义，
+##      水面 pass 前缀也不变）
 ##   - 建筑 3 张：`BuildingVisualLayer.compose_shader_code()`
 ##   - resource_impostor：`ResourceVisualLayer.compose_shader_code()`
 ##   - 植被 body/shadow/family：`ShrubLayer.web_warmup_shader_codes()`
-##   - fog / weather / country_border：本文件的常量（与各自图层逐字一致）
+##   - country_border：本文件的常量
+##   - fog：[O23 2026-11-18] 也走判定口了 —— `fog_prefix_active()` =
+##     `FOG_PREFIX + WEB_FOG_RUNTIME_DEFINE` + `cell_field_prefix_for_variant(...)`，
+##     因为运行期 fog_of_war_layer.gd::_load_shader() 会按 boot 自检结论追加
+##     `#define PK_CELL_FIELD`（**拼在最后**，紧跟在 PK_WEB_FOG_RUNTIME 之后）。
+##     少了这一段，Web 上迷雾会在"进游戏"时真编一次（冻帧）。
+##   - weather：本文件的常量（与 WeatherLayer._load_overlay_shader 逐字一致）
 
 
 ## 探针：world_map 的 land/water 双分支联合编译爆炸。
@@ -82,6 +88,34 @@ const AWAIT_READY_TIMEOUT_MSEC := 600000
 ## 迷雾 / 国界这类层使用的前缀：只有质量档，没有纹理预算宏。
 const FOG_PREFIX := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
 
+## [O23 2026-11-18] 迷雾 web 变体的**静态**前缀 = 质量档 + 运行期画质宏。
+## 顺序照 fog_of_war_layer.gd::_load_shader()：tier（web 上是 MOBILE_QUALITY_LOW +
+## PK_SHADER_TIER_LOW）→ `PK_WEB_FOG_RUNTIME` → 最后才是场函数段（该段不是常量，
+## 见 fog_prefix_active()）。"web 上是 LOW 档"沿用本文件既有前提（FOG_PREFIX 的注释），
+## 与运行期 `set_mobile_quality_tier("MOBILE_QUALITY_LOW")` 同值。
+const WEB_FOG_RUNTIME_DEFINE := "#define PK_WEB_FOG_RUNTIME\n"
+const FOG_WEB_PREFIX := FOG_PREFIX + WEB_FOG_RUNTIME_DEFINE
+
+
+## [O23 2026-11-18] 迷雾 web 变体的**完整**前缀 = 静态段 + 场函数段。
+##
+## 场函数段为什么不能写进 `SHADERS` 的 const 字面量：它依赖 boot 自检结论与项目设置
+## （`cell_field_prefix_for_variant` 是函数调用，GDScript 的 const 不允许）。所以迷雾
+## 从"纯常量前缀"改成本文件的第二个"判定口"条目（第一个是 world_map/水面那三组）。
+##
+## 判定口与运行期**同一个**：RendererShaderWater 的 `cell_field_prefix_for_variant`
+## （= 变体准入 ∧ boot 自检结论）＋ `cell_field_setting_enabled()`（= HexRenderer._init
+## 读进 `terrain_cell_field_enabled` 的**同一个键** —— 也就是运行期
+## `_cell_field_active(host)` 的第一个条件）。运行期第二个条件
+## `_cell_field_active(host)` 的 host 开关在 boot 时刻就等于这个设置值，所以"预热 =
+## 运行期"在这里是构造保证（GM 面板热切会重编，那是必然的一次代价，见方案 §4）。
+## ⚠ `budget_variant` / `world_min` 两个形参自 W6 起被忽略（见
+## `cell_field_variant_allowed`），迷雾不是 budget 变体、也不是 world-min，传
+## (true, false) 只是沿用陆地那份调用形状；真正起作用的是开关与 boot 结论。
+static func fog_prefix_active() -> String:
+	return FOG_WEB_PREFIX + RendererShaderWaterScript.cell_field_prefix_for_variant(
+			true, false, RendererShaderWaterScript.cell_field_setting_enabled())
+
 const TIER_PREFIX := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n#define PK_WEB_TEXTURE_BUDGET\n"
 
 ## world_map 专用前缀的**历史默认/kill-switch**常量（= micro 被裁的 NO_MICRO 变体）。
@@ -102,18 +136,61 @@ const WORLD_MAP_PREFIX := HexRenderer.WORLD_MAP_WEB_PREFIX
 static func world_map_prefix_active() -> String:
 	return HexRenderer.web_map_web_prefix_active()
 
+
+## [cell-field-web 2026-11-18] 三组 Web 前缀（world_map / 水面 pass / PC-HIGH 陆地+水面）
+## 的真源在 RendererShaderWater。本文件只**转发**，一个宏字面量都不写：
+## 那里同时管 micro 开关与 PK_CELL_FIELD 的 boot 结论，两处同源才谈得上"逐字节一致"。
+## `HexRenderer` 没有转发这个函数（它只需要常量），所以直接 preload 实现脚本。
+const RendererShaderWaterScript = preload("res://scripts/rendering/renderer_shader_water.gd")
+## boot 自检的入口（方案 §3.5：在主菜单 boot 阶段、warmup 之前跑）。
+## [W6 2026-11-18] 桌面 Compatibility 的第二个调用点：`renderer_scene_services.gd::_ready`
+## （首次构建世界材质之前）。本文件的 run() 对非 web 直接 return，覆盖不到那条路径。
+const CellFieldWebProbeScript = preload("res://scripts/rendering/cell_field_web_probe.gd")
+
+
+static func web_program_prefixes() -> Dictionary:
+	return RendererShaderWaterScript.web_warmup_program_prefixes()
+
+
+## [cell-field-web 2026-11-18] PK_CELL_FIELD（解析格界）在 Web 上的预热不是"另加一条"，
+## 而是**同一个函数多出一段**：
+##   · 变体准入由 `RendererShaderWater.cell_field_variant_allowed()` 管 —— W6 起它恒真
+##     （budget 排除随 W2 的旧三槽退役、world-min 排除随场函数正交一起撤销），所以真正
+##     决定"这一段加不加"的只剩 boot 自检结论与项目设置开关；
+##   · boot 自检结论（`pk_web_cell_field_boot`）在这里生效：fail / skipped 就一段都不加；
+##   · 三组前缀（world_map / world_water_web / PC-HIGH）**统一**由
+##     `RendererShaderWater.web_warmup_program_prefixes()` 给出，本文件不写宏串；
+##   · **载荷宏两侧不同**：world_map 与 PC-HIGH 两片拼 `PK_CELL_FIELD`，水面第二 pass
+##     （world_water_web）拼 `PK_WATER_FIELD_MATCHES_LAND` —— 存在性同源、字节各自为政，
+##     后者顺序是 `MATCHES_LAND + WATER_PASS_PREFIX`（与 `_create_water_quad` 一致）。
+## ⇒ 任何时刻实际预热的只有 boot 判定选中的那一套，绝不新旧同时编（方案 §7 否决）。
+##   两套装的是**同一批 label**（文件名去扩展名），所以 label 不能靠名字区分新旧：
+##   区分靠 `warmup_plan` 里的源码指纹（fp）。运行期 `note_variant()` 报的也是同一个
+##   label，两边 fp 相等才算"预热到了" —— 名字相同而 fp 不同正是要抓的那种错。
+
 ## 全量预热清单。
+## [cell-field-web 2026-11-18 / W6] world_map / world_water_web 两条**刻意不再带
+## `prefix` 字段**：它们的运行期前缀不是一个常量，而是
+## `RendererShaderWater.web_warmup_program_prefixes()` 的返回值（含 micro 开关、boot
+## 自检结论、以及水面那份载荷宏）。曾经放在这里的文档值（`WORLD_MAP_PREFIX`（= NO_MICRO
+## 变体）与 `WATER_PASS_PREFIX`）在 W6 之后与真源**不再是同一个字节串**（默认 web 是
+## MICRO 变体、水面还要加载荷宏），留着只会让读者和断言一起读到一个错的答案。
+## ⇒ 纪律：这两条的 prefix 只有真源一个出处，断言也必须读真源（terrain_shader_variant_test
+## 的 warmup↔runtime 对账就是这么做的），不许在本文件里再写"看起来像"的常量。
 const SHADERS := [
-	{"path": "res://shaders/world_map.gdshader", "prefix": WORLD_MAP_PREFIX},
+	{"path": "res://shaders/world_map.gdshader"},
 	# [web-water-pass] 水面的第二 pass。**必须**跟在 world_map 之后：两片是同一张
 	# 地图的两次绘制，运行期也总是成对出现（hex_renderer._sync_water_quad）。
 	# 少了这一条，那 1.1 s 的编译会落进世界首帧。
-	{"path": "res://shaders/world_water_web.gdshader",
-		"prefix": HexRenderer.WATER_PASS_PREFIX},
+	{"path": "res://shaders/world_water_web.gdshader"},
 	# 迷雾层的前缀与 hex_renderer 不同：它不带 PK_WEB_TEXTURE_BUDGET
 	# （那个宏只由 hex_renderer._apply_shader_variant_prefix 追加）。
-	{"path": "res://shaders/fog_of_war.gdshader",
-		"prefix": FOG_PREFIX + "#define PK_WEB_FOG_RUNTIME\n"},
+	# [O23 2026-11-18] **刻意不再带 `prefix` 字段**：运行期 fog_of_war_layer.gd::
+	# _load_shader() 在 PK_WEB_FOG_RUNTIME 之后还会追加 `#define PK_CELL_FIELD`
+	# （判定口 = RendererShaderWater._cell_field_active），所以它的完整前缀不是常量。
+	# 唯一出处是 `fog_prefix_active()`（真源常量 + 同一个判定口）；这里再留一个"看起来
+	# 像"的常量只会让读者和断言一起读到错的答案（与 world_map / 水面两条同一个纪律）。
+	{"path": "res://shaders/fog_of_war.gdshader"},
 	{"path": "res://shaders/weather_overlay.gdshader",
 		"prefix": "#define PK_WEB_WEATHER_MIN\n" + TIER_PREFIX},
 	{"path": "res://shaders/country_border.gdshader", "prefix": ""},
@@ -256,6 +333,11 @@ static func run(host: Node) -> void:
 	layer.name = "WebShaderWarmup"
 	layer.layer = -128
 	host.add_child(layer)
+	# [cell-field-web 2026-11-18] PK_CELL_FIELD 是**编译期** define，选哪一套变体必须在这里
+	# 定下来（方案 §3.5：主菜单 boot 阶段、预热之前）。关着 / 桌面 / 缓存命中时这一步只是
+	# 几次 meta 读取；只有"首次启动 + Web"才会真的跑一次 32×32 的离屏自检。
+	# 顺序很重要：必须在 _collect_codes() **之前**，否则清单已经按旧结论建好了。
+	await CellFieldWebProbeScript.ensure_decided(host)
 	var codes := _collect_codes()
 	_total_count = codes.size()
 	# 先把"打算编哪几份、每份的源码指纹/前缀"一次性报出去。前缀直接暴露出来：
@@ -330,7 +412,11 @@ static func _collect_codes() -> Array:
 	# [C 2026-11-01] world_map 共享程序的前缀要跟着 micro URL 诊断开关走；运行期
 	# _apply_shader_variant_prefix 用同一个 HexRenderer.web_map_web_prefix_active()，
 	# 两边逐字节一致，A/B 时预热才不会白编。
-	var shared_map_prefix := world_map_prefix_active()
+	# [cell-field-web 2026-11-18] 三组 Web 前缀（world_map / 水面 pass / PC-HIGH 两片）
+	# 一律向 RendererShaderWater 的**同一个函数**取，本文件不拼任何宏：
+	# 那里同时管 micro 开关与 PK_CELL_FIELD 的 boot 结论，「预热 = 运行期」才是构造保证。
+	var web_prefixes := web_program_prefixes()
+	var shared_map_prefix := String(web_prefixes.get("world_map", world_map_prefix_active()))
 	if PROBE_TRIVIAL_FIRST:
 		# 最简 canvas_item：只为吃掉"本进程第一次编译"的一次性成本。
 		out.append({"label": "probe_trivial_first", "code":
@@ -343,16 +429,36 @@ static func _collect_codes() -> Array:
 			continue
 		var entry_prefix := String(entry.get("prefix", ""))
 		if path == "res://shaders/world_map.gdshader":
-			# 共享陆地程序：web 默认 MICRO 变体（A/B 结论），URL micro=off|0|false 回退。
+			# 共享陆地程序：web 默认 MICRO 变体（A/B 结论），URL micro=off|0|false 回退；
+			# [W6] 再加上场函数段（boot 结论 / 项目设置决定加不加）。
 			entry_prefix = shared_map_prefix
+		elif path == "res://shaders/world_water_web.gdshader":
+			# [cell-field-web 2026-11-18 / W3+W6] 水面第二 pass 的前缀同样来自单一真源：
+			# 运行期在 _create_water_quad 里拼的是
+			#   _water_program_prefix(host, "web_min") + WATER_PASS_PREFIX + shader.code
+			# 而真源给出的那一段已经把两者按同一顺序串好了（载荷宏 PK_WATER_FIELD_MATCHES_LAND
+			# 在前、WATER_PASS_PREFIX 在后），所以这里**直接整段取**，不要再拆开拼。
+			entry_prefix = String(web_prefixes.get("world_water_web",
+				HexRenderer.WATER_PASS_PREFIX))
+		elif path == "res://shaders/fog_of_war.gdshader":
+			# [O23 2026-11-18] 迷雾：静态段 + 场函数段（后者按 boot 自检结论 / 项目设置选）。
+			# 见 fog_prefix_active() 的注释：判定口与运行期 _load_shader() 完全同源，
+			# 场函数宏**拼在最后**（PK_WEB_FOG_RUNTIME 之后），与运行期逐字节同序。
+			entry_prefix = fog_prefix_active()
 		var code := entry_prefix + shader.code
 		if String(entry.get("compose", "")) == "building":
 			code = BuildingVisualLayer.compose_shader_code(shader, false)
 		out.append({"label": path.get_file().get_basename(), "code": code})
 	# resource_impostor 的 web 两份程序（surface / geology）：owner 自己给出源码。
 	var pc_world := FileAccess.get_file_as_string("res://shaders/world_map.gdshader")
-	out.append({"label": "world_map_high", "code": HexRenderer.WORLD_MAP_WEB_HIGH_PREFIX + pc_world})
-	out.append({"label": "world_water_high", "code": HexRenderer.WATER_WEB_HIGH_PREFIX + pc_world})
+	# [cell-field-web 2026-11-18] PC-HIGH 两片的前缀也走同一个函数（原先在这里直接拼
+	# HexRenderer 的常量；行为逐字节不变，但 PK_CELL_FIELD 的 boot 结论现在自动生效）。
+	out.append({"label": "world_map_high",
+		"code": String(web_prefixes.get("world_map_high",
+			HexRenderer.WORLD_MAP_WEB_HIGH_PREFIX)) + pc_world})
+	out.append({"label": "world_water_high",
+		"code": String(web_prefixes.get("world_water_high",
+			HexRenderer.WATER_WEB_HIGH_PREFIX)) + pc_world})
 	var res_codes := ResourceVisualLayer.web_warmup_shader_codes()
 	for key in res_codes.keys():
 		out.append({"label": String(key), "code": String(res_codes[key])})

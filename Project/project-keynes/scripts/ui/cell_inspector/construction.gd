@@ -935,6 +935,20 @@ func _construction_tooltip(host, entry: Dictionary, item: Dictionary, materials:
 		host._construction_input_recipe_rows(placement, unlocked_goods))
 	if not inputs.is_empty():
 		lines.append("投入：%s" % inputs)
+	var resource_ids: PackedStringArray = placement.get("resource_ids", PackedStringArray())
+	var resource_quantities: PackedInt64Array = placement.get(
+		"resource_quantities", PackedInt64Array())
+	var resource_modes: PackedInt32Array = placement.get("resource_modes", PackedInt32Array())
+	var resources := PackedStringArray()
+	for index in range(mini(resource_ids.size(), mini(resource_quantities.size(),
+			resource_modes.size()))):
+		var resource_name: String = h._resource_display_name(resource_ids[index])
+		var quantity: String = h._goods_scaled(resource_quantities[index])
+		# 承载需求是每栋的储量门槛，开采量才是每日消耗。
+		resources.append("%s 需有 %s" % [resource_name, quantity] if resource_modes[index] == 1
+			else "%s %s/日" % [resource_name, quantity])
+	if not resources.is_empty():
+		lines.append("自然资源：%s" % "、".join(resources))
 	var outputs = host._construction_recipe_side(
 		h._construction_recipe_rows(placement, "output_good_ids",
 			"output_quantities", "产出"))

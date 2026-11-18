@@ -4,6 +4,7 @@
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
 #include "bake_dem_landform.h"
+#include "bake_erosion_spl.h"      // SPL 汇流侵蚀核（纯函数 header-only，契约见 terrain-erosion-spl-contracts.md §2）
 #include "bake_terrain_relief.h"
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
@@ -786,6 +787,601 @@ godot::Dictionary DCWorldExt::run_bake_erosion_pass(godot::Dictionary knobs) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// 侵蚀模式接线（terrain-erosion-spl，2026-11-18）
+// 规格：docs/plans/terrain-erosion-spl-contracts.md §3（模式语义已裁决，见 §3.1 与本文件下文）
+//       docs/plans/terrain-erosion-spl-plan.md §4.1（总体流程）/§4.7（Web 计算栅格）/§4.11（输出契约）
+//
+// 模式语义（**已裁决**，contracts §3.1 + checklist §A1）：
+//   carve     = 现状全序：汇流刻谷 + droplet 液滴。height_buffer 必须与改动前**逐位相同**
+//               （P0 的 hash 门禁靠它守住一键回退），因此 droplet 在 carve 下照旧执行。
+//   spl       = 只跑 SPL 管线（建树 → 隐式下切 → [沉积/谷底展宽] → 限坡），不跑 carve、不跑 droplet。
+//   spl+carve = SPL 管线 + 浅刻谷（carve 深度 × dem_spl_carve_scale），不跑 droplet。
+//   droplet   = 仅 droplet（历史对照，供 A/B 复现旧视觉）。
+// C++ 缺省恒 "carve"：Project/perf-validation 加载同一 DLL 但不传该 knob → 行为逐位不变（计划 §12 Q5）。
+//
+// 单位约定：除 dem_erosion_max_dim（像素）与各 ms 外，全部长度/面积参数以 hex 为单位（计划 §4.2），
+//   迭代次数只按分辨率分档，禁止按耗时自适应（计划 §3.2-6 确定性）。
+// 不变量（计划 §3.2）：h ≤ h_pre、陆地 ≥ sea_level + 5e-4、水体/河心像素逐位不变、deposited ≤ eroded。
+//   [S7-T7 2026-11-18] G2 注入开启（dem_spl_inject_cell_area=true，**非缺省**）时第三条收窄为
+//   「**真水体**逐位不变」：河心像素从汇流出口改为「带外部汇水的普通陆地像素」，因此会被
+//   SPL 下切 / 限坡改动（这正是 G2 的目的）；关闭该 knob 时一切回到改动前（含河心并入 wet）。
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// 侵蚀 knobs 解析结果（融合 pass 与 run_bake_erosion_spl_pass 共用一份实现，不复制参数表）。
+struct ErosionKnobs {
+    String mode = String("carve");   // C++ 缺省恒 carve（计划 §4.8 / §12 Q5）
+    pk_erosion::SplParams sp;        // dem_spl_*
+    pk_erosion::DepParams dep;       // dem_dep_* / dem_floor_*
+    pk_erosion::LimParams lim;       // dem_slope_limit_* / dem_crest_round
+    int max_dim = 1024;              // 计算栅格长边上限（像素）；<=0 → 不下采样
+    double carve_scale = 0.40;       // 仅 spl+carve：浅刻谷深度系数
+    bool pit_audit = false;          // 诊断：额外算 pits_out（默认关，不改变高度）
+    bool area_dump = false;          // 诊断：额外导出像素层 A_hex（默认关，不改变高度）
+    // ── [S7-T7 2026-11-18] G2/G3（计划 §10.4 / §10.5）────────────────────────────
+    // dem_spl_inject_cell_area（bool，**缺省 false**，见 T7 验收结论）：开启后 cell 层河流汇水注入像素 SPL，
+    //   河心像素不再是汇流出口。**false ⇒ 与改动前逐位一致**（注入代码路径整体不进入）。
+    // dem_river_incise_base / dem_river_incise_flow（缺省 0.020 / 0.035）：河道 SDF 下切
+    //   incise = base + flow · river_flow(cell)（river_flow=1 时 = 改动前的常量 0.045）。
+    bool spl_inject_cell_area = true;
+    double river_incise_base = 0.020;
+    double river_incise_flow = 0.035;
+};
+
+// ── 侵蚀 knobs 解析：缺省值 = 计划 §4.10 的「C++ 缺省」列，与 DEM_DEFAULTS 原值一致 ──
+ErosionKnobs pk_parse_erosion_knobs(const Dictionary &knobs) {
+    ErosionKnobs ek;
+    ek.mode = String(knobs.get("dem_erosion_mode", String("carve")));   // 缺省恒 carve
+    ek.max_dim = int(knobs.get("dem_erosion_max_dim", 1024));
+    // SPL 下切（计划 §4.4）
+    ek.sp.iters = int(knobs.get("dem_spl_iters", 6));
+    // [P2 标定 2026-11-18] dem_spl_k 缺省 = 0.50，必须与 GDScript DEM_DEFAULTS 同值：
+    // 生产恒由 dem_landform_knobs() 显式传入，这里只是「谁漏传」时的兜底，两处不同值会变成隐形陷阱。
+    // 标定依据见 terrain_index_baker.gd::DEM_DEFAULTS 与 docs/plans/terrain-erosion-spl-checklist.md §A4。
+    ek.sp.k_total = double(knobs.get("dem_spl_k", 0.50));
+    ek.sp.m = double(knobs.get("dem_spl_m", 0.45));
+    ek.sp.min_area_hex = double(knobs.get("dem_spl_min_area_hex", 0.03));
+    // 限坡（计划 §4.5；默认与 carve 的谷壁坡度对齐，锐度≈现状）
+    ek.lim.per_relief = double(knobs.get("dem_slope_limit_per_relief", 5.0));
+    ek.lim.relief_floor = double(knobs.get("dem_slope_limit_relief_floor", 0.04));
+    ek.lim.cap_per_relief = double(knobs.get("dem_slope_limit_cap_per_relief", 1.4));
+    ek.lim.crest_round = double(knobs.get("dem_crest_round", 0.0));
+    // 输运沉积（P3a）+ 谷底展宽（P3b），计划 §4.6，默认关
+    ek.dep.enabled = bool(knobs.get("dem_dep_enabled", false));
+    ek.dep.kc = double(knobs.get("dem_dep_kc", 0.02));
+    ek.dep.rate = double(knobs.get("dem_dep_rate", 0.5));
+    ek.dep.min_area_hex = double(knobs.get("dem_dep_min_area_hex", 0.5));
+    ek.dep.floor_widen = bool(knobs.get("dem_floor_widen", false));
+    ek.dep.floor_width_hex = double(knobs.get("dem_floor_width_hex", 0.04));
+    ek.dep.floor_slope = double(knobs.get("dem_floor_slope", 0.002));
+    ek.dep.floor_min_area_hex = double(knobs.get("dem_floor_min_area_hex", 2.0));
+    // 仅 spl+carve
+    ek.carve_scale = double(knobs.get("dem_spl_carve_scale", 0.40));
+    // 测试/诊断：让合并管线额外算 pits_out
+    ek.pit_audit = bool(knobs.get("dem_erosion_pit_audit", false));
+    // [S2/S4.4 诊断 2026-11-18] 导出像素层汇水面积 A_hex（单位 hex²），供
+    //   X2「河心是否走在像素汇流主干上」与 §5.4「dem_spl_k 为什么需要 17 倍」的量级核算。
+    //   纯诊断：只在传此键时分配并返回，不参与任何计算、不改变高度输出。
+    ek.area_dump = bool(knobs.get("dem_erosion_area_dump", false));
+    // [S7-T7 2026-11-18] G2/G3 knob（计划 §10.4/§10.5，缺省值与 §10 的文字规格一致）：
+    //   dem_spl_inject_cell_area 缺省 false；不开启时注入代码路径整体不进入（逐位回退到改动前）。
+    //   dem_river_incise_base/flow 只在注入生效时才被使用（见融合 pass 的 G3 分支）。
+    // [S7-T7 2026-11-18] **默认关**：机制已实现并验证「关闭时逐位一致」，但验收未通过——
+    // 开启后 A12 的相对门禁 �� FAIL（X1(spl) 0.767→0.746、0.781→0.764，Δ −0.014 < −0.01）。
+    // 按计划 §2.3 应先走 E1–E3 排查再决定是否设为 true；在未验收前不改变默认行为。
+    ek.spl_inject_cell_area = bool(knobs.get("dem_spl_inject_cell_area", false));
+    ek.river_incise_base = double(knobs.get("dem_river_incise_base", 0.020));
+    ek.river_incise_flow = double(knobs.get("dem_river_incise_flow", 0.035));
+    return ek;
+}
+
+// SPL 管线报告（contracts §3.2）。ms 全部 -1 = 该步未执行；factor/w_lo/h_lo 描述**实际**计算栅格。
+struct SplPipelineReport {
+    bool ok = false;
+    const char *reason = "";
+    int factor = 1;
+    int w_lo = 0;
+    int h_lo = 0;
+    double flow_ms = -1.0;      // 建树（填洼 + 最陡受体 + 汇水面积）+ 系数预计算
+    double spl_ms = -1.0;       // SPL 隐式下切
+    double dep_ms = -1.0;       // 输运沉积（含谷底展宽）；未开 = -1
+    double limit_ms = -1.0;     // 限坡倒角扫描
+    double carve_ms = -1.0;     // 由调用方回填（spl+carve 的浅刻谷）
+    double upsample_ms = -1.0;  // 缩放/搬运段：紧凑化 + 下采样 + delta 取非负 + 双线性放大 + 写回基线
+                                // （**不含**任何核函数耗时）；factor==1 且无别名列 = -1
+    pk_erosion::Stats stats{};
+};
+
+// ── 一份实现两处调用：融合 pass（run_bake_geometry_fields_pass 的 spl* 分支）与
+//    run_bake_erosion_spl_pass 都走这里，算法/顺序/不变量只有一处。
+//
+// H：入口高度（就地改写成最终高度）；relief/wet：同尺寸基线栅格（w×h）。
+// wrap_cols：0 = 不环绕；>2 且 < w 时前 wrap_cols 列是一个经线周期、其后列是 x-wrap_cols 的别名
+//   （与 pk_dem::carve_drainage_valleys 同一约定：只读前 wrap_cols 列，写回时别名列按 delta 复制）。
+// hex_px_hi：基线栅格上「一个 hex 跨度」的像素数；max_dim<=0 → 不下采样。
+// pit_audit / fill_out 是契约 §3.2 签名之外的**可选尾参**（都有缺省值，不影响契约调用形态）：
+//   pit_audit = dem_erosion_pit_audit（contracts §4.1）要求合并管线能算 pits_out；
+//   fill_out  = 融合 pass 的 spl+carve 复用同一份填洼（checklist §A2），factor>1 跨网格不复用。
+// [S7-T7 2026-11-18] G2 注入四参（计划 §10.4；缺省 = 不注入，行为与改动前逐位一致）：
+//   inject_hi / cell_id_hi 是**基线（hi）栅格**逐像素数组（与 H/relief/wet 同尺寸 w×h），
+//   cell_downstream 是 by cell.index 的声明下游（长度 n_cells，-1 = 无）。
+//   四个都传齐才在计算栅格上装配 Grid.inject_area / Grid.cell_id（下采样见步骤 3b），
+//   否则 Grid 三个新指针保持 nullptr，build_flow 整段走旧实现。诊断入口
+//   run_bake_erosion_spl_pass 没有 cell 拓扑，恒传 nullptr（退化为旧语义）。
+// 返回时全部中间 buffer 已在函数内释放（契约 §4.12：峰值 ~20 MB @620k px，进入 tile 烘焙前归零）。
+static SplPipelineReport pk_run_erosion_spl_pipeline(
+        float *H, const float *relief, const uint8_t *wet, int w, int h, int wrap_cols,
+        double hex_px_hi, double sea_level, int max_dim,
+        const pk_erosion::SplParams &sp, const pk_erosion::DepParams &dp,
+        const pk_erosion::LimParams &lp,
+        const float *inject_hi = nullptr, const int32_t *cell_id_hi = nullptr,
+        const int32_t *cell_downstream = nullptr, int32_t n_cells = 0,
+        bool pit_audit = false, pk_dem::FillResult *fill_out = nullptr,
+        PackedFloat32Array *area_out = nullptr) {
+    SplPipelineReport rep;
+    if (H == nullptr || relief == nullptr || wet == nullptr || w <= 2 || h <= 2) {
+        rep.reason = "invalid grid";
+        return rep;
+    }
+    if (fill_out != nullptr) {
+        fill_out->z.clear();
+        fill_out->order.clear();
+        fill_out->pits = 0;
+    }
+
+    // 经线周期：与 carve 同一约定（前 hi_w 列是周期本体，[hi_w, w) 是别名列）。
+    const bool periodic = (wrap_cols > 2 && wrap_cols <= w);
+    const int hi_w = periodic ? wrap_cols : w;
+    const bool alias_cols = (hi_w < w);
+
+    // 1. 计算栅格因子：长边超过 max_dim 时按整数因子盒式下采样（计划 §4.7）。
+    //    长边取**周期列数 hi_w**（而不是含别名列的光栅宽 w）：别名列是周期本体的重复数据，
+    //    不参与计算，把它们算进长边会让 Web high 多做一次没必要的 2× 下采样。
+    int factor = 1;
+    if (max_dim > 0) {
+        const int long_dim = std::max(hi_w, h);
+        if (long_dim > max_dim) factor = (long_dim + max_dim - 1) / max_dim;
+    }
+    // 下采样后不足 3 列/行就建不出流向树：退回不下采样（宁可多花内存，也不要退化栅格）。
+    while (factor > 1 && (hi_w / factor <= 2 || h / factor <= 2)) --factor;
+    const int gw = hi_w / factor;
+    const int gh = h / factor;
+    // 注：periodic 且 hi_w 不能被 factor 整除时，周期尾部剩下的 r = hi_w - gw*factor 列在 lo 栅格上
+    // 没有独立列表示（downsample 只覆盖 floor 列）；放大时它们按 u 取模落到周期头部，即接缝处
+    // 至多 f-1 列继承左侧列的 delta。只影响 Web high（factor>1）这一档，且包体本身是周期重复列，
+    // 视觉上不可见；真要严格，就把 wrap_cols 选成 factor 的整数倍。
+    rep.factor = factor;
+    rep.w_lo = gw;
+    rep.h_lo = gh;
+    const size_t n_lo = size_t(gw) * size_t(gh);
+
+    // 2. 入口面：有别名列时先紧凑成 hi_w×h（只取周期本体，与 carve 的 z/rel/wet 装配同一约定）。
+    //    [计时] upsample_ms 第 1 段 = 紧凑化(wrap 别名列搬运) + 盒式下采样 + 建 Grid + 拷 h_pre。
+    //    核函数（build_flow/precompute_coeff/spl_incise/deposit/slope_limit）**绝不**计入这个键：
+    //    计划 §4.11 把它定义为「计算栅格下采样 + delta 取非负 + 双线性放大 + 写回基线」这一段的分项耗时。
+    const auto t_scale0 = std::chrono::high_resolution_clock::now();
+    std::vector<float> h_cmp, rel_cmp;
+    std::vector<uint8_t> wet_cmp;
+    float *h_hi = H;
+    const float *rel_hi = relief;
+    const uint8_t *wet_hi = wet;
+    if (alias_cols) {
+        h_cmp.resize(size_t(hi_w) * size_t(h));
+        rel_cmp.resize(size_t(hi_w) * size_t(h));
+        wet_cmp.resize(size_t(hi_w) * size_t(h));
+        for (int y = 0; y < h; ++y) {
+            const size_t s = size_t(y) * size_t(w);
+            const size_t d = size_t(y) * size_t(hi_w);
+            for (int x = 0; x < hi_w; ++x) {
+                h_cmp[d + size_t(x)] = H[s + size_t(x)];
+                rel_cmp[d + size_t(x)] = relief[s + size_t(x)];
+                wet_cmp[d + size_t(x)] = wet[s + size_t(x)];
+            }
+        }
+        h_hi = h_cmp.data();
+        rel_hi = rel_cmp.data();
+        wet_hi = wet_cmp.data();
+    }
+
+    // 3. 工作面（计算栅格）：factor==1 时直接复用入口面（就地改写，零拷贝），否则盒式下采样。
+    std::vector<float> h_lo, rel_lo;
+    std::vector<uint8_t> wet_lo;
+    if (factor > 1) {
+        h_lo.resize(n_lo);
+        rel_lo.resize(n_lo);
+        wet_lo.resize(n_lo);
+        pk_erosion::downsample_box_f32(h_hi, hi_w, h, factor, h_lo.data());
+        pk_erosion::downsample_box_f32(rel_hi, hi_w, h, factor, rel_lo.data());
+        pk_erosion::downsample_box_u8(wet_hi, hi_w, h, factor, wet_lo.data());
+    }
+
+    pk_erosion::Grid g;
+    g.w = gw;
+    g.h = gh;
+    g.wrap_cols = periodic ? gw : 0;   // 计算栅格整幅即一个经线周期
+    g.sea_level = sea_level;
+    g.sea_eps = 5e-4;                  // 与 carve 的下海截断同值（bake_dem_landform.h 写回段）
+    g.hex_px = (hex_px_hi > 1e-9 ? hex_px_hi : 1.0) / double(factor);
+    g.H = (factor > 1) ? h_lo.data() : h_hi;
+    g.relief = (factor > 1) ? rel_lo.data() : rel_hi;
+    g.wet = (factor > 1) ? wet_lo.data() : wet_hi;
+
+    // 入口快照：H_pre 全程只读（下切下限 / delta / 沉积上限）。factor==1 时就地改写 H，故先拷一份。
+    std::vector<float> h_pre(n_lo);
+    std::memcpy(h_pre.data(), g.H, n_lo * sizeof(float));
+    g.H_pre = h_pre.data();
+
+    // 3b. [S7-T7 2026-11-18] G2 注入场：基线(hi)栅格 → 计算栅格。与 h/relief/wet 同一套「先紧凑化
+    //     （wrap 别名列）、再盒式下采样」。三条指针齐备才装配 Grid 的注入字段；否则三个新指针一律保持
+    //     nullptr，build_flow 的两处注入分支整体不进入 ⇒ dem_spl_inject_cell_area=false 时逐位一致。
+    const bool inject_on = (inject_hi != nullptr && cell_id_hi != nullptr
+            && cell_downstream != nullptr && n_cells > 0);
+    std::vector<float> inject_lo;
+    std::vector<int32_t> cell_lo;
+    if (inject_on) {
+        const float *inject_cmp = inject_hi;
+        const int32_t *cell_cmp = cell_id_hi;
+        std::vector<float> inject_cmp_buf;
+        std::vector<int32_t> cell_cmp_buf;
+        if (alias_cols) {
+            inject_cmp_buf.resize(size_t(hi_w) * size_t(h));
+            cell_cmp_buf.resize(size_t(hi_w) * size_t(h));
+            for (int y = 0; y < h; ++y) {
+                const size_t s = size_t(y) * size_t(w);
+                const size_t d = size_t(y) * size_t(hi_w);
+                for (int x = 0; x < hi_w; ++x) {
+                    inject_cmp_buf[d + size_t(x)] = inject_hi[s + size_t(x)];
+                    cell_cmp_buf[d + size_t(x)] = cell_id_hi[s + size_t(x)];
+                }
+            }
+            inject_cmp = inject_cmp_buf.data();
+            cell_cmp = cell_cmp_buf.data();
+        }
+        inject_lo.resize(n_lo);
+        pk_erosion::downsample_box_f32(inject_cmp, hi_w, h, factor, inject_lo.data());
+        if (factor > 1) {
+            // 面积是广延量：downsample_box_f32 给的是块内**均值**，乘 f² 还原成块内**和**
+            // （一个 lo 像素覆盖 f² 个 hi 像素，两者的 base area 也正好差 f²，量纲自洽）。
+            const float area_scale = float(double(factor) * double(factor));
+            for (size_t i = 0; i < n_lo; ++i) inject_lo[i] *= area_scale;
+        }
+        // 所属格：取块中心像素的 p2c（只是受体偏好的标签；块心必落在同一格内，确定性）。
+        cell_lo.resize(n_lo);
+        const int half = factor / 2;
+        for (int ly = 0; ly < gh; ++ly) {
+            const int sy = std::min(h - 1, ly * factor + half);
+            const size_t srow = size_t(sy) * size_t(hi_w);
+            const size_t drow = size_t(ly) * size_t(gw);
+            for (int lx = 0; lx < gw; ++lx) {
+                const int sx = std::min(hi_w - 1, lx * factor + half);
+                cell_lo[drow + size_t(lx)] = cell_cmp[srow + size_t(sx)];
+            }
+        }
+        g.inject_area = inject_lo.data();
+        g.cell_id = cell_lo.data();
+        g.cell_downstream = cell_downstream;
+        g.n_cells = n_cells;
+    }
+
+    // [计时] upsample_ms 第 1 段收尾（紧凑化 / 下采样 / 建 Grid / 拷 h_pre）。factor==1 且无别名列时
+    //    这一段没做任何缩放搬运，upsample_ms 保持 -1（契约：未执行项 = -1）。
+    //    第 2 段（delta + 放大 + 写回）在步骤 8 单独计时，两段之和才是 upsample_ms，
+    //    保证核函数耗时不会再混进这个键（此前 185.6ms 的误报就是混算所致）。
+    const bool scaled = (factor > 1 || alias_cols);
+    const double scale_ms = scaled
+            ? std::chrono::duration<double, std::milli>(
+                    std::chrono::high_resolution_clock::now() - t_scale0).count()
+            : 0.0;
+
+    // 4. 建树 + 系数（pow 每像素只算一次），随后按 order 串行下切（确定性：无并行、无 RNG）。
+    pk_erosion::Flow flow;
+    pk_erosion::Stats st{};
+    const auto t_flow0 = std::chrono::high_resolution_clock::now();
+    // build_flow 的第三参（可选）：填洼时顺带把入口闭合洼地数写进 st.pits_in，零额外扫描。
+    pk_erosion::build_flow(g, flow, &st);
+    std::vector<float> coeff;
+    pk_erosion::precompute_coeff(g, flow, sp, coeff);
+    if (area_out != nullptr) {
+        // [S2/S4.4 诊断] 把计算栅格的 area_hex 映射回基线栅格（最近邻；别名列回绕到周期本体）。
+        // factor==1 时等价于直拷（lo 栅格就是 hi_w×h），factor>1 时按整数因子取上游格。
+        // 语义：汇水面积，单位 hex²（单像素初值 1/hex_px²）。纯诊断，不影响下切。
+        const int hw = hi_w;
+        area_out->resize(w * h);
+        float * const AO = area_out->ptrw();
+        for (int y = 0; y < h; ++y) {
+            const int ly = std::min(gh - 1, y / factor);
+            const size_t lrow = size_t(ly) * size_t(gw);
+            const size_t hrow = size_t(y) * size_t(w);
+            for (int x = 0; x < w; ++x) {
+                const int lx = std::min(gw - 1, (x % hw) / factor);
+                AO[hrow + size_t(x)] = flow.area_hex[lrow + size_t(lx)];
+            }
+        }
+    }
+    rep.flow_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_flow0).count();
+
+    const auto t_spl0 = std::chrono::high_resolution_clock::now();
+    pk_erosion::spl_incise(g, flow, coeff, sp, st);
+    rep.spl_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_spl0).count();
+
+    // 5. 输运沉积（P3a）+ 谷底展宽（P3b）：同一棵流向树，只把 SPL 削掉的部分填回，上限 h_pre。
+    //    顺序固定 deposit → floor_widen → slope_limit（floor_widen 拿 deposit 之后的 H 当槽底，
+    //    限坡再削出谷壁）；两个开关彼此独立（dp.enabled=false + dp.floor_widen=true 合法）。
+    if (dp.enabled || dp.floor_widen) {
+        const auto t_dep0 = std::chrono::high_resolution_clock::now();
+        if (dp.enabled) pk_erosion::deposit(g, flow, dp, sp, st);
+        if (dp.floor_widen) pk_erosion::floor_widen(g, flow, dp, st);
+        rep.dep_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - t_dep0).count();
+    }
+
+    // 6. 限坡（必须在下切/沉积/展宽之后：它决定谷宽与截面形状，计划 §4.5；
+    //    dem_crest_round 由 slope_limit 内部在限坡前处理，不在这里重复调用）。
+    const auto t_lim0 = std::chrono::high_resolution_clock::now();
+    pk_erosion::slope_limit(g, lp, st);
+    rep.limit_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_lim0).count();
+
+    // pits_out：填洼复核（诊断）。只在开了沉积或显式 audit 时算，否则保持 -1（契约 §3.2-5）。
+    if (dp.enabled || pit_audit) {
+        st.pits_out = pk_erosion::count_pits(g);
+    }
+
+    // 7. spl+carve 的填洼复用（checklist §A2）：只有 factor==1 时计算栅格与 carve 栅格同几何。
+    if (fill_out != nullptr && factor == 1 && flow.z_fill.size() == n_lo) {
+        fill_out->z.resize(n_lo);
+        for (size_t i = 0; i < n_lo; ++i) fill_out->z[i] = double(flow.z_fill[i]);
+        fill_out->order = flow.order;
+        fill_out->pits = (st.pits_in >= 0) ? st.pits_in : 0;
+    }
+
+    // 8. 写回基线栅格：delta = max(0, h_pre - h) 搬回去 —— 只降、水体不动、陆地不下海。
+    //    factor==1 且无别名列时 SPL 已就地改写 H，这一步跳过（upsample_ms 保持 -1）。
+    //    [计时] upsample_ms 第 2 段 = delta 取非负 + 双线性放大 + 逐像素写回（只含这一段，不含核函数）。
+    const auto t_wb0 = std::chrono::high_resolution_clock::now();
+    if (factor > 1) {
+        std::vector<float> delta_lo(n_lo);
+        for (size_t i = 0; i < n_lo; ++i) {
+            const float d = g.H_pre[i] - g.H[i];
+            delta_lo[i] = (d > 0.0f) ? d : 0.0f;
+        }
+        // 双线性放大（wrap 感知）：hi 宽 = w，别名列由 upsample 的 u 取模自然复制。
+        std::vector<float> delta_hi(size_t(w) * size_t(h));
+        pk_erosion::upsample_box_f32(delta_lo.data(), gw, gh, factor, delta_hi.data(), w, h);
+        if (!periodic) {
+            // 无经线环绕时，放大语义要求 u 取模 wrap；但地图左右边缘应夹紧而不是跨图插值，
+            // 否则首末列会出现一条假接缝。这里按同一双线性公式只修越界的边缘列。
+            for (int y = 0; y < h; ++y) {
+                const size_t drow = size_t(y) * size_t(w);
+                const size_t srow = size_t(y) * size_t(gw);
+                for (int x = 0; x < w; ++x) {
+                    const double u = (double(x) + 0.5) / double(factor) - 0.5;
+                    if (u >= 0.0 && u <= double(gw - 1)) continue;
+                    const double uc = (u < 0.0) ? 0.0 : double(gw - 1);
+                    const int i0 = int(std::floor(uc));
+                    const int i1 = std::min(gw - 1, i0 + 1);
+                    const double t = uc - double(i0);
+                    delta_hi[drow + size_t(x)] = float(
+                            (1.0 - t) * double(delta_lo[srow + size_t(i0)])
+                            + t * double(delta_lo[srow + size_t(i1)]));
+                }
+            }
+        }
+        const double sea_floor = sea_level + 5e-4;
+        for (int y = 0; y < h; ++y) {
+            const size_t row = size_t(y) * size_t(w);
+            for (int x = 0; x < w; ++x) {
+                const size_t i = row + size_t(x);
+                if (wet[i]) continue;                       // 水体 / 河心像素：逐位不变
+                const double h0 = double(H[i]);             // 入口高度（H 此刻尚未被改写）
+                double hn = h0 - double(delta_hi[i]);
+                if (h0 > sea_level && hn < sea_floor) hn = sea_floor;
+                if (hn > h0) hn = h0;                       // 只降
+                H[i] = float(hn);
+            }
+        }
+    } else if (alias_cols) {
+        const double sea_floor = sea_level + 5e-4;
+        for (int y = 0; y < h; ++y) {
+            const size_t srow = size_t(y) * size_t(w);
+            const size_t drow = size_t(y) * size_t(hi_w);
+            for (int x = 0; x < w; ++x) {
+                const size_t i = srow + size_t(x);
+                if (wet[i]) continue;
+                const size_t j = drow + size_t(x % hi_w);   // 别名列取周期本体的 delta
+                const float d0 = g.H_pre[j] - g.H[j];
+                const double h0 = double(H[i]);
+                double hn = h0 - double(d0 > 0.0f ? d0 : 0.0f);
+                if (h0 > sea_level && hn < sea_floor) hn = sea_floor;
+                if (hn > h0) hn = h0;
+                H[i] = float(hn);
+            }
+        }
+    }
+    if (scaled) {
+        // upsample_ms = 第 1 段（紧凑化/下采样/建 Grid/拷 h_pre）+ 第 2 段（delta/放大/写回）。
+        // 两段之间隔着全部核函数，故不再相减整段——否则会把 flow/spl/limit 误算进来（task-8）。
+        rep.upsample_ms = scale_ms + std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - t_wb0).count();
+    }
+
+    rep.stats = st;
+    rep.ok = true;
+    rep.reason = "";
+    return rep;
+}
+
+} // namespace
+
+// run_bake_erosion_spl_pass — SPL 汇流侵蚀管线的 buffer-encoder 入口（测试 / A-B probe 用）。
+// 生产路径走融合 pass（run_bake_geometry_fields_pass）的 spl / spl+carve 分支，两者共用同一份
+// pk_run_erosion_spl_pipeline（不复制算法）。范式同 run_bake_erosion_pass：坐标/尺寸在循环外解析、
+// 裸指针、fallback 初始 true 成功才置 false、失败**不** push_error（测试与融合 pass 都靠它判据）。
+// 入参 knobs：width/height；height_buffer(F32，入口高度)/relief_buffer(F32，局地起伏)/
+//   wet_buffer(U8，1 = 水体或河心像素 → 汇流出口)；sea_level；hex_px（缺省由 size_x + hex_size 推）；
+//   wrap_cols（0 = 不环绕，>2 时前 wrap_cols 列为经线周期）+ 全部 dem_* knob。
+//   dem_erosion_mode 只按 spl / spl+carve 解释（carve / droplet 由融合 pass 负责）。
+// 出参：fallback/path/height_out(F32)/width/height/erosion_mode/erosion_grid_w/h/factor +
+//   flow_ms/spl_ms/dep_ms/limit_ms/carve_ms/upsample_ms/fill_ms/mfd_ms/wall_ms +
+//   spl_iters_effective/spl_p99_drop/spl_max_drop/eroded_vol/deposited_vol/
+//   spl_sea_clamped/spl_nan/pits_in/pits_out + elapsed_ms/reason（契约 §3.3/§3.4，未执行项 -1）。
+godot::Dictionary DCWorldExt::run_bake_erosion_spl_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdscript");
+    out["elapsed_ms"] = -1.0;
+    // 契约 §3.4：report keys 只增不改。先把全部分项/统计键按「未执行 = -1」填好，成功再逐项覆盖，
+    // 失败分支因此也回一套完整键（测试可直接断言「某项未执行」）。
+    out["erosion_mode"] = String("spl");
+    out["erosion_grid_w"] = -1;
+    out["erosion_grid_h"] = -1;
+    out["erosion_grid_factor"] = -1;
+    out["flow_ms"] = -1.0;
+    out["spl_ms"] = -1.0;
+    out["dep_ms"] = -1.0;
+    out["limit_ms"] = -1.0;
+    out["carve_ms"] = -1.0;
+    out["upsample_ms"] = -1.0;
+    out["fill_ms"] = -1.0;
+    out["mfd_ms"] = -1.0;
+    out["wall_ms"] = -1.0;
+    out["spl_iters_effective"] = -1;
+    out["spl_p99_drop"] = -1.0;
+    out["spl_max_drop"] = -1.0;
+    out["eroded_vol"] = -1.0;
+    out["deposited_vol"] = -1.0;
+    out["spl_sea_clamped"] = -1;
+    out["spl_nan"] = -1;
+    out["pits_in"] = -1;
+    out["pits_out"] = -1;
+
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int w = int(knobs.get("width", knobs.get("w", 0)));
+    const int h = int(knobs.get("height", knobs.get("h", 0)));
+    const int n = w * h;
+    if (w <= 2 || h <= 2 || n <= 0) return fail("invalid size");
+    out["width"] = w;
+    out["height"] = h;
+
+    PackedFloat32Array src = knobs.get("height_buffer", PackedFloat32Array());
+    if (src.size() < n) return fail("height buffer too small");
+    PackedFloat32Array relief = knobs.get("relief_buffer", PackedFloat32Array());
+    if (relief.size() < n) return fail("relief buffer too small");
+    PackedByteArray wet = knobs.get("wet_buffer", PackedByteArray());
+    if (wet.size() < n) return fail("wet buffer too small");
+
+    // 侵蚀 knobs（与融合 pass 共用同一份解析实现）
+    const ErosionKnobs ek = pk_parse_erosion_knobs(knobs);
+    // 本 pass 只解释 SPL 两档模式（carve / droplet 交给融合 pass）：缺省按 spl，spl+carve 保留。
+    // 注：godot::String 只重载了 operator==(const char*)，这里一律用 == 判断。
+    String mode = String("spl");
+    if (ek.mode == "spl+carve") mode = String("spl+carve");
+    out["erosion_mode"] = mode;
+
+    const double sea_level = double(knobs.get("sea_level", 0.64));
+    const int wrap_cols = int(knobs.get("wrap_cols", 0));
+    double hex_px = double(knobs.get("hex_px", 0.0));
+    if (hex_px <= 1e-9) {
+        // 缺省由世界尺寸反推：与 carve / 融合 pass 的 dp.hex_px 同一算式（hex_size·√3 / 像素步长）。
+        const double size_x = double(knobs.get("size_x", 0.0));
+        const double step_x = (size_x > 1e-9) ? size_x / double(w) : 0.0;
+        const double hex_size = double(knobs.get("hex_size", 1.0));
+        hex_px = (step_x > 1e-9) ? hex_size * 1.7320508075688772 / step_x : 1.0;
+    }
+
+    PackedFloat32Array height_out = src;
+    height_out.resize(n);
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    pk_dem::CarveStats carve_stats;   // spl+carve 时回填（未跑时全 -1）
+    PackedFloat32Array area_diag;     // [S2/S4.4 诊断] 仅 dem_erosion_area_dump=1 时填充
+    // [S7-T7 2026-11-18] G2 注入四参恒传 nullptr/0：本诊断 pass 的输入只有「已合成的 wet_buffer」，
+    //   没有 cell 拓扑（p2c / _gen_river_downstream），无法做 cell 级汇水注入 ⇒ 显式退化为旧语义
+    //   （plan §10.4 的「数组缺失 → 退化」）。生产路径的注入只在融合 pass 里生效。
+    SplPipelineReport rep = pk_run_erosion_spl_pipeline(
+            height_out.ptrw(), relief.ptr(), wet.ptr(), w, h, wrap_cols,
+            hex_px, sea_level, ek.max_dim, ek.sp, ek.dep, ek.lim,
+            nullptr, nullptr, nullptr, 0,
+            ek.pit_audit, nullptr,
+            ek.area_dump ? &area_diag : nullptr);
+
+    // spl+carve：叠浅刻谷（深度 × dem_spl_carve_scale）。诊断 pass 不复用填洼（factor>1 也无法复用；
+    // 复用路径在融合 pass 里通过 fill_out 拿到）。
+    if (rep.ok && mode == "spl+carve") {
+        const double carve_depth = double(knobs.get("dem_valley_depth_per_relief", 1.4)) * ek.carve_scale;
+        if (carve_depth > 0.0) {
+            pk_dem::DrainageParams cdp;
+            cdp.width = w;
+            cdp.height = h;
+            cdp.wrap_cols = wrap_cols;
+            cdp.sea_level = sea_level;
+            cdp.hex_px = hex_px;
+            cdp.depth_per_relief = carve_depth;
+            cdp.wall_per_relief = double(knobs.get("dem_valley_wall_per_relief", 5.0));
+            cdp.area_lo_px = double(knobs.get("dem_valley_area_lo", 8.0));
+            cdp.area_hi_px = double(knobs.get("dem_valley_area_hi", 4000.0));
+            cdp.depth_exp = double(knobs.get("dem_valley_depth_exp", 0.8));
+            cdp.mfd_exponent = double(knobs.get("dem_valley_mfd_exponent", 6.0));
+            pk_dem::carve_drainage_valleys(height_out.ptrw(), relief.ptr(), wet.ptr(), cdp, &carve_stats);
+            rep.carve_ms = carve_stats.total_ms;
+        }
+    }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    if (!rep.ok) {
+        // 退化栅格等原因失败：fallback=true 且**不**返回 height_out（避免 caller 误用半成品）。
+        out["reason"] = String((rep.reason != nullptr) ? rep.reason : "spl pipeline failed");
+        out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        return out;
+    }
+
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["path"] = String("gdext");
+    out["height_out"] = height_out;
+    out["erosion_grid_w"] = rep.w_lo;
+    out["erosion_grid_h"] = rep.h_lo;
+    out["erosion_grid_factor"] = rep.factor;
+    out["flow_ms"] = rep.flow_ms;
+    out["spl_ms"] = rep.spl_ms;
+    out["dep_ms"] = rep.dep_ms;
+    out["limit_ms"] = rep.limit_ms;
+    out["carve_ms"] = rep.carve_ms;
+    out["upsample_ms"] = rep.upsample_ms;
+    out["fill_ms"] = carve_stats.fill_ms;
+    out["mfd_ms"] = carve_stats.mfd_ms;
+    out["wall_ms"] = carve_stats.wall_ms;
+    out["spl_iters_effective"] = rep.stats.iters_effective;
+    out["spl_p99_drop"] = rep.stats.p99_drop;
+    out["spl_max_drop"] = rep.stats.max_drop;
+    out["eroded_vol"] = rep.stats.eroded_vol;
+    out["deposited_vol"] = rep.stats.deposited_vol;
+    out["spl_sea_clamped"] = int(rep.stats.sea_clamped);
+    out["spl_nan"] = int(rep.stats.nan);
+    out["pits_in"] = int(rep.stats.pits_in);
+    out["pits_out"] = int(rep.stats.pits_out);
+    // [S2/S4.4 诊断] 像素层汇水面积（hex²）。仅 dem_erosion_area_dump=1 时非空。
+    if (ek.area_dump && area_diag.size() == n) out["area_hex_buffer"] = area_diag;
+    out["format"] = String("F32");
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // run_bake_coast_sdf_pass — 海/湖统一"离岸像素距离场"(water-bodies systemic)。
 // 从 per-pixel terrain(biome_buffer)的 land-water 边界做 chamfer 3-4 双通距离变换，产出每像素
 // 到最近水体的像素距离(水体=0，向内陆递增，clamp 于 coast_sdf_max_dist_px)。供
@@ -943,64 +1539,253 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     Dictionary riv = run_bake_river_sdf_pass(knobs);
     const bool riv_ok = !bool(riv.get("fallback", true));
 
-    // ①b 汇流刻谷：在像素高度图上累积汇水面积，刻出树枝状 V 形谷（深度按局地起伏缩放）。
-    //    水体与河心像素都是出口，支谷因此汇入格子尺度的河流。
-    double valley_ms = -1.0;
-    {
-        const double depth_per_relief = double(knobs.get("dem_valley_depth_per_relief", 1.4));
-        PackedFloat32Array dem_relief = terr.get("dem_relief_buffer", PackedFloat32Array());
-        PackedByteArray biome = terr.get("biome_buffer", PackedByteArray());
-        const int np = w * h;
-        if (depth_per_relief > 0.0 && height_buf.size() == np && dem_relief.size() == np
-                && biome.size() == np) {
-            auto tv0 = std::chrono::high_resolution_clock::now();
-            std::vector<uint8_t> wet(static_cast<size_t>(np), uint8_t(0));
-            const uint8_t *BI = biome.ptr();
-            for (int i = 0; i < np; ++i) wet[size_t(i)] = pk_is_water_terrain(BI[i]) ? 1 : 0;
+    // ── 侵蚀阶段（①b 刻谷 / SPL 管线 + ② droplet）：模式分支（contracts §3.1）──────────
+    // carve = 现状全序（刻谷 + droplet，逐位基线）／spl = 只 SPL 管线／
+    // spl+carve = SPL + 浅刻谷（dem_spl_carve_scale）／droplet = 仅 droplet。
+    // C++ 缺省恒 "carve"：perf-validation 不传该 knob → 与改动前逐位相同（计划 §12 Q5）。
+    const ErosionKnobs ek = pk_parse_erosion_knobs(knobs);
+    // 模式串规范化：只有四个已知取值生效；其它（拼写错误 / 旧存档 knob）一律回退 carve，
+    // 即「不认识的模式 = 现状行为」，与「C++ 缺省恒 carve」同一取向（契约 §3.1）。
+    // 注：godot::String 只重载了 operator==(const char*)，比较一律走 == 包装，避免 != 触发
+    //     Variant/StringName 的隐式转换而变得有歧义。
+    String erosion_mode = ek.mode;
+    auto mode_is = [&erosion_mode](const char *m) { return erosion_mode == m; };
+    if (!mode_is("carve") && !mode_is("spl") && !mode_is("spl+carve") && !mode_is("droplet")) {
+        erosion_mode = String("carve");
+    }
+    const bool mode_carve = mode_is("carve");
+    const bool mode_spl = mode_is("spl") || mode_is("spl+carve");
+    const bool mode_spl_carve = mode_is("spl+carve");
+    const bool mode_droplet = mode_is("droplet");
+    // droplet 只在 carve（逐位基线）与 droplet（历史对照）执行；spl* 跳过（计划 §4.8 / checklist §A1）。
+    const bool run_droplet = (mode_carve || mode_droplet);
+    // 全量刻谷只在 carve 执行；droplet 模式按 A1「仅 droplet」，不做几何刻谷。
+    const bool run_carve_legacy = mode_carve;
+
+    const int np_erosion = w * h;
+    const double depth_per_relief = double(knobs.get("dem_valley_depth_per_relief", 1.4));
+    PackedFloat32Array dem_relief = terr.get("dem_relief_buffer", PackedFloat32Array());
+    PackedByteArray biome = terr.get("biome_buffer", PackedByteArray());
+    const bool erosion_sizes_ok = height_buf.size() == np_erosion
+            && dem_relief.size() == np_erosion && biome.size() == np_erosion;
+
+    double valley_ms = -1.0;             // 刻谷阶段（carve：出口集合 + 刻谷；spl+carve：仅浅刻谷）
+    double carve_ms = -1.0;              // carve 的 CarveStats.total_ms（未跑 = -1）
+    double erosion_stage_ms = -1.0;      // spl*：整个侵蚀阶段（管线 [+ 浅刻谷]）
+    pk_dem::CarveStats carve_stats;      // 未跑 carve 时全 -1（=「未执行」）
+    SplPipelineReport spl_rep;           // 未跑 SPL 时 ok=false、分项全 -1
+    PackedFloat32Array area_hex_diag;    // [S2/S4.4 诊断] 仅 dem_erosion_area_dump=1 时填充
+
+    // 出口集合 wet = 水体 ∪ 河心像素（carve 与 SPL 共用的汇流出口，沿用 carve 约定 R4）。
+    // 计时起点仍在出口集合构造之前：carve 模式下 valley_ms 的语义与改动前一致。
+    auto tv0 = std::chrono::high_resolution_clock::now();
+    // ── [S7-T7 2026-11-18] G2 注入门（计划 §10.4）──────────────────────────────────────
+    // dem_spl_inject_cell_area（bool，**缺省 false**）为真、且满足「spl* 模式 + 河流拓扑/p2c 齐备」
+    // 时，才把 cell 层汇水注入像素 SPL（河心像素不再是出口）。**carve 模式恒 false**（逐位基线不许
+    // 动）；任意条件不满足（缺 p2c / 缺 _gen_river_* / n_cells 对不上）也 false ⇒ 下面三条路径
+    // （wet 语义 / 注入场 / G3 下切）全部退回改动前的实现，与 knob=false 的逐位一致同一条路。
+    const int n_cells_bake = int(knobs.get("n_cells", 0));
+    const PackedInt32Array p2c_all = terr.get("pixel_to_cell_index", PackedInt32Array());
+    const double river_outlet_flow = double(knobs.get("dem_valley_river_outlet_flow", 0.6));
+    PackedFloat32Array river_sdf_hi;   // G2/G3 共用：河 SDF（河心=1 → 远岸=0）
+    if (riv_ok) river_sdf_hi = riv.get("out_buf", PackedFloat32Array());
+    const bool spl_inject_on = ek.spl_inject_cell_area && mode_spl && erosion_sizes_ok
+            && riv_ok && river_sdf_hi.size() == np_erosion
+            && n_cells_bake > 0 && int(p2c_all.size()) == np_erosion
+            && _gen_river_n == n_cells_bake
+            && int(_gen_river_has.size()) == _gen_river_n
+            && int(_gen_river_downstream.size()) == _gen_river_n;
+    std::vector<float> inject_hi;      // 每像素注入面积（hex²，只有陆上河心像素非 0）
+    double inject_ms = -1.0;           // up_cells + 注入场构造耗时（G2 专用分项；未执行 = -1）
+    std::vector<uint8_t> wet;
+    if (erosion_sizes_ok && (mode_spl || run_carve_legacy)) {
+        wet.assign(static_cast<size_t>(np_erosion), uint8_t(0));
+        const uint8_t *BI = biome.ptr();
+        for (int i = 0; i < np_erosion; ++i) wet[size_t(i)] = pk_is_water_terrain(BI[i]) ? 1 : 0;
+        // [S7-T7] G2：注入开启 ⇒ wet 只含**真水体**（pk_is_water_terrain），河心像素改为「带外部
+        //   汇水的普通陆地像素」，照常进入流向树并被 SPL 下切/限坡；关闭 ⇒ 旧语义（河心并入 wet
+        //   当汇流出口）。旧语句原样保留在下面这个分支里，关闭时逐位不变。
+        if (!spl_inject_on) {
             if (riv_ok) {
                 PackedFloat32Array flow = riv.get("out_buf", PackedFloat32Array());
-                const double outlet = double(knobs.get("dem_valley_river_outlet_flow", 0.6));
-                if (flow.size() == np && outlet < 1.0) {
+                const double outlet = river_outlet_flow;
+                if (flow.size() == np_erosion && outlet < 1.0) {
                     const float *FL = flow.ptr();
-                    for (int i = 0; i < np; ++i) {
+                    for (int i = 0; i < np_erosion; ++i) {
                         if (double(FL[i]) >= outlet) wet[size_t(i)] = 1;
                     }
                 }
             }
-
-            const double size_x = double(knobs.get("size_x", 0.0));
-            const double step_x = size_x / double(w);
-            const double period = double(knobs.get("wrap_period_x", 0.0));
-            const double hex_size = double(knobs.get("hex_size", 1.0));
-            pk_dem::DrainageParams dp;
-            dp.width = w;
-            dp.height = h;
-            if (bool(knobs.get("wrap_x", true)) && period > 1e-6 && step_x > 1e-9) {
-                dp.wrap_cols = std::min(w, int(std::llround(period / step_x)));
-            }
-            dp.sea_level = double(knobs.get("sea_level", 0.64));
-            dp.hex_px = step_x > 1e-9 ? hex_size * 1.7320508075688772 / step_x : 1.0;
-            dp.depth_per_relief = depth_per_relief;
-            dp.wall_per_relief = double(knobs.get("dem_valley_wall_per_relief", 5.0));
-            dp.area_lo_px = double(knobs.get("dem_valley_area_lo", 8.0));
-            dp.area_hi_px = double(knobs.get("dem_valley_area_hi", 4000.0));
-            dp.depth_exp = double(knobs.get("dem_valley_depth_exp", 0.8));
-            dp.mfd_exponent = double(knobs.get("dem_valley_mfd_exponent", 6.0));
-            pk_dem::carve_drainage_valleys(height_buf.ptrw(), dem_relief.ptr(), wet.data(), dp);
-            valley_ms = std::chrono::duration<double, std::milli>(
-                    std::chrono::high_resolution_clock::now() - tv0).count();
         }
     }
 
-    // ② erosion：in/out height（C++ 内注入 height_buffer，不跨语言）。失败用未侵蚀 height 续算。
-    knobs["height_buffer"] = height_buf;
-    Dictionary ero = run_bake_erosion_pass(knobs);
-    const bool ero_ok = !bool(ero.get("fallback", true));
+    // ── [S7-T7 2026-11-18] G2：cell 河流汇水注入像素 SPL（计划 §10.4）────────────────────
+    // 像素层原来的「河心像素 = wet 出口」把汇水在河心截断（实测 A_hex p99 只有 1.55 hex²），干流在
+    // 像素层从不被 SPL 下切，支谷只能在河边「悬挂」。这里用 post_base 已暂存的 cell 河流拓扑做一次
+    // 上游累积，把每格的上游面积均摊到该格内的陆上河心像素上，作为它们在流向树里的初始汇水增量：
+    //   1) up_cells[c]：沿 _gen_river_downstream 反向累加（每个河流格自身贡献 1 格，O(n_cells)）；
+    //   2) n_center[c]：该格内「河 SDF ≥ 出口阈值且非真水体」的像素数；
+    //   3) inject[i] = up_cells[c] · cell_area_hex / max(1, n_center[c])，cell_area_hex = √3/2。
+    // 不变量：只降 / 陆地不下海 / 水体逐位不动都不受影响（注入只改 area_hex 初值与受体偏好）。
+    if (spl_inject_on) {
+        const auto t_inj0 = std::chrono::high_resolution_clock::now();
+        const int rn = _gen_river_n;
+        const int32_t * const DOWN = _gen_river_downstream.data();
+        // 1) up_cells：Kahn 拓扑序（入度 = 有多少 cell 把本格声明为自己的下游）一次 O(n_cells) 扫描。
+        //    按 cell 下标序入队 ⇒ 确定性；自环/环不参与（不会死循环，退化为未累加）。
+        std::vector<int32_t> up(size_t(rn), 0);
+        std::vector<int32_t> indeg(size_t(rn), 0);
+        for (int c = 0; c < rn; ++c) {
+            if (_gen_river_has[size_t(c)] != 0) up[size_t(c)] = 1;
+            const int32_t d = DOWN[c];
+            if (d >= 0 && d < rn && d != c) indeg[size_t(d)] += 1;
+        }
+        std::vector<int32_t> topo;
+        topo.reserve(size_t(rn));
+        for (int c = 0; c < rn; ++c) {
+            if (indeg[size_t(c)] == 0) topo.push_back(int32_t(c));
+        }
+        for (size_t qi = 0; qi < topo.size(); ++qi) {
+            const int32_t c = topo[qi];
+            const int32_t d = DOWN[c];
+            if (d < 0 || d >= rn || d == c) continue;
+            if (up[size_t(c)] > 0) up[size_t(d)] += up[size_t(c)];
+            if (--indeg[size_t(d)] == 0) topo.push_back(d);
+        }
+        // 2) n_center[c]：每格内的陆上河心像素数（真水体不进注入 —— 它们仍是 wet 出口）。
+        //    顺手把合格像素下标收进 inj_px（河心像素只占 np 的百分之一量级），后面第 3 步只遍历它，
+        //    避免再对整个像素面重算一遍判据。
+        const float * const FLP = river_sdf_hi.ptr();
+        const int32_t * const P2C = p2c_all.ptr();
+        const uint8_t * const BI = biome.ptr();
+        inject_hi.assign(static_cast<size_t>(np_erosion), 0.0f);
+        std::vector<int32_t> n_center(size_t(rn), 0);
+        std::vector<int32_t> inj_px;
+        inj_px.reserve(size_t(np_erosion) / 64 + 64);
+        for (int i = 0; i < np_erosion; ++i) {
+            if (double(FLP[i]) < river_outlet_flow) continue;      // 非河心
+            if (pk_is_water_terrain(BI[i])) continue;              // 真水体不动（wet 出口）
+            const int ci = P2C[i];
+            if (ci < 0 || ci >= rn) continue;                      // 该像素 cell 未知 → 不注入
+            n_center[size_t(ci)] += 1;
+            inj_px.push_back(int32_t(i));
+        }
+        // 3) 把整格上游面积均摊到格内河心像素（分母取 max(1, n) ⇒ 恒有定义、不会除零）。
+        constexpr double PK_CELL_AREA_HEX = 0.86602540378443864676;   // √3/2：单格面积（hex²）
+        float * const INJ = inject_hi.data();
+        for (size_t q = 0; q < inj_px.size(); ++q) {
+            const int32_t i = inj_px[q];
+            const int ci = P2C[i];
+            const double denom = double(std::max(1, int(n_center[size_t(ci)])));
+            INJ[size_t(i)] = float(double(up[size_t(ci)]) * PK_CELL_AREA_HEX / denom);
+        }
+        inject_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - t_inj0).count();
+    }
+
+    // 栅格几何（carve 与 SPL 共用同一套算式；三个算式与改动前逐字相同）
+    const double size_x = double(knobs.get("size_x", 0.0));
+    const double step_x = size_x / double(w);
+    const double period = double(knobs.get("wrap_period_x", 0.0));
+    const double hex_size = double(knobs.get("hex_size", 1.0));
+    const double bake_sea_level = double(knobs.get("sea_level", 0.64));
+    const double bake_hex_px = step_x > 1e-9 ? hex_size * 1.7320508075688772 / step_x : 1.0;
+    int bake_wrap_cols = 0;
+    if (bool(knobs.get("wrap_x", true)) && period > 1e-6 && step_x > 1e-9) {
+        bake_wrap_cols = std::min(w, int(std::llround(period / step_x)));
+    }
+
+    if (mode_spl) {
+        // ── spl / spl+carve：SPL 管线（计划 §4.1：建树 → 系数 → 下切 → [沉积/展宽] → 限坡）──
+        const auto ts0 = std::chrono::high_resolution_clock::now();
+        if (!erosion_sizes_ok) {
+            spl_rep.reason = "erosion buffers size mismatch";
+        } else {
+            // spl+carve 且 factor==1 时复用 SPL 的填洼（checklist §A2：省掉第二次填洼）
+            pk_dem::FillResult fill_reuse;
+            spl_rep = pk_run_erosion_spl_pipeline(
+                    height_buf.ptrw(), dem_relief.ptr(), wet.data(), w, h, bake_wrap_cols,
+                    bake_hex_px, bake_sea_level, ek.max_dim, ek.sp, ek.dep, ek.lim,
+                    // [S7-T7] G2 注入四参：未开启时全传 nullptr/0 ⇒ Grid 的三个新指针保持 nullptr，
+                    //   build_flow 的注入分支整体不进入（knob=false 的逐位基线）。
+                    spl_inject_on ? inject_hi.data() : nullptr,
+                    spl_inject_on ? p2c_all.ptr() : nullptr,
+                    spl_inject_on ? _gen_river_downstream.data() : nullptr,
+                    spl_inject_on ? _gen_river_n : 0,
+                    ek.pit_audit, mode_spl_carve ? &fill_reuse : nullptr,
+                    ek.area_dump ? &area_hex_diag : nullptr);
+            if (mode_spl_carve && spl_rep.ok) {
+                // 浅刻谷：只叠一层浅谷形（深度 × dem_spl_carve_scale），不跑 droplet。
+                const double carve_depth = depth_per_relief * ek.carve_scale;
+                if (carve_depth > 0.0) {
+                    pk_dem::DrainageParams cdp;
+                    cdp.width = w;
+                    cdp.height = h;
+                    cdp.wrap_cols = bake_wrap_cols;
+                    cdp.sea_level = bake_sea_level;
+                    cdp.hex_px = bake_hex_px;
+                    cdp.depth_per_relief = carve_depth;
+                    cdp.wall_per_relief = double(knobs.get("dem_valley_wall_per_relief", 5.0));
+                    cdp.area_lo_px = double(knobs.get("dem_valley_area_lo", 8.0));
+                    cdp.area_hi_px = double(knobs.get("dem_valley_area_hi", 4000.0));
+                    cdp.depth_exp = double(knobs.get("dem_valley_depth_exp", 0.8));
+                    cdp.mfd_exponent = double(knobs.get("dem_valley_mfd_exponent", 6.0));
+                    const auto tc0 = std::chrono::high_resolution_clock::now();
+                    const pk_dem::FillResult *reuse = fill_reuse.z.empty() ? nullptr : &fill_reuse;
+                    pk_dem::carve_drainage_valleys(height_buf.ptrw(), dem_relief.ptr(), wet.data(),
+                            cdp, &carve_stats, reuse);
+                    valley_ms = std::chrono::duration<double, std::milli>(
+                            std::chrono::high_resolution_clock::now() - tc0).count();
+                    carve_ms = carve_stats.total_ms;
+                    spl_rep.carve_ms = carve_stats.total_ms;
+                }
+            }
+        }
+        if (spl_rep.ok) {
+            erosion_stage_ms = std::chrono::duration<double, std::milli>(
+                    std::chrono::high_resolution_clock::now() - ts0).count();
+        }
+    } else if (run_carve_legacy && depth_per_relief > 0.0 && erosion_sizes_ok) {
+        // ── carve：现状全序（逐位基线）────────────────────────────────────────
+        // 与原实现逐条相同：DrainageParams 每个字段、carve 调用顺序、写回位置都不变；
+        // 唯一差异是多传了 &carve_stats（只读并行计时，不参与任何计算）。
+        pk_dem::DrainageParams dp;
+        dp.width = w;
+        dp.height = h;
+        dp.wrap_cols = bake_wrap_cols;
+        dp.sea_level = bake_sea_level;
+        dp.hex_px = bake_hex_px;
+        dp.depth_per_relief = depth_per_relief;
+        dp.wall_per_relief = double(knobs.get("dem_valley_wall_per_relief", 5.0));
+        dp.area_lo_px = double(knobs.get("dem_valley_area_lo", 8.0));
+        dp.area_hi_px = double(knobs.get("dem_valley_area_hi", 4000.0));
+        dp.depth_exp = double(knobs.get("dem_valley_depth_exp", 0.8));
+        dp.mfd_exponent = double(knobs.get("dem_valley_mfd_exponent", 6.0));
+        pk_dem::carve_drainage_valleys(height_buf.ptrw(), dem_relief.ptr(), wet.data(), dp, &carve_stats);
+        carve_ms = carve_stats.total_ms;
+        valley_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - tv0).count();
+    }
+
+    // ② droplet：carve（逐位基线）与 droplet（历史对照）执行，spl* 跳过
+    //    （计划 §4.8「默认路径不再调用液滴」在 DEM_DEFAULTS 切到 spl 后自动成立）。
+    //    height_final 的赋值顺序与改动前一致：droplet 失败 → 用当前高度（含刻谷 / SPL）续算。
+    Dictionary ero;
+    bool ero_ok = false;
+    if (run_droplet) {
+        knobs["height_buffer"] = height_buf;   // C++ 内注入 height_buffer，不跨语言
+        ero = run_bake_erosion_pass(knobs);
+        ero_ok = !bool(ero.get("fallback", true));
+    }
     PackedFloat32Array height_final = height_buf;
     if (ero_ok) {
         PackedFloat32Array he = ero.get("height_out", PackedFloat32Array());
         if (he.size() == height_buf.size()) height_final = he;
     }
+
+    // 整个侵蚀阶段的状态与耗时（erosion_ok / erosion_ms 语义保留 = 该阶段整体，contracts §3.4）
+    const bool erosion_ok = mode_spl ? spl_rep.ok : ero_ok;
+    const double erosion_ms = mode_spl ? erosion_stage_ms : double(ero.get("elapsed_ms", -1.0));
 
     // ④ latitude。
     Dictionary lat = run_bake_latitude_field_pass(knobs);
@@ -1011,6 +1796,11 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     // flow 的 SDF 衰减天然形成河岸坡 → terrain_normal_tex/height_tex/relief 都读得到 crisp 河岸；与 #2b
     // (仿真 E 的 cell 级河谷+堤岸)叠加成多尺度河岸。仅陆地段(height>sea_level，不刻入海口/水下)；
     // fused 内 height_final 与 flow 均为 hm_size、索引对齐。GDScript legacy 路径镜像见 _carve_river_into_height。
+    //
+    // [S7-T7 2026-11-18] G3（计划 §10.5）分支门：只有 G2 注入真的生效（knob 开 + 拓扑齐备）**且 SPL
+    //   跑成功**时才走「下切随流量 + 只补刻」的新实现；其余情况（含 carve 模式、注入关闭、SPL 失败）
+    //   **整段旧循环原样执行**——P0 的 carve 逐位基线与 knob=false 的逐位一致都靠这一点守住。
+    const bool river_incise_scaled = spl_inject_on && spl_rep.ok;
     if (riv_ok) {
         PackedFloat32Array flow = riv.get("out_buf", PackedFloat32Array());
         const int nf = w * h;
@@ -1019,15 +1809,52 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
             const double bake_sea = double(knobs.get("sea_level", 0.64));
             float * const HF = height_final.ptrw();
             const float * const FL = flow.ptr();
-            for (int i = 0; i < nf; ++i) {
-                const double f = double(FL[i]);
-                if (f <= 0.02) continue;
-                double e = double(HF[i]);
-                if (e <= bake_sea) continue;                    // 不刻入海口/水下
-                const double notch = f * f * (3.0 - 2.0 * f);   // smoothstep 锐化河岸坡
-                e -= PK_BAKE_RIVER_INCISE * notch;
-                if (e < 0.0) e = 0.0;
-                HF[i] = float(e);
+            if (!river_incise_scaled) {
+                for (int i = 0; i < nf; ++i) {
+                    const double f = double(FL[i]);
+                    if (f <= 0.02) continue;
+                    double e = double(HF[i]);
+                    if (e <= bake_sea) continue;                    // 不刻入海口/水下
+                    const double notch = f * f * (3.0 - 2.0 * f);   // smoothstep 锐化河岸坡
+                    e -= PK_BAKE_RIVER_INCISE * notch;
+                    if (e < 0.0) e = 0.0;
+                    HF[i] = float(e);
+                }
+            } else {
+                // incise = dem_river_incise_base + dem_river_incise_flow · river_flow(cell)
+                //   （缺省 0.020 + 0.035：river_flow=1 时与上面的旧常量 0.045 同值）。
+                // **只补刻**：目标 = 侵蚀前高度 e_pre − incise·notch，落点 = min(e_spl, 目标)。
+                //   SPL 已经刻得比目标更低时保持 SPL 的结果不动 —— 这样 G2 的干流下切与河流 SDF 的
+                //   notch 不会叠成双重深槽（风险 G-K4），支谷汇入处也不会被再压一刀。
+                // 退化：p2c 缺失 / 该像素 cell 越界 / _gen_river_flow 缺失 ⇒ 该像素退回旧常量 0.045。
+                const double inc_base = ek.river_incise_base;
+                const double inc_flow = ek.river_incise_flow;
+                const int32_t * const P2C = (p2c_all.size() == nf) ? p2c_all.ptr() : nullptr;
+                const bool rflow_ok = (_gen_river_n > 0)
+                        && (int(_gen_river_flow.size()) == _gen_river_n);
+                const float * const RFL = rflow_ok ? _gen_river_flow.data() : nullptr;
+                const float * const PRE = procedural_height.ptr();   // SPL 之前的高度（e_pre）
+                for (int i = 0; i < nf; ++i) {
+                    const double f = double(FL[i]);
+                    if (f <= 0.02) continue;
+                    double e = double(HF[i]);
+                    if (e <= bake_sea) continue;                    // 不刻入海口/水下
+                    const double notch = f * f * (3.0 - 2.0 * f);
+                    double incise = PK_BAKE_RIVER_INCISE;           // 退化值：旧常量
+                    if (P2C != nullptr && RFL != nullptr) {
+                        const int ci = P2C[i];
+                        if (ci >= 0 && ci < _gen_river_n) {
+                            double rf = double(RFL[size_t(ci)]);
+                            if (rf < 0.0) rf = 0.0;
+                            else if (rf > 1.0) rf = 1.0;
+                            incise = inc_base + inc_flow * rf;
+                        }
+                    }
+                    const double target = double(PRE[i]) - incise * notch;
+                    double en = (e < target) ? e : target;          // min(e_spl, e_pre − incise·notch)
+                    if (en < 0.0) en = 0.0;
+                    HF[i] = float(en);
+                }
             }
         }
     }
@@ -1135,6 +1962,11 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     out["pixel_to_cell_index"] = terr.get("pixel_to_cell_index", PackedInt32Array());
     out["edge_secondary_index_buffer"] = terr.get("edge_secondary_index_buffer", PackedByteArray());
     out["edge_distance_buffer"] = terr.get("edge_distance_buffer", PackedByteArray());
+    // [cell-field warp 2026-11-18] 边界扭曲场随 terrain 原样透传：非 tiled 路径要靠这三个键
+    //   把 RG8 场交给 surface 打包（layer6）；漏转发会让 P0 数据在不经 tile 的路径上静默丢失。
+    out["boundary_warp_buffer"] = terr.get("boundary_warp_buffer", PackedByteArray());
+    out["boundary_warp_range"] = terr.get("boundary_warp_range", 1.6);
+    out["boundary_warp_clamped"] = terr.get("boundary_warp_clamped", 0);
     out["cell_first_px"] = terr.get("cell_first_px", PackedInt32Array());
     out["cell_px_count"] = terr.get("cell_px_count", PackedInt32Array());
     out["flat_px_indices"] = terr.get("flat_px_indices", PackedInt32Array());
@@ -1154,14 +1986,49 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     // stage 诊断（GDScript 打印 / 校验用）
     out["terrain_ok"] = true;
     out["valley_ms"] = valley_ms;
-    out["erosion_ok"] = ero_ok;
+    out["erosion_ok"] = erosion_ok;
     out["river_ok"] = riv_ok;
     out["latitude_ok"] = lat_ok;
     out["terrain_ms"] = terr.get("elapsed_ms", -1.0);
-    out["erosion_ms"] = ero.get("elapsed_ms", -1.0);
+    out["erosion_ms"] = erosion_ms;
     out["river_ms"] = riv.get("elapsed_ms", -1.0);
     out["latitude_ms"] = lat.get("elapsed_ms", -1.0);
     out["river_reason"] = riv.get("reason", String());
+
+    // ── 侵蚀模式与分项（terrain-erosion-spl 计划 §4.11 / contracts §3.4；**只增不改**，未执行 = -1）──
+    // carve 模式：只有 fill_ms/mfd_ms/wall_ms/carve_ms/valley_ms/erosion_ms 有值，SPL 项全 -1；
+    // spl*：flow/spl/dep/limit/upsample + stats 有值，fill/mfd/wall 只有 spl+carve 跑浅刻谷时才有。
+    out["erosion_mode"] = erosion_mode;
+    out["erosion_grid_w"] = spl_rep.ok ? spl_rep.w_lo : -1;
+    out["erosion_grid_h"] = spl_rep.ok ? spl_rep.h_lo : -1;
+    out["erosion_grid_factor"] = spl_rep.ok ? spl_rep.factor : -1;
+    out["flow_ms"] = spl_rep.flow_ms;
+    out["spl_ms"] = spl_rep.spl_ms;
+    out["dep_ms"] = spl_rep.dep_ms;
+    out["limit_ms"] = spl_rep.limit_ms;
+    out["upsample_ms"] = spl_rep.upsample_ms;
+    out["carve_ms"] = carve_ms;
+    out["fill_ms"] = carve_stats.fill_ms;       // carve 分项（P0 新增，未跑 = -1）
+    out["mfd_ms"] = carve_stats.mfd_ms;
+    out["wall_ms"] = carve_stats.wall_ms;
+    out["spl_iters_effective"] = spl_rep.ok ? spl_rep.stats.iters_effective : -1;
+    out["spl_p99_drop"] = spl_rep.ok ? spl_rep.stats.p99_drop : -1.0;
+    out["spl_max_drop"] = spl_rep.ok ? spl_rep.stats.max_drop : -1.0;
+    out["eroded_vol"] = spl_rep.ok ? spl_rep.stats.eroded_vol : -1.0;
+    out["deposited_vol"] = spl_rep.ok ? spl_rep.stats.deposited_vol : -1.0;
+    out["spl_sea_clamped"] = spl_rep.ok ? int(spl_rep.stats.sea_clamped) : -1;
+    out["spl_nan"] = spl_rep.ok ? int(spl_rep.stats.nan) : -1;
+    out["pits_in"] = spl_rep.ok ? int(spl_rep.stats.pits_in) : -1;
+    out["pits_out"] = spl_rep.ok ? int(spl_rep.stats.pits_out) : -1;
+    // [S2/S4.4 诊断] 像素层汇水面积（hex²）。仅 dem_erosion_area_dump=1 时非空。
+    if (!area_hex_diag.is_empty()) out["area_hex_buffer"] = area_hex_diag;
+    // [S7-T7 2026-11-18] G2/G3 诊断（**只增不改**，契约 §3.4）：注入是否生效 + 其构造耗时
+    //   （up_cells 累积 + 逐像素注入场；未执行 = -1）。注入场的紧凑化/下采样计入 upsample_ms，
+    //   build_flow 的注入分支计入 flow_ms，三者相加才是 G2 的真实成本。
+    out["spl_inject_cell_area"] = spl_inject_on ? 1 : 0;
+    out["spl_inject_ms"] = spl_inject_on ? inject_ms : -1.0;
+    // 诊断：spl* 分支为什么没跑（尺寸不符等）；正常为空串。
+    out["erosion_reason"] = String(spl_rep.ok ? "" : spl_rep.reason);
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t_all1 - t_all0).count();
     return out;
 }
@@ -1175,6 +2042,10 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
 // 全程经 knobs 传参（不依赖 bound slot —— bake 发生在 generation 期、bind 时机
 // 不确定，与 encode_bake_* 同范式）。输出 CSR 三件套（按 cell.index）直接喂
 // encode_bake_enum_atlas_payload；G/B/A 由硬主 cell 的桶成员驱动。
+// 另输出边界扭曲场 RG8（boundary_warp_buffer / _range / _clamped，契约见
+// docs/plans/terrain-cell-field-contract.md §2）：R/G = (warp + hi) / PK_WARP_RANGE
+// 的 8-bit 编码，供 hex cell field shader 解析格界；clamped 为被 clamp 的通道数
+// （按构造应为 0，非 0 即说明 warp 幅值超出 1.6，需进报告排查）。
 // ─────────────────────────────────────────────────────────────────────────
 godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knobs) {
     using godot::Dictionary;
@@ -1243,6 +2114,10 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     constexpr double WARP_FREQ = 0.024;
     constexpr double WARP_HIGH_FREQ_MUL = 3.4;
     constexpr double WARP_HIGH_AMP_RATIO = 0.55;
+    // [cell-field warp 2026-11-18] 边界扭曲场编码的归一化分母（契约 §2）。每个分量
+    //   |warp| ≤ 1，hi 再乘 WARP_HIGH_AMP_RATIO ⇒ 理论上界 1.55 < 1.6，正常应零 clamp。
+    //   与 GDScript DCHexCellField.WARP_RANGE、shader terrain_warp_range 同源。
+    constexpr double PK_WARP_RANGE = 1.6;
     // [DEM 地貌 2026-10-09] P0 起伏 = 山脊网络（脊状 fBm）+ 顺坡沟谷（bake_dem_landform.h）。
     //   旧实现把脊状 / 岩屑噪声以 0.8~0.97 / 世界单位的频率直接采样世界坐标，波长约 1 个世界单位，
     //   而本栅格像素间距约 2 个世界单位：0.26 振幅整层落在奈奎斯特以上，烘出的是逐像素混叠噪点
@@ -1376,6 +2251,8 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     PackedInt32Array p2c;           p2c.resize(n_pix);
     PackedByteArray edge_secondary_buf; edge_secondary_buf.resize(n_pix * 2);
     PackedByteArray edge_distance_buf;  edge_distance_buf.resize(n_pix);
+    // [cell-field warp 2026-11-18] 边界扭曲场 RG8（契约 §2）：逐像素 2 字节，R=x / G=y。
+    PackedByteArray boundary_warp_buf;  boundary_warp_buf.resize(n_pix * 2);
     float * const __restrict HBUF = height_buf.ptrw();
     uint8_t * const __restrict BBUF = biome_buf.ptrw();
     float * const __restrict MBUF = moist_buf.ptrw();
@@ -1384,6 +2261,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     int32_t * const __restrict P2C = p2c.ptrw();
     uint8_t * const __restrict ESEC = edge_secondary_buf.ptrw();
     uint8_t * const __restrict EDIST = edge_distance_buf.ptrw();
+    uint8_t * const __restrict BWARP = boundary_warp_buf.ptrw();
 
     // CSR 计数（by cell.index）
     PackedInt32Array first_px;  first_px.resize(n_cells);
@@ -1471,6 +2349,12 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double hy_above = 1.0 - sea_level;
     const double hy_inv_above = (hy_above > 1e-6) ? (1.0 / hy_above) : 0.0;
 
+    // [cell-field warp 2026-11-18] warp clamp 计数按行分槽：run_rows 是并行体，跨行共享一个
+    // 累加器就是 data race（理由与下方 CSR 直方图注释相同）。每行只写自己的槽（该行只被一个
+    // task 处理），并行区结束后再串行求和，与 CSR 直方图同一模式。
+    std::vector<int> warp_clamp_rows(size_t(H), 0);
+    int * const __restrict WCLAMP_ROW = warp_clamp_rows.data();
+
     // 逐行并行：每像素只写自己的 idx 槽，CGX/CGY/CREL 与四个 FastNoiseLite 实例
     // 在此之后只读——噪声参数全部在进入并行区前设完，get_noise_2d 是纯读，
     // 多线程共享同一实例安全。唯一的跨行共享写（CSR 直方图）已移到并行区之后。
@@ -1478,6 +2362,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
         for (int y = y_begin; y < y_end; ++y) {
             const double wy_base = origin_y + (double(y) + 0.5) * step_y;
             const int row = y * W;
+            int row_clamp = 0;   // 本行被 clamp 的 warp 通道数（只属于该行的槽）
             for (int x = 0; x < W; ++x) {
                 const double wx_base = origin_x + (double(x) + 0.5) * step_x;
 
@@ -1673,11 +2558,33 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                     ESEC[idx * 2 + 1] = 0xFF;
                     EDIST[idx] = 0xFF;
                 }
+
+                // 9.5 [cell-field warp 2026-11-18] 边界扭曲场 RG8（契约 §2）：与 height/biome 等
+                //     buffer 同行并行，每像素只写自己的 2 字节，不碰任何跨行状态。total 取的是
+                //     第 1 步里乘 warp_scale **之前**的 (warp + hi)，与 CPU 高程/海滩坡同源。
+                {
+                    const double total_x = warp_x + hi_x;
+                    const double total_y = warp_y + hi_y;
+                    double vx = total_x / PK_WARP_RANGE;
+                    double vy = total_y / PK_WARP_RANGE;
+                    if (vx < -1.0) { vx = -1.0; ++row_clamp; }
+                    else if (vx > 1.0) { vx = 1.0; ++row_clamp; }
+                    if (vy < -1.0) { vy = -1.0; ++row_clamp; }
+                    else if (vy > 1.0) { vy = 1.0; ++row_clamp; }
+                    BWARP[idx * 2] = uint8_t(std::round((vx * 0.5 + 0.5) * 255.0));
+                    BWARP[idx * 2 + 1] = uint8_t(std::round((vy * 0.5 + 0.5) * 255.0));
+                }
             }
+            WCLAMP_ROW[y] = row_clamp;
         }
     };
     pk::parallel_for_range("pk_bake_terrain_index", H, bake_row_tasks(H),
             /*seq_threshold=*/8, run_rows);
+
+    // [cell-field warp 2026-11-18] warp clamp 计数汇总：并行区内每行只写自己的槽，这里串行
+    // 求和（与下面 CSR 直方图同一模式）。按构造理论上界 1.55 < PK_WARP_RANGE=1.6 ⇒ 应为 0。
+    int boundary_warp_clamped = 0;
+    for (int y = 0; y < H; ++y) boundary_warp_clamped += WCLAMP_ROW[y];
 
     // ── CSR build：prefix-sum first_px + scatter flat（counting sort，by cell.index）──
     // 直方图必须留在 run_rows 之外：CNT[cell] 是跨行共享的累加目标，放进并行体里
@@ -1732,6 +2639,10 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     out["edge_distance_buffer"] = edge_distance_buf;
     out["edge_distance_units"] = String("normalized_hex_center_gap");
     out["edge_distance_saturate_hex"] = VISUAL_EDGE_DISTANCE_SATURATE_HEX;
+    // [cell-field warp 2026-11-18] 边界扭曲场（契约 §2）：RG8 payload + 解码分母 + clamp 诊断。
+    out["boundary_warp_buffer"] = boundary_warp_buf;
+    out["boundary_warp_range"] = PK_WARP_RANGE;
+    out["boundary_warp_clamped"] = boundary_warp_clamped;
     out["cell_first_px"] = first_px;
     out["cell_px_count"] = px_count;
     out["flat_px_indices"] = flat_px;

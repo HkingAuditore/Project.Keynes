@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_family_move_cash.h"
 #include "economy_runtime_building_investment_internal.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
@@ -16,20 +17,34 @@ namespace pk {
 bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
         int32_t cell, const InvestmentCandidatePlan *const *plans,
         const ConstructionMaterialPlan *materials, int32_t count) const {
+    struct FamilyAccount {
+        uint64_t handle;
+        int64_t people;
+        int64_t claim;
+    };
     struct Account {
         int32_t signature;
+        int32_t slot;
         int64_t population;
         int64_t funds;
+        bool families_loaded = false;
+        std::vector<FamilyAccount> families{};
+
+        FamilyAccount *family(uint64_t handle) {
+            for (auto &family : families)
+                if (family.handle == handle) return &family;
+            return nullptr;
+        }
     };
     std::vector<Account> accounts;
     population_store().for_each_in_cell(cell, [&](int32_t slot) {
-        accounts.push_back({static_cast<int32_t>(population_store().signature_id[slot]),
+        accounts.push_back({static_cast<int32_t>(population_store().signature_id[slot]), slot,
             population_store().population[slot], population_store().funds[slot]});
     });
     const auto account_index = [&](int32_t signature) {
         for (size_t i = 0; i < accounts.size(); ++i)
             if (accounts[i].signature == signature) return i;
-        accounts.push_back({signature, 0, 0});
+        accounts.push_back({signature, -1, 0, 0});
         return accounts.size() - 1;
     };
     std::vector<size_t> merchants;
@@ -38,6 +53,25 @@ bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
             population_store().signature_id[_merchant_slots[k]])));
     }
     int64_t sat = 0;
+    std::vector<int32_t> family_edges;
+    const auto load_families = [&](Account &account) {
+        if (account.families_loaded) return;
+        account.families_loaded = true;
+        if (account.slot < 0 || family_memberships().empty()) return;
+        collect_family_edges_for_cohort(account.slot, family_edges);
+        for (int32_t edge : family_edges) {
+            const auto &row = family_memberships()[edge];
+            account.families.push_back({row.family_handle, row.people, row.cash_claim});
+        }
+    };
+    const auto attribute_cash = [&](Account &account, uint64_t family_handle, int64_t delta) {
+        if (family_handle == 0 || delta == 0) return;
+        load_families(account);
+        if (auto *family = account.family(family_handle)) {
+            family->claim = std::clamp<int64_t>(saturating_add(family->claim, delta, sat),
+                0, std::max<int64_t>(0, account.funds));
+        }
+    };
     // 按实际的两阶段顺序预演：全部迁人/注资/放贷之后，才逐张支付建材。
     // 商人自建款和已注入业主的建造款，不能再次当作另一项目的可用现金。
     for (int32_t i = 0; i < count; ++i) {
@@ -51,25 +85,50 @@ bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
         if (source != owner) {
             const int64_t people = saturating_mul(plan.allocated_count,
                 std::max<int64_t>(1, _building_types[plan.type_id].owner_slots_per_building), sat);
-            // Money follows people: the actual move is their proportional
-            // cohort claim, which may exceed the building's minimum
-            // required_capital. Preflight that real transfer, not just the
-            // minimum, so a second portfolio item cannot spend the same cash.
-            const int64_t proportional = accounts[source].population > 0
-                ? mul_div_sat(accounts[source].funds, people,
-                    accounts[source].population, sat)
-                : 0;
-            const int64_t capital = std::max<int64_t>(
-                required_capital, proportional);
-            // Sponsor selection protects one source occupant. Reject an
-            // overlapping allocation that would invalidate its stable slot.
-            if (people >= accounts[source].population ||
-                accounts[source].funds < capital || accounts[owner].funds < 0)
+            Account &from = accounts[source];
+            Account &to = accounts[owner];
+            // Keep the source slot alive so later plans and the frozen merchant
+            // list still refer to the same cohort.
+            if (people >= from.population || from.funds < required_capital || to.funds < 0)
                 return false;
-            accounts[source].population -= people;
-            accounts[owner].population = saturating_add(accounts[owner].population, people, sat);
-            accounts[source].funds -= capital;
-            accounts[owner].funds = saturating_add(accounts[owner].funds, capital, sat);
+            load_families(from);
+            int64_t carried = 0;
+            if (plan.sponsor_family_handle != 0) {
+                auto *family = from.family(plan.sponsor_family_handle);
+                // A prior leg may have moved the selected people. Reject this
+                // prefix if the live move would fall back to other parties.
+                if (family == nullptr || family->people < people) return false;
+                const int64_t claim = family_move_cash_share(
+                    std::max<int64_t>(0, family->claim), people, family->people, sat, mul_div_sat);
+                carried = std::min(claim, from.funds);
+                family->people -= people;
+                family->claim -= claim;
+                load_families(to);
+                if (auto *destination_family = to.family(plan.sponsor_family_handle)) {
+                    destination_family->people = saturating_add(destination_family->people, people, sat);
+                    destination_family->claim = saturating_add(destination_family->claim, claim, sat);
+                } else {
+                    to.families.push_back({plan.sponsor_family_handle, people, claim});
+                }
+            } else {
+                int64_t family_people = 0, family_claim = 0;
+                for (const auto &family : from.families) {
+                    family_people = saturating_add(family_people, std::max<int64_t>(0, family.people), sat);
+                    family_claim = saturating_add(family_claim, std::max<int64_t>(0, family.claim), sat);
+                }
+                const int64_t anonymous_people = std::max<int64_t>(0, from.population - family_people);
+                if (anonymous_people < people) return false;
+                carried = family_move_cash_share(std::max<int64_t>(0, from.funds - family_claim),
+                    people, anonymous_people, sat, mul_div_sat);
+            }
+            const int64_t capital = std::max(required_capital, carried);
+            const int64_t top_up = capital - carried;
+            from.population -= people;
+            to.population = saturating_add(to.population, people, sat);
+            from.funds -= capital;
+            to.funds = saturating_add(to.funds, capital, sat);
+            attribute_cash(from, plan.sponsor_family_handle, -top_up);
+            attribute_cash(to, plan.sponsor_family_handle, top_up);
         }
         const int64_t credit = saturating_mul(
             plan.allocated_count, plan.merchant_credit, sat);
@@ -89,6 +148,7 @@ bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
         }
         if (distributed != credit) return false;
         accounts[owner].funds = saturating_add(accounts[owner].funds, credit, sat);
+        attribute_cash(accounts[owner], plan.sponsor_family_handle, credit);
     }
     for (int32_t i = 0; i < count; ++i) {
         const auto &plan = *plans[i];

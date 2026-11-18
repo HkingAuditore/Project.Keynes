@@ -403,8 +403,3 @@ static func _shader_share_layer_count(host) -> int:
 		if child is ShrubLayer:
 			count += 1
 	return maxi(count, 1)
-
-
-# Generated single-tree crown and hardscape-rock sprites (resource_art/crown_atlas);
-# the body shader falls back to procedural forms when the art is missing.
-

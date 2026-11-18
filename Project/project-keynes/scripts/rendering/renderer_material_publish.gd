@@ -172,6 +172,11 @@ static func _apply_cell_lut_rebind(host, lut_name: String, world_tex: Texture2D)
 		if host._fog_layer != null:
 			host._fog_layer.set_enum_lut_texture(world_tex)
 		host._push_fog_uniforms()
+		# [veg-fog-knowledge 2026-11-18] 植被材质也读这张表的 A 通道（按知识度淡出），
+		# 同样是"绑一次"语义；漏了这条，第二天起植被的 knowledge 会停在旧快照上。
+		host._for_each_vegetation_layer(func(layer) -> void:
+			if layer.has_method("set_enum_lut_texture"):
+				layer.set_enum_lut_texture(world_tex))
 
 
 static func _apply_uniforms(host) -> void:
@@ -192,6 +197,12 @@ static func _apply_uniforms(host) -> void:
 		sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
 		sm.set_shader_parameter("visual_edge_neighbor_tiles", visual_tiles.edge_neighbor)
 		sm.set_shader_parameter("visual_edge_distance_tiles", visual_tiles.edge_distance)
+		# [cell-field 2026-11-18] 格界扭曲场（方案 §3.5 / 契约 §4.2）：tiled 路径用独立
+		# warp tile kind（占 visual_map_index_tiles 让出的槽位，槽数持平）。未烘焙时保持
+		# "不绑"：shader 侧 terrain_warp_layer_bound=false，helper 直接返回中性值，
+		# 绝不采样未绑定的 sampler。
+		if visual_tiles.boundary_warp != null:
+			sm.set_shader_parameter("visual_warp_tiles", visual_tiles.boundary_warp)
 		host._push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
 	else:
 		sm.set_shader_parameter("height_tex", host._world.height_tex)
@@ -231,6 +242,16 @@ static func _apply_uniforms(host) -> void:
 	# legacy/Web 用 surface array 是否就绪。shader 只认这个 bool 决定读不读烘焙法线。
 	sm.set_shader_parameter("terrain_baked_normals",
 		visual_tiles.static_ready if tiled else host._world.terrain_surface_tex != null)
+	# [cell-field 2026-11-18] layer6（boundary_warp）是否真的烘出来了（契约 §4.1/§4.2）：
+	# 非 tiled 用 WorldData 的权威标志 —— surface array **恒为 7 层**（中性兜底层也算一层），
+	# 层数推不出"载荷是真的"，surface_baker.gd:367-382 明确要求按这个标志推；与层数取与是
+	# 越界保护（旧图 6 层 + 标志残留时绝不告诉 shader 去采 layer6）。tiled 用 warp tile 是否
+	# 在场（visual_tile_set.gd:144-153 在整图烘焙缺键时把字段置 null，正是按这条门控设计）。
+	# false ⇒ shader 的 pk_boundary_warp_world() 恒返回 0，格界退化成直边六边形归属（仍与
+	# CPU cube_round 逐点一致）。默认关 PK_CELL_FIELD 时该 uniform 不存在，推送无副作用。
+	sm.set_shader_parameter("terrain_warp_layer_bound",
+		visual_tiles.boundary_warp != null if tiled \
+		else host._world.terrain_warp_layer_bound and surface_layers >= 7)
 	# [static-bake 2026-10-10 / surface-array-edge 2026-11-02] 分地形细节法线、海岸邻域、
 	# 水面软权重只在 tiled 静态烘焙里产出；非 tiled 打包路径把同一批场塞进 surface array
 	# 的 layer4/5（surface_layers>=6），因此两条路径都算"静态烘焙就绪"。
@@ -326,6 +347,25 @@ static func _apply_uniforms(host) -> void:
 	host._lut_bound["enum_lut"] = host._world.enum_lut_tex
 	sm.set_shader_parameter("dyn_lut", host._world.dyn_lut_tex)
 	host._lut_bound["dyn_lut"] = host._world.dyn_lut_tex
+	# [cell-field 2026-11-18] per-cell 属性表（方案 §3.4 / 契约 §3、§4.1）：**四层** RGBA8，
+	# 其中 layer0/1/2 是 offset 空间；PK_CELL_FIELD 变体里一个 sampler 替换
+	# map_index_atlas + enum_lut + dyn_lut 三个（净省 2 槽）。只在真的就绪时写 sampler 与
+	# 尺寸：未 bake / 旧存档时保持 shader 默认（1×1 中性格 + bound=false），绝不把 null
+	# 写进 sampler 槽。layer3（index 空间镜像）由下一段的 cell_class_index_bound 单独管。
+	# 尺寸走 vec2（同本文件 lut_dims 的约定），shader 侧的声明名是 `cell_table_size`
+	# （契约文档 §4.1 里的 `cell_table_dims`/ivec2 是旧稿）。
+	var cell_table: Texture2DArray = host._world.cell_table_tex
+	var cell_dims: Vector2i = host._world.cell_table_dims
+	if cell_table != null and cell_dims.x > 0 and cell_dims.y > 0:
+		sm.set_shader_parameter("cell_table", cell_table)
+		sm.set_shader_parameter("cell_table_size", Vector2(cell_dims.x, cell_dims.y))
+	sm.set_shader_parameter("cell_table_bound",
+		host._world.cell_table_bound and cell_table != null)
+	# [cell-field-web 2026-11-18] layer3（class_by_index，**cell.index 空间**）是否真的发布了
+	# （Web 方案 §3.1/§3.4）：_publish_cell_table 在 n_cells > map_w*map_h 时只发 3 层，
+	# 第 4 层是整层占位零。**缺数据一律推 false**（旧存档 / 旧图 / 未 bake 时字段是 0），
+	# 绝不推 true 让 shader 去读一张不存在或全零的层。与水面 program 的推送同值。
+	sm.set_shader_parameter("cell_class_index_bound", host._world.cell_table_layers >= 4)
 	# eco_lut 仅绑给植被实例层；主地形已退役该 sampler（槽位给 terrain_material_tex）。
 	_push_cell_lut_dims(host, sm, host._world.lut_dims)
 	# [terrain-gi 档 2] 弹射代表色 LUT：与 enum/dyn/eco 同一 lut_dims 网格、同一日刷节奏。
@@ -370,13 +410,21 @@ static func _apply_uniforms(host) -> void:
 	var visual_resolution = Vector2(visual_tiles.layout.logical_size) if tiled \
 		else Vector2(host._world.hm_size.x, host._world.hm_size.y)
 	sm.set_shader_parameter("hm_resolution", visual_resolution)
-	sm.set_shader_parameter("terrain_normal_sample_radius_hex", 1.35)
-	sm.set_shader_parameter("terrain_normal_height_scale_hex", 2.10)
+	sm.set_shader_parameter("terrain_normal_sample_radius_hex", 0.35)
+	# [terrain-relief 2026-11-18] 与 MapBaker.TERRAIN_NORMAL_HEIGHT_SCALE_HEX 同步。
+	# 这里改小会让河流顺坡梯度虚高，改大则相反 —— 三处必须一起动。
+	sm.set_shader_parameter("terrain_normal_height_scale_hex", 2.60)
 	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
 		else Vector2(host._world.derived_size.x, host._world.derived_size.y))
 	sm.set_shader_parameter("visual_reference_resolution",
 		visual_resolution)
 	sm.set_shader_parameter("sea_level", host._world.sea_level)
+	# [cell-field 2026-11-18] 扭曲场解码参数（契约 §4.1 / 方案 §3.5）：range 是 C++ 编码
+	# 归一化用的分母（由诊断报告经 WorldData 转交，与 world_ext_bake.cpp 的 PK_WARP_RANGE
+	# 同源）；amp 直接引用生成期常量 MapBaker.WARP_AMP —— 两者都必须与烘焙同源，否则
+	# 格界形状会与 CPU 高程 / 海滩坡烘焙错位。未烘焙 warp 层时 shader 侧早退，值不参与计算。
+	sm.set_shader_parameter("terrain_warp_range", host._world.boundary_warp_range)
+	sm.set_shader_parameter("terrain_warp_amp", MapBaker.WARP_AMP)
 
 	sm.set_shader_parameter("season_phase", host._season_phase)
 	sm.set_shader_parameter("climate_anomaly", host._climate_anomaly)

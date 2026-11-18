@@ -105,8 +105,17 @@ uniform float terrain_ecotone_noise = 0.22;
 // [terrain-material-tiles] 四方连续材质族数组。只在 HIGH 且运行时成功绑定时
 // 采样；其它画质继续使用 terrain_detail_tex / 程序化旧路径。
 // [pk-web-texture-budget 2026-08-06] Compatibility 预算砍掉 eco_lut 后腾出 1 槽，
-// 材质数组重新纳入；height+flow 合并后再腾 1 槽（现为 height/horizon/map_index/noise/
-// enum/dyn/material = 7，留 1 裕量）。
+// 材质数组重新纳入；height+flow 合并后再腾 1 槽。
+// [cell-field-web 2026-11-18] **槽位数字不要再写在本注释里**：上面那句"现为
+// height/horizon/map_index/noise/enum/dyn/material = 7，留 1 裕量"已经过时 —— 实测是
+// **8 张**，正好顶到设备上限，一丁点裕量都没有（这正是 W2 要删旧三槽的原因）。
+// 唯一权威口径 = `tests/world/terrain_shader_variant_test.gd` 的 sampler 普查
+// （逐变体**等值**断言，多一个少一个都要人确认，不是阈值）。当前事实（方案 §3.3 第 5 条）：
+//   Web/Compatibility 陆地 OFF = 8：height / map_index / enum / dyn / material /
+//     terrain_surface / horizon / noise；
+//   Web/Compatibility 陆地 **PK**（PK_CELL_FIELD_NO_LEGACY_LUT）= **6**：height / horizon /
+//     noise / material / terrain_surface / cell_table —— 旧三槽退役（-3）、
+//     cell_table 补 1。
 // 微纹理仍裁掉（材质激活时本就跳过；未激活走 procedural）。
 #ifndef PK_WATER_ONLY
 uniform sampler2DArray terrain_material_tex : filter_linear_mipmap, repeat_enable;
@@ -169,8 +178,30 @@ const float NOISE_TEX_SCALE = 256.0;
 // eco_lut 已从主地形 shader 移除（2026-08-06）：主地图着色与 dyn_vitality 高度重叠，
 // 占一个纹理单元却收益薄；mobile/web 预算把该槽让给 terrain_material_tex。
 // 植被实例层（shrub_layer）仍有独立 eco_lut sampler，不走本文件。
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// [cell-field-web 2026-11-18] 预算变体（PK_WEB_TEXTURE_BUDGET）启用场函数后，
+// **旧三槽必须从声明里删掉**：Web 陆地 program 已用满 8 个 sampler，`cell_table`
+// 会是第 9 个，被引擎静默替换成白纹理（不报错，画面只是全白/全黑）——
+// 见 docs/plans/terrain-cell-field-web-plan.md §3.2。
+//
+// 关键点：**不写「声明保留、只是不调用」**。那样槽位统计能对上，但下一次有人在新路径里
+// 误调 visual_sample_map_index() 就又是第 9 槽的静默错误。删声明之后，残留引用直接变成
+// 编译错误，漏改不可能溜过去。
+//
+// `VT_USE_MAP_INDEX` 的关闭在 world_map.gdshader 的 VT_USE 分配块里做；本宏只负责
+// enum_lut / dyn_lut 两张 2D LUT。
+// ═══════════════════════════════════════════════════════════════════════════
+#if defined(PK_CELL_FIELD) && defined(PK_WEB_TEXTURE_BUDGET)
+#define PK_CELL_FIELD_NO_LEGACY_LUT
+#endif
+
+#ifndef PK_CELL_FIELD_NO_LEGACY_LUT
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut  : filter_nearest, repeat_disable;
+#endif
+// lut_dims 不是采样器（零槽位），保留声明：`cell_lut_uv()` 在 cell_indirect 里
+// 仍被编译，只是在 NO_LEGACY_LUT 组合下没有任何调用点。
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 
 
@@ -183,7 +214,9 @@ uniform vec2 lut_dims = vec2(1.0, 1.0);
 //   k = 1   完全可见     → 原样
 // =========================================================================
 uniform bool fog_gray_enabled = true;
-uniform float fog_gray_strength : hint_range(0.0, 1.0) = 0.75;
+// [fog-memory-tone 2026-11-18] 0.75 → 0.85：作者要求"灰再深一些"。
+// 灰化公式已统一到 fog_memory.gdshaderinc，植被/资源也传同一个值。
+uniform float fog_gray_strength : hint_range(0.0, 1.0) = 0.94;
 // 未探索像素早退：跳过整条陆地/水体/BRDF/hillshade 管线。净收益取决于
 // FogOfWarLayer 的厚云比被跳过的地形便宜，必须按实测开关，不能凭感觉默认开。
 uniform bool fog_early_out_enabled = false;
@@ -432,9 +465,9 @@ uniform float insolation_season_gain : hint_range(0.0, 2.0) = 1.0;
 // 【植被 / 雪 / 洋流 / 风组】
 // =========================================================================
 // 植被换色总开关与强度
-uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.94;
 // 动态雪量（季节性雪盖叠加在 biome SNOW 之外）总开关与强度
-uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.94;
 // 调试用：true 时雪盖跳过 fbm cosmetic 抖动，直接拿 dyn_snow 上屏，
 // 用于验证 CPU→atlas→shader 链路是否健康（屏幕值应 ≈ info_panel.snow_cover）。
 uniform bool debug_force_dyn_snow_only = false;
@@ -451,11 +484,11 @@ uniform bool ocean_current_flow_tex_bound = false;
 // =========================================================================
 // ─── Deep Ocean Layered Color（深海色彩层次感） ─────────────────────────
 // 总开关振幅。0 = 完全还原旧视觉；1 = 子层按各自默认振幅全量生效。
-uniform float deep_ocean_color_richness         : hint_range(0.0, 1.0) = 0.85;
+uniform float deep_ocean_color_richness         : hint_range(0.0, 1.0) = 0.94;
 // 洋流冷/暖色偏：暖流（低纬→高纬）偏微暖，寒流（高纬→低纬）偏冷青。
 uniform float deep_ocean_current_tint_strength  : hint_range(0.0, 1.0) = 0.60;
 // 纬度/温度驱动色温带：热带翠绿—温带中性—极地冷青。
-uniform float deep_ocean_latitude_tint_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float deep_ocean_latitude_tint_strength : hint_range(0.0, 1.0) = 0.94;
 // 深渊幽冷：深海最深段加压暗与微蓝紫偏移，强化质感。
 uniform float deep_ocean_abyss_tint_strength    : hint_range(0.0, 1.0) = 0.60;
 // 海盆 gyre 色斑增强：放大半封闭海 vs 开阔腹地的色相差。
@@ -483,7 +516,7 @@ uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disa
 uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.40;
 uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
 uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.80;
-uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.94;
 uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.75;
 uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.25;
 uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.18;
@@ -552,8 +585,9 @@ uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
 //   运行期没有任何 height 邻域差分回退，因此下面三个"差分半径/高程比例"参数语义收窄为
 //   材质兼容保留项（land_pipeline 的河流顺坡梯度仍用 height_scale 换量纲）。
 uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 保留：旧材质/存档兼容
-uniform float terrain_normal_sample_radius_hex = 1.35;
-uniform float terrain_normal_height_scale_hex = 2.10;
+uniform float terrain_normal_sample_radius_hex = 0.35;
+// [terrain-relief 2026-11-18] 2.10 → 4.50，与 MapBaker / renderer_material_publish 同步。
+uniform float terrain_normal_height_scale_hex = 2.60;
 // [normal-soften 2026-07-31] 1.6→1.25：先压低 residual 中频引起的过硬阴阳面。
 // [起伏增强 2026-09-01] 1.25→1.65：在 1.35-hex 宽半径粗法线上恢复宏观走向，不提高细节法线。
 // [macro-relief 2026-11-06] 放大生成期粗法线的 xy 分量，突出山系/盆地的连续大尺度坡向。
@@ -586,7 +620,7 @@ uniform float coast_shore_land_bias  : hint_range(0.0, 1.0) = 0.5;    // 过渡�
 // 【河流组】
 // =========================================================================
 // ─── 河流（从 flow accumulation） ───────────────────────────────────────
-uniform float river_strength       : hint_range(0.0, 1.0) = 0.85;
+uniform float river_strength       : hint_range(0.0, 1.0) = 0.94;
 uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.70;
 uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.94;
 uniform vec3  river_color          : source_color = vec3(0.30, 0.50, 0.68);

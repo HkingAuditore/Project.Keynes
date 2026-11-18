@@ -48,9 +48,23 @@ SurfaceParams compute_land_base_surface(
 		vec2 uv,
 		vec4 scals,
 		TerrainEdgeSample terrain_edge,
-		out float mixed_micro_strength) {
+		out float mixed_micro_strength
+// [cell-field 2026-11-18] 解析格界数据包（与 render_land_pipeline 的尾参同形）。
+// 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
+#ifdef PK_CELL_FIELD
+		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#endif
+		) {
 	// LAND 1.1: hard primary state with screen-space static material edge AA.
+	// [cell-field 2026-11-18] 静态材质换 3-way 版本（方案 §3.6）：色调走三格、
+	// 材质贴图只采前两名。场版本不读 edge_distance（scals.r），格界由场函数给出；
+	// TerrainEdgeSample 照样要收（函数原型两个变体一致），只是不读。
+#ifdef PK_CELL_FIELD
+	TerrainStaticMaterial static_mat = compute_terrain_static_material_field(
+			field, fcls0, fcls1, fcls2, biome, elev, wp, uv);
+#else
 	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv, terrain_edge);
+#endif
 	vec3 col = static_mat.color;
 	mixed_micro_strength = static_mat.micro_strength;
 
@@ -591,8 +605,9 @@ SurfaceParams apply_land_material_overlays(
 vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// [cylindrical-earth-daylight] 传 uv+lat_signed 进光照上下文 → 逐像素经纬度日照。
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND, uv, lat_signed);
-	lc.direct_shadow *= cloud_shadow_direct_visibility(uv, lc.local_day);
-	lc.cloud_ambient = cloud_shadow_ambient_visibility(uv, lc.local_day);
+	vec2 cloud_visibility = cloud_shadow_land_visibility(uv, lc.local_day);
+	lc.direct_shadow *= cloud_visibility.x;
+	lc.cloud_ambient = cloud_visibility.y;
 	// 5 = 白模光照：底色换成中性灰、其余光照全保留，只看地形明暗本身。
 	if (gi_debug_view == 5) {
 		surface.base_color = vec3(0.55);
@@ -719,11 +734,22 @@ vec3 render_land_pipeline(
 		float dyn_vitality,
 		vec4 pixel_noise,
 		vec2 shore_frac,
-		TerrainEdgeSample terrain_edge) {
+		TerrainEdgeSample terrain_edge
+// [cell-field 2026-11-18] 解析格界数据包（world_map SETUP 算一次后传入）。
+// 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
+#ifdef PK_CELL_FIELD
+	, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#endif
+	) {
 	// 15 = 河流层之前的静态材质底色。与 12（底色全部叠加完、光照前）成对使用：
 	// 15 正常而 12 发蓝，说明是 compute_land_base_surface 里的河流 flow 层把陆地刷成了水色。
 	if (terrain_surface_debug_view == 15) {
+#ifdef PK_CELL_FIELD
+		return compute_terrain_static_material_field(
+				field, fcls0, fcls1, fcls2, biome, elev, wp, uv).color;
+#else
 		return compute_terrain_static_material(biome, elev, wp, uv, terrain_edge).color;
+#endif
 	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
 #ifdef PK_PROBE_NO_LAND_BASE
@@ -733,7 +759,11 @@ vec3 render_land_pipeline(
 #else
 	SurfaceParams surface = compute_land_base_surface(
 			biome, geo_biome, landform, elev, wp, uv, scals, terrain_edge,
-			mixed_micro_strength);
+			mixed_micro_strength
+#ifdef PK_CELL_FIELD
+			, field, fcls0, fcls1, fcls2
+#endif
+			);
 #endif // PK_PROBE_NO_LAND_BASE
 
 	LandModInputs mi;

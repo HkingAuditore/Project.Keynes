@@ -459,7 +459,7 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             ++_investment_sparse_skipped_types;
             if (sparse_filter_active) continue;
         }
-        ++_investment_type_evaluations;
+        ctx.begin_type_review(*this, existing);
         const BuildingType &type = _building_types[type_id];
         InvestmentDiagnostic *diagnostic = nullptr;
         bool type_has_viable_candidate = false;

@@ -19,16 +19,26 @@ render_mode blend_mix, unshaded;
 // ════════════════════════════════════════════════════════════════════════
 // fog_of_war.gdshader — 三态视野迷雾（体积云）
 //
-// 数据通路与天气云完全同构：map_index_atlas.GB 逐像素解出 cell.index，再经
-// cell-index 间接寻址采 per-cell LUT。区别是迷雾不占用独立纹理 —— 它复用
-// enum_lut 空闲的 A 通道（enum_lut 已从 RGB8 升为 RGBA8），因此主地形拿迷雾
-// 值是零新增采样。
+// ── 取 k 的两条路径（`PK_CELL_FIELD` 二选一）────────────────────────────
+// 开（本任务 O3，方案 docs/plans/terrain-cell-field-overlays-plan.md §3.6）：
+//   解析格界（cell field）。世界坐标 → 可平铺低频扭曲（按长度 clamp）→ 对偶三角形
+//   三格 + 重心 → 锐化权重 → 三格 k 加权。k 来自 `cell_table` layer2.R（offset 空间的
+//   per-cell 表，1 texel = 1 格），不再是"纹理里的类别量"，所以任意 zoom 都没有纹素
+//   台阶。另外**在自己的 shader 内复算地形的早退判定**（约束 3），保证「地形早退的
+//   像素迷雾一定不透明」。开关与环境侧地形**同一个判定口**
+//   （RendererShaderWater._cell_field_active），所以不会出现"地形走旧路径、迷雾走新
+//   路径"从而判一个不存在的条件。
+// 关（今日行为，逐字节不变）：
+//   数据通路与天气云完全同构：map_index_atlas.GB 逐像素解出 cell.index，再经
+//   cell-index 间接寻址采 per-cell LUT。区别是迷雾不占用独立纹理 —— 它复用
+//   enum_lut 空闲的 A 通道（enum_lut 已从 RGB8 升为 RGBA8），因此主地形拿迷雾
+//   值是零新增采样。
 //
-// 知识度 k（enum_lut.a）：
+// 知识度 k（开：cell_table.layer2.R / 关：enum_lut.a，语义完全相同）：
 //   k = 0.0  未探索      → 厚云，完全不透明
 //   k = 0.5  已探索未可见 → 薄纱 + 主地形去饱和灰化（灰化在 world_map 做）
 //   k = 1.0  完全可见     → alpha 0，整个 fragment 早退
-//   中间值 = 烘焙期 hex 邻域 blur 产生的柔化过渡带
+//   中间值 = 烘焙期 hex 邻域 blur 产生的柔化过渡带（开路径下再叠一层场插值）
 //
 // ── 云怎么画：分层 2.5D 云海 ─────────────────────────────────────────
 //
@@ -71,7 +81,12 @@ render_mode blend_mix, unshaded;
 // 探针数 3 → 2 同理 —— 自阴影是软厚度，少一段远探针肉眼不可辨。
 // ════════════════════════════════════════════════════════════════════════
 
+// [cell-field-overlays 2026-11-18 / O3] PK_CELL_FIELD 变体不再读 enum_lut：知识度 k 改从
+// cell_table 的 layer2.R（offset 空间 per-cell 表）取。声明本身留在这两行之外的老路径里，
+// 否则 PK 变体会白白占一个 sampler 槽（方案 §3.9 的迷雾账：4 → 2）。
+#ifndef PK_CELL_FIELD
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;        // A = 知识度 k
+#endif
 uniform vec2 lut_dims = vec2(0.0);
 uniform bool has_terrain_edge_data = false;
 uniform float terrain_ecotone_width : hint_range(0.0, 0.96) = 0.84;
@@ -80,12 +95,80 @@ uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+// [cell-field-overlays 2026-11-18 / O3] PK_CELL_FIELD 变体删掉三条旧采样链：
+//   map_index（主格 id）、edge_neighbor（副格 id）、edge_distance（次生权重）。
+// 三个 VT_USE_* 只决定 visual_tile_sampling 里是否声明那几个 sampler / helper，所以
+// 「关掉它们」就等于「整条旧路径从 program 里消失」，而不是靠"声明了但不采"。
+// 关闭 PK 时这三行与今日逐字节相同（`#ifndef` 展开成同样三行）。
+#ifndef PK_CELL_FIELD
 #define VT_USE_MAP_INDEX
 #define VT_USE_EDGE_NEIGHBOR
 #define VT_USE_EDGE_DISTANCE
+#endif
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 uniform float world_time = 0.0;
 uniform float hex_world_diameter = 38.0;
+
+#ifdef PK_CELL_FIELD
+// ═══════════════════════════════════════════════════════════════════════════
+// [cell-field-overlays 2026-11-18 / O3] 解析格界（场函数）路径
+//
+// 方案：docs/plans/terrain-cell-field-overlays-plan.md §3.6（迷雾显示、三条约束）、
+//       §3.2（坐标契约）、§3.9（迷雾采样账）、§4（开关跟随地形）
+// 契约：docs/plans/terrain-cell-field-contract.md §1（AA 带宽 / 平局次序）、
+//       §9.1（回绕接缝 AA）、§9.3（世界 uniform 不得硬编码）
+//
+// 只 include **零 uniform** 的核心 + 胶水（hex_cell_core / cell_field_overlays）。
+// 绝不 include hex_cell_field.gdshaderinc：那是地形的包装层，依赖 uniforms.gdshaderinc
+// 的 world_origin / hex_size / terrain_warp_* / cell_table_size / B_SEA_ICE 等一整批
+// uniform，迷雾一条都没有 ⇒ 整片编译失败。
+#include "res://shaders/include/cell_field_overlays.gdshaderinc"
+
+// ── 新增 uniform：**全部由 FogOfWarLayer 推送**，一个都不许依赖这里的默认值 ──────
+// 契约 §9.3「世界坐标 uniform 不得硬编码」：hex_size / map_dims 必须来自宿主
+// （host.hex_size / WorldData 的地图尺寸），不从 hex_world_diameter 反推。
+uniform float hex_size = 22.0;                       // 世界单位 / hex（宿主 hex_size）
+uniform vec2 map_dims = vec2(0.0);                   // (map_w, map_h)，= WorldData.cell_table_dims
+uniform sampler2DArray cell_table : filter_nearest, repeat_disable;   // offset 空间 4 层 RGBA8
+uniform vec2 cell_table_size = vec2(1.0, 1.0);       // 与 map_dims 同值（texelFetch 的模数）
+uniform bool cell_table_bound = false;               // false ⇒ 绝不读表（一律按厚云处理）
+// 地形扭曲场（约束 3 必须与地形用**同一张**场，否则"早退像素"两边的判定会错开）：
+//   非 tiled → terrain_surface_tex 的 layer6（RG = warp xy，LINEAR 双线性）；
+//   tiled    → visual_warp_tiles（同一个 bundle 的 boundary_warp）。
+// terrain_warp_layer_bound == false（未烘焙）⇒ 扭曲视为 0，与地形侧逐值一致。
+uniform bool terrain_warp_layer_bound = false;
+uniform float terrain_warp_range = 1.6;              // = WorldData.boundary_warp_range
+uniform float terrain_warp_amp = 0.4;                // = MapBaker.WARP_AMP（生成期同一常量）
+// 扭曲场的 sampler 自己声明（**不**复用 visual_tile_sampling 的 VT_USE_BOUNDARY_WARP 块）：
+// 那个块同时声明 terrain_warp_layer_bound，而非 tiled 分支还要 VT_USE_TERRAIN_SURFACE_ARRAY
+// 才肯用 terrain_surface_tex（否则退成 terrain_boundary_warp_tex 这张不存在的 2D 图），
+// 会连带把 terrain_surface_layer_count / terrain_edge_layers_bound 等四个与迷雾无关的
+// uniform 拖进来。两个名字与那两块**逐字同值**，绑定由 FogOfWarLayer 按地形同一套门控推送。
+#ifdef MAP_VISUAL_TILED
+uniform sampler2DArray visual_warp_tiles : filter_linear, repeat_disable;
+#else
+uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
+#endif
+// 迷雾锐化带宽（gap 单位）。约束 1：必须 < √3/2，否则沿穿过格心的线出现接缝；
+// 默认 0.6 刻意比地形的 terrain_ecotone_width（0.84）宽 —— 迷雾是"柔边类别量"。
+uniform float fog_field_band : hint_range(0.0, 0.86) = 0.6;
+// 迷雾自己的可平铺低频扭曲（纯 ALU，方案 §3.2 第 3 条：必须沿 x 可平铺）。
+// freq 与旧 edge_warp 那条 `fog_tileable_scale(0.0042)` 同值，形态尺度不变；
+// amp 的单位是 **hex_size**（旧 edge_warp 用的是 hex 直径 —— 见下面的约束 2 推导）。
+uniform float fog_warp_freq = 0.0042;
+uniform float fog_warp_amp = 0.55;
+// 地形早退判定（必须与地形 program **逐像素同形**，见 fragment 里的约束 3）。
+// 由 FogOfWarLayer 从 host._shader_mat 上读地形**实际收到**的实参再推过来 ——
+// 不复述 _effective_fog_early_out() 的判定链（那会漂移）。
+uniform bool fog_early_out_enabled = false;
+uniform float fog_early_out_k : hint_range(0.0, 0.5) = 0.02;
+// 调试档（仅 PK_CELL_FIELD；0 = 正常）：
+//   1 = terrain_hidden（R 通道 0/1）  2 = 最终 alpha（RGB 灰阶）  3 = 显示用 k（R 通道）
+// 给 tests/world/fog_cell_field_test.gd 的不变量探针回读用（方案 §6 不变量 1/2）。
+uniform int fog_debug_view = 0;
+// 场函数本体见文件下半部（`void vertex()` 之前的 PK_CELL_FIELD 段）：它们要调
+// fog_wrap_uv / fog_wrap_world_x，而那两个函数在本文件 200 行之后才定义。
+#endif // PK_CELL_FIELD
 
 uniform bool fog_enabled = true;
 // 运行时质量档 0..3，会被编译期 tier 上限夹住。
@@ -210,6 +293,11 @@ vec2 fog_wrap_uv(vec2 uv) {
 	return vec2((wrapped_x - world_origin.x) / world_size.x, clamp(uv.y, 0.0, 1.0));
 }
 
+// [cell-field-overlays 2026-11-18 / O3] 整段旧取 k 链路在 PK_CELL_FIELD 变体里
+// **不参与编译**：它要 map_index（视觉索引图）、edge_neighbor / edge_distance 两场、
+// 以及纹理空间的 Bayer 选格 —— 场函数路径一个都不用，而且三个 VT_USE_* 已经关掉，
+// 这些 helper 会直接引用到不存在的符号。关掉 PK 时本段与今日逐字节相同。
+#ifndef PK_CELL_FIELD
 // cell-index 间接寻址（与 cell_indirect.gdshaderinc 同公式；此处内联，避免为了
 // 一个 A 通道把 dyn/eco LUT 的 uniform 依赖全拖进来）。
 int fog_decode_cell_index(vec2 uv) {
@@ -293,6 +381,7 @@ float fog_edge_secondary_weight(vec2 uv, int q) {
 	float aa = 0.5 * (1.0 - smoothstep(0.0, one_screen_pixel, edge_distance));
 	return max(analytic, aa);
 }
+#endif // PK_CELL_FIELD（旧取 k 链路结束）
 
 // 把域缩放微调到「环绕周期恰好等于 4 的整数倍个噪声格」。
 //
@@ -312,18 +401,30 @@ vec2 fog_tileable_scale(float base_scale) {
 // 时间演化的可平铺梯度噪声。与单纯给 p 加偏移不同，这里让每个晶格角点的梯度
 // 以不同速度和方向旋转，因此等值线会原地生成、消散和重组；先折叠 x 晶格坐标，
 // 仍能保证东西向周期完全一致。seed 只改变旋转速率，t=0 时保持静态场原貌。
-vec2 fog_evolving_gradient(vec2 lattice, float t, float seed) {
-	vec2 h = cloud_hash22(lattice);
-	vec2 g = -1.0 + 2.0 * h;
-	float direction = (h.x < 0.5) ? -1.0 : 1.0;
-	float rate = (0.34 + 0.32 * h.y) * (0.88 + 0.09 * seed);
-	float angle = t * rate * direction;
-	float cs = cos(angle);
-	float sn = sin(angle);
-	return vec2(cs * g.x - sn * g.y, sn * g.x + cs * g.y);
+#include "res://shaders/include/fog_lattice.gdshaderinc"
+
+#ifdef PK_FOG_LATTICE
+uniform sampler2D fog_gradient_lattice : filter_linear, repeat_disable;
+uniform float fog_gradient_blend = 0.0;
+#endif
+
+vec4 fog_vertical_gradients(float x, float y, float t, int band) {
+#ifdef PK_FOG_LATTICE
+	ivec2 pos = ivec2(int(x) & (FOG_LATTICE_SIDE - 1),
+		band * FOG_LATTICE_SIDE + ((int(y) + FOG_LATTICE_Y_BIAS) & (FOG_LATTICE_SIDE - 1)));
+	vec2 uv = (vec2(pos * ivec2(2, 1)) + vec2(0.5 + fog_gradient_blend, 0.5))
+		/ vec2(float(FOG_LATTICE_SIDE * 2), float(FOG_LATTICE_SIDE * 10));
+	return (textureLod(fog_gradient_lattice, uv, 0.0) - 0.5) * 3.0;
+#else
+	vec2 evolution = FOG_BANDS[band];
+	float clock = t * evolution.x;
+	return vec4(fog_evolving_gradient(vec2(x, y), clock, evolution.y),
+		fog_evolving_gradient(vec2(x, y + 1.0), clock, evolution.y));
+#endif
 }
 
-vec3 fog_grad_noise_tiled_evolve_d(vec2 p, float period_x, float t, float seed) {
+
+vec3 fog_grad_noise_tiled_evolve_d(vec2 p, float period_x, float t, int band) {
 	vec2 i = floor(p);
 	vec2 f = fract(p);
 	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
@@ -334,10 +435,12 @@ vec3 fog_grad_noise_tiled_evolve_d(vec2 p, float period_x, float t, float seed) 
 		x0 = mod(x0, period_x);
 		x1 = mod(x1, period_x);
 	}
-	vec2 ga = fog_evolving_gradient(vec2(x0, i.y), t, seed);
-	vec2 gb = fog_evolving_gradient(vec2(x1, i.y), t, seed);
-	vec2 gc = fog_evolving_gradient(vec2(x0, i.y + 1.0), t, seed);
-	vec2 gd = fog_evolving_gradient(vec2(x1, i.y + 1.0), t, seed);
+	vec4 left = fog_vertical_gradients(x0, i.y, t, band);
+	vec4 right = fog_vertical_gradients(x1, i.y, t, band);
+	vec2 ga = left.xy;
+	vec2 gb = right.xy;
+	vec2 gc = left.zw;
+	vec2 gd = right.zw;
 	float va = dot(ga, f);
 	float vb = dot(gb, f - vec2(1.0, 0.0));
 	float vc = dot(gc, f - vec2(0.0, 1.0));
@@ -352,7 +455,7 @@ vec3 fog_grad_noise_tiled_evolve_d(vec2 p, float period_x, float t, float seed) 
 	return vec3(0.5 + 0.5 * n, 0.5 * dn);
 }
 
-float fog_grad_noise_tiled_evolve(vec2 p, float period_x, float t, float seed) {
+float fog_grad_noise_tiled_evolve(vec2 p, float period_x, float t, int band) {
 	vec2 i = floor(p);
 	vec2 f = fract(p);
 	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
@@ -362,10 +465,12 @@ float fog_grad_noise_tiled_evolve(vec2 p, float period_x, float t, float seed) {
 		x0 = mod(x0, period_x);
 		x1 = mod(x1, period_x);
 	}
-	vec2 ga = fog_evolving_gradient(vec2(x0, i.y), t, seed);
-	vec2 gb = fog_evolving_gradient(vec2(x1, i.y), t, seed);
-	vec2 gc = fog_evolving_gradient(vec2(x0, i.y + 1.0), t, seed);
-	vec2 gd = fog_evolving_gradient(vec2(x1, i.y + 1.0), t, seed);
+	vec4 left = fog_vertical_gradients(x0, i.y, t, band);
+	vec4 right = fog_vertical_gradients(x1, i.y, t, band);
+	vec2 ga = left.xy;
+	vec2 gb = right.xy;
+	vec2 gc = left.zw;
+	vec2 gd = right.zw;
 	float va = dot(ga, f);
 	float vb = dot(gb, f - vec2(1.0, 0.0));
 	float vc = dot(gc, f - vec2(0.0, 1.0));
@@ -382,18 +487,18 @@ float fog_grad_noise_tiled_evolve(vec2 p, float period_x, float t, float seed) {
 // q3 叠第二层，扭曲的扭曲 —— 这是云缘出现撕扯、翻卷的来源。
 vec2 fog_domain_warp(vec2 p, float t, float period_n, int q) {
 	float w0 = fog_grad_noise_tiled_evolve(
-		p * 0.5 + vec2(0.0, t * 0.05), period_n * 0.5, t * 0.32, 0.0
+		p * 0.5 + vec2(0.0, t * 0.05), period_n * 0.5, t, 0
 	);
 	float w1 = fog_grad_noise_tiled_evolve(
-		p * 0.5 + vec2(5.2, 1.3 - t * 0.04), period_n * 0.5, t * 0.29, 1.0
+		p * 0.5 + vec2(5.2, 1.3 - t * 0.04), period_n * 0.5, t, 1
 	);
 	vec2 pw = p + (vec2(w0, w1) - vec2(0.5)) * (2.0 * warp_amount);
 	if (q >= 3) {
 		float w2 = fog_grad_noise_tiled_evolve(
-			pw * 0.25 + vec2(-3.1, 8.4), period_n * 0.25, t * 0.21, 2.0
+			pw * 0.25 + vec2(-3.1, 8.4), period_n * 0.25, t, 2
 		);
 		float w3 = fog_grad_noise_tiled_evolve(
-			pw * 0.25 + vec2(11.9, -2.6), period_n * 0.25, t * 0.24, 3.0
+			pw * 0.25 + vec2(11.9, -2.6), period_n * 0.25, t, 3
 		);
 		pw += (vec2(w2, w3) - vec2(0.5)) * (1.6 * warp_amount);
 	}
@@ -432,22 +537,22 @@ FogCloudShape fog_sample_shape(
 
 	vec3 n0 = fog_grad_noise_tiled_evolve_d(
 		p * 0.5 + drift * 0.42 + vec2(7.1, -3.4),
-		period_n * 0.5, t * 0.46, 0.0
+		period_n * 0.5, t, 4
 	);
 	vec3 n1 = fog_grad_noise_tiled_evolve_d(
 		p + drift * 0.76 + cross_wobble * 0.10 + vec2(-11.8, 5.6),
-		period_n, t * 0.68, 1.0
+		period_n, t, 5
 	);
 	vec3 n2 = fog_grad_noise_tiled_evolve_d(
 		p * 2.0 + drift * 1.16 - wobble * 0.30 + vec2(19.7, 13.2),
-		period_n * 2.0, t * 0.97, 2.0
+		period_n * 2.0, t, 6
 	);
 	vec3 n3 = vec3(0.5, 0.0, 0.0);
 	if (q >= 2 && f3 > 0.002) {
 		n3 = fog_grad_noise_tiled_evolve_d(
 			p * 4.0 - drift * 1.42 + (wobble - cross_wobble) * 0.34
 				+ vec2(-31.4, 22.9),
-			period_n * 4.0, t * 1.31, 3.0
+			period_n * 4.0, t, 7
 		);
 	}
 
@@ -494,7 +599,7 @@ FogCloudShape fog_sample_shape(
 		vec2 tower_p = p + parallax_p
 			+ vec2(t * 0.23, -t * 0.16) * top_shear_speed
 			+ vec2(47.3, -19.1);
-		float tower_field = fog_grad_noise_tiled_evolve(tower_p, period_n, t * 0.71, 5.0);
+		float tower_field = fog_grad_noise_tiled_evolve(tower_p, period_n, t, 8);
 		float tower_gate = smoothstep(cut - 0.10, cut + 0.16, shaped);
 		top = max(top, smoothstep(cut + 0.16, cut + 0.44, tower_field) * tower_gate * 0.85);
 	}
@@ -535,11 +640,11 @@ float fog_shadow_mass(
 	float f1 = fog_octave_fade(lod_px, 1.0);
 	float n0 = fog_grad_noise_tiled_evolve(
 		p * 0.5 + drift * 0.42 + vec2(7.1, -3.4),
-		period_n * 0.5, t * 0.46, 0.0
+		period_n * 0.5, t, 4
 	);
 	float n1 = fog_grad_noise_tiled_evolve(
 		p + drift * 0.76 + cross_wobble * 0.10 + vec2(-11.8, 5.6),
-		period_n, t * 0.68, 1.0
+		period_n, t, 5
 	);
 	float norm = max(f0 * 0.68 + f1 * 0.32, 0.0001);
 	float macro = (n0 * f0 * 0.68 + n1 * f1 * 0.32) / norm;
@@ -559,6 +664,81 @@ vec3 fog_soft_tonemap(vec3 x) {
 	);
 }
 
+#ifdef PK_CELL_FIELD
+// ═══════════════════════════════════════════════════════════════════════════
+// [cell-field-overlays 2026-11-18 / O3] 场函数本体（必须放在 fog_wrap_uv /
+// fog_wrap_world_x / fog_soft_tonemap 之后：GLSL 没有函数前向声明）
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 网格参数：uniform → PkHexGrid（核心唯一的几何入口）。
+PkHexGrid fog_hex_grid() {
+	PkHexGrid g;
+	g.hex_size = hex_size;
+	g.map_w = int(map_dims.x + 0.5);
+	g.map_h = int(map_dims.y + 0.5);
+	return g;
+}
+
+// 与 uniforms.gdshaderinc::wrap_world_pos 逐字同式（迷雾不 include uniforms）。
+vec2 fog_wrap_world_pos(vec2 p) {
+	return vec2(fog_wrap_world_x(p.x), p.y);
+}
+
+// GLSL 没有 clamp_length：按长度做径向 clamp。约束 2 要求的是**长度**上限，
+// 不是逐轴 clamp —— 逐轴 clamp 会把位移方块的角削成斜边，形状会看出方向性。
+vec2 fog_clamp_length(vec2 v, float max_len) {
+	float l = length(v);
+	return v * min(1.0, max_len / max(l, 1e-5));
+}
+
+// 一格的知识度 k = cell_table.layer2.R（fog_k）。
+//   · cell_table_bound == false ⇒ 返回 0（= 厚云），**绝不**读不存在的层
+//     （GLES3/WebGL2 对越界层 / 未绑 sampler2DArray 的返回值未定义）；
+//   · row 南北越界 = 地图外 padding：**k = 0（完全不透明）**。
+//     [2026-11-18 修复] 这里一度按地形侧的「padding 视作全知 k=1」写，结果世界上下
+//     那圈 padding 海冰直接露出来了（截图证据：屏幕上下各一条蓝色冰带）。
+//     地形侧 `field_fog` 用 k=1 是**早退判定**的语义（padding 不早退、照常渲染），
+//     而迷雾侧 k 是**显示不透明度**的语义；两者相反不是矛盾 —— 渲染出来的 padding
+//     必须被迷雾盖住，否则玩家就看到了地图外的极地海冰。
+//     `climate_season.gdshaderinc` 里也明写「padding 像素恒为 B_SEA_ICE 且被
+//     FogOfWarLayer 整片不透明覆盖」，本行是那条约定的执行点。
+float fog_cell_k(ivec2 c) {
+	if (!cell_table_bound) {
+		return 0.0;
+	}
+	int w = int(cell_table_size.x + 0.5);
+	int h = int(cell_table_size.y + 0.5);
+	float k = texelFetch(cell_table,
+			ivec3(pk_posmod(c.x, max(w, 1)), clamp(c.y, 0, max(h - 1, 0)), 2), 0).r;
+	float inside = step(0.0, float(c.y)) * step(float(c.y), float(h - 1));
+	return mix(0.0, k, inside);
+}
+
+// 三格里主导格的 k（约束 3 的判定只读主导格，与地形 world_map.gdshader:541 同口径）。
+float fog_tri_dom_k(PkHexTri t) {
+	int d = pk_hex_tri_dom(t);
+	ivec2 c = (d == 0) ? t.c0 : ((d == 1) ? t.c1 : t.c2);
+	return fog_cell_k(c);
+}
+
+// 地形扭曲场在 wp_wrapped 处的世界位移 —— 与地形
+// hex_cell_field.gdshaderinc::pk_boundary_warp_world 逐式相同（解码系数、
+// world_origin/world_size 的 uv 映射、tiled / 非 tiled 两条来源）。
+// 未烘焙时恒为 0 ⇒ 退化成直边六边形归属（两边一起退化，判定仍然一致）。
+vec2 pk_fog_terrain_warp_world(vec2 wp_wrapped) {
+	if (!terrain_warp_layer_bound) {
+		return vec2(0.0);
+	}
+	vec2 uv = fog_wrap_uv((wp_wrapped - world_origin) / world_size);
+#ifdef MAP_VISUAL_TILED
+	vec2 rg = texture(visual_warp_tiles, visual_tile_address(uv)).rg;
+#else
+	vec2 rg = texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), 6.0)).rg;
+#endif
+	return (rg * 2.0 - 1.0) * (terrain_warp_range * hex_size * terrain_warp_amp);
+}
+#endif // PK_CELL_FIELD
+
 void vertex() {
 	// VERTEX 此时是 mesh 局部坐标 = 世界坐标（quad 顶点按 world_bounds 写入）。
 	// 与 data_overlay.gdshader 同约定：不走 canvas_item 默认 UV，避免
@@ -570,12 +750,99 @@ void fragment() {
 	// canvas_item 的 fragment 禁用 return（见 data_overlay.gdshader 注释），
 	// 全部用嵌套 if 表达，默认完全透明。
 	vec4 out_color = vec4(0.0);
+#ifdef PK_CELL_FIELD
+	// 调试档的载体（只存在于 PK_CELL_FIELD 变体；关掉时本文件逐字节不变）：
+	//   fog_k_debug  = 显示用 k（三格锐化权重混合后的知识度）
+	//   fog_hidden01 = 地形早退判定（0/1），即方案 §3.6 约束 3 的 `terrain_hidden`
+	float fog_k_debug = 0.0;
+	float fog_hidden01 = 0.0;
+#endif
 
 	if (fog_enabled && lut_dims.x >= 1.0) {
 		int q = effective_fog_quality();
 		vec2 wp = vec2(fog_wrap_world_x(v_world.x), v_world.y);
 		float t = world_time * churn_speed;
 
+#ifdef PK_CELL_FIELD
+		// ═══════════════════════════════════════════════════════════════════════
+		// [cell-field-overlays 2026-11-18 / O3] 场函数取 k（方案 §3.6 的三条约束）
+		//
+		// 这一步替换掉整条旧链路：`map_index` NEAREST 取格 → `enum_lut` 间接寻址 →
+		// （移动档）Bayer 选格 / （桌面档）主副格双采样 mix。旧链路是**类别量进纹理**，
+		// 格界只能落在 texel 边上，所以近景一定出现纹素台阶与孤立方块。
+		//
+		// 坐标契约（方案 §3.2，两条都不能省）：
+		//   · `wp` 是**已回绕**的世界坐标（上行算出），进 pk_hex_tri 用；
+		//   · AA 的屏幕导数必须取自**未回绕**的 `v_world`，否则跨经线那个 2×2 像素块
+		//     里分数 axial 会跳 map_w，fwidth 爆掉 ⇒ 带宽被顶到 PK_FIELD_BAND_MAX，
+		//     接缝处一条竖线（契约 §9.1）。
+		//
+		// ⚠ 迷雾清晰度为 50% 时（子视口 1/2 尺寸 +
+		//   线性上采样）：这里 fwidth(v_world) 拿到的是**半分辨率像素**的世界跨度，
+		//   所以 AA 带宽天然宽 2 倍。这一条是有意接受的（方案 §3.2 第 4 条），并且
+		//   下面的 fog_hidden_margin 按同一份 fwidth 算 ⇒ 半分辨率下余量也自动翻倍，
+		//   不会因为"AA 带窄于一个半分辨率像素"而在早退区边缘漏出 alpha 衰减。
+		// ═══════════════════════════════════════════════════════════════════════
+
+		// ── 约束 1：带宽。fog_field_band < √3/2（默认 0.6，比地形的 0.84 宽 = 更柔）；
+		//    再与 AA 项取 max（近景时带宽至少要有一个屏幕像素那么宽，否则格界会闪）。
+		float fog_aa = pk_hex_field_aa(v_world, hex_size, 1.0);
+		float fog_band = clamp(max(fog_field_band, fog_aa), 1e-4, PK_FIELD_BAND_MAX);
+
+		// ── 约束 2：扭曲按**长度** clamp，上限由带宽反算（不另设参数）。
+		//    推导（方案 §3.6）：|∇gap| = 2/s，格心 gap = √3；扭曲把采样点从格心最多
+		//    推开 A（世界单位）后，到格界的距离 ≥ (√3/2)s − A，对应 gap ≥ √3 − 2A/s。
+		//    要让可见格的格心仍然是"纯主导格"（gap ≥ band），需要
+		//        √3 − 2A/s ≥ band   ⇒   **A ≤ (√3/2 − band/2)·s**
+		//    band = 0.6 时 A_max = 0.566·s。
+		//
+		//    ⚠ 这是**有意的视觉变化**：今天的 `edge_warp = 0.55` 是 hex **直径**倍数，
+		//    单轴最大位移 = 0.55·2s = **1.1·s**，能把一个可见格的格心推进隔壁未探索
+		//    格（这正是本任务要修掉的真问题：它没有任何保证，只是碰巧没被噪声撞到）。
+		//    换成 A_max 之后迷雾边的"张牙舞爪"幅度会明显变小（约减半）—— 需要美术确认；
+		//    若形态太乖，只能加**二级细节噪声**（只改 alpha 纹理），不能放宽 clamp。
+		float fog_warp_amax = max(PK_HEX_SQRT3 * 0.5 - fog_band * 0.5, 0.0) * hex_size;
+		PkHexGrid fog_grid = fog_hex_grid();
+		// 可平铺低频扭曲（与天气共用 cell_field_overlays 里那一份；沿 x 周期 =
+		// wrap_period_x，否则环绕接缝两侧会取到不同的格子，方案 §3.2 第 3 条）。
+		vec2 fog_warp_raw = pk_soft_warp_tiled(
+				wp, wrap_period_x, fog_warp_freq, fog_warp_amp * hex_size);
+		vec2 fog_warp = fog_clamp_length(fog_warp_raw, fog_warp_amax);
+
+		// ── 显示用 k：三格 k 用**锐化后**的权重混合（类别量用 w，连续量用 w_raw）。
+		PkHexTri fog_tri = pk_overlay_tri(wp, fog_grid, fog_warp);
+		vec3 fog_w = pk_hex_sharpen(fog_tri.w_raw, fog_band);
+		float k = pk_overlay_fog_k(fog_w,
+				fog_cell_k(fog_tri.c0), fog_cell_k(fog_tri.c1), fog_cell_k(fog_tri.c2));
+		fog_k_debug = k;
+
+		// ── 约束 3（强制不透明）：**在自己的 shader 内复算地形的早退判定**。
+		//    与 world_map.gdshader:815-817 同形、同一张地形扭曲场、同一个
+		//    PK_FIELD_BAND_MAX：
+		//        fog_hidden = fog_early_out_enabled
+		//                  && (fog_k(主导格) <= fog_early_out_k)
+		//                  && (field_edge_gap >= PK_FIELD_BAND_MAX);
+		//    唯一差别是 gap 阈值减掉 fog_hidden_margin —— 方向**永远安全**：
+		//    迷雾判定为不透明的区域比地形早退区域大一圈。
+		//
+		//    fog_hidden_margin = 2 个**屏幕**像素对应的 gap
+		//                      = (2/hex_size · world_per_px) · 2
+		//                      = 4 · world_per_px / hex_size；
+		//    world_per_px 直接取 fwidth(v_world)（本 shader 现有的唯一像素尺度来源，
+		//    不新推硬编码常数）。它吸收两件事：① 半分辨率 + 线性上采样在边缘造成的
+		//    1 个半分辨率像素的 alpha 衰减（半分辨率下 fwidth 翻倍 ⇒ margin 自动翻倍，
+		//    见上面坐标契约那一段）；② 地形与迷雾两片 program 在判定边界上的浮点差异。
+#ifndef PK_FOG_NO_TERRAIN_QUERY
+		float fog_px_world = max(abs(fwidth(v_world.x)), abs(fwidth(v_world.y)));
+		float fog_hidden_margin = 4.0 / max(hex_size, 1e-4) * fog_px_world;
+		PkHexTri fog_ttri = pk_hex_tri(
+				fog_wrap_world_pos(wp + pk_fog_terrain_warp_world(wp)), fog_grid);
+		bool fog_terrain_hidden = fog_early_out_enabled
+				&& (fog_tri_dom_k(fog_ttri) <= fog_early_out_k)
+				&& (pk_hex_tri_gap(fog_ttri) >= PK_FIELD_BAND_MAX - fog_hidden_margin);
+		fog_hidden01 = fog_terrain_hidden ? 1.0 : 0.0;
+#endif
+#else
 		// 边界域扭曲：只影响"在哪儿取 k"，不影响 k 本身，因此 hex 轮廓被打散成
 		// 有机曲线，而每格的语义状态仍然精确。
 		// 同样要走可平铺噪声，否则环绕接缝上的迷雾边界会错开一截。
@@ -625,8 +892,24 @@ void fragment() {
 			}
 		}
 #endif
+#endif // PK_CELL_FIELD
 
 		float fog_amount = 1.0 - clamp(k, 0.0, 1.0);
+#ifdef PK_CELL_FIELD
+		// ── 约束 3 的前半：让"强制不透明"在结构上成立，而不是只靠下面的 mix ──────
+		// 显示侧的 k 与地形侧的主导格 k 来自**两张不同的扭曲场**（显示用本 shader 的
+		// 可平铺噪声，判早退用地形烘焙的边界扭曲场）。两者的位移差上界是
+		// |fog_warp| + |terrain_warp| ≤ 0.566s + 0.9s（约束 2 的 A_max + 契约 §2 的
+		// 编码范围）≈ 1.47s，比一个 hex 的内切圆半径还大 ⇒ **存在**这样的像素：地形
+		// 侧主导格未探索（早退），显示侧却恰好落在隔壁可见格的正中央 ⇒ 显示 k = 1、
+		// fog_amount = 0，下面的云体分支整段跳过。那时只改 alpha 是改不到的
+		// （没有 alpha 可改），地形早退输出的常量色就会露出来。
+		// 所以条件 3 拆成两半：
+		//   ① 这里把 fog_amount 顶到 1（= 按"完全未探索"画云：thick 收敛到 1、
+		//      云体满覆盖），分支必然执行，视觉上也是一块正常的厚云而不是黑块；
+		//   ② 分支末尾再 mix 一次（幂等的兜底，防止将来有人调 thick 的阈值）。
+		fog_amount = max(fog_amount, fog_hidden01);
+#endif
 		if (fog_amount > 0.02) {
 			// thick 在未探索区收敛到 1；alpha 必须能真正到 1.0，否则 world_map
 			// 的早退会露出底下未绘制的内容。
@@ -648,7 +931,7 @@ void fragment() {
 				// ── q0 超低：无导数、无光照。只要一层柔和起伏把纯色打散。
 				vec2 q0_drift = vec2(t * 0.17, -t * 0.13);
 				float n = fog_grad_noise_tiled_evolve(
-					p + q0_drift, period_n, t * 0.68, 0.0
+					p + q0_drift, period_n, t, 9
 				);
 				float shade = mix(0.86, 1.14, n);
 				col = mix(explored_color, unexplored_color, thick) * shade;
@@ -974,9 +1257,35 @@ void fragment() {
 				alpha = mix(clamp(thin_a, 0.0, 1.0), 1.0, thick);
 			}
 
+#ifdef PK_CELL_FIELD
+			// ── 约束 3 的落地（方案 §3.6 / §6 不变量 1）────────────────────────
+			// 地形早退的像素在地形 program 里被写成 `fog_unexplored_color` 常量色，
+			// 迷雾**必须**在这里画满，否则玩家会透过迷雾看到那块纯色。
+			// 用 mix 而不是 if：三元/混合在 GPU 上是无分支选择，逐像素分支会让这一行
+			// 落进非一致控制流（本函数后面还有 fwidth 的消费者，方案 §3.9 第 3 条）。
+			alpha = mix(alpha, 1.0, fog_hidden01);
+#endif
 			out_color = vec4(clamp(col, vec3(0.0), vec3(1.0)), clamp(alpha, 0.0, 1.0));
 		}
 	}
+
+#ifdef PK_CELL_FIELD
+	// ── 调试档（只在 PK_CELL_FIELD 变体里存在；只给 tests/world/fog_cell_field_test.gd
+	//    的不变量探针回读，生产路径 fog_debug_view 恒 0）────────────────────────
+	// 三个视图都把值写进**颜色**并且 alpha 固定 1.0：canvas_item 是 blend_mix，
+	// alpha=0 的片元会把 rgb 一起乘成 0（与"什么都没画"无法区分，契约 §9.3 的 view 22
+	// 踩过同一个坑），所以回读必须走 rgb。
+	if (fog_debug_view == 1) {
+		// (a) 地形早退判定：R = terrain_hidden ? 1 : 0
+		out_color = vec4(fog_hidden01, 0.0, 0.0, 1.0);
+	} else if (fog_debug_view == 2) {
+		// (b) **最终** alpha（已含约束 3 的强制不透明）：RGB 灰阶
+		out_color = vec4(vec3(out_color.a), 1.0);
+	} else if (fog_debug_view == 3) {
+		// (c) 显示用 k（三格锐化权重混合后的知识度）：R
+		out_color = vec4(fog_k_debug, 0.0, 0.0, 1.0);
+	}
+#endif
 
 	COLOR = out_color;
 }

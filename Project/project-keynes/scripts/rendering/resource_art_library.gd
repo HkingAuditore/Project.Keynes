@@ -7,8 +7,8 @@ extends RefCounted
 #                                communities, then grazing traces (pasture, mud, sand).
 #                                Normal strip: RG = tangent normal, B = height, A = AO.
 #   fauna                        9 layers of 4x2 top-down sprites (128px cells, heads up).
-#   crown / crown_normal         5 layers (broadleaf, conifer, palm, shrub, hardscape rock)
-#                                of 4x2 sprites (256px cells, alpha), sampled by vegetation_forms.
+#   crown / crown_normal         7 layers of 4x2 sprites (256px cells, alpha) for all
+#                                vegetation and hardscape forms, plus leafless broadleaf.
 #   material                     2 layers sharing one 8x4, 128px-cell atlas:
 #                                layer 0 = albedo, layer 1 = RG normal/B height/A AO.
 #                                Used by resource props, ground decals and lens badges.
@@ -17,6 +17,7 @@ extends RefCounted
 
 const ROOT := "res://assets/textures/resource_art/"
 const MANIFEST := ROOT + "manifest.json"
+const CROWN_LAYERS := 7
 const FAUNA_COLS := 4
 const FAUNA_ROWS := 2
 
@@ -61,6 +62,10 @@ func cover_layer_count() -> int:
 	return _cover_layer.size()
 
 func _load() -> void:
+	# Decoration rendering only needs the two imported arrays. Its layer order is
+	# fixed, so it can load even when a package omits the resource manifest JSON.
+	crown = _array(ROOT + "crown_atlas.png", CROWN_LAYERS)
+	crown_normal = _array(ROOT + "crown_normal.png", CROWN_LAYERS)
 	if not FileAccess.file_exists(MANIFEST):
 		return
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(MANIFEST))
@@ -83,11 +88,6 @@ func _load() -> void:
 		_trace_for[String(fl[i].id)] = String(fl[i].get("trace", ""))
 	if not fl.is_empty():
 		fauna = _array(ROOT + String(fa.file), fl.size())
-	var cr: Dictionary = parsed.get("crown", {})
-	var cl: Array = cr.get("layers", [])
-	if not cl.is_empty():
-		crown = _array(ROOT + String(cr.file), cl.size())
-		crown_normal = _array(ROOT + String(cr.normal), cl.size())
 	var ma: Dictionary = parsed.get("material", {})
 	var mids: Array = ma.get("ids", [])
 	for i in mids.size():
@@ -102,8 +102,8 @@ func _load() -> void:
 	# 导出版里 push_warning 没有任何出口（无控制台、不进 user://logs），于是"图集
 	# 没进包"与"图集在但画质档被压到 0"这两种完全不同的故障在玩家侧长得一模一样。
 	# 这条 print 走 stdout，`adb logcat | grep resource_art` 就能一眼分开：
-	#   cover=16 fauna=9 crown=5 material=2  → 图集正常，问题在渲染档位
-	#   FAILED=...                          → 图集缺失/格式不符，点缀必然退化成色块
+	#   cover=16 fauna=9 crown=7 material=2  → 图集正常，问题在渲染档位
+	#   FAILED=...                          → 图集缺失或格式不符
 	print("[resource_art] v%d cover=%d fauna=%d crown=%d material=%d%s" % [
 		version, _layer_count(cover_albedo), _layer_count(fauna),
 		_layer_count(crown), _layer_count(material),

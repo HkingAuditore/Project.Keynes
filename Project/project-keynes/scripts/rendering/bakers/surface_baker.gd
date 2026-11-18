@@ -216,6 +216,7 @@ static func _bake_visual_tiles(baker: MapBaker, map: MapData, world: WorldData, 
 		layer_reports.append({
 			"layer": layer_id,
 			"bake_ms": float(bundle.get("elapsed_ms", -1.0)),
+			"profile": bundle.get("profile", {}),
 			"upload_ms": float(Time.get_ticks_usec() - upload_t0) / 1000.0,
 			"wall_ms": float(Time.get_ticks_usec() - layer_t0) / 1000.0,
 			"normal_radius_px": Vector2i(
@@ -266,16 +267,24 @@ static func _bake_visual_tiles(baker: MapBaker, map: MapData, world: WorldData, 
 ##   terrain_relief : RG=粗段细节坡度，BA=细段细节坡度 encode_slope
 ## 一次上传两条消费路径：
 ##   ① 2D `terrain_normal_tex`（仅 normal，给植被/建筑/资源/贸易等其它层）；
-##   ② **固定 4 层** `terrain_surface_tex`（主地形 shader，少占材质 sampler）：
+##   ② **固定 7 层** `terrain_surface_tex`（主地形 shader，少占材质 sampler）：
 ##      layer0=normal、layer1=relief、layer2=detail（来自 world.terrain_detail_tex，
 ##      R8→RGBA8 resize LINEAR；null→0x80 中性）、layer3=occluder（来自
-##      world.gi_occluder_tex，RGBA8 resize NEAREST；null→0xFF 哨兵）。
-## 失败时返回 false，调用方走 RG8 粗法线兜底（同样建 4 层 array，detail/occluder 为中性）。
+##      world.gi_occluder_tex，RGBA8 resize NEAREST；null→0xFF 哨兵）、
+##      layer4/5=edge_distance/edge_neighbor（同一个 bundle 的 payload）、
+##      layer6=boundary_warp（同一个 bundle 的 boundary_warp；缺失→中性 0x80）。
+## 失败时返回 false，调用方走 RG8 粗法线兜底（同样建 7 层 array，其余层为中性）。
 
 static func _bake_legacy_static_surface(baker: MapBaker, map: MapData, world: WorldData, hex_size: float,
 		seed_val: int, generation_id: int) -> bool:
 	if map == null or world == null:
 		return false
+	# [cell-field 2026-11-18] 本次烘焙的默认结论：**没有**可用的 warp 层。只有完整走到
+	# 「7 层 array 建好且 layer6 来自真实 bundle 载荷」才翻成 true。放在这里是为了让下面
+	# 每一条 early-return（native pass 缺失 / 尺寸非法 / bundle fallback / 载荷尺寸不符）
+	# 都自动保持 false —— 包括调用方紧接着走的最后兜底 `_upload_legacy_surface_fallback`
+	# （那条路径没有 world 参数，所以标志由这里负责清干净）。
+	world.terrain_warp_layer_bound = false
 	if baker._world_ext == null or not baker._world_ext.has_method("run_bake_visual_tile_layer_pass"):
 		push_warning("[terrain-baked-surface] native visual tile pass unavailable; using RG8 normal fallback")
 		return false
@@ -321,18 +330,21 @@ static func _bake_legacy_static_surface(baker: MapBaker, map: MapData, world: Wo
 		push_warning("[terrain-baked-surface] payload size mismatch normal=%d relief=%d expected=%d (%dx%d)"
 			% [normal_data.size(), relief_data.size(), expected, size.x, size.y])
 		return false
-	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 一次建 surface 的 6 个 Image，
-	# 喂两条消费路径：
+	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01 / cell-field 2026-11-18]
+	# 一次建 surface 的 7 个 Image，喂两条消费路径：
 	#   ① 2D terrain_normal_tex（植被/建筑/资源/贸易等只开 VT_USE_TERRAIN_NORMAL 的层
 	#      继续用 2D sampler；内容与 array layer0 相同，normal 数据因此存两份）；
-	#   ② 固定 6 层 terrain_surface_tex（主地形 + 水面 shader）：
+	#   ② 固定 7 层 terrain_surface_tex（主地形 + 水面 shader）：
 	#      layer0=normal、layer1=relief、layer2=detail（R=detail,GBA=0）、
 	#      layer3=occluder（RGBA8 两个 16-bit cell id，0xFFFF=哨兵）、
 	#      layer4=edge_distance（RGBA8：R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比）、
-	#      layer5=edge_neighbor（RG 次生 cell id 16-bit；B=water_depth R，A 预留）。
+	#      layer5=edge_neighbor（RG 次生 cell id 16-bit；B=water_depth R，A 预留）、
+	#      layer6=boundary_warp（RG=边界扭曲场 xy 的 RG8 编码，BA 预留）。
 	# [surface-array-edge 2026-11-02] layer4/5 的数据本来就在同一个 native tile bundle 里
 	# （run_bake_visual_tile_layer_pass 的 edge_distance / edge_neighbor），因此扩层
 	# **不增加任何烘焙计算**，只是把已有 payload 多填两层。
+	# [cell-field 2026-11-18] layer6 同理：bundle 的 boundary_warp 与 terrain-index pass 的
+	# boundary_warp_buffer 逐字节同源（同一个栅格直搬），扩层同样零新增计算。
 	var normal_img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, normal_data)
 	var relief_img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, relief_data)
 	var layers_t0 := Time.get_ticks_msec()
@@ -362,14 +374,28 @@ static func _bake_legacy_static_surface(baker: MapBaker, map: MapData, world: Wo
 	var edge_t0 := Time.get_ticks_msec()
 	var edge_layers: Array = await baker._make_surface_edge_layers(bundle, size, water_data, expected)
 	var edge_ms := Time.get_ticks_msec() - edge_t0
+	# [cell-field 2026-11-18] layer6：边界扭曲场。与 edge 两层同一个 bundle、零新增烘焙；
+	# 缺失/尺寸不符时这里拿到中性图（RG=0x80 ⇒ 解码后 warp≈0 ⇒ 直边六边形），
+	# 层数因此恒为 7，shader 的 terrain_warp_layer_bound 可以保持 true 而不产生垃圾。
+	# 第二项 is_real 决定 world.terrain_warp_layer_bound：**不能**用层数推断（中性层也是 7 层之一）。
+	var warp_t0 := Time.get_ticks_msec()
+	var warp_data: PackedByteArray = bundle.get("boundary_warp", PackedByteArray())
+	var warp_layer: Array = _make_surface_warp_layer(bundle, size)
+	var warp_img: Image = warp_layer[0]
+	var warp_is_real: bool = bool(warp_layer[1])
+	var warp_ms := Time.get_ticks_msec() - warp_t0
 	world.terrain_surface_tex = baker._create_surface_array(
-		[normal_img, relief_img, detail_img, occluder_img, edge_layers[0], edge_layers[1]],
+		[normal_img, relief_img, detail_img, occluder_img, edge_layers[0], edge_layers[1], warp_img],
 		baker.SURFACE_ARRAY_LAYERS)
+	# array 没建起来时 layer6 也不存在（terrain_surface_tex == null，pusher 不会绑），
+	# 所以只有"真实载荷 + array 成功"两个条件同时成立才置 true。
+	world.terrain_warp_layer_bound = warp_is_real and world.terrain_surface_tex != null
 	var layers_ms := Time.get_ticks_msec() - layers_t0
 	print(("[terrain-baked-surface] %s single-tile %dx%d relief_supersample=1 surface_array=%s "
 		+ "layers=%d detail_layer=%d occluder_layer=%d water_depth=%s edge_layers=%s "
-		+ "native_ms=%.1f wall_ms=%d layers_ms=%d edge_ms=%d normal_bytes=%d relief_bytes=%d "
-		+ "water_bytes=%d edge_distance_bytes=%d edge_neighbor_bytes=%d") % [
+		+ "warp_layer=%s native_ms=%.1f wall_ms=%d layers_ms=%d edge_ms=%d warp_ms=%d "
+		+ "normal_bytes=%d relief_bytes=%d water_bytes=%d edge_distance_bytes=%d "
+		+ "edge_neighbor_bytes=%d boundary_warp_bytes=%d") % [
 		"web" if OS.has_feature("web") else "desktop-legacy",
 		size.x, size.y, "ok" if world.terrain_surface_tex != null else "failed",
 		baker.SURFACE_ARRAY_LAYERS,
@@ -377,16 +403,18 @@ static func _bake_legacy_static_surface(baker: MapBaker, map: MapData, world: Wo
 		1 if world.gi_occluder_tex != null else 0,
 		water_depth_state,
 		"ok" if int(edge_layers[2]) >= 0 else "neutral",
-		float(bundle.get("elapsed_ms", -1.0)), wall_ms, layers_ms, edge_ms,
+		"ok" if warp_is_real else "neutral",
+		float(bundle.get("elapsed_ms", -1.0)), wall_ms, layers_ms, edge_ms, warp_ms,
 		normal_data.size(), relief_data.size(), water_data.size(),
-		int(edge_layers[2]), int(edge_layers[3])])
+		int(edge_layers[2]), int(edge_layers[3]), warp_data.size()])
 	return true
 
 
-# [terrain-web-baked-surface-B 2026-11-01 / surface-array-edge 2026-11-02] 非 tiled
-# surface array 的固定层数：0 normal / 1 relief / 2 detail / 3 occluder /
-# 4 edge_distance / 5 edge_neighbor。shader 侧 terrain_surface_layer_count 由运行期按实际
-# get_layers() 推送；层数不足时对应 helper 返回中性值（距离=1 无混合、次生 id=0xFFFF）。
+# [terrain-web-baked-surface-B 2026-11-01 / surface-array-edge 2026-11-02 / cell-field 2026-11-18]
+# 非 tiled surface array 的固定层数：0 normal / 1 relief / 2 detail / 3 occluder /
+# 4 edge_distance / 5 edge_neighbor / 6 boundary_warp。shader 侧 terrain_surface_layer_count
+# 由运行期按实际 get_layers() 推送；层数不足时对应 helper 返回中性值（距离=1 无混合、
+# 次生 id=0xFFFF、warp=0x80 ⇒ 零偏移）。
 
 static func _make_surface_edge_layers(baker: MapBaker, bundle: Dictionary, size: Vector2i,
 		water_data: PackedByteArray, water_expected: int) -> Array:
@@ -457,6 +485,58 @@ static func _make_neutral_surface_neighbor_image(baker: MapBaker, size: Vector2i
 		data[i * 4] = 255
 		data[i * 4 + 1] = 255
 	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, data)
+
+
+## [cell-field 2026-11-18] surface array layer6（boundary_warp）。
+##
+## 数据来自**同一个** native tile bundle 的 `boundary_warp` 键（run_bake_visual_tile_layer_pass
+## 逐 texel 直搬 terrain-index pass 的 RG8 结果）：尺寸 = layer_size.x*layer_size.y*2，含
+## gutter/halo，行主序 `y*W+x`（`[2i]=R=x`、`[2i+1]=G=y`）。载荷是 RG8，而一条
+## Texture2DArray 只能同格式同尺寸，所以这里扩成 RGBA8（RG 两个字节原样保留，B=0、A=255
+## 来自 RG8→RGBA8 的自然展开；A 是预留通道，没有读者）。
+##
+## 为什么用 `Image.convert` 而不是逐像素 GDScript 交织：1024×762 实测交织 32 ms /
+## convert 0.8 ms，而这条路径在 Web 上是**唯一**的整图单 tile 烘焙路径（单线程 wasm），
+## 32 ms × 3–5 会顶穿加载期 100 ms 心跳断言。convert 的目标格式是本项目到处在用的
+## RGBA8（不是"单通道加宽"，那条 wasm 坑不适用），RG 通道已 headless 逐字节核对一致。
+##
+## 尺寸不符（旧 DLL / canal 刷新分片 / 其它中性化路径）⇒ 返回中性图（RG=0x80 ⇒ 解码后
+## warp≈0，通道布局见下一个函数）。
+## **返回中性图而不是 null**：`_create_surface_array` 要求正好 7 个同尺寸 Image，null 会让
+## 整个 array 建不起来，把本来完好的 normal/relief/detail/occluder/edge 一起丢掉——比
+## "warp 为 0、格界退化成直边" 严重得多（对照 `terrain_edge_layers_bound=false` 的语义：
+## 边缘数据缺失时也是退化成硬边而不是整张地表回退）。
+##
+## 返回 `[Image, bool]`（与 `_make_surface_edge_layers` 一样用位置约定）：
+##   `[0]` 永远可用的 layer6 Image；`[1]` = true 表示像素**真的**来自 bundle 载荷，
+##   false 表示中性兜底。调用方据此推 `world.terrain_warp_layer_bound`（渲染器的
+##   `terrain_warp_layer_bound` uniform），不能靠"层数够 7"推断——中性层也是 7 层之一。
+static func _make_surface_warp_layer(bundle: Dictionary, size: Vector2i) -> Array:
+	var n: int = size.x * size.y
+	var expected: int = n * 2
+	var warp_data: PackedByteArray = bundle.get("boundary_warp", PackedByteArray())
+	if n <= 0 or warp_data.size() != expected:
+		push_warning(("[terrain-baked-surface] boundary_warp payload mismatch %d/%d; "
+			+ "layer6 neutral (hex edges stay straight)") % [warp_data.size(), expected])
+		return [_make_neutral_surface_warp_image(size), false]
+	var image := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RG8, warp_data)
+	image.convert(Image.FORMAT_RGBA8)
+	return [image, true]
+
+
+## [cell-field 2026-11-18] layer6 中性层：R=G=0x80 ⇒ 解码后 (0x80/255*2-1) ≈ +0.4% ⇒
+## 世界偏移 ≈ 0.0025×hex_size（契约里的 0x80 约定，视觉上等价于零偏移 = 直边六边形归属）。
+## 与真实载荷走同一条 RG8→RGBA8 展开，所以 B=0、A=255 也一致（A 是预留通道，无读者）。
+## 尺寸必须与其他 6 层一致，否则 Texture2DArray 建不起来。
+static func _make_neutral_surface_warp_image(size: Vector2i) -> Image:
+	var w: int = maxi(size.x, 1)
+	var h: int = maxi(size.y, 1)
+	var data := PackedByteArray()
+	data.resize(w * h * 2)
+	data.fill(128)
+	var image := Image.create_from_data(w, h, false, Image.FORMAT_RG8, data)
+	image.convert(Image.FORMAT_RGBA8)
+	return image
 
 
 ## [terrain-web-baked-surface-B 2026-11-01] surface array layer2（detail）：
@@ -535,7 +615,8 @@ static func _make_neutral_rgba_image(baker: MapBaker, size: Vector2i, value: int
 
 
 ## [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 把同尺寸同格式的 RGBA8 Image
-## 列表建成 Texture2DArray（主地形 non-tiled 路径的 surface array）。B 方案固定 4 层，
+## 列表建成 Texture2DArray（主地形 non-tiled 路径的 surface array）。层数固定为
+## `baker.SURFACE_ARRAY_LAYERS`（[cell-field 2026-11-18] 6 → 7），
 ## 所以这里显式校验层数：层数不符说明有 layer 没造出来，push_error 返回 null
 ## （调用方据此把 terrain_baked_normals 置 false，shader 用平地法线）。
 
@@ -560,6 +641,11 @@ static func _create_surface_array(baker: MapBaker, images: Array, expected_layer
 ## 等价于旧的"仅粗法线"兜底，而不是退回运行期高度差分。
 ## [surface-array-edge 2026-11-02] 同步补 layer4/5 中性层：R=255（距离 1.0 ⇒ 次生权重 0）、
 ## G/BA=0；次生 id 全 0xFFFF（65535 哨兵 ⇒ decode 返回 -1，硬主 cell 边界）。
+## [cell-field 2026-11-18] 再补 layer6 中性层（RG=0x80 ⇒ 零 warp 偏移），使层数恒为 7。
+## 本函数**没有** world 参数（签名由 map_baker 的委托方法固定），所以
+## `world.terrain_warp_layer_bound = false` 由调用它的那次 `_bake_legacy_static_surface`
+## 在函数入口就置好了：map_baker 只在 `_bake_legacy_static_surface` 返回 false 之后才走到
+## 这条兜底，因此到这里时标志必定已是 false，无需也不应在这里重复设置。
 ## 返回 {"normal_tex": ImageTexture 或 null, "surface_tex": Texture2DArray 或 null}。
 
 static func _upload_legacy_surface_fallback(baker: MapBaker, rg8_data: PackedByteArray, size: Vector2i,
@@ -590,6 +676,8 @@ static func _upload_legacy_surface_fallback(baker: MapBaker, rg8_data: PackedByt
 		out["normal_tex"] = ImageTexture.create_from_image(normal_img)
 	# layer4 中性：只有 R=255，其余通道 0（不能用 _make_neutral_rgba_image(size, 255)，
 	# 那会把 G/BA 也填成 1.0 ⇒ 假 crease + 假海岸占比）。
+	# [cell-field 2026-11-18] layer6 中性：RG=0x80 ⇒ 解码后 warp≈0，格界退化成直边；
+	# 层数仍必须是 7，否则整个 array 建不起来（_create_surface_array 会 push_error + null）。
 	out["surface_tex"] = baker._create_surface_array([
 		normal_img,
 		baker._make_neutral_rgba_image(size, 128),   # layer1 relief：0 坡度
@@ -597,6 +685,7 @@ static func _upload_legacy_surface_fallback(baker: MapBaker, rg8_data: PackedByt
 		baker._make_neutral_rgba_image(size, 255),   # layer3 occluder：cell id 哨兵
 		baker._make_neutral_surface_edge_image(size),      # layer4 距离 1.0 / 无 crease
 		baker._make_neutral_surface_neighbor_image(size),  # layer5 次生 id 0xFFFF
+		_make_neutral_surface_warp_image(size),            # layer6 边界扭曲 0x80（零偏移）
 	], baker.SURFACE_ARRAY_LAYERS)
 	return out
 

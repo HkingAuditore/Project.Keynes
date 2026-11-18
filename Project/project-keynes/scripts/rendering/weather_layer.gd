@@ -27,6 +27,44 @@ const PK_WEB_ENABLE_WEATHER_SHADERS := true
 ## 桌面/移动端不受影响（宏未定义 → 走原来的桌面路径）。
 const WEB_WEATHER_MIN_DEFINE := "#define PK_WEB_WEATHER_MIN\n"
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# [cell-field-overlays 2026-11-18 / O2] 天气 overlay 改走共享场函数（PK_CELL_FIELD）
+#
+# 方案：docs/plans/terrain-cell-field-overlays-plan.md §4（开关与平台）/
+#       §3.2（坐标契约）/ §3.4（采样流程）/ §3.9（sampler 账）
+#
+# 为什么天气要**独立**开关（而不是跟着地形走）：天气和地形之间没有逐像素不变量，
+# 画面只在本层内部变化；所以它可以单独开、单独回退，第一版 Web 也能开（sampler
+# 8 → 2、编译更轻）。迷雾跟地形绑在一起是另一回事（早退判定必须同源），见方案 §4。
+# ═══════════════════════════════════════════════════════════════════════════
+
+## 开关的项目设置键。命名照 `project_keynes/rendering/map_tiles/terrain_cell_field_enabled`
+## 的惯例（`project_keynes/rendering/<子系>/<键>`），但**是另一个键** ⇒ 两个开关互不影响。
+const CELL_FIELD_SETTING := "project_keynes/rendering/map_tiles/weather_cell_field_enabled"
+## PK_CELL_FIELD 的前缀片段：开 = 一个 define 行，关 = 空串。
+## 关时必须**恰好**空串：关态编译产物要与加这套功能之前逐字节相同（回退保证）。
+const CELL_FIELD_DEFINE := "#define PK_CELL_FIELD\n"
+## 迷雾带宽（gap 单位）等三个「迷雾门控参数」的**唯一真源在 FogOfWarLayer**。
+##
+## [O23 2026-11-18] 方案 §3.7 的硬要求：云的消失边界与迷雾薄纱边界必须是**同一条线**。
+## 函数一致还不够 —— k 的取样位置由扭曲决定，参数一分开边界就会错开。所以
+## `fog_field_band` / `fog_warp_freq` / `fog_warp_amp` 在本文件里**一个定义都不留**，
+## 只能引用 fog_of_war_layer.gd 的三个常量（绘制迷雾那一条路径读的是同一批常量）。
+##
+## 环形依赖检查：fog_of_war_layer.gd 只 preload renderer_shader_water.gd，**不** preload
+## 本文件（它只在注释里提到 WeatherLayer，代码里从不引用），所以这条引用是单向的：
+##   weather_layer.gd → fog_of_war_layer.gd → renderer_shader_water.gd（无出边）
+## 检测：tests/world/weather_overlay_field_test.gd 断言两个方向（本文件有这条 preload、
+## fog_of_war_layer.gd 的 preload 列表里没有 weather_layer.gd）。
+const FogOfWarLayerScript = preload("res://scripts/rendering/fog_of_war_layer.gd")
+## 查表前的低频域扭曲（方案 §3.4 / §8-2）：频率单位 1/世界单位，幅度单位 × hex_size。
+## 0.004 → 波长 ≈ 250 wu ≈ 5~6 个 hex；0.75 → 每轴位移 ≈ 0.37 个 hex 直径（落在方案
+## §8-2 建议的 0.3~0.5 格内）。参数值待美术联调 —— 走 uniform 就是为了不重编 shader。
+## ⚠ 这两个值只影响**天气云自己的形态**，与迷雾无关；迷雾门控取 k 用的 twisted 位置另有
+## 两个 uniform（fog_warp_*），真源在 FogOfWarLayer（见上）。
+const WEATHER_WARP_FREQ_DEFAULT := 0.004
+const WEATHER_WARP_AMP_DEFAULT := 0.75
 const CURTAIN_SHADER_PATH := "res://shaders/weather_cell_curtain.gdshader"
 const _CELL_CURTAIN_ENABLED := true
 const _FRONT_PARTICLES_ENABLED := false
@@ -131,6 +169,35 @@ var _wx_lut_diag_last_msec: int = -1000000
 var _wx_pushed_weather_lut: Texture2D = null
 var _wx_pushed_weather_prev: Texture2D = null
 var _wx_pushed_lerp: float = -1.0
+# [cell-field-overlays 2026-11-18] weather_table（offset 空间 4 层）+ 层号双缓冲的推送缓存。
+# 与上面三项同一个策略：值变了才推 —— 稳态下这几条 uniform 写回 0 次。
+# shader 侧消费在 O2（weather_overlay.gdshader），本任务只保证数据与层号已经到位。
+var _endpoints: SubViewport
+var _endpoints_revision := -1
+var _wx_pushed_weather_table: Texture2DArray = null
+var _wx_pushed_weather_cur: int = -2
+var _wx_pushed_weather_bound: bool = false
+# [cell-field-overlays 2026-11-18 / O2] 场函数开关的"已警告一次"标记：开关开着但
+# weather_table / cell_table 没发布时只报一次，避免每帧刷日志。
+var _wx_cell_field_warned: bool = false
+
+## [cell-field-overlays 2026-11-18 / O2] 天气 overlay 是否走共享场函数（见文件头的
+## CELL_FIELD_SETTING 注释）。**与地形的 terrain_cell_field_enabled 完全独立**。
+## **出货默认开**（2026-11-18 收尾；`project.godot` 里显式写 true）；关态 = 与加这套功能
+## 之前逐字节相同，可整体回退。
+## 两个口（惯例照 HexRenderer.terrain_cell_field_enabled）：
+##   · 项目设置 project_keynes/rendering/map_tiles/weather_cell_field_enabled —— 部署期
+##     默认值，_init() 读它作为初值（"setting + export" 惯例）；
+##   · 本变量 —— 运行期权威，GM 面板 / 远程 inspector 可热切。
+## 切换会重编 shader 变体（define 是编译期的）：见 _apply_cell_field_enabled()。
+## 注意：本开关**不接** RendererShaderWater 的 Web boot 自检 —— 方案 §4 明确天气第一版
+## Web 就能开，而那个自检判的是地形/水面两条 program 的驱动兼容性。
+@export var weather_cell_field_enabled: bool = true:
+	set(value):
+		if weather_cell_field_enabled == value:
+			return
+		weather_cell_field_enabled = value
+		_apply_cell_field_enabled()
 
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
 
@@ -157,6 +224,35 @@ var _front_snapshot_interval_sec: float = _WEATHER_FRONT_INITIAL_BLEND_SEC
 # 验证完成后改回 false 关日志。
 const DRIFT_DEBUG_LOG: bool = false
 var _drift_debug_last_log_time: float = -1.0
+
+## [cell-field-overlays 2026-11-18 / O2] "项目设置 + 导出变量"惯例如
+## HexRenderer.terrain_cell_field_enabled：_init() 读设置作为本变量的初值。
+## 读不到键时走**关闭**默认值（方案 §4：出货默认关）。
+func _init() -> void:
+	weather_cell_field_enabled = cell_field_setting_enabled()
+
+
+## [cell-field-overlays 2026-11-18 / O2] 项目设置侧的天气场函数开关（**默认 false**）。
+## 刻意不接受 host：export 初值与测试必须读到同一个答案（形状同
+## RendererShaderWater.cell_field_setting_enabled）。
+## **出货默认开**（2026-11-18 收尾）：`project.godot` 里显式写了 true，这里的 fallback 也是
+## `true`，所以「读不到键」与「没有 project.godot」都不会把它悄悄关掉。
+static func cell_field_setting_enabled() -> bool:
+	return bool(ProjectSettings.get_setting(CELL_FIELD_SETTING, true))
+
+
+## [cell-field-overlays 2026-11-18 / O2] export 开关翻转后的重建入口。
+## PK_CELL_FIELD 是**编译期** define，光推 uniform 不够：必须重载 shader 建新材质。
+## 模板照 set_mobile_quality_tier()：_load_overlay_shader() 重建材质（并按最新值拼前缀），
+## _push_overlay_runtime_state() 把全部 uniform 重推一遍（新 ShaderMaterial 上没有任何
+## 已推的值）。只影响本层 overlay program —— 地形 / 水面 / 迷雾 / 雨幕一个字节都不动。
+func _apply_cell_field_enabled() -> void:
+	if _overlay_quad == null:
+		# 还没 _ready()（例如 _init 里读项目设置）：_load_overlay_shader() 会按最新值建前缀。
+		return
+	_load_overlay_shader()
+	_push_overlay_runtime_state()
+
 
 func _ready() -> void:
 	z_as_relative = false
@@ -234,6 +330,10 @@ func _process(delta: float) -> void:
 				_overlay_mat.set_shader_parameter("weather_lut_prev", _wx_pushed_weather_prev)
 				for mat in _curtain_mats:
 					mat.set_shader_parameter("weather_lut_prev", _wx_pushed_weather_prev)
+			# [cell-field-overlays 2026-11-18] weather_table + 层号：同样按"值变了才推"。
+			# 层号翻转与 weather_lut 换纹理发生在同一次提交（cell_lut_baker 里紧贴），
+			# 所以这里看到的 (tex, cur) 永远是配套的一对。
+			_push_weather_table()
 			# 时间平滑:weather_lerp 按 LUT 的【实际更新节奏】推进 0→1,与 prev/curr 严格对齐(不再复用 front blend)。
 			var _now_us: int = Time.get_ticks_usec()
 			var _upd: int = int(_world_ref.weather_lut_update_usec)
@@ -304,7 +404,9 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
 func set_world_ref(w) -> void:
-	_world_ref = w
+	if _world_ref != w:
+		_world_ref = w
+		_push_weather_table(true)
 
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
 	_world_bounds = bounds
@@ -339,6 +441,9 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 		# v-data-driven：一次性把 8 个 WeatherProfile 的颜色推入 shader。
 		_push_weather_profile_uniforms_to_overlay()
 		_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
+		# [cell-field-overlays 2026-11-18 / O2] 场函数路径的世界坐标 / per-cell 表绑定
+		# （hex_size、map_dims、cell_table*）。旧路径不声明这些 uniform，多推是空操作。
+		_push_cell_field_uniforms()
 	_rebuild_curtain_layers()
 	_push_curtain_runtime_state()
 	_update_curtain_visibility()
@@ -1167,6 +1272,11 @@ func _push_overlay_runtime_state() -> void:
 	if _overlay_mat == null:
 		return
 	_push_wind_luts()
+	# [cell-field-overlays 2026-11-18] 材质重建/首次 setup 后必须重推一次（force）：缓存里的
+	# "上次推的值"在新 ShaderMaterial 上不存在。
+	_push_weather_table(true)
+	# [cell-field-overlays 2026-11-18 / O2] 场函数路径的世界坐标 / per-cell 表绑定。
+	_push_cell_field_uniforms()
 	if _map_index_atlas_tex != null:
 		_overlay_mat.set_shader_parameter("map_index_atlas", _map_index_atlas_tex)
 	if _weather_lut_tex != null:
@@ -1217,6 +1327,140 @@ func _push_wind_luts() -> void:
 	if _wind_lut_tex != null:
 		_overlay_mat.set_shader_parameter("wind_lut", _wind_lut_tex)
 		_overlay_mat.set_shader_parameter("wind_lut_prev", _wind_lut_prev_tex)
+
+
+func _uses_weather_endpoints() -> bool:
+	return weather_cell_field_enabled and RenderingServer.get_rendering_device() != null
+
+
+# [cell-field-overlays 2026-11-18] weather_table（offset 空间，4 层）+ 层号双缓冲的推送。
+#
+#   weather_table        : sampler2DArray（O2 的 weather_overlay 用 texelFetch 三格取值）
+#   weather_table_size   : (map_w, map_h) —— shader 推 offset 的模数，**不**从别的 uniform 反推
+#   weather_table_bound  : 数据是否就绪（false ⇒ shader 必须退回 weather_lut 旧路径）
+#   weather_cur_layer    : 当前层号 0/1；prev = 1 - weather_cur_layer
+#   weather_prev_layer   : 1 - cur（风的 A/B 是 2 + cur / 2 + prev，由 shader 自己加基址）
+#
+# 失效时把 bound 推 false 并解除纹理绑定：绝不把上一张地图/上一次提交的层号留在材质上。
+func _push_weather_table(force: bool = false) -> void:
+	if _overlay_mat == null:
+		return
+	var tex: Texture2DArray = _world_ref.weather_table_tex if _world_ref != null else null
+	var bound: bool = tex != null and _world_ref.weather_table_valid
+	var cur: int = int(_world_ref.weather_table_cur) if bound else -1
+	var revision: int = _world_ref.weather_lut_update_usec if bound else -1
+	if not force and revision == _endpoints_revision and tex == _wx_pushed_weather_table \
+			and cur == _wx_pushed_weather_cur and bound == _wx_pushed_weather_bound:
+		return
+	_endpoints_revision = revision
+	_wx_pushed_weather_table = tex
+	_wx_pushed_weather_cur = cur
+	_wx_pushed_weather_bound = bound
+	_overlay_mat.set_shader_parameter("weather_table", tex if bound else null)
+	_overlay_mat.set_shader_parameter("weather_table_bound", bound)
+	if _uses_weather_endpoints() and bound:
+		var dimensions: Vector2i = _world_ref.weather_table_dims * 2
+		if _endpoints == null:
+			_endpoints = preload("res://scripts/rendering/render_data_table.gd").new()
+			_endpoints.configure(self, dimensions, preload("res://shaders/weather_cell_endpoints.gdshader"))
+		_endpoints.resize_table(dimensions)
+		_endpoints.material.set_shader_parameter("source_table", tex)
+		_endpoints.material.set_shader_parameter("current_layer", cur)
+		_endpoints.refresh()
+		_overlay_mat.set_shader_parameter("weather_endpoints", _endpoints.get_texture())
+	elif _endpoints != null:
+		_overlay_mat.set_shader_parameter("weather_endpoints", null)
+		_endpoints.queue_free()
+		_endpoints = null
+	# 尺寸与层号只在 bound 时有意义；不 bound 时推 0 / -1，任何误读都落在合法范围外
+	# （shader 的 bound 早退先挡住，这里只是不让残值看起来"像对的"）。
+	_overlay_mat.set_shader_parameter("weather_table_size",
+		Vector2(float(_world_ref.weather_table_dims.x), float(_world_ref.weather_table_dims.y)) \
+		if bound else Vector2.ZERO)
+	_overlay_mat.set_shader_parameter("weather_cur_layer", cur)
+	_overlay_mat.set_shader_parameter("weather_prev_layer", (1 - cur) if bound else -1)
+	# [cell-field-overlays 2026-11-18 / O2] 开关开着但表没就绪：shader 侧会整段空返回
+	# （没有云），只在日志里报**一次** —— 否则 GM 面板上看到的是"开关打开了、天气没了"，
+	# 属于最难查的一类静默。bound 恢复后重新武装，下次再失效还会报一次。
+	if _world_ref != null and not bound and weather_cell_field_enabled and not _wx_cell_field_warned:
+		_wx_cell_field_warned = true
+		push_warning("[weather-layer/cell-field] weather_cell_field_enabled=true 但 "
+			+ "weather_table 未发布（reason 见 cell_lut_baker 的 weather_table_reason）⇒"
+			+ " overlay 退化为无云。检查 bake 是否跑过、风场字节是否可用。")
+	elif bound:
+		_wx_cell_field_warned = false
+
+
+# [cell-field-overlays 2026-11-18 / O2 + O23] 场函数路径的其余 uniform（方案 §3.2 / §3.4）。
+#
+#   hex_size       : 世界单位 / hex（= 半径）。**唯一** hex 尺寸来源；新代码不从
+#                    hex_world_diameter 反推（那个 uniform 三处默认值不同，方案 §1.4）
+#   map_dims       : (map_w, map_h)，与 cell_table / weather_table 同源
+#   cell_table*    : 迷雾门控用（layer2.R = 知识度 k），缺数据一律推 false
+#   weather_warp_* : 查表前的低频域扭曲（方案 §3.4 / §8-2）—— 天气云**自己的形态**参数
+#   fog_field_band : 迷雾门控的 k 带宽，必须与迷雾显示同值（方案 §3.7）
+#   fog_warp_*     : [O23] 迷雾门控**取 k 用的扭曲**，必须与迷雾显示同值。与 weather_warp_*
+#                    分开是本任务的核心：云的形态用天气的，k 的取样位置用迷雾的。
+#                    这三条（band / warp_*）的值一律取自 FogOfWarLayer 的常量，本文件不定义。
+#
+# 旧路径的 shader 不声明这些 uniform，"多推"是空操作 —— 所以这里不做开关判断，
+# 保证开关翻转后新材质上一定拿得到全部值（ShaderMaterial 重建会丢掉已推的参数）。
+func _push_cell_field_uniforms() -> void:
+	if _overlay_mat == null:
+		return
+	_overlay_mat.set_shader_parameter("hex_size", _hex_size)
+	_overlay_mat.set_shader_parameter("map_dims", _resolve_map_dims())
+	_overlay_mat.set_shader_parameter("weather_warp_freq", WEATHER_WARP_FREQ_DEFAULT)
+	_overlay_mat.set_shader_parameter("weather_warp_amp", WEATHER_WARP_AMP_DEFAULT)
+	_overlay_mat.set_shader_parameter("fog_field_band", _fog_field_band)
+	_overlay_mat.set_shader_parameter("fog_warp_freq", FogOfWarLayerScript.FOG_WARP_FREQ)
+	_overlay_mat.set_shader_parameter("fog_warp_amp", FogOfWarLayerScript.FOG_WARP_AMP)
+	var table: Texture2DArray = null
+	var dims := Vector2i.ZERO
+	var bound := false
+	if _world_ref != null:
+		table = _world_ref.cell_table_tex
+		dims = _world_ref.cell_table_dims
+		bound = bool(_world_ref.cell_table_bound) and table != null \
+			and dims.x > 0 and dims.y > 0
+	if bound:
+		_overlay_mat.set_shader_parameter("cell_table", table)
+		_overlay_mat.set_shader_parameter("cell_table_size", Vector2(dims.x, dims.y))
+	else:
+		# 缺数据一律推 false + 解除绑定：shader 侧 bound 早退，绝不读不存在的层。
+		_overlay_mat.set_shader_parameter("cell_table", null)
+		_overlay_mat.set_shader_parameter("cell_table_size", Vector2.ZERO)
+	_overlay_mat.set_shader_parameter("cell_table_bound", bound)
+
+
+## 地图尺寸（map_w, map_h）。优先用**表自己的尺寸**（weather_table_dims，O1 起与
+## cell_table_dims 同源）；没有表时退回 MapData 的宽高；都没有则 ZERO（shader 的
+## bound 早退会挡住一切读取）。
+func _resolve_map_dims() -> Vector2:
+	if _world_ref != null:
+		var dims: Vector2i = _world_ref.weather_table_dims
+		if dims.x > 0 and dims.y > 0:
+			return Vector2(dims.x, dims.y)
+		dims = _world_ref.cell_table_dims
+		if dims.x > 0 and dims.y > 0:
+			return Vector2(dims.x, dims.y)
+	if _curtain_map != null and _curtain_map.width > 0 and _curtain_map.height > 0:
+		return Vector2(_curtain_map.width, _curtain_map.height)
+	return Vector2.ZERO
+
+
+## 迷雾带宽（gap 单位）。方案 §3.7：天气的迷雾门控与迷雾显示必须用同一个 k 函数 +
+## **同一组参数**，所以初值直接取 FogOfWarLayer 的真源（[O23]：本文件不再有 0.6 这个
+## 字面量；唯一的 0.6 在 fog_of_war_layer.gd::FOG_FIELD_BAND）。
+var _fog_field_band: float = FogOfWarLayerScript.FOG_FIELD_BAND
+
+
+## 覆盖带宽（gap 单位）。默认值来自真源（`FogOfWarLayer.FOG_FIELD_BAND`），调用方通常
+## 不需要改；上限 0.86 = PK_FIELD_BAND_MAX（shader 侧同一条约束，方案 §3.6 约束 1）。
+func set_fog_field_band(v: float = FogOfWarLayerScript.FOG_FIELD_BAND) -> void:
+	_fog_field_band = clampf(v, 0.0001, 0.86)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("fog_field_band", _fog_field_band)
 
 
 func _push_curtain_runtime_state() -> void:
@@ -1277,6 +1521,13 @@ func _load_overlay_shader() -> void:
 		prefix += "#define MAP_VISUAL_TILED\n"
 	if shader_tier != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(shader_tier)
+	# [cell-field-overlays 2026-11-18 / O2] 场函数开关：**独立**于地形开关，只改这份 program。
+	# 放最后：define 顺序不影响 #ifdef 判定，而 cloud_weather_quality_test 断言前缀仍然
+	# begins_with("#define PK_WEATHER_")（质量档必须排第一）。
+	if weather_cell_field_enabled:
+		prefix += CELL_FIELD_DEFINE
+		if _uses_weather_endpoints():
+			prefix += "#define PK_WEATHER_CELL_ENDPOINTS\n"
 	if not prefix.is_empty():
 		shader = shader.duplicate() as Shader
 		shader.code = prefix + shader.code
@@ -1287,6 +1538,11 @@ func _load_overlay_shader() -> void:
 	_wx_pushed_weather_lut = null
 	_wx_pushed_weather_prev = null
 	_wx_pushed_lerp = -1.0
+	# [cell-field-overlays 2026-11-18 / O2] weather_table / cell_table 的缓存同理：新材质上
+	# 一个参数都没有，必须让下一次 _push_* 真正写一遍。
+	_wx_pushed_weather_table = null
+	_wx_pushed_weather_cur = -2
+	_wx_pushed_weather_bound = false
 	_push_visual_tile_uniforms()
 	_push_edge_transition_data()
 

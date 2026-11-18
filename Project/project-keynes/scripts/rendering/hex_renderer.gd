@@ -47,6 +47,10 @@ const WATER_SHADER_PATH = RendererShaderWater.WATER_SHADER_PATH
 const WATER_PASS_PREFIX = RendererShaderWater.WATER_PASS_PREFIX
 const SPLIT_LAND_ONLY_DEFINE = RendererShaderWater.SPLIT_LAND_ONLY_DEFINE
 const SPLIT_WATER_ONLY_DEFINE = RendererShaderWater.SPLIT_WATER_ONLY_DEFINE
+## [cell-field 2026-11-18] 解析格界的 define 片段与项目设置键：预热清单（WebShaderWarmup）
+## 与测试都从这里取，保证「预热 = 运行期」用的是同一行字节（不在预热文件里写宏字面量）。
+const CELL_FIELD_DEFINE = RendererShaderWater.CELL_FIELD_DEFINE
+const CELL_FIELD_SETTING = RendererShaderWater.CELL_FIELD_SETTING
 const WORLD_MAP_SHADER_PATH = RendererShaderWater.WORLD_MAP_SHADER_PATH
 const WATER_PARAM_NAMES: Array[StringName] = RendererShaderWater.WATER_PARAM_NAMES
 const _HORIZON_BAKE_SHADER_PATH = RendererTerrainHorizon._HORIZON_BAKE_SHADER_PATH
@@ -253,17 +257,17 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 
 @export_group("Cloud Shadow")
 ## PC 高画质直接光照路径的最大直射光压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.85:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.62:
 	set(value):
 		cloud_shadow_strength_high = clampf(value, 0.0, 1.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## PC 中画质合成 pass 的压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.62:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.58:
 	set(value):
 		cloud_shadow_strength_mid = clampf(value, 0.0, 1.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## PC 低画质、移动端和 Web 合成 pass 的压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.48:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.46:
 	set(value):
 		cloud_shadow_strength_low = clampf(value, 0.0, 1.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
@@ -331,15 +335,32 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 	set(value):
 		cloud_shadow_mask_bias = clampf(value, 0.0, 0.8)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
-## 独立云核密度。提高后同一片 LUT Mask 内会出现更多、更小的云朵。
-@export_range(0.35, 2.5, 0.05) var cloud_shadow_cell_scale: float = 0.75:
+## [cloud-tiling 2026-11-18] 云影噪声在**每个世界 wrap 周期**里铺几遍（整数）。
+## 1 = 云团直径 3~5 格、整屏十来朵；2 = 云团减半、数量翻倍；再大就碎成斑点。
+##
+## 为什么必须整数：tile_period = wrap_period / repeat，只有整数除，接缝两侧才落到
+## 同一 texel 上；非整数除会在东西 wrap 处错半格，出现一条竖向错位缝。
+##
+## 这个名字原来是 cloud_shadow_cell_scale（"独立云核密度"），但那个 uniform 从
+## 2026-11-07 改成预烘噪声之后就一直没被 shader 读取 —— 也就是说以前调它完全
+## 没有效果。现在它真的接到平铺上了。
+@export_range(1.0, 8.0, 1.0) var cloud_shadow_tile_repeat: float = 1.0:
 	set(value):
-		cloud_shadow_cell_scale = clampf(value, 0.35, 2.5)
+		cloud_shadow_tile_repeat = clampf(value, 1.0, 8.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
-## 世界空间主云团尺度。降低后云团更大、更连续；提高后云团更密。
-## 当前尺度把噪声单元压到约 1.6 hex，云团保持约 3~5 hex 的可分辨大小。
-## 压到 62（约 1.6 hex），云团直径从 7~12 hex 降到 3~5 hex，整屏能看到
-## 十来朵彼此分开的云影而不是 3~5 团大色块。
+## 云体内部厚薄调制：0 = 云心是一个常数（放大看是一块铁板），1 = 最强。
+## 本质是把中频 Worley 的"云胞内部厚 / 胞界薄"乘在最终密度上。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_interior_detail: float = 0.45:
+	set(value):
+		cloud_shadow_interior_detail = clampf(value, 0.0, 1.0)
+		RendererShaderWater._push_cloud_shadow_tuning(self)
+## 云形采样的目标世界 texel（越大越柔、越小越锐）。实际 footprint 会再和
+## field 像素的世界尺寸取大者，所以低画质/移动端低分辨率场不会因此走样。
+@export_range(2.0, 24.0, 0.5) var cloud_shadow_detail_texel_world: float = 8.0:
+	set(value):
+		cloud_shadow_detail_texel_world = clampf(value, 1.0, 64.0)
+		RendererShaderWater._push_cloud_shadow_tuning(self)
+## 云影平流的世界尺度：只影响**漂移速度**，不改变云团大小（大小看 tile_repeat）。
 @export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0130:
 	set(value):
 		cloud_shadow_world_scale = clampf(value, 0.001, 0.05)
@@ -372,10 +393,20 @@ var _wind_strength: float = 0.15
 ## A/B switch for the HIGH terrain material-array path. This is intentionally
 ## not exposed as a player-facing setting; false restores the legacy path.
 var terrain_materials_enabled: bool = true
-@export_range(0, 17, 1) var terrain_surface_debug_view: int = 0:
+## 地表诊断视图 id（0 = 正常画面）。0..17 为既有视图，18..23 是
+## [cell-field 2026-11-18] 新增的六个解析格界对照视图（只在 PK_CELL_FIELD 变体里编得出来）：
+##   18 = dom 一致性（解析格归属 vs 烘焙 map_index，不一致处标红）
+##   19 = 三格权重 RGB（权重直接上屏，看对偶三角是否连续）
+##   20 = gap 差值（解析 gap vs edge_distance.R）
+##   21 = warp 可视化（扭曲场 rg → 屏幕向量）
+##   22 = dom offset 编码（R,G=col 低/高字节，B=row 低字节，A=1.0；
+##        tests/world/cell_field_gpu_parity_probe.gd 回读后逐像素与 DCHexCellField.dom_at 比对）
+##   23 = 实际带宽 band 灰阶（band/0.86；经线接缝整列变白 = 导数取在已回绕坐标上的回归信号）
+## 上限必须与 clampi、GM 面板条目、shader 里的 `terrain_surface_debug_view == 2x` 同步改。
+@export_range(0, 23, 1) var terrain_surface_debug_view: int = 0:
 	set(value):
 		var was_split := _split_active()
-		terrain_surface_debug_view = clampi(value, 0, 17)
+		terrain_surface_debug_view = clampi(value, 0, 23)
 		RendererShaderWater._apply_surface_debug_view(self, was_split)
 
 ## 陆地 / 水面双 program 总开关，可用于远程 inspector 的 A/B。
@@ -396,6 +427,23 @@ var terrain_materials_enabled: bool = true
 			return
 		terrain_coverage_mesh_enabled = value
 		RendererTerrainHorizon._apply_coverage_mesh_enabled(self)
+
+## [cell-field 2026-11-18] 解析格界总开关（方案 §3.10「一个 define + 一个导出开关」）。
+## **出货默认开**（2026-11-18 第二轮末尾打开；`project.godot` 里显式写 true）。
+## 关闭时 shader 前缀一个字节都不变 ⇒ 与加这套功能之前逐像素一致，这是回退保证。
+## 作用域 = 桌面 Vulkan / 移动 **+ Web / 桌面 Compatibility**：后者要先过 boot 自检
+## （`cell_field_boot_allows()`），自检不过自动退回旧路径并在 `Engine` meta 里记 fail。
+## 两个口：
+##   · 项目设置 project_keynes/rendering/map_tiles/terrain_cell_field_enabled —— 部署期
+##     默认值，_init() 读它作为本变量的初值（"setting + export" 惯例）；
+##   · 本变量 —— 运行期权威，GM 面板 / 远程 inspector 可热切。
+## 切换会重编 shader 变体（define 是编译期的）：见 RendererShaderWater._apply_cell_field_enabled()。
+@export var terrain_cell_field_enabled: bool = true:
+	set(value):
+		if terrain_cell_field_enabled == value:
+			return
+		terrain_cell_field_enabled = value
+		RendererShaderWater._apply_cell_field_enabled(self)
 
 # 材质族参数暴露给 Inspector；运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效，
 # _rebuild 全量推送也读这组值。
@@ -854,6 +902,8 @@ var _shader_mat: ShaderMaterial
 var _sky_background: Node
 ## 拆分绘制使用独立水面节点与材质，由 _apply_uniforms() 调用 _sync_water_quad() 管理。
 var _water_quad: MeshInstance2D
+var _ripple_table: SubViewport
+var _ripple_cycles := Vector4(-1.0, -1.0, -1.0, -1.0)
 var _water_mat: ShaderMaterial
 ## 记录当前水面材质前缀。贴图布局或分档变更时据此判断是否重编。
 var _water_variant_prefix: String = ""
@@ -1063,6 +1113,21 @@ var _building_visual_layer: BuildingVisualLayer = null
 
 func get_last_detail_drain_ms() -> float: return RendererSceneServices.get_last_detail_drain_ms(self)
 
+## [cell-field 2026-11-18] 项目设置侧的解析格界开关（转发给 RendererShaderWater）。
+## 与 _init() 的 export 初值走同一个函数，保证「部署期默认值」与「运行期实际行为」
+## 读的是同一个设置。注意 v1 它只对桌面 Vulkan / 移动有效（见 terrain_cell_field_enabled
+## 与 RendererShaderWater._cell_field_active 的注释）。
+static func cell_field_setting_enabled() -> bool:
+	return RendererShaderWater.cell_field_setting_enabled()
+
+## [cell-field 2026-11-18] 项目设置只作为**初值**来源：部署期配置决定默认，运行期权威
+## 仍是 export 变量（GM 面板要能双向热切，见 terrain_cell_field_enabled 的注释）。
+## 放在 _init 而不是 _ready：_ready 时 set_map / shader 装配已经开始，改开关会与
+## 首帧的变体装配抢时序。此处的赋值命中 setter，但此时还不在树上，
+## _apply_cell_field_enabled() 里的 _refresh_split_configuration() 会安全早退。
+func _init() -> void:
+	terrain_cell_field_enabled = cell_field_setting_enabled()
+
 func _ready() -> void:
 	RendererSceneServices._ready(self)
 
@@ -1077,6 +1142,8 @@ func _apply_weather_layer_render_gate() -> void: return RendererShaderWater._app
 
 func _process(delta: float) -> void:
 	RendererSceneServices._process(self, delta)
+	if _ripple_table != null:
+		RendererShaderWater.sync_ripple_lattice(self)
 
 func _sweep_dormant_detail_chunks() -> void:
 	RendererSceneServices._sweep_dormant_detail_chunks(self)
@@ -1612,6 +1679,7 @@ func _front_precip_amount(front) -> float:
 
 func _rebuild() -> void:
 	return RendererMaterialPublish._rebuild(self)
+
 
 func _push_cell_lut_dims(sm: ShaderMaterial, dims: Vector2i) -> void:
 	return RendererMaterialPublish._push_cell_lut_dims(self, sm, dims)

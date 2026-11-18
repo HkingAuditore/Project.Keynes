@@ -37,8 +37,7 @@ static func quality_tier_defines(tier: int) -> String:
 
 static func web_form_defines(world_known: bool) -> String:
 	if not PK_WEB_ENABLE_VEG_NEAR_FORMS:
-		# 回退档：只走远景 LOD（fragment 只调 vf_far），编译器把 vegetation_forms
-		# 里的近景 form 函数整段丢掉。这就是"挡回 45s 卡死"的那一版行为。
+		# 轻量档用单张物种贴图，省去簇布局和法线采样。
 		return "#define PK_VEG_FAR_ONLY\n"
 	if not world_known:
 		# _ready() 早编：此刻还没有 world，先给几毫秒的远景变体，把近景预算留给
@@ -46,10 +45,9 @@ static func web_form_defines(world_known: bool) -> String:
 		# （见 web_warmup_shader_codes() 的 world_known=false 那格）。
 		return "#define PK_VEG_FAR_ONLY\n"
 	if PK_WEB_VEG_NEAR_FULL_FORMS:
-		# 全量档：与桌面同款，17 个 form 全编（仅在确认不再卡顿时打开）。
+		# 完整光照档，形态沿用同一图集。
 		return ""
-	# 默认档：PK_VEG_NEAR_MIN，只编译阔叶/针叶/灌木/草丛 4 个主力家族，
-	# 其余 form 在 fragment 里直接落到 vf_far（详见 vegetation_forms.gdshaderinc）。
+	# 默认档：LOW 使用图集颜色和轮廓，MID/HIGH 追加法线光照。
 	return "#define PK_VEG_NEAR_MIN\n"
 
 

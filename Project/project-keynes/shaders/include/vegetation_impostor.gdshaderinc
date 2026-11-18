@@ -12,8 +12,16 @@
 // Family batches add style_id * 4 and read per-style shading from the style
 // LUT, so one material draws every profile of the family correctly.
 
+#include "res://shaders/include/fog_memory.gdshaderinc"
+
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
+// [veg-fog-knowledge 2026-11-18] A 通道 = 知识度 k（0 未探索 / 0.5 已探索未可见 /
+// 1 可见），与主地形、资源、建筑、迷雾读的是同一张表。植被过去完全不看这张表，
+// 于是"已探索未可见"区里的树冠保持全彩全黑，看起来像浮在云海上（雾只能靠半透明
+// alpha 去盖，云缝处只有 9% 遮盖力，盖不住）。这里在 vertex 取一次 k，fragment
+// 按 k 压暗 + 去饱和 + 降不透明度，让植被和别的世界层一样"沉进雾里"。
+uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 
 // 移动高档也执行法线着色；只恢复植被这条路径，不改变 horizon 或其他移动特效开关。
 #if !defined(PK_SKIP_VEGETATION_SHADING) || defined(PK_QUALITY_HIGH) || defined(PK_VEG_NEAR_MIN)
@@ -103,12 +111,19 @@ uniform float shading_enabled = 1.0;
 uniform float terrain_normal_influence = 1.0;
 uniform float hillshade_coarse_strength = 2.10;
 uniform float sun_shade_strength = 0.55;
-uniform float ambient_floor = 0.18;
+uniform float ambient_floor = 0.22;
 uniform float contact_ao_strength = 0.42;
 uniform float terrain_valley_ao_strength = 0.40;
 uniform float terrain_valley_ao_gain = 6.0;
 
 #ifdef DETAIL_FAMILY_BATCH
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY && !defined(PK_WEB_VEGETATION)
+// Four fixed vec4 values per style leave a texture unit for the crown normals.
+uniform vec4 detail_style_rows[128];
+vec4 detail_style_param(float style_id, float slot) {
+	return detail_style_rows[4 * int(style_id) + max(int(slot) - 2, 0)];
+}
+#else
 uniform sampler2D detail_style_lut : filter_nearest, repeat_disable;
 uniform vec2 detail_style_lut_size = vec2(16.0, 32.0);
 vec4 detail_style_param(float style_id, float slot) {
@@ -116,6 +131,7 @@ vec4 detail_style_param(float style_id, float slot) {
 		(style_id + 0.5) / detail_style_lut_size.y);
 	return texture(detail_style_lut, uv);
 }
+#endif
 #endif
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
@@ -132,9 +148,11 @@ vec2 shrub_macro_normal(vec2 uv) {
 
 const float VEG_QUAD_HALF = 0.62;
 
-varying flat vec4 v_a;  // seed, count, sub_form, leaf
+varying flat vec3 v_crown_params;
+varying float v_cloud_visibility;
+varying flat vec3 v_a;  // seed, count, leaf
 varying flat vec4 v_b;  // vigor, bloom, form, albedo floor
-varying flat vec4 v_c;  // wind dir (local), sway offset (local)
+varying flat vec2 v_c;  // sway offset (local)
 varying flat vec4 v_d;  // autumn red colour, red support
 varying flat vec4 v_e;  // climate foliage colour, veg_response
 varying flat vec4 v_f;  // snow amount, snow cap retention, body alpha, floor alpha
@@ -142,18 +160,11 @@ varying flat vec4 v_g;  // instance x axis, terrain normal xy
 varying flat vec4 v_h;  // sun direction, valley ao
 varying flat vec4 v_i;  // local day, sun high, moon, horizon visibility
 varying flat vec4 v_j;  // bent normal, sky visibility
-// [veg-ground-uv-uncond 2026-11-17] v_ground_uv 必须是**无条件** varying。
-// 它原来和 VEG_TERRAIN_SHADING 一起被 #ifdef 包着，但 fragment 里的
-// cloud_shadow_direct_visibility(shrub_wrap_map_uv(v_ground_uv), ...) 是**无条件**调用的。
-// 于是 VEG_TERRAIN_SHADING 没定义的那些档位（= PK_SKIP_VEGETATION_SHADING，
-// 也就是 PK_MOBILE_ANY 的 LOW / MID）整份植被 shader 编译失败：
-//   SHADER ERROR: Unknown identifier in expression: 'v_ground_uv'
-//   ERROR: Shader compilation failed.
-// 真机上表现为所有植被实例退化成纯色方块 + 之后每帧刷
-//   ERROR: Parameter "version" is null. (version_get_shader)
-// ——「各种光照都极其丑陋 / 点缀变成色块」有一半是这个，不是分级参数。
-// 一个 vec2 varying 的成本远低于这条分叉，所以直接无条件声明/写入。
+// Ground lighting and the vertex cloud-shadow sample both use this coordinate.
 varying vec2 v_ground_uv; // 不在顶点 wrap，避免跨地图接缝时插值穿过整张图。
+// [veg-fog-knowledge 2026-11-18] 知识度刻意**不用 flat**：格与格之间靠顶点插值过渡，
+// 免得同一丛植被在格界上出现一条硬边（树冠的 quad 常常跨 2~3 格）。
+varying float v_knowledge;
 
 float shrub_decode_height(vec2 uv) {
 	vec2 rg = visual_sample_height(uv).rg;
@@ -380,6 +391,7 @@ void vertex() {
 	float sub_form = floor(packed + 0.0001);
 	float count = floor(clamp(packed - sub_form, 0.0, 0.9999) * 32.0) + 1.0;
 	float seed = INSTANCE_CUSTOM.b;
+	v_crown_params = vec3(vf_seed_offset(seed), vf_elem_radius(count));
 
 	vec2 inst_ax = MODEL_MATRIX[0].xy;
 	float inst_axl = length(inst_ax);
@@ -388,6 +400,12 @@ void vertex() {
 	vec2 uv = clamp(INSTANCE_CUSTOM.rg, vec2(0.0), vec2(1.0));
 	vec4 dyn = sample_dyn_state(uv);
 	vec4 eco = sample_eco_state(uv);
+	// [veg-fog-knowledge 2026-11-18] 与 sample_dyn_state 同一条 cell 寻址，
+	// 只多一次 A 通道采样（每顶点，不是每像素）。表没绑时 a=1，等价于全可见。
+	{
+		int k_cid = decode_cell_index(uv);
+		v_knowledge = (k_cid >= 0) ? texture(enum_lut, cell_lut_uv(k_cid)).a : 1.0;
+	}
 	VegCellState cs = veg_cell_state(dyn, eco, aquatic);
 	float presence = veg_presence(cs, dyn, phen_resp);
 	float vit_n = veg_vitality_norm(cs.vitality);
@@ -492,14 +510,15 @@ void vertex() {
 	if (form == VF_ROCK || form == VF_SCREE || form == VF_FALLEN_LOG || form == VF_SNOW_MOUND) {
 		floor_alpha = body_alpha;
 	}
-	v_a = vec4(seed, count, sub_form, leaf);
+	v_a = vec3(seed, count, leaf);
 	v_b = vec4(vigor, bloom, form_f, alb_floor);
-	v_c = vec4(wdir_local, sway_off);
+	v_c = sway_off;
 	v_d = vec4(pal.red_col, pal.red_amt);
 	v_e = vec4(pal.leaf, veg_resp);
 	v_f = vec4(pal.snow_amt, snow_ret, hidden ? 0.0 : body_alpha, hidden ? 0.0 : floor_alpha);
 	v_g = vec4(bx, terrain_n);
 	v_h = vec4(ed.sun_dir, valley_ao);
+	v_cloud_visibility = cloud_shadow_direct_visibility(shrub_wrap_map_uv(v_ground_uv), ed.local_day);
 	v_i = vec4(ed.local_day, ed.sun_high, ed.moon_strength, horizon_vis);
 	v_j = vec4(sky.bent_normal, sky.visibility);
 }
@@ -509,48 +528,30 @@ void fragment() {
 	float px = max(length(fwidth(p)) * 0.75, 1e-4);
 	VegCtx ctx;
 	ctx.seed = v_a.x;
+	ctx.seed_offset = v_crown_params.xy;
+	ctx.radius = v_crown_params.z;
 	ctx.count = v_a.y;
-	ctx.sub_form = v_a.z;
-	ctx.leaf = v_a.w;
+	ctx.leaf = v_a.z;
 	ctx.vigor = v_b.x;
 	ctx.bloom = v_b.y;
-	ctx.wind = v_c.xy;
-	ctx.time = world_time;
 	ctx.px = px;
 	int form = int(v_b.z + 0.5);
-	vec2 pe = p - v_c.zw;
+	vec2 pe = p - v_c;
 
-	float elem_px = vf_elem_radius(ctx.count) / px;
+	float elem_px = ctx.radius / px;
 #ifdef PK_MOBILE_ANY
 	bool far = elem_px < 6.0;
 #else
 	bool far = elem_px < 3.0;
 #endif
 #ifdef PK_VEG_NEAR_MIN
-	// One prewarmed Web program; LOW keeps the old distant forms, while
-	// MID/HIGH reveal the four supported near families when large enough.
+	// LOW uses the same sprite coverage and skips the relief-normal fetch.
 	far = far || veg_shade_quality < 1;
 #endif
-	// GLSL ES 3.0 (the Compatibility/WebGL2 backend) rejects `?:` when the
-	// operands are structs, which the old one-liner `far ? vf_far(...) :
-	// vf_eval(...)` did. Branch instead so the desktop (SPIR-V) and web builds
-	// share one source.
-	VegSurf s = vf_empty();
 #ifdef PK_VEG_FAR_ONLY
-	// 回退档（ShrubLayer.PK_WEB_ENABLE_VEG_NEAR_FORMS = false）：只走远景 LOD。
-	// 近景 form 那一整套函数（broadleaf/conifer/palm/...）没人引用，编译器会把它们
-	// 整段丢掉——这就是把 web 首次编译从 50s 级降下来的止损手段。
-	s = vf_far(form, pe, ctx);
-#else
-	// PK_VEG_NEAR_MIN（web 默认档）下，被裁掉的 form 近景函数根本没编进来，
-	// 这里直接落到 vf_far；桌面/全量档下 vf_form_near_available() 恒为 true，
-	// 这个条件被编译器折成原来的 far 判断。
-	if (far || !vf_form_near_available(form)) {
-		s = vf_far(form, pe, ctx);
-	} else {
-		s = vf_eval(form, pe, ctx, false);
-	}
+	far = true;
 #endif
+	VegSurf s = vf_bitmap(form, pe, ctx, far);
 
 	vec3 L = v_h.xyz;
 	vec4 daylight = v_i;
@@ -569,22 +570,14 @@ void fragment() {
 	vec2 bx = v_g.xy;
 	vec2 by = vec2(-bx.y, bx.x);
 	float local_day = daylight.x;
-	float cloud_visibility = cloud_shadow_direct_visibility(
-		shrub_wrap_map_uv(v_ground_uv), local_day);
+	float cloud_visibility = v_cloud_visibility;
 	float sun_vis = 1.0;
 	float floor_shadow = 0.0;
-#ifdef VF_CROWN_ART
-	// Atlas boulders already carry painted cavity shading. The synthetic ellipse
-	// underneath them reads as a dark pasted-on plate, so only procedural rocks use it.
-	bool atlas_rock = form == VF_ROCK && crown_art_bound;
-#else
-	bool atlas_rock = false;
-#endif
 #ifndef PK_MOBILE_ANY
 	float hs = vf_height_scale(form);
-	if (!atlas_rock && !far && veg_shade_quality >= 2 && local_day > 0.02 && hs > 0.1) {
+	if (form != VF_ROCK && crown_art_bound && !far && veg_shade_quality >= 2 && local_day > 0.02 && hs > 0.1) {
 		vec2 sl = vec2(dot(L.xy, bx), dot(L.xy, by)) / max(L.z, 0.28);
-		vec2 sh = vf_soft_shadow(pe, ctx, form, -sl * hs);
+		vec2 sh = vf_soft_shadow(pe, ctx.radius, s.shadow_crown, -sl * hs);
 		sun_vis = 1.0 - sh.y * 0.50 * step(0.001, s.cov);
 		// Fade before the quad border so the shadow never shows a straight cut.
 		vec2 ap = abs(p);
@@ -593,8 +586,7 @@ void fragment() {
 #endif
 
 	float body_a = s.cov * v_f.z;
-	float floor_a = max(s.floor_a * contact_ao_strength * 2.0,
-		floor_shadow * 0.70 * local_day * daylight.w * cloud_visibility)
+	float floor_a = floor_shadow * 0.70 * local_day * daylight.w * cloud_visibility
 		* v_f.w * (1.0 - s.cov);
 	if (body_a + floor_a < 0.004) {
 		discard;
@@ -657,9 +649,16 @@ void fragment() {
 		vec3 light = max(amb * mix(1.0, 0.70, local_day), vec3(ambient_floor * 0.5))
 			+ sun_col * direct * sun_shade_strength * 1.40
 			+ EARTH_MOONLIGHT * moon * 0.35;
-		rgb = albedo * light * s.ao;
+		rgb = albedo * light * mix(1.0, s.ao, clamp(contact_ao_strength * 2.0, 0.0, 1.0));
 		rgb *= 1.0 - v_h.w * terrain_valley_ao_strength * mix(0.38, 1.0, v_e.a);
-		rgb = max(rgb, albedo * v_b.w * 0.45 * mix(0.35, 1.0, local_day));
+		// [veg-night-floor 2026-11-18] 夜间暗部地板。旧式 `mix(0.35, 1.0, local_day)`
+		// 让深夜地板只剩 albedo×0.38×0.45×0.35 ≈ albedo×0.06；树冠 albedo 本来就是
+		// 深绿（线性 0.05 量级），乘完落到 0.003 —— 纯黑剪影，压在月光照亮的云海上
+		// 就是作者说的"黑黢黢的树"。两处一起抬：
+		//   ① 相对地板：夜间系数 0.35 → 0.75；
+		//   ② 绝对地板：月光/天光下最暗的植被也有冷蓝轮廓，与雾的暗部同一量级。
+		rgb = max(rgb, albedo * v_b.w * 0.45 * mix(0.75, 1.0, local_day));
+		rgb = max(rgb, vec3(0.013, 0.016, 0.023) * (1.0 - local_day));
 	} else {
 		vec3 light = max(amb_col * sky.w, vec3(ambient_floor))
 			+ sun_col * (local_day * 0.35 * daylight.w * cloud_visibility);
@@ -689,5 +688,12 @@ void fragment() {
 		// overlay. Keep its cool night palette and exposure with the vegetation.
 		floor_col *= mix(EARTH_NIGHT_AMBIENT / EARTH_DAY_AMBIENT, vec3(1.0), local_day) * tod_exposure;
 	}
+	// [veg-fog-knowledge 2026-11-18] 与地形**同一份**灰化（fog_memory.gdshaderinc）：
+	// 同一片未发现区里，植株和地表必须是同一个纸白，否则地形已经褪色、植株还是全彩，
+	// 看起来像浮在雾上。alpha 仍按知识度收一点，让植株沉进雾里而不是一块实心灰像。
+	float vk = clamp(v_knowledge, 0.0, 1.0);
+	rgb = pk_fog_memory_wash(rgb, vk, 0.94);
+	float veg_alpha_mul = mix(0.55, 1.0, smoothstep(0.86, 1.0, vk));
 	float a = body_a + floor_a;
-	COLOR = vec4((rgb * body_a + floor_col * floor_a) / a, clamp(a, 0.0, 1.0));}
+	COLOR = vec4((rgb * body_a + floor_col * floor_a) / a,
+		clamp(a * veg_alpha_mul, 0.0, 1.0));}

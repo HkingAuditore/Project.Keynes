@@ -47,6 +47,110 @@ standalone、fused geometry、visual tile 都传 `cell_landform`，不得只修�
 DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有编辑器锁定，
 构建完成后再切换 `.gdextension` 的 debug/release 映射；不要结束用户编辑器进程。
 
+### 烘焙期侵蚀 knobs（2026-11-18，19 项 + 1 诊断项）
+
+默认值的**唯一来源**是 `terrain_index_baker.gd::DEM_DEFAULTS`（经 `dem_landform_knobs()` 并入融合几何 pass 的
+knobs），可用 `project_keynes/rendering/dem/<去 dem_ 前缀>` 逐项覆盖。C++ 侧另有一套缺省值，
+两边原值一致；**改默认只改 GDScript 表**。
+
+| knob | 默认 | 单位 | 作用 |
+|---|---|---|---|
+| `dem_erosion_mode` | `"spl"` | — | `carve`/`spl`/`spl+carve`/`droplet`；C++ 缺省恒 `carve` |
+| `dem_erosion_max_dim` | 1024 | px（长边） | 侵蚀计算栅格上限；基线长边超过它时按整数因子盒式下采样 |
+| `dem_spl_iters` | 6 | 轮 | 把总侵蚀时间切成几步；只影响离散误差，不改宏观强度 |
+| `dem_spl_k` | 0.50 | 无量纲（总侵蚀时间） | 下切总量；以 `spl_p99_drop ∈ [0.01, 0.08]` 标定 |
+| `dem_spl_m` | 0.45 | — | 汇水面积指数（地貌学区间 0.4–0.6） |
+| `dem_spl_min_area_hex` | 0.03 | hex² | 汇水面积低于它不下切（坡面交给限坡） |
+| `dem_slope_limit_per_relief` | 5.0 | 高度/hex（× 局地起伏） | 坡限系数；默认与 carve 谷壁 `dem_valley_wall_per_relief` 相同 |
+| `dem_slope_limit_relief_floor` | 0.04 | 高度 | 起伏下限，避免平原区坡限趋 0 |
+| `dem_slope_limit_cap_per_relief` | 1.4 | 高度（× 局地起伏） | 单像素最大削减（= carve `dem_valley_depth_per_relief`） |
+| `dem_crest_round` | 0.0 | 强度 | 凸脊磨圆；只取负值 Laplacian，不填谷 |
+| `dem_dep_enabled` | `false` | — | P3a 输运受限沉积开关（默认关，等 A/B 裁决） |
+| `dem_dep_kc` | 0.02 | — | 搬运能力系数（与 SPL 同面积指数） |
+| `dem_dep_rate` | 0.5 | 比例/像素 | 超载部分每像素填回比例 |
+| `dem_dep_min_area_hex` | 0.5 | hex² | 只在成形河道上沉积 |
+| `dem_floor_widen` | `false` | — | P3b 谷底展宽开关（默认关） |
+| `dem_floor_width_hex` | 0.04 | hex | 展宽半宽系数：半宽 = 它 · `A_hex^0.5` |
+| `dem_floor_slope` | 0.002 | 高度/hex | 谷底横坡 |
+| `dem_floor_min_area_hex` | 2.0 | hex² | 展宽起点汇水面积 |
+| `dem_spl_carve_scale` | 0.40 | 比例 | 仅 `spl+carve`：叠加的浅刻谷按此比例缩放谷深 |
+| `dem_erosion_pit_audit` | `false` | — | 诊断：让合并管线额外算 `pits_out`；不改地形，但会多一次填洼（约 60 ms） |
+
+三条硬约束（动这些值之前先读）：
+
+1. **长度 / 面积参数一律以 hex 为单位**（不是像素、不是归一化高度）：像素量由 C++ 乘 `hex_px` 换算，
+   分辨率 / 平台（desktop 1024、Web 512–2048）变化时不改 knob。
+2. **迭代次数（`dem_spl_iters`）只按分辨率分档，禁止按耗时自适应或提前退出**：同一 seed 必须逐位复现，
+   机器负载只能改变耗时，不能改变地形结果。
+3. **C++ 缺省永远是 `carve`**（逐位回退基线）；`spl` 只能由 GDScript `DEM_DEFAULTS` 显式开启，不改 C++。
+   旧 `dem_valley_*` 在所有模式下语义不变；`dem_valley_river_outlet_flow` 在所有模式下都决定河心出口。
+
+**回退方法**：把 `dem_erosion_mode` 改为 `"carve"`——改一行、**无需重编**（C++ 缺省本就是 `carve`）；
+也可临时用 ProjectSettings 覆盖 `project_keynes/rendering/dem/erosion_mode = "carve"`。
+`carve` 输出由 FNV-1a 32-bit hash 门禁守逐位一致（三组基线用例见
+[terrain-erosion-spl-plan.md §6 P0](../plans/terrain-erosion-spl-plan.md)）。
+
+侵蚀相关验收：`tests/world/erosion_spl_bake_test.gd` 的 A1–A11（不变量 / 确定性 / 分辨率无关 / 回退 / 沉积）、
+A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95 门禁，属已知 FAIL），
+加六个既有回归（`mountain_relief_bake_test`、`terrain_index_edge_bake_test`、`terrain_detail_continuity_test`、
+`bake_encoder_cpp_parity_test`、`native_generation_equivalence_test`、`visual_tile_native_bake_test`）；
+性能看「同图同次运行的 carve vs spl 成对对照」，不要只看单模式绝对值
+（desktop `spl` 约 233–265 ms，同机多次运行波动约 ±15%；**全部是 `template_debug`，release 未测**）。
+
+### 结构指标阈值与地图指纹基线（2026-11-18）
+
+地形两计划跟进时，结构指标（M1 / M2b / M5）的三个阈值先后作废、而世界漂移当时没有任何门禁。由此固化两条规矩：
+
+1. **结构指标必须先量基线再定阈值。** 判据要同时满足三件事：**同一版本内可对照**、**口径可测**、**方向已知**。
+   反例都在本轮发生：`M1` 的门禁「Spearman ≤ −0.3」基于「基线预计 ≈ 0」的假设，实测基线是 −0.2863 / −0.3485；
+   `M2b` 的「≤ 旧基线 ×2」拿旧实现的数字比新实现，而两版 `ridge_add` 根本不是一个场（幅值差 3–5 倍、
+   高脊格集合 Jaccard 只有 0.31–0.43）；`M5` 的「`land_h > 0.6` 且局地起伏小」在本工程永远不成立
+   （`sea_level = 0.64` 且 `E ≤ 1` ⇒ `land_h ≤ 0.36`），而换成 `M5_p90` 后又把「扩散磨小起伏」误判成「变平」。
+   所以：**先在同一版本上把指标的分布跑出来、确认口径可测，再定阈值**；跨版本只能做同版本内对照
+   （vs 零假设、vs 关 knob）或换 DLL 法并同时报告判据集合一致度，否则数字不可引用。
+   结构指标新增/改口径时，判据先进测试的 `GATES` 表（`ridge_drainage_metrics_test.gd`，逐项 `hard` / `record`），
+   不要用一个全局严格开关；未定口径的指标先记 `record`，定了再转 `hard`。
+2. **改世界的 PR 必须重写指纹基线。** 世界指纹测试由 `tests/world/world_fingerprint.gd`（共用实现）+
+   `tests/world/world_fingerprint_test.gd`（用例）+ `tests/world/baselines/world_fingerprint.json`（基线）组成，
+   已挂在 `golden_day_hash_test` / `golden_external_advancers_test` / `native_generation_equivalence_test` 开头
+   （世界不一致时直接报「世界指纹漂移」，而不是继续跑出一组无法比对的经济 hash）。
+   有意改动生成结果（高程、地形、地貌、河流、`hydro_parent`）的 PR 必须在**同一提交**里用 `FINGERPRINT_WRITE=1`
+   重写基线，并在提交说明附**分布差异摘要**（`land_h` p10/p50/p90/p99、terrain / landform 直方图、
+   `river_count` / `lake_count` / `highland_river_count` / `peak_count` / `plateau_count` 的新旧值），
+   否则下一个 PR 会看到一团无法归因的 drift。hash 严格、分布统计 5% 容差；精确 hash 只在**同平台同编译配置**下比，
+   其他配置用 `FINGERPRINT_HASH=0` 只比统计。**覆盖边界（2026-11-18 S7 T2 已补）**：指纹现在盖 **cell 级 5 条数组
+   + bake 的 `height_buffer`**（`SCHEMA_VERSION` 1→2，新增 `hashes.bake_height`（FNV-1a-64）、
+   `stats.bake_h_p50/p90/p99`（陆地像素）与 `meta.bake`；分辨率由**常量** `BAKE_HM_MAX_DIM=1024` + bounds 长宽比推出，
+   不依赖 `OS.has_feature()`，60×40 → **1024×606 = 620,544 px**、`wrap_period_x = 2286.307`；只对 **1 个种子**
+   `BAKE_SEEDS=[20260718]` 烘）。验收实测：`dem_slope_limit_per_relief` 5.0→5.1 ⇒
+   `hash DRIFT bake_height: baseline=14ff4f58e6917976 actual=0270977fe8927095`、exit 1，**其余 5 行 PASS 不受影响**，
+   恢复后 hash 一致；指纹测试实测 **693–782 ms**（≤ 1.5 s 预算）。⇒ **改烘焙期侵蚀 / 限坡参数现在也会被这把锁抓到**。
+
+诊断输出按需要临时导出即可，但一律用 **raw profile 键**（`ridge_debug_dump` → `ridge_add_arr`、
+`dem_erosion_area_dump` → `area_hex_buffer`、`debug_dump_ridge_e0` → `e0_arr` / `ridge_e0_arr`、
+`spl_steepest_receiver` 作消融键），**不要加进 `DEM_DEFAULTS` / `ClimateProfile` export**：
+纯诊断、不改任何输出数组，避免把测试开关放进玩家可见的 profile。**默认零行为变化要用指纹证明**，见下一条。
+
+### 同参照场比较与诊断开关（2026-11-18）
+
+地形 S7 复核（同口径新旧对比 + 收益消融）又固化两条规矩，改判据 / 加诊断前先读：
+
+1. **新旧比较必须使用同一参照场。** 同一指标名在两次实现里可能落在**不同的格子集合**上，直接算「旧值 vs 新值」
+   等于中途换了一把尺子。反例就发生在本工程：脊抬升两版的 `ridge_add` 一个在 SPL 之后用最终 `E` 算、
+   一个在 SPL 之前用 `E0` 算，幅值差 **3–5 倍**、场相关仅 **0.40–0.52**、高脊格集合的 **Jaccard 只有 0.31–0.43**
+   ⇒ 由它导出的 M1 / M2b「旧基线 vs 新值」全部不可引用（结论一度被误读成「M2b 变差 5 → 41」，
+   同口径实测是 **0.6667 → 0.6667 不变**）。做法：**两版共用同一个参照场**——S7 用「以 E0 为输入的 `ridge_add`」
+   造判据集合，两版只在自己的最终 `E` / `hydro_parent` 上算指标；并**用 Jaccard 量化判据集合一致度**。
+   集合换了就声明不可比、只做同版本内对照（vs 零假设、vs 关 knob），或换 DLL 法并同时报 Jaccard。
+2. **诊断字段必须 opt-in、默认零行为变化，并以指纹证明。** 只加输出、只加开关也必须证明「默认路径逐位不变」，
+   否则「诊断」会变成第二个变量源。S7 的两个做法可直接照抄：
+   - `debug_dump_ridge_e0`（raw profile 键，默认 `false`）导出 `e0_arr` / `ridge_e0_arr`，开启时 elevation hash
+     与默认**完全一致**（`51a893b7a6b45835` / `22149fd9ffeee585`，两种子）；`spl_steepest_receiver`
+     （raw profile 键，默认 `true`）作消融键，`= 0` 确实改变地形（`4c944a48e0f8cb69`）⇒ 开关有效且默认不变。
+   - 改了实现结构（G2 的河心注入路径）时，用**双编译差分**自证等价：`dem_spl_inject_cell_area = false` 逐位复现
+     改动前的数字（X1 **0.7669 / 0.7809** 完全相同），另用「旧 header vs 新 header」双编译自检 **4 组指纹全同**。
+   指纹入口与重写规则沿用上一条（改世界就 `FINGERPRINT_WRITE=1` 重写基线并附分布差异摘要）。
+
 ## 经济平衡调参
 
 经济平衡调整先用 `tests/economy/economy_balance_soak.gd` 跑固定种子的正式多国开局，
@@ -101,6 +205,27 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 不能将预测写成真实销量、提款或资金。保留资源、库存、利润与业主生计门槛，
 验证缺少下游与上游建筑时仍能形成原料价格和首座生产者机会；细节见
 [经济公式](../cpp-dots-runtime/economy-fixed-point-ledger-formulas.md)。
+
+## 自动建筑投资的资金预检
+
+按实际提交顺序预演整个地块的投资组合：先迁人、注资和放贷，再依次付建材款。
+转职带走的资金按所选家族的现金份额，或按无家族人口的剩余资金计算，不能用整个职业
+人口组的平均值替代。后续项目必须看到前序项目已经迁走的人口和资金，以及更新后的家族份额。
+若选定群体已无法提供足够的转职人口，或某笔建材款付不起，则在写入前保留能通过预检的前缀；
+实际提交的余额断言不放宽。
+
+## 建筑最近一次投资评估
+
+受阻原因、投资评分和回本天数按建筑组保留最近一次实际评估结果。新批次初始化、
+未到评估日期、跨日续算和未进入类型评估的跳过路径不得全局清空这些列；只有建筑类型
+真正进入地块候选评估时，才重置该地块同类型建筑组的旧结果并写回新结果，允许解除受阻。
+新增建筑从未评估状态开始；结构重排沿用原有按行搬迁，新世界和读档候选清理时不得继承
+另一世界的结果。上述列仍为非持久化的展示诊断，读档后等待实际评估重新生成，不改变
+投资周期、候选选择、资金结算、业务状态 hash 或存档格式。
+
+原生回归 `EconomyTargetSelectorTests::run_building_investment_review` 经
+`tests/ideology/ideology_target_selector_test.gd` 进入，覆盖批次和续算保留、跳过保留、
+重新评估替换、解除受阻及建筑清理后重建。
 
 ## 经济冻结输入与标签采样
 
@@ -222,7 +347,22 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   分辨率不是同一件事。验证：`tests/rendering/mobile_msaa_policy_test.gd` 和
   `tests/ui/visual_tile_layout_test.gd`。
 
+## 地图自然点缀
+
+- `world_decoration_manifest.tres` 的散布、实例布局、气候和画质由既有植被层管理。主体轮廓取
+  `crown_atlas.png` 的 alpha，所有外形和视距共用该图集，近景按画质采样匹配的法线图。
+  风摆、物候、雪、光照和投影仍由渲染材质计算。
+- 新贴图从 `assets/textures/resource_art/source/crown/` 经 `tools/resource_art/build.py`
+  打包。修改图集顺序时同步 `vf_bitmap_cell()` 和导入层数。用
+  `tests/world/vegetation_pixel_normal_render_test.gd` 实际渲染全部外形，
+  另跑 `vegetation_form_scatter_test.gd`、`vegetation_family_layer_test.gd`
+  和 `tests/rendering/veg_variant_parity_probe.gd`。
+
 ## 天气与光照 Shader
+
+- 每个水面像素共用一次太阳方向来算主光和水面高光。夜色仍按原来的太阳高度计算，
+  保留调试高度缩放的口径。每个陆地或水面像素的直射光和环境光共用一次云影取样，
+  仍使用各自的遮蔽强度。
 
 - 天气雨雪幕的天气/视野 LUT 在实例内恒定，放在顶点读取后用 flat varying 传递；
   完全不可见的实例收成退化三角形，透明边缘不进入雨雪计算。雪花候选可按最大
@@ -325,6 +465,9 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 
 ## GM 屏蔽与叙事弹窗
 
+阶层动员事件由玩家控制器在每日提交后投递，使用动员事实的独立游标，并复用叙事弹窗和暂停流程。
+叛乱服务状态随 `pknr` 保存。旧档缺少这份状态时，首次提交后以当前玩家领地的动员快照补发仍需处理的阶段。
+
 - GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
 - 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
 
@@ -353,6 +496,9 @@ AI 叙事文本只写处境与后果，不写气温/价格/库存/人口/百分�
 汇总快照没有 `handles/populations`，不能据此选择转账收款人。
 
 ## 家族派遣面板
+
+无家族移民队的报价与派遣命令都使用显式的整数 `family_handle = 0`。
+玩家命令校验不能把 0 误判为缺参，也不能把省略句柄当作无家族移民。
 
 派遣面板以 `(source_cell, family_handle)` 标识来源行，目标已选时直接按地点分组展示
 当地家族。全国进行中入口与详情都复用 PlayerController 查询，按日事件和回执更新；
@@ -450,6 +596,21 @@ Trigger 收尾都完成后，主线程先用原请求日期重试已排队的 Id
 
 ## 大图每日计算与地表绘制
 
+- 陆地与水面的覆盖网格用每行连续的小块组成矩形。保留原分类、边缘外扩、
+  边界裁切与环绕副本，三角形统计取实际生成数量。
+- 使用解析格界的迷雾层在提交绘制前跳过被完全遮住的地表。先判断整屏，再检查
+  镜头内的地图块。判断读取与迷雾贴图同批发布的知识度字节，把扭曲、相邻格混合
+  和屏幕取样范围计入。剩下的区域各合成一份陆地和水面网格，利用原来的材质与
+  绘制顺序；画面范围或视野更新时，在当帧提交新的绘制区域。用
+  `tests/rendering/terrain_draw_coverage_test.gd` 验证覆盖范围，再在真实图形
+  环境对照雾边、横向环绕、移动镜头和视野揭开的首帧。
+- 同一遮挡判断覆盖雾层下方的植被、资源道具和建筑批次。植被和建筑在上传时记录实例的位置
+  和尺寸，绘制前把叶片缩放、投影外伸、屋顶和地面贴花计入。资源道具复用引擎的
+  绘制范围，透镜放大的徽章保留。只有本帧在
+  画面内的整个范围被不透明雾挡住才跳过该批次。地被和建筑底图用同一批可见矩形
+  裁剪绘制范围，保留原材质、贴图坐标和绘制顺序。图层自身的可见状态、细节档和
+  实例数据由原图层继续维护。定向测试见 `tests/rendering/detail_fog_culling_test.gd`。
+
 - 资源恢复先按输入顺序加入有经济活动的格子，再按当天荒地批次的步长递增访问。已处理日和本日步数仍由每格的日历游标决定，只有资源发布成功才记日。
 - 宿主完整验证日输入，再把数组移入只读队列。逐日计划核对这份输入的日期和版本，读档重启用同样验证过的帧重建队列。校验仍拒绝非有限值、非法邻接及水路环。水路的每条下游路径只需证明一次。`runtime_climate_input_hash.cpp` 按 64 位字归并现有参与校验的数组，含数组长度和末尾字节。后台和独立重算走同一摘要定义，CLM2 的状态校验由 ClimateStore 负责。
 - 同一轮中相同纬度复用日照和昼长计算。天气邻接几何按坐标、邻接和环绕宽度的精确值复用。空气输送、天气场与大尺度天气推进只分配互不重叠的格子，等一轮结果齐全才开始下一步。
@@ -535,6 +696,9 @@ Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成
   日期、地块顺序和周期位置继续保存。旧周期强制键仅用于明确的历史近似夹具，不进入正式配置。
 - Country 普通操作仍排到最早尚未封好的日期；明确预约的批次设置 `preserve_effective_days`，
   不能提前。入队在同一锁内回传实际日期，GM 回执使用该日期；已封好的日期只能向后调整。
+- Country worker 的领土变更仅在正式提交后进入读视图，发布游标必须连续递增。
+  领土补丁失配时补齐完整归属，再由 `country_committed` 刷新视野和国界。
+  详见[视野迷雾与国界线](../cpp-dots-runtime/vision-fog-and-borders.md)。
 - 开局两种国家创建路径均把开局国家放在第一个稳定槽位，吞并也不重排槽位。
   PKCN16 已保存这个顺序；冷启动恢复和只读副本安装须从它重建 `starting_country_slot`，
   配置及重置须清除旧值。不能依靠曾经执行过 bootstrap 的旧对象残留内存。
@@ -579,3 +743,33 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 `country_late_command_reschedule_test.gd`；Country-only 不推进经济轮次的检查在财政续算用例。
 `cell_tier` / `cell_next_review_day` 目前保留为存档及诊断列，不再决定每日结算参与范围；
 删除每日维护需另做存档和状态摘要迁移，不在此轮改变。
+
+## 地图绘制中的共享计算
+
+水面、迷雾和天气各自管理一张用于显示的数值纹理。共用的 `render_data_table.gd` 在独立画布中绘制一次，调用者按输入变化刷新。只有回归测试需要把结果读回 CPU。
+
+- 水面在波纹的随机周期切换时更新角点，屏幕像素仍按当前时间算波形与斜率。低档与纹理数量受限的水面程序沿用直接计算。
+- 迷雾每 0.25 个云形演变秒预先算好前后两个时刻，绘制时连续混合。切到最低档会释放纹理。半分辨率迷雾把数值纹理挂在实际使用它的子视口内。地表材质启用浓雾遮挡时，迷雾必须完全盖住它省略的像素。
+- 天气在 `WorldData` 发布天气或切换地图时准备两份相邻数据。天气类型取当前值，风先解码为带方向的分量，再混合空间与时间。兼容模式沿用直接取值。
+- 陆地保留三格底色，细纹取主材质，在两种材质交界处渐淡。植被复用已经选出的树冠轮廓，并让同株云影在顶点间过渡。建筑在顶点读取同栋共用的雨雪、可见状态与夜灯，地形光照仍按像素计算。
+
+比较性能时固定镜头、动画时间、分辨率和各项画质。把水波换周期、天气发布和云雾更新计入帧时间。主要回归入口为 `tests/rendering/render_data_tables_test.gd`、`tests/world/fog_cell_field_test.gd` 和 `tests/world/vegetation_pixel_normal_render_test.gd`。
+
+## 电脑和手机画质设置
+
+- 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
+  `graphics_quality_settings.gd`，单项修改从当前预设复制显示值并切到自定义。
+  `GameSettings` 保存预设及自定义选项到 `user://settings.cfg`，用同一份解析结果
+  应用帧率上限。地图贴图烘焙仍读取原预设，地图清晰度单独决定陆地/水面绘制尺寸。
+- 地图清晰度低于 100% 时，`terrain_render_scale.gd` 只缩放陆地和水面平面，
+  合成图放回地图原绘制位置。相机、选区、地图标记与界面继续使用主画布。切回
+  100% 归还两个平面；水面材质重建后也放入当前绘制目标。渲染验证使用
+  `tests/rendering/terrain_render_scale_test.gd`，检查图层顺序、缩放、平移和调整窗口。
+- 半屏浓雾按地表最终显示在主画布上的位置裁剪。低清晰度地表额外保留线性放大可能采到的一圈像素。地被和建筑底图复用同一组可见区域。水波和迷雾各自的数值纹理跟随使用它的绘制节点，切换清晰度时会在新视口里先于地表或雾层更新。
+- 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
+  关闭云影仍保留天气云的风场输入。切档验证入口为
+  `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
+
+- 雨雪幕按当前天气类型的绘制标记及插值后的强度判断是否完全透明。雾和闪电按
+  各自的阈值跳过；雨雪在低强度时仍可能有可见贡献，保留原形状计算。两个项目的
+  雨雪 Shader 一起更新。高档水面的细碎闪光随屏幕上尺寸平滑淡出，保留较宽的反光。

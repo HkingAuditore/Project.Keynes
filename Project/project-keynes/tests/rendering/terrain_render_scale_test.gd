@@ -2,6 +2,10 @@ extends SceneTree
 
 const TerrainRenderScale = preload("res://scripts/rendering/terrain_render_scale.gd")
 
+class LeftFog extends "res://scripts/rendering/renderer_fog_culling.gd":
+	func _covers_screen(region: Rect2, _world: WorldData, _hex_size: float) -> bool:
+		return region.end.x <= _screen_rect.get_center().x
+
 var _failures := 0
 
 
@@ -66,10 +70,42 @@ func _run() -> void:
 		"returning to 100% restores both surfaces")
 	_check(renderer.get_node_or_null("TerrainBlit") == null, "100% releases the blit")
 	_check(replacement.get_index() == land.get_index() + 1, "direct draw order is restored")
+	_check_scaled_fog(output, renderer, scale, land, replacement)
 	output.queue_free()
 	await process_frame
 	print("terrain render scale: %d failures" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _check_scaled_fog(output: SubViewport, renderer: Node2D, scale: TerrainRenderScale,
+		land: MeshInstance2D, water: MeshInstance2D) -> void:
+	var fog := FogOfWarLayer.new()
+	renderer.add_child(fog)
+	var culler := LeftFog.new()
+	culler._screen_rect = output.get_visible_rect()
+	var graphics := preload("res://scripts/rendering/renderer_graphics_settings.gd").new()
+	graphics._terrain_scale = scale
+	var vertices := PackedVector2Array([Vector2(-192, -192), Vector2(384, -192),
+		Vector2(384, 192), Vector2(-192, 192)])
+	var host := {"_graphics_details": graphics, "_coverage_land_mesh": land.mesh,
+		"_coverage_water_mesh": water.mesh, "_world": WorldData.new(),
+		"_coverage_mesh_result": {"land_vertices": vertices, "water_vertices": vertices}}
+	renderer.position = Vector2(17, 3)
+	land.position = Vector2(-6, 8)
+	water.position = land.position
+	var expected := land.get_global_transform_with_canvas()
+	for percent in [100, 85, 75, 100]:
+		scale.apply(land, percent, Viewport.MSAA_DISABLED)
+		scale.attach_water(water)
+		_check(culler._prepare_partial_meshes(host, land, water, fog)
+			and culler._terrain_canvas_transform.is_equal_approx(expected),
+			"partial fog uses the original map coordinates at %d%%" % percent)
+		var visible_point := expected.affine_inverse() * Vector2(220, 80)
+		var hidden_point := expected.affine_inverse() * Vector2(18, 80)
+		_check(culler._regions.any(func(rect: Rect2) -> bool: return rect.has_point(visible_point))
+			and not culler._regions.any(func(rect: Rect2) -> bool: return rect.has_point(hidden_point)),
+			"the same exposed and covered regions survive resizing to %d%%" % percent)
+	culler.free()
 
 
 func _add_surface(parent: Node2D, color: Color, center: Vector2) -> MeshInstance2D:

@@ -662,7 +662,7 @@ static func _cached_detail_mesh(host) -> ArrayMesh:
 	return mesh
 
 
-# Every form is drawn procedurally on one quad (vegetation_forms.gdshaderinc).
+# Every form samples bitmap sprites within one quad (vegetation_forms.gdshaderinc).
 # Its half extent keeps the old mesh footprint so instance size, settlement
 # avoidance and wrap margins keep their meaning.
 

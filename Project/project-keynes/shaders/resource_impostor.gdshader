@@ -3,7 +3,10 @@ render_mode unshaded, blend_mix;
 
 uniform sampler2D style_lut : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
+#ifndef PK_WEB_RESOURCE_MIN
+// The compatibility program omits the dry plant tint, including its texture slot.
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
+#endif
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D memory_lut : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0);
@@ -55,6 +58,11 @@ uniform vec2 luma_range = vec2(0.24, 0.64);
 uniform float area_feather = 0.55;
 uniform float area_edge_noise = 0.35;
 uniform float plant_cluster_density = 1.30;
+// [decal-ground-fit 2026-11-18] 贴花贴合地表的两档强度。
+// slope_fit：坡面面积变形增益（0 = 关闭，回到"印在屏幕平面"）。
+// ground_tint：贴花色温向脚下地表色靠拢的比例（0 = 保持独立配色）。
+uniform float decal_slope_fit = 1.0;
+uniform float decal_ground_tint = 0.45;
 // Generated bitmap fauna (tools/resource_art): 4x2 top-down sprites per species, drawn
 // as small realistic herds/shoals. Plants are NOT drawn here: they are continuous wild
 // communities in ResourceGroundCover. Style LUT texel 2 = (unused, fauna layer+1, count).
@@ -79,7 +87,9 @@ uniform int herd_size_max = 9;
 uniform float animal_length_hex = 0.11;
 uniform float animal_min_pixels = 3.0;
 uniform float fish_length_hex = 0.035;
+#ifndef PK_WEB_RESOURCE_MIN
 #define VT_USE_HORIZON
+#endif
 #define VT_USE_TERRAIN_NORMAL
 #define VT_USE_HEIGHT
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
@@ -105,6 +115,7 @@ uniform vec2 wind_dir = vec2(1.0, 0.18);
 uniform float weather_wind_boost = 0.0;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#include "res://shaders/include/fog_memory.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 // [web-resource-min] Web/GLES3 精简变体：地形地平线 GI 在 web 上恒为中性值
 // （terrain_horizon_tex_bound 恒 false，见 include 文件头的逐条依据），因此整段
@@ -121,13 +132,17 @@ varying flat vec4 v_material;
 varying flat vec4 v_climate;
 varying flat vec4 v_data;
 varying flat vec4 v_art;
-varying flat vec2 v_sub;
-varying flat vec2 v_ecology;
+// Pack the three per-instance values used by the fragment into one flat slot.
+// Native OpenGL on macOS allows 16 varying slots in total.
+varying flat vec3 v_instance_detail; // x = sub-style, y = instance kind, z = dryness
 varying flat vec3 v_light;
 varying flat vec3 v_direct;
 varying flat vec3 v_sun;
 varying flat vec2 v_axis;
 varying flat vec2 v_rank;
+// [res-fog-memory 2026-11-18] 知识度按**实例**传（flat）：一个道具一个格，
+// 只做逐格灰化，不做格界过渡 —— 与地形共用 fog_memory.gdshaderinc 的同一份公式。
+varying flat float v_knowledge;
 
 // style_lut 的列寻址：夹到 [0, width-1]。见 vertex() 里 texelFetch 那段的说明。
 int rv_style_col(int col, int width) {
@@ -177,11 +192,6 @@ varying vec2 v_world_position;
 #endif
 #endif // PK_RES_WEB_PASS_*
 #endif // PK_WEB_RESOURCE_MIN
-// x = instance kind (1 prop, 2 ground decal, 3 submerged, 4 lens-only),
-// y = 1 when this instance carries the resource's lens badge.
-varying flat vec2 v_kind;
-// Light transmission through water for submerged cues (1 on land).
-// World-space radius of the instance quad (for real-scale sprites).
 
 float rv_hash(float n) {
 	return fract(sin(n * 12.9898 + 78.233) * 43758.5453);
@@ -279,8 +289,12 @@ void vertex() {
 	float live = step(0.88, knowledge);
 	vec4 current = texture(dyn_lut, cell_uv);
 	v_climate = mix(memory, current, has_dynamic_lut ? live : 0.0);
+#ifndef PK_WEB_RESOURCE_MIN
 	vec4 ecology = texture(eco_lut, cell_uv);
-	v_ecology = mix(vec2(memory.a, 1.0 - memory.a), ecology.rg, has_ecology_lut ? live : 0.0);
+	v_instance_detail.z = mix(1.0 - memory.a, ecology.g, has_ecology_lut ? live : 0.0);
+#else
+	v_instance_detail.z = 0.0;
+#endif
 	float style = INSTANCE_CUSTOM.g;
 	// [style-lut-texel 2026-11-17] style_lut 是 4 列 × 64 行、列间没有 padding 的 RGBAF 表：
 	//   col0 = (specular, material_cell+1, art_bound, metallic)
@@ -309,8 +323,9 @@ void vertex() {
 	v_misc.z = max(model_scale.x, model_scale.y);
 	float radius_px = mix(radius_px_world, badge_px * 0.5, clamp(lens_amount, 0.0, 1.0));
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
+	v_knowledge = knowledge;
 	v_misc.y = COLOR.g;
-	v_sub = vec2(meta.b, style);
+	v_instance_detail.x = meta.b;
 	v_rank = vec2(INSTANCE_CUSTOM.a, radius_px);
 	vec2 center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xy;
 	vec2 map_uv = visual_static_wrap_uv((center - world_origin) / max(world_size, vec2(0.0001)));
@@ -327,7 +342,7 @@ void vertex() {
 	float kind_raw = COLOR.a + 0.01;
 	float kind = floor(kind_raw);
 	float carrier = step(fract(kind_raw), 0.25);
-	v_kind = vec2(kind, carrier);
+	v_instance_detail.y = kind;
 	float present = step(0.10, knowledge);
 	float lens = clamp(lens_amount, 0.0, 1.0);
 	float lod = smoothstep(fade_pixels, simple_pixels, radius_px_world);
@@ -534,8 +549,8 @@ float rv_material_contact_edge(vec4 albedo, vec4 surface, vec2 p, float seed,
 void fragment() {
 	int form = int(v_data.x + 0.5);
 	int family = int(v_data.y + 0.5);
-	int sub_style = int(v_sub.x + 0.5);
-	int kind = int(v_kind.x + 0.5);
+	int sub_style = int(v_instance_detail.x + 0.5);
+	int kind = int(v_instance_detail.y + 0.5);
 	float seed = v_data.z;
 	float live = v_data.w;
 	float lens = clamp(lens_amount, 0.0, 1.0);
@@ -560,9 +575,12 @@ void fragment() {
 	vec4 sky_state = v_sky;
 	float horizon_visibility = v_misc.x;
 	vec3 terrain_normal = v_terrain;
+	// [decal-ground-fit 2026-11-18] 逐像素地图 uv 提到分支外：贴花的坡度面积变形、
+	// 地表色继承、云影与光照重采全部按像素位置求，不能沿用实例锚点
+	// （否则一整块贴花上只有一个常量，那正是"平"的来源之一）。
+	vec2 surface_uv = visual_static_wrap_uv(
+		(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
 	if (pixel_surface_lighting) {
-		vec2 surface_uv = visual_static_wrap_uv(
-			(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
 		RvDaylightState surface_daylight = rv_sample_daylight(surface_uv);
 		light_dir = surface_daylight.sun;
 		ambient_color = surface_daylight.ambient;
@@ -573,8 +591,7 @@ void fragment() {
 		sky_state = surface_horizon.sky;
 		terrain_normal = rv_terrain_normal_at(surface_uv);
 	}
-	vec2 cloud_map_uv = visual_static_wrap_uv(
-		(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
+	vec2 cloud_map_uv = surface_uv;
 	float cloud_visibility = cloud_shadow_direct_visibility(cloud_map_uv, day_state.x);
 	vec3 direct_light = direct_color * day_state.x * horizon_visibility * cloud_visibility;
 	// Flat-ground lighting shared by decals and submerged cues.
@@ -672,7 +689,7 @@ void fragment() {
 #endif
 
 		if (family == 0 && form != 26) {
-			float dry = clamp((0.35 - v_climate.g) * 1.4 + (1.0 - health) * 0.45 + v_ecology.y * 0.12, 0.0, 1.0);
+			float dry = clamp((0.35 - v_climate.g) * 1.4 + (1.0 - health) * 0.45 + v_instance_detail.z * 0.12, 0.0, 1.0);
 			base = mix(base, vec3(0.54, 0.45, 0.26), dry * climate_response * 0.38);
 		}
 		float snow_mask = snow * (family == 1 ? 0.18 : (s.h < 0.08 ? 0.55 : 0.85)) * smoothstep(-0.1, 0.5, s.n.z);
@@ -780,14 +797,43 @@ void fragment() {
 #else
 		bool material_ground = material_art && (form == 19 || form == 20 || form == 21
 			|| form == 22 || form == 23 || form == 25);
+		// [decal-ground-fit 2026-11-18] 坡面面积变形。俯视正交投影下，斜面上 1 单位
+		// 长度只投影成 nz 单位，所以屏幕上 1 单位对应地表 1/nz 单位。沿坡向把实例坐标
+		// 除以 nz，图案在坡上自然压密、在坡脚摊开 —— 这是"铺在斜面上"与"印在屏幕
+		// 平面上"的唯一几何差别。纯 ALU，不新增采样；slope_fit = 0 时完全关闭。
+		vec2 p_fit = p;
+		vec2 slope_fit = terrain_normal.xy * decal_slope_fit;
+		float slope2 = dot(slope_fit, slope_fit);
+		if (slope2 > 1e-6) {
+			vec2 axis_y = vec2(-v_axis.y, v_axis.x);
+			vec2 along = slope_fit * inversesqrt(slope2);
+			vec2 across = vec2(-along.y, along.x);
+			vec2 woff = v_axis * p.x + axis_y * p.y;
+			woff = along * (dot(woff, along) / clamp(terrain_normal.z, 0.32, 1.0))
+				+ across * dot(woff, across);
+			p_fit = vec2(dot(woff, v_axis), dot(woff, axis_y));
+		}
 		mat2 material_xform = rv_material_instance_xform(seed);
-		vec2 material_p = material_xform * p;
-		vec4 g = material_ground ? rv_material_albedo(material_p) : rd_ground_decal(p, form, sub_style, tint, seed);
+		vec2 material_p = material_xform * p_fit;
+		vec4 g = material_ground ? rv_material_albedo(material_p) : rd_ground_decal(p_fit, form, sub_style, tint, seed);
 		vec3 col = g.rgb;
 		float grey_albedo = dot(col, vec3(0.299, 0.587, 0.114));
 		col = mix(vec3(grey_albedo), col, palette_saturation);
 		col = rv_compress_luma(col);
 		col = mix(col, vec3(0.84, 0.88, 0.92), snow * 0.55);
+		// [decal-ground-fit] 地表颜色继承。贴花原先是与地表无关的独立位图，两张图
+		// alpha 叠 60% —— 大脑读作"上面多了一层"。这里用已绑定的 height 推
+		// hypsometric 地表色（低地沃土 → 高地灰褐），只取**相对色偏**（除以自身明度）
+		// 调制贴花色温，不动明度，所以不会把深色材料洗灰。零新增采样。
+		vec3 ground_shift = vec3(1.0);
+		if (has_height_tex && decal_ground_tint > 0.001) {
+			vec4 gsample = visual_sample_height(surface_uv);
+			float gh = (gsample.r * 256.0 + gsample.g) / 257.0;
+			float upland = smoothstep(sea_level + 0.02, 0.86, gh);
+			vec3 ground_col = mix(vec3(0.66, 0.64, 0.40), vec3(0.76, 0.70, 0.58), upland);
+			ground_shift = ground_col / max(dot(ground_col, vec3(0.299, 0.587, 0.114)), 0.02);
+		}
+		col *= mix(vec3(1.0), ground_shift, decal_ground_tint);
 		float material_edge = 1.0;
 		// Procedural decals already carry their alpha mask; generated ground art
 		// replaces that mask with its height-feathered material coverage below.
@@ -805,12 +851,19 @@ void fragment() {
 			vec3 normal = normalize(mix(terrain_normal, material_normal,
 				mix(1.0, material_edge, 0.72)));
 			float diffuse = max(dot(normal, light_dir), 0.0);
-			// Decals keep the terrain's flat exposure. Their derived normals only bias
-			// direct light around that baseline; using full object ambient here washes
-			// dark generated material (oil, soil) into grey.
-			float response = clamp(1.0 + (diffuse - flat_diffuse) * 0.55, 0.45, 1.35);
-			col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.08;
-			col *= flat_light * response * mix(1.0, surf.a, 0.55);
+			// [decal-ground-fit 2026-11-18] 法线进 ambient。原实现把 terrain_normal
+			// 的 ambient 当作整块贴花的基线，等于向渲染器声明"你和脚下地面一样平"：
+			// 贴花自身的起伏永远进不了天光项，只剩 direct 的一个乘性偏置。这里让
+			// ambient 与 direct 都按贴花法线求，再与地形基线 mix —— 既拿到体积，
+			// 也不会把深色材料（油、湿土）洗成灰。
+			vec3 decal_amb = rv_ambient_from(normal, ambient_color, direct_color,
+				light_dir, day_state, sky_state);
+			vec3 decal_light = mix(flat_light,
+				decal_amb + direct_light * diffuse * 0.78, 0.55);
+			// 接触边阴影：原系数 0.08 在 contact_shadow=0.68 下只压暗 ~5%，
+			// 等于没有接地。0.40 才能让贴花边缘"咬"进土里。
+			col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.40;
+			col *= decal_light * mix(1.0, surf.a, 0.80);
 		} else {
 			col *= flat_light;
 		}
@@ -932,12 +985,16 @@ void fragment() {
 #endif
 	if ((family == 0 || kind == 2) && has_height_tex && lens < 1.0) {
 		// 扩大的植被/地力斑必须沿实际河岸裁切，不能只检查群落中心。
-		vec2 ground_uv = (v_world_position - world_origin) / max(world_size, vec2(0.0001));
-		vec4 ground = visual_sample_height(ground_uv);
+		// [decal-ground-fit] 与坡度变形/地表色用同一个逐像素 uv，避免两套 wrap 约定
+		// 在东西包裹缝两侧裁出不一致的岸线。
+		vec4 ground = visual_sample_height(surface_uv);
 		float height = (ground.r * 256.0 + ground.g) / 257.0;
 		float land = smoothstep(sea_level - 0.002, sea_level + 0.002, height);
 		float river = has_flow_tex ? 1.0 - smoothstep(river_clear_threshold - 0.08, river_clear_threshold, ground.b) : 1.0;
 		out_alpha *= mix(land * river, 1.0, lens);
 	}
+	// [res-fog-memory 2026-11-18] 与地形、植被**同一份**灰化：同一片未发现区里
+	// 道具、贴花、植株、地表必须是同一个纸白。
+	color = pk_fog_memory_wash(color, v_knowledge, 0.94);
 	COLOR = vec4(color, out_alpha * v_style.a);
 }

@@ -194,11 +194,17 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     PackedInt32Array p2c_work = terr.get("pixel_to_cell_index", PackedInt32Array());
     PackedByteArray edge_work = terr.get("edge_secondary_index_buffer", PackedByteArray());
     PackedByteArray edge_distance_work = terr.get("edge_distance_buffer", PackedByteArray());
+    // [cell-field warp 2026-11-18] 边界扭曲场 RG8，与 edge_* 同一 halo 工作栅格、逐 texel 2 字节。
+    PackedByteArray boundary_warp_work = terr.get("boundary_warp_buffer", PackedByteArray());
     if (procedural_height.size() != WN || biome_work.size() != WN ||
             p2c_work.size() != WN || edge_work.size() != WN * 2 ||
             edge_distance_work.size() != WN) {
         return fail("terrain payload size mismatch");
     }
+    // warp 是附加视觉层：尺寸不符时只丢这一层（shader 侧 terrain_warp_layer_bound 保持 false），
+    // 不让一个附加输出把整张 tile 打成 fallback。
+    const uint8_t * const BW_W = (boundary_warp_work.size() == WN * 2)
+            ? boundary_warp_work.ptr() : nullptr;
 
     auto wrap_world_x = [&](double x) -> double {
         if (wrap_period_x <= 0.0001) return x;
@@ -268,13 +274,31 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         return double(src[sy * BW + sx]) / 255.0;
     };
 
-    godot::Ref<godot::FastNoiseLite> residual_noise;
-    residual_noise.instantiate();
-    residual_noise->set_noise_type(godot::FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
-    residual_noise->set_seed(int(knobs.get("seed", 0)) + 1597);
-    residual_noise->set_frequency(float(0.42 / hex_size));
-    residual_noise->set_fractal_type(godot::FastNoiseLite::FRACTAL_FBM);
-    residual_noise->set_fractal_octaves(3);
+    // [tile-height-parallel 2026-11-18] 工作高度场原本是单线程逐 texel 循环：
+    // 每个 texel 5 次 FBM（中心 + 上下左右滤波）+ 双三次基线高程采样，实测占
+    // 单层烘焙六成以上——纯海洋层（跳过噪声）只要 ~55ms，陆地层 ~230ms，差值
+    // 就是这段。这里按行分带并行，写入互不重叠，结果逐字节等价。
+    //
+    // 噪声实例必须**每带一份**：FastNoiseLite 没有跨线程重入的保证，共用一份
+    // 就是把未定义行为放进热循环。配置参数与原单实例完全一致（同 seed / 同
+    // 频率 / 同分形），因此每带的噪声输出与串行版逐位相同。
+    const int height_bands = bake_row_tasks(WH);
+    const int height_band_rows = (WH + height_bands - 1) / std::max(1, height_bands);
+    std::vector<godot::Ref<godot::FastNoiseLite>> band_noise;
+    band_noise.reserve(size_t(height_bands));
+    for (int band = 0; band < height_bands; ++band) {
+        godot::Ref<godot::FastNoiseLite> noise;
+        noise.instantiate();
+        noise->set_noise_type(godot::FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+        noise->set_seed(int(knobs.get("seed", 0)) + 1597);
+        noise->set_frequency(float(0.42 / hex_size));
+        noise->set_fractal_type(godot::FastNoiseLite::FRACTAL_FBM);
+        noise->set_fractal_octaves(3);
+        band_noise.push_back(noise);
+    }
+    // [tile-height-columns PR#9] 回绕坐标只跟 x 有关，逐 texel 算 4 次 cos/sin 是白费：
+    // 按列预计算 {cos(phase)*radius, sin(phase)*radius}，中心 / 左右滤波共用，
+    // y 方向 ±r 只改第三个分量。纯数学、无共享状态，可以和上面的每带实例并存。
     using NoiseColumn = std::array<double, 2>;
     const bool wrap_noise = wrap_period_x > 0.0001;
     auto noise_column = [&](double wx) -> NoiseColumn {
@@ -293,9 +317,25 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 noise_column(wx + residual_filter_radius)});
         }
     }
-    auto periodic_noise = [&](const NoiseColumn &column, double wy) -> double {
-        if (!wrap_noise) return double(residual_noise->get_noise_2d(column[0], wy));
-        return double(residual_noise->get_noise_3d(column[0], column[1], wy));
+    auto band_periodic_noise = [&](int band, const NoiseColumn &column, double wy) -> double {
+        godot::FastNoiseLite *noise = band_noise[size_t(band)].ptr();
+        if (!wrap_noise) return double(noise->get_noise_2d(column[0], wy));
+        return double(noise->get_noise_3d(column[0], column[1], wy));
+    };
+
+    // [tile-profile 2026-11-18] 每层瓦片的内部耗时拆分，随 bundle 回给
+    // surface_baker 写进 visual tiles 报告。六个 steady_clock 读数对单层
+    // ~170ms 的量级可以忽略，换来的是"下一刀该切哪里"不用再猜。
+    auto now_ms = []() -> double {
+        return std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+    };
+    Dictionary prof;
+    double prof_last = now_ms();
+    auto mark = [&](const char *key) {
+        const double t = now_ms();
+        prof[String(key)] = t - prof_last;
+        prof_last = t;
     };
 
     PackedFloat32Array height_work;
@@ -303,42 +343,50 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     float * const HW = height_work.ptrw();
     const float * const PH = procedural_height.ptr();
     const uint8_t * const BIOME_W = biome_work.ptr();
-    auto height_rows = [&](int first_row, int end_row) {
-        for (int y = first_row; y < end_row; ++y) {
-            const double wy = work_origin_y + (double(y) + 0.5) * step_y;
-            for (int x = 0; x < WW; ++x) {
-                const int i = y * WW + x;
-                const double wx = work_origin_x + (double(x) + 0.5) * step_x;
-                const double base = sample_base_height(wx, wy);
-                const bool water = pk_is_water_terrain(BIOME_W[i]);
-                double procedural_detail = 0.0;
-                if (!water && BASE_P != nullptr && procedural_detail_gain > 0.0) {
-                    procedural_detail = std::max(-procedural_detail_max, std::min(procedural_detail_max,
-                            (double(PH[i]) - sample_base_bicubic(BASE_P, wx, wy)) * procedural_detail_gain));
+    // n_tasks_hint == n 让每个 task 恰好是一整条带（chunk = 1），闭包拿到的
+    // begin 就是带号，可以直接索引自己的噪声实例——parallel_for_range 的闭包
+    // 只暴露 (begin,end)，没有 task_idx。
+    pk::parallel_for_range("pk_bake_visual_tile_height", height_bands, height_bands, 1,
+            [&](int band_begin, int band_end) {
+        for (int band = band_begin; band < band_end; ++band) {
+            const int y_begin = band * height_band_rows;
+            const int y_end = std::min(y_begin + height_band_rows, WH);
+            for (int y = y_begin; y < y_end; ++y) {
+                const double wy = work_origin_y + (double(y) + 0.5) * step_y;
+                for (int x = 0; x < WW; ++x) {
+                    const int i = y * WW + x;
+                    const double wx = work_origin_x + (double(x) + 0.5) * step_x;
+                    const double base = sample_base_height(wx, wy);
+                    const bool water = pk_is_water_terrain(BIOME_W[i]);
+                    double procedural_detail = 0.0;
+                    if (!water && BASE_P != nullptr && procedural_detail_gain > 0.0) {
+                        procedural_detail = std::max(-procedural_detail_max, std::min(procedural_detail_max,
+                                (double(PH[i]) - sample_base_bicubic(BASE_P, wx, wy)) * procedural_detail_gain));
+                    }
+                    double residual = 0.0;
+                    if (!water && residual_amp > 0.0) {
+                        const auto &columns = residual_columns[x];
+                        const double n0 = band_periodic_noise(band, columns[0], wy);
+                        const double navg = 0.25 * (
+                                band_periodic_noise(band, columns[1], wy) +
+                                band_periodic_noise(band, columns[2], wy) +
+                                band_periodic_noise(band, columns[0], wy - residual_filter_radius) +
+                                band_periodic_noise(band, columns[0], wy + residual_filter_radius));
+                        const double relief_gate = std::max(0.12, std::min(1.0,
+                                std::fabs(double(PH[i]) - base) / 0.06));
+                        residual = std::max(-residual_amp, std::min(residual_amp,
+                                (n0 - navg) * residual_amp * 3.0 * relief_gate));
+                    }
+                    double h = std::max(0.0, std::min(1.0, base + procedural_detail + residual));
+                    if (water) h = std::min(h, sea_level);
+                    else h = std::max(h, sea_level);
+                    HW[i] = float(h);
                 }
-                double residual = 0.0;
-                if (!water && residual_amp > 0.0) {
-                    const auto &columns = residual_columns[x];
-                    const double n0 = periodic_noise(columns[0], wy);
-                    const double navg = 0.25 * (
-                            periodic_noise(columns[1], wy) +
-                            periodic_noise(columns[2], wy) +
-                            periodic_noise(columns[0], wy - residual_filter_radius) +
-                            periodic_noise(columns[0], wy + residual_filter_radius));
-                    const double relief_gate = std::max(0.12, std::min(1.0,
-                            std::fabs(double(PH[i]) - base) / 0.06));
-                    residual = std::max(-residual_amp, std::min(residual_amp,
-                            (n0 - navg) * residual_amp * 3.0 * relief_gate));
-                }
-                double h = std::max(0.0, std::min(1.0, base + procedural_detail + residual));
-                if (water) h = std::min(h, sea_level);
-                else h = std::max(h, sea_level);
-                HW[i] = float(h);
             }
         }
-    };
-    pk::parallel_for_range("pk_bake_visual_tile_height", WH, bake_row_tasks(WH),
-            64, height_rows);
+    });
+
+    mark("height");
 
     Dictionary river = run_bake_river_sdf_pass(work_knobs);
     PackedFloat32Array flow_work = river.get("out_buf", PackedFloat32Array());
@@ -365,6 +413,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     // Artificial canals share the height texture's A channel. Rasterization
     // uses only the owner cell and its six directed edges, keeping the work
     // bounded per pixel and adding no runtime sampler.
+    mark("river");
     PackedFloat32Array canal_work;
     canal_work.resize(WN);
     canal_work.fill(0.0f);
@@ -428,6 +477,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         }
     }
     const float * const CANAL_W = canal_work.ptr();
+    mark("canal");
 
     work_knobs["biome_buffer"] = biome_work;
     Dictionary coast = run_bake_coast_sdf_pass(work_knobs);
@@ -447,6 +497,8 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         }
     }
 
+    mark("coast");
+
     // height RGBA8: RG=16-bit carved visual elevation, B=natural river SDF,
     // A=artificial canal SDF.
     // 与 Legacy encode_height_flow_tex 对齐；不再单独产出 flow 层。
@@ -456,6 +508,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     // water_depth RGBA8: R=水深，G/B/A=湖 / 礁 / 海带的 3×3 软权重。
     // edge_distance RGBA8: R=到次生格的距离，G=沟谷深度（凹处遮蔽），B/A=8 邻域水 / 湖占比
     //   （海岸过渡；海占比 ≈ 水 − 湖）。fragment setup 每像素只读这一次，陆地和水面共用。
+    // [cell-field warp 2026-11-18] boundary_warp RG8: R/G = 边界扭曲场 xy 的 8-bit 编码
+    //   （v = clamp((warp+hi)/1.6, -1, 1)，byte = round((v*0.5+0.5)*255)），供 hex cell
+    //   field shader 解析格界；与 terrain_index 的同名 buffer 逐字节同源（同栅格直搬）。
     PackedByteArray height_data; height_data.resize(N * 4);
     PackedByteArray normal_data; normal_data.resize(N * 4);
     // 细节坡度是 sub-hex 尺度的高频量，按 relief_supersample 倍分辨率烘焙（只这一张），
@@ -469,6 +524,8 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     PackedByteArray detail_data; detail_data.resize(N);
     PackedByteArray edge_data; edge_data.resize(N * 2);
     PackedByteArray edge_distance_data; edge_distance_data.resize(N * 4);
+    // [cell-field warp 2026-11-18] 边界扭曲场 RG8：静态几何场，逐 texel 2 字节（与 edge_neighbor 同宽）。
+    PackedByteArray boundary_warp_data; boundary_warp_data.resize(N * 2);
     uint8_t * const HD = height_data.ptrw();
     uint8_t * const ND = normal_data.ptrw();
     uint8_t * const RD = relief_data.ptrw();
@@ -477,6 +534,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     uint8_t * const DD = detail_data.ptrw();
     uint8_t * const ED = edge_data.ptrw();
     uint8_t * const EDD = edge_distance_data.ptrw();
+    uint8_t * const BWD = boundary_warp_data.ptrw();
     const int32_t * const P2C = p2c_work.ptr();
     const uint8_t * const EW = edge_work.ptr();
     const uint8_t * const EDW = edge_distance_work.ptr();
@@ -691,10 +749,12 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             }
         }
     };
+    mark("relief_setup");
     if (!canal_refresh_only) {
         pk::parallel_for_range("pk_bake_visual_tile_relief", RH, bake_row_tasks(RH),
                 /*seq_threshold=*/8, relief_rows);
     }
+    mark("relief");
 
     auto encode_rows = [&](int y_begin, int y_end) {
         for (int y = y_begin; y < y_end; ++y) {
@@ -814,6 +874,12 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 DD[di] = uint8_t(std::round((dn * 0.5 + 0.5) * 255.0));
                 ED[di * 2] = EW[si * 2];
                 ED[di * 2 + 1] = EW[si * 2 + 1];
+                // [cell-field warp 2026-11-18] warp 场与 edge_* 同一 halo 工作栅格，逐 texel 直搬
+                // （无重采样）：工作栅格步长与 tile 栅格完全一致，si → di 只差 halo 偏移。
+                if (BW_W != nullptr) {
+                    BWD[di * 2] = BW_W[si * 2];
+                    BWD[di * 2 + 1] = BW_W[si * 2 + 1];
+                }
                 EDD[di * 4] = EDW[si];
                 EDD[di * 4 + 1] = uint8_t(std::lround(pk_relief::clampf(crease, 0.0f, 1.0f) * 255.0f));
                 EDD[di * 4 + 2] = uint8_t(std::lround(float(n_water) * (255.0f / 8.0f)));
@@ -823,29 +889,40 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     };
     pk::parallel_for_range("pk_bake_visual_tile_encode", H, bake_row_tasks(H),
             /*seq_threshold=*/8, encode_rows);
+    mark("encode");
 
-    auto hash_bytes = [](const PackedByteArray &data) -> int64_t {
-        uint64_t h = 1469598103934665603ULL;
-        const uint8_t *p = data.ptr();
-        for (int i = 0; i < data.size(); ++i) {
-            h ^= uint64_t(p[i]);
-            h *= 1099511628211ULL;
-        }
-        return int64_t(h);
-    };
+    // 逐缓冲 FNV：只服务于人工对拍（换实现后确认逐字节等价）。
+    // **不要**把它挪进条件分支：`tests/ui/visual_tile_native_bake_test.gd` 用
+    // `first.hashes == second.hashes` 断言逐块确定性，一旦默认返回空 dict，
+    // 那条断言就退化成 `{} == {}` 恒真（2026-11-18 曾有人把它包进
+    // `emit_layer_hashes` 开关并默认关闭，会静默削弱该测试）。
     Dictionary hashes;
-    hashes["height"] = hash_bytes(height_data);
-    hashes["terrain_normal"] = hash_bytes(normal_data);
-    if (!canal_refresh_only) {
-        hashes["terrain_relief"] = hash_bytes(relief_data);
-        hashes["map_index"] = hash_bytes(map_index_data);
-        hashes["water_depth"] = hash_bytes(water_data);
-        hashes["terrain_detail"] = hash_bytes(detail_data);
-        hashes["edge_neighbor"] = hash_bytes(edge_data);
-        hashes["edge_distance"] = hash_bytes(edge_distance_data);
+    {
+        auto hash_bytes = [](const PackedByteArray &data) -> int64_t {
+            uint64_t h = 1469598103934665603ULL;
+            const uint8_t *p = data.ptr();
+            for (int i = 0; i < data.size(); ++i) {
+                h ^= uint64_t(p[i]);
+                h *= 1099511628211ULL;
+            }
+            return int64_t(h);
+        };
+        hashes["height"] = hash_bytes(height_data);
+        hashes["terrain_normal"] = hash_bytes(normal_data);
+        if (!canal_refresh_only) {
+            hashes["terrain_relief"] = hash_bytes(relief_data);
+            hashes["map_index"] = hash_bytes(map_index_data);
+            hashes["water_depth"] = hash_bytes(water_data);
+            hashes["terrain_detail"] = hash_bytes(detail_data);
+            hashes["edge_neighbor"] = hash_bytes(edge_data);
+            hashes["edge_distance"] = hash_bytes(edge_distance_data);
+            if (BW_W != nullptr) hashes["boundary_warp"] = hash_bytes(boundary_warp_data);
+        }
     }
 
     const auto t1 = std::chrono::high_resolution_clock::now();
+    mark("hash");
+    out["profile"] = prof;
     out["fallback"] = false;
     out["reason"] = String();
     out["width"] = W;
@@ -861,6 +938,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         out["terrain_detail"] = detail_data;
         out["edge_neighbor"] = edge_data;
         out["edge_distance"] = edge_distance_data;
+        // [cell-field warp 2026-11-18] tiled warp field：每 tile RG8（N*2），GDScript 侧
+        //   VisualTileSet.FIELD_FORMATS 需登记 boundary_warp: FORMAT_RG8 才会上传成 tex 层。
+        if (BW_W != nullptr) out["boundary_warp"] = boundary_warp_data;
     }
     out["hashes"] = hashes;
     out["relief_supersample"] = RS;
@@ -878,6 +958,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             "edge_distance_units", String("normalized_hex_center_gap"));
     out["edge_distance_saturate_hex"] = double(terr.get(
             "edge_distance_saturate_hex", VISUAL_EDGE_DISTANCE_SATURATE_HEX));
+    // [cell-field warp 2026-11-18] 解码分母 + clamp 诊断（诊断统计覆盖含 halo 的工作栅格）。
+    out["boundary_warp_range"] = double(terr.get("boundary_warp_range", 1.6));
+    out["boundary_warp_clamped"] = int(terr.get("boundary_warp_clamped", 0));
     out["terrain_ms"] = double(terr.get("elapsed_ms", -1.0));
     out["river_ms"] = double(river.get("elapsed_ms", -1.0));
     out["coast_ms"] = double(coast.get("elapsed_ms", -1.0));

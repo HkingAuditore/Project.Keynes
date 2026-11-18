@@ -2,14 +2,23 @@
 # 三态视野迷雾层。
 #
 # 与 DataOverlayLayer / WeatherLayer 同一套机制：一张覆盖 world_bounds 的
-# quad + map_index_atlas 逐像素解 cell.index + per-cell LUT 间接寻址。
-# 之所以不用 GPU instance 画六边形：2400 格 × 3 份 wrap 副本 = 7200 instance，
-# 每次视野变化都要重传 instance buffer，六边形还是硬边、得额外羽化；而 LUT 方案
-# 是 1 个 draw call、0 几何，视野变化只需重写 2400 个 texel。map_index_atlas 在
-# 烘焙期提供硬主索引 + 独立邻格/距离场，Shader 只混合显示用知识度。
+# quad + per-pixel 取格 + per-cell 表。之所以不用 GPU instance 画六边形：2400 格 ×
+# 3 份 wrap 副本 = 7200 instance，每次视野变化都要重传 instance buffer，六边形还是硬边、
+# 得额外羽化；而 LUT 方案是 1 个 draw call、0 几何，视野变化只需重写 2400 个 texel。
 #
-# 迷雾值不占独立纹理：它住在 enum_lut 的 A 通道（知识度 k），主地形已经无条件
-# 采样 enum_lut，因此灰化与早退都是零新增 texture sample。本层复用同一张 LUT。
+# ── 取格的两条路径（与主地形**同一个**开关 `PK_CELL_FIELD`）───────────────
+# [cell-field-overlays 2026-11-18 / O3] 开（方案 docs/plans/terrain-cell-field-overlays-plan.md
+# §3.6 / §4）：像素归属由解析格界（场函数）算出，知识度 k 从 `cell_table` 的 layer2.R 取。
+# 本层负责把世界 uniform / per-cell 表 / 地形扭曲场推给 shader，并且**必须**用主地形
+# 拼前缀的那个判定口（RendererShaderWater._cell_field_active）—— 迷雾的「地形早退
+# 像素必须不透明」是在 shader 内复算地形的判定式，地形走旧路径时那条判定判的是一个
+# 不存在的条件，所以两边只能同开同关。**迷雾不新增开关。**
+# 关：旧路径不变（map_index_atlas 逐像素解 cell.index + enum_lut.a 取 k）。
+#
+# 知识度 k 的语义（两条路径相同）：
+#   k = 0 未探索 / 0.5 已探索未可见 / 1 完全可见。旧路径住在 enum_lut 的 A 通道
+#   （主地形已经无条件采样它，因此灰化与早退都是零新增采样）；场函数路径住在
+#   cell_table.layer2.R（与 enum_lut.a 逐字节同源，见 cell_lut_baker 的 layer2 注释）。
 #
 # z_index = 12：必须盖住 WeatherLayer(4) / DataOverlayLayer(5) /
 # CountryBorderLayer(6) / CellHighlight(10) —— 未探索区不该漏出任何信息。
@@ -17,6 +26,23 @@ class_name FogOfWarLayer
 extends Node2D
 
 const SHADER_PATH: String = "res://shaders/fog_of_war.gdshader"
+
+## [cell-field-overlays 2026-11-18 / O3] 前缀拼装的唯一真源（与陆地 / 水面两条路径
+## 引用同一个常量）；本文件**不写宏字面量**。
+const RendererShaderWaterScript = preload("res://scripts/rendering/renderer_shader_water.gd")
+const CELL_FIELD_DEFINE = RendererShaderWaterScript.CELL_FIELD_DEFINE
+
+## 迷雾锐化带宽（gap 单位）。约束 1：必须 < √3/2，默认 0.6（比地形的 0.84 宽 ⇒ 更柔）。
+## 与 fog_of_war.gdshader 的 `fog_field_band` 默认值同值；运行期由本层推送覆盖。
+const FOG_FIELD_BAND := 0.6
+## 迷雾自己的可平铺低频扭曲。freq 与旧 `edge_warp` 那条 fog_tileable_scale(0.0042) 同值
+## （形态尺度不变）；amp 的单位是 **hex_size**（旧 edge_warp 用的是 hex 直径，见 shader 里
+## 约束 2 的推导 —— 按长度 clamp 后幅度会变小，这是有意的视觉变化）。
+const FOG_WARP_FREQ := 0.0042
+const FOG_WARP_AMP := 0.55
+## `fog_early_out_k` 在拿不到地形材质实参时的兜底（= uniforms.gdshaderinc:221 的默认值）。
+## 正常路径永远读 host._shader_mat 上的**实际值**，不靠这个常数。
+const FOG_EARLY_OUT_K_FALLBACK := 0.02
 
 ## Web 上是否编译完整 fog shader（43 KB）。实测：它和 weather_overlay 一起构成
 ## "进世界后卡一次"的那几十秒；web 默认用极简纯色版本（雾仍然整片不透明，
@@ -27,6 +53,7 @@ const PK_WEB_ENABLE_FOG_FULL_SHADER := true
 ## world_map.gdshader 的早退分支输出同一个颜色；只有 q0（无光照）时两者才真的对得齐，
 ## 见 supports_terrain_early_out()。
 const UNEXPLORED_COLOR := Color(0.52, 0.56, 0.64)
+const GRADIENT_STEP := 0.25  # cloud-evolution seconds
 
 var _mesh_inst: MeshInstance2D
 var _shader_mat: ShaderMaterial
@@ -40,6 +67,8 @@ var _edge_distance_tex: Texture2D = null
 var _edge_transition_width: float = 0.84
 var _enabled: bool = true
 var _world_time: float = 0.0
+var _gradient_table: SubViewport
+var _gradient_start := -INF
 var _visual_tiles = null
 # 与 WeatherLayer 同一表现时钟语义：运行时按游戏倍速推进；暂停时保留 1x 环境运动，
 # 避免整个大气层完全冻结。
@@ -56,6 +85,15 @@ var _blit_sprite: Sprite2D = null
 ## set_visual_quality 到达时必须能重算，所以单独存一份。
 var _visual_quality: int = 0
 
+# ── [cell-field-overlays 2026-11-18 / O3] 场函数路径的推送状态 ────────────────
+## 当前 shader 是否在搭的时候带了 `#define PK_CELL_FIELD`。与判定口不一致时要重编
+## （开关在运行期翻转 / boot 自检结论晚到 —— 与陆地 program 的重编时机同源）。
+var _built_cell_field: bool = false
+## 上一帧推给材质的场函数参数快照。稳态下每帧只是**一次字典比较**（与
+## renderer_material_publish._sync_cell_lut_textures 同一个取舍：不靠"绑一次"的假设，
+## 但也不每帧盲推十几个 set_shader_parameter）。
+var _cell_field_sig: Dictionary = {}
+
 # TOD：earth_daylight 的三个相位 uniform 与调试项，与 WeatherLayer 同套。
 var _day_night_enabled: bool = true
 var _day_phase: float = 0.25
@@ -68,6 +106,12 @@ var _tod_debug_sun_height_scale: float = 1.0
 
 func _ready() -> void:
 	z_index = 12
+	# [fog-z-absolute 2026-11-18] 必须与植被同口径用**绝对 z**。
+	# 植被（ShrubLayer.shrub/lifecycle.gd）是 z_as_relative=false + z=0..3，而本层原先是
+	# 相对 z（12 + HexRenderer 的 0）。两者混用同一个 CanvasLayer 时，相对 z 的项会跟着
+	# 父的绘制组走，实测结果是 z=3 的树冠压在 z=12 的迷雾之上（未探索厚云里浮出树点）。
+	# 改成绝对 z 后，12 与 3 在同一把尺子上比较。
+	z_as_relative = false
 	top_level = true
 	visible = false
 	# 运行期档平台的首帧兜底：_fog_quality 的成员初值 3 是桌面语义（全效果）。
@@ -81,12 +125,46 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	# [cell-field-overlays 2026-11-18 / O3] 场函数 uniform 的同步放在 visible 判断**之前**：
+	# 世界烘焙完成后本层往往还是隐藏的（_update_visibility 要等 atlas 绑上），而材质一旦
+	# 提前可见就必须已经是"对的那一帧数据"。稳态下这里只是一次字典比较。
+	_sync_cell_field_uniforms()
 	if not is_visible_in_tree() or _shader_mat == null:
 		return
 	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
 	_world_time += delta * visual_time_scale
 	_shader_mat.set_shader_parameter("world_time", _world_time)
+	_sync_gradient_table()
 	_sync_scaled_target()
+
+
+func _uses_gradient_table() -> bool:
+	return effective_quality() > 0 and RenderingServer.get_rendering_device() != null
+
+
+func _sync_gradient_table() -> void:
+	if not _uses_gradient_table():
+		if _gradient_table != null:
+			_shader_mat.set_shader_parameter("fog_gradient_lattice", null)
+			_gradient_table.queue_free()
+			_gradient_table = null
+			_gradient_start = -INF
+		return
+	if _gradient_table == null:
+		_gradient_table = preload("res://scripts/rendering/render_data_table.gd").new()
+		# The table follows the fog mesh when the player changes its drawing resolution.
+		_gradient_table.configure(_mesh_inst, Vector2i(128 * 2, 128 * 10),
+			preload("res://shaders/fog_gradient_lattice.gdshader"))
+		_gradient_table.material.set_shader_parameter("evolution_step", GRADIENT_STEP)
+		_shader_mat.set_shader_parameter("fog_gradient_lattice", _gradient_table.get_texture())
+	var speed: Variant = _shader_mat.get_shader_parameter("churn_speed")
+	var time := _world_time * (0.2 if speed == null else float(speed))
+	var start := floorf(time / GRADIENT_STEP) * GRADIENT_STEP
+	if start != _gradient_start:
+		_gradient_start = start
+		_gradient_table.material.set_shader_parameter("evolution_start", start)
+		_gradient_table.refresh()
+	_shader_mat.set_shader_parameter("fog_gradient_blend", (time - start) / GRADIENT_STEP)
 
 
 ## Scale the transform by the actual target dimensions to preserve alignment and
@@ -160,10 +238,16 @@ func _ensure_nodes() -> void:
 	_shader_mat.set_shader_parameter("fog_enabled", true)
 	_shader_mat.set_shader_parameter("unexplored_color", UNEXPLORED_COLOR)
 	_mesh_inst.material = _shader_mat
+	_sync_gradient_table()
 	_has_valid_shader = true
 	_push_quality()
 	_push_tod()
 	_push_edge_transition_data()
+	# [cell-field-overlays 2026-11-18 / O3] 场函数参数。此刻世界可能还没建好（_world 为
+	# null）⇒ 推中性值：cell_table_bound=false 时 shader 一律按厚云画、**不读表**；
+	# 本层此时也不可见（_update_visibility 要求 atlas 已绑），所以不会看到那一帧。
+	# 真正的数据在 setup() 与 _process 的每次比较里补上。
+	_sync_cell_field_uniforms(true)
 
 
 func _build_scaled_target() -> void:
@@ -254,6 +338,19 @@ func _load_shader() -> Shader:
 		# 这里不新增采样、不换程序：q1..q3 的分支本来就全部编进了低档程序，只是
 		# 被 effective_fog_quality 钳成 0、永不执行。
 		prefix += "#define PK_FOG_RUNTIME\n"
+	# [cell-field-overlays 2026-11-18 / O3] 解析格界（场函数）开关。
+	# **唯一判定口**：RendererShaderWater._cell_field_active() —— 陆地 program 拼
+	# CELL_FIELD_DEFINE 用的是同一个静态函数（方案 §4 表格第三行 + §1.3）。迷雾的
+	# 「地形早退像素必须不透明」判定必须在**地形真的早退**时才成立，所以两边只能同开
+	# 同关；这里绝不自己判平台 / 画质 / 项目设置。
+	# 关 = 一个字节都不加（与今日逐字节相同）。
+	if _uses_gradient_table():
+		if not _cell_field_sig.get("early", false):
+			prefix += "#define PK_FOG_NO_TERRAIN_QUERY\n"
+		prefix += "#define PK_FOG_LATTICE\n"
+	_built_cell_field = _cell_field_active()
+	if _built_cell_field:
+		prefix += CELL_FIELD_DEFINE
 	if not prefix.is_empty():
 		sh = sh.duplicate() as Shader
 		sh.code = prefix + sh.code
@@ -270,6 +367,36 @@ func _fog_runtime_quality_override() -> bool:
 	return DCFeatureFlags.uses_shader_quality_tier()
 
 
+## [cell-field-overlays 2026-11-18 / O3] 场函数路径是否启用（**迷雾不新增开关**）。
+##
+## 与地形的前缀拼装是同一个判定函数，因此结构上不可能出现"地形走旧路径、迷雾走新路径"
+## —— 那会让约束 3 判一个地形根本没执行的条件（方案 §4）。
+## 独立创建（tests/ui/overlay_edge_transition_shader_test.gd 直接 new + add_child(root)）
+## 时拿不到宿主 ⇒ 返回 false ⇒ 与今天的旧路径行为一致。
+func _cell_field_active() -> bool:
+	var host: Variant = _cell_field_host()
+	if host == null:
+		return false
+	return RendererShaderWaterScript._cell_field_active(host)
+
+
+## 迷雾层的宿主 = 父节点 HexRenderer（renderer_scene_services.gd:159-161 建 + add_child）。
+## 按**方法面**识别而不是按类型，避免 fog_of_war_layer.gd 反向 preload hex_renderer.gd
+## 形成循环依赖：`_wrap_period_x` / `_push_world_uniform` 是 HexRenderer 独有的两个入口。
+func _cell_field_host() -> Variant:
+	var p: Node = get_parent()
+	if p == null:
+		return null
+	if not (p.has_method("_wrap_period_x") and p.has_method("_push_world_uniform")):
+		return null
+	return p
+
+
+func _visual_tiles_active() -> bool:
+	return _visual_tiles != null and bool(_visual_tiles.ready) \
+		and String(_visual_tiles.layout.mode) == "tiled"
+
+
 func set_visual_tiles(tiles) -> void:
 	var was_tiled := _visual_tiles_active()
 	_visual_tiles = tiles
@@ -279,11 +406,9 @@ func set_visual_tiles(tiles) -> void:
 			_shader_mat.shader = sh
 	_push_visual_tile_uniforms()
 	_push_edge_transition_data()
-
-
-func _visual_tiles_active() -> bool:
-	return _visual_tiles != null and bool(_visual_tiles.ready) \
-		and String(_visual_tiles.layout.mode) == "tiled"
+	# [cell-field-overlays 2026-11-18 / O3] 换 tiled 变体会换掉 PK 变体的扭曲场来源
+	# （terrain_surface_tex ↔ visual_warp_tiles），必须重推一遍（签名比较会看到变化）。
+	_sync_cell_field_uniforms(true)
 
 
 func _push_visual_tile_uniforms() -> void:
@@ -325,6 +450,7 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 		var sh := _load_shader()
 		if sh != null:
 			_shader_mat.shader = sh
+			_sync_gradient_table()
 			_push_quality()
 			_push_tod()
 			_push_edge_transition_data()
@@ -359,6 +485,10 @@ func setup(
 	# hex 外接圆半径 → 直径（噪声域扭曲的位移尺度基准）。
 	_shader_mat.set_shader_parameter("hex_world_diameter", _hex_size * 2.0)
 	_has_atlas = map_index_atlas != null and lut_dims.x > 0 and lut_dims.y > 0
+	# [cell-field-overlays 2026-11-18 / O3] 场函数参数：setup() 是"世界数据已就绪"的
+	# 唯一入口（renderer_material_publish.gd:495 在 _apply_uniforms 里调），所以这里
+	# 强制重推一次 —— cell_table / 扭曲场 / 早退实参全在这一刻才第一次可用。
+	_sync_cell_field_uniforms(true)
 	_update_visibility()
 
 
@@ -402,6 +532,139 @@ func _push_edge_transition_data() -> void:
 		)
 	_shader_mat.set_shader_parameter("has_terrain_edge_data", ready)
 	_shader_mat.set_shader_parameter("terrain_ecotone_width", _edge_transition_width)
+
+
+# ─── [cell-field-overlays 2026-11-18 / O3] 场函数路径的 uniform 推送 ────────────
+#
+# 数据来源全部是**已有字段**（不新增 WorldData 字段、不改其他模块）：
+#   cell_table / dims / bound   ← WorldData.cell_table_tex / cell_table_dims / cell_table_bound
+#   地形扭曲场                   ← 非 tiled: WorldData.terrain_surface_tex 的 layer6
+#                                  + terrain_warp_layer_bound / boundary_warp_range
+#                                  tiled   : WorldData.visual_tiles.boundary_warp
+#   hex_size                    ← setup() 收到的 host.hex_size
+#   map_dims                    ← cell_table_dims（与 cell_table_size 同值：1 texel = 1 格）
+#   fog_early_out_enabled/_k    ← 地形材质上**实际**的实参（见下面的注释）
+#
+# 缺数据时一律推中性值，绝不猜：
+#   cell_table_bound=false ⇒ shader 一律按厚云（k=0）画，**不读表**（GLES3 对未绑
+#   sampler2DArray / 越界层的返回值未定义）；terrain_warp_layer_bound=false ⇒ 扭曲 0
+#   （与地形侧 pk_boundary_warp_world 的退化分支一致）。
+func _sync_cell_field_uniforms(force: bool = false) -> void:
+	if _shader_mat == null:
+		return
+	var host: Variant = _cell_field_host()
+	var want_active: bool = host != null and RendererShaderWaterScript._cell_field_active(host)
+	# 判定口与当前 program 不一致（运行期翻转开关 / boot 自检结论晚到）⇒ 重编一次。
+	# 与陆地 program 的重编时机同源（RendererShaderWater._apply_cell_field_enabled），
+	# 那条路径会走 _refresh_split_configuration → _apply_uniforms → 本层 setup()。
+	if want_active != _built_cell_field:
+		var sh := _load_shader()
+		if sh != null:
+			_shader_mat.shader = sh
+		force = true
+	if not _built_cell_field:
+		return
+
+	var world: Variant = host._world if host != null else null
+	var tiled: bool = _visual_tiles_active()
+	var table: Texture2DArray = null
+	var dims := Vector2i.ZERO
+	var bound := false
+	var surface: Texture2DArray = null
+	var warp_tiles: Texture2DArray = null
+	var warp_bound := false
+	var warp_range := 1.6
+	if world != null:
+		table = world.cell_table_tex
+		dims = world.cell_table_dims
+		# **与地形 program 逐字同一门控**（renderer_material_publish.gd:357-358 的
+		# `cell_table_bound = world.cell_table_bound and cell_table != null`）：
+		# 两边对"表是否可读"必须给出同一个答案，否则会出现"地形正渲染、迷雾却整屏厚云"
+		# 这种更糟的不一致。表一旦建出来就恒有 4 层（offset 空间三层恒有效，第 4 层
+		# 在 index 空间装不下时是占位），所以 layer2 的可用性由建表成功本身保证。
+		bound = bool(world.cell_table_bound) and table != null
+		warp_range = float(world.boundary_warp_range)
+		if tiled:
+			var vt: Variant = world.visual_tiles
+			if vt != null:
+				warp_tiles = vt.boundary_warp
+			warp_bound = warp_tiles != null
+		else:
+			surface = world.terrain_surface_tex
+			# 与 renderer_material_publish.gd:247-249 同一门控：surface array 恒 7 层，
+			# 中性兜底层也是 7 层之一 ⇒ 必须同时看 terrain_warp_layer_bound（烘焙报告）。
+			warp_bound = bool(world.terrain_warp_layer_bound) and surface != null \
+				and int(surface.get_layers()) >= 7
+	if dims.x <= 0 or dims.y <= 0:
+		var mp: Variant = host._map if host != null else null
+		if mp != null:
+			dims = Vector2i(int(mp.width), int(mp.height))
+
+	# 早退判定的实参：**直接读地形材质上推过的值**（renderer_scene_services.gd:664-665
+	# 推的就是这两条），而不是在本文件里复述 _effective_fog_early_out() 的判定链
+	# （迷雾层档位 / _fog_enabled / 请求位三条与运算，复述一遍就是第二个真源）。
+	# 拿不到地形材质时按"不强制"处理（与今日行为相同：只有旧路径的早退，没有强制项）。
+	var early_on := false
+	var early_k := FOG_EARLY_OUT_K_FALLBACK
+	var host_mat: Variant = host._shader_mat if host != null else null
+	if host_mat is ShaderMaterial:
+		var e: Variant = host_mat.get_shader_parameter("fog_early_out_enabled")
+		early_on = bool(e) if e != null else false
+		var ek: Variant = host_mat.get_shader_parameter("fog_early_out_k")
+		early_k = float(ek) if ek != null else FOG_EARLY_OUT_K_FALLBACK
+
+	var sig := {
+		"tiled": tiled,
+		"table": table,
+		"dims": dims,
+		"bound": bound,
+		"surface": surface,
+		"warp_tiles": warp_tiles,
+		"warp_bound": warp_bound,
+		"warp_range": warp_range,
+		"hex": _hex_size,
+		"early": early_on,
+		"early_k": early_k,
+	}
+	if not force and sig == _cell_field_sig:
+		return
+	var previous_early: bool = _cell_field_sig.get("early", false)
+	_cell_field_sig = sig
+	# Even at high quality the terrain material is authoritative. Compile the
+	# opacity check back in whenever terrain actually starts skipping pixels.
+	if previous_early != early_on and _uses_gradient_table():
+		_shader_mat.shader = _load_shader()
+
+	_shader_mat.set_shader_parameter("hex_size", _hex_size)
+	_shader_mat.set_shader_parameter("map_dims", Vector2(dims.x, dims.y))
+	_shader_mat.set_shader_parameter("cell_table_size", Vector2(dims.x, dims.y))
+	if table != null:
+		_shader_mat.set_shader_parameter("cell_table", table)
+	_shader_mat.set_shader_parameter("cell_table_bound", bound)
+	if tiled:
+		if warp_tiles != null:
+			_shader_mat.set_shader_parameter("visual_warp_tiles", warp_tiles)
+	else:
+		if surface != null:
+			_shader_mat.set_shader_parameter("terrain_surface_tex", surface)
+	_shader_mat.set_shader_parameter("terrain_warp_layer_bound", warp_bound)
+	_shader_mat.set_shader_parameter("terrain_warp_range", warp_range)
+	# amp 与地形同源（MapBaker.WARP_AMP = 生成期 C++ 烘焙用的同一个常量）。
+	_shader_mat.set_shader_parameter("terrain_warp_amp", MapBaker.WARP_AMP)
+	_shader_mat.set_shader_parameter("fog_field_band", FOG_FIELD_BAND)
+	_shader_mat.set_shader_parameter("fog_warp_freq", FOG_WARP_FREQ)
+	_shader_mat.set_shader_parameter("fog_warp_amp", FOG_WARP_AMP)
+	_shader_mat.set_shader_parameter("fog_early_out_enabled", early_on)
+	_shader_mat.set_shader_parameter("fog_early_out_k", early_k)
+
+
+## 调试输出档（0 = 正常；1 = terrain_hidden；2 = 最终 alpha；3 = 显示用 k）。
+## 只给真后端不变量探针（tests/world/fog_cell_field_test.gd）用；生产路径从不调用，
+## 材质上的 fog_debug_view 因此恒为 shader 默认值 0。
+func set_fog_debug_view(view: int) -> void:
+	if _shader_mat == null:
+		return
+	_shader_mat.set_shader_parameter("fog_debug_view", clampi(view, 0, 3))
 
 
 func set_bounds(bounds: Rect2) -> void:
@@ -462,8 +725,13 @@ func set_clock_running(running: bool) -> void:
 ## "中"会直接落到 q2 的完整散射（移动 GPU 上最贵的一档），而 q1 这个专为移动端
 ## 中档准备的分层云海反而永远拿不到。web 保持原映射，避免二次动它的性能基线。
 func set_visual_quality(quality: int) -> void:
+	var used_table := _uses_gradient_table()
 	_visual_quality = clampi(quality, 0, 2)
 	_fog_quality = _fog_quality_for(_visual_quality)
+	if _shader_mat != null and used_table != _uses_gradient_table():
+		_shader_mat.shader = _load_shader()
+		_sync_cell_field_uniforms(true)
+		_sync_gradient_table()
 	_push_quality()
 
 

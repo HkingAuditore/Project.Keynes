@@ -169,7 +169,8 @@ func apply_profile(p: Resource) -> void:
 			["far_opacity", "ground_cover_far_opacity"], ["trace_opacity", "animal_trace_opacity"],
 			["climate_response", "climate_response"], ["snow_response", "snow_response"],
 			["vitality_dead_threshold", "vitality_dead_threshold"], ["vitality_power", "vitality_power"],
-			["wind_strength", "wind_strength"], ["river_clear_threshold", "river_clear_threshold"]]:
+			["wind_strength", "wind_strength"], ["river_clear_threshold", "river_clear_threshold"],
+			["cover_ground_tint", "ground_cover_ground_tint"], ["cover_slope_fit", "ground_cover_slope_fit"]]:
 		_material.set_shader_parameter(pair[0], p.get(pair[1]))
 	_enabled = bool(p.enabled) and bool(p.ground_cover_enabled)
 	_update_visibility()

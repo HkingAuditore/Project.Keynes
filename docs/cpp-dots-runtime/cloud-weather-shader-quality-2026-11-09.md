@@ -73,3 +73,91 @@ weather_shape_PK_WEATHER_MID.png；只是隔离云形，不是完整游戏截图
 （max1.795ms调度尖峰）；Web裁剪宏HIGH=0.1361/0.1340ms（max0.521ms）。
 对比原廉价值噪声略增ALU，仍远小于桌面高档，未重新引入循环或纹理槽。
 移动真机和完整游戏云形尚未实测，不把桌面宏验证当成浏览器/手机成绩。
+
+## 云影"铁板 / 死黑 / 接缝"修复（2026-11-18）
+
+玩家反馈：单块云影内部没有细节、像一块闪烁的脏污，云心死黑，东西 wrap 有一条缝。
+拆开看是五个独立问题，其中两个是"调参无效"级别的实现缺陷。
+
+### 1. 平铺旋钮从来没接上（"tiling 调得不够"的直接原因）
+
+`cloud_shadow_cell_scale` 从 2026-11-07 把云形改为采样预烘 Perlin-Worley 纹理之后
+就没有任何读取点，全 shader 只有一句 uniform 声明；`cloud_shadow_world_scale`
+只参与 `drift_scale`（漂移速度），也不影响云团大小。场景里把 cell_scale 调成 1.1
+自然毫无反应。
+
+现在改为 `cloud_shadow_tile_repeat`（整数 1..8）：`tile_period = wrap_period / repeat`。
+**必须整数**，非整数除会让 fold 两侧错半格。
+
+### 2. 云心是硬截断出来的常数块（"铁板"+ "死黑"）
+
+两处硬 clamp 把云心压成同一个值：
+
+- `cloud_shadow_field.gdshader` 里 `density = min(smoothstep(...) * core_gain, 1.0)`，
+  core_gain 1.31~1.7 直接把云心顶到 1.0。实测 field 里 **5.8%（低边缘柔度）/ 7.8%
+  （默认值）的 texel 恰好等于 1.0**。
+- `cloud_shadow.gdshaderinc` 里 `clamp(field * strength, 0, 0.60)`：field ≥ 0.71 全部
+  压成 0.60，云心既没有梯度，又吃掉 60% 直射 + 21% 环境 → 死黑。
+
+改为：density 不再乘 core_gain；合成侧改成指数软膝
+`0.85 * (1 - exp(-raw/0.85))`（composite 路径 0.40），单调但永远碰不到平台。
+强度同时下调（HIGH 0.85→0.62，MID 0.62→0.58，LOW 0.48→0.46）。
+实测 field 里 `==1.0` 的 texel 从 5.8% 降到 **0.05%**，值域中位数 0.29。
+
+### 3. 云体内部没有厚薄
+
+新增 `cloud_shadow_interior_detail`（默认 0.45）：把中频 Worley 的"云胞内部厚 /
+胞界薄"（`n.g`）乘在**最终密度**上，而不是加进 `shape` —— 加进 shape 会被阈值抹平，
+这正是以前"内部是一块铁板"的机制。
+
+### 4. 东西 wrap 的接缝：噪声倍频不是整数
+
+`dynamic_warp` 用 1.35×、`detail` 用 1.75× 采样噪声。噪声纹理一个周期正好等于世界
+wrap 周期，于是采样频率 f 的纹理周期是 1/f 个世界周期；跨 wrap 时 base_uv 从 1 跳到 0，
+**采样相位跳 (f − floor(f)) 个纹理周期**（1.35 → 0.35 周期 ≈ 1067 世界单位）。表现就是
+接缝两侧云纹错位 + 一条硬边。
+
+三条实测证据：把 `base_uv.x` 换成原始 UV，接缝立刻消失（最大列梯度 0.027、中位 0.017，
+比值 1.6）；`tile_repeat=2` 时接缝仍只在世界 wrap 出现、不在噪声自己的 wrap 出现；
+换成隐式 `texture()` 前后数值完全一致（所以**不是** LOD/贴图问题）。
+
+修法：倍频全部改成整数（2.0）。修好后 wrap 两列的梯度和全图中位数之比是
+**1.13~1.15 倍**（修前 4.6 倍），列均值 0.319/0.319/0.321/0.320/0.317/0.317/0.319
+平滑无台阶。`cloud_band_lod` 的解析 LOD 保留 —— 它不修接缝，但让采样精度
+不随场分辨率/缩放漂移。
+
+### 5. 预烘贴图被 Web 构建缩图污染，桌面一直在用 512²
+
+`e47b3ff33` / `03993080b` 提交的 `cloud_noise_rgba.res` / `cloud_shadow_base_rgba.res`
+都是 5,592,769 字节（1024² RGBA8 + mip）；`f4d833abb`（"sync post-PR5 content…"）
+把它们换成了 1,398,501 字节的 512² —— 是 `tools/web_cloud_shadow_shrink.gd` 的产物。
+桌面因此一直跑在半分辨率噪声上。已从 `f4d833abb^` 恢复。
+
+**构建纪律**：`Build-Web.cmd` 的 shrink/restore 是成对的，只在 export 期间有效；
+任何在 Web 构建之后做的提交，必须先确认 `.1024.bak` 已还原（`ls` 大小应为 5.6MB）。
+
+### 6. HIGH 档的分辨率才是细节瓶颈
+
+512×256 的场铺满 3155 世界单位 = 6.2 单位/texel，而 1024 噪声纹理一个 texel 只有 3.0
+单位 —— 场比噪声还粗一倍，1024 贴图等于白给。HIGH 提到 **1024×512**
+（`resolution_for_quality`），`cloud_shadow_detail_texel_world` 4.0。
+
+同一台机（RTX 4080 / OpenGL Compatibility）场视口 GPU 时间，30 帧预热 + 120 帧采样：
+
+| 场分辨率 | avg | p95 | max |
+|---|---:|---:|---:|
+| 512×256（旧） | 0.0307 ms | — | — |
+| 1024×512（新，独占帧） | 0.0875 ms | 0.0910 | 0.0960 |
+| 1024×512（新，同帧还有 2 个测试视口） | 0.1190~0.1332 ms | 0.1230~0.1400 | 0.1300~0.1420 |
+
+像素数 ×4、耗时约 ×2.8，绝对值仍很小。**未测**：集显/弱桌面、移动真机、浏览器。
+若超预算，把 `resolution_for_quality` 的 HIGH 改回 `Vector2i(512, 256)` 即可，
+采样 LOD 会跟着自动变粗，不会走样。
+
+### 回归入口
+
+`tools/probe_cloud_shadow_field.gd`（必须图形渲染）：恒定天气下渲染场，打印
+`==1.0` 比例、wrap 两列梯度 vs 全图中位数、GPU 时间，并把场导出到
+`tmp/cloud_tex_dump/field_uniform_weather.png`。
+`tests/rendering/cloud_weather_quality_test.gd` 45 项全通过（分辨率断言按函数计算，
+已随 1024×512 更新）。

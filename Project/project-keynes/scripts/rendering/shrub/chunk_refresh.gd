@@ -1,6 +1,6 @@
 extends RefCounted
 
-## Stateless collaborator for ShrubLayer.
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 
 static func begin_detail_chunk_refresh(host) -> void:
 
@@ -599,7 +599,7 @@ static func _apply_chunk_payload(host,
 			for k in range(16):
 				chunk_buffer[dst_b + k] = buffer[src_b + k]
 			ordered_cells[dst] = int(cell_indices[src])
-		mm.buffer = chunk_buffer
+		FogDrawBounds.upload(mm, chunk_buffer, FogDrawBounds.Kind.VEGETATION)
 		_cache_chunk_cell_payloads(host, chunk_id, chunk_buffer, ordered_cells, inst)
 		host._mirror_shadow_chunk(chunk_id, chunk_buffer, inst)
 	else:
@@ -655,7 +655,7 @@ static func _apply_chunk_payload_direct(host,
 		return
 	var mm = _prepare_chunk_multimesh(host, chunk_id, inst, far_count)
 	if inst > 0:
-		mm.buffer = buffer
+		FogDrawBounds.upload(mm, buffer, FogDrawBounds.Kind.VEGETATION)
 		if not cache_already_updated:
 			_cache_chunk_cell_payloads(host, chunk_id, buffer, cell_indices, inst)
 		host._mirror_shadow_chunk(chunk_id, buffer, inst)

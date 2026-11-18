@@ -67,9 +67,9 @@ func _run() -> int:
 	var saved_report: Dictionary = ext.get_country_report()
 	var saved_generation := int(saved_report.get("generation", -1))
 	var saved_day := int(saved_report.get("last_committed_day", -2))
-	_expect("direct checkpoint is canonical PKCN v15",
+	_expect("direct checkpoint is canonical PKCN v16",
 		bool(expected_checkpoint.get("ok", false))
-		and int(expected_checkpoint.get("schema_version", 0)) == 15
+		and int(expected_checkpoint.get("schema_version", 0)) == 16
 		and _ascii_magic(expected_pkcn) == "PKCN")
 
 	var started: Dictionary = ext.start_runtime_worker({

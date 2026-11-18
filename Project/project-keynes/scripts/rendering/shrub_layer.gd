@@ -196,6 +196,10 @@ var _chunk_far_instance_counts: Dictionary = {}
 var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
 var _material: ShaderMaterial = null
+## [veg-fog-knowledge 2026-11-18] 当前 enum_lut（知识度表）引用，用于每帧廉价比较：
+## 世界烘完前 set_world_material_inputs 会把参数绑成空纹理，之后对象变了也没人补，
+## 结果植被永远判成"可见"、知识度淡出完全不生效。
+var _enum_lut_bound: Texture2D = null
 var _single_wrap_nodes: Array[MultiMeshInstance2D] = []
 
 # [veg-cast-shadow] 投影 pass：专用「软边椭圆 blob」网格（不复用植株多裂片网格——复用会按各裂片
@@ -269,6 +273,10 @@ func set_day_phase(v: float) -> void:
 
 func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
 	return Material_inputs.set_world_material_inputs(self, world, bounds, _use_cell_indirection)
+
+## [veg-fog-knowledge 2026-11-18] 知识度表的日常漂移补绑（enum_lut 每天重烘会换对象）。
+func set_enum_lut_texture(tex: Texture2D) -> void:
+	return Material_inputs.set_enum_lut_texture(self, tex)
 
 func _visual_tiles_active() -> bool:
 	return Material_inputs._visual_tiles_active(self)

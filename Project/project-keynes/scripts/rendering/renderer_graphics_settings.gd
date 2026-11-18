@@ -1,12 +1,14 @@
 extends RefCounted
 
+const TerrainRenderScale = preload("res://scripts/rendering/terrain_render_scale.gd")
+
 ## Player preferences for this renderer. Bare renderer callers retain the
 ## platform policy by leaving each setting unset.
 var water_detail := -1
 var vegetation_detail := -1
 var cloud_shadow: Variant = null
 var terrain_scale_percent := 100
-var _terrain_scale: Node
+var _terrain_scale: TerrainRenderScale
 
 
 func water_flowmap_enabled() -> bool:
@@ -23,7 +25,7 @@ func apply_terrain_scale(host, percent: int, msaa: Viewport.MSAA) -> void:
 	if _terrain_scale == null:
 		if percent == 100:
 			return
-		_terrain_scale = preload("res://scripts/rendering/terrain_render_scale.gd").new()
+		_terrain_scale = TerrainRenderScale.new()
 		host.add_child(_terrain_scale)
 	var changed := terrain_scale_percent != percent
 	terrain_scale_percent = percent
@@ -31,6 +33,10 @@ func apply_terrain_scale(host, percent: int, msaa: Viewport.MSAA) -> void:
 	_terrain_scale.attach_water(host._water_quad)
 	if changed:
 		host._push_world_uniform("pixel_world_size", host._refresh_pixel_world_size())
+
+
+func scaled_surface_parent(surface: MeshInstance2D) -> Node2D:
+	return _terrain_scale.main_canvas_parent(surface) if _terrain_scale != null else null
 
 
 func attach_water_surface(host) -> void:

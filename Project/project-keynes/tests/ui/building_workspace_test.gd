@@ -85,12 +85,21 @@ func _run() -> void:
 		and String(workspace._hover_card._payload.get("tooltip", "")).contains("国库"))
 	_expect("eligible hover hides the empty shortage section",
 		not workspace._hover_card._materials.visible)
+	_expect("hover shows daily inputs, natural resources and outputs",
+		workspace._hover_card._flow.visible
+		and workspace._hover_card._flow_text.text
+			== "投入：原木 0.5/日\n自然资源：水源 0.2/日\n产出：木板 0.25/日")
+	_expect("hover shows owner and employee roles",
+		workspace._hover_card._employment.visible
+		and workspace._hover_card._employment_text.text == "岗位：业主 工匠 ×1 · 雇员 工人 ×3")
 	_expect("hover detail stays inside the construction column",
 		host.get_global_rect().grow(0.5).encloses(
 			workspace._hover_card.get_global_rect()))
 	workspace._on_row_hover_ended()
 	workspace._on_row_hover_started(blocked_row._row_data, blocked_row)
 	await process_frame
+	_expect("hover hides sections without recipe or job data",
+		not workspace._hover_card._flow.visible and not workspace._hover_card._employment.visible)
 	_expect("blocked hover explains missing amount and market cause",
 		workspace._hover_card._materials.visible
 		and String(workspace._hover_card._material_rows.get_child(0)
@@ -226,6 +235,8 @@ func _count_nodes(node: Node) -> int:
 
 func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 		reason: String) -> Dictionary:
+	var production := "\n岗位：业主 工匠 ×1 · 雇员 工人 ×3\n投入：原木 0.5/日\n自然资源：水源 0.2/日\n产出：木板 0.25/日" \
+		if building_id == "weaving" else ""
 	return {
 		"building_id": building_id,
 		"type_id": 1,
@@ -245,8 +256,8 @@ func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 			"missing_text": "0.6", "reason": "市场无货",
 		}],
 		"cash_blocked": reason == "资金不足",
-		"tooltip": "%s\n木材 · 需 2.4 / 国库 1.8 / 市购 0.6\n合计需现金 %.1f" % [
-			display_name, float(cash) / 10000.0],
+		"tooltip": "%s\n木材 · 需 2.4 / 国库 1.8 / 市购 0.6\n合计需现金 %.1f%s" % [
+			display_name, float(cash) / 10000.0, production],
 	}
 
 

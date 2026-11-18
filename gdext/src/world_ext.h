@@ -2717,6 +2717,38 @@ public:
     //   num_drops/max_steps/inertia/capacity_factor/min_capacity/deposit_speed/erode_speed/
     //   evaporation/gravity/brush_radius。输出 height_out(F32 PackedFloat32Array)。
     godot::Dictionary run_bake_erosion_pass(godot::Dictionary knobs);
+    // run_bake_erosion_spl_pass（terrain-erosion-spl，2026-11-18）：SPL 汇流侵蚀管线的
+    //   buffer-encoder 入口，只给测试 / A-B probe 喂合成高度场；**生产**走
+    //   run_bake_geometry_fields_pass 的 dem_erosion_mode = spl / spl+carve 分支——两者共用
+    //   world_ext_bake.cpp 内的同一份 pk_run_erosion_spl_pipeline（算法只一处，不复制）。
+    //   模式语义（契约 §3.1，已裁决）：
+    //     carve     = 现状全序（汇流刻谷 + droplet），height_buffer 逐位不变 → hash 门禁的回退基线；
+    //     spl       = 只跑 SPL 管线（建树 → 隐式下切 → [沉积/谷底展宽] → 限坡），不跑 carve、不跑 droplet；
+    //     spl+carve = SPL 管线 + 浅刻谷（carve 深度 × dem_spl_carve_scale），不跑 droplet；
+    //     droplet   = 仅 droplet（历史对照）。
+    //   **C++ 缺省恒 "carve"**（dem_erosion_mode 缺省）：Project/perf-validation 加载同一 DLL 但不传
+    //   该 knob → 行为逐位不变（计划 §12 Q5）。
+    //   入参 knobs：
+    //     width / height；height_buffer(PackedFloat32Array，入口高度) /
+    //     relief_buffer(PackedFloat32Array，局地起伏，0 = 平原) /
+    //     wet_buffer(PackedByteArray，1 = 水体或河心像素 → 汇流出口，不参与下切/限坡)；
+    //     sea_level；hex_px（缺省时由 size_x + hex_size 反推）；wrap_cols（0 = 不环绕，>2 时前
+    //     wrap_cols 列为经线周期，其后列是 x-wrap_cols 的别名）+ 全部 dem_* knob
+    //     （dem_erosion_max_dim、dem_spl_iters/k/m/min_area_hex、dem_slope_limit_*、
+    //      dem_crest_round、dem_dep_*/dem_floor_*、dem_spl_carve_scale、dem_erosion_pit_audit）。
+    //     本 pass 只按 spl / spl+carve 解释 dem_erosion_mode（其余值按 spl 处理）。
+    //   单位：除 dem_erosion_max_dim（像素）与各 ms 外，所有长度/面积参数以 hex 为单位（计划 §4.2），
+    //     因此 512 / 1024 / 2048 三档平台宏观形态一致；迭代次数只按分辨率分档。
+    //   出参：fallback=false、path="gdext"、height_out(F32)、width/height、erosion_mode、
+    //     erosion_grid_w/h/factor、flow_ms/spl_ms/dep_ms/limit_ms/carve_ms/upsample_ms、
+    //     fill_ms/mfd_ms/wall_ms（仅 spl+carve 的浅刻谷）、spl_iters_effective、spl_p99_drop、
+    //     spl_max_drop、eroded_vol、deposited_vol、spl_sea_clamped、spl_nan、pits_in、pits_out、
+    //     elapsed_ms、reason（契约 §3.3/§3.4，未执行项 = -1）。
+    //   失败（尺寸不符 / 缓冲缺失 / 栅格退化）→ fallback=true + reason，**不** push_error
+    //     （供测试与融合 pass 作判据）。
+    //   不变量（计划 §3.2）：h ≤ h_pre、陆地 ≥ sea_level + 5e-4、水体/河心像素逐位不变、
+    //     deposited_vol ≤ eroded_vol、同 knobs 同分辨率逐位可复现（串行、无 RNG、无时间依赖）。
+    godot::Dictionary run_bake_erosion_spl_pass(godot::Dictionary knobs);
     // run_bake_geometry_fields_pass（dots-total-cpp step2，2026-06-25）：bake 期几何场编排
     //   下沉 C++ 的单次驱动。GDScript 只发一次请求（一个 knobs Dictionary 含 terrain-index
     //   所需 cell SoA + 几何参数 + erosion 常量），C++ 在进程内依次串起已验证的
@@ -2729,6 +2761,14 @@ public:
     //   total_px + width/height + 各 stage 的 *_elapsed_ms 诊断。
     //   terrain sub-pass 失败 → 整体 fallback=true（caller 回退旧 per-pass / GDScript 路径）；
     //   erosion sub-pass 失败 → 用未侵蚀 height 续算（非致命），不令整体 fallback。
+    //   [terrain-erosion-spl 2026-11-18] 其中「①b 刻谷 + ② 液滴侵蚀」这一段按 knobs
+    //   dem_erosion_mode 分支（契约 §3.1，语义与 run_bake_erosion_spl_pass 的注释相同）：
+    //     carve = 现状全序（刻谷 + droplet），height_buffer 逐位不变；spl* = 走 SPL 管线，
+    //     不跑 carve/droplet；droplet = 仅 droplet。**缺省恒 carve**（不传 knob → 逐位不变）。
+    //   侵蚀分项只增不改（契约 §3.4）：erosion_mode / erosion_grid_w|h|factor /
+    //     flow_ms|spl_ms|dep_ms|limit_ms|carve_ms|upsample_ms / fill_ms|mfd_ms|wall_ms /
+    //     spl_iters_effective|spl_p99_drop|spl_max_drop|eroded_vol|deposited_vol /
+    //     spl_sea_clamped|spl_nan|pits_in|pits_out / erosion_reason，未执行项 = -1。
     godot::Dictionary run_bake_geometry_fields_pass(godot::Dictionary knobs);
 
     // ---- bindings: bake_encoders ----

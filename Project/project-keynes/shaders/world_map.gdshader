@@ -21,6 +21,20 @@ render_mode blend_mix, unshaded;
 #if defined(PK_WEB_WATER_ONLY) && !defined(PK_WATER_ONLY)
 #define PK_WATER_ONLY
 #endif
+// ═══════════════════════════════════════════════════════════════════════════
+// [cell-field-web 2026-11-18] `PK_WEB_WORLD_MIN` 与 `PK_CELL_FIELD` **正交，不互斥**。
+// world-min 的唯一作用是「把水面着色源从这个 fragment 里摘掉」（水面由
+// shaders/world_water_web.gdshader 的第二 pass 重画），从而避开 ANGLE/FXC 的
+// 「两个着色源联合优化」悬崖（20.3 s 实测见本文件下方 PK_WEB_WORLD_MIN 注释块，与
+// docs/web-export.md 的 Web 首编实测同源）。它**不是**「不渲染陆地」，也不含任何
+// 逐像素索引图消费者：world_map_web_min.gdshaderinc 只补 cell_lut_uv /
+// WATER_WRAP_TAU / water_wrap_* 三个叶子，不引用 enum_lut / dyn_lut / map_index。
+// ⇒ 上一版那条 `#if defined(PK_CELL_FIELD) && defined(PK_WEB_WORLD_MIN)` →
+// `#undef PK_CELL_FIELD` 的归一化已删除：它会静默把 Web LOW 的场函数关掉，
+// 让陆地走 legacy 索引图、水面走场函数，海岸判定两套来源 ⇒ 必然错开 1~2 px
+// （方案 §3.7「陆地与水面由同一个判断口决定」）。现在 world-min 变体同样可以
+// 带 PK_CELL_FIELD，两边的 is_water 同源。
+// ═══════════════════════════════════════════════════════════════════════════
 
 // world_map.gdshader v9.atlas — 高分辨率地理仿真渲染（结构重构版 2026-05-19）
 // [sky-sh-ambient 2026-06-29] 引入 L1 球谐天光（earth_daylight.earth_sky_sh）；本注释用于
@@ -148,6 +162,10 @@ render_mode blend_mix, unshaded;
 //     GI 弹射读 surface array layer3（不再需要 bounce_lut）。都不新增 sampler。
 //     [2026-11-02] 次生生态过渡（secondary biome 混合 + DitherUV 远景过渡）、沟谷 crease、
 //     海岸 halo 占比改读 layer4/layer5 —— 同样是**已有槽**，8 槽预算不变。
+//     [cell-field-web 2026-11-18] 启用场函数后旧三槽（map_index / enum / dyn）从声明里
+//     删掉、cell_table 补 1 ⇒ **6 槽**：height / horizon / noise / material /
+//     terrain_surface / cell_table。逐变体数字以
+//     `tests/world/terrain_shader_variant_test.gd` 的 sampler 普查为准（等值断言）。
 //   Web/Compatibility 水面（PK_WEB_WATER_ONLY，或桌面 Compatibility 的**非 tiled**
 //     完整主 pass）：water_depth 槽打开（HIGH 水面 7→8 槽，新增的 1 槽就是 surface array；
 //     桌面 Compatibility 主 pass 8 槽）。
@@ -156,7 +174,17 @@ render_mode blend_mix, unshaded;
 //   桌面 Compatibility（只有 PK_WEB_TEXTURE_BUDGET、没有 PK_WEB_HORIZON）：horizon 槽
 //     不开（VT_USE_HORIZON 不定义，由 terrain_horizon 中性叶子兜底）。
 #define VT_USE_HEIGHT
+// [cell-field-web 2026-11-18] 预算变体（PK_WEB_TEXTURE_BUDGET）启用场函数后，旧三槽必须
+// 从**声明**里删掉（见 uniforms.gdshaderinc 的 PK_CELL_FIELD_NO_LEGACY_LUT）：Web 陆地
+// program 已用满 8 个 sampler，cell_table 会是第 9 个，第 9 张起每帧被引擎内建白纹覆盖，
+// **不报错**、画面只是错的（方案 §3.2 / §3.4）。所以 VT_USE_MAP_INDEX 在该组合下不定义
+// ⇒ visual_sample_map_index() / map_index_atlas 的任何残留引用直接变成编译错误，漏改
+// 不可能靠"人眼 grep"溜过去。
+// 开关本身由 uniforms 的宏表达（那里已经算好了 PK_CELL_FIELD && PK_WEB_TEXTURE_BUDGET），
+// 本文件**不重复**加第二个宏。
+#ifndef PK_CELL_FIELD_NO_LEGACY_LUT
 #define VT_USE_MAP_INDEX
+#endif
 #define VT_USE_FLOW
 // [surface-array-edge 2026-11-02] 非 tiled 的静态地表打包成 **6 层** sampler2DArray
 // `terrain_surface_tex`（normal/relief/detail/occluder/edge_distance/edge_neighbor）。
@@ -220,6 +248,22 @@ render_mode blend_mix, unshaded;
 #define PK_TERRAIN_MICRO_ARRAY
 #define PK_TERRAIN_PACKED_BOUNCE
 #endif
+// [cell-field 2026-11-18] 解析格界（docs/plans/terrain-hex-mesh-implementation-plan.md）：
+// 像素「属于哪几格、各占多少」不再从逐像素索引图读，而由「世界坐标 + 一张连续扭曲场」
+// 解析算出（对偶三角 + 重心权重）。开关 PK_CELL_FIELD，**默认关**；关闭时下面两段 do
+// 都不定义 ⇒ 预处理产物与今日逐字节一致（截图 diff = 0 是验收项）。
+//   VT_USE_CELL_TABLE    —— per-cell 三层表（class/state/aux），一个 sampler 顶掉
+//                           map_index_atlas + enum_lut + dyn_lut 三个，净省 2 槽；
+//   VT_USE_BOUNDARY_WARP —— 扭曲场（非 tiled 读 terrain_surface_tex layer6）。
+// [cell-field-web 2026-11-18] world-min 变体**也要**这两个开关：它与场函数正交
+// （只摘掉水面着色源），见文件头那条注释。之前的 `#ifndef PK_WEB_WORLD_MIN`
+// 会把 Web LOW 的场函数关掉，现在已删除。
+#ifdef PK_CELL_FIELD
+#define VT_USE_CELL_TABLE
+#if defined(MAP_VISUAL_TILED) || defined(VT_USE_TERRAIN_SURFACE_ARRAY)
+#define VT_USE_BOUNDARY_WARP
+#endif
+#endif
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
@@ -247,6 +291,16 @@ render_mode blend_mix, unshaded;
 #endif
 #include "res://shaders/include/surface_params.gdshaderinc"
 #include "res://shaders/include/terrain_surface_detail.gdshaderinc"
+// [cell-field 2026-11-18] 场函数必须在这之后 include：
+//   依赖 terrain_surface_detail 的 terrain_edge_screen_width_px() 与
+//   terrain_static_biome_is_water()；依赖 visual_tile_sampling 的 cell_table /
+//   visual_sample_boundary_warp。land/water pipeline 都在它之后，故可自由调用。
+// 关闭 PK_CELL_FIELD 时整段不 include（文件不存在于预处理产物里）。
+// [cell-field-web 2026-11-18] 不再排除 world-min：那个变体也要场函数（见文件头）。
+#ifdef PK_CELL_FIELD
+#include "res://shaders/include/hex_cell_field.gdshaderinc"
+#include "res://shaders/include/terrain_cell_field_detail.gdshaderinc"
+#endif
 #include "res://shaders/include/tonemap.gdshaderinc"
 #ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/shore_common.gdshaderinc"
@@ -269,6 +323,66 @@ render_mode blend_mix, unshaded;
 #endif
 
 #include "res://shaders/include/global_adjustments.gdshaderinc"
+#include "res://shaders/include/fog_memory.gdshaderinc"
+
+
+#ifdef PK_CELL_FIELD
+// ═══════════════════════════════════════════════════════════════════════════
+// [cell-field 2026-11-18] PK_CELL_FIELD 下 SETUP 专用的小 helper。
+// 只做 ALU、只复用 hex_cell_field 的公开函数，不新增任何采样。
+// 关闭开关时整段被预处理剔除 ⇒ 预处理产物与今日逐字节一致。
+// （公共场函数与查表 helper 属于 lead 独占的 hex_cell_field.gdshaderinc，这里只放
+//  world_map SETUP 自己的三格混合 / 边界判定 / 岸线占比，避免公共文件继续长大。）
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 防出洞的岸带宽度（gap 单位，与 pk_cell_field_edge_gap / edge_distance 同一单位）。
+// 0.02 = 0.01·hex_size ≈ 0.22 wu，远小于 zoom 6 下的 1 像素；用法见 SETUP 的 is_water。
+const float PK_FIELD_SHORE_EPS = 0.02;
+
+// 三格 state（layer1 的四个通道都是连续量）按权重混合。
+// hex_cell_field 的 pk_field_blend_channel 只按 class 的单通道选择，state 需要整
+// vec4 一起混，所以在这里镜像一份（与 pk_field_blend_channel 逐项同式）。
+vec4 pk_field_blend_state(vec3 weights, vec4 s0, vec4 s1, vec4 s2) {
+	return s0 * weights.x + s1 * weights.y + s2 * weights.z;
+}
+
+// 该 offset 行是否落在真实地图内。row 越界（南北边界之外）的 texel 是 padding
+// 哨兵（pk_cell_table_fetch 只把 R 填成 B_SEA_ICE，其余通道为 0），连续量按它混合
+// 会得到 0.08 这种假温度/假雪。返回 0/1，供权重遮罩与 dyn_valid 使用。
+float pk_field_row_in_bounds(ivec2 c) {
+	return step(0.0, float(c.y)) * step(float(c.y), float(pk_cell_map_h - 1));
+}
+
+// 解析岸线占比（方案 §3.7）：把「edge_distance.BA 的 8 邻域水 / 湖格占比」换成
+// 「对偶三角形三格里水格 / 湖格占的权重」。水判定与 pk_cell_field_is_water_dom 共用
+// terrain_static_biome_is_water，所以岸线占比与水陆分支不会各说各话。
+// 用 w_raw：岸线占比是连续量（方案 §3.3）。
+vec2 pk_cell_field_shore_frac(HexCellField f, vec4 e0, vec4 e1, vec4 e2) {
+	int b0 = pk_byte_of(e0.r);
+	int b1 = pk_byte_of(e1.r);
+	int b2 = pk_byte_of(e2.r);
+	float w0 = terrain_static_biome_is_water(b0) ? f.w_raw.x : 0.0;
+	float w1 = terrain_static_biome_is_water(b1) ? f.w_raw.y : 0.0;
+	float w2 = terrain_static_biome_is_water(b2) ? f.w_raw.z : 0.0;
+	float l0 = (b0 == B_LAKE) ? f.w_raw.x : 0.0;
+	float l1 = (b1 == B_LAKE) ? f.w_raw.y : 0.0;
+	float l2 = (b2 == B_LAKE) ? f.w_raw.z : 0.0;
+	return vec2(w0 + w1 + w2, l0 + l1 + l2);
+}
+
+// offset (col,row) → 该格中心的世界坐标（pointy-top / odd-r，对 §3.1 的分数 axial
+// 做**逆运算**，与 pk_axial_to_offset 是两条独立表达式）：
+//   q = col - (row - (row & 1)) / 2,  r = row        （pk_axial_to_offset 的逆）
+//   x = √3·s·(q + r/2),              y = 1.5·s·r      （分数 axial 定义的逆）
+// 只给 debug 视图 18 的独立复核用：把「重心 argmax」与「世界距离最近」两条路径
+// 对撞，任何 offset 换算 / 回绕 / padding 的错都会立刻变红。
+vec2 pk_offset_hex_center(ivec2 c) {
+	int q = c.x - (c.y - (c.y & 1)) / 2;
+	float r = float(c.y);
+	return hex_size * vec2(PK_FIELD_SQRT3 * (float(q) + r * 0.5), 1.5 * r);
+}
+
+#endif // PK_CELL_FIELD
 
 
 #ifdef PK_WEB_WORLD_MIN
@@ -304,6 +418,17 @@ void fragment() {
 	// ═══════════════════════════════════════════════════════════════════════
 	vec2 wp = wrap_world_pos(v_world);
 	vec2 uv = wrap_map_uv((v_world - world_origin) / world_size);
+	// [cell-field 2026-11-18] 解析格界：整条 fragment 只算这一次。
+	//   1 次 warp 纹理采样 + 一段纯 ALU + 3 次 texelFetch（per-cell 小表，全命中缓存）。
+	// 结果以 `HexCellField + 三格 class` 往下传给 land / water pipeline 与静态材质，
+	// 下游不再重算（重算等于把 §3.8 的预算翻倍）。
+#ifdef PK_CELL_FIELD
+	HexCellField cell_field = pk_hex_cell_field_default(v_world);
+	vec4 cell_e0 = vec4(0.0);
+	vec4 cell_e1 = vec4(0.0);
+	vec4 cell_e2 = vec4(0.0);
+	pk_cell_field_classes(cell_field, cell_e0, cell_e1, cell_e2);
+#endif
 	// v10.noise-cache：本像素只采样一次全局噪声包，供后续"随机抖动/强度扰动"
 	// 类视觉细节复用。真正需要独立频率/方向/时间推进的结构噪声（水纹、河口等）
 	// 仍走专用 fbm，避免所有效果同形同相。
@@ -345,16 +470,105 @@ void fragment() {
 	// edge_distance 一次采样：scals.r = 格界距离（生态过渡 / 材质边缘），
 	// scals.a = 烘焙沟谷折痕，shore_frac = 8 邻域水 / 湖占比（海岸 halo）。
 	// 下游一律从这里取，不再重复采样。
+	// 采样点统一提到分支之前：`terrain_shader_variant_test.gd` 用一次调用点的
+	// 出现次数守着"整条 fragment 只采一次 edge_distance"（所以这里连注释都别再写
+	// 那个带括号的调用形式）。PK_CELL_FIELD 下仍然要这一次采样（只为 .g 的沟谷 crease）。
 	vec2 shore_frac = vec2(0.0);
 #ifdef VT_USE_EDGE_DISTANCE
 	vec4 edge_px = visual_sample_edge_distance(uv);
+#endif
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 三个量拆成两条来源（方案 §3.7）：
+	//   scals.r    ← 解析格距 pk_cell_field_edge_gap()。单位与今天的 edge_distance.R
+	//                相同（normalized_hex_center_gap），但连续、无纹素台阶；下游
+	//                terrain_edge_secondary_weight_d() / 静态材质边缘公式一个字都不用改。
+	//   shore_frac ← 解析：三格里水格 / 湖格按 w_raw 累加，不再读 layer4.BA 的 8 邻域统计。
+	//   scals.a    —— **保留**读 layer4.G：沟谷 crease 是烘焙连续量，与格界归属无关，
+	//                方案 §3.8 明确要求留着（该次采样仍在，只是不再读 .r / .ba）。
+	float field_edge_gap = pk_cell_field_edge_gap(cell_field);
+	scals.r = field_edge_gap;
+#ifdef VT_USE_EDGE_DISTANCE
+	scals.a = edge_px.g;
+#endif
+	shore_frac = pk_cell_field_shore_frac(cell_field, cell_e0, cell_e1, cell_e2);
+#else
+#ifdef VT_USE_EDGE_DISTANCE
 	scals.r = edge_px.r;
 	scals.a = edge_px.g;
 	shore_frac = edge_px.ba;
 #else
 	scals.r = 1.0;
 #endif
+#endif
 
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] PK 路径不采逐像素索引图 / enum_lut / dyn_lut，全部改成
+	// cell_table 的 texelFetch（无过滤、无导数、全命中缓存）：
+	//   biome / veg / cover / landform ← layer0 class（三格已在 SETUP 顶部取好，取主导格）
+	//   dyns（temp/wet/snow/vitality|sea_ice）← layer1 state，连续量按 w_raw 三格混合（§3.3）
+	//   fog_k ← layer2 aux.R，MID/HIGH 与 state 同式按 w_raw 三格混合（fog-k-blend 2026-11-18），
+	//           LOW 仍只读主导格
+	// 采样记账（方案 §3.8，陆地 program）：MID/HIGH = warp 1 + class 3 + state 3 + aux 3
+	//   + edge_distance 1（沟谷 crease）+ height 1 + noise 1 + 静态材质 2 = 15；
+	//   LOW = warp 1 + class 3 + state 1 + aux 1 + edge 1 + height 1 + noise 1 + 材质 1 = 10。
+	//   （LOW 与 MID 的差别是 state 1↔3、aux 1↔3 与材质 1↔2；水面 program 的 aux 一直是 3。）
+	// _cell_id 仍被 debug 视图引用，但本变体里它的所有消费点都已换成场函数 ⇒ 固定 -1
+	// （保留定义是为了不改下游函数原型，顺带让 cell_lut_uv() 的 LUT 读取自然退化）。
+	int _cell_id = -1;
+	ivec2 field_dom_c = pk_cell_field_dom_offset(cell_field);
+	// padding 行（南北边界之外）没有真实格：先把它们的权重清零，再在真实格之间重新
+	// 归一。三格全越界时退回原始 w_raw —— 那个像素本来就在地图外，dyn_valid / fog_k
+	// 会走与今天 cid < 0 一致的分支。
+	float field_inb0 = pk_field_row_in_bounds(cell_field.c0);
+	float field_inb1 = pk_field_row_in_bounds(cell_field.c1);
+	float field_inb2 = pk_field_row_in_bounds(cell_field.c2);
+	vec3 field_w_valid = cell_field.w_raw * vec3(field_inb0, field_inb1, field_inb2);
+	float field_valid = field_w_valid.x + field_w_valid.y + field_w_valid.z;
+#if defined(PK_QUALITY_LOW)
+	// LOW 档（方案 §3.8 的 state 1 预算）：只读主导格 1 个 texel，不混合。
+	vec4 dyns = pk_cell_state_at(field_dom_c);
+#else
+	// MID/HIGH 档：state 三格按 w_raw 混合（连续量，格界处不再有雪线/海冰硬台阶）。
+	// 权重在真实格之间重新归一，padding 格的哨兵 state 不会混进来。
+	vec3 field_w = (field_valid > 1e-5)
+			? field_w_valid / field_valid : cell_field.w_raw;
+	vec4 dyns = pk_field_blend_state(field_w,
+			pk_cell_state_at(cell_field.c0),
+			pk_cell_state_at(cell_field.c1),
+			pk_cell_state_at(cell_field.c2));
+#endif
+	// fog_k：aux.R。**MID/HIGH 与 state 同式走三格 w_raw 混合**，LOW 保持主导格 1 次。
+	//
+	// [fog-k-blend 2026-11-18] 原来只有主导格 1 次 texelFetch（方案 §3.3 把 fog_k 归为
+	// "类别量、不插值"）。但同一张 aux 表的 water_depth（water_pipeline 的 wd）一直是
+	// 三格混合的，地形的 biome 材质也有 terrain_ecotone_width 交织 —— 只有 fog_k 两套
+	// 都没走，于是 `fog_gray` 的纸白在格内恒定、格界跳变：**地块纹理连续、白不连续**。
+	// 用 field_w_valid（padding 权重已清零）而不是 field_w，避免把 padding 行的
+	// aux.R 哨兵（B_SEA_ICE）混进来；1e-5 下限保证三格全越界时不会除零，
+	// 那种像素随后会被 in_bounds(主导格)=0 的 mix 换成 1.0。
+	//
+	// [pr10 合并] 水深 field_water_depth 与 fog_k 共用同一批 aux 取值，水面 program
+	// 不必在 water_pipeline 里重复取表。LOW 取主导格 1 次，MID/HIGH 三格取一次。
+#if defined(PK_QUALITY_LOW)
+	vec4 dominant_aux = pk_cell_aux_at(field_dom_c);
+	float field_water_depth = dominant_aux.g;
+	float field_fog = mix(1.0, dominant_aux.r,
+			pk_field_row_in_bounds(field_dom_c));
+#else
+	vec4 aux0 = pk_cell_aux_at(cell_field.c0);
+	vec4 aux1 = pk_cell_aux_at(cell_field.c1);
+	vec4 aux2 = pk_cell_aux_at(cell_field.c2);
+#ifdef PK_WATER_ONLY
+	float field_water_depth = dot(cell_field.w_raw, vec3(aux0.g, aux1.g, aux2.g));
+#endif
+	float field_fog_lerp = (aux0.r * field_w_valid.x
+			+ aux1.r * field_w_valid.y
+			+ aux2.r * field_w_valid.z)
+			/ max(field_valid, 1e-5);
+	float field_fog = mix(1.0, field_fog_lerp,
+			pk_field_row_in_bounds(field_dom_c));
+#endif
+#else
 	// map_index 一次采样：R=像素 biome，GB=cell id，A=landform。
 	vec4 map_px = visual_sample_map_index(uv);
 	int _cell_id = int(map_px.g * 255.0 + 0.5) + int(map_px.b * 255.0 + 0.5) * 256;
@@ -365,6 +579,7 @@ void fragment() {
 	vec4 dyns = (_cell_id >= 0) ? texture(dyn_lut, cell_lut_uv(_cell_id)) : vec4(0.0);
 	// [eco-lut-retire 2026-08-06] 主地形不再读 eco_lut：着色与 dyn_vitality 重叠，
 	// 纹理槽让给 terrain_material_tex（web/mobile/desktop 统一）。植被层自有 eco_lut。
+#endif
 
 	// enum 通道（biome/veg/cover）走 cell 索引图 + enum_lut。
 	// cid<0 是极地外侧的不可交互 padding。玩家地图把它表现为海冰，既明确世界边界，
@@ -377,6 +592,19 @@ void fragment() {
 	// 本来就无条件采这张 LUT，只是多读一个分量。地图外 padding 视作全知，不参与
 	// 迷雾（padding 本就由迷雾层自己盖住）。
 	float fog_k = 1.0;
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 类别三元组取**主导格**的 layer0（pk_field_class_of），
+	// 语义等价于今天 enum_lut[主 cell]。padding 行由 pk_cell_table_fetch 的哨兵给出
+	// B_SEA_ICE / 0 / 0，与今天 cid < 0 的三个赋值逐值一致。
+	// fog_k 直接取主导格 layer2.R（上面的 field_fog，1 次 texelFetch）：与今天
+	// enum_lut[主 cell].a 的语义逐值一致（方案 §3.3 把 fog_k 归为类别量，不插值）；
+	// 移动端那条 DitherUV 次生选格整段编译掉（方案 §3.6）。
+	vec4 field_cls_dom = pk_field_class_of(cell_field, cell_e0, cell_e1, cell_e2);
+	biome = pk_byte_of(field_cls_dom.r);
+	veg = pk_byte_of(field_cls_dom.g);
+	cover = pk_byte_of(field_cls_dom.b);
+	fog_k = field_fog;
+#else
 	if (_cell_id >= 0) {
 		vec4 elut = texture(enum_lut, cell_lut_uv(_cell_id));
 		biome = int(elut.r * 255.0 + 0.5);
@@ -388,11 +616,32 @@ void fragment() {
 		veg = 0;
 		cover = 0;
 	}
+#endif
 	// [landform 轴可视化 2026-06-25] landform id 走 map_index_atlas.A（per-pixel, NEAREST），
 	// 供陆地管线给火山/高原/峡谷/裂谷/高峰补充专属着色。地图外哨兵采样得 0（=DEEP_OCEAN，陆地分支不消费）。
+	// [cell-field 2026-11-18] PK 变体改读主导格 layer0.A（padding 哨兵 A=0，与 map_index 的
+	// 地图外哨兵同值）。
+#ifdef PK_CELL_FIELD
+	int landform = pk_byte_of(field_cls_dom.a);
+#else
 	int landform = int(map_px.a * 255.0 + 0.5);
+#endif
 	float moist = dyns.g;
+	// [cell-field-web 2026-11-18] lat_norm 的归一化分母不再借 map_index 纹理的尺寸：
+	// `visual_static_texture_size()` 在非 tiled 下就是 `textureSize(map_index_atlas, 0)`，
+	// 而 map_index_atlas 在该组合下整张退役。改用 derived_resolution —— 二者**逐值相等**：
+	//   非 tiled：derived_resolution ← world.derived_size（renderer_material_publish.gd:404-405），
+	//             而 map_index_atlas = world.enum_atlas_tex 正是按 world.derived_size 生成
+	//             （map_baker.gd:774 `world.derived_size = world.hm_size`、:916-918），
+	//             `textureSize()` 取回的又是整数像素尺寸 ⇒ 同一个数。
+	//   tiled：  derived_resolution ← visual_tiles.layout.logical_size（同文件 :404-409），
+	//             `visual_static_texture_size()` 也返回 visual_logical_resolution，
+	//             同样由 renderer_terrain_horizon.gd:750 推自 layout.logical_size。
+#ifdef PK_CELL_FIELD_NO_LEGACY_LUT
+	float _Hf = derived_resolution.y;
+#else
 	float _Hf = visual_static_texture_size().y;
+#endif
 	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
 	float dyn_temp = dyns.r;
 	float dyn_wet = dyns.g;
@@ -406,11 +655,38 @@ void fragment() {
 	// 帧即带真实纬度温度，不再存在未初始化窗口，因此恒信 atlas 真值（含温度=0 的极寒）。
 	// 唯一例外：cell-indirection 下地图外哨兵像素（cid<0）采样为 vec4(0)，仍回退
 	// derived_temp，避免地图边缘出现"温度=0 冷边"。on-map 真实格永远有效。
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] dyn_valid = 「三格里真实格占的权重过半」。与今天
+	// cid < 0 ⇒ 0 的硬判定语义相同（padding 格的 state 权重已被清零），但在南北
+	// 边界一格之内是渐变的，不会再出现整块"温度=0 冷边"。
+	float dyn_valid = step(0.5, field_valid);
+#else
 	float dyn_valid = (_cell_id < 0) ? 0.0 : 1.0;
+#endif
 	moist = mix(moist, dyn_wet, dyn_valid);
 	// flow + river_edge_warp 仅在陆地的 river 分支才用，这里推迟到 _if (!is_water)_ 计算，
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 水陆判定（方案 §3.7）：陆地与水面两个 program 调用
+	// **同一个**函数、读同一份数据 ⇒ 海岸线就是 dom 在水 / 陆之间切换的那条弯曲等值线。
+	bool is_water = pk_cell_field_is_water_dom(cell_field, cell_e0, cell_e1, cell_e2);
+#ifdef PK_LAND_ONLY
+	// 防出洞（方案 §3.7）：两个 program 分别编译，同一表达式在恰好落在等值线上的
+	// 像素上可能给出不同结果（一边 discard、另一边也 discard ⇒ 1 px 洞）。规则是
+	// 「画在**下层**的 program 放宽 ε，上层严格」，宁可重叠不许出洞。
+	//
+	// 哪边是下层（绘制顺序证据）：
+	//   renderer_scene_services.gd:91-94 建 _world_quad（陆地 program，z_index=0）；
+	//   renderer_shader_water.gd:687-696 把 _water_quad 的 z_index 也设为 0，再
+	//   move_child 到 _world_quad.get_index() + 1，注释原文「水面盖住陆地」。
+	// ⇒ **陆地是下层、水面是上层**，所以放宽 ε 的是陆地 program：岸带（gap < ε）内
+	//   即使 dom 判成水也照常画陆地色；正常像素仍由上层水面 program 覆盖，只有那个
+	//   1 px 争议带会退化成陆地色而不是一个洞。
+	is_water = is_water && (field_edge_gap >= PK_FIELD_SHORE_EPS);
+#endif
+#else
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+#endif
 	vec2 ocean_current_v = vec2(0.0);
 	vec2 wind_v = vec2(0.0);
 #if !defined(PK_LAND_ONLY) && (!defined(PK_WEB_TEXTURE_BUDGET) || defined(PK_WEB_WATER_ONLY))
@@ -433,13 +709,56 @@ void fragment() {
 	int visual_land_biome = biome;
 	int visual_land_veg = veg;
 	int visual_land_cover = cover;
+	// Water keeps hard primary ownership, but MID/HIGH pass the secondary static
+	// material and a continuous distance-field weight into one water evaluation.
+	// LOW compiles this lookup out entirely. Dynamic state remains primary-owned.
 	int water_secondary_biome = biome;
 	int water_secondary_cover = cover;
 	float water_static_edge_mix = 0.0;
-	float visual_water_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
+	// [edge-sample 2026-11-18] 静态材质边权重包（PR #9 引入）。两个变体都要声明：
+	// render_land_pipeline 的形参不随 define 变化，场版本只把它原样传下去、不读值。
 	TerrainEdgeSample terrain_edge;
 	terrain_edge.biome = -1;
 	terrain_edge.weight = 0.0;
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 海冰比例：layer1.A 按 w_raw 三格混合（连续量，冰缘不再
+	// 沿格界硬切）。dyns 在 PK 下就是三格 state 的 w_raw 混合；padding 像素 dyn_valid=0
+	// ⇒ 与今天 cid < 0 取 1.0（整片海冰）一致。
+	float visual_water_ice_fraction = mix(1.0, dyns.a, dyn_valid);
+	// [cell-field 2026-11-18] 门控阶段选格（方案 §3.6）：不再用 DitherUV 在主 / 副之间
+	// 二选一（那是 Bayer 网点，近景 `terrain_land_dither_zoom_strength()` 归零后退化成
+	// 硬主 id ⇒ 纹素台阶），改为在**每格世界锚定的抖动量**上做 argmax：近景碎边、远景
+	// 退化成 argmax(w) 的弯曲硬边。整段不再读 terrain_mobile_dither_uv_threshold /
+	// terrain_land_dither_zoom_strength / decode_edge_secondary_index / enum_lut。
+	// 门控不能把水格配色带进陆地像素（方案 §3.7「颜色不跨水陆」）：胜者若是水格，
+	// 退回主导格三元组 —— 与今天 land_secondary 的水格守卫同义。
+	if (!is_water) {
+		ivec3 field_gate = pk_cell_field_gate_class(
+				cell_field, cell_e0, cell_e1, cell_e2, pixel_noise);
+		int field_gate_water = terrain_static_biome_is_water(field_gate.x) ? 1 : 0;
+		visual_land_biome = (field_gate_water == 1) ? biome : field_gate.x;
+		visual_land_veg = (field_gate_water == 1) ? veg : field_gate.y;
+		visual_land_cover = (field_gate_water == 1) ? cover : field_gate.z;
+	}
+#if !defined(PK_QUALITY_LOW)
+	// [cell-field 2026-11-18] 次生水格 = 权重第二的那一格（pk_cell_field_rank(f, 1)），
+	// 混合权重就是它的 w_raw。今天的 water_edge_w 是距离场导出的连续量，这里换成同一
+	// 语义的连续量；候选仍必须是水格（与今天 candidate_biome 的守卫同义）。
+	{
+		vec4 field_rank1_cls = pk_cell_field_ranked_class(cell_field, 1, cell_e0, cell_e1, cell_e2);
+		int field_rank1_biome = pk_byte_of(field_rank1_cls.r);
+		bool field_second_ok = is_water && terrain_static_biome_is_water(field_rank1_biome);
+		water_secondary_biome = field_second_ok ? field_rank1_biome : water_secondary_biome;
+		water_secondary_cover = field_second_ok ? pk_byte_of(field_rank1_cls.b) : water_secondary_cover;
+		water_static_edge_mix = field_second_ok
+				? pk_cell_field_ranked_weight_raw(cell_field, 1) : 0.0;
+	}
+#endif
+#else
+	float visual_water_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
+	// Fog and the land/water edge effects can all read the same secondary
+	// cell. Resolve its index and enum texture once, only when a consumer
+	// needs it. Dynamic weather, ice, and climate stay on the primary cell.
 	if (_cell_id >= 0 && has_terrain_edge_data) {
 		float edge_weight = terrain_edge_secondary_weight_d(scals.r, wp);
 		bool land_material_edge = !is_water && edge_weight > 0.0001;
@@ -483,6 +802,7 @@ void fragment() {
 			}
 		}
 	}
+#endif
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 1：季节相位 + 当前温度（每帧由 WorldClock 驱动）
@@ -512,7 +832,18 @@ void fragment() {
 	// GPU 分支按 wave 粒度生效：迷雾区是大片连续屏幕区域，发散 wave 只有 O(边界
 	// 周长)，相对 O(面积) 可忽略。canvas_item 的 fragment 禁用 return，所以只能
 	// 用 if/else 把两条出口都写出来。
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 「三格均未探索」才早退，但**不额外采 aux**：
+	// edge_gap ≥ PK_FIELD_BAND_MAX ⇒ 邻格权重为 0，这个像素既不在任何格界带里，也没有
+	// 邻居能在视觉上渗进来 —— 主导格未探索就等于整块未探索；反过来，整条过渡带
+	// （edge_gap < 带宽）永远不早退，正是「三格里至少有一格已探索」原本要保护的性质。
+	// fog_k 本身是主导格 aux.R 的 1 次 texelFetch（见 SETUP），LOW 档与今天逐值等价。
+	bool fog_hidden = fog_early_out_enabled
+			&& (fog_k <= fog_early_out_k)
+			&& (field_edge_gap >= PK_FIELD_BAND_MAX);
+#else
 	bool fog_hidden = fog_early_out_enabled && (fog_k <= fog_early_out_k);
+#endif
 	if (fog_hidden) {
 		COLOR = vec4(fog_unexplored_color, 1.0);
 	} else {
@@ -521,7 +852,11 @@ void fragment() {
 			col = render_land_pipeline(
 				visual_land_biome, biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
-				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac, terrain_edge);
+				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac, terrain_edge
+#ifdef PK_CELL_FIELD
+				, cell_field, cell_e0, cell_e1, cell_e2
+#endif
+				);
 #else
 			col = vec3(0.2, 0.35, 0.15);   // PROBE: land pipeline removed
 #endif
@@ -545,7 +880,14 @@ void fragment() {
 				biome, cover, water_secondary_biome, water_secondary_cover,
 				water_static_edge_mix, elev, wp, uv, scals,
 				lat_signed, current_temp, ocean_current_v, wind_v,
-				visual_water_ice_fraction, shore_frac, pixel_noise);
+				visual_water_ice_fraction, shore_frac, pixel_noise
+#ifdef PK_CELL_FIELD
+				, cell_field, cell_e0, cell_e1, cell_e2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
+#endif
+				);
 #endif
 #else
 			col = vec3(0.1, 0.2, 0.4);     // PROBE: water pipeline removed
@@ -563,14 +905,9 @@ void fragment() {
 		// 是明亮的浅海）。记忆层应该是**提亮+褪色**：往纸色靠，明度不低于原图，
 		// 顺便把块状边缘糊掉，和手绘纸本的底子也更搭。
 		if (fog_gray_enabled) {
-			float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
-			float mem_l = dot(col, vec3(0.299, 0.587, 0.114));
-			// 去饱和后的中性灰，稍微偏暖（纸），再向纸色提一档。
-			vec3 memory = vec3(mem_l) * vec3(1.02, 1.00, 0.96);
-			memory = mix(memory, vec3(0.88, 0.86, 0.82), 0.22);
-			// 暗部抬得比亮部多：海面/山影不再塌成黑块，亮部基本不动。
-			memory = max(memory, vec3(mem_l) * 0.86 + 0.10);
-			col = mix(col, memory, gray_amt);
+			// 灰化公式统一在 fog_memory.gdshaderinc（植被 / 资源共用同一份），
+			// 保证同一片未发现区里三层给出同一个纸白。
+			col = pk_fog_memory_wash(col, fog_k, fog_gray_strength);
 		}
 
 		// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。
@@ -626,6 +963,101 @@ void fragment() {
 			// 11 = 光照后、apply_global_adjustments 前；12 = 光照前的底色；
 			// 15 = 河流 flow 层之前的静态材质底色（三者都在 land_pipeline 里取值）。
 			COLOR = vec4(col, 1.0);
+#ifdef PK_CELL_FIELD
+		// ── [cell-field 2026-11-18] 18–21：解析格界的四档诊断（方案 §5 P1 完成判据）。
+		// 都只在 PK_CELL_FIELD 变体里存在（需要场函数），除 18/21 各多一次扭曲场采样
+		// 之外没有新增采样，且都在 uniform 分支（terrain_surface_debug_view）内。
+		} else if (terrain_surface_debug_view == 18) {
+			// 18 = dom 一致性（tools/cell_field_gpu_probe.gd 读这一档）：绿 = 一致，红 = 不一致。
+			//   用**两条独立路径**复算归属并对撞：
+			//     A（场函数）：对偶三角形重心 argmax ⇒ dom；
+			//     B（本档）：把三格的 offset 反解成 hex 中心（offset→axial→世界坐标，
+			//       即 pk_axial_to_offset 与分数 axial 的逆运算），取像素到三个中心的
+			//       欧氏距离最近者。
+			//   两条路径的中间步骤完全不同（重心 vs offset 换算 + 世界距离），所以这一档
+			//   能抓到 pk_axial_to_offset / pk_posmod 回绕 / padding 判定的错 —— 正是与
+			//   CPU cube_round 做 parity 时最容易漂的那一层。格界带上可红可绿（亚像素 +
+			//   平局次序），其余区域必须全绿。
+			//   本变体**不读**索引图（契约 §6 的 grep 断言）；「dom vs 烘焙 cell id」的
+			//   另一半由 CPU 侧的 hex_cell_field_parity_test.gd 守着：GPU 这半证明 shader
+			//   场函数自洽，CPU 那半证明镜像 == 烘焙索引。
+			vec2 field_pw = wrap_world_pos(wp + pk_boundary_warp_world(wp));
+			vec2 field_ctr0 = pk_offset_hex_center(cell_field.c0);
+			vec2 field_ctr1 = pk_offset_hex_center(cell_field.c1);
+			vec2 field_ctr2 = pk_offset_hex_center(cell_field.c2);
+			// offset col 已被 posmod 到 [0, map_w)，而 pw.x 是回绕后的世界坐标（可能为负），
+			// 所以按 wrap_period_x 把中心平移回离像素最近的那一份；只有真正回绕时才做。
+			if (wrap_period_x > 0.0001) {
+				field_ctr0.x += wrap_period_x * round((field_pw.x - field_ctr0.x) / wrap_period_x);
+				field_ctr1.x += wrap_period_x * round((field_pw.x - field_ctr1.x) / wrap_period_x);
+				field_ctr2.x += wrap_period_x * round((field_pw.x - field_ctr2.x) / wrap_period_x);
+			}
+			float field_dd0 = length(field_pw - field_ctr0);
+			float field_dd1 = length(field_pw - field_ctr1);
+			float field_dd2 = length(field_pw - field_ctr2);
+			int field_nearest = (field_dd0 <= field_dd1 && field_dd0 <= field_dd2) ? 0
+					: ((field_dd1 <= field_dd2) ? 1 : 2);
+			COLOR = vec4((field_nearest == cell_field.dom)
+					? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), 1.0);
+		} else if (terrain_surface_debug_view == 19) {
+			// 19 = 三格锐化权重 w 直接当 RGB（R=c0 G=c1 B=c2）。三格交汇处应是三色
+			// 平滑过渡；出现黑线/白线说明 w 的归一化或 band 有问题（方案 §3.2 接缝）。
+			COLOR = vec4(cell_field.w, 1.0);
+		} else if (terrain_surface_debug_view == 20) {
+			// 20 = 解析格距 vs 烘焙 edge_distance.R 的差值（契约 §6：gap < 0.86 区间内
+			// |Δ| < 0.02）。灰阶 = |Δ|×25（0.02 → 0.5 亮度），|Δ| > 0.04 直接标红。
+			// 全黑 = 两条数据源一致；整屏红 = 单位或坐标口径错（例如把 world 单位当 gap，
+			// 或 warp 没生效）。scals.r 在 PK 下就是 pk_cell_field_edge_gap()。
+			// 复用 SETUP 那一次 edge_distance 采样（不新增采样点）。
+#ifdef VT_USE_EDGE_DISTANCE
+			float field_gap_err = abs(edge_px.r - scals.r);
+			vec3 field_gap_col = vec3(clamp(field_gap_err * 25.0, 0.0, 1.0));
+			if (field_gap_err > 0.04) { field_gap_col = vec3(1.0, 0.0, 0.0); }
+#else
+			vec3 field_gap_col = vec3(scals.r);
+#endif
+			COLOR = vec4(field_gap_col, 1.0);
+		} else if (terrain_surface_debug_view == 21) {
+			// 21 = 扭曲场可视化：pk_boundary_warp_world(wp) 归一到 [-1,1] 后映射到 [0,1]
+			// 打 RG（0.5 = 无扭曲）。整屏死灰 = layer6 / tiled warp tile 没绑
+			// （terrain_warp_layer_bound=false），此时格界退化成直边六边形但归属仍正确。
+			// 本档多一次扭曲场采样（场函数初始化已经采过一次）。
+			vec2 field_warp_vis = pk_boundary_warp_world(wp)
+					/ max(hex_size * terrain_warp_amp * terrain_warp_range, 1e-4);
+			COLOR = vec4(field_warp_vis * 0.5 + 0.5, 0.0, 1.0);
+		} else if (terrain_surface_debug_view == 22) {
+			// 22 = dom 格的 offset 编码 —— **GPU ↔ CPU 逐像素回读比对专用**
+			//   （tests/world/cell_field_gpu_parity_probe.gd 解码后与
+			//     DCHexCellField.dom_at() 逐像素对撞；这是唯一能证明"GPU 与 CPU 用的是
+			//     同一个坐标系"的通道，见 review 2026-11-18「没有任何测试验证 GPU 和
+			//     CPU 用的是同一个坐标系」）。
+			//   R,G = col 的低 / 高字节，B = row 的低字节，每个通道 byte/255。
+			//   A = **常量 1.0**。
+			// 为什么 A 不放 row 的高字节：本程序是 `render_mode blend_mix`（第 8 行），
+			// 片元 alpha = 0 时 MIX 的 `dst = src.rgb·src.a + dst·(1−src.a)` 会把 rgb
+			// 一起乘成 0，回读就是一片清屏色（实测：整个视图等于 viewport 的 clear
+			// color，且与"什么都没画"无法区分）—— 编码必须让 alpha 非 0 才可回读。
+			// row ∈ [0, 255) 时高字节本来就是 0，所以本视图对 col ∈ [0, 4095]、
+			// row ∈ [0, 255] **仍然是无损的**；row 越界（padding 行 / 超 255）时高位
+			// 会被截断，仅供目视诊断，不要拿它做数值比对。
+			// 零新增采样：pk_cell_field_dom_offset 只复用 SETUP 已算好的场。
+			ivec2 field_enc_c = pk_cell_field_dom_offset(cell_field);
+			COLOR = vec4(
+					float(field_enc_c.x & 255) / 255.0,
+					float((field_enc_c.x >> 8) & 255) / 255.0,
+					float(field_enc_c.y & 255) / 255.0,
+					1.0);
+		} else if (terrain_surface_debug_view == 23) {
+			// 23 = **实际使用**的锐化带宽 band（灰阶 = band / PK_FIELD_BAND_MAX）。
+			//   band = clamp(max(terrain_ecotone_width, AA 项), 1e-4, 0.86)，
+			//   AA 项 = 2/hex_size · max(|fwidth(v_world)|) · terrain_edge_screen_width_px()。
+			// 全图均匀灰 = AA 项主导且没有导数爆点；**经线接缝那一列整列变白（= 1.0）
+			// 说明导数取在了已回绕坐标上**——review 2026-11-18 第 1 条的病征。
+			// 本档是那条 bug 的回归信号：terrain_ecotone_width 调到足够小后，
+			// max(band) 应该只剩 AA 项的量级（探针 Pass C 断言 < 0.10）。
+			// 零新增采样（band 是场函数里已经算出来的局部量，只是额外存进 struct）。
+			COLOR = vec4(vec3(cell_field.band / PK_FIELD_BAND_MAX), 1.0);
+#endif // PK_CELL_FIELD
 		} else if (terrain_surface_debug_view > 0) {
 			COLOR = vec4(terrain_surface_debug_color(uv, wp, _cell_id), 1.0);
 		} else {

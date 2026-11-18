@@ -56,6 +56,18 @@ static func _apply_water_uniforms(
 				sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
 			if visual_tiles.gi_occluder != null:
 				sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
+			# [cell-field 2026-11-18] 格界扭曲场 tile（方案 §3.7 / 契约 §4.2）：水面 program
+			# 与陆地 program 必须采同一份 warp 场，否则同一个像素在两片里的 is_water 判定
+			# 会错开 ⇒ 海岸线出 1-px 洞。未烘焙时保持"不绑"（warp_layer_bound=false 时
+			# helper 返回中性值，绝不采样未绑定的 sampler）。
+			if visual_tiles.boundary_warp != null:
+				sm.set_shader_parameter("visual_warp_tiles", visual_tiles.boundary_warp)
+			# [cell-field 2026-11-18] 与 _apply_uniforms 的同名推送同值：tiled 的 warp 是否
+			# 就绪只看 warp tile 数组（非 tiled 看 WorldData 的权威标志，见下面的 else 分支）。
+			# 放在这个世界地图变体守卫内：只有它声明这两个 uniform —— 紧凑 web_min 水面
+			# 不编 PK_CELL_FIELD（方案 §3.10 / 契约 §4.3），独立材质里没有它们。
+			sm.set_shader_parameter("terrain_warp_layer_bound",
+				visual_tiles.boundary_warp != null)
 		_push_visual_tile_layout_uniforms.call(sm, visual_tiles.layout)
 	else:
 		sm.set_shader_parameter("height_tex", _world.height_tex)
@@ -81,6 +93,14 @@ static func _apply_water_uniforms(
 				and _world.terrain_edge_distance_tex != null)
 			or water_surface_layers >= 6)
 		sm.set_shader_parameter("terrain_static_baked", water_surface_layers >= 6)
+		# [cell-field 2026-11-18] layer6（boundary_warp）是否就绪：与陆地 program **同一数据源**
+		# （WorldData.terrain_warp_layer_bound）—— surface array 恒为 7 层，中性兜底层也是
+		# 一层，层数推不出载荷真假；两片 program 的判定一旦不同，海岸线就会出 1-px 洞。
+		# 与层数取与是越界保护（6 层旧图 + 标志残留时不得采 layer6）。**不**并入
+		# terrain_static_baked：后者只表示 edge_distance / edge_neighbor / water_depth 这套
+		# layer4/5 静态通道可用（water_pipeline / shore_common 只据此二选一）。
+		sm.set_shader_parameter("terrain_warp_layer_bound",
+			_world.terrain_warp_layer_bound and water_surface_layers >= 7)
 		# [surface-array-edge 2026-11-02] compact 水面自行声明的 ecotone 宽度（与
 		# uniforms.gdshaderinc 同一个 @export 值）；世界地图水面程序会从主材质整表拷贝。
 		sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
@@ -91,6 +111,24 @@ static func _apply_water_uniforms(
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+	# [cell-field 2026-11-18] 格界场的共享输入（方案 §3.7 的硬约束）：陆地与水面两个
+	# program 必须拿到**逐项同值**的 cell_table / 尺寸 / 扭曲参数，否则同一个像素在两片
+	# program 里的 is_water 判定会错开 ⇒ 海岸线出 1-px 洞（规则是宁可重叠，不许出洞）。
+	# 未 bake / 旧存档时 bound=false 且 sampler 保持不绑，shader 侧早退。
+	# 尺寸走 vec2（同本文件 lut_dims 的约定），shader 声明的名字是 `cell_table_size`。
+	var water_cell_table: Texture2DArray = _world.cell_table_tex
+	var water_cell_dims: Vector2i = _world.cell_table_dims
+	if water_cell_table != null and water_cell_dims.x > 0 and water_cell_dims.y > 0:
+		sm.set_shader_parameter("cell_table", water_cell_table)
+		sm.set_shader_parameter("cell_table_size", Vector2(water_cell_dims.x, water_cell_dims.y))
+	sm.set_shader_parameter("cell_table_bound", _world.cell_table_bound and water_cell_table != null)
+	# [cell-field-web 2026-11-18] layer3（class_by_index，cell.index 空间）是否发布：与
+	# renderer_material_publish.gd::_apply_uniforms 的**同名同表达式**推送（两片 program 的
+	# 格界/类别判定必须逐项同值，否则同一个像素在水陆两侧读到不同的 class）。字段为 0
+	# （旧存档 / 未 bake / 发布失败）时推 false，shader 不读那一层。
+	sm.set_shader_parameter("cell_class_index_bound", _world.cell_table_layers >= 4)
+	sm.set_shader_parameter("terrain_warp_range", _world.boundary_warp_range)
+	sm.set_shader_parameter("terrain_warp_amp", MapBaker.WARP_AMP)
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)
 	sm.set_shader_parameter("wrap_origin_x", 0.0)

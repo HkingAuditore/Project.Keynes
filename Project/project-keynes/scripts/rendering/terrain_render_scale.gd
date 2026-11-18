@@ -28,6 +28,14 @@ func surface_parent() -> Node:
 	return _target if _target != null else _land.get_parent()
 
 
+func main_canvas_parent(surface: MeshInstance2D) -> Node2D:
+	if _target == null or surface.get_parent() != _target:
+		return null
+	# Fog coverage is checked before drawing and may run before our pre-draw signal.
+	_sync_target()
+	return _surface_parent
+
+
 func attach_water(water: MeshInstance2D) -> void:
 	if not is_instance_valid(water):
 		_water = null

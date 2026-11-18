@@ -17,6 +17,15 @@
 //      「云量 ↔ 视觉浓度」的响应关系不变，变的只是云形细节来源。
 //   3) 噪声值域（均值/上下限）与漂移速度对齐桌面版，避免整体亮度或移动速度跳变。
 // 不做什么：不声明 uniform、不做纹理采样 —— 全部沿用 weather_overlay 已有 uniform。
+//
+// [cell-field-overlays 2026-11-18 / O2] 与 `PK_CELL_FIELD`（场函数采样）**正交共存**：
+//   本文件只替换噪声栈，一格采样都不碰，所以两件事互不影响，`PK_WEB_WEATHER_MIN +
+//   PK_CELL_FIELD` 是合法变体（方案 §4：天气第一版 Web 就能开）。硬约束：
+//     · 不许引用 `map_index` / `enum_lut` / 任何 index 空间 LUT —— 场函数路径把那些
+//       sampler 从声明里整个删掉了，这里引用一个就编不过（也不用担心"宏关时还能用"，
+//       宏关时走的是桌面噪声栈，本文件整份不参与）。
+//     · 不许自带 `uniform sampler` —— 否则 Web 变体的 sampler 从 2 张又涨回去
+//       （tests/world/weather_overlay_field_test.gd 有逐名等值断言）。
 // ─────────────────────────────────────────────────────────────────────────
 #ifndef PK_WEATHER_OVERLAY_WEB_MIN_INC
 #define PK_WEATHER_OVERLAY_WEB_MIN_INC

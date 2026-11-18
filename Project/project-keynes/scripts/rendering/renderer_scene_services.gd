@@ -1,6 +1,9 @@
 extends RefCounted
 
-## Stateless collaborator for ShrubLayer.
+## [cell-field-web 2026-11-18 / W6] boot 自检入口（方案 §3.5：判定必须在首次构建世界
+## 材质之前）。preload 而不是按名 new：它与 renderer_shader_water.gd 共用同一个三态
+## meta 契约（`CellFieldWebProbe` 自己已 preload 那个模块，这里不重复拼字符串）。
+const CellFieldWebProbeScript = preload("res://scripts/rendering/cell_field_web_probe.gd")
 
 # ─── 任务 1：性能采样器（30 秒窗口内 avg + P95） ───────────────────────
 # 统计窗口通过 ring buffer，不分配；每 REPORT_INTERVAL_SEC 打印一次结果。
@@ -154,6 +157,35 @@ static func _ready(host) -> void:
 		host._fog_layer = FogOfWarLayer.new()
 	host._fog_layer.name = "FogOfWarLayer"
 	host.add_child(host._fog_layer)
+	host.add_child(preload("res://scripts/rendering/renderer_fog_culling.gd").new())
+	# [cell-field-web 2026-11-18 / W6] 桌面 Compatibility 的 boot 自检调用点。
+	# 为什么必须有：W4 的 `CellFieldWebProbe.ensure_decided()` 此前只在
+	# `WebShaderWarmup.run()` 里被调用，而那个入口对非 web 直接 return ⇒ 桌面
+	# Compatibility 永远停在「未判定」，而 `_cell_field_boot_allows()` 对"未判定"的
+	# 结论是**不启用**。W6 撤销预算/world-min 两条排除后，本地这条路径就再没有别的
+	# 理由不启用 —— 不补这个调用点，开关在桌面 Compatibility 上打开等于没打开
+	# （且只有一行 warning，属于最难查的静默）。
+	# 为什么选这里（而不是 hex_renderer.gd::_ready 第一行）：
+	#   ① 它正好是**首次构建世界材质之前**的最后一行 —— 紧跟着的 `_load_shader()` 是
+	#      `_apply_shader_variant_prefix()` 的唯一入口，也是 PK_CELL_FIELD 被拼进前缀的
+	#      唯一时机，await 放在这里才能保证"结论先落 meta、再拼前缀"；
+	#   ② 节点树/图层的创建保持**同步**：`add_child(renderer)` 之后立刻访问 `_world_quad` /
+	#      各图层的调用方（含 tests/world/*_node_test.gd）在非 Compatibility 后端上完全
+	#      看不到区别；放在 `HexRenderer._ready()` 第一行则会把整棵子树的创建一起推迟。
+	#   ③ 万一 `set_map()` 在 await 期间插进来，它自己会 `_load_shader()` + `_rebuild()`
+	#      一遍；本函数恢复后又 `_load_shader()`（此时结论已定）+ 末尾 `_rebuild()`
+	#      重推全部 uniform，最终一致。`ensure_decided()` 本身幂等（boot 后固定）。
+	# 桌面 Vulkan / 移动不跑：`is_compatibility_renderer()` 为假时整段跳过，
+	# `ensure_decided()` 内部也会直接判 `desktop` ⇒ 非受限平台零成本、无额外帧等待。
+	# `--headless` 同理（dummy 渲染器在 project.godot 里仍走 mobile 方法 ⇒ 条件为假）。
+	if DCFeatureFlags.is_compatibility_renderer():
+		await CellFieldWebProbeScript.ensure_decided(host)
+		# 协程恢复之前场景可能已经被销毁（菜单→对局切换 / 退出）。此时继续往下调
+		# `_load_shader(host)` 就是 "previously freed instance" 报错，所以先验一次。
+		# 只判 is_instance_valid、不判 is_inside_tree：把节点从树上摘掉再挂回来的调用方
+		# 也应该拿到与改动前一样的完成态（`_ready` 不会再被引擎叫第二次）。
+		if not is_instance_valid(host):
+			return
 	_load_shader(host, )
 	if host._map != null and host._world != null:
 		host._rebuild()

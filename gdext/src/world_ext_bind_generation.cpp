@@ -53,6 +53,12 @@ void DCWorldExt::_bind_generation_methods() {
     ClassDB::bind_method(
         D_METHOD("run_bake_erosion_pass", "knobs"),
         &DCWorldExt::run_bake_erosion_pass);
+    // [terrain-erosion-spl 2026-11-18] SPL 汇流侵蚀管线的 buffer-encoder 入口（测试 / A-B probe）。
+    // 生产路径是 run_bake_geometry_fields_pass 的 dem_erosion_mode = spl / spl+carve 分支；
+    // 两者共用 world_ext_bake.cpp 内的同一份 pk_run_erosion_spl_pipeline。
+    ClassDB::bind_method(
+        D_METHOD("run_bake_erosion_spl_pass", "knobs"),
+        &DCWorldExt::run_bake_erosion_spl_pass);
     ClassDB::bind_method(
         D_METHOD("run_bake_geometry_fields_pass", "knobs"),
         &DCWorldExt::run_bake_geometry_fields_pass);
