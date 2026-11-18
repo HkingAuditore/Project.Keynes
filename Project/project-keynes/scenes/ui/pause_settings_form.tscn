@@ -1,7 +1,8 @@
 [gd_scene format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/graphics_quality_options.tscn" id="1_graphics"]
 [node name="SettingsForm" type="VBoxContainer"]
 theme_override_constants/separation = 8
-[node name="Quality" type="OptionButton" parent="."]
+[node name="GraphicsQualityOptions" parent="." instance=ExtResource("1_graphics")]
 layout_mode = 2
 [node name="Scale" type="OptionButton" parent="."]
 layout_mode = 2

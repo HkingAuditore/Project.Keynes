@@ -1,6 +1,7 @@
 extends RefCounted
 
 ## Resource placement, resumable chunk construction and GPU publication.
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 const NativeSlice = preload("res://scripts/rendering/resource_visual_native_slice.gd")
 const Plan = preload("res://scripts/rendering/resource_instance_plan.gd")
 const INSTANCE_SCALE_MIN := 0.82
@@ -564,7 +565,7 @@ static func _install_upload(host, task: Dictionary) -> bool:
 				copies.append(copy)
 		node.set_meta("wraps", copies)
 	node.multimesh.instance_count = count
-	node.multimesh.buffer = buffer
+	FogDrawBounds.upload(node.multimesh, buffer, FogDrawBounds.Kind.RESOURCE)
 	host._instance_count += count - previous
 	host._sync_wrap_visibility(key)
 	host._stats.uploads = int(host._stats.uploads) + 1

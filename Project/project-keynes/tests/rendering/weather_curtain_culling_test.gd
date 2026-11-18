@@ -27,6 +27,8 @@ func run() -> void:
 		printerr("weather curtain culling needs an actual rendering display")
 		quit(2)
 		return
+	if not root.is_node_ready():
+		await root.ready
 	var source := FileAccess.get_file_as_string("res://shaders/weather_cell_curtain.gdshader")
 	var reference := ""
 	for arg in OS.get_cmdline_user_args():
@@ -41,6 +43,8 @@ func run() -> void:
 		reference = regex.sub(source, "", true)
 		reference = reference.replace("int y = -1; y <= 1", "int y = -2; y <= 2")
 		reference = reference.replace("int x = -1; x <= 1", "int x = -2; x <= 2")
+		reference = reference.replace("if (!has_effect || v_fog_vis", "if (v_fog_vis")
+		reference = reference.replace("fog_mask_enabled && has_effect", "fog_mask_enabled")
 	for i in range(2):
 		var view := SubViewport.new()
 		view.size = Vector2i(256, 256)
@@ -86,6 +90,13 @@ func run() -> void:
 		await compare_case(variant, 0.0, 2.1, 1.309, 0.0, 0.5, 4)
 		await compare_case(variant, 0.5, 2.1, 1.309, 0.5, 0.5, 8)
 		await compare_case(variant, 0.0, 2.1, 1.309, 1.0, 0.5, 30)
+		await compare_case(variant, 0.0, 2.1, 1.309, 1.0, 0.5, 0, false)
+		var has_haze := variant == 0 or variant == 3
+		for mat in materials:
+			mat.set_shader_parameter("weather_lut", texture(Color(1.0 / 255, 0, 0, 0)))
+		await compare_case(variant, 0.0, 2.1, 1.309, 1.0, 1.0, 18, false)
+		await compare_case(variant, 0.0, 2.1, 1.309, 1.0, 0.5, 18, has_haze)
+		await compare_case(variant, 0.0, 2.1, 1.309, 1.0, 1.0, 12)
 	for view in views:
 		view.queue_free()
 	await process_frame
@@ -93,7 +104,7 @@ func run() -> void:
 	quit(0 if failures == 0 else 1)
 
 func compare_case(variant: int, depth: float, time: float, pitch: float,
-		visibility: float, weather_lerp: float, flags: int) -> void:
+		visibility: float, weather_lerp: float, flags: int, has_effect: bool = true) -> void:
 	for i in range(2):
 		meshes[i].set_instance_custom_data(0, Color(0, 0, 0.317 + depth * 0.23, depth))
 		materials[i].set_shader_parameter("layer_depth", depth)
@@ -119,7 +130,7 @@ func compare_case(variant: int, depth: float, time: float, pitch: float,
 			nonzero_alpha += 1
 	var label := "variant=%d depth=%.1f time=%.1f pitch=%.3f visibility=%.2f flags=%d" % [variant, depth, time, pitch, visibility, flags]
 	check(max_difference == 0, "%s pixel difference=%d" % [label, max_difference])
-	check(nonzero_alpha > 0 if visibility > 0.5 else nonzero_alpha == 0, label + " visibility")
+	check(nonzero_alpha > 0 if visibility > 0.5 and has_effect else nonzero_alpha == 0, label + " visibility")
 	if not output.is_empty() and (comparisons == 0 or max_difference > 0):
 		a.save_png(output.path_join("curtain-%d-after.png" % comparisons))
 		b.save_png(output.path_join("curtain-%d-reference.png" % comparisons))

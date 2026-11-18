@@ -8,17 +8,9 @@
 //                                          terrain_periodic_world_uv
 //   hex_cell_field.gdshaderinc          —— HexCellField / cell_table 查表
 //
-// 职责：替换 compute_terrain_static_material() 在 PK_CELL_FIELD 下的实现。
-//   方案 §3.6：「静态材质只采前两名」——底色（biome_hue_modulate，纯 ALU）做完整
-//   3-way；terrain_material_tex 的 albedo detail / 法线 / 粗糙度只对权重前两名的
-//   biome 采样，第三名的权重并入第二名。LOW 档只采视觉主格一份。
-//
-// 采样账（方案 §3.8 / §3.9，按「分支全部展平」的最坏情况）：
-//   MID/HIGH：terrain_material_tex 恰好 **2** 次（rank0 + rank1），无条件执行；
-//   LOW（PK_QUALITY_LOW）：恰好 **1** 次（视觉主格）。
-//   本文件不含循环、不把 texture() 放进权重门控的 if、名次选择全是三元选择。
-//   唯一的三元门控 `use_material_tiles` 与今日 compute_terrain_static_material 同源
-//   （只读 uniform：enabled / tex_bound / visual_quality）⇒ warp 一致，不违反 §3.9。
+// 三格权重连续混合地表底色。LOW 采视觉主格的细节，中高档采权重最高的
+// 同域材质。地貌不同时，细纹按次生权重淡向中性值，避免放大交界处的纹理反差。
+// 各档只读取一份细节纹理，粗糙度和微表面强度仍采用原有的地貌权重。
 // ═══════════════════════════════════════════════════════════════════════════
 
 // 水面 program（PK_WATER_ONLY）不 include land_pipeline，且 uniforms.gdshaderinc:111
@@ -29,10 +21,9 @@
 // 材质贴图的无条件采样（方案 §3.9 第 2 / 3 条）。
 // 不调 terrain_material_sample()：它内部有 `if (layer < 0) return` 早退，等价于把
 // 带隐式导数的 texture() 放进非一致控制流（FXC 会强制展平或报 X3570）。
-// 这里把 layer 无条件钳到 ≥ 0：水格/未知 biome 多付一次采样，但权重恒为 0，结果不变。
-vec4 terrain_cell_field_material_sample(int biome, vec2 wp) {
+// 调用方先将材质层钳到合法范围。
+vec4 terrain_cell_field_material_sample(int layer, vec2 wp) {
 	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
-	int layer = max(terrain_material_layer(biome), 0);
 	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
 }
 
@@ -90,8 +81,7 @@ TerrainStaticMaterial compute_terrain_static_material_field(
 	float w_r0 = (i_r0 == 0) ? w.x : ((i_r0 == 1) ? w.y : w.z);
 	float w_r1 = (i_r1 == 0) ? w.x : ((i_r1 == 1) ? w.y : w.z);
 
-	// ── 3. 材质细节：只采前两名（方案 §3.6）───────────────────────────────
-	// 第三名权重并入第二名：w1' = w1 + w2 = 1 - w0（Σw == 1）。
+	// ── 3. 只读主导材质的细纹；第二名代表剩余权重，用于过渡和粗糙度。
 #ifdef PK_QUALITY_LOW
 	// LOW：方案 §3.8 静态材质预算 = 1，只采视觉主格一份，不做名次折叠。
 	int detail_biome0 = primary_biome;
@@ -102,70 +92,37 @@ TerrainStaticMaterial compute_terrain_static_material_field(
 	int detail_biome1 = b_r1;
 	float detail_mix = 1.0 - w_r0;
 #endif
-	// 采样点**无条件执行**：rank1 权重为 0 时照采照乘（§3.9 第 2 条）。门控只读
-	// uniform（warp 一致），与今日 compute_terrain_static_material 的写法同源。
+	// 两种地貌可以共用同一层纹理。这种交界保留完整细纹。
+	int layer0 = max(terrain_material_layer(detail_biome0), 0);
+	int layer1 = max(terrain_material_layer(detail_biome1), 0);
 	vec4 material0 = use_material_tiles
-			? terrain_cell_field_material_sample(detail_biome0, wp)
+			? terrain_cell_field_material_sample(layer0, wp)
 			: vec4(1.0, 0.5, 0.5, 0.5);
 	vec3 detail0 = use_material_tiles
 			? terrain_material_albedo_detail(material0)
 			: procedural_biome_detail(detail_biome0, wp, uv);
-	vec4 material1 = material0;
-	vec3 detail1 = detail0;
-#ifndef PK_QUALITY_LOW
-	// 第二份采样：MID/HIGH 无条件再采一次（采样数是编译期常数 2）。
-	material1 = use_material_tiles
-			? terrain_cell_field_material_sample(detail_biome1, wp)
-			: vec4(1.0, 0.5, 0.5, 0.5);
-	detail1 = use_material_tiles
-			? terrain_material_albedo_detail(material1)
-			: procedural_biome_detail(detail_biome1, wp, uv);
-#endif
-	// [web-high-features 2026-11-01 / 方案 B] 预算后端在材质族激活时也把烘焙 detail
-	// 乘进 albedo（理由见 compute_terrain_static_material 的同段注释）：两名各乘一次，
-	// LOW 只有一份 ⇒ 不会重复乘。
 #if defined(PK_WEB_TEXTURE_BUDGET) && defined(VT_USE_TERRAIN_DETAIL)
 	if (use_material_tiles && visual_quality >= 1 && terrain_detail_available()) {
 		detail0 *= baked_biome_detail(detail_biome0, uv);
-#ifndef PK_QUALITY_LOW
-		detail1 *= baked_biome_detail(detail_biome1, uv);
-#endif
 	}
 #endif
-
-	// ── 4. 底色：色调走完整 3-way（纯 ALU），细节走 2-way ─────────────────
-	// hue = Σ w_i · biome_hue_modulate(hyps, biome_i)，Σw == 1 ⇒ 凸组合，等价于
-	// hyps × Σ w_i·mult_i。第三格（角点处）仍有色调贡献，肉眼看不出细节纹理的 2-way。
-	vec3 detail = mix(detail0, detail1, detail_mix);
-	vec3 hue = biome_hue_modulate(hyps, b0) * w.x
-			+ biome_hue_modulate(hyps, b1) * w.y
-			+ biome_hue_modulate(hyps, b2) * w.z;
+	float other_detail = detail_mix * float(use_material_tiles ? layer0 != layer1 : detail_biome0 != detail_biome1);
+	vec3 detail = mix(detail0, vec3(1.0), other_detail);
+	vec3 tint = biome_hue_multiplier(b0) * w.x + biome_hue_multiplier(b1) * w.y
+			+ biome_hue_multiplier(b2) * w.z;
+	vec3 hue = hyps * mix(vec3(1.0), tint, biome_tint_strength);
 	out_mat.color = hue * detail;
 
-	float rough0 = use_material_tiles
-			? terrain_material_roughness(biome_roughness(detail_biome0), material0)
-			: biome_roughness(detail_biome0);
-	vec2 normal0 = use_material_tiles
-			? terrain_material_normal_detail(material0)
-			: vec2(0.0);
-	float micro0 = terrain_biome_micro_strength(detail_biome0);
-	float rough1 = rough0;
-	vec2 normal1 = normal0;
-	float micro1 = micro0;
-#ifndef PK_QUALITY_LOW
-	rough1 = use_material_tiles
-			? terrain_material_roughness(biome_roughness(detail_biome1), material1)
-			: biome_roughness(detail_biome1);
-	normal1 = use_material_tiles
-			? terrain_material_normal_detail(material1)
-			: vec2(0.0);
-	micro1 = terrain_biome_micro_strength(detail_biome1);
-#endif
-	out_mat.roughness = mix(rough0, rough1, detail_mix);
-	out_mat.material_normal_xy = mix(normal0, normal1, detail_mix);
-	out_mat.micro_strength = mix(micro0, micro1, detail_mix);
+	float base_roughness = mix(biome_roughness(detail_biome0),
+		biome_roughness(detail_biome1), detail_mix);
+	out_mat.roughness = use_material_tiles
+		? terrain_material_roughness(base_roughness, material0) : base_roughness;
+	out_mat.material_normal_xy = use_material_tiles
+		? terrain_material_normal_detail(material0) * (1.0 - other_detail) : vec2(0.0);
+	out_mat.micro_strength = mix(terrain_biome_micro_strength(detail_biome0),
+		terrain_biome_micro_strength(detail_biome1), detail_mix);
 
-	// ── 5. 接口字段（land_pipeline 暂只读 color / micro_strength，这里保持与非 PK
+	// ── 4. 接口字段（land_pipeline 暂只读 color / micro_strength，这里保持与非 PK
 	//    路径同语义，避免以后接回时口径漂移）─────────────────────────────
 	out_mat.edge_factor = 1.0 - w_r0;                        // 次生占比 = 非主导格权重和
 	out_mat.secondary_biome = (w_r1 > 1e-4) ? b_r1 : -1;     // 次名权重为 0 时无次生

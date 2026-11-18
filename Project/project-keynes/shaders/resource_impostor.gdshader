@@ -3,7 +3,10 @@ render_mode unshaded, blend_mix;
 
 uniform sampler2D style_lut : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
+#ifndef PK_WEB_RESOURCE_MIN
+// The compatibility program omits the dry plant tint, including its texture slot.
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
+#endif
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D memory_lut : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0);
@@ -84,7 +87,9 @@ uniform int herd_size_max = 9;
 uniform float animal_length_hex = 0.11;
 uniform float animal_min_pixels = 3.0;
 uniform float fish_length_hex = 0.035;
+#ifndef PK_WEB_RESOURCE_MIN
 #define VT_USE_HORIZON
+#endif
 #define VT_USE_TERRAIN_NORMAL
 #define VT_USE_HEIGHT
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
@@ -127,8 +132,9 @@ varying flat vec4 v_material;
 varying flat vec4 v_climate;
 varying flat vec4 v_data;
 varying flat vec4 v_art;
-varying flat vec2 v_sub;
-varying flat vec2 v_ecology;
+// Pack the three per-instance values used by the fragment into one flat slot.
+// Native OpenGL on macOS allows 16 varying slots in total.
+varying flat vec3 v_instance_detail; // x = sub-style, y = instance kind, z = dryness
 varying flat vec3 v_light;
 varying flat vec3 v_direct;
 varying flat vec3 v_sun;
@@ -186,11 +192,6 @@ varying vec2 v_world_position;
 #endif
 #endif // PK_RES_WEB_PASS_*
 #endif // PK_WEB_RESOURCE_MIN
-// x = instance kind (1 prop, 2 ground decal, 3 submerged, 4 lens-only),
-// y = 1 when this instance carries the resource's lens badge.
-varying flat vec2 v_kind;
-// Light transmission through water for submerged cues (1 on land).
-// World-space radius of the instance quad (for real-scale sprites).
 
 float rv_hash(float n) {
 	return fract(sin(n * 12.9898 + 78.233) * 43758.5453);
@@ -288,8 +289,12 @@ void vertex() {
 	float live = step(0.88, knowledge);
 	vec4 current = texture(dyn_lut, cell_uv);
 	v_climate = mix(memory, current, has_dynamic_lut ? live : 0.0);
+#ifndef PK_WEB_RESOURCE_MIN
 	vec4 ecology = texture(eco_lut, cell_uv);
-	v_ecology = mix(vec2(memory.a, 1.0 - memory.a), ecology.rg, has_ecology_lut ? live : 0.0);
+	v_instance_detail.z = mix(1.0 - memory.a, ecology.g, has_ecology_lut ? live : 0.0);
+#else
+	v_instance_detail.z = 0.0;
+#endif
 	float style = INSTANCE_CUSTOM.g;
 	// [style-lut-texel 2026-11-17] style_lut 是 4 列 × 64 行、列间没有 padding 的 RGBAF 表：
 	//   col0 = (specular, material_cell+1, art_bound, metallic)
@@ -320,7 +325,7 @@ void vertex() {
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
 	v_knowledge = knowledge;
 	v_misc.y = COLOR.g;
-	v_sub = vec2(meta.b, style);
+	v_instance_detail.x = meta.b;
 	v_rank = vec2(INSTANCE_CUSTOM.a, radius_px);
 	vec2 center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xy;
 	vec2 map_uv = visual_static_wrap_uv((center - world_origin) / max(world_size, vec2(0.0001)));
@@ -337,7 +342,7 @@ void vertex() {
 	float kind_raw = COLOR.a + 0.01;
 	float kind = floor(kind_raw);
 	float carrier = step(fract(kind_raw), 0.25);
-	v_kind = vec2(kind, carrier);
+	v_instance_detail.y = kind;
 	float present = step(0.10, knowledge);
 	float lens = clamp(lens_amount, 0.0, 1.0);
 	float lod = smoothstep(fade_pixels, simple_pixels, radius_px_world);
@@ -544,8 +549,8 @@ float rv_material_contact_edge(vec4 albedo, vec4 surface, vec2 p, float seed,
 void fragment() {
 	int form = int(v_data.x + 0.5);
 	int family = int(v_data.y + 0.5);
-	int sub_style = int(v_sub.x + 0.5);
-	int kind = int(v_kind.x + 0.5);
+	int sub_style = int(v_instance_detail.x + 0.5);
+	int kind = int(v_instance_detail.y + 0.5);
 	float seed = v_data.z;
 	float live = v_data.w;
 	float lens = clamp(lens_amount, 0.0, 1.0);
@@ -684,7 +689,7 @@ void fragment() {
 #endif
 
 		if (family == 0 && form != 26) {
-			float dry = clamp((0.35 - v_climate.g) * 1.4 + (1.0 - health) * 0.45 + v_ecology.y * 0.12, 0.0, 1.0);
+			float dry = clamp((0.35 - v_climate.g) * 1.4 + (1.0 - health) * 0.45 + v_instance_detail.z * 0.12, 0.0, 1.0);
 			base = mix(base, vec3(0.54, 0.45, 0.26), dry * climate_response * 0.38);
 		}
 		float snow_mask = snow * (family == 1 ? 0.18 : (s.h < 0.08 ? 0.55 : 0.85)) * smoothstep(-0.1, 0.5, s.n.z);

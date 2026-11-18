@@ -1,26 +1,8 @@
-# weather_layer.gd v1
-# 独立的天气表现层（v9.split：从 world_map.gdshader 中拆出来）。
-#
-# 节点结构：
-#   WeatherLayer (Node2D, z_index=4，挂在 HexRenderer 之下；高于植被/点缀，低于数据 overlay）
-#   ├── _overlay_quad   MeshInstance2D + weather_overlay.gdshader  (z_index=0 in layer)
-#   ├── _curtain_root   Node2D（cell 级 MultiMesh 雨幕/雪幕）         (z_index=-1)
-#   └── _particles_root Node2D（GPUParticles2D 池，每 front 一个）   (z_index=2)
-#
-# 数据流：
-#   HexRenderer.set_weather_fronts(fronts) → WeatherLayer.set_weather_fronts(fronts)
-#       ├─ 写 overlay shader 的 weather_front_centers / types / count uniform
-#       ├─ 渲染云体与降水特效（共享云影由 CloudShadowField 负责）
-#       └─ 同步 GPUParticles2D 池（B6 实装）
-#
-# 与地形 shader 的分工：
-#   - DROUGHT / HEATWAVE 的 multiplicative 调色仍在 world_map.gdshader 内（地表本色变化）
-#   - 其余 RAIN / STORM / FOG / BLIZZARD / MONSOON 全部由本层负责
 # WeatherLayer owns the Godot presentation boundary for weather fronts.
 # It publishes the weather LUT and front snapshots to the overlay shader, and
 # owns cell curtain meshes and the optional desktop particle pool. Simulation
 # state remains in WeatherSystem; this node only keeps visual interpolation and
-# GPU resources.
+# GPU resources. The terrain shader applies drought and heatwave ground tint.
 
 class_name WeatherLayer
 extends Node2D
@@ -93,19 +75,8 @@ const _CURTAIN_PATCH_SCALE := 1.45
 # [parallax-rain] 三层视差参数：每层独立的 z_offset（layer_depth 由层数自动计算）
 # 索引 0=近景(z 高) / 1=中景 / 2=远景(z 低)
 const _CURTAIN_PARALLAX_Z_OFFSETS := [2, 1, 0]
-# Weather simulation still advances by game day. The presentation layer follows
-# snapshots with a small lag so fronts keep moving between day ticks instead of
-# snapping once and then freezing until the next tick.
-# Phase E（方案 A）：sim 端寿命翻倍后，相邻快照之间的位置变化更大、间隔更长。
-# 把 MAX_BLEND 从 1.35s 抬到 2.5s、MAX_PREDICT 从 0.35d 抬到 1.0d，让表现层
-# 能在每两次 day-tick 之间持续外推前进，避免"两次快照之间冻住、第三次跳一下"。
-#
-# 抽动修复（2026-05-18）：进一步把 MAX_BLEND 抬到 5.0s、MAX_PREDICT 抬到 2.5d。
-# 原因：SUS 多 tick 切片 + RefreshClimateDaily 偶发抢占下，commit 真实间隔可
-# 突变到 3-4s，旧上限 2.5s 会触顶 → lerp 完成后进入 _predict 外推 → 新 commit
-# 一到 _front_blend_elapsed=0 重置 + smoothstep 的 ease-in → 视觉上"加速冲一
-# 下→突然停→慢慢起步"。抬高上限后 99% commit 间隔都能装进单段 lerp 内。
 # Presentation interpolation keeps front snapshots moving between day commits.
+# Its blend and prediction limits accommodate occasional 3–4 s gaps between commits.
 const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.65
 const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.35
 const _WEATHER_FRONT_MAX_BLEND_SEC: float = 5.0
@@ -201,6 +172,8 @@ var _wx_pushed_lerp: float = -1.0
 # [cell-field-overlays 2026-11-18] weather_table（offset 空间 4 层）+ 层号双缓冲的推送缓存。
 # 与上面三项同一个策略：值变了才推 —— 稳态下这几条 uniform 写回 0 次。
 # shader 侧消费在 O2（weather_overlay.gdshader），本任务只保证数据与层号已经到位。
+var _endpoints: SubViewport
+var _endpoints_revision := -1
 var _wx_pushed_weather_table: Texture2DArray = null
 var _wx_pushed_weather_cur: int = -2
 var _wx_pushed_weather_bound: bool = false
@@ -431,7 +404,9 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
 func set_world_ref(w) -> void:
-	_world_ref = w
+	if _world_ref != w:
+		_world_ref = w
+		_push_weather_table(true)
 
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
 	_world_bounds = bounds
@@ -614,26 +589,42 @@ func _has_weather_lut_source() -> bool:
 func set_vector_atlas_texture(tex: Texture2D) -> void:
 	_vector_atlas_tex = tex
 
-# ─── 任务 1：视觉总开关（由 HexRenderer 转发） ──────────────────────────
-# 这里的 setter 只负责把值写入 overlay shader uniform；overlay shader 内部
-# 的分支会根据这些 uniform 决定是否执行对应特性。为使任务 1 本身"无视觉变化"，
-# shader 侧的实际分支会在任务 4~6 中接入。
 var _visual_quality: int = 2
+var _weather_detail: int = -1  # -1 跟随总画质，兼容未配置单项的场景。
 var _weather_debug_view: int = 0
 var _day_night_enabled: bool = true
 var _extreme_ground_enabled: bool = true
 
 func set_visual_quality(q: int) -> void:
-	var next_quality := clampi(q, 0, 2)
-	var changed := _visual_quality != next_quality
-	_visual_quality = next_quality
-	if changed and _overlay_quad != null:
+	var previous := _weather_quality()
+	_visual_quality = clampi(q, 0, 2)
+	if previous != _weather_quality():
+		_apply_weather_quality()
+
+func set_weather_detail(quality: int) -> void:
+	var previous := _weather_quality()
+	var previous_tier := _weather_shader_tier()
+	var previous_capacity := _curtain_layer_capacity()
+	_weather_detail = clampi(quality, -1, 2)
+	if previous_tier != _weather_shader_tier() or previous_capacity != _curtain_layer_capacity():
+		_rebuild_weather_materials()
+	elif previous != _weather_quality():
+		_apply_weather_quality()
+
+func _weather_quality() -> int:
+	return _visual_quality if _weather_detail < 0 else _weather_detail
+
+func _weather_shader_tier() -> String:
+	if _weather_detail < 0 or OS.has_feature("web") or not DCFeatureFlags.uses_shader_quality_tier():
+		return _mobile_quality_tier_define
+	return ["MOBILE_QUALITY_LOW", "MOBILE_QUALITY_MID", "MOBILE_QUALITY_HIGH"][_weather_detail]
+
+func _apply_weather_quality() -> void:
+	if _overlay_quad != null:
 		_load_overlay_shader()
 		_push_overlay_runtime_state()
-	if _overlay_mat != null:
-		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
 	for mat in _curtain_mats:
-		mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
+		mat.set_shader_parameter("cell_curtain_quality", _weather_quality())
 	_update_curtain_visibility()
 
 func set_weather_debug_view(view: int) -> void:
@@ -656,23 +647,25 @@ func get_cell_curtain_diag() -> Dictionary:
 		"layers": _curtain_layers.size(),
 		"active_layers": _desired_curtain_layer_count(),
 		"has_lut": _has_weather_lut_source(),
-		"quality": _visual_quality,
-		"mobile_tier": _mobile_quality_tier_define,
+		"quality": _weather_quality(),
+		"mobile_tier": _weather_shader_tier(),
 	}
 
 var _mobile_quality_tier_define: String = ""
 
 func set_mobile_quality_tier(tier_define: String) -> void:
-	if _mobile_quality_tier_define == tier_define:
-		return
+	var previous := _weather_shader_tier()
 	_mobile_quality_tier_define = tier_define
+	if previous != _weather_shader_tier():
+		_rebuild_weather_materials()
+
+func _rebuild_weather_materials() -> void:
+	if _overlay_quad == null:
+		return
 	_load_overlay_shader()
 	_load_curtain_shader()
-	if _overlay_quad != null and _world_bounds.size != Vector2.ZERO:
-		_overlay_quad.mesh = _build_full_quad(_world_bounds, _wrap_period_x)
-	_rebuild_curtain_layers(true)
+	_rebuild_curtain_layers()
 	_push_overlay_runtime_state()
-	_push_curtain_runtime_state()
 	_update_curtain_visibility()
 
 
@@ -1298,7 +1291,7 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("world_time", _world_time)
 	_overlay_mat.set_shader_parameter("weather_strength", _strength)
 	_overlay_mat.set_shader_parameter("cloud_opacity_scale", _cloud_opacity_scale)
-	_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
+	_overlay_mat.set_shader_parameter("weather_overlay_quality", _weather_quality())
 	_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
 	_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 	_overlay_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
@@ -1336,6 +1329,10 @@ func _push_wind_luts() -> void:
 		_overlay_mat.set_shader_parameter("wind_lut_prev", _wind_lut_prev_tex)
 
 
+func _uses_weather_endpoints() -> bool:
+	return weather_cell_field_enabled and RenderingServer.get_rendering_device() != null
+
+
 # [cell-field-overlays 2026-11-18] weather_table（offset 空间，4 层）+ 层号双缓冲的推送。
 #
 #   weather_table        : sampler2DArray（O2 的 weather_overlay 用 texelFetch 三格取值）
@@ -1346,19 +1343,35 @@ func _push_wind_luts() -> void:
 #
 # 失效时把 bound 推 false 并解除纹理绑定：绝不把上一张地图/上一次提交的层号留在材质上。
 func _push_weather_table(force: bool = false) -> void:
-	if _overlay_mat == null or _world_ref == null:
+	if _overlay_mat == null:
 		return
-	var tex: Texture2DArray = _world_ref.weather_table_tex
-	var bound: bool = _world_ref.weather_table_valid and tex != null
+	var tex: Texture2DArray = _world_ref.weather_table_tex if _world_ref != null else null
+	var bound: bool = tex != null and _world_ref.weather_table_valid
 	var cur: int = int(_world_ref.weather_table_cur) if bound else -1
-	if not force and tex == _wx_pushed_weather_table and cur == _wx_pushed_weather_cur \
-			and bound == _wx_pushed_weather_bound:
+	var revision: int = _world_ref.weather_lut_update_usec if bound else -1
+	if not force and revision == _endpoints_revision and tex == _wx_pushed_weather_table \
+			and cur == _wx_pushed_weather_cur and bound == _wx_pushed_weather_bound:
 		return
+	_endpoints_revision = revision
 	_wx_pushed_weather_table = tex
 	_wx_pushed_weather_cur = cur
 	_wx_pushed_weather_bound = bound
 	_overlay_mat.set_shader_parameter("weather_table", tex if bound else null)
 	_overlay_mat.set_shader_parameter("weather_table_bound", bound)
+	if _uses_weather_endpoints() and bound:
+		var dimensions: Vector2i = _world_ref.weather_table_dims * 2
+		if _endpoints == null:
+			_endpoints = preload("res://scripts/rendering/render_data_table.gd").new()
+			_endpoints.configure(self, dimensions, preload("res://shaders/weather_cell_endpoints.gdshader"))
+		_endpoints.resize_table(dimensions)
+		_endpoints.material.set_shader_parameter("source_table", tex)
+		_endpoints.material.set_shader_parameter("current_layer", cur)
+		_endpoints.refresh()
+		_overlay_mat.set_shader_parameter("weather_endpoints", _endpoints.get_texture())
+	elif _endpoints != null:
+		_overlay_mat.set_shader_parameter("weather_endpoints", null)
+		_endpoints.queue_free()
+		_endpoints = null
 	# 尺寸与层号只在 bound 时有意义；不 bound 时推 0 / -1，任何误读都落在合法范围外
 	# （shader 的 bound 早退先挡住，这里只是不让残值看起来"像对的"）。
 	_overlay_mat.set_shader_parameter("weather_table_size",
@@ -1369,7 +1382,7 @@ func _push_weather_table(force: bool = false) -> void:
 	# [cell-field-overlays 2026-11-18 / O2] 开关开着但表没就绪：shader 侧会整段空返回
 	# （没有云），只在日志里报**一次** —— 否则 GM 面板上看到的是"开关打开了、天气没了"，
 	# 属于最难查的一类静默。bound 恢复后重新武装，下次再失效还会报一次。
-	if not bound and weather_cell_field_enabled and not _wx_cell_field_warned:
+	if _world_ref != null and not bound and weather_cell_field_enabled and not _wx_cell_field_warned:
 		_wx_cell_field_warned = true
 		push_warning("[weather-layer/cell-field] weather_cell_field_enabled=true 但 "
 			+ "weather_table 未发布（reason 见 cell_lut_baker 的 weather_table_reason）⇒"
@@ -1461,7 +1474,7 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("lut_dims", Vector2(_weather_lut_dims.x, _weather_lut_dims.y))
 		mat.set_shader_parameter("world_time", _world_time)
 		mat.set_shader_parameter("weather_strength", _strength)
-		mat.set_shader_parameter("cell_curtain_quality", _visual_quality)
+		mat.set_shader_parameter("cell_curtain_quality", _weather_quality())
 		mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
 		mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 		mat.set_shader_parameter("season_phase", _season_phase)
@@ -1498,20 +1511,23 @@ func _load_overlay_shader() -> void:
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
-	var tier_quality := CloudShadowField.quality_for_tier(_visual_quality, _mobile_quality_tier_define)
+	var shader_tier := _weather_shader_tier()
+	var tier_quality := CloudShadowField.quality_for_tier(_weather_quality(), shader_tier)
 	var prefix := "#define %s\n" % ["PK_WEATHER_LOW", "PK_WEATHER_MID", "PK_WEATHER_HIGH"][tier_quality]
 	# 平台裁剪宏必须排在质量档宏之前：web 变体要能压过 MOBILE_QUALITY_* 的分支判断。
 	if OS.has_feature("web"):
 		prefix += WEB_WEATHER_MIN_DEFINE
 	if _visual_tiles_active():
 		prefix += "#define MAP_VISUAL_TILED\n"
-	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
-		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	if shader_tier != "" and DCFeatureFlags.uses_shader_quality_tier():
+		prefix += _shader_quality_define_prefix(shader_tier)
 	# [cell-field-overlays 2026-11-18 / O2] 场函数开关：**独立**于地形开关，只改这份 program。
 	# 放最后：define 顺序不影响 #ifdef 判定，而 cloud_weather_quality_test 断言前缀仍然
 	# begins_with("#define PK_WEATHER_")（质量档必须排第一）。
 	if weather_cell_field_enabled:
 		prefix += CELL_FIELD_DEFINE
+		if _uses_weather_endpoints():
+			prefix += "#define PK_WEATHER_CELL_ENDPOINTS\n"
 	if not prefix.is_empty():
 		shader = shader.duplicate() as Shader
 		shader.code = prefix + shader.code
@@ -1536,11 +1552,12 @@ func _load_curtain_shader() -> void:
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % CURTAIN_SHADER_PATH)
 		return
-	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
+	var shader_tier := _weather_shader_tier()
+	if shader_tier != "" and DCFeatureFlags.uses_shader_quality_tier():
 		var src: String = shader.code
 		if not src.begins_with("#define"):
 			shader = shader.duplicate() as Shader
-			shader.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
+			shader.code = "%s%s" % [_shader_quality_define_prefix(shader_tier), src]
 	# [parallax-rain] 清空旧材质，按层数重建
 	_curtain_mats.clear()
 	var layer_count := _curtain_layer_capacity()
@@ -1606,13 +1623,12 @@ func _build_curtain_patch_mesh() -> ArrayMesh:
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
 
-func _rebuild_curtain_layers(force: bool = false) -> void:
+func _rebuild_curtain_layers() -> void:
 	var max_layers := _curtain_layer_capacity()
 	if not _CELL_CURTAIN_ENABLED or _curtain_map == null or _curtain_map.cell_count() <= 0 or max_layers <= 0:
 		_clear_curtain_layers()
 		return
-	if not force \
-			and _curtain_built_for_map == _curtain_map \
+	if _curtain_built_for_map == _curtain_map \
 			and is_equal_approx(_curtain_built_hex_size, _hex_size) \
 			and is_equal_approx(_curtain_built_wrap_period, _wrap_period_x) \
 			and _curtain_layers.size() == max_layers:
@@ -1706,6 +1722,8 @@ func _clear_curtain_layers() -> void:
 
 func _curtain_layer_capacity() -> int:
 	if OS.has_feature("mobile"):
+		if _weather_detail == 2:
+			return 2
 		return _CURTAIN_LAYER_COUNT_MOBILE
 	return _CURTAIN_LAYER_COUNT_DESKTOP
 
@@ -1717,8 +1735,8 @@ func _desired_curtain_layer_count() -> int:
 	if _strength <= 0.001:
 		return 0
 	if OS.has_feature("mobile"):
-		return 1
-	match _visual_quality:
+		return _curtain_layer_capacity()
+	match _weather_quality():
 		0:
 			return 1
 		1:

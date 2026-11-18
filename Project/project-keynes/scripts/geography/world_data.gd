@@ -12,6 +12,8 @@
 class_name WorldData
 extends RefCounted
 
+const FogTerrainCoverage = preload("res://scripts/rendering/fog_terrain_coverage.gd")
+
 # ─── 高分辨率原始 buffer（GDScript 端可直接采样） ─────────────────────────
 var height_buffer: PackedFloat32Array = PackedFloat32Array()
 var moisture_buffer: PackedFloat32Array = PackedFloat32Array()
@@ -288,6 +290,9 @@ var weather_table_valid: bool = false              # 成败标志（失败时 sh
 var cell_table_tex: Texture2DArray          # 4 层 RGBA8，map_w × map_h
 var cell_table_dims: Vector2i = Vector2i.ZERO
 var cell_table_bound: bool = false
+## Display-only coverage derived lazily from the published auxiliary layer.
+var cell_table_fog_coverage_source: Image
+var cell_table_fog_coverage: FogTerrainCoverage
 # [cell-field-web 2026-11-18] cell_table **实际可读**的层数（0 = 未发布）：
 #   0 = 没有可用的表（发布失败 / 旧存档 / 旧图）；
 #   3 = 只有 offset 空间的三层（layer3 因 n_cells > map_w*map_h 不可发布，第 4 层是占位）；
@@ -297,6 +302,15 @@ var cell_table_bound: bool = false
 # 消费点：渲染推送的 `cell_class_index_bound = cell_table_layers >= 4`（陆地 + 水面两片
 # program 各推一次，必须同值）。初始化就是 0，所以旧存档天然"不读 layer3"。
 var cell_table_layers: int = 0
+
+func fog_covers_surface(world_samples: Rect2, hex_size: float) -> bool:
+	if cell_table_fog_coverage == null:
+		if cell_table_fog_coverage_source == null:
+			return false
+		cell_table_fog_coverage = FogTerrainCoverage.new(
+			cell_table_fog_coverage_source.get_data(), cell_table_dims)
+		cell_table_fog_coverage_source = null
+	return cell_table_fog_coverage.covers(world_samples, hex_size)
 # [cell-field 2026-11-18] 边界扭曲场（方案 §3.5 / 契约 §2、§5.1）：C++ 的
 # run_bake_terrain_index_pass 顺手输出的 RG8 逐像素场（W*H*2，R=x/G=y，
 # v = clamp((warp+hi)/range, -1, 1)，byte = round((v*0.5+0.5)*255)）。

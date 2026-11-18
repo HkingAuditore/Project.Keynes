@@ -43,21 +43,18 @@ float cloud_shadow_direct_visibility(vec2 map_uv, float local_day) {
 	return 1.0 - cloud_shadow_amount(map_uv) * clamp(local_day, 0.0, 1.0);
 }
 
-float cloud_shadow_water_direct_visibility(vec2 map_uv, float local_day) {
-	return 1.0 - cloud_shadow_amount(map_uv) * cloud_shadow_water_scale
-		* clamp(local_day, 0.0, 1.0);
+// x 为直射光可见度，y 为环境光可见度。两个值共用同一次云影取样。
+vec2 cloud_shadow_land_visibility(vec2 map_uv, float local_day) {
+	float amount = cloud_shadow_amount(map_uv);
+	float day = clamp(local_day, 0.0, 1.0);
+	return vec2(1.0 - amount * day, 1.0 - amount * cloud_shadow_ambient_weight * day);
 }
 
-// 间接光用的遮蔽：幅度按 cloud_shadow_ambient_weight 缩放，弱于直射遮蔽，
-// 避免山谷/夜景被压成死黑。无云影场时恒为 1.0。
-float cloud_shadow_ambient_visibility(vec2 map_uv, float local_day) {
-	return 1.0 - cloud_shadow_amount(map_uv) * cloud_shadow_ambient_weight
-		* clamp(local_day, 0.0, 1.0);
-}
-
-float cloud_shadow_water_ambient_visibility(vec2 map_uv, float local_day) {
-	return 1.0 - cloud_shadow_amount(map_uv) * cloud_shadow_ambient_weight
-		* cloud_shadow_water_scale * clamp(local_day, 0.0, 1.0);
+vec2 cloud_shadow_water_visibility(vec2 map_uv, float local_day) {
+	float amount = cloud_shadow_amount(map_uv);
+	float day = clamp(local_day, 0.0, 1.0);
+	return vec2(1.0 - amount * cloud_shadow_water_scale * day,
+			1.0 - amount * cloud_shadow_ambient_weight * cloud_shadow_water_scale * day);
 }
 #else
 float cloud_shadow_amount(vec2 map_uv) {
@@ -68,15 +65,11 @@ float cloud_shadow_direct_visibility(vec2 map_uv, float local_day) {
 	return 1.0;
 }
 
-float cloud_shadow_water_direct_visibility(vec2 map_uv, float local_day) {
-	return 1.0;
+vec2 cloud_shadow_land_visibility(vec2 map_uv, float local_day) {
+	return vec2(1.0);
 }
 
-float cloud_shadow_ambient_visibility(vec2 map_uv, float local_day) {
-	return 1.0;
-}
-
-float cloud_shadow_water_ambient_visibility(vec2 map_uv, float local_day) {
-	return 1.0;
+vec2 cloud_shadow_water_visibility(vec2 map_uv, float local_day) {
+	return vec2(1.0);
 }
 #endif
