@@ -45,6 +45,9 @@ func _ready() -> void:
 		PKLog.enabled = false
 	# Web 自动测试：先挂跟车节点再配置运行时，这样连"会话配置失败"也能被超时抓到。
 	_attach_web_autotest()
+	var modals := _ui_manager.get_node("UIRoot/ModalLayer")
+	var loading := modals.get_node("WorldLoadingOverlay") as WorldLoadingOverlay
+	$WorldRoot.backdrops.assign([loading, modals.get_node("AnnualReportWorkspace/Desk")])
 	_configure_runtime()
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
@@ -64,7 +67,6 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 	_push_visual_toggles()
 	_ui_manager.show_loading("正在生成世界...")
-	var loading := _ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
 	loading.retry_requested.connect(_retry_session)
 	loading.return_requested.connect(func() -> void: get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH))

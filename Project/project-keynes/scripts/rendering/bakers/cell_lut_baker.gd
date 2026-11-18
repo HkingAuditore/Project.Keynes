@@ -429,6 +429,7 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 		world.enum_lut_tex = baker._lut_tex_from_data(
 			e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
 		report["enum_lut_upload_ms"] = float(Time.get_ticks_usec() - enum_upload_t0_us) / 1000.0
+		world.fog_texture_revision += 1
 		baker._cell_enum_lut_bytes_cache = e
 	else:
 		report["enum_lut_upload_ms"] = 0.0
@@ -554,6 +555,7 @@ static func _bake_cell_luts_gd(baker: MapBaker, map: MapData, world: WorldData, 
 		weather_data[w4 + 1] = baker._q01_byte(float(cell.weather_intensity))
 		weather_data[w4 + 2] = baker._q01_byte(float(cell.weather_cloud))
 		weather_data[w4 + 3] = baker._q01_byte(float(cell.weather_vapor))
+	world.fog_texture_revision += 1
 	world.enum_lut_tex = baker._lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
 	# [dyn-lut-inplace 2026-11-02] 以前这里对 dyn_lut 做前后台双缓冲交换：
 	#   var dyn_front := world.dyn_lut_tex
@@ -836,6 +838,7 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 			tex.update_layer(state_image, CellTableCodecScript.LAYER_STATE)
 			updated_layers.append("state")
 	if need_static:
+		world.fog_texture_revision += 1
 		world.land_base_revision += 1
 		world.cell_table_fog_coverage_source = aux_image
 		world.cell_table_fog_coverage = null

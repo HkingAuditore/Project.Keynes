@@ -169,3 +169,34 @@ static func _bind_art(host) -> void:
 	host._set_param("art_material_bound", art.material != null)
 	if art.material != null:
 		host._set_param("art_material", art.material)
+
+## The clock can move each frame while the wind, lighting and bound textures stay the same.
+static func sync_frame_bindings(host, time: float, sun: Vector3, state: Dictionary) -> void:
+	var dyn: Texture2D = host._world.dyn_lut_tex if host._world != null else null
+	var eco: Texture2D = host._world.eco_lut_tex if host._world != null else null
+	var enums: Texture2D = host._world.enum_lut_tex if host._world != null else null
+	var bindings := {"state": state, "sun": sun, "dyn": dyn, "eco": eco, "enum": enums,
+		"memory": host._memory_texture, "fog": host._fog, "resource_shader": host._material.shader,
+		"geology_shader": host._material_geo.shader}
+	if host._cover != null:
+		bindings.cover_shader = host._cover.material().shader
+		bindings.memory_only = host._cover.memory_climate_only
+	if bindings == host._last_frame_bindings:
+		if host._cover != null:
+			host._cover.material().set_shader_parameter("world_time", time)
+		return
+	host._last_frame_bindings = bindings
+	host._last_frame_bindings.state = state.duplicate()
+	host._set_param("tod_sun_dir", sun)
+	for name in state:
+		host._set_param(name, state[name])
+	host._set_param("dyn_lut", dyn)
+	host._set_param("has_dynamic_lut", dyn != null)
+	host._set_param("eco_lut", eco)
+	host._set_param("has_ecology_lut", eco != null)
+	host._set_param("enum_lut", enums)
+	if host._cover != null:
+		var cover_state := state.duplicate()
+		cover_state.merge({"tod_sun_dir": sun, "fog_enabled": host._fog, "dyn_lut": dyn,
+			"has_dynamic_lut": dyn != null, "enum_lut": enums}, true)
+		host._cover.set_frame_state(time, cover_state, host._memory_texture)

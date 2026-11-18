@@ -290,8 +290,10 @@ var weather_table_valid: bool = false              # 成败标志（失败时 sh
 var cell_table_tex: Texture2DArray          # 4 层 RGBA8，map_w × map_h
 var cell_table_dims: Vector2i = Vector2i.ZERO
 var cell_table_bound: bool = false
-## Display-only coverage derived lazily from the published auxiliary layer.
 var land_base_revision := 0
+## Changes on upload, including updates to an existing enum texture or cell-table mask.
+var fog_texture_revision := 0
+## Display-only coverage derived lazily from the published auxiliary layer.
 var cell_table_fog_coverage_source: Image
 var cell_table_fog_coverage: FogTerrainCoverage
 # [cell-field-web 2026-11-18] cell_table **实际可读**的层数（0 = 未发布）：

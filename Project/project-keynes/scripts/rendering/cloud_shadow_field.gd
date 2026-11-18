@@ -137,12 +137,21 @@ static func has_valid_weather_source(texture: Texture2D, dims: Vector2i) -> bool
 	return texture != null and dims.x > 0 and dims.y > 0
 
 
+# Direct shadows can still be sampled when the composite quad is hidden.
+# The map renderer's visibility controls whether any of its consumers can draw.
+var _map_drawn := true
+
+
 func _ready() -> void:
 	top_level = true
 	z_as_relative = false
 	z_index = 4
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_ensure_nodes()
+	var map_renderer := get_parent() as CanvasItem
+	if map_renderer != null:
+		map_renderer.visibility_changed.connect(_sync_map_visibility.bind(map_renderer))
+		_sync_map_visibility(map_renderer)
 	set_process(true)
 
 
@@ -328,6 +337,14 @@ func clear_shadow_inputs() -> void:
 		_debug_quad.visible = false
 
 
+func _sync_map_visibility(map_renderer: CanvasItem) -> void:
+	_map_drawn = map_renderer.is_visible_in_tree()
+	if not _map_drawn:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	elif _world != null:
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
 func get_quality_resolution() -> Vector2i:
 	return _field_size
 
@@ -363,6 +380,8 @@ func _process(delta: float) -> void:
 		_mark_dirty()
 	if _field_material != null:
 		_field_material.set_shader_parameter("world_time", _world_time)
+	if not _map_drawn:
+		return
 	_field_update_accum += delta
 	if _has_weather_source:
 		# [cloud-shape 2026-11-07] 形状噪声依赖 world_time，必须按显示刷新节奏重绘；
@@ -621,7 +640,7 @@ func _strength_for_quality() -> float:
 
 func _mark_dirty() -> void:
 	_dirty = true
-	if _viewport != null and _world != null and not _direct_mode:
+	if _map_drawn and _viewport != null and _world != null and not _direct_mode:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 

@@ -171,6 +171,7 @@ var _max_style_scale := 1.0
 var _last_profile_enabled := true
 var _configured := false
 var _last_intel: Object
+var _last_frame_bindings: Dictionary = {}
 # Wild plant communities + grazing traces: one full-world quad drawn under all props.
 var _cover: ResourceGroundCover
 var _cover_pending: Array[int] = []
@@ -198,6 +199,7 @@ func _ready() -> void:
 
 func configure(map: MapData, world: WorldData, hex_size: float,
 		intel: BuildingVisualIntelCache) -> Dictionary:
+	_last_frame_bindings.clear()
 	_configured = false
 	_clear_geometry()
 	if _map != null and _map.resource_visual_inputs_changed.is_connected(notify_resource_inputs):
@@ -509,24 +511,7 @@ func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
 		return
 	_set_param("world_time", time)
 	_update_lens()
-	_set_param("tod_sun_dir", sun)
-	for name in state:
-		_set_param(name, state[name])
-	if _world != null:
-		_set_param("dyn_lut", _world.dyn_lut_tex)
-		_set_param("has_dynamic_lut", _world.dyn_lut_tex != null)
-		_set_param("eco_lut", _world.eco_lut_tex)
-		_set_param("has_ecology_lut", _world.eco_lut_tex != null)
-		_set_param("enum_lut", _world.enum_lut_tex)
-	if _cover != null:
-		var cover_state := state.duplicate()
-		cover_state["tod_sun_dir"] = sun
-		cover_state["fog_enabled"] = _fog
-		if _world != null:
-			cover_state["dyn_lut"] = _world.dyn_lut_tex
-			cover_state["has_dynamic_lut"] = _world.dyn_lut_tex != null
-			cover_state["enum_lut"] = _world.enum_lut_tex
-		_cover.set_frame_state(time, cover_state, _memory_texture)
+	Materials.sync_frame_bindings(self, time, sun, state)
 	_sync_restored_memory()
 	var begin := Time.get_ticks_usec()
 	_stats.last_setup_ms = float(begin - frame_begin) / 1000.0

@@ -34,10 +34,13 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/military_peace_window.tscn" id="36_peace"]
 [ext_resource type="PackedScene" path="res://scenes/ui/military_map_toolbar.tscn" id="37_military_map"]
 
+[ext_resource type="Script" path="res://scripts/rendering/map_draw_visibility.gd" id="38_map_visibility"]
+
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
 
 [node name="WorldRoot" type="Node2D" parent="." unique_id=1950342253]
+script = ExtResource("38_map_visibility")
 
 [node name="HexRenderer" type="Node2D" parent="WorldRoot" unique_id=1885530707]
 show_behind_parent = true

@@ -106,10 +106,54 @@ func _run() -> void:
 		camera.force_update_scroll()
 		await RenderingServer.frame_post_draw
 		_check(land._shader_mat.shader != cache._reader, "a moved view draws fresh terrain")
+	await _check_idle_presentation(game, land, camera)
 	game.queue_free()
 	await process_frame
 	print("Land base cache: %d failures" % failures)
 	quit(int(failures != 0))
+
+
+func _check_idle_presentation(game: Node, land: HexRenderer, camera: MapCamera) -> void:
+	var fog := land.fog_of_war_layer()
+	land.set_fog_of_war_enabled(true, false)
+	fog.set_render_scale(50)
+	await RenderingServer.frame_post_draw
+	var updates := 0
+	for frame in 12:
+		var previous: float = fog._shader_mat.get_shader_parameter("world_time")
+		fog._process(1.0 / 30.0)
+		await RenderingServer.frame_post_draw
+		updates += int(previous != fog._shader_mat.get_shader_parameter("world_time"))
+	_check(updates == 6, "idle fog redraws six times in twelve display frames")
+	fog._process(1.0 / 30.0)
+	camera.restore_view_state(camera.position + Vector2(80, 24), camera.zoom)
+	camera.force_update_scroll()
+	await RenderingServer.frame_post_draw
+	_check(is_equal_approx(fog._shader_mat.get_shader_parameter("world_time"), fog._world_time),
+		"moving the camera refreshes fog on the first draw")
+
+	var ui := game.get_node("UI") as GameUIManager
+	var loading := ui.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as ColorRect
+	ui.show()
+	loading.show()
+	land.set_terrain_render_scale(75, Viewport.MSAA_DISABLED)
+	await RenderingServer.frame_post_draw
+	var terrain := land._world_quad.get_viewport() as SubViewport
+	_check(not land.is_visible_in_tree() and terrain.render_target_update_mode == SubViewport.UPDATE_DISABLED,
+		"an opaque full-window loading page skips the world and its scaled terrain")
+	ui.hide()
+	await RenderingServer.frame_post_draw
+	_check(land.is_visible_in_tree(), "a hidden UI layer cannot cover the map")
+	ui.show()
+	loading.modulate.a = 0.8
+	await RenderingServer.frame_post_draw
+	_check(land.is_visible_in_tree() and terrain.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
+		"the first translucent draw restores the scaled terrain")
+	loading.modulate.a = 1.0
+	loading.offset_left += 24.0
+	await RenderingServer.frame_post_draw
+	_check(land.is_visible_in_tree(), "a visible strip at the edge keeps the map live")
+	loading.hide()
 
 
 func _check(ok: bool, message: String) -> void:
