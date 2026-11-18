@@ -327,6 +327,17 @@ public:
         std::sort(result.begin(), result.end());
         return result;
     }
+    template<class Publish>
+    void publish_pages(EconomyFieldId id, Publish &&publish) {
+        auto &entry = _entries.at(id.key());
+        constexpr size_t index = static_cast<size_t>(EconomyChangeConsumer::Publish);
+        const auto &pages = entry.consumer_pages[index];
+        // Keep the cursor on an incomplete publish so copying can be retried.
+        publish(pages);
+        constexpr uint8_t bit = static_cast<uint8_t>(1u << index);
+        for (uint64_t page : pages) entry.consumer_pending[page] &= static_cast<uint8_t>(~bit);
+        entry.consumer_pages[index].clear();
+    }
     std::vector<uint64_t> take_keys(EconomyFieldId id, EconomyChangeConsumer consumer) {
         auto &entry = _entries.at(id.key());
         if (entry.layout != EconomyFieldLayout::KeyedRows) throw std::logic_error("economy_dense_field_keyed_read");

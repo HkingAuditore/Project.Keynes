@@ -10,7 +10,8 @@ if env['PLATFORM'] == 'win32':
 else:
     env.Append(CCFLAGS=['-std=c++17', '-O2'])
 worker = ARGUMENTS.get('worker', '0') == '1'
-sources = ['runtime_climate_physics.cpp', 'runtime_climate_formulas.cpp']
+sources = ['runtime_climate_physics.cpp', 'runtime_climate_physics_state.cpp',
+           'runtime_climate_formulas.cpp']
 if worker:
     env.Append(CPPDEFINES=['PK_TEST_CLIMATE_WORKER'])
     sources += [

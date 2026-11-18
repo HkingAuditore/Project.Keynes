@@ -20,6 +20,12 @@ func _run() -> void:
 	for key in reference:
 		if typeof(reference[key]) in [TYPE_PACKED_FLOAT32_ARRAY,TYPE_PACKED_BYTE_ARRAY,TYPE_PACKED_INT32_ARRAY]:
 			expect("generation array parity: "+key,reference[key]==async_result.get(key))
+	await _expect_generated_topology(cfg, async_result)
+	var narrow_cfg := MapConfig.make(1, 4)
+	narrow_cfg.seed = cfg.seed
+	var narrow_result: Dictionary = ext.run_native_world_generate_full_pass(narrow_cfg.seed,
+		generator._native_generation_cfg_dict(narrow_cfg), input.profile)
+	await _expect_generated_topology(narrow_cfg, narrow_result)
 	var canceled: int = ext.begin_loading_task("generate",input)
 	expect("other owner cannot consume a task",other.take_loading_task(canceled).is_empty())
 	ext.cancel_loading_task(canceled)
@@ -48,6 +54,45 @@ func _run() -> void:
 	expect("catalog snapshot matches source compiler",economy==LoadingCatalogCache.economy_catalog())
 	var cached_effect := LoadingCatalogCache.effect_catalog()
 	expect("effect extension IR survives serialization",cached_effect != null and effect==cached_effect.compile_native_catalog())
+	var prebaked_effect := LoadingCatalogCache.effect_native_columns()
+	expect("prebaked Effect columns match source compiler", prebaked_effect == effect)
+	prebaked_effect.erase("effect_keys")
+	expect("prebaked Effect columns do not share caller edits", LoadingCatalogCache.effect_native_columns() == effect)
+	var effect_override := FamilyEffectCatalog.new()
+	var override_context := preload("res://scripts/game/loading_catalog_context.gd").new()
+	var custom_effect: Resource = await EffectDomainCatalog.build_cooperative(override_context, effect_override)
+	var custom_columns: Dictionary = custom_effect.compile_native_catalog() if custom_effect != null else {}
+	expect("explicit Effect override bypasses the default snapshot", bool(custom_columns.get("ok", false))
+		and (custom_columns.get("family_effect_keys", PackedStringArray()) as PackedStringArray).is_empty()
+		and not (effect.get("family_effect_keys", PackedStringArray()) as PackedStringArray).is_empty())
+	LoadingCatalogCache.invalidate()
+	expect("invalidated Effect columns cannot be used", LoadingCatalogCache.effect_native_columns().is_empty())
 	for failure in failures: push_error(failure)
 	print("[native-loading-tasks] %d failures" % failures.size())
 	quit(0 if failures.is_empty() else 1)
+
+func _expect_generated_topology(cfg: MapConfig, generated: Dictionary) -> void:
+	var size := "%dx%d" % [cfg.width, cfg.height]
+	var neighbors: PackedInt32Array = generated.get("neighbor_indices", PackedInt32Array())
+	expect(size + " packed topology published", neighbors.size() == cfg.width * cfg.height * 6)
+	var assembler := DCTerrainGenerator.new(null)
+	var map: MapData = await assembler.assemble_native_result(generated, cfg)
+	var generic_input := generated.duplicate()
+	generic_input.erase("neighbor_indices")
+	var generic: MapData = await assembler.assemble_native_result(generic_input, cfg)
+	expect(size + " assembled both paths", map != null and generic != null)
+	if map == null or generic == null:
+		return
+	await generic.build_indices_cooperative()
+	expect(size + " packed topology matches generic wrapped world", neighbors == generic.neighbor_indices_packed())
+	expect(size + " accepted packed topology during assembly", map.has_indices() and map.neighbor_indices_packed() == neighbors)
+	if not map.has_indices():
+		return
+	var ordered := true
+	for i in map.cell_count():
+		var actual: HexCell = map.cell_at(i)
+		var expected: HexCell = generic.cell_at(i)
+		if actual.index != i or map.index_of(actual) != i or actual.q != expected.q or actual.r != expected.r:
+			ordered = false
+			break
+	expect(size + " cell IDs and insertion order preserved", ordered)

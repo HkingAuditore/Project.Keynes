@@ -62,6 +62,10 @@ static func bake() -> Error:
 	if effect == null:
 		push_error("[loading-catalog] effect 目录编译失败: EffectDomainCatalog.build() 返回 null")
 		return ERR_INVALID_DATA
+	var effect_columns: Dictionary = effect.compile_native_catalog()
+	if not bool(effect_columns.get("ok", false)):
+		push_error("[loading-catalog] effect 目录编译失败: %s" % _reason_of(effect_columns))
+		return ERR_INVALID_DATA
 	print("[loading-catalog] effect    %6d ms" % [Time.get_ticks_msec() - step])
 
 	step = Time.get_ticks_msec()
@@ -91,7 +95,10 @@ static func bake() -> Error:
 	print("[loading-catalog] technology+research %6d ms" % [Time.get_ticks_msec() - step])
 
 	var extensions := Snapshot.new()
-	extensions.columns = effect.get("native_extensions")
+	extensions.columns = {
+		"native_extensions": effect.get("native_extensions"),
+		"compiled_catalog": effect_columns,
+	}
 	var payload := {
 		"economy.res": snapshot,
 		"effect.res": effect,

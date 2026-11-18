@@ -62,6 +62,10 @@ public:
         if (consumer == EconomyChangeConsumer::Hash) return take_hash_pages();
         return _registry->take_pages(_field, consumer);
     }
+    template<class Publish>
+    void publish_pages(Publish &&publish) const {
+        _registry->publish_pages(_field, std::forward<Publish>(publish));
+    }
     operator const std::vector<T> &() const noexcept { return _values; }
     const T *data() const noexcept { return _values.data(); }
     const T &operator[](size_t index) const {

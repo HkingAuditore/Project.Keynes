@@ -63,6 +63,7 @@ struct RuntimeClimateSnapshot {
     // writeback 为可见场投影，不携带无消费者的温度历史。
     // snapshot() 的完整诊断快照仍包含全部字段。
     RuntimeClimateStore payload;
+    std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState> physics_writeback;
     std::vector<double> restored_capture_cursors;
     // 没有 store 成员、但仍须回灌 MapData 的场。跨日继续态由 CLM2 v9 保存。
     // RuntimeClimateStore 不决定 PKEC 或旧 PDP3/PDP4 格式；后者使用独立 POD 类型。
@@ -236,8 +237,12 @@ public:
         out.catalog_hash = _catalog.hash;
         out.state_hash = _committed_state_hash;
         const auto probe_started = std::chrono::steady_clock::now();
-        if (visible_only) RuntimeClimateKernel::copy_visible_store(out.payload, _store);
-        else out.payload = _store;
+        out.physics_writeback = visible_only ? _kernel.copy_physics_writeback(_store) : nullptr;
+        if (visible_only) {
+            RuntimeClimateKernel::copy_visible_store(out.payload, _store, !out.physics_writeback);
+        } else {
+            out.payload = _store;
+        }
         out.soil_moisture = _kernel.distribute_soil_moisture();
         const auto &ro = _kernel.round_output();
         out.insolation_now = ro.insolation_now;

@@ -67,8 +67,12 @@ func _ready() -> void:
 	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
 	loading.retry_requested.connect(_retry_session)
 	loading.return_requested.connect(func() -> void: get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH))
+	# 让加载画面绘制两帧。开局时钟由 generate_world 接管，不能把这两帧的耗时计入首日天气。
+	var clock_was_processing := _world_clock.is_processing()
+	_world_clock.set_process(false)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	_world_clock.set_process(clock_was_processing)
 	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
 
 

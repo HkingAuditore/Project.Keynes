@@ -37,7 +37,7 @@ func begin_periodic_season_refresh() -> int:
 	_generator._season_round_slots_refresh_count = 0
 	var season_idx: int = 0
 	if _generator._world_clock_ref != null and _generator._world_clock_ref.has_method("season_index"):
-		season_idx = int(_generator._world_clock_ref.season_index())
+		season_idx = _generator._world_clock_ref.season_index_for_day(floori(_generator._get_runtime_climate_capture().sample_day()))
 	_generator._pending_season_idx = clampi(season_idx, 0, 3)
 	return _generator._pending_season_idx
 
@@ -307,7 +307,7 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, _max_u
 func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
 	_generator._season_refresh_in_progress = false
 	if _generator._world_clock_ref != null and _generator._world_clock_ref.has_method("day_index"):
-		_generator._last_season_refresh_day = int(_generator._world_clock_ref.day_index())
+		_generator._last_season_refresh_day = floori(_generator._get_runtime_climate_capture().sample_day())
 	if not _generator._season_round_b_plus_facade_published and _map != null and _map.has_method("sync_runtime_terrain_facade_from_soa"):
 		var terrain_facade_fixed: int = int(_map.sync_runtime_terrain_facade_from_soa())
 		_generator._last_season_refresh_breakdown["terrain_facade_fixed"] = terrain_facade_fixed
@@ -334,7 +334,7 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 	# 季节刷新会改 cover（雪线 / 洪水 / 冰川），而 Military 的地形成本表按 cover
 	# 分类。facade 用 cover 签名去重，cover 未变时这里只做一次 hash，不过桥。
 	if _generator._military_facade != null and _generator._military_facade.is_configured():
-		var day := int(_generator._world_clock_ref.day_index()) if _generator._world_clock_ref != null else -1
+		var day := floori(_generator._get_runtime_climate_capture().sample_day()) if _generator._world_clock_ref != null else -1
 		var terrain: Dictionary = _generator.refresh_military_terrain(day)
 		_generator._last_season_refresh_breakdown["military_terrain"] = String(
 			terrain.get("reason", "ok" if bool(terrain.get("ok", false)) else "failed"))

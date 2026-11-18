@@ -2032,5 +2032,4 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
     set_restore_rejected_reason(error);
     return false;
 }
-
 } // namespace pk

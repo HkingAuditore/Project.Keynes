@@ -161,7 +161,10 @@ func _setup_effect_runtime(cp_sched) -> void:
 		await _generator._yield_generation_frame()
 		_generator._loading_profile_step("effect_catalog")
 		var catalog_context = LoadingCatalogContextScript.for_generator(_generator)
-		var effect_catalog = await _generator.EffectDomainCatalogScript.build_cooperative(catalog_context)
+		var effect_catalog := LoadingCatalogCache.effect_catalog()
+		var effect_columns := LoadingCatalogCache.effect_native_columns()
+		if effect_catalog == null:
+			effect_catalog = await _generator.EffectDomainCatalogScript.build_cooperative(catalog_context)
 		if catalog_context.canceled:
 			return
 		await _generator._yield_generation_frame()
@@ -169,7 +172,8 @@ func _setup_effect_runtime(cp_sched) -> void:
 		if effect_catalog == null:
 			push_error("[effect] domain catalog build failed")
 		else:
-			var effect_columns: Dictionary = await effect_catalog.compile_native_catalog_cooperative(catalog_context)
+			if effect_columns.is_empty():
+				effect_columns = await effect_catalog.compile_native_catalog_cooperative(catalog_context)
 			if catalog_context.canceled:
 				return
 			await _generator._yield_generation_frame()

@@ -16,8 +16,8 @@ namespace pk {
 //   1. 主线程不允许阻塞在 futex/`Atomics.wait` 上，"等一组 worker"在 wasm 里
 //      只能退化成忙等或直接抛异常 —— 主线程一旦不再返回，连 WebTelemetry 的
 //      心跳都发不出去，页面表现为完全挂死；
-//   2. wasm 的 pthread 池可能已被 Godot 自己的 WorkerThreadPool 占满，起不来
-//      的 worker 会让 group barrier 永远等不到 `_remaining_tasks == 0`。
+//   2. wasm 的 pthread 池可能已被 Godot 自己的 WorkerThreadPool 占满，可用
+//      线程少时，唤醒和同步的开销可能超过计算本身。
 // 顺序路径与本文件原有的"无 worker" fallback 完全同一条代码，逐字节等价，
 // 因此确定性不变。
 void set_parallel_serial_only(bool enabled) noexcept;
@@ -60,6 +60,7 @@ private:
     ~NativeParallelExecutor();
 
     void worker_loop(uint32_t worker_index);
+    void run_remaining_tasks(TaskFn fn, void *userdata, uint32_t task_count);
     uint32_t active_worker_limit() const;
 
     const uint32_t _hardware_threads;
@@ -78,15 +79,10 @@ private:
     void *_task_userdata = nullptr;
     uint32_t _published_task_count = 0;
     uint32_t _participating_workers = 0;
-    // Workers that have taken `_task_fn` out of the critical section and may
-    // still call it. `_remaining_tasks == 0` alone does not imply this is 0: a
-    // worker can be preempted between reading the group and entering its task
-    // loop, and would then call the previous group's fn — whose stack-backed
-    // userdata run_group has already released — against the next group's task
-    // cursor. run_group must wait on both.
+    // Workers which may still be using the current group's stack-backed data.
+    // Drain them before returning or reusing the task cursor for the next group.
     uint32_t _active_workers = 0;
     std::atomic<uint32_t> _next_task{0};
-    std::atomic<uint32_t> _remaining_tasks{0};
 
     std::atomic<uint64_t> _dispatch_count{0};
     std::atomic<uint64_t> _serial_dispatch_count{0};

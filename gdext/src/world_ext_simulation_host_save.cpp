@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "runtime_climate_weather_input.h"
 #include "native_simulation_host.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
@@ -14,6 +15,7 @@
 #include "metric_mask_tests.h"
 #include "runtime_switch_registry.h"
 #include "world_ext_simulation_host_internal.h"
+#include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -416,9 +418,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             snapshot.climate_round_input.sea_ice_frac =
                 snapshot.climate_round_input.sea_ice_frac_inout;
         }
-        _captured_climate_round_input = snapshot.climate_round_input;
-        _captured_climate_round_input_valid = true;
-        _captured_climate_round_input_day = snapshot.day;
     }
     // round 不变量。只在 bind_map_data 之后变一次，所以与 per-day 输入分开走。
     // 缺 albedo_table 会让 stage 8 静默跳过（而 albedo 是 temp 的日内最后写者）；
@@ -693,6 +692,36 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 k.snow_classification_margin =
                     clamp_f(kf("snow_classification_margin", 0.03f), 0.0f, 0.12f);
                 k.weather_lat_te_norm = kf("weather_lat_te_norm", 0.5f);
+                if (d.has("thermal_equator_capture_bounds")) {
+                    const Rect2 bounds = d["thermal_equator_capture_bounds"];
+                    const PackedFloat32Array temp = d["temp_read_arr"];
+                    const PackedVector2Array positions = d["cell_pos"];
+                    if (!std::isfinite(bounds.position.y) || !std::isfinite(bounds.size.y)) {
+                        out["ok"] = false;
+                        out["code"] = "runtime_weather_equator_bounds_invalid";
+                        return out;
+                    }
+                    // If the original slice lacked a complete sample it used 0.5.
+                    if (bounds.size.y > 0.001 && cells > 0 &&
+                        static_cast<size_t>(temp.size()) == cells &&
+                        static_cast<size_t>(positions.size()) == cells) {
+                        auto sample = std::make_shared<pk_async_climate::WeatherThermalEquatorInput>();
+                        sample->bounds_y = bounds.position.y;
+                        sample->bounds_height = bounds.size.y;
+                        sample->temperature.assign(temp.ptr(), temp.ptr() + cells);
+                        sample->pos_y.resize(cells);
+                        const Vector2 *pos = positions.ptr();
+                        for (size_t i = 0; i < cells; ++i) {
+                            if (!std::isfinite(pos[i].y)) {
+                                out["ok"] = false;
+                                out["code"] = "runtime_weather_equator_position_invalid";
+                                return out;
+                            }
+                            sample->pos_y[i] = pos[i].y;
+                        }
+                        wx->captured_thermal_equator = std::move(sample);
+                    }
+                }
                 // 键名例外：struct 叫 omega_ascent_gain，字典键带 field_ 前缀。
                 k.omega_ascent_gain = kf("field_omega_ascent_gain", 0.40f);
                 k.world_bounds_pos_y = kf("world_bounds_pos_y", 0.0f);

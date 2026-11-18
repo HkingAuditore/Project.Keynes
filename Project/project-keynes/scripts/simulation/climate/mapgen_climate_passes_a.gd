@@ -805,7 +805,7 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 func _consume_sea_ice_dt_days(max_dt_days: float = 30.0) -> float:
 	var dt_days: float = 1.0
 	if _generator._world_clock_ref != null:
-		var now_day_v = _generator._world_clock_ref.get("current_day")
+		var now_day_v = _generator._get_runtime_climate_capture().sample_day()
 		if now_day_v != null:
 			var now_day: float = float(now_day_v)
 			if _generator._last_sea_ice_pass_day >= 0.0:
@@ -844,7 +844,7 @@ func _consume_sea_ice_dt_days(max_dt_days: float = 30.0) -> float:
 func _consume_climate_dt_days() -> float:
 	var dt_days: float = 1.0
 	if _generator._world_clock_ref != null:
-		var now_day_v = _generator._world_clock_ref.get("current_day")
+		var now_day_v = _generator._get_runtime_climate_capture().sample_day()
 		if now_day_v != null:
 			var now_day: float = float(now_day_v)
 			# 同一仿真日重复取值 → 命中缓存，不再推进游标。

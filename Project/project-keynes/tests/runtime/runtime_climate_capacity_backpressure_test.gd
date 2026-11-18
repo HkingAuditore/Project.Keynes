@@ -11,12 +11,13 @@ class CapacityProbe extends RefCounted:
 class GeneratorProbe extends MapGenerator:
 	var probe := CapacityProbe.new()
 	var whole_graph := false
+	var committed_day := -1
 	var captured_days: Array[int] = []
 	func get_data_core_world_ext():
 		return probe
 	func get_runtime_thread_report() -> Dictionary:
 		return {"climate_worker_authoritative": true, "authority_ready": whole_graph,
-			"simulation_thread_mode": "ACTIVE"}
+			"simulation_thread_mode": "ACTIVE", "simulation_committed_day": committed_day}
 	func publish_environment_through(last_day: int, _phase: float,
 			_callsite: int = 0) -> Dictionary:
 		captured_days.append(last_day)
@@ -24,6 +25,7 @@ class GeneratorProbe extends MapGenerator:
 
 class HostProbe extends WorldRuntimeHost:
 	var ticks: Array[int] = []
+	var consume_writeback_day := -1
 	func _consume_modifier_worker_snapshot_if_authoritative() -> void: pass
 	func _consume_effect_worker_snapshot_if_authoritative() -> void: pass
 	func _service_effect_worker_intents_if_authoritative() -> void: pass
@@ -34,6 +36,15 @@ class HostProbe extends WorldRuntimeHost:
 	func _apply_climate_writeback_if_authoritative(_report: Dictionary) -> void: pass
 	func _service_country_worker_transport() -> void: pass
 	func _consume_country_worker_read_view_if_authoritative() -> void: pass
+	func _consume_runtime_commit_if_ready(_report_override: Dictionary = {}) -> void:
+		if consume_writeback_day >= 0:
+			_runtime_climate_writeback_last_day = consume_writeback_day
+			var generator := _generator as GeneratorProbe
+			generator.committed_day = consume_writeback_day
+	func _observe_runtime_worker_fault(_report: Dictionary = {}) -> void: pass
+	func _poll_runtime_health() -> void: pass
+	func _service_runtime_liveness(_frame_usec: int, _capacity_pending: bool) -> void: pass
+	func _service_runtime_progress(_frame_usec: int) -> void: pass
 	func run_daily_tick(day: int, _phase: float) -> Dictionary:
 		ticks.append(day)
 		return {}
@@ -61,9 +72,49 @@ func _init() -> void:
 	assert(not clock.has_simulation_backpressure())
 	generator.whole_graph = true
 	host._on_clock_day_changed(11)
+	assert(generator.captured_days.is_empty(), "day 10 must wait for the weather of day 9")
+	assert(host._climate_capacity_pending_day == 11)
+	host._runtime_climate_writeback_last_day = 9
+	host._on_clock_day_changed(host._climate_capacity_pending_day)
 	assert(generator.captured_days == [10])
 	assert(host.ticks == [10])
+	# The commit becomes readable in this frame. Receive it before retrying
+	# the calendar's retained day so input 11 can be published in this frame.
+	host._on_clock_day_changed(12)
+	assert(host._climate_capacity_pending_day == 12)
+	generator.committed_day = 9
+	host.consume_writeback_day = 10
+	host._process(0.0)
+	assert(generator.captured_days == [10, 11], "retained input missed a frame after its source committed")
+	assert(host._climate_capacity_pending_day == -1)
+	_test_climate_calendar(generator, clock)
 	host.free()
 	clock.free()
 	print("[climate-capacity-backpressure] PASS")
 	quit(0)
+
+func _test_climate_calendar(generator: MapGenerator, clock: WorldClock) -> void:
+	generator.set_world_clock_ref(clock)
+	var capture = generator._get_runtime_climate_capture()
+	capture.calendar_day = 93
+	generator._last_climate_pass_day = 92.0
+	generator._last_sea_ice_pass_day = 92.0
+	for display_day in [91.125, 94.75]:
+		clock.current_day = display_day
+		assert(generator._consume_climate_dt_days() == 1.0)
+		assert(generator._consume_sea_ice_dt_days() == 1.0)
+		var weather := generator._native_daily_weather_clock_values(0.0)
+		assert(weather.season_idx == clock.season_index_for_day(93))
+		assert(weather.season_phase == clock.season_phase_for_day(93))
+	capture.calendar_day = -1
+	assert(capture.sample_day() == clock.current_day)
+	clock.seed_annual_climate(20260718)
+	clock._apply_year_rollover(1)
+	var checkpoint := clock.export_state()
+	clock._apply_year_rollover(2)
+	var reference := clock.climate_anomaly
+	var restored := WorldClock.new()
+	assert(restored.restore_state(checkpoint).ok)
+	restored._apply_year_rollover(2)
+	assert(restored.climate_anomaly == reference)
+	restored.free()

@@ -2,13 +2,10 @@ extends "res://scripts/simulation/generator_context.gd"
 class_name DCTerrainGenerator
 const BioSummary = preload("res://scripts/geography/map_generation/bio_occupancy_summary.gd")
 
-## 校验原生生成结果，装配 HexCell，并保存地形、地貌与植被的生成基线。
-## 不持有生成状态；可用 DCTerrainGenerator.new(null) 独立装配结果。
-
 func _init(generator) -> void:
 	_generator = generator
 
-## Native result assembly boundary used by MapGenerator.generate().
+## Assembles native and bundled maps without taking ownership of generation.
 func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	var n: int = int(res.get("n_cells", 0))
 	if cfg == null or n <= 0 or n != int(cfg.width) * int(cfg.height):
@@ -122,6 +119,9 @@ func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	})
 	if hydro_parent_arr.size() == n:
 		map.hydro_parent_arr = hydro_parent_arr.duplicate()
+	if native_generation_array_ok(res, "neighbor_indices", n * 6, TYPE_PACKED_INT32_ARRAY) and map.cell_count() == n:
+		var gate = _generator._loading_frames if _generator != null else null
+		await map.build_indices_cooperative(gate, res["neighbor_indices"])
 	return map
 
 

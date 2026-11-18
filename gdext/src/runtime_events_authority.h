@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -158,13 +159,18 @@ public:
     static bool self_test();
 
 private:
-    enum : uint8_t { FREE = 0, WRITING = 1, READY = 2, READING = 3 };
+    enum class State : uint8_t { free, writing, published };
     struct Slot {
-        std::atomic<uint8_t> state{FREE};
+        State state = State::free;
+        uint32_t readers = 0;
+        bool observed = false;
         RuntimeEventsSnapshot snapshot{};
     };
+    // The lock protects slot ownership. Readers share an immutable snapshot
+    // and the producer fills a different slot outside the lock.
+    std::mutex _mutex;
     std::array<Slot, RUNTIME_SNAPSHOT_RING_SIZE> _slots{};
-    std::atomic<uint64_t> _published_generation{0};
+    uint32_t _latest = RUNTIME_SNAPSHOT_RING_SIZE;
     std::atomic<uint64_t> _publish_drop_count{0};
 };
 

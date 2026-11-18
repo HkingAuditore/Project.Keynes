@@ -1088,19 +1088,17 @@ func _sync_event_audio() -> void:
 func _on_day_changed(day_idx: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
-	# WorldRuntimeHost owns the single OFF/SHADOW daily authority and receives
-	# this clock signal before the controller. The controller only refreshes
-	# presentation state; keeping simulation out of this callback prevents a
-	# second SUS invocation when a worker commit is introduced.
+	# Events are read from a completed day. The active worker signals that boundary separately.
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
 	_sync_era_music()
 	_sync_event_audio()
 	_refresh_era_advancement()
-	_step_narrative_daily(day_idx)
-	if _music_situation != null:
-		_music_situation.refresh_global_from_commit()
+	if not _runtime_host.uses_worker_day_commits():
+		_step_narrative_daily(day_idx)
+		if _music_situation != null:
+			_music_situation.refresh_global_from_commit()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):
 		_economy_facade.dispatch_family_colonization_receipts(

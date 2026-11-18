@@ -34,6 +34,15 @@ void check_raw_bytes() {
             }
         }
     }
+    // The unclaimed territory and default policy columns are long runs of -1.
+    // Each block must take the same incoming low byte as the scalar stream.
+    std::vector<uint8_t> territory(3 * 64, 255);
+    territory[64] = 7;
+    for (uint64_t low = 0; low < 256; ++low) {
+        const uint64_t seed = (random() & ~uint64_t{255}) | low;
+        assert(pk::economy_hash_bytes(seed, territory.data(), territory.size()) ==
+               reference_bytes(seed, territory.data(), territory.size()));
+    }
     assert(pk::economy_hash_bytes(17, nullptr, 0) == 17);
 }
 

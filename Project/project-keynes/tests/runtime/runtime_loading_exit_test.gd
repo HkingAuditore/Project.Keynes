@@ -7,6 +7,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	await _check_player_loading_clock()
 	# Exercise immediate exit and suspension in catalog/native/map/bake work.
 	# These are sampling points, not deadlines or loading fallbacks.
 	for frames in [0, 2, 5, 15, 40, 80]:
@@ -14,6 +15,18 @@ func _run() -> void:
 	await _close_during_catalog()
 	print("runtime loading exit: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func _check_player_loading_clock() -> void:
+	var game := preload("res://scenes/player_game.tscn").instantiate()
+	var clock := game.get_node("WorldClock") as WorldClock
+	root.add_child(game)
+	await process_frame
+	await process_frame
+	_expect("drawing the loading screen leaves the opening day at zero", clock.current_day == 0.0)
+	var host := game.get_node("RuntimeHost") as WorldRuntimeHost
+	await host.close_world()
+	game.queue_free()
+	await process_frame
 
 func _close_loading_world(frames: int) -> void:
 	var host := WorldRuntimeHost.new()
