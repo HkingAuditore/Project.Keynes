@@ -63,6 +63,15 @@ var _last_wind_dir := Vector2(INF, INF)
 var _last_wind_boost := INF
 
 
+## [world-z-absolute 2026-11-18] 世界层 z 一律用绝对口径（与 fog_of_war_layer /
+## resource_visual_layer / building_visual_layer 同一个约定）。本层原先没有设过
+## z_as_relative，默认相对父 HexRenderer（z=0），于是 `_family_z()` 写的 3 是相对值，
+## 和绝对 12 的迷雾混在同一 CanvasLayer 时会抢错先后 —— 未探索厚云上会浮出树冠。
+## 父 z 恒为 0，改成绝对不改变任何数值，只是把两种口径统一。
+func _ready() -> void:
+	z_as_relative = false
+
+
 func configure(sources: Array, enabled: bool) -> void:
 	_clear_entries()
 	_sources = sources.duplicate()

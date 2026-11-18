@@ -100,8 +100,9 @@ func _run_assert(ext: Object, stat_tol: float, compare_hashes: bool) -> void:
 		var status := str(result.get("status", "skip"))
 		match status:
 			"ok":
-				print("[world-fingerprint] %d %dx%d PASS (%dms) %s"
-						% [seed_v, w, h, ms, _hash_line(result.get("actual", {}))])
+				print("[world-fingerprint] %d %dx%d PASS (%dms) %s %s"
+						% [seed_v, w, h, ms, _hash_line(result.get("actual", {})),
+						_bake_line(result.get("actual", {}))])
 			"drift":
 				_failures += 1
 				print("[world-fingerprint] %d %dx%d DRIFT (%dms)"
@@ -140,8 +141,9 @@ func _run_write(ext: Object) -> void:
 					% [seed_v, w, h, str(row.get("reason", "?"))])
 			continue
 		var meta: Dictionary = row.get("meta", {})
-		print("[world-fingerprint/write] %d %dx%d %s base_ms=%.2f (%dms)"
-				% [seed_v, w, h, _hash_line(row), float(meta.get("base_ms", -1.0)), ms])
+		print("[world-fingerprint/write] %d %dx%d %s %s base_ms=%.2f (%dms)"
+				% [seed_v, w, h, _hash_line(row), _bake_line(row),
+				float(meta.get("base_ms", -1.0)), ms])
 		rows.append(row)
 	if _failures > 0:
 		print("[world-fingerprint] WRITE ABORTED failures=%d：**不写残缺基线**（先修好生成）"
@@ -173,3 +175,20 @@ func _hash_line(row: Dictionary) -> String:
 		var value := str(hashes.get(k, ""))
 		parts += "%s=%s " % [k, value.substr(0, 8) if value.length() >= 8 else "--------"]
 	return parts.strip_edges()
+
+
+# bake height_buffer 的覆盖摘要：not-covered（该种子不烘）/ hash 前 8 位 + 尺寸 + 陆地像素
+# + 融合几何 pass 耗时。**只被 print 调用、不参与任何判定**（2026-11-18 计划 §5.3 / T2）。
+func _bake_line(row: Dictionary) -> String:
+	var meta: Dictionary = row.get("meta", {})
+	var bake: Dictionary = meta.get("bake", {})
+	if bake.is_empty():
+		return "bake=absent"
+	if not bool(bake.get("measured", false)):
+		return "bake=not-covered"
+	var hashes: Dictionary = row.get("hashes", {})
+	var hash_text := str(hashes.get(WORLD_FINGERPRINT.BAKE_HASH_KEY, ""))
+	var brief := hash_text.substr(0, 8) if hash_text.length() >= 8 else "--------"
+	return "bake=%s %dx%d land_px=%d %.0fms" % [brief, int(bake.get("w", 0)),
+			int(bake.get("h", 0)), int(bake.get("land_px", 0)),
+			float(bake.get("ms", -1.0))]

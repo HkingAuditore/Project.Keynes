@@ -3,6 +3,109 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 地形 S7 复核：同口径对比 · 收益消融 · 判据修正（2026-11-18）
+
+方案：[terrain-same-caliber-review-plan.md](../plans/terrain-same-caliber-review-plan.md)；勾选与完整实测表见
+[terrain-same-caliber-review-checklist.md](../plans/terrain-same-caliber-review-checklist.md)。
+**T1–T9、T12 完成；T7（G2+G3）已实现但验收未通过、默认关闭；T10（G4 tile 对齐）未做；T11 已同步三份计划与本文。**
+本轮**改了生成代码**：两处 opt-in 诊断、G1 脊预叠、G2/G3（默认关）、u 重标。
+
+改动摘要：
+
+- **诊断（opt-in、默认零行为变化）**：`debug_dump_ridge_e0`（raw profile 键，默认 `false`）→ base pass 额外返回
+  `e0_arr` / `ridge_e0_arr`；`spl_steepest_receiver`（默认 `true`）保留为**消融诊断键**（T12）。
+  开启 `debug_dump_ridge_e0` 时 elevation hash 与默认**完全一致**（`51a893b7a6b45835` / `22149fd9ffeee585`），
+  专项探针 **10/10 PASS**；`spl_steepest_receiver = 0` 确实改变地形（`4c944a48e0f8cb69`）⇒ 开关有效。
+- **世界指纹补 bake `height_buffer`**：`tests/world/world_fingerprint.gd` **616 → 1013 行**、`SCHEMA_VERSION` 1→2，
+  新增 `hashes.bake_height`（FNV-1a-64）+ `stats.bake_h_p50/p90/p99`（陆地像素）+ `meta.bake`；分辨率由常量
+  `BAKE_HM_MAX_DIM=1024` 与 bounds 长宽比推出（不依赖平台判断），60×40 → **1024×606 = 620,544 px**、
+  `wrap_period_x=2286.307`；只烘 **1 个种子** `BAKE_SEEDS=[20260718]`。基线已重生成（v2、6/6 PASS），
+  指纹测试实测 **693–782 ms**（≤1.5 s 预算）。
+- **A12 改口径**（`erosion_spl_bake_test.gd`）：X1 = **r3 圆盘陆地中位数**、门禁改 **spl vs carve 相对**
+  （`X1(spl) ≥ X1(carve) − 0.01`）；`X1s`（7×7 局部最低）/ `X1r`（r6 百分位中位数）只记录；**X2 删除**
+  （河心是 wet 出口 ⇒ 汇水在出口截断，构造上不可测）。
+- **G1 脊参与初始建网**（cell 层）：`E_init = E0 + f_pre·(iters·u)·ridge_add`（第 1 轮建树前，仅陆地）+
+  预叠后局部填洼；`U` 的脊项乘 `(1−f_pre)`；新 profile 键 `spl_ridge_prestamp_frac`（默认 **0.5**，三处同源）。
+  **`f_pre = 0` 与 G1 之前逐位一致**（两个种子 hash 完全匹配）；`f_pre` 0→0.75 时 base pass **+1.2~1.7 ms @60×40**，
+  p50/p90 基本不动。
+- **G2 + G3（已实现、默认关闭）**：新 knob `dem_spl_inject_cell_area`（bool，**默认 `false`**）—— 河心像素不再是
+  汇流出口，改为带 `inject[c] = up_cells[c]·cell_area_hex/n_center_px[c]` 的普通像素（受体优先同为河心且同格/下游格）；
+  G3 让 SDF 下切随流量（`incise = 0.020 + 0.035·river_flow(cell)`）且**只补刻**。**验收未过 ⇒ 保持关闭**（见 T7）。
+- **u 重标**：`spl_ridge_uplift` 0.03 → **0.010**、`spl_uplift_rate` 保持 **0.08**，三处同源
+  （`ClimateProfile` / C++ 兜底 / 4 个测试的 `_profile()`），指纹基线按规则重写。
+- **门禁重排**：`ridge_drainage_metrics_test` 的 M3 改 **8 张 200×150 池化回归**，`GATES` **13 项**逐项声明
+  （hard = M2 / M2b / M3 / 确定性 / 原生成功；record = M1' / M4 / M5a / M5b / C1 / C2 / C3）。
+
+T1–T12 状态：
+
+| 步 | 内容 | 状态 | 关键证据 |
+|---|---|---|---|
+| T1 | 诊断导出 + 消融开关 | **完成** | elevation hash 与默认一致（`51a893b7a6b45835` / `22149fd9ffeee585`）；`spl_steepest_receiver=0` → `4c944a48e0f8cb69`；探针 10/10 PASS |
+| T2 | 指纹补 bake height | **完成** | 616→1013 行、`SCHEMA_VERSION` 2；`dem_slope_limit_per_relief` 5.0→5.1 ⇒ `hash DRIFT bake_height: baseline=14ff4f58e6917976 actual=0270977fe8927095`、exit 1，其余 5 行 PASS；693–782 ms |
+| T3 | X1 改口径 / 删 X2 / 相对门禁 | **完成，结论反转** | X1 spl **0.7669 / 0.7809** vs carve **0.7598 / 0.7681**（Δ **+0.0071 / +0.0128**）；`checks=12 failures=0`、A1–A11 逐字节未动 |
+| T4 | 同口径新旧对比 | **完成** | 新增 `tests/world/terrain_same_caliber_test.gd`；`hydro_parent` 重建一致率 **1.0000**；dM1' = **+0.0443**（< +0.05）、`M1' − 零假设` **+0.102**（< 0.15）；M2b **0.6667 → 0.6667** |
+| T5 | 收益消融（4×60×40 + 4×200×150，G1 关） | **完成** | A1 442.3 / A2（去脊抬升）**486.3（+10%）** / A3（去扩散）**421.0（−5%）** / A4（去最陡受体）456.5 / A5 466.8 ⇒ 结构改动约 **31pp**、脊抬升约 **3pp**、扩散中性偏负 |
+| T6 | G1 脊参与初始建网 | **完成** | `f_pre=0` 逐位回退；默认 0.5；base pass **+1.2~1.7 ms @60×40** |
+| **T7** | **G2 + G3** | **已实现，验收未通过 ⇒ 默认关闭** | 注入生效：`river_area_p50` 0.00376 → **0.10717 hex²（≈25 px）**；但 **X1 反降**（0.7669→0.746、0.7809→0.764），A12 相对门禁 **FAIL（Δ −0.014）**；`inject=false` 逐位复现旧数字；双 header 双编译 4 组指纹全同 |
+| T8 | 门禁重排 | **完成** | M3 **8 张 200×150 池化回归** = **0.6401 ∈ [0.50, 0.65] PASS**（单种子只打 `[INFO]`）；`GATES` 13 项；`checks=6 failures=0 skips=1 targets_hit=1 targets_missed=2`、wall **2224 ms**（预算 25 s） |
+| T9 | u 重标 | **完成（大图 p50 未解决）** | 网格 u ∈ {0.010, 0.015, 0.020} × rate ∈ {0.06, 0.07, 0.08}，**9 组全不达标**；落地 **u = 0.010 / rate = 0.08**（小图 p50 +3.2%、p90 两档 <5%）；**大图 p50 −18.7% 记为未解决** |
+| **T10** | **G4 tile 沟谷对齐汇流** | **未做（顺延）** | G2 未验收、默认关闭 ⇒ 像素层 `A_hex` 仍被河心出口截断（p99 = 1.55 hex²）⇒ G4 前提不成立（计划 §10 G4 写明「依赖 G2」） |
+| T11 | 文档修正 | **完成** | 三份计划 + 本页 + `feature-guides.md` 两条规范 |
+| T12 | 清理 | **完成** | `spl_steepest_receiver` **保留为诊断键**（默认 `true`、对生产零影响），用途写进代码注释与本页 |
+
+R1–R10 处置（上一轮结论）：
+
+| # | 上一轮结论 | 处置 | 本轮结果 |
+|---|---|---|---|
+| R1 | M2b 与残差 / 脊抬升 / 扩散三个 knob 都无关；§4.1 工序诊断错误 | **接受** | 已修正跟进计划 §4.1–§4.3（标注「已被实验推翻」）；工序未改 |
+| R2 | 两版 `ridge_add` 不是同一个场（Jaccard 0.35） | **接受** | T4 用 **E0 场**作公共参照场重建可比比较（ridge 计划 §6.2.5） |
+| R3 | 山顶变圆而非变平（M5a 0.724 / M5b 0.0019） | **接受** | M5a / M5b 转正式指标；非线性扩散**不触发** |
+| R4 | `A_hex` 比计划假设小 65 倍 | **接受** | 侵蚀计划 §4.2 量级核算已改为实测分布；`dem_spl_k = 0.50` 自洽 |
+| R5 | X1 = 0.83 < 0.95，叠加收益不成立 | **口径有问题 → T3 重跑** | **结论反转**：新口径下 spl **优于** carve，绝对门禁 0.95 作废 |
+| R6 | X2 = 0.24，河不走像素汇流主干 | **构造上不可测 → 作废** | **X2 已删除**（河心是 wet 出口） |
+| R7 | M1' 只和零假设比过 | **T4 补同口径对比** | dM1' = **+0.0443 < +0.05** ⇒ 脊抬升对分水岭位置基本无作用 |
+| R8 | M2 −40% 归功于 P5，来源未拆分 | **T5 消融** | −34% 中约 **31pp** 来自结构改动（最陡受体 + 线性预算 + 删热力坍塌），脊抬升约 **3pp**，扩散中性偏负 |
+| R9 | M3 单种子 0.6931 超带 | **T8 改多种子汇总** | 8 张池化回归 **0.6401** PASS；单种子只打 `[INFO]` |
+| R10 | 指纹不含 bake `height_buffer` | **T2 补上** | `hashes.bake_height` + 分布统计；变异检测实测有效 |
+
+三个关键更正（都会影响后续引用）：
+
+1. **X1 口径反转，原「叠加收益不成立」作废**：7×7 局部最低口径测的是「河心是不是最小点」，河宽 > 1 px / SDF warp /
+   notch 平底都必然判失败。换成 r3 圆盘中位数后 X1(spl) **0.7669 / 0.7809** ≥ X1(carve) **0.7598 / 0.7681 − 0.01**，
+   A12 由 FAIL 转 **PASS**；绝对门禁 0.95 确认不可达（河心链本身是等高链），已移除。
+2. **M2b 同口径不变**：原来的「0.031 → 2.375、5.0 → 41.0 变差」是**两版 `ridge_add` 不同场**的产物；
+   用 E0 场重算后 **0.6667 → 0.6667**，既不更好也不更差。这一条与 R1 一起推翻了「M2b 是工序问题」的旧叙事。
+3. **M2 的 −34% 主要来自结构改动，不是脊抬升**：A2（去脊抬升）洼地只涨 10%，A3（去扩散）反而少 5%，
+   A5（只剩结构改动）仍有 466.8（对比旧基线 674，−31%）⇒ 脊抬升只贡献约 3pp。**u 因此下调**（0.03 → 0.010）。
+
+未做项（不得当作已完成）：
+
+- **T10（G4 tile 沟谷对齐汇流）未做**：依赖 G2，而 G2 验收未过、默认关闭 ⇒ 前提不成立，等 G2 排查（E1–E3）通过后再上。
+- **T9 的大图 p50 −18.7% 未解决**：不是 u / rate 能修的（9 组网格全不达标），怀疑来自「最陡受体 + 删热力坍塌」，需另立题目。
+- **T7 的两条验收未测**：支谷汇入悬挂高差 p95、干流纵剖面逆坡段 ≤ 2%；**`spl_p99_drop` 是否越过 0.08 也未测**（K4 / K5）。
+- **G1 之后的 M1' 未重测**：按计划依赖，T6 在 T4 之后（T4 先跑）⇒ 「脊抬升对分水岭位置基本无作用」（dM1' = +0.0443）
+  是 **P5 机制的整版结论，不是 G1 的验收**；`f_pre` 对 M1' / M2 的逐档作用也未测（只测了耗时与 p50/p90）。
+- 视觉 A/B（游戏内截图）、`template_release` 性能、Web high 真浏览器、`perf-validation` 基线、沉积 / 谷底展宽默认值
+  —— 仍全部未做（承接上一轮 S6 的欠账）；**现有性能数字仍全部是 `template_debug`**。
+
+两条规范已写进 [feature-guides.md](feature-guides.md) §同参照场比较与诊断开关：
+「**新旧比较必须使用同一参照场**」（两版共用 E0 场造判据集合，**Jaccard 量化**集合一致度）、
+「**诊断字段必须 opt-in、默认零行为变化，并以指纹证明**」（T1 用 elevation hash、T7 用 `inject=false` 逐位复现 +
+双 header 双编译 4 组指纹自证）。
+
+回归：`bio_occupancy` **86/0**、`mountain_relief_bake` **61/0**、`generation_riparian_biome` **23/0**、
+`native_generation_equivalence` **33/0**；`check_size_ratchet.py` 只剩**他人名下** 4 条既有违规
+（`cell_lut_baker.gd` / `surface_baker.gd` / `fog_of_war_layer.gd` / `vegetation_family_layer.gd`），
+本轮改动的 C++ / gd 文件已按评审更新基线。
+
+## 地图自然点缀位图（2026-11-18）
+
+- 默认装饰清单的 20 个 profile 共用 18 种图集外形。新增 13 种装饰贴图及阔叶落叶枝冠，
+  复用现有的阔叶、针叶、棕榈、灌木和岩石贴图。雪堆、海带和珊瑚遵循原有默认启用设置。
+- Godot 4.6.2 的 Compatibility 与 Forward+ 实际渲染均通过 112 项检查，覆盖 18 种形态、
+  轻量远景和 Web LOW 合批变体。散布、合批、默认清单、地形 GI、资源层和地被回归通过。
+  Web LOW 使用桌面渲染器编译并验证，浏览器和移动端真机尚无验证记录。
+
 ## 地形两计划跟进：门禁补强 · 归因排查 · 叠加验证（2026-11-18）
 
 方案：[terrain-followup-verification-plan.md](../plans/terrain-followup-verification-plan.md)；勾选与完整实测表见
@@ -16,7 +119,9 @@
   （**175 行**）+ 基线 `tests/world/baselines/world_fingerprint.json`（**6 条种子记录 / 13.7 KB**，生成 302 ms）。
   hash 为 5 条数组的 FNV-1a-64（`elevation` / `terrain` / `landform` / `has_river` / `hydro_parent`）；
   stats 为 `land_h` p10–p99 + terrain / landform 直方图 + 5 个计数。规则：hash 严格、统计 5% 容差，
-  `FINGERPRINT_HASH=0` 只比统计、`FINGERPRINT_WRITE=1` 重写基线。**bake `height_buffer` 的 hash 尚未覆盖**（代码注释已记为已知缺口）。
+  `FINGERPRINT_HASH=0` 只比统计、`FINGERPRINT_WRITE=1` 重写基线。**bake `height_buffer` 的 hash 当时尚未覆盖**
+  （代码注释已记为已知缺口）—— **2026-11-18 S7 T2 已补上**：`world_fingerprint.gd` 616 → **1013 行**、
+  `SCHEMA_VERSION` 2、新增 `hashes.bake_height`，见上一条。
 - 三个 golden 测试挂上指纹前置校验：`golden_day_hash_test`、`golden_external_advancers_test`、
   `native_generation_equivalence_test` 开头即报「世界指纹漂移」。
 - `ridge_drainage_metrics_test` 删除 `P5_STRICT` 全局开关，改 `GATES` 逐项声明（M1 / M5 = `record`，M2 / M2b / M3 / M4 = `hard`，

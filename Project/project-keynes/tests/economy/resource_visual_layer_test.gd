@@ -77,7 +77,10 @@ func run() -> void:
 	world.world_bounds = Rect2(-30, -30, 400, 250)
 	world.lut_dims = Vector2i(map.cell_count(), 1)
 	_expect("resource layer configures", bool(layer.configure(map, world, 22.0, intel).ok))
-	_expect("resource root shares the terrain draw subtree", layer.z_index == 0 and not layer.top_level and layer.z_as_relative)
+	# [world-z-absolute 2026-11-18] 世界层 z 口径统一为绝对：留在 HexRenderer 的绘制
+	# 子树里的判据只是 `not top_level`（z_as_relative 不再参与）。混用会失真——
+	# 实测迷雾（相对 12）被植被（绝对 3）压住。
+	_expect("resource root shares the terrain draw subtree", layer.z_index == 0 and not layer.top_level and not layer.z_as_relative)
 	layer.set_context(false, 7383)
 	layer.set_quality(2)
 	layer.set_camera_view(world.world_bounds, world.world_bounds.get_center(), 3.0)

@@ -6,7 +6,7 @@ Outputs: assets/textures/resource_art/
            cover_albedo.png  vertical strip, one 512x512 seamless RGBA tile per layer
            cover_normal.png  vertical strip, RG = tangent normal, B = height, A = AO
            fauna_atlas.png   vertical strip, one 512x256 layer per animal (4x2 cells of 128)
-           crown_atlas.png   vertical strip: 4 tree-family layers + 1 hardscape boulder layer
+           crown_atlas.png   vertical strip: 4 tree-family layers, boulders, 2 decoration layers
                              (each 4x2 cells of 256)
            crown_normal.png  matching RG normal / B height / A AO derived from the sprites
            resource_material.png
@@ -77,6 +77,31 @@ ROCK_DECOR = {
 		"muted semi-realistic painted strategy-map style, transparent background",
 }
 CROWN_CELL = 256
+# Rows of the generated sheet, in order. The first 14 cells occupy array
+# layers 5–6; the last two are unused. Keep the order in sync with vf_bitmap_cell.
+DECORATION_FORMS = [
+	("cactus", 0.65), ("reed", 0.30), ("grass", 0.28), ("lichen", 0.08),
+	("flower", 0.25), ("scree", 0.55), ("snow", 0.30), ("snag", 0.70),
+	("fallen_log", 0.38), ("mangrove", 0.55), ("kelp", 0.14), ("coral", 0.30),
+	("peat", 0.22), ("leafless_broadleaf", 0.65),
+]
+DECORATION_SOURCE = "crown/decoration_forms.png"
+DECORATION_PROMPT = (
+	"Generate a production-ready 4 by 4 sprite sheet for Project Keynes, a top-down historical strategy "
+	"map with muted, tactile hand-painted cut-paper relief art. Actual transparent alpha background, no "
+	"text, no grid lines, no floor or cast shadows. Orthographic vertical overhead view. Exactly 16 "
+	"distinct isolated centered objects, one per equally spaced cell, with 15% transparent margins all "
+	"around each sprite and mostly equal visual footprint. Crisp silhouettes readable at 12 pixels, "
+	"painted internal paper fibers and restrained relief, gentle neutral illumination. Row 1 left to "
+	"right: blue-green branching desert cactus cluster, olive and golden marsh reeds, broad tuft of "
+	"olive green grass, gray-green spreading tundra lichen. Row 2: alpine violet and ivory wildflower "
+	"tuft, pale shattered rock scree pile, irregular off-white drift of snow, gray-brown bare dead tree "
+	"with radial branches as seen from directly above. Row 3: long fallen log with broken bark lying "
+	"horizontally, spreading tangled mangrove aerial roots with tiny green foliage, olive-brown "
+	"underwater kelp fronds, salmon-pink branching coral. Row 4: dark brown peaty tussock with sedge, "
+	"brown fine bare deciduous tree with a branching intact canopy, muted charcoal rock, muted olive "
+	"fern. Every bounding box separate, no overlapping cells, keep all 16 motifs clearly different."
+)
 MATERIAL_CELL = 128
 MATERIAL_MARGIN = 8
 MATERIAL_COLS = 8
@@ -417,6 +442,38 @@ def crown_normal(a: np.ndarray, tall: float, edge_px: float = 0.0) -> np.ndarray
 	return np.stack([n[..., 0] * 0.5 + 0.5, n[..., 1] * 0.5 + 0.5, h, ao], -1).astype(np.float32)
 
 
+def append_decoration_forms(crowns: list, normals: list) -> list[dict]:
+	source = load_rgba(SRC / DECORATION_SOURCE)
+	if source.shape[0] != source.shape[1]:
+		raise ValueError(f"{DECORATION_SOURCE} must contain a square 4x4 sheet")
+	bounds = np.linspace(0, source.shape[0], 5).round().astype(int)
+	layers = []
+	for offset in range(0, len(DECORATION_FORMS), 8):
+		sheet = np.zeros_like(crowns[0])
+		normal = np.zeros_like(sheet)
+		normal[..., :2] = 0.5
+		normal[..., 3] = 1.0
+		names = []
+		for cell, (name, height) in enumerate(DECORATION_FORMS[offset:offset + 8]):
+			row, col = divmod(offset + cell, 4)
+			sprite = source[bounds[row]:bounds[row + 1], bounds[col]:bounds[col + 1]].copy()
+			# The generator can leave low-alpha coloured speckles around the object.
+			sprite[..., 3] = np.clip((sprite[..., 3] - 0.35) / 0.60, 0, 1)
+			tile = fit_cell(sprite, CROWN_CELL, 16)
+			if np.count_nonzero(tile[..., 3] > 0.5) < CROWN_CELL ** 2 * 0.05:
+				raise ValueError(f"{DECORATION_SOURCE} has insufficient coverage for {name}")
+			y, x = divmod(cell, 4)
+			ys = slice(y * CROWN_CELL, (y + 1) * CROWN_CELL)
+			xs = slice(x * CROWN_CELL, (x + 1) * CROWN_CELL)
+			sheet[ys, xs] = bleed_alpha(tile, tile=False)
+			normal[ys, xs] = crown_normal(tile, height, 2.0)
+			names.append(name)
+		crowns.append(sheet)
+		normals.append(normal)
+		layers.append({"id": f"decoration.{offset // 8}", "path": DECORATION_SOURCE, "cells": names})
+	return layers
+
+
 def material_tone(a: np.ndarray, kind: str, ident: str) -> np.ndarray:
 	"""Keep the generated mineral hue while matching the map's muted value range."""
 	target = MATERIAL_TONE.get(ident, (0.27, 0.63) if kind == "solid" else (0.31, 0.53))
@@ -560,6 +617,7 @@ def build(check_only: bool) -> int:
 	crowns.append(bleed_alpha(rock_sheet, tile=False))
 	crown_normals.append(rock_normals)
 	report[str(ROCK_DECOR["id"])] = {"sprites": len(rock_sprites)}
+	decoration_layers = append_decoration_forms(crowns, crown_normals)
 
 	material_albedo = np.zeros((MATERIAL_ROWS * MATERIAL_CELL, MATERIAL_COLS * MATERIAL_CELL, 4), np.float32)
 	material_normals = np.zeros_like(material_albedo)
@@ -654,12 +712,13 @@ def build(check_only: bool) -> int:
 			"layers": [{"id": i, "prompt": p, "trace": t} for i, p, t in FAUNA]},
 		"crown": {"file": "crown_atlas.png", "normal": "crown_normal.png", "cell": CROWN_CELL,
 			"cols": 4, "rows": 2, "count": 8,
+			"decoration_prompt": DECORATION_PROMPT,
 			"prompt": "Sprite sheet: 8 individual tree crowns seen strictly from directly above, orthographic, "
 				"4x2 grid with wide spacing, realistic photographic detail, soft diffuse overcast light, "
 				"no ground, no cast shadows, transparent background",
 			"layers": [{"id": i, "prompt": p, "tall": t} for i, p, t in CROWNS]
 				+ [{"id": ROCK_DECOR["id"], "prompt": ROCK_DECOR["prompt"],
-					"tall": ROCK_DECOR["tall"], "path": ROCK_DECOR["path"]}]},
+					"tall": ROCK_DECOR["tall"], "path": ROCK_DECOR["path"]}] + decoration_layers},
 		"material": {"file": "resource_material.png", "cell": MATERIAL_CELL,
 			"cols": MATERIAL_COLS, "rows": MATERIAL_ROWS,
 			"layers": {"albedo": 0, "normal": 1}, "ids": MATERIAL_IDS,

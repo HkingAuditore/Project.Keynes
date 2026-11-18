@@ -92,8 +92,9 @@ func run() -> void:
 		tilted.fill(Color(0.88, 0.5, 0, 1))
 		_set_normals(tilted, variant)
 		var canopy_tilted := await _capture(variant + "_canopy_center_tilt")
-		var mobile_variant: bool = variant.begins_with("mobile")
-		_expect(variant + " canopy retains its original quality policy", _difference(canopy_flat, canopy_tilted) < 0.00001 if mobile_variant else _difference(canopy_flat, canopy_tilted) > 0.002)
+		var canopy_delta := _difference(canopy_flat, canopy_tilted)
+		# Mobile HIGH uses desktop canopy lighting. MID drops canopy normal sampling.
+		_expect(variant + " canopy follows its quality policy", canopy_delta < 0.00001 if variant == "mobile_mid" else canopy_delta > 0.002)
 	# 草丛也用同一个片元路径，不能只对树冠生效。
 	_configure("source")
 	mat.set_shader_parameter("detail_form", Profile.FORM_GRASS)
@@ -105,6 +106,7 @@ func run() -> void:
 	var grass_slope := await _capture("grass_slope")
 	_expect("grass also follows pixel terrain normals", _alpha(grass_flat) > 50.0 and _difference(grass_flat, grass_slope) > 0.0005)
 	await _check_ground_tod()
+	await _check_bitmap_forms()
 	print("vegetation pixel normals: %d checks, %d failures; %s" % [checks, failures, output])
 	viewport.queue_free()
 	await process_frame
@@ -120,10 +122,15 @@ func _configure(variant: String) -> void:
 		prefix += "#define MOBILE_QUALITY_HIGH\n"
 	if variant == "mobile_mid":
 		prefix += "#define MOBILE_QUALITY_MID\n"
+	if variant == "bitmap_far":
+		prefix += "#define PK_VEG_FAR_ONLY\n"
+	if variant == "web_low_family":
+		prefix += Shrubs.web_define_prefix(0, false, true)
 	var shader := Shader.new()
 	shader.code = prefix + Shrubs._SHADER_CODE
 	mat = ShaderMaterial.new()
 	mat.shader = shader
+	Shrubs._bind_crown_art(mat)
 	subject.material = mat
 	mat.set_shader_parameter("world_origin", Vector2.ZERO)
 	mat.set_shader_parameter("world_size", Vector2(256, 128))
@@ -158,6 +165,21 @@ func _configure(variant: String) -> void:
 		lut.set_pixel(4, 0, Color(0, 0, 0.38, 0.55))
 		lut.set_pixel(5, 0, Color(0, 0, 1, 1))
 		mat.set_shader_parameter("detail_style_lut", ImageTexture.create_from_image(lut))
+
+func _check_bitmap_forms() -> void:
+	for variant in ["source", "bitmap_far", "web_low_family"]:
+		_configure(variant)
+		# Snow mounds only appear with snow. Use just enough to reveal them.
+		mat.set_shader_parameter("dyn_lut", _texture(Color(0.6, 0.65, 0.22, 1.0)))
+		subject.multimesh.set_instance_custom_data(0, Color(0.5, 0.5, 0.37, Shrubs.pack_form(0, 1)))
+		for form in range(Profile.FORM_PEAT_TUFT + 1):
+			_set_form(form)
+			var sprite := await _capture("%s_form_%02d" % [variant, form])
+			_expect("%s form %d has bitmap coverage" % [variant, form], _alpha(sprite) > 15.0)
+		mat.set_shader_parameter("crown_art_bound", false)
+		var missing := await _capture(variant + "_missing_bitmap")
+		_expect(variant + " missing art produces no procedural body", _alpha(missing) < 0.01)
+
 
 func _check_ground_tod() -> void:
 	# Climate is uniform: moving only the climate anchor must not move high-quality

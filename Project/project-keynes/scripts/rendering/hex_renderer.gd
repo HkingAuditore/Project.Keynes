@@ -257,17 +257,17 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 
 @export_group("Cloud Shadow")
 ## PC 高画质直接光照路径的最大直射光压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.85:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.62:
 	set(value):
 		cloud_shadow_strength_high = clampf(value, 0.0, 1.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## PC 中画质合成 pass 的压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.62:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.58:
 	set(value):
 		cloud_shadow_strength_mid = clampf(value, 0.0, 1.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## PC 低画质、移动端和 Web 合成 pass 的压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.48:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.46:
 	set(value):
 		cloud_shadow_strength_low = clampf(value, 0.0, 1.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
@@ -335,15 +335,32 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 	set(value):
 		cloud_shadow_mask_bias = clampf(value, 0.0, 0.8)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
-## 独立云核密度。提高后同一片 LUT Mask 内会出现更多、更小的云朵。
-@export_range(0.35, 2.5, 0.05) var cloud_shadow_cell_scale: float = 0.75:
+## [cloud-tiling 2026-11-18] 云影噪声在**每个世界 wrap 周期**里铺几遍（整数）。
+## 1 = 云团直径 3~5 格、整屏十来朵；2 = 云团减半、数量翻倍；再大就碎成斑点。
+##
+## 为什么必须整数：tile_period = wrap_period / repeat，只有整数除，接缝两侧才落到
+## 同一 texel 上；非整数除会在东西 wrap 处错半格，出现一条竖向错位缝。
+##
+## 这个名字原来是 cloud_shadow_cell_scale（"独立云核密度"），但那个 uniform 从
+## 2026-11-07 改成预烘噪声之后就一直没被 shader 读取 —— 也就是说以前调它完全
+## 没有效果。现在它真的接到平铺上了。
+@export_range(1.0, 8.0, 1.0) var cloud_shadow_tile_repeat: float = 1.0:
 	set(value):
-		cloud_shadow_cell_scale = clampf(value, 0.35, 2.5)
+		cloud_shadow_tile_repeat = clampf(value, 1.0, 8.0)
 		RendererShaderWater._push_cloud_shadow_tuning(self)
-## 世界空间主云团尺度。降低后云团更大、更连续；提高后云团更密。
-## 当前尺度把噪声单元压到约 1.6 hex，云团保持约 3~5 hex 的可分辨大小。
-## 压到 62（约 1.6 hex），云团直径从 7~12 hex 降到 3~5 hex，整屏能看到
-## 十来朵彼此分开的云影而不是 3~5 团大色块。
+## 云体内部厚薄调制：0 = 云心是一个常数（放大看是一块铁板），1 = 最强。
+## 本质是把中频 Worley 的"云胞内部厚 / 胞界薄"乘在最终密度上。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_interior_detail: float = 0.45:
+	set(value):
+		cloud_shadow_interior_detail = clampf(value, 0.0, 1.0)
+		RendererShaderWater._push_cloud_shadow_tuning(self)
+## 云形采样的目标世界 texel（越大越柔、越小越锐）。实际 footprint 会再和
+## field 像素的世界尺寸取大者，所以低画质/移动端低分辨率场不会因此走样。
+@export_range(2.0, 24.0, 0.5) var cloud_shadow_detail_texel_world: float = 8.0:
+	set(value):
+		cloud_shadow_detail_texel_world = clampf(value, 1.0, 64.0)
+		RendererShaderWater._push_cloud_shadow_tuning(self)
+## 云影平流的世界尺度：只影响**漂移速度**，不改变云团大小（大小看 tile_repeat）。
 @export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0130:
 	set(value):
 		cloud_shadow_world_scale = clampf(value, 0.001, 0.05)
@@ -1660,6 +1677,7 @@ func _front_precip_amount(front) -> float:
 
 func _rebuild() -> void:
 	return RendererMaterialPublish._rebuild(self)
+
 
 func _push_cell_lut_dims(sm: ShaderMaterial, dims: Vector2i) -> void:
 	return RendererMaterialPublish._push_cell_lut_dims(self, sm, dims)

@@ -228,6 +228,11 @@ static func detail_family_material(host, style_lut: Texture2D) -> ShaderMaterial
 	out.shader = detail_family_shader(host, false)
 	out.set_shader_parameter("detail_style_lut", style_lut)
 	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+	# [veg-fog-knowledge 2026-11-18] duplicate 只复制**当时**的参数。若源材质那时还没
+	# 绑上 enum_lut（世界未烘完），family 材质会永远拿不到知识度表，整批树冠都不会淡出。
+	# 显式补一次；后续漂移仍走 set_world_material_inputs / rebind 那条链。
+	if host._world != null and host._world.enum_lut_tex != null:
+		out.set_shader_parameter("enum_lut", host._world.enum_lut_tex)
 	_track_family_material(host, out)
 	host._push_cloud_shadow_uniforms_to(out)
 	return out

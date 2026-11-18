@@ -1329,8 +1329,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 # spl_ridge_uplift 是「每轮」系数（非总量）：14 轮累计约 14×该值×ridge_add，由 §4 标定到与改动前 p99 陆地高度一致。
 # spl_hillslope_diffusion 是每轮下切后一步显式线性扩散 E_i += κ·Σ_k(E_nb−E_i)/6 的系数；显式格式稳定上限 <1，默认 0.08 留足余量。
 # ridge_residual_frac 是 §5' 脊线残差 = ridge_boost_amp × 该值；0 = 完全内生；⚠ 超过 0.30 会重新引入脊坝（上界即 0.30）。
-@export_range(0.0, 0.20, 0.001) var spl_ridge_uplift: float = 0.03   # 每轮脊抬升系数
+# [S7-T9 重标 2026-11-18] 0.03 -> 0.010：实测 u 对 M2（闭合洼地）只贡献约 3pp（去掉 u 只涨 10%），
+# 却带来高度分布漂移与高脊洼地；T9 网格里 u=0.010 是「p90 两档都 <5%、小图 p50 +3.2%」的最优点。
+@export_range(0.0, 0.20, 0.001) var spl_ridge_uplift: float = 0.010  # 每轮脊抬升系数
 @export_range(0.0, 0.45, 0.005) var spl_hillslope_diffusion: float = 0.08  # 坡面扩散 κ
+# [S7-T6 / G1 2026-11-18] 脊「预叠」份额：建树前先把 f_pre·(iters·u)·ridge_add 叠进初始地形，
+# 让第 1 轮水网就看到脊（否则水网继承自 E0、河流先于脊存在）。
+# f_pre 只改变「脊在第几轮出现」，不改变总脊量；0 = 与 G1 之前逐位一致。
+@export_range(0.0, 1.0, 0.05) var spl_ridge_prestamp_frac: float = 0.5  # 预叠份额 f_pre
 @export_range(0.0, 0.30, 0.01) var ridge_residual_frac: float = 0.15  # §5' 脊线残差比例（上限 0.30）
 
 # [coast-erosion 2026-06-26] 水域波蚀强度：邻接水体(海/湖)按波浪能量下蚀近岸陆地，向海蚀台地收敛

@@ -125,6 +125,7 @@ func native_generation_profile_dict() -> Dictionary:
 		# terrain-ridge-uplift 2026-11-18：脊抬升 / 坡面扩散 / §5' 脊线残差
 		"spl_ridge_uplift",
 		"spl_hillslope_diffusion",
+		"spl_ridge_prestamp_frac",
 		"ridge_residual_frac",
 		# terrain-overhaul Phase 3 统一气候场
 		"moisture_wind_evap",

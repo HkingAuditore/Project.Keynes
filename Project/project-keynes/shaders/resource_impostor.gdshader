@@ -110,6 +110,7 @@ uniform vec2 wind_dir = vec2(1.0, 0.18);
 uniform float weather_wind_boost = 0.0;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#include "res://shaders/include/fog_memory.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 // [web-resource-min] Web/GLES3 精简变体：地形地平线 GI 在 web 上恒为中性值
 // （terrain_horizon_tex_bound 恒 false，见 include 文件头的逐条依据），因此整段
@@ -133,6 +134,9 @@ varying flat vec3 v_direct;
 varying flat vec3 v_sun;
 varying flat vec2 v_axis;
 varying flat vec2 v_rank;
+// [res-fog-memory 2026-11-18] 知识度按**实例**传（flat）：一个道具一个格，
+// 只做逐格灰化，不做格界过渡 —— 与地形共用 fog_memory.gdshaderinc 的同一份公式。
+varying flat float v_knowledge;
 
 // style_lut 的列寻址：夹到 [0, width-1]。见 vertex() 里 texelFetch 那段的说明。
 int rv_style_col(int col, int width) {
@@ -314,6 +318,7 @@ void vertex() {
 	v_misc.z = max(model_scale.x, model_scale.y);
 	float radius_px = mix(radius_px_world, badge_px * 0.5, clamp(lens_amount, 0.0, 1.0));
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
+	v_knowledge = knowledge;
 	v_misc.y = COLOR.g;
 	v_sub = vec2(meta.b, style);
 	v_rank = vec2(INSTANCE_CUSTOM.a, radius_px);
@@ -983,5 +988,8 @@ void fragment() {
 		float river = has_flow_tex ? 1.0 - smoothstep(river_clear_threshold - 0.08, river_clear_threshold, ground.b) : 1.0;
 		out_alpha *= mix(land * river, 1.0, lens);
 	}
+	// [res-fog-memory 2026-11-18] 与地形、植被**同一份**灰化：同一片未发现区里
+	// 道具、贴花、植株、地表必须是同一个纸白。
+	color = pk_fog_memory_wash(color, v_knowledge, 0.94);
 	COLOR = vec4(color, out_alpha * v_style.a);
 }

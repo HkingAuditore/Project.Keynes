@@ -172,6 +172,11 @@ static func _apply_cell_lut_rebind(host, lut_name: String, world_tex: Texture2D)
 		if host._fog_layer != null:
 			host._fog_layer.set_enum_lut_texture(world_tex)
 		host._push_fog_uniforms()
+		# [veg-fog-knowledge 2026-11-18] 植被材质也读这张表的 A 通道（按知识度淡出），
+		# 同样是"绑一次"语义；漏了这条，第二天起植被的 knowledge 会停在旧快照上。
+		host._for_each_vegetation_layer(func(layer) -> void:
+			if layer.has_method("set_enum_lut_texture"):
+				layer.set_enum_lut_texture(world_tex))
 
 
 static func _apply_uniforms(host) -> void:

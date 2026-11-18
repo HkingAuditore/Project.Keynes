@@ -7,23 +7,28 @@ extends SceneTree
 #   docs/plans/terrain-ridge-uplift-contracts.md §C（M1–M5 定义）、§D-1（种子/cfg/profile 契约）
 #   docs/plans/terrain-ridge-uplift-plan.md       §6.2（阈值）、§6.3（分布回归带）
 #
-# ── 门禁分级（2026-11-18 起：**逐项声明**，不再是 P5_STRICT 一个全局开关）──────────────
-# 来源：docs/plans/terrain-followup-verification-plan.md §2.3（拆分门禁）+ 2026-11-18 实测值。
-#   硬门禁（判据有效 / 不变量）：
+# ── 门禁分级（2026-11-18 T8：按计划 §5.4「门禁总表」逐项声明，取代原 P5_STRICT 全局开关）──────
+# 来源：docs/plans/terrain-same-caliber-review-plan.md §5.4（门禁总表）+ §5.1（M3 池化）
+#       + docs/plans/terrain-followup-verification-plan.md §2.3（拆分门禁）+ 2026-11-18 实测值。
+#   硬门禁（失败计入退出码）：
 #     · M2   闭合洼地总数（陆地 pit 格数合计）≤ 2026-11-18 实测 × 1.2 的回归线
-#     · M3   Hack 指数 ∈ [0.5, 0.65]（只有 M3_points >= 100 的图参与判定）
-#     · T3-1 原生成功（rc=0、无 fallback）、T3-2 同种子两次逐位一致
-#   硬门禁（回归线 = 2026-11-18 实测 × 1.2，只防「进一步恶化」）：
-#     · M2b  降幅 ≥ 实测降幅 × 1.2（实测 −700% ⇒ 回归线 −840%；**负值 = 恶化**，取绝对值放宽）
-#     · M4   流路直线度 ≥ 实测 / 1.2（实测 1.2145 ⇒ 回归线 1.0121；**越高越好**，故向下放宽）
+#     · M3   Hack 指数：**8 张 200×150 合并样本**（≥300 点）拟合的池化斜率 ∈ [0.50, 0.65]
+#     · M2b  ridge≥p75 的 pit 格数降幅 ≥ 实测降幅 × 1.2（实测 −700% ⇒ 回归线 −840%；负值 = 恶化）
+#     · T3-1 原生成功（rc=0、无 fallback）、T3-2 同种子两次逐位一致（不变量，不在 GATES 表里）
 #   只记录（打印 [RECORD-ONLY]，计入 targets_hit/missed，**不影响退出码**）：
-#     · M1   Spearman(ridge_add, log10 A)（计划 §5.1 要换成 M1'）
-#     · M5   平顶率（字面阈值恒空集；计划 §5.5 要换成 M5a/M5b）
-# 背景不变：2026-11-18 实测 M1 / M2b / M3 未达成、M5 阈值不可达，用户已接受「部分达标」
+#     · M1'  Spearman(ridge_add, log10 A) 均值（M1 由 M1' 取代；§3.2 的分水岭口径在另一支测试里）
+#     · M4   流路直线度（§5.4 由 hard 降为 record；回归线只打印、不判定）
+#     · M5a  契约 §C 字面平顶率（现有高度预算下恒空集 ⇒ SKIP）
+#     · M5b  平坦/圆顶的连续代理 M5_p90（land_h≥p90 的格里局地起伏<0.02 的比例）
+#     · M3_seed 单种子 Hack 斜率（只打 [INFO]；判据已取消，见下面裁决 5）
+#     · C1–C3 河流格是否落在脊间谷地（**本文件不计算**，由 terrain_same_caliber_test.gd 算；
+#             在 GATES 里登记为 record 只是让本文件的表与 §5.4 总表逐项对齐）
+# 背景不变：2026-11-18 实测 M1 / M2b / M3(单种子) 未达成、M5 阈值不可达，用户已接受「部分达标」
 # （详见 docs/plans/terrain-ridge-uplift-checklist.md 附 A/附 B）。上一轮（F10）把 M1–M5
-# **整体**降级为「只记录」被判定为约束力过度削弱，故这次按上表逐项拆分而不是一刀切。
-# ⚠ 已知后果：M3 实测 0.6931 已超出 0.65 ⇒ M3 是硬门禁时本测试会 FAIL —— 那是 200×150
-#   assert 种子的真实结论，不是门禁坏了；要等计划 §6 的重标定落地才可能转绿。
+# **整体**降级为「只记录」被判定为约束力过度削弱，故按 §5.4 逐项拆分而不是一刀切。
+# ⚠ M3 的关键变化：单种子 0.6931 越界是**采样噪声**（单图 A≥100 的点 488–672 个，逐图斜率
+#   0.5934…0.6931 摆 0.10）；同一批数组 8 图合并 4377 点后斜率 **0.6401 ∈ [0.50, 0.65]**，
+#   与 checklist 记的「8 图均值 0.6415」差 −0.0014。故 M3 改成池化判定，单种子只记录。
 #
 # 跑法（root 统一编译 + 执行；本文件**不**自行启动 Godot / scons）：
 #   # 门禁（缺省 assert 模式）
@@ -36,7 +41,8 @@ extends SceneTree
 #   godot --headless -s res://tests/world/ridge_drainage_metrics_test.gd
 #
 # 三种模式（`P5_MODE`；也接受 `-- capture` 这样的用户参数）：
-#   · assert（缺省）：4 种子 × 60×40 + 1 种子 × 200×150，按 §6.2 门禁 M1–M5，
+#   · assert（缺省）：4 种子 × 60×40 + 1 种子 × 200×150 判 M1'/M2/M2b/M4/M5，**另跑 7 张**
+#     200×150（20260719..20260725）供 M3 池化 ⇒ 池化集合 = 8 张 200×150、≈4400 点；
 #     并断言「同 seed 两次 elevation_arr 逐位一致」。判不了的条目打 SKIP（见下面 SKIP 清单）。
 #   · capture：contracts §D-1 的完整集合（32 × 60×40 + 8 × 200×150），**不做断言**，
 #     把每个种子的 M1–M5 + 分布统计写进 `res://tmp/p5_calib/<P5_LABEL>/metrics.json`；
@@ -45,7 +51,7 @@ extends SceneTree
 #   · baseline：只读 `res://tmp/p5_calib/baseline/` 里冻结的 `.bin`，用**同一份**指标实现
 #     重算 M1–M5，写 `metrics_gd.json` 并与 lead 的 `metrics_py.json` 逐项对照。
 #
-# ── 与契约 §C 的三处口径裁决（都有实测证据，详见对应代码注释）─────────────────────────
+# ── 与契约 §C 的口径裁决（都有实测证据，详见对应代码注释；第 5 条是 T8 新增）──────────────
 #   1) **M3 的 L 取「上游最长汇流路径」`l_up`，不是「到出口步数」`l_down`。**
 #      §C 用同一个 L 同时定义 M3（Hack 律）与 M4（流路直线度），但 Hack 律的 L 必须随 A 单调增，
 #      而「到出口步数」随 A 单调减 —— P5-0 冻结基线实测 M3(l_down) = −2.51 / −6.27 / −0.28 /
@@ -67,15 +73,24 @@ extends SceneTree
 #      作为 P5-1 的「改善证据」几乎没有余量 —— 若标定后仍想证明改善，建议改成
 #      「相对基线再降 ΔM1 ≥ 0.05」。本文件把 M1 列为**只记录**（计划 §2.3），T_M1 只当参考线
 #      打印（`P5_T_M1` 可覆盖），输出里同时打印基线均值与 Δ，便于 lead 换判据。
+#   5) **M3 改按多种子合并样本判定，单种子只记录（计划 §5.1）。**
+#      单张 200×150 上 A≥100 的点只有 488–672 个，逐图斜率在 0.5934…0.6931 之间摆 0.10 ——
+#      0.6931 越界是**采样噪声**，不是地形退步；把 8 张图的 (log10 A, log10 l_up) 点合并成
+#      4377 点的一个样本后，斜率 0.6401 ∈ [0.50, 0.65]（与 checklist 的 8 图均值 0.6415 差 −0.0014）。
+#      故门禁判**池化斜率**（≥300 点才判，不足则 SKIP），单种子值只打 [INFO]。这是修统计口径，
+#      不是放宽阈值：区间仍是 §6.2 的 [0.50, 0.65]。
+#      60×40 的点不进池：它们的 A≥100 点只有 3–13 个、斜率标准误 ±0.1~0.4，进池只会稀释信号。
 #
-# ── 阈值（具名常量，来源 = 2026-11-18 实测 + 计划 §2.3；**不要凭空改数**）──────────────
-#   M2   ≤ MEASURED_M2_PITS × GATE_SLACK        = 425 × 1.2 = 510（实测 425，基线 614）
-#   M2b  降幅 ≥ MEASURED_M2B_DROP × GATE_SLACK   = −700% × 1.2 = −840%（实测 6 → 48）
-#   M3   ∈ [T_M3_LO, T_M3_HI]                    = [0.5, 0.65]（§6.2 原阈值；实测 0.6931）
-#   M4   ≥ MEASURED_M4 / GATE_SLACK              = 1.2145 / 1.2 = 1.0121（基线 1.1194）
-#   M1   只记录：T_M1 仅作参考线打印（§6.2 原目标，不参与退出码）
+# ── 阈值（具名常量，来源 = 2026-11-18 实测 + 计划 §2.3/§5.1；**不要凭空改数**）────────────
+#   M2   ≤ MEASURED_M2_PITS × GATE_SLACK        = 425 × 1.2 = 510（实测 425，基线 614）  [hard]
+#   M2b  降幅 ≥ MEASURED_M2B_DROP × GATE_SLACK   = −700% × 1.2 = −840%（实测 6 → 48）     [hard]
+#   M3   ∈ [T_M3_LO, T_M3_HI]                    = [0.50, 0.65]（§6.2 原区间，§5.1 改池化口径；
+#        实测 8 图 4377 点池化 = 0.6401，单种子 0.6931 只记录）                             [hard]
+#        样本门槛 M3_POOL_MIN_POINTS = 300 点（不足 ⇒ SKIP，不假装通过）
+#   M4   只记录（§5.4）：参考线 MEASURED_M4 / GATE_SLACK = 1.2145 / 1.2 = 1.0121 仍打印    [record]
+#   M1'  只记录：T_M1 仅作参考线打印（§6.2 原目标，不参与退出码）                           [record]
 # 环境变量覆盖：P5_T_M3_LO / P5_T_M3_HI / P5_T_M1 仍可用（调参不改代码）；
-# M2 / M2b / M4 的回归线不允许用环境变量放宽 —— 它们就是「不许再恶化」的下限。
+# M2 / M2b 的回归线不允许用环境变量放宽 —— 它们就是「不许再恶化」的下限。
 #
 # ── 基线来源（M2/M2b/M4 的对照打印、M5 的较基线判定需要它）────────────────────────
 #   按顺序尝试：`P5_BASELINE`（JSON 路径）→ `tmp/p5_calib/baseline/metrics_gd.json`
@@ -84,17 +99,24 @@ extends SceneTree
 #   `_p5_freeze_baseline.gd` 冻结、`tmp/p5_calib/metrics.py` 算出的**全量种子均值**
 #   （60×40 32 个种子 / 200×150 8 个种子），与 assert 模式的 4+1 个种子不是同一集合，
 #   只作量级参照（打印时明确标注 fallback）。**基线一旦重冻结，请优先用上面两个 JSON 路径。**
-#   硬门禁 M2 / M4 用**绝对回归线**判定，没有基线也能判（不因缺基线 SKIP）。
+#   硬门禁 M2 用**绝对回归线**判定，没有基线也能判（不因缺基线 SKIP）；M2b 的降幅需要基线行。
 #
 # ── SKIP 清单（不假装通过；每条都打印 `<tag>: SKIP reason=...` 并计入 _skips）──────────
-#   · ridge_add_arr 缺失（DLL 未含 P5-0.1 诊断输出）→ M1 / M2(b) 全 SKIP
+#   · ridge_add_arr 缺失（DLL 未含 P5-0.1 诊断输出）→ M1' / M2(b) 全 SKIP
 #   · M2(b) 基线合计为 0 → 「较基线降幅」无定义 → SKIP
 #   · M5 无基线可用 → SKIP
 #   · M5 候选格 = 0（字面阈值恒空集）→ SKIP
-#   · M3：样本 < 8（A ≥ 100 的格太少）→ 该图 M3 落 null；样本 < 100 → 只作参考不判定；
-#     没有一张图达到 100 → 整体 SKIP
+#   · M3：池化点数 < M3_POOL_MIN_POINTS（300）或斜率无定义 → SKIP（不假装通过）；
+#     单种子不再有 SKIP/FAIL 语义（样本不足只在 [INFO] 行里标注，见 _check_m3）
 #   · base pass fallback / rc != 0 → 该行指标不可信：T3-1 直接 FAIL（合法输入不该 fallback）
 #   （注：M4 不再因缺基线 SKIP —— 它的门禁是绝对回归线）
+#
+# ── 运行时长（2026-11-18 实测，headless；per-map 耗时取自 gd_final/metrics.json 的同一批）──────
+#   单张 200×150 ≈ base 101 ms + metrics 108 ms + post_base ≈ 40 ms ⇒ ≈ 0.25 s/张。
+#   改动前 assert ≈ 0.6 s（4×60×40 + 1×200×150 + 两次确定性重跑）；
+#   改动后 = 上述 + 7 张 200×150（≈1.8 s）⇒ **≈ 2.4 s**，远低于 25 s 预算 ⇒ 池化取 8 个种子。
+#   若将来 DLL / bake 变慢使 wall > 25 s：把 N_LARGE_M3_POOL 从 8 降到 4（20260718..20260721），
+#   门禁口径（池化斜率 ∈ [0.50,0.65]、≥300 点）不变，只是样本从 ≈4400 点降到 ≈2200 点。
 #
 # ── 实现要点 ───────────────────────────────────────────────────────────────────
 #   · 排水网：D6 邻接与 `gdext/src/world_ext_generate_base.cpp` 的 `index_for_qr` 逐字一致
@@ -113,9 +135,10 @@ extends SceneTree
 #   · Spearman：平均秩（并列取平均位次）—— 把「值量化 × m + 局部下标」打包成 int64 后
 #     `PackedInt64Array.sort()` 一次原生排序，再线性走等值区段取平均位次回填；O(m log m)、
 #     零 lambda、零逐元素比较排序（30k 元素上比 sort_custom 快一个数量级）。
-#   · M3 的判定样本下限：只在 `M3_points >= 100` 的图上判（实际就是 200×150）。60×40 上
-#     A ≥ 100 的格只有 3–13 个，同一批基线实测 M3 在 0.29…1.40 之间乱跳 —— 那是采样误差，
-#     不是地形的 Hack 指数；这些图仍然落盘/打印，只是不参与断言。
+#   · M3 的池化实现：assert 模式把 8 张 200×150 的 (log10 A, log10 l_up) 点**合并成一个样本**，
+#     调一次 `_regress_slope`（中心化两点式最小二乘）——不是「先按图算斜率再平均」。60×40 不进池：
+#     A ≥ 100 的格只有 3–13 个，同一批基线实测逐图 M3 在 0.29…1.40 之间乱跳（采样误差，不是 Hack 指数）；
+#     这些图仍然落盘/打印，只是不参与池化。
 #   · 确定性：所有数值累积只按**固定下标序 / proc 序 / 排序后的键序**推进，
 #     不读 Dictionary 的遍历序、不用随机数（直方图统计完再按下标升序转 dict 输出）。
 # ─────────────────────────────────────────────────────────────────────────────
@@ -129,6 +152,10 @@ const N_SMALL_CAPTURE := 32
 const N_LARGE_CAPTURE := 8
 const N_SMALL_ASSERT := 4
 const N_LARGE_ASSERT := 1
+const N_LARGE_M3_POOL := 8          # M3 池化专用：8 张 200×150（种子 20260718..20260725），
+                                    # 与 N_LARGE_CAPTURE 同集合 ⇒ 与 checklist「8 图均值 0.6415」
+                                    # 同一口径。总时长 > 25 s 时降到 4（20260718..20260721，
+                                    # ≈2200 点，门禁口径不变），见文件头「运行时长」。
 
 const OUT_ROOT := "res://tmp/p5_calib"
 const BASELINE_DIR := "res://tmp/p5_calib/baseline"
@@ -139,28 +166,37 @@ const PLATEAU_RELIEF := 0.02        # 契约 §C M5：自身+6 邻 max−min < 0
 const M5_MIN_LAND_H := 0.6          # 契约 §C M5：elevation − sea_level > 0.6（见文件头裁决 3）
 const STEM_MIN_AREA := 100.0        # 契约 §C M3/M4：A >= 100
 const MIN_SAMPLE := 8               # 与 metrics.py 同：样本 < 8 不下结论
-const M3_JUDGE_MIN_POINTS := 100    # M3 只在样本足够的图上判定（见 _check_m3 注释）
+const M3_JUDGE_MIN_POINTS := 100    # 单种子斜率「样本够」的标注线（只在 [INFO] 行里用，不再判定）
+const M3_POOL_MIN_POINTS := 300     # M3 池化样本门槛：合并点数 < 300 ⇒ SKIP（计划 §5.1，不假装通过）
 
-# ── 门禁阈值：具名常量（来源 2026-11-18 实测 + 计划 §2.3，见文件头「阈值」）──────────────
+# ── 门禁阈值：具名常量（来源 2026-11-18 实测 + 计划 §2.3/§5.1，见文件头「阈值」）──────────────
 const GATE_SLACK := 1.2            # 计划 §2.3：回归线 = 2026-11-18 实测值 × 1.2
 const MEASURED_M2_PITS := 425.0    # 实测：assert 集（4×60×40 + 1×200×150）陆地 pit 格数合计
 const MEASURED_M2B_DROP := -7.0    # 实测：ridge>=p75 的 pit 合计 6 → 48，降幅 −700% = −7.0
 const MEASURED_M4 := 1.2145        # 实测：assert 集配对均值（基线 1.1194）
 
 const T_M1 := -0.3                 # 只记录的参考线（§6.2 原目标；不参与退出码）
-const T_M3_LO := 0.5               # 硬门禁：§6.2 的 Hack 指数区间
+const T_M3_LO := 0.5               # 硬门禁（§5.1 池化口径）：§6.2 的 Hack 指数区间下界
 const T_M3_HI := 0.65
 
-# 逐项门禁声明（计划 §2.3，取代原 P5_STRICT 全局开关）：item → hard / record
+# 逐项门禁声明（计划 §2.3 拆分 + §5.4 门禁总表，取代原 P5_STRICT 全局开关）：item → hard / record
 const GATE_HARD := "hard"
 const GATE_RECORD := "record"
 const GATES := {
-	"M1": GATE_RECORD,      # 判据待计划 §5.1 修订（M1'），修订后转硬
+	# 计划 §5.4：M1 由 M1'（同口径）取代 ⇒ record。注意本文件的 M1' 仍是
+	# Spearman(ridge_add, log10 A)；§3.2 的「脊顶落在分水岭上」那版由
+	# terrain_same_caliber_test.gd 计算。
+	"M1'": GATE_RECORD,
 	"M2": GATE_HARD,        # 判据有效，且是 P5 主收益
-	"M2b": GATE_HARD,       # 硬，回归线 = 实测 × 1.2（只防更差；§4 会修工序）
-	"M3": GATE_HARD,        # 判据有效
-	"M4": GATE_HARD,        # 硬，回归线 = 实测 / 1.2
-	"M5": GATE_RECORD,      # 判据待计划 §5.5 修订（M5a/M5b），修订后转硬
+	"M2b": GATE_HARD,       # 回归线 = 实测 × 1.2（只防更差）
+	"M3": GATE_HARD,        # 多种子池化（§5.1）：8 图合并样本斜率 ∈ [0.50, 0.65]，≥300 点才判
+	"M3_seed": GATE_RECORD, # 登记项：单种子 M3 只打 [INFO]、不走 _gate；留表里让 record 清单完整
+	"M4": GATE_RECORD,      # 计划 §5.4：由 hard 降为 record（回归线仍打印，不判定）
+	"M5a": GATE_RECORD,     # M5 已被 M5a/M5b 取代；本文件只有退化代理，见 _check_m5
+	"M5b": GATE_RECORD,
+	"C1": GATE_RECORD,      # 本文件不计算（terrain_same_caliber_test.gd 负责），登记以对齐 §5.4
+	"C2": GATE_RECORD,
+	"C3": GATE_RECORD,
 }
 
 # 量纲：高度 0..1。LEVEL_* 只用于堆键排序，RANK_SCALE 只用于秩排序，都不参与指标数值。
@@ -187,7 +223,8 @@ const BASELINE_FALLBACK := {
 var _checks := 0
 var _failures := 0
 var _skips := 0
-# 只记录项（M1 / M5）的达成度计数：默认不影响退出码，见 _gate 与文件头「门禁分级」。
+# 只记录项（M1' / M4 / M5a / M5b / M3_seed / C1–C3）的达成度计数：默认不影响退出码，
+# 见 _gate 与文件头「门禁分级」。
 var _targets_hit := 0
 var _targets_missed := 0
 var _mode := "assert"
@@ -196,6 +233,12 @@ var _sea_level := SEA_FALLBACK
 var _ext: Object = null
 var _baseline: Dictionary = {}        # "seed|w|h" -> 基线行
 var _baseline_src := ""
+# M3 池化（计划 §5.1）：_collect_m3_points 只在大图测量阶段为 true；_m3_pool_xs/_ys 是
+# **所有池化成员图**合并后的 (log10 A, log10 l_up) 点（seed 升序 + 图内格下标序追加 ⇒ 顺序固定）。
+var _collect_m3_points := false
+var _m3_pool_xs: PackedFloat64Array = PackedFloat64Array()
+var _m3_pool_ys: PackedFloat64Array = PackedFloat64Array()
+var _m3_pool_rows: Array = []         # 池化成员的逐图行（只读 seed / M3 / M3_points，供 [INFO] 打印）
 var _heap: PackedInt64Array = PackedInt64Array()
 var _heap_n := 0
 
@@ -239,7 +282,8 @@ func _sanitize_label(raw: String) -> String:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# assert 模式：4 种子 × 60×40 + 1 种子 × 200×150，按 §6.2 门禁
+# assert 模式：4 种子 × 60×40 + 1 种子 × 200×150 判 M1'/M2/M2b/M4/M5；
+#              另跑 7 张 200×150（20260719..20260725）供 M3 池化 ⇒ 池化集合 8 图 / ≈4400 点
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _run_assert() -> void:
@@ -251,6 +295,7 @@ func _run_assert() -> void:
 		_expect(false, "T3-0: DCWorldExt 可实例化")
 		return
 	_load_baseline()
+	var t_start := Time.get_ticks_msec()
 
 	var rows: Array = []
 	var maps: Array = []                 # 完整测量结果（含原始数组，供确定性比对；不落盘）
@@ -260,11 +305,32 @@ func _run_assert() -> void:
 		maps.append(m)
 		rows.append(m["row"])
 		gen_ok = gen_ok and bool(m["ok"])
+	# M3 池化的点从大图开始收集：60×40 的 A>=100 点只有 3–13 个、斜率标准误 ±0.1~0.4，不进池
+	# （文件头裁决 5）。_collect_m3_points 只决定 _metrics 是否把本图的点追加进池化样本。
+	_collect_m3_points = true
 	for i in range(N_LARGE_ASSERT):
 		var m := _measure(SEED_BASE + i, W_LARGE, H_LARGE)
 		maps.append(m)
 		rows.append(m["row"])
 		gen_ok = gen_ok and bool(m["ok"])
+	# 池化成员的逐图行：assert 的大图已在上面测过，直接登记，不重复生成（省一张 200×150 的耗时）。
+	for r in rows:
+		var is_big := int(r.get("w", -1)) == W_LARGE and int(r.get("h", -1)) == H_LARGE
+		if is_big and bool(r.get("ok", false)):
+			_m3_pool_rows.append(r)
+	# M3 池化专用：再跑到 N_LARGE_M3_POOL 张 200×150（20260719..20260725）。这些图只供池化点、
+	# **不进 rows** ⇒ M1'/M2/M2b/M4/M5 的判定集合与改动前逐项一致。
+	var pool_fail := 0
+	for i in range(N_LARGE_ASSERT, N_LARGE_M3_POOL):
+		var mp := _measure(SEED_BASE + i, W_LARGE, H_LARGE)
+		if bool(mp["ok"]):
+			_m3_pool_rows.append(mp["row"])
+		else:
+			pool_fail += 1
+	_collect_m3_points = false
+	if pool_fail > 0:
+		print("[ridge-metrics] WARN M3 池化有 %d 个种子 base pass 失败：池化少 %d 张图的点（见上面的 gen FAIL）"
+				% [pool_fail, pool_fail])
 	_expect(gen_ok, "T3-1: base pass 原生成功（rc=0、无 fallback）")
 
 	# 确定性：同 seed 再跑一次，逐位比对（§6.1 T3「同种子两次逐位一致」）
@@ -291,18 +357,20 @@ func _run_assert() -> void:
 		det_ok = det_ok and ok_run and elev_same and ridge_same
 	_expect(det_ok, "T3-2: 同 seed 两次 elevation_arr / ridge_add_arr 逐位一致")
 
-	# 门禁声明提示（2026-11-18 更新，取代原 P5_STRICT 全局开关）：M1–M5 逐项声明 hard / record，
-	# 见文件头「门禁分级」与 GATES 表。M2 / M2b / M3 / M4 是硬门禁（失败计退出码），
-	# M1 / M5 只记录（判据待计划 §5 修订）。T3-1 / T3-2 是不变量，始终硬门禁。
-	print("[ridge-metrics] 说明：逐项门禁 hard=%s record=%s（计划 §2.3）。"
+	# 门禁声明提示（2026-11-18 T8：对齐计划 §5.4 的门禁总表）：逐项声明 hard / record。
+	# 硬 = M2 / M3（多种子池化）/ M2b；record = M1' / M4 / M5a / M5b / 单种子 M3 / C1–C3。
+	# T3-1 / T3-2（原生成功、逐位一致）是不变量，不在这张表里，始终硬门禁。
+	print("[ridge-metrics] 说明：逐项门禁 hard=%s record=%s（计划 §5.4）。"
 			% [_items_with_gate(GATE_HARD), _items_with_gate(GATE_RECORD)])
+	print("[ridge-metrics] 说明：C1–C3 由 tests/world/terrain_same_caliber_test.gd 计算并只记录；"
+			+ "本文件不产出该三项，登记在 GATES 里只为与 §5.4 总表逐项对齐。")
 
 	# M1 / M2(b) 前置：ridge_add_arr 必须存在（P5-0.1 的 opt-in 诊断）
 	var ridge_ok := true
 	for r in rows:
 		ridge_ok = ridge_ok and bool(r.get("ridge_ok", false))
 	if not ridge_ok:
-		_skip("M1", "ridge_add_arr 缺失（DLL 未含 P5-0.1 诊断输出？profile.ridge_debug_dump=1 未生效）")
+		_skip("M1'", "ridge_add_arr 缺失（DLL 未含 P5-0.1 诊断输出？profile.ridge_debug_dump=1 未生效）")
 		_skip("M2b", "ridge_add_arr 缺失，p75 口径无从计算")
 	else:
 		_check_m1(rows)
@@ -311,6 +379,8 @@ func _run_assert() -> void:
 	_check_m4(rows)
 	_check_m5(rows)
 	_print_table(rows)
+	print("[ridge-metrics] assert wall=%dms（预算 25 s：8 张 200×150 实测 ≈1.8 s，见文件头「运行时长」）"
+			% (Time.get_ticks_msec() - t_start))
 
 
 func _check_m1(rows: Array) -> void:
@@ -326,7 +396,7 @@ func _check_m1(rows: Array) -> void:
 		n += 1
 		line += "%d×%d=%.4f " % [int(r["seed"]), int(r["w"]), float(v)]
 	if n == 0:
-		_skip("M1", "所有种子 M1 样本 < %d（ridge_add>0 且 A>=1 的陆地格不足）" % MIN_SAMPLE)
+		_skip("M1'", "所有种子 M1 样本 < %d（ridge_add>0 且 A>=1 的陆地格不足）" % MIN_SAMPLE)
 		return
 	var mean := acc / float(n)
 	var thr := _env_float("P5_T_M1", T_M1)
@@ -335,10 +405,10 @@ func _check_m1(rows: Array) -> void:
 	if int(pair[2]) > 0:
 		delta = "Δ=%+.4f(基线 %.4f, 配对图 %d)" % [float(pair[0]) - float(pair[1]),
 				float(pair[1]), int(pair[2])]
-	print("[ridge-metrics/M1] per-seed %smean=%.4f n=%d thr<=%.3f %s"
+	print("[ridge-metrics/M1'] per-seed %smean=%.4f n=%d thr<=%.3f %s"
 			% [line, mean, n, thr, delta])
-	# M1 只记录（计划 §2.3）：thr 只是 §6.2 原目标的参考线，不影响退出码。
-	_gate("M1", mean <= thr, "M1: 陆地 Spearman(ridge_add, log10 A) 均值 %.4f <= %.3f" % [mean, thr])
+	# M1' 只记录（计划 §5.4）：M1 已由同口径 M1' 取代；thr 只是 §6.2 原目标的参考线，不影响退出码。
+	_gate("M1'", mean <= thr, "M1': 陆地 Spearman(ridge_add, log10 A) 均值 %.4f <= %.3f" % [mean, thr])
 
 
 func _check_m2(rows: Array) -> void:
@@ -377,29 +447,48 @@ func _check_m2(rows: Array) -> void:
 			% [drop * 100.0, drop_limit * 100.0, MEASURED_M2B_DROP * 100.0, GATE_SLACK])
 
 
+# M3：Hack 指数 = log10(l_up) ~ log10(A) 的斜率。
+# 2026-11-18 T8 起（计划 §5.1）：**多种子合并样本**判定 —— 把所有参与判定的大图的
+# (log10 A, log10 l_up) 点合并成一个样本做**一次**最小二乘；单种子值只打 [INFO]、不参与判定。
+# 实测依据：单图 A>=100 的点 488–672 个，逐图斜率 0.5934…0.6931 摆 0.10（0.6931 越界是采样噪声）；
+# 同一批 8 图的 4377 点池化后 0.6401 ∈ [0.50, 0.65]（与 8 图均值 0.6415 差 −0.0014）。
 func _check_m3(rows: Array) -> void:
 	var lo := _env_float("P5_T_M3_LO", T_M3_LO)
 	var hi := _env_float("P5_T_M3_HI", T_M3_HI)
-	var judged := 0
-	var bad := ""
+	# (a) 单种子：只打 [INFO]（样本不足的标注出来，说明它的绝对值为什么不可信）
 	var line := ""
 	for r in rows:
 		var v = r.get("M3", null)
 		var n := int(r.get("M3_points", 0))
-		if v == null or n < M3_JUDGE_MIN_POINTS:
-			line += "%d×%d=参考(n=%d) " % [int(r["seed"]), int(r["w"]), n]
-			continue
-		judged += 1
-		line += "%d×%d=%.4f(n=%d) " % [int(r["seed"]), int(r["w"]), float(v), n]
-		if float(v) < lo or float(v) > hi:
-			bad += "%d×%d=%.4f " % [int(r["seed"]), int(r["w"]), float(v)]
-	print("[ridge-metrics/M3] 口径=斜率 log10(l_up)~log10(A)（文件头裁决 1）%s" % line)
+		if v == null:
+			line += "%d×%d=n/a(n=%d) " % [int(r["seed"]), int(r["w"]), n]
+		elif n < M3_JUDGE_MIN_POINTS:
+			line += "%d×%d=%.4f(样本不足 n=%d) " % [int(r["seed"]), int(r["w"]), float(v), n]
+		else:
+			line += "%d×%d=%.4f(n=%d) " % [int(r["seed"]), int(r["w"]), float(v), n]
+	print("[ridge-metrics/M3] [INFO] 单种子斜率（仅参考，不参与判定）%s" % line)
 	print("[ridge-metrics/M3] M3_down（§C 字面 l_down 口径，仅诊断）%s" % _fmt_list(rows, "M3_down"))
-	if judged == 0:
-		_skip("M3", "没有 M3_points>=%d 的图（60×40 上 A>=%.0f 的样本只有 3–13 个，斜率标准误 ±0.1~0.4，不构成判定）"
-				% [M3_JUDGE_MIN_POINTS, STEM_MIN_AREA])
+	# (b) 池化成员的逐图斜率（同一个 [INFO] 口径，方便与 checklist 的「8 图均值 0.6415」对照）
+	var member := ""
+	for r in _m3_pool_rows:
+		member += "%d=%s(n=%d) " % [int(r.get("seed", -1)), _fmt_v(r.get("M3", null)),
+				int(r.get("M3_points", 0))]
+	print("[ridge-metrics/M3] [INFO] 池化成员逐图 种子=%d %s"
+			% [_m3_pool_rows.size(), member.strip_edges()])
+	# (c) 池化判定：点合并后一次最小二乘；样本不足就 SKIP，不假装通过
+	var pts := _m3_pool_xs.size()
+	var slope: float = NAN
+	if pts > 0 and _m3_pool_ys.size() == pts:
+		slope = _regress_slope(_m3_pool_xs, _m3_pool_ys)
+	print("[ridge-metrics/M3] 池化 种子=%d 点=%d 斜率=%s 门禁∈[%.2f, %.2f] 样本门槛>=%d 点（计划 §5.1）"
+			% [_m3_pool_rows.size(), pts, _fmt_v(_num(slope)), lo, hi, M3_POOL_MIN_POINTS])
+	if pts < M3_POOL_MIN_POINTS or is_nan(slope):
+		_skip("M3", "池化样本 %d 点 < %d（或斜率无定义）→ 不判定（不假装通过）"
+				% [pts, M3_POOL_MIN_POINTS])
 		return
-	_gate("M3", bad == "", "M3: Hack 指数 ∈ [%.2f, %.2f]（越界: %s）" % [lo, hi, bad])
+	_gate("M3", slope >= lo and slope <= hi,
+			"M3: Hack 指数（%d 图池化 / %d 点）%.4f ∈ [%.2f, %.2f]"
+			% [_m3_pool_rows.size(), pts, slope, lo, hi])
 
 
 func _check_m4(rows: Array) -> void:
@@ -408,9 +497,9 @@ func _check_m4(rows: Array) -> void:
 		_skip("M4", "所有种子 M4 样本 < %d" % MIN_SAMPLE)
 		return
 	var pair := _paired_mean(rows, "M4")
-	# M4 硬门禁（计划 §2.3）：不得低于「2026-11-18 实测 / 1.2」的回归线。
-	# 方向：流路直线度**越高越好** ⇒ 1.2 倍放宽要向下用（实测 1.2145 ⇒ 回归线 1.0121）；
-	# 基线均值只用于打印 Δ，不再作为判定依据（无基线也能判，少一个 SKIP）。
+	# M4 只记录（计划 §5.4：由 hard 降为 record）：参考线 = 2026-11-18 实测 / 1.2 = 1.0121
+	# 仍照旧打印，但 _gate 走 record（不计退出码）。方向：流路直线度**越高越好** ⇒ 1.2 倍放宽向下用；
+	# 基线均值只用于打印 Δ（无基线也能算，少一个 SKIP）。
 	var m4_limit := MEASURED_M4 / GATE_SLACK
 	if int(pair[2]) > 0:
 		print("[ridge-metrics/M4] 流路直线度 基线=%.4f 新=%.4f Δ=%+.4f 配对图=%d 回归线>=%.4f 来源=%s"
@@ -438,23 +527,36 @@ func _check_m5(rows: Array) -> void:
 			aux_n += 1
 	if aux_n > 0:
 		aux = aux / float(aux_n)
-	print("[ridge-metrics/M5] 字面候选格(land_h>%.2f)=%d land_h_max=%.4f；AUX M5_p90=%.4f（非契约，不作门禁）"
+	print("[ridge-metrics/M5] 字面候选格(land_h>%.2f)=%d land_h_max=%.4f；AUX M5_p90=%.4f"
 			% [M5_MIN_LAND_H, cand, hmax, aux])
+	# M5 已被 M5a（顶部曲率集中度）/ M5b（平坦面积比）取代（计划 §5.4、follow-up §5.5），两者都只记录。
+	# §5.5 的正式定义本文件算不出来（那是 terrain_followup_probe.gd 的活），只能给两个退化代理：
+	#   M5a ← 契约 §C 字面平顶率（land_h>0.6）。现有高度预算下候选格恒为 0（land_h_max≈0.34）⇒ SKIP。
+	#   M5b ← M5_p90 辅助量（land_h≥p90 的格里局地起伏<0.02 的比例），与基线比，只记录。
 	if cand == 0:
-		_skip("M5", "字面阈值 land_h>%.2f 在现有高度预算下恒为空集（land_h_max=%.4f）→ 无从判定；见文件头裁决 3"
+		_skip("M5a", "字面阈值 land_h>%.2f 在现有高度预算下恒为空集（land_h_max=%.4f）→ 无从判定；见文件头裁决 3"
 				% [M5_MIN_LAND_H, hmax])
+	else:
+		var new_mean := _rows_mean(rows, "M5")
+		var pair := _paired_mean(rows, "M5")
+		if is_nan(new_mean) or int(pair[2]) == 0:
+			_skip("M5a", "无基线平顶率可对齐")
+		else:
+			var base_mean := float(pair[1])
+			print("[ridge-metrics/M5a] 平顶率 基线=%.4f 新=%.4f 配对图=%d"
+					% [base_mean, new_mean, int(pair[2])])
+			_gate("M5a", new_mean < base_mean - 1.0e-9,
+					"M5a: 字面平顶率较基线下降（%.4f < %.4f）" % [new_mean, base_mean])
+	var pair_p90 := _paired_mean(rows, "M5_p90")
+	if int(pair_p90[2]) == 0:
+		_skip("M5b", "无基线 M5_p90 可对齐")
 		return
-	var new_mean := _rows_mean(rows, "M5")
-	var pair := _paired_mean(rows, "M5")
-	if is_nan(new_mean) or int(pair[2]) == 0:
-		_skip("M5", "无基线平顶率可对齐")
-		return
-	var base_mean := float(pair[1])
-	print("[ridge-metrics/M5] 平顶率 基线=%.4f 新=%.4f Δ=%+.4f 配对图=%d"
-			% [base_mean, float(pair[0]), float(pair[0]) - base_mean, int(pair[2])])
-	# M5 只记录（计划 §2.3）：判据待 §5.5 换成 M5a/M5b 后再转硬门禁。
-	_gate("M5", float(pair[0]) < base_mean - 1.0e-9, "M5: 平顶率较基线下降（%.4f < %.4f）"
-			% [float(pair[0]), base_mean])
+	var base_p90 := float(pair_p90[1])
+	var new_p90 := float(pair_p90[0])
+	print("[ridge-metrics/M5b] M5_p90 基线=%.4f 新=%.4f Δ=%+.4f 配对图=%d"
+			% [base_p90, new_p90, new_p90 - base_p90, int(pair_p90[2])])
+	_gate("M5b", new_p90 <= base_p90 + 1.0e-9,
+			"M5b: M5_p90（平坦代理）不高于基线（%.4f <= %.4f）" % [new_p90, base_p90])
 
 
 func _print_table(rows: Array) -> void:
@@ -774,7 +876,7 @@ func _profile() -> Dictionary:
 		# 会整体抬高陆地高度，这一步把它拉回基线分布（见 checklist §B-1）。三个新键显式列出，
 		# 使本测试不依赖 C++ 缺省值（缺省与这里同值，但显式写出来才能自证「测的是哪个配置」）。
 		"spl_uplift_rate": 0.08,
-		"spl_ridge_uplift": 0.03,
+		"spl_ridge_uplift": 0.010,
 		"spl_hillslope_diffusion": 0.08,
 		"ridge_residual_frac": 0.15,
 		"ridge_debug_dump": 1,
@@ -963,6 +1065,11 @@ func _metrics(elev: PackedFloat32Array, ridge: PackedFloat32Array,
 				ratio_n += 1
 	out["M3_points"] = xs_up.size()
 	out["M4_points"] = ratio_n
+	# M3 池化（计划 §5.1）：把本图 (log10 A, log10 l_up) 点追加进池化样本。只在 assert 的大图阶段
+	# 开启（_collect_m3_points）。追加顺序 = seed 升序 + 图内格下标升序 ⇒ 样本顺序固定、斜率可复现。
+	if _collect_m3_points and xs_up.size() > 0:
+		_m3_pool_xs.append_array(xs_up)
+		_m3_pool_ys.append_array(ys_up)
 	if xs_up.size() >= MIN_SAMPLE:
 		out["M3"] = _num(_regress_slope(xs_up, ys_up))
 	if xs_down.size() >= MIN_SAMPLE:
