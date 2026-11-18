@@ -446,6 +446,11 @@ Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
         _trigger_handoff_completed = Dictionary();
         return completed;
     }
+    // The facade queue lives on the main thread. An empty queue cannot
+    // submit anything to Effect, so a poll has no boundary to acquire.
+    if (_trigger_handoff_retry_limit == 0 &&
+            runtime_from(_trigger_runtime)->pending_effect_count() == 0)
+        return handoff_trigger_effects_unlocked(limit);
     // Economy may append builtin transactions to the same EffectRuntime from
     // its worker day. Delivery is main-thread transport, so defer rather than
     // mutating the transaction arena concurrently or waiting for that day.

@@ -20,6 +20,25 @@ static inline String runtime_state_name(RuntimeWorkerState state) {
     return "UNKNOWN";
 }
 
+static inline void append_worker_timing(const RuntimeWorkerTiming::Totals &time,
+                                        Dictionary &out) {
+    using Timing = RuntimeWorkerTiming;
+    constexpr const char *names[]{
+        "execute", "input_wait", "clock_wait", "save_build", "save_pause",
+        "paused", "overhead", "boundary_wait", "environment_wait", "main_tail_wait",
+        "input_retry_wait"};
+    static_assert(std::size(names) == Timing::COUNT);
+    uint64_t total = 0;
+    for (size_t i = 0; i < time.size(); ++i) {
+        out[String("worker_time_") + names[i] + "_us"] = static_cast<int64_t>(time[i]);
+        total += time[i];
+    }
+    // Keep the original aggregate for existing recordings and dashboards.
+    out["worker_time_input_wait_us"] = static_cast<int64_t>(time[Timing::INPUT_WAIT] +
+        time[Timing::ENVIRONMENT_WAIT] + time[Timing::MAIN_TAIL_WAIT] + time[Timing::INPUT_RETRY_WAIT]);
+    out["worker_time_total_us"] = static_cast<int64_t>(total);
+}
+
 // ── 主线程抑制掩码（2026-11-16）─────────────────────────────────────────────
 //
 // `authoritative_domain_mask` 不是主线程该查的门。`domain_main_thread_suppressed()`

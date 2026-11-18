@@ -295,7 +295,7 @@ static func _probe_float(baker: MapBaker, values: PackedFloat32Array, idx: int) 
 static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cache_valid: bool = false,
 		publish_weather_lut: bool = true,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
-		force_full_encode: bool = true) -> Dictionary:
+		force_full_encode: bool = true, defer_upload: bool = false) -> Dictionary:
 	var total_t0_us := Time.get_ticks_usec()
 	var report: Dictionary = {
 		"path": "gdscript",
@@ -311,6 +311,8 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 	if map == null or world == null:
 		report.reason = "missing_map_or_world"
 		return report
+	if not defer_upload:
+		flush_staged_cell_lut_upload(baker, world)
 	if world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		baker._ensure_cell_lut_dims(map, world)
 	var lw: int = world.lut_dims.x
@@ -373,88 +375,138 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 			if e is PackedByteArray and d is PackedByteArray and c is PackedByteArray:
 				out["lut_encode_path"] = "gdext"
 				baker._record_river_atlas_probe(map, out, d, c)
-				var enum_changed: bool = world.enum_lut_tex == null \
-						or baker._cell_enum_lut_bytes_cache.size() != e.size() \
-						or baker._cell_enum_lut_bytes_cache != e
-				var dyn_changed: bool = world.dyn_lut_tex == null \
-						or baker._cell_dyn_lut_bytes_cache.size() != d.size() \
-						or baker._cell_dyn_lut_bytes_cache != d
-				var eco_changed: bool = world.eco_lut_tex == null \
-						or baker._cell_eco_lut_bytes_cache.size() != c.size() \
-						or baker._cell_eco_lut_bytes_cache != c
-				# [qa-skip-lut-publish 2026-11-02] 二分"渲染线程崩溃是否来自每日
-				# LUT 纹理上传"：pk_debug.cfg 里 `[render] skip_lut_publish=true`
-				# 时只跳过 GPU 上传，模拟与报告照常（正常玩家没有该文件）。
-				if baker._qa_skip_lut_publish():
-					enum_changed = false
-					dyn_changed = false
-					eco_changed = false
-				report["enum_lut_changed"] = enum_changed
-				report["dyn_lut_changed"] = dyn_changed
-				report["eco_lut_changed"] = eco_changed
 				report["dirty_cells"] = n_cells \
-						if bool(out.get("full_encode", force_full_encode)) \
-						else dirty_indices.size()
-				var upload_t0_us := Time.get_ticks_usec()
-				if enum_changed:
-					var enum_upload_t0_us := Time.get_ticks_usec()
-					world.enum_lut_tex = baker._lut_tex_from_data(
-						e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
-					report["enum_lut_upload_ms"] = float(Time.get_ticks_usec() - enum_upload_t0_us) / 1000.0
-					baker._cell_enum_lut_bytes_cache = e
+						if bool(out.get("full_encode", force_full_encode)) else dirty_indices.size()
+				var wlut: PackedByteArray = out.get("weather_lut", PackedByteArray())
+				if defer_upload:
+					_stage_cell_lut_upload(baker, world, e, d, c, wlut)
 				else:
-					report["enum_lut_upload_ms"] = 0.0
-				if dyn_changed:
-					var dyn_upload_t0_us := Time.get_ticks_usec()
-					# [dyn-lut-inplace 2026-11-02] 这里原来是"写后台纹理再交换引用"的
-					# 双缓冲。后果是**每天换一个 Texture 对象**，hex_renderer 的
-					# `_sync_cell_lut_textures()` 于是每天命中一次 stale-rebind 分支，
-					# 在同一帧里给两张 world_map 材质换 sampler —— 真机渲染线程
-					# 10~60 秒后 SIGSEGV 的主嫌疑点。`dyn_lut_tex_back` 全项目没有任何
-					# 读者，双缓冲没换来收益；改成与 enum/eco 一致的原地 update()
-					# （Godot 的 ImageTexture.update() 由 RenderingServer 排队，
-					# 采样中的纹理更新是它的正常用法）。
-					world.dyn_lut_tex = baker._lut_tex_from_data(
-						d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
-					report["dyn_lut_upload_ms"] = float(Time.get_ticks_usec() - dyn_upload_t0_us) / 1000.0
-					baker._cell_dyn_lut_bytes_cache = d
-				else:
-					report["dyn_lut_upload_ms"] = 0.0
-				if eco_changed:
-					var eco_upload_t0_us := Time.get_ticks_usec()
-					world.eco_lut_tex = baker._lut_tex_from_data(
-						c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
-					report["eco_lut_upload_ms"] = float(Time.get_ticks_usec() - eco_upload_t0_us) / 1000.0
-					baker._cell_eco_lut_bytes_cache = c
-				else:
-					report["eco_lut_upload_ms"] = 0.0
-				report["texture_upload_ms"] = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
-				# [cell-field 2026-11-18] cell_table 紧跟 eco_lut 发布（同一个 refresh），
-				# 是追加工件：上面三张 LUT 的字节与上传时机一行没改。
-				# layer0/2 由 enum_changed 门控重建，layer1 只在 dyn_changed 时重写 —— 与
-				# dyn_lut 的更新节奏严格同步（每天都变的是 state，不是 class）。
-				report.merge(_publish_cell_table(baker, map, world, e, d,
-					enum_changed, dyn_changed), true)
-				var bounce_t0_us := Time.get_ticks_usec()
-				report["bounce_lut_published"] = false
-				if enum_changed or dyn_changed or world.bounce_lut_tex == null:
-					report["bounce_lut_published"] = baker._publish_bounce_lut(
-						e, d, world, lw, lh, dirty_indices, force_full_encode)
-				report["bounce_lut_ms"] = float(Time.get_ticks_usec() - bounce_t0_us) / 1000.0
-				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 weather_refresh commit 才更新时间戳。
-
-				var wlut = out.get("weather_lut", null)
-				if publish_weather_lut and wlut is PackedByteArray:
-					var wx_report: Dictionary = baker._publish_weather_lut_bytes(wlut, world, lw, lh)
-					report.merge(wx_report, true)
+					_publish_cell_lut_textures(baker, world, e, d, c, report,
+							dirty_indices, force_full_encode)
+					if not wlut.is_empty():
+						report.merge(baker._publish_weather_lut_bytes(wlut, world, lw, lh), true)
 				report["lut_total_ms"] = float(Time.get_ticks_usec() - total_t0_us) / 1000.0
 				return report
+	# A legacy/fallback encode publishes immediately. Flush an earlier native
+	# batch first so a newer synchronous update cannot be replaced by it.
+	flush_staged_cell_lut_upload(baker, world)
 	baker._bake_cell_luts_gd(map, world, lw, lh, snow_cover_override, publish_weather_lut, fog_k_override)
 
 	report["lut_encode_path"] = "gdscript"
 	report["path"] = "gdscript"
 	report["fallback"] = true
 	return report
+
+
+static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
+		e: PackedByteArray, d: PackedByteArray, c: PackedByteArray, report: Dictionary,
+		dirty_indices: PackedInt32Array = PackedInt32Array(),
+		force_full_encode: bool = true) -> void:
+	var lw := world.lut_dims.x
+	var lh := world.lut_dims.y
+	var enum_changed: bool = world.enum_lut_tex == null \
+			or baker._cell_enum_lut_bytes_cache.size() != e.size() \
+			or baker._cell_enum_lut_bytes_cache != e
+	var dyn_changed: bool = world.dyn_lut_tex == null \
+			or baker._cell_dyn_lut_bytes_cache.size() != d.size() \
+			or baker._cell_dyn_lut_bytes_cache != d
+	var eco_changed: bool = world.eco_lut_tex == null \
+			or baker._cell_eco_lut_bytes_cache.size() != c.size() \
+			or baker._cell_eco_lut_bytes_cache != c
+	# [qa-skip-lut-publish 2026-11-02] 二分"渲染线程崩溃是否来自每日
+	# LUT 纹理上传"：pk_debug.cfg 里 `[render] skip_lut_publish=true`
+	# 时只跳过 GPU 上传，模拟与报告照常（正常玩家没有该文件）。
+	if baker._qa_skip_lut_publish():
+		enum_changed = false
+		dyn_changed = false
+		eco_changed = false
+	report["enum_lut_changed"] = enum_changed
+	report["dyn_lut_changed"] = dyn_changed
+	report["eco_lut_changed"] = eco_changed
+	var upload_t0_us := Time.get_ticks_usec()
+	if enum_changed:
+		var enum_upload_t0_us := Time.get_ticks_usec()
+		world.enum_lut_tex = baker._lut_tex_from_data(
+			e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
+		report["enum_lut_upload_ms"] = float(Time.get_ticks_usec() - enum_upload_t0_us) / 1000.0
+		baker._cell_enum_lut_bytes_cache = e
+	else:
+		report["enum_lut_upload_ms"] = 0.0
+	if dyn_changed:
+		var dyn_upload_t0_us := Time.get_ticks_usec()
+		# [dyn-lut-inplace 2026-11-02] 这里原来是"写后台纹理再交换引用"的
+		# 双缓冲。后果是**每天换一个 Texture 对象**，hex_renderer 的
+		# `_sync_cell_lut_textures()` 于是每天命中一次 stale-rebind 分支，
+		# 在同一帧里给两张 world_map 材质换 sampler —— 真机渲染线程
+		# 10~60 秒后 SIGSEGV 的主嫌疑点。`dyn_lut_tex_back` 全项目没有任何
+		# 读者，双缓冲没换来收益；改成与 enum/eco 一致的原地 update()
+		# （Godot 的 ImageTexture.update() 由 RenderingServer 排队，
+		# 采样中的纹理更新是它的正常用法）。
+		world.dyn_lut_tex = baker._lut_tex_from_data(
+			d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
+		report["dyn_lut_upload_ms"] = float(Time.get_ticks_usec() - dyn_upload_t0_us) / 1000.0
+		baker._cell_dyn_lut_bytes_cache = d
+	else:
+		report["dyn_lut_upload_ms"] = 0.0
+	if eco_changed:
+		var eco_upload_t0_us := Time.get_ticks_usec()
+		world.eco_lut_tex = baker._lut_tex_from_data(
+			c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+		report["eco_lut_upload_ms"] = float(Time.get_ticks_usec() - eco_upload_t0_us) / 1000.0
+		baker._cell_eco_lut_bytes_cache = c
+	else:
+		report["eco_lut_upload_ms"] = 0.0
+	report["texture_upload_ms"] = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
+	# [cell-field 2026-11-18] cell_table 紧跟 eco_lut 发布（同一个 refresh），
+	# 是追加工件：上面三张 LUT 的字节与上传时机一行没改。
+	# layer0/2 由 enum_changed 门控重建，layer1 只在 dyn_changed 时重写 —— 与
+	# dyn_lut 的更新节奏严格同步（每天都变的是 state，不是 class）。
+	#
+	# 放在 helper 里而不是 bake_cell_luts 的调用点：native 的 defer_upload 路径由
+	# flush_staged_cell_lut_upload 直接调本函数发布，绕开 bake_cell_luts；表若留在
+	# 调用点，那条路上 LUT 换了而表还是旧的。
+	# map 取 baker._last_bake_map：发布器签名里没有 map，而整个会话就是 bake_world
+	# 那一个实例（与 _publish_weather_table_from_luts 同一先例）；null 时
+	# _publish_cell_table 自己会把 bound/layers 归零。
+	report.merge(_publish_cell_table(baker, baker._last_bake_map, world, e, d,
+		enum_changed, dyn_changed), true)
+	var bounce_t0_us := Time.get_ticks_usec()
+	report["bounce_lut_published"] = false
+	if enum_changed or dyn_changed or world.bounce_lut_tex == null:
+		report["bounce_lut_published"] = baker._publish_bounce_lut(
+			e, d, world, lw, lh, dirty_indices, force_full_encode)
+	report["bounce_lut_ms"] = float(Time.get_ticks_usec() - bounce_t0_us) / 1000.0
+
+static func _stage_cell_lut_upload(baker: MapBaker, world: WorldData,
+		enum_bytes: PackedByteArray, dyn_bytes: PackedByteArray, eco_bytes: PackedByteArray,
+		weather_bytes: PackedByteArray) -> void:
+	var pending := world.staged_cell_lut_upload
+	pending["enum_bytes"] = enum_bytes
+	pending["dyn_bytes"] = dyn_bytes
+	pending["eco_bytes"] = eco_bytes
+	if weather_bytes.is_empty():
+		return
+	# Keep the last two distinct snapshots so a batch feeds the same interpolation pair
+	# as individual uploads. Packed arrays keep their old bytes via copy-on-write.
+	var current: PackedByteArray = pending.get("weather_current", baker._prev_weather_lut_bytes)
+	var has_current := pending.has("weather_current") or (world.weather_lut_tex != null
+			and world.weather_lut_tex.get_size() == Vector2(world.lut_dims))
+	if has_current and current == weather_bytes:
+		return
+	pending["weather_previous"] = current if current.size() == weather_bytes.size() else weather_bytes
+	pending["weather_current"] = weather_bytes
+
+
+static func flush_staged_cell_lut_upload(baker: MapBaker, world: WorldData) -> void:
+	if world == null or world.staged_cell_lut_upload.is_empty():
+		return
+	var pending := world.staged_cell_lut_upload
+	world.staged_cell_lut_upload = {}
+	_publish_cell_lut_textures(baker, world, pending["enum_bytes"],
+			pending["dyn_bytes"], pending["eco_bytes"], {})
+	if pending.has("weather_current"):
+		_upload_weather_lut_pair(baker, world, world.lut_dims.x, world.lut_dims.y,
+				pending["weather_previous"], pending["weather_current"])
 
 
 # GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
@@ -1106,16 +1158,14 @@ static func _publish_weather_lut_bytes(baker: MapBaker, data: PackedByteArray, w
 	if world == null or data.is_empty() or lw <= 0 or lh <= 0:
 		report.weather_lut_reason = "invalid_weather_lut_args"
 		return report
+	flush_staged_cell_lut_upload(baker, world)
 	var has_current_tex: bool = world.weather_lut_tex != null and world.weather_lut_tex.get_size() == Vector2(float(lw), float(lh))
 	var changed: bool = (not has_current_tex) or baker._prev_weather_lut_bytes.size() != data.size() or baker._prev_weather_lut_bytes != data
 	if not changed:
 		report.weather_lut_reason = "unchanged"
 		return report
 	var prev_bytes: PackedByteArray = baker._prev_weather_lut_bytes if baker._prev_weather_lut_bytes.size() == data.size() and baker._prev_weather_lut_bytes.size() > 0 else data
-	world.weather_lut_prev_tex = baker._lut_tex_from_data(prev_bytes, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
-	world.weather_lut_tex = baker._lut_tex_from_data(data, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
-	baker._prev_weather_lut_bytes = data.duplicate()
-	world.weather_lut_update_usec = Time.get_ticks_usec()
+	_upload_weather_lut_pair(baker, world, lw, lh, prev_bytes, data)
 	report.weather_lut_published = true
 	report.weather_lut_changed = true
 	report.weather_lut_reason = "changed"
@@ -1149,6 +1199,16 @@ static func _publish_weather_table_from_luts(baker: MapBaker, world: WorldData,
 		}
 	var wind_bytes: PackedByteArray = WeatherWindSourceScript.build_bytes(map, Vector2i(lw, lh))
 	return _publish_weather_table(baker, map, world, weather_bytes, wind_bytes)
+
+
+static func _upload_weather_lut_pair(baker: MapBaker, world: WorldData, lw: int, lh: int,
+		previous: PackedByteArray, current: PackedByteArray) -> void:
+	world.weather_lut_prev_tex = baker._lut_tex_from_data(
+			previous, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
+	world.weather_lut_tex = baker._lut_tex_from_data(
+			current, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
+	baker._prev_weather_lut_bytes = current
+	world.weather_lut_update_usec = Time.get_ticks_usec()
 
 
 
@@ -1279,10 +1339,13 @@ static func refresh_weather_lut_from_weather(baker: MapBaker, map: MapData, worl
 static func refresh_cell_luts_daily(baker: MapBaker, map: MapData, world: WorldData,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
 		force_full_encode: bool = true,
-		publish_weather_lut: bool = false) -> Dictionary:
+		publish_weather_lut: bool = false, defer_upload: bool = false) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
+	if defer_upload:
+		return bake_cell_luts(baker, map, world, true, publish_weather_lut,
+				dirty_indices, force_full_encode, true)
 	return baker.bake_cell_luts(map, world, true, publish_weather_lut, dirty_indices, force_full_encode)
 
 

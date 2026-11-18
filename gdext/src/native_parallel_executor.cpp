@@ -51,7 +51,10 @@ NativeParallelExecutor::NativeParallelExecutor()
 }
 
 NativeParallelExecutor::~NativeParallelExecutor() {
-    _stopping.store(true, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lock(_state_mutex);
+        _stopping.store(true, std::memory_order_release);
+    }
     _work_cv.notify_all();
     for (std::thread &worker : _workers)
         if (worker.joinable()) worker.join();
@@ -113,15 +116,8 @@ void NativeParallelExecutor::run_group(uint32_t task_count, TaskFn fn,
     std::lock_guard<std::mutex> dispatch_guard(_dispatch_mutex);
     ++_dispatch_count;
     _task_count.fetch_add(task_count, std::memory_order_relaxed);
-    // 内联日：在调用线程上把整组任务顺序跑完再返回。与下面 participants==0
-    // 的分支同构，但额外挡住"worker 已经存在也不许用"的情形。
-    if (parallel_serial_only()) {
-        ++_serial_dispatch_count;
-        for (uint32_t task = 0; task < task_count; ++task) fn(userdata, task);
-        return;
-    }
-    const uint32_t participants = std::min(task_count, active_worker_limit());
-    if (participants == 0) {
+    const uint32_t lanes = std::min(task_count, active_worker_limit());
+    if (lanes <= 1) {
         ++_serial_dispatch_count;
         for (uint32_t task = 0; task < task_count; ++task) fn(userdata, task);
         return;
@@ -132,22 +128,28 @@ void NativeParallelExecutor::run_group(uint32_t task_count, TaskFn fn,
         _task_fn = fn;
         _task_userdata = userdata;
         _published_task_count = task_count;
-        _participating_workers = participants;
-        _next_task.store(0, std::memory_order_relaxed);
-        _remaining_tasks.store(task_count, std::memory_order_release);
+        _participating_workers = lanes - 1;
+        _next_task.store(1, std::memory_order_relaxed);
         ++_generation;
     }
     _work_cv.notify_all();
+    // Task zero belongs to the caller. Short groups can finish here before
+    // the first worker wakes, while longer ones use the other lanes.
+    fn(userdata, 0);
+    run_remaining_tasks(fn, userdata, task_count);
 
     std::unique_lock<std::mutex> state_lock(_state_mutex);
-    _done_cv.wait(state_lock, [this]() {
-        return _remaining_tasks.load(std::memory_order_acquire) == 0 &&
-            _active_workers == 0;
-    });
     _task_fn = nullptr;
     _task_userdata = nullptr;
-    _published_task_count = 0;
-    _participating_workers = 0;
+    _done_cv.wait(state_lock, [this]() { return _active_workers == 0; });
+}
+
+void NativeParallelExecutor::run_remaining_tasks(TaskFn fn, void *userdata, uint32_t task_count) {
+    for (uint32_t task = _next_task.fetch_add(1, std::memory_order_relaxed);
+         task < task_count;
+         task = _next_task.fetch_add(1, std::memory_order_relaxed)) {
+        fn(userdata, task);
+    }
 }
 
 void NativeParallelExecutor::worker_loop(uint32_t worker_index) {
@@ -182,20 +184,7 @@ void NativeParallelExecutor::worker_loop(uint32_t worker_index) {
         }
         if (!participates || fn == nullptr) continue;
 
-        while (true) {
-            const uint32_t task = _next_task.fetch_add(1,
-                                                       std::memory_order_relaxed);
-            if (task >= task_count) break;
-            // Native kernels are required to be noexcept in production. A
-            // thrown exception would violate the deterministic group barrier;
-            // keep this path allocation-free and let the process-level fault
-            // handler own such programmer errors.
-            fn(userdata, task);
-            if (_remaining_tasks.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                std::lock_guard<std::mutex> state_guard(_state_mutex);
-                _done_cv.notify_one();
-            }
-        }
+        run_remaining_tasks(fn, userdata, task_count);
 
         {
             std::lock_guard<std::mutex> state_guard(_state_mutex);

@@ -911,6 +911,7 @@ int32_t NativeEconomyRuntime::dominant_output_good_at(
     const int32_t cells = _cell_count.get();
     if (cell < 0 || cell >= cells) return -1;
     if (_building_cell_offsets.size() != static_cast<size_t>(cells) + 1) return -1;
+    if (_building_cell_offsets[cell] == _building_cell_offsets[cell + 1]) return -1;
     // last_output is already net of output_factor_q16 (see
     // effective_building_output_quantity_at), so spreading it across the
     // authored mix yields a genuine output share -- injecting the sector

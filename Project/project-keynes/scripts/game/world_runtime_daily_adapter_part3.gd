@@ -1,6 +1,7 @@
 extends RefCounted
 
 ## Extracted world_runtime_daily_adapter.gd group 3; state stays with host.
+const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
 	var commit_usec = Time.get_ticks_usec()
@@ -29,6 +30,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	var received_new_commit = bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > host._runtime_commit_generation
+	var whole_graph_commit = received_new_commit and bool(report.get("authority_ready", false))
 	var economy_worker_authoritative = (
 			int(report.get("authoritative_domain_mask", 0)) &
 			host.RUNTIME_ECONOMY_DOMAIN_MASK) != 0
@@ -48,22 +50,14 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host._runtime_commit_family_done.clear()
 		host._runtime_pending_visual_generation = generation
 		host._runtime_pending_dirty_families = int(commit.get("dirty_families", 0))
-		# Whole-graph ACTIVE bypasses run_daily_tick, including its visual and
-		# recorder tail. Publish those consumers from the committed boundary.
-		var whole_graph = bool(report.get("authority_ready", false))
-		if whole_graph:
+		# Whole-graph ACTIVE bypasses run_daily_tick. Record this exact day while
+		# the worker is still at the boundary. Presentation follows the tail.
+		if whole_graph_commit:
 			host._fast_tick_count += 1
 			host._pending_tick_start_usec = publish_started_usec
 			host._pending_tick_sus_ms = 0.0
 			host._pending_tick_skipped_day = false
-			host._generator.publish_worker_climate_visuals()
-			if host._renderer != null:
-				host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
-				host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-				if host._renderer.has_method("refresh_terrain_weather_field_tex"):
-					host._renderer.refresh_terrain_weather_field_tex()
-			host._pending_tick_render_ms = (Time.get_ticks_usec() - publish_started_usec) / 1000.0
-			host.mark_map_overlay_dirty(&"worker_committed")
+			host._pending_tick_render_ms = 0.0
 			if dcp:
 				host._dcp_publish_ms = float(Time.get_ticks_usec() - publish_started_usec) / 1000.0
 		# 只通知一次最新完整日提交；后续帧仅继续消费尚未应用的视觉 patch。
@@ -71,7 +65,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			int(commit.get("from_day", host._runtime_commit_day)),
 			host._runtime_commit_day,
 			host._runtime_commit_generation)
-		if whole_graph:
+		if whole_graph_commit:
 			host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 			var dcp_finish_usec: int = Time.get_ticks_usec() if dcp else 0
 			host.finish_daily_tick(0.0)
@@ -110,6 +104,15 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	if host._runtime_pending_visual_generation <= 0 \
 			or host._runtime_pending_visual_generation != host._runtime_commit_generation:
 		return
+	var visual_started_us = Time.get_ticks_usec()
+	if whole_graph_commit:
+		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
+				host._renderer, host._generator._baker, host._world_data)
+		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload)
+		if host._renderer != null:
+			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
+			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
+		host.mark_map_overlay_dirty(&"worker_committed")
 	# 当前 skeleton 的 COMMIT 阶段可能没有 visual intents；仍走同一消费边界，
 	# 以后新增 family 时无需把 worker 对象暴露给主线程。交互期间缩小预算，
 	# 但不等待或取消 worker，只把剩余 patch 留到下一渲染帧。
@@ -140,7 +143,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host._runtime_commit_family_cursors[family_bit] = int(patch.get("next_cursor", cursor))
 		host._runtime_commit_family_done[family_bit] = bool(patch.get("done", false))
 		host._apply_runtime_visual_patch(family_bit, patch)
-	host._runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - apply_started_us) / 1000.0
+	host._runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - visual_started_us) / 1000.0
 	host._sched_proc_visual_ms += host._runtime_last_visual_apply_ms
 	if dcp:
 		host._dcp_visual_ms = host._runtime_last_visual_apply_ms
@@ -212,6 +215,10 @@ func _mark_runtime_day_tail(host, committed_day: int) -> void:
 		done = mini(done, host._runtime_military_last_commit_day)
 	if host._runtime_natural_resource_pending_target_day >= 0:
 		done = mini(done, host._runtime_natural_resource_last_commit_day)
+	if done == committed_day and host._ideology_refresh_pending_day >= 0:
+		# Retry the already queued refresh while the worker is at the day boundary.
+		# Its requested date stays the same and the normal frame pump handles a retry.
+		host._step_ideology_instance_refresh_if_authoritative(host._ideology_refresh_pending_day)
 	ext.mark_runtime_day_tail_done(done)
 
 

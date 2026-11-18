@@ -31,8 +31,10 @@ uint64_t mix_vector(uint64_t hash, const std::vector<T> &values) noexcept {
 }
 
 bool finite_vector(const std::vector<float> &values) noexcept {
-    for (float value : values) if (!std::isfinite(value)) return false;
-    return true;
+    // A reduction lets the compiler test several lanes at once.
+    bool all_finite = true;
+    for (float value : values) all_finite &= std::isfinite(value);
+    return all_finite;
 }
 
 template <typename T>
@@ -85,12 +87,7 @@ bool validate_runtime_environment_snapshot(
     const auto sized = [cells](size_t count) {
         return count == 0 || count == cells;
     };
-    const auto finite = [](const std::vector<float> &values) {
-        for (const float value : values) {
-            if (!std::isfinite(value)) return false;
-        }
-        return true;
-    };
+    const auto finite = finite_vector;
     if (!sized(snapshot.cell_temp.size()) ||
         !sized(snapshot.cell_temp_30d.size()) ||
         !sized(snapshot.cell_temp_365d.size()) ||
@@ -243,20 +240,25 @@ bool validate_runtime_environment_snapshot(
             return false;
         }
     }
-    // The routing graph is a parent DAG. Range checks alone would allow a
-    // closed cycle and make a deterministic downstream reduction depend on
-    // the traversal guard. Validate cycles at the cold capture boundary.
+    // Range checks cannot reject cycles. Prove each path once so branches
+    // reaching a shared downstream river do not walk that river again.
     if (!snapshot.hydro_parent.empty()) {
+        enum Visit : uint8_t { UNVISITED, IN_PATH, CHECKED };
+        std::vector<Visit> visits(cells, UNVISITED);
         for (size_t start = 0; start < cells; ++start) {
             int32_t cursor = static_cast<int32_t>(start);
-            size_t steps = 0;
-            while (cursor >= 0 && steps <= cells) {
+            while (cursor >= 0 && visits[static_cast<size_t>(cursor)] == UNVISITED) {
+                visits[static_cast<size_t>(cursor)] = IN_PATH;
                 cursor = snapshot.hydro_parent[static_cast<size_t>(cursor)];
-                ++steps;
             }
-            if (cursor >= 0) {
+            if (cursor >= 0 && visits[static_cast<size_t>(cursor)] == IN_PATH) {
                 error = "runtime_input_hydro_cycle";
                 return false;
+            }
+            cursor = static_cast<int32_t>(start);
+            while (cursor >= 0 && visits[static_cast<size_t>(cursor)] == IN_PATH) {
+                visits[static_cast<size_t>(cursor)] = CHECKED;
+                cursor = snapshot.hydro_parent[static_cast<size_t>(cursor)];
             }
         }
     }

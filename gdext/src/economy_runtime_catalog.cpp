@@ -1355,7 +1355,6 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         if (_good_food_equivalent_q16[static_cast<size_t>(good)] > 0)
             _food_equivalent_goods.push_back(good);
     }
-
     const std::vector<int32_t> sig_prof = packed_i32(catalog, "signature_profession_ids");
     const std::vector<int32_t> sig_eth = packed_i32(catalog, "signature_ethnicity_ids");
     const std::vector<int32_t> sig_plan = packed_i32(catalog, "signature_plan_ids");
@@ -1817,7 +1816,6 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     if (!compile_person_catalog(catalog, error)) return false;
     return compile_development_catalog(catalog, error);
 }
-
 bool NativeEconomyRuntime::compile_development_catalog(
         const Dictionary &catalog, std::string &error) {
     _development_metric_signal_indices = packed_i32(
@@ -1898,7 +1896,6 @@ bool NativeEconomyRuntime::compile_development_catalog(
     }
     return true;
 }
-
 bool NativeEconomyRuntime::compile_family_catalog(
         const Dictionary &catalog, std::string &error) {
     _family_surname_pack_id = dict_string(
@@ -1978,7 +1975,6 @@ bool NativeEconomyRuntime::compile_family_catalog(
     }
     return compile_family_trait_catalog(catalog, error);
 }
-
 bool NativeEconomyRuntime::compile_person_catalog(
         const Dictionary &catalog, std::string &error) {
     _person_given_name_pack_id = dict_string(
@@ -2012,7 +2008,6 @@ bool NativeEconomyRuntime::compile_person_catalog(
     }
     return true;
 }
-
 bool NativeEconomyRuntime::compile_settlement_catalog(
         const Dictionary &catalog, std::string &error) {
     _prosperity_thresholds = packed_i64(catalog, "prosperity_thresholds");
@@ -2143,7 +2138,6 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
     }
     return true;
 }
-
 bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                                                      std::string &error) {
     _building_type_ids = packed_strings(catalog, "building_type_ids");
@@ -2868,7 +2862,6 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_type_market_signal_goods.insert(
             _building_type_market_signal_goods.end(), baked_keys.begin(),
             baked_keys.end());
-
         baked_keys.clear();
         for (int32_t role = type.employee_begin;
              role < type.employee_begin + type.employee_count; ++role) {
@@ -3024,5 +3017,4 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     }
     return true;
 }
-
 } // namespace pk

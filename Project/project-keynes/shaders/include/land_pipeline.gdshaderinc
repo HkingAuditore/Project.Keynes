@@ -47,6 +47,7 @@ SurfaceParams compute_land_base_surface(
 		vec2 wp,
 		vec2 uv,
 		vec4 scals,
+		TerrainEdgeSample terrain_edge,
 		out float mixed_micro_strength
 // [cell-field 2026-11-18] 解析格界数据包（与 render_land_pipeline 的尾参同形）。
 // 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
@@ -56,12 +57,13 @@ SurfaceParams compute_land_base_surface(
 		) {
 	// LAND 1.1: hard primary state with screen-space static material edge AA.
 	// [cell-field 2026-11-18] 静态材质换 3-way 版本（方案 §3.6）：色调走三格、
-	// 材质贴图只采前两名。场版本不读 edge_distance（scals.r），格界由场函数给出。
+	// 材质贴图只采前两名。场版本不读 edge_distance（scals.r），格界由场函数给出；
+	// TerrainEdgeSample 照样要收（函数原型两个变体一致），只是不读。
 #ifdef PK_CELL_FIELD
 	TerrainStaticMaterial static_mat = compute_terrain_static_material_field(
 			field, fcls0, fcls1, fcls2, biome, elev, wp, uv);
 #else
-	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv, scals.r);
+	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv, terrain_edge);
 #endif
 	vec3 col = static_mat.color;
 	mixed_micro_strength = static_mat.micro_strength;
@@ -729,8 +731,9 @@ vec3 render_land_pipeline(
 		float dyn_snow,
 		float dyn_valid,
 		float dyn_vitality,
-	vec4 pixel_noise,
-	vec2 shore_frac
+		vec4 pixel_noise,
+		vec2 shore_frac,
+		TerrainEdgeSample terrain_edge
 // [cell-field 2026-11-18] 解析格界数据包（world_map SETUP 算一次后传入）。
 // 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
 #ifdef PK_CELL_FIELD
@@ -744,7 +747,7 @@ vec3 render_land_pipeline(
 		return compute_terrain_static_material_field(
 				field, fcls0, fcls1, fcls2, biome, elev, wp, uv).color;
 #else
-		return compute_terrain_static_material(biome, elev, wp, uv, scals.r).color;
+		return compute_terrain_static_material(biome, elev, wp, uv, terrain_edge).color;
 #endif
 	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
@@ -754,7 +757,7 @@ vec3 render_land_pipeline(
 	SurfaceParams surface = 		make_surface_params(vec3(0.34, 0.42, 0.26), vec3(0.0, 0.0, 1.0), 0.90, 0.0, 1.0);
 #else
 	SurfaceParams surface = compute_land_base_surface(
-			biome, geo_biome, landform, elev, wp, uv, scals,
+			biome, geo_biome, landform, elev, wp, uv, scals, terrain_edge,
 			mixed_micro_strength
 #ifdef PK_CELL_FIELD
 			, field, fcls0, fcls1, fcls2

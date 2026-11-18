@@ -219,7 +219,7 @@ public:
         const godot::Dictionary &opts);
 
     // Returns a pointer to the per-cell annual-mean insolation cache (size n),
-    // rebuilding it iff the (n, lat-array, axial_tilt, daylen) fingerprint changed.
+    // rebuilding when latitude values, axial tilt or day length change.
     // Shared by run_climate_pass_a and run_climate_pass_a_thread. Bit-equal to the
     // inline dc_insolation_annual_mean(dc_clamp01f(lat[i]), ...) it replaces.
     const float *ensure_insol_annual_mean_cache(const float *lat_ptr, int n,
@@ -3209,16 +3209,11 @@ private:
     godot::Vector<Slot>                       _slots;
     godot::HashMap<godot::StringName, int>    _slot_by_name;
 
-    // ---- climate pass-A annual-mean insolation cache (perf 2026-06) ----
-    // dc_insolation_annual_mean(lat, axial_tilt, daylen) integrates 16 trig-heavy
-    // insolation samples; it depends ONLY on cell latitude + two planet constants,
-    // so it is IDENTICAL every day. run_climate_pass_a previously recomputed it per
-    // cell per day (2464*16 trig/day ≈ 1.38ms of the round-start slice). We memoize
-    // it per cell and rebuild only when a cheap fingerprint of (n, lat bits,
-    // axial_tilt, daylen) changes (≈ once, at map bind / planet-param change).
-    std::vector<float>                        _insol_annual_mean_cache;
-    uint64_t                                  _insol_cache_fingerprint = 0;
-    bool                                      _insol_cache_valid = false;
+    // Exact input bits shared by synchronous and worker-round capture.
+    std::vector<float> _insol_annual_mean_cache;
+    std::vector<float> _insol_cache_latitudes;
+    float _insol_cache_tilt = 0.0f;
+    float _insol_cache_daylen = 0.0f;
 
     // ---- S3: sync run_climate_pass_a 的共享内核 scratch ------------------
     // run_climate_pass_a 不再自带第二份 pass-A 算法，而是把 _slots 快照进这两个
@@ -3300,14 +3295,6 @@ private:
     // 那一天，如果 reference 相对前一天变了，就证明存在 14 stage 之外的写者（例如
     // native daily finalizer）。这比反推分叉矩阵直接得多，且不依赖任何猜测。
     std::shared_ptr<const RuntimeClimateStore> _last_published_climate_reference;
-
-    // capture 侧另建的一份 round 输入。worker 只在 trace 帧没带生产缓冲时才会读到
-    // 它，而那种情况下 worker 本来就整段跳过 Climate —— 所以它现在是纯 fallback，
-    // 不参与对拍。留着是为了 snapshot 校验有完整的 lane 形状可查。
-    pk_async_climate::ClimateInputBuf          _captured_climate_round_input;
-    bool                                       _captured_climate_round_input_valid = false;
-    int64_t                                    _captured_climate_round_input_day = -1;
-    int64_t                                    _capture_call_count = 0;
 
     // ---- S3: pass_a 输出 → reference 边界诊断 -----------------------------
     // 输入侧对齐之后，剩下的可能性是 reference 不等于 pass_a 的输出（同一 tick 里

@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "runtime_climate_weather_input.h"
 #include "runtime_climate_passes.h"
 
 #include <algorithm>

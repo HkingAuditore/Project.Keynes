@@ -8,6 +8,9 @@
 
 namespace pk {
 
+bool derived_price_conduction_enabled();
+bool derived_startup_absorption_enabled();
+
 namespace {
 using Clock = std::chrono::steady_clock;
 

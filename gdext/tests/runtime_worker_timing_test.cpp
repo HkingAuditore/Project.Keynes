@@ -23,4 +23,25 @@ int main() {
     for(auto i:{pk::RuntimeWorkerTiming::EXECUTE,pk::RuntimeWorkerTiming::CLOCK_WAIT,
         pk::RuntimeWorkerTiming::SAVE_BUILD,pk::RuntimeWorkerTiming::PAUSED}) assert(c[i]>0);
     t.start();t.stop();assert(t.snapshot()[pk::RuntimeWorkerTiming::SAVE_BUILD]==0);
+
+    using Timing = pk::RuntimeWorkerTiming;
+    t.start();
+    for (auto phase : {Timing::ENVIRONMENT_WAIT, Timing::MAIN_TAIL_WAIT,
+                       Timing::INPUT_RETRY_WAIT}) {
+        t.set(phase);
+        wait();
+        assert(t.snapshot()[phase] > 0);
+    }
+    const auto before_pause = t.snapshot();
+    t.pause(true);
+    t.set(Timing::MAIN_TAIL_WAIT);
+    wait();
+    const auto while_paused = t.snapshot();
+    assert(while_paused[Timing::MAIN_TAIL_WAIT] == before_pause[Timing::MAIN_TAIL_WAIT]);
+    assert(while_paused[Timing::PAUSED] > 0);
+    t.save(true);
+    wait();
+    const auto while_saving = t.snapshot();
+    assert(while_saving[Timing::SAVE_PAUSE] > 0);
+    t.stop();
 }

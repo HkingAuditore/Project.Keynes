@@ -62,6 +62,10 @@ public:
         if (consumer == EconomyChangeConsumer::Hash) return take_hash_pages();
         return _registry->take_pages(_field, consumer);
     }
+    template<class Publish>
+    void publish_pages(Publish &&publish) const {
+        _registry->publish_pages(_field, std::forward<Publish>(publish));
+    }
     operator const std::vector<T> &() const noexcept { return _values; }
     const T *data() const noexcept { return _values.data(); }
     const T &operator[](size_t index) const {
@@ -142,12 +146,15 @@ public:
         if (first > size() || count > size() - first || (count && !values))
             economy_tracking_range_failure("economy_column_write_values_invalid", descriptor().name, first, size());
         constexpr size_t kBlock = 64;
+        size_t compared_through = 0;
         for (size_t index = 0; index < count;) {
-            if constexpr (std::is_trivially_copyable<T>::value) {
-                if (index + kBlock <= count &&
-                    std::memcmp(_values.data() + first + index, values + index,
+            // Probe each block once even when it contains a sparse change.
+            // The scalar path still journals the same contiguous changed runs.
+            if (index >= compared_through && count - index >= kBlock) {
+                compared_through = index + kBlock;
+                if (std::memcmp(_values.data() + first + index, values + index,
                                 kBlock * sizeof(T)) == 0) {
-                    index += kBlock;
+                    index = compared_through;
                     continue;
                 }
             }

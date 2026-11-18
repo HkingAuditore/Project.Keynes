@@ -217,6 +217,15 @@ func _test_wilderness_bucket_selection() -> void:
 	_expect("wilderness 60-day bucket does not rescan every empty cell",
 		later_seen.has(0) and later_seen.has(60) and not later_seen.has(1)
 		and int(later.get("cell_indices", PackedInt32Array()).size()) == 4)
+	var same_bucket := PackedInt32Array([61, 8])
+	var due: Dictionary = gen.collect_natural_resource_pass_cells(61, same_bucket)
+	_expect("live cells retain input order and occur only once in the due bucket",
+		due.cell_indices == PackedInt32Array([61, 8, 1]))
+	_expect("catchup preserves the elapsed-day cap for every due cell",
+		due.cell_dt_days == PackedInt32Array([60, 60, 60]))
+	gen._commit_natural_resource_pass_days(61, due.cell_indices, due.live_set)
+	_expect("a repeated call for an applied day has no due cells",
+		gen.collect_natural_resource_pass_cells(61, same_bucket).cell_indices.is_empty())
 
 
 # ─── 3. 原生 pass + A/B 对拍 ─────────────────────────────────────

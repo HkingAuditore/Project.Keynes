@@ -215,19 +215,21 @@ func _process(host, _delta: float) -> void:
 	host._web_mark("annual_poll_end")
 	if capacity_pending:
 		host._note_climate_capacity_pending_stall()
-		# Worker may have force-advanced past the day that armed capacity.
-		# Retrying the stale arm republishes an old env into a full FIFO and
-		# keeps the calendar nailed. Advance the pending publish to the
-		# worker's next needed day when the committed watermark moved on.
-		if host._generator != null and host._generator.has_method("get_runtime_thread_report"):
-			var cap_report: Dictionary = host._generator.get_runtime_thread_report()
+		# Receive this frame's committed result before testing whether the
+		# retained input can be published. Receiving it after the retry can
+		# leave the worker idle until the next frame even though its input is ready.
+		host._consume_runtime_commit_if_ready()
+		# Retry the next required packet once its source day has committed.
+		var cap_report: Dictionary = host._runtime_control_state()
+		if not cap_report.is_empty():
 			var worker_committed = int(cap_report.get(
 				"simulation_committed_day", cap_report.get("committed_day", -1)))
 			if worker_committed >= host._climate_capacity_pending_day:
 				host._climate_capacity_pending_day = worker_committed + 1
-		host._on_clock_day_changed(host._climate_capacity_pending_day)
+		if host._environment_prefetch_days_active > 0 or not bool(cap_report.get("authority_ready", false)) \
+				or int(cap_report.get("simulation_committed_day", -1)) >= host._climate_capacity_pending_day - 2:
+			host._on_clock_day_changed(host._climate_capacity_pending_day)
 		if host._climate_capacity_pending_day >= 0:
-			host._consume_runtime_commit_if_ready()
 			host._observe_runtime_worker_fault()
 			host._poll_runtime_health()
 			# ---- Military layers
@@ -311,21 +313,10 @@ func _service_worker_lead_and_prefetch(host) -> void:
 	# 在 worker 卡住时自顾自往前跑（实测能跑到 365 天而模拟停在第 1 天）。
 	host._world_clock.report_worker_lead_days(committed - clock_day)
 	host._world_clock.report_worker_lag_days(clock_day - committed)
-	# ── 发布上界 ─────────────────────────────────────────────────────────
-	# 语义只有一条：**worker 相对日历的领先量必须 < K**。
-	#   base   = max(committed + 1, 0)         worker 下一步要用的日（负数当 0）
-	#   lead   = committed - clock_day         已提交相对日历的领先
-	#   lead >= K ⇒ 本帧不发（等日历追上来）
-	# 这一条同时替代了旧的两条：`committed + 1 + K`（防越界）和 `clock_day + K`
-	# （防自激）。旧写法的问题正是它是**和式**：任何一边读成负值都会把上界压到
-	# 低于 base，于是"worker 需要的下一帧"永远发不出去。
+	# The committed day bounds the next input. Lead is relative to the visible calendar.
 	var base = maxi(committed + 1, 0)
 	var lead = committed - clock_day
-	# 发布窗口深度：`prefetch_days`(K) 只决定"日历锚定几天前"，真正允许的在途深度
-	# 必须显著更大，否则 worker 永远只能领先 K 天 —— 每消费一天都要等主线程下一帧
-	# 再补一帧，等于每算一天绕一个来回。真机实测：worker `execute` 只要 60 ms/天，
-	# 但 `input_wait` 高达 88 ms/天，正是这个来回。
-	# 上限取 K + WORKER_LEAD_MARGIN_DAYS（= 时钟侧 `max_lead`，两边同一个数）。
+	# Extra ring capacity is usable for inputs whose previous state is already available.
 	var lead_cap = prefetch_days + host.WORKER_PUBLISH_DEPTH_DAYS
 	if lead >= lead_cap:
 		host._prefetch_diag_note(&"lead_over")
@@ -339,6 +330,13 @@ func _service_worker_lead_and_prefetch(host) -> void:
 	if cursor > limit:
 		host._prefetch_diag_note(&"cursor_over")
 		return
+	if cursor > 1 and host._runtime_climate_writeback_last_day < cursor - 1:
+		var control: Dictionary = host._runtime_control_state()
+		if bool(control.get("climate_worker_authoritative", false)):
+			host._apply_climate_writeback_if_authoritative(control)
+			if host._runtime_climate_writeback_last_day < cursor - 1:
+				host._prefetch_diag_note(&"await_writeback")
+				return
 	# 每帧最多发一帧。一帧 = 26+10 条 per-cell lane 的打包（万级格数是毫秒级），
 	# 一帧发两帧就会把主线程尖峰翻倍。10 天/秒 @60fps 只需要 0.17 帧/帧，所以
 	# 一帧一帧发完全跟得上；跟不上时 worker 会在 K 天外等下一帧，而 K 的余量
@@ -743,15 +741,8 @@ func _arm_climate_capacity_pending(host, day_idx: int) -> void:
 		host._climate_capacity_stall_next_diag_msec = 0
 	host._climate_capacity_pending_day = day_idx
 	if host._world_clock != null:
-		# P3：领先量限流打开时**不再**抬 `climate_input_capacity_day_barrier`。
-		#
-		# 原因：那个 source 的语义是"这一天不许推进"，而它被抬起的起因是
-		# "worker 还没消费完环境帧"。主线程一停日，就再也不会有人调用 capture，
-		# 于是它变成一个会自我维持的停止条件。改成"本帧不重试、下一帧再试"+
-		# 领先量上限之后，日历不再被 worker 的等待状态绑架。
-		#
-		# `_climate_capacity_pending_day` 仍然记账：`_process` 里那条"重试保留日"
-		# 的路径依赖它，关掉的是**屏障**而不是记账。
+		# The independent publisher keeps running during a calendar hold.
+		# Its lead throttle already owns admission when prefetch is enabled.
 		if host._max_worker_lead_days > 0:
 			return
 		host._world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
@@ -890,8 +881,8 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
 		return
 	var segment_usec = Time.get_ticks_usec()
-	var report = host._generator.get_runtime_thread_report() \
-		if host._generator.has_method("get_runtime_thread_report") else {}
+	var report: Dictionary = host._generator.get_runtime_thread_report() \
+		if host._native_daily_inline_active else host._runtime_control_state()
 	host._sched_day_report_ms = host._sched_elapsed_ms(segment_usec)
 	# native_daily_inline：没有 worker 线程，这一天的 12 域日屏障就在本线程上跑。
 	# 必须放在下面的 capacity wait 之前 —— 内联执行者自己消费环境帧，ring 容量
@@ -950,6 +941,12 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 		host._sched_day_climate_writeback_ms += host._sched_elapsed_ms(segment_usec)
 		if bool(report.get("climate_worker_authoritative", false)):
 			segment_usec = Time.get_ticks_usec()
+			# Input D reads the temperature, moisture and other fields written by D-1.
+			var input_day: int = day_idx - 1
+			if host._environment_prefetch_days_active == 0 and input_day > 1 \
+					and host._runtime_climate_writeback_last_day < input_day - 1:
+				host._arm_climate_capacity_pending(day_idx)
+				return
 			var capacity_result = host.wait_for_climate_consumed(0)
 			host._sched_day_climate_wait_ms += host._sched_elapsed_ms(segment_usec)
 			if not bool(capacity_result.get("ok", false)):
