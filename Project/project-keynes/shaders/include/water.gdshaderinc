@@ -22,6 +22,10 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+// -1 inherits the shader's quality tier. The player can select ocean detail
+// independently from the rest of the map.
+uniform int water_detail_override = -1;
+
 // ─── Water Visual Overhaul：统一水面波浪高度场（Gerstner-Lite） ──────────
 // 3 个固定方向的正弦相位叠加，生成"视觉高度场"用于法线/光照，不做顶点位移。
 // 方向、频率、振幅、相速度全部硬编码，避免每水体 uniform 多传一组；各水体在
@@ -475,7 +479,7 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 	float rip_k = 6.5 * water_ripple_strength;
 	vec2 grad = rp1.xy * rip_k;
 	float height = rp1.z * 0.60 * water_ripple_strength;
-	if (visual_quality >= 1) {
+	if (water_detail_override >= 2 || (water_detail_override < 0 && visual_quality >= 1)) {
 		vec2 adv_small = vec2(bg_dir.x * 0.5 - bg_dir.y * 0.87, bg_dir.x * 0.87 + bg_dir.y * 0.5)
 				* (water_flow_drift_base * 0.47) + flow * (water_flow_drift_current * 0.60);
 		vec3 rp2 = water_hash_ripple_flow(wp, 23.0 * rsc, adv_small, t, 0.06 * rate_s, 133.0, -0.39, 1);
@@ -488,7 +492,7 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 			t, 0.06 * mark_rate, 0.40, 0.14, 0.26 * mlen, fp, 3.0, noise_lf);
 	grad += la.xy * (0.55 * water_mark_strength);
 	height += la.z;
-	if (visual_quality >= 1) {
+	if (water_detail_override >= 2 || (water_detail_override < 0 && visual_quality >= 1)) {
 		vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
 		vec4 lb = water_mark_layer(wp, 37.0 * sc, -0.27, dirb, cover_b,
 				t, 0.10 * mark_rate, 0.50, 0.14, 0.22 * mlen, fp, 11.0, noise_lf);

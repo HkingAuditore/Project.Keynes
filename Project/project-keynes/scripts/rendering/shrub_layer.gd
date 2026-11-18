@@ -104,6 +104,7 @@ var _world: WorldData = null
 var _bounds: Rect2 = Rect2()
 var _hex_size: float = 22.0
 var _visual_quality: int = 1
+var _density_detail := -1
 var _mobile_quality_tier: int = 1
 var _cloud_shadow_direct := false
 var _cloud_shadow_texture: Texture2D
@@ -325,6 +326,9 @@ func set_chunked_multimesh_enabled(enabled: bool, chunk_size_cells: int = 8) -> 
 func set_visual_quality(q: int) -> void:
 	return Material_inputs.set_visual_quality(self, q)
 
+func set_density_detail(detail: int) -> void:
+	return Material_inputs.set_density_detail(self, detail)
+
 func set_camera_zoom(value: float) -> void:
 	return Lifecycle.set_camera_zoom(self, value)
 
@@ -340,13 +344,7 @@ func _family_far_fraction() -> float:
 
 
 func _family_lod_fraction(zoom_value: float) -> float:
-	var base := _family_lod_fraction_base(zoom_value)
-	# [veg-lod-high 2026-10-18] 高画质的远景密度不再掉到个位数：树冠/灌木在总览 zoom 也
-	# 保留 60%，否则拉远后森林只剩几撮、和地形与建筑接不上。贴地/水生 family 走原曲线
-	# （连续地被由 ResourceGroundCover 绘制，不需要实例补密度）。
-	if _active_quality_tier() >= 2 and detail_render_family() in [2, 3, 4]:
-		return clampf(maxf(base, 0.60), 0.0, 1.0)
-	return base
+	return Lifecycle.family_lod_fraction(self, zoom_value)
 
 
 func _family_lod_fraction_base(zoom_value: float) -> float:

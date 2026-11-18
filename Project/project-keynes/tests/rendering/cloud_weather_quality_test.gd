@@ -56,6 +56,22 @@ func run() -> void:
 	weather.set_mobile_quality_tier("MOBILE_QUALITY_LOW")
 	var mobile_mat: ShaderMaterial = weather.get("_overlay_mat")
 	check(mobile_mat.shader.code.begins_with("#define PK_WEATHER_LOW"), "weather mobile LOW caps requested HIGH")
+	var old_tier_sim := DCFeatureFlags._mobile_tier_sim
+	DCFeatureFlags._mobile_tier_sim = 1
+	for q in [0, 1, 2]:
+		weather.set_weather_detail(q)
+		var detail_mat: ShaderMaterial = weather.get("_overlay_mat")
+		check(detail_mat.shader.code.begins_with("#define " + ["PK_WEATHER_LOW", "PK_WEATHER_MID", "PK_WEATHER_HIGH"][q]),
+			"weather override selects its own compile tier q=%d" % q)
+		check(int(weather.get_cell_curtain_diag()["quality"]) == q, "curtain follows weather override q=%d" % q)
+	weather.set_mobile_quality_tier("MOBILE_QUALITY_MID")
+	weather.set_visual_quality(0)
+	check(weather.get("_overlay_mat").shader.code.begins_with("#define PK_WEATHER_HIGH"),
+		"total quality and main map tier changes preserve the explicit weather detail")
+	weather.set_weather_detail(-1)
+	check(weather.get("_overlay_mat").shader.code.begins_with("#define PK_WEATHER_LOW"),
+		"clearing the override restores total weather quality")
+	DCFeatureFlags._mobile_tier_sim = old_tier_sim
 	# Production mobile-disabled route must retain weather wind independently.
 	var renderer := HexRenderer.new()
 	renderer._world = world

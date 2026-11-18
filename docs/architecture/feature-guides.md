@@ -670,3 +670,22 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 - 陆地保留三格底色，细纹取主材质，在两种材质交界处渐淡。植被复用已经选出的树冠轮廓，并让同株云影在顶点间过渡。建筑在顶点读取同栋共用的雨雪、可见状态与夜灯，地形光照仍按像素计算。
 
 比较性能时固定镜头、动画时间、分辨率和各项画质。把水波换周期、天气发布和云雾更新计入帧时间。主要回归入口为 `tests/rendering/render_data_tables_test.gd`、`tests/world/fog_cell_field_test.gd` 和 `tests/world/vegetation_pixel_normal_render_test.gd`。
+
+## 电脑和手机画质设置
+
+- 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
+  `graphics_quality_settings.gd`，单项修改从当前预设复制显示值并切到自定义。
+  `GameSettings` 保存预设及自定义选项到 `user://settings.cfg`，用同一份解析结果
+  应用帧率上限。地图贴图烘焙仍读取原预设，地图清晰度单独决定陆地/水面绘制尺寸。
+- 地图清晰度低于 100% 时，`terrain_render_scale.gd` 只缩放陆地和水面平面，
+  合成图放回地图原绘制位置。相机、选区、地图标记与界面继续使用主画布。切回
+  100% 归还两个平面；水面材质重建后也放入当前绘制目标。渲染验证使用
+  `tests/rendering/terrain_render_scale_test.gd`，检查图层顺序、缩放、平移和调整窗口。
+- 半屏浓雾按地表最终显示在主画布上的位置裁剪。低清晰度地表额外保留线性放大可能采到的一圈像素。地被和建筑底图复用同一组可见区域。水波和迷雾各自的数值纹理跟随使用它的绘制节点，切换清晰度时会在新视口里先于地表或雾层更新。
+- 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
+  关闭云影仍保留天气云的风场输入。切档验证入口为
+  `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
+
+- 雨雪幕按当前天气类型的绘制标记及插值后的强度判断是否完全透明。雾和闪电按
+  各自的阈值跳过；雨雪在低强度时仍可能有可见贡献，保留原形状计算。两个项目的
+  雨雪 Shader 一起更新。高档水面的细碎闪光随屏幕上尺寸平滑淡出，保留较宽的反光。

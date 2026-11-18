@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/graphics_quality_options.gd" id="1_script"]
+
+[node name="GraphicsQualityOptions" type="GridContainer"]
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 8
+columns = 2
+script = ExtResource("1_script")

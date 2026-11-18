@@ -263,6 +263,16 @@ static func set_visual_quality(host, q: int) -> void:
 
 
 
+static func set_density_detail(host, detail: int) -> void:
+	var next_detail := clampi(detail, -1, 2)
+	if host._density_detail == next_detail:
+		return
+	host._density_detail = next_detail
+	host._native_delta_common_knobs = {}
+	if host._map != null:
+		_rebuild_or_defer(host)
+
+
 static func set_mobile_quality_tier(host, q: int) -> void:
 
 	var next_q = clampi(q, 0, 2)

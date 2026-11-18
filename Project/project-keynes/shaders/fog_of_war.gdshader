@@ -777,7 +777,7 @@ void fragment() {
 		//     里分数 axial 会跳 map_w，fwidth 爆掉 ⇒ 带宽被顶到 PK_FIELD_BAND_MAX，
 		//     接缝处一条竖线（契约 §9.1）。
 		//
-		// ⚠ 半分辨率 SubViewport（FogOfWarLayer._half_res，renderer 侧 1/2 尺寸 +
+		// ⚠ 迷雾清晰度为 50% 时（子视口 1/2 尺寸 +
 		//   线性上采样）：这里 fwidth(v_world) 拿到的是**半分辨率像素**的世界跨度，
 		//   所以 AA 带宽天然宽 2 倍。这一条是有意接受的（方案 §3.2 第 4 条），并且
 		//   下面的 fog_hidden_margin 按同一份 fwidth 算 ⇒ 半分辨率下余量也自动翻倍，
