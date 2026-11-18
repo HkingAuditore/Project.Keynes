@@ -236,9 +236,8 @@ vec3 gi_evaluate_bounce(vec2 uv, vec4 nearest_packed, float sky_visibility) {
 // [cylindrical-earth-daylight] 逐像素经纬度日照（晨昏线）驱动昼夜：昼夜系数 / 昼晨昏色
 //   统一由 earth_daylight.eval_earth_daylight() 给出（与水面、植被同一真源），
 //   tod_exposure 保留为全局曝光。昼侧用太阳主光，夜侧用冷蓝月光主光。
-LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
+LightingContext make_lighting_context_from_daylight(float ambient_floor, vec2 uv, EarthDaylight ed) {
 	LightingContext lc;
-	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
 
 	// [tod-latitude-sun 2026-06-25] 主光方向：默认使用逐像素物理太阳方向（近似点光源）。
 	// ed.sun_dir 的水平/垂直分量比 = cos(h)/sin(h)，因此纬度与时角不同 → 阴影方向与长度不同。
@@ -292,6 +291,11 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 		? gi_evaluate_bounce(uv, hs.nearest_packed, hs.sky_visibility)
 		: vec3(0.0);
 	return lc;
+}
+
+LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
+	return make_lighting_context_from_daylight(ambient_floor, uv,
+			eval_earth_daylight(uv, lat_signed, day_night_enabled));
 }
 
 // [terrain-gi] 地形级环境遮蔽：sky visibility 经倾斜法线修正后的最终 ambient 乘子。
