@@ -3,6 +3,29 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 无家族移民派遣命令（2026-11-19）
+
+玩家命令校验原先拒绝无家族移民报价中的合法 `family_handle = 0`，导致派遣未到
+Economy 就显示「开拓命令参数不完整」。现要求显式传入整数句柄并接受 0；其余必填项、
+命令排期、原生报价校验与存档格式不变。
+
+Windows Godot 4.6.2 无界面验证：`colonization_workbench_ui_test.gd` 的移民提交
+断言由失败转为通过，五项缺参检查通过；套件仍有改前已失败的三项「完整显示六条摘要」
+布局断言。`player_controller_contract_test.gd`、`colonization_planner_context_test.gd` 和
+`family_colonization_runtime_test.gd -- --caravan-only` 均通过。未做图形界面手动复验。
+
+## 自动建筑投资的资金预检（2026-11-19）
+
+自动投资的批量资金预检改为按选中家族或无家族人口重演转职资金，随后应用注资、放贷和
+建材结算。资金或转职人口不足的项目在写入前由既有的组合裁剪逻辑移除；保留原生提交断言，
+没有改变命令排期、运行时权威或存档格式。
+
+Windows Godot 4.6.2：原生回归先在旧预检上复现错收资金不足项目；修复后 Debug 和
+Release 均通过。新用例分别验证家族和无家族转职，以及资金刚好够时两笔采购的现金和
+库存守恒。建筑运行时 552 项、家族运行时 157 项、经济 StageOps 对照 40 项均通过。
+本机没有第 3743 天的现场存档；尝试回放第 2330 天的旧副本时未进入运行态
+（`runtime_never_became_ready`），因此未验证原局能跨过第 3744 天。
+
 ## 地形 S7 复核：同口径对比 · 收益消融 · 判据修正（2026-11-18）
 
 方案：[terrain-same-caliber-review-plan.md](../plans/terrain-same-caliber-review-plan.md)；勾选与完整实测表见

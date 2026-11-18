@@ -233,7 +233,8 @@ static func _validate_command_args(
 			if not found:
 				return _result(false, "invalid_regime", "体制标识无效。")
 		COMMAND_FAMILY_COLONIZATION_START:
-			if int(args.get("family_handle", 0)) == 0 or \
+			# Zero explicitly selects a caravan; an omitted handle is not a caravan.
+			if not args.get("family_handle", null) is int or \
 					int(args.get("source_cell", -1)) < 0 or \
 					int(args.get("target_cell", -1)) < 0 or \
 					int(args.get("population", 0)) < 1 or \
