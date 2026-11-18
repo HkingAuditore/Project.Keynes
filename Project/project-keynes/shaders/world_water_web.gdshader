@@ -721,54 +721,6 @@ void fragment() {
 	vec4 fe1 = vec4(0.0);
 	vec4 fe2 = vec4(0.0);
 	pk_cell_field_classes(field, fe0, fe1, fe2);
-	ivec2 field_dom_c = pk_cell_field_dom_offset(field);
-	// padding 行（南北边界之外）没有真实格：把它们的权重清零后，在真实格之间重新归一
-	// —— 与 world_map.gdshader 的 `field_w_valid / field_valid` 逐式相同。
-	float field_inb0 = web_field_row_in_bounds(field.c0);
-	float field_inb1 = web_field_row_in_bounds(field.c1);
-	float field_inb2 = web_field_row_in_bounds(field.c2);
-	vec3 field_w_valid = field.w_raw * vec3(field_inb0, field_inb1, field_inb2);
-	float field_valid = field_w_valid.x + field_w_valid.y + field_w_valid.z;
-	float dyn_valid = step(0.5, field_valid);
-	vec3 field_w = (field_valid > 1e-5)
-			? field_w_valid / field_valid : field.w_raw;
-	// 类别三元组取**主导格**的 layer0（与今天 enum_lut[主 cell] 同语义；padding 行由
-	// pk_cell_table_fetch 的哨兵给出 B_SEA_ICE / 0 / 0，与今天 cid < 0 的三个赋值一致）。
-	vec4 field_cls_dom = pk_field_class_of(field, fe0, fe1, fe2);
-	biome = pk_byte_of(field_cls_dom.r);
-	cover = pk_byte_of(field_cls_dom.b);
-	// ── state / aux 三格按 w_raw 插值（**连续量**用 w_raw，契约 §3.3）──────────────
-	// 旧路径这两个量是"逐格常量"（dyn_lut.A / water_depth.R 都按主 cell NEAREST 取），
-	// 所以在格界上是硬台阶；三格插值把它们变成跨格连续的场 —— 海冰边缘、湖泊碗形都不
-	// 再沿格界跳一级。padding 格的哨兵已被上面的 field_w 归零，不会混进来。
-	// 与 world_map 的 pk_field_blend_state / compute_offshore_depth 三格分支同一公式。
-	vec4 field_st0 = pk_cell_state_at(field.c0);
-	vec4 field_st1 = pk_cell_state_at(field.c1);
-	vec4 field_st2 = pk_cell_state_at(field.c2);
-	vec4 field_ax0 = pk_cell_aux_at(field.c0);
-	vec4 field_ax1 = pk_cell_aux_at(field.c1);
-	vec4 field_ax2 = pk_cell_aux_at(field.c2);
-	vec4 field_state = field_st0 * field_w.x + field_st1 * field_w.y + field_st2 * field_w.z;
-	vec4 field_aux = field_ax0 * field_w.x + field_ax1 * field_w.y + field_ax2 * field_w.z;
-	// fog_k 是**类别量** ⇒ 只读主导格、不插值（契约 D3：三格未探索 ≡ 主导格未探索）；
-	// padding 主导格视作全知（取 1.0，与今天 cid < 0 时 fog_k = 1.0 一致）。
-	float field_fog_dom = (field.dom == 0) ? field_ax0.r
-			: ((field.dom == 1) ? field_ax1.r : field_ax2.r);
-	fog_k = mix(1.0, field_fog_dom, web_field_row_in_bounds(field_dom_c));
-	// 海冰比例 = layer1.A（连续量）。padding 像素 dyn_valid=0 ⇒ 取 1.0（整片海冰），
-	// 与今天 cid < 0 时 dyn_ice_frac = 1.0 逐值一致。
-	dyn_ice_frac = mix(1.0, field_state.a, dyn_valid);
-	// 次生水格 = 权重**第二**的那一格（桌面水面 P3 用的同一个 pk_cell_field_rank）。
-	vec4 field_rank1_cls = pk_cell_field_ranked_class(field, 1, fe0, fe1, fe2);
-	int field_rank1_biome = pk_byte_of(field_rank1_cls.r);
-	bool field_second_water = terrain_static_biome_is_water(field_rank1_biome);
-	secondary_biome = field_second_water ? field_rank1_biome : biome;
-	secondary_cover = field_second_water ? pk_byte_of(field_rank1_cls.b) : cover;
-	// 混合权重取 rank-1 的 **w_raw**（连续量，§3.3）—— 与桌面 water_pipeline 的
-	// pk_cell_field_ranked_weight_raw(f, 1) 同一表达式。
-	static_edge_mix = field_second_water
-			? pk_cell_field_ranked_weight_raw(field, 1) : 0.0;
-
 	// ── 水陆判定：与陆地 program **同一个函数、同一份数据**（方案 §3.7 第 1 条）──
 	// 海岸线因此就是「dom 在水 / 陆之间切换」的那条弯曲等值线，两片 program 不可能各说各话。
 	bool is_water = pk_cell_field_is_water_dom(field, fe0, fe1, fe2);
@@ -796,6 +748,20 @@ void fragment() {
 	if (!is_water) {
 		discard;
 	}
+	ivec2 field_dom_c = pk_cell_field_dom_offset(field);
+	// 类别三元组取**主导格**的 layer0（与今天 enum_lut[主 cell] 同语义；padding 行由
+	// pk_cell_table_fetch 的哨兵给出 B_SEA_ICE / 0 / 0，与今天 cid < 0 的三个赋值一致）。
+	vec4 field_cls_dom = pk_field_class_of(field, fe0, fe1, fe2);
+	biome = pk_byte_of(field_cls_dom.r);
+	cover = pk_byte_of(field_cls_dom.b);
+	vec4 field_ax0 = pk_cell_aux_at(field.c0);
+	vec4 field_ax1 = pk_cell_aux_at(field.c1);
+	vec4 field_ax2 = pk_cell_aux_at(field.c2);
+	// fog_k 是**类别量** ⇒ 只读主导格、不插值（契约 D3：三格未探索 ≡ 主导格未探索）；
+	// padding 主导格视作全知（取 1.0，与今天 cid < 0 时 fog_k = 1.0 一致）。
+	float field_fog_dom = (field.dom == 0) ? field_ax0.r
+			: ((field.dom == 1) ? field_ax1.r : field_ax2.r);
+	fog_k = mix(1.0, field_fog_dom, web_field_row_in_bounds(field_dom_c));
 #else
 	// ── SETUP（legacy 路径）：坐标 + cell 索引（与 world_map:184-241 同源，采样顺序
 	// 刻意不同：先把"是不是水"判掉再取 height/dyn，非水像素只花 2 次 fetch 就 discard）
@@ -808,7 +774,6 @@ void fragment() {
 		biome = int(elut.r * 255.0 + 0.5);
 		cover = int(elut.b * 255.0 + 0.5);
 		fog_k = elut.a;
-		dyn_ice_frac = texture(dyn_lut, cell_lut_uv(cell_id)).a;
 		secondary_biome = biome;
 		secondary_cover = cover;
 	} else {
@@ -816,7 +781,6 @@ void fragment() {
 		biome = B_SEA_ICE;
 		cover = 0;
 		fog_k = 1.0;
-		dyn_ice_frac = 1.0;
 		secondary_biome = B_SEA_ICE;
 		secondary_cover = 0;
 	}
@@ -847,6 +811,45 @@ void fragment() {
 	if (fog_hidden) {
 		COLOR = vec4(fog_unexplored_color, 1.0);
 	} else {
+#ifdef PK_WATER_FIELD_MATCHES_LAND
+		// padding 行（南北边界之外）没有真实格：把它们的权重清零后，在真实格之间重新归一
+		// —— 与 world_map.gdshader 的 `field_w_valid / field_valid` 逐式相同。
+		float field_inb0 = web_field_row_in_bounds(field.c0);
+		float field_inb1 = web_field_row_in_bounds(field.c1);
+		float field_inb2 = web_field_row_in_bounds(field.c2);
+		vec3 field_w_valid = field.w_raw * vec3(field_inb0, field_inb1, field_inb2);
+		float field_valid = field_w_valid.x + field_w_valid.y + field_w_valid.z;
+		float dyn_valid = step(0.5, field_valid);
+		vec3 field_w = (field_valid > 1e-5)
+				? field_w_valid / field_valid : field.w_raw;
+		// ── state / aux 三格按 w_raw 插值（**连续量**用 w_raw，契约 §3.3）──────────────
+		// 旧路径这两个量是"逐格常量"（dyn_lut.A / water_depth.R 都按主 cell NEAREST 取），
+		// 所以在格界上是硬台阶；三格插值把它们变成跨格连续的场 —— 海冰边缘、湖泊碗形都不
+		// 再沿格界跳一级。padding 格的哨兵已被上面的 field_w 归零，不会混进来。
+		// 与 world_map 的 pk_field_blend_state / compute_offshore_depth 三格分支同一公式。
+		vec4 field_st0 = pk_cell_state_at(field.c0);
+		vec4 field_st1 = pk_cell_state_at(field.c1);
+		vec4 field_st2 = pk_cell_state_at(field.c2);
+		vec4 field_state = field_st0 * field_w.x + field_st1 * field_w.y + field_st2 * field_w.z;
+		vec4 field_aux = field_ax0 * field_w.x + field_ax1 * field_w.y + field_ax2 * field_w.z;
+		// 海冰比例 = layer1.A（连续量）。padding 像素 dyn_valid=0 ⇒ 取 1.0（整片海冰），
+		// 与今天 cid < 0 时 dyn_ice_frac = 1.0 逐值一致。
+		dyn_ice_frac = mix(1.0, field_state.a, dyn_valid);
+		// 次生水格 = 权重**第二**的那一格（桌面水面 P3 用的同一个 pk_cell_field_rank）。
+		vec4 field_rank1_cls = pk_cell_field_ranked_class(field, 1, fe0, fe1, fe2);
+		int field_rank1_biome = pk_byte_of(field_rank1_cls.r);
+		bool field_second_water = terrain_static_biome_is_water(field_rank1_biome);
+		secondary_biome = field_second_water ? field_rank1_biome : biome;
+		secondary_cover = field_second_water ? pk_byte_of(field_rank1_cls.b) : cover;
+		// 混合权重取 rank-1 的 **w_raw**（连续量，§3.3）—— 与桌面 water_pipeline 的
+		// pk_cell_field_ranked_weight_raw(f, 1) 同一表达式。
+		static_edge_mix = field_second_water
+				? pk_cell_field_ranked_weight_raw(field, 1) : 0.0;
+
+#else
+		dyn_ice_frac = (cell_id >= 0) ? texture(dyn_lut, cell_lut_uv(cell_id)).a : 1.0;
+#endif
+
 		// 水深 → 归一高程（height.RG = 16-bit，解码同 world_map:208-209）。
 		vec4 height_px = visual_sample_height(uv);
 		float elev = (height_px.r * 256.0 + height_px.g) / 257.0;

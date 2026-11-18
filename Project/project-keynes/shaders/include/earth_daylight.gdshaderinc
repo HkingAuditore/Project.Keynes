@@ -177,12 +177,11 @@ struct EarthDaylight {
 	vec3 moon_col;
 };
 
-// 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 当地正午基线 + 宽幅视觉日内永昼。
+// 给定太阳方向，返回昼夜/晨昏统一光照量。
 // 各管线（PBR 地形 / 平面植被 / 水面）据此自行组装最终着色（线性 or sRGB、是否 tonemap）。
 // 注：参数名刻意避开 uniform day_night_enabled，否则在已声明该 uniform 的 shader 里会重定义。
-EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_night) {
-	vec3 sdir = enable_day_night ? compute_sun_dir_enu(uv, lat_signed) : compute_eternal_visual_sun_dir(lat_signed);
-	float sinh = sdir.z;  // = sin(太阳高度角)，与 compute_solar_elevation 等价（同源公式）
+EarthDaylight eval_earth_daylight_from_sun(vec3 sdir, bool enable_day_night) {
+	float sinh = sdir.z;
 	EarthDaylight ed;
 	ed.sun_dir = sdir;
 	ed.local_day = enable_day_night ? solar_day_factor(sinh) : 1.0;
@@ -200,6 +199,11 @@ EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_nig
 	ed.moon_dir = -sdir;
 	ed.moon_col = EARTH_MOONLIGHT;
 	return ed;
+}
+
+EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_night) {
+	vec3 sdir = enable_day_night ? compute_sun_dir_enu(uv, lat_signed) : compute_eternal_visual_sun_dir(lat_signed);
+	return eval_earth_daylight_from_sun(sdir, enable_day_night);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

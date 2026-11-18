@@ -1091,11 +1091,6 @@ void fragment() {
 	vec2 wp = wx_wrap_world_pos(v_world);
 	vec2 uv = wx_wrap_uv((v_world - world_origin) / world_size);
 
-	// [cylindrical-earth-daylight] 逐像素晨昏线唯一真源：纬度近似 uv.y*2-1（与地形 lat_signed 同定义/同向）。
-	// 同一时刻东西经度晨昏不同 → 云的明暗随晨昏线扫过，与地面/水面/植被完全一致（不再全图统一明暗）。
-	float lat_signed = clamp(uv.y * 2.0 - 1.0, -1.0, 1.0);
-	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
-
 	// [cell-field-overlays 2026-11-18 / O2] 场函数路径的入参是**未回绕**世界坐标（方案 §3.2
 	// 第 1 条，函数内部自己 wrap）；旧路径保持传已回绕的 wp，一字未改。
 #ifdef PK_CELL_FIELD
@@ -1177,13 +1172,6 @@ void fragment() {
 #ifndef PK_WEATHER_LOW
 	cirrus = (q_weather >= 1) ? sample_high_cloud(wp, cirrus_axis, cirrus_intensity) : 0.0;
 #endif
-	CloudLayerSample cirrus_layer = make_cloud_layer(
-		remap_cloud_density(cirrus, cirrus_intensity, 0.16),
-		smoothstep(0.05, 0.42, cirrus) * (1.0 - smoothstep(0.58, 0.96, cirrus)),
-		cirrus_intensity,
-		0.92
-	);
-
 	// 中云（主云）强度：使用已按天气层级增强后的 w.cloud。
 	float cumulus_intensity = (w.cloud > 0.02) ? w.cloud : 0.0;
 	CloudLayerSample cumulus_layer = sample_cumulus_layer(wp, cumulus_axis, cumulus_intensity);
@@ -1196,54 +1184,63 @@ void fragment() {
 	low_fog = (fog_intensity > 0.001) ? sample_low_fog(wp, w.axis, fog_intensity, local_fog_w) : 0.0;
 #endif
 
-	CloudLayerSample fog_layer = make_cloud_layer(
-		remap_cloud_density(low_fog, max(fog_intensity, local_fog_w), 0.24),
-		smoothstep(0.04, 0.42, low_fog) * (1.0 - smoothstep(0.54, 0.96, low_fog)),
-		max(fog_intensity, local_fog_w),
-		0.18
-	);
-
-	// [tod-point-light 2026-06-25] 云响应逐像素点光源 TOD 光照：用 earth_daylight 的 ed.sun_dir
-	// （含纬度/时角的"类点光源太阳方向"，与地形/水面/植被同源）取代旧全局 tod_sun_dir。
-	// 水平分量 sun_axis = 太阳方位；其长度 sun_horiz = cos(太阳高度角) → 太阳越低方向感越强。
-	vec2 sun_h = ed.sun_dir.xy;
-	float sun_horiz = clamp(length(sun_h), 0.0, 1.0);
-	vec2 sun_axis = (sun_horiz > 1e-4) ? sun_h / sun_horiz : normalize(vec2(0.62, -0.38));
-	float sun_up = max(ed.sun_dir.z, 0.0); // = sin(太阳高度角)
-
-	// 主云 TOD 体积近似：
-	// q2: 4-tap 密度差分算法线 + 假厚度；q1: 单向太阳采样；q0: density/edge 近似。
-	float cumulus_light_grad = 0.0;
-	float cumulus_thickness = cumulus_layer.density;
-	// 低/中/移动/Web 只用已有密度和边缘；高档导数光照也不重复调用云噪声。
-	cumulus_thickness = clamp(cumulus_layer.density * (0.80 + 0.20 * cumulus_intensity), 0.0, 1.0);
-	cumulus_light_grad = clamp(cumulus_layer.edge * 0.45 + cumulus_layer.density * 0.18 - 0.30, -1.0, 1.0);
 #ifndef PK_WEATHER_CHEAP_NOISE
+	// 透明像素也参与相邻云边像素的导数计算。只在全画面一致的画质分支中取导数。
+	vec2 grad_xy = vec2(0.0);
 	if (q_weather >= 2) {
 		vec2 world_pixel = vec2(length(dFdx(wp)), length(dFdy(wp)));
-		vec2 grad_xy = vec2(dFdx(cumulus), dFdy(cumulus))
+		grad_xy = vec2(dFdx(cumulus), dFdy(cumulus))
 			/ max(world_pixel, vec2(0.001)) * hex_world_diameter * 0.34;
-		vec3 fake_normal = normalize(vec3(-grad_xy * 2.9, 0.92));
-		vec3 fake_sun = normalize(vec3(sun_axis * max(sun_horiz, 0.001), max(sun_up, 0.10)));
-		cumulus_light_grad = clamp((dot(fake_normal, fake_sun) - 0.52) * 2.25
-			+ dot(grad_xy, sun_axis) * 0.82 - cumulus_thickness * 0.18, -1.0, 1.0)
-			* (0.42 + 0.58 * sun_horiz);
 	}
-#endif
-
-#ifdef PK_WEB_WEATHER_MIN
-	// web-min：层间遮挡纯 ALU（fog/cumulus 密度已在手），按桌面 q2 语义保留，不额外取样。
-	float layer_occlusion = clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0);
-#else
-	float layer_occlusion = (q_weather >= 2)
-		? clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0)
-		: 0.0;
 #endif
 
 	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001);
 	if (!has_layer) {
 		COLOR = vec4(0.0);
 	} else {
+		// 只给可见天气计算经纬度光照，保留与地表相同的晨昏线和太阳方向。
+		float lat_signed = clamp(uv.y * 2.0 - 1.0, -1.0, 1.0);
+		EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
+
+		CloudLayerSample cirrus_layer = make_cloud_layer(
+			remap_cloud_density(cirrus, cirrus_intensity, 0.16),
+			smoothstep(0.05, 0.42, cirrus) * (1.0 - smoothstep(0.58, 0.96, cirrus)),
+			cirrus_intensity,
+			0.92
+		);
+		CloudLayerSample fog_layer = make_cloud_layer(
+			remap_cloud_density(low_fog, max(fog_intensity, local_fog_w), 0.24),
+			smoothstep(0.04, 0.42, low_fog) * (1.0 - smoothstep(0.54, 0.96, low_fog)),
+			max(fog_intensity, local_fog_w),
+			0.18
+		);
+
+		// 低/中/移动/Web 只用已有密度和边缘；高档复用分支外的导数来计算层内光照。
+		float cumulus_thickness = clamp(cumulus_layer.density * (0.80 + 0.20 * cumulus_intensity), 0.0, 1.0);
+		float cumulus_light_grad = clamp(cumulus_layer.edge * 0.45 + cumulus_layer.density * 0.18 - 0.30, -1.0, 1.0);
+#ifndef PK_WEATHER_CHEAP_NOISE
+		if (q_weather >= 2) {
+			vec2 sun_h = ed.sun_dir.xy;
+			float sun_horiz = clamp(length(sun_h), 0.0, 1.0);
+			vec2 sun_axis = (sun_horiz > 1e-4) ? sun_h / sun_horiz : normalize(vec2(0.62, -0.38));
+			float sun_up = max(ed.sun_dir.z, 0.0);
+			vec3 fake_normal = normalize(vec3(-grad_xy * 2.9, 0.92));
+			vec3 fake_sun = normalize(vec3(sun_axis * max(sun_horiz, 0.001), max(sun_up, 0.10)));
+			cumulus_light_grad = clamp((dot(fake_normal, fake_sun) - 0.52) * 2.25
+				+ dot(grad_xy, sun_axis) * 0.82 - cumulus_thickness * 0.18, -1.0, 1.0)
+				* (0.42 + 0.58 * sun_horiz);
+		}
+#endif
+
+#ifdef PK_WEB_WEATHER_MIN
+		// web-min：层间遮挡纯 ALU（fog/cumulus 密度已在手），按桌面 q2 语义保留，不额外取样。
+		float layer_occlusion = clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0);
+#else
+		float layer_occlusion = (q_weather >= 2)
+			? clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0)
+			: 0.0;
+#endif
+
 		// 局部云核/羽边（密度驱动）：先算，供压暗与亮度调制复用（cloud_core 后续阴影也用）。
 		float cloud_core = smoothstep(0.38, 0.92, cumulus_layer.density);
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);

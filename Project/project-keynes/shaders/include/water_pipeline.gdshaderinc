@@ -1318,19 +1318,18 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 //   USE_PBR_BRDF=0 时被使用。water 不再自己写 Blinn-Phong/Fresnel/spec 系数。
 // ─────────────────────────────────────────────────────────────────────
 vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, float edge_mix, vec2 wp, int quality, vec2 uv, float lat_signed, float w_ice) {
-	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
+	// The scalar path has independent debug-elevation scaling.
 	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
-	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随太阳方向；
-	// 昼夜关闭时使用当地正午基线 + 视觉日内方向，避免关闭 TOD 后水面方向光一起消失。
-	vec3 sun_dir_px = day_night_enabled
-			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
-			: compute_eternal_visual_sun_dir(lat_signed);
-	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
+	vec3 physical_sun = day_night_enabled ? compute_sun_dir_enu(uv, lat_signed) : compute_eternal_visual_sun_dir(lat_signed);
+	vec3 sun_dir_px = (day_night_enabled && !tod_latitude_sun_enabled)
+			? normalize(tod_sun_dir) : physical_sun;
+	LightingContext lc = make_lighting_context_from_daylight(AMBIENT_FLOOR_WATER, uv,
+			eval_earth_daylight_from_sun(physical_sun, day_night_enabled));
 	// 开阔海面底色和环境光更暗，不能直接复用陆地同幅云影；否则云区会
 	// 同时被直射、天光和水面 shadow floor 压暗，读成脏黑块。
-	float cloud_direct_visibility = cloud_shadow_water_direct_visibility(uv, lc.local_day);
-	lc.direct_shadow *= cloud_direct_visibility;
-	lc.cloud_ambient = cloud_shadow_water_ambient_visibility(uv, lc.local_day);
+	vec2 cloud_visibility = cloud_shadow_water_visibility(uv, lc.local_day);
+	lc.direct_shadow *= cloud_visibility.x;
+	lc.cloud_ambient = cloud_visibility.y;
 	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
 	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
 	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。
@@ -1348,7 +1347,7 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 	// [terrain-horizon 2026-07-03] 水面阴影先压 BRDF 结果，再叠加 fresnel/caustics/sparkle，
 	// 让高光与波浪可以覆盖在阴影之上；强度比陆地轻，避免水面变脏。
 	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
-	float cloud_cast_shadow = clamp((1.0 - cloud_direct_visibility) * lc.local_day, 0.0, 1.0);
+	float cloud_cast_shadow = clamp((1.0 - cloud_visibility.x) * lc.local_day, 0.0, 1.0);
 	cast_shadow = clamp(cast_shadow - cloud_cast_shadow, 0.0, 1.0);
 	if (cast_shadow > 0.001) {
 		float water_floor = mix(1.0, terrain_horizon_cast_floor, 0.38);
