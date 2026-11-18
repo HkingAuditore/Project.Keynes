@@ -1,5 +1,7 @@
 extends RefCounted
 
+const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
+
 const _SHADOW_BUFFER_STRIDE := 16  # 2D transform(8) + color(4) + custom(4)
 
 ## Stateless collaborator for ShrubLayer.
@@ -170,7 +172,8 @@ static func _mirror_shadow_chunk(host, chunk_id: int, buffer: PackedFloat32Array
 	var smm = snode.multimesh
 	smm.instance_count = inst
 	if inst > 0:
-		smm.buffer = buffer
+		FogDrawBounds.upload(smm, buffer, FogDrawBounds.Kind.VEGETATION_SHADOW,
+			host._chunk_nodes[chunk_id].multimesh)
 		var far_count = int(host._chunk_far_instance_counts.get(chunk_id, inst))
 		smm.visible_instance_count = host._lod_visible_count(inst, far_count)
 	else:

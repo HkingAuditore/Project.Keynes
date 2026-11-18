@@ -109,6 +109,13 @@ Climate ACTIVE 慢层刷新日期归 `scripts/simulation/systems/season_refresh_
 `rendering/resource_visual_chunk_inputs.gd`。像素对象表与数值列的发布归 `WorldData`，三处
 terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模拟状态，也不增加存档字段。
 
+陆水覆盖形状由 `rendering/terrain_coverage_mesh.gd` 构建。整屏及局部浓雾裁剪由
+`rendering/renderer_fog_culling.gd` 在绘制前判断，读取随迷雾贴图发布的
+`WorldData` 遮挡索引，`rendering/terrain_fog_mesh.gd` 合并保留区域并更新绘制命令。
+细节层同帧裁剪归 `rendering/fog_detail_culling.gd`，实例批次的绘制边界由现有上传入口
+经 `rendering/fog_draw_bounds.gd` 记录。验证入口为 `tests/rendering/terrain_draw_coverage_test.gd`
+和 `tests/rendering/detail_fog_culling_test.gd`。
+
 天气风场纹理由 `Project/project-keynes/scripts/rendering/weather_wind_source.gd` 按天气发布更新，
 由 `cloud_shadow_field.gd` 持有并将同一份纹理提供给云影和天气云；关闭云影只停止绘制。
 云影向地表、水面和细节层的材质绑定归 `renderer_lighting_bindings.gd`；水面入口只转发，

@@ -684,7 +684,8 @@ static func _apply_world_quad_geometry(host) -> void:
 			land_mesh = result.get("land_mesh", null) as Mesh
 			water_mesh = result.get("water_mesh", null) as Mesh
 			host._coverage_mesh_result = {"ok": true, "reason": "",
-				"stats": (result.get("stats", {}) as Dictionary).duplicate()}
+				"stats": (result.get("stats", {}) as Dictionary).duplicate(),
+				"land_vertices": result["land_vertices"], "water_vertices": result["water_vertices"]}
 			host._coverage_mesh_stats = result.get("stats", {})
 		else:
 			host._coverage_mesh_result = {"ok": false,

@@ -835,6 +835,9 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 		if need_state:
 			tex.update_layer(state_image, CellTableCodecScript.LAYER_STATE)
 			updated_layers.append("state")
+	if need_static:
+		world.cell_table_fog_coverage_source = aux_image
+		world.cell_table_fog_coverage = null
 	world.cell_table_dims = dims
 	world.cell_table_bound = true
 	# [cell-field-web 2026-11-18] 实际**可读**的层数：index 空间装不下时只承诺 3 层

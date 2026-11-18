@@ -28,6 +28,8 @@ TESTS = (
     "tests/building/building_visual_catalog_test.gd",
     "tests/world/vegetation_family_layer_test.gd",
     "tests/rendering/veg_variant_parity_probe.gd",
+    "tests/rendering/terrain_draw_coverage_test.gd",
+    "tests/rendering/detail_fog_culling_test.gd",
     "tests/ui/visual_tile_native_bake_test.gd",
     "tests/world/web_water_pass_node_test.gd",
     "tests/family/family_workspace_ui_test.gd",
