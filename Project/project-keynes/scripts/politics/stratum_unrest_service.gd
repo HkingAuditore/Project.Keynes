@@ -28,6 +28,8 @@ var _world_seed := 1
 var _last_fact_id := -1
 var _last_day := -1
 var _sequence := 1
+var _needs_player_recovery := true
+var _pending_stage_checks: Array[Dictionary] = []
 ## Deferred AI facts: applying the sparse row from the main thread while the
 ## economy worker may be settling is unsafe, so AI resolutions run only when the
 ## clock is paused (the normal case when a narrative popup is open).
@@ -66,9 +68,15 @@ func step_daily(day: int) -> void:
 	if day <= _last_day:
 		return
 	_last_day = day
-	_poll_facts(day)
+	var player_stages := {}
+	_poll_facts(player_stages)
+	if _needs_player_recovery:
+		_recover_player_unrest(day, player_stages)
+	_process_stage_checks(player_stages)
 	_process_pending_ai(day)
 	_process_independence(day)
+	for key: Vector2i in player_stages:
+		_offer_player(key.x, key.y, int(player_stages[key]), _player_handle, day)
 
 
 func on_offer_resolved(record: Dictionary) -> void:
@@ -92,10 +100,17 @@ func on_offer_resolved(record: Dictionary) -> void:
 	if action in [RebellionContentScript.ACTION_CONCEDE,
 			RebellionContentScript.ACTION_BRIBE]:
 		_pay_concession(cell, cost_bp, int(record.get("day", _last_day)))
-	_economy.apply_mobilization_result(cell, profession, action, success)
+	if not _economy.apply_mobilization_result(cell, profession, action, success):
+		return
 	if action == RebellionContentScript.ACTION_ABANDON or \
 			(stage >= 4 and not success):
 		_queue_independence(cell, owner_handle)
+	elif not success:
+		# A decision between epochs can change the row before the next epoch
+		# starts, when its staging facts are cleared. Recheck the committed row.
+		_pending_stage_checks.append({
+			"cell": cell, "profession": profession, "stage": stage, "owner_handle": owner_handle,
+		})
 
 
 func export_state() -> Dictionary:
@@ -107,32 +122,43 @@ func export_state() -> Dictionary:
 		"sequence": _sequence,
 		"pending_ai": _pending_ai.duplicate(true),
 		"pending_independence": _pending_independence.duplicate(true),
+		"pending_stage_checks": _pending_stage_checks.duplicate(true),
+		"needs_player_recovery": _needs_player_recovery,
 	}
 
 
 func restore_state(state: Dictionary) -> Dictionary:
 	if String(state.get("schema", "")) != "PKStratumUnrest":
+		_last_fact_id = -1
+		_last_day = -1
+		_sequence = 1
+		_needs_player_recovery = true
+		_pending_ai.clear()
+		_pending_independence.clear()
+		_pending_stage_checks.clear()
 		return {"ok": true}
 	if int(state.get("version", 0)) != SCHEMA_VERSION:
 		return {"ok": false, "reason": "stratum_unrest_schema_incompatible"}
 	_last_fact_id = int(state.get("last_fact_id", -1))
 	_last_day = int(state.get("last_day", -1))
 	_sequence = maxi(1, int(state.get("sequence", 1)))
-	_pending_ai = (state.get("pending_ai", []) as Array).duplicate(true)
-	_pending_independence = (
-		state.get("pending_independence", []) as Array).duplicate(true)
+	_pending_ai.assign(state.get("pending_ai", []).duplicate(true))
+	_pending_independence.assign(state.get("pending_independence", []).duplicate(true))
+	_pending_stage_checks.assign(state.get("pending_stage_checks", []).duplicate(true))
+	_needs_player_recovery = bool(state.get("needs_player_recovery", true))
 	return {"ok": true}
 
 
 # ─── facts ────────────────────────────────────────────────────────────────
 
-func _poll_facts(day: int) -> void:
+func _poll_facts(player_stages: Dictionary) -> void:
 	if _generator == null or not _generator.has_method("get_gameplay_event_bus"):
 		return
 	var bus = _generator.get_gameplay_event_bus()
 	if bus == null or not bus.is_available():
 		return
-	var batch: Dictionary = bus.poll_events(CONSUMER_ID, 32, 0, true, _last_fact_id)
+	var batch: Dictionary = bus.poll_events(CONSUMER_ID, 0,
+		GameplayEventBusScript.EVENT_STRATUM_MOBILIZATION, false, _last_fact_id)
 	var count := int(batch.get("count", 0))
 	if count <= 0:
 		return
@@ -155,28 +181,102 @@ func _poll_facts(day: int) -> void:
 		var profession := int(p2[i]) if i < p2.size() else -1
 		var country_slot := int(p3[i]) if i < p3.size() else -1
 		var flag_bits := int(flags[i]) if i < flags.size() else 0
-		if cell < 0 or profession < 0 or stage <= 0:
+		if cell < 0 or profession < 0:
 			continue
 		var summary: Dictionary = _country.cell_summary(cell) if _country != null else {}
 		var owner_handle := int(summary.get("country_handle", 0))
-		if owner_handle == 0:
+		if owner_handle == 0 or int(summary.get("country_slot", -1)) != country_slot:
 			continue
 		if (flag_bits & FLAG_INDEPENDENCE) != 0:
-			_queue_independence(cell, owner_handle)
+			if not _needs_player_recovery or (_row_flags(cell, profession) & FLAG_INDEPENDENCE) != 0:
+				_queue_independence(cell, owner_handle)
 			continue
-		if owner_handle == _player_handle:
+		if owner_handle == _player_handle and not _needs_player_recovery:
 			if (flag_bits & FLAG_CAPITAL) == 0 and stage > previous:
-				_offer_player(cell, profession, stage, owner_handle, day)
+				player_stages[Vector2i(cell, profession)] = stage
 		# AI facts need no service action: native auto-resolves the stage and the
 		# independence bit was already queued by the branch above.
 
 
 # ─── player chain ─────────────────────────────────────────────────────────
 
+func _row_flags(cell: int, profession: int) -> int:
+	if _economy == null or not _economy.is_configured():
+		return 0
+	var snapshot: Dictionary = _economy.cell_mobilization_snapshot(cell)
+	for row in snapshot.get("rows", []):
+		if int(row.get("profession", -1)) == profession:
+			return int(row.get("flags", 0))
+	return 0
+
+
+func _recover_player_unrest(day: int, player_stages: Dictionary) -> void:
+	if _country == null or _economy == null or not _economy.is_configured() \
+			or _player_handle <= 0:
+		return
+	var country: Dictionary = _country.snapshot(_player_handle)
+	if not bool(country.get("ok", false)):
+		return
+	var complete := true
+	var capital := int(country.get("capital_cell", -1))
+	for cell in country.get("territory_cells", PackedInt32Array()):
+		if cell == capital:
+			continue
+		var snapshot: Dictionary = _economy.cell_mobilization_snapshot(cell)
+		if not bool(snapshot.get("ok", false)):
+			complete = false
+			continue
+		for row in snapshot.get("rows", []):
+			var profession := int(row.get("profession", -1))
+			var stage := int(row.get("stage", 0))
+			if (int(row.get("flags", 0)) & FLAG_INDEPENDENCE) != 0:
+				_queue_independence(cell, _player_handle)
+			elif stage > 0 and profession >= 0 and int(row.get("cooldown_until_day", -1)) <= day:
+				player_stages[Vector2i(cell, profession)] = stage
+	_needs_player_recovery = not complete
+
+
+func _process_stage_checks(player_stages: Dictionary) -> void:
+	if _pending_stage_checks.is_empty() or _country == null or _economy == null:
+		return
+	var checks := _pending_stage_checks
+	_pending_stage_checks = []
+	for check in checks:
+		var cell := int(check["cell"])
+		var owner := int(check["owner_handle"])
+		var summary: Dictionary = _country.cell_summary(cell)
+		if owner != _player_handle or owner != int(summary.get("country_handle", 0)):
+			continue
+		var snapshot: Dictionary = _economy.cell_mobilization_snapshot(cell)
+		if not bool(snapshot.get("ok", false)):
+			_pending_stage_checks.append(check)
+			continue
+		var profession := int(check["profession"])
+		for row in snapshot.get("rows", []):
+			if int(row.get("profession", -1)) != profession:
+				continue
+			var stage := int(row.get("stage", 0))
+			if (int(row.get("flags", 0)) & FLAG_INDEPENDENCE) != 0:
+				_queue_independence(cell, owner)
+			elif stage > int(check["stage"]):
+				player_stages[Vector2i(cell, profession)] = stage
+			else:
+				# The committed view can still precede the player's decision.
+				_pending_stage_checks.append(check)
+			break
+
+
 func _offer_player(cell: int, profession: int, stage: int,
 		owner_handle: int, day: int) -> void:
 	if _narrative == null or _economy == null or not _economy.is_configured():
 		return
+	var chain_id := StringName("rebellion:%d:%d" % [cell, profession])
+	var offers: Array = _narrative.ready_queue()
+	offers.append(_narrative.active_offer())
+	for offer in offers:
+		if StringName(offer.get("chain_id", "")) == chain_id \
+				and int(offer.get("meta", {}).get("stage", 0)) == stage:
+			return
 	var actions: Array = RebellionContentScript.actions_for_stage(stage)
 	var probabilities := {}
 	var costs: Array = []
@@ -215,7 +315,7 @@ func _offer_player(cell: int, profession: int, stage: int,
 		"cost_bps": costs,
 	}
 	_narrative.enqueue_event_offer(
-		def, cell, day, StringName("rebellion:%d:%d" % [cell, profession]),
+		def, cell, day, chain_id,
 		true, {"settlement_name": settlement}, probabilities, chain_salt, meta)
 
 

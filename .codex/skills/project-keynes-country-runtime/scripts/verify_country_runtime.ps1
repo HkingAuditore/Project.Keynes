@@ -19,8 +19,8 @@ try {
         'gdext/src/economy_runtime_persistence_read.cpp',
         'Project/project-keynes/scripts/country/country_facade.gd',
         'Project/project-keynes/scripts/simulation/systems/country_daily_system.gd',
-        'Project/project-keynes/tests/runtime_country_peer_bridge_test.gd',
-        'Project/project-keynes/tests/runtime_country_save_roundtrip_test.gd',
+        'Project/project-keynes/tests/runtime/runtime_country_peer_bridge_test.gd',
+        'Project/project-keynes/tests/runtime/runtime_country_save_roundtrip_test.gd',
         'docs/architecture/current-state.md'
     )
     foreach ($path in $required) {
@@ -76,7 +76,8 @@ try {
     }
 
     if ($Godot) {
-        $godotExe = (Get-Command godot4 -ErrorAction SilentlyContinue).Source
+        $godotExe = $env:GDA_GODOT
+        if (-not $godotExe) { $godotExe = (Get-Command godot4 -ErrorAction SilentlyContinue).Source }
         if (-not $godotExe) { $godotExe = (Get-Command godot -ErrorAction SilentlyContinue).Source }
         if (-not $godotExe) {
             $defaultGodot = 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe'
@@ -84,15 +85,15 @@ try {
         }
         if (-not $godotExe) { throw 'Godot executable was not found on PATH.' }
         $tests = @(
-            'country_reference_trace_test.gd',
-            'country_runtime_test.gd',
-            'runtime_country_pod_test.gd',
-            'runtime_country_peer_bridge_test.gd',
-            'runtime_country_save_roundtrip_test.gd',
-            'runtime_country_host_protocol_test.gd',
-            'runtime_country_parity_test.gd',
-            'runtime_country_economy_transaction_test.gd',
-            'economy_fiscal_reservation_continuation_test.gd'
+            'country/country_reference_trace_test.gd',
+            'country/country_runtime_test.gd',
+            'runtime/runtime_country_pod_test.gd',
+            'runtime/runtime_country_peer_bridge_test.gd',
+            'runtime/runtime_country_save_roundtrip_test.gd',
+            'runtime/runtime_country_host_protocol_test.gd',
+            'runtime/runtime_country_parity_test.gd',
+            'runtime/runtime_country_economy_transaction_test.gd',
+            'economy/economy_fiscal_reservation_continuation_test.gd'
         )
         foreach ($test in $tests) {
             $testProcess = Start-Process -FilePath $godotExe -ArgumentList @(

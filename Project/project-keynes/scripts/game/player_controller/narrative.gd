@@ -60,7 +60,11 @@ static func _is_suppressed_popup_pause_source(host, source: String) -> bool:
 
 
 func export_narrative_state(host) -> Dictionary:
-	return host._narrative_service.export_state() if host._narrative_service != null else {}
+	if host._narrative_service == null:
+		return {}
+	var state: Dictionary = host._narrative_service.export_state()
+	state["stratum_unrest"] = host._stratum_unrest.export_state()
+	return state
 
 
 
@@ -69,7 +73,9 @@ func restore_narrative_state(host, state: Dictionary) -> Dictionary:
 		return {"ok": true}
 	var res = host._narrative_service.restore_state(state)
 	host._last_narrative_step_day = -1
-	return res
+	if not bool(res.get("ok", false)):
+		return res
+	return host._stratum_unrest.restore_state(state.get("stratum_unrest", {}))
 
 
 
@@ -98,6 +104,9 @@ func _configure_narrative_runtime(host) -> void:
 		generator, map, view_adapter, host._world_clock,
 		host._player_country_handle, maxi(1, seed_val)
 	)
+	host._stratum_unrest.configure(generator, map, host._world_clock,
+		host._narrative_service, host._economy_facade, host._country_facade,
+		host._military_facade(), host._player_country_handle, seed_val)
 	host._narrative_flow.configure(
 		host, host._runtime_host, host._world_clock, host._ui_manager,
 		host._narrative_service, host._narrative_ai_client
@@ -122,6 +131,8 @@ func _step_narrative_daily(host, day_idx: int) -> void:
 		return
 	host._last_narrative_step_day = day_idx
 	host._narrative_service.set_player_country_handle(host._player_country_handle)
+	host._stratum_unrest.set_player_country_handle(host._player_country_handle)
+	host._stratum_unrest.step_daily(day_idx)
 	var ai_enabled = false
 	var settings = host.get_node_or_null("/root/GameSettings")
 	if settings != null and settings.has_method("values"):

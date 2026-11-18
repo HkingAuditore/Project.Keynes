@@ -54,6 +54,9 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
   country authority. See `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
 - Keep `country_committed` as the single broadcast for territory change. Visual
   consumers subscribe to it; do not add a second notification path.
+- Keep the worker read-view cursor increasing across previews and sealed commits.
+  Territory-bearing plans publish owners only when sealed. Recover missed territory
+  patches from the full owner plane, including on the first read.
 - Add taxation only through the dedicated tax/fiscal contract: country owns policy and treasury;
   economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
   country AI, deletion, or technology revocation as incidental behavior.

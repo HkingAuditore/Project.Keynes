@@ -45,6 +45,8 @@ DataCore slots, native passes, or authority claims.
    start context.
 6. Save/restore `player_view` only after map and rendering resources are ready;
    restore camera and selected cell through controller APIs.
+   The stratum unrest bridge saves its fact cursor and pending decisions with
+   the narrative queue in `pknr.stratum_unrest`.
 
 ## Implementation Workflow
 

@@ -773,6 +773,11 @@ Worker read-view 在 `full_snapshot_required` 时仍会整图修复 `country_slo
 但广播的 `changed_cells` 是真实 diff；主线程用帧预算执行
 `refresh_country_visuals`，避免一次 CLAIM 把 `day_changed` / 50× 时钟拖死。
 
+Country worker 读视图使用独立递增的发布游标，正式提交接续上一次发布，
+包括研究预览或财政发布。仍在等待 peer 的领土计划只保留上一份已提交的
+归属平面。正式提交按两份已提交的归属求差；主线程首读或后续轮询错过领土
+补丁时，以完整归属平面补齐，再由同一条 `country_committed` 驱动国界刷新。
+
 生产路径默认 `native_runtime_graph_mode=ACTIVE` 时，国家提交发生在
 `advance_runtime_pulse()` 内，不经过 `CountryDailySystem`。此时必须由
 `MapGenerator._dispatch_runtime_graph_country_committed()` 按 generation

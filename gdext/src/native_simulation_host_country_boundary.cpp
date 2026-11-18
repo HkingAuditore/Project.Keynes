@@ -156,6 +156,13 @@ bool NativeSimulationHost::publish_country_plan_preview_snapshot(
         error = "country_plan_preview_inactive";
         return false;
     }
+    // Territory readers must only observe sealed owners. Installing a
+    // pending claim here would also hide it from the final owner diff.
+    if ((_country_pod_plan.header.dirty_families &
+         RUNTIME_DIRTY_COUNTRY_TERRITORY) != 0) {
+        error = "country_plan_preview_territory_pending";
+        return false;
+    }
     std::lock_guard<std::mutex> lock(_country_transport_mutex);
     const uint64_t previous_view_generation = _country_read_view_generation;
     uint64_t next_view_generation = previous_view_generation + 1u;
@@ -1086,7 +1093,6 @@ RuntimeCountryReadView NativeSimulationHost::country_worker_read_view(
     // Host consumers must still advertise the real MapData owner diff on
     // country_committed — never cell_count — so vision/border stay O(changed).
     out.full_snapshot_required = out.available &&
-        after_generation != 0 &&
         after_generation != out.patch_base_generation &&
         after_generation < _country_read_view_territory_generation;
     return out;
@@ -1324,6 +1330,10 @@ bool NativeSimulationHost::country_peer_rejection_self_test(
     }
     probe._country_pod_configured.store(true, std::memory_order_release);
     probe._country_worker_session_epoch = 17;
+    if (!probe.publish_country_snapshot(fixture)) {
+        error = "country_rejection_self_test_initial_view_missing";
+        return false;
+    }
     const int64_t rejected_day = fixture.committed_day + 1;
     RuntimeDayCommit first_commit;
     std::string stage_error;
@@ -1406,11 +1416,36 @@ bool NativeSimulationHost::country_peer_rejection_self_test(
     }
     CountryPeerIntent retry;
     RuntimeDayCommit retry_wait;
+    // Pair the retry with a claim so the same Country plan contains both
+    // a territory change and an outstanding technology peer.
+    const auto unowned = std::find(fixture.cell_country_slot.begin(),
+                                   fixture.cell_country_slot.end(), -1);
+    if (unowned == fixture.cell_country_slot.end()) {
+        error = "country_rejection_self_test_unowned_cell_missing";
+        return false;
+    }
+    RuntimeCountryCommand claim;
+    claim.request_id = probe.allocate_command_request_id();
+    claim.sequence = 1;
+    claim.opcode = 20; // CLAIM_UNOWNED_TERRITORY
+    claim.cell = static_cast<int32_t>(unowned - fixture.cell_country_slot.begin());
+    claim.effective_day = rejected_day + 1;
+    claim.target_handle = intent.target_handle;
+    if (!probe._country_pod_authority.queue_command(claim, stage_error)) {
+        error = stage_error;
+        return false;
+    }
     if (probe.execute_country_worker_stage(
             rejected_day + 1, 1, {}, retry_wait, stage_error, 1) ||
         !probe.poll_country_worker_intent(retry) ||
         retry.request_id == intent.request_id) {
         error = "country_rejection_self_test_retry_identity_invalid";
+        return false;
+    }
+    const auto waiting_view = probe.country_worker_read_view(0);
+    if (waiting_view.snapshot == nullptr ||
+        waiting_view.snapshot->cell_country_slot[claim.cell] != -1) {
+        error = "country_rejection_self_test_unsealed_territory_visible";
         return false;
     }
     CountryPeerResult applied = rejected;
@@ -1435,6 +1470,14 @@ bool NativeSimulationHost::country_peer_rejection_self_test(
             rejected_day + 1, 1, {}, retry_commit, stage_error, 1)) {
         error = stage_error.empty() ? "country_rejection_self_test_retry_commit_failed" :
             stage_error;
+        return false;
+    }
+    const auto claim_view = probe.country_worker_read_view(waiting_view.generation);
+    if (!claim_view.available ||
+        claim_view.patch_base_generation != waiting_view.generation ||
+        claim_view.changed_cells != std::vector<int32_t>{claim.cell} ||
+        claim_view.changed_owners != std::vector<int32_t>{slot}) {
+        error = "country_rejection_self_test_territory_patch_missing";
         return false;
     }
     RuntimeCountryPodSnapshot final_snapshot;

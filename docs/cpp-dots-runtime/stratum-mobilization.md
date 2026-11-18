@@ -151,7 +151,8 @@ flags = bit0 玩家国 / bit1 首都
 - 地块档案新增「民情」页签：按职业显示组织度条、阶段、最高阶段与其余阶层满意度（走 `metrics/gauges/insights` 通用渲染）。
 - 地图告警：`cell_situation_snapshot` 追加 `mobilization_stage` / `mobilization_q16` 两列（不改变原 severity stride）；`cell_situation_layer` 增加第 9 个「阶层组织度」图标，鼠标悬停显示阶段与说明。
 - 顶栏：`PlayerTopBar.set_unrest_status(count)` 程序化生成「离心 N」纸签（不改编排场景），`GameUIManager` 用 `country_mobilization_summary` 的 stage 3+4 计数刷新；为 0 时隐藏。
-- 服务存档并入 `player_view` 的 `stratum_unrest` 键（`last_fact_id`、独立队列、旧 AI 待办）。
+- 玩家控制器在叙事运行时绑定时配置服务，并在每日提交后推进，先消费动员事实再处理普通叙事。动员事实使用独立游标和事件类型过滤。
+- 服务存档并入 `pknr.stratum_unrest`，与叙事队列一同恢复（事实游标、独立队列、升阶复核待办和旧 AI 待办）。缺少服务状态的旧存档在提交后从玩家领地的动员快照恢复当前未处于冷却的阶段。玩家选择失败时，下一次提交后复核受影响的职业行，以接续可能在经济周期切换时丢失的升阶事实。
 
 测试：`tests/politics_parse_probe.gd`（PASS）、`tests/politics/stratum_unrest_service_test.gd`（7/0，覆盖让步付款、弃城→建国→宣战、队列清空）。
 

@@ -214,6 +214,19 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 若选定群体已无法提供足够的转职人口，或某笔建材款付不起，则在写入前保留能通过预检的前缀；
 实际提交的余额断言不放宽。
 
+## 建筑最近一次投资评估
+
+受阻原因、投资评分和回本天数按建筑组保留最近一次实际评估结果。新批次初始化、
+未到评估日期、跨日续算和未进入类型评估的跳过路径不得全局清空这些列；只有建筑类型
+真正进入地块候选评估时，才重置该地块同类型建筑组的旧结果并写回新结果，允许解除受阻。
+新增建筑从未评估状态开始；结构重排沿用原有按行搬迁，新世界和读档候选清理时不得继承
+另一世界的结果。上述列仍为非持久化的展示诊断，读档后等待实际评估重新生成，不改变
+投资周期、候选选择、资金结算、业务状态 hash 或存档格式。
+
+原生回归 `EconomyTargetSelectorTests::run_building_investment_review` 经
+`tests/ideology/ideology_target_selector_test.gd` 进入，覆盖批次和续算保留、跳过保留、
+重新评估替换、解除受阻及建筑清理后重建。
+
 ## 经济冻结输入与标签采样
 
 `capture_country_epoch()` 仍在原结算边界冻结 Country 输入。科技可用性表、领土索引
@@ -433,6 +446,9 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 - 玩家自动探路：任务、观察点、返程和战斗暂停归 `MilitaryCore`（`military_core_explore.cpp`，PKMI v4 section 23）；`army.explore` 只接受 Host 安装的玩家 observer。探路 passability 独立于普通 `find_path()`，战争状态也不进入他国控制格；每国每日 8 个规划槽、16 次 A*，并保留至少 16 次共享路径预算给区域控制。`run_movement()` 逐实际进入格产生 trail，Host 在 `_prepare_military_exploration_day()` 只合并 `MapData.explored_arr`，visible/fog 仍由既有 `_refresh_vision()` 生成；保存前必须 flush trail，失败拒绝保存。验证入口：`tests/military/military_auto_exploration_test.gd`、`tests/military/military_dossier_test.gd`、`tests/runtime/military_index_continuation_test.gd`、`tests/qa/military_dossier_screenshot_qa.gd`。
 
 ## GM 屏蔽与叙事弹窗
+
+阶层动员事件由玩家控制器在每日提交后投递，使用动员事实的独立游标，并复用叙事弹窗和暂停流程。
+叛乱服务状态随 `pknr` 保存。旧档缺少这份状态时，首次提交后以当前玩家领地的动员快照补发仍需处理的阶段。
 
 - GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
 - 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
@@ -662,6 +678,9 @@ Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成
   日期、地块顺序和周期位置继续保存。旧周期强制键仅用于明确的历史近似夹具，不进入正式配置。
 - Country 普通操作仍排到最早尚未封好的日期；明确预约的批次设置 `preserve_effective_days`，
   不能提前。入队在同一锁内回传实际日期，GM 回执使用该日期；已封好的日期只能向后调整。
+- Country worker 的领土变更仅在正式提交后进入读视图，发布游标必须连续递增。
+  领土补丁失配时补齐完整归属，再由 `country_committed` 刷新视野和国界。
+  详见[视野迷雾与国界线](../cpp-dots-runtime/vision-fog-and-borders.md)。
 - 开局两种国家创建路径均把开局国家放在第一个稳定槽位，吞并也不重排槽位。
   PKCN16 已保存这个顺序；冷启动恢复和只读副本安装须从它重建 `starting_country_slot`，
   配置及重置须清除旧值。不能依靠曾经执行过 bootstrap 的旧对象残留内存。

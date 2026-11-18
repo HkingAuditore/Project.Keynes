@@ -173,6 +173,10 @@ func _run_read_view_patch_contract(catalog: Dictionary) -> void:
 		and bool(skipped.get("full_snapshot_required", false))
 		and full_owners.size() == 3
 		and full_owners[0] == 0 and full_owners[1] == 0 and full_owners[2] == 1)
+	var first_read := ext.get_country_worker_read_view(0)
+	_expect("first read after territory and identity commits recovers the full owner plane",
+		bool(first_read.get("full_snapshot_required", false))
+		and first_read.get("full_cell_owners", PackedInt32Array()) == full_owners)
 
 
 func _single_country_command(opcode: int, target_generation: int,
