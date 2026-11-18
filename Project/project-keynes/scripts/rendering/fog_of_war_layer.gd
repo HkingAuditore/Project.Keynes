@@ -53,6 +53,7 @@ const PK_WEB_ENABLE_FOG_FULL_SHADER := true
 ## world_map.gdshader 的早退分支输出同一个颜色；只有 q0（无光照）时两者才真的对得齐，
 ## 见 supports_terrain_early_out()。
 const UNEXPLORED_COLOR := Color(0.52, 0.56, 0.64)
+const GRADIENT_STEP := 0.25  # cloud-evolution seconds
 
 var _mesh_inst: MeshInstance2D
 var _shader_mat: ShaderMaterial
@@ -66,6 +67,8 @@ var _edge_distance_tex: Texture2D = null
 var _edge_transition_width: float = 0.84
 var _enabled: bool = true
 var _world_time: float = 0.0
+var _gradient_table: SubViewport
+var _gradient_start := -INF
 var _visual_tiles = null
 # 与 WeatherLayer 同一表现时钟语义：运行时按游戏倍速推进；暂停时保留 1x 环境运动，
 # 避免整个大气层完全冻结。
@@ -127,8 +130,39 @@ func _process(delta: float) -> void:
 	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
 	_world_time += delta * visual_time_scale
 	_shader_mat.set_shader_parameter("world_time", _world_time)
+	_sync_gradient_table()
 	if _half_res:
 		_sync_half_res_target()
+
+
+func _uses_gradient_table() -> bool:
+	return effective_quality() > 0 and RenderingServer.get_rendering_device() != null
+
+
+func _sync_gradient_table() -> void:
+	if not _uses_gradient_table():
+		if _gradient_table != null:
+			_shader_mat.set_shader_parameter("fog_gradient_lattice", null)
+			_gradient_table.queue_free()
+			_gradient_table = null
+			_gradient_start = -INF
+		return
+	if _gradient_table == null:
+		_gradient_table = preload("res://scripts/rendering/render_data_table.gd").new()
+		# The consuming viewport must render after this dependency, including half-res fog.
+		var consumer: Node = _sub_viewport if _half_res else self
+		_gradient_table.configure(consumer, Vector2i(128 * 2, 128 * 10),
+			preload("res://shaders/fog_gradient_lattice.gdshader"))
+		_gradient_table.material.set_shader_parameter("evolution_step", GRADIENT_STEP)
+		_shader_mat.set_shader_parameter("fog_gradient_lattice", _gradient_table.get_texture())
+	var speed: Variant = _shader_mat.get_shader_parameter("churn_speed")
+	var time := _world_time * (0.2 if speed == null else float(speed))
+	var start := floorf(time / GRADIENT_STEP) * GRADIENT_STEP
+	if start != _gradient_start:
+		_gradient_start = start
+		_gradient_table.material.set_shader_parameter("evolution_start", start)
+		_gradient_table.refresh()
+	_shader_mat.set_shader_parameter("fog_gradient_blend", (time - start) / GRADIENT_STEP)
 
 
 ## 半分辨率目标同步：尺寸取主视口的一半，canvas_transform 取主画布变换的 0.5 倍。
@@ -185,6 +219,7 @@ func _ensure_nodes() -> void:
 	_shader_mat.set_shader_parameter("fog_enabled", true)
 	_shader_mat.set_shader_parameter("unexplored_color", UNEXPLORED_COLOR)
 	_mesh_inst.material = _shader_mat
+	_sync_gradient_table()
 	if _half_res:
 		_build_half_res_target()
 	_has_valid_shader = true
@@ -265,6 +300,10 @@ func _load_shader() -> Shader:
 	# 「地形早退像素必须不透明」判定必须在**地形真的早退**时才成立，所以两边只能同开
 	# 同关；这里绝不自己判平台 / 画质 / 项目设置。
 	# 关 = 一个字节都不加（与今日逐字节相同）。
+	if _uses_gradient_table():
+		if not _cell_field_sig.get("early", false):
+			prefix += "#define PK_FOG_NO_TERRAIN_QUERY\n"
+		prefix += "#define PK_FOG_LATTICE\n"
 	_built_cell_field = _cell_field_active()
 	if _built_cell_field:
 		prefix += CELL_FIELD_DEFINE
@@ -367,6 +406,7 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 		var sh := _load_shader()
 		if sh != null:
 			_shader_mat.shader = sh
+			_sync_gradient_table()
 			_push_quality()
 			_push_tod()
 			_push_edge_transition_data()
@@ -544,7 +584,12 @@ func _sync_cell_field_uniforms(force: bool = false) -> void:
 	}
 	if not force and sig == _cell_field_sig:
 		return
+	var previous_early: bool = _cell_field_sig.get("early", false)
 	_cell_field_sig = sig
+	# Even at high quality the terrain material is authoritative. Compile the
+	# opacity check back in whenever terrain actually starts skipping pixels.
+	if previous_early != early_on and _uses_gradient_table():
+		_shader_mat.shader = _load_shader()
 
 	_shader_mat.set_shader_parameter("hex_size", _hex_size)
 	_shader_mat.set_shader_parameter("map_dims", Vector2(dims.x, dims.y))
@@ -636,8 +681,13 @@ func set_clock_running(running: bool) -> void:
 ## "中"会直接落到 q2 的完整散射（移动 GPU 上最贵的一档），而 q1 这个专为移动端
 ## 中档准备的分层云海反而永远拿不到。web 保持原映射，避免二次动它的性能基线。
 func set_visual_quality(quality: int) -> void:
+	var used_table := _uses_gradient_table()
 	_visual_quality = clampi(quality, 0, 2)
 	_fog_quality = _fog_quality_for(_visual_quality)
+	if _shader_mat != null and used_table != _uses_gradient_table():
+		_shader_mat.shader = _load_shader()
+		_sync_cell_field_uniforms(true)
+		_sync_gradient_table()
 	_push_quality()
 
 

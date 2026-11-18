@@ -528,10 +528,36 @@ static func _resolved_water_program_kind(host) -> String:
 	return ""
 
 
+static func sync_ripple_lattice(host) -> void:
+	if host._ripple_table == null:
+		return
+	var phase: float = host._world_time * (host.water_flow_advection / 1.15)
+	var cycles := Vector4(floorf(phase * 0.04), floorf(phase * 0.04 + 0.5),
+		floorf(phase * 0.06), floorf(phase * 0.06 + 0.5))
+	if cycles != host._ripple_cycles:
+		host._ripple_cycles = cycles
+		host._ripple_table.material.set_shader_parameter("cycles", cycles)
+		host._ripple_table.refresh()
+
+
+static func _bind_ripple_lattice(host) -> void:
+	if not host._water_uniform_names.has(&"water_ripple_lattice"):
+		if host._ripple_table != null:
+			host._ripple_table.queue_free()
+			host._ripple_table = null
+		return
+	if host._ripple_table == null:
+		host._ripple_table = preload("res://scripts/rendering/render_data_table.gd").new()
+		host._ripple_table.configure(host, Vector2i(256, 256 * 3),
+			preload("res://shaders/water_ripple_lattice.gdshader"))
+		host._ripple_cycles = Vector4(-1.0, -1.0, -1.0, -1.0)
+		sync_ripple_lattice(host)
+	host._water_mat.set_shader_parameter("water_ripple_lattice", host._ripple_table.get_texture())
+
+
 ## 水面 program 的编译前缀。Web 两类沿用既有常量（字节契约）；桌面 / 移动按
 ## [MAP_VISUAL_TILED] + [MOBILE_QUALITY_*] + [PK_WEB_TEXTURE_BUDGET（仅 Compatibility）]
 ## + "#define PK_WATER_ONLY\n" 拼装（与陆地变体同一套顺序，便于测试逐段断言）。
-
 static func _water_program_prefix(host, kind: String) -> String:
 
 	var prefix = "#define MAP_VISUAL_TILED\n" if _visual_tiles_active(host) else ""
@@ -944,6 +970,9 @@ static func _drop_water_quad(host) -> void:
 		host._water_quad.queue_free()
 		host._water_quad = null
 	host._water_mat = null
+	if host._ripple_table != null:
+		host._ripple_table.queue_free()
+		host._ripple_table = null
 	host._water_variant_prefix = ""
 	host._water_variant_kind = ""
 	host._water_program_kind = ""
@@ -997,6 +1026,7 @@ static func _create_water_quad(host, prefix: String, kind: String) -> void:
 	# 才创建的，直接 add_child 会排到植被层后面 → 水面盖住整片植被。
 	host._water_quad.z_index = 0
 	# FPS 探针（toggle_world_shader_disabled）关闭主 shader 时，两片必须一起关。
+	_bind_ripple_lattice(host)
 	host._water_quad.material = null if host._shader_disabled_by_toggle else host._water_mat
 	host.add_child(host._water_quad)
 	if is_instance_valid(host._world_quad):

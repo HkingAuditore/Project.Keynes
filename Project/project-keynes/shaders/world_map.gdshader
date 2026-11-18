@@ -538,7 +538,20 @@ void fragment() {
 #endif
 	// fog_k：1 次 texelFetch（主导格 aux.R）。padding 行的 aux 是哨兵（只有 R 被填成
 	// B_SEA_ICE），按今天 cid < 0 的口径取 1.0（padding 视作全知，迷雾层自己会盖住）。
-	float field_fog = mix(1.0, pk_cell_aux_at(field_dom_c).r,
+#if defined(PK_WATER_ONLY) && !defined(PK_QUALITY_LOW)
+	vec4 aux0 = pk_cell_aux_at(cell_field.c0);
+	vec4 aux1 = pk_cell_aux_at(cell_field.c1);
+	vec4 aux2 = pk_cell_aux_at(cell_field.c2);
+	float field_water_depth = dot(cell_field.w_raw, vec3(aux0.g, aux1.g, aux2.g));
+	float dominant_fog = vec3(aux0.r, aux1.r, aux2.r)[cell_field.dom];
+#else
+	vec4 dominant_aux = pk_cell_aux_at(field_dom_c);
+	float dominant_fog = dominant_aux.r;
+#ifdef PK_QUALITY_LOW
+	float field_water_depth = dominant_aux.g;
+#endif
+#endif
+	float field_fog = mix(1.0, dominant_fog,
 			pk_field_row_in_bounds(field_dom_c));
 #else
 	// map_index 一次采样：R=像素 biome，GB=cell id，A=landform。
@@ -855,6 +868,9 @@ void fragment() {
 				visual_water_ice_fraction, shore_frac, pixel_noise
 #ifdef PK_CELL_FIELD
 				, cell_field, cell_e0, cell_e1, cell_e2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
 #endif
 				);
 #endif

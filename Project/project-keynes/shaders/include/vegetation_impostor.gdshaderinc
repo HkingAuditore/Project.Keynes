@@ -109,6 +109,13 @@ uniform float terrain_valley_ao_strength = 0.40;
 uniform float terrain_valley_ao_gain = 6.0;
 
 #ifdef DETAIL_FAMILY_BATCH
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY && !defined(PK_WEB_VEGETATION)
+// Four fixed vec4 values per style leave a texture unit for the crown normals.
+uniform vec4 detail_style_rows[128];
+vec4 detail_style_param(float style_id, float slot) {
+	return detail_style_rows[4 * int(style_id) + max(int(slot) - 2, 0)];
+}
+#else
 uniform sampler2D detail_style_lut : filter_nearest, repeat_disable;
 uniform vec2 detail_style_lut_size = vec2(16.0, 32.0);
 vec4 detail_style_param(float style_id, float slot) {
@@ -116,6 +123,7 @@ vec4 detail_style_param(float style_id, float slot) {
 		(style_id + 0.5) / detail_style_lut_size.y);
 	return texture(detail_style_lut, uv);
 }
+#endif
 #endif
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
@@ -132,6 +140,8 @@ vec2 shrub_macro_normal(vec2 uv) {
 
 const float VEG_QUAD_HALF = 0.62;
 
+varying flat vec3 v_crown_params;
+varying float v_cloud_visibility;
 varying flat vec4 v_a;  // seed, count, sub_form, leaf
 varying flat vec4 v_b;  // vigor, bloom, form, albedo floor
 varying flat vec4 v_c;  // wind dir (local), sway offset (local)
@@ -142,17 +152,7 @@ varying flat vec4 v_g;  // instance x axis, terrain normal xy
 varying flat vec4 v_h;  // sun direction, valley ao
 varying flat vec4 v_i;  // local day, sun high, moon, horizon visibility
 varying flat vec4 v_j;  // bent normal, sky visibility
-// [veg-ground-uv-uncond 2026-11-17] v_ground_uv 必须是**无条件** varying。
-// 它原来和 VEG_TERRAIN_SHADING 一起被 #ifdef 包着，但 fragment 里的
-// cloud_shadow_direct_visibility(shrub_wrap_map_uv(v_ground_uv), ...) 是**无条件**调用的。
-// 于是 VEG_TERRAIN_SHADING 没定义的那些档位（= PK_SKIP_VEGETATION_SHADING，
-// 也就是 PK_MOBILE_ANY 的 LOW / MID）整份植被 shader 编译失败：
-//   SHADER ERROR: Unknown identifier in expression: 'v_ground_uv'
-//   ERROR: Shader compilation failed.
-// 真机上表现为所有植被实例退化成纯色方块 + 之后每帧刷
-//   ERROR: Parameter "version" is null. (version_get_shader)
-// ——「各种光照都极其丑陋 / 点缀变成色块」有一半是这个，不是分级参数。
-// 一个 vec2 varying 的成本远低于这条分叉，所以直接无条件声明/写入。
+// Ground lighting and the vertex cloud-shadow sample both use this coordinate.
 varying vec2 v_ground_uv; // 不在顶点 wrap，避免跨地图接缝时插值穿过整张图。
 
 float shrub_decode_height(vec2 uv) {
@@ -380,6 +380,7 @@ void vertex() {
 	float sub_form = floor(packed + 0.0001);
 	float count = floor(clamp(packed - sub_form, 0.0, 0.9999) * 32.0) + 1.0;
 	float seed = INSTANCE_CUSTOM.b;
+	v_crown_params = vec3(vf_seed_offset(seed), vf_elem_radius(count));
 
 	vec2 inst_ax = MODEL_MATRIX[0].xy;
 	float inst_axl = length(inst_ax);
@@ -500,6 +501,7 @@ void vertex() {
 	v_f = vec4(pal.snow_amt, snow_ret, hidden ? 0.0 : body_alpha, hidden ? 0.0 : floor_alpha);
 	v_g = vec4(bx, terrain_n);
 	v_h = vec4(ed.sun_dir, valley_ao);
+	v_cloud_visibility = cloud_shadow_direct_visibility(shrub_wrap_map_uv(v_ground_uv), ed.local_day);
 	v_i = vec4(ed.local_day, ed.sun_high, ed.moon_strength, horizon_vis);
 	v_j = vec4(sky.bent_normal, sky.visibility);
 }
@@ -509,6 +511,8 @@ void fragment() {
 	float px = max(length(fwidth(p)) * 0.75, 1e-4);
 	VegCtx ctx;
 	ctx.seed = v_a.x;
+	ctx.seed_offset = v_crown_params.xy;
+	ctx.radius = v_crown_params.z;
 	ctx.count = v_a.y;
 	ctx.sub_form = v_a.z;
 	ctx.leaf = v_a.w;
@@ -520,7 +524,7 @@ void fragment() {
 	int form = int(v_b.z + 0.5);
 	vec2 pe = p - v_c.zw;
 
-	float elem_px = vf_elem_radius(ctx.count) / px;
+	float elem_px = ctx.radius / px;
 #ifdef PK_MOBILE_ANY
 	bool far = elem_px < 6.0;
 #else
@@ -569,8 +573,7 @@ void fragment() {
 	vec2 bx = v_g.xy;
 	vec2 by = vec2(-bx.y, bx.x);
 	float local_day = daylight.x;
-	float cloud_visibility = cloud_shadow_direct_visibility(
-		shrub_wrap_map_uv(v_ground_uv), local_day);
+	float cloud_visibility = v_cloud_visibility;
 	float sun_vis = 1.0;
 	float floor_shadow = 0.0;
 #ifdef VF_CROWN_ART
@@ -584,7 +587,7 @@ void fragment() {
 	float hs = vf_height_scale(form);
 	if (!atlas_rock && !far && veg_shade_quality >= 2 && local_day > 0.02 && hs > 0.1) {
 		vec2 sl = vec2(dot(L.xy, bx), dot(L.xy, by)) / max(L.z, 0.28);
-		vec2 sh = vf_soft_shadow(pe, ctx, form, -sl * hs);
+		vec2 sh = vf_soft_shadow(pe, ctx.radius, s.shadow_crown, -sl * hs);
 		sun_vis = 1.0 - sh.y * 0.50 * step(0.001, s.cov);
 		// Fade before the quad border so the shadow never shows a straight cut.
 		vec2 ap = abs(p);

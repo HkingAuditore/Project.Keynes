@@ -64,6 +64,9 @@ struct WaterStageCtx {
 	//   shore_gap        ：到最近陆地格的 gap（三格都是水 ⇒ 1e3，见 shore_common）
 	//   shore_dist_wu    ：岸距（世界单位）= 0.5·shore_gap·hex_size ⇒ 桌面 / 移动同宽
 	HexCellField field;
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+	float water_depth;
+#endif
 	vec4 fcls0;
 	vec4 fcls1;
 	vec4 fcls2;
@@ -248,8 +251,8 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	//   ③ LOW 档只读主导格（1 次 texelFetch，§3.8 的 LOW 行）；两项都是常数采样次数，
 	//      不出现"权重 > 0 才采"的分支（§3.9 第 2 条）。
 	// water_depth_tex 数组在 PK 变体里不再采样 —— 采样槽由 cell_table 顶掉。
-#if defined(PK_QUALITY_LOW)
-	float wd = pk_cell_aux_at(pk_cell_field_dom_offset(ctx.field)).g;
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+	float wd = ctx.water_depth;
 #else
 	float wd = pk_cell_aux_at(ctx.field.c0).g * ctx.field.w_raw.x
 			+ pk_cell_aux_at(ctx.field.c1).g * ctx.field.w_raw.y
@@ -949,6 +952,9 @@ SurfaceParams compute_water_base_surface(
 // 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, float field_water_depth
+#endif
 #endif
 		) {
 
@@ -980,6 +986,9 @@ SurfaceParams compute_water_base_surface(
 	// [cell-field 2026-11-18] 场数据包 + 派生量（方案 §3.7）。三格 class 由 SETUP 传入，
 	// 下游 helper 只读 ctx，不再有各自的 map_index 采样。
 	ctx.field = field;
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+	ctx.water_depth = field_water_depth;
+#endif
 	ctx.fcls0 = fcls0;
 	ctx.fcls1 = fcls1;
 	ctx.fcls2 = fcls2;
@@ -1384,6 +1393,9 @@ vec3 render_water_pipeline_raw(
 		vec4 pixel_noise
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, float field_water_depth
+#endif
 #endif
 		) {
 	SurfaceParams surface = compute_water_base_surface(
@@ -1391,6 +1403,9 @@ vec3 render_water_pipeline_raw(
 		current_temp, ocean_current_v, wind_v, dyn_ice_frac, pixel_noise
 #ifdef PK_CELL_FIELD
 		, field, fcls0, fcls1, fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
 #endif
 		);
 	// Underwater resources (oil/gas seeps, fish shoals) are drawn by ResourceVisualLayer's
@@ -1443,6 +1458,9 @@ vec3 render_water_pipeline(
 		vec4 pixel_noise
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, float field_water_depth
+#endif
 #endif
 		) {
 	return render_water_pipeline_raw(
@@ -1451,6 +1469,9 @@ vec3 render_water_pipeline(
 		ocean_current_v, wind_v, dyn_ice_frac, shore_frac, pixel_noise
 #ifdef PK_CELL_FIELD
 		, field, fcls0, fcls1, fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
 #endif
 		);
 }

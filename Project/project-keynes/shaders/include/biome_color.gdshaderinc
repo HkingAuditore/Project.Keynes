@@ -153,39 +153,44 @@ vec3 hypsometric_tint(float elev, bool is_water) {
 
 // ─── biome 色相调制（高度负责亮度，biome 负责色相） ──────────────────────
 
+// Ordered by the B_* terrain IDs; the last entry is also the unknown-ID colour.
+const vec3 BIOME_HUES[32] = vec3[32](
+	vec3(1.0),  // B_OCEAN
+	vec3(1.0),  // B_COAST
+	vec3(1.0),  // B_PLAIN
+	vec3(0.95, 1.02, 0.78),  // B_GRASSLAND
+	vec3(0.74, 0.96, 0.68),  // B_FOREST
+	vec3(1.06, 1.00, 0.92),  // B_HILL
+	vec3(1.00, 0.96, 0.96),  // B_MOUNTAIN
+	vec3(1.30, 0.96, 0.58),  // B_DESERT
+	vec3(0.88, 0.96, 1.05),  // B_TUNDRA
+	vec3(0.88, 0.92, 0.98),  // B_SNOW
+	vec3(0.64, 0.86, 0.72),  // B_SWAMP
+	vec3(0.55, 0.93, 0.64),  // B_JUNGLE
+	vec3(1.12, 1.04, 0.60),  // B_SAVANNA
+	vec3(0.64, 0.91, 0.81),  // B_TAIGA
+	vec3(1.00, 1.06, 0.76),  // B_STEPPE
+	vec3(1.04, 0.98, 0.82),  // B_SHRUBLAND
+	vec3(0.63, 0.89, 0.77),  // B_MANGROVE
+	vec3(0.94, 0.99, 1.04),  // B_GLACIER
+	vec3(1.0),  // B_LAKE
+	vec3(1.0),  // B_REEF
+	vec3(1.0),  // B_SEA_ICE
+	vec3(1.0),  // B_KELP
+	vec3(0.85, 0.98, 0.76),  // B_DELTA
+	vec3(0.69, 1.01, 0.69),  // B_OASIS
+	vec3(1.16, 1.14, 0.94),  // B_SALT_FLAT
+	vec3(1.26, 0.84, 0.58),  // B_BADLANDS
+	vec3(1.10, 1.00, 0.84),  // B_COLD_DESERT
+	vec3(1.04, 1.02, 0.76),  // B_CHAPARRAL
+	vec3(0.84, 0.94, 0.72),  // B_MOOR
+	vec3(0.84, 0.99, 0.75),  // B_FLOODPLAIN
+	vec3(1.28, 0.90, 0.62),  // B_MESA
+	vec3(1.0)
+);
+
 vec3 biome_hue_multiplier(int biome) {
-	// 少一点统一绿，多一点橄榄、金黄、冷青和岩灰。
-	if (biome == B_FOREST)    return vec3(0.74, 0.96, 0.68);
-	if (biome == B_GRASSLAND) return vec3(0.95, 1.02, 0.78);
-	if (biome == B_DESERT)    return vec3(1.30, 0.96, 0.58);
-	if (biome == B_TUNDRA)    return vec3(0.88, 0.96, 1.05);
-	if (biome == B_SNOW)      return vec3(0.88, 0.92, 0.98);
-	if (biome == B_MOUNTAIN)  return vec3(1.00, 0.96, 0.96);
-	if (biome == B_HILL)      return vec3(1.06, 1.00, 0.92);
-	if (biome == B_SWAMP)     return vec3(0.64, 0.86, 0.72);
-	// Phase 10：Whittaker 4
-	// JUNGLE：极深饱和绿（雨林郁闭）
-	if (biome == B_JUNGLE)    return vec3(0.55, 0.93, 0.64);
-	if (biome == B_SAVANNA)   return vec3(1.12, 1.04, 0.60);
-	if (biome == B_TAIGA)     return vec3(0.64, 0.91, 0.81);
-	if (biome == B_STEPPE)    return vec3(1.00, 1.06, 0.76);
-	// Phase 11
-	// SHRUBLAND：灰绿带土黄（地中海干性灌丛）
-	if (biome == B_SHRUBLAND) return vec3(1.04, 0.98, 0.82);
-	if (biome == B_MANGROVE)  return vec3(0.63, 0.89, 0.77);
-	if (biome == B_GLACIER)   return vec3(0.94, 0.99, 1.04);
-	if (biome == B_DELTA)     return vec3(0.85, 0.98, 0.76);
-	if (biome == B_OASIS)     return vec3(0.69, 1.01, 0.69);
-	if (biome == B_SALT_FLAT) return vec3(1.16, 1.14, 0.94);
-	if (biome == B_BADLANDS)  return vec3(1.26, 0.84, 0.58);
-	// terrain-overhaul 新增地形配色
-	// COLD_DESERT：冷灰黄（寒漠，比热沙漠更灰、偏冷）
-	if (biome == B_COLD_DESERT) return vec3(1.10, 1.00, 0.84);
-	if (biome == B_CHAPARRAL)   return vec3(1.04, 1.02, 0.76);
-	if (biome == B_MOOR)        return vec3(0.84, 0.94, 0.72);
-	if (biome == B_FLOODPLAIN)  return vec3(0.84, 0.99, 0.75);
-	if (biome == B_MESA)        return vec3(1.28, 0.90, 0.62);
-	return vec3(1.0);
+	return BIOME_HUES[uint(biome) <= uint(B_MESA) ? biome : 31];
 }
 
 vec3 biome_hue_modulate(vec3 base, int biome) {

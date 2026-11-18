@@ -887,6 +887,8 @@ var _sky_background: Node
 ## 那些情况下 world_map 自己就把水面画了，再画一遍就是双份水面。
 ## 创建/销毁唯一入口是 _sync_water_quad()（由 _apply_uniforms() 末尾驱动）。
 var _water_quad: MeshInstance2D
+var _ripple_table: SubViewport
+var _ripple_cycles := Vector4(-1.0, -1.0, -1.0, -1.0)
 var _water_mat: ShaderMaterial
 ## 已编进 _water_mat 的变体前缀（"" 或 "#define MAP_VISUAL_TILED\n"）。tiled 布局
 # 切换会换掉 sampler 类型，前缀变了必须重编变体，不能复用旧的材质。
@@ -1131,6 +1133,8 @@ func _apply_weather_layer_render_gate() -> void: return RendererShaderWater._app
 
 func _process(delta: float) -> void:
 	RendererSceneServices._process(self, delta)
+	if _ripple_table != null:
+		RendererShaderWater.sync_ripple_lattice(self)
 
 func _sweep_dormant_detail_chunks() -> void:
 	RendererSceneServices._sweep_dormant_detail_chunks(self)
