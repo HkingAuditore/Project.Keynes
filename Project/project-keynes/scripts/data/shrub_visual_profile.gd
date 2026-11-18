@@ -318,7 +318,9 @@ func resolved_visual_form() -> int:
 # 方向光（NdotL）直射贡献强度。
 @export_range(0.0, 1.5, 0.01) var sun_shade_strength: float = 0.55
 # 环境光下限（对齐地形 AMBIENT_FLOOR_LAND=0.18），避免背光面死黑。
-@export_range(0.0, 0.6, 0.01) var ambient_floor: float = 0.18
+# [dead-shadow 2026-11-18] 0.18 → 0.22，与 AMBIENT_FLOOR_LAND 同步。
+# 照例这条地板也是乘 albedo 之前的值，深色针叶冠层实际下限更低。
+@export_range(0.0, 0.6, 0.01) var ambient_floor: float = 0.22
 # 边缘光（fresnel 风格）：背光轮廓轻微提亮，增加体积感。
 @export_range(0.0, 0.6, 0.01) var rim_light_strength: float = 0.12
 # 接触阴影：近根部（UV.y 低）压暗强度与作用高度。

@@ -612,12 +612,12 @@ static func _bake_geometry_fields_native(baker: MapBaker, map: MapData, hex_size
 	var proc_h: PackedFloat32Array = rep.get("procedural_height_buffer", PackedFloat32Array())
 	baker._baseline_procedural_height = proc_h if proc_h.size() == pix_count else PackedFloat32Array()
 
-	print("    [fused] terrain=%.1fms valley=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms coast_sdf=%.1fms(ok=%s)" % [
-		float(rep.get("terrain_ms", -1.0)), float(rep.get("valley_ms", -1.0)),
-		float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))),
-		float(rep.get("river_ms", -1.0)), str(bool(rep.get("river_ok", false))),
-		float(rep.get("latitude_ms", -1.0)),
-		float(rep.get("coast_ms", -1.0)), str(bool(rep.get("coast_ok", false)))])
+	print("    [fused] terrain=%.1fms valley=%.1fms erosion=%.1fms(ok=%s mode=%s grid=%dx%d flow=%.1fms spl=%.1fms x%d dep=%.1fms limit=%.1fms p99=%.6f) river=%.1fms(ok=%s) latitude=%.1fms coast_sdf=%.1fms(ok=%s)" % [
+		float(rep.get("terrain_ms", -1.0)), float(rep.get("valley_ms", -1.0)), float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))), String(rep.get("erosion_mode", "?")),
+		int(rep.get("erosion_grid_w", -1)), int(rep.get("erosion_grid_h", -1)), float(rep.get("flow_ms", -1.0)), float(rep.get("spl_ms", -1.0)), int(rep.get("spl_iters_effective", -1)),
+		float(rep.get("dep_ms", -1.0)), float(rep.get("limit_ms", -1.0)), float(rep.get("spl_p99_drop", -1.0)), float(rep.get("river_ms", -1.0)),
+		str(bool(rep.get("river_ok", false))), float(rep.get("latitude_ms", -1.0)), float(rep.get("coast_ms", -1.0)), str(bool(rep.get("coast_ok", false)))])
+	if String(rep.get("erosion_mode", "carve")) != "carve" and not bool(rep.get("erosion_ok", false)): push_warning("[bake_geometry_fields] %s 侵蚀分支未执行（日志分项为 -1 即此因）：%s" % [rep.get("erosion_mode", "?"), rep.get("erosion_reason", "")])
 	if not bool(rep.get("river_ok", false)):
 		push_warning("[bake_geometry_fields] river sub-pass fallback（reason=%s）→ flow 置空（无河流或拓扑缺失）。"
 			% String(rep.get("river_reason", "?")))

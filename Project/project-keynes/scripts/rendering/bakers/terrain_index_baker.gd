@@ -95,6 +95,54 @@ const DEM_DEFAULTS := {
 	"dem_valley_mfd_exponent": 6.0,
 	# 河心 flow 不低于它的像素也是汇流出口（>= 1 关闭）。
 	"dem_valley_river_outlet_flow": 0.6,
+	# ── 侵蚀（契约 §4.1 / 计划 §4.10）：本表是**唯一**的默认值来源，经 dem_landform_knobs()
+	# 并入融合 pass knobs，可用 project_keynes/rendering/dem/<去 dem_ 前缀> 逐项覆盖。
+	# 三条硬约束，动这些值之前先读：
+	#   ① 长度/面积类参数一律以 **hex** 为单位（不是像素、不是归一化高度）：像素量由 C++ 乘
+	#      hex_px 换算，分辨率/平台（desktop 1024、Web 512–2048）变化时不改 knob。
+	#   ② 迭代次数（dem_spl_iters）只按分辨率分档，**禁止**按耗时自适应或提前退出：同一 seed
+	#      必须逐位复现，机器负载只能改变耗时，不能改变地形结果。
+	#   ③ C++ 缺省**永远**是 "carve"（逐位回退基线，见 checklist §A1）；"spl" 只能由本表显式
+	#      开启，不改 C++。旧 dem_valley_* 在所有模式下语义不变。
+	# [P2.7 2026-11-18] 已切换默认模式 carve → spl（计划 §6 P2 验收全部通过后执行）。
+	#   要回到改动前的逐位基线：把这里改回 "carve" 即可（无需重编 DLL，C++ 缺省就是 carve）；
+	#   也可临时用 ProjectSettings 覆盖 project_keynes/rendering/dem/erosion_mode = "carve"。
+	"dem_erosion_mode": "spl",
+	"dem_erosion_max_dim": 1024,
+	# 隐式 SPL 下切：dem_spl_k = 总侵蚀时间（hex 单位），dem_spl_m = 面积指数（地貌学 0.4–0.6）；
+	# 汇水面积低于 dem_spl_min_area_hex 不下切。iters 只切分强度，不改变宏观总量。
+	# [P2 标定 2026-11-18] dem_spl_k = 0.50，两条依据（均在真实地图 60×40 / 1024×606 上实测）：
+	#   ① 计划 §6 P2 验收带 spl_p99_drop ∈ [0.01, 0.08]：k=0.60 → 0.0843（**出界**，故下调），
+	#      k=0.50 → 0.0719（带内，余量 10%）。
+	#   ② 计划 §12 Q1「锐度对齐现状」：合成真实起伏图上实测「相对 procedural 高度的总削蚀均值」
+	#      carve=0.01382、spl(k=0.50)≈0.0116 → 约 84% 的 carve 强度，观感偏柔和但同量级。
+	#   标定扫描（合成图、k → p99_drop）：0.03→0.0070、0.30→0.0419、0.50→0.0586、0.60→0.0694、
+	#   0.90→0.0906、1.20→0.1080。p99 对 k 近似线性，改 k 后请按同一验收带复核。
+	"dem_spl_iters": 6,
+	"dem_spl_k": 0.50,
+	"dem_spl_m": 0.45,
+	"dem_spl_min_area_hex": 0.03,
+	# 限坡：坡度上限 = per_relief × max(relief, relief_floor) / hex；单像素最大削减 = cap × relief。
+	# 默认 5.0 与 carve 的 dem_valley_wall_per_relief 相同，锐度对齐现状。
+	"dem_slope_limit_per_relief": 5.0,
+	"dem_slope_limit_relief_floor": 0.04,
+	"dem_slope_limit_cap_per_relief": 1.4,
+	# 凸脊磨圆强度（0 = 关闭）：只取负值的 Laplacian，磨圆凸脊、不动谷底。
+	"dem_crest_round": 0.0,
+	# P3 输运受限沉积（默认关，A/B 后再定）：超搬运能力处按 dem_dep_rate 逐像素填回。
+	"dem_dep_enabled": false,
+	"dem_dep_kc": 0.02,
+	"dem_dep_rate": 0.5,
+	"dem_dep_min_area_hex": 0.5,
+	# P3b 谷底展宽（默认关）：半宽 = dem_floor_width_hex × A_hex^0.5，dem_floor_slope 为谷底横坡。
+	"dem_floor_widen": false,
+	"dem_floor_width_hex": 0.04,
+	"dem_floor_slope": 0.002,
+	"dem_floor_min_area_hex": 2.0,
+	# 仅 "spl+carve" 诊断模式：叠加的浅刻谷按此比例缩放谷深。
+	"dem_spl_carve_scale": 0.40,
+	# 诊断/测试专用：让合并 pipeline 用 count_pits 算 pits_out（缺省关，不改变地形）。
+	"dem_erosion_pit_audit": false,
 }
 const DEM_SETTING_PREFIX := "project_keynes/rendering/dem/"
 
@@ -170,6 +218,7 @@ static func apply_result(map: MapData, world: WorldData, world_ext: Object,
 	world.vegetation_buffer = vbuf
 	world.cover_buffer = cbuf
 	_upload_edge_textures(world, world_ext, report, pix_count)
+	_stash_boundary_warp(world, report, pix_count)
 	_apply_csr(world, map, report, inputs)
 	return true
 
@@ -189,6 +238,47 @@ static func _upload_edge_textures(world: WorldData, world_ext: Object,
 		secondary, world.derived_size, world.terrain_edge_neighbor_tex)
 	world.terrain_edge_distance_tex = AtlasEncodersScript.encode_r8_tex(
 		distance, world.derived_size, world.terrain_edge_distance_tex, world_ext)
+
+
+## [cell-field 2026-11-18] 边界扭曲场（方案 §3.5 / 契约 §2）：C++ 顺手输出的 RG8 暂存。
+##
+## terrain-index pass 的第 1 步本来就在逐像素算双频扭曲（`NW_LO` + `NW_HI * 0.55`），
+## C++ 把它按 `v = clamp((warp_x + hi_x) / range, -1, 1)`、`byte = round((v * 0.5 + 0.5) * 255)`
+## 编码成 W*H*2 的 RG8 一起返回（R=x、G=y）。这里只做**尺寸校验 + 暂存**，不解码、不上传：
+##   - 非 tiled：surface_baker 把它塞进 `terrain_surface_tex` 的 layer6（RGBA8 的 RG 通道）；
+##   - tiled：visual tile bundle 自带逐 tile 的 `boundary_warp`（同一个 buffer 直搬），不走这里。
+## shader 解码要的两个常量——`range`（本函数记录）与 `map_baker.WARP_AMP`——由渲染器在绑定时
+## 从 WorldData 读出来推 `terrain_warp_range` / `terrain_warp_amp`，**不在 shader 里硬编码**。
+## 旧 DLL / 融合 pass 未转发（无这三个键）⇒ 保持空/默认值，shader 的 `terrain_warp_layer_bound`
+## 为 false，格界退化成直边六边形（仍与 CPU cube_round 逐点一致），不崩、不报错。
+static func _stash_boundary_warp(world: WorldData, report: Dictionary, pix_count: int) -> void:
+	# world_data.gd 的三个字段由数据侧 agent 提供（本文件不拥有 world_data.gd）。字段缺失时
+	# 只警告一次并跳过暂存：写入不存在的属性会在 debug 构建里报 "Invalid set index"。
+	if not ("boundary_warp_buf" in world and "boundary_warp_range" in world
+			and "boundary_warp_clamped" in world):
+		push_warning("[cell-field] WorldData.boundary_warp_{buf,range,clamped} missing; "
+			+ "warp field dropped (terrain_surface_tex.layer6 falls back to neutral)")
+		return
+	var expected: int = pix_count * 2
+	var buf: PackedByteArray = report.get("boundary_warp_buffer", PackedByteArray())
+	if buf.size() != expected:
+		world.boundary_warp_buf = PackedByteArray()
+		world.boundary_warp_range = 1.6
+		world.boundary_warp_clamped = 0
+		push_warning("[cell-field] boundary_warp_buffer size %d != %d (W*H*2); warp field disabled"
+			% [buf.size(), expected])
+		return
+	var clamped: int = int(report.get("boundary_warp_clamped", 0))
+	world.boundary_warp_buf = buf
+	world.boundary_warp_range = float(report.get("boundary_warp_range", 1.6))
+	world.boundary_warp_clamped = clamped
+	# 契约：被 clamp 的通道数必须恒为 0（|warp| ≤ 1、hi × 0.55 ⇒ 理论上界 1.55 < 1.6）。
+	# 非 0 说明 C++ 的编码分母与真实扭曲上界不一致 ⇒ 值被截断，格界形状会与 CPU 高程 /
+	# 海滩坡烘焙错位。正常情况下不打日志（每次生成都会跑，不刷屏）。
+	if clamped > 0:
+		print(("[cell-field] boundary warp clamped %d channel(s) (expected 0): "
+			+ "encoding range %.3f is too small; hex edges will drift from CPU bake")
+			% [clamped, world.boundary_warp_range])
 
 
 static func _apply_csr(world: WorldData, map: MapData, report: Dictionary,

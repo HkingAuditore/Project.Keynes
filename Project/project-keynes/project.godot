@@ -102,6 +102,8 @@ rendering/map_tiles/residual_amp=0.01
 rendering/map_tiles/residual_filter_hex=0.06
 rendering/map_tiles/horizon_max_iterations=2048
 rendering/map_tiles/horizon_height_scale_hex=16.0
+rendering/map_tiles/terrain_cell_field_enabled=true
+rendering/map_tiles/weather_cell_field_enabled=true
 
 [rendering]
 

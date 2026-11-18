@@ -411,7 +411,11 @@ const HYPSO_LAYER_A_MIX := 0.0    # [bimodal 2026-06-26] 置 0：双峰地台模
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
 # 半径须小于汇流刻谷的谷宽（约 0.3–0.5 格），否则谷地被低通抹平；格内高频噪声已按奈奎斯特截断。
 const TERRAIN_NORMAL_SAMPLE_RADIUS_HEX := 0.35
-const TERRAIN_NORMAL_HEIGHT_SCALE_HEX := 2.10  # 宏观法线的视觉垂直夸张；不改权威 elevation
+# [terrain-relief 2026-11-18] 2.10 → 4.50。2.10 档下烘焙法线 xy 实测只有 0.02–0.06，
+# nz ≈ 0.998 —— 光照上地形几乎是一张平面，decal 拿不到任何可依附的坡度，这也是
+# "贴花贴不住 / 地形起伏感弱"的共同根因。半径仍锁 0.35（注释：再大就抹平谷地），
+# 只抬垂直夸张。同步：renderer_material_publish 的 uniform、uniforms.gdshaderinc 默认值。
+const TERRAIN_NORMAL_HEIGHT_SCALE_HEX := 2.60
 
 # ─── 轻度侵蚀（仅做边界平滑，不刻河谷） ──────────────────────────────────
 const EROSION_DROPS := 6000
@@ -1010,11 +1014,13 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	#   ① tiled 桌面：visual_tiles 的 normal/relief/detail/water 数组（tiled 烘焙时已上传）→
 	#      非 tiled 字段（2D normal / surface array）置 null；
 	#   ② Web 全部档位 / 桌面 legacy 回退：整图单 tile native pass 烘 normal+relief，
-	#      上传 2D terrain_normal_tex（其它层用）+ 固定 6 层 terrain_surface_tex（主地形与
+	#      上传 2D terrain_normal_tex（其它层用）+ 固定 7 层 terrain_surface_tex（主地形与
 	#      水面程序共用：layer0=normal / 1=relief / 2=detail / 3=occluder ids /
-	#      4=edge_distance / 5=edge_neighbor+water_depth）；layer4/5 直接取自同一 bundle；
-	#   ③ 单 tile 也失败：旧 RG8 粗法线兜底 —— 扩成 RGBA8（BA=128=0 坡度）2D + 6 层中性
-	#      array（relief/detail=0x80、occluder=0xFF、edge 距离=1.0、次生 id=0xFFFF）：
+	#      4=edge_distance / 5=edge_neighbor+water_depth / 6=boundary_warp，[cell-field
+	#      2026-11-18] 6 → 7）；layer4/5/6 直接取自同一 bundle；
+	#   ③ 单 tile 也失败：旧 RG8 粗法线兜底 —— 扩成 RGBA8（BA=128=0 坡度）2D + 7 层中性
+	#      array（relief/detail=0x80、occluder=0xFF、edge 距离=1.0、次生 id=0xFFFF、
+	#      warp=0x80 零偏移）：
 	#      shader 走完整路径但细节/次生混合为 0，等价于原来的"仅粗法线"，
 	#      绝不回退运行期高度差分。
 	var tiled_ok: bool = await _bake_visual_tiles(map, world, hex_size, seed_val, visual_generation_id)
@@ -1178,7 +1184,11 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float,
 		seed_val: int, generation_id: int) -> bool:
 	return await SurfaceBakerScript._bake_legacy_static_surface(self, map, world, hex_size, seed_val, generation_id)
-const SURFACE_ARRAY_LAYERS := 6
+# [cell-field 2026-11-18] 6 → 7：新增 layer6 = boundary_warp（RG=边界扭曲场 xy 的 RG8
+# 编码，BA 预留）。层序契约见 surface_baker.gd 的 SURFACE_ARRAY 注释块与
+# docs/plans/terrain-cell-field-contract.md §4.2；shader 侧按 get_layers() 推
+# terrain_surface_layer_count，warp 层是否可用由 terrain_warp_layer_bound 单独门控。
+const SURFACE_ARRAY_LAYERS := 7
 func _make_surface_edge_layers(bundle: Dictionary, size: Vector2i,
 		water_data: PackedByteArray, water_expected: int) -> Array:
 	return await SurfaceBakerScript._make_surface_edge_layers(self, bundle, size, water_data, water_expected)

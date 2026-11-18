@@ -81,13 +81,41 @@ struct LightingContext {
 #ifdef PK_TERRAIN_PACKED_BOUNCE
 // [web-high-features 2026-11-01 / 方案 B] 非 tiled Web/Compatibility 的弹射近似色。
 // 桌面路径的 bounce_lut 提供"遮挡 cell 的当前地表代表色"；Web 预算没有这张 LUT，
-// 这里用已绑 enum_lut 的 biome → hypsometric 基色 × biome 色相近似（biome_color 在
-// brdf 之前 include）；水体 / 地图外返回 0，等价于 bounce_lut.a=0（不参与弹射）。
+// 这里用 biome → hypsometric 基色 × biome 色相近似（biome_color 在 brdf 之前 include）；
+// 水体 / 地图外返回 0，等价于 bounce_lut.a=0（不参与弹射）。
+//
+// [cell-field-web 2026-11-18] 预算 + 场函数组合（PK_CELL_FIELD_NO_LEGACY_LUT）下
+// enum_lut 已从声明里删掉，这条依赖改由 cell_table 的 **layer3 class_by_index** 承担：
+// 第 i 格放在 (i % W, i / W)，R 通道就是 biome（与 GDScript
+// DCCellTableCodec.LAYER_CLASS_BY_INDEX = 3 同值；层契约见 visual_tile_sampling）。
+//   · **`cid % W` 一定在 `cid >= 0` 之后求值**：GLSL ES 3.00 对负操作数的 `%` / `/`
+//     结果未定义（方案 §3.4），而本函数第一句就是 `cid < 0` 早退 ⇒ 取模只会在
+//     cid ∈ [0, 65534] 上执行。W / H 先 max(..., 1)：cell_table_size 默认 (1,1)，
+//     退化尺寸下不能出现除零。
+//   · layer3 是否就绪由 `cell_class_index_bound` 门控（false = 旧图 / 未烘 / 层数不足），
+//     false 时返回 vec3(0.0)（等价于"无弹射"），**绝不 texelFetch 一个不存在的层**
+//     —— GLES3 对越界 layer 的返回值未定义，那是又一个不报错的坑。
+//   · cid 来自遮挡层的 16-bit 编码，理论上 < W·H；越界时同样返回 0，不做 clamp（clamp 会
+//     把越界 id 伪装成一个"看起来合理"的邻格色，静默错更难查）。
 vec3 gi_packed_bounce_color(int cid) {
 	if (cid < 0 || cid >= 65535) {
 		return vec3(0.0);
 	}
+#ifdef PK_CELL_FIELD_NO_LEGACY_LUT
+	if (!cell_class_index_bound) {
+		return vec3(0.0);
+	}
+	int bounce_w = max(int(cell_table_size.x + 0.5), 1);
+	int bounce_h = max(int(cell_table_size.y + 0.5), 1);
+	if (cid >= bounce_w * bounce_h) {
+		return vec3(0.0);
+	}
+	int b = int(texelFetch(cell_table,
+			ivec3(cid % bounce_w, cid / bounce_w, PK_CELL_LAYER_CLASS_BY_INDEX), 0).r
+			* 255.0 + 0.5);
+#else
 	int b = int(texture(enum_lut, cell_lut_uv(cid)).r * 255.0 + 0.5);
+#endif
 	if (b == B_OCEAN || b == B_COAST || b == B_LAKE || b == B_REEF
 			|| b == B_KELP || b == B_SEA_ICE) {
 		return vec3(0.0);
@@ -376,8 +404,15 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 		sky_ambient = sky_sample_irradiance(amb_N, lc.local_day);
 	}
 #endif
-	vec3 ambient = max(sky_ambient, vec3(lc.ambient_floor))
-		* albedo * s.ao * geo_ao * lc.cloud_ambient;
+	// [gi-floor 2026-11-18] ambient_floor 是**辐照度下限**，必须放在遮蔽项之后。
+	// 旧写法 `max(sky, floor) * albedo * s.ao * geo_ao * cloud` 里，floor 本身还要被
+	// s.ao × geo_ao × cloud 再乘一遍 —— 那它就不是下限，只是把天光抬到 0.18 再照常打折。
+	// 深色地表（森林 albedo 0.22 → 线性 0.04）在背光面：
+	//   旧：0.18 × 0.04 × 0.5 × 0.32 ≈ 0.0012（sRGB ≈ 0.037，死黑）
+	//   新：max(0.3×0.5×0.32, 0.18) × 0.04 ≈ 0.0072（sRGB ≈ 0.09），留得住层次。
+	// 注意 floor 仍乘 albedo：深色物体在阴影里就该更暗，这里补的是"不要被遮蔽项二次压死"。
+	float ambient_occ = s.ao * geo_ao * lc.cloud_ambient;
+	vec3 ambient = max(sky_ambient * ambient_occ, vec3(lc.ambient_floor)) * albedo;
 
 	// ── 单次弹射：被遮挡方向带来的邻域反照率溢出，同样只作用于间接光 ──────
 	ambient += lc.bounce * albedo * lc.sun_color_linear * lc.cloud_ambient;

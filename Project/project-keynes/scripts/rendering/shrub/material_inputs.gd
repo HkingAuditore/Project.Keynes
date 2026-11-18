@@ -516,7 +516,7 @@ static func _apply_profile_uniforms(host) -> void:
 		host._profile_float(&"sun_shade_strength", 0.55))
 	host._material.set_shader_parameter(
 		"ambient_floor",
-		host._profile_float(&"ambient_floor", 0.18))
+		host._profile_float(&"ambient_floor", 0.22))
 	host._material.set_shader_parameter(
 		"contact_ao_strength",
 		host._profile_float(&"contact_ao_strength", 0.42))

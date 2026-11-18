@@ -17,12 +17,20 @@ render_mode blend_mix, unshaded;
 // ════════════════════════════════════════════════════════════════════════
 // weather_overlay.gdshader — 天气云 overlay（2026-06-19 精简重写）
 //
-// 单数据通路：weather_lut（per-cell 天气场 LUT，由 encode_cell_luts 产出；经
-//             map_index_atlas.GB 的 cell.index 间接寻址逐格采样，见 sample_field_weather）。
+// **两条互斥编译的数据通路**（同一份文件，由 `PK_CELL_FIELD` 二选一）：
+//   · 宏关（默认，逐字节 = 加这套功能之前）：weather_lut（per-cell 天气场 LUT，由
+//     encode_cell_luts 产出）经 map_index_atlas.GB 的 cell.index **间接寻址**逐格采样，
+//     副格来自 edge_neighbor / edge_distance，移动档在 texel 空间做 Bayer 选格，
+//     桌面档再补一圈 6 邻环平均。见 `sample_field_weather` 的旧实现（`#ifndef` 块）。
+//   · 宏开（方案 O2）：改用共享场函数（hex_cell_core + cell_field_overlays）解析出
+//     对偶三角形与原始重心权重 w_raw，连续量三格插值、类型先查 profile 再混结果；
+//     读 offset 空间的 weather_table（4 层，层号双缓冲）。sampler 8 → 2。
+//     开关注释见 weather_layer.gd 的 CELL_FIELD_SETTING。
 // 单噪声系统：解析梯度噪声（Perlin-like，quintic 插值），无任何纹理噪声依赖。
 // 三层云：cumulus（中层主云）/ cirrus（高层卷云）/ fog（低层山雾）。
 // 降水：按天气类型 profile flag 叠加（闪电已移除）。
-// 唯一的 filter_nearest 采样是 map_index_atlas（biome），仅用于 is_water 与低雾山地权重。
+// filter_nearest 采样：旧路径是 map_index_atlas（biome）+ 三张 index 空间 LUT；
+//   场函数路径是 cell_table（迷雾 k）与 weather_table（天气 + 风），全部 texelFetch。
 //
 // [web-weather-min] web / ANGLE 裁剪变体（2026-10-31）：
 //   桌面版首帧编译在 ANGLE 上约 45 秒，卡住 web 加载条（曾在 98%）。原因不是 shader 体积，
@@ -34,14 +42,23 @@ render_mode blend_mix, unshaded;
 //   邻域、接缝伙伴采样。保留：三层云（中云/卷云/低雾）、coverage 重映射曲线、逐像素晨昏
 //   光照与银边、云下直射阴影、天气 LUT 的连续副格混合、全部 uniform 契约。
 //   桌面路径（未定义该宏）逐字不变。
+//   [O2] 这个变体只换噪声栈、不碰取样：与 PK_CELL_FIELD **正交**（方案 §4：天气第一版
+//   Web 就能开），所以 `PK_WEB_WEATHER_MIN + PK_CELL_FIELD` 也是一份合法变体
+//   （tests/world/weather_overlay_field_test.gd 编它并断言 sampler 仍是 2 张）。
 // ════════════════════════════════════════════════════════════════════════
 
-// cell-index 间接寻址（cloud-from-field 2026-06-20）：per-cell 天气场 LUT。
-//   R=weather_type, G=intensity, B=cloud, A=vapor（与 encode_cell_luts 同布局）。
-//   decode_cell_index(uv) 用 map_index_atlas.GB 取 cell.index，再 cell_lut_uv 采样本格天气。
+// 帧间插值系数（两条路径共用）：0=prev 1=curr,两次仿真更新之间随时间推进。
+uniform float weather_lerp : hint_range(0.0, 1.0) = 1.0;
+
+#ifndef PK_CELL_FIELD
+// ── 旧路径：cell-index 间接寻址（cloud-from-field 2026-06-20）────────────────
+//   per-cell 天气场 LUT。R=weather_type, G=intensity, B=cloud, A=vapor（与 encode_cell_luts
+//   同布局）。wx_decode_cell_index(uv) 用 map_index_atlas.GB 取 cell.index，再 wx_cell_lut_uv
+//   采样本格天气。
+//   整段在 `#ifndef PK_CELL_FIELD` 里：开关关闭时预处理产物与今天**逐字节一致**，开关
+//   打开时下面 5 个 sampler 全部从声明里消失（sampler 普查：8 → 2，方案 §3.9）。
 uniform sampler2D weather_lut : filter_nearest, repeat_disable;
 uniform sampler2D weather_lut_prev : filter_nearest, repeat_disable;  // 上一仿真帧 LUT(帧间插值减两次更新间横跳)
-uniform float weather_lerp : hint_range(0.0, 1.0) = 1.0;              // 0=prev 1=curr,两次仿真更新之间随时间推进
 uniform vec2 lut_dims = vec2(0.0);
 uniform sampler2D wind_lut : filter_nearest, repeat_disable;
 uniform sampler2D wind_lut_prev : filter_nearest, repeat_disable;
@@ -51,18 +68,107 @@ uniform bool has_wind_prev = false;
 // ——「你记得这里的地形，但不知道今天下不下雨」这个信号比灰化本身更能说明问题。
 // fog_mask_enabled 关闭时整个分支被 uniform 条件跳过，不产生额外采样。
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
-uniform bool fog_mask_enabled = false;
 uniform bool has_terrain_edge_data = false;
 uniform float terrain_ecotone_width : hint_range(0.0, 0.96) = 0.84;
+#endif
+
+// 视野门控总开关（两条路径共用）。PK_CELL_FIELD 路径下还要 `cell_table_bound` 为真才
+// 真的生效 —— 表没就绪时宁可整段跳过，也不读一张不存在的层（方案 §3.4 末条）。
+uniform bool fog_mask_enabled = false;
 
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+
+#ifndef PK_CELL_FIELD
 #define VT_USE_MAP_INDEX
 #define VT_USE_EDGE_NEIGHBOR
 #define VT_USE_EDGE_DISTANCE
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
+#endif
+
+#ifdef PK_CELL_FIELD
+// ════════════════════════════════════════════════════════════════════════════
+// [cell-field-overlays 2026-11-18 / O2] PK_CELL_FIELD：天气改用共享场函数
+//
+// 方案：docs/plans/terrain-cell-field-overlays-plan.md §3.2（坐标契约）/ §3.4（采样流程）/
+//       §3.5（类型怎么处理）/ §3.7（迷雾门控与迷雾显示共用一个函数）/ §3.9（采样账）
+//
+// 与旧路径的差别（旧路径由上面的 #ifndef 保留、编译期整段剔除）：
+//   · 归属不再来自 map_index_atlas 的 NEAREST texel（类别量），而是由世界坐标解析算出
+//     一个对偶三角形 + 原始重心权重 w_raw（hex_cell_core.gdshaderinc）；
+//   · 连续量（intensity / cloud / vapor / 风）一律 `Σ w_i · value_i`，不锐化、不要 fwidth；
+//   · 天气类型是类别量：**先查 profile 再按 w 混合结果**，绝不插值 type ID（§3.5）；
+//   · 桌面 6 邻环、Bayer 选格、副格双采样、依赖读的间接寻址全部删除（§3.4 末段）；
+//   · sampler 从约 8 张降到 **2** 张（cell_table + weather_table）。
+//
+// 数据源（O1 已落地，见 scripts/rendering/bakers/cell_lut_baker.gd 的 weather_table 段）：
+//   weather_table = Texture2DArray RGBA8, map_w × map_h, **offset 空间**, 4 层：
+//     layer 0/1 天气 A/B : R=type G=intensity B=cloud A=vapor（与 weather_lut 同字节）
+//     layer 2/3 风   A/B : RG=单位风向*0.5+0.5 B=speed/20 A=1（与 wind_lut 同编码）
+//   双缓冲靠**层号**：cur = weather_cur_layer，prev = weather_prev_layer = 1 - cur；
+//   风用 2 + cur / 2 + prev。层号翻转与天气提交同一次（不拷贝、不重传）。
+//
+// ⚠ 这里的 uniform 一律**不得依赖默认值**（方案 §3.2 第 2 条）：hex_size / map_dims /
+//   *_size / *_bound / 层号全部由 weather_layer.gd 推送。默认值只保证"宿主还没推"时
+//   退化成**没有云**，而不是画出错位的云（bound=false ⇒ sample_field_weather 直接空返回）。
+// ⚠ 函数形参名不得与 uniform 同名（Godot 把两者放同一命名空间）：本文件里
+//   `hex_size` / `map_dims` / `cell_table` / `weather_table` / `wrap_period_x` 等名字
+//   只作 uniform 使用，helper 的形参用 c / g / layer / v 这类短名。
+// ════════════════════════════════════════════════════════════════════════════
+#include "res://shaders/include/cell_field_overlays.gdshaderinc"
+
+// 世界单位 / hex（= hex 半径；宿主推 host.hex_size）。
+// ⚠ 不要用 hex_world_diameter 反推：那个 uniform 在天气 / 迷雾 / 地形三处默认值不同
+//   （38 / 未声明 / 44，方案 §1.4），新代码只用本 uniform。
+uniform float hex_size = 22.0;
+// (map_w, map_h)，宿主推 Vector2(map.width, map.height)。
+uniform vec2 map_dims = vec2(0.0);
+// per-cell 属性表（offset 空间，4 层 RGBA8）。这里只用 layer2.R = 迷雾知识度 k，
+// 让天气的视野门控与迷雾显示**共用同一个函数**（方案 §3.7）。
+uniform sampler2DArray cell_table : filter_nearest, repeat_disable;
+uniform vec2 cell_table_size = vec2(0.0);
+uniform bool cell_table_bound = false;
+// 天气 + 风的 offset 空间表（4 层，见文件头）。**不加 source_color**：字节
+// （R=类型 / G=intensity / ...）是数据不是颜色，sRGB 转换会把 type 通道也一起改掉。
+uniform sampler2DArray weather_table : filter_nearest, repeat_disable;
+uniform vec2 weather_table_size = vec2(0.0);
+uniform bool weather_table_bound = false;
+uniform int weather_cur_layer = 0;
+uniform int weather_prev_layer = 1;
+// 查表前的低频域扭曲（方案 §2「为什么天气也要扭曲」）：纯 w_raw 插值时，一个下雨格
+// 被晴天包围会得到一顶以格心为顶点的"软六边形帐篷"，轮廓仍带六边形感。加一层
+// 约 0.3~0.5 格的**可平铺**扭曲（横向周期 = wrap_period_x，否则回绕接缝两侧会取到
+// 不同的格）把帐篷打散成不规则团块。
+//   weather_warp_freq : 1 / 世界单位。默认 0.004 ⇒ 波长 ≈ 250 wu ≈ 5~6 个 hex。
+//   weather_warp_amp  : × hex_size（世界单位位移幅度）。默认 0.75 ⇒ 每轴 ≈ 0.37 hex 直径。
+// 参数值待美术联调（方案 §8-2），走 uniform 就是为了不重编 shader。
+uniform float weather_warp_freq = 0.004;
+uniform float weather_warp_amp = 0.75;
+// 迷雾带宽（gap 单位）：与迷雾显示**必须同值**，否则天气云消失的位置与薄纱边界错开
+// （方案 §3.7）。约束 fog_field_band < √3/2（PK_FIELD_BAND_MAX），建议 0.6。
+uniform float fog_field_band = 0.6;
+// [O23] 迷雾**自己的**扭曲（真源 = fog_of_war_layer.gd 的 FOG_WARP_FREQ / FOG_WARP_AMP，
+// 由 weather_layer.gd 从真源推过来；数值默认值刻意与 fog_of_war.gdshader:158-159 的同名
+// uniform 默认值相同 —— 万一宿主没推，两边退化成同一组参数，而不是"天气一套、迷雾一套"）。
+//
+// 为什么天气要**另外**吃这两个值，而不是复用上面的 weather_warp_*：天气云的形态是天气
+// 自己的美术参数（方案 §3.4 / §8-2），与迷雾无关；但**迷雾门控取 k 的取样位置**必须与
+// fog_of_war.gdshader 逐像素一致（方案 §3.7：云的消失边界与薄纱边界是同一条线）。
+// 扭曲决定 k 在哪儿取样 ⇒ 参数一旦分家，函数再一致边界也会错开。
+// ⚠ 单位：freq = 1 / 世界单位；amp 要再乘 hex_size（见 pk_soft_warp_tiled 的说明）。
+uniform float fog_warp_freq = 0.0042;
+uniform float fog_warp_amp = 0.55;
+
+// weather_table 层号：必须与 bakers/cell_lut_baker.gd 的 WEATHER_TABLE_LAYER_* 同值。
+const int PK_WX_LAYER_WEATHER_A = 0;
+const int PK_WX_LAYER_WEATHER_B = 1;
+const int PK_WX_LAYER_WIND_BASE = 2;
+// cell_table 层号：必须与 bakers/cell_table_codec.gd 的 LAYER_* 同值。
+const int PK_WX_CELL_LAYER_CLASS = 0;
+const int PK_WX_CELL_LAYER_AUX = 2;
+#endif
 uniform float world_time = 0.0;
 // 与洋流和云影一致：双相位交替，重置时权重为零。
 vec3 weather_flow_phases() {
@@ -309,7 +415,12 @@ float cloud_density_alpha(float density) {
 // billboard 白云着色：以亮白为主，迎太阳侧更亮、背光侧 / 厚核略压暗形成体积感，薄边银边。
 // 光照走 earth_daylight：sun_col（晨昏暖橙↔正午暖白）、amb_col（夜冷蓝↔昼天空）、local_day（夜=0）。
 // 方向光乘 local_day → 夜侧无阳照（与 brdf.make_lighting_context 同源），云的明暗随晨昏线扫过。
-vec3 compute_cloud_lighting(CloudLayerSample layer, vec3 base_tint, int wt, float light_grad, float thickness, float silver_gain, vec3 sun_col, vec3 amb_col, float local_day) {
+// [cell-field-overlays 2026-11-18 / O2] **不再吃 int 天气类型**（方案 §3.5）：
+// 函数体从来不按 type 分支/染色（见下面「云层光照不按天气类型染色/压暗」那条），参数
+// 一直是死参数。场函数路径下"先查表再按 w 混合"的 tint 由调用方算好（weather_profile_colors
+// 的加权和就是 w.color），所以这里连 type 都不需要 —— 删掉参数而不是传一个
+// wt_dom 进来当摆设。旧路径调点同签名（区域外），因此宏关闭时行为不变。
+vec3 compute_cloud_lighting(CloudLayerSample layer, vec3 base_tint, float light_grad, float thickness, float silver_gain, vec3 sun_col, vec3 amb_col, float local_day) {
 	if (!cloud_tod_tint_enabled) {
 		return base_tint;
 	}
@@ -460,7 +571,7 @@ CloudLayerSample sample_cumulus_layer(vec2 wp, vec2 axis, float coverage) {
 	return make_cloud_layer(density, edge, coverage, 0.55);
 }
 
-// ── 逐格天气场采样结果（结构沿用旧名 FrontField，现由 weather_lut 填充）──
+// ── 逐格天气场采样结果（结构沿用旧名 FrontField，现由 weather_lut / weather_table 填充）──
 struct FrontField {
 	vec3 color;
 	float alpha;
@@ -471,6 +582,11 @@ struct FrontField {
 	float edge;
 	int type;
 	vec2 axis;
+	// [cell-field-overlays 2026-11-18 / O2] 低雾用的「山地权重」。旧路径在 fragment 里现算
+	// （4 点 golden-angle 邻域），场函数路径在 sample_field_weather 里用三格 biome 混合，
+	// 顺便复用已经求出的三角形与 w_raw —— 所以带在结构里。旧路径恒为 0（并由 fragment
+	// 的旧分支覆盖它自己的 mountain_w），字段只被 PK 分支读取。
+	float mountain_w;
 };
 
 FrontField empty_field() {
@@ -484,6 +600,7 @@ FrontField empty_field() {
 	f.edge = 0.0;
 	f.type = WT_CLEAR;
 	f.axis = vec2(1.0, 0.0);
+	f.mountain_w = 0.0;
 	return f;
 }
 
@@ -502,6 +619,11 @@ float precip_cloud_opacity_bias(float precip) {
 // front_axis / front_ellipse_distance / visual_weather_intensity 已随 sample_fronts 一并删除。
 
 // ── cell-index 间接寻址（与 cell_indirect.gdshaderinc 同公式；此处内联，避免引入 dyn/eco LUT 依赖）──
+// [cell-field-overlays 2026-11-18 / O2] 整段（含下面的 Bayer 选格 / 6 邻环 / 副格双采样）
+// 只在旧路径编译。PK_CELL_FIELD 变体里这些符号一个都不存在 —— 这是"删掉 Bayer 选格、
+// 副格间接寻址、桌面 6 邻环"的可验证形式（tests/world/weather_overlay_field_test.gd 的
+// 缺席断言）；反过来，宏关时它们必须在（否则那条断言就是恒真的空断言）。
+#ifndef PK_CELL_FIELD
 int wx_decode_cell_index(vec2 uv) {
 	vec2 gb = visual_sample_map_index(wx_wrap_uv(uv)).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
@@ -517,11 +639,17 @@ vec2 wx_cell_lut_uv(int cid) {
 	return (vec2(float(cx), float(cy)) + 0.5) / max(lut_dims, vec2(1.0));
 }
 
+#endif // PK_CELL_FIELD（旧路径的 cell-index 解码）
+
+// 风编码解码（RG = 单位风向 * 0.5 + 0.5，B = speed / 20，A = 1）：两条路径共用。
+// 纯解码、不碰 sampler，所以放在守卫外面 —— 旧路径仍然逐字节调用同一份实现。
 vec2 wx_decode_wind(vec4 encoded) {
 	vec2 dir = encoded.rg * 2.0 - 1.0;
 	float len = length(dir);
 	return len > 0.01 ? dir / len * (0.25 + encoded.b) : vec2(0.0);
 }
+
+#ifndef PK_CELL_FIELD
 vec2 wx_sample_wind(int cid) {
 	if (!has_local_wind || cid < 0) return vec2(0.0);
 	vec2 uv = wx_cell_lut_uv(cid);
@@ -596,7 +724,93 @@ float wx_edge_secondary_weight(vec2 uv) {
 vec4 wx_sample_lut(int cid) {
 	return texture(weather_lut, wx_cell_lut_uv(cid));
 }
+#endif // PK_CELL_FIELD（旧路径：sampler 辅助 / Bayer 选格 / 副格 / 6 邻环）
 
+#ifdef PK_CELL_FIELD
+// ─── 场函数路径的装配层（方案 §3.4）─────────────────────────────────────────
+// 网格参数：几何一律来自 uniform（hex_size / map_dims），**不从 hex_world_diameter
+// 反推、不信默认值**（方案 §3.2 第 2 条）。map_w 同时是横向回绕周期。
+PkHexGrid wx_field_grid() {
+	PkHexGrid g;
+	g.hex_size = max(hex_size, 1e-3);
+	g.map_w = max(int(map_dims.x + 0.5), 1);
+	g.map_h = max(int(map_dims.y + 0.5), 1);
+	return g;
+}
+
+// 三格之一在 weather_table 里的 texel（offset 空间；col 已 posmod、row 未 clamp）。
+// row 越界 = 南北 padding：先把 row clamp 进纹理（绝不越界读），再乘 inside 掩码清零。
+// 为什么"清零"就是 padding 语义：建表时 o2i == -1 的 texel 四通道全部写
+// WEATHER_TABLE_PAD_TYPE（= WT_CLEAR = 0，见 bakers/cell_lut_baker.gd），所以"读那一格"
+// 与"读 0"逐字节相同。反过来若 clamp 到 0 / map_h-1 后**不**清零，就会把真实地图数据
+// 混进地图外区域 —— 南北边缘凭空长出天气（旧路径 cid < 0 早退同样不给天气）。
+vec4 wx_fetch_weather(ivec2 c, int layer, PkHexGrid g) {
+	int row = clamp(c.y, 0, g.map_h - 1);
+	float inside = step(0.0, float(c.y)) * step(float(c.y), float(g.map_h - 1));
+	return texelFetch(weather_table, ivec3(pk_posmod(c.x, g.map_w), row, layer), 0) * inside;
+}
+
+// 三格之一的风（已解码成世界单位向量）。层号规则：wind = 2 + cur / 2 + prev。
+// ⚠ 掩码必须乘在**解码之后**：风编码是 RG = 方向*0.5+0.5，padding 的 0 字节解码出来是
+// dir = (-1,-1)、长度 1.41 > 0.01，会得到 (-0.707,-0.707)*0.25 这个"假风"，而不是零风。
+vec2 wx_fetch_wind(ivec2 c, int layer, PkHexGrid g) {
+	int row = clamp(c.y, 0, g.map_h - 1);
+	float inside = step(0.0, float(c.y)) * step(float(c.y), float(g.map_h - 1));
+	return wx_decode_wind(
+			texelFetch(weather_table, ivec3(pk_posmod(c.x, g.map_w), row, layer), 0)) * inside;
+}
+
+// 三格之一的迷雾知识度 k（cell_table.aux.R，0..1）。
+// [2026-11-18 修复] padding（row 越界）取 **k = 0**，与 `fog_of_war.gdshader::fog_cell_k`
+// 逐值一致 —— 那一圈地图外薄带上的迷雾是**完全不透明**的，天气也必须一并被门控掉，
+// 否则会出现「迷雾已经盖住、云还在被算」的无意义着色（且两边边界会分家）。
+// 早先这里写的是 `mix(B_SEA_ICE/255, …)`：那既不是迷雾的 k，也不是地形的 k，只是把
+// 一个 **biome 常量**（20/255≈0.078）混进了 **知识度** 通道，属笔误。
+float wx_fetch_fog_k(ivec2 c, PkHexGrid g) {
+	int row = clamp(c.y, 0, g.map_h - 1);
+	vec4 v = texelFetch(cell_table, ivec3(pk_posmod(c.x, g.map_w), row, PK_WX_CELL_LAYER_AUX), 0);
+	float inside = step(0.0, float(c.y)) * step(float(c.y), float(g.map_h - 1));
+	return mix(0.0, v.r, inside);
+}
+
+// [O23] 按**长度**做径向 clamp（GLSL 没有 clamp_length）—— 与
+// fog_of_war.gdshader::fog_clamp_length 逐式相同，是本文件唯一一处"抄迷雾"的数学。
+//
+// 为什么迷雾门控也要 clamp：迷雾侧的扭曲是**按长度限幅**的（方案 §3.6 约束 2：
+// A ≤ (√3/2 − band/2)·s，保证可见格的格心仍是纯主导格）。天气若用同一组 freq/amp
+// 却不限幅，|warp| 超过 A_max 的那些像素上 k 的取样点就会与迷雾错开（amp=0.55 时
+// 双轴合成最坏 0.78·hex_size，而 A_max ≈ 0.57·hex_size ⇒ **大部分像素**都不受限），
+// 于是"云消失的边界"与"薄纱边界"又分家 —— 那正是本任务要消掉的东西。
+// 逐轴 clamp 不行：会把位移方块的角削成斜边，形态看出方向性。
+vec2 wx_clamp_length(vec2 v, float max_len) {
+	float l = length(v);
+	return v * min(1.0, max_len / max(l, 1e-5));
+}
+
+// 低雾的「山地权重」（0..1）。旧路径用 4 点 golden-angle 环 + hash 抖动去平滑 texel 台阶
+// （方案 §1.1 记录的同类问题）；场函数下 biome 归属本来就随坐标连续，所以直接按 w_raw
+// 混合三格权重 —— 抖动与邻域采样存在的理由一起消失。
+// 权重取值沿用桌面旧公式（M=1.0 / H=0.65 / 其它陆=0.35 / 水=0）：移动·Web 旧的二值近似
+// （0.55、其它陆 0）是省采样的妥协，场函数下两者采样次数一样，没必要再近似。
+float wx_biome_mountain_weight(ivec2 c, PkHexGrid g) {
+	int row = clamp(c.y, 0, g.map_h - 1);
+	int biome = int(texelFetch(cell_table,
+			ivec3(pk_posmod(c.x, g.map_w), row, PK_WX_CELL_LAYER_CLASS), 0).r * 255.0 + 0.5);
+	bool water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
+			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+	return (biome == B_MOUNTAIN) ? 1.0 : ((biome == B_HILL) ? 0.65 : (water ? 0.0 : 0.35));
+}
+
+// 天气类型 → profile 行。**先查表**：颜色 / 透明度由调用方按 w 混合结果（方案 §3.5）。
+// type 字节只在这里被解释一次，绝不参与插值；clamp 是因为 padding / 空槽字节写坏时
+// 动态索引会越界（GLES3 对越界数组索引同样未定义）。
+vec4 wx_profile_row(float type_byte) {
+	return weather_profile_colors[clamp(int(type_byte * 255.0 + 0.5), 0, MAX_WEATHER_TYPES - 1)];
+}
+#endif // PK_CELL_FIELD（场函数装配层）
+
+// ── 逐格天气场采样：两条路径互斥编译（宏关 = 今天逐字节相同的旧实现）──
+#ifndef PK_CELL_FIELD
 // 逐格天气场采样（cloud-from-field 2026-06-20）：经 cell-index 间接寻址读 weather_lut。
 // type/intensity/cloud/vapor 取中心 cell（枚举不可插值）；只做帧间(prev)时间平滑。
 // Spatial transitions use the shared neighbor/distance field; the hard atlas
@@ -719,6 +933,154 @@ FrontField sample_field_weather(vec2 wp) {
 	return best;
 }
 
+#else // PK_CELL_FIELD
+// ════════════════════════════════════════════════════════════════════════════
+// [cell-field-overlays 2026-11-18 / O2] 场函数版 sample_field_weather（方案 §3.4 / §3.5）
+//
+// 入参是**未回绕**的世界坐标（方案 §3.2 第 1 条）：函数内部先 wrap 一次，再由
+// pk_overlay_tri 叠加可平铺低频扭曲后求对偶三角形。
+//
+// 采样账（方案 §3.9，按分支全部展平的最坏情况）：
+//   天气 cur 3 +（weather_lerp < 0.999 时）天气 prev 3 + 风 cur 3 + 风 prev 3
+//   + 迷雾 aux 3（fog_mask_enabled ∧ cell_table_bound）+ 低雾 class 3（低雾门控内）= 15
+// 全是两张 ≤ 40 KB 小表的 texelFetch（无过滤、命中 L1）。三个条件 weather_lerp /
+// fog_mask_enabled / cell_table_bound 都**只依赖 uniform** ⇒ 整屏走向一致，各平台都能
+// 真正跳过（方案 §3.9 末条允许保留这类条件）。
+//
+// [O23 2026-11-18] 迷雾门控改用**迷雾自己的**三角形（t_fog）之后账本的变化：
+//   · 纹理采样**净增 0**：那 3 次 aux texelFetch 本来就有，只是从 t 的三格换成 t_fog 的
+//     三格（k 的取样位置必须与 fog_of_war.gdshader 一致，见下方门控段）；
+//   · 纯 ALU **+1 次 pk_soft_warp_tiled**（2 次 pk_overlay_grad_noise_tiled = 8 次
+//     pk_overlay_hash22，零纹理）＋ 1 次 length() 的 clamp。
+// 所以 sampler 账不变（仍是 2 张表），只多两个 uniform 与一小段 ALU。
+// ════════════════════════════════════════════════════════════════════════════
+FrontField sample_field_weather(vec2 world_pos) {
+	FrontField best = empty_field();
+	// 数据没就绪（宏开着但 weather_table 未发布）⇒ 整段退回**无云**，绝不读不存在的层。
+	// 为什么不用旧路径兜底：旧实现只在宏关闭态编译（它是"逐字节不变"的回退保证本身），
+	// 两份实现同时编进来会让 sampler 从 2 涨回 8。weather_layer.gd::_push_weather_table()
+	// 在同一个条件下打一次 push_warning，把"开关开着但表没就绪"报到日志里。
+	if (!weather_table_bound) {
+		return best;
+	}
+	PkHexGrid g = wx_field_grid();
+	vec2 wp = wx_wrap_world_pos(world_pos);
+	// 扭曲必须沿 x 周期可平铺（周期 = wrap_period_x），否则回绕接缝两侧会取到不同的格子
+	// ⇒ 经线上出现一条云形错位（方案 §3.2 第 3 条）。
+	vec2 ws = pk_soft_warp_tiled(wp, wrap_period_x, weather_warp_freq, weather_warp_amp * hex_size);
+	PkHexTri t = pk_overlay_tri(wp, g, ws);
+	vec3 w = t.w_raw;
+
+	// 视野门控（方案 §3.7）：与迷雾显示**同一组函数 + 同一组参数**（pk_hex_sharpen +
+	// pk_overlay_fog_k + pk_overlay_fog_visibility），三格 k 读 cell_table.aux.R。
+	// 放在所有云计算之前：不可见处直接退成无云，顺带把三层云 / TOD 光照 / 投影阴影
+	// 整条管线一起省掉。
+	//
+	// [O23 2026-11-18] k 的三角形**单独构造**：门控的函数一致但参数不一致，边界仍会错开
+	// （k 的取样位置由扭曲决定）。所以这里用迷雾那组 fog_warp_* 重新求一次三角形，
+	// 云自己的 t / w 继续用 weather_warp_*（那是天气形态参数，与迷雾无关）。
+	// 三个参数（fog_warp_freq / fog_warp_amp / fog_field_band）在 GDScript 侧只有一个
+	// 真源（fog_of_war_layer.gd 的常量），由 weather_layer.gd 从真源推给本材质。
+	float fog_vis = 1.0;
+	if (fog_mask_enabled && cell_table_bound) {
+		// 迷雾显示的 k 用**锐化后**的权重与自己的带宽（方案 §3.6）：天气门控必须跟着走，
+		// 否则「已探索未可见」区域里云消失的位置与薄纱边界会各走一条线。
+		float fog_band = clamp(fog_field_band, 1e-4, PK_FIELD_BAND_MAX);
+		vec2 ws_fog = pk_soft_warp_tiled(wp, wrap_period_x, fog_warp_freq, fog_warp_amp * hex_size);
+		// 约束 2 的同一上限（与 fog_of_war.gdshader 的 fog_warp_amax 逐式相同，band 也取自
+		// 同一组参数）：不加这一步，|warp| 超过 A_max 的像素上取样点就会与迷雾错开。
+		float fog_amax = max(PK_HEX_SQRT3 * 0.5 - fog_band * 0.5, 0.0) * hex_size;
+		PkHexTri t_fog = pk_overlay_tri(wp, g, wx_clamp_length(ws_fog, fog_amax));
+		vec3 w_fog = pk_hex_sharpen(t_fog.w_raw, fog_band);
+		float fog_k = pk_overlay_fog_k(w_fog,
+				wx_fetch_fog_k(t_fog.c0, g), wx_fetch_fog_k(t_fog.c1, g),
+				wx_fetch_fog_k(t_fog.c2, g));
+		fog_vis = pk_overlay_fog_visibility(fog_k);
+		if (fog_vis < 0.01) {
+			return best;
+		}
+	}
+
+	// 层号：cur / prev 是一对（O1 双缓冲，prev = 1 - cur）。clamp 只是不让脏 uniform 去
+	// 索引不存在的层（GLES3 对越界 layer 的 texelFetch 返回值未定义）。bound 为真时
+	// 两者本来就在 0/1，这里不引入分支代价。
+	int cur = clamp(weather_cur_layer, PK_WX_LAYER_WEATHER_A, PK_WX_LAYER_WEATHER_B);
+	int prev = clamp(weather_prev_layer, PK_WX_LAYER_WEATHER_A, PK_WX_LAYER_WEATHER_B);
+
+	// 固定 3 次 texelFetch，三格展开写、不用循环（方案 §3.9 第 2 条）。
+	vec4 c0 = wx_fetch_weather(t.c0, cur, g);
+	vec4 c1 = wx_fetch_weather(t.c1, cur, g);
+	vec4 c2 = wx_fetch_weather(t.c2, cur, g);
+	vec2 wind0 = wx_fetch_wind(t.c0, PK_WX_LAYER_WIND_BASE + cur, g);
+	vec2 wind1 = wx_fetch_wind(t.c1, PK_WX_LAYER_WIND_BASE + cur, g);
+	vec2 wind2 = wx_fetch_wind(t.c2, PK_WX_LAYER_WIND_BASE + cur, g);
+
+	// 帧间插值（时间平滑）：条件只依赖 uniform weather_lerp。**只插连续量 .gba**；
+	// type 通道（.r）不插 —— 类型是类别量，走下面的"先查表再混结果"。
+	if (weather_lerp < 0.999) {
+		vec4 p0 = wx_fetch_weather(t.c0, prev, g);
+		vec4 p1 = wx_fetch_weather(t.c1, prev, g);
+		vec4 p2 = wx_fetch_weather(t.c2, prev, g);
+		c0.gba = mix(p0.gba, c0.gba, weather_lerp);
+		c1.gba = mix(p1.gba, c1.gba, weather_lerp);
+		c2.gba = mix(p2.gba, c2.gba, weather_lerp);
+		// 风是向量：**先解码再插值**（与旧路径 mix(decode, decode) 同序 —— 在编码域
+		// 插值会把归一化方向算错）。
+		wind0 = mix(wx_fetch_wind(t.c0, PK_WX_LAYER_WIND_BASE + prev, g), wind0, weather_lerp);
+		wind1 = mix(wx_fetch_wind(t.c1, PK_WX_LAYER_WIND_BASE + prev, g), wind1, weather_lerp);
+		wind2 = mix(wx_fetch_wind(t.c2, PK_WX_LAYER_WIND_BASE + prev, g), wind2, weather_lerp);
+	}
+
+	// 连续量：原始重心权重 w_raw 的三格线性组合（不锐化，方案 §2 原则表）。
+	// 结果是对偶三角网上的分段线性场 ⇒ 跨格处处连续，所以天气侧不需要 fwidth。
+	vec3 gba = w.x * c0.gba + w.y * c1.gba + w.z * c2.gba;
+	float intensity_amount = gba.x;
+	float cloud_amount = gba.y;
+	float vapor_amount = gba.z;
+
+	// 类型：**先查 profile 再按 w 混合结果**（方案 §3.5）。绝不混合 type ID ⇒
+	// 雨区与雪区之间得到一条连续的雨夹雪过渡带，而不是色调硬切。
+	vec4 prof = w.x * wx_profile_row(c0.r) + w.y * wx_profile_row(c1.r) + w.z * wx_profile_row(c2.r);
+	// 主导格类型：只留给"仍然需要整数类型"的下游。当前**没有**这样的下游
+	// （compute_cloud_lighting 不吃 int，见它的函数头），保留它是给 O4 探针与以后可能
+	// 出现的按类型分支用 —— 有它就能在交界处单独检查是否跳变，而不必改采样路径。
+	int dom = pk_hex_tri_dom(t);
+	vec4 c_dom = (dom == 0) ? c0 : ((dom == 1) ? c1 : c2);
+	int wt_dom = clamp(int(c_dom.r * 255.0 + 0.5), 0, MAX_WEATHER_TYPES - 1);
+
+	float precip_amount = intensity_amount;
+	float visual_cloud_amount = clamp((cloud_amount + 0.6 * vapor_amount), 0.0, 1.0);
+	// 云层以 weather_cloud + weather_vapor 为基础（2026-06-29：水汽先进可视云量）。
+	float cloud_linear = clamp(visual_cloud_amount / 0.8, 0.0, 1.0);
+	float cloud_shaped = smoothstep(0.05, 0.8, visual_cloud_amount);
+	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.44) * precip_cloud_bias(precip_amount), 0.0, 1.0);
+	float precip_gate = clamp(precip_amount * 1.05, 0.0, 1.0);
+
+	best.color = prof.rgb;
+	best.alpha = prof.a * fog_vis;
+	best.intensity = intensity_amount * fog_vis;
+	best.cloud = cloud_cover * fog_vis;
+	best.precip = precip_gate * fog_vis;
+	best.shadow = clamp(cloud_cover * 0.6, 0.0, 1.0) * fog_vis;
+	best.edge = vapor_amount * fog_vis;
+	best.type = wt_dom;
+	// 风：Σ w_i · wind_i（同样 w_raw；prev 已在上面按解码域插值）。
+	best.axis = w.x * wind0 + w.y * wind1 + w.z * wind2;
+
+	// 低雾的「山地权重」：旧路径在 fragment 里做 4 点邻域（桌面）/ 1 点（移动 · Web）；
+	// 这里改成三格 class.biome 的 w_raw 混合。门控与旧路径完全一致（q>=2 且 w.cloud>0.05，
+	// 即 fog_intensity > 0.001），而且低/中档根本没编译低雾 ⇒ 这 3 次读取一般被整段跳过。
+#if !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
+	if (effective_weather_quality() >= 2 && best.cloud > 0.05) {
+		best.mountain_w = clamp(w.x * wx_biome_mountain_weight(t.c0, g)
+				+ w.y * wx_biome_mountain_weight(t.c1, g)
+				+ w.z * wx_biome_mountain_weight(t.c2, g), 0.0, 1.0);
+	}
+#endif
+	return best;
+}
+#endif // PK_CELL_FIELD
+
 // sample_fronts（旧 fronts 椭圆通路）已删除——云分布改由 sample_field_weather 逐格 LUT 驱动。
 
 void vertex() {
@@ -734,19 +1096,34 @@ void fragment() {
 	float lat_signed = clamp(uv.y * 2.0 - 1.0, -1.0, 1.0);
 	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
 
+	// [cell-field-overlays 2026-11-18 / O2] 场函数路径的入参是**未回绕**世界坐标（方案 §3.2
+	// 第 1 条，函数内部自己 wrap）；旧路径保持传已回绕的 wp，一字未改。
+#ifdef PK_CELL_FIELD
+	FrontField w = sample_field_weather(v_world);
+#else
 	FrontField w = sample_field_weather(wp);
+#endif
 
 	int q_weather = effective_weather_quality();
+#ifndef PK_CELL_FIELD
+	// 旧路径的 biome 采样：is_water 自 2026-06 起已无下游读取（低雾单独取一次 fog_biome），
+	// 场函数路径连 map_index_atlas 都不绑定，所以整段只在旧路径编译。
 	int biome = 0;
 #if !defined(PK_MOBILE_ANY)
 	biome = int(visual_sample_map_index(wx_wrap_uv(uv)).r * 255.0 + 0.5);
 #endif
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+#endif
 
 	// 低雾仅高档启用；无雾时跳过山地采样。移动/Web 使用中心格近似。
 	float fog_intensity = (q_weather >= 2 && w.cloud > 0.05) ? w.cloud * 0.65 : 0.0;
 	float mountain_w = 0.0;
+#ifdef PK_CELL_FIELD
+	// 场函数路径：三格 class.biome 的 w_raw 混合已在 sample_field_weather 里算好
+	// （复用同一个三角形，不重算扭曲噪声），门控也一致。
+	mountain_w = w.mountain_w;
+#else
 #ifdef PK_WEATHER_CHEAP_NOISE
 	// web-min：山地权重退化成「中心格 biome」二值近似（桌面版是 4 点 golden-angle 邻域 + hash
 	// 抖动）。省掉 4 次邻域贴图取样、8 次 hash，以及一个可动态索引的 vec2[4] 局部数组 ——
@@ -789,6 +1166,7 @@ void fragment() {
 				+ hash_signed(floor(wp * 0.085 + vec2(67.0, -31.0))) * 0.18, 0.0, 1.0);
 	}
 #endif
+#endif // PK_CELL_FIELD（旧路径的山地权重邻域采样）
 
 	vec2 cumulus_axis = w.axis;
 	vec2 cirrus_axis = w.axis;
@@ -880,7 +1258,7 @@ void fragment() {
 #else
 		float silver = mix((q_weather >= 2) ? 1.08 : 0.72, 0.58, dense_core);
 #endif
-		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, cumulus_thickness, silver, ed.sun_col, ed.amb_col, ed.local_day);
+		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, cumulus_light_grad, cumulus_thickness, silver, ed.sun_col, ed.amb_col, ed.local_day);
 		// 边缘过亮项(>1)在强云核轻微收敛，避免羽边白点闪烁（但不压成暗块）。
 #ifdef PK_WEB_WEATHER_MIN
 		float bright_mul = mix(1.08 + cloud_edge_soft * 0.06, 0.82, cloud_core * 0.54);
@@ -907,7 +1285,7 @@ void fragment() {
 		// 低雾（底层，介于地面与中云之间）。
 		if (fog_layer.density > 0.001) {
 			vec3 fog_base = mix(vec3(0.80, 0.84, 0.88), vec3(0.62, 0.68, 0.74), ed.pixel_night);
-			vec3 fog_col = compute_cloud_lighting(fog_layer, fog_base, WT_FOG, 0.0, fog_layer.density * 0.55, 0.08, ed.sun_col, ed.amb_col, ed.local_day);
+			vec3 fog_col = compute_cloud_lighting(fog_layer, fog_base, 0.0, fog_layer.density * 0.55, 0.08, ed.sun_col, ed.amb_col, ed.local_day);
 			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.95 * cloud_opacity_scale, 0.0);
 			col = fog_comp.rgb;
 			alpha = fog_comp.a;
@@ -917,7 +1295,7 @@ void fragment() {
 		if (cirrus_layer.density > 0.001) {
 			vec3 cirrus_base = mix(vec3(0.92, 0.94, 0.98), ed.sun_col, 0.28);
 			cirrus_base = mix(cirrus_base, vec3(0.72, 0.78, 0.88), ed.pixel_night);
-			vec3 cirrus_col = compute_cloud_lighting(cirrus_layer, cirrus_base, w.type, cirrus_layer.edge * 0.18, cirrus_layer.density * 0.28, 0.36, ed.sun_col, ed.amb_col, ed.local_day);
+			vec3 cirrus_col = compute_cloud_lighting(cirrus_layer, cirrus_base, cirrus_layer.edge * 0.18, cirrus_layer.density * 0.28, 0.36, ed.sun_col, ed.amb_col, ed.local_day);
 			vec4 cirrus_comp = apply_cloud_layer(col, alpha, cirrus_layer, cirrus_col, 0.42 * cloud_opacity_scale, layer_occlusion * 0.45);
 			col = cirrus_comp.rgb;
 			alpha = min(cirrus_comp.a, 0.94);

@@ -2,7 +2,15 @@
 
 本文总结 Project.Keynes 当前实际运行的初始地形生成算法：每一步做什么、使用什么算法、在哪个函数里实现、最终数据如何进入渲染和运行期 SoA/DataCore。
 
-当前状态：**初始地形生成已 100% C++/GDExtension 化**。`MapGenerator.generate()` 负责流程编排，权威地形、水文、生态和特殊地貌生成在 `gdext/src/world_ext.cpp`。旧 GDScript `_generate_cells` 和后处理 fallback 已删除，native 失败会直接中止生成。
+当前状态：**初始地形生成已 100% C++/GDExtension 化**。`MapGenerator.generate()` 负责流程编排，权威地形、水文、生态和特殊地貌生成在 GDExtension（base pass 在 `gdext/src/world_ext_generate_base.cpp`，post-base 在 `gdext/src/world_ext_generate.cpp`）。旧 GDScript `_generate_cells` 和后处理 fallback 已删除，native 失败会直接中止生成。
+
+> **2026-11-18 更新（cell 级地形重构：脊噪声 → 构造抬升场）**：base pass 的地形段改为
+> 「**§R 脊信号前置 → §2.4' SPL（抬升场 + 坡面扩散 + 最陡受体 + 线性高度预算）→ §5' 脊线残差**」，
+> 液滴侵蚀与热力坍塌分支已整段删除、p99 膝点压缩取消（§3.6 / §3.7 / §6）。
+> 方案与实测见 [terrain-ridge-uplift-plan.md](plans/terrain-ridge-uplift-plan.md)（结果为「部分达标」：M2/M4/性能达标，M1/M5 未达标）。
+>
+> ⚠ **本版本起 cell 高程 `E[]` 变化 ⇒ 旧存档作废，需新开局**：读档按种子重建世界，重建结果与旧档不再一致
+> （起始格不一致时 `start_cell_drift` 拒绝读档，碰巧一致时动态 SoA 与新算法的视觉/水文会静默错位）。
 
 ## 关键源码入口
 
@@ -11,9 +19,9 @@
 | 世界生成入口 | `Project/project-keynes/scripts/geography/map_generator.gd` | `generate()` |
 | native 生成桥 | `Project/project-keynes/scripts/geography/map_generator.gd` | `_generate_cells_native_base()` |
 | native 结果装配 | `Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd` | `TerrainGeneratorScript.assemble_native_result()` |
-| C++ base 生成 | `gdext/src/world_ext.cpp` | `DCWorldExt::run_native_world_generate_base_pass()` |
-| C++ post-base 后处理 | `gdext/src/world_ext.cpp` | `DCWorldExt::run_native_world_generate_post_base_pass()` |
-| C++ 同源 helper | `gdext/src/world_ext.cpp` | `pk_compute_temperature()` / `pk_decide_terrain_ex()` / `pk_derive_*()` |
+| C++ base 生成 | `gdext/src/world_ext_generate_base.cpp` | `DCWorldExt::run_native_world_generate_base_pass()` |
+| C++ post-base 后处理 | `gdext/src/world_ext_generate.cpp` | `DCWorldExt::run_native_world_generate_post_base_pass()` |
+| C++ 同源 helper | `gdext/src/world_ext_internal.h` | `pk_compute_temperature()` / `pk_decide_terrain_ex()` / `pk_derive_*()` |
 | GDScript 运行期 helper | `Project/project-keynes/scripts/geography/map_generator.gd` | `_compute_temperature()` / `_decide_terrain()` / `_derive_*()` |
 | 渲染烘焙入口 | `Project/project-keynes/scripts/rendering/map_baker.gd` | `bake_world()` |
 | terrain-index native bridge | `Project/project-keynes/scripts/rendering/bakers/terrain_index_baker.gd` | `DCTerrainIndexBaker.bake()` / `apply_result()` |
@@ -67,6 +75,7 @@
 | 边界海洋化 | `edge_falloff_start`、`edge_falloff_end`、`edge_falloff_depth` |
 | 大陆中心 | `main_radius_min/max`、`satellite_radius_min/max`、`satellites_per_main`、`main_placement_min/max`、`satellite_placement_min/max`、`*_separation_factor` |
 | 水文 | `river_channel_init_cells`、`river_headwater_init_cells`、`river_headwater_min_land_h`、`river_flow_percentile`、`hydro_river_min_length`、`hydro_lake_min_cells`、`hydro_lake_min_depth`、`hydro_lake_min_volume`、`pit_fill_max_iters`、`lake_seed_freq`、`lake_seed_threshold`、`lake_seed_depth`、`lake_seed_min_interior` |
+| cell 级侵蚀 / 脊抬升（2026-11-18 重构） | `spl_iters`（14）、`spl_erodibility`（1.2）、`spl_area_exp`（0.45）、`spl_uplift_rate`（**0.08**）、`spl_ref_cells`（2400）、`spl_headroom_frac`（0.97）、`spl_ridge_uplift`（**0.03**）、`spl_hillslope_diffusion`（**0.08**）、`ridge_residual_frac`（**0.15**）、`ridge_boost_amp`（0.60）；液滴与热力坍塌的 `erosion_*` 键**已删除** |
 | 湿度耦合 | `coastal_moisture_boost`、`orographic_boost`、`rain_shadow_threshold`、`rain_shadow_factor`、`rain_shadow_lookback` |
 | 植被反馈 | `veg_forest_donor`、`veg_swamp_donor`、`veg_grassland_donor`、`veg_desert_donor`、`veg_jungle_donor`、`veg_taiga_donor`、`veg_savanna_donor`、`veg_oasis_donor`、`veg_delta_donor`、`veg_salt_flat_donor`、`veg_feedback_elev_decay` |
 | 特殊地貌 | `max_volcanoes`、`volcano_min_dist`、`volcano_min_land_h`、`plateau_min_land_h`、`plateau_max_relief`、`plateau_min_cells`、`mountain_min_land_h`、`mountain_min_relief`、`peak_min_land_h`、`peak_min_prominence`、`peak_land_cells_per_peak` |
@@ -115,37 +124,107 @@ C++ base pass 使用的 `FastNoiseLite`：
 1. offset 坐标 `(col,row)` 转 cube 坐标：`q = col - ((row - (row & 1)) / 2)`，`r = row`，`s = -q-r`。
 2. `cell_lat_norm = row / max(height - 1, 1)`。
 3. `nx = col / max(width - 1, 1)`，`ny = row / max(height - 1, 1)`。
+4. **经度是周期轴**：噪声按 `lon = col / width` 取 `θ = 2π·lon`，走 `cyl_noise()` 圆环采样（col=0 与 col=width-1 相邻不重合），所以海拔/气候在接缝处东西无缝。
 
-海拔由以下信号合成：
+**当前默认是双峰地台模型（`PK_BIMODAL_ENABLED = true`，2026-06-26 起）**：
 
-1. **大陆距离扰动**：`dist_perturb = height_warp(nx*250+11.3, ny*250-7.1) * continent_warp_amp`。扰动距离值，让海岸线不规则，同时避免直接扭曲坐标把远洋拉进大陆。
-2. **大陆距离场**：对每个大陆中心计算 `df = pow(clamp(1 - (distance + dist_perturb) / radius, 0, 1), 1.5)`，多个中心取最大值。取最大而非相加，可以保留主大陆和卫星岛的独立尺度。
-3. **多频 FBM 起伏**：坐标放大到 `nx*200 / ny*200` 后，用 `height_warp` 扭曲采样点；`height_noise` 与 `detail_noise` 按 `0.70 / 0.30` 混合，映射到 `[0,1]`。
-4. **中尺度 meso 起伏**：`detail_noise(nx*400+137, ny*400-91)` 映射到 `[0,1]`，产生高原/谷地大块结构。
-5. **海岸细节**：`height_noise(nx*80+500, ny*80+500) * 0.06`。
-6. **离岸群岛**：`pow(max(detail_noise(nx*900-333, ny*900+217) - 0.55, 0), 1.5) * offshore_amp`，只有强 spike 才抬出水面。
-7. **边界衰减**：按 `edge_falloff_start/end/depth` 对靠近地图边缘的位置做 smoothstep 扣减，让地图边缘倾向于海洋。
+1. **大陆性 mask**：`cont = dist_field·PK_CONT_RADIAL_W + (cont_noise−0.5)·PK_CONT_NOISE_W + offshore`，再乘极地偏海因子。
+   `dist_field` 已**不再 `pow(1.5)`、不再是穹顶**，只作 mask 种子。
+2. **陆海分界**：`C = smoothstep(THRESH−MARGIN, THRESH+MARGIN, cont)`，海岸线定在 `C=0.5`（窄 margin → 陡大陆坡折）。
+3. **造山带**：`ridge = ridged noise (1−|n|)` 成脉 × 低频 `belt` 成带，`orogeny = pow(ridge, PK_OROG_SHARP)·belt·PK_OROGENY_AMP`，只随 `C` 出现在陆地侧。
+4. **陆地侧**：`platform = PK_PLATFORM_H + macro·PK_PLATFORM_UNDULATE + orogeny`；`lt = (C−0.5)·2`，`E = sea_level + lt·platform`——即平坦大陆地台 + 低频起伏 + 造山带，**内陆平坦、海岸上坡**。
+5. **海洋侧**：只产「水侧占位深度」保证 `E < sea_level`；真实洋底由后面的「距岸 BFS」（大陆架 3 hex → 大陆坡 → 10 hex 达深渊）统一重写。
+6. 双峰路径**跳过 min/max 归一化**（见 §3）。
 
-合成公式核心是：
+下面的旧径向穹顶合成式只在 `PK_BIMODAL_ENABLED = false` 的回退路径生效，保留作回退基础设施：
 
 ```text
-raw = dist_field * (dist_field_weight + noise_01*noise_weight + meso*meso_weight)
-    + coast
-    + offshore
+raw = dist_field^(1.5) * (dist_field_weight + noise_01*noise_weight + meso*meso_weight)
+    + coast + offshore + macro * dist_field^(1.5) * macro_relief_weight
     - edge_falloff
 ```
 
-### 3. 海拔归一化
+回退路径的分项含义：大陆距离扰动 `dist_perturb = height_warp(...)·continent_warp_amp`；
+多频 FBM 起伏 `height_noise`/`detail_noise` 按 0.70/0.30 混合；中尺度 `meso` 出高原/谷地大块结构；
+海岸细节 `height_noise·0.06`；离岸群岛 `pow(max(detail_noise−0.55,0), 1.5)·offshore_amp`；
+边界衰减按 `edge_falloff_start/end/depth` 用 smoothstep 扣减，让地图边缘倾向海洋。
+
+### 3. 海拔归一化（双峰路径已跳过）
 
 实现位置：base pass 的 `normalize` block。
 
-扫描全图 `min_e / max_e`，若范围大于 `0.001`，把所有海拔线性映射到 `[0,1]`：
+**双峰地台模型（当前默认，`PK_BIMODAL_ENABLED = true`）不执行本步**：双峰模型已锚定 `sea_level` 直接产出
+`[0,1]` 海拔，min/max 拉伸会把海平面位置搬走，因此 `normalize` 只在旧径向路径（`PK_BIMODAL_ENABLED = false`）
+下运行。
+
+旧径向路径行为（仅在回退路径生效）：扫描全图 `min_e / max_e`，若范围大于 `0.001`，把所有海拔线性映射到 `[0,1]`：
 
 ```text
 E[i] = (E[i] - min_e) / (max_e - min_e)
 ```
 
-山脉 ridge 在归一化后才加，避免 ridge 扩大分母、压低普通陆地。
+该路径下山脉 ridge 在归一化后才加，避免 ridge 扩大分母、压低普通陆地；双峰路径的脊信号现在改为在**任何侵蚀之前**
+算成抬升场（§3.6），SPL 结束后只保留一份 `ridge_residual_frac` 的残差（§6）。
+
+### 3.5 海底距岸剖面（代码块 2.55）
+
+**2.55 海底深度自然化**：以所有陆地格（`E ≥ sea`）为源做多源 BFS 得到每个海洋格的距岸 hex 距离，
+近岸 3 hex 为大陆架（浅）、10 hex 达深渊（`PK_OCEAN_ABYSS_FRAC` 占 `sea_level` 比例），叠低频盆地噪声造海沟/海岭。
+锚定 `sea_level`：陆地格完全不动，海陆边界与陆地高度不被改写。
+
+### 3.6 脊信号前置：构造抬升场（代码块 R，2026-11-18）
+
+位置：§2.55 洋底之后、SPL 之前。实现位置：base pass 的 `R. 脊信号前置` block。
+
+算法（公式与常量逐字沿用旧 §5，只把输入换成 `E0`）：
+
+1. 先把当前 `E` 拷一份 `e0_frozen`，**之后所有的脊计算只读它**——否则 `ridge_add` 会依赖迭代次数/顺序，
+   破坏「同种子逐位一致」。
+2. 两套 ridge noise：`ridge_a = 1 − |detail_noise(...·180·feature_scale...)|`、
+   `ridge_b = 1 − |detail_noise(...·220·feature_scale...)|`（经度走圆柱采样，跨接缝无缝）。
+3. `ridge_signal = pow(max(ridge_a, ridge_b), 1.4)`。
+4. `slope = E0[idx] − 最低邻居（读 E0）`；`slope_gate = clamp(slope*8.0, 0.30, 1.0)`。
+5. `land_factor = pow((E0 − sea)/(1−sea), 1.5)`。
+6. `ridge_add = ridge_signal · land_factor · slope_gate · ridge_boost_amp`；**海洋格 `ridge_add = 0`**。
+7. 诊断：`ridge_debug_dump=1` 时额外返回 `ridge_add_arr`（未乘 §5' 预算缩放 `g`），**纯诊断、不改变任何输出数组**。
+
+`ridge_add` 在本节算完后不再随水系变化，它作为 §3.7 抬升场 U 的脊项参与「抬升 vs 下切」的准平衡：
+脊信号强、汇水小的格 `U/C` 大 → 高出下游 → 成脊；穿过山带的大河 `A` 大、`C` 大 → 抬升被下切抵消 → 峡谷（先成河）。
+
+### 3.7 SPL 侵蚀：抬升场 + 坡面扩散 + 最陡受体（代码块 2.4'，2026-11-18）
+
+位置：`normalize` + 洋底之后、地形决策之前（注意与视觉层的像素侵蚀不同层级）。
+原 §2.4 SPL 与 §2.5 液滴 / 热力坍塌合并为本节：**液滴与热力坍塌分支已整段删除**（坡面扩散承担软化陡坡、圆脊的职责），
+`p99` 膝点硬压缩也已取消。实现位置：base pass 的 `2.4' Stream-Power 河流侵蚀` block。
+
+每轮（`spl_iters` 默认 14）：
+
+1. Priority-Flood 求填洼面 `filled` 与出栈序 `proc`（下游先）。
+2. **最陡受体**：`rcv[i] = argmax_d (filled[i] − filled[nb_d])`，仅取严格更低的邻居；平局取 `d` 小者；
+   无严格更低邻点时沿用 Priority-Flood 的「关闭者」（平地 ε 路径），否则平地上的汇水无法下传。
+3. 汇水面积 `A` 沿 `rcv` 累积（初值 1，单位=格）。
+4. **隐式下切**：`E[i] = (E[i] + U[i] + C·E[rcv]) / (1 + C)`，`C = K·(A/Ā)^m`，
+   **`U[i] = spl_uplift_rate·relief0[i] + spl_ridge_uplift·ridge_add[i]`**（每轮施加）。
+   `proc` 升序 ⇒ 更新 `E[i]` 时 `E[rcv]` 已就绪，且加权平均保证 `E[i] ≥ E[rcv]`（不倒灌、不发散）。
+5. **坡面扩散**一步（显式线性，hex 6 邻 Laplacian）：
+   `E'_i = E_i + κ·Σ_k (E_nb_k − E_i)/6`，`κ = spl_hillslope_diffusion`（0.08）；**仅陆地**、海洋邻居按固定边界；
+   **双缓冲**（读 `E` 写 `e_diff`，整步结束后一次拷回），与遍历方向/线程数无关。
+
+循环结束后做一次**线性高度预算**（取代膝点压缩）：对陆地相对海平面高度 `h = E − sea` 乘**同一个**系数，使
+`p99(h)` 落到 `target = sea + (soft_max − sea)·spl_headroom_frac`（默认 **0.97**）；
+其中 `land_elev_cap = max(0.93, sea + (1−sea)·0.94)`、`soft_max = land_elev_cap − (land_elev_cap − sea)·0.06`。
+系数被夹到 ≤ 1（**只压不抬**），统一缩放保序、地貌分类阈值含义不变。
+
+其他要点：
+
+- 大图按 `spl_ref_cells`（默认 2400）做分辨率缩放：`s = max(1, sqrt(n/spl_ref_cells))`，
+  `C = K·s·(A/Ā/s)^m`，使每格高差 ∝ `1/s` 一致（`N ≤ spl_ref_cells` 时 `s=1`，与旧行为逐位相同）。
+- `spl_iters = 0` 关闭 SPL（回到「无侵蚀」基线）；**没有**「关 SPL 就回液滴」的分支（不保留旧算法，计划 §2.3）。
+- 产出：沿高汇水下切出树状河谷（长干流 + 支流），低汇水脊线被抬升保留，杂散闭流洼地被抬填。
+- 实测（默认参数，32 种子均值）：陆地闭合洼地 34.6 → **22.0（−36%）** / 674 → **403.4（−40%）**；
+  base pass 耗时 7.63 → **7.60 ms**（60×40）、110.6 → **101.3 ms**（200×150）；
+  但 M1（脊–水系）与 M5（平顶率）**未达标**、M2b（高脊洼地）变差——
+  见 [terrain-ridge-uplift-plan.md](plans/terrain-ridge-uplift-plan.md) §6.2 / 附 A。
 
 ### 4. 湖泊种子下沉
 
@@ -176,21 +255,26 @@ E[i] = (E[i] - min_e) / (max_e - min_e)
 
 目的不是做真实水文侵蚀，而是消除局部无出口洼地，帮助后续河流 flow accumulation 找到下坡路径。
 
-### 6. 山脉脊线
+### 6. 脊线残差（代码块 5'，2026-11-18）
 
-实现位置：base pass 的 `mountain ridges` block。
+实现位置：base pass 的 `5'. 脊线残差` block（在「湖泊种子下沉」「洼地平滑」两步之后，即代码块 §3 / §4 之后）。
 
-只作用于 `E >= sea_level` 的陆地格，且 `ridge_boost_amp > 0` 时启用。
+旧 §5 是「侵蚀之后再整段叠脊噪声」：脊信号与汇水无关 → 脊线横跨河谷、在谷中筑坝，坝后盆地被 post-base 的
+Priority-Flood 判成湖盆。**这条顺序问题已在 2026-11-18 消除**：脊信号已前移到 §R（§3.6）作为抬升场参与
+「抬升 vs 下切」平衡，本节只保留**同一份 `ridge_add` 的残差**，用于给脊顶一点锐度：
 
-算法：
+1. 直接复用 §3.6 算出的 `ridge_add`（已含 `ridge_boost_amp`），**不再重算噪声、不再乘 amp**。
+2. `ridge_residual_frac`（默认 **0.15**，上限 0.30）是残差比例；加法 = `g · ridge_residual_frac · ridge_add[i]`。
+3. 冻结基底 `ridge_pre`，避免抬升按遍历顺序累积。
+4. **统一高度预算**：`land_elev_cap = max(0.93, sea + (1−sea)·0.94)`、`soft_max = land_elev_cap − (land_elev_cap − sea)·0.06`
+   （顶部只留 6% 做 C1 收尾）；极端配置先把基底按海平面锚定比例缩放，再用 24 次二分求全局增益 `g`
+   使陆地 p99 ≤ `soft_max`；超过 `soft_max` 的部分用指数软收尾
+   `h = soft_max + span·(1 − exp(−(h−soft_max)/span))`，`span = land_elev_cap − soft_max`。
+5. 诊断输出 `ridge_budget_scale`（即 `g`）、`ridge_base_scale`、`ridge_tail_cells`、`ridge_land_cells`、`ridge_elevation_cap`。
 
-1. 两套 ridge noise：`ridge_a = 1 - abs(detail_noise(nx*180+71.3, ny*180-33.7))`，`ridge_b = 1 - abs(detail_noise(nx*220-50.7, ny*220+91.1))`。
-2. `ridge_signal = pow(max(ridge_a, ridge_b), 1.4)`，形成两组不同走向山脉链。
-3. 计算局部坡度 `slope = E[idx] - lowest_neighbor_elevation`。
-4. `slope_gate = clamp(slope * 8.0, 0.30, 1.0)`。
-5. `land_factor = pow((E - sea_level)/(1-sea_level), 1.5)`。
-6. `addition = ridge_signal * land_factor * slope_gate * ridge_boost_amp`。
-7. 加回海拔后做软上限：超过 `soft_max=0.78` 的部分用指数压缩，最终 clamp 到 `land_elev_cap=0.93`。
+该 block 的增量按同一全局比例 `g` 分配（不是逐点压缩），只有顶部极少数尖峰走 C1 软收尾，且不动海洋与海陆分布。
+`ridge_residual_frac = 0` 时完全内生（山脊只由 §3.7 的抬升场 + 水系长出来）；**超过 0.30 会重新引入脊坝**（上界即 0.30）。
+脊抬升的落地结果是**部分达标**（M1 / M5 未达成），见 [terrain-ridge-uplift-plan.md](plans/terrain-ridge-uplift-plan.md) §6.2 / 附 B。
 
 ### 7. 基础湿度与初步 terrain
 
@@ -503,8 +587,8 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 1. 初始化 baker RNG 和视觉噪声。
 2. 清空海冰、enum atlas、weather atlas、dynamic atlas、cell-index LUT 等缓存。
 3. 创建 `WorldData`，计算 `world_bounds`、`hm_size`、`derived_size`、`sea_level`、`bake_seed`。
-4. `DCTerrainBaker.bake_height_biome_moisture()` 一次循环生成 `height_buffer / biome_buffer / moisture_buffer / vegetation_buffer / cover_buffer`，并建立 `pixel_to_cell_lookup / cell_pixel_lists / CSR`。
-5. `DCTerrainBaker.bake_hydraulic_erosion()` 对视觉 `height_buffer` 做轻度水力侵蚀。
+4. 优先 `DCWorldExt.run_bake_geometry_fields_pass()`（融合 native pass）：C++ 进程内串起 terrain-index → 侵蚀 → 河流 SDF → 海岸 SDF → 纬度；返回 fallback 时才回退到下列 per-pass 编排（`DCTerrainBaker.bake_height_biome_moisture()` 一次循环生成 `height_buffer / biome_buffer / moisture_buffer / vegetation_buffer / cover_buffer`，并建立 `pixel_to_cell_lookup / cell_pixel_lists / CSR`）。
+5. 侵蚀在融合 pass 内由 `dem_erosion_mode` 分支决定（默认 `spl`；`carve`/`spl+carve`/`droplet` 见下文「轻度水力侵蚀」小节）；legacy 回退路径调 `DCTerrainBaker.bake_hydraulic_erosion()` 做液滴侵蚀。
 6. `DCTerrainBaker.bake_river_sdf()` 把 `cell.has_river` 链烘成河流 SDF。
 7. `_bake_latitude_buffer()` 生成每像素纬度。
 8. `_bake_initial_physical_circulation()` 和 `_bake_initial_vector_buffers()` 生成风、洋流、上升流相关 buffer。
@@ -531,19 +615,54 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 9. 写入 height/biome/moisture/vegetation/cover buffer。
 10. 同步建立像素到 cell 的 lookup 和 cell 到 pixels 的反向索引。
 
-### 轻度水力侵蚀
+### 轻度水力侵蚀（汇流 SPL + 限坡 + 沉积，2026-11-18）
 
-函数：`DCTerrainBaker.bake_hydraulic_erosion()`。
+生产路径是融合几何 pass `DCWorldExt.run_bake_geometry_fields_pass` 内的**侵蚀阶段**
+（`gdext/src/world_ext_bake.cpp`）；`DCTerrainBaker.bake_hydraulic_erosion()`（液滴）现在只在
+fused 返回 fallback 时的 legacy per-pass 编排里执行。
 
-这是视觉层侵蚀，不回写 `HexCell.elevation`：
+模式由 `dem_erosion_mode` 选择，默认值在 `terrain_index_baker.gd::DEM_DEFAULTS`，经
+`dem_landform_knobs()` 并入 fused knobs（可用 `project_keynes/rendering/dem/<去 dem_ 前缀>` 覆盖）：
 
-1. 预计算圆形 brush kernel。
-2. 生成 `EROSION_DROPS` 个雨滴。
-3. 每个雨滴随机起点，最多走 `EROSION_MAX_STEPS`。
-4. 双线性采样高度和梯度，用惯性和梯度更新方向。
-5. 根据高度差、速度、水量和携沙容量决定沉积或侵蚀。
-6. 侵蚀按 brush kernel 从邻近像素扣高度。
-7. 水量按 `EROSION_EVAPORATION` 衰减，过低则停止。
+| 模式 | 执行内容 |
+| --- | --- |
+| `spl`（**出货默认**） | SPL 管线（建树 → 系数 → 隐式下切 → [沉积/展宽] → 限坡）→ 河流 SDF → 海岸 SDF；不跑刻谷、不跑液滴 |
+| `carve`（**C++ 缺省**，逐位回退基线） | 几何刻谷（Priority-Flood 填洼 → MFD 汇水 → `log(A)` 映射谷深 → 倒角谷壁）+ 液滴装饰 → 河流 → 海岸 |
+| `spl+carve`（诊断） | SPL 管线 + 浅刻谷（谷深 × `dem_spl_carve_scale`）→ 河流 → 海岸 |
+| `droplet`（历史对照） | 仅液滴侵蚀，不做几何刻谷 |
+
+C++ 缺省**恒为 `carve`**，且不认识的模式串一律回退 `carve`，所以不传该 knob 的宿主（perf-validation 镜像）
+行为逐位不变；`spl` 只能由 GDScript `DEM_DEFAULTS` 显式开启。
+
+`pk_erosion`（`gdext/src/bake_erosion_spl.h`，header-only、无 Godot 依赖）的实现顺序：
+
+1. **计算栅格**：基线长边超过 `dem_erosion_max_dim`（1024）时按整数因子盒式下采样（wrap 感知，别名列按经线周期处理），`hex_px` 同步换算；`factor=1` 时不下采样。
+2. `build_flow`：Priority-Flood + ε 填洼（float key + FIFO 洼地）→ 拓扑序 `order` → 单受体最陡下降 `rcv` → 汇水面积 `A_hex`（1 px = 1/`hex_px²` hex）。
+3. `precompute_coeff`：`C = (dem_spl_k / dem_spl_iters) · A_hex^dem_spl_m / dx_hex`，循环外一次算完。
+4. `spl_incise`：沿 `order` 下游→上游隐式求解 `h = (h + C·h_rcv) / (1 + C)`，再 `clamp(·, sea+eps, h_old)`——只降、不下海。
+5. 可选 `deposit` / `floor_widen`：沿同一棵树反向累积削蚀体积，超搬运能力处填回（上限 `h_pre`、`min_child_h` 保证不造洼）。**两者默认 `false`**（`dem_dep_enabled` / `dem_floor_widen`），是否默认开等 A/B 裁决。
+6. `slope_limit`：按局地起伏缩放坡限的前向/后向倒角扫描，只削高侧、单像素削减有 `dem_slope_limit_cap_per_relief` 上限。
+7. **写回**：`delta = h_pre − h`（≥ 0）在计算栅格上双线性放大后 `h = h_pre − delta↑`，陆地截断到 `sea+eps`；`factor=1` 时直接就地写回。
+
+不变量（测试断言，A1–A11）：任一阶段后 `h ≤ h_pre`；水体与河心像素**逐位不变**；陆地 ≥ `sea_level + 5e-4`；
+`pits_out ≤ pits_in`；同 knobs + 同分辨率逐位可复现（迭代次数只按分辨率分档，禁止按耗时自适应）；
+`dem_dep_enabled=false` 时与 P2 结果逐位相等。
+
+实测（`template_debug`，同图同次运行成对对照）：**desktop 1024×606** `carve` 231.6 ms → `spl` 264.9 ms
+（`spl` desktop 多次实测约 233–265 ms，同机波动约 ±15%）；**Web high 2048×1212** `carve` 1072.8 ms →
+`spl` **514.5 ms**（spl 在 1024 计算栅格上跑，反比 carve 快 558 ms）；2048 上 `upsample_ms` = 16.2 ms。
+`spl` 分项 desktop 中位 flow≈80 / spl≈13 / limit≈13 ms。生产路径 `[fused] erosion` = 86.0 ms、
+`spl_p99_drop` = 0.0719，`MapBaker v6: total` 1439 → 1393 ms。完整预算与验收见
+[terrain-erosion-spl-plan.md](plans/terrain-erosion-spl-plan.md) §5。
+
+`run_bake_erosion_spl_pass(knobs)` 是同一条管线的 buffer-encoder 入口，只给测试 / A/B probe 喂合成高度场，
+生产走融合 pass；`run_bake_erosion_pass`（液滴）ABI 不变，保留给 `carve` / `droplet` / legacy 回退。
+
+legacy 液滴侵蚀（`DCTerrainBaker.bake_hydraulic_erosion()`，仅在 fused fallback 与 `carve`/`droplet` 模式跑）：
+预计算圆形 brush kernel → 生成 `EROSION_DROPS` 个雨滴 → 每个雨滴随机起点、最多走 `EROSION_MAX_STEPS` 步 →
+双线性采样高度与梯度、按惯性和梯度更新方向 → 按高度差 / 速度 / 水量 / 携沙容量决定沉积或侵蚀 →
+侵蚀按 brush kernel 扣邻近像素高度 → 按 `EROSION_EVAPORATION` 衰减水量。它只做边界平滑（单步扣除约 10⁻³，
+5 步走不出一个 hex），不形成水系——这正是本轮换掉它的原因。
 
 ### River SDF
 
@@ -588,16 +707,18 @@ noise raster、byte quantization 和 `DCAtlasEncoders.encode_r8_tex()` 调用。
 
 ## 维护注意
 
-1. 初始生成没有 GDScript fallback。修改 `world_ext.cpp` 后必须 rebuild GDExtension。
+1. 初始生成没有 GDScript fallback。修改 `gdext/src/world_ext_*.cpp`（base 在 `world_ext_generate_base.cpp`）后必须 rebuild GDExtension。
 2. C++ helper 与 GDScript helper、shader helper 有 SAME_SOURCE 关系，尤其是纬度温度曲线、海拔降温、雪盖和海冰公式。
 3. `MapConfig.river_count` 当前不控制河流数量；主河由 `river_channel_init_cells` 控制，高地源流由 `river_headwater_init_cells / river_headwater_min_land_h` 控制，之后会沿 `hydro_parent` 下坡连通到水体。
 4. `has_river` 是逻辑 flag，terrain 不会变成 river；视觉河流由 `DCTerrainBaker.bake_river_sdf()` 生成。
-5. `DCTerrainBaker.bake_hydraulic_erosion()` 只改视觉高度图，不回写逻辑海拔，因此不影响玩法水文。
+5. 视觉地形侵蚀（融合 pass 的 `spl` 管线，或 legacy 的 `bake_hydraulic_erosion()`）只改视觉高度图，不回写逻辑海拔，因此不影响玩法水文；`WorldData.sample_height` 与 `world.height_buffer` 均无玩法消费者，改视觉高度是纯视觉变化（读档重烘也会看到新地形）。
 6. post-base 的 `base_moisture` 快照在雨影之前；运行期季节刷新从该基线出发。
 7. 海冰 bootstrap 可能改写 terrain，所以 native post-base 后仍需要一次 `_sync_axes_for_map()`。
 8. 三轴语义已取代单轴 terrain 作为新代码推荐读取方式；terrain 仍是渲染和兼容层重要 enum。
 9. reef/kelp 生成可读取 upwelling，但生成期是否已有完整 upwelling 取决于调用时序。
 10. 新增水体 terrain 时必须同步 `pk_is_water_terrain()`、GDScript `_is_water()`、shader、SoA/DataCore 消费路径。
+11. **cell 层地形段的顺序是契约**：§R（脊信号，输入冻结在 E0）→ §2.4'（抬升场 → 最陡受体 → SPL 下切 → 坡面扩散 → 线性高度预算）→ §5'（残差）。改这个顺序或改 `ridge_add` 的输入都会改变 `E[]`，从而让**旧存档作废、必须新开局**（2026-11-18 起）；液滴 / 热力坍塌 / 膝点压缩已删除，不要再按旧文档找它们。
+
 ## Initial Vegetation Ecology (2026-07-31)
 
 After priority-flood, lake selection, river graph construction, and riparian/floodplain moisture correction, post-base performs one final whole-map vegetation classification. It uses the same coastal-adjusted generation temperature as terrain (`T=clamp(gen_temp_with_coastal_adjustment,0,1)`), VegetationProfile's 2-D Gaussian climate fit, and the bounded `pk_vegetation_terrain_weight` soft prior (`0.35..1.25`). Ordinary terrain and landform are never hard mappings; only physical substrates (water, glacier, salt flat, coral, kelp, seagrass) may reject candidates. `NONE` is selected only when every candidate is below `vegetation_min_suitability`; there are no type, patch, or whole-map quotas.

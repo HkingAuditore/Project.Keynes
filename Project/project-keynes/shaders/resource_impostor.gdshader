@@ -55,6 +55,11 @@ uniform vec2 luma_range = vec2(0.24, 0.64);
 uniform float area_feather = 0.55;
 uniform float area_edge_noise = 0.35;
 uniform float plant_cluster_density = 1.30;
+// [decal-ground-fit 2026-11-18] 贴花贴合地表的两档强度。
+// slope_fit：坡面面积变形增益（0 = 关闭，回到"印在屏幕平面"）。
+// ground_tint：贴花色温向脚下地表色靠拢的比例（0 = 保持独立配色）。
+uniform float decal_slope_fit = 1.0;
+uniform float decal_ground_tint = 0.45;
 // Generated bitmap fauna (tools/resource_art): 4x2 top-down sprites per species, drawn
 // as small realistic herds/shoals. Plants are NOT drawn here: they are continuous wild
 // communities in ResourceGroundCover. Style LUT texel 2 = (unused, fauna layer+1, count).
@@ -560,9 +565,12 @@ void fragment() {
 	vec4 sky_state = v_sky;
 	float horizon_visibility = v_misc.x;
 	vec3 terrain_normal = v_terrain;
+	// [decal-ground-fit 2026-11-18] 逐像素地图 uv 提到分支外：贴花的坡度面积变形、
+	// 地表色继承、云影与光照重采全部按像素位置求，不能沿用实例锚点
+	// （否则一整块贴花上只有一个常量，那正是"平"的来源之一）。
+	vec2 surface_uv = visual_static_wrap_uv(
+		(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
 	if (pixel_surface_lighting) {
-		vec2 surface_uv = visual_static_wrap_uv(
-			(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
 		RvDaylightState surface_daylight = rv_sample_daylight(surface_uv);
 		light_dir = surface_daylight.sun;
 		ambient_color = surface_daylight.ambient;
@@ -573,8 +581,7 @@ void fragment() {
 		sky_state = surface_horizon.sky;
 		terrain_normal = rv_terrain_normal_at(surface_uv);
 	}
-	vec2 cloud_map_uv = visual_static_wrap_uv(
-		(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
+	vec2 cloud_map_uv = surface_uv;
 	float cloud_visibility = cloud_shadow_direct_visibility(cloud_map_uv, day_state.x);
 	vec3 direct_light = direct_color * day_state.x * horizon_visibility * cloud_visibility;
 	// Flat-ground lighting shared by decals and submerged cues.
@@ -780,14 +787,43 @@ void fragment() {
 #else
 		bool material_ground = material_art && (form == 19 || form == 20 || form == 21
 			|| form == 22 || form == 23 || form == 25);
+		// [decal-ground-fit 2026-11-18] 坡面面积变形。俯视正交投影下，斜面上 1 单位
+		// 长度只投影成 nz 单位，所以屏幕上 1 单位对应地表 1/nz 单位。沿坡向把实例坐标
+		// 除以 nz，图案在坡上自然压密、在坡脚摊开 —— 这是"铺在斜面上"与"印在屏幕
+		// 平面上"的唯一几何差别。纯 ALU，不新增采样；slope_fit = 0 时完全关闭。
+		vec2 p_fit = p;
+		vec2 slope_fit = terrain_normal.xy * decal_slope_fit;
+		float slope2 = dot(slope_fit, slope_fit);
+		if (slope2 > 1e-6) {
+			vec2 axis_y = vec2(-v_axis.y, v_axis.x);
+			vec2 along = slope_fit * inversesqrt(slope2);
+			vec2 across = vec2(-along.y, along.x);
+			vec2 woff = v_axis * p.x + axis_y * p.y;
+			woff = along * (dot(woff, along) / clamp(terrain_normal.z, 0.32, 1.0))
+				+ across * dot(woff, across);
+			p_fit = vec2(dot(woff, v_axis), dot(woff, axis_y));
+		}
 		mat2 material_xform = rv_material_instance_xform(seed);
-		vec2 material_p = material_xform * p;
-		vec4 g = material_ground ? rv_material_albedo(material_p) : rd_ground_decal(p, form, sub_style, tint, seed);
+		vec2 material_p = material_xform * p_fit;
+		vec4 g = material_ground ? rv_material_albedo(material_p) : rd_ground_decal(p_fit, form, sub_style, tint, seed);
 		vec3 col = g.rgb;
 		float grey_albedo = dot(col, vec3(0.299, 0.587, 0.114));
 		col = mix(vec3(grey_albedo), col, palette_saturation);
 		col = rv_compress_luma(col);
 		col = mix(col, vec3(0.84, 0.88, 0.92), snow * 0.55);
+		// [decal-ground-fit] 地表颜色继承。贴花原先是与地表无关的独立位图，两张图
+		// alpha 叠 60% —— 大脑读作"上面多了一层"。这里用已绑定的 height 推
+		// hypsometric 地表色（低地沃土 → 高地灰褐），只取**相对色偏**（除以自身明度）
+		// 调制贴花色温，不动明度，所以不会把深色材料洗灰。零新增采样。
+		vec3 ground_shift = vec3(1.0);
+		if (has_height_tex && decal_ground_tint > 0.001) {
+			vec4 gsample = visual_sample_height(surface_uv);
+			float gh = (gsample.r * 256.0 + gsample.g) / 257.0;
+			float upland = smoothstep(sea_level + 0.02, 0.86, gh);
+			vec3 ground_col = mix(vec3(0.66, 0.64, 0.40), vec3(0.76, 0.70, 0.58), upland);
+			ground_shift = ground_col / max(dot(ground_col, vec3(0.299, 0.587, 0.114)), 0.02);
+		}
+		col *= mix(vec3(1.0), ground_shift, decal_ground_tint);
 		float material_edge = 1.0;
 		// Procedural decals already carry their alpha mask; generated ground art
 		// replaces that mask with its height-feathered material coverage below.
@@ -805,12 +841,19 @@ void fragment() {
 			vec3 normal = normalize(mix(terrain_normal, material_normal,
 				mix(1.0, material_edge, 0.72)));
 			float diffuse = max(dot(normal, light_dir), 0.0);
-			// Decals keep the terrain's flat exposure. Their derived normals only bias
-			// direct light around that baseline; using full object ambient here washes
-			// dark generated material (oil, soil) into grey.
-			float response = clamp(1.0 + (diffuse - flat_diffuse) * 0.55, 0.45, 1.35);
-			col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.08;
-			col *= flat_light * response * mix(1.0, surf.a, 0.55);
+			// [decal-ground-fit 2026-11-18] 法线进 ambient。原实现把 terrain_normal
+			// 的 ambient 当作整块贴花的基线，等于向渲染器声明"你和脚下地面一样平"：
+			// 贴花自身的起伏永远进不了天光项，只剩 direct 的一个乘性偏置。这里让
+			// ambient 与 direct 都按贴花法线求，再与地形基线 mix —— 既拿到体积，
+			// 也不会把深色材料（油、湿土）洗成灰。
+			vec3 decal_amb = rv_ambient_from(normal, ambient_color, direct_color,
+				light_dir, day_state, sky_state);
+			vec3 decal_light = mix(flat_light,
+				decal_amb + direct_light * diffuse * 0.78, 0.55);
+			// 接触边阴影：原系数 0.08 在 contact_shadow=0.68 下只压暗 ~5%，
+			// 等于没有接地。0.40 才能让贴花边缘"咬"进土里。
+			col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.40;
+			col *= decal_light * mix(1.0, surf.a, 0.80);
 		} else {
 			col *= flat_light;
 		}
@@ -932,8 +975,9 @@ void fragment() {
 #endif
 	if ((family == 0 || kind == 2) && has_height_tex && lens < 1.0) {
 		// 扩大的植被/地力斑必须沿实际河岸裁切，不能只检查群落中心。
-		vec2 ground_uv = (v_world_position - world_origin) / max(world_size, vec2(0.0001));
-		vec4 ground = visual_sample_height(ground_uv);
+		// [decal-ground-fit] 与坡度变形/地表色用同一个逐像素 uv，避免两套 wrap 约定
+		// 在东西包裹缝两侧裁出不一致的岸线。
+		vec4 ground = visual_sample_height(surface_uv);
 		float height = (ground.r * 256.0 + ground.g) / 257.0;
 		float land = smoothstep(sea_level - 0.002, sea_level + 0.002, height);
 		float river = has_flow_tex ? 1.0 - smoothstep(river_clear_threshold - 0.08, river_clear_threshold, ground.b) : 1.0;

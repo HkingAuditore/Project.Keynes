@@ -12,9 +12,12 @@ const VisualTileLayoutScript = preload("res://scripts/rendering/visual_tile_layo
 #   water_depth    RGBA8: R=水深，GBA=湖/礁/海带 3×3 软权重
 #   terrain_detail R8:    细节噪声
 #   edge_distance  RGBA8: R=次生格距离，G=沟谷深度，BA=8 邻域水/湖占比
+#   boundary_warp  RG8:   R/G=边界扭曲场 xy 的 8-bit 编码（cell-field 契约 §2/§4.2，
+#                  v=clamp((warp+hi)/1.6,-1,1)、byte=round((v*0.5+0.5)*255)；与
+#                  terrain_index pass 的 boundary_warp_buffer 逐字节同源，含 gutter/halo）
 #   horizon        32 bit：8 个 4-bit 方位角；Vulkan 后端按 RG16 建图，shader 用两次
 #                  textureGather 取 2×2（GLES3 没有 gather，仍是 RGBA8 + 4 次采样）。
-# 合计 35 bytes/texel——visual_tile_layout.BYTES_PER_PHYSICAL_TEXEL 必须同步。
+# 合计 37 bytes/texel——visual_tile_layout.BYTES_PER_PHYSICAL_TEXEL 必须同步。
 const FIELD_FORMATS := {
 	"height": Image.FORMAT_RGBA8,
 	"terrain_normal": Image.FORMAT_RGBA8,
@@ -26,6 +29,7 @@ const FIELD_FORMATS := {
 	"terrain_detail": Image.FORMAT_R8,
 	"edge_neighbor": Image.FORMAT_RG8,
 	"edge_distance": Image.FORMAT_RGBA8,
+	"boundary_warp": Image.FORMAT_RG8,
 	"horizon": Image.FORMAT_RGBA8,
 	"gi_occluder": Image.FORMAT_RGBA8,
 }
@@ -50,6 +54,11 @@ var water_depth: Texture2DArray
 var terrain_detail: Texture2DArray
 var edge_neighbor: Texture2DArray
 var edge_distance: Texture2DArray
+# [cell-field 2026-11-18] 边界扭曲场（RG8，tiled）。C++ bundle 键名与本类字段名**同名**
+# （boundary_warp），所以 upload_layer_bundle 的 `bundle.has(field_name)` / `set()` 直接对齐，
+# 不需要任何映射；渲染器按 visual_warp_tiles 推给 shader（uniform 名在
+# visual_tile_sampling.gdshaderinc，另一个 agent 负责推送）。
+var boundary_warp: Texture2DArray
 var horizon: Texture2DArray
 var gi_occluder: Texture2DArray
 
@@ -132,6 +141,16 @@ func upload_layer_bundle(layer_id: int, bundle: Dictionary) -> bool:
 				image.convert(tex_format)
 		var texture: Texture2DArray = get(field_name)
 		texture.update_layer(image, layer_id)
+	# [cell-field 2026-11-18] boundary_warp 是**可能缺席**的字段，缺席时必须区分两种情况，
+	# 否则渲染器的门控（按 `visual_tiles.boundary_warp != null` 推
+	# terrain_warp_layer_bound）会把"已分配但从未上传"的空数组当成可用：空数组 RG=0，
+	# 解码后 v = -1 ⇒ 最大负扭曲，整图格界会被拉偏。
+	#   - canal 刷新分片（bundle 无 terrain_relief）：必须**保留**上一次整图烘焙上传的层，
+	#     上面的 skip 分支已经做到，这里什么都不做；
+	#   - 整图烘焙却缺键（旧 DLL / 内部 terrain-index 没产出 warp）：置 null 让门控为 false，
+	#     shader 退化成直边六边形（与中性层等价的观感，但少一次采样）。
+	if bundle.has("terrain_relief") and not bundle.has("boundary_warp"):
+		set("boundary_warp", null)
 	return true
 
 

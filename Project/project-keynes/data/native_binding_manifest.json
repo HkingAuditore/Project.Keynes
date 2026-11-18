@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 661,
+  "count": 662,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -461,6 +461,7 @@
     "run_albedo_pass",
     "run_atlas_pipeline_step",
     "run_bake_erosion_pass",
+    "run_bake_erosion_spl_pass",
     "run_bake_geometry_fields_pass",
     "run_bake_latitude_field_pass",
     "run_bake_river_sdf_pass",

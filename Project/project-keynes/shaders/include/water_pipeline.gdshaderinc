@@ -15,6 +15,9 @@
 // 性能（Cost）
 //   LOW 不查副格；MID/HIGH 复用地形边界距离/副格纹理。桌面端另保留
 //   3×3 water-biome 邻域，移动端不执行该 9-tap。海冰来自 fragment 入口的 dyn_lut.a。
+//   [cell-field 2026-11-18] PK_CELL_FIELD 下这三条全换来源：水型软权重 / 水深插值 /
+//   岸线与湖岸都改由「三格解析场 + cell_table」给出（方案 §2.3 / §3.7 / §3.8），
+//   compute_lake_shore_proxy、water_biome_weights、water_depth_tex 采样全部编译掉。
 //   apply_water_specials 在 day_night_enabled 关时保留当地正午日照。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -54,6 +57,19 @@ struct WaterStageCtx {
 	// 全 desktop 路径下省 2 个 fbm(2-oct)/像素。ctx 构造时算一次，多个 helper 复用。
 	float macro_lf;      // 低频共享（base_ripple + calm_brightness）
 	float macro_vlf;     // 极低频共享（deep_ripple + calm_tint）
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 解析格界数据包（方案 §2.3 / §3.7）：world_map 的 SETUP 算
+	// **一次**后透传下来，水面管线内部不再重算（重算等于把 §3.8 的预算翻倍）。
+	//   field / fcls0..2 ：三格 offset 坐标、锐化权重 w、原始权重 w_raw 与三格 class
+	//   shore_gap        ：到最近陆地格的 gap（三格都是水 ⇒ 1e3，见 shore_common）
+	//   shore_dist_wu    ：岸距（世界单位）= 0.5·shore_gap·hex_size ⇒ 桌面 / 移动同宽
+	HexCellField field;
+	vec4 fcls0;
+	vec4 fcls1;
+	vec4 fcls2;
+	float shore_gap;
+	float shore_dist_wu;
+#endif
 };
 
 // 软权重 + 派生标量
@@ -144,7 +160,12 @@ SurfaceParams make_water_surface_params(
 // 真正的 lake SDF 目前没有由 baker 输出。这里用 map_index_atlas 多半径采样估算：
 // 当前湖像素附近若出现非湖 biome，则认为靠岸；越靠近岸边权重越高。
 // 它只服务 LAKE 的颜色/透底/halo，避免继续把 sea_level 当湖泊水位线。
+// [cell-field 2026-11-18] PK_CELL_FIELD 下整函数删除（方案 §2.3 / §3.7）：解析岸距
+// （三格 gap → 世界单位）在 gap ≤ 0.86 内是**精确**的，见 compute_offshore_depth 的
+// 场函数分支。顺带修掉一个隐性 bug：本函数的探测半径以**纹素**为单位（o ≤ 3），
+// 桌面索引图 1024 探 ≈ 7 wu、移动端 512 探 ≈ 14 wu ⇒ 同一份代码湖岸晕染宽度差一倍。
 // ─────────────────────────────────────────────────────────────────────
+#ifndef PK_CELL_FIELD
 float compute_lake_shore_proxy(vec2 uv, int quality) {
 	vec2 tx = 1.0 / derived_resolution;
 	float near_cnt = 0.0;
@@ -210,6 +231,7 @@ float compute_lake_shore_proxy(vec2 uv, int quality) {
 			+ smoothstep(0.12, 0.50, far_t) * 0.18;
 	return clamp(shore, 0.0, 1.0);
 }
+#endif // PK_CELL_FIELD
 
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -219,6 +241,39 @@ float compute_lake_shore_proxy(vec2 uv, int quality) {
 //   并合并 depth_t = 1 - elev/sea_level，得到 offshore_depth。
 // ─────────────────────────────────────────────────────────────────────
 void compute_offshore_depth(inout WaterStageCtx ctx) {
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 水深改由 cell_table layer2.g 提供（方案 §2.3 / §3.3）：
+	//   ① 8bit 精度与今天 surface array layer5.B 完全相同（同一份 C++ per-cell 深度）；
+	//   ② 三格按 **w_raw** 插值（连续量，§3.3）⇒ 跨格界不再有"逐格常量"的色阶；
+	//   ③ LOW 档只读主导格（1 次 texelFetch，§3.8 的 LOW 行）；两项都是常数采样次数，
+	//      不出现"权重 > 0 才采"的分支（§3.9 第 2 条）。
+	// water_depth_tex 数组在 PK 变体里不再采样 —— 采样槽由 cell_table 顶掉。
+#if defined(PK_QUALITY_LOW)
+	float wd = pk_cell_aux_at(pk_cell_field_dom_offset(ctx.field)).g;
+#else
+	float wd = pk_cell_aux_at(ctx.field.c0).g * ctx.field.w_raw.x
+			+ pk_cell_aux_at(ctx.field.c1).g * ctx.field.w_raw.y
+			+ pk_cell_aux_at(ctx.field.c2).g * ctx.field.w_raw.z;
+#endif
+	float depth_signal = wd;
+#if !defined(PK_QUALITY_LOW)
+	// 海深优先用连续高程反推（公式与下面 water_depth 分支逐字相同，只换数据来源）。
+	float continuous_sea_depth = 1.0 - clamp(ctx.elev / max(sea_level, 0.001), 0.0, 1.0);
+	float lake_depth_blend_w = water_ctx_type_mix(ctx, B_LAKE);
+	depth_signal = mix(continuous_sea_depth, wd, lake_depth_blend_w);
+#endif
+	ctx.depth_t = depth_signal;
+	ctx.offshore = depth_signal;
+	ctx.offshore_depth = depth_signal;
+	ctx.deep_layer_w = smoothstep(0.36, 1.0, depth_signal);
+	// 湖岸（1=靠岸 → 0=湖心）改**解析岸距**：宽度 = PK_SHORE_BAND_HEX · hex_size（世界单位）
+	// ⇒ 桌面索引图 1024 与移动端 512 得到完全相同的宽度（旧 compute_lake_shore_proxy 差 2×）。
+	float lake_type_w = water_ctx_type_mix(ctx, B_LAKE);
+	ctx.lake_shore_w = lake_type_w
+			* (1.0 - smoothstep(0.0, PK_SHORE_BAND_HEX * hex_size, ctx.shore_dist_wu));
+	ctx.lake_depth_proxy = mix(depth_signal, wd, lake_type_w);
+	return;
+#else
 	// [water-depth-tex 2026-06-26] 快速路径：优先用 C++ 烘焙好的统一水深图（海/湖一张 R8）。
 	// 每水像素仅 1 次采样，取代下方"海洋 5×5/plus height 邻域 + compute_lake_shore_proxy 的
 	// 16× biome 多半径"两套估算。湖泊深浅、海洋大陆架→深渊全部来自 C++ 真实 per-cell 深度。
@@ -300,6 +355,7 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 		ctx.offshore_depth = mix(0.10, 0.80, smoothstep(0.0, 1.0, lake_depth_combined));
 		ctx.deep_layer_w = smoothstep(0.36, 1.0, ctx.offshore_depth);
 	}
+#endif // PK_CELL_FIELD
 }
 
 
@@ -367,6 +423,15 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 #if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
 	bw = edge_bw;
 #else
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 三格 class 的**锐化权重**直接给出水型软权重（方案 §3.3 / §3.4）：
+	// 取代 water_biome_weights 的 9 次 map_index 邻域，也取代 water_depth.gba 的烘焙 3×3
+	// —— 两者都是"把 per-cell 类别量扇出成 per-pixel"的旧通道。零新增采样：三格 class
+	// 在 SETUP 已经 texelFetch 过。water_biome_blend_radius 的"邻域宽度"语义由带宽
+	// （terrain_ecotone_width，SETUP 里的 field.w）接管，不再单独读这个 uniform。
+	bw = water_biome_weights_field(ctx.field.w, ctx.fcls0, ctx.fcls1, ctx.fcls2);
+	bw = mix(bw, edge_bw, clamp(ctx.edge_mix * 2.0, 0.0, 1.0));
+#else
 	// Desktop：保留 radius-aware 3×3 邻域采样
 	if (water_biome_blend_radius > 0.001) {
 #ifdef PK_TERRAIN_STATIC_BAKED
@@ -391,6 +456,7 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	// the exact distance-field pair. This keeps desktop's wide water transition
 	// while making both sides converge to the same 50/50 boundary value.
 	bw = mix(bw, edge_bw, clamp(ctx.edge_mix * 2.0, 0.0, 1.0));
+#endif // PK_CELL_FIELD
 #endif
 	float transition_soft = clamp(max(water_boundary_softness, water_transition_softness), 0.0, 1.0);
 	float blend_entry = mix(0.28, 0.05, transition_soft);
@@ -410,6 +476,8 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	//     当 fraction=1 但 terrain==OCEAN 时却无冰。
 	// 60 FPS 优化（2026-06-15）：从 ctx.ice_frac 取（fragment 入口 dyn_atlas_smooth.a 已采样），
 	// 避免冗余 texture sample。之前 line 250 重复采一次 dyn_atlas_smooth.a 是 1 个白浪费 sample。
+	// [cell-field 2026-11-18] PK_CELL_FIELD 下 dyn_ice_frac 已由 SETUP 按三格 layer1.a 的
+	// **w_raw** 插值给出（海冰比例是连续量，§3.3），这里照旧只消费参数、不重复取。
 	float ice_frac = ctx.ice_frac;
 	// 60 FPS 优化（2026-06-15）：mobile 三档全砍 ridge_n fbm（海冰边缘破碎扰动）。
 	float ridge_offset = 0.0;
@@ -876,7 +944,13 @@ SurfaceParams compute_water_base_surface(
 		vec2 ocean_current_v,
 		vec2 wind_v,
 		float dyn_ice_frac,
-		vec4 pixel_noise) {
+		vec4 pixel_noise
+// [cell-field 2026-11-18] 解析格界数据包（由 render_water_pipeline_raw 透传）。
+// 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
+#ifdef PK_CELL_FIELD
+		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#endif
+		) {
 
 	// ── 0. ctx 构造 ───────────────────────────────────────────────────
 	WaterStageCtx ctx;
@@ -902,7 +976,22 @@ SurfaceParams compute_water_base_surface(
 	ctx.quality = visual_quality;
 #endif
 	ctx.ice_frac = dyn_ice_frac;
-#ifdef VT_USE_WATER_DEPTH
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 场数据包 + 派生量（方案 §3.7）。三格 class 由 SETUP 传入，
+	// 下游 helper 只读 ctx，不再有各自的 map_index 采样。
+	ctx.field = field;
+	ctx.fcls0 = fcls0;
+	ctx.fcls1 = fcls1;
+	ctx.fcls2 = fcls2;
+	// 到最近陆地格的 gap。三格都是水 ⇒ 1e3（"岸在远处"，见 shore_common.shore_gap_from_field）。
+	ctx.shore_gap = shore_gap_from_field(field, fcls0, fcls1, fcls2);
+	// 岸距换到世界单位：d = 0.5·gap·hex_size ⇒ 湖岸晕染宽度与索引图分辨率无关
+	//（旧 compute_lake_shore_proxy 以纹素给半径，桌面 / 移动差 2×）。
+	ctx.shore_dist_wu = shore_distance_wu(ctx.shore_gap);
+	// 水深不在这里采：compute_offshore_depth 直接用 cell_table layer2.g 按 w_raw 插值，
+	// 不再采样 water_depth_tex 数组（方案 §2.3）。字段保留以避免下游引用未定义成员。
+	ctx.water_depth_px = vec4(0.0);
+#elif defined(VT_USE_WATER_DEPTH)
 	ctx.water_depth_px = visual_sample_water_depth(uv);
 #else
 	ctx.water_depth_px = vec4(0.0);
@@ -980,7 +1069,12 @@ SurfaceParams apply_water_overlay_surface(
 		vec2 uv,
 		vec2 wind_v,
 		vec2 shore_frac,
-		float dyn_ice_frac) {
+		float dyn_ice_frac
+// [cell-field 2026-11-18] 解析格界数据包（仅 PK 变体；关闭时原型与今日逐字相同）。
+#ifdef PK_CELL_FIELD
+		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#endif
+		) {
 	vec3 col = surface.base_color;
 	float coast_sdf = abs(elev - sea_level);
 	// [water-flow-waves 2026-11-06] 冰面不该有滚动浪花：静态冰 biome 与动态冰量
@@ -1009,7 +1103,14 @@ SurfaceParams apply_water_overlay_surface(
 #if defined(PK_MOBILE_ANY)
 	// 无 halo —— 海面/陆面边界硬切（视觉上海岸线略硬，但不影响功能）
 #else
+#ifdef PK_CELL_FIELD
+	// [cell-field 2026-11-18] 解析岸线（方案 §3.7）：接触度来自**世界单位岸距**
+	// （shore_gap → 0.5·gap·hex_size），水 / 湖 / 海占比来自 Σ w_raw ——
+	// 没有 map_index 邻域采样，晕染宽度只依赖 hex_size ⇒ 桌面与移动一致。
+	ShoreSamples shore_samp = sample_shore_neighborhood_field(field, fcls0, fcls1, fcls2);
+#else
 	ShoreSamples shore_samp = sample_shore_neighborhood(uv, shore_frac);
+#endif
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, 0.0, 1);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
 	surface.roughness = mix(surface.roughness, shore_halo_r.roughness_target,
@@ -1281,10 +1382,18 @@ vec3 render_water_pipeline_raw(
 		vec2 wind_v,
 		float dyn_ice_frac,
 		vec2 shore_frac,
-		vec4 pixel_noise) {
+		vec4 pixel_noise
+#ifdef PK_CELL_FIELD
+		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#endif
+		) {
 	SurfaceParams surface = compute_water_base_surface(
 		biome, secondary_biome, edge_mix, elev, wp, uv, scals, lat_signed,
-		current_temp, ocean_current_v, wind_v, dyn_ice_frac, pixel_noise);
+		current_temp, ocean_current_v, wind_v, dyn_ice_frac, pixel_noise
+#ifdef PK_CELL_FIELD
+		, field, fcls0, fcls1, fcls2
+#endif
+		);
 	// Underwater resources (oil/gas seeps, fish shoals) are drawn by ResourceVisualLayer's
 	// MultiMesh pass, not here: the terrain shader carries no per-resource cost.
 	// [远洋华 2026-06-25] PELAGIC_BLOOM（浮游生物大量繁殖）：开阔海面叠加淡绿富营养 tint，
@@ -1307,7 +1416,11 @@ vec3 render_water_pipeline_raw(
 	}
 	surface = apply_water_overlay_surface(
 		surface, biome, secondary_biome, edge_mix, elev, wp, uv, wind_v, shore_frac,
-		dyn_ice_frac);
+		dyn_ice_frac
+#ifdef PK_CELL_FIELD
+		, field, fcls0, fcls1, fcls2
+#endif
+		);
 	return shade_water_surface(
 		surface, biome, secondary_biome, edge_mix, wp, visual_quality, uv, lat_signed, dyn_ice_frac);
 }
@@ -1328,9 +1441,17 @@ vec3 render_water_pipeline(
 		vec2 wind_v,
 		float dyn_ice_frac,
 		vec2 shore_frac,
-		vec4 pixel_noise) {
+		vec4 pixel_noise
+#ifdef PK_CELL_FIELD
+		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#endif
+		) {
 	return render_water_pipeline_raw(
 		biome, cover, secondary_biome, secondary_cover, edge_mix, elev,
 		wrap_world_pos(wp), uv, scals, lat_signed, current_temp,
-		ocean_current_v, wind_v, dyn_ice_frac, shore_frac, pixel_noise);
+		ocean_current_v, wind_v, dyn_ice_frac, shore_frac, pixel_noise
+#ifdef PK_CELL_FIELD
+		, field, fcls0, fcls1, fcls2
+#endif
+		);
 }

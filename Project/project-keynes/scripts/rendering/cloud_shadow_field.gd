@@ -505,7 +505,25 @@ func _resize_field() -> void:
 func _configure_geometry() -> void:
 	if _composite_quad == null:
 		return
+	# [cloud-shadow-wrap 2026-11-18] wrap 副本必须按**周期**铺，不能用 bounds 宽度。
+	# compute_world_bounds() 左右各留 2*hex 的 padding（W − P = 4.866*hex），而 offsets
+	# 的间距是 P；若每份 quad 仍画满 W，相邻副本就重叠 4.866*hex，composite 的
+	# blend_mul 会在重叠带把画面乘两次 → 一条两侧带硬边的暗带（低画质专属，因为
+	# direct 模式根本不画这张 quad）。
+	# 这里改成：宽度 = P，UV 起止 = [wrap_origin_uv, +wrap_period_uv]，三份首尾相接、
+	# 零重叠；UV 恒落在一个周期内，composite shader 的 mod() 也不会再跳相位。
 	var bounds := _bounds
+	var x0 := bounds.position.x
+	var span := bounds.size.x
+	var u0 := 0.0
+	var u_span := 1.0
+	if _wrap_period_x > 0.0001:
+		x0 = 0.0
+		span = _wrap_period_x
+		u0 = get_wrap_origin_uv()
+		u_span = get_wrap_period_uv()
+	var y0 := bounds.position.y
+	var y1 := bounds.position.y + bounds.size.y
 	var vertices := PackedVector2Array()
 	var uv := PackedVector2Array()
 	var indices := PackedInt32Array()
@@ -515,16 +533,15 @@ func _configure_geometry() -> void:
 	for offset_index in range(offsets.size()):
 		var x_offset := offsets[offset_index]
 		var first := vertices.size()
-		var u_offset := x_offset / maxf(bounds.size.x, 0.0001)
 		vertices.append_array(PackedVector2Array([
-			bounds.position + Vector2(x_offset, 0.0),
-			bounds.position + Vector2(bounds.size.x + x_offset, 0.0),
-			bounds.position + bounds.size + Vector2(x_offset, 0.0),
-			bounds.position + Vector2(x_offset, bounds.size.y),
+			Vector2(x0 + x_offset, y0),
+			Vector2(x0 + span + x_offset, y0),
+			Vector2(x0 + span + x_offset, y1),
+			Vector2(x0 + x_offset, y1),
 		]))
 		uv.append_array(PackedVector2Array([
-			Vector2(u_offset, 0.0), Vector2(1.0 + u_offset, 0.0),
-			Vector2(1.0 + u_offset, 1.0), Vector2(u_offset, 1.0),
+			Vector2(u0, 0.0), Vector2(u0 + u_span, 0.0),
+			Vector2(u0 + u_span, 1.0), Vector2(u0, 1.0),
 		]))
 		indices.append_array(PackedInt32Array([
 			first, first + 1, first + 2, first, first + 2, first + 3,

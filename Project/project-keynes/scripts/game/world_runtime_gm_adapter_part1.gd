@@ -221,6 +221,15 @@ func get_gm_capabilities(host) -> Dictionary:
 			{"id": "diagnostics.static_color_view", "label": "河流层之前的静态底色", "group": "诊断"},
 			{"id": "diagnostics.flow_texsize_view", "label": "flow_tex 采样器尺寸（12 位条：derived_size=正常 4×4=兜底白纹理）", "group": "诊断"},
 			{"id": "diagnostics.flow_texel_view", "label": "flow texelFetch 取样（绕过过滤/wrap）", "group": "诊断"},
+			# [cell-field 2026-11-18] 解析格界的六个对照视图（方案 §5 P1 完成判据）。
+			# 只在 PK_CELL_FIELD 变体里编得出来：terrain_cell_field_enabled 关着时切到这些
+			# id 画面不变（分支被预处理剔除），所以 label 里带上前提提示。
+			{"id": "diagnostics.cell_field_dom_view", "label": "解析格界 dom 一致性（红=与烘焙 map_index 不一致；需开解析格界）", "group": "诊断"},
+			{"id": "diagnostics.cell_field_weights_view", "label": "解析格界三格权重 RGB（对偶三角连续性；需开解析格界）", "group": "诊断"},
+			{"id": "diagnostics.cell_field_gap_view", "label": "解析格界 gap 差值（红=与 edge_distance 不一致；需开解析格界）", "group": "诊断"},
+			{"id": "diagnostics.cell_field_warp_view", "label": "解析格界扭曲场（rg=warp xy；需开解析格界）", "group": "诊断"},
+			{"id": "diagnostics.cell_field_dom_encode_view", "label": "解析格界 dom offset 编码（R,G=col 低/高字节 B=row；供 GPU↔CPU 回读比对）", "group": "诊断"},
+			{"id": "diagnostics.cell_field_band_view", "label": "解析格界带宽 band 灰阶（接缝整列变白=fwidth 取在回绕坐标上的 bug）", "group": "诊断"},
 			{"id": "diagnostics.dump_flow_tex_report", "label": "输出 FlowTex 完整诊断（CPU/材质/sampler/GPU）",
 				"group": "诊断", "kind": "button", "icon": &"summary.overview",
 				"tooltip": "打印 Web FlowTex 的生成、编码、上传、绑定、Shader 变体和 GPU 实际读取信息"},
@@ -376,6 +385,30 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 			if host._renderer == null:
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
 			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 17}
+		"diagnostics.cell_field_dom_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 18}
+		"diagnostics.cell_field_weights_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 19}
+		"diagnostics.cell_field_gap_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 20}
+		"diagnostics.cell_field_warp_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 21}
+		"diagnostics.cell_field_dom_encode_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 22}
+		"diagnostics.cell_field_band_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": host._renderer.terrain_surface_debug_view == 23}
 		"diagnostics.dyn_lut_view":
 			if host._renderer == null:
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
@@ -516,6 +549,50 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 			if enabled:
 				print("[flow-texel-view] texelFetch 整数取样，绕过 filter_linear 与 wrap uv；"
 					+ "恢复出细红河线 = 问题在过滤/采样状态而非纹理内容")
+		"diagnostics.cell_field_dom_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			host._renderer.terrain_surface_debug_view = 18 if enabled else 0
+			if enabled:
+				print("[cell-field-view] 18 = dom 一致性：红 = 解析格归属与烘焙 map_index 不同"
+					+ "（应只出现在格界 1 纹素带内）；需要 terrain_cell_field_enabled = true")
+		"diagnostics.cell_field_weights_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			host._renderer.terrain_surface_debug_view = 19 if enabled else 0
+			if enabled:
+				print("[cell-field-view] 19 = 三格权重 RGB（对偶三角内应连续无硬边）；"
+					+ "需要 terrain_cell_field_enabled = true")
+		"diagnostics.cell_field_gap_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			host._renderer.terrain_surface_debug_view = 20 if enabled else 0
+			if enabled:
+				print("[cell-field-view] 20 = gap 差值：红 = 解析 gap 与 edge_distance.R 超出容差；"
+					+ "需要 terrain_cell_field_enabled = true")
+		"diagnostics.cell_field_warp_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			host._renderer.terrain_surface_debug_view = 21 if enabled else 0
+			if enabled:
+				print("[cell-field-view] 21 = 扭曲场可视化（rg → 屏幕向量）；"
+					+ "需要 terrain_cell_field_enabled = true")
+		"diagnostics.cell_field_dom_encode_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			host._renderer.terrain_surface_debug_view = 22 if enabled else 0
+			if enabled:
+				print("[cell-field-view] 22 = dom offset 编码（R,G=col 低/高字节 B=row，A=1）；"
+					+ "给 tests/world/cell_field_gpu_parity_probe.gd 回读比对用；"
+					+ "需要 terrain_cell_field_enabled = true")
+		"diagnostics.cell_field_band_view":
+			if host._renderer == null:
+				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			host._renderer.terrain_surface_debug_view = 23 if enabled else 0
+			if enabled:
+				print("[cell-field-view] 23 = 实际带宽 band 灰阶（band/0.86）；"
+					+ "经线接缝整列变白 = fwidth 取在已回绕坐标上；"
+					+ "需要 terrain_cell_field_enabled = true")
 		"diagnostics.dyn_lut_view":
 			if host._renderer == null:
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")

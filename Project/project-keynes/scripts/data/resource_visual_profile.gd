@@ -29,6 +29,11 @@ extends Resource
 @export_range(0.1, 1.5) var decal_diameter_hex := 0.80
 @export_range(0.0, 1.0) var decal_opacity := 0.60
 @export_range(0.0, 1.0) var submerged_opacity := 0.50
+# [decal-ground-fit 2026-11-18] 贴花贴合地表。俯视正交投影下坡面的面积压缩是
+# 1/nz，沿坡向把贴花 UV 除以 nz 才有"铺在斜面上"的读感。0 = 退回屏幕平面贴纸。
+@export_range(0.0, 2.0) var decal_slope_fit := 1.0
+# 贴花色温向脚下地表（hypsometric）靠拢的比例；只取相对色偏，不动明度。
+@export_range(0.0, 1.0) var decal_ground_tint := 0.45
 # 水下：深水按 exp(-depth * falloff) 透光衰减；鱼群只在少数格子出现。
 @export_range(0.0, 8.0) var water_depth_falloff := 2.6
 @export_range(0.0, 1.0) var shoal_density := 0.30
@@ -85,6 +90,12 @@ extends Resource
 @export_range(0.0, 1.0) var ground_cover_far_opacity := 0.65
 # 聚落核心对野生地被的清除程度。
 @export_range(0.0, 1.0) var ground_cover_settlement_clear := 0.7
+# [cover-ground-fit 2026-11-18] 地被贴合地表。地面色继承只用已绑定的 height 推
+# hypsometric 色偏，不改明度，所以不会把深色群落洗灰。
+@export_range(0.0, 1.0) var ground_cover_ground_tint := 0.35
+# 坡面面积变形的增益（保留字段：world 空间 wrap 平铺下任意方向的各向异性变换
+# 会在东西缝跳变，当前实现未启用，恒为 0）。
+@export_range(0.0, 2.0) var ground_cover_slope_fit := 0.0
 # 地被 LUT 的 GPU 上传频率上限（仅在观测变化时上传）。
 @export_range(0.5, 30.0) var ground_cover_upload_hz := 4.0
 # 写实、小比例动物：每群只数，单只体长（格），低于此像素数淡出。

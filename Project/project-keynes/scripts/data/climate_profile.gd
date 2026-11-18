@@ -1308,35 +1308,31 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 6, 1) var tectonic_lloyd_iters: int = 2
 
 # ══════════════════════════════════════════════════════════════════════
-# [terrain-overhaul Phase 1 — 水力/热力侵蚀]
+# [terrain-overhaul Phase 1 — 水力侵蚀(SPL + 坡面扩散)]
 # ══════════════════════════════════════════════════════════════════════
-# 液滴水力侵蚀(作用于 cell 海拔) + 热力坍塌；droplet_factor=0 关闭。迭代上限控制生成耗时。
-# 注：2026-06-19 回退到 0.6（曾误判它造成"单格海洋"而关到 0；修正坐标后的实测显示孤立单格
-# 水体仅 ~34 个，并非液滴侵蚀所致，而是我的分析脚本把多 tick 快照按错误宽度合并的假象）。
-# 液滴侵蚀刻出的河谷/沟壑有助于"宏观大峡谷/下切河谷"的可读性，恢复开启。
+# 2026-11-18 (terrain-ridge-uplift P5-2.4)：旧液滴 / 热力坍塌分支已删除，对应 profile 键一并移除
+# （计划 §7：不保留旧算法、不做版本分派，旧观感只能靠 git 回退）。现在只剩 SPL 下切 + 坡面扩散；
+# 海岸波蚀另见下方 coast_wave_erosion。
 @export_group("侵蚀(生成)")
 
 # ── Stream-Power 河流侵蚀 (Cordonnier et al. 2016, EG) ──────────────────────
 # 构造抬升场(=噪声地形陆地相对高度)与河流侵蚀达准平衡：priority-flood 求汇流 → 汇水面积 →
 # 隐式 SPL 下切 E=(E+U+C·E_down)/(1+C), C=K·(A/Ā)^m。产出连贯山脉脊线、树状长河(干流+支流)、
-# 大流域；并把杂散闭流洼地抬填(减少内陆碎水 + 修复运行时盆地灌水)。开启时自动跳过随机液滴侵蚀。
-# spl_iters=0 一键回退到旧的随机液滴侵蚀。
+# 大流域；并把杂散闭流洼地抬填(减少内陆碎水 + 修复运行时盆地灌水)。开启时走 SPL 下切（液滴分支已删）。
+# spl_iters=0 关闭 SPL（液滴/热力分支已按 P5-2.4 删除，不保留旧算法回退）。
 @export_range(0, 60, 1) var spl_iters: int = 14            # 迭代轮数(0=关闭SPL)；越大越接近平衡、河谷越深
 @export_range(0.0, 6.0, 0.05) var spl_erodibility: float = 1.2   # 侵蚀系数 K：越大河谷下切越强、地形越平缓
 @export_range(0.2, 1.0, 0.05) var spl_area_exp: float = 0.45     # 汇水面积指数 m(地貌学常用 0.4~0.6)
-@export_range(0.0, 0.5, 0.01) var spl_uplift_rate: float = 0.10  # 抬升回补：越大山体越高耸、起伏越强
+@export_range(0.0, 0.5, 0.01) var spl_uplift_rate: float = 0.08  # 抬升回补：越大山体越高耸、起伏越强
 
-@export_range(0.0, 2.0, 0.05) var erosion_droplet_factor: float = 0.6
-@export_range(1, 200, 1) var erosion_max_lifetime: int = 30
-@export var erosion_capacity: float = 4.0
-@export_range(0.0, 1.0, 0.01) var erosion_deposit_rate: float = 0.3
-@export_range(0.0, 1.0, 0.01) var erosion_erode_rate: float = 0.3
-@export_range(0.0, 1.0, 0.01) var erosion_evaporation: float = 0.02
-@export var erosion_gravity: float = 4.0
-@export var erosion_min_slope: float = 0.01
-@export_range(0, 12, 1) var erosion_thermal_iters: int = 2
-@export var erosion_thermal_talus: float = 0.04
-@export_range(0.0, 1.0, 0.05) var erosion_thermal_rate: float = 0.5
+# ── 脊抬升 / 坡面扩散 (terrain-ridge-uplift, 2026-11-18 P5-2.4) ───────────────
+# spl_ridge_uplift 是「每轮」系数（非总量）：14 轮累计约 14×该值×ridge_add，由 §4 标定到与改动前 p99 陆地高度一致。
+# spl_hillslope_diffusion 是每轮下切后一步显式线性扩散 E_i += κ·Σ_k(E_nb−E_i)/6 的系数；显式格式稳定上限 <1，默认 0.08 留足余量。
+# ridge_residual_frac 是 §5' 脊线残差 = ridge_boost_amp × 该值；0 = 完全内生；⚠ 超过 0.30 会重新引入脊坝（上界即 0.30）。
+@export_range(0.0, 0.20, 0.001) var spl_ridge_uplift: float = 0.03   # 每轮脊抬升系数
+@export_range(0.0, 0.45, 0.005) var spl_hillslope_diffusion: float = 0.08  # 坡面扩散 κ
+@export_range(0.0, 0.30, 0.01) var ridge_residual_frac: float = 0.15  # §5' 脊线残差比例（上限 0.30）
+
 # [coast-erosion 2026-06-26] 水域波蚀强度：邻接水体(海/湖)按波浪能量下蚀近岸陆地，向海蚀台地收敛
 # (河流沿河道切，水域沿岸线切)。0=关；越大海岸退得越多/海崖越明显。post_base #2c 消费。
 @export_range(0.0, 1.0, 0.01) var coast_wave_erosion: float = 0.30
