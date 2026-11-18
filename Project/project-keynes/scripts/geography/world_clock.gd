@@ -7,13 +7,7 @@
 #   映射到 [0, 4)，供气候/日照使用。
 #   x5/x20 加速倍率简化等比缩放。
 #
-# 信号：
-#   day_changed(day_idx)        — 跨整数日触发
-#   season_changed(season_idx)  — 跨整数季触发（0=冬 1=春 2=夏 3=秋；北半球日历语义）
-#   year_changed(year_idx)      — 跨整数年触发
-#
-# Phase 4：year_changed 时长期 climate_anomaly 做随机游走漂移。
-# Phase 1：season_phase() 返回 [0, 4) 浮点，给 shader 做平滑插值。
+# 每过一日发出 day_changed。跨季和跨年另有信号，绘制按帧读取连续相位。
 
 class_name WorldClock
 extends Node
@@ -276,8 +270,9 @@ func _ready() -> void:
 	day_cost_probe_on = OS.has_feature("web") \
 		or OS.get_environment(PK_DAY_COST_PROBE_ENV) == "1"
 	_dcp_console = day_cost_probe_on and not OS.has_feature("web")
-	_rng = RandomNumberGenerator.new()
-	_rng.randomize()
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+		_rng.randomize()
 	speed_multiplier = initial_speed
 	paused = not auto_start
 	# Fast-tick perf opt (D)：检测 Inspector 是否手动指定了 phase 节流步长。
@@ -660,6 +655,11 @@ func season_index_for_day(day_idx: int) -> int:
 
 func year_index_for_day(day_idx: int) -> int:
 	return int(floor(float(day_idx) / float(days_per_year())))
+
+func seed_annual_climate(world_seed: int) -> void:
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+	_rng.seed = world_seed
 
 func _apply_year_rollover(year_idx: int) -> void:
 	# Phase 4：年度气候漂移（pink-noise 风格随机游走）

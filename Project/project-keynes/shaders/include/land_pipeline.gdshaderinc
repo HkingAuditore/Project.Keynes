@@ -47,9 +47,10 @@ SurfaceParams compute_land_base_surface(
 		vec2 wp,
 		vec2 uv,
 		vec4 scals,
+		TerrainEdgeSample terrain_edge,
 		out float mixed_micro_strength) {
 	// LAND 1.1: hard primary state with screen-space static material edge AA.
-	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv, scals.r);
+	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv, terrain_edge);
 	vec3 col = static_mat.color;
 	mixed_micro_strength = static_mat.micro_strength;
 
@@ -716,12 +717,13 @@ vec3 render_land_pipeline(
 		float dyn_snow,
 		float dyn_valid,
 		float dyn_vitality,
-	vec4 pixel_noise,
-	vec2 shore_frac) {
+		vec4 pixel_noise,
+		vec2 shore_frac,
+		TerrainEdgeSample terrain_edge) {
 	// 15 = 河流层之前的静态材质底色。与 12（底色全部叠加完、光照前）成对使用：
 	// 15 正常而 12 发蓝，说明是 compute_land_base_surface 里的河流 flow 层把陆地刷成了水色。
 	if (terrain_surface_debug_view == 15) {
-		return compute_terrain_static_material(biome, elev, wp, uv, scals.r).color;
+		return compute_terrain_static_material(biome, elev, wp, uv, terrain_edge).color;
 	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
 #ifdef PK_PROBE_NO_LAND_BASE
@@ -730,7 +732,7 @@ vec3 render_land_pipeline(
 	SurfaceParams surface = 		make_surface_params(vec3(0.34, 0.42, 0.26), vec3(0.0, 0.0, 1.0), 0.90, 0.0, 1.0);
 #else
 	SurfaceParams surface = compute_land_base_surface(
-			biome, geo_biome, landform, elev, wp, uv, scals,
+			biome, geo_biome, landform, elev, wp, uv, scals, terrain_edge,
 			mixed_micro_strength);
 #endif // PK_PROBE_NO_LAND_BASE
 

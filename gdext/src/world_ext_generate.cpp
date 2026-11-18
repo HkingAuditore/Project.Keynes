@@ -31,7 +31,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 #include <condition_variable>
-#include <cstring>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -798,7 +797,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         return r * width + col;
     };
     std::vector<int32_t> NB(size_t(n) * 6, -1);
+    bool row_major = true;
     for (int i = 0; i < n; ++i) {
+        row_major &= R[i] == i / width && Q[i] == i % width - ((R[i] - (R[i] & 1)) / 2);
         for (int d = 0; d < 6; ++d) {
             NB[size_t(i) * 6 + d] = index_for_qr(Q[i] + DQ[d], R[i] + DR[d]);
         }
@@ -2995,30 +2996,27 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["water_depth_arr"] = water_depth_arr;   // [water-depth-tex] 海/湖统一归一水深 ∈ [0,1]
     if (upwelling_arr.size() == n) out["upwelling_strength_arr"] = upwelling_arr;
 
-    // ─── 暂存河流拓扑到 ext 成员（dots-total-cpp step1）──────────────────
-    // 供同一 generation ext 实例的 run_bake_river_sdf_pass 直接 trace（零跨语言再传输）。
-    // terrain/elevation/river_flow 此处均为 post_base 最终值；NB 是已建好的 n*6 邻居索引。
-    {
-        _gen_river_n = n;
-        _gen_river_q.assign(size_t(n), 0);
-        _gen_river_r.assign(size_t(n), 0);
-        _gen_river_terrain.assign(size_t(n), 0);
-        _gen_river_elev.assign(size_t(n), 0.0f);
-        _gen_river_has.assign(size_t(n), 0);
-        _gen_river_flow.assign(size_t(n), 0.0f);
-        _gen_river_downstream.assign(size_t(n), -1);
-        _gen_river_neighbors.assign(size_t(n) * 6, -1);
-        for (int i = 0; i < n; ++i) {
-            _gen_river_q[size_t(i)] = Q[i];
-            _gen_river_r[size_t(i)] = R[i];
-            _gen_river_terrain[size_t(i)] = TERR[i];
-            _gen_river_elev[size_t(i)] = E[i];
-            _gen_river_has[size_t(i)] = RIV[i];
-            _gen_river_flow[size_t(i)] = RFLOW_OUT[i];
-            _gen_river_downstream[size_t(i)] = RDOWN[i];
+    PackedInt32Array neighbors;
+    if (row_major && neighbors.resize(NB.size()) == OK) {
+        int32_t *data = neighbors.ptrw();
+        std::copy(NB.begin(), NB.end(), data);
+        if (width == 1) {
+            // MapData excludes self edges; keep the generator's inputs intact.
+            for (int i = 0; i < n; ++i)
+                data[size_t(i) * 6] = data[size_t(i) * 6 + 3] = -1;
         }
-        for (size_t k = 0; k < size_t(n) * 6; ++k) _gen_river_neighbors[k] = NB[k];
+        out["neighbor_indices"] = neighbors;
     }
+    // The river baker retains its own topology and final physical columns.
+    _gen_river_n = n;
+    _gen_river_q.assign(Q, Q + n);
+    _gen_river_r.assign(R, R + n);
+    _gen_river_terrain.assign(TERR, TERR + n);
+    _gen_river_elev.assign(E, E + n);
+    _gen_river_has.assign(RIV, RIV + n);
+    _gen_river_flow.assign(RFLOW_OUT, RFLOW_OUT + n);
+    _gen_river_downstream.assign(RDOWN, RDOWN + n);
+    _gen_river_neighbors = std::move(NB);
 
     return out;
 }

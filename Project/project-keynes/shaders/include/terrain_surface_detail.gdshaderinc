@@ -287,12 +287,17 @@ float terrain_biome_micro_strength(int biome) {
 	return 0.40; // organic terrain
 }
 
+struct TerrainEdgeSample {
+	int biome;
+	float weight;
+};
+
 TerrainStaticMaterial compute_terrain_static_material(
 		int primary_biome,
 		float elev,
 		vec2 wp,
 		vec2 uv,
-		float edge_distance) {
+		TerrainEdgeSample edge) {
 	TerrainStaticMaterial out_mat;
 	vec3 hyps = hypsometric_tint(elev, false);
 	bool use_material_tiles = terrain_materials_active();
@@ -322,22 +327,9 @@ TerrainStaticMaterial compute_terrain_static_material(
 	out_mat.edge_factor = 0.0;
 	out_mat.secondary_biome = -1;
 
-	float edge_w = terrain_edge_secondary_weight_d(edge_distance, wp);
-	if (edge_w <= 0.0001) {
-		return out_mat;
-	}
-	int secondary_id = decode_edge_secondary_index(uv);
-	if (secondary_id < 0) {
-		return out_mat;
-	}
-	int secondary_biome = int(texture(enum_lut, cell_lut_uv(secondary_id)).r * 255.0 + 0.5);
-	// The shared edge field also serves fog and weather across coastlines. Terrain
-	// alone keeps the land/water material topology hard to prevent color leakage.
-	if (terrain_static_biome_is_water(secondary_biome)
-			!= terrain_static_biome_is_water(primary_biome)) {
-		return out_mat;
-	}
-	if (secondary_biome == primary_biome) {
+	float edge_w = edge.weight;
+	int secondary_biome = edge.biome;
+	if (secondary_biome < 0 || secondary_biome == primary_biome) {
 		return out_mat;
 	}
 	out_mat.edge_factor = edge_w;

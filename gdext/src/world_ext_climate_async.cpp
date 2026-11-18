@@ -1149,22 +1149,13 @@ void DCWorldExt::fill_climate_round_input(const Dictionary &input, int n_cells,
         (int)buf.lat_norm.size() == n_cells) {
         const float ax_tilt = float(buf.scalars.axial_tilt_deg);
         const float dl_amp  = float(buf.scalars.day_length_gain);
-        buf.insol_annual_mean.resize(static_cast<size_t>(n_cells));
-        for (int i = 0; i < n_cells; ++i) {
-            buf.insol_annual_mean[static_cast<size_t>(i)] =
-                dc_insolation_annual_mean(dc_clamp01f(buf.lat_norm[static_cast<size_t>(i)]),
-                                          ax_tilt, dl_amp);
-        }
+        const float *mean = ensure_insol_annual_mean_cache(
+            buf.lat_norm.data(), n_cells, ax_tilt, dl_amp);
+        buf.insol_annual_mean.assign(mean, mean + n_cells);
     } else {
         buf.insol_annual_mean.clear();
     }
 
-    // 输入边界诊断：只留存 SHADOW capture 交给 worker 的那一份。
-    if (prefer_slot_lanes) {
-        _captured_climate_round_input = buf;
-        _captured_climate_round_input_valid = true;
-        ++_capture_call_count;
-    }
 }
 
 bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {

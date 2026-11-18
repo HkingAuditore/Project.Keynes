@@ -101,7 +101,7 @@ func solve(map: MapData, world: WorldData, season_idx: int, climate_anomaly: flo
 # _neighbor_average_vapor*）已在 PR-1/2/3 搬入本类，自调用。
 
 ## 切片初始化：分配 prev/next buffer、读 SoA 进 prev_vapor/precip。
-func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true, for_worker_knobs_only: bool = false) -> void:
+func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true, for_worker_knobs_only: bool = false, defer_thermal_equator: bool = false) -> void:
 	_weather_system._clear_weather_field_slice_state()
 	if map == null or world == null:
 		return
@@ -207,13 +207,13 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 			var tc: HexCell = _field_slice_cells[ti]
 			_field_slice_temp_anom[ti] = float(tc.temperature_transport_anomaly)
 	# ─── climate-realism Stage1 (2026-06-23): 计算「热赤道」纬度 (norm) ──────
-	# = zonal-mean 温度最高的纬度带。供 Hadley/Ferrel omega 项以「相对热赤道距离」定位
-	# ITCZ/副热带/风暴轴，随季迁移、不产生沿绝对纬线的直线条带。用基准气候温度(非含
-	# air anomaly 的分类温度)。每 tick 一次 O(n) 累加 + 24 桶 argmax + 抛物线细化。
+	# 用基准气温找最暖纬带并细化位置，供 Hadley/Ferrel、ITCZ、副热带和风暴轴随季移动。
+	# 24 个纬带按格子顺序累加，使用邻带温度做抛物线插值。
 	var lat_te_norm: float = 0.5
 	var te_bpos_y: float = _weather_system._world_bounds.position.y
 	var te_bsize_y: float = _weather_system._world_bounds.size.y
-	if te_bsize_y > 0.001 and _field_slice_temp_read.size() == n_cells and _field_slice_cell_pos.size() == n_cells:
+	if not defer_thermal_equator and te_bsize_y > 0.001 \
+			and _field_slice_temp_read.size() == n_cells and _field_slice_cell_pos.size() == n_cells:
 		const TE_NB := 24
 		var te_sum: PackedFloat32Array = PackedFloat32Array(); te_sum.resize(TE_NB)
 		var te_cnt: PackedInt32Array = PackedInt32Array(); te_cnt.resize(TE_NB)

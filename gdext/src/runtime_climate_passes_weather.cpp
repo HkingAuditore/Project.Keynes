@@ -1,4 +1,5 @@
 #include "runtime_climate_passes.h"
+#include "parallel_dispatcher.h"
 
 #include <algorithm>
 #include <cmath>
@@ -42,50 +43,52 @@ void synoptic_advance_pure(int n_cells,
     if (adv_cells < 0) adv_cells = 0;
     else if (adv_cells > 16) adv_cells = 16;
 
-    for (int p = 0; p < n_cells; ++p) {
-        const int pb = p * 6;
-        // 平滑引导流：风邻域平均（去地转风小尺度切变→平移连贯，不打散）
-        float gx = WX[p], gy = WY[p];
-        int gn = 1;
-        for (int d = 0; d < 6; ++d) {
-            const int nb = NB[pb + d];
-            if (nb < 0) continue;
-            gx += WX[nb]; gy += WY[nb]; ++gn;
+    pk::parallel_for_range("pk_weather_synoptic", n_cells, 0, 2048, [&](int begin, int end) {
+        for (int p = begin; p < end; ++p) {
+            const int pb = p * 6;
+            // 平滑引导流：风邻域平均（去地转风小尺度切变→平移连贯，不打散）
+            float gx = WX[p], gy = WY[p];
+            int gn = 1;
+            for (int d = 0; d < 6; ++d) {
+                const int nb = NB[pb + d];
+                if (nb < 0) continue;
+                gx += WX[nb]; gy += WY[nb]; ++gn;
+            }
+            gx /= float(gn); gy /= float(gn);
+            // 半拉格朗日真平移：沿 -引导流走 adv_cells 格取 departure 的 ψ_prev
+            int dep = p;
+            for (int s = 0; s < adv_cells; ++s) {
+                const int up = wf_neighbor_aligned_idx_xy(
+                    dep, -gx, -gy, pos_x, pos_y, NB, n_cells,
+                    knobs.cell_pos_scale, knobs.wrap_width_x);
+                if (up < 0 || up >= n_cells) break;
+                dep = up;
+            }
+            float ps = PSI_R[dep];
+            // 斜压门：邻域温度梯度
+            float tmn = TR[p], tmx = TR[p];
+            for (int d = 0; d < 6; ++d) {
+                const int nb = NB[pb + d];
+                if (nb < 0) continue;
+                const float tv = TR[nb];
+                if (tv < tmn) tmn = tv;
+                if (tv > tmx) tmx = tv;
+            }
+            const float g = wf_smoothstep(0.04f, 0.16f, tmx - tmn);
+            const float aps0 = ps < 0.0f ? -ps : ps;
+            // 斜压增长随振幅饱和→有界，不会全场饱和
+            ps *= (1.0f + knobs.baroclinic * g * (1.0f - aps0));
+            const float sr = knobs.seed_rate * (0.30f + 0.70f * g);
+            if (wf_hash01(p, knobs.tick) < sr)
+                ps += knobs.seed_amp * (wf_hash01(p + 50021, knobs.tick) - 0.5f) * 2.0f;
+            ps += (wf_neighbor_average_vapor_idx(p, NB, PSI_R) - ps) * knobs.diffuse;
+            ps *= knobs.damp;
+            if (ps > 1.0f) ps = 1.0f; else if (ps < -1.0f) ps = -1.0f;
+            // 阈值清零→防低值 ψ 经扩散/平流铺满全场，保稀疏移动涡旋
+            if (ps < 0.05f && ps > -0.05f) ps = 0.0f;
+            PSI_W[p] = ps;
         }
-        gx /= float(gn); gy /= float(gn);
-        // 半拉格朗日真平移：沿 -引导流走 adv_cells 格取 departure 的 ψ_prev
-        int dep = p;
-        for (int s = 0; s < adv_cells; ++s) {
-            const int up = wf_neighbor_aligned_idx_xy(
-                dep, -gx, -gy, pos_x, pos_y, NB, n_cells,
-                knobs.cell_pos_scale, knobs.wrap_width_x);
-            if (up < 0 || up >= n_cells) break;
-            dep = up;
-        }
-        float ps = PSI_R[dep];
-        // 斜压门：邻域温度梯度
-        float tmn = TR[p], tmx = TR[p];
-        for (int d = 0; d < 6; ++d) {
-            const int nb = NB[pb + d];
-            if (nb < 0) continue;
-            const float tv = TR[nb];
-            if (tv < tmn) tmn = tv;
-            if (tv > tmx) tmx = tv;
-        }
-        const float g = wf_smoothstep(0.04f, 0.16f, tmx - tmn);
-        const float aps0 = ps < 0.0f ? -ps : ps;
-        // 斜压增长随振幅饱和→有界，不会全场饱和
-        ps *= (1.0f + knobs.baroclinic * g * (1.0f - aps0));
-        const float sr = knobs.seed_rate * (0.30f + 0.70f * g);
-        if (wf_hash01(p, knobs.tick) < sr)
-            ps += knobs.seed_amp * (wf_hash01(p + 50021, knobs.tick) - 0.5f) * 2.0f;
-        ps += (wf_neighbor_average_vapor_idx(p, NB, PSI_R) - ps) * knobs.diffuse;
-        ps *= knobs.damp;
-        if (ps > 1.0f) ps = 1.0f; else if (ps < -1.0f) ps = -1.0f;
-        // 阈值清零→防低值 ψ 经扩散/平流铺满全场，保稀疏移动涡旋
-        if (ps < 0.05f && ps > -0.05f) ps = 0.0f;
-        PSI_W[p] = ps;
-    }
+    });
 }
 
 // ─── stage 11 WEATHER：field solve 主循环（纯内核）──────────────────────────

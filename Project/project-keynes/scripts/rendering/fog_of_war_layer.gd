@@ -162,7 +162,7 @@ func _build_half_res_target() -> void:
 	_sub_viewport.name = "FogHalfRes"
 	_sub_viewport.transparent_bg = true
 	_sub_viewport.disable_3d = true
-	_sub_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_sub_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	_sub_viewport.gui_disable_input = true
 	_sub_viewport.size = Vector2i(2, 2)
 	add_child(_sub_viewport)

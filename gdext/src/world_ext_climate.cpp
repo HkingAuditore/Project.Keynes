@@ -60,44 +60,24 @@ using namespace godot;
 // runtime_climate_pass_math.h（经 world_ext_internal.h 传递可见）。
 
 
-// Per-cell annual-mean insolation memo. dc_insolation_annual_mean integrates 16
-// trig-heavy samples and depends ONLY on (cell latitude, axial_tilt, daylen) — all
-// day-invariant — so recomputing it per cell per day was ~1.38ms/round of pure waste
-// (the dominant cost of the climate_pass_a round-start slice). We rebuild only when a
-// cheap FNV-1a fingerprint over (n, lat bits, axial_tilt, daylen) changes (≈ once, at
-// map bind / planet-param change). Returns the cached value for cell i, which is
-// bit-identical to the inline dc_insolation_annual_mean(dc_clamp01f(lat[i]), ...).
+// The annual mean depends only on latitude and the two planet settings.
 const float *DCWorldExt::ensure_insol_annual_mean_cache(const float *lat_ptr, int n,
                                                         float axial_tilt_deg, float daylen_amp) {
-    uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
-    auto mix = [&fp](uint32_t bits) {
-        fp ^= uint64_t(bits);
-        fp *= 1099511628211ull; // FNV-1a prime
-    };
-    mix(uint32_t(n));
-    {
-        uint32_t b;
-        std::memcpy(&b, &axial_tilt_deg, sizeof(b));
-        mix(b);
-        std::memcpy(&b, &daylen_amp, sizeof(b));
-        mix(b);
-    }
-    for (int i = 0; i < n; ++i) {
-        uint32_t b;
-        std::memcpy(&b, &lat_ptr[i], sizeof(b));
-        mix(b);
-    }
-    if (_insol_cache_valid && _insol_cache_fingerprint == fp &&
-        int(_insol_annual_mean_cache.size()) == n) {
+    if (n <= 0) return nullptr;
+    if (_insol_cache_latitudes.size() == static_cast<size_t>(n) &&
+        std::memcmp(&_insol_cache_tilt, &axial_tilt_deg, sizeof(float)) == 0 &&
+        std::memcmp(&_insol_cache_daylen, &daylen_amp, sizeof(float)) == 0 &&
+        std::memcmp(_insol_cache_latitudes.data(), lat_ptr, n * sizeof(float)) == 0) {
         return _insol_annual_mean_cache.data();
     }
+    _insol_cache_latitudes.assign(lat_ptr, lat_ptr + n);
+    _insol_cache_tilt = axial_tilt_deg;
+    _insol_cache_daylen = daylen_amp;
     _insol_annual_mean_cache.resize(n);
     for (int i = 0; i < n; ++i) {
         _insol_annual_mean_cache[i] =
             dc_insolation_annual_mean(dc_clamp01f(lat_ptr[i]), axial_tilt_deg, daylen_amp);
     }
-    _insol_cache_fingerprint = fp;
-    _insol_cache_valid = true;
     return _insol_annual_mean_cache.data();
 }
 

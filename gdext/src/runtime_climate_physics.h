@@ -768,6 +768,10 @@ bool physics_state_self_test(std::string &error);
 // 空 blob 是 legacy 冷启动；非空错误返回 false，且不修改目标状态。
 bool serialize_physics_state(const RuntimeClimatePhysicsState &state,
                              std::vector<uint8_t> &blob, std::string &error);
+// Copy the saved fields of an already validated commit for native readers.
+// Solver scratch and derived caches remain private to the solver.
+void copy_committed_physics_fields(const RuntimeClimatePhysicsState &source,
+                                  RuntimeClimatePhysicsState &out);
 bool restore_physics_state(const uint8_t *data, size_t size,
                            RuntimeClimatePhysicsState &state, std::string &error);
 

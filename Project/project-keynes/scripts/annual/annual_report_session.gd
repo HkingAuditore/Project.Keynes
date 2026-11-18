@@ -13,8 +13,10 @@ var _boundary_day: int = -1
 var _configured: bool = false
 var _generator
 var _boundary_input_sent: bool = false
+var _can_capture_environment: Callable
 
-func configure(generator, clock: WorldClock, handle: int) -> Dictionary:
+func configure(generator, clock: WorldClock, handle: int, can_capture_environment := Callable()) -> Dictionary:
+	_can_capture_environment = can_capture_environment
 	_configured = false
 	_generator = generator
 	_clock = clock
@@ -66,6 +68,8 @@ func poll() -> void:
 	if _boundary_day >= 0 and bool(state.get("worker_managed", false)) \
 			and int(state.get("last_day", -1)) >= _boundary_day - 1 \
 			and int(state.get("last_day", -1)) < _boundary_day and not _boundary_input_sent:
+		if _can_capture_environment.is_valid() and not _can_capture_environment.call(_boundary_day):
+			return
 		var captured: Dictionary = _generator.publish_environment_through(
 			_boundary_day, _clock.season_phase_for_day(_boundary_day))
 		_boundary_input_sent = bool(captured.get("ok", false))

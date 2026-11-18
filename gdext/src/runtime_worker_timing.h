@@ -9,7 +9,8 @@ namespace pk {
 class RuntimeWorkerTiming {
 public:
     enum Phase { EXECUTE, INPUT_WAIT, CLOCK_WAIT, SAVE_BUILD, SAVE_PAUSE,
-                 PAUSED, OVERHEAD, BOUNDARY_WAIT, COUNT };
+                 PAUSED, OVERHEAD, BOUNDARY_WAIT, ENVIRONMENT_WAIT,
+                 MAIN_TAIL_WAIT, INPUT_RETRY_WAIT, COUNT };
     using Totals = std::array<uint64_t, COUNT>;
     void start() { std::lock_guard<std::mutex> lock(mutex); totals = {}; phase = OVERHEAD; active = true; last = Clock::now(); }
     void stop() { std::lock_guard<std::mutex> lock(mutex); settle(); active = false; }
@@ -30,7 +31,8 @@ private:
     bool active = false, saving = false, paused = false;
     Clock::time_point last{};
     Phase bucket() const {
-        if (phase == INPUT_WAIT || phase == CLOCK_WAIT) {
+        if (phase == INPUT_WAIT || phase == CLOCK_WAIT || phase == ENVIRONMENT_WAIT ||
+                phase == MAIN_TAIL_WAIT || phase == INPUT_RETRY_WAIT) {
             if (saving) return SAVE_PAUSE;
             if (paused) return PAUSED;
         }

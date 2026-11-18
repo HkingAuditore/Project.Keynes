@@ -369,26 +369,16 @@ func get_neighbors_by_cube(coords: Vector3i) -> Array:
 # ─── Daily-Sim SoA Refactor 阶段 2：索引访问 API ────────────────────
 # 仅 fast-tick 热路径使用；冷路径继续走 get_neighbors(cell)。
 
-## 一次性构建（_cell_array / _cell_index / _neighbor_indices）。
-## 必须在所有 cell 入库且 terrain 定型完成后调用一次；regenerate 时
-## MapData 整体被替换，不需要重复调用。重复调用会先清空再重建。
+## Rebuild after all cells are present, preserving their insertion order.
 func _build_indices() -> void:
-	_cell_array.clear()
+	_cell_array.assign(_cells.values())
 	_cell_index.clear()
-	var n: int = _cells.size()
-	_cell_array.resize(n)
+	var n := _cell_array.size()
 	_neighbor_indices.resize(n * 6)
-	# 第一遍：填 _cell_array / _cell_index（Phase 3a Step 2.1：同步注入 cell.index，
-	# 让 hot loop 直接用 `arr[cell.index]`，避免 _cell_index Dictionary 查找）
-	var i: int = 0
-	for key in _cells.keys():
-		var cell: HexCell = _cells[key]
-		_cell_array[i] = cell
+	for i in n:
+		var cell: HexCell = _cell_array[i]
 		_cell_index[cell] = i
 		cell.index = i
-		i += 1
-	# 第二遍：填 _neighbor_indices；HexUtils.CUBE_DIRECTIONS 顺序：
-	# 0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE
 	_build_neighbor_indices(0,n)
 	_indices_built = true
 
@@ -418,28 +408,30 @@ func _build_neighbor_indices(begin: int, end: int) -> void:
 				# 邻居一定已在 _cell_index 内（因为 _cells 是同源）
 				_neighbor_indices[base + d] = int(_cell_index.get(nb, -1))
 
-func build_indices_cooperative(frame_gate = null) -> void:
+## Generated neighbors must already use this map's insertion order and six direction slots.
+func build_indices_cooperative(frame_gate = null,
+		generated_neighbors: PackedInt32Array = PackedInt32Array()) -> void:
 	if _indices_built:
 		return
-	_cell_array.clear()
+	_cell_array.assign(_cells.values())
 	_cell_index.clear()
-	var n := _cells.size()
-	_cell_array.resize(n)
-	_neighbor_indices.resize(n*6)
+	var n := _cell_array.size()
 	var tree := Engine.get_main_loop() as SceneTree
 	var start := Time.get_ticks_usec()
-	var i := 0
-	for key in _cells.keys():
-		var cell: HexCell = _cells[key]
-		_cell_array[i] = cell
+	for i in n:
+		var cell: HexCell = _cell_array[i]
 		_cell_index[cell] = i
 		cell.index = i
-		i += 1
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
 			if frame_gate != null and frame_gate.canceled:
 				return
 			start = Time.get_ticks_usec()
+	if generated_neighbors.size() == n * 6:
+		_neighbor_indices = generated_neighbors
+		_indices_built = true
+		return
+	_neighbor_indices.resize(n*6)
 	for begin in range(0,n,16):
 		_build_neighbor_indices(begin,mini(begin+16,n))
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
