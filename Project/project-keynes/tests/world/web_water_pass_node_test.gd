@@ -31,6 +31,7 @@ extends SceneTree
 const SHADER_PATH := "res://shaders/world_water_web.gdshader"
 const WORLD_MAP_PATH := "res://shaders/world_map.gdshader"
 const RENDERER_SHADER_WATER_PATH := "res://scripts/rendering/renderer_shader_water.gd"
+const RENDERER_GRAPHICS_SETTINGS_PATH := "res://scripts/rendering/renderer_graphics_settings.gd"
 const RENDERER_SCENE_SERVICES_PATH := "res://scripts/rendering/renderer_scene_services.gd"
 
 ## [cell-field-web 2026-11-18 / W3] 水面 pass 的「判据与陆地同源」宏。
@@ -429,16 +430,25 @@ func _check_cell_field_variant() -> void:
 	_expect(scene_services.contains("host._world_quad.z_index = 0"),
 		"draw order evidence: the land quad is created first with z_index 0")
 	var water_renderer := FileAccess.get_file_as_string(RENDERER_SHADER_WATER_PATH)
-	_expect(water_renderer.contains("move_child(host._water_quad")
-		and water_renderer.contains("host._water_quad.z_index = 0"),
+	# 水面 quad 的挂接与 move_child 定序现在集中在 renderer_graphics_settings.attach_water_surface
+	# （画质缩放开启时挂到缩放子视口，否则挂在 host 下并紧跟陆地 quad）。
+	var graphics_source := FileAccess.get_file_as_string(RENDERER_GRAPHICS_SETTINGS_PATH)
+	var attach_a := graphics_source.find("func attach_water_surface")
+	var attach_b := graphics_source.find("\nfunc ", attach_a + 1)
+	var attach_block := graphics_source.substr(attach_a, attach_b - attach_a) \
+		if attach_a >= 0 and attach_b > attach_a else ""
+	_expect(water_renderer.contains("host._water_quad.z_index = 0")
+			and water_renderer.contains("host._graphics_details.attach_water_surface(host)")
+			and attach_block.contains("move_child(host._water_quad"),
 		"draw order evidence: the water quad is moved right after the land quad")
 	# Web 与桌面共用同一段**定序**代码 ⇒ 绘制顺序相同（平台分支只允许出现在编译失败
-	# 的回退里，不能出现在"谁盖谁"这段）。截取 z_index→move_child 之间的片段检查。
+	# 的回退里，不能出现在"谁盖谁"这段）。检查 z_index→挂接调用之间，以及挂接函数本身。
 	var order_a := water_renderer.find("host._water_quad.z_index = 0")
-	var order_b := water_renderer.find("move_child(host._water_quad", order_a)
+	var order_b := water_renderer.find("host._graphics_details.attach_water_surface(host)", order_a)
 	var order_block := water_renderer.substr(order_a, order_b - order_a) \
 		if order_a >= 0 and order_b > order_a else ""
-	_expect(not order_block.is_empty() and not order_block.contains("has_feature"),
+	_expect(not order_block.is_empty() and not order_block.contains("has_feature")
+			and not attach_block.is_empty() and not attach_block.contains("has_feature"),
 		"the draw-order statements carry no platform branch ⇒ Web draws in the same"
 			+ " order as desktop (land below, water above)")
 
