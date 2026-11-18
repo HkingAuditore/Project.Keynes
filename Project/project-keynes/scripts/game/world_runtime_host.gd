@@ -114,20 +114,9 @@ var runtime_economy_auto_pod_active: bool = true
 ## SeasonRefreshSystem 仍留在主线程（它是 SUS 里按 period_ticks 自驱的独立
 ## system，不在那张图里，而且它是地理级重算，本就该是主线程权威）。
 ##
-## 两个权威写同一批 MapData 数组这件事已经解决：执行序在 _on_clock_day_changed
-## 里钉成「回灌(第 N 天) → season refresh → capture(第 N+1 天输入)」，三者同一
-## 调用栈内串行，不再依赖节点树的 _process 顺序。并发触碰同一批 slot 导致的
-## 0xC0000005 也已修（native_parallel_executor 的 barrier 竞态）。
-##
-## 已知的两条限制，见 docs/architecture/migration.md
-## 第 38 节的实测数字：
-##   1. 小地图（≈2400 格）是负收益。climate 本来只占 0.27ms，capture 打包与回灌
-##      memcpy 的固定开销比它还大。真正有意义的规模是万级格数以上。
-##   2. 大地图上 worker 可能跟不上一天的预算（180x120 下 50 天只有 30 天的回灌
-##      落地）。落不下的那天保持 MapData 原值，不是错值，但场会滞后。
-##
-## 这是运行时可回退的开关（见下方 set_runtime_climate_authority_enabled），回退
-## 不需要重新生成世界。
+## 后台负责气候时，下一天的输入等上一天气候写回 MapData 后再采集。
+## 在同一日期完成到期的季节刷新。不同地图规模的写回开销见
+## docs/architecture/migration.md 第 38 节及 docs/architecture/feature-status.md。
 var runtime_climate_authority_enabled: bool = true
 ## Domains requested for worker authority. Capability default remains the full
 ## Production request mask. Default is the full twelve-domain graph (0xFFF).
@@ -809,6 +798,13 @@ func last_tick_report() -> Dictionary:
 
 func is_runtime_ready_for_ticks() -> bool:
 	return _runtime_ready_for_ticks
+
+
+func uses_worker_day_commits() -> bool:
+	if not _runtime_ready_for_ticks or _native_daily_inline_active:
+		return false
+	var state := _runtime_control_state()
+	return state.get("simulation_thread_mode", "OFF") == "ACTIVE" and bool(state.get("authority_ready", false))
 
 
 func set_day_night_enabled(enabled: bool) -> void:

@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -261,9 +262,12 @@ public:
                   bool compute_state_hash = true,
                   bool validate_input = true,
                   bool reuse_committed_history = false) const;
-    // 可见发布省去无消费者的温度历史；物理胶囊仍用于主线程提交与校验。
+    // Visible publication omits the temperature history. A native physics
+    // projection can also take the place of the serialized transport.
     static void copy_visible_store(RuntimeClimateStore &destination,
-        const RuntimeClimateStore &source);
+        const RuntimeClimateStore &source, bool include_physics_blob = true);
+    std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState>
+        copy_physics_writeback(const RuntimeClimateStore &store) const;
     static void commit(RuntimeClimateStore &current, RuntimeClimateStore &next);
     // 只由 Authority 在成功交换提交后确认；任何丢弃/恢复都会撤销复用资格。
     void accept_committed_physics(const RuntimeClimateStore &store);

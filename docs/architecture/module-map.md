@@ -76,6 +76,8 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 
 气候封包摘要归 `gdext/src/runtime_climate_input_hash.cpp`，宿主在发布不可变输入时计算，Climate 内核和日输入记录共用这个定义。
 
+天气场的一日输入在 `gdext/src/runtime_climate_weather_input.h`。物理场的只读交付、校验和存档编解码在 `gdext/src/runtime_climate_physics_state.cpp`。
+
 军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。
 
 经济冷配置的共同实现位于 `scripts/economy/economy_facade_configuration.gd`，显示目录准备位于 `scripts/economy/economy_facade_display.gd`。

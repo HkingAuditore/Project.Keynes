@@ -27,6 +27,24 @@ func _run() -> void:
 	_expect("runtime opens ticks after topology construction",
 		runtime.is_runtime_ready_for_ticks())
 	_expect("new game restores the pre-generation running state", not clock.paused)
+	clock.set_process(false)
+	var generator := runtime.get_generator()
+	var bio = generator._bio_occupancy_daily_job
+	_expect("the generated map has a daily species update", bio != null)
+	if bio != null:
+		bio.execution_mode = "sliced"
+		var day := clock.day_index() + 1
+		runtime.run_daily_tick(day, clock.season_phase_for_day(day))
+		runtime.finish_daily_tick(0.0, {})
+		_expect("manual day uses the sliced species update", bio.slice_enabled)
+		_expect("all species updates finish before the next manual day",
+			not generator.bio_occupancy_round_active())
+		clock.pause(true)
+		clock.set_process(true)
+		runtime.run_daily_tick(day + 1, clock.season_phase_for_day(day + 1))
+		runtime.finish_daily_tick(0.0, {})
+		_expect("manual steps also finish while the frame clock is paused",
+			not generator.bio_occupancy_round_active())
 	game.queue_free()
 	await process_frame
 	_finish()

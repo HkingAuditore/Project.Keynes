@@ -135,11 +135,10 @@ func _prepare_world_data(host) -> Dictionary:
 	host._building_visual_diag_logged = false
 	host._world_data = result["world_data"] as WorldData
 	host._last_seed = int(result.get("seed", cfg.seed))
-	# 生成出的世界只能用它实际使用的 seed 复现。`generate_world(0)`（失败重试 /
-	# 调试重生成）会把 0 解析成随机 seed，若会话配置仍记录旧 seed，之后写出的
-	# 存档就是「旧 seed + 另一张世界的 PKCN/领土」，下次读档会在
-	# `_player_start_cell_drift()` 处必然失败。这里把生效 seed 回写进会话配置。
+	# Persist the map's effective seed and use it for the new world's annual drift.
 	host._adopt_generated_seed(host._last_seed)
+	if host._world_clock != null and host._pending_load_bundle.is_empty():
+		host._world_clock.seed_annual_climate(host._last_seed)
 	host._fast_tick_count = 0
 	host._last_fast_tick_ms = 0
 	host._last_tick_timing.clear()
@@ -202,15 +201,15 @@ func _prepare_world_simulation(host) -> Dictionary:
 			return host._session_preparation_failure()
 	WebTelemetry.emit("bind_step", {"s": "post_worker_frame"})
 	var annual_handle: int = host._resolve_player_country_handle()
-	# Annual reports depend on the Country + Economy + Ideology catalogs.  A
-	# failed economy bootstrap leaves those providers intentionally absent; keep
-	# the session diagnostic at its original failure point and do not emit a
-	# second initialization error from this optional report module.
+	# Annual reports require a configured ideology catalog.
 	var annual_ideology_ready: bool = host._generator != null \
 		and host._generator.has_method("get_ideology_facade") \
 		and host._generator.get_ideology_facade() != null
 	if annual_handle != 0 and annual_ideology_ready:
-		var annual_result: Dictionary = host._annual_reports.configure(host._generator, host._world_clock, annual_handle)
+		var can_capture := func(day: int) -> bool:
+			return host._runtime_climate_writeback_last_day >= day - 1 \
+				or not bool(host._runtime_control_state().get("climate_worker_authoritative", false))
+		var annual_result: Dictionary = host._annual_reports.configure(host._generator, host._world_clock, annual_handle, can_capture)
 		WebTelemetry.emit("bind_step", {"s": "annual_configured"})
 		if not bool(annual_result.get("ok", false)):
 			push_error("年度报告初始化失败：%s" % String(annual_result.get("reason", "未知原因")))

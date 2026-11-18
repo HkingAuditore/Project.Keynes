@@ -2,11 +2,20 @@ extends "res://scripts/simulation/generator_context.gd"
 
 const RuntimeClimateHash = preload("res://scripts/simulation/runtime_climate_hash.gd")
 
-## Runtime climate input capture, parity reference publish, and capture diagnostics. Mutable state remains on MapGenerator.
+## Runtime climate input capture, parity reference publish, and capture diagnostics. Session state remains on MapGenerator.
 
+
+# Only set while packing one worker input on the main thread.
+var calendar_day := -1
+
+func sample_day() -> float:
+	if calendar_day >= 0:
+		return float(calendar_day)
+	var clock = _generator._world_clock_ref
+	return float(clock.current_day) if clock != null else 0.0
 
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
-		authoritative: bool) -> Dictionary:
+		authoritative: bool, defer_thermal_equator: bool = false) -> Dictionary:
 	if not authoritative or map == null:
 		return {}
 	var cp_now = _generator._c()
@@ -24,12 +33,7 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 			physics["ocean_period_days"] = maxi(1, int(cp_now.ocean_currents_period_ticks))
 			physics["world_seed"] = _generator._last_seed
 			out["physics_knobs"] = physics
-	# stage_b（反照率 / 植被 / 反馈）仍按主线程 stagger 的 weather 轮计数，
-	# 避免改成每日嵌入后把 10/20 日的子 stride 放大成每个气候日。
-	# 水汽场和 distribute 不再跟着这道门：ACTIVE 下主线程 weather_refresh 已被
-	# 抑制，worker 是 vapor/precip/湿度目标的唯一写者。按 stagger（默认 8 日）
-	# 抽稀会让 pass A 连续多日对着一份冻住的降水目标松弛，陆地湿度日变化掉到
-	# 动态 LUT 一档以下。
+	# Stage B follows weather rounds. Vapor and precipitation are solved daily.
 	var stride: int = _generator._get_native_daily_bundle_builder()._native_daily_weather_cadence_stride(cp_now)
 	var stage_b_due: bool = true
 	# capture 失败会在同一天重试；节拍必须按日而不是按调用推进。
@@ -53,22 +57,12 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 			_generator._runtime_climate_worker_weather_embed_day = day
 			_generator._runtime_climate_worker_stage_b_call_index += 1
 		out["weather_round"] = true
-		# 复用生产那份组装：节拍与标量口径必须与生产逐位一致，重写一份就等于在
-		# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
-		# 因为这套计数器每 stride 天才推进一次。
+		# The production builder uses the same cadence and elapsed game days.
 		var stage_b: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_stage_b_knobs(
 			map, cp_now, _generator._runtime_climate_worker_stage_b_call_index, float(stride), day + 1)
 		if not stage_b.is_empty():
 			out["stage_b"] = stage_b
-	# distribute 是 stage 11 的后半段，也是 snow_cover / snowpack /
-	# water_balance_30d 的权威写者 —— 权威下它不跑，那三条就恒为 0（sea_ice 与
-	# albedo 都读 snow_cover，所以缺口会往下游传）。
-	#
-	# 同样复用生产的 builder：那些 snow/flood 阈值有一半是 builder 里的硬编码
-	# 常量，在 worker 侧重抄一份等于给它们开第二个漂移入口。不走
-	# build_unified_fast_tick_weather_knobs —— 那条会先调
-	# begin_weather_field_solve 初始化 field slice state，而权威下生产的 weather
-	# 段是被抑制的，那份 state 没人消费，留着只是悬挂。
+	# The worker reuses the production precipitation and snowpack configuration.
 	if _generator._weather_system != null \
 			and _generator._weather_system.has_method("build_distribute_knobs_for_worker"):
 		var dist: Dictionary = _generator._weather_system.build_distribute_knobs_for_worker(
@@ -86,7 +80,8 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 					map, _generator._sus_world,
 					int(clock.get("season_idx", 0)),
 					float(clock.get("anomaly", 0.0)),
-					float(clock.get("season_phase", 0.0)))
+					float(clock.get("season_phase", 0.0)),
+					defer_thermal_equator)
 			if not field_knobs.is_empty():
 				if _generator._weather_system.has_method("convergence_refresh_due_on_day"):
 					field_knobs["refresh_convergence"] = \
@@ -510,11 +505,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	var cell_count := int(map.cell_count())
 	if cell_count <= 0 or int(map.width) <= 0 or int(map.height) <= 0:
 		return _runtime_climate_failure("runtime_input_map_shape_invalid", "MapData shape is empty", day)
-	# NativeSimulationHost keeps the last accepted immutable generation across a
-	# save/restore boundary. Reconcile that watermark before allocating the next
-	# capture so a restored host never receives a duplicate generation.
-	# Hoisted: the same report also says whether Climate is worker-authoritative,
-	# which decides whether this capture has to carry the per-stage knobs below.
+	# Restored hosts retain their last accepted input generation.
 	var thread_report: Dictionary = {}
 	if _generator._data_core_world_ext != null:
 		thread_report = _generator.get_runtime_thread_report()
@@ -533,11 +524,19 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 			# 出来，在这里等就是等自己 —— 正是 web 上"首日卡 24 秒"的形态。
 			if callsite != _generator.ENV_CALLSITE_PREFETCH:
 				thread_report = _generator._wait_climate_authority_grant()
-	# Season refresh reads the climate fields in MapData and writes base_moisture /
-	# moisture that this capture hands to the worker. Under worker authority a due
-	# round runs here in one piece, after MapData has been brought to the worker's
-	# writeback of the last captured day; sliced across frames, both what it read
-	# and how much of it landed before the capture depended on machine speed.
+	# Synchronous same-day capture. Retries and the year fence can arrive on
+	# different display frames; the elapsed game days come from the packet.
+	var previous_date: int = calendar_day
+	if bool(thread_report.get("climate_worker_authoritative", false)):
+		calendar_day = day + 1
+	var result := _capture_environment(map, day, phase, callsite, thread_report)
+	calendar_day = previous_date
+	return result
+
+
+func _capture_environment(map: MapData, day: int, phase: float,
+		callsite: int, thread_report: Dictionary) -> Dictionary:
+	# The due season refresh completes before its fields enter the worker packet.
 	if bool(thread_report.get("climate_worker_authoritative", false)) \
 			and _generator._season_refresh_job != null:
 		# Eligibility comes from this game's date, not how often SUS had enough
@@ -669,7 +668,8 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		# supplying a second source would give the two sides different inputs
 		# for the same day.
 		"climate_stage_knobs": _build_runtime_climate_stage_knobs(
-			map, day, bool(thread_report.get("climate_worker_authoritative", false))),
+			map, day, bool(thread_report.get("climate_worker_authoritative", false)),
+			bool(thread_report.get("climate_worker_prepares_thermal_equator", false))),
 		# season refresh 今天跑过没有。worker 内核用它决定要不要把 moisture 与
 		# plant_available_water 从 input 收回来 —— 那一天这两个字段的权威是主线程，
 		# 不是 worker（season refresh 没有搬进 worker，它是地理级重算）。

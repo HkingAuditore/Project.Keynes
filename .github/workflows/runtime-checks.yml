@@ -76,6 +76,20 @@ jobs:
           clang++ -std=c++17 -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -g \
             -Igdext/src gdext/tests/runtime_control_wakeup_test.cpp -o /tmp/control-wakeup-test
           /tmp/control-wakeup-test
+          clang++ -std=c++17 -pthread -Igdext/src gdext/tests/runtime_worker_timing_test.cpp \
+            -o /tmp/worker-timing-test
+          /tmp/worker-timing-test
+      - name: Concurrent kernel dispatch and sparse byte hashing
+        run: |
+          clang++ -std=c++17 -pthread -fsanitize=address,undefined -Igdext/src \
+            gdext/tests/native_parallel_executor_test.cpp gdext/src/native_parallel_executor.cpp \
+            -o /tmp/parallel-executor-test
+          /tmp/parallel-executor-test
+          clang++ -std=c++17 -O2 -Igdext/src gdext/tests/economy_hash_lanes_test.cpp -o /tmp/hash-lanes-test
+          /tmp/hash-lanes-test
+          clang++ -std=c++17 -pthread -fsanitize=address,undefined -Igdext/src \
+            gdext/tests/economy_resource_projection_test.cpp -o /tmp/economy-resource-projection-test
+          /tmp/economy-resource-projection-test
       - name: Standalone climate compilation
         run: |
           printf '#include "runtime_climate_pass_math.h"\n' | g++ -std=c++17 -fsyntax-only -x c++ -Igdext/src -

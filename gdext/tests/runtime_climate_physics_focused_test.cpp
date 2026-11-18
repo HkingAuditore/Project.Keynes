@@ -47,7 +47,7 @@ static bool state_roundtrip() {
         CHECK(restored.state_hash() == hash);
     }
     auto corrupt = blob;
-    corrupt.back() ^= 0x80;
+    corrupt[120] ^= 1; // First SLP value is covered even before transport anomaly is seeded.
     CHECK(!restore_physics_state(corrupt.data(), corrupt.size(), restored, error));
     CHECK(restored.state_hash() == hash);
     corrupt = blob;
@@ -254,7 +254,7 @@ static bool worker_progress(bool all_land) {
     }
     CHECK(state.daily_due_seq == 4 && state.last_ocean_day == 6);
     auto damaged = current;
-    damaged.physics_state.back() ^= 1;
+    damaged.physics_state[120] ^= 1; // Corrupt a field covered by the stored hash.
     in.day = 7;
     CHECK(!kernel.plan_day(7, in, catalog, damaged, next, report));
     in.climate_worker_authoritative = false;

@@ -18,6 +18,7 @@ const SNAPSHOT_FILES := [
 static var _ready := false
 static var _economy: Dictionary = {}
 static var _effect: Resource
+static var _effect_columns: Dictionary = {}
 static var _display: Dictionary = {}
 static var _technology: Dictionary = {}
 static var _research: Dictionary = {}
@@ -35,6 +36,9 @@ static func effect_catalog() -> Resource:
 	result.set("native_extensions",(_effect.get("native_extensions") as Dictionary).duplicate(true))
 	return result
 
+static func effect_native_columns() -> Dictionary:
+	return _effect_columns.duplicate(true) if _ready else {}
+
 static func economy_display() -> Dictionary:
 	return _display.duplicate(true) if _ready else {}
 
@@ -48,6 +52,7 @@ static func invalidate() -> void:
 	_ready = false
 	_economy.clear()
 	_effect = null
+	_effect_columns = {}
 	_display.clear()
 	_technology.clear()
 	_research.clear()
@@ -88,9 +93,13 @@ static func prepare(ext: Object, frame_gate = null) -> void:
 	_display = resources[2].get("columns")
 	_technology = resources[3].get("columns")
 	_research = resources[5].get("columns")
-	var extensions = resources[4].get("columns")
-	if extensions is Dictionary:
-		_effect.set("native_extensions",extensions)
+	var effect_data: Dictionary = resources[4].get("columns")
+	# Earlier prebakes store only the extension keys in this file. They still
+	# provide the Resource; its columns will be compiled on the loading path.
+	_effect.set("native_extensions", effect_data.get("native_extensions", effect_data))
+	var compiled = effect_data.get("compiled_catalog", {})
+	if compiled is Dictionary and bool(compiled.get("ok", false)):
+		_effect_columns = compiled
 	_ready = bool(_economy.get("ok",false)) and _effect != null
 	if not _ready:
 		_miss("economy 快照无效（ok=false），快照可能来自不完整的 bake")

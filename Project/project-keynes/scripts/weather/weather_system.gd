@@ -735,27 +735,24 @@ func run_synoptic_advance_pass(map: MapData, world: WorldData) -> float:
 
 func build_field_knobs_for_worker(map: MapData, world: WorldData,
 		season_idx: int, climate_anomaly: float,
-		season_phase: float) -> Dictionary:
+		season_phase: float, defer_thermal_equator: bool = false) -> Dictionary:
 	if _data_core_world_ext == null or map == null or world == null:
 		return {}
 	var n_cells: int = map.cell_count()
 	if n_cells <= 0:
 		return {}
 	_current_map_for_tick = map
-	begin_weather_field_solve(map, world, season_idx, climate_anomaly,
-		season_phase, true, true)
-	if not _field_solver._field_slice_fast_indexed:
-		# fast-indexed 是 solve 的硬前置，缺了它生产也会 fallback。
-		_clear_weather_field_slice_state()
-		_current_map_for_tick = null
-		return {}
-	# The resident/native path stores this Dictionary on the slice state.  Make
-	# a shallow copy before clearing that state below; otherwise
-	# `_clear_weather_field_slice_state()` empties the very Dictionary returned
-	# to the worker, leaving stage_weather silently unconfigured every day.
-	var knobs: Dictionary = _field_solver._field_slice_native_knobs.duplicate(false) \
-		if not _field_solver._field_slice_native_knobs.is_empty() \
-		else _build_weather_field_knobs(map, world, n_cells)
+	_field_solver.begin_slice(map, world, season_idx, climate_anomaly,
+		season_phase, true, true, defer_thermal_equator)
+	var knobs: Dictionary = {}
+	if _field_solver._field_slice_fast_indexed:
+		# The weather stage needs indexed neighbors. Copy the resident knobs
+		# before clearing the solver because both names refer to one dictionary.
+		var resident := _field_solver._field_slice_native_knobs
+		knobs = resident.duplicate(false) if not resident.is_empty() \
+			else _build_weather_field_knobs(map, world, n_cells)
+		if defer_thermal_equator:
+			knobs["thermal_equator_capture_bounds"] = _world_bounds
 	_clear_weather_field_slice_state()
 	_current_map_for_tick = null
 	return knobs

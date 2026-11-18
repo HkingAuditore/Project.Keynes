@@ -1017,7 +1017,13 @@ bool _async_ocean_water_kernel_pure(const ClimateInputBuf &in,
         ol.ocean_anomaly = OANOM;
         ol.tta_inout = AOUT;
 
-        ocean_water_pure(ok, ol);
+        // Upstream temperatures are immutable; only the two outputs at i change.
+        parallel_for_range("pk_climate_ocean_water", n, 0, 2048, [&](int begin, int end) {
+            auto range = ok;
+            range.start_idx = begin;
+            range.end_idx = end;
+            ocean_water_pure(range, ol);
+        });
     }
     return true;
 }
@@ -1284,7 +1290,9 @@ bool _async_wind_surface_kernel_pure(const ClimateInputBuf &in,
     ws_lanes.air_anomaly_out = AOUT;
     ws_lanes.temp_out = T_OUT;
 
-    wind_surface_pure(ws_knobs, ws_lanes, 0, n);
+    parallel_for_range("pk_climate_wind_surface", n, 0, 2048, [&](int begin, int end) {
+        wind_surface_pure(ws_knobs, ws_lanes, begin, end);
+    });
     return true;
 }
 

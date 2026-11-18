@@ -1,4 +1,5 @@
 #include "runtime_climate_kernel.h"
+#include "runtime_climate_weather_input.h"
 #include "economy_cost_probe.h"
 #include "parallel_dispatcher.h"
 #include "runtime_climate_formulas.h"
@@ -53,7 +54,8 @@ void copy_lane(std::vector<T> &destination, const std::vector<T> &source) {
 }
 
 void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &current,
-                      bool reuse_committed_history = false, bool visible_only = false) {
+                      bool reuse_committed_history = false, bool visible_only = false,
+                      bool include_physics_blob = true) {
     copy_lane(next.temperature, current.temperature);
     copy_lane(next.temperature_30d_ema, current.temperature_30d_ema);
     copy_lane(next.temperature_365d_ema, current.temperature_365d_ema);
@@ -148,7 +150,8 @@ void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &curr
     next.rng_state = current.rng_state;
     next.annual_rng_state = current.annual_rng_state;
     next.history_cursor = current.history_cursor;
-    next.physics_state = current.physics_state;
+    if (include_physics_blob) next.physics_state = current.physics_state;
+    else next.physics_state.clear();
     next.cyclone_state = current.cyclone_state;
 }
 
@@ -364,38 +367,41 @@ float normalised_rng(uint64_t &value) noexcept {
     return climate_formula::normalized_rng(value);
 }
 
-// field_solver.gd begin_slice 的热赤道：zonal-mean 温度最高的纬带，抛物线细化。
-float thermal_equator_lat_norm(const std::vector<float> &temp,
-                               const std::vector<float> &pos_y,
-                               float bounds_pos_y, float bounds_size_y,
-                               float fallback) {
+// The temperature sums use float in both paths. The legacy script uses double
+// for latitude and interpolation, while the worker's own sampling uses float.
+template <typename Scalar>
+Scalar thermal_equator_lat_norm(const std::vector<float> &temp,
+                               const std::vector<Scalar> &pos_y,
+                               Scalar bounds_pos_y, Scalar bounds_size_y,
+                               Scalar fallback) {
     constexpr int TE_NB = 24;
-    if (!(bounds_size_y > 0.001f) || temp.empty() || pos_y.size() != temp.size())
+    if (!(bounds_size_y > Scalar(0.001)) || temp.empty() || pos_y.size() != temp.size())
         return fallback;
     float sum[TE_NB] = {};
     int count[TE_NB] = {};
     for (size_t i = 0; i < temp.size(); ++i) {
-        const float ny = std::clamp((pos_y[i] - bounds_pos_y) / bounds_size_y, 0.0f, 0.999999f);
+        const Scalar ny = std::clamp((pos_y[i] - bounds_pos_y) / bounds_size_y,
+                                    Scalar(0), Scalar(0.999999));
         const int bucket = static_cast<int>(ny * TE_NB);
         sum[bucket] += temp[i];
         ++count[bucket];
     }
-    float best_m = -1.0f;
+    Scalar best_m = Scalar(-1);
     int best_b = TE_NB / 2;
     for (int b = 0; b < TE_NB; ++b) {
         if (count[b] <= 0) continue;
-        const float m = sum[b] / static_cast<float>(count[b]);
+        const Scalar m = static_cast<Scalar>(sum[b]) / static_cast<Scalar>(count[b]);
         if (m > best_m) { best_m = m; best_b = b; }
     }
-    float bf = static_cast<float>(best_b);
+    Scalar bf = static_cast<Scalar>(best_b);
     if (best_b > 0 && best_b < TE_NB - 1 && count[best_b - 1] > 0 && count[best_b + 1] > 0) {
-        const float ml = sum[best_b - 1] / static_cast<float>(count[best_b - 1]);
-        const float mr = sum[best_b + 1] / static_cast<float>(count[best_b + 1]);
-        const float denom = ml - 2.0f * best_m + mr;
-        if (std::fabs(denom) > 1.0e-6f)
-            bf += std::clamp(0.5f * (ml - mr) / denom, -0.5f, 0.5f);
+        const Scalar ml = static_cast<Scalar>(sum[best_b - 1]) / static_cast<Scalar>(count[best_b - 1]);
+        const Scalar mr = static_cast<Scalar>(sum[best_b + 1]) / static_cast<Scalar>(count[best_b + 1]);
+        const Scalar denom = ml - Scalar(2) * best_m + mr;
+        if (std::fabs(denom) > Scalar(1.0e-6))
+            bf += std::clamp(Scalar(0.5) * (ml - mr) / denom, Scalar(-0.5), Scalar(0.5));
     }
-    return std::clamp((bf + 0.5f) / static_cast<float>(TE_NB), 0.0f, 1.0f);
+    return std::clamp((bf + Scalar(0.5)) / static_cast<Scalar>(TE_NB), Scalar(0), Scalar(1));
 }
 
 // PK_SIM_DAY_TRACE 的 [climate-out]：每个 stage 之后 store 关键 lane 的短哈希，
@@ -793,9 +799,16 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         double(physics_knobs.wind_traj_pos_scale), double(physics_knobs.wind_traj_dt_days)};
     const bool same_neighbors = _physics_cache_keys_valid &&
         _physics_cache_neighbors == input.neighbor_indices;
-    const bool same_geometry = same_neighbors &&
-        _physics_cache_terrain == physics_terrain &&
-        _physics_cache_water_ids == physics_knobs.water_terrain_ids;
+    const bool same_terrain = _physics_cache_terrain == physics_terrain;
+    const bool same_water_ids = _physics_cache_water_ids == physics_knobs.water_terrain_ids;
+    const bool same_geometry = same_neighbors && same_water_ids && (same_terrain || [&] {
+        // Both builders depend on the land/water classification, not the raw terrain ID.
+        bool water[256]{};
+        for (uint8_t id : physics_knobs.water_terrain_ids) water[id] = true;
+        return std::equal(_physics_cache_terrain.begin(), _physics_cache_terrain.end(),
+            physics_terrain.begin(), physics_terrain.end(),
+            [&water](uint8_t previous, uint8_t next) { return water[previous] == water[next]; });
+    }());
     const bool same_trajectory_inputs = same_neighbors &&
         same_float_bits(_physics_cache_pos_x, input.cell_pos_x) &&
         same_float_bits(_physics_cache_pos_y, input.cell_pos_y) &&
@@ -811,7 +824,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         }
         if (reuse_physics) {
             _physics.wind_speed_out = _physics.wind_speed;
-            // 邻居/地形/水域分类逐值匹配；海冰翻转当天立即重建。
+            // 邻接或海陆分类变化时才需要重算海岸与海域编号。
             _physics.topo_valid &= same_geometry;
             _physics.coast_valid &= same_geometry;
             // wind_prepass 每次改风都会更新或废弃轨迹。这里另核对地图坐标和配置。
@@ -832,10 +845,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         }
     }
     if (physics_owned) {
-        if (!same_geometry) {
-            _physics_cache_terrain = physics_terrain;
-            _physics_cache_water_ids = physics_knobs.water_terrain_ids;
-        }
+        if (!same_terrain) _physics_cache_terrain = physics_terrain;
+        if (!same_water_ids) _physics_cache_water_ids = physics_knobs.water_terrain_ids;
         if (!same_neighbors) _physics_cache_neighbors = input.neighbor_indices;
         if (!same_trajectory_inputs) {
             _physics_cache_pos_x = input.cell_pos_x;
@@ -2196,11 +2207,16 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
 
             pk_async_climate::WeatherFieldKnobs knobs = wx.knobs;
             knobs.use_next_outputs = true;
-            // capture 侧按 MapData 温度算热赤道，而 MapData 是按回写时机落后的那份。
-            if (physics_owned) {
+            // The worker's own fields take precedence, as before. When they
+            // are unavailable, sample from the same arrays the script read.
+            if (physics_owned && knobs.world_bounds_size_y > 0.001f) {
                 knobs.weather_lat_te_norm = thermal_equator_lat_norm(
                     wx.temp_read, wx.pos_y, knobs.world_bounds_pos_y,
                     knobs.world_bounds_size_y, knobs.weather_lat_te_norm);
+            } else if (const auto &sample = wx.captured_thermal_equator) {
+                knobs.weather_lat_te_norm = static_cast<float>(thermal_equator_lat_norm(
+                    sample->temperature, sample->pos_y, sample->bounds_y,
+                    sample->bounds_height, static_cast<double>(knobs.weather_lat_te_norm)));
             }
 
             pk_async_climate::WeatherFieldLanes lanes;
@@ -2981,8 +2997,28 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
 }
 
 void RuntimeClimateKernel::copy_visible_store(RuntimeClimateStore &destination,
-        const RuntimeClimateStore &source) {
-    copy_store_lanes(destination, source, false, true);
+        const RuntimeClimateStore &source, bool include_physics_blob) {
+    copy_store_lanes(destination, source, false, true, include_physics_blob);
+}
+
+std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState>
+RuntimeClimateKernel::copy_physics_writeback(const RuntimeClimateStore &store) const {
+    if (_committed_physics_owner != &store ||
+        _committed_physics_generation != store.generation ||
+        _physics.committed_day != store.committed_day ||
+        _physics.cell_count != static_cast<int>(store.cell_count)) return {};
+
+    auto view = std::make_shared<pk_async_physics::RuntimeClimatePhysicsState>();
+    pk_async_physics::copy_committed_physics_fields(_physics, *view);
+    // The solver validated the raw trajectory settings and verified the
+    // geometry, neighbors, and settings for this commit's table.
+    if (_physics_cache_keys_valid && _physics.wind_traj_valid) {
+        view->wind_traj_idx = _physics.wind_traj_idx;
+        view->wind_traj_w = _physics.wind_traj_w;
+        view->wind_traj_fingerprint = _physics.wind_traj_fingerprint;
+        view->wind_traj_valid = true;
+    }
+    return view;
 }
 
 void RuntimeClimateKernel::commit(RuntimeClimateStore &current, RuntimeClimateStore &next) {
@@ -3008,6 +3044,19 @@ void RuntimeClimateKernel::accept_committed_physics(const RuntimeClimateStore &s
 }
 
 bool RuntimeClimateKernel::self_test(std::string &error) {
+    {
+        // A coordinate just below a bin edge rounds onto that edge at single
+        // precision. The captured script path must retain the double result.
+        const std::vector<float> temperature{0.25f, 0.875f, 0.5f};
+        const std::vector<double> pos{0.5, 8.0 - 1.0e-8, 23.5};
+        const std::vector<float> rounded_pos(pos.begin(), pos.end());
+        if (thermal_equator_lat_norm(temperature, pos, 0.0, 24.0, 0.5) != 7.5 / 24.0 ||
+            thermal_equator_lat_norm(temperature, rounded_pos, 0.0f, 24.0f, 0.5f) != 8.5f / 24.0f ||
+            thermal_equator_lat_norm(temperature, pos, 0.0, 0.0, 0.25) != 0.25) {
+            error = "climate_weather_thermal_equator_precision";
+            return false;
+        }
+    }
     {
         RuntimeEnvironmentSnapshot input;
         input.cell_temp = {0.0f, 0.0f, 0.0f};
@@ -3049,6 +3098,7 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
         auto &k = in.climate_physics_knobs;
         k.enabled = true; k.ready = 1; k.water_id_count = 4;
         k.water_terrain_ids = {0, 3, 4, 5};
+        k.land_lf_mountain = 1; k.land_lf_peak = 2; k.land_lf_hill = 3;
         k.wind_traj_table_enabled = 1; k.wind_momentum_advect_w = 0.1f;
         k.daily_period_days = 2;
         RuntimeClimateKernel cached;
@@ -3058,6 +3108,8 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
         if (!cached.compile_catalog(in, catalog, error)) return false;
         for (int day = 0; day < 20; ++day) {
             in.day = day; ++in.generation;
+            if (day == 2) { current.terrain[1] = 3; in.terrain[1] = 3; }
+            if (day == 3) { current.terrain[3] = 2; in.terrain[3] = 2; }
             if (day == 4) { current.terrain[0] = 0; in.terrain[0] = 0; }
             if (day == 6) in.neighbor_indices[1] = 2;
             if (day == 8) in.cell_pos_x[1] = 1.25f;
@@ -3080,7 +3132,37 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
             }
             commit(current, next);
             cached.accept_committed_physics(current);
-            if (day == 16) cached.invalidate_committed_physics();
+            auto physics = cached.copy_physics_writeback(current);
+            pk_async_physics::RuntimeClimatePhysicsState decoded;
+            if (!physics || !pk_async_physics::restore_physics_state(
+                    current.physics_state.data(), current.physics_state.size(), decoded, error) ||
+                !decoded.initialized || physics->state_hash() != decoded.state_hash() ||
+                !physics->wind_traj_valid ||
+                physics->wind_traj_generation != decoded.wind_traj_generation) {
+                error = "climate_physics_writeback_mismatch:" + std::to_string(day);
+                return false;
+            }
+            auto old_idx = physics->wind_traj_idx;
+            auto old_weights = physics->wind_traj_w;
+            const pk_async_physics::WindTrajKnobs knobs{
+                k.wrap_period_x, k.wind_traj_pos_scale, k.wind_traj_dt_days};
+            const pk_async_physics::WindTrajLanes lanes{
+                in.cell_pos_x.data(), in.cell_pos_y.data(), in.neighbor_indices.data(),
+                decoded.wind_x.data(), decoded.wind_y.data(), decoded.wind_speed.data(),
+                old_idx.data(), old_weights.data()};
+            pk_async_physics::wind_traj_build_range(n, 0, n, knobs, lanes);
+            if (old_idx != physics->wind_traj_idx ||
+                !same_float_bits(old_weights, physics->wind_traj_w)) {
+                error = "climate_wind_writeback_mismatch:" + std::to_string(day);
+                return false;
+            }
+            if (day == 16) {
+                cached.invalidate_committed_physics();
+                if (cached.copy_physics_writeback(current)) {
+                    error = "climate_invalidated_physics_writeback_available";
+                    return false;
+                }
+            }
         }
     }
     {

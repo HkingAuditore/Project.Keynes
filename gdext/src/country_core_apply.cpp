@@ -1,6 +1,7 @@
 #include "country_core_apply.h"
 
 #include "country_core.h"
+#include "fnv1a_bytes.h"
 
 #include <algorithm>
 #include <array>
@@ -1429,13 +1430,8 @@ uint64_t country_core_hash_business_state(const RuntimeCountryPodSnapshot &state
             hash ^= static_cast<uint8_t>(count >> (i * 8u));
             hash *= FNV_PRIME;
         }
-        if (!values.empty()) {
-            const auto *bytes = reinterpret_cast<const uint8_t *>(values.data());
-            for (size_t i = 0; i < values.size() * sizeof(values[0]); ++i) {
-                hash ^= bytes[i];
-                hash *= FNV_PRIME;
-            }
-        }
+        hash = hashing::fnv1a::bytes(hash, reinterpret_cast<const uint8_t *>(values.data()),
+                            values.size() * sizeof(values[0]));
     };
     // generation is transport/bookkeeping state, not Country business state.
     // Production and SHADOW can publish the same canonical Country values
