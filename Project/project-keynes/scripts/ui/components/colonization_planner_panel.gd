@@ -123,7 +123,6 @@ var _preview_hovering := false
 var _planning_identity := ""
 var _identity_pulse_tween: Tween
 
-
 func _ready() -> void:
 	if _list != null:
 		return
@@ -194,7 +193,6 @@ func _ready() -> void:
 		get_viewport().size_changed.connect(_layout_left_panel)
 	_layout_left_panel()
 	visible = false
-
 
 func set_player_controller(controller) -> void:
 	_controller = controller

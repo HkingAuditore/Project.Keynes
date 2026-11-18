@@ -317,6 +317,15 @@ float terrain_biome_micro_strength(int biome) {
 	return 0.40; // organic terrain
 }
 
+// [edge-sample 2026-11-18 / cell-field 2026-11-18] 结构体必须留在 PK_CELL_FIELD 的
+// 编译剔除之外：land_pipeline 的 compute_land_base_surface / render_land_pipeline
+// 在**两个变体里**都带 TerrainEdgeSample 形参（场版本只是不读它的值），所以 struct
+// 一旦跟着下面那段一起被剔除，PK_CELL_FIELD 变体会报 unknown type。
+struct TerrainEdgeSample {
+	int biome;
+	float weight;
+};
+
 // [cell-field 2026-11-18] 本函数依赖上面那段已随 DitherUV 整族编译剔除的混合权重
 // 函数，因此 PK_CELL_FIELD 变体里整段不进预处理产物。场版本在
 // terrain_cell_field_detail.gdshaderinc::compute_terrain_static_material_field()，
@@ -327,7 +336,7 @@ TerrainStaticMaterial compute_terrain_static_material(
 		float elev,
 		vec2 wp,
 		vec2 uv,
-		float edge_distance) {
+		TerrainEdgeSample edge) {
 	TerrainStaticMaterial out_mat;
 	vec3 hyps = hypsometric_tint(elev, false);
 	bool use_material_tiles = terrain_materials_active();
@@ -357,22 +366,9 @@ TerrainStaticMaterial compute_terrain_static_material(
 	out_mat.edge_factor = 0.0;
 	out_mat.secondary_biome = -1;
 
-	float edge_w = terrain_edge_secondary_weight_d(edge_distance, wp);
-	if (edge_w <= 0.0001) {
-		return out_mat;
-	}
-	int secondary_id = decode_edge_secondary_index(uv);
-	if (secondary_id < 0) {
-		return out_mat;
-	}
-	int secondary_biome = int(texture(enum_lut, cell_lut_uv(secondary_id)).r * 255.0 + 0.5);
-	// The shared edge field also serves fog and weather across coastlines. Terrain
-	// alone keeps the land/water material topology hard to prevent color leakage.
-	if (terrain_static_biome_is_water(secondary_biome)
-			!= terrain_static_biome_is_water(primary_biome)) {
-		return out_mat;
-	}
-	if (secondary_biome == primary_biome) {
+	float edge_w = edge.weight;
+	int secondary_biome = edge.biome;
+	if (secondary_biome < 0 || secondary_biome == primary_biome) {
 		return out_mat;
 	}
 	out_mat.edge_factor = edge_w;

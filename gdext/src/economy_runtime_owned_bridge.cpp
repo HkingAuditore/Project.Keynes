@@ -1,6 +1,7 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "economy_hash.h"
+#include "economy_resource_projection.h"
 #include "runtime_switch_registry.h"
 #include "economy_graph_kernels.h"
 #include "economy_graph_live_ops.h"
@@ -777,19 +778,19 @@ void NativeEconomyRuntime::fill_ledger_resource_from_store(
     // harvest scratch on a live store is transient and is never published.
     block.store.resource_count = store.resource_count;
     block.store.cell_count = store.cell_count;
-    // Structural assign/reorder marks every page dirty even when bytes match.
-    // The existing tracked range writer compares exact bytes and touches only
-    // changed runs, so unchanged mirror pages retain their canonical digest.
-    const auto project = [&](auto &target, const auto &source) {
-        if (&target == &source) return;
-        if (!scalar_projection && target.size() == source.size())
-            target.write_values(0, source.values().data(), source.size());
-        else target = source;
-    };
-    project(block.store.stock, store.stock);
-    project(block.store.cell_generation, store.cell_generation);
+    {
+        EconomyCostProbe copy_cost("projection.resource_wire_copy", _current_day.get());
+        const auto stock_bytes = project_resource_wire_column(
+            block.store.stock, store.stock, scalar_projection);
+        const auto generation_bytes = project_resource_wire_column(
+            block.store.cell_generation, store.cell_generation, scalar_projection);
+        copy_cost.set_work(stock_bytes + generation_bytes);
+    }
     block.sync_counts_from_store();
-    block.recompute_content_hash();
+    {
+        EconomyCostProbe hash_cost("projection.resource_wire_hash", _current_day.get());
+        block.recompute_content_hash();
+    }
 }
 
 void NativeEconomyRuntime::fill_ledger_epoch_cursor(

@@ -242,6 +242,8 @@ var gi_occluder_tex: ImageTexture
 #   采样驱动云分布——天气云不再用 fronts 椭圆摘要，而是精确对应 HexCell.weather_*。
 var weather_lut_tex: ImageTexture
 var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值减两次更新间横跳)
+# Native worker commits stage pixel bytes until this world's renderer presents them.
+var staged_cell_lut_upload: Dictionary = {}
 var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
 var lut_dims: Vector2i = Vector2i.ZERO
 # ─── [cell-field-overlays 2026-11-18] 天气/风的 offset 空间表（方案 §3.3）─────────────

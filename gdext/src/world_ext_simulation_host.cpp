@@ -110,13 +110,7 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["ui_input_to_feedback_ms"] = report.ui_input_to_feedback_ms;
     out["visual_apply_ms"] = report.visual_apply_ms;
     out["gpu_upload_ms"] = report.gpu_upload_ms;
-    const char *timing_names[] = {"execute", "input_wait", "clock_wait", "save_build", "save_pause", "paused", "overhead", "boundary_wait"};
-    uint64_t timing_total = 0;
-    for (size_t i = 0; i < report.worker_time_us.size(); ++i) {
-        out[String("worker_time_") + timing_names[i] + "_us"] = static_cast<int64_t>(report.worker_time_us[i]);
-        timing_total += report.worker_time_us[i];
-    }
-    out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+    append_worker_timing(report.worker_time_us, out);
     out["main_wait_on_sim_us"] = static_cast<int64_t>(report.main_wait_on_sim_us);
     out["environment_generation"] = static_cast<int64_t>(report.environment_generation);
     out["environment_day"] = report.environment_day;
@@ -483,8 +477,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // 已经占掉一部分），而 NativeParallelExecutor 按 `hardware_concurrency()-2`
     // 去 spawn（浏览器报告 8–32 ⇒ 实测要起 8–14 个）。
     //
-    // 后果不是"并行慢一点"，而是**负收益**：起不全的 worker 不会去减 `_remaining_tasks`
-    // （见上面内联日那段注释），而每一次 `parallel_for_range` 都要付跨 wasm thread 的
+    // 线程不足时，每一次 `parallel_for_range` 仍要付跨 wasm thread 的
     // 派活 / 唤醒延迟。真机实测（RTX 4080 + Chrome，新 side module）：
     //   worker 模式（并行器开着）：单日墙钟 250–370 ms ⇒ 2.70 天/秒
     //   inline 模式（并行器关着）：单日墙钟 46 ms     ⇒ 9.81 天/秒

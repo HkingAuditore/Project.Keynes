@@ -1,6 +1,31 @@
 extends RefCounted
 
-## Stateless collaborator for ShrubLayer.
+## Weather presentation and the late cell-texture upload for HexRenderer.
+
+class CellLutUpload extends Node:
+	func _process(_delta: float) -> void:
+		var renderer = get_parent()
+		if renderer._map_baker != null and renderer._world != null \
+				and not renderer._world.staged_cell_lut_upload.is_empty():
+			DCCellLutBaker.flush_staged_cell_lut_upload(renderer._map_baker, renderer._world)
+
+
+static func configure_weather_presentation(renderer: Node) -> void:
+	var upload := CellLutUpload.new()
+	# Install during renderer setup. A node enabled from a daily commit would
+	# enter the scene's process list one frame after the weather interpolation.
+	upload.name = &"CellLutUpload"
+	upload.process_priority = 999
+	renderer.add_child(upload)
+	if renderer._weather_layer != null:
+		renderer._weather_layer.process_priority = 1000
+
+
+static func can_defer_cell_lut_upload(renderer: Node, baker: MapBaker, world: WorldData) -> bool:
+	return renderer != null and baker != null and world != null \
+			and renderer._map_baker == baker and renderer._world == world \
+			and renderer.is_inside_tree() and renderer.can_process() and renderer.has_node(^"CellLutUpload")
+
 
 static func set_extreme_weather_ground_effect_enabled(host, v: bool) -> void:
 

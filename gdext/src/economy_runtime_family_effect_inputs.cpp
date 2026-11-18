@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "parallel_dispatcher.h"
 #include "runtime_switch_registry.h"
 #include "pk_log.h"
 
@@ -360,47 +361,103 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
         // metrics on every cell even when only a terrain tag was consumed.
         // Unknown/empty consumer sets already select all tags above. Direct
         // metric queries keep their own mask and are not narrowed by this pass.
-        MetricMask mask;
+        // Index category rules by the actual map byte. A cell only visits tags it matches.
+        using CategoryTags = std::array<std::vector<int32_t>, 256>;
+        CategoryTags terrain_tags, landform_tags;
+        struct SingleRowTag { int32_t tag; TargetTagRow row; };
+        std::vector<SingleRowTag> single_row_tags;
+        std::vector<int32_t> compound_tags;
+        MetricMask requested_mask;
+        MetricMask sample_mask;
+        const auto metric_overrides = std::atomic_load_explicit(
+            &_effect_metric_override_snapshot, std::memory_order_acquire);
         for (const int32_t tag : active_tags) {
-            for (int32_t row = _target_tags.begin(tag);
-                 row < _target_tags.end(tag); ++row)
-                mask.set(_target_tags.rows[static_cast<size_t>(row)].metric_id);
+            const auto first = _target_tags.rows.begin() + _target_tags.begin(tag);
+            const auto last = _target_tags.rows.begin() + _target_tags.end(tag);
+            for (auto row = first; row != last; ++row)
+                requested_mask.set(row->metric_id);
+            const int32_t id = first->metric_id;
+            const bool categorical = id == FAMILY_METRIC_CELL_TERRAIN ||
+                                     id == FAMILY_METRIC_CELL_LANDFORM;
+            if (categorical && (metric_overrides == nullptr || !metric_overrides->set[id]) &&
+                    std::all_of(first, last, [id](const auto &row) { return row.metric_id == id; })) {
+                // A pure terrain/landform rule has the same answer for every
+                // cell of that category, including the missing-column value 0.
+                auto &by_value = id == FAMILY_METRIC_CELL_TERRAIN ? terrain_tags : landform_tags;
+                for (size_t value = 0; value < by_value.size(); ++value) {
+                    values[id] = static_cast<int64_t>(value) * Q16_ONE;
+                    if (_target_tags.matches(tag, values.data(), metric_count))
+                        by_value[value].push_back(tag);
+                }
+            } else {
+                if (last - first == 1 && id >= 0 && id < metric_count)
+                    single_row_tags.push_back({tag, *first});
+                else
+                    compound_tags.push_back(tag);
+                for (auto row = first; row != last; ++row)
+                    sample_mask.set(row->metric_id);
+            }
         }
         MetricMask catalog_mask;
         _target_tags.collect_metric_mask(catalog_mask);
         _tag_catalog_metrics.store(
             catalog_mask.count(metric_count), std::memory_order_relaxed);
         _tag_snapshot_requested_metrics.store(
-            mask.count(metric_count), std::memory_order_relaxed);
+            requested_mask.count(metric_count), std::memory_order_relaxed);
         _tag_snapshot_sampled_cells.store(
             active > 0 ? cells : 0, std::memory_order_relaxed);
-        for (int32_t cell = 0; active > 0 && cell < cells; ++cell) {
-            sample_effect_metrics(cell, metric_count, values.data(), mask);
-            const size_t word = static_cast<size_t>(cell / 64);
-            const uint64_t bit = uint64_t{1} << (cell % 64);
-            const std::vector<CellTagOverride> *cell_overrides = nullptr;
-            if (tag_overrides != nullptr) {
-                const auto override_it = tag_overrides->cells.find(cell);
-                if (override_it != tag_overrides->cells.end())
-                    cell_overrides = &override_it->second;
-            }
-            for (int32_t index = 0; index < active; ++index) {
-                const int32_t tag = active_tags[static_cast<size_t>(index)];
-                bool matches =
-                    _target_tags.matches(tag, values.data(), metric_count);
-                if (cell_overrides != nullptr &&
-                        tag < static_cast<int32_t>(
-                            cell_overrides->size())) {
-                    const CellTagOverride &override =
-                        (*cell_overrides)[static_cast<size_t>(tag)];
-                    if (override.force_true != 0)
-                        matches = true;
-                    else if (override.force_false != 0)
-                        matches = false;
+        std::vector<int32_t> overridden_metrics;
+        if (metric_overrides != nullptr) {
+            for (int32_t id = 0; id < metric_count; ++id)
+                if (metric_overrides->set[id]) overridden_metrics.push_back(id);
+        }
+        if (active > 0) {
+            // Give each task whole words of every tag. Metric sampling reads
+            // frozen inputs, and each task owns its value scratch and bit writes.
+            pk::parallel_for_range("pk_economy_tag_words", words,
+                parallel_default_n_tasks(cells), 32, [&](int begin, int end) {
+                std::array<int64_t, FAMILY_METRIC_COUNT> sampled_values{};
+                const auto end_cell = std::min(static_cast<size_t>(cells),
+                                               static_cast<size_t>(end) * 64u);
+                for (size_t index = static_cast<size_t>(begin) * 64u; index < end_cell; ++index) {
+                    const auto cell = static_cast<int32_t>(index);
+                    const size_t word = index / 64u;
+                    const uint64_t bit = uint64_t{1} << (index % 64u);
+                    const auto set_bit = [&](int32_t tag) {
+                        snapshot->tag_bits[static_cast<size_t>(tag) * words + word] |= bit;
+                    };
+                    for (const int32_t tag : terrain_tags[index < _building_terrain.size()
+                            ? _building_terrain[index] : 0]) set_bit(tag);
+                    for (const int32_t tag : landform_tags[index < _building_landform.size()
+                            ? _building_landform[index] : 0]) set_bit(tag);
+                    if (!single_row_tags.empty() || !compound_tags.empty()) {
+                        fill_family_behavior_metrics(-1, -1, cell, sampled_values.data(),
+                                                     metric_count, sample_mask);
+                        for (const int32_t id : overridden_metrics)
+                            sampled_values[id] = metric_overrides->values[id];
+                        for (const auto &entry : single_row_tags) {
+                            if (TargetTagTable::row_matches(entry.row, sampled_values[entry.row.metric_id]))
+                                set_bit(entry.tag);
+                        }
+                        for (const int32_t tag : compound_tags) {
+                            if (_target_tags.matches(tag, sampled_values.data(), metric_count))
+                                set_bit(tag);
+                        }
+                    }
                 }
-                if (!matches) continue;
-                snapshot->tag_bits[static_cast<size_t>(tag) *
-                                       static_cast<size_t>(words) + word] |= bit;
+            });
+            // Overrides affect selected tags even when their rule did not match.
+            if (tag_overrides != nullptr) {
+                for (const auto &[cell, overrides] : tag_overrides->cells) {
+                    if (cell < 0 || cell >= cells) continue;
+                    const uint64_t bit = uint64_t{1} << (cell % 64);
+                    for (const int32_t tag : active_tags) {
+                        if (static_cast<size_t>(tag) >= overrides.size()) continue;
+                        auto &word = snapshot->tag_bits[static_cast<size_t>(tag) * words + cell / 64];
+                        if (overrides[tag].force_true) word |= bit;
+                        else if (overrides[tag].force_false) word &= ~bit;
+                    }
+                }
             }
         }
     }
@@ -1071,9 +1128,12 @@ void NativeEconomyRuntime::refresh_neighbor_distinct_goods_metrics() {
     // depend on price noise. dominant_output_good_at() resolves ties and output
     // shares, so two equal dominant ids guarantee the distinct-neighbour answer
     // is unchanged.
+    std::vector<int32_t> dominant_goods(static_cast<size_t>(cells), -1);
     for (int32_t cell = 0; cell < cells; ++cell) {
         int32_t share_q16 = 0;
-        const int32_t good = dominant_output_good_at(cell, share_q16);
+        const int32_t good = _building_cell_offsets[cell] == _building_cell_offsets[cell + 1]
+            ? -1 : dominant_output_good_at(cell, share_q16);
+        dominant_goods[cell] = good;
         source_hash = mix(source_hash,
             static_cast<uint64_t>(static_cast<uint32_t>(good + 1)));
     }
@@ -1091,9 +1151,7 @@ void NativeEconomyRuntime::refresh_neighbor_distinct_goods_metrics() {
                 static_cast<size_t>(cell) * 6 +
                 static_cast<size_t>(direction)];
             if (neighbor < 0 || neighbor >= cells) continue;
-            int32_t share_q16 = 0;
-            const int32_t good = dominant_output_good_at(
-                neighbor, share_q16);
+            const int32_t good = dominant_goods[neighbor];
             if (good < 0) continue;
             bool duplicate = false;
             for (int32_t slot = 0; slot < distinct_count; ++slot) {
@@ -1433,42 +1491,48 @@ void NativeEconomyRuntime::refresh_effect_input_digest() {
     if (consumers->metric_mask.is_any()) {
         const int32_t cells = _cell_count.get();
         const int32_t metric_count = static_cast<int32_t>(FAMILY_METRIC_COUNT);
-        std::vector<int64_t> values(static_cast<size_t>(metric_count), 0);
         // One digest per metric, so a card can depend on the metrics it reads
         // rather than on "some metric somewhere moved".
         std::array<uint64_t, FAMILY_METRIC_COUNT> per_metric;
         per_metric.fill(1469598103934665603ULL);
+        std::vector<int32_t> requested_metrics;
+        consumers->metric_mask.collect_ids(0, metric_count, requested_metrics);
         digest = effect_input_mix(digest, static_cast<uint64_t>(cells));
-        for (int32_t cell = 0; cell < cells; ++cell) {
-            sample_effect_metrics(cell, metric_count, values.data(),
-                consumers->metric_mask);
-            for (int32_t metric = 0; metric < metric_count; ++metric) {
-                if (!consumers->metric_mask.test(metric)) continue;
-                int64_t sampled = values[static_cast<size_t>(metric)];
-                if (overrides != nullptr &&
-                        overrides->set[static_cast<size_t>(metric)] != 0)
-                    sampled = overrides->values[static_cast<size_t>(metric)];
-                // Threshold bucketing (review §3): if any card compares this
-                // metric against N, the digest carries "how many N are <= value"
-                // instead of the raw number. Crossing a threshold is exactly the
-                // event that can flip a condition, and it needs no unit table --
-                // population, counts and category ids all work the same way.
-                const std::vector<int64_t> &metric_thresholds =
-                    consumers->thresholds[static_cast<size_t>(metric)];
-                if (!metric_thresholds.empty())
-                    sampled = static_cast<int64_t>(
-                        std::upper_bound(metric_thresholds.begin(),
-                                         metric_thresholds.end(), sampled) -
-                        metric_thresholds.begin());
-                per_metric[static_cast<size_t>(metric)] = effect_input_mix(
-                    per_metric[static_cast<size_t>(metric)],
-                    static_cast<uint64_t>(sampled));
+        // Sampling reads the frozen epoch. Each partition writes separate cells;
+        // fold every metric in ascending cell order, including across batches.
+        // A strip keeps scratch proportional to active metrics on large maps.
+        constexpr int32_t strip_cells = 4096;
+        const int32_t stride = std::min(cells, strip_cells);
+        std::vector<uint64_t> samples(requested_metrics.size() * static_cast<size_t>(stride));
+        for (int32_t start = 0; start < cells; ) {
+            const int32_t count = std::min(stride, cells - start);
+            parallel_for_range("pk_effect_metric_cells", count, 0, 1024, [&](int begin, int end) {
+                std::array<int64_t, FAMILY_METRIC_COUNT> values{};
+                for (int i = begin; i < end; ++i) {
+                    fill_family_behavior_metrics(-1, -1, start + i, values.data(),
+                                                 metric_count, consumers->metric_mask);
+                    for (size_t index = 0; index < requested_metrics.size(); ++index) {
+                        const int32_t metric = requested_metrics[index];
+                        int64_t value = overrides != nullptr && overrides->set[metric] != 0
+                            ? overrides->values[metric] : values[metric];
+                        const auto &thresholds = consumers->thresholds[metric];
+                        if (!thresholds.empty())
+                            value = std::upper_bound(thresholds.begin(), thresholds.end(), value)
+                                    - thresholds.begin();
+                        samples[index * stride + i] = static_cast<uint64_t>(value);
+                    }
+                }
+            });
+            for (size_t index = 0; index < requested_metrics.size(); ++index) {
+                uint64_t &hash = per_metric[requested_metrics[index]];
+                const auto *column = samples.data() + index * stride;
+                for (int i = 0; i < count; ++i) hash = effect_input_mix(hash, column[i]);
             }
+            start += count;
         }
         // Fold the per-metric digests into the global one (so its meaning is
         // unchanged) and bump the revision of each metric that actually moved.
-        for (int32_t metric = 0; metric < metric_count; ++metric) {
-            if (!consumers->metric_mask.test(metric)) continue;
+        for (const int32_t metric : requested_metrics) {
             const size_t slot = static_cast<size_t>(metric);
             digest = effect_input_mix(digest, per_metric[slot]);
             if (per_metric[slot] != _effect_metric_published[slot]) {
@@ -1511,6 +1575,7 @@ void NativeEconomyRuntime::refresh_effect_input_digest() {
             std::memory_order_release);
     }
 }
+
 
 // REMOVED (R-3): `ensure_country_tag_counts` and `build_country_tag_counts` are
 // gone. The per-country counts live in the same immutable TagSnapshot as the tag

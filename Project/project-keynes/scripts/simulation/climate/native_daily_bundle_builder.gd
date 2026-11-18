@@ -724,7 +724,6 @@ func _native_daily_weather_active_bootstrap_allowed(readiness: Dictionary) -> bo
 			and _generator._sus_world != null \
 			and _generator._weather_system.has_method("build_unified_fast_tick_weather_knobs")
 
-
 # Stagger 对齐（2026-06）：legacy 的 weather_refresh + _generator.refresh_daily_stage_b 跑在
 # sim_stagger 的 weather bucket 上（默认 stride=8 / phase=4），而不是每天。native
 # daily 此前每轮都嵌入 weather/stage_b（must_run），让天气场与 stage_b call_index
@@ -774,19 +773,22 @@ func _native_daily_split_weather_node_enabled(cp_now) -> bool:
 		and bool(cp_now.native_daily_split_weather_node_enabled)
 
 func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
-	var values: Dictionary = {
-		"season_idx": 0,
-		"anomaly": 0.0,
-		"season_phase": default_phase,
-	}
-	if _generator._world_clock_ref != null:
-		if _generator._world_clock_ref.has_method("season_index"):
-			values["season_idx"] = int(_generator._world_clock_ref.season_index())
-		var v_anom = _generator._world_clock_ref.get("climate_anomaly")
-		if v_anom != null:
-			values["anomaly"] = float(v_anom)
-		if _generator._world_clock_ref.has_method("season_phase"):
-			values["season_phase"] = float(_generator._world_clock_ref.season_phase())
+	var clock = _generator._world_clock_ref
+	var values := {"season_idx": 0, "anomaly": 0.0, "season_phase": default_phase}
+	if clock == null:
+		return values
+	var anomaly = clock.get("climate_anomaly")
+	if anomaly != null:
+		values["anomaly"] = float(anomaly)
+	var date: int = _generator._get_runtime_climate_capture().calendar_day
+	if date >= 0:
+		values["season_idx"] = clock.season_index_for_day(date)
+		values["season_phase"] = clock.season_phase_for_day(date)
+	else:
+		if clock.has_method("season_index"):
+			values["season_idx"] = clock.season_index()
+		if clock.has_method("season_phase"):
+			values["season_phase"] = clock.season_phase()
 	return values
 
 func _build_native_daily_weather_super_knobs(
@@ -1127,7 +1129,6 @@ func _merge_native_daily_slice_patch_local(patch: Dictionary) -> void:
 		_generator._native_daily_slice_active_bundle[key] = patch[key]
 	_generator._native_daily_slice_bundle_pass_keys = _native_daily_bundle_pass_keys(_generator._native_daily_slice_active_bundle)
 
-
 # Slice-graph node indices that MUST receive a just-in-time knob patch before they run,
 # because running them with the round-start knobs would diverge. Empirically minimized
 # (tmp_native_batch_bitequal_test.gd, 40-round soak): only `ocean_water` (2) and
@@ -1162,7 +1163,6 @@ const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD: Array[int] = [
 # nodes that do not need GDScript patching. Weather split subnodes remain inside the same
 # C++ call unless another dynamic boundary is needed.
 const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD_COARSE: Array[int] = [2, 6, 12, 19, 20]
-
 
 # Pick the slice yield set for the current cadence mode: spread → max granularity
 # (lowest per-tick peak), atomic → coarse {2,6} batching (fewest round-trips/round).

@@ -40,6 +40,14 @@ func _init() -> void:
 		_expect(int(first.get("season_idx", -1)) == 1
 			and int(second.get("season_idx", -1)) == 2,
 			"next capture preserves the previous day's input")
+		var prepared := weather.build_field_knobs_for_worker(map, world, 3, 0.0, 3.5, true)
+		_expect(prepared.get("thermal_equator_capture_bounds") == world.world_bounds,
+			"background preparation retains the original sampling bounds")
+		_expect(prepared.get("temp_read_arr") == temperatures
+			and (prepared.get("cell_pos", PackedVector2Array()) as PackedVector2Array).size() == 6,
+			"background preparation freezes the same temperature and position samples")
+		_expect(not weather.is_weather_field_solve_active(),
+			"background preparation releases temporary solver state")
 	print("weather worker input lifetime: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

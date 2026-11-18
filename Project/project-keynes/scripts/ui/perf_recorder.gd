@@ -318,11 +318,11 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_country_pod_ack_pending",
 	"runtime_graph_country_pod_blocker",
 	# Cumulative worker-time counters: compare deltas across rows.
-	"runtime_graph_worker_time_execute_us",
-	"runtime_graph_worker_time_input_wait_us",
+	"runtime_graph_worker_time_execute_us", "runtime_graph_worker_time_input_wait_us",
+	"runtime_graph_worker_time_environment_wait_us", "runtime_graph_worker_time_main_tail_wait_us",
+	"runtime_graph_worker_time_input_retry_wait_us",
 	"runtime_graph_worker_time_clock_wait_us",
-	"runtime_graph_worker_time_save_build_us",
-	"runtime_graph_worker_time_save_pause_us",
+	"runtime_graph_worker_time_save_build_us", "runtime_graph_worker_time_save_pause_us",
 	"runtime_graph_worker_time_paused_us",
 	"runtime_graph_worker_time_boundary_wait_us",
 	"runtime_graph_worker_time_overhead_us",
@@ -336,8 +336,7 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_country_worker_last_reason",
 	"runtime_graph_country_worker_day",
 	"runtime_graph_country_worker_continuation_index",
-	# Tax/subsidy probe published by the economy worker. Millisecond fields are
-	# epoch accumulators and drop back to 0 when the epoch metrics clear.
+	# Economy tax/subsidy timings reset each epoch.
 	# negative_tax_mask bit 0 is income subsidy.
 	"runtime_graph_economy_yield_reason",
 	"runtime_graph_economy_stage_name",
@@ -606,6 +605,7 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"country_pod_pending_checks", "country_pod_ack_pending",
 				"country_pod_blocker",
 				"worker_time_execute_us", "worker_time_input_wait_us",
+				"worker_time_environment_wait_us", "worker_time_main_tail_wait_us", "worker_time_input_retry_wait_us",
 				"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
 				"worker_time_save_build_us", "worker_time_save_pause_us",
 				"worker_time_paused_us",

@@ -58,15 +58,15 @@ func _ensure_maritime_factor(map: MapData, decay_cells: float) -> PackedFloat32A
 # _async_pass_a_kernel_pure 的硬校验 lane 列表（gdext/src/runtime_climate_passes.cpp
 # 顶部的维度检查）。任一条 size != n_cells，共享内核直接 return false。
 
-func publish_worker_climate_visuals() -> Dictionary:
+func publish_worker_climate_visuals(defer_upload: bool) -> Dictionary:
 	# Reuse the production cell LUT encoders; no simulation or full map rebake.
 	if _generator._baker == null or _generator._sus_map == null or _generator._last_world == null:
 		return {}
 	# Weather LUT is fully re-encoded here: the worker writes weather fields back
 	# but never weather_dirty_mask, so refresh_weather_lut_from_weather's dirty
 	# subset stays empty and the LUT would freeze at its world-gen contents.
-	return _generator._baker.refresh_cell_luts_daily(
-		_generator._sus_map, _generator._last_world, PackedInt32Array(), true, true)
+	return DCCellLutBaker.refresh_cell_luts_daily(_generator._baker,
+			_generator._sus_map, _generator._last_world, PackedInt32Array(), true, true, defer_upload)
 
 
 
@@ -976,21 +976,8 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		_generator._get_runtime_climate_capture().next_environment_day() - 1)
 	var runtime_climate_pre_reference: Dictionary = \
 		_generator._get_runtime_climate_capture()._publish_ready_runtime_climate_references(trace_input_day - 1, _generator._sus_map)
-	# Capture the immutable Climate input immediately before the synchronous OFF
-	# graph. The worker never reads MapData directly; it can only consume this
-	# frame after _publish_runtime_climate_reference() releases its hash below.
-	# capture 留在同步图之前，ACTIVE 也一样。
-	#
-	# 试过在 ACTIVE 下把它挪到 _sus.tick() 之后（那条约束的原始理由——「worker 要吃
-	# 生产 pass_a 稍后读到的同一份输入」——在 ACTIVE 下确实不再成立，因为生产 climate
-	# 被抑制门整段关掉了）。动机是让 season refresh 的季节性重算能进入 worker。
-	#
-	# 结果是零改善：snow_cover 非零格仍恒 113~117、soil_moisture 仍恒 914、
-	# vegetation_growth_pressure 仍恒 909、moisture 仍 0.902~0.913，与挪动前逐项一致
-	# （stage 接线也确认未受影响，累计 pass_a=149 weather=19 albedo=1）。
-	#
-	# 所以「worker 的场平坦 = 季节信号被 capture 时点挡在门外」这个假设是错的，真正
-	# 的原因在别处。挪回来：没有证据支持的时点改动不值得留在这条路径上。
+	# Capture before the synchronous graph in both OFF and ACTIVE. The worker
+	# consumes the dated packet and never reads MapData directly.
 	var runtime_climate_capture: Dictionary = \
 		_generator._get_runtime_climate_capture().publish_environment_through(trace_input_day, sp, _generator.ENV_CALLSITE_SUS_TICK)
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
@@ -1024,6 +1011,16 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		var bio_done_reported := bool(bio_tick_report.get("done", true))
 		if bio_done_reported:
 			_generator._bio_occupancy_day_pending = false
+	# A manually stepped calendar has no clock frame to finish this date's cell
+	# ranges. Complete them with their original inputs before the caller advances.
+	var clock_drives_slices: bool = world_clock_node is WorldClock and world_clock_node.is_processing() \
+		and not world_clock_node.paused and world_clock_node.speed_multiplier > 0.0
+	if not clock_drives_slices:
+		while _generator.bio_occupancy_round_active():
+			_generator._bio_occupancy_day_pending = false
+			var slice_result: Dictionary = _generator._sus.continue_system(&"bio_occupancy_daily", ctx)
+			if bool(slice_result.get("fatal", false)):
+				return slice_result
 	# Native daily has the same same-day transaction boundary as Bio.  A first
 	# slice skipped by SUS budget must be started by the continuation pulse before
 	# WorldClock is allowed to advance; otherwise that semantic day would be

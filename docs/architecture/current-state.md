@@ -71,6 +71,10 @@ Android/iOS 与桌面现在默认使用同一 native worker 执行十二域日�
 | visual_delivery | 主线程 | 消费已发布的脏类别补丁，写显示与 MapData |
 | climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
 
+等上一日结果的输入重试会在同一帧先消费提交，再判断能否发送。天气输入的热赤道采样由后台对冻结的温度和位置计算。日提交直接发布物理场和可复用的风轨迹，主线程把它们写回地图。读档时可用 CLM2 中的物理数据重建首次回写。
+
+军事、资源恢复、事件交付和命令封口仍在每日边界完成。地图天气和生态像素准备排在日尾放行之后。纹理上传在同一渲染帧内合并，并在天气插值读取之前提交。
+
 ## 跨模块交接
 
 - **已提交视图（9 条，`check_committed_views.py`）**：Economy←Climate、Trigger←Events、Ideology←Modifier、Modifier←Effect、Ideology←Economy 意见、年报←Ideology、Country AI←Economy、年报←Country、Family 指标←Economy 意见。所有者复制已提交数据，带 generation/day，消费处检查游标单调。

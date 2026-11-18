@@ -23,6 +23,7 @@
 #include <godot_cpp/variant/variant.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -295,13 +296,31 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         noise->set_fractal_octaves(3);
         band_noise.push_back(noise);
     }
-    auto band_periodic_noise = [&](int band, double wx, double wy) -> double {
-        godot::FastNoiseLite *noise = band_noise[size_t(band)].ptr();
-        if (wrap_period_x <= 0.0001) return double(noise->get_noise_2d(wx, wy));
+    // [tile-height-columns PR#9] 回绕坐标只跟 x 有关，逐 texel 算 4 次 cos/sin 是白费：
+    // 按列预计算 {cos(phase)*radius, sin(phase)*radius}，中心 / 左右滤波共用，
+    // y 方向 ±r 只改第三个分量。纯数学、无共享状态，可以和上面的每带实例并存。
+    using NoiseColumn = std::array<double, 2>;
+    const bool wrap_noise = wrap_period_x > 0.0001;
+    auto noise_column = [&](double wx) -> NoiseColumn {
+        if (!wrap_noise) return {wx, 0.0};
         const double phase = wrap_world_x(wx) / wrap_period_x * (2.0 * M_PI);
         const double radius = wrap_period_x / (2.0 * M_PI);
-        return double(noise->get_noise_3d(
-                std::cos(phase) * radius, std::sin(phase) * radius, wy));
+        return {std::cos(phase) * radius, std::sin(phase) * radius};
+    };
+    std::vector<std::array<NoiseColumn, 3>> residual_columns;
+    if (residual_amp > 0.0) {
+        residual_columns.reserve(WW);
+        for (int x = 0; x < WW; ++x) {
+            const double wx = work_origin_x + (double(x) + 0.5) * step_x;
+            residual_columns.push_back({noise_column(wx),
+                noise_column(wx - residual_filter_radius),
+                noise_column(wx + residual_filter_radius)});
+        }
+    }
+    auto band_periodic_noise = [&](int band, const NoiseColumn &column, double wy) -> double {
+        godot::FastNoiseLite *noise = band_noise[size_t(band)].ptr();
+        if (!wrap_noise) return double(noise->get_noise_2d(column[0], wy));
+        return double(noise->get_noise_3d(column[0], column[1], wy));
     };
 
     // [tile-profile 2026-11-18] 每层瓦片的内部耗时拆分，随 bundle 回给
@@ -346,12 +365,13 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                     }
                     double residual = 0.0;
                     if (!water && residual_amp > 0.0) {
-                        const double n0 = band_periodic_noise(band, wx, wy);
+                        const auto &columns = residual_columns[x];
+                        const double n0 = band_periodic_noise(band, columns[0], wy);
                         const double navg = 0.25 * (
-                                band_periodic_noise(band, wx - residual_filter_radius, wy) +
-                                band_periodic_noise(band, wx + residual_filter_radius, wy) +
-                                band_periodic_noise(band, wx, wy - residual_filter_radius) +
-                                band_periodic_noise(band, wx, wy + residual_filter_radius));
+                                band_periodic_noise(band, columns[1], wy) +
+                                band_periodic_noise(band, columns[2], wy) +
+                                band_periodic_noise(band, columns[0], wy - residual_filter_radius) +
+                                band_periodic_noise(band, columns[0], wy + residual_filter_radius));
                         const double relief_gate = std::max(0.12, std::min(1.0,
                                 std::fabs(double(PH[i]) - base) / 0.06));
                         residual = std::max(-residual_amp, std::min(residual_amp,

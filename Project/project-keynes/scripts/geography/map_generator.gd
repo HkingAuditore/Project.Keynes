@@ -796,8 +796,8 @@ var _runtime_climate_distribute_reported: bool = false
 var _runtime_climate_field_reported: bool = false
 var _runtime_climate_worker_weather_embed_day: int = -1000000
 var _runtime_climate_worker_stage_b_call_index: int = -1
-func publish_worker_climate_visuals() -> Dictionary:
-	return _get_mapgen_native_daily_runtime().publish_worker_climate_visuals()
+func publish_worker_climate_visuals(defer_upload: bool = false) -> Dictionary:
+	return _get_mapgen_native_daily_runtime().publish_worker_climate_visuals(defer_upload)
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		authoritative: bool) -> Dictionary:
 	return _get_runtime_climate_capture()._build_runtime_climate_stage_knobs(map, day, authoritative)

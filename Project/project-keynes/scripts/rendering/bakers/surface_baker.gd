@@ -160,6 +160,7 @@ static func _bake_visual_tiles(baker: MapBaker, map: MapData, world: WorldData, 
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
 	var layer_reports: Array[Dictionary] = []
 	var bake_t0 := Time.get_ticks_usec()
+	var last_upload_frame := -1
 	for layer_id in range(layout.layer_count):
 		if generation_id != baker._visual_tile_generation_id:
 			tiles.fallback_reason = "stale_generation"
@@ -185,6 +186,14 @@ static func _bake_visual_tiles(baker: MapBaker, map: MapData, world: WorldData, 
 		}, true)
 		var layer_t0 := Time.get_ticks_usec()
 		var bundle: Dictionary = await NativeLoadingTasks.compute(baker._world_ext,"visual_tile",knobs, baker._loading_frames)
+		# The next native computation can start as soon as this tile is
+		# uploaded. Even synchronous compatibility paths upload one per frame.
+		if Engine.get_process_frames() == last_upload_frame:
+			await baker._yield_generation_frame()
+		if generation_id != baker._visual_tile_generation_id or (
+				baker._loading_frames != null and baker._loading_frames.canceled):
+			tiles.clear()
+			return false
 		if bundle == null or bool(bundle.get("fallback", true)) \
 				or int(bundle.get("generation_id", -1)) != generation_id:
 			tiles.fallback_reason = "native_layer_failed:%d:%s" % [
@@ -203,6 +212,7 @@ static func _bake_visual_tiles(baker: MapBaker, map: MapData, world: WorldData, 
 			world.visual_tiles = tiles
 			push_warning("[visual-tiles] layer upload failed: %s" % tiles.fallback_reason)
 			return false
+		last_upload_frame = Engine.get_process_frames()
 		layer_reports.append({
 			"layer": layer_id,
 			"bake_ms": float(bundle.get("elapsed_ms", -1.0)),
@@ -223,7 +233,6 @@ static func _bake_visual_tiles(baker: MapBaker, map: MapData, world: WorldData, 
 			"edge_distance_saturate_hex": float(bundle.get("edge_distance_saturate_hex", 0.90)),
 			"hashes": bundle.get("hashes", {}),
 		})
-		await baker._yield_generation_frame()
 
 	tiles.static_ready = true
 	# Horizon starts neutral. The renderer's asynchronous tiled horizon module replaces

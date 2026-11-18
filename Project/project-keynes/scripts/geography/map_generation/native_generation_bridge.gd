@@ -851,15 +851,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 当前激活的 profile。
 	if cfg != null:
 		cfg.climate_profile = _generator._c()
-	# [fix cell-indirect 2026-06-16] cell.index 必须在 bake_world 之前赋值。
-	# bake_world 内部 _bake_height_biome_moisture 会按 cell.index 建 CSR，并把
-	# cell.index fan-out 到 map_index_atlas.g/b。原 _build_indices() 在 bake 之后
-	# (下方 ~L1205)才跑，会导致 bake 期间 cell.index 全是默认 -1 → CSR 全跳过、
-	# map_index_atlas 写哨兵(0xFFFF) → shader 解码全 -1。这里提前建一次索引
-	# (幂等：下方 _build_indices / init_soa_from_bake 会按同一 _cells 顺序再建，
-	# cell.index 与 SoA terrain_arr 排布严格一致)。此刻 has_soa() 仍为 false，
-	# 物理环流 defer 分支(MapBaker._bake_initial_physical_circulation)行为不变。
-	_generator._loading_profile_step("await map.build_indices_cooperative()")
+	# Map baking writes cell indices into its lookup textures. Generated maps
+	# already have them; older or authored maps build them here before baking.
+	_generator._loading_profile_step("build_map_indices")
 	if epoch != _generator._loading_epoch:
 		return _generator._generation_superseded(_generator._mapgen_stage)
 	await map.build_indices_cooperative(_generator._loading_frames)
@@ -868,6 +862,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	await _generator._yield_generation_frame()
 	if epoch != _generator._loading_epoch:
 		return _generator._generation_superseded(_generator._mapgen_stage)
+	_generator._loading_profile_step("initial_climate_and_map_bake")
 	# [snow-dyn-valid-fix 2026-06-16] 温度 Bootstrap 必须在 bake_world 之前执行。
 	# 原因：bake_world 内部 rebake_dynamic_cell_atlas_only / bake_cell_luts 会把
 	# cell.temperature 烘进动态 atlas/LUT 的 R 通道。若此刻温度仍是默认 0.0，首帧
