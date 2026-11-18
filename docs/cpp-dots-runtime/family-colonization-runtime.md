@@ -24,6 +24,8 @@
 - 存档：PKEC v65 的 `anonymous` 列承载移民队，`population` 允许为 0；
   `family_handle = 0` 通过 `save_family_expedition_family_handle_invalid` 校验，
   命令入口（`command_entry_valid`、存档 pending 校验）同样接受 `target_handle = 0`。
+  玩家命令 `family.colonization.start` 要求显式提供整数 `family_handle`，其中 0
+  代表无家族移民队。来源、目标、人数与报价令牌均为必填，报价匹配由原生 Economy 验证。
 - 验证：`family_colonization_runtime_test.gd -- --caravan-only` 覆盖报价行、
   出发守恒、落地无家族、账本闭合。
 
