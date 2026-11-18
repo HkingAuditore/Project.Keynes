@@ -383,18 +383,6 @@ void fragment() {
 		veg   = int(elut.g * 255.0 + 0.5);
 		cover = int(elut.b * 255.0 + 0.5);
 		fog_k = elut.a;
-#if defined(PK_MOBILE_ANY)
-		// 与 FogOfWarLayer 使用同一移动端 DitherUV 选择，仅替换知识度的视觉采样；
-		// 地表分类、交互和动态权威状态仍属于硬主 cell。
-		float fog_edge_w = terrain_edge_secondary_weight_d(scals.r, wp);
-		if (fog_edge_w > 0.0001
-				&& terrain_mobile_dither_uv_threshold(uv, wp) < fog_edge_w) {
-			int fog_secondary_id = decode_edge_secondary_index(uv);
-			if (fog_secondary_id >= 0) {
-				fog_k = texture(enum_lut, cell_lut_uv(fog_secondary_id)).a;
-			}
-		}
-#endif
 	} else {
 		biome = B_SEA_ICE;
 		veg = 0;
@@ -439,56 +427,62 @@ void fragment() {
 	// Reuse the PC water pipeline without compiling a second land shading source.
 	if (!is_water || terrain_surface_debug_view != 0) { discard; }
 #endif
-	// The static base color already uses continuous edge blending, but later
-	// climate/vegetation/cover stages are biome-gated. Feed those stages a
-	// DitherUV-selected visual biome as well, otherwise they redraw the hard
-	// primary-cell silhouette after the distance-field blend.
+	// Fog and the land/water edge effects can all read the same secondary
+	// cell. Resolve its index and enum texture once, only when a consumer
+	// needs it. Dynamic weather, ice, and climate stay on the primary cell.
 	int visual_land_biome = biome;
 	int visual_land_veg = veg;
 	int visual_land_cover = cover;
-	if (!is_water && _cell_id >= 0 && has_terrain_edge_data) {
-		float land_edge_w = terrain_edge_secondary_weight_d(scals.r, wp);
-		float land_dither_probability =
-				land_edge_w * terrain_land_dither_zoom_strength();
-		if (land_dither_probability > 0.0001
-				&& terrain_mobile_dither_uv_threshold(uv, wp)
-						< land_dither_probability) {
-			int land_secondary_id = decode_edge_secondary_index(uv);
-			if (land_secondary_id >= 0) {
-				vec4 land_secondary_enum = texture(enum_lut, cell_lut_uv(land_secondary_id));
-				int land_secondary_biome = int(land_secondary_enum.r * 255.0 + 0.5);
-				if (!terrain_static_biome_is_water(land_secondary_biome)) {
-					visual_land_biome = land_secondary_biome;
-					visual_land_veg = int(land_secondary_enum.g * 255.0 + 0.5);
-					visual_land_cover = int(land_secondary_enum.b * 255.0 + 0.5);
-				}
-			}
-		}
-	}
-	// Water keeps hard primary ownership, but MID/HIGH pass the secondary static
-	// material and a continuous distance-field weight into one water evaluation.
-	// LOW compiles this lookup out entirely. Dynamic state remains primary-owned.
 	int water_secondary_biome = biome;
 	int water_secondary_cover = cover;
 	float water_static_edge_mix = 0.0;
 	float visual_water_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
+	TerrainEdgeSample terrain_edge;
+	terrain_edge.biome = -1;
+	terrain_edge.weight = 0.0;
+	if (_cell_id >= 0 && has_terrain_edge_data) {
+		float edge_weight = terrain_edge_secondary_weight_d(scals.r, wp);
+		bool land_material_edge = !is_water && edge_weight > 0.0001;
+		float land_probability = land_material_edge
+				? edge_weight * terrain_land_dither_zoom_strength() : 0.0;
+		bool land_edge = land_probability > 0.0001;
+		bool fog_edge = false;
+#if defined(PK_MOBILE_ANY)
+		fog_edge = edge_weight > 0.0001;
+#endif
+		if (land_edge || fog_edge) {
+			float dither = terrain_mobile_dither_uv_threshold(uv, wp);
+			land_edge = land_edge && dither < land_probability;
+			fog_edge = fog_edge && dither < edge_weight;
+		}
+		bool water_edge = false;
 #if !defined(PK_QUALITY_LOW)
-	if (is_water && _cell_id >= 0 && has_terrain_edge_data) {
-		float water_edge_w = terrain_edge_secondary_weight_d(scals.r, wp);
-		if (water_edge_w > 0.0001) {
-			int water_secondary_id = decode_edge_secondary_index(uv);
-			if (water_secondary_id >= 0) {
-				vec4 water_secondary_enum = texture(enum_lut, cell_lut_uv(water_secondary_id));
-				int candidate_biome = int(water_secondary_enum.r * 255.0 + 0.5);
-				if (terrain_static_biome_is_water(candidate_biome)) {
-					water_secondary_biome = candidate_biome;
-					water_secondary_cover = int(water_secondary_enum.b * 255.0 + 0.5);
-					water_static_edge_mix = water_edge_w;
+		water_edge = is_water && edge_weight > 0.0001;
+#endif
+		if (land_material_edge || fog_edge || water_edge) {
+			int secondary_id = decode_edge_secondary_index(uv);
+			if (secondary_id >= 0) {
+				vec4 secondary_enum = texture(enum_lut, cell_lut_uv(secondary_id));
+				if (fog_edge) fog_k = secondary_enum.a;
+				int secondary_biome = int(secondary_enum.r * 255.0 + 0.5);
+				bool secondary_water = terrain_static_biome_is_water(secondary_biome);
+				if (land_material_edge && !secondary_water) {
+					terrain_edge.biome = secondary_biome;
+					terrain_edge.weight = edge_weight;
+				}
+				if (land_edge && !secondary_water) {
+					visual_land_biome = secondary_biome;
+					visual_land_veg = int(secondary_enum.g * 255.0 + 0.5);
+					visual_land_cover = int(secondary_enum.b * 255.0 + 0.5);
+				}
+				if (water_edge && secondary_water) {
+					water_secondary_biome = secondary_biome;
+					water_secondary_cover = int(secondary_enum.b * 255.0 + 0.5);
+					water_static_edge_mix = edge_weight;
 				}
 			}
 		}
 	}
-#endif
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 1：季节相位 + 当前温度（每帧由 WorldClock 驱动）
@@ -527,7 +521,7 @@ void fragment() {
 			col = render_land_pipeline(
 				visual_land_biome, biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
-				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac);
+				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac, terrain_edge);
 #else
 			col = vec3(0.2, 0.35, 0.15);   // PROBE: land pipeline removed
 #endif

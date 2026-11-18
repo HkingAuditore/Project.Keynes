@@ -133,7 +133,7 @@ static func _ready(host) -> void:
 	host.add_child(host._weather_layer)
 	# 帧间插值时序:让 weather_layer._process 最晚执行,保证在 LUT 烘焙(SUS/DC 系统)之后、同帧渲染前
 	# 检测到 weather_lut_update_usec 变化并把 weather_lerp 归 0 → 消除"curr 已换帧但 lerp 还未重置"的一帧频闪。
-	host._weather_layer.process_priority = 1000
+	host.RendererWeatherState.configure_weather_presentation(host)
 	# web：低 / 中 / auto 画质不绘制天气层，只有高画质才画。
 	# 用画质门而不是一次性 host.visible=false：WeatherLayer._refresh_visibility() 会在
 	# setup()/fronts 更新时把 host.visible 重新置 true，只有门能挡住那次重开。

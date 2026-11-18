@@ -713,6 +713,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
     const NativeParallelExecutor::Report report =
         NativeParallelExecutor::instance().report();
     Dictionary out;
+    out["climate_worker_prepares_thermal_equator"] = true;
     out["simulation_executor_exited"] = !_runtime_host || _runtime_host->execution_has_stopped();
     out["executor_serial_only"] = parallel_serial_only();
     out["process_cpu_us"] = process_cpu_us_now();
@@ -775,13 +776,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
-        const char *timing_names[] = {"execute", "input_wait", "clock_wait", "save_build", "save_pause", "paused", "overhead", "boundary_wait"};
-        uint64_t timing_total = 0;
-        for (size_t i = 0; i < host.worker_time_us.size(); ++i) {
-            out[String("worker_time_") + timing_names[i] + "_us"] = static_cast<int64_t>(host.worker_time_us[i]);
-            timing_total += host.worker_time_us[i];
-        }
-        out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+        append_worker_timing(host.worker_time_us, out);
         out["process_cpu_us"] = process_cpu_us_now();
         out["economy_yield_reason"] = String(host.economy_yield_reason);
         out["economy_stage_name"] = String(host.economy_stage_name);
@@ -1505,13 +1500,7 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
-        const char *timing_names[] = {"execute", "input_wait", "clock_wait", "save_build", "save_pause", "paused", "overhead", "boundary_wait"};
-        uint64_t timing_total = 0;
-        for (size_t i = 0; i < host.worker_time_us.size(); ++i) {
-            out[String("worker_time_") + timing_names[i] + "_us"] = static_cast<int64_t>(host.worker_time_us[i]);
-            timing_total += host.worker_time_us[i];
-        }
-        out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+        append_worker_timing(host.worker_time_us, out);
         out["process_cpu_us"] = process_cpu_us_now();
         out["economy_yield_reason"] = String(host.economy_yield_reason);
         out["economy_stage_name"] = String(host.economy_stage_name);

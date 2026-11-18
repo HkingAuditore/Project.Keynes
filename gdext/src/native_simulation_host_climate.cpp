@@ -41,7 +41,7 @@
 namespace pk {
 
 bool NativeSimulationHost::publish_environment(
-        const RuntimeEnvironmentSnapshot &snapshot, std::string &error) {
+        RuntimeEnvironmentSnapshot &&snapshot, std::string &error) {
     error.clear();
     std::string validation_error;
     if (!validate_runtime_environment_snapshot(snapshot, validation_error)) {
@@ -101,42 +101,45 @@ bool NativeSimulationHost::publish_environment(
         error = "climate_trace_capacity_exceeded";
         return false;
     }
-    auto copy = std::make_shared<RuntimeEnvironmentSnapshot>(snapshot);
+    auto frame = std::make_shared<RuntimeEnvironmentSnapshot>(std::move(snapshot));
     {
-        EconomyCostProbe probe("environment.seal_input_hash", snapshot.day, snapshot.cell_count);
-        copy->sealed_climate_input_hash = RuntimeClimateKernel::input_hash(*copy);
+        EconomyCostProbe probe("environment.seal_input_hash", frame->day, frame->cell_count);
+        frame->sealed_climate_input_hash = RuntimeClimateKernel::input_hash(*frame);
     }
-    // Restore preparation stages the replacement input. start() retires the old
-    // queue and seeds this snapshot; the stopped world's full queue cannot drain.
-    if (!preparing_restore_input) {
-        bool dropped = false;
-        if (climate_authoritative) {
-            // ACTIVE：满环拒绝，主线程 wait_climate_consumed(0) 等空位 —— 不静默丢天。
-            if (!_environment_ring.has_capacity() || !_environment_ring.try_push(copy)) {
-                error = "climate_environment_pending";
-                return false;
-            }
-        } else {
-            // SHADOW：允许 force 覆盖最旧未消费输入，计入 dropped（ring 溢出语义）。
-            if (!_environment_ring.force_push(copy, dropped)) {
-                error = "climate_environment_ring_push_failed";
-                return false;
-            }
-            if (dropped) {
-                _environment_dropped_days.fetch_add(1, std::memory_order_relaxed);
-                _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+    {
+        // The worker checks the ring under this mutex before sleeping. Publish
+        // under the same mutex so it cannot miss the only notification for a day.
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        // Restore preparation stages the replacement input. start() retires the
+        // old queue and seeds this snapshot; the stopped world's queue cannot drain.
+        if (!preparing_restore_input) {
+            bool dropped = false;
+            if (climate_authoritative) {
+                if (!_environment_ring.try_push(frame)) {
+                    error = "climate_environment_pending";
+                    return false;
+                }
+            } else {
+                if (!_environment_ring.force_push(frame, dropped)) {
+                    error = "climate_environment_ring_push_failed";
+                    return false;
+                }
+                if (dropped) {
+                    _environment_dropped_days.fetch_add(1, std::memory_order_relaxed);
+                    _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+                }
             }
         }
+        std::atomic_store_explicit(&_environment_snapshot,
+            std::shared_ptr<const RuntimeEnvironmentSnapshot>(frame),
+            std::memory_order_release);
+        _environment_published_days.fetch_add(1, std::memory_order_relaxed);
+        _environment_generation.store(frame->generation, std::memory_order_release);
+        _environment_day.store(frame->day, std::memory_order_release);
+        _environment_cell_count.store(frame->cell_count, std::memory_order_release);
+        _environment_topology_validated.store(frame->topology_validated,
+                                               std::memory_order_release);
     }
-    std::atomic_store_explicit(&_environment_snapshot,
-        std::shared_ptr<const RuntimeEnvironmentSnapshot>(copy),
-        std::memory_order_release);
-    _environment_published_days.fetch_add(1, std::memory_order_relaxed);
-    _environment_generation.store(snapshot.generation, std::memory_order_release);
-    _environment_day.store(snapshot.day, std::memory_order_release);
-    _environment_cell_count.store(snapshot.cell_count, std::memory_order_release);
-    _environment_topology_validated.store(snapshot.topology_validated,
-                                           std::memory_order_release);
     _control_cv.notify_all();
     _climate_wait_cv.notify_all();
     return true;

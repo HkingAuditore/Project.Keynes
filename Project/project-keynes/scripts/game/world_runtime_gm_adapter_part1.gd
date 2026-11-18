@@ -699,12 +699,10 @@ func _web_barrier_diag(host) -> Dictionary:
 			"native_daily_inline",
 			# P1/P2：预发布与 peer 归属。
 			"environment_ring_pending", "environment_frames_ahead",
-			# [worker 计时分解] C++ 侧一直在累计（RuntimeWorkerTiming::snapshot() →
-			# `worker_time_<phase>_us`），但这份 diag 白名单没带它们，于是"worker 比
-			# 主线程慢 8 倍"只能靠 cd/clk 速率间接推断。带上 8 个分项后一条 diag 就能
-			# 区分"worker 在算"（execute）与"worker 在等"（input_wait / clock_wait /
-			# boundary_wait / paused），这是决定"优化图"还是"改交付方式"的分水岭。
+			# 累计耗时区分后台计算、输入交接、保存和暂停。
 			"worker_time_execute_us", "worker_time_input_wait_us",
+			"worker_time_environment_wait_us", "worker_time_main_tail_wait_us",
+			"worker_time_input_retry_wait_us",
 			"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
 			"worker_time_overhead_us", "worker_time_paused_us",
 			"worker_time_save_build_us", "worker_time_save_pause_us",

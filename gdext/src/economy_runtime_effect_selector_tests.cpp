@@ -1344,6 +1344,18 @@ bool EconomyTargetSelectorTests::run(std::string &error) {
         if (!expect(full[10] == kQ16One && full[43] == -kQ16One &&
                     full[44] == 0, "tag_new_world_direct_metrics", error))
             return false;
+        other->_building_landform[0] = 0;
+        other->rebuild_epoch_tag_snapshot();
+        if (!expect(!other->cell_has_target_tag(0, 0), "tag_geography_changed", error))
+            return false;
+        other->set_effect_metric_override(10, kQ16One, true);
+        other->rebuild_epoch_tag_snapshot();
+        if (!expect(other->cell_has_target_tag(0, 0), "tag_geography_overridden", error))
+            return false;
+        other->set_effect_metric_override(10, 0, false);
+        other->rebuild_epoch_tag_snapshot();
+        if (!expect(!other->cell_has_target_tag(0, 0), "tag_geography_override_cleared", error))
+            return false;
         if (!check_bits(true, false, false)) return false;
 
         // Operation counts, rather than elapsed milliseconds, prove that the

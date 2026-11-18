@@ -235,10 +235,12 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     thread_local std::vector<int64_t> employed_profession_people;
     profession_people.clear();
     employed_profession_people.clear();
-    if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) ||
+    if ((requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) ||
         requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
         requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) ||
-        wants_profession_mix) {
+        wants_profession_mix) &&
+        static_cast<size_t>(cell) < population_store().cell_first_page.size() &&
+        population_store().cell_first_page[cell] >= 0) {
         if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
             employed_professions.assign(_profession_ids.size(), 0);
         if (wants_profession_mix)
@@ -443,11 +445,11 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         // the counts alive for this read even if a commit publishes a new epoch
         // underneath it, so `count_in_range` and the reads below all describe the
         // same snapshot.
-        const std::shared_ptr<const TagSnapshot> tag_snapshot_local = tag_snapshot();
+        const int32_t count_country = cell_country_slot(cell);
+        const auto tag_snapshot_local = count_country >= 0 ? tag_snapshot() : nullptr;
         // Slot count must match kCountryTagCountSlots exactly; the metric id
         // array below is the other half of that contract.
         constexpr int32_t kSlots = 11;
-        const int32_t count_country = cell_country_slot(cell);
         const size_t base = count_country >= 0
             ? static_cast<size_t>(count_country) * kSlots : 0;
         const bool count_in_range = count_country >= 0 &&
@@ -476,9 +478,8 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     // X7b: distinct goods with at least one specialized cell in this country.
     if (requested(FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT)) {
         // R-3: read from the same immutable snapshot as the tag counts, one load.
-        const std::shared_ptr<const TagSnapshot> specialized_snapshot =
-            tag_snapshot();
         const int32_t distinct_country = cell_country_slot(cell);
+        const auto specialized_snapshot = distinct_country >= 0 ? tag_snapshot() : nullptr;
         metrics[FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT] =
             specialized_snapshot != nullptr && distinct_country >= 0 &&
             static_cast<size_t>(distinct_country) <

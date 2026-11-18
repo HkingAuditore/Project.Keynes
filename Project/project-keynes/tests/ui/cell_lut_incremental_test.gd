@@ -1,14 +1,21 @@
 extends SceneTree
 
 # Headless:
-#   godot --headless --path . --script res://tests/ui/cell_lut_incremental_test.gd --quit
+#   godot --headless --path . --script res://tests/ui/cell_lut_incremental_test.gd
+
+const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 
 var _checks := 0
 var _failures := 0
 
 
 func _init() -> void:
+	_run_and_exit.call_deferred()
+
+
+func _run_and_exit() -> void:
 	_run()
+	await _test_late_presentation()
 	print("=== cell LUT incremental: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -30,6 +37,7 @@ func _run() -> void:
 	_test_precise_native_flush(ext, dirty_world)
 	_test_dense_native_flush(ext, dirty_world, map)
 	_test_incremental_lut(ext, dirty_world, map)
+	_test_worker_lut_upload_batch()
 
 
 func _make_map() -> MapData:
@@ -175,6 +183,161 @@ func _eco_transition_byte(baker: MapBaker, cell_index: int) -> int:
 	var data: PackedByteArray = baker._cell_eco_lut_bytes_cache
 	var byte_index := cell_index * 4 + 2
 	return int(data[byte_index]) if byte_index < data.size() else -1
+
+
+class RecordingBaker extends MapBaker:
+	var upload_count := 0
+	var upload_bytes := 0
+	var uploaded_bytes: Dictionary = {}
+
+	func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int,
+			existing: ImageTexture) -> ImageTexture:
+		var texture := super(data, w, h, fmt, existing)
+		upload_count += 1
+		upload_bytes += data.size()
+		uploaded_bytes[texture.get_instance_id()] = data.duplicate()
+		return texture
+
+	func bytes_for(texture: ImageTexture) -> PackedByteArray:
+		return uploaded_bytes.get(texture.get_instance_id(), PackedByteArray())
+
+
+func _test_worker_lut_upload_batch() -> void:
+	var reference: Dictionary = _run_worker_lut_days(false)
+	var batched: Dictionary = _run_worker_lut_days(true)
+	print("  worker texture uploads for three committed days: immediate=%d (%d B) batched=%d (%d B)"
+			% [reference.uploads, reference.bytes, batched.uploads, batched.bytes])
+	_expect("worker commits keep intermediate textures out of the render queue",
+			int(batched.uploads_before_flush) == 0)
+	_expect("worker batch uploads fewer textures than three individual days",
+			int(batched.uploads) > 0 and int(batched.uploads) < int(reference.uploads) \
+			and int(batched.bytes) > 0 and int(batched.bytes) < int(reference.bytes))
+	for lane in ["enum_lut_tex", "dyn_lut_tex", "eco_lut_tex", "bounce_lut_tex",
+			"weather_lut_tex", "weather_lut_prev_tex"]:
+		_expect("worker batch preserves %s bytes" % lane,
+				not batched[lane].is_empty() and batched[lane] == reference[lane])
+	_expect("worker batch keeps the previous distinct weather for interpolation",
+			batched.weather_lut_prev_tex != batched.weather_lut_tex)
+	_expect("worker batch keeps ecological transitions advancing each day",
+			int(batched.eco_lut_tex[2]) == 255 - 2 * 18)
+	_expect("an ordinary LUT update and world replacement keep staged bytes ordered",
+			bool(batched.ordered_flush) and bool(batched.replacement_isolated))
+
+
+func _run_worker_lut_days(batch: bool) -> Dictionary:
+	var map := _make_map()
+	var ext := DCWorldExt.new()
+	ext.bind_map_data(map)
+	var baker := RecordingBaker.new()
+	baker.set_world_ext(ext)
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(4, 1)
+	baker.bake_cell_luts(map, world)
+	baker.upload_count = 0
+	baker.upload_bytes = 0
+	var veg_id := ext.component_id(&"cell_vegetation")
+	var temp_id := ext.component_id(&"cell_temp")
+	var weather_id := ext.component_id(&"cell_weather_intensity")
+	ext.write_u8(veg_id, 0, int(VegetationType.VEG.TEMPERATE_GRASSLAND))
+	for day in range(3):
+		ext.write_f32(temp_id, 0, 0.6 + day * 0.1)
+		ext.write_f32(weather_id, 0, 0.25 if day == 0 else 0.75)
+		if batch:
+			DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+					PackedInt32Array(), true, true, true)
+		else:
+			baker.refresh_cell_luts_daily(map, world, PackedInt32Array(), true, true)
+	var uploads_before_flush := baker.upload_count
+	if batch:
+		DCCellLutBaker.flush_staged_cell_lut_upload(baker, world)
+	var result := {"uploads_before_flush": uploads_before_flush,
+			"uploads": baker.upload_count, "bytes": baker.upload_bytes}
+	for lane in ["enum_lut_tex", "dyn_lut_tex", "eco_lut_tex", "bounce_lut_tex",
+			"weather_lut_tex", "weather_lut_prev_tex"]:
+		result[lane] = baker.bytes_for(world.get(lane))
+	if batch:
+		ext.write_f32(weather_id, 0, 0.375)
+		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+				PackedInt32Array(), true, true, true)
+		ext.write_f32(weather_id, 0, 0.5)
+		baker.refresh_cell_luts_daily(map, world, PackedInt32Array(), true, true)
+		var weather_prev := baker.bytes_for(world.weather_lut_prev_tex)
+		result.ordered_flush = weather_prev[1] == 96
+		ext.write_f32(weather_id, 0, 1.0)
+		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+				PackedInt32Array(), true, true, true)
+		var replacement := WorldData.new()
+		replacement.lut_dims = Vector2i(4, 1)
+		ext.write_f32(weather_id, 0, 0.125)
+		baker.bake_cell_luts(map, replacement)
+		var weather_before := baker.bytes_for(replacement.weather_lut_tex)
+		DCCellLutBaker.flush_staged_cell_lut_upload(baker, replacement)
+		result.replacement_isolated = baker.bytes_for(replacement.weather_lut_tex) == weather_before \
+				and weather_before[1] == 32
+	return result
+
+
+class WeatherReader extends Node:
+	var timestamp := 0
+	var changed_frame := -1
+
+	func _process(_delta: float) -> void:
+		var renderer = get_parent()
+		var next_timestamp: int = renderer._world.weather_lut_update_usec
+		if next_timestamp != timestamp:
+			timestamp = next_timestamp
+			changed_frame = Engine.get_process_frames()
+
+
+class RendererFixture extends Node:
+	var _map_baker: RecordingBaker
+	var _world: WorldData
+	var _weather_layer: WeatherReader
+	var publish: Callable
+	var committed_frame := -1
+
+	func _process(_delta: float) -> void:
+		if publish.is_valid():
+			committed_frame = Engine.get_process_frames()
+			publish.call()
+			publish = Callable()
+
+
+func _test_late_presentation() -> void:
+	var map := _make_map()
+	var ext := DCWorldExt.new()
+	ext.bind_map_data(map)
+	var renderer := RendererFixture.new()
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(4, 1)
+	var baker := RecordingBaker.new()
+	baker.set_world_ext(ext)
+	baker.bake_cell_luts(map, world)
+	renderer._map_baker = baker
+	renderer._world = world
+	renderer._weather_layer = WeatherReader.new()
+	var prior := world.weather_lut_update_usec
+	renderer._weather_layer.timestamp = prior
+	renderer.add_child(renderer._weather_layer)
+	RendererWeatherState.configure_weather_presentation(renderer)
+	root.add_child(renderer)
+	var intensity_id := ext.component_id(&"cell_weather_intensity")
+	renderer.publish = func() -> void:
+		_expect("live renderer accepts a staged upload",
+				RendererWeatherState.can_defer_cell_lut_upload(renderer, baker, world))
+		ext.write_f32(intensity_id, 0, 0.625)
+		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+				PackedInt32Array(), true, true, true)
+		_expect("worker commit leaves the previous interpolation timestamp alone",
+				world.weather_lut_update_usec == prior)
+	await process_frame
+	await process_frame
+	_expect("weather reads the new timestamp in the commit's render frame",
+			world.weather_lut_update_usec > prior \
+			and renderer._weather_layer.timestamp == world.weather_lut_update_usec \
+			and renderer._weather_layer.changed_frame == renderer.committed_frame)
+	_expect("render flush consumes the pending batch", world.staged_cell_lut_upload.is_empty())
+	renderer.free()
 
 
 func _report_has_no_lut_payload(report: Dictionary) -> bool:

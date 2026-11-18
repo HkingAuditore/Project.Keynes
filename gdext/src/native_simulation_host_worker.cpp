@@ -410,7 +410,8 @@ void NativeSimulationHost::worker_main() {
                 _state.store(RuntimeWorkerState::PAUSED, std::memory_order_release);
                 last = std::chrono::steady_clock::now();
                 std::unique_lock<std::mutex> lock(_control_mutex);
-                _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
+                _worker_timing.set(climate_driven ? RuntimeWorkerTiming::ENVIRONMENT_WAIT
+                                                  : RuntimeWorkerTiming::INPUT_WAIT);
                 _control_cv.wait(lock, [&] {
                     return _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) ||
@@ -468,7 +469,7 @@ void NativeSimulationHost::worker_main() {
                 const auto tail_ready = [&] { return !main_day_tail_pending(); };
                 if (!tail_ready()) {
                     std::unique_lock<std::mutex> control_lock(_control_mutex);
-                    _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
+                    _worker_timing.set(RuntimeWorkerTiming::MAIN_TAIL_WAIT);
                     _control_cv.wait(control_lock, [&] {
                         return tail_ready() ||
                             _stop_requested.load(std::memory_order_acquire) ||
@@ -969,7 +970,7 @@ void NativeSimulationHost::worker_main() {
                     std::unique_lock<std::mutex> lock(_control_mutex);
                     _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RETRY);
                     _day_waterfall.finish(false, day_commit.completed_domain_mask);
-                    _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
+                    _worker_timing.set(RuntimeWorkerTiming::INPUT_RETRY_WAIT);
                     // Timed wait: peer-stall timeout must be polled while the
                     // Climate ring is full and no CV signal arrives.
                     constexpr auto kDayWaitSlice =

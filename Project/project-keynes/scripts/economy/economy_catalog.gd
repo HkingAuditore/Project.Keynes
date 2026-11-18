@@ -1049,7 +1049,6 @@ static func _compile_native_catalog(context,
 	catalog["ok"] = true
 	return catalog
 
-
 static func need_display_names() -> Dictionary:
 	return _need_display_names_impl.call(null)
 
@@ -1068,7 +1067,6 @@ static func _need_display_names_impl(context) -> Dictionary:
 	return names
 
 static func validate_building_progression_profiles(profiles: Array) -> Dictionary:
-
 
 		# Explicit kind table. The previous nested ternary ended in a bare
 		# `else 1`, so any unrecognised kind - a typo like "state_" or a
@@ -1109,13 +1107,11 @@ static func validate_building_progression_profiles(profiles: Array) -> Dictionar
 			# Route B: a merchant may own either a matching bullion collector
 			# (gold/silver) or a service "merchant post" (no output/resource).
 
-
 	return BuildingPlacementCatalogScript.validate_building_progression_profiles(profiles)
 
 static func _validate_explicit_input_candidates(profile: Resource,
 		good_index: Dictionary) -> String:
 	return BuildingPlacementCatalogScript._validate_explicit_input_candidates(profile, good_index)
-
 
 ## Compiles the material/resource prerequisites for every direct building
 ## technology branch.  A branch is usable only when its own technology and
@@ -1274,7 +1270,6 @@ static func _compile_building_dependency_columns(buildings: Dictionary,
 		"building_dependency_ids": dependency_ids,
 		"building_dependency_tag_offsets": dependency_tag_offsets,
 		"building_dependency_tags": dependency_tags}
-
 
 ## Construction BOM rows are authoring weights, not independent hard slots.
 ## Compile every building to one effective-quantity group whose candidates are

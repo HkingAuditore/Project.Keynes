@@ -29,6 +29,12 @@ class RefreshProbe extends MapGenerator:
 		days.append(day)
 		return {"ok": true, "done": derived_calls > 1, "pending": derived_calls == 1}
 
+class TailProbe extends RefCounted:
+	var refresh: RefreshProbe
+	var marks: Array = []
+	func mark_runtime_day_tail_done(day: int) -> void:
+		marks.append([day, refresh.derived_calls])
+
 var _checks := 0
 var _failures := 0
 
@@ -71,9 +77,25 @@ func _init() -> void:
 	host._step_ideology_instance_refresh_if_authoritative(592)
 	_expect("the next day schedules both passes again",
 		refresh.instance_calls == 3 and refresh.derived_calls == 3)
+	var tail := preload("res://scripts/game/world_runtime_daily_adapter_part3.gd").new()
+	var tail_probe := TailProbe.new()
+	tail_probe.refresh = refresh
+	refresh._data_core_world_ext = tail_probe
+	host._ideology_refresh_pending_day = 593
+	host._runtime_natural_resource_pending_target_day = 600
+	host._runtime_natural_resource_last_commit_day = 599
+	tail._mark_runtime_day_tail(host, 600)
+	_expect("an unfinished resource day holds the tail and the queued refresh",
+		tail_probe.marks == [[599, 3]] and host._ideology_refresh_pending_day == 593)
+	host._runtime_natural_resource_pending_target_day = -1
+	tail._mark_runtime_day_tail(host, 600)
+	_expect("the tail retries the original date before releasing the worker",
+		tail_probe.marks == [[599, 3], [600, 4]]
+		and refresh.days.slice(-2) == [593, 593] and host._ideology_refresh_pending_day == -1)
+	refresh._data_core_world_ext = null
 	host.free()
 	print("ideology day continuation: %d checks, %d failures" % [_checks, _failures])
-	quit(1 if _failures > 0 or _checks != 9 else 0)
+	quit(1 if _failures > 0 or _checks != 11 else 0)
 
 func _expect(label: String, condition: bool) -> void:
 	_checks += 1

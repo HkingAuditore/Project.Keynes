@@ -14,6 +14,28 @@
 
 namespace pk {
 
+// Derived-demand price conduction is on by default. Setting
+// PK_ECONOMY_DERIVED_PRICE_CONDUCTION=0 restores the old price formation;
+// PK_ECONOMY_DERIVED_STARTUP=0 disables only the investment-side absorption.
+// The two switches let a rerun separate "price did not rise" from "price rose
+// but the producer still would not start".
+bool derived_price_conduction_enabled() {
+    static const bool value = [] {
+        const char *flag = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_PRICE_CONDUCTION);
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
+
+bool derived_startup_absorption_enabled() {
+    static const bool value = [] {
+        const char *flag = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_STARTUP);
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
+
+
 namespace {
 static std::vector<int64_t> &investment_cell_profession_population() {
     thread_local std::vector<int64_t> cell_profession_population;

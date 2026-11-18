@@ -1487,7 +1487,7 @@ struct RuntimeThreadReport {
     // Facade calls are intentionally non-blocking.  Keep this explicit in
     // the report so a future bridge cannot silently introduce a wait.
     uint64_t main_wait_on_sim_us = 0;
-    std::array<uint64_t, 8> worker_time_us{};
+    std::array<uint64_t, 11> worker_time_us{};
     uint64_t environment_generation = 0;
     int64_t environment_day = 0;
     uint32_t environment_cell_count = 0;

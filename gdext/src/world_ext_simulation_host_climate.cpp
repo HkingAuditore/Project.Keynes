@@ -398,22 +398,29 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     }
 
     using PhysicsState = pk_async_physics::RuntimeClimatePhysicsState;
-    std::shared_ptr<PhysicsState> physics;
-    if (!store.physics_state.empty()) {
-        physics = std::make_shared<PhysicsState>();
-        std::string error;
-        if (!pk_async_physics::restore_physics_state(store.physics_state.data(), store.physics_state.size(), *physics, error) ||
-            physics->cell_count != cell_count || physics->committed_day != snapshot.committed_day ||
-            physics->input_generation != snapshot.input_generation) {
-            _runtime_host->release_climate_writeback(slot);
-            _climate_physics_committed.reset();
-            out["ok"] = false; out["applied"] = false;
-            out["code"] = error.empty() ? String("physics_commit_mismatch") : String(error.c_str());
-            return out;
+    auto physics = snapshot.physics_writeback;
+    const bool projected_physics = physics != nullptr;
+    std::string physics_error;
+    if (!physics && !store.physics_state.empty()) {
+        auto restored = std::make_shared<PhysicsState>();
+        if (pk_async_physics::restore_physics_state(store.physics_state.data(),
+                store.physics_state.size(), *restored, physics_error)) {
+            physics = std::move(restored);
         }
+    }
+    if (!physics_error.empty() || (physics &&
+            (physics->cell_count != cell_count || physics->committed_day != snapshot.committed_day ||
+             physics->input_generation != snapshot.input_generation))) {
+        _runtime_host->release_climate_writeback(slot);
+        _climate_physics_committed.reset();
+        out["ok"] = false; out["applied"] = false;
+        out["code"] = physics_error.empty()
+            ? String("physics_commit_mismatch") : String(physics_error.c_str());
+        return out;
     }
     const bool apply_physics = physics && physics->initialized && physics->ready && climate_worker_authoritative();
     // 物理 family 全部预检通过后才写；任何缺槽都不能宣称 grant。
+    bool reused_wind_trajectory = false;
     if (apply_physics) {
         for (const char *name : {"cell_slp", "cell_wind_x", "cell_wind_y", "cell_wind_speed",
                 "cell_ocean_current_x", "cell_ocean_current_y", "cell_ocean_psi",
@@ -580,16 +587,25 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
         apply_extra("ocean_thermal_anomaly", "cell_ocean_thermal_anomaly", physics->ocean_thermal_anomaly);
         _phys_slp_buf = physics->slp;
         _phys_monsoon_thermal = physics->monsoon_thermal;
-        // traj 是派生缓存，使用本次提交风场重建，绝不携带 worker 裸指针。
+        // Use only the table for the environment that produced this wind.
         const auto env = _runtime_host->environment_snapshot();
         _phys_wind_traj_valid = false;
         if (env && env->cell_pos_x.size() == size_t(cell_count) && env->cell_pos_y.size() == size_t(cell_count) &&
             env->neighbor_indices.size() == size_t(cell_count) * 6 && env->generation == snapshot.input_generation &&
             physics->wind_traj_generation > 0) {
             const auto &k = env->climate_physics_knobs;
-            _phys_build_wind_traj(cell_count, env->cell_pos_x.data(), env->cell_pos_y.data(),
-                env->neighbor_indices.data(), physics->wind_x.data(), physics->wind_y.data(), physics->wind_speed.data(),
-                k.wrap_period_x, k.wind_traj_pos_scale, k.wind_traj_dt_days);
+            if (physics->wind_traj_valid) {
+                _phys_wind_traj_idx = physics->wind_traj_idx;
+                _phys_wind_traj_w = physics->wind_traj_w;
+                _phys_wind_traj_fp = physics->wind_traj_fingerprint;
+                ++_phys_wind_traj_gen;
+                _phys_wind_traj_valid = true;
+                reused_wind_trajectory = true;
+            } else {
+                _phys_build_wind_traj(cell_count, env->cell_pos_x.data(), env->cell_pos_y.data(),
+                    env->neighbor_indices.data(), physics->wind_x.data(), physics->wind_y.data(),
+                    physics->wind_speed.data(), k.wrap_period_x, k.wind_traj_pos_scale, k.wind_traj_dt_days);
+            }
             _phys_wind_traj_consume_enabled = k.wind_traj_weather_share != 0;
         }
     }
@@ -695,6 +711,8 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     out["committed_day"] = applied_day;
     out["input_generation"] = static_cast<int64_t>(applied_input_generation);
     out["physics_applied"] = apply_physics;
+    out["physics_projection_applied"] = apply_physics && projected_physics;
+    out["physics_wind_trajectory_reused"] = reused_wind_trajectory;
     out["physics_authoritative"] = climate_physics_authoritative();
     if (_runtime_host) {
         _runtime_host->note_climate_writeback_input_generation(
