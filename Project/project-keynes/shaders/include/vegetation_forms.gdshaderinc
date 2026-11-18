@@ -56,6 +56,8 @@ const float VF_PI = 3.1415927;
 #ifndef PK_VF_NOISE_ONLY
 struct VegCtx {
 	float seed;
+	vec2 seed_offset;
+	float radius;
 	float count;     // elements carried by the instance (1..32)
 	float sub_form;  // 0 single, 1 cluster, 2 grove
 	float leaf;      // foliage amount: deciduous crowns thin to bare branches
@@ -77,6 +79,7 @@ struct VegSurf {
 	float elem;      // per-element hash for colour variety
 	float floor_a;   // ground darkening alpha where cov is 0
 	float snow_hold; // how readily snow settles on this surface
+	vec4 shadow_crown; // centre, radius and height of the crown selected by vf_elements
 	vec4 art;        // crown bitmap hue (rgb at luma 0.5) and its weight vs the climate palette
 };
 
@@ -92,6 +95,7 @@ VegSurf vf_empty() {
 	s.elem = 0.0;
 	s.floor_a = 0.0;
 	s.snow_hold = 1.0;
+	s.shadow_crown = vec4(0.0, 0.0, 0.0, 1.0);
 	s.art = vec4(0.5, 0.5, 0.5, 0.0);
 	return s;
 }
@@ -169,6 +173,7 @@ struct VfElem {
 	float id;
 	float z;
 	float hit;
+	float top;
 	float edge;  // union signed distance, negative inside any element
 	int k;
 };
@@ -185,6 +190,7 @@ void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr
 			e.z = z;
 			e.c = c;
 			e.r = rr;
+			e.top = top;
 			e.id = id;
 			e.hit = 1.0;
 			e.k = k;
@@ -194,6 +200,7 @@ void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr
 		near_edge = sd;
 		e.c = c;
 		e.r = rr;
+		e.top = top;
 		e.id = id;
 		e.k = k;
 	}
@@ -212,7 +219,7 @@ struct VfSlot {
 // Ring layout for count <= 4.
 VfSlot vf_ring_slot(int k, int cnt, VegCtx ctx, float r0, float top, float keep, int form) {
 	VfSlot sl;
-	vec4 h = vf_hash42(vf_seed_offset(ctx.seed) + vec2(float(k) * 7.13, 3.7));
+	vec4 h = vf_hash42(ctx.seed_offset + vec2(float(k) * 7.13, 3.7));
 	sl.live = !(k > 0 && h.w > keep);
 	float ring = cnt <= 1 ? 0.0 : (0.86 - r0);
 	float a = ctx.seed * VF_TAU + float(k) * VF_TAU / float(cnt) + (h.x - 0.5) * 0.9;
@@ -258,12 +265,13 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float lob_amp, float en,
 	e.id = 0.0;
 	e.z = 0.0;
 	e.hit = 0.0;
+	e.top = 0.0;
 	e.edge = 9.0;
 	e.k = 0;
 	float near_edge = 9.0;
 	float n = max(ctx.count, 1.0);
-	float r0 = vf_elem_radius(n);
-	vec2 so = vf_seed_offset(ctx.seed);
+	float r0 = ctx.radius;
+	vec2 so = ctx.seed_offset;
 	float lob = (en - 0.5) * lob_amp;
 	if (n < 4.5) {
 		int cnt = int(n + 0.5);
@@ -297,12 +305,11 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float lob_amp, float en,
 // Soft blurred ellipse cast by one element: starts under the crown and
 // stretches by its height along the shadow direction. sv = shadow offset per
 // unit height (away from the sun, local units).
-float vf_ellipse_shadow(vec2 p, VfSlot sl, vec2 sv, float max_len) {
-	vec2 v = sv * sl.top;
-	float len_raw = length(v);
-	vec2 u = len_raw > 1e-4 ? v / len_raw : vec2(1.0, 0.0);
+float vf_ellipse_shadow(vec2 p, VfSlot sl, vec2 axis, float offset_length, float max_len) {
+	float len_raw = offset_length * sl.top;
+	vec2 u = len_raw > 1e-4 ? axis : vec2(1.0, 0.0);
 	float len = min(len_raw, max_len);
-	v = u * len;
+	vec2 v = u * len;
 	vec2 d = p - (sl.c + v * 0.5);
 	float a = dot(d, u) / (sl.r * 1.05 + len * 0.5);
 	float b = dot(d, vec2(-u.y, u.x)) / (sl.r * 1.05);
@@ -314,56 +321,19 @@ float vf_ellipse_shadow(vec2 p, VfSlot sl, vec2 sv, float max_len) {
 		* mix(1.0, 0.72, soft);
 }
 
-// Approximate sun shadow of the whole layout from per-element ellipses instead
-// of re-evaluating the form. x: ground shadow (every element), y: shadow on
-// crowns (only elements whose footprint does not contain p). sv is the shadow
-// offset per unit height of a single full-size plant.
-vec2 vf_soft_shadow(vec2 p, VegCtx ctx, int form, vec2 sv) {
-	float top = form == VF_SHRUB ? 0.55 : 1.0;
-	float keep = form == VF_CACTUS ? 1.0
-		: mix(form == VF_SHRUB ? 0.40 : 0.45, 1.0, ctx.vigor);
-	float n = max(ctx.count, 1.0);
-	float r0 = vf_elem_radius(n);
-	// Plant height follows crown size; the cap keeps a grove's shadows inside
-	// the 3x3 search below.
-	sv *= r0 / 0.80;
-	float max_len = r0 * 1.1;
-	float ground = 0.0;
-	float crown = 0.0;
-	if (n < 4.5) {
-		int cnt = int(n + 0.5);
-		for (int k = 0; k < 4; k++) {
-			if (k >= cnt) {
-				break;
-			}
-			VfSlot sl = vf_ring_slot(k, cnt, ctx, r0, top, keep, form);
-			if (!sl.live) {
-				continue;
-			}
-			float w = vf_ellipse_shadow(p, sl, sv, max_len);
-			ground = max(ground, w);
-			crown = max(crown, w * smoothstep(sl.r * 0.9, sl.r * 1.25, length(p - sl.c)));
-		}
-	} else {
-		vec2 so = vf_seed_offset(ctx.seed);
-		float pitch = r0 * 1.62;
-		vec2 sv_mean = sv * top;
-		float sv_len = length(sv_mean);
-		vec2 back = sv_len > max_len ? sv_mean * (max_len / sv_len) : sv_mean;
-		vec2 gi = floor((p - back * 0.5) / pitch + so);
-		for (int j = -1; j <= 1; j++) {
-			for (int i = -1; i <= 1; i++) {
-				VfSlot sl = vf_grid_slot(gi + vec2(float(i), float(j)), so, pitch, r0, top, keep);
-				if (!sl.live) {
-					continue;
-				}
-				float w = vf_ellipse_shadow(p, sl, sv, max_len);
-				ground = max(ground, w);
-				crown = max(crown, w * smoothstep(sl.r * 0.9, sl.r * 1.25, length(p - sl.c)));
-			}
-		}
-	}
-	return vec2(ground, crown);
+// Reuse the crown already selected for this pixel, including its actual
+// radius and height. Forms drawn without a crown layout use their anchor.
+vec2 vf_soft_shadow(vec2 p, float radius, vec4 crown, vec2 sv) {
+	VfSlot slot;
+	slot.c = crown.xy;
+	slot.r = crown.z > 0.0 ? crown.z : radius;
+	slot.top = crown.w;
+	sv *= radius / 0.80;
+	float offset_length = length(sv);
+	vec2 axis = sv / max(offset_length, 1e-7);
+	float shadow = vf_ellipse_shadow(p, slot, axis, offset_length, radius * 1.1)
+		* step(0.001, slot.top);
+	return vec2(shadow, shadow * smoothstep(slot.r * 0.9, slot.r * 1.25, length(p - slot.c)));
 }
 
 // Bare branch skeleton inside one crown, q in crown units. Only the winning
@@ -489,13 +459,14 @@ float vf_crown_cov(inout VegSurf s, VfElem e, vec2 p, float layer, VegCtx ctx, b
 
 VegSurf vf_broadleaf(vec2 p, VegCtx ctx, bool cheap, bool deciduous_skeleton) {
 	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
+	float r0 = ctx.radius;
 	float fe = 1.5 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float en = vf_vnoise(p * fe + so);
 	float det = vf_detail(fe, ctx.px);
 	float keep = mix(0.45, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 1.0, 0.32 * det, en, keep, VF_BROADLEAF, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	float union_cov = vf_cov(e.edge, ctx.px);
 	s.floor_a = vf_canopy_floor(e, p, ctx.count);
 	if (union_cov <= 0.0 && e.edge > e.r * 0.25) {
@@ -550,6 +521,7 @@ VegSurf vf_conifer(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	float keep = mix(0.45, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, keep, VF_CONIFER, true);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = vf_canopy_floor(e, p, ctx.count);
 	float union_cov = vf_cov(e.edge, ctx.px);
 #ifdef VF_CROWN_ART
@@ -614,6 +586,7 @@ VegSurf vf_palm(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	float keep = mix(0.45, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, keep, VF_PALM, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = exp(-max(e.edge, 0.0) * 7.0) * 0.12;
 #ifdef VF_CROWN_ART
 	if (crown_art_bound) {
@@ -669,7 +642,7 @@ VegSurf vf_palm(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_snag(vec2 p, VegCtx ctx, bool cheap, bool roots) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	vec2 c = (vf_hash22(so) - 0.5) * 0.08;
 	vec2 q = (p - c) / 0.86;
 	float rho = length(q);
@@ -713,13 +686,14 @@ VegSurf vf_snag(vec2 p, VegCtx ctx, bool cheap, bool roots) {
 
 VegSurf vf_shrub(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
+	float r0 = ctx.radius;
 	float fe = 1.8 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float en = vf_vnoise(p * fe + so);
 	float det = vf_detail(fe, ctx.px);
 	float keep = mix(0.40, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 0.55, 0.40 * det, en, keep, VF_SHRUB, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = exp(-max(e.edge, 0.0) * 8.0) * 0.16;
 	float union_cov = vf_cov(e.edge, ctx.px);
 	if (union_cov <= 0.0 && e.edge > e.r * 0.25) {
@@ -769,6 +743,7 @@ VegSurf vf_shrub(vec2 p, VegCtx ctx, bool cheap) {
 VegSurf vf_cactus(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, 1.0, VF_CACTUS, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = exp(-max(e.edge, 0.0) * 8.0) * 0.15;
 	s.cov = vf_cov(e.edge, ctx.px);
 	s.h = e.z;
@@ -805,7 +780,7 @@ VegSurf vf_cactus(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_reed(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float patch_r = length(p) + (vf_vnoise(p * 2.1 + so) - 0.5) * 0.36;
 	if (patch_r > 0.95) {
 		return s;
@@ -876,6 +851,7 @@ VegSurf vf_grass(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	float keep = mix(0.35, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 0.40, 0.0, 0.5, keep, VF_GRASS, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	// Blades reach past the element disc, so test a slightly larger radius.
 	if (e.edge > 0.35 * e.r) {
 		return s;
@@ -905,7 +881,7 @@ VegSurf vf_grass(vec2 p, VegCtx ctx, bool cheap) {
 	s.ao = mix(0.62, 1.0, smoothstep(0.0, 0.7, rho));
 	s.elem = e.id;
 	if (ctx.bloom > 0.02) {
-		vec2 g = p * 9.0 + vf_seed_offset(ctx.seed);
+		vec2 g = p * 9.0 + ctx.seed_offset;
 		vec2 gi = floor(g);
 		float fl = step(1.0 - ctx.bloom * 0.30, vf_hash12(gi))
 			* (1.0 - smoothstep(0.16, 0.16 + ctx.px * 18.0, length(fract(g) - 0.5)));
@@ -920,7 +896,7 @@ VegSurf vf_grass(vec2 p, VegCtx ctx, bool cheap) {
 #ifndef PK_VEG_NEAR_MIN
 VegSurf vf_lichen(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float n1 = vf_vnoise(p * 2.2 + so);
 	float n2 = vf_vnoise(p * 5.3 + so * 1.7);
 	float nn = n1 * 0.65 + n2 * 0.35;
@@ -944,12 +920,13 @@ VegSurf vf_lichen(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_flower(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
+	float r0 = ctx.radius;
 	float fe = 2.0 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float en = vf_vnoise(p * fe + so);
 	float keep = mix(0.35, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 0.30, 0.30 * vf_detail(fe, ctx.px), en, keep, VF_FLOWER, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = exp(-max(e.edge, 0.0) * 18.0) * 0.18;
 	s.cov = vf_cov(e.edge, ctx.px);
 	s.h = e.z;
@@ -981,12 +958,13 @@ VegSurf vf_flower(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_peat(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
+	float r0 = ctx.radius;
 	float fe = 1.6 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float en = vf_vnoise(p * fe + so);
 	VfElem e = vf_elements(p, ctx, 0.22, 0.36 * vf_detail(fe, ctx.px), en,
 		mix(0.4, 1.0, ctx.vigor), VF_PEAT_TUFT, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = max(exp(-max(e.edge, 0.0) * 12.0) * 0.20, vf_floor_patch(p, 0.18));
 	s.cov = vf_cov(e.edge, ctx.px);
 	s.h = e.z;
@@ -1016,7 +994,7 @@ VegSurf vf_peat(vec2 p, VegCtx ctx, bool cheap) {
 #ifndef PK_VEG_NEAR_MIN
 VegSurf vf_rock(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 #ifdef VF_CROWN_ART
 	if (crown_art_bound) {
 		// The atlas replaces the old faceted dome with authored weathered boulders.
@@ -1125,6 +1103,7 @@ VegSurf vf_rock(vec2 p, VegCtx ctx, bool cheap) {
 VegSurf vf_scree(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	VfElem e = vf_elements(p, ctx, 0.30, 0.0, 0.5, 1.0, VF_SCREE, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.floor_a = exp(-max(e.edge, 0.0) * 16.0) * 0.28;
 	if (e.edge > ctx.px) {
 		return s;
@@ -1150,7 +1129,7 @@ VegSurf vf_scree(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_snow_mound(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	vec2 wd = ctx.wind;
 	vec2 q = vec2(dot(p, wd) * 0.72, dot(p, vec2(-wd.y, wd.x)));
 	float dn = vf_vnoise(p * 1.8 + so);
@@ -1178,7 +1157,7 @@ VegSurf vf_snow_mound(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_fallen_log(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float L = 0.78;
 	float x = p.x;
 	float y = p.y + sin(x * 2.0 + ctx.seed * 6.0) * 0.04;
@@ -1224,7 +1203,7 @@ VegSurf vf_fallen_log(vec2 p, VegCtx ctx, bool cheap) {
 #ifndef PK_VEG_NEAR_MIN
 VegSurf vf_kelp(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	// The holdfast sits upstream; fronds stream with the current, so the
 	// field is anchored at -wind and every blade is swept downstream.
 	vec2 wd = ctx.wind;
@@ -1284,12 +1263,13 @@ VegSurf vf_kelp(vec2 p, VegCtx ctx, bool cheap) {
 
 VegSurf vf_coral(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
+	float r0 = ctx.radius;
 	float fe = 1.7 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float en = vf_vnoise(p * fe + so);
 	VfElem e = vf_elements(p, ctx, 0.30, 0.34 * vf_detail(fe, ctx.px), en,
 		mix(0.4, 1.0, ctx.vigor), VF_CORAL, false);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	s.cov = vf_cov(e.edge, ctx.px) * 0.92;
 	s.h = e.z;
 	if (cheap || s.cov <= 0.0) {
@@ -1359,7 +1339,7 @@ VegSurf vf_eval(int form, vec2 p, VegCtx ctx, bool cheap) {
 // lumpy disc in the element colour reads the same and skips the field walk.
 VegSurf vf_far(int form, vec2 p, VegCtx ctx) {
 	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
+	vec2 so = ctx.seed_offset;
 	float extent = (form == VF_LICHEN || form == VF_REED || form == VF_KELP) ? 0.78 : 0.82;
 	if (form == VF_FALLEN_LOG) {
 		float d = length(vec2(max(abs(p.x) - 0.78, 0.0), p.y)) - 0.17;
@@ -1382,7 +1362,7 @@ VegSurf vf_far(int form, vec2 p, VegCtx ctx) {
 	if (multi) {
 		// Element-scale blotches keep a cluster or grove broken into crowns
 		// instead of a single puck, at the cost of one noise tap.
-		float fe = 0.85 / vf_elem_radius(ctx.count);
+		float fe = 0.85 / ctx.radius;
 		crowns = vf_vnoise(p * fe + so * 1.7);
 		s.cov *= smoothstep(0.22, 0.48, crowns);
 	}

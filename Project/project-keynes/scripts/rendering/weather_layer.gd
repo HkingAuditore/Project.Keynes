@@ -201,6 +201,8 @@ var _wx_pushed_lerp: float = -1.0
 # [cell-field-overlays 2026-11-18] weather_table（offset 空间 4 层）+ 层号双缓冲的推送缓存。
 # 与上面三项同一个策略：值变了才推 —— 稳态下这几条 uniform 写回 0 次。
 # shader 侧消费在 O2（weather_overlay.gdshader），本任务只保证数据与层号已经到位。
+var _endpoints: SubViewport
+var _endpoints_revision := -1
 var _wx_pushed_weather_table: Texture2DArray = null
 var _wx_pushed_weather_cur: int = -2
 var _wx_pushed_weather_bound: bool = false
@@ -431,7 +433,9 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 # 2026-05-19 hex-grounded-offset：新增 hex_size 参数，用于把 shader 里的"邻域采样偏移"
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
 func set_world_ref(w) -> void:
-	_world_ref = w
+	if _world_ref != w:
+		_world_ref = w
+		_push_weather_table(true)
 
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
 	_world_bounds = bounds
@@ -1336,6 +1340,10 @@ func _push_wind_luts() -> void:
 		_overlay_mat.set_shader_parameter("wind_lut_prev", _wind_lut_prev_tex)
 
 
+func _uses_weather_endpoints() -> bool:
+	return weather_cell_field_enabled and RenderingServer.get_rendering_device() != null
+
+
 # [cell-field-overlays 2026-11-18] weather_table（offset 空间，4 层）+ 层号双缓冲的推送。
 #
 #   weather_table        : sampler2DArray（O2 的 weather_overlay 用 texelFetch 三格取值）
@@ -1346,19 +1354,35 @@ func _push_wind_luts() -> void:
 #
 # 失效时把 bound 推 false 并解除纹理绑定：绝不把上一张地图/上一次提交的层号留在材质上。
 func _push_weather_table(force: bool = false) -> void:
-	if _overlay_mat == null or _world_ref == null:
+	if _overlay_mat == null:
 		return
-	var tex: Texture2DArray = _world_ref.weather_table_tex
-	var bound: bool = _world_ref.weather_table_valid and tex != null
+	var tex: Texture2DArray = _world_ref.weather_table_tex if _world_ref != null else null
+	var bound: bool = tex != null and _world_ref.weather_table_valid
 	var cur: int = int(_world_ref.weather_table_cur) if bound else -1
-	if not force and tex == _wx_pushed_weather_table and cur == _wx_pushed_weather_cur \
-			and bound == _wx_pushed_weather_bound:
+	var revision: int = _world_ref.weather_lut_update_usec if bound else -1
+	if not force and revision == _endpoints_revision and tex == _wx_pushed_weather_table \
+			and cur == _wx_pushed_weather_cur and bound == _wx_pushed_weather_bound:
 		return
+	_endpoints_revision = revision
 	_wx_pushed_weather_table = tex
 	_wx_pushed_weather_cur = cur
 	_wx_pushed_weather_bound = bound
 	_overlay_mat.set_shader_parameter("weather_table", tex if bound else null)
 	_overlay_mat.set_shader_parameter("weather_table_bound", bound)
+	if _uses_weather_endpoints() and bound:
+		var dimensions: Vector2i = _world_ref.weather_table_dims * 2
+		if _endpoints == null:
+			_endpoints = preload("res://scripts/rendering/render_data_table.gd").new()
+			_endpoints.configure(self, dimensions, preload("res://shaders/weather_cell_endpoints.gdshader"))
+		_endpoints.resize_table(dimensions)
+		_endpoints.material.set_shader_parameter("source_table", tex)
+		_endpoints.material.set_shader_parameter("current_layer", cur)
+		_endpoints.refresh()
+		_overlay_mat.set_shader_parameter("weather_endpoints", _endpoints.get_texture())
+	elif _endpoints != null:
+		_overlay_mat.set_shader_parameter("weather_endpoints", null)
+		_endpoints.queue_free()
+		_endpoints = null
 	# 尺寸与层号只在 bound 时有意义；不 bound 时推 0 / -1，任何误读都落在合法范围外
 	# （shader 的 bound 早退先挡住，这里只是不让残值看起来"像对的"）。
 	_overlay_mat.set_shader_parameter("weather_table_size",
@@ -1369,7 +1393,7 @@ func _push_weather_table(force: bool = false) -> void:
 	# [cell-field-overlays 2026-11-18 / O2] 开关开着但表没就绪：shader 侧会整段空返回
 	# （没有云），只在日志里报**一次** —— 否则 GM 面板上看到的是"开关打开了、天气没了"，
 	# 属于最难查的一类静默。bound 恢复后重新武装，下次再失效还会报一次。
-	if not bound and weather_cell_field_enabled and not _wx_cell_field_warned:
+	if _world_ref != null and not bound and weather_cell_field_enabled and not _wx_cell_field_warned:
 		_wx_cell_field_warned = true
 		push_warning("[weather-layer/cell-field] weather_cell_field_enabled=true 但 "
 			+ "weather_table 未发布（reason 见 cell_lut_baker 的 weather_table_reason）⇒"
@@ -1512,6 +1536,8 @@ func _load_overlay_shader() -> void:
 	# begins_with("#define PK_WEATHER_")（质量档必须排第一）。
 	if weather_cell_field_enabled:
 		prefix += CELL_FIELD_DEFINE
+		if _uses_weather_endpoints():
+			prefix += "#define PK_WEATHER_CELL_ENDPOINTS\n"
 	if not prefix.is_empty():
 		shader = shader.duplicate() as Shader
 		shader.code = prefix + shader.code
