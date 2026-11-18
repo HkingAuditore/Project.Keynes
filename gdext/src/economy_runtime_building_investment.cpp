@@ -62,6 +62,24 @@ void NativeEconomyRuntime::investment_mark_rejection(
     }
 }
 
+void NativeEconomyRuntime::BuildingInvestmentCellContext::begin_type_review(
+        NativeEconomyRuntime &runtime, const InvestmentExistingType *existing) {
+    ++runtime._investment_type_evaluations;
+    // Only a type entering this review replaces its previous result.
+    runtime.investment_mark_rejection(existing, INVESTMENT_REJECTION_NONE);
+    if (existing == nullptr || existing->first_group < 0) return;
+    const int32_t end = std::min<int32_t>(
+        static_cast<int32_t>(runtime.building_count()), existing->last_group + 1);
+    for (int32_t group = existing->first_group;
+         group < end; ++group) {
+        if (runtime.buildings_store().cell[group] != cell ||
+            runtime.buildings_store().type_id[group] !=
+                runtime.buildings_store().type_id[existing->first_group]) break;
+        runtime._building_investment_score_q16[group] = 0;
+        runtime._building_investment_payback_days[group] = 0;
+    }
+}
+
 void NativeEconomyRuntime::begin_investment_scratch_generation() {
     const size_t resource_lanes =
         _resource_ids.size() * static_cast<size_t>(_cell_count.get());
@@ -211,9 +229,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
     };
     if (need_prepare) {
         const auto prepare_lanes_started = Clock::now();
-        _building_investment_score_q16.assign(building_count(), 0);
-        _building_investment_payback_days.assign(building_count(), 0);
-        _building_investment_rejection.assign(building_count(), 0);
+        // These are the last review of each building, not batch scratch.
+        _building_investment_score_q16.resize(building_count(), 0);
+        _building_investment_payback_days.resize(building_count(), 0);
+        _building_investment_rejection.resize(building_count(), 0);
         _investment_pending_by_cell_type.clear();
         _investment_existing_by_cell_type.clear();
         const size_t review_divisor = static_cast<size_t>(

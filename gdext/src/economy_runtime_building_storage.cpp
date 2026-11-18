@@ -48,6 +48,9 @@ size_t NativeEconomyRuntime::append_building_group(const BuildingGroup &group) {
     // Packed projection; refresh_building_store_role_lanes() recomputes it
     // before any wire or ledger read.
     store.role_begin.push_back(0);
+    _building_investment_score_q16.resize(row + 1, 0);
+    _building_investment_payback_days.resize(row + 1, 0);
+    _building_investment_rejection.resize(row + 1, 0);
     _building_handle_index_clean = false;
     return row;
 }
@@ -91,6 +94,9 @@ void NativeEconomyRuntime::clear_building_groups() {
     store.role_base_wage_paid.clear();
     store.role_bonus_due.clear();
     store.role_bonus_paid.clear();
+    _building_investment_score_q16.clear();
+    _building_investment_payback_days.clear();
+    _building_investment_rejection.clear();
     _building_handle_index_clean = false;
 }
 

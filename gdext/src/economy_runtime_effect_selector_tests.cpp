@@ -122,6 +122,7 @@ bool EconomyTargetSelectorTests::run(std::string &error) {
     bool tag_work_matches = true;
     if (!run_country_epoch_cache(error)) return false;
     if (!run_building_chain_metrics(error)) return false;
+    if (!run_building_investment_review(error)) return false;
     if (!run_golden_population_market(error)) return false;
     if (!run_owned_stock_audit(error)) return false;
     if (!run_producer_continuation(error)) return false;

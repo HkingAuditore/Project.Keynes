@@ -59,6 +59,14 @@ func _run_width(width: int) -> void:
 	_dump(width, page, "ready")
 	await _capture("ready_%d" % width)
 
+	var first_row := page.get_node("%Rows").get_child(0) as BuildingOptionRow
+	first_row.hover_started.emit(first_row._row_data, first_row)
+	await _settle()
+	if not page.get_global_rect().encloses(page._hover_card.get_global_rect()):
+		_failures.append("hover card exceeds the %d px column" % width)
+	await _capture("hover_%d" % width)
+	first_row.hover_ended.emit()
+
 	page.set_model(_blocked_model())
 	await _settle()
 	_dump(width, page, "blocked")
@@ -143,7 +151,8 @@ func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 		"cash_required": cash,
 		"cash_text": "%.2f" % (float(cash) / 10000.0),
 		"market_used": market_used,
-		"tooltip": "%s\n木材 · 需 2.400 / 国库 1.800 / 市购 0.600 · 单价 12\n合计需现金 %.2f\n本地市场 木材 0.200，缺口 2.200\n工期 3 日 · 岗位 业主 1 · 工匠 3\n原料 原木 0.500 /日 → 产出 木板 0.250 /日%s" % [
+		"days": 3,
+		"tooltip": "%s\n合计需现金 %.2f\n岗位：业主 工匠 ×1 · 雇员 工人 ×3\n投入：亚麻 / 棉花 0.5/日、燃料 0.25/日\n产出：布料 0.25/日%s" % [
 			display_name, float(cash) / 10000.0,
 			"" if eligible else "\n不满足：%s" % reason],
 	}

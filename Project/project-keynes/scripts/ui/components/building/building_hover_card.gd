@@ -9,7 +9,6 @@ class_name BuildingHoverCard
 
 const EDGE_MARGIN := 8.0
 const POINTER_GAP := 12.0
-const CARD_MAX_HEIGHT := 360.0
 const CARD_WIDTH := 440.0
 
 @onready var _icon: IconBadge = $Body/Header/Icon
@@ -35,11 +34,13 @@ var _payload: Dictionary = {}
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED
 	visible = false
 	size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	custom_minimum_size.x = CARD_WIDTH
 	size = Vector2(CARD_WIDTH, 0.0)
+	minimum_size_changed.connect(_fit_card, CONNECT_DEFERRED)
 	_process_mode_always()
 
 
@@ -58,7 +59,7 @@ func show_for(row: Dictionary, source: Control, workspace: Control) -> void:
 	tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tween.tween_property(self, "modulate:a", 1.0, 0.12)
 	call_deferred("_place_card")
-	call_deferred("_fit_card")
+	_fit_after_layout()
 
 
 func hide_card() -> void:
@@ -73,7 +74,12 @@ func refresh(row: Dictionary) -> void:
 	if visible:
 		_apply_payload()
 		call_deferred("_place_card")
-		call_deferred("_fit_card")
+		_fit_after_layout()
+
+
+func _fit_after_layout() -> void:
+	await get_tree().process_frame
+	_fit_card()
 
 
 func _fit_card() -> void:
@@ -81,7 +87,7 @@ func _fit_card() -> void:
 		return
 	# 首次写入长文本时，Label 的自动换行需要先拿到容器宽度；下一帧再收紧
 	# 高度，避免 PanelContainer 把「窄宽度下的巨大最小高度」永久保留下来。
-	size.y = clampf(get_combined_minimum_size().y, 160.0, CARD_MAX_HEIGHT)
+	size.y = get_combined_minimum_size().y
 	_place_card()
 
 
@@ -91,14 +97,14 @@ func _apply_payload() -> void:
 	var eligible := bool(_payload.get("eligible", false))
 	_icon.set_semantic(icon, UITokens.DOSSIER_BRASS if eligible else UITokens.DOSSIER_UMBER)
 	_title.text = name
-	_subtitle.text = _subtitle_text()
 	_status.text = "可营造" if eligible else "暂不可营造"
 	_status.add_theme_font_size_override("font_size", 15)
 	_status.add_theme_color_override("font_color",
 		UITokens.DOSSIER_VERDIGRIS if eligible else UITokens.DOSSIER_OXBLOOD)
 	_cost.text = String(_payload.get("cash_text", "—"))
 	var days := int(_payload.get("days", 0))
-	_duration.text = "%d 日" % days if days > 0 else "—"
+	_duration.get_parent().get_parent().visible = days > 0
+	_duration.text = "%d 日" % days
 	var score := int(_payload.get("score", 0))
 	_profit.text = _money_text(score) if score != 0 else "—"
 	_profit.add_theme_color_override("font_color", _profit_color())
@@ -107,10 +113,10 @@ func _apply_payload() -> void:
 	_profit.get_parent().get_parent().visible = false
 
 	var lines := _tooltip_lines()
-	# 详情卡只保留建造决策所需信息：缺口数量和缺口来源。岗位、投入产出
-	# 等完整配方仍由目录行和经济详情承担，避免一张 hover 卡变成长账单。
-	_employment.visible = false
-	_flow.visible = false
+	_set_section(_flow, _flow_text, lines, ["投入：", "自然资源：", "产出："])
+	_set_section(_employment, _employment_text, lines, ["岗位："])
+	_subtitle.text = _subtitle_text()
+	_subtitle.visible = not _subtitle.text.is_empty()
 	_apply_issue_rows(_issue_rows(lines, eligible))
 	_summary.text = ""
 	_summary.visible = false
@@ -123,7 +129,7 @@ func _subtitle_text() -> String:
 		return "%s · 第 %d 档" % [role, tier + 1]
 	if not role.is_empty():
 		return role
-	return "生产与营造报价"
+	return "每栋建筑的生产配方" if _flow.visible else ""
 
 
 func _tooltip_lines() -> PackedStringArray:
@@ -194,10 +200,15 @@ func _apply_issue_rows(rows: Array) -> void:
 
 
 func _set_section(panel: PanelContainer, label: Label, lines: PackedStringArray,
-		value: String) -> void:
-	panel.visible = not lines.is_empty()
-	if panel.visible:
-		label.text = value
+		prefixes: PackedStringArray) -> void:
+	var section_lines := PackedStringArray()
+	for line in lines:
+		for prefix in prefixes:
+			if line.begins_with(prefix):
+				section_lines.append(line)
+				break
+	label.text = "\n".join(section_lines)
+	panel.visible = not section_lines.is_empty()
 
 
 func _profit_color() -> Color:
@@ -235,15 +246,12 @@ func _place_card() -> void:
 	size.x = desired_width
 	var source_rect := Rect2(_source.get_global_position(), _source.size)
 	var card_size := size
-	if card_size.x <= 0.0:
-		card_size.x = CARD_WIDTH
-	card_size.y = minf(maxf(card_size.y, 160.0), CARD_MAX_HEIGHT)
 	var pointer := get_viewport().get_mouse_position()
-	var pos := pointer + Vector2(POINTER_GAP, POINTER_GAP)
+	var pos := Vector2(pointer.x + POINTER_GAP, source_rect.end.y + POINTER_GAP)
 	if pos.x + card_size.x > safe.end.x:
 		pos.x = source_rect.position.x - card_size.x - POINTER_GAP
 	if pos.y + card_size.y > safe.end.y:
-		pos.y = source_rect.position.y + source_rect.size.y - card_size.y
+		pos.y = source_rect.position.y - card_size.y - POINTER_GAP
 	pos.x = clampf(pos.x, safe.position.x, maxf(safe.position.x, safe.end.x - card_size.x))
 	pos.y = clampf(pos.y, safe.position.y, maxf(safe.position.y, safe.end.y - card_size.y))
 	global_position = pos

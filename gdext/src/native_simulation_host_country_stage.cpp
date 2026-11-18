@@ -796,53 +796,16 @@ bool NativeSimulationHost::execute_country_worker_stage(
     for (auto &character : _country_pod_fallback_reason) {
         character.store('\0', std::memory_order_release);
     }
-    RuntimeCountryPodSnapshot committed_snapshot;
     std::string snapshot_error;
-    if (!_country_pod_authority.snapshot(committed_snapshot, snapshot_error)) {
-        error = snapshot_error.empty() ? "country_worker_snapshot_failed" :
-            snapshot_error;
+    if (!publish_country_worker_snapshot(
+            _country_pod_plan.header.dirty_families, snapshot_error)) {
+        error = snapshot_error;
         commit.preflight_ok = 0;
         return false;
     }
     {
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
-        const std::shared_ptr<const RuntimeCountryPodSnapshot> previous =
-            _country_committed_snapshot;
-        _country_read_view_generation = committed_snapshot.generation;
-        _country_read_view_patch_base_generation = previous != nullptr
-            ? previous->generation : 0;
-        _country_read_view_dirty_families = _country_pod_plan.header.dirty_families;
-        _country_read_view_changed_cells.clear();
-        _country_read_view_changed_owners.clear();
-        const bool same_cell_shape = previous != nullptr &&
-            previous->cell_country_slot.size() ==
-                committed_snapshot.cell_country_slot.size();
-        for (size_t cell = 0; cell < committed_snapshot.cell_country_slot.size();
-             ++cell) {
-            if (same_cell_shape &&
-                previous->cell_country_slot[cell] ==
-                    committed_snapshot.cell_country_slot[cell]) {
-                continue;
-            }
-            _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
-            _country_read_view_changed_owners.push_back(
-                committed_snapshot.cell_country_slot[cell]);
-        }
-        if (!_country_read_view_changed_cells.empty())
-            _country_read_view_territory_generation = _country_read_view_generation;
-        auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
-            std::move(committed_snapshot));
-        _country_committed_snapshot = committed_copy;
-        _country_worker_country_generation = committed_copy->generation;
-        _country_worker_day = committed_copy->committed_day;
-        record_country_parity_locked(*committed_copy);
-        std::shared_ptr<const RuntimeCountryPodSnapshot> committed_view =
-            committed_copy;
-        std::atomic_store_explicit(&_country_snapshot, committed_view,
-                                   std::memory_order_release);
-        std::atomic_store_explicit(&_country_economy_audit_snapshot,
-                                   committed_view, std::memory_order_release);
-        queue_country_milestone_notifications_locked(committed_view);
+        queue_country_milestone_notifications_locked(country_asset_snapshot());
         for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
             const uint64_t request_id = intent.request_id != 0
                 ? intent.request_id : intent.source_id;
@@ -866,7 +829,6 @@ bool NativeSimulationHost::execute_country_worker_stage(
     commit.dirty_families |= _country_pod_plan.header.dirty_families;
     commit.work_units += _country_pod_plan.header.work_units;
     ++commit.completed_stage_count;
-    (void)committed_snapshot;
     return true;
 }
 

@@ -71,6 +71,8 @@ struct NativeEconomyRuntime::BuildingInvestmentCellContext {
     int64_t max_type_owner_population = 0;
 
     explicit BuildingInvestmentCellContext(int32_t cell_value);
+    void begin_type_review(NativeEconomyRuntime &runtime,
+                           const InvestmentExistingType *existing);
     BuildingInvestmentCellContext(const BuildingInvestmentCellContext &) = delete;
     BuildingInvestmentCellContext &operator=(
         const BuildingInvestmentCellContext &) = delete;
