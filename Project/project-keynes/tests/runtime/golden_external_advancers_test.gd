@@ -12,6 +12,11 @@ const PERSON_FIELDS := ["person_handle", "stable_id", "family_handle", "cohort_h
     "employee_role_index", "job_since_day"]
 
 func _run() -> void:
+	# 计划 §2.2：本文件覆盖了父类 _run，所以这里要自己挂一次世界指纹前置校验
+	# （校验实现与 golden_day_hash_test 共用 _world_fingerprint_precheck）。
+	if not _world_fingerprint_precheck():
+		_finish()
+		return
 	OS.set_environment("PK_GOLDEN_DOMAINS", "0")
 	var config := NewGameConfig.create_default()
 	config.country.name = "External Golden Nation"

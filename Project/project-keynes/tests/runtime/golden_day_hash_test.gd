@@ -1,5 +1,8 @@
 extends "res://tests/game/starter_settlement_soak_test.gd"
 
+# 计划 §2.2：跑业务前先比「世界指纹」（共用 tests/world/world_fingerprint.gd）。
+const WORLD_FINGERPRINT := preload("res://tests/world/world_fingerprint.gd")
+
 # Formal ACTIVE world with an explicit same-day read boundary. Ledger and
 # whole economy chains are separate; neither claims all twelve domain states.
 const GOLDEN_DAYS := 8
@@ -22,6 +25,10 @@ func _create_host() -> WorldRuntimeHost:
 
 
 func _run() -> void:
+	# 计划 §2.2：世界指纹不一致时立刻停 —— 继续跑只会得出一组无法比对的经济 hash。
+	if not _world_fingerprint_precheck():
+		_finish()
+		return
 	OS.set_environment("PK_GOLDEN_DOMAINS", "1")
 	var config := NewGameConfig.create_default()
 	config.country.name = "Golden Nation"
@@ -216,3 +223,32 @@ func _read_domains(world, day: int) -> Dictionary:
 			"worker": last_report.get("runtime_graph_worker", {}),
 		}))
 	return {}
+
+
+# 计划 §2.2：golden 跑业务前的「世界指纹」前置校验（共用 tests/world/world_fingerprint.gd）。
+# 拿 ext 的优先级在 WorldFingerprint.resolve_ext 里：host.world_ext()（host 有该方法时）→
+# ClassDB.instantiate("DCWorldExt")；调用方已经手上有 ext 时（如 equivalence 测试）可直接传。
+# 返回 true = 继续跑原来的流程（**原有断言与流程一行不改**）：
+#   · 一致 → 计 1 次 PASS 后继续
+#   · 拿不到 ext / 基线文件缺失 → 打印 SKIP reason=...，**不计失败**，继续跑业务
+# 返回 false = 调用方应 _finish() 并立刻退出：
+#   · 世界漂移 → 打印 DRIFT + 差异明细，并用本测试自己的 _expect 计一次 FAIL
+#   · 指纹生成失败（rc != 0 / fallback）→ 同样计 FAIL（合法输入不该失败，不伪装成 SKIP）
+func _world_fingerprint_precheck(host = null) -> bool:
+	var result: Dictionary = WORLD_FINGERPRINT.precheck(host)
+	var status := str(result.get("status", "skip"))
+	if status == "ok":
+		_expect("world fingerprint matches baseline", true)
+		return true
+	if status == "skip":
+		print("[world-fingerprint] SKIP reason=%s" % str(result.get("reason", "?")))
+		return true
+	if status == "drift":
+		print("[world-fingerprint] DRIFT seed=%d %dx%d（继续跑只会得到无法比对的经济 hash）"
+				% [int(result.get("seed", -1)), int(result.get("w", -1)),
+				int(result.get("h", -1))])
+		print(WORLD_FINGERPRINT.format_report(result))
+	else:
+		print("[world-fingerprint] ERROR reason=%s" % str(result.get("reason", "?")))
+	_expect("world fingerprint matches baseline", false)
+	return false
