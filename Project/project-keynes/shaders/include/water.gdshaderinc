@@ -22,6 +22,10 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+// -1 inherits the shader's quality tier. The player can select ocean detail
+// independently from the rest of the map.
+uniform int water_detail_override = -1;
+
 // ─── Water Visual Overhaul：统一水面波浪高度场（Gerstner-Lite） ──────────
 // 3 个固定方向的正弦相位叠加，生成"视觉高度场"用于法线/光照，不做顶点位移。
 // 方向、频率、振幅、相速度全部硬编码，避免每水体 uniform 多传一组；各水体在
@@ -276,11 +280,12 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 const float WATER_FLOW_PRESENCE_LO = 0.015;
 const float WATER_FLOW_PRESENCE_HI = 0.16;
 
-vec3 water_hash32(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-	p3 += dot(p3, p3.yxz + 33.33);
-	return fract((p3.xxy + p3.yzz) * p3.zyx);
-}
+#include "res://shaders/include/water_lattice.gdshaderinc"
+
+#if defined(PK_WATER_ONLY) && !defined(PK_WEB_TEXTURE_BUDGET) && !defined(PK_QUALITY_LOW)
+#define PK_WATER_LATTICE
+uniform sampler2D water_ripple_lattice : filter_nearest, repeat_disable;
+#endif
 
 // 圆柱噪声坐标：与 water_cyl_noise_p 数值一致，但 cos/sin 由调用方算一次后传入。
 vec2 water_cyl_p_cs(vec2 cs, vec2 wp, float freq, vec2 ofs) {
@@ -366,7 +371,7 @@ vec4 water_mark_layer(vec2 wp, float cell, float shear, vec2 dirv,
 // 大片同向的斜向长亮条——预烘噪声贴图的梯度不是各向同性的。改用逐格哈希 + quintic 插值的
 // 值噪声，梯度解析求出，天然各向同性、梯度连续（无菱形小面）；x 向格数取整 ⇒ 环绕缝连续。
 // 返回 xy = 对世界坐标的梯度，z = 起伏（零均值）。drift 以「格」为单位。
-vec3 water_hash_ripple(vec2 wp, float cell, vec2 drift, float seed, float shear) {
+vec3 water_hash_ripple(vec2 wp, float cell, vec2 drift, float seed, float shear, int page, int channel) {
 	bool wrapped = wrap_period_x > 0.0001;
 	float n_cells = wrapped ? max(floor(wrap_period_x / cell + 0.5), 1.0) : 1.0;
 	float cw = wrapped ? wrap_period_x / n_cells : cell;
@@ -378,10 +383,20 @@ vec3 water_hash_ripple(vec2 wp, float cell, vec2 drift, float seed, float shear)
 	vec2 du = 30.0 * f * f * (f - 1.0) * (f - 1.0);
 	float x0 = wrapped ? mod(ci.x, n_cells) : ci.x;
 	float x1 = wrapped ? mod(ci.x + 1.0, n_cells) : ci.x + 1.0;
+#ifdef PK_WATER_LATTICE
+	int row = page * WATER_LATTICE_SIDE + ((int(ci.y) + WATER_LATTICE_Y_BIAS) & (WATER_LATTICE_SIDE - 1));
+	vec4 left = texelFetch(water_ripple_lattice, ivec2(int(x0) & (WATER_LATTICE_SIDE - 1), row), 0);
+	vec4 right = texelFetch(water_ripple_lattice, ivec2(int(x1) & (WATER_LATTICE_SIDE - 1), row), 0);
+	float a = left[channel];
+	float b = right[channel];
+	float c = left[channel + 2];
+	float d = right[channel + 2];
+#else
 	float a = water_hash32(vec2(x0, ci.y) + seed).x;
 	float b = water_hash32(vec2(x1, ci.y) + seed).x;
 	float c = water_hash32(vec2(x0, ci.y + 1.0) + seed).x;
 	float d = water_hash32(vec2(x1, ci.y + 1.0) + seed).x;
+#endif
 	float h = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 	vec2 dq = vec2((b - a + (a - b - c + d) * u.y) * du.x,
 			(c - a + (a - b - c + d) * u.x) * du.y);
@@ -389,15 +404,14 @@ vec3 water_hash_ripple(vec2 wp, float cell, vec2 drift, float seed, float shear)
 }
 
 // 两相位 flowmap：每个相位内位移有界；周期序号换哈希种子 ⇒ 不循环；保方差混合。
-vec3 water_hash_ripple_flow(vec2 wp, float cell, vec2 adv_world, float t, float rate, float seed, float shear) {
+vec3 water_hash_ripple_flow(vec2 wp, float cell, vec2 adv_world, float t, float rate, float seed, float shear, int page) {
 	float ph0 = fract(t * rate);
 	float ph1 = fract(ph0 + 0.5);
 	float w0 = 1.0 - abs(1.0 - 2.0 * ph0);
 	float w1 = 1.0 - w0;
-	float s0 = seed + mod(floor(t * rate), 997.0) * 13.7;
-	float s1 = seed + 5.0 + mod(floor(t * rate + 0.5), 997.0) * 13.7;
-	vec3 a = water_hash_ripple(wp, cell, -adv_world * (ph0 / cell), s0, shear);
-	vec3 b = water_hash_ripple(wp, cell, -adv_world * (ph1 / cell) + vec2(0.37, 0.11), s1, shear);
+	vec2 seeds = water_ripple_seeds(floor(t * rate), floor(t * rate + 0.5), seed);
+	vec3 a = water_hash_ripple(wp, cell, -adv_world * (ph0 / cell), seeds.x, shear, page, 0);
+	vec3 b = water_hash_ripple(wp, cell, -adv_world * (ph1 / cell) + vec2(0.37, 0.11), seeds.y, shear, page, 1);
 	return (a * w0 + b * w1) * inversesqrt(w0 * w0 + w1 * w1);
 }
 
@@ -442,8 +456,8 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 	//   water_rough_scale    ：海况分区的空间尺度（越大，平静 / 风浪区块越大）
 	//   water_rough_coverage ：风浪区所占比例（0 = 几乎全平静，1 = 几乎全风浪）
 	float rs = max(water_rough_scale, 0.05);
-	float rough_n = water_hash_ripple(wp, 420.0 * rs, vec2(t * 0.0040, -t * 0.0027) / rs, 211.0, 0.31).z * 0.62
-			+ water_hash_ripple(wp, 150.0 * rs, vec2(-t * 0.0060, t * 0.0040) / rs, 307.0, -0.27).z * 0.38 + 0.5;
+	float rough_n = water_hash_ripple(wp, 420.0 * rs, vec2(t * 0.0040, -t * 0.0027) / rs, 211.0, 0.31, 2, 0).z * 0.62
+			+ water_hash_ripple(wp, 150.0 * rs, vec2(-t * 0.0060, t * 0.0040) / rs, 307.0, -0.27, 2, 1).z * 0.38 + 0.5;
 	float rough_c = mix(0.75, 0.25, clamp(water_rough_coverage, 0.0, 1.0));
 	float rough = smoothstep(rough_c - 0.20, rough_c + 0.20, rough_n);
 	float cov_k = max(water_mark_coverage, 0.0);
@@ -461,14 +475,14 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 	// 平流位移 = 背景浪向 × water_flow_drift_base + 洋流向量 × water_flow_drift_current（世界单位 / 周期）；
 	// 位移必须大于一个格宽，才是净流动而不是原地淡入淡出。
 	vec2 adv_big = bg_dir * water_flow_drift_base + flow * water_flow_drift_current;
-	vec3 rp1 = water_hash_ripple_flow(wp, 52.0 * rsc, adv_big, t, 0.04 * rate_s, 71.0, 0.47);
+	vec3 rp1 = water_hash_ripple_flow(wp, 52.0 * rsc, adv_big, t, 0.04 * rate_s, 71.0, 0.47, 0);
 	float rip_k = 6.5 * water_ripple_strength;
 	vec2 grad = rp1.xy * rip_k;
 	float height = rp1.z * 0.60 * water_ripple_strength;
-	if (visual_quality >= 1) {
+	if (water_detail_override >= 2 || (water_detail_override < 0 && visual_quality >= 1)) {
 		vec2 adv_small = vec2(bg_dir.x * 0.5 - bg_dir.y * 0.87, bg_dir.x * 0.87 + bg_dir.y * 0.5)
 				* (water_flow_drift_base * 0.47) + flow * (water_flow_drift_current * 0.60);
-		vec3 rp2 = water_hash_ripple_flow(wp, 23.0 * rsc, adv_small, t, 0.06 * rate_s, 133.0, -0.39);
+		vec3 rp2 = water_hash_ripple_flow(wp, 23.0 * rsc, adv_small, t, 0.06 * rate_s, 133.0, -0.39, 1);
 		grad += rp2.xy * rip_k * water_ripple_detail_mix;
 		height += rp2.z * 0.45 * water_ripple_strength;
 	}
@@ -478,7 +492,7 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 			t, 0.06 * mark_rate, 0.40, 0.14, 0.26 * mlen, fp, 3.0, noise_lf);
 	grad += la.xy * (0.55 * water_mark_strength);
 	height += la.z;
-	if (visual_quality >= 1) {
+	if (water_detail_override >= 2 || (water_detail_override < 0 && visual_quality >= 1)) {
 		vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
 		vec4 lb = water_mark_layer(wp, 37.0 * sc, -0.27, dirb, cover_b,
 				t, 0.10 * mark_rate, 0.50, 0.14, 0.22 * mlen, fp, 11.0, noise_lf);

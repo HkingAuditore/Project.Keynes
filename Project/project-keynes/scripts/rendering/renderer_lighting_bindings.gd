@@ -16,7 +16,8 @@ static func _apply_water_uniforms(
 		_push_water_lighting_uniforms: Callable,
 		_push_water_params_to: Callable,
 		_visual_tiles_active: Callable,
-		_wrap_period_x: Callable) -> void:
+		_wrap_period_x: Callable,
+		water_flowmap_enabled: bool) -> void:
 	if _water_mat == null or _world == null:
 		return
 	var sm := _water_mat
@@ -35,9 +36,6 @@ static func _apply_water_uniforms(
 			sm.set_shader_parameter("noise_tex", _world.noise_tex)
 		if not _visual_tiles_active.call() and _world.water_depth_tex != null:
 			sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
-		if DCFeatureFlags.water_flowmap_enabled() and _world.ocean_current_flow_tex != null:
-			sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
-			sm.set_shader_parameter("ocean_current_flow_tex_bound", true)
 	var tiled: bool = _visual_tiles_active.call()
 	var bounds := _world.world_bounds
 	if tiled:
@@ -109,7 +107,7 @@ static func _apply_water_uniforms(
 	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
 	sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
 	sm.set_shader_parameter("ocean_current_flow_tex_bound",
-		DCFeatureFlags.water_flowmap_enabled() and _world.ocean_current_flow_tex != null)
+		water_flowmap_enabled and _world.ocean_current_flow_tex != null)
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
@@ -241,11 +239,10 @@ static func push_cloud_shadow_material_inputs(
 		_resource_visual_layer,
 		_for_each_vegetation_layer: Callable,
 		_detail_family_layer,
-		_cloud_shadow_direct_active: Callable) -> void:
+		direct_enabled: bool) -> void:
 
 	if _cloud_shadow_field == null:
 		return
-	var direct_enabled = _cloud_shadow_direct_active.call()
 	var has_source: bool = _cloud_shadow_field.has_weather_source()
 	var field_texture: Texture2D = _cloud_shadow_field.get_field_texture() if has_source else null
 	var wrap_origin_uv: float = _cloud_shadow_field.get_wrap_origin_uv()

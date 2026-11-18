@@ -9,6 +9,7 @@
 [ext_resource type="Shader" uid="uid://dspdg0p4uwrfm" path="res://shaders/paper_folio_plaque.gdshader" id="8_folio_shader"]
 [ext_resource type="Shader" uid="uid://cuehdjldca646" path="res://shaders/paper_command_slip.gdshader" id="9_slip_shader"]
 [ext_resource type="Texture2D" uid="uid://dbw72vpul2qsy" path="res://assets/ui/paper_aux_v1/torn_note_v1.png" id="10_grain"]
+[ext_resource type="PackedScene" path="res://scenes/ui/graphics_quality_options.tscn" id="11_graphics"]
 
 [sub_resource type="ShaderMaterial" id="FolioMat"]
 shader = ExtResource("8_folio_shader")
@@ -749,6 +750,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
+follow_focus = true
 
 [node name="SettingsSpread" type="BoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll" unique_id=1749793702]
 unique_name_in_owner = true
@@ -796,16 +798,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="RenderQualityLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=1618518331]
-layout_mode = 2
-theme_type_variation = &"PKDossierBody"
-text = "渲染质量"
-
-[node name="RenderQuality" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=780953401]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
 [node name="UIScaleLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=807138996]
 unique_name_in_owner = true
 layout_mode = 2
@@ -827,6 +819,10 @@ text = "界面布局"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="GraphicsQualityOptions" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol" instance=ExtResource("11_graphics")]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="Vsync" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol" unique_id=6452880]
 unique_name_in_owner = true

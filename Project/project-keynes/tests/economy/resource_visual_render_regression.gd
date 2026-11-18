@@ -20,6 +20,9 @@ func _init() -> void:
 	call_deferred("run")
 
 func run() -> void:
+	if not root.is_node_ready():
+		await root.ready
+	await process_frame
 	output += "/" + RenderingServer.get_current_rendering_method()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(output))
 	viewport = SubViewport.new()
@@ -38,25 +41,26 @@ func run() -> void:
 	world = WorldData.new()
 	world.world_bounds = Rect2(0, 0, 720, 128)
 	world.lut_dims = Vector2i(map.cell_count(), 1)
+	# Supply the same dry height to the plain and tiled material variants.
+	world.height_tex = _texture(Color(0.8, 0.0, 0.0, 0.0))
 	world.terrain_normal_tex = _texture(Color(0.5, 0.5, 0, 1))
 	layer = Layer.new()
 	renderer_root.add_child(layer)
 	layer.configure(map, world, 22.0, intel)
 	layer._memory_image.fill(Color(0.6, 0.65, 0.0, 1.0))
 	layer._memory_texture.update(layer._memory_image)
-	var mat: ShaderMaterial = layer._material
-	mat.set_shader_parameter("day_night_enabled", false)
-	mat.set_shader_parameter("fog_enabled", false)
-	mat.set_shader_parameter("tod_debug_sun_position_enabled", true)
-	mat.set_shader_parameter("tod_sun_dir", Vector3(0.65, -0.35, 0.45).normalized())
-	mat.set_shader_parameter("gi_horizon_lut", Renderer.build_gi_horizon_lut(1.5708))
-	mat.set_shader_parameter("terrain_horizon_max_angle", 1.5708)
-	mat.set_shader_parameter("gi_lut_bound", true)
-	mat.set_shader_parameter("visual_quality", 2)
-	mat.set_shader_parameter("camera_zoom", 1.0)
+	layer._set_param("day_night_enabled", false)
+	layer._set_param("fog_enabled", false)
+	layer._set_param("tod_debug_sun_position_enabled", true)
+	layer._set_param("tod_sun_dir", Vector3(0.65, -0.35, 0.45).normalized())
+	layer._set_param("gi_horizon_lut", Renderer.build_gi_horizon_lut(1.5708))
+	layer._set_param("terrain_horizon_max_angle", 1.5708)
+	layer._set_param("gi_lut_bound", true)
+	layer._set_param("visual_quality", 2)
+	layer._set_param("camera_zoom", 1.0)
 	# Real-scale animals are ~1px in this 48px fixture; enlarge them so motion is measurable.
-	mat.set_shader_parameter("animal_length_hex", 0.35)
-	mat.set_shader_parameter("animal_min_pixels", 0.0)
+	layer._set_param("animal_length_hex", 0.35)
+	layer._set_param("animal_min_pixels", 0.0)
 	for col in IDS.size():
 		var style := -1
 		for i in styles.size():
@@ -64,7 +68,8 @@ func run() -> void:
 				style = i
 		var node := MultiMeshInstance2D.new()
 		node.z_index = Layer.RESOURCE_Z
-		node.material = mat
+		var batch := Layer.DECAL_BATCH if IDS[col] == "fertile_soil" else int(styles[style].family)
+		node.material = layer._material_for(batch)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_2D
 		mm.use_colors = true
@@ -76,12 +81,12 @@ func run() -> void:
 		mm.set_instance_custom_data(0, Color(float(style), float(style), 0.45, 4.0))
 		node.multimesh = mm
 		layer.add_child(node)
-	mat.set_shader_parameter("world_time", 0.0)
+	layer._set_param("world_time", 0.0)
 	var first := await _capture("scenery_t0")
 	for col in [0, 1, 3]:
 		var coverage := _coverage(first, col)
 		_expect("%s leaves ground between individual forms (%.3f)" % [IDS[col], coverage], coverage > 0.01 and coverage < 0.48)
-	mat.set_shader_parameter("world_time", 5.0)
+	layer._set_param("world_time", 5.0)
 	var later := await _capture("scenery_t5")
 	for col in [0, 1, 2]:
 		_expect("%s visibly moves" % IDS[col], _difference(first, later, col) > 0.0005)
@@ -99,21 +104,25 @@ func run() -> void:
 	layer._memory_image.fill(Color(0.6, 0.65, 0.0, 1.0))
 	layer._memory_texture.update(layer._memory_image)
 	# 当前不可见时 live=0，任何 GPU 动作都必须冻结。
-	mat.set_shader_parameter("fog_enabled", true)
-	mat.set_shader_parameter("enum_lut", _texture(Color(0, 0, 0, 0.5)))
-	mat.set_shader_parameter("world_time", 0.0)
+	layer._set_param("fog_enabled", true)
+	layer._set_param("enum_lut", _texture(Color(0, 0, 0, 0.5)))
+	layer._set_param("world_time", 0.0)
 	var hidden_first := await _capture("hidden_t0")
-	mat.set_shader_parameter("world_time", 5.0)
+	layer._set_param("world_time", 5.0)
 	var hidden_later := await _capture("hidden_t5")
 	_expect("remembered scenery freezes all motion", _difference(hidden_first, hidden_later) < 0.00001)
-	mat.set_shader_parameter("fog_enabled", false)
-	mat.set_shader_parameter("world_time", 0.0)
+	layer._set_param("fog_enabled", false)
+	layer._set_param("world_time", 0.0)
 	# 全方向高山遮蔽必须同时压低直射与天空光，不能只乘一个色调。
 	world.terrain_horizon_tex = _texture(Color.WHITE)
 	layer._sync_terrain_textures()
 	var shaded := await _capture("horizon_shadow")
-	_expect("horizon shadow reduces direct and sky lighting", _brightness(shaded) < _brightness(first) * 0.70)
-	mat.set_shader_parameter("terrain_horizon_tex_bound", false)
+	if Layer.web_min_active():
+		# This compiled variant uses a neutral horizon on every tile.
+		_expect("compatibility material uses its neutral horizon", _difference(first, shaded) < 0.00001)
+	else:
+		_expect("horizon shadow reduces direct and sky lighting", _brightness(shaded) < _brightness(first) * 0.70)
+	layer._set_param("terrain_horizon_tex_bound", false)
 	var restored := await _capture("horizon_unbound")
 	_expect("missing horizon returns to neutral lighting", _difference(first, restored) < 0.00001)
 	# 真实 tile array 路径；GL 用 RGBA8，Mobile/Forward 用同一 RG16 编码。
@@ -140,6 +149,13 @@ func run() -> void:
 	layer._sync_terrain_textures()
 	var tiled_shaded := await _capture("tiled_horizon_shadow")
 	_expect("tiled horizon matches legacy shadow", _difference(shaded, tiled_shaded) < 0.002)
+	layer.set_cloud_shadow_field(_texture(Color.BLACK), true, 0.0, 1.0)
+	var clear := await _capture("direct_cloud_clear")
+	layer.set_cloud_shadow_field(_texture(Color.WHITE), true, 0.0, 1.0)
+	var clouded := await _capture("direct_cloud_dense")
+	_expect("clear direct cloud preserves visible tiled resources", _difference(clear, tiled_shaded) < 0.002)
+	_expect("dense clouds dim visible resource art", _brightness(clouded) > 0.0 and _brightness(clouded) < _brightness(clear))
+	layer.set_cloud_shadow_field(null, false, 0.0, 1.0)
 	# 与正式 HexRenderer 相同的父级排序；树冠在资源之后/之前创建都必须挡住它。
 	var canopy := ColorRect.new()
 	canopy.color = Color(0.12, 0.38, 0.16, 1)
@@ -154,7 +170,7 @@ func run() -> void:
 	canopy.queue_free()
 	world.visual_tiles = null
 	layer._sync_terrain_textures()
-	mat.set_shader_parameter("terrain_horizon_tex_bound", false)
+	layer._set_param("terrain_horizon_tex_bound", false)
 	# 放大的群落按像素避让河体，干燥一侧的植物仍可见。
 	for y in 8:
 		for x in 4:
@@ -162,16 +178,16 @@ func run() -> void:
 	world.height_tex = ImageTexture.create_from_image(heights)
 	world.flow_buffer = PackedFloat32Array([1.0])
 	layer._sync_terrain_textures()
-	mat.set_shader_parameter("terrain_horizon_tex_bound", false)
+	layer._set_param("terrain_horizon_tex_bound", false)
 	var river_masked := await _capture("river_footprint_clip")
 	_expect("wide plant patches clip river pixels while keeping dry ground", _region_alpha(river_masked, 0) < 0.01 and _region_alpha(river_masked, 5) > 0.5)
 	world.height_tex = null
 	world.flow_buffer = PackedFloat32Array()
 	layer._sync_terrain_textures()
-	mat.set_shader_parameter("terrain_horizon_tex_bound", false)
-	mat.set_shader_parameter("lens_amount", 1.0)
-	mat.set_shader_parameter("hex_size", 200.0)
-	mat.set_shader_parameter("badge_px", 96.0)
+	layer._set_param("terrain_horizon_tex_bound", false)
+	layer._set_param("lens_amount", 1.0)
+	layer._set_param("hex_size", 200.0)
+	layer._set_param("badge_px", 96.0)
 	var badges := await _capture("lens_badges")
 	_expect("recognition badges keep their complete silhouettes", _coverage(badges, 0) > 0.55)
 	print("resource render regression: %d checks, %d failures; %s" % [checks, failures, output])

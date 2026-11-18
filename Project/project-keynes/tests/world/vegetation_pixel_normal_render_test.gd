@@ -7,6 +7,7 @@ var viewport: SubViewport
 var camera: Camera2D
 var subject: MultiMeshInstance2D
 var mat: ShaderMaterial
+var style_image: Image
 var checks := 0
 var failures := 0
 var output := "res://tmp/vegetation_pixel_normal_qa"
@@ -17,6 +18,9 @@ func _init() -> void:
 	call_deferred("run")
 
 func run() -> void:
+	if not root.is_node_ready():
+		await root.ready
+	await process_frame
 	output += "/" + RenderingServer.get_current_rendering_method()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(output))
 	viewport = SubViewport.new()
@@ -92,9 +96,8 @@ func run() -> void:
 		tilted.fill(Color(0.88, 0.5, 0, 1))
 		_set_normals(tilted, variant)
 		var canopy_tilted := await _capture(variant + "_canopy_center_tilt")
-		var canopy_delta := _difference(canopy_flat, canopy_tilted)
-		# Mobile HIGH uses desktop canopy lighting. MID drops canopy normal sampling.
-		_expect(variant + " canopy follows its quality policy", canopy_delta < 0.00001 if variant == "mobile_mid" else canopy_delta > 0.002)
+		var skips_canopy_slope: bool = variant == "mobile_mid"
+		_expect(variant + " canopy retains its original quality policy", _difference(canopy_flat, canopy_tilted) < 0.00001 if skips_canopy_slope else _difference(canopy_flat, canopy_tilted) > 0.002)
 	# 草丛也用同一个片元路径，不能只对树冠生效。
 	_configure("source")
 	mat.set_shader_parameter("detail_form", Profile.FORM_GRASS)
@@ -113,6 +116,7 @@ func run() -> void:
 	quit(0 if failures == 0 else 1)
 
 func _configure(variant: String) -> void:
+	style_image = null
 	var prefix := ""
 	if variant.contains("family"):
 		prefix += "#define DETAIL_FAMILY_BATCH\n"
@@ -164,7 +168,8 @@ func _configure(variant: String) -> void:
 		lut.set_pixel(3, 0, Color(float(Profile.FORM_GRASS), 1.0, 0.64, 1.0))
 		lut.set_pixel(4, 0, Color(0, 0, 0.38, 0.55))
 		lut.set_pixel(5, 0, Color(0, 0, 1, 1))
-		mat.set_shader_parameter("detail_style_lut", ImageTexture.create_from_image(lut))
+		style_image = lut
+		Shrubs.Family_materials.bind_body_style(mat, ImageTexture.create_from_image(style_image))
 
 func _check_bitmap_forms() -> void:
 	for variant in ["source", "bitmap_far", "web_low_family"]:
@@ -275,13 +280,11 @@ func _blue_ratio(image: Image) -> float:
 
 func _set_form(form: int) -> void:
 	mat.set_shader_parameter("detail_form", form)
-	var texture = mat.get_shader_parameter("detail_style_lut")
-	if texture is ImageTexture:
-		var image: Image = texture.get_image()
-		var entry := image.get_pixel(3, 0)
+	if style_image != null:
+		var entry := style_image.get_pixel(3, 0)
 		entry.r = float(form)
-		image.set_pixel(3, 0, entry)
-		texture.update(image)
+		style_image.set_pixel(3, 0, entry)
+		Shrubs.Family_materials.bind_body_style(mat, ImageTexture.create_from_image(style_image))
 
 func _set_normals(image: Image, variant: String) -> void:
 	_set_raster(image, variant, "terrain_normal_tex", "visual_terrain_normal_tiles")

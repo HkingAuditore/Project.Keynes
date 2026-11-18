@@ -509,9 +509,18 @@ func _init() -> void:
 	_expect(not renderer_shader_source.contains(
 		"preload(\"res://shaders/world_water_web.gdshader\")"),
 		"water shader is loaded lazily, never preloaded on desktop")
+	var draw_order := HexRenderer.new()
+	draw_order._world_quad = MeshInstance2D.new()
+	draw_order.add_child(draw_order._world_quad)
+	var detail := Node2D.new()
+	draw_order.add_child(detail)
+	draw_order._water_quad = MeshInstance2D.new()
+	draw_order._graphics_details.attach_water_surface(draw_order)
 	_expect(renderer_shader_source.contains("_water_quad.z_index = 0")
-		and renderer_shader_source.contains("move_child(host._water_quad"),
+		and draw_order._water_quad.get_index() == draw_order._world_quad.get_index() + 1
+		and detail.get_index() > draw_order._water_quad.get_index(),
 		"water quad sits right after the world quad (above land, below detail)")
+	draw_order.free()
 	_expect(renderer_shader_source.contains("static func _sync_water_quad(host)")
 		and renderer_shader_source.contains("WebTelemetry.note_variant(\"world_water_web\""),
 		"water pass is created by _apply_uniforms and reported to warmup reconciliation")

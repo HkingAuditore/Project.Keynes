@@ -83,6 +83,16 @@ static func clear(host) -> void:
 
 
 
+static func family_lod_fraction(host, zoom_value: float) -> float:
+	var base: float = host._family_lod_fraction_base(zoom_value)
+	var detail: int = host._active_quality_tier() if host._density_detail < 0 else host._density_detail
+	# Keep dense canopy, brush and hardscape continuous when looking over the map.
+	# Ground and aquatic cover use their original zoom curves.
+	if detail >= 2 and host.detail_render_family() in [2, 3, 4]:
+		return clampf(maxf(base, 0.60), 0.0, 1.0)
+	return base
+
+
 static func set_camera_zoom(host, value: float) -> void:
 
 	var next_zoom = clampf(value, 0.01, 16.0)

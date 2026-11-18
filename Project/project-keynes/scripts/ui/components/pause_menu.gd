@@ -33,47 +33,32 @@ func _ready() -> void:
 	if _panel == null or _title_label == null or _rows == null or _status == null:
 		push_error("PauseMenu 必须通过 pause_menu.tscn 实例化。")
 	if TouchUI.is_touch():
-		call_deferred("_apply_touch_layout")
+		_ensure_rows_scroll.call_deferred()
 
 
-## 触摸档：每个菜单按钮要 44dp（= 88 设计像素），「加载游戏」列出 5 个存档就有 10 个
-## 按钮，纵向必然超过手机的逻辑高度（873）。CenterContainer 会把超出部分上下对称裁掉，
-## 而「返回 / 继续」正好在最下面 —— 于是面板关不掉。这里把 Frame 改成铺满视口、
-## 按钮列塞进 ScrollContainer，把溢出交给滚动条。桌面档不走这条路径，.tscn 未改。
-func _apply_touch_layout() -> void:
+## 存档列表和画质设置共用面板中的滚动区，标题和状态留在视口内。
+func _ensure_rows_scroll() -> void:
 	if _rows_scroll != null or _frame == null or _center == null or _panel == null:
 		return
-	# [pc-fit 2026-11-17] 不再把 Frame 移出 CenterContainer、铺满视口。
-	# 旧做法得到的是一个 1544×932 的空框：内容只占上半屏，下半屏全空（真机截图里的「丑」）。
-	# 现在面板保持 pause_menu.tscn 的 390×540 居中不动，只把按钮列塞进 ScrollContainer，
-	# 用固定高度上限换取「存档再多也关得掉」——这才是当初加滚动的原因，不是要撑满屏。
 	_rows_scroll = UIControlParts.scroll_container()
 	_rows_scroll.name = "RowsScroll"
 	_rows_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_rows_scroll.follow_focus = true
 	_rows_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rows_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# 给列表一个高度上限（540 减去标题/状态/分隔线）。超出才滚，不超出就按内容高。
-	_rows_scroll.custom_minimum_size = Vector2(0.0, 380.0)
 	_rows.get_parent().remove_child(_rows)
 	_rows_scroll.add_child(_rows)
-	# ScrollContainer 不会把子节点在「非滚动轴」上撑满，只按最小宽度摆（实测按钮塌成 8px）。
-	# 必须显式给 EXPAND_FILL，再在尺寸变化时把列表宽对齐到滚动区宽（减掉加宽后的滚动条）。
 	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_panel.add_child(_rows_scroll)
 	_panel.move_child(_rows_scroll, 2)
 	TouchUI.widen_scrollbars(_rows_scroll)
-	_rows_scroll.resized.connect(_sync_rows_width)
-	_sync_rows_width.call_deferred()
+	resized.connect(_fit_scrolled_panel)
+	_fit_scrolled_panel()
 
 
-func _sync_rows_width() -> void:
-	if _rows_scroll == null or _rows == null:
-		return
-	var bar_width := 0.0
-	var bar := _rows_scroll.get_v_scroll_bar()
-	if bar != null:
-		bar_width = maxf(bar.custom_minimum_size.x, bar.size.x)
-	_rows.custom_minimum_size.x = maxf(0.0, _rows_scroll.size.x - bar_width)
+func _fit_scrolled_panel() -> void:
+	if size.y > 0.0:
+		_frame.custom_minimum_size.y = minf(540.0, maxf(0.0, size.y - 24.0))
 
 
 func open() -> void:
@@ -164,6 +149,7 @@ func _show_load() -> void:
 
 
 func _show_settings() -> void:
+	_ensure_rows_scroll()
 	_clear_panel()
 	_title("设置")
 	var settings_service := get_node_or_null("/root/GameSettings")
@@ -172,12 +158,10 @@ func _show_settings() -> void:
 		"master_volume": 1.0, "master_muted": false}
 	var form := SettingsFormScene.instantiate() as VBoxContainer
 	_rows.add_child(form)
-	var quality := form.get_node("Quality") as OptionButton
-	for entry in [{"label": "自动画质", "id": "auto"}, {"label": "低画质", "id": "low"},
-			{"label": "中画质", "id": "medium"}, {"label": "高画质", "id": "high"}]:
-		quality.add_item(entry.label)
-		quality.set_item_metadata(quality.item_count - 1, entry.id)
-		if entry.id == current.render_quality: quality.select(quality.item_count - 1)
+	var graphics := form.get_node("GraphicsQualityOptions")
+	graphics.configure(current)
+	if visible:
+		graphics.call_deferred("focus_preset")
 	var scale := form.get_node("Scale") as OptionButton
 	scale.clear()
 	var layout := form.get_node_or_null("Layout") as OptionButton
@@ -219,9 +203,9 @@ func _show_settings() -> void:
 	_add_button("应用", "confirm", func() -> void:
 		if settings_service != null:
 			var picked = scale.get_selected_metadata()
-			var payload := {"render_quality": quality.get_selected_metadata(),
-				"master_volume": volume.value,
-				"master_muted": mute.button_pressed, "reduce_motion": reduce_motion.button_pressed}
+			var payload: Dictionary = graphics.settings_payload()
+			payload.merge({"master_volume": volume.value, "master_muted": mute.button_pressed,
+				"reduce_motion": reduce_motion.button_pressed})
 			# 触摸档：Scale 装缩放百分比，Layout 装布局档位。桌面档：只有百分比。
 			if layout_active:
 				payload["ui_layout_scale"] = picked
@@ -229,7 +213,11 @@ func _show_settings() -> void:
 					payload["ui_layout_mode"] = layout.get_selected_metadata()
 			else:
 				payload["ui_scale_percent"] = picked
-			settings_service.update(payload)
+			var result: Dictionary = settings_service.update(payload)
+			if not bool(result.get("ok", false)):
+				_status.text = String(result.get("message", "无法保存设置。"))
+				_status.show()
+				return
 		_show_main())
 	_add_button("返回", "back", _show_main)
 
@@ -311,7 +299,10 @@ func _finish_pending_action() -> void:
 func _clear_panel() -> void:
 	_panel_generation += 1
 	for child in _rows.get_children():
+		_rows.remove_child(child)
 		child.queue_free()
+	if _rows_scroll != null:
+		_rows_scroll.scroll_vertical = 0
 	_status.visible = false
 	# AI 设置页需要更宽的字段区；回到其他页面时恢复原宽度。
 	if _frame != null:

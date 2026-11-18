@@ -27,6 +27,8 @@ const float VF_TAU = 6.2831853;
 #ifndef PK_VF_NOISE_ONLY
 struct VegCtx {
 	float seed;
+	vec2 seed_offset;
+	float radius;
 	float count;     // elements carried by the instance (1..32)
 	float leaf;      // foliage amount: deciduous crowns thin to bare branches
 	float vigor;     // structural presence: dieback removes whole elements
@@ -43,6 +45,7 @@ struct VegSurf {
 	vec3 tint;       // bark, stone, petal, snow...
 	float elem;      // per-element hash for colour variety
 	float snow_hold; // how readily snow settles on this surface
+	vec4 shadow_crown; // centre, radius and height of the crown selected by vf_elements
 	vec4 art;        // crown bitmap hue (rgb at luma 0.5) and its weight vs the climate palette
 };
 
@@ -56,6 +59,7 @@ VegSurf vf_empty() {
 	s.tint = vec3(0.5);
 	s.elem = 0.0;
 	s.snow_hold = 1.0;
+	s.shadow_crown = vec4(0.0, 0.0, 0.0, 1.0);
 	s.art = vec4(0.5, 0.5, 0.5, 0.0);
 	return s;
 }
@@ -121,6 +125,7 @@ struct VfElem {
 	float id;
 	float z;
 	float hit;
+	float top;
 	float edge;  // distance to the nearest element footprint
 };
 
@@ -136,6 +141,7 @@ void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr
 			e.z = z;
 			e.c = c;
 			e.r = rr;
+			e.top = top;
 			e.id = id;
 			e.hit = 1.0;
 		}
@@ -144,6 +150,7 @@ void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr
 		near_edge = sd;
 		e.c = c;
 		e.r = rr;
+		e.top = top;
 		e.id = id;
 	}
 }
@@ -161,7 +168,7 @@ struct VfSlot {
 // Ring layout for count <= 4.
 VfSlot vf_ring_slot(int k, int cnt, VegCtx ctx, float r0, float top, float keep, int form) {
 	VfSlot sl;
-	vec4 h = vf_hash42(vf_seed_offset(ctx.seed) + vec2(float(k) * 7.13, 3.7));
+	vec4 h = vf_hash42(ctx.seed_offset + vec2(float(k) * 7.13, 3.7));
 	sl.live = !(k > 0 && h.w > keep);
 	float ring = cnt <= 1 ? 0.0 : (0.86 - r0);
 	float a = ctx.seed * VF_TAU + float(k) * VF_TAU / float(cnt) + (h.x - 0.5) * 0.9;
@@ -205,11 +212,12 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float keep, int form, bool con
 	e.id = 0.0;
 	e.z = 0.0;
 	e.hit = 0.0;
+	e.top = 0.0;
 	e.edge = 9.0;
 	float near_edge = 9.0;
 	float n = max(ctx.count, 1.0);
-	float r0 = vf_elem_radius(n);
-	vec2 so = vf_seed_offset(ctx.seed);
+	float r0 = ctx.radius;
+	vec2 so = ctx.seed_offset;
 	if (n < 4.5) {
 		int cnt = int(n + 0.5);
 		for (int k = 0; k < 4; k++) {
@@ -241,12 +249,11 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float keep, int form, bool con
 // Soft blurred ellipse cast by one element: starts under the crown and
 // stretches by its height along the shadow direction. sv = shadow offset per
 // unit height (away from the sun, local units).
-float vf_ellipse_shadow(vec2 p, VfSlot sl, vec2 sv, float max_len) {
-	vec2 v = sv * sl.top;
-	float len_raw = length(v);
-	vec2 u = len_raw > 1e-4 ? v / len_raw : vec2(1.0, 0.0);
+float vf_ellipse_shadow(vec2 p, VfSlot sl, vec2 axis, float offset_length, float max_len) {
+	float len_raw = offset_length * sl.top;
+	vec2 u = len_raw > 1e-4 ? axis : vec2(1.0, 0.0);
 	float len = min(len_raw, max_len);
-	v = u * len;
+	vec2 v = u * len;
 	vec2 d = p - (sl.c + v * 0.5);
 	float a = dot(d, u) / (sl.r * 1.05 + len * 0.5);
 	float b = dot(d, vec2(-u.y, u.x)) / (sl.r * 1.05);
@@ -258,56 +265,21 @@ float vf_ellipse_shadow(vec2 p, VfSlot sl, vec2 sv, float max_len) {
 		* mix(1.0, 0.72, soft);
 }
 
-// Approximate sun shadow of the whole layout from per-element ellipses instead
-// of re-evaluating the form. x: ground shadow (every element), y: shadow on
-// crowns (only elements whose footprint does not contain p). sv is the shadow
-// offset per unit height of a single full-size plant.
-vec2 vf_soft_shadow(vec2 p, VegCtx ctx, int form, vec2 sv) {
-	float top = form == VF_SHRUB ? 0.55 : 1.0;
-	float keep = form == VF_CACTUS ? 1.0
-		: mix(form == VF_SHRUB ? 0.40 : 0.45, 1.0, ctx.vigor);
-	float n = max(ctx.count, 1.0);
-	float r0 = vf_elem_radius(n);
-	// Plant height follows crown size; the cap keeps a grove's shadows inside
-	// the 3x3 search below.
-	sv *= r0 / 0.80;
-	float max_len = r0 * 1.1;
-	float ground = 0.0;
-	float crown = 0.0;
-	if (n < 4.5) {
-		int cnt = int(n + 0.5);
-		for (int k = 0; k < 4; k++) {
-			if (k >= cnt) {
-				break;
-			}
-			VfSlot sl = vf_ring_slot(k, cnt, ctx, r0, top, keep, form);
-			if (!sl.live) {
-				continue;
-			}
-			float w = vf_ellipse_shadow(p, sl, sv, max_len);
-			ground = max(ground, w);
-			crown = max(crown, w * smoothstep(sl.r * 0.9, sl.r * 1.25, length(p - sl.c)));
-		}
-	} else {
-		vec2 so = vf_seed_offset(ctx.seed);
-		float pitch = r0 * 1.62;
-		vec2 sv_mean = sv * top;
-		float sv_len = length(sv_mean);
-		vec2 back = sv_len > max_len ? sv_mean * (max_len / sv_len) : sv_mean;
-		vec2 gi = floor((p - back * 0.5) / pitch + so);
-		for (int j = -1; j <= 1; j++) {
-			for (int i = -1; i <= 1; i++) {
-				VfSlot sl = vf_grid_slot(gi + vec2(float(i), float(j)), so, pitch, r0, top, keep);
-				if (!sl.live) {
-					continue;
-				}
-				float w = vf_ellipse_shadow(p, sl, sv, max_len);
-				ground = max(ground, w);
-				crown = max(crown, w * smoothstep(sl.r * 0.9, sl.r * 1.25, length(p - sl.c)));
-			}
-		}
-	}
-	return vec2(ground, crown);
+// Reuse the crown already selected for this pixel, including its actual
+// radius and height. Forms drawn without a crown layout use their anchor.
+// x: ground shadow, y: shadow on crowns. sv is the shadow offset per unit
+// height of a single full-size plant.
+vec2 vf_soft_shadow(vec2 p, float radius, vec4 crown, vec2 sv) {
+	VfSlot slot;
+	slot.c = crown.xy;
+	slot.r = crown.z > 0.0 ? crown.z : radius;
+	slot.top = crown.w;
+	sv *= radius / 0.80;
+	float offset_length = length(sv);
+	vec2 axis = sv / max(offset_length, 1e-7);
+	float shadow = vf_ellipse_shadow(p, slot, axis, offset_length, radius * 1.1)
+		* step(0.001, slot.top);
+	return vec2(shadow, shadow * smoothstep(slot.r * 0.9, slot.r * 1.25, length(p - slot.c)));
 }
 
 #ifdef VF_CROWN_ART
@@ -347,6 +319,7 @@ VegSurf vf_bitmap(int form, vec2 p, VegCtx ctx, bool far) {
 #else
 	float top = form == VF_SHRUB ? 0.55 : 1.0;
 	e = vf_elements(p, ctx, top, keep, form, form == VF_CONIFER);
+	s.shadow_crown = vec4(e.c, e.r, e.top);
 	if (e.edge > e.r * 0.42) {
 		return s;
 	}

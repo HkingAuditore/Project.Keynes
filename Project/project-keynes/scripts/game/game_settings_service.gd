@@ -5,6 +5,7 @@ signal settings_changed(settings: Dictionary)
 ## 移动端 UI 缩放策略的唯一入口（content_scale_mode/aspect/factor + 安全区）。
 ## 用 preload 而不是 class_name：新脚本还没进 global_script_class_cache 时裸类名会编译失败。
 const MobileUIScalingScript := preload("res://scripts/ui/mobile_ui_scaling.gd")
+const GraphicsQualitySettings := preload("res://scripts/game/graphics_quality_settings.gd")
 const SETTINGS_PATH := "user://settings.cfg"
 const DEFAULTS := {
 	"window_mode": "borderless",
@@ -12,6 +13,14 @@ const DEFAULTS := {
 	"resolution_height": 960,
 	"vsync": true,
 	"render_quality": "auto",
+	"graphics_custom": false,
+	"map_render_scale": null,
+	"water_detail": null,
+	"fog_render_scale": null,
+	"vegetation_detail": null,
+	"weather_detail": null,
+	"cloud_shadow": null,
+	"frame_rate_limit": null,
 	"ui_scale_percent": 100,
 	## 触摸档的界面布局：fit（KEEP 1600×960，PC 版式）/ fill（EXPAND 铺满）/ dense（EXPAND+0.85）。
 	## 桌面档忽略。见 scripts/ui/mobile_ui_scaling.gd:LAYOUT_MODES。
@@ -54,6 +63,8 @@ func values() -> Dictionary:
 
 
 func update(values_to_apply: Dictionary, persist: bool = true) -> Dictionary:
+	if values_to_apply.has("render_quality") and not values_to_apply.has("graphics_custom"):
+		_settings.graphics_custom = false
 	for key in DEFAULTS:
 		if values_to_apply.has(key):
 			_settings[key] = values_to_apply[key]
@@ -88,7 +99,8 @@ func load_settings() -> Dictionary:
 		return {"ok": false, "code": "settings_read_failed", "message": "无法读取设置文件。"}
 	if error == OK:
 		for key in DEFAULTS:
-			_settings[key] = cfg.get_value("settings", key, DEFAULTS[key])
+			_settings[key] = cfg.get_value("settings", key) if cfg.has_section_key("settings", key) \
+				else DEFAULTS[key]
 	_validate()
 	return {"ok": true, "code": "ok", "message": ""}
 
@@ -103,6 +115,9 @@ func save_settings() -> Dictionary:
 
 
 func apply() -> void:
+	if not OS.has_feature("web"):
+		var graphics := GraphicsQualitySettings.resolve(_settings, OS.has_feature("mobile"))
+		Engine.max_fps = int(graphics.frame_rate_limit)
 	# Web 没有原生窗口概念："fullscreen"在浏览器里必须由用户输入手势触发，
 	# 否则 requestFullscreen() 会被静默拒绝（见 DisplayServerWeb::window_set_mode
 	# 的报错提示）；WINDOW_FLAG_BORDERLESS / window_set_size 在 Web 平台也均为
@@ -145,8 +160,13 @@ func _validate() -> void:
 		_settings.window_mode = DEFAULTS.window_mode
 	_settings.resolution_width = clampi(int(_settings.resolution_width), 800, 7680)
 	_settings.resolution_height = clampi(int(_settings.resolution_height), 600, 4320)
-	if String(_settings.render_quality) not in ["auto", "low", "medium", "high"]:
+	if str(_settings.render_quality) not in GraphicsQualitySettings.PRESET_IDS:
 		_settings.render_quality = "auto"
+	var custom = _settings.graphics_custom
+	_settings.graphics_custom = custom is bool and custom
+	for key in GraphicsQualitySettings.OPTION_VALUES:
+		if not GraphicsQualitySettings.is_supported_value(key, _settings[key]):
+			_settings[key] = null
 	if int(_settings.ui_scale_percent) not in [80, 100, 125, 150]:
 		_settings.ui_scale_percent = 100
 	if String(_settings.get("ui_layout_mode", "fit")) not in ["fit", "fill", "dense"]:

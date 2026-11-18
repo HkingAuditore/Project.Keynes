@@ -525,11 +525,17 @@ func _check_web_warmup_prefix() -> void:
 		await process_frame
 		var mat: ShaderMaterial = fog.get("_shader_mat")
 		var real_code := String(mat.shader.code) if mat != null and mat.shader != null else ""
-		var real_expected := (RendererShaderWaterScript.CELL_FIELD_DEFINE
+		var quality_prefix := ""
+		if RenderingServer.get_rendering_device() != null and fog.effective_quality() > 0:
+			# The fixture requests terrain early out. Only an active field consumes it.
+			if not runtime_gate:
+				quality_prefix += "#define PK_FOG_NO_TERRAIN_QUERY\n"
+			quality_prefix += "#define PK_FOG_LATTICE\n"
+		var real_expected := quality_prefix + (RendererShaderWaterScript.CELL_FIELD_DEFINE
 			if RendererShaderWaterScript._cell_field_active(host) else "") + fog_src
 		_expect(real_code == real_expected,
-			("[warmup/%s] the real _load_shader() bytes are exactly [gate segment] + source"
-				+ " (define at the very front of the prefix, %d vs %d chars)")
+			("[warmup/%s] the real _load_shader() bytes are exactly [quality and field segments] + source"
+				+ " (%d vs %d chars)")
 				% [label, real_code.length(), real_expected.length()])
 		host.queue_free()
 		await process_frame

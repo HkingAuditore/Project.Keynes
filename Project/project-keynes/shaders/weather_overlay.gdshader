@@ -643,11 +643,7 @@ vec2 wx_cell_lut_uv(int cid) {
 
 // 风编码解码（RG = 单位风向 * 0.5 + 0.5，B = speed / 20，A = 1）：两条路径共用。
 // 纯解码、不碰 sampler，所以放在守卫外面 —— 旧路径仍然逐字节调用同一份实现。
-vec2 wx_decode_wind(vec4 encoded) {
-	vec2 dir = encoded.rg * 2.0 - 1.0;
-	float len = length(dir);
-	return len > 0.01 ? dir / len * (0.25 + encoded.b) : vec2(0.0);
-}
+#include "res://shaders/include/weather_wind_decode.gdshaderinc"
 
 #ifndef PK_CELL_FIELD
 vec2 wx_sample_wind(int cid) {
@@ -744,6 +740,22 @@ PkHexGrid wx_field_grid() {
 // WEATHER_TABLE_PAD_TYPE（= WT_CLEAR = 0，见 bakers/cell_lut_baker.gd），所以"读那一格"
 // 与"读 0"逐字节相同。反过来若 clamp 到 0 / map_h-1 后**不**清零，就会把真实地图数据
 // 混进地图外区域 —— 南北边缘凭空长出天气（旧路径 cid < 0 早退同样不给天气）。
+#ifdef PK_WEATHER_CELL_ENDPOINTS
+uniform sampler2D weather_endpoints : filter_linear, repeat_disable;
+
+// Both endpoints carry the current categorical type. The linear sampler
+// interpolates the continuous values of this one cell along the x axis.
+void wx_sample_endpoints(ivec2 c, PkHexGrid grid, out vec4 weather, out vec2 wind) {
+	ivec2 cell = ivec2(pk_posmod(c.x, grid.map_w), clamp(c.y, 0, grid.map_h - 1));
+	float inside = float(c.y == cell.y);
+	float blend = mix(weather_lerp, 1.0, step(0.999, weather_lerp));
+	vec2 uv = (vec2(cell * ivec2(2, 1)) + vec2(0.5 + blend, 0.5)) /
+		vec2(ivec2(grid.map_w, grid.map_h) * 2);
+	weather = textureLod(weather_endpoints, uv, 0.0) * inside;
+	wind = (textureLod(weather_endpoints, uv + vec2(0.0, 0.5), 0.0).rg - 0.5) * (2.5 * inside);
+}
+#endif
+
 vec4 wx_fetch_weather(ivec2 c, int layer, PkHexGrid g) {
 	int row = clamp(c.y, 0, g.map_h - 1);
 	float inside = step(0.0, float(c.y)) * step(float(c.y), float(g.map_h - 1));
@@ -1004,6 +1016,13 @@ FrontField sample_field_weather(vec2 world_pos) {
 	// 层号：cur / prev 是一对（O1 双缓冲，prev = 1 - cur）。clamp 只是不让脏 uniform 去
 	// 索引不存在的层（GLES3 对越界 layer 的 texelFetch 返回值未定义）。bound 为真时
 	// 两者本来就在 0/1，这里不引入分支代价。
+#ifdef PK_WEATHER_CELL_ENDPOINTS
+	vec4 c0, c1, c2;
+	vec2 wind0, wind1, wind2;
+	wx_sample_endpoints(t.c0, g, c0, wind0);
+	wx_sample_endpoints(t.c1, g, c1, wind1);
+	wx_sample_endpoints(t.c2, g, c2, wind2);
+#else
 	int cur = clamp(weather_cur_layer, PK_WX_LAYER_WEATHER_A, PK_WX_LAYER_WEATHER_B);
 	int prev = clamp(weather_prev_layer, PK_WX_LAYER_WEATHER_A, PK_WX_LAYER_WEATHER_B);
 
@@ -1033,6 +1052,8 @@ FrontField sample_field_weather(vec2 world_pos) {
 
 	// 连续量：原始重心权重 w_raw 的三格线性组合（不锐化，方案 §2 原则表）。
 	// 结果是对偶三角网上的分段线性场 ⇒ 跨格处处连续，所以天气侧不需要 fwidth。
+#endif
+
 	vec3 gba = w.x * c0.gba + w.y * c1.gba + w.z * c2.gba;
 	float intensity_amount = gba.x;
 	float cloud_amount = gba.y;

@@ -52,7 +52,8 @@ static func _refresh_pixel_world_size(host) -> float:
 		var canvas_scale = host.get_global_transform_with_canvas().get_scale().x
 		if is_finite(canvas_scale) and canvas_scale > 0.000001:
 			scale_x = canvas_scale
-	host._pixel_world_size = clampf(1.0 / scale_x, 0.00001, 1024.0)
+	var render_fraction: float = host._graphics_details.terrain_scale_percent / 100.0
+	host._pixel_world_size = clampf(1.0 / (scale_x * render_fraction), 0.00001, 1024.0)
 	return host._pixel_world_size
 
 

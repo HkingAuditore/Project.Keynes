@@ -235,13 +235,14 @@ func _bind_settings_controls() -> void:
 		"window_mode": %WindowMode,
 		"resolution": %Resolution,
 		"vsync": %Vsync,
-		"render_quality": %RenderQuality,
+		"graphics": %GraphicsQualityOptions,
 		"ui_scale": %UIScale,
 		"ui_layout": %UILayout,
 		"volume": %Volume,
 		"muted": %Muted,
 		"reduce_motion": %ReduceMotion,
 	}
+	%Vsync.toggled.connect(_settings_controls.graphics.set_vsync_enabled)
 	(%Volume as HSlider).value_changed.connect(func(val: float) -> void:
 		if _volume_value_label != null:
 			_volume_value_label.text = "%d%%" % int(round(val * 100.0))
@@ -407,7 +408,7 @@ func _focus_default_for_page(page_key: String) -> void:
 				%LoadBackButton.grab_focus()
 		"settings":
 			if %ApplySettingsButton != null and %ApplySettingsButton.is_visible_in_tree():
-				%ApplySettingsButton.grab_focus()
+				_settings_controls.graphics.focus_preset()
 
 
 func _show_home(animate: bool = true) -> void:
@@ -501,8 +502,7 @@ func _show_settings() -> void:
 		["1280 × 720", "1366 × 768", "1600 × 900", "1920 × 1080", "2560 × 1440"],
 		[Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900), Vector2i(1920, 1080), Vector2i(2560, 1440)],
 		Vector2i(current.resolution_width, current.resolution_height))
-	_configure_option(_settings_controls.render_quality,
-		["自动", "低", "中", "高"], ["auto", "low", "medium", "high"], current.render_quality)
+	_settings_controls.graphics.configure(current)
 	# 触摸档：布局策略三档（fit/fill/dense）+ 布局之上的再缩放（50/75/100）。
 	# 桌面档：只有百分比缩放（80/100/125/150），布局行隐藏。
 	var layout_active := _ui_layout_mode_active()
@@ -1055,7 +1055,6 @@ func _apply_settings() -> void:
 		"resolution_width": resolution.x,
 		"resolution_height": resolution.y,
 		"vsync": _settings_controls.vsync.button_pressed,
-		"render_quality": _settings_controls.render_quality.get_selected_metadata(),
 		"master_volume": _settings_controls.volume.value,
 		"master_muted": _settings_controls.muted.button_pressed,
 		"reduce_motion": _settings_controls.reduce_motion.button_pressed,
@@ -1067,7 +1066,7 @@ func _apply_settings() -> void:
 		payload["ui_layout_mode"] = _settings_controls.ui_layout.get_selected_metadata()
 	else:
 		payload["ui_scale_percent"] = picked_scale
-	var result := GameSettings.update(payload)
+	var result := GameSettings.update(payload.merged(_settings_controls.graphics.settings_payload()))
 	_status_label.text = "设置已应用。" if bool(result.get("ok", false)) else String(result.message)
 
 

@@ -92,7 +92,8 @@ varying flat vec2 v_height;
 varying flat vec2 v_ux;
 varying flat vec2 v_lift;
 varying flat vec4 v_ids;      // form, material, era, archetype
-varying flat vec2 v_seed_cell;
+varying flat float v_seed;
+varying flat vec4 v_building_weather;
 varying flat vec2 v_map_uv;
 varying flat vec3 v_ground_n;  // 实例中心的地形法线（shader 空间，+z=天顶）
 varying flat vec3 v_sun_dir;
@@ -123,7 +124,7 @@ void vertex() {
 	int mat = int(COLOR.b * 16.0);
 	float style = floor(INSTANCE_CUSTOM.r * 65.0 + 0.5);
 	v_ids = vec4(float(form), float(mat), floor(style / 6.0), mod(style, 6.0));
-	v_seed_cell = INSTANCE_CUSTOM.gb;
+	v_seed = INSTANCE_CUSTOM.g;
 	vec2 lean = vec2(0.0, -oblique);
 	v_lift = vec2(dot(lean, ux), dot(lean, uy));
 
@@ -148,6 +149,15 @@ void vertex() {
 	v_sun_col = ed.sun_col;
 	v_amb_col = ed.amb_col;
 	v_day = vec3(ed.local_day, ed.pixel_night, ed.moon_strength);
+	vec2 cell_uv = lut_uv(INSTANCE_CUSTOM.b);
+	vec4 dyn = textureLod(dyn_lut, cell_uv, 0.0);
+	vec4 knowledge = textureLod(enum_lut, cell_uv, 0.0);
+	vec4 weather = textureLod(weather_lut, cell_uv, 0.0);
+	bool live = knowledge.a > 0.88;
+	float snow = live ? clamp(dyn.b * 1.25, 0.0, 1.0) : 0.0;
+	float wet = (live && visual_quality > 0) ? clamp(dyn.g * weather.g, 0.0, 1.0) : 0.0;
+	float night = smoothstep(BUILDING_WINDOW_NIGHT_START, BUILDING_WINDOW_NIGHT_FULL, v_day.y);
+	v_building_weather = vec4(snow, wet, night, float(live));
 	v_cloud_sun_visibility = cloud_shadow_direct_visibility(v_map_uv, ed.local_day);
 
 	// 地形法线每实例只采一次：坡度在 fragment 里作为整栋建筑的基面倾角，
@@ -342,7 +352,7 @@ void fragment() {
 	int mat = int(v_ids.y + 0.5);
 	float era = v_ids.z;
 	float archetype = v_ids.w;
-	float seed = v_seed_cell.x;
+	float seed = v_seed;
 	float he = v_height.x;
 	float hr = v_height.y;
 	vec2 s = v_p;
@@ -350,14 +360,10 @@ void fragment() {
 	// 逐像素地面位置：horizon 图按真实世界坐标采样，跨山脊的建筑才会在脊线处分开。
 	vec2 map_uv = pixel_map_uv(s);
 
-	vec2 cell_uv = lut_uv(v_seed_cell.y);
-	vec4 dyn = texture(dyn_lut, cell_uv);
-	vec4 knowledge = texture(enum_lut, cell_uv);
-	vec4 weather = texture(weather_lut, cell_uv);
-	bool live = knowledge.a > 0.88;
-	float snow = live ? clamp(dyn.b * 1.25, 0.0, 1.0) : 0.0;
-	float wet = (live && visual_quality > 0) ? clamp(dyn.g * weather.g, 0.0, 1.0) : 0.0;
-	float night = smoothstep(BUILDING_WINDOW_NIGHT_START, BUILDING_WINDOW_NIGHT_FULL, v_day.y);
+	bool live = v_building_weather.w > 0.5;
+	float snow = v_building_weather.x;
+	float wet = v_building_weather.y;
+	float night = v_building_weather.z;
 
 	// Roof: the lean is small next to the roof slopes, so one correction of a
 	// mid-pitch guess lands on the surface.

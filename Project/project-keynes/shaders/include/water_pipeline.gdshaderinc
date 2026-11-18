@@ -64,6 +64,9 @@ struct WaterStageCtx {
 	//   shore_gap        ：到最近陆地格的 gap（三格都是水 ⇒ 1e3，见 shore_common）
 	//   shore_dist_wu    ：岸距（世界单位）= 0.5·shore_gap·hex_size ⇒ 桌面 / 移动同宽
 	HexCellField field;
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+	float water_depth;
+#endif
 	vec4 fcls0;
 	vec4 fcls1;
 	vec4 fcls2;
@@ -248,8 +251,8 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	//   ③ LOW 档只读主导格（1 次 texelFetch，§3.8 的 LOW 行）；两项都是常数采样次数，
 	//      不出现"权重 > 0 才采"的分支（§3.9 第 2 条）。
 	// water_depth_tex 数组在 PK 变体里不再采样 —— 采样槽由 cell_table 顶掉。
-#if defined(PK_QUALITY_LOW)
-	float wd = pk_cell_aux_at(pk_cell_field_dom_offset(ctx.field)).g;
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+	float wd = ctx.water_depth;
 #else
 	float wd = pk_cell_aux_at(ctx.field.c0).g * ctx.field.w_raw.x
 			+ pk_cell_aux_at(ctx.field.c1).g * ctx.field.w_raw.y
@@ -851,10 +854,9 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 	// 现在波形坐标只用 ctx.wpw（连续噪声域扭曲），洋流信息全部交给相位层处理。
 	vec2 wave_wp = ctx.wpw;
 	float wave_h = 0.0;        // 归一化涌浪波高；冰面 / LOW 档恒 0
+	bool waves_on = water_waves_enabled && wave_amp_scale > 0.001 && water_detail_override != 0;
 #ifdef PK_QUALITY_LOW
-	bool waves_on = false;
-#else
-	bool waves_on = water_waves_enabled && wave_amp_scale > 0.001;
+	waves_on = waves_on && water_detail_override >= 1;
 #endif
 #ifdef PK_WEB_WORLD_MIN
 	// PK_QUALITY_LOW ⇒ waves_on 恒 false，sample_flow_water_normal 只会被短路为 +Z；
@@ -949,6 +951,9 @@ SurfaceParams compute_water_base_surface(
 // 关闭 PK_CELL_FIELD 时这几行被预处理剔除 ⇒ 函数原型与今日逐字相同。
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, float field_water_depth
+#endif
 #endif
 		) {
 
@@ -975,11 +980,15 @@ SurfaceParams compute_water_base_surface(
 #else
 	ctx.quality = visual_quality;
 #endif
+	ctx.quality = water_detail_override < 0 ? ctx.quality : water_detail_override;
 	ctx.ice_frac = dyn_ice_frac;
 #ifdef PK_CELL_FIELD
 	// [cell-field 2026-11-18] 场数据包 + 派生量（方案 §3.7）。三格 class 由 SETUP 传入，
 	// 下游 helper 只读 ctx，不再有各自的 map_index 采样。
 	ctx.field = field;
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+	ctx.water_depth = field_water_depth;
+#endif
 	ctx.fcls0 = fcls0;
 	ctx.fcls1 = fcls1;
 	ctx.fcls2 = fcls2;
@@ -1133,7 +1142,7 @@ SurfaceParams apply_water_overlay_surface(
 	float ocean_type_w = water_static_type_mix(biome, secondary_biome, edge_mix, B_OCEAN);
 	float foam_domain_w = clamp(coast_type_w + ocean_type_w + reef_type_w + kelp_type_w, 0.0, 1.0)
 			* foam_ice_free;
-	if (foam_domain_w > 0.001) {
+	if (foam_domain_w > 0.001 && water_detail_override != 0) {
 		float reef_foam_scale = clamp(
 			coast_type_w + ocean_type_w + reef_type_w * 0.72 + kelp_type_w * 0.50,
 			0.0, 1.0);
@@ -1141,13 +1150,14 @@ SurfaceParams apply_water_overlay_surface(
 		if (foam_mask_raw > 0.001) {
 			float local_noise = 0.5;
 			float sub_wave = 0.5;
-			if (visual_quality >= 1) {
-				int foam_oct = (visual_quality >= 2) ? 2 : 1;
+			bool fine_foam = water_detail_override >= 2 || (water_detail_override < 0 && visual_quality >= 1);
+			if (fine_foam) {
+				int foam_oct = (water_detail_override >= 2 || visual_quality >= 2) ? 2 : 1;
 				local_noise = water_fbm_cyl(wp, 0.10, vec2(world_time * 0.08, -world_time * 0.06), foam_oct);
 			}
 			float main_phase = coast_sdf * 130.0 - world_time * 1.10 + local_noise * 1.20;
 			float main_wave = sin(main_phase) * 0.5 + 0.5;
-			if (visual_quality >= 1) {
+			if (fine_foam) {
 				float sub_phase = coast_sdf * 240.0 - world_time * 1.65 + local_noise * 0.75;
 				sub_wave = sin(sub_phase) * 0.5 + 0.5;
 			}
@@ -1203,7 +1213,8 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 	// SEA 3.1：水下光斑 caustics（仅 REEF + 白天 + 启用） ──────────────
 #if !defined(PK_MOBILE_ANY)
 	float reef_type_w = water_static_type_mix(biome, secondary_biome, edge_mix, B_REEF);
-	if (reef_type_w > 0.001 && caustics_enabled && quality >= 1 && pixel_night < 0.5) {
+	if (reef_type_w > 0.001 && caustics_enabled && quality >= 1 && pixel_night < 0.5
+			&& (water_detail_override < 0 || water_detail_override >= 2)) {
 		int caustics_oct = (quality >= 2) ? 2 : 1;
 		float caustics = water_fbm_cyl(wp, 0.35, vec2(world_time * 0.08, -world_time * 0.12), caustics_oct);
 		float caustics_mask = smoothstep(0.55, 0.75, caustics);
@@ -1249,7 +1260,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 #endif
 
 	// SEA 3.2：菲涅尔天空反射（与 BRDF 的 F_Schlick 互补） ──────────────
-	if (water_fresnel_enabled) {
+	if (water_fresnel_enabled && water_detail_override != 0) {
 		float F;
 		if (quality <= 1) {
 			// 顶视正交：视线近乎垂直水面，菲涅尔反射本应很弱。旧的 0.30 平值在快进/低画质下
@@ -1274,8 +1285,12 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 	}
 
 	// SEA 3.3：sparkle 高频颗粒高光 ────────────────────────────────────
-#if !defined(PK_MOBILE_ANY)
-	if (quality >= 1 && water_sparkle_enabled) {
+#if !defined(PK_MOBILE_ANY) || !defined(PK_WEB_TEXTURE_BUDGET)
+	bool sparkle_detail = water_detail_override >= 2;
+#ifndef PK_MOBILE_ANY
+	sparkle_detail = sparkle_detail || (water_detail_override < 0 && quality >= 1);
+#endif
+	if (sparkle_detail && water_sparkle_enabled) {
 		int sparkle_oct = (quality >= 2) ? 2 : 1;
 		vec3 L = sun_dir_px;
 		vec3 H = normalize(L + VIEW_DIR_TOP_DOWN);
@@ -1293,18 +1308,22 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 		vec3 glint_add = glint_col * sun_glint * glint_mask * rough_window * water_reflection_strength * day_factor * 0.32;
 		col += min(glint_add, vec3(0.45));
 
-		float sparkle_freq = 0.085;
-		float sparkle_speed_day = 0.32;
-		float sparkle = water_fbm_cyl(wp, sparkle_freq, vec2(world_time * sparkle_speed_day, -world_time * 0.20), sparkle_oct);
-		float spark_mask = smoothstep(0.88, 0.985, sparkle);
-		vec3 day_sparkle_col = vec3(1.03, 1.02, 0.96);
-		vec3 night_sparkle_col = vec3(0.76, 0.86, 1.03);
-		vec3 sparkle_col = mix(day_sparkle_col, night_sparkle_col, pixel_night);
-		float base_intensity = 0.028;
-		float intensity = mix(base_intensity, base_intensity * 0.45, pixel_night);
-		float night_freq_scale = mix(1.0, 0.55, pixel_night);
-		spark_mask *= night_freq_scale;
-		col = mix(col, col * sparkle_col, spark_mask * intensity);
+		// Fade the finest noise as it shrinks on screen; retain the broad glint.
+		float sparkle_visibility = 1.0 - smoothstep(0.8, 2.4, pixel_world_size);
+		if (sparkle_visibility > 0.0) {
+			float sparkle_freq = 0.085;
+			float sparkle_speed_day = 0.32;
+			float sparkle = water_fbm_cyl(wp, sparkle_freq, vec2(world_time * sparkle_speed_day, -world_time * 0.20), sparkle_oct);
+			float spark_mask = smoothstep(0.88, 0.985, sparkle);
+			vec3 day_sparkle_col = vec3(1.03, 1.02, 0.96);
+			vec3 night_sparkle_col = vec3(0.76, 0.86, 1.03);
+			vec3 sparkle_col = mix(day_sparkle_col, night_sparkle_col, pixel_night);
+			float base_intensity = 0.028;
+			float intensity = mix(base_intensity, base_intensity * 0.45, pixel_night);
+			float night_freq_scale = mix(1.0, 0.55, pixel_night);
+			spark_mask *= night_freq_scale;
+			col = mix(col, col * sparkle_col, spark_mask * intensity * sparkle_visibility);
+		}
 	}
 #endif
 	return col;
@@ -1318,19 +1337,18 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 //   USE_PBR_BRDF=0 时被使用。water 不再自己写 Blinn-Phong/Fresnel/spec 系数。
 // ─────────────────────────────────────────────────────────────────────
 vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, float edge_mix, vec2 wp, int quality, vec2 uv, float lat_signed, float w_ice) {
-	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
+	// The scalar path has independent debug-elevation scaling.
 	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
-	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随太阳方向；
-	// 昼夜关闭时使用当地正午基线 + 视觉日内方向，避免关闭 TOD 后水面方向光一起消失。
-	vec3 sun_dir_px = day_night_enabled
-			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
-			: compute_eternal_visual_sun_dir(lat_signed);
-	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
+	vec3 physical_sun = day_night_enabled ? compute_sun_dir_enu(uv, lat_signed) : compute_eternal_visual_sun_dir(lat_signed);
+	vec3 sun_dir_px = (day_night_enabled && !tod_latitude_sun_enabled)
+			? normalize(tod_sun_dir) : physical_sun;
+	LightingContext lc = make_lighting_context_from_daylight(AMBIENT_FLOOR_WATER, uv,
+			eval_earth_daylight_from_sun(physical_sun, day_night_enabled));
 	// 开阔海面底色和环境光更暗，不能直接复用陆地同幅云影；否则云区会
 	// 同时被直射、天光和水面 shadow floor 压暗，读成脏黑块。
-	float cloud_direct_visibility = cloud_shadow_water_direct_visibility(uv, lc.local_day);
-	lc.direct_shadow *= cloud_direct_visibility;
-	lc.cloud_ambient = cloud_shadow_water_ambient_visibility(uv, lc.local_day);
+	vec2 cloud_visibility = cloud_shadow_water_visibility(uv, lc.local_day);
+	lc.direct_shadow *= cloud_visibility.x;
+	lc.cloud_ambient = cloud_visibility.y;
 	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
 	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
 	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。
@@ -1348,7 +1366,7 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 	// [terrain-horizon 2026-07-03] 水面阴影先压 BRDF 结果，再叠加 fresnel/caustics/sparkle，
 	// 让高光与波浪可以覆盖在阴影之上；强度比陆地轻，避免水面变脏。
 	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
-	float cloud_cast_shadow = clamp((1.0 - cloud_direct_visibility) * lc.local_day, 0.0, 1.0);
+	float cloud_cast_shadow = clamp((1.0 - cloud_visibility.x) * lc.local_day, 0.0, 1.0);
 	cast_shadow = clamp(cast_shadow - cloud_cast_shadow, 0.0, 1.0);
 	if (cast_shadow > 0.001) {
 		float water_floor = mix(1.0, terrain_horizon_cast_floor, 0.38);
@@ -1385,6 +1403,9 @@ vec3 render_water_pipeline_raw(
 		vec4 pixel_noise
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, float field_water_depth
+#endif
 #endif
 		) {
 	SurfaceParams surface = compute_water_base_surface(
@@ -1392,6 +1413,9 @@ vec3 render_water_pipeline_raw(
 		current_temp, ocean_current_v, wind_v, dyn_ice_frac, pixel_noise
 #ifdef PK_CELL_FIELD
 		, field, fcls0, fcls1, fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
 #endif
 		);
 	// Underwater resources (oil/gas seeps, fish shoals) are drawn by ResourceVisualLayer's
@@ -1421,8 +1445,9 @@ vec3 render_water_pipeline_raw(
 		, field, fcls0, fcls1, fcls2
 #endif
 		);
+	int lighting_quality = water_detail_override < 0 ? visual_quality : water_detail_override;
 	return shade_water_surface(
-		surface, biome, secondary_biome, edge_mix, wp, visual_quality, uv, lat_signed, dyn_ice_frac);
+		surface, biome, secondary_biome, edge_mix, wp, lighting_quality, uv, lat_signed, dyn_ice_frac);
 }
 
 vec3 render_water_pipeline(
@@ -1444,6 +1469,9 @@ vec3 render_water_pipeline(
 		vec4 pixel_noise
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, float field_water_depth
+#endif
 #endif
 		) {
 	return render_water_pipeline_raw(
@@ -1452,6 +1480,9 @@ vec3 render_water_pipeline(
 		ocean_current_v, wind_v, dyn_ice_frac, shore_frac, pixel_noise
 #ifdef PK_CELL_FIELD
 		, field, fcls0, fcls1, fcls2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
 #endif
 		);
 }

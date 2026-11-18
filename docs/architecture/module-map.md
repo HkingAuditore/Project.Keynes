@@ -109,12 +109,27 @@ Climate ACTIVE 慢层刷新日期归 `scripts/simulation/systems/season_refresh_
 `rendering/resource_visual_chunk_inputs.gd`。像素对象表与数值列的发布归 `WorldData`，三处
 terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模拟状态，也不增加存档字段。
 
+陆水覆盖形状由 `rendering/terrain_coverage_mesh.gd` 构建。整屏及局部浓雾裁剪由
+`rendering/renderer_fog_culling.gd` 在绘制前判断，读取随迷雾贴图发布的
+`WorldData` 遮挡索引，`rendering/terrain_fog_mesh.gd` 合并保留区域并更新绘制命令。
+细节层同帧裁剪归 `rendering/fog_detail_culling.gd`，实例批次的绘制边界由现有上传入口
+经 `rendering/fog_draw_bounds.gd` 记录。验证入口为 `tests/rendering/terrain_draw_coverage_test.gd`
+和 `tests/rendering/detail_fog_culling_test.gd`。
+
 天气风场纹理由 `Project/project-keynes/scripts/rendering/weather_wind_source.gd` 按天气发布更新，
 由 `cloud_shadow_field.gd` 持有并将同一份纹理提供给云影和天气云；关闭云影只停止绘制。
 云影向地表、水面和细节层的材质绑定归 `renderer_lighting_bindings.gd`；水面入口只转发，
 仍使用当前纹理和绑定到渲染宿主的回调，不保存世界或跨帧状态。
 回归入口：`tests/rendering/cloud_weather_quality_test.gd`。手机执行方式与逐日对照见
 `Project/project-keynes/tests/runtime/mobile_runtime_worker_test.gd`。
+
+玩家画质预设与自定义选项保存在 `scripts/game/game_settings_service.gd`，档位解析在
+`scripts/game/graphics_quality_settings.gd`。主菜单和暂停菜单共用
+`scenes/ui/graphics_quality_options.tscn`。应用到地图和显示层的入口在
+`scripts/rendering/renderer_graphics_settings.gd`，陆地和水面绘制尺寸归同目录的
+`terrain_render_scale.gd`。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
+
+水面波纹、迷雾梯度和天气新旧值的数值纹理共用 `rendering/render_data_table.gd`。更新入口依次在 `renderer_shader_water.gd`、`fog_of_war_layer.gd`、`weather_layer.gd`。地面读取、植被与建筑的着色入口见 [地图绘制中的共享计算](feature-guides.md#地图绘制中的共享计算)，数据校验见 `tests/rendering/render_data_tables_test.gd`。
 
 提交前整理的脚本职责位置见 [源文件职责拆分](source-module-splits.md) 的“移动端 PR 提交前的长度与依赖修复”。
 原生开拓的存储、查询、人口载荷分别在 `gdext/src/economy_runtime_colonization_store.cpp`、

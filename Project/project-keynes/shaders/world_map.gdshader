@@ -546,13 +546,24 @@ void fragment() {
 	// 用 field_w_valid（padding 权重已清零）而不是 field_w，避免把 padding 行的
 	// aux.R 哨兵（B_SEA_ICE）混进来；1e-5 下限保证三格全越界时不会除零，
 	// 那种像素随后会被 in_bounds(主导格)=0 的 mix 换成 1.0。
+	//
+	// [pr10 合并] 水深 field_water_depth 与 fog_k 共用同一批 aux 取值，水面 program
+	// 不必在 water_pipeline 里重复取表。LOW 取主导格 1 次，MID/HIGH 三格取一次。
 #if defined(PK_QUALITY_LOW)
-	float field_fog = mix(1.0, pk_cell_aux_at(field_dom_c).r,
+	vec4 dominant_aux = pk_cell_aux_at(field_dom_c);
+	float field_water_depth = dominant_aux.g;
+	float field_fog = mix(1.0, dominant_aux.r,
 			pk_field_row_in_bounds(field_dom_c));
 #else
-	float field_fog_lerp = (pk_cell_aux_at(cell_field.c0).r * field_w_valid.x
-			+ pk_cell_aux_at(cell_field.c1).r * field_w_valid.y
-			+ pk_cell_aux_at(cell_field.c2).r * field_w_valid.z)
+	vec4 aux0 = pk_cell_aux_at(cell_field.c0);
+	vec4 aux1 = pk_cell_aux_at(cell_field.c1);
+	vec4 aux2 = pk_cell_aux_at(cell_field.c2);
+#ifdef PK_WATER_ONLY
+	float field_water_depth = dot(cell_field.w_raw, vec3(aux0.g, aux1.g, aux2.g));
+#endif
+	float field_fog_lerp = (aux0.r * field_w_valid.x
+			+ aux1.r * field_w_valid.y
+			+ aux2.r * field_w_valid.z)
 			/ max(field_valid, 1e-5);
 	float field_fog = mix(1.0, field_fog_lerp,
 			pk_field_row_in_bounds(field_dom_c));
@@ -872,6 +883,9 @@ void fragment() {
 				visual_water_ice_fraction, shore_frac, pixel_noise
 #ifdef PK_CELL_FIELD
 				, cell_field, cell_e0, cell_e1, cell_e2
+#if defined(PK_WATER_ONLY) || defined(PK_QUALITY_LOW)
+		, field_water_depth
+#endif
 #endif
 				);
 #endif
