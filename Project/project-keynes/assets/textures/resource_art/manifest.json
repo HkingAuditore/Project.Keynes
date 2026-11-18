@@ -199,6 +199,7 @@
   "cols": 4,
   "rows": 2,
   "count": 8,
+  "decoration_prompt": "Generate a production-ready 4 by 4 sprite sheet for Project Keynes, a top-down historical strategy map with muted, tactile hand-painted cut-paper relief art. Actual transparent alpha background, no text, no grid lines, no floor or cast shadows. Orthographic vertical overhead view. Exactly 16 distinct isolated centered objects, one per equally spaced cell, with 15% transparent margins all around each sprite and mostly equal visual footprint. Crisp silhouettes readable at 12 pixels, painted internal paper fibers and restrained relief, gentle neutral illumination. Row 1 left to right: blue-green branching desert cactus cluster, olive and golden marsh reeds, broad tuft of olive green grass, gray-green spreading tundra lichen. Row 2: alpine violet and ivory wildflower tuft, pale shattered rock scree pile, irregular off-white drift of snow, gray-brown bare dead tree with radial branches as seen from directly above. Row 3: long fallen log with broken bark lying horizontally, spreading tangled mangrove aerial roots with tiny green foliage, olive-brown underwater kelp fronds, salmon-pink branching coral. Row 4: dark brown peaty tussock with sedge, brown fine bare deciduous tree with a branching intact canopy, muted charcoal rock, muted olive fern. Every bounding box separate, no overlapping cells, keep all 16 motifs clearly different.",
   "prompt": "Sprite sheet: 8 individual tree crowns seen strictly from directly above, orthographic, 4x2 grid with wide spacing, realistic photographic detail, soft diffuse overcast light, no ground, no cast shadows, transparent background",
   "layers": [
    {
@@ -226,6 +227,32 @@
     "prompt": "Eight isolated top-down weathered boulders, rough granite and sandstone, chipped silhouettes, dark fissures, sparse lichen and tiny loose chips, muted semi-realistic painted strategy-map style, transparent background",
     "tall": 0.9,
     "path": "geology/rocks.png"
+   },
+   {
+    "id": "decoration.0",
+    "path": "crown/decoration_forms.png",
+    "cells": [
+     "cactus",
+     "reed",
+     "grass",
+     "lichen",
+     "flower",
+     "scree",
+     "snow",
+     "snag"
+    ]
+   },
+   {
+    "id": "decoration.1",
+    "path": "crown/decoration_forms.png",
+    "cells": [
+     "fallen_log",
+     "mangrove",
+     "kelp",
+     "coral",
+     "peat",
+     "leafless_broadleaf"
+    ]
    }
   ]
  },
