@@ -323,6 +323,7 @@ render_mode blend_mix, unshaded;
 #endif
 
 #include "res://shaders/include/global_adjustments.gdshaderinc"
+#include "res://shaders/include/fog_memory.gdshaderinc"
 
 
 #ifdef PK_CELL_FIELD
@@ -505,12 +506,12 @@ void fragment() {
 	// cell_table 的 texelFetch（无过滤、无导数、全命中缓存）：
 	//   biome / veg / cover / landform ← layer0 class（三格已在 SETUP 顶部取好，取主导格）
 	//   dyns（temp/wet/snow/vitality|sea_ice）← layer1 state，连续量按 w_raw 三格混合（§3.3）
-	//   fog_k ← layer2 aux.R，**只读主导格**（与今天 enum_lut.a 的"硬主 cell"语义逐值一致；
-	//           方案 §3.3 把 fog_k 归为类别量，所以不做插值）
-	// 采样记账（方案 §3.8，陆地 program）：MID/HIGH = warp 1 + class 3 + state 3 + aux 1
-	//   + edge_distance 1（沟谷 crease）+ height 1 + noise 1 + 静态材质 2 = 13；
+	//   fog_k ← layer2 aux.R，MID/HIGH 与 state 同式按 w_raw 三格混合（fog-k-blend 2026-11-18），
+	//           LOW 仍只读主导格
+	// 采样记账（方案 §3.8，陆地 program）：MID/HIGH = warp 1 + class 3 + state 3 + aux 3
+	//   + edge_distance 1（沟谷 crease）+ height 1 + noise 1 + 静态材质 2 = 15；
 	//   LOW = warp 1 + class 3 + state 1 + aux 1 + edge 1 + height 1 + noise 1 + 材质 1 = 10。
-	//   （LOW 与 MID 的差别只有 state 1↔3 与材质 1↔2；水面 program 的 aux 仍是 3，P3 再算。）
+	//   （LOW 与 MID 的差别是 state 1↔3、aux 1↔3 与材质 1↔2；水面 program 的 aux 一直是 3。）
 	// _cell_id 仍被 debug 视图引用，但本变体里它的所有消费点都已换成场函数 ⇒ 固定 -1
 	// （保留定义是为了不改下游函数原型，顺带让 cell_lut_uv() 的 LUT 读取自然退化）。
 	int _cell_id = -1;
@@ -536,10 +537,26 @@ void fragment() {
 			pk_cell_state_at(cell_field.c1),
 			pk_cell_state_at(cell_field.c2));
 #endif
-	// fog_k：1 次 texelFetch（主导格 aux.R）。padding 行的 aux 是哨兵（只有 R 被填成
-	// B_SEA_ICE），按今天 cid < 0 的口径取 1.0（padding 视作全知，迷雾层自己会盖住）。
+	// fog_k：aux.R。**MID/HIGH 与 state 同式走三格 w_raw 混合**，LOW 保持主导格 1 次。
+	//
+	// [fog-k-blend 2026-11-18] 原来只有主导格 1 次 texelFetch（方案 §3.3 把 fog_k 归为
+	// "类别量、不插值"）。但同一张 aux 表的 water_depth（water_pipeline 的 wd）一直是
+	// 三格混合的，地形的 biome 材质也有 terrain_ecotone_width 交织 —— 只有 fog_k 两套
+	// 都没走，于是 `fog_gray` 的纸白在格内恒定、格界跳变：**地块纹理连续、白不连续**。
+	// 用 field_w_valid（padding 权重已清零）而不是 field_w，避免把 padding 行的
+	// aux.R 哨兵（B_SEA_ICE）混进来；1e-5 下限保证三格全越界时不会除零，
+	// 那种像素随后会被 in_bounds(主导格)=0 的 mix 换成 1.0。
+#if defined(PK_QUALITY_LOW)
 	float field_fog = mix(1.0, pk_cell_aux_at(field_dom_c).r,
 			pk_field_row_in_bounds(field_dom_c));
+#else
+	float field_fog_lerp = (pk_cell_aux_at(cell_field.c0).r * field_w_valid.x
+			+ pk_cell_aux_at(cell_field.c1).r * field_w_valid.y
+			+ pk_cell_aux_at(cell_field.c2).r * field_w_valid.z)
+			/ max(field_valid, 1e-5);
+	float field_fog = mix(1.0, field_fog_lerp,
+			pk_field_row_in_bounds(field_dom_c));
+#endif
 #else
 	// map_index 一次采样：R=像素 biome，GB=cell id，A=landform。
 	vec4 map_px = visual_sample_map_index(uv);
@@ -874,14 +891,9 @@ void fragment() {
 		// 是明亮的浅海）。记忆层应该是**提亮+褪色**：往纸色靠，明度不低于原图，
 		// 顺便把块状边缘糊掉，和手绘纸本的底子也更搭。
 		if (fog_gray_enabled) {
-			float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
-			float mem_l = dot(col, vec3(0.299, 0.587, 0.114));
-			// 去饱和后的中性灰，稍微偏暖（纸），再向纸色提一档。
-			vec3 memory = vec3(mem_l) * vec3(1.02, 1.00, 0.96);
-			memory = mix(memory, vec3(0.88, 0.86, 0.82), 0.22);
-			// 暗部抬得比亮部多：海面/山影不再塌成黑块，亮部基本不动。
-			memory = max(memory, vec3(mem_l) * 0.86 + 0.10);
-			col = mix(col, memory, gray_amt);
+			// 灰化公式统一在 fog_memory.gdshaderinc（植被 / 资源共用同一份），
+			// 保证同一片未发现区里三层给出同一个纸白。
+			col = pk_fog_memory_wash(col, fog_k, fog_gray_strength);
 		}
 
 		// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。

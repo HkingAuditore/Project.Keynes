@@ -118,13 +118,38 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
    重写基线，并在提交说明附**分布差异摘要**（`land_h` p10/p50/p90/p99、terrain / landform 直方图、
    `river_count` / `lake_count` / `highland_river_count` / `peak_count` / `plateau_count` 的新旧值），
    否则下一个 PR 会看到一团无法归因的 drift。hash 严格、分布统计 5% 容差；精确 hash 只在**同平台同编译配置**下比，
-   其他配置用 `FINGERPRINT_HASH=0` 只比统计。**注意覆盖边界**：现有指纹只盖 cell 级 5 条数组
-   （`elevation` / `terrain` / `landform` / `has_river` / `hydro_parent`），bake 的 `height_buffer` hash **尚未覆盖**，
-   改了烘焙期侵蚀/限坡参数不会被这把锁抓到，别以为已经盖住了 bake。
+   其他配置用 `FINGERPRINT_HASH=0` 只比统计。**覆盖边界（2026-11-18 S7 T2 已补）**：指纹现在盖 **cell 级 5 条数组
+   + bake 的 `height_buffer`**（`SCHEMA_VERSION` 1→2，新增 `hashes.bake_height`（FNV-1a-64）、
+   `stats.bake_h_p50/p90/p99`（陆地像素）与 `meta.bake`；分辨率由**常量** `BAKE_HM_MAX_DIM=1024` + bounds 长宽比推出，
+   不依赖 `OS.has_feature()`，60×40 → **1024×606 = 620,544 px**、`wrap_period_x = 2286.307`；只对 **1 个种子**
+   `BAKE_SEEDS=[20260718]` 烘）。验收实测：`dem_slope_limit_per_relief` 5.0→5.1 ⇒
+   `hash DRIFT bake_height: baseline=14ff4f58e6917976 actual=0270977fe8927095`、exit 1，**其余 5 行 PASS 不受影响**，
+   恢复后 hash 一致；指纹测试实测 **693–782 ms**（≤ 1.5 s 预算）。⇒ **改烘焙期侵蚀 / 限坡参数现在也会被这把锁抓到**。
 
 诊断输出按需要临时导出即可，但一律用 **raw profile 键**（`ridge_debug_dump` → `ridge_add_arr`、
-`dem_erosion_area_dump` → `area_hex_buffer`），**不要加进 `DEM_DEFAULTS` / `ClimateProfile` export**：
-纯诊断、不改任何输出数组，避免把测试开关放进玩家可见的 profile。
+`dem_erosion_area_dump` → `area_hex_buffer`、`debug_dump_ridge_e0` → `e0_arr` / `ridge_e0_arr`、
+`spl_steepest_receiver` 作消融键），**不要加进 `DEM_DEFAULTS` / `ClimateProfile` export**：
+纯诊断、不改任何输出数组，避免把测试开关放进玩家可见的 profile。**默认零行为变化要用指纹证明**，见下一条。
+
+### 同参照场比较与诊断开关（2026-11-18）
+
+地形 S7 复核（同口径新旧对比 + 收益消融）又固化两条规矩，改判据 / 加诊断前先读：
+
+1. **新旧比较必须使用同一参照场。** 同一指标名在两次实现里可能落在**不同的格子集合**上，直接算「旧值 vs 新值」
+   等于中途换了一把尺子。反例就发生在本工程：脊抬升两版的 `ridge_add` 一个在 SPL 之后用最终 `E` 算、
+   一个在 SPL 之前用 `E0` 算，幅值差 **3–5 倍**、场相关仅 **0.40–0.52**、高脊格集合的 **Jaccard 只有 0.31–0.43**
+   ⇒ 由它导出的 M1 / M2b「旧基线 vs 新值」全部不可引用（结论一度被误读成「M2b 变差 5 → 41」，
+   同口径实测是 **0.6667 → 0.6667 不变**）。做法：**两版共用同一个参照场**——S7 用「以 E0 为输入的 `ridge_add`」
+   造判据集合，两版只在自己的最终 `E` / `hydro_parent` 上算指标；并**用 Jaccard 量化判据集合一致度**。
+   集合换了就声明不可比、只做同版本内对照（vs 零假设、vs 关 knob），或换 DLL 法并同时报 Jaccard。
+2. **诊断字段必须 opt-in、默认零行为变化，并以指纹证明。** 只加输出、只加开关也必须证明「默认路径逐位不变」，
+   否则「诊断」会变成第二个变量源。S7 的两个做法可直接照抄：
+   - `debug_dump_ridge_e0`（raw profile 键，默认 `false`）导出 `e0_arr` / `ridge_e0_arr`，开启时 elevation hash
+     与默认**完全一致**（`51a893b7a6b45835` / `22149fd9ffeee585`，两种子）；`spl_steepest_receiver`
+     （raw profile 键，默认 `true`）作消融键，`= 0` 确实改变地形（`4c944a48e0f8cb69`）⇒ 开关有效且默认不变。
+   - 改了实现结构（G2 的河心注入路径）时，用**双编译差分**自证等价：`dem_spl_inject_cell_area = false` 逐位复现
+     改动前的数字（X1 **0.7669 / 0.7809** 完全相同），另用「旧 header vs 新 header」双编译自检 **4 组指纹全同**。
+   指纹入口与重写规则沿用上一条（改世界就 `FINGERPRINT_WRITE=1` 重写基线并附分布差异摘要）。
 
 ## 经济平衡调参
 
@@ -300,6 +325,17 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   闪烁回归。地图纹理密度仍为低/中/高 12/16/20、自动 16，界面缩放和实际绘制
   分辨率不是同一件事。验证：`tests/rendering/mobile_msaa_policy_test.gd` 和
   `tests/ui/visual_tile_layout_test.gd`。
+
+## 地图自然点缀
+
+- `world_decoration_manifest.tres` 的散布、实例布局、气候和画质由既有植被层管理。主体轮廓取
+  `crown_atlas.png` 的 alpha，所有外形和视距共用该图集，近景按画质采样匹配的法线图。
+  风摆、物候、雪、光照和投影仍由渲染材质计算。
+- 新贴图从 `assets/textures/resource_art/source/crown/` 经 `tools/resource_art/build.py`
+  打包。修改图集顺序时同步 `vf_bitmap_cell()` 和导入层数。用
+  `tests/world/vegetation_pixel_normal_render_test.gd` 实际渲染全部外形，
+  另跑 `vegetation_form_scatter_test.gd`、`vegetation_family_layer_test.gd`
+  和 `tests/rendering/veg_variant_parity_probe.gd`。
 
 ## 天气与光照 Shader
 

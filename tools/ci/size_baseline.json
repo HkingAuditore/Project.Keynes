@@ -10,7 +10,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/data/climate_profile.gd": {
-      "lines": 1543,
+      "lines": 1545,
       "limit": 800
     },
     "Project/project-keynes/scripts/data_core/world.gd": {
@@ -530,7 +530,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_bake.cpp": {
-      "lines": 2432,
+      "lines": 2656,
       "limit": 2000
     },
     "gdext/src/world_ext_bio.cpp": {

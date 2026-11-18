@@ -10,7 +10,10 @@
 //    面积用 hex^2（单像素初值 1/hex_px^2），受体距离用 dir_len/hex_px。
 //  · 只降不升：spl_incise / crest_round / slope_limit 只会把高度往下改；deposit 只把 SPL
 //    削掉的部分**部分**填回，上限仍是 H_pre（不变量 1）。陆地像素不低于 sea_level+sea_eps
-//    （不变量 2）；wet 像素（水体/河心）逐位不变，且不作限坡约束源（不变量 3）。
+//    （不变量 2）；wet 像素（水体，G2 注入开启后不再含河心）逐位不变，且不作限坡约束源（不变量 3）。
+//  · [S7-T7 2026-11-18] G2 可选注入（Grid.inject_area/cell_id/cell_downstream 全非空才生效）：
+//    河心像素从「汇水出口」变成「带外部汇水的普通陆地像素」，照常进入流向树并被下切/限坡；
+//    三个指针任一为 nullptr 时，build_flow 的两处注入分支整体不进入，行为与改动前逐位一致。
 //  · 全串行、确定性：无 parallel_for、无 RNG、无时间依赖、无可变全局状态；同输入逐位同输出
 //    （不变量 6）。存储用 float、中间计算用 double，pow 用 double。
 //  · 一棵流向树贯穿全流程：build_flow 给出填洼面 / 拓扑序 / 最陡受体 / 汇水面积，后面的系数
@@ -51,7 +54,20 @@ struct Grid {
     float *H = nullptr;           // 入口 = h_pre；核修改它
     const float *H_pre = nullptr; // 入口高度快照（delta / 沉积上限 / 只降判据）
     const float *relief = nullptr;
-    const uint8_t *wet = nullptr; // 1 = 水体或河心像素（出口，不参与下切/限坡）
+    // 1 = 水体/出口像素（不参与下切/限坡）。G2 注入开启时只含**真水体**（pk_is_water_terrain），
+    // 河心像素不再是湿区；关闭时沿用旧语义（水体 ∪ 河心）。
+    const uint8_t *wet = nullptr;
+    // ── [S7-T7 2026-11-18] G2：cell 汇水注入（计划 §10.4；四个成员全为缺省值 = 不注入）──────
+    // 像素层原来的「河心像素 = wet 出口」把汇水在河心截断（实测 A_hex p99 只有 1.55 hex²），
+    // 干流在像素层从不被 SPL 下切。注入开启后河心像素改为「带外部汇水的普通陆地像素」：
+    //   inject_area[i] > 0  ⇔ i 是河心像素，其初始汇水额外加上 inject_area[i]（单位 hex²）；
+    //   cell_id[i]          = i 所属 cell.index（与 cell_downstream 同一下标空间）；
+    //   cell_downstream[c]  = cell c 的声明下游 cell（-1 = 无），供受体偏好用（风险 G-K3）。
+    // 三个指针任一为 nullptr（或 n_cells <= 0）⇒ 注入关闭，build_flow 整段走旧实现（逐位基线）。
+    const float *inject_area = nullptr;        // 每像素注入面积（hex²，只有河心像素非 0）
+    const int32_t *cell_id = nullptr;          // 每像素所属 cell.index（-1 = 未知）
+    const int32_t *cell_downstream = nullptr;  // by cell.index，长度 n_cells（-1 = 无下游）
+    int32_t n_cells = 0;                       // cell_downstream 长度 / cell_id 取值上界
 };
 
 struct Flow {
@@ -127,6 +143,18 @@ inline bool wrap_on(const Grid &g) {
 
 inline bool is_wet(const Grid &g, size_t i) {
     return g.wet != nullptr && g.wet[i] != 0;
+}
+
+// [S7-T7 2026-11-18] G2 注入是否真正生效：三条 cell 拓扑指针齐备且 n_cells 有效才算，
+// 否则 build_flow 的两处注入分支整体不进入（= 改动前的逐位基线）。
+inline bool inject_on(const Grid &g) {
+    return g.inject_area != nullptr && g.cell_id != nullptr
+            && g.cell_downstream != nullptr && g.n_cells > 0;
+}
+
+// [S7-T7] 河心像素判据：注入面积 > 0（由调用方按「河 SDF ≥ 出口阈值且非真水体」写入）。
+inline bool is_river_px(const Grid &g, size_t i) {
+    return g.inject_area != nullptr && g.inject_area[i] > 0.0f;
 }
 
 inline double relief_at(const Grid &g, size_t i) {
@@ -304,31 +332,94 @@ inline void build_flow(const Grid &g, Flow &fl, Stats *st = nullptr) {
 
     // 2. 最陡受体：argmax_k (z[i]-z[nb_k])/DL[k]，只接受严格更低的邻点；平局取 k 小者。
     //    水体/出口 rcv = -1。受体取自填洼面（保证严格更低 → order 仍是合法拓扑序）。
+    //
+    // [S7-T7 2026-11-18] G2（计划 §10.4-3）：注入开启时，**河心像素**的受体优先选「同为河心、
+    //   且所属 cell 等于本 cell 或本 cell 的下游 cell」的邻像素（平局再取最陡），免得干流在格内
+    //   被最陡下降打散成乱走的折线（风险 G-K3）；找不到合格河心邻时退回普通最陡下降。
+    //   注入关闭时下面的旧循环**一字不改、整段独走**（没有任何新增的逐像素判断）——这是
+    //   dem_spl_inject_cell_area=false 时逐位一致的关键。
     fl.rcv.assign(N, -1);
     fl.rcv_k.assign(N, 0);
-    for (int y = 0; y < R; ++y) {
-        for (int x = 0; x < cols; ++x) {
-            const size_t i = size_t(y) * size_t(W) + size_t(x);
-            if (detail::is_wet(g, i)) continue;
-            const double zi = double(fl.z_fill[i]);
-            double best_s = 0.0;
-            int best_k = -1;
-            int32_t best_n = -1;
-            for (int k = 0; k < 8; ++k) {
-                const int32_t n = detail::neighbor_of(x, y, k, cols, R, W, wrap);
-                if (n < 0) continue;
-                const double dz = zi - double(fl.z_fill[size_t(n)]);
-                if (dz <= 0.0) continue;                       // 只要严格更低
-                const double slope = dz / dir_len()[k];
-                if (slope > best_s) {                          // 严格 >：平局保留 k 小者
-                    best_s = slope;
-                    best_k = k;
-                    best_n = n;
+    const bool inject_on = detail::inject_on(g);
+    if (!inject_on) {
+        for (int y = 0; y < R; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                const size_t i = size_t(y) * size_t(W) + size_t(x);
+                if (detail::is_wet(g, i)) continue;
+                const double zi = double(fl.z_fill[i]);
+                double best_s = 0.0;
+                int best_k = -1;
+                int32_t best_n = -1;
+                for (int k = 0; k < 8; ++k) {
+                    const int32_t n = detail::neighbor_of(x, y, k, cols, R, W, wrap);
+                    if (n < 0) continue;
+                    const double dz = zi - double(fl.z_fill[size_t(n)]);
+                    if (dz <= 0.0) continue;                       // 只要严格更低
+                    const double slope = dz / dir_len()[k];
+                    if (slope > best_s) {                          // 严格 >：平局保留 k 小者
+                        best_s = slope;
+                        best_k = k;
+                        best_n = n;
+                    }
+                }
+                if (best_k >= 0) {
+                    fl.rcv[i] = best_n;
+                    fl.rcv_k[i] = uint8_t(best_k);
                 }
             }
-            if (best_k >= 0) {
-                fl.rcv[i] = best_n;
-                fl.rcv_k[i] = uint8_t(best_k);
+        }
+    } else {
+        // ── [S7-T7] 注入分支：河心优先受体；其余像素（以及优先集为空时的河心像素）算式与旧实现相同 ──
+        for (int y = 0; y < R; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                const size_t i = size_t(y) * size_t(W) + size_t(x);
+                if (detail::is_wet(g, i)) continue;
+                const double zi = double(fl.z_fill[i]);
+                double best_s = 0.0;
+                int best_k = -1;
+                int32_t best_n = -1;
+                if (detail::is_river_px(g, i)) {
+                    const int32_t ci = g.cell_id[i];
+                    int32_t cd = -1;
+                    if (ci >= 0 && ci < g.n_cells) cd = g.cell_downstream[ci];
+                    for (int k = 0; k < 8; ++k) {
+                        const int32_t n = detail::neighbor_of(x, y, k, cols, R, W, wrap);
+                        if (n < 0) continue;
+                        const size_t sn = size_t(n);
+                        if (!detail::is_river_px(g, sn)) continue;      // 必须是河心
+                        const int32_t cn = g.cell_id[sn];
+                        if (cn < 0 || cn >= g.n_cells) continue;
+                        if (!((ci >= 0 && cn == ci) || (cd >= 0 && cn == cd))) continue;  // 本格或下游格
+                        const double dz = zi - double(fl.z_fill[sn]);
+                        if (dz <= 0.0) continue;                        // 仍要求严格更低（拓扑序）
+                        const double slope = dz / dir_len()[k];
+                        if (slope > best_s) {                           // 平局保留 k 小者
+                            best_s = slope;
+                            best_k = k;
+                            best_n = n;
+                        }
+                    }
+                }
+                if (best_k < 0) {
+                    // 非河心 / 河心但优先集为空：退回最陡下降（与旧实现同一算式同一顺序）
+                    best_s = 0.0;
+                    for (int k = 0; k < 8; ++k) {
+                        const int32_t n = detail::neighbor_of(x, y, k, cols, R, W, wrap);
+                        if (n < 0) continue;
+                        const double dz = zi - double(fl.z_fill[size_t(n)]);
+                        if (dz <= 0.0) continue;
+                        const double slope = dz / dir_len()[k];
+                        if (slope > best_s) {
+                            best_s = slope;
+                            best_k = k;
+                            best_n = n;
+                        }
+                    }
+                }
+                if (best_k >= 0) {
+                    fl.rcv[i] = best_n;
+                    fl.rcv_k[i] = uint8_t(best_k);
+                }
             }
         }
     }
@@ -336,6 +427,18 @@ inline void build_flow(const Grid &g, Flow &fl, Stats *st = nullptr) {
     // 3. 汇水面积：沿 order 逆序（上游 → 下游）累加；wet 不累加也不作目标。
     const double unit_area = 1.0 / std::max(1e-12, g.hex_px * g.hex_px);
     fl.area_hex.assign(N, float(unit_area));
+    // [S7-T7 2026-11-18] G2（计划 §10.4-2）：河心像素的初始汇水 = 1/hex_px² + inject_area[i]。
+    //   注入关闭时这段整体跳过，初值仍是逐像素的 1/hex_px²（与改动前逐位相同）。
+    if (inject_on) {
+        for (int y = 0; y < R; ++y) {
+            const size_t row = size_t(y) * size_t(W);
+            for (int x = 0; x < cols; ++x) {
+                const size_t i = row + size_t(x);
+                const double add = double(g.inject_area[i]);
+                if (add > 0.0) fl.area_hex[i] = float(double(fl.area_hex[i]) + add);
+            }
+        }
+    }
     for (size_t oi = fl.order.size(); oi-- > 0;) {
         const int32_t i = fl.order[oi];
         if (detail::is_wet(g, size_t(i))) continue;

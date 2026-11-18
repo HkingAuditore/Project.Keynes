@@ -1088,14 +1088,16 @@ static func _configure_cloud_shadow_field(host) -> void:
 		host.cloud_shadow_shape_contrast,
 		host.cloud_shadow_noise_warp,
 		host.cloud_shadow_mask_bias,
-		host.cloud_shadow_cell_scale,
+		host.cloud_shadow_tile_repeat,
 		host.cloud_shadow_world_scale,
 		host.cloud_shadow_erosion,
 		host.cloud_shadow_uv_scroll_gain,
 		host.cloud_shadow_dynamic_detail_gain,
 		host.cloud_shadow_dynamic_warp_gain,
 		host.cloud_shadow_edge_softness,
-		host.cloud_shadow_wind_influence)
+		host.cloud_shadow_wind_influence,
+		host.cloud_shadow_interior_detail,
+		host.cloud_shadow_detail_texel_world)
 	host._cloud_shadow_field.configure(
 		host._world.world_bounds,
 		host._world,
@@ -1125,14 +1127,16 @@ static func _push_cloud_shadow_tuning(host) -> void:
 		host.cloud_shadow_shape_contrast,
 		host.cloud_shadow_noise_warp,
 		host.cloud_shadow_mask_bias,
-		host.cloud_shadow_cell_scale,
+		host.cloud_shadow_tile_repeat,
 		host.cloud_shadow_world_scale,
 		host.cloud_shadow_erosion,
 		host.cloud_shadow_uv_scroll_gain,
 		host.cloud_shadow_dynamic_detail_gain,
 		host.cloud_shadow_dynamic_warp_gain,
 		host.cloud_shadow_edge_softness,
-		host.cloud_shadow_wind_influence)
+		host.cloud_shadow_wind_influence,
+		host.cloud_shadow_interior_detail,
+		host.cloud_shadow_detail_texel_world)
 	_push_cloud_shadow_material_inputs(host)
 
 

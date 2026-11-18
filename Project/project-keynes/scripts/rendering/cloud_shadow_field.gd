@@ -8,9 +8,12 @@ const COMPOSITE_SHADER_PATH := "res://shaders/cloud_shadow_composite.gdshader"
 const DEBUG_SHADER_PATH := "res://shaders/cloud_shadow_debug.gdshader"
 ## 云影强度是最终直射光的最大压暗比例。云量遮罩本身已经做了柔化，
 ## 这里提高到可感知范围，避免中等云量只有几个百分点的变化。
-const CLOUD_SHADOW_STRENGTH_HIGH := 0.85
-const CLOUD_SHADOW_STRENGTH_MID := 0.62
-const CLOUD_SHADOW_STRENGTH_LOW := 0.48
+## [cloud-tiling 2026-11-18] 合成侧已改成软压缩（见 cloud_shadow.gdshaderinc），
+## 不再有 clamp 平台，所以强度整体下调：0.62 在满云心约压暗 41% 直射、
+## 典型云体约 18%，且从云心到边缘是连续梯度，而不是原来 0.85 → 硬截 0.60 的死黑。
+const CLOUD_SHADOW_STRENGTH_HIGH := 0.62
+const CLOUD_SHADOW_STRENGTH_MID := 0.58
+const CLOUD_SHADOW_STRENGTH_LOW := 0.46
 ## [cloud-tex 2026-11-07] 离线烘焙的 Perlin-Worley 噪声（4 通道多尺度、无缝）。
 ## 由 tools/prebake_cloud_shadow_noise.gd 生成；缺失时云影整体关闭而不是画成全黑。
 const CLOUD_NOISE_TEXTURE_PATH := "res://assets/textures/cloud_shadow/cloud_noise_rgba.res"
@@ -26,7 +29,15 @@ const CLOUD_SHADOW_DYNAMIC_WARP_GAIN := 0.80
 const CLOUD_SHADOW_EDGE_SOFTNESS := 1.10
 const CLOUD_SHADOW_WIND_INFLUENCE := 0.22
 const CLOUD_SHADOW_MASK_BIAS := 0.10
-const CLOUD_SHADOW_CELL_SCALE := 0.75
+## [cloud-tiling 2026-11-18] 每个世界 wrap 周期里铺几遍噪声纹理（整数）。
+## 1 = 云团直径 3~5 格；2 = 减半，云块更多更碎。必须整数，否则接缝错半格。
+const CLOUD_SHADOW_TILE_REPEAT := 1.0
+## 云体内部厚薄：0 = 云心是一个常数（一块铁板），1 = 最强。
+const CLOUD_SHADOW_INTERIOR_DETAIL := 0.45
+## 云形采样的目标世界 texel（越大越柔）。会再和场像素的世界尺寸取大者，
+## 所以低分辨率场/LOW 档也不会走样。4.0 只有在 HIGH 的 1024x512 场上才咬得住；
+## MID/LOW 会被场 texel 顶回去。
+const CLOUD_SHADOW_DETAIL_TEXEL_WORLD := 4.0
 ## [cloud-shape 2026-11-07] 0.0045 时一个噪声单元≈222 世界单位（约 6 hex），
 ## 云团直径 7~12 hex，整屏只有 3~5 团，读起来像"整片明暗不均"。0.0160 把
 ## 单元压到约 62 世界单位（1.6 hex），云团直径 3~5 hex，一朵云影在 zoom 0.9
@@ -74,7 +85,9 @@ var _dynamic_warp_gain := CLOUD_SHADOW_DYNAMIC_WARP_GAIN
 var _edge_softness := CLOUD_SHADOW_EDGE_SOFTNESS
 var _wind_influence := CLOUD_SHADOW_WIND_INFLUENCE
 var _mask_bias := CLOUD_SHADOW_MASK_BIAS
-var _cell_scale := CLOUD_SHADOW_CELL_SCALE
+var _tile_repeat := CLOUD_SHADOW_TILE_REPEAT
+var _interior_detail := CLOUD_SHADOW_INTERIOR_DETAIL
+var _detail_texel_world := CLOUD_SHADOW_DETAIL_TEXEL_WORLD
 var _world_scale := CLOUD_SHADOW_WORLD_SCALE
 var _erosion := CLOUD_SHADOW_EROSION
 var _field_update_accum := 1.0
@@ -99,7 +112,13 @@ var _field_size := Vector2i.ZERO
 static func resolution_for_quality(quality: int, mobile_or_web: bool) -> Vector2i:
 	if mobile_or_web:
 		return [Vector2i(128, 64), Vector2i(192, 96), Vector2i(256, 128)][clampi(quality, 0, 2)]
-	return [Vector2i(128, 64), Vector2i(256, 128), Vector2i(512, 256)][clampi(quality, 0, 2)]
+	# [cloud-tiling 2026-11-18] HIGH 从 512x256 提到 1024x512。原来这一档是**分辨率**
+	# 而不是采样次数在限制细节：512 宽铺满 3155 世界单位 = 6.2 单位/texel，而噪声
+	# 纹理一个 texel 只有 3.0 单位 —— 场比噪声还粗一倍，云心当然是一块均匀的灰。
+	# 升到 1024 后场 texel 降到 3.1/4.1，噪声纹理（1024）才真正被用上。
+	# 代价是像素数 ×4；本轮未在弱桌面/集显实测，若超预算把这条改回 512x256 即可，
+	# 云形采样 LOD 会自动跟着变粗（不会走样）。
+	return [Vector2i(128, 64), Vector2i(256, 128), Vector2i(1024, 512)][clampi(quality, 0, 2)]
 
 
 static func quality_for_tier(quality: int, tier: String) -> int:
@@ -257,14 +276,16 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 		shape_contrast: float = CLOUD_SHADOW_SHAPE_CONTRAST,
 		noise_warp: float = CLOUD_SHADOW_NOISE_WARP,
 		mask_bias: float = CLOUD_SHADOW_MASK_BIAS,
-		cell_scale: float = CLOUD_SHADOW_CELL_SCALE,
+		tile_repeat: float = CLOUD_SHADOW_TILE_REPEAT,
 		world_scale: float = CLOUD_SHADOW_WORLD_SCALE,
 		erosion: float = CLOUD_SHADOW_EROSION,
 		uv_scroll_gain: float = CLOUD_SHADOW_UV_SCROLL_GAIN,
 		dynamic_detail_gain: float = CLOUD_SHADOW_DYNAMIC_DETAIL_GAIN,
 		dynamic_warp_gain: float = CLOUD_SHADOW_DYNAMIC_WARP_GAIN,
 		edge_softness: float = CLOUD_SHADOW_EDGE_SOFTNESS,
-		wind_influence: float = CLOUD_SHADOW_WIND_INFLUENCE) -> void:
+		wind_influence: float = CLOUD_SHADOW_WIND_INFLUENCE,
+		interior_detail: float = CLOUD_SHADOW_INTERIOR_DETAIL,
+		detail_texel_world: float = CLOUD_SHADOW_DETAIL_TEXEL_WORLD) -> void:
 	_strength_high = clampf(strength_high, 0.0, 1.0)
 	_strength_mid = clampf(strength_mid, 0.0, 1.0)
 	_strength_low = clampf(strength_low, 0.0, 1.0)
@@ -278,7 +299,9 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 	_edge_softness = clampf(edge_softness, 0.0, 2.0)
 	_wind_influence = clampf(wind_influence, 0.0, 1.0)
 	_mask_bias = clampf(mask_bias, 0.0, 0.8)
-	_cell_scale = clampf(cell_scale, 0.35, 2.5)
+	_tile_repeat = clampf(tile_repeat, 1.0, 8.0)
+	_interior_detail = clampf(interior_detail, 0.0, 1.0)
+	_detail_texel_world = clampf(detail_texel_world, 1.0, 64.0)
 	_world_scale = clampf(world_scale, 0.001, 0.05)
 	_erosion = clampf(erosion, 0.0, 1.0)
 	if _field_material != null:
@@ -292,9 +315,12 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 		_field_material.set_shader_parameter("cloud_shadow_edge_softness", _edge_softness)
 		_field_material.set_shader_parameter("cloud_shadow_wind_influence", _wind_influence)
 		_field_material.set_shader_parameter("cloud_shadow_mask_bias", _mask_bias)
-		_field_material.set_shader_parameter("cloud_shadow_cell_scale", _cell_scale)
+		_field_material.set_shader_parameter("cloud_shadow_tile_repeat", _tile_repeat)
+		_field_material.set_shader_parameter("cloud_shadow_interior_detail", _interior_detail)
+		_field_material.set_shader_parameter("cloud_shadow_detail_texel_world", _detail_texel_world)
 		_field_material.set_shader_parameter("cloud_shadow_world_scale", _world_scale)
 		_field_material.set_shader_parameter("cloud_shadow_erosion", _erosion)
+		_push_noise_texel_world()
 	_update_visibility()
 
 
@@ -457,9 +483,12 @@ func _configure_shaders() -> void:
 			_field_material.set_shader_parameter("cloud_shadow_edge_softness", _edge_softness)
 			_field_material.set_shader_parameter("cloud_shadow_wind_influence", _wind_influence)
 			_field_material.set_shader_parameter("cloud_shadow_mask_bias", _mask_bias)
-			_field_material.set_shader_parameter("cloud_shadow_cell_scale", _cell_scale)
+			_field_material.set_shader_parameter("cloud_shadow_tile_repeat", _tile_repeat)
+			_field_material.set_shader_parameter("cloud_shadow_interior_detail", _interior_detail)
+			_field_material.set_shader_parameter("cloud_shadow_detail_texel_world", _detail_texel_world)
 			_field_material.set_shader_parameter("cloud_shadow_world_scale", _world_scale)
 			_field_material.set_shader_parameter("cloud_shadow_erosion", _erosion)
+			_push_noise_texel_world()
 	var debug_shader := ResourceLoader.load(DEBUG_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if debug_shader != null:
 		_debug_material = ShaderMaterial.new()
@@ -567,6 +596,7 @@ func _push_static_inputs() -> void:
 	_field_material.set_shader_parameter("wrap_period_x", _wrap_period_x)
 	_field_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims))
 	_field_material.set_shader_parameter("cloud_shadow_hex_world_diameter", _hex_world_diameter)
+	_push_noise_texel_world()
 	if _visual_tiles != null and bool(_visual_tiles.ready) \
 			and String(_visual_tiles.layout.mode) == "tiled":
 		var layout = _visual_tiles.layout
@@ -580,6 +610,18 @@ func _push_static_inputs() -> void:
 		_field_material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
 	else:
 		_field_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+
+
+## 云形采样 LOD 需要的"一个噪声 texel 等于多少世界单位"：tile_period / 纹理宽度。
+## 必须在 repeat / wrap 周期 / 纹理分辨率三者任一变化后重推，否则 LOD 会算错。
+func _push_noise_texel_world() -> void:
+	if _field_material == null:
+		return
+	var texture := _shared_noise_texture()
+	var width := float(texture.get_width()) if texture != null else 512.0
+	var period := maxf(_wrap_period_x, 1.0) / maxf(round(_tile_repeat), 1.0)
+	_field_material.set_shader_parameter("cloud_noise_texel_world",
+		period / maxf(width, 1.0))
 
 
 func _sync_weather_sources(force: bool) -> void:

@@ -24,12 +24,19 @@ vec2 cloud_shadow_wrap_map_uv(vec2 map_uv) {
 	return map_uv;
 }
 
+// [cloud-tiling 2026-11-18] 软压缩的上限尺度。原来这里是硬 clamp(…, 0.60)：
+// field 只要超过 0.60/strength≈0.7 就全部压成同一个常数，一块云心于是成了一片
+// 完全同色的暗斑（"铁板"）；同时云影最深能吃掉 60% 直射 + 21% 环境，暗部直接
+// 死黑。改成指数软膝后单调性保留（云心越厚仍然越暗），但永远碰不到平台。
+const float CLOUD_SHADOW_SOFT_MAX = 0.85;
+
 float cloud_shadow_amount(vec2 map_uv) {
 	if (!cloud_shadow_field_bound || cloud_shadow_strength <= 0.0) {
 		return 0.0;
 	}
 	vec2 uv = cloud_shadow_wrap_map_uv(map_uv);
-	return clamp(texture(cloud_shadow_tex, uv).r * cloud_shadow_strength, 0.0, 0.60);
+	float raw = texture(cloud_shadow_tex, uv).r * cloud_shadow_strength;
+	return CLOUD_SHADOW_SOFT_MAX * (1.0 - exp(-raw / CLOUD_SHADOW_SOFT_MAX));
 }
 
 float cloud_shadow_direct_visibility(vec2 map_uv, float local_day) {

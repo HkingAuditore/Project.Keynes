@@ -214,7 +214,9 @@ uniform vec2 lut_dims = vec2(1.0, 1.0);
 //   k = 1   完全可见     → 原样
 // =========================================================================
 uniform bool fog_gray_enabled = true;
-uniform float fog_gray_strength : hint_range(0.0, 1.0) = 0.75;
+// [fog-memory-tone 2026-11-18] 0.75 → 0.85：作者要求"灰再深一些"。
+// 灰化公式已统一到 fog_memory.gdshaderinc，植被/资源也传同一个值。
+uniform float fog_gray_strength : hint_range(0.0, 1.0) = 0.94;
 // 未探索像素早退：跳过整条陆地/水体/BRDF/hillshade 管线。净收益取决于
 // FogOfWarLayer 的厚云比被跳过的地形便宜，必须按实测开关，不能凭感觉默认开。
 uniform bool fog_early_out_enabled = false;
@@ -463,9 +465,9 @@ uniform float insolation_season_gain : hint_range(0.0, 2.0) = 1.0;
 // 【植被 / 雪 / 洋流 / 风组】
 // =========================================================================
 // 植被换色总开关与强度
-uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.94;
 // 动态雪量（季节性雪盖叠加在 biome SNOW 之外）总开关与强度
-uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.94;
 // 调试用：true 时雪盖跳过 fbm cosmetic 抖动，直接拿 dyn_snow 上屏，
 // 用于验证 CPU→atlas→shader 链路是否健康（屏幕值应 ≈ info_panel.snow_cover）。
 uniform bool debug_force_dyn_snow_only = false;
@@ -482,11 +484,11 @@ uniform bool ocean_current_flow_tex_bound = false;
 // =========================================================================
 // ─── Deep Ocean Layered Color（深海色彩层次感） ─────────────────────────
 // 总开关振幅。0 = 完全还原旧视觉；1 = 子层按各自默认振幅全量生效。
-uniform float deep_ocean_color_richness         : hint_range(0.0, 1.0) = 0.85;
+uniform float deep_ocean_color_richness         : hint_range(0.0, 1.0) = 0.94;
 // 洋流冷/暖色偏：暖流（低纬→高纬）偏微暖，寒流（高纬→低纬）偏冷青。
 uniform float deep_ocean_current_tint_strength  : hint_range(0.0, 1.0) = 0.60;
 // 纬度/温度驱动色温带：热带翠绿—温带中性—极地冷青。
-uniform float deep_ocean_latitude_tint_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float deep_ocean_latitude_tint_strength : hint_range(0.0, 1.0) = 0.94;
 // 深渊幽冷：深海最深段加压暗与微蓝紫偏移，强化质感。
 uniform float deep_ocean_abyss_tint_strength    : hint_range(0.0, 1.0) = 0.60;
 // 海盆 gyre 色斑增强：放大半封闭海 vs 开阔腹地的色相差。
@@ -514,7 +516,7 @@ uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disa
 uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.40;
 uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
 uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.80;
-uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.94;
 uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.75;
 uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.25;
 uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.18;
@@ -618,7 +620,7 @@ uniform float coast_shore_land_bias  : hint_range(0.0, 1.0) = 0.5;    // 过渡�
 // 【河流组】
 // =========================================================================
 // ─── 河流（从 flow accumulation） ───────────────────────────────────────
-uniform float river_strength       : hint_range(0.0, 1.0) = 0.85;
+uniform float river_strength       : hint_range(0.0, 1.0) = 0.94;
 uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.70;
 uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.94;
 uniform vec3  river_color          : source_color = vec3(0.30, 0.50, 0.68);

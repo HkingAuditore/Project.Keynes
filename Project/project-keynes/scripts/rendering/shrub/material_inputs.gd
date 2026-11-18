@@ -10,6 +10,16 @@ static func set_world_time(host, v: float) -> void:
 
 	if host._material != null:
 		host._material.set_shader_parameter("world_time", v)
+		# [veg-fog-knowledge 2026-11-18] 知识度表兜底。`set_world_material_inputs` 可能
+		# 在世界还没烘完时跑过一次（那时 enum_lut_tex 是 null，参数被设成空纹理 ⇒
+		# shader 里 a 恒为 1 ⇒ 植被永远判成"可见"、知识度淡出完全不生效）。而
+		# `_apply_cell_lut_rebind` 只在"对象变了"时补，空→非空这次变化它看不见。
+		# 这里只是一次引用比较，稳态零开销。
+		if host._world != null:
+			var tex: Texture2D = host._world.enum_lut_tex
+			if tex != null and host._enum_lut_bound != tex:
+				host._enum_lut_bound = tex
+				host._material.set_shader_parameter("enum_lut", tex)
 
 
 
@@ -380,26 +390,8 @@ static func _ensure_resources(host) -> void:
 	_push_cloud_shadow_uniforms(host, )
 
 
-# ─── web 近景 vegetation form 开关（2026-10-31）──────────────────────────────
-# 背景：整套近景 form（broadleaf/conifer/palm/...）在 web 上首次绘制编译要 45s 级，
-# 当时的止损是把近景整段关掉 —— _shader_quality_define_prefix() 里给 web 加
-# PK_VEG_FAR_ONLY，vegetation_impostor 的 fragment 只剩 vf_far()，vegetation_forms
-# 里那一整套近景函数没人引用，编译器把它们全丢掉。
-#
-# 现在加载链路已经改成"进世界后分帧补 chunk"，唯一的风险回到"首次绘制 vegetation
-# shader 编译"这一项，所以把近景放回来，但默认只编 4 个主力家族（PK_VEG_NEAR_MIN）。
-#
-# 三个档位只改下面两个常量，不用动 shader：
-#   PK_WEB_ENABLE_VEG_NEAR_FORMS = false
-#       → 老行为：PK_VEG_FAR_ONLY，近景 0 个 form（远景软盘），编译最省。
-#   = true 且 PK_WEB_VEG_NEAR_FULL_FORMS = false（当前默认）
-#       → PK_VEG_NEAR_MIN：阔叶 / 针叶 / 灌木 / 草丛 4 个家族走近景，
-#         其余 13 个 form 直接落到 vf_far。
-#   = true 且 PK_WEB_VEG_NEAR_FULL_FORMS = true
-#       → 桌面同款全 17 个 form，最费编译时间（验证用，不要当默认）。
-# 回退：把 PK_WEB_ENABLE_VEG_NEAR_FORMS 改回 false，重新导出一版 web 即可，
-# shader 源文件不用改；首次编译成本仍然可以从 WebTelemetry 的 veg_shader 事件读。
-
+# Web 各档共用装饰图集。预热和隐藏批次可用单张贴图，世界就绪后恢复簇布局。
+# PK_VEG_NEAR_MIN 继续按画质控制法线光照。
 
 ## 受限平台（web / mobile）共用的 compile-time 档位宏（shader_quality.gdshaderinc
 ## 按这三个宏展开 PK_QUALITY_* / PK_MOBILE_ANY）。
@@ -593,6 +585,10 @@ static func _sync_world_material_inputs(host, _use_cell_indirection: bool) -> vo
 		host._material.set_shader_parameter("map_index_atlas", host._world.enum_atlas_tex)
 	host._material.set_shader_parameter("dyn_lut", host._world.dyn_lut_tex)
 	host._material.set_shader_parameter("eco_lut", host._world.eco_lut_tex)
+	# [veg-fog-knowledge 2026-11-18] A 通道 = 知识度。植被按它压暗/去饱和/降不透明度，
+	# 与地形、资源、建筑、迷雾读同一张表（此前植被完全不知道迷雾存在）。
+	# 这张表会随每日重烘换对象，漂移由 renderer_material_publish 的 enum_lut rebind 补。
+	host._material.set_shader_parameter("enum_lut", host._world.enum_lut_tex)
 	host._material.set_shader_parameter("lut_dims", Vector2(host._world.lut_dims.x, host._world.lut_dims.y))
 	# [veg-normal-shading] 地形宏观法线 + 高度图（与地形 brdf 同源数据），植被 shader 用于 NdotL/谷地 AO。
 	if not tiled:
@@ -614,6 +610,16 @@ static func _sync_world_material_inputs(host, _use_cell_indirection: bool) -> vo
 			host._shadow_material.set_shader_parameter("map_index_atlas", host._world.enum_atlas_tex)
 		host._shadow_material.set_shader_parameter("dyn_lut", host._world.dyn_lut_tex)
 		host._shadow_material.set_shader_parameter("lut_dims", Vector2(host._world.lut_dims.x, host._world.lut_dims.y))
+
+
+## [veg-fog-knowledge 2026-11-18] enum_lut 每天重烘会换纹理对象（见
+## renderer_material_publish 的 "material held a stale LUT texture object" 分支），
+## 植被材质必须跟着补一枪，否则第二天起知识度就停在旧快照上。
+static func set_enum_lut_texture(host, tex: Texture2D) -> void:
+	if tex == null or host._material == null:
+		return
+	host._enum_lut_bound = tex
+	host._material.set_shader_parameter("enum_lut", tex)
 
 
 

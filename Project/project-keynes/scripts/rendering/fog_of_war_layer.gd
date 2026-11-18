@@ -105,6 +105,12 @@ var _tod_debug_sun_height_scale: float = 1.0
 
 func _ready() -> void:
 	z_index = 12
+	# [fog-z-absolute 2026-11-18] 必须与植被同口径用**绝对 z**。
+	# 植被（ShrubLayer.shrub/lifecycle.gd）是 z_as_relative=false + z=0..3，而本层原先是
+	# 相对 z（12 + HexRenderer 的 0）。两者混用同一个 CanvasLayer 时，相对 z 的项会跟着
+	# 父的绘制组走，实测结果是 z=3 的树冠压在 z=12 的迷雾之上（未探索厚云里浮出树点）。
+	# 改成绝对 z 后，12 与 3 在同一把尺子上比较。
+	z_as_relative = false
 	top_level = true
 	visible = false
 	# 运行期档平台的首帧兜底：_fog_quality 的成员初值 3 是桌面语义（全效果）。

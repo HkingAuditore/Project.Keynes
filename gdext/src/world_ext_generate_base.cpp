@@ -117,6 +117,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // 生产与 perf-validation 都不传该键。
     const bool ridge_debug_dump = geti(profile, "ridge_debug_dump", 0) != 0;
     PackedFloat32Array ridge_add_diag;
+    // [S7-T1 诊断 2026-11-18] `debug_dump_ridge_e0`（bool，默认 false）：导出 E0 与 E0 版 ridge_add（见 §R 之后）。
+    const bool ridge_debug_e0_dump = geti(profile, "debug_dump_ridge_e0", 0) != 0;
+    PackedFloat32Array e0_diag;
+    PackedFloat32Array ridge_e0_diag;
+    // [S7-T1 消融开关 2026-11-18] `spl_steepest_receiver`（bool，默认 true）：
+    //   false ⇒ §2.4' 用 Priority-Flood 的「关闭者」当受体，复刻 P5-3 之前的旧行为。
+    //   仅供 §4「收益消融」把 M2/M4 的收益拆到「扩散 / 最陡受体 / 脊抬升」三者身上；
+    //   默认 true 时与现状逐位一致（有指纹门禁证明）。实验结束后按计划 T12 决定去留。
+    const bool spl_steepest_receiver = geti(profile, "spl_steepest_receiver", 1) != 0;
     const double meso_weight = getd(profile, "meso_weight", 0.40);   // 2026-06-19 回退：保留多块大陆+岛屿群（用户认可的形状）
     const double offshore_amp = getd(profile, "offshore_amp", 0.45);  // 2026-06-19 回退：保留近海点缀岛屿/群岛
     // [macro-relief 2026-06-19] 低频大尺度起伏权重。meso(400×高频)负责海岸破碎/群岛(用户认可，
@@ -739,6 +748,18 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         ridge_add_diag.resize(n);
         for (int i = 0; i < n; ++i) ridge_add_diag[i] = ridge_add[size_t(i)];
     }
+    // [S7-T1 诊断 2026-11-18] `debug_dump_ridge_e0`：导出 **E0（SPL 入口冻结面）** 与 **在 E0 上算的 ridge_add**。
+    // 用途：S7 §3「同口径新旧对比」——两版的 §1 地台/§2.55 洋底一致 ⇒ E0 两版相同，用它当「哪里是脊」的公共参照场，
+    // 跨版本比较才成立（上一轮用各自版本的 ridge_add 比较，高脊格集合 Jaccard 只有 0.31–0.43 ⇒ 比不了）。
+    // 此刻 E 尚未被 §2.4' 改写，所以直接拷 E 就是 E0。**纯诊断**：只在传该键时分配并返回，不参与任何计算。
+    if (ridge_debug_e0_dump) {
+        e0_diag.resize(n);
+        ridge_e0_diag.resize(n);
+        for (int i = 0; i < n; ++i) {
+            e0_diag[i] = E[i];
+            ridge_e0_diag[i] = ridge_add[size_t(i)];
+        }
+    }
 
     // ── 2.4' [P5-1/P5-2/P5-3 2026-11-18] Stream-Power 河流侵蚀：抬升场 + 坡面扩散 + 最陡受体 ──
     // 原 §2.4 SPL 与 §2.5 液滴/热力坍塌合并为本节：液滴与热力坍塌分支已删除（坡面扩散承担软化
@@ -765,7 +786,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // 并让闭合洼地回升。取 0.03：大图闭合洼地 -36%、小图 -31%，land p50 偏差 -6.4%（大图），M1 ≈ 基线。
     // 必须与 climate_profile.gd::spl_ridge_uplift 同值（漏传时兜底不同值会成隐形陷阱）。
     // 标定扫描与取舍依据见 docs/plans/terrain-ridge-uplift-checklist.md 附 B。
-    const double spl_ridge_uplift = std::max(0.0, getd(profile, "spl_ridge_uplift", 0.03));
+    const double spl_ridge_uplift = std::max(0.0, getd(profile, "spl_ridge_uplift", 0.010));   // [S7-T9] 0.03 -> 0.010
         // [P5-2.1 2026-11-18] 坡面扩散 κ（契约 §A.1，默认 0.08）。显式扩散稳定上界 κ<1，契约范围
         // [0, 0.45] 留足余量；夹取既防 profile 传入失控值把山磨平（K4），也保证确定性。
         const double spl_diffusion = std::clamp(getd(profile, "spl_hillslope_diffusion", 0.08), 0.0, 0.45);
@@ -778,6 +799,62 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (spl_iters > 0) {
             std::vector<float> relief0(size_t(n), 0.0f);
             for (int i = 0; i < n; ++i) relief0[size_t(i)] = std::max(0.0f, float(double(E[i]) - sea_level));
+            // ── [S7-T6 / G1 2026-11-18] 脊参与初始建网：把脊拆成「初始地形」+「逐轮抬升」两部分 ──
+            // 缺陷（同口径复核计划 §10 G1）：ridge_add 此前只以 `U += u·ridge_add` 逐轮进入 SPL，
+            // 第 1 轮建树时 E 里还没有脊，水网按 E0 组织；此后每轮抬升量小，14 轮内水网基本继承 E0
+            // ⇒ 河流大量「先于脊存在」、横穿脊带。实测印证：M1' 只比零假设高 7 pp；加轮数时 M1' 单调上升。
+            // 做法：建树前先叠 f_pre·(iters·u)·ridge_add，让第 1 轮就看到脊；剩余 (1−f_pre) 仍逐轮施加。
+            // 这样 f_pre 只改变「脊在第几轮出现」，不改变总脊量 ⇒ f_pre=0 时与改动前逐位一致。
+            const double spl_ridge_prestamp = std::clamp(
+                    getd(profile, "spl_ridge_prestamp_frac", 0.5), 0.0, 1.0);
+            if (spl_ridge_prestamp > 0.0 && ridge_boost_amp > 0.0) {
+                const double a_ridge = double(spl_iters) * spl_ridge_uplift;   // iters 轮的脊抬升总量
+                const double pre = spl_ridge_prestamp * a_ridge;
+                for (int i = 0; i < n; ++i) {
+                    const double add = pre * double(ridge_add[size_t(i)]);
+                    if (add <= 0.0) continue;                                  // 海洋格 ridge_add=0，自动跳过
+                    E[i] = float(std::min(1.0, double(E[i]) + add));
+                }
+                // 预叠脊会在谷里造出闭合洼地——正是旧版「脊在 SPL 之后叠加」造坝的同一机制，必须在建树前消掉，
+                // 否则第 1 轮水网会绕着坝走（G-K1）。规则与 §4 pit fill 相同：Priority-Flood（种子 = 南北边缘 ∪ 水体）
+                // 填平后 +1e-3。这一步**只抬高**、且不碰水体，故不破坏「陆地不下海 / 水体不动」。
+                {
+                    std::vector<uint8_t> pz_seen(size_t(n), 0);
+                    std::vector<float> pz(size_t(n), 0.0f);
+                    std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>,
+                                        std::greater<std::pair<float, int>>> pq2;
+                    for (int row = 0; row < height; ++row) {
+                        for (int col = 0; col < width; ++col) {
+                            const int i = row * width + col;
+                            const bool edge = (row == 0 || row == height - 1);
+                            const bool water = (double(E[i]) < sea_level);
+                            if (!edge && !water) continue;
+                            pz_seen[size_t(i)] = 1;
+                            pz[size_t(i)] = E[i];
+                            pq2.push(std::make_pair(E[i], i));
+                        }
+                    }
+                    while (!pq2.empty()) {
+                        const std::pair<float, int> top = pq2.top(); pq2.pop();
+                        const int cur = top.second;
+                        if (top.first > pz[size_t(cur)] + 1e-6f) continue;
+                        for (int d = 0; d < 6; ++d) {
+                            const int ni = index_for_qr(Q[cur] + DQ[d], R[cur] + DR[d]);
+                            if (ni < 0 || pz_seen[size_t(ni)]) continue;
+                            pz_seen[size_t(ni)] = 1;
+                            const float sp = std::max(E[ni], pz[size_t(cur)]);
+                            pz[size_t(ni)] = sp;
+                            pq2.push(std::make_pair(sp, ni));
+                        }
+                    }
+                    for (int i = 0; i < n; ++i) {
+                        if (double(E[i]) < sea_level) continue;               // 水体逐位不动
+                        if (pz[size_t(i)] > E[i] + 1e-7f) {
+                            E[i] = float(std::min(1.0, double(pz[size_t(i)]) + 1e-3));
+                        }
+                    }
+                }
+            }
             std::vector<float> filled(size_t(n), 0.0f);
             std::vector<int32_t> down(size_t(n), -1);
             // [P5-3.1 2026-11-18] 最陡受体（取代 Priority-Flood 的「关闭者」down）。down 仍保留：
@@ -837,6 +914,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 // 拓扑合法性：filled 严格更低的邻点必然更早出栈（PQ 按 filled 单调弹出）⇒ proc 仍是
                 // 合法拓扑序，下切循环里 E[rcv] 本轮已就绪；落差严格 > 0 ⇒ 受体链不可能成环。
                 for (int i = 0; i < n; ++i) {
+                    if (!spl_steepest_receiver) {          // [S7-T1 消融] 复刻旧行为：关闭者当受体
+                        rcv[size_t(i)] = down[size_t(i)];
+                        continue;
+                    }
                     const float fi = filled[size_t(i)];
                     int best = down[size_t(i)];
                     float best_drop = 0.0f;
@@ -864,8 +945,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     const double C = spl_k * spl_res_scale
                             * std::pow(area[size_t(i)] * inv_area_mean / spl_res_scale, spl_m);
                     // [P5-1.2] 每轮抬升 = 残余地势回补 + 构造脊抬升场（ridge_add 由 §R 在冻结的 E0 上算得）。
+                    // [S7-T6 / G1] 其中脊项只留 (1−f_pre) 的份额：f_pre 的份额已在建树前预叠进 E_init，
+                    // 两者相加仍是 u·ridge_add，所以 f_pre 只改变「脊在第几轮出现」、不改变总脊量。
                     const double U = spl_uplift_rate * double(relief0[size_t(i)])
-                            + spl_ridge_uplift * double(ridge_add[size_t(i)]);
+                            + (1.0 - spl_ridge_prestamp) * spl_ridge_uplift * double(ridge_add[size_t(i)]);
                     double z = (double(E[i]) + U + C * double(E[d])) / (1.0 + C);
                     if (z < double(E[d])) z = double(E[d]);
                     E[i] = float(z);
@@ -1509,6 +1592,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     out["elevation_arr"] = elevation_arr;
     // [P5-0 诊断] 仅在 profile.ridge_debug_dump=1 时返回（见上方 ridge_debug_dump 注释）。
     if (ridge_debug_dump && ridge_add_diag.size() == n) out["ridge_add_arr"] = ridge_add_diag;
+    // [S7-T1 诊断] 仅在 profile.debug_dump_ridge_e0=1 时返回（E0 + E0 版 ridge_add，供同口径新旧对比）。
+    if (ridge_debug_e0_dump && e0_diag.size() == n) {
+        out["e0_arr"] = e0_diag;
+        out["ridge_e0_arr"] = ridge_e0_diag;
+    }
     out["moisture_arr"] = moisture_arr;
     out["base_moisture_arr"] = base_moisture_arr;
     out["temp_arr"] = temp_arr;

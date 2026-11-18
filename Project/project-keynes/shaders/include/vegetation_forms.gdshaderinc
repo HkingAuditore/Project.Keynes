@@ -1,31 +1,6 @@
-// vegetation_forms.gdshaderinc
-// Top-down procedural impostors for every vegetation / decoration form.
-//
-// One instance is one quad; p is its local coordinate in [-1, 1]^2 (same
-// orientation as the instance transform, +z toward the camera). A form returns
-// the surface seen from straight above: coverage, height, normal, material
-// mix and an optional ground darkening for the gaps between its elements.
-// Forms that carry several elements (crowns, tussocks, stones) evaluate a
-// small jittered element field and keep the highest surface, so a grove of
-// fifteen crowns costs one 3x3 neighbourhood walk instead of fifteen draws.
-// `cheap` returns after coverage and height; the caller uses that second
-// evaluation, offset toward the sun, for crown-on-crown and ground shadows.
-
+// Shared placement and bitmap sampling for top-down vegetation and decorations.
 #ifndef PK_VEGETATION_FORMS_INC
 #define PK_VEGETATION_FORMS_INC
-
-// ── 近景 form 编译档位（只由 ShrubLayer 的 web 前缀定义）──────────────────────
-// PK_VEG_FAR_ONLY：近景整段关掉，调用点只调 vf_far（远景软盘）。近景函数没人
-//   引用，编译器/驱动都不会为它们生成代码。这是 web 上挡回 45s 首次编译的老档。
-// PK_VEG_NEAR_MIN：近景保留 subset（阔叶 / 针叶 / 灌木 / 草丛 4 个家族），其余
-//   13 个 form 的函数体被下面的 #ifndef 整段排除，调用点由 vf_form_near_available()
-//   判到 vf_far。web 默认档，见 ShrubLayer.PK_WEB_VEG_NEAR_FORMS 那两个常量。
-// 都不定义：全量 17 个 form（桌面/移动端，以及 web 的 PK_WEB_VEG_NEAR_FULL_FORMS）。
-// 三个 define 都只影响"编多少"，不改变任何一个 form 的外观。
-//
-// 想把某个被裁的家族加回精简集：把它的函数体挪到对应 #ifndef 段落之外，再在
-// vf_form_near_available() 和 vf_eval() 的精简集分支里各加一行即可（每加回一个
-// 家族就多付一段首帧编译时间）。
 
 const int VF_BROADLEAF = 0;
 const int VF_CONIFER = 1;
@@ -47,35 +22,26 @@ const int VF_CORAL = 16;
 const int VF_PEAT_TUFT = 17;
 
 const float VF_TAU = 6.2831853;
-const float VF_PI = 3.1415927;
 
-// [web-resource-min] PK_VF_NOISE_ONLY：只要 vf_hash12 / vf_hash22 / vf_vnoise 三个叶子
-// （resource_impostor 的 web 精简变体用；resource 侧从不用下面任何一个近景 form）。
-// 本宏只由 shaders/include/resource_impostor_web_min.gdshaderinc 定义，
-// 植被链路（vegetation_impostor.gdshaderinc）永远不定义它，所以那边逐字不变。
+// The resource shader's Web variant only needs the shared noise functions.
 #ifndef PK_VF_NOISE_ONLY
 struct VegCtx {
 	float seed;
 	float count;     // elements carried by the instance (1..32)
-	float sub_form;  // 0 single, 1 cluster, 2 grove
 	float leaf;      // foliage amount: deciduous crowns thin to bare branches
 	float vigor;     // structural presence: dieback removes whole elements
 	float bloom;     // 0..1 flowering
-	vec2 wind;       // unit prevailing wind in the local frame
-	float time;
 	float px;        // local units per screen pixel
 };
 
 struct VegSurf {
 	float cov;       // coverage 0..1, antialiased
-	float h;         // surface height 0..1
 	vec3 n;          // local-frame normal
 	float ao;        // cavity / inter-element occlusion
 	float tone;      // albedo multiplier
 	float leaf_w;    // 1 = climate foliage palette, 0 = tint
 	vec3 tint;       // bark, stone, petal, snow...
 	float elem;      // per-element hash for colour variety
-	float floor_a;   // ground darkening alpha where cov is 0
 	float snow_hold; // how readily snow settles on this surface
 	vec4 art;        // crown bitmap hue (rgb at luma 0.5) and its weight vs the climate palette
 };
@@ -83,14 +49,12 @@ struct VegSurf {
 VegSurf vf_empty() {
 	VegSurf s;
 	s.cov = 0.0;
-	s.h = 0.0;
 	s.n = vec3(0.0, 0.0, 1.0);
 	s.ao = 1.0;
 	s.tone = 1.0;
 	s.leaf_w = 1.0;
 	s.tint = vec3(0.5);
 	s.elem = 0.0;
-	s.floor_a = 0.0;
 	s.snow_hold = 1.0;
 	s.art = vec4(0.5, 0.5, 0.5, 0.0);
 	return s;
@@ -126,20 +90,8 @@ float vf_vnoise(vec2 p) {
 	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// [web-resource-min] 以下整段（vf_detail … 17 个近景 form … vf_eval）只服务植被链路，
-// resource_impostor 的 web 精简变体不编译它们（PK_VF_NOISE_ONLY，约 44 KB 死代码）。
+// Placement and lighting helpers are used by the decoration body pass.
 #ifndef PK_VF_NOISE_ONLY
-// Fades a pattern of the given frequency (cycles per local unit) once it
-// drops below a few pixels, so distant forms stay calm instead of aliasing.
-float vf_detail(float freq, float px) {
-	return 1.0 - smoothstep(0.16, 0.50, freq * px);
-}
-
-// Coverage of a signed distance (negative inside), one pixel wide.
-float vf_cov(float d, float px) {
-	return 1.0 - smoothstep(-px, px, d);
-}
-
 vec2 vf_seed_offset(float seed) {
 	return vec2(seed * 97.31 + 3.1, seed * 53.17 + 7.9);
 }
@@ -169,13 +121,12 @@ struct VfElem {
 	float id;
 	float z;
 	float hit;
-	float edge;  // union signed distance, negative inside any element
-	int k;
+	float edge;  // distance to the nearest element footprint
 };
 
 void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr,
-		float id, float top, float lob, int k, bool cone) {
-	float d = length(p - c) - rr * lob;
+		float id, float top, bool cone) {
+	float d = length(p - c);
 	float sd = d - rr;
 	e.edge = min(e.edge, sd);
 	if (sd < 0.0) {
@@ -187,7 +138,6 @@ void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr
 			e.r = rr;
 			e.id = id;
 			e.hit = 1.0;
-			e.k = k;
 		}
 	} else if (e.hit < 0.5 && sd < near_edge) {
 		// Remember the nearest element so antialiased rim pixels still shade.
@@ -195,7 +145,6 @@ void vf_consider(inout VfElem e, inout float near_edge, vec2 p, vec2 c, float rr
 		e.c = c;
 		e.r = rr;
 		e.id = id;
-		e.k = k;
 	}
 }
 
@@ -248,10 +197,8 @@ VfSlot vf_grid_slot(vec2 cell, vec2 so, float pitch, float r0, float top, float 
 	return sl;
 }
 
-// keep: fraction of elements that survive dieback. lob: shared outline
-// perturbation (fraction of the radius), en: the noise value it scales.
-VfElem vf_elements(vec2 p, VegCtx ctx, float top, float lob_amp, float en,
-		float keep, int form, bool cone) {
+// Select the visible element in the deterministic ring or grove.
+VfElem vf_elements(vec2 p, VegCtx ctx, float top, float keep, int form, bool cone) {
 	VfElem e;
 	e.c = vec2(0.0);
 	e.r = 0.5;
@@ -259,12 +206,10 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float lob_amp, float en,
 	e.z = 0.0;
 	e.hit = 0.0;
 	e.edge = 9.0;
-	e.k = 0;
 	float near_edge = 9.0;
 	float n = max(ctx.count, 1.0);
 	float r0 = vf_elem_radius(n);
 	vec2 so = vf_seed_offset(ctx.seed);
-	float lob = (en - 0.5) * lob_amp;
 	if (n < 4.5) {
 		int cnt = int(n + 0.5);
 		for (int k = 0; k < 4; k++) {
@@ -275,7 +220,7 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float lob_amp, float en,
 			if (!sl.live) {
 				continue;
 			}
-			vf_consider(e, near_edge, p, sl.c, sl.r, sl.id, sl.top, lob, k, cone);
+			vf_consider(e, near_edge, p, sl.c, sl.r, sl.id, sl.top, cone);
 		}
 	} else {
 		float pitch = r0 * 1.62;
@@ -286,8 +231,7 @@ VfElem vf_elements(vec2 p, VegCtx ctx, float top, float lob_amp, float en,
 				if (!sl.live) {
 					continue;
 				}
-				vf_consider(e, near_edge, p, sl.c, sl.r, sl.id, sl.top, lob,
-					(i + 1) + (j + 1) * 3, cone);
+				vf_consider(e, near_edge, p, sl.c, sl.r, sl.id, sl.top, cone);
 			}
 		}
 	}
@@ -366,62 +310,6 @@ vec2 vf_soft_shadow(vec2 p, VegCtx ctx, int form, vec2 sv) {
 	return vec2(ground, crown);
 }
 
-// Bare branch skeleton inside one crown, q in crown units. Only the winning
-// crown pays for the atan.
-float vf_branches(vec2 q, float id, float pxq, float nmain, float reach) {
-	float rho = length(q);
-	float th = atan(q.y, q.x);
-	float bend = sin(rho * 4.0 + id * 9.0) * 0.22;
-	float sec = th / VF_TAU * nmain + id * 3.0 + bend;
-	float da = abs(fract(sec) - 0.5) * VF_TAU / nmain * rho;
-	float w = mix(0.085, 0.020, rho);
-	float limb_len = reach * (0.70 + 0.30 * vf_hash12(vec2(floor(sec), id * 31.0)));
-	float limb = (1.0 - smoothstep(w - pxq, w + pxq, da)) * step(rho, limb_len);
-	float n2 = nmain * 2.6;
-	float sec2 = th / VF_TAU * n2 + id * 5.0 - bend * 1.7 + rho * 1.3;
-	float da2 = abs(fract(sec2) - 0.5) * VF_TAU / n2 * rho;
-	float w2 = mix(0.032, 0.012, rho);
-	float twig = (1.0 - smoothstep(w2 - pxq, w2 + pxq, da2))
-		* smoothstep(0.30, 0.45, rho) * step(rho, reach);
-	float trunk = 1.0 - smoothstep(0.10 - pxq, 0.10 + pxq, rho);
-	return max(max(limb, twig * 0.85), trunk);
-}
-
-// Shared crown-field shading for broadleaf-like elements: hemisphere normal
-// plus analytic leaf-clump bumps whose frequency follows the crown size.
-void vf_crown_shade(inout VegSurf s, VfElem e, vec2 p, float clump_freq, float bump_amp,
-		float px) {
-	vec2 q = (p - e.c) / e.r;
-	float t2 = clamp(dot(q, q), 0.0, 0.97);
-	vec3 n = normalize(vec3(q * 0.92, sqrt(1.0 - t2) + 0.12));
-	float det = vf_detail(clump_freq / e.r * 0.16, px);
-	vec2 qa = q * clump_freq + e.id * 17.0;
-	vec2 qb = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * q * clump_freq * 1.9 + e.id * 5.0;
-	vec2 grad = vec2(cos(qa.x) * sin(qa.y), sin(qa.x) * cos(qa.y))
-		+ 0.5 * vec2(cos(qb.x) * sin(qb.y), sin(qb.x) * cos(qb.y));
-	n = normalize(n + vec3(grad * bump_amp * det, 0.0));
-	float clump = sin(qa.x) * sin(qa.y) + 0.5 * sin(qb.x) * sin(qb.y);
-	s.n = n;
-	s.tone = (0.98 + 0.10 * clump * det) * (0.90 + 0.18 * e.id);
-	s.ao = mix(0.70, 1.0, smoothstep(0.0, 0.60, e.z));
-	s.elem = e.id;
-}
-
-// Contact darkening hugging the element union; groves add a faint understorey
-// only inside the patch so the forest floor never shows a disc outline.
-float vf_canopy_floor(VfElem e, vec2 p, float count) {
-	float contact = exp(-max(e.edge, 0.0) * 8.0) * 0.13;
-	float under = count > 4.5 ? 0.10 * (1.0 - smoothstep(0.45, 0.78, length(p))) : 0.0;
-	return max(contact, under);
-}
-
-float vf_floor_patch(vec2 p, float strength) {
-	return strength * (1.0 - smoothstep(0.62, 0.92, length(p)));
-}
-
-// ── Crown / hardscape bitmaps (resource_art/crown_atlas: 5 layers x 4x2, alpha) ─
-// Only the vegetation body shader defines VF_CROWN_ART; other includers keep the
-// procedural crowns and pay no samplers.
 #ifdef VF_CROWN_ART
 uniform sampler2DArray crown_art : filter_linear_mipmap, repeat_disable;
 uniform sampler2DArray crown_normal_art : filter_linear_mipmap, repeat_disable;
@@ -429,983 +317,83 @@ uniform bool crown_art_bound = false;
 uniform float crown_art_palette = 0.55;
 uniform float crown_art_normal = 1.0;
 
-// Samples element e's crown sprite (variant + rotation from its id). Writes tone,
-// hue and, when want_normal, the relief normal / AO; returns sprite coverage.
-float vf_crown_sample(inout VegSurf s, VfElem e, vec2 p, float layer, float px, bool want_normal) {
-	vec2 q = (p - e.c) / max(e.r, 1e-4);
+// x = array layer, y = sprite in its 4x2 sheet. The generated decoration
+// sheets follow DECORATION_FORMS in tools/resource_art/build.py.
+ivec2 vf_bitmap_cell(int form, float id, float leaf) {
+	if (form == VF_BROADLEAF && leaf < mix(0.18, 0.78, id)) {
+		return ivec2(6, 5);
+	}
+	if (form <= VF_SHRUB || form == VF_ROCK) {
+		int layer = form == VF_ROCK ? 4 : form;
+		return ivec2(layer, int(floor(fract(id * 5.731 + 0.13) * 8.0)));
+	}
+	int cell = form < VF_ROCK ? form - VF_CACTUS : form - VF_CACTUS - 1;
+	return ivec2(5 + cell / 8, cell % 8);
+}
+
+VegSurf vf_bitmap(int form, vec2 p, VegCtx ctx, bool far) {
+	VegSurf s = vf_empty();
+	if (!crown_art_bound) {
+		return s;
+	}
+	float keep = form == VF_CACTUS ? 1.0
+		: mix(form == VF_SHRUB ? 0.40 : 0.45, 1.0, ctx.vigor);
+	VfElem e;
+#ifdef PK_VEG_FAR_ONLY
+	// The startup and hidden Web batches use a single mipmapped sprite.
+	e.c = vec2(0.0);
+	e.r = 0.82;
+	e.id = ctx.seed;
+#else
+	float top = form == VF_SHRUB ? 0.55 : 1.0;
+	e = vf_elements(p, ctx, top, keep, form, form == VF_CONIFER);
+	if (e.edge > e.r * 0.42) {
+		return s;
+	}
+#endif
+	vec2 q = (p - e.c) / max(e.r, 0.0001);
 	float ang = e.id * VF_TAU * 3.0;
 	float ca = cos(ang);
 	float sa = sin(ang);
 	mat2 rot = mat2(vec2(ca, sa), vec2(-sa, ca));
 	vec2 qr = rot * q;
 	if (max(abs(qr.x), abs(qr.y)) >= 1.0) {
-		return 0.0;
+		return s;
 	}
-	float variant = floor(fract(e.id * 5.731 + 0.13) * 8.0);
-	vec2 cell = vec2(mod(variant, 4.0), floor(variant / 4.0));
+	ivec2 sprite = vf_bitmap_cell(form, e.id, ctx.leaf);
+	vec2 cell = vec2(float(sprite.y % 4), float(sprite.y / 4));
 	vec2 uv = (cell + vec2(qr.x, -qr.y) * 0.5 + 0.5) / vec2(4.0, 2.0);
-	// Explicit gradients: texel footprint of one screen pixel (px is ~0.75 * fwidth).
-	float k = px / 0.75 / (2.0 * max(e.r, 1e-4));
+	// Clamp the footprint within a sprite's mip chain to avoid mixing neighbours.
+	float k = min(ctx.px / (1.5 * e.r), 0.125);
 	vec2 gx = vec2(k * 0.25, 0.0);
 	vec2 gy = vec2(0.0, k * 0.5);
-	vec4 c = textureGrad(crown_art, vec3(uv, layer), gx, gy);
-	float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-	s.tone = clamp(l * 2.0, 0.12, 1.9) * (0.92 + 0.16 * e.id);
-	s.art = vec4(c.rgb / max(2.0 * l, 0.04), crown_art_palette);
+	vec3 uvw = vec3(uv, float(sprite.x));
+	vec4 c = textureGrad(crown_art, uvw, gx, gy);
+	s.cov = c.a;
 	s.elem = e.id;
-	if (want_normal) {
-		vec4 nm = textureGrad(crown_normal_art, vec3(uv, layer), gx, gy);
-		// Stored in sprite space (x right, y up); back-rotate into the instance frame.
-		vec2 nxy = (nm.rg * 2.0 - 1.0) * crown_art_normal;
-		nxy = vec2(ca * nxy.x + sa * nxy.y, -sa * nxy.x + ca * nxy.y);
-		// Keep the crown dome so the sun still models the whole tree.
-		vec2 dome = q * 0.55;
-		s.n = normalize(vec3(nxy + dome, max(sqrt(max(1.0 - dot(nxy, nxy), 0.0)), 0.35)));
-		s.ao = mix(0.55, 1.0, nm.a) * mix(0.78, 1.0, smoothstep(0.0, 0.6, e.z));
+	bool bare = form == VF_BROADLEAF && sprite.x == 6;
+	bool own_colour = bare || form == VF_ROCK || form == VF_SCREE || form == VF_SNOW_MOUND
+		|| form == VF_SNAG || form == VF_FALLEN_LOG || form == VF_KELP || form == VF_CORAL;
+	s.leaf_w = own_colour ? 0.0 : 1.0;
+	s.tint = c.rgb;
+	float luma = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+	s.tone = own_colour ? 1.0 : clamp(luma * 2.0, 0.12, 1.9);
+	s.art = vec4(c.rgb / max(2.0 * luma, 0.04), crown_art_palette);
+	if (form == VF_FLOWER) {
+		// Reveal the painted petal colours with the seasonal bloom signal.
+		s.leaf_w = 1.0 - ctx.bloom * 0.75;
 	}
-	return c.a;
-}
-
-// Overlapping crowns: deep inside the union another crown is underneath, so the
-// winning sprite's transparent texels must not punch holes to the ground.
-float vf_crown_fill(VfElem e) {
-	return smoothstep(0.10, 0.38, -e.edge / max(e.r, 1e-4)) * step(0.5, e.hit);
-}
-
-// Crown coverage from the sprite; negative = art unavailable (use procedural).
-float vf_crown_cov(inout VegSurf s, VfElem e, vec2 p, float layer, VegCtx ctx, bool cheap) {
-	if (!crown_art_bound) {
-		return -1.0;
+	s.snow_hold = form == VF_KELP || form == VF_CORAL ? 0.0 : 1.0;
+	if (!far && c.a > 0.0) {
+		vec4 nm = textureGrad(crown_normal_art, uvw, gx, gy);
+		vec2 nxy = transpose(rot) * ((nm.rg * 2.0 - 1.0) * crown_art_normal);
+		s.n = normalize(vec3(nxy, max(sqrt(max(1.0 - dot(nxy, nxy), 0.0)), 0.35)));
+		s.ao = mix(0.55, 1.0, nm.a);
 	}
-	if (e.edge > e.r * 0.25) {
-		return 0.0;
-	}
-	float a = vf_crown_sample(s, e, p, layer, ctx.px, !cheap);
-	return max(a, vf_crown_fill(e));
+	return s;
 }
 #endif
 
-// ── Canopy ─────────────────────────────────────────────────────────────────
-
-VegSurf vf_broadleaf(vec2 p, VegCtx ctx, bool cheap, bool deciduous_skeleton) {
-	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
-	float fe = 1.5 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
-	float en = vf_vnoise(p * fe + so);
-	float det = vf_detail(fe, ctx.px);
-	float keep = mix(0.45, 1.0, ctx.vigor);
-	VfElem e = vf_elements(p, ctx, 1.0, 0.32 * det, en, keep, VF_BROADLEAF, false);
-	float union_cov = vf_cov(e.edge, ctx.px);
-	s.floor_a = vf_canopy_floor(e, p, ctx.count);
-	if (union_cov <= 0.0 && e.edge > e.r * 0.25) {
-		return s;
-	}
-	vec2 q = (p - e.c) / e.r;
-	// Leaf-off: foliage thins as a fine stipple (leaf clusters), never as big
-	// blotches, and the bare crown keeps a translucent twig haze over the limbs.
-	float stip_f = fe * 4.2;
-	float stip = vf_vnoise(p * stip_f + so + 5.1) * 0.60 + vf_vnoise(p * fe * 1.4 + so + 2.0) * 0.40;
-	float lm = smoothstep(stip - 0.10, stip + 0.10, ctx.leaf * 1.08);
-	lm = mix(smoothstep(0.15, 0.85, ctx.leaf), lm, vf_detail(stip_f, ctx.px));
-	float br = 0.0;
-	float haze = 0.0;
-	if (deciduous_skeleton && lm < 0.999) {
-		br = vf_branches(q, e.id, ctx.px / e.r, 5.0 + floor(e.id * 3.0), 0.96);
-		haze = 0.40 * (1.0 - smoothstep(0.55, 1.0, length(q)) * 0.5);
-	}
-	float wood = max(br, haze);
-	float art_cov = -1.0;
-#ifdef VF_CROWN_ART
-	art_cov = vf_crown_cov(s, e, p, 0.0, ctx, cheap);
-#endif
-	bool art = art_cov >= 0.0;
-	s.cov = art ? max(art_cov * lm, union_cov * wood) : union_cov * max(lm, wood);
-	s.h = e.z * mix(0.55, 1.0, lm);
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	if (!art) {
-		vf_crown_shade(s, e, p, 3.4 + e.id * 1.4, 0.40, ctx.px);
-	}
-	float leaf_part = art ? art_cov * lm : lm;
-	s.leaf_w = leaf_part / max(max(leaf_part, wood), 1e-4);
-	float bark_w = 1.0 - s.leaf_w;
-	s.tint = mix(vec3(0.47, 0.41, 0.35), vec3(0.30, 0.25, 0.20), br);
-	if (s.leaf_w < 0.5) {
-		s.n = normalize(vec3(q * 0.35, 1.0));
-		s.ao = 0.84;
-		s.tone = 1.0;
-	}
-	if (!art) {
-		// Fine leaf speckle where the crown is large enough on screen.
-		float sp = vf_vnoise(p * fe * 6.0 + so * 1.7);
-		s.tone *= 1.0 + (sp - 0.5) * 0.16 * vf_detail(fe * 6.0, ctx.px);
-	}
-	s.snow_hold = mix(0.85, 0.55, bark_w);
-	return s;
-}
-
-VegSurf vf_conifer(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float keep = mix(0.45, 1.0, ctx.vigor);
-	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, keep, VF_CONIFER, true);
-	s.floor_a = vf_canopy_floor(e, p, ctx.count);
-	float union_cov = vf_cov(e.edge, ctx.px);
-#ifdef VF_CROWN_ART
-	if (crown_art_bound) {
-		float art_cov = vf_crown_cov(s, e, p, 1.0, ctx, cheap);
-		s.cov = art_cov * mix(0.55, 1.0, ctx.vigor);
-		s.h = e.z;
-		if (!cheap) {
-			vec2 qa = (p - e.c) / e.r;
-			s.snow_hold = 0.6 + 0.4 * smoothstep(0.2, 0.8, length(qa));
-		}
-		return s;
-	}
-#endif
-	if (union_cov <= 0.0) {
-		return s;
-	}
-	vec2 q = (p - e.c) / e.r;
-	float rho = length(q);
-	vec2 dir = rho > 1e-4 ? q / rho : vec2(0.0);
-	float th = atan(q.y, q.x);
-	// Branch tips: an uneven spike count broken up by direction noise, so the
-	// outline reads as layered boughs rather than a gear.
-	float nsp = 11.0 + floor(e.id * 5.0);
-	float tip_noise = vf_vnoise(dir * 2.6 + e.id * 13.0);
-	float wave = 0.5 + 0.5 * cos(th * nsp + e.id * 20.0 + tip_noise * 3.0);
-	float spikes = clamp(0.70 * wave * wave + 0.30 * vf_vnoise(dir * 5.5 + e.id * 7.0), 0.0, 1.0);
-	float det = vf_detail(nsp / (VF_TAU * e.r) * 2.0, ctx.px);
-	// Star cut applies to the nearest crown too, so the disc union never shows
-	// as a rim outside the bough tips.
-	float star = 1.0 - smoothstep(-ctx.px / e.r, ctx.px / e.r,
-		rho - (1.0 - 0.26 * (1.0 - spikes) * det));
-	s.cov = union_cov * star;
-	s.h = e.z;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	// Bough sprays radiate from the leader; whorl tiers stay soft and noisy.
-	float tier_det = vf_detail(2.6 / e.r, ctx.px);
-	float tier = fract(rho * 2.6 + spikes * 0.45 + tip_noise * 0.6 + e.id);
-	float boughs = vf_vnoise(q * 6.5 + e.id * 31.0);
-	vec2 perp = vec2(-dir.y, dir.x);
-	s.n = normalize(vec3(dir * (0.62 + 0.40 * tier * tier_det)
-		+ perp * (wave - 0.5) * 0.45 * det, 0.90));
-	float spray = mix(0.80, 1.08, wave) * smoothstep(0.0, 0.35, rho) + (1.0 - smoothstep(0.0, 0.35, rho));
-	s.tone = (0.84 + 0.14 * e.id) * mix(1.0, spray * (0.92 + 0.10 * smoothstep(0.0, 0.8, tier))
-		+ (boughs - 0.5) * 0.14, det);
-	s.tone *= 1.0 + 0.12 * (1.0 - smoothstep(0.0, 0.10, rho));
-	s.ao = mix(0.72, 1.0, smoothstep(0.0, 0.7, e.z));
-	s.elem = e.id;
-	s.snow_hold = 0.6 + 0.4 * smoothstep(0.3, 0.8, tier);
-	return s;
-}
-
-// ── web 精简集裁掉的近景 form（PK_VEG_NEAR_MIN）──────────────────────────────
-// 下面这些函数体在精简集下整段不参与编译：vf_eval 也不再引用它们，调用点直接
-// 落到 vf_far（远景软盘）。这是 web 首帧编译预算让出来的部分；想恢复全量就把
-// ShrubLayer.PK_WEB_VEG_NEAR_FULL_FORMS 改成 true。
-#ifndef PK_VEG_NEAR_MIN
-// 裁掉：棕榈 / 枯木（红树也走 vf_snag）。热带与枯木属点缀冠层，远景软盘可接受。
-VegSurf vf_palm(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float keep = mix(0.45, 1.0, ctx.vigor);
-	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, keep, VF_PALM, false);
-	s.floor_a = exp(-max(e.edge, 0.0) * 7.0) * 0.12;
-#ifdef VF_CROWN_ART
-	if (crown_art_bound) {
-		float art_cov = vf_crown_cov(s, e, p, 2.0, ctx, cheap);
-		// Fronds drop as the palm dries out; the hub stays.
-		float rho_a = length(p - e.c) / max(e.r, 1e-4);
-		s.cov = art_cov * max(smoothstep(0.05, 0.35, ctx.leaf + 0.25), 1.0 - smoothstep(0.10, 0.18, rho_a));
-		s.h = e.z * (1.0 - rho_a * 0.45);
-		s.snow_hold = 0.5;
-		return s;
-	}
-#endif
-	if (e.edge > ctx.px) {
-		return s;
-	}
-	vec2 q = (p - e.c) / e.r;
-	float rho = length(q);
-	float th = atan(q.y, q.x);
-	float nf = 7.0 + floor(e.id * 3.0);
-	float sec = th / VF_TAU * nf + e.id * 4.0 + rho * 0.35;
-	float f = fract(sec) - 0.5;
-	float da = abs(f) * VF_TAU / nf * rho;
-	float pxq = ctx.px / e.r;
-	float w = 0.21 * pow(sin(VF_PI * clamp(rho / 0.98, 0.0, 1.0)), 0.7) + 0.015;
-	float frond = (1.0 - smoothstep(w - pxq, w + pxq, da)) * step(rho, 0.98);
-	float hub = 1.0 - smoothstep(0.11 - pxq, 0.11 + pxq, rho);
-	float leafy = frond * smoothstep(0.05, 0.35, ctx.leaf + 0.25);
-	s.cov = max(leafy, hub);
-	s.h = e.z * (1.0 - rho * 0.45);
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vec2 dir = rho > 1e-4 ? q / rho : vec2(0.0);
-	vec2 perp = vec2(-dir.y, dir.x);
-	float side = sign(f) * clamp(da / max(w, 1e-3), 0.0, 1.0);
-	s.n = normalize(vec3(dir * (0.20 + rho * 0.95) + perp * side * 0.45, 1.0));
-	float det = vf_detail(13.0 / e.r, ctx.px);
-	float leaflet = step(0.32, fract(rho * 13.0 + abs(f) * 9.0 + e.id));
-	s.tone = (0.90 + 0.18 * e.id) * mix(1.0, 0.74 + 0.30 * leaflet, det);
-	s.tone *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 0.025 + pxq, da)) * det;
-	s.ao = mix(0.66, 1.0, smoothstep(0.0, 0.5, rho)) * mix(0.75, 1.0, smoothstep(0.0, 0.6, w - da + 0.4));
-	s.elem = e.id;
-	if (hub > 0.5 && leafy < hub) {
-		s.leaf_w = 0.0;
-		vec2 nut = fract(q * 9.0 + e.id) - 0.5;
-		s.tint = mix(vec3(0.36, 0.27, 0.16), vec3(0.48, 0.38, 0.18),
-			step(length(nut), 0.30));
-		s.n = vec3(0.0, 0.0, 1.0);
-	}
-	s.snow_hold = 0.5;
-	return s;
-}
-
-VegSurf vf_snag(vec2 p, VegCtx ctx, bool cheap, bool roots) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	vec2 c = (vf_hash22(so) - 0.5) * 0.08;
-	vec2 q = (p - c) / 0.86;
-	float rho = length(q);
-	if (rho > 1.05) {
-		return s;
-	}
-	float id = fract(ctx.seed * 13.7);
-	float pxq = ctx.px / 0.86;
-	float br;
-	if (roots) {
-		// Prop roots arch out from the trunk; thicker, fewer, reaching further.
-		float th = atan(q.y, q.x);
-		float nr = 8.0 + floor(id * 4.0);
-		float sec = th / VF_TAU * nr + id * 3.0 + sin(rho * 5.0 + id * 7.0) * 0.18;
-		float da = abs(fract(sec) - 0.5) * VF_TAU / nr * rho;
-		float w = mix(0.07, 0.035, rho);
-		float reach = 0.78 + 0.22 * vf_hash12(vec2(floor(sec), id * 17.0));
-		br = (1.0 - smoothstep(w - pxq, w + pxq, da)) * step(rho, reach);
-		br = max(br, 1.0 - smoothstep(0.13 - pxq, 0.13 + pxq, rho));
-		s.floor_a = 0.22 * (1.0 - smoothstep(0.55, 1.0, rho));
-	} else {
-		br = vf_branches(q, id, pxq, 4.0 + floor(id * 2.0), 0.72);
-		s.floor_a = exp(-rho * 6.0) * 0.20;
-	}
-	s.cov = br;
-	s.h = roots ? 0.55 * sin(VF_PI * clamp(rho, 0.0, 1.0)) + 0.2 : 1.0 - rho;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	s.n = normalize(vec3(q * 0.35, 1.0));
-	s.tone = roots ? 0.70 + 0.35 * sin(VF_PI * clamp(rho, 0.0, 1.0)) : 0.92 + 0.12 * id;
-	s.leaf_w = 1.0;
-	s.ao = 0.85;
-	s.elem = id;
-	s.snow_hold = 0.45;
-	return s;
-}
-#endif  // !PK_VEG_NEAR_MIN
-
-// ── Brush and ground ───────────────────────────────────────────────────────
-
-VegSurf vf_shrub(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
-	float fe = 1.8 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
-	float en = vf_vnoise(p * fe + so);
-	float det = vf_detail(fe, ctx.px);
-	float keep = mix(0.40, 1.0, ctx.vigor);
-	VfElem e = vf_elements(p, ctx, 0.55, 0.40 * det, en, keep, VF_SHRUB, false);
-	s.floor_a = exp(-max(e.edge, 0.0) * 8.0) * 0.16;
-	float union_cov = vf_cov(e.edge, ctx.px);
-	if (union_cov <= 0.0 && e.edge > e.r * 0.25) {
-		return s;
-	}
-	vec2 q = (p - e.c) / e.r;
-	float stip_f = fe * 4.0;
-	float stip = vf_vnoise(p * stip_f + so + 2.3) * 0.65 + vf_vnoise(p * fe * 1.3 + so) * 0.35;
-	float lm = smoothstep(stip - 0.10, stip + 0.10, ctx.leaf * 1.05 + 0.10);
-	lm = mix(smoothstep(0.0, 0.75, ctx.leaf), lm, vf_detail(stip_f, ctx.px));
-	float br = lm < 0.999 ? vf_branches(q, e.id, ctx.px / e.r, 6.0, 0.9) : 0.0;
-	float art_cov = -1.0;
-#ifdef VF_CROWN_ART
-	art_cov = vf_crown_cov(s, e, p, 3.0, ctx, cheap);
-#endif
-	bool art = art_cov >= 0.0;
-	s.cov = art ? max(art_cov * lm, union_cov * br * 0.9) : union_cov * max(lm, br * 0.9);
-	s.h = e.z;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	if (!art) {
-		vf_crown_shade(s, e, p, 4.6 + e.id * 2.0, 0.50, ctx.px);
-		s.tone *= 0.94;
-	}
-	float leaf_part = art ? art_cov * lm : lm;
-	s.leaf_w = leaf_part / max(max(leaf_part, br * 0.9), 1e-4);
-	s.tint = vec3(0.36, 0.30, 0.24);
-	// Berries / blossom dots.
-	if (ctx.bloom > 0.01 && !art) {
-		vec2 g = q * 4.5 + e.id * 9.0;
-		vec2 gi = floor(g);
-		float pick = vf_hash12(gi + 3.3);
-		float dot_r = length(fract(g) - 0.5 - (vf_hash22(gi) - 0.5) * 0.4);
-		float berry = step(1.0 - ctx.bloom * 0.45, pick)
-			* (1.0 - smoothstep(0.14, 0.14 + ctx.px / e.r * 4.5, dot_r));
-		s.leaf_w *= 1.0 - berry;
-		s.tint = mix(s.tint, mix(vec3(0.92, 0.88, 0.80), vec3(0.78, 0.22, 0.30),
-			step(0.5, vf_hash12(gi + 8.1))), berry);
-	}
-	s.snow_hold = 0.9;
-	return s;
-}
-
-// 裁掉：仙人掌 / 芦苇（荒漠、湿地河岸的点缀层）。
-#ifndef PK_VEG_NEAR_MIN
-VegSurf vf_cactus(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, 1.0, VF_CACTUS, false);
-	s.floor_a = exp(-max(e.edge, 0.0) * 8.0) * 0.15;
-	s.cov = vf_cov(e.edge, ctx.px);
-	s.h = e.z;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vec2 q = (p - e.c) / e.r;
-	float rho = length(q);
-	float th = atan(q.y, q.x);
-	float ribs = e.k == 0 ? 12.0 : 8.0;
-	float rib = cos(th * ribs + e.id * 3.0);
-	float det = vf_detail(ribs / (VF_TAU * e.r), ctx.px);
-	vec2 dir = rho > 1e-4 ? q / rho : vec2(0.0);
-	vec2 perp = vec2(-dir.y, dir.x);
-	float t2 = clamp(rho * rho, 0.0, 0.97);
-	s.n = normalize(vec3(dir * rho * 0.9 + perp * sin(th * ribs + e.id * 3.0) * 0.22 * det,
-		sqrt(1.0 - t2) + 0.15));
-	s.tone = (0.90 + 0.12 * e.id) * mix(1.0, 0.82 + 0.18 * (rib * 0.5 + 0.5), det);
-	s.ao = mix(0.70, 1.0, smoothstep(0.0, 0.6, e.z));
-	s.elem = e.id;
-	// Areole spine dots along the rib crests.
-	float spine = step(0.85, rib) * step(0.6, fract(rho * 7.0 + e.id)) * det;
-	s.tone += spine * 0.22;
-	if (e.k == 0 && ctx.bloom > 0.02) {
-		float petals = 0.30 + 0.12 * abs(cos(th * 3.0));
-		float fl = (1.0 - smoothstep(petals - 0.04, petals + 0.04, rho))
-			* step(0.35, ctx.bloom + e.id * 0.3);
-		s.leaf_w = 1.0 - fl;
-		s.tint = mix(vec3(0.95, 0.40, 0.55), vec3(0.98, 0.82, 0.30), step(0.5, e.id));
-	}
-	s.snow_hold = 0.7;
-	return s;
-}
-
-VegSurf vf_reed(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	float patch_r = length(p) + (vf_vnoise(p * 2.1 + so) - 0.5) * 0.36;
-	if (patch_r > 0.95) {
-		return s;
-	}
-	s.floor_a = 0.24 * (1.0 - smoothstep(0.62, 0.90, patch_r));
-	float pitch = 0.15;
-	vec2 g = p / pitch + so;
-	vec2 gi = floor(g);
-	vec2 wd = ctx.wind;
-	vec2 wp = vec2(-wd.y, wd.x);
-	float best_z = -1.0;
-	float edge = 9.0;
-	vec2 best_dir = wd;
-	float best_side = 0.0;
-	float best_id = 0.0;
-	float head = 0.0;
-	for (int j = -1; j <= 1; j++) {
-		for (int i = -1; i <= 1; i++) {
-			vec2 cell = gi + vec2(float(i), float(j));
-			vec4 h = vf_hash42(cell);
-			vec2 c = (cell + 0.5 + (h.xy - 0.5) * 0.85 - so) * pitch;
-			if (length(c) > 0.80 + (h.w - 0.5) * 0.22) {
-				continue;
-			}
-			vec2 dir = normalize(wd + wp * (h.z - 0.5) * 1.5);
-			float L = 0.07 + 0.05 * h.w;
-			float wdt = 0.013;
-			vec2 v = p - c;
-			float t = clamp(dot(v, dir), -L, L);
-			vec2 off = v - dir * t;
-			float d = length(off) - wdt * (1.0 - 0.45 * abs(t) / L);
-			float hd = length(p - (c + dir * L)) - 0.022;
-			float with_head = h.x > 0.45 ? min(d, hd) : d;
-			edge = min(edge, with_head);
-			float z = 0.45 + 0.55 * h.w;
-			if (with_head < 0.0 && z > best_z) {
-				best_z = z;
-				best_dir = dir;
-				best_side = dot(off, vec2(-dir.y, dir.x)) / wdt;
-				best_id = h.z;
-				head = (h.x > 0.45 && hd < d) ? 1.0 : 0.0;
-			}
-		}
-	}
-	s.cov = vf_cov(edge, ctx.px);
-	s.h = max(best_z, 0.0);
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vec2 perp = vec2(-best_dir.y, best_dir.x);
-	s.n = normalize(vec3(perp * clamp(best_side, -1.0, 1.0) * 0.8 + best_dir * 0.15, 1.0));
-	s.tone = 0.86 + 0.26 * best_id;
-	s.elem = best_id;
-	s.ao = mix(0.72, 1.0, s.h);
-	if (head > 0.5) {
-		s.leaf_w = 0.0;
-		s.tint = vec3(0.40, 0.27, 0.15);
-		s.n = vec3(0.0, 0.0, 1.0);
-	}
-	s.snow_hold = 0.7;
-	return s;
-}
-
-#endif  // !PK_VEG_NEAR_MIN
-
-// 保留：草丛（地表底色，web 上最常出现在屏幕上的三个家族之一）。
-VegSurf vf_grass(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float keep = mix(0.35, 1.0, ctx.vigor);
-	VfElem e = vf_elements(p, ctx, 0.40, 0.0, 0.5, keep, VF_GRASS, false);
-	// Blades reach past the element disc, so test a slightly larger radius.
-	if (e.edge > 0.35 * e.r) {
-		return s;
-	}
-	vec2 q = (p - e.c) / (e.r * 1.15);
-	q -= ctx.wind * dot(q, q) * 0.28;
-	float rho = length(q);
-	vec2 dir = rho > 1e-4 ? q / rho : vec2(1.0, 0.0);
-	float pxq = ctx.px / e.r;
-	// Tussock: a dense core with many uneven blade tips fanning out; the
-	// reach varies with direction noise so no two tufts share a silhouette.
-	float det = vf_detail(14.0 / VF_TAU, pxq);
-	float tips = 0.55 * vf_vnoise(dir * 3.2 + e.id * 13.0)
-		+ 0.45 * mix(0.5, vf_vnoise(dir * 9.0 + e.id * 7.0), det);
-	float reach = 0.48 + 0.62 * tips * tips;
-	float fan = 1.0 - smoothstep(reach - pxq * 1.5, reach + pxq * 1.5, rho);
-	float core = 1.0 - smoothstep(0.34 - pxq, 0.34 + pxq, rho);
-	s.cov = max(fan * mix(1.0, 0.78, smoothstep(0.4, 1.0, rho)), core);
-	s.h = e.z * (1.0 - rho * 0.8);
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	float th = atan(q.y, q.x);
-	float strands = 0.5 + 0.5 * cos(th * 23.0 + e.id * 40.0 + rho * 4.0);
-	s.n = normalize(vec3(q * 0.75 + vec2(-dir.y, dir.x) * (strands - 0.5) * 0.30 * det, 1.0));
-	s.tone = (0.80 + 0.34 * rho) * (0.92 + 0.16 * e.id) * mix(1.0, 0.90 + 0.18 * strands, det);
-	s.ao = mix(0.62, 1.0, smoothstep(0.0, 0.7, rho));
-	s.elem = e.id;
-	if (ctx.bloom > 0.02) {
-		vec2 g = p * 9.0 + vf_seed_offset(ctx.seed);
-		vec2 gi = floor(g);
-		float fl = step(1.0 - ctx.bloom * 0.30, vf_hash12(gi))
-			* (1.0 - smoothstep(0.16, 0.16 + ctx.px * 18.0, length(fract(g) - 0.5)));
-		s.leaf_w = 1.0 - fl;
-		s.tint = mix(vec3(0.96, 0.92, 0.84), vec3(0.92, 0.74, 0.24), step(0.5, vf_hash12(gi + 4.1)));
-	}
-	s.snow_hold = 1.0;
-	return s;
-}
-
-// 裁掉：地衣 / 花 / 泥炭草（纯点缀层，远景软盘已经读不出差别）。
-#ifndef PK_VEG_NEAR_MIN
-VegSurf vf_lichen(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	float n1 = vf_vnoise(p * 2.2 + so);
-	float n2 = vf_vnoise(p * 5.3 + so * 1.7);
-	float nn = n1 * 0.65 + n2 * 0.35;
-	float shape = length(p) - 0.84 + (nn - 0.5) * 0.60;
-	float blot = smoothstep(0.30, 0.36, nn + ctx.vigor * 0.12);
-	s.cov = vf_cov(shape, ctx.px) * blot;
-	s.h = 0.05;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	float rim = 1.0 - smoothstep(0.0, 0.08, nn + ctx.vigor * 0.12 - 0.33);
-	float spot = step(0.70, vf_vnoise(p * 3.3 + so * 2.1));
-	s.tint = mix(vec3(0.64, 0.66, 0.56), vec3(0.80, 0.54, 0.20), spot);
-	s.leaf_w = 0.45 * (1.0 - spot);
-	s.tone = 0.90 + 0.18 * n2 + rim * 0.12;
-	s.n = normalize(vec3((vec2(n1, n2) - 0.5) * 0.4, 1.0));
-	s.elem = n1;
-	s.snow_hold = 1.0;
-	return s;
-}
-
-VegSurf vf_flower(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
-	float fe = 2.0 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
-	float en = vf_vnoise(p * fe + so);
-	float keep = mix(0.35, 1.0, ctx.vigor);
-	VfElem e = vf_elements(p, ctx, 0.30, 0.30 * vf_detail(fe, ctx.px), en, keep, VF_FLOWER, false);
-	s.floor_a = exp(-max(e.edge, 0.0) * 18.0) * 0.18;
-	s.cov = vf_cov(e.edge, ctx.px);
-	s.h = e.z;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vf_crown_shade(s, e, p, 6.0, 0.45, ctx.px);
-	if (ctx.bloom > 0.02 && e.id > 0.30) {
-		vec2 fc = e.c + (vf_hash22(vec2(e.id * 41.0, 3.0)) - 0.5) * e.r * 0.5;
-		vec2 fq = (p - fc) / (e.r * 0.55);
-		float fr = length(fq);
-		float th = atan(fq.y, fq.x);
-		float petal = 0.55 + 0.45 * abs(cos(th * 2.5));
-		float bloom_size = smoothstep(0.02, 0.5, ctx.bloom);
-		float fl = 1.0 - smoothstep(petal * bloom_size - 0.06, petal * bloom_size + 0.06, fr);
-		float eye = 1.0 - smoothstep(0.18, 0.26, fr);
-		float pick = fract(e.id * 5.77);
-		vec3 petal_col = pick < 0.25 ? vec3(0.95, 0.94, 0.90)
-			: (pick < 0.5 ? vec3(0.96, 0.80, 0.22)
-			: (pick < 0.75 ? vec3(0.84, 0.36, 0.64) : vec3(0.52, 0.48, 0.90)));
-		s.leaf_w = 1.0 - fl;
-		s.tint = mix(petal_col, vec3(0.95, 0.75, 0.20), eye * step(pick, 0.75));
-		s.n = normalize(mix(s.n, vec3(0.0, 0.0, 1.0), fl * 0.7));
-		s.h += fl * 0.1;
-	}
-	s.snow_hold = 1.0;
-	return s;
-}
-
-VegSurf vf_peat(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
-	float fe = 1.6 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
-	float en = vf_vnoise(p * fe + so);
-	VfElem e = vf_elements(p, ctx, 0.22, 0.36 * vf_detail(fe, ctx.px), en,
-		mix(0.4, 1.0, ctx.vigor), VF_PEAT_TUFT, false);
-	s.floor_a = max(exp(-max(e.edge, 0.0) * 12.0) * 0.20, vf_floor_patch(p, 0.18));
-	s.cov = vf_cov(e.edge, ctx.px);
-	s.h = e.z;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vf_crown_shade(s, e, p, 7.0, 0.30, ctx.px);
-	float red = step(0.55, e.id) * smoothstep(0.35, 0.65, vf_vnoise(p * 4.0 + so * 3.0));
-	s.leaf_w = 1.0 - red * 0.7;
-	s.tint = vec3(0.58, 0.26, 0.20);
-	vec2 g = p * 11.0 + so;
-	vec2 gi = floor(g);
-	float cotton = step(0.86 - ctx.bloom * 0.2, vf_hash12(gi))
-		* (1.0 - smoothstep(0.12, 0.12 + ctx.px * 22.0, length(fract(g) - 0.5)))
-		* vf_detail(11.0, ctx.px);
-	s.leaf_w *= 1.0 - cotton;
-	s.tint = mix(s.tint, vec3(0.95, 0.95, 0.92), cotton);
-	s.snow_hold = 1.0;
-	return s;
-}
-#endif  // !PK_VEG_NEAR_MIN
-
-// ── Hardscape ──────────────────────────────────────────────────────────────
-
-// 裁掉：岩石 / 碎石 / 雪堆 / 倒木（硬质点缀）。岩石是这一段里唯一较重的 3x3
-// Voronoi，也在精简集之外。
-#ifndef PK_VEG_NEAR_MIN
-VegSurf vf_rock(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-#ifdef VF_CROWN_ART
-	if (crown_art_bound) {
-		// The atlas replaces the old faceted dome with authored weathered boulders.
-		// Keep a full rotation so the same eight sprites do not form a visible pattern.
-		float ang = fract(ctx.seed * 7.31 + 0.17) * VF_TAU;
-		float ca = cos(ang);
-		float sa = sin(ang);
-		vec2 q = mat2(vec2(ca, sa), vec2(-sa, ca)) * p;
-		if (max(abs(q.x), abs(q.y)) >= 1.0) {
-			return s;
-		}
-		float variant = floor(fract(ctx.seed * 5.731 + 0.29) * 8.0);
-		vec2 cell = vec2(mod(variant, 4.0), floor(variant / 4.0));
-		vec2 uv = (cell + q * 0.5 + 0.5) / vec2(4.0, 2.0);
-		float k = ctx.px / 0.75 / 2.0;
-		vec2 gx = vec2(k * 0.25, 0.0);
-		vec2 gy = vec2(0.0, k * 0.5);
-		vec4 c = textureGrad(crown_art, vec3(uv, 4.0), gx, gy);
-		// Erode the authored silhouette through stable multi-scale noise. The broad
-		// octave breaks up the contact contour; the finer one fades out before it can
-		// alias at overview zoom.
-		float n_broad = vf_vnoise(q * 4.3 + so * 1.7);
-		float n_fine = vf_vnoise(q * 8.6 + so * 3.1) * vf_detail(8.6, ctx.px);
-		float contour = (n_broad - 0.5) * 0.28 + (n_fine - 0.5) * 0.12;
-		s.cov = c.a * smoothstep(0.035, 0.68, c.a + contour);
-		s.h = 0.72 * s.cov;
-		// The bitmap already carries its own cavity shading. A second geometric contact
-		// disc reads as a dark square/blob at map scale, so atlas rocks use no floor pass.
-		s.floor_a = 0.0;
-		s.leaf_w = 0.0;
-		s.tone = 1.0;
-		s.tint = c.rgb * 1.06;
-		s.elem = fract(ctx.seed * 5.173 + 0.41);
-		s.snow_hold = 0.78 * smoothstep(0.10, 0.55, s.cov);
-		if (cheap || s.cov <= 0.0) {
-			return s;
-		}
-		vec4 nm = textureGrad(crown_normal_art, vec3(uv, 4.0), gx, gy);
-		vec2 nxy = (nm.rg * 2.0 - 1.0) * 0.92;
-		nxy = vec2(ca * nxy.x + sa * nxy.y, -sa * nxy.x + ca * nxy.y);
-		float relief = smoothstep(0.04, 0.64, s.cov);
-		vec3 relief_n = normalize(vec3(nxy,
-			max(sqrt(max(1.0 - dot(nxy, nxy), 0.0)), 0.42)));
-		// Flatten normals and lift AO through the feathered edge. Otherwise the baked
-		// side-wall normals turn a transparent contour into a dark painted border.
-		s.n = normalize(mix(vec3(0.0, 0.0, 1.0), relief_n, relief));
-		s.ao = mix(1.0, mix(0.58, 1.0, nm.a), relief);
-		s.h = nm.b;
-		return s;
-	}
-#endif
-	vec2 pe = vec2(p.x * 0.86, p.y * 1.12);
-	float dn = vf_vnoise(p * 1.6 + so) * 0.6 + vf_vnoise(p * 3.7 + so) * 0.4;
-	float r = 0.70;
-	float rad = length(pe);
-	float d = rad - r + (dn - 0.5) * 0.42;
-	s.floor_a = exp(-max(d, 0.0) * 12.0) * 0.36;
-	s.cov = vf_cov(d, ctx.px);
-	float t = clamp(rad / (r + 0.2), 0.0, 1.0);
-	s.h = 0.8 * pow(max(1.0 - t * t, 0.0), 0.6);
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	// Voronoi facets: each cell tilts the dome normal a little, so the boulder
-	// reads as weathered planes, not a polished gem.
-	vec2 g = p * 1.7 + so;
-	vec2 gi = floor(g);
-	float f1 = 9.0;
-	float f2 = 9.0;
-	vec2 fid = vec2(0.0);
-	for (int j = -1; j <= 1; j++) {
-		for (int i = -1; i <= 1; i++) {
-			vec2 cell = gi + vec2(float(i), float(j));
-			vec2 fp = cell + vf_hash22(cell);
-			float dd = length(g - fp);
-			if (dd < f1) {
-				f2 = f1;
-				f1 = dd;
-				fid = cell;
-			} else if (dd < f2) {
-				f2 = dd;
-			}
-		}
-	}
-	vec2 fh = vf_hash22(fid + 5.3);
-	float det = vf_detail(1.7, ctx.px);
-	vec3 dome = normalize(vec3(pe / (r + 0.2) * 1.1, max(1.0 - t * t, 0.05)));
-	s.n = normalize(dome + vec3((fh - 0.5) * 0.45 * det, 0.0));
-	float crack = 1.0 - smoothstep(0.0, 0.035 + ctx.px * 2.5, f2 - f1);
-	crack *= smoothstep(0.30, 0.62, vf_vnoise(p * 4.5 + so * 1.3));
-	s.ao = 1.0 - 0.42 * crack * det;
-	s.ao *= mix(0.70, 1.0, smoothstep(0.0, 0.45, s.h));
-	float grain = vf_vnoise(p * 6.0 + so * 1.9);
-	s.tone = (0.84 + 0.14 * fh.x) * (0.92 + 0.14 * grain * vf_detail(6.0, ctx.px));
-	float spot = smoothstep(0.66, 0.74, vf_vnoise(p * 7.0 + so * 2.0)) * step(0.35, s.n.z)
-		* vf_detail(7.0, ctx.px);
-	// Stone keeps half its own warm grey so sky ambient never turns it blue.
-	s.leaf_w = 0.5 * (1.0 - spot);
-	vec3 stone = mix(vec3(0.54, 0.51, 0.46), vec3(0.62, 0.56, 0.47), fh.y);
-	s.tint = mix(stone, mix(vec3(0.46, 0.52, 0.30), vec3(0.78, 0.60, 0.26), step(0.5, fh.y)), spot);
-	s.elem = fh.x;
-	s.snow_hold = 0.75 * smoothstep(0.55, 0.85, s.n.z);
-	return s;
-}
-
-VegSurf vf_scree(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	VfElem e = vf_elements(p, ctx, 0.30, 0.0, 0.5, 1.0, VF_SCREE, false);
-	s.floor_a = exp(-max(e.edge, 0.0) * 16.0) * 0.28;
-	if (e.edge > ctx.px) {
-		return s;
-	}
-	vec2 q = (p - e.c) / e.r;
-	float a = e.id * VF_TAU;
-	vec2 qr = mat2(vec2(cos(a), sin(a)), vec2(-sin(a), cos(a))) * q;
-	float angular = mix(length(qr), max(abs(qr.x) * 1.05, abs(qr.y) * 1.3), 0.6);
-	float pxq = ctx.px / e.r;
-	s.cov = 1.0 - smoothstep(0.92 - pxq, 0.92 + pxq, angular);
-	s.h = e.z * (1.0 - angular * 0.6);
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vec2 tilt = vf_hash22(vec2(e.id * 37.0, 1.7)) - 0.5;
-	s.n = normalize(vec3(q * 0.55 + tilt * 0.9, 1.0));
-	s.tone = 0.78 + 0.36 * fract(e.id * 3.71);
-	s.ao = mix(0.70, 1.0, smoothstep(0.0, 0.5, 1.0 - angular));
-	s.elem = e.id;
-	s.snow_hold = 0.9;
-	return s;
-}
-
-VegSurf vf_snow_mound(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	vec2 wd = ctx.wind;
-	vec2 q = vec2(dot(p, wd) * 0.72, dot(p, vec2(-wd.y, wd.x)));
-	float dn = vf_vnoise(p * 1.8 + so);
-	float rad = length(q);
-	float d = rad - 0.76 + (dn - 0.5) * 0.30;
-	s.floor_a = exp(-max(d, 0.0) * 10.0) * 0.08;
-	// Drifts melt into the snowfield: a wide soft rim instead of a hard shell.
-	s.cov = 1.0 - smoothstep(-0.22, ctx.px, d);
-	float t = clamp(rad / 0.86, 0.0, 1.0);
-	s.h = 0.6 * sqrt(max(1.0 - t * t, 0.0));
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	// Drifts are steeper on the lee side.
-	float lee = dot(p, wd) > 0.0 ? 1.4 : 0.8;
-	vec2 grad = p / 0.86 * lee;
-	s.n = normalize(vec3(grad * 0.8, max(1.0 - t * t, 0.08) + 0.2));
-	float det = vf_detail(14.0 / VF_TAU, ctx.px);
-	s.tone = 1.0 + 0.025 * sin(q.y * 14.0 + dn * 7.0) * det;
-	s.leaf_w = 0.0;
-	s.tint = vec3(0.92, 0.94, 0.98);
-	s.snow_hold = 0.0;
-	return s;
-}
-
-VegSurf vf_fallen_log(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	float L = 0.78;
-	float x = p.x;
-	float y = p.y + sin(x * 2.0 + ctx.seed * 6.0) * 0.04;
-	float rr = 0.17 * (1.0 - 0.18 * (x / L));
-	float dx = max(abs(x) - L, 0.0);
-	float d = length(vec2(dx, y)) - rr;
-	// One stub where a branch broke off.
-	vec2 stub_c = vec2(L * (0.2 + 0.3 * fract(ctx.seed * 7.0)) * sign(fract(ctx.seed * 3.0) - 0.5),
-		rr * 0.6);
-	vec2 sv = p - stub_c;
-	float stub = length(vec2(sv.x, max(abs(sv.y) - 0.10, 0.0))) - 0.035;
-	d = min(d, stub);
-	s.floor_a = exp(-max(d, 0.0) * 12.0) * 0.34;
-	s.cov = vf_cov(d, ctx.px);
-	float across = clamp(y / rr, -1.0, 1.0);
-	s.h = 0.30 * sqrt(max(1.0 - across * across, 0.0));
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	s.n = normalize(vec3(0.0, across, sqrt(max(1.0 - across * across, 0.0)) + 0.1));
-	float det = vf_detail(10.0, ctx.px);
-	float bark = vf_vnoise(vec2(x * 3.0, across * 6.0) + so);
-	s.tone = (0.82 + 0.22 * bark) * mix(1.0, 0.88 + 0.12 * sin(across * 14.0 + bark * 4.0), det);
-	s.ao = mix(0.62, 1.0, s.n.z);
-	if (x > L - 0.01) {
-		// Cut end: pale wood with growth rings.
-		float ring = fract(length(vec2(x - L, y)) / rr * 4.0);
-		s.leaf_w = 0.0;
-		s.tint = vec3(0.70, 0.57, 0.38) * (0.88 + 0.12 * step(0.5, ring));
-		s.n = normalize(vec3(0.6, 0.0, 0.8));
-	}
-	float moss = smoothstep(0.58, 0.70, vf_vnoise(p * 4.0 + so * 1.3)) * step(0.4, s.n.z);
-	s.leaf_w *= 1.0 - moss;
-	s.tint = mix(s.tint, vec3(0.30, 0.42, 0.18), moss);
-	s.snow_hold = 0.9;
-	return s;
-}
-#endif  // !PK_VEG_NEAR_MIN
-
-// ── Aquatic ────────────────────────────────────────────────────────────────
-
-// 裁掉：海带 / 珊瑚（水下层，web 上本就只在海岸线附近出现）。
-#ifndef PK_VEG_NEAR_MIN
-VegSurf vf_kelp(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	// The holdfast sits upstream; fronds stream with the current, so the
-	// field is anchored at -wind and every blade is swept downstream.
-	vec2 wd = ctx.wind;
-	vec2 c = (vf_hash22(so) - 0.5) * 0.10 - wd * 0.45;
-	vec2 v = (p - c) / 0.90;
-	float id = fract(ctx.seed * 11.3);
-	float along = dot(v, wd);
-	vec2 wp = vec2(-wd.y, wd.x);
-	float across = dot(v, wp);
-	if (along < -0.12 || along > 1.30 || abs(across) > 0.75) {
-		return s;
-	}
-	float nf = 4.0 + floor(id * 3.0);
-	float best = 9.0;
-	float best_t = 0.0;
-	float best_side = 0.0;
-	for (int k = 0; k < 6; k++) {
-		if (float(k) >= nf) {
-			break;
-		}
-		float hk = vf_hash12(vec2(id * 31.0, float(k) * 7.7));
-		float hk2 = vf_hash12(vec2(id * 17.0 + 3.1, float(k) * 5.3));
-		// Fronds rise from a spread-out holdfast and drift almost parallel,
-		// each with its own wave, so a bed never reads as a fan or arrow.
-		float start = (float(k) / max(nf - 1.0, 1.0) - 0.5) * 0.42 + (hk2 - 0.5) * 0.16;
-		float spread = (hk - 0.5) * 0.30;
-		float len = 0.70 + 0.55 * hk2;
-		float t = clamp(along / len, 0.0, 1.0);
-		float sway = sin(t * (4.0 + 3.0 * hk) - ctx.time * 0.6 + hk * 9.0) * 0.11 * t;
-		float centre = start + spread * t + sway;
-		float w = (0.050 + 0.035 * hk) * sin(VF_PI * clamp(t * 0.85 + 0.15, 0.0, 1.0)) + 0.010;
-		float d = abs(across - centre) - w;
-		if (along > len) {
-			d = max(d, along - len);
-		}
-		if (d < best) {
-			best = d;
-			best_t = t;
-			best_side = (across - centre) / max(w, 1e-3);
-		}
-	}
-	float pxq = ctx.px / 0.9;
-	s.cov = vf_cov(best, pxq) * mix(0.62, 0.40, best_t);
-	s.h = 0.06;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	s.n = normalize(vec3(wp * clamp(best_side, -1.0, 1.0) * 0.40, 1.0));
-	float bladder = 1.0 - smoothstep(0.20, 0.34, abs(fract(best_t * 7.0) - 0.5));
-	s.tone = 0.86 + 0.18 * id + bladder * 0.14 * vf_detail(7.0, ctx.px);
-	s.leaf_w = 0.35;
-	s.tint = vec3(0.38, 0.34, 0.15);
-	s.elem = id;
-	s.snow_hold = 0.0;
-	return s;
-}
-
-VegSurf vf_coral(vec2 p, VegCtx ctx, bool cheap) {
-	VegSurf s = vf_empty();
-	float r0 = vf_elem_radius(ctx.count);
-	float fe = 1.7 / r0;
-	vec2 so = vf_seed_offset(ctx.seed);
-	float en = vf_vnoise(p * fe + so);
-	VfElem e = vf_elements(p, ctx, 0.30, 0.34 * vf_detail(fe, ctx.px), en,
-		mix(0.4, 1.0, ctx.vigor), VF_CORAL, false);
-	s.cov = vf_cov(e.edge, ctx.px) * 0.92;
-	s.h = e.z;
-	if (cheap || s.cov <= 0.0) {
-		return s;
-	}
-	vf_crown_shade(s, e, p, 5.0, 0.35, ctx.px);
-	vec2 q = (p - e.c) / e.r;
-	float det = vf_detail(4.0 / e.r, ctx.px);
-	float groove = abs(sin(vf_vnoise(q * 3.0 + e.id * 7.0) * 9.0));
-	s.tone *= mix(1.0, 0.72 + 0.28 * smoothstep(0.2, 0.6, groove), det);
-	float pick = fract(e.id * 4.37);
-	vec3 col = pick < 0.25 ? vec3(0.92, 0.48, 0.52)
-		: (pick < 0.5 ? vec3(0.95, 0.64, 0.34)
-		: (pick < 0.75 ? vec3(0.66, 0.46, 0.80) : vec3(0.90, 0.84, 0.48)));
-	s.tint = col;
-	s.leaf_w = 0.35;
-	s.snow_hold = 0.0;
-	return s;
-}
-#endif  // !PK_VEG_NEAR_MIN
-
-// 该 form 有没有近景函数可调。精简集下只有 4 个主力家族有，其余在调用点
-// （vegetation_impostor 的 fragment）直接走 vf_far —— 这里绝不能引用被 #if
-// 裁掉的函数，否则那 13 段 GLSL 又会回到编译单元里。
-bool vf_form_near_available(int form) {
-#ifdef PK_VEG_NEAR_MIN
-	return form == VF_BROADLEAF || form == VF_CONIFER
-		|| form == VF_SHRUB || form == VF_GRASS;
-#else
-	return true;
-#endif
-}
-
-VegSurf vf_eval(int form, vec2 p, VegCtx ctx, bool cheap) {
-#ifdef PK_VEG_NEAR_MIN
-	// 精简集分派：4 个主力家族；其余落到 vf_shrub 只是兜底（正常不会走到，
-	// 调用点已经用 vf_form_near_available() 把它们导向 vf_far 了）。
-	if (form == VF_BROADLEAF) return vf_broadleaf(p, ctx, cheap, true);
-	if (form == VF_CONIFER) return vf_conifer(p, ctx, cheap);
-	if (form == VF_SHRUB) return vf_shrub(p, ctx, cheap);
-	if (form == VF_GRASS) return vf_grass(p, ctx, cheap);
-	return vf_shrub(p, ctx, cheap);
-#else
-	if (form == VF_BROADLEAF) return vf_broadleaf(p, ctx, cheap, true);
-	if (form == VF_CONIFER) return vf_conifer(p, ctx, cheap);
-	if (form == VF_PALM) return vf_palm(p, ctx, cheap);
-	if (form == VF_SHRUB) return vf_shrub(p, ctx, cheap);
-	if (form == VF_CACTUS) return vf_cactus(p, ctx, cheap);
-	if (form == VF_REED) return vf_reed(p, ctx, cheap);
-	if (form == VF_GRASS) return vf_grass(p, ctx, cheap);
-	if (form == VF_LICHEN) return vf_lichen(p, ctx, cheap);
-	if (form == VF_FLOWER) return vf_flower(p, ctx, cheap);
-	if (form == VF_ROCK) return vf_rock(p, ctx, cheap);
-	if (form == VF_SCREE) return vf_scree(p, ctx, cheap);
-	if (form == VF_SNOW_MOUND) return vf_snow_mound(p, ctx, cheap);
-	if (form == VF_SNAG) return vf_snag(p, ctx, cheap, false);
-	if (form == VF_FALLEN_LOG) return vf_fallen_log(p, ctx, cheap);
-	if (form == VF_MANGROVE) return vf_snag(p, ctx, cheap, true);
-	if (form == VF_KELP) return vf_kelp(p, ctx, cheap);
-	if (form == VF_CORAL) return vf_coral(p, ctx, cheap);
-	if (form == VF_PEAT_TUFT) return vf_peat(p, ctx, cheap);
-	return vf_shrub(p, ctx, cheap);
-#endif  // PK_VEG_NEAR_MIN
-}
-
-// Distant fallback: once a whole instance is only a few pixels wide, a soft
-// lumpy disc in the element colour reads the same and skips the field walk.
-VegSurf vf_far(int form, vec2 p, VegCtx ctx) {
-	VegSurf s = vf_empty();
-	vec2 so = vf_seed_offset(ctx.seed);
-	float extent = (form == VF_LICHEN || form == VF_REED || form == VF_KELP) ? 0.78 : 0.82;
-	if (form == VF_FALLEN_LOG) {
-		float d = length(vec2(max(abs(p.x) - 0.78, 0.0), p.y)) - 0.17;
-		s.cov = vf_cov(d, ctx.px);
-		s.h = 0.2;
-		s.leaf_w = 1.0;
-		return s;
-	}
-	bool multi = ctx.count > 1.5;
-	float lump = multi ? 0.50 : 0.25;
-	float d = length(p) - extent + (vf_vnoise(p * 2.0 + so) - 0.5) * lump;
-	float density = (form == VF_SNAG || form == VF_MANGROVE) ? 0.45
-		: ((form == VF_REED || form == VF_GRASS || form == VF_KELP) ? 0.75 : 1.0);
-	if (form == VF_BROADLEAF) {
-		density = mix(0.45, 1.0, smoothstep(0.1, 0.6, ctx.leaf));
-	}
-	s.cov = vf_cov(d, ctx.px) * density;
-	vec2 q = p / extent;
-	float crowns = 1.0;
-	if (multi) {
-		// Element-scale blotches keep a cluster or grove broken into crowns
-		// instead of a single puck, at the cost of one noise tap.
-		float fe = 0.85 / vf_elem_radius(ctx.count);
-		crowns = vf_vnoise(p * fe + so * 1.7);
-		s.cov *= smoothstep(0.22, 0.48, crowns);
-	}
-	s.h = 0.5;
-	s.n = normalize(vec3(q * 0.30, 1.0));
-	s.tone = 0.90 + 0.18 * crowns;
-	s.elem = crowns;
-	s.ao = 0.94;
-	if (form == VF_ROCK || form == VF_SCREE || form == VF_SNOW_MOUND) {
-		s.leaf_w = form == VF_SNOW_MOUND ? 0.0 : 1.0;
-		s.tint = vec3(0.92, 0.94, 0.98);
-	}
-	if (form == VF_CORAL) {
-		s.leaf_w = 0.35;
-		s.tint = vec3(0.90, 0.56, 0.48);
-	}
-	if (form == VF_KELP) {
-		s.leaf_w = 0.35;
-		s.tint = vec3(0.38, 0.34, 0.15);
-	}
-	s.floor_a = exp(-max(d, 0.0) * 14.0) * 0.10;
-	return s;
-}
 #endif // PK_VF_NOISE_ONLY
 
 #endif
