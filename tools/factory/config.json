@@ -30,6 +30,7 @@
     "localReviewRounds": 2,
     "localReviewRequired": false,
     "prReviewRounds": 3,
+    "checkFixRounds": 2,
     "localReviewTimeoutMinutes": 30,
     "prReviewTimeoutMinutes": 40,
     "ciTimeoutMinutes": 40,

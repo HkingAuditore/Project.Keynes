@@ -671,16 +671,36 @@ class Watcher:
         if self.scope_blocked(pr, st, logs, files, candidate):
             return "stopped"
 
-        res, files = candidate.run(head, files, str(logs / "checks-fix"), [])
-        after = checks.failed(res)
-        new = checks.new_failures(res, before)
-        ev.add("checks-after", failed=after, new=new)
-        record["checks"] = {"before": before, "after": after, "new": new, "results": res}
-        record["files"] = files
-        if self.scope_blocked(pr, st, logs, files, candidate, before_commit=not new):
-            return "stopped"
+        rounds = cfg["limits"].get("checkFixRounds", 0)
+        for attempt in range(rounds + 1):
+            label = "checks-fix" if attempt == 0 else f"checks-fix-{attempt}"
+            res, files = candidate.run(head, files, str(logs / label), [])
+            after = checks.failed(res)
+            new = checks.new_failures(res, before)
+            ev.add("checks-after", failed=after, new=new, attempt=attempt)
+            record["checks"] = {"before": before, "after": after, "new": new, "results": res, "checkFixRounds": attempt}
+            record["files"] = files
+            if self.scope_blocked(pr, st, logs, files, candidate, before_commit=not new):
+                return "stopped"
+            if not new or attempt == rounds:
+                break
+            # Give Codex the failing checks and let it repair its own change before giving up.
+            prompt = agent.render("fix-checks", number=str(n), title=pr["title"], feedback=checks.feedback(res, new))
+            out = agent.codex(cfg, self.workdir, prompt, str(logs / f"fix-checks-{attempt + 1}.md"), writable=True)
+            record.setdefault("checkFixReports", []).append(out["report"][-4000:])
+            ev.add("check-fix", attempt=attempt + 1, ok=out["ok"], code=out.get("code"))
+            if not out["ok"]:
+                self.stop_with_patch(pr, st, logs, f"{agent.failure_reason(out)} while fixing failing checks")
+                return "stopped"
+            if work.head(self.workdir) != head:
+                self.stop(pr, st, "the agent made its own commits; nothing was pushed")
+                return "stopped"
+            files = work.changed(self.workdir, head)
+            if self.scope_blocked(pr, st, logs, files, candidate):
+                return "stopped"
         if new:
-            self.stop(pr, st, f"the fix has failing checks: {', '.join(new)}; nothing was pushed",
+            tried = f" after {rounds} check-fix round{'s' if rounds != 1 else ''}" if rounds else ""
+            self.stop(pr, st, f"the fix has failing checks{tried}: {', '.join(new)}; nothing was pushed",
                       checks.feedback(res, new)[:6000] + f"\n\n{facts.report()}")
             return "stopped"
 

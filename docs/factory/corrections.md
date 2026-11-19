@@ -9,3 +9,4 @@
 | 2026-11-19 | 工厂处理 PR #3 时，agent 工作树继承了轮询工作树的稀疏设置，Codex 只能看到少量代码，修复前的检查也因脚本缺失全部失败，导致新增失败的判断失去作用。 | `work.prepare()` 检查稀疏状态和跟踪文件是否齐全，`checks.Runner` 遇到缺失的检查脚本或测试目录直接报错，新增真实 Git 工作树、缺失检查入口和停机记录测试。 |
 | 2026-11-19 | 仓库所有者决定，当前头部提交通过 Qodo 评审且 CI 全部成功时，由工厂合并符合条件的 PR。 | `watch_prs.py` 的 `decide()` 检查评审、CI、标签和可合并状态，`tools/factory/tests/test_watch.py` 覆盖合并和停止条件。 |
 | 2026-11-19 | 仓库所有者决定，由工厂把有冲突的 PR 分支更新到 master。 | `watch_prs.py` 的 `decide()` 选择更新，`test_watch.py` 和 `test_workflow.py` 覆盖判断和工作流程。 |
+| 2026-11-19 | PR #2 上 Codex 修完 19 项评审问题，只因一处 C++ 编译错误和一处脚本原生访问计数超 1 就整轮放弃，修复没有推送。 | `watch_prs.py` 的 `_fix()` 把新增失败的检查报错交回 Codex，最多 `checkFixRounds` 轮；`checks.feedback()` 先列出报错行；`test_workflow.py` 和 `test_native.py` 覆盖重试成功、达到上限停下和 Codex 失败。 |

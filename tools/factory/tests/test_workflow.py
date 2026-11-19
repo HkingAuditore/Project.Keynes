@@ -253,6 +253,50 @@ class WatchWorkflowTest(TempFactory):
     def read_record(self, watcher):
         return json.loads((self.root / "runs" / f"pr-7-{watcher.stamp}.json").read_text())
 
+    def run_check_fix(self, results, codex_ok=True):
+        watcher = self.make_watcher()
+        log = self.write_file(self.root, "native.log", "src/a.cpp:197:49: error: no viable conversion\n"
+                              + "warning: noise\n" * 200)
+        failing = [{"name": "native-rebuild", "ok": False, "code": 1, "log": str(log)}]
+        runs = [(failing if r == "fail" else [], ["edit.gd"]) for r in results]
+        reports = [{"ok": True, "report": "fixed"}] + [{"ok": codex_ok, "code": 0 if codex_ok else 1, "report": "x"}] * 3
+        with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.base_results", return_value=[]), patch("work.head", return_value=HEAD),
+              patch("agent.codex", side_effect=reports) as codex,
+              patch("work.changed", return_value=["edit.gd"]), patch("checks.Candidate.run", side_effect=runs),
+              patch.object(watcher, "scope_blocked", return_value=False),
+              patch("work.save_patch", return_value=[]),
+              patch.object(watcher, "stop") as stop, patch("work.commit", return_value="b" * 40) as commit,
+              patch("checks.Candidate.committed"), patch("watch_prs.must")):
+            record = {}
+            outcome = watcher._fix(PR, PrState(), [FINDING], self.root, Events(), record)
+        return outcome, codex, stop, commit, record
+
+    def test_failing_checks_go_back_to_codex_before_stopping(self):
+        outcome, codex, stop, commit, record = self.run_check_fix(["fail", "pass"])
+        self.assertEqual(outcome, "pushed")
+        self.assertEqual(codex.call_count, 2)
+        prompt = codex.call_args_list[1].args[2]
+        self.assertIn("no viable conversion", prompt)
+        stop.assert_not_called()
+        commit.assert_called_once()
+        self.assertEqual(record["checks"]["checkFixRounds"], 1)
+
+    def test_checks_that_keep_failing_stop_after_the_round_limit(self):
+        rounds = self.cfg["limits"]["checkFixRounds"]
+        outcome, codex, stop, commit, _ = self.run_check_fix(["fail"] * (rounds + 1))
+        self.assertEqual(outcome, "stopped")
+        self.assertEqual(codex.call_count, rounds + 1)
+        commit.assert_not_called()
+        self.assertIn(f"after {rounds} check-fix rounds: native-rebuild", stop.call_args.args[2])
+
+    def test_failed_check_fix_agent_stops_with_patch(self):
+        outcome, codex, stop, commit, _ = self.run_check_fix(["fail", "pass"], codex_ok=False)
+        self.assertEqual(outcome, "stopped")
+        self.assertEqual(codex.call_count, 2)
+        commit.assert_not_called()
+        self.assertIn("while fixing failing checks", stop.call_args.args[2])
+
     def test_scope_rechecked_after_passing_checks(self):
         watcher = Watcher(self.cfg, dry=False)
         pr = {"number": 7, "headRefOid": HEAD, "headRefName": "issue", "title": "Example"}

@@ -263,11 +263,23 @@ class Candidate:
         self.inputs, self.built = {}, {}
 
 
+def error_lines(path: str, limit: int = 30) -> str:
+    """Compiler and test errors can scroll out of the log tail; quote them first."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    hits = [line for line in lines if re.search(r"\berror\b|\bFAIL(ED)?\b|Traceback|AssertionError", line, re.I)]
+    if not hits:
+        return ""
+    return "Error lines:\n```\n" + "\n".join(hits[:limit]) + "\n```\nLog tail:\n"
+
+
 def feedback(results: list[dict], names: list[str]) -> str:
     parts = []
     for r in results:
         if r["name"] in names:
-            parts.append(f"### {r['name']} (exit {r['code']})\n```\n{tail(r['log'], 80)}\n```")
+            parts.append(f"### {r['name']} (exit {r['code']})\n{error_lines(r['log'])}```\n{tail(r['log'], 80)}\n```")
     return "\n\n".join(parts)
 
 

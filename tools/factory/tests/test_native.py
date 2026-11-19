@@ -96,6 +96,7 @@ class NativeWorkflowTest(TempFactory):
         gh.create_pr.return_value = PR
         pr = {**PR, "headRefOid": self.base}
         self.cfg["limits"]["implementAttempts"] = 2
+        self.cfg["limits"]["checkFixRounds"] = 1
 
         def review_head(tool, url, sha, timeout):
             findings = [FINDING] if review_fix and len(prompts) == 1 else []
@@ -145,12 +146,13 @@ class NativeWorkflowTest(TempFactory):
                 self.assertIn("native_libraries_committed=true", message)
 
     def test_failed_rebuild_skips_import_and_probes_and_never_publishes(self):
-        for mode, attempts in (("pr", 1), ("issue", 2)):
+        for mode in ("pr", "issue"):
             with self.subTest(mode=mode):
                 stages, prompts, record, gh, commit, push = self.run_workflow(mode, failure=checks.NATIVE_REBUILD)
-                self.assertEqual(stages, [checks.NATIVE_REBUILD] * attempts)
-                if mode == "issue":
-                    self.assertIn("native-rebuild failed", prompts[-1])
+                # Both modes hand the failing build back to Codex once before stopping.
+                self.assertEqual(stages, [checks.NATIVE_REBUILD] * 2)
+                self.assertIn("native-rebuild", prompts[-1])
+                self.assertEqual(len(prompts), 2)
                 self.assertIn(checks.NATIVE_REBUILD, gh.comment.call_args.args[1])
                 self.assert_native_facts(record, True, False, False, False)
                 for lib in self.libraries:
@@ -160,15 +162,16 @@ class NativeWorkflowTest(TempFactory):
 
     def test_failed_import_skips_probes_and_never_publishes(self):
         stages, _, record, gh, commit, push = self.run_workflow("pr", failure=checks.NATIVE_IMPORT)
-        self.assertEqual(stages, [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT])
+        self.assertEqual(stages, [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT] * 2)
         self.assertIn(checks.NATIVE_IMPORT, gh.comment.call_args.args[1])
         self.assert_native_facts(record, True, True, False, False)
         commit.assert_not_called()
         push.assert_not_called()
 
     def test_one_failed_probe_still_runs_both_and_never_publishes(self):
-        for mode, attempts in (("pr", 1), ("issue", 2)):
+        for mode in ("pr", "issue"):
             with self.subTest(mode=mode):
+                attempts = 2
                 first, second = [checks.runtime_name(lib) for lib in self.cfg["paths"]["nativeLibraries"]]
                 stages, _, record, gh, commit, push = self.run_workflow(mode, failure=first)
                 self.assertEqual(stages, [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT, first, second,
