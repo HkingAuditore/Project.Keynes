@@ -7,6 +7,11 @@ const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 
+static func apply_published_resources(world: Object) -> Dictionary:
+	if world == null:
+		return {"ok": true, "applied": false}
+	return world.apply_runtime_economy_resource_writeback()
+
 static func mapped_names(stable_ids: PackedStringArray, table: Dictionary) -> PackedStringArray:
 	var names := PackedStringArray()
 	for stable_id in stable_ids:

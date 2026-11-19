@@ -64,6 +64,19 @@ struct EconomyMilitaryCellView {
     std::vector<uint8_t> has_merchant;  // a live merchant serves the cell
 };
 
+struct EconomyNaturalResourceProfile {
+    std::array<float, 20> coefficients{};
+    int32_t habitat_mode = 0;
+    int32_t temperature_signal = 0;
+    int32_t moisture_signal = 0;
+};
+
+struct EconomyNaturalResourceCatalogView {
+    const std::vector<std::string> &ids;
+    const std::vector<std::string> &reserve_slots;
+    const std::vector<std::string> &change_slots;
+};
+
 struct EconomyApi {
     enum EventKind : int32_t {
         EVENT_COMMAND_SETTLED = 1,
@@ -516,6 +529,14 @@ void collect_own_tagged_cells(const NativeEconomyRuntime &economy,
                               int32_t country_slot, int32_t tag,
                               std::vector<int32_t> &out_cells);
 int32_t cell_count(const NativeEconomyRuntime &economy);
+EconomyNaturalResourceCatalogView natural_resource_catalog(const NativeEconomyRuntime &economy);
+void configure_natural_resources(NativeEconomyRuntime &economy,
+                                 const std::vector<EconomyNaturalResourceProfile> &profiles);
+bool natural_resources_configured(const NativeEconomyRuntime &economy);
+bool natural_resources_seeded(const NativeEconomyRuntime &economy);
+bool seed_natural_resources(NativeEconomyRuntime &economy, int64_t day,
+                           const std::vector<const float *> &reserves,
+                           const std::vector<const float *> &changes);
 int32_t building_neighbor(const NativeEconomyRuntime &economy, int32_t cell,
                           int32_t direction);
 void collect_effect_target_cells(
@@ -592,6 +613,15 @@ bool military_purchase_receipt(const NativeEconomyRuntime &economy, int64_t sequ
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units);
 godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
 godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
+godot::Dictionary family_colonization_quotes(NativeEconomyRuntime &economy,
+    int64_t country, int32_t target, int64_t family, int32_t source, int32_t offset, int32_t limit,
+    const uint8_t *visible, int32_t visible_count, uint64_t vision_revision);
+godot::Dictionary family_colonization_quote_detail(const NativeEconomyRuntime &economy,
+    int64_t quote, int64_t population);
+godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy,
+    int64_t country, int64_t family, int32_t source, int32_t target, int64_t population,
+    int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
+    int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy);
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell);

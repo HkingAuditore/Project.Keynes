@@ -1,5 +1,6 @@
 extends Node
 const NativeWorld = preload("res://scripts/data_core/native_world.gd")
+const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 signal save_completed(slot_id: String, result: Dictionary)
 signal load_completed(slot_id: String, result: Dictionary)
 signal _slot_verification_completed(slots: Array)
@@ -377,8 +378,8 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		return runtime_bundle
 	var ext = _runtime_host.generator().get_data_core_world_ext()
 	if ext != null:
-		var resources: Dictionary = ext.apply_runtime_economy_resource_writeback()
-		var species: Dictionary = ext.apply_runtime_species_writeback()
+		var resources := EconomyDisplay.apply_published_resources(ext)
+		var species := BioOccupancyDailySystem.apply_published_occupancy(ext)
 		var vision := _runtime_host.apply_runtime_vision_display()
 		if not bool(vision.get("ok", false)):
 			_restore_clock_mode(was_paused, previous_speed, generation)

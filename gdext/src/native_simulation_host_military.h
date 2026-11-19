@@ -1,6 +1,6 @@
 #pragma once
 
-#include "military_core.h"
+#include "military_bridge.h"
 
 #include <memory>
 #include <string>
@@ -11,6 +11,8 @@
 
 namespace pk {
 
+class MilitaryCore;
+struct MilitaryCatalog;
 class ModifierRuntime;
 class DCWorldExt;
 class NativeCountryRuntime;
@@ -56,6 +58,7 @@ struct MilitaryEconomyCommand {
     int64_t i64_1 = 0;
 };
 
+// The executor adapter composes the military core with the host’s peer ports.
 // On a formal world, the executor is the sole writer after startup.
 // The facade uses a published copy for inspection and rendering.
 class NativeMilitaryRuntime {
@@ -79,7 +82,16 @@ public:
         godot::Dictionary result;
     };
 
-    MilitaryCore core;
+    NativeMilitaryRuntime();
+    ~NativeMilitaryRuntime();
+
+    MilitaryCore &core() noexcept { return *_core; }
+    const MilitaryCore &core() const noexcept { return *_core; }
+    std::vector<int32_t> vision_sources(int32_t country_slot) const;
+    std::vector<int32_t> take_vision_trail(int32_t country_slot);
+    void prepare_exploration(int32_t player_slot, const std::vector<uint8_t> &explored,
+                             int64_t day, uint64_t revision);
+
     NativeEconomyRuntime *_economy_runtime = nullptr;
     NativeCountryRuntime *_country_runtime = nullptr;
     ModifierRuntime *_modifier_runtime = nullptr;
@@ -106,6 +118,7 @@ public:
     int64_t events_forwarded = 0;
     godot::Dictionary last_result;
 private:
+    std::unique_ptr<MilitaryCore> _core;
     std::shared_ptr<const Published> _published;
 public:
     // One submitted intent plus the identity needed to match its receipt on the

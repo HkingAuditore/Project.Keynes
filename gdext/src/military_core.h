@@ -719,24 +719,6 @@ struct MilitaryCacheRow {
 
 // ---------------------------------------------------------------- runtime
 
-struct MilitaryCommand {
-    uint16_t op = 0;          // MilitaryCommandOp
-    int64_t effective_day = 0;
-    uint64_t sequence = 0;
-    uint64_t country = 0;     // issuing country handle
-    uint64_t army = 0;
-    uint64_t other = 0;       // second army / target country / war id
-    int32_t cell = -1;
-    int32_t radius = 0;
-    int32_t unit_from = -1;
-    int32_t unit_to = -1;
-    int64_t count = 0;
-    int64_t value = 0;
-    std::vector<int32_t> cells;     // area cells / ceded cells
-    std::vector<int32_t> ints;      // config shares (unit, bp pairs), template rows, treaty terms
-    std::vector<int64_t> longs;
-};
-
 enum MilitaryCommandOp : uint16_t {
     MCMD_NONE = 0,
     MCMD_FORCE_SET_TARGET = 1,        // count=mode, value

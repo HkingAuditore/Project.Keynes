@@ -953,7 +953,7 @@ bool NativeCountryRuntime::preflight_country_slice(
             push_typed_receipt(command,
                 CountryCommandReceiptCode::REJECTED_AT_EXECUTION, error);
             if (command.effect_request_id == 0) continue;
-            EffectCommandResult &result = _effect_command_results[command.effect_request_id];
+            CountryEffectCommandResult &result = _effect_command_results[command.effect_request_id];
             result.complete = 1; result.ok = 0; result.reason = error;
         }
         _command_batch = {};
@@ -1002,7 +1002,7 @@ bool NativeCountryRuntime::preflight_country_slice(
             push_typed_receipt(command,
                 CountryCommandReceiptCode::REJECTED_AT_EXECUTION, error);
             if (command.effect_request_id == 0) continue;
-            EffectCommandResult &result = _effect_command_results[command.effect_request_id];
+            CountryEffectCommandResult &result = _effect_command_results[command.effect_request_id];
             result.complete = 1; result.ok = 0; result.reason = error;
         }
         _command_batch = {};
@@ -1111,7 +1111,7 @@ bool NativeCountryRuntime::commit_country_slice(
             committed_typed_commands.push_back(std::move(receipt_command));
         }
         if (command.effect_request_id == 0) continue;
-        EffectCommandResult &result = _effect_command_results[command.effect_request_id];
+        CountryEffectCommandResult &result = _effect_command_results[command.effect_request_id];
         result.complete = 1; result.ok = 1; result.reason.clear();
     }
     _command_batch = {};

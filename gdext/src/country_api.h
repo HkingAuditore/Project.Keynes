@@ -12,10 +12,49 @@
 #include "country_fiscal_return_intent.h"
 #include "country_procurement_intent.h"
 
-namespace godot { class Dictionary; }
+namespace godot { class Dictionary; class PackedInt32Array; }
 
 namespace pk {
 class NativeCountryRuntime;
+
+// Committed Economy facts, published once per Economy commit. Money flows are
+// per day: an Economy batch spans a variable number of days.
+struct CountryAiEconomyRow {
+    uint64_t country_handle = 0;
+    int64_t population = 0;
+    int32_t satisfaction_q16 = 0;
+    int32_t essentials_q16 = 0;
+    int64_t tax_paid = 0;
+    int64_t subsidy_received = 0;
+    int64_t income = 0;
+    int64_t expense = 0;
+    int32_t family_count = 0;
+    int32_t expeditions_active = 0;
+    uint32_t ai_colonization_failures = 0;
+    uint32_t ai_colonization_started = 0;
+    // Food-flow carrying capacity over owned cells, in persons. Births slow
+    // once a cell's population passes ~90% of its K_eff, so the load is
+    // population-weighted: a one-person colony must not dominate it.
+    int64_t carrying_k_eff = 0;
+    int64_t carrying_k_geo = 0;
+    int32_t carrying_load_q16 = 0;
+    // Population share below COUNTRY_AI_HUNGRY_ESSENTIALS_Q16; the mean
+    // essentials value hides one starving cell.
+    int32_t hungry_share_q16 = 0;
+};
+
+struct CountryAiEconomyDigest {
+    uint64_t revision = 0;
+    int64_t commit_day = -1;
+    std::vector<CountryAiEconomyRow> rows; // sorted by country_handle
+    // Indexed like the Country business-tax items: 1 when the building type
+    // has a survival-food output.
+    std::vector<uint8_t> food_building_types;
+    // Per-map-cell living population at digest publish (0 for empty/unowned).
+    // Used by colonize reinforce to find thin own-territory outposts.
+    std::vector<int64_t> cell_population;
+    const CountryAiEconomyRow *find(uint64_t handle) const;
+};
 
 // EffectRuntime's country adapter uses this POD ABI.  `payload` is
 // precompiled by the Effect catalog: [cell|aux], [domain|position], four
@@ -168,6 +207,9 @@ godot::Dictionary submit_commands(NativeCountryRuntime &country, const godot::Di
 bool copy_economy_snapshot(const NativeCountryRuntime &country, CountryEconomySnapshot &out);
 int64_t cash_for_slot(const NativeCountryRuntime &country, int32_t country_slot);
 bool has_technology(const NativeCountryRuntime &country, int32_t country_slot, int32_t technology_id);
+bool has_completed_technology(const NativeCountryRuntime &country, int64_t handle, int32_t technology);
+godot::Dictionary submit_observation_batch(NativeCountryRuntime &country, int64_t handle,
+    const godot::PackedInt32Array &cells, const godot::PackedInt32Array &signals, int64_t effective_day);
 uint32_t political_regime_capabilities(const NativeCountryRuntime &country, int32_t country_slot);
 int32_t political_regime_id(const NativeCountryRuntime &country, int32_t country_slot);
 int32_t country_slot_for_cell(const NativeCountryRuntime &country, int32_t cell);

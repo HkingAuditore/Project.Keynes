@@ -2,11 +2,7 @@ extends "res://scripts/simulation/generator_context.gd"
 
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const IdeologyFacadeScript = preload("res://scripts/ideology/ideology_facade.gd")
-const MAIN_STEP_HISTORY_DAYS := 64
-
-var _main_steps_by_day: Dictionary = {}
-var _latest_main_step_day := -1
-var _main_steps_map_id := 0
+var _main_steps = preload("res://scripts/game/runtime_main_step_diagnostics.gd").new()
 
 ## 第 5 批：保存边界、停止清理与 worker 控制。可变状态仍由 MapGenerator 持有。
 
@@ -25,37 +21,14 @@ func set_runtime_qos_threaded(interactive: bool) -> Dictionary:
 func get_runtime_thread_report() -> Dictionary:
 	if _generator._data_core_world_ext == null:
 		return {}
-	_sync_main_steps_world()
 	var report: Dictionary = _generator._data_core_world_ext.get_runtime_thread_report()
-	report["main_simulation_steps_by_day"] = _main_steps_by_day.duplicate(true)
+	report["main_simulation_steps_by_day"] = _main_steps.snapshot(_generator._sus_map)
 	return report
 
 
 func record_runtime_main_step(day: int, step: StringName) -> void:
-	_sync_main_steps_world()
-	if day < 0 or day <= _latest_main_step_day - MAIN_STEP_HISTORY_DAYS:
-		return
-	if day > _latest_main_step_day:
-		var first_expired := maxi(0, _latest_main_step_day - MAIN_STEP_HISTORY_DAYS + 1)
-		var last_expired := day - MAIN_STEP_HISTORY_DAYS
-		if last_expired - first_expired >= MAIN_STEP_HISTORY_DAYS:
-			_main_steps_by_day.clear()
-		else:
-			for expired_day in range(first_expired, last_expired + 1):
-				_main_steps_by_day.erase(expired_day)
-		_latest_main_step_day = day
-	var counts: Dictionary = _main_steps_by_day.get_or_add(day, {})
-	counts[step] = int(counts.get(step, 0)) + 1
+	_main_steps.record(_generator._sus_map, day, step)
 
-
-func _sync_main_steps_world() -> void:
-	# The first dated input is captured before starting the executor.
-	var map: MapData = _generator._sus_map
-	var map_id := map.get_instance_id() if map != null else 0
-	if map_id != _main_steps_map_id:
-		_main_steps_map_id = map_id
-		_main_steps_by_day.clear()
-		_latest_main_step_day = -1
 
 func get_runtime_control_state() -> Dictionary:
 	if _generator._data_core_world_ext == null:

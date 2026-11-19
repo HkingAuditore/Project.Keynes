@@ -98,7 +98,7 @@ std::vector<uint8_t> NativeCountryRuntime::capture_effect_adapter() const {
     for (const auto &[key, request] : entries) {
         const auto host = host_requests.find(request);
         const auto result = _effect_command_results.find(request);
-        const EffectCommandResult absent{1, 0, "country_effect_request_unknown"};
+        const CountryEffectCommandResult absent{1, 0, "country_effect_request_unknown"};
         const auto &receipt = result != _effect_command_results.end() ? result->second : absent;
         append_le(bytes, key);
         append_le(bytes, request);
@@ -125,7 +125,7 @@ void NativeCountryRuntime::restore_effect_adapter(const std::vector<uint8_t> &by
         uint64_t key = 0;
         int64_t request = 0;
         uint64_t host_request = 0;
-        EffectCommandResult receipt;
+        CountryEffectCommandResult receipt;
         if (!read_le(bytes, cursor, key) || !read_le(bytes, cursor, request) ||
             !read_le(bytes, cursor, host_request) ||
             !read_le(bytes, cursor, receipt.complete) ||
@@ -1677,7 +1677,7 @@ bool NativeCountryRuntime::decode_save_in_place(
             error = "country_save_effect_command_invalid";
             return false;
         }
-        _effect_command_results.emplace(command.effect_request_id, EffectCommandResult{});
+        _effect_command_results.emplace(command.effect_request_id, CountryEffectCommandResult{});
         _next_effect_request_id = std::max(_next_effect_request_id,
             command.effect_request_id + 1);
     }

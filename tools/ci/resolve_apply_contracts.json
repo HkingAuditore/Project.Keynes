@@ -112,13 +112,16 @@
     "gdext/src/effect_runtime_instances.cpp|EffectRuntime::enqueue_canal_commit_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/native_simulation_host_asset_worker.cpp|NativeSimulationHost::enqueue_economy_origin_country_asset": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_batch": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_batch_at": "Timeline admission for player requests and executor-produced requests with a known effective day. Uses the same validation, order and persisted command queue for both.",
     "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_modifier_shadow": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/native_simulation_host_economy.cpp|NativeSimulationHost::submit_economy_pod_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/runtime_country_pod.cpp|RuntimeCountryPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/runtime_economy_pod.cpp|RuntimeEconomyPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/runtime_ideology_pod.cpp|RuntimeIdeologyPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/runtime_trigger_pod.cpp|RuntimeTriggerPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
-    "gdext/src/world_ext_simulation_host.cpp|DCWorldExt::submit_runtime_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md."
+    "gdext/src/world_ext_events.cpp|NativeSimulationHost::enqueue_legacy_event_batch": "Admits an ordered batch of gameplay facts to the Events owner on a specified effective day and generation.",
+    "gdext/src/world_ext_simulation_host.cpp|DCWorldExt::submit_runtime_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/world_ext_vision.cpp|NativeSimulationHost::submit_fog_command": "Admits a player fog request through the timeline. The executor applies the setting on the sealed day."
   },
   "stage_writes": {
     "input_capture": "input manifest",

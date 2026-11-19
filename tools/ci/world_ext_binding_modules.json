@@ -32,6 +32,7 @@
     ],
     "economy": [
       "world_ext_economy.cpp",
+      "world_ext_economy_resources.cpp",
       "world_ext_economy_topology.cpp"
     ],
     "country": [

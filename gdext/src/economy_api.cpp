@@ -7,6 +7,29 @@ namespace pk {
 namespace economy_api { bool military_purchase_receipt(const NativeEconomyRuntime &e, int64_t s, int64_t &q, int64_t &c) { return e.military_purchase_receipt(s, q, c); } }
 namespace economy_api {
 
+EconomyNaturalResourceCatalogView natural_resource_catalog(const NativeEconomyRuntime &economy) {
+    return economy.natural_resource_catalog();
+}
+
+void configure_natural_resources(NativeEconomyRuntime &economy,
+                                 const std::vector<EconomyNaturalResourceProfile> &profiles) {
+    economy.configure_worker_natural_resources(profiles);
+}
+
+bool natural_resources_configured(const NativeEconomyRuntime &economy) {
+    return economy.worker_natural_resources_configured();
+}
+
+bool natural_resources_seeded(const NativeEconomyRuntime &economy) {
+    return economy.worker_resource_seeded();
+}
+
+bool seed_natural_resources(NativeEconomyRuntime &economy, int64_t day,
+                           const std::vector<const float *> &reserves,
+                           const std::vector<const float *> &changes) {
+    return economy.seed_worker_resource_reserves(day, reserves, changes);
+}
+
 godot::Dictionary detail_report(const NativeEconomyRuntime &economy) {
     return economy.report();
 }
@@ -188,6 +211,23 @@ void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy) { economy.
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units) { return economy.military_read_state_buildings(out_cells, out_type_ids, out_state_roles, out_units); }
 godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_build(country_handle, cell_idx, type_id, effective_day, sequence, queue_for_worker); }
 godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_demolish(country_handle, cell_idx, type_id, count, effective_day, sequence, queue_for_worker); }
+godot::Dictionary family_colonization_quotes(NativeEconomyRuntime &economy,
+    int64_t country, int32_t target, int64_t family, int32_t source, int32_t offset, int32_t limit,
+    const uint8_t *visible, int32_t visible_count, uint64_t vision_revision) {
+    return economy.family_colonization_quotes(country, target, family, source, offset, limit,
+        visible, visible_count, vision_revision);
+}
+godot::Dictionary family_colonization_quote_detail(const NativeEconomyRuntime &economy,
+    int64_t quote, int64_t population) {
+    return economy.family_colonization_quote_detail(quote, population);
+}
+godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy,
+    int64_t country, int64_t family, int32_t source, int32_t target, int64_t population,
+    int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
+    int32_t visible_count, uint64_t vision_revision, bool queue_for_worker) {
+    return economy.submit_family_colonization_start(country, family, source, target, population,
+        quote, day, sequence, visible, visible_count, vision_revision, queue_for_worker);
+}
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp) { return economy.set_country_procurement_policy(country_handle, enabled, treasury_share_bp, research_share_bp, effective_day, sequence, era_share_bp, colonization_share_bp); }
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy) { return economy.trade_topology_ready_for_test(); }
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell) { return economy.trade_passable_for_test(cell); }

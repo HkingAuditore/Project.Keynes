@@ -1911,40 +1911,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         if (c >= 0 && (size_t)c < tmp._cell_state_index.size()) tmp._cell_state_index[(size_t)c] = (int32_t)i;
     }
     tmp.rebuild_cell_index();
-    // Exploration routes are regular army paths; the last cell must still name
-    // the observation / return target the task persisted.
-    for (const MilitaryExplorationTask &task : tmp._explorations) {
-        if (!task.active) continue;
-        // Terminal records remain attached to the army as history. Any
-        // subsequent route belongs to the army's current orders.
-        if (task.phase == MILITARY_EXPLORATION_COMPLETE ||
-            task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN) continue;
-        int32_t army_slot = -1;
-        if (!tmp.resolve_army(task.army_handle, army_slot)) {
-            error = "pkmi_exploration_army_missing";
-            return false;
-        }
-        const MilitaryArmyStore &a = tmp._armies;
-        const int32_t len = a.path_len[(size_t)army_slot];
-        if (len <= 0) continue;
-        const int32_t off = a.path_offset[(size_t)army_slot];
-        if (off < 0 || (size_t)(off + len) > tmp._path_cells.size()) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-        const int32_t expected =
-            task.phase == MILITARY_EXPLORATION_RETURNING
-                ? task.return_cell : task.current_observation_cell;
-        if (expected < 0 ||
-            tmp._path_cells[(size_t)(off + len - 1)] != expected) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-        if (task.phase == MILITARY_EXPLORATION_PAUSED_BATTLE) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-    }
+    if (!military_validate_restored_exploration_paths(tmp, error)) return false;
     // Army caches are saved verbatim (refreshing here would diverge from the
     // live cache, which lags condition decay and needs the era mirror).
     return true;

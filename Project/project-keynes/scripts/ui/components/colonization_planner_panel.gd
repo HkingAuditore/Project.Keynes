@@ -1247,7 +1247,7 @@ func _update_workflow() -> void:
 	_workflow.text = "%s → %s → %s" % [source, family, _cell_name(_target_cell)]
 	_footer_selection.text = "已选：%s" % family if not _selected_quote.is_empty() else "点击家族确定派遣对象"
 	_subtitle.text = _stage_hint()
-	_subtitle.visible = _current_tab == "quotes"
+	_subtitle.visible = not _subtitle.text.is_empty()
 	# 目的地这一格显示真实地名：点地图能改，但玩家首先要能确认「现在打的是哪」。
 	_target_button.text = "正在选点" if _target_picking else (
 		_cell_name(_target_cell) if _target_cell >= 0 else "点地图选目的地")
@@ -1274,7 +1274,7 @@ func _stage_hint() -> String:
 		return "点地图上的青绿环选出发城"
 	if _selected_quote.is_empty():
 		return "直接点地图上任意地块改目的地，再从左侧挑选家族"
-	return "出发城与家族已就绪：直接点地图上任意地块改目的地"
+	return ""
 
 
 

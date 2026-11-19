@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
+#include "country_api.h"
 #include "country_ai_core.h"
 #include "economy_hash.h"
 #include "runtime_economy_family_side_tables.h"

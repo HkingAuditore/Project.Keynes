@@ -1,5 +1,5 @@
 #include "world_ext.h"
-#include "native_military_runtime.h"
+#include "native_simulation_host_military.h"
 
 #include "economy_api.h"
 #include "military_bridge.h"

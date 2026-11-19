@@ -1,7 +1,6 @@
 #include "world_ext.h"
 #include "country_api.h"
-#include "country_runtime.h"
-#include "native_military_runtime.h"
+#include "native_simulation_host_military.h"
 #include "native_simulation_day_context.h"
 #include "runtime_vision.h"
 
@@ -117,18 +116,6 @@ void unpack_observations(std::vector<uint64_t> &keys, Dictionary &out) {
     out["observation_count"] = static_cast<int64_t>(keys.size());
 }
 
-std::vector<int32_t> military_sources(const NativeMilitaryRuntime *military, int32_t slot) {
-    std::vector<int32_t> cells;
-    if (!military || slot < 0) return cells;
-    const auto &armies = military->core.armies();
-    for (size_t i = 0; i < armies.active.size(); ++i)
-        if (armies.active[i] && armies.owner_slot[i] == slot && armies.cell[i] >= 0)
-            cells.push_back(armies.cell[i]);
-    std::sort(cells.begin(), cells.end());
-    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
-    return cells;
-}
-
 Dictionary vision_frame_to_dictionary(const RuntimeVisionFrame &frame) {
     Dictionary out;
     out["ok"] = true;
@@ -191,8 +178,8 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
     state->eligibility.assign(static_cast<size_t>(n), 0u);
     if (config.has("world_day")) {
         const auto *country = static_cast<NativeCountryRuntime *>(_country_runtime);
-        NativeCountryRuntime::EconomySnapshot country_view;
-        if (!_runtime_host || !country || !country->copy_economy_snapshot(country_view) ||
+        CountryEconomySnapshot country_view;
+        if (!_runtime_host || !country || !country_api::copy_economy_snapshot(*country, country_view) ||
                 country_view.cell_country_slot.size() != size_t(n)) {
             out["reason"] = "vision_country_state_unavailable";
             return out;
@@ -204,12 +191,12 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
             state->player_handle = country_view.country_handles[state->player_slot];
         state->remote_technology = config.get("remote_technology", -1);
         state->remote = state->remote_technology >= 0 &&
-            country->has_completed_technology(state->player_handle, state->remote_technology);
+            country_api::has_completed_technology(*country, state->player_handle, state->remote_technology);
         state->fog_available = static_cast<bool>(config.get("fog_available", false)) &&
             state->player_handle != 0;
         state->fog_enabled = state->fog_available && static_cast<bool>(config.get("fog_enabled", false));
         state->all_visible.assign(size_t(n), 1);
-        state->military_sources = military_sources(_military.get(), state->player_slot);
+        if (_military) state->military_sources = _military->vision_sources(state->player_slot);
         VisionResearchWork work;
         work.state = state.get();
         work.owners = state->owners;
@@ -236,7 +223,7 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
             Dictionary observations;
             unpack_observations(work.observations, observations);
             auto *writer = static_cast<NativeCountryRuntime *>(_country_runtime);
-            auto accepted = writer->submit_observation_batch(state->player_handle,
+            auto accepted = country_api::submit_observation_batch(*writer, state->player_handle,
                 observations["observation_cells"], observations["observation_signals"], work.day + 1);
             if (!static_cast<bool>(accepted.get("ok", false))) return accepted;
         }
@@ -545,14 +532,13 @@ const char *NativeSimulationHost::stage_vision(DayExecution &day) {
 
     if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
     auto &tail = *_executor_day_tail;
-    auto sources = military_sources(_executor_military.get(), slot);
+    auto sources = _executor_military ? _executor_military->vision_sources(slot) : std::vector<int32_t>{};
     bool dirty = country->cell_country_slot != vision.owners ||
         remote != vision.remote || sources != vision.military_sources;
     const auto &previous = *vision.frame;
     std::vector<uint8_t> explored;
     if (_executor_military && slot >= 0) {
-        auto &core = _executor_military->core;
-        const auto &trail = core.exploration_trail(slot);
+        const auto trail = _executor_military->take_vision_trail(slot);
         tail.military_trail_cells = static_cast<int32_t>(trail.size());
         if (!trail.empty()) {
             explored = previous.explored;
@@ -561,7 +547,6 @@ const char *NativeSimulationHost::stage_vision(DayExecution &day) {
                     explored[cell] = 1;
                     dirty = true;
                 }
-            core.clear_exploration_trail(slot);
         }
     }
 

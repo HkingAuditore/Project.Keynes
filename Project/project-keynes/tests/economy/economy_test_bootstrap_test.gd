@@ -409,7 +409,9 @@ func _initialize() -> void:
 	var failure_start := _start_csv_recorder(
 		ext, map, csv_resource_slot_ids, csv_resource_ids, 5_000_000, false, 0, 32)
 	_expect("write-failure recorder starts", bool(failure_start.get("ok", false)))
-	_run_day(ext, 8)
+	# Capture the current committed epoch without starting the next one.
+	# Advancing a day can fill both buffers before the writer reports failure.
+	_run_day(ext, 7)
 	var failure_status := _wait_csv_terminal(ext)
 	_expect("injected write failure reports one accepted but no committed file epoch",
 		str(failure_status.get("error_code", "")) == "write_failed" and
@@ -420,6 +422,7 @@ func _initialize() -> void:
 		_expect("write failure rolls every CSV back to its header",
 			text.split("\n", false).size() == 1)
 	_cleanup_csv_paths(failure_start.get("test_paths", {}))
+	_run_day(ext, 8)
 	var soak_start: Dictionary = facade.population_cell_snapshot(0)
 	var soak_start_population := _sum_i64(soak_start.get("populations", PackedInt64Array()))
 	var soak_start_unemployed := _sum_i64(

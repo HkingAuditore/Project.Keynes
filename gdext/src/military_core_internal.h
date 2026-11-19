@@ -237,6 +237,7 @@ int32_t military_cell_garrison_slot(const MilitaryCore &core, int32_t cell);
 // removal) see exactly the rows the former scan saw.
 enum MilitaryLotOrder : uint8_t { MILITARY_LOT_ASC = 0, MILITARY_LOT_DESC = 1 };
 bool military_valid_index_continuation(MilitaryCore &core);
+bool military_validate_restored_exploration_paths(MilitaryCore &core, std::string &error);
 void military_lot_index_rebuild(const MilitaryCore &core);
 void military_lot_index_link(MilitaryCore &core, int32_t lot);
 void military_lot_index_unlink(MilitaryCore &core, int32_t lot);

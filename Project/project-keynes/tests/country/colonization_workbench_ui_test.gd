@@ -379,7 +379,13 @@ func _run_density_and_layout() -> void:
 		var scroll := panel.get_node("%RowsScroll") as ScrollContainer
 		await process_frame
 		await process_frame
-		var visible_rows := floori((scroll.size.y + 2.0) / 50.0)
+		var list := first.get_parent() as VBoxContainer
+		var separation := list.get_theme_constant("separation")
+		var row_height: float = first.size.y
+		for child in list.get_children():
+			if child is ColonizationFamilyRow and child.visible:
+				row_height = maxf(row_height, child.size.y)
+		var visible_rows := floori((scroll.size.y + separation) / (row_height + separation))
 		var expected_rows := 6 if root.get_visible_rect().size.y >= 720 else 3
 		_expect("source directory keeps %d complete summaries at this UI scale for %d branches" % [expected_rows, count],
 			visible_rows >= expected_rows and not (panel.get_node("%Body") as BoxContainer).vertical)

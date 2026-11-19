@@ -928,7 +928,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         command.submit_order = ++_submit_order;
         command.effect_request_id = _next_effect_request_id++;
         command.effect_idempotency_key = source.idempotency_key;
-        _effect_command_results.emplace(command.effect_request_id, EffectCommandResult{});
+        _effect_command_results.emplace(command.effect_request_id, CountryEffectCommandResult{});
         _effect_command_idempotency[source.idempotency_key] = command.effect_request_id;
         request_ids.push_back(command.effect_request_id);
         staged.push_back(std::move(command));
@@ -1059,7 +1059,7 @@ void NativeCountryRuntime::drain_effect_host_command_receipts() {
             receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION ||
             receipt.code == CountryCommandReceiptCode::ADMISSION_REJECTED;
         if (!committed && !rejected) continue;
-        EffectCommandResult &result =
+        CountryEffectCommandResult &result =
             _effect_command_results[mapped->second];
         result.complete = 1;
         result.ok = committed ? 1 : 0;

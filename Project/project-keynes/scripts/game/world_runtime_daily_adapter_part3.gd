@@ -2,6 +2,7 @@ extends RefCounted
 
 ## Extracted world_runtime_daily_adapter.gd group 3; state stays with host.
 const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
+const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
 	var commit_usec = Time.get_ticks_usec()
@@ -70,7 +71,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 	var ext = host._generator.get_data_core_world_ext()
 	var resource_usec := Time.get_ticks_usec()
-	var writeback: Dictionary = ext.apply_runtime_economy_resource_writeback()
+	var writeback := EconomyDisplay.apply_published_resources(ext)
 	if bool(writeback.get("applied", false)):
 		host._sched_proc_resource_ms += host._sched_elapsed_ms(resource_usec)
 		if dcp:
@@ -78,7 +79,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	elif received_new_commit and not bool(writeback.get("ok", false)):
 		push_warning("Resource display patch: " + String(writeback.get("code", "")))
 	if received_new_commit and bool(commit.get("species_writeback", false)):
-		var species: Dictionary = ext.apply_runtime_species_writeback()
+		var species := BioOccupancyDailySystem.apply_published_occupancy(ext)
 		if not bool(species.get("ok", false)):
 			push_warning("Species display snapshot: " + String(species.get("reason", "")))
 	var vision: Dictionary = host.apply_runtime_vision_display()

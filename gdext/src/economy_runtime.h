@@ -39,7 +39,7 @@
 #include "runtime_economy_army_personnel.h"
 // END army personnel lane
 #include "runtime_pod_protocol.h"
-#include "country_read_view.h"
+#include "country_api.h"
 #include "natural_resource_kernel.h"
 #include "trade_visual_cache.h"
 #include "annual_development_ledger.h"
@@ -921,23 +921,16 @@ public:
         int32_t temperature_signal = 0;
         int32_t moisture_signal = 0;
     };
-    void configure_worker_natural_resources(
-        std::vector<WorkerNaturalResource> resources);
-    bool worker_natural_resources_configured() const {
-        return !_worker_natural_resources.empty() &&
-            _worker_natural_resources.size() == _resource_ids.size();
-    }
-    bool worker_resource_seeded() const { return _worker_resource_seeded; }
-    int32_t worker_resource_recovered_cells() const { return _worker_resource_recovered_cells; }
+    EconomyNaturalResourceCatalogView natural_resource_catalog() const;
+    void configure_worker_natural_resources(const std::vector<EconomyNaturalResourceProfile> &profiles);
+    bool worker_natural_resources_configured() const;
+    bool worker_resource_seeded() const;
+    int32_t worker_resource_recovered_cells() const;
     bool seed_worker_resource_reserves(int64_t initial_day,
         const std::vector<const float *> &reserves, const std::vector<const float *> &changes);
     void take_worker_resource_mirror_cells(std::vector<int32_t> &out);
-    const std::vector<float> &worker_resource_reserve_lanes() const {
-        return _worker_resource_reserve;
-    }
-    const std::vector<float> &worker_resource_extra_lanes() const {
-        return _worker_resource_extra;
-    }
+    const std::vector<float> &worker_resource_reserve_lanes() const;
+    const std::vector<float> &worker_resource_extra_lanes() const;
     struct CommittedGameplayFact {
         int32_t kind = 0;
         int32_t cell = -1;
@@ -1238,7 +1231,7 @@ public:
     // at Economy commit, preferences are frozen inputs read by FAMILY_COMMIT,
     // and colonization intents are converted into ordinary expedition
     // commands at the next epoch open.
-    std::shared_ptr<const struct CountryAiEconomyDigest> country_ai_digest() const;
+    std::shared_ptr<const CountryAiEconomyDigest> country_ai_digest() const;
     void restore_country_ai_digest(std::shared_ptr<const CountryAiEconomyDigest> digest);
     void set_country_ai_family_preferences(std::vector<struct CountryAiFamilyPreferenceRow> rows);
     void queue_country_ai_colonization(std::vector<struct CountryAiColonizationIntent> intents);

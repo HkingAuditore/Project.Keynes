@@ -1,4 +1,4 @@
-#include "native_military_runtime.h"
+#include "native_simulation_host_military.h"
 #include "runtime_pod_protocol.h"
 
 #include "country_api.h"
@@ -91,7 +91,7 @@ void NativeMilitaryRuntime::capture_military_digest(MilitaryWorldDigest &digest,
                                          const MilitaryCatalog &catalog,
                                          bool *economy_ready) {
     if (economy_ready != nullptr) *economy_ready = false;
-    const int32_t cells = std::max(0, core.terrain().cell_count);
+    const int32_t cells = std::max(0, core().terrain().cell_count);
     digest.day = -1;
     // The digest object is reused across days, so the state building lanes must
     // be reset up front: an economy read that fails below must not leave
@@ -136,7 +136,7 @@ void NativeMilitaryRuntime::capture_military_digest(MilitaryWorldDigest &digest,
         const uint64_t handle = static_cast<size_t>(slot) < handles.size()
             ? handles[static_cast<size_t>(slot)] : 0;
         if (handle == 0) continue;
-        core.ensure_country_slot(handle);
+        core().ensure_country_slot(handle);
     }
     digest.cell_owner_slot = std::move(owner);
     digest.country_capacity = country_count;

@@ -293,35 +293,7 @@ func _runtime_climate_catalog_hash_for_map(map: MapData) -> int:
 	var map_id := map.get_instance_id()
 	if _generator._runtime_climate_catalog_map_id == map_id and _generator._runtime_climate_catalog_hash > 0:
 		return _generator._runtime_climate_catalog_hash
-	var hashing := HashingContext.new()
-	hashing.start(HashingContext.HASH_SHA256)
-	hashing.update("runtime-climate-catalog-v1\n".to_utf8_buffer())
-	_runtime_climate_hash_append(hashing, "abi", 3)
-	_runtime_climate_hash_append(hashing, "width", int(map.width))
-	_runtime_climate_hash_append(hashing, "height", int(map.height))
-	_runtime_climate_hash_append(hashing, "cells", int(map.cell_count()))
-	var cp = _generator._c()
-	if cp != null:
-		# Only immutable numeric/profile knobs belong in the catalog. Dynamic
-		# day fields are deliberately excluded and remain input snapshot data.
-		for field_name in PackedStringArray([
-			"solar_amplitude", "lapse_rate", "sea_ice_freeze_threshold",
-			"sea_ice_melt_threshold", "soil_water_capacity", "hydrology_enabled",
-			"weather_advect_use_wind_vector", "veg_feedback_elev_decay",
-		]):
-			var field_value = cp.get(field_name)
-			if field_value != null:
-				_runtime_climate_hash_append(hashing, field_name, field_value)
-	# Static map identity is included once per generated MapData instance. These
-	# arrays are not re-read by the worker; they only detect a mismatched map.
-	_runtime_climate_hash_append(hashing, "elevation", map.elevation_arr)
-	_runtime_climate_hash_append(hashing, "lat_norm", map.cell_lat_norm_arr)
-	_runtime_climate_hash_append(hashing, "terrain", map.terrain_arr)
-	_runtime_climate_hash_append(hashing, "landform", map.landform_arr)
-	_runtime_climate_hash_append(hashing, "water", map.is_water_arr)
-	_runtime_climate_hash_append(hashing, "hydro_parent", map.hydro_parent_arr)
-	_runtime_climate_hash_append(hashing, "neighbours", map.neighbor_indices_packed())
-	_generator._runtime_climate_catalog_hash = _runtime_climate_hash_digest_value(hashing.finish())
+	_generator._runtime_climate_catalog_hash = RuntimeClimateHash.catalog_hash(map, _generator._c())
 	_generator._runtime_climate_catalog_map_id = map_id
 	return _generator._runtime_climate_catalog_hash
 

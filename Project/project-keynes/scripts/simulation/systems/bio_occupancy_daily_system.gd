@@ -25,6 +25,10 @@ var _full_round_ema_ms: float = 0.0
 var _throughput_cells_per_ms: float = 0.0
 
 
+static func apply_published_occupancy(world: Object) -> Dictionary:
+	return world.apply_runtime_species_writeback()
+
+
 func _init(p_generator, p_map: MapData, p_diffusion_stride: int = 8) -> void:
 	id = &"bio_occupancy_daily"
 	priority = 121

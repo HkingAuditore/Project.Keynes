@@ -1,6 +1,6 @@
 #include "native_simulation_host.h"
 
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "runtime_colonization_request.h"
 #include "runtime_vision.h"
 
@@ -49,7 +49,7 @@ bool NativeSimulationHost::service_colonization_requests() {
         const auto &visible = frame.fog_enabled ? frame.visible : vision.all_visible;
         for (const auto &request : requests) {
             auto &r = *request;
-            if (economy == nullptr || economy->epoch_active()) {
+            if (economy == nullptr || economy_api::epoch_active(*economy)) {
                 r.result["ok"] = false;
                 r.result["busy"] = economy != nullptr;
                 r.result["code"] = economy ? "economy_busy_retry" : "economy_not_available";
@@ -57,15 +57,15 @@ bool NativeSimulationHost::service_colonization_requests() {
             }
             switch (r.kind) {
             case RuntimeColonizationRequest::Kind::QUOTES:
-                r.result = economy->family_colonization_quotes(
+                r.result = economy_api::family_colonization_quotes(*economy,
                     r.country_handle, r.target_cell, r.family_handle, r.source_cell,
                     r.offset, r.limit, visible.data(), visible.size(), frame.revision);
                 break;
             case RuntimeColonizationRequest::Kind::QUOTE_DETAIL:
-                r.result = economy->family_colonization_quote_detail(r.quote_token, r.population);
+                r.result = economy_api::family_colonization_quote_detail(*economy, r.quote_token, r.population);
                 break;
             case RuntimeColonizationRequest::Kind::START:
-                r.result = economy->submit_family_colonization_start(
+                r.result = economy_api::submit_family_colonization_start(*economy,
                     r.country_handle, r.family_handle, r.source_cell, r.target_cell,
                     r.population, r.quote_token, r.effective_day, r.sequence,
                     visible.data(), visible.size(), frame.revision, true);
