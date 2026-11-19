@@ -15,6 +15,7 @@
 | 评审以 failed 等非 completed 状态结束，或评审项的状态或未关闭项的处理级别无法识别 | 停下，打 `agent-needs-help` |
 | 头部提交上没有未关闭的阻塞项 | 跳过 |
 | 有阻塞项 | 修复：检出头部提交，先跑一遍检查记下已有失败，Codex 成功退出后再跑检查，没有新增失败才推送（`--force-with-lease` 指定原头部提交），在 PR 上评论 |
+| 工作树不完整，或检查脚本、测试目录缺失 | 停下，打 `agent-needs-help`，把错误写入运行记录 |
 | Codex 退出失败或超时 | 停下，打 `agent-needs-help`，保存本地补丁并列出路径 |
 | 工厂修过之后又出现同一批问题，或连续修了 3 轮还不干净 | 停下，打 `agent-needs-help` |
 | Codex 有异议且改了文件 | 按修复流程跑检查，异议写进评论由人决定 |
@@ -70,7 +71,7 @@ flowchart TD
 | G0 工单 | 标题；`## Acceptance criteria` 或 `## 验收标准` 下有勾选框或编号条目；没有跳过标签 | issue 正文和标签 | `agent-needs-help`，移除 `ready-for-agent`，评论列出原因 |
 | 计划 | 六个小节齐全，Questions 为 `none`，额外检查命令符合允许格式 | Codex 只读输出，贴在 issue 上 | 有问题或命令被拒绝时交给人 |
 | 范围 | 禁止修改 `.github/`、`tools/factory/`、`tools/ci/` 和 `.qodo/`。基线、契约文件和 C++（含子模块）由人处理 | 每次提交前重查 `git diff`、未跟踪文件和子模块状态 | 提交前发现越界就停下 |
-| 检查 | 在 base 上通过的检查，在改动后也要通过。每次执行回归都先导入候选项目 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 失败日志尾部发给 Codex，最多 3 次 |
+| 检查 | 工作树完整，检查脚本和测试目录齐全；在 base 上通过的检查，在改动后也要通过。每次执行回归都先导入候选项目 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 工作树不完整或检查入口缺失时立即停下，记录错误并打 `agent-needs-help`。普通检查失败时把日志尾部发给 Codex，最多 3 次 |
 | 本地评审（默认尽力而为） | Qodo 对未提交改动没有阻塞项（action_required / remediation_recommended） | `qodo review --repo hrhgit/Project.Keynes --json` | 评审失败或覆盖不完整时记入运行记录和 PR 正文，继续走 PR 评审。若配置要求本地评审，则停下交给人 |
 | PR 评审 | Qodo 对**当前头部提交**的评审已完成，没有未关闭的阻塞项 | `qodo read pr-review-session findings` | 最多 3 轮修复；同一批问题重复就停 |
 | CI | 头部提交至少有一次 GitHub Actions 工作流运行，所有工作流和检查都已结束，检查全部成功 | GitHub Actions 和 check runs | 等待中为 NOT_DONE，检查失败为 NEEDS_FIX，查询失败时立即停下并给出 NEEDS_HUMAN |
@@ -90,7 +91,7 @@ python3 tools/factory/sync_rules.py [--apply]   # 把 qodo-rules.json 里缺的�
 python3 -m unittest discover -s tools/factory/tests
 ```
 
-本机目录 `~/.keynes-factory/`：`work/` 是 agent 的完整工作树，每次准备时重置并清理 `gdext/godot-cpp`，保留忽略的 `.godot` 和 SCons 缓存；`runner/` 是轮询用的稀疏工作树，固定在 fork/master；`runs/` 存每次运行的 JSON 记录；`logs/` 存检查和 Codex 的日志；`base-checks/` 按提交缓存通过项，下次重跑失败项和缺失项。
+本机目录 `~/.keynes-factory/`：`runner/` 是轮询用的稀疏工作树，只检出 `tools/factory/` 和 `.github/`，固定在 fork/master。即使从 `runner/` 创建，agent 使用的 `work/` 也是完整工作树。每次准备会关闭主工作树和 `gdext/godot-cpp` 子模块已有的稀疏检出，重置主工作树并更新、清理子模块，保留忽略的 `.godot` 和 SCons 缓存，最后检查主工作树和子模块是否还有稀疏设置或缺失的跟踪文件。`runs/` 存每次运行的 JSON 记录；`logs/` 存检查和 Codex 的日志；`base-checks/` 按提交缓存通过项，下次重跑失败项和缺失项。
 
 安装轮询任务时，脚本把配置里的 `tools.python` 写进 launchd。更改路径后再运行一次安装脚本。手动运行 `poll.sh` 时，未设置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。fork/master 尚无工厂目录时轮询正常退出，目录已存在但启动脚本缺失时则报错。
 

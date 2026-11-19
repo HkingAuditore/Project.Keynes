@@ -17,6 +17,7 @@ sys.path.insert(0, str(FACTORY))
 
 import checks
 import qodo
+import run as issue_runner
 import sync_rules
 import work
 from common import Events, Result, load_config
@@ -42,6 +43,15 @@ class TempFactory(unittest.TestCase):
         self.cfg = load_config()
         self.cfg["home"] = str(self.root)
         self.enterContext(redirect_stdout(io.StringIO()))
+
+    def write_file(self, root, path, text=""):
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        return target
+
+    def write_guard_list(self, root, *guards):
+        self.write_file(root, self.cfg["checks"]["staticWorkflow"], f"for guard in {' '.join(guards)}; do\n")
 
 
 class IssueWorkflowTest(TempFactory):
@@ -209,6 +219,28 @@ class IssueWorkflowTest(TempFactory):
         sleep.assert_not_called()
         fix.assert_not_called()
 
+    def test_missing_check_stops_issue_and_records_needs_human(self):
+        path = "tools/ci/base_guard.py"
+        self.write_guard_list(self.root / "work", "base_guard.py")
+        gh = Mock(errors=[])
+        gh.issue.return_value = {**ISSUE, "number": 7}
+        gh.relabel.return_value = gh.open_pr.return_value = None
+        with (patch("sys.argv", ["run.py", "--issue", "7"]), patch("run.load_config", return_value=self.cfg),
+              patch("run.GitHub", return_value=gh), patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.sh", return_value=Result(1, "", "")) as execute,
+              patch("agent.codex", return_value={"ok": False, "code": 1, "report": ""}) as codex,
+              patch("work.commit") as commit, patch("work.push") as push):
+            self.assertEqual(issue_runner.main(), 0)
+        for step in (execute, codex, commit, push, gh.create_pr):
+            step.assert_not_called()
+        gh.relabel.assert_called_with(7, ["agent-needs-help"], ["agent-working"])
+        record_file, = (self.root / "runs").glob("7-*.json")
+        record = json.loads(record_file.read_text())
+        self.assertEqual(record["verdict"], "NEEDS_HUMAN")
+        self.assertIn(path, record["facts"]["stopped_by"])
+        self.assertEqual(record["facts"]["base_failures"], [])
+        self.assertIn(path, gh.comment.call_args.args[1])
+
 
 class WatchWorkflowTest(TempFactory):
     def make_watcher(self):
@@ -339,10 +371,36 @@ class WatchWorkflowTest(TempFactory):
         self.assertEqual([(e["step"], e["expected"], e["got"]) for e in record["events"]],
                          [("moved", HEAD, moved)])
 
+    def test_missing_candidate_check_stops_pr_and_records_error_without_push(self):
+        watcher = self.make_watcher()
+        path = "tools/ci/candidate_guard.py"
+        self.write_guard_list(Path(watcher.workdir), "candidate_guard.py")
+        with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.base_results", return_value=[]), patch("work.head", return_value=HEAD),
+              patch("work.changed", return_value=["edit.gd"]),
+              patch("agent.codex", return_value={"ok": True, "report": ""}) as codex,
+              patch("checks.sh", return_value=Result(1, "", "")) as execute,
+              patch("work.commit") as commit, patch("watch_prs.must") as push):
+            watcher.fix(PR, PrState(), [FINDING])
+        codex.assert_called_once()
+        for step in (execute, commit, push):
+            step.assert_not_called()
+        self.assertEqual(watcher.load(7).gave_up_at, HEAD)
+        watcher.gh.relabel.assert_any_call(7, ["agent-needs-help"], ["agent-working"])
+        watcher.gh.relabel.assert_called_with(7, [], ["agent-working"])
+        self.assertIn(path, watcher.gh.comment.call_args.args[1])
+        record = self.read_record(watcher)
+        self.assertEqual(record["outcome"], "error")
+        self.assertIn(path, record["error"])
+        self.assertEqual(record["events"][-1]["step"], "error")
+        self.assertNotIn("checks", record)
+
 
 class ChecksTest(TempFactory):
     def test_regression_imports_even_when_godot_cache_exists(self):
         (self.root / "Project/project-keynes/.godot").mkdir(parents=True)
+        (self.root / "tools/map_authoring/tests").mkdir(parents=True)
+        self.write_file(self.root, "tools/ci/run_regression_checks.py")
         runner = checks.Runner(self.cfg, str(self.root), str(self.root))
         with patch("checks.static_guards", return_value=[]), patch.object(runner, "_run") as execute:
             runner.run(native=False, extra=[])
@@ -356,6 +414,8 @@ class ChecksTest(TempFactory):
         cache = self.root / f"{HEAD}.json"
         cache.write_text(json.dumps([passed, failed]), encoding="utf-8")
         self.cfg["checks"]["unit"] = []
+        for script in ("a.py", "b.py", "run_regression_checks.py"):
+            self.write_file(self.root, f"tools/ci/{script}")
         with (patch("checks.static_guards", return_value=["a.py", "b.py"]),
               patch("checks.Runner._run", side_effect=[failed, {"name": "regression", "ok": True}, recovered])
               as execute):
@@ -367,6 +427,45 @@ class ChecksTest(TempFactory):
         self.assertEqual(checks.failed(second), [])
         self.assertEqual(third, second)
         self.assertEqual([c.args[0] for c in execute.call_args_list], ["static:b.py", "regression", "static:b.py"])
+
+    def test_missing_static_guard_raises_even_if_cached(self):
+        self.write_guard_list(self.root, "missing_guard.py")
+        runner = checks.Runner(self.cfg, str(self.root), str(self.root))
+        cached = [{"name": "static:missing_guard.py", "ok": True}]
+        with (patch.object(runner, "_run") as execute,
+              self.assertRaisesRegex(RuntimeError, "tools/ci/missing_guard.py")):
+            runner.run(native=False, extra=[], cached=cached)
+        execute.assert_not_called()
+
+    def test_missing_regression_script_raises_before_execution(self):
+        self.write_guard_list(self.root)
+        self.cfg["checks"]["unit"] = []
+        runner = checks.Runner(self.cfg, str(self.root), str(self.root))
+        with (patch.object(runner, "_run") as execute,
+              self.assertRaisesRegex(RuntimeError, "tools/ci/run_regression_checks.py")):
+            runner.run(native=False, extra=[])
+        execute.assert_not_called()
+
+    def test_missing_unit_directory_or_script_raises_before_execution(self):
+        self.write_guard_list(self.root)
+        runner = checks.Runner(self.cfg, str(self.root), str(self.root))
+        for args, path in ((self.cfg["checks"]["unit"][0], "tools/map_authoring/tests"),
+                           (["tools/map_authoring/test_script.py"], "tools/map_authoring/test_script.py")):
+            with self.subTest(args=args):
+                self.cfg["checks"]["unit"] = [args]
+                with patch.object(runner, "_run") as execute, self.assertRaisesRegex(RuntimeError, path):
+                    runner.run(native=False, extra=[])
+                execute.assert_not_called()
+
+    def test_missing_extra_script_raises_before_execution(self):
+        self.write_guard_list(self.root)
+        self.cfg["checks"]["unit"] = []
+        self.write_file(self.root, "tools/ci/run_regression_checks.py")
+        runner = checks.Runner(self.cfg, str(self.root), str(self.root))
+        with (patch.object(runner, "_run", return_value={"ok": True}) as execute,
+              self.assertRaisesRegex(RuntimeError, "tools/ci/extra_replay.py")):
+            runner.run(native=False, extra=["tools/ci/extra_replay.py --days 10"])
+        self.assertEqual([c.args[0] for c in execute.call_args_list], ["regression"])
 
 
 class AdapterTest(TempFactory):
@@ -454,7 +553,7 @@ class AdapterTest(TempFactory):
         self.assertFalse((self.root / "fix.vendor__clean.patch").exists())
 
     def test_prepare_forces_submodule_checkout_and_cleans_inside(self):
-        with patch("work.must", return_value=HEAD) as git:
+        with patch("work._is_sparse", return_value=False), patch("work.must", return_value="") as git:
             work.prepare(str(self.root), "fork", "master", "test")
         sub = self.root / "gdext/godot-cpp"
         git.assert_has_calls([
@@ -543,9 +642,127 @@ class EnsureTest(unittest.TestCase):
             main = Path(d) / "main"
             (main / work.GODOT_CPP / ".git").mkdir(parents=True)
             workdir = str(Path(d) / "work")
-            with patch.object(work, "common_dir", return_value=str(main / ".git")), \
-                    patch.object(work, "must") as must:
+            with (patch.object(work, "common_dir", return_value=str(main / ".git")),
+                  patch.object(work, "_is_sparse", return_value=False),
+                  patch.object(work, "must", return_value="") as must):
                 work.ensure(str(main), workdir, "fork/master")
-            args = must.call_args_list[-1].args[0]
-            self.assertEqual(args[3:7], ["submodule", "update", "--reference", str(main / work.GODOT_CPP)])
-            self.assertEqual(args[-2:], ["--init", work.GODOT_CPP])
+            must.assert_has_calls([
+                call(["git", "-C", workdir, "submodule", "update", "--reference", str(main / work.GODOT_CPP),
+                      "--init", work.GODOT_CPP], timeout=3600),
+                call(["git", "-C", str(Path(workdir) / work.GODOT_CPP), "ls-files", "--deleted", "-z", "--"]),
+            ])
+
+
+class WorktreeTest(TempFactory):
+    OUTSIDE = "tools/ci/check_project.py"
+
+    def setUp(self):
+        super().setUp()
+        self.main, submodule = self.root / "main", self.root / "submodule"
+        main = self.main
+        for repo in (main, submodule):
+            repo.mkdir()
+            work.git(str(repo), "init", "-q", "-b", "master")
+            work.git(str(repo), "config", "user.name", "Factory Test")
+            work.git(str(repo), "config", "user.email", "factory@example.invalid")
+        self.write_file(submodule, "sub.cpp", "int main() {}\n")
+        self.write_file(submodule, "include/sub.h")
+        self.commit_all(submodule)
+        work.git(str(main), "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+                 str(submodule), work.GODOT_CPP)
+        self.write_file(main, self.OUTSIDE, "# factory check\n")
+        self.write_file(main, "tools/factory/watch_prs.py")
+        self.write_guard_list(main, "check_project.py")
+        self.base = self.commit_all(main)
+        work.git(str(main), "remote", "add", "fork", str(main))
+        self.runner = self.root / "runner"
+        self.agent = self.root / "work"
+        work.git(str(main), "worktree", "add", "--detach", str(self.runner), self.base)
+        self.make_sparse(self.runner)
+        self.assertFalse((self.runner / self.OUTSIDE).exists())
+        self.enterContext(patch.dict(os.environ, {"GIT_ALLOW_PROTOCOL": "file"}))
+
+    def commit_all(self, repo):
+        work.git(str(repo), "add", "-A")
+        work.git(str(repo), "-c", "commit.gpgsign=false", "commit", "-qm", "test checkout")
+        return work.head(str(repo))
+
+    def make_sparse(self, tree):
+        work.git(str(tree), "sparse-checkout", "set", "--no-cone", "/tools/factory/", "/.github/")
+
+    def existing_sparse_agent(self):
+        work.git(str(self.runner), "worktree", "add", "--detach", str(self.agent), self.base)
+        self.make_sparse(self.agent)
+        self.assertFalse((self.agent / self.OUTSIDE).exists())
+
+    def assert_full_agent(self):
+        self.assertEqual(work.git(str(self.agent), "config", "--worktree", "--get", "core.sparseCheckout"), "false")
+        self.assertTrue((self.agent / self.OUTSIDE).is_file())
+        self.assertTrue((self.agent / work.GODOT_CPP / "sub.cpp").is_file())
+
+    def test_ensure_from_sparse_runner_creates_full_checkout(self):
+        work.ensure(str(self.runner), str(self.agent), self.base)
+        self.assert_full_agent()
+        self.assertFalse((self.runner / self.OUTSIDE).exists())
+
+    def test_prepare_repairs_existing_sparse_checkout(self):
+        self.existing_sparse_agent()
+        self.assertEqual(work.prepare(str(self.agent), "fork", "master", "factory-test"), self.base)
+        self.assert_full_agent()
+
+    def test_prepare_repairs_sparse_index_even_when_config_is_off(self):
+        self.existing_sparse_agent()
+        work.git(str(self.agent), "config", "--worktree", "core.sparseCheckout", "false")
+        self.assertEqual(work.prepare(str(self.agent), "fork", "master", "factory-test"), self.base)
+        self.assert_full_agent()
+
+    def test_prepare_repairs_existing_sparse_submodule(self):
+        work.ensure(str(self.runner), str(self.agent), self.base)
+        submodule = self.agent / work.GODOT_CPP
+        work.git(str(submodule), "sparse-checkout", "set", "--no-cone", "/include/")
+        self.assertTrue((submodule / "include/sub.h").is_file())
+        self.assertFalse((submodule / "sub.cpp").exists())
+
+        self.assertEqual(work.prepare(str(self.agent), "fork", "master", "factory-test"), self.base)
+        self.assertEqual(work.git(str(submodule), "config", "--get", "core.sparseCheckout"), "false")
+        self.assertEqual((submodule / "sub.cpp").read_text(encoding="utf-8"), "int main() {}\n")
+
+    def test_rejects_missing_submodule_file_after_update(self):
+        original_must = work.must
+
+        def remove_file_after_update(args, **kwargs):
+            result = original_must(args, **kwargs)
+            if args[3:5] == ["submodule", "update"]:
+                (Path(args[2]) / work.GODOT_CPP / "sub.cpp").unlink()
+            return result
+
+        initial = self.root / "initial"
+        work.ensure(str(self.runner), str(self.agent), self.base)
+        for operation, args, directory in (
+            (work.ensure, (str(self.runner), str(initial), self.base), initial),
+            (work.prepare, (str(self.agent), "fork", "master", "factory-test"), self.agent),
+        ):
+            with self.subTest(operation=operation.__name__):
+                with patch("work.must", side_effect=remove_file_after_update), self.assertRaises(RuntimeError) as error:
+                    operation(*args)
+                submodule = directory / work.GODOT_CPP
+                self.assertEqual(str(error.exception),
+                                 f"incomplete work tree at {submodule}: missing tracked files 'sub.cpp'")
+
+    def test_prepare_rejects_incomplete_tree_after_submodule_update(self):
+        work.git(str(self.main), "worktree", "add", "--detach", str(self.agent), self.base)
+        original_must = work.must
+
+        def interrupt_after_update(args, **kwargs):
+            result = original_must(args, **kwargs)
+            if args[3:5] == ["submodule", "update"]:
+                if enable_sparse:
+                    self.make_sparse(self.agent)
+                else:
+                    (self.agent / self.OUTSIDE).unlink()
+            return result
+
+        for enable_sparse, reason in ((False, self.OUTSIDE), (True, "sparse checkout is still active")):
+            with (self.subTest(enable_sparse=enable_sparse), patch("work.must", side_effect=interrupt_after_update),
+                  self.assertRaisesRegex(RuntimeError, f"incomplete work tree.*{reason}")):
+                work.prepare(str(self.agent), "fork", "master", "factory-test")

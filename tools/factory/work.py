@@ -23,27 +23,65 @@ def common_dir(path: str) -> str:
     return str((Path(path) / d).resolve()) if not os.path.isabs(d) else d
 
 
+def _is_sparse(workdir: str) -> bool:
+    # The effective config includes worktree overrides when worktreeConfig is enabled.
+    args = ["git", "-C", workdir]
+    config = sh([*args, "config", "--type=bool", "--get", "core.sparseCheckout"])
+    if config.ok and config.out.strip() == "true":
+        return True
+    if not config.ok and (config.code != 1 or config.err):
+        raise RuntimeError(f"could not read sparse checkout config in {workdir}: {config.err.strip()}")
+    patterns = sh([*args, "sparse-checkout", "list"], env={"LC_ALL": "C"})
+    if patterns.ok and patterns.out.strip():
+        return True
+    if not patterns.ok and (patterns.code != 128 or patterns.err.strip() != "fatal: this worktree is not sparse"):
+        raise RuntimeError(f"could not list sparse checkout patterns in {workdir}: {patterns.err.strip()}")
+    # Turning off the config alone can leave skip-worktree entries invisible to ls-files --deleted.
+    entries = git(workdir, "ls-files", "--sparse", "-t", "-z")
+    return any(entry.startswith("S ") for entry in entries.split("\0"))
+
+
+def _require_complete(workdir: str, *paths: str) -> None:
+    if _is_sparse(workdir):
+        raise RuntimeError(f"incomplete work tree at {workdir}: sparse checkout is still active")
+    deleted = git(workdir, "ls-files", "--deleted", "-z", "--", *paths)
+    if deleted:
+        missing = ", ".join(repr(path) for path in deleted.split("\0") if path)
+        raise RuntimeError(f"incomplete work tree at {workdir}: missing tracked files {missing}")
+
+
 def ensure(runner_dir: str, workdir: str, ref: str) -> None:
     if (Path(workdir) / ".git").exists():
         return
-    must(["git", "-C", runner_dir, "worktree", "add", "--detach", workdir, ref], timeout=3600)
+    must(["git", "-C", runner_dir, "worktree", "add", "--no-checkout", "--detach", workdir, ref], timeout=3600)
+    git(workdir, "sparse-checkout", "disable")
+    # With --no-checkout the index can be empty, so disabling sparsity alone may write no files.
+    git(workdir, "reset", "--hard", "-q", "HEAD")
     main = str(Path(common_dir(runner_dir)).parent)
     reference = Path(main) / GODOT_CPP
     args = ["git", "-C", workdir, "submodule", "update", "--init", GODOT_CPP]
     if (reference / ".git").exists():
         args[5:5] = ["--reference", str(reference)]  # after "update": git submodule update --reference X
     must(args, timeout=3600)
+    _require_complete(str(Path(workdir) / GODOT_CPP))
 
 
 def prepare(workdir: str, remote: str, base: str, branch: str) -> str:
     """Reset the tree and put `branch` at `remote/base`. Returns the base commit."""
     git(workdir, "fetch", "--prune", remote)
+    if _is_sparse(workdir):
+        git(workdir, "sparse-checkout", "disable")
     git(workdir, "reset", "--hard", "-q")
     git(workdir, "clean", "-fdq")
     git(workdir, "checkout", "-q", "-B", branch, f"{remote}/{base}")
+    submodule = Path(workdir) / GODOT_CPP
+    if (submodule / ".git").exists() and _is_sparse(str(submodule)):
+        git(str(submodule), "sparse-checkout", "disable")
     must(["git", "-C", workdir, "submodule", "update", "--init", "--checkout", "--force", GODOT_CPP],
          timeout=3600)
-    git(str(Path(workdir) / GODOT_CPP), "clean", "-fdq")
+    git(str(submodule), "clean", "-fdq")
+    _require_complete(workdir, ".", f":(top,exclude,literal){GODOT_CPP}")
+    _require_complete(str(submodule))
     return git(workdir, "rev-parse", "HEAD")
 
 
