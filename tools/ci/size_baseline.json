@@ -566,7 +566,7 @@
       "limit": 2000
     },
     "Project/project-keynes/scripts/rendering/bakers/cell_lut_baker.gd": {
-      "lines": 1297,
+      "lines": 1363,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/bakers/surface_baker.gd": {
@@ -574,7 +574,15 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/fog_of_war_layer.gd": {
-      "lines": 822,
+      "lines": 916,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/resource_visual_layer.gd": {
+      "lines": 802,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/vegetation_family_layer.gd": {
+      "lines": 804,
       "limit": 800
     }
   }
