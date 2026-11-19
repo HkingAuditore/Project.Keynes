@@ -91,7 +91,7 @@ python3 tools/factory/sync_rules.py [--apply]   # 把 qodo-rules.json 里缺的�
 python3 -m unittest discover -s tools/factory/tests
 ```
 
-本机目录 `~/.keynes-factory/`：`runner/` 是轮询用的稀疏工作树，只检出 `tools/factory/` 和 `.github/`，固定在 fork/master。即使从 `runner/` 创建，agent 使用的 `work/` 也是完整工作树。每次准备会关闭旧工作树的稀疏检出，重置工作树并更新、清理 `gdext/godot-cpp`，保留忽略的 `.godot` 和 SCons 缓存，最后检查是否还有稀疏设置或缺失的跟踪文件。`runs/` 存每次运行的 JSON 记录；`logs/` 存检查和 Codex 的日志；`base-checks/` 按提交缓存通过项，下次重跑失败项和缺失项。
+本机目录 `~/.keynes-factory/`：`runner/` 是轮询用的稀疏工作树，只检出 `tools/factory/` 和 `.github/`，固定在 fork/master。即使从 `runner/` 创建，agent 使用的 `work/` 也是完整工作树。每次准备会关闭主工作树和 `gdext/godot-cpp` 子模块已有的稀疏检出，重置主工作树并更新、清理子模块，保留忽略的 `.godot` 和 SCons 缓存，最后检查主工作树和子模块是否还有稀疏设置或缺失的跟踪文件。`runs/` 存每次运行的 JSON 记录；`logs/` 存检查和 Codex 的日志；`base-checks/` 按提交缓存通过项，下次重跑失败项和缺失项。
 
 安装轮询任务时，脚本把配置里的 `tools.python` 写进 launchd。更改路径后再运行一次安装脚本。手动运行 `poll.sh` 时，未设置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。fork/master 尚无工厂目录时轮询正常退出，目录已存在但启动脚本缺失时则报错。
 

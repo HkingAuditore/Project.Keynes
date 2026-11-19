@@ -642,12 +642,15 @@ class EnsureTest(unittest.TestCase):
             main = Path(d) / "main"
             (main / work.GODOT_CPP / ".git").mkdir(parents=True)
             workdir = str(Path(d) / "work")
-            with patch.object(work, "common_dir", return_value=str(main / ".git")), \
-                    patch.object(work, "must") as must:
+            with (patch.object(work, "common_dir", return_value=str(main / ".git")),
+                  patch.object(work, "_is_sparse", return_value=False),
+                  patch.object(work, "must", return_value="") as must):
                 work.ensure(str(main), workdir, "fork/master")
-            args = must.call_args_list[-1].args[0]
-            self.assertEqual(args[3:7], ["submodule", "update", "--reference", str(main / work.GODOT_CPP)])
-            self.assertEqual(args[-2:], ["--init", work.GODOT_CPP])
+            must.assert_has_calls([
+                call(["git", "-C", workdir, "submodule", "update", "--reference", str(main / work.GODOT_CPP),
+                      "--init", work.GODOT_CPP], timeout=3600),
+                call(["git", "-C", str(Path(workdir) / work.GODOT_CPP), "ls-files", "--deleted", "-z", "--"]),
+            ])
 
 
 class WorktreeTest(TempFactory):
@@ -663,6 +666,7 @@ class WorktreeTest(TempFactory):
             work.git(str(repo), "config", "user.name", "Factory Test")
             work.git(str(repo), "config", "user.email", "factory@example.invalid")
         self.write_file(submodule, "sub.cpp", "int main() {}\n")
+        self.write_file(submodule, "include/sub.h")
         self.commit_all(submodule)
         work.git(str(main), "-c", "protocol.file.allow=always", "submodule", "add", "-q",
                  str(submodule), work.GODOT_CPP)
@@ -711,6 +715,39 @@ class WorktreeTest(TempFactory):
         work.git(str(self.agent), "config", "--worktree", "core.sparseCheckout", "false")
         self.assertEqual(work.prepare(str(self.agent), "fork", "master", "factory-test"), self.base)
         self.assert_full_agent()
+
+    def test_prepare_repairs_existing_sparse_submodule(self):
+        work.ensure(str(self.runner), str(self.agent), self.base)
+        submodule = self.agent / work.GODOT_CPP
+        work.git(str(submodule), "sparse-checkout", "set", "--no-cone", "/include/")
+        self.assertTrue((submodule / "include/sub.h").is_file())
+        self.assertFalse((submodule / "sub.cpp").exists())
+
+        self.assertEqual(work.prepare(str(self.agent), "fork", "master", "factory-test"), self.base)
+        self.assertEqual(work.git(str(submodule), "config", "--get", "core.sparseCheckout"), "false")
+        self.assertEqual((submodule / "sub.cpp").read_text(encoding="utf-8"), "int main() {}\n")
+
+    def test_rejects_missing_submodule_file_after_update(self):
+        original_must = work.must
+
+        def remove_file_after_update(args, **kwargs):
+            result = original_must(args, **kwargs)
+            if args[3:5] == ["submodule", "update"]:
+                (Path(args[2]) / work.GODOT_CPP / "sub.cpp").unlink()
+            return result
+
+        initial = self.root / "initial"
+        work.ensure(str(self.runner), str(self.agent), self.base)
+        for operation, args, directory in (
+            (work.ensure, (str(self.runner), str(initial), self.base), initial),
+            (work.prepare, (str(self.agent), "fork", "master", "factory-test"), self.agent),
+        ):
+            with self.subTest(operation=operation.__name__):
+                with patch("work.must", side_effect=remove_file_after_update), self.assertRaises(RuntimeError) as error:
+                    operation(*args)
+                submodule = directory / work.GODOT_CPP
+                self.assertEqual(str(error.exception),
+                                 f"incomplete work tree at {submodule}: missing tracked files 'sub.cpp'")
 
     def test_prepare_rejects_incomplete_tree_after_submodule_update(self):
         work.git(str(self.main), "worktree", "add", "--detach", str(self.agent), self.base)

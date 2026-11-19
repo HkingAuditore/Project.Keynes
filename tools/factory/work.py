@@ -41,6 +41,15 @@ def _is_sparse(workdir: str) -> bool:
     return any(entry.startswith("S ") for entry in entries.split("\0"))
 
 
+def _require_complete(workdir: str, *paths: str) -> None:
+    if _is_sparse(workdir):
+        raise RuntimeError(f"incomplete work tree at {workdir}: sparse checkout is still active")
+    deleted = git(workdir, "ls-files", "--deleted", "-z", "--", *paths)
+    if deleted:
+        missing = ", ".join(repr(path) for path in deleted.split("\0") if path)
+        raise RuntimeError(f"incomplete work tree at {workdir}: missing tracked files {missing}")
+
+
 def ensure(runner_dir: str, workdir: str, ref: str) -> None:
     if (Path(workdir) / ".git").exists():
         return
@@ -54,6 +63,7 @@ def ensure(runner_dir: str, workdir: str, ref: str) -> None:
     if (reference / ".git").exists():
         args[5:5] = ["--reference", str(reference)]  # after "update": git submodule update --reference X
     must(args, timeout=3600)
+    _require_complete(str(Path(workdir) / GODOT_CPP))
 
 
 def prepare(workdir: str, remote: str, base: str, branch: str) -> str:
@@ -64,15 +74,14 @@ def prepare(workdir: str, remote: str, base: str, branch: str) -> str:
     git(workdir, "reset", "--hard", "-q")
     git(workdir, "clean", "-fdq")
     git(workdir, "checkout", "-q", "-B", branch, f"{remote}/{base}")
+    submodule = Path(workdir) / GODOT_CPP
+    if (submodule / ".git").exists() and _is_sparse(str(submodule)):
+        git(str(submodule), "sparse-checkout", "disable")
     must(["git", "-C", workdir, "submodule", "update", "--init", "--checkout", "--force", GODOT_CPP],
          timeout=3600)
-    git(str(Path(workdir) / GODOT_CPP), "clean", "-fdq")
-    if _is_sparse(workdir):
-        raise RuntimeError(f"incomplete work tree at {workdir}: sparse checkout is still active")
-    deleted = git(workdir, "ls-files", "--deleted", "-z", "--", ".", f":(top,exclude,literal){GODOT_CPP}")
-    if deleted:
-        missing = ", ".join(repr(path) for path in deleted.split("\0") if path)
-        raise RuntimeError(f"incomplete work tree at {workdir}: missing tracked files {missing}")
+    git(str(submodule), "clean", "-fdq")
+    _require_complete(workdir, ".", f":(top,exclude,literal){GODOT_CPP}")
+    _require_complete(str(submodule))
     return git(workdir, "rev-parse", "HEAD")
 
 
