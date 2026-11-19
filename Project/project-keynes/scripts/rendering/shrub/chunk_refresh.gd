@@ -1004,6 +1004,11 @@ static func _encode_gdscript_payload_for_indices(host, indices: PackedInt32Array
 	mm.transform_format = MultiMesh.TRANSFORM_2D
 	mm.use_colors = true
 	mm.use_custom_data = true
+	# MultiMesh needs a mesh before instance data is allocated; without it every
+	# fallback chunk refresh raises `multimesh->mesh.is_null()` in the engine.
+	# This scrub MultiMesh only exists to pack the instance buffer, so the mesh
+	# is never drawn.
+	mm.mesh = host._cached_detail_mesh()
 	mm.instance_count = transforms.size()
 	for i in range(transforms.size()):
 		mm.set_instance_transform_2d(i, transforms[i])

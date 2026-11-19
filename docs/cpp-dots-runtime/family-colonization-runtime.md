@@ -1,5 +1,32 @@
 # 家族远程开拓与领土扩张运行时
 
+## 在途要人不是孤儿（2026-11-19）
+
+载荷抽人时把随行要人的 `cohort_handle` 和职业 lane 清零（`extract_family_expedition_payload`），
+人在途期间由载荷持有，**不参与本地市场、就业或日常人口循环**（见下文「在途载荷」）。
+`PERSON_COMMIT` 第 1 阶段原先只看「家族有效 + cohort 有效 + 成员边存在」，于是这些人在
+出发后的第一个 epoch 就被判为孤儿 `retire_person`：要人凭空消失，载荷留下死句柄，
+PKEC 写出后读档在 `save_family_expedition_person_invalid` 处整份拒绝（玩家侧
+`ecp2_restore_failed`，2026-11-19 三名玩家上报）。
+
+约束：
+
+- `cohort_handle == 0` 且出现在 `family_expedition_person_handles()` 里的人是在途，不是孤儿。
+  `PERSON_COMMIT` 必须用 `person_in_expedition_transit` 放过他们，不得 retire。
+- 其他权威仍可能 retire 在途要人（家族解散、家族零人口）。`retire_person` 必须先调
+  `drop_expedition_transit_person`：把该句柄从扁平 person lane 摘掉、递减所属载荷的
+  `person_count`、并把其后所有载荷的 `person_begin` 左移一位，然后才释放 slot。
+  句柄一旦过期就不可能再被 restore 接受，这是「死句柄 = 存档全灭」的唯一根治点。
+- PKEC 写 `SAVE_SECTION_FAMILY_EXPEDITIONS` 时按实际 lane 长度夹紧 `person_count`，
+  不信任缓存计数（旧实现越界读 `family_expedition_person_handles()`）。
+- 读取侧对**已经写成死句柄**的旧存档降级：丢掉这条人物 lane 并在回执里回报
+  `dropped_transit_persons`，因为载荷的 `people` / `funds` / 归因 lane 才是权威；
+  `cohort_handle != 0` 或 `family_handle` 不匹配仍是硬错误（真不一致）。
+
+验证：`family_colonization_runtime_test.gd -- --transit-person-only`
+（出发 1 名要人 → 跑一天 → 要人 `get_notable_person_snapshot` 仍有效、
+`get_family_notable_people` 仍给 `cell_indices == -1` → PKCN+PKEC 回读成功且 hash 相等）。
+
 ## 无家族移民队（2026-11-17）
 
 开拓/迁移有两条互斥的派遣路：**家族分支**（原有）和**无家族移民队**（新增）。
