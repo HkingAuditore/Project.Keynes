@@ -1,9 +1,8 @@
-"""Keynes factory, PR mode: fix Qodo findings or merge a reviewed PR with passing CI.
+"""Keynes factory, PR mode: update conflicting branches, fix findings, or merge reviewed PRs.
 
-One tick: list open PRs into the base branch -> for each, read Qodo's review session -> decide()
--> for the first PR that needs a fix: check out its head, run the checks on that head, let Codex
-fix the blocking findings, run the checks again, push to the PR branch only if nothing new fails,
-comment on the PR. Qodo then reviews the new commit and the next tick looks again.
+One tick: list open PRs into the base branch and decide whether they need a conflict update,
+review fix, or GitHub merge. An update or fix checks out the PR head, records existing failures,
+applies the change, and checks it before pushing. Qodo then reviews the new commit.
 
 Usage: python3 tools/factory/watch_prs.py [--pr N] [--dry]
 """
@@ -36,17 +35,20 @@ TRAILER = "Fixed-By: keynes-factory"
 class PrState:
     """What the factory remembers about one PR, in ~/.keynes-factory/prs/<n>.json."""
     pushed: list[str] = field(default_factory=list)     # commits the factory pushed
-    rounds: int = 0                                     # fix rounds since a person last pushed
+    rounds: int = 0                                     # fix and update rounds since a person last pushed
     seen: list[list[str]] = field(default_factory=list)  # finding-id sets already sent to Codex
     disputed: list[str] = field(default_factory=list)   # finding ids Codex disputed (a person decides)
     gave_up_at: str | None = None                       # head commit where the factory stopped
     reason: str | None = None
     attempted: list[str] = field(default_factory=list)  # heads sent to Codex that a person pushed
+    update_attempted: list[str] = field(default_factory=list)
+    last_update: str | None = None
+    last_conflicts: list[str] = field(default_factory=list)
 
 
 @dataclass
 class Decision:
-    action: str            # "skip", "fix", "merge" or "stop"
+    action: str            # "skip", "fix", "update", "merge" or "stop"
     reason: str
     findings: list[dict] = field(default_factory=list)
     needs_files: bool = False
@@ -90,6 +92,17 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
         return Decision("skip", "has a skip label")
     if state.gave_up_at == head:
         return Decision("skip", f"stopped at this head ({state.reason}); waiting for a person")
+    if pr.get("mergeable") == "UNKNOWN":
+        return Decision("skip", "waiting for GitHub to determine mergeability")
+    if pr.get("mergeable") == "CONFLICTING":
+        if not cfg.get("autoUpdateConflicts", True):
+            return Decision("skip", "GitHub reports merge conflicts")
+        if head in state.update_attempted:
+            return Decision("skip", "the factory already tried to update this head")
+        limit = cfg["limits"]["prReviewRounds"]
+        if head in state.pushed and state.rounds >= limit:
+            return Decision("stop", f"{limit} factory rounds used and the branch still conflicts")
+        return Decision("update", "GitHub reports merge conflicts")
     if head not in state.pushed and head in state.attempted:
         return Decision("skip", "Codex already ran at this head; waiting for a person")
     if review is None:
@@ -190,7 +203,9 @@ class Watcher:
     def tick(self, only: int | None) -> int:
         for pr in self.prs(only):
             st = self.load(pr["number"])
-            review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
+            review = None
+            if pr.get("mergeable") not in ("CONFLICTING", "UNKNOWN"):
+                review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
             args = (pr, review, st, self.cfg)
             d = decide(*args)
             changed_files = None
@@ -216,6 +231,8 @@ class Watcher:
             if d.action == "stop":
                 self.stop(pr, st, d.reason)
                 continue
+            if d.action == "update":
+                return self.update(pr, st)
             return self.fix(pr, st, d.findings)  # one fix per tick: it takes minutes
         return 0
 
@@ -320,34 +337,45 @@ class Watcher:
 
     def scope_blocked(self, pr: dict, st: PrState, logs: Path, files: list[str],
                       candidate: checks.Candidate, *, before_commit: bool = False) -> bool:
-        bad, human, native = candidate.scope(files)
-        protected = sorted(set(bad + human))
-        if protected:
-            reason = f"the fix touches files a person must handle ({', '.join(protected)})"
-        else:
-            reason = candidate.commit_problem(files, native) if before_commit else None
+        reason = self.scope_problem(files, candidate, before_commit=before_commit)
         if not reason:
             return False
         self.stop_with_patch(pr, st, logs, f"{reason}. Nothing was pushed.", candidate.facts.report())
         return True
 
+    def scope_problem(self, files: list[str], candidate: checks.Candidate, *, before_commit: bool) -> str | None:
+        bad, human, native = candidate.scope(files)
+        protected = sorted(set(bad + human))
+        if protected:
+            return f"the change touches files a person must handle ({', '.join(protected)})"
+        return candidate.commit_problem(files, native) if before_commit else None
+
     def fix(self, pr: dict, st: PrState, findings: list[dict]) -> int:
+        return self.run_change(pr, st, "fix", findings)
+
+    def update(self, pr: dict, st: PrState) -> int:
+        return self.run_change(pr, st, "update", [])
+
+    def run_change(self, pr: dict, st: PrState, action: str, findings: list[dict]) -> int:
         cfg, n, head = self.cfg, pr["number"], pr["headRefOid"]
         L = cfg["labels"]
         logs = self.home / "logs" / f"pr-{n}-{self.stamp}"
         logs.mkdir(parents=True, exist_ok=True)
         ev = Events()
-        record: dict = {"pr": n, "url": pr["url"], "head": head, "started": self.stamp,
+        record: dict = {"pr": n, "url": pr["url"], "head": head, "started": self.stamp, "action": action,
                         "findings": [f.get("id") for f in findings]}
         facts = NativeFacts()
         outcome = "error"
         try:
             self.gh.relabel(n, [L["working"]], [L["help"]])
-            outcome = self._fix(pr, st, findings, logs, ev, record, facts)
+            if action == "update":
+                outcome = self._update(pr, st, logs, ev, record, facts)
+            else:
+                outcome = self._fix(pr, st, findings, logs, ev, record, facts)
         except Exception as e:
             record["error"] = str(e)
             ev.add("error", trace=traceback.format_exc()[-3000:])
-            self.stop(pr, st, f"the fix run failed: {e}", facts.report())
+            self.stop(pr, st, f"the {action} run failed: {e}", facts.report())
         finally:
             self.gh.relabel(n, [], [L["working"]])
             record.update({"outcome": outcome, "events": ev.items, "githubErrors": self.gh.errors, "facts": asdict(facts),
@@ -358,6 +386,171 @@ class Watcher:
                                                            encoding="utf-8")
         return 1 if self.gh.errors else 0
 
+    def prepare_head(self, pr: dict, ev: Events) -> bool:
+        cfg, n = self.cfg, pr["number"]
+        runner_dir = str(Path(__file__).resolve().parents[2])
+        work.ensure(runner_dir, self.workdir, f"{cfg['remote']}/{cfg['base']}")
+        got = work.prepare(self.workdir, cfg["remote"], pr["headRefName"], f"factory-pr-{n}")
+        if got != pr["headRefOid"]:
+            ev.add("moved", expected=pr["headRefOid"], got=got)
+            return False
+        return True
+
+    def update_head_moved(self, pr: dict, ev: Events) -> bool:
+        got = work.remote_head(self.workdir, self.cfg["remote"], pr["headRefName"])
+        expected = pr["headRefOid"]
+        if got == expected:
+            return False
+        ev.add("moved", expected=expected, got=got)
+        return True
+
+    def _update(self, pr: dict, st: PrState, logs: Path, ev: Events, record: dict, facts: NativeFacts) -> str:
+        cfg, n, head = self.cfg, pr["number"], pr["headRefOid"]
+        if not self.prepare_head(pr, ev):
+            return "head moved"
+        if head not in st.pushed:
+            st.rounds, st.seen = 0, []
+        st.update_attempted.append(head)
+        self.save(n, st)
+        base_res = checks.base_results(cfg, self.workdir, head, str(self.home / "base-checks"), str(logs / "checks-head"))
+        before = checks.failed(base_res)
+        ev.add("checks-before", failed=before)
+        record["checks"] = {"before": before}
+        if self.update_head_moved(pr, ev):
+            return "head moved"
+
+        base = pr.get("baseRefName", cfg["base"])
+        synced_submodule = False
+
+        def abort() -> None:
+            if work.merge_head(self.workdir):
+                work.git(self.workdir, "merge", "--abort")
+                if synced_submodule:
+                    work.update_godot_cpp(self.workdir)
+
+        def stop(reason: str, details: str = "") -> str:
+            abort()
+            record["reason"] = reason
+            self.stop(pr, st, f"{reason}. Nothing was pushed.",
+                      "\n\n".join(filter(None, [details, facts.report()])))
+            return "stopped"
+
+        try:
+            parent = work.merge_from(self.workdir, f"{cfg['remote']}/{base}")
+            if parent is None:
+                ev.add("up-to-date", base=base)
+                return "already up to date"
+            record.update(base=base, baseSha=parent)
+
+            conflicts = work.unmerged(self.workdir)
+            paths = sorted(conflicts)
+            record["conflicts"] = paths
+            if paths and st.last_update == head and paths == st.last_conflicts:
+                return stop("the same conflicts reappeared after the factory update: " + ", ".join(paths))
+            bad, human, _ = work.scope(cfg, paths)
+            gitlinks = [path for path, stages in conflicts.items() if "160000" in stages.values()]
+            protected = sorted(set(bad + human + gitlinks))
+            if protected:
+                return stop("conflicts in paths a person must handle: " + ", ".join(protected))
+
+            libraries = sorted(set(paths) & set(cfg["paths"]["nativeLibraries"]))
+            text = sorted(set(paths) - set(libraries))
+            binary = work.binary_conflicts(self.workdir, head, parent, text)
+            if binary:
+                return stop("binary conflicts a person must handle: " + ", ".join(binary))
+            resolutions = []
+            for path in libraries:
+                side = "ours" if "2" in conflicts[path] else "theirs"
+                spec = f":(top,literal){path}"
+                work.git(self.workdir, "checkout", f"--{side}", "--", spec)
+                work.git(self.workdir, "add", "--", spec)
+                resolutions.append(f"- `{path}` · took {side} for the merge, then rebuilt and verified it.")
+
+            if work.git(self.workdir, "diff", "--cached", "--name-only", head, "--", work.GODOT_CPP):
+                synced_submodule = True
+                work.update_godot_cpp(self.workdir)
+            candidate = checks.Candidate(cfg, self.workdir, facts, merge_parent=parent, force_native=bool(libraries))
+            if text:
+                prompt = agent.render("resolve-conflicts", files="\n".join(f"- `{path}`" for path in text))
+                out = agent.codex(cfg, self.workdir, prompt, str(logs / "resolve-conflicts.md"), writable=True)
+                record["report"] = out["report"]
+                ev.add("agent", ok=out["ok"], code=out.get("code"))
+                if self.update_head_moved(pr, ev):
+                    return "head moved"
+                if not out["ok"]:
+                    record["agentFailure"] = agent.failure_reason(out)
+                    return stop(record["agentFailure"], record["report"])
+                resolutions.extend([f"- `{path}` · resolved by Codex." for path in text])
+
+            def merge_problem(files: list[str]) -> str | None:
+                if work.head(self.workdir) != head or work.merge_head(self.workdir) != parent:
+                    return "the working checkout no longer has the expected pending merge"
+                unresolved = sorted(work.unmerged(self.workdir))
+                if unresolved:
+                    return "unmerged paths remain: " + ", ".join(unresolved)
+                marked = work.conflict_markers(self.workdir, sorted(set(paths + files) - set(libraries)))
+                if marked:
+                    return "conflict markers remain: " + ", ".join(marked)
+                return None
+
+            files = candidate.changed(head)
+            record["files"] = files
+            reason = merge_problem(files) or self.scope_problem(files, candidate, before_commit=False)
+            if reason:
+                return stop(reason)
+            res, files = candidate.run(head, files, str(logs / "checks-update"), [])
+            after, new = checks.failed(res), checks.new_failures(res, before)
+            ev.add("checks-after", failed=after, new=new)
+            record["checks"].update(after=after, new=new, results=res)
+            record["files"] = files
+            if self.update_head_moved(pr, ev):
+                return "head moved"
+            if new:
+                return stop("the update has failing checks: " + ", ".join(new), checks.feedback(res, new)[:6000])
+
+            reason = merge_problem(files)
+            if reason:
+                return stop(reason)
+            work.stage(self.workdir)
+            record["files"] = candidate.changed(head)
+            reason = self.scope_problem(record["files"], candidate, before_commit=True)
+            if reason:
+                return stop(reason)
+            message = f"Merge {base} into {pr['headRefName']}\n\n{TRAILER}\n"
+            if text:
+                message += f"Implemented-By: Codex ({cfg['agent']['model']})\n"
+            sha = work.commit(self.workdir, message, staged=True)
+            if work.git(self.workdir, "show", "-s", "--format=%P", sha).split() != [head, parent]:
+                raise RuntimeError("the update commit must have the PR head and fetched base as parents")
+            candidate.committed()
+            branch = pr["headRefName"]
+            try:
+                work.git(self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
+                         cfg["remote"], f"HEAD:refs/heads/{branch}")
+            except RuntimeError:
+                if self.update_head_moved(pr, ev):
+                    return "head moved"
+                raise
+            st.pushed.append(sha)
+            st.rounds += 1
+            st.gave_up_at = st.reason = None
+            st.last_update, st.last_conflicts = sha, paths
+            self.save(n, st)
+            ev.add("pushed", sha=sha, round=st.rounds)
+            lines = [f"### Factory updated this branch from `{base}`", "",
+                     f"Pushed merge commit `{sha}`.", "", "Conflict resolutions", "",
+                     *(resolutions or ["Git merged cleanly with the fetched base."])]
+            if text:
+                lines += ["", "Codex resolution notes", "", record["report"]]
+            lines += ["", facts.report(), "", "Checks", ""]
+            lines += [f"- `{row['name']}` · {'passed' if row['ok'] else 'already failing on the PR head'}" for row in res]
+            if before:
+                lines += ["", "Failures recorded on the PR head: " + ", ".join(before)]
+            self.gh.comment(n, "\n".join(lines), pull_request=True)
+            return "pushed"
+        finally:
+            abort()
+
     def _fix(self, pr: dict, st: PrState, findings: list[dict], logs: Path, ev: Events, record: dict,
              facts: NativeFacts | None = None) -> str:
         cfg, n, head, branch = self.cfg, pr["number"], pr["headRefOid"], pr["headRefName"]
@@ -365,11 +558,7 @@ class Watcher:
         candidate = checks.Candidate(cfg, self.workdir, facts)
         if head not in st.pushed:  # a person pushed: start counting again
             st.rounds, st.seen = 0, []
-        runner_dir = str(Path(__file__).resolve().parents[2])
-        work.ensure(runner_dir, self.workdir, f"{cfg['remote']}/{cfg['base']}")
-        got = work.prepare(self.workdir, cfg["remote"], branch, f"factory-pr-{n}")
-        if got != head:
-            ev.add("moved", expected=head, got=got)
+        if not self.prepare_head(pr, ev):
             return "head moved"
         base_res = checks.base_results(cfg, self.workdir, head, str(self.home / "base-checks"), str(logs / "checks-head"))
         before = checks.failed(base_res)

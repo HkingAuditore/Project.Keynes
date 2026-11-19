@@ -152,10 +152,33 @@ class MergeDecision(unittest.TestCase):
                 self.assertEqual(self.d(r=r).action, "fix")
                 self.assertEqual(self.d(r=r, state=PrState(disputed=["block"])).action, "skip")
 
-    def test_conflicting_and_unknown_mergeability_prevent_merge(self):
-        for status in ("CONFLICTING", "UNKNOWN", None):
+    def test_unknown_mergeability_waits(self):
+        for status in ("UNKNOWN", None):
             with self.subTest(status=status):
                 self.assertEqual(self.d(p=pr(mergeable=status)).action, "skip")
+        self.assertEqual(self.d(p=pr(mergeable="UNKNOWN"), r=review(findings=[finding("x")])).action, "skip")
+
+    def test_conflicting_head_updates_without_review_or_ci(self):
+        cfg = load_config()
+        p = pr(mergeable="CONFLICTING")
+        for r in (None, review(status="failed"), review(findings=[finding("x")])):
+            with self.subTest(review=r):
+                self.assertEqual(decide(p, r, PrState(), cfg).action, "update")
+
+    def test_conflict_update_respects_skip_conditions(self):
+        cfg = load_config()
+        for flags in ({"isDraft": True}, {"isCrossRepository": True}, *({"labels": [label]} for label in SKIP)):
+            with self.subTest(flags=flags):
+                self.assertEqual(decide(pr(mergeable="CONFLICTING", **flags), None, PrState(), cfg).action, "skip")
+        p = pr(mergeable="CONFLICTING")
+        self.assertEqual(decide(p, None, PrState(gave_up_at=HEAD), cfg).action, "skip")
+        cfg["autoUpdateConflicts"] = False
+        self.assertEqual(decide(p, review(findings=[finding("x")]), PrState(), cfg).action, "skip")
+
+    def test_conflict_update_does_not_retry_an_already_attempted_factory_head(self):
+        p = pr(mergeable="CONFLICTING")
+        st = PrState(pushed=[HEAD], rounds=1, update_attempted=[HEAD])
+        self.assertEqual(decide(p, None, st, load_config()).action, "skip")
 
     def test_ci_requires_evidence_for_same_head(self):
         for ci in (None, replace(self.ci, sha="older-head")):
