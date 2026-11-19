@@ -1412,6 +1412,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     const int32_t restored_commands = _restore.restored_commands;
     const int32_t restored_buildings = _restore.restored_buildings;
     const int32_t restored_schema = _restore.schema_version;
+    const int32_t dropped_transit_persons = _restore.dropped_transit_persons;
     _resource_stock_restored_pending_capture = _restore.resource_stock_seen;
     _restore = {};
     trace_begin_epoch();
@@ -1432,6 +1433,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_families"] = families_store().active_count.get();
     out["restored_persons"] = persons_store().active_count.get();
     out["restored_person_needs"] = static_cast<int64_t>(person_needs().size());
+    out["dropped_transit_persons"] = dropped_transit_persons;
     out["migration"] = restored_schema == 27
         ? "v27_empty_birth_residual_bootstrap"
         : (restored_schema == 25

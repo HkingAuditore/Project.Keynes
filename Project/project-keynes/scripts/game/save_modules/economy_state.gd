@@ -49,6 +49,14 @@ func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dic
 		return _result(false, "ecp2_restore_failed",
 			String(result.get("restore_rejected_reason",
 				result.get("reason", "经济 ECP2 恢复失败。"))))
+	# Saves written before the in-transit retirement fix carry payload person
+	# lanes whose notable person no longer exists. Population, funds and the
+	# attribution lanes are authoritative, so the runtime drops those lanes
+	# instead of rejecting the world; keep the count visible for support.
+	var dropped_transit: int = int(result.get("dropped_transit_persons", 0))
+	if dropped_transit > 0:
+		push_warning(
+			"[save/restore] dropped %d retired in-transit notable person lane(s) from this save" % dropped_transit)
 	# ECP2 owns the authored building catalog. Bind it before PKFG is restored so
 	# building intel type indices are checked against the authoritative type count.
 	if context.refresh_buildings.is_valid():

@@ -821,5 +821,70 @@ void NativeEconomyRuntime::release_family_expedition_reservations(
     population_store().reclaim_empty_pages(family_expeditions_store().target_cell[expedition]);
 }
 
+bool NativeEconomyRuntime::person_in_expedition_transit(
+        uint64_t person_handle) const {
+    if (person_handle == 0) return false;
+    const auto &handles = family_expedition_person_handles();
+    return std::find(handles.begin(), handles.end(), person_handle) !=
+        handles.end();
+}
+
+void NativeEconomyRuntime::drop_expedition_transit_person(
+        uint64_t person_handle) {
+    if (person_handle == 0) return;
+    auto &handles = family_expedition_person_handles();
+    if (handles.empty()) return;
+    const int32_t expedition_count = static_cast<int32_t>(
+        family_expeditions_store().active.size());
+    int32_t removed = -1;
+    size_t owner_payload = 0;
+    for (int32_t e = 0; e < expedition_count && removed < 0; ++e) {
+        if (family_expeditions_store().active[e] == 0) continue;
+        const size_t begin = family_expeditions_store().payload_begin[e];
+        const size_t end = std::min<size_t>(begin +
+            family_expeditions_store().payload_count[e],
+            family_expedition_payloads().size());
+        for (size_t p = begin; p < end && removed < 0; ++p) {
+            const FamilyExpeditionPayload &lane =
+                family_expedition_payloads()[p];
+            const size_t lane_end = std::min<size_t>(
+                static_cast<size_t>(lane.person_begin) + lane.person_count,
+                handles.size());
+            for (size_t i = lane.person_begin; i < lane_end; ++i) {
+                if (handles[i] != person_handle) continue;
+                removed = static_cast<int32_t>(i);
+                owner_payload = p;
+                break;
+            }
+        }
+    }
+    if (removed < 0) return;
+    handles.erase(static_cast<size_t>(removed), 1);
+    {
+        auto owner_write = family_expedition_payloads().edit_row(
+            owner_payload, market_mutation_sink());
+        if (owner_write[0].person_count > 0) --owner_write[0].person_count;
+    }
+    // The flat handle lane stays contiguous, so every payload that begins after
+    // the removed entry shifts left by one.
+    std::vector<size_t> shifted;
+    for (int32_t e = 0; e < expedition_count; ++e) {
+        if (family_expeditions_store().active[e] == 0) continue;
+        const size_t begin = family_expeditions_store().payload_begin[e];
+        const size_t end = std::min<size_t>(begin +
+            family_expeditions_store().payload_count[e],
+            family_expedition_payloads().size());
+        for (size_t p = begin; p < end; ++p)
+            if (family_expedition_payloads()[p].person_begin >
+                    static_cast<uint32_t>(removed))
+                shifted.push_back(p);
+    }
+    for (const size_t p : shifted) {
+        auto write = family_expedition_payloads().edit_row(p,
+            market_mutation_sink());
+        --write[0].person_begin;
+    }
+    _person_indices_dirty = true;
+}
 
 } // namespace pk
