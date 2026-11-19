@@ -140,48 +140,61 @@ class IssueWorkflowTest(TempFactory):
 
     def test_failed_implementation_stops_before_checks_review_or_publish(self):
         run = self.make_run()
+        patch_path = run.logs / "fix.patch"
         run.gh.relabel.return_value = None
         run.gh.open_pr.return_value = None
         with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
               patch("checks.base_results", return_value=[]), patch.object(run, "plan", return_value=""),
               patch("agent.codex", return_value={"ok": False, "code": 1, "report": "partial"}) as codex,
-              patch("work.save_patch") as save, patch.object(run, "run_checks") as candidate_checks,
+              patch("work.save_patch", return_value=[patch_path]) as save,
+              patch.object(run, "run_checks") as candidate_checks,
               patch.object(run, "local_review") as local_review,
               patch("work.commit") as commit, patch("work.push") as push):
             run.go(ISSUE)
         codex.assert_called_once()
-        save.assert_called_once_with(run.workdir, HEAD, run.logs / "fix.patch")
+        save.assert_called_once_with(run.workdir, HEAD, patch_path)
         for step in (candidate_checks, local_review, commit, push, run.gh.create_pr):
             step.assert_not_called()
         self.assertIn("Codex failed (exit 1) during implementation", run.facts.stopped_by)
+        self.assertIn(str(patch_path), run.facts.stopped_by)
 
     def test_failed_issue_review_fix_stops_before_checks_or_publish(self):
         run = self.make_run()
+        paths = [run.logs / "fix.patch", run.logs / "fix.gdext__godot-cpp.patch"]
         run.pr = PR
         run.facts.head = HEAD
         with (patch("qodo.wait_pr_review", return_value=review(FINDING)),
               patch.object(run, "wait_ci", return_value="success"),
               patch("agent.codex", return_value={"ok": False, "code": 124, "report": "partial"}),
-              patch("work.save_patch") as save, patch.object(run, "run_checks") as candidate_checks,
+              patch("work.save_patch", return_value=paths) as save, patch.object(run, "run_checks") as candidate_checks,
               patch("work.commit") as commit, patch("work.push") as push):
             run.pr_loop(ISSUE, [], [])
-        save.assert_called_once_with(run.workdir, HEAD, run.logs / "fix.patch")
+        save.assert_called_once_with(run.workdir, HEAD, paths[0])
         for step in (candidate_checks, commit, push):
             step.assert_not_called()
         self.assertIn("Codex timed out", run.facts.stopped_by)
+        for path in paths:
+            self.assertIn(str(path), run.facts.stopped_by)
 
     def test_issue_review_fix_stops_on_invalid_dispute_file(self):
         run = self.make_run()
+        paths = [run.logs / "fix.patch", run.logs / "fix.gdext__godot-cpp.patch"]
         disagree = Path(run.workdir) / ".factory-disagree.md"
         disagree.parent.mkdir()
         disagree.write_text("  - f: malformed\n- unknown: file.gd:42\n", encoding="utf-8")
         with (patch("agent.codex", return_value={"ok": True, "report": ""}),
+              patch("work.save_patch", return_value=paths) as save,
               patch.object(run, "run_checks") as candidate_checks):
             self.assertFalse(run.fix(ISSUE, [FINDING], "local review", False, [], []))
+        save.assert_called_once_with(run.workdir, HEAD, paths[0])
         candidate_checks.assert_not_called()
         self.assertIn(repr("  - f: malformed"), run.facts.stopped_by)
         self.assertIn(repr("- unknown: file.gd:42"), run.facts.stopped_by)
         self.assertEqual(run.facts.disagreements, [])
+        self.assertEqual(run.finish(), 0)
+        for path in paths:
+            self.assertIn(str(path), run.facts.stopped_by)
+            self.assertIn(str(path), run.gh.comment.call_args.args[1])
 
     def test_ci_query_error_stops_polling_and_pr_fix(self):
         run = self.make_run()
@@ -209,29 +222,34 @@ class WatchWorkflowTest(TempFactory):
     def test_scope_rechecked_after_passing_checks(self):
         watcher = Watcher(self.cfg, dry=False)
         pr = {"number": 7, "headRefOid": HEAD, "headRefName": "issue", "title": "Example"}
+        paths = [self.root / "fix.patch", self.root / "fix.gdext__godot-cpp.patch"]
         with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
               patch("checks.base_results", return_value=[]), patch("work.head", return_value=HEAD),
               patch("agent.codex", return_value={"ok": True, "report": ""}),
               patch("work.changed", side_effect=[["edit.gd"], ["edit.gd", "tools/ci/generated.py"]]),
-              patch("checks.Runner.run", return_value=[]), patch("work.save_patch") as save,
+              patch("checks.Runner.run", return_value=[]), patch("work.save_patch", return_value=paths) as save,
               patch.object(watcher, "stop") as stop, patch("work.commit") as commit):
             self.assertEqual(watcher._fix(pr, PrState(), [FINDING], self.root, Events(), {}), "stopped")
         commit.assert_not_called()
-        save.assert_called_once_with(watcher.workdir, HEAD, self.root / "fix.patch")
+        save.assert_called_once_with(watcher.workdir, HEAD, paths[0])
         self.assertIn("tools/ci/generated.py", stop.call_args.args[2])
+        for path in paths:
+            self.assertIn(str(path), stop.call_args.args[3])
 
     def test_failed_codex_saves_partial_patch_without_checks_or_publish(self):
         for code, reason in ((1, "Codex failed"), (124, "Codex timed out")):
             with self.subTest(code=code):
                 watcher = self.make_watcher()
+                logs = self.root / "logs" / f"pr-7-{watcher.stamp}"
+                paths = [logs / "fix.patch", logs / "fix.gdext__godot-cpp.patch"]
                 with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
                       patch("checks.base_results", return_value=[]),
                       patch("agent.codex", return_value={"ok": False, "report": "partial", "code": code}),
-                      patch("work.save_patch") as save, patch("checks.Runner.run") as candidate_checks,
+                      patch("work.save_patch", return_value=paths) as save,
+                      patch("checks.Runner.run") as candidate_checks,
                       patch("work.commit") as commit, patch("watch_prs.must") as push):
                     watcher.fix(PR, PrState(), [FINDING])
-                save.assert_called_once_with(watcher.workdir, HEAD,
-                                             self.root / "logs" / f"pr-7-{watcher.stamp}" / "fix.patch")
+                save.assert_called_once_with(watcher.workdir, HEAD, paths[0])
                 for step in (candidate_checks, commit, push):
                     step.assert_not_called()
                 record = self.read_record(watcher)
@@ -239,6 +257,8 @@ class WatchWorkflowTest(TempFactory):
                 self.assertIn(reason, record["agentFailure"])
                 self.assertEqual(watcher.load(7).gave_up_at, HEAD)
                 self.assertIn(reason, watcher.gh.comment.call_args.args[1])
+                for path in paths:
+                    self.assertIn(str(path), watcher.gh.comment.call_args.args[1])
                 watcher.gh.relabel.assert_called_with(7, [], ["agent-working"])
 
     def test_disputed_head_runs_codex_once_across_two_ticks(self):
@@ -249,7 +269,7 @@ class WatchWorkflowTest(TempFactory):
               patch("work.ensure"), patch("work.prepare", return_value=HEAD),
               patch("work.head", return_value=HEAD), patch("work.changed", return_value=[]),
               patch("checks.base_results", return_value=[]),
-              patch("work.scratch", return_value="- f: file.gd:42"),
+              patch("work.scratch", return_value="- `f`: file.gd:42"),
               patch("agent.codex", return_value={"ok": True, "report": ""}) as codex):
             self.assertEqual(watcher.tick(None), 0)
             self.assertEqual(watcher.tick(None), 0)
@@ -284,17 +304,23 @@ class WatchWorkflowTest(TempFactory):
 
     def test_invalid_dispute_stops_pr_fix_before_checks(self):
         watcher = self.make_watcher()
+        logs = self.root / "logs" / f"pr-7-{watcher.stamp}"
+        paths = [logs / "fix.patch", logs / "fix.gdext__godot-cpp.patch"]
         with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
               patch("checks.base_results", return_value=[]), patch("checks.Runner.run") as candidate_checks,
               patch("work.scratch", return_value="- unknown: file.gd:42"),
               patch("agent.codex", return_value={"ok": True, "report": ""}),
+              patch("work.save_patch", return_value=paths) as save,
               patch("work.commit") as commit, patch("watch_prs.must") as push):
             watcher.fix(PR, PrState(), [FINDING])
+        save.assert_called_once_with(watcher.workdir, HEAD, paths[0])
         for step in (candidate_checks, commit, push):
             step.assert_not_called()
         self.assertEqual(watcher.load(7).gave_up_at, HEAD)
         self.assertIn("- unknown: file.gd:42", self.read_record(watcher)["disputeError"])
         self.assertIn("- unknown: file.gd:42", watcher.gh.comment.call_args.args[1])
+        for path in paths:
+            self.assertIn(str(path), watcher.gh.comment.call_args.args[1])
 
     def test_moved_head_clears_working_label_and_records_without_comment(self):
         watcher = self.make_watcher()
@@ -388,12 +414,44 @@ class AdapterTest(TempFactory):
         (tree / "new.gd").write_text("new\n", encoding="utf-8")
         (tree / ".factory-disagree.md").write_text("scratch\n", encoding="utf-8")
         path = self.root / "fix.patch"
-        work.save_patch(str(tree), base, path)
+        self.assertEqual(work.save_patch(str(tree), base, path), [path])
         patch_text = path.read_text(encoding="utf-8")
         for line in ("diff --git a/tracked.gd b/tracked.gd", "-before\n+after\n",
                      "diff --git a/new.gd b/new.gd", "+new\n"):
             self.assertIn(line, patch_text)
         self.assertNotIn(".factory-disagree.md", patch_text)
+
+    def test_save_patch_includes_dirty_submodule_and_skips_clean_submodule(self):
+        source, tree = self.root / "source", self.root / "tree"
+        for repo in (source, tree):
+            repo.mkdir()
+            work.git(str(repo), "init", "-q")
+            work.git(str(repo), "config", "user.name", "Factory Test")
+            work.git(str(repo), "config", "user.email", "factory@example.invalid")
+        (source / "tracked.cpp").write_text("before\n", encoding="utf-8")
+        work.git(str(source), "add", "tracked.cpp")
+        work.git(str(source), "-c", "commit.gpgsign=false", "commit", "-qm", "Submodule base")
+        for name in ("gdext/godot-cpp", "vendor/clean", "vendor/untracked"):
+            work.git(str(tree), "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(source), name)
+        work.git(str(tree), "-c", "commit.gpgsign=false", "commit", "-qm", "Superproject base")
+        child = tree / "gdext/godot-cpp"
+        (child / "tracked.cpp").write_text("after\n", encoding="utf-8")
+        work.git(str(child), "add", "tracked.cpp")
+        (child / "new.bin").write_bytes(b"\0new binary content\xff")
+        (tree / "vendor/untracked/new.txt").write_text("untracked only\n", encoding="utf-8")
+
+        path = self.root / "fix.patch"
+        child_path = self.root / "fix.gdext__godot-cpp.patch"
+        untracked_path = self.root / "fix.vendor__untracked.patch"
+        self.assertEqual(work.save_patch(str(tree), work.head(str(tree)), path), [path, child_path, untracked_path])
+        self.assertIn("diff --git a/gdext/godot-cpp b/gdext/godot-cpp", path.read_text(encoding="utf-8"))
+        patch_text = child_path.read_text(encoding="utf-8")
+        self.assertIn("-before\n+after\n", patch_text)
+        self.assertIn("diff --git a/new.bin b/new.bin", patch_text)
+        self.assertIn("GIT binary patch", patch_text)
+        work.git(str(source), "apply", "--check", str(child_path))
+        self.assertIn("+untracked only\n", untracked_path.read_text(encoding="utf-8"))
+        self.assertFalse((self.root / "fix.vendor__clean.patch").exists())
 
     def test_prepare_forces_submodule_checkout_and_cleans_inside(self):
         with patch("work.must", return_value=HEAD) as git:

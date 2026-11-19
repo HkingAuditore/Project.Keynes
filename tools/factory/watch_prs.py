@@ -150,15 +150,17 @@ class Watcher:
         self.gh.relabel(pr["number"], [L["help"]], [L["working"]])
 
     # ---- the fix ---------------------------------------------------------------------
+    def stop_with_patch(self, pr: dict, st: PrState, logs: Path, reason: str) -> None:
+        patches = work.save_patch(self.workdir, pr["headRefOid"], logs / "fix.patch")
+        self.stop(pr, st, reason, work.patch_notice(patches))
+
     def scope_blocked(self, pr: dict, st: PrState, logs: Path, files: list[str]) -> bool:
         bad, human, native = work.scope(self.cfg, files)
         protected = sorted(set(bad + human + native))
         if not protected:
             return False
-        patch = logs / "fix.patch"
-        work.save_patch(self.workdir, pr["headRefOid"], patch)
-        self.stop(pr, st, f"the fix touches files a person must handle ({', '.join(protected)}). Nothing was pushed.",
-                  f"The patch is saved locally at `{patch}`.")
+        reason = f"the fix touches files a person must handle ({', '.join(protected)}). Nothing was pushed."
+        self.stop_with_patch(pr, st, logs, reason)
         return True
 
     def fix(self, pr: dict, st: PrState, findings: list[dict]) -> int:
@@ -211,15 +213,13 @@ class Watcher:
         if not out["ok"]:
             reason = agent.failure_reason(out)
             record["agentFailure"] = reason
-            patch = logs / "fix.patch"
-            work.save_patch(self.workdir, head, patch)
-            self.stop(pr, st, reason, f"The patch is saved locally at `{patch}`.")
+            self.stop_with_patch(pr, st, logs, reason)
             return "stopped"
         try:
             parsed = agent.parse_disputes(work.scratch(self.workdir, "disagree.md"), findings)
         except ValueError as e:
             record["disputeError"] = str(e)
-            self.stop(pr, st, str(e))
+            self.stop_with_patch(pr, st, logs, str(e))
             return "stopped"
         disputes = [f"{finding_id}: {evidence}" for finding_id, evidence in parsed]
         disputed_ids = {finding_id for finding_id, _ in parsed}

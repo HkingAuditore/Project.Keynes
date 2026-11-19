@@ -71,13 +71,14 @@ class Run:
     def path(self, name: str) -> str:
         return str(self.logs / name)
 
+    def stop_with_patch(self, reason: str, base: str) -> None:
+        patches = work.save_patch(self.workdir, base, self.logs / "fix.patch")
+        self.facts.stopped_by = f"{reason}\n\n{work.patch_notice(patches)}"
+
     def stop_failed_agent(self, out: dict, stage: str, base: str) -> None:
         reason = f"{agent.failure_reason(out)} during {stage}"
-        self.facts.stopped_by = reason
         self.ev.add("agent", stage=stage, ok=False, code=out["code"], reason=reason)
-        patch = self.logs / "fix.patch"
-        work.save_patch(self.workdir, base, patch)
-        self.facts.stopped_by = f"{reason}. The patch is saved locally at `{patch}`."
+        self.stop_with_patch(reason, base)
 
     def run_checks(self, label: str, extra: list[str], base_failed: list[str]) -> tuple[list[dict], list[str]]:
         files = work.changed(self.workdir, self.base)
@@ -220,7 +221,7 @@ class Run:
         try:
             disputes = agent.parse_disputes(work.scratch(self.workdir, "disagree.md"), findings)
         except ValueError as e:
-            self.facts.stopped_by = str(e)
+            self.stop_with_patch(str(e), base)
             return False
         self.facts.disagreements += [f"{finding_id}: {evidence}" for finding_id, evidence in disputes]
         if work.head(self.workdir) != base:

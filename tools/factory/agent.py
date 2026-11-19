@@ -38,7 +38,9 @@ def parse_disputes(text: str | None, findings: list[dict]) -> list[tuple[str, st
         if not line.strip():
             continue
         finding_id, colon, evidence = line[2:].partition(":")
-        if (line.startswith("- ") and colon and finding_id in ids
+        if finding_id.startswith("`") and finding_id.endswith("`"):
+            finding_id = finding_id[1:-1]
+        if (line.startswith("- ") and colon and "`" not in finding_id and finding_id in ids
                 and evidence.startswith(" ") and evidence.strip()):
             disputes.append((finding_id, evidence.strip()))
         else:

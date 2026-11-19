@@ -148,11 +148,15 @@ class DisputeTest(unittest.TestCase):
 
     def test_id_is_exact_even_when_evidence_mentions_another_id(self):
         evidence = "see file.gd:42 for finding other"
-        self.assertEqual(agent.parse_disputes(f"\n- f-long: {evidence}\n\n", self.FINDINGS),
-                         [("f-long", evidence)])
+        for finding_id in ("f-long", "`f-long`"):
+            with self.subTest(finding_id=finding_id):
+                self.assertEqual(agent.parse_disputes(f"\n- {finding_id}: {evidence}\n\n", self.FINDINGS),
+                                 [("f-long", evidence)])
 
     def test_lists_all_malformed_and_unknown_lines(self):
         bad = ["- f", "  - f: indented", "- f:evidence", "- f:  ", "- unknown: evidence"]
+        bad += ["- `f: evidence", "- f`: evidence", "- ``f``: evidence", "- ` f`: evidence",
+                "- `unknown`: evidence", "- `f`:evidence"]
         with self.assertRaises(ValueError) as error:
             agent.parse_disputes("\n".join([*bad, "- f: valid evidence"]), self.FINDINGS)
         for line in bad:
