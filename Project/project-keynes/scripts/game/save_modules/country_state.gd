@@ -53,8 +53,7 @@ func _write_military_provider(context: Dictionary) -> Dictionary:
 		# A configured facade that cannot encode is a real failure: writing an
 		# empty section would silently reset every army on the next load.
 		return _result(false, "pkmi_save_failed", "Military state serialization failed")
-	var job = context.get("military_progress")
-	var progress: PackedInt64Array = facade.capture_pending_event_progress() if job == null else PackedInt64Array(job.capture_event_progress())
+	var progress: PackedInt64Array = facade.capture_pending_event_progress()
 	var tail := PackedByteArray()
 	tail.resize(28)
 	tail.encode_u32(0, 0x314a444d) # MDJ1
@@ -89,10 +88,7 @@ func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Di
 	if not bool(result.get("ok", false)):
 		return _result(false, "pkmi_restore_failed",
 			String(result.get("reason", "Military PKMI restore failed")))
-	var job = context.get("military_progress")
-	if job == null and not facade.restore_pending_event_progress(progress):
-		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
-	if job != null and not job.restore_event_progress(progress):
+	if not facade.restore_pending_event_progress(progress):
 		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
 	# AI arming is part of the military store's meaning: after a restore, every
 	# non-player country must be AI again or the armed forces stop planning.
@@ -106,7 +102,10 @@ func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Di
 			if country != null and start_cell >= 0 else 0
 		if handle != 0:
 			player_handles = PackedInt64Array([handle])
-	facade.arm_ai(player_handles)
+	# Headless saves can omit the player cell. PKMI already carries the AI
+	# flags and schedule, so keep them when the player cannot be resolved.
+	if not player_handles.is_empty():
+		facade.arm_ai(player_handles)
 	return result
 
 func _can_country_ai_provider(context: Dictionary) -> Dictionary:

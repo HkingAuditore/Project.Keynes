@@ -116,12 +116,17 @@ void NativeEconomyRuntime::ensure_mobilization_profession_config() {
 int32_t NativeEconomyRuntime::set_military_cell_garrison(
         const std::vector<int32_t> &cells, const std::vector<int32_t> &heads) {
     const size_t count = std::min(cells.size(), heads.size());
-    if (count == 0) return 0;
     const int32_t cell_count = _cell_count.get();
     if (cell_count <= 0) return 0;
     if (_cell_garrison_heads.size() != static_cast<size_t>(cell_count)) {
         _cell_garrison_heads.assign(static_cast<size_t>(cell_count), 0);
         _cell_garrison_present.assign(static_cast<size_t>(cell_count), 0);
+    }
+    // Each publication replaces the previous day's garrison headcounts.
+    for (size_t cell = 0; cell < _cell_garrison_present.size(); ++cell) {
+        if (_cell_garrison_present[cell] == 0) continue;
+        _cell_garrison_heads[cell] = 0;
+        _cell_garrison_present[cell] = 0;
     }
     int32_t written = 0;
     for (size_t i = 0; i < count; ++i) {

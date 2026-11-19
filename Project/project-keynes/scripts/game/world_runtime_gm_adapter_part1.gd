@@ -467,7 +467,7 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 		"visual.day_night":
 			host.set_day_night_enabled(enabled)
 		"visual.fog_of_war":
-			host.set_fog_of_war_enabled(enabled)
+			return host.set_fog_of_war_enabled(enabled)
 		"visual.water_effect":
 			if not host._gm_call_renderer_toggle("set_water_effect_enabled", enabled):
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")

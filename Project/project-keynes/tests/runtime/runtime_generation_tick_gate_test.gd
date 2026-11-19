@@ -3,6 +3,7 @@ extends SceneTree
 
 var _failures := 0
 var _generation_started := false
+var _generation_failure := ""
 
 
 func _init() -> void:
@@ -15,12 +16,15 @@ func _run() -> void:
 	var game := packed.instantiate()
 	var runtime := game.get_node("RuntimeHost") as WorldRuntimeHost
 	var clock := game.get_node("WorldClock") as WorldClock
+	# Exercise the retained manual scheduler. The committed-day tests drive
+	# the full production executor through its own day boundary.
+	runtime.runtime_shadow_on_generate = false
+	runtime.set_climate_authority_override("force_off")
 	runtime.world_generation_started.connect(_on_world_generation_started.bind(runtime, clock))
+	runtime.world_generation_failed.connect(func(reason: String): _generation_failure = reason)
 	root.add_child(game)
 
-	for _frame in range(2400):
-		if runtime.is_runtime_ready_for_ticks():
-			break
+	while not runtime.is_runtime_ready_for_ticks() and _generation_failure.is_empty():
 		await process_frame
 
 	_expect("generation start boundary observed", _generation_started)

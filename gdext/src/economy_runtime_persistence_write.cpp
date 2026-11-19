@@ -384,6 +384,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const int32_t end = std::min<int32_t>(static_cast<int32_t>(building_count()),
                                               _save.building_cursor + max_records);
         const int32_t begin = _save.building_cursor;
+        std::vector<std::pair<uint32_t, int64_t>> maintenance_exceptions;
         for (; _save.building_cursor < end; ++_save.building_cursor) {
             const auto group = building_view(static_cast<size_t>(_save.building_cursor));
             append_le<int32_t>(payload, group.cell);
@@ -444,6 +445,12 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int64_t>(payload, group.last_observed_capacity_days_q16);
             append_le<int64_t>(payload, group.last_quoted_market_receipt);
             append_le<int64_t>(payload, group.last_quoted_operating_cost);
+            if (group.last_maintenance_cost != maintenance_from_operating_cost(
+                    group.last_operating_cost, group.last_input_cost, group.last_wages_due)) {
+                maintenance_exceptions.emplace_back(
+                    static_cast<uint32_t>(_save.building_cursor - begin),
+                    group.last_maintenance_cost);
+            }
             const int32_t roles = _building_types[group.type_id].employee_count;
             append_le<int32_t>(payload, roles);
             for (int32_t r = 0; r < roles; ++r) {
@@ -458,6 +465,12 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<int64_t>(payload, _building_role_bonus_due[index]);
                 append_le<int64_t>(payload, _building_role_bonus_paid[index]);
             }
+        }
+        // Keep a separate paid amount only when the settled total cannot be
+        // inverted (for example, when the total saturated).
+        for (const auto &[row, paid] : maintenance_exceptions) {
+            append_le<uint32_t>(payload, row);
+            append_le<int64_t>(payload, paid);
         }
         if (_save.building_cursor >= static_cast<int32_t>(building_count())) ++_save.section;
         return make_save_chunk(SAVE_SECTION_BUILDINGS,
@@ -511,7 +524,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_SIGNALS) {
         constexpr int32_t record_bytes = 68;
-        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        constexpr int32_t observation_sizes_bytes = 4 * sizeof(uint32_t);
+        const int32_t max_records = std::max(1,
+            (budget - 16 - observation_sizes_bytes) / record_bytes);
         const int32_t end = std::min<int32_t>(
             static_cast<int32_t>(_market_signals.good_ids.size()),
             _save.signal_cursor + max_records);
@@ -542,8 +557,23 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_observation(_epoch_previous_producer_sellable);
             append_observation(_epoch_previous_producer_merchant_sold);
         }
-        if (_save.signal_cursor >= static_cast<int32_t>(_market_signals.good_ids.size()))
+        if (_save.signal_cursor >= static_cast<int32_t>(_market_signals.good_ids.size())) {
+            // The market topology can grow after these observations were
+            // sampled. Padding on the wire must not make an old sample look
+            // aligned with the new topology at the next epoch's opening.
+            const size_t count = _market_signals.good_ids.size();
+            const std::array<size_t, 4> sizes{
+                _epoch_producer_sellable_current.size(),
+                _epoch_producer_merchant_sold_current.size(),
+                _epoch_previous_producer_sellable.size(),
+                _epoch_previous_producer_merchant_sold.size()};
+            if (std::any_of(sizes.begin(), sizes.end(),
+                    [count](size_t size) { return size < count; })) {
+                for (const size_t size : sizes)
+                    append_le<uint32_t>(payload, static_cast<uint32_t>(std::min(size, count)));
+            }
             ++_save.section;
+        }
         return make_save_chunk(SAVE_SECTION_SIGNALS,
                                static_cast<uint32_t>(_save.signal_cursor - begin), payload);
     }

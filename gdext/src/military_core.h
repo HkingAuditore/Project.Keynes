@@ -860,7 +860,7 @@ public:
     const std::vector<uint8_t> &exploration_view() const { return _exploration_explored_view; }
     int64_t exploration_view_day() const { return _exploration_view_day; }
     uint64_t exploration_view_revision() const { return _exploration_view_revision; }
-    bool has_exploration_work() const;
+    bool has_exploration_work(int64_t through_day = -1) const;
     std::vector<MilitaryEvent> events_after(uint64_t after_id, size_t limit) const;
     int64_t country_soldiers(int32_t slot) const;
     int32_t posts_for_cell(int32_t cell, int32_t country_slot) const;

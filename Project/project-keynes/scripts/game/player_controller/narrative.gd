@@ -130,6 +130,11 @@ func _step_narrative_daily(host, day_idx: int) -> void:
 	if day_idx <= host._last_narrative_step_day:
 		return
 	host._last_narrative_step_day = day_idx
+	var generator = host._runtime_host.generator() if host._runtime_host != null \
+			and host._runtime_host.has_method("generator") else null
+	if generator != null and generator.has_method("record_runtime_main_step"):
+		generator.record_runtime_main_step(day_idx, &"stratum_unrest_daily")
+		generator.record_runtime_main_step(day_idx, &"narrative_daily")
 	host._narrative_service.set_player_country_handle(host._player_country_handle)
 	host._stratum_unrest.set_player_country_handle(host._player_country_handle)
 	host._stratum_unrest.step_daily(day_idx)

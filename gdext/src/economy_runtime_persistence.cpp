@@ -1350,7 +1350,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_person_indices();
     rebuild_family_demography_weights();
     _bootstrapped = true;
-    military_soldier_profession(); // Rebuild the catalog lookup before the first restored quote.
     _track_b_investment_cells_pending.swap(_restore.track_b_investment_cells_pending);
     _track_b_derived_cell_cache.swap(_restore.track_b_derived_cell_cache);
     _track_b_derived_cell_cache_day = _restore.track_b_derived_cell_cache_day;

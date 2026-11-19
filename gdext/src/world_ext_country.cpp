@@ -1475,6 +1475,7 @@ Dictionary DCWorldExt::restore_country_runtime_checkpoint(
             ? "country_checkpoint_restore_failed" : error.c_str());
         return out;
     }
+    country_runtime_from(_country_runtime)->restore_effect_adapter(checkpoint.effect_adapter);
     out["ok"] = true;
     out["code"] = "ok";
     publish_restored_country_territory(out);

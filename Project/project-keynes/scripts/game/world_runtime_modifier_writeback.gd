@@ -18,4 +18,7 @@ static func consume(ready: bool, generator: Object, control_state: Callable,
 	var generation := int(applied.get("generation", 0))
 	if generation <= after_generation:
 		return after_generation
+	if generator.has_method("record_runtime_main_step"):
+		generator.record_runtime_main_step(int(applied.get(
+			"committed_day", report.get("simulation_committed_day", -1))), &"modifier_snapshot_install")
 	return generation

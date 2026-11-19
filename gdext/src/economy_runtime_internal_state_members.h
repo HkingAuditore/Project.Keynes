@@ -887,9 +887,11 @@
     std::vector<int32_t> _worker_resource_last_day;
     std::vector<uint8_t> _worker_resource_was_live;
     std::vector<uint8_t> _worker_resource_cell_live;
+    std::vector<int32_t> _worker_resource_live_cells;
     std::vector<uint8_t> _worker_resource_mirror_mark;
     std::vector<int32_t> _worker_resource_mirror_cells;
     std::vector<float> _worker_resource_regen_factors;
+    int32_t _worker_resource_recovered_cells = 0;
     bool advance_worker_resource_reserves(const RuntimeEconomyDayInput &input,
                                           std::string &error);
     void fold_worker_resource_deltas();

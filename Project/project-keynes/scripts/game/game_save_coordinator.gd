@@ -370,23 +370,24 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return boundary
-	# The exploration trail is explored-only state that still belongs to the
-	# world. Drain it inside the safe boundary, before any provider snapshot;
-	# refusing the save is safer than writing a PKFG with lost explored cells.
-	if _runtime_host != null and _runtime_host.has_method(
-			"flush_military_exploration_trail_for_save"):
-		var explored_flush: Dictionary = _runtime_host.flush_military_exploration_trail_for_save()
-		if not bool(explored_flush.get("ok", false)):
-			_restore_clock_mode(was_paused, previous_speed, generation)
-			_busy = false
-			return _result(false, String(explored_flush.get("reason",
-				"military_exploration_trail_flush_failed")),
-				"探索轨迹未能写入地图，已取消保存。")
 	var runtime_bundle := await _capture_native_runtime_bundle(generation)
 	if not bool(runtime_bundle.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return runtime_bundle
+	var ext = _runtime_host.generator().get_data_core_world_ext()
+	if ext != null:
+		var resources: Dictionary = ext.apply_runtime_economy_resource_writeback()
+		var species: Dictionary = ext.apply_runtime_species_writeback()
+		var vision := _runtime_host.apply_runtime_vision_display()
+		if not bool(vision.get("ok", false)):
+			_restore_clock_mode(was_paused, previous_speed, generation)
+			_busy = false
+			return _result(false, "save_vision_writeback_failed", "视野未能写入地图，已取消保存。")
+		if not bool(resources.get("ok", false)) or not bool(species.get("ok", false)):
+			_restore_clock_mode(was_paused, previous_speed, generation)
+			_busy = false
+			return _result(false, "save_ecology_writeback_failed", "资源或物种未能写入地图，已取消保存。")
 	var collected := _collect_sections(was_paused, previous_speed,
 		 runtime_bundle.get("bytes", PackedByteArray()),
 		 runtime_bundle.get("country_pkcn", PackedByteArray()),
@@ -445,19 +446,7 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 	if generation < 0:
 		generation = _runtime_generation
 	const MAX_WAIT_FRAMES := 1800
-	# 同一个 blocking code 连续出现的帧/墙钟上限。
-	#
-	# 冻结时钟后有些边界不可能在暂停期间推进，最典型的是
-	# save_requires_idle_effect_country：年度结算奖励的 Effect 命令要等下一个
-	# **游戏日** 才会 ACK，而存档已经 pause 了时钟。旧实现会一直等满 1800 帧，
-	# 每帧重跑 advance_save_boundary() 里的整条日系统链（trigger/ideology/
-	# effect/modifier/gameplay_effect + economy inflight）。实测（desktop headless，
-	# 60x40，10x，sync-write 复现 web 路径）这一轮空转把 Godot 静态内存抬高
-	# **约 600 MB，而且永不归还**——每次年度自动存档都会再抬一次，web 的 2 GiB
-	# wasm 堆因此在第 2–4 个游戏年撞墙，随后控制台就是每次鼠标事件一对
-	# "Cannot enlarge memory" + "table index is out of bounds"。
-	# 失败路径本来就会 `_last_autosave_year = year - 1`（下一个年份再试），
-	# 所以早点放弃没有任何功能损失；web 还顺带避免了主线程被堵几十秒。
+	# 某些回执要到次日才会产生。时钟暂停后，避免持续重跑等待中的旧日系统。
 	const MAX_STALL_FRAMES := 240
 	const MAX_STALL_FRAMES_WEB := 90
 	const MAX_WAIT_MSEC := 8000
@@ -504,11 +493,13 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 				print("[save] boundary wait frame=%d code=%s condition=%s detail=%s" % [
 					frame, code, String(boundary.get("blocking_condition", "")),
 					JSON.stringify(_boundary_diagnostics())])
-		# 空转期间不必每帧重跑日系统链；隔帧推进把内存增速再压一半。
-		var generator := _runtime_host.generator()
-		if generator != null and generator.has_method("advance_save_boundary") \
-				and (frame % 2 == 0):
-			generator.advance_save_boundary()
+		if String(boundary.get("blocking_condition", "")) == "day_tail_pending":
+			# Complete the committed day even if the host's frame callback is suspended.
+			_runtime_host._consume_runtime_commit_if_ready()
+		elif frame % 2 == 0:
+			var generator := _runtime_host.generator()
+			if generator != null and generator.has_method("advance_save_boundary"):
+				generator.advance_save_boundary()
 		await get_tree().process_frame
 	if not _session_active(generation):
 		return _session_cancelled()
@@ -581,16 +572,18 @@ func _can_save() -> Dictionary:
 			or _runtime_host.generator() == null:
 		return _result(false, "save_runtime_missing", "游戏尚未就绪，请稍后再试。")
 	var generator := _runtime_host.generator()
-	# 暂停后 worker 仍会排空已经接收的环境输入。必须等它停稳，才可捕获
-	# 主线程国家只读副本，避免请求时的 PKCN 与稍后生成的 PKSR 相差数天。
+	var country_has_checkpoint := false
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
-		if String(thread.get("simulation_host_state", "")) == "FAULTED":
+		country_has_checkpoint = bool(thread.get("country_worker_authoritative", false))
+		if _runtime_host.is_runtime_fault_paused() or String(thread.get("simulation_host_state", "")) == "FAULTED":
 			return _blocked_result("worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
-				String(thread.get("fault_code", "unknown")), "worker_faulted")
-		# 这三条子条件以前共用一个 code，在日志里完全分不开：state 还停在
-		# RUNNING（暂停没送到 worker）、环里还有未来帧没人消费、和"一天正飞"
-		# 都会表现为同一个 save_requires_idle_worker。condition 把它们分开。
+				String(_runtime_host.get_runtime_fault_diagnostics().get("fault_code", thread.get("fault_code", "unknown"))), "worker_faulted")
+		var committed_day := int(thread.get("simulation_committed_day", -1))
+		if bool(thread.get("authority_ready", false)) \
+				and committed_day > _runtime_host._runtime_tail_completed_day:
+			return _blocked_result("save_requires_committed_boundary",
+				"等待当日军务、视野和资源交接完成。", "day_tail_pending")
 		var idle_blocker := _worker_idle_blocker(thread)
 		if not idle_blocker.is_empty():
 			return _blocked_result("save_requires_idle_worker",
@@ -607,7 +600,9 @@ func _can_save() -> Dictionary:
 	# Effect preflight but has not received the owning domain's durable ACK.
 	if effect != null and effect.world_ext() != null:
 		var adapters: Dictionary = effect.native_adapter_report()
-		if bool(adapters.get("country_pending", false)):
+		# The host checkpoint carries pending Country packets and their Effect
+		# receipt bindings. Future-day commands cannot drain with the clock paused.
+		if not country_has_checkpoint and bool(adapters.get("country_pending", false)):
 			return _blocked_result("save_requires_idle_effect_country",
 				"等待理念/Effect Country 命令提交", "effect_country_pending")
 		if bool(adapters.get("economy_pending", false)):

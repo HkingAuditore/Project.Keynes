@@ -333,8 +333,7 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_input_capture(
 
 RuntimeDomainReport RuntimeDomainPodPipeline::run_climate(
         const RuntimeDayContext &context,
-        const RuntimeEnvironmentSnapshot *environment,
-        std::vector<RuntimeVisualIntent> &visuals) {
+        const RuntimeEnvironmentSnapshot *environment) {
     RuntimeDomainReport out; out.domain = RuntimeDomainId::CLIMATE;
     out.day = context.day;
     out.input_generation = context.input_generation;
@@ -359,6 +358,7 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_climate(
     ensure_cells(_climate.weather_precip);
     ensure_cells(_climate.weather_intensity);
     ensure_cells(_climate.vegetation_vitality);
+    uint32_t changed_cells = 0;
     for (size_t i = 0; i < count; ++i) {
         const float temp = i < environment->cell_temp.size()
             ? environment->cell_temp[i] : 0.0f;
@@ -388,14 +388,8 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_climate(
             std::clamp(0.5f + water * 0.5f, 0.0f, 1.0f), 0.0f, 1.0f);
         _climate.vegetation_vitality[i] = _climate.vegetation_vitality[i] * 0.9f +
             target_vitality * 0.1f;
-        if (std::abs(old - temp) > 1e-5f && visuals.size() < RUNTIME_DOMAIN_INTENT_CAPACITY) {
-            RuntimeVisualIntent intent;
-            intent.family = RUNTIME_DIRTY_CLIMATE_FIELDS;
-            intent.cell_index = static_cast<uint32_t>(i);
-            intent.field_id = 1;
-            intent.value_f32 = temp;
-            visuals.push_back(intent);
-        }
+        if (std::abs(old - temp) > 1e-5f && changed_cells < RUNTIME_DOMAIN_INTENT_CAPACITY)
+            ++changed_cells;
     }
     _climate.anomaly = environment->climate_anomaly;
     _climate.rng_state = hash_mix(_climate.rng_state,
@@ -404,7 +398,7 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_climate(
     out.dirty_families = RUNTIME_DIRTY_CLIMATE_FIELDS;
     out.completed = 1;
     out.timing.work_units = count * 8u;
-    out.timing.intent_count = static_cast<uint32_t>(visuals.size());
+    out.timing.intent_count = changed_cells;
     out.timing.state_hash = hash_mix(FNV_OFFSET, _climate.generation);
     out.timing.state_hash = hash_mix(out.timing.state_hash,
                                      static_cast<uint64_t>(std::llround(_climate.anomaly * 1000000.0)));
@@ -643,9 +637,8 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_events(
 bool RuntimeDomainPodPipeline::execute_day(
         const RuntimeDayContext &context, const RuntimeEnvironmentSnapshot *environment,
         const RuntimeCountryPodSnapshot *country, RuntimeDayCommit &day_commit,
-        std::vector<RuntimeVisualIntent> &visual_intents,
         std::vector<RuntimeCommandReceipt> &receipts) {
-    day_commit = RuntimeDayCommit{}; visual_intents.clear(); receipts.clear();
+    day_commit = RuntimeDayCommit{}; receipts.clear();
     _report = RuntimeDomainPipelineReport{}; _intents.clear(); _acks.clear();
     if (context.day < 0 || !std::isfinite(context.speed_scale)) return false;
     bool all_ok = true;
@@ -667,7 +660,8 @@ bool RuntimeDomainPodPipeline::execute_day(
         day_commit.completed_domain_mask |= runtime_domain_mask(domain.domain);
     };
     add(run_input_capture(context, environment));
-    add(run_climate(context, environment, visual_intents));
+    const auto climate = run_climate(context, environment);
+    add(climate);
     add(run_country(context, country, _intents));
     add(run_trigger(context, _intents));
     add(run_ideology(context, _intents));
@@ -679,10 +673,10 @@ bool RuntimeDomainPodPipeline::execute_day(
     RuntimeDomainReport visual; visual.domain = RuntimeDomainId::VISUAL;
     visual.day = context.day; visual.input_generation = context.input_generation;
     visual.completed = 1;
-    visual.dirty_families = visual_intents.empty() ? 0 : RUNTIME_DIRTY_CLIMATE_FIELDS;
-    visual.timing.work_units = visual_intents.size();
-    visual.timing.intent_count = static_cast<uint32_t>(visual_intents.size());
-    visual.timing.state_hash = hash_mix(FNV_OFFSET, visual_intents.size()); add(visual);
+    visual.dirty_families = climate.timing.intent_count == 0 ? 0 : RUNTIME_DIRTY_CLIMATE_FIELDS;
+    visual.timing.work_units = climate.timing.intent_count;
+    visual.timing.intent_count = climate.timing.intent_count;
+    visual.timing.state_hash = hash_mix(FNV_OFFSET, climate.timing.intent_count); add(visual);
     RuntimeDomainReport commit; commit.domain = RuntimeDomainId::COMMIT;
     commit.day = context.day; commit.input_generation = context.input_generation;
     commit.base_generation = _report.state_hash; commit.completed = 1;
@@ -894,14 +888,14 @@ bool RuntimeDomainPodPipeline::self_test(std::string &error) {
     country.research_queue_lengths = {0,0,0,0}; country.research_active_index_valid = true;
     country.research_active_country_slots = {0}; country.state_hash = 42;
     RuntimeDayContext context; context.day = 0; context.speed_scale = 1.0;
-    RuntimeDayCommit commit; std::vector<RuntimeVisualIntent> visuals;
+    RuntimeDayCommit commit;
     std::vector<RuntimeCommandReceipt> receipts;
-    if (!pipeline.execute_day(context, &environment, &country, commit, visuals, receipts)) {
+    if (!pipeline.execute_day(context, &environment, &country, commit, receipts)) {
         error = "runtime_domain_pipeline_execute_failed"; return false;
     }
     if (commit.completed_stage_count != RUNTIME_DOMAIN_STAGE_COUNT ||
         pipeline.completed_domain_mask() != ((1u << RUNTIME_DOMAIN_STAGE_COUNT) - 1u) ||
-        commit.work_units == 0 || visuals.size() != 2) {
+        commit.work_units == 0 || pipeline.report().domains[1].timing.intent_count != 2) {
         error = "runtime_domain_pipeline_contract_failed"; return false;
     }
     std::vector<uint8_t> encoded;
@@ -933,7 +927,7 @@ bool RuntimeDomainPodPipeline::self_test(std::string &error) {
         error = "runtime_climate_snapshot_restore_failed"; return false;
     }
     RuntimeDayCommit next; context.day = 1;
-    if (!pipeline.execute_day(context, &environment, &country, next, visuals, receipts) ||
+    if (!pipeline.execute_day(context, &environment, &country, next, receipts) ||
         next.state_hash == commit.state_hash) {
         error = "runtime_domain_pipeline_hash_not_advancing"; return false;
     }

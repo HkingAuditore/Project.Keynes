@@ -84,6 +84,10 @@ func tick(ctx) -> Dictionary:
 	var t0: int = Time.get_ticks_usec()
 	if generator == null or map == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
+	if generator.has_method("get_runtime_control_state"):
+		var report: Dictionary = generator.get_runtime_control_state()
+		if bool(report.get("whole_graph_requested", report.get("authority_ready", false))):
+			return {"done": true, "path": "committed_day"}
 	var day_index := 0
 	if ctx != null:
 		day_index = int(ctx.day_index)
@@ -108,7 +112,6 @@ func tick(ctx) -> Dictionary:
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"bio_occupancy_day_barrier", slice_enabled and not done)
 	if done:
-		_submit_occupancy_discoveries(res, day_index)
 		_finish_round_timing()
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
 	return {
@@ -156,38 +159,3 @@ func _finish_round_timing() -> void:
 			else lerpf(_full_round_ema_ms, _round_native_ms, 0.25)
 	_round_count += 1
 	_round_active = false
-
-
-func _submit_occupancy_discoveries(res: Dictionary, day_index: int) -> void:
-	if bool(res.get("native_evidence_submission", false)):
-		return
-	if generator == null or not generator.has_method("get_country_facade") \
-			or not generator.has_method("gameplay_start_report"):
-		return
-	var facade = generator.get_country_facade()
-	if facade == null:
-		return
-	var start_cell := int(generator.gameplay_start_report().get("cell", -1))
-	if start_cell < 0:
-		return
-	var handle := int(facade.cell_summary(start_cell).get("country_handle", 0))
-	if handle == 0:
-		return
-	var cells: PackedInt32Array = res.get("newly_occupied_cells", PackedInt32Array())
-	var signals: PackedInt32Array = res.get("newly_occupied_signal_ids", PackedInt32Array())
-	if cells.size() != signals.size() or cells.is_empty():
-		return
-	var ext = generator.get_data_core_world_ext() if generator.has_method(
-		"get_data_core_world_ext") else null
-	if ext == null:
-		return
-	var filtered: Dictionary = ext.filter_bio_research_observations(cells, signals)
-	if not bool(filtered.get("ok", false)):
-		return
-	var eligible_cells: PackedInt32Array = filtered.get(
-		"observation_cells", PackedInt32Array())
-	var eligible_signals: PackedInt32Array = filtered.get(
-		"observation_signals", PackedInt32Array())
-	if not eligible_cells.is_empty():
-		facade.submit_observation_batch(handle, eligible_cells, eligible_signals,
-			day_index + 1)

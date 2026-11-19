@@ -18,6 +18,7 @@ class RefreshProbe extends MapGenerator:
 	var instance_calls := 0
 	var derived_calls := 0
 	var days: Array[int] = []
+	var hold_next_derived := false
 	func get_runtime_control_state() -> Dictionary:
 		return {"authoritative_domain_mask": 0x010}
 	func step_ideology_instance_refresh(day: int) -> Dictionary:
@@ -27,11 +28,15 @@ class RefreshProbe extends MapGenerator:
 	func step_ideology_derived_rebuild(day: int) -> Dictionary:
 		derived_calls += 1
 		days.append(day)
-		return {"ok": true, "done": derived_calls > 1, "pending": derived_calls == 1}
+		var pending := derived_calls == 1 or hold_next_derived
+		hold_next_derived = false
+		return {"ok": true, "done": not pending, "pending": pending}
 
 class TailProbe extends RefCounted:
 	var refresh: RefreshProbe
 	var marks: Array = []
+	func apply_runtime_ideology_snapshot(_after_generation: int) -> Dictionary:
+		return {"ok": true, "applied": false}
 	func mark_runtime_day_tail_done(day: int) -> void:
 		marks.append([day, refresh.derived_calls])
 
@@ -81,17 +86,16 @@ func _init() -> void:
 	var tail_probe := TailProbe.new()
 	tail_probe.refresh = refresh
 	refresh._data_core_world_ext = tail_probe
-	host._ideology_refresh_pending_day = 593
-	host._runtime_natural_resource_pending_target_day = 600
-	host._runtime_natural_resource_last_commit_day = 599
-	tail._mark_runtime_day_tail(host, 600)
-	_expect("an unfinished resource day holds the tail and the queued refresh",
-		tail_probe.marks == [[599, 3]] and host._ideology_refresh_pending_day == 593)
-	host._runtime_natural_resource_pending_target_day = -1
-	tail._mark_runtime_day_tail(host, 600)
-	_expect("the tail retries the original date before releasing the worker",
-		tail_probe.marks == [[599, 3], [600, 4]]
-		and refresh.days.slice(-2) == [593, 593] and host._ideology_refresh_pending_day == -1)
+	host._runtime_commit_day = 592
+	refresh.hold_next_derived = true
+	_expect("a full-graph commit prepares tomorrow's projection before it releases the worker",
+		not tail._prepare_runtime_day_tail(host, true)
+		and tail_probe.marks.is_empty() and host._ideology_refresh_pending_day == 593)
+	if tail._prepare_runtime_day_tail(host, true):
+		tail._mark_runtime_day_tail(host, 592)
+	_expect("the tail releases the worker after installing the dated projection",
+		tail_probe.marks == [[592, 5]]
+		and refresh.days.slice(-3) == [593, 593, 593] and host._ideology_refresh_pending_day == -1)
 	refresh._data_core_world_ext = null
 	host.free()
 	print("ideology day continuation: %d checks, %d failures" % [_checks, _failures])

@@ -215,8 +215,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _paused.store(start_paused, std::memory_order_release);
     _stop_requested.store(false, std::memory_order_release);
     _generation.store(start_generation, std::memory_order_release);
-    _last_visual_publish_us.store(0, std::memory_order_release);
-    _snapshot_publish_throttled_count.store(0, std::memory_order_release);
     _last_commit_produced_at_us.store(0, std::memory_order_release);
     _worker_day_inflight.store(0, std::memory_order_release);
     _economy_inflight_mutations.store(0, std::memory_order_release);
@@ -454,6 +452,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     initial_commit.from_day = start_day;
     initial_commit.committed_day = start_day;
     initial_commit.state_hash = start_state_hash;
+    if (auto vision = latest_vision()) {
+        auto tail = std::make_shared<RuntimeDayTail>();
+        tail->vision = std::move(vision);
+        initial->day_tail = std::move(tail);
+    }
     std::atomic_store_explicit(&_latest_commit,
         std::shared_ptr<const RuntimeCommit>(std::move(initial)),
         std::memory_order_release);
@@ -1036,7 +1039,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _ideology_pod_ready.store(true, std::memory_order_release);
         }
     }
-    _pod_visual_intents.clear();
     _pod_receipts.clear();
     // A fresh ACTIVE start earns its grant from the first fully committed day.
     // A restore start must not wait for that: every domain's POD state was just
@@ -1121,6 +1123,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     if (restore_pending && !restore_trigger_transport(_pending_restore_bundle.trigger_transport_bytes, ecp2_apply_error, true)) {
         set_fault(ecp2_apply_error.c_str()); return false;
     }
+    if (restore_pending)
+        restore_effect_transport(_pending_restore_bundle.effect_transport_bytes);
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     return launch_executor(paused);

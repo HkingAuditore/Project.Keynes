@@ -66,6 +66,7 @@ NativeSimulationHost::ControlState NativeSimulationHost::control_state() const {
     out.authority_ready = authority.ready;
     out.interactive = _interactive.load(std::memory_order_acquire);
     out.authoritative_domain_mask = authority.granted_mask;
+    out.requested_authority_mask = _requested_authority_mask.load(std::memory_order_acquire);
     out.committed_day = _committed_day.load(std::memory_order_acquire);
     return out;
 }
@@ -112,7 +113,6 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 
 NativeSimulationHost::NativeSimulationHost(uint64_t previous_country_session_epoch)
     : _country_worker_session_epoch(std::max<uint64_t>(1u, previous_country_session_epoch)) {
-    _pod_visual_intents.reserve(RUNTIME_DOMAIN_INTENT_CAPACITY);
     _pod_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
     for (auto &sequence : _producer_sequences) {
         sequence.store(0, std::memory_order_relaxed);
@@ -221,6 +221,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         std::vector<RuntimeCommandReceipt> &day_receipts,
         uint64_t admitted_submit_order) {
     RuntimeDayCommit commit;
+    _executor_day_tail.reset();
     // native_daily_inline 分域计时开关。worker 日恒为 false，所以这条 worker 路径
     // 不为任何探针付账（只有每 stage 一次原子读）。内联日一切都在调用线程上，
     // 累加器不需要原子。
@@ -240,7 +241,6 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         commit.preflight_ok = 0;
         return commit;
     }
-    _pod_visual_intents.clear();
     // INPUT_CAPTURE is a real freeze boundary, not merely a validation bit.
     // 仅复用本次调用中、同一不可变对象已经由 Climate kernel 计算的完整哈希。
     // 不按 day/generation 猜测跨调用内容；重试或未跑 Climate 时仍完整计算。
@@ -394,6 +394,24 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     }
     if (try_fault_injection("day.plan.after")) {
         commit.preflight_ok = 0;
+    }
+    // Both executors reach this table only after the daily domains settle.
+    // Keep the table in gameplay order, before either caller publishes the day.
+    using DayTailStage = const char *(NativeSimulationHost::*)(DayExecution &);
+    static constexpr std::array<DayTailStage, 4> day_tail_stages{
+        &NativeSimulationHost::stage_natural_resource_recovery,
+        &NativeSimulationHost::stage_bio_occupancy,
+        &NativeSimulationHost::stage_military,
+        &NativeSimulationHost::stage_vision,
+    };
+    if (commit.preflight_ok != 0) {
+        for (const auto stage : day_tail_stages) {
+            if (const char *error = (this->*stage)(day)) {
+                set_fault(error);
+                commit.preflight_ok = 0;
+                break;
+            }
+        }
     }
     return commit;
 }

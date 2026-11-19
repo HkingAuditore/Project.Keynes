@@ -127,6 +127,11 @@ func _service_country_worker_transport(host) -> void:
 	var shadow_replay = mode != "ACTIVE"
 	host._country_worker_transport_last_service = \
 		host._generator.service_country_worker_peer_adapter(64, shadow_replay)
+	var committed_day := int(report.get("simulation_committed_day", -1))
+	if int(host._country_worker_transport_last_service.get("inspected", 0)) > 0:
+		host._generator.record_runtime_main_step(committed_day + 1, &"country_peer_service")
+	if int(host._country_worker_transport_last_service.get("notified", 0)) > 0:
+		host._generator.record_runtime_main_step(committed_day, &"country_milestone_delivery")
 	if int(host._country_worker_transport_last_service.get("inspected", 0)) > 0 \
 			or int(host._country_worker_transport_last_service.get("notified", 0)) > 0:
 		host.country_peer_serviced.emit(host._country_worker_transport_last_service.duplicate(false))
@@ -172,6 +177,7 @@ func _consume_effect_worker_snapshot_if_authoritative(host) -> void:
 	if generation <= host._effect_worker_snapshot_generation:
 		return
 	host._effect_worker_snapshot_generation = generation
+	host._generator.record_runtime_main_step(int(report.get("simulation_committed_day", -1)), &"effect_snapshot_install")
 
 
 ## F8: non-Modifier Effect intents are consumed on the main thread and ACK'd
@@ -212,6 +218,7 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 			"sequence": int(intent.get("sequence", 0)),
 		}
 		effect.submit_worker_ack(ack)
+		host._generator.record_runtime_main_step(int(ack.effective_day), &"effect_worker_ack")
 	# Economy-owned family expeditions enqueue their CLAIM/SETTLE transaction
 	# onto the legacy EffectRuntime while the Effect domain itself is worker
 	# authoritative. The worker intent queue above does not contain these
@@ -222,6 +229,7 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 	var adapter_report: Dictionary = effect.native_adapter_report()
 	if bool(adapter_report.get("idle", true)):
 		return
+	host._generator.record_runtime_main_step(int(report.get("simulation_committed_day", -1)), &"effect_native_adapter")
 	effect.dispatch_native_country()
 	effect.ack_native_country()
 	# Drain only non-mixed orphaned Country bindings. The native helper keeps
@@ -259,7 +267,9 @@ func _step_ideology_instance_refresh_if_authoritative(host, day_idx: int) -> voi
 		return
 	host._ideology_refresh_pending_day = day_idx
 	host._ideology_pump_calls += 1
+	var source_day := int(report.get("simulation_committed_day", day_idx - 1))
 	if host._ideology_instance_refreshed_day != day_idx:
+		host._generator.record_runtime_main_step(source_day, &"ideology_instance_service")
 		host._ideology_instance_refresh_last = \
 			host._generator.step_ideology_instance_refresh(day_idx).duplicate(false)
 		if not bool(host._ideology_instance_refresh_last.get("done", false)) \
@@ -288,8 +298,15 @@ func _step_ideology_instance_refresh_if_authoritative(host, day_idx: int) -> voi
 	if host._generator.has_method("step_ideology_derived_rebuild"):
 		if host._ideology_derived_pumped_day != day_idx:
 			var pumped: Dictionary = host._generator.step_ideology_derived_rebuild(day_idx)
+			if int(pumped.get("steps", 0)) > 0 or String(pumped.get("code", "")) == "economy_day_inflight":
+				host._generator.record_runtime_main_step(source_day, &"ideology_projection_service")
 			host._ideology_pump_last = pumped.duplicate(false)
+			var reason := String(pumped.get("reason", ""))
+			if not bool(pumped.get("ok", false)) and not reason.is_empty():
+				host._observe_runtime_worker_fault({"simulation_host_state": "FAULTED", "fault_code": reason})
+				return
 			if bool(pumped.get("done", false)) and not bool(pumped.get("pending", true)):
+				host._generator.record_runtime_main_step(source_day, &"ideology_projection_install")
 				host._ideology_derived_pumped_day = day_idx
 			else:
 				return
@@ -317,6 +334,8 @@ func _consume_ideology_worker_snapshot_if_authoritative(host) -> void:
 	if generation <= host._ideology_worker_snapshot_generation:
 		return
 	host._ideology_worker_snapshot_generation = generation
+	host._generator.record_runtime_main_step(int(applied.get(
+		"committed_day", report.get("simulation_committed_day", -1))), &"ideology_snapshot_install")
 
 
 ## G8: Ideology transition intents address EFFECT and require an ACK before the
@@ -389,6 +408,7 @@ func _service_ideology_worker_intents_if_authoritative(host) -> void:
 			"code": 0,
 			"effective_day": int(intent.get("effective_day", 0)),
 		})
+		host._generator.record_runtime_main_step(int(intent.get("effective_day", 0)), &"ideology_worker_ack")
 
 ## H8 ACTIVE Trigger write-back. The worker owns aggregation and effect emission;
 ## this is the only boundary that copies its committed state back into the legacy
@@ -413,6 +433,7 @@ func _consume_trigger_worker_snapshot_if_authoritative(host) -> void:
 	if generation <= host._trigger_worker_snapshot_generation:
 		return
 	host._trigger_worker_snapshot_generation = generation
+	host._generator.record_runtime_main_step(int(report.get("simulation_committed_day", -1)), &"trigger_snapshot_install")
 
 
 ## H8: Trigger effect intents address EFFECT and require an ACK before the worker
@@ -452,11 +473,14 @@ func _service_trigger_worker_intents_if_authoritative(host) -> void:
 			"code": 0,
 			"effective_day": int(intent.get("effective_day", 0)),
 		})
+		host._generator.record_runtime_main_step(int(intent.get("effective_day", 0)), &"trigger_worker_ack")
 
 
 
-func _service_trigger_country_delivery(host, trigger, effect, _report: Dictionary) -> void:
+func _service_trigger_country_delivery(host, trigger, effect, report: Dictionary) -> void:
+	var committed_day := int(report.get("simulation_committed_day", -1))
 	if host._trigger_country_delivery_id > 0 or not host._trigger_country_delivery_ids.is_empty():
+		host._generator.record_runtime_main_step(committed_day, &"trigger_country_delivery")
 		effect.ack_native_country()
 		if not host._trigger_country_delivery_ack_sent:
 			var retried: Dictionary = _ack_trigger_delivery_ids(host, trigger)
@@ -473,6 +497,7 @@ func _service_trigger_country_delivery(host, trigger, effect, _report: Dictionar
 		host._completed_research_signals_reconciled = bool(recovery.get("ok", false)) \
 			and bool(recovery.get("complete", false))
 		if int(recovery.get("submitted", 0)) > 0:
+			host._generator.record_runtime_main_step(committed_day, &"research_signal_reconcile")
 			print("[research-evidence-recovery] ", recovery)
 	# Full-graph ACTIVE skips advance_runtime_pulse(), which used to own this
 	# handoff. Drain a bounded prefix through the existing Effect -> Country
@@ -490,6 +515,8 @@ func _service_trigger_country_delivery(host, trigger, effect, _report: Dictionar
 		return
 	var handoff: Dictionary = trigger.handoff_effect_batch(maxi(1, count))
 	host._trigger_country_delivery_waiting = bool(handoff.get("deferred", false))
+	if int(handoff.get("handed_off", 0)) > 0 or host._trigger_country_delivery_waiting:
+		host._generator.record_runtime_main_step(committed_day, &"trigger_country_delivery")
 	if int(handoff.get("handed_off", 0)) <= 0:
 		return
 	# Delivery order is canonical while effect ids are ingress-allocated: ACK
@@ -599,14 +626,14 @@ func _consume_country_worker_read_view_if_authoritative(host) -> void:
 	host._country_worker_read_last_result["territory_changed_cells"] = territory_changed_count
 	host._country_worker_read_last_result["full_snapshot_applied"] = full_required
 	var worker_report = host._country_worker_read_last_result.duplicate(false)
-	# Vision/border consumers key off changed_cells. Use the real territory
+	# Border consumers key off changed_cells. Use the real territory
 	# delta, never the repaired plane width.
 	worker_report["changed_cells"] = territory_changed_count
 	worker_report["changed_cell_count"] = territory_changed_count
 	worker_report["full_snapshot_applied"] = full_required
 	worker_report["country_generation"] = generation
 	# CountryFacade is the existing notification path.  It emits the same
-	# country_committed signal consumed by vision, border, controller and UI.
+	# country_committed signal consumed by borders, the controller and UI.
 	var facade = host._generator.get_country_facade() \
 		if host._generator.has_method("get_country_facade") else null
 	if facade != null and facade.has_method("dispatch_worker_committed_view"):

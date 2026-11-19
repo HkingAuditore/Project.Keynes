@@ -41,8 +41,6 @@ const MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS: int = 20
 const MOBILE_NATURAL_RESOURCE_STRIDE_DAYS: int = 10
 const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
 const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
-const RUNTIME_ECONOMY_DOMAIN_MASK: int = 1 << 8
-const RUNTIME_NATURAL_RESOURCE_CATCHUP_DAYS_PER_FRAME: int = 8
 ## Military is a synchronous main-thread runtime (contract §0.1). In whole-graph
 ## ACTIVE the worker owns the day, so the host replays the military catch-up for
 ## every committed day it observes — same pattern as the natural-resource drain,
@@ -345,15 +343,7 @@ var _fog_of_war_enabled: bool = false
 var _player_country_slot: int = -1
 var _player_country_handle: int = 0
 var _vision_dirty_indices: PackedInt32Array = PackedInt32Array()
-## Committed military positions used as low-budget vision sources. The source
-## list is refreshed only when the military render revision changes.
-var _military_vision_render_revision: int = -1
-var _military_vision_source_slot: int = -2
-var _military_vision_source_cells: PackedInt32Array = PackedInt32Array()
-## Auto-exploration freezes the player's explored map once per military day.
-## The trail is explored-only; visible/fog remain owned by `_refresh_vision`.
-var _military_exploration_last_view_day: int = -1
-var _military_exploration_last_trail_cells: int = 0
+var _runtime_vision_result: Dictionary = {}
 var _building_visual_intel: BuildingVisualIntelCache:
 	get: return _presentation._building_visual_intel
 	set(value): _presentation._building_visual_intel = value
@@ -367,10 +357,6 @@ var _building_visual_force_full_refresh: bool:
 var _building_visual_diag_logged: bool:
 	get: return _presentation._building_visual_diag_logged
 	set(value): _presentation._building_visual_diag_logged = value
-var _native_vision_configured_n: int = -1
-var _native_vision_configured_map_id: int = 0
-var _magnetic_navigation_dense_id: int = -2
-var _remote_observation_capability: bool = false
 ## Country graph commits can arrive several times during one frame.  Queue a
 ## single visual refresh so territory/vision/LUT work is coalesced at the frame
 ## boundary instead of running once per native slice.
@@ -382,25 +368,13 @@ var _load_slot_id: String = ""
 var _pending_load_bundle: Dictionary = {}
 var _runtime_ready_for_ticks: bool = false
 var _runtime_commit_generation: int = 0
+var _runtime_notified_generation: int = 0
 var _runtime_commit_day: int = -1
-var _runtime_commit_family_cursors: Dictionary = {}
-var _runtime_commit_family_done: Dictionary = {}
-var _runtime_pending_visual_generation: int = 0
-var _runtime_pending_dirty_families: int = 0
+var _runtime_tail_completed_day: int = -1
 var _runtime_last_commit: Dictionary = {}
-## Whole-graph ACTIVE bypasses SUS, so natural resources need a separate
-## committed-day cursor.  The target remains queued while the Economy boundary
-## lock is held by the worker and is drained on a later render frame.
-var _runtime_natural_resource_last_commit_day: int = 0
-var _runtime_natural_resource_pending_target_day: int = -1
-var _runtime_natural_resource_last_result: Dictionary = {}
 ## Military committed-day cursor for whole-graph ACTIVE. The military day reads
 ## committed Country/Economy state, so it can only run after the commit that
 ## exposes day D; `target` stays queued until that boundary is visible.
-var _runtime_military_last_commit_day: int = -1
-var _runtime_military_pending_target_day: int = -1
-var _runtime_military_last_result: Dictionary = {}
-var _runtime_military_ms: float = 0.0
 ## Season index whose cover the military terrain layer currently holds; -1 until
 ## the first observed day.
 var _military_terrain_season_index: int = -1
@@ -1013,20 +987,8 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 	_daily_adapter._consume_country_worker_read_view_if_authoritative(self)
 func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
 	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec)
-func _poll_military_vision_revision() -> void:
-	_visual_adapter.poll_military_vision_revision(self)
-func _observe_military_render_feed(feed) -> void:
-	_visual_adapter.observe_military_render_feed(self, feed)
 func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	_daily_adapter._consume_runtime_commit_if_ready(self, report_override)
-func _queue_runtime_natural_resource_commit(day: int) -> void:
-	_daily_adapter._queue_runtime_natural_resource_commit(self, day)
-func _drain_runtime_natural_resource_commits() -> void:
-	_daily_adapter._drain_runtime_natural_resource_commits(self)
-func _queue_runtime_military_commit(day: int) -> void:
-	_daily_adapter._queue_runtime_military_commit(self, day)
-func _drain_runtime_military_commits() -> void:
-	_daily_adapter._drain_runtime_military_commits(self)
 func _refresh_military_terrain_after_season() -> void:
 	_daily_adapter._refresh_military_terrain_after_season(self)
 func _refresh_military_terrain_on_season_edge(day_idx: int) -> void:
@@ -1047,10 +1009,6 @@ func _resolve_climate_authority_policy() -> Dictionary:
 	return _climate_runtime._resolve_climate_authority_policy(self)
 func climate_authority_diagnostics() -> Dictionary:
 	return _climate_runtime.climate_authority_diagnostics(self)
-func _apply_runtime_visual_patch(_family: int, _patch: Dictionary) -> void:
-	return
-
-
 func _map_overlay_refresh_interval_msec() -> int:
 	_bind_overlay_resources()
 	return _overlay._map_overlay_refresh_interval_msec()
@@ -1386,8 +1344,8 @@ func _player_start_cell_drift() -> Dictionary:
 	return _visual_adapter._player_start_cell_drift(self)
 func is_fog_of_war_enabled() -> bool:
 	return _visual_adapter.is_fog_of_war_enabled(self)
-func set_fog_of_war_enabled(enabled: bool) -> void:
-	_visual_adapter.set_fog_of_war_enabled(self, enabled)
+func set_fog_of_war_enabled(enabled: bool) -> Dictionary:
+	return _visual_adapter.set_fog_of_war_enabled(self, enabled)
 func _resolve_fog_of_war_enabled() -> bool:
 	return _visual_adapter._resolve_fog_of_war_enabled(self)
 func _resolve_player_country_slot() -> int:
@@ -1398,133 +1356,8 @@ func _resolve_player_start_cell() -> int:
 	return _visual_adapter._resolve_player_start_cell(self)
 func _sync_country_territory_to_map() -> Dictionary:
 	return _visual_adapter._sync_country_territory_to_map(self)
-func _refresh_vision() -> Dictionary:
-	return _visual_adapter._refresh_vision(self)
-
-
-## Military auto-exploration owns a frozen explored snapshot, never visible or
-## fog. This hook is the single host-side daily boundary:
-##   trail -> MapData.explored_arr -> existing _refresh_vision() -> native view.
-## It early-outs to a couple of null checks when no exploration work exists.
-func _military_exploration_facade():
-	if _generator == null or not _generator.has_method("get_military_facade"):
-		return null
-	return _generator.get_military_facade()
-
-
-func _drain_military_exploration_trail(facade) -> Dictionary:
-	if _current_map == null or _player_country_slot < 0:
-		return {"ok": true, "cells": 0, "skipped": true}
-	if facade == null or not facade.has_method("get_military_vision_trail"):
-		return {"ok": true, "cells": 0, "skipped": true}
-	var trail: PackedInt32Array = facade.get_military_vision_trail(_player_country_slot)
-	if trail.is_empty():
-		return {"ok": true, "cells": 0}
-	var cell_count: int = _current_map.cell_count()
-	if _current_map.explored_arr.size() != cell_count:
-		return {"ok": false, "reason": "military_exploration_explored_size_mismatch"}
-	var explored: PackedByteArray = _current_map.explored_arr.duplicate()
-	var changed := 0
-	for raw_cell in trail:
-		var cell := int(raw_cell)
-		if cell < 0 or cell >= cell_count:
-			return {"ok": false, "reason": "military_exploration_trail_cell_invalid",
-				"cell": cell}
-		if explored[cell] == 0:
-			explored[cell] = 1
-			changed += 1
-	_current_map.explored_arr = explored
-	if not facade.has_method("clear_military_vision_trail"):
-		return {"ok": false, "reason": "military_exploration_trail_clear_missing"}
-	var cleared: Dictionary = facade.clear_military_vision_trail(_player_country_slot)
-	if not bool(cleared.get("ok", false)):
-		return {"ok": false, "reason": String(cleared.get("reason",
-			"military_exploration_trail_clear_failed"))}
-	return {"ok": true, "cells": trail.size(), "changed": changed}
-
-
-func _prepare_military_exploration_day(day: int) -> Dictionary:
-	if _current_map == null or _player_country_slot < 0:
-		return {"ok": true, "skipped": true}
-	var facade = _military_exploration_facade()
-	if facade == null or not facade.has_method("is_configured") \
-			or not facade.is_configured():
-		return {"ok": true, "skipped": true}
-	if not facade.has_method("has_military_exploration_work") \
-			or not facade.has_method("set_military_exploration_observer") \
-			or not facade.has_method("set_military_exploration_view"):
-		return {"ok": true, "skipped": true}
-	if not bool(facade.has_military_exploration_work()):
-		return {"ok": true, "skipped": true}
-	var observer: Dictionary = facade.set_military_exploration_observer(
-		_player_country_slot)
-	if not bool(observer.get("ok", false)):
-		return {"ok": false, "reason": String(observer.get("reason",
-			"military_exploration_observer_failed"))}
-	# Refresh the committed army positions before the vision pass.  The
-	# exploration trail covers visited cells, while the final occupied cell is
-	# still the ordinary low-budget vision source.
-	_poll_military_vision_revision()
-	var drained := _drain_military_exploration_trail(facade)
-	if not bool(drained.get("ok", false)):
-		return drained
-	# A new explored cell or an unsolved map needs the existing vision pass to
-	# refresh fog/LUT/dirty indices. Reusing that pass is mandatory: no second
-	# visibility algorithm exists here.
-	if int(drained.get("changed", 0)) > 0 or not _current_map.fog_solved \
-			or _country_visual_refresh_pending:
-		var vision := _refresh_vision()
-		if not bool(vision.get("ok", false)):
-			return {"ok": false, "reason": String(vision.get("reason",
-				"military_exploration_vision_refresh_failed"))}
-		# Do not consume the general visual-refresh latch here. _refresh_vision
-		# only refreshes visible/fog/LUT inputs; territory, borders, building
-		# intel and the final LUT publish still belong to the budgeted
-		# refresh_country_visuals() path.
-	if _current_map.explored_arr.size() != _current_map.cell_count():
-		return {"ok": false, "reason": "military_exploration_explored_unavailable"}
-	var pushed: Dictionary = facade.set_military_exploration_view(
-		_player_country_slot, _current_map.explored_arr, day,
-		_current_map.vision_revision)
-	if not bool(pushed.get("ok", false)):
-		return {"ok": false, "reason": String(pushed.get("reason",
-			"military_exploration_view_failed"))}
-	_military_exploration_last_view_day = day
-	_military_exploration_last_trail_cells = int(drained.get("cells", 0))
-	return {"ok": true, "day": day, "trail_cells": int(drained.get("cells", 0)),
-		"new_explored": int(drained.get("changed", 0))}
-
-
-## Called inside GameSaveCoordinator's safe boundary, after the world clock is
-## paused and before provider collection. A failure must reject the save: a
-## PKFG that silently drops explored cells is worse than no file.
-func flush_military_exploration_trail_for_save() -> Dictionary:
-	if _current_map == null or _player_country_slot < 0:
-		return {"ok": true, "cells": 0, "skipped": true}
-	var facade = _military_exploration_facade()
-	if facade == null or not facade.has_method("is_configured") \
-			or not facade.is_configured():
-		return {"ok": true, "cells": 0, "skipped": true}
-	if not facade.has_method("get_military_vision_trail"):
-		return {"ok": true, "cells": 0, "skipped": true}
-	if facade.has_method("set_military_exploration_observer"):
-		var observer: Dictionary = facade.set_military_exploration_observer(
-			_player_country_slot)
-		if not bool(observer.get("ok", false)):
-			return {"ok": false, "reason": String(observer.get("reason",
-				"military_exploration_observer_failed"))}
-	var drained := _drain_military_exploration_trail(facade)
-	if not bool(drained.get("ok", false)):
-		return drained
-	return {"ok": true, "cells": int(drained.get("cells", 0))}
-func _ensure_native_vision_configured(ext: Object) -> bool:
-	return _visual_adapter._ensure_native_vision_configured(self, ext)
-func _has_remote_observation_capability() -> bool:
-	return _visual_adapter._has_remote_observation_capability(self)
-func _submit_native_observations(facade, result: Dictionary) -> void:
-	_visual_adapter._submit_native_observations(self, facade, result)
-func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
-	_visual_adapter._submit_discovered_map_signals(self, previous)
+func apply_runtime_vision_display() -> Dictionary:
+	return _visual_adapter.apply_runtime_vision_display(self)
 func _republish_cell_luts(dirty_indices: PackedInt32Array = PackedInt32Array(),
 		force_full_encode: bool = false) -> Dictionary:
 	return _visual_adapter._republish_cell_luts(self, dirty_indices, force_full_encode)

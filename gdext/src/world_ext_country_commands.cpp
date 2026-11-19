@@ -71,7 +71,15 @@ Dictionary enqueue_country_host_command_batch(
         "display_names", PackedStringArray());
     const int64_t count = opcodes.size();
     Dictionary out;
-    if (count <= 0 || count > static_cast<int64_t>(RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY)) {
+    // A vision sweep can discover more signals than a normal player batch.
+    // Admit the full sweep atomically into the Host queue.
+    const bool too_many_commands =
+        count > static_cast<int64_t>(RUNTIME_COMMAND_QUEUE_CAPACITY) ||
+        (count > static_cast<int64_t>(RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY) &&
+         !std::all_of(opcodes.ptr(), opcodes.ptr() + count, [](int32_t opcode) {
+             return opcode == CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL;
+         }));
+    if (count <= 0 || too_many_commands) {
         out["ok"] = false;
         out["code"] = count <= 0 ? "country_command_batch_empty"
                                  : "country_command_batch_capacity_exceeded";
@@ -202,10 +210,9 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
             return out;
         }
     }
-    const bool worker_authoritative = _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(
-            RuntimeDomainId::COUNTRY);
-    if (worker_authoritative) {
+    // The ACTIVE executor owns admission from the start, including the
+    // first-day interval before it has proved the full Country grant.
+    if (_runtime_host && _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::COUNTRY)) {
         return enqueue_country_host_command_batch(
             *_runtime_host, packed_batch, true);
     }

@@ -1,5 +1,6 @@
 #include <cassert>
 #include "native_simulation_day_context.h"
+#include "runtime_vision.h"
 #include "economy_runtime.h"
 #include "economy_authority_transfer.h"
 #include "pk_log.h"
@@ -154,6 +155,13 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                     worker_climate_input.geography[0] = std::move(climate_view.categories[2]);
                 if (climate_view.categories[3].size() == economy_day_input->fields[0].size())
                     worker_climate_input.geography[2] = std::move(climate_view.categories[3]);
+                economy_day_input = &worker_climate_input;
+            }
+            if (_executor_vision) {
+                if (economy_day_input != &worker_climate_input)
+                    worker_climate_input = *economy_day_input;
+                worker_climate_input.geography[5] = _executor_vision->frame->visible;
+                worker_climate_input.fog_solved = true;
                 economy_day_input = &worker_climate_input;
             }
             if (std::FILE *trace = sim_day_trace_file()) {

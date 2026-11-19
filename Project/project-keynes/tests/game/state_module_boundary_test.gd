@@ -52,6 +52,15 @@ func _init() -> void:
 	_expect("old native omission stays opaque bytes", modules.pkmi.decode_sections({}).sections.pkmi == PackedByteArray())
 	_expect("legacy runtime variant remains readable", modules.simulation_runtime.decode_sections({"simulation_runtime": var_to_bytes({"schema": "PKSR", "version": 2})}).sections.simulation_runtime.version == 2)
 	_expect("invalid runtime variant fails before restore", modules.simulation_runtime.decode_sections({"simulation_runtime": var_to_bytes(17)}).code == "save_section_decode_failed")
+	var world := DCWorld.new()
+	world.create_entities(2)
+	var sections := {"new_game_config": {}, "dynamic_world": world.serialize()}
+	var context := {"world": world, "session": {}}
+	_expect("legacy geography without species still restores", modules.dynamic_world.restore_sections(sections, context).ok)
+	sections.dynamic_world.cells["cell_bio_occupancy_bits"] = PackedInt32Array([0])
+	_expect("species column must cover the saved map", modules.dynamic_world.restore_sections(sections, context).code == "species_state_invalid")
+	sections.dynamic_world.n_cells = 1
+	_expect("saved map dimensions must match the live map", modules.dynamic_world.restore_sections(sections, context).code == "dynamic_world_shape_invalid")
 	print("state module boundaries: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 

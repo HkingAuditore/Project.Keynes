@@ -689,8 +689,8 @@ public:
     // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
     // epoch; this value identifies the latest committed aggregate state.
     uint64_t committed_generation() const { return _committed_generation; }
-    void drain_bio_introduces(godot::PackedInt32Array &cells,
-                              godot::PackedInt32Array &bits);
+    void take_bio_introduces(std::vector<int32_t> &cells,
+                            std::vector<int32_t> &bits);
     godot::PackedInt32Array economy_live_cells_query();
     godot::Dictionary report() const;
     godot::Dictionary committed_audit_report() const;
@@ -903,6 +903,7 @@ public:
         return !_epoch_active && day_index > _last_committed_day &&
                _building_context_day != day_index;
     }
+    const std::vector<std::string> &resource_ids() const { return _resource_ids; }
     const std::vector<std::string> &building_resource_reserve_slots() const {
         return _resource_reserve_slots;
     }
@@ -927,6 +928,9 @@ public:
             _worker_natural_resources.size() == _resource_ids.size();
     }
     bool worker_resource_seeded() const { return _worker_resource_seeded; }
+    int32_t worker_resource_recovered_cells() const { return _worker_resource_recovered_cells; }
+    bool seed_worker_resource_reserves(int64_t initial_day,
+        const std::vector<const float *> &reserves, const std::vector<const float *> &changes);
     void take_worker_resource_mirror_cells(std::vector<int32_t> &out);
     const std::vector<float> &worker_resource_reserve_lanes() const {
         return _worker_resource_reserve;
@@ -1235,6 +1239,7 @@ public:
     // and colonization intents are converted into ordinary expedition
     // commands at the next epoch open.
     std::shared_ptr<const struct CountryAiEconomyDigest> country_ai_digest() const;
+    void restore_country_ai_digest(std::shared_ptr<const CountryAiEconomyDigest> digest);
     void set_country_ai_family_preferences(std::vector<struct CountryAiFamilyPreferenceRow> rows);
     void queue_country_ai_colonization(std::vector<struct CountryAiColonizationIntent> intents);
     // AI research shares become ordinary procurement policies (whole treasury
@@ -2134,6 +2139,8 @@ private:
     void refresh_cell_activity_tiers(int64_t day_index);
     void request_cell_wake(int32_t cell);
     int32_t tier_review_period_days(uint8_t tier) const;
+    void collect_economy_live_cells(std::vector<int32_t> &cells,
+                                    std::vector<int64_t> *population_totals) const;
     void rebuild_economy_live_cells();
     void capture_epoch_country_population();
     void refresh_cadence_estimates();

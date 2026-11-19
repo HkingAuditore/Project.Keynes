@@ -1015,7 +1015,7 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
     // Bounded: a rebuild needs at most (contributions / min_batch) steps, and a
     // runaway loop here would hang a day rather than fail it.
     int32_t steps = 0;
-    while (ideology->derived_rebuild_pending() && steps < 4096) {
+    while (ideology->derived_rebuild_pending() && !ideology->derived_fold_running() && steps < 4096) {
         // A local, not `*new std::string()`: that leaked one string per step.
         std::string step_error;
         ideology->step_derived_rebuild(day_index, step_error);
@@ -1024,6 +1024,7 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
         if (first_error.empty() && !step_error.empty())
             first_error = step_error;
         ++steps;
+        if (!step_error.empty()) break;
     }
     out["ok"] = true;
     out["steps"] = steps;

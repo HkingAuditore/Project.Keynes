@@ -2,6 +2,7 @@
 #include "native_simulation_host.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
+#include "runtime_day_tail.h"
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
@@ -105,8 +106,6 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["generation"] = static_cast<int64_t>(report.generation);
     out["state_hash"] = static_cast<int64_t>(report.state_hash);
     out["last_commit_produced_at_us"] = static_cast<int64_t>(report.last_commit_produced_at_us);
-    out["last_visual_publish_at_us"] = static_cast<int64_t>(report.last_visual_publish_at_us);
-    out["snapshot_staleness_ms"] = report.snapshot_staleness_ms;
     out["ui_input_to_feedback_ms"] = report.ui_input_to_feedback_ms;
     out["visual_apply_ms"] = report.visual_apply_ms;
     out["gpu_upload_ms"] = report.gpu_upload_ms;
@@ -127,13 +126,8 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["gameplay_effect_pending"] = static_cast<int>(report.gameplay_effect_pending);
     out["gameplay_effect_terminal"] = static_cast<int>(report.gameplay_effect_terminal);
     out["gameplay_effect_state_hash"] = static_cast<int64_t>(report.gameplay_effect_state_hash);
-    out["visual_intent_generation"] = static_cast<int64_t>(report.visual_intent_generation);
-    out["visual_intent_count"] = static_cast<int>(report.visual_intent_count);
-    out["visual_full_refresh"] = report.visual_full_refresh != 0;
     out["command_queue_capacity_exceeded"] = static_cast<int64_t>(report.command_queue_capacity_exceeded);
     out["receipt_queue_capacity_exceeded"] = static_cast<int64_t>(report.receipt_queue_capacity_exceeded);
-    out["snapshot_publish_drop_count"] = static_cast<int64_t>(report.snapshot_publish_drop_count);
-    out["snapshot_publish_throttled_count"] = static_cast<int64_t>(report.snapshot_publish_throttled_count);
     out["worker_fault_count"] = static_cast<int64_t>(report.worker_fault_count);
     out["completed_days"] = static_cast<int64_t>(report.completed_days);
     out["day_stage_count"] = static_cast<int>(report.day_stage_count);
@@ -810,10 +804,34 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         }
         _economy_modifier_view_attached = use_economy_modifier_view;
         if (economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY) {
+            if (mode == RuntimeSimulationMode::ACTIVE &&
+                (requested_authority_mask & runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u &&
+                economy->worker_natural_resources_configured() &&
+                !seed_runtime_resource_reserves(*economy, day)) {
+                out["ok"] = false;
+                out["code"] = "resource_start_seed_invalid";
+                return out;
+            }
+            if (mode == RuntimeSimulationMode::ACTIVE &&
+                requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK &&
+                !seed_runtime_bio(*economy)) {
+                out["ok"] = false;
+                out["code"] = "bio_start_seed_invalid";
+                return out;
+            }
             _runtime_host->attach_economy_production_runtime(economy);
         } else {
             _runtime_host->attach_economy_production_runtime(nullptr);
         }
+    }
+    if (_military && mode == RuntimeSimulationMode::ACTIVE &&
+            requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK) {
+        if (!_runtime_host->has_started_once())
+            _runtime_host->seed_events_ingress_cursor(_gameplay_next_event_id);
+        bind_military_dependencies();
+        _runtime_host->attach_military(_military);
+    } else {
+        _runtime_host->attach_military(nullptr);
     }
     // The inline executor already runs each day between main-thread frames.
     _runtime_host->set_main_day_tail_gate(
@@ -829,9 +847,6 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // A DCWorldExt instance may be reused for a second world after the prior
     // worker has stopped.  Do not let the new run expose the previous world's
     // commit or visual intents through the main-thread cache.
-    _runtime_commit_cache = RuntimeCommit{};
-    _runtime_commit_cache_generation = 0;
-    _runtime_commit_cache_valid = false;
     // A restore start is granted immediately; make the main-thread peers see
     // that grant now rather than on a runtime-graph pulse that may not run.
     sync_runtime_domain_ownership();
@@ -960,6 +975,9 @@ Dictionary DCWorldExt::run_native_daily_inline_day() {
             attempt_budget_tripped = true;
             break;
         }
+        // A later stage can acknowledge Country's requests during this
+        // attempt. The next Country stage can consume those results directly.
+        if (outcome.country_peer_progress) continue;
         // peer 就在本线程。把 Country peer 适配器推一轮（Effect/Modifier/
         // Economy 的 intent 服务都由它同一线程完成），再重试同一天。
         if (_country_runtime == nullptr) break;
@@ -1310,9 +1328,6 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {
         out["available"] = false;
         return out;
     }
-    _runtime_commit_cache = commit;
-    _runtime_commit_cache_generation = commit.header.generation;
-    _runtime_commit_cache_valid = true;
     const RuntimeCommitHeader &h = commit.header;
     out["ok"] = true;
     out["pending"] = false;
@@ -1324,6 +1339,17 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {
     out["dirty_families"] = static_cast<int64_t>(h.dirty_families);
     out["state_hash"] = static_cast<int64_t>(h.state_hash);
     out["command_receipt_count"] = static_cast<int>(h.command_receipt_count);
+    if (commit.day_tail) {
+        out["resource_recovery_cells"] = commit.day_tail->resource_recovery_cells;
+        out["species_writeback"] = !commit.day_tail->occupancy.empty();
+        out["species_diffused_cells"] = commit.day_tail->species_diffused_cells;
+        out["species_introductions_consumed"] = commit.day_tail->species_introductions_consumed;
+        out["military_trail_cells"] = commit.day_tail->military_trail_cells;
+        out["vision_writeback"] = bool(commit.day_tail->vision);
+        out["vision_solved"] = commit.day_tail->vision_solved;
+        out["vision_observations"] = commit.day_tail->vision_observations;
+        out["species_observations"] = commit.day_tail->species_observations;
+    }
     PackedInt64Array dirty_family_generations;
     dirty_family_generations.resize(RUNTIME_DIRTY_FAMILY_COUNT);
     for (size_t i = 0; i < RUNTIME_DIRTY_FAMILY_COUNT; ++i) {
@@ -1343,113 +1369,34 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {
         receipts.push_back(item);
     }
     out["receipts"] = receipts;
-    PackedInt32Array cells;
-    PackedInt32Array fields;
-    PackedInt32Array values_i32;
-    PackedFloat32Array values_f32;
-    for (const RuntimeVisualIntent &intent : commit.visual_intents) {
-        cells.push_back(static_cast<int32_t>(intent.cell_index));
-        fields.push_back(static_cast<int32_t>(intent.field_id));
-        values_i32.push_back(intent.value_i32);
-        values_f32.push_back(intent.value_f32);
-    }
-    out["visual_cell_indices"] = cells;
-    out["visual_field_ids"] = fields;
-    out["visual_values_i32"] = values_i32;
-    out["visual_values_f32"] = values_f32;
     return out;
 }
 
-Dictionary DCWorldExt::consume_runtime_visual_patch(int64_t generation, int family,
-                                                    int cursor, int max_items) {
+Dictionary DCWorldExt::request_runtime_stop(bool preserve_day_boundary) {
     Dictionary out;
-    if (!_runtime_host) {
+    const RuntimeWorkerState before = _runtime_host
+        ? _runtime_host->state() : RuntimeWorkerState::STOPPED;
+    if (_runtime_host && preserve_day_boundary && !_runtime_host->try_stop_at_day_boundary()) {
         out["ok"] = false;
-        out["code"] = "runtime_worker_not_started";
+        out["pending"] = true;
+        out["code"] = "runtime_stop_waiting_for_day_boundary";
+        out["state"] = runtime_state_name(before);
         return out;
     }
-    RuntimeCommit commit;
-    uint64_t requested_generation = static_cast<uint64_t>(std::max<int64_t>(0, generation));
-    bool have_commit = requested_generation == 0 && _runtime_commit_cache_valid;
-    if (have_commit) {
-        commit = _runtime_commit_cache;
-        requested_generation = commit.header.generation;
-    } else if (_runtime_commit_cache_valid &&
-               _runtime_commit_cache_generation == requested_generation) {
-        commit = _runtime_commit_cache;
-        have_commit = true;
-    } else if (_runtime_commit_cache_valid && requested_generation > 0 &&
-               _runtime_commit_cache_generation > requested_generation) {
-        out["ok"] = true;
-        out["available"] = false;
-        out["code"] = "runtime_generation_expired";
-        return out;
-    } else {
-        const uint64_t after = requested_generation > 0 ? requested_generation - 1 : 0;
-        if (_runtime_host->poll_commit(after, commit) &&
-            (requested_generation == 0 || commit.header.generation == requested_generation)) {
-            _runtime_commit_cache = commit;
-            _runtime_commit_cache_generation = commit.header.generation;
-            _runtime_commit_cache_valid = true;
-            have_commit = true;
-        }
-    }
-    if (!have_commit) {
-        out["ok"] = true;
-        out["available"] = false;
-        out["code"] = requested_generation > 0 ? "runtime_generation_unavailable" : "runtime_commit_unavailable";
-        return out;
-    }
-    const int total = static_cast<int>(commit.visual_intents.size());
-    const int begin = std::clamp(cursor, 0, total);
-    const int limit = std::max(0, max_items);
-    PackedInt32Array cells;
-    PackedInt32Array fields;
-    PackedInt32Array values_i32;
-    PackedFloat32Array values_f32;
-    int emitted = 0;
-    int next_cursor = begin;
-    for (; next_cursor < total && emitted < limit; ++next_cursor) {
-        const RuntimeVisualIntent &intent = commit.visual_intents[static_cast<size_t>(next_cursor)];
-        if (family != 0 && static_cast<int>(intent.family) != family) continue;
-        cells.push_back(static_cast<int32_t>(intent.cell_index));
-        fields.push_back(static_cast<int32_t>(intent.field_id));
-        values_i32.push_back(intent.value_i32);
-        values_f32.push_back(intent.value_f32);
-        ++emitted;
-    }
-    out["ok"] = true;
-    out["available"] = true;
-    out["generation"] = static_cast<int64_t>(commit.header.generation);
-    out["next_cursor"] = next_cursor;
-    out["done"] = next_cursor >= total;
-    out["cell_indices"] = cells;
-    out["field_ids"] = fields;
-    out["values_i32"] = values_i32;
-    out["values_f32"] = values_f32;
-    return out;
-}
-
-
-
-
-Dictionary DCWorldExt::request_runtime_stop() {
     _climate_physics_committed.reset();
     _climate_physics_capture_ready = false;
     _climate_writeback_applied_generation = 0;
     _climate_writeback_applied_day = -1;
-    Dictionary out;
     if (!_runtime_host) {
         out["ok"] = true;
         out["pending"] = false;
         out["state"] = "STOPPED";
         return out;
     }
-    const RuntimeWorkerState before = _runtime_host->state();
     // Stop is asynchronous: the worker may still be executing an Economy
     // stage or its command executor. Keep both attached until it has exited;
     // DCWorldExt joins the host before destroying the owned runtimes.
-    _runtime_host->request_stop();
+    if (!preserve_day_boundary) _runtime_host->request_stop();
     out["ok"] = true;
     const RuntimeWorkerState state = _runtime_host->state();
     // The request itself is asynchronous even if the worker exits during this

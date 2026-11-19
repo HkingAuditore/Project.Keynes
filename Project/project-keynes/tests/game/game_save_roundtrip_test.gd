@@ -91,19 +91,19 @@ func _run() -> void:
 		int(country_facade.cell_summary(capital_cell).get("cash", 0)) \
 			!= int(start_capital.get("cash", 0)))
 	_saved_paused = first_clock.paused
-	var expected := _capture_hashes(first_host, first_clock)
-	var expected_environment: Dictionary = \
+	var before_save_environment: Dictionary = \
 		first_host.generator().export_environment_runtime_state()
 	var save_result: Dictionary = await _game_save.call("request_manual_save", "manual_3")
 	# 存档完成后再取样：speed=0 时 worker 仍会把 ring 里已挂起的输入跑完，
 	# 存档前取的值可能比真正写进存档的状态早一次提交。
+	var expected := _capture_hashes(first_host, first_clock)
 	var expected_capital: Dictionary = country_facade.cell_summary(capital_cell)
 	var expected_tax: Dictionary = country_facade.tax_policy_snapshot(player_handle)
-	var saved_environment: Dictionary = \
+	var expected_environment: Dictionary = \
 		first_host.generator().export_environment_runtime_state()
-	if _hash_variant(saved_environment) != _hash_variant(expected_environment):
+	if _hash_variant(before_save_environment) != _hash_variant(expected_environment):
 		print("[save-roundtrip] environment drifted during the save call: %s" % [
-			_diff_keys(expected_environment, saved_environment)])
+			_diff_keys(before_save_environment, expected_environment)])
 	if not bool(save_result.get("ok", false)):
 		# 不打出 code/message 的话，一次写档失败在日志里只剩一行 FAIL，
 		# 既看不出是边界没停稳还是 provider 缺 section。
@@ -132,6 +132,8 @@ func _run() -> void:
 	# Compare frozen military bytes at load completion, before the worker starts
 	# its next day. A later live hash can legitimately include new daily work.
 	var saved_container: Dictionary = _game_save.get("_repository").load_slot("manual_3")
+	_expect("saved dynamic world matches the committed map",
+		_hash_variant(bytes_to_var(saved_container.section_bytes.dynamic_world)) == expected.dynamic_world)
 	var saved_military: PackedByteArray = saved_container.section_bytes.pkmi
 	var saved_clock: Dictionary = bytes_to_var(saved_container.section_bytes.world_clock)
 	expected.clock = _hash_variant(saved_clock)
@@ -141,11 +143,10 @@ func _run() -> void:
 	var restored_clocks: Array[Dictionary] = []
 	_game_save.load_completed.connect(func(_slot_id: String, _result: Dictionary) -> void:
 		var host: WorldRuntimeHost = _game_save.get("_runtime_host")
-		# The provider owns the MDJ1 event-forwarding tail as well as PKMI.
+		# Compare the military section with its MDJ1 event cursor.
 		var provider = preload("res://scripts/game/save_modules/country_state.gd").new()
 		var captured: Dictionary = provider._write_military_provider({
-			"military": host.generator().get_military_facade(),
-			"military_progress": host.generator()._military_daily_job})
+			"military": host.generator().get_military_facade()})
 		restored_military.append(captured.get("sections", {}).get("pkmi", PackedByteArray()))
 		restored_clocks.append((_game_save.get("_world_clock") as WorldClock).export_state()), CONNECT_ONE_SHOT)
 	var previous_session = first_host.get("_runtime_session")
@@ -356,7 +357,11 @@ func _capture_hashes(host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
 	var generator := host.generator()
 	var hashes := {}
 	hashes.clock = _hash_variant(clock.export_state())
-	hashes.dynamic_world = _hash_variant(generator.get_data_core_world().serialize())
+	var world: Dictionary = generator.get_data_core_world().serialize()
+	# Species is published to MapData while the legacy DCWorld mirror retains
+	# its bootstrap values. Check the same committed column the provider saves.
+	world.cells["cell_bio_occupancy_bits"] = host.current_map().bio_occupancy_bits_arr
+	hashes.dynamic_world = _hash_variant(world)
 	hashes.environment = _hash_variant(generator.export_environment_runtime_state())
 	hashes.country = str(generator.get_country_facade().report().get("state_hash", ""))
 	hashes.economy = str(generator.get_economy_facade().report().get("state_hash", ""))

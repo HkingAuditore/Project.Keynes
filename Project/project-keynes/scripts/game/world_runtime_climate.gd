@@ -84,8 +84,3 @@ func climate_authority_diagnostics(host) -> Dictionary:
 		"writeback_drop_count": int(host._runtime_climate_writeback_drops),
 		"authority_policy": host._resolve_climate_authority_policy(),
 	}
-
-
-## 视觉 intent 的兼容适配点。worker 只发布数值 intent；具体 MapData/GPU
-## 更新仍留在主线程。当前未迁移的 family 不做隐式写入，避免误把 probe
-## 数据当成权威状态。

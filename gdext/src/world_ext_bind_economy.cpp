@@ -13,8 +13,8 @@ void DCWorldExt::_bind_economy_methods() {
     ClassDB::bind_method(D_METHOD("diagnose_colonization_target",
                         "country_handle", "target_cell"),
                          &DCWorldExt::diagnose_colonization_target);
-    ClassDB::bind_method(D_METHOD("flush_runtime_economy_resource_writeback"),
-                         &DCWorldExt::flush_runtime_economy_resource_writeback);
+    ClassDB::bind_method(D_METHOD("apply_runtime_economy_resource_writeback"),
+                         &DCWorldExt::apply_runtime_economy_resource_writeback);
     ClassDB::bind_method(D_METHOD("get_country_fiscal_snapshot", "handle"),
                          &DCWorldExt::get_country_fiscal_snapshot);
     // R-4 X16 / metric probes.

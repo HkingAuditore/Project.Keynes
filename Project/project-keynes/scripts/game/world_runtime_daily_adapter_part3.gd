@@ -5,7 +5,8 @@ const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_s
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
 	var commit_usec = Time.get_ticks_usec()
-	if not host._runtime_ready_for_ticks or host._generator == null:
+	if (not host._runtime_ready_for_ticks or host._generator == null
+			or host._runtime_worker_fault_paused):
 		return
 	if not host._generator.has_method("get_runtime_thread_report") \
 			or not host._generator.has_method("poll_runtime_commit"):
@@ -21,14 +22,14 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		return
 	if not bool(report.get("simulation_worker_ready", report.get(
 			"authority_ready", false))):
-		# Nothing below runs before the grant, so no tail holds the worker.
-		_mark_runtime_day_tail(host, int(report.get("simulation_committed_day", -1)))
 		return
 	var commit: Dictionary = host._generator.poll_runtime_commit(host._runtime_commit_generation)
 	var received_new_commit = bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > host._runtime_commit_generation
 	var commit_day := int(commit.get("committed_day", -1))
+	if received_new_commit and commit_day > int(report.get("simulation_committed_day", -1)):
+		report = host._runtime_control_state()
 	if received_new_commit and bool(report.get("climate_worker_authoritative", false)):
 		# A worker can commit between the status read and the commit poll.
 		# Apply the weather for the polled day before exposing that day to scripts.
@@ -40,29 +41,25 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			return
 	elif report_override.is_empty():
 		host._apply_climate_writeback_if_authoritative(report)
-	var whole_graph_commit = received_new_commit and bool(report.get("authority_ready", false))
-	var economy_worker_authoritative = (
-			int(report.get("authoritative_domain_mask", 0)) &
-			host.RUNTIME_ECONOMY_DOMAIN_MASK) != 0
+	var whole_graph = bool(report.get("authority_ready", false))
 	if received_new_commit:
 		var publish_started_usec = Time.get_ticks_usec()
 		var generation = int(commit.get("generation", 0))
+		var from_day := int(commit.get("from_day", -1))
+		if host._runtime_commit_generation == 0 and from_day >= 0:
+			# A restored boundary is already settled. The first new day's
+			# origin also identifies it if the restored header was not polled.
+			host._runtime_tail_completed_day = maxi(host._runtime_tail_completed_day, from_day)
 		host._runtime_commit_generation = generation
-		host._runtime_commit_day = int(commit.get("committed_day", host._runtime_commit_day))
+		host._runtime_commit_day = commit_day
+		if commit_day <= host._runtime_tail_completed_day:
+			host._runtime_notified_generation = generation
+			return
 		host._runtime_last_commit = commit.duplicate(false)
-		if economy_worker_authoritative:
-			host._queue_runtime_natural_resource_commit(host._runtime_commit_day)
-		# Military reads the Country/Economy view committed for this day. It is
-		# a synchronous main-thread runtime (never a worker domain), so the host
-		# is the only thing that can advance it while the graph is ACTIVE.
-		host._queue_runtime_military_commit(host._runtime_commit_day)
-		host._runtime_commit_family_cursors.clear()
-		host._runtime_commit_family_done.clear()
-		host._runtime_pending_visual_generation = generation
-		host._runtime_pending_dirty_families = int(commit.get("dirty_families", 0))
+		host._generator.record_runtime_main_step(commit_day, &"queue_day_tail")
 		# Whole-graph ACTIVE bypasses run_daily_tick. Record this exact day while
 		# the worker is still at the boundary. Presentation follows the tail.
-		if whole_graph_commit:
+		if whole_graph:
 			host._fast_tick_count += 1
 			host._pending_tick_start_usec = publish_started_usec
 			host._pending_tick_sus_ms = 0.0
@@ -70,90 +67,58 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			host._pending_tick_render_ms = 0.0
 			if dcp:
 				host._dcp_publish_ms = float(Time.get_ticks_usec() - publish_started_usec) / 1000.0
-		var from_day := int(commit.get("from_day", host._runtime_commit_day))
-		host.simulation_committed.emit(from_day, host._runtime_commit_day, generation)
-		if whole_graph_commit:
-			host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
-			var dcp_finish_usec: int = Time.get_ticks_usec() if dcp else 0
+	host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
+	var ext = host._generator.get_data_core_world_ext()
+	var resource_usec := Time.get_ticks_usec()
+	var writeback: Dictionary = ext.apply_runtime_economy_resource_writeback()
+	if bool(writeback.get("applied", false)):
+		host._sched_proc_resource_ms += host._sched_elapsed_ms(resource_usec)
+		if dcp:
+			host._dcp_resource_ms = float(Time.get_ticks_usec() - resource_usec) / 1000.0
+	elif received_new_commit and not bool(writeback.get("ok", false)):
+		push_warning("Resource display patch: " + String(writeback.get("code", "")))
+	if received_new_commit and bool(commit.get("species_writeback", false)):
+		var species: Dictionary = ext.apply_runtime_species_writeback()
+		if not bool(species.get("ok", false)):
+			push_warning("Species display snapshot: " + String(species.get("reason", "")))
+	var vision: Dictionary = host.apply_runtime_vision_display()
+	if not bool(vision.get("ok", false)):
+		push_warning("Vision display snapshot: " + String(vision.get("reason", "")))
+	if whole_graph:
+		host._consume_country_worker_read_view_if_authoritative()
+	if not _prepare_runtime_day_tail(host, whole_graph):
+		return
+	if whole_graph and not host._native_daily_inline_active and host._runtime_commit_day > host._runtime_tail_completed_day \
+			and host._generator.has_method("prepare_next_climate_input_during_tail") \
+			and not host._generator.prepare_next_climate_input_during_tail(host._runtime_commit_day):
+		_fail_runtime_day_tail(host, "season_day_tail_unavailable")
+		return
+	if host._runtime_commit_generation > host._runtime_notified_generation:
+		host._runtime_notified_generation = host._runtime_commit_generation
+		var from_day := int(host._runtime_last_commit.get("from_day", host._runtime_commit_day))
+		host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
+		if whole_graph:
+			var finish_usec := Time.get_ticks_usec()
 			host.finish_daily_tick(0.0)
-			if dcp_finish_usec > 0:
-				host._dcp_finish_ms = float(Time.get_ticks_usec() - dcp_finish_usec) / 1000.0
-			commit_usec = Time.get_ticks_usec()
-		else:
-			host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
-	else:
-		host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
-		commit_usec = Time.get_ticks_usec()
-	# Mirror the committed resource changes. The scheduled pass still handles
-	# slots that the worker does not own. If the commit lock is busy, retain
-	# this day for the next frame.
-	var resource_usec = Time.get_ticks_usec()
-	if economy_worker_authoritative and host._runtime_natural_resource_pending_target_day >= 0 \
-			and host._generator.has_method("flush_runtime_economy_resource_writeback"):
-		var resource_writeback: Dictionary = \
-			host._generator.flush_runtime_economy_resource_writeback()
-		if bool(resource_writeback.get("ok", false)) \
-				and not bool(resource_writeback.get("pending", false)):
-			host._drain_runtime_natural_resource_commits()
-	host._sched_proc_resource_ms += host._sched_elapsed_ms(resource_usec)
-	if dcp:
-		host._dcp_resource_ms = float(Time.get_ticks_usec() - resource_usec) / 1000.0
-	# Military catch-up. It consumes only the committed Country/Economy view, so
-	# it is safe to run as soon as a commit is visible — no writeback or
-	# boundary lock is involved. Same-frame budget as the resource drain.
-	var military_usec = Time.get_ticks_usec()
-	host._drain_runtime_military_commits()
+			if dcp:
+				host._dcp_finish_ms = float(Time.get_ticks_usec() - finish_usec) / 1000.0
 	_mark_runtime_day_tail(host, host._runtime_commit_day)
-	host._runtime_military_ms = float(Time.get_ticks_usec() - military_usec) / 1000.0
-	if dcp:
-		host._dcp_military_ms = host._runtime_military_ms
-	if host._runtime_military_pending_target_day >= 0 \
-			or host._runtime_natural_resource_pending_target_day >= 0 \
-			or host._runtime_pending_visual_generation <= 0 \
-			or host._runtime_pending_visual_generation != host._runtime_commit_generation:
+	if host._runtime_tail_completed_day < host._runtime_commit_day \
+			and host._generator.get_data_core_world_ext() != null:
+		return
+	if not host._presentation.needs_worker_view(host._runtime_commit_generation):
 		return
 	var visual_started_us = Time.get_ticks_usec()
-	if host._presentation.needs_worker_view(host._runtime_commit_generation):
-		if bool(report.get("authority_ready", false)):
-			var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
-					host._renderer, host._generator._baker, host._world_data)
-			host._generator.publish_worker_climate_visuals(defer_cell_lut_upload)
-			if host._renderer != null:
-				host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
-				host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-			host.mark_map_overlay_dirty(&"worker_committed")
-		host._presentation.queue_worker_commit(int(host._runtime_last_commit.get("from_day", host._runtime_commit_day)),
-				host._runtime_commit_day, host._runtime_commit_generation)
-	# 当前 skeleton 的 COMMIT 阶段可能没有 visual intents；仍走同一消费边界，
-	# 以后新增 family 时无需把 worker 对象暴露给主线程。交互期间缩小预算，
-	# 但不等待或取消 worker，只把剩余 patch 留到下一渲染帧。
-	var apply_started_us = Time.get_ticks_usec()
-	var interactive = bool(report.get("interactive", false))
-	var budget_us = 250 if interactive else 750
-	var max_items = 128 if interactive else 512
-	for family_index in range(9):
-		if Time.get_ticks_usec() - apply_started_us >= budget_us:
-			break
-		var family_bit = 1 << family_index
-		if (host._runtime_pending_dirty_families & family_bit) == 0 \
-				or bool(host._runtime_commit_family_done.get(family_bit, false)):
-			continue
-		var cursor = int(host._runtime_commit_family_cursors.get(family_bit, 0))
-		var patch: Dictionary = host._generator.consume_runtime_visual_patch(
-			host._runtime_pending_visual_generation, family_bit, cursor, max_items)
-		if not bool(patch.get("available", false)):
-			if String(patch.get("code", "")) == "runtime_generation_expired":
-				# A newer commit will be picked up on the next frame. Do not spin
-				# forever trying to consume a generation already evicted by the ring.
-				host._runtime_commit_family_done[family_bit] = true
-			continue
-		if int(patch.get("generation", host._runtime_pending_visual_generation)) \
-				!= host._runtime_pending_visual_generation:
-			host._runtime_commit_family_done[family_bit] = true
-			continue
-		host._runtime_commit_family_cursors[family_bit] = int(patch.get("next_cursor", cursor))
-		host._runtime_commit_family_done[family_bit] = bool(patch.get("done", false))
-		host._apply_runtime_visual_patch(family_bit, patch)
+	if bool(report.get("authority_ready", false)):
+		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
+				host._renderer, host._generator._baker, host._world_data)
+		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload)
+		if host._renderer != null:
+			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
+			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
+		host.mark_map_overlay_dirty(&"worker_committed")
+	host._presentation.queue_worker_commit(int(host._runtime_last_commit.get("from_day", host._runtime_commit_day)),
+			host._runtime_commit_day, host._runtime_commit_generation)
 	host._runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - visual_started_us) / 1000.0
 	host._sched_proc_visual_ms += host._runtime_last_visual_apply_ms
 	if dcp:
@@ -163,133 +128,47 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			host._runtime_last_ui_feedback_ms,
 			host._runtime_last_visual_apply_ms,
 			host._runtime_last_gpu_upload_ms)
-	var all_done = true
-	for family_index in range(9):
-		var family_bit = 1 << family_index
-		if (host._runtime_pending_dirty_families & family_bit) != 0 \
-				and not bool(host._runtime_commit_family_done.get(family_bit, false)):
-			all_done = false
-			break
-	if all_done:
-		host._runtime_pending_visual_generation = 0
 
 
-
-func _queue_runtime_natural_resource_commit(host, day: int) -> void:
-	if day <= host._runtime_natural_resource_last_commit_day:
-		return
-	host._runtime_natural_resource_pending_target_day = maxi(
-			host._runtime_natural_resource_pending_target_day, day)
-
-
-
-func _drain_runtime_natural_resource_commits(host) -> void:
-	if host._generator == null or not host._generator.has_method(
-			"run_natural_resource_pass_for_runtime_commit"):
-		return
-	var target_day = host._runtime_natural_resource_pending_target_day
-	if target_day < 0:
-		return
-	var processed = 0
-	while host._runtime_natural_resource_last_commit_day < target_day \
-			and processed < host.RUNTIME_NATURAL_RESOURCE_CATCHUP_DAYS_PER_FRAME:
-		var day = host._runtime_natural_resource_last_commit_day + 1
-		var result: Dictionary = host._generator.run_natural_resource_pass_for_runtime_commit(day)
-		host._runtime_natural_resource_last_result = result.duplicate(true)
-		if not bool(result.get("done", false)):
-			return
-		host._runtime_natural_resource_last_commit_day = day
-		processed += 1
-	if host._runtime_natural_resource_last_commit_day >= target_day:
-		host._runtime_natural_resource_pending_target_day = -1
-
-
-
-## The worker starts day D+1 only after the Military and resource tails of
-## day D ran here (native `main_day_tail_gate`). A tail with nothing queued
-## does not hold it.
+## D+1 still waits for the later main-thread stages to settle day D.
 func _mark_runtime_day_tail(host, committed_day: int) -> void:
 	var ext = host._generator.get_data_core_world_ext() if committed_day >= 0 \
 		and host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
 	if ext == null or not ext.has_method("mark_runtime_day_tail_done"):
 		return
-	var done = committed_day
-	# Trigger effects emitted through day D go out before D's tail is marked,
-	# so their commands and delivery ACKs are sealed on D+1. A lost boundary
-	# lock defers the handoff; the tail waits for it.
+	if committed_day > host._runtime_tail_completed_day:
+		host._generator.record_runtime_main_step(committed_day, &"acknowledge_day_tail")
+	host._runtime_tail_completed_day = maxi(host._runtime_tail_completed_day, committed_day)
+	ext.mark_runtime_day_tail_done(committed_day)
+
+
+func _prepare_runtime_day_tail(host, whole_graph: bool) -> bool:
+	# Delivery and its acknowledgement belong to this day's boundary.
 	host._consume_trigger_worker_snapshot_if_authoritative()
 	var trigger = host._generator.get_trigger_facade() \
 		if host._generator.has_method("get_trigger_facade") else null
-	if trigger != null and bool(trigger.handoff_effect_batch(512).get("deferred", false)):
-		done = mini(done, committed_day - 1)
-	if host._runtime_military_pending_target_day >= 0:
-		done = mini(done, host._runtime_military_last_commit_day)
-	if host._runtime_natural_resource_pending_target_day >= 0:
-		done = mini(done, host._runtime_natural_resource_last_commit_day)
-	if done == committed_day and host._ideology_refresh_pending_day >= 0:
-		# Retry the already queued refresh while the worker is at the day boundary.
-		# Its requested date stays the same and the normal frame pump handles a retry.
+	if trigger != null:
+		var handoff: Dictionary = trigger.handoff_effect_batch(512)
+		if int(handoff.get("handed_off", 0)) > 0 or bool(handoff.get("deferred", false)):
+			host._generator.record_runtime_main_step(host._runtime_commit_day, &"trigger_effect_handoff")
+		if bool(handoff.get("deferred", false)):
+			return false
+	if whole_graph and host._runtime_commit_day > host._runtime_tail_completed_day:
+		host._consume_ideology_worker_snapshot_if_authoritative()
+		# Today's confirmed basis is eligible for tomorrow's economy input.
+		host._step_ideology_instance_refresh_if_authoritative(host._runtime_commit_day + 1)
+	elif host._ideology_refresh_pending_day >= 0:
 		host._step_ideology_instance_refresh_if_authoritative(host._ideology_refresh_pending_day)
-	ext.mark_runtime_day_tail_done(done)
+	return host._ideology_refresh_pending_day < 0
 
 
-func _queue_runtime_military_commit(host, day: int) -> void:
-	if day < 0:
+func _fail_runtime_day_tail(host, reason: String) -> void:
+	if host._runtime_worker_fault_paused:
 		return
-	host._runtime_military_pending_target_day = maxi(
-			host._runtime_military_pending_target_day, day)
-
-
-## Military is a main-thread synchronous runtime that reads the committed
-## Country/Economy view of day D and emits D+1 intents. In whole-graph ACTIVE the
-## worker never runs it (it is not a worker domain), so the host replays every
-## observed committed day here, bounded per frame. When the API is missing (older
-## DLL) or the facade is unconfigured this is a single null check.
-
-
-func _drain_runtime_military_commits(host) -> void:
-	if host._runtime_military_pending_target_day < 0 or host._generator == null:
-		return
-	if not host._generator.has_method("get_military_facade"):
-		host._runtime_military_pending_target_day = -1
-		return
-	var facade = host._generator.get_military_facade()
-	if facade == null or not facade.is_configured():
-		# No military authority in this world (old DLL / catalog missing). Drop
-		# the queue so every frame does not re-probe the facade.
-		host._runtime_military_pending_target_day = -1
-		return
-	var target_day = host._runtime_military_pending_target_day
-	var processed = 0
-	var first_day = host._runtime_military_last_commit_day + 1
-	if host._runtime_military_last_commit_day < 0:
-		# First observation: start at the oldest day we must cover, not at 0.
-		first_day = mini(target_day, maxi(0, target_day - host.RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME))
-	var day = first_day
-	while day <= target_day and processed < host.RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME:
-		# Every replay day gets its own frozen explored view. Calling this once
-		# for the whole batch would make days 2..N plan against day 1.
-		if host.has_method("_prepare_military_exploration_day"):
-			host._prepare_military_exploration_day(day)
-		var result: Dictionary
-		if facade.should_run(day):
-			result = facade.run_daily(day)
-		else:
-			# Peace with no movement: the native side owns the skip decision and
-			# reports zero work, but the committed-day cursor still advances so a
-			# later war does not replay a hundred idle days.
-			result = {"ok": true, "path": "native_military_skip", "day_index": day}
-		host._runtime_military_last_commit_day = day
-		host._runtime_military_last_result = result.duplicate(false)
-		# Forward the day's facts on the same boundary as every other bus batch.
-		var job = host._generator.get_military_daily_job() \
-			if host._generator.has_method("get_military_daily_job") else null
-		if job != null and job.has_method("forward_military_events"):
-			job.forward_military_events()
-		processed += 1
-		day += 1
-	if host._runtime_military_last_commit_day >= target_day:
-		host._runtime_military_pending_target_day = -1
+	var report: Dictionary = host._generator.get_runtime_thread_report()
+	report["simulation_host_state"] = "FAULTED"
+	report["fault_code"] = reason
+	host._observe_runtime_worker_fault(report)
 
 
 ## Season refresh changes cover (snowline / flood / glacier), which feeds the
@@ -297,6 +176,8 @@ func _drain_runtime_military_commits(host) -> void:
 
 
 func _refresh_military_terrain_after_season(host) -> void:
+	if host.uses_worker_day_commits() or host._native_daily_inline_active:
+		return
 	if host._generator == null or not host._generator.has_method("refresh_military_terrain"):
 		return
 	var result: Dictionary = host._generator.refresh_military_terrain(
@@ -328,9 +209,9 @@ func military_report(host) -> Dictionary:
 	if host._generator == null or not host._generator.has_method("get_military_report"):
 		return {"configured": false}
 	var report: Dictionary = host._generator.get_military_report()
-	report["host_last_commit_day"] = host._runtime_military_last_commit_day
-	report["host_pending_target_day"] = host._runtime_military_pending_target_day
-	report["host_last_ms"] = host._runtime_military_ms
+	report["host_last_commit_day"] = host._runtime_commit_day
+	report["host_pending_target_day"] = -1
+	report["host_last_ms"] = float(report.get("military_day_ms", 0.0))
 	return report
 
 
@@ -339,10 +220,8 @@ func military_report(host) -> Dictionary:
 ## 这是 ACTIVE Climate 的主线程另一半：抑制门已经让主线程不再算 climate，
 ## 如果这里不回灌，MapData 就永久停在转权威那一天。
 ##
-## 语义上滞后一日：worker 提交第 N 天之后，主线程在下一个渲染帧才把它应用到
-## MapData，所以同一帧里读 MapData 的消费者看到的是第 N-1 天。这与视觉 patch
-## 消费的滞后一致，也是 worker 不阻塞主线程的代价。需要同帧一致的读者必须走
-## simulation_committed 信号，而不是直接轮询 MapData。
+## 主线程先把当天的气候写入 MapData，再发出 simulation_committed。
+## 逐日读取者从这个信号取得已完整交接的数据。
 
 
 func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void:
@@ -377,6 +256,7 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 	# the worker report driving this consume is the same committed generation.
 	host._runtime_climate_writeback_last_day = int(applied.get(
 		"committed_day", report.get("simulation_committed_day", -1)))
+	host._generator.record_runtime_main_step(host._runtime_climate_writeback_last_day, &"climate_writeback")
 	host._runtime_climate_writeback_days += 1
 	# A field the slot guards reject is a field the worker owns but never
 	# publishes, so MapData silently keeps the pre-promotion value. Kept for

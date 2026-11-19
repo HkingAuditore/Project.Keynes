@@ -94,11 +94,8 @@ struct RuntimeClimateSnapshot {
 // Worker -> main-thread handoff for ACTIVE Climate write-back.
 //
 // Same three-slot protocol as RuntimeSnapshotRing, with a Climate store as the
-// payload instead of a RuntimeCommit. It is a separate ring rather than a new
-// field on that one because the visual ring is published on a throttle and may
-// legitimately drop frames: dropping a visual patch loses a repaint, dropping
-// an authoritative day loses the day itself. This one is only written at a
-// committed day boundary, so it never drops while a reader keeps up.
+// payload. Publish at the committed day boundary so the main thread can
+// install that day's climate fields before delivering the day to consumers.
 //
 // Neither side ever blocks. The worker skips publishing when all non-reading
 // slots are busy (counted, not silently swallowed) and the main thread simply

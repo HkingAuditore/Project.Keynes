@@ -9,9 +9,20 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 	match id:
 		"dynamic_world":
 			var ext = generator.get_data_core_world_ext() if generator != null else null
+			var map: MapData = host.current_map() if host != null else null
 			return {"world": source.get("world"), "session": source.session,
+				"species": func():
+					return map.bio_occupancy_bits_arr if map != null else PackedInt32Array(),
+				"restore_species": func(bits: PackedInt32Array):
+					if map != null and generator != null:
+						if not bits.is_empty():
+							map.bio_occupancy_bits_arr = bits
+						# Diffusion also needs the regenerated province and landmass
+						# columns. The extension was bound before those were built.
+						generator._publish_bio_occupancy_to_runtime(map),
 				"restore_base_moisture": func():
-					ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"])),
+					if ext != null:
+						ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"])),
 				"base_moisture": func():
 					return ext.snapshot_f32(ext.component_id("cell_base_moisture")) if ext != null else PackedFloat32Array()}
 		"environment":
@@ -33,8 +44,7 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 				"native_country_pkcn": source.get("native_country_pkcn", PackedByteArray()),
 				"prepare_economy": _method(generator, "prepare_economy_save_restore_runtime")}
 		"pkmi":
-			return {"military": _facade(generator, "military"), "country": _facade(generator, "country"),
-				"military_progress": generator.get_military_daily_job() if generator != null else null}
+			return {"military": _facade(generator, "military"), "country": _facade(generator, "country")}
 		"pkai":
 			return {"country_ai": _facade(generator, "country_ai"), "country": _facade(generator, "country")}
 		"ecp2":

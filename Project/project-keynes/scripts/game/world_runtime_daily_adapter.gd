@@ -100,14 +100,6 @@ func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> 
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
 	_part3._consume_runtime_commit_if_ready(host, report_override)
-func _queue_runtime_natural_resource_commit(host, day: int) -> void:
-	_part3._queue_runtime_natural_resource_commit(host, day)
-func _drain_runtime_natural_resource_commits(host) -> void:
-	_part3._drain_runtime_natural_resource_commits(host)
-func _queue_runtime_military_commit(host, day: int) -> void:
-	_part3._queue_runtime_military_commit(host, day)
-func _drain_runtime_military_commits(host) -> void:
-	_part3._drain_runtime_military_commits(host)
 func _refresh_military_terrain_after_season(host) -> void:
 	_part3._refresh_military_terrain_after_season(host)
 func _refresh_military_terrain_on_season_edge(host, day_idx: int) -> void:

@@ -41,7 +41,7 @@ const SOURCE_GDSCRIPT: int = 2
 const SOURCE_DEBUG: int = 3
 ## 4 is the native PK_EVENT_SOURCE_EFFECT (EffectRuntime PUBLISH_EVENT rows).
 const SOURCE_EFFECT: int = 4
-## Military facts forwarded by MilitaryDailySystem. The bus and TriggerRuntime
+## Military facts published by the native runtime. The bus and TriggerRuntime
 ## carry the source id verbatim (TriggerRuntime keeps a cursor per source,
 ## source_count 64), so military rules match on this dedicated id instead of
 ## sharing SOURCE_NATIVE's cursor or colliding with SOURCE_DEBUG.

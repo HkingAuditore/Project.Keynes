@@ -103,6 +103,8 @@ public:
     bool effect_command_result_pod(int64_t request_id, bool &complete,
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
+    std::vector<uint8_t> capture_effect_adapter() const;
+    void restore_effect_adapter(const std::vector<uint8_t> &bytes);
     bool should_run(int64_t day_index) const;
     // Pending future technology activations are not a half-applied Country
     // command. Annual snapshots must wait for the actual batch/seal only.

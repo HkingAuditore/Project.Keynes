@@ -30,6 +30,7 @@ using namespace godot;
 namespace {
 constexpr uint32_t SAVE_MAGIC = 0x4e434b50U; // PKCN
 constexpr uint32_t SAVE_END = 0x21444e45U;   // END!
+constexpr uint32_t EFFECT_ADAPTER_MARKER = 0x31584643U; // CFX1
 
 template <typename T>
 void append_le(std::vector<uint8_t> &out, T value) {
@@ -79,6 +80,67 @@ bool read_vector(const std::vector<uint8_t> &in, size_t &cursor,
     return true;
 }
 } // namespace
+
+std::vector<uint8_t> NativeCountryRuntime::capture_effect_adapter() const {
+    if (_effect_command_idempotency.empty()) return {};
+    // Host packets and terminal receipts are already in PKSR/CPD2. Only
+    // store the correlation and the local results Effect may ask for again.
+    std::vector<std::pair<uint64_t, int64_t>> entries(
+        _effect_command_idempotency.begin(), _effect_command_idempotency.end());
+    std::sort(entries.begin(), entries.end());
+    std::unordered_map<int64_t, uint64_t> host_requests;
+    for (const auto &[host_request, effect_request] : _effect_host_request_map)
+        host_requests.emplace(effect_request, host_request);
+    std::vector<uint8_t> bytes;
+    append_le(bytes, EFFECT_ADAPTER_MARKER);
+    append_le(bytes, _next_effect_request_id);
+    append_le(bytes, static_cast<uint32_t>(entries.size()));
+    for (const auto &[key, request] : entries) {
+        const auto host = host_requests.find(request);
+        const auto result = _effect_command_results.find(request);
+        const EffectCommandResult absent{1, 0, "country_effect_request_unknown"};
+        const auto &receipt = result != _effect_command_results.end() ? result->second : absent;
+        append_le(bytes, key);
+        append_le(bytes, request);
+        append_le(bytes, host != host_requests.end() ? host->second : uint64_t{0});
+        append_le(bytes, receipt.complete);
+        append_le(bytes, receipt.ok);
+        append_string(bytes, receipt.reason);
+    }
+    return bytes;
+}
+
+void NativeCountryRuntime::restore_effect_adapter(const std::vector<uint8_t> &bytes) {
+    size_t cursor = 0;
+    uint32_t marker = 0;
+    int64_t next_request = 1;
+    uint32_t count = 0;
+    if (!read_le(bytes, cursor, marker) || marker != EFFECT_ADAPTER_MARKER ||
+        !read_le(bytes, cursor, next_request) || !read_le(bytes, cursor, count) ||
+        count > (bytes.size() - cursor) / 30u) return;
+    decltype(_effect_command_idempotency) idempotency;
+    decltype(_effect_command_results) results;
+    decltype(_effect_host_request_map) host_requests;
+    for (uint32_t row = 0; row < count; ++row) {
+        uint64_t key = 0;
+        int64_t request = 0;
+        uint64_t host_request = 0;
+        EffectCommandResult receipt;
+        if (!read_le(bytes, cursor, key) || !read_le(bytes, cursor, request) ||
+            !read_le(bytes, cursor, host_request) ||
+            !read_le(bytes, cursor, receipt.complete) ||
+            !read_le(bytes, cursor, receipt.ok) ||
+            !read_string(bytes, cursor, receipt.reason)) return;
+        idempotency.emplace(key, request);
+        results.emplace(request, std::move(receipt));
+        if (host_request != 0) host_requests.emplace(host_request, request);
+    }
+    if (cursor != bytes.size()) return;
+    _effect_command_idempotency = std::move(idempotency);
+    _effect_command_results = std::move(results);
+    _effect_host_request_map = std::move(host_requests);
+    _next_effect_request_id = next_request;
+}
 
 bool NativeCountryRuntime::capture_worker_committed_checkpoint(
         CountryCoreCheckpoint &out, std::string &error) const {

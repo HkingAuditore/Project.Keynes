@@ -53,11 +53,13 @@ func _run() -> void:
 	var opening_resources := _resource_state(ext)
 	var opening_reserves: Array = opening_resources.reserves
 	var rows: Array = []
-	var chain := "keynes-external-v5:seed=20260727:days1-4:target=2,3,4,5"
+	var chain := "keynes-external-v5:seed=20260727:days1-4:target=0,2,3,4"
 	clock.pause(false)
 	for day in range(1, EXTERNAL_DAYS + 1):
-		# This is a real player command, accepted before the next day is released.
-		_expect("v5 military target accepted", bool(military.set_target(handle, 0, day + 1).get("ok", false)))
+		# The previous day's tail is acknowledged, so today's inputs are sealed.
+		var target: Dictionary = military.set_target(handle, 0, day + 1)
+		_expect("v5 military target accepted on the first unsealed day",
+			bool(target.get("ok", false)) and int(target.get("effective_day", -1)) == day + 1)
 		var report := await _run_day(host, economy, clock, day)
 		_expect("v5 economy commits", bool(report.get("done", false)))
 		_expect("v5 all ledgers conserved", int(report.get("money_error", -1)) == 0
@@ -67,15 +69,25 @@ func _run() -> void:
 		var caught_up := false
 		for _slice in range(MAX_SLICES_PER_DAY):
 			host._process(0.0)
-			if host._runtime_military_last_commit_day == day and host._runtime_natural_resource_last_commit_day == day:
+			if host._runtime_tail_completed_day == day:
 				caught_up = true
 				break
 			await process_frame
-		_expect("v5 main-thread advancers caught up", caught_up)
+		_expect("v5 committed tail caught up", caught_up)
 		if not caught_up:
 			break
 		var army: Dictionary = military.country_snapshot(handle)
-		_expect("v5 military command applied, not only a date change", int(army.get("target_value", -1)) == day + 1)
+		if not host._native_daily_inline_active:
+			_expect("v5 the first military order wakes the executor on day two",
+				int(ext.get_military_report().get("background_day", -2)) == (day if day > 1 else -1))
+			_expect("v5 the executor published vision for this day",
+				int(host._runtime_last_commit.get("committed_day", -1)) == day
+				and bool(host._runtime_last_commit.get("vision_writeback", false)))
+			_expect("v5 species update ran on the executor for this day",
+				int(host._runtime_last_commit.get("committed_day", -1)) == day
+				and bool(host._runtime_last_commit.get("species_writeback", false)))
+		_expect("v5 military target settles on its admitted day",
+			int(army.get("target_value", -1)) == (day if day > 1 else 0))
 		var resource := _resource_state(ext)
 		var recovery_count := 0
 		for i in range(resource.reserves.size()):
@@ -166,7 +178,7 @@ func _canonical(value: Variant) -> Variant:
 func _digest(value: Variant) -> String:
 	return JSON.stringify(value).sha256_text()
 
-func _resource_state(ext: Object) -> Dictionary:
+func _resource_state(ext: Object, expected_cells: int = 40 * 28) -> Dictionary:
 	var columns: Array = []
 	var reserves: Array = []
 	for profile in ResourceProfileRegistry.ordered():
@@ -174,7 +186,7 @@ func _resource_state(ext: Object) -> Dictionary:
 		var extra_name := ResourceProfileRegistry.extra_change_cpp_name(profile)
 		var reserve: PackedFloat32Array = ext.snapshot_f32(ext.component_id(reserve_name))
 		var extra: PackedFloat32Array = ext.snapshot_f32(ext.component_id(extra_name))
-		_expect("v5 complete resource columns", reserve.size() == 40 * 28 and extra.size() == reserve.size())
+		_expect("v5 complete resource columns", reserve.size() == expected_cells and extra.size() == reserve.size())
 		reserves.append(reserve)
 		columns.append([String(profile.id), reserve.to_byte_array().hex_encode(), extra.to_byte_array().hex_encode()])
 	return {"hash": _digest(columns), "reserves": reserves, "columns": columns}

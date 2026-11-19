@@ -57,21 +57,12 @@ void NativeEconomyRuntime::queue_bio_introduce_from_good(int32_t cell, int32_t g
     }
 }
 
-void NativeEconomyRuntime::drain_bio_introduces(godot::PackedInt32Array &cells,
-                                                godot::PackedInt32Array &bits) {
-    const int32_t n = static_cast<int32_t>(_bio_introduce_cells.size());
-    cells.resize(n);
-    bits.resize(n);
-    if (n > 0) {
-        int32_t *cell_ptr = cells.ptrw();
-        int32_t *bit_ptr = bits.ptrw();
-        for (int32_t i = 0; i < n; ++i) {
-            cell_ptr[i] = _bio_introduce_cells[size_t(i)];
-            bit_ptr[i] = _bio_introduce_bits[size_t(i)];
-        }
-    }
-    _bio_introduce_cells.clear();
-    _bio_introduce_bits.clear();
+void NativeEconomyRuntime::take_bio_introduces(std::vector<int32_t> &cells,
+                                               std::vector<int32_t> &bits) {
+    cells.clear();
+    bits.clear();
+    cells.swap(_bio_introduce_cells);
+    bits.swap(_bio_introduce_bits);
     _bio_introduce_keys.clear();
 }
 

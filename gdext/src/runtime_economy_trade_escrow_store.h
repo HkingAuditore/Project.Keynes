@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -60,7 +61,7 @@ struct RuntimeEconomyTradeEscrowStore {
     }
     bool shape_valid(uint32_t expected_orders) const noexcept;
     void append_wire(std::vector<uint8_t> &out) const;
-    bool load_wire(const uint8_t *data, size_t size, uint32_t expected_orders);
+    bool load_wire(const uint8_t *data, std::size_t size, uint32_t expected_orders);
     uint64_t wire_content_hash() const noexcept;
     uint64_t mix_wire_hash(uint64_t hash) const noexcept;
 

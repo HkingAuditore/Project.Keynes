@@ -38,11 +38,19 @@ NativeEconomyRuntime::~NativeEconomyRuntime() = default;
 
 void NativeEconomyRuntime::reset_country_ai_pending() {
     import_country_ai_pending({}, {}, 0);
+    restore_country_ai_digest(nullptr);
 }
 
 std::shared_ptr<const CountryAiEconomyDigest> NativeEconomyRuntime::country_ai_digest() const {
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
     return _country_ai->digest;
+}
+
+void NativeEconomyRuntime::restore_country_ai_digest(
+        std::shared_ptr<const CountryAiEconomyDigest> digest) {
+    std::lock_guard<std::mutex> lock(_country_ai->mutex);
+    _country_ai->digest_revision = digest ? digest->revision : 0;
+    _country_ai->digest = std::move(digest);
 }
 
 void NativeEconomyRuntime::set_country_ai_family_preferences(

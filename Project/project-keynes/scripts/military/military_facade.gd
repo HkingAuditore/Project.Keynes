@@ -90,7 +90,6 @@ var _terrain_set_day := -1
 var _ai_player_handles := PackedInt64Array()
 var _missing_api_reason := ""
 var _event_cursor := 0
-var _restored_event_progress := PackedInt64Array()
 ## 维护快照的整形结果：一次原生读取服务同一刷新里的明细表与汇总，跨日/命令/
 ## 读档才失效（见 `invalidate_maintenance_cache`）。UI 每天最多读一次。
 ## 键是缓存槽（见 `_maintenance_view`），不是国家槽。
@@ -144,7 +143,6 @@ func configure(world_ext: DCWorldExt, economy_catalog: Dictionary,
 	_catalog_hash = int(compiled.get("catalog_hash", 0))
 	_configured = true
 	_event_cursor = 0
-	_restored_event_progress.clear()
 	_terrain_signature = 0
 	_terrain_set_day = -1
 	_last_configure_result = result.duplicate(false)
@@ -273,17 +271,12 @@ func should_run(day: int) -> bool:
 func run_daily(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	var result: Dictionary = _world_ext.run_military_daily({"day_index": int(day)})
+	var result: Dictionary = _world_ext.run_military_daily({"day_index": day})
 	_last_daily_report = result if result is Dictionary else {}
 	invalidate_maintenance_cache()
 	return _last_daily_report
 
 
-## Legacy alias kept for older callers. The worker NEVER steps Military: in
-## whole-graph ACTIVE, WorldRuntimeHost replays each committed day on the main
-## thread through [run_daily] (native `run_military_daily`). This forwards to
-## `run_military_catch_up`, which is the same main-thread step guarded by the
-## one-step-per-day check (`military_day_already_stepped` when already run).
 func catch_up(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
@@ -301,6 +294,10 @@ func set_render_selection(army_handle: int) -> Dictionary:
 
 
 func last_daily_report() -> Dictionary:
+	if _configured:
+		var current: Dictionary = _world_ext.get_military_daily_result()
+		if not current.is_empty():
+			return current
 	return _last_daily_report.duplicate(false)
 
 
@@ -443,42 +440,6 @@ func explore_army(army: int, cell: int, cells: PackedInt32Array,
 		radius: int) -> Dictionary:
 	return submit([{"op": "army.explore", "army": army, "cell": int(cell),
 		"cells": cells, "radius": int(radius)}])
-
-
-func set_military_exploration_observer(observer_slot: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"set_military_exploration_observer"):
-		return _fail("military_exploration_observer_unavailable")
-	return _world_ext.set_military_exploration_observer(int(observer_slot))
-
-
-func set_military_exploration_view(observer_slot: int, explored: PackedByteArray,
-		day: int, revision: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"set_military_exploration_view"):
-		return _fail("military_exploration_view_unavailable")
-	return _world_ext.set_military_exploration_view(
-		int(observer_slot), explored, int(day), int(revision))
-
-
-func get_military_vision_trail(observer_slot: int) -> PackedInt32Array:
-	if not _configured or not _world_ext.has_method("get_military_vision_trail"):
-		return PackedInt32Array()
-	var trail = _world_ext.get_military_vision_trail(int(observer_slot))
-	return trail if trail is PackedInt32Array else PackedInt32Array()
-
-
-func clear_military_vision_trail(observer_slot: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("clear_military_vision_trail"):
-		return _fail("military_exploration_trail_unavailable")
-	return _world_ext.clear_military_vision_trail(int(observer_slot))
-
-
-func has_military_exploration_work() -> bool:
-	if not _configured or not _world_ext.has_method(
-			"has_military_exploration_work"):
-		return false
-	return bool(_world_ext.has_military_exploration_work())
 
 
 func declare_war(country: int, target_country: int) -> Dictionary:
@@ -960,17 +921,9 @@ func _fail(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason}
 
 
-# The save provider restores before DCSystem registration. Hold only forwarding
-# metadata here, then hand it to the session-owned job once at construction.
+# MDJ1 belongs to the same native boundary as the battle and event records.
 func restore_pending_event_progress(values: PackedInt64Array) -> bool:
-	if values.size() != 3 or values[0] < 0 or values[1] < -1 or values[2] < 0: return false
-	_restored_event_progress = values.duplicate()
-	return true
+	return _world_ext.restore_military_event_progress(values)
 
 func capture_pending_event_progress() -> PackedInt64Array:
-	return PackedInt64Array([0, -1, 0]) if _restored_event_progress.is_empty() else _restored_event_progress.duplicate()
-
-func take_restored_event_progress() -> PackedInt64Array:
-	var values := _restored_event_progress.duplicate()
-	_restored_event_progress.clear()
-	return values
+	return _world_ext.capture_military_event_progress()

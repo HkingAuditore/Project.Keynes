@@ -44,10 +44,14 @@ NativeParallelExecutor::NativeParallelExecutor()
         ? std::min<uint32_t>(_hardware_threads - 2, 16) : 0;
     // 内联日不 spawn 任何 worker：浏览器里每一个 wasm pthread 都是一次真正的
     // worker 启动（池满时直接失败），而内联日不需要它们。
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    return;
+#else
     if (parallel_serial_only()) return;
     _workers.reserve(worker_count);
     for (uint32_t index = 0; index < worker_count; ++index)
         _workers.emplace_back([this, index]() { worker_loop(index); });
+#endif
 }
 
 NativeParallelExecutor::~NativeParallelExecutor() {

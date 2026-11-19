@@ -820,15 +820,15 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		w["pumped_days"] = int(w.get("pumped_days", 0)) + 1
 	var drained: Dictionary = ext.drain_derived_cell_layer(day)
 	if bool(ideology.get("suppressed", false)):
-		# Under worker authority the day is committed by the worker; wait for it so the
-		# mirrored basis dates do not fall behind the calendar the pump is using.
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_await_pod_day(w, before, POD_WAIT_MS)
-		# Production retries the snapshot write-back every frame; the consume inside
-		# run_daily_tick lands in the worker's day transaction (economy_day_inflight),
-		# so without a frame the mirror never takes a snapshot.
-		host._process(0.0)
+		# Drain host handoffs up to the day just supplied. Waiting for the next
+		# POD generation can demand an input the fixture has not published yet.
+		ext.set_runtime_clock(false, WORKER_SPEED)
+		var committed := WorkerWaitHelper.wait_committed(host, ext, maxi(0, day - 1), POD_WAIT_MS)
+		ext.set_runtime_clock(true, WORKER_SPEED)
+		if not bool(committed.get("ok", false)):
+			_fail("%s: day %d failed to commit: %s" % [w["name"], day, committed])
+			w["faulted"] = true
+			return committed
 	_record_day(w, day, pump, drained)
 	return {"ok": true, "day": day, "slices": slices, "drained": drained,
 		"pump": pump, "suppressed": bool(ideology.get("suppressed", false))}
@@ -930,22 +930,6 @@ func _print_pump_table(w: Dictionary) -> void:
 				int(row["drain_steps"]), str(row["installed"]),
 				int(row["cells"]), int(row["contributions"]),
 				int(row["generation"])])
-
-
-func _await_pod_day(w: Dictionary, before: int, timeout_ms: int) -> int:
-	var ext: Object = w["ext"]
-	var deadline := Time.get_ticks_msec() + timeout_ms
-	var day := before
-	while Time.get_ticks_msec() < deadline:
-		var report: Dictionary = ext.get_runtime_thread_report()
-		day = int(report.get("ideology_pod_committed_day", -1))
-		if day > before:
-			break
-		if String(report.get("simulation_host_state", "")) in ["STOPPED", "FAULTED"]:
-			break
-		_service_peers(ext, 1)
-		OS.delay_msec(2)
-	return day
 
 
 func _worker_fault(ext: Object) -> String:

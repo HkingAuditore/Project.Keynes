@@ -219,7 +219,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_ECONOMY_ASSET |
                                  RUNTIME_SAVE_SECTION_ECONOMY_POD |
                                  RUNTIME_SAVE_SECTION_ECONOMY_ECP2 |
-                                 RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT)) != 0) {
+                                 RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT |
+                                 RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -891,6 +892,12 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    // The optional Effect inbox follows the final authority section. Its
+    // payload is already covered by the whole bundle checksum.
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT) != 0u) {
+        parsed.effect_transport_bytes.assign(bytes + cursor, bytes + payload_end);
+        cursor = payload_end;
+    }
     if (cursor != payload_end) {
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
@@ -917,7 +924,6 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     // GPU/Object state is intentionally outside the runtime bundle. The next
     // committed visual batch must therefore be a reconstructible full refresh
     // after any successful restore, even when the visual ring had no drop.
-    _visual_full_refresh.store(true, std::memory_order_release);
     if (try_fault_injection("restore.swap.before")) {
         error = "restore_swap_fault_injected_before";
         _pending_restore_bundle = RuntimeSaveBundle{};
@@ -1029,13 +1035,13 @@ void NativeSimulationHost::build_save_bundle(
                            existing->second.effective_day != receipt.effective_day) {
                     const auto &previous = existing->second;
                     if (previous.code == CountryCommandReceiptCode::ACCEPTED &&
-                        receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION &&
-                        receipt.producer_id == COUNTRY_AI_PRODUCER_ID &&
+                        _country_command_terminals.find(receipt.request_id) !=
+                            _country_command_terminals.end() &&
                         previous.producer_id == receipt.producer_id &&
                         previous.sequence == receipt.sequence &&
-                        previous.effective_day == receipt.effective_day &&
-                        receipt.reason == "country_ai_superseded_by_worker") {
-                        // 只读副本保留旧接收记录；Host 的 AI 收尾终态优先。
+                        previous.effective_day == receipt.effective_day) {
+                        // A restored read replica can retain the admission
+                        // receipt after the Host completes the same command.
                         existing->second = receipt;
                         continue;
                     }
@@ -1164,6 +1170,8 @@ void NativeSimulationHost::build_save_bundle(
             return;
         }
         bundle->section_mask |= RUNTIME_SAVE_SECTION_EFFECT;
+        bundle->effect_transport_bytes = encode_effect_transport();
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT;
     }
     if (_ideology_pod_configured) {
         std::string ideology_save_error;
@@ -1246,7 +1254,7 @@ void NativeSimulationHost::build_save_bundle(
             &bundle->trigger_bytes, &bundle->modifier_bytes, &bundle->events_bytes,
             &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
             &bundle->ideology_bytes, &bundle->economy_pod_bytes,
-            &bundle->economy_ecp2_bytes}) {
+            &bundle->economy_ecp2_bytes, &bundle->effect_transport_bytes}) {
         const size_t limit = section == &bundle->economy_ecp2_bytes
             ? std::numeric_limits<uint32_t>::max() : 64u * 1024u * 1024u;
         if (section->size() > limit) {
@@ -1507,6 +1515,9 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(ecp2_checksum);
     }
 
+    if (!bundle->effect_transport_bytes.empty()) {
+        append_bytes(bundle->effect_transport_bytes.data(), bundle->effect_transport_bytes.size());
+    }
     const uint64_t checksum = economy_save_hash_bytes(
         bundle->bytes.data(), bundle->bytes.size());
     bundle->checksum = checksum;

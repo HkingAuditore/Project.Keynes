@@ -7,7 +7,7 @@ var failures := 0
 class RestartGenerator extends RefCounted:
 	var reports := 0
 	var capture_ok := true
-	func request_runtime_stop() -> Dictionary:
+	func request_runtime_stop(_preserve_day_boundary: bool = false) -> Dictionary:
 		return {"ok": true}
 	func get_runtime_thread_report() -> Dictionary:
 		reports += 1

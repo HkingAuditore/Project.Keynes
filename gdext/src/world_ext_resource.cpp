@@ -29,11 +29,13 @@
 #include "parallel_dispatcher.h" // Phase C.3 — parallel_for_range(_with_emit)
 #include "modifier_runtime.h"
 #include "natural_resource_kernel.h"
+#include "natural_resource_cadence.h"
 #include "economy_runtime.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <chrono>
 #include <cmath>
@@ -103,6 +105,23 @@ inline void natres_simd_block(float *__restrict R, const float *__restrict T,
     _mm256_storeu_ps(R + i, v);
 }
 #endif  // PK_HAVE_AVX2
+
+} // namespace
+
+namespace {
+
+double recover_indexed_resources(const std::vector<NatResRuntime> &resources,
+        const int32_t *cells, const int32_t *cell_days, int count, int days,
+        const uint8_t *habitat, const uint8_t *water) {
+    double delta = 0.0;
+    for (int k = 0; k < count; ++k) {
+        const int cell_days_elapsed = cell_days ? std::clamp(cell_days[k], 1, 60) : days;
+        for (const NatResRuntime &resource : resources)
+            natres_apply_one_cell(resource, cells[k], cell_days_elapsed,
+                                  habitat != nullptr, habitat, water != nullptr, water, delta);
+    }
+    return delta;
+}
 
 } // namespace
 
@@ -218,19 +237,6 @@ Dictionary DCWorldExt::get_natural_resource_regen_factors(
     return out;
 }
 
-bool DCWorldExt::natural_resource_slots_are_worker_owned(
-        const PackedStringArray &reserve_slots) const {
-    if (reserve_slots.is_empty() || !economy_worker_owns_natural_resources()) return false;
-    const auto &worker_slots = static_cast<const NativeEconomyRuntime *>(_economy_runtime)
-        ->building_resource_reserve_slots();
-    for (int64_t index = 0; index < reserve_slots.size(); ++index) {
-        const CharString slot = reserve_slots[index].utf8();
-        if (std::find(worker_slots.begin(), worker_slots.end(), slot.get_data()) ==
-                worker_slots.end()) return false;
-    }
-    return true;
-}
-
 Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     using godot::PackedFloat32Array;
     using godot::PackedStringArray;
@@ -281,6 +287,40 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         ? PackedInt32Array(knobs["cell_indices"]) : PackedInt32Array();
     PackedInt32Array cell_dt_days = knobs.has("cell_dt_days")
         ? PackedInt32Array(knobs["cell_dt_days"]) : PackedInt32Array();
+    const bool scheduled = knobs.has("schedule_day");
+    const int32_t day = std::max(0, int(knobs.get("schedule_day", 0)));
+    NaturalResourceRecoveryPlan plan;
+    if (scheduled) {
+        if (static_cast<int>(_natural_resource_last_day.size()) != n_cells) {
+            const int32_t initial_day = _natural_resource_last_day.empty() ? 0 : std::max(0, day - 1);
+            _natural_resource_last_day.assign(n_cells, initial_day);
+            _natural_resource_was_live.assign(n_cells, 0);
+            _natural_resource_live_mark.assign(n_cells, 0);
+        }
+        const PackedInt32Array live_cells = knobs.get("scheduled_live_cells", PackedInt32Array());
+        const bool include_wilderness = !bool(knobs.get("live_catchup", false));
+        plan = plan_natural_resource_recovery(day, live_cells.ptr(), live_cells.size(),
+            include_wilderness, _natural_resource_last_day, _natural_resource_was_live,
+            _natural_resource_live_mark);
+        cell_indices.resize(plan.cells.size());
+        cell_dt_days.resize(plan.elapsed_days.size());
+        if (!plan.cells.empty()) {
+            std::copy(plan.cells.begin(), plan.cells.end(), cell_indices.ptrw());
+            std::copy(plan.elapsed_days.begin(), plan.elapsed_days.end(), cell_dt_days.ptrw());
+        }
+        out["cell_indices"] = cell_indices;
+        out["cell_dt_days"] = cell_dt_days;
+        if (plan.cells.empty()) {
+            out["done"] = true;
+            out["path"] = include_wilderness ? "indexed_empty" : "catchup_empty";
+            out["published_to_slot"] = true;
+            out["n_cells"] = n_cells;
+            out["dt_days"] = dt_days;
+            out["indexed_cell_count"] = 0;
+            out["total_delta"] = 0.0;
+            return out;
+        }
+    }
     const bool indexed = !cell_indices.is_empty();
     if (indexed) {
         for (int k = 0; k < cell_indices.size(); ++k) {
@@ -413,7 +453,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     bool mt_candidate = false;
 
     // A worker-owned economy regenerates its own resources; the slots of those
-    // resources are a mirror written by flush_runtime_economy_resource_writeback.
+    // resources only mirror the committed result.
     std::vector<std::string> worker_owned_slots;
     if (economy_worker_owns_natural_resources()) {
         worker_owned_slots = static_cast<const NativeEconomyRuntime *>(_economy_runtime)
@@ -574,19 +614,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
         const auto t_loop0 = std::chrono::high_resolution_clock::now();
         if (indexed) {
-            double seg = 0.0;
-            const int n_index = cell_indices.size();
-            const bool per_cell_dt = cell_dt_days.size() == n_index;
-            for (int k = 0; k < n_index; ++k) {
-                const int cell = cell_indices[k];
-                const int cell_dt = per_cell_dt
-                    ? std::max(1, std::min(60, int(cell_dt_days[k])))
-                    : dt_days;
-                for (const NatResRuntime &rr : dynamic_resources)
-                    natres_apply_one_cell(rr, cell, cell_dt, have_habitat, HABITAT,
-                                          have_water, WATER, seg);
-            }
-            delta_acc.sum += seg;
+            const int32_t *days = cell_dt_days.is_empty() ? nullptr : cell_dt_days.ptr();
+            delta_acc.sum = recover_indexed_resources(
+                dynamic_resources, cell_indices.ptr(), days, cell_indices.size(),
+                dt_days, HABITAT, WATER);
         } else {
             pk::parallel_for_range_with_emit<DeltaEmit>("pk_natural_resource_fused", n_cells,
                                                         n_tasks_hint, NATRES_PARALLEL_SEQ_THRESHOLD,
@@ -646,6 +677,9 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     out["regen_modifier_snapshot_version"] = knobs.has("regen_modifier_snapshot_version")
         ? int64_t(knobs["regen_modifier_snapshot_version"]) : int64_t{0};
     out["active_regen_factor_count"] = active_regen_factor_count;
+    if (scheduled && (published_count > 0 || all_static))
+        commit_natural_resource_recovery(day, plan, _natural_resource_last_day,
+                                         _natural_resource_was_live);
     if (published_count == 0 && !all_static) out["fallback_reason"] = "no_publishable_resource";
     return out;
 }

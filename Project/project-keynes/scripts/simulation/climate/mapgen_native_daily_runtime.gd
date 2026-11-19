@@ -966,20 +966,15 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		di = day_index_override
 	if not is_nan(season_phase_override):
 		sp = season_phase_override
-	# A sliced Climate round may finish on a later render-frame/day boundary.
-	# Release older completed references first; capture remains ordered but is
-	# allowed to queue behind an unreleased frame so each input day is retained.
-	# The tick's input is day - 1, but never a day already published (a fresh
-	# world publishes day 1 during preparation). publish_environment_through
-	# fills any day a full ring refused, in order.
+	# Release older reference slices before capturing the dated input for this tick.
 	var trace_input_day: int = maxi(maxi(0, di - 1),
 		_generator._get_runtime_climate_capture().next_environment_day() - 1)
 	var runtime_climate_pre_reference: Dictionary = \
 		_generator._get_runtime_climate_capture()._publish_ready_runtime_climate_references(trace_input_day - 1, _generator._sus_map)
-	# Capture before the synchronous graph in both OFF and ACTIVE. The worker
-	# consumes the dated packet and never reads MapData directly.
 	var runtime_climate_capture: Dictionary = \
 		_generator._get_runtime_climate_capture().publish_environment_through(trace_input_day, sp, _generator.ENV_CALLSITE_SUS_TICK)
+	if bool(_generator.get_runtime_control_state().get("whole_graph_requested", false)):
+		return {"worker_managed": true, "runtime_climate_capture": runtime_climate_capture}
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
 	# 这样 SUS 决定跳过该 Job 时它就保持 false（main.gd 据此跳过 UI 行刷新）。
 	if _generator._refresh_climate_daily_job != null:

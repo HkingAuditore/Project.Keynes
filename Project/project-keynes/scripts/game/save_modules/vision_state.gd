@@ -31,6 +31,7 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 		"version": 4,
 		"cells": map.cell_count(),
 		"explored": explored,
+		"fog_enabled": bool(context.fog_enabled),
 	}
 	var intel = context.intel
 	if intel != null:

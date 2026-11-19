@@ -45,6 +45,8 @@ var _finished_outside_scheduler: bool = false
 # Legacy signal mode can defer a round to capture. In ordinary worker mode,
 # capture owns fixed game-day eligibility; scheduler observations do not count.
 var _capture_round_pending: bool = false
+var _background_capture_day: int = -1
+var background_capture_failed: bool = false
 
 
 func _init(p_generator, p_map: MapData, p_world: WorldData) -> void:
@@ -145,6 +147,8 @@ func should_run(_ctx: SusTickContext) -> bool:
 	_finished_outside_scheduler = false
 	if generator == null or map == null or world_data == null:
 		return false
+	if _background_capture_day >= 0:
+		return false
 	if _round_active:
 		return true
 	if _defers_rounds_to_capture() and not _uses_legacy_signal():
@@ -182,10 +186,35 @@ func has_capture_round_pending() -> bool:
 	return _capture_round_pending
 
 
+func prepare_background_round_for_capture(day: int) -> bool:
+	if _round_active or _uses_legacy_signal() or not _periodic_capture_due(day):
+		return true
+	_begin_round(day - 1)
+	if not _b_plus_active:
+		return false
+	_background_capture_day = day
+	return true
+
+
+func _periodic_capture_due(day: int) -> bool:
+	return day > 1 and posmod(day - 1, maxi(1, period_ticks)) == 0 \
+		and int(generator.get("_last_season_refresh_day")) < day + 1
+
+
 ## Capture days are consecutive simulation days. Refresh after each complete
 ## period: 31, 61, ... for period 30. The completed boundary is already saved
 ## by CLM2, in WorldClock's day+1 convention; no unsaved tick counter is needed.
 func run_due_round_for_capture(day: int) -> int:
+	if _background_capture_day >= 0:
+		if day != _background_capture_day or background_capture_failed:
+			return 0
+		var step := tick(null)
+		if bool(step.get("pending", false)) or background_capture_failed:
+			return 0
+		var slices := 1 + finish_round_now()
+		_record_capture_completion(day, slices)
+		_background_capture_day = -1
+		return slices
 	# An authority switch can inherit a round begun by the main-thread path.
 	# Finish that work before testing eligibility for a new periodic round.
 	if _round_active:
@@ -194,9 +223,7 @@ func run_due_round_for_capture(day: int) -> int:
 		return continued
 	if _uses_legacy_signal():
 		return run_round_for_capture() if _capture_round_pending else finish_round_now()
-	if day <= 1 or posmod(day - 1, maxi(1, period_ticks)) != 0:
-		return 0
-	if int(generator.get("_last_season_refresh_day")) >= day + 1:
+	if not _periodic_capture_due(day):
 		return 0
 	_capture_round_pending = true
 	var slices := run_round_for_capture()
@@ -238,7 +265,7 @@ func _uses_legacy_signal() -> bool:
 	return false
 
 
-func _begin_round() -> void:
+func _begin_round(background_boundary: int = -1) -> void:
 	# 新路径优先：周期自驱调用 begin_periodic_season_refresh；legacy_signal
 	# 模式下走 begin_pending_season_refresh 消费 pending flag（与旧行为一致）。
 	if _uses_legacy_signal() and generator.has_method("begin_pending_season_refresh"):
@@ -257,7 +284,8 @@ func _begin_round() -> void:
 	_b_plus_finish_pending = false
 	if generator.has_method("season_round_b_plus_available") and generator.season_round_b_plus_available():
 		if generator.has_method("start_season_round_b_plus"):
-			var bp_handle: int = int(generator.start_season_round_b_plus(map, world_data, _season_idx))
+			var bp_handle: int = int(generator.start_season_round_b_plus(map, world_data, _season_idx, background_boundary)) \
+				if background_boundary >= 0 else int(generator.start_season_round_b_plus(map, world_data, _season_idx))
 			_b_plus_active = bp_handle > 0
 
 
@@ -310,6 +338,11 @@ func tick(_ctx) -> Dictionary:
 	if _b_plus_active:
 		var bp_max_us: int = int(slice_budget_ms * 1000.0)
 		var bp_res: Dictionary = generator.run_season_round_slice_b_plus(map, world_data, bp_max_us)
+		if bool(bp_res.get("pending", false)):
+			return {"done": false, "pending": true}
+		if _background_capture_day >= 0 and bool(bp_res.get("fallback", false)):
+			background_capture_failed = true
+			return {"done": false, "failed": true}
 		var bp_done: bool = bool(bp_res.get("done", false)) or bool(bp_res.get("fallback", false))
 		var bp_stages_done: int = int(bp_res.get("stages_done", _stage))
 		var bp_elapsed_ms_inner: float = float(bp_res.get("elapsed_ms", 0.0))
@@ -410,6 +443,8 @@ func reset_progress() -> void:
 	_stage_cursor = 0
 	_round_active = false
 	_capture_round_pending = false
+	_background_capture_day = -1
+	background_capture_failed = false
 	# B+ 路径残留 round handle 强制清理（generator 内部会 abort 掉 C++ 端 round_state）。
 	if _b_plus_active and generator != null and generator.has_method("_abort_season_round_b_plus_safe"):
 		generator._abort_season_round_b_plus_safe()

@@ -92,6 +92,10 @@ func _run() -> void:
 		_expect("replay cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(economy.world_ext()))
 	var cell := int(generator.gameplay_start_report().get("cell", -1))
 	var ext: Object = economy.world_ext()
+	if mode == "resume":
+		var restored_map := host.get_current_map()
+		_expect("restored province inputs are installed before the first day's diffusion",
+			ext.snapshot_i32(ext.component_id("cell_province_id")) == restored_map.province_id_arr)
 	if not OS.get_environment("PK_SIM_DAY_TRACE").is_empty():
 		print("REPLAY_INGRESS_START=" + str(ext.get_gameplay_event_bus_report().get("next_event_id")))
 	var military = generator.get_military_facade()
@@ -104,8 +108,15 @@ func _run() -> void:
 				military_construction.merge(result, true)
 		)
 	var militia_unit: int = military.unit_ids().find("militia")
-	var military_enemy := 0
-	var military_target_cell := -1
+	var vision_target := -1
+	if scenario == "military":
+		var map := host.get_current_map()
+		for candidate in range(map.cell_count()):
+			if absi(candidate / config.base.map_width - cell / config.base.map_width) >= 10 \
+					and map.is_water_arr[candidate] == 0:
+				vision_target = candidate
+				break
+		_expect("military replay has distant land for a vision change", vision_target >= 0)
 	var rows: Array = []
 	if mode == "resume" and OS.get_environment("PK_COMMITTED_REPLAY_ROUNDTRIP") == "1":
 		var reencoded: Dictionary = await save_service.request_manual_save("manual_2")
@@ -121,6 +132,7 @@ func _run() -> void:
 			host.current_map().base_moisture_arr = saved.map
 			ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"]))
 	clock.pause(false)
+	var previous_target := int(commands[save_day - 1].value) if mode == "resume" else 0
 	for command in commands:
 		var day := int(command.day)
 		if mode == "resume" and day <= save_day: continue
@@ -131,7 +143,9 @@ func _run() -> void:
 			# so it lands on the same day in every mode.
 			_expect("military technology granted", bool(host.execute_gm_command("country.grant_technology", {
 				"country_handle": handle, "technology_id": "tech.military.war_bands", "day": day + 1}).get("ok", false)))
-			_expect("military levy admitted", bool(military.set_levy_enabled(handle, true).get("ok", false)))
+			var levy: Dictionary = military.set_levy_enabled(handle, true)
+			_expect("military levy admitted for day two",
+				bool(levy.get("ok", false)) and int(levy.get("effective_day", -1)) == 2)
 		if scenario == "military" and day == 4:
 			# State buildings are economy construction: the treasury pays and
 			# queues the lot, then the military side books the schedule (the
@@ -175,7 +189,9 @@ func _run() -> void:
 					}).get("ok", false)))
 			_expect("military state building request admitted", state_building >= 0 and bool(economy.treasury_sponsored_build(
 				handle, cell, building_id, day + 1, 900001).get("ok", false)))
-			_expect("military state building admitted", state_building >= 0 and bool(military.build_state_building(handle, cell, state_building).get("ok", false)))
+			var barracks: Dictionary = military.build_state_building(handle, cell, state_building)
+			_expect("military state building admitted for day five", state_building >= 0
+				and bool(barracks.get("ok", false)) and int(barracks.get("effective_day", -1)) == 5)
 		if scenario == "military" and day == 20:
 			# Settlement has its own committed-read publication boundary. The
 			# receipt must prove actual day-5 settlement before army creation;
@@ -197,23 +213,45 @@ func _run() -> void:
 					militia_heads += int(lot.get("count", 0))
 			_expect("military completed barracks has posts", int(local.get("post_count", 0)) >= 4)
 			_expect("military recruited four local militia", militia_unit >= 0 and militia_heads >= 4)
-			_expect("military army admitted", militia_unit >= 0 and bool(
-				military.create_army(handle, cell, {militia_unit: 4}).get("ok", false)))
-		if scenario == "military" and day == 21:
+			var enlist: Dictionary = military.create_army(handle, cell, {militia_unit: 4})
+			_expect("military army admitted for day 21", militia_unit >= 0
+				and bool(enlist.get("ok", false)) and int(enlist.get("effective_day", -1)) == 21)
+		if scenario == "military" and day == 22:
+			var military_enemy := 0
 			for candidate in range(config.base.map_width * config.base.map_height):
 				var candidate_handle := int(ext.get_country_cell_summary(candidate).get("country_handle", 0))
 				if candidate_handle != 0 and candidate_handle != handle:
 					military_enemy = candidate_handle
-					military_target_cell = candidate
 					break
 			var armies: Array = military.armies(handle)
-			_expect("military war target found", military_enemy != 0 and military_target_cell >= 0 and not armies.is_empty())
+			_expect("military war target found", military_enemy != 0 and not armies.is_empty())
 			if military_enemy != 0 and not armies.is_empty():
-				_expect("military war admitted", bool(military.declare_war(handle, military_enemy).get("ok", false)))
-				_expect("military move admitted", bool(military.move_army(int(armies[0].handle), military_target_cell).get("ok", false)))
+				var war: Dictionary = military.declare_war(handle, military_enemy)
+				_expect("military war admitted for day 23",
+					bool(war.get("ok", false)) and int(war.get("effective_day", -1)) == 23)
+				var army_handle := int(armies[0].handle)
+				var target := -1
+				for direction in range(6):
+					var candidate := host.get_current_map().neighbor_index(cell, direction)
+					var route: Dictionary = military.preview_path(army_handle, candidate)
+					if bool(route.get("ok", false)):
+						target = candidate
+						break
+				_expect("military move has a passable route", target >= 0)
+				if target >= 0:
+					var move: Dictionary = military.move_army(army_handle, target)
+					_expect("military move admitted for day 23",
+						bool(move.get("ok", false)) and int(move.get("effective_day", -1)) == 23)
+		if scenario == "military" and day == 22 and vision_target >= 0:
+			_expect("distant land starts hidden", host.get_current_map().physical_visible_arr[vision_target] == 0)
+			var claim: Dictionary = generator.get_country_facade().transfer_territory(
+				vision_target, handle, day + 1, 910001, true)
+			_expect("dated territory transfer accepted", bool(claim.get("ok", false))
+				and int(claim.get("effective_day", -1)) == day + 1)
 		_expect("known command", String(command.operation) == "military_target")
 		var receipt: Dictionary = military.set_target(handle, 0, int(command.value))
-		_expect("logged command admitted", bool(receipt.get("ok", false)))
+		_expect("logged command admitted for day %d" % (day + 1),
+			bool(receipt.get("ok", false)) and int(receipt.get("effective_day", -1)) == day + 1)
 		var gm_receipt := {}
 		if scenario == "mixed":
 			gm_receipt = host.execute_gm_command("country.rename", {
@@ -221,6 +259,8 @@ func _run() -> void:
 			_expect("GM command admitted", bool(gm_receipt.get("ok", false)))
 			_expect("GM receipt preserves the explicitly requested future day",
 				int(gm_receipt.get("effective_day", -1)) == day + 2)
+			_expect("ACTIVE admission uses the same receipt before and after the first grant",
+				String((gm_receipt.get("data", {}) as Dictionary).get("code", "")) == "accepted")
 		if scenario == "calendar" or annual:
 			# Keep the headless daily driver; exercise actual calendar callbacks separately.
 			var next_season := clock.season_index_for_day(day + 1)
@@ -245,21 +285,23 @@ func _run() -> void:
 		var caught_up := false
 		for _slice in range(MAX_SLICES_PER_DAY):
 			host._process(0.0)
-			if host._runtime_military_last_commit_day == day and host._runtime_natural_resource_last_commit_day == day:
+			if host._runtime_tail_completed_day == day:
 				caught_up = true
 				break
 			await process_frame
 		_expect("external boundary", caught_up)
-		if scenario == "military" and day == 20:
+		if scenario == "military" and day in [20, 21]:
 			var formations: Array = military.armies(handle)
 			var field_heads := 0
 			for formation in formations:
 				for lot in military.army(int(formation.handle)).get("composition", []):
 					if int(lot.get("unit", -1)) == militia_unit:
 						field_heads += int(lot.get("count", 0))
-			_expect("military checkpoint contains four embarked militia", field_heads == 4)
+			_expect("military field heads change from zero on day 20 to four on day 21",
+				field_heads == (4 if day == 21 else 0))
 		var army: Dictionary = military.country_snapshot(handle)
-		_expect("command changes authoritative target", int(army.get("target_value", -1)) == int(command.value))
+		_expect("the target settles on its admitted day", int(army.get("target_value", -1)) == previous_target)
+		previous_target = int(command.value)
 		if scenario == "military" and day >= 40:
 			_expect("military soldiers remain nonzero", int(army.get("soldiers_total", 0)) > 0)
 			_expect("military war remains visible", int(army.get("wars_active", 0)) > 0)
@@ -274,11 +316,32 @@ func _run() -> void:
 				"economy_switch_reason": diagnostics.get("economy_authority_switch_reason"),
 				"economy_ready": diagnostics.get("economy_pod_active_ready"),
 				"event_ingress": ext.get_gameplay_event_bus_report().get("next_event_id")}))
+		var replay_map := host.get_current_map()
+		_expect("committed physical vision covers the player origin",
+			replay_map.physical_visible_arr.size() == replay_map.cell_count()
+			and replay_map.physical_visible_arr[cell] != 0)
+		var vision_hash := _digest([replay_map.physical_visible_arr.hex_encode(),
+			replay_map.explored_arr.hex_encode(), replay_map.fog_k_arr.hex_encode()])
 		rows.append({"day": day, "domains": domains, "whole_economy_hash": _whole_economy_hash,
-			"military": _canonical(army), "resources": _resource_state(ext).hash})
+			"military": _canonical(army), "resources": _resource_state(ext).hash,
+			"vision": vision_hash, "species": _digest(replay_map.bio_occupancy_bits_arr.to_byte_array().hex_encode())})
 		if scenario == "military":
-			rows[-1]["field_armies"] = _canonical(military.armies(handle))
+			var formations: Array = military.armies(handle)
+			rows[-1]["field_armies"] = _canonical(formations)
 			rows[-1]["military_control"] = _canonical(military.control_snapshot())
+			if day == 23:
+				_expect("military march order settles on day 23",
+					not formations.is_empty() and int(formations[0].mission) == 1)
+			if day in [24, 25, 26]:
+				_expect("military first enters the next cell on day 26",
+					not formations.is_empty() and (int(formations[0].cell) != cell) == (day == 26)
+					and int(formations[0].moved_day) == (26 if day == 26 else 21))
+			if day == 23 and vision_target >= 0:
+				_expect("territory transfer becomes visible on its settlement day",
+					replay_map.physical_visible_arr[vision_target] != 0
+					and replay_map.explored_arr[vision_target] != 0)
+				_expect("changed vision was computed on the background executor",
+					bool(host._runtime_last_commit.get("vision_solved", false)))
 		if scenario == "mixed":
 			rows[-1]["gm_receipt"] = gm_receipt
 			# Observe the actual name after the day's commit, not only admission.
@@ -306,6 +369,10 @@ func _run() -> void:
 			if day >= save_day:
 				_expect("annual report complete and settled", bool(annual_report.get("complete", false)) and bool(annual_report.get("reward_settled", false)))
 		if not annual and mode == "checkpoint" and day == save_day:
+			print("REPLAY_CHECKPOINT_ECOLOGY=" + JSON.stringify({
+				"day": day, "resource_recovery_cells": host._runtime_last_commit.get("resource_recovery_cells", 0),
+				"species_diffused_cells": host._runtime_last_commit.get("species_diffused_cells", 0),
+			}))
 			var saved: Dictionary = await save_service.request_manual_save("manual_3")
 			print("REPLAY_SAVE=" + JSON.stringify(saved))
 			_expect("checkpoint writes PKSV", bool(saved.get("ok", false)))

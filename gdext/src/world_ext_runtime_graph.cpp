@@ -688,8 +688,15 @@ static void append_runtime_control_state(Dictionary &out,
         host.authority_ready || host.authoritative_domain_mask != 0u;
     out["authoritative_domain_mask"] =
         static_cast<int64_t>(host.authoritative_domain_mask);
+    out["requested_authority_mask"] = static_cast<int64_t>(host.requested_authority_mask);
+    out["whole_graph_requested"] = host.mode == RuntimeSimulationMode::ACTIVE &&
+        host.requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK &&
+        host.state != RuntimeWorkerState::STOPPED && host.state != RuntimeWorkerState::STOPPING &&
+        host.state != RuntimeWorkerState::FAULTED;
     out["climate_worker_authoritative"] =
         (host.authoritative_domain_mask & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    out["country_worker_authoritative"] =
+        (host.authoritative_domain_mask & runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u;
     out["simulation_committed_day"] = host.committed_day;
     out["interactive"] = host.interactive;
 }
@@ -723,7 +730,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["pod_domain_abi_version"] = static_cast<int>(host.pod_domain_abi_version);
         append_runtime_control_state(out, NativeSimulationHost::ControlState{
             host.state, host.mode, host.authority_ready, report.interactive,
-            host.authoritative_domain_mask, host.committed_day});
+            host.authoritative_domain_mask, host.requested_authority_mask, host.committed_day});
         // R-3b: how many CLIENTS are still waiting for a boundary turn. A non-zero
         // value with `state == PAUSED` means the worker is parked for that client --
         // which is the exact condition that used to persist for a whole session
@@ -736,6 +743,36 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["main_boundary_service_trigger"] =
             _runtime_host->main_boundary_service_requested_by(
                 NativeSimulationHost::MainBoundaryClient::TRIGGER);
+        constexpr std::array<const char *, RuntimeWorkerTiming::MAIN_WAIT_REASON_COUNT> wait_names = {
+            "environment_input", "day_tail", "day_tail_task_slot", "other"};
+        constexpr std::array<const char *, RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT> task_names = {
+            "ideology_projection", "season"};
+        Dictionary waits_by_day;
+        for (const auto &day : _runtime_host->main_waits_by_day()) {
+            if (day.day < 0) continue;
+            Dictionary reasons;
+            for (size_t i = 0; i < wait_names.size(); ++i) {
+                const auto &counter = day.reasons[i];
+                if (counter.count == 0) continue;
+                Dictionary values;
+                values["count"] = static_cast<int64_t>(counter.count);
+                values["usec"] = static_cast<int64_t>(counter.usec);
+                if (i == RuntimeWorkerTiming::DAY_TAIL_TASK_SLOT) {
+                    Dictionary tasks;
+                    for (size_t j = 0; j < task_names.size(); ++j) {
+                        if (day.tasks[j].count == 0) continue;
+                        Dictionary task;
+                        task["count"] = static_cast<int64_t>(day.tasks[j].count);
+                        task["usec"] = static_cast<int64_t>(day.tasks[j].usec);
+                        tasks[task_names[j]] = task;
+                    }
+                    values["tasks"] = tasks;
+                }
+                reasons[wait_names[i]] = values;
+            }
+            waits_by_day[day.day] = reasons;
+        }
+        out["worker_main_wait_by_day"] = waits_by_day;
         out["graph_coverage_complete"] = host.graph_coverage_complete;
         out["native_daily_inline"] = host.inline_daily;
         out["inline_day_pending"] = _runtime_host->inline_day_pending();
@@ -748,8 +785,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(
             host.completion_gate_missing_domain_mask);
         out["active_gate_blocked"] = host.active_gate_blocked;
-        out["requested_authority_mask"] =
-            static_cast<int64_t>(host.requested_authority_mask);
         out["active_evidence_mask"] =
             static_cast<int64_t>(host.active_evidence_mask);
         // The gate, next to the ledger it is NOT identical to. `suppressed` is what
@@ -771,8 +806,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["simulation_state_hash"] = static_cast<int64_t>(host.state_hash);
         out["state_hash"] = static_cast<int64_t>(host.state_hash);
         out["last_commit_produced_at_us"] = static_cast<int64_t>(host.last_commit_produced_at_us);
-        out["last_visual_publish_at_us"] = static_cast<int64_t>(host.last_visual_publish_at_us);
-        out["snapshot_staleness_ms"] = host.snapshot_staleness_ms;
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
@@ -800,8 +833,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         // consume the direct host report. Both fields describe the same
         // bounded debt value; the prefixed form remains the CSV contract.
         out["time_debt_days"] = host.time_debt_days;
-        out["snapshot_publish_drop_count"] = static_cast<int64_t>(host.snapshot_publish_drop_count);
-        out["snapshot_publish_throttled_count"] = static_cast<int64_t>(host.snapshot_publish_throttled_count);
         out["command_queue_capacity_exceeded"] = static_cast<int64_t>(host.command_queue_capacity_exceeded);
         out["receipt_queue_capacity_exceeded"] = static_cast<int64_t>(host.receipt_queue_capacity_exceeded);
         out["worker_fault_count"] = static_cast<int64_t>(host.worker_fault_count);
@@ -1495,8 +1526,6 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["simulation_generation"] = static_cast<int64_t>(host.generation);
         out["simulation_state_hash"] = static_cast<int64_t>(host.state_hash);
         out["last_commit_produced_at_us"] = static_cast<int64_t>(host.last_commit_produced_at_us);
-        out["last_visual_publish_at_us"] = static_cast<int64_t>(host.last_visual_publish_at_us);
-        out["snapshot_staleness_ms"] = host.snapshot_staleness_ms;
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
@@ -1773,8 +1802,6 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["stale_environment_rejected"] = static_cast<int64_t>(host.stale_environment_rejected);
         out["simulation_time_debt_days"] = host.time_debt_days;
         out["time_debt_days"] = host.time_debt_days;
-        out["snapshot_publish_drop_count"] = static_cast<int64_t>(host.snapshot_publish_drop_count);
-        out["snapshot_publish_throttled_count"] = static_cast<int64_t>(host.snapshot_publish_throttled_count);
         out["command_queue_capacity_exceeded"] = static_cast<int64_t>(host.command_queue_capacity_exceeded);
         out["receipt_queue_capacity_exceeded"] = static_cast<int64_t>(host.receipt_queue_capacity_exceeded);
         out["day_stage_count"] = static_cast<int>(host.day_stage_count);

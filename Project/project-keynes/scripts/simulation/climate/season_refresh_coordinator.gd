@@ -333,9 +333,11 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 	_generator._season_round_slots_refresh_count = 0
 	# 季节刷新会改 cover（雪线 / 洪水 / 冰川），而 Military 的地形成本表按 cover
 	# 分类。facade 用 cover 签名去重，cover 未变时这里只做一次 hash，不过桥。
-	if _generator._military_facade != null and _generator._military_facade.is_configured():
+	if not _generator.runtime_graph_active() and _generator._military_facade != null \
+			and _generator._military_facade.is_configured():
 		var day := floori(_generator._get_runtime_climate_capture().sample_day()) if _generator._world_clock_ref != null else -1
 		var terrain: Dictionary = _generator.refresh_military_terrain(day)
+
 		_generator._last_season_refresh_breakdown["military_terrain"] = String(
 			terrain.get("reason", "ok" if bool(terrain.get("ok", false)) else "failed"))
 
@@ -357,7 +359,7 @@ func season_round_b_plus_available() -> bool:
 # 时直接返回；否则重建 row_indices + rain-shadow jitter 各一次并落缓存。
 # 返回 false 表示当前无法构建（cfg/warp 缺失或 size 不符），caller 走 fallback。
 
-func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> int:
+func start_season_round_b_plus(map: MapData, _world: WorldData, season: int, background_boundary: int = -1) -> int:
 	if not season_round_b_plus_available():
 		_generator._season_log_path_once("b_plus", "gdscript_fallback", "gate fail (cp/ext/method)")
 		return 0
@@ -373,6 +375,9 @@ func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> 
 	if knobs.is_empty():
 		_generator._season_log_path_once("b_plus", "gdscript_fallback", "round_knobs build failed (cfg/map/row_table)")
 		return 0
+	if background_boundary >= 0:
+		knobs["background_boundary"] = background_boundary
+		_generator.record_runtime_main_step(background_boundary, &"season_freeze")
 	var res: Dictionary = _generator._data_core_world_ext.start_season_round(knobs)
 	if res.is_empty() or bool(res.get("fallback", true)):
 		_generator._season_log_path_once("b_plus", "gdscript_fallback", "start_season_round returned fallback: %s" % String(res.get("reason", "unknown")))
@@ -386,9 +391,10 @@ func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> 
 	_generator._season_round_b_plus_slices_used = 0
 	_generator._season_round_b_plus_stages_done = 0
 	_generator._b_plus_round_start_usec = Time.get_ticks_usec()
-	_generator._last_season_refresh_breakdown["b_plus_path"] = "gdext"
+	var path := "gdext_background" if background_boundary >= 0 else "gdext"
+	_generator._last_season_refresh_breakdown["b_plus_path"] = path
 	_generator._last_season_refresh_breakdown["b_plus_handle"] = handle
-	_generator._season_log_path_once("b_plus_start", "gdext", "handle=%d season=%d n_cells=%d" % [handle, season, int(knobs.get("n_cells", 0))])
+	_generator._season_log_path_once("b_plus_start", path, "handle=%d season=%d n_cells=%d" % [handle, season, int(knobs.get("n_cells", 0))])
 	return handle
 
 
@@ -425,6 +431,8 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 		budget_us = maxi(50, int(round(ms * 1000.0)))
 	budget_us = clampi(budget_us, 50, 1000)
 	var res: Dictionary = _generator._data_core_world_ext.run_season_round_slice(_generator._season_round_b_plus_handle, budget_us)
+	if bool(res.get("pending", false)):
+		return {"done": false, "pending": true}
 	if res.is_empty() or bool(res.get("fallback", false)):
 		var completed_before_fallback: int = int(res.get(
 				"stages_done", res.get("stage", _generator._season_round_b_plus_stages_done)))
@@ -450,9 +458,7 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 	return out
 
 
-# B+ completion has two boundaries. The C++ finish below is the authoritative
-# commit; the Godot facade/history mirror is then published in fixed 256-cell
-# ranges. The WorldClock keeps its seasonal barrier until that mirror is done.
+# Complete the Godot facade and history mirror before capturing the next input.
 
 func begin_finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -> void:
 	if _generator._season_round_b_plus_handle <= 0:
@@ -1201,9 +1207,6 @@ func _build_season_round_knobs(map: MapData, season: int) -> Dictionary:
 	var moist_scale: float = 1.0
 	var soil_arr: PackedFloat32Array = map.soil_moisture_arr
 	var vg_arr: PackedFloat32Array = map.vegetation_growth_pressure_arr
-	# B+ 路径暂不暴露 stage 11（feedback_decay）的 in/out array 写回路径——
-	# 由 finish wrapper 末尾通过 knobs 取回 decayed array 后回灌 map.xxx_arr。
-	# round_knobs 字段顺序与 stage helper 中现有 knobs 保持一致，便于 diff 验收。
 	var knobs: Dictionary = {
 		"season": season,
 		"season_phase": float(season) + 0.5,

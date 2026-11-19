@@ -190,7 +190,7 @@ void MilitaryCore::push_event(const MilitaryEvent &event) {
     if (_events.size() >= cap) {
         // Ring full: drop the oldest row and rebuild the day table from the
         // survivors (row indices shift, so a stale table is unusable).
-        _events.erase(_events.begin(), _events.begin() + (ptrdiff_t)(_events.size() - cap + 1));
+        _events.erase(_events.begin(), _events.begin() + static_cast<std::ptrdiff_t>(_events.size() - cap + 1));
         ++_report.event_evictions;
         ++_report.event_coalesced;
         index.clear(e.day, _events.size());

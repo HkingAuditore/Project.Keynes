@@ -212,9 +212,12 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         !copy_i32("neighbor_offsets", snapshot.neighbor_offsets) ||
         !copy_i32("neighbor_indices", snapshot.neighbor_indices) ||
         !copy_i32("hydro_parent", snapshot.hydro_parent) ||
+        !copy_i32("province_ids", snapshot.province_ids) ||
         !copy_u8("terrain", snapshot.terrain) ||
         !copy_u8("landform", snapshot.landform) ||
         !copy_u8("vegetation", snapshot.vegetation) ||
+        !copy_u8("military_base_landform", snapshot.military_base_landform) ||
+        !copy_u8("military_settlement_tier", snapshot.military_settlement_tier) ||
         !copy_u8("cover", snapshot.cover) ||
         !copy_u8("is_water", snapshot.is_water) ||
         !copy_u8("has_river", snapshot.has_river) ||
@@ -325,6 +328,7 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         !cell_size_ok(snapshot.cell_lat_norm) || !cell_size_ok(snapshot.canal_water) ||
         !cell_size_ok(snapshot.cell_geometry_area) || !cell_size_ok(snapshot.cell_wind_band) ||
         !cell_size_ok(snapshot.cell_ocean_heat_capacity) ||
+        (!snapshot.province_ids.empty() && snapshot.province_ids.size() != cells) ||
         !cell_size_ok(snapshot.building_resource_reserve) ||
         !cell_size_ok(snapshot.building_resource_extra) ||
         !cell_size_ok_u8(snapshot.terrain) || !cell_size_ok_u8(snapshot.landform) ||
@@ -332,6 +336,8 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         !cell_size_ok_u8(snapshot.is_water) || !cell_size_ok_u8(snapshot.has_river) ||
         !cell_size_ok_u8(snapshot.canal_edge_mask) ||
         !cell_size_ok_u8(snapshot.visible) ||
+        !cell_size_ok_u8(snapshot.military_base_landform) ||
+        !cell_size_ok_u8(snapshot.military_settlement_tier) ||
         ((!snapshot.trade_passable_lut.empty() ||
           !snapshot.trade_move_cost_lut.empty()) &&
             (snapshot.trade_passable_lut.size() != 256u ||
@@ -1380,10 +1386,12 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         const auto &extra_slots = economy->building_resource_extra_slots();
         economy_input->reserves.resize(reserve_slots.size());
         economy_input->changes.resize(extra_slots.size());
-        for (size_t r = 0; r < reserve_slots.size(); ++r)
-            copy_slot_f32(reserve_slots[r].c_str(), economy_input->reserves[r]);
-        for (size_t r = 0; r < extra_slots.size(); ++r)
-            copy_slot_f32(extra_slots[r].c_str(), economy_input->changes[r]);
+        if (!economy->worker_natural_resources_configured()) {
+            for (size_t r = 0; r < reserve_slots.size(); ++r)
+                copy_slot_f32(reserve_slots[r].c_str(), economy_input->reserves[r]);
+            for (size_t r = 0; r < extra_slots.size(); ++r)
+                copy_slot_f32(extra_slots[r].c_str(), economy_input->changes[r]);
+        }
         const int habitat_sid = component_id(StringName("cell_resource_habitat_mask"));
         if (habitat_sid >= 0 && habitat_sid < _slots.size() &&
             _slots[habitat_sid].dtype == SlotDType::U8 &&
@@ -1449,6 +1457,9 @@ Dictionary DCWorldExt::request_runtime_save(int64_t request_id) {
                 : country_source->capture_core_checkpoint(
                       checkpoint, country_error));
         checkpoint.compatibility_pkcn = std::move(compatibility.canonical_pkcn);
+        if (worker_owns_country)
+            checkpoint.effect_adapter =
+                static_cast<NativeCountryRuntime *>(_country_runtime)->capture_effect_adapter();
         if (!captured || !_runtime_host->publish_country_checkpoint(checkpoint,
                                                        country_error)) {
             out["ok"] = false;
@@ -1610,6 +1621,7 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes,
         out["state"] = runtime_state_name(_runtime_host->state());
         return out;
     }
+    _runtime_host->reset_day_tail_for_world_change();
     _climate_physics_committed.reset();
     _climate_physics_capture_ready = false;
     _climate_writeback_applied_generation = 0;

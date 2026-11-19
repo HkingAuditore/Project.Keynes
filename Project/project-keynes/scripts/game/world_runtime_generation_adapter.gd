@@ -8,27 +8,16 @@ func _prepare_world_data(host) -> Dictionary:
 	host._ideology_refresh_pending_day = -1
 	host._ideology_instance_refreshed_day = -1
 	host._ideology_derived_pumped_day = -1
-	# 生成后阶段（渲染绑定 + 植被层 + 建筑外观）的进度游标复位：
-	# 0.0 表示"本次生成还没进入后期阶段"，_loading_visual_step 在复位前不会发进度。
+	# Reset the late-loading progress before rebinding presentation.
 	host._visual_progress = 0.0
 	host._clear_climate_capacity_pending()
+	host._runtime_notified_generation = 0
 	host._runtime_commit_generation = 0
 	host._runtime_commit_day = -1
-	host._runtime_commit_family_cursors.clear()
-	host._runtime_commit_family_done.clear()
-	host._runtime_pending_visual_generation = 0
-	host._runtime_pending_dirty_families = 0
+	host._runtime_tail_completed_day = -1
 	host._runtime_last_commit.clear()
-	host._runtime_natural_resource_last_commit_day = 0
-	host._runtime_natural_resource_pending_target_day = -1
-	host._runtime_natural_resource_last_result.clear()
-	host._runtime_military_last_commit_day = -1
-	host._runtime_military_pending_target_day = -1
-	host._runtime_military_last_result.clear()
-	host._runtime_military_ms = 0.0
-	host._military_vision_render_revision = -1
-	host._military_vision_source_slot = -2
-	host._military_vision_source_cells = PackedInt32Array()
+	host._runtime_vision_result.clear()
+	host._vision_dirty_indices = PackedInt32Array()
 	host._military_terrain_season_index = -1
 	host._country_worker_read_generation = 0
 	host._country_worker_read_last_day = -1
@@ -171,6 +160,8 @@ func _restore_prepared_world(host) -> Dictionary:
 		else {"ok": false, "message": "存档服务不可用。"}
 
 func _prepare_world_simulation(host) -> Dictionary:
+	if host._resolve_player_start_cell() >= 0 and host._runtime_vision_result.is_empty():
+		return {"ok": false, "code": "runtime_vision_not_seeded"}
 	# Fresh worlds freeze here; loads first install committed climate state.
 	# Web 曾经在这里跳过 capture（当时日志停在 _bind_country_visuals 之后、心跳全停）。
 	# 真正原因是首帧 shader 编译 45s 堵住整帧，不是 capture 本身。ACTIVE worker
@@ -393,8 +384,8 @@ func _start_production_shadow_worker(host) -> void:
 	# 遗留的 true 会让 host 不 spawn 线程，而调用方以为 worker 起了。
 	var want_inline = climate_authority_active and web_wants_inline
 	config["native_daily_inline"] = want_inline
-	# worker 等本线程跑完第 D 天的军事、资源恢复再开始 D+1。
 	config["main_day_tail_gate"] = climate_authority_active and not want_inline
+	host._runtime_notified_generation = 0
 	host._runtime_commit_generation = 0  # 新 worker 代数从 0 起，旧游标会挡住提交、停住日尾闸门
 	host._presentation.reset_worker_views()
 	var started: Dictionary = host._generator.start_runtime_worker(config)

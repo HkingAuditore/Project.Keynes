@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "native_military_runtime.h"
 
 #include "economy_api.h"
 #include "military_bridge.h"
@@ -159,7 +160,7 @@ Dictionary DCWorldExt::set_military_ration_satisfaction(
 // mode OFF there is no stream: rows resolve optimistically with the requested
 // quantity once Economy's last_committed_day reaches their effective day.
 // ---------------------------------------------------------------------------
-void DCWorldExt::collect_military_economy_receipts(
+void NativeMilitaryRuntime::collect_military_economy_receipts(
         int64_t day, std::vector<MilitaryIntentReceipt> &out) {
     (void)day;
     (void)out;  // rows are marked resolved; the caller emits receipts in order
@@ -176,7 +177,9 @@ void DCWorldExt::collect_military_economy_receipts(
     // Worker-owned Economy: the committed batch deque is only readable while
     // holding the authority boundary between epochs. Busy -> retry next day.
     std::unique_lock<std::mutex> boundary;
-    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+    if (_runtime_host != nullptr && _runtime_host->on_worker_thread()) {
+        if (economy_api::epoch_active(*economy)) return;
+    } else if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
         boundary = _runtime_host->try_lock_economy_read_boundary();
         if (!boundary.owns_lock() || economy_api::epoch_active(*economy)) return;
     }

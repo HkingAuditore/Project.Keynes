@@ -182,7 +182,13 @@ func _restore_era_advancement(host, state) -> void:
 func _refresh_era_advancement(host, force: bool = false) -> void:
 	if host._era_advancement == null or not host._era_advancement.is_bound() or host._world_clock == null:
 		return
-	host._era_advancement.refresh(host._world_clock.day_index(), force)
+	var day: int = host._world_clock.day_index()
+	var previous_day: int = host._era_advancement._last_refresh_day
+	host._era_advancement.refresh(day, force)
+	if day != previous_day and host._runtime_host != null:
+		var generator = host._runtime_host.generator()
+		if generator != null and generator.has_method("record_runtime_main_step"):
+			generator.record_runtime_main_step(day, &"era_advancement_daily")
 
 
 

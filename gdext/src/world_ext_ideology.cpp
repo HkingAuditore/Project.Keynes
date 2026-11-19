@@ -658,10 +658,25 @@ Dictionary DCWorldExt::step_ideology_derived_rebuild(int64_t day_index) {
     std::string error;
     bool ok = false;
     int32_t steps = 0;
+    NativeIdeologyRuntime::DerivedFoldQueue queue_fold;
+    bool queued_fold = false;
+    if (_runtime_host != nullptr && !_runtime_host->inline_daily_mode()) {
+        const auto control = _runtime_host->control_state();
+        if (control.requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK &&
+            day_index > 0 && control.committed_day == day_index - 1 &&
+            _runtime_host->main_day_tail_pending()) {
+            queue_fold = [&, boundary = control.committed_day](std::function<void()> work) {
+                queued_fold = _runtime_host->schedule_day_tail_work(
+                    boundary, RuntimeWorkerTiming::IDEOLOGY_PROJECTION, std::move(work));
+                return queued_fold;
+            };
+        }
+    }
     do {
-        ok = runtime->step_derived_rebuild(day_index, error);
+        ok = runtime->step_derived_rebuild(day_index, error, queue_fold);
         ++steps;
-    } while (!ok && error.empty() && runtime->derived_rebuild_pending() && steps < 4096);
+    } while (!ok && error.empty() && !queued_fold && !runtime->derived_fold_running() &&
+             runtime->derived_rebuild_pending() && steps < 4096);
     const bool pending = runtime->derived_rebuild_pending();
     if (ok && !pending && _economy_modifier_view_attached &&
         _economy_modifier_view != nullptr && _modifier_runtime != nullptr) {
@@ -677,6 +692,7 @@ Dictionary DCWorldExt::step_ideology_derived_rebuild(int64_t day_index) {
     out["pending"] = pending;
     out["day"] = day_index;
     out["steps"] = steps;
+    out["background_queued"] = queued_fold;
     if (!ok) out["reason"] = error.c_str();
     return out;
 }

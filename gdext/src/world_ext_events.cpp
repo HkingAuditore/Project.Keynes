@@ -112,51 +112,8 @@ static bool queue_events_bridge_batch(
         error = "events_bridge_worker_unavailable";
         return false;
     }
-    const uint64_t sequence = host->allocate_producer_sequence(
-        EVENTS_BRIDGE_PRODUCER_ID);
-    const uint64_t request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
-    RuntimeCommandPacket packet{};
-    packet.envelope.request_id = request_id;
-    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
-    packet.envelope.sequence = sequence;
-    packet.envelope.observed_generation = report.generation;
-    packet.envelope.requested_day = std::max<int64_t>(0, records.front().tick);
-    packet.envelope.effective_day = std::max(
-        packet.envelope.requested_day, report.committed_day + 1);
-    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
-    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
-    std::vector<uint8_t> payload;
-    payload.reserve(8u + records.size() * 84u);
-    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
-    append_le<uint32_t>(payload, static_cast<uint32_t>(records.size()));
-    for (const RuntimeEventsRecord &record : records) {
-        append_le<int64_t>(payload, record.tick);
-        append_le<int32_t>(payload, record.phase);
-        append_le<int32_t>(payload, record.type);
-        append_le<int32_t>(payload, record.source);
-        append_le<int32_t>(payload, record.flags);
-        append_le<uint64_t>(payload, record.entity_handle);
-        append_le<int32_t>(payload, record.entity_id);
-        append_le<int32_t>(payload, record.cell_idx);
-        append_le<int32_t>(payload, record.payload_schema);
-        append_le<int64_t>(payload, record.value_i64);
-        append_le<int32_t>(payload, record.payload_i0);
-        append_le<int32_t>(payload, record.payload_i1);
-        append_le<int32_t>(payload, record.payload_i2);
-        append_le<int32_t>(payload, record.payload_i3);
-        append_le<uint64_t>(payload, static_cast<uint64_t>(record.event_id));
-    }
-    if (payload.size() > RUNTIME_MAX_COMMAND_PAYLOAD) {
-        error = "events_bridge_payload_exceeded";
-        return false;
-    }
-    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
-    std::memcpy(packet.payload.data(), payload.data(), payload.size());
-    if (!host->enqueue(packet)) {
-        error = "events_bridge_queue_full";
-        return false;
-    }
-    return true;
+    return host->enqueue_legacy_event_batch(records, report.committed_day + 1,
+        report.generation, error);
 }
 
 static bool queue_events_bridge_ack(NativeSimulationHost *host,
@@ -232,6 +189,55 @@ static PackedInt64Array dictionary_i64_array(const Dictionary &d, const char *ke
 
 } // namespace
 
+bool NativeSimulationHost::enqueue_legacy_event_batch(
+        const std::vector<RuntimeEventsRecord> &records, int64_t effective_day,
+        uint64_t generation, std::string &error) {
+    const uint64_t sequence = allocate_producer_sequence(
+        EVENTS_BRIDGE_PRODUCER_ID);
+    const uint64_t request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
+    RuntimeCommandPacket packet{};
+    packet.envelope.request_id = request_id;
+    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
+    packet.envelope.sequence = sequence;
+    packet.envelope.observed_generation = generation;
+    packet.envelope.requested_day = std::max<int64_t>(0, records.front().tick);
+    packet.envelope.effective_day = std::max(packet.envelope.requested_day, effective_day);
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
+    std::vector<uint8_t> payload;
+    payload.reserve(8u + records.size() * 84u);
+    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint32_t>(payload, static_cast<uint32_t>(records.size()));
+    for (const RuntimeEventsRecord &record : records) {
+        append_le<int64_t>(payload, record.tick);
+        append_le<int32_t>(payload, record.phase);
+        append_le<int32_t>(payload, record.type);
+        append_le<int32_t>(payload, record.source);
+        append_le<int32_t>(payload, record.flags);
+        append_le<uint64_t>(payload, record.entity_handle);
+        append_le<int32_t>(payload, record.entity_id);
+        append_le<int32_t>(payload, record.cell_idx);
+        append_le<int32_t>(payload, record.payload_schema);
+        append_le<int64_t>(payload, record.value_i64);
+        append_le<int32_t>(payload, record.payload_i0);
+        append_le<int32_t>(payload, record.payload_i1);
+        append_le<int32_t>(payload, record.payload_i2);
+        append_le<int32_t>(payload, record.payload_i3);
+        append_le<uint64_t>(payload, static_cast<uint64_t>(record.event_id));
+    }
+    if (payload.size() > RUNTIME_MAX_COMMAND_PAYLOAD) {
+        error = "events_bridge_payload_exceeded";
+        return false;
+    }
+    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::memcpy(packet.payload.data(), payload.data(), payload.size());
+    if (!enqueue(std::move(packet))) {
+        error = "events_bridge_queue_full";
+        return false;
+    }
+    return true;
+}
+
 int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
                                          int32_t phase,
                                          int32_t type,
@@ -254,7 +260,8 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
         return 0;
     }
     GameplayEventRecord ev;
-    ev.event_id = _gameplay_next_event_id++;
+    ev.event_id = military_executor_active() ? _runtime_host->allocate_events_ingress_key()
+        : _gameplay_next_event_id++;
     ev.tick = tick;
     ev.phase = phase;
     ev.type = type;
@@ -737,6 +744,22 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
         "entity_id", "cell_idx", "payload_schema", "value_i64", "payload_i0",
         "payload_i1", "payload_i2", "payload_i3");
     return schema;
+}
+
+bool DCWorldExt::publish_legacy_military_events(std::vector<RuntimeEventsRecord> &records) {
+    for (auto &record : records) {
+        record.event_id = _emit_gameplay_event(record.tick, record.phase, record.type,
+            record.source, record.flags, record.entity_handle, record.entity_id, record.cell_idx,
+            record.payload_schema, record.value_i64, record.payload_i0, record.payload_i1,
+            record.payload_i2, record.payload_i3);
+    }
+    records.erase(std::remove_if(records.begin(), records.end(), [](const auto &record) {
+        return record.event_id <= 0;
+    }), records.end());
+    if (records.empty()) return true;
+    std::string error;
+    const bool queued = queue_events_bridge_batch(_runtime_host.get(), records, error);
+    return queued || !_runtime_host || !_runtime_host->events_worker_authoritative();
 }
 
 Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
@@ -1298,7 +1321,8 @@ Dictionary DCWorldExt::snapshot_gameplay_event_journal(Dictionary opts) const {
     // Those commands mutate authoritative slots instead of appending a normal
     // GameplayEventRecord, but still need durable idempotency evidence.
     out["version"] = 4;
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
     out["max_events"] = _gameplay_max_events;
@@ -1433,7 +1457,8 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
     Dictionary out;
     out["ok"] = true;
     out["restored"] = int(_gameplay_events.size());
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["fallback"] = false;
     return out;
 }
@@ -1455,7 +1480,8 @@ Dictionary DCWorldExt::clear_gameplay_events(Dictionary opts) {
     }
     Dictionary out;
     out["event_count"] = 0;
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["fallback"] = false;
     return out;
 }
@@ -1466,7 +1492,8 @@ Dictionary DCWorldExt::get_gameplay_event_bus_report() const {
     out["max_events"] = _gameplay_max_events;
     out["oldest_event_id"] = _gameplay_events.empty() ? 0 : _gameplay_events.front().event_id;
     out["newest_event_id"] = _gameplay_events.empty() ? 0 : _gameplay_events.back().event_id;
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
     out["native_ms"] = _gameplay_last_native_ms;

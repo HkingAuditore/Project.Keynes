@@ -3,37 +3,36 @@
   "advancers": [
     {
       "id": "military",
-      "thread": "main",
-      "reads": "committed Country/Economy; terrain",
-      "writes": "military runtime; next-day intents; military events",
-      "trigger": "host frame catchup of observed committed days",
-      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
-      "entrypoint": "_drain_runtime_military_commits",
-      "host_fields": [
-        "_runtime_military_last_commit_day",
-        "_runtime_military_pending_target_day"
-      ],
-      "host_methods": [
-        "_queue_runtime_military_commit",
-        "_drain_runtime_military_commits"
-      ]
+      "thread": "executor",
+      "reads": "committed Country and Economy, terrain and prior exploration",
+      "writes": "Military state, D+1 intents and military facts",
+      "trigger": "after species in the whole-day executor",
+      "source": "gdext/src/native_simulation_host_military.cpp",
+      "entrypoint": "NativeSimulationHost::stage_military",
+      "host_fields": [],
+      "host_methods": []
     },
     {
       "id": "natural_resource_recovery",
-      "thread": "main",
-      "reads": "resource reserves; climate/terrain/vegetation inputs",
-      "writes": "resource slots; MapData mirror",
-      "trigger": "host frame catchup of observed committed days",
-      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
-      "entrypoint": "_drain_runtime_natural_resource_commits",
-      "host_fields": [
-        "_runtime_natural_resource_last_commit_day",
-        "_runtime_natural_resource_pending_target_day"
-      ],
-      "host_methods": [
-        "_queue_runtime_natural_resource_commit",
-        "_drain_runtime_natural_resource_commits"
-      ]
+      "thread": "executor",
+      "reads": "executor-owned reserves and economy resource deltas",
+      "writes": "resource writeback in the native day commit",
+      "trigger": "native day tail after economy settles",
+      "source": "gdext/src/native_simulation_host_day_tail.cpp",
+      "entrypoint": "stage_natural_resource_recovery",
+      "host_fields": [],
+      "host_methods": []
+    },
+    {
+      "id": "bio_occupancy",
+      "thread": "executor",
+      "reads": "executor-owned climate and reserves; frozen geography; economy introductions; occupancy",
+      "writes": "occupancy and observation candidates in the native day commit",
+      "trigger": "native day tail after resource recovery",
+      "source": "gdext/src/world_ext_bio.cpp",
+      "entrypoint": "stage_bio_occupancy",
+      "host_fields": [],
+      "host_methods": []
     },
     {
       "id": "family",
@@ -59,26 +58,26 @@
     },
     {
       "id": "vision",
-      "thread": "main",
-      "reads": "committed Country territory; terrain; bio occupancy; research signals",
-      "writes": "visibility/exploration/fog; Country observation intents",
-      "trigger": "host vision refresh on world/country changes",
-      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
-      "entrypoint": "_refresh_vision",
+      "thread": "executor",
+      "reads": "committed Country territory and technology, Military sources and trail, species",
+      "writes": "visibility, exploration, fog and D+1 Country observations",
+      "trigger": "after Military in the whole-day executor",
+      "source": "gdext/src/world_ext_vision.cpp",
+      "entrypoint": "NativeSimulationHost::stage_vision",
       "host_fields": [],
       "host_methods": []
     },
     {
       "id": "visual_delivery",
       "thread": "main",
-      "reads": "published commit and dirty-family patches",
-      "writes": "MapData/display mirrors; renderer uploads",
-      "trigger": "host frame consumption of commit and visual patches",
+      "reads": "published commit and dirty-family flags",
+      "writes": "daily completion acknowledgement; MapData/display mirrors; renderer uploads",
+      "trigger": "host frame consumption of commit and display refresh",
       "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
       "entrypoint": "_consume_runtime_commit_if_ready",
       "host_fields": [
         "_runtime_commit_day",
-        "_runtime_commit_family_cursors"
+        "_runtime_tail_completed_day"
       ],
       "host_methods": []
     },

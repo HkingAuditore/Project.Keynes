@@ -50,6 +50,12 @@ bool NativeSimulationHost::enqueue(RuntimeCommandPacket packet) {
 bool NativeSimulationHost::enqueue_batch(
         std::vector<RuntimeCommandPacket> packets,
         std::vector<int64_t> *effective_days) {
+    return enqueue_batch_at(std::move(packets), effective_days, true);
+}
+
+bool NativeSimulationHost::enqueue_batch_at(
+        std::vector<RuntimeCommandPacket> packets,
+        std::vector<int64_t> *effective_days, bool seal) {
     if (effective_days != nullptr) effective_days->clear();
     if (packets.empty()) return false;
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
@@ -82,10 +88,9 @@ bool NativeSimulationHost::enqueue_batch(
             return false;
         }
     }
-    // Every caller is a main-thread producer. A command takes effect no
-    // earlier than the first day whose inputs are not sealed yet, so it can
-    // never land on a day the worker already started.
-    const int64_t seal_day = command_seal_day();
+    // Main-thread requests can only target unsealed days. The executor can
+    // enqueue a consequence of today's settlement at its exact D+1 date.
+    const int64_t seal_day = seal ? command_seal_day() : 0;
     if (effective_days != nullptr) effective_days->reserve(packets.size());
     for (size_t index = 0; index < packets.size(); ++index) {
         RuntimeCommandPacket &packet = packets[index];
@@ -152,6 +157,10 @@ uint64_t NativeSimulationHost::allocate_command_request_id() {
     if (on_worker_thread())
         return (_executor_request_id.fetch_add(1u, std::memory_order_relaxed) + 1u) |
             EXECUTOR_REQUEST_ID_TAG;
+    return allocate_command_request_id_for_ingress();
+}
+
+uint64_t NativeSimulationHost::allocate_command_request_id_for_ingress() {
     uint64_t value = _command_request_id.fetch_add(
         1u, std::memory_order_relaxed) + 1u;
     if (value == 0) {
@@ -545,6 +554,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _day_waterfall.mark(RuntimeDayWaterfall::BUILD_PLAN);
     out.plan_build_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_build_started).count();
+    const auto peer_signal = _country_peer_signal.load(std::memory_order_acquire);
     _inline_day_pending.store(true, std::memory_order_release);
     const RuntimeDayCommit day_commit = execute_day_plan(
         day_plan, environment.get(), day_commands, day_receipts,
@@ -564,6 +574,8 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     out.dirty_families = day_commit.dirty_families;
     out.work_units = day_commit.work_units;
     out.continuation_pending = day_commit.continuation_pending != 0;
+    out.country_peer_progress =
+        _country_peer_signal.load(std::memory_order_acquire) != peer_signal;
     if (_inline_budget_exceeded) {
         // 看门狗掐断：这一天没有提交，也不该被当成"缺 peer"再重试 —— 重试只
         // 会再花一次同样的预算。调用方看到的是可上报的一次明确失败。
@@ -754,54 +766,24 @@ void NativeSimulationHost::publish_day(
         if ((day_commit.dirty_families & FAMILY_BITS[family_index]) != 0)
             header.dirty_family_generations[family_index] = generation;
     }
-    const bool visual_published = prepare_day_visuals(*published, day_receipts);
-    std::atomic_store_explicit(&_latest_commit,
-        std::shared_ptr<const RuntimeCommit>(std::move(published)),
-        std::memory_order_release);
+    published->receipts = day_receipts;
+    if (_executor_vision && (!_executor_day_tail || !_executor_day_tail->vision) &&
+        previous && previous->day_tail && previous->day_tail->vision) {
+        if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+        _executor_day_tail->vision = previous->day_tail->vision;
+    }
+    published->day_tail = std::move(_executor_day_tail);
+    publish_military_day();
+    {
+        std::lock_guard<std::mutex> lock(_resource_display_mutex);
+        merge_resource_display_patch();
+        std::atomic_store_explicit(&_latest_commit,
+            std::shared_ptr<const RuntimeCommit>(std::move(published)),
+            std::memory_order_release);
+    }
     _generation.store(generation, std::memory_order_release);
     _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);
-    if (visual_published) try_fault_injection("day.commit.after");
-}
-
-bool NativeSimulationHost::prepare_day_visuals(
-        RuntimeCommit &commit,
-        const std::vector<RuntimeCommandReceipt> &day_receipts) {
-    const RuntimeCommitHeader &header = commit.header;
-    const uint64_t last_visual = _last_visual_publish_us.load(std::memory_order_relaxed);
-    // Visual state is capped at 20 Hz. Commands and non-clock dirty families
-    // bypass the cap so a user action or major event is visible immediately.
-    const bool force_visual = !day_receipts.empty() ||
-        (header.dirty_families & ~RUNTIME_DIRTY_CLOCK) != 0;
-    if (!force_visual && last_visual != 0 && header.produced_at_us - last_visual < 50000u) {
-        _snapshot_publish_throttled_count.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-    // VISUAL is a committed intent boundary. Sort and deduplicate worker
-    // intents before exposing them, so consumers never observe order that
-    // depends on worker traversal or a half-built batch.
-    std::stable_sort(_pod_visual_intents.begin(), _pod_visual_intents.end(),
-        [](const RuntimeVisualIntent &a, const RuntimeVisualIntent &b) {
-            if (a.family != b.family) return a.family < b.family;
-            if (a.cell_index != b.cell_index) return a.cell_index < b.cell_index;
-            return a.field_id < b.field_id;
-        });
-    _pod_visual_intents.erase(std::unique(_pod_visual_intents.begin(),
-        _pod_visual_intents.end(), [](const RuntimeVisualIntent &a,
-                                      const RuntimeVisualIntent &b) {
-            return a.family == b.family && a.cell_index == b.cell_index &&
-                   a.field_id == b.field_id && a.value_i32 == b.value_i32 &&
-                   a.value_f32 == b.value_f32;
-        }), _pod_visual_intents.end());
-    _visual_intent_generation.store(header.generation, std::memory_order_release);
-    _visual_intent_count.store(static_cast<uint32_t>(
-        std::min<size_t>(_pod_visual_intents.size(),
-                         std::numeric_limits<uint32_t>::max())),
-        std::memory_order_release);
-    _visual_full_refresh.store(false, std::memory_order_release);
-    commit.visual_intents = _pod_visual_intents;
-    commit.receipts = day_receipts;
-    _last_visual_publish_us.store(header.produced_at_us, std::memory_order_release);
-    return true;
+    try_fault_injection("day.commit.after");
 }
 
 void NativeSimulationHost::publish_economy_tax_diag(

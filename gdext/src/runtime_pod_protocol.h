@@ -100,6 +100,7 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1u << 11;
 // M3 GAMEPLAY_EFFECT transaction state. This section is independent from
 // Effect's EFP1 catalog/instance state and Events' EVT1 journal.
 constexpr uint32_t RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT = 1u << 12;
+constexpr uint32_t RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT = 1u << 13;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -406,6 +407,7 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<int32_t> neighbor_offsets;
     std::vector<int32_t> neighbor_indices;
     std::vector<int32_t> hydro_parent;
+    std::vector<int32_t> province_ids;
     std::vector<uint8_t> terrain;
     std::vector<uint8_t> landform;
     std::vector<uint8_t> vegetation;
@@ -417,6 +419,8 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<uint8_t> trade_passable_lut;
     std::vector<int32_t> trade_move_cost_lut;
     std::vector<uint8_t> visible;
+    std::vector<uint8_t> military_base_landform;
+    std::vector<uint8_t> military_settlement_tier;
     std::vector<float> building_resource_reserve;
     std::vector<float> building_resource_extra;
     // S3（断点 2 的解法）：生产 Climate round 的输入缓冲，由主线程 capture 时用
@@ -1414,26 +1418,12 @@ struct RuntimeCommitHeader {
     std::array<uint64_t, RUNTIME_DIRTY_FAMILY_COUNT> dirty_family_generations{};
 };
 
-struct RuntimeVisualIntent {
-    uint32_t family = 0;
-    uint32_t cell_index = 0;
-    uint32_t field_id = 0;
-    int32_t value_i32 = 0;
-    float value_f32 = 0.0f;
-};
-
-struct RuntimeVisualIntentBatch {
-    uint64_t generation = 0;
-    int64_t committed_day = -1;
-    uint64_t state_hash = 0;
-    uint8_t full_refresh = 0;
-    std::vector<RuntimeVisualIntent> intents;
-};
+struct RuntimeDayTail;
 
 struct RuntimeCommit {
     RuntimeCommitHeader header;
-    std::vector<RuntimeVisualIntent> visual_intents;
     std::vector<RuntimeCommandReceipt> receipts;
+    std::shared_ptr<const RuntimeDayTail> day_tail;
 };
 
 struct RuntimeThreadReport {
@@ -1477,8 +1467,6 @@ struct RuntimeThreadReport {
     uint64_t generation = 0;
     uint64_t state_hash = 0;
     uint64_t last_commit_produced_at_us = 0;
-    uint64_t last_visual_publish_at_us = 0;
-    double snapshot_staleness_ms = 0.0;
     // Main-thread visual timings are fed back through the facade. They stay in
     // the POD report so CSV/diagnostic consumers have one stable namespace.
     double ui_input_to_feedback_ms = 0.0;
@@ -1502,14 +1490,9 @@ struct RuntimeThreadReport {
     uint32_t gameplay_effect_pending = 0;
     uint32_t gameplay_effect_terminal = 0;
     uint64_t gameplay_effect_state_hash = 0;
-    uint64_t visual_intent_generation = 0;
-    uint32_t visual_intent_count = 0;
-    uint8_t visual_full_refresh = 0;
     uint64_t stale_environment_rejected = 0;
     uint64_t command_queue_capacity_exceeded = 0;
     uint64_t receipt_queue_capacity_exceeded = 0;
-    uint64_t snapshot_publish_drop_count = 0;
-    uint64_t snapshot_publish_throttled_count = 0;
     uint64_t worker_fault_count = 0;
     uint64_t completed_days = 0;
     uint32_t day_stage_count = 0;
@@ -1984,6 +1967,7 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> modifier_bytes;
     std::vector<uint8_t> events_bytes;
     std::vector<uint8_t> effect_bytes;
+    std::vector<uint8_t> effect_transport_bytes;
     std::vector<uint8_t> gameplay_effect_bytes;
     std::vector<uint8_t> ideology_bytes;
     // Economy POD ECP1 section (graph authority snapshot).

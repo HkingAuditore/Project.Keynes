@@ -893,12 +893,14 @@ bool MilitaryCore::ai_decision_due(int64_t day) const {
 
 bool MilitaryCore::should_run(int64_t day) const {
     if (!_configured) return false;
-    if (!_pending.empty()) return true;
+    if (std::any_of(_pending.begin(), _pending.end(), [day](const MilitaryCommand &command) {
+        return command.effective_day <= day;
+    })) return true;
     // Physical maintenance (design S3/S4): a country whose only work is keeping
     // its buildings repaired, or waiting on a paid purchase, must still step -
     // otherwise the maintenance pass never runs and the orders never settle.
     if (!_maint_rows.empty() || !_purchase_orders.empty()) return true;
-    if (has_exploration_work()) return true;
+    if (has_exploration_work(day)) return true;
     const bool upkeep_day = (day % kUpkeepPeriod) == 0;
     const bool recruit_day = (day % kRecruitCheckPeriod) == 0;
     for (int32_t slot = 0; slot < (int32_t)_armies.active.size(); ++slot) {

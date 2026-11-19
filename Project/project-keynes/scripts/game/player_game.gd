@@ -211,7 +211,10 @@ func _on_world_ready(
 	)
 	_ui_manager.set_world_summary(map.width, map.height, map.cell_count(), _runtime_host.last_seed())
 	print("[player-ready-step] UI context %.1fms" % [float(Time.get_ticks_usec()-ready_t0)/1000.0])
-	await get_tree().process_frame
+	var frames = _runtime_host._session_frames
+	await frames.next_frame()
+	if frames.canceled:
+		return
 	_player_controller.sync_ui()
 	var start_report: Dictionary = generator.gameplay_start_report() \
 		if generator != null and generator.has_method("gameplay_start_report") else {}
@@ -219,7 +222,9 @@ func _on_world_ready(
 		if not _runtime_host.is_loading_session():
 			var start_cell := map.cell_at(int(start_report.get("cell", -1)))
 			if start_cell != null:
-				await get_tree().process_frame
+				await frames.next_frame()
+				if frames.canceled:
+					return
 				var select_t0 := Time.get_ticks_usec()
 				_player_controller.select_cell(start_cell)
 				print("[player-ready-step] select %.1fms" % [float(Time.get_ticks_usec()-select_t0)/1000.0])

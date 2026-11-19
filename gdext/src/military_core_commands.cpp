@@ -559,7 +559,7 @@ void MilitaryCore::apply_due_commands(int64_t day) {
         apply_command(_pending[applied], day);
         ++applied;
     }
-    if (applied > 0) _pending.erase(_pending.begin(), _pending.begin() + (ptrdiff_t)applied);
+    if (applied > 0) _pending.erase(_pending.begin(), _pending.begin() + static_cast<std::ptrdiff_t>(applied));
 }
 
 void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {

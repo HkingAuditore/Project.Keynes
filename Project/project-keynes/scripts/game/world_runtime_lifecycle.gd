@@ -7,7 +7,7 @@ const AnnualReportSessionScript = preload("res://scripts/annual/annual_report_se
 func restart_worker_with_current_policy(host) -> Dictionary:
 	if host._generator == null or not host._generator.has_method("request_runtime_stop"):
 		return host.climate_authority_diagnostics()
-	var requested: Dictionary = host._generator.request_runtime_stop()
+	var requested: Dictionary = host._generator.request_runtime_stop(true)
 	if not bool(requested.get("ok", false)):
 		return requested
 	var deadline := Time.get_ticks_msec() + 5000

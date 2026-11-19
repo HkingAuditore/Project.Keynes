@@ -455,7 +455,7 @@ func _maybe_register_military_system() -> void:
 	_generator._military_registered_graph_active = _generator._runtime_graph_active
 	_generator._military_registered_graph_mode = graph_mode
 	_generator._military_daily_job = MilitaryDailySystemScript.new(
-		_generator._military_facade, _generator._world_clock_ref, _generator, _generator._gameplay_event_bus)
+		_generator._military_facade, _generator)
 	_generator._sus.configure_job_from_profile(_generator._military_daily_job, cp, false,
 		MilitaryFacadeScript.SYSTEM_ID, 1)
 	_generator._runtime_register_system(_generator._military_daily_job)

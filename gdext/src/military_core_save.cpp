@@ -1883,8 +1883,8 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
             max_tpl_end = std::max(max_tpl_end, (size_t)(toff + tlen));
         }
     }
-    tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + (ptrdiff_t)max_path_end);
-    tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + (ptrdiff_t)max_tpl_end);
+    tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + static_cast<std::ptrdiff_t>(max_path_end));
+    tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + static_cast<std::ptrdiff_t>(max_tpl_end));
 
     // Slot payload, free-list order and linked sets are continuation state.
     if (tmp._cell_states.size() > 1) {
@@ -1915,6 +1915,10 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     // the observation / return target the task persisted.
     for (const MilitaryExplorationTask &task : tmp._explorations) {
         if (!task.active) continue;
+        // Terminal records remain attached to the army as history. Any
+        // subsequent route belongs to the army's current orders.
+        if (task.phase == MILITARY_EXPLORATION_COMPLETE ||
+            task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN) continue;
         int32_t army_slot = -1;
         if (!tmp.resolve_army(task.army_handle, army_slot)) {
             error = "pkmi_exploration_army_missing";
@@ -1936,9 +1940,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
             error = "pkmi_exploration_bad_phase";
             return false;
         }
-        if (task.phase == MILITARY_EXPLORATION_PAUSED_BATTLE ||
-            task.phase == MILITARY_EXPLORATION_COMPLETE ||
-            task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN) {
+        if (task.phase == MILITARY_EXPLORATION_PAUSED_BATTLE) {
             error = "pkmi_exploration_bad_phase";
             return false;
         }

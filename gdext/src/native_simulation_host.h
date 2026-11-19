@@ -5,6 +5,7 @@
 #include "runtime_authority_control.h"
 #include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
+#include "runtime_day_tail.h"
 #include "runtime_published_view.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
@@ -28,6 +29,7 @@
 #include <cstddef>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -38,7 +40,12 @@
 #include <unordered_set>
 #include <vector>
 namespace pk {
+
+struct VisionResearchState;
 struct RuntimeGoldenSnapshot;
+struct MilitaryCommandBatch;
+struct RuntimeColonizationRequest;
+class NativeMilitaryRuntime;
 class NativeEconomyRuntime;
 class ModifierRuntime;
 class CountryAiRuntime;
@@ -58,6 +65,7 @@ public:
         bool authority_ready = false;
         bool interactive = false;
         uint32_t authoritative_domain_mask = 0;
+        uint32_t requested_authority_mask = 0;
         int64_t committed_day = -1;
     };
     ControlState control_state() const;
@@ -102,6 +110,7 @@ public:
                      initial_day, speed_days_per_second, paused);
     }
     void request_stop();
+    bool try_stop_at_day_boundary();
     void join_for_destruction();
     void set_clock(bool paused, double speed_days_per_second);
     void set_interactive(bool interactive);
@@ -126,6 +135,7 @@ public:
     struct InlineDayOutcome {
         bool committed = false;
         bool continuation_pending = false;
+        bool country_peer_progress = false;
         int64_t from_day = -1;
         int64_t day = -1;
         int64_t environment_day = -1;
@@ -479,12 +489,44 @@ public:
         return (_main_boundary_service_requested.load(std::memory_order_acquire) &
                 main_boundary_client_bit(client)) != 0;
     }
-    // Main-thread day tail (Military, natural-resource recovery) reads day D
-    // and writes inputs for D+1; with the gate on, the worker starts D+1 only
-    // after that tail is reported done. Set before start; start() counts the
-    // start day's tail as done.
+    // Day-tail tasks consume committed day D. The main thread acknowledges
+    // their results and D+1 inputs before the executor advances.
     void set_main_day_tail_gate(bool enabled) noexcept;
     void mark_main_day_tail_done(int64_t day) noexcept;
+    void attach_bio_state(std::shared_ptr<struct RuntimeBioState> state) {
+        _executor_bio = std::move(state);
+    }
+    void attach_military(std::shared_ptr<NativeMilitaryRuntime> military);
+    void attach_vision(std::shared_ptr<VisionResearchState> vision);
+    std::shared_ptr<const RuntimeVisionFrame> latest_vision() const;
+    bool submit_fog_command(bool enabled, int64_t &effective_day);
+    bool vision_executor_active() const noexcept;
+    bool submit_colonization_request(std::shared_ptr<RuntimeColonizationRequest> request);
+    bool military_executor_active() const noexcept;
+    bool submit_military_commands(std::shared_ptr<MilitaryCommandBatch> batch);
+    uint64_t allocate_command_request_id_for_ingress();
+    void seed_events_ingress_cursor(int64_t next) noexcept {
+        _events_ingress_cursor.store(next, std::memory_order_release);
+    }
+    int64_t events_ingress_cursor() const noexcept {
+        return _events_ingress_cursor.load(std::memory_order_acquire);
+    }
+    int64_t allocate_events_ingress_key() noexcept {
+        return _events_ingress_cursor.fetch_add(1, std::memory_order_relaxed);
+    }
+    bool enqueue_legacy_event_batch(const std::vector<RuntimeEventsRecord> &records,
+                                    int64_t effective_day, uint64_t generation,
+                                    std::string &error);
+    bool has_bio_state() const noexcept { return bool(_executor_bio); }
+    void reset_day_tail_for_world_change();
+    bool has_resource_display_patch() const;
+    RuntimeResourceDisplayPatch take_resource_display_patch();
+    // The caller retains the day-tail gate until it consumes this result.
+    // The queued computation owns value data and never uses a scene object.
+    bool schedule_day_tail_work(int64_t day, RuntimeWorkerTiming::DayTailTask task,
+                                std::function<void()> work,
+                                bool before_next_input = false);
+    bool service_day_tail_work();
     // The committed day's main-thread tail has not run yet. Before the Climate
     // grant the main thread may be waiting for it without running a tail.
     bool main_day_tail_pending() const noexcept {
@@ -980,6 +1022,9 @@ public:
                                double visual_apply_ms,
                                double gpu_upload_ms);
     RuntimeThreadReport report() const;
+    RuntimeWorkerTiming::MainWaitDays main_waits_by_day() const {
+        return _worker_timing.main_wait_snapshot();
+    }
     RuntimeGoldenSnapshot golden_snapshot() const;
     void profile_save_window(bool active) { _worker_timing.save(active); }
     bool stop_requested() const {
@@ -1158,6 +1203,9 @@ private:
     bool stage_events(DayExecution &, RuntimeDomainPlan &);
     bool stage_visual(DayExecution &, RuntimeDomainPlan &);
     bool stage_commit(DayExecution &, RuntimeDomainPlan &);
+    const char *stage_natural_resource_recovery(DayExecution &);
+    void merge_resource_display_patch();
+    const char *stage_bio_occupancy(DayExecution &);
     static uint64_t now_us();
     static uint64_t mix_hash(uint64_t value, uint64_t input);
     // A worker publishes STOPPED immediately before returning.  Reusing a
@@ -1241,6 +1289,8 @@ private:
     // Soft-skip and climate-park paths must call this so main-thread ENSURE
     // registrations are not stranded in `_effect_instance_queue`.
     bool drain_effect_transport_queues(std::string &error);
+    std::vector<uint8_t> encode_effect_transport() const;
+    void restore_effect_transport(const std::vector<uint8_t> &bytes);
     // E8: shared Modifier POD stage for SHADOW diagnostics and ACTIVE
     // production. authority_plan is non-null only on SHADOW (fixture ACK /
     // domain-runner commit). ACTIVE passes nullptr. Failure isolates
@@ -1283,8 +1333,6 @@ private:
     void publish_day(int64_t from_day, int64_t day,
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
-    bool prepare_day_visuals(RuntimeCommit &commit,
-                             const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
     // Grant and revoke share one atomic state; a finishing day cannot undo stop.
     void publish_authority_grant(uint32_t mask) noexcept {
@@ -1378,8 +1426,31 @@ private:
     std::atomic<uint64_t> _generation{0};
     // Slow readers can keep this commit while the worker publishes a new one.
     std::shared_ptr<const RuntimeCommit> _latest_commit;
-    std::atomic<uint64_t> _last_visual_publish_us{0};
-    std::atomic<uint64_t> _snapshot_publish_throttled_count{0};
+    std::shared_ptr<RuntimeDayTail> _executor_day_tail;
+    std::shared_ptr<VisionResearchState> _executor_vision;
+    const char *stage_vision(DayExecution &day);
+    void apply_fog_commands(const std::vector<RuntimeCommandPacket> &commands);
+    bool submit_vision_observations(uint64_t country, int64_t day,
+                                    std::vector<uint64_t> &observations);
+    bool submit_species_observations(int64_t day, const std::vector<int32_t> &cells,
+                                      const std::vector<int32_t> &signals, int32_t &submitted);
+    bool enqueue_batch_at(std::vector<RuntimeCommandPacket> packets,
+                          std::vector<int64_t> *effective_days, bool seal);
+    std::shared_ptr<NativeMilitaryRuntime> _executor_military;
+    std::deque<std::shared_ptr<MilitaryCommandBatch>> _military_commands; // _control_mutex
+    std::deque<std::shared_ptr<RuntimeColonizationRequest>> _colonization_requests;
+    bool player_requests_pending_locked() const noexcept {
+        return !_military_commands.empty() || !_colonization_requests.empty();
+    }
+    bool service_colonization_requests();
+    std::atomic<int64_t> _events_ingress_cursor{1};
+    bool service_military_commands();
+    const char *stage_military(DayExecution &day);
+    void publish_military_day();
+    std::shared_ptr<struct RuntimeBioState> _executor_bio;
+    std::vector<int32_t> _executor_resource_display_cells;
+    mutable std::mutex _resource_display_mutex;
+    RuntimeResourceDisplayPatch _resource_display_patch;
     // M4/M5 diagnostics. These fields describe the frozen input manifest and
     // the committed visual-intent batch without exposing worker vectors.
     std::atomic<uint64_t> _input_capture_count{0};
@@ -1395,9 +1466,6 @@ private:
     std::atomic<uint32_t> _gameplay_effect_pending{0};
     std::atomic<uint32_t> _gameplay_effect_terminal{0};
     std::atomic<uint64_t> _gameplay_effect_state_hash{0};
-    std::atomic<uint64_t> _visual_intent_generation{0};
-    std::atomic<uint32_t> _visual_intent_count{0};
-    std::atomic<bool> _visual_full_refresh{false};
     std::atomic<uint64_t> _last_commit_produced_at_us{0};
     std::atomic<double> _ui_input_to_feedback_ms{0.0};
     std::atomic<double> _visual_apply_ms{0.0};
@@ -1425,6 +1493,8 @@ private:
     std::array<RuntimeCommandReceipt, RUNTIME_RECEIPT_QUEUE_CAPACITY> _receipts{};
 
     mutable std::mutex _control_mutex;
+    std::function<void()> _day_tail_work; // Protected by _control_mutex.
+    RuntimeWorkerTiming::DayTailTask _day_tail_task = RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT;
     std::condition_variable _control_cv;
     // B8 P3：主线程交付等待专用。不能复用 _control_cv —— worker 的日循环也在
     // 同一个 CV 上等 preflight 重试，而 worker 自己在消费环境后 notify 会让它
@@ -2137,7 +2207,6 @@ private:
     mutable std::mutex _environment_publish_mutex;
     // Reused worker-local output arenas; no per-day heap growth in the hot
     // loop. They are never exposed to Godot or another thread.
-    std::vector<RuntimeVisualIntent> _pod_visual_intents;
     std::vector<RuntimeCommandReceipt> _pod_receipts;
 };
 } // namespace pk

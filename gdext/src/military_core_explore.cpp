@@ -441,10 +441,11 @@ const std::vector<int32_t> &MilitaryCore::exploration_trail(int32_t observer_slo
     return _exploration_trail;
 }
 
-bool MilitaryCore::has_exploration_work() const {
+bool MilitaryCore::has_exploration_work(int64_t through_day) const {
     if (!_exploration_trail.empty()) return true;
     for (const MilitaryCommand &cmd : _pending) {
-        if (cmd.op == MCMD_ARMY_EXPLORE) return true;
+        if (cmd.op == MCMD_ARMY_EXPLORE &&
+            (through_day < 0 || cmd.effective_day <= through_day)) return true;
     }
     for (const MilitaryExplorationTask &task : _explorations) {
         if (!task.active) continue;
@@ -521,6 +522,9 @@ void MilitaryCore::rebuild_exploration_index() {
         MilitaryExplorationTask &task = _explorations[(size_t)row];
         if (!task.active) continue;
         task.row_index = row;
+        // Cancellation leaves the record for history but detaches it from
+        // the army. Naturally completed tasks stay attached until replaced.
+        if (task.result == MILITARY_EXPLORATION_RESULT_CANCELLED) continue;
         int32_t army_slot = -1;
         if (!resolve_army(task.army_handle, army_slot)) continue;
         _exploration_by_army[(size_t)army_slot] = (int16_t)row;

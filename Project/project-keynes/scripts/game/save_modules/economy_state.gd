@@ -18,13 +18,7 @@ func _can_economy_provider(context: Dictionary) -> Dictionary:
 
 func _write_economy_provider(context: Dictionary) -> Dictionary:
 	var shared_ecp2: PackedByteArray = context.get("native_economy_ecp2", PackedByteArray())
-	if not shared_ecp2.is_empty() and OS.get_environment("PK_SAVE_ECP2_REUSE_DISABLE") != "1":
-		if OS.get_environment("PK_SAVE_ECP2_REUSE_VERIFY") == "1":
-			var reference: Dictionary = context.economy.capture_ecp2(0)
-			if not bool(reference.get("ok", false)) or reference.get("bytes") != shared_ecp2:
-				return _result(false, "ecp2_shared_capture_mismatch",
-					"冻结 ECP2 与完整捕获结果不一致。")
-			print("[save/ecp2-reuse] full byte comparison passed bytes=%d" % shared_ecp2.size())
+	if not shared_ecp2.is_empty():
 		return {"ok": true, "sections": {"ecp2": shared_ecp2}}
 	var facade = context.economy
 	var captured: Dictionary = facade.capture_ecp2(0)

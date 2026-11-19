@@ -240,7 +240,7 @@ var _typed_fields_migrated: bool = false
 var _sus = null
 var _sus_bootstrap: RefCounted = null
 var _data_core_world: DCWorld = null
-var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
+var _data_core_world_ext: RefCounted = null
 var _gameplay_event_bus: GameplayEventBus = GameplayEventBusScript.new()
 const _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS: int = 12
 var _dc_terrain_mirror_sync_log_count: int = 0
@@ -409,10 +409,6 @@ var _deposit_noise_cache: Dictionary = {}
 var _natural_resource_regen_factors_valid: bool = false
 var _natural_resource_regen_factor_prime_ms: float = 0.0
 var _last_natural_resource_report: Dictionary = {}
-const NATURAL_RESOURCE_WILDERNESS_STRIDE: int = 60
-const NATURAL_RESOURCE_LIVE_CATCHUP_MAX_DAYS: int = 5
-var _natural_resource_last_day: PackedInt32Array = PackedInt32Array()
-var _natural_resource_was_live: PackedByteArray = PackedByteArray()
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
 	"cell_temp",
 	"cell_moisture",
@@ -566,6 +562,8 @@ func set_runtime_qos_threaded(interactive: bool) -> Dictionary:
 	return _get_map_runtime_bridge().set_runtime_qos_threaded(interactive)
 func get_runtime_thread_report() -> Dictionary:
 	return _get_map_runtime_bridge().get_runtime_thread_report()
+func record_runtime_main_step(day: int, step: StringName) -> void:
+	_get_map_runtime_bridge().record_runtime_main_step(day, step)
 func get_runtime_control_state() -> Dictionary:
 	return _get_map_runtime_bridge().get_runtime_control_state()
 func record_runtime_visual_timings(ui_input_to_feedback_ms: float,
@@ -597,12 +595,6 @@ func submit_runtime_command(command: Dictionary) -> Dictionary:
 	return _get_map_runtime_bridge().submit_runtime_command(command)
 func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
 	return _get_map_runtime_bridge().poll_runtime_commit(after_generation)
-func flush_runtime_economy_resource_writeback() -> Dictionary:
-	return _get_map_runtime_bridge().flush_runtime_economy_resource_writeback()
-func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
-		max_items: int) -> Dictionary:
-	return _get_map_runtime_bridge().consume_runtime_visual_patch(
-		generation, family, cursor, max_items)
 func request_runtime_save(request_id: int) -> Dictionary:
 	return _get_map_runtime_bridge().request_runtime_save(request_id)
 func poll_runtime_save(request_id: int) -> Dictionary:
@@ -610,8 +602,8 @@ func poll_runtime_save(request_id: int) -> Dictionary:
 func restore_runtime_bundle(bytes: PackedByteArray,
 		external_ecp2: PackedByteArray = PackedByteArray()) -> Dictionary:
 	return _get_map_runtime_bridge().restore_runtime_bundle(bytes, external_ecp2)
-func request_runtime_stop() -> Dictionary:
-	return _get_map_runtime_bridge().request_runtime_stop()
+func request_runtime_stop(preserve_day_boundary: bool = false) -> Dictionary:
+	return _get_map_runtime_bridge().request_runtime_stop(preserve_day_boundary)
 func set_economy_diagnostics_enabled(enabled: bool) -> void:
 	_get_map_runtime_bridge().set_economy_diagnostics_enabled(enabled)
 func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
@@ -1123,20 +1115,6 @@ func economy_live_cells() -> PackedInt32Array:
 	if _data_core_world_ext != null:
 		return _data_core_world_ext.get_economy_live_cells()
 	return PackedInt32Array()
-func run_natural_resource_pass_for_runtime_commit(day: int) -> Dictionary:
-	return _get_map_resource_initializer().run_natural_resource_pass_for_runtime_commit(day)
-func _reset_natural_resource_cadence(n_cells: int, last_day: int) -> void:
-	_get_map_resource_initializer()._reset_natural_resource_cadence(n_cells, last_day)
-func _ensure_natural_resource_cadence(n_cells: int, day: int) -> void:
-	if _natural_resource_last_day.size() != n_cells \
-			or _natural_resource_was_live.size() != n_cells:
-		_reset_natural_resource_cadence(n_cells, maxi(day - 1, 0))
-func _natural_resource_dt_for_cell(cell: int, day: int, is_live: bool) -> int:
-	return _get_map_resource_initializer()._natural_resource_dt_for_cell(cell, day, is_live)
-func collect_natural_resource_pass_cells(day: int, live_cells: PackedInt32Array) -> Dictionary:
-	return _get_map_resource_initializer().collect_natural_resource_pass_cells(day, live_cells)
-func _commit_natural_resource_pass_days(day: int, cell_indices: PackedInt32Array, live_set: Dictionary) -> void:
-	_get_map_resource_initializer()._commit_natural_resource_pass_days(day, cell_indices, live_set)
 func run_natural_resource_pass_scheduled(map_ref, day: int, live_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	return _get_map_resource_initializer().run_natural_resource_pass_scheduled(map_ref, day, live_cells)
 func catchup_natural_resources_for_live_cells(day: int) -> Dictionary:
@@ -1278,8 +1256,10 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 	_get_season_refresh_coordinator().finish_season_refresh(_map, _world, _season_idx)
 func season_round_b_plus_available() -> bool:
 	return _get_season_refresh_coordinator().season_round_b_plus_available()
-func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> int:
-	return _get_season_refresh_coordinator().start_season_round_b_plus(map, _world, season)
+func start_season_round_b_plus(map: MapData, _world: WorldData, season: int, background_boundary: int = -1) -> int:
+	return _get_season_refresh_coordinator().start_season_round_b_plus(map, _world, season, background_boundary)
+func prepare_next_climate_input_during_tail(day: int) -> bool:
+	return _get_runtime_climate_capture().prepare_next_climate_input_during_tail(day)
 func run_season_round_slice_b_plus(map: MapData, _world: WorldData, max_usec: int = 0) -> Dictionary:
 	return _get_season_refresh_coordinator().run_season_round_slice_b_plus(map, _world, max_usec)
 func begin_finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -> void:
@@ -1396,15 +1376,18 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 	_get_terrain_generator()._log_bio_occupancy_seed(knobs, seed_res, landmass_count, province_count)
 func _log_bio_occupancy_seed_native(report: Dictionary, knobs: Dictionary) -> void:
 	_get_terrain_generator()._log_bio_occupancy_seed_native(report, knobs)
-func _bio_landmass_summary_gdscript(occupancy: PackedInt32Array,
-		landmass: PackedInt32Array, knobs: Dictionary,
-		out_landmass: PackedInt32Array, out_classes: PackedStringArray,
-		out_foods: PackedStringArray) -> void:
-	_get_terrain_generator()._bio_landmass_summary_gdscript(occupancy, landmass, knobs, out_landmass, out_classes, out_foods)
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 		day_index: int = 0, slice_enabled: bool = false,
 		bio_slice_cells: int = BIO_OCCUPANCY_SLICE_CELLS) -> Dictionary:
-	return _get_terrain_generator().run_bio_occupancy_pass_native(map_ref, run_diffusion, day_index, slice_enabled, bio_slice_cells)
+	return _get_terrain_generator().run_bio_occupancy_pass_native(map_ref, run_diffusion,
+		day_index, slice_enabled, bio_slice_cells)
+func _resolve_bio_observation_country_handle() -> int:
+	if _bio_observation_country_handle == 0 and _country_facade != null:
+		var start_cell := int(gameplay_start_report().get("cell", -1))
+		if start_cell >= 0:
+			_bio_observation_country_handle = int(_country_facade.cell_summary(
+				start_cell).get("country_handle", 0))
+	return _bio_observation_country_handle
 static func _is_permanent_landform(t: int) -> bool:
 	return t == TerrainType.TERRAIN.OASIS \
 			or t == TerrainType.TERRAIN.DELTA \

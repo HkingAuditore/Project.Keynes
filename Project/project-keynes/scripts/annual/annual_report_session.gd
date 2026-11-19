@@ -9,6 +9,7 @@ var _ext: Object
 var _clock: WorldClock
 var _sync_day: int = -1
 var _last_announced: int = 0
+var _last_main_commit_step: int = -1
 var _boundary_day: int = -1
 var _configured: bool = false
 var _generator
@@ -18,6 +19,7 @@ var _can_capture_environment: Callable
 func configure(generator, clock: WorldClock, handle: int, can_capture_environment := Callable()) -> Dictionary:
 	_can_capture_environment = can_capture_environment
 	_configured = false
+	_last_main_commit_step = -1
 	_generator = generator
 	_clock = clock
 	_ext = generator.get_data_core_world_ext() if generator != null else null
@@ -56,7 +58,11 @@ func poll() -> void:
 	if not _configured:
 		return
 	if _sync_day >= 0:
-		_ext.commit_annual_reports(_sync_day)
+		var committed: Dictionary = _ext.commit_annual_reports(_sync_day)
+		if bool(committed.get("ok", false)) and not bool(committed.get("worker_managed", false)) \
+				and int(committed.get("last_day", -1)) == _sync_day and _sync_day > _last_main_commit_step:
+			_last_main_commit_step = _sync_day
+			_generator.record_runtime_main_step(_sync_day, &"annual_report_main_commit")
 	var state: Dictionary = _ext.get_annual_report_status()
 	if not bool(state.get("ok", false)):
 		return
@@ -73,6 +79,8 @@ func poll() -> void:
 		var captured: Dictionary = _generator.publish_environment_through(
 			_boundary_day, _clock.season_phase_for_day(_boundary_day))
 		_boundary_input_sent = bool(captured.get("ok", false))
+		if _boundary_input_sent:
+			_generator.record_runtime_main_step(_boundary_day, &"annual_year_boundary_input")
 	if _boundary_day >= 0 and int(state.get("last_day", -1)) >= _boundary_day \
 			and not bool(state.get("reward_pending", false)):
 		_clock.request_simulation_backpressure(&"annual_report_day_barrier", false)
