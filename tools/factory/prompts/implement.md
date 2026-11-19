@@ -12,8 +12,8 @@ The investigation plan (from a read-only pass over the code):
 {plan}
 
 Rules for this run:
-- Change only what the ticket and plan need. Do not edit `.github/`, `tools/factory/` or `.qodo/`.
-- Baseline and contract files under `tools/ci/` may only change through their own `--write-baseline` / `--sync` / `--write-manifest` commands, as the development guide says. Say in your report if you ran one.
+- Change only what the ticket and plan need. Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person.
+- Leave the tracked native libraries to the factory. It rebuilds and checks both macOS libraries when native source changes.
 - Do not commit, branch, push or stash. Leave all changes in the working tree; the factory commits them.
 - Find the root cause before changing code. Do not loosen assertions, lengthen timeouts, add retries, add days or change hashes to make a check pass.
 - Add or update tests that prove each acceptance criterion.

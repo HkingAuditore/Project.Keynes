@@ -21,8 +21,9 @@ import run as issue_runner
 import sync_rules
 import work
 from common import Events, Result, load_config
-from github import GitHub, combine_ci
+from github import GitHub
 from run import Run
+from verdict import CIFacts, CIRun
 from watch_prs import PrState, Watcher
 
 
@@ -118,7 +119,8 @@ class IssueWorkflowTest(TempFactory):
                 commit.assert_not_called()
                 self.assertIsNone(run.facts.checks_sha)
                 if path == "gdext/godot-cpp":
-                    self.assertTrue(run.facts.native_changed)
+                    self.assertFalse(run.facts.native_changed)
+                    self.assertIn(path, run.facts.human_paths)
                 else:
                     self.assertIn(path, run.facts.stopped_by)
 
@@ -470,29 +472,34 @@ class ChecksTest(TempFactory):
 
 class AdapterTest(TempFactory):
     def test_ci_waits_for_actions_and_checks(self):
+        completed = CIRun("completed", "success")
+        running = CIRun("in_progress", None)
+        failed = CIRun("completed", "failure")
         for workflows, runs, expected in [
             (None, [], "error"),
-            (["completed"], None, "error"),
-            ([], ["completed\tsuccess"], "pending"),
-            (["completed", "in_progress"], ["completed\tsuccess"], "pending"),
-            (["completed"], [], "pending"),
-            (["completed"], ["completed\tfailure", "queued\t"], "pending"),
-            (["completed"], ["completed\tfailure"], "failure"),
-            (["completed", "completed"], ["completed\tsuccess", "completed\tskipped"], "success"),
+            ([completed], None, "error"),
+            ([], [completed], "pending"),
+            ([completed, running], [completed], "pending"),
+            ([completed], [], "pending"),
+            ([completed], [failed, CIRun("queued", None)], "pending"),
+            ([completed], [failed], "failure"),
+            ([completed, completed], [completed, CIRun("completed", "skipped")], "success"),
         ]:
             with self.subTest(workflows=workflows, runs=runs):
-                self.assertEqual(combine_ci(workflows, runs), expected)
+                self.assertEqual(CIFacts(HEAD, workflows, runs).state(), expected)
 
     def test_ci_requests_both_lists_for_the_head_sha(self):
-        with patch("github.sh", side_effect=[Result(0, "completed\n", ""), Result(0, "completed\tsuccess\n", "")]) as cli:
+        completed = Result(0, '{"status":"completed","conclusion":"success"}\n', "")
+        with patch("github.sh", side_effect=[completed, completed]) as cli:
             self.assertEqual(GitHub("example/repo").ci_state(HEAD), "success")
         self.assertIn(f"repos/example/repo/actions/runs?head_sha={HEAD}", cli.call_args_list[0].args[0])
         self.assertIn(f"repos/example/repo/commits/{HEAD}/check-runs", cli.call_args_list[1].args[0])
 
     def test_ci_records_failure_from_either_query(self):
         failure = Result(1, "partial output", "HTTP 503")
+        completed = Result(0, '{"status":"completed","conclusion":"success"}\n', "")
         for results, endpoint in [([failure], "/actions/runs?"),
-                                  ([Result(0, "completed\n", ""), failure], "/check-runs")]:
+                                  ([completed, failure], "/check-runs")]:
             with self.subTest(endpoint=endpoint):
                 gh = GitHub("example/repo")
                 with patch("github.sh", side_effect=results) as cli:
@@ -572,7 +579,7 @@ class AdapterTest(TempFactory):
         with patch("work.git", side_effect=["gdext/godot-cpp\0", "tools/ci/.factory-test\0.factory-note\0"]) as git:
             files = work.changed(str(self.root), HEAD)
         self.assertIn("--ignore-submodules=none", git.call_args_list[0].args)
-        self.assertEqual(work.scope(self.cfg, files), (["tools/ci/.factory-test"], [], ["gdext/godot-cpp"]))
+        self.assertEqual(work.scope(self.cfg, files), (["tools/ci/.factory-test"], ["gdext/godot-cpp"], []))
 
     def test_local_review_reports_missing_open_finding_level(self):
         output = {"finding_state": {"complete": True, "introduced": ["missing"]}}
