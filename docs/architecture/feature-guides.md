@@ -316,7 +316,7 @@ pending；`ideology_worker_derived_pump_test.gd` 比较每格实际数值与主�
 真实数据来源；无生产运行时的纯 POD 用例仍读取自身状态。此诊断不推进或修改模拟。
 
 财政回执的 `terminal_requests` 是尚未消费的终态队列长度，不是累计完成次数。
-Country 在后台、Economy 在主线程执行时，财政请求完成后必须先通过宿主应用
+在保留的 Country 后台、Economy 同步兼容路径中，财政请求完成后先通过宿主应用
 Country 账目并发布不可变读视图，再确认消费回执；确认会同时删除请求与终态，
 不能让它早于国家落账。此路径沿用 `run_economy_slice_internal()` 持有的执行边界，
 不得从未持锁的入口直接调用。`economy_fiscal_reservation_continuation_test.gd`
@@ -325,8 +325,8 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 移动端帧预算与分块显示
 
-- Android/iOS 默认由现有 native worker 执行十二域日计划，主线程负责输入和已提交
-  结果的显示。`RuntimeClockBinding` 在启动后立即同步暂停/速度，后续订阅控制变化；
+- 移动平台的后台选择与执行范围见 [运行现状](current-state.md#十二域以外的推进)。
+  `RuntimeClockBinding` 在启动后立即同步暂停和速度，后续订阅控制变化；
   不用 UI 刷新或等待时长唤醒。`PK_MOBILE_NATIVE_WORKER=0` 显式诊断旧 inline 路径，
   `=1` 或未设置走后台；通用 `PK_NATIVE_DAILY_INLINE=1` 仍可显式选 inline。
   执行方式不能改变日序、输入、命令日期、存档边界或结果。验证：
@@ -578,7 +578,9 @@ OwnedState 已应用的 ADD_STOCK / REMOVE_STOCK 命令，在经济侧接回结�
 不能在清空当轮计数后丢失。`economy_runtime_command_audit_tests.cpp` 使用真实命令应用与
 结果接回路径检查闲置期、活动期、限量移除、下一轮与恢复后的派生状态。
 
-## 主线程服务完成与工作线程唤醒
+## 现有兼容路径的主线程服务唤醒
+
+适用于尚未迁移的 Trigger、Ideology 日结算交接。新功能的模拟判断和写入由后台完成。
 
 `complete_main_boundary_service` 清除自身请求位时持有工作线程等待使用的
 `_control_mutex`，释放锁后通知。原子位操作不能替代这一互斥约束：完成操作若插进
@@ -679,7 +681,9 @@ Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成
 
 原生密集地图在生成时已算出六个方向的邻接格，脚本按原有地图顺序绑定编号时可直接使用这批数据。作者地图及读档仍经通用索引入口。分块地形的下一次原生烘焙可以在上一块上传后立即开始；主线程每帧最多上传一块，上传前检查取消和地图代数。
 
-## 运行时诊断字段与主线程抑制门（2026-11-16）
+## 运行时诊断字段与兼容路径抑制门
+
+抑制门用于停掉已有同步路径。正式后台模拟的新功能直接接入后台。
 
 - 诊断字段必须写入。只声明 + 导出、从不赋值的计数器比没有更坏：它把「这一步没跑」伪装成事实（`cell_layer_collect_count/_rows/_ideas` 就这样误导过一轮排查）。新增诊断要么在产生它的那一步写，要么不要导出。
 - 主线程域门只认 `domain_main_thread_suppressed()`。外部读 `main_thread_suppressed_domain_mask` / `authority_window_domain_mask`（启动回复、`get_runtime_thread_report()`、`thread_report`、perf snapshot）；`authoritative_domain_mask` 只回答「worker 已证明拥有哪些域」，不能回答「主线程是否该跑」。请求了却拿不到的域会静默永久丢失，`authority_window_blocker` 是它的名字。

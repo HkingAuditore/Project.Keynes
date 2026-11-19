@@ -25,7 +25,7 @@
 | GAMEPLAY_EFFECT | Host 解码、去重，排入 Events/Ideology 命令 | 无双算 |
 | ECONOMY | StageOps 调度 `NativeEconomyRuntime` 的真实计算；POD_ACTIVE 时绑定 OwnedState | 默认 ACTIVE_ONLY；显式 ACTIVE_WITH_PARITY 才跑影子 |
 | EVENTS | RuntimeEventsAuthority 写事件日志与消费者游标 | 沿用 `events_probe_enabled`，名称含 probe 但用于生产 |
-| VISUAL | Host 产生刷新意图，`publish_day` 排序去重；实际显示归 Godot | 无双算 |
+| VISUAL | Host 记录变化类别，随日提交发布；Godot 接收当前已提交的显示数据 | 无双算 |
 | COMMIT | 记完成位，检查请求域全部完成，由外层发布 | 无双算 |
 
 政治体制不增加新的每日域。`NativeCountryRuntime` 保存 `regime_id` 与
@@ -52,30 +52,50 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 - 已验证：`country_capital_test.gd` 16/0、`satisfaction_runtime_test.gd` 58/0（含 9 项组织度/概率/结算）、`military_native_binding_test.gd` 自测 PASS（含割地转移与强制宣战）、`narrative_event_runtime_test.gd` 71/0、`stratum_unrest_service_test.gd` 7/0；地块档案与地图层 parse PASS。
 - 未实现：无（长跑平衡校准可作为后续平衡工作）。黄金 v4/v2/v3 与外部位移 v5 已按 5 次捕获更新并通过：`golden_day_hash_test` 176/0、`golden_external_advancers_test` 338/0。详见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md)。
 
-Android/iOS 与桌面现在默认使用同一 native worker 执行十二域日计划，取消手机默认
-同步执行整日的特殊分支；时钟仍由会话持有的 `RuntimeClockBinding` 在执行器启动后
-同步并持续通知。主线程的输入采集、显示回灌及下表列出的日尾工作仍在原处。诊断时
-`PK_MOBILE_NATIVE_WORKER=0` 或 `PK_NATIVE_DAILY_INLINE=1` 可选已有 inline 路径。
-执行器及数据所有者没有新增，公式、日计划和保存格式不变；验证范围见 feature-status。
+Android、桌面和线程版 Web 默认使用后台执行器完成日计划。无线程 Web 构建使用同步执行器。
+`RuntimeClockBinding` 在执行器启动后持续同步时钟。主线程采集输入、安装日尾结果并更新显示。
+诊断时可用 `PK_MOBILE_NATIVE_WORKER=0` 或 `PK_NATIVE_DAILY_INLINE=1` 选择同步执行。
+验证范围见 [feature-status.md](feature-status.md)。
 
 ## 十二域以外的推进
 
-登记在 `tools/ci/runtime_advancers.json`（生成 `runtime_external_advancers.h`），登记不拥有调度权。
+表外推进者登记在 `tools/ci/runtime_advancers.json` 并生成 `runtime_external_advancers.h`。
+理念逐格汇总属于 IDEOLOGY 的日尾阶段。调度由日执行器和主线程交接入口负责。
 
 | 推进者 | 线程 | 读写与交接 |
 | --- | --- | --- |
-| military | 主线程 | 每帧追赶已提交日期，`facade.run_daily` 同步运行；读 Country/Economy 已提交数据，写军事实体，后续意图走 D+1。后台 worker 在主线程报告第 D 天日尾完成（`mark_runtime_day_tail_done`）后才开始 D+1，Climate 授权前不等 |
-| natural_resource_recovery | 经济执行线程、主线程 | 后台经济负责其拥有的资源储量。主线程把变化写回地图并维护同步模式的日期记录。资源全部归后台时跳过主线程再生准备；仍有主线程负责的资源时运行原来的恢复流程 |
+| military | 日执行器与主线程交接 | 主线程冻结 Country/Economy 当日数据并复制 Military 状态。后台计算军务，主线程安装完成的状态并提交 D+1 命令及当日事件。同步模式运行同一计算入口 |
+| natural_resource_recovery | 日执行器与主线程交接 | 后台经济更新自己持有的储量。其他资源按原周期冻结到期地块，由同一个执行线程计算，主线程写回地图 |
+| bio_occupancy | 日执行器与主线程交接 | 整日模式在资源更新后计算物种存续、引入与扩散。主线程安装整天的结果，再交付科研观察和视野输入。既有存档的物种列恢复到地图与原生数据 |
+| season_refresh | 日执行器与主线程交接 | 到期日冻结季节输入，后台计算慢层，主线程在采集次日输入前安装结果。恢复到已结束的某日时仍可提交下一日的季节计算 |
 | family / person | 执行线程 | 在经济 FAMILY_COMMIT / PERSON_COMMIT 内运行，没有独立日域 |
-| vision | 主线程 | 读地形/领地/研究信号与已提交的玩家部队位置，写可见性，并提交 Country 观察意图；部队使用低于城市的移动视野预算 |
-| visual_delivery | 主线程 | 消费同一次提交的日期、刷新标记与显示数据。每帧向界面发送最新日期，账本和剧情仍逐日接收提交 |
+| vision | 日执行器与主线程交接 | 领土、玩家军队视野源、探索轨迹或境外观察资格变化时，主线程准备输入，后台计算物理视野、迷雾和科研发现。主线程仍合并探索轨迹、安装结果并提交 D+1 观察记录。开局、读档和同步模式同步解算 |
+| ideology_cell_projection | 日执行器与主线程交接 | 主线程从已提交的理念、经济和效果数据冻结目标与指标。后台合成逐格加成，主线程安装结果。旧版效果实例的匹配、发送与回执仍由兼容层处理 |
+| visual_delivery | 主线程 | 逐日发出结算通知，其后每帧刷新最新日期。渲染、路线和纹理由实际数据的消费者更新 |
 | climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
 
 等上一日结果的输入重试会在同一帧先消费提交，再判断能否发送。天气输入的热赤道采样由后台对冻结的温度和位置计算。日提交直接发布物理场和可复用的风轨迹，主线程把它们写回地图。读档时可用 CLM2 中的物理数据重建首次回写。
 
 年度气候值按环境输入的采样日期读取。第 364 份输入按既有规则采样第 365 日，年末重试时取到同一气候值。
 
-军事、资源写回、事件交付和命令封口仍在每日边界完成。地图天气和生态像素准备排在日尾放行之后。纹理上传在同一渲染帧内合并，并在天气插值读取之前提交。
+日执行器在当天核心计算提交后完成资源恢复、物种、军务、视野和理念逐格加成汇总。主线程采集输入、安装结果、交付事件、封口命令。
+地图纹理上传在同一渲染帧内合并，并在天气插值读取之前提交。
+
+## 前台尚存的模拟工作
+
+以下路径仍需迁移，目标规则见 [design.md](design.md#单一时间线与前后台分工)。
+
+- **输入、交接与次日放行**：主线程仍准备每日输入、安装军务、视野和季节结果，并处理气候、
+  资源和物种写回。军务状态复制、视野的探索轨迹合并、D+1 命令和科研观察交接仍在这里。
+  下一日等待当天的主线程交接完成。
+- **理念与跨域效果**：理念目标匹配、指标采集和旧效果实例交接仍经主线程兼容层。科研效果的
+  交付和部分国家、效果、经济之间的请求仍经主线程适配，参见 [科技交接](../cpp-dots-runtime/technology-tree-runtime.md)
+  和 [家族开拓](../cpp-dots-runtime/family-colonization-runtime.md)。
+- **等待玩家**：时代奖励、理念、家族立族和年报仍有前台协调自动暂停或恢复的入口。
+  当前入口在 `scripts/game/player_controller/progression.gd` 和
+  `scripts/annual/annual_report_flow.gd`。等玩家的时机及恢复须移交后台。
+- **同步兼容路径**：无线程 Web 仍同步算整日。显式诊断和部分旧授权路径也保留同步执行。
+  开局有由主线程分段调度的地图计算，开局与读档的视野初始化仍可同步执行。
 
 ## 跨模块交接
 

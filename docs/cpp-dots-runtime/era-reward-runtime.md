@@ -69,7 +69,7 @@ ACK 后才关闭弹窗，并按打开前状态恢复运行或继续暂停。`pla
   `ModifierRuntime` 在 worker 模式下不是活副本，不能用来判定。所有命令的唯一来源条目
   都存在时进入 `RESOLVED`。提交后两个已提交日内未落地就重提，最多三次，之后进入
   `ERROR(era_reward_modifier_commit_missing)`；重复提交由 `UNIQUE_SOURCE` 保证幂等。
-- **时钟**：worker Modifier 命令只在模拟日落地，所以 `era_reward_offer()` 返回
+- **现有时钟交接（待迁移）**：worker Modifier 命令只在模拟日落地，所以 `era_reward_offer()` 返回
   `settles_on_day_advance=true`。PlayerController 在该状态下以 1 倍速推进日期，其余
   玩家命令仍被锁定，`RESOLVED` 后恢复打开前的速度与运行状态。`era_reward.choose`
   成功后总会延迟同步一次 Offer，不依赖弹窗回调。时代奖励锁持有期间，家族立族锁不接管

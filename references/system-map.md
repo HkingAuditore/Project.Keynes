@@ -172,7 +172,7 @@ world_setup.tscn
 - `gdext/src/world_ext_generate_base.cpp` 提供 base；`world_ext_generate.cpp` 提供 post-base/full/publish；`world_ext_season_refresh.cpp` 提供季节阶段与继续游标接口。
 - `MapGenerator._generate_cells_native_base()` 调 native base/post-base，`_assemble_native_generation_map()` 装配 `MapData` / `HexCell`。
 - GDScript 旧 `_generate_cells` fallback 已删除。native 失败时 `generate()` 直接中止，不应静默降级。
-- 玩家与 debug 入口必须 `await MapGenerator.generate()`。生成仍在 Godot 主线程执行，因为 `MapData`/`HexCell` 装配、`ImageTexture` 和 DataCore/Godot 对象生命周期不能粗暴迁入 worker；`MapGenerator` 与 `MapBaker` 在大陆、几何、物理、图集编码和模拟装配边界协作式 `await process_frame`，让加载 UI、窗口事件和动画持续推进。直接调用但不 `await` 会在首个让帧点提前返回，是不受支持的调用方式。
+- 玩家与调试入口等待 `MapGenerator.generate()` 完成。现有开局流程在 Godot 主线程以 `await process_frame` 分段调度生成与装配。地图和物理计算可按[前后台分工](../docs/architecture/design.md#单一时间线与前后台分工)独立迁移，Godot 对象装配与纹理上传留在前台。
 
 生成期主要步骤：
 
@@ -266,7 +266,7 @@ WorldClock.day_changed(day_idx)
 - `enum_atlas_upload`：terrain/biome/cover/vegetation 视觉 enum atlas 增量上传。
 - `dynamic_visual_atlas_upload`：dynamic/ecology/smooth/ice LUT 或 atlas 刷新。
 - `native_daily_sim`：native daily graph/probe/active 路径，仍受 gate 控制，不能默认视为所有系统的权威。
-- `military_daily`：主线程同步军事日（priority 270，Country/Economy 之后），读 D 日已提交视图、发 D+1 命令；整图 ACTIVE 时由 `WorldRuntimeHost` 在已提交日后补跑。见下方「Military runtime module map」。
+- `military_daily`：旧 SUS 路径在 Country/Economy 之后同步推进军务（priority 270）。整日后台模式由日执行线程计算军务，主线程用 D 日已提交数据安排任务、安装结果并提交 D+1 命令。见下方「Military runtime module map」。
 
 调度字段要稳定：
 
@@ -708,13 +708,16 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
   `military_core_war.cpp`、`military_core_ai.cpp`、`military_core_budget.cpp`（三段预算信封）、
   `military_core_save.cpp`（PKMI v6：section 23 探路 / 24 采购订单 / 25 维护行）、
   `military_core_selftest.cpp`。
-- 桥：`world_ext_military.cpp`（digest 采集——含维修材料报价、意图→Country/Economy D+1 命令、
-  opcode 37 采购+POD 稳定序列、回执、`get_military_maintenance_snapshot`、渲染快照、MILB 包装）、
+- 桥：`world_ext_military_digest.cpp`（采集已提交输入，含维修材料报价）、
+  `world_ext_military.cpp`（日任务交接、意图→Country/Economy D+1 命令、opcode 37 采购+POD 稳定序列、
+  回执、`get_military_maintenance_snapshot`、渲染快照、MILB 包装）、
   `world_ext_economy_military.cpp`（口粮满足率与采购回执折账）、
   `world_ext_military_economy_ingress.inc`（37 进 POD 车道的字段编码）。
 - GDScript：`scripts/military/military_facade.gd`、`military_catalog_compiler.gd`（`data/military/military_catalog.json`）、
   `scripts/simulation/systems/military_daily_system.gd`；接线在 `map_generator.gd`（配置/注册/季节地形）、
-  `world_runtime_host.gd`（整图补跑、图层节点、探路 trail/explored 日边界）、
+  `world_runtime_daily_adapter_part3.gd`（整日军务与视野交接）、
+  `world_runtime_vision_boundary.gd`（已提交军队位置和探索轨迹交给视野计算）、
+  `world_runtime_host.gd`（图层节点、探路 trail/explored）、
   `game_save_coordinator.gd`（`pkmi`、保存前 trail flush）、`player_controller.gd`（`military.*` 命令与探路草稿）。
 - 视觉：`scripts/rendering/military_render_feed.gd`、`military_map_layers.gd` 与 z5–11 的 `military_*_layer.gd`，
   `shaders/military_*.gdshader`；全部低于迷雾 z12。`military_army_token_layer.gd` 内含纸片/formation
