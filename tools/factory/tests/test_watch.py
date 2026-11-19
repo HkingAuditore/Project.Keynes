@@ -204,6 +204,8 @@ class MergeWorkflow(unittest.TestCase):
         self.must = self.enterContext(patch("github.must", side_effect=self.github_request))
         self.fail_checks = False
         self.fail_files = False
+        self.fail_help_label = False
+        self.fail_working_label_removal = False
         self.merge_error = None
         self.preflight_error = None
         self.read_error = None
@@ -238,6 +240,10 @@ class MergeWorkflow(unittest.TestCase):
         if args[1] != "api":
             return Result(0, "", "")
         if "/issues/7/labels" in args[2]:
+            if self.fail_help_label and "POST" in args:
+                return Result(1, "", "HTTP 503 adding label")
+            if self.fail_working_label_removal and "DELETE" in args:
+                return Result(1, "", "HTTP 503 removing label")
             return Result(0, "", "")
         workflow = "/actions/runs?" in args[2]
         if not workflow and self.fail_checks:
@@ -340,6 +346,36 @@ class MergeWorkflow(unittest.TestCase):
         self.assertEqual(self.watcher.tick(None), 0)
         self.assertEqual(self.record()["outcome"], "merged")
         self.assertEqual(self.must.call_args_list[-2].args[0][-1], HEAD)
+
+    def test_failed_help_label_add_saves_stop_and_blocks_next_tick(self):
+        self.merge_state = "OPEN"
+        self.fail_help_label = True
+        self.assertEqual(self.watcher.tick(None), 1)
+        record = self.record()
+        self.assertEqual(record["outcome"], "not_merged")
+        self.assertIn("HTTP 503 adding label", record["githubErrors"][0])
+        state = self.watcher.load(7)
+        self.assertEqual((state.gave_up_at, state.reason), (HEAD, record["error"]))
+        comment = self.cli.call_args.kwargs["stdin"]
+        self.assertIn("could not add `agent-needs-help`", comment)
+        self.assertIn("HTTP 503 adding label", comment)
+        self.assertIn("after the next push", comment)
+
+        self.must.reset_mock()
+        self.cli.reset_mock()
+        self.assert_skipped("stopped at this head")
+        self.cli.assert_not_called()
+
+    def test_working_label_removal_failure_preserves_help_label_retry(self):
+        self.merge_state = "OPEN"
+        self.fail_working_label_removal = True
+        self.assertEqual(self.watcher.tick(None), 1)
+        record = self.record()
+        self.assertEqual(record["outcome"], "not_merged")
+        self.assertIn("HTTP 503 removing label", record["githubErrors"][0])
+        self.assertIsNone(self.watcher.load(7).gave_up_at)
+        comment = next(c.kwargs["stdin"] for c in self.cli.call_args_list if c.args[0][1:3] == ["pr", "comment"])
+        self.assertIn("Remove `agent-needs-help`", comment)
 
     def test_legacy_queue_marker_does_not_block_merging(self):
         path = self.watcher.state_path(7)

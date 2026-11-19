@@ -220,17 +220,25 @@ class Watcher:
         return 0
 
     def stop(self, pr: dict, st: PrState, reason: str, details: str = "", *, resume_on_label_removal: bool = False) -> None:
+        n, head = pr["number"], pr["headRefOid"]
         L = self.cfg["labels"]
-        if resume_on_label_removal:
+        # Only adding the help label determines whether removing it can resume the merge.
+        label_error = self.gh.relabel(n, [L["help"]], []) if resume_on_label_removal else None
+        if resume_on_label_removal and label_error is None:
             next_step = (f"The factory will not retry the merge while `{L['help']}` is set. "
                          f"Remove `{L['help']}` to let it try again.")
         else:
-            st.gave_up_at, st.reason = pr["headRefOid"], reason
-            self.save(pr["number"], st)
+            st.gave_up_at, st.reason = head, reason
+            self.save(n, st)
             next_step = "The factory will look again after the next push to this branch."
-        self.gh.comment(pr["number"], f"### Factory stopped on {pr['headRefOid'][:10]}\n\n{reason}\n\n{details}".strip()
+            if label_error is not None:
+                next_step = f"The factory could not add `{L['help']}` ({label_error}).\n\n{next_step}"
+        self.gh.comment(n, f"### Factory stopped on {head[:10]}\n\n{reason}\n\n{details}".strip()
                         + f"\n\n{next_step}", pull_request=True)
-        self.gh.relabel(pr["number"], [L["help"]], [L["working"]])
+        if not resume_on_label_removal:
+            self.gh.relabel(n, [L["help"]], [L["working"]])
+        elif label_error is None:
+            self.gh.relabel(n, [], [L["working"]])
 
     def merge_preflight(self, pr: dict) -> str | None:
         try:
