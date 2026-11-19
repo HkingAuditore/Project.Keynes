@@ -13,6 +13,8 @@ For each finding:
    - abc123: example.gd:42 validates the value before use.
    ```
 
-Do not commit, branch, push or stash. Do not edit `.github/`, `tools/factory/` or `.qodo/`. Do not loosen assertions, lengthen timeouts or add retries to make a finding go away.
+Do not commit, branch, push or stash. Do not loosen assertions, lengthen timeouts or add retries to make a finding go away.
+
+Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person. Leave the tracked native libraries to the factory. It rebuilds and checks both macOS libraries when native source changes.
 
 Finish with a short report: one line per finding id saying fixed (and how) or disputed (and why).

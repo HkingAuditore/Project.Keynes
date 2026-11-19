@@ -27,6 +27,14 @@ def finding(fid, status="pending", level="action_required"):
 
 
 class VerdictTest(unittest.TestCase):
+    def test_native_change_needs_all_three_facts(self):
+        native = dict(native_changed=True, native_rebuilt=True, native_runtime_ok=True,
+                      native_libraries_committed=True)
+        self.assertEqual(judge(ready(**native)).verdict, "READY")
+        for fact in ("native_rebuilt", "native_runtime_ok", "native_libraries_committed"):
+            with self.subTest(fact=fact):
+                self.assertEqual(judge(ready(**(native | {fact: False}))).verdict, "NEEDS_HUMAN")
+
     def test_ready_needs_every_fact(self):
         self.assertEqual(judge(ready()).verdict, "READY")
 

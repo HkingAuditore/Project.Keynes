@@ -2,15 +2,32 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import shlex
 import time
 from pathlib import Path
 
+import work
 from common import sh, tail
+from verdict import NativeFacts
 
 GUARD_LIST = re.compile(r"for guard in (.*?); do", re.S)
+NATIVE_REBUILD = "native-rebuild"
+NATIVE_IMPORT = "native-import"
+
+
+def runtime_name(library: str) -> str:
+    return f"native-runtime:{Path(library).name}"
+
+
+def file_digest(path: Path) -> str | None:
+    if path.is_symlink() or not path.is_file():
+        return None
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 def static_guards(workdir: str, workflow: str) -> list[str]:
@@ -63,12 +80,43 @@ class Runner:
         elif args[0] != "-m":
             self._require_path(args[0])
 
-    def _run(self, name: str, args: list[str], cwd: str | None = None) -> dict:
+    def _run(self, name: str, args: list[str], cwd: str | None = None, *, env: dict | None = None) -> dict:
         log = str(self.logdir / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', name)}.log")
         started = time.time()
-        r = sh(args, cwd=cwd or self.workdir, timeout=self.timeout, log=log)
+        r = sh(args, cwd=cwd or self.workdir, timeout=self.timeout, log=log, env=env)
         return {"name": name, "ok": r.ok, "code": r.code, "log": log,
                 "seconds": round(time.time() - started)}
+
+    def _run_native(self, results: list[dict]) -> bool:
+        c, tools = self.cfg["checks"], self.cfg["tools"]
+        rebuild = Path(c["nativeRebuild"])
+        self._require_path(str(rebuild.parent), directory=True)
+        self._require_path(c["nativeRebuild"])
+        args = c["nativeImport"]
+        self._require_path(args[args.index("--path") + 1], directory=True)
+        self._require_path(c["nativeRuntimeCheck"])
+        libraries = self.cfg["paths"]["nativeLibraries"]
+        # Force both targets to be produced here, even if SCons retained its object cache.
+        for lib in libraries:
+            (Path(self.workdir) / lib).unlink(missing_ok=True)
+        scons_dir = str(Path(tools["scons"]).expanduser().parent)
+        build = self._run(NATIVE_REBUILD, ["bash", rebuild.name], cwd=str(Path(self.workdir) / rebuild.parent),
+                          env={"PATH": os.pathsep.join([scons_dir, os.environ.get("PATH", os.defpath)])})
+        results.append(build)
+        if not build["ok"]:
+            return False
+        build["libraries"] = {lib: file_digest(Path(self.workdir) / lib) for lib in libraries}
+
+        imported = self._run(NATIVE_IMPORT, [tools["godot"], *args])
+        results.append(imported)
+        if not imported["ok"]:
+            return False
+        for lib in libraries:
+            name = runtime_name(lib)
+            logs = self.logdir / f"probe-{Path(lib).stem}"
+            results.append(self._run(name, [self.py, c["nativeRuntimeCheck"], "--godot", tools["godot"],
+                                            "--library", lib, "--log-dir", str(logs)]))
+        return True
 
     def run(self, native: bool, extra: list[str], cached: list[dict] | None = None) -> list[dict]:
         passed = {r["name"]: r for r in cached or [] if r["ok"]}
@@ -85,11 +133,8 @@ class Runner:
         for args in c["unit"]:
             self._require_unit_target(args)
             results.append(run_check("unit:" + " ".join(args[-1:]), [self.py, *args]))
-        if native:
-            build = run_check("native-build", [self.cfg["tools"]["scons"], *c["nativeBuild"]])
-            results.append(build)
-            if not build["ok"]:
-                return results
+        if native and not self._run_native(results):
+            return results
         godot = self.cfg["tools"]["godot"]
         reg_logs = str(self.logdir / f"regression-{int(time.time())}")
         self._require_path(c["regression"][0])
@@ -107,6 +152,91 @@ class Runner:
 
 def failed(results: list[dict]) -> list[str]:
     return [r["name"] for r in results if not r["ok"]]
+
+
+def new_failures(results: list[dict], before: list[str]) -> list[str]:
+    return [name for name in failed(results) if name.startswith("native-") or name not in before]
+
+
+class Candidate:
+    """Check one pending commit against its parent and retain its build evidence."""
+
+    def __init__(self, cfg: dict, workdir: str, facts: NativeFacts) -> None:
+        self.cfg, self.workdir, self.facts = cfg, workdir, facts
+        self.inputs: dict[str, str | None] = {}
+        self.built: dict[str, str | None] = {}
+
+    def scope(self, files: list[str]) -> tuple[list[str], list[str], list[str]]:
+        bad, human, native = work.scope(self.cfg, files)
+        if native:
+            if self.facts.native_libraries_committed:
+                self.facts.native_rebuilt = self.facts.native_runtime_ok = self.facts.native_libraries_committed = False
+            self.facts.native_changed = True
+            human = sorted(set(human) | (set(work.binary_changes(self.cfg, files)) - set(self.expected_libraries)))
+        return bad, human, native
+
+    @property
+    def expected_libraries(self) -> list[str]:
+        return self.cfg["paths"]["nativeLibraries"]
+
+    def discard_binaries(self, files: list[str]) -> list[str]:
+        binaries = set(work.binary_changes(self.cfg, files))
+        if binaries:
+            work.restore(self.workdir, self.cfg["paths"]["trackedBinaries"])
+        return [path for path in files if path not in binaries]
+
+    def _digests(self, files: list[str]) -> dict[str, str | None]:
+        return {path: file_digest(Path(self.workdir) / path) for path in files}
+
+    def run(self, base: str, files: list[str], logdir: str, extra: list[str]) -> tuple[list[dict], list[str]]:
+        _, _, native = self.scope(files)
+        self.inputs, self.built = self._digests(native), {}
+        if native or not self.facts.native_libraries_committed:
+            self.facts.native_changed = bool(native)
+            self.facts.native_rebuilt = self.facts.native_runtime_ok = False
+        if not native:
+            self.discard_binaries(files)
+        results = Runner(self.cfg, self.workdir, logdir).run(bool(native), extra)
+        if native:
+            by_name = {row["name"]: row for row in results}
+            build = by_name.get(NATIVE_REBUILD, {})
+            self.facts.native_rebuilt = build.get("ok", False)
+            self.facts.native_runtime_ok = all(by_name.get(runtime_name(lib), {}).get("ok", False)
+                                               for lib in self.expected_libraries)
+            self.built = build.get("libraries", {})
+        after = work.changed(self.workdir, base)
+        if not native and not work.scope(self.cfg, after)[2]:
+            after = self.discard_binaries(after)
+        elif native and not self.facts.native_runtime_ok:
+            # A failed rebuild can leave one or both targets missing. Restore the parents'
+            # libraries for the next repair attempt, while preserving any out-of-scope changes.
+            if set(work.binary_changes(self.cfg, after)).issubset(self.expected_libraries):
+                after = self.discard_binaries(after)
+        return results, after
+
+    def commit_problem(self, files: list[str], native: list[str]) -> str | None:
+        if not native:
+            if self.inputs:
+                return "C++ files changed after the native checks"
+            return None
+        if (self.inputs != self._digests(native) or
+                not (self.facts.native_rebuilt and self.facts.native_runtime_ok)):
+            return "both macOS libraries must be rebuilt and pass runtime checks for the current C++ changes"
+        changed = set(work.binary_changes(self.cfg, files))
+        expected = set(self.expected_libraries)
+        if changed != expected:
+            missing = ", ".join(sorted(expected - changed))
+            unexpected = ", ".join(sorted(changed - expected))
+            return f"expected exactly the two rebuilt macOS libraries to change (missing: {missing or 'none'}; unexpected: {unexpected or 'none'})"
+        if any(not digest or self.built.get(lib) != digest
+               for lib, digest in self._digests(self.expected_libraries).items()):
+            return "the macOS libraries differ from this run's rebuild outputs"
+        return None
+
+    def committed(self) -> None:
+        if self.inputs:
+            self.facts.native_libraries_committed = True
+        self.inputs, self.built = {}, {}
 
 
 def feedback(results: list[dict], names: list[str]) -> str:

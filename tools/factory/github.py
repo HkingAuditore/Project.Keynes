@@ -5,23 +5,13 @@ from __future__ import annotations
 import json
 
 from common import must, sh
-
-
-def combine_ci(workflows: list[str] | None, checks: list[str] | None) -> str:
-    if workflows is None or checks is None:
-        return "error"
-    if not workflows or any(s != "completed" for s in workflows) or not checks:
-        return "pending"
-    rows = [line.partition("\t") for line in checks]
-    if any(status != "completed" for status, _, _ in rows):
-        return "pending"
-    good = {"success", "neutral", "skipped"}
-    return "success" if all(c in good for _, _, c in rows) else "failure"
+from verdict import CIFacts, CIRun
 
 
 class GitHub:
-    def __init__(self, repo: str) -> None:
+    def __init__(self, repo: str, *, pull_requests: bool = False) -> None:
         self.repo = repo
+        self.resource = "pr" if pull_requests else "issue"
         self.errors: list[str] = []
 
     def _json(self, args: list[str]):
@@ -40,7 +30,7 @@ class GitHub:
         return it
 
     def relabel(self, number: int, add: list[str], remove: list[str]) -> str | None:
-        args = ["issue", "edit", str(number), "-R", self.repo]
+        args = [self.resource, "edit", str(number), "-R", self.repo]
         for l in add:
             args += ["--add-label", l]
         for l in remove:
@@ -52,8 +42,9 @@ class GitHub:
         self.errors.append(msg)
         return msg
 
-    def comment(self, number: int, body: str) -> None:
-        r = sh(["gh", "issue", "comment", str(number), "-R", self.repo, "--body-file", "-"], stdin=body)
+    def comment(self, number: int, body: str, *, pull_request: bool = False) -> None:
+        resource = "pr" if pull_request else self.resource
+        r = sh(["gh", resource, "comment", str(number), "-R", self.repo, "--body-file", "-"], stdin=body)
         if not r.ok:
             self.errors.append(f"comment #{number}: {(r.err or r.out).strip()[-300:]}")
 
@@ -75,17 +66,35 @@ class GitHub:
         if not r.ok:
             self.errors.append(f"edit PR #{number}: {(r.err or r.out).strip()[-300:]}")
 
-    def _ci_rows(self, endpoint: str, query: str) -> list[str] | None:
+    def merge_pr(self, number: int, sha: str) -> str:
+        must(["gh", "pr", "merge", str(number), "--repo", self.repo, "--merge", "--match-head-commit", sha])
+        pr = self._json(["pr", "view", str(number), "--json", "state,headRefOid,mergeCommit"])
+        if not isinstance(pr, dict):
+            raise RuntimeError(f"GitHub did not return the PR after the merge of {sha}")
+        commit = (pr.get("mergeCommit") or {}).get("oid")
+        if pr.get("state") != "MERGED" or pr.get("headRefOid") != sha or not commit:
+            raise RuntimeError(f"GitHub did not confirm a merge of {sha}")
+        return commit
+
+    def _ci_runs(self, endpoint: str, collection: str) -> list[CIRun] | None:
+        query = f'.{collection}[] | {{id, name, status, conclusion, url: .html_url}} | @json'
         r = sh(["gh", "api", endpoint, "--paginate", "--jq", query])
-        if r.ok:
-            return r.out.splitlines()
-        self.errors.append(f"read CI at {endpoint}: {(r.err or r.out).strip()[-300:]}")
-        return None
+        if not r.ok:
+            self.errors.append(f"read CI at {endpoint}: {(r.err or r.out).strip()[-300:]}")
+            return None
+        try:
+            return [CIRun(**json.loads(line)) for line in r.out.splitlines()]
+        except (ValueError, TypeError) as e:
+            self.errors.append(f"read CI at {endpoint}: {e}")
+            return None
+
+    def ci_facts(self, sha: str, *, all_check_runs: bool = False) -> CIFacts:
+        workflows = self._ci_runs(f"repos/{self.repo}/actions/runs?head_sha={sha}", "workflow_runs")
+        if not workflows or any(run.status != "completed" for run in workflows):
+            return CIFacts(sha, workflows, [])
+        suffix = "?filter=all" if all_check_runs else ""
+        checks = self._ci_runs(f"repos/{self.repo}/commits/{sha}/check-runs{suffix}", "check_runs")
+        return CIFacts(sha, workflows, checks)
 
     def ci_state(self, sha: str) -> str:
-        statuses = self._ci_rows(f"repos/{self.repo}/actions/runs?head_sha={sha}", ".workflow_runs[].status")
-        if not statuses or any(s != "completed" for s in statuses):
-            return combine_ci(statuses, [])
-        checks = self._ci_rows(f"repos/{self.repo}/commits/{sha}/check-runs",
-                               '.check_runs[] | [.status, (.conclusion // "")] | @tsv')
-        return combine_ci(statuses, checks)
+        return self.ci_facts(sha).state()

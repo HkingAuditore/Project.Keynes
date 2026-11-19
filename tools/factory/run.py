@@ -1,4 +1,4 @@
-"""Keynes factory: take one `ready-for-agent` ticket to a reviewed PR on the fork. Never merges.
+"""Keynes factory: take one `ready-for-agent` ticket to a reviewed PR on the fork.
 
 Stages: G0 ticket gate -> plan (Codex, read-only) -> implement + checks (Codex, retry limit)
 -> Qodo local review of uncommitted changes -> commit, push, PR -> Qodo PR review + CI
@@ -26,7 +26,7 @@ import qodo  # noqa: E402
 import work  # noqa: E402
 from common import Events, load_config, sh  # noqa: E402
 from github import GitHub  # noqa: E402
-from ticket import criteria, gate, touching  # noqa: E402
+from ticket import criteria, gate  # noqa: E402
 from verdict import Facts, judge, unknown_findings  # noqa: E402
 
 
@@ -60,6 +60,7 @@ class Run:
         home = Path(cfg["home"])
         self.home = home
         self.workdir = str(home / "work")
+        self.candidate = checks.Candidate(cfg, self.workdir, self.facts)
         self.logs = home / "logs" / f"{number}-{self.stamp}"
         self.logs.mkdir(parents=True, exist_ok=True)
         self.branch = f"agent/issue-{number}"
@@ -81,29 +82,37 @@ class Run:
         self.stop_with_patch(reason, base)
 
     def run_checks(self, label: str, extra: list[str], base_failed: list[str]) -> tuple[list[dict], list[str]]:
-        files = work.changed(self.workdir, self.base)
-        native = bool(touching(files, self.cfg["checks"]["nativePaths"]))
-        self.facts.native_changed = self.facts.native_changed or native
-        res = checks.Runner(self.cfg, self.workdir, self.path(f"checks-{label}")).run(native, extra)
-        if native:
-            work.restore(self.workdir, self.cfg["paths"]["trackedBinaries"])
-        new = [n for n in checks.failed(res) if n not in base_failed]
-        self.ev.add("checks", label=label, failed=checks.failed(res), new=new)
+        base = self.facts.head or self.base
+        files = work.changed(self.workdir, base)
+        res, after = self.candidate.run(base, files, self.path(f"checks-{label}"), extra)
+        new = checks.new_failures(res, base_failed)
+        self.ev.add("checks", label=label, failed=checks.failed(res), new=new, results=res)
+        _, self.facts.human_paths, _ = self.candidate.scope(after)
         return res, new
 
-    def scope_problems(self) -> list[str]:
-        files = work.changed(self.workdir, self.base)
-        bad, self.facts.human_paths, native = work.scope(self.cfg, files)
-        self.facts.native_changed = bool(native)
+    def scope_problems(self, files: list[str] | None = None) -> list[str]:
+        if files is None:
+            files = work.changed(self.workdir, self.facts.head or self.base)
+        bad, self.facts.human_paths, _ = self.candidate.scope(files)
         return [f"files outside the agent's area changed: {', '.join(bad)}. Revert them."] if bad else []
 
     def commit_checked(self, message: str) -> bool:
-        problems = self.scope_problems()
+        files = work.changed(self.workdir, self.facts.head or self.base)
+        problems = self.scope_problems(files)
         if problems:
             self.facts.stopped_by = problems[0]
-        if problems or self.facts.human_paths or self.facts.native_changed:
+        if problems or self.facts.human_paths:
+            return False
+        _, _, native = work.scope(self.cfg, files)
+        problem = self.candidate.commit_problem(files, native)
+        if problem:
+            self.facts.stopped_by = problem
+            return False
+        if not native and not self.candidate.discard_binaries(files):
+            self.facts.stopped_by = "no changes remain after the checks"
             return False
         self.facts.head = self.facts.checks_sha = work.commit(self.workdir, message)
+        self.candidate.committed()
         return True
 
     # ---- stages --------------------------------------------------------------------------
@@ -144,16 +153,22 @@ class Run:
                 self.ev.add("implement", attempt=attempt, result="no changes")
                 continue
             problems = self.scope_problems()
+            if self.facts.human_paths:
+                return False
             if problems:
                 feedback = "\n".join(problems)
                 self.ev.add("implement", attempt=attempt, result="scope", problems=problems)
                 continue
             res, new = self.run_checks(f"implement-{attempt}", extra, base_failed)
+            if self.facts.human_paths:
+                return False
             if not new:
                 self.ev.add("implement", attempt=attempt, result="checks pass")
                 return True
             feedback = checks.feedback(res, new)
         self.facts.stopped_by = f"checks still fail after {self.cfg['limits']['implementAttempts']} attempts"
+        if new:
+            self.facts.stopped_by += ": " + ", ".join(new)
         self.facts.new_failures = new
         return False
 
@@ -230,13 +245,14 @@ class Run:
         problems = self.scope_problems()
         if problems:
             self.facts.stopped_by = problems[0]
+        if problems or self.facts.human_paths:
             return False
-        res, new = self.run_checks(f"fix-{int(time.time())}", extra, base_failed)
+        res, new = self.run_checks(f"fix-{time.time_ns()}", extra, base_failed)
         self.facts.new_failures = new
         if new:
             self.facts.stopped_by = "checks fail after the review fix: " + ", ".join(new)
             return False
-        return True
+        return not self.facts.human_paths
 
     def pr_body(self, issue: dict, plan: str) -> str:
         crit = "\n".join(f"- [ ] {c}" for c in criteria(issue["body"]))
@@ -248,6 +264,7 @@ class Run:
         return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n{local}"
                 f"## Factory\nPlan, checks and reviews are in the run record `{self.stamp}` "
                 f"and the issue comments. The verdict is computed from facts, not from this report.\n\n"
+                f"{self.facts.report()}\n\n"
                 f"<details><summary>Plan</summary>\n\n{plan[:20000]}\n\n</details>\n\n"
                 f"<details><summary>Agent report</summary>\n\n{reports[-1][:12000]}\n\n</details>\n\n"
                 f"Implemented-By: Codex ({self.cfg['agent']['model']})\n")
@@ -288,6 +305,8 @@ class Run:
                                        f"Implemented-By: Codex ({self.cfg['agent']['model']})\n"):
                 return
             work.push(self.workdir, self.cfg["remote"], self.branch)
+            self.gh.comment(self.pr["number"], f"Factory checks for `{self.facts.head}`\n\n{self.facts.report()}",
+                            pull_request=True)
 
     def wait_ci(self, sha: str, timeout_min: int) -> str | None:
         deadline = time.time() + timeout_min * 60
@@ -376,8 +395,8 @@ class Run:
             if v.for_human:
                 lines += ["", "For a person to decide (informational findings):"] + [f"- {x}" for x in v.for_human]
             if self.pr:
-                lines += ["", f"PR: {self.pr['url']} (the factory never merges)"]
-            lines += ["", f"Run record: `{out.name}`"]
+                lines += ["", f"PR: {self.pr['url']}"]
+            lines += ["", self.facts.report(), "", f"Run record: `{out.name}`"]
             self.gh.comment(self.number, "\n".join(lines))
             done = v.verdict == "READY"
             remove = [L["working"], L["trigger"]] if self.remove_trigger else [L["working"]]
