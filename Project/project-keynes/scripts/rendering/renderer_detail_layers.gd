@@ -146,12 +146,24 @@ static func _spawn_detail_layers(host) -> void:
 	host._detail_budget_total_dirty = true
 	host._detail_budget_total_scan_count = 0
 	host._detail_budget_last_scan_ms = 0.0
-	var profiles = _detail_profiles(host, )
+	var cfg := ConfigFile.new()
+	var hidden_layers := PackedStringArray()
+	if cfg.load("user://pk_debug.cfg") == OK:
+		hidden_layers = DCFeatureFlags.render_debug_hidden_layers(cfg)
+	var family_name := &"VegetationFamilyLayer"
+	var hide_all := hidden_layers.has("vegetation")
+	var family_hidden := hide_all or DCFeatureFlags.render_debug_hides_layer(family_name, hidden_layers)
+	# 合批开启时，源层只为植被合批提供数据。排除合批层也应停掉源层工作。
+	var hide_sources: bool = hide_all or (family_hidden and host.detail_scatter_family_renderer_enabled)
+	var profiles: Array = [] if hide_sources else _detail_profiles(host)
 	var veg_tier = host._mobile_quality_tier_from_define(host._mobile_quality_tier_define)
 	for i in range(profiles.size()):
 		var prof: Resource = profiles[i]
+		var layer_name := _detail_layer_name(host, prof, i)
+		if DCFeatureFlags.render_debug_hides_layer(layer_name, hidden_layers):
+			continue
 		var layer = ShrubLayer.new()
-		layer.name = _detail_layer_name(host, prof, i)
+		layer.name = layer_name
 		layer.profile = prof
 		layer.set_mobile_quality_tier(veg_tier)
 		layer.set_density_detail(host._graphics_details.vegetation_detail)
@@ -181,9 +193,10 @@ static func _spawn_detail_layers(host) -> void:
 			layer.set_camera_view(host._camera_world_rect, host._camera_world_center, host._camera_zoom)
 		layer.set_lod_debug_view(host.terrain_surface_debug_view == 6)
 		host._detail_layers.append(layer)
-	host._detail_family_layer = host.VegetationFamilyLayerScript.new()
-	host._detail_family_layer.name = "VegetationFamilyLayer"
-	host.add_child(host._detail_family_layer)
+	if not family_hidden:
+		host._detail_family_layer = host.VegetationFamilyLayerScript.new()
+		host._detail_family_layer.name = family_name
+		host.add_child(host._detail_family_layer)
 	if host._cloud_shadow_field != null:
 		host._push_cloud_shadow_material_inputs()
 

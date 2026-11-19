@@ -589,6 +589,8 @@ static func _water_program_prefix(host, kind: String) -> String:
 		return prefix
 	if host._mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(host, host._mobile_quality_tier_define)
+		if host._mobile_quality_tier_define == "MOBILE_QUALITY_LOW" and host._graphics_details.water_detail == 0:
+			prefix += "#define PK_WATER_FLAT_LOW\n"
 	else:
 		prefix += _desktop_sky_quality_prefix(host)
 	if DCFeatureFlags.is_compatibility_renderer():
@@ -614,6 +616,8 @@ static func _water_program_prefix(host, kind: String) -> String:
 static func _push_world_uniform(host, key: Variant, value: Variant) -> void:
 
 	var key_name = StringName(key)
+	if host._land_base_cache != null:
+		host._land_base_cache.parameter_changed(key_name, value)
 	if host._shader_mat != null:
 		host._shader_mat.set_shader_parameter(key_name, value)
 	if host._water_mat != null and not host._water_uniform_names.is_empty() \
@@ -917,9 +921,8 @@ static func _apply_split_program_fallback(host) -> void:
 		host._apply_uniforms()
 
 
-## 建/拆 + 几何 + uniform 全量对齐。调用点只有 _apply_uniforms() 末尾：
-## 材质重建（_load_shader）、画质换档（set_mobile_quality_tier）、set_map(_cooperative)
-## 都会经过 _apply_uniforms，所以这里不需要额外的调用点。稳态下是几次引用比较。
+## 建/拆 + 几何 + uniform 全量对齐。重建材质、切换档位和换图走 _apply_uniforms()，
+## 单项水面设置跨越编译变体时也会走这里。
 
 static func _sync_water_quad(host) -> void:
 

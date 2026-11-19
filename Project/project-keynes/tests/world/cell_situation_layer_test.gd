@@ -82,7 +82,7 @@ func _run() -> void:
 	_expect("候选只覆盖视窗而不是全图", layer._scan_count < map.cell_count()
 		and layer._candidates.size() < map.cell_count())
 	var first: PackedInt32Array = economy.batches[0]
-	host.simulation_committed.emit(5, 6, 1)
+	host.simulation_view_updated.emit(5, 6, 1)
 	layer._process(0.3)
 	_expect("后台提交不让分页反复停在第一页", economy.batches.size() == 2
 		and economy.batches[1] != first)
@@ -103,12 +103,12 @@ func _run() -> void:
 	_expect("拒绝未提交数据", before == layer._rows)
 	map.visible_arr[target] = 0
 	_expect("当前迷雾立即禁止显示和悬停", not layer._can_show(target))
-	host.simulation_committed.emit(6, 7, 2)
+	host.simulation_view_updated.emit(6, 7, 2)
 	layer._process(0.3)
 	_expect("重建剔除不可见缓存", not layer._rows.has(target)
 		and not layer._candidates.has(target))
 	map.visible_arr[target] = 1
-	host.simulation_committed.emit(7, 8, 3)
+	host.simulation_view_updated.emit(7, 8, 3)
 	layer._process(0.3)
 	_expect("新视野无需移动相机即可加入", layer._candidates.has(target))
 	camera.zoom = Vector2.ONE * 2.0
@@ -121,7 +121,7 @@ func _run() -> void:
 	layer._process(0.3)
 	_expect("缩远停止查询且清空显示", not layer._near and layer._rows.is_empty()
 		and layer._hits.is_empty() and economy.batches.size() == queries)
-	_expect("八种透明位图均已装载", layer._icons.size() == 8)
+	_expect("九种透明位图均已装载", layer._icons.size() == 9 and not layer._icons.has(null))
 	layer.configure(map, camera, host, economy, weather)
 	_expect("重绑不残留旧地图状态", layer._rows.is_empty() and layer._candidates.is_empty())
 	var scene: PackedScene = load("res://scenes/player_game.tscn")

@@ -15,14 +15,16 @@ from unittest.mock import Mock, call, patch
 FACTORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FACTORY))
 
+import agent
 import checks
 import qodo
 import run as issue_runner
 import sync_rules
 import work
 from common import Events, Result, load_config
-from github import GitHub, combine_ci
+from github import GitHub
 from run import Run
+from verdict import CIFacts, CIRun
 from watch_prs import PrState, Watcher
 
 
@@ -118,7 +120,8 @@ class IssueWorkflowTest(TempFactory):
                 commit.assert_not_called()
                 self.assertIsNone(run.facts.checks_sha)
                 if path == "gdext/godot-cpp":
-                    self.assertTrue(run.facts.native_changed)
+                    self.assertFalse(run.facts.native_changed)
+                    self.assertIn(path, run.facts.human_paths)
                 else:
                     self.assertIn(path, run.facts.stopped_by)
 
@@ -250,6 +253,79 @@ class WatchWorkflowTest(TempFactory):
 
     def read_record(self, watcher):
         return json.loads((self.root / "runs" / f"pr-7-{watcher.stamp}.json").read_text())
+
+    def run_check_fix(self, results, codex_ok=True):
+        watcher = self.make_watcher()
+        log = self.write_file(self.root, "native.log", "src/a.cpp:197:49: error: no viable conversion\n"
+                              + "warning: noise\n" * 200)
+        failing = [{"name": "native-rebuild", "ok": False, "code": 1, "log": str(log)}]
+        runs = [(failing if r == "fail" else [], ["edit.gd"]) for r in results]
+        reports = [{"ok": True, "report": "fixed", "session": "thread-1"}] + [
+            {"ok": codex_ok, "code": 0 if codex_ok else 1, "report": "x", "session": "thread-1"}] * 3
+        with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.base_results", return_value=[]), patch("work.head", return_value=HEAD),
+              patch("agent.codex", side_effect=reports) as codex,
+              patch("work.changed", return_value=["edit.gd"]), patch("checks.Candidate.run", side_effect=runs),
+              patch.object(watcher, "scope_blocked", return_value=False),
+              patch("work.save_patch", return_value=[]),
+              patch.object(watcher, "stop") as stop, patch("work.commit", return_value="b" * 40) as commit,
+              patch("checks.Candidate.committed"), patch("watch_prs.must")):
+            record = {}
+            outcome = watcher._fix(PR, PrState(), [FINDING], self.root, Events(), record)
+        return outcome, codex, stop, commit, record
+
+    def test_codex_resume_continues_the_same_thread(self):
+        report = str(self.root / "fix.md")
+        events = '{"type":"thread.started","thread_id":"0199-abc"}\n{"type":"turn.completed"}\n'
+
+        def fake_sh(args, **kw):
+            Path(kw["log"]).write_text(events if "resume" not in args else "", encoding="utf-8")
+            return Result(0, "", "")
+
+        with patch("agent.sh", side_effect=fake_sh) as sh:
+            first = agent.codex(self.cfg, "/w", "fix", report, writable=True)
+            again = agent.codex(self.cfg, "/w", "checks", report, writable=True, session=first["session"])
+        self.assertEqual(first["session"], "0199-abc")
+        self.assertEqual(again["session"], "0199-abc")
+        new_args, resume_args = sh.call_args_list[0].args[0], sh.call_args_list[1].args[0]
+        self.assertIn("--json", new_args)
+        self.assertEqual(resume_args[1:4], ["exec", "resume", "0199-abc"])
+        self.assertNotIn("-C", resume_args)
+        self.assertIn('sandbox_mode="workspace-write"', resume_args)
+        self.assertEqual(sh.call_args_list[1].kwargs["cwd"], "/w")
+
+    def test_codex_without_thread_event_has_no_session(self):
+        report = str(self.root / "fix.md")
+        with patch("agent.sh", side_effect=lambda args, **kw: (Path(kw["log"]).write_text("not json\n"), Result(1, "", ""))[1]):
+            self.assertIsNone(agent.codex(self.cfg, "/w", "fix", report, writable=True)["session"])
+
+    def test_failing_checks_go_back_to_codex_before_stopping(self):
+        outcome, codex, stop, commit, record = self.run_check_fix(["fail", "pass"])
+        self.assertEqual(outcome, "pushed")
+        self.assertEqual(codex.call_count, 2)
+        prompt = codex.call_args_list[1].args[2]
+        self.assertIn("no viable conversion", prompt)
+        self.assertIsNone(codex.call_args_list[0].kwargs.get("session"))
+        self.assertEqual(codex.call_args_list[1].kwargs["session"], "thread-1")
+        self.assertEqual(record["codexSession"], "thread-1")
+        stop.assert_not_called()
+        commit.assert_called_once()
+        self.assertEqual(record["checks"]["checkFixRounds"], 1)
+
+    def test_checks_that_keep_failing_stop_after_the_round_limit(self):
+        rounds = self.cfg["limits"]["checkFixRounds"]
+        outcome, codex, stop, commit, _ = self.run_check_fix(["fail"] * (rounds + 1))
+        self.assertEqual(outcome, "stopped")
+        self.assertEqual(codex.call_count, rounds + 1)
+        commit.assert_not_called()
+        self.assertIn(f"after {rounds} check-fix rounds: native-rebuild", stop.call_args.args[2])
+
+    def test_failed_check_fix_agent_stops_with_patch(self):
+        outcome, codex, stop, commit, _ = self.run_check_fix(["fail", "pass"], codex_ok=False)
+        self.assertEqual(outcome, "stopped")
+        self.assertEqual(codex.call_count, 2)
+        commit.assert_not_called()
+        self.assertIn("while fixing failing checks", stop.call_args.args[2])
 
     def test_scope_rechecked_after_passing_checks(self):
         watcher = Watcher(self.cfg, dry=False)
@@ -396,6 +472,363 @@ class WatchWorkflowTest(TempFactory):
         self.assertNotIn("checks", record)
 
 
+class ConflictUpdateTest(TempFactory):
+    def setUp(self):
+        super().setUp()
+        self.source = self.root / "source"
+        self.source.mkdir()
+        self.remote = self.root / "fork.git"
+        self.watcher = Watcher(self.cfg, dry=False)
+        self.watcher.gh = Mock(errors=[])
+        self.watcher.gh.relabel.return_value = None
+        self.watcher.gh.pr_merge_state.side_effect = lambda number: {
+            **self.pr, "baseRefOid": self.base, "state": "OPEN",
+            "isDraft": False, "isCrossRepository": False,
+            "labels": [*self.pr["labels"], self.cfg["labels"]["working"]], **self.fresh_fields,
+        }
+        self.fresh_fields = {}
+        self.checkout = Path(self.watcher.workdir)
+        self.libraries = self.cfg["paths"]["nativeLibraries"]
+        work.git(str(self.source), "init", "-qb", "master")
+        self.configure(self.source)
+        self.enterContext(patch.dict(os.environ, {"GIT_ALLOW_PROTOCOL": "file"}))
+        # These fixtures have no Godot checkout. Git still handles the real merge and push.
+        self.enterContext(patch("work.update_godot_cpp"))
+        self.codex = self.enterContext(patch("agent.codex"))
+        self.qodo = self.enterContext(patch("qodo.pr_review"))
+        self.baseline = self.enterContext(patch("checks.base_results", side_effect=self.check_baseline))
+        self.runner = self.enterContext(patch("checks.Runner.run", side_effect=self.check_candidate))
+        self.build = False
+        self.parent_results = {
+            "head": [{"name": "known", "ok": False}, {"name": "regression", "ok": True}],
+            "base": [{"name": "known", "ok": True}, {"name": "regression", "ok": True}],
+        }
+        self.after = [{"name": "known", "ok": False}, {"name": "regression", "ok": True}]
+
+    def configure(self, repo):
+        work.git(str(repo), "config", "user.name", "Factory Test")
+        work.git(str(repo), "config", "user.email", "factory@example.invalid")
+        work.git(str(repo), "config", "commit.gpgsign", "false")
+
+    def write_versions(self, paths):
+        for path, data in paths.items():
+            target = self.source / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+
+    def commit(self, repo):
+        work.git(str(repo), "add", "-A")
+        work.git(str(repo), "commit", "-qm", "test checkout")
+        return work.head(str(repo))
+
+    def prepare_conflict(self, paths):
+        self.write_versions({path: versions[0] for path, versions in paths.items()})
+        self.write_file(self.source, ".github/master.yml", "old check")
+        self.write_file(self.source, "unrelated.txt", "unchanged")
+        self.write_file(self.source, "script.sh", "#!/bin/sh\n")
+        common = self.commit(self.source)
+        self.write_versions({path: versions[1] for path, versions in paths.items()})
+        # This protected file arrives cleanly from master and is outside the resolution scope.
+        self.write_file(self.source, ".github/master.yml", "upstream check")
+        self.base = self.commit(self.source)
+        work.git(str(self.source), "checkout", "-qb", "issue", common)
+        self.write_versions({path: versions[2] for path, versions in paths.items()})
+        self.commit(self.source)
+        self.open_fixture()
+
+    def open_fixture(self):
+        head = work.head(str(self.source))
+        work.git(str(self.source), "clone", "--bare", "-q", ".", str(self.remote))
+        work.git(str(self.source), "clone", "-qo", "fork", str(self.remote), str(self.checkout))
+        self.configure(self.checkout)
+        self.pr = {**PR, "headRefOid": head, "baseRefName": "master", "mergeable": "CONFLICTING", "labels": []}
+
+    def check_baseline(self, cfg, workdir, head, cache, logs):
+        self.assertEqual(work.head(workdir), head)
+        self.assertIsNone(work.merge_head(workdir))
+        self.assertEqual(Path(cache), self.root / "base-checks")
+        if head == self.base:
+            return self.parent_results["base"]
+        self.assertEqual(head, self.pr["headRefOid"])
+        return self.parent_results["head"]
+
+    def check_candidate(self, native, extra):
+        self.assertEqual(native, self.build)
+        self.assertEqual(work.merge_head(str(self.checkout)), self.base)
+        self.assertFalse(work.unmerged(str(self.checkout)))
+        native_results = []
+        if native:
+            for lib, data in zip(self.libraries, self.rebuilt):
+                (self.checkout / lib).write_bytes(data)
+            native_results = [{"name": checks.NATIVE_REBUILD, "ok": True, "libraries": {
+                lib: checks.file_digest(self.checkout / lib) for lib in self.libraries
+            }}, {"name": checks.NATIVE_IMPORT, "ok": True}]
+            native_results.extend({"name": checks.runtime_name(lib), "ok": True} for lib in self.libraries)
+        return [*native_results, *self.after]
+
+    def tick(self):
+        with patch.object(self.watcher, "prs", return_value=[self.pr]):
+            self.assertEqual(self.watcher.tick(None), 0)
+        self.qodo.assert_not_called()
+        record = self.root / "runs" / f"pr-7-{self.watcher.stamp}.json"
+        return json.loads(record.read_text())
+
+    def remote_head(self):
+        return work.git(str(self.remote), "rev-parse", "refs/heads/issue")
+
+    def assert_merge(self, used_codex):
+        sha = self.remote_head()
+        self.assertNotEqual(sha, self.pr["headRefOid"])
+        self.assertEqual(work.git(str(self.remote), "show", "-s", "--format=%P", sha).split(),
+                         [self.pr["headRefOid"], self.base])
+        body = work.git(str(self.remote), "show", "-s", "--format=%B", sha)
+        self.assertTrue(body.startswith("Merge master into issue\n"))
+        self.assertIn("Fixed-By: keynes-factory", body)
+        self.assertEqual("Implemented-By: Codex (" in body, used_codex)
+        self.assertEqual(self.watcher.load(7).rounds, 1)
+        return sha
+
+    def assert_stopped(self, reason):
+        self.assertIsNone(work.merge_head(str(self.checkout)))
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.assertEqual(self.watcher.load(7).gave_up_at, self.pr["headRefOid"])
+        self.watcher.gh.relabel.assert_any_call(7, ["agent-needs-help"], ["agent-working"])
+        self.assertIn(reason, self.watcher.gh.comment.call_args.args[1])
+
+    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n", stage=True):
+        self.assertIn("edit.gd", prompt)
+        self.assertTrue(writable)
+        self.write_file(Path(workdir), "edit.gd", text)
+        if stage:
+            work.git(workdir, "add", "edit.gd")
+        return {"ok": True, "code": 0, "report": "edit.gd combines the changes from both branches."}
+
+    def text_conflict(self):
+        self.prepare_conflict({"edit.gd": (b"common\n", b"master\n", b"PR\n")})
+        self.codex.side_effect = self.resolve_text
+
+    def test_library_conflicts_force_native_flow_even_without_source_edits(self):
+        self.prepare_conflict({lib: (b"\0old", b"\0master", b"\0pr") for lib in self.libraries})
+        self.build = True
+        # Identical to master for one target, different from both parents for the other.
+        self.rebuilt = [b"\0master", b"\0rebuilt"]
+        record = self.tick()
+        sha = self.assert_merge(used_codex=False)
+        self.codex.assert_not_called()
+        self.assertEqual(record["conflicts"], sorted(self.libraries))
+        self.assertEqual(record["files"], [self.libraries[1]])
+        self.assertTrue(all(record["facts"].values()))
+        self.assertEqual(record["outcome"], "pushed")
+        for lib, data in zip(self.libraries, self.rebuilt):
+            self.assertEqual(subprocess.check_output(["git", "-C", str(self.remote), "show", f"{sha}:{lib}"]), data)
+            self.assertIn(checks.runtime_name(lib), self.watcher.gh.comment.call_args.args[1])
+
+    def test_required_native_check_failure_blocks_without_a_baseline(self):
+        self.prepare_conflict({lib: (b"\0old", b"\0master", b"\0pr") for lib in self.libraries})
+        self.build = True
+        self.rebuilt = [b"\0master", b"\0rebuilt"]
+        name = checks.runtime_name(self.libraries[0])
+
+        def fail_probe(native, extra):
+            results = self.check_candidate(native, extra)
+            next(row for row in results if row["name"] == name).update(
+                ok=False, code=1, log=str(self.root / "native.log"))
+            return results
+
+        self.runner.side_effect = fail_probe
+        record = self.tick()
+        self.assert_stopped(name)
+        self.assertEqual(record["checks"]["new"], [])
+        self.assertEqual(record["checks"]["nativeFailed"], [name])
+
+    def test_text_conflict_preserves_clean_upstream_changes_and_existing_failures(self):
+        self.text_conflict()
+        record = self.tick()
+        sha = self.assert_merge(used_codex=True)
+        self.codex.assert_called_once()
+        self.assertEqual(record["files"], ["edit.gd"])
+        self.assertEqual(record["checks"]["before"], ["known"])
+        self.assertEqual(record["checks"]["new"], [])
+        self.assertEqual(work.git(str(self.remote), "show", f"{sha}:edit.gd"), "PR and master")
+        self.assertEqual(work.git(str(self.remote), "show", f"{sha}:.github/master.yml"), "upstream check")
+        self.assertIn("combines the changes", self.watcher.gh.comment.call_args.args[1])
+
+    def test_check_already_failing_on_base_does_not_block_the_update(self):
+        self.text_conflict()
+        self.parent_results["head"][0]["ok"] = True
+        self.parent_results["base"][0]["ok"] = False
+        record = self.tick()
+        self.assert_merge(used_codex=True)
+        self.assertEqual([c.args[2] for c in self.baseline.call_args_list], [self.pr["headRefOid"], self.base])
+        self.assertEqual(record["checks"]["new"], [])
+        self.assertEqual(record["checks"]["beforeByParent"], {"head": [], "base": ["known"]})
+
+    def test_check_that_passed_on_both_parents_blocks_the_update(self):
+        self.text_conflict()
+        self.after[1].update(ok=False, code=1, log=str(self.root / "regression.log"))
+        record = self.tick()
+        self.assert_stopped("the update has failing checks: regression")
+        self.assertEqual(record["checks"]["new"], ["regression"])
+        self.assertEqual([c.args[2] for c in self.baseline.call_args_list], [self.pr["headRefOid"], self.base])
+
+    def test_check_missing_on_one_parent_is_not_a_regression_from_both(self):
+        self.text_conflict()
+        self.parent_results["base"].pop()
+        self.after[1]["ok"] = False
+        self.assertEqual(self.tick()["checks"]["new"], [])
+        self.assert_merge(used_codex=True)
+
+    def test_codex_cannot_restore_a_cleanly_merged_file_to_the_pr_head(self):
+        self.text_conflict()
+        path = ".github/master.yml"
+
+        def undo_upstream_change(cfg, workdir, *args, **kwargs):
+            report = self.resolve_text(cfg, workdir, *args, **kwargs)
+            work.git(workdir, "restore", "--source=HEAD", "--staged", "--worktree", "--", path)
+            return report
+
+        self.codex.side_effect = undo_upstream_change
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped(path)
+        self.runner.assert_not_called()
+
+    def test_codex_cannot_delete_add_or_change_modes_outside_conflicts(self):
+        self.text_conflict()
+
+        def edit_unrelated_paths(cfg, workdir, *args, **kwargs):
+            report = self.resolve_text(cfg, workdir, *args, **kwargs)
+            (self.checkout / "unrelated.txt").unlink()
+            work.git(workdir, "update-index", "--chmod=+x", "--", "script.sh")
+            self.write_file(self.checkout, "new.txt", "untracked")
+            self.write_file(self.checkout, "staged.txt", "staged")
+            work.git(workdir, "add", "--", "staged.txt")
+            return report
+
+        self.codex.side_effect = edit_unrelated_paths
+        record = self.tick()
+        self.assertEqual(record["outcome"], "stopped", record.get("error"))
+        self.assertEqual(record["unrelatedFiles"], ["new.txt", "script.sh", "staged.txt", "unrelated.txt"])
+        for path in ("unrelated.txt", "script.sh", "new.txt", "staged.txt"):
+            self.assert_stopped(path)
+        self.runner.assert_not_called()
+
+    def test_label_added_before_push_abandons_the_update(self):
+        self.text_conflict()
+        self.fresh_fields["labels"] = ["agent-working", "agent-needs-help"]
+        record = self.tick()
+        self.assertEqual(record["outcome"], "skipped")
+        self.assertIn("labels", record["reason"])
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.watcher.gh.pr_merge_state.assert_called_once_with(7)
+        self.watcher.gh.comment.assert_not_called()
+        self.assertEqual(self.watcher.gh.relabel.call_args_list, [
+            call(7, ["agent-working"], []), call(7, [], ["agent-working"]),
+        ])
+
+    def test_head_changed_in_github_metadata_before_push_abandons_the_update(self):
+        self.text_conflict()
+        self.fresh_fields["headRefOid"] = self.base
+        self.assertEqual(self.tick()["outcome"], "head moved")
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.watcher.gh.pr_merge_state.assert_called_once_with(7)
+        self.watcher.gh.comment.assert_not_called()
+
+    def test_staged_leftover_marker_stops_the_update(self):
+        self.text_conflict()
+        self.codex.side_effect = lambda *args, **kwargs: self.resolve_text(*args, **kwargs, text="<<<<<<< HEAD\nPR\n")
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped("conflict markers remain: edit.gd")
+        self.runner.assert_not_called()
+
+    def test_unmerged_index_stops_even_when_the_working_file_has_no_markers(self):
+        self.text_conflict()
+        self.codex.side_effect = lambda *args, **kwargs: self.resolve_text(*args, **kwargs, stage=False)
+        self.tick()
+        self.assert_stopped("unmerged paths remain: edit.gd")
+        self.runner.assert_not_called()
+
+    def test_protected_path_conflict_aborts_without_codex_or_push(self):
+        path = ".github/check.yml"
+        self.prepare_conflict({path: (b"old\n", b"master\n", b"PR\n")})
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped(path)
+        self.codex.assert_not_called()
+        self.runner.assert_not_called()
+
+    def test_gitlink_conflict_outside_the_configured_protected_paths_aborts(self):
+        path = "other/submodule"
+
+        def gitlink(oid):
+            work.git(str(self.source), "update-index", "--add", "--cacheinfo", f"160000,{oid},{path}")
+            work.git(str(self.source), "commit", "-qm", "move submodule")
+            return work.head(str(self.source))
+
+        common = gitlink("1" * 40)
+        self.base = gitlink("2" * 40)
+        work.git(str(self.source), "checkout", "-qb", "issue", common)
+        gitlink("3" * 40)
+        self.open_fixture()
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped(path)
+        self.codex.assert_not_called()
+        self.runner.assert_not_called()
+
+    def test_scope_is_rechecked_after_checks(self):
+        self.text_conflict()
+
+        def change_protected_file(native, extra):
+            self.write_file(self.checkout, ".github/master.yml", "modified during checks")
+            return self.check_candidate(native, extra)
+
+        self.runner.side_effect = change_protected_file
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped(".github/master.yml")
+
+    def test_head_moving_during_checks_abandons_the_merge(self):
+        self.text_conflict()
+
+        def move_head(native, extra):
+            work.git(str(self.remote), "update-ref", "refs/heads/issue", self.base)
+            return self.check_candidate(native, extra)
+
+        self.runner.side_effect = move_head
+        self.assertEqual(self.tick()["outcome"], "head moved")
+        self.assertEqual(self.remote_head(), self.base)
+        self.assertIsNone(work.merge_head(str(self.checkout)))
+        self.assertEqual(work.head(str(self.checkout)), self.pr["headRefOid"])
+        self.watcher.gh.comment.assert_not_called()
+        self.watcher.gh.relabel.assert_called_with(7, [], ["agent-working"])
+
+    def test_lease_protects_a_head_that_moves_after_the_last_check(self):
+        self.text_conflict()
+        git = work.git
+
+        def git_with_head_move(workdir, *args):
+            if args[0] == "push":
+                git(str(self.remote), "update-ref", "refs/heads/issue", self.base)
+            return git(workdir, *args)
+
+        with patch("work.git", side_effect=git_with_head_move):
+            self.assertEqual(self.tick()["outcome"], "head moved")
+        self.assertEqual(self.remote_head(), self.base)
+        self.watcher.gh.comment.assert_not_called()
+        self.assertEqual(self.watcher.load(7).rounds, 0)
+
+    def test_same_conflict_after_an_update_stops_before_calling_codex_again(self):
+        self.text_conflict()
+        self.tick()
+        updated = self.remote_head()
+        work.git(str(self.source), "checkout", "-q", "master")
+        self.write_file(self.source, "edit.gd", "new master change\n")
+        self.base = self.commit(self.source)
+        work.git(str(self.source), "push", "-q", str(self.remote), "master")
+        self.pr["headRefOid"] = updated
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped("the same conflicts reappeared after the factory update: edit.gd")
+        self.codex.assert_called_once()
+        self.assertEqual(self.watcher.load(7).rounds, 1)
+
+
 class ChecksTest(TempFactory):
     def test_regression_imports_even_when_godot_cache_exists(self):
         (self.root / "Project/project-keynes/.godot").mkdir(parents=True)
@@ -470,29 +903,34 @@ class ChecksTest(TempFactory):
 
 class AdapterTest(TempFactory):
     def test_ci_waits_for_actions_and_checks(self):
+        completed = CIRun("completed", "success")
+        running = CIRun("in_progress", None)
+        failed = CIRun("completed", "failure")
         for workflows, runs, expected in [
             (None, [], "error"),
-            (["completed"], None, "error"),
-            ([], ["completed\tsuccess"], "pending"),
-            (["completed", "in_progress"], ["completed\tsuccess"], "pending"),
-            (["completed"], [], "pending"),
-            (["completed"], ["completed\tfailure", "queued\t"], "pending"),
-            (["completed"], ["completed\tfailure"], "failure"),
-            (["completed", "completed"], ["completed\tsuccess", "completed\tskipped"], "success"),
+            ([completed], None, "error"),
+            ([], [completed], "pending"),
+            ([completed, running], [completed], "pending"),
+            ([completed], [], "pending"),
+            ([completed], [failed, CIRun("queued", None)], "pending"),
+            ([completed], [failed], "failure"),
+            ([completed, completed], [completed, CIRun("completed", "skipped")], "success"),
         ]:
             with self.subTest(workflows=workflows, runs=runs):
-                self.assertEqual(combine_ci(workflows, runs), expected)
+                self.assertEqual(CIFacts(HEAD, workflows, runs).state(), expected)
 
     def test_ci_requests_both_lists_for_the_head_sha(self):
-        with patch("github.sh", side_effect=[Result(0, "completed\n", ""), Result(0, "completed\tsuccess\n", "")]) as cli:
+        completed = Result(0, '{"status":"completed","conclusion":"success"}\n', "")
+        with patch("github.sh", side_effect=[completed, completed]) as cli:
             self.assertEqual(GitHub("example/repo").ci_state(HEAD), "success")
         self.assertIn(f"repos/example/repo/actions/runs?head_sha={HEAD}", cli.call_args_list[0].args[0])
         self.assertIn(f"repos/example/repo/commits/{HEAD}/check-runs", cli.call_args_list[1].args[0])
 
     def test_ci_records_failure_from_either_query(self):
         failure = Result(1, "partial output", "HTTP 503")
+        completed = Result(0, '{"status":"completed","conclusion":"success"}\n', "")
         for results, endpoint in [([failure], "/actions/runs?"),
-                                  ([Result(0, "completed\n", ""), failure], "/check-runs")]:
+                                  ([completed, failure], "/check-runs")]:
             with self.subTest(endpoint=endpoint):
                 gh = GitHub("example/repo")
                 with patch("github.sh", side_effect=results) as cli:
@@ -572,7 +1010,7 @@ class AdapterTest(TempFactory):
         with patch("work.git", side_effect=["gdext/godot-cpp\0", "tools/ci/.factory-test\0.factory-note\0"]) as git:
             files = work.changed(str(self.root), HEAD)
         self.assertIn("--ignore-submodules=none", git.call_args_list[0].args)
-        self.assertEqual(work.scope(self.cfg, files), (["tools/ci/.factory-test"], [], ["gdext/godot-cpp"]))
+        self.assertEqual(work.scope(self.cfg, files), (["tools/ci/.factory-test"], ["gdext/godot-cpp"], []))
 
     def test_local_review_reports_missing_open_finding_level(self):
         output = {"finding_state": {"complete": True, "introduced": ["missing"]}}

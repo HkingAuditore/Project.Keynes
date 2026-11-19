@@ -4,6 +4,8 @@
   "base": "master",
   "remote": "fork",
   "home": "~/.keynes-factory",
+  "autoMerge": true,
+  "autoUpdateConflicts": true,
   "labels": {
     "trigger": "ready-for-agent",
     "working": "agent-working",
@@ -28,6 +30,7 @@
     "localReviewRounds": 2,
     "localReviewRequired": false,
     "prReviewRounds": 3,
+    "checkFixRounds": 2,
     "localReviewTimeoutMinutes": 30,
     "prReviewTimeoutMinutes": 40,
     "ciTimeoutMinutes": 40,
@@ -38,14 +41,20 @@
     "unit": [
       ["-m", "unittest", "discover", "-s", "tools/map_authoring/tests"]
     ],
-    "nativePaths": ["gdext/src/", "gdext/tests/", "gdext/SConstruct", "gdext/site_scons/", "gdext/godot-cpp/"],
-    "nativeBuild": ["-C", "gdext", "platform=macos", "target=template_debug", "arch=arm64", "dev_build=no", "-j8"],
+    "nativePaths": ["gdext/src/", "gdext/tests/", "gdext/SConstruct", "gdext/site_scons/"],
+    "nativeRebuild": "gdext/rebuild.sh",
+    "nativeImport": ["--headless", "--path", "Project/project-keynes", "--import"],
+    "nativeRuntimeCheck": "tools/ci/check_macos_runtime_extension.py",
     "regression": ["tools/ci/run_regression_checks.py", "--jobs", "4"],
     "extraCheckPattern": "^tools/ci/[a-z0-9_]+\\.py( --?[a-z0-9-]+)*$"
   },
   "paths": {
     "forbidden": [".github/", "tools/factory/", ".qodo/", "tools/ci/"],
-    "needsHuman": ["tools/ci/*baseline*.json", "tools/ci/module_api/", "tools/ci/module_api_shared.json", "tools/ci/cross_domain_inventory.json"],
-    "trackedBinaries": "Project/project-keynes/addons/dots_ext/bin/"
+    "needsHuman": ["tools/ci/*baseline*.json", "tools/ci/module_api/", "tools/ci/module_api_shared.json", "tools/ci/cross_domain_inventory.json", "gdext/godot-cpp/", "gdext/rebuild.sh"],
+    "trackedBinaries": "Project/project-keynes/addons/dots_ext/bin/",
+    "nativeLibraries": [
+      "Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.macos.template_debug.arm64.dylib",
+      "Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.macos.template_release.arm64.dylib"
+    ]
   }
 }

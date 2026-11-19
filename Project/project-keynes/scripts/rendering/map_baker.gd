@@ -284,6 +284,8 @@ var _cell_dyn_lut_bytes_cache: PackedByteArray = PackedByteArray()
 var _cell_eco_lut_bytes_cache: PackedByteArray = PackedByteArray()
 var _cell_bounce_lut_bytes_cache: PackedByteArray = PackedByteArray()
 var _cell_lut_active_transition_count: int = 0
+var _cell_offset_layout: Dictionary = {}
+var _cell_table_source_cache: Dictionary = {}
 
 # GM-only river Atlas probe. It samples a bounded set of river/non-river cells
 # at the LUT encode boundary so source values can be compared with published bytes.
@@ -765,6 +767,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_cell_eco_lut_bytes_cache = PackedByteArray()
 	_cell_bounce_lut_bytes_cache = PackedByteArray()
 	_cell_lut_active_transition_count = 0
+	_cell_offset_layout.clear()
+	_cell_table_source_cache.clear()
 	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
 	_vector_atlas_data = PackedByteArray()
 	_vector_atlas_data_size = Vector2i.ZERO

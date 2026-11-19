@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from common import FACTORY, sh
@@ -15,15 +16,40 @@ def render(name: str, **values: str) -> str:
     return text
 
 
-def codex(cfg: dict, workdir: str, prompt: str, report: str, writable: bool) -> dict:
+def codex(cfg: dict, workdir: str, prompt: str, report: str, writable: bool, *, session: str | None = None) -> dict:
+    """Run Codex once. With `session`, continue that conversation instead of starting a new one."""
     a = cfg["agent"]
-    args = [cfg["tools"]["codex"], "exec", "-C", workdir, "-m", a["model"],
-            "-c", f'model_reasoning_effort="{a["effort"]}"',
-            "-s", "workspace-write" if writable else "read-only",
-            "--skip-git-repo-check", "-o", report, "-"]
-    r = sh(args, stdin=prompt, timeout=a["timeoutMinutes"] * 60, log=report + ".log")
+    sandbox = "workspace-write" if writable else "read-only"
+    if session:
+        # `codex exec resume` takes neither -C nor -s: the directory comes from cwd, the sandbox from config.
+        args = [cfg["tools"]["codex"], "exec", "resume", session, "-m", a["model"],
+                "-c", f'model_reasoning_effort="{a["effort"]}"', "-c", f'sandbox_mode="{sandbox}"']
+    else:
+        args = [cfg["tools"]["codex"], "exec", "-C", workdir, "-m", a["model"],
+                "-c", f'model_reasoning_effort="{a["effort"]}"', "-s", sandbox]
+    args += ["--json", "--skip-git-repo-check", "-o", report, "-"]
+    log = report + ".log"
+    r = sh(args, cwd=workdir, stdin=prompt, timeout=a["timeoutMinutes"] * 60, log=log)
     text = Path(report).read_text(encoding="utf-8") if Path(report).exists() else ""
-    return {"ok": r.ok, "code": r.code, "report": text, "log": report + ".log"}
+    return {"ok": r.ok, "code": r.code, "report": text, "log": log, "session": session or session_id(log)}
+
+
+def session_id(log: str) -> str | None:
+    """The thread id from a `codex exec --json` event log, or None if it never started."""
+    try:
+        lines = Path(log).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if '"thread.started"' not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "thread.started" and isinstance(event.get("thread_id"), str):
+            return event["thread_id"]
+    return None
 
 
 def failure_reason(out: dict) -> str:

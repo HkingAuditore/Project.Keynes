@@ -29,10 +29,12 @@
 | Shader 少用 if，优化按 GPU 实际工作量判断 | AGENTS.md、用户 2026-11-19 | Qodo：shaders keep if-branches few（warning） |
 | 推送前先修掉已发现的问题，包括既有失败 | AGENTS.md | 工厂：master 上有失败时结论为 NEEDS_HUMAN |
 | 基线只能用脚本收紧，不能手改 | development-guide.md | 工厂：基线和契约文件改动交给人 |
-| 改 C++ 后两种 macOS 库都要重编 | development-guide.md | 工厂：改了 C++ 一律交给人 |
+| 改 C++ 后两种 macOS 库都要重编并验证 | development-guide.md | 工厂：重编、导入项目、逐库跑运行验证，提交前核对库目录只改了本次验证过的两份库 |
 | 开始改动前先同步上游 | AGENTS.md | 文字说明（工厂基于 fork/master，同步由人做） |
 | 上游改动合入前独立审查 | AGENTS.md | 文字说明 |
 | 交给外部 AI 的修复先写根因证据 | AGENTS.md | 工厂提示词（implement.md、fix-review.md） |
 | 工厂结论只来自事实 | 本目录 | 测试：`tools/factory/tests/test_factory.py`；变异检查见 [verdict-mutations.txt](verdict-mutations.txt) |
+| PR 在当前头部提交评审通过、CI 全部成功且 GitHub 确认可合并时才自动合并 | 仓库所有者 2026-11-19 | 工厂：`watch_prs.py` 的 `decide()` 和 `--match-head-commit`；测试：`tools/factory/tests/test_watch.py` |
+| 工厂把有冲突的 PR 分支更新到 master，遇到受保护路径或子模块冲突时交给人，库冲突时重编并验证两份库 | 仓库所有者 2026-11-19 | 工厂：`watch_prs.py` 的 `decide()` 和更新流程；测试：`test_watch.py`、`test_workflow.py` |
 
-合计 30 条规则：至少有一项护栏或测试的 16 条（其中“前台只读”一条，护栏只管到原生绑定访问）；只靠 Qodo 规则的 7 条；靠工厂关卡或提示词的 5 条（“找根因”一条另有 Qodo 规则）；只有文字说明的 2 条。
+合计 32 条规则：至少有一项护栏或测试的 18 条（其中“前台只读”一条，护栏只管到原生绑定访问）；只靠 Qodo 规则的 7 条；靠工厂关卡或提示词的 5 条（“找根因”一条另有 Qodo 规则）；只有文字说明的 2 条。

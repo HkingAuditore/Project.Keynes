@@ -87,16 +87,20 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 	# 保证在屏幕内且不在迷雾里）。正常玩家没有 pk_debug.cfg ⇒ 不生效。
 	var probe_cfg := ConfigFile.new()
 	if probe_cfg.load("user://pk_debug.cfg") == OK:
-		var raw_probe = probe_cfg.get_value("render", "badge_probe_cell", -1)
+		var raw_probe: Variant = probe_cfg.get_value("render", "badge_probe_cell", -1)
 		var probe_cell := -1
-		if String(raw_probe).strip_edges().to_lower() == "center":
-			var cube: Vector3i = HexUtils.world_to_cube(_camera.global_position, _hex_size)
-			var offset := HexUtils.cube_to_offset(cube.x, cube.y)
-			if _map != null:
-				probe_cell = int(offset.y) * int(_map.width) + int(offset.x)
-		else:
-			probe_cell = int(raw_probe)
-		if probe_cell >= 0 and probe_cell < _map.cell_count():
+		if raw_probe is int:
+			probe_cell = raw_probe
+		elif raw_probe is String or raw_probe is StringName:
+			var probe_text := String(raw_probe).strip_edges()
+			if probe_text.is_valid_int():
+				probe_cell = probe_text.to_int()
+			elif probe_text.to_lower() == "center" and _camera != null and _map != null:
+				var cube := HexUtils.world_to_cube(_camera.global_position, _hex_size)
+				var cell := _map.get_cell_by_cube(cube)
+				if cell != null:
+					probe_cell = cell.index
+		if _map != null and probe_cell >= 0 and probe_cell < _map.cell_count():
 			_effects.append({"cell": probe_cell, "kind": &"colony", "caption": "PROBE",
 				"major": true, "age": 0.0, "duration": 99999.0, "reduced": false})
 			print("[activity-probe] badge at cell=%d world=%s" % [

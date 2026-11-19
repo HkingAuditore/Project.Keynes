@@ -56,6 +56,8 @@ func apply(host, settings: Dictionary) -> void:
 		if host._world != null:
 			host._push_world_uniform("ocean_current_flow_tex_bound",
 				water_flowmap_enabled() and host._world.ocean_current_flow_tex != null)
+		if host._water_quad != null and host._water_variant_prefix != host._water_program_prefix(host._water_variant_kind):
+			host._sync_water_quad()
 
 	if host._fog_layer != null:
 		host._fog_layer.set_render_scale(int(settings.get("fog_render_scale", -1)))

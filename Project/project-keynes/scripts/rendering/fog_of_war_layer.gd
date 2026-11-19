@@ -79,8 +79,11 @@ var _clock_speed_multiplier: float = 1.0
 var _mobile_quality_tier_define: String = ""
 var _fog_quality: int = 3
 var _render_scale_percent := -1
-var _sub_viewport: SubViewport = null
-var _blit_sprite: Sprite2D = null
+var _scaled := preload("res://scripts/rendering/fog_render_target.gd").new()
+var _sub_viewport: SubViewport:
+	get: return _scaled.viewport
+var _blit_sprite: Sprite2D:
+	get: return _scaled.blit
 ## 玩家画质档（0..2）。档位映射要用到它，且 set_mobile_quality_tier 晚于
 ## set_visual_quality 到达时必须能重算，所以单独存一份。
 var _visual_quality: int = 0
@@ -102,6 +105,15 @@ var _axial_tilt_rad: float = 0.4101523
 var _tod_debug_sun_position_enabled: bool = false
 var _tod_debug_sun_uv: Vector2 = Vector2(0.25, 0.5)
 var _tod_debug_sun_height_scale: float = 1.0
+
+
+func _enter_tree() -> void:
+	# Register before terrain culling, including when a scaled target is enabled later in play.
+	RenderingServer.frame_pre_draw.connect(_prepare_scaled_draw)
+
+
+func _exit_tree() -> void:
+	RenderingServer.frame_pre_draw.disconnect(_prepare_scaled_draw)
 
 
 func _ready() -> void:
@@ -133,9 +145,15 @@ func _process(delta: float) -> void:
 		return
 	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
 	_world_time += delta * visual_time_scale
+	if _sub_viewport != null:
+		_scaled.elapsed += delta
+	else:
+		_push_animation_time()
+
+
+func _push_animation_time() -> void:
 	_shader_mat.set_shader_parameter("world_time", _world_time)
 	_sync_gradient_table()
-	_sync_scaled_target()
 
 
 func _uses_gradient_table() -> bool:
@@ -167,32 +185,6 @@ func _sync_gradient_table() -> void:
 	_shader_mat.set_shader_parameter("fog_gradient_blend", (time - start) / GRADIENT_STEP)
 
 
-## Scale the transform by the actual target dimensions to preserve alignment and
-## screen-space effects at odd window sizes.
-func _sync_scaled_target() -> void:
-	if _sub_viewport == null or _blit_sprite == null:
-		return
-	var vp := get_viewport()
-	if vp == null:
-		return
-	var view := vp.get_visible_rect()
-	if view.size.x <= 0.0 or view.size.y <= 0.0:
-		return
-	var fraction := float(_effective_render_scale()) / 100.0
-	var physical_size := view.size * vp.get_stretch_transform().get_scale().abs()
-	var target_size := Vector2i(physical_size * fraction).max(Vector2i(2, 2))
-	if _sub_viewport.size != target_size:
-		_sub_viewport.size = target_size
-	var scale := Vector2(target_size) / view.size
-	var downsample := Transform2D(Vector2(scale.x, 0.0), Vector2(0.0, scale.y), -view.position * scale)
-	var canvas := downsample * vp.canvas_transform
-	if _sub_viewport.canvas_transform != canvas:
-		_sub_viewport.canvas_transform = canvas
-	var blit_transform := canvas.affine_inverse()
-	if _blit_sprite.transform != blit_transform:
-		_blit_sprite.transform = blit_transform
-
-
 func _effective_render_scale() -> int:
 	if _render_scale_percent < 0:
 		return 50 if DCFeatureFlags.fog_half_res_enabled() else 100
@@ -206,10 +198,9 @@ func set_render_scale(percent: int) -> void:
 	if _mesh_inst == null:
 		return
 	if _effective_render_scale() < 100:
-		_build_scaled_target()
-		_sync_scaled_target()
+		_scaled.build(self, _mesh_inst)
 	else:
-		_drop_scaled_target()
+		_scaled.drop(self, _mesh_inst)
 	_update_visibility()
 
 
@@ -220,7 +211,7 @@ func _ensure_nodes() -> void:
 	_mesh_inst.name = "FogQuad"
 	_mesh_inst.texture = DataOverlayBaker.get_empty_texture()
 	if _effective_render_scale() < 100:
-		_build_scaled_target()
+		_scaled.build(self, _mesh_inst)
 	else:
 		add_child(_mesh_inst)
 
@@ -250,61 +241,17 @@ func _ensure_nodes() -> void:
 	_sync_cell_field_uniforms(true)
 
 
-func _build_scaled_target() -> void:
-	if _sub_viewport != null:
-		return
-	_sub_viewport = SubViewport.new()
-	_sub_viewport.name = "FogHalfRes"
-	_sub_viewport.transparent_bg = true
-	_sub_viewport.disable_3d = true
-	_sub_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	_sub_viewport.gui_disable_input = true
-	_sub_viewport.size = Vector2i(2, 2)
-	add_child(_sub_viewport)
-	if _mesh_inst.get_parent() == null:
-		_sub_viewport.add_child(_mesh_inst)
-	else:
-		_mesh_inst.reparent(_sub_viewport, false)
-	# 上采样用 Sprite2D 而不是 TextureRect：Control 的 transform 不是可写属性
-	# （只能改 position/scale/size，且受 anchors 约束），而 Sprite2D 直接吃
-	# canvas 变换的逆，能精确铺满屏幕。
-	# 它留在主画布（canvas 0）里才能参与 z_index 排序：迷雾要在世界之上、UI 之下；
-	# 换 CanvasLayer 会跳出画布 0，反而盖住 HUD。
-	_blit_sprite = Sprite2D.new()
-	_blit_sprite.name = "FogBlit"
-	_blit_sprite.centered = false
-	_blit_sprite.texture = _sub_viewport.get_texture()
-	_blit_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_blit_sprite.top_level = true
-	_blit_sprite.z_index = 12
-	_blit_sprite.visible = false
-	add_child(_blit_sprite)
-
-
-func _drop_scaled_target() -> void:
-	if _sub_viewport == null:
-		return
-	_mesh_inst.reparent(self, false)
-	remove_child(_blit_sprite)
-	_blit_sprite.queue_free()
-	_sub_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	remove_child(_sub_viewport)
-	_sub_viewport.queue_free()
-	_blit_sprite = null
-	_sub_viewport = null
-
-
 func _sync_scaled_visibility() -> void:
-	if _sub_viewport == null:
-		return
-	var drawn := is_visible_in_tree()
-	_blit_sprite.visible = drawn
-	# Render on the first frame after activation. A viewport that waits for a
-	# visible consumer can leave the newly switched fog blank for one frame.
-	var update_mode := SubViewport.UPDATE_ALWAYS if drawn else SubViewport.UPDATE_DISABLED
-	_sub_viewport.render_target_update_mode = update_mode
-	if drawn:
-		_sync_scaled_target()
+	_scaled.sync_visibility(self, _effective_render_scale())
+
+
+func _prepare_scaled_draw() -> void:
+	if _sub_viewport != null and is_visible_in_tree() and _shader_mat != null:
+		var host: Variant = _cell_field_host()
+		var world: WorldData = host._world if host != null else null
+		if _scaled.needs_draw(self, _effective_render_scale(), world):
+			_push_animation_time()
+			_sub_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 ## 编译期质量档：mobile/web 共用 MOBILE_QUALITY_*；桌面不 prepend。
@@ -510,6 +457,7 @@ func set_edge_transition_data(
 	distance_tex: Texture2D,
 	width: float
 ) -> void:
+	_scaled.dirty = true
 	_edge_neighbor_tex = neighbor_tex
 	_edge_distance_tex = distance_tex
 	_edge_transition_width = clampf(width, 0.0, 0.96)
@@ -629,6 +577,7 @@ func _sync_cell_field_uniforms(force: bool = false) -> void:
 	if not force and sig == _cell_field_sig:
 		return
 	var previous_early: bool = _cell_field_sig.get("early", false)
+	_scaled.dirty = true
 	_cell_field_sig = sig
 	# Even at high quality the terrain material is authoritative. Compile the
 	# opacity check back in whenever terrain actually starts skipping pixels.
@@ -664,6 +613,7 @@ func _sync_cell_field_uniforms(force: bool = false) -> void:
 func set_fog_debug_view(view: int) -> void:
 	if _shader_mat == null:
 		return
+	_scaled.dirty = true
 	_shader_mat.set_shader_parameter("fog_debug_view", clampi(view, 0, 3))
 
 
@@ -684,6 +634,7 @@ func set_bounds(bounds: Rect2) -> void:
 
 
 func set_horizontal_wrap(period_x: float) -> void:
+	_scaled.dirty = true
 	_wrap_period_x = maxf(0.0, period_x)
 	if _bounds.size.x > 0.0 and _mesh_inst != null:
 		_mesh_inst.mesh = _build_quad_mesh(_bounds, _wrap_period_x)
@@ -837,6 +788,7 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 func _push_quality() -> void:
 	if _shader_mat == null:
 		return
+	_scaled.dirty = true
 	_shader_mat.set_shader_parameter("fog_quality", _fog_quality)
 	# [fog-quality-diag 2026-11-17] 一行可 grep 的实际档位。真机排查"迷雾画质没变"
 	# 时需要区分三件事：设置没推下来 / 推了但被 tier 夹住 / shader 根本没生效。

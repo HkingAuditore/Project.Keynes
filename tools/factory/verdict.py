@@ -5,15 +5,54 @@ Order: NEEDS_HUMAN, then NOT_DONE (evidence missing), then NEEDS_FIX, then READY
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 
 OPEN = {"pending", "partial_implementation", "not_implemented", "focus_areas_edited"}
 CLOSED = {"implemented", "full_implementation", "dismissed", "detected_after_merge", "outdated"}
 BLOCKING = ("action_required", "remediation_recommended")
 
 
+@dataclass(frozen=True)
+class CIRun:
+    status: str
+    conclusion: str | None
+    id: int = 0
+    name: str = ""
+    url: str = ""
+
+
+@dataclass(frozen=True)
+class CIFacts:
+    sha: str
+    workflows: list[CIRun] | None
+    checks: list[CIRun] | None
+
+    def state(self, *, strict: bool = False) -> str:
+        if self.workflows is None or self.checks is None:
+            return "error"
+        if not self.workflows or (not strict and not self.checks):
+            return "pending"
+        if any(run.status != "completed" for run in self.workflows + self.checks):
+            return "pending"
+        if strict:
+            return "success" if all(run.conclusion == "success" for run in self.workflows + self.checks) else "failure"
+        # Keep the issue verdict's existing allowance for neutral and skipped checks.
+        return "success" if all(run.conclusion in {"success", "neutral", "skipped"} for run in self.checks) else "failure"
+
+
 @dataclass
-class Facts:
+class NativeFacts:
+    native_changed: bool = False
+    native_rebuilt: bool = False
+    native_runtime_ok: bool = False
+    native_libraries_committed: bool = False
+
+    def report(self) -> str:
+        return " · ".join(f"`{item.name}={str(getattr(self, item.name)).lower()}`" for item in fields(NativeFacts))
+
+
+@dataclass
+class Facts(NativeFacts):
     head: str | None = None
     stopped_by: str | None = None
     plan_questions: list[str] = field(default_factory=list)
@@ -23,7 +62,6 @@ class Facts:
     checks_sha: str | None = None
     new_failures: list[str] = field(default_factory=list)
     human_paths: list[str] = field(default_factory=list)
-    native_changed: bool = False
     local_blocking: list[str] = field(default_factory=list)
     local_review_incomplete: bool = False
     review_status: str | None = None
@@ -43,6 +81,8 @@ def classify_level(level: str | None) -> str:
 
 def classify(finding: dict) -> str:
     status = finding.get("attribution_status")
+    if not isinstance(status, str):
+        return "unknown"
     if status in OPEN:
         return classify_level(finding.get("action_level"))
     if status in CLOSED:
@@ -50,9 +90,10 @@ def classify(finding: dict) -> str:
     return "unknown"
 
 
-def unknown_findings(findings: list[dict]) -> list[str]:
+def unknown_findings(findings: list[dict], *, require_level: bool = False) -> list[str]:
     return [f"{f.get('id', '?')} (status={f.get('attribution_status')!r}, action_level={f.get('action_level')!r})"
-            for f in findings if classify(f) == "unknown"]
+            for f in findings if classify(f) == "unknown" or
+            (require_level and classify_level(f.get("action_level")) == "unknown")]
 
 
 @dataclass
@@ -73,11 +114,16 @@ def judge(f: Facts) -> Verdict:
         human.append("master already fails " + ", ".join(f.base_failures)
                      + "; AGENTS.md requires fixing found failures before a push")
     if f.human_paths:
-        human.append("baseline or contract files changed and need a human check: " + ", ".join(f.human_paths))
+        human.append("protected files changed and need a human check: " + ", ".join(f.human_paths))
     if f.local_blocking:
         human.append("local Qodo review findings left open after the round limit: " + ", ".join(f.local_blocking))
     if f.native_changed:
-        human.append("C++ changed: rebuild and commit both macOS libraries, then run check_macos_runtime_extension.py")
+        if not f.native_rebuilt:
+            human.append("C++ changed and the macOS rebuild did not pass")
+        if not f.native_runtime_ok:
+            human.append("C++ changed and both macOS runtime checks have not passed")
+        if not f.native_libraries_committed:
+            human.append("C++ changed and both verified macOS libraries have not been committed")
     if f.ci_state == "error":
         human.append("the CI state could not be read")
     unknown = unknown_findings(f.findings)

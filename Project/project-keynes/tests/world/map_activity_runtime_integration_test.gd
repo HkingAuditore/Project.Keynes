@@ -5,7 +5,7 @@ extends SceneTree
 var _failures := 0
 var _seen: Dictionary = {}
 var _cell := -1
-var _commits := 0
+var _view_updates := 0
 var _capture_dir := ""
 var _captures: Dictionary = {}
 
@@ -20,15 +20,18 @@ func _run() -> void:
 	var config := NewGameConfig.create_default()
 	config.base.map_width = 40
 	config.base.map_height = 28
-	config.base.initial_seed = 1
+	# The original capital loses population through the observation window.
+	# This capital recovers and publishes growth as well as completing buildings.
+	config.base.initial_seed = 20260101
+	config.apply_land_layout("single")
 	config.country.foreign_count = 0
 	# Set up a test request without starting a second scene transition.
 	root.get_node("GameFlow").set("_pending_request", {
 		"kind": "new_game", "config": config.to_dictionary()})
 	var game: Node = load("res://scenes/player_game.tscn").instantiate()
 	var host: WorldRuntimeHost = game.get_node("RuntimeHost")
-	host.simulation_committed.connect(func(_from: int, _to: int, _generation: int) -> void:
-		_commits += 1)
+	host.simulation_view_updated.connect(func(_from: int, _to: int, _generation: int) -> void:
+		_view_updates += 1)
 	root.add_child(game)
 	await host.world_ready
 	for i in 4:
@@ -36,6 +39,8 @@ func _run() -> void:
 	var clock: WorldClock = game.get_node("WorldClock")
 	clock.pause(true)
 	var player = game.get_node("PlayerController")
+	player.set_popups_suppressed(true)
+	game._ui_manager.set_popups_suppressed(true)
 	var activity = game.get_node("WorldRoot/MapActivityLayer")
 	var generator = host.get("_generator")
 	var start: Dictionary = generator.gameplay_start_report()
@@ -72,7 +77,7 @@ func _run() -> void:
 	_expect("ACTIVE native population commit starts visible growth effect", _seen.has(&"growth"))
 	await _wait_for_kind(&"build", 20.0)
 	_expect("native installed-building publication starts completion effect", _seen.has(&"build"))
-	_expect("formal worker published real commit notifications", _commits > 0)
+	_expect("formal worker published real display updates", _view_updates > 0)
 	clock.pause(true)
 	if not _capture_dir.is_empty():
 		await create_timer(0.5).timeout
