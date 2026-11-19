@@ -112,6 +112,8 @@ public:
     std::shared_ptr<const Published> read() const;
     bool forward_events(int64_t day, DCWorldExt *legacy = nullptr);
     const char *prepare_day(const RuntimeEnvironmentSnapshot &environment);
+    std::vector<uint8_t> capture_terrain() const;
+    void restore_terrain(const std::vector<uint8_t> &bytes);
 
     int64_t event_cursor = 0;
     int64_t event_tick = -1;

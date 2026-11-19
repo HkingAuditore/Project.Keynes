@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 664,
+  "count": 665,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -432,6 +432,7 @@
     "register_gameplay_modifier_object",
     "replay_completed_research_signal",
     "replay_gameplay_events",
+    "request_runtime_calendar_day",
     "request_runtime_save",
     "request_runtime_stop",
     "request_stop_economy_csv_recording",

@@ -3,6 +3,10 @@ extends SceneTree
 class CapacityProbe extends RefCounted:
 	var ready := false
 	var calls := 0
+	var calendar_requests: Array[int] = []
+	func request_runtime_calendar_day(date: int) -> int:
+		calendar_requests.append(date)
+		return date - 1
 	func wait_climate_consumed(generation: int, timeout: int) -> Dictionary:
 		assert(generation == 0 and timeout == 0)
 		calls += 1
@@ -71,24 +75,21 @@ func _init() -> void:
 	assert(host.ticks == [10])
 	assert(host._climate_capacity_pending_day == -1)
 	assert(not clock.has_simulation_backpressure())
+	# A formal executor does not need a slot in the external-input queue.
+	# Keep the queue full and the last display frame stale across two requests.
 	generator.whole_graph = true
+	generator.probe.ready = false
+	host._native_environment_active = true
+	var previous_calls := generator.probe.calls
 	host._on_clock_day_changed(11)
-	assert(generator.captured_days.is_empty(), "day 10 must wait for the weather of day 9")
-	assert(host._climate_capacity_pending_day == 11)
-	host._runtime_climate_writeback_last_day = 9
-	host._runtime_tail_completed_day = 9
-	host._on_clock_day_changed(host._climate_capacity_pending_day)
-	assert(generator.captured_days == [10])
-	assert(host.ticks == [10])
-	# The commit becomes readable in this frame. Receive it before retrying
-	# the calendar's retained day so input 11 can be published in this frame.
 	host._on_clock_day_changed(12)
-	assert(host._climate_capacity_pending_day == 12)
-	generator.committed_day = 9
-	host.consume_writeback_day = 10
-	host._process(0.0)
-	assert(generator.captured_days == [10, 11], "retained input missed a frame after its source committed")
+	assert(generator.probe.calendar_requests == [11, 12])
+	assert(generator.probe.calls == previous_calls)
+	assert(generator.captured_days.is_empty())
+	assert(host.ticks == [10])
+	assert(host._calendar_admitted_through == 11)
 	assert(host._climate_capacity_pending_day == -1)
+	assert(not clock.has_simulation_backpressure())
 	_test_climate_calendar(generator, clock)
 	host.free()
 	clock.free()

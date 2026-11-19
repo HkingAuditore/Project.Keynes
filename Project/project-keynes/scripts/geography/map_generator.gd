@@ -144,16 +144,12 @@ var _runtime_climate_topology_generation: int = 1
 var _runtime_climate_topology_map_id: int = 0
 var _runtime_climate_neighbor_offsets: PackedInt32Array = PackedInt32Array()
 var _runtime_climate_neighbor_offsets_map_id: int = 0
-var _worker_environment_publisher_callsite: int = 0
-var _save_prefetch_suspend_callback: Callable = Callable()
 var _environment_publish_callsite_mask: int = 0
 var _environment_publish_count: int = 0
-var _environment_publish_suppressed: int = 0
 var _environment_publish_orphan_day: int = -1
 const ENV_CALLSITE_HOST_DAY_CHANGED := 1
 const ENV_CALLSITE_SUS_TICK := 2
 const ENV_CALLSITE_INLINE_DAY := 4
-const ENV_CALLSITE_PREFETCH := 8
 var _last_climate_breakdown: Dictionary = {}
 var _pending_season_refresh: bool = false
 var _season_refresh_in_progress: bool = false
@@ -231,11 +227,9 @@ func mark_runtime_terrain_mirror_dirty() -> void:
 func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 	return _get_native_generation_bridge()._climate_views_from_world(cp)
 var _last_active_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
-var _weather_stride_logged: int = -1
 var _refresh_daily_call_index: int = -1
 var _weather_stage_b_call_index: int = -1
 var _native_daily_hydrology_call_index: int = -1
-var _native_daily_last_weather_embed_day: int = -1000000
 var _typed_fields_migrated: bool = false
 var _sus = null
 var _sus_bootstrap: RefCounted = null
@@ -626,20 +620,17 @@ func _runtime_climate_neighbor_offsets_for_map(map: MapData) -> PackedInt32Array
 	return _get_runtime_climate_capture()._runtime_climate_neighbor_offsets_for_map(map)
 func _runtime_climate_trace_has_older_pending(day: int) -> bool:
 	return _get_runtime_climate_capture()._runtime_climate_trace_has_older_pending(day)
-func set_worker_environment_publisher(callsite: int) -> void:
-	_get_runtime_climate_capture().set_worker_environment_publisher(callsite)
-func set_save_prefetch_suspend_callback(callback: Callable) -> void:
-	_get_runtime_climate_capture().set_save_prefetch_suspend_callback(callback)
 func _notify_save_prefetch_suspend() -> void:
 	_get_runtime_climate_capture()._notify_save_prefetch_suspend()
-func worker_environment_publisher_callsite() -> int:
-	return _get_runtime_climate_capture().worker_environment_publisher_callsite()
 func environment_publish_callsite_mask() -> int:
 	return _get_runtime_climate_capture().environment_publish_callsite_mask()
 func environment_publish_diagnostics() -> Dictionary:
 	return _get_runtime_climate_capture().environment_publish_diagnostics()
 func _runtime_environment_publish_allowed(callsite: int, day: int) -> bool:
 	return _get_runtime_climate_capture()._runtime_environment_publish_allowed(callsite, day)
+func initialize_world_environment() -> Dictionary:
+	return _get_runtime_climate_capture().initialize_world_environment()
+
 func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		callsite: int = 0) -> Dictionary:
 	return _get_runtime_climate_capture().capture_runtime_inputs_for_worker(day, phase, callsite)
@@ -839,24 +830,10 @@ func _native_daily_season_refresh_state_snapshot() -> Dictionary:
 	return _get_native_daily_bundle_builder()._native_daily_season_refresh_state_snapshot()
 func _native_daily_weather_active_bootstrap_allowed(readiness: Dictionary) -> bool:
 	return _get_native_daily_bundle_builder()._native_daily_weather_active_bootstrap_allowed(readiness)
-func _native_daily_weather_cadence_stride(cp_now) -> int:
-	return _get_native_daily_bundle_builder()._native_daily_weather_cadence_stride(cp_now)
-func _native_daily_weather_cadence_due(cp_now, ctx: SusTickContext) -> bool:
-	return _get_native_daily_bundle_builder()._native_daily_weather_cadence_due(cp_now, ctx)
 func _native_daily_split_weather_node_enabled(cp_now) -> bool:
 	return _get_native_daily_bundle_builder()._native_daily_split_weather_node_enabled(cp_now)
 func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
 	return _get_native_daily_bundle_builder()._native_daily_weather_clock_values(default_phase)
-func _build_native_daily_weather_super_knobs(
-		ctx: SusTickContext,
-		map: MapData,
-		world: WorldData,
-		phase_default: float,
-		stage_b_knobs: Dictionary,
-		runtime_hydrology_active: bool,
-		commit_side_effects: bool,
-		force_weather_embed: bool) -> Dictionary:
-	return _get_native_daily_bundle_builder()._build_native_daily_weather_super_knobs(ctx, map, world, phase_default, stage_b_knobs, runtime_hydrology_active, commit_side_effects, force_weather_embed)
 func _native_daily_boundary_contract(bundle: Dictionary, commit_side_effects: bool) -> Dictionary:
 	return _get_native_daily_bundle_builder()._native_daily_boundary_contract(bundle, commit_side_effects)
 func _native_daily_static_bundle_cache_key(map: MapData, cp_now) -> String:
@@ -872,9 +849,8 @@ func _build_native_daily_bundle(
 		commit_side_effects: bool = false,
 		sea_ice_dt_cap_days: float = 30.0,
 		commit_sea_ice_side_effects: bool = true,
-		force_weather_embed: bool = false,
 		defer_heavy_pass_knobs: bool = false) -> Dictionary:
-	return _get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, _world, commit_side_effects, sea_ice_dt_cap_days, commit_sea_ice_side_effects, force_weather_embed, defer_heavy_pass_knobs)
+	return _get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, _world, commit_side_effects, sea_ice_dt_cap_days, commit_sea_ice_side_effects, defer_heavy_pass_knobs)
 func _merge_native_daily_slice_patch_local(patch: Dictionary) -> void:
 	_get_native_daily_bundle_builder()._merge_native_daily_slice_patch_local(patch)
 func _native_daily_effective_yield_nodes(cp) -> PackedInt32Array:
@@ -1246,10 +1222,8 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 	_get_season_refresh_coordinator().finish_season_refresh(_map, _world, _season_idx)
 func season_round_b_plus_available() -> bool:
 	return _get_season_refresh_coordinator().season_round_b_plus_available()
-func start_season_round_b_plus(map: MapData, _world: WorldData, season: int, background_boundary: int = -1) -> int:
-	return _get_season_refresh_coordinator().start_season_round_b_plus(map, _world, season, background_boundary)
-func prepare_next_climate_input_during_tail(day: int) -> bool:
-	return _get_runtime_climate_capture().prepare_next_climate_input_during_tail(day)
+func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> int:
+	return _get_season_refresh_coordinator().start_season_round_b_plus(map, _world, season)
 func run_season_round_slice_b_plus(map: MapData, _world: WorldData, max_usec: int = 0) -> Dictionary:
 	return _get_season_refresh_coordinator().run_season_round_slice_b_plus(map, _world, max_usec)
 func begin_finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -> void:
@@ -1518,8 +1492,6 @@ func active_weather_fronts() -> Array[WeatherFront]:
 	if _weather_system == null:
 		return [] as Array[WeatherFront]
 	return _weather_system.active_fronts()
-func set_weather_refresh_stride(s: int) -> void:
-	_get_climate_pass_b_module().set_weather_refresh_stride(s)
 func set_daily_climate_refresh_stride(s: int) -> void:
 	_get_wind_heat_transport().set_daily_climate_refresh_stride(s)
 func _build_transpiration_donor_table() -> PackedFloat32Array:

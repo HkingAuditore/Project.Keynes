@@ -38,7 +38,7 @@ func _run() -> void:
 		_expect("main thread actually stopped between process frames", int(hold.process_frames) == 0)
 		_expect("worker stayed ACTIVE and did not fault during hold", bool(hold.worker_healthy))
 		_expect("hold started after the warmup boundary", int(hold.start_day) == WARMUP_DAY)
-		_expect("current clock path admitted a real next-day input", int(hold.admitted_through) > WARMUP_DAY)
+		_expect("current clock path admitted a real next simulation day", int(hold.admitted_through) > WARMUP_DAY)
 		print("BACKGROUND_DAILY_HOLD=" + JSON.stringify(hold))
 		if _failures == 0:
 			_expect_target_failure("A", int(hold.committed_after) == WARMUP_DAY + RELEASE_DAYS,
@@ -226,14 +226,10 @@ func _run_hold(host: WorldRuntimeHost, clock: WorldClock, target_day: int) -> Di
 	var ext: Object = generator.get_data_core_world_ext()
 	var settled_before := int(ext.runtime_committed_day())
 	var tail_before := host._runtime_tail_completed_day
-	# Today's clock entry tries to publish inputs through the requested day.
-	# If it parks on the previous tail, offer the next day with a valid source.
+	# Calendar admission no longer carries environment data. The remaining tail
+	# acknowledgement still limits this pause to one completed day.
 	host._on_clock_day_changed(target_day + 1)
-	var admitted_in_one_request := generator.next_environment_day() - 1
-	var deferred_calendar_day := host._climate_capacity_pending_day
-	if admitted_in_one_request == settled_before:
-		_publish_day(host, clock, settled_before + 1)
-	var admitted_through := generator.next_environment_day() - 1
+	var admitted_through := host._calendar_admitted_through
 	var frames_before := Engine.get_process_frames()
 	var committed_before := int(ext.runtime_committed_day())
 	var started := Time.get_ticks_usec()
@@ -243,7 +239,7 @@ func _run_hold(host: WorldRuntimeHost, clock: WorldClock, target_day: int) -> Di
 	var state := generator.get_runtime_control_state()
 	return {
 		"requested_through": target_day, "admitted_through": admitted_through,
-		"admitted_in_one_request": admitted_in_one_request, "deferred_calendar_day": deferred_calendar_day,
+		"admitted_in_one_request": admitted_through,
 		"start_day": settled_before, "committed_before": committed_before,
 		"committed_after": committed_after, "committed_during_hold": committed_after - committed_before,
 		"tail_before_hold": tail_before, "tail_after_hold": host._runtime_tail_completed_day, "hold_usec": elapsed,
@@ -308,6 +304,22 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 		var waits: Dictionary = report.worker_main_wait_by_day.get(day, {})
 		var slot: Dictionary = waits.get("day_tail_task_slot", {})
 		var tasks: Dictionary = slot.get("tasks", {})
+		_expect("environment input does not wait for the main thread on day %d" % day,
+			int(waits.get("environment_input", {}).get("count", 0)) == 0)
+		_expect("seasonal refresh uses no task slot on day %d" % day,
+			int(tasks.get("season", {}).get("count", 0)) == 0)
+		for step in ["climate_writeback", "environment_capture", "environment_publish_hold",
+				"modifier_snapshot_install", "season_freeze", "season_install", "annual_year_boundary_input"]:
+			_expect("%s has no main-thread round trip on day %d" % [step, day],
+				int(steps.get(step, 0)) == 0)
+		for step in steps:
+			if step not in ["queue_day_tail", "acknowledge_day_tail"]:
+				_expect("only notification queue and tail acknowledgement remain on day %d (%s)" % [day, step],
+					int(steps[step]) == 0)
+		for reason in waits:
+			if reason != "day_tail":
+				_expect("only tail acknowledgement can block day %d (%s)" % [day, reason],
+					int(waits[reason].get("count", 0)) == 0)
 		var named_waits := 0
 		for task in tasks.values():
 			named_waits += int(task.count)

@@ -791,20 +791,12 @@ func _web_barrier_diag(host) -> Dictionary:
 			out[key] = graph[key]
 	# 时钟侧限流状态不在 graph 字典里，直接取。
 	if host._world_clock != null:
-		out["worker_lead_days"] = host._world_clock.get_worker_lead_days() \
-			if host._world_clock.has_method("get_worker_lead_days") else 0
-		out["max_worker_lead_days"] = host._world_clock.get_max_worker_lead_days() \
-			if host._world_clock.has_method("get_max_worker_lead_days") else 0
-		out["lead_blocked_frames"] = host._world_clock.get_lead_blocked_frame_count() \
-			if host._world_clock.has_method("get_lead_blocked_frame_count") else 0
 		out["worker_lag_days"] = host._world_clock.get_worker_lag_days() \
 			if host._world_clock.has_method("get_worker_lag_days") else 0
 		out["max_worker_lag_days"] = host._world_clock.get_max_worker_lag_days() \
 			if host._world_clock.has_method("get_max_worker_lag_days") else 0
 		out["lag_blocked_frames"] = host._world_clock.get_lag_blocked_frame_count() \
 			if host._world_clock.has_method("get_lag_blocked_frame_count") else 0
-	out["environment_prefetch_days"] = host._environment_prefetch_days_active
-	out["environment_lead_budget_days"] = host._max_worker_lead_days
 	out["web_worker"] = host._web_worker_requested()
 	# web worker 的启动结论 + 内联回退状态。这两项让"为什么没起"不用再 grep 日志：
 	#   web_worker_start_code == ""            → 还没走到启动（世界还没生成完）

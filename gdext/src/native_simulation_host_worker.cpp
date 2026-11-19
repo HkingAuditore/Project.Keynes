@@ -371,8 +371,7 @@ void NativeSimulationHost::worker_main() {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
             if (service_military_commands() || service_colonization_requests() ||
-                service_era_reward_requests() || service_annual_presentations() ||
-                service_day_tail_work()) continue;
+                service_era_reward_requests() || service_annual_presentations()) continue;
 
             const bool retained_day_pending = active_environment != nullptr &&
                 active_environment->day == _committed_day.load(std::memory_order_acquire) + 1;
@@ -408,7 +407,12 @@ void NativeSimulationHost::worker_main() {
                 _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
                 (_requested_authority_mask.load(std::memory_order_acquire) &
                  runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-            const bool climate_pending = has_pending_climate_input() || retained_day_pending;
+            const auto daily_work_ready = [&] {
+                return has_pending_climate_input() || retained_day_pending ||
+                    (_world_environment && _clock_requested_day.load(std::memory_order_acquire) >
+                        _committed_day.load(std::memory_order_acquire));
+            };
+            const bool climate_pending = daily_work_ready();
             const bool awaiting_player = player_confirmation_block() != nullptr;
             if (awaiting_player || (climate_driven && !climate_pending) ||
                 (!climate_driven && (paused || speed <= 0.0 || !std::isfinite(speed)))) {
@@ -417,21 +421,22 @@ void NativeSimulationHost::worker_main() {
                 last = std::chrono::steady_clock::now();
                 std::unique_lock<std::mutex> lock(_control_mutex);
                 _worker_timing.set(awaiting_player ? RuntimeWorkerTiming::PAUSED :
-                    (climate_driven ? RuntimeWorkerTiming::ENVIRONMENT_WAIT : RuntimeWorkerTiming::INPUT_WAIT));
+                    (climate_driven && !_world_environment ? RuntimeWorkerTiming::ENVIRONMENT_WAIT
+                                                          : RuntimeWorkerTiming::CLOCK_WAIT));
                 _control_cv.wait(lock, [&] {
                     const bool blocked = player_confirmation_block() != nullptr;
                     const bool ready = _stop_requested.load(std::memory_order_acquire) ||
-                        _save_requested.load(std::memory_order_acquire) || _day_tail_work ||
+                        _save_requested.load(std::memory_order_acquire) ||
                         player_requests_pending_locked() ||
                         (!blocked && (climate_driven ?
-                            (has_pending_climate_input() || retained_day_pending) :
+                            daily_work_ready() :
                             (!_paused.load(std::memory_order_acquire) &&
                              _speed_days_per_second.load(std::memory_order_acquire) > 0.0)));
                     if (!ready && climate_driven && !blocked) {
                         const int64_t committed = _committed_day.load(std::memory_order_acquire);
                         if (main_day_tail_pending()) {
                             _worker_timing.observe_main_wait(committed, RuntimeWorkerTiming::DAY_TAIL);
-                        } else if (!_paused.load(std::memory_order_acquire)) {
+                        } else if (!_world_environment && !_paused.load(std::memory_order_acquire)) {
                             _worker_timing.observe_main_wait(
                                 committed + 1, RuntimeWorkerTiming::ENVIRONMENT_INPUT);
                         } else {
@@ -440,8 +445,7 @@ void NativeSimulationHost::worker_main() {
                     }
                     return ready;
                 });
-                _worker_timing.finish_main_wait(_day_tail_work ?
-                    _day_tail_task : RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT);
+                _worker_timing.finish_main_wait();
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 continue;
             }
@@ -495,7 +499,7 @@ void NativeSimulationHost::worker_main() {
                     std::unique_lock<std::mutex> control_lock(_control_mutex);
                     _worker_timing.set(RuntimeWorkerTiming::MAIN_TAIL_WAIT);
                     _control_cv.wait(control_lock, [&] {
-                        const bool ready = tail_ready() || _day_tail_work || player_requests_pending_locked() ||
+                        const bool ready = tail_ready() || player_requests_pending_locked() ||
                             _stop_requested.load(std::memory_order_acquire) ||
                             _save_requested.load(std::memory_order_acquire);
                         if (!ready) {
@@ -503,8 +507,7 @@ void NativeSimulationHost::worker_main() {
                         }
                         return ready;
                     });
-                    _worker_timing.finish_main_wait(_day_tail_work ?
-                        _day_tail_task : RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT);
+                    _worker_timing.finish_main_wait();
                     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                     // A save or stop is served at the day boundary first.
                     if (!tail_ready() || player_requests_pending_locked()) break;
@@ -599,7 +602,7 @@ void NativeSimulationHost::worker_main() {
                 // 跨日时（environment.day < worker 下一拍）再从 FIFO 取最旧。
                 if (!active_environment ||
                     active_environment->day < day) {
-                    active_environment = environment_input_for_plan();
+                    active_environment = executor_environment_for_day(day);
                 }
                 const auto &environment = active_environment;
                 // 在执行前采样唤醒游标，避免执行期间已到达的 peer ACK 被漏掉。
@@ -995,7 +998,7 @@ void NativeSimulationHost::worker_main() {
                     // Climate ring is full and no CV signal arrives.
                     constexpr auto kDayWaitSlice =
                         std::chrono::milliseconds(250);
-                    const bool missing_environment = climate_driven &&
+                    const bool missing_environment = climate_driven && !_world_environment &&
                         (!environment || environment->day != day);
                     constexpr uint32_t peer_waits = RUNTIME_DAY_STALL_ECONOMY_INPUT |
                         RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
@@ -1088,7 +1091,7 @@ void NativeSimulationHost::worker_main() {
                             _climate_writeback.try_begin_write(slot)) {
                             RuntimeClimateSnapshot &out =
                                 _climate_writeback.write_buffer(slot);
-                            _climate_authority.snapshot_into(out, true);
+                            capture_climate_display(out);
                             // Own monotonic sequence, not the commit
                             // generation: the commit generation is bumped later
                             // inside publish_day, so reading it here would
@@ -1152,7 +1155,6 @@ void NativeSimulationHost::worker_main() {
         set_fault("unhandled_worker_exception");
     }
     // Complete already accepted value-only work before a same-world restart.
-    service_day_tail_work();
     compact_pending_commands(true);
     publish_pending_count();
     {

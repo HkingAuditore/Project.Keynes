@@ -33,6 +33,9 @@ bool seed_natural_resources(NativeEconomyRuntime &economy, int64_t day,
 godot::Dictionary detail_report(const NativeEconomyRuntime &economy) {
     return economy.report();
 }
+godot::Dictionary named_settlement_snapshot(const NativeEconomyRuntime &economy) {
+    return economy.named_settlement_snapshot();
+}
 bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
     const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
     const uint8_t *passable, const int32_t *move_cost, int32_t count,

@@ -5,6 +5,7 @@ extends RefCounted
 func _prepare_world_data(host) -> Dictionary:
 	var seed_override: int = host._session_prepare_options.seed
 	host._runtime_ready_for_ticks = false
+	host._native_environment_active = false
 	# Reset the late-loading progress before rebinding presentation.
 	host._visual_progress = 0.0
 	host._clear_climate_capacity_pending()
@@ -194,10 +195,8 @@ func _prepare_world_simulation(host) -> Dictionary:
 		and host._generator.has_method("get_ideology_facade") \
 		and host._generator.get_ideology_facade() != null
 	if annual_handle != 0 and annual_ideology_ready:
-		var can_capture := func(day: int) -> bool:
-			return host._runtime_climate_writeback_last_day >= day - 1 \
-				or not bool(host._runtime_control_state().get("climate_worker_authoritative", false))
-		var annual_result: Dictionary = host._annual_reports.configure(host._generator, host._world_clock, annual_handle, can_capture)
+		var annual_result: Dictionary = host._annual_reports.configure(
+			host._generator, host._world_clock, annual_handle)
 		WebTelemetry.emit("bind_step", {"s": "annual_configured"})
 		if not bool(annual_result.get("ok", false)):
 			push_error("年度报告初始化失败：%s" % String(annual_result.get("reason", "未知原因")))
@@ -300,17 +299,6 @@ func _start_production_shadow_worker(host) -> void:
 	# 只有 ACTIVE 才推进日历；SHADOW 会停在 day 1。
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator.has_method("get_data_core_world_ext") else null
-	# Web worker 依赖主线程预发布器的两个只读探测 API。旧 side module
-	# （例如使用 `skip-native` 导出，或浏览器缓存了旧包）可能仍能加载并报告
-	# `requested=ACTIVE`，但没有这两个方法；继续走 worker 会让它停在 PAUSED
-	# 等环境帧，而发布权又无法安全交给预发布器，最终把第 1 天钉死。
-	# 在启动边界直接切到同一 host 的 inline 日屏障，避免进入这个半启动状态。
-	if host._is_web_build() and web_wants_worker and not host._environment_prefetch_capable():
-		print("[runtime-worker] web side module lacks environment prefetch API; " +
-			"forcing native_daily_inline (rebuild Web native module to re-enable worker)")
-		host._web_worker_inline_fallback = true
-		web_wants_worker = false
-		web_wants_inline = true
 	if ext != null and host.runtime_parity_forcing:
 		ext.set_runtime_climate_parity_forcing(true)
 	host._runtime_climate_writeback_generation = 0
@@ -373,6 +361,13 @@ func _start_production_shadow_worker(host) -> void:
 	var want_inline = climate_authority_active and web_wants_inline
 	config["native_daily_inline"] = want_inline
 	config["main_day_tail_gate"] = climate_authority_active and not want_inline
+	var native_environment: bool = climate_authority_active and host.runtime_authority_domain_mask == 0xFFF
+	if native_environment and not host._native_environment_active:
+		var seeded: Dictionary = host._generator.initialize_world_environment()
+		if not bool(seeded.get("ok", false)):
+			host._observe_runtime_worker_fault({"simulation_host_state": "FAULTED",
+				"fault_code": String(seeded.get("code", "runtime_environment_seed_failed"))})
+			return
 	host._runtime_notified_generation = 0
 	host._runtime_commit_generation = 0  # 新 worker 代数从 0 起，旧游标会挡住提交、停住日尾闸门
 	host._presentation.reset_worker_views()
@@ -407,6 +402,10 @@ func _start_production_shadow_worker(host) -> void:
 	# 回退路径下 start 成功说明"内联起来了"，不是"worker 起来了"，diag 必须分得清。
 	host._web_worker_start_code = "inline_fallback" if host._web_worker_inline_fallback else "ok"
 	host._native_daily_inline_active = bool(started.get("native_daily_inline", false))
+	host._native_environment_active = native_environment
+	host._calendar_admitted_through = -1
+	if host._world_clock != null:
+		host._world_clock.set_native_climate_calendar(native_environment)
 	# 二次校验：请求了 worker 却反馈 inline=true，说明配置没生效。宁可回退内联，
 	# 也不要留一个"看起来起了、其实日屏障还在主线程"的状态。
 	if not host._native_daily_inline_active and bool(want_inline):
@@ -415,97 +414,15 @@ func _start_production_shadow_worker(host) -> void:
 		if host._reject_web_daily_fallback("web_inline_flag_mismatch", "原生模块没有启用所请求的 inline 执行器"):
 			return
 		push_error("[runtime-worker] native_daily_inline requested but host reported false")
-	# P1/P3：worker 真的起来了才谈得上预发布与领先量限流。内联日不适用
-	# （它的消费者就是本线程，预发布只会让环卡住）。
-	host._apply_web_worker_parallel_channels(climate_authority_active, started)
+	if host._world_clock != null:
+		host._world_clock.set_max_worker_lag_days(2 if native_environment and not want_inline else 0)
 	if climate_authority_active:
 		print("[runtime-worker] production ACTIVE started mask=",
 			host.runtime_authority_domain_mask,
 			" auto_pod=", host.runtime_economy_auto_pod_active,
 			" inline=", host._native_daily_inline_active,
-			" web_worker=", host._web_worker_requested(),
-			" prefetch_days=", host._environment_prefetch_days_active,
-			" max_lead_days=", host._max_worker_lead_days)
+			" web_worker=", host._web_worker_requested())
 	host._sync_runtime_worker_clock()
-
-
-## P1/P3 的开关落地。只有"worker 线程真的在跑"时才打开：
-##   P1 预发布 K 天 + 把环境帧发布权收归 `_process` 预发布器（单一发布者）
-##   P3 允许 worker 领先主线程 K 天
-## 关掉时 K=0、发布权归还全部调用点、领先上限 0 ⇒ 回到改动前逐表达式的行为。
-
-func _apply_web_worker_parallel_channels(host, climate_authority_active: bool,
-		started: Dictionary) -> void:
-	# 判据用 **请求模式**，不用 effective 模式：worker 刚启动时
-	# `authoritative_domain_mask` 还是 0（授予要等第一天提交），
-	# 用 effective 判会得到 OFF，预发布永远打不开。
-	var worker_running = climate_authority_active \
-		and not host._native_daily_inline_active \
-		and String(started.get("requested_simulation_thread_mode", "OFF")) == "ACTIVE" \
-		and String(started.get("state", "")) != "FAULTED"
-	var prefetch_days = host._effective_environment_prefetch_days() if worker_running else 0
-	# ── 能力门：**没有预发布所需 API 就绝不独占发布权** ──────────────────
-	#
-	# 这一条是 web 上"日历停在 day 1"的直接原因，必须写清楚：预发布器需要
-	# `environment_ring_has_capacity()` / `runtime_committed_day()`（本轮新增）。
-	# 如果 side module 是旧的一份（`Build-Web.cmd skip-native` 就会这样），这两个
-	# 方法不存在 ⇒ `_service_worker_lead_and_prefetch()` 第一行就 return ⇒
-	# **一帧都不会发**；而发布权已经被预发布器独占，S1/S2/S3 三个调用点全部
-	# 被 suppressed ⇒ 环境帧为 0 ⇒ worker 无法推进 ⇒ `mode=OFF`、日历停住、
-	# `fault_code` 为空（因为没有任何域报错，只是没输入）。
-	#
-	# 所以发布权必须与"能力"一起转移：能力不在，K 就归 0，继续由 S1/S2/S3 发。
-	if prefetch_days > 0 and not host._environment_prefetch_capable():
-		print("[runtime-worker] P1 prefetch disabled: DCWorldExt lacks " +
-			"environment_ring_has_capacity/runtime_committed_day " +
-			"(stale side module? rerun Build-Web.cmd with native rebuild) " +
-			"-> environment frames stay on S1/S2/S3")
-		prefetch_days = 0
-	if OS.get_environment("PK_NO_ENV_PREFETCH") == "1":
-		print("[runtime-worker] P1 prefetch disabled by PK_NO_ENV_PREFETCH=1 (A/B)")
-		prefetch_days = 0
-	if host._generator != null and host._generator.has_method("set_worker_environment_publisher"):
-		# 预发布器独占发布权；否则归还给 S1/S2/S3 三个既有调用点。
-		var callsite = MapGenerator.ENV_CALLSITE_PREFETCH if prefetch_days > 0 else 0
-		host._generator.set_worker_environment_publisher(callsite)
-	host._max_worker_lead_days = prefetch_days + host.WORKER_LEAD_MARGIN_DAYS if prefetch_days > 0 else 0
-	host._environment_prefetch_days_active = prefetch_days
-	host._release_prefetch_barrier_to_clock()
-	if host._world_clock != null and host._world_clock.has_method("set_max_worker_lead_days"):
-		host._world_clock.set_max_worker_lead_days(host._max_worker_lead_days)
-		if host._world_clock.has_method("set_max_worker_lag_days"):
-			host._world_clock.set_max_worker_lag_days(host._max_worker_lead_days)
-	if prefetch_days > 0:
-		print("[runtime-worker] P1 prefetch enabled days=", prefetch_days,
-			" publisher=prefetch P3 lead_budget=", host._max_worker_lead_days,
-			" (worker_running=", worker_running, ")")
-
-
-## 把"当前生效的预发布天数 K"同步给时钟。
-##
-## 时钟要用它判断"预发布器是不是正因为领先额度用完而暂停" —— 那种时候日历是
-## 唯一能解开闭环的一方，必须允许它推进（否则 预发布器等日历 / 日历等 worker /
-## worker 等帧 三方互锁，浏览器实测 clk 恒 1、cd 4）。K=0 时这条通道完全关闭。
-
-func _release_prefetch_barrier_to_clock(host) -> void:
-	if host._world_clock == null or not host._world_clock.has_method("report_worker_prefetch_days"):
-		return
-	host._world_clock.report_worker_prefetch_days(host._environment_prefetch_days_active)
-
-
-## 预发布器的**能力**判定：缺任何一个 C++ 探测方法就只能退回 S1/S2/S3 发布。
-## `PK_NO_ENV_PREFETCH=1` 是 A/B 用的显式关闭（也让"旧 side module"这条
-## 失效路径可以在 headless 上复现）。
-
-func _environment_prefetch_capable(host) -> bool:
-	if OS.get_environment("PK_NO_ENV_PREFETCH") == "1":
-		return false
-	if host._generator == null or not host._generator.has_method("get_data_core_world_ext"):
-		return false
-	var ext = host._generator.get_data_core_world_ext()
-	return ext != null \
-		and ext.has_method("environment_ring_has_capacity") \
-		and ext.has_method("runtime_committed_day")
 
 
 func _stop_previous_runtime_worker(host) -> Dictionary:

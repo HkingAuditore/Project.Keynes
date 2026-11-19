@@ -4,6 +4,38 @@ extends RefCounted
 const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 
+func _apply_season_display(host, applied: Dictionary) -> void:
+	if not applied.has("season_day") or host._current_map == null:
+		return
+	var map: MapData = host._current_map
+	var biome: PackedByteArray = applied.biome_history
+	var vegetation: PackedByteArray = applied.vegetation_history
+	var next: int = applied.season_history_next
+	var cells := map.iter_cells()
+	for i in cells.size():
+		var cell: HexCell = cells[i]
+		if cell == null:
+			continue
+		if cell.terrain != map.terrain_arr[i]:
+			cell.apply_terrain(map.terrain_arr[i])
+		cell.landform = map.landform_arr[i]
+		cell.vegetation = map.vegetation_arr[i]
+		cell.cover = map.cover_arr[i]
+		if not cell.current_state.is_empty():
+			cell.current_state["biome"] = cell.terrain
+			cell.current_state["landform"] = cell.landform
+			cell.current_state["vegetation"] = cell.vegetation
+			cell.current_state["cover"] = cell.cover
+		var begin := i * HexCell.HISTORY_LEN
+		cell.biome_history = biome.slice(begin, begin + HexCell.HISTORY_LEN)
+		cell.vegetation_history = vegetation.slice(begin, begin + HexCell.HISTORY_LEN)
+		cell._history_idx = next
+		cell._veg_history_idx = next
+	map.sync_is_water_arr_from_terrain()
+	host._generator._last_season_refresh_day = int(applied.season_day) + 1
+	host._generator._last_season_refresh_breakdown = {"b_plus_path": "gdext_background"}
+
+
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
 	var commit_usec = Time.get_ticks_usec()
 	if (not host._runtime_ready_for_ticks or host._generator == null
@@ -38,7 +70,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			report = report.duplicate(false)
 			report["simulation_committed_day"] = commit_day
 		host._apply_climate_writeback_if_authoritative(report)
-		if host._runtime_climate_writeback_last_day < commit_day:
+		if not host._native_environment_active and host._runtime_climate_writeback_last_day < commit_day:
 			return
 	elif report_override.is_empty():
 		host._apply_climate_writeback_if_authoritative(report)
@@ -87,11 +119,6 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		push_warning("Vision display snapshot: " + String(vision.get("reason", "")))
 	if whole_graph:
 		host._consume_country_worker_read_view_if_authoritative()
-	if whole_graph and not host._native_daily_inline_active and host._runtime_commit_day > host._runtime_tail_completed_day \
-			and host._generator.has_method("prepare_next_climate_input_during_tail") \
-			and not host._generator.prepare_next_climate_input_during_tail(host._runtime_commit_day):
-		_fail_runtime_day_tail(host, "season_day_tail_unavailable")
-		return
 	if host._runtime_commit_generation > host._runtime_notified_generation:
 		host._runtime_notified_generation = host._runtime_commit_generation
 		var from_day := int(host._runtime_last_commit.get("from_day", host._runtime_commit_day))
@@ -139,15 +166,6 @@ func _mark_runtime_day_tail(host, committed_day: int) -> void:
 		host._generator.record_runtime_main_step(committed_day, &"acknowledge_day_tail")
 	host._runtime_tail_completed_day = maxi(host._runtime_tail_completed_day, committed_day)
 	ext.mark_runtime_day_tail_done(committed_day)
-
-
-func _fail_runtime_day_tail(host, reason: String) -> void:
-	if host._runtime_worker_fault_paused:
-		return
-	var report: Dictionary = host._generator.get_runtime_thread_report()
-	report["simulation_host_state"] = "FAULTED"
-	report["fault_code"] = reason
-	host._observe_runtime_worker_fault(report)
 
 
 ## Season refresh changes cover (snowline / flood / glacier), which feeds the
@@ -229,13 +247,17 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 	if not bool(applied.get("applied", false)):
 		return
 	preload("res://scripts/game/world_runtime_climate_restore.gd").apply(host._generator, applied)
+	if host._native_environment_active:
+		host._world_clock.apply_native_climate_calendar(applied)
+		_apply_season_display(host, applied)
 	host._runtime_climate_writeback_generation = int(applied.get(
 		"generation", host._runtime_climate_writeback_generation))
 	# Older compatible runtimes may omit committed_day from the apply result;
 	# the worker report driving this consume is the same committed generation.
 	host._runtime_climate_writeback_last_day = int(applied.get(
 		"committed_day", report.get("simulation_committed_day", -1)))
-	host._generator.record_runtime_main_step(host._runtime_climate_writeback_last_day, &"climate_writeback")
+	if not host._native_environment_active:
+		host._generator.record_runtime_main_step(host._runtime_climate_writeback_last_day, &"climate_writeback")
 	host._runtime_climate_writeback_days += 1
 	# A field the slot guards reject is a field the worker owns but never
 	# publishes, so MapData silently keeps the pre-promotion value. Kept for

@@ -162,7 +162,6 @@ func request_runtime_save(request_id: int) -> Dictionary:
 	# P1：存盘准入要求 ring 排空（`!has_pending_climate_input()`），而预发布会让
 	# ring 长期非空。先让 host 把 K 降到 0、停掉新帧；环里的未来帧由 worker 侧
 	# 在存盘准入处丢弃（PKSR 不保存 pending environment）。
-	_generator._get_runtime_climate_capture()._notify_save_prefetch_suspend()
 	return _generator._data_core_world_ext.request_runtime_save(request_id)
 
 
@@ -253,13 +252,12 @@ func finalize_save_restore_runtime() -> Dictionary:
 	var registered: Dictionary = _generator._get_map_rules_initializer()._register_country_economy_systems(_generator._c())
 	if not bool(registered.get("ok", false)):
 		return registered
-	# PKMI has already restored. Never configure again here: that would erase
-	# the recovered armies, orders and AI state. Refresh settlement terrain
-	# from restored ECP2 through the facade's state-preserving terrain path.
+	# PKMI has already restored. Updating the bound map's terrain in place
+	# keeps the restored armies, orders and AI state.
 	if _generator._military_facade != null and _generator._military_facade.is_configured():
 		var terrain: Dictionary = _generator._military_facade.set_terrain(_generator._sus_map, -1, true,
 			_generator._get_map_country_initializer()._military_settlement_tiers(_generator._sus_map))
-		if not bool(terrain.get("ok", false)) or not bool(terrain.get("state_preserved", false)):
+		if not bool(terrain.get("ok", false)):
 			return {"ok": false, "reason": "military_restore_terrain_failed"}
 	else:
 		# Keep a fallback for restore paths whose preparation did not produce a
@@ -1390,12 +1388,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# DCSystemScheduler.configure_job_from_profile() 统一解释。
 	var climate_stride: int = 1
 	var sea_ice_stride: int = 1
-	var weather_stride: int = 1
 	if cp != null:
 		climate_stride = max(1, int(cp.daily_climate_refresh_stride))
 		if cp.get("sea_ice_daily_stride") != null:
 			sea_ice_stride = clampi(int(cp.sea_ice_daily_stride), 1, 8)
-		weather_stride = max(1, int(cp.weather_refresh_stride))
 	# ClimateDailySystem：写连续气候基线（priority 100）
 	var climate_phase_getter := Callable()
 	if _generator._world_clock_ref != null:
@@ -1435,12 +1431,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	var weather_dc_system = _generator.WeatherDCSystemScript.new(
 		_generator, map, world,
 		season_idx_getter, season_phase_getter, climate_anomaly_getter,
-		weather_stride
+		1
 	)
 	_generator._weather_refresh_system = weather_dc_system
 	_generator._weather_refresh_job = weather_dc_system.get_inner()
-	_generator._sus.configure_job_from_profile(weather_dc_system, cp, false, &"weather_refresh", weather_stride)
-	_generator._sus.configure_job_from_profile(_generator._weather_refresh_job, cp, false, &"weather_refresh", weather_stride)
+	_generator._sus.configure_job_from_profile(weather_dc_system, cp, false, &"weather_refresh", 1)
+	_generator._sus.configure_job_from_profile(_generator._weather_refresh_job, cp, false, &"weather_refresh", 1)
 	# Weather=0 fix（2026-05-13，与 weather_refresh_job.gd line 498-507 同源
 	# 历史教训）：原 `_weather_refresh_job.depends_on.append(&"season_refresh")`
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round

@@ -101,6 +101,7 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1u << 11;
 // Effect's EFP1 catalog/instance state and Events' EVT1 journal.
 constexpr uint32_t RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT = 1u << 12;
 constexpr uint32_t RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT = 1u << 13;
+constexpr uint32_t RUNTIME_SAVE_SECTION_MILITARY_TERRAIN = 1u << 14;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -1969,6 +1970,7 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> effect_bytes;
     std::vector<uint8_t> effect_transport_bytes;
     std::vector<uint8_t> gameplay_effect_bytes;
+    std::vector<uint8_t> military_terrain_bytes;
     std::vector<uint8_t> ideology_bytes;
     // Economy POD ECP1 section (graph authority snapshot).
     std::vector<uint8_t> economy_pod_bytes;

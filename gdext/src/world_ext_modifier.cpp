@@ -1249,11 +1249,10 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
         out["reason"] = "modifier_not_worker_authoritative";
         return out;
     }
-    // This copy serves main-thread readers; the worker economy has its own
-    // (attach_economy_modifier_view). Still rebuild only between days: peers
-    // captured under this boundary read it too.
-    auto boundary_lock = _runtime_host->try_lock_economy_input_capture();
-    if (!boundary_lock.owns_lock()) {
+    // The Modifier stage can fill its ring before the whole day commits.
+    // Read only at a settled boundary, and leave an admitted day to the worker.
+    auto boundary = _runtime_host->try_lock_economy_read_boundary();
+    if (!boundary.owns_lock()) {
         out["ok"] = true;
         out["reason"] = "economy_day_inflight";
         return out;

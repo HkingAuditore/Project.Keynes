@@ -12,9 +12,7 @@ public:
                  PAUSED, OVERHEAD, BOUNDARY_WAIT, ENVIRONMENT_WAIT,
                  MAIN_TAIL_WAIT, INPUT_RETRY_WAIT, COUNT };
     using Totals = std::array<uint64_t, COUNT>;
-    enum MainWaitReason { ENVIRONMENT_INPUT, DAY_TAIL, DAY_TAIL_TASK_SLOT,
-                          OTHER, MAIN_WAIT_REASON_COUNT };
-    enum DayTailTask { SEASON, DAY_TAIL_TASK_COUNT };
+    enum MainWaitReason { ENVIRONMENT_INPUT, DAY_TAIL, OTHER, MAIN_WAIT_REASON_COUNT };
     struct MainWaitCounter {
         uint64_t count = 0;
         uint64_t usec = 0;
@@ -22,7 +20,6 @@ public:
     struct MainWaitDay {
         int64_t day = -1;
         std::array<MainWaitCounter, MAIN_WAIT_REASON_COUNT> reasons{};
-        std::array<MainWaitCounter, DAY_TAIL_TASK_COUNT> tasks{};
     };
     using MainWaitDays = std::array<MainWaitDay, 64>;
 
@@ -37,7 +34,7 @@ public:
     }
     void stop() {
         std::lock_guard<std::mutex> lock(mutex);
-        finish_main_wait_locked(DAY_TAIL_TASK_COUNT);
+        finish_main_wait_locked();
         settle();
         active = false;
     }
@@ -52,19 +49,18 @@ public:
     }
 
     // Called only when the existing wait predicate fails. Unrelated wakeups
-    // leave an episode open. A tail wait woken by a posted task is attributed
-    // to the task slot; the final wait for the main thread's ACK stays DAY_TAIL.
+    // leave an episode open.
     void observe_main_wait(int64_t day, MainWaitReason reason) {
         std::lock_guard<std::mutex> lock(mutex);
         if (main_wait_day == day && main_wait_reason == reason) return;
-        finish_main_wait_locked(DAY_TAIL_TASK_COUNT);
+        finish_main_wait_locked();
         main_wait_day = day;
         main_wait_reason = reason;
         main_wait_started = Clock::now();
     }
-    void finish_main_wait(DayTailTask task = DAY_TAIL_TASK_COUNT) {
+    void finish_main_wait() {
         std::lock_guard<std::mutex> lock(mutex);
-        finish_main_wait_locked(task);
+        finish_main_wait_locked();
     }
     MainWaitDays main_wait_snapshot() const {
         std::lock_guard<std::mutex> lock(mutex);
@@ -85,8 +81,7 @@ private:
     MainWaitReason main_wait_reason = OTHER;
     Clock::time_point main_wait_started{};
 
-    void add_main_wait(MainWaitDays &days, MainWaitReason reason,
-                       DayTailTask task = DAY_TAIL_TASK_COUNT) const {
+    void add_main_wait(MainWaitDays &days, MainWaitReason reason) const {
         MainWaitDay &entry = days[static_cast<size_t>(main_wait_day) % days.size()];
         if (entry.day != main_wait_day) {
             entry = {};
@@ -96,17 +91,10 @@ private:
             std::chrono::microseconds>(Clock::now() - main_wait_started).count());
         ++entry.reasons[reason].count;
         entry.reasons[reason].usec += usec;
-        if (task != DAY_TAIL_TASK_COUNT) {
-            ++entry.tasks[task].count;
-            entry.tasks[task].usec += usec;
-        }
     }
-    void finish_main_wait_locked(DayTailTask task) {
+    void finish_main_wait_locked() {
         if (main_wait_day < 0) return;
-        if (task != DAY_TAIL_TASK_COUNT && main_wait_reason == DAY_TAIL)
-            add_main_wait(main_wait_days, DAY_TAIL_TASK_SLOT, task);
-        else
-            add_main_wait(main_wait_days, main_wait_reason);
+        add_main_wait(main_wait_days, main_wait_reason);
         main_wait_day = -1;
     }
     Phase bucket() const {

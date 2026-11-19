@@ -61,6 +61,8 @@ RuntimeResourceDisplayPatch NativeSimulationHost::take_resource_display_patch() 
 }
 
 void NativeSimulationHost::reset_day_tail_for_world_change() {
+    _world_environment.reset();
+    _clock_requested_day.store(-1, std::memory_order_release);
     _executor_bio.reset();
     _executor_vision.reset();
     if (const auto last = std::atomic_load(&_latest_commit); last && last->day_tail) {

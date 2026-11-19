@@ -43,6 +43,10 @@ namespace pk {
 bool NativeSimulationHost::publish_environment(
         RuntimeEnvironmentSnapshot &&snapshot, std::string &error) {
     error.clear();
+    if (_world_environment && !execution_has_stopped()) {
+        error = "runtime_environment_owned_by_executor";
+        return false;
+    }
     std::string validation_error;
     if (!validate_runtime_environment_snapshot(snapshot, validation_error)) {
         _invalid_environment_rejected.fetch_add(1, std::memory_order_relaxed);

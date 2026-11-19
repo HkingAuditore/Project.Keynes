@@ -31,39 +31,6 @@ void NativeSimulationHost::seed_executor_command_orders() {
     }
 }
 
-bool NativeSimulationHost::schedule_day_tail_work(
-        int64_t day, RuntimeWorkerTiming::DayTailTask task,
-        std::function<void()> work, bool before_next_input) {
-    {
-        std::lock_guard<std::mutex> lock(_control_mutex);
-        // A seasonal round prepares the next input and can start at an
-        // already acknowledged boundary after restoring a checkpoint.
-        const bool input_open = before_next_input &&
-            _main_day_tail_gate.load(std::memory_order_acquire) &&
-            _environment_day.load(std::memory_order_acquire) <= day;
-        const auto state = _state.load(std::memory_order_acquire);
-        if (inline_daily_mode() || stop_requested() || _day_tail_work ||
-            state == RuntimeWorkerState::FAULTED || state == RuntimeWorkerState::STOPPED ||
-            _committed_day.load(std::memory_order_acquire) != day ||
-            (!main_day_tail_pending() && !input_open)) return false;
-        _day_tail_task = task;
-        _day_tail_work = std::move(work);
-    }
-    _control_cv.notify_all();
-    return true;
-}
-
-bool NativeSimulationHost::service_day_tail_work() {
-    std::function<void()> work;
-    {
-        std::lock_guard<std::mutex> lock(_control_mutex);
-        work.swap(_day_tail_work);
-    }
-    if (!work) return false;
-    work();
-    return true;
-}
-
 bool NativeSimulationHost::try_stop_at_day_boundary() {
     std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
     if (!boundary.owns_lock() || main_day_tail_pending() ||
@@ -79,7 +46,7 @@ bool NativeSimulationHost::service_save_request(
     if (main_day_tail_pending()) {
         std::unique_lock<std::mutex> control_lock(_control_mutex);
         _control_cv.wait(control_lock, [&] {
-            const bool ready = !main_day_tail_pending() || _day_tail_work ||
+            const bool ready = !main_day_tail_pending() ||
                 player_requests_pending_locked() ||
                 _stop_requested.load(std::memory_order_acquire);
             if (!ready) {
@@ -88,8 +55,7 @@ bool NativeSimulationHost::service_save_request(
             }
             return ready;
         });
-        _worker_timing.finish_main_wait(_day_tail_work ?
-            _day_tail_task : RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT);
+        _worker_timing.finish_main_wait();
         if (main_day_tail_pending()) return false;
     }
     // Pending environment frames describe future days and are regenerated on

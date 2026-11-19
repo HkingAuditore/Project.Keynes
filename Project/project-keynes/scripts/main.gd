@@ -518,9 +518,6 @@ func _ready() -> void:
 	# 与游戏倍速无关、按真实时间缓慢推进 → 快进不再闪瞎眼。
 	_world_clock.visual_day_phase_changed.connect(_on_day_phase_changed)
 	_world_clock.season_phase_changed.connect(_on_season_phase_changed)
-	# Fast-tick perf opt (A+D)：速度档变更时自动调整 MapGenerator 的
-	# weather_refresh_stride，同时 world_clock 内部会顺带调整 day_phase/season_phase
-	# 节流步长。启动时按 initial_speed 初调一次，保证 x1 档默认 stride=1 的语义。
 	_world_clock.speed_changed.connect(_on_speed_changed)
 	_on_speed_changed(_world_clock.speed_multiplier)
 	_refresh_time_label()
@@ -695,21 +692,6 @@ func _on_speed_changed(new_speed: float) -> void:
 		var fl = _renderer.get_node_or_null("FogOfWarLayer")
 		if fl != null and fl.has_method("set_clock_speed_multiplier"):
 			fl.set_clock_speed_multiplier(new_speed)
-	if _generator == null:
-		return
-	var cp = _generator._c() if _generator.has_method("_c") else null
-	var auto_weather_stride: bool = true
-	if cp != null and cp.get("weather_refresh_auto_stride_by_speed") != null:
-		auto_weather_stride = bool(cp.weather_refresh_auto_stride_by_speed)
-	if auto_weather_stride:
-		var stride: int = 1
-		if new_speed >= 15.0:
-			stride = 8
-		elif new_speed >= 3.0:
-			stride = 4
-		else:
-			stride = 1
-		_generator.set_weather_refresh_stride(stride)
 	# 抽动修复（2026-05-18）：切档瞬间 weather_layer 内的 snapshot_interval 估计
 	# 会因为"上次 push 到现在"的墙钟差变得不真实（x20→x1 时尤其严重），导致下
 	# 一次 set_weather_fronts 算出超长 blend_duration → 云第一段几乎不动。重置

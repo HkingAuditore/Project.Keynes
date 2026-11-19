@@ -68,7 +68,7 @@ SeasonStageArrays::SeasonStageArrays(const Dictionary &knobs)
 // Preparation owns all Godot reads. The returned math captures scalars and
 // pointers into the caller's retained columns and is independent of the scene.
 PreparedSeasonStage prepare_season_stage(
-        const DCWorldExt &world, const std::function<Slot &(int)> &slot,
+        const std::function<int(const char *)> &component, const std::function<Slot &(int)> &slot,
         const Dictionary &knobs, SeasonStageArrays &arrays, int stage) {
     auto fail = [](const char *reason) {
         return PreparedSeasonStage{{}, {}, reason};
@@ -81,9 +81,9 @@ PreparedSeasonStage prepare_season_stage(
         const double moist_scale = double(knobs["moist_scale"]);
         if (n_cells <= 0) return fail("stage_0 n_cells <= 0");
 
-        const int sid_terrain      = world.component_id(StringName("cell_terrain"));
-        const int sid_moist        = world.component_id(StringName("cell_moisture"));
-        const int sid_base_m       = world.component_id(StringName("cell_base_moisture"));
+        const int sid_terrain      = component("cell_terrain");
+        const int sid_moist        = component("cell_moisture");
+        const int sid_base_m       = component("cell_base_moisture");
         if (sid_terrain < 0 || sid_moist < 0 || sid_base_m < 0) {
             return fail("stage_0 missing slot id (terrain/moisture/base_moisture)");
         }
@@ -124,8 +124,8 @@ PreparedSeasonStage prepare_season_stage(
         const double decay = double(knobs["decay"]);
         if (n_cells <= 0) return fail("stage_10 n_cells <= 0");
 
-        const int sid_terrain = world.component_id(StringName("cell_terrain"));
-        const int sid_base_m  = world.component_id(StringName("cell_base_moisture"));
+        const int sid_terrain = component("cell_terrain");
+        const int sid_base_m  = component("cell_base_moisture");
         if (sid_terrain < 0 || sid_base_m < 0) {
             return fail("stage_10 missing slot id (terrain/base_moisture)");
         }
@@ -185,12 +185,12 @@ PreparedSeasonStage prepare_season_stage(
         const double season_phase = double(knobs["season_phase"]);
         if (n_cells <= 0) return fail("stage_1 n_cells <= 0");
 
-        const int sid_terrain = world.component_id(StringName("cell_terrain"));
-        const int sid_moist   = world.component_id(StringName("cell_moisture"));
-        const int sid_elev    = world.component_id(StringName("cell_elevation"));
-        const int sid_wx      = world.component_id(StringName("cell_wind_x"));
-        const int sid_wy      = world.component_id(StringName("cell_wind_y"));
-        const int sid_lat     = world.component_id(StringName("cell_lat_norm"));
+        const int sid_terrain = component("cell_terrain");
+        const int sid_moist   = component("cell_moisture");
+        const int sid_elev    = component("cell_elevation");
+        const int sid_wx      = component("cell_wind_x");
+        const int sid_wy      = component("cell_wind_y");
+        const int sid_lat     = component("cell_lat_norm");
         if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 ||
             sid_wx < 0 || sid_wy < 0 || sid_lat < 0) {
             return fail("stage_1 missing slot id");
@@ -315,17 +315,17 @@ PreparedSeasonStage prepare_season_stage(
         if (lat_tab.size() < height || off_tab.size() < height) return fail("stage_2 row tables size");
         if (row_idx.size() != n_cells) return fail("stage_2 row_indices size");
 
-        const int sid_terrain   = world.component_id(StringName("cell_terrain"));
-        const int sid_base_t    = world.component_id(StringName("cell_base_terrain"));
-        const int sid_elev      = world.component_id(StringName("cell_elevation"));
-        const int sid_moist     = world.component_id(StringName("cell_moisture"));
-        const int sid_base_m    = world.component_id(StringName("cell_base_moisture"));
-        const int sid_wb30      = world.component_id(StringName("cell_water_balance_30d"));
-        const int sid_landform  = world.component_id(StringName("cell_landform"));
-        const int sid_vegetation= world.component_id(StringName("cell_vegetation"));
-        const int sid_cover     = world.component_id(StringName("cell_cover"));
-        const int sid_snow      = world.component_id(StringName("cell_snow_cover"));
-        const int sid_is_water  = world.component_id(StringName("cell_is_water"));
+        const int sid_terrain   = component("cell_terrain");
+        const int sid_base_t    = component("cell_base_terrain");
+        const int sid_elev      = component("cell_elevation");
+        const int sid_moist     = component("cell_moisture");
+        const int sid_base_m    = component("cell_base_moisture");
+        const int sid_wb30      = component("cell_water_balance_30d");
+        const int sid_landform  = component("cell_landform");
+        const int sid_vegetation= component("cell_vegetation");
+        const int sid_cover     = component("cell_cover");
+        const int sid_snow      = component("cell_snow_cover");
+        const int sid_is_water  = component("cell_is_water");
         if (sid_terrain < 0 || sid_base_t < 0 || sid_elev < 0 || sid_moist < 0 ||
             sid_base_m < 0 || sid_wb30 < 0 ||
             sid_landform < 0 || sid_vegetation < 0 || sid_cover < 0 || sid_snow < 0 ||
@@ -358,7 +358,7 @@ PreparedSeasonStage prepare_season_stage(
         const float   * const __restrict MOIST = s_m.arr_f32.ptr();
         const float   * const __restrict BASE_MOIST = s_bm.arr_f32.ptr();
         const float   * const __restrict WB30 = s_wb.arr_f32.ptr();
-        const int sid_temp_365d = world.component_id(StringName("cell_temp_365d"));
+        const int sid_temp_365d = component("cell_temp_365d");
         if (sid_temp_365d < 0 || slot(sid_temp_365d).arr_f32.size() != n_cells) {
             return fail("stage_2 temp_365d slot size mismatch");
         }
@@ -468,12 +468,12 @@ PreparedSeasonStage prepare_season_stage(
         auto &row_idx = arrays.rows;
         if (row_idx.size() != n_cells) return fail("stage_3 row_indices size");
 
-        const int sid_terrain  = world.component_id(StringName("cell_terrain"));
-        const int sid_moist    = world.component_id(StringName("cell_moisture"));
-        const int sid_elev     = world.component_id(StringName("cell_elevation"));
-        const int sid_river    = world.component_id(StringName("cell_has_river"));
-        const int sid_rflow    = world.component_id(StringName("cell_river_flow"));
-        const int sid_landform = world.component_id(StringName("cell_landform"));
+        const int sid_terrain  = component("cell_terrain");
+        const int sid_moist    = component("cell_moisture");
+        const int sid_elev     = component("cell_elevation");
+        const int sid_river    = component("cell_has_river");
+        const int sid_rflow    = component("cell_river_flow");
+        const int sid_landform = component("cell_landform");
         if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_river < 0 || sid_rflow < 0 ||
             sid_landform < 0) {
             return fail("stage_3 missing slot id");
@@ -575,13 +575,13 @@ PreparedSeasonStage prepare_season_stage(
         if (nb_arr.size() < n_cells * 6) return fail("stage_4 neighbor_indices size");
         if (donor_tab.size() < 26) return fail("stage_4 donor_table size < 26");
 
-        const int sid_terrain  = world.component_id(StringName("cell_terrain"));
-        const int sid_moist    = world.component_id(StringName("cell_moisture"));
-        const int sid_base_m   = world.component_id(StringName("cell_base_moisture"));
-        const int sid_wb30     = world.component_id(StringName("cell_water_balance_30d"));
-        const int sid_temp365  = world.component_id(StringName("cell_temp_365d"));
-        const int sid_elev     = world.component_id(StringName("cell_elevation"));
-        const int sid_landform = world.component_id(StringName("cell_landform"));
+        const int sid_terrain  = component("cell_terrain");
+        const int sid_moist    = component("cell_moisture");
+        const int sid_base_m   = component("cell_base_moisture");
+        const int sid_wb30     = component("cell_water_balance_30d");
+        const int sid_temp365  = component("cell_temp_365d");
+        const int sid_elev     = component("cell_elevation");
+        const int sid_landform = component("cell_landform");
         if (sid_terrain < 0 || sid_moist < 0 || sid_base_m < 0 || sid_wb30 < 0 ||
             sid_temp365 < 0 || sid_elev < 0 || sid_landform < 0) {
             return fail("stage_4 missing slot id");
@@ -691,10 +691,10 @@ PreparedSeasonStage prepare_season_stage(
         if (row_idx.size() != n_cells) return fail("stage_5 row_indices size");
         if (nb_arr.size() < n_cells * 6) return fail("stage_5 neighbor_indices size");
 
-        const int sid_terrain  = world.component_id(StringName("cell_terrain"));
-        const int sid_moist    = world.component_id(StringName("cell_moisture"));
-        const int sid_elev     = world.component_id(StringName("cell_elevation"));
-        const int sid_landform = world.component_id(StringName("cell_landform"));
+        const int sid_terrain  = component("cell_terrain");
+        const int sid_moist    = component("cell_moisture");
+        const int sid_elev     = component("cell_elevation");
+        const int sid_landform = component("cell_landform");
         if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_landform < 0) {
             return fail("stage_5 missing slot id");
         }
@@ -776,11 +776,11 @@ PreparedSeasonStage prepare_season_stage(
         if (row_idx.size() != n_cells) return fail("stage_6 row_indices size");
         if (nb_arr.size() < n_cells * 6) return fail("stage_6 neighbor_indices size");
 
-        const int sid_terrain  = world.component_id(StringName("cell_terrain"));
-        const int sid_elev     = world.component_id(StringName("cell_elevation"));
-        const int sid_moist    = world.component_id(StringName("cell_moisture"));
-        const int sid_river    = world.component_id(StringName("cell_has_river"));
-        const int sid_landform = world.component_id(StringName("cell_landform"));
+        const int sid_terrain  = component("cell_terrain");
+        const int sid_elev     = component("cell_elevation");
+        const int sid_moist    = component("cell_moisture");
+        const int sid_river    = component("cell_has_river");
+        const int sid_landform = component("cell_landform");
         if (sid_terrain < 0 || sid_elev < 0 || sid_moist < 0 || sid_river < 0 || sid_landform < 0) {
             return fail("stage_6 missing slot id");
         }
@@ -863,9 +863,9 @@ PreparedSeasonStage prepare_season_stage(
         if (row_idx.size() != n_cells) return fail("stage_7 row_indices size");
         if (nb_arr.size() < n_cells * 6) return fail("stage_7 neighbor_indices size");
 
-        const int sid_terrain  = world.component_id(StringName("cell_terrain"));
-        const int sid_elev     = world.component_id(StringName("cell_elevation"));
-        const int sid_landform = world.component_id(StringName("cell_landform"));
+        const int sid_terrain  = component("cell_terrain");
+        const int sid_elev     = component("cell_elevation");
+        const int sid_landform = component("cell_landform");
         if (sid_terrain < 0 || sid_elev < 0 || sid_landform < 0) {
             return fail("stage_7 missing slot id");
         }
@@ -948,11 +948,11 @@ PreparedSeasonStage prepare_season_stage(
         if (row_idx.size() != n_cells) return fail("stage_9 row_indices size");
         if (nb_arr.size() < n_cells * 6) return fail("stage_9 neighbor_indices size");
 
-        const int sid_terrain  = world.component_id(StringName("cell_terrain"));
-        const int sid_moist    = world.component_id(StringName("cell_moisture"));
-        const int sid_elev     = world.component_id(StringName("cell_elevation"));
-        const int sid_river    = world.component_id(StringName("cell_has_river"));
-        const int sid_landform = world.component_id(StringName("cell_landform"));
+        const int sid_terrain  = component("cell_terrain");
+        const int sid_moist    = component("cell_moisture");
+        const int sid_elev     = component("cell_elevation");
+        const int sid_river    = component("cell_has_river");
+        const int sid_landform = component("cell_landform");
         if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_river < 0 ||
             sid_landform < 0) {
             return fail("stage_9 missing slot id");
@@ -1026,14 +1026,14 @@ PreparedSeasonStage prepare_season_stage(
     const float sea_level = float(knobs["sea_level"]);
     if (n_cells <= 0) return fail("n_cells <= 0");
 
-    const int sid_temp = world.component_id(StringName("cell_temp"));
-    const int sid_moist = world.component_id(StringName("cell_moisture"));
-    const int sid_snow = world.component_id(StringName("cell_snow_cover"));
-    const int sid_elev = world.component_id(StringName("cell_elevation"));
-    const int sid_terrain = world.component_id(StringName("cell_terrain"));
-    const int sid_landform = world.component_id(StringName("cell_landform"));
-    const int sid_vegetation = world.component_id(StringName("cell_vegetation"));
-    const int sid_cover = world.component_id(StringName("cell_cover"));
+    const int sid_temp = component("cell_temp");
+    const int sid_moist = component("cell_moisture");
+    const int sid_snow = component("cell_snow_cover");
+    const int sid_elev = component("cell_elevation");
+    const int sid_terrain = component("cell_terrain");
+    const int sid_landform = component("cell_landform");
+    const int sid_vegetation = component("cell_vegetation");
+    const int sid_cover = component("cell_cover");
     if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_elev < 0 ||
         sid_terrain < 0 ||
         sid_landform < 0 || sid_vegetation < 0 || sid_cover < 0) {
@@ -1134,7 +1134,8 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
     _production_season_refresh_ran = true;
     SeasonStageArrays arrays(knobs);
     const auto prepared = prepare_season_stage(
-        *this, [this](int id) -> Slot & { return _slots.write[id]; }, knobs, arrays, stage);
+        [this](const char *name) { return component_id(StringName(name)); },
+        [this](int id) -> Slot & { return _slots.write[id]; }, knobs, arrays, stage);
     if (prepared.reason != nullptr) return fail(prepared.reason);
     const auto started = std::chrono::steady_clock::now();
     const auto counts = prepared.compute();

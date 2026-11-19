@@ -130,6 +130,8 @@ var visual_day_phase_held: bool = false
 
 # Phase 4：长期气候异常值（游戏内"全球温度偏移"），shader 直接读
 var climate_anomaly: float = 0.0
+var _native_climate_calendar := false
+var _native_climate_year := -1
 
 # 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
 # -1.0 是哨兵值，表示"从来没发射过"，第一次 _process 必发。
@@ -168,37 +170,10 @@ var _rate_delta_sum: float = 0.0
 var _rate_next_msec: int = 0
 var _rng: RandomNumberGenerator
 var _simulation_backpressure_sources: Dictionary = {}
-# ─── worker 领先量限流（P3：屏障降级为限流）────────────────────────────────
-# 语义：`_lead_days` = worker 已提交日 − 本机日历日。`_max_lead_days` = 允许的
-# 领先上限；0 = 关闭。
-#
-# 这条通道与 `_has_hard_day_barrier()` / `needs_continuation_pulse()` **并行**，
-# 不改它们一字：默认 `_max_lead_days == 0` ⇒ 限额恒不触发 ⇒ 桌面行为逐表达式
-# 不变（`hard_day_barrier` 的每个操作数都与改动前一致）。
-#
-# 为什么需要它：`climate_input_capacity_day_barrier` 的语义是"不许推进这一天"，
-# 而 worker 一旦被赋予 Climate 权威、环境帧又由主线程按帧产出，环满 → 停日 →
-# 更不可能腾空，就形成自维持的停止条件。领先量限流把判据换成"worker 跑得太远
-# 就先等一帧"——它只是一个数字上限，不会自我维持。
-var _lead_days: int = 0
-var _max_lead_days: int = 0
-var _lead_blocked_frames: int = 0
-# 反方向的安全网：worker **落后**日历太多时也要停日历。
-#
-# 为什么必须有：日历由 `delta*speed` 驱动，worker 由环境帧驱动。两者一旦脱钩
-# （worker 卡在某个域、或帧没喂上），日历会自顾自往前跑 —— 实测出现过
-# 「日历 365 天、worker 提交 1 天」：UI 上的日期是假的，模拟其实停着，只有
-# `simulation_day_stalled` 看门狗在喊。领先量限流管不到这个方向（那里的 lead
-# 是负数，恒被 clamp 成 0）。
-#
-# 同样默认关闭（0），所以桌面逐表达式不变。
+# Keep the visible calendar close to the background commit.
 var _worker_lag_days: int = 0
 var _max_worker_lag_days: int = 0
 var _lag_blocked_frames: int = 0
-## 预发布天数 K（0 = 没有预发布器）。见 `_prefetch_throttled_by_lead()`。
-var _prefetch_days: int = 0
-## 因"预发布暂停"而豁免屏障的帧数（诊断用）。
-var _barrier_released_frames: int = 0
 # ─── Web 单日成本探针（按日聚合的 epoch 累加器）──────────────────────────
 # 目的：回答"inline_day 只报 30–50ms，为什么 _day_cost_ms_ema 是 ~100ms"——
 # 把**一个模拟日**的主线程墙钟按监听者/段落拆开，逐日从事件流读出。
@@ -317,6 +292,8 @@ func _advance_one_sim_day() -> void:
 		_dcp_day = _last_day + 1
 		_dcp_dispatch_usec = Time.get_ticks_usec()
 	_last_day += 1
+	if _max_worker_lag_days > 0:
+		_worker_lag_days += 1
 	day_changed.emit(_last_day)
 	if day_cost_probe_on:
 		day_cost_add(&"clk", _dcp_elapsed_ms(_dcp_dispatch_usec))
@@ -456,13 +433,8 @@ func _process(delta: float) -> void:
 	# 硬 barrier 不同：它只在冻结周期的结算截止点抬起，必须停下新的一天，并发一次
 	# 真实帧 pulse 让同日 catchup 收尾。
 	var simulation_budget_start_us: int = Time.get_ticks_usec()
-	# 限额是**并行**通道：`_has_hard_day_barrier()` 一字未改，只是 or 上它。
-	# 两个上限都为 0（默认）时 `_worker_budget_exhausted()` 恒 false。
-	var worker_budget_hit := _worker_budget_exhausted()
-	if worker_budget_hit:
-		_lead_blocked_frames += 1
-		if _worker_lag_over_budget():
-			_lag_blocked_frames += 1
+	if _worker_lag_over_budget():
+		_lag_blocked_frames += 1
 	var hard_day_barrier := _day_advance_blocked_by_barrier()
 	var pulse_start_us: int = Time.get_ticks_usec()
 	# climate_input_capacity_day_barrier parks day advance only. Capacity is
@@ -650,6 +622,7 @@ func seed_annual_climate(world_seed: int) -> void:
 	if _rng == null:
 		_rng = RandomNumberGenerator.new()
 	_rng.seed = world_seed
+	_native_climate_year = -1
 
 func climate_anomaly_for_day(day_idx: int) -> float:
 	if _rng == null or _last_year < 0 or year_index_for_day(day_idx) <= _last_year:
@@ -661,8 +634,21 @@ func climate_anomaly_for_day(day_idx: int) -> float:
 	return anomaly
 
 func _apply_year_rollover(year_idx: int) -> void:
-	climate_anomaly = _sample_annual_climate_anomaly()
+	if not _native_climate_calendar:
+		climate_anomaly = _sample_annual_climate_anomaly()
 	year_changed.emit(year_idx)
+
+
+func set_native_climate_calendar(active: bool) -> void:
+	_native_climate_calendar = active
+
+
+func apply_native_climate_calendar(view: Dictionary) -> void:
+	if not view.has("climate_rng_year"):
+		return
+	_native_climate_year = int(view.climate_rng_year)
+	_rng.state = int(view.climate_rng_state)
+	climate_anomaly = float(view.climate_anomaly)
 
 func _sample_annual_climate_anomaly() -> float:
 	return clampf(
@@ -863,6 +849,7 @@ func export_state() -> Dictionary:
 		"last_day": _last_day,
 		"last_season": _last_season,
 		"last_year": _last_year,
+		"climate_rng_year": _native_climate_year if _native_climate_year >= 0 else _last_year,
 		"last_emit_day_phase": _last_emit_day_phase,
 		"last_emit_season_phase": _last_emit_season_phase,
 		"rng_seed": _rng.seed if _rng != null else 0,
@@ -884,6 +871,7 @@ func restore_state(state: Dictionary) -> Dictionary:
 	_last_day = int(state.get("last_day", int(floor(current_day))))
 	_last_season = int(state.get("last_season", season_index_for_day(_last_day)))
 	_last_year = int(state.get("last_year", year_index_for_day(_last_day)))
+	_native_climate_year = int(state.get("climate_rng_year", -1))
 	if _rng == null:
 		_rng = RandomNumberGenerator.new()
 	_rng.seed = int(state.get("rng_seed", 0))
@@ -918,7 +906,6 @@ func request_simulation_backpressure(source: StringName, active: bool) -> void:
 
 func _has_hard_day_barrier() -> bool:
 	return _simulation_backpressure_sources.has(&"climate_input_capacity_day_barrier") \
-		or _simulation_backpressure_sources.has(&"annual_report_day_barrier") \
 		or _simulation_backpressure_sources.has(&"annual_report_commit_barrier") \
 		or needs_continuation_pulse()
 
@@ -938,34 +925,12 @@ func has_simulation_backpressure() -> bool:
 	return not _simulation_backpressure_sources.is_empty()
 
 
-# ─── 限额 API（P3）────────────────────────────────────────────────────────
-# 外部（WorldRuntimeHost）每帧写入：
-#   lead = worker.committed_day - day_index()   （worker 领先多少天）
-#   lag  = day_index() - worker.committed_day   （worker 落后多少天）
-# 两个上限默认都是 0 ⇒ `_worker_budget_exhausted()` 恒 false ⇒ 桌面逐表达式
-# 等价于改动前（既有 barrier source 的语义一个字都没改）。
-func report_worker_lead_days(lead: int) -> void:
-	_lead_days = maxi(lead, 0)
-
-
-func set_max_worker_lead_days(value: int) -> void:
-	_max_lead_days = maxi(value, 0)
-
-
 func report_worker_lag_days(lag: int) -> void:
 	_worker_lag_days = maxi(lag, 0)
 
 
 func set_max_worker_lag_days(value: int) -> void:
 	_max_worker_lag_days = maxi(value, 0)
-
-
-func get_worker_lead_days() -> int:
-	return _lead_days
-
-
-func get_max_worker_lead_days() -> int:
-	return _max_lead_days
 
 
 func get_worker_lag_days() -> int:
@@ -976,84 +941,16 @@ func get_max_worker_lag_days() -> int:
 	return _max_worker_lag_days
 
 
-func get_lead_blocked_frame_count() -> int:
-	return _lead_blocked_frames
-
-
 func get_lag_blocked_frame_count() -> int:
 	return _lag_blocked_frames
-
-
-func _lead_over_budget() -> bool:
-	return _max_lead_days > 0 and _lead_days >= _max_lead_days
 
 
 func _worker_lag_over_budget() -> bool:
 	return _max_worker_lag_days > 0 and _worker_lag_days >= _max_worker_lag_days
 
 
-## 只有**一个方向**该拦日历：worker 落后太多（日历不能跑到它前面去）。
-##
-## 反方向曾经也拦，那是错的，而且会和预发布器的上限撞成死锁：
-##   worker 领先 10 天（lead = max_lead）⇒ 日历被拦；日历不动 ⇒ lead 不变；
-##   预发布器又因 lead ≥ lead_cap(=10) 不发布 ⇒ 双方都停在 10 上，日历冻住。
-## 正确语义：worker 领先时日历**追上去**才是消解领先的方式，拦它只会让领先永远存在。
-## 记忆体上界由预发布器一侧的 `lead_cap` 负责（那是发布闸，不是日历闸）。
-func _worker_budget_exhausted() -> bool:
-	return _worker_lag_over_budget()
-
-
-# ─── P3 补完：预发布暂停时，日历必须能走 ──────────────────────────────────
-#
-# 浏览器实测的互锁（`?worker=1`）：
-#     clk=1（日历停）、cd=4（worker 已提交 4）、lead=3 ≥ k=2
-# 成因链条完全对称、而且每一环都"按设计"：
-#   1) 预发布器看到 lead ≥ K，按防自激的不变量**暂停发布**（正确）；
-#   2) worker 因此缺下一帧，抬着 `native_daily_day_barrier` 等输入（正确）；
-#   3) `_has_hard_day_barrier()` 于是钉住日历（**这里错了**）；
-#   4) 日历不动 ⇒ `clk` 不变 ⇒ `lead` 不变 ⇒ 预发布器继续暂停。闭环。
-#
-# 语义上的修正：`lead ≥ K` 意味着"worker 已经跑在日历前面"，此时**唯一能解开
-# 闭环的一方是日历** —— 所以"等 worker / 等输入"这一类屏障不得再拦日。
-# 真正该拦日的只剩两种：
-#   * `annual_report_*`：不依赖 worker，且有自己的 pulse 语义；
-#   * 领先/落后额度真正用尽（`_worker_budget_exhausted()`，上限 = K + 8）。
-#
-# 关闭态完全不变：`_prefetch_days == 0` 时 `_prefetch_throttled_by_lead()` 恒 false，
-# `_day_advance_blocked_by_barrier()` 逐表达式等于
-# `_has_hard_day_barrier() or _worker_budget_exhausted()`。
-func report_worker_prefetch_days(k: int) -> void:
-	_prefetch_days = maxi(k, 0)
-
-
-func get_worker_prefetch_days() -> int:
-	return _prefetch_days
-
-
-func get_barrier_released_frame_count() -> int:
-	return _barrier_released_frames
-
-
-## 预发布器此刻是否正因为"领先额度用完"而暂停发布。
-func _prefetch_throttled_by_lead() -> bool:
-	return _prefetch_days > 0 and _lead_days >= _prefetch_days
-
-
-func _annual_report_barrier_active() -> bool:
-	return _simulation_backpressure_sources.has(&"annual_report_day_barrier") \
-		or _simulation_backpressure_sources.has(&"annual_report_commit_barrier")
-
-
-## 本帧"不许推进新的一天"的唯一判定。`_process` 的三处（首判 / pulse 后重读 /
-## 日循环内重读）必须共用它，否则三处会给出不同答案。
 func _day_advance_blocked_by_barrier() -> bool:
-	var barrier_blocks := _has_hard_day_barrier()
-	if barrier_blocks and _prefetch_throttled_by_lead() \
-			and not _annual_report_barrier_active():
-		# 豁免：预发布暂停中，日历必须能追上来（见上面长注释）。
-		barrier_blocks = false
-		_barrier_released_frames += 1
-	return barrier_blocks or _worker_budget_exhausted()
+	return _has_hard_day_barrier() or _worker_lag_over_budget()
 
 
 # ─── 帧内分解诊断查询 ────────────────────────────────────────────────────

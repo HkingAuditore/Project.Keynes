@@ -247,10 +247,6 @@ func _set_speed(host, s: float) -> void:
 	host._sync_speed_buttons()
 	host._sync_clock_running_to_weather_layer()
 
-# Fast-tick perf opt (A)：速度档变更回调——按速度区间把 weather_refresh_stride
-# 调成低速→1 / 中速→4 / 高速→8，让加速档位下 refresh_daily 的反馈链 + 重烘焙
-# 按 stride 跳日执行，显著降低单帧热路径开销。
-
 func _sync_clock_running_to_weather_layer(host) -> void:
 	if host._renderer == null:
 		return

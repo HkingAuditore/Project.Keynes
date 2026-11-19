@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "runtime_world_environment.h"
 #include "native_simulation_host.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
@@ -349,6 +350,10 @@ int64_t DCWorldExt::runtime_next_environment_day() const {
     return _runtime_host->next_environment_day();
 }
 
+int64_t DCWorldExt::request_runtime_calendar_day(int64_t date) {
+    return _runtime_host ? _runtime_host->request_runtime_calendar_day(date) : -1;
+}
+
 Dictionary DCWorldExt::apply_runtime_climate_writeback(
         int64_t after_generation) {
     SimTraceWriteGuard sim_trace_guard{this, "apply_runtime_climate_writeback"};
@@ -648,6 +653,28 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     };
     apply_extra_u8("weather_field_init", "cell_weather_field_init",
                    snapshot.weather_field_init);
+    if (const auto &season = snapshot.season) {
+        apply_extra("base_moisture", "cell_base_moisture", season->base_moisture);
+        apply_extra_u8("landform", "cell_landform", season->landform);
+        if (season->day > _climate_writeback_applied_day) {
+            const auto bytes = [](const std::vector<uint8_t> &lane) {
+                PackedByteArray array;
+                array.resize(static_cast<int64_t>(lane.size()));
+                std::memcpy(array.ptrw(), lane.data(), lane.size());
+                return array;
+            };
+            _map_data->set("base_landform_arr", bytes(season->base_landform));
+            out["season_day"] = season->day;
+            out["biome_history"] = bytes(season->biome_history);
+            out["vegetation_history"] = bytes(season->vegetation_history);
+            out["season_history_next"] = static_cast<int64_t>(season->history_next);
+        }
+    }
+    if (const auto &calendar = snapshot.calendar) {
+        out["climate_rng_year"] = calendar->year;
+        out["climate_rng_state"] = calendar->rng_state;
+        out["climate_anomaly"] = calendar->anomaly;
+    }
 
     if (!snapshot.restored_capture_cursors.empty()) {
         PackedFloat64Array cursors; cursors.resize(snapshot.restored_capture_cursors.size());

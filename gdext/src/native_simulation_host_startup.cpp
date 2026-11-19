@@ -104,6 +104,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         _requested_authority_mask.load(std::memory_order_acquire) == wanted)
         return resume_same_world_executor(speed_days_per_second, paused);
+    if (_world_environment && wanted != RUNTIME_ALL_DOMAIN_MASK) {
+        // The legacy ring can still remember the opening frame. The next
+        // owner needs the latest frame published by the full executor.
+        _environment_ring.reset();
+        _world_environment.reset();
+        _clock_requested_day.store(-1, std::memory_order_release);
+    }
     // STOPPED proves the previous worker no longer accesses the host; the
     // independent retirement task may still be joining its OS handle. Reset
     // the continuation machine here rather than touching its
@@ -1056,7 +1063,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         uint32_t restore_slot = 0;
         if (!_pending_restore_bundle.climate_bytes.empty() && _climate_writeback.try_begin_write(restore_slot)) {
             auto &writeback = _climate_writeback.write_buffer(restore_slot);
-            _climate_authority.snapshot_into(writeback, true);
+            capture_climate_display(writeback);
             writeback.restored_capture_cursors = _climate_authority.capture_cursors();
             writeback.generation = _climate_writeback_sequence.fetch_add(1) + 1u;
             _climate_writeback.publish(restore_slot);

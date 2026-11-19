@@ -514,10 +514,8 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             // Climate park + hard_ack can otherwise deadlock; after a real drain
             // soft-settle leftovers so founder PREFLIGHTED cannot pin the clock.
             ack_effect_native_country();
-            if (country_worker_authoritative) {
-                static_cast<EffectRuntime *>(_effect_runtime)
-                    ->settle_orphaned_native_country_acks();
-            }
+            if (country_worker_authoritative)
+                settle_orphaned_effect_native_country_acks();
             // Second Economy pass: SETTLE may only proceed after Country CLAIM
             // ACK from the drain/soft-settle above.
             dispatch_effect_native_economy();
@@ -733,9 +731,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.state, host.mode, host.authority_ready, report.interactive,
             host.authoritative_domain_mask, host.requested_authority_mask, host.committed_day});
         constexpr std::array<const char *, RuntimeWorkerTiming::MAIN_WAIT_REASON_COUNT> wait_names = {
-            "environment_input", "day_tail", "day_tail_task_slot", "other"};
-        constexpr std::array<const char *, RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT> task_names = {
-            "season"};
+            "environment_input", "day_tail", "other"};
         Dictionary waits_by_day;
         for (const auto &day : _runtime_host->main_waits_by_day()) {
             if (day.day < 0) continue;
@@ -746,17 +742,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
                 Dictionary values;
                 values["count"] = static_cast<int64_t>(counter.count);
                 values["usec"] = static_cast<int64_t>(counter.usec);
-                if (i == RuntimeWorkerTiming::DAY_TAIL_TASK_SLOT) {
-                    Dictionary tasks;
-                    for (size_t j = 0; j < task_names.size(); ++j) {
-                        if (day.tasks[j].count == 0) continue;
-                        Dictionary task;
-                        task["count"] = static_cast<int64_t>(day.tasks[j].count);
-                        task["usec"] = static_cast<int64_t>(day.tasks[j].usec);
-                        tasks[task_names[j]] = task;
-                    }
-                    values["tasks"] = tasks;
-                }
                 reasons[wait_names[i]] = values;
             }
             waits_by_day[day.day] = reasons;

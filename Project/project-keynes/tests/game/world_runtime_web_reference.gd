@@ -52,17 +52,6 @@ func _start_production_shadow_worker() -> void:
 	# 只有 ACTIVE 才推进日历；SHADOW 会停在 day 1。
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
-	# Web worker 依赖主线程预发布器的两个只读探测 API。旧 side module
-	# （例如使用 `skip-native` 导出，或浏览器缓存了旧包）可能仍能加载并报告
-	# `requested=ACTIVE`，但没有这两个方法；继续走 worker 会让它停在 PAUSED
-	# 等环境帧，而发布权又无法安全交给预发布器，最终把第 1 天钉死。
-	# 在启动边界直接切到同一 host 的 inline 日屏障，避免进入这个半启动状态。
-	if _is_web_build() and web_wants_worker and not _environment_prefetch_capable():
-		print("[runtime-worker] web side module lacks environment prefetch API; " +
-			"forcing native_daily_inline (rebuild Web native module to re-enable worker)")
-		_web_worker_inline_fallback = true
-		web_wants_worker = false
-		web_wants_inline = true
 	if ext != null and runtime_parity_forcing \
 			and ext.has_method("set_runtime_climate_parity_forcing"):
 		ext.set_runtime_climate_parity_forcing(true)
@@ -171,15 +160,12 @@ func _start_production_shadow_worker() -> void:
 		push_error("[runtime-worker] native_daily_inline requested but host reported false")
 	# P1/P3：worker 真的起来了才谈得上预发布与领先量限流。内联日不适用
 	# （它的消费者就是本线程，预发布只会让环卡住）。
-	_apply_web_worker_parallel_channels(climate_authority_active, started)
 	if climate_authority_active:
 		print("[runtime-worker] production ACTIVE started mask=",
 			runtime_authority_domain_mask,
 			" auto_pod=", runtime_economy_auto_pod_active,
 			" inline=", _native_daily_inline_active,
-			" web_worker=", _web_worker_requested(),
-			" prefetch_days=", _environment_prefetch_days_active,
-			" max_lead_days=", _max_worker_lead_days)
+			" web_worker=", _web_worker_requested())
 	_sync_runtime_worker_clock()
 
 

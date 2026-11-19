@@ -376,6 +376,10 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return runtime_bundle
+	if not _runtime_host.synchronize_environment_display_for_save():
+		_restore_clock_mode(was_paused, previous_speed, generation)
+		_busy = false
+		return _result(false, "save_environment_display_failed", "未能同步已结算的地图环境，已取消保存。")
 	var ext = _runtime_host.generator().get_data_core_world_ext()
 	if ext != null:
 		var resources := EconomyDisplay.apply_published_resources(ext)
@@ -497,7 +501,7 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 		if String(boundary.get("blocking_condition", "")) == "day_tail_pending":
 			# Complete the committed day even if the host's frame callback is suspended.
 			_runtime_host._consume_runtime_commit_if_ready()
-		elif frame % 2 == 0:
+		elif not _runtime_host._native_environment_active and frame % 2 == 0:
 			var generator := _runtime_host.generator()
 			if generator != null and generator.has_method("advance_save_boundary"):
 				generator.advance_save_boundary()
@@ -632,10 +636,13 @@ func _can_save() -> Dictionary:
 			or int(peer_status.get("rejected_intents", 0)) > 0:
 			return _blocked_result("save_requires_idle_country_peer",
 				"Country peer continuation 尚未到达可保存边界。", "country_peer_intents")
-	if country_ext_available:
-		country_busy = country_busy or country.should_run(_world_clock.day_index())
-	else:
-		country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
+	# The checkpoint includes future commands. The calendar is one day ahead
+	# of the committed state and must not drive the synchronous Country store.
+	if not country_has_checkpoint:
+		if country_ext_available:
+			country_busy = country_busy or country.should_run(_world_clock.day_index())
+		else:
+			country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
 	if country_busy:
 		# 三个来源：report.busy / country_should_run(day) / 无扩展时的
 		# command_preflight。日志里必须能分开，否则又是一句"国家没空闲"。

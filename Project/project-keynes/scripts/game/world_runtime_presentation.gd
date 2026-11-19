@@ -190,8 +190,10 @@ func _bind_settlement_labels() -> void:
 func on_season_changed(host, season_idx: int) -> void:
 	if host._generator == null or host._current_map == null or host._world_data == null:
 		return
-	var cp = host._generator._c() if host._generator.has_method("_c") else null
 	host.mark_map_overlay_dirty(&"season_changed")
+	if host._native_environment_active:
+		return
+	var cp = host._generator._c() if host._generator.has_method("_c") else null
 	var use_legacy = false
 	if cp != null and "season_refresh_legacy_signal" in cp:
 		use_legacy = bool(cp.season_refresh_legacy_signal)
@@ -205,7 +207,6 @@ func on_season_changed(host, season_idx: int) -> void:
 
 func on_year_changed(host, _year_idx: int) -> void:
 	if host._generator != null and host._current_map != null and host._world_data != null:
-		host._generator.refresh_yearly(host._current_map, host._world_data)
 		host.mark_map_overlay_dirty(&"year_changed")
 
 

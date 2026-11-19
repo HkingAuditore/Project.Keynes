@@ -8,8 +8,6 @@
 
 namespace pk {
 
-class DCWorldExt;
-
 struct SeasonStageArrays {
     godot::PackedInt32Array neighbors, rows;
     godot::PackedFloat32Array latitude, season_offsets, jitter, donors, soil, growth_pressure;
@@ -29,7 +27,8 @@ struct PreparedSeasonStage {
 };
 
 PreparedSeasonStage prepare_season_stage(
-    const DCWorldExt &world, const std::function<Slot &(int)> &slot,
+    const std::function<int(const char *)> &component, const std::function<Slot &(int)> &slot,
     const godot::Dictionary &knobs, SeasonStageArrays &arrays, int stage);
+int season_kernel_stage(int round_stage);
 
 } // namespace pk

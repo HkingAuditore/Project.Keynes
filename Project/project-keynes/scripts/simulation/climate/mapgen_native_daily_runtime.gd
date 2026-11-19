@@ -130,7 +130,7 @@ func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: Wo
 		_generator._native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "gdext_unavailable" }
 		return
 	# SHADOW probe 同样是 readiness 探测，强制纳入 weather/stage_b 探完整图。
-	var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, world, false, 30.0, true, true)
+	var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, world, false, 30.0, true)
 	var pass_keys: Array[String] = _generator._get_native_daily_bundle_builder()._native_daily_bundle_pass_keys(bundle)
 	if pass_keys.is_empty():
 		_generator._native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "empty_bundle" }
@@ -268,7 +268,7 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	var probe_ctx: SusTickContext = SusTickContext.make(0, 0, 0.0, 1.0, &"native_daily_probe")
 	# probe 是 readiness 探测（“weather 到期时能否跑”），强制纳入 weather/stage_b，
 	# 否则 tick 0 非 weather 到期会让 required pass key 判缺失→错误回退 legacy。
-	var probe_bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(probe_ctx, map, world, false, 30.0, true, true)
+	var probe_bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(probe_ctx, map, world, false, 30.0, true)
 	var required_pass_keys_packed: PackedStringArray = _generator._get_native_daily_bundle_builder()._native_daily_required_pass_keys(cp)
 	var required_pass_keys: Array[String] = _generator._get_native_daily_bundle_builder()._native_daily_required_pass_keys_array(cp)
 	var missing_required: PackedStringArray = _generator._get_native_daily_bundle_builder()._native_daily_missing_required_pass_keys(
@@ -637,7 +637,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		if _map != null and _map.has_soa() and _map.has_method("soa_begin_climate_transaction"):
 			_map.soa_begin_climate_transaction()
 		_generator._get_native_daily_publish()._native_daily_capture_finalizer_start_state(_map)
-		var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, _map, _world, true, 1.0, false, false, true)
+		var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, _map, _world, true, 1.0, false, true)
 		bundle_ms = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
 		_generator._native_daily_slice_active_bundle = bundle
 		_generator._native_daily_slice_unified_weather_embedded = bundle.has("weather_knobs")

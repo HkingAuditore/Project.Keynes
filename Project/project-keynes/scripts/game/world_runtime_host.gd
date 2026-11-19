@@ -137,50 +137,8 @@ var runtime_climate_authority_enabled: bool = true
 ## 桌面端默认不开：浏览器里(OS.has_feature("web"))才生效；桌面/headless 想验证
 ## 这条路径要显式给 PK_NATIVE_DAILY_INLINE=1（A/B 用）。
 @export var runtime_native_daily_inline: bool = true
-## Web 用回 native worker 的总开关（默认关闭）。
-##
-## 关：web 走 `runtime_native_daily_inline`（今天的行为，主线程逐日跑 12 域）。
-## 开：web 真的起 worker 线程，并打开三条并行通道：
-##   P1 环境帧在 `_process` 里预发布 N+1..N+K（单一发布者）
-##   P2 Country peer 由 worker 入口自 promote（deferred 分支仍关闭，见报告）
-##   P3 WorldClock 的判据从"有硬屏障"变成"领先量超预算"
-##
-## 解析顺序：环境变量 `PK_WEB_WORKER=1` > 本导出项 > false。
-## 桌面/headless 上 `PK_NATIVE_DAILY_INLINE` 不变时，本开关**只影响 P1/P3**：
-## 桌面本来就跑 worker，inline 本来就关着。
+## Web can request the background executor instead of running it inline.
 @export var runtime_web_worker: bool = false
-## P1：环境帧预发布天数 K。0 = 关闭（每 day_changed 一帧，今天的行为）。
-## web worker 开关打开时自动置 2（ring 4 槽：1 槽给 worker 正在消费、1 槽给
-## 主线程正在写，剩 2 槽可预发布）。
-@export var runtime_environment_prefetch_days: int = 0
-## 预发布流水线深度（K）：worker 最多能领先日历多少天。
-## 真机实测（RTX 4080 + 新 side module）：web 上 worker 是 **7.4 天/秒**、inline 是
-## **9.8 天/秒** —— 所以 web 默认仍走 inline（见 _web_worker_requested）。
-## 诊断数据说清了原因：worker 路径下单日派发只要 4 ms（inline 46 ms），但
-## `prefetch_diag` 里 `lead_over` 长期占 60/66 条，有效吞吐由**跨线程交付节奏**决定。
-## 试过把 K 从 2 加深到 6（让在途覆盖往返延迟）：7.43 → 7.45，**无改善**，
-## 所以瓶颈不是流水线深度，不要再往这个方向调。已回落 2。
-const WEB_WORKER_PREFETCH_DAYS := 2
-## P3：领先量上限 = 预发布天数 + 本余量。
-##
-## 关键：它**必须显著大于 K**。预发布时间锚在日历上（`clock_day + K`），所以
-## worker 的领先量在稳态下天然就是 ≤ K；把上限设成 K 会让"管线刚好装满"变成
-## "日历停止推进"，而日历一停就再也不会有新帧 —— 两个机制互锁，实测卡在第 3 天。
-##
-## 于是这条通道的真实语义是**安全网**而不是油门：它只在"worker 被别的发布者
-## 喂到日历之外"（P1 关闭、或某条路径绕过预发布器）时才生效，把跑飞封在
-## K + 8 天以内（8 = worker 单批上限，见 worker_main 的 target_days clamp）。
-const WORKER_LEAD_MARGIN_DAYS := 8
-## 发布器的在途深度上限 = K + 本值。
-##
-## 真机实测（RTX 4080 + Chrome）：把它设成 K+8(=10) 之后 worker 已经追平 inline
-## （9.93 vs 9.81 天/秒），但 `worker_time_input_wait_us` 仍有 52 ms/天、`lead` 顶在
-## 10 —— 说明流水线又被填满、worker 在等下一帧。环境帧每帧约 0.5 MB，放到 40 天
-## ≈20 MB，wasm 堆完全放得下；先看 input_wait 会不会塌下去。
-const WORKER_PUBLISH_DEPTH_DAYS := 40
-## P3：允许 worker 领先主线程日历的天数上限。0 = 关闭（`_lead_over_budget()`
-## 恒 false ⇒ WorldClock 逐表达式等价于改动前）。web worker 开关打开时 = K。
-var _max_worker_lead_days: int = 0
 ## Web worker 的启动结果，进 diag：不用 grep 日志就能知道"到底起没起、为什么没起"。
 ## 空字符串 = 还没尝试过。
 var _web_worker_start_code: String = ""
@@ -190,17 +148,6 @@ var _web_worker_start_ok: bool = false
 ## 互斥，一旦"worker 要了却起不来"，两边都不成立 ⇒ **没有任何日屏障执行者**
 ## ⇒ 日历停在 day 1（web 上表现为"世界不动"，且 fault_code 为空，极难查）。
 var _web_worker_inline_fallback: bool = false
-## 只有**存盘**才会把预发布暂停成这个状态。区分它是必须的：
-## `_environment_prefetch_days_active == 0` 可能是"能力门否掉了预发布"（例如
-## side module 是旧的一份），而把那种情况误判成"存盘暂停"并自动恢复，会让
-## 能力门在下一帧就被撤销 —— 发布权重新被预发布器独占、而预发布器根本发不出去
-## ⇒ 环境帧为 0 ⇒ 日历停在 day 1（本轮 web 事故的同一个形态）。
-var _environment_prefetch_suspended_for_save: bool = false
-## K 本尊（预发布天数）。**必须与 `_max_worker_lead_days` 分开**：
-## 前者是"发到 clock+K"，后者是"worker 领先超过 K+margin 就停日历"。把两者
-## 用同一个变量会立刻互锁 —— 发到 clock+K+margin，worker 追到那里，lead 打满，
-## 日历停，于是再也没有新帧（实测卡在第 3 / 第 15 天）。
-var _environment_prefetch_days_active: int = 0
 ## 本次会话是否真的走内联日。只有 _start_production_shadow_worker 成功把它置真
 ## 之后，_on_clock_day_changed 才会接管日历的推进。
 var _native_daily_inline_active: bool = false
@@ -366,6 +313,18 @@ var _new_game_config: Dictionary = {}
 var _load_slot_id: String = ""
 var _pending_load_bundle: Dictionary = {}
 var _runtime_ready_for_ticks: bool = false
+var _native_environment_active := false
+var _calendar_admitted_through := -1
+
+func synchronize_environment_display_for_save() -> bool:
+	if not _native_environment_active:
+		return true
+	var committed: Dictionary = _runtime_control_state()
+	_apply_climate_writeback_if_authoritative(committed)
+	if _runtime_climate_writeback_last_day < int(committed.get("simulation_committed_day", -1)):
+		return false
+	_generator._write_runtime_enum_axes_dense(_current_map)
+	return true
 var _runtime_commit_generation: int = 0
 var _runtime_notified_generation: int = 0
 var _runtime_commit_day: int = -1
@@ -405,7 +364,6 @@ var _day_barrier_claim_enabled: bool = false
 var _sched_proc_frames: int = 0
 var _sched_proc_economy_input_ms: float = 0.0
 ## day_changed 里容量检查/输入抓取被拒绝的次数（只在前 8 次打日志，避免刷屏）。
-var _day_capture_blocked_logs: int = 0
 var _sched_proc_peer_ms: float = 0.0
 var _sched_proc_snapshots_ms: float = 0.0
 var _sched_proc_country_read_ms: float = 0.0
@@ -459,18 +417,6 @@ const GM_GOODS_SCALE: int = 1000
 var _gm_adapter = preload("res://scripts/game/world_runtime_gm_adapter.gd").new()
 var _daily_adapter = preload("res://scripts/game/world_runtime_daily_adapter.gd").new()
 var _web_beat_next_msec := 0
-const _PREFETCH_DIAG_INTERVAL_MSEC := 2000
-var _prefetch_diag_last_code: StringName = &""
-var _prefetch_diag_counts: Dictionary = {}
-var _prefetch_diag_next_msec: int = 0
-var _prefetch_diag_publish_count: int = 0
-var _prefetch_diag_emit_count: int = 0
-var _prefetch_diag_last_reason: String = ""
-var _prefetch_diag_last_capture_usec: int = 0
-var _prefetch_diag_boot: Dictionary = {}
-var _prefetch_diag_snapshot: Dictionary = {}
-var _prefetch_diag_on_cache: int = -1
-var _prefetch_boot_emitted: bool = false
 const _GI_STRENGTH_PROPS := ["gi_ao_strength", "gi_bent_strength", "gi_bounce_strength"]
 var _visual_adapter = preload("res://scripts/game/world_runtime_visual_adapter.gd").new()
 # Generation/worker preparation delegates to the passive adapter.
@@ -490,13 +436,6 @@ func _session_preparation_failure() -> Dictionary:
 	return _generation_adapter._session_preparation_failure(self)
 func _start_production_shadow_worker() -> void:
 	_generation_adapter._start_production_shadow_worker(self)
-func _apply_web_worker_parallel_channels(climate_authority_active: bool,
-		started: Dictionary) -> void:
-	return _generation_adapter._apply_web_worker_parallel_channels(self, climate_authority_active, started)
-func _release_prefetch_barrier_to_clock() -> void:
-	_generation_adapter._release_prefetch_barrier_to_clock(self)
-func _environment_prefetch_capable() -> bool:
-	return _generation_adapter._environment_prefetch_capable(self)
 func _stop_previous_runtime_worker() -> Dictionary:
 	return await _generation_adapter._stop_previous_runtime_worker(self)
 var _generation_adapter = preload("res://scripts/game/world_runtime_generation_adapter.gd").new()
@@ -851,8 +790,6 @@ func _web_gdscript_daily_fallback_allowed() -> bool:
 	return _daily_adapter._web_gdscript_daily_fallback_allowed(self)
 func _reject_web_daily_fallback(code: String, reason: String) -> bool:
 	return _daily_adapter._reject_web_daily_fallback(self, code, reason)
-func _effective_environment_prefetch_days() -> int:
-	return _daily_adapter._effective_environment_prefetch_days(self)
 func _preparation_process_frame() -> void:
 	await get_tree().process_frame
 
@@ -885,30 +822,6 @@ func _emit_web_beat(frame_usec: int) -> void:
 func _process(_delta: float) -> void:
 	_daily_adapter._process(self, _delta)
 	_presentation.publish_worker_view(simulation_view_updated.emit)
-func _service_worker_lead_and_prefetch() -> void:
-	_daily_adapter._service_worker_lead_and_prefetch(self)
-func _prefetch_diag_tick_prep() -> void:
-	_daily_adapter._prefetch_diag_tick_prep(self)
-func _prefetch_diag_enabled() -> bool:
-	return _daily_adapter._prefetch_diag_enabled(self)
-func _emit_prefetch_boot_once() -> void:
-	_daily_adapter._emit_prefetch_boot_once(self)
-func _prefetch_diag_boot_payload() -> Dictionary:
-	return _daily_adapter._prefetch_diag_boot_payload(self)
-func _prefetch_diag_note(code: StringName) -> void:
-	_daily_adapter._prefetch_diag_note(self, code)
-func _prefetch_diag_collect_extras() -> void:
-	_daily_adapter._prefetch_diag_collect_extras(self)
-func _prefetch_diag_seen_text() -> String:
-	return _daily_adapter._prefetch_diag_seen_text(self)
-func _emit_prefetch_diag(code: StringName) -> void:
-	_daily_adapter._emit_prefetch_diag(self, code)
-func _suspend_environment_prefetch_for_save(reason: String) -> void:
-	_daily_adapter._suspend_environment_prefetch_for_save(self, reason)
-func _resume_environment_prefetch_after_save() -> void:
-	_daily_adapter._resume_environment_prefetch_after_save(self)
-func _poll_environment_prefetch_resume() -> void:
-	_daily_adapter._poll_environment_prefetch_resume(self)
 func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void:
 	_daily_adapter._service_runtime_liveness(self, frame_usec, _capacity_pending)
 func _service_runtime_progress(frame_usec: int) -> void:

@@ -1,14 +1,11 @@
 #include "world_ext.h"
 #include "world_ext_internal.h"
 #include "world_ext_season_stage.h"
-#include "native_simulation_host.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <limits>
 #include <memory>
-#include <unordered_map>
 
 namespace pk {
 
@@ -16,43 +13,11 @@ using namespace godot;
 
 namespace {
 
-struct SeasonRoundWork {
-    explicit SeasonRoundWork(const Dictionary &knobs) : arrays(knobs) {}
-
-    SeasonStageArrays arrays;
-    std::unordered_map<int, Slot> columns;
-    std::vector<PreparedSeasonStage> stages;
-    std::vector<int> publish_order;
-    std::atomic<bool> ready{false};
-    bool ok = false;
-    double elapsed_ms = 0.0;
-
-    void compute() noexcept {
-        const auto started = std::chrono::steady_clock::now();
-        try {
-            for (const auto &stage : stages) stage.compute();
-            ok = true;
-        } catch (...) {
-            ok = false;
-        }
-        elapsed_ms = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - started).count();
-        ready.store(true, std::memory_order_release);
-    }
-};
-
 struct SeasonRoundData : SeasonRoundState {
-    std::unique_ptr<SeasonRoundWork> background;
-
-    bool background_pending() const {
-        return background && !background->ready.load(std::memory_order_acquire);
-    }
-
     void clear_inputs() {
         input_knobs = Dictionary();
         soil_moisture_arr.clear();
         veg_growth_pressure_arr.clear();
-        background.reset();
     }
 };
 
@@ -62,7 +27,7 @@ void destroy_season_round_state(void *state) {
     delete static_cast<SeasonRoundData *>(state);
 }
 
-static int pk_round_stage_to_cpp_stage(int round_stage) {
+int season_kernel_stage(int round_stage) {
     switch (round_stage) {
         case 0:  return 0;
         case 1:  return 1;
@@ -100,7 +65,6 @@ godot::Dictionary DCWorldExt::start_season_round(godot::Dictionary round_knobs) 
     if (!round_knobs.has("n_cells")) return fail("missing required knob: n_cells");
     const int n_cells = int(round_knobs["n_cells"]);
     if (n_cells <= 0) return fail("n_cells <= 0");
-    const int64_t boundary = round_knobs.get("background_boundary", int64_t{-1});
 
     // 已存在活跃 round：先 abort 旧的，避免泄漏（fast-restart 容错）。
     // generation 单调递增保证：把旧 generation +=1 后赋给新 SeasonRoundData，
@@ -108,7 +72,6 @@ godot::Dictionary DCWorldExt::start_season_round(godot::Dictionary round_knobs) 
     int next_generation = 1;
     if (_season_round != nullptr) {
         SeasonRoundData *old = static_cast<SeasonRoundData *>(_season_round);
-        if (old->background_pending()) return fail("season_round_pending");
         if (old->active) {
             UtilityFunctions::push_warning(
                 "[DCWorldExt] start_season_round: previous round still active "
@@ -134,35 +97,6 @@ godot::Dictionary DCWorldExt::start_season_round(godot::Dictionary round_knobs) 
     if (round_knobs.has("veg_growth_pressure_arr")) {
         st->veg_growth_pressure_arr = round_knobs["veg_growth_pressure_arr"];
     }
-    if (boundary >= 0) {
-        st->background = std::make_unique<SeasonRoundWork>(round_knobs);
-        auto *work = st->background.get();
-        auto copy_slot = [&](int id) -> Slot & {
-            auto [entry, inserted] = work->columns.try_emplace(id, _slots[id]);
-            Slot &copy = entry->second;
-            // Prepare writable buffers before storing any views into them.
-            // Later stages share the same private columns as earlier stages.
-            if (inserted && copy.dtype == SlotDType::F32) copy.arr_f32.ptrw();
-            if (inserted && copy.dtype == SlotDType::U8) copy.arr_u8.ptrw();
-            return copy;
-        };
-        for (int round_stage = 0; round_stage < 12; ++round_stage) {
-            const int stage = pk_round_stage_to_cpp_stage(round_stage);
-            if (stage < 0) continue;
-            auto prepared = prepare_season_stage(*this, copy_slot, round_knobs, work->arrays, stage);
-            if (prepared.reason != nullptr) return fail(prepared.reason);
-            for (const int id : prepared.slots)
-                if (std::find(work->publish_order.begin(), work->publish_order.end(), id)
-                        == work->publish_order.end())
-                    work->publish_order.push_back(id);
-            work->stages.push_back(std::move(prepared));
-        }
-        if (!_runtime_host || !_runtime_host->schedule_day_tail_work(
-                boundary, RuntimeWorkerTiming::SEASON, [work] { work->compute(); },
-                /*before_next_input=*/true))
-            return fail("season_day_tail_unavailable");
-    }
-
     out["handle"] = st->generation;
     out["fallback"] = false;
     destroy_season_round_state(_season_round);
@@ -197,41 +131,6 @@ godot::Dictionary DCWorldExt::run_season_round_slice(int handle, int max_usec) {
     if (!st->active) return fail("round inactive");
     if (handle != st->generation) return fail("stale handle (generation mismatch)");
 
-    if (st->background && st->round_stage < 12) {
-        out["fallback"] = false;
-        out["path"] = "gdext_background";
-        if (st->background_pending()) {
-            out["pending"] = true;
-            return out;
-        }
-        auto &work = *st->background;
-        if (!work.ok) {
-            out["fallback"] = true;
-            return fail("season_background_compute_failed");
-        }
-        SimTraceWriteGuard trace{this, "run_season_round_slice"};
-        for (const int id : work.publish_order) {
-            Slot &target = _slots.write[id];
-            auto &column = work.columns.at(id);
-            if (column.dtype == SlotDType::F32) target.arr_f32 = std::move(column.arr_f32);
-            else target.arr_u8 = std::move(column.arr_u8);
-            _flush_slot_to_map(id);
-        }
-        _production_season_refresh_ran = true;
-        _production_seasonal_feedback_ran = true;
-        _production_seasonal_feedback_decay = float(st->input_knobs["decay"]);
-        st->soil_moisture_arr = std::move(work.arrays.soil);
-        st->veg_growth_pressure_arr = std::move(work.arrays.growth_pressure);
-        st->total_native_ms = work.elapsed_ms;
-        st->round_stage = st->stages_done = 12;
-        ++st->slices_used;
-        out["done"] = true;
-        out["stage"] = 12;
-        out["stages_done"] = 12;
-        out["stages_done_this_slice"] = 12;
-        out["elapsed_ms"] = work.elapsed_ms;
-        return out;
-    }
 
     if (max_usec <= 0) max_usec = 550;  // 默认 SUS slice budget
     // 用 steady_clock 算 deadline，与文件其余 perf 计时保持一致，避免引入
@@ -244,7 +143,7 @@ godot::Dictionary DCWorldExt::run_season_round_slice(int handle, int max_usec) {
     // b1 粒度：每 stage 边界查一次 deadline；不在 stage 内 cursor 切片
     while (st->round_stage < 12) {
         const int round_stage = st->round_stage;
-        const int cpp_stage = pk_round_stage_to_cpp_stage(round_stage);
+        const int cpp_stage = season_kernel_stage(round_stage);
 
         if (cpp_stage < 0) {
             // SKIP（atlas_queue / unknown）：直接前进
@@ -355,7 +254,6 @@ godot::Dictionary DCWorldExt::finish_season_round(int handle) {
     SeasonRoundData *st = static_cast<SeasonRoundData *>(_season_round);
     if (handle != st->generation) return fail("stale handle (generation mismatch)");
     if (!st->active) return fail("round inactive");
-    if (st->background && st->round_stage < 12) return fail("season_round_pending");
 
     out["total_native_ms"] = st->total_native_ms;
     out["slices_used"] = st->slices_used;
@@ -376,7 +274,7 @@ void DCWorldExt::abort_season_round() {
     SeasonRoundData *st = static_cast<SeasonRoundData *>(_season_round);
     st->active = false;
     // The math owns raw views into this candidate until it publishes ready.
-    if (!st->background_pending()) st->clear_inputs();
+    st->clear_inputs();
 }
 
 

@@ -159,6 +159,9 @@ public:
     }
     bool publish_environment(RuntimeEnvironmentSnapshot &&snapshot,
                              std::string &error);
+    bool initialize_world_environment(RuntimeEnvironmentSnapshot &&seed,
+        const godot::Dictionary &config, std::string &error);
+    int64_t request_runtime_calendar_day(int64_t date);
     // worker：ring 内仍有未评估输入（有活可干）。
     bool has_pending_climate_input() const;
     // 主线程 publish：ring 已满，需 wait 腾空位。
@@ -434,10 +437,6 @@ public:
     RuntimeResourceDisplayPatch take_resource_display_patch();
     // The caller retains the day-tail gate until it consumes this result.
     // The queued computation owns value data and never uses a scene object.
-    bool schedule_day_tail_work(int64_t day, RuntimeWorkerTiming::DayTailTask task,
-                                std::function<void()> work,
-                                bool before_next_input = false);
-    bool service_day_tail_work();
     // The committed day's main-thread tail has not run yet. Before the Climate
     // grant the main thread may be waiting for it without running a tail.
     bool main_day_tail_pending() const noexcept {
@@ -447,10 +446,7 @@ public:
             _main_day_tail_done.load(std::memory_order_acquire) <
                 _committed_day.load(std::memory_order_acquire);
     }
-    std::unique_lock<std::mutex> try_lock_economy_read_boundary() const {
-        return std::unique_lock<std::mutex>(
-            _economy_authority_boundary_mutex, std::try_to_lock);
-    }
+    std::unique_lock<std::mutex> try_lock_economy_read_boundary() const;
     void complete_economy_input_capture() noexcept {
         {
             std::lock_guard<std::mutex> control_lock(_control_mutex);
@@ -1346,6 +1342,9 @@ private:
     bool service_annual_presentations();
     void execute_era_advancement_request(RuntimeEraRewardRequest &request);
     const char *stage_era_advancement(DayExecution &day);
+    const char *stage_prepare_environment(DayExecution &day);
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> executor_environment_for_day(int64_t day);
+    void capture_climate_display(RuntimeClimateSnapshot &out) const;
     bool settle_player_regime(RuntimeEraAdvancement &state, int32_t regime, int64_t day);
     bool submit_era_milestone(RuntimeEraAdvancement &state, int32_t era,
         int64_t requested, int64_t effective, int64_t sequence, bool consume_goods);
@@ -1424,8 +1423,6 @@ private:
     std::array<RuntimeCommandReceipt, RUNTIME_RECEIPT_QUEUE_CAPACITY> _receipts{};
 
     mutable std::mutex _control_mutex;
-    std::function<void()> _day_tail_work; // Protected by _control_mutex.
-    RuntimeWorkerTiming::DayTailTask _day_tail_task = RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT;
     std::condition_variable _control_cv;
     // B8 P3：主线程交付等待专用。不能复用 _control_cv —— worker 的日循环也在
     // 同一个 CV 上等 preflight 重试，而 worker 自己在消费环境后 notify 会让它
@@ -1702,6 +1699,8 @@ private:
     // Accepted world backlog; the active executor has exclusive access.
     std::vector<RuntimeCommandPacket> _executor_pending_commands;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _executor_day_environment;
+    std::shared_ptr<class RuntimeWorldEnvironment> _world_environment;
+    std::atomic<int64_t> _clock_requested_day{-1};
     std::atomic<bool> _inline_day_pending{false};
     std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 

@@ -28,30 +28,6 @@ func _emit_web_beat(host, frame_usec: int) -> void:
 	_part1._emit_web_beat(host, frame_usec)
 func _process(host, _delta: float) -> void:
 	_part1._process(host, _delta)
-func _service_worker_lead_and_prefetch(host) -> void:
-	_part1._service_worker_lead_and_prefetch(host)
-func _prefetch_diag_tick_prep(host) -> void:
-	_part1._prefetch_diag_tick_prep(host)
-func _prefetch_diag_enabled(host) -> bool:
-	return _part1._prefetch_diag_enabled(host)
-func _emit_prefetch_boot_once(host) -> void:
-	_part1._emit_prefetch_boot_once(host)
-func _prefetch_diag_boot_payload(host) -> Dictionary:
-	return _part1._prefetch_diag_boot_payload(host)
-func _prefetch_diag_note(host, code: StringName) -> void:
-	_part1._prefetch_diag_note(host, code)
-func _prefetch_diag_collect_extras(host) -> void:
-	_part1._prefetch_diag_collect_extras(host)
-func _prefetch_diag_seen_text(host) -> String:
-	return _part1._prefetch_diag_seen_text(host)
-func _emit_prefetch_diag(host, code: StringName) -> void:
-	_part1._emit_prefetch_diag(host, code)
-func _suspend_environment_prefetch_for_save(host, reason: String) -> void:
-	_part1._suspend_environment_prefetch_for_save(host, reason)
-func _resume_environment_prefetch_after_save(host) -> void:
-	_part1._resume_environment_prefetch_after_save(host)
-func _poll_environment_prefetch_resume(host) -> void:
-	_part1._poll_environment_prefetch_resume(host)
 func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -> void:
 	_part1._service_runtime_liveness(host, frame_usec, _capacity_pending)
 func _service_runtime_progress(host, frame_usec: int) -> void:
@@ -116,9 +92,6 @@ func _web_gdscript_daily_fallback_allowed(host) -> bool:
 
 func _reject_web_daily_fallback(host, code: String, reason: String) -> bool:
 	return _part1._reject_web_daily_fallback(host, code, reason)
-
-func _effective_environment_prefetch_days(host) -> int:
-	return _part1._effective_environment_prefetch_days(host)
 
 func _publish_fast_tick_perf_sample(host,
 		t_sus_ms: float,

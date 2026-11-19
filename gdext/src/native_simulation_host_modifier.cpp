@@ -208,7 +208,8 @@ bool NativeSimulationHost::modifier_pod_self_test(std::string *out_error) const 
 std::shared_ptr<const RuntimeEnvironmentSnapshot>
 NativeSimulationHost::environment_snapshot() const {
     // 诊断 / 物理派生读 latest；worker 日计划必须走 environment_input_for_plan。
-    if (auto latest = _environment_ring.latest()) return latest;
+    if (!_world_environment)
+        if (auto latest = _environment_ring.latest()) return latest;
     return std::atomic_load_explicit(&_environment_snapshot, std::memory_order_acquire);
 }
 

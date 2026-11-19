@@ -15,6 +15,7 @@ class Generator extends MapGenerator:
 		calls.append(config.duplicate(true))
 		return {"ok": starts_ok, "code": "probe_start_failed" if not starts_ok else "ok",
 			"native_daily_inline": bool(config.get("native_daily_inline", false))}
+	func initialize_world_environment() -> Dictionary: return {"ok": true}
 	func capture_country_worker_inputs() -> Dictionary: return {"ok": true}
 	func get_data_core_world_ext(): return null
 
@@ -26,7 +27,6 @@ class Current extends WorldRuntimeHost:
 	func _web_worker_requested() -> bool: return worker
 	func _resolve_climate_authority_policy() -> Dictionary: return {"enabled": active, "reason": "test_policy"}
 	func _sync_runtime_worker_clock() -> void: pass
-	func _apply_web_worker_parallel_channels(_active: bool, _started: Dictionary) -> void: pass
 
 class Previous extends OldHost:
 	var web := true
@@ -36,7 +36,6 @@ class Previous extends OldHost:
 	func _web_worker_requested() -> bool: return worker
 	func _resolve_climate_authority_policy() -> Dictionary: return {"enabled": active, "reason": "test_policy"}
 	func _sync_runtime_worker_clock() -> void: pass
-	func _apply_web_worker_parallel_channels(_active: bool, _started: Dictionary) -> void: pass
 
 func _init() -> void:
 	call_deferred("_run")
@@ -58,12 +57,12 @@ func _run() -> void:
 	_check("exact string only", not host._web_gdscript_daily_fallback_allowed())
 	OS.unset_environment("PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK")
 	host.free()
-	# A missing prefetch API must still choose native inline, not reject a working executor.
 	host = Current.new()
 	host.worker = true
 	host._generator = Generator.new()
 	host._start_production_shadow_worker()
-	_check("missing prefetch preserves native fallback", host._web_worker_inline_fallback and host._native_daily_inline_active and not host.is_runtime_fault_paused())
+	_check("native worker starts with a resident environment",
+		host._native_environment_active and not host._native_daily_inline_active and not host.is_runtime_fault_paused())
 	host.free()
 	print("web daily fallback: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)

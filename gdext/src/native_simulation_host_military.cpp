@@ -12,6 +12,8 @@ void NativeSimulationHost::attach_military(std::shared_ptr<NativeMilitaryRuntime
     _executor_military = std::move(military);
     if (_executor_military) {
         _executor_military->_runtime_host = this;
+        if (_has_pending_restore)
+            _executor_military->restore_terrain(_pending_restore_bundle.military_terrain_bytes);
         _executor_military->publish(_executor_military->last_result);
     }
 }

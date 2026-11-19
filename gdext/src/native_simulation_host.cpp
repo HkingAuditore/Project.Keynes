@@ -379,7 +379,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     // Both executors reach this table only after the daily domains settle.
     // Keep the table in gameplay order, before either caller publishes the day.
     using DayTailStage = const char *(NativeSimulationHost::*)(DayExecution &);
-    static constexpr std::array<DayTailStage, 8> day_tail_stages{
+    static constexpr DayTailStage day_tail_stages[]{
         &NativeSimulationHost::stage_natural_resource_recovery,
         &NativeSimulationHost::stage_bio_occupancy,
         &NativeSimulationHost::stage_military,
@@ -388,6 +388,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         &NativeSimulationHost::stage_trigger_delivery,
         &NativeSimulationHost::stage_ideology_projection,
         &NativeSimulationHost::stage_era_advancement,
+        &NativeSimulationHost::stage_prepare_environment,
     };
     if (commit.preflight_ok != 0) {
         for (const auto stage : day_tail_stages) {

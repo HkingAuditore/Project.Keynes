@@ -359,7 +359,7 @@ func season_round_b_plus_available() -> bool:
 # 时直接返回；否则重建 row_indices + rain-shadow jitter 各一次并落缓存。
 # 返回 false 表示当前无法构建（cfg/warp 缺失或 size 不符），caller 走 fallback。
 
-func start_season_round_b_plus(map: MapData, _world: WorldData, season: int, background_boundary: int = -1) -> int:
+func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> int:
 	if not season_round_b_plus_available():
 		_generator._season_log_path_once("b_plus", "gdscript_fallback", "gate fail (cp/ext/method)")
 		return 0
@@ -375,9 +375,6 @@ func start_season_round_b_plus(map: MapData, _world: WorldData, season: int, bac
 	if knobs.is_empty():
 		_generator._season_log_path_once("b_plus", "gdscript_fallback", "round_knobs build failed (cfg/map/row_table)")
 		return 0
-	if background_boundary >= 0:
-		knobs["background_boundary"] = background_boundary
-		_generator.record_runtime_main_step(background_boundary, &"season_freeze")
 	var res: Dictionary = _generator._data_core_world_ext.start_season_round(knobs)
 	if res.is_empty() or bool(res.get("fallback", true)):
 		_generator._season_log_path_once("b_plus", "gdscript_fallback", "start_season_round returned fallback: %s" % String(res.get("reason", "unknown")))
@@ -391,7 +388,7 @@ func start_season_round_b_plus(map: MapData, _world: WorldData, season: int, bac
 	_generator._season_round_b_plus_slices_used = 0
 	_generator._season_round_b_plus_stages_done = 0
 	_generator._b_plus_round_start_usec = Time.get_ticks_usec()
-	var path := "gdext_background" if background_boundary >= 0 else "gdext"
+	var path := "gdext"
 	_generator._last_season_refresh_breakdown["b_plus_path"] = path
 	_generator._last_season_refresh_breakdown["b_plus_handle"] = handle
 	_generator._season_log_path_once("b_plus_start", path, "handle=%d season=%d n_cells=%d" % [handle, season, int(knobs.get("n_cells", 0))])

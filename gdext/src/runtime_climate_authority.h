@@ -17,6 +17,9 @@
 
 namespace pk {
 
+struct RuntimeSeasonView;
+struct RuntimeClimateCalendar;
+
 struct RuntimeClimateVerticalReport {
     uint64_t work_units = 0;
     uint32_t changed_cells = 0;
@@ -54,6 +57,8 @@ struct RuntimeClimateVerticalReport {
 };
 
 struct RuntimeClimateSnapshot {
+    std::shared_ptr<const RuntimeSeasonView> season;
+    std::shared_ptr<const RuntimeClimateCalendar> calendar;
     uint64_t generation = 0;
     int64_t committed_day = -1;
     uint64_t input_generation = 0;
@@ -259,6 +264,10 @@ public:
     bool serialize(std::vector<uint8_t> &bytes, std::string &error) const;
     bool restore(const uint8_t *bytes, size_t size, std::string &error);
     const std::vector<double> &capture_cursors() const { return _continuation.capture_cursors; }
+    const RuntimeClimateKernel::Continuation &continuation() const { return _continuation; }
+    std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState> copy_committed_physics() const {
+        return _kernel.copy_physics_writeback(_store);
+    }
     static bool self_test(std::string &error);
 
 private:

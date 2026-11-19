@@ -101,15 +101,13 @@ func _direct_commit(host: WorldRuntimeHost, clock: WorldClock, day: int) -> bool
 	var generator := host.get_generator()
 	var ext: Object = generator.get_data_core_world_ext()
 	clock.current_day = float(day + 1)
-	host._apply_climate_writeback_if_authoritative(generator.get_runtime_control_state())
-	var capture: Dictionary = generator.publish_environment_through(
-		day, clock.season_phase_for_day(day + 1), MapGenerator.ENV_CALLSITE_INLINE_DAY)
-	_expect("direct environment is available on day %d" % day, bool(capture.get("ok", false)))
 	var result: Dictionary = ext.run_native_daily_inline_day()
+	_expect("executor supplies the environment for day %d" % day,
+		int(result.get("environment_day", -1)) == day)
 	var committed := bool(result.get("ok", false)) and int(result.get("committed_day", -1)) == day
 	_expect("directly driven inline commit reaches day %d" % day, committed)
 	if not committed:
-		print("ECOLOGY_DIRECT_COMMIT=" + JSON.stringify({"capture": capture, "result": result}))
+		print("ECOLOGY_DIRECT_COMMIT=" + JSON.stringify(result))
 	return committed
 
 
@@ -176,6 +174,13 @@ func _verify_in_place_restore(host: WorldRuntimeHost, clock: WorldClock, ext: Ob
 	var country: Dictionary = ext.restore_country_runtime_checkpoint(archive.get("country_pkcn", PackedByteArray()))
 	_expect("same native instance restores PKCN first", bool(country.get("ok", false)))
 	_expect("same native instance restores ECP2 after PKCN", bool(ext.restore_economy_ecp2(ecp2).get("ok", false)))
+	_expect("restoring clears the old executor environment",
+		int(ext.request_runtime_calendar_day(LAST_DISPLAY_DAY + 2)) == -1)
+	var seeded: Dictionary = host.get_generator().initialize_world_environment()
+	_expect("same native instance takes the restored environment before starting",
+		bool(seeded.get("ok", false)))
+	if not bool(seeded.get("ok", false)):
+		return
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE", "graph_coverage_complete": true,
 		"native_daily_inline": true, "authoritative_domain_mask": 0xFFF,

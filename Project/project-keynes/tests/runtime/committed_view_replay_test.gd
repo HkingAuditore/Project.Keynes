@@ -402,18 +402,17 @@ func _confirm_ready_report(host: WorldRuntimeHost, clock: WorldClock, next_day: 
 		bool(host.annual_report_snapshot(report_id).get("presented", false)))
 
 
-func _check_annual_report_pause(host: WorldRuntimeHost, clock: WorldClock, generator, day: int) -> void:
+func _check_annual_report_pause(host: WorldRuntimeHost, _clock: WorldClock, generator, day: int) -> void:
 	var report_id := int(host.annual_report_status().get("ready_report_id", 0))
-	var offered: Dictionary = generator.publish_environment_through(day + 1,
-		clock.season_phase_for_day(day + 2))
+	var admitted := int(generator.get_data_core_world_ext().request_runtime_calendar_day(day + 2))
 	_expect("next day was offered with an unread annual report",
-		report_id > 0 and bool(offered.get("ok", false)) and generator.next_environment_day() == day + 2)
+		report_id > 0 and admitted == day + 1)
 	var frames := Engine.get_process_frames()
 	OS.delay_msec(100)
 	var status: Dictionary = generator.get_runtime_control_state()
 	var after := int(status.get("simulation_committed_day", -1))
 	print("ANNUAL_REPORT_BLOCK day=%d next_admitted=%d after=%d process_frames=%d state=%s" % [
-		day, generator.next_environment_day() - 1, after, Engine.get_process_frames() - frames,
+		day, admitted, after, Engine.get_process_frames() - frames,
 		String(status.get("simulation_host_state", ""))])
 	_expect("executor waits for annual confirmation even with the next day offered",
 		after == day and Engine.get_process_frames() == frames

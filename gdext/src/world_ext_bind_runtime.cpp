@@ -50,6 +50,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::set_runtime_qos_threaded);
      ClassDB::bind_method(D_METHOD("capture_runtime_inputs", "inputs"),
                           &DCWorldExt::capture_runtime_inputs);
+     ClassDB::bind_method(D_METHOD("request_runtime_calendar_day", "date"),
+                          &DCWorldExt::request_runtime_calendar_day);
      ClassDB::bind_method(D_METHOD("compute_runtime_climate_parity_hash", "fields"),
                           &DCWorldExt::compute_runtime_climate_parity_hash);
      ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference_state", "day", "fields"),

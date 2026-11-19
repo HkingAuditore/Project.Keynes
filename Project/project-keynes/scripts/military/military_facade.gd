@@ -197,17 +197,6 @@ func set_terrain(map, day: int = -1, force: bool = false,
 	var tiers := settlement_tiers
 	if tiers.size() != int(map.cell_count()):
 		tiers = _settlement_tiers_from_map(map, int(map.cell_count()))
-	# temporary: remove once MilitaryCore::set_terrain stops resetting
-	# Native MilitaryCore::set_terrain calls reset_state(): every push wipes
-	# armies, wars, policies, pending commands and the step cursor. Only the
-	# configure-time push may do that; a seasonal cover refresh on a live world
-	# must keep military state, so snapshot it through PKMI and restore it onto
-	# the new terrain (same shape, so the transactional restore validates).
-	var preserved := PackedByteArray()
-	if terrain_ready() and _terrain_cells == int(map.cell_count()):
-		var encoded = _world_ext.encode_military_state()
-		if encoded is PackedByteArray:
-			preserved = encoded
 	var result: Dictionary = _world_ext.set_military_terrain({
 		"cell_count": int(map.cell_count()),
 		"width": int(map.width),
@@ -225,14 +214,6 @@ func set_terrain(map, day: int = -1, force: bool = false,
 		_terrain_cells = int(map.cell_count())
 		_terrain_set_day = day
 		invalidate_maintenance_cache()
-		if not preserved.is_empty():
-			# Native call on purpose: restore_state() rewinds the event cursor,
-			# but the restored ring keeps its ids, so forwarding must continue.
-			var restored: Dictionary = _world_ext.restore_military_state(preserved)
-			result["state_preserved"] = bool(restored.get("ok", false))
-			if not bool(restored.get("ok", false)):
-				push_error("[military] terrain refresh lost military state: %s" % String(
-					restored.get("reason", "restore_failed")))
 	return result
 
 

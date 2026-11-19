@@ -1403,7 +1403,11 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     }
     const float captured_dt_days = snapshot.dt_days;
     const bool complete = snapshot.climate_input_complete;
-    if (!_runtime_host->publish_environment(std::move(snapshot), publish_error)) {
+    const bool accepted = inputs.has("world_environment_config")
+        ? _runtime_host->initialize_world_environment(std::move(snapshot),
+              Dictionary(inputs["world_environment_config"]), publish_error)
+        : _runtime_host->publish_environment(std::move(snapshot), publish_error);
+    if (!accepted) {
         out["ok"] = false;
         out["code"] = String(publish_error.empty()
             ? "runtime_input_publish_failed" : publish_error.c_str());

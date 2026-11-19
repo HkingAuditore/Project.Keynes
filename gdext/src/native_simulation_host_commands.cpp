@@ -529,7 +529,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     auto environment = _executor_day_environment;
     if (environment && environment->day != day) environment.reset();
     for (uint32_t peek = 0; !environment && peek < 4u; ++peek) {
-        environment = environment_input_for_plan();
+        environment = executor_environment_for_day(day);
         if (environment == nullptr || environment->day >= day) break;
         const size_t popped = _environment_ring.pop_while_day_at_most(environment->day);
         if (popped == 0u) break;
@@ -663,7 +663,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
                 _climate_writeback.try_begin_write(slot)) {
                 RuntimeClimateSnapshot &writeback =
                     _climate_writeback.write_buffer(slot);
-                _climate_authority.snapshot_into(writeback, true);
+                capture_climate_display(writeback);
                 writeback.generation = _climate_writeback_sequence.fetch_add(
                     1, std::memory_order_relaxed) + 1u;
                 writeback.committed_day = climate_day;

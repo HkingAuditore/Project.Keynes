@@ -675,6 +675,7 @@ public:
     int64_t runtime_committed_day() const;
     // Day the next environment frame must carry (-1 without a runtime host).
     int64_t runtime_next_environment_day() const;
+    int64_t request_runtime_calendar_day(int64_t date);
     bool runtime_climate_writeback_self_test() const;
     bool runtime_snapshot_ring_self_test() const;
     bool runtime_domain_pod_self_test() const;

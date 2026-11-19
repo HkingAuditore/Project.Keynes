@@ -204,16 +204,35 @@ const char *NativeMilitaryRuntime::prepare_day(const RuntimeEnvironmentSnapshot 
         if (!environment.military_settlement_tier.empty())
             terrain.settlement_tier = environment.military_settlement_tier;
 
-        const auto wire = encode();
-        godot::PackedByteArray saved;
-        saved.resize(static_cast<int64_t>(wire.size()));
-        std::memcpy(saved.ptrw(), wire.data(), wire.size());
         std::string error;
-        if (!core().set_terrain(std::move(terrain), error) ||
-            !static_cast<bool>(restore(saved).get("ok", false)))
-            return "military_season_terrain_restore_failed";
+        if (!core().set_terrain(std::move(terrain), error))
+            return "military_season_terrain_invalid";
     }
     return nullptr;
+}
+
+std::vector<uint8_t> NativeMilitaryRuntime::capture_terrain() const {
+    const auto &terrain = core().terrain();
+    std::vector<uint8_t> bytes;
+    bytes.reserve(static_cast<size_t>(terrain.cell_count) * 5);
+    for (const auto *lane : {&terrain.landform, &terrain.vegetation, &terrain.cover,
+                            &terrain.is_water, &terrain.settlement_tier})
+        bytes.insert(bytes.end(), lane->begin(), lane->end());
+    return bytes;
+}
+
+void NativeMilitaryRuntime::restore_terrain(const std::vector<uint8_t> &bytes) {
+    const size_t cells = static_cast<size_t>(core().terrain().cell_count);
+    if (bytes.empty() || bytes.size() != cells * 5) return;
+    auto terrain = core().terrain();
+    auto next = bytes.begin();
+    for (auto *lane : {&terrain.landform, &terrain.vegetation, &terrain.cover,
+                      &terrain.is_water, &terrain.settlement_tier}) {
+        lane->assign(next, next + cells);
+        next += cells;
+    }
+    std::string error;
+    core().set_terrain(std::move(terrain), error);
 }
 
 

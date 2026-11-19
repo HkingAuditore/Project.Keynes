@@ -7,6 +7,7 @@
 #endif
 #include "native_simulation_host.h"
 #include "native_simulation_day_context.h"
+#include "native_simulation_host_military.h"
 #include "runtime_module_descriptor.h"
 #include <cassert>
 #include "country_core_apply.h"
@@ -220,7 +221,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_ECONOMY_POD |
                                  RUNTIME_SAVE_SECTION_ECONOMY_ECP2 |
                                  RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT |
-                                 RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT)) != 0) {
+                                 RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT |
+                                 RUNTIME_SAVE_SECTION_MILITARY_TERRAIN)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -894,6 +896,17 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     }
     // The optional Effect inbox follows the final authority section. Its
     // payload is already covered by the whole bundle checksum.
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_MILITARY_TERRAIN) != 0u) {
+        uint32_t length = 0;
+        if (payload_end - cursor < 4u || !read_u32(cursor, length) ||
+                length > payload_end - cursor - 4u) {
+            error = "runtime_bundle_producer_cursor_invalid";
+            return false;
+        }
+        cursor += 4u;
+        parsed.military_terrain_bytes.assign(bytes + cursor, bytes + cursor + length);
+        cursor += length;
+    }
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT) != 0u) {
         parsed.effect_transport_bytes.assign(bytes + cursor, bytes + payload_end);
         cursor = payload_end;
@@ -1239,6 +1252,12 @@ void NativeSimulationHost::build_save_bundle(
         bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_ECP2;
     }
 
+    if (_world_environment && _executor_military) {
+        bundle->military_terrain_bytes = _executor_military->capture_terrain();
+        if (!bundle->military_terrain_bytes.empty())
+            bundle->section_mask |= RUNTIME_SAVE_SECTION_MILITARY_TERRAIN;
+    }
+
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
     // carries an explicit ABI/section mask, followed by a bounded pending
     // command tail and producer cursors. The checksum remains the final eight
@@ -1254,7 +1273,8 @@ void NativeSimulationHost::build_save_bundle(
             &bundle->trigger_bytes, &bundle->modifier_bytes, &bundle->events_bytes,
             &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
             &bundle->ideology_bytes, &bundle->economy_pod_bytes,
-            &bundle->economy_ecp2_bytes, &bundle->effect_transport_bytes}) {
+            &bundle->economy_ecp2_bytes, &bundle->effect_transport_bytes,
+            &bundle->military_terrain_bytes}) {
         const size_t limit = section == &bundle->economy_ecp2_bytes
             ? std::numeric_limits<uint32_t>::max() : 64u * 1024u * 1024u;
         if (section->size() > limit) {
@@ -1515,6 +1535,10 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(ecp2_checksum);
     }
 
+    if (!bundle->military_terrain_bytes.empty()) {
+        append_u32_le(static_cast<uint32_t>(bundle->military_terrain_bytes.size()));
+        append_bytes(bundle->military_terrain_bytes.data(), bundle->military_terrain_bytes.size());
+    }
     if (!bundle->effect_transport_bytes.empty()) {
         append_bytes(bundle->effect_transport_bytes.data(), bundle->effect_transport_bytes.size());
     }

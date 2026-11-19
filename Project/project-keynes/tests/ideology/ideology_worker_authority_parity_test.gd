@@ -1077,20 +1077,12 @@ func _world_day(ext: Object) -> int:
 ## assuming the restart took: it stays 0 in the report until the worker is ready.
 func _flip_authority(w: Dictionary, mask: int, label: String) -> bool:
 	var ext: Object = w["ext"]
+	var host: WorldRuntimeHost = w["host"]
 	var before_day := int(w["tick"])
 	print("[FLIP/%s] stop -> restart with mask 0x%03X at day %d"
 		% [label, mask, before_day])
-	if ext.has_method("request_runtime_stop"):
-		ext.request_runtime_stop()
-	_wait_worker_state(w, "STOPPED", STATE_WAIT_MS)
-	var started: Dictionary = ext.start_runtime_worker({
-		"simulation_thread_mode": "ACTIVE",
-		"graph_coverage_complete": true,
-		"authoritative_domain_mask": mask,
-		"day": maxi(0, before_day),
-		"speed_days_per_second": WORKER_SPEED,
-		"paused": false,
-	})
+	host.runtime_authority_domain_mask = mask
+	var started: Dictionary = host._restart_worker_with_current_policy()
 	if not _require("[FLIP/%s] the worker restarts with mask 0x%03X"
 			% [label, mask], bool(started.get("ok", false)), str(started)):
 		return false
