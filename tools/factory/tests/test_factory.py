@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import agent  # noqa: E402
 import checks  # noqa: E402
 from ticket import criteria, gate, touching  # noqa: E402
-from verdict import Facts, judge  # noqa: E402
+from verdict import Facts, classify, judge  # noqa: E402
 
 HEAD = "abc123"
 
@@ -61,6 +61,21 @@ class VerdictTest(unittest.TestCase):
 
     def test_unknown_status_needs_human(self):
         self.assertEqual(judge(ready(findings=[finding(1, "weird")])).verdict, "NEEDS_HUMAN")
+
+    def test_unknown_or_missing_action_level_needs_human(self):
+        for item in (finding(1, level="new_level"), {"id": 1, "attribution_status": "pending"}):
+            with self.subTest(item=item):
+                self.assertEqual(classify(item), "unknown")
+                v = judge(ready(findings=[item]))
+                self.assertEqual(v.verdict, "NEEDS_HUMAN")
+                self.assertIn("action_level=", v.reasons[0])
+                self.assertFalse(v.for_human)
+
+    def test_rejected_check_needs_human_even_with_other_evidence(self):
+        command = "tools/ci/check_committed_replay.py --checkpoint --trace --days 10"
+        v = judge(ready(rejected_checks=[command]))
+        self.assertEqual(v.verdict, "NEEDS_HUMAN")
+        self.assertIn(command, v.reasons[0])
 
     def test_new_failures_need_fix(self):
         self.assertEqual(judge(ready(new_failures=["regression"])).verdict, "NEEDS_FIX")

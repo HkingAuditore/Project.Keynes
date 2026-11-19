@@ -52,9 +52,9 @@
       "source": "docs/architecture/development-guide.md#气候每日-native-only-边界; author request 2026-11-19",
       "category": "Reliability",
       "severity": "error",
-      "content": "When something goes wrong (a missing extension or method, a failed native call, invalid or missing data, an unexpected state, a failed load or decode), report it with push_error or an explicit error result, stop that operation and keep the previous state. Do not silently switch to another code path, a default value, an empty result or a GDScript reimplementation, and do not report success. A fallback is acceptable only where the docs name it as intended behaviour, and it must still log the cause. The climate entry points in map_generator.gd (Pass-A, Pass-B, ocean, sea-ice, transpiration) have no fallback at all: no GDScript full-map computation and no successful empty result.",
+      "content": "When something goes wrong (a missing extension or method, a failed native call, invalid or missing data, an unexpected state, a failed load or decode), report it with push_error or an explicit error result, stop that operation and keep the previous state. Do not silently switch to another code path, a default value, an empty result or a GDScript reimplementation, and do not report success. A fallback is acceptable only where the docs name it as intended behaviour, and it must still log the cause. Defaults for values that are documented as optional are fine; flag a default only when it hides data or a result that must exist. The climate entry points in map_generator.gd (Pass-A, Pass-B, ocean, sea-ice, transpiration) have no fallback at all: no GDScript full-map computation and no successful empty result.",
       "good_examples": "if not _native.has_method(\"run_pass_a\"):\n    push_error(\"climate pass A: native method missing\")\n    return false\nvar preset = load(path)\nif preset == null:\n    push_error(\"map preset failed to load: %s\" % path)\n    return ERR_FILE_CORRUPT",
-      "bad_examples": "if not _native.has_method(\"run_pass_a\"):\n    return _run_pass_a_gdscript()  # silent fallback\nvar price := prices.get(good_id, 0.0)  # a missing good silently costs nothing\nif cfg.is_empty():\n    cfg = DEFAULT_CONFIG  # hides a broken file"
+      "bad_examples": "if not _native.has_method(\"run_pass_a\"):\n    return _run_pass_a_gdscript()  # silent fallback\nvar cfg := _read_config(path)\nif cfg.is_empty():\n    cfg = DEFAULT_CONFIG  # a broken or missing file is hidden"
     },
     {
       "name": "Keynes: daily stage functions stay engine-free",
@@ -106,8 +106,8 @@
       "source": "AGENTS.md; author request 2026-11-19",
       "category": "Performance",
       "severity": "warning",
-      "content": "Use as few if statements in shaders as possible. Pixels in one batch that take different branches often execute both paths, so a branch rarely saves work and can cost it. Prefer branch-free math (step, mix, clamp, select by multiplication), skipping whole batches, or removing unused paths at compile time. Do not count an if-branch as saved work; justify a claimed speed-up with measured frame time at the same quality and resolution.",
-      "good_examples": "color = mix(color, apply_rain(color, uv), step(0.001, rain_amount));\n#ifdef WEATHER_RAIN\n    color = apply_rain(color, uv);\n#endif",
+      "content": "Use as few if statements in shaders as possible. Pixels in one batch that take different branches often execute both paths, so a branch rarely saves work and can cost it. Do not count an if-branch as saved work. There is no fixed pattern for shader optimisation: first measure where the GPU actually spends its time, then change that, and justify a claimed speed-up with measured frame time at the same quality and resolution.",
+      "good_examples": "",
       "bad_examples": "if (rain_amount > 0.0) {  // claimed as a speed-up without frame-time numbers\n    color = apply_rain(color, uv);\n}\nif (biome == 0) { c = a; } else if (biome == 1) { c = b; } else { c = d; }  // chain where a lookup or mix would do"
     },
     {

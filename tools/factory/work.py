@@ -7,12 +7,14 @@ import os
 from pathlib import Path
 
 from common import must, sh
+from ticket import touching
 
 SCRATCH = ".factory-"
+GODOT_CPP = "gdext/godot-cpp"
 
 
 def git(workdir: str, *args: str) -> str:
-    return must(["git", "-C", workdir, *args]).strip()
+    return must(["git", "-C", workdir, *args]).rstrip("\n")
 
 
 def common_dir(path: str) -> str:
@@ -21,11 +23,12 @@ def common_dir(path: str) -> str:
 
 
 def ensure(runner_dir: str, workdir: str, ref: str) -> None:
-    if not (Path(workdir) / ".git").exists():
-        must(["git", "-C", runner_dir, "worktree", "add", "--detach", workdir, ref], timeout=3600)
+    if (Path(workdir) / ".git").exists():
+        return
+    must(["git", "-C", runner_dir, "worktree", "add", "--detach", workdir, ref], timeout=3600)
     main = str(Path(common_dir(runner_dir)).parent)
-    reference = Path(main) / "gdext" / "godot-cpp"
-    args = ["git", "-C", workdir, "submodule", "update", "--init", "gdext/godot-cpp"]
+    reference = Path(main) / GODOT_CPP
+    args = ["git", "-C", workdir, "submodule", "update", "--init", GODOT_CPP]
     if (reference / ".git").exists():
         args[4:4] = ["--reference", str(reference)]
     must(args, timeout=3600)
@@ -37,7 +40,9 @@ def prepare(workdir: str, remote: str, base: str, branch: str) -> str:
     git(workdir, "reset", "--hard", "-q")
     git(workdir, "clean", "-fdq")
     git(workdir, "checkout", "-q", "-B", branch, f"{remote}/{base}")
-    must(["git", "-C", workdir, "submodule", "update", "--init", "gdext/godot-cpp"], timeout=3600)
+    must(["git", "-C", workdir, "submodule", "update", "--init", "--checkout", "--force", GODOT_CPP],
+         timeout=3600)
+    git(str(Path(workdir) / GODOT_CPP), "clean", "-fdq")
     return git(workdir, "rev-parse", "HEAD")
 
 
@@ -46,9 +51,15 @@ def head(workdir: str) -> str:
 
 
 def changed(workdir: str, base: str) -> list[str]:
-    tracked = git(workdir, "diff", "--name-only", base).splitlines()
-    untracked = git(workdir, "ls-files", "--others", "--exclude-standard").splitlines()
-    return sorted({f for f in tracked + untracked if f and not Path(f).name.startswith(SCRATCH)})
+    tracked = git(workdir, "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", base)
+    untracked = git(workdir, "ls-files", "--others", "--exclude-standard", "-z")
+    return sorted({f for f in (tracked + untracked).split("\0") if f and not f.startswith(SCRATCH)})
+
+
+def scope(cfg: dict, files: list[str]) -> tuple[list[str], list[str], list[str]]:
+    return (touching(files, cfg["paths"]["forbidden"]),
+            touching(files, cfg["paths"]["needsHuman"]),
+            touching(files, cfg["checks"]["nativePaths"]))
 
 
 def dirty(workdir: str) -> bool:
@@ -62,7 +73,7 @@ def restore(workdir: str, path: str) -> None:
 
 
 def commit(workdir: str, message: str) -> str:
-    git(workdir, "add", "-A", "--", ".", f":(exclude){SCRATCH}*")
+    git(workdir, "add", "-A", "--", ".", f":(top,exclude,glob){SCRATCH}*")
     must(["git", "-C", workdir, "commit", "-q", "-F", "-"], stdin=message)
     return head(workdir)
 

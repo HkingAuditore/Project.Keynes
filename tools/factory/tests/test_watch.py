@@ -36,6 +36,13 @@ class Decide(unittest.TestCase):
     def test_closed_findings_do_not_block(self):
         self.assertEqual(self.d(r=review(findings=[finding("x", status="implemented")])).action, "skip")
 
+    def test_missing_or_unknown_action_level_stops_before_fixing_other_findings(self):
+        for item in (finding("x", "new_level"), {"id": "x", "attribution_status": "pending"}):
+            with self.subTest(item=item):
+                d = self.d(r=review(findings=[item, finding("y")]))
+                self.assertEqual(d.action, "stop")
+                self.assertIn("x (status='pending', action_level=", d.reason)
+
     def test_waits_for_review_of_head(self):
         self.assertEqual(self.d(r=review(sha="b" * 40, findings=[finding("x")])).action, "skip")
         self.assertEqual(self.d(r=review(status="started", findings=[finding("x")])).action, "skip")

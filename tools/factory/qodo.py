@@ -6,7 +6,7 @@ import json
 import time
 
 from common import sh
-from verdict import BLOCKING, OPEN
+from verdict import classify, classify_level
 
 
 def _parse(out: str) -> dict | None:
@@ -39,11 +39,13 @@ def local_review(qodo: str, workdir: str, repo: str, base: str, context_file: st
     open_ids = [i if isinstance(i, str) else (i or {}).get("id") for i in open_ids]
     open_f = [findings.get(i) or {"id": i} for i in open_ids]
     coverage = ((data.get("meta") or {}).get("coverage") or {}).get("complete")
+    by_level = {"blocking": [], "informational": [], "unknown": []}
+    for finding in open_f:
+        by_level[classify_level(finding.get("action_level"))].append(finding)
     return {
         "ok": True,
         "complete": bool(state.get("complete")) and coverage is not False,
-        "blocking": [f for f in open_f if f.get("action_level") in BLOCKING],
-        "informational": [f for f in open_f if f.get("action_level") not in BLOCKING],
+        **by_level,
         "comment": data.get("review_agent_comment"),
         "run": (data.get("meta") or {}).get("run"),
     }
@@ -68,8 +70,7 @@ def wait_pr_review(qodo: str, pr_url: str, head: str, timeout_min: int, poll: in
 
 
 def blocking(findings: list[dict]) -> list[dict]:
-    return [f for f in findings
-            if f.get("attribution_status") in OPEN and f.get("action_level") in BLOCKING]
+    return [f for f in findings if classify(f) == "blocking"]
 
 
 def describe(findings: list[dict]) -> str:

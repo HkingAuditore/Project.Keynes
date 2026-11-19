@@ -7,6 +7,16 @@ import json
 from common import must, sh
 
 
+def combine_ci(workflows: list[str], checks: list[str]) -> str:
+    if not workflows or any(s != "completed" for s in workflows) or not checks:
+        return "pending"
+    rows = [line.partition("\t") for line in checks]
+    if any(status != "completed" for status, _, _ in rows):
+        return "pending"
+    good = {"success", "neutral", "skipped"}
+    return "success" if all(c in good for _, _, c in rows) else "failure"
+
+
 class GitHub:
     def __init__(self, repo: str) -> None:
         self.repo = repo
@@ -63,16 +73,12 @@ class GitHub:
         if not r.ok:
             self.errors.append(f"edit PR #{number}: {(r.err or r.out).strip()[-300:]}")
 
-    def ci_state(self, sha: str) -> str | None:
-        """Combined state of check runs on a commit: success, failure, pending, or None (no checks)."""
-        r = sh(["gh", "api", f"repos/{self.repo}/commits/{sha}/check-runs", "--paginate",
-                "--jq", ".check_runs[] | [.status, (.conclusion // \"\")] | @tsv"])
-        if not r.ok:
-            return None
-        rows = [line.split("\t") for line in r.out.splitlines() if line.strip()]
-        if not rows:
-            return None
-        if any(status != "completed" for status, _ in rows):
+    def ci_state(self, sha: str) -> str:
+        workflows = sh(["gh", "api", f"repos/{self.repo}/actions/runs?head_sha={sha}",
+                        "--paginate", "--jq", ".workflow_runs[].status"])
+        statuses = workflows.out.splitlines() if workflows.ok else []
+        if not statuses or any(s != "completed" for s in statuses):
             return "pending"
-        good = {"success", "neutral", "skipped"}
-        return "success" if all(c in good for _, c in rows) else "failure"
+        checks = sh(["gh", "api", f"repos/{self.repo}/commits/{sha}/check-runs", "--paginate",
+                     "--jq", ".check_runs[] | [.status, (.conclusion // \"\")] | @tsv"])
+        return combine_ci(statuses, checks.out.splitlines() if checks.ok else [])

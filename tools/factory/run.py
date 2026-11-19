@@ -27,7 +27,7 @@ import work  # noqa: E402
 from common import Events, load_config, sh  # noqa: E402
 from github import GitHub  # noqa: E402
 from ticket import criteria, gate, touching  # noqa: E402
-from verdict import Facts, classify, judge  # noqa: E402
+from verdict import Facts, judge, unknown_findings  # noqa: E402
 
 
 def take_lock(path: Path) -> bool:
@@ -64,6 +64,7 @@ class Run:
         self.logs.mkdir(parents=True, exist_ok=True)
         self.branch = f"agent/issue-{number}"
         self.pr: dict | None = None
+        self.remove_trigger = False
         self.record: dict = {"issue": number, "started": self.stamp, "branch": self.branch}
 
     # ---- helpers -------------------------------------------------------------------------
@@ -83,9 +84,18 @@ class Run:
 
     def scope_problems(self) -> list[str]:
         files = work.changed(self.workdir, self.base)
-        self.facts.human_paths = touching(files, self.cfg["paths"]["needsHuman"])
-        bad = touching(files, self.cfg["paths"]["forbidden"])
-        return [f"files outside the agent's area changed: {', '.join(bad)}; revert them"] if bad else []
+        bad, self.facts.human_paths, native = work.scope(self.cfg, files)
+        self.facts.native_changed = bool(native)
+        return [f"files outside the agent's area changed: {', '.join(bad)}. Revert them."] if bad else []
+
+    def commit_checked(self, message: str) -> bool:
+        problems = self.scope_problems()
+        if problems:
+            self.facts.stopped_by = problems[0]
+        if problems or self.facts.human_paths or self.facts.native_changed:
+            return False
+        self.facts.head = self.facts.checks_sha = work.commit(self.workdir, message)
+        return True
 
     # ---- stages --------------------------------------------------------------------------
     def plan(self, issue: dict) -> str | None:
@@ -150,9 +160,10 @@ class Run:
                                     self.cfg["limits"]["localReviewTimeoutMinutes"])
             self.record.setdefault("localReviews", []).append(
                 {k: rev.get(k) for k in ("ok", "complete", "error", "comment")}
-                | {"blocking": [b.get("id") for b in rev.get("blocking", [])],
-                   "informational": [b.get("id") for b in rev.get("informational", [])]})
-            self.ev.add("local-review", round=rnd, ok=rev["ok"], blocking=len(rev.get("blocking", [])))
+                | {level: [b.get("id") for b in rev.get(level, [])]
+                   for level in ("blocking", "informational", "unknown")})
+            self.ev.add("local-review", round=rnd, ok=rev["ok"], complete=rev.get("complete"),
+                        blocking=len(rev.get("blocking", [])))
             if not rev["ok"]:
                 if self.cfg["limits"].get("localReviewRequired", True):
                     self.facts.stopped_by = f"Qodo local review failed: {rev['error']}"
@@ -161,6 +172,15 @@ class Run:
                 self.record["localReviewSkipped"] = rev["error"]
                 self.ev.add("local-review", round=rnd, skipped=True)
                 return True
+            if not rev["complete"]:
+                self.facts.local_review_incomplete = True
+            if rev.get("unknown"):
+                ids = ", ".join(f"{b.get('id')} ({b.get('action_level')!r})" for b in rev["unknown"])
+                self.facts.stopped_by = f"local Qodo findings with an unknown action_level: {ids}"
+                return False
+            if not rev["complete"] and self.cfg["limits"].get("localReviewRequired", True):
+                self.facts.stopped_by = "the required Qodo local review was incomplete"
+                return False
             ids = tuple(sorted(str(b.get("id")) for b in rev["blocking"]))
             if not ids:
                 return True
@@ -204,6 +224,8 @@ class Run:
         reports = self.record.get("reports") or [""]
         skipped = self.record.get("localReviewSkipped")
         local = (f"Qodo local review did not run: {skipped[:400]}\n\n" if skipped else "")
+        if self.facts.local_review_incomplete:
+            local += "Qodo local review coverage was incomplete. See the factory run record for details.\n\n"
         return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n{local}"
                 f"## Factory\nPlan, checks and reviews are in the run record `{self.stamp}` "
                 f"and the issue comments. The verdict is computed from facts, not from this report.\n\n"
@@ -228,6 +250,8 @@ class Run:
                         blocking=len(block), ci=self.facts.ci_state)
             if self.facts.review_status != "completed" or not block:
                 return
+            if unknown_findings(self.facts.findings):
+                return
             if self.facts.review_rounds >= lim["prReviewRounds"]:
                 return
             ids = tuple(sorted(str(f.get("id")) for f in block))
@@ -241,9 +265,9 @@ class Run:
             if not work.dirty(self.workdir):
                 self.facts.review_stalled = True
                 return
-            self.facts.head = work.commit(self.workdir, f"Issue #{self.number}: address Qodo findings "
-                                          f"{', '.join(ids)}\n\nImplemented-By: Codex ({self.cfg['agent']['model']})\n")
-            self.facts.checks_sha = self.facts.head
+            if not self.commit_checked(f"Issue #{self.number}: address Qodo findings {', '.join(ids)}\n\n"
+                                       f"Implemented-By: Codex ({self.cfg['agent']['model']})\n"):
+                return
             work.push(self.workdir, self.cfg["remote"], self.branch)
 
     def wait_ci(self, sha: str, timeout_min: int) -> str | None:
@@ -264,6 +288,7 @@ class Run:
         self.ev.add("G0", errors=errors)
         if errors:
             self.facts.stopped_by = "the ticket is not ready: " + "; ".join(errors)
+            self.remove_trigger = L["trigger"] in issue["labels"]
             return
         if self.dry:
             self.ev.add("dry", note="G0 passed; stopping before any write")
@@ -292,6 +317,9 @@ class Run:
             return
         extra, rejected = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"])
         self.record["extraChecks"] = {"run": extra, "rejected": rejected}
+        self.facts.rejected_checks = rejected
+        if rejected:
+            return
 
         if not self.implement(issue, plan, extra, base_failed):
             return
@@ -299,8 +327,8 @@ class Run:
             return
 
         title = f"Issue #{self.number}: {issue['title']}"
-        self.facts.head = work.commit(self.workdir, f"{title}\n\nImplemented-By: Codex ({cfg['agent']['model']})\n")
-        self.facts.checks_sha = self.facts.head
+        if not self.commit_checked(f"{title}\n\nImplemented-By: Codex ({cfg['agent']['model']})\n"):
+            return
         work.push(self.workdir, cfg["remote"], self.branch)
         self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan))
         self.record["pr"] = self.pr["url"]
@@ -309,9 +337,13 @@ class Run:
 
     def finish(self) -> int:
         if self.pr:
-            remote_head = (self.gh.open_pr(self.branch) or {}).get("headRefOid")
-            if remote_head and remote_head != self.facts.head:
-                self.facts.stopped_by = self.facts.stopped_by or "the PR head moved outside the factory"
+            try:
+                remote_head = (self.gh.open_pr(self.branch) or {}).get("headRefOid")
+                if remote_head and remote_head != self.facts.head:
+                    self.facts.stopped_by = self.facts.stopped_by or "the PR head moved outside the factory"
+            except Exception as e:
+                self.gh.errors.append(f"look up PR for {self.branch}: {e}")
+                self.facts.stopped_by = self.facts.stopped_by or "the final PR head could not be verified"
         v = judge(self.facts)
         self.record.update({"finished": time.strftime("%Y%m%d-%H%M%S"), "verdict": v.verdict,
                             "reasons": v.reasons, "forHuman": v.for_human, "facts": asdict(self.facts),
@@ -329,7 +361,8 @@ class Run:
             lines += ["", f"Run record: `{out.name}`"]
             self.gh.comment(self.number, "\n".join(lines))
             done = v.verdict == "READY"
-            self.gh.relabel(self.number, [L["done"] if done else L["help"]], [L["working"]])
+            remove = [L["working"], L["trigger"]] if self.remove_trigger else [L["working"]]
+            self.gh.relabel(self.number, [L["done"] if done else L["help"]], remove)
         self.record["githubErrors"] = self.gh.errors
         out.write_text(json.dumps(self.record, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"verdict {v.verdict}: {out}")

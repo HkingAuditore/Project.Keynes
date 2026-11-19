@@ -38,13 +38,13 @@
     "unit": [
       ["-m", "unittest", "discover", "-s", "tools/map_authoring/tests"]
     ],
-    "nativePaths": ["gdext/src/", "gdext/tests/", "gdext/SConstruct", "gdext/site_scons/"],
+    "nativePaths": ["gdext/src/", "gdext/tests/", "gdext/SConstruct", "gdext/site_scons/", "gdext/godot-cpp/"],
     "nativeBuild": ["-C", "gdext", "platform=macos", "target=template_debug", "arch=arm64", "dev_build=no", "-j8"],
     "regression": ["tools/ci/run_regression_checks.py", "--jobs", "4"],
     "extraCheckPattern": "^tools/ci/[a-z0-9_]+\\.py( --?[a-z0-9-]+)*$"
   },
   "paths": {
-    "forbidden": [".github/", "tools/factory/", ".qodo/"],
+    "forbidden": [".github/", "tools/factory/", ".qodo/", "tools/ci/"],
     "needsHuman": ["tools/ci/*baseline*.json", "tools/ci/module_api/", "tools/ci/module_api_shared.json", "tools/ci/cross_domain_inventory.json"],
     "trackedBinaries": "Project/project-keynes/addons/dots_ext/bin/"
   }

@@ -27,7 +27,7 @@ import work  # noqa: E402
 from common import Events, load_config, must, sh  # noqa: E402
 from github import GitHub  # noqa: E402
 from run import take_lock  # noqa: E402
-from ticket import touching  # noqa: E402
+from verdict import unknown_findings  # noqa: E402
 
 TRAILER = "Fixed-By: keynes-factory"
 
@@ -73,7 +73,11 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
         return Decision("skip", "Qodo review in progress")
     if status != "completed":
         return Decision("stop", f"Qodo review ended with status {status!r}")
-    block = [f for f in qodo.blocking(review.get("findings") or []) if str(f.get("id")) not in state.disputed]
+    findings = review.get("findings") or []
+    unknown = unknown_findings(findings)
+    if unknown:
+        return Decision("stop", "findings with an unknown status or action_level: " + ", ".join(unknown))
+    block = [f for f in qodo.blocking(findings) if str(f.get("id")) not in state.disputed]
     if not block:
         if state.disputed:
             return Decision("skip", "only findings the agent disputed are open; a person decides")
@@ -143,6 +147,18 @@ class Watcher:
         self.gh.relabel(pr["number"], [L["help"]], [L["working"]])
 
     # ---- the fix ---------------------------------------------------------------------
+    def scope_blocked(self, pr: dict, st: PrState, logs: Path, files: list[str]) -> bool:
+        bad, human, native = work.scope(self.cfg, files)
+        protected = sorted(set(bad + human + native))
+        if not protected:
+            return False
+        patch = logs / "fix.patch"
+        sh(["git", "-C", self.workdir, "add", "-A", "-N", "."])
+        patch.write_text(sh(["git", "-C", self.workdir, "diff", pr["headRefOid"]]).out, encoding="utf-8")
+        self.stop(pr, st, f"the fix touches files a person must handle ({', '.join(protected)}). Nothing was pushed.",
+                  f"The patch is saved locally at `{patch}`.")
+        return True
+
     def fix(self, pr: dict, st: PrState, findings: list[dict]) -> int:
         cfg, n, head, branch = self.cfg, pr["number"], pr["headRefOid"], pr["headRefName"]
         L = cfg["labels"]
@@ -207,16 +223,7 @@ class Watcher:
                 return "disputed"
             self.stop(pr, st, "the agent changed nothing and disputed nothing")
             return "stopped"
-        bad = touching(files, cfg["paths"]["forbidden"])
-        human = touching(files, cfg["paths"]["needsHuman"])
-        native = touching(files, cfg["checks"]["nativePaths"])
-        if bad or human or native:
-            patch = logs / "fix.patch"
-            sh(["git", "-C", self.workdir, "add", "-A", "-N", "."])
-            patch.write_text(sh(["git", "-C", self.workdir, "diff", head]).out, encoding="utf-8")
-            what = ", ".join(bad + human + native)
-            self.stop(pr, st, f"the fix touches files a person must handle ({what}); nothing was pushed",
-                      f"The agent's patch is saved locally at `{patch}`.")
+        if self.scope_blocked(pr, st, logs, files):
             return "stopped"
 
         res = checks.Runner(cfg, self.workdir, str(logs / "checks-fix")).run(native=False, extra=[])
@@ -230,6 +237,12 @@ class Watcher:
             return "stopped"
 
         ids = ", ".join(str(f.get("id")) for f in findings)
+        record["files"] = work.changed(self.workdir, head)
+        if self.scope_blocked(pr, st, logs, record["files"]):
+            return "stopped"
+        if not record["files"]:
+            self.stop(pr, st, "no changes remain after the checks")
+            return "stopped"
         sha = work.commit(self.workdir, f"Address Qodo findings on #{n}\n\nFindings: {ids}\n\n"
                                         f"Implemented-By: Codex ({cfg['agent']['model']})\n{TRAILER}\n")
         must(["git", "-C", self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",

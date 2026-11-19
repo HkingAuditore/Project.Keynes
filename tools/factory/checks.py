@@ -43,32 +43,34 @@ class Runner:
         return {"name": name, "ok": r.ok, "code": r.code, "log": log,
                 "seconds": round(time.time() - started)}
 
-    def run(self, native: bool, extra: list[str]) -> list[dict]:
+    def run(self, native: bool, extra: list[str], cached: list[dict] | None = None) -> list[dict]:
+        passed = {r["name"]: r for r in cached or [] if r["ok"]}
+
+        def run_check(name: str, args: list[str], cwd: str | None = None) -> dict:
+            return passed.get(name) or self._run(name, args, cwd)
+
         c = self.cfg["checks"]
         results = []
         ci = str(Path(self.workdir) / "tools" / "ci")
         for g in static_guards(self.workdir, c["staticWorkflow"]):
-            results.append(self._run(f"static:{g}", [self.py, g], cwd=ci))
+            results.append(run_check(f"static:{g}", [self.py, g], cwd=ci))
         for args in c["unit"]:
-            results.append(self._run("unit:" + " ".join(args[-1:]), [self.py, *args]))
+            results.append(run_check("unit:" + " ".join(args[-1:]), [self.py, *args]))
         if native:
-            build = self._run("native-build", [self.cfg["tools"]["scons"], *c["nativeBuild"]])
+            build = run_check("native-build", [self.cfg["tools"]["scons"], *c["nativeBuild"]])
             results.append(build)
             if not build["ok"]:
                 return results
         godot = self.cfg["tools"]["godot"]
-        imported = (Path(self.workdir) / "Project" / "project-keynes" / ".godot").is_dir()
         reg_logs = str(self.logdir / f"regression-{int(time.time())}")
-        reg = [self.py, *c["regression"], "--godot", godot, "--log-dir", reg_logs]
-        if not imported:
-            reg.append("--import")
-        results.append(self._run("regression", reg))
+        reg = [self.py, *c["regression"], "--godot", godot, "--log-dir", reg_logs, "--import"]
+        results.append(run_check("regression", reg))
         for cmd in extra:
             parts = shlex.split(cmd)
             args = [self.py, *parts]
             if "--godot" not in parts and any(p.endswith(("replay.py", "matrix.py", "determinism.py")) for p in parts):
                 args += ["--godot", godot, "--log-dir", str(self.logdir / f"extra-{int(time.time())}")]
-            results.append(self._run(f"extra:{cmd}", args))
+            results.append(run_check(f"extra:{cmd}", args))
         return results
 
 
@@ -85,11 +87,14 @@ def feedback(results: list[dict], names: list[str]) -> str:
 
 
 def base_results(cfg: dict, workdir: str, sha: str, cache_dir: str, logdir: str) -> list[dict]:
-    """Checks on the untouched base commit, cached per commit (no native build: libraries are tracked)."""
+    """Reuse passing checks on the same base commit. Retry failed or missing checks."""
     cache = Path(cache_dir) / f"{sha}.json"
-    if cache.exists():
-        return json.loads(cache.read_text(encoding="utf-8"))
-    results = Runner(cfg, workdir, logdir).run(native=False, extra=[])
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    cached = json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else []
+    results = Runner(cfg, workdir, logdir).run(native=False, extra=[], cached=cached)
+    passed = [r for r in results if r["ok"]]
+    if passed != cached:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_suffix(".tmp")
+        tmp.write_text(json.dumps(passed, indent=2), encoding="utf-8")
+        tmp.replace(cache)
     return results

@@ -15,7 +15,12 @@ fi
 git -C "$RUNNER" checkout -q --detach "$REMOTE/master"
 cd "$RUNNER"
 if [ ! -f tools/factory/watch_prs.py ]; then
-  echo "$(date -u +%FT%TZ) $REMOTE/master has no tools/factory/watch_prs.py yet; nothing to do"
-  exit 0
+  factory_entry="$(git ls-tree --name-only HEAD -- tools/factory)"
+  if [ -z "$factory_entry" ] && [ ! -d tools/factory ]; then
+    echo "$(date -u +%FT%TZ) $REMOTE/master has no tools/factory/ yet"
+    exit 0
+  fi
+  echo "$(date -u +%FT%TZ) tools/factory/watch_prs.py is missing from $RUNNER" >&2
+  exit 1
 fi
-exec ~/.local/bin/python3 tools/factory/watch_prs.py "$@"
+exec "${KEYNES_FACTORY_PYTHON:-python3}" tools/factory/watch_prs.py "$@"

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 OPEN = {"pending", "partial_implementation", "not_implemented", "focus_areas_edited"}
 CLOSED = {"implemented", "full_implementation", "dismissed", "detected_after_merge", "outdated"}
-BLOCKING = {"action_required", "remediation_recommended"}
+BLOCKING = ("action_required", "remediation_recommended")
 
 
 @dataclass
@@ -17,6 +17,7 @@ class Facts:
     head: str | None = None
     stopped_by: str | None = None
     plan_questions: list[str] = field(default_factory=list)
+    rejected_checks: list[str] = field(default_factory=list)
     disagreements: list[str] = field(default_factory=list)
     base_failures: list[str] = field(default_factory=list)
     checks_sha: str | None = None
@@ -24,6 +25,7 @@ class Facts:
     human_paths: list[str] = field(default_factory=list)
     native_changed: bool = False
     local_blocking: list[str] = field(default_factory=list)
+    local_review_incomplete: bool = False
     review_status: str | None = None
     review_sha: str | None = None
     findings: list[dict] = field(default_factory=list)
@@ -33,13 +35,24 @@ class Facts:
     ci_state: str | None = None
 
 
+def classify_level(level: str | None) -> str:
+    if level in BLOCKING:
+        return "blocking"
+    return "informational" if level == "informational" else "unknown"
+
+
 def classify(finding: dict) -> str:
     status = finding.get("attribution_status")
     if status in OPEN:
-        return "blocking" if finding.get("action_level") in BLOCKING else "informational"
+        return classify_level(finding.get("action_level"))
     if status in CLOSED:
         return "closed"
     return "unknown"
+
+
+def unknown_findings(findings: list[dict]) -> list[str]:
+    return [f"{f.get('id', '?')} (status={f.get('attribution_status')!r}, action_level={f.get('action_level')!r})"
+            for f in findings if classify(f) == "unknown"]
 
 
 @dataclass
@@ -54,6 +67,7 @@ def judge(f: Facts) -> Verdict:
     if f.stopped_by:
         human.append(f.stopped_by)
     human += [f"the plan asks: {q}" for q in f.plan_questions]
+    human += [f"the plan check was rejected by the allowlist: {c}" for c in f.rejected_checks]
     human += [f"the agent disagrees with a finding: {d}" for d in f.disagreements]
     if f.base_failures:
         human.append("master already fails " + ", ".join(f.base_failures)
@@ -64,9 +78,9 @@ def judge(f: Facts) -> Verdict:
         human.append("local Qodo review findings left open after the round limit: " + ", ".join(f.local_blocking))
     if f.native_changed:
         human.append("C++ changed: rebuild and commit both macOS libraries, then run check_macos_runtime_extension.py")
-    unknown = [x.get("id", "?") for x in f.findings if classify(x) == "unknown"]
+    unknown = unknown_findings(f.findings)
     if unknown:
-        human.append("findings with an unknown status: " + ", ".join(map(str, unknown)))
+        human.append("findings with an unknown status or action_level: " + ", ".join(unknown))
     blocking = [x for x in f.findings if classify(x) == "blocking"]
     if f.review_stalled:
         human.append("the fix-and-review loop stalled on the same findings")

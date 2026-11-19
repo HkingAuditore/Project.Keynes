@@ -1,6 +1,6 @@
 """Create the Qodo rules in docs/factory/qodo-rules.json that the workspace does not have yet.
 
-Matches by name only. Never edits or deletes an existing rule (change those in the Qodo portal,
+Matches by name only. Never edits or deletes an existing rule (change those with qodo rules update,
 then update the JSON to match). Default is a dry run; pass --apply to create.
 """
 
@@ -43,6 +43,7 @@ def main() -> int:
     qodo = load_config()["tools"]["qodo"]
     spec = json.loads(RULES.read_text(encoding="utf-8"))
     have = existing(qodo, spec["scope"])
+    failed = False
     for rule in spec["rules"]:
         name = rule["name"]
         if name in have:
@@ -60,10 +61,11 @@ def main() -> int:
         Path(fh.name).unlink(missing_ok=True)
         if not r.ok:
             print(f"FAILED  {name}: {(r.err or r.out).strip()[-300:]}")
+            failed = True
             continue
         made = json.loads(r.out[r.out.find("{"):])
         print(f"created {made.get('state')}  {made.get('ruleId')}  {name}")
-    return 0
+    return int(failed)
 
 
 if __name__ == "__main__":

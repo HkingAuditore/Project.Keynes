@@ -49,7 +49,7 @@ def gate(title: str, body: str, labels: list[str], skip_labels: list[str]) -> li
 def matches(path: str, pattern: str) -> bool:
     """A pattern ending in '/' is a folder; one with a wildcard is a glob; anything else is exact."""
     if pattern.endswith("/"):
-        return path.startswith(pattern)
+        return path == pattern[:-1] or path.startswith(pattern)
     if any(c in pattern for c in "*?["):
         return fnmatch.fnmatchcase(path, pattern)
     return path == pattern
