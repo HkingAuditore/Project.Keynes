@@ -17,7 +17,7 @@ func _run() -> void:
 	await process_frame
 	var settings := root.get_node("GameSettings")
 	settings.update({"render_quality": "high", "window_mode": "windowed",
-		"resolution_width": 1280, "resolution_height": 720}, false)
+		"resolution_width": 1600, "resolution_height": 960, "ui_layout_scale": 125}, false)
 	var config := NewGameConfig.create_default()
 	config.base.initial_seed = 20260718
 	config.base.map_width = 60
@@ -77,22 +77,7 @@ func _run() -> void:
 		land.biome_tint_strength = 0.5 if land.biome_tint_strength != 0.5 else 0.6
 		await RenderingServer.frame_post_draw
 		_check(cache.builds == builds + 1, "changed land colours refresh before display")
-		var cached := root.get_texture().get_image()
-		cache.enabled = false
-		await RenderingServer.frame_post_draw
-		var direct := root.get_texture().get_image()
-		var mean_error := 0.0
-		var count := 0
-		for y in range(0, direct.get_height(), 9):
-			for x in range(0, direct.get_width(), 9):
-				var a := cached.get_pixel(x, y)
-				var b := direct.get_pixel(x, y)
-				mean_error += absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)
-				count += 3
-		_check(mean_error / count < 1.0 / 255.0, "cached pixels match the direct land material")
-		cache.enabled = true
-		await RenderingServer.frame_post_draw
-		await RenderingServer.frame_post_draw
+		await _check_cached_pixels(cache)
 		var revision := land._world.land_base_revision
 		map.fog_k_arr[index] = 255 - map.fog_k_arr[index]
 		map.vision_revision += 1
@@ -106,8 +91,8 @@ func _run() -> void:
 		camera.force_update_scroll()
 		await RenderingServer.frame_post_draw
 		_check(land._shader_mat.shader != cache._reader, "a moved view draws fresh terrain")
-	# A touch layout keeps the output native while applying a non-unit
-	# canvas stretch. The cache must share the output pixel grid.
+	# At 1600x960, fill alone has unit stretch. The explicit 125% UI
+	# setting exercises canvas stretching on the native output grid.
 	DCFeatureFlags._debug_render_flag("render_viewport")
 	DCFeatureFlags._debug_render_flags["render_viewport"] = 0
 	settings.ui_scaling().set_qa_override({"profile": "mobile", "layout": "fill"})
@@ -116,14 +101,37 @@ func _run() -> void:
 	_check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		and not root.get_stretch_transform().get_scale().is_equal_approx(Vector2.ONE),
 		"touch layout exercises a non-unit canvas stretch")
-	_check(cache._views[0].size == root.get_texture().get_image().get_size(),
+	var output_size := root.get_texture().get_image().get_size()
+	_check(cache._views[0].size == output_size and cache._views[1].size == output_size,
 		"land cache matches actual pixels in a stretched native-size window")
+	_check(cache._reader != null and land._shader_mat.shader == cache._reader,
+		"stretched native-size land draws with the cache")
+	await _check_cached_pixels(cache)
 	settings.ui_scaling().clear_qa_override()
 	await _check_idle_presentation(game, land, camera)
 	game.queue_free()
 	await process_frame
 	print("Land base cache: %d failures" % failures)
 	quit(int(failures != 0))
+
+
+func _check_cached_pixels(cache: Node) -> void:
+	var cached := root.get_texture().get_image()
+	cache.enabled = false
+	await RenderingServer.frame_post_draw
+	var direct := root.get_texture().get_image()
+	var mean_error := 0.0
+	var count := 0
+	for y in range(0, direct.get_height(), 9):
+		for x in range(0, direct.get_width(), 9):
+			var a := cached.get_pixel(x, y)
+			var b := direct.get_pixel(x, y)
+			mean_error += absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)
+			count += 3
+	_check(mean_error / count < 1.0 / 255.0, "cached pixels match the direct land material")
+	cache.enabled = true
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
 
 
 func _check_idle_presentation(game: Node, land: HexRenderer, camera: MapCamera) -> void:
