@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import quote
 
 from common import must, sh
@@ -17,6 +18,12 @@ class ChangedFile:
     filename: str
     status: str
     previous_filename: str | None = None
+
+
+@dataclass(frozen=True)
+class MergeResult:
+    outcome: Literal["merged", "queued"]
+    commit: str | None = None
 
 
 class GitHub:
@@ -111,19 +118,25 @@ class GitHub:
             raise ValueError(f"GitHub returned an incomplete changed-files list (expected {changed_count})")
         return files
 
-    def merge_pr(self, number: int, sha: str) -> str | None:
+    def merge_pr(self, number: int, sha: str) -> MergeResult:
         must(["gh", "pr", "merge", str(number), "--repo", self.repo, "--merge", "--match-head-commit", sha])
         try:
             pr = self._json(["pr", "view", str(number), "--json", "state,headRefOid,mergeCommit"])
-            if not isinstance(pr, dict) or pr.get("state") != "MERGED" or pr.get("headRefOid") != sha:
+            state = pr.get("state") if isinstance(pr, dict) else None
+            if not isinstance(state, str) or not state:
+                raise ValueError("GitHub did not return the PR state")
+            if state != "MERGED":
+                return MergeResult("queued")
+            if pr.get("headRefOid") != sha:
                 raise ValueError(f"GitHub did not confirm a merge of {sha}")
             merge_commit = pr.get("mergeCommit")
-            if not isinstance(merge_commit, dict) or not merge_commit.get("oid"):
+            oid = merge_commit.get("oid") if isinstance(merge_commit, dict) else None
+            if not isinstance(oid, str) or not oid:
                 raise ValueError("GitHub did not return the merge commit")
-            return merge_commit["oid"]
+            return MergeResult("merged", oid)
         except (RuntimeError, ValueError) as e:
             self.errors.append(f"read PR #{number} after merge: {e}")
-            return None
+            return MergeResult("merged")
 
     def _ci_runs(self, endpoint: str, collection: str, *, latest_workflows: bool = False) -> list[CIRun] | None:
         fields = "id, name, status, conclusion, url: .html_url"

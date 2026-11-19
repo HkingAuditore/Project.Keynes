@@ -42,6 +42,7 @@ class PrState:
     gave_up_at: str | None = None                       # head commit where the factory stopped
     reason: str | None = None
     attempted: list[str] = field(default_factory=list)  # heads sent to Codex that a person pushed
+    merge_requested_at: str | None = None               # head waiting for GitHub to merge
 
 
 @dataclass
@@ -81,6 +82,8 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
            changed_files: list[ChangedFile] | None = None, ci: CIFacts | None = None) -> Decision:
     """Pure decision for one PR from GitHub metadata, the Qodo review read and the saved state."""
     head = pr["headRefOid"]
+    if state.merge_requested_at == head:
+        return Decision("skip", "merge requested; waiting for GitHub")
     if pr.get("isDraft"):
         return Decision("skip", "draft")
     if pr.get("isCrossRepository"):
@@ -185,8 +188,14 @@ class Watcher:
 
     def tick(self, only: int | None) -> int:
         for pr in self.prs(only):
-            st = self.load(pr["number"])
-            review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
+            n, head = pr["number"], pr["headRefOid"]
+            st = self.load(n)
+            review = None
+            if st.merge_requested_at != head:
+                if st.merge_requested_at is not None and not self.dry:
+                    st.merge_requested_at = None
+                    self.save(n, st)
+                review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
             args = (pr, review, st, self.cfg)
             d = decide(*args)
             changed_files = None
@@ -258,7 +267,8 @@ class Watcher:
             skipped = self.merge_preflight(pr)
             if skipped is None:
                 try:
-                    record["mergeCommit"] = self.gh.merge_pr(n, sha)
+                    result = self.gh.merge_pr(n, sha)
+                    record.update(outcome=result.outcome, mergeCommit=result.commit)
                 except RuntimeError as e:
                     error = f"the merge failed: {e}"
                     self.stop(pr, st, error)
@@ -267,8 +277,11 @@ class Watcher:
         elif skipped:
             record.update(outcome="skipped", reason=skipped)
             print(json.dumps({"pr": n, "action": "skip", "reason": skipped}), flush=True)
+        elif record["outcome"] == "queued":
+            st.merge_requested_at = sha
+            self.save(n, st)
+            self.gh.comment(n, "The factory requested a merge, but GitHub has not merged this PR yet.", pull_request=True)
         else:
-            record["outcome"] = "merged"
             lines = [f"### Factory merged PR #{n}", "",
                      f"Qodo completed its review of `{sha}` with no open blocking findings.", ""]
             for title, runs in (("GitHub Actions workflows", ci.workflows), ("Check runs", ci.checks)):

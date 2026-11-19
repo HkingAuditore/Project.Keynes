@@ -207,6 +207,7 @@ class MergeWorkflow(unittest.TestCase):
         self.merge_error = None
         self.preflight_error = None
         self.read_error = None
+        self.merge_state = "MERGED"
         self.check_result = "success"
         self.workflow_result = "success"
         self.rerun = False
@@ -227,7 +228,9 @@ class MergeWorkflow(unittest.TestCase):
                 return json.dumps({**self.fresh_pr, "labels": [{"name": x} for x in self.fresh_pr["labels"]]})
             if self.read_error:
                 raise RuntimeError(self.read_error)
-            return json.dumps({"state": "MERGED", "headRefOid": HEAD, "mergeCommit": {"oid": self.merge_sha}})
+            commit = {"oid": self.merge_sha} if self.merge_state == "MERGED" else None
+            return json.dumps({"state": self.merge_state, "headRefOid": self.fresh_pr["headRefOid"],
+                               "mergeCommit": commit})
         self.fail(f"unexpected GitHub command: {args}")
 
     def github_query(self, args, **kw):
@@ -268,11 +271,13 @@ class MergeWorkflow(unittest.TestCase):
                                    f"repos/hrhgit/Project.Keynes/commits/{HEAD}/check-runs?filter=latest"])
         self.assertEqual(self.cli.call_args.args[0][:4], ["gh", "pr", "comment", "7"])
         comment = self.cli.call_args.kwargs["stdin"]
+        self.assertIn("Factory merged PR #7", comment)
         for value in (HEAD, "Runtime workflow", "Runtime check", "info"):
             self.assertIn(value, comment)
         record = self.record()
         self.assertEqual((record["outcome"], record["reviewedSha"], record["mergeCommit"]),
                          ("merged", HEAD, self.merge_sha))
+        self.assertEqual(record["githubErrors"], [])
         self.assertEqual(record["ci"]["workflows"][0]["id"], 10)
         self.assertEqual(record["ci"]["checks"][0]["id"], 11)
         self.assertEqual(record["informationalFindings"][0]["id"], "info")
@@ -292,6 +297,42 @@ class MergeWorkflow(unittest.TestCase):
         self.assertIsNone(self.watcher.load(7).gave_up_at)
         self.assertIn("Factory merged PR #7", self.cli.call_args.kwargs["stdin"])
         self.assertTrue(all("/issues/7/labels" not in c.args[0][2] for c in self.cli.call_args_list))
+
+    def test_open_after_merge_request_records_queued_and_comments_once(self):
+        self.merge_state = "OPEN"
+        self.assertEqual(self.watcher.tick(None), 0)
+        record = self.record()
+        self.assertEqual(record["outcome"], "queued")
+        self.assertIsNone(record["mergeCommit"])
+        self.assertEqual(record["githubErrors"], [])
+        state = self.watcher.load(7)
+        self.assertEqual(state.merge_requested_at, HEAD)
+        self.assertIsNone(state.gave_up_at)
+        writes = [c for c in self.cli.call_args_list if c.args[0][1] != "api" or "--method" in c.args[0]]
+        self.assertEqual(writes, [call(
+            ["gh", "pr", "comment", "7", "-R", "hrhgit/Project.Keynes", "--body-file", "-"],
+            stdin="The factory requested a merge, but GitHub has not merged this PR yet.")])
+
+    def test_queued_head_is_skipped_on_next_tick_and_new_head_resets_it(self):
+        self.merge_state = "OPEN"
+        self.assertEqual(self.watcher.tick(None), 0)
+        self.assertEqual(self.record()["outcome"], "queued")
+        self.must.reset_mock()
+        self.cli.reset_mock()
+        with patch("qodo.pr_review") as reviewed:
+            self.assert_skipped("merge requested; waiting for GitHub")
+        reviewed.assert_not_called()
+        self.must.assert_not_called()
+        self.cli.assert_not_called()
+
+        new_head = "d" * 40
+        self.pr["headRefOid"] = self.fresh_pr["headRefOid"] = new_head
+        self.assert_skipped("waiting for Qodo to review the head commit")
+        self.assertIsNone(self.watcher.load(7).merge_requested_at)
+        with patch("qodo.pr_review", return_value=review(sha=new_head)):
+            self.assertEqual(self.watcher.tick(None), 0)
+        self.assertEqual(self.watcher.load(7).merge_requested_at, new_head)
+        self.assertIn(new_head, self.must.call_args_list[-2].args[0])
 
     def test_changes_in_pr_state_before_merge_are_recorded_as_skips(self):
         for fields, reason in (({"labels": ["no-auto-merge"]}, "label that blocks auto-merge"),
