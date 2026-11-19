@@ -62,6 +62,13 @@ class Decide(unittest.TestCase):
         st = PrState(gave_up_at=HEAD, reason="x")
         self.assertEqual(self.d(r=review(findings=[finding("x")]), st=st).action, "skip")
 
+    def test_old_attempt_is_skipped_if_a_person_restores_that_head(self):
+        st = PrState(gave_up_at="b" * 40, attempted=[HEAD])
+        r = review(findings=[finding("x")])
+        self.assertEqual(self.d(r=r, st=st).action, "skip")
+        st.pushed.append(HEAD)
+        self.assertEqual(self.d(r=r, st=st).action, "fix")
+
     def test_same_findings_after_own_fix_stops(self):
         st = PrState(pushed=[HEAD], rounds=1, seen=[["x"]])
         self.assertEqual(self.d(r=review(findings=[finding("x")]), st=st).action, "stop")

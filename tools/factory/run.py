@@ -71,6 +71,15 @@ class Run:
     def path(self, name: str) -> str:
         return str(self.logs / name)
 
+    def stop_with_patch(self, reason: str, base: str) -> None:
+        patches = work.save_patch(self.workdir, base, self.logs / "fix.patch")
+        self.facts.stopped_by = f"{reason}\n\n{work.patch_notice(patches)}"
+
+    def stop_failed_agent(self, out: dict, stage: str, base: str) -> None:
+        reason = f"{agent.failure_reason(out)} during {stage}"
+        self.ev.add("agent", stage=stage, ok=False, code=out["code"], reason=reason)
+        self.stop_with_patch(reason, base)
+
     def run_checks(self, label: str, extra: list[str], base_failed: list[str]) -> tuple[list[dict], list[str]]:
         files = work.changed(self.workdir, self.base)
         native = bool(touching(files, self.cfg["checks"]["nativePaths"]))
@@ -120,7 +129,10 @@ class Run:
                                   feedback=f"Problems from the previous attempt:\n\n{feedback}" if feedback else "")
             out = agent.codex(self.cfg, self.workdir, prompt, self.path(f"implement-{attempt}.md"), writable=True)
             self.record.setdefault("reports", []).append(out["report"][-4000:])
-            question = work.scratch(self.workdir, "question.md")
+            if not out["ok"]:
+                self.stop_failed_agent(out, f"implementation attempt {attempt}", self.base)
+                return False
+            question = (work.scratch(self.workdir, "question.md") or "").strip()
             if question:
                 self.facts.stopped_by = f"the agent asks: {question[:1500]}"
                 return False
@@ -202,10 +214,17 @@ class Run:
                               source=source, findings=qodo.describe(findings))
         out = agent.codex(self.cfg, self.workdir, prompt, self.path(f"fix-{int(time.time())}.md"), writable=True)
         self.record.setdefault("reports", []).append(out["report"][-4000:])
-        disagree = work.scratch(self.workdir, "disagree.md")
-        if disagree:
-            self.facts.disagreements += [l.strip("- ").strip() for l in disagree.splitlines() if l.strip()]
-        if work.head(self.workdir) != (self.facts.head or self.base):
+        base = self.facts.head or self.base
+        if not out["ok"]:
+            self.stop_failed_agent(out, source, base)
+            return False
+        try:
+            disputes = agent.parse_disputes(work.scratch(self.workdir, "disagree.md"), findings)
+        except ValueError as e:
+            self.stop_with_patch(str(e), base)
+            return False
+        self.facts.disagreements += [f"{finding_id}: {evidence}" for finding_id, evidence in disputes]
+        if work.head(self.workdir) != base:
             self.facts.stopped_by = "the agent made its own commits"
             return False
         problems = self.scope_problems()
@@ -248,7 +267,7 @@ class Run:
             block = qodo.blocking(self.facts.findings)
             self.ev.add("pr-review", round=self.facts.review_rounds, status=self.facts.review_status,
                         blocking=len(block), ci=self.facts.ci_state)
-            if self.facts.review_status != "completed" or not block:
+            if self.facts.ci_state == "error" or self.facts.review_status != "completed" or not block:
                 return
             if unknown_findings(self.facts.findings):
                 return
@@ -275,7 +294,7 @@ class Run:
         state = None
         while time.time() < deadline:
             state = self.gh.ci_state(sha)
-            if state in ("success", "failure"):
+            if state in ("success", "failure", "error"):
                 return state
             time.sleep(60)
         return state

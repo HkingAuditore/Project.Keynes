@@ -14,16 +14,24 @@
 | Qodo 还没评审头部提交，或评审进行中 | 跳过，下一轮再看 |
 | 评审以 failed 等非 completed 状态结束，或评审项的状态或未关闭项的处理级别无法识别 | 停下，打 `agent-needs-help` |
 | 头部提交上没有未关闭的阻塞项 | 跳过 |
-| 有阻塞项 | 修复：检出头部提交，先跑一遍检查记下已有失败，Codex 修，再跑检查，没有新增失败才推送（`--force-with-lease` 指定原头部提交），在 PR 上评论 |
+| 有阻塞项 | 修复：检出头部提交，先跑一遍检查记下已有失败，Codex 成功退出后再跑检查，没有新增失败才推送（`--force-with-lease` 指定原头部提交），在 PR 上评论 |
+| Codex 退出失败或超时 | 停下，打 `agent-needs-help`，保存本地补丁并列出路径 |
 | 工厂修过之后又出现同一批问题，或连续修了 3 轮还不干净 | 停下，打 `agent-needs-help` |
-| Codex 认为某条评审不成立 | 这条不再重试，写进评论由人决定 |
-| 修复改到 C++、子模块、基线或契约文件、`.github/`、`tools/factory/`、`tools/ci/` 或 `.qodo/` | 停下交给人，补丁保存在本地。跑检查前和提交前各查一次范围 |
+| Codex 有异议且改了文件 | 按修复流程跑检查，异议写进评论由人决定 |
+| Codex 没改文件 | 停下，打 `agent-needs-help`。有异议的条目交给人判断，其余阻塞项列出 ID |
+| 异议格式有误，或 ID 不在本次交给 Codex 的评审项中 | 停下，打 `agent-needs-help`，列出有问题的行，保存本地补丁并列出路径 |
+| 检出时发现头部提交已变 | 停掉本次修复，记入运行记录，下一轮查看新提交 |
+| 修复改到 C++、子模块、基线或契约文件、`.github/`、`tools/factory/`、`tools/ci/` 或 `.qodo/` | 停下交给人，保存本地补丁并列出路径。跑检查前和提交前各查一次范围 |
 
-人往分支上推了新提交，轮数重新计算；工厂停下的那个头部提交不会再试。每个 PR 的状态存在 `~/.keynes-factory/prs/<编号>.json`，每次修复的记录存在 `~/.keynes-factory/runs/pr-<编号>-<时间>.json`。工厂的提交带 `Fixed-By: keynes-factory` 和 `Implemented-By: Codex`。注意：工厂会往你的 PR 分支推提交，本地继续改之前先 `git pull`。
+人往分支上推了新提交，轮数重新计算。同一个由人推送的头部提交最多交给 Codex 一次。每次修复结束都移除 `agent-working`。每个 PR 的状态存在 `~/.keynes-factory/prs/<编号>.json`，每次修复的记录存在 `~/.keynes-factory/runs/pr-<编号>-<时间>.json`。工厂的提交带 `Fixed-By: keynes-factory` 和 `Implemented-By: Codex`。注意：工厂会往你的 PR 分支推提交，本地继续改之前先 `git pull`。
+
+两种模式都从仓库根目录的 `.factory-disagree.md` 读取异议，每行严格按 `- <评审项 ID>: <证据>` 写一项。ID 必须和交给 Codex 时给出的一致，可以直接写，也可以用一对反引号包住。证据写明相关文件和行号。空行可跳过。格式有误或 ID 不认识时保存补丁，列出问题行交给人处理。
+
+补丁都保存在本次日志目录。主仓库的补丁是 `fix.patch`，有改动的子模块各有一份以子模块路径命名的补丁，例如 `fix.gdext__godot-cpp.patch`。停下时会列出所有保存的路径。
 
 ## Issue 模式（只能手动）
 
-由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。
+由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
 
 ```mermaid
 flowchart TD
@@ -34,6 +42,7 @@ flowchart TD
   B --> P[计划：Codex 只读<br/>读 AGENTS.md 和模块地图<br/>写 Fit / Reuse / Affected / Plan / Checks / Questions]
   P -- 有问题或检查命令被拒绝 --> H
   P --> I[实现：Codex 可写<br/>最多 3 次]
+  I -- Codex 退出失败或超时 --> H
   I --> S{范围检查<br/>不许改 .github/ tools/factory/ tools/ci/ .qodo/}
   S -- 越界 --> I
   S --> C{检查<br/>静态护栏（取自 runtime-checks.yml）<br/>地图单测、C++ 改了就构建<br/>默认回归、计划里要求的检查}
@@ -41,11 +50,13 @@ flowchart TD
   C -- 3 次仍失败 --> H
   C -- 通过 --> L{Qodo 本地评审<br/>未提交的改动，最多 2 轮}
   L -- 有阻塞项 --> F1[Codex 修复或写出反驳证据] --> C
+  F1 -- Codex 退出失败或异议格式有误 --> H
   L -- 结束 --> S2{提交前重查范围}
   S2 -- 触及受保护文件或 C++ --> H
   S2 -- 通过 --> PR[提交、推送、在 fork 开 PR]
   PR --> R{Qodo PR 评审完成于头部提交<br/>+ CI 结束}
   R -- 有阻塞项且未到 3 轮 --> F2[Codex 修复 → 检查 → 推送] --> R
+  F2 -- Codex 退出失败或异议格式有误 --> H
   R -- 同一批问题重复 / 没有改动 --> H
   R --> V[结论由 verdict.py 从事实算出]
   V -- READY --> D[agent-done<br/>人决定是否合并]
@@ -62,7 +73,7 @@ flowchart TD
 | 检查 | 在 base 上通过的检查，在改动后也要通过。每次执行回归都先导入候选项目 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 失败日志尾部发给 Codex，最多 3 次 |
 | 本地评审（默认尽力而为） | Qodo 对未提交改动没有阻塞项（action_required / remediation_recommended） | `qodo review --repo hrhgit/Project.Keynes --json` | 评审失败或覆盖不完整时记入运行记录和 PR 正文，继续走 PR 评审。若配置要求本地评审，则停下交给人 |
 | PR 评审 | Qodo 对**当前头部提交**的评审已完成，没有未关闭的阻塞项 | `qodo read pr-review-session findings` | 最多 3 轮修复；同一批问题重复就停 |
-| CI | 头部提交至少有一次 GitHub Actions 工作流运行，所有工作流和检查都已结束，检查全部成功 | GitHub Actions 和 check runs | 等待中为 NOT_DONE，检查失败为 NEEDS_FIX |
+| CI | 头部提交至少有一次 GitHub Actions 工作流运行，所有工作流和检查都已结束，检查全部成功 | GitHub Actions 和 check runs | 等待中为 NOT_DONE，检查失败为 NEEDS_FIX，查询失败时立即停下并给出 NEEDS_HUMAN |
 
 结论的先后顺序：NEEDS_HUMAN → NOT_DONE（证据不全）→ NEEDS_FIX → READY。以下情况一律交给人：master 本身就有检查失败（AGENTS.md 要求推送前修掉已发现的问题）；改了 C++（两种 macOS 库都要重编并提交，再跑 `check_macos_runtime_extension.py`，工厂不提交二进制）；Codex 对某条评审有不同意见；状态无法识别的评审结果。仅供参考的评审结果会列出来，由人决定。
 
