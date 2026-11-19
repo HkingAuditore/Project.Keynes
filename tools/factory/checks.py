@@ -36,6 +36,33 @@ class Runner:
         self.py = cfg["tools"]["python"]
         self.timeout = cfg["limits"]["checkTimeoutMinutes"] * 60
 
+    def _require_path(self, name: str, *, cwd: str | None = None, directory: bool = False) -> None:
+        path = Path(cwd or self.workdir) / name
+        if directory:
+            if not path.is_dir():
+                raise RuntimeError(f"missing check directory: {path}")
+        elif not path.is_file():
+            raise RuntimeError(f"missing check script: {path}")
+
+    def _require_unit_target(self, args: list[str]) -> None:
+        if args[:3] == ["-m", "unittest", "discover"]:
+            options = args[3:]
+            directory = options[0] if options and not options[0].startswith("-") else "."
+            for i, arg in enumerate(options):
+                if arg in ("-s", "--start-directory"):
+                    directory = options[i + 1]
+                    break
+                if arg.startswith("--start-directory="):
+                    directory = arg.partition("=")[2]
+                    break
+            self._require_path(directory, directory=True)
+        elif args[:2] == ["-m", "unittest"]:
+            for script in args[2:]:
+                if script.endswith(".py"):
+                    self._require_path(script)
+        elif args[0] != "-m":
+            self._require_path(args[0])
+
     def _run(self, name: str, args: list[str], cwd: str | None = None) -> dict:
         log = str(self.logdir / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', name)}.log")
         started = time.time()
@@ -53,8 +80,10 @@ class Runner:
         results = []
         ci = str(Path(self.workdir) / "tools" / "ci")
         for g in static_guards(self.workdir, c["staticWorkflow"]):
+            self._require_path(g, cwd=ci)
             results.append(run_check(f"static:{g}", [self.py, g], cwd=ci))
         for args in c["unit"]:
+            self._require_unit_target(args)
             results.append(run_check("unit:" + " ".join(args[-1:]), [self.py, *args]))
         if native:
             build = run_check("native-build", [self.cfg["tools"]["scons"], *c["nativeBuild"]])
@@ -63,10 +92,12 @@ class Runner:
                 return results
         godot = self.cfg["tools"]["godot"]
         reg_logs = str(self.logdir / f"regression-{int(time.time())}")
+        self._require_path(c["regression"][0])
         reg = [self.py, *c["regression"], "--godot", godot, "--log-dir", reg_logs, "--import"]
         results.append(run_check("regression", reg))
         for cmd in extra:
             parts = shlex.split(cmd)
+            self._require_path(parts[0])
             args = [self.py, *parts]
             if "--godot" not in parts and any(p.endswith(("replay.py", "matrix.py", "determinism.py")) for p in parts):
                 args += ["--godot", godot, "--log-dir", str(self.logdir / f"extra-{int(time.time())}")]
