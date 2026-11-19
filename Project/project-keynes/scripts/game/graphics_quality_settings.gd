@@ -24,10 +24,7 @@ static func resolve(settings: Dictionary, mobile: bool) -> Dictionary:
 	var detail: int = DETAIL_LEVEL[quality]
 	var map_scale := 100
 	if mobile:
-		if preset == "low":
-			map_scale = 75
-		elif preset == "medium":
-			map_scale = 90
+		map_scale = 75
 	elif preset == "low":
 		map_scale = 85
 	var fog_scales := [50, 75, 100]
@@ -35,7 +32,7 @@ static func resolve(settings: Dictionary, mobile: bool) -> Dictionary:
 		"render_quality": quality,
 		"map_render_scale": map_scale,
 		"water_detail": detail,
-		"fog_render_scale": fog_scales[detail],
+		"fog_render_scale": 50 if mobile else fog_scales[detail],
 		"vegetation_detail": detail,
 		"weather_detail": detail,
 		"cloud_shadow": detail >= (2 if mobile else 1),

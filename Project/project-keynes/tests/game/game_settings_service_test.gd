@@ -77,12 +77,16 @@ func _check_graphics_options(service: Node) -> void:
 	_expect("desktop automatic uses full detail and follows the display",
 		desktop.render_quality == "high" and desktop.map_render_scale == 100 \
 		and desktop.fog_render_scale == 100 and desktop.cloud_shadow and desktop.frame_rate_limit == 0)
-	_expect("mobile automatic saves work and keeps map clarity",
-		mobile.render_quality == "low" and mobile.map_render_scale == 100 \
+	_expect("mobile automatic defaults to 75% terrain and half-size fog",
+		mobile.render_quality == "low" and mobile.map_render_scale == 75 \
 		and mobile.fog_render_scale == 50 and not mobile.cloud_shadow and mobile.frame_rate_limit == GraphicsQualitySettings.ADAPTIVE_FPS)
 	var legacy := GraphicsQualitySettings.resolve({"render_quality": "medium"}, true)
 	_expect("an existing preset remains valid without new fields",
-		legacy.render_quality == "medium" and legacy.water_detail == 1)
+		legacy.render_quality == "medium" and legacy.water_detail == 1
+		and legacy.map_render_scale == 75 and legacy.fog_render_scale == 50)
+	var mobile_high := GraphicsQualitySettings.resolve({"render_quality": "high"}, true)
+	_expect("mobile high detail uses the same default render sizes",
+		mobile_high.water_detail == 2 and mobile_high.map_render_scale == 75 and mobile_high.fog_render_scale == 50)
 
 	var options := GraphicsOptionsScene.instantiate()
 	root.add_child(options)
@@ -106,12 +110,14 @@ func _check_graphics_options(service: Node) -> void:
 
 	draft.frame_rate_limit = 30
 	draft.map_render_scale = 85
+	draft.fog_render_scale = 75
 	draft.cloud_shadow = true
 	_expect("custom settings and frame cap apply",
 		bool(service.update(draft).get("ok", false)) and Engine.max_fps == 30)
 	service._settings = service.DEFAULTS.duplicate(true)
 	_expect("custom settings survive reload", bool(service.load_settings().get("ok", false)) \
-		and GraphicsQualitySettings.resolve(service.values(), true).map_render_scale == 85 \
+		and GraphicsQualitySettings.resolve(service.values(), true).map_render_scale == 85
+		and GraphicsQualitySettings.resolve(service.values(), true).fog_render_scale == 75 \
 		and GraphicsQualitySettings.resolve(service.values(), true).water_detail == 2 \
 		and GraphicsQualitySettings.resolve(service.values(), true).cloud_shadow)
 	service.update({"map_render_scale": 82, "cloud_shadow": 7}, false)

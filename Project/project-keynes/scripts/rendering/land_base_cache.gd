@@ -106,7 +106,10 @@ func _prepare() -> void:
 		invalidate()
 	var viewport := land.get_viewport()
 	host._graphics_details.scaled_surface_parent(land)
-	var size := Vector2i(viewport.get_texture().get_size())
+	# Window ViewportTexture sizes include the content stretch again in Godot 4.6.
+	# Match the physical pixel grid read by SCREEN_UV.
+	var physical_size := viewport.get_visible_rect().size * viewport.get_stretch_transform().get_scale().abs()
+	var size := Vector2i(physical_size.round())
 	var canvas := viewport.get_final_transform() * land.get_global_transform_with_canvas()
 	var key := [viewport, size, viewport.use_hdr_2d, canvas, land.global_transform, land.mesh, host._world,
 		host._world.land_base_revision]

@@ -3,7 +3,7 @@ render_mode unshaded;
 
 uniform sampler2D path_texture : filter_nearest, repeat_disable;
 uniform sampler2D visibility_texture : filter_nearest, repeat_disable;
-uniform sampler2D vehicle_atlas : source_color, filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray vehicle_sprites : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec4 route_info[32]; // point count, length, last observed wall second, active
 uniform float visual_seconds = 0.0;
 uniform float wall_seconds = 0.0;
@@ -34,12 +34,10 @@ varying vec2 sprite_uv;
 
 // One canonical east-facing TRUE vertical view per vehicle. Rotating the quad
 // gives every heading without mixing oblique frames or stretching the art.
-vec4 atlas_sample(vec2 uv) {
-	if (any(lessThan(uv, vec2(0.002))) || any(greaterThan(uv, vec2(0.998)))) {
-		return vec4(0.0);
-	}
-	int style = clamp(int(sprite_row), 0, 11);
-	return texture(vehicle_atlas, (vec2(float(style % 2), float(style / 2)) + uv) / vec2(2.0, 6.0));
+vec4 sample_vehicle(vec2 uv) {
+	// Separate mip chains keep adjacent vehicle silhouettes out of this sprite.
+	float style = clamp(sprite_row, 0.0, 11.0);
+	return texture(vehicle_sprites, vec3(uv, style));
 }
 
 float cell_visible(float payload) {
@@ -121,7 +119,7 @@ void fragment() {
 		if (coverage * vehicle_alpha < 0.003) { discard; }
 		COLOR = vec4(shadow_color.rgb, coverage * vehicle_alpha * shadow_color.a);
 	} else {
-		vec4 paint = atlas_sample(sprite_uv);
+		vec4 paint = sample_vehicle(sprite_uv);
 		if (paint.a < 0.025) { discard; }
 		COLOR = vec4(paint.rgb * vehicle_light, paint.a * vehicle_alpha);
 	}

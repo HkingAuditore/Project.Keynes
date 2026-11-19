@@ -106,6 +106,19 @@ func _run() -> void:
 		camera.force_update_scroll()
 		await RenderingServer.frame_post_draw
 		_check(land._shader_mat.shader != cache._reader, "a moved view draws fresh terrain")
+	# A touch layout keeps the output native while applying a non-unit
+	# canvas stretch. The cache must share the output pixel grid.
+	DCFeatureFlags._debug_render_flag("render_viewport")
+	DCFeatureFlags._debug_render_flags["render_viewport"] = 0
+	settings.ui_scaling().set_qa_override({"profile": "mobile", "layout": "fill"})
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	_check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+		and not root.get_stretch_transform().get_scale().is_equal_approx(Vector2.ONE),
+		"touch layout exercises a non-unit canvas stretch")
+	_check(cache._views[0].size == root.get_texture().get_image().get_size(),
+		"land cache matches actual pixels in a stretched native-size window")
+	settings.ui_scaling().clear_qa_override()
 	await _check_idle_presentation(game, land, camera)
 	game.queue_free()
 	await process_frame

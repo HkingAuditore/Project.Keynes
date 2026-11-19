@@ -37,6 +37,7 @@ const WEATHER_TABLE_LAYER_WIND_BASE := 2
 ## 真值 `WeatherType.WT.CLEAR`（weather_type.gd:24）= 0；
 ## tests/world/weather_table_layout_test.gd 里有等值断言，防止枚举被改后这条静默失效。
 const WEATHER_TABLE_PAD_TYPE := 0
+const WEATHER_CURTAIN_LUT_PAIR := &"weather_curtain_lut_pair"
 
 
 
@@ -1214,6 +1215,8 @@ static func _upload_weather_lut_pair(baker: MapBaker, world: WorldData, lw: int,
 			previous, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
 	world.weather_lut_tex = baker._lut_tex_from_data(
 			current, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_tex)
+	# Keep the exact bytes used by the rain/snow meshes available without a GPU readback.
+	world.weather_lut_tex.set_meta(WEATHER_CURTAIN_LUT_PAIR, [previous, current])
 	baker._prev_weather_lut_bytes = current
 	world.weather_lut_update_usec = Time.get_ticks_usec()
 

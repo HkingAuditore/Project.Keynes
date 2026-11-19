@@ -71,6 +71,11 @@ const _FRONT_PARTICLES_ENABLED := false
 const _CURTAIN_LAYER_COUNT_DESKTOP := 3
 const _CURTAIN_LAYER_COUNT_MOBILE := 1
 const _CURTAIN_PATCH_SCALE := 1.45
+# These bits are also used by weather_cell_curtain.gdshader.
+const _FLAG_LIGHTNING := 2
+const _FLAG_SNOW := 4
+const _FLAG_RAIN := 8
+const _FLAG_FOG := 16
 
 # [parallax-rain] 三层视差参数：每层独立的 z_offset（layer_depth 由层数自动计算）
 # 索引 0=近景(z 高) / 1=中景 / 2=远景(z 低)
@@ -126,6 +131,11 @@ var _curtain_built_for_map: MapData = null
 var _curtain_built_hex_size: float = -1.0
 var _curtain_built_wrap_period: float = -1.0
 var _curtain_instance_count: int = 0
+var _curtain_cells := PackedVector4Array() # center.xy, seed, original cell id
+var _curtain_draw_cells := PackedInt32Array() # indices into _curtain_cells, in draw order
+var _curtain_offsets := PackedFloat32Array()
+var _curtain_lut_update := -1
+var _curtain_lut_blending := false
 var _particles_root: Node2D
 var _particles_pool: Array[GPUParticles2D] = []  # 16 个，按 front index 复用
 # 缓存每个 slot 当前配置类型，避免每次 set_weather_fronts 都重建 process_material
@@ -353,6 +363,7 @@ func _process(delta: float) -> void:
 				_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
 				for mat in _curtain_mats:
 					mat.set_shader_parameter("weather_lerp", _wlerp)
+			_refresh_curtain_instances(_upd, _wx_pushed_lerp < 0.999)
 			if _upd != 0 and (_wx_lut_diag_count < 12 or _now_us / 1000 - _wx_lut_diag_last_msec >= 2000):
 				_wx_lut_diag_count += 1
 				_wx_lut_diag_last_msec = _now_us / 1000
@@ -406,6 +417,7 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 func set_world_ref(w) -> void:
 	if _world_ref != w:
 		_world_ref = w
+		_curtain_lut_update = -1
 		_push_weather_table(true)
 
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
@@ -535,6 +547,7 @@ func set_cloud_opacity_scale(v: float) -> void:
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
 func set_weather_strength(v: float) -> void:
 	_strength = clampf(v, 0.0, 1.0)
+	_update_curtain_visibility()
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
 	for mat in _curtain_mats:
@@ -1466,6 +1479,8 @@ func set_fog_field_band(v: float = FogOfWarLayerScript.FOG_FIELD_BAND) -> void:
 func _push_curtain_runtime_state() -> void:
 	if _curtain_mats.is_empty():
 		return
+	_curtain_lut_update = -1
+	var flags := _weather_profile_flags()
 	for mat in _curtain_mats:
 		if _weather_lut_tex != null:
 			mat.set_shader_parameter("weather_lut", _weather_lut_tex)
@@ -1486,7 +1501,7 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
 		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		mat.set_shader_parameter("tod_exposure", _tod_exposure)
-		mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
+		mat.set_shader_parameter("weather_profile_flags", flags)
 		# [parallax-rain] 俯视投影参数
 		mat.set_shader_parameter("camera_pitch", _camera_pitch)
 		mat.set_shader_parameter("wind_dir", _wind_dir)
@@ -1590,13 +1605,13 @@ func _weather_profile_flags() -> PackedInt32Array:
 			continue
 		var f: int = 0
 		if p.enables_lightning:
-			f |= 2
+			f |= _FLAG_LIGHTNING
 		if p.enables_snow_grain:
-			f |= 4
+			f |= _FLAG_SNOW
 		if p.enables_rain_streak:
-			f |= 8
+			f |= _FLAG_RAIN
 		if p.enables_fog_breathe:
-			f |= 16
+			f |= _FLAG_FOG
 		flags[wt] = f
 	return flags
 
@@ -1641,22 +1656,21 @@ func _rebuild_curtain_layers() -> void:
 		cells = _curtain_map.all_cells()
 	if cells.is_empty():
 		return
-	var tile_offsets := PackedFloat32Array([0.0])
+	_curtain_offsets = PackedFloat32Array([0.0])
 	if _wrap_period_x > 0.0001:
-		tile_offsets = PackedFloat32Array([-_wrap_period_x, 0.0, _wrap_period_x])
-	var valid_cells: Array = []
+		_curtain_offsets = PackedFloat32Array([-_wrap_period_x, 0.0, _wrap_period_x])
 	for order in range(cells.size()):
 		var cell = cells[order]
 		if cell == null:
 			continue
-		var idx: int = int(cell.index)
-		if idx < 0:
-			idx = order
-		if idx < 0 or idx >= 65536:
+		var id := int(cell.index)
+		if id < 0:
+			id = order
+		if id >= 65536:
 			continue
-		valid_cells.append([cell, idx, order])
-	var instance_total: int = valid_cells.size() * tile_offsets.size()
-	if instance_total <= 0:
+		var center := _curtain_cell_center(cell, id)
+		_curtain_cells.append(Vector4(center.x, center.y, _curtain_seed(id, order), id))
+	if _curtain_cells.is_empty():
 		return
 	for layer_idx in range(max_layers):
 		var mmi := MultiMeshInstance2D.new()
@@ -1678,36 +1692,82 @@ func _rebuild_curtain_layers() -> void:
 		mm.use_colors = false
 		mm.use_custom_data = true
 		mm.mesh = _curtain_mesh
-		mm.instance_count = instance_total
-		mm.visible_instance_count = instance_total
+		# Allocate once for the map. Each publication submits only the compact prefix.
+		mm.instance_count = _curtain_cells.size() * _curtain_offsets.size()
+		mm.visible_instance_count = 0
 		mmi.multimesh = mm
-		var depth: float = 0.5
-		if max_layers > 1:
-			depth = float(layer_idx) / float(max_layers - 1)
-		var half_w: float = _hex_size * _CURTAIN_PATCH_SCALE * lerpf(0.96, 1.18, depth)
-		var half_h: float = _hex_size * _CURTAIN_PATCH_SCALE * lerpf(1.10, 1.36, depth)
-		var write_idx: int = 0
-		for item in valid_cells:
-			var item_cell = item[0]
-			var cell_idx: int = int(item[1])
-			var cell_order: int = int(item[2])
-			var center := _curtain_cell_center(item_cell, cell_idx)
-			var seed := _curtain_seed(cell_idx, cell_order)
-			for ox in tile_offsets:
-				var pos := center + Vector2(float(ox), 0.0)
-				mm.set_instance_transform_2d(write_idx, Transform2D(
-					Vector2(half_w, 0.0),
-					Vector2(0.0, half_h),
-					pos
-				))
-				mm.set_instance_custom_data(write_idx, _curtain_custom_data(cell_idx, seed, depth))
-				write_idx += 1
 		_curtain_layers.append(mmi)
 		_curtain_multimeshes.append(mm)
 	_curtain_built_for_map = _curtain_map
 	_curtain_built_hex_size = _hex_size
 	_curtain_built_wrap_period = _wrap_period_x
-	_curtain_instance_count = instance_total * max_layers
+	var update_usec: int = _world_ref.weather_lut_update_usec if _world_ref != null else 0
+	_refresh_curtain_instances(update_usec, true)
+
+
+func _refresh_curtain_instances(update_usec: int, blending: bool) -> void:
+	if _curtain_multimeshes.is_empty():
+		return
+	if update_usec == _curtain_lut_update and blending == _curtain_lut_blending:
+		return
+	_curtain_lut_update = update_usec
+	_curtain_lut_blending = blending
+
+	var current := PackedByteArray()
+	var previous := PackedByteArray()
+	if _world_ref != null and _weather_lut_tex != null and _weather_lut_tex == _world_ref.weather_lut_tex \
+			and _weather_lut_dims == _world_ref.lut_dims:
+		var pair: Array = _weather_lut_tex.get_meta(DCCellLutBaker.WEATHER_CURTAIN_LUT_PAIR, [])
+		if pair.size() == 2:
+			previous = pair[0]
+			current = pair[1]
+	# The shader uses the current type throughout the blend. Rain and snow
+	# still contribute at zero intensity. Fog and lightning need positive G.
+	var tier := _weather_shader_tier() if DCFeatureFlags.uses_shader_quality_tier() else ""
+	var intensity_effects := tier.is_empty() or tier == "MOBILE_QUALITY_HIGH"
+	var flags := _weather_profile_flags()
+	var draw_cells := PackedInt32Array()
+	for index in range(_curtain_cells.size()):
+		var at := int(_curtain_cells[index].w) * 4
+		# Standalone callers may supply a texture without CPU data. Keep those
+		# instances and let the shader decide, including any out-of-range ids.
+		if at + 3 < current.size():
+			var type := current[at]
+			var effects := flags[type] if type < flags.size() else 0
+			var has_intensity := current[at + 1] > 0 or (blending and
+					(at + 1 >= previous.size() or previous[at + 1] > 0))
+			if (effects & (_FLAG_RAIN | _FLAG_SNOW)) == 0 and not (
+					intensity_effects and has_intensity and (effects & (_FLAG_FOG | _FLAG_LIGHTNING)) != 0):
+				continue
+		draw_cells.append(index)
+	if draw_cells == _curtain_draw_cells:
+		return
+	_curtain_draw_cells = draw_cells
+	_upload_curtain_instances()
+	_update_curtain_visibility()
+
+
+func _upload_curtain_instances() -> void:
+	var count := _curtain_draw_cells.size() * _curtain_offsets.size()
+	var layer_count := _curtain_multimeshes.size()
+	for layer_idx in range(layer_count):
+		var mm := _curtain_multimeshes[layer_idx]
+		var depth := float(layer_idx) / (layer_count - 1) if layer_count > 1 else 0.5
+		var half_w := _hex_size * _CURTAIN_PATCH_SCALE * lerpf(0.96, 1.18, depth)
+		var half_h := _hex_size * _CURTAIN_PATCH_SCALE * lerpf(1.10, 1.36, depth)
+		var transform := Transform2D(Vector2(half_w, 0.0), Vector2(0.0, half_h), Vector2.ZERO)
+		var write_idx := 0
+		for index in _curtain_draw_cells:
+			var cell := _curtain_cells[index]
+			var custom := _curtain_custom_data(int(cell.w), cell.z, depth)
+			for offset in _curtain_offsets:
+				transform.origin = Vector2(cell.x, cell.y) + Vector2(offset, 0.0)
+				mm.set_instance_transform_2d(write_idx, transform)
+				mm.set_instance_custom_data(write_idx, custom)
+				write_idx += 1
+		mm.visible_instance_count = count
+	_curtain_instance_count = count * layer_count
+
 
 func _clear_curtain_layers() -> void:
 	for layer in _curtain_layers:
@@ -1717,6 +1777,9 @@ func _clear_curtain_layers() -> void:
 			layer.queue_free()
 	_curtain_layers.clear()
 	_curtain_multimeshes.clear()
+	_curtain_cells.clear()
+	_curtain_draw_cells.clear()
+	_curtain_lut_update = -1
 	_curtain_instance_count = 0
 	_curtain_built_for_map = null
 
