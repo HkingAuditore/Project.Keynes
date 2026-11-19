@@ -208,6 +208,7 @@ class MergeWorkflow(unittest.TestCase):
         self.preflight_error = None
         self.read_error = None
         self.merge_state = "MERGED"
+        self.reported_head = HEAD
         self.check_result = "success"
         self.workflow_result = "success"
         self.rerun = False
@@ -229,7 +230,7 @@ class MergeWorkflow(unittest.TestCase):
             if self.read_error:
                 raise RuntimeError(self.read_error)
             commit = {"oid": self.merge_sha} if self.merge_state == "MERGED" else None
-            return json.dumps({"state": self.merge_state, "headRefOid": self.fresh_pr["headRefOid"],
+            return json.dumps({"state": self.merge_state, "headRefOid": self.reported_head,
                                "mergeCommit": commit})
         self.fail(f"unexpected GitHub command: {args}")
 
@@ -298,41 +299,57 @@ class MergeWorkflow(unittest.TestCase):
         self.assertIn("Factory merged PR #7", self.cli.call_args.kwargs["stdin"])
         self.assertTrue(all("/issues/7/labels" not in c.args[0][2] for c in self.cli.call_args_list))
 
-    def test_open_after_merge_request_records_queued_and_comments_once(self):
-        self.merge_state = "OPEN"
-        self.assertEqual(self.watcher.tick(None), 0)
+    def assert_reported_not_merged(self):
+        self.assertEqual(self.watcher.tick(None), 1)
         record = self.record()
-        self.assertEqual(record["outcome"], "queued")
+        self.assertEqual(record["outcome"], "not_merged")
         self.assertIsNone(record["mergeCommit"])
         self.assertEqual(record["githubErrors"], [])
-        state = self.watcher.load(7)
-        self.assertEqual(state.merge_requested_at, HEAD)
-        self.assertIsNone(state.gave_up_at)
-        writes = [c for c in self.cli.call_args_list if c.args[0][1] != "api" or "--method" in c.args[0]]
-        self.assertEqual(writes, [call(
-            ["gh", "pr", "comment", "7", "-R", "hrhgit/Project.Keynes", "--body-file", "-"],
-            stdin="The factory requested a merge, but GitHub has not merged this PR yet.")])
+        self.assertIn(self.merge_state, record["error"])
+        self.assertIn(self.reported_head, record["error"])
+        self.assertIsNone(self.watcher.load(7).gave_up_at)
+        self.assertNotIn("merge_requested_at", vars(self.watcher.load(7)))
+        comments = [c.kwargs["stdin"] for c in self.cli.call_args_list if c.args[0][1:3] == ["pr", "comment"]]
+        self.assertEqual(len(comments), 1)
+        self.assertIn("Factory stopped", comments[0])
+        self.assertIn(record["error"], comments[0])
+        self.assertIn("will not retry", comments[0])
+        self.assertIn("Remove `agent-needs-help`", comments[0])
+        self.assert_help_label_added()
 
-    def test_queued_head_is_skipped_on_next_tick_and_new_head_resets_it(self):
+    def test_open_after_merge_stops_with_not_merged(self):
         self.merge_state = "OPEN"
-        self.assertEqual(self.watcher.tick(None), 0)
-        self.assertEqual(self.record()["outcome"], "queued")
-        self.must.reset_mock()
-        self.cli.reset_mock()
-        with patch("qodo.pr_review") as reviewed:
-            self.assert_skipped("merge requested; waiting for GitHub")
-        reviewed.assert_not_called()
-        self.must.assert_not_called()
-        self.cli.assert_not_called()
+        self.assert_reported_not_merged()
 
-        new_head = "d" * 40
-        self.pr["headRefOid"] = self.fresh_pr["headRefOid"] = new_head
-        self.assert_skipped("waiting for Qodo to review the head commit")
-        self.assertIsNone(self.watcher.load(7).merge_requested_at)
-        with patch("qodo.pr_review", return_value=review(sha=new_head)):
-            self.assertEqual(self.watcher.tick(None), 0)
-        self.assertEqual(self.watcher.load(7).merge_requested_at, new_head)
-        self.assertIn(new_head, self.must.call_args_list[-2].args[0])
+    def test_closed_after_merge_stops_with_not_merged(self):
+        self.merge_state = "CLOSED"
+        self.assert_reported_not_merged()
+
+    def test_merged_at_a_different_head_stops_with_not_merged(self):
+        self.reported_head = "d" * 40
+        self.assert_reported_not_merged()
+
+    def test_removing_help_label_allows_same_head_to_retry(self):
+        self.merge_state = "OPEN"
+        self.assert_reported_not_merged()
+        self.must.reset_mock()
+        self.pr["labels"] = self.fresh_pr["labels"] = ["agent-needs-help"]
+        self.assert_skipped("has a label that blocks auto-merge")
+        self.pr["labels"] = self.fresh_pr["labels"] = []
+        self.merge_state = "MERGED"
+        self.assertEqual(self.watcher.tick(None), 0)
+        self.assertEqual(self.record()["outcome"], "merged")
+        self.assertEqual(self.must.call_args_list[-2].args[0][-1], HEAD)
+
+    def test_legacy_queue_marker_does_not_block_merging(self):
+        path = self.watcher.state_path(7)
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"merge_requested_at": HEAD, "rounds": 2}), encoding="utf-8")
+        self.assertEqual(self.watcher.tick(None), 0)
+        self.assertEqual(self.record()["outcome"], "merged")
+        state = self.watcher.load(7)
+        self.assertEqual(state.rounds, 2)
+        self.assertNotIn("merge_requested_at", vars(state))
 
     def test_changes_in_pr_state_before_merge_are_recorded_as_skips(self):
         for fields, reason in (({"labels": ["no-auto-merge"]}, "label that blocks auto-merge"),
@@ -434,6 +451,9 @@ class MergeWorkflow(unittest.TestCase):
         self.assertEqual(record["outcome"], "stopped")
         self.assertIn(error, record["error"])
         self.assertEqual(self.watcher.load(7).gave_up_at, HEAD)
+        self.assert_help_label_added()
+
+    def assert_help_label_added(self):
         self.assertIn(call(["gh", "api", "repos/hrhgit/Project.Keynes/issues/7/labels", "--method", "POST",
                             "--input", "-"], stdin='{"labels": ["agent-needs-help"]}'), self.cli.call_args_list)
 

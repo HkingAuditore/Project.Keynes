@@ -22,8 +22,9 @@ class ChangedFile:
 
 @dataclass(frozen=True)
 class MergeResult:
-    outcome: Literal["merged", "queued"]
+    outcome: Literal["merged", "not_merged"]
     commit: str | None = None
+    reason: str = ""
 
 
 class GitHub:
@@ -125,10 +126,11 @@ class GitHub:
             state = pr.get("state") if isinstance(pr, dict) else None
             if not isinstance(state, str) or not state:
                 raise ValueError("GitHub did not return the PR state")
-            if state != "MERGED":
-                return MergeResult("queued")
-            if pr.get("headRefOid") != sha:
-                raise ValueError(f"GitHub did not confirm a merge of {sha}")
+            head = pr.get("headRefOid")
+            if state != "MERGED" or head != sha:
+                return MergeResult("not_merged", reason=(
+                    f"GitHub reported PR state `{state}` at head `{head or 'unknown'}` after the merge command. "
+                    f"The factory expected `MERGED` at `{sha}`."))
             merge_commit = pr.get("mergeCommit")
             oid = merge_commit.get("oid") if isinstance(merge_commit, dict) else None
             if not isinstance(oid, str) or not oid:

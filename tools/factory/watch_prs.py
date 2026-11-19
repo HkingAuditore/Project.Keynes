@@ -42,7 +42,6 @@ class PrState:
     gave_up_at: str | None = None                       # head commit where the factory stopped
     reason: str | None = None
     attempted: list[str] = field(default_factory=list)  # heads sent to Codex that a person pushed
-    merge_requested_at: str | None = None               # head waiting for GitHub to merge
 
 
 @dataclass
@@ -82,8 +81,6 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
            changed_files: list[ChangedFile] | None = None, ci: CIFacts | None = None) -> Decision:
     """Pure decision for one PR from GitHub metadata, the Qodo review read and the saved state."""
     head = pr["headRefOid"]
-    if state.merge_requested_at == head:
-        return Decision("skip", "merge requested; waiting for GitHub")
     if pr.get("isDraft"):
         return Decision("skip", "draft")
     if pr.get("isCrossRepository"):
@@ -169,7 +166,11 @@ class Watcher:
 
     def load(self, n: int) -> PrState:
         p = self.state_path(n)
-        return PrState(**json.loads(p.read_text(encoding="utf-8"))) if p.exists() else PrState()
+        if not p.exists():
+            return PrState()
+        data = json.loads(p.read_text(encoding="utf-8"))
+        data.pop("merge_requested_at", None)  # Ignore the retired field in older state files.
+        return PrState(**data)
 
     def save(self, n: int, st: PrState) -> None:
         p = self.state_path(n)
@@ -188,14 +189,8 @@ class Watcher:
 
     def tick(self, only: int | None) -> int:
         for pr in self.prs(only):
-            n, head = pr["number"], pr["headRefOid"]
-            st = self.load(n)
-            review = None
-            if st.merge_requested_at != head:
-                if st.merge_requested_at is not None and not self.dry:
-                    st.merge_requested_at = None
-                    self.save(n, st)
-                review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
+            st = self.load(pr["number"])
+            review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
             args = (pr, review, st, self.cfg)
             d = decide(*args)
             changed_files = None
@@ -224,12 +219,17 @@ class Watcher:
             return self.fix(pr, st, d.findings)  # one fix per tick: it takes minutes
         return 0
 
-    def stop(self, pr: dict, st: PrState, reason: str, details: str = "") -> None:
-        st.gave_up_at, st.reason = pr["headRefOid"], reason
-        self.save(pr["number"], st)
+    def stop(self, pr: dict, st: PrState, reason: str, details: str = "", *, resume_on_label_removal: bool = False) -> None:
         L = self.cfg["labels"]
+        if resume_on_label_removal:
+            next_step = (f"The factory will not retry the merge while `{L['help']}` is set. "
+                         f"Remove `{L['help']}` to let it try again.")
+        else:
+            st.gave_up_at, st.reason = pr["headRefOid"], reason
+            self.save(pr["number"], st)
+            next_step = "The factory will look again after the next push to this branch."
         self.gh.comment(pr["number"], f"### Factory stopped on {pr['headRefOid'][:10]}\n\n{reason}\n\n{details}".strip()
-                        + "\n\nThe factory will look again after the next push to this branch.", pull_request=True)
+                        + f"\n\n{next_step}", pull_request=True)
         self.gh.relabel(pr["number"], [L["help"]], [L["working"]])
 
     def merge_preflight(self, pr: dict) -> str | None:
@@ -277,10 +277,9 @@ class Watcher:
         elif skipped:
             record.update(outcome="skipped", reason=skipped)
             print(json.dumps({"pr": n, "action": "skip", "reason": skipped}), flush=True)
-        elif record["outcome"] == "queued":
-            st.merge_requested_at = sha
-            self.save(n, st)
-            self.gh.comment(n, "The factory requested a merge, but GitHub has not merged this PR yet.", pull_request=True)
+        elif record["outcome"] == "not_merged":
+            record["error"] = result.reason
+            self.stop(pr, st, result.reason, resume_on_label_removal=True)
         else:
             lines = [f"### Factory merged PR #{n}", "",
                      f"Qodo completed its review of `{sha}` with no open blocking findings.", ""]
@@ -304,7 +303,7 @@ class Watcher:
                                                             encoding="utf-8")
         if skipped:
             return None
-        return 1 if error else 0
+        return 1 if error or record["outcome"] == "not_merged" else 0
 
     # ---- the fix ---------------------------------------------------------------------
     def stop_with_patch(self, pr: dict, st: PrState, logs: Path, reason: str, details: str = "") -> None:
