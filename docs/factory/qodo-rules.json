@@ -48,13 +48,13 @@
       "bad_examples": "await wait_days(20)  # was 8; passes by waiting longer\nassert_true(abs(a - b) < 1000)  # was assert_eq(a, b)"
     },
     {
-      "name": "Keynes: native climate entry points fail loudly without fallback",
-      "source": "docs/architecture/development-guide.md#气候每日-native-only-边界",
+      "name": "Keynes: errors fail loudly instead of falling back silently",
+      "source": "docs/architecture/development-guide.md#气候每日-native-only-边界; author request 2026-11-19",
       "category": "Reliability",
       "severity": "error",
-      "content": "In map_generator.gd's Pass-A, Pass-B, ocean, sea-ice and transpiration entry points, a missing extension, failed method probe or failed C++ call must push_error, keep the previous fields and return failure. It must not fall back to a GDScript full-map computation or return a successful empty result.",
-      "good_examples": "if not _native.has_method(\"run_pass_a\"):\n    push_error(\"climate pass A: native method missing\")\n    return false",
-      "bad_examples": "if not _native.has_method(\"run_pass_a\"):\n    return _run_pass_a_gdscript()  # silent fallback"
+      "content": "When something goes wrong (a missing extension or method, a failed native call, invalid or missing data, an unexpected state, a failed load or decode), report it with push_error or an explicit error result, stop that operation and keep the previous state. Do not silently switch to another code path, a default value, an empty result or a GDScript reimplementation, and do not report success. A fallback is acceptable only where the docs name it as intended behaviour, and it must still log the cause. The climate entry points in map_generator.gd (Pass-A, Pass-B, ocean, sea-ice, transpiration) have no fallback at all: no GDScript full-map computation and no successful empty result.",
+      "good_examples": "if not _native.has_method(\"run_pass_a\"):\n    push_error(\"climate pass A: native method missing\")\n    return false\nvar preset = load(path)\nif preset == null:\n    push_error(\"map preset failed to load: %s\" % path)\n    return ERR_FILE_CORRUPT",
+      "bad_examples": "if not _native.has_method(\"run_pass_a\"):\n    return _run_pass_a_gdscript()  # silent fallback\nvar price := prices.get(good_id, 0.0)  # a missing good silently costs nothing\nif cfg.is_empty():\n    cfg = DEFAULT_CONFIG  # hides a broken file"
     },
     {
       "name": "Keynes: daily stage functions stay engine-free",

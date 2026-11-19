@@ -16,7 +16,7 @@
 | 新继续态冻结、校验、完整解码后才安装 | development-guide.md | 测试：`check_replay_matrix.py`；Qodo：continuation state |
 | 只在已提交边界保存，超容量明确失败 | development-guide.md | 测试：`runtime_inline_save_restore_test.gd` 等；Qodo：committed boundary |
 | 不靠放宽断言、加长超时、加重试修测试 | AGENTS.md | Qodo：root cause；工厂提示词 |
-| 气候 native 入口失败时报错，不回退 GDScript | development-guide.md | Qodo：native climate entry points |
+| 出错时直接报错，不悄悄回退（气候 native 入口完全不许回退） | development-guide.md、用户 2026-11-19 | Qodo：errors fail loudly |
 | 阶段函数不碰 Godot 对象，返回值不表示业务成功 | development-guide.md | Qodo：daily stage functions |
 | 手动推进后台日的测试要等已提交日期并接收结果 | development-guide.md | Qodo：background-day tests |
 | 会话组件只拿窄依赖，不建第二个日推进入口 | development-guide.md | Qodo：session components |
