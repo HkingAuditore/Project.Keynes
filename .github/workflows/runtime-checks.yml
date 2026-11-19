@@ -49,7 +49,10 @@ jobs:
           exit $status
       - name: Factory tests
         if: success() || failure()
-        run: python -m unittest discover -s tools/factory/tests -v
+        # poll.sh runs under zsh on macOS; the poll-script tests need it here too.
+        run: |
+          sudo apt-get install -y -qq zsh >/dev/null
+          python -m unittest discover -s tools/factory/tests -v
   authoring-and-thread-lifetime:
     runs-on: ubuntu-latest
     steps:
