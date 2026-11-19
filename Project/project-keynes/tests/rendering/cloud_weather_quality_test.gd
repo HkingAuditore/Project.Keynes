@@ -158,12 +158,22 @@ func _check_curtain_instances() -> void:
 	DCCellLutBaker._upload_weather_lut_pair(baker, world, 4, 1, previous, current)
 	weather.set_world_ref(world)
 	weather.setup(Rect2(0, 0, 160, 44), null, null, 22.0, world.weather_lut_tex, world.lut_dims, 160.0, map)
-	var instances := weather._curtain_multimeshes[0]
-	check(instances.visible_instance_count == 9 and weather._curtain_draw_cells == PackedInt32Array([1, 2, 3]),
+	var instances := weather._curtains.multimeshes[0]
+	check(instances.visible_instance_count == 9 and weather._curtains.draw_cells == PackedInt32Array([1, 2, 3]),
 		"rain and snow survive at zero intensity, and only current type participates in the blend")
+	if DisplayServer.get_name() != "headless":
+		var cube := HexUtils.offset_to_cube(1, 0)
+		var center := HexUtils.cube_to_world(cube.x, cube.y, 22.0)
+		var offsets := [-160.0, 0.0, 160.0]
+		for copy_index in offsets.size():
+			var transform := instances.get_instance_transform_2d(copy_index)
+			var custom := instances.get_instance_custom_data(copy_index)
+			check(transform.origin.is_equal_approx(center + Vector2(offsets[copy_index], 0.0))
+				and roundi(custom.r * 255.0) == 1 and roundi(custom.g * 255.0) == 0,
+				"the first contributing cell retains its position, index and wrap order")
 	weather._refresh_curtain_instances(world.weather_lut_update_usec, false)
 	check(instances.instance_count == 12 and instances.visible_instance_count == 6
-		and weather._curtain_draw_cells == PackedInt32Array([1, 2]),
+		and weather._curtains.draw_cells == PackedInt32Array([1, 2]),
 		"fog at zero intensity stops submitting instances after the blend")
 	var texture_before := world.weather_lut_tex
 	current = current.duplicate()
@@ -171,9 +181,9 @@ func _check_curtain_instances() -> void:
 	current[4] = WeatherType.WT.CLEAR
 	DCCellLutBaker._upload_weather_lut_pair(baker, world, 4, 1, previous, current)
 	weather._refresh_curtain_instances(world.weather_lut_update_usec, false)
-	check(world.weather_lut_tex == texture_before and weather._curtain_draw_cells == PackedInt32Array([0, 2]),
+	check(world.weather_lut_tex == texture_before and weather._curtains.draw_cells == PackedInt32Array([0, 2]),
 		"an in-place LUT upload refreshes contributors even when the instance count is unchanged")
 	weather.set_weather_strength(0.0)
-	check(not weather._curtain_root.visible, "zero global weather strength hides all curtain layers")
+	check(not weather._curtains.root.visible, "zero global weather strength hides all curtain layers")
 	weather.queue_free()
 	await process_frame
