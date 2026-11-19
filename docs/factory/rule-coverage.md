@@ -26,7 +26,7 @@
 | skill 改权威副本再同步 | development-guide.md | 护栏：`check_skill_mirrors.py` |
 | 脚本接口绑定归属正确 | development-guide.md | 护栏：`world_ext_bindings.py`、`check_world_ext_bindings.py` |
 | 国库建造检查体制能力位 | development-guide.md | Qodo：treasury construction |
-| Shader 优化按 GPU 实际工作量判断 | AGENTS.md | Qodo：shader optimisations（recommendation） |
+| Shader 少用 if，优化按 GPU 实际工作量判断 | AGENTS.md、用户 2026-11-19 | Qodo：shaders keep if-branches few（warning） |
 | 推送前先修掉已发现的问题，包括既有失败 | AGENTS.md | 工厂：master 上有失败时结论为 NEEDS_HUMAN |
 | 基线只能用脚本收紧，不能手改 | development-guide.md | 工厂：基线和契约文件改动交给人 |
 | 改 C++ 后两种 macOS 库都要重编 | development-guide.md | 工厂：改了 C++ 一律交给人 |

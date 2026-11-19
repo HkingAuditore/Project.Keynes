@@ -102,13 +102,13 @@
       "bad_examples": "extends \"res://scripts/ui/game_ui_manager_base.gd\"\nemit_signal(\"host.day_changed\")  # prefix leaked into a literal"
     },
     {
-      "name": "Keynes: shader optimisations are judged by real GPU work",
-      "source": "AGENTS.md",
+      "name": "Keynes: shaders keep if-branches few and are judged by real GPU work",
+      "source": "AGENTS.md; author request 2026-11-19",
       "category": "Performance",
-      "severity": "recommendation",
-      "content": "Do not count a shader if-branch as saved work: pixels in one batch taking different branches often execute both paths. Prefer skipping whole batches or removing unused paths at compile time, and justify the gain with measured frame time at the same quality and resolution.",
-      "good_examples": "#ifdef WEATHER_RAIN\n    color = apply_rain(color, uv);\n#endif",
-      "bad_examples": "if (rain_amount > 0.0) {  // claimed as a speed-up without frame-time numbers\n    color = apply_rain(color, uv);\n}"
+      "severity": "warning",
+      "content": "Use as few if statements in shaders as possible. Pixels in one batch that take different branches often execute both paths, so a branch rarely saves work and can cost it. Prefer branch-free math (step, mix, clamp, select by multiplication), skipping whole batches, or removing unused paths at compile time. Do not count an if-branch as saved work; justify a claimed speed-up with measured frame time at the same quality and resolution.",
+      "good_examples": "color = mix(color, apply_rain(color, uv), step(0.001, rain_amount));\n#ifdef WEATHER_RAIN\n    color = apply_rain(color, uv);\n#endif",
+      "bad_examples": "if (rain_amount > 0.0) {  // claimed as a speed-up without frame-time numbers\n    color = apply_rain(color, uv);\n}\nif (biome == 0) { c = a; } else if (biome == 1) { c = b; } else { c = d; }  // chain where a lookup or mix would do"
     },
     {
       "name": "Keynes: treasury construction checks the regime capability",
