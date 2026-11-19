@@ -126,14 +126,13 @@ bool EconomyInvariantProbe::run(std::string &error) {
         // One person takes 100 out of 220. Cohort-average cash is only
         // 22, so the old preview accepted a 140 invoice on a 120 balance.
         population.funds.write_scalar(sponsor, 220);
-        NativeEconomyRuntime::FamilyMembershipEdge family;
-        family.family_handle = 1;
-        family.cohort_handle = population.handle_for_slot(sponsor);
-        family.people = family_sponsored ? 2 : 9;
-        family.cash_claim = family_sponsored ? 200 : 120;
-        family.population_basis = 10;
-        family.funds_basis = 220;
-        economy->family_memberships().push_back(family);
+        constexpr uint64_t family_handle = 1;
+        const int64_t family_people = family_sponsored ? 2 : 9;
+        const int64_t family_cash = family_sponsored ? 200 : 120;
+        economy->family_memberships().push_back({
+            family_handle, population.handle_for_slot(sponsor), family_people, family_cash,
+            population.population[sponsor], population.funds[sponsor],
+        });
         if (!economy->rebuild_merchant_ranges(error)) return false;
 
         NativeEconomyRuntime::InvestmentCandidatePlan transition, existing_owner;
@@ -142,8 +141,8 @@ bool EconomyInvariantProbe::run(std::string &error) {
         transition.sponsor = existing_owner.sponsor = sponsor;
         transition.owner_signature_id = 2;
         existing_owner.owner_signature_id = 1;
-        transition.sponsor_family_handle = family_sponsored ? family.family_handle : 0;
-        existing_owner.sponsor_family_handle = family.family_handle;
+        transition.sponsor_family_handle = family_sponsored ? family_handle : 0;
+        existing_owner.sponsor_family_handle = family_handle;
         transition.allocated_count = existing_owner.allocated_count = 1;
         transition.funding_capital = 20;
         existing_owner.funding_capital = 140;
@@ -157,7 +156,7 @@ bool EconomyInvariantProbe::run(std::string &error) {
         if (!economy->investment_portfolio_funds_feasible(0, plans, materials, 1) ||
             economy->investment_portfolio_funds_feasible(0, plans, materials, 2) ||
             population.funds[sponsor] != 220 || population.funds[owner] != 0 ||
-            economy->family_memberships()[0].cash_claim != family.cash_claim) {
+            economy->family_memberships()[0].cash_claim != family_cash) {
             error = family_sponsored ? "investment_portfolio_overlooked_family_transition_cash"
                 : "investment_portfolio_overlooked_anonymous_transition_cash";
             return false;

@@ -2177,6 +2177,8 @@ private:
     static int64_t goods_cost(int64_t quantity, int64_t price, int64_t &sat);
     static int64_t mul_div_sat(int64_t a, int64_t b, int64_t divisor,
                                int64_t &saturation_count);
+    static int64_t proportional_cash_share(int64_t cash, int64_t people,
+                                          int64_t population, int64_t &sat);
     static int64_t pow_q16(int64_t ratio_q16, int64_t exponent_q16,
                            int64_t &saturation_count);
     int32_t sample_environment_curve(int32_t curve_id, int32_t cell) const;

@@ -1,7 +1,6 @@
 #include "economy_cost_probe.h"
 #include "economy_effect_forward.h"
 #include "economy_runtime.h"
-#include "economy_family_move_cash.h"
 #include "economy_hash.h"
 #include "runtime_switch_registry.h"
 #include "economy_graph_kernels.h"
@@ -1679,8 +1678,8 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     _structural_touched_cells.push_back(cmd_cell);
     // Money follows people: family members carry their per-capita claim,
     // anonymous movers the per-capita anonymous remainder.
-    int64_t move_funds = family_move_cash_share(population_store().funds[source],
-        move_pop, source_pop, _saturation_count, mul_div_sat);
+    int64_t move_funds = proportional_cash_share(population_store().funds[source],
+        move_pop, source_pop, _saturation_count);
     if (!family_memberships().empty()) {
         const int64_t anonymous_moved = plan_family_membership_move(source, cmd_cell,
             move_pop, preferred_family_handle, preferred_family_strict);
@@ -1695,8 +1694,8 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
             const int64_t source_funds = std::max<int64_t>(0, population_store().funds[source]);
             const int64_t anonymous = std::max<int64_t>(0, source_pop - family_people);
             const int64_t anonymous_funds = std::max<int64_t>(0, source_funds - family_claim);
-            const int64_t anonymous_move_funds = family_move_cash_share(anonymous_funds,
-                anonymous_moved, anonymous, _saturation_count, mul_div_sat);
+            const int64_t anonymous_move_funds = proportional_cash_share(anonymous_funds,
+                anonymous_moved, anonymous, _saturation_count);
             move_funds = std::clamp<int64_t>(saturating_add(moved_claim,
                 anonymous_move_funds, _saturation_count), 0, source_funds);
         }

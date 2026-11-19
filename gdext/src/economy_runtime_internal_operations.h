@@ -1405,6 +1405,17 @@ private:
                                       bool commit_ledger = false);
     void collect_family_edges_for_cohort(int32_t slot,
                                          std::vector<int32_t> &out) const;
+    // Give the investment preview only the data needed to copy its opening claims.
+    template <typename Visitor>
+    void for_each_cohort_cash_claim(int32_t slot, std::vector<int32_t> &scratch,
+                                   Visitor visit) const {
+        if (family_memberships().empty()) return;
+        collect_family_edges_for_cohort(slot, scratch);
+        for (int32_t edge : scratch) {
+            const auto &row = family_memberships()[edge];
+            visit(row.family_handle, row.people, row.cash_claim);
+        }
+    }
     int64_t family_ledger_basis_for_slot(int32_t slot) const;
     // Structural funds moves (migration, colonization, capital transfers)
     // shift the cohort's ledger opening so they are not read as flows.
