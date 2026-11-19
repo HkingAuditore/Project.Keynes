@@ -276,7 +276,7 @@ class GuardsTest(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.splitlines(), expected)
 
-    def test_size_baseline_write_rejects_new_files_and_raises_without_writing(self):
+    def test_size_baseline_write_leaves_file_unchanged_when_nothing_tightens(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             leaf = root / "Project/project-keynes/scripts/leaf.gd"
@@ -301,6 +301,35 @@ class GuardsTest(unittest.TestCase):
             self.assertIn("leaf.gd: 811 lines > 810 (baseline)", result.stdout)
             self.assertEqual(path.read_bytes(), before)
 
+    def test_size_baseline_write_tightens_despite_growth_and_new_oversize(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "Project/project-keynes/scripts"
+            scripts.mkdir(parents=True)
+            shrinking = scripts / "shrinking.gd"
+            growing = scripts / "growing.gd"
+            removed = scripts / "removed.gd"
+            for source in (shrinking, growing, removed):
+                source.write_text("pass\n" * 850)
+            path = root / "baseline.json"
+            path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
+            shrinking.write_text("pass\n" * 849)
+            growing.write_text("pass\n" * 851)
+            removed.unlink()
+            (scripts / "new.gd").write_text("pass\n" * 801)
+
+            result = self.run_size_guard(root, "--write-baseline")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("growing.gd: 851 lines > 850 (baseline)", result.stdout)
+            self.assertIn("new.gd: 801 lines > 800 (threshold)", result.stdout)
+            self.assertEqual(json.loads(path.read_text()), {
+                "version": 1, "files": {
+                    growing.relative_to(root).as_posix(): {"lines": 850, "limit": 800},
+                    shrinking.relative_to(root).as_posix(): {"lines": 849, "limit": 800},
+                },
+            })
+            self.assertIn("baseline entries lowered=1, dropped=1", result.stdout)
+
     def test_size_baseline_write_lowers_and_drops_entries(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -320,6 +349,7 @@ class GuardsTest(unittest.TestCase):
                     leaf.relative_to(root).as_posix(): {"lines": 849, "limit": 800},
                 },
             })
+            self.assertIn("baseline entries lowered=1, dropped=1", result.stdout)
 
     def test_foreign_include_and_type_increases_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
