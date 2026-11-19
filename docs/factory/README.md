@@ -1,6 +1,6 @@
 # 工厂
 
-工厂负责**审查后的修复和合并**。fork（`hrhgit/Project.Keynes`）上每个打开的 PR，Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。工厂**不会自动认领 issue**，issue 模式只能手动运行。合到 fork 后，再由人向上游提 PR。
+工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。工厂**不会自动认领 issue**，issue 模式只能手动运行。合到 fork 后，再由人向上游提 PR。
 
 代码在 `tools/factory/`，配置在 `tools/factory/config.json`，Qodo 评审规则在 [qodo-rules.json](qodo-rules.json)，每条规则由什么强制见 [rule-coverage.md](rule-coverage.md)，人工纠正记录在 [corrections.md](corrections.md)。
 
@@ -11,6 +11,8 @@
 | 情况 | 动作 |
 |---|---|
 | 草稿、分支在别的仓库、带 `blocked` / `needs-investigation` | 跳过 |
+| GitHub 报告有合并冲突 | 更新：把目标分支合入 PR 分支，解决允许的冲突，检查通过后推送。带 `agent-needs-help`、`agent-working` 或关闭 `autoUpdateConflicts` 时跳过 |
+| GitHub 尚无法判断是否有冲突（`UNKNOWN`） | 跳过，下一轮再看 |
 | Qodo 还没评审头部提交，或评审进行中 | 跳过，下一轮再看 |
 | 评审以 failed 等非 completed 状态结束，或评审项的状态或未关闭项的处理级别无法识别 | 停下，打 `agent-needs-help` |
 | 头部提交上没有未关闭的阻塞项，且 CI、文件范围、标签和 GitHub 可合并状态均满足下方条件 | 请求 GitHub 合并到 fork，按下方规则评论并写运行记录 |
@@ -20,7 +22,7 @@
 | 合并命令失败 | 停下，打 `agent-needs-help`，把错误写入运行记录 |
 | 有阻塞项 | 修复：检出头部提交，先跑一遍检查记下已有失败，Codex 成功退出后再跑检查，没有新增失败才推送（`--force-with-lease` 指定原头部提交），在 PR 上评论 |
 | 工作树不完整，或检查脚本、测试目录缺失 | 停下，打 `agent-needs-help`，把错误写入运行记录 |
-| Codex 退出失败或超时 | 停下，打 `agent-needs-help`，保存本地补丁并列出路径 |
+| 修复评审项时 Codex 退出失败或超时 | 停下，打 `agent-needs-help`，保存本地补丁并列出路径 |
 | 工厂修过之后又出现同一批问题，或连续修了 3 轮还不干净 | 停下，打 `agent-needs-help` |
 | Codex 有异议且改了文件 | 按修复流程跑检查，异议写进评论由人决定 |
 | Codex 没改文件 | 停下，打 `agent-needs-help`。有异议的条目交给人判断，其余阻塞项列出 ID |
@@ -29,11 +31,18 @@
 | 修复改到 C++ | 工厂重编两种 macOS 库，导入项目，分别验证两份库；检查通过且库目录只改了这两份文件，才把它们和源码一起提交、推送 |
 | 修复改到 `gdext/godot-cpp/`、`gdext/rebuild.sh`、基线或契约文件、`.github/`、`tools/factory/`、`tools/ci/` 或 `.qodo/` | 停下交给人，保存本地补丁并列出路径。跑检查前和提交前各查一次范围 |
 
-人往分支上推了新提交，轮数重新计算。同一个由人推送的头部提交最多交给 Codex 一次。每次修复结束都移除 `agent-working`。每个 PR 的状态存在 `~/.keynes-factory/prs/<编号>.json`，每次修复的记录存在 `~/.keynes-factory/runs/pr-<编号>-<时间>.json`。工厂的提交带 `Fixed-By: keynes-factory` 和 `Implemented-By: Codex`。注意：工厂会往你的 PR 分支推提交，本地继续改之前先 `git pull`。
+人往分支上推了新提交，轮数重新计算。同一个由人推送的头部提交最多交给 Codex 修复一次。每次修复或更新结束都移除 `agent-working`。每个 PR 的状态存在 `~/.keynes-factory/prs/<编号>.json`，每次修复或更新的记录存在 `~/.keynes-factory/runs/pr-<编号>-<时间>.json`。工厂的提交带 `Fixed-By: keynes-factory`，用到 Codex 的提交另带 `Implemented-By: Codex`。**工厂推送后，正在这个分支上工作的人必须先执行 `git pull`，再继续修改。**
+
+### 更新有冲突的分支
+
+- `autoUpdateConflicts` 默认开启。工厂先检查 PR 头部与最新取到的 `fork/master`，分别记录结果并复用按提交缓存的通过项，再将已检查的目标提交合入工作树，暂不提交。普通检查在两个父提交上都通过、在合入后失败时才阻止更新。所需的库重编、导入和逐库验证必须通过。
+- 已跟踪的 macOS 库发生冲突时，先取一侧，再从合并后的源码重编两份库，即使 C++ 未改。文本冲突交给 Codex 保留双方意图，并逐文件说明处理方式。Codex 只能改冲突文件。工厂对照交接前的 Git 暂存区，发现其他文件被改动、删除或新增时，列出路径、中止合并并打 `agent-needs-help`。Codex 失败、未解决的路径或残留冲突标记也会让工厂停下。
+- 受保护路径（`paths.forbidden`、`paths.needsHuman`）、子模块或其他二进制文件发生冲突时，工厂中止合并，列出路径并打 `agent-needs-help`。提交前核对范围，只计算与两个父提交都不同的文件。
+- 工厂创建 `Merge <base> into <branch>` 合并提交。推送前重读 PR 并核对标签、头部和目标提交，有变化就放弃本轮。推送成功后，工厂在 PR 上评论冲突处理、重编和检查结果。更新算一轮，与评审修复共用 `prReviewRounds` 上限。同一个头部提交最多尝试更新一次。工厂刚更新完又遇到同一组冲突文件时停下并打 `agent-needs-help`。
 
 ### 自动合并
 
-- `autoMerge` 默认开启。设为 `false` 时只轮询并修复。
+- `autoMerge` 默认开启。设为 `false` 时，工厂仍可更新冲突分支和修复评审问题。
 - PR 必须来自 fork 内的分支，已退出草稿且没有跳过标签、`agent-needs-help`、`agent-working` 或 `no-auto-merge`。GitHub 必须报告 `MERGEABLE`，尚无法判断时等下一轮。
 - Qodo 必须已完成对当前头部提交的评审。所有评审项的状态和处理级别都要能识别，所有阻塞项都要关闭。有异议的阻塞项交给人处理，仅供参考的评审项会列在评论中。
 - 当前头部提交至少有一条 GitHub Actions 工作流。每个工作流和每项检查只看最新一次运行，均须完成且结论为 `success`。重跑成功后，旧的失败结果不再阻止合并。读取失败时停下交给人。

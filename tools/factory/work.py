@@ -69,30 +69,117 @@ def ensure(runner_dir: str, workdir: str, ref: str) -> None:
 def prepare(workdir: str, remote: str, base: str, branch: str) -> str:
     """Reset the tree and put `branch` at `remote/base`. Returns the base commit."""
     git(workdir, "fetch", "--prune", remote)
+    return checkout(workdir, f"{remote}/{base}", branch=branch)
+
+
+def checkout(workdir: str, ref: str, *, branch: str | None = None) -> str:
+    """Materialize a full checkout without fetching or moving the requested ref."""
     if _is_sparse(workdir):
         git(workdir, "sparse-checkout", "disable")
     git(workdir, "reset", "--hard", "-q")
     git(workdir, "clean", "-fdq")
-    git(workdir, "checkout", "-q", "-B", branch, f"{remote}/{base}")
+    target = ["-B", branch] if branch else ["--detach"]
+    git(workdir, "checkout", "-q", *target, ref)
+    update_godot_cpp(workdir)
+    _require_complete(workdir, ".", f":(top,exclude,literal){GODOT_CPP}")
+    return head(workdir)
+
+
+def update_godot_cpp(workdir: str) -> None:
     submodule = Path(workdir) / GODOT_CPP
     if (submodule / ".git").exists() and _is_sparse(str(submodule)):
         git(str(submodule), "sparse-checkout", "disable")
     must(["git", "-C", workdir, "submodule", "update", "--init", "--checkout", "--force", GODOT_CPP],
          timeout=3600)
     git(str(submodule), "clean", "-fdq")
-    _require_complete(workdir, ".", f":(top,exclude,literal){GODOT_CPP}")
     _require_complete(str(submodule))
-    return git(workdir, "rev-parse", "HEAD")
 
 
 def head(workdir: str) -> str:
     return git(workdir, "rev-parse", "HEAD")
 
 
-def changed(workdir: str, base: str) -> list[str]:
-    tracked = git(workdir, "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", base)
+def changed(workdir: str, base: str, merge_parent: str | None = None) -> list[str]:
+    def differs(parent: str) -> set[str]:
+        return set(git(workdir, "diff", "--name-only", "--no-renames", "--ignore-submodules=none",
+                       "-z", parent).split("\0"))
+
+    tracked = differs(base)
+    if merge_parent is not None:
+        tracked &= differs(merge_parent)
     untracked = git(workdir, "ls-files", "--others", "--exclude-standard", "-z")
-    return sorted({f for f in (tracked + untracked).split("\0") if f and not f.startswith(SCRATCH)})
+    return sorted(f for f in tracked.union(untracked.split("\0")) if f and not f.startswith(SCRATCH))
+
+
+def merge_head(workdir: str) -> str | None:
+    result = sh(["git", "-C", workdir, "rev-parse", "--verify", "-q", "MERGE_HEAD"])
+    if result.ok:
+        return result.out.strip()
+    if result.code == 1 and not result.err:
+        return None
+    raise RuntimeError(f"could not read MERGE_HEAD: {result.err.strip()}")
+
+
+def unmerged(workdir: str) -> dict[str, dict[str, str]]:
+    conflicts: dict[str, dict[str, str]] = {}
+    for entry in git(workdir, "ls-files", "--unmerged", "-z").split("\0"):
+        if entry:
+            info, _, path = entry.partition("\t")
+            mode, _, stage = info.split()
+            conflicts.setdefault(path, {})[stage] = mode
+    return conflicts
+
+
+def stage_zero_entries(workdir: str) -> dict[str, tuple[str, str]]:
+    entries = {}
+    for entry in filter(None, git(workdir, "ls-files", "--stage", "-z").split("\0")):
+        info, _, path = entry.partition("\t")
+        mode, blob, stage = info.split()
+        if stage == "0":
+            entries[path] = (mode, blob)
+    return entries
+
+
+def changes_outside_conflicts(workdir: str, clean_entries: dict[str, tuple[str, str]],
+                              conflicts: list[str]) -> list[str]:
+    current = stage_zero_entries(workdir)
+    changed_entries = {p for p in clean_entries.keys() | current.keys() if clean_entries.get(p) != current.get(p)}
+    unstaged = git(workdir, "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z")
+    untracked = git(workdir, "ls-files", "--others", "--exclude-standard", "-z")
+    return sorted(changed_entries.union(unstaged.split("\0"), untracked.split("\0")) - set(conflicts) - {""})
+
+
+def merge_from(workdir: str, ref: str) -> str | None:
+    result = sh(["git", "-C", workdir, "-c", "rerere.enabled=false",
+                 "merge", "--no-ff", "--no-commit", ref])
+    parent = merge_head(workdir)
+    if not result.ok and not (parent and unmerged(workdir)):
+        raise RuntimeError(f"could not merge {ref}: {(result.err or result.out).strip()}")
+    return parent
+
+
+def binary_conflicts(workdir: str, head: str, parent: str, paths: list[str]) -> list[str]:
+    if not paths:
+        return []
+    stats = git(workdir, "diff", "--numstat", "--no-renames", "--no-textconv", "--no-ext-diff",
+                "-z", head, parent, "--", *[f":(top,literal){p}" for p in paths])
+    return sorted(entry.split("\t", 2)[2] for entry in stats.split("\0") if entry.startswith("-\t-\t"))
+
+
+def conflict_markers(workdir: str, paths: list[str]) -> list[str]:
+    if not paths:
+        return []
+    markers = r"^(<{7,}|>{7,}|\|{7,})([[:space:]]|$)|^={7,}[[:space:]]*$"
+    result = sh(["git", "-C", workdir, "grep", "-I", "-l", "-z", "-E", "--untracked", "-e", markers,
+                 "--", *[f":(top,literal){p}" for p in paths]])
+    if result.code not in (0, 1) or result.err:
+        raise RuntimeError(f"could not check for conflict markers: {result.err.strip()}")
+    return sorted(filter(None, result.out.split("\0")))
+
+
+def remote_head(workdir: str, remote: str, branch: str) -> str | None:
+    ref = f"refs/heads/{branch}"
+    return git(workdir, "ls-remote", "--refs", remote, ref).partition("\t")[0] or None
 
 
 def scope(cfg: dict, files: list[str]) -> tuple[list[str], list[str], list[str]]:
@@ -153,8 +240,13 @@ def patch_notice(paths: list[Path]) -> str:
     return "Saved patches: " + ", ".join(f"`{path}`" for path in paths)
 
 
-def commit(workdir: str, message: str) -> str:
+def stage(workdir: str) -> None:
     git(workdir, "add", "-A", "--", ".", f":(top,exclude,glob){SCRATCH}*")
+
+
+def commit(workdir: str, message: str, *, staged: bool = False) -> str:
+    if not staged:
+        stage(workdir)
     must(["git", "-C", workdir, "commit", "-q", "-F", "-"], stdin=message)
     return head(workdir)
 

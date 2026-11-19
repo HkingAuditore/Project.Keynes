@@ -5,6 +5,7 @@
   "remote": "fork",
   "home": "~/.keynes-factory",
   "autoMerge": true,
+  "autoUpdateConflicts": true,
   "labels": {
     "trigger": "ready-for-agent",
     "working": "agent-working",
