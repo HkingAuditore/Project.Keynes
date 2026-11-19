@@ -25,7 +25,7 @@ import checks  # noqa: E402
 import qodo  # noqa: E402
 import work  # noqa: E402
 from common import Events, load_config, must  # noqa: E402
-from github import GitHub  # noqa: E402
+from github import PR_MERGE_FIELDS, ChangedFile, GitHub  # noqa: E402
 from run import take_lock  # noqa: E402
 from verdict import CIFacts, NativeFacts, unknown_findings  # noqa: E402
 
@@ -49,12 +49,36 @@ class Decision:
     action: str            # "skip", "fix", "merge" or "stop"
     reason: str
     findings: list[dict] = field(default_factory=list)
+    needs_files: bool = False
     needs_ci: bool = False
 
 
-def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str], round_limit: int, *,
-           auto_merge: bool = False, ci: CIFacts | None = None,
-           merge_skip_labels: tuple[str, ...] = ("agent-needs-help", "agent-working", "no-auto-merge")) -> Decision:
+def merge_blocker(pr: dict, cfg: dict) -> str | None:
+    labels = cfg["labels"]
+    blocked = {*cfg["skipLabels"], labels["help"], labels["working"], "no-auto-merge"}
+    if blocked.intersection(pr.get("labels") or []):
+        return "has a label that blocks auto-merge"
+    if pr.get("mergeable") in (None, "UNKNOWN"):
+        return "waiting for GitHub to determine mergeability"
+    if pr["mergeable"] != "MERGEABLE":
+        return "GitHub reports merge conflicts"
+    return None
+
+
+def merge_path_blocker(files: list[ChangedFile], cfg: dict) -> str | None:
+    paths = [path for f in files for path in (f.filename, f.previous_filename) if path is not None]
+    forbidden, human, native = work.scope(cfg, paths)
+    protected = sorted(set(forbidden + human))
+    if protected:
+        return f"a person merges this PR because it touches protected paths ({', '.join(protected)})"
+    updated = {f.filename for f in files if f.status not in ("removed", "unchanged")}
+    if native and not set(cfg["paths"]["nativeLibraries"]).issubset(updated):
+        return "C++ changed but the macOS libraries were not rebuilt"
+    return None
+
+
+def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
+           changed_files: list[ChangedFile] | None = None, ci: CIFacts | None = None) -> Decision:
     """Pure decision for one PR from GitHub metadata, the Qodo review read and the saved state."""
     head = pr["headRefOid"]
     if pr.get("isDraft"):
@@ -62,7 +86,7 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
     if pr.get("isCrossRepository"):
         return Decision("skip", "the branch is in another repository; the factory cannot push to it")
     labels = set(pr.get("labels") or [])
-    if labels.intersection(skip_labels):
+    if labels.intersection(cfg["skipLabels"]):
         return Decision("skip", "has a skip label")
     if state.gave_up_at == head:
         return Decision("skip", f"stopped at this head ({state.reason}); waiting for a person")
@@ -81,6 +105,7 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
     if status != "completed":
         return Decision("stop", f"Qodo review ended with status {status!r}")
     findings = review.get("findings")
+    auto_merge = cfg["autoMerge"]
     if auto_merge and (not isinstance(findings, list) or any(not isinstance(f, dict) for f in findings)):
         return Decision("stop", "Qodo findings could not be read")
     findings = findings or []
@@ -90,14 +115,17 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
     open_blocking = qodo.blocking(findings)
     if not open_blocking:
         if auto_merge:
-            if labels.intersection(merge_skip_labels):
-                return Decision("skip", "has a label that blocks auto-merge")
+            blocker = merge_blocker(pr, cfg)
+            if blocker:
+                return Decision("skip", blocker)
             unknown = unknown_findings(findings, require_level=True)
             if unknown:
                 return Decision("stop", "findings with an unknown status or action_level: " + ", ".join(unknown))
-            if pr.get("mergeable") != "MERGEABLE":
-                return Decision("skip", "waiting for GitHub to determine mergeability"
-                                if pr.get("mergeable") in (None, "UNKNOWN") else "GitHub reports merge conflicts")
+            if changed_files is None:
+                return Decision("skip", "waiting for the PR's changed files", needs_files=True)
+            blocker = merge_path_blocker(changed_files, cfg)
+            if blocker:
+                return Decision("skip", blocker)
             if ci is None or ci.sha != head:
                 return Decision("skip", "waiting for CI facts on the head", needs_ci=True)
             ci_state = ci.state(strict=True)
@@ -114,6 +142,7 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
     if not block:
         return Decision("skip", "only findings the agent disputed are open; a person decides")
     ids = sorted(str(f.get("id")) for f in block)
+    round_limit = cfg["limits"]["prReviewRounds"]
     rounds = state.rounds if head in state.pushed else 0
     seen = state.seen if head in state.pushed else []
     if ids in seen:
@@ -126,7 +155,7 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
 class Watcher:
     def __init__(self, cfg: dict, dry: bool) -> None:
         self.cfg, self.dry = cfg, dry
-        self.gh = GitHub(cfg["repo"], pull_requests=True)
+        self.gh = GitHub(cfg["repo"])
         self.home = Path(cfg["home"])
         self.workdir = str(self.home / "work")
         self.stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -148,31 +177,38 @@ class Watcher:
     def prs(self, only: int | None) -> list[dict]:
         items = json.loads(must(["gh", "pr", "list", "-R", self.cfg["repo"], "--state", "open",
                                  "--base", self.cfg["base"], "--limit", "50", "--json",
-                                 "number,title,url,headRefName,headRefOid,isDraft,isCrossRepository,labels,createdAt,mergeable"]))
+                                 f"number,title,url,headRefName,createdAt,{PR_MERGE_FIELDS}"]))
         for it in items:
             it["labels"] = [l["name"] for l in it["labels"]]
         items.sort(key=lambda it: it["createdAt"])
         return [it for it in items if only is None or it["number"] == only]
 
     def tick(self, only: int | None) -> int:
-        lim = self.cfg["limits"]
-        labels = self.cfg["labels"]
-        merge_options = {"auto_merge": self.cfg["autoMerge"],
-                         "merge_skip_labels": (labels["help"], labels["working"], "no-auto-merge")}
         for pr in self.prs(only):
             st = self.load(pr["number"])
             review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
-            args = (pr, review, st, self.cfg["skipLabels"], lim["prReviewRounds"])
-            d = decide(*args, **merge_options)
+            args = (pr, review, st, self.cfg)
+            d = decide(*args)
+            changed_files = None
+            if d.needs_files:
+                try:
+                    changed_files = self.gh.pr_files(pr["number"], pr["changedFiles"])
+                except (KeyError, RuntimeError, ValueError) as e:
+                    d = Decision("skip", f"the PR's changed files could not be read: {e}")
+                else:
+                    d = decide(*args, changed_files=changed_files)
             ci = None
             if d.needs_ci:
-                ci = self.gh.ci_facts(pr["headRefOid"], all_check_runs=True)
-                d = decide(*args, **merge_options, ci=ci)
+                ci = self.gh.ci_facts(pr["headRefOid"], latest_workflows=True)
+                d = decide(*args, changed_files=changed_files, ci=ci)
             print(json.dumps({"pr": pr["number"], "action": d.action, "reason": d.reason}), flush=True)
             if self.dry or d.action == "skip":
                 continue
             if ci is not None and d.action in ("merge", "stop"):
-                return self.apply_merge_decision(pr, st, d, review["review_session"], ci)
+                result = self.apply_merge_decision(pr, st, d, review["review_session"], ci)
+                if result is not None:
+                    return result
+                continue
             if d.action == "stop":
                 self.stop(pr, st, d.reason)
                 continue
@@ -184,26 +220,53 @@ class Watcher:
         self.save(pr["number"], st)
         L = self.cfg["labels"]
         self.gh.comment(pr["number"], f"### Factory stopped on {pr['headRefOid'][:10]}\n\n{reason}\n\n{details}".strip()
-                        + "\n\nThe factory will look again after the next push to this branch.")
+                        + "\n\nThe factory will look again after the next push to this branch.", pull_request=True)
         self.gh.relabel(pr["number"], [L["help"]], [L["working"]])
 
-    def apply_merge_decision(self, pr: dict, st: PrState, decision: Decision, session: dict, ci: CIFacts) -> int:
+    def merge_preflight(self, pr: dict) -> str | None:
+        try:
+            fresh = self.gh.pr_merge_state(pr["number"])
+        except (RuntimeError, ValueError) as e:
+            self.gh.errors.append(f"read PR #{pr['number']} before merge: {e}")
+            return "the PR could not be re-read before merge"
+        if fresh["headRefOid"] != pr["headRefOid"]:
+            return "the PR head changed before merge"
+        if fresh["baseRefName"] != pr["baseRefName"] or fresh["baseRefOid"] != pr["baseRefOid"]:
+            return "the PR base changed before merge"
+        if fresh["state"] != "OPEN" or fresh["isDraft"] or fresh["isCrossRepository"]:
+            return "the PR is no longer open and eligible for auto-merge"
+        blocker = merge_blocker(fresh, self.cfg)
+        if blocker:
+            return blocker
+        if set(fresh["labels"]) != set(pr["labels"]):
+            return "the PR labels changed before merge"
+        if fresh["changedFiles"] != pr["changedFiles"]:
+            return "the PR changed-file count changed before merge"
+        return None
+
+    def apply_merge_decision(self, pr: dict, st: PrState, decision: Decision, session: dict, ci: CIFacts) -> int | None:
+        """Record this merge decision. A preflight skip lets the tick continue to the next PR."""
         n, sha = pr["number"], pr["headRefOid"]
         record = {"pr": n, "url": pr["url"], "head": sha, "started": self.stamp,
                   "reviewedSha": session["commit_sha"], "reviewStatus": session["status"],
                   "mergeable": pr["mergeable"], "ci": asdict(ci), "informationalFindings": decision.findings}
-        error = None
+        error = skipped = None
         if decision.action == "stop":
             error = decision.reason
             self.stop(pr, st, error, "\n".join(self.gh.errors))
         else:
-            try:
-                record["mergeCommit"] = self.gh.merge_pr(n, sha)
-            except (RuntimeError, ValueError) as e:
-                error = f"the merge failed: {e}"
-                self.stop(pr, st, error)
+            skipped = self.merge_preflight(pr)
+            if skipped is None:
+                try:
+                    record["mergeCommit"] = self.gh.merge_pr(n, sha)
+                except RuntimeError as e:
+                    error = f"the merge failed: {e}"
+                    self.stop(pr, st, error)
         if error:
             record.update(outcome="stopped", error=error)
+        elif skipped:
+            record.update(outcome="skipped", reason=skipped)
+            print(json.dumps({"pr": n, "action": "skip", "reason": skipped}), flush=True)
         else:
             record["outcome"] = "merged"
             lines = [f"### Factory merged PR #{n}", "",
@@ -220,13 +283,15 @@ class Watcher:
             if decision.findings:
                 lines += ["Informational findings", ""] + [
                     f"- `{f.get('id')}` {f.get('title') or '(untitled)'}" for f in decision.findings]
-            self.gh.comment(n, "\n".join(lines).rstrip())
+            self.gh.comment(n, "\n".join(lines).rstrip(), pull_request=True)
         record.update(finished=time.strftime("%Y%m%d-%H%M%S"), githubErrors=self.gh.errors)
         runs = self.home / "runs"
         runs.mkdir(parents=True, exist_ok=True)
         (runs / f"merge-pr-{n}-{self.stamp}.json").write_text(json.dumps(record, indent=2, ensure_ascii=False),
                                                             encoding="utf-8")
-        return 1 if error or self.gh.errors else 0
+        if skipped:
+            return None
+        return 1 if error else 0
 
     # ---- the fix ---------------------------------------------------------------------
     def stop_with_patch(self, pr: dict, st: PrState, logs: Path, reason: str, details: str = "") -> None:
@@ -329,7 +394,8 @@ class Watcher:
                 return "stopped"
             st.gave_up_at, st.reason = head, "the agent disputed every finding and made no changes"
             self.save(n, st)
-            self.gh.comment(n, self.comment_text(head, None, findings, disputes, [], out["report"]) + f"\n\n{facts.report()}")
+            self.gh.comment(n, self.comment_text(head, None, findings, disputes, [], out["report"]) + f"\n\n{facts.report()}",
+                            pull_request=True)
             self.gh.relabel(n, [cfg["labels"]["help"]], [])
             return "disputed"
         if self.scope_blocked(pr, st, logs, files, candidate):
@@ -365,7 +431,8 @@ class Watcher:
         st.gave_up_at = st.reason = None
         self.save(n, st)
         ev.add("pushed", sha=sha, round=st.rounds)
-        self.gh.comment(n, self.comment_text(head, sha, findings, disputes, before, out["report"]) + f"\n\n{facts.report()}")
+        self.gh.comment(n, self.comment_text(head, sha, findings, disputes, before, out["report"]) + f"\n\n{facts.report()}",
+                        pull_request=True)
         return "pushed"
 
     def comment_text(self, head: str, sha: str | None, findings: list[dict], disputes: list[str],

@@ -9,6 +9,7 @@ from unittest.mock import call, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common import Result, load_config  # noqa: E402
+from github import GitHub  # noqa: E402
 from verdict import CIFacts, CIRun  # noqa: E402
 from watch_prs import PrState, Watcher, decide  # noqa: E402
 
@@ -30,7 +31,10 @@ def finding(i, level="action_required", status="pending"):
 
 class Decide(unittest.TestCase):
     def d(self, p=None, r=None, st=None, limit=3):
-        return decide(p or pr(), r, st or PrState(), SKIP, limit)
+        cfg = load_config()
+        cfg["autoMerge"] = False
+        cfg["limits"]["prReviewRounds"] = limit
+        return decide(p or pr(), r, st or PrState(), cfg)
 
     def test_fix_on_blocking_findings_at_head(self):
         d = self.d(r=review(findings=[finding("x"), finding("y", "informational")]))
@@ -102,8 +106,10 @@ class MergeDecision(unittest.TestCase):
         self.ci = CIFacts(HEAD, [self.workflow], [self.check])
 
     def d(self, p=None, r=None, state=None, **opts):
-        options = {"auto_merge": True, "ci": self.ci, **opts}
-        return decide(p or pr(mergeable="MERGEABLE"), r or review(), state or PrState(), SKIP, 3, **options)
+        cfg = load_config()
+        cfg["autoMerge"] = opts.pop("auto_merge", True)
+        options = {"ci": self.ci, "changed_files": [], **opts}
+        return decide(p or pr(mergeable="MERGEABLE"), r or review(), state or PrState(), cfg, **options)
 
     def test_merges_clean_head_with_green_ci_and_lists_information(self):
         info = finding("info", "informational")
@@ -187,36 +193,79 @@ class MergeWorkflow(unittest.TestCase):
         cfg = load_config()
         cfg["home"] = str(self.home)
         self.watcher = Watcher(cfg, dry=False)
-        self.pr = pr(mergeable="MERGEABLE", url="https://example.invalid/pr/7")
+        self.pr = pr(mergeable="MERGEABLE", url="https://example.invalid/pr/7", state="OPEN",
+                     baseRefName="master", baseRefOid="c" * 40, changedFiles=1)
+        self.fresh_pr = dict(self.pr)
+        self.files = [{"filename": "scripts/test.gd", "status": "modified"}]
         self.merge_sha = "b" * 40
         self.enterContext(patch.object(self.watcher, "prs", return_value=[self.pr]))
         self.enterContext(patch("qodo.pr_review", return_value=review(findings=[finding("info", "informational")])))
         self.cli = self.enterContext(patch("github.sh", side_effect=self.github_query))
-        self.must = self.enterContext(patch("github.must", side_effect=[
-            "", json.dumps({"state": "MERGED", "headRefOid": HEAD, "mergeCommit": {"oid": self.merge_sha}})
-        ]))
+        self.must = self.enterContext(patch("github.must", side_effect=self.github_request))
         self.fail_checks = False
+        self.fail_files = False
+        self.merge_error = None
+        self.preflight_error = None
+        self.read_error = None
+        self.check_result = "success"
+        self.workflow_result = "success"
+        self.rerun = False
+
+    def github_request(self, args):
+        if args[1] == "api" and "/pulls/7/files" in args[2]:
+            if self.fail_files:
+                raise RuntimeError("HTTP 503")
+            return "\n".join(json.dumps(item) for item in self.files)
+        if args[1:3] == ["pr", "merge"]:
+            if self.merge_error:
+                raise RuntimeError(self.merge_error)
+            return ""
+        if args[1:3] == ["pr", "view"]:
+            if "labels" in args[5].split(","):
+                if self.preflight_error:
+                    raise RuntimeError(self.preflight_error)
+                return json.dumps({**self.fresh_pr, "labels": [{"name": x} for x in self.fresh_pr["labels"]]})
+            if self.read_error:
+                raise RuntimeError(self.read_error)
+            return json.dumps({"state": "MERGED", "headRefOid": HEAD, "mergeCommit": {"oid": self.merge_sha}})
+        self.fail(f"unexpected GitHub command: {args}")
 
     def github_query(self, args, **kw):
         if args[1] != "api":
+            return Result(0, "", "")
+        if "/issues/7/labels" in args[2]:
             return Result(0, "", "")
         workflow = "/actions/runs?" in args[2]
         if not workflow and self.fail_checks:
             return Result(1, "", "HTTP 503")
         run = {"id": 10 if workflow else 11, "status": "completed", "conclusion": "success",
                "name": "Runtime workflow" if workflow else "Runtime check", "url": "https://example.invalid/run"}
-        return Result(0, json.dumps(run) + "\n", "")
+        if workflow:
+            run.update(workflow_id=21, run_number=2, run_attempt=2, conclusion=self.workflow_result)
+        else:
+            run["conclusion"] = self.check_result
+        runs = [run]
+        if self.rerun:
+            if workflow:
+                old = "failure" if self.workflow_result == "success" else "success"
+                runs = [{**run, "id": 9, "run_number": 1, "run_attempt": 3, "conclusion": old},
+                        run, {**run, "run_attempt": 1, "conclusion": old}]
+            elif "filter=latest" not in args[2]:
+                old = "failure" if self.check_result == "success" else "success"
+                runs.append({**run, "id": 8, "conclusion": old})
+        return Result(0, "\n".join(json.dumps(item) for item in runs), "")
 
     def record(self):
         return json.loads((self.home / "runs" / f"merge-pr-7-{self.watcher.stamp}.json").read_text())
 
     def test_merges_with_head_guard_and_records_ci_and_review_evidence(self):
         self.assertEqual(self.watcher.tick(None), 0)
-        self.assertEqual(self.must.call_args_list[0], call(
+        self.assertEqual(self.must.call_args_list[-2], call(
             ["gh", "pr", "merge", "7", "--repo", "hrhgit/Project.Keynes", "--merge", "--match-head-commit", HEAD]))
+        self.assertEqual(self.must.call_args_list[-3].args[0][:4], ["gh", "pr", "view", "7"])
         queried = [c.args[0][2] for c in self.cli.call_args_list if c.args[0][1] == "api"]
         self.assertEqual(queried, [f"repos/hrhgit/Project.Keynes/actions/runs?head_sha={HEAD}",
-                                   f"repos/hrhgit/Project.Keynes/commits/{HEAD}/check-runs?filter=all"])
+                                   f"repos/hrhgit/Project.Keynes/commits/{HEAD}/check-runs?filter=latest"])
         self.assertEqual(self.cli.call_args.args[0][:4], ["gh", "pr", "comment", "7"])
         comment = self.cli.call_args.kwargs["stdin"]
         for value in (HEAD, "Runtime workflow", "Runtime check", "info"):
@@ -229,19 +278,98 @@ class MergeWorkflow(unittest.TestCase):
         self.assertEqual(record["informationalFindings"][0]["id"], "info")
 
     def test_failed_merge_command_labels_pr_and_records_error(self):
-        self.must.side_effect = RuntimeError("head changed")
+        self.merge_error = "head changed"
         self.assertEqual(self.watcher.tick(None), 1)
         self.assert_stopped("head changed")
 
-    def test_queued_merge_is_not_reported_as_merged(self):
-        self.must.side_effect = ["", json.dumps({"state": "OPEN", "headRefOid": HEAD, "mergeCommit": None})]
-        self.assertEqual(self.watcher.tick(None), 1)
-        self.assert_stopped("GitHub did not confirm a merge")
+    def test_successful_merge_with_failed_follow_up_still_comments_and_records_merged(self):
+        self.read_error = "HTTP 503"
+        self.assertEqual(self.watcher.tick(None), 0)
+        record = self.record()
+        self.assertEqual(record["outcome"], "merged")
+        self.assertIsNone(record["mergeCommit"])
+        self.assertIn("HTTP 503", record["githubErrors"][0])
+        self.assertIsNone(self.watcher.load(7).gave_up_at)
+        self.assertIn("Factory merged PR #7", self.cli.call_args.kwargs["stdin"])
+        self.assertTrue(all("/issues/7/labels" not in c.args[0][2] for c in self.cli.call_args_list))
+
+    def test_changes_in_pr_state_before_merge_are_recorded_as_skips(self):
+        for fields, reason in (({"labels": ["no-auto-merge"]}, "label that blocks auto-merge"),
+                               ({"labels": ["agent-working"]}, "label that blocks auto-merge"),
+                               ({"labels": ["documentation"]}, "labels changed"),
+                               ({"headRefOid": "d" * 40}, "head changed"),
+                               ({"mergeable": "CONFLICTING"}, "merge conflicts"),
+                               ({"baseRefOid": "e" * 40}, "base changed")):
+            with self.subTest(fields=fields):
+                self.fresh_pr = {**self.pr, **fields}
+                self.must.reset_mock()
+                self.assertEqual(self.watcher.tick(None), 0)
+                self.assert_no_merge_command()
+                self.assertEqual(self.record()["outcome"], "skipped")
+                self.assertIn(reason, self.record()["reason"])
+                self.assertIsNone(self.watcher.load(7).gave_up_at)
+
+    def test_failed_pr_reread_skips_without_merging(self):
+        self.preflight_error = "HTTP 503"
+        self.assert_skipped("the PR could not be re-read before merge")
+        record = self.record()
+        self.assertEqual(record["outcome"], "skipped")
+        self.assertIn("HTTP 503", record["githubErrors"][0])
+
+    def test_preflight_skip_allows_tick_to_consider_next_pr(self):
+        self.fresh_pr["labels"] = ["no-auto-merge"]
+        next_pr = {**self.pr, "number": 8, "labels": ["blocked"], "url": "https://example.invalid/pr/8"}
+        self.watcher.prs.return_value = [self.pr, next_pr]
+        with patch("qodo.pr_review", return_value=review()) as reviewed:
+            self.assertEqual(self.watcher.tick(None), 0)
+        self.assertEqual([c.args[1] for c in reviewed.call_args_list], [self.pr["url"], next_pr["url"]])
+        self.assert_no_merge_command()
+
+    def test_passed_reruns_replace_failed_ci_attempts(self):
+        self.rerun = True
+        self.assertEqual(self.watcher.tick(None), 0)
+        record = self.record()
+        self.assertEqual(record["outcome"], "merged")
+        self.assertEqual([r["id"] for r in record["ci"]["workflows"]], [10])
+        self.assertEqual([r["id"] for r in record["ci"]["checks"]], [11])
+
+    def test_latest_failed_workflow_or_check_still_blocks(self):
+        self.rerun = True
+        for self.workflow_result, self.check_result in (("failure", "success"), ("success", "failure")):
+            with self.subTest(workflow=self.workflow_result, check=self.check_result):
+                self.assert_skipped("CI on the head is failure")
+
+    def test_protected_paths_require_a_person_even_when_renamed(self):
+        for path in (".github/workflows/check.yml", "tools/factory/watch_prs.py", "tools/ci/size_baseline.json",
+                     ".qodo/config.toml", "gdext/godot-cpp", "gdext/rebuild.sh"):
+            with self.subTest(path=path):
+                self.files = [{"filename": "a.txt", "status": "renamed", "previous_filename": path}]
+                self.assert_skipped("a person merges this PR")
+
+    def test_native_changes_require_both_libraries(self):
+        libs = self.watcher.cfg["paths"]["nativeLibraries"]
+        self.files = [{"filename": "gdext/src/world.cpp", "status": "modified"},
+                      {"filename": libs[0], "status": "modified"}]
+        self.pr["changedFiles"] = self.fresh_pr["changedFiles"] = 2
+        self.assert_skipped("C++ changed but the macOS libraries were not rebuilt")
+        self.pr["changedFiles"] = self.fresh_pr["changedFiles"] = 3
+        self.files.append({"filename": libs[1], "status": "removed"})
+        self.assert_skipped("C++ changed but the macOS libraries were not rebuilt")
+        self.files[-1]["status"] = "modified"
+        self.assertEqual(self.watcher.tick(None), 0)
+        self.assertEqual(self.record()["outcome"], "merged")
+
+    def test_failed_or_incomplete_changed_files_query_skips(self):
+        self.fail_files = True
+        self.assert_skipped("changed files could not be read")
+        self.fail_files = False
+        self.files.clear()
+        self.assert_skipped("changed files could not be read")
 
     def test_ci_query_error_labels_pr_without_attempting_merge(self):
         self.fail_checks = True
         self.assertEqual(self.watcher.tick(None), 1)
-        self.must.assert_not_called()
+        self.assert_no_merge_command()
         self.assert_stopped("CI state could not be read")
         self.assertIn("HTTP 503", self.record()["githubErrors"][0])
 
@@ -255,7 +383,7 @@ class MergeWorkflow(unittest.TestCase):
     def test_dry_run_reads_evidence_without_writes(self):
         self.watcher.dry = True
         self.assertEqual(self.watcher.tick(None), 0)
-        self.must.assert_not_called()
+        self.assert_no_merge_command()
         self.assertEqual(self.cli.call_count, 2)
         self.assertTrue(all(c.args[0][1] == "api" for c in self.cli.call_args_list))
         self.assertFalse((self.home / "runs").exists())
@@ -265,8 +393,41 @@ class MergeWorkflow(unittest.TestCase):
         self.assertEqual(record["outcome"], "stopped")
         self.assertIn(error, record["error"])
         self.assertEqual(self.watcher.load(7).gave_up_at, HEAD)
-        self.assertEqual(self.cli.call_args.args[0][:4], ["gh", "pr", "edit", "7"])
-        self.assertIn("agent-needs-help", self.cli.call_args.args[0])
+        self.assertIn(call(["gh", "api", "repos/hrhgit/Project.Keynes/issues/7/labels", "--method", "POST",
+                            "--input", "-"], stdin='{"labels": ["agent-needs-help"]}'), self.cli.call_args_list)
+
+    def assert_no_merge_command(self):
+        self.assertFalse(any(c.args[0][1:3] == ["pr", "merge"] for c in self.must.call_args_list))
+
+    def assert_skipped(self, reason):
+        with patch("builtins.print") as output:
+            self.assertEqual(self.watcher.tick(None), 0)
+        self.assert_no_merge_command()
+        decision = json.loads(output.call_args.args[0])
+        self.assertEqual(decision["action"], "skip")
+        self.assertIn(reason, decision["reason"])
+
+
+class LabelAPI(unittest.TestCase):
+    def test_relabel_uses_rest_and_ignores_delete_404(self):
+        gh = GitHub("example/repo")
+        missing = Result(1, "HTTP/2.0 404 Not Found\n", "gh: Not Found (HTTP 404)")
+        with patch("github.sh", side_effect=[Result(0, "[]", ""), missing]) as cli:
+            self.assertIsNone(gh.relabel(7, ["agent-needs-help", "second label"], ["work/queued #1"]))
+        self.assertEqual(cli.call_args_list, [
+            call(["gh", "api", "repos/example/repo/issues/7/labels", "--method", "POST", "--input", "-"],
+                 stdin='{"labels": ["agent-needs-help", "second label"]}'),
+            call(["gh", "api", "repos/example/repo/issues/7/labels/work%2Fqueued%20%231", "--method", "DELETE",
+                  "--include", "--silent"]),
+        ])
+        self.assertEqual(gh.errors, [])
+
+    def test_label_delete_errors_other_than_404_are_recorded(self):
+        gh = GitHub("example/repo")
+        with patch("github.sh", return_value=Result(1, "HTTP/2.0 403 Forbidden\n", "gh: Forbidden (HTTP 403)")):
+            error = gh.relabel(7, [], ["agent-working"])
+        self.assertIn("HTTP 403", error)
+        self.assertEqual(gh.errors, [error])
 
 
 if __name__ == "__main__":
