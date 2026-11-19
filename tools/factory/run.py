@@ -4,7 +4,7 @@ Stages: G0 ticket gate -> plan (Codex, read-only) -> implement + checks (Codex, 
 -> Qodo local review of uncommitted changes -> commit, push, PR -> Qodo PR review + CI
 -> fix loop -> verdict from facts -> run record, issue comment, label.
 
-Usage: python3 tools/factory/run.py [--issue N] [--dry]
+Manual only (the poller runs watch_prs.py instead): python3 tools/factory/run.py --issue N [--dry]
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def take_lock(path: Path) -> bool:
             except (OSError, ValueError):
                 pid = 0
             owner = sh(["ps", "-o", "command=", "-p", str(pid)]).out if pid else ""
-            if "tools/factory/run.py" in owner:
+            if "tools/factory/" in owner:
                 return False
             path.unlink(missing_ok=True)
     return False
@@ -343,14 +343,10 @@ def main() -> int:
     a = ap.parse_args()
     cfg = load_config()
     gh = GitHub(cfg["repo"])
-    if a.issue:
-        issue = gh.issue(a.issue)
-    else:
-        tickets = [t for t in gh.tickets(cfg["labels"]["trigger"]) if not set(t["labels"]) & set(cfg["skipLabels"])]
-        if not tickets:
-            print("no ticket labelled", cfg["labels"]["trigger"])
-            return 0
-        issue = tickets[0]
+    if not a.issue:
+        print("issue mode is manual: pass --issue N (the poller only watches PRs, see watch_prs.py)")
+        return 2
+    issue = gh.issue(a.issue)
     lock = Path(cfg["home"]) / "lock"
     if not a.dry and not take_lock(lock):
         print("another factory run holds the lock")

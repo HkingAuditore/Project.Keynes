@@ -1,10 +1,28 @@
 # 工厂
 
-给 fork（`hrhgit/Project.Keynes`）上的 issue 打 `ready-for-agent` 标签，工厂就会把它做成一个经过检查和 Qodo 评审的 PR。代码由 Codex 写；工厂只负责调度、跑检查、读评审结果，并根据事实给出结论。**工厂从不合并**，合并由人决定，合到 fork 后再由人向上游提 PR。
+工厂主要做**审查后的修复**：fork（`hrhgit/Project.Keynes`）上每个打开的 PR，Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送；推送后 Qodo 会评审新提交，下一轮再看。工厂**不会自动认领 issue**，issue 模式只能手动运行。**工厂从不合并**，合并由人决定，合到 fork 后再由人向上游提 PR。
 
 代码在 `tools/factory/`，配置在 `tools/factory/config.json`，Qodo 评审规则在 [qodo-rules.json](qodo-rules.json)，每条规则由什么强制见 [rule-coverage.md](rule-coverage.md)，人工纠正记录在 [corrections.md](corrections.md)。
 
-## 流程
+## PR 模式（定时运行）
+
+`tools/factory/watch_prs.py`，每 600 秒由 launchd 运行一次。每个 PR 的处理由 `decide()` 决定（纯函数，测试在 `tests/test_watch.py`）：
+
+| 情况 | 动作 |
+|---|---|
+| 草稿、分支在别的仓库、带 `blocked` / `needs-investigation` | 跳过 |
+| Qodo 还没评审头部提交，或评审进行中 | 跳过，下一轮再看 |
+| 评审以 failed 等非 completed 状态结束 | 停下，打 `agent-needs-help` |
+| 头部提交上没有未关闭的阻塞项 | 跳过 |
+| 有阻塞项 | 修复：检出头部提交，先跑一遍检查记下已有失败，Codex 修，再跑检查，没有新增失败才推送（`--force-with-lease` 指定原头部提交），在 PR 上评论 |
+| 工厂修过之后又出现同一批问题，或连续修了 3 轮还不干净 | 停下，打 `agent-needs-help` |
+| Codex 认为某条评审不成立 | 这条不再重试，写进评论由人决定 |
+| 修复改到 C++、基线或契约文件、`.github/`、`tools/factory/` | 不推送，补丁存在本地，停下交给人 |
+
+人往分支上推了新提交，轮数重新计算；工厂停下的那个头部提交不会再试。每个 PR 的状态存在 `~/.keynes-factory/prs/<编号>.json`，每次修复的记录存在 `~/.keynes-factory/runs/pr-<编号>-<时间>.json`。工厂的提交带 `Fixed-By: keynes-factory` 和 `Implemented-By: Codex`。注意：工厂会往你的 PR 分支推提交，本地继续改之前先 `git pull`。
+
+## Issue 模式（只能手动）
+
 
 ```mermaid
 flowchart TD
@@ -48,10 +66,11 @@ flowchart TD
 ## 运行
 
 ```bash
-python3 tools/factory/run.py --issue 12 --dry   # 只跑 G0，不写任何东西
-python3 tools/factory/run.py --issue 12         # 处理一张指定工单
-python3 tools/factory/run.py                    # 处理最早的 ready-for-agent 工单
-tools/factory/install_poller.sh                 # 每 600 秒轮询一次（launchd）
+python3 tools/factory/watch_prs.py --dry        # 只打印每个 PR 的决定，不写任何东西
+python3 tools/factory/watch_prs.py --pr 5       # 只看一个 PR
+python3 tools/factory/run.py --issue 12 --dry   # issue 模式：只跑 G0
+python3 tools/factory/run.py --issue 12         # issue 模式：处理一张指定工单
+tools/factory/install_poller.sh                 # 每 600 秒运行一次 watch_prs.py（launchd）
 tools/factory/install_poller.sh --remove
 python3 tools/factory/sync_rules.py [--apply]   # 把 qodo-rules.json 里缺的规则建到 Qodo
 python3 -m unittest discover -s tools/factory/tests

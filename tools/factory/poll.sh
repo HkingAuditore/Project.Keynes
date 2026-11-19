@@ -1,5 +1,5 @@
 #!/bin/zsh -l
-# One poll: refresh the runner worktree to the fork's master, then run the factory once.
+# One poll: refresh the runner worktree to the fork's master, then look at the open PRs once.
 # launchd starts this through `/bin/zsh -l` so PATH has gh, git, codex and node.
 set -eu
 : "${KEYNES_REPO:?set KEYNES_REPO to the main Project.Keynes checkout}"
@@ -14,8 +14,8 @@ if [ ! -e "$RUNNER/.git" ]; then
 fi
 git -C "$RUNNER" checkout -q --detach "$REMOTE/master"
 cd "$RUNNER"
-if [ ! -f tools/factory/run.py ]; then
-  echo "$(date -u +%FT%TZ) $REMOTE/master has no tools/factory/run.py yet; nothing to do"
+if [ ! -f tools/factory/watch_prs.py ]; then
+  echo "$(date -u +%FT%TZ) $REMOTE/master has no tools/factory/watch_prs.py yet; nothing to do"
   exit 0
 fi
-exec ~/.local/bin/python3 tools/factory/run.py "$@"
+exec ~/.local/bin/python3 tools/factory/watch_prs.py "$@"
