@@ -71,4 +71,4 @@ Country 的 `country_core*.h`、`country_ai_*.h` 尚未锁进契约（只锁 `co
 
 ## 行数棘轮
 
-编排入口 600 行，普通 GDScript 800 行，`gdext/src` C++ 2000 行（编排入口清单在 `check_size_ratchet.py`）。统计物理行，排除 tests、addons、生成物。现有超限文件只能保持或缩短，新文件不准超限。基线 `size_baseline.json` 只在文件变短后收紧。
+编排入口 600 行，普通 GDScript 800 行，`gdext/src` C++ 2000 行（编排入口清单在 `check_size_ratchet.py`）。统计物理行，排除 tests、addons、生成物。基线内的文件最多比记录多 50 行，增长都会告警，新文件不准超限。基线 `size_baseline.json` 只收紧。

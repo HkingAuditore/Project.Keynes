@@ -1,0 +1,8 @@
+caught  older-commit review accepted: FAILED (failures=1)
+caught  pending treated as closed: FAILED (failures=3)
+caught  stall ignored: FAILED (failures=1)
+caught  round limit off by one: FAILED (failures=1)
+caught  stopped_by ignored: FAILED (failures=1)
+caught  master failures ignored: FAILED (failures=1)
+caught  CI pending accepted: FAILED (failures=1)
+caught  checks on other commit accepted: FAILED (failures=1)
