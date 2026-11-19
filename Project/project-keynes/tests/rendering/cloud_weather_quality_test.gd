@@ -161,9 +161,12 @@ func _check_curtain_instances() -> void:
 	var instances := weather._curtain_multimeshes[0]
 	check(instances.visible_instance_count == 9 and weather._curtain_draw_cells == PackedInt32Array([1, 2, 3]),
 		"rain and snow survive at zero intensity, and only current type participates in the blend")
+	check(instances.buffer.size() == instances.instance_count * 12,
+		"curtain transforms and custom data publish as one compact MultiMesh buffer")
 	weather._refresh_curtain_instances(world.weather_lut_update_usec, false)
 	check(instances.instance_count == 12 and instances.visible_instance_count == 6
-		and weather._curtain_draw_cells == PackedInt32Array([1, 2]),
+		and weather._curtain_draw_cells == PackedInt32Array([1, 2])
+		and instances.buffer.size() == instances.instance_count * 12,
 		"fog at zero intensity stops submitting instances after the blend")
 	var texture_before := world.weather_lut_tex
 	current = current.duplicate()

@@ -33,9 +33,10 @@ func _covers_viewport(backdrop: ColorRect) -> bool:
 		if item.modulate.a < 1.0:
 			return false
 		if item == backdrop or (item is Control and item.clip_contents):
+			var control := item as Control
 			var to_screen := item.get_global_transform_with_canvas()
 			if to_screen.x.y != 0.0 or to_screen.y.x != 0.0 or not (
-					to_screen * Rect2(Vector2.ZERO, item.size)).encloses(view):
+					to_screen * Rect2(Vector2.ZERO, control.size)).encloses(view):
 				return false
 		item = item.get_parent() as CanvasItem
 	return true

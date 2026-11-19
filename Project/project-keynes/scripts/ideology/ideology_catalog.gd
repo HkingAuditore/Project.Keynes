@@ -60,8 +60,9 @@ const LEVEL_LABELS := ["初识", "通晓", "化育"]
 ## catalog whose profile disables the gate. Production never touches it.
 static var support_gate_enabled := true
 
-static func load_default() -> Resource:
-	var loaded := ResourceLoader.load(DEFAULT_PATH, "Resource")
+static func load_default(loaded: Resource = null) -> Resource:
+	if loaded == null:
+		loaded = ResourceLoader.load(DEFAULT_PATH, "Resource")
 	if loaded != null and not support_gate_enabled and loaded.profile != null:
 		var profile: Resource = loaded.profile.duplicate()
 		profile.support_gate_enabled = false

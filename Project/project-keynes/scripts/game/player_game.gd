@@ -172,7 +172,7 @@ func _connect_signals() -> void:
 	var settings: Node = _game_settings()
 	if settings != null:
 		if not OS.has_feature("web"):
-			settings.follow_map_camera(_camera)
+			settings.follow_map_camera(_camera, _world_clock)
 		if not settings.settings_changed.is_connected(_on_settings_changed):
 			settings.settings_changed.connect(_on_settings_changed)
 

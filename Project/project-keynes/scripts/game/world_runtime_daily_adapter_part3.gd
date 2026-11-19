@@ -369,6 +369,14 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 			applied.get("code", "unknown")))
 		return
 	if not bool(applied.get("applied", false)):
+		# A consumed snapshot may contain no compatible fields. Its generation still
+		# closes this day's climate handoff; an unavailable snapshot reports the
+		# same generation we requested and must keep the day-tail gate closed.
+		var consumed_generation := int(applied.get("generation", -1))
+		if consumed_generation > host._runtime_climate_writeback_generation:
+			host._runtime_climate_writeback_generation = consumed_generation
+			host._runtime_climate_writeback_last_day = int(applied.get(
+				"committed_day", report.get("simulation_committed_day", -1)))
 		return
 	preload("res://scripts/game/world_runtime_climate_restore.gd").apply(host._generator, applied)
 	host._runtime_climate_writeback_generation = int(applied.get(

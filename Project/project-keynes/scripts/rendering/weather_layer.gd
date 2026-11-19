@@ -1755,16 +1755,31 @@ func _upload_curtain_instances() -> void:
 		var depth := float(layer_idx) / (layer_count - 1) if layer_count > 1 else 0.5
 		var half_w := _hex_size * _CURTAIN_PATCH_SCALE * lerpf(0.96, 1.18, depth)
 		var half_h := _hex_size * _CURTAIN_PATCH_SCALE * lerpf(1.10, 1.36, depth)
-		var transform := Transform2D(Vector2(half_w, 0.0), Vector2(0.0, half_h), Vector2.ZERO)
+		# TRANSFORM_2D uses eight floats and custom data adds four. Build the
+		# compact draw prefix in one CPU array and publish it once per layer;
+		# per-instance setters each cross the RenderingServer boundary.
+		var buffer := PackedFloat32Array()
+		buffer.resize(mm.instance_count * 12)
 		var write_idx := 0
 		for index in _curtain_draw_cells:
 			var cell := _curtain_cells[index]
 			var custom := _curtain_custom_data(int(cell.w), cell.z, depth)
 			for offset in _curtain_offsets:
-				transform.origin = Vector2(cell.x, cell.y) + Vector2(offset, 0.0)
-				mm.set_instance_transform_2d(write_idx, transform)
-				mm.set_instance_custom_data(write_idx, custom)
+				var base := write_idx * 12
+				buffer[base] = half_w
+				buffer[base + 1] = 0.0
+				buffer[base + 2] = 0.0
+				buffer[base + 3] = cell.x + offset
+				buffer[base + 4] = 0.0
+				buffer[base + 5] = half_h
+				buffer[base + 6] = 0.0
+				buffer[base + 7] = cell.y
+				buffer[base + 8] = custom.r
+				buffer[base + 9] = custom.g
+				buffer[base + 10] = custom.b
+				buffer[base + 11] = custom.a
 				write_idx += 1
+		mm.buffer = buffer
 		mm.visible_instance_count = count
 	_curtain_instance_count = count * layer_count
 

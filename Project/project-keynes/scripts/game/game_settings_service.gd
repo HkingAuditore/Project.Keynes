@@ -119,15 +119,17 @@ func save_settings() -> Dictionary:
 
 var _frame_limit := 0
 var _map_camera: MapCamera
+var _map_clock: WorldClock
 var _held_inputs: Dictionary = {}
 var _gesture_event := false
 var _last_view: Transform2D
 
 
-func follow_map_camera(camera: MapCamera) -> void:
+func follow_map_camera(camera: MapCamera, clock: WorldClock = null) -> void:
 	if is_instance_valid(_map_camera):
 		_release_map_camera()
 	_map_camera = camera
+	_map_clock = clock
 	camera.tree_exiting.connect(_release_map_camera)
 	_configure_frame_limit()
 
@@ -135,6 +137,7 @@ func follow_map_camera(camera: MapCamera) -> void:
 func _release_map_camera() -> void:
 	_map_camera.tree_exiting.disconnect(_release_map_camera)
 	_map_camera = null
+	_map_clock = null
 	_configure_frame_limit()
 
 
@@ -191,7 +194,10 @@ func _process(_delta: float) -> void:
 
 
 func _update_navigation_limit(moved: bool) -> void:
-	var active := moved or _gesture_event or not _held_inputs.is_empty() or _map_camera.is_animating_view()
+	var simulation_running := _map_clock != null and not _map_clock.paused \
+		and _map_clock.speed_multiplier > 0.0
+	var active := simulation_running or moved or _gesture_event or not _held_inputs.is_empty() \
+		or _map_camera.is_animating_view()
 	var limit := 60 if active else 30
 	if Engine.max_fps != limit:
 		Engine.max_fps = limit
