@@ -673,22 +673,27 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 	var aux := previous_aux
 	var state := previous_state
 	var images: Array[Image] = [null, null, null, null]
+	var required_images := [false, false, false, false]
 	if need_all or static_changed:
 		var packed := _cell_table_static_words(map, world, enum_bytes, classes.duplicate(), aux.duplicate())
 		classes = packed[0]
 		aux = packed[1]
 		if need_all or classes != previous_class:
+			required_images[CellTableCodecScript.LAYER_CLASS] = true
 			images[CellTableCodecScript.LAYER_CLASS] = _cell_table_image(
 				_cell_words_to_offset(classes, layout).to_byte_array(), map_w, map_h)
 			if index_space_ok:
-				var by_index := classes.to_byte_array()
-				by_index.resize(map_w * map_h * bytes_per_cell)
+				required_images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = true
+				var by_index := _cell_index_table_bytes(
+					classes.to_byte_array(), n_cells, map_w, map_h)
 				images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = _cell_table_image(
 					by_index, map_w, map_h)
 			elif need_all:
+				required_images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = true
 				images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = _cell_table_image(
 					CellTableCodecScript.index_space_fill_bytes(map_w, map_h), map_w, map_h)
 		if need_all or aux != previous_aux:
+			required_images[CellTableCodecScript.LAYER_AUX] = true
 			images[CellTableCodecScript.LAYER_AUX] = _cell_table_image(
 				_cell_words_to_offset(aux, layout).to_byte_array(), map_w, map_h)
 	if need_all or state_changed:
@@ -699,7 +704,16 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 		else:
 			state = _cell_words_to_offset(dyn_bytes.to_int32_array(), layout).to_byte_array()
 		if need_all or state != previous_state:
+			required_images[CellTableCodecScript.LAYER_STATE] = true
 			images[CellTableCodecScript.LAYER_STATE] = _cell_table_image(state, map_w, map_h)
+	if need_all:
+		required_images.fill(true)
+	if not cell_table_images_valid(images, required_images):
+		world.cell_table_bound = false
+		world.cell_table_layers = 0
+		report.cell_table_reason = "layer_payload_mismatch"
+		report.cell_table_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		return report
 
 	if need_all:
 		tex = _create_cell_table_array(images)
@@ -740,6 +754,35 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 	report.cell_table_layers_published = int(world.cell_table_layers)
 	report.cell_table_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	return report
+
+
+## A non-full index-space table has a zero-filled tail, but its source must still
+## contain exactly one RGBA word per cell. Never let resize() conceal a short or
+## oversized source payload.
+static func _cell_index_table_bytes(source: PackedByteArray, n_cells: int,
+		map_w: int, map_h: int) -> PackedByteArray:
+	var want_source := n_cells * CellTableCodecScript.BYTES_PER_TEXEL
+	var want_table := map_w * map_h * CellTableCodecScript.BYTES_PER_TEXEL
+	if n_cells <= 0 or map_w <= 0 or map_h <= 0 or n_cells > map_w * map_h \
+			or source.size() != want_source:
+		return PackedByteArray()
+	var output := PackedByteArray()
+	output.resize(want_table)
+	output.fill(CellTableCodecScript.FILL_BYTE)
+	for i in source.size():
+		output[i] = source[i]
+	return output
+
+
+## Null is allowed only for layers that this incremental commit does not update.
+static func cell_table_images_valid(images: Array, required: Array) -> bool:
+	if images.size() != CellTableCodecScript.LAYER_COUNT \
+			or required.size() != CellTableCodecScript.LAYER_COUNT:
+		return false
+	for layer in CellTableCodecScript.LAYER_COUNT:
+		if bool(required[layer]) and images[layer] == null:
+			return false
+	return true
 
 
 static func _cell_table_static_words(map: MapData, world: WorldData, enums: PackedByteArray,
