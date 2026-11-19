@@ -175,28 +175,35 @@ static func sync_frame_bindings(host, time: float, sun: Vector3, state: Dictiona
 	var dyn: Texture2D = host._world.dyn_lut_tex if host._world != null else null
 	var eco: Texture2D = host._world.eco_lut_tex if host._world != null else null
 	var enums: Texture2D = host._world.enum_lut_tex if host._world != null else null
-	var bindings := {"state": state, "sun": sun, "dyn": dyn, "eco": eco, "enum": enums,
-		"memory": host._memory_texture, "fog": host._fog, "resource_shader": host._material.shader,
-		"geology_shader": host._material_geo.shader}
-	if host._cover != null:
-		bindings.cover_shader = host._cover.material().shader
-		bindings.memory_only = host._cover.memory_climate_only
-	if bindings == host._last_frame_bindings:
-		if host._cover != null:
-			host._cover.material().set_shader_parameter("world_time", time)
+	var resource_shader: Shader = host._material.shader
+	var geology_shader: Shader = host._material_geo.shader
+	var cover: ResourceGroundCover = host._cover
+	var inputs := {"state": state, "sun": sun, "dyn": dyn, "eco": eco, "enum": enums,
+		"resource_shader": resource_shader, "geology_shader": geology_shader}
+	if cover != null:
+		inputs.merge({"cover_shader": cover.material().shader, "memory_only": cover.memory_climate_only,
+			"memory": host._memory_texture, "fog": host._fog})
+	var previous: Dictionary = host._last_frame_bindings
+	var old_inputs: Dictionary = previous.get("inputs", {})
+	if inputs == old_inputs:
+		if cover != null:
+			cover.material().set_shader_parameter("world_time", time)
 		return
-	host._last_frame_bindings = bindings
-	host._last_frame_bindings.state = state.duplicate()
-	host._set_param("tod_sun_dir", sun)
-	for name in state:
-		host._set_param(name, state[name])
-	host._set_param("dyn_lut", dyn)
-	host._set_param("has_dynamic_lut", dyn != null)
-	host._set_param("eco_lut", eco)
-	host._set_param("has_ecology_lut", eco != null)
-	host._set_param("enum_lut", enums)
-	if host._cover != null:
+
+	var values := state.duplicate()
+	values.merge({"tod_sun_dir": sun})
+	values.merge({"dyn_lut": dyn, "has_dynamic_lut": dyn != null,
+		"eco_lut": eco, "has_ecology_lut": eco != null, "enum_lut": enums}, true)
+	var old_values: Dictionary = previous.get("values", {})
+	var rebind: bool = old_inputs.get("resource_shader") != resource_shader or old_inputs.get("geology_shader") != geology_shader
+	for name in values:
+		var value: Variant = values[name]
+		if rebind or not old_values.has(name) or old_values[name] != value:
+			host._set_param(name, value)
+	inputs.state = state.duplicate()
+	host._last_frame_bindings = {"inputs": inputs, "values": values}
+	if cover != null:
 		var cover_state := state.duplicate()
 		cover_state.merge({"tod_sun_dir": sun, "fog_enabled": host._fog, "dyn_lut": dyn,
 			"has_dynamic_lut": dyn != null, "enum_lut": enums}, true)
-		host._cover.set_frame_state(time, cover_state, host._memory_texture)
+		cover.set_frame_state(time, cover_state, host._memory_texture)
