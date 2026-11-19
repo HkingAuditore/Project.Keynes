@@ -838,7 +838,23 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
     return out;
 }
 
-Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_runtime) {
+bool EffectRuntime::has_pending_research_discovery(uint64_t country, int32_t signal) const {
+    for (const Transaction &transaction : _transactions) {
+        if (transaction.status == ACKED || transaction.status == REJECTED ||
+            transaction.status == RESYNC_REQUIRED) continue;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command != nullptr && command->action == COUNTRY_COMMAND &&
+                command->target_handle == country &&
+                country_api::discovers_signal(command->opcode, command->payload[0], signal))
+                return true;
+        }
+    }
+    return false;
+}
+
+Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_runtime,
+                                                  bool trigger_delivery) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
@@ -886,6 +902,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
             native.value = command->value_q16;
             native.payload = command->payload;
             native.idempotency_key = command->idempotency_key;
+            native.trigger_delivery = trigger_delivery;
             // For structural country commands the catalog carries immutable
             // names in the existing cold string columns.  No Godot Variant is
             // built in this bridge.

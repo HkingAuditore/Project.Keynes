@@ -22,7 +22,7 @@
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
 
-namespace godot { class Dictionary; class Array; }
+namespace godot { class Dictionary; class Array; class PackedInt32Array; class PackedInt64Array; }
 
 namespace pk {
 
@@ -572,7 +572,12 @@ void notify_era_milestone_activated(NativeEconomyRuntime &economy,
 
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 void military_read_cell_view(const NativeEconomyRuntime &economy, EconomyMilitaryCellView &out, int32_t good_count = 0);
-void military_read_market(const NativeEconomyRuntime &economy, int32_t good, std::vector<int32_t> &out_cells, std::vector<int64_t> &out_sellable, std::vector<int64_t> &out_price);
+void military_read_market(const NativeEconomyRuntime &economy, int32_t good,
+    std::vector<int32_t> &cells, std::vector<int64_t> &sellable,
+    std::vector<int64_t> &price, std::vector<uint8_t> &stocked);
+void military_read_equipment_production(const NativeEconomyRuntime &economy,
+    const std::vector<int32_t> &cells, const std::vector<uint8_t> &equipment,
+    std::vector<uint8_t> &out);
 int32_t military_soldier_profession(NativeEconomyRuntime &economy);
 int32_t military_unemployed_profession(const NativeEconomyRuntime &economy);
 int32_t military_merchant_profession(const NativeEconomyRuntime &economy);
@@ -622,6 +627,11 @@ godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy
     int64_t country, int64_t family, int32_t source, int32_t target, int64_t population,
     int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
     int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
+godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country);
+godot::Dictionary era_advancement_economy_summary(const NativeEconomyRuntime &economy, int64_t country);
+godot::Dictionary set_era_procurement_target(NativeEconomyRuntime &economy,
+    int64_t country, bool active, const godot::PackedInt32Array &goods,
+    const godot::PackedInt64Array &quantities, int64_t day, int64_t sequence);
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy);
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell);

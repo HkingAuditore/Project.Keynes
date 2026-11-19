@@ -92,7 +92,6 @@ Dictionary NativeEconomyRuntime::set_country_procurement_policy(
     {
         std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
         update.order = _procurement_inbox->next_order++;
-        _procurement_inbox->requested_policy[update.country_handle] = update;
         _procurement_inbox->updates.push_back(std::move(update));
     }
     out["ok"] = true;
@@ -150,7 +149,6 @@ Dictionary NativeEconomyRuntime::set_era_procurement_target(
     {
         std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
         update.order = _procurement_inbox->next_order++;
-        _procurement_inbox->requested_era[update.country_handle] = update;
         _procurement_inbox->updates.push_back(std::move(update));
     }
     out["ok"] = true;
@@ -174,8 +172,7 @@ void NativeEconomyRuntime::clear_procurement_runtime_state(bool clear_pending) {
     if (clear_pending) {
         std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
         _procurement_inbox->updates.clear();
-        _procurement_inbox->requested_policy.clear();
-        _procurement_inbox->requested_era.clear();
+        _procurement_inbox->next_order = 1;
     }
 }
 

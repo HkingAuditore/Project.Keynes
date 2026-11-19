@@ -4,16 +4,6 @@ const WorkspaceScene := preload("res://scenes/ui/technology_workspace.tscn")
 const DialogScene := preload("res://scenes/ui/era_reward_dialog.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
-class PeerGenerator extends MapGenerator:
-	var service_report: Dictionary = {"ok": true, "inspected": 0, "notified": 0}
-
-	func get_runtime_thread_report() -> Dictionary:
-		return {"simulation_thread_mode": "ACTIVE"}
-
-	func service_country_worker_peer_adapter(_limit: int = 64,
-			_shadow: bool = true) -> Dictionary:
-		return service_report
-
 class CeremonyUI extends GameUIManager:
 	var ceremony := false
 
@@ -53,25 +43,18 @@ func _run() -> void:
 	controller.set("_ui_manager", ui)
 	ui.era_reward_dismiss_requested.connect(controller.dismiss_era_reward_offer)
 	dialog.dismiss_requested.connect(ui._on_era_popup_dismissed)
-	var generator := PeerGenerator.new()
 	var host := WorldRuntimeHost.new()
-	host.set("_generator", generator)
-	host.set("_runtime_ready_for_ticks", true)
-	host.country_peer_serviced.connect(controller._on_country_peer_serviced)
+	controller.set("_runtime_host", host)
+	controller._connect_runtime()
 
-	host._service_country_worker_transport()
-	_expect("idle peer service does not poll offers", facade.reads == 0)
-	# A promotion opens the offer directly (upstream 2026-11-03); while the
-	# ascension ceremony plays the modal yields and the next sync retries.
+	_expect("before the first published day the offer is unread", facade.reads == 0)
 	ui.ceremony = true
-	generator.service_report = {"ok": true, "inspected": 0, "notified": 1}
-	host._service_country_worker_transport()
-	_expect("notification-only service reaches PlayerController immediately", facade.reads > 0)
+	host.simulation_committed.emit(0, 1, 1)
+	_expect("day commit delivers the offer immediately", facade.reads > 0)
 	_expect("offer yields while the ascension ceremony plays", not dialog.is_offer_open()
 		and not controller.era_reward_locked() and not clock.paused)
 	ui.ceremony = false
-	generator.service_report = {"ok": true, "inspected": 1, "notified": 0}
-	host._service_country_worker_transport()
+	host.simulation_committed.emit(1, 2, 2)
 	_expect("next sync after the ceremony opens the offer directly", dialog.is_offer_open())
 	_expect("open offer pauses 50x play and retains resume intent",
 		clock.paused and controller.era_reward_locked()
@@ -82,8 +65,8 @@ func _run() -> void:
 	_expect("compact reward keeps clock controls from bypassing the choice lock", clock.paused
 		and clock.speed_multiplier == 50.0)
 	var reads_before := facade.reads
-	host._service_country_worker_transport()
-	_expect("ordinary peer intents still refresh offers", facade.reads > reads_before)
+	host.simulation_committed.emit(2, 3, 3)
+	_expect("each committed day refreshes the published offer", facade.reads > reads_before)
 	dialog.dismiss_requested.emit()
 	await create_timer(0.14).timeout
 	_expect("dismiss closes the modal and restores previous speed", not dialog.is_offer_open()

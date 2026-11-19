@@ -155,6 +155,7 @@ void NativeMilitaryRuntime::capture_military_digest(MilitaryWorldDigest &digest,
     scratch.market_good.clear();
     scratch.market_sellable.clear();
     scratch.market_price.clear();
+    digest.country_equipment_available.clear();
     if (_economy_runtime != nullptr) {
         NativeEconomyRuntime *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
         if (economy_ready != nullptr)
@@ -198,17 +199,41 @@ void NativeMilitaryRuntime::capture_military_digest(MilitaryWorldDigest &digest,
                     goods.push_back(mat.good);
             }
         }
+        const size_t good_count = static_cast<size_t>(catalog.economy_good_count);
+        std::vector<uint8_t> equipment(good_count, 0);
+        for (const MilitaryEquipCategory &category : catalog.categories) {
+            for (const int32_t good : category.good_ids) {
+                equipment[good] = 1;
+                goods.push_back(good);
+            }
+        }
+        // Technology and producer prerequisites are shared by a country's cells.
+        std::vector<int32_t> representative(static_cast<size_t>(country_count), -1);
+        for (int32_t cell = 0; cell < cells; ++cell) {
+            const int32_t owner = digest.cell_owner_slot[cell];
+            if (owner >= 0 && owner < country_count && representative[owner] < 0)
+                representative[owner] = cell;
+        }
+        economy_api::military_read_equipment_production(*economy, representative,
+            equipment, digest.country_equipment_available);
         std::sort(goods.begin(), goods.end());
+        goods.erase(std::unique(goods.begin(), goods.end()), goods.end());
         for (const int32_t good : goods) {
             std::vector<int32_t> market_cells;
             std::vector<int64_t> sellable;
             std::vector<int64_t> price;
-            economy_api::military_read_market(*economy, good, market_cells, sellable, price);
+            std::vector<uint8_t> stocked;
+            economy_api::military_read_market(*economy, good, market_cells, sellable, price, stocked);
             for (size_t i = 0; i < market_cells.size(); ++i) {
                 scratch.market_cell.push_back(market_cells[i]);
                 scratch.market_good.push_back(good);
                 scratch.market_sellable.push_back(sellable[i]);
                 scratch.market_price.push_back(price[i]);
+                const int32_t cell = market_cells[i];
+                if (cell < 0 || cell >= cells) continue;
+                const int32_t owner = digest.cell_owner_slot[cell];
+                if (equipment[good] && stocked[i] && owner >= 0 && owner < country_count)
+                    digest.country_equipment_available[static_cast<size_t>(owner) * good_count + good] = 1;
             }
         }
         for (int32_t slot = 0; slot < country_count; ++slot)

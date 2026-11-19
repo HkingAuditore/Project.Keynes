@@ -7,7 +7,6 @@ signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator,
 signal daily_tick_completed(report: Dictionary)
 signal simulation_committed(from_day: int, to_day: int, generation: int)
 signal simulation_view_updated(from_day: int, to_day: int, generation: int)
-signal country_peer_serviced(report: Dictionary)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
 signal gm_tod_preview_changed(active: bool)
@@ -431,35 +430,8 @@ var _country_read_last_territory_changed_cells: int = 0
 ## FAULTED worker parks the WorldClock and retains last-committed diagnostics.
 var _runtime_worker_fault_paused: bool = false
 var _runtime_last_fault_diagnostics: Dictionary = {}
-var _country_worker_transport_last_service: Dictionary = {}
 var _country_worker_transport_capture: Dictionary = {}
 var _modifier_worker_snapshot_generation: int = 0
-var _effect_worker_snapshot_generation: int = 0
-var _ideology_worker_snapshot_generation: int = 0
-var _trigger_worker_snapshot_generation: int = 0
-# R-3d: correctness counters for the GDScript ideology-intent reply.
-#
-# `submit_ideology_worker_ack` claims that the Effect side committed the transition.
-# Two ways that claim can be wrong, both counted here so they are observable instead
-# of silent:
-#   * duplicate — the same transaction answered twice (a retry raced the first reply,
-#     or the POD emitted two intents for one transition);
-#   * unknown — an intent with no request id, i.e. nothing to reply to.
-# Under the production 0xFFF mask the worker owns EFFECT and drains these itself, so
-# BOTH must stay 0: any other value means the fallback pump fired when it should not.
-var _ideology_intent_duplicate_acks: int = 0
-var _ideology_intent_unknown_acks: int = 0
-var _ideology_acked_transactions: Dictionary = {}
-# Trigger delivery still uses Effect's native domain adapters. Keep its facade
-# transaction alive until Country acknowledges and the worker admits its ACK.
-# Effect ids are ingress-allocated while delivery is canonical, so the exact id
-# set from handoff_effects() is retained; the legacy max-id cursor below is kept
-# only for old-DLL fallback and reporting.
-var _trigger_country_delivery_id: int = 0
-var _trigger_country_delivery_ids: PackedInt64Array = PackedInt64Array()
-var _trigger_country_delivery_ack_sent := false
-var _trigger_country_delivery_waiting := false
-var _completed_research_signals_reconciled := false
 var _country_worker_read_generation: int = 0
 var _country_worker_read_last_day: int = -1
 var _country_worker_read_last_result: Dictionary = {}
@@ -499,12 +471,6 @@ var _prefetch_diag_boot: Dictionary = {}
 var _prefetch_diag_snapshot: Dictionary = {}
 var _prefetch_diag_on_cache: int = -1
 var _prefetch_boot_emitted: bool = false
-var _ideology_refresh_pending_day: int = -1
-var _ideology_instance_refreshed_day: int = -1
-var _ideology_derived_pumped_day: int = -1
-var _ideology_pump_calls: int = 0
-var _ideology_pump_last: Dictionary = {}
-var _ideology_instance_refresh_last: Dictionary = {}
 const _GI_STRENGTH_PROPS := ["gi_ao_strength", "gi_bent_strength", "gi_bounce_strength"]
 var _visual_adapter = preload("res://scripts/game/world_runtime_visual_adapter.gd").new()
 # Generation/worker preparation delegates to the passive adapter.
@@ -961,28 +927,8 @@ func get_runtime_fault_diagnostics() -> Dictionary:
 	return _daily_adapter.get_runtime_fault_diagnostics(self)
 func is_runtime_fault_paused() -> bool:
 	return _daily_adapter.is_runtime_fault_paused(self)
-func _service_country_worker_transport() -> void:
-	_daily_adapter._service_country_worker_transport(self)
 func _consume_modifier_worker_snapshot_if_authoritative() -> void:
 	_daily_adapter._consume_modifier_worker_snapshot_if_authoritative(self)
-func _consume_effect_worker_snapshot_if_authoritative() -> void:
-	_daily_adapter._consume_effect_worker_snapshot_if_authoritative(self)
-func _service_effect_worker_intents_if_authoritative() -> void:
-	_daily_adapter._service_effect_worker_intents_if_authoritative(self)
-func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
-	_daily_adapter._step_ideology_instance_refresh_if_authoritative(self, day_idx)
-func _consume_ideology_worker_snapshot_if_authoritative() -> void:
-	_daily_adapter._consume_ideology_worker_snapshot_if_authoritative(self)
-func _service_ideology_worker_intents_if_authoritative() -> void:
-	_daily_adapter._service_ideology_worker_intents_if_authoritative(self)
-func _consume_trigger_worker_snapshot_if_authoritative() -> void:
-	_daily_adapter._consume_trigger_worker_snapshot_if_authoritative(self)
-func _service_trigger_worker_intents_if_authoritative() -> void:
-	_daily_adapter._service_trigger_worker_intents_if_authoritative(self)
-func _service_trigger_country_delivery(trigger, effect, report: Dictionary) -> void:
-	_daily_adapter._service_trigger_country_delivery(self, trigger, effect, report)
-func _ack_trigger_delivery_ids(trigger) -> Dictionary:
-	return _daily_adapter._ack_trigger_delivery_ids(self, trigger)
 func _consume_country_worker_read_view_if_authoritative() -> void:
 	_daily_adapter._consume_country_worker_read_view_if_authoritative(self)
 func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
@@ -1060,19 +1006,6 @@ func get_sus_last_tick_report() -> Dictionary:
 		return {}
 	var report: Dictionary = _generator.sus_report_last_tick()
 	return report.duplicate(false)
-
-
-## R-3d: how the GDScript ideology-intent fallback behaved.
-##
-## `duplicate_acks` and `unknown_acks` must both be 0 on any session where the worker
-## owns EFFECT (the 0xFFF production mask), because the worker drains its own intents
-## and this pump should never reply at all. `replies` is informational.
-func get_ideology_intent_reply_report() -> Dictionary:
-	return {
-		"duplicate_acks": _ideology_intent_duplicate_acks,
-		"unknown_acks": _ideology_intent_unknown_acks,
-		"replies": _ideology_acked_transactions.size(),
-	}
 
 
 func get_sus_last_tick_summary() -> Dictionary:

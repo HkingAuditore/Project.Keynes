@@ -1097,6 +1097,8 @@ bool EffectRuntime::acknowledge_native_domain(Transaction &transaction,
     apply_acked_instance_transition(transaction);
     _acked_transaction_id = std::max(_acked_transaction_id, transaction.id);
     ++_transactions_acked;
+    if (_era_reward_offer.transaction_id == transaction.id)
+        refresh_era_reward_offer_status();
     return true;
 }
 
@@ -1350,7 +1352,10 @@ Dictionary EffectRuntime::ack_transactions(const Dictionary &batch) {
             transaction.status = COMMITTED;
         }
     }
-    if (acknowledged != 0) compact_terminal_transactions();
+    if (acknowledged != 0) {
+        refresh_era_reward_offer_status();
+        compact_terminal_transactions();
+    }
     Dictionary out;
     out["ok"] = rejected == 0;
     out["acknowledged"] = acknowledged;

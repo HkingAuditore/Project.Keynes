@@ -31,15 +31,26 @@ bool economy_available(const NativeCountryRuntime &country) { return country.eco
 int64_t country_handle_for_cell(const NativeCountryRuntime &country, int32_t cell) { return country.country_handle_for_cell(cell); }
 
 // ---- Effect (effect_runtime.cpp)
+bool discovers_signal(int32_t opcode, int64_t operand, int32_t signal) {
+    return opcode == CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+        static_cast<int32_t>(static_cast<uint64_t>(operand) >> 32) == signal;
+}
 bool submit_effect_commands_pod(NativeCountryRuntime &country, const CountryEffectCommand *commands, size_t count, std::vector<int64_t> &request_ids, std::string &error) { return country.submit_effect_commands_pod(commands, count, request_ids, error); }
 void drain_effect_host_command_receipts(NativeCountryRuntime &country) { country.drain_effect_host_command_receipts(); }
 bool effect_command_result_pod(const NativeCountryRuntime &country, int64_t request_id, bool &complete, bool &ok, std::string &reason) { return country.effect_command_result_pod(request_id, complete, ok, reason); }
+bool has_pending_effect_commands(const NativeCountryRuntime &country) { return country.has_pending_effect_commands(); }
 godot::Dictionary country_snapshot(const NativeCountryRuntime &country, int64_t handle) { return country.country_snapshot(handle); }
 godot::Dictionary treasury_snapshot(const NativeCountryRuntime &country, int64_t handle) { return country.treasury_snapshot(handle); }
 godot::Dictionary research_snapshot(const NativeCountryRuntime &country, int64_t handle) { return country.research_snapshot(handle); }
 godot::Dictionary research_signal_snapshot(const NativeCountryRuntime &country, int64_t handle) { return country.research_signal_snapshot(handle); }
 void set_era_reward_reference_pod(NativeCountryRuntime &country, int64_t plan_id, int64_t offer_generation, int32_t milestone_technology, int32_t status) { country.set_era_reward_reference_pod(plan_id, offer_generation, milestone_technology, status); }
 CountryApi::EraRewardReference era_reward_reference_pod(const NativeCountryRuntime &country) { return country.era_reward_reference_pod(); }
+std::shared_ptr<const NativeCountryRuntime> copy_committed_read_view(
+        const NativeCountryRuntime &country, const RuntimeCountryPodSnapshot &snapshot) {
+    auto view = std::make_shared<NativeCountryRuntime>(country);
+    if (!view->apply_committed_read_snapshot(snapshot)) return {};
+    return view;
+}
 int64_t world_seed(const NativeCountryRuntime &country) { return country.world_seed(); }
 
 // ---- Ideology (ideology_runtime.cpp)

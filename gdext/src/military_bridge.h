@@ -60,6 +60,8 @@ struct MilitaryWorldDigest {
     std::vector<int32_t> market_good;
     std::vector<int64_t> market_sellable;      // GOODS_SCALE
     std::vector<int64_t> market_price;         // MONEY_SCALE per 1.0 good
+    // Country technology and existing stock, independent of sellable quantity.
+    std::vector<uint8_t> country_equipment_available; // country_capacity * economy_good_count
     // Average non-food soldier living cost per head/day, by country slot.
     std::vector<int64_t> country_soldier_living_cost; // MONEY_SCALE
     // Technology gate: bitset rows per country over military unlock ids

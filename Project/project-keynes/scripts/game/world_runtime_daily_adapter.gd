@@ -71,28 +71,8 @@ func get_runtime_fault_diagnostics(host) -> Dictionary:
 	return _part2.get_runtime_fault_diagnostics(host)
 func is_runtime_fault_paused(host) -> bool:
 	return _part2.is_runtime_fault_paused(host)
-func _service_country_worker_transport(host) -> void:
-	_part2._service_country_worker_transport(host)
 func _consume_modifier_worker_snapshot_if_authoritative(host) -> void:
 	_part2._consume_modifier_worker_snapshot_if_authoritative(host)
-func _consume_effect_worker_snapshot_if_authoritative(host) -> void:
-	_part2._consume_effect_worker_snapshot_if_authoritative(host)
-func _service_effect_worker_intents_if_authoritative(host) -> void:
-	_part2._service_effect_worker_intents_if_authoritative(host)
-func _step_ideology_instance_refresh_if_authoritative(host, day_idx: int) -> void:
-	_part2._step_ideology_instance_refresh_if_authoritative(host, day_idx)
-func _consume_ideology_worker_snapshot_if_authoritative(host) -> void:
-	_part2._consume_ideology_worker_snapshot_if_authoritative(host)
-func _service_ideology_worker_intents_if_authoritative(host) -> void:
-	_part2._service_ideology_worker_intents_if_authoritative(host)
-func _consume_trigger_worker_snapshot_if_authoritative(host) -> void:
-	_part2._consume_trigger_worker_snapshot_if_authoritative(host)
-func _service_trigger_worker_intents_if_authoritative(host) -> void:
-	_part2._service_trigger_worker_intents_if_authoritative(host)
-func _service_trigger_country_delivery(host, trigger, effect, report: Dictionary) -> void:
-	_part2._service_trigger_country_delivery(host, trigger, effect, report)
-func _ack_trigger_delivery_ids(host, trigger) -> Dictionary:
-	return _part2._ack_trigger_delivery_ids(host, trigger)
 func _consume_country_worker_read_view_if_authoritative(host) -> void:
 	_part2._consume_country_worker_read_view_if_authoritative(host)
 func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> void:

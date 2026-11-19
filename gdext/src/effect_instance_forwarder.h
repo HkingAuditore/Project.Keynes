@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -32,9 +34,8 @@ class NativeSimulationHost;
 //    not configured returns WORKER_TRANSPORT_NOT_READY and writes nothing.
 //    Writing legacy here would only be erased by the next worker snapshot,
 //    which turns into "looked fine, then vanished".
-// 3. Only the main thread touches this object. `refresh_catalog` and the
-//    program-facts cache resolve through EffectRuntime/NativeSimulationHost on
-//    the calling thread; the worker never reads them.
+// 3. The catalog and attachments are configured at the stopped-world boundary.
+//    A short lock protects the lookup cache and observed owner across writers.
 class EffectInstanceForwarder {
 public:
     enum class Result : int32_t {
@@ -82,7 +83,7 @@ public:
     //
     // -1 = follow the live host (default), 0 = force legacy, 1 = force worker.
     void set_authority_override_for_test(int32_t mode);
-    int32_t authority_override_for_test() const { return _authority_override; }
+    int32_t authority_override_for_test() const { return _authority_override.load(); }
     // Number of worker<->legacy flips observed for the EFFECT domain. Advances
     // only when authority_epoch() is called, which the reconcile entry point
     // does every tick; a caller that sees a new epoch must resubmit in full
@@ -155,14 +156,16 @@ public:
 private:
     const ProgramFacts *facts_for(const std::string &program_key);
     bool resolve_facts(const std::string &program_key, ProgramFacts &out);
-    bool note_authority_change(std::string &code);
+    uint64_t observe_authority(bool worker);
+    bool note_authority_change(bool started_on_worker, std::string &code);
 
     EffectRuntime *_effect = nullptr;
     NativeSimulationHost *_host = nullptr;
+    std::mutex _state_mutex;
     std::unordered_map<std::string, ProgramFacts> _programs;
     bool _last_worker_authoritative = false;
     uint64_t _authority_epoch = 0;
-    int32_t _authority_override = -1;
+    std::atomic<int32_t> _authority_override{-1};
 };
 
 } // namespace pk

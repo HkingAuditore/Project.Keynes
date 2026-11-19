@@ -1020,6 +1020,8 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<int16_t>(h, _lots.unit_type[i]);
         h = mix_scalar<int16_t>(h, _lots.equip_quality_q8[i]);
         h = mix_scalar<int32_t>(h, _lots.kit_q16[i]);
+        if (_lots.partial_equipment[i] != 0)
+            h = mix_scalar<uint16_t>(h, _lots.partial_equipment[i]);
         h = mix_scalar<int32_t>(h, _lots.condition_q16[i]);
         h = mix_scalar<int64_t>(h, _lots.count[i]);
     }
@@ -1085,6 +1087,8 @@ uint64_t MilitaryCore::state_hash() const {
             h = mix_scalar<int8_t>(h, quality);
         h = mix_scalar<int16_t>(h, o.delivered_quality_q8);
         h = mix_scalar<uint64_t>(h, o.equipped_slot_mask);
+        if (o.source_partial_equipment != 0)
+            h = mix_scalar<uint16_t>(h, o.source_partial_equipment);
     }
     h = mix_scalar<uint64_t>(h, (uint64_t)_stocks.size());
     for (const MilitaryStockRow &r : _stocks) {

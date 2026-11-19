@@ -41,7 +41,7 @@ int64_t transfer_army_to_army(MilitaryCore &core, int32_t from, int32_t to, int3
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, to,
                                                      core._lots.country_slot[i], core._lots.unit_type[i],
                                                      core._lots.equip_quality_q8[i],
-                                                     core._lots.kit_q16[i]);
+                                                     core._lots.kit_q16[i], core._lots.partial_equipment[i]);
         if (dest < 0) {
             core._lots.count[i] += take;
             break;
@@ -104,7 +104,7 @@ int32_t military_embark_army(MilitaryCore &core, int32_t owner, int32_t cell, in
         core._lots.count[i] -= take;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army, owner,
                                                      core._lots.unit_type[i], core._lots.equip_quality_q8[i],
-                                                     core._lots.kit_q16[i]);
+                                                     core._lots.kit_q16[i], core._lots.partial_equipment[i]);
         if (dest < 0) {
             core._lots.count[i] += take;
             break;
@@ -154,7 +154,7 @@ bool military_disembark_army(MilitaryCore &core, int32_t army) {
         if (core._lots.location[i] != army) continue;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, cell, owner,
                                                      core._lots.unit_type[i], core._lots.equip_quality_q8[i],
-                                                     core._lots.kit_q16[i]);
+                                                     core._lots.kit_q16[i], core._lots.partial_equipment[i]);
         if (dest < 0) break;
         core._lots.count[(size_t)dest] += core._lots.count[i];
         core._lots.count[i] = 0;
@@ -755,7 +755,8 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                     if (_lots.location[i] != other) continue;
                     const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army_slot,
                                                             _lots.country_slot[i], _lots.unit_type[i],
-                                                            _lots.equip_quality_q8[i], _lots.kit_q16[i]);
+                                                            _lots.equip_quality_q8[i], _lots.kit_q16[i],
+                                                            _lots.partial_equipment[i]);
                     if (dest < 0) continue;
                     _lots.count[(size_t)dest] += _lots.count[i];
                     _lots.count[i] = 0;

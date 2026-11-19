@@ -1662,8 +1662,8 @@ func is_annual_report_open() -> bool:
 func close_annual_report() -> void:
 	_overlay_component.close_annual_report(self)
 
-func annual_other_modal_open() -> bool:
-	return _overlay_component.annual_other_modal_open(self)
+func annual_other_modal_open(ignore_era_progress: bool = false) -> bool:
+	return _overlay_component.annual_other_modal_open(self, ignore_era_progress)
 
 func show_narrative_event_offer(offer: Dictionary) -> void:
 	_overlay_component.show_narrative_event_offer(self, offer)

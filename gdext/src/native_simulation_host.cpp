@@ -39,25 +39,6 @@
 
 namespace pk {
 
-void NativeSimulationHost::complete_main_boundary_service(MainBoundaryClient client) noexcept {
-    const uint32_t bit = main_boundary_client_bit(client);
-    {
-        // Pair predicate publication with the worker's check-to-wait
-        // transition. Atomics alone can lose this notification before
-        // wait_for enters its wait, leaving the 5 ms timeout to wake it.
-        std::lock_guard<std::mutex> control_lock(_control_mutex);
-        uint32_t observed = _main_boundary_service_requested.load(
-            std::memory_order_acquire);
-        while ((observed & bit) != 0) {
-            if (_main_boundary_service_requested.compare_exchange_weak(observed,
-                    observed & ~bit, std::memory_order_acq_rel,
-                    std::memory_order_acquire))
-                break;
-        }
-    }
-    _control_cv.notify_all();
-}
-
 NativeSimulationHost::ControlState NativeSimulationHost::control_state() const {
     ControlState out;
     out.state = _state.load(std::memory_order_acquire);
@@ -398,11 +379,15 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     // Both executors reach this table only after the daily domains settle.
     // Keep the table in gameplay order, before either caller publishes the day.
     using DayTailStage = const char *(NativeSimulationHost::*)(DayExecution &);
-    static constexpr std::array<DayTailStage, 4> day_tail_stages{
+    static constexpr std::array<DayTailStage, 8> day_tail_stages{
         &NativeSimulationHost::stage_natural_resource_recovery,
         &NativeSimulationHost::stage_bio_occupancy,
         &NativeSimulationHost::stage_military,
         &NativeSimulationHost::stage_vision,
+        &NativeSimulationHost::stage_effect_adapter,
+        &NativeSimulationHost::stage_trigger_delivery,
+        &NativeSimulationHost::stage_ideology_projection,
+        &NativeSimulationHost::stage_era_advancement,
     };
     if (commit.preflight_ok != 0) {
         for (const auto stage : day_tail_stages) {

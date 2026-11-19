@@ -118,7 +118,6 @@ static func _validate_command_args(
 		is_milestone_technology: Callable,
 		_validate_owned_cell: Callable,
 		ideology_offer_eligibility: Callable,
-		_era_advancement_preview: Callable,
 		_military_facade: Callable,
 		_completed_technology_ids: Callable,
 		_state_building_gate: Callable,
@@ -294,34 +293,9 @@ static func _validate_command_args(
 				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			if int(args.get("ideology_id", -1)) < 0:
 				return _result(false, "invalid_args", "理念标识无效。")
-		COMMAND_ERA_ADVANCE_START:
-			var preview: Dictionary = _era_advancement_preview.call()
-			match String(preview.get("status", "")):
-				"ready":
-					pass
-				"max":
-					return _result(false, "era_advance_max", "已到达最高时代。")
-				"purchasing", "paused", "completing":
-					return _result(false, "era_advance_in_progress", "时代晋升已在进行中。")
-				_:
-					return _result(false, "era_advance_conditions_unmet",
-						"至少需要满足 2 项晋升条件。")
-		COMMAND_ERA_ADVANCE_PAUSE:
-			if String(_era_advancement_preview.call().get("status", "")) != "purchasing":
-				return _result(false, "era_advance_not_purchasing", "当前没有进行中的收购。")
-		COMMAND_ERA_ADVANCE_RESUME:
-			if String(_era_advancement_preview.call().get("status", "")) != "paused":
-				return _result(false, "era_advance_not_paused", "时代收购没有处于暂停状态。")
 		COMMAND_PROCUREMENT_SET_POLICY:
 			if not args.has("treasury_share_bp") or not args.has("research_share_bp"):
 				return _result(false, "invalid_args", "国家购买预算参数不完整。")
-			var policy_check: Dictionary = EraAdvancementServiceScript.validate_policy(
-				int(args.get("treasury_share_bp", -1)), int(args.get("research_share_bp", -1)),
-				int(args.get("era_share_bp", EraAdvancementServiceScript.SHARE_UNSET)),
-				int(args.get("colonization_share_bp",
-					EraAdvancementServiceScript.SHARE_UNSET)))
-			if not bool(policy_check.get("ok", false)):
-				return policy_check
 		COMMAND_NARRATIVE_CHOOSE:
 			if int(args.get("offer_id", 0)) <= 0 \
 					or int(args.get("offer_generation", 0)) <= 0 \

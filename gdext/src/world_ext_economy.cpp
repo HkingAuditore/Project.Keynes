@@ -452,8 +452,7 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
 
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     if (_runtime_host != nullptr &&
-        (_trigger_handoff_retry_limit > 0 ||
-         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
+        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
          _runtime_host->economy_input_requested_day() >= 0)) {
         auto boundary = _runtime_host->try_lock_economy_input_capture();
         Dictionary pending;
@@ -461,7 +460,6 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
         pending["fatal"] = false;
         pending["captured"] = false;
         if (!boundary.owns_lock()) return pending;
-        service_economy_boundary_inbox();
         int64_t requested = _runtime_host->economy_input_requested_day();
         if (requested < 0) {
             // 主线程发布下一日环境前可预先冻结同一批 slots；只允许严格
@@ -2007,19 +2005,6 @@ Dictionary DCWorldExt::get_family_colonization_quote_detail(
     return committed_read(_runtime_host.get(), runtime,
         read_key(ReadQuery::FAMILY_COLONIZATION_QUOTE_DETAIL, {quote_token, population}),
         [&] { return runtime->family_colonization_quote_detail(quote_token, population); });
-}
-
-void DCWorldExt::service_economy_boundary_inbox() {
-    if (_trigger_handoff_retry_limit > 0) {
-        const int limit = _trigger_handoff_retry_limit;
-        _trigger_handoff_retry_limit = 0;
-        _trigger_handoff_completed = handoff_trigger_effects_unlocked(limit);
-    }
-    if (!_economy_effect_adapter_retry || _effect_runtime == nullptr ||
-        _economy_runtime == nullptr) return;
-    _economy_effect_adapter_retry = false;
-    dispatch_effect_native_economy_unlocked();
-    ack_effect_native_economy_unlocked();
 }
 
 Dictionary DCWorldExt::start_family_colonization(

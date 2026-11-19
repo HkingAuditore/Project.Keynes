@@ -82,12 +82,15 @@ func _test_social_media() -> bool:
 			_wait_opinion_revision(),
 			str(_ext.get_country_class_opinion_snapshot())):
 		return false
-	if not _require("the live opinion source publishes to the worker",
-			bool(_ext.publish_ideology_worker_inputs().get("ok", false)),
-			str(_ext.get_runtime_thread_report())):
-		return false
+	var opinion: Dictionary = _ext.get_country_class_opinion_snapshot()
 	_ext.set_runtime_clock(true, WORKER_SPEED)
 	_tick = _drive_days(1)
+	var worker: Dictionary = _ext.get_runtime_thread_report()
+	if not _require("the worker consumes the exact preceding Economy opinion revision",
+			int(worker.get("ideology_parity_worker_opinion_revision", -1)) == int(opinion.get("revision", 0))
+			and int(worker.get("ideology_parity_worker_opinion_committed_day", -2)) == int(opinion.get("commit_day", -1)),
+			str(opinion.get("revision")) + " / " + str(worker.get("ideology_parity_worker_opinion_revision"))):
+		return false
 	if not _require("the worker Ideology POD becomes ready",
 			bool(_ext.get_runtime_thread_report().get(
 				"ideology_pod_ready", false)),
@@ -144,7 +147,7 @@ func _test_social_media() -> bool:
 	_opinion_population = live.population.duplicate()
 	_opinion_satisfaction_q16 = live.satisfaction_q16.duplicate()
 	_opinion_weighted = live.satisfaction_weighted.duplicate()
-	if not _publish_opinion_source("restore real class rows for repeal"):
+	if not _install_opinion_source("restore real class rows for repeal"):
 		return false
 	_tick = _drive_days(1)
 	if not _unequip(CARD):
@@ -221,7 +224,7 @@ func _settle_positive_population(label: String) -> Dictionary:
 	for row in range(row_begin, row_end):
 		_opinion_population[row] += POPULATION_STEP
 	var before_day := int(_snapshot().get("point_ledger_day", -1))
-	if not _publish_opinion_source(label):
+	if not _install_opinion_source(label):
 		return {}
 	var last := _snapshot()
 	for _index in range(16):
@@ -243,16 +246,11 @@ func _wait_point_baseline() -> bool:
 		str(_snapshot()))
 
 
-func _publish_opinion_source(label: String) -> bool:
+func _install_opinion_source(label: String) -> bool:
 	var override: Dictionary = _ext.set_class_opinion_source_override_for_test(
 		_opinion_population, _opinion_satisfaction_q16, _opinion_weighted)
-	if not _require("%s: controlled opinion source applies" % label,
-			bool(override.get("ok", false)), str(override)):
-		return false
-	var published: Dictionary = _ext.publish_ideology_worker_inputs()
-	return _require("%s: worker publication accepts the controlled source"
-			% label,
-		bool(published.get("ok", false)), str(published))
+	return _require("%s: controlled opinion source applies" % label,
+		bool(override.get("ok", false)), str(override))
 
 
 func _snapshot() -> Dictionary:

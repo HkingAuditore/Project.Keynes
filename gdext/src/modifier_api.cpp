@@ -64,6 +64,7 @@ int32_t remove_rows_for_source(ModifierRuntime &modifier, uint64_t source_type, 
 // ---- Ideology (ideology_runtime.cpp)
 uint64_t catalog_hash(const ModifierRuntime &modifier) { return modifier.catalog_hash(); }
 bool install_derived_cell_layer(ModifierRuntime &modifier, DerivedCellFront front, uint64_t expected_generation, bool &skipped, std::string &error) { return modifier.install_derived_cell_layer(front, expected_generation, skipped, error); }
+void restore_derived_cell_layer(ModifierRuntime &modifier, DerivedCellFront front) { modifier.restore_derived_cell_layer(std::move(front)); }
 bool resolve_definition_terms(const ModifierRuntime &modifier, const std::string &definition_key, std::vector<ModifierApi::ResolvedTerm> &out) { return modifier.resolve_definition_terms(definition_key, out); }
 } // namespace modifier_api
 } // namespace pk

@@ -10,11 +10,8 @@ extends SceneTree
 ## 现在 tribal_warriors 挂在 `tech.composite_tools`（硬前置含 stone_knapping），
 ## 民兵没有任何兵种专属物资需求。
 ##
-## 第二轮（全兵种）：核心槽在解锁时必须有一个达到 min_quality 的商品既
-## 有生产许可、又有已解锁的产出建筑；次要槽则要求类别中至少一个商品可用。
-##
-## 校验走正式目录（军事 JSON + 经济目录 + 建筑 .tres + 科技树），并带负例
-## （回退部落战士门槛 / 火枪兵挂到早期科技门）证明不是假 PASS。
+## 槽在解锁时可以留空。保留正式目录的逐槽检查，并对空槽、库存不足和后续
+## 补装分别跑原生训练与组军测试。
 ##
 ##   godot --headless --path Project/project-keynes \
 ##       -s res://tests/military/military_unit_unlock_consistency_test.gd
@@ -41,10 +38,11 @@ func _init() -> void:
 	_nodes = _technology_nodes()
 	_producers = _load_producers()
 	_check_day_zero_unlock_contract()
-	_check_all_unit_equipment_reachable()
+	_check_unit_equipment_at_unlock()
 	_check_tribal_warriors_gate()
 	_check_musketeers_example()
 	_check_guard_detects_regression()
+	_check_native_training()
 	_report_supply_gaps()
 	if _failures.is_empty():
 		print("=== military unit unlock consistency: ok ===")
@@ -203,7 +201,7 @@ func _producer_ready(good_id: String, closure: Dictionary) -> bool:
 			continue
 		var row: Dictionary = row_value
 		var direct: PackedStringArray = row.get("tags", PackedStringArray())
-		var hit := false
+		var hit := direct.is_empty()
 		for tag in direct:
 			if closure.has(String(tag)):
 				hit = true
@@ -288,16 +286,16 @@ func _day_zero_violations(raw: Dictionary, compiled: Dictionary,
 	return violations
 
 
-## 全兵种硬契约：核心槽在解锁瞬间必须有一个达标商品可生产；次要槽
-## 则必须有一个同类别商品可生产。
-func _equipment_violations(raw: Dictionary, graph: Dictionary,
-		good_tags: Dictionary) -> Array:
-	var violations: Array = []
+## 核心槽接受达标装备，次要槽接受同类替代。
+func _equipment_slot_gaps(raw: Dictionary, graph: Dictionary,
+		good_tags: Dictionary, report_slots: bool = false) -> Array:
+	var gaps: Array = []
 	_slots_checked = 0
 	var compiled := _compile(raw)
+	_expect("catalog compiles for the equipment audit", bool(compiled.get("ok", false)),
+		String(compiled.get("reason", "")))
 	if not bool(compiled.get("ok", false)):
-		violations.append("catalog does not compile: %s" % String(compiled.get("reason", "")))
-		return violations
+		return gaps
 	var categories_by_id := _categories_by_id(compiled)
 	var good_ids := _economy_good_ids()
 	for unit_value in raw.get("units", []):
@@ -308,7 +306,7 @@ func _equipment_violations(raw: Dictionary, graph: Dictionary,
 		if tech_id.is_empty():
 			continue  # 恒解锁兵种由 day-zero 契约覆盖
 		if not graph.has(tech_id):
-			violations.append("unknown unlock technology %s" % tech_id)
+			_expect("known unit unlock technology", false, tech_id)
 			continue
 		var closure := _closure_of(tech_id, graph)
 		var unit_id := str(unit.get("id", ""))
@@ -324,18 +322,23 @@ func _equipment_violations(raw: Dictionary, graph: Dictionary,
 					categories_by_id.get(category, {})):
 				if int(good_value) >= 0 and int(good_value) < good_ids.size():
 					accepted_ids.append(String(good_ids[int(good_value)]))
-			var ready := false
+			var ready := ""
 			for good_id in accepted_ids:
 				var tags: PackedStringArray = good_tags.get(good_id, PackedStringArray())
-				if Array(tags).any(func(tag) -> bool: return closure.has(String(tag))) \
+				if (tags.is_empty() or Array(tags).any(func(tag) -> bool: return closure.has(String(tag)))) \
 						and _producer_ready(good_id, closure):
-					ready = true
+					ready = good_id
 					break
-			if not ready:
-				var slot_kind := "core" if bool(slot.get("core", false)) else "secondary"
-				violations.append("%s/%sQ%d %s slot has no unlocked producible accepted good (accepted=%s)"
-					% [unit_id, category, quality, slot_kind, str(accepted_ids)])
-	return violations
+			var slot_id := "%s/%sQ%d" % [unit_id, category, quality]
+			_expect("slot defines an accepted good", not accepted_ids.is_empty(), slot_id)
+			if ready.is_empty():
+				gaps.append(slot_id)
+			if report_slots:
+				var eventual := Array(accepted_ids).any(func(good_id) -> bool:
+					return _producer_ready(String(good_id), graph))
+				_expect("slot can be filled after the relevant technologies unlock", eventual, slot_id)
+				print("  [equipment] %s %s" % [slot_id, "may stay empty" if ready.is_empty() else "can equip " + ready])
+	return gaps
 
 
 func _categories_by_id(compiled: Dictionary) -> Dictionary:
@@ -383,17 +386,15 @@ func _check_day_zero_unlock_contract() -> void:
 			(militia.get("equipment", []) as Array).is_empty() and not has_demand)
 
 
-func _check_all_unit_equipment_reachable() -> void:
+func _check_unit_equipment_at_unlock() -> void:
 	var raw := _read_json(MILITARY_PATH)
 	if raw.is_empty():
 		return
-	var violations := _equipment_violations(raw, _nodes, _good_technology_tags())
-	for violation in violations:
-		_failures.append(String(violation))
+	var gaps := _equipment_slot_gaps(raw, _nodes, _good_technology_tags(), true)
 	_expect("checked every authored gated equipment slot", _slots_checked >= 46,
 		str(_slots_checked))
-	_expect("every gated equipment slot is reachable at unlock", violations.is_empty(),
-		str(violations.size()) + " broken slots")
+	_expect("the catalog includes slots that can equip at unlock and slots that must wait for later technology",
+		gaps.size() > 0 and gaps.size() < _slots_checked)
 
 
 func _check_tribal_warriors_gate() -> void:
@@ -449,23 +450,30 @@ func _check_musketeers_example() -> void:
 	prereq.erase("tech.iron_smelting")
 	gate["hard_prerequisite_ids"] = prereq
 	regressed[MUSKETEER_TECH] = gate
-	var violations := _equipment_violations(raw, regressed, _good_technology_tags())
-	var found := false
-	for violation in violations:
-		if String(violation).contains("musketeers") and String(violation).contains("iron_weapons"):
-			found = true
+	var gaps := _equipment_slot_gaps(raw, regressed, good_tags)
 	_expect("secondary musketeer melee slot accepts lower quality after iron prerequisite removal",
-		not found, str(violations))
-	# 负例：把火枪兵挂到部落战士的科技门上，核心 firearms 槽必须报缺口。
+		not gaps.has("musketeers/melee_armsQ3"), str(gaps))
+	# 把火枪兵提前到部落战士的科技门。核心槽仍不能接受未解锁的火器。
 	var early := raw.duplicate(true)
 	for unit_value in early.get("units", []):
 		if unit_value is Dictionary and String((unit_value as Dictionary).get("id", "")) == "musketeers":
 			(unit_value as Dictionary)["tech"] = TRIBAL_TECH
-	var core_gap := false
-	for violation in _equipment_violations(early, _nodes, good_tags):
-		if String(violation).begins_with("musketeers/firearms") and String(violation).contains("core slot"):
-			core_gap = true
-	_expect("guard rejects musketeers whose core firearms slot is unproducible", core_gap)
+	var early_gaps := _equipment_slot_gaps(early, _nodes, good_tags)
+	_expect("early musketeers leave the firearms slot empty", early_gaps.has("musketeers/firearmsQ1"),
+		str(early_gaps))
+
+
+func _check_native_training() -> void:
+	var ext = ClassDB.instantiate("DCWorldExt")
+	_expect("native training checks are available", ext != null and ext.has_method("runtime_military_self_test"))
+	if ext == null or not ext.has_method("runtime_military_self_test"):
+		return
+	var result: Dictionary = ext.runtime_military_self_test()
+	var report := String(result.get("reason", ""))
+	for line in report.split("\n"):
+		if line.contains("empty slot:"):
+			print(line)
+	_expect("native recruitment, training, battle strength and re-equipment", bool(result.get("ok", false)), report)
 
 
 ## 把 tribal_warriors 的门槛改回空串，防线必须报出石矛 / 弓 / upkeep 的违规。

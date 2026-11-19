@@ -7,6 +7,7 @@
 #include "cell_program_eligibility.h"
 #include "ideology_runtime.h"
 #include "native_simulation_host.h"
+#include "runtime_ideology_read_view.h"
 
 #include <cstring>
 #include <limits>
@@ -803,7 +804,11 @@ Dictionary DCWorldExt::get_effective_stat_value(const String &stat_key,
     // while the simulation still consumes a different published generation.
     std::optional<std::unique_lock<std::mutex>> boundary;
     const auto *runtime = static_cast<const ModifierRuntime *>(_modifier_runtime);
-    if (_economy_modifier_view_attached && _economy_modifier_view != nullptr) {
+    const auto ideology_view = _runtime_host && _runtime_host->effect_adapter_owned()
+        ? _runtime_host->latest_ideology_read_view() : nullptr;
+    if (ideology_view) {
+        out["read_source"] = "committed_ideology_projection";
+    } else if (_economy_modifier_view_attached && _economy_modifier_view != nullptr) {
         if (_runtime_host != nullptr) {
             auto acquired = _runtime_host->try_lock_economy_input_capture();
             if (!acquired.owns_lock()) {
@@ -826,14 +831,15 @@ Dictionary DCWorldExt::get_effective_stat_value(const String &stat_key,
     out["ok"] = true;
     out["stat_id"] = stat_id;
     // The production call, so this reports the number the game would see.
-    out["value"] = runtime->effective_value(ModifierRuntime::ECONOMY, stat_id,
-        static_cast<uint64_t>(entity_handle), static_cast<uint64_t>(cell), base_value);
+    const DerivedCellFront *front = ideology_view ? ideology_view->derived.get()
+        : runtime->derived_cell_front();
+    out["value"] = runtime->effective_value_with_front(ModifierRuntime::ECONOMY, stat_id,
+        static_cast<uint64_t>(entity_handle), static_cast<uint64_t>(cell), base_value, front);
 
     // The derived layer's own slice of it, when the cell has one. Reported separately so
     // a test can tell "the derived row contributed" from "the legacy bucket did".
     bool derived_found = false;
     if (cell >= 0) {
-        const DerivedCellFront *front = runtime->derived_cell_front();
         if (front != nullptr) {
             const DerivedCellStatRow *row = front->row_for_stat(stat_id);
             if (row != nullptr) {
@@ -1000,6 +1006,11 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
         out["reason"] = "ideology_runtime_unavailable";
         return out;
     }
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        out["ok"] = false;
+        out["reason"] = "ideology_executor_owned";
+        return out;
+    }
     // NON-const: draining advances the rebuild.
     auto *ideology = static_cast<NativeIdeologyRuntime *>(_ideology_runtime);
     // A drain for a day the in-flight job does not belong to DESTROYS that job:
@@ -1015,7 +1026,7 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
     // Bounded: a rebuild needs at most (contributions / min_batch) steps, and a
     // runaway loop here would hang a day rather than fail it.
     int32_t steps = 0;
-    while (ideology->derived_rebuild_pending() && !ideology->derived_fold_running() && steps < 4096) {
+    while (ideology->derived_rebuild_pending() && steps < 4096) {
         // A local, not `*new std::string()`: that leaked one string per step.
         std::string step_error;
         ideology->step_derived_rebuild(day_index, step_error);
@@ -1055,7 +1066,10 @@ Dictionary DCWorldExt::get_derived_multi_country_report() const {
         return out;
     }
     auto *runtime = static_cast<const ModifierRuntime *>(_modifier_runtime);
-    const DerivedCellFront *front = runtime->derived_cell_front();
+    const auto ideology_view = _runtime_host && _runtime_host->effect_adapter_owned()
+        ? _runtime_host->latest_ideology_read_view() : nullptr;
+    const DerivedCellFront *front = ideology_view ? ideology_view->derived.get()
+        : runtime->derived_cell_front();
     if (front == nullptr) {
         out["ok"] = true;
         out["rows"] = 0;
@@ -1145,12 +1159,15 @@ Dictionary DCWorldExt::get_derived_cell_layer_report() const {
         out["reason"] = "modifier_runtime_unavailable";
         return out;
     }
-    const DerivedCellFront *layer =
-        runtime_from(_modifier_runtime)->derived_cell_front();
+    const auto ideology_view = _runtime_host && _runtime_host->effect_adapter_owned()
+        ? _runtime_host->latest_ideology_read_view() : nullptr;
+    const DerivedCellFront *layer = ideology_view ? ideology_view->derived.get()
+        : runtime_from(_modifier_runtime)->derived_cell_front();
     out["ok"] = true;
     out["installed"] = layer != nullptr;
     out["layer_generation"] = static_cast<int64_t>(
-        runtime_from(_modifier_runtime)->derived_cell_layer_generation());
+        ideology_view ? (layer ? layer->generation : 0)
+                      : runtime_from(_modifier_runtime)->derived_cell_layer_generation());
     if (layer == nullptr) {
         out["stat_count"] = int64_t{0};
         out["cell_count"] = int64_t{0};
@@ -1170,8 +1187,7 @@ Dictionary DCWorldExt::get_derived_cell_layer_report() const {
     int64_t contribution_count = 0;
     int64_t row_overhead_bytes = 0;
     {
-        const auto *modifier = runtime_from(_modifier_runtime);
-        const DerivedCellFront *front = modifier->derived_cell_front();
+        const DerivedCellFront *front = layer;
         if (front != nullptr) {
             // ONE formula for both the report and the peak tracker:
             // `pk::derived_cell_front_bytes` in `derived_cell_layer.h`. It also counts

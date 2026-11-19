@@ -8,7 +8,6 @@ func _on_era_reward_choice_requested(host, generation: int, choice_index: int) -
 		"choice_index": choice_index,
 	})
 	host._sync_era_reward_offer()
-	host._drain_era_reward_until_settled()
 
 
 
@@ -79,6 +78,8 @@ func _sync_era_reward_offer(host) -> void:
 			host.open_era_reward_offer()
 		return
 	if status == "OPEN" or status == "SELECTED_PENDING" or status == "ERROR":
+		if status == "SELECTED_PENDING" and host._annual_report_flow.is_open():
+			return
 		if not host._era_reward_locked:
 			host._era_reward_resume_running = host._world_clock != null and not host._world_clock.paused
 			host._era_reward_previous_speed = host._world_clock.speed_multiplier \
@@ -103,8 +104,6 @@ func _sync_era_reward_offer(host) -> void:
 				host._ui_manager.show_era_reward_error(String(offer.get(
 					"error", "未知事务错误")))
 		host.era_reward_offer_changed.emit(offer)
-		if status == "SELECTED_PENDING":
-			host._drain_era_reward_until_settled()
 		return
 	# NONE also releases a stale lock, e.g. restored player_view without an Offer.
 	if host._era_reward_locked:
@@ -129,7 +128,6 @@ func era_reward_locked(host) -> bool:
 
 
 func get_era_advancement_snapshot(host) -> Dictionary:
-	host._bind_era_advancement()
 	return host._era_advancement.snapshot()
 
 
@@ -145,13 +143,6 @@ func get_era_advancement_blocked_reason(host) -> String:
 
 
 
-func _era_advancement_preview(host) -> Dictionary:
-	# Read-only: validation must not submit anything or consume sequences.
-	host._bind_era_advancement()
-	return host._era_advancement.preview()
-
-
-
 func _bind_era_advancement(host) -> void:
 	if host._era_advancement == null:
 		return
@@ -161,11 +152,14 @@ func _bind_era_advancement(host) -> void:
 		host._era_advancement.era_advanced.connect(host._on_era_advancement_advanced)
 	if host._country_facade == null or host._player_country_handle == 0:
 		return
+	var regimes: Array = []
+	if host._country_facade.has_method("political_regime_catalog_view"):
+		regimes = host._country_facade.political_regime_catalog_view().get("definitions", [])
 	var newly_bound: bool = host._era_advancement.bind(host._country_facade, host._economy_facade,
-		host._player_country_handle, Callable(host, "_allocate_command_sequence"))
+		host._player_country_handle, Callable(host, "_allocate_command_sequence"), regimes)
 	if newly_bound:
-		# Policy and era target are transient on the native side.
-		host._era_advancement.push_runtime_state(host._next_effective_day())
+		if host._runtime_host == null or not host._runtime_host.is_loading_session():
+			host._era_advancement.push_runtime_state(host._next_effective_day())
 		host._refresh_era_advancement(true)
 
 
@@ -173,8 +167,6 @@ func _bind_era_advancement(host) -> void:
 func _restore_era_advancement(host, state) -> void:
 	host._bind_era_advancement()
 	host._era_advancement.restore(state if state is Dictionary else {})
-	if host._era_advancement.is_bound():
-		host._era_advancement.push_runtime_state(host._next_effective_day())
 	host._refresh_era_advancement(true)
 
 
@@ -182,13 +174,7 @@ func _restore_era_advancement(host, state) -> void:
 func _refresh_era_advancement(host, force: bool = false) -> void:
 	if host._era_advancement == null or not host._era_advancement.is_bound() or host._world_clock == null:
 		return
-	var day: int = host._world_clock.day_index()
-	var previous_day: int = host._era_advancement._last_refresh_day
-	host._era_advancement.refresh(day, force)
-	if day != previous_day and host._runtime_host != null:
-		var generator = host._runtime_host.generator()
-		if generator != null and generator.has_method("record_runtime_main_step"):
-			generator.record_runtime_main_step(day, &"era_advancement_daily")
+	host._era_advancement.refresh(host._world_clock.day_index(), force)
 
 
 
@@ -457,7 +443,7 @@ func capture_view_state(host) -> Dictionary:
 		"ideology_draw_baseline_generation": host._ideology_draw_baseline_generation,
 		"ideology_draw_start_day": host._ideology_draw_start_day,
 		"ideology_draw_sequence": host._ideology_draw_sequence,
-		"era_advancement": host._era_advancement.to_save(),
+		"era_advancement": host._era_advancement.capture(),
 		"military_budget": host._military_budget_state.duplicate(),
 		"narrative_event_view": host._narrative_flow.capture(),
 	}
@@ -586,7 +572,6 @@ func _validate_command_args(host, id: StringName, args: Dictionary, facade = nul
 		host.is_milestone_technology,
 		host._validate_owned_cell,
 		host.ideology_offer_eligibility,
-		host._era_advancement_preview,
 		host._military_facade,
 		host._completed_technology_ids,
 		host._state_building_gate,

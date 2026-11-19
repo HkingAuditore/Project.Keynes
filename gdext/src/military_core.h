@@ -288,6 +288,7 @@ struct MilitaryLotStore {
     std::vector<int16_t> unit_type;
     std::vector<int16_t> equip_quality_q8;  // average actual quality * 256
     std::vector<int32_t> kit_q16;           // weighted per-slot delivery factor
+    std::vector<uint16_t> partial_equipment; // packed grades of incompletely equipped lots
     std::vector<int32_t> condition_q16;     // equipment condition 0.5..1.0
     std::vector<int64_t> count;
     std::vector<int32_t> free_list;
@@ -308,6 +309,7 @@ struct MilitaryTrainingOrder {
     int16_t delivered_quality_q8 = 0;  // weakest actually delivered slot (q8), 0 = none yet
     uint64_t equipped_slot_mask = 0;   // one bit per delivered equipment category
     std::array<int8_t, MILITARY_MAX_EQUIP_SLOTS> slot_delivered_quality{};
+    uint16_t source_partial_equipment = 0; // same-unit re-equipment only
 };
 
 struct MilitaryArmyStore {
@@ -912,6 +914,7 @@ public:
     void update_force_targets(const MilitaryWorldDigest &digest);
     void run_recruitment(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     void run_training(const MilitaryWorldDigest &digest);
+    void run_reequipment(const MilitaryWorldDigest &digest, int32_t country, bool upgrade_quality);
     void run_reinforcement(const MilitaryWorldDigest &digest);
     void update_morale_org(const MilitaryWorldDigest &digest);
     void run_wages_and_upkeep(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
@@ -954,7 +957,7 @@ public:
     void destroy_army(int32_t army_slot);
     int32_t lot_find_or_create(uint8_t kind, int32_t location, int32_t country_slot,
                                int16_t unit, int16_t quality_q8,
-                               int32_t kit_q16 = MILITARY_Q16);
+                               int32_t kit_q16 = MILITARY_Q16, uint16_t partial_equipment = 0);
     int64_t lot_remove_casualties(uint8_t kind, int32_t location, int64_t count); // proportional
     MilitaryCellState *cell_state(int32_t cell, bool create);
     // Military stock custody helpers (military_core_logistics.cpp).

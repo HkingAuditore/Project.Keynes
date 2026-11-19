@@ -603,22 +603,21 @@ int32_t cell_training_speed_q16(const MilitaryCatalog &c, const MilitaryCellStat
     return speed > 0 ? speed : MILITARY_Q16;
 }
 
-int64_t transfer_garrison(MilitaryCore &core, int32_t cell, int32_t from_country, int32_t to_country,
-                          int16_t from_unit, int16_t to_unit, int16_t quality_q8,
-                          int32_t kit_q16, int64_t count) {
-    if (count <= 0) return 0;
-    int64_t left = count;
+void transfer_trained_garrison(MilitaryCore &core, const MilitaryTrainingOrder &order,
+                              int16_t quality_q8, int32_t kit_q16, uint16_t partial_equipment) {
+    int64_t left = order.count;
     for (size_t i = 0; i < core._lots.active.size() && left > 0; ++i) {
         if (!core._lots.active[i]) continue;
         if (core._lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
-        if (core._lots.location[i] != cell) continue;
-        if (core._lots.country_slot[i] != from_country) continue;
-        if (core._lots.unit_type[i] != from_unit) continue;
+        if (core._lots.location[i] != order.cell || core._lots.country_slot[i] != order.country_slot ||
+            core._lots.unit_type[i] != order.from_unit) continue;
+        if (order.source_partial_equipment != 0 &&
+            core._lots.partial_equipment[i] != order.source_partial_equipment) continue;
         const int64_t take = std::min(left, core._lots.count[i]);
         if (take <= 0) continue;
         core._lots.count[i] -= take;
-        const int32_t lot = core.lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, cell, to_country,
-                                                    to_unit, quality_q8, kit_q16);
+        const int32_t lot = core.lot_find_or_create(MILITARY_LOT_GARRISON, order.cell,
+            order.country_slot, order.to_unit, quality_q8, kit_q16, partial_equipment);
         if (lot < 0) {
             core._lots.count[i] += take;
             break;
@@ -626,34 +625,44 @@ int64_t transfer_garrison(MilitaryCore &core, int32_t cell, int32_t from_country
         core._lots.count[(size_t)lot] += take;
         left -= take;
     }
-    return count - left;
+}
+
+bool training_equipment_ready(const MilitaryCore &core, const MilitaryWorldDigest &digest,
+                              const MilitaryTrainingOrder &order, const MilitaryUnitType &unit) {
+    const uint64_t slots = equipment_slot_mask(unit);
+    if (slots && (slots & order.equipped_slot_mask) == slots) return true;
+    if (!unlocked(digest, order.country_slot, unit.unlock_bit) ||
+        digest.country_equipment_available.empty()) return false;
+    for (int32_t slot = 0; slot < unit.slot_count; ++slot) {
+        if (order.slot_delivered_quality[slot] == 0 &&
+            equipment_slot_available(core.catalog(), digest, order.country_slot, unit, slot)) return false;
+    }
+    const auto in_transit = [&](const auto &delivery) {
+        return delivery.dest_kind == MILITARY_LOT_TRAINING && delivery.dest_handle == order.id;
+    };
+    return std::none_of(core._purchase_orders.begin(), core._purchase_orders.end(), in_transit) &&
+        std::none_of(core._shipments.begin(), core._shipments.end(), in_transit);
 }
 
 } // namespace
 
 void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
-    // 1. Advance in-progress orders. A2's procurement sets equipment_ready once
-    // the equipment is in place; until then the order waits (and is the demand
-    // signal A2 reads from _training).
+    // 1. Advance after the slots the country can obtain have been delivered.
     for (size_t i = 0; i < _training.size(); ++i) {
         MilitaryTrainingOrder &o = _training[i];
         if (o.count <= 0 || o.days_done >= o.days_total) continue;
+        if (o.to_unit < 0 || static_cast<size_t>(o.to_unit) >= _catalog.units.size()) continue;
+        const MilitaryUnitType &unit = _catalog.units[o.to_unit];
+        o.equipment_ready = training_equipment_ready(*this, digest, o, unit);
         if (!o.equipment_ready) continue;
         ++o.days_done;
         if (o.days_done < o.days_total) continue;
-        // v3: the garrison lot kept its *source* unit type while training, so
-        // an unequipped order can never fight as the target unit. Only now -
-        // every equipment slot delivered and all training days elapsed - do the
-        // heads become the target unit, at the quality actually bought.
-        const int16_t delivered_q8 = o.delivered_quality_q8 > 0
-            ? o.delivered_quality_q8 : o.quality_q8;
-        const int32_t kit_q16 = (o.to_unit >= 0 &&
-                (size_t)o.to_unit < _catalog.units.size())
-            ? training_kit_factor_q16(_catalog.units[(size_t)o.to_unit], o)
-            : MILITARY_Q16;
+        const uint16_t partial_equipment = training_partial_equipment(unit, o);
+        const int16_t delivered_q8 = unit.slot_count > 0 ? o.delivered_quality_q8 : o.quality_q8;
+        const int32_t kit_q16 = partial_equipment == 0
+            ? training_kit_factor_q16(unit, o) : MILITARY_Q16;
         if (o.from_unit >= 0) {
-            transfer_garrison(*this, o.cell, o.country_slot, o.country_slot,
-                              o.from_unit, o.to_unit, delivered_q8, kit_q16, o.count);
+            transfer_trained_garrison(*this, o, delivered_q8, kit_q16, partial_equipment);
         }
         o.count = 0;
     }
@@ -671,6 +680,8 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
     if (units <= 0 || _catalog.militia_unit < 0) return;
     static thread_local std::vector<int64_t> gap;
     static thread_local std::vector<int64_t> existing;
+    const bool has_partial_equipment = std::any_of(_lots.partial_equipment.begin(),
+        _lots.partial_equipment.end(), [](uint16_t kit) { return kit != 0; });
 
     // 3. Automatic training / retraining / re-equip (5.6).
     for (size_t slot = 0; slot < _policies.size(); ++slot) {
@@ -687,9 +698,11 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
             if (u == _catalog.militia_unit) continue;
             share_sum += bp;
         }
-        if (share_sum <= 0) continue;
         const int64_t target = p.effective_target;
-        if (target <= 0) continue;
+        if (share_sum <= 0 || target <= 0) {
+            if (has_partial_equipment) run_reequipment(digest, s, false);
+            continue;
+        }
         gap.assign((size_t)units, 0);
         existing.assign((size_t)units, 0);
         for (size_t i = 0; i < _lots.active.size(); ++i) {
@@ -815,46 +828,58 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
                 break;
             }
         }
-        // Re-equip (5.6, same-unit re-equip): garrison lots of a configured unit whose
-        // quality is below the achievable maximum queue a 0.25? order.
-        if (p.quality_policy != 0) continue;
-        const int32_t max_q8 = 5 * 256;
-        for (size_t i = 0; i < _lots.active.size(); ++i) {
-            if (!_lots.active[i]) continue;
-            if (_lots.country_slot[i] != s) continue;
-            if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
-            if (_lots.equip_quality_q8[i] + 128 >= max_q8) continue;
-            const int32_t u = _lots.unit_type[i];
-            if (u < 0 || u >= units) continue;
-            if (u == _catalog.militia_unit) continue;
-            if (_catalog.units[(size_t)u].slot_count <= 0) continue;
-            const int32_t cell = _lots.location[i];
-            const MilitaryCellState *st = cell_state(cell, false);
-            if (!st || st->paused) continue;
-            if (cell < 0 || (size_t)cell >= digest.cell_owner_slot.size()) continue;
-            if (digest.cell_owner_slot[(size_t)cell] != s) continue;
-            if ((_last_day + cell) % 7 != 0) continue;   // spread re-equip work over the week
-            const int64_t count = std::min<int64_t>(_lots.count[i], 256);
-            if (count <= 0) continue;
-            const int32_t speed = cell_training_speed_q16(_catalog, st);
-            const int64_t train_stat = stat_q16(digest, s, MSTAT_TRAINING_TIME);
-            int64_t days = ceil_div_pos((int64_t)_catalog.units[(size_t)u].training_days * (MILITARY_Q16 / 4),
-                                        MILITARY_Q16);
-            days = std::max<int64_t>(1, mul_div(days, train_stat, speed));
-            MilitaryTrainingOrder o;
-            o.id = _next_id++;
-            o.country_slot = s;
-            o.cell = cell;
-            o.from_unit = (int16_t)u;
-            o.to_unit = (int16_t)u;
-            o.count = count;
-            o.days_total = (int32_t)std::min<int64_t>(days, 100000);
-            o.equipment_ready = 0;
-            o.manual = 0;
-            o.quality_q8 = (int16_t)max_q8;
-            _training.push_back(o);
-            break;
+        if (has_partial_equipment || p.quality_policy == 0)
+            run_reequipment(digest, s, p.quality_policy == 0);
+    }
+}
+
+void MilitaryCore::run_reequipment(const MilitaryWorldDigest &digest, int32_t country,
+                                   bool upgrade_quality) {
+    for (size_t i = 0; i < _lots.active.size(); ++i) {
+        if (!_lots.active[i] || _lots.country_slot[i] != country ||
+            _lots.location_kind[i] != MILITARY_LOT_GARRISON || _lots.count[i] <= 0) continue;
+        const uint16_t kit = _lots.partial_equipment[i];
+        if (kit == 0 && (!upgrade_quality || _lots.equip_quality_q8[i] + 128 >= 5 * 256)) continue;
+        const int32_t unit_id = _lots.unit_type[i];
+        if (unit_id < 0 || static_cast<size_t>(unit_id) >= _catalog.units.size() ||
+            unit_id == _catalog.militia_unit) continue;
+        const auto &unit = _catalog.units[unit_id];
+        if (unit.slot_count <= 0) continue;
+        const int32_t cell = _lots.location[i];
+        const MilitaryCellState *state = cell_state(cell, false);
+        if (!state || state->paused || cell < 0 || static_cast<size_t>(cell) >= digest.cell_owner_slot.size() ||
+            digest.cell_owner_slot[cell] != country || (_last_day + cell) % 7 != 0) continue;
+        MilitaryTrainingOrder order;
+        if (kit != 0) {
+            bool can_fill = false;
+            for (int32_t slot = 0; slot < unit.slot_count; ++slot) {
+                const int32_t grade = partial_equipment_grade(kit, slot);
+                order.slot_delivered_quality[slot] = static_cast<int8_t>(grade);
+                if (grade == 0) {
+                    can_fill |= equipment_slot_available(_catalog, digest, country, unit, slot);
+                    continue;
+                }
+                order.equipped_slot_mask |= uint64_t{1} << unit.slot_category[slot];
+            }
+            if (!can_fill || std::any_of(_training.begin(), _training.end(), [&](const auto &pending) {
+                return pending.country_slot == country && pending.cell == cell &&
+                    pending.from_unit == unit_id && pending.source_partial_equipment == kit;
+            })) continue;
+            order.source_partial_equipment = kit;
+            order.delivered_quality_q8 = _lots.equip_quality_q8[i];
         }
+        const int32_t speed = cell_training_speed_q16(_catalog, state);
+        const int64_t training = stat_q16(digest, country, MSTAT_TRAINING_TIME);
+        const int64_t days = ceil_div_pos(unit.training_days, 4);
+        order.id = _next_id++;
+        order.country_slot = country;
+        order.cell = cell;
+        order.from_unit = order.to_unit = static_cast<int16_t>(unit_id);
+        order.count = std::min<int64_t>(_lots.count[i], 256);
+        order.days_total = static_cast<int32_t>(std::clamp<int64_t>(mul_div(days, training, speed), 1, 100000));
+        order.quality_q8 = upgrade_quality ? 5 * 256 : 256;
+        _training.push_back(order);
+        break;
     }
 }
 
@@ -905,7 +930,7 @@ void MilitaryCore::run_reinforcement(const MilitaryWorldDigest &digest) {
                 _lots.count[i] -= take;
                 const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, slot, owner,
                                                         (int16_t)unit, _lots.equip_quality_q8[i],
-                                                        _lots.kit_q16[i]);
+                                                        _lots.kit_q16[i], _lots.partial_equipment[i]);
                 if (dest < 0) {
                     _lots.count[i] += take;
                     break;

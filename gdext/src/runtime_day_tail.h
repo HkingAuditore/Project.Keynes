@@ -8,6 +8,21 @@
 namespace pk {
 
 struct RuntimeVisionFrame;
+struct RuntimeEffectReadView;
+struct RuntimeEraRewardView;
+struct RuntimeGoldenSnapshot;
+struct RuntimeEraAdvancementView;
+struct RuntimeIdeologyReadView;
+class TriggerRuntime;
+class NativeIdeologyRuntime;
+
+struct RuntimeTriggerDelivery {
+    TriggerRuntime *runtime = nullptr;
+    NativeIdeologyRuntime *ideology = nullptr;
+    std::shared_ptr<const TriggerRuntime> initial_view;
+    std::shared_ptr<const RuntimeIdeologyReadView> initial_ideology_view;
+    bool research_reconciled = false;
+};
 
 struct RuntimeResourceDisplayPatch {
     // Cell-major. Each pending cell appears once with its latest values.
@@ -27,6 +42,12 @@ struct RuntimeDayTail {
     int32_t vision_observations = 0;
     int32_t species_observations = 0;
     bool vision_solved = false;
+    std::shared_ptr<const RuntimeEffectReadView> effect;
+    std::shared_ptr<const RuntimeEraRewardView> era_reward;
+    std::shared_ptr<const RuntimeGoldenSnapshot> golden;
+    std::shared_ptr<const RuntimeEraAdvancementView> era_advancement;
+    std::shared_ptr<const TriggerRuntime> trigger;
+    std::shared_ptr<const RuntimeIdeologyReadView> ideology;
 };
 
 } // namespace pk

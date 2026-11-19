@@ -272,7 +272,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_pod_parity_ready_mask.store(0, std::memory_order_release);
     _economy_sync_writes_forbidden.store(false, std::memory_order_release);
     _economy_input_requested_day.store(-1, std::memory_order_release);
-    _main_boundary_service_requested.store(0, std::memory_order_release);
+
     _economy_input_signal.store(0, std::memory_order_release);
     _economy_shadow_stage_invocations.store(0, std::memory_order_release);
     _economy_shadow_stage_cache_hits.store(0, std::memory_order_release);

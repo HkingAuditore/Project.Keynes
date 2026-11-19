@@ -102,9 +102,12 @@ func _prewarm_chronicle(id: int) -> void:
 	_scribe.request(ViewModel.build(report, previous, _host.annual_report_catalogs()))
 
 func _busy() -> bool:
-	return _controller.era_reward_locked() or _controller.family_founding_locked() \
-		or not String(_controller.ideology_draw_phase()).is_empty() \
-		or (_ui != null and _ui.has_method("annual_other_modal_open") and _ui.annual_other_modal_open())
+	var report_pending := _queued > 0 or _reopen_pending or _restore_pending
+	var era_waiting: bool = report_pending and _controller.era_reward_waiting_for_commit()
+	var draw_phase := String(_controller.ideology_draw_phase())
+	return ((_controller.era_reward_locked() or _controller.family_founding_locked()) and not era_waiting) \
+		or (not draw_phase.is_empty() and (not report_pending or draw_phase == "presenting")) \
+		or (_ui != null and _ui.has_method("annual_other_modal_open") and _ui.annual_other_modal_open(era_waiting))
 
 ## 暂停时钟，并且**把暂停推出去**。
 ##

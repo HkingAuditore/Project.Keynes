@@ -26,7 +26,6 @@ func run_daily_tick(host, day_idx: int, season_phase: float) -> Dictionary:
 		host._arm_climate_capacity_pending(day_idx)
 	if bool(report.get("worker_managed", false)):
 		host._pending_tick_start_usec = 0
-		host._service_country_worker_transport()
 		return report
 	host._pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
 	host._refresh_military_terrain_on_season_edge(day_idx)
@@ -39,15 +38,7 @@ func run_daily_tick(host, day_idx: int, season_phase: float) -> Dictionary:
 	# Country ACTIVE day barriers park on peer intents. Callers that drive
 	# ticks without idling WorldRuntimeHost._process (headless tests, catch-up
 	# batches) still need the transport drained on every day boundary.
-	host._service_country_worker_transport()
 	host._consume_modifier_worker_snapshot_if_authoritative()
-	host._consume_effect_worker_snapshot_if_authoritative()
-	host._service_effect_worker_intents_if_authoritative()
-	host._consume_trigger_worker_snapshot_if_authoritative()
-	host._service_trigger_worker_intents_if_authoritative()
-	host._consume_ideology_worker_snapshot_if_authoritative()
-	host._service_ideology_worker_intents_if_authoritative()
-	host._step_ideology_instance_refresh_if_authoritative(day_idx)
 	host._consume_country_worker_read_view_if_authoritative()
 	host._fast_tick_count += 1
 	if host._renderer != null and host._generator.has_method("has_pending_detail_scatter_refresh") \
@@ -706,18 +697,9 @@ func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -
 					economy.dispatch_construction_command_receipts()
 	host._sched_proc_economy_input_ms += host._sched_elapsed_ms(segment_usec)
 	segment_usec = Time.get_ticks_usec()
-	host._service_country_worker_transport()
 	host._sched_proc_peer_ms += host._sched_elapsed_ms(segment_usec)
 	segment_usec = Time.get_ticks_usec()
 	host._consume_modifier_worker_snapshot_if_authoritative()
-	host._consume_effect_worker_snapshot_if_authoritative()
-	host._service_effect_worker_intents_if_authoritative()
-	host._consume_trigger_worker_snapshot_if_authoritative()
-	host._service_trigger_worker_intents_if_authoritative()
-	host._consume_ideology_worker_snapshot_if_authoritative()
-	host._service_ideology_worker_intents_if_authoritative()
-	if host._ideology_refresh_pending_day >= 0:
-		host._step_ideology_instance_refresh_if_authoritative(host._ideology_refresh_pending_day)
 	host._sched_proc_snapshots_ms += host._sched_elapsed_ms(segment_usec)
 
 
@@ -795,7 +777,6 @@ func _run_native_daily_inline_day(host, day_idx: int, report: Dictionary) -> Dic
 	host._sched_day_climate_writeback_ms += host._sched_elapsed_ms(segment_usec)
 	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_writeback"})
 	segment_usec = Time.get_ticks_usec()
-	host._service_country_worker_transport()
 	host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
 	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_transport"})
 	# 输入日必须等于 host 的 committed_day+1。内联日没有跨线程重试，错日会直接
@@ -914,7 +895,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 			# Peer pump before parking: Country/fiscal soft-commit may be what
 			# frees ring capacity. wait_for_climate_consumed(0) does not pump.
 			segment_usec = Time.get_ticks_usec()
-			host._service_country_worker_transport()
 			host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
 			host._arm_climate_capacity_pending(day_idx)
 			host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
@@ -938,12 +918,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 		if bool(report.get("climate_worker_authoritative", false)):
 			segment_usec = Time.get_ticks_usec()
 			host._consume_modifier_worker_snapshot_if_authoritative()
-			host._consume_effect_worker_snapshot_if_authoritative()
-			host._service_effect_worker_intents_if_authoritative()
-			host._consume_trigger_worker_snapshot_if_authoritative()
-			host._service_trigger_worker_intents_if_authoritative()
-			host._consume_ideology_worker_snapshot_if_authoritative()
-			host._service_ideology_worker_intents_if_authoritative()
 			host._sched_day_snapshots_ms += host._sched_elapsed_ms(segment_usec)
 		segment_usec = Time.get_ticks_usec()
 		host._apply_climate_writeback_if_authoritative(report)
@@ -972,7 +946,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 						str(capacity_result.get("consumed_generation", -1)),
 						str(capacity_result.get("ring_pending", -1))])
 				segment_usec = Time.get_ticks_usec()
-				host._service_country_worker_transport()
 				host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
 				host._arm_climate_capacity_pending(day_idx)
 				host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
@@ -997,7 +970,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 						capture_result.get("reason", "")))])
 			host._sched_day_capture_ms += host._sched_elapsed_ms(segment_usec)
 		segment_usec = Time.get_ticks_usec()
-		host._service_country_worker_transport()
 		host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
 		host._sched_day_country_read_ms = 0.0
 		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
@@ -1005,15 +977,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 	# 兼容调度先接收上一日气候，再采集下一日的输入，避免帧顺序决定更新结果。
 	if bool(report.get("climate_worker_authoritative", false)):
 		host._consume_modifier_worker_snapshot_if_authoritative()
-		host._consume_effect_worker_snapshot_if_authoritative()
-		host._service_effect_worker_intents_if_authoritative()
-		# H8: Trigger before Ideology mirrors the worker stage order, and doing it
-		# here (not only after the tick) lets this day's graph pulse hand off the
-		# effects the worker just emitted instead of trailing them by a day.
-		host._consume_trigger_worker_snapshot_if_authoritative()
-		host._service_trigger_worker_intents_if_authoritative()
-		host._consume_ideology_worker_snapshot_if_authoritative()
-		host._service_ideology_worker_intents_if_authoritative()
 	host._apply_climate_writeback_if_authoritative(report)
 	if bool(report.get("climate_worker_authoritative", false)):
 		# B8 P3：等输入 ring 有空位再 capture（after_generation=0）。
@@ -1024,7 +987,6 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 		host._sched_day_climate_wait_ms += host._sched_elapsed_ms(segment_usec)
 		if not bool(capacity_result.get("ok", false)):
 			segment_usec = Time.get_ticks_usec()
-			host._service_country_worker_transport()
 			host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
 			host._arm_climate_capacity_pending(day_idx)
 			host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)

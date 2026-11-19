@@ -2,6 +2,8 @@
 #include "economy_runtime.h"
 #include "runtime_economy_pod.h"
 
+#include <algorithm>
+
 namespace pk {
 namespace {
 template <typename T> class RestoreValue final {
@@ -49,22 +51,21 @@ bool EconomyAuthorityTransfer::restore_before_country(NativeEconomyRuntime &runt
     // inbox, so carry them across ahead of anything queued meanwhile.
     auto &inbox = *runtime._procurement_inbox;
     decltype(inbox.updates) updates;
-    decltype(inbox.requested_policy) requested_policy;
-    decltype(inbox.requested_era) requested_era;
+    uint64_t next_order;
     {
         std::lock_guard<std::mutex> lock(inbox.mutex);
         updates.swap(inbox.updates);
-        requested_policy.swap(inbox.requested_policy);
-        requested_era.swap(inbox.requested_era);
+        next_order = inbox.next_order;
     }
     const bool restored = runtime.apply_ecp2_authority(state, error);
     {
         std::lock_guard<std::mutex> lock(inbox.mutex);
-        inbox.updates.insert(inbox.updates.begin(), std::make_move_iterator(updates.begin()),
-                             std::make_move_iterator(updates.end()));
-        // merge() keeps an existing key, so a request queued meanwhile wins.
-        inbox.requested_policy.merge(requested_policy);
-        inbox.requested_era.merge(requested_era);
+        // The staged archive and the executor archive contain the same older
+        // orders. Only requests queued since staging belong to this handoff.
+        for (auto &update : updates)
+            if (!restored || update.order >= inbox.next_order)
+                inbox.updates.push_back(std::move(update));
+        inbox.next_order = std::max(inbox.next_order, next_order);
     }
     runtime._trade_topology = std::move(topology);
     if (restored) runtime._trade_topology.component_country_hash = 0;

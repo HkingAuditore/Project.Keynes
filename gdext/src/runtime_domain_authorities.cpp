@@ -33,6 +33,12 @@ bool RuntimeDomainAuthorityRunner::trigger_pod_configured() const {
     return _trigger_configured;
 }
 
+bool RuntimeDomainAuthorityRunner::read_trigger_snapshot(
+        RuntimeTriggerSnapshot &snapshot, std::string &error) const {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    return _trigger_authority.snapshot(snapshot, error);
+}
+
 bool RuntimeDomainAuthorityRunner::run_trigger_active_day(
         int64_t day, uint64_t input_generation,
         const std::vector<RuntimeDomainAck> &acks,

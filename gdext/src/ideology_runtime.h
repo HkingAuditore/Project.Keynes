@@ -190,10 +190,8 @@ public:
     // between contributions without cutting a program's own fold in half.
     //
     // Returns true when there is nothing left to do for `day`.
-    using DerivedFoldQueue = std::function<bool(std::function<void()>)>;
     bool step_derived_rebuild(int64_t day, std::string &error,
-                              const DerivedFoldQueue &queue_fold = {});
-    bool derived_fold_running() const;
+                              bool finish_in_day = false);
     // Plan §11.5: the identity that says "this save was produced under these execution
     // rules". Computed ON DEMAND from the version vector plus the compile identities, so
     // it always reflects the configuration in force -- a configure-time stamp would depend
@@ -1474,8 +1472,6 @@ private:
     uint64_t _derived_installed_generation = 0;
     // The resumable fold. Held across slice boundaries -- the state IS the job.
     std::unique_ptr<DerivedCellMaterializeJob> _derived_rebuild_job;
-    struct DerivedFoldWork;
-    std::shared_ptr<DerivedFoldWork> _derived_fold_work;
     // Ramp sampling state for the SHARDED rebuild.
     //
     // The single-shot path builds a lambda that captures these as LOCALS by

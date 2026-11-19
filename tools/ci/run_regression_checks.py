@@ -185,8 +185,8 @@ def fixture_errors(name: str, lines: list[str]) -> list[str]:
         if sum(bool(re.fullmatch(success_pattern, line)) for line in lines) != 1:
             declarations.append("expected exactly one successful stratum save roundtrip summary")
     if name == "loading_snapshot_cancel_test":
-        # This test intentionally loads one malformed resource. Only the two
-        # exact diagnostics for its declared temporary path are permitted.
+        # This test intentionally loads one malformed resource. ResourceLoader.load
+        # reports its failure in addition to the parser and format loader.
         marker = "[loading-snapshot-cancel] broken_resource="
         paths = [line[len(marker):] for line in lines if line.startswith(marker)]
         if len(paths) != 1 or not re.fullmatch(
@@ -196,6 +196,7 @@ def fixture_errors(name: str, lines: list[str]) -> list[str]:
             expected.extend((
                 f"ERROR: {paths[0]}:1 - Parse Error: Expected '['.",
                 f"ERROR: Failed loading resource: {paths[0]}.",
+                f"ERROR: Error loading resource: '{paths[0]}'.",
             ))
     errors = [line for line in lines if (
         "SCRIPT ERROR:" in line or "[FAIL]" in line or line.startswith("FAIL:") or

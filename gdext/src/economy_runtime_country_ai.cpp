@@ -86,7 +86,6 @@ void NativeEconomyRuntime::queue_research_procurement_policy(
     update.sequence = sequence;
     std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
     update.order = _procurement_inbox->next_order++;
-    _procurement_inbox->requested_policy[update.country_handle] = update;
     _procurement_inbox->updates.push_back(std::move(update));
 }
 

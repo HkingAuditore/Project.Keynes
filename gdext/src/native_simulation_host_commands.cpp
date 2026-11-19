@@ -19,6 +19,7 @@
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
 #include "runtime_switch_registry.h"
+#include "runtime_golden_diagnostics.h"
 #include "pk_log.h"
 
 #include <algorithm>
@@ -58,19 +59,22 @@ bool NativeSimulationHost::enqueue_batch_at(
         std::vector<int64_t> *effective_days, bool seal) {
     if (effective_days != nullptr) effective_days->clear();
     if (packets.empty()) return false;
-    const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
-    if (current == RuntimeWorkerState::STOPPED ||
-        current == RuntimeWorkerState::STOPPING ||
-        current == RuntimeWorkerState::FAULTED) return false;
+    // A day that already owns the execution boundary must finish delivering
+    // its consequences even if stop revoked admission for future days.
+    const bool settling = on_worker_thread() &&
+        _worker_day_inflight.load(std::memory_order_acquire) != 0;
+    const auto accepts = [settling](RuntimeWorkerState state) {
+        return state != RuntimeWorkerState::STOPPED &&
+            state != RuntimeWorkerState::FAULTED &&
+            (settling || state != RuntimeWorkerState::STOPPING);
+    };
+    if (!accepts(_state.load(std::memory_order_acquire))) return false;
 
     // Serialise producers for the batch path. The consumer remains lock-free
     // and may advance dequeue_pos while this lock is held.
     std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
-    const auto admitted_state = _state.load(std::memory_order_acquire);
-    if (admitted_state == RuntimeWorkerState::STOPPED ||
-        admitted_state == RuntimeWorkerState::STOPPING ||
-        admitted_state == RuntimeWorkerState::FAULTED ||
-        _stop_requested.load(std::memory_order_acquire)) return false;
+    if (!accepts(_state.load(std::memory_order_acquire)) ||
+        (!settling && _stop_requested.load(std::memory_order_acquire))) return false;
     const uint64_t write = _command_enqueue_pos.load(std::memory_order_relaxed);
     const uint64_t read = _command_dequeue_pos.load(std::memory_order_acquire);
     if (packets.size() > RUNTIME_COMMAND_QUEUE_CAPACITY ||
@@ -517,6 +521,10 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     const int64_t day = from_day + 1;
     out.from_day = from_day;
     out.day = day;
+    if (const char *block = player_confirmation_block()) {
+        runtime_copy_text(out.reason, block);
+        return out;
+    }
     // An unfinished day keeps the same frozen frame across executor lifetimes.
     auto environment = _executor_day_environment;
     if (environment && environment->day != day) environment.reset();
@@ -772,8 +780,17 @@ void NativeSimulationHost::publish_day(
         if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
         _executor_day_tail->vision = previous->day_tail->vision;
     }
+    const char *golden = runtime_switch_value(RuntimeSwitch::PK_GOLDEN_DOMAINS);
+    if (golden != nullptr && std::strcmp(golden, "1") == 0) {
+        if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+        _executor_day_tail->golden = std::make_shared<RuntimeGoldenSnapshot>(capture_golden_snapshot(day));
+    }
     published->day_tail = std::move(_executor_day_tail);
     publish_military_day();
+    if (published->day_tail && published->day_tail->era_reward)
+        std::atomic_store(&_published_era_reward, published->day_tail->era_reward);
+    if (published->day_tail && published->day_tail->era_advancement)
+        std::atomic_store(&_published_era_advancement, published->day_tail->era_advancement);
     {
         std::lock_guard<std::mutex> lock(_resource_display_mutex);
         merge_resource_display_patch();

@@ -71,6 +71,43 @@ inline bool modifier_packet_shape_valid(const RuntimeModifierPodCommand &command
         command.effective_day >= 0;
 }
 
+inline RuntimeCommandPacket encode_modifier_packet(const RuntimeModifierPodCommand &command) {
+    RuntimeCommandPacket packet;
+    auto &envelope = packet.envelope;
+    envelope.request_id = command.request_id;
+    envelope.producer_id = command.producer_id;
+    envelope.sequence = command.sequence;
+    envelope.requested_day = command.requested_day;
+    envelope.effective_day = command.effective_day;
+    envelope.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+    envelope.opcode = command.opcode;
+    envelope.payload_size = RUNTIME_MODIFIER_POD_WIRE_SIZE;
+    size_t cursor = 0;
+    const auto write = [&packet, &cursor](auto value) {
+        using U = std::make_unsigned_t<decltype(value)>;
+        U bits = static_cast<U>(value);
+        for (size_t byte = 0; byte < sizeof(value); ++byte) {
+            packet.payload[cursor++] = static_cast<uint8_t>(bits & 0xffu);
+            bits >>= 8u;
+        }
+    };
+    write(RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION);
+    write(command.domain);
+    write(static_cast<uint16_t>(command.scope));
+    write(command.definition_id);
+    write(command.entity_handle);
+    write(command.group_handle);
+    write(command.source_type);
+    write(command.source_id);
+    write(command.duration_days);
+    write(command.stacks);
+    write(command.magnitude_q16);
+    write(command.modifier_handle);
+    write(command.target_generation);
+    write(command.input_generation);
+    return packet;
+}
+
 inline bool map_country_peer_intent(const RuntimeDomainIntent &intent,
                              CountryPeerIntentCode &opcode,
                              std::string &error) {

@@ -536,18 +536,8 @@ func get_ideology_report() -> Dictionary:
 	return _get_map_rules_initializer().get_ideology_report()
 func get_modifier_report() -> Dictionary:
 	return _get_map_rules_initializer().get_modifier_report()
-func apply_runtime_trigger_snapshot(after_generation: int) -> Dictionary:
-	return _get_map_rules_initializer().apply_runtime_trigger_snapshot(after_generation)
-func apply_runtime_ideology_snapshot(after_generation: int) -> Dictionary:
-	return _get_map_rules_initializer().apply_runtime_ideology_snapshot(after_generation)
-func step_ideology_instance_refresh(day_index: int) -> Dictionary:
-	return _get_map_rules_initializer().step_ideology_instance_refresh(day_index)
-func step_ideology_derived_rebuild(day_index: int) -> Dictionary:
-	return _get_map_rules_initializer().step_ideology_derived_rebuild(day_index)
 func apply_runtime_modifier_snapshot(after_generation: int) -> Dictionary:
 	return _get_map_rules_initializer().apply_runtime_modifier_snapshot(after_generation)
-func apply_runtime_effect_snapshot(after_generation: int) -> Dictionary:
-	return _get_map_rules_initializer().apply_runtime_effect_snapshot(after_generation)
 func get_economy_report() -> Dictionary:
 	return _economy_facade.report() if _economy_facade != null else {"configured": false}
 func get_economy_perf_report() -> Dictionary:

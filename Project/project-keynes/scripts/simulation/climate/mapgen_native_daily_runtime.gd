@@ -1369,7 +1369,6 @@ func _wait_climate_authority_grant() -> Dictionary:
 			push_warning("[climate-authority] grant wait timed out at day %d"
 				% int(report.get("simulation_environment_day", -1)))
 			break
-		_generator.service_country_worker_peer_adapter(64, false)
 		if ext != null:
 			ext.wait_climate_consumed(_generator._runtime_input_generation, 10)
 		OS.delay_usec(200)

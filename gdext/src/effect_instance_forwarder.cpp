@@ -93,6 +93,7 @@ void EffectInstanceForwarder::detach() {
 }
 
 void EffectInstanceForwarder::refresh_catalog() {
+    std::lock_guard<std::mutex> lock(_state_mutex);
     _programs.clear();
     // An attach/refresh is exactly the moment callers must forget what the
     // previous authority wrote, so start counting flips from a clean epoch.
@@ -101,6 +102,7 @@ void EffectInstanceForwarder::refresh_catalog() {
 }
 
 void EffectInstanceForwarder::set_authority_override_for_test(int32_t mode) {
+    std::lock_guard<std::mutex> lock(_state_mutex);
     _authority_override = mode < 0 ? -1 : (mode != 0 ? 1 : 0);
     // An override is a deliberate jump, not a flip a caller should be told to
     // retry: re-baseline so it costs no epoch. Otherwise flipping the override
@@ -110,32 +112,32 @@ void EffectInstanceForwarder::set_authority_override_for_test(int32_t mode) {
 }
 
 bool EffectInstanceForwarder::worker_authoritative() const {
-    if (_authority_override >= 0) return _authority_override != 0;
+    const int32_t override_mode = _authority_override.load();
+    if (override_mode >= 0) return override_mode != 0;
     return _host != nullptr &&
         _host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
 }
 
 uint64_t EffectInstanceForwarder::authority_epoch() {
-    const bool authoritative = worker_authoritative();
-    if (authoritative != _last_worker_authoritative) {
-        _last_worker_authoritative = authoritative;
+    return observe_authority(worker_authoritative());
+}
+
+uint64_t EffectInstanceForwarder::observe_authority(bool worker) {
+    std::lock_guard<std::mutex> lock(_state_mutex);
+    if (worker != _last_worker_authoritative) {
+        _last_worker_authoritative = worker;
         ++_authority_epoch;
     }
     return _authority_epoch;
 }
 
-bool EffectInstanceForwarder::note_authority_change(std::string &code) {
+bool EffectInstanceForwarder::note_authority_change(bool started_on_worker, std::string &code) {
     const bool authoritative = worker_authoritative();
-    if (authoritative == _last_worker_authoritative) {
+    observe_authority(authoritative);
+    if (authoritative == started_on_worker) {
         code.clear();
         return false;
     }
-    // Record the flip here so authority_epoch() advances exactly once for it.
-    // Reporting it does not make *this* batch fail on the losing path -- the
-    // batch ran end to end on one path -- but the result is downgraded because
-    // the other side is now the writer of record.
-    _last_worker_authoritative = authoritative;
-    ++_authority_epoch;
     code = result_token(Result::AUTHORITY_CHANGED);
     return true;
 }
@@ -169,6 +171,7 @@ bool EffectInstanceForwarder::resolve_facts(const std::string &program_key,
 
 const EffectInstanceForwarder::ProgramFacts *EffectInstanceForwarder::facts_for(
         const std::string &program_key) {
+    std::lock_guard<std::mutex> lock(_state_mutex);
     auto found = _programs.find(program_key);
     if (found != _programs.end()) return &found->second;
     // Cache misses too: a key that does not resolve today will not resolve
@@ -280,10 +283,10 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
         // believing a write the next snapshot will erase.
         std::string authority_code;
         if (bool(result.get("ok", false)) &&
-            note_authority_change(authority_code)) {
+            note_authority_change(worker_path, authority_code)) {
             result["ok"] = false;
             result["reason"] = authority_code.c_str();
-            result["authority_epoch"] = static_cast<int64_t>(_authority_epoch);
+            result["authority_epoch"] = static_cast<int64_t>(authority_epoch());
         }
         return result;
     }
@@ -364,10 +367,10 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
     }
     // Rule 1: a flip mid-batch must not look like success.
     std::string authority_code;
-    if (batch_ok && note_authority_change(authority_code)) {
+    if (batch_ok && note_authority_change(worker_path, authority_code)) {
         result["ok"] = false;
         result["reason"] = authority_code.c_str();
-        result["authority_epoch"] = static_cast<int64_t>(_authority_epoch);
+        result["authority_epoch"] = static_cast<int64_t>(authority_epoch());
     }
     return result;
 }
@@ -397,10 +400,10 @@ Dictionary EffectInstanceForwarder::retire(int64_t instance_id, int64_t generati
         // Retire carries no declarative row of its own, so a flip here only
         // means the caller should re-check next tick; report it the same way.
         std::string authority_code;
-        if (note_authority_change(authority_code)) {
+        if (note_authority_change(worker_path, authority_code)) {
             out["ok"] = false;
             out["reason"] = authority_code.c_str();
-            out["authority_epoch"] = static_cast<int64_t>(_authority_epoch);
+            out["authority_epoch"] = static_cast<int64_t>(authority_epoch());
         }
         return out;
     }
@@ -503,7 +506,7 @@ bool EffectInstanceForwarder::upsert_instance(const InstanceRow &row,
     // path, but the other side is now the writer of record, so the caller has to
     // resubmit next tick instead of believing it.
     std::string authority_code;
-    if (note_authority_change(authority_code)) {
+    if (note_authority_change(worker_path, authority_code)) {
         error = authority_code;
         return false;
     }
@@ -518,7 +521,8 @@ bool EffectInstanceForwarder::set_metric(int64_t instance_id, uint32_t generatio
         error = result_token(Result::NOT_ATTACHED);
         return false;
     }
-    if (worker_authoritative()) {
+    const bool worker_path = worker_authoritative();
+    if (worker_path) {
         if (_host == nullptr || !_host->effect_pod_transport_ready()) {
             error = result_token(Result::WORKER_TRANSPORT_NOT_READY);
             return false;
@@ -539,7 +543,7 @@ bool EffectInstanceForwarder::set_metric(int64_t instance_id, uint32_t generatio
         }
     }
     std::string authority_code;
-    if (note_authority_change(authority_code)) {
+    if (note_authority_change(worker_path, authority_code)) {
         error = authority_code;
         return false;
     }

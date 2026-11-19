@@ -70,18 +70,19 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(error=error):
                 self.assertTrue(fixture_errors(name, [diagnostic, error]))
 
-    def test_loading_failure_requires_exact_declared_path_and_both_errors(self):
+    def test_loading_failure_requires_exact_declared_path_and_all_errors(self):
         name = "loading_snapshot_cancel_test"
         path = "user://loading_snapshot_cleanup_12345/broken.tres"
         declaration = "[loading-snapshot-cancel] broken_resource=" + path
         parse = f"ERROR: {path}:1 - Parse Error: Expected '['."
         failed = f"ERROR: Failed loading resource: {path}."
-        valid = [declaration, parse, failed]
+        load = f"ERROR: Error loading resource: '{path}'."
+        valid = [declaration, parse, failed, load]
         self.assertEqual(fixture_errors(name, valid), [])
         self.assertTrue(fixture_errors("another_fixture", valid))
-        for lines in ([], valid[1:], valid[:2], valid[::2],
-                      valid + [parse], valid + [declaration],
-                      [declaration.replace("12345", "12346"), parse, failed],
+        for lines in ([], valid[1:], valid[:-1], valid[::2],
+                      valid + [parse], valid + [load], valid + [declaration],
+                      [declaration.replace("12345", "12346"), parse, failed, load],
                       [line.replace(path, "user://unrelated.tres") for line in valid]):
             with self.subTest(lines=lines):
                 self.assertTrue(fixture_errors(name, lines))

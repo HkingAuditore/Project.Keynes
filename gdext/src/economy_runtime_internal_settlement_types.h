@@ -1167,10 +1167,7 @@
         _family_expedition_procurement_orphans;
     std::unordered_map<int32_t, FamilyExpeditionProcurementRejection>
         _family_expedition_procurement_rejections;
-    // ── National procurement budget + era procurement (transient) ──────────
-    // docs/cpp-dots-runtime/era-advancement-runtime.md §2.2-2.4. Nothing here
-    // enters PKEC, the state hash or the read-view authority: the player
-    // session re-pushes policy/targets after load.
+    // National procurement budgets and era purchases continue through ECP2.
     struct EraProcurementLine {
         int32_t good = -1;
         int64_t required = 0;
@@ -1222,10 +1219,6 @@
         std::mutex mutex;
         std::vector<PendingProcurementUpdate> updates;
         uint64_t next_order = 1;
-        // Latest requested configuration per handle, visible immediately to
-        // snapshot readers even before the next epoch applies it.
-        std::map<uint64_t, PendingProcurementUpdate> requested_policy;
-        std::map<uint64_t, PendingProcurementUpdate> requested_era;
     };
     std::unique_ptr<ProcurementInbox> _procurement_inbox =
         std::make_unique<ProcurementInbox>();
@@ -1237,7 +1230,7 @@
     std::vector<int64_t> _epoch_research_daily;
     int32_t _procurement_default_treasury_share_bp = 200;
     int32_t _procurement_default_research_share_bp = 5000;
-    // Transient monotone trade-order counters indexed by country slot and
+    // Monotone trade-order counters indexed by country slot and
     // stamped with the handle that owns the slot.
     std::vector<std::pair<uint64_t, int64_t>> _country_trade_orders_by_slot;
     struct EraProcurementCandidate {

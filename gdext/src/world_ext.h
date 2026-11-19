@@ -2286,6 +2286,9 @@ public:
     godot::Dictionary clear_effect_state();
     godot::Dictionary bind_era_reward_player_country(int64_t country_handle);
     godot::Dictionary get_era_reward_offer();
+    godot::Dictionary submit_era_advancement(const godot::String &action,
+        int64_t country, int64_t day, int64_t sequence, const godot::Dictionary &data);
+    godot::Dictionary get_era_advancement_view() const;
     godot::Dictionary choose_era_reward(int64_t offer_generation,
                                         int choice_index,
                                         int64_t effective_day);
@@ -3611,11 +3614,6 @@ private:
     // A running worker re-takes the economy boundary right after each input
     // capture, so a deferred Economy effect adapter call is replayed by the
     // next capture that already holds the boundary.
-    bool                                     _economy_effect_adapter_retry = false;
-    int                                      _trigger_handoff_retry_limit = 0;
-    godot::Dictionary                        _trigger_handoff_completed;
-    godot::Dictionary handoff_trigger_effects_unlocked(int limit);
-    void service_economy_boundary_inbox();
     godot::Dictionary dispatch_effect_native_economy_unlocked();
     godot::Dictionary ack_effect_native_economy_unlocked();
     uint64_t                                  _canal_topology_generation = 0;
@@ -3694,11 +3692,6 @@ private:
     // Host-committed era-reward selection under worker Effect authority.
     // Session-only: a restored pending selection is re-submitted, which the
     // UNIQUE_SOURCE Modifier policy makes idempotent.
-    bool era_reward_host_commit_active() const;
-    godot::String service_era_reward_host_selection(int64_t effective_day);
-    int64_t                                   _era_reward_host_generation = 0;
-    int64_t                                   _era_reward_host_deadline_day = -1;
-    int32_t                                   _era_reward_host_attempts = 0;
     void                                     *_ideology_runtime        = nullptr;
     uint64_t                                  _natural_resource_modifier_version =
         std::numeric_limits<uint64_t>::max();

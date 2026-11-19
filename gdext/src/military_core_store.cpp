@@ -354,6 +354,7 @@ bool military_valid_index_continuation(MilitaryCore &c) {
     if (c._lots.location_kind.size() != n || c._lots.location.size() != n ||
         c._lots.country_slot.size() != n || c._lots.unit_type.size() != n ||
         c._lots.equip_quality_q8.size() != n || c._lots.kit_q16.size() != n ||
+        c._lots.partial_equipment.size() != n ||
         c._lots.condition_q16.size() != n ||
         c._lots.count.size() != n || c._armies.generation.size() != c._armies.active.size()) return false;
     auto valid_free = [](const auto &free, const auto &active) {
@@ -464,7 +465,7 @@ void military_lot_index_link(MilitaryCore &c, int32_t lot) {
 
 int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t country_slot,
                                          int16_t unit, int16_t quality_q8,
-                                         int32_t kit_q16) {
+                                         int32_t kit_q16, uint16_t partial_equipment) {
     const size_t n = _lots.active.size();
     int32_t found = -1;
     military_for_each_lot(*this, kind, location, [&](int32_t i) {
@@ -472,6 +473,7 @@ int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t
         const size_t s = (size_t)i;
         if (_lots.country_slot[s] != country_slot) return;
         if (_lots.unit_type[s] != unit) return;
+        if (_lots.partial_equipment[s] != partial_equipment) return;
         if (std::abs((int32_t)_lots.equip_quality_q8[s] - (int32_t)quality_q8) > 16) return;
         if (std::abs(_lots.kit_q16[s] - kit_q16) > MILITARY_Q16 / 64) return;
         found = i;
@@ -490,6 +492,7 @@ int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t
         _lots.unit_type.push_back(-1);
         _lots.equip_quality_q8.push_back(256);
         _lots.kit_q16.push_back(MILITARY_Q16);
+        _lots.partial_equipment.push_back(0);
         _lots.condition_q16.push_back(MILITARY_Q16);
         _lots.count.push_back(0);
     }
@@ -502,6 +505,7 @@ int32_t MilitaryCore::lot_find_or_create(uint8_t kind, int32_t location, int32_t
     _lots.unit_type[s] = unit;
     _lots.equip_quality_q8[s] = quality_q8;
     _lots.kit_q16[s] = std::clamp(kit_q16, 0, MILITARY_Q16);
+    _lots.partial_equipment[s] = partial_equipment;
     _lots.condition_q16[s] = MILITARY_Q16;
     _lots.count[s] = 0;
     military_lot_index_link(*this, slot);
@@ -766,7 +770,7 @@ void MilitaryCore::refresh_army_cache(int32_t army_slot) {
         if (cnt <= 0) continue;
         head += cnt;
         const int64_t eq = lot_equip_factor_q16(u, _lots.equip_quality_q8[i],
-                                                _lots.kit_q16[i]);
+            _lots.kit_q16[i], _lots.partial_equipment[i]);
         const int64_t cond = clamp64(_lots.condition_q16[i], MILITARY_Q16 / 2, MILITARY_Q16);
         const int64_t cond_factor = MILITARY_Q16 / 2 + cond / 2;   // 0.5 + 0.5 * condition
         const int64_t power = mul_div(cnt * eq, cond_factor, MILITARY_Q16);   // heads * factors

@@ -869,6 +869,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         return false;
     }
     if (commands == nullptr || count == 0) { error = "country_effect_command_empty"; return false; }
+    const bool trigger_delivery = commands[0].trigger_delivery;
     request_ids.clear();
     request_ids.reserve(count);
     std::vector<Command> staged;
@@ -955,8 +956,9 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
             };
             for (const Command &command : staged) {
                 RuntimeCountryCommand mirrored;
-                mirrored.request_id =
-                    _simulation_host->allocate_command_request_id();
+                mirrored.request_id = trigger_delivery
+                    ? _simulation_host->allocate_command_request_id_for_ingress()
+                    : _simulation_host->allocate_command_request_id();
                 mirrored.producer_id = 0;
                 mirrored.sequence = command.sequence > 0
                     ? static_cast<uint64_t>(command.sequence)

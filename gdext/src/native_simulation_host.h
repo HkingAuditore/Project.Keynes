@@ -46,9 +46,13 @@ struct VisionResearchState;
 struct RuntimeGoldenSnapshot;
 struct MilitaryCommandBatch;
 struct RuntimeColonizationRequest;
+struct RuntimeEraRewardRequest;
+struct RuntimeEraAdvancement;
+struct RuntimeEraAdvancementView;
 class NativeMilitaryRuntime;
 class NativeEconomyRuntime;
 class ModifierRuntime;
+class EffectRuntime;
 class CountryAiRuntime;
 class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort {
 public:
@@ -396,57 +400,6 @@ public:
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
     }
-    // Deferred-boundary handshake: a main-thread caller that lost
-    // `try_lock_economy_input_capture` asks the worker to park between semantic
-    // days until that caller has had its turn ("come back to the boundary").
-    //
-    // COUNTED PER REQUESTER, not one shared bool. The flag shipped as a bool and
-    // that shape cannot express "two subsystems both want a turn":
-    //   * `world_ext_trigger.cpp` requests on a failed handoff and clears on the
-    //     next handoff that wins the lock;
-    //   * `world_ext_ideology.cpp` requests on a failed instance refresh.
-    // With one bool, whichever cleared FIRST spoke for both -- a trigger
-    // completion released a worker that ideology was still waiting on. And the
-    // ideology path requested without ever completing, so the worker parked in
-    // the `_control_cv` loop (`native_simulation_host.cpp`, the
-    // `_main_boundary_service_requested != 0` wait between semantic days) forever:
-    // that is the observed "worker_committed_day 2 -> 2" and the empty receipts.
-    //
-    // Each requester owns one bit. Request/complete must be paired BY THE SAME
-    // CLIENT, and cannot be paired by accident: completing a bit this client does
-    // not hold is a no-op, so one subsystem can never release another's turn.
-    enum class MainBoundaryClient : uint32_t {
-        TRIGGER = 0,
-        IDEOLOGY = 1,
-        CLIENT_COUNT = 2,
-    };
-    static constexpr uint32_t main_boundary_client_bit(MainBoundaryClient client) {
-        return uint32_t{1} << static_cast<uint32_t>(client);
-    }
-    void request_main_boundary_service(MainBoundaryClient client) noexcept {
-        const uint32_t bit = main_boundary_client_bit(client);
-        _main_boundary_service_requested.fetch_or(bit, std::memory_order_acq_rel);
-    }
-    // Clears ONE client's turn (its own). Idempotent: a client that never asked,
-    // or that already completed, changes nothing. When the last client completes
-    // the worker's wait predicate goes false and `notify_all` releases it.
-    void complete_main_boundary_service(MainBoundaryClient client) noexcept;
-    // Diagnostic: outstanding requesters, as a count. Exported so a parked worker
-    // can be told apart from one subsystem starving on another's bit.
-    uint32_t main_boundary_service_requests() const noexcept {
-        uint32_t mask = _main_boundary_service_requested.load(
-            std::memory_order_acquire);
-        uint32_t count = 0;
-        while (mask != 0) {
-            mask &= mask - 1u;
-            ++count;
-        }
-        return count;
-    }
-    bool main_boundary_service_requested_by(MainBoundaryClient client) const noexcept {
-        return (_main_boundary_service_requested.load(std::memory_order_acquire) &
-                main_boundary_client_bit(client)) != 0;
-    }
     // Day-tail tasks consume committed day D. The main thread acknowledges
     // their results and D+1 inputs before the executor advances.
     void set_main_day_tail_gate(bool enabled) noexcept;
@@ -462,7 +415,7 @@ public:
     bool submit_colonization_request(std::shared_ptr<RuntimeColonizationRequest> request);
     bool military_executor_active() const noexcept;
     bool submit_military_commands(std::shared_ptr<MilitaryCommandBatch> batch);
-    uint64_t allocate_command_request_id_for_ingress();
+    uint64_t allocate_command_request_id_for_ingress() override;
     void seed_events_ingress_cursor(int64_t next) noexcept {
         _events_ingress_cursor.store(next, std::memory_order_release);
     }
@@ -814,6 +767,17 @@ public:
     bool queue_effect_pod_remove(int64_t instance_id, uint32_t generation,
                                  std::string &error);
     bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
+    void attach_effect_adapter(EffectRuntime *effect, class NativeCountryRuntime *country,
+                               TriggerRuntime *trigger, NativeIdeologyRuntime *ideology);
+    std::shared_ptr<const RuntimeEffectReadView> latest_effect_read_view() const;
+    std::shared_ptr<const TriggerRuntime> latest_trigger_read_view() const;
+    std::shared_ptr<const RuntimeIdeologyReadView> latest_ideology_read_view() const;
+    std::shared_ptr<const RuntimeEraRewardView> latest_era_reward() const;
+    std::shared_ptr<const RuntimeEraAdvancementView> latest_era_advancement() const;
+    bool submit_era_reward_request(std::shared_ptr<RuntimeEraRewardRequest> request);
+    bool effect_adapter_owned() const noexcept {
+        return _effect_adapter_runtime != nullptr && !execution_has_stopped();
+    }
     bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
     int32_t effect_pod_program_id_for_key(const char *key) const override;
     // M2a: true once a compiled Effect POD catalog is installed. The forwarder
@@ -962,6 +926,8 @@ public:
         return _worker_timing.main_wait_snapshot();
     }
     RuntimeGoldenSnapshot golden_snapshot() const;
+    RuntimeGoldenSnapshot capture_golden_snapshot(int64_t day) const;
+    void publish_restored_ideology_view();
     void profile_save_window(bool active) { _worker_timing.save(active); }
     bool stop_requested() const {
         return _stop_requested.load(std::memory_order_acquire);
@@ -1307,6 +1273,12 @@ private:
         RuntimeCommandPacket packet{};
     };
 
+    struct AnnualPresentationRequest {
+        uint64_t report_id;
+        bool presented = false;
+        bool done = false;
+    };
+
     struct ClimateParityFieldAccumulator {
         std::atomic<uint64_t> diverged_days{0};
         std::atomic<uint64_t> compared_days{0};
@@ -1365,6 +1337,23 @@ private:
     std::shared_ptr<RuntimeDayTail> _executor_day_tail;
     std::shared_ptr<VisionResearchState> _executor_vision;
     const char *stage_vision(DayExecution &day);
+    const char *stage_effect_adapter(DayExecution &day);
+    const char *stage_trigger_delivery(DayExecution &day);
+    const char *stage_ideology_projection(DayExecution &day);
+    std::shared_ptr<const RuntimeIdeologyReadView> capture_ideology_read_view() const;
+    const char *settle_era_rewards(DayExecution &day);
+    const char *player_confirmation_block() const;
+    bool service_annual_presentations();
+    void execute_era_advancement_request(RuntimeEraRewardRequest &request);
+    const char *stage_era_advancement(DayExecution &day);
+    bool settle_player_regime(RuntimeEraAdvancement &state, int32_t regime, int64_t day);
+    bool submit_era_milestone(RuntimeEraAdvancement &state, int32_t era,
+        int64_t requested, int64_t effective, int64_t sequence, bool consume_goods);
+    bool service_era_reward_requests();
+    std::shared_ptr<const RuntimeEraRewardView> capture_era_reward() const;
+    EffectRuntime *_effect_adapter_runtime = nullptr;
+    class NativeCountryRuntime *_effect_adapter_country = nullptr;
+    RuntimeTriggerDelivery _trigger_delivery;
     void apply_fog_commands(const std::vector<RuntimeCommandPacket> &commands);
     bool submit_vision_observations(uint64_t country, int64_t day,
                                     std::vector<uint64_t> &observations);
@@ -1375,8 +1364,14 @@ private:
     std::shared_ptr<NativeMilitaryRuntime> _executor_military;
     std::deque<std::shared_ptr<MilitaryCommandBatch>> _military_commands; // _control_mutex
     std::deque<std::shared_ptr<RuntimeColonizationRequest>> _colonization_requests;
+    std::deque<std::shared_ptr<RuntimeEraRewardRequest>> _era_reward_requests;
+    std::deque<std::shared_ptr<AnnualPresentationRequest>> _annual_presentations;
+    std::shared_ptr<const RuntimeEraRewardView> _published_era_reward;
+    std::shared_ptr<RuntimeEraAdvancement> _era_advancement;
+    std::shared_ptr<const RuntimeEraAdvancementView> _published_era_advancement;
     bool player_requests_pending_locked() const noexcept {
-        return !_military_commands.empty() || !_colonization_requests.empty();
+        return !_military_commands.empty() || !_colonization_requests.empty() ||
+            !_era_reward_requests.empty() || !_annual_presentations.empty();
     }
     bool service_colonization_requests();
     std::atomic<int64_t> _events_ingress_cursor{1};
@@ -1822,11 +1817,6 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
-    // Outstanding requesters behind `_main_boundary_service_requested`, as a bit
-    // set (one bit per `MainBoundaryClient`). Written only through
-    // `request_main_boundary_service` / `complete_main_boundary_service`. See those
-    // two for why one shared bool parked the worker permanently.
-    std::atomic<uint32_t> _main_boundary_service_requested{0};
     std::atomic<bool> _main_day_tail_gate{false};
     std::atomic<int64_t> _main_day_tail_done{-1};
     std::atomic<int64_t> _economy_input_requested_day{-1};

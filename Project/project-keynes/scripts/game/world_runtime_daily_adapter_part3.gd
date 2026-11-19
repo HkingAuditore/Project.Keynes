@@ -87,8 +87,6 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		push_warning("Vision display snapshot: " + String(vision.get("reason", "")))
 	if whole_graph:
 		host._consume_country_worker_read_view_if_authoritative()
-	if not _prepare_runtime_day_tail(host, whole_graph):
-		return
 	if whole_graph and not host._native_daily_inline_active and host._runtime_commit_day > host._runtime_tail_completed_day \
 			and host._generator.has_method("prepare_next_climate_input_during_tail") \
 			and not host._generator.prepare_next_climate_input_during_tail(host._runtime_commit_day):
@@ -141,26 +139,6 @@ func _mark_runtime_day_tail(host, committed_day: int) -> void:
 		host._generator.record_runtime_main_step(committed_day, &"acknowledge_day_tail")
 	host._runtime_tail_completed_day = maxi(host._runtime_tail_completed_day, committed_day)
 	ext.mark_runtime_day_tail_done(committed_day)
-
-
-func _prepare_runtime_day_tail(host, whole_graph: bool) -> bool:
-	# Delivery and its acknowledgement belong to this day's boundary.
-	host._consume_trigger_worker_snapshot_if_authoritative()
-	var trigger = host._generator.get_trigger_facade() \
-		if host._generator.has_method("get_trigger_facade") else null
-	if trigger != null:
-		var handoff: Dictionary = trigger.handoff_effect_batch(512)
-		if int(handoff.get("handed_off", 0)) > 0 or bool(handoff.get("deferred", false)):
-			host._generator.record_runtime_main_step(host._runtime_commit_day, &"trigger_effect_handoff")
-		if bool(handoff.get("deferred", false)):
-			return false
-	if whole_graph and host._runtime_commit_day > host._runtime_tail_completed_day:
-		host._consume_ideology_worker_snapshot_if_authoritative()
-		# Today's confirmed basis is eligible for tomorrow's economy input.
-		host._step_ideology_instance_refresh_if_authoritative(host._runtime_commit_day + 1)
-	elif host._ideology_refresh_pending_day >= 0:
-		host._step_ideology_instance_refresh_if_authoritative(host._ideology_refresh_pending_day)
-	return host._ideology_refresh_pending_day < 0
 
 
 func _fail_runtime_day_tail(host, reason: String) -> void:
@@ -298,11 +276,6 @@ func wait_for_climate_consumed(host, after_environment_generation: int) -> Dicti
 		return ext.wait_climate_consumed(0, 0)
 	var total_waited_ms = 0.0
 	while true:
-		# 先服务 peer，再进入下一次等待：Country 的 barrier 可能正是 worker
-		# 还没消费这份环境的原因。
-		# Peer pump only: country read-view is owned by _process so a full
-		# snapshot / vision refresh cannot inflate climate-wait or day_cost_ema.
-		host._service_country_worker_transport()
 		var slice: Dictionary = ext.wait_climate_consumed(
 			after_environment_generation, host.RUNTIME_CLIMATE_WAIT_SLICE_MS)
 		total_waited_ms += float(slice.get("waited_ms", 0.0))

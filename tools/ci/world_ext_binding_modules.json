@@ -91,7 +91,7 @@
     "economy": ["scripts/economy", "scripts/family", "scripts/simulation/systems/economy_daily_system.gd"],
     "country": ["scripts/country", "scripts/annual"],
     "military": ["scripts/military"],
-    "effect": ["scripts/effect", "scripts/simulation/systems/effect_runtime_system.gd"],
+    "effect": ["scripts/effect", "scripts/era/era_advancement_service.gd", "scripts/simulation/systems/effect_runtime_system.gd"],
     "modifier": ["scripts/modifier", "scripts/simulation/systems/modifier_daily_system.gd"],
     "ideology": ["scripts/ideology", "scripts/simulation/systems/ideology_runtime_system.gd"],
     "trigger": ["scripts/trigger", "scripts/simulation/systems/trigger_daily_system.gd"],

@@ -5,9 +5,6 @@ extends RefCounted
 func _prepare_world_data(host) -> Dictionary:
 	var seed_override: int = host._session_prepare_options.seed
 	host._runtime_ready_for_ticks = false
-	host._ideology_refresh_pending_day = -1
-	host._ideology_instance_refreshed_day = -1
-	host._ideology_derived_pumped_day = -1
 	# Reset the late-loading progress before rebinding presentation.
 	host._visual_progress = 0.0
 	host._clear_climate_capacity_pending()
@@ -319,8 +316,6 @@ func _start_production_shadow_worker(host) -> void:
 	host._runtime_climate_writeback_generation = 0
 	host._runtime_climate_writeback_days = 0
 	host._runtime_climate_writeback_last_day = -1
-	# A new worker lifetime restarts Ideology snapshot generations at 1.
-	host._ideology_worker_snapshot_generation = 0
 	var config: Dictionary = {
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -370,13 +365,6 @@ func _start_production_shadow_worker(host) -> void:
 				"[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events|Economy ACTIVE refused: Country capture incomplete (%s)" % [
 					String(host._country_worker_transport_capture.get("code", "missing"))])
 			return
-		# G8: best-effort Economy opinion publish before ACTIVE so Ideology
-		# stage is not cold-started with a null opinion snapshot.
-		if ext != null:
-			var opinion_pub: Dictionary = ext.publish_ideology_worker_inputs()
-			if not bool(opinion_pub.get("ok", false)):
-				push_warning("[runtime-worker] Ideology opinion publish deferred: %s" % [
-					String(opinion_pub.get("code", "unknown"))])
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
 		config["authoritative_domain_mask"] = host.runtime_authority_domain_mask

@@ -103,6 +103,7 @@ public:
     bool ok() const { return _ok; }
     size_t pos() const { return _pos; }
     size_t remaining() const { return _ok ? _size - _pos : 0; }
+    size_t section_remaining() const { return _section_end > _pos ? _section_end - _pos : 0; }
     bool need(size_t n) {
         if (!_ok || _pos + n > _size) {
             _ok = false;
@@ -288,6 +289,15 @@ void write_index_continuation(Writer &w, const MilitaryCore &c) {
     write_index_vector(w, c._armies.generation);
     write_index_vector(w, c._armies.free_list);
     write_index_vector(w, c._army_lane_pending);
+    bool partial = std::any_of(c._training.begin(), c._training.end(),
+        [](const auto &order) { return order.source_partial_equipment != 0; });
+    for (size_t row = 0; row < c._lots.active.size() && !partial; ++row)
+        partial = c._lots.active[row] && c._lots.partial_equipment[row] != 0;
+    if (partial) {
+        for (size_t row = 0; row < c._lots.active.size(); ++row)
+            w.u16(c._lots.active[row] ? c._lots.partial_equipment[row] : 0);
+        for (const auto &order : c._training) w.u16(order.source_partial_equipment);
+    }
 }
 bool read_index_continuation(Reader &r, MilitaryCore &c) {
     if (!read_index_vector(r, c._lots.location_kind) ||
@@ -300,11 +310,18 @@ bool read_index_continuation(Reader &r, MilitaryCore &c) {
         !read_index_vector(r, c._lots.count) ||
         !read_index_vector(r, c._lots.free_list)) return false;
     c._lot_index_ok = r.u8() != 0;
-    return read_index_vector(r, c._lot_next) &&
+    if (!(read_index_vector(r, c._lot_next) &&
         read_index_vector(r, c._lot_link_kind) && read_index_vector(r, c._lot_link_loc) &&
         read_index_vector(r, c._lot_army_head) && read_index_vector(r, c._lot_cell_head) &&
         read_index_vector(r, c._armies.generation) && read_index_vector(r, c._armies.free_list) &&
-        read_index_vector(r, c._army_lane_pending);
+        read_index_vector(r, c._army_lane_pending))) return false;
+    c._lots.partial_equipment.resize(c._lots.active.size(), 0);
+    if (r.section_remaining() == 0) return true;
+    const size_t grades = c._lots.active.size() + c._training.size();
+    if (r.section_remaining() < grades * sizeof(uint16_t)) return false;
+    for (auto &kit : c._lots.partial_equipment) kit = r.u16();
+    for (auto &order : c._training) order.source_partial_equipment = r.u16();
+    return r.ok();
 }
 
 

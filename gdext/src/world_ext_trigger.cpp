@@ -5,6 +5,7 @@
 #include "economy_runtime.h"
 #include "ideology_runtime.h"
 #include "native_simulation_host.h"
+#include "native_simulation_host_trigger_delivery.h"
 #include "country_runtime.h"
 
 #include <algorithm>
@@ -130,8 +131,8 @@ Dictionary unavailable() {
 
 bool DCWorldExt::trigger_worker_authoritative() const {
     return _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(
-            RuntimeDomainId::TRIGGER_INPUT);
+        (_runtime_host->effect_adapter_owned() ||
+         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::TRIGGER_INPUT));
 }
 
 // Transport-level admission for the sole-writer path. submit_events() normally
@@ -261,7 +262,7 @@ Dictionary DCWorldExt::apply_runtime_trigger_snapshot(int64_t after_generation) 
         out["code"] = "trigger_runtime_unavailable";
         return out;
     }
-    if (!trigger_worker_authoritative()) {
+    if (_runtime_host->effect_adapter_owned() || !trigger_worker_authoritative()) {
         out["code"] = "trigger_not_worker_authoritative";
         return out;
     }
@@ -342,12 +343,17 @@ Dictionary DCWorldExt::submit_trigger_worker_ack(const Dictionary &source) {
 
 Dictionary DCWorldExt::poll_trigger_effects(int64_t after_effect_id,
                                              int limit) const {
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        const auto view = _runtime_host->latest_trigger_read_view();
+        return view ? view->poll_effects(after_effect_id, limit) : unavailable();
+    }
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->poll_effects(after_effect_id, limit);
 }
 
 Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
-    if (_trigger_runtime == nullptr) return unavailable();
+    if (_trigger_runtime == nullptr || (_runtime_host && _runtime_host->effect_adapter_owned()))
+        return unavailable();
     Dictionary out = runtime_from(_trigger_runtime)->ack_effects(up_to_effect_id);
     if (static_cast<bool>(out.get("ok", false))) {
         RuntimeTriggerCommand command;
@@ -361,7 +367,8 @@ Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
 }
 
 Dictionary DCWorldExt::ack_trigger_effect_ids(const PackedInt64Array &effect_ids) {
-    if (_trigger_runtime == nullptr) return unavailable();
+    if (_trigger_runtime == nullptr || (_runtime_host && _runtime_host->effect_adapter_owned()))
+        return unavailable();
     Dictionary out = runtime_from(_trigger_runtime)->ack_effect_ids(effect_ids);
     if (static_cast<bool>(out.get("ok", false))) {
         out["acked"] = static_cast<int64_t>(effect_ids.size());
@@ -372,130 +379,29 @@ Dictionary DCWorldExt::ack_trigger_effect_ids(const PackedInt64Array &effect_ids
 
 Dictionary DCWorldExt::reconcile_completed_research_signals(int limit) {
     if (_trigger_runtime == nullptr || _country_runtime == nullptr) return unavailable();
-    RuntimeTriggerPodCatalog catalog;
-    RuntimeTriggerSnapshot snapshot;
-    std::string error;
-    auto *trigger = runtime_from(_trigger_runtime);
-    Dictionary out;
-    out["ok"] = false;
-    out["complete"] = false;
-    if (!trigger->export_pod_catalog(catalog, error) ||
-        !trigger->export_pod_snapshot(snapshot, error)) {
-        out["reason"] = String(error.c_str());
-        return out;
-    }
-    NativeCountryRuntime *country = country_query_runtime();
-    if (country == nullptr || !country->economy_available()) return unavailable();
-    std::unordered_map<uint64_t, Dictionary> countries;
-    int32_t submitted = 0;
-    const int64_t day = std::max<int64_t>(1, snapshot.committed_day + 1);
-    for (const auto &state : snapshot.states) {
-        if (!state.completed || state.trigger_id < 0 ||
-            state.trigger_id >= static_cast<int32_t>(catalog.definitions.size())) continue;
-        const auto &definition = catalog.definitions[state.trigger_id];
-        if (definition.development_metric_id < 0 || definition.effect_count != 1 ||
-            definition.mode != static_cast<int32_t>(RuntimeTriggerMode::ONE_SHOT)) continue;
-        const auto &effect = catalog.effects[definition.effect_begin];
-        if (effect.action != static_cast<int32_t>(RuntimeTriggerAction::COUNTRY_COMMAND) ||
-            effect.opcode != NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) continue;
-        auto found = countries.find(state.target_handle);
-        if (found == countries.end())
-            found = countries.emplace(state.target_handle,
-                country->country_snapshot(static_cast<int64_t>(state.target_handle))).first;
-        const Dictionary &owner = found->second;
-        if (!static_cast<bool>(owner.get("ok", false))) continue;
-        const int32_t signal = static_cast<int32_t>(effect.payload[0]);
-        if (country->has_research_signal(static_cast<int32_t>(state.target_handle), signal)) continue;
-        const int32_t cell = static_cast<int32_t>(owner.get("cell", -1));
-        if (cell < 0) continue;
-        const bool already_pending = std::any_of(snapshot.pending_effects.begin(),
-            snapshot.pending_effects.end(), [&state](const RuntimeTriggerEffectIntent &pending) {
-                return pending.trigger_id == state.trigger_id &&
-                    pending.target_handle == state.target_handle;
-            });
-        if (already_pending) continue;
-        if (submitted >= std::max(1, std::min(limit, 256))) {
-            out["ok"] = true;
-            out["submitted"] = submitted;
-            return out;
-        }
-        // This is an adapter reconciliation, not a second writer: Trigger
-        // replays its durable completion through Effect and Country's normal
-        // boundary. The representative owned cell is recorded as recovery
-        // provenance at this boundary, not as the original sample location.
-        const Dictionary replay = replay_completed_research_signal(
-            state.trigger_id, static_cast<int64_t>(state.target_handle), cell, day);
-        if (!static_cast<bool>(replay.get("ok", false))) {
-            out["reason"] = replay.get("reason", "trigger_research_replay_failed");
-            out["submitted"] = submitted;
-            return out;
-        }
-        ++submitted;
-    }
-    out["ok"] = true;
-    out["complete"] = true;
-    out["submitted"] = submitted;
-    return out;
+    if (_runtime_host != nullptr && _runtime_host->effect_adapter_owned()) return unavailable();
+    auto *country = country_query_runtime();
+    if (country == nullptr) return unavailable();
+    return reconcile_trigger_research(*runtime_from(_trigger_runtime), *country,
+        static_cast<EffectRuntime *>(_effect_runtime), limit,
+        [this](int32_t trigger, int64_t handle, int32_t cell, int64_t day) {
+            return replay_completed_research_signal(trigger, handle, cell, day);
+        });
 }
 
 Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
-    if (_trigger_runtime == nullptr || _effect_runtime == nullptr)
-        return unavailable();
-    if (!_trigger_handoff_completed.is_empty()) {
-        Dictionary completed = _trigger_handoff_completed;
-        _trigger_handoff_completed = Dictionary();
-        return completed;
-    }
-    // The facade queue lives on the main thread. An empty queue cannot
-    // submit anything to Effect, so a poll has no boundary to acquire.
-    if (_trigger_handoff_retry_limit == 0 &&
-            runtime_from(_trigger_runtime)->pending_effect_count() == 0)
-        return handoff_trigger_effects_unlocked(limit);
-    // Economy may append builtin transactions to the same EffectRuntime from
-    // its worker day. Delivery is main-thread transport, so defer rather than
-    // mutating the transaction arena concurrently or waiting for that day.
+    if (_trigger_runtime == nullptr || _effect_runtime == nullptr ||
+        (_runtime_host != nullptr && _runtime_host->effect_adapter_owned())) return unavailable();
     std::unique_lock<std::mutex> boundary;
     if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
         boundary = _runtime_host->try_lock_economy_input_capture();
-        if (!boundary.owns_lock()) {
-            _trigger_handoff_retry_limit = std::max(_trigger_handoff_retry_limit, limit);
-            _runtime_host->request_main_boundary_service(
-                NativeSimulationHost::MainBoundaryClient::TRIGGER);
-            Dictionary out;
-            out["ok"] = true;
-            out["native_supported"] = true;
-            out["handed_off"] = 0;
-            out["deferred"] = true;
-            return out;
-        }
+        if (!boundary.owns_lock()) return unavailable();
     }
-    _trigger_handoff_retry_limit = 0;
-    return handoff_trigger_effects_unlocked(limit);
-}
-
-Dictionary DCWorldExt::handoff_trigger_effects_unlocked(int limit) {
     Dictionary out = runtime_from(_trigger_runtime)->handoff_effects(
         static_cast<EffectRuntime *>(_effect_runtime),
-        static_cast<NativeIdeologyRuntime *>(_ideology_runtime),
-        _runtime_host.get(), limit);
-    // H8: handoff_effects ACKs the facade by explicit effect id but does not
-    // talk to the worker. Under authority the worker holds the same pending
-    // effects, so without this the worker's queue would never drain. The id set
-    // (not a numeric cursor) is forwarded because delivery order is canonical
-    // while ids are ingress-allocated.
-    const int64_t handed_off = static_cast<int64_t>(out.get("handed_off", 0));
-    if (handed_off > 0 && trigger_worker_authoritative()) {
-        const PackedInt64Array handed_off_ids = out.get("effect_ids", PackedInt64Array());
-        publish_trigger_ack_ids(this, handed_off_ids, out);
-    }
-    // Finish the Country enqueue while the handoff still holds the day
-    // boundary. Releasing it before the script dispatch races command admission.
-    if (handed_off > 0 && _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY))
-        dispatch_effect_native_country();
-    if (_runtime_host != nullptr)
-        _runtime_host->complete_main_boundary_service(
-            NativeSimulationHost::MainBoundaryClient::TRIGGER);
+        static_cast<NativeIdeologyRuntime *>(_ideology_runtime), _runtime_host.get(), limit);
+    if (static_cast<int64_t>(out.get("handed_off", 0)) > 0 && trigger_worker_authoritative())
+        publish_trigger_ack_ids(this, out.get("effect_ids", PackedInt64Array()), out);
     return out;
 }
 
@@ -584,6 +490,10 @@ Dictionary DCWorldExt::reconcile_trigger_branch_bindings(const Dictionary &batch
 }
 
 Dictionary DCWorldExt::get_trigger_branch_progress(int64_t branch_handle) const {
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        const auto view = _runtime_host->latest_trigger_read_view();
+        return view ? view->branch_progress(static_cast<uint64_t>(branch_handle)) : unavailable();
+    }
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->branch_progress(
             static_cast<uint64_t>(branch_handle));
@@ -591,6 +501,10 @@ Dictionary DCWorldExt::get_trigger_branch_progress(int64_t branch_handle) const 
 
 Dictionary DCWorldExt::get_development_progress(int64_t country_handle,
                                                 int32_t era_index) const {
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        const auto view = _runtime_host->latest_trigger_read_view();
+        return view ? view->development_progress(static_cast<uint64_t>(country_handle), era_index) : unavailable();
+    }
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->development_progress(
             static_cast<uint64_t>(country_handle), era_index);
@@ -642,22 +556,30 @@ Dictionary DCWorldExt::resync_trigger_source(const Dictionary &snapshot) {
 }
 
 Dictionary DCWorldExt::get_trigger_report() const {
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        const auto view = _runtime_host->latest_trigger_read_view();
+        return view ? view->report() : unavailable();
+    }
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->report();
 }
 
 PackedByteArray DCWorldExt::capture_trigger_state() const {
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        const auto view = _runtime_host->latest_trigger_read_view();
+        return view ? view->capture() : PackedByteArray();
+    }
     return _trigger_runtime == nullptr ? PackedByteArray()
         : runtime_from(_trigger_runtime)->capture();
 }
 
 Dictionary DCWorldExt::restore_trigger_state(const PackedByteArray &bytes) {
-    return _trigger_runtime == nullptr ? unavailable()
+    return _trigger_runtime == nullptr || (_runtime_host && _runtime_host->effect_adapter_owned()) ? unavailable()
         : runtime_from(_trigger_runtime)->restore(bytes);
 }
 
 Dictionary DCWorldExt::clear_trigger_state() {
-    return _trigger_runtime == nullptr ? unavailable()
+    return _trigger_runtime == nullptr || (_runtime_host && _runtime_host->effect_adapter_owned()) ? unavailable()
         : runtime_from(_trigger_runtime)->clear_state();
 }
 

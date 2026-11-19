@@ -156,6 +156,46 @@ inline uint64_t equipment_slot_mask(const MilitaryUnitType &u) {
     return mask;
 }
 
+inline bool equipment_quality_allowed(bool core, int32_t minimum, int32_t quality) {
+    return quality > 0 && (!core || quality >= minimum);
+}
+
+inline bool equipment_slot_available(const MilitaryCatalog &catalog, const MilitaryWorldDigest &digest,
+                                     int32_t country, const MilitaryUnitType &unit, int32_t slot) {
+    // Digests without capability rows cannot distinguish scarcity from a technology lock.
+    if (digest.country_equipment_available.empty() || country < 0) return true;
+    const MilitaryEquipCategory &category = catalog.categories[unit.slot_category[slot]];
+    const size_t offset = static_cast<size_t>(country) * catalog.economy_good_count;
+    for (size_t i = 0; i < category.good_ids.size(); ++i) {
+        const size_t index = offset + category.good_ids[i];
+        if (index < digest.country_equipment_available.size() &&
+            digest.country_equipment_available[index] &&
+            equipment_quality_allowed(unit.slot_core[slot], unit.slot_min_quality[slot],
+                                      category.good_quality[i])) return true;
+    }
+    return false;
+}
+
+// Each grade is 0..5, with 0 meaning empty. The tag distinguishes an all-empty
+// kit from the zero sentinel used by lots already carrying a complete kit.
+constexpr uint16_t MILITARY_PARTIAL_KIT_TAG = 0x8000;
+
+inline int32_t partial_equipment_grade(uint16_t kit, int32_t slot) {
+    return (kit >> (3 * slot)) & 7;
+}
+
+inline uint16_t training_partial_equipment(const MilitaryUnitType &unit,
+                                            const MilitaryTrainingOrder &order) {
+    uint16_t kit = MILITARY_PARTIAL_KIT_TAG;
+    bool missing = false;
+    for (int32_t slot = 0; slot < unit.slot_count; ++slot) {
+        const int32_t quality = order.slot_delivered_quality[slot];
+        missing |= quality == 0;
+        kit |= static_cast<uint16_t>(quality << (3 * slot));
+    }
+    return missing ? kit : 0;
+}
+
 // Weighted multiplier from the lot's *actually delivered* quality (q8).
 // Shared by the army cache (UI / AI / threat) and the live engagement formula
 // so the number a player sees is the number that fights.
@@ -179,14 +219,25 @@ inline int64_t equip_factor_q16(const MilitaryUnitType &u, int32_t quality_q8) {
 // the nominal quality factor for the visible tier, then apply the weighted
 // per-slot delivery factor to the same number used by combat and the cache.
 inline int64_t lot_equip_factor_q16(const MilitaryUnitType &u, int32_t quality_q8,
-                                    int32_t kit_q16) {
+                                    int32_t kit_q16, uint16_t partial_equipment) {
+    if (partial_equipment != 0) {
+        int64_t weighted = 0;
+        int64_t weights = 0;
+        for (int32_t slot = 0; slot < u.slot_count; ++slot) {
+            const int64_t weight = u.slot_power_weight_q16[slot];
+            const int32_t grade = partial_equipment_grade(partial_equipment, slot);
+            weights += weight;
+            if (grade == 0) continue;
+            const int64_t normal = quality_mult_q16(u.slot_min_quality[slot]);
+            weighted += weight * (quality_mult_q16(grade) * MILITARY_Q16 / normal);
+        }
+        return weights > 0 ? weighted / weights : MILITARY_Q16;
+    }
     const int64_t kit = clamp64(kit_q16, 0, MILITARY_Q16);
     return mul_div(equip_factor_q16(u, quality_q8), kit, MILITARY_Q16);
 }
 
-// Computes the training kit factor from the actual quality delivered to each
-// slot. A missing slot is only possible on an in-progress order; completed
-// orders have equipment_ready set after every category arrived.
+// Computes the legacy training factor for a complete kit.
 inline int32_t training_kit_factor_q16(const MilitaryUnitType &u,
                                        const MilitaryTrainingOrder &order) {
     if (u.slot_count <= 0) return MILITARY_Q16;

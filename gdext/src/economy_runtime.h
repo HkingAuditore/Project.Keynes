@@ -1665,7 +1665,9 @@ public:
     // operating floor; `price` is MONEY_SCALE per 1.0 good.
     void military_read_market(int32_t good, std::vector<int32_t> &out_cells,
                               std::vector<int64_t> &out_sellable,
-                              std::vector<int64_t> &out_price) const;
+                              std::vector<int64_t> &out_price, std::vector<uint8_t> &out_stocked) const;
+    void military_read_equipment_production(const std::vector<int32_t> &cells,
+        const std::vector<uint8_t> &equipment, std::vector<uint8_t> &out) const;
     // Dense soldier / unemployed profession ids (resolved from the profession
     // catalog; -1 when the catalog predates the military content).
     int32_t military_soldier_profession();

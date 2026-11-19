@@ -1,4 +1,5 @@
 #include "native_simulation_host.h"
+#include "runtime_era_reward.h"
 #include <algorithm>
 #include <cassert>
 
@@ -88,7 +89,62 @@ std::vector<AnnualDevelopmentReport> NativeSimulationHost::annual_history(uint32
     std::lock_guard<std::mutex> lock(_annual_mutex);std::vector<AnnualDevelopmentReport> result;const auto &rows=_annual_ledger.reports();limit=std::min<uint32_t>(limit,64);
     for(size_t i=offset;i<rows.size()&&result.size()<limit;++i)result.push_back(rows[rows.size()-1-i]);return result;
 }
-bool NativeSimulationHost::mark_annual_presented(uint64_t id){std::lock_guard<std::mutex> lock(_annual_mutex);return _annual_ledger.mark_presented(id);}
+const char *NativeSimulationHost::player_confirmation_block() const {
+    const auto era_reward = latest_era_reward();
+    if (era_reward && era_reward->needs_choice) return "era_reward_choice_required";
+    if (!annual_development_enabled() || !annual_worker_managed()) return nullptr;
+    std::lock_guard<std::mutex> lock(_annual_mutex);
+    const auto report = _annual_ledger.ready_report_id();
+    // The old year closes one day before the reward and report are due.
+    // A zero reward can already be settled at close, so check the date too.
+    if (report != 0 && _annual_ledger.last_day() / _annual_ledger.days_per_year() >=
+            static_cast<int64_t>(report)) return "annual_report_confirmation_required";
+    return nullptr;
+}
+
+bool NativeSimulationHost::mark_annual_presented(uint64_t id) {
+    if (!annual_worker_managed()) {
+        std::lock_guard<std::mutex> lock(_annual_mutex);
+        return _annual_ledger.mark_presented(id);
+    }
+    std::unique_lock<std::mutex> control(_control_mutex);
+    const auto available = [&] {
+        return !_stop_requested.load(std::memory_order_acquire) &&
+            state() != RuntimeWorkerState::STOPPED && state() != RuntimeWorkerState::FAULTED;
+    };
+    if (!available()) return false;
+    auto request = std::make_shared<AnnualPresentationRequest>(AnnualPresentationRequest{id});
+    _annual_presentations.push_back(request);
+    if (inline_daily_mode()) {
+        control.unlock();
+        service_annual_presentations();
+        return request->presented;
+    }
+    _control_cv.notify_all();
+    _control_cv.wait(control, [&] { return request->done || !available(); });
+    return request->done && request->presented;
+}
+
+bool NativeSimulationHost::service_annual_presentations() {
+    std::deque<std::shared_ptr<AnnualPresentationRequest>> requests;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        requests.swap(_annual_presentations);
+    }
+    if (requests.empty()) return false;
+    {
+        std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
+        std::lock_guard<std::mutex> lock(_annual_mutex);
+        for (const auto &request : requests)
+            request->presented = _annual_ledger.mark_presented(request->report_id);
+    }
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        for (const auto &request : requests) request->done = true;
+    }
+    _control_cv.notify_all();
+    return true;
+}
 std::vector<uint8_t> NativeSimulationHost::encode_annual_save() const{std::lock_guard<std::mutex> lock(_annual_mutex);std::vector<uint8_t> bytes;if(_annual_ledger.configured())_annual_ledger.encode(bytes);return bytes;}
 bool NativeSimulationHost::restore_annual_save(const uint8_t *bytes,size_t size,std::string &error){
     std::lock_guard<std::mutex> lock(_annual_mutex);if(!_annual_ledger.restore(bytes,size,error))return false;

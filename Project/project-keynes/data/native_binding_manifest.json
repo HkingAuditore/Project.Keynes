@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 662,
+  "count": 664,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -273,6 +273,7 @@
     "get_effect_report",
     "get_effective_stat_value",
     "get_epoch_profession_report",
+    "get_era_advancement_view",
     "get_era_reward_offer",
     "get_family_branch_effects",
     "get_family_branches",
@@ -634,6 +635,7 @@
     "submit_effect_instances",
     "submit_effect_snapshots",
     "submit_effect_worker_ack",
+    "submit_era_advancement",
     "submit_family_founding_choice",
     "submit_family_trait_commands",
     "submit_ideology_commands",

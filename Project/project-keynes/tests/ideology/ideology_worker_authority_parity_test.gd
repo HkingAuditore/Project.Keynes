@@ -509,9 +509,12 @@ func _phase_k3_k4_k2() -> void:
 	_drive_days(w, 6)
 	var f_worker := _capture_front(w, "K3-A")
 	_fronts["K3-A"] = f_worker
-	var host: ProjectionWitness = w["host"]
-	_expect("K3: a nonempty projection was queued on the background executor",
-		host.background_projection_day >= 0, str(host.background_projection_day))
+	var committed: Dictionary = w["ext"].get_runtime_thread_report()
+	var projection_day := int(f_worker["basis_eligible_day"])
+	_expect("K3: the executor publishes a nonempty projection for a committed day",
+		int(f_worker["layer_generation"]) > 0 and projection_day >= 0
+		and projection_day <= int(committed.get("simulation_committed_day", -2)) + 1,
+		"projection=%d committed=%s" % [projection_day, str(committed.get("simulation_committed_day"))])
 	print("[K3][FINDING] worker authority: card live (locations=%s) but the derived "
 		% str(_snapshot(w).get("locations", PackedInt32Array()))
 		+ "front is installed=%s cell_count=%d contributions=%d; the shard ran "
@@ -884,7 +887,7 @@ func _build_world(spec: Dictionary) -> Dictionary:
 	clock.debug_step_log = false
 	get_root().add_child(clock)
 	clock.pause(true)
-	var host := ProjectionWitness.new()
+	var host := WorldRuntimeHost.new()
 	host.map_width = width
 	host.map_height = height
 	host.initial_seed = seed
@@ -1853,12 +1856,3 @@ func _require(label: String, condition: bool, detail: String = "") -> bool:
 
 func _fail(label: String) -> void:
 	_expect(label, false)
-
-
-class ProjectionWitness extends WorldRuntimeHost:
-	var background_projection_day := -1
-
-	func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
-		super._step_ideology_instance_refresh_if_authoritative(day_idx)
-		if bool(_ideology_pump_last.get("background_queued", false)):
-			background_projection_day = int(_ideology_pump_last.get("day", -1))

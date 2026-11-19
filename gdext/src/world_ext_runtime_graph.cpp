@@ -376,7 +376,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // budget; a publish placed only inside the loop then never runs and the
     // worker Ideology stage keeps skipping days awaiting the opinion.
     if (_ideology_runtime != nullptr && _economy_runtime != nullptr &&
-        _runtime_host != nullptr &&
+        _runtime_host != nullptr && !_runtime_host->effect_adapter_owned() &&
         static_cast<NativeEconomyRuntime *>(_economy_runtime)
                 ->country_class_opinion_snapshot().revision !=
             _ideology_opinion_published_revision) {
@@ -421,6 +421,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         TriggerRuntime *trigger_runtime = _trigger_runtime != nullptr
             ? static_cast<TriggerRuntime *>(_trigger_runtime) : nullptr;
         const bool trigger_facade_due = trigger_runtime != nullptr &&
+            (!_runtime_host || !_runtime_host->effect_adapter_owned()) &&
             (trigger_worker_owns_day
                 ? trigger_runtime->pending_effect_count() > 0
                 : trigger_runtime->should_run(day));
@@ -478,7 +479,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         // Ideology runs. Economy settles later in this graph, so the worker
         // cannot form an Ideology<->Economy same-day cycle.
         if (_ideology_runtime != nullptr && _economy_runtime != nullptr &&
-            _runtime_host != nullptr) {
+            _runtime_host != nullptr && !_runtime_host->effect_adapter_owned()) {
             publish_ideology_worker_inputs();
         }
         // G8: publish_ideology_worker_inputs above still runs under worker
@@ -731,22 +732,10 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         append_runtime_control_state(out, NativeSimulationHost::ControlState{
             host.state, host.mode, host.authority_ready, report.interactive,
             host.authoritative_domain_mask, host.requested_authority_mask, host.committed_day});
-        // R-3b: how many CLIENTS are still waiting for a boundary turn. A non-zero
-        // value with `state == PAUSED` means the worker is parked for that client --
-        // which is the exact condition that used to persist for a whole session
-        // because the ideology path requested and never completed.
-        out["main_boundary_service_requests"] =
-            static_cast<int64_t>(_runtime_host->main_boundary_service_requests());
-        out["main_boundary_service_ideology"] =
-            _runtime_host->main_boundary_service_requested_by(
-                NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
-        out["main_boundary_service_trigger"] =
-            _runtime_host->main_boundary_service_requested_by(
-                NativeSimulationHost::MainBoundaryClient::TRIGGER);
         constexpr std::array<const char *, RuntimeWorkerTiming::MAIN_WAIT_REASON_COUNT> wait_names = {
             "environment_input", "day_tail", "day_tail_task_slot", "other"};
         constexpr std::array<const char *, RuntimeWorkerTiming::DAY_TAIL_TASK_COUNT> task_names = {
-            "ideology_projection", "season"};
+            "season"};
         Dictionary waits_by_day;
         for (const auto &day : _runtime_host->main_waits_by_day()) {
             if (day.day < 0) continue;

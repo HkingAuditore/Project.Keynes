@@ -221,8 +221,8 @@ func close_annual_report(host) -> void:
 
 
 
-func annual_other_modal_open(host) -> bool:
-	return host.is_era_reward_modal_open() or host.is_family_founding_modal_open() \
+func annual_other_modal_open(host, ignore_era_progress: bool) -> bool:
+	return (not ignore_era_progress and host.is_era_reward_modal_open()) or host.is_family_founding_modal_open() \
 		or host.is_narrative_event_modal_open() \
 		or (host._pause_menu != null and host._pause_menu.visible)
 

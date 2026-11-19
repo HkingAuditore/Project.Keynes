@@ -15,6 +15,9 @@
 #include "economy_runtime.h"
 #include "economy_hash.h"
 #include "effect_magnitude.h"
+#include "effect_runtime.h"
+#include "trigger_runtime.h"
+#include "ideology_runtime.h"
 #include "runtime_economy_ecp2.h"
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
@@ -39,6 +42,84 @@
 #include "native_simulation_host_support.h"
 
 namespace pk {
+
+void NativeSimulationHost::attach_effect_adapter(
+        EffectRuntime *effect, NativeCountryRuntime *country, TriggerRuntime *trigger,
+        NativeIdeologyRuntime *ideology) {
+    _effect_adapter_runtime = effect;
+    _effect_adapter_country = country;
+    _trigger_delivery = {};
+    _trigger_delivery.runtime = trigger;
+    _trigger_delivery.ideology = ideology;
+    if (trigger != nullptr) _trigger_delivery.initial_view = std::make_shared<TriggerRuntime>(*trigger);
+    if (ideology != nullptr) {
+        ideology->attach_modifier_runtime(_economy_modifier_view);
+        _trigger_delivery.initial_ideology_view = capture_ideology_read_view();
+    }
+    if (effect != nullptr) {
+        effect->begin_executor_transaction_namespace();
+    }
+    std::atomic_store(&_published_era_reward, capture_era_reward());
+}
+
+std::shared_ptr<const RuntimeEffectReadView>
+NativeSimulationHost::latest_effect_read_view() const {
+    const auto commit = std::atomic_load(&_latest_commit);
+    return commit && commit->day_tail ? commit->day_tail->effect : nullptr;
+}
+
+const char *NativeSimulationHost::stage_effect_adapter(DayExecution &day) {
+    if (_effect_adapter_runtime == nullptr) return nullptr;
+    auto &effect = *_effect_adapter_runtime;
+    const auto &snapshot = _effect_pod_authority.snapshot();
+    std::string error;
+    if (snapshot.generation > effect.pod_snapshot_generation() &&
+        !effect.apply_pod_snapshot(snapshot, error)) {
+        pk::log_error("[effect] executor adapter snapshot: %s", error.c_str());
+        return "effect_executor_adapter_snapshot_failed";
+    }
+    RuntimeDomainIntent intent;
+    while (poll_effect_pod_intent(intent)) {
+        if (intent.target_domain == static_cast<uint16_t>(RuntimeDomainId::MODIFIER))
+            continue;
+        RuntimeDomainAck ack;
+        ack.request_id = intent.request_id;
+        ack.transaction_id = intent.request_id;
+        ack.target_handle = intent.target_handle;
+        ack.target_generation = intent.target_generation;
+        ack.domain = intent.target_domain;
+        ack.code = RuntimeDomainAckCode::OK;
+        ack.effective_day = intent.effective_day;
+        ack.producer_id = intent.producer_id;
+        ack.sequence = intent.sequence;
+        if (!submit_effect_pod_ack(ack, error)) return "effect_executor_adapter_ack_failed";
+    }
+    if (_effect_adapter_country != nullptr) {
+        effect.dispatch_native_country(_effect_adapter_country);
+        effect.ack_native_country(_effect_adapter_country);
+        effect.settle_orphaned_native_country_acks();
+    }
+    if (_economy_production_runtime != nullptr) {
+        effect.dispatch_native_economy(_economy_production_runtime);
+        effect.ack_native_economy(_economy_production_runtime);
+    }
+    if (const char *error = settle_era_rewards(day)) return error;
+    auto view = std::make_shared<RuntimeEffectReadView>();
+    view->report = effect.report();
+    const bool country_pending = _effect_adapter_country != nullptr &&
+        _effect_adapter_country->has_pending_effect_commands();
+    const bool economy_pending = _economy_production_runtime != nullptr &&
+        _economy_production_runtime->has_pending_effect_commands();
+    const bool colonization_pending = effect.has_pending_family_colonization_transactions();
+    view->adapters["country_pending"] = country_pending;
+    view->adapters["economy_pending"] = economy_pending;
+    view->adapters["colonization_pending"] = colonization_pending;
+    view->adapters["idle"] = !country_pending && !economy_pending && !colonization_pending;
+    if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+    _executor_day_tail->effect = std::move(view);
+    _executor_day_tail->era_reward = capture_era_reward();
+    return nullptr;
+}
 
 bool NativeSimulationHost::configure_modifier_pod(
         const RuntimeModifierPodCatalog &catalog, std::string &error) {

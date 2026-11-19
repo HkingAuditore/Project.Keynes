@@ -310,7 +310,10 @@ func generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 	var final_res: Dictionary = PkmapIOScript.native_result_from_payload(payload, header)
 	if _generator._terrain_generator == null:
 		_generator._terrain_generator = TerrainGeneratorScript.new(_generator)
+	var frame_gate = _generator._loading_frames
 	var map: MapData = await _generator._terrain_generator.assemble_native_result(final_res, cfg)
+	if frame_gate.canceled:
+		return null
 	if map == null:
 		push_error("[native_generation/pkmap] assemble_native_result 失败；中止，不回退程序生成")
 		_generator._native_generation_base_report = {
@@ -424,7 +427,10 @@ func generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	}
 	if _generator._terrain_generator == null:
 		_generator._terrain_generator = TerrainGeneratorScript.new(_generator)
+	var frame_gate = _generator._loading_frames
 	var map: MapData = await _generator._terrain_generator.assemble_native_result(final_res, cfg)
+	if frame_gate.canceled:
+		return null
 	if map == null:
 		push_warning("[native_generation] final result invalid（装配失败）；中止生成")
 		return null

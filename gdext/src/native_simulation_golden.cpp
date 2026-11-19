@@ -1,4 +1,5 @@
 #include "native_simulation_host.h"
+#include "runtime_day_tail.h"
 #include "runtime_golden_diagnostics.h"
 #include "country_core_apply.h"
 #include "economy_api.h"
@@ -424,13 +425,19 @@ bool RuntimeDomainAuthorityRunner::copy_trigger_snapshot(
 }
 
 RuntimeGoldenSnapshot NativeSimulationHost::golden_snapshot() const {
-    RuntimeGoldenSnapshot out;
-    // Same boundary held by the executor for the entire semantic day. This
-    // diagnostic never pumps, commits, publishes, consumes a ring or retries a plan.
-    std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
+    const auto commit = std::atomic_load(&_latest_commit);
+    if (commit && commit->day_tail && commit->day_tail->golden)
+        return *commit->day_tail->golden;
+    // Standalone diagnostic fixtures may query outside an executor commit.
+    auto boundary = try_lock_economy_read_boundary();
     if (!boundary.owns_lock() || _worker_day_inflight.load(std::memory_order_acquire) != 0)
-        return out;
-    out.day = _committed_day.load(std::memory_order_acquire);
+        return {};
+    return capture_golden_snapshot(_committed_day.load(std::memory_order_acquire));
+}
+
+RuntimeGoldenSnapshot NativeSimulationHost::capture_golden_snapshot(int64_t day) const {
+    RuntimeGoldenSnapshot out;
+    out.day = day;
     if (out.day < 0 || _country_pod_plan_active.load(std::memory_order_acquire)) return out;
     const auto add = [&](const char *id, const char *scope, int64_t day, uint64_t hash) {
         out.domains.push_back({id, scope, day, hash});

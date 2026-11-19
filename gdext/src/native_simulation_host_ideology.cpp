@@ -706,6 +706,10 @@ bool NativeSimulationHost::restore_ideology_pod_save(
     _ideology_loose_modifier_rows.clear();
     _ideology_day_modifier_batches.clear();
     _ideology_pod_authority.rearm_pending_transitions();
+    const auto &restored = _ideology_pod_authority.snapshot();
+    _ideology_pod_state_hash.store(restored.state_hash, std::memory_order_release);
+    _ideology_pod_snapshot_generation.store(restored.generation, std::memory_order_release);
+    _ideology_pod_committed_day.store(restored.committed_day, std::memory_order_release);
     return true;
 }
 

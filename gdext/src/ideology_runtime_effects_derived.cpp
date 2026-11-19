@@ -804,46 +804,11 @@ void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
     }
 }
 
-struct NativeIdeologyRuntime::DerivedFoldWork {
-    std::unique_ptr<DerivedCellMaterializeJob> job;
-    std::vector<DerivedProgramContribution> contributions;
-    DerivedCellFront previous;
-    DerivedCellFront front;
-    DerivedMaterializeReport report;
-    std::atomic<bool> ready{false};
-    bool skipped = false;
-    bool ok = false;
-    double fold_ms = 0.0;
-    double total_ms = 0.0;
-
-    void compute() noexcept {
-        const auto started = Clock::now();
-        try {
-            job->fold_step(contributions, std::numeric_limits<double>::infinity());
-            fold_ms = elapsed_ms(started);
-            ok = job->finish(previous.rows.empty() ? nullptr : &previous, front, report, skipped);
-        } catch (...) {
-            ok = false;
-        }
-        total_ms = elapsed_ms(started);
-        ready.store(true, std::memory_order_release);
-    }
-};
-
-bool NativeIdeologyRuntime::derived_fold_running() const {
-    return _derived_fold_work && !_derived_fold_work->ready.load(std::memory_order_acquire);
-}
-
 bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day, std::string &error,
-                                               const DerivedFoldQueue &queue_fold) {
+                                               bool finish_in_day) {
     error.clear();
     if (!_configured || _modifier_runtime == nullptr || _effect_runtime == nullptr)
         return true;
-    if (derived_fold_running()) return false;
-    if (_derived_fold_work && day != _derived_rebuild_day) {
-        error = "ideology_derived_fold_day_mismatch";
-        return false;
-    }
     // Counted HERE, not in the deleted `rebuild_derived_cell_layer`.
     //
     // When the old one-shot rebuild was removed its `++_cell_layer_rebuild_visits`
@@ -1003,21 +968,8 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day, std::string &error
         _derived_rebuild_job.reset(new DerivedCellMaterializeJob(
             _derived_world_identity, _derived_map_generation, day,
             _derived_epoch_id, compute_execution_contract_hash(), job_options));
-        if (queue_fold && !_derived_rebuild_contributions.empty()) {
-            auto work = std::make_shared<DerivedFoldWork>();
-            const auto *previous = modifier_api::derived_cell_front(*_modifier_runtime);
-            if (previous) work->previous = *previous;
+        if (finish_in_day && !_derived_rebuild_contributions.empty())
             _derived_rebuild_job->freeze_ramp_inputs(_derived_rebuild_contributions);
-            work->contributions = std::move(_derived_rebuild_contributions);
-            work->job = std::move(_derived_rebuild_job);
-            if (!queue_fold([work] { work->compute(); })) {
-                _derived_rebuild_job = std::move(work->job);
-                _derived_rebuild_contributions = std::move(work->contributions);
-                error = "ideology_derived_fold_unavailable";
-                return false;
-            }
-            _derived_fold_work = std::move(work);
-        }
         return false;   // fold happens in later steps
     }
 
@@ -1025,31 +977,15 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day, std::string &error
     DerivedCellFront front;
     DerivedMaterializeReport report;
     bool skipped = false;
-    bool folded = true;
-    double step_ms = 0.0;
-    double background_tail_ms = 0.0;
     const DerivedCellFront *previous = modifier_api::derived_cell_front(*_modifier_runtime);
-    if (_derived_fold_work) {
-        auto work = std::move(_derived_fold_work);
-        _derived_rebuild_contributions = std::move(work->contributions);
-        if (!work->ok) {
-            error = "ideology_derived_fold_failed";
-            return false;
-        }
-        front = std::move(work->front);
-        report = work->report;
-        skipped = work->skipped;
-        step_ms = work->fold_ms;
-        background_tail_ms = work->total_ms - step_ms;
-    } else {
-        if (!_derived_rebuild_job) return true;
-        folded = _derived_rebuild_job->fold_step(
-            _derived_rebuild_contributions, DERIVED_REBUILD_STEP_BUDGET_MS);
-        step_ms = elapsed_ms(started);
-        if (folded && !_derived_rebuild_job->finish(previous, front, report, skipped)) {
-            error = "derived_cell_layer_finish_failed";
-            return false;
-        }
+    if (!_derived_rebuild_job) return true;
+    const double budget = finish_in_day ? std::numeric_limits<double>::infinity()
+                                        : DERIVED_REBUILD_STEP_BUDGET_MS;
+    const bool folded = _derived_rebuild_job->fold_step(_derived_rebuild_contributions, budget);
+    const double step_ms = elapsed_ms(started);
+    if (folded && !_derived_rebuild_job->finish(previous, front, report, skipped)) {
+        error = "derived_cell_layer_finish_failed";
+        return false;
     }
     _cell_layer_rebuild_ms = std::max(_cell_layer_rebuild_ms, step_ms);
     _derived_materialise_ms = std::max(_derived_materialise_ms, step_ms);
@@ -1115,8 +1051,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day, std::string &error
     // the two reported numbers still answer different questions: "what did the fold
     // cost" versus "what did one slice of this stage cost".
     {
-        const double whole_step_ms = elapsed_ms(started) +
-            (background_tail_ms > 0.0 ? step_ms + background_tail_ms : 0.0);
+        const double whole_step_ms = elapsed_ms(started);
         _cell_layer_rebuild_ms = std::max(_cell_layer_rebuild_ms, whole_step_ms);
         // The tail (build + install + release) is part of the same day's total. The
         // fold's part was already added above, so only the delta is added here.

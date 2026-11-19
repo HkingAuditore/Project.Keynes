@@ -14,7 +14,7 @@ public:
     using Totals = std::array<uint64_t, COUNT>;
     enum MainWaitReason { ENVIRONMENT_INPUT, DAY_TAIL, DAY_TAIL_TASK_SLOT,
                           OTHER, MAIN_WAIT_REASON_COUNT };
-    enum DayTailTask { IDEOLOGY_PROJECTION, SEASON, DAY_TAIL_TASK_COUNT };
+    enum DayTailTask { SEASON, DAY_TAIL_TASK_COUNT };
     struct MainWaitCounter {
         uint64_t count = 0;
         uint64_t usec = 0;

@@ -181,6 +181,8 @@ bool NativeEconomyRuntime::capture_trade_topology(
     // not throw away an incremental plan. A real content change always advances
     // our internal generation even when the caller reuses a stale token.
     if (_trade_topology.ready && _trade_topology.topology_hash == normalized_hash) return true;
+    const bool resumes_saved_plan = !_trade_topology.ready &&
+        _trade_topology.topology_hash == normalized_hash;
     if (_trade_topology.ready) {
         ++_trade_topology_content_change_count;
         ++_trade_plan_reset_count;
@@ -188,8 +190,9 @@ bool NativeEconomyRuntime::capture_trade_topology(
     } else {
         _trade_last_plan_reset_reason = "initial_topology_capture";
     }
-    const uint64_t resolved_generation = std::max<uint64_t>(
-        _trade_topology.topology_generation + 1, generation != 0 ? generation : 1);
+    const uint64_t resolved_generation = resumes_saved_plan
+        ? _trade_topology.topology_generation
+        : std::max<uint64_t>(_trade_topology.topology_generation + 1, generation);
     _trade_topology.neighbors.swap(neighbors);
     _trade_topology.passable.swap(passable);
     _trade_topology.enter_cost.swap(enter_cost);
@@ -204,7 +207,7 @@ bool NativeEconomyRuntime::capture_trade_topology(
     _trade_topology.component_country_hash = 0;
     _trade_topology.ready = true;
     build_water_transport_graphs();
-    _trade_plan.clear_transient();
+    if (!resumes_saved_plan) _trade_plan.clear_transient();
     return true;
 }
 

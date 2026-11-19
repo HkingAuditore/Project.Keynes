@@ -836,6 +836,18 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // The inline executor already runs each day between main-thread frames.
     _runtime_host->set_main_day_tail_gate(
         !native_daily_inline && static_cast<bool>(config.get("main_day_tail_gate", false)));
+    const bool owns_rule_adapters = mode == RuntimeSimulationMode::ACTIVE &&
+        requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK;
+    if (_ideology_runtime != nullptr) {
+        auto *ideology = static_cast<NativeIdeologyRuntime *>(_ideology_runtime);
+        ideology->reset_pod_snapshot_cursor();
+        ideology->attach_modifier_runtime(static_cast<ModifierRuntime *>(_modifier_runtime));
+    }
+    _runtime_host->attach_effect_adapter(
+        owns_rule_adapters ? static_cast<EffectRuntime *>(_effect_runtime) : nullptr,
+        owns_rule_adapters ? static_cast<NativeCountryRuntime *>(_country_runtime) : nullptr,
+        owns_rule_adapters ? static_cast<TriggerRuntime *>(_trigger_runtime) : nullptr,
+        owns_rule_adapters ? static_cast<NativeIdeologyRuntime *>(_ideology_runtime) : nullptr);
     if (!_runtime_host->start(mode, complete, day, speed, paused,
                               requested_authority_mask)) {
         out["ok"] = false;
@@ -850,10 +862,6 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // A restore start is granted immediately; make the main-thread peers see
     // that grant now rather than on a runtime-graph pulse that may not run.
     sync_runtime_domain_ownership();
-    // Every worker lifetime numbers its Ideology snapshots from 1 again.
-    if (_ideology_runtime != nullptr)
-        static_cast<NativeIdeologyRuntime *>(_ideology_runtime)
-            ->reset_pod_snapshot_cursor();
     out["ok"] = true;
     out["pending"] = mode != RuntimeSimulationMode::OFF;
     out["code"] = "ok";

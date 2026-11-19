@@ -5,6 +5,20 @@
 #include <cassert>
 
 namespace pk {
+bool NativeSimulationHost::publish_committed_ideology_inputs(std::string &error) {
+    if (_economy_production_runtime == nullptr) return true;
+    const auto &economy = *_economy_production_runtime;
+    const auto opinion = economy.class_opinion_source_override_enabled_for_test()
+        ? economy.country_class_opinion_source_snapshot() : economy.country_class_opinion_snapshot();
+    const auto previous = std::atomic_load(&_ideology_opinion_snapshot);
+    if (opinion.revision == 0 || (previous && opinion.revision == previous->revision)) return true;
+    if (const auto tags = economy.published_tag_snapshot())
+        set_ideology_cell_tags(tags->tag_words, tags->tag_bits);
+    else
+        set_ideology_cell_tags(0, {});
+    return publish_ideology_opinion_snapshot(ideology_opinion_from_economy(opinion), error);
+}
+
 RuntimePublishedView<RuntimeIdeologyOpinionSnapshot>
 NativeSimulationHost::copy_economy_opinion_view(int64_t day) {
     auto source = std::atomic_load_explicit(&_ideology_opinion_snapshot,

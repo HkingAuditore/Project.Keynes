@@ -17,7 +17,6 @@ const PlayerControllerProgressionScript = preload("res://scripts/game/player_con
 const PlayerControllerSelectionScript = preload("res://scripts/game/player_controller/selection.gd")
 const PlayerControllerNarrativeScript = preload("res://scripts/game/player_controller/narrative.gd")
 const StratumUnrestServiceScript = preload("res://scripts/politics/stratum_unrest_service.gd")
-const RegimeEffectBindingScript = preload("res://scripts/country/regime_effect_binding.gd")
 var _annual_report_flow = AnnualReportFlowScript.new()
 var _music_situation = MusicSituationAggregatorScript.new()
 var _music_playback: Node
@@ -197,15 +196,11 @@ var _ideology_facade = null
 var _modifier_facade = null
 # Regime effects: the last (country, regime) pair whose Modifier rows were
 # reconciled. Empty means "not reconciled yet", so the first commit after a
-# bind applies the initial regime's definitions.
-var _regime_effect_key := ""
-var _regime_effect_handle := 0
 var _era_reward_locked := false
 var _era_reward_resume_running := false
 var _era_reward_previous_speed := 1.0
 var _era_reward_generation := 0
 var _era_reward_last_status := "NONE"
-var _era_reward_drain_active := false
 var _family_founding_locked := false
 var _family_founding_resume_running := false
 var _family_founding_previous_speed := 1.0
@@ -808,7 +803,7 @@ func _connect_runtime() -> void:
 		_camera.view_changed.connect(_on_camera_view_changed)
 	if _runtime_host != null:
 		var runtime_callbacks := {"simulation_committed": _on_simulation_committed,
-			"simulation_view_updated": _on_simulation_view_updated, "country_peer_serviced": _on_country_peer_serviced}
+			"simulation_view_updated": _on_simulation_view_updated}
 		for event in runtime_callbacks:
 			if _runtime_host.has_signal(event) and not _runtime_host.is_connected(event, runtime_callbacks[event]):
 				_runtime_host.connect(event, runtime_callbacks[event])
@@ -846,16 +841,6 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_step_narrative_daily(to_day)
 	_annual_report_flow.try_present()
 	_narrative_flow.try_present()
-
-
-func _on_country_peer_serviced(report: Dictionary) -> void:
-	# Era reward planning is completed while the host drains Country peer
-	# intents, after the worker commit signal has already been published.
-	# 里程碑通知可能单独送达，此时没有普通 peer intent 但仍须立即打开弹窗。
-	if int(report.get("inspected", 0)) <= 0 and int(report.get("notified", 0)) <= 0:
-		return
-	_sync_era_reward_offer()
-	_sync_family_founding_offer()
 
 
 func _connect_ui() -> void:
@@ -926,51 +911,11 @@ func get_player_country_handle() -> int:
 
 func _on_country_committed(report: Dictionary) -> void:
 	country_committed.emit(report)
-	_sync_regime_effects()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_era_music()
 	# Country ACK of advance_era raises current_era_index here.
 	_refresh_era_advancement(true)
-
-
-## Apply the political regime's Modifier definitions once per regime change.
-##
-## The regime itself is native country state; its effects are ordinary COUNTRY
-## Modifier rows. Reconciling here (on a confirmed commit) rather than per frame
-## keeps the cost at one snapshot read per commit and zero commands while the
-## regime stays the same. Rows persist with PKCM, so a reload does not need a
-## replay unless the regime key changed.
-func _sync_regime_effects() -> void:
-	if _country_facade == null or _modifier_facade == null \
-			or _player_country_handle == 0:
-		return
-	if not _modifier_facade.has_method("is_configured") \
-			or not bool(_modifier_facade.is_configured()):
-		return
-	var snapshot: Dictionary = _country_facade.political_regime_snapshot(
-		_player_country_handle)
-	if not bool(snapshot.get("ok", false)):
-		return
-	var regime_view: Dictionary = _country_facade.political_regime_catalog_view()
-	var regime_key := RegimeEffectBindingScript.regime_key_from_snapshot(
-		snapshot, regime_view)
-	if regime_key.is_empty():
-		return
-	if regime_key == _regime_effect_key \
-			and _player_country_handle == _regime_effect_handle:
-		return
-	var keys: PackedStringArray = RegimeEffectBindingScript.definition_keys_for(
-		regime_view, regime_key)
-	var result: Dictionary = RegimeEffectBindingScript.reconcile(
-		_modifier_facade, _player_country_handle, keys)
-	if not bool(result.get("ok", false)):
-		# Leave the marker empty so the next commit retries instead of silently
-		# treating a failed apply as done.
-		push_warning("regime_effect_apply_failed: %s" % str(result))
-		return
-	_regime_effect_key = regime_key
-	_regime_effect_handle = _player_country_handle
 
 
 func _on_construction_command_settled(result: Dictionary) -> void:
@@ -1097,7 +1042,6 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_ideology_draw()
 	_sync_era_music()
 	_sync_event_audio()
-	_refresh_era_advancement()
 	var worker_days: bool = _runtime_host.uses_worker_day_commits()
 	if not worker_days:
 		_step_narrative_daily(day_idx)
@@ -1540,21 +1484,6 @@ func military_truce_until(_slot: int) -> int:
 func _on_era_reward_choice_requested(generation: int, choice_index: int) -> void:
 	_progression_component._on_era_reward_choice_requested(self, generation, choice_index)
 
-func _drain_era_reward_until_settled() -> void:
-	if _era_reward_drain_active:
-		return
-	_era_reward_drain_active = true
-	while _era_reward_locked and _era_reward_last_status == "SELECTED_PENDING":
-		var generator: Variant = _runtime_host.generator() \
-			if _runtime_host != null else null
-		if generator == null or not generator.has_method("advance_save_boundary"):
-			break
-		# 复用存档协调器的无日期推进安全边界排空链。
-		generator.advance_save_boundary()
-		await get_tree().process_frame
-		_sync_era_reward_offer()
-	_era_reward_drain_active = false
-
 func open_era_reward_offer() -> void:
 	_progression_component.open_era_reward_offer(self)
 
@@ -1567,6 +1496,9 @@ func _sync_era_reward_offer() -> void:
 func era_reward_locked() -> bool:
 	return _progression_component.era_reward_locked(self)
 
+func era_reward_waiting_for_commit() -> bool:
+	return _era_reward_last_status == "SELECTED_PENDING"
+
 func get_era_advancement_snapshot() -> Dictionary:
 	return _progression_component.get_era_advancement_snapshot(self)
 
@@ -1575,9 +1507,6 @@ func get_procurement_policy() -> Dictionary:
 
 func get_era_advancement_blocked_reason() -> String:
 	return _progression_component.get_era_advancement_blocked_reason(self)
-
-func _era_advancement_preview() -> Dictionary:
-	return _progression_component._era_advancement_preview(self)
 
 func _bind_era_advancement() -> void:
 	_progression_component._bind_era_advancement(self)

@@ -1,138 +1,71 @@
-extends SceneTree
+extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 
-# Exercise transport backpressure and the two independent ACKs. A full Trigger
-# command lane must not lose the delivery id set or discard the Effect plan.
-# Effect ids are ingress-allocated while delivery is canonical, so the delivery
-# ACK ships the exact id set returned by handoff_trigger_effects(); the numeric
-# cursor lane is only a fallback when the id batch reports available=false.
-class PeerBase extends RefCounted:
-	var effects := PackedInt32Array([10, 13])
-	var pending_country := false
-	var receipt_ready := false
-	var cursor_lane_ready := false
-	var dispatches := 0
-	var handoffs := 0
-	var id_submissions := 0
-	var cursor_submissions := 0
-	var last_ids := PackedInt64Array()
-	var defer_handoff := false
+const Achievements = preload("res://scripts/research/development_achievement_catalog.gd")
 
-	func poll_effect_batch(_after: int, _limit: int = 64) -> Dictionary:
-		return {"actions": effects, "opcodes": PackedInt32Array([14, 1])}
-
-	func dispatch_native_country() -> Dictionary:
-		dispatches += 1
-		pending_country = true
-		return {"ok": true}
-
-	func ack_native_country() -> Dictionary:
-		if receipt_ready:
-			pending_country = false
-		return {"ok": true}
-
-	func ack_effect_cursor(_cursor: int) -> Dictionary:
-		cursor_submissions += 1
-		return {"ok": true, "pod_shadow_ok": cursor_lane_ready}
-
-	func native_adapter_report() -> Dictionary:
-		return {"country_pending": pending_country}
-
-	func reconcile_research_signals(_max_items: int = 64) -> Dictionary:
-		return {"ok": true, "complete": true}
-
-class DeliveryPeer extends PeerBase:
-	func handoff_effect_batch(count: int) -> Dictionary:
-		if defer_handoff:
-			return {"handed_off": 0, "deferred": true}
-		handoffs += 1
-		effects.clear()
-		return {"handed_off": count, "last_effect_id": 2,
-			"effect_ids": PackedInt64Array([2])}
-
-	func ack_effect_id_batch(effect_ids: PackedInt64Array) -> Dictionary:
-		id_submissions += 1
-		last_ids = effect_ids
-		return {"ok": true, "pod_shadow_ok": cursor_lane_ready}
-
-# Id batch unavailable: handoff only reports the numeric cursor.
-class LegacyDeliveryPeer extends PeerBase:
-	func handoff_effect_batch(count: int) -> Dictionary:
-		if defer_handoff:
-			return {"handed_off": 0, "deferred": true}
-		handoffs += 1
-		effects.clear()
-		return {"handed_off": count, "last_effect_id": 2}
-
-	func ack_effect_id_batch(_effect_ids: PackedInt64Array) -> Dictionary:
-		return {"ok": false, "available": false}
-
-var _failures := 0
-
-func _init() -> void:
-	var host := WorldRuntimeHost.new()
-	var peer := DeliveryPeer.new()
-	host._service_trigger_country_delivery(peer, peer, {"trigger_acked_effect_id": 0})
-	_expect(peer.handoffs == 1 and peer.dispatches == 1,
-		"full graph delivers research signals even without a legacy graph pulse")
-	_expect(peer.id_submissions == 1 and peer.cursor_submissions == 0,
-		"delivery must ACK by explicit effect ids, not by the numeric cursor")
-	_expect(peer.last_ids.size() == 1 and int(peer.last_ids[0]) == 2,
-		"delivery must ACK exactly the handoff effect id set")
-	var retained_ids: PackedInt64Array = host.get("_trigger_country_delivery_ids")
-	_expect(retained_ids.size() == 1 and int(retained_ids[0]) == 2,
-		"full id lane retains the in-flight Effect transaction")
-	peer.cursor_lane_ready = true
-	host._service_trigger_country_delivery(peer, peer, {"trigger_acked_effect_id": 0})
-	_expect(peer.id_submissions == 2 and peer.handoffs == 1,
-		"id-lane overflow retries without repeating the Country command")
-	_expect(peer.cursor_submissions == 0,
-		"id-lane retry must not fall back to the cursor")
-	host._service_trigger_country_delivery(peer, peer, {"trigger_acked_effect_id": 2})
-	_expect(host.get("_trigger_country_delivery_id") == 2,
-		"Trigger acknowledgment alone cannot discard a pending Country receipt")
-	peer.receipt_ready = true
-	host._service_trigger_country_delivery(peer, peer, {"trigger_acked_effect_id": 0})
-	var cleared_ids: PackedInt64Array = host.get("_trigger_country_delivery_ids")
-	_expect(host.get("_trigger_country_delivery_id") == 0 and cleared_ids.is_empty(),
-		"durable Country receipt and admitted Trigger id ACK release Effect writeback")
-	_expect(peer.id_submissions >= 2 and peer.dispatches == 1,
-		"successful id submission and Country delivery remain idempotent")
-	host.free()
-
-	# Old DLL graceful fallback: no ack_trigger_effect_ids(), no effect_ids.
-	var legacy_host := WorldRuntimeHost.new()
-	var legacy_peer := LegacyDeliveryPeer.new()
-	legacy_host._service_trigger_country_delivery(legacy_peer, legacy_peer, {})
-	_expect(legacy_peer.handoffs == 1 and legacy_peer.cursor_submissions == 1,
-		"peer without ack_trigger_effect_ids() falls back to the numeric cursor")
-	var legacy_ids: PackedInt64Array = legacy_host.get("_trigger_country_delivery_ids")
-	_expect(legacy_ids.size() == 1 and int(legacy_ids[0]) == 2,
-		"fallback still retains the last delivered id for reporting")
-	legacy_peer.receipt_ready = true
-	legacy_peer.cursor_lane_ready = true
-	legacy_host._service_trigger_country_delivery(legacy_peer, legacy_peer, {})
-	_expect(legacy_host.get("_trigger_country_delivery_id") == 0,
-		"legacy cursor lane still releases the delivery after the receipt")
-	legacy_host.free()
-
-	var deferred_host := WorldRuntimeHost.new()
-	var deferred_peer := DeliveryPeer.new()
-	deferred_peer.defer_handoff = true
-	deferred_host._service_trigger_country_delivery(deferred_peer, deferred_peer, {})
-	_expect(deferred_host.get("_trigger_country_delivery_waiting")
-		and deferred_peer.dispatches == 0,
-		"busy Economy boundary defers delivery and protects the Effect facade")
-	deferred_peer.defer_handoff = false
-	deferred_peer.cursor_lane_ready = true
-	deferred_host._service_trigger_country_delivery(deferred_peer, deferred_peer, {})
-	_expect(not deferred_host.get("_trigger_country_delivery_waiting")
-		and deferred_peer.dispatches == 1,
-		"boundary inbox completion resumes the same delivery once")
-	deferred_host.free()
+func _run() -> void:
+	OS.set_environment("PK_GOLDEN_DOMAINS", "1")
+	await _run_world(false)
 	print("technology_signal_delivery_test: %s" % ("PASS" if _failures == 0 else "FAIL"))
-	quit(0 if _failures == 0 else 1)
+	_finish()
 
-func _expect(condition: bool, label: String) -> void:
-	if not condition:
-		_failures += 1
-		push_error(label)
+
+func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> Dictionary:
+	var generator := host.get_generator()
+	var economy = generator.get_economy_facade()
+	var country = generator.get_country_facade()
+	var ext: Object = generator.get_data_core_world_ext()
+	var map := host.current_map()
+	var cell := -1
+	for candidate in map.cell_count():
+		if map.country_slot_arr[candidate] >= 0:
+			cell = candidate
+			break
+	_expect("the frozen world has an owned cell", cell >= 0)
+	if cell < 0:
+		return {}
+	var handle := int(country.cell_summary(cell).get("country_handle", 0))
+	clock.set_speed(1.0)
+	_publish_day(host, clock, 1)
+	if not await _wait_golden_read_boundary(host, economy, 1):
+		_expect("day 1 commits", false)
+		return {}
+	var catalog := EconomyCatalog.compile_native_catalog()
+	var metrics: Dictionary = Achievements.compile_native_catalog(catalog.research_signal_ids)
+	var ids: PackedStringArray = metrics.development_metric_ids
+	var agriculture := ids.find("development.employment.agriculture.10_90d")
+	var manufacturing := ids.find("development.employment.manufacturing.10_90d")
+	_expect("both achievement metric IDs resolve", agriculture >= 0 and manufacturing >= 0)
+	if agriculture < 0 or manufacturing < 0:
+		return {}
+	var source: Dictionary = ext.get_trigger_report()
+	var ingress := int(source.source_cursors[1]) + 10000
+	# The event order is the reverse of the canonical delivery order.
+	var submitted: Dictionary = ext.submit_trigger_events({
+		"event_ids": PackedInt64Array([ingress, ingress + 1]), "source_ids": PackedInt32Array([1, 1]),
+		"days": PackedInt64Array([2, 2]), "event_types": PackedInt32Array([17, 17]),
+		"payload_schemas": PackedInt32Array([10, 10]),
+		"entity_handles": PackedInt64Array([handle, handle]), "group_handles": PackedInt64Array([cell, cell]),
+		"values": PackedInt64Array([1000, 1000]), "payload_i0": PackedInt64Array([manufacturing, agriculture]),
+		"payload_i1": PackedInt64Array([90, 90]),
+	})
+	_expect("both observations enter the executor", int(submitted.get("accepted", 0)) == 2)
+	var signals := PackedInt32Array([
+		metrics.development_metric_signal_indices[agriculture], metrics.development_metric_signal_indices[manufacturing]])
+	# After day 1's tail, the shared seal admits the samples on day 3. Trigger
+	# first emits its requests on day 3, commits with the Effect ACK on day 4,
+	# and delivers the resulting Country commands for day 5.
+	for day in range(2, 6):
+		_publish_day(host, clock, day)
+		if not await _wait_golden_read_boundary(host, economy, day):
+			_expect("signal test day %d commits" % day, false)
+			return {}
+		var evidence: Dictionary = country.research_signal_snapshot(handle)
+		var received: PackedInt32Array = evidence.get("signal_ids", PackedInt32Array())
+		print("SIGNAL_DELIVERY_DAY ", day, " signals=", received, " expected=", signals)
+		for signal_id in signals:
+			_expect("signal %d is committed on day 5, observed on day %d" % [signal_id, day],
+				received.count(signal_id) == (1 if day == 5 else 0))
+		var steps: Dictionary = generator.get_runtime_thread_report().get("main_simulation_steps_by_day", {}).get(day, {})
+		for step in ["trigger_country_delivery", "trigger_effect_handoff", "research_signal_reconcile"]:
+			_expect("%s stays in the executor on day %d" % [step, day], int(steps.get(step, 0)) == 0)
+	return {}

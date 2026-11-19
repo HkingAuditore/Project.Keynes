@@ -1272,6 +1272,11 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         out["code"] = "country_worker_adapter_limit_invalid";
         return out;
     }
+    if (_runtime_host->effect_adapter_owned()) {
+        out["ok"] = true;
+        out["code"] = "country_executor_owned";
+        return out;
+    }
     const RuntimeThreadReport host_report = _runtime_host->report();
     if (!shadow_replay &&
         (host_report.mode != RuntimeSimulationMode::ACTIVE ||
@@ -1398,6 +1403,7 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
     String notification_error;
     NativeSimulationHost::CountryWorkerNotification notification;
     while (notified < max_intents &&
+           !_runtime_host->effect_adapter_owned() &&
            _runtime_host->poll_country_worker_notification(notification)) {
         ++notified;
         // SHADOW keeps planning on the sync store, which already notified.

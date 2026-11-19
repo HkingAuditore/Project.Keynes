@@ -70,7 +70,6 @@ func _start_production_shadow_worker() -> void:
 	_runtime_climate_writeback_days = 0
 	_runtime_climate_writeback_last_day = -1
 	# A new worker lifetime restarts Ideology snapshot generations at 1.
-	_ideology_worker_snapshot_generation = 0
 	var config: Dictionary = {
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -207,7 +206,6 @@ func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionar
 	_sched_day_climate_writeback_ms += _sched_elapsed_ms(segment_usec)
 	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_writeback"})
 	segment_usec = Time.get_ticks_usec()
-	_service_country_worker_transport()
 	_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
 	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_transport"})
 	# 输入日必须等于 host 的 committed_day+1。内联日没有跨线程重试，错日会直接

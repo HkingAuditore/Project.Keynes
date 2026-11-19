@@ -132,10 +132,14 @@ func _run() -> void:
 			host.current_map().base_moisture_arr = saved.map
 			ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"]))
 	clock.pause(false)
+	if annual and mode == "resume":
+		_check_annual_report_pause(host, clock, generator, save_day)
 	var previous_target := int(commands[save_day - 1].value) if mode == "resume" else 0
 	for command in commands:
 		var day := int(command.day)
 		if mode == "resume" and day <= save_day: continue
+		if annual or scenario == "calendar":
+			_confirm_ready_report(host, clock, day)
 		if scenario == "military" and day == 1:
 			# Every barracks needs a military technology; the scenario grants
 			# the earliest one (warrior lodge) instead of researching it. Like
@@ -368,6 +372,8 @@ func _run() -> void:
 			rows[-1]["annual_status"] = _canonical(host.annual_report_status())
 			if day >= save_day:
 				_expect("annual report complete and settled", bool(annual_report.get("complete", false)) and bool(annual_report.get("reward_settled", false)))
+			if day == save_day and mode != "resume":
+				_check_annual_report_pause(host, clock, generator, day)
 		if not annual and mode == "checkpoint" and day == save_day:
 			print("REPLAY_CHECKPOINT_ECOLOGY=" + JSON.stringify({
 				"day": day, "resource_recovery_cells": host._runtime_last_commit.get("resource_recovery_cells", 0),
@@ -384,6 +390,34 @@ func _run() -> void:
 	host.free()
 	clock.free()
 	_finish()
+
+
+func _confirm_ready_report(host: WorldRuntimeHost, clock: WorldClock, next_day: int) -> void:
+	var state := host.annual_report_status()
+	var report_id := int(state.get("ready_report_id", 0))
+	if report_id <= 0 or next_day <= report_id * clock.days_per_year():
+		return
+	host.mark_annual_report_presented(report_id)
+	_expect("player confirms annual report before day %d" % next_day,
+		bool(host.annual_report_snapshot(report_id).get("presented", false)))
+
+
+func _check_annual_report_pause(host: WorldRuntimeHost, clock: WorldClock, generator, day: int) -> void:
+	var report_id := int(host.annual_report_status().get("ready_report_id", 0))
+	var offered: Dictionary = generator.publish_environment_through(day + 1,
+		clock.season_phase_for_day(day + 2))
+	_expect("next day was offered with an unread annual report",
+		report_id > 0 and bool(offered.get("ok", false)) and generator.next_environment_day() == day + 2)
+	var frames := Engine.get_process_frames()
+	OS.delay_msec(100)
+	var status: Dictionary = generator.get_runtime_control_state()
+	var after := int(status.get("simulation_committed_day", -1))
+	print("ANNUAL_REPORT_BLOCK day=%d next_admitted=%d after=%d process_frames=%d state=%s" % [
+		day, generator.next_environment_day() - 1, after, Engine.get_process_frames() - frames,
+		String(status.get("simulation_host_state", ""))])
+	_expect("executor waits for annual confirmation even with the next day offered",
+		after == day and Engine.get_process_frames() == frames
+		and String(status.get("simulation_host_state", "")) == "PAUSED")
 
 
 func _export_archive(slot: String) -> void:

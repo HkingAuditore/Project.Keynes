@@ -371,6 +371,7 @@ void NativeSimulationHost::worker_main() {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
             if (service_military_commands() || service_colonization_requests() ||
+                service_era_reward_requests() || service_annual_presentations() ||
                 service_day_tail_work()) continue;
 
             const bool retained_day_pending = active_environment != nullptr &&
@@ -408,22 +409,25 @@ void NativeSimulationHost::worker_main() {
                 (_requested_authority_mask.load(std::memory_order_acquire) &
                  runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
             const bool climate_pending = has_pending_climate_input() || retained_day_pending;
-            if ((climate_driven && !climate_pending) ||
+            const bool awaiting_player = player_confirmation_block() != nullptr;
+            if (awaiting_player || (climate_driven && !climate_pending) ||
                 (!climate_driven && (paused || speed <= 0.0 || !std::isfinite(speed)))) {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 _state.store(RuntimeWorkerState::PAUSED, std::memory_order_release);
                 last = std::chrono::steady_clock::now();
                 std::unique_lock<std::mutex> lock(_control_mutex);
-                _worker_timing.set(climate_driven ? RuntimeWorkerTiming::ENVIRONMENT_WAIT
-                                                  : RuntimeWorkerTiming::INPUT_WAIT);
+                _worker_timing.set(awaiting_player ? RuntimeWorkerTiming::PAUSED :
+                    (climate_driven ? RuntimeWorkerTiming::ENVIRONMENT_WAIT : RuntimeWorkerTiming::INPUT_WAIT));
                 _control_cv.wait(lock, [&] {
+                    const bool blocked = player_confirmation_block() != nullptr;
                     const bool ready = _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) || _day_tail_work ||
                         player_requests_pending_locked() ||
-                        (climate_driven ? (has_pending_climate_input() || retained_day_pending) :
+                        (!blocked && (climate_driven ?
+                            (has_pending_climate_input() || retained_day_pending) :
                             (!_paused.load(std::memory_order_acquire) &&
-                             _speed_days_per_second.load(std::memory_order_acquire) > 0.0));
-                    if (!ready && climate_driven) {
+                             _speed_days_per_second.load(std::memory_order_acquire) > 0.0)));
+                    if (!ready && climate_driven && !blocked) {
                         const int64_t committed = _committed_day.load(std::memory_order_acquire);
                         if (main_day_tail_pending()) {
                             _worker_timing.observe_main_wait(committed, RuntimeWorkerTiming::DAY_TAIL);
@@ -482,7 +486,8 @@ void NativeSimulationHost::worker_main() {
             debt -= static_cast<double>(target_days);
             _time_debt_days.store(std::min(100.0, debt), std::memory_order_release);
             for (int64_t step = 0; step < target_days; ++step) {
-                if (_stop_requested.load(std::memory_order_acquire)) break;
+                if (_stop_requested.load(std::memory_order_acquire) ||
+                    player_confirmation_block()) break;
                 const int64_t from_day = _committed_day.load(std::memory_order_acquire);
                 const int64_t day = from_day + 1;
                 const auto tail_ready = [&] { return !main_day_tail_pending(); };
@@ -503,23 +508,6 @@ void NativeSimulationHost::worker_main() {
                     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                     // A save or stop is served at the day boundary first.
                     if (!tail_ready() || player_requests_pending_locked()) break;
-                }
-                // Yield between days until every main-thread requester has
-                // completed its protected inbox service; no authority lock is
-                // held while waiting. Country commands are drained afterwards.
-                if (_main_boundary_service_requested.load(std::memory_order_acquire) != 0u) {
-                    std::unique_lock<std::mutex> control_lock(_control_mutex);
-                    while (_main_boundary_service_requested.load(
-                               std::memory_order_acquire) != 0u && !player_requests_pending_locked() &&
-                           !_stop_requested.load(std::memory_order_acquire)) {
-                        _worker_timing.observe_main_wait(day, RuntimeWorkerTiming::OTHER);
-                        // Completion is an atomic transport signal. Bound the
-                        // sleep so a notify between predicate and wait cannot
-                        // strand the worker after the main thread completed.
-                        _control_cv.wait_for(control_lock, std::chrono::milliseconds(5));
-                    }
-                    _worker_timing.finish_main_wait();
-                    if (_stop_requested.load(std::memory_order_acquire) || player_requests_pending_locked()) break;
                 }
                 // Keep the authority switch closed across the whole semantic
                 // day transaction through publication and generation release.
@@ -1171,6 +1159,8 @@ void NativeSimulationHost::worker_main() {
         std::lock_guard<std::mutex> control(_control_mutex);
         _military_commands.clear();
         _colonization_requests.clear();
+        _era_reward_requests.clear();
+        _annual_presentations.clear();
         _control_cv.notify_all();
     }
     _worker_timing.stop();

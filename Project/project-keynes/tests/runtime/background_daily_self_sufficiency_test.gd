@@ -332,6 +332,15 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 		_expect("military and vision use no day-tail task slot on day %d" % day,
 			int(tasks.get("military", {}).get("count", 0)) == 0
 			and int(tasks.get("vision", {}).get("count", 0)) == 0)
+		for step in ["country_peer_service", "country_milestone_delivery", "effect_snapshot_install",
+				"effect_worker_ack", "effect_native_adapter", "trigger_snapshot_install", "trigger_worker_ack",
+				"trigger_country_delivery", "research_signal_reconcile", "trigger_effect_handoff",
+				"ideology_snapshot_install", "ideology_worker_ack", "ideology_instance_service",
+				"ideology_projection_service", "ideology_projection_install", "era_advancement_daily"]:
+			_expect("%s has no main-thread round trip on day %d" % [step, day],
+				int(steps.get(step, 0)) == 0)
+		_expect("ideology uses no day-tail task slot on day %d" % day,
+			int(tasks.get("ideology_projection", {}).get("count", 0)) == 0)
 
 
 func _check_round_trips(report: Dictionary) -> void:

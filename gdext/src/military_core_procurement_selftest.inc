@@ -5,7 +5,7 @@
 // The synthetic digest carries a market every 37th cell, so a garrison on its
 // own ring sources locally; a garrison far from any own market records unmet
 // demand instead of scanning the map.
-bool test_procurement(const MilitaryTerrainInput &t, std::string &report) {
+bool test_stock_procurement(const MilitaryTerrainInput &t, std::string &report) {
     Sim sim;
     ST_CHECK(sim.init(t, 9091), "procurement sim init");
     // Markets of the synthetic digest sit on every 37th cell of the map. A cell
@@ -113,6 +113,100 @@ bool test_procurement(const MilitaryTerrainInput &t, std::string &report) {
     return true;
 }
 
+bool test_training_with_empty_slot(const MilitaryTerrainInput &t, std::string &report) {
+    MilitaryCatalog catalog = make_catalog();
+    catalog.economy_good_count = 3;
+    catalog.categories.push_back({"armor", {2}, {1}});
+    MilitaryUnitType &infantry = catalog.units[1];
+    infantry.training_days = 3;
+    infantry.slot_count = 2;
+    infantry.slot_category[1] = 1;
+    infantry.slot_min_quality[1] = 1;
+    infantry.slot_qty_per_100[0] = 10 * MILITARY_GOODS_SCALE;
+    infantry.slot_qty_per_100[1] = 10 * MILITARY_GOODS_SCALE;
+    infantry.slot_power_weight_q16[0] = 3 * MILITARY_Q16 / 4;
+    infantry.slot_power_weight_q16[1] = MILITARY_Q16 / 4;
+    const int32_t attack = infantry.attack_q16;
+    Sim sim;
+    ST_CHECK(sim.init(t, 9490, std::move(catalog)), "empty slot: world configured");
+    sim.dg.country_equipment_available.assign(9, 0);
+    sim.dg.country_equipment_available[1] = 1; // producible arms, no inventory
+    for (size_t row = 0; row < sim.dg.market_good.size(); ++row) {
+        if (sim.dg.market_good[row] == 1) sim.dg.market_sellable[row] = 0;
+    }
+    const int32_t cell = sim.dg.market_cell.front();
+    MilitaryCommand barracks;
+    barracks.cell = cell;
+    barracks.unit_to = 0;
+    ST_CHECK(sim.submit(MCMD_STATE_BUILD, 0, barracks), "empty slot: build barracks");
+    MilitaryCommand target;
+    target.value = 30;
+    ST_CHECK(sim.submit(MCMD_FORCE_SET_TARGET, 0, target), "empty slot: recruit");
+    ST_STEP(sim, 20);
+    ST_CHECK(garrison_at(sim.core, cell) == 30, "empty slot: exactly 30 recruits");
+    MilitaryCommand train;
+    train.cell = cell;
+    train.unit_from = 0;
+    train.unit_to = 1;
+    train.count = 30;
+    ST_CHECK(sim.submit(MCMD_TRAIN, 0, train), "empty slot: training accepts the order");
+    ST_STEP(sim, 27);
+    ST_CHECK(sim.core.training().size() == 1 && sim.core.training()[0].days_done == 0,
+        "empty slot: zero inventory of unlocked arms still blocks training");
+    sim.dg.market_sellable[1] = 500000;
+    ST_STEP(sim, 34);
+    ST_CHECK(sim.core.training().empty(), "empty slot: training graduates without locked armor");
+    MilitaryCommand form;
+    form.cell = cell;
+    form.ints = {1, 30};
+    ST_CHECK(sim.submit(MCMD_ARMY_CREATE, 0, form), "empty slot: form the trained unit");
+    ST_STEP(sim, 35);
+    const int32_t army = sim.army_of(0);
+    ST_CHECK(army >= 0 && sim.core.armies().cached_headcount[army] == 30,
+        "empty slot: all 30 trained soldiers form the army");
+    const int32_t lot = military_lot_head(sim.core, MILITARY_LOT_ARMY, army);
+    ST_CHECK(lot >= 0 && sim.core.lots().count[lot] == 30 && sim.core.lots().partial_equipment[lot] != 0,
+        "empty slot: the unfilled kit follows the soldiers into the army");
+    sim.core.refresh_army_cache(army);
+    const int64_t condition = std::clamp<int64_t>(sim.core.lots().condition_q16[lot],
+        MILITARY_Q16 / 2, MILITARY_Q16);
+    const int64_t strength = 30 * 3 * MILITARY_Q16 / 4;
+    const int64_t expected = (strength * (MILITARY_Q16 / 2 + condition / 2) /
+        MILITARY_Q16) * attack / MILITARY_Q16;
+    const auto observed = sim.core.armies().cached_attack_q16[army];
+    ST_CHECK(observed == expected,
+        "empty slot: only the delivered 75-percent equipment weight contributes to attack (actual=" +
+        std::to_string(observed) + ", expected=" + std::to_string(expected) +
+        ", kit=" + std::to_string(sim.core.lots().partial_equipment[lot]) + ")");
+    const auto saved = sim.core.encode();
+    ST_CHECK(sim.core.restore(saved.data(), saved.size(), sim.error) && sim.core.encode() == saved,
+        "empty slot: exact PKMI round trip preserves the missing equipment");
+    MilitaryCommand disband;
+    disband.army = sim.core.army_handle(army);
+    ST_CHECK(sim.submit(MCMD_ARMY_DISBAND, 0, disband), "empty slot: return the lot to garrison");
+    sim.dg.country_equipment_available[2] = 1;
+    sim.dg.market_cell.push_back(cell);
+    sim.dg.market_good.push_back(2);
+    sim.dg.market_sellable.push_back(500000);
+    sim.dg.market_price.push_back(20000);
+    bool bought_armor = false;
+    for (int32_t day = 0; day < 12; ++day) {
+        ST_STEP(sim, sim.day + 1);
+        for (const MilitaryIntent &intent : sim.last) {
+            if (intent.kind == MILITARY_INTENT_PROCURE_GOOD && intent.good == 2) bought_armor = true;
+        }
+    }
+    ST_CHECK(bought_armor, "empty slot: newly unlocked armor is procured through the market");
+    const MilitaryLotStore &lots = sim.core.lots();
+    int64_t filled = 0;
+    for (size_t row = 0; row < lots.active.size(); ++row) {
+        if (lots.active[row] && lots.unit_type[row] == 1 && lots.partial_equipment[row] == 0)
+            filled += lots.count[row];
+    }
+    ST_CHECK(filled == 30, "empty slot: re-equipment fills the 30 missing armor slots");
+    return true;
+}
+
 // --- 12. Physical maintenance (design §2/§3, plan S2-4/S3): the demand carry,
 // the min-ratio consumption rule and the buy/settle handover.
 //
@@ -202,4 +296,9 @@ bool test_maintenance(const MilitaryTerrainInput &t, std::string &report) {
     }
     ST_CHECK(found_building, "maintenance trade: the barracks is a repair object");
     return true;
+}
+
+bool test_procurement(const MilitaryTerrainInput &terrain, std::string &report) {
+    return test_stock_procurement(terrain, report) &&
+           test_training_with_empty_slot(terrain, report);
 }

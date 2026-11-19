@@ -12,33 +12,18 @@ class DailyProbe extends RefCounted:
 	func ideology_needs_daily_continuation(_day: int) -> bool:
 		return local_slice_pending
 
-# A boundary request parks the worker. No new daily tick is available until the
-# main-thread continuation releases it. Exercise the real host's frame service.
-class RefreshProbe extends MapGenerator:
-	var instance_calls := 0
-	var derived_calls := 0
-	var days: Array[int] = []
-	var hold_next_derived := false
-	func get_runtime_control_state() -> Dictionary:
-		return {"authoritative_domain_mask": 0x010}
-	func step_ideology_instance_refresh(day: int) -> Dictionary:
-		instance_calls += 1
-		days.append(day)
-		return {"ok": true, "done": instance_calls > 1, "pending": instance_calls == 1}
-	func step_ideology_derived_rebuild(day: int) -> Dictionary:
-		derived_calls += 1
-		days.append(day)
-		var pending := derived_calls == 1 or hold_next_derived
-		hold_next_derived = false
-		return {"ok": true, "done": not pending, "pending": pending}
-
+# Published days need no rule callbacks to release the remaining day-tail gate.
 class TailProbe extends RefCounted:
-	var refresh: RefreshProbe
-	var marks: Array = []
-	func apply_runtime_ideology_snapshot(_after_generation: int) -> Dictionary:
-		return {"ok": true, "applied": false}
+	var marks: Array[int] = []
 	func mark_runtime_day_tail_done(day: int) -> void:
-		marks.append([day, refresh.derived_calls])
+		marks.append(day)
+	func record_runtime_main_step(_day: int, _step: StringName) -> void:
+		pass
+
+class PublishedWorld extends MapGenerator:
+	var steps: Array = []
+	func record_runtime_main_step(day: int, step: StringName) -> void:
+		steps.append([day, step])
 
 var _checks := 0
 var _failures := 0
@@ -62,41 +47,25 @@ func _init() -> void:
 		not clock.needs_continuation_pulse())
 	clock.free()
 	var host := WorldRuntimeHost.new()
-	var refresh := RefreshProbe.new()
-	host._generator = refresh
-	host._runtime_ready_for_ticks = true
-	host._step_ideology_instance_refresh_if_authoritative(591)
-	_expect("pending instance retains its request without starting another boundary client",
-		refresh.instance_calls == 1 and refresh.derived_calls == 0)
-	host._service_runtime_liveness(Time.get_ticks_usec(), true)
-	_expect("frame liveness retries the instance while calendar capacity is blocked",
-		refresh.instance_calls == 2 and refresh.derived_calls == 1)
-	host._service_runtime_liveness(Time.get_ticks_usec(), true)
-	_expect("derived continuation completes without another day or repeated instance work",
-		refresh.instance_calls == 2 and refresh.derived_calls == 2
-		and host._ideology_refresh_pending_day == -1)
-	host._service_runtime_liveness(Time.get_ticks_usec(), false)
-	_expect("completed work stays idle on later frames",
-		refresh.instance_calls == 2 and refresh.derived_calls == 2)
-	_expect("every continuation retains the original simulation day", refresh.days == [591, 591, 591, 591])
-	host._step_ideology_instance_refresh_if_authoritative(592)
-	_expect("the next day schedules both passes again",
-		refresh.instance_calls == 3 and refresh.derived_calls == 3)
+	var view := PublishedWorld.new()
+	var boundary := TailProbe.new()
+	view._data_core_world_ext = boundary
+	host._generator = view
 	var tail := preload("res://scripts/game/world_runtime_daily_adapter_part3.gd").new()
-	var tail_probe := TailProbe.new()
-	tail_probe.refresh = refresh
-	refresh._data_core_world_ext = tail_probe
-	host._runtime_commit_day = 592
-	refresh.hold_next_derived = true
-	_expect("a full-graph commit prepares tomorrow's projection before it releases the worker",
-		not tail._prepare_runtime_day_tail(host, true)
-		and tail_probe.marks.is_empty() and host._ideology_refresh_pending_day == 593)
-	if tail._prepare_runtime_day_tail(host, true):
-		tail._mark_runtime_day_tail(host, 592)
-	_expect("the tail releases the worker after installing the dated projection",
-		tail_probe.marks == [[592, 5]]
-		and refresh.days.slice(-3) == [593, 593, 593] and host._ideology_refresh_pending_day == -1)
-	refresh._data_core_world_ext = null
+	_expect("published world starts with no day tail", boundary.marks.is_empty())
+	tail._mark_runtime_day_tail(host, 591)
+	_expect("a published day releases the gate immediately", boundary.marks == [591])
+	_expect("a published day advances the foreground cursor", host._runtime_tail_completed_day == 591)
+	_expect("the only main step is acknowledging the published day",
+		view.steps == [[591, &"acknowledge_day_tail"]])
+	tail._mark_runtime_day_tail(host, 591)
+	_expect("re-reading a day records no simulation work", view.steps.size() == 1)
+	tail._mark_runtime_day_tail(host, 592)
+	_expect("the next published day releases the same gate", boundary.marks[-1] == 592)
+	_expect("the next day only records confirmation", view.steps[-1] == [592, &"acknowledge_day_tail"])
+	tail._mark_runtime_day_tail(host, 591)
+	_expect("an older display cursor cannot rewind the confirmed day", host._runtime_tail_completed_day == 592)
+	view._data_core_world_ext = null
 	host.free()
 	print("ideology day continuation: %d checks, %d failures" % [_checks, _failures])
 	quit(1 if _failures > 0 or _checks != 11 else 0)

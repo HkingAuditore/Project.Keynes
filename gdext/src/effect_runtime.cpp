@@ -140,6 +140,16 @@ bool EffectRuntime::invoke_pod_behavior(
     return true;
 }
 
+namespace {
+constexpr int64_t ADAPTER_TRANSACTION_START = int64_t{1} << 52;
+}
+
+void EffectRuntime::begin_executor_transaction_namespace() noexcept {
+    // POD catalog transactions start at 1. Transactions created by the native
+    // adapters (including family claims) have their own persisted cursor.
+    _next_transaction_id = std::max(_next_transaction_id, ADAPTER_TRANSACTION_START);
+}
+
 bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
                                        std::string &error) {
     error.clear();
@@ -219,7 +229,8 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
             source_index >= static_cast<int32_t>(_instances.size()))
             continue;
         const Instance &source_instance = _instances[static_cast<size_t>(source_index)];
-        if (source_instance.source_type != IDEOLOGY_SOURCE_TYPE) continue;
+        if (tx.id < ADAPTER_TRANSACTION_START &&
+            source_instance.source_type != IDEOLOGY_SOURCE_TYPE) continue;
         PreservedIdeologyBatch row;
         row.transaction = tx;
         row.commands.reserve(tx.command_count);
@@ -246,6 +257,7 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
                 row.metric_present.push_back(0);
             }
         }
+        preserved_tx_ids.insert(tx.id);
         preserved_ideology.push_back(std::move(row));
     }
     std::vector<int64_t> preserved_country_request_ids;
@@ -458,6 +470,26 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         next_transactions.push_back(tx);
     }
 
+    // A transaction number cannot establish that the underlying requests
+    // match. In particular, a catalog row never represents a family claim.
+    for (const PreservedBuiltin &row : preserved_builtins) {
+        if (next_transaction_ids.count(row.transaction.id) != 0) {
+            error = "effect_pod_snapshot_builtin_transaction_id_collision";
+            return false;
+        }
+    }
+    for (const PreservedIdeologyBatch &row : preserved_ideology) {
+        const auto other = next_transaction_ids.find(row.transaction.id);
+        if (other == next_transaction_ids.end()) continue;
+        const Transaction &incoming = next_transactions[other->second];
+        if (incoming.source_instance_id != row.transaction.source_instance_id ||
+            incoming.source_generation != row.transaction.source_generation ||
+            incoming.plan_hash != row.transaction.plan_hash) {
+            error = "effect_pod_snapshot_ideology_transaction_id_collision";
+            return false;
+        }
+    }
+
     _instances = std::move(next_instances);
     _instance_ids = std::move(next_instance_ids);
     _free_instance_indices.clear();
@@ -500,7 +532,6 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
     _native_gameplay_ack_bindings.clear();
     _native_gameplay_bound_transaction_ids.clear();
     for (PreservedBuiltin &row : preserved_builtins) {
-        if (_transaction_ids.count(row.transaction.id) != 0) continue;
         row.transaction.command_begin =
             static_cast<uint32_t>(_command_arena.size());
         row.transaction.command_count =

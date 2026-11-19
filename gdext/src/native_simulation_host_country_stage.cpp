@@ -243,8 +243,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
                     break;
                 }
                 _country_worker_intents[peer.request_id] = peer;
-                if (effect_in_worker &&
-                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT)
+                if (_effect_adapter_country != nullptr || (effect_in_worker &&
+                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT))
                     worker_effect_peers.push_back(peer);
                 else
                     _country_worker_intent_queue.push_back(peer.request_id);
@@ -263,8 +263,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
         if (error.empty()) {
             for (const CountryPeerIntent &peer : worker_effect_peers) {
-                const CountryPeerResult result =
-                    resolve_country_technology_effect(peer);
+                const CountryPeerResult result = effect_in_worker &&
+                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT
+                    ? resolve_country_technology_effect(peer)
+                    : _effect_adapter_country->execute_peer_intent_from_worker(peer);
                 std::lock_guard<std::mutex> lock(_country_transport_mutex);
                 _country_worker_results[peer.request_id] = result;
                 if (result.code == CountryPeerResultCode::PENDING) continue;

@@ -59,12 +59,17 @@ func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
 	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
 	var water_depth_arr: PackedFloat32Array = res["water_depth_arr"] if res.has("water_depth_arr") else PackedFloat32Array()
+	var frame_gate = _generator._loading_frames if _generator != null else null
+	if frame_gate != null and frame_gate.canceled:
+		return null
 	var map := MapData.new(cfg.width, cfg.height)
 	var slice_start := Time.get_ticks_usec()
 	var tree := Engine.get_main_loop() as SceneTree
 	for i in range(n):
 		if tree != null and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return null
 			slice_start = Time.get_ticks_usec()
 		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
 		cell.elevation = float(elevation_arr[i])
@@ -120,8 +125,9 @@ func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	if hydro_parent_arr.size() == n:
 		map.hydro_parent_arr = hydro_parent_arr.duplicate()
 	if native_generation_array_ok(res, "neighbor_indices", n * 6, TYPE_PACKED_INT32_ARRAY) and map.cell_count() == n:
-		var gate = _generator._loading_frames if _generator != null else null
-		await map.build_indices_cooperative(gate, res["neighbor_indices"])
+		await map.build_indices_cooperative(frame_gate, res["neighbor_indices"])
+		if frame_gate != null and frame_gate.canceled:
+			return null
 	return map
 
 

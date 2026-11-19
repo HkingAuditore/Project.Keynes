@@ -17,7 +17,6 @@ func restart_worker_with_current_policy(host) -> Dictionary:
 		exited = bool(report.get("simulation_executor_exited", false))
 		if exited:
 			break
-		host._service_country_worker_transport()
 		host._consume_country_worker_read_view_if_authoritative()
 		OS.delay_msec(1)
 	if not exited:

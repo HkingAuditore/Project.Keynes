@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@ namespace godot { class Dictionary; class PackedInt32Array; }
 
 namespace pk {
 class NativeCountryRuntime;
+struct RuntimeCountryPodSnapshot;
 
 // Committed Economy facts, published once per Economy commit. Money flows are
 // per day: an Economy batch spans a variable number of days.
@@ -70,6 +72,8 @@ struct CountryEffectCommand {
     uint64_t idempotency_key = 0;
     const char *stable_id = nullptr;
     const char *display_name = nullptr;
+    // Trigger deliveries keep the request IDs used by the existing Country boundary.
+    bool trigger_delivery = false;
 };
 struct CountryApi {
     // v15: inactive records plus persistent political regime state.
@@ -225,15 +229,19 @@ bool economy_available(const NativeCountryRuntime &country);
 int64_t country_handle_for_cell(const NativeCountryRuntime &country, int32_t cell);
 
 // ---- Effect (effect_runtime.cpp)
+bool discovers_signal(int32_t opcode, int64_t operand, int32_t signal);
 bool submit_effect_commands_pod(NativeCountryRuntime &country, const CountryEffectCommand *commands, size_t count, std::vector<int64_t> &request_ids, std::string &error);
 void drain_effect_host_command_receipts(NativeCountryRuntime &country);
 bool effect_command_result_pod(const NativeCountryRuntime &country, int64_t request_id, bool &complete, bool &ok, std::string &reason);
+bool has_pending_effect_commands(const NativeCountryRuntime &country);
 godot::Dictionary country_snapshot(const NativeCountryRuntime &country, int64_t handle);
 godot::Dictionary treasury_snapshot(const NativeCountryRuntime &country, int64_t handle);
 godot::Dictionary research_snapshot(const NativeCountryRuntime &country, int64_t handle);
 godot::Dictionary research_signal_snapshot(const NativeCountryRuntime &country, int64_t handle);
 void set_era_reward_reference_pod(NativeCountryRuntime &country, int64_t plan_id, int64_t offer_generation, int32_t milestone_technology, int32_t status);
 CountryApi::EraRewardReference era_reward_reference_pod(const NativeCountryRuntime &country);
+std::shared_ptr<const NativeCountryRuntime> copy_committed_read_view(
+    const NativeCountryRuntime &country, const RuntimeCountryPodSnapshot &snapshot);
 int64_t world_seed(const NativeCountryRuntime &country);
 
 // ---- Ideology (ideology_runtime.cpp)

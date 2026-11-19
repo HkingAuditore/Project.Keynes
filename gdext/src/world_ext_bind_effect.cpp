@@ -80,6 +80,10 @@ void DCWorldExt::_bind_effect_methods() {
     ClassDB::bind_method(D_METHOD("bind_era_reward_player_country",
                                   "country_handle"),
                          &DCWorldExt::bind_era_reward_player_country);
+    ClassDB::bind_method(D_METHOD("submit_era_advancement", "action", "country",
+                         "day", "sequence", "data"), &DCWorldExt::submit_era_advancement);
+    ClassDB::bind_method(D_METHOD("get_era_advancement_view"),
+                         &DCWorldExt::get_era_advancement_view);
     ClassDB::bind_method(D_METHOD("get_era_reward_offer"),
                          &DCWorldExt::get_era_reward_offer);
     ClassDB::bind_method(D_METHOD("choose_era_reward", "offer_generation",
