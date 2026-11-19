@@ -39,7 +39,7 @@ flowchart TD
 | 计划 | 六个小节齐全；Questions 为 `none` | Codex 只读输出，贴在 issue 上 | 有问题时停下等人 |
 | 范围 | 不改 `.github/`、`tools/factory/`、`.qodo/` | `git diff` + 未跟踪文件 | 退回 Codex；基线和契约文件改了就交给人 |
 | 检查 | 在 base 上通过的检查，在改动后也要通过 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 失败日志尾部发给 Codex，最多 3 次 |
-| 本地评审 | Qodo 对未提交改动没有阻塞项（action_required / remediation_recommended） | `qodo review --json` | Codex 修复或写反驳证据；到上限后交给人 |
+| 本地评审（尽力而为） | Qodo 对未提交改动没有阻塞项（action_required / remediation_recommended） | `qodo review --repo hrhgit/Project.Keynes --json` | Codex 修复或写反驳证据；到上限后交给人。评审本身跑不起来时记入运行记录和 PR 正文，继续走 PR 评审 |
 | PR 评审 | Qodo 对**当前头部提交**的评审已完成，没有未关闭的阻塞项 | `qodo read pr-review-session findings` | 最多 3 轮修复；同一批问题重复就停 |
 | CI | 头部提交上的检查全部成功 | GitHub check runs | NEEDS_FIX |
 
@@ -66,4 +66,6 @@ python3 -m unittest discover -s tools/factory/tests
 - Codex 在沙箱里运行，不能联网，所以计划步骤没有调用 Qodo Codebase Wisdom，只读本地代码和文档。
 - 工厂不构建 release 库，也不提交 `addons/dots_ext/bin/` 下的二进制；改了 C++ 的 PR 一律交给人收尾。
 - 本地没有跑 CI 里的 C++ sanitizer 用例；这部分以 PR 上的 CI 结果为准。
+- Qodo 本地评审目前跑不起来：评审服务在 120 秒内检出不了这个仓库的 base（2026-11-19 两次都超时）。所以 `localReviewRequired` 设为 `false`，本地评审失败时只记录，不拦；把关的是 PR 上对头部提交的 Qodo 评审，`verdict.py` 没有它就不会给 READY。
+- 工作树的 `origin` 是上游，Qodo 里没有连上游，所以本地评审显式传 `--repo hrhgit/Project.Keynes`。
 - 计划里要求的额外检查只接受 `tools/ci/<脚本>.py [--参数]` 这种格式，其他命令会被拒绝并记录下来。

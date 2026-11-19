@@ -26,6 +26,7 @@
   "limits": {
     "implementAttempts": 3,
     "localReviewRounds": 2,
+    "localReviewRequired": false,
     "prReviewRounds": 3,
     "localReviewTimeoutMinutes": 30,
     "prReviewTimeoutMinutes": 40,

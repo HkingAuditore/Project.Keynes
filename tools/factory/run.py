@@ -146,7 +146,7 @@ class Run:
             }
             ctx_file = self.path(f"review-context-{rnd}.json")
             Path(ctx_file).write_text(json.dumps(ctx, ensure_ascii=False), encoding="utf-8")
-            rev = qodo.local_review(self.cfg["tools"]["qodo"], self.workdir, self.base, ctx_file,
+            rev = qodo.local_review(self.cfg["tools"]["qodo"], self.workdir, self.cfg["repo"], self.base, ctx_file,
                                     self.cfg["limits"]["localReviewTimeoutMinutes"])
             self.record.setdefault("localReviews", []).append(
                 {k: rev.get(k) for k in ("ok", "complete", "error", "comment")}
@@ -154,8 +154,13 @@ class Run:
                    "informational": [b.get("id") for b in rev.get("informational", [])]})
             self.ev.add("local-review", round=rnd, ok=rev["ok"], blocking=len(rev.get("blocking", [])))
             if not rev["ok"]:
-                self.facts.stopped_by = f"Qodo local review failed: {rev['error']}"
-                return False
+                if self.cfg["limits"].get("localReviewRequired", True):
+                    self.facts.stopped_by = f"Qodo local review failed: {rev['error']}"
+                    return False
+                # Best effort: the PR review at head is still required by verdict.py.
+                self.record["localReviewSkipped"] = rev["error"]
+                self.ev.add("local-review", round=rnd, skipped=True)
+                return True
             ids = tuple(sorted(str(b.get("id")) for b in rev["blocking"]))
             if not ids:
                 return True
@@ -197,7 +202,9 @@ class Run:
     def pr_body(self, issue: dict, plan: str) -> str:
         crit = "\n".join(f"- [ ] {c}" for c in criteria(issue["body"]))
         reports = self.record.get("reports") or [""]
-        return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n"
+        skipped = self.record.get("localReviewSkipped")
+        local = (f"Qodo local review did not run: {skipped[:400]}\n\n" if skipped else "")
+        return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n{local}"
                 f"## Factory\nPlan, checks and reviews are in the run record `{self.stamp}` "
                 f"and the issue comments. The verdict is computed from facts, not from this report.\n\n"
                 f"<details><summary>Plan</summary>\n\n{plan[:20000]}\n\n</details>\n\n"
