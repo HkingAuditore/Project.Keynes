@@ -27,6 +27,9 @@ namespace godot { class Dictionary; class Array; class PackedInt32Array; class P
 namespace pk {
 
 class NativeEconomyRuntime;
+struct NarrativeCellView;
+struct NarrativeUnrestRow;
+struct NarrativeUnrestOdds;
 
 // P3-B: everything a reader depends on is published as ONE immutable snapshot.
 // Reading the counters one by one let a card see metric A's new revision next to
@@ -629,6 +632,11 @@ godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy
     int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
     int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
 godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country);
+void sample_narrative_cell(const NativeEconomyRuntime &, NarrativeCellView &, bool detailed);
+bool narrative_unrest_rows(const NativeEconomyRuntime &, int32_t cell, std::vector<NarrativeUnrestRow> &);
+NarrativeUnrestOdds narrative_unrest_odds(const NativeEconomyRuntime &, int32_t cell, int32_t profession, int32_t action);
+bool settle_narrative_unrest(NativeEconomyRuntime &, int32_t cell, int32_t profession, int32_t action, bool success);
+const std::vector<std::string> &narrative_professions(const NativeEconomyRuntime &);
 godot::Dictionary era_advancement_economy_summary(const NativeEconomyRuntime &economy, int64_t country);
 godot::Dictionary set_era_procurement_target(NativeEconomyRuntime &economy,
     int64_t country, bool active, const godot::PackedInt32Array &goods,

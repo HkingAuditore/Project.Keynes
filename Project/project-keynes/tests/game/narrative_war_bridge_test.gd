@@ -6,7 +6,7 @@ extends SceneTree
 ##   Godot --headless --path Project/project-keynes \
 ##     --script tests/game/narrative_war_bridge_test.gd --quit
 
-const NarrativeContextSamplerScript = preload("res://scripts/narrative/narrative_context_sampler.gd")
+const NarrativeContextSamplerScript = preload("res://tests/support/legacy_narrative_context.gd")
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
 const NarrativeStateProbeCatalogScript = preload("res://scripts/narrative/narrative_state_probe_catalog.gd")
 const NarrativeAiPromptBuilderScript = preload("res://scripts/narrative/ai/narrative_ai_prompt_builder.gd")

@@ -60,23 +60,11 @@ static func _is_suppressed_popup_pause_source(host, source: String) -> bool:
 
 
 func export_narrative_state(host) -> Dictionary:
-	if host._narrative_service == null:
-		return {}
-	var state: Dictionary = host._narrative_service.export_state()
-	state["stratum_unrest"] = host._stratum_unrest.export_state()
-	return state
-
+	return host._narrative_service.export_state()
 
 
 func restore_narrative_state(host, state: Dictionary) -> Dictionary:
-	if host._narrative_service == null:
-		return {"ok": true}
-	var res = host._narrative_service.restore_state(state)
-	host._last_narrative_step_day = -1
-	if not bool(res.get("ok", false)):
-		return res
-	return host._stratum_unrest.restore_state(state.get("stratum_unrest", {}))
-
+	return host._narrative_service.restore_state(state)
 
 
 func open_narrative_chronicle(host, filter_cell: int = -1) -> void:
@@ -96,17 +84,6 @@ func _configure_narrative_runtime(host) -> void:
 		host._narrative_ai_client = host.NarrativeAiClientScript.new()
 		host._narrative_ai_client.name = "NarrativeAiClient"
 		host.add_child(host._narrative_ai_client)
-	var generator = host._runtime_host.generator() if host._runtime_host != null and host._runtime_host.has_method("generator") else null
-	var map = host._runtime_host.current_map() if host._runtime_host != null and host._runtime_host.has_method("current_map") else null
-	var view_adapter = host._runtime_host.view_adapter() if host._runtime_host != null and host._runtime_host.has_method("view_adapter") else null
-	var seed_val = int(host._runtime_host.last_seed()) if host._runtime_host != null and host._runtime_host.has_method("last_seed") else 1
-	host._narrative_service.configure(
-		generator, map, view_adapter, host._world_clock,
-		host._player_country_handle, maxi(1, seed_val)
-	)
-	host._stratum_unrest.configure(generator, map, host._world_clock,
-		host._narrative_service, host._economy_facade, host._country_facade,
-		host._military_facade(), host._player_country_handle, seed_val)
 	host._narrative_flow.configure(
 		host, host._runtime_host, host._world_clock, host._ui_manager,
 		host._narrative_service, host._narrative_ai_client
@@ -121,29 +98,6 @@ func _configure_narrative_runtime(host) -> void:
 		var cb_chron = Callable(host, "open_narrative_chronicle")
 		if not host._ui_manager.narrative_chronicle_requested.is_connected(cb_chron):
 			host._ui_manager.narrative_chronicle_requested.connect(cb_chron)
-
-
-
-func _step_narrative_daily(host, day_idx: int) -> void:
-	if host._narrative_service == null or host._player_country_handle <= 0:
-		return
-	if day_idx <= host._last_narrative_step_day:
-		return
-	host._last_narrative_step_day = day_idx
-	var generator = host._runtime_host.generator() if host._runtime_host != null \
-			and host._runtime_host.has_method("generator") else null
-	if generator != null and generator.has_method("record_runtime_main_step"):
-		generator.record_runtime_main_step(day_idx, &"stratum_unrest_daily")
-		generator.record_runtime_main_step(day_idx, &"narrative_daily")
-	host._narrative_service.set_player_country_handle(host._player_country_handle)
-	host._stratum_unrest.set_player_country_handle(host._player_country_handle)
-	host._stratum_unrest.step_daily(day_idx)
-	var ai_enabled = false
-	var settings = host.get_node_or_null("/root/GameSettings")
-	if settings != null and settings.has_method("values"):
-		ai_enabled = bool(settings.values().get("ai_narrative_enabled", false))
-	host._narrative_service.on_day_committed(day_idx, ai_enabled)
-	host._narrative_flow.try_present()
 
 
 

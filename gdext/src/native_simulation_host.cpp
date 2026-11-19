@@ -389,6 +389,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         &NativeSimulationHost::stage_ideology_projection,
         &NativeSimulationHost::stage_era_advancement,
         &NativeSimulationHost::stage_prepare_environment,
+        &NativeSimulationHost::stage_narrative,
     };
     if (commit.preflight_ok != 0) {
         for (const auto stage : day_tail_stages) {

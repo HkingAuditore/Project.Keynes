@@ -16,13 +16,11 @@ const PlayerControllerMilitaryScript = preload("res://scripts/game/player_contro
 const PlayerControllerProgressionScript = preload("res://scripts/game/player_controller/progression.gd")
 const PlayerControllerSelectionScript = preload("res://scripts/game/player_controller/selection.gd")
 const PlayerControllerNarrativeScript = preload("res://scripts/game/player_controller/narrative.gd")
-const StratumUnrestServiceScript = preload("res://scripts/politics/stratum_unrest_service.gd")
 var _annual_report_flow = AnnualReportFlowScript.new()
 var _music_situation = MusicSituationAggregatorScript.new()
 var _music_playback: Node
 var _narrative_service = NarrativeEventServiceScript.new()
 var _narrative_flow = NarrativeEventFlowScript.new()
-var _stratum_unrest = StratumUnrestServiceScript.new()
 var _narrative_ai_client: Node = null
 var _military_component = PlayerControllerMilitaryScript.new()
 var _progression_component = PlayerControllerProgressionScript.new()
@@ -325,6 +323,15 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			"narrative_choice_required", "请先处理当前事件。"))
 	if not SUPPORTED_COMMANDS.has(id):
 		return _complete_command(id, _result(false, "unsupported_command", "该正式玩家命令尚未开放。"))
+	if id == COMMAND_NARRATIVE_CHOOSE:
+		var checked := _validate_command_args(id, args)
+		if not bool(checked.get("ok", false)):
+			return _complete_command(id, checked)
+		var choice_sequence := _allocate_command_sequence()
+		var answer := _narrative_service.choose_option(args, choice_sequence,
+			Callable(self, "_allocate_command_sequence"))
+		answer["sequence"] = choice_sequence
+		return _complete_command(id, answer)
 	var ready := _resolve_player_country()
 	if not bool(ready.get("ok", false)):
 		return _complete_command(id, ready)
@@ -458,14 +465,6 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 				int(args.get("era_share_bp", EraAdvancementServiceScript.SHARE_UNSET)),
 				int(args.get("colonization_share_bp",
 					EraAdvancementServiceScript.SHARE_UNSET)))
-		COMMAND_NARRATIVE_CHOOSE:
-			result = _narrative_service.choose_option(
-				int(args.get("offer_id", -1)),
-				int(args.get("offer_generation", -1)),
-				int(args.get("option_index", -1)),
-				effective_day,
-				Callable(self, "_allocate_command_sequence")
-			)
 		_:
 			if id == COMMAND_MILITARY_STATE_BUILD:
 				result = _submit_state_build_command(args, effective_day, sequence)
@@ -838,7 +837,7 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_sync_era_music()
 	_sync_event_audio()
 	_refresh_era_advancement()
-	_step_narrative_daily(to_day)
+	_narrative_service.consume_committed()
 	_annual_report_flow.try_present()
 	_narrative_flow.try_present()
 
@@ -1044,7 +1043,6 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_event_audio()
 	var worker_days: bool = _runtime_host.uses_worker_day_commits()
 	if not worker_days:
-		_step_narrative_daily(day_idx)
 		if _music_situation != null:
 			_music_situation.refresh_global_from_commit()
 	if _economy_facade != null and _player_country_handle != 0 and \
@@ -1367,7 +1365,6 @@ static func _result(ok: bool, code: String, message: String) -> Dictionary:
 
 # ─── Narrative Event System Integration ─────────────────────────────────────
 
-var _last_narrative_step_day: int = -1
 
 
 
@@ -1641,9 +1638,34 @@ func open_narrative_chronicle(filter_cell: int = -1) -> void:
 
 func _configure_narrative_runtime() -> void:
 	_narrative_component._configure_narrative_runtime(self)
+	if _runtime_host == null or not _runtime_host.has_method("register_session_module"):
+		return
+	var module := preload("res://scripts/game/runtime_session_module.gd").new()
+	module.configure("narrative", ["restore"], ["world.narrative"], _prepare_narrative_session,
+		_cancel_narrative_session, _narrative_service.release_world)
+	_runtime_host.register_session_module(module)
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings != null and not settings.settings_changed.is_connected(_on_narrative_settings_changed):
+		settings.settings_changed.connect(_on_narrative_settings_changed)
 
-func _step_narrative_daily(day_idx: int) -> void:
-	_narrative_component._step_narrative_daily(self, day_idx)
+
+func _prepare_narrative_session() -> Dictionary:
+	var country: int = _runtime_host._resolve_player_country_handle()
+	if country <= 0:
+		return {"ok": true}
+	var settings := get_node_or_null("/root/GameSettings")
+	var ai_enabled := settings != null and bool(settings.values().get("ai_narrative_enabled", false))
+	return _narrative_service.bind_world(_runtime_host.generator(), _world_clock,
+		country, _runtime_host.last_seed(), ai_enabled)
+
+
+func _cancel_narrative_session() -> void:
+	pass
+
+
+func _on_narrative_settings_changed(settings: Dictionary) -> void:
+	_narrative_service.set_ai_enabled(bool(settings.get("ai_narrative_enabled", false)))
+
 
 func _on_narrative_offer_changed(offer: Dictionary) -> void:
 	_narrative_component._on_narrative_offer_changed(self, offer)

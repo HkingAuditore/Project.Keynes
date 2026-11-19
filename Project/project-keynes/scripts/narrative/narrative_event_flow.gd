@@ -138,19 +138,6 @@ func _resolve_active_offer() -> Dictionary:
 		var raw = _service.active_offer()
 		if raw is Dictionary:
 			offer = raw
-	if offer.is_empty() or int(offer.get("offer_id", 0)) <= 0:
-		if _service.has_method("promote_next_offer"):
-			var promoted = _service.promote_next_offer()
-			if promoted is Dictionary:
-				offer = promoted
-		elif _service.has_method("pop_next_ready_offer"):
-			var popped = _service.pop_next_ready_offer()
-			if popped is Dictionary:
-				offer = popped
-		elif _service.has_method("ready_queue"):
-			var q = _service.ready_queue()
-			if q is Array and not q.is_empty() and q[0] is Dictionary:
-				offer = q[0]
 	if offer.is_empty():
 		return {}
 	var status := String(offer.get("status", "OPEN"))
@@ -168,10 +155,11 @@ func _resolve_active_offer() -> Dictionary:
 ## 这里用重入闩切断：presenting 期间再次 try_present 直接返回；真正的二次请求会由
 ## 下一次 sync_ui/镜头事件重新触发，不会丢事件。
 var _presenting := false
+var _choosing := false
 
 
 func try_present() -> void:
-	if _presenting:
+	if _presenting or _choosing:
 		return
 	_presenting = true
 	_try_present_impl()
@@ -288,6 +276,7 @@ func _maybe_request_ai_illustration(offer: Dictionary) -> void:
 
 
 func on_option_chosen(offer_id: int, offer_generation: int, option_index: int) -> Dictionary:
+	_choosing = true
 	var result: Dictionary = {}
 	if _controller != null and _controller.has_method("request_command"):
 		result = _controller.request_command(&"narrative.choose", {
@@ -302,6 +291,7 @@ func on_option_chosen(offer_id: int, offer_generation: int, option_index: int) -
 		elif _service.has_method("resolve_active_offer"):
 			result = _service.resolve_active_offer(option_index)
 
+	_choosing = false
 	if not bool(result.get("ok", false)):
 		var err_msg := String(result.get("message", result.get("reason", "操作未生效，请重试。")))
 		if _ui_manager != null and _ui_manager.has_method("show_narrative_event_error"):

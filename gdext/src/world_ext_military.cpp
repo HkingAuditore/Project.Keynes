@@ -1,3 +1,4 @@
+#include "runtime_narrative_context.h"
 // Military bridge (owner: B). Godot <-> pk::MilitaryCore.
 //
 // Military reads the committed day-D view of Country and Economy and updates its own
@@ -85,6 +86,27 @@
 #include <vector>
 
 namespace pk {
+
+void sample_narrative_military_country(const MilitaryCore &core, NarrativeCountryView &out) {
+    const int32_t slot = core.country_slot_for_handle(out.handle);
+    if (slot < 0) return;
+    out.military_available = true;
+    out.soldiers = core.country_soldiers(slot);
+    const auto &armies = core.armies();
+    for (size_t army = 0; army < armies.active.size(); ++army)
+        if (armies.active[army] && armies.owner_slot[army] == slot)
+            out.soldiers_in_armies += armies.cached_headcount[army];
+    for (const auto &war : core.wars()) {
+        if (!war.active || (war.attacker_slot != slot && war.defender_slot != slot)) continue;
+        const int32_t score = war.score_battle_q16 + war.score_annihilation_q16 + war.score_attrition_q16;
+        ++out.war_count;
+        out.war_score = std::min<int64_t>(out.war_score, war.attacker_slot == slot ? score : -score);
+        out.war_losses += war.attacker_losses + war.defender_losses;
+    }
+    out.at_war = out.war_count > 0;
+}
+
+
 
 using namespace godot;
 

@@ -255,6 +255,7 @@ func _verify_wiped_fog_is_never_persisted(host: WorldRuntimeHost) -> void:
 
 func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> void:
 	var generator := host.generator()
+	var player := host.get_parent().get_node("PlayerController") as PlayerController
 	var start_day := clock.day_index()
 	var target_day := start_day + 6
 	var start_economy: Dictionary = generator.get_economy_report()
@@ -268,8 +269,9 @@ func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> vo
 	clock.pause(false)
 	for frame in range(1200):
 		await get_tree().process_frame
-		# Presentation offers can pause a real player. This fixture explicitly
-		# advances simulation; pause(false) still respects authority fault holds.
+		var offer: Dictionary = player.narrative_service().active_offer()
+		if not offer.is_empty() and not _answer_narrative(player, generator, offer):
+			break
 		clock.pause(false)
 		var economy: Dictionary = generator.get_economy_report()
 		if bool(economy.get("fatal", false)):
@@ -293,6 +295,29 @@ func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> vo
 	_expect("loaded economy remains non-fatal after its first settlement cycle",
 		not bool(generator.get_economy_report().get("fatal", false)))
 	clock.set_speed(0.0)
+
+
+func _answer_narrative(player: PlayerController, generator: MapGenerator,
+		offer: Dictionary) -> bool:
+	var options: Array = offer.get("options", [])
+	var index := -1
+	for i in range(options.size()):
+		if bool(options[i].get("eligible", false)):
+			index = i
+			break
+	_expect("the restored session has an eligible narrative choice", index >= 0)
+	if index < 0:
+		return false
+	var day := int(generator.get_runtime_thread_report().get("simulation_committed_day", -1))
+	var result: Dictionary = player.narrative_flow().on_option_chosen(
+		int(offer.offer_id), int(offer.offer_generation), index)
+	var accepted := bool(result.get("ok", false)) and int(result.get("effective_day", -1)) == day + 1
+	_expect("the narrative choice is accepted for the day after the blocked commit", accepted)
+	if accepted:
+		player.narrative_flow().on_outcome_acknowledged()
+		print("ROUNDTRIP_NARRATIVE_CHOICE day=%d effective_day=%d event=%s" % [
+			day, int(result.effective_day), String(offer.event_id)])
+	return accepted
 
 
 func _advance_days(host: WorldRuntimeHost, clock: WorldClock, days: int) -> void:

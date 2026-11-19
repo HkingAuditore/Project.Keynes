@@ -848,6 +848,10 @@ public:
     // Per-cell stratum-mobilization rows (organization/stage/cooldown). Returns
     // an empty list when the cell has no aggrieved profession.
     godot::Dictionary cell_mobilization_snapshot(int32_t cell_idx) const;
+    void sample_narrative_cell(NarrativeCellView &, bool detailed) const;
+    bool narrative_unrest_rows(int32_t cell, std::vector<NarrativeUnrestRow> &) const;
+    NarrativeUnrestOdds calculate_mobilization_odds(int32_t cell, int32_t profession,
+        int32_t action, int64_t spend_bp, godot::Dictionary *details) const;
     // Bounded country-level summary for the top bar/alerts.
     godot::Dictionary country_mobilization_summary(int32_t country_slot) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;

@@ -1,4 +1,3 @@
-class_name NarrativeContextSampler
 extends RefCounted
 
 const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")

@@ -1,7 +1,7 @@
 extends SceneTree
 
 const NarrativeEventCatalogScript = preload("res://scripts/narrative/narrative_event_catalog.gd")
-const NarrativeEventServiceScript = preload("res://scripts/narrative/narrative_event_service.gd")
+const NarrativeEventServiceScript = preload("res://tests/support/legacy_narrative_fixture.gd")
 const NarrativeEventDialogScript = preload("res://scripts/ui/components/narrative_event_dialog.gd")
 const NarrativeChroniclePanelScript = preload("res://scripts/ui/components/narrative_chronicle_panel.gd")
 const PauseMenuScene := preload("res://scenes/ui/pause_menu.tscn")

@@ -10,6 +10,7 @@ namespace pk {
 struct RuntimeVisionFrame;
 struct RuntimeEffectReadView;
 struct RuntimeEraRewardView;
+struct RuntimeNarrativeView;
 struct RuntimeGoldenSnapshot;
 struct RuntimeEraAdvancementView;
 struct RuntimeIdeologyReadView;
@@ -44,6 +45,7 @@ struct RuntimeDayTail {
     bool vision_solved = false;
     std::shared_ptr<const RuntimeEffectReadView> effect;
     std::shared_ptr<const RuntimeEraRewardView> era_reward;
+    std::shared_ptr<const RuntimeNarrativeView> narrative;
     std::shared_ptr<const RuntimeGoldenSnapshot> golden;
     std::shared_ptr<const RuntimeEraAdvancementView> era_advancement;
     std::shared_ptr<const TriggerRuntime> trigger;

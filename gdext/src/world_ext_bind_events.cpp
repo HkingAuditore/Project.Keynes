@@ -31,6 +31,14 @@ void DCWorldExt::_bind_events_methods() {
                          &DCWorldExt::restore_gameplay_event_journal);
     ClassDB::bind_method(D_METHOD("clear_gameplay_events", "opts"),
                          &DCWorldExt::clear_gameplay_events);
+    ClassDB::bind_method(D_METHOD("configure_gameplay_narrative", "packet", "state"),
+                         &DCWorldExt::configure_gameplay_narrative);
+    ClassDB::bind_method(D_METHOD("get_gameplay_narrative_view"),
+                         &DCWorldExt::get_gameplay_narrative_view);
+    ClassDB::bind_method(D_METHOD("capture_gameplay_narrative"),
+                         &DCWorldExt::capture_gameplay_narrative);
+    ClassDB::bind_method(D_METHOD("submit_gameplay_narrative", "kind", "args"),
+                         &DCWorldExt::submit_gameplay_narrative);
     ClassDB::bind_method(D_METHOD("get_gameplay_event_bus_report"),
                          &DCWorldExt::get_gameplay_event_bus_report);
     ClassDB::bind_method(

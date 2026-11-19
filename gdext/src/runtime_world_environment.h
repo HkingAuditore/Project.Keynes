@@ -42,6 +42,7 @@ public:
 
     std::shared_ptr<const RuntimeSeasonView> season_view(int64_t day) const;
     RuntimeClimateCalendar calendar(int64_t day) const;
+    const RuntimeEnvironmentSnapshot &narrative_geography() const;
 
 private:
     struct State;

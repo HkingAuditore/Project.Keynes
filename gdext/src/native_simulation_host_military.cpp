@@ -8,6 +8,10 @@
 
 namespace pk {
 
+void NativeSimulationHost::sample_narrative_military(NarrativeCountryView &out) const {
+    if (_executor_military) sample_narrative_military_country(_executor_military->core(), out);
+}
+
 void NativeSimulationHost::attach_military(std::shared_ptr<NativeMilitaryRuntime> military) {
     _executor_military = std::move(military);
     if (_executor_military) {

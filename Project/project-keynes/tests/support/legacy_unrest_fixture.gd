@@ -1,4 +1,3 @@
-class_name StratumUnrestService
 extends RefCounted
 
 ## Bridges native stratum mobilization facts to the narrative event chain and,

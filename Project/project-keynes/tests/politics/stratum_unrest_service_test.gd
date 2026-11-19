@@ -3,9 +3,10 @@ extends SceneTree
 ## Service-level coverage for the rebellion bridge without a full world:
 ## option resolution, concession payment, and the independence -> war sequence.
 
-const ServiceScript = preload("res://scripts/politics/stratum_unrest_service.gd")
+const ServiceScript = preload("res://tests/support/legacy_unrest_fixture.gd")
 const ContentScript = preload("res://scripts/politics/stratum_rebellion_content.gd")
-const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
+const NarrativeFixture = preload("res://tests/support/legacy_narrative_fixture.gd")
+const NarrativeFlow = preload("res://scripts/narrative/narrative_event_flow.gd")
 const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
 
 var _checks := 0
@@ -38,11 +39,6 @@ class MockJournal:
 class MockGenerator:
 	var bus = GameplayEventBusScript.new()
 	func get_gameplay_event_bus(): return bus
-
-
-class MockRuntimeHost:
-	var source := MockGenerator.new()
-	func generator(): return source
 
 
 class MockEconomy:
@@ -164,24 +160,20 @@ func _run() -> void:
 
 
 func _test_player_delivery() -> void:
-	var runtime := MockRuntimeHost.new()
-	var journal := MockJournal.new()
-	runtime.source.bus.bind_world_ext(journal)
+	var generator := MockGenerator.new()
+	generator.bus.bind_world_ext(MockJournal.new())
 	var economy := MockEconomy.new()
-	var controller = PlayerControllerScript.new()
-	root.add_child(controller)
 	var clock := MockClock.new()
 	clock.paused = false
 	var ui := MockNarrativeUI.new()
-	controller._world_clock = clock
-	controller._ui_manager = ui
-	controller._runtime_host = runtime
-	controller._player_country_handle = 1
-	controller._economy_facade = economy
-	controller._country_facade = MockCountry.new()
-	controller._configure_narrative_runtime()
-	controller._step_narrative_daily(9)
-	var service = controller.narrative_service()
+	var service := NarrativeFixture.new()
+	service.configure(generator, null, null, clock, 1, 12345)
+	var unrest = ServiceScript.new()
+	unrest.configure(generator, null, clock, service, economy, MockCountry.new(),
+		MockMilitary.new(), 1, 12345)
+	var flow := NarrativeFlow.new()
+	flow.configure(null, null, clock, ui, service)
+	unrest.step_daily(9)
 	var offer: Dictionary = service.active_offer()
 	_expect("existing merchant unrest is recovered at its current stage without a retained fact",
 		offer.get("event_id") == "evt.rebellion.stage_4"
@@ -193,32 +185,31 @@ func _test_player_delivery() -> void:
 		var abandon_index := actions.find(ContentScript.ACTION_ABANDON)
 		if abandon_index >= 0:
 			service.choose_option(offer.offer_id, offer.offer_generation, abandon_index, 10)
-	_expect("the formal narrative service routes a choice back to the unrest service",
+	_expect("the narrative resolution reaches the unrest effect adapter",
 		economy.applied.size() == 1)
-	var saved: Dictionary = controller.export_narrative_state()
+	var saved := service.export_state()
+	saved["stratum_unrest"] = unrest.export_state()
 	_expect("pending independence is saved with narrative state",
 		saved.get("stratum_unrest", {}).get("pending_independence", []).size() == 1)
+	var restored: Dictionary = bytes_to_var(var_to_bytes(saved))
 	_expect("pending independence survives restoring the narrative save",
-		bool(controller.restore_narrative_state(bytes_to_var(var_to_bytes(saved))).get("ok", false))
-		and controller.export_narrative_state().get("stratum_unrest", {})
-			.get("pending_independence", []).size() == 1)
-	controller.free()
+		bool(service.restore_state(restored).get("ok", false))
+		and bool(unrest.restore_state(restored.get("stratum_unrest", {})).get("ok", false))
+		and unrest.export_state().get("pending_independence", []).size() == 1)
 
 
 func _test_followup_delivery() -> void:
-	var runtime := MockRuntimeHost.new()
 	var journal := MockJournal.new()
-	runtime.source.bus.bind_world_ext(journal)
+	var generator := MockGenerator.new()
+	generator.bus.bind_world_ext(journal)
 	var economy := MockEconomy.new()
 	economy.stage = 0
-	var controller = PlayerControllerScript.new()
-	root.add_child(controller)
-	controller._runtime_host = runtime
-	controller._player_country_handle = 1
-	controller._economy_facade = economy
-	controller._country_facade = MockCountry.new()
-	controller._configure_narrative_runtime()
-	controller._step_narrative_daily(8)
+	var service := NarrativeFixture.new()
+	service.configure(generator, null, null, null, 1, 12345)
+	var unrest = ServiceScript.new()
+	unrest.configure(generator, null, null, service, economy, MockCountry.new(),
+		MockMilitary.new(), 1, 12345)
+	unrest.step_daily(8)
 	economy.stage = 1
 	journal.batch = {
 		"count": 1, "event_id": PackedInt64Array([42]),
@@ -227,8 +218,7 @@ func _test_followup_delivery() -> void:
 		"payload_i0": PackedInt32Array([1]), "payload_i1": PackedInt32Array([0]),
 		"payload_i2": PackedInt32Array([0]), "payload_i3": PackedInt32Array([0]),
 	}
-	controller._step_narrative_daily(9)
-	var service = controller.narrative_service()
+	unrest.step_daily(9)
 	var offer: Dictionary = service.active_offer()
 	_expect("the player commit consumes only mobilization facts and opens stage one",
 		journal.requested_type == GameplayEventBusScript.EVENT_STRATUM_MOBILIZATION
@@ -237,15 +227,17 @@ func _test_followup_delivery() -> void:
 		var actions: Array = offer.meta.actions
 		service.choose_option(offer.offer_id, offer.offer_generation,
 			actions.find(ContentScript.ACTION_IGNORE), 10)
-	var saved: Dictionary = controller.export_narrative_state()
-	controller.restore_narrative_state(bytes_to_var(var_to_bytes(saved)))
-	controller._step_narrative_daily(10)
+	var saved := service.export_state()
+	saved["stratum_unrest"] = unrest.export_state()
+	var restored: Dictionary = bytes_to_var(var_to_bytes(saved))
+	service.restore_state(restored)
+	unrest.restore_state(restored["stratum_unrest"])
+	unrest.step_daily(10)
 	_expect("a failed response continues after reload even if its fact was lost",
 		service.active_offer().get("event_id") == "evt.rebellion.stage_2")
-	controller._step_narrative_daily(11)
+	unrest.step_daily(11)
 	_expect("the consumed fact and recovered stage are not queued again",
 		service.ready_queue_size() == 0)
-	controller.free()
 
 
 func _expect(label: String, condition: bool) -> void:

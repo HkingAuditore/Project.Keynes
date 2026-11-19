@@ -789,6 +789,8 @@ void NativeSimulationHost::publish_day(
     publish_military_day();
     if (published->day_tail && published->day_tail->era_reward)
         std::atomic_store(&_published_era_reward, published->day_tail->era_reward);
+    if (published->day_tail && published->day_tail->narrative)
+        std::atomic_store(&_published_narrative, published->day_tail->narrative);
     if (published->day_tail && published->day_tail->era_advancement)
         std::atomic_store(&_published_era_advancement, published->day_tail->era_advancement);
     {

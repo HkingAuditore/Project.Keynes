@@ -13,7 +13,7 @@ extends SceneTree
 ## 比实际效果大三四倍，而这个测试会把这种错当场抓出来。
 
 const NarrativeEventCatalogScript = preload("res://scripts/narrative/narrative_event_catalog.gd")
-const NarrativeEventServiceScript = preload("res://scripts/narrative/narrative_event_service.gd")
+const NarrativeEventServiceScript = preload("res://tests/support/legacy_narrative_fixture.gd")
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")

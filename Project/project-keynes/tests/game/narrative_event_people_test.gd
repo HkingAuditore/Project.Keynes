@@ -11,8 +11,8 @@ extends SceneTree
 ##   6. 弹窗渲染纯散文正文与结果段落，不出现引语块。
 
 const NarrativeEventCatalogScript = preload("res://scripts/narrative/narrative_event_catalog.gd")
-const NarrativeEventServiceScript = preload("res://scripts/narrative/narrative_event_service.gd")
-const NarrativeContextSamplerScript = preload("res://scripts/narrative/narrative_context_sampler.gd")
+const NarrativeEventServiceScript = preload("res://tests/support/legacy_narrative_fixture.gd")
+const NarrativeContextSamplerScript = preload("res://tests/support/legacy_narrative_context.gd")
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 const NarrativeEffectAdapterScript = preload("res://scripts/narrative/narrative_effect_adapter.gd")

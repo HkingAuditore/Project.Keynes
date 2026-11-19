@@ -371,7 +371,8 @@ void NativeSimulationHost::worker_main() {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
             if (service_military_commands() || service_colonization_requests() ||
-                service_era_reward_requests() || service_annual_presentations()) continue;
+                service_era_reward_requests() || service_annual_presentations() ||
+                service_narrative_requests()) continue;
 
             const bool retained_day_pending = active_environment != nullptr &&
                 active_environment->day == _committed_day.load(std::memory_order_acquire) + 1;
@@ -1162,6 +1163,7 @@ void NativeSimulationHost::worker_main() {
         _military_commands.clear();
         _colonization_requests.clear();
         _era_reward_requests.clear();
+        _narrative_requests.clear();
         _annual_presentations.clear();
         _control_cv.notify_all();
     }

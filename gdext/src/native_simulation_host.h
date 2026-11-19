@@ -770,6 +770,12 @@ public:
     std::shared_ptr<const RuntimeIdeologyReadView> latest_ideology_read_view() const;
     std::shared_ptr<const RuntimeEraRewardView> latest_era_reward() const;
     std::shared_ptr<const RuntimeEraAdvancementView> latest_era_advancement() const;
+    bool initialize_narrative(const godot::Dictionary &, const godot::Dictionary &);
+    std::shared_ptr<const RuntimeNarrativeView> latest_narrative() const;
+    godot::Dictionary capture_narrative() const;
+    bool submit_narrative_choice_request(std::shared_ptr<struct RuntimeNarrativeRequest>);
+    bool enqueue_event_consumer_ack(uint64_t consumer, int64_t event, int64_t day,
+        uint64_t generation, bool seal);
     bool submit_era_reward_request(std::shared_ptr<RuntimeEraRewardRequest> request);
     bool effect_adapter_owned() const noexcept {
         return _effect_adapter_runtime != nullptr && !execution_has_stopped();
@@ -1349,6 +1355,11 @@ private:
     bool submit_era_milestone(RuntimeEraAdvancement &state, int32_t era,
         int64_t requested, int64_t effective, int64_t sequence, bool consume_goods);
     bool service_era_reward_requests();
+    const char *stage_narrative(DayExecution &);
+    bool service_narrative_requests();
+    bool narrative_needs_choice() const;
+    struct NarrativeDay sample_narrative_day(int64_t) const;
+    void sample_narrative_military(struct NarrativeCountryView &) const;
     std::shared_ptr<const RuntimeEraRewardView> capture_era_reward() const;
     EffectRuntime *_effect_adapter_runtime = nullptr;
     class NativeCountryRuntime *_effect_adapter_country = nullptr;
@@ -1365,12 +1376,15 @@ private:
     std::deque<std::shared_ptr<RuntimeColonizationRequest>> _colonization_requests;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> _era_reward_requests;
     std::deque<std::shared_ptr<AnnualPresentationRequest>> _annual_presentations;
+    std::deque<std::shared_ptr<RuntimeNarrativeRequest>> _narrative_requests;
+    std::shared_ptr<class RuntimeNarrative> _executor_narrative;
+    std::shared_ptr<const RuntimeNarrativeView> _published_narrative;
     std::shared_ptr<const RuntimeEraRewardView> _published_era_reward;
     std::shared_ptr<RuntimeEraAdvancement> _era_advancement;
     std::shared_ptr<const RuntimeEraAdvancementView> _published_era_advancement;
     bool player_requests_pending_locked() const noexcept {
         return !_military_commands.empty() || !_colonization_requests.empty() ||
-            !_era_reward_requests.empty() || !_annual_presentations.empty();
+            !_era_reward_requests.empty() || !_annual_presentations.empty() || !_narrative_requests.empty();
     }
     bool service_colonization_requests();
     std::atomic<int64_t> _events_ingress_cursor{1};

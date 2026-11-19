@@ -17,6 +17,10 @@
 
 namespace pk {
 
+class MilitaryCore;
+struct NarrativeCountryView;
+void sample_narrative_military_country(const MilitaryCore &, NarrativeCountryView &);
+
 constexpr int64_t MILITARY_MONEY_SCALE = 10000;
 constexpr int64_t MILITARY_GOODS_SCALE = 1000;
 constexpr int32_t MILITARY_Q16 = 65536;

@@ -1,7 +1,7 @@
 extends SceneTree
 
 const Flow = preload("res://scripts/narrative/narrative_event_flow.gd")
-const Service = preload("res://scripts/narrative/narrative_event_service.gd")
+const Service = preload("res://tests/support/legacy_narrative_fixture.gd")
 const Catalog = preload("res://scripts/narrative/narrative_event_catalog.gd")
 
 var failures := 0

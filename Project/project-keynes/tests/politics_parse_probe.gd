@@ -4,7 +4,7 @@ extends SceneTree
 ## preloaded dependencies (not the whole game scene, which needs imported art).
 
 const StratumUnrestServiceScript = preload(
-	"res://scripts/politics/stratum_unrest_service.gd")
+	"res://tests/support/legacy_unrest_fixture.gd")
 const StratumRebellionContentScript = preload(
 	"res://scripts/politics/stratum_rebellion_content.gd")
 

@@ -14,7 +14,7 @@ extends SceneTree
 
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 const NarrativeEffectAdapterScript = preload("res://scripts/narrative/narrative_effect_adapter.gd")
-const NarrativeContextSamplerScript = preload("res://scripts/narrative/narrative_context_sampler.gd")
+const NarrativeContextSamplerScript = preload("res://tests/support/legacy_narrative_context.gd")
 const NarrativeAiValidatorScript = preload("res://scripts/narrative/ai/narrative_ai_validator.gd")
 const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
 

@@ -211,6 +211,24 @@ func poll_events(
 	return batch
 
 
+func configure_story(packet: Dictionary, state: Dictionary) -> bool:
+	return _world_ext != null and _world_ext.configure_gameplay_narrative(packet, state)
+
+
+func story_view() -> Dictionary:
+	return _world_ext.get_gameplay_narrative_view() if _world_ext != null else {}
+
+
+func capture_story() -> Dictionary:
+	return _world_ext.capture_gameplay_narrative() if _world_ext != null else {}
+
+
+func submit_story_request(kind: StringName, args: Dictionary) -> Dictionary:
+	if _world_ext == null:
+		return {"ok": false, "code": "narrative_runtime_unavailable"}
+	return _world_ext.submit_gameplay_narrative(kind, args)
+
+
 func ack_events(consumer_id: StringName, up_to_event_id: int) -> Dictionary:
 	if not is_available():
 		return {"fallback": true, "reason": "world_ext_event_bus_unavailable"}

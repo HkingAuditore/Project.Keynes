@@ -1,3 +1,4 @@
+#include "runtime_narrative.h"
 #include "world_ext.h"
 #include "economy_runtime.h"
 #include "native_simulation_host.h"
@@ -133,24 +134,8 @@ static bool queue_events_bridge_ack(NativeSimulationHost *host,
         error = "events_bridge_worker_unavailable";
         return false;
     }
-    const uint64_t sequence = host->allocate_producer_sequence(
-        EVENTS_BRIDGE_PRODUCER_ID);
-    RuntimeCommandPacket packet{};
-    packet.envelope.request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
-    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
-    packet.envelope.sequence = sequence;
-    packet.envelope.observed_generation = report.generation;
-    packet.envelope.requested_day = std::max<int64_t>(0, report.committed_day + 1);
-    packet.envelope.effective_day = packet.envelope.requested_day;
-    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
-    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::ACK_CONSUMER);
-    std::vector<uint8_t> payload;
-    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
-    append_le<uint64_t>(payload, stable_consumer_key(consumer_id));
-    append_le<int64_t>(payload, event_id);
-    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
-    std::memcpy(packet.payload.data(), payload.data(), payload.size());
-    if (!host->enqueue(packet)) {
+    if (!host->enqueue_event_consumer_ack(stable_consumer_key(consumer_id),
+            event_id, report.committed_day + 1, report.generation, true)) {
         error = "events_bridge_queue_full";
         return false;
     }
@@ -188,6 +173,27 @@ static PackedInt64Array dictionary_i64_array(const Dictionary &d, const char *ke
 }
 
 } // namespace
+
+bool NativeSimulationHost::enqueue_event_consumer_ack(uint64_t consumer, int64_t event_id,
+        int64_t day, uint64_t generation, bool seal) {
+    const uint64_t sequence = allocate_producer_sequence(EVENTS_BRIDGE_PRODUCER_ID);
+    RuntimeCommandPacket packet{};
+    packet.envelope.request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
+    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
+    packet.envelope.sequence = sequence;
+    packet.envelope.observed_generation = generation;
+    packet.envelope.requested_day = std::max<int64_t>(0, day);
+    packet.envelope.effective_day = packet.envelope.requested_day;
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::ACK_CONSUMER);
+    std::vector<uint8_t> payload;
+    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint64_t>(payload, consumer);
+    append_le<int64_t>(payload, event_id);
+    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::memcpy(packet.payload.data(), payload.data(), payload.size());
+    return enqueue_batch_at({std::move(packet)}, nullptr, seal);
+}
 
 bool NativeSimulationHost::enqueue_legacy_event_batch(
         const std::vector<RuntimeEventsRecord> &records, int64_t effective_day,
@@ -940,6 +946,45 @@ void DCWorldExt::_append_gameplay_event_to_arrays(const GameplayEventRecord &ev,
     p1.append(ev.payload_i1);
     p2.append(ev.payload_i2);
     p3.append(ev.payload_i3);
+}
+
+bool DCWorldExt::configure_gameplay_narrative(Dictionary packet, Dictionary state) {
+    return _runtime_host && _runtime_host->initialize_narrative(packet, state);
+}
+
+Dictionary DCWorldExt::get_gameplay_narrative_view() const {
+    Dictionary out;
+    const auto view = _runtime_host ? _runtime_host->latest_narrative() : nullptr;
+    if (!view) return out;
+    out["day"] = view->day;
+    out["last_popup_day"] = view->popup_day;
+    out["active_offer"] = view->active_offer.duplicate(true);
+    out["ready_queue"] = view->queue.duplicate(true);
+    out["chronicle"] = view->chronicle.duplicate(true);
+    out["ai_request"] = view->ai_request.duplicate(true);
+    out["independence"] = view->independence.duplicate(true);
+    out["unrest_fact_cursor"] = view->unrest_fact;
+    return out;
+}
+
+Dictionary DCWorldExt::capture_gameplay_narrative() const {
+    return _runtime_host ? _runtime_host->capture_narrative() : Dictionary();
+}
+
+Dictionary DCWorldExt::submit_gameplay_narrative(StringName kind, Dictionary args) {
+    if (!_runtime_host) return narrative_response(false, "narrative_runtime_unavailable");
+    auto request = std::make_shared<RuntimeNarrativeRequest>();
+    using Kind = RuntimeNarrativeRequest::Kind;
+    if (kind == StringName("choose")) request->kind = Kind::CHOOSE;
+    else if (kind == StringName("complete")) request->kind = Kind::COMPLETE;
+    else if (kind == StringName("source_id")) request->kind = Kind::SOURCE_ID;
+    else if (kind == StringName("ai_result")) request->kind = Kind::AI_RESULT;
+    else if (kind == StringName("ai_enabled")) request->kind = Kind::SET_AI;
+    else return narrative_response(false, "narrative_command_invalid");
+    request->args = args.duplicate(true);
+    if (!_runtime_host->submit_narrative_choice_request(request))
+        return narrative_response(false, "narrative_runtime_unavailable");
+    return request->result;
 }
 
 Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {

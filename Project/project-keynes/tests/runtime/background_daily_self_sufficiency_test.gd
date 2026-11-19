@@ -56,6 +56,7 @@ func _run() -> void:
 		_check_removed_round_trips(stalled_report, days)
 	var military_world := await _run_world(false, true)
 	print("BACKGROUND_MILITARY_BASELINE=" + JSON.stringify(military_world))
+	await _check_narrative_boundary()
 	_finish()
 
 
@@ -309,7 +310,8 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 		_expect("seasonal refresh uses no task slot on day %d" % day,
 			int(tasks.get("season", {}).get("count", 0)) == 0)
 		for step in ["climate_writeback", "environment_capture", "environment_publish_hold",
-				"modifier_snapshot_install", "season_freeze", "season_install", "annual_year_boundary_input"]:
+				"modifier_snapshot_install", "season_freeze", "season_install", "annual_year_boundary_input",
+				"narrative_daily", "stratum_unrest_daily"]:
 			_expect("%s has no main-thread round trip on day %d" % [step, day],
 				int(steps.get(step, 0)) == 0)
 		for step in steps:
@@ -353,6 +355,97 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 				int(steps.get(step, 0)) == 0)
 		_expect("ideology uses no day-tail task slot on day %d" % day,
 			int(tasks.get("ideology_projection", {}).get("count", 0)) == 0)
+
+
+func _check_narrative_boundary() -> void:
+	var clock := WorldClock.new()
+	clock.auto_start = false
+	root.add_child(clock)
+	clock.set_process(false)
+	var host := _create_host()
+	host.runtime_economy_auto_pod_active = true
+	root.add_child(host)
+	host.configure(null, null, clock)
+	host.set_climate_authority_override("force_on")
+	var controller := PlayerController.new()
+	root.add_child(controller)
+	controller.configure(null, null, host, clock, null)
+	controller.restore_narrative_state({
+		"last_popup_day": 0,
+		"next_offer_id": 2,
+		"ready_queue": [{"offer_id": 1, "cell_idx": -1, "bypass_pacing": false}],
+		"scheduled_events": [
+			{"due_day": 2, "event_id": "evt.ages.first_seed", "chain_id": "scheduled_first"},
+			{"due_day": 2, "event_id": "evt.ages.first_grave", "chain_id": "scheduled_second"},
+		],
+	})
+	var configured := host.configure_session({
+		"kind": "new_game", "config": _background_config().to_dictionary()})
+	_expect("formal narrative session configures", bool(configured.get("ok", false)))
+	if bool(configured.get("ok", false)):
+		await host.generate_world()
+		var generator := host.get_generator()
+		if host.is_runtime_ready_for_ticks() and generator != null:
+			await _check_narrative_commit(host, clock, controller, generator)
+		else:
+			_expect("formal narrative session starts", false)
+	_expect("formal narrative session closes", bool((await host.close_world()).get("ok", false)))
+	controller.free()
+	host.free()
+	clock.free()
+
+
+func _check_narrative_commit(host: WorldRuntimeHost, clock: WorldClock,
+		controller: PlayerController, generator: MapGenerator) -> void:
+	# Leave the real clock and release path running. Omit only the player's
+	# display consumer so its modal cannot pause the worker for this test.
+	host.simulation_committed.disconnect(controller._on_simulation_committed)
+	var service: NarrativeEventService = controller.narrative_service()
+	service.offer_ready.disconnect(controller.narrative_flow()._on_service_offer_ready)
+	var economy: EconomyFacade = generator.get_economy_facade()
+	var ext: Object = economy.world_ext()
+	clock.set_speed(SPEED)
+	for day in range(1, 3):
+		_publish_day(host, clock, day)
+		var settled := await _wait_golden_read_boundary(host, economy, day)
+		_expect("narrative day %d settles with display disconnected" % day, settled)
+		if not settled:
+			return
+	var first: Dictionary = ext.get_gameplay_narrative_view().get("active_offer", {})
+	_expect("background publishes the first scheduled event",
+		first.get("chain_id") == "scheduled_first" and int(first.get("day", -1)) == 2)
+	_expect("remaining events stay queued", ext.get_gameplay_narrative_view().get("ready_queue", []).size() == 2)
+	_publish_day(host, clock, 3)
+	var frame := Engine.get_process_frames()
+	OS.delay_msec(HOLD_MSEC)
+	var committed := int(ext.runtime_committed_day())
+	var state := generator.get_runtime_control_state()
+	_expect("background awaits the player's choice after admission and without foreground frames",
+		committed == 2 and host._calendar_admitted_through == 3
+		and state.get("simulation_host_state") == "PAUSED"
+		and not clock.paused and Engine.get_process_frames() == frame)
+	print("NARRATIVE_BLOCK day=2 after=%d admitted=%d frames=%d state=%s" % [
+		committed, host._calendar_admitted_through, Engine.get_process_frames() - frame,
+		state.get("simulation_host_state", "")])
+	for chain in ["scheduled_first", "scheduled_second"]:
+		var offer: Dictionary = ext.get_gameplay_narrative_view().get("active_offer", {})
+		_expect("background promotes %s before proceeding" % chain,
+			offer.get("chain_id") == chain)
+		if offer.is_empty():
+			return
+		var selected := controller.request_command(&"narrative.choose", {
+			"offer_id": int(offer.offer_id), "offer_generation": int(offer.offer_generation),
+			"option_index": 0})
+		var record: Dictionary = selected.get("record", {})
+		_expect("choice targets day 3 and legacy outcome day 4",
+			bool(selected.get("ok", false)) and int(selected.get("effective_day", -1)) == 3
+			and int(record.get("resolved_day", -1)) == 4)
+	var continued := await _wait_golden_read_boundary(host, economy, 3)
+	_expect("background continues after both choices despite a nonblocking queue entry",
+		continued and ext.get_gameplay_narrative_view().get("ready_queue", []).size() == 1)
+	var report := generator.get_runtime_thread_report()
+	if _expect_round_trip_report(report):
+		_check_removed_round_trips(report, 3)
 
 
 func _check_round_trips(report: Dictionary) -> void:

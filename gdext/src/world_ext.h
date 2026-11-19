@@ -2583,6 +2583,10 @@ public:
     godot::Dictionary restore_gameplay_event_journal(godot::Dictionary snapshot);
     godot::Dictionary clear_gameplay_events(godot::Dictionary opts);
     godot::Dictionary get_gameplay_event_bus_report() const;
+    bool configure_gameplay_narrative(godot::Dictionary packet, godot::Dictionary state);
+    godot::Dictionary get_gameplay_narrative_view() const;
+    godot::Dictionary capture_gameplay_narrative() const;
+    godot::Dictionary submit_gameplay_narrative(godot::StringName kind, godot::Dictionary args);
     godot::Dictionary poll_runtime_events_snapshot(int64_t after_generation = 0);
 
     // ---- bindings: generation ----

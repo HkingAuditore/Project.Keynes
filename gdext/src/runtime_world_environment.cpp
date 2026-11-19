@@ -356,6 +356,10 @@ std::shared_ptr<const RuntimeSeasonView> RuntimeWorldEnvironment::season_view(in
     return state.season && state.season->day <= day ? state.season : state.previous_season;
 }
 
+const RuntimeEnvironmentSnapshot &RuntimeWorldEnvironment::narrative_geography() const {
+    return _state->prepared ? *_state->prepared : _state->opening;
+}
+
 RuntimeClimateCalendar RuntimeWorldEnvironment::calendar(int64_t day) const {
     const auto &state = *_state;
     return state.prepared && state.prepared->day > day ? state.calendar_committed : state.calendar_prepared;
