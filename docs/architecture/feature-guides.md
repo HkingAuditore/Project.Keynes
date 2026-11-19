@@ -214,6 +214,16 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 若选定群体已无法提供足够的转职人口，或某笔建材款付不起，则在写入前保留能通过预检的前缀；
 实际提交的余额断言不放宽。
 
+预检是**快照证书**，写入读的是 live 状态，两者必须共用同一条现金规则
+（`gdext/src/economy_family_move_cash.h::cohort_move_cash()`）；不要再在预检里另写一套份额公式。
+写入前必须在 `investment_commit_portfolio` 内用 live 状态复算本腿转移，不满足就裁剪候选
+（`allocated_count = 0` + `_building_investment_capital_limited`），不能先写后断言。
+裁剪判据按分支写：抽空 sponsor 的分支只有 `carried < required_capital`；普通分支因为 backstop
+读的是**移动后**余额，`carried` 抵消，等价于 `funds_before < required_capital`——写成
+`funds_before < required - carried` 会留下 `required - carried <= funds_before < required` 的窗口，
+重新触发同一 fatal。回归入口 `tests/building/building_portfolio_funds_regression_test.gd`
+（含 top-up 窗口反例与无裁剪聚合守恒）。
+
 ## 建筑最近一次投资评估
 
 受阻原因、投资评分和回本天数按建筑组保留最近一次实际评估结果。新批次初始化、
@@ -399,7 +409,7 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 时代晋升
 
-- 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 60% 必达，人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；条件投影运行 `tests/game/module_projection_boundaries_test.gd`，玩家界面运行 `tests/game/player_country_ui_smoke_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
+- 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 45% 必达（`TECH_COMPLETION_RATIO`，2026-11-19 由 60% 下调），人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；条件投影运行 `tests/game/module_projection_boundaries_test.gd`，玩家界面运行 `tests/game/player_country_ui_smoke_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
 
 ## 军事界面命令
 
@@ -490,6 +500,12 @@ AI 叙事文本只写处境与后果，不写气温/价格/库存/人口/百分�
 `tests/country/colonization_planner_context_test.gd`、`colonization_workbench_ui_test.gd`
 及 `tests/family/family_colonization_runtime_test.gd -- --population-shrink-only`。
 旧套件基线限制见 current-state；机制契约见家族开拓运行时文档。
+
+在途载荷里的人不是孤儿：`cohort_handle == 0` 且登记在 `family_expedition_person_handles()`
+中的要人由载荷持有，`PERSON_COMMIT` 不得按「cohort 无效」退场；任何权威真的要退场时必须走
+`retire_person`，由它在释放 slot 前摘掉载荷引用并修正后续 `person_begin`。回归用
+`family_colonization_runtime_test.gd -- --transit-person-only`；死句柄进存档会让整份 PKEC
+读档失败（`save_family_expedition_person_invalid`），不允许再以「加校验拒存档」应对。
 
 ## 国库收支展示
 
@@ -737,6 +753,25 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 
 比较性能时固定镜头、动画时间、分辨率和各项画质。把水波换周期、天气发布和云雾更新计入帧时间。主要回归入口为 `tests/rendering/render_data_tables_test.gd`、`tests/world/fog_cell_field_test.gd` 和 `tests/world/vegetation_pixel_normal_render_test.gd`。
 
+## 贴图导入形态与运行时读取
+
+导出包只带**导入产物**，不带已导入文件的源文本，而且 `export_presets.cfg` 的
+`include_filter` 对已导入文件无效（实测：给 `shaders/compute/*.glsl` 加了过滤器，导出日志里
+仍然只有 `.glsl.import`，源文件没进包）。所以：
+
+- 运行时读 `res://…` 文本前，先确认该扩展名没有 importer。`.json` / `.txt` / `.gdshader`
+  这类没有 importer 的文件会按原样打包；`.glsl` 有 glsl importer（产出 `RDShaderFile`），
+  源文本不打包。
+- 计算着色器走 `load()` 拿导入后的 `RDShaderFile.get_spirv()`；需要现场编译时才回退到
+  `FileAccess.get_file_as_string`（仅编辑器/未导入环境可用）。现实现见
+  `scripts/rendering/visual_tile_horizon_baker.gd::_create_shader_bundle`。
+- 纸贴图集按 VRAM 压缩导入（`compress/mode=1`），任何 `Image.convert/resize/blend_rect`
+  之前必须 `is_compressed() → decompress()`，否则 release 下图层被静默丢弃。现实现见
+  `scripts/ui/icon_catalog.gd::_paper_building_texture`。
+- 用 `MultiMesh` 打包 instance buffer 的临时对象也必须先赋 `.mesh` 再设 `instance_count`，
+  否则引擎每次都报 `multimesh->mesh.is_null()`。现实现见
+  `scripts/rendering/shrub/chunk_refresh.gd` 的 GDScript fallback 路径。
+
 ## 电脑和手机画质设置
 
 - 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
@@ -752,6 +787,31 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
   关闭云影仍保留天气云的风场输入。切档验证入口为
   `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
 
+- 画质/省电开关只能关**动画与强度**，不能关**静态数据**。`has_flow_tex` 是静态河网的总闸
+  （height 贴图 B 通道 = 河流 SDF；`scals.g = has_flow_tex ? height.b : 0`），只能由
+  `RendererMaterialPublish.flow_channel_ready()` 按「height 就绪 + flow_buffer 覆盖全图」
+  判定；`DCFeatureFlags.water_flowmap_enabled()`（移动端默认关）只允许影响流速蠕动与海洋
+  环流漂移。同类开关接入共享通道前，先确认该通道的**所有消费者**只是装饰动画。回归入口：
+  `tests/rendering/terrain_river_flow_gate_test.gd`。
+
 - 雨雪幕按当前天气类型的绘制标记及插值后的强度判断是否完全透明。雾和闪电按
   各自的阈值跳过；雨雪在低强度时仍可能有可见贡献，保留原形状计算。两个项目的
   雨雪 Shader 一起更新。高档水面的细碎闪光随屏幕上尺寸平滑淡出，保留较宽的反光。
+
+## 玩家可见时间文案（2026-11-19）
+
+时间点与时长是两种口径，不要混用。
+
+- 时间点（结算日、完工日、抵达日、创立日、信号首次记录日、停战与冷却到期日、事件与史册日期）
+  一律走 `WorldClock.date_text_for_day(day, days_per_year)`；有时钟引用就传
+  `clock.days_per_year()`，没有时钟的 view model 与 AI 提示词按默认 365 天换算。输出固定为
+  `1年2月14日`；日索引是 0 起（第 0 日 = `1年1月1日`），不要把已加过 1 的显示日再传进去。
+- 顶栏、GM 面板、年鉴这类已经拿到年/月/日字段的地方直接格式化成 `%d年%d月%d日`，不要再各写
+  一套日索引换算；新增面板优先接 `WorldClock.date_text_for_day`。
+- 时长保留 `N 日`：已战、剩余、工期、近 N 日、可支撑 N 日、N 日后触发。为了去掉“第”把时长
+  改写成日期会读成错误的时间点；战争计数写成「已战 N 日」，不写「第 N 日」。
+- 事件弹窗与史册的 `date_text` 由 `scripts/narrative/narrative_calendar.gd` 转交 WorldClock；
+  无时钟路径也按默认年长换算，不再退回「第 N 日」。
+- 回归入口：`tests/ui/player_top_bar_fit_test.gd`（顶栏日期不裁字）、
+  `tests/ui/hud_status_card_test.gd` 与 `tests/economy/economy_dossier_view_model_test.gd`
+  （结算日文案）、`tests/game/narrative_event_runtime_test.gd`（事件日期）。

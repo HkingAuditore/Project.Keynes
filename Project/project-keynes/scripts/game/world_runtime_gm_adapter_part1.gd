@@ -645,7 +645,9 @@ func _gm_overview_snapshot(host) -> Dictionary:
 			"cells": host._current_map.cell_count() if host._current_map != null else 0},
 		"clock": {"day_index": host._world_clock.day_index() if host._world_clock != null else -1,
 			"year": int(calendar.get("year", 0)), "month": int(calendar.get("month", 0)),
-			"day": int(calendar.get("day", 0)), "paused": host._world_clock.paused if host._world_clock != null else true,
+			# WorldClock.calendar_date() exposes day_of_month, not day; reading
+			# the wrong key made the GM panel date always show "…日 0".
+			"day": int(calendar.get("day_of_month", 0)), "paused": host._world_clock.paused if host._world_clock != null else true,
 			"speed": host._world_clock.speed_multiplier if host._world_clock != null else 0.0,
 			"authority_fault_hold": host._world_clock.authority_fault_hold if host._world_clock != null else true,
 			"last_pause_source": String(host._world_clock.last_pause_source) if host._world_clock != null else "",

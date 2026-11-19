@@ -1210,13 +1210,51 @@ func _on_btn_snapshot() -> void:
 		push_warning("[DebugConsole] 快照写入失败：%s (err=%d)" % [fname, err])
 		_show_snapshot_toast("写入失败 err=%d" % err, true)
 		return
-	f.store_string(JSON.stringify(payload, "  "))
+	# 采样窗口为空时 avg/min/max 可能是 NaN/INF；JSON.stringify 会把它们写成
+	# null 并只报一次警告，事后无法知道是哪个指标。这里替换成 null 并指出键路径。
+	var non_finite_paths: Array = []
+	var safe_payload = _sanitize_non_finite(payload, "$", non_finite_paths)
+	if not non_finite_paths.is_empty():
+		push_warning("[PerfSnapshot] non-finite float replaced with null at %s"
+			% ", ".join(PackedStringArray(non_finite_paths.slice(0, 4))))
+	f.store_string(JSON.stringify(safe_payload, "  "))
 	f.close()
 
 	# 转成绝对路径打印到控制台（res:// 在 dev 下 = 项目根目录）
 	var abs_path: String = ProjectSettings.globalize_path(fname)
 	print_rich("[color=cyan][PerfSnapshot][/color] saved to %s" % abs_path)
 	_show_snapshot_toast("已保存：%s" % fname.get_file(), false)
+
+
+## Replaces NaN/INF floats with null so JSON.stringify cannot silently write null
+## for an unknown metric, and records the offending paths for the log line.
+static func _sanitize_non_finite(value, path: String, reported: Array):
+	if value is float:
+		var number := float(value)
+		if is_nan(number) or is_inf(number):
+			if reported.size() < 32:
+				reported.append(path)
+			return null
+		return number
+	if value is PackedFloat32Array or value is PackedFloat64Array:
+		var floats := []
+		for index in range(value.size()):
+			floats.append(_sanitize_non_finite(float(value[index]),
+				"%s[%d]" % [path, index], reported))
+		return floats
+	if value is Dictionary:
+		var sanitized := {}
+		for key in value:
+			sanitized[key] = _sanitize_non_finite(value[key],
+				"%s.%s" % [path, key], reported)
+		return sanitized
+	if value is Array:
+		var sanitized_array := []
+		for index in range(value.size()):
+			sanitized_array.append(_sanitize_non_finite(value[index],
+				"%s[%d]" % [path, index], reported))
+		return sanitized_array
+	return value
 
 
 func _build_snapshot_payload() -> Dictionary:

@@ -345,15 +345,24 @@ func _create_shader_bundle() -> Dictionary:
 		["pyramid", PYRAMID_SHADER],
 		["trace", TRACE_SHADER],
 	]:
-		var source_text := FileAccess.get_file_as_string(String(entry[1]))
-		if source_text.is_empty():
-			out.reason = "shader_source_missing:%s" % String(entry[1])
-			return out
-		# RDShaderSource consumes GLSL directly; #[compute] is the resource importer tag.
-		source_text = source_text.trim_prefix("#[compute]\r\n").trim_prefix("#[compute]\n")
-		var source := RDShaderSource.new()
-		source.set_stage_source(RenderingDevice.SHADER_STAGE_COMPUTE, source_text)
-		var spirv := _rd.shader_compile_spirv_from_source(source)
+		var path := String(entry[1])
+		# 导出包里只带 glsl importer 生成的 RDShaderFile（源文本不进包，
+		# include_filter 对已导入文件无效），所以优先用导入产物里的 SPIR-V；
+		# 编辑器/未导入环境才回退到读源文本现场编译，保持本地既有行为。
+		var spirv: RDShaderSPIRV = null
+		var shader_file := load(path) as RDShaderFile
+		if shader_file != null:
+			spirv = shader_file.get_spirv()
+		if spirv == null:
+			var source_text := FileAccess.get_file_as_string(path)
+			if source_text.is_empty():
+				out.reason = "shader_source_missing:%s" % path
+				return out
+			# RDShaderSource consumes GLSL directly; #[compute] is the resource importer tag.
+			source_text = source_text.trim_prefix("#[compute]\r\n").trim_prefix("#[compute]\n")
+			var source := RDShaderSource.new()
+			source.set_stage_source(RenderingDevice.SHADER_STAGE_COMPUTE, source_text)
+			spirv = _rd.shader_compile_spirv_from_source(source)
 		var compile_error := spirv.get_stage_compile_error(RenderingDevice.SHADER_STAGE_COMPUTE)
 		if not compile_error.is_empty():
 			out.reason = "shader_compile:%s:%s" % [String(entry[0]), compile_error]

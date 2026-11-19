@@ -286,6 +286,20 @@ func _print_enum_lut_view_state(host) -> void:
 # 每一项都正常，要判死必须看 dv16 的 textureSize。
 
 
+## Size text for either a Texture2D or a Texture2DArray (tiled visual layers).
+## Texture2DArray has no get_size(), so the diagnostic must not call it blindly.
+static func _texture_size_text(texture) -> String:
+	if texture == null:
+		return "-"
+	if texture is Texture2DArray:
+		var layered := texture as Texture2DArray
+		return "%dx%d x%d" % [layered.get_width(), layered.get_height(),
+			layered.get_layers()]
+	if texture is Texture2D:
+		return str((texture as Texture2D).get_size())
+	return "<%s>" % texture.get_class()
+
+
 func _print_river_flow_state(host) -> void:
 	if host._renderer == null:
 		return
@@ -296,22 +310,26 @@ func _print_river_flow_state(host) -> void:
 	if tiles != null and bool(tiles.ready) and tiles.layout != null \
 			and String(tiles.layout.mode) == "tiled":
 		tiled = true
-	var world_tex: Texture2D = null
+	# Tiled visual layers publish a Texture2DArray (visual_height_tiles), the
+	# non-tiled path a Texture2D. Keep these untyped and describe sizes through a
+	# helper, otherwise the diagnostic itself throws a cast error in tiled mode.
+	var world_tex = null
+	var world_tex_desc := "-"
 	if world != null:
 		world_tex = tiles.height if tiled else world.height_tex
+		world_tex_desc = _texture_size_text(world_tex)
 		print("[river-flow-view] world 侧: packed_in_height=true tiled=%s tex=%s size=%s derived_size=%s" % [
-			str(tiled), str(world_tex != null),
-			str(world_tex.get_size()) if world_tex != null else "-",
+			str(tiled), str(world_tex != null), world_tex_desc,
 			str(world.derived_size)])
 	if host._renderer._shader_mat != null:
 		var bound_name = "visual_height_tiles" if tiled else "height_tex"
-		var bound: Texture2D = host._renderer._shader_mat.get_shader_parameter(bound_name)
+		var bound = host._renderer._shader_mat.get_shader_parameter(bound_name)
 		var bound_fmt: int = bound.get_format() if bound != null and bound.has_method("get_format") else -1
 		var want_fmt: int = Image.FORMAT_RGBA8
 		print("[river-flow-view] 材质 uniform: %s=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
-			bound_name, str(bound != null), str(bound.get_size()) if bound != null else "-",
+			bound_name, str(bound != null), _texture_size_text(bound),
 			bound_fmt, want_fmt,
-			str(bound != null and bound == world_tex),
+			str(bound != null and world_tex != null and bound == world_tex),
 			str(host._renderer._shader_mat.get_shader_parameter("has_flow_tex"))])
 		if bound == null:
 			push_warning("[river-flow-view] %s 未绑定；GLES3 兜底白纹理会让整片陆地被判成河" % bound_name)
