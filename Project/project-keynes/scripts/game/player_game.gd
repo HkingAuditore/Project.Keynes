@@ -410,7 +410,7 @@ func _push_visual_toggles() -> void:
 ##
 ##   [render]
 ##   visual_quality = 0|1|2   # 覆盖 PBR/线性光照/ACES 这些运行期档位
-##   hide = "vegetation,maximpostor,fog,weather"   # 按节点名子串隐藏渲染层
+##   hide = "vegetation,maximpostor,fog,weather"   # vegetation 排除整组植被，其余按节点名子串匹配
 ##
 ## 用途：不重新导出就能在真机上逐项关掉渲染层量 fps，定位 LOW→MID 的台阶在哪。
 func _apply_render_debug_overrides() -> void:
@@ -431,28 +431,19 @@ func _apply_render_debug_overrides() -> void:
 				_renderer.set_visual_quality(forced)
 			if _trade_activity != null:
 				_trade_activity.set_quality(forced)
-	var hide := String(cfg.get_value("render", "hide", "")).strip_edges()
-	if hide == "":
-		return
-	var needles := PackedStringArray()
-	for token in hide.split(","):
-		var needle := token.strip_edges().to_lower()
-		if needle != "":
-			needles.append(needle)
-	_set_layers_hidden(_renderer, needles)
+	var needles := DCFeatureFlags.render_debug_hidden_layers(cfg)
+	if not needles.is_empty():
+		_set_layers_hidden(_renderer, needles)
 
 
 func _set_layers_hidden(root: Node, needles: PackedStringArray) -> void:
 	if root == null:
 		return
 	for child in root.get_children():
-		var node_name := String(child.name).to_lower()
-		var matched := false
-		for needle in needles:
-			if node_name.contains(needle):
-				matched = true
-				break
-		if matched:
+		# 植被由 HexRenderer 直接调用和排队，在创建时按同一配置排除。
+		if child is ShrubLayer or child is VegetationFamilyLayer:
+			continue
+		if DCFeatureFlags.render_debug_hides_layer(child.name, needles):
 			var item := child as CanvasItem
 			if item != null:
 				item.visible = false
