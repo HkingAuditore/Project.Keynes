@@ -1,4 +1,4 @@
-You are repairing your own uncommitted fix on Project Keynes pull request #{number}: {title}. Follow `AGENTS.md`.
+You are repairing the uncommitted fix on Project Keynes pull request #{number}: {title}. Follow `AGENTS.md`.
 
 The working tree still holds the changes from the previous step. The factory ran the project's checks on them, and these checks failed although they pass on the PR head:
 

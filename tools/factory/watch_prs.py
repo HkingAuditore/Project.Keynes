@@ -630,7 +630,9 @@ class Watcher:
             st.attempted.append(head)
             self.save(n, st)
         out = agent.codex(cfg, self.workdir, prompt, str(logs / "fix.md"), writable=True)
+        session = out.get("session")
         record["report"] = out["report"][-6000:]
+        record["codexSession"] = session
         ev.add("agent", ok=out["ok"], code=out.get("code"))
         if not out["ok"]:
             reason = agent.failure_reason(out)
@@ -686,7 +688,10 @@ class Watcher:
                 break
             # Give Codex the failing checks and let it repair its own change before giving up.
             prompt = agent.render("fix-checks", number=str(n), title=pr["title"], feedback=checks.feedback(res, new))
-            out = agent.codex(cfg, self.workdir, prompt, str(logs / f"fix-checks-{attempt + 1}.md"), writable=True)
+            # Continue the fixing conversation so Codex keeps its reasons; start fresh only without an id.
+            out = agent.codex(cfg, self.workdir, prompt, str(logs / f"fix-checks-{attempt + 1}.md"), writable=True,
+                              session=session)
+            session = out.get("session") or session
             record.setdefault("checkFixReports", []).append(out["report"][-4000:])
             ev.add("check-fix", attempt=attempt + 1, ok=out["ok"], code=out.get("code"))
             if not out["ok"]:

@@ -42,7 +42,7 @@ class NativeWorkflowTest(TempFactory):
         prompts = []
         c, tools = self.cfg["checks"], self.cfg["tools"]
 
-        def agent_run(cfg, cwd, prompt, log, *, writable):
+        def agent_run(cfg, cwd, prompt, log, *, writable, session=None):
             prompts.append(prompt)
             if submodule:
                 self.write_file(self.repo, "gdext/godot-cpp/file.cpp", "new")

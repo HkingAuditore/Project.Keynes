@@ -15,6 +15,7 @@ from unittest.mock import Mock, call, patch
 FACTORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FACTORY))
 
+import agent
 import checks
 import qodo
 import run as issue_runner
@@ -259,7 +260,8 @@ class WatchWorkflowTest(TempFactory):
                               + "warning: noise\n" * 200)
         failing = [{"name": "native-rebuild", "ok": False, "code": 1, "log": str(log)}]
         runs = [(failing if r == "fail" else [], ["edit.gd"]) for r in results]
-        reports = [{"ok": True, "report": "fixed"}] + [{"ok": codex_ok, "code": 0 if codex_ok else 1, "report": "x"}] * 3
+        reports = [{"ok": True, "report": "fixed", "session": "thread-1"}] + [
+            {"ok": codex_ok, "code": 0 if codex_ok else 1, "report": "x", "session": "thread-1"}] * 3
         with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
               patch("checks.base_results", return_value=[]), patch("work.head", return_value=HEAD),
               patch("agent.codex", side_effect=reports) as codex,
@@ -272,12 +274,40 @@ class WatchWorkflowTest(TempFactory):
             outcome = watcher._fix(PR, PrState(), [FINDING], self.root, Events(), record)
         return outcome, codex, stop, commit, record
 
+    def test_codex_resume_continues_the_same_thread(self):
+        report = str(self.root / "fix.md")
+        events = '{"type":"thread.started","thread_id":"0199-abc"}\n{"type":"turn.completed"}\n'
+
+        def fake_sh(args, **kw):
+            Path(kw["log"]).write_text(events if "resume" not in args else "", encoding="utf-8")
+            return Result(0, "", "")
+
+        with patch("agent.sh", side_effect=fake_sh) as sh:
+            first = agent.codex(self.cfg, "/w", "fix", report, writable=True)
+            again = agent.codex(self.cfg, "/w", "checks", report, writable=True, session=first["session"])
+        self.assertEqual(first["session"], "0199-abc")
+        self.assertEqual(again["session"], "0199-abc")
+        new_args, resume_args = sh.call_args_list[0].args[0], sh.call_args_list[1].args[0]
+        self.assertIn("--json", new_args)
+        self.assertEqual(resume_args[1:4], ["exec", "resume", "0199-abc"])
+        self.assertNotIn("-C", resume_args)
+        self.assertIn('sandbox_mode="workspace-write"', resume_args)
+        self.assertEqual(sh.call_args_list[1].kwargs["cwd"], "/w")
+
+    def test_codex_without_thread_event_has_no_session(self):
+        report = str(self.root / "fix.md")
+        with patch("agent.sh", side_effect=lambda args, **kw: (Path(kw["log"]).write_text("not json\n"), Result(1, "", ""))[1]):
+            self.assertIsNone(agent.codex(self.cfg, "/w", "fix", report, writable=True)["session"])
+
     def test_failing_checks_go_back_to_codex_before_stopping(self):
         outcome, codex, stop, commit, record = self.run_check_fix(["fail", "pass"])
         self.assertEqual(outcome, "pushed")
         self.assertEqual(codex.call_count, 2)
         prompt = codex.call_args_list[1].args[2]
         self.assertIn("no viable conversion", prompt)
+        self.assertIsNone(codex.call_args_list[0].kwargs.get("session"))
+        self.assertEqual(codex.call_args_list[1].kwargs["session"], "thread-1")
+        self.assertEqual(record["codexSession"], "thread-1")
         stop.assert_not_called()
         commit.assert_called_once()
         self.assertEqual(record["checks"]["checkFixRounds"], 1)
