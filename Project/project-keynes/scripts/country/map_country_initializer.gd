@@ -287,12 +287,29 @@ func _load_ideology_catalog_cooperative() -> Resource:
 	if _generator._loading_frames.canceled:
 		return null
 	var request := preload("res://scripts/game/loading_resource_request.gd").new(IDEOLOGY_CATALOG_PATH)
+	var start_failure := _ideology_catalog_request_failure(request.start_error, false, null)
+	if not start_failure.is_empty():
+		push_error("[country-init] %s" % start_failure)
+		return null
 	while not request.finished:
 		await _generator._yield_generation_frame()
 		if _generator._loading_frames.canceled:
 			return null
-	# Keep the result alive while load_default applies the profile/test hook.
-	return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
+	var result_failure := _ideology_catalog_request_failure(OK, request.finished, request.result)
+	if not result_failure.is_empty():
+		push_error("[country-init] %s: %s" % [result_failure, IDEOLOGY_CATALOG_PATH])
+		return null
+	# Keep the threaded result while load_default applies the profile/test hook.
+	return IdeologyFacadeScript.IdeologyCatalogScript.load_default(request.result)
+
+
+static func _ideology_catalog_request_failure(start_error: int, finished: bool,
+		result: Resource) -> String:
+	if start_error != OK:
+		return "failed to start ideology catalog load (%s)" % error_string(start_error)
+	if finished and result == null:
+		return "ideology catalog load finished without a resource"
+	return ""
 
 
 func _configure_economy_runtime(map: MapData, seed_value: int) -> Dictionary:

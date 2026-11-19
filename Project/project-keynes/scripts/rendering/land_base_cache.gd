@@ -74,7 +74,9 @@ func _configure(mat: ShaderMaterial) -> void:
 	for mode in ["PK_READ_LAND_BASE", "PK_BAKE_LAND_COLOR", "PK_BAKE_LAND_NORMAL"]:
 		var shader := Shader.new()
 		shader.code = "#define " + mode + "\n" + src
-		if shader.get_shader_uniform_list().is_empty():
+		var failure := _variant_failure_message(mode, shader.get_shader_uniform_list())
+		if not failure.is_empty():
+			push_error("[land-base-cache] %s" % failure)
 			_reader = null
 			_writers.clear()
 			_eligible = false
@@ -85,6 +87,10 @@ func _configure(mat: ShaderMaterial) -> void:
 			var writer := ShaderMaterial.new()
 			writer.shader = shader
 			_writers.append(writer)
+
+
+static func _variant_failure_message(mode: String, uniforms: Array) -> String:
+	return "generated shader variant has no uniforms: %s" % mode if uniforms.is_empty() else ""
 
 
 func _prepare() -> void:

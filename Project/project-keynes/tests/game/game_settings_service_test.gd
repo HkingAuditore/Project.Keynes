@@ -143,9 +143,16 @@ func _finish() -> void:
 func _check_map_frame_limit(service: Node) -> void:
 	var camera := MapCamera.new()
 	root.add_child(camera)
+	var clock := WorldClock.new()
 	service.update({"graphics_custom": true, "frame_rate_limit": GraphicsQualitySettings.ADAPTIVE_FPS}, false)
-	service.follow_map_camera(camera)
-	_expect("stationary map uses 30 fps", Engine.max_fps == 30)
+	service.follow_map_camera(camera, clock)
+	_expect("running simulation keeps 60 fps while the map is still", Engine.max_fps == 60)
+	clock.pause(true)
+	service._process(0.0)
+	_expect("paused stationary map uses 30 fps", Engine.max_fps == 30)
+	clock.pause(false)
+	service._process(0.0)
+	_expect("resuming simulation restores 60 fps", Engine.max_fps == 60)
 	var touch := InputEventScreenTouch.new()
 	touch.pressed = true
 	service._input(touch)
@@ -158,7 +165,12 @@ func _check_map_frame_limit(service: Node) -> void:
 	_expect("second finger keeps interactive rate", Engine.max_fps == 60)
 	touch.index = 1
 	service._input(touch)
-	_expect("reading after release returns to 30 fps", Engine.max_fps == 30)
+	_expect("reading after release stays at 60 fps while simulation runs", Engine.max_fps == 60)
+	clock.pause(true)
+	service._process(0.0)
+	_expect("paused reading returns to 30 fps", Engine.max_fps == 30)
+	clock.pause(false)
+	service._process(0.0)
 	camera._pan_anim_active = true
 	service._process(0.0)
 	_expect("camera animation keeps 60 fps", Engine.max_fps == 60)
@@ -169,4 +181,5 @@ func _check_map_frame_limit(service: Node) -> void:
 			Engine.max_fps == limit and not service.is_processing_input())
 	service.update({"graphics_custom": true, "frame_rate_limit": GraphicsQualitySettings.ADAPTIVE_FPS}, false)
 	camera.free()
+	clock.free()
 	_expect("leaving the map releases its idle cap", Engine.max_fps == 60 and not service.is_processing())
