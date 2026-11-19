@@ -535,3 +535,17 @@ class PollScriptsTest(TempFactory):
                        input=script, text=True, check=True)
         env = plistlib.loads(path.read_bytes())["EnvironmentVariables"]
         self.assertEqual(env["KEYNES_FACTORY_PYTHON"], self.cfg["tools"]["python"])
+
+
+class EnsureTest(unittest.TestCase):
+    def test_reference_goes_after_update(self):
+        with tempfile.TemporaryDirectory() as d:
+            main = Path(d) / "main"
+            (main / work.GODOT_CPP / ".git").mkdir(parents=True)
+            workdir = str(Path(d) / "work")
+            with patch.object(work, "common_dir", return_value=str(main / ".git")), \
+                    patch.object(work, "must") as must:
+                work.ensure(str(main), workdir, "fork/master")
+            args = must.call_args_list[-1].args[0]
+            self.assertEqual(args[3:7], ["submodule", "update", "--reference", str(main / work.GODOT_CPP)])
+            self.assertEqual(args[-2:], ["--init", work.GODOT_CPP])

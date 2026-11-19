@@ -31,7 +31,7 @@ def ensure(runner_dir: str, workdir: str, ref: str) -> None:
     reference = Path(main) / GODOT_CPP
     args = ["git", "-C", workdir, "submodule", "update", "--init", GODOT_CPP]
     if (reference / ".git").exists():
-        args[4:4] = ["--reference", str(reference)]
+        args[5:5] = ["--reference", str(reference)]  # after "update": git submodule update --reference X
     must(args, timeout=3600)
 
 
