@@ -10,7 +10,6 @@ var enabled := true
 var partial_enabled := true
 var detail_enabled := true
 var _detail := DetailCulling.new()
-var _last_visible_fog_buffer_size := Vector2i.ZERO
 var _screen_rect: Rect2
 var _screen_to_buffer: Transform2D
 var _buffer_to_world: Transform2D
@@ -52,12 +51,12 @@ func _update_surface_visibility() -> void:
 	var water: MeshInstance2D = host._water_quad
 	var fog: FogOfWarLayer = host._fog_layer
 	var world: WorldData = host._world
+	if not host.is_visible_in_tree():
+		return
 	var fog_ready := false
 	if enabled and host._fog_enabled and host.terrain_surface_debug_view == 0 \
 			and host.terrain_horizon_debug_view == 0:
 		fog_ready = _prepare_fog_view(fog, world)
-	else:
-		_last_visible_fog_buffer_size = Vector2i.ZERO
 	var obscured := fog_ready and _covers_screen(_screen_rect, world, fog._hex_size)
 	var draw_surface: bool = not obscured and not (host.PK_WEB_HIDE_WORLD_QUAD and OS.has_feature("web"))
 	var show_land := draw_surface and not land.visible
@@ -171,8 +170,6 @@ func _covers_screen(screen_region: Rect2, world: WorldData, hex_size: float) -> 
 ## Only the cell-field path has a bounded set of candidate cells in world space.
 ## Use its published texture bytes and the canvas transforms for the upcoming draw.
 func _prepare_fog_view(fog: FogOfWarLayer, world: WorldData) -> bool:
-	var previous_buffer_size := _last_visible_fog_buffer_size
-	_last_visible_fog_buffer_size = Vector2i.ZERO
 	if fog == null or not fog.is_visible_in_tree() or not fog._built_cell_field or world == null \
 			or not world.cell_table_bound \
 			or not fog._cell_field_sig.get("bound", false) \
@@ -212,13 +209,7 @@ func _prepare_fog_view(fog: FogOfWarLayer, world: WorldData) -> bool:
 				or blit_to_screen.x.y != 0.0 or blit_to_screen.y.x != 0.0 \
 				or not (blit_to_screen * fog._blit_sprite.get_rect()).encloses(_screen_rect.grow(-0.001)):
 			return false
-		# UPDATE_WHEN_VISIBLE starts drawing after the parent has used the texture.
-		# Keep the ground for the first blit and whenever the target has been resized.
-		_last_visible_fog_buffer_size = fog._sub_viewport.size
-		if fog._sub_viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
-			if fog._sub_viewport.render_target_update_mode != SubViewport.UPDATE_WHEN_VISIBLE \
-					or previous_buffer_size != fog._sub_viewport.size:
-				return false
+		# Both scheduled and reused fog textures describe this draw's camera and visibility.
 		_screen_to_buffer = blit_to_screen.affine_inverse()
 	else:
 		var scale := viewport.get_stretch_transform().get_scale().abs()

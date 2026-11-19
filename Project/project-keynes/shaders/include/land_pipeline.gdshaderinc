@@ -59,7 +59,15 @@ SurfaceParams compute_land_base_surface(
 	// [cell-field 2026-11-18] 静态材质换 3-way 版本（方案 §3.6）：色调走三格、
 	// 材质贴图只采前两名。场版本不读 edge_distance（scals.r），格界由场函数给出；
 	// TerrainEdgeSample 照样要收（函数原型两个变体一致），只是不读。
-#ifdef PK_CELL_FIELD
+#ifdef PK_READ_LAND_BASE
+	vec4 cached_color = texture(land_base_color, land_base_uv);
+	vec4 cached_normal = texture(land_base_normal, land_base_uv);
+	TerrainStaticMaterial static_mat;
+	static_mat.color = cached_color.rgb * 2.0;
+	static_mat.micro_strength = cached_color.a * 2.0;
+	static_mat.material_normal_xy = cached_normal.xy * 2.0 - 1.0;
+	static_mat.roughness = cached_normal.z;
+#elif defined(PK_CELL_FIELD)
 	TerrainStaticMaterial static_mat = compute_terrain_static_material_field(
 			field, fcls0, fcls1, fcls2, biome, elev, wp, uv);
 #else

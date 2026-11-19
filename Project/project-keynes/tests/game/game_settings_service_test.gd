@@ -61,6 +61,7 @@ func _run() -> void:
 		and int(validated.resolution_height) == 4320 \
 		and is_equal_approx(float(validated.master_volume), 1.0))
 	_check_graphics_options(service)
+	_check_map_frame_limit(service)
 	_finish()
 
 
@@ -78,7 +79,7 @@ func _check_graphics_options(service: Node) -> void:
 		and desktop.fog_render_scale == 100 and desktop.cloud_shadow and desktop.frame_rate_limit == 0)
 	_expect("mobile automatic saves work and keeps map clarity",
 		mobile.render_quality == "low" and mobile.map_render_scale == 100 \
-		and mobile.fog_render_scale == 50 and not mobile.cloud_shadow and mobile.frame_rate_limit == 60)
+		and mobile.fog_render_scale == 50 and not mobile.cloud_shadow and mobile.frame_rate_limit == GraphicsQualitySettings.ADAPTIVE_FPS)
 	var legacy := GraphicsQualitySettings.resolve({"render_quality": "medium"}, true)
 	_expect("an existing preset remains valid without new fields",
 		legacy.render_quality == "medium" and legacy.water_detail == 1)
@@ -132,3 +133,34 @@ func _expect(label: String, condition: bool) -> void:
 func _finish() -> void:
 	print("game settings service: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+
+func _check_map_frame_limit(service: Node) -> void:
+	var camera := MapCamera.new()
+	root.add_child(camera)
+	service.update({"graphics_custom": true, "frame_rate_limit": GraphicsQualitySettings.ADAPTIVE_FPS}, false)
+	service.follow_map_camera(camera)
+	_expect("stationary map uses 30 fps", Engine.max_fps == 30)
+	var touch := InputEventScreenTouch.new()
+	touch.pressed = true
+	service._input(touch)
+	_expect("touch immediately requests 60 fps", Engine.max_fps == 60)
+	touch.index = 1
+	service._input(touch)
+	touch.index = 0
+	touch.pressed = false
+	service._input(touch)
+	_expect("second finger keeps interactive rate", Engine.max_fps == 60)
+	touch.index = 1
+	service._input(touch)
+	_expect("reading after release returns to 30 fps", Engine.max_fps == 30)
+	camera._pan_anim_active = true
+	service._process(0.0)
+	_expect("camera animation keeps 60 fps", Engine.max_fps == 60)
+	camera._pan_anim_active = false
+	for limit in [30, 60, 0]:
+		service.update({"graphics_custom": true, "frame_rate_limit": limit}, false)
+		_expect("fixed option %d ignores adaptive pacing" % limit,
+			Engine.max_fps == limit and not service.is_processing_input())
+	service.update({"graphics_custom": true, "frame_rate_limit": GraphicsQualitySettings.ADAPTIVE_FPS}, false)
+	camera.free()
+	_expect("leaving the map releases its idle cap", Engine.max_fps == 60 and not service.is_processing())

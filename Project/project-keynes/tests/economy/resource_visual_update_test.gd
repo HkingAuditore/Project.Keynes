@@ -37,6 +37,7 @@ func run() -> void:
 	_expect("initial scan observes every visible cell", intel.resource_observations.rows.size() == map.cell_count())
 	_expect("all generated instance fields match complete rebuild", _geometry_matches(layer))
 	_test_live_profile_inputs(layer)
+	_test_frame_bindings(layer)
 	_test_selection_reference(layer)
 	_test_upload_budget(layer)
 	_test_inflight_progress(layer)
@@ -172,6 +173,18 @@ func _test_upload_budget(layer) -> void:
 	layer._last_texture_msec = saved.memory_time
 	layer._frame_budget_active = saved.budget_active
 	layer._upload_turn = saved.turn
+
+func _test_frame_bindings(layer) -> void:
+	var state := {"weather_wind_boost": 0.25}
+	layer.prepare_frame(1.0, Vector3.UP, state)
+	layer.prepare_frame(2.0, Vector3.UP, state)
+	var cover: ShaderMaterial = layer.ground_cover().material()
+	_expect("stable lighting keeps the cover clock moving", cover.get_shader_parameter("world_time") == 2.0)
+	state.weather_wind_boost = 0.75
+	layer.prepare_frame(3.0, Vector3.UP, state)
+	for material in [layer._material, layer._material_geo, cover]:
+		_expect("changed wind reaches each material", material.get_shader_parameter("weather_wind_boost") == 0.75)
+
 
 func _test_live_profile_inputs(layer) -> void:
 	var original: ResourceVisualProfile = layer.profile

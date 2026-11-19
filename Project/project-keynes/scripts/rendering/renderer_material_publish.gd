@@ -180,6 +180,8 @@ static func _apply_cell_lut_rebind(host, lut_name: String, world_tex: Texture2D)
 
 
 static func _apply_uniforms(host) -> void:
+	if host._land_base_cache != null:
+		host._land_base_cache.invalidate()
 
 	var sm = host._shader_mat
 	var bounds = host._world.world_bounds
