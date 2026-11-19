@@ -69,11 +69,17 @@ def ensure(runner_dir: str, workdir: str, ref: str) -> None:
 def prepare(workdir: str, remote: str, base: str, branch: str) -> str:
     """Reset the tree and put `branch` at `remote/base`. Returns the base commit."""
     git(workdir, "fetch", "--prune", remote)
+    return checkout(workdir, f"{remote}/{base}", branch=branch)
+
+
+def checkout(workdir: str, ref: str, *, branch: str | None = None) -> str:
+    """Materialize a full checkout without fetching or moving the requested ref."""
     if _is_sparse(workdir):
         git(workdir, "sparse-checkout", "disable")
     git(workdir, "reset", "--hard", "-q")
     git(workdir, "clean", "-fdq")
-    git(workdir, "checkout", "-q", "-B", branch, f"{remote}/{base}")
+    target = ["-B", branch] if branch else ["--detach"]
+    git(workdir, "checkout", "-q", *target, ref)
     update_godot_cpp(workdir)
     _require_complete(workdir, ".", f":(top,exclude,literal){GODOT_CPP}")
     return head(workdir)
@@ -122,6 +128,25 @@ def unmerged(workdir: str) -> dict[str, dict[str, str]]:
             mode, _, stage = info.split()
             conflicts.setdefault(path, {})[stage] = mode
     return conflicts
+
+
+def stage_zero_entries(workdir: str) -> dict[str, tuple[str, str]]:
+    entries = {}
+    for entry in filter(None, git(workdir, "ls-files", "--stage", "-z").split("\0")):
+        info, _, path = entry.partition("\t")
+        mode, blob, stage = info.split()
+        if stage == "0":
+            entries[path] = (mode, blob)
+    return entries
+
+
+def changes_outside_conflicts(workdir: str, clean_entries: dict[str, tuple[str, str]],
+                              conflicts: list[str]) -> list[str]:
+    current = stage_zero_entries(workdir)
+    changed_entries = {p for p in clean_entries.keys() | current.keys() if clean_entries.get(p) != current.get(p)}
+    unstaged = git(workdir, "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z")
+    untracked = git(workdir, "ls-files", "--others", "--exclude-standard", "-z")
+    return sorted(changed_entries.union(unstaged.split("\0"), untracked.split("\0")) - set(conflicts) - {""})
 
 
 def merge_from(workdir: str, ref: str) -> str | None:

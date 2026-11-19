@@ -55,9 +55,13 @@ class Decision:
     needs_ci: bool = False
 
 
-def merge_blocker(pr: dict, cfg: dict) -> str | None:
+def automation_skip_labels(cfg: dict) -> set[str]:
     labels = cfg["labels"]
-    blocked = {*cfg["skipLabels"], labels["help"], labels["working"], "no-auto-merge"}
+    return {*cfg["skipLabels"], labels["help"], labels["working"]}
+
+
+def merge_blocker(pr: dict, cfg: dict) -> str | None:
+    blocked = automation_skip_labels(cfg) | {"no-auto-merge"}
     if blocked.intersection(pr.get("labels") or []):
         return "has a label that blocks auto-merge"
     if pr.get("mergeable") in (None, "UNKNOWN"):
@@ -97,6 +101,8 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
     if pr.get("mergeable") == "CONFLICTING":
         if not cfg.get("autoUpdateConflicts", True):
             return Decision("skip", "GitHub reports merge conflicts")
+        if labels.intersection(automation_skip_labels(cfg)):
+            return Decision("skip", "has a label that blocks conflict updates")
         if head in state.update_attempted:
             return Decision("skip", "the factory already tried to update this head")
         limit = cfg["limits"]["prReviewRounds"]
@@ -367,7 +373,7 @@ class Watcher:
         facts = NativeFacts()
         outcome = "error"
         try:
-            self.gh.relabel(n, [L["working"]], [L["help"]])
+            self.gh.relabel(n, [L["working"]], [] if action == "update" else [L["help"]])
             if action == "update":
                 outcome = self._update(pr, st, logs, ev, record, facts)
             else:
@@ -404,6 +410,24 @@ class Watcher:
         ev.add("moved", expected=expected, got=got)
         return True
 
+    def update_preflight(self, pr: dict, base: str, parent: str, ev: Events) -> str | None:
+        try:
+            fresh = self.gh.pr_merge_state(pr["number"])
+        except (RuntimeError, ValueError) as e:
+            self.gh.errors.append(f"read PR #{pr['number']} before update push: {e}")
+            return "the PR could not be re-read before push"
+        if fresh["headRefOid"] != pr["headRefOid"]:
+            ev.add("moved", expected=pr["headRefOid"], got=fresh["headRefOid"])
+            return "head moved"
+        if fresh["baseRefName"] != base or fresh["baseRefOid"] != parent:
+            return "the PR base changed before push"
+        if fresh["state"] != "OPEN" or fresh["isDraft"] or fresh["isCrossRepository"]:
+            return "the PR is no longer open and eligible for conflict updates"
+        expected = set(pr.get("labels") or []) | {self.cfg["labels"]["working"]}
+        if set(fresh["labels"]) != expected:
+            return "the PR labels changed before push"
+        return None
+
     def _update(self, pr: dict, st: PrState, logs: Path, ev: Events, record: dict, facts: NativeFacts) -> str:
         cfg, n, head = self.cfg, pr["number"], pr["headRefOid"]
         if not self.prepare_head(pr, ev):
@@ -412,35 +436,54 @@ class Watcher:
             st.rounds, st.seen = 0, []
         st.update_attempted.append(head)
         self.save(n, st)
-        base_res = checks.base_results(cfg, self.workdir, head, str(self.home / "base-checks"), str(logs / "checks-head"))
-        before = checks.failed(base_res)
-        ev.add("checks-before", failed=before)
-        record["checks"] = {"before": before}
+        base = pr.get("baseRefName", cfg["base"])
+        parent = work.git(self.workdir, "rev-parse", f"{cfg['remote']}/{base}")
+        record.update(base=base, baseSha=parent)
+        cache = str(self.home / "base-checks")
+        head_res = checks.base_results(cfg, self.workdir, head, cache, str(logs / "checks-head"))
+        try:
+            work.checkout(self.workdir, parent)
+            base_res = checks.base_results(cfg, self.workdir, parent, cache, str(logs / "checks-base"))
+        finally:
+            work.checkout(self.workdir, head, branch=f"factory-pr-{n}")
+        parent_failures = {"head": checks.failed(head_res), "base": checks.failed(base_res)}
+        before = sorted(set(parent_failures["head"]) | set(parent_failures["base"]))
+        passed_on_both = {row["name"] for row in head_res if row["ok"]} & {
+            row["name"] for row in base_res if row["ok"]
+        }
+        ev.add("checks-before", failed=before, failedByParent=parent_failures)
+        record["checks"] = {"before": before, "beforeByParent": parent_failures}
         if self.update_head_moved(pr, ev):
             return "head moved"
 
-        base = pr.get("baseRefName", cfg["base"])
         synced_submodule = False
 
         def abort() -> None:
-            if work.merge_head(self.workdir):
+            pending = work.merge_head(self.workdir)
+            if pending is None:
+                return
+            try:
                 work.git(self.workdir, "merge", "--abort")
-                if synced_submodule:
-                    work.update_godot_cpp(self.workdir)
+            except RuntimeError as e:
+                # The factory started with a clean checkout. Abort can refuse unstaged agent edits.
+                if pending != parent or work.head(self.workdir) != head:
+                    raise
+                ev.add("merge-abort-reset", error=str(e))
+                work.git(self.workdir, "reset", "--hard", "-q", head)
+            if synced_submodule:
+                work.update_godot_cpp(self.workdir)
 
         def stop(reason: str, details: str = "") -> str:
-            abort()
             record["reason"] = reason
+            abort()
             self.stop(pr, st, f"{reason}. Nothing was pushed.",
                       "\n\n".join(filter(None, [details, facts.report()])))
             return "stopped"
 
         try:
-            parent = work.merge_from(self.workdir, f"{cfg['remote']}/{base}")
-            if parent is None:
+            if work.merge_from(self.workdir, parent) is None:
                 ev.add("up-to-date", base=base)
                 return "already up to date"
-            record.update(base=base, baseSha=parent)
 
             conflicts = work.unmerged(self.workdir)
             paths = sorted(conflicts)
@@ -471,6 +514,7 @@ class Watcher:
                 work.update_godot_cpp(self.workdir)
             candidate = checks.Candidate(cfg, self.workdir, facts, merge_parent=parent, force_native=bool(libraries))
             if text:
+                clean_entries = work.stage_zero_entries(self.workdir)
                 prompt = agent.render("resolve-conflicts", files="\n".join(f"- `{path}`" for path in text))
                 out = agent.codex(cfg, self.workdir, prompt, str(logs / "resolve-conflicts.md"), writable=True)
                 record["report"] = out["report"]
@@ -479,6 +523,12 @@ class Watcher:
                     return "head moved"
                 if not out["ok"]:
                     record["agentFailure"] = agent.failure_reason(out)
+                unrelated = work.changes_outside_conflicts(self.workdir, clean_entries, paths)
+                if unrelated:
+                    record["unrelatedFiles"] = unrelated
+                    return stop("Codex changed paths outside the conflicts: " + ", ".join(unrelated),
+                                record.get("agentFailure", ""))
+                if not out["ok"]:
                     return stop(record["agentFailure"], record["report"])
                 resolutions.extend([f"- `{path}` · resolved by Codex." for path in text])
 
@@ -499,14 +549,19 @@ class Watcher:
             if reason:
                 return stop(reason)
             res, files = candidate.run(head, files, str(logs / "checks-update"), [])
-            after, new = checks.failed(res), checks.new_failures(res, before)
-            ev.add("checks-after", failed=after, new=new)
-            record["checks"].update(after=after, new=new, results=res)
+            after = checks.failed(res)
+            new = [name for name in after if name in passed_on_both]
+            native_failed = [name for name in after if name.startswith("native-")]
+            ev.add("checks-after", failed=after, new=new, nativeFailed=native_failed)
+            record["checks"].update(after=after, new=new, nativeFailed=native_failed, results=res)
             record["files"] = files
             if self.update_head_moved(pr, ev):
                 return "head moved"
-            if new:
-                return stop("the update has failing checks: " + ", ".join(new), checks.feedback(res, new)[:6000])
+            # The required native gates block even without a baseline result.
+            blocking = sorted(set(new) | set(native_failed))
+            if blocking:
+                return stop("the update has failing checks: " + ", ".join(blocking),
+                            checks.feedback(res, blocking)[:6000])
 
             reason = merge_problem(files)
             if reason:
@@ -524,6 +579,11 @@ class Watcher:
                 raise RuntimeError("the update commit must have the PR head and fetched base as parents")
             candidate.committed()
             branch = pr["headRefName"]
+            blocker = self.update_preflight(pr, base, parent, ev)
+            if blocker:
+                record["reason"] = blocker
+                ev.add("push-skipped", reason=blocker)
+                return "head moved" if blocker == "head moved" else "skipped"
             try:
                 work.git(self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
                          cfg["remote"], f"HEAD:refs/heads/{branch}")
@@ -543,9 +603,10 @@ class Watcher:
             if text:
                 lines += ["", "Codex resolution notes", "", record["report"]]
             lines += ["", facts.report(), "", "Checks", ""]
-            lines += [f"- `{row['name']}` · {'passed' if row['ok'] else 'already failing on the PR head'}" for row in res]
-            if before:
-                lines += ["", "Failures recorded on the PR head: " + ", ".join(before)]
+            lines += [f"- `{row['name']}` · {'passed' if row['ok'] else 'failed'}" for row in res]
+            for label, failures in (("PR head", parent_failures["head"]), (base, parent_failures["base"])):
+                if failures:
+                    lines += ["", f"Failures recorded on {label}: " + ", ".join(failures)]
             self.gh.comment(n, "\n".join(lines), pull_request=True)
             return "pushed"
         finally:

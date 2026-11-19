@@ -406,6 +406,13 @@ class ConflictUpdateTest(TempFactory):
         self.remote = self.root / "fork.git"
         self.watcher = Watcher(self.cfg, dry=False)
         self.watcher.gh = Mock(errors=[])
+        self.watcher.gh.relabel.return_value = None
+        self.watcher.gh.pr_merge_state.side_effect = lambda number: {
+            **self.pr, "baseRefOid": self.base, "state": "OPEN",
+            "isDraft": False, "isCrossRepository": False,
+            "labels": [*self.pr["labels"], self.cfg["labels"]["working"]], **self.fresh_fields,
+        }
+        self.fresh_fields = {}
         self.checkout = Path(self.watcher.workdir)
         self.libraries = self.cfg["paths"]["nativeLibraries"]
         work.git(str(self.source), "init", "-qb", "master")
@@ -418,6 +425,10 @@ class ConflictUpdateTest(TempFactory):
         self.baseline = self.enterContext(patch("checks.base_results", side_effect=self.check_baseline))
         self.runner = self.enterContext(patch("checks.Runner.run", side_effect=self.check_candidate))
         self.build = False
+        self.parent_results = {
+            "head": [{"name": "known", "ok": False}, {"name": "regression", "ok": True}],
+            "base": [{"name": "known", "ok": True}, {"name": "regression", "ok": True}],
+        }
         self.after = [{"name": "known", "ok": False}, {"name": "regression", "ok": True}]
 
     def configure(self, repo):
@@ -438,6 +449,9 @@ class ConflictUpdateTest(TempFactory):
 
     def prepare_conflict(self, paths):
         self.write_versions({path: versions[0] for path, versions in paths.items()})
+        self.write_file(self.source, ".github/master.yml", "old check")
+        self.write_file(self.source, "unrelated.txt", "unchanged")
+        self.write_file(self.source, "script.sh", "#!/bin/sh\n")
         common = self.commit(self.source)
         self.write_versions({path: versions[1] for path, versions in paths.items()})
         # This protected file arrives cleanly from master and is outside the resolution scope.
@@ -453,12 +467,16 @@ class ConflictUpdateTest(TempFactory):
         work.git(str(self.source), "clone", "--bare", "-q", ".", str(self.remote))
         work.git(str(self.source), "clone", "-qo", "fork", str(self.remote), str(self.checkout))
         self.configure(self.checkout)
-        self.pr = {**PR, "headRefOid": head, "baseRefName": "master", "mergeable": "CONFLICTING"}
+        self.pr = {**PR, "headRefOid": head, "baseRefName": "master", "mergeable": "CONFLICTING", "labels": []}
 
     def check_baseline(self, cfg, workdir, head, cache, logs):
         self.assertEqual(work.head(workdir), head)
         self.assertIsNone(work.merge_head(workdir))
-        return [{"name": "known", "ok": False}]
+        self.assertEqual(Path(cache), self.root / "base-checks")
+        if head == self.base:
+            return self.parent_results["base"]
+        self.assertEqual(head, self.pr["headRefOid"])
+        return self.parent_results["head"]
 
     def check_candidate(self, native, extra):
         self.assertEqual(native, self.build)
@@ -531,6 +549,24 @@ class ConflictUpdateTest(TempFactory):
             self.assertEqual(subprocess.check_output(["git", "-C", str(self.remote), "show", f"{sha}:{lib}"]), data)
             self.assertIn(checks.runtime_name(lib), self.watcher.gh.comment.call_args.args[1])
 
+    def test_required_native_check_failure_blocks_without_a_baseline(self):
+        self.prepare_conflict({lib: (b"\0old", b"\0master", b"\0pr") for lib in self.libraries})
+        self.build = True
+        self.rebuilt = [b"\0master", b"\0rebuilt"]
+        name = checks.runtime_name(self.libraries[0])
+
+        def fail_probe(native, extra):
+            results = self.check_candidate(native, extra)
+            next(row for row in results if row["name"] == name).update(
+                ok=False, code=1, log=str(self.root / "native.log"))
+            return results
+
+        self.runner.side_effect = fail_probe
+        record = self.tick()
+        self.assert_stopped(name)
+        self.assertEqual(record["checks"]["new"], [])
+        self.assertEqual(record["checks"]["nativeFailed"], [name])
+
     def test_text_conflict_preserves_clean_upstream_changes_and_existing_failures(self):
         self.text_conflict()
         record = self.tick()
@@ -542,6 +578,86 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(work.git(str(self.remote), "show", f"{sha}:edit.gd"), "PR and master")
         self.assertEqual(work.git(str(self.remote), "show", f"{sha}:.github/master.yml"), "upstream check")
         self.assertIn("combines the changes", self.watcher.gh.comment.call_args.args[1])
+
+    def test_check_already_failing_on_base_does_not_block_the_update(self):
+        self.text_conflict()
+        self.parent_results["head"][0]["ok"] = True
+        self.parent_results["base"][0]["ok"] = False
+        record = self.tick()
+        self.assert_merge(used_codex=True)
+        self.assertEqual([c.args[2] for c in self.baseline.call_args_list], [self.pr["headRefOid"], self.base])
+        self.assertEqual(record["checks"]["new"], [])
+        self.assertEqual(record["checks"]["beforeByParent"], {"head": [], "base": ["known"]})
+
+    def test_check_that_passed_on_both_parents_blocks_the_update(self):
+        self.text_conflict()
+        self.after[1].update(ok=False, code=1, log=str(self.root / "regression.log"))
+        record = self.tick()
+        self.assert_stopped("the update has failing checks: regression")
+        self.assertEqual(record["checks"]["new"], ["regression"])
+        self.assertEqual([c.args[2] for c in self.baseline.call_args_list], [self.pr["headRefOid"], self.base])
+
+    def test_check_missing_on_one_parent_is_not_a_regression_from_both(self):
+        self.text_conflict()
+        self.parent_results["base"].pop()
+        self.after[1]["ok"] = False
+        self.assertEqual(self.tick()["checks"]["new"], [])
+        self.assert_merge(used_codex=True)
+
+    def test_codex_cannot_restore_a_cleanly_merged_file_to_the_pr_head(self):
+        self.text_conflict()
+        path = ".github/master.yml"
+
+        def undo_upstream_change(cfg, workdir, *args, **kwargs):
+            report = self.resolve_text(cfg, workdir, *args, **kwargs)
+            work.git(workdir, "restore", "--source=HEAD", "--staged", "--worktree", "--", path)
+            return report
+
+        self.codex.side_effect = undo_upstream_change
+        self.assertEqual(self.tick()["outcome"], "stopped")
+        self.assert_stopped(path)
+        self.runner.assert_not_called()
+
+    def test_codex_cannot_delete_add_or_change_modes_outside_conflicts(self):
+        self.text_conflict()
+
+        def edit_unrelated_paths(cfg, workdir, *args, **kwargs):
+            report = self.resolve_text(cfg, workdir, *args, **kwargs)
+            (self.checkout / "unrelated.txt").unlink()
+            work.git(workdir, "update-index", "--chmod=+x", "--", "script.sh")
+            self.write_file(self.checkout, "new.txt", "untracked")
+            self.write_file(self.checkout, "staged.txt", "staged")
+            work.git(workdir, "add", "--", "staged.txt")
+            return report
+
+        self.codex.side_effect = edit_unrelated_paths
+        record = self.tick()
+        self.assertEqual(record["outcome"], "stopped", record.get("error"))
+        self.assertEqual(record["unrelatedFiles"], ["new.txt", "script.sh", "staged.txt", "unrelated.txt"])
+        for path in ("unrelated.txt", "script.sh", "new.txt", "staged.txt"):
+            self.assert_stopped(path)
+        self.runner.assert_not_called()
+
+    def test_label_added_before_push_abandons_the_update(self):
+        self.text_conflict()
+        self.fresh_fields["labels"] = ["agent-working", "agent-needs-help"]
+        record = self.tick()
+        self.assertEqual(record["outcome"], "skipped")
+        self.assertIn("labels", record["reason"])
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.watcher.gh.pr_merge_state.assert_called_once_with(7)
+        self.watcher.gh.comment.assert_not_called()
+        self.assertEqual(self.watcher.gh.relabel.call_args_list, [
+            call(7, ["agent-working"], []), call(7, [], ["agent-working"]),
+        ])
+
+    def test_head_changed_in_github_metadata_before_push_abandons_the_update(self):
+        self.text_conflict()
+        self.fresh_fields["headRefOid"] = self.base
+        self.assertEqual(self.tick()["outcome"], "head moved")
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.watcher.gh.pr_merge_state.assert_called_once_with(7)
+        self.watcher.gh.comment.assert_not_called()
 
     def test_staged_leftover_marker_stops_the_update(self):
         self.text_conflict()

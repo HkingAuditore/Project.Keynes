@@ -167,7 +167,8 @@ class MergeDecision(unittest.TestCase):
 
     def test_conflict_update_respects_skip_conditions(self):
         cfg = load_config()
-        for flags in ({"isDraft": True}, {"isCrossRepository": True}, *({"labels": [label]} for label in SKIP)):
+        blocked = [*SKIP, cfg["labels"]["help"], cfg["labels"]["working"]]
+        for flags in ({"isDraft": True}, {"isCrossRepository": True}, *({"labels": [label]} for label in blocked)):
             with self.subTest(flags=flags):
                 self.assertEqual(decide(pr(mergeable="CONFLICTING", **flags), None, PrState(), cfg).action, "skip")
         p = pr(mergeable="CONFLICTING")
