@@ -21,7 +21,7 @@
 | 手动推进后台日的测试要等已提交日期并接收结果 | development-guide.md | Qodo：background-day tests |
 | 会话组件只拿窄依赖，不建第二个日推进入口 | development-guide.md | Qodo：session components |
 | GDScript 拆分保留公开接口和字面量 | development-guide.md | Qodo：GDScript splits |
-| 文件行数不超限，超限文件只缩不涨 | module-boundaries.md | 护栏：`check_size_ratchet.py` |
+| 新文件行数不超限，基线内文件最多比记录多 50 行且增长告警，基线只收紧 | module-boundaries.md | 护栏：`check_size_ratchet.py` |
 | 模块地图里的路径存在 | module-map.md | 护栏：`check_module_map.py` |
 | skill 改权威副本再同步 | development-guide.md | 护栏：`check_skill_mirrors.py` |
 | 脚本接口绑定归属正确 | development-guide.md | 护栏：`world_ext_bindings.py`、`check_world_ext_bindings.py` |
