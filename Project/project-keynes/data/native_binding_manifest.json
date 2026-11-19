@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 662,
+  "count": 663,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
