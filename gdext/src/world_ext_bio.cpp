@@ -745,7 +745,7 @@ const char *NativeSimulationHost::stage_bio_occupancy(DayExecution &day) {
     const auto &climate = _climate_authority.store();
     const auto day_index = day.plan.context.day;
     const auto count = static_cast<size_t>(round.n);
-    if (!environment || !environment->economy_input || !_executor_day_tail ||
+    if (!environment || !environment->economy_input ||
         environment->day != day_index || climate.committed_day != day_index ||
         climate.temperature_30d_ema.size() != count || climate.moisture.size() != count ||
         climate.vegetation.size() != count || environment->is_water.size() != count ||
@@ -755,6 +755,7 @@ const char *NativeSimulationHost::stage_bio_occupancy(DayExecution &day) {
         return "bio_day_tail_input_shape_invalid";
     }
 
+    if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
     const auto &reserves = _economy_production_runtime->worker_resource_reserve_lanes();
     _economy_production_runtime->take_bio_introduces(state.introduce_cells, state.introduce_bits);
     _executor_day_tail->species_introductions_consumed =

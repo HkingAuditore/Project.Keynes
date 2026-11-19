@@ -105,6 +105,7 @@ public:
     bool should_run(int64_t day) const;
     bool submit(MilitaryCommand command, std::string &error);
     void admit(MilitaryCommandBatch &batch);
+    bool submit_independence(uint64_t old_owner, uint64_t new_owner, int32_t cell, int64_t day);
     godot::Dictionary run_day(int64_t day);
     std::vector<uint8_t> encode() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
@@ -113,7 +114,7 @@ public:
     bool forward_events(int64_t day, DCWorldExt *legacy = nullptr);
     const char *prepare_day(const RuntimeEnvironmentSnapshot &environment);
     std::vector<uint8_t> capture_terrain() const;
-    void restore_terrain(const std::vector<uint8_t> &bytes);
+    bool restore_terrain(const std::vector<uint8_t> &bytes, std::string &error);
 
     int64_t event_cursor = 0;
     int64_t event_tick = -1;

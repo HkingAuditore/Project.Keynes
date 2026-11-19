@@ -517,7 +517,6 @@ bool NativeSimulationHost::settle_player_regime(
         add(command, RuntimeModifierPodOpcode::APPLY);
     }
     if (!commands.empty() && !enqueue_batch_at(std::move(commands), nullptr, false)) return false;
-    state.observed_regime = regime;
     return true;
 }
 

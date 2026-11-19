@@ -311,10 +311,15 @@ func _answer_narrative(player: PlayerController, generator: MapGenerator,
 	var day := int(generator.get_runtime_thread_report().get("simulation_committed_day", -1))
 	var result: Dictionary = player.narrative_flow().on_option_chosen(
 		int(offer.offer_id), int(offer.offer_generation), index)
-	var accepted := bool(result.get("ok", false)) and int(result.get("effective_day", -1)) == day + 1
+	var accepted := bool(result.get("ok", false)) and bool(result.get("pending", false)) \
+		and int(result.get("effective_day", -1)) == day + 1
 	_expect("the narrative choice is accepted for the day after the blocked commit", accepted)
 	if accepted:
-		player.narrative_flow().on_outcome_acknowledged()
+		var offer_id := int(offer.offer_id)
+		player.narrative_service().choice_resolved.connect(func(record: Dictionary) -> void:
+			_expect("the accepted choice settles in the following commit",
+				int(record.get("offer_id", -1)) == offer_id and int(record.get("resolved_day", -1)) == day + 1)
+			player.narrative_flow().on_outcome_acknowledged(), CONNECT_ONE_SHOT)
 		print("ROUNDTRIP_NARRATIVE_CHOICE day=%d effective_day=%d event=%s" % [
 			day, int(result.effective_day), String(offer.event_id)])
 	return accepted

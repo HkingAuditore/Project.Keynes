@@ -957,12 +957,12 @@ Dictionary DCWorldExt::get_gameplay_narrative_view() const {
     const auto view = _runtime_host ? _runtime_host->latest_narrative() : nullptr;
     if (!view) return out;
     out["day"] = view->day;
+    out["event_pause_mask"] = static_cast<int32_t>(view->pause_mask);
     out["last_popup_day"] = view->popup_day;
     out["active_offer"] = view->active_offer.duplicate(true);
     out["ready_queue"] = view->queue.duplicate(true);
     out["chronicle"] = view->chronicle.duplicate(true);
     out["ai_request"] = view->ai_request.duplicate(true);
-    out["independence"] = view->independence.duplicate(true);
     out["unrest_fact_cursor"] = view->unrest_fact;
     return out;
 }
@@ -976,10 +976,9 @@ Dictionary DCWorldExt::submit_gameplay_narrative(StringName kind, Dictionary arg
     auto request = std::make_shared<RuntimeNarrativeRequest>();
     using Kind = RuntimeNarrativeRequest::Kind;
     if (kind == StringName("choose")) request->kind = Kind::CHOOSE;
-    else if (kind == StringName("complete")) request->kind = Kind::COMPLETE;
-    else if (kind == StringName("source_id")) request->kind = Kind::SOURCE_ID;
     else if (kind == StringName("ai_result")) request->kind = Kind::AI_RESULT;
     else if (kind == StringName("ai_enabled")) request->kind = Kind::SET_AI;
+    else if (kind == StringName("pause_policy")) request->kind = Kind::PAUSE_POLICY;
     else return narrative_response(false, "narrative_command_invalid");
     request->args = args.duplicate(true);
     if (!_runtime_host->submit_narrative_choice_request(request))

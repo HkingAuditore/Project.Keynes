@@ -87,7 +87,6 @@ var _last_daily_report: Dictionary = {}
 var _terrain_signature := 0
 var _terrain_cells := 0
 var _terrain_set_day := -1
-var _ai_player_handles := PackedInt64Array()
 var _missing_api_reason := ""
 var _event_cursor := 0
 ## 维护快照的整形结果：一次原生读取服务同一刷新里的明细表与汇总，跨日/命令/
@@ -861,23 +860,11 @@ func state_hash() -> int:
 
 # ------------------------------------------------------------- AI arming
 
-## AI countries are every non-player country. Called after bootstrap and again
-## when the player set is restored from a save.
+## Arm the foreign countries during a new game's bootstrap.
 func arm_ai(player_handles: PackedInt64Array) -> Dictionary:
-	_ai_player_handles = player_handles.duplicate()
-	if not _configured:
-		return _fail("military_not_configured")
-	return _apply_ai_arming()
-
-
-func _apply_ai_arming() -> Dictionary:
 	if not _configured or _world_ext == null:
 		return _fail("military_not_configured")
-	return _world_ext.set_military_ai_player_handles(_ai_player_handles)
-
-
-func ai_player_handles() -> PackedInt64Array:
-	return _ai_player_handles
+	return _world_ext.set_military_ai_player_handles(player_handles)
 
 
 ## Annual-report war section (design §19.2). Null when the native report has no

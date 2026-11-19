@@ -311,7 +311,8 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 			int(tasks.get("season", {}).get("count", 0)) == 0)
 		for step in ["climate_writeback", "environment_capture", "environment_publish_hold",
 				"modifier_snapshot_install", "season_freeze", "season_install", "annual_year_boundary_input",
-				"narrative_daily", "stratum_unrest_daily"]:
+				"narrative_daily", "stratum_unrest_daily", "narrative_choice_resolution",
+				"narrative_effect_delivery", "stratum_independence_delivery"]:
 			_expect("%s has no main-thread round trip on day %d" % [step, day],
 				int(steps.get(step, 0)) == 0)
 		for step in steps:
@@ -427,25 +428,40 @@ func _check_narrative_commit(host: WorldRuntimeHost, clock: WorldClock,
 	print("NARRATIVE_BLOCK day=2 after=%d admitted=%d frames=%d state=%s" % [
 		committed, host._calendar_admitted_through, Engine.get_process_frames() - frame,
 		state.get("simulation_host_state", "")])
-	for chain in ["scheduled_first", "scheduled_second"]:
+	for effective_day in [3, 4]:
+		var chain := "scheduled_first" if effective_day == 3 else "scheduled_second"
 		var offer: Dictionary = ext.get_gameplay_narrative_view().get("active_offer", {})
-		_expect("background promotes %s before proceeding" % chain,
-			offer.get("chain_id") == chain)
+		_expect("background promotes %s before proceeding" % chain, offer.get("chain_id") == chain)
 		if offer.is_empty():
 			return
-		var selected := controller.request_command(&"narrative.choose", {
-			"offer_id": int(offer.offer_id), "offer_generation": int(offer.offer_generation),
-			"option_index": 0})
-		var record: Dictionary = selected.get("record", {})
-		_expect("choice targets day 3 and legacy outcome day 4",
-			bool(selected.get("ok", false)) and int(selected.get("effective_day", -1)) == 3
-			and int(record.get("resolved_day", -1)) == 4)
-	var continued := await _wait_golden_read_boundary(host, economy, 3)
-	_expect("background continues after both choices despite a nonblocking queue entry",
-		continued and ext.get_gameplay_narrative_view().get("ready_queue", []).size() == 1)
+		var args := {"offer_id": int(offer.offer_id), "offer_generation": int(offer.offer_generation),
+			"option_index": 0}
+		var selected := controller.request_command(&"narrative.choose", args)
+		_expect("choice is pending on the next day",
+			bool(selected.get("ok", false)) and bool(selected.get("pending", false))
+			and int(selected.get("effective_day", -1)) == effective_day
+			and not selected.has("record"))
+		var duplicate := controller.request_command(&"narrative.choose", args)
+		_expect("the same choice cannot be accepted twice", not bool(duplicate.get("ok", false)))
+		_publish_day(host, clock, effective_day)
+		var continued := await _wait_golden_read_boundary(host, economy, effective_day)
+		_expect("background commits the dated choice", continued)
+		if not continued:
+			return
+		var last: Array = ext.get_gameplay_narrative_view().get("chronicle", [])
+		_expect("chronicle confirms the option on its effective day", not last.is_empty()
+			and last[0].get("chain_id") == chain and int(last[0].get("resolved_day", -1)) == effective_day)
+		if effective_day == 3:
+			var modifiers: Dictionary = ext.list_modifiers(2, 0, "")
+			var keys: PackedStringArray = modifiers.get("definition_keys", PackedStringArray())
+			_expect("first seed's actual modifiers are published on day 3",
+				keys.has("economy.city.building.agriculture_output_factor")
+				and keys.has("economy.city.need.staple_food.consumption_factor"))
+	_expect("unpromoted queue entries cannot stop the executor",
+		ext.get_gameplay_narrative_view().get("ready_queue", []).size() == 1)
 	var report := generator.get_runtime_thread_report()
 	if _expect_round_trip_report(report):
-		_check_removed_round_trips(report, 3)
+		_check_removed_round_trips(report, 4)
 
 
 func _check_round_trips(report: Dictionary) -> void:

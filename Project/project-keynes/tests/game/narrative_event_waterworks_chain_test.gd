@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tests/support/runtime_narrative_scenario.gd"
 
 ## 水利工程链（渠议 → 渠成 / 中辍 → 渠田连岁）的契约测试。
 ##
@@ -13,28 +13,12 @@ extends SceneTree
 ## 比实际效果大三四倍，而这个测试会把这种错当场抓出来。
 
 const NarrativeEventCatalogScript = preload("res://scripts/narrative/narrative_event_catalog.gd")
-const NarrativeEventServiceScript = preload("res://tests/support/legacy_narrative_fixture.gd")
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 
 const CELL := 7
 const ERA_AGRARIAN := 1
-
-var _checks := 0
-var _failures := 0
-
-
-func _init() -> void:
-	call_deferred("_run")
-
-
-func _expect(label: String, condition: bool) -> void:
-	_checks += 1
-	if not condition:
-		_failures += 1
-		print("[FAIL] ", label)
-
 
 func _near(a: float, b: float, tolerance: float = 0.0005) -> bool:
 	return absf(a - b) <= tolerance
@@ -44,12 +28,12 @@ func _run() -> void:
 	var catalog := NarrativeEventCatalogScript.build_default_catalog()
 	_test_catalog_shape(catalog)
 	_test_trigger_gates(catalog)
-	_test_authorized_route(catalog)
-	_test_abandoned_route(catalog)
+	await _test_authorized_route()
+	await _test_abandoned_route()
 	_test_flag_gating_contract(catalog)
 	_test_effect_numbers_match_labels(catalog)
 	print("=== narrative waterworks chain test: %d checks, %d failures ===" % [_checks, _failures])
-	quit(0 if _failures == 0 else 1)
+	call_deferred("quit", 0 if _failures == 0 else 1)
 
 
 # ─── 1. 内容形状与写法契约 ───────────────────────────────────────────────────
@@ -130,8 +114,10 @@ func _test_catalog_shape(catalog) -> void:
 							or eff.kind == NarrativeEffectSpecScript.Kind.COUNTRY_MODIFIER:
 						_expect("modifier %s of %s exists in the catalog" % [eff.target_key, def.event_id],
 							definitions.has(String(eff.target_key)))
-						_expect("modifier %s of %s states its percentage" % [eff.target_key, def.event_id],
-							pct_regex.search(label) != null)
+						var absolute_levy := String(eff.target_key) == "narrative.levy.labor_satisfaction"
+						_expect("modifier %s of %s states its magnitude" % [eff.target_key, def.event_id],
+							label.contains("满意度 -4") and label.contains("劳动者 -5") if absolute_levy
+							else pct_regex.search(label) != null)
 					elif eff.kind == NarrativeEffectSpecScript.Kind.SCHEDULE_FOLLOWUP_EVENT:
 						_expect("scheduled %s of %s exists in the catalog" % [eff.target_key, def.event_id],
 							catalog.get_event(eff.target_key) != null)
@@ -143,8 +129,6 @@ func _test_catalog_shape(catalog) -> void:
 # ─── 2. 触发门槛与权重 ───────────────────────────────────────────────────────
 
 func _test_trigger_gates(catalog) -> void:
-	var service := NarrativeEventServiceScript.new()
-	service.configure(null, null, null, null, 1, 424242, catalog)
 	var proposal = catalog.get_event(&"evt.waterworks.canal_proposal")
 	_expect("proposal definition is available", proposal != null)
 	if proposal == null:
@@ -162,155 +146,156 @@ func _test_trigger_gates(catalog) -> void:
 		"technology_ids": PackedStringArray(["tech.irrigation"]),
 		"market_price_ratios_by_id": {"wheat_grain": 1.0},
 	}
-	var baseline := service.evaluate_event_weight(proposal, base_ctx, 10)
+	var baseline := _authored_weight(proposal, base_ctx)
 	_expect("eligible river plain gets a positive weight", baseline > 0)
 
 	var dry_ctx := base_ctx.duplicate(true)
 	dry_ctx["moisture"] = 0.30
 	dry_ctx["population"] = 30
 	dry_ctx["market_price_ratios_by_id"] = {"wheat_grain": 1.30}
-	var rich := service.evaluate_event_weight(proposal, dry_ctx, 10)
+	var rich := _authored_weight(proposal, dry_ctx)
 	_expect("dry, populous, expensive-grain cell outweighs the baseline", rich > baseline)
 
 	var no_river := base_ctx.duplicate(true)
 	no_river["has_river"] = false
-	_expect("no river means no canal", service.evaluate_event_weight(proposal, no_river, 10) == 0)
+	_expect("no river means no canal", _authored_weight(proposal, no_river) == 0)
 
 	var wrong_terrain := base_ctx.duplicate(true)
 	wrong_terrain["terrain"] = 6 # MOUNTAIN
 	_expect("mountains are not canal country",
-		service.evaluate_event_weight(proposal, wrong_terrain, 10) == 0)
+		_authored_weight(proposal, wrong_terrain) == 0)
 
 	var wet := base_ctx.duplicate(true)
 	wet["moisture"] = 0.80
 	_expect("wet cells do not need irrigation",
-		service.evaluate_event_weight(proposal, wet, 10) == 0)
+		_authored_weight(proposal, wet) == 0)
 
 	var no_tech := base_ctx.duplicate(true)
 	no_tech["technology_ids"] = PackedStringArray(["tech.hunting"])
 	_expect("without tech.irrigation the proposal stays locked",
-		service.evaluate_event_weight(proposal, no_tech, 10) == 0)
+		_authored_weight(proposal, no_tech) == 0)
 
 	var too_late := base_ctx.duplicate(true)
 	too_late["era_index"] = 9
 	_expect("era window closes after era 4",
-		service.evaluate_event_weight(proposal, too_late, 10) == 0)
+		_authored_weight(proposal, too_late) == 0)
 
 	var thin := base_ctx.duplicate(true)
 	thin["population"] = 4
 	_expect("too few hands means no corvee",
-		service.evaluate_event_weight(proposal, thin, 10) == 0)
+		_authored_weight(proposal, thin) == 0)
 
 
 # ─── 3. 两条分支的路由 ───────────────────────────────────────────────────────
 
-func _open_proposal(service, catalog) -> Dictionary:
-	var proposal = catalog.get_event(&"evt.waterworks.canal_proposal")
-	var ctx := {
-		"cell_idx": CELL,
-		"settlement_name": "泽畔邑",
-		"era_index": ERA_AGRARIAN,
-		"has_river": true,
-		"terrain": 2,
-		"terrain_name": "平原",
-		"moisture": 0.40,
-		"population": 18,
-		"treasury_cash": 400000,
-		"market_stocks_by_id": {"wheat_grain": 12000},
-		"market_price_ratios_by_id": {"wheat_grain": 1.2},
-		"technology_ids": PackedStringArray(["tech.irrigation"]),
+func _start_proposal() -> bool:
+	if not await _start_story({"scheduled_events": [
+		{"due_day": 5, "event_id": "evt.waterworks.canal_proposal"},
+	]}, ["evt.waterworks.canal_proposal", "evt.waterworks.canal_completed",
+		"evt.waterworks.canal_abandoned", "evt.waterworks.canal_legacy"]):
+		return false
+	return await _advance_story(5)
+
+
+func _test_authorized_route() -> void:
+	if await _start_proposal():
+		await _check_authorized_route()
+	await _close_story()
+
+
+func _check_authorized_route() -> void:
+	_expect("proposal opens", story_service.active_offer().get("event_id") == "evt.waterworks.canal_proposal")
+	_choose_story(0)
+	if not await _advance_story(6):
+		return
+	var saved := story_service.export_state()
+	var flag := "cell:%d:flag_canal_authorized" % story_cell
+	_expect("authorization raises the story flag", saved.get("story_flags", {}).has(flag))
+	var future: Array = saved.get("scheduled_events", [])
+	_expect("the completion is scheduled thirty days after construction starts",
+		future.size() == 1 and future[0].get("due_day") == 36)
+	var term_rows := {
+		"agricultural_worker": -400, "worker": -400, "miner": -400,
+		"construction_worker": -500, "corvee_worker": -500,
 	}
-	return service.enqueue_event_offer(proposal, CELL, 5, &"chain_canal", true, ctx)
+	for profession in term_rows:
+		var stat := "economy.profession.%s.satisfaction_bp" % profession
+		var rows: Dictionary = story_ext.list_modifiers(1, story_player, stat)
+		var index: int = rows.get("definition_keys", PackedStringArray()).find("narrative.levy.labor_satisfaction")
+		var detail: Dictionary = story_ext.explain_modifier_stat(1, story_player, 0, stat, 0.0)
+		var term: int = detail.get("definition_keys", PackedStringArray()).find("narrative.levy.labor_satisfaction")
+		_expect("published canal levy for %s is %d bp from day 6 through day 245" % [profession, term_rows[profession]],
+			index >= 0 and term >= 0 and rows.applied_days[index] == 6 and rows.expiry_days[index] == 246
+			and int(detail.adds[term]) == term_rows[profession])
+		print("CANAL_LEVY profession=", profession, " list=", JSON.stringify(rows), " effect=", JSON.stringify(detail))
+	if not await _advance_story(35):
+		return
+	_expect("completion does not fire early", not story_service.has_active_offer())
+	if not await _advance_story(36):
+		return
+	var completed := story_service.active_offer()
+	_expect("completion fires on the due day", completed.get("event_id") == "evt.waterworks.canal_completed")
+	var choices: Array = completed.get("options", [])
+	_expect("completion offers three readings of the canal", choices.size() == 3)
+	for option in choices:
+		if option.get("option_id") != "ship_grain_to_capital":
+			continue
+		_expect("the commuted tax option needs no goods stock and describes the cash levy",
+			bool(option.get("eligible", false)) and "  ".join(option.outcomes[0].effect_summaries)
+				.contains("征收其现金的 3%"))
+	_choose_story(0)
+	if not await _advance_story(37):
+		return
+	future = story_service.export_state().get("scheduled_events", [])
+	_expect("silt irrigation schedules the legacy beat two years after the choice",
+		future.size() == 1 and future[0].get("due_day") == 767)
+	if not await _advance_story(246):
+		return
+	var remaining: Dictionary = story_ext.list_modifiers(1, story_player, "")
+	_expect("the canal levy no longer applies after the authored duration",
+		not remaining.get("definition_keys", PackedStringArray()).has("narrative.levy.labor_satisfaction"))
+	if await _advance_story(767):
+		var legacy := story_service.active_offer()
+		_expect("the legacy fires with two readings on day 767",
+			legacy.get("event_id") == "evt.waterworks.canal_legacy"
+			and legacy.get("options", []).size() == 2)
 
 
-func _test_authorized_route(catalog) -> void:
-	var service := NarrativeEventServiceScript.new()
-	service.configure(null, null, null, null, 1, 20261111, catalog)
-	var offer := _open_proposal(service, catalog)
-	_expect("proposal opens", not offer.is_empty() and service.has_active_offer())
-
-	var choose := service.choose_option(
-		int(offer.get("offer_id", 0)), int(offer.get("offer_generation", 0)), 0, 6)
-	_expect("authorizing the engineer resolves", bool(choose.get("ok", false)))
-	_expect("authorization raises the story flag",
-		service.has_story_flag(&"flag_canal_authorized", CELL))
-	_expect("authorization schedules the completion beat",
-		service.scheduled_events().size() == 1)
-
-	service.on_day_committed(8, false)
-	_expect("completion does not fire early",
-		String(service.active_offer().get("event_id", "")) != "evt.waterworks.canal_completed")
-
-	service.on_day_committed(37, false)
-	var completed := service.active_offer()
-	_expect("completion fires on its due day",
-		String(completed.get("event_id", "")) == "evt.waterworks.canal_completed")
-	_expect("completion offers three readings of the canal",
-		(completed.get("options", []) as Array).size() == 3)
-	var levy_eligible := false
-	var levy_label := ""
-	for opt in completed.get("options", []):
-		var option_dict: Dictionary = opt
-		if String(option_dict.get("option_id", "")) == "ship_grain_to_capital":
-			levy_eligible = bool(option_dict.get("eligible", true))
-			var branches: Array = option_dict.get("outcomes", [])
-			if not branches.is_empty():
-				levy_label = "  ".join(PackedStringArray(
-					(branches[0] as Dictionary).get("effect_summaries", [])))
-	_expect("the commuted-tax option needs no goods stock", levy_eligible)
-	_expect("the commuted tax names the cash levy",
-		levy_label.contains("征收其现金的 3%"))
-
-	# 选确定性的淤灌，验证两年后结账的第四幕。
-	var choose2 := service.choose_option(
-		int(completed.get("offer_id", 0)), int(completed.get("offer_generation", 0)), 0, 38)
-	_expect("silt irrigation resolves", bool(choose2.get("ok", false)))
-	_expect("silt irrigation schedules the legacy beat",
-		service.scheduled_events().size() == 1)
-
-	service.on_day_committed(768, false)
-	var legacy := service.active_offer()
-	_expect("legacy fires two years later",
-		String(legacy.get("event_id", "")) == "evt.waterworks.canal_legacy")
-	_expect("legacy titles its outcome with the country name",
-		(legacy.get("options", []) as Array).size() == 2)
+func _test_abandoned_route() -> void:
+	if await _start_proposal():
+		await _check_abandoned_route()
+	await _close_story()
 
 
-func _test_abandoned_route(catalog) -> void:
-	var service := NarrativeEventServiceScript.new()
-	service.configure(null, null, null, null, 1, 777, catalog)
-	var offer := _open_proposal(service, catalog)
-	var choose := service.choose_option(
-		int(offer.get("offer_id", 0)), int(offer.get("offer_generation", 0)), 2, 6)
-	_expect("dismissing the works resolves", bool(choose.get("ok", false)))
-	_expect("dismissal raises the abandoned flag",
-		service.has_story_flag(&"flag_canal_abandoned", CELL))
-	_expect("dismissal routes to the abandoned beat",
-		service.scheduled_events().size() == 1)
-
-	service.on_day_committed(27, false)
-	var abandoned := service.active_offer()
-	_expect("abandoned beat fires",
-		String(abandoned.get("event_id", "")) == "evt.waterworks.canal_abandoned")
-
-	var choose2 := service.choose_option(
-		int(abandoned.get("offer_id", 0)), int(abandoned.get("offer_generation", 0)), 0, 28)
-	_expect("keeping the survey resolves", bool(choose2.get("ok", false)))
-	_expect("keeping the survey clears the abandoned flag",
-		not service.has_story_flag(&"flag_canal_abandoned", CELL))
-	_expect("keeping the survey re-schedules the completion beat",
-		service.scheduled_events().size() == 1)
-
-	service.on_day_committed(149, false)
-	_expect("revived canal completes",
-		String(service.active_offer().get("event_id", "")) == "evt.waterworks.canal_completed")
+func _check_abandoned_route() -> void:
+	_choose_story(2)
+	if not await _advance_story(6):
+		return
+	var flag := "cell:%d:flag_canal_abandoned" % story_cell
+	var saved := story_service.export_state()
+	_expect("dismissal raises the abandoned flag", saved.get("story_flags", {}).has(flag))
+	var future: Array = saved.get("scheduled_events", [])
+	_expect("dismissal schedules the abandoned beat on day 26",
+		future.size() == 1 and future[0].get("due_day") == 26)
+	if not await _advance_story(26):
+		return
+	_expect("the abandoned beat arrives on schedule",
+		story_service.active_offer().get("event_id") == "evt.waterworks.canal_abandoned")
+	_choose_story(0)
+	if not await _advance_story(27):
+		return
+	saved = story_service.export_state()
+	_expect("keeping the survey clears the abandoned flag", not saved.get("story_flags", {}).has(flag))
+	future = saved.get("scheduled_events", [])
+	_expect("keeping the survey re-schedules completion on day 147",
+		future.size() == 1 and future[0].get("due_day") == 147)
+	if await _advance_story(147):
+		_expect("the revived canal completes", story_service.active_offer().get("event_id") == "evt.waterworks.canal_completed")
 
 
 ## 标记并不是排程门槛（定时事件直接入队），但它在脉冲通道里是硬门槛。
 ## 这里直接对权重求值，证明「有标记才可能出现」这条规则对将来改成脉冲事件同样成立。
 func _test_flag_gating_contract(catalog) -> void:
-	var service := NarrativeEventServiceScript.new()
-	service.configure(null, null, null, null, 1, 777, catalog)
 	var abandoned_def = catalog.get_event(&"evt.waterworks.canal_abandoned")
 	_expect("abandoned beat definition is available", abandoned_def != null)
 	if abandoned_def == null:
@@ -322,12 +307,11 @@ func _test_flag_gating_contract(catalog) -> void:
 		"story_flags": {},
 	}
 	_expect("without the flag the abandoned beat is ineligible",
-		service.evaluate_event_weight(abandoned_def, ctx, 10) == 0)
-	service.set_story_flag(&"flag_canal_abandoned", CELL, 5, 1825, 1)
+		_authored_weight(abandoned_def, ctx) == 0)
 	var flagged_ctx := ctx.duplicate(true)
 	flagged_ctx["story_flags"] = {"flag_canal_abandoned": 1}
 	_expect("with the flag the abandoned beat becomes eligible",
-		service.evaluate_event_weight(abandoned_def, flagged_ctx, 10) > 0)
+		_authored_weight(abandoned_def, flagged_ctx) > 0)
 
 
 # ─── 4. 卡面百分比 = 实际乘数 ────────────────────────────────────────────────
@@ -373,6 +357,8 @@ func _test_effect_numbers_match_labels(catalog) -> void:
 		for opt in def.options:
 			for out in opt.outcomes:
 				for eff in out.effects:
+					if String(eff.target_key) == "narrative.levy.labor_satisfaction":
+						continue # Checked against the five native terms on the choice day.
 					if eff.kind != NarrativeEffectSpecScript.Kind.CITY_MODIFIER \
 							and eff.kind != NarrativeEffectSpecScript.Kind.COUNTRY_MODIFIER:
 						continue

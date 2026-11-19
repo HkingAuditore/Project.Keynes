@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <locale>
 #include <sstream>
+#include <utility>
 #include <numeric>
 
 namespace pk {
@@ -160,11 +161,13 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
     out["is_coastal"] = cell.coastal;
     out["ocean_current_speed"] = cell.current;
     out["ocean_upwelling"] = cell.upwelling;
+    out["weather_vapor"] = cell.vapor;
+    out["weather_cloud"] = cell.clouds;
     out["satisfaction"] = cell.satisfaction;
     out["satisfaction_norm"] = cell.satisfaction;
     out["population"] = cell.population;
     out["primary_cohort_handle"] = static_cast<int64_t>(cell.primary_cohort);
-    out["primary_cohort_cash"] = 0;
+    out["primary_cohort_cash"] = cell.primary_cash;
     out["primary_cohort_profession_id"] = text(cell.primary_profession);
     out["primary_cohort_profession_name"] = _catalog.profession_names.get(
         text(cell.primary_profession), text(cell.primary_profession));
@@ -183,6 +186,7 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
     out["primary_family_handle"] = static_cast<int64_t>(cell.family);
     out["primary_family_name"] = text(cell.family_name);
     out["primary_family_prestige"] = cell.prestige;
+    out["primary_family_prestige_score_q16"] = cell.prestige_q16;
     out["primary_family_population"] = cell.family_population;
     out["primary_family_population_share"] = std::clamp(
         double(cell.family_population) / double(cell.denominator()), 0.0, 1.0);
@@ -191,8 +195,30 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
     PackedStringArray trait_names;
     for (const auto &name : cell.family_trait_names) trait_names.push_back(text(name));
     out["primary_family_trait_names"] = trait_names;
-    out["market_stocks_by_id"] = Dictionary();
-    out["highlight_good_name"] = text("粮食");
+    Dictionary stocks, prices, buildings, resources;
+    PackedStringArray shortages;
+    for (const auto &id : _catalog.good_ids) {
+        if (cell.market_stocks.count(id)) stocks[text(id)] = cell.stock(id);
+        const auto price = cell.market_prices.find(id);
+        if (price == cell.market_prices.end()) continue;
+        prices[text(id)] = price->second;
+        if (price->second >= 1.30) shortages.push_back(text(id));
+    }
+    const auto encode_sorted = [](const auto &values, Dictionary &out) {
+        std::vector<std::string> keys;
+        for (const auto &item : values) keys.push_back(item.first);
+        std::sort(keys.begin(), keys.end());
+        for (const auto &key : keys) out[text(key)] = values.at(key);
+    };
+    encode_sorted(cell.building_counts, buildings);
+    encode_sorted(cell.resources, resources);
+    out["market_stocks_by_id"] = stocks;
+    out["market_price_ratios_by_id"] = prices;
+    out["shortage_good_ids"] = shortages;
+    out["building_counts_by_id"] = buildings;
+    out["natural_resources_by_id"] = resources;
+    out["max_price_ratio"] = cell.max_price_ratio;
+    out["highlight_good_name"] = cell.expensive_good.empty() ? text("粮食") : text(cell.expensive_good);
     for (int32_t ring = 0; ring < 2; ++ring) {
         PackedInt32Array cells;
         for (const int32_t value : cell.nearby[ring]) cells.push_back(value);
@@ -208,7 +234,8 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
                 row["cell_idx"] = index;
                 row["name"] = text(neighbor.settlement);
                 row["population"] = neighbor.population;
-                row["shortage_good"] = "";
+                row["shortage_good"] = neighbor.max_price_ratio >= 1.30 ?
+                    text(neighbor.expensive_good) : String();
                 neighbors.push_back(row);
             }
         }
@@ -238,8 +265,8 @@ bool RuntimeNarrative::enqueue(const NarrativeDefinition &def, const NarrativeDa
         int32_t cell, const std::string &chain, bool bypass, const Dictionary &meta,
         int64_t chain_salt, const Array &odds) {
     if (!bypass && (paced(input.day) || cell_capped(cell, input.day))) return false;
-    const auto sampled = input.sample(cell, false);
     const bool rebellion = !meta.is_empty() && String(meta.get("kind", "")) == "rebellion";
+    const auto sampled = input.sample(cell, !rebellion);
     Dictionary ctx;
     if (rebellion) {
         ctx["settlement_name"] = sampled.settlement.empty() ? text("本地") : text(sampled.settlement);
@@ -307,6 +334,7 @@ bool RuntimeNarrative::enqueue(const NarrativeDefinition &def, const NarrativeDa
             path["outcome_narrative"] = narrative_format(authored.get("outcome_narrative", ""), ctx);
             path["effect_summaries"] = packed_lines;
             path["effects"] = effects;
+            path["effect_descriptions"] = descriptions;
             paths.push_back(path);
         }
         option["outcomes"] = paths;
@@ -332,6 +360,8 @@ bool RuntimeNarrative::enqueue(const NarrativeDefinition &def, const NarrativeDa
     offer["chain_id"] = text(chain);
     offer["chain_salt"] = chain_salt;
     offer["meta"] = meta.duplicate(true);
+    offer["event_category"] = rebellion ? 0 : def.category;
+    offer["event_notification"] = def.notification;
     if (rebellion) {
         Dictionary clean = offer["meta"];
         clean.erase("profession_name");
@@ -346,9 +376,79 @@ bool RuntimeNarrative::enqueue(const NarrativeDefinition &def, const NarrativeDa
     return true;
 }
 
-Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dictionary &args) {
-    if (_active.is_empty())
-        return narrative_response(false, "narrative_no_active_offer", "当前没有待处理的事件。");
+
+bool RuntimeNarrative::stops_for(const Dictionary &offer, uint16_t mask) const {
+    const int32_t category = std::clamp<int32_t>(offer.get("event_category", 7), 0, 7);
+    const int32_t bit = category + (bool(offer.get("event_notification", false)) ? 8 : 0);
+    return (mask & (uint16_t(1) << bit)) != 0;
+}
+
+Dictionary RuntimeNarrative::queue_choice(int64_t day, const Dictionary &args, bool automatic) {
+    if (!_pending_choice.is_empty())
+        return narrative_response(false, "narrative_choice_already_pending");
+    const auto check = validate_choice(args);
+    if (!bool(check.get("ok", false))) return check;
+    _pending_choice = args.duplicate(true);
+    _pending_choice["effective_day"] = day;
+    _pending_choice["automatic"] = automatic;
+    auto receipt = narrative_response(true, "ok");
+    receipt["effective_day"] = day;
+    receipt["offer_id"] = args.get("offer_id", 0);
+    receipt["pending"] = true;
+    return receipt;
+}
+
+Dictionary RuntimeNarrative::take_due_choice(int64_t day) {
+    if (_pending_choice.is_empty() || int64_t(_pending_choice.get("effective_day", -1)) > day)
+        return {};
+    return std::exchange(_pending_choice, {});
+}
+
+void RuntimeNarrative::queue_automatic_choice(int64_t day) {
+    if (_active.is_empty() || !_pending_choice.is_empty() || stops_for(_active, _pause_mask)) return;
+    const Array options = _active.get("options", Array());
+    if (options.is_empty()) return;
+    const auto eligible = [&](int64_t index) {
+        return index >= 0 && index < options.size() &&
+            bool(Dictionary(options[index]).get("eligible", true));
+    };
+    int64_t selected = _active.get("default_option_index", 0);
+    if (!eligible(selected)) {
+        selected = 0;
+        while (selected < options.size() && !eligible(selected)) ++selected;
+        if (selected == options.size()) return;
+    }
+    Dictionary choice;
+    choice["country"] = static_cast<int64_t>(_country);
+    choice["offer_id"] = _active["offer_id"];
+    choice["offer_generation"] = _active["offer_generation"];
+    choice["option_index"] = selected;
+    queue_choice(day, choice, true);
+}
+
+void RuntimeNarrative::set_pause_policy(int64_t day, uint16_t mask) {
+    while (!_pause_updates.empty() && _pause_updates.back().first >= day)
+        _pause_updates.pop_back();
+    _pause_updates.emplace_back(day, mask);
+}
+
+uint16_t RuntimeNarrative::pause_policy_for(int64_t day) const {
+    uint16_t mask = _pause_mask;
+    for (const auto &[effective_day, value] : _pause_updates) {
+        if (effective_day > day) break;
+        mask = value;
+    }
+    return mask;
+}
+
+void RuntimeNarrative::apply_pause_policy(int64_t day) {
+    while (!_pause_updates.empty() && _pause_updates.front().first <= day) {
+        _pause_mask = _pause_updates.front().second;
+        _pause_updates.pop_front();
+    }
+}
+
+Dictionary RuntimeNarrative::validate_choice(const Dictionary &args) const {
     if (placing_choice() || int64_t(args.get("country", 0)) != int64_t(_country) ||
         int64_t(args.get("offer_id", -1)) != int64_t(_active.get("offer_id", -2)) ||
         int64_t(args.get("offer_generation", -1)) != int64_t(_active.get("offer_generation", -2)))
@@ -363,22 +463,28 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
         result["message"] = selected.get("ineligible_reason", text("条件不满足。"));
         return result;
     }
-    _choice_day = input.day + 1;
-    // The first batch changes command admission only. Preserve the old day's
-    // branch roll, effect requests and chronicle until the next batch.
-    const int64_t legacy_resolution_day = _choice_day + 1;
+    return narrative_response(true, "ok");
+}
+
+Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dictionary &args) {
+    const auto check = validate_choice(args);
+    if (!bool(check.get("ok", false))) return check;
+    const Array options = _active.get("options", Array());
+    const int64_t option = args["option_index"];
+    const Dictionary selected = options[option];
+    _choice_day = args.get("effective_day", input.day + 1);
     const int32_t cell = _active.get("cell_idx", -1);
     const int64_t offer_id = _active.get("offer_id", 0);
     const int64_t chain_salt = _active.get("chain_salt", 0);
     _choice_context = context(input, input.sample(cell, true));
-    _choice_context["day"] = legacy_resolution_day;
+    _choice_context["day"] = _choice_day;
 
     const Array outcomes = selected.get("outcomes", Array());
     std::vector<int64_t> weights;
     for (int64_t i = 0; i < outcomes.size(); ++i)
         weights.push_back(std::max<int64_t>(1, Dictionary(outcomes[i]).get("probability_q16", 65536)));
     const int64_t salt = (chain_salt != 0 ? chain_salt : offer_id) * 131 + option * 17 + 7;
-    const int64_t rolled = std::max<int64_t>(0, pick(weights, legacy_resolution_day, cell, salt));
+    const int64_t rolled = std::max<int64_t>(0, pick(weights, _choice_day, cell, salt));
     Dictionary chosen;
     if (outcomes.is_empty()) {
         chosen["probability_q16"] = 65536;
@@ -396,7 +502,8 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
             "image_path", "tags", "chain_id", "meta", "is_ai_generated"})
         record[key] = _active[key];
     record["record_id"] = _next_record;
-    record["resolved_day"] = legacy_resolution_day;
+    record["resolved_day"] = _choice_day;
+    record["automatically_chosen"] = args.get("automatic", false);
     record["year"] = _choice_day / _days_per_year;
     record["chosen_option_index"] = option;
     record["chosen_option_text"] = selected.get("text", "");
@@ -407,7 +514,6 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
     _choice_record = record;
     auto result = narrative_response(true, "ok");
     result["effective_day"] = _choice_day;
-    result["legacy_resolution_day"] = legacy_resolution_day;
     result["outcome_index"] = rolled;
     result["outcome"] = chosen.duplicate(true);
     result["context"] = _choice_context.duplicate(true);
@@ -424,7 +530,7 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
             Dictionary concession;
             concession["cohort"] = cohort;
             concession["amount"] = amount;
-            concession["day"] = _choice_record["day"];
+            concession["day"] = _choice_day;
             concession["sequence"] = allocate_unrest_sequence();
             result["concession"] = concession;
         }
@@ -432,20 +538,33 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
     return result;
 }
 
-Dictionary RuntimeNarrative::complete_choice(const Dictionary &args) {
-    if (!placing_choice() ||
-        int64_t(args.get("offer_id", -1)) != int64_t(_choice_record.get("offer_id", -2)))
-        return narrative_response(false, "narrative_offer_mismatch");
+Dictionary RuntimeNarrative::complete_choice(Dictionary result) {
     const int64_t date = _choice_record["resolved_day"];
     const int32_t cell = _choice_record["cell_idx"];
     for (int64_t i = 0; i < _choice_effects.size(); ++i)
         local_effect(compile_narrative_effect(_choice_effects[i]), cell, date);
-    _completed[narrative_key(_choice_record["event_id"])] = date;
+    if (!bool(_active.get("notice_only", false)))
+        _completed[narrative_key(_choice_record["event_id"])] = date;
     ++_next_record;
-    _choice_record["applied_effects_summary"] = args.get("applied_summaries", Array());
+    const Dictionary outcome = result.get("outcome", Dictionary());
+    const Array descriptions = outcome.get("effect_descriptions", Array());
+    Array summaries;
+    if (!descriptions.is_empty()) {
+        for (int64_t index = 0; index < descriptions.size(); ++index) {
+            const auto line = label(descriptions[index], _choice_context);
+            if (!line.is_empty()) summaries.push_back(line);
+        }
+    } else {
+        const PackedStringArray shown = outcome.get("effect_summaries", PackedStringArray());
+        for (int64_t index = 0; index < shown.size(); ++index)
+            if (!shown[index].is_empty()) summaries.push_back(shown[index]);
+    }
+    _choice_record["applied_effects_summary"] = summaries;
+    PackedStringArray displayed;
+    for (int64_t index = 0; index < summaries.size(); ++index) displayed.push_back(summaries[index]);
+    result["applied_summaries"] = displayed;
     _chronicle.push_front(_choice_record);
     if (_chronicle.size() > 256) _chronicle.pop_back();
-    auto result = narrative_response(true, "ok");
     result["record"] = _choice_record.duplicate(true);
     result["effective_day"] = _choice_day;
     _active = Dictionary();

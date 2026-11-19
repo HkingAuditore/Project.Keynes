@@ -128,12 +128,16 @@ bool EconomyAuthorityTransfer::restore_continuations(
         !restore_cadence_continuation(runtime, state, error) ||
         !restore_population_continuation(runtime, state, error) ||
         !restore_climate_continuation(runtime, state, error)) return false;
+    bool structure_present = false;
     const auto wire = persistence_codec::publication_block(
         state.domain_blobs.at(ECP2_DOMAIN_OWNED_STATE),
-        persistence_codec::OWNED_PENDING_STRUCTURE_BLOCK);
+        persistence_codec::OWNED_PENDING_STRUCTURE_BLOCK, &structure_present);
     CheckpointReader in{wire.data(), wire.size()};
     std::vector<NativeEconomyRuntime::StructuralCommand> pending;
-    if (!in.rows(pending, structural_fields) || in.cursor != in.size) pending.clear();
+    if (structure_present && (!in.rows(pending, structural_fields) || in.cursor != in.size)) {
+        error = "economy_pending_structure_checkpoint_corrupt";
+        return false;
+    }
     runtime._structural_commands.swap(pending);
     const auto population = persistence_codec::publication_block(
         state.domain_blobs.at(ECP2_DOMAIN_OWNED_STATE),

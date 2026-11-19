@@ -328,8 +328,7 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		if not bool(checked.get("ok", false)):
 			return _complete_command(id, checked)
 		var choice_sequence := _allocate_command_sequence()
-		var answer := _narrative_service.choose_option(args, choice_sequence,
-			Callable(self, "_allocate_command_sequence"))
+		var answer := _narrative_service.choose_option(args, choice_sequence)
 		answer["sequence"] = choice_sequence
 		return _complete_command(id, answer)
 	var ready := _resolve_player_country()
@@ -1647,6 +1646,8 @@ func _configure_narrative_runtime() -> void:
 	var settings := get_node_or_null("/root/GameSettings")
 	if settings != null and not settings.settings_changed.is_connected(_on_narrative_settings_changed):
 		settings.settings_changed.connect(_on_narrative_settings_changed)
+	if settings != null and not settings.event_pause_changed.is_connected(_on_event_pause_changed):
+		settings.event_pause_changed.connect(_on_event_pause_changed)
 
 
 func _prepare_narrative_session() -> Dictionary:
@@ -1655,12 +1656,17 @@ func _prepare_narrative_session() -> Dictionary:
 		return {"ok": true}
 	var settings := get_node_or_null("/root/GameSettings")
 	var ai_enabled := settings != null and bool(settings.values().get("ai_narrative_enabled", false))
+	var pause_mask := int(settings.values().get("event_pause_mask", 255)) if settings != null else 255
 	return _narrative_service.bind_world(_runtime_host.generator(), _world_clock,
-		country, _runtime_host.last_seed(), ai_enabled)
+		country, _runtime_host.last_seed(), ai_enabled, pause_mask)
 
 
 func _cancel_narrative_session() -> void:
 	pass
+
+
+func _on_event_pause_changed(mask: int) -> void:
+	_narrative_service.update_event_pause_mask(mask)
 
 
 func _on_narrative_settings_changed(settings: Dictionary) -> void:

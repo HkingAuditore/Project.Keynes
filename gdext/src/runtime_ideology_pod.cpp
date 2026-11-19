@@ -617,14 +617,14 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
             error = "ideology_country_generation_mismatch"; return false;
         }
     }
-    // Once bootstrapped, the worker state is tied to the exact Country handle
-    // table it was captured from. A newer/reused Country generation must not
-    // replay commands against retained ideology state.
+    // A founded country extends the table. Existing rows must still match
+    // their original handles and generations.
     if (!_current.countries.empty()) {
-        if (_current.countries.size() != country.country_count) {
+        if (_current.countries.size() > country.country_count ||
+            (_current.round_day >= 0 && _current.countries.size() != country.country_count)) {
             error = "ideology_country_state_shape_mismatch"; return false;
         }
-        for (uint32_t slot = 0; slot < country.country_count; ++slot) {
+        for (size_t slot = 0; slot < _current.countries.size(); ++slot) {
             const auto &current = _current.countries[slot];
             const uint64_t expected_handle = country_handle(country, slot);
             if (country.country_active[slot] == 0) {
@@ -644,6 +644,36 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
     return true;
 }
 
+void RuntimeIdeologyPodAuthority::append_country_rows(RuntimeIdeologyPodSnapshot &state,
+        const std::vector<uint8_t> &active, const std::vector<uint32_t> &generations,
+        uint64_t opinion_revision) const {
+    if (state.countries.size() == active.size()) return;
+    const size_t first = state.countries.size();
+    state.countries.resize(active.size());
+    const size_t idea_words = (_catalog.definitions.size() + 63u) / 64u;
+    const size_t gate_words = (_catalog.gate_count + 63u) / 64u;
+    const size_t synergy_words = (_catalog.synergies.size() + 63u) / 64u;
+    for (size_t slot = first; slot < active.size(); ++slot) {
+        auto &out = state.countries[slot];
+        if (active[slot] == 0) continue;
+        out.generation = generations[slot];
+        out.handle = (uint64_t(out.generation) << 32) | uint32_t(slot);
+        out.ideology_points_q16 = _catalog.starting_points_q16;
+        // Seed from the handle and the SHARED constant only. Seeding from
+        // `_catalog.catalog_hash` made the two sides disagree by construction,
+        // because the main thread and the worker hash their catalogs with
+        // different functions.
+        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
+                                                         _catalog.world_seed);
+        out.opinion_revision = opinion_revision;
+        out.known_bits.assign(idea_words, 0);
+        out.banned_bits.assign(idea_words, 0);
+        out.gate_bits.assign(gate_words, 0);
+        out.synergy_bits.assign(synergy_words, 0);
+        out.ideas.resize(_catalog.definitions.size());
+    }
+}
+
 bool RuntimeIdeologyPodAuthority::bootstrap(
         const RuntimeCountryPodSnapshot &country,
         const RuntimeIdeologyOpinionSnapshot &opinion,
@@ -653,29 +683,7 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
     state.catalog_hash = _catalog.catalog_hash;
     state.input_generation = country.generation;
     state.opinion_revision = opinion.revision;
-    state.countries.resize(country.country_count);
-    const size_t idea_words = (_catalog.definitions.size() + 63u) / 64u;
-    const size_t gate_words = (_catalog.gate_count + 63u) / 64u;
-    const size_t synergy_words = (_catalog.synergies.size() + 63u) / 64u;
-    for (uint32_t slot = 0; slot < country.country_count; ++slot) {
-        auto &out = state.countries[slot];
-        if (country.country_active[slot] == 0) continue;
-        out.handle = country_handle(country, slot);
-        out.generation = country.country_generation[slot];
-        out.ideology_points_q16 = _catalog.starting_points_q16;
-        // Seed from the handle and the SHARED constant only. Seeding from
-        // `_catalog.catalog_hash` made the two sides disagree by construction,
-        // because the main thread and the worker hash their catalogs with
-        // different functions.
-        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
-                                                         _catalog.world_seed);
-        out.opinion_revision = opinion.revision;
-        out.known_bits.assign(idea_words, 0);
-        out.banned_bits.assign(idea_words, 0);
-        out.gate_bits.assign(gate_words, 0);
-        out.synergy_bits.assign(synergy_words, 0);
-        out.ideas.resize(_catalog.definitions.size());
-    }
+    append_country_rows(state, country.country_active, country.country_generation, opinion.revision);
     state.state_hash = compute_state_hash(state);
     _current = std::move(state);
     for (auto &country_row : _current.countries)
@@ -1506,6 +1514,7 @@ bool RuntimeIdeologyPodAuthority::plan_day(
     plan.input_generation = country.generation;
     plan.next_snapshot = _current;
     auto &state = plan.next_snapshot;
+    append_country_rows(state, country.country_active, country.country_generation, opinion.revision);
     if (state.round_day < 0) {
         if (day <= state.committed_day) {
             // ── a RESTORED state is ahead of this worker's calendar ──────────

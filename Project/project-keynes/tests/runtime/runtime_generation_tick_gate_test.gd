@@ -4,6 +4,7 @@ extends SceneTree
 var _failures := 0
 var _generation_started := false
 var _generation_failure := ""
+const FRAME_LIMIT := 2400
 
 
 func _init() -> void:
@@ -16,43 +17,53 @@ func _run() -> void:
 	var game := packed.instantiate()
 	var runtime := game.get_node("RuntimeHost") as WorldRuntimeHost
 	var clock := game.get_node("WorldClock") as WorldClock
-	# Exercise the retained manual scheduler. The committed-day tests drive
-	# the full production executor through its own day boundary.
-	runtime.runtime_shadow_on_generate = false
-	runtime.set_climate_authority_override("force_off")
 	runtime.world_generation_started.connect(_on_world_generation_started.bind(runtime, clock))
 	runtime.world_generation_failed.connect(func(reason: String): _generation_failure = reason)
 	root.add_child(game)
 
-	while not runtime.is_runtime_ready_for_ticks() and _generation_failure.is_empty():
+	for _frame in range(FRAME_LIMIT):
+		if runtime.is_runtime_ready_for_ticks() or not _generation_failure.is_empty():
+			break
 		await process_frame
 
 	_expect("generation start boundary observed", _generation_started)
 	_expect("runtime opens ticks after topology construction",
 		runtime.is_runtime_ready_for_ticks())
-	_expect("new game restores the pre-generation running state", not clock.paused)
-	clock.set_process(false)
-	var generator := runtime.get_generator()
-	var bio = generator._bio_occupancy_daily_job
-	_expect("the generated map has a daily species update", bio != null)
-	if bio != null:
-		bio.execution_mode = "sliced"
-		var day := clock.day_index() + 1
-		runtime.run_daily_tick(day, clock.season_phase_for_day(day))
-		runtime.finish_daily_tick(0.0, {})
-		_expect("manual day uses the sliced species update", bio.slice_enabled)
-		_expect("all species updates finish before the next manual day",
-			not generator.bio_occupancy_round_active())
-		clock.pause(true)
-		clock.set_process(true)
-		runtime.run_daily_tick(day + 1, clock.season_phase_for_day(day + 1))
-		runtime.finish_daily_tick(0.0, {})
-		_expect("manual steps also finish while the frame clock is paused",
-			not generator.bio_occupancy_round_active())
-	_expect("game closes after the manual ticks", bool((await runtime.close_world()).get("ok", false)))
+	if runtime.is_runtime_ready_for_ticks():
+		_expect("new game restores the pre-generation running state", not clock.paused)
+		await _check_native_days(runtime, clock)
+	else:
+		print("generation_failure=", _generation_failure,
+			" diagnostic=", JSON.stringify(runtime.last_world_generation_error))
+	_expect("game closes after the native days", bool((await runtime.close_world()).get("ok", false)))
 	game.queue_free()
 	await process_frame
 	_finish()
+
+
+func _check_native_days(runtime: WorldRuntimeHost, clock: WorldClock) -> void:
+	clock.set_process(false)
+	var generator := runtime.get_generator()
+	_expect("formal generation starts the whole graph", runtime._native_environment_active
+		and runtime.runtime_authority_domain_mask == 0xfff)
+	var report := generator.get_runtime_thread_report()
+	var day := int(report.get("simulation_committed_day", 0)) + 1
+	for expected in [day, day + 1]:
+		clock.current_day = float(expected + 1)
+		runtime._on_clock_day_changed(expected + 1)
+		for _frame in range(FRAME_LIMIT):
+			runtime._process(0.0)
+			report = generator.get_runtime_thread_report()
+			if runtime._runtime_tail_completed_day >= expected or report.get("simulation_host_state") == "FAULTED":
+				break
+			await process_frame
+		_expect("all species updates commit before the next tick on day %d" % expected,
+			runtime._runtime_tail_completed_day == expected
+			and int(runtime._runtime_last_commit.get("committed_day", -1)) == expected
+			and bool(runtime._runtime_last_commit.get("species_writeback", false)))
+		if runtime._runtime_tail_completed_day != expected:
+			print("native_day_report=", JSON.stringify(report))
+			break
 
 
 func _on_world_generation_started(runtime: WorldRuntimeHost, clock: WorldClock) -> void:

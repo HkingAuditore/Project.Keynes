@@ -35,6 +35,7 @@ bool RuntimeNarrative::configure(const Dictionary &packet, const Dictionary &arc
     _seed = std::max<int64_t>(1, packet.get("seed", 1));
     _days_per_year = std::max<int64_t>(1, packet.get("days_per_year", 365));
     _ai_enabled = packet.get("ai_enabled", false);
+    _pause_mask = static_cast<uint16_t>(int32_t(packet.get("event_pause_mask", 255)));
     restore(archive);
     return _country != 0;
 }
@@ -165,7 +166,7 @@ void RuntimeNarrative::promote(int64_t day) {
         }
         _active = *it;
         _queue.erase(it);
-        _last_popup = day;
+        if (!bool(_active.get("notice_only", false))) _last_popup = day;
         if (cell >= 0 && !bypass) {
             const int64_t year = day / _days_per_year;
             ++_year_counts[annual_cell_key(year, cell)];
@@ -197,7 +198,6 @@ void RuntimeNarrative::prune(int64_t day) {
     }), _tracking.end());
     if (!_pending_ai.is_empty() && day - int64_t(_pending_ai.get("day", day)) > 60) {
         _pending_ai.clear();
-        _ai_request = Dictionary();
     }
 }
 
@@ -208,7 +208,7 @@ void RuntimeNarrative::followups(const NarrativeDay &input) {
         const auto &territory = input.country.territory;
         const int32_t cell = !territory.empty() && !contains(territory, item.cell) ?
             territory.front() : item.cell;
-        if (item.event.empty() && !_ai_request.has("ai_request_seq") && _ai_enabled &&
+        if (item.event.empty() && _pending_ai.is_empty() && _ai_enabled &&
             !item.hint.strip_edges().is_empty() && !item.requested && input.day >= item.due - 3) {
             item.requested = request_ai(input, input.sample(cell, false), item, {}, {}, {}, true);
         }
@@ -280,8 +280,8 @@ int64_t RuntimeNarrative::step(const NarrativeDay &input,
         const std::vector<RuntimeEventsRecord> &facts, int64_t acknowledged) {
     if (input.day <= _day) return -1;
     _day = input.day;
-    _independence_requests = Array();
     unrest(input, facts);
+    fact_notices(input, facts);
     prune(input.day);
     followups(input);
     std::array<const RuntimeEventsRecord *, 64> batch{};
@@ -311,16 +311,18 @@ int64_t RuntimeNarrative::step(const NarrativeDay &input,
     return count != 0 ? batch[count - 1]->event_id : -1;
 }
 
-std::shared_ptr<const RuntimeNarrativeView> RuntimeNarrative::view() const {
+std::shared_ptr<const RuntimeNarrativeView> RuntimeNarrative::view(int64_t committed_day) const {
     auto out = std::make_shared<RuntimeNarrativeView>();
-    out->day = _day;
+    out->day = committed_day;
     out->popup_day = _last_popup;
-    out->active_offer = _active;
+    if (_pending_choice.is_empty() && !_active.is_empty() &&
+            stops_for(_active, pause_policy_for(committed_day + 1)))
+        out->active_offer = _active;
+    out->pause_mask = _pause_updates.empty() ? _pause_mask : _pause_updates.back().second;
     out->unrest_fact = _last_unrest_fact;
     for (const auto &row : _queue) out->queue.push_back(row);
     for (const auto &row : _chronicle) out->chronicle.push_back(row);
-    out->ai_request = _ai_request;
-    out->independence = _independence_requests;
+    out->ai_request = _pending_ai;
     return out;
 }
 } // namespace pk

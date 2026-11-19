@@ -57,9 +57,11 @@ func poll() -> void:
 	var state: Dictionary = _ext.get_annual_report_status()
 	if not bool(state.get("ok", false)):
 		return
-	if int(state.get("last_day", -1)) >= _sync_day:
-		_clock.request_simulation_backpressure(&"annual_report_commit_barrier", false)
 	var report_id: int = int(state.get("ready_report_id", 0))
+	if _sync_day >= 0 and not bool(state.get("worker_managed", false)):
+		var pending_report := report_id > 0 and _sync_day >= report_id * _clock.days_per_year()
+		_clock.request_simulation_backpressure(&"annual_report_commit_barrier",
+			int(state.get("last_day", -1)) < _sync_day or pending_report)
 	if report_id > 0 and report_id != _last_announced:
 		_last_announced = report_id
 		report_ready.emit(report_id)
@@ -84,3 +86,4 @@ func mark_presented(report_id: int) -> void:
 	if _configured:
 		_ext.mark_annual_report_presented(report_id)
 		_last_announced = 0
+		poll()

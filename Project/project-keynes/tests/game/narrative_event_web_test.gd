@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tests/support/runtime_narrative_scenario.gd"
 
 ## 主题事件网（8 包 34 条）的契约测试。
 ##
@@ -21,7 +21,6 @@ const NarrativeEventRegistryScript = preload("res://scripts/narrative/narrative_
 const NarrativeEventPackScript = preload("res://scripts/narrative/narrative_event_pack.gd")
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
-const NarrativeEventServiceScript = preload("res://tests/support/legacy_narrative_fixture.gd")
 const NarrativeEventIdsScript = preload("res://scripts/narrative/narrative_event_ids.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
@@ -33,21 +32,8 @@ const CAST_HITS_MIN := 2
 ## 带引语的事件占比上限。
 const QUOTE_SHARE_MAX := 0.40
 
-var _checks := 0
-var _failures := 0
 var _cast_by_prefix: Dictionary = {}
 var _prefix_by_event: Dictionary = {}
-
-
-func _init() -> void:
-	call_deferred("_run")
-
-
-func _expect(label: String, condition: bool) -> void:
-	_checks += 1
-	if not condition:
-		_failures += 1
-		print("[FAIL] ", label)
 
 
 func _run() -> void:
@@ -64,10 +50,10 @@ func _run() -> void:
 	_test_references(catalog)
 	_test_graph(catalog)
 	_test_trigger_layers(catalog)
-	_test_behaviour(catalog)
+	await _test_behaviour(catalog)
 	_test_runtime_parity(catalog)
 	print("=== narrative event web test: %d checks, %d failures ===" % [_checks, _failures])
-	quit(0 if _failures == 0 else 1)
+	call_deferred("quit", 0 if _failures == 0 else 1)
 
 
 # ─── 索引 ───────────────────────────────────────────────────────────────────
@@ -702,15 +688,13 @@ func _test_trigger_layers(catalog) -> void:
 			dimensions.size() >= 2)
 
 	# 合成对照：同一事件在"发达格"的权重必须高于"荒凉格"。
-	var service := NarrativeEventServiceScript.new()
-	service.configure(null, null, null, null, 1, 24680, catalog)
 	for def in _web_events(catalog):
 		if int(def.trigger_channel) != 0:
 			continue
 		var lean := _synthetic_ctx(false)
 		var grown := _synthetic_ctx(true)
-		var lean_weight := service.evaluate_event_weight(def, lean, 10)
-		var grown_weight := service.evaluate_event_weight(def, grown, 10)
+		var lean_weight := _authored_weight(def, lean)
+		var grown_weight := _authored_weight(def, grown)
 		_expect("%s responds to development (%d vs %d)" % [
 			def.event_id, lean_weight, grown_weight], grown_weight >= lean_weight)
 
@@ -720,16 +704,16 @@ func _test_trigger_layers(catalog) -> void:
 		var era1 := _synthetic_ctx(true)
 		era1["era_index"] = 1
 		_expect("court.empty_seat stays closed before era 2",
-			service.evaluate_event_weight(seat, era1, 10) == 0)
+			_authored_weight(seat, era1) == 0)
 		var era6 := _synthetic_ctx(true)
 		era6["era_index"] = 6
 		_expect("court.empty_seat closes after era 5",
-			service.evaluate_event_weight(seat, era6, 10) == 0)
+			_authored_weight(seat, era6) == 0)
 	# 完成门：掌印的人在空座完成前不可入池。
 	var regent = catalog.get_event(StringName("evt.court.regent_bargain"))
 	if regent != null:
 		_expect("court.regent_bargain stays closed until the empty seat is resolved",
-			service.evaluate_event_weight(regent, _synthetic_ctx(true), 10) == 0)
+			_authored_weight(regent, _synthetic_ctx(true)) == 0)
 
 
 func _synthetic_ctx(developed: bool) -> Dictionary:
@@ -757,9 +741,6 @@ func _synthetic_ctx(developed: bool) -> Dictionary:
 # ─── 9. 行为：阻断、市场增补前提、定时链 ────────────────────────────────────
 
 func _test_behaviour(catalog) -> void:
-	var service := NarrativeEventServiceScript.new()
-	service.configure(null, null, null, null, 1, 13579, catalog)
-
 	# 负向门：边将坐大之后，商人不敢借钱。
 	var loan = catalog.get_event(NarrativeEventIdsScript.EVT_FISCAL_STATE_LOAN)
 	_expect("state_loan is registered", loan != null)
@@ -767,11 +748,11 @@ func _test_behaviour(catalog) -> void:
 		var open_ctx := _synthetic_ctx(true)
 		open_ctx["era_index"] = 5
 		_expect("state_loan opens without a warlord",
-			service.evaluate_event_weight(loan, open_ctx, 10) > 0)
+			_authored_weight(loan, open_ctx) > 0)
 		var blocked_ctx := open_ctx.duplicate(true)
 		blocked_ctx["story_flags"] = {String(NarrativeEventIdsScript.FLAG_WARLORD): true}
 		_expect("a warlord blocks state_loan",
-			service.evaluate_event_weight(loan, blocked_ctx, 10) == 0)
+			_authored_weight(loan, blocked_ctx) == 0)
 
 	# 市场增补：原生要求该格有商人，条件里必须写出来。
 	for def in _web_events(catalog):
@@ -790,21 +771,19 @@ func _test_behaviour(catalog) -> void:
 			_expect("%s stocks goods only where a merchant exists" % def.event_id, has_merchant)
 
 	# 定时链：两方印「发兵」→ 40 日后小钱。
-	var seals = catalog.get_event(NarrativeEventIdsScript.EVT_COURT_TWO_SEALS)
-	if seals != null:
-		var offer := service.enqueue_event_offer(seals, 9, 10, &"", true, {
-			"cell_idx": 9, "settlement_name": "测试邑", "era_index": 5,
-			"population": 30, "treasury_cash": 400000,
-		})
-		_expect("two_seals opens as a scheduled beat", not offer.is_empty())
-		var choose := service.choose_option(
-			int(offer.get("offer_id", 0)), int(offer.get("offer_generation", 0)), 1, 11)
-		_expect("marching south resolves", bool(choose.get("ok", false)))
-		_expect("marching south schedules the thin coin", service.scheduled_events().size() >= 1)
-		service.on_day_committed(51, false)
-		var later := service.active_offer()
-		_expect("the thin coin fires on its due day",
-			String(later.get("event_id", "")) == "evt.fiscal.debased_coin")
+	if await _start_story({"scheduled_events": [
+		{"due_day": 10, "event_id": String(NarrativeEventIdsScript.EVT_COURT_TWO_SEALS)},
+	]}):
+		if await _advance_story(10):
+			_expect("two_seals opens as a scheduled beat",
+				story_service.active_offer().get("event_id") == String(NarrativeEventIdsScript.EVT_COURT_TWO_SEALS))
+			_choose_story(1)
+			if await _advance_story(50):
+				_expect("the thin coin has not arrived a day early", not story_service.has_active_offer())
+				if await _advance_story(51):
+					_expect("the thin coin fires on its due day",
+						story_service.active_offer().get("event_id") == "evt.fiscal.debased_coin")
+	await _close_story()
 
 
 # ─── 10. 数值对账：标签百分比 = 原生实测乘数 ────────────────────────────────

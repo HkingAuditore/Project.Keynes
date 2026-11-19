@@ -42,7 +42,7 @@ var _open := false
 @onready var _hint_label: Label = %Hint
 @onready var _mode_row: Control = %Modes
 @onready var _money_icon: TextureRect = %MoneyIcon
-@onready var _mode_keys: Dictionary = {MODE_PERCENT: %Percent, MODE_ABSOLUTE: %Absolute}
+@onready var _mode_keys: Dictionary = {int(MODE_PERCENT): %Percent, int(MODE_ABSOLUTE): %Absolute}
 @onready var _confirm_key: Button = %Confirm
 
 
@@ -104,10 +104,8 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 		return
 	var key := event as InputEventKey
-	if key == null:
-		return
-	_handle_key(key)
-	accept_event()
+	if key != null and _handle_key(key):
+		accept_event()
 
 
 ## 安卓返回键 / 手柄 B 走 player_cancel，不一定落在有焦点的控件上，所以补一道。

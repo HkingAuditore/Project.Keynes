@@ -3,6 +3,7 @@
 #include "runtime_events_authority.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace pk {
 using namespace godot;
@@ -24,33 +25,31 @@ void RuntimeNarrative::queue_independence(int32_t cell, uint64_t owner) {
         "rebel." + std::to_string(cell) + "." + std::to_string(_last_unrest_day)});
 }
 
+std::vector<NarrativeIndependenceAction> RuntimeNarrative::take_independence_actions() {
+    return std::exchange(_independence_actions, {});
+}
+
 void RuntimeNarrative::advance_independence(const NarrativeDay &input) {
     std::vector<Independence> remaining;
     for (auto &item : _independence) {
-        Dictionary request;
         const uint64_t owner = input.owner(item.cell);
-        request["cell"] = item.cell;
-        request["old_owner"] = static_cast<int64_t>(item.owner);
         if (owner != item.owner) {
-            ++_unrest_sequence;
-            request["new_owner"] = static_cast<int64_t>(owner);
-        } else {
-            if (input.day <= item.queued) {
-                remaining.push_back(std::move(item));
-                continue;
+            if (owner != 0) {
+                _independence_actions.push_back({item.cell, item.owner, owner,
+                    ++_unrest_sequence, {}, {}});
+                if (item.owner == _country)
+                    enqueue_notice(input, item.cell, 0, "stratum_unrest.independence", "独立建国");
             }
-            if (input.territory_count(owner) <= 1) continue;
-            const auto sample = input.sample(item.cell, false);
-            request["stable_id"] = text(item.stable_id);
-            request["display_name"] = (sample.settlement.empty() ?
-                String::utf8("边地") : text(sample.settlement)) + String::utf8("自治");
-            request["day"] = input.day;
-            request["sequence"] = ++_unrest_sequence;
+        } else if (input.day <= item.queued) {
+            remaining.push_back(std::move(item));
+        } else if (!item.submitted && input.territory_count(owner) > 1) {
+            auto sample = input.sample(item.cell, false);
+            if (sample.settlement.empty()) sample.settlement = "边地";
+            _independence_actions.push_back({item.cell, item.owner, 0, ++_unrest_sequence,
+                item.stable_id, sample.settlement + "自治"});
+            item.submitted = true;
             remaining.push_back(std::move(item));
         }
-        // The legacy independent-state command chain remains the consumer.
-        // It receives the already-decided action, cell, identity and date.
-        _independence_requests.push_back(request);
     }
     _independence = std::move(remaining);
 }
@@ -166,7 +165,7 @@ void RuntimeNarrative::unrest(const NarrativeDay &input,
     }
 }
 
-void RuntimeNarrative::finish_unrest_choice(bool applied) {
+void RuntimeNarrative::finish_unrest_choice(bool applied, int64_t day) {
     const Dictionary meta = _choice_record.get("meta", Dictionary());
     if (!applied || String(meta.get("kind", "")) != "rebellion") return;
     const int32_t cell = meta.get("cell", -1);
@@ -177,8 +176,10 @@ void RuntimeNarrative::finish_unrest_choice(bool applied) {
     const Array actions = meta.get("actions", Array());
     if (option < 0 || option >= actions.size()) return;
     const bool success = int64_t(_choice_record.get("rolled_outcome_index", 1)) == 0;
-    if (int32_t(actions[option]) == ABANDON || (stage >= 4 && !success))
+    if (int32_t(actions[option]) == ABANDON || (stage >= 4 && !success)) {
+        _last_unrest_day = day;
         queue_independence(cell, owner);
+    }
     else if (!success) _unrest_checks.push_back({cell, profession, stage, owner});
 }
 } // namespace pk

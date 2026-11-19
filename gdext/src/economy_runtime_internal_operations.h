@@ -1499,6 +1499,8 @@ private:
         const std::vector<int32_t> &avoid) const;
     void review_family_lifecycle();
     void assign_core_family_traits(int32_t family_index);
+    int32_t resolve_family_trait_command(int32_t operation, uint64_t handle,
+        const std::string &key, int32_t strength, int64_t day, std::string &error) const;
     void apply_due_family_trait_commands();
     void rebuild_family_influences(bool rebuild_derived = true);
     void reconcile_family_branch_effects(uint64_t branch_handle,

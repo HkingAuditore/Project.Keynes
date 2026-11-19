@@ -1357,9 +1357,15 @@ private:
     bool service_era_reward_requests();
     const char *stage_narrative(DayExecution &);
     bool service_narrative_requests();
+    void publish_narrative_boundary(int64_t);
     bool narrative_needs_choice() const;
     struct NarrativeDay sample_narrative_day(int64_t) const;
     void sample_narrative_military(struct NarrativeCountryView &) const;
+    bool prepare_narrative_day(int64_t);
+    godot::Dictionary resolve_narrative_choice(int64_t, const godot::Dictionary &);
+    bool dispatch_narrative_independence(int64_t);
+    static std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> expand_ideology_opinion(
+        const RuntimeCountryPodSnapshot &, const RuntimeIdeologyOpinionSnapshot &);
     std::shared_ptr<const RuntimeEraRewardView> capture_era_reward() const;
     EffectRuntime *_effect_adapter_runtime = nullptr;
     class NativeCountryRuntime *_effect_adapter_country = nullptr;

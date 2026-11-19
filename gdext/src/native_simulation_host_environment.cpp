@@ -1,4 +1,5 @@
 #include "native_simulation_day_context.h"
+#include "pk_log.h"
 #include "runtime_world_environment.h"
 
 #include <algorithm>
@@ -22,6 +23,11 @@ bool NativeSimulationHost::initialize_world_environment(RuntimeEnvironmentSnapsh
         return false;
     }
     _world_environment = std::make_shared<RuntimeWorldEnvironment>(std::move(seed), config);
+    if (_has_pending_restore &&
+            (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_SEASON_HISTORY) != 0 &&
+            !_world_environment->restore_season_history(_pending_restore_bundle.season_history_bytes,
+                _pending_restore_bundle.committed_day))
+        log_error("season history restore: runtime_bundle_season_history_invalid");
     _clock_requested_day.store(-1, std::memory_order_release);
     return true;
 }

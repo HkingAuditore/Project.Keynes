@@ -26,7 +26,6 @@ func set_popups_suppressed(host, enabled: bool) -> void:
 		host._suppression_resume_running = host._world_clock != null and not host._world_clock.paused
 	host._popups_suppressed = enabled
 	host._annual_report_flow.set_popups_suppressed(enabled)
-	host._narrative_flow.set_popups_suppressed(enabled)
 	if not enabled:
 		return
 	# 已经锁住时钟的提示在开关切换瞬间也必须释放；原生 offer 保留，

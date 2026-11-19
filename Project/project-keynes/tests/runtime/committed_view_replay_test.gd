@@ -133,7 +133,7 @@ func _run() -> void:
 			ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"]))
 	clock.pause(false)
 	if annual and mode == "resume":
-		_check_annual_report_pause(host, clock, generator, save_day)
+		await _check_annual_report_pause(host, clock, generator, save_day)
 	var previous_target := int(commands[save_day - 1].value) if mode == "resume" else 0
 	for command in commands:
 		var day := int(command.day)
@@ -373,7 +373,7 @@ func _run() -> void:
 			if day >= save_day:
 				_expect("annual report complete and settled", bool(annual_report.get("complete", false)) and bool(annual_report.get("reward_settled", false)))
 			if day == save_day and mode != "resume":
-				_check_annual_report_pause(host, clock, generator, day)
+				await _check_annual_report_pause(host, clock, generator, day)
 		if not annual and mode == "checkpoint" and day == save_day:
 			print("REPLAY_CHECKPOINT_ECOLOGY=" + JSON.stringify({
 				"day": day, "resource_recovery_cells": host._runtime_last_commit.get("resource_recovery_cells", 0),
@@ -407,15 +407,19 @@ func _check_annual_report_pause(host: WorldRuntimeHost, _clock: WorldClock, gene
 	var admitted := int(generator.get_data_core_world_ext().request_runtime_calendar_day(day + 2))
 	_expect("next day was offered with an unread annual report",
 		report_id > 0 and admitted == day + 1)
-	var frames := Engine.get_process_frames()
-	OS.delay_msec(100)
-	var status: Dictionary = generator.get_runtime_control_state()
+	var status: Dictionary = {}
+	for frame in range(MAX_SLICES_PER_DAY):
+		status = generator.get_runtime_control_state()
+		var state := String(status.get("simulation_host_state", ""))
+		if state in ["PAUSED", "FAULTED"] or int(status.get("simulation_committed_day", -1)) > day:
+			break
+		await process_frame
 	var after := int(status.get("simulation_committed_day", -1))
-	print("ANNUAL_REPORT_BLOCK day=%d next_admitted=%d after=%d process_frames=%d state=%s" % [
-		day, admitted, after, Engine.get_process_frames() - frames,
+	print("ANNUAL_REPORT_BLOCK day=%d next_admitted=%d after=%d waiting_report=%d state=%s" % [
+		day, admitted, after, int(host.annual_report_status().get("ready_report_id", 0)),
 		String(status.get("simulation_host_state", ""))])
 	_expect("executor waits for annual confirmation even with the next day offered",
-		after == day and Engine.get_process_frames() == frames
+		after == day and not _clock.paused and int(host.annual_report_status().get("ready_report_id", 0)) == report_id
 		and String(status.get("simulation_host_state", "")) == "PAUSED")
 
 

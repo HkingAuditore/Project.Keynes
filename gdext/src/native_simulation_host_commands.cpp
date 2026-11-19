@@ -551,6 +551,11 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     day_commands.reserve(16u);
     std::vector<RuntimeCommandReceipt> day_receipts;
     uint64_t admitted_submit_order = 0;
+    prepare_narrative_day(day);
+    if (state() == RuntimeWorkerState::FAULTED) {
+        runtime_copy_text(out.reason, "narrative_choice_apply_failed");
+        return out;
+    }
     drain_inline_day_commands(day, day_commands, day_receipts,
                               admitted_submit_order);
     const double speed = _speed_days_per_second.load(std::memory_order_acquire);

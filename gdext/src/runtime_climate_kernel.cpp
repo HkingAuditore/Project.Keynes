@@ -1140,7 +1140,10 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // 生产 stage 11（consume_feedback_buffers）在 climate round / hydrology 之前
     // 把 VGP *= decay。放在全部 stage 之后会让当天 hydrology 仍按未衰减的 VGP
     // 抽水，比完之后 VGP 本身却是绿的——day 28 的 moisture/PAW/河网链就是这样。
-    if (input.climate_seasonal_feedback_ran &&
+    if (input.season_growth_pressure.size() == current.cell_count) {
+        next.vegetation_growth_pressure = input.season_growth_pressure;
+        next.vegetation = input.vegetation;
+    } else if (input.climate_seasonal_feedback_ran &&
         next.vegetation_growth_pressure.size() == current.cell_count) {
         const float decay = input.climate_seasonal_feedback_decay;
         if (std::isfinite(decay)) {

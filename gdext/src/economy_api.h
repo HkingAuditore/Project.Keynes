@@ -30,6 +30,7 @@ class NativeEconomyRuntime;
 struct NarrativeCellView;
 struct NarrativeUnrestRow;
 struct NarrativeUnrestOdds;
+struct NarrativeEconomyNotice;
 
 // P3-B: everything a reader depends on is published as ONE immutable snapshot.
 // Reading the counters one by one let a card see metric A's new revision next to
@@ -511,6 +512,8 @@ bool submit_effect_commands_pod(NativeEconomyRuntime &economy,
                                 const EconomyApi::EffectCommand *commands,
                                 size_t count, std::vector<int64_t> &request_ids,
                                 std::string &error);
+bool submit_effect_family_trait(NativeEconomyRuntime &economy, uint64_t family,
+    const std::string &trait, bool grant, int32_t strength, int64_t day, int64_t sequence);
 bool effect_command_result_pod(const NativeEconomyRuntime &economy,
                                int64_t request_id, bool &complete, bool &ok,
                                std::string &reason);
@@ -633,6 +636,8 @@ godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy
     int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
 godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country);
 void sample_narrative_cell(const NativeEconomyRuntime &, NarrativeCellView &, bool detailed);
+std::vector<NarrativeEconomyNotice> narrative_economy_notices(
+    const NativeEconomyRuntime &, int64_t day, uint64_t country);
 bool narrative_unrest_rows(const NativeEconomyRuntime &, int32_t cell, std::vector<NarrativeUnrestRow> &);
 NarrativeUnrestOdds narrative_unrest_odds(const NativeEconomyRuntime &, int32_t cell, int32_t profession, int32_t action);
 bool settle_narrative_unrest(NativeEconomyRuntime &, int32_t cell, int32_t profession, int32_t action, bool success);

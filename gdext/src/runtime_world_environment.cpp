@@ -2,6 +2,7 @@
 
 #include "economy_api.h"
 #include "modifier_api.h"
+#include "runtime_checkpoint_wire.h"
 #include "runtime_climate_authority.h"
 #include "runtime_climate_physics.h"
 #include "runtime_climate_weather_input.h"
@@ -168,11 +169,13 @@ const char *RuntimeWorldEnvironment::State::refresh_season(RuntimeEnvironmentSna
     }
     read_lane(input.terrain, columns[TERRAIN].arr_u8);
     read_lane(input.landform, columns[LANDFORM].arr_u8);
+    read_lane(input.vegetation, columns[VEGETATION].arr_u8);
     read_lane(input.cover, columns[COVER].arr_u8);
     read_lane(input.cell_moisture, columns[MOISTURE].arr_f32);
     read_lane(input.cell_base_moisture, columns[BASE_MOISTURE].arr_f32);
     read_lane(input.cell_snow_cover, columns[SNOW].arr_f32);
     read_lane(input.cell_soil_moisture, arrays.soil);
+    read_lane(input.season_growth_pressure, arrays.growth_pressure);
     auto view = season ? std::make_shared<RuntimeSeasonView>(*season)
                        : std::make_shared<RuntimeSeasonView>();
     view->day = input.day;
@@ -354,6 +357,39 @@ std::shared_ptr<const RuntimeEnvironmentSnapshot> RuntimeWorldEnvironment::prepa
 std::shared_ptr<const RuntimeSeasonView> RuntimeWorldEnvironment::season_view(int64_t day) const {
     const auto &state = *_state;
     return state.season && state.season->day <= day ? state.season : state.previous_season;
+}
+
+std::vector<uint8_t> RuntimeWorldEnvironment::capture_season_history(int64_t day) const {
+    const auto view = season_view(day);
+    if (!view) return {};
+    CheckpointWriter out;
+    out.bytes.reserve(sizeof(int64_t) + 1 + view->biome_history.size() + view->vegetation_history.size());
+    out.field(view->day);
+    out.field(static_cast<uint8_t>(view->history_next));
+    out.bytes.insert(out.bytes.end(), view->biome_history.begin(), view->biome_history.end());
+    out.bytes.insert(out.bytes.end(), view->vegetation_history.begin(), view->vegetation_history.end());
+    return std::move(out.bytes);
+}
+
+bool RuntimeWorldEnvironment::restore_season_history(const std::vector<uint8_t> &bytes, int64_t day) {
+    auto &state = *_state;
+    const auto cells = static_cast<size_t>(state.opening.cell_count);
+    const size_t lane = cells * RuntimeSeasonView::HISTORY_LENGTH;
+    CheckpointReader in{bytes.data(), bytes.size()};
+    auto view = std::make_shared<RuntimeSeasonView>();
+    uint8_t cursor = 0;
+    if (!in.field(view->day) || !in.field(cursor) || in.size - in.cursor != lane * 2 ||
+            view->day < 0 || view->day > day || cursor >= RuntimeSeasonView::HISTORY_LENGTH)
+        return false;
+    const auto begin = bytes.begin() + in.cursor;
+    view->history_next = cursor;
+    view->biome_history.assign(begin, begin + lane);
+    view->vegetation_history.assign(begin + lane, bytes.end());
+    view->landform = state.opening.landform;
+    view->base_landform = state.opening.military_base_landform;
+    view->base_moisture = state.opening.cell_base_moisture;
+    state.season = std::move(view);
+    return true;
 }
 
 const RuntimeEnvironmentSnapshot &RuntimeWorldEnvironment::narrative_geography() const {

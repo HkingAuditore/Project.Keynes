@@ -781,6 +781,8 @@ public:
     godot::Dictionary family_traits(int64_t family_handle) const;
     godot::Dictionary family_branch_effects(int64_t family_handle,
                                             int32_t cell) const;
+    bool submit_effect_family_trait(uint64_t family, const std::string &trait, bool grant,
+        int32_t strength, int64_t day, int64_t sequence);
     godot::Dictionary submit_family_trait_commands(
         const godot::Dictionary &packed_batch);
     godot::Dictionary family_founding_offers(int32_t offset,
@@ -849,6 +851,7 @@ public:
     // an empty list when the cell has no aggrieved profession.
     godot::Dictionary cell_mobilization_snapshot(int32_t cell_idx) const;
     void sample_narrative_cell(NarrativeCellView &, bool detailed) const;
+    std::vector<NarrativeEconomyNotice> narrative_economy_notices(int64_t day, uint64_t country) const;
     bool narrative_unrest_rows(int32_t cell, std::vector<NarrativeUnrestRow> &) const;
     NarrativeUnrestOdds calculate_mobilization_odds(int32_t cell, int32_t profession,
         int32_t action, int64_t spend_bp, godot::Dictionary *details) const;

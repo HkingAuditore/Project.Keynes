@@ -1,5 +1,6 @@
 #include "native_simulation_day_context.h"
 #include "native_simulation_host_military.h"
+#include "pk_log.h"
 #include "runtime_vision.h"
 #include "world_ext.h"
 
@@ -16,8 +17,12 @@ void NativeSimulationHost::attach_military(std::shared_ptr<NativeMilitaryRuntime
     _executor_military = std::move(military);
     if (_executor_military) {
         _executor_military->_runtime_host = this;
-        if (_has_pending_restore)
-            _executor_military->restore_terrain(_pending_restore_bundle.military_terrain_bytes);
+        if (_has_pending_restore &&
+                (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_MILITARY_TERRAIN) != 0) {
+            std::string error;
+            if (!_executor_military->restore_terrain(_pending_restore_bundle.military_terrain_bytes, error))
+                log_error("military terrain restore: %s", error.c_str());
+        }
         _executor_military->publish(_executor_military->last_result);
     }
 }

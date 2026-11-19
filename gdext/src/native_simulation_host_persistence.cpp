@@ -36,6 +36,7 @@
 #endif
 #include "native_simulation_host_support.h"
 #include "runtime_control_wakeup.h"
+#include "runtime_world_environment.h"
 namespace pk {
 namespace {
 void d7_append_u32(std::vector<uint8_t> &out, uint32_t value) {
@@ -222,7 +223,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_ECONOMY_ECP2 |
                                  RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT |
                                  RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT |
-                                 RUNTIME_SAVE_SECTION_MILITARY_TERRAIN)) != 0) {
+                                 RUNTIME_SAVE_SECTION_MILITARY_TERRAIN |
+                                 RUNTIME_SAVE_SECTION_SEASON_HISTORY)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -896,7 +898,10 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     }
     // The optional Effect inbox follows the final authority section. Its
     // payload is already covered by the whole bundle checksum.
-    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_MILITARY_TERRAIN) != 0u) {
+    for (auto [section, bytes_out] : {
+            std::make_pair(RUNTIME_SAVE_SECTION_MILITARY_TERRAIN, &parsed.military_terrain_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_SEASON_HISTORY, &parsed.season_history_bytes)}) {
+        if ((parsed.section_mask & section) == 0u) continue;
         uint32_t length = 0;
         if (payload_end - cursor < 4u || !read_u32(cursor, length) ||
                 length > payload_end - cursor - 4u) {
@@ -904,7 +909,7 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
         cursor += 4u;
-        parsed.military_terrain_bytes.assign(bytes + cursor, bytes + cursor + length);
+        bytes_out->assign(bytes + cursor, bytes + cursor + length);
         cursor += length;
     }
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT) != 0u) {
@@ -1257,6 +1262,11 @@ void NativeSimulationHost::build_save_bundle(
         if (!bundle->military_terrain_bytes.empty())
             bundle->section_mask |= RUNTIME_SAVE_SECTION_MILITARY_TERRAIN;
     }
+    if (_world_environment) {
+        bundle->season_history_bytes = _world_environment->capture_season_history(bundle->committed_day);
+        if (!bundle->season_history_bytes.empty())
+            bundle->section_mask |= RUNTIME_SAVE_SECTION_SEASON_HISTORY;
+    }
 
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
     // carries an explicit ABI/section mask, followed by a bounded pending
@@ -1274,7 +1284,7 @@ void NativeSimulationHost::build_save_bundle(
             &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
             &bundle->ideology_bytes, &bundle->economy_pod_bytes,
             &bundle->economy_ecp2_bytes, &bundle->effect_transport_bytes,
-            &bundle->military_terrain_bytes}) {
+            &bundle->military_terrain_bytes, &bundle->season_history_bytes}) {
         const size_t limit = section == &bundle->economy_ecp2_bytes
             ? std::numeric_limits<uint32_t>::max() : 64u * 1024u * 1024u;
         if (section->size() > limit) {
@@ -1535,9 +1545,10 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(ecp2_checksum);
     }
 
-    if (!bundle->military_terrain_bytes.empty()) {
-        append_u32_le(static_cast<uint32_t>(bundle->military_terrain_bytes.size()));
-        append_bytes(bundle->military_terrain_bytes.data(), bundle->military_terrain_bytes.size());
+    for (const auto *section : {&bundle->military_terrain_bytes, &bundle->season_history_bytes}) {
+        if (section->empty()) continue;
+        append_u32_le(static_cast<uint32_t>(section->size()));
+        append_bytes(section->data(), section->size());
     }
     if (!bundle->effect_transport_bytes.empty()) {
         append_bytes(bundle->effect_transport_bytes.data(), bundle->effect_transport_bytes.size());

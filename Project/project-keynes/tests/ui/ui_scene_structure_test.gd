@@ -53,6 +53,16 @@ func _check_touch_number_pad() -> void:
 	_expect("touch number pad applies the step and submits the value",
 		submissions == [["8", 0]] and not pad.is_open())
 	pad.open({"title": "定额", "value": "12", "mode": 1})
+	var percent: Button = pad.get_node("%Percent")
+	var absolute: Button = pad.get_node("%Absolute")
+	_expect("both tax modes are reachable by keyboard",
+		percent.focus_mode == Control.FOCUS_ALL and absolute.focus_mode == Control.FOCUS_ALL
+		and pad.find_next_valid_focus() == percent and percent.find_next_valid_focus() == absolute)
+	_expect("only the absolute mode is highlighted",
+		absolute.theme_type_variation == &"PKPrimaryButton" and percent.theme_type_variation == &"PKIconButton")
+	percent.pressed.emit()
+	_expect("only the percent mode is highlighted after switching",
+		percent.theme_type_variation == &"PKPrimaryButton" and absolute.theme_type_variation == &"PKIconButton")
 	_expect("reopened touch number pad displays the current field title",
 		pad.get_node("%Title").text == "定额")
 	pad.get_node("%Cancel").pressed.emit()

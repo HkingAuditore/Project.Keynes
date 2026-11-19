@@ -53,6 +53,7 @@ func _run() -> void:
 	var opening_resources := _resource_state(ext)
 	var opening_reserves: Array = opening_resources.reserves
 	var rows: Array = []
+	var admitted_targets := {1: 0}
 	var chain := "keynes-external-v5:seed=20260727:days1-4:target=0,2,3,4"
 	clock.pause(false)
 	for day in range(1, EXTERNAL_DAYS + 1):
@@ -60,6 +61,7 @@ func _run() -> void:
 		var target: Dictionary = military.set_target(handle, 0, day + 1)
 		_expect("v5 military target accepted on the first unsealed day",
 			bool(target.get("ok", false)) and int(target.get("effective_day", -1)) == day + 1)
+		admitted_targets[int(target.get("effective_day", -1))] = day + 1
 		var report := await _run_day(host, economy, clock, day)
 		_expect("v5 economy commits", bool(report.get("done", false)))
 		_expect("v5 all ledgers conserved", int(report.get("money_error", -1)) == 0
@@ -86,8 +88,9 @@ func _run() -> void:
 			_expect("v5 species update ran on the executor for this day",
 				int(host._runtime_last_commit.get("committed_day", -1)) == day
 				and bool(host._runtime_last_commit.get("species_writeback", false)))
-		_expect("v5 military target settles on its admitted day",
-			int(army.get("target_value", -1)) == (day if day > 1 else 0))
+		_expect("v5 military target is exactly the command admitted for committed day %d" % day,
+			int(ext.runtime_committed_day()) == day and admitted_targets.has(day)
+			and int(army.get("target_value", -1)) == int(admitted_targets[day]))
 		var resource := _resource_state(ext)
 		var recovery_count := 0
 		for i in range(resource.reserves.size()):

@@ -241,6 +241,7 @@ func _bind_settings_controls() -> void:
 		"volume": %Volume,
 		"muted": %Muted,
 		"reduce_motion": %ReduceMotion,
+		"event_pause": %EventPauseOptions,
 	}
 	%Vsync.toggled.connect(_settings_controls.graphics.set_vsync_enabled)
 	(%Volume as HSlider).value_changed.connect(func(val: float) -> void:
@@ -503,6 +504,7 @@ func _show_settings() -> void:
 		[Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900), Vector2i(1920, 1080), Vector2i(2560, 1440)],
 		Vector2i(current.resolution_width, current.resolution_height))
 	_settings_controls.graphics.configure(current)
+	_settings_controls.event_pause.configure(int(current.event_pause_mask))
 	# 触摸档：布局策略三档（fit/fill/dense）+ 布局之上的再缩放（50/75/100）。
 	# 桌面档：只有百分比缩放（80/100/125/150），布局行隐藏。
 	var layout_active := _ui_layout_mode_active()
@@ -1058,6 +1060,7 @@ func _apply_settings() -> void:
 		"master_volume": _settings_controls.volume.value,
 		"master_muted": _settings_controls.muted.button_pressed,
 		"reduce_motion": _settings_controls.reduce_motion.button_pressed,
+		"event_pause_mask": _settings_controls.event_pause.value(),
 	}
 	# 触摸档：UIScale 装缩放百分比（int）、UILayout 装布局档位（String）。
 	# 桌面档：UIScale 装桌面百分比（int），UILayout 隐藏。

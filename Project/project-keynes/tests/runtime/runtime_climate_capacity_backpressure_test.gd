@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 
 class CapacityProbe extends RefCounted:
 	var ready := false
@@ -54,7 +54,13 @@ class HostProbe extends WorldRuntimeHost:
 		ticks.append(day)
 		return {}
 
-func _init() -> void:
+func _run() -> void:
+	_check_capacity_gate()
+	await _check_prepared_input_order()
+	print("[climate-capacity-backpressure] checks=%d failures=%d" % [_checks, _failures])
+	call_deferred("quit", 0 if _failures == 0 else 1)
+
+func _check_capacity_gate() -> void:
 	var host := HostProbe.new()
 	var generator := GeneratorProbe.new()
 	var clock := WorldClock.new()
@@ -93,8 +99,39 @@ func _init() -> void:
 	_test_climate_calendar(generator, clock)
 	host.free()
 	clock.free()
-	print("[climate-capacity-backpressure] PASS")
-	quit(0)
+
+func _check_prepared_input_order() -> void:
+	var clock := WorldClock.new()
+	clock.auto_start = false
+	root.add_child(clock)
+	clock.set_process(false)
+	var host := _create_host()
+	host.runtime_economy_auto_pod_active = true
+	root.add_child(host)
+	host.configure(null, null, clock)
+	host.set_climate_authority_override("force_on")
+	var config := host.configure_session({"kind": "new_game", "config": _background_config().to_dictionary()})
+	_expect("the native ordering fixture configures", bool(config.get("ok", false)))
+	if bool(config.get("ok", false)):
+		await host.generate_world()
+	var prepared_days: Array[int] = []
+	if host.is_runtime_ready_for_ticks():
+		var generator := host.get_generator()
+		clock.set_speed(100.0)
+		for day in range(1, 12):
+			_publish_day(host, clock, day)
+			if not await _wait_golden_read_boundary(host, generator.get_economy_facade(), day):
+				_expect("the native ordering fixture commits day %d" % day, false)
+				break
+			if day >= 10:
+				var report := generator.get_runtime_thread_report()
+				prepared_days.append(int(report.get("simulation_environment_day", -1)))
+				_expect("commit and prepared environment have the same date on day %d" % day,
+					int(report.get("simulation_committed_day", -1)) == prepared_days.back())
+	_expect("both native inputs are used in order after admission", prepared_days == [10, 11])
+	_expect("the native ordering fixture closes", bool((await host.close_world()).get("ok", false)))
+	host.free()
+	clock.free()
 
 func _test_climate_calendar(generator: MapGenerator, clock: WorldClock) -> void:
 	generator.set_world_clock_ref(clock)

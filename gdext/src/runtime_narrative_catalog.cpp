@@ -83,14 +83,18 @@ bool read_leaf(const NarrativeConditionProgram::Leaf &leaf,
         case POPULATION_LTE: return cell.population <= leaf.integer;
         case SATISFACTION_GTE: return cell.satisfaction >= leaf.threshold;
         case SATISFACTION_LTE: return cell.satisfaction <= leaf.threshold;
-        case HAS_BUILDING_TYPE:
-        case MARKET_GOOD_SHORTAGE:
-        case HAS_NATURAL_RESOURCE: return false;
-        case BUILDING_COUNT_GTE: return leaf.integer <= 0;
-        // With the old market and resource columns absent, a keyed stock test
-        // falls through to the national treasury and a price test sees 1.0.
-        case MARKET_GOOD_STOCK_GTE: return count_for(country.treasury_goods, leaf.key) >= leaf.integer;
-        case MARKET_GOOD_STOCK_LTE: return count_for(country.treasury_goods, leaf.key) <= leaf.integer;
+        case HAS_BUILDING_TYPE: return count_for(cell.building_counts, leaf.key) > 0;
+        case MARKET_GOOD_SHORTAGE: return cell.price_ratio(leaf.key) >= 1.30;
+        case HAS_NATURAL_RESOURCE: {
+            const auto resource = cell.resources.find(leaf.key);
+            return resource != cell.resources.end() &&
+                resource->second >= std::max<int64_t>(1, leaf.integer);
+        }
+        case BUILDING_COUNT_GTE:
+            return (leaf.key.empty() ? cell.buildings : count_for(cell.building_counts, leaf.key))
+                >= leaf.integer;
+        case MARKET_GOOD_STOCK_GTE: return cell.stock(leaf.key) >= leaf.integer;
+        case MARKET_GOOD_STOCK_LTE: return cell.stock(leaf.key) <= leaf.integer;
         case MARKET_GOOD_PRICE_RATIO_GTE: return cell.price_ratio(leaf.key) >= leaf.threshold;
         case HAS_TECHNOLOGY: return country.technologies.count(leaf.key) != 0;
         case LACKS_TECHNOLOGY: return country.technologies.count(leaf.key) == 0;
@@ -208,7 +212,9 @@ NarrativeEffect compile_narrative_effect(const Dictionary &effect) {
     result.key = narrative_key(String(effect.get("target_key", "")).strip_edges());
     result.tag = narrative_key(effect.get("tag_key", ""));
     result.value = effect.get("int_value", 0);
-    result.ratio = effect.get("ratio_bp", 0);
+    result.ratio = std::clamp<int64_t>(effect.get("ratio_bp", 0), -5000, 5000);
+    if (result.kind == NarrativeEffect::ADD_POPULATION)
+        result.value = std::clamp<int64_t>(result.value, -5000, 5000);
     result.duration = std::clamp<int64_t>(effect.get("duration_days", 90), 1, 1825);
     result.magnitude = std::clamp<int64_t>(effect.get("magnitude_q16", 65536), 655, 131072);
     if (result.kind == NarrativeEffect::WEIGHT_BIAS)
@@ -235,6 +241,9 @@ NarrativeDefinition RuntimeNarrativeCatalog::compile_event(const Dictionary &raw
     result.min_era = raw.get("min_era_index", 0);
     result.max_era = raw.get("max_era_index", 10);
     result.one_shot = raw.get("one_shot", false);
+    result.category = std::clamp<int32_t>(raw.get("event_category", 7), 0, 7);
+    result.notification = result.id == "evt.chain.ancient_foundry_legacy" ||
+        bool(raw.get("event_notification", false));
     result.tags = keys(raw.get("tags", Array()));
     result.required_tech = keys(raw.get("required_technologies", Array()));
     result.blocked_tech = keys(raw.get("blocked_technologies", Array()));

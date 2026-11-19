@@ -183,7 +183,15 @@ bool NativeMilitaryRuntime::submit_military_economy_commands(
                 }
             }
             for (const auto &packet : packets)
-                if (!_runtime_host->submit_economy_pod_command(packet, error)) return false;
+                if (packet.request_id == 0) {
+                    error = "military_economy_request_identity_exhausted";
+                    return false;
+                }
+            // Nonzero identities always receive an individual admission result,
+            // including capacity and validation rejections. Keep those rows
+            // pending until their own terminal receipts.
+            for (const auto &packet : packets)
+                _runtime_host->submit_economy_pod_command(packet, error);
             return true;
         };
         if (cohort_rows.empty() && lane_rows.empty()) {

@@ -21,11 +21,19 @@ struct NarrativeDay {
     const std::vector<std::string> &professions;
 };
 
+struct NarrativeIndependenceAction {
+    int32_t cell = -1;
+    uint64_t old_owner = 0, new_owner = 0;
+    int64_t sequence = 0;
+    std::string stable_id, display_name;
+};
+
 struct RuntimeNarrativeView {
     int64_t day = -1;
     int64_t popup_day = -999;
     godot::Dictionary active_offer;
-    godot::Array queue, chronicle, independence;
+    godot::Array queue, chronicle;
+    uint16_t pause_mask = 0x00ff;
     int64_t unrest_fact = -1;
     godot::Dictionary ai_request;
 };
@@ -33,7 +41,7 @@ struct RuntimeNarrativeView {
 // Control requests run between committed days. The response is written before
 // signaling the requesting thread under the host control mutex.
 struct RuntimeNarrativeRequest {
-    enum class Kind { CHOOSE, COMPLETE, SOURCE_ID, AI_RESULT, SET_AI };
+    enum class Kind { CHOOSE, AI_RESULT, SET_AI, PAUSE_POLICY };
     Kind kind = Kind::CHOOSE;
     godot::Dictionary args, result;
     bool done = false;
@@ -46,15 +54,24 @@ public:
     int64_t step(const NarrativeDay &input, const std::vector<RuntimeEventsRecord> &facts,
                  int64_t acknowledged);
     godot::Dictionary capture() const;
-    std::shared_ptr<const RuntimeNarrativeView> view() const;
+    std::shared_ptr<const RuntimeNarrativeView> view(int64_t committed_day) const;
+    godot::Dictionary queue_choice(int64_t day, const godot::Dictionary &args, bool automatic = false);
+    godot::Dictionary take_due_choice(int64_t day);
+    void queue_automatic_choice(int64_t day);
+    void set_pause_policy(int64_t day, uint16_t mask);
+    void apply_pause_policy(int64_t day);
+    bool notice_policy_enabled() const { return (_pause_mask >> 8) != 0; }
+    void economy_notices(const NarrativeDay &, const std::vector<NarrativeEconomyNotice> &);
     godot::Dictionary begin_choice(const NarrativeDay &input, const godot::Dictionary &args);
-    godot::Dictionary complete_choice(const godot::Dictionary &args);
+    godot::Dictionary complete_choice(godot::Dictionary result);
+    std::vector<NarrativeIndependenceAction> take_independence_actions();
     int64_t allocate_modifier_source() { return _next_modifier_source++; }
     godot::Dictionary accept_ai(const NarrativeDay &input, const godot::Dictionary &result);
     void set_ai_enabled(bool enabled) { _ai_enabled = enabled; }
     uint64_t player() const { return _country; }
+    const RuntimeNarrativeCatalog &catalog() const { return _catalog; }
     bool placing_choice() const { return !_choice_record.is_empty(); }
-    void finish_unrest_choice(bool applied);
+    void finish_unrest_choice(bool applied, int64_t day);
     const godot::Dictionary &choice_record() const { return _choice_record; }
     int64_t allocate_unrest_sequence() { return ++_unrest_sequence; }
 
@@ -93,6 +110,7 @@ private:
         uint64_t owner;
         int64_t queued;
         std::string stable_id;
+        bool submitted = false;
     };
 
     static constexpr int64_t NEVER = -999;
@@ -100,6 +118,9 @@ private:
     uint64_t _country = 0, _seed = 1;
     int64_t _days_per_year = 365, _day = -1;
     bool _ai_enabled = false;
+    uint16_t _pause_mask = 0x00ff;
+    std::deque<std::pair<int64_t, uint16_t>> _pause_updates;
+    godot::Dictionary _pending_choice;
     int64_t _next_offer = 1, _next_generation = 1, _next_record = 1;
     int64_t _next_bias = 1, _next_modifier_source = 1, _next_pool = 1;
     int64_t _last_pulse = 0, _last_popup = NEVER, _last_fact = -1, _last_probe = NEVER;
@@ -115,8 +136,8 @@ private:
     std::unordered_map<std::string, NarrativeDefinition> _dynamic;
     std::vector<UnrestPending> _unrest_checks;
     std::vector<Independence> _independence;
-    godot::Array _pending_ai_unrest, _independence_requests;
-    godot::Dictionary _pending_ai, _ai_request;
+    std::vector<NarrativeIndependenceAction> _independence_actions;
+    godot::Dictionary _pending_ai;
     // Offers and records keep the established pknr/presentation shape. No
     // condition reads the presentation payload to sample the simulation.
     godot::Dictionary _active, _choice_record, _choice_context;
@@ -128,7 +149,15 @@ private:
     bool enqueue(const NarrativeDefinition &, const NarrativeDay &, int32_t cell,
         const std::string &chain = {}, bool bypass = false, const godot::Dictionary &meta = {},
         int64_t chain_salt = 0, const godot::Array &odds = {});
+    int64_t _last_notification_fact = 0, _notification_sequence = 0;
+    int32_t _last_notice_era = -1;
+    void enqueue_notice(const NarrativeDay &, int32_t cell, int32_t category,
+                        const char *id, const char *title);
+    void fact_notices(const NarrativeDay &, const std::vector<RuntimeEventsRecord> &);
     void promote(int64_t day);
+    godot::Dictionary validate_choice(const godot::Dictionary &args) const;
+    bool stops_for(const godot::Dictionary &offer, uint16_t mask) const;
+    uint16_t pause_policy_for(int64_t day) const;
     bool flag_present(const std::string &key, int32_t cell) const;
     void local_effect(const NarrativeEffect &, int32_t cell, int64_t effective);
     void prune(int64_t day);

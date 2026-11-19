@@ -14,9 +14,11 @@ String text(const std::string &value) { return String::utf8(value.c_str()); }
 } // namespace
 
 int RuntimeNarrative::ai_pressure(const NarrativeCountryView &country, const NarrativeCellView &cell) {
-    // The legacy price and shortage lanes are empty. Keep their contribution
-    // zero until the sampler corrections are made together with effect parity.
-    int score = std::clamp<int>(std::lround((0.6 - cell.satisfaction) * 100.0), 0, 25);
+    const auto shortages = std::count_if(cell.market_prices.begin(), cell.market_prices.end(),
+        [](const auto &price) { return price.second >= 1.30; });
+    int score = std::min(2, static_cast<int>(shortages)) * 15;
+    score += std::clamp<int>(std::lround((cell.max_price_ratio - 1.30) * 50.0), 0, 25);
+    score += std::clamp<int>(std::lround((0.6 - cell.satisfaction) * 100.0), 0, 25);
     const double stress = cell.temperature >= 30.0 ? (cell.temperature - 30.0) / 10.0 :
         std::max(0.0, -cell.temperature) / 15.0;
     score += std::clamp<int>(std::lround(stress * 20.0), 0, 20);
@@ -52,7 +54,6 @@ bool RuntimeNarrative::request_ai(const NarrativeDay &input, const NarrativeCell
     request["recent_chronicle"] = recent;
     _last_ai = input.day;
     _pending_ai = request;
-    _ai_request = request;
     return true;
 }
 
@@ -84,10 +85,11 @@ void RuntimeNarrative::poll_probes(const NarrativeDay &input) {
                 continue;
             }
             if (row == _tracking.end()) {
-                _tracking.push_back({key, cell, input.day, input.day, 1.0, sample.satisfaction});
+                _tracking.push_back({key, cell, input.day, input.day, sample.max_price_ratio, sample.satisfaction});
                 row = std::prev(_tracking.end());
             } else {
                 row->seen = input.day;
+                row->peak_price = std::max(row->peak_price, sample.max_price_ratio);
                 row->min_satisfaction = std::min(row->min_satisfaction, sample.satisfaction);
             }
             const auto seeded = _last_seed.find(key);
@@ -115,7 +117,8 @@ void RuntimeNarrative::poll_probes(const NarrativeDay &input) {
             hint += String::utf8("；已持续 ") + String::num_int64(held) +
                 String::utf8(" 日；本地人口 ") + String::num_int64(sample.population) +
                 String::utf8("，当前满意度 ") + narrative_percent(sample.satisfaction) +
-                String::utf8("%；期间最高价格比 1.00；期间最低满意度 ") +
+                String::utf8("%；期间最高价格比 ") + String::num(row->peak_price, 2) +
+                String::utf8("；期间最低满意度 ") +
                 narrative_percent(row->min_satisfaction) + "%";
             if (request_ai(input, sample, {input.day + 1, 0, cell, {}, {}, {}}, {}, probe.id, hint))
                 _last_seed[key] = input.day;
@@ -164,7 +167,6 @@ Dictionary RuntimeNarrative::accept_ai(const NarrativeDay &input, const Dictiona
         return narrative_response(false, "ai_request_unknown");
     const Dictionary pending = _pending_ai;
     _pending_ai = Dictionary();
-    _ai_request = Dictionary();
     if (!bool(result.get("ok", false))) {
         auto failed = narrative_response(false, "ai_generation_failed");
         failed["code"] = result.get("code", "ai_generation_failed");

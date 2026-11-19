@@ -1989,31 +1989,16 @@ Dictionary NativeEconomyRuntime::submit_family_trait_commands(
     std::vector<FamilyTraitCommand> commands;
     commands.reserve(count);
     for (size_t i = 0; i < count; ++i) {
-        const auto trait_it = std::lower_bound(_family_trait_ids.begin(),
-            _family_trait_ids.end(), keys[i]);
-        int32_t family = -1;
-        if (operations[i] < 1 || operations[i] > 3 ||
-            trait_it == _family_trait_ids.end() || *trait_it != keys[i] ||
-            !families_store().valid_handle(static_cast<uint64_t>(handles[i]), family) ||
-            days[i] < 0) {
+        std::string error;
+        const int32_t id = resolve_family_trait_command(operations[i], handles[i], keys[i],
+            strengths[i], days[i], error);
+        if (id < 0) {
             out["ok"] = false;
-            out["reason"] = "family_trait_command_entry_invalid";
+            out["reason"] = error.c_str();
             return out;
         }
-        const int32_t trait_id = static_cast<int32_t>(
-            trait_it - _family_trait_ids.begin());
-        if (operations[i] != 2 &&
-            (strengths[i] < _family_trait_strength_min_q16[trait_id] ||
-             strengths[i] > _family_trait_strength_max_q16[trait_id] ||
-             (strengths[i] - _family_trait_strength_min_q16[trait_id]) %
-                 _family_trait_strength_step_q16[trait_id] != 0)) {
-            out["ok"] = false;
-            out["reason"] = "family_trait_command_strength_invalid";
-            return out;
-        }
-        commands.push_back({operations[i], static_cast<uint64_t>(handles[i]),
-            trait_id, strengths[i], days[i], priorities[i], sequences[i],
-            ++_next_submit_order});
+        commands.push_back({operations[i], static_cast<uint64_t>(handles[i]), id,
+            strengths[i], days[i], priorities[i], sequences[i], ++_next_submit_order});
     }
     _family_trait_commands.insert(_family_trait_commands.end(),
         commands.begin(), commands.end());

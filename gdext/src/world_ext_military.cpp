@@ -97,7 +97,9 @@ void sample_narrative_military_country(const MilitaryCore &core, NarrativeCountr
         if (armies.active[army] && armies.owner_slot[army] == slot)
             out.soldiers_in_armies += armies.cached_headcount[army];
     for (const auto &war : core.wars()) {
-        if (!war.active || (war.attacker_slot != slot && war.defender_slot != slot)) continue;
+        if (war.attacker_handle != out.handle && war.defender_handle != out.handle) continue;
+        out.wars.push_back(war.id);
+        if (!war.active) continue;
         const int32_t score = war.score_battle_q16 + war.score_annihilation_q16 + war.score_attrition_q16;
         ++out.war_count;
         out.war_score = std::min<int64_t>(out.war_score, war.attacker_slot == slot ? score : -score);
@@ -184,7 +186,7 @@ bool NativeMilitaryRuntime::forward_events(int64_t day, DCWorldExt *legacy) {
                 const auto &event = events[i];
                 auto &record = records.emplace_back();
                 if (!legacy) record.event_id = _runtime_host->allocate_events_ingress_key();
-                record.tick = event_tick;
+                record.tick = event.day;
                 record.type = std::clamp<int32_t>(event.type, 40, 47);
                 record.source = 5;
                 record.entity_id = static_cast<int32_t>(event.i0);
@@ -207,6 +209,7 @@ bool NativeMilitaryRuntime::forward_events(int64_t day, DCWorldExt *legacy) {
             }
             events_forwarded += static_cast<int64_t>(records.size());
             event_cursor = static_cast<int64_t>(events[end - 1].id);
+            event_tick = events[end - 1].day;
         }
     }
 }
@@ -215,22 +218,24 @@ const char *NativeMilitaryRuntime::prepare_day(const RuntimeEnvironmentSnapshot 
     // Military terrain changes at the seasonal refresh boundary. Daily weather
     // also changes cover, but those changes never refreshed military costs.
     if (!environment.climate_season_refresh_ran) return nullptr;
-    const size_t count = static_cast<size_t>(core().terrain().cell_count);
-    if (environment.cover.size() != count) return "military_terrain_cover_shape_invalid";
-    if (environment.cover != core().terrain().cover) {
-        auto terrain = core().terrain();
-        terrain.cover = environment.cover;
-        terrain.vegetation = environment.vegetation;
-        if (!environment.military_base_landform.empty())
-            terrain.landform = environment.military_base_landform;
-        if (!environment.military_settlement_tier.empty())
-            terrain.settlement_tier = environment.military_settlement_tier;
-
-        std::string error;
-        if (!core().set_terrain(std::move(terrain), error))
-            return "military_season_terrain_invalid";
-    }
-    return nullptr;
+    const auto &current = core().terrain();
+    const size_t count = static_cast<size_t>(current.cell_count);
+    const auto &landform = environment.military_base_landform.empty() ? current.landform : environment.military_base_landform;
+    const auto &tiers = environment.military_settlement_tier.empty() ? current.settlement_tier : environment.military_settlement_tier;
+    if (environment.cover.size() != count || environment.vegetation.size() != count ||
+        environment.is_water.size() != count || landform.size() != count || tiers.size() != count)
+        return "military_season_terrain_shape_invalid";
+    if (current.cover == environment.cover && current.vegetation == environment.vegetation &&
+        current.landform == landform && current.settlement_tier == tiers &&
+        current.is_water == environment.is_water) return nullptr;
+    auto terrain = current;
+    terrain.cover = environment.cover;
+    terrain.vegetation = environment.vegetation;
+    terrain.landform = landform;
+    terrain.settlement_tier = tiers;
+    terrain.is_water = environment.is_water;
+    std::string error;
+    return core().set_terrain(std::move(terrain), error) ? nullptr : "military_season_terrain_invalid";
 }
 
 std::vector<uint8_t> NativeMilitaryRuntime::capture_terrain() const {
@@ -243,9 +248,12 @@ std::vector<uint8_t> NativeMilitaryRuntime::capture_terrain() const {
     return bytes;
 }
 
-void NativeMilitaryRuntime::restore_terrain(const std::vector<uint8_t> &bytes) {
+bool NativeMilitaryRuntime::restore_terrain(const std::vector<uint8_t> &bytes, std::string &error) {
     const size_t cells = static_cast<size_t>(core().terrain().cell_count);
-    if (bytes.empty() || bytes.size() != cells * 5) return;
+    if (bytes.size() != cells * 5) {
+        error = "military_terrain_checkpoint_size_invalid";
+        return false;
+    }
     auto terrain = core().terrain();
     auto next = bytes.begin();
     for (auto *lane : {&terrain.landform, &terrain.vegetation, &terrain.cover,
@@ -253,8 +261,7 @@ void NativeMilitaryRuntime::restore_terrain(const std::vector<uint8_t> &bytes) {
         lane->assign(next, next + cells);
         next += cells;
     }
-    std::string error;
-    core().set_terrain(std::move(terrain), error);
+    return core().set_terrain(std::move(terrain), error);
 }
 
 
@@ -1378,7 +1385,6 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     bind_military_dependencies();
     const int64_t day = dict_i64(ctx, "day_index", -1);
     auto report = _military->run_day(day);
-    _military->event_tick = day;
     const auto events_before = _military->events_forwarded;
     if (!_military->forward_events(day, this))
         return military_fail("military_events_submission_failed");
@@ -1417,6 +1423,21 @@ bool NativeMilitaryRuntime::submit(MilitaryCommand command, std::string &error) 
     if (_military_forced_run_day < 0 || day < _military_forced_run_day)
         _military_forced_run_day = day;
     return true;
+}
+
+bool NativeMilitaryRuntime::submit_independence(
+        uint64_t old_owner, uint64_t new_owner, int32_t cell, int64_t day) {
+    ensure_military_country_slots();
+    MilitaryCommand command;
+    command.op = MCMD_WAR_DECLARE_FORCED;
+    command.country = old_owner;
+    command.other = new_owner;
+    command.effective_day = day;
+    std::string error;
+    if (!submit(command, error)) return false;
+    command.op = MCMD_GARRISON_TRANSFER_CELL;
+    command.cell = cell;
+    return submit(std::move(command), error);
 }
 
 void NativeMilitaryRuntime::admit(MilitaryCommandBatch &batch) {

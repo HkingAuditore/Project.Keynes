@@ -1,34 +1,32 @@
 class_name NarrativeEventService
 extends RefCounted
 
-## Reads the executor's committed story frame. Choice effects still use the
-## existing adapters and the context included in the native choice receipt.
+## Reads the executor's committed story frame and forwards player choices.
 signal offer_ready(offer: Dictionary)
+signal offer_changed(offer: Dictionary)
 signal chronicle_updated()
+signal choice_resolved(record: Dictionary)
 signal ai_generation_requested(request_spec: Dictionary)
 
 const CatalogPacket = preload("res://scripts/narrative/narrative_catalog_packet.gd")
-const Effects = preload("res://scripts/narrative/narrative_effect_adapter.gd")
 
 var _bus = null
-var _generator = null
 var _country: int = 0
 var _view: Dictionary = {}
 var _last_popup_day: int = -999
-var _consumed_day: int = -1
 var _last_ai_request: int = 0
+var _last_record: int = 0
 var _ai_enabled := false
 var _saved: Dictionary = {}
 var _catalog: NarrativeEventCatalog
 
 
 func bind_world(generator, clock: WorldClock, country: int, seed: int,
-		enable_ai: bool) -> Dictionary:
-	_generator = generator
+		enable_ai: bool, pause_mask: int = 255) -> Dictionary:
 	_country = country
 	_bus = generator.get_gameplay_event_bus()
 	_ai_enabled = enable_ai
-	var packet := CatalogPacket.build(catalog(), generator, clock, country, seed, enable_ai)
+	var packet := CatalogPacket.build(catalog(), generator, clock, country, seed, enable_ai, pause_mask)
 	if _bus == null or not _bus.configure_story(packet, _saved):
 		return {"ok": false, "code": "narrative_executor_configure_failed"}
 	_saved = {}
@@ -38,13 +36,12 @@ func bind_world(generator, clock: WorldClock, country: int, seed: int,
 
 func release_world() -> Dictionary:
 	_bus = null
-	_generator = null
 	_country = 0
 	_view = {}
 	_saved = {}
 	_last_popup_day = -999
-	_consumed_day = -1
 	_last_ai_request = 0
+	_last_record = 0
 	return {"ok": true}
 
 
@@ -56,10 +53,29 @@ func catalog() -> NarrativeEventCatalog:
 
 func consume_committed() -> void:
 	_refresh_view()
-	var day := int(_view.get("day", -1))
-	if day > _consumed_day:
-		_consumed_day = day
-		_forward_independence(_view.get("independence", []))
+	var records: Array = _view.get("chronicle", [])
+	var fresh: Array[Dictionary] = []
+	for row: Dictionary in records:
+		var id := int(row.get("record_id", 0))
+		if id <= _last_record:
+			break
+		fresh.push_front(row.duplicate(true))
+	for row in fresh:
+		_last_record = int(row.record_id)
+		choice_resolved.emit(row)
+	if not fresh.is_empty():
+		chronicle_updated.emit()
+
+
+func event_pause_mask() -> int:
+	return int(_view.get("event_pause_mask", 255))
+
+
+func update_event_pause_mask(mask: int) -> Dictionary:
+	var result := _request(&"pause_policy", {"mask": mask})
+	if bool(result.get("ok", false)):
+		_refresh_view()
+	return result
 
 
 func active_offer() -> Dictionary:
@@ -82,35 +98,14 @@ func unrest_fact_cursor() -> int:
 	return int(_view.get("unrest_fact_cursor", -1))
 
 
-func choose_option(args: Dictionary, sequence: int, sequence_alloc: Callable) -> Dictionary:
+func choose_option(args: Dictionary, sequence: int) -> Dictionary:
 	var command := args.duplicate()
 	command["country"] = _country
 	command["sequence"] = sequence
-	var receipt := _request(&"choose", command)
-	if not bool(receipt.get("ok", false)):
-		return receipt
-	var outcome: Dictionary = receipt.outcome
-	var ctx: Dictionary = receipt.context
-	var effects := Effects.apply_effects(outcome.get("effects", []), ctx, self, _generator,
-		_country, int(ctx.get("cell_idx", -1)), int(receipt.legacy_resolution_day), sequence_alloc)
-	var concession: Dictionary = receipt.get("concession", {})
-	if not concession.is_empty():
-		_generator.get_economy_facade().transfer_country_cash_to_cohort(
-			_country, int(concession.cohort), int(concession.amount),
-			int(concession.day), int(concession.sequence))
-	var resolved := _request(&"complete", {"offer_id": receipt.offer_id,
-		"applied_summaries": Array(effects.applied_summaries)})
-	if bool(resolved.get("ok", false)):
-		resolved["outcome"] = outcome
-		resolved["outcome_index"] = receipt.outcome_index
-		resolved["applied_summaries"] = effects.applied_summaries
+	var result := _request(&"choose", command)
+	if bool(result.get("ok", false)):
 		_refresh_view()
-		chronicle_updated.emit()
-	return resolved
-
-
-func allocate_modifier_source_id() -> int:
-	return int(_request(&"source_id", {}).get("id", 0))
+	return result
 
 
 func set_ai_enabled(enabled: bool) -> void:
@@ -148,6 +143,8 @@ func export_state() -> Dictionary:
 
 func restore_state(state: Dictionary) -> Dictionary:
 	_saved = state.duplicate(true)
+	var records: Array = _saved.get("chronicle", [])
+	_last_record = 0 if records.is_empty() else int(records[0].get("record_id", 0))
 	return {"ok": true}
 
 
@@ -166,20 +163,10 @@ func _refresh_view() -> void:
 	var offer := active_offer()
 	if not offer.is_empty() and int(offer.offer_id) != previous:
 		offer_ready.emit(offer)
+	elif offer.is_empty() and previous != 0:
+		offer_changed.emit(offer)
 	var request: Dictionary = _view.get("ai_request", {})
 	var sequence := int(request.get("ai_request_seq", 0))
 	if sequence > _last_ai_request:
 		_last_ai_request = sequence
 		ai_generation_requested.emit(request)
-
-
-func _forward_independence(requests: Array) -> void:
-	for item: Dictionary in requests:
-		if item.has("new_owner"):
-			var military = _generator.get_military_facade()
-			if military != null:
-				military.declare_war_forced(int(item.old_owner), int(item.new_owner))
-				military.transfer_cell_garrison(int(item.old_owner), int(item.cell), int(item.new_owner))
-		else:
-			_generator.get_country_facade().create_country(StringName(item.stable_id),
-				String(item.display_name), int(item.cell), int(item.day), int(item.sequence))

@@ -40,24 +40,31 @@ T sample_at(const std::vector<T> &column, int32_t cell, T fallback) {
 }
 
 NarrativeCellView sample_geography(const RuntimeEnvironmentSnapshot &geo, int32_t cell,
-        uint64_t handle, const RuntimeCountryPodSnapshot &country) {
+        uint64_t handle, const RuntimeCountryPodSnapshot &country,
+        const RuntimeClimateStore &climate, const RuntimeSeasonView *season,
+        const pk_async_physics::RuntimeClimatePhysicsState *physics) {
     NarrativeCellView sampled;
     sampled.cell = cell;
     if (cell < 0 || uint32_t(cell) >= geo.cell_count) return sampled;
-    sampled.terrain = sample_at(geo.terrain, cell, uint8_t(2));
-    sampled.landform = sample_at(geo.landform, cell, uint8_t(4));
-    sampled.vegetation = sample_at(geo.vegetation, cell, uint8_t(0));
-    sampled.cover = sample_at(geo.cover, cell, uint8_t(0));
-    sampled.temperature = sample_at(geo.cell_temp, cell, 18.0f);
-    sampled.moisture = sample_at(geo.cell_moisture, cell, 0.5f);
+    const bool committed = climate.committed_day >= 0;
+    sampled.terrain = sample_at(committed ? climate.terrain : geo.terrain, cell, uint8_t(2));
+    sampled.landform = sample_at(season ? season->landform : geo.landform, cell, uint8_t(4));
+    sampled.vegetation = sample_at(committed ? climate.vegetation : geo.vegetation, cell, uint8_t(0));
+    sampled.cover = sample_at(committed ? climate.cover : geo.cover, cell, uint8_t(0));
+    sampled.temperature = sample_at(committed ? climate.temperature : geo.cell_temp, cell, 18.0f);
+    sampled.moisture = sample_at(committed ? climate.moisture : geo.cell_moisture, cell, 0.5f);
     sampled.elevation = sample_at(geo.cell_elevation, cell, 0.5f);
-    sampled.snow = sample_at(geo.cell_snow_cover, cell, 0.0f);
-    sampled.precipitation = sample_at(geo.cell_weather_precip, cell, 0.0f);
+    sampled.snow = sample_at(committed ? climate.snow_cover : geo.cell_snow_cover, cell, 0.0f);
+    sampled.precipitation = sample_at(committed ? climate.weather_precipitation : geo.cell_weather_precip, cell, 0.0f);
+    sampled.vapor = sample_at(committed ? climate.vapor : geo.cell_weather_vapor, cell, 0.0f);
+    sampled.clouds = sample_at(committed ? climate.cloud_cover : geo.cell_weather_cloud, cell, 0.0f);
+    const auto &upwelling = physics ? physics->upwelling : geo.climate_physics_seed_upwelling;
+    sampled.upwelling = sample_at(upwelling, cell, 0.0f);
     sampled.river = sample_at(geo.has_river, cell, uint8_t(0)) != 0;
     sampled.coastal = sampled.landform == 2 || sampled.landform == 9;
     const auto current = [&](int32_t at) {
-        const float x = sample_at(geo.cell_ocean_current_x, at, 0.0f);
-        const float y = sample_at(geo.cell_ocean_current_y, at, 0.0f);
+        const float x = sample_at(physics ? physics->ocean_current_x : geo.cell_ocean_current_x, at, 0.0f);
+        const float y = sample_at(physics ? physics->ocean_current_y : geo.cell_ocean_current_y, at, 0.0f);
         return double(std::sqrt(x * x + y * y));
     };
     sampled.current = current(cell);
@@ -74,6 +81,7 @@ NarrativeCellView sample_geography(const RuntimeEnvironmentSnapshot &geo, int32_
         if (neighbor >= 0 && sample_at(geo.is_water, neighbor, uint8_t(0))) {
             sampled.coastal = true;
             sampled.current = std::max(sampled.current, current(neighbor));
+            sampled.upwelling = std::max(sampled.upwelling, double(sample_at(upwelling, neighbor, 0.0f)));
         }
     }
     collect(cell, sampled.nearby[0]);
@@ -98,9 +106,14 @@ bool NativeSimulationHost::initialize_narrative(const Dictionary &packet, const 
     if (!execution_has_stopped()) return false;
     auto narrative = std::make_shared<RuntimeNarrative>();
     if (!narrative->configure(packet, saved)) return false;
-    std::atomic_store(&_published_narrative, narrative->view());
     _executor_narrative = std::move(narrative);
+    publish_narrative_boundary(_committed_day.load(std::memory_order_acquire));
     return true;
+}
+
+void NativeSimulationHost::publish_narrative_boundary(int64_t day) {
+    if (_executor_narrative)
+        std::atomic_store(&_published_narrative, _executor_narrative->view(day));
 }
 
 std::shared_ptr<const RuntimeNarrativeView> NativeSimulationHost::latest_narrative() const {
@@ -145,6 +158,9 @@ void RuntimeNarrative::sample_country(const RuntimeCountryPodSnapshot &country,
 NarrativeDay NativeSimulationHost::sample_narrative_day(int64_t day) const {
     const auto *country = _country_pod_authority.borrow_state();
     const auto &geo = _world_environment->narrative_geography();
+    const auto &climate = _climate_authority.store();
+    const auto season = _world_environment->season_view(day);
+    const auto physics = _climate_authority.copy_committed_physics();
     const auto *economy = _economy_production_runtime;
     const uint64_t handle = _executor_narrative->player();
     NarrativeCountryView player;
@@ -155,8 +171,10 @@ NarrativeDay NativeSimulationHost::sample_narrative_day(int64_t day) const {
     }
     static const std::vector<std::string> empty;
     return {day, std::move(player),
-        [country, &geo, economy, handle](int32_t cell, bool detailed) {
-            auto sample = country ? sample_geography(geo, cell, handle, *country) : NarrativeCellView{};
+        [country, &geo, &climate, season, economy, handle, physics](int32_t cell, bool detailed) {
+            auto sample = country ? sample_geography(geo, cell, handle, *country, climate,
+                season.get(), physics && physics->ready ? physics.get() : nullptr)
+                                  : NarrativeCellView{};
             if (economy) economy_api::sample_narrative_cell(*economy, sample, detailed);
             return sample;
         },
@@ -181,14 +199,33 @@ const char *NativeSimulationHost::stage_narrative(DayExecution &day) {
     const auto ack = std::lower_bound(events.consumer_acks.begin(), events.consumer_acks.end(),
         NARRATIVE_CONSUMER, [](const auto &row, uint64_t key) { return row.consumer_key < key; });
     const int64_t day_index = day.plan.context.day;
-    const int64_t next = _executor_narrative->step(sample_narrative_day(day_index), events.events,
+    const auto input = sample_narrative_day(day_index);
+    const int64_t next = _executor_narrative->step(input, events.events,
         ack == events.consumer_acks.end() || ack->consumer_key != NARRATIVE_CONSUMER ? 0 : ack->event_id);
+    if (_economy_production_runtime && _executor_narrative->notice_policy_enabled())
+        _executor_narrative->economy_notices(input, economy_api::narrative_economy_notices(
+            *_economy_production_runtime, day_index, input.country.handle));
+    if (!dispatch_narrative_independence(day_index + 1))
+        return "narrative_independence_dispatch_failed";
     if (next >= 0 && !enqueue_event_consumer_ack(NARRATIVE_CONSUMER, next, day_index + 1,
             _generation.load(std::memory_order_relaxed) + 1, false))
         return "narrative_events_ack_dispatch_failed";
     if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
-    _executor_day_tail->narrative = _executor_narrative->view();
+    _executor_narrative->queue_automatic_choice(day_index + 1);
+    _executor_day_tail->narrative = _executor_narrative->view(day_index);
     return nullptr;
+}
+
+bool NativeSimulationHost::prepare_narrative_day(int64_t day) {
+    if (!_executor_narrative || !_world_environment) return false;
+    auto &narrative = *_executor_narrative;
+    narrative.apply_pause_policy(day);
+    narrative.queue_automatic_choice(day);
+    const auto choice = narrative.take_due_choice(day);
+    if (choice.is_empty()) return false;
+    if (!bool(resolve_narrative_choice(day - 1, choice).get("ok", false)))
+        set_fault("narrative_choice_apply_failed");
+    return true;
 }
 
 bool NativeSimulationHost::submit_narrative_choice_request(
@@ -226,27 +263,17 @@ bool NativeSimulationHost::service_narrative_requests() {
         for (const auto &request : requests) {
             using Kind = RuntimeNarrativeRequest::Kind;
             if (request->kind == Kind::CHOOSE) {
-                request->result = narrative.begin_choice(sample_narrative_day(day), request->args);
-            } else if (request->kind == Kind::SOURCE_ID) {
-                if (narrative.placing_choice()) request->result["id"] = narrative.allocate_modifier_source();
-            } else if (request->kind == Kind::COMPLETE) {
-                const auto &record = narrative.choice_record();
-                const Dictionary meta = record.get("meta", Dictionary());
-                if (_economy_production_runtime && String(meta.get("kind", "")) == "rebellion" &&
-                    int64_t(record.get("offer_id", -1)) == int64_t(request->args.get("offer_id", -2))) {
-                    const Array actions = meta.get("actions", Array());
-                    const int32_t option = record.get("chosen_option_index", -1);
-                    if (option >= 0 && option < actions.size()) {
-                        const int32_t action = actions[option];
-                        const int32_t cell = meta.get("cell", -1);
-                        const int32_t profession = meta.get("profession", -1);
-                        const bool success = int32_t(record.get("rolled_outcome_index", 1)) == 0;
-                        const bool applied = economy_api::settle_narrative_unrest(
-                            *_economy_production_runtime, cell, profession, action, success);
-                        narrative.finish_unrest_choice(applied);
-                    }
-                }
-                request->result = narrative.complete_choice(request->args);
+                request->result = narrative.queue_choice(day + 1, request->args);
+            } else if (request->kind == Kind::PAUSE_POLICY) {
+                // A stopped day has no simulation work ahead of the pending reply.
+                // A policy can replace that reply with an automatic choice on D+1.
+                const auto view = narrative.view(day);
+                const int64_t effective_day = view->active_offer.is_empty() ?
+                    std::max(day + 1, command_seal_day()) : day + 1;
+                narrative.set_pause_policy(effective_day,
+                    static_cast<uint16_t>(int32_t(request->args.get("mask", 255))));
+                request->result["ok"] = true;
+                request->result["effective_day"] = effective_day;
             } else if (request->kind == Kind::AI_RESULT) {
                 request->result = narrative.accept_ai(sample_narrative_day(
                     request->args.get("arrival_day", day)), request->args);
@@ -255,7 +282,7 @@ bool NativeSimulationHost::service_narrative_requests() {
                 request->result["ok"] = true;
             }
         }
-        std::atomic_store(&_published_narrative, narrative.view());
+        publish_narrative_boundary(day);
     }
     {
         std::lock_guard<std::mutex> control(_control_mutex);

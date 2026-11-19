@@ -121,6 +121,7 @@
     "gdext/src/runtime_trigger_pod.cpp|RuntimeTriggerPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/world_ext_events.cpp|NativeSimulationHost::enqueue_event_consumer_ack": "Uses the Events owner queue to acknowledge a consumed committed batch on its exact next day.",
     "gdext/src/native_simulation_host_narrative.cpp|NativeSimulationHost::submit_narrative_choice_request": "Validates the active offer and answers the player at the executor boundary. The effective date is the first day after the blocked commit.",
+    "gdext/src/runtime_narrative_notices.cpp|RuntimeNarrative::enqueue_notice": "Queues an executor-owned notice under the effective pause policy, without changing the source fact or its receipt.",
     "gdext/src/world_ext_events.cpp|NativeSimulationHost::enqueue_legacy_event_batch": "Admits an ordered batch of gameplay facts to the Events owner on a specified effective day and generation.",
     "gdext/src/world_ext_simulation_host.cpp|DCWorldExt::submit_runtime_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/world_ext_vision.cpp|NativeSimulationHost::submit_fog_command": "Admits a player fog request through the timeline. The executor applies the setting on the sealed day."

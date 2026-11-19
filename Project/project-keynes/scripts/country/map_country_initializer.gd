@@ -419,8 +419,7 @@ func refresh_military_terrain(day: int = -1) -> Dictionary:
 	return result
 
 
-## AI 军事议程：玩家国以外的所有国家。player_handles 为空时按
-## gameplay start 的 is_player 标记解析；读档后由 PKAI/PKMI 恢复路径再调一次。
+## 正式开局时启用外国的军事 AI。读档沿用 PKMI 中保存的各国状态。
 
 func _arm_military_ai(player_handles: PackedInt64Array) -> Dictionary:
 	if _generator._military_facade == null or not _generator._military_facade.is_configured():

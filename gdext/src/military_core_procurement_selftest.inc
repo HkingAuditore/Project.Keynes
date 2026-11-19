@@ -204,6 +204,23 @@ bool test_training_with_empty_slot(const MilitaryTerrainInput &t, std::string &r
             filled += lots.count[row];
     }
     ST_CHECK(filled == 30, "empty slot: re-equipment fills the 30 missing armor slots");
+
+    std::fill(sim.dg.country_equipment_available.begin(), sim.dg.country_equipment_available.end(), 0);
+    for (size_t row = 0; row < sim.dg.market_good.size(); ++row) {
+        if (sim.dg.market_good[row] >= 1) sim.dg.market_sellable[row] = 0;
+    }
+    MilitaryCommand quality;
+    quality.value = 0;
+    ST_CHECK(sim.submit(MCMD_CONFIG_SET_QUALITY_POLICY, 0, quality),
+        "quality upgrade: request better equipment for a complete kit");
+    ST_STEP(sim, sim.day + 14);
+    int64_t retained = 0;
+    for (size_t row = 0; row < lots.active.size(); ++row) {
+        if (lots.active[row] && lots.unit_type[row] == 1 && lots.partial_equipment[row] == 0)
+            retained += lots.count[row];
+    }
+    ST_CHECK(retained == 30 && sim.core.training().empty(),
+        "quality upgrade: unavailable replacements leave all 30 complete kits in service");
     return true;
 }
 

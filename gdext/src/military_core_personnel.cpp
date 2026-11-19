@@ -631,6 +631,10 @@ bool training_equipment_ready(const MilitaryCore &core, const MilitaryWorldDiges
                               const MilitaryTrainingOrder &order, const MilitaryUnitType &unit) {
     const uint64_t slots = equipment_slot_mask(unit);
     if (slots && (slots & order.equipped_slot_mask) == slots) return true;
+    // A quality upgrade replaces an existing full kit only when the new kit
+    // is complete. An unavailable slot is optional for new training.
+    if (order.from_unit == order.to_unit && order.source_partial_equipment == 0)
+        return false;
     if (!unlocked(digest, order.country_slot, unit.unlock_bit) ||
         digest.country_equipment_available.empty()) return false;
     for (int32_t slot = 0; slot < unit.slot_count; ++slot) {
@@ -849,6 +853,11 @@ void MilitaryCore::run_reequipment(const MilitaryWorldDigest &digest, int32_t co
         const MilitaryCellState *state = cell_state(cell, false);
         if (!state || state->paused || cell < 0 || static_cast<size_t>(cell) >= digest.cell_owner_slot.size() ||
             digest.cell_owner_slot[cell] != country || (_last_day + cell) % 7 != 0) continue;
+        if (std::any_of(_training.begin(), _training.end(), [&](const auto &pending) {
+                return pending.country_slot == country && pending.cell == cell &&
+                    pending.from_unit == unit_id && pending.to_unit == unit_id &&
+                    pending.source_partial_equipment == kit;
+            })) continue;
         MilitaryTrainingOrder order;
         if (kit != 0) {
             bool can_fill = false;
@@ -861,12 +870,14 @@ void MilitaryCore::run_reequipment(const MilitaryWorldDigest &digest, int32_t co
                 }
                 order.equipped_slot_mask |= uint64_t{1} << unit.slot_category[slot];
             }
-            if (!can_fill || std::any_of(_training.begin(), _training.end(), [&](const auto &pending) {
-                return pending.country_slot == country && pending.cell == cell &&
-                    pending.from_unit == unit_id && pending.source_partial_equipment == kit;
-            })) continue;
+            if (!can_fill) continue;
             order.source_partial_equipment = kit;
             order.delivered_quality_q8 = _lots.equip_quality_q8[i];
+        } else {
+            bool complete_kit_available = true;
+            for (int32_t slot = 0; slot < unit.slot_count && complete_kit_available; ++slot)
+                complete_kit_available = equipment_slot_available(_catalog, digest, country, unit, slot);
+            if (!complete_kit_available) continue;
         }
         const int32_t speed = cell_training_speed_q16(_catalog, state);
         const int64_t training = stat_q16(digest, country, MSTAT_TRAINING_TIME);

@@ -61,7 +61,8 @@ struct NarrativeDefinition {
     int32_t channel = 2, fact = 0, scope = 0;
     int32_t base_weight = 100, chance = 65536, cooldown = 0;
     int32_t min_era = 0, max_era = 10;
-    bool one_shot = false;
+    uint8_t category = 7;
+    bool one_shot = false, notification = false;
     std::vector<std::string> tags, required_tech, blocked_tech, prerequisites;
     std::vector<std::string> required_flags, blocked_flags;
     NarrativeConditionProgram conditions;

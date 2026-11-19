@@ -45,10 +45,13 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 		var frame: Dictionary = ext.get_runtime_vision_frame(-1)
 		_expect("fog change takes effect exactly on day three and day six",
 			bool(frame.fog_enabled) == (day < 3 or day == 6))
+		if not test_host.skip_display:
+			_expect("GM fog readback agrees with the installed frame",
+				host.get_gm_toggle_state("visual.fog_of_war").get("enabled") == frame.fog_enabled)
 		match day:
 			1:
 				original_frame = frame
-				var off := host.set_fog_of_war_enabled(false)
+				var off := host.set_gm_toggle("visual.fog_of_war", false)
 				_expect("fog off sealed for day three", bool(off.ok) and int(off.effective_day) == 3)
 				var forged := map.visible_arr.duplicate()
 				forged.fill(1)
@@ -75,7 +78,8 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 				_expect("one read installs the complete latest frame",
 					bool(refreshed.get("applied", false)) and map.physical_visible_arr == frame.physical_visible
 					and map.explored_arr == frame.explored_arr and map.visible_arr.count(1) == map.cell_count()
-					and map.fog_k_arr.count(255) == map.cell_count())
+					and map.fog_k_arr.count(255) == map.cell_count()
+					and host.get_gm_toggle_state("visual.fog_of_war").get("enabled") == false)
 				var forged := map.visible_arr.duplicate()
 				forged.fill(0)
 				map.visible_arr = forged

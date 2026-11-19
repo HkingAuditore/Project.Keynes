@@ -90,22 +90,7 @@ func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Di
 			String(result.get("reason", "Military PKMI restore failed")))
 	if not facade.restore_pending_event_progress(progress):
 		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
-	# AI arming is part of the military store's meaning: after a restore, every
-	# non-player country must be AI again or the armed forces stop planning.
-	var player_handles: PackedInt64Array = facade.ai_player_handles()
-	if player_handles.is_empty():
-		var player_context = sections.get("player_context", {})
-		var start_cell := int(player_context.get("start_cell", -1)) \
-			if player_context is Dictionary else -1
-		var country = context.country
-		var handle := int(country.cell_summary(start_cell).get("country_handle", 0)) \
-			if country != null and start_cell >= 0 else 0
-		if handle != 0:
-			player_handles = PackedInt64Array([handle])
-	# Headless saves can omit the player cell. PKMI already carries the AI
-	# flags and schedule, so keep them when the player cannot be resolved.
-	if not player_handles.is_empty():
-		facade.arm_ai(player_handles)
+	# PKMI owns the AI flags and decision dates, including for newly created countries.
 	return result
 
 func _can_country_ai_provider(context: Dictionary) -> Dictionary:

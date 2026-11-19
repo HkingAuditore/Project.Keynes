@@ -199,9 +199,7 @@ func get_gm_capabilities(host) -> Dictionary:
 		"commands": host._gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
-			{"id": "ui.suppress_popups", "label": "屏蔽事件与报告弹窗", "group": "界面"},
 			{"id": "ui.hide_all_except_gm", "label": "关闭所有界面（保留 GM）", "group": "界面"},
-			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
@@ -309,12 +307,8 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 	match toggle_id:
 		"simulation.paused":
 			return {"ok": true, "enabled": host._world_clock.paused}
-		"ui.suppress_popups":
-			return {"ok": true, "enabled": host._gm_suppress_popups}
 		"ui.hide_all_except_gm":
 			return {"ok": true, "enabled": host._gm_hide_all_except_gm}
-		"simulation.climate_worker_authority":
-			return {"ok": true, "enabled": host.runtime_climate_authority_enabled}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": host._gm_click_claim_territory_enabled}
 		"system.autosave":
@@ -433,12 +427,6 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 
 func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 	match toggle_id:
-		"ui.suppress_popups":
-			host._gm_suppress_popups = enabled
-			host.gm_toggle_changed.emit(toggle_id, enabled)
-			var response: Dictionary = host._gm_ok("事件与报告弹窗已%s。" % ("屏蔽" if enabled else "恢复"), false, -1)
-			response["enabled"] = host._gm_suppress_popups
-			return response
 		"ui.hide_all_except_gm":
 			host._gm_hide_all_except_gm = enabled
 			host.gm_toggle_changed.emit(toggle_id, enabled)
@@ -452,8 +440,6 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 						host._runtime_last_fault_diagnostics.get("fault_code", "faulted")))
 			host._world_clock.pause(enabled)
 			host.on_clock_running_changed(not enabled)
-		"simulation.climate_worker_authority":
-			host.set_runtime_climate_authority_enabled(enabled)
 		"simulation.click_claim_territory":
 			return host._gm_set_click_claim_territory_enabled(enabled)
 		"system.autosave":

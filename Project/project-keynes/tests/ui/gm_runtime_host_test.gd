@@ -63,7 +63,7 @@ func _run() -> void:
 		if String(command.get("id", "")) == "diagnostics.dump_atlas_river_probe":
 			river_probe_command_found = true
 	_expect(fog_toggle_found, "fog toggle capability", failures)
-	_expect(suppress_popups_toggle_found, "popup suppression toggle capability", failures)
+	_expect(not suppress_popups_toggle_found, "the old all-popup GM toggle is retired", failures)
 	_expect(hide_all_ui_toggle_found, "hide all UI toggle capability", failures)
 	_expect(click_claim_toggle_found, "click claim toggle capability", failures)
 	_expect(atlas_toggle_found, "dynamic atlas toggle capability", failures)
@@ -78,16 +78,13 @@ func _run() -> void:
 	_expect(host.set_gm_toggle("simulation.click_claim_territory", true).get("code") == "world_not_ready",
 		"click claim world readiness boundary", failures)
 	var fog_toggle := host.set_gm_toggle("visual.fog_of_war", false)
-	_expect(bool(fog_toggle.get("ok", false)) and not bool(fog_toggle.get("enabled", true)),
-		"fog toggle authoritative readback", failures)
-	var popups_on := host.set_gm_toggle("ui.suppress_popups", true)
-	var popups_state: Dictionary = host.get_gm_toggle_state("ui.suppress_popups")
-	_expect(bool(popups_on.get("ok", false)) and bool(popups_on.get("enabled", false))
-		and bool(popups_state.get("enabled", false)),
-		"popup suppression GM toggle readback", failures)
-	var popups_off := host.set_gm_toggle("ui.suppress_popups", false)
-	_expect(bool(popups_off.get("ok", false)) and not bool(popups_off.get("enabled", true)),
-		"popup suppression GM toggle restores", failures)
+	_expect(bool(fog_toggle.get("ok", false)) and not host.fog_of_war_enabled
+		and not fog_toggle.has("effective_day"), "fog toggle sets the opening policy before startup", failures)
+	var options := preload("res://scripts/ui/components/event_pause_options.gd").new()
+	root.add_child(options)
+	options.configure(0x5aa5)
+	_expect(options.value() == 0x5aa5, "event settings retain independent choice and notice switches", failures)
+	options.free()
 	var hide_all_on := host.set_gm_toggle("ui.hide_all_except_gm", true)
 	var hide_all_state: Dictionary = host.get_gm_toggle_state("ui.hide_all_except_gm")
 	_expect(bool(hide_all_on.get("ok", false)) and bool(hide_all_state.get("enabled", false)),

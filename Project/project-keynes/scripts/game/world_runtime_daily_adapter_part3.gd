@@ -4,10 +4,9 @@ extends RefCounted
 const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 
-func _apply_season_display(host, applied: Dictionary) -> void:
-	if not applied.has("season_day") or host._current_map == null:
-		return
-	var map: MapData = host._current_map
+func _apply_season_display(map: MapData, applied: Dictionary) -> bool:
+	if not applied.has("season_day") or map == null:
+		return false
 	var biome: PackedByteArray = applied.biome_history
 	var vegetation: PackedByteArray = applied.vegetation_history
 	var next: int = applied.season_history_next
@@ -32,8 +31,7 @@ func _apply_season_display(host, applied: Dictionary) -> void:
 		cell._history_idx = next
 		cell._veg_history_idx = next
 	map.sync_is_water_arr_from_terrain()
-	host._generator._last_season_refresh_day = int(applied.season_day) + 1
-	host._generator._last_season_refresh_breakdown = {"b_plus_path": "gdext_background"}
+	return true
 
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
@@ -249,7 +247,9 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 	preload("res://scripts/game/world_runtime_climate_restore.gd").apply(host._generator, applied)
 	if host._native_environment_active:
 		host._world_clock.apply_native_climate_calendar(applied)
-		_apply_season_display(host, applied)
+		if _apply_season_display(host._current_map, applied):
+			host._generator._last_season_refresh_day = int(applied.season_day) + 1
+			host._generator._last_season_refresh_breakdown = {"b_plus_path": "gdext_background"}
 	host._runtime_climate_writeback_generation = int(applied.get(
 		"generation", host._runtime_climate_writeback_generation))
 	# Older compatible runtimes may omit committed_day from the apply result;

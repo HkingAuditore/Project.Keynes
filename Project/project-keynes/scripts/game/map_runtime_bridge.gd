@@ -265,12 +265,6 @@ func finalize_save_restore_runtime() -> Dictionary:
 		# state was installed into the facade in that path.
 		_generator._get_map_country_initializer()._configure_military_runtime(
 			_generator._sus_map, null, _generator._save_restore_seed)
-	if _generator._military_facade != null and _generator._military_facade.is_configured() \
-			and _generator._military_facade.ai_player_handles().is_empty():
-		var initializer = _generator._get_map_country_initializer()
-		var player_handles: PackedInt64Array = initializer._gameplay_player_country_handles()
-		if not player_handles.is_empty():
-			initializer._arm_military_ai(player_handles)
 	_generator._get_map_country_initializer()._maybe_register_military_system()
 	if not _generator._runtime_build_topology("save restore finalize"):
 		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}

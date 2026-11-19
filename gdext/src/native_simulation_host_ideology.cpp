@@ -760,6 +760,8 @@ NativeSimulationHost::execute_ideology_worker_stage(
         error = "ideology_opinion_snapshot_missing";
         return Outcome::AWAITING_OPINION;
     }
+    if (const auto expanded = expand_ideology_opinion(*country, *opinion))
+        opinion = expanded;
     // Freeze the country.ideology.* multipliers from the last committed Modifier
     // snapshot (Modifier runs after Ideology, so this is the previous day's
     // value). Only the opinion copy changes; the published input stays.

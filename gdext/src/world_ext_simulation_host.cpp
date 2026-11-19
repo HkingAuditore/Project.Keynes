@@ -862,6 +862,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // A restore start is granted immediately; make the main-thread peers see
     // that grant now rather than on a runtime-graph pulse that may not run.
     sync_runtime_domain_ownership();
+    apply_runtime_economy_resource_writeback();
     out["ok"] = true;
     out["pending"] = mode != RuntimeSimulationMode::OFF;
     out["code"] = "ok";

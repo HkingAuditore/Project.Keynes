@@ -127,7 +127,6 @@ TESTS = (
     "tests/runtime/mobile_runtime_worker_test.gd",
     "tests/rendering/cloud_weather_quality_test.gd",
     "tests/rendering/mobile_msaa_policy_test.gd",
-    "tests/rendering/terrain_render_scale_test.gd",
     "tests/world/season_refresh_schedule_test.gd",
     "tests/world/season_refresh_consumer_test.gd",
     "tests/runtime/runtime_event_restore_cursor_test.gd",

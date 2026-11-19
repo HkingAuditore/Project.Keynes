@@ -213,6 +213,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
+    publish_narrative_boundary(start_day);
     // The start day's tail is done: a save waits for it before packing. The
     // caller's calendar is a day ahead after a load, and the seal is
     // tail_done+2, so taking it would land the first day's commands a day late.
@@ -798,7 +799,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
             return false;
         }
-
+        uint32_t restore_slot = 0;
+        if (_events_snapshots.try_begin_write(restore_slot)) {
+            _events_snapshots.write_buffer(restore_slot) = _events_authority.snapshot();
+            _events_snapshots.publish(restore_slot);
+        }
     }
     if (restore_pending && !_pending_restore_bundle.gameplay_effect_bytes.empty()) {
         const std::vector<uint8_t> &gmp =
@@ -1132,6 +1137,12 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     if (restore_pending)
         restore_effect_transport(_pending_restore_bundle.effect_transport_bytes);
+    if (restore_pending && _world_environment && _economy_production_runtime &&
+        _economy_production_runtime->worker_resource_seeded()) {
+        std::lock_guard<std::mutex> display(_resource_display_mutex);
+        _economy_production_runtime->take_worker_resource_mirror_cells(_executor_resource_display_cells);
+        merge_resource_display_patch();
+    }
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     return launch_executor(paused);

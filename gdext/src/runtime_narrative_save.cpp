@@ -65,7 +65,21 @@ Dictionary RuntimeNarrative::capture() const {
     out["last_fact_event_id"] = _last_fact;
     out["last_ai_request_day"] = _last_ai;
     out["next_ai_request_seq"] = _next_ai;
+    out["pending_ai_request"] = _pending_ai;
     out["last_state_probe_day"] = _last_probe;
+    out["event_pause_mask"] = static_cast<int32_t>(_pause_mask);
+    out["last_notification_fact"] = _last_notification_fact;
+    out["notification_sequence"] = _notification_sequence;
+    out["last_notice_era"] = _last_notice_era;
+    out["pending_choice"] = _pending_choice;
+    Array pause_updates;
+    for (const auto &[day, mask] : _pause_updates) {
+        Array row;
+        row.push_back(day);
+        row.push_back(static_cast<int32_t>(mask));
+        pause_updates.push_back(row);
+    }
+    out["pending_event_pause_masks"] = pause_updates;
     out["next_pool_id"] = _next_pool;
     Array pool;
     for (const auto &item : _pool) {
@@ -140,7 +154,6 @@ Dictionary RuntimeNarrative::capture() const {
     unrest["last_fact_id"] = _last_unrest_fact;
     unrest["last_day"] = _last_unrest_day;
     unrest["sequence"] = _unrest_sequence;
-    unrest["pending_ai"] = _pending_ai_unrest;
     unrest["needs_player_recovery"] = _recover_unrest;
     Array independence;
     for (const auto &item : _independence) {
@@ -149,6 +162,7 @@ Dictionary RuntimeNarrative::capture() const {
         row["owner_handle"] = static_cast<int64_t>(item.owner);
         row["queued_day"] = item.queued;
         row["stable_id"] = text(item.stable_id);
+        row["submitted"] = item.submitted;
         independence.push_back(row);
     }
     unrest["pending_independence"] = independence;
@@ -182,7 +196,20 @@ void RuntimeNarrative::restore(const Dictionary &state) {
     _last_popup = state.get("last_popup_day", NEVER);
     _last_fact = state.get("last_fact_event_id", -1);
     _last_probe = state.get("last_state_probe_day", NEVER);
+    _pause_mask = static_cast<uint16_t>(int32_t(state.get("event_pause_mask", _pause_mask)));
+    _last_notification_fact = state.get("last_notification_fact", std::max<int64_t>(0, _last_fact));
+    _notification_sequence = state.get("notification_sequence", 0);
+    _last_notice_era = state.get("last_notice_era", -1);
+    _pending_choice = record_or_empty(state.get("pending_choice", Variant())).duplicate(true);
+    const auto pending_masks = rows_or_empty(state.get("pending_event_pause_masks", Variant()));
+    for (int64_t index = 0; index < pending_masks.size(); ++index) {
+        if (pending_masks[index].get_type() != Variant::ARRAY) continue;
+        const Array row = pending_masks[index];
+        if (row.size() == 2)
+            _pause_updates.emplace_back(int64_t(row[0]), static_cast<uint16_t>(int32_t(row[1])));
+    }
     _last_ai = state.get("last_ai_request_day", NEVER);
+    _pending_ai = record_or_empty(state.get("pending_ai_request", Variant())).duplicate(true);
 
     _active = record_or_empty(state.get("active_offer", Variant())).duplicate(true);
     decode_records(state.get("ready_queue", Array()),
@@ -223,7 +250,8 @@ void RuntimeNarrative::restore(const Dictionary &state) {
     decode_records(state.get("scheduled_events", Array()), [&](const Dictionary &row) {
         _followups.push_back({row.get("due_day", 0), row.get("parent_record_id", 0),
             row.get("cell_idx", -1), narrative_key(row.get("event_id", "")),
-            narrative_key(row.get("chain_id", "")), row.get("ai_prompt_hint", "")});
+            narrative_key(row.get("chain_id", "")), row.get("ai_prompt_hint", ""),
+            row.get("ai_requested", false)});
     });
     decode_map(record_or_empty(state.get("dynamic_events_by_id", Variant())), _dynamic,
         [&](const Variant &value) { return _catalog.compile_event(record_or_empty(value)); });
@@ -234,10 +262,10 @@ void RuntimeNarrative::restore(const Dictionary &state) {
     _day = _last_unrest_day;
     _unrest_sequence = std::max<int64_t>(1, unrest.get("sequence", 1));
     _recover_unrest = unrest.get("needs_player_recovery", true);
-    _pending_ai_unrest = rows_or_empty(unrest.get("pending_ai", Variant())).duplicate(true);
     decode_records(unrest.get("pending_independence", Array()), [&](const Dictionary &row) {
         _independence.push_back({row.get("cell", -1), uint64_t(int64_t(row.get("owner_handle", 0))),
-            row.get("queued_day", 0), narrative_key(row.get("stable_id", ""))});
+            row.get("queued_day", 0), narrative_key(row.get("stable_id", "")),
+            row.get("submitted", false)});
     });
     decode_records(unrest.get("pending_stage_checks", Array()), [&](const Dictionary &row) {
         _unrest_checks.push_back({row.get("cell", -1), row.get("profession", -1),

@@ -398,7 +398,6 @@ var _country_worker_read_full_snapshot_count: int = 0
 var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
-var _gm_suppress_popups: bool = false
 ## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
 var _gm_hide_all_except_gm: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}

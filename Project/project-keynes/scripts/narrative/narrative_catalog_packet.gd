@@ -3,6 +3,7 @@ extends RefCounted
 const Rebellion = preload("res://scripts/politics/stratum_rebellion_content.gd")
 const Probes = preload("res://scripts/narrative/narrative_state_probe_catalog.gd")
 const EffectSpec = preload("res://scripts/narrative/narrative_effect_spec.gd")
+const PauseCategories = preload("res://scripts/narrative/narrative_pause_categories.gd")
 const ERA_NAMES := [
 	"石器时代", "农耕时代", "青铜与城邦时代", "古典王国时代", "帝国与封建时代",
 	"文艺复兴与航海时代", "工场手工业时代", "蒸汽工业时代", "电气与钢铁时代", "原子与信息时代", "智能与生态时代",
@@ -25,7 +26,7 @@ const UNREST_PROFESSIONS := {
 
 
 static func build(catalog: NarrativeEventCatalog, generator, clock: WorldClock,
-		player: int, seed: int, enable_ai: bool) -> Dictionary:
+		player: int, seed: int, enable_ai: bool, pause_mask: int) -> Dictionary:
 	var economy = generator.get_economy_facade()
 	var country = generator.get_country_facade().native_catalog()
 	var professions := {}
@@ -60,7 +61,7 @@ static func build(catalog: NarrativeEventCatalog, generator, clock: WorldClock,
 				option.tooltip_hint = option.tooltip_hint.replace("50%", "{unrest_chance}%")
 			unrest.append(encode_event(event))
 	return {
-		"country": player, "seed": seed, "ai_enabled": enable_ai,
+		"country": player, "seed": seed, "ai_enabled": enable_ai, "event_pause_mask": pause_mask,
 		"days_per_year": clock.days_per_year(), "month_lengths": WorldClock._MONTH_LENGTHS,
 		"events": definitions, "probes": probes, "unrest": unrest, "unrest_actions": actions_by_stage,
 		"terrain_names": terrain_names, "landform_names": landform_names,
@@ -68,6 +69,7 @@ static func build(catalog: NarrativeEventCatalog, generator, clock: WorldClock,
 		"era_milestones": CountryFacade.era_milestone_indices(),
 		"technology_ids": country.get("technology_ids", PackedStringArray()),
 		"good_ids": country.get("good_ids", PackedStringArray()),
+		"signal_ids": country.get("research_signal_ids", PackedStringArray()),
 		"profession_names": professions, "unrest_profession_names": UNREST_PROFESSIONS,
 		"ai_fact_hints": AI_FACT_HINTS,
 	}
@@ -75,6 +77,8 @@ static func build(catalog: NarrativeEventCatalog, generator, clock: WorldClock,
 
 static func encode_event(event: NarrativeEventDefinition) -> Dictionary:
 	var raw := event.to_dict()
+	raw["event_category"] = PauseCategories.category(String(event.event_id))
+	raw["event_notification"] = event.event_id == &"evt.chain.ancient_foundry_legacy"
 	for index in range(event.options.size()):
 		var option: NarrativeOption = event.options[index]
 		var row: Dictionary = raw.options[index]

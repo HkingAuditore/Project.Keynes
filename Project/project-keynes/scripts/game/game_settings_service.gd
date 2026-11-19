@@ -1,6 +1,7 @@
 extends Node
 
 signal settings_changed(settings: Dictionary)
+signal event_pause_changed(mask: int)
 
 ## 移动端 UI 缩放策略的唯一入口（content_scale_mode/aspect/factor + 安全区）。
 ## 用 preload 而不是 class_name：新脚本还没进 global_script_class_cache 时裸类名会编译失败。
@@ -34,6 +35,7 @@ const DEFAULTS := {
 	"master_muted": false,
 	"autosave_enabled": true,
 	"ai_narrative_enabled": false,
+	"event_pause_mask": 255,
 	"ai_llm_base_url": "https://api.deepseek.com/v1/chat/completions",
 	"ai_llm_model": "deepseek-chat",
 	"ai_image_enabled": false,
@@ -75,6 +77,8 @@ func update(values_to_apply: Dictionary, persist: bool = true) -> Dictionary:
 		if not bool(saved.get("ok", false)):
 			return saved
 	settings_changed.emit(values())
+	if values_to_apply.has("event_pause_mask"):
+		event_pause_changed.emit(int(_settings.event_pause_mask))
 	return {"ok": true, "code": "ok", "message": ""}
 
 
@@ -176,6 +180,7 @@ func _validate() -> void:
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
 	_settings.autosave_enabled = bool(_settings.autosave_enabled)
 	_settings.reduce_motion = bool(_settings.reduce_motion)
+	_settings.event_pause_mask = clampi(int(_settings.event_pause_mask), 0, 65535)
 	_settings.ai_narrative_enabled = bool(_settings.get("ai_narrative_enabled", DEFAULTS.ai_narrative_enabled))
 	var llm_url := String(_settings.get("ai_llm_base_url", DEFAULTS.ai_llm_base_url)).strip_edges()
 	_settings.ai_llm_base_url = llm_url if not llm_url.is_empty() else String(DEFAULTS.ai_llm_base_url)

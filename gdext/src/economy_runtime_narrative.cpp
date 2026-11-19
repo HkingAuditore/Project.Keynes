@@ -30,6 +30,7 @@ void NativeEconomyRuntime::sample_narrative_cell(NarrativeCellView &out, bool de
             largest = people;
             out.primary_cohort = handle;
             out.primary_profession = id;
+            out.primary_cash = population.funds[slot];
         }
         if (!detailed) return;
         lowest = std::min<int32_t>(lowest, population.needs_satisfaction[slot]);
@@ -60,6 +61,39 @@ void NativeEconomyRuntime::sample_narrative_cell(NarrativeCellView &out, bool de
         }
     }
 
+    if (_building_cell_offsets.size() == size_t(_cell_count.get()) + 1) {
+        const int32_t first = _building_cell_offsets[cell], last = _building_cell_offsets[cell + 1];
+        for (int32_t index = first; index < last; ++index) {
+            const auto group = building_at(index);
+            if (group.cell != cell || group.count <= 0) continue;
+            out.building_counts[_building_type_ids[group.type_id]] += group.count;
+            out.buildings += group.count;
+        }
+    }
+    const auto &market = market_store();
+    const int32_t local_market = market.cell_to_market[cell];
+    if (local_market >= 0 && local_market < market.market_count.get()) {
+        for (size_t good = 0; good < _good_ids.size(); ++good) {
+            const auto lane = market.index(local_market, good);
+            const auto &id = _good_ids[good];
+            out.market_stocks.emplace(id, market.stock[lane]);
+            if (_good_default_price[good] <= 0) continue;
+            const double ratio = double(market.price[lane]) / _good_default_price[good];
+            out.market_prices.emplace(id, ratio);
+            if (ratio > out.max_price_ratio) {
+                out.max_price_ratio = ratio;
+                out.expensive_good = id;
+            }
+        }
+    }
+    for (size_t resource = 0; resource < _resource_ids.size(); ++resource) {
+        const size_t lane = resource * _cell_count.get() + cell;
+        if (_worker_resource_seeded && lane < _worker_resource_reserve.size())
+            out.resources.emplace(_resource_ids[resource], _worker_resource_reserve[lane]);
+        else if (lane < resource_stock_lanes().size())
+            out.resources.emplace(_resource_ids[resource], double(resource_stock_lanes()[lane]) / GOODS_SCALE);
+    }
+
     if (!detailed || _family_cell_offsets.size() != size_t(_cell_count.get()) + 1) return;
     const auto &families = families_store();
     const int32_t begin = _family_cell_offsets[cell], end = _family_cell_offsets[cell + 1];
@@ -85,6 +119,7 @@ void NativeEconomyRuntime::sample_narrative_cell(NarrativeCellView &out, bool de
         if (influences.active[branch] && influences.family_handle[branch] == out.family &&
             influences.cell[branch] == cell) {
             out.prestige = influences.prestige_level[branch];
+            out.prestige_q16 = influences.score_q16[branch];
             break;
         }
     }
@@ -131,9 +166,32 @@ bool NativeEconomyRuntime::narrative_unrest_rows(
     return true;
 }
 
+std::vector<NarrativeEconomyNotice> NativeEconomyRuntime::narrative_economy_notices(
+        int64_t day, uint64_t country) const {
+    using Notice = NarrativeEconomyNotice;
+    std::vector<Notice> notices;
+    for (const auto &row : _committed_construction_receipts)
+        if (row.settled_day == day && row.country_handle == country)
+            notices.push_back({Notice::CONSTRUCTION, row.cell});
+    for (const auto &row : _canal_receipts)
+        if (row.settled_day == day && row.country_handle == country)
+            notices.push_back({Notice::INFRASTRUCTURE, -1});
+    for (const auto &row : _colonization_receipts)
+        if (row.settled_day == day && row.country_handle == country)
+            notices.push_back({Notice::COLONIZATION, row.target_cell});
+    if (_commit_day == day)
+        for (int32_t cell : _population_changed_cells)
+            notices.push_back({Notice::POPULATION, cell});
+    return notices;
+}
+
 namespace economy_api {
 void sample_narrative_cell(const NativeEconomyRuntime &economy, NarrativeCellView &out, bool detailed) {
     economy.sample_narrative_cell(out, detailed);
+}
+std::vector<NarrativeEconomyNotice> narrative_economy_notices(
+        const NativeEconomyRuntime &economy, int64_t day, uint64_t country) {
+    return economy.narrative_economy_notices(day, country);
 }
 bool narrative_unrest_rows(const NativeEconomyRuntime &economy, int32_t cell,
         std::vector<NarrativeUnrestRow> &out) {
@@ -151,4 +209,54 @@ const std::vector<std::string> &narrative_professions(const NativeEconomyRuntime
     return economy.profession_ids();
 }
 } // namespace economy_api
+} // namespace pk
+
+namespace pk {
+
+int32_t NativeEconomyRuntime::resolve_family_trait_command(int32_t operation, uint64_t handle,
+        const std::string &key, int32_t strength, int64_t day, std::string &error) const {
+    const auto trait = std::lower_bound(_family_trait_ids.begin(), _family_trait_ids.end(), key);
+    int32_t family = -1;
+    if (operation < 1 || operation > 3 || trait == _family_trait_ids.end() || *trait != key ||
+            !families_store().valid_handle(handle, family) || day < 0) {
+        error = "family_trait_command_entry_invalid";
+        return -1;
+    }
+    const int32_t id = static_cast<int32_t>(trait - _family_trait_ids.begin());
+    const int32_t minimum = _family_trait_strength_min_q16[id];
+    if (operation != 2 && (strength < minimum || strength > _family_trait_strength_max_q16[id] ||
+            (strength - minimum) % _family_trait_strength_step_q16[id] != 0)) {
+        error = "family_trait_command_strength_invalid";
+        return -1;
+    }
+    return id;
+}
+
+bool NativeEconomyRuntime::submit_effect_family_trait(uint64_t family, const std::string &trait,
+        bool grant, int32_t strength, int64_t day, int64_t sequence) {
+    if (!_configured) return false;
+    if (grant) {
+        const auto found = std::lower_bound(_family_trait_ids.begin(), _family_trait_ids.end(), trait);
+        if (found == _family_trait_ids.end() || *found != trait) return false;
+        const size_t index = found - _family_trait_ids.begin();
+        const int32_t minimum = _family_trait_strength_min_q16[index];
+        const int32_t maximum = _family_trait_strength_max_q16[index];
+        const int32_t step = _family_trait_strength_step_q16[index];
+        const int32_t offset = std::clamp(strength, minimum, maximum) - minimum;
+        strength = minimum + std::min((offset + step / 2) / step, (maximum - minimum) / step) * step;
+    }
+    const int32_t operation = grant ? 1 : 2;
+    std::string error;
+    const int32_t id = resolve_family_trait_command(operation, family, trait, strength, day, error);
+    if (id < 0) return false;
+    _family_trait_commands.push_back({operation, family, id, strength, day, 100,
+        sequence, ++_next_submit_order});
+    return true;
+}
+
+bool economy_api::submit_effect_family_trait(NativeEconomyRuntime &economy, uint64_t family,
+        const std::string &trait, bool grant, int32_t strength, int64_t day, int64_t sequence) {
+    return economy.submit_effect_family_trait(family, trait, grant, strength, day, sequence);
+}
+
 } // namespace pk

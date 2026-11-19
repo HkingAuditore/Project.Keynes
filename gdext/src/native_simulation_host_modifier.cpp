@@ -578,7 +578,7 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
             modifier_slot_reserved = false;
             _modifier_pod_snapshot_generation.store(
                 modifier_snapshot.generation, std::memory_order_release);
-            refresh_economy_modifier_view(modifier_snapshot);
+            refresh_economy_modifier_view(_modifier_pod_authority.snapshot());
         }
     } else {
         authority_ok = false;

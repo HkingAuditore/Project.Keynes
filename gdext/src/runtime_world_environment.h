@@ -41,6 +41,8 @@ public:
         bool annual_report, const char *&error);
 
     std::shared_ptr<const RuntimeSeasonView> season_view(int64_t day) const;
+    std::vector<uint8_t> capture_season_history(int64_t day) const;
+    bool restore_season_history(const std::vector<uint8_t> &bytes, int64_t day);
     RuntimeClimateCalendar calendar(int64_t day) const;
     const RuntimeEnvironmentSnapshot &narrative_geography() const;
 

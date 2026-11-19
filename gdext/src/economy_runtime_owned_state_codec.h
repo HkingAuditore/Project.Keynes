@@ -237,14 +237,19 @@ inline void append_publication_block(std::vector<uint8_t> &wire,
     const uint64_t hash = owned_fnv1a(wire.data() + 40u, wire.size() - 40u);
     binary_codec::store_le(wire.data() + 32u, hash);
 }
-inline std::vector<uint8_t> publication_block(const std::vector<uint8_t> &wire, uint32_t wanted = 8u) {
+inline std::vector<uint8_t> publication_block(const std::vector<uint8_t> &wire, uint32_t wanted = 8u,
+                                              bool *present = nullptr) {
+    if (present) *present = false;
     size_t cursor = 40u;
     while (cursor < wire.size()) {
         uint32_t id = 0, size = 0;
         if (!read_owned_u32(wire.data(), wire.size(), cursor, id) ||
             !read_owned_u32(wire.data(), wire.size(), cursor, size) ||
             size > wire.size() - cursor) return {};
-        if (id == wanted) return {wire.begin() + cursor, wire.begin() + cursor + size};
+        if (id == wanted) {
+            if (present) *present = true;
+            return {wire.begin() + cursor, wire.begin() + cursor + size};
+        }
         cursor += size;
     }
     return {};

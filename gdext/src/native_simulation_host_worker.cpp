@@ -531,7 +531,9 @@ void NativeSimulationHost::worker_main() {
                 }
                 // Include commands delivered during the main boundary service;
                 // draining before that service made their admission race a day.
-                if (country_delivery_boundary) drain_commands();
+                const bool narrative_commands = prepare_narrative_day(day);
+                if (state() == RuntimeWorkerState::FAULTED) break;
+                if (country_delivery_boundary || narrative_commands) drain_commands();
                 day_receipts.clear();
                 if (pending_commands_dirty) {
                     std::stable_sort(pending_commands.begin() +
