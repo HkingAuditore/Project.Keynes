@@ -46,6 +46,13 @@ class VerdictTest(unittest.TestCase):
     def test_ci_failure_needs_fix(self):
         self.assertEqual(judge(ready(ci_state="failure")).verdict, "NEEDS_FIX")
 
+    def test_ci_read_error_needs_human_even_with_missing_evidence(self):
+        for review_status in ("completed", "started"):
+            with self.subTest(review_status=review_status):
+                v = judge(ready(ci_state="error", review_status=review_status, findings=[finding("x")]))
+                self.assertEqual(v.verdict, "NEEDS_HUMAN")
+                self.assertIn("the CI state could not be read", v.reasons)
+
     def test_each_open_status_blocks(self):
         for s in ("pending", "partial_implementation", "not_implemented", "focus_areas_edited"):
             self.assertEqual(judge(ready(findings=[finding(1, s)])).verdict, "NEEDS_FIX", s)
@@ -134,6 +141,22 @@ class PlanTest(unittest.TestCase):
     def test_questions(self):
         plan = self.PLAN.replace("## Questions\nnone", "## Questions\n- Should taxes round down?")
         self.assertEqual(agent.plan_questions(plan), ["Should taxes round down?"])
+
+
+class DisputeTest(unittest.TestCase):
+    FINDINGS = [{"id": "f"}, {"id": "f-long"}, {"id": "other"}]
+
+    def test_id_is_exact_even_when_evidence_mentions_another_id(self):
+        evidence = "see file.gd:42 for finding other"
+        self.assertEqual(agent.parse_disputes(f"\n- f-long: {evidence}\n\n", self.FINDINGS),
+                         [("f-long", evidence)])
+
+    def test_lists_all_malformed_and_unknown_lines(self):
+        bad = ["- f", "  - f: indented", "- f:evidence", "- f:  ", "- unknown: evidence"]
+        with self.assertRaises(ValueError) as error:
+            agent.parse_disputes("\n".join([*bad, "- f: valid evidence"]), self.FINDINGS)
+        for line in bad:
+            self.assertIn(repr(line), str(error.exception))
 
 
 class GuardListTest(unittest.TestCase):

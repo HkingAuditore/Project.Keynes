@@ -24,7 +24,7 @@ import agent  # noqa: E402
 import checks  # noqa: E402
 import qodo  # noqa: E402
 import work  # noqa: E402
-from common import Events, load_config, must, sh  # noqa: E402
+from common import Events, load_config, must  # noqa: E402
 from github import GitHub  # noqa: E402
 from run import take_lock  # noqa: E402
 from verdict import unknown_findings  # noqa: E402
@@ -41,6 +41,7 @@ class PrState:
     disputed: list[str] = field(default_factory=list)   # finding ids Codex disputed (a person decides)
     gave_up_at: str | None = None                       # head commit where the factory stopped
     reason: str | None = None
+    attempted: list[str] = field(default_factory=list)  # heads sent to Codex that a person pushed
 
 
 @dataclass
@@ -61,6 +62,8 @@ def decide(pr: dict, review: dict | None, state: PrState, skip_labels: list[str]
         return Decision("skip", "has a skip label")
     if state.gave_up_at == head:
         return Decision("skip", f"stopped at this head ({state.reason}); waiting for a person")
+    if head not in state.pushed and head in state.attempted:
+        return Decision("skip", "Codex already ran at this head; waiting for a person")
     if review is None:
         return Decision("skip", "Qodo review could not be read")
     session = review.get("review_session") or {}
@@ -153,14 +156,13 @@ class Watcher:
         if not protected:
             return False
         patch = logs / "fix.patch"
-        sh(["git", "-C", self.workdir, "add", "-A", "-N", "."])
-        patch.write_text(sh(["git", "-C", self.workdir, "diff", pr["headRefOid"]]).out, encoding="utf-8")
+        work.save_patch(self.workdir, pr["headRefOid"], patch)
         self.stop(pr, st, f"the fix touches files a person must handle ({', '.join(protected)}). Nothing was pushed.",
                   f"The patch is saved locally at `{patch}`.")
         return True
 
     def fix(self, pr: dict, st: PrState, findings: list[dict]) -> int:
-        cfg, n, head, branch = self.cfg, pr["number"], pr["headRefOid"], pr["headRefName"]
+        cfg, n, head = self.cfg, pr["number"], pr["headRefOid"]
         L = cfg["labels"]
         logs = self.home / "logs" / f"pr-{n}-{self.stamp}"
         logs.mkdir(parents=True, exist_ok=True)
@@ -168,16 +170,15 @@ class Watcher:
         record: dict = {"pr": n, "url": pr["url"], "head": head, "started": self.stamp,
                         "findings": [f.get("id") for f in findings]}
         outcome = "error"
-        self.gh.relabel(n, [L["working"]], [L["help"]])
         try:
+            self.gh.relabel(n, [L["working"]], [L["help"]])
             outcome = self._fix(pr, st, findings, logs, ev, record)
         except Exception as e:
             record["error"] = str(e)
             ev.add("error", trace=traceback.format_exc()[-3000:])
             self.stop(pr, st, f"the fix run failed: {e}")
         finally:
-            if outcome == "pushed":
-                self.gh.relabel(n, [], [L["working"]])
+            self.gh.relabel(n, [], [L["working"]])
             record.update({"outcome": outcome, "events": ev.items, "githubErrors": self.gh.errors,
                            "finished": time.strftime("%Y%m%d-%H%M%S")})
             runs = self.home / "runs"
@@ -201,14 +202,32 @@ class Watcher:
         ev.add("checks-before", failed=before)
 
         prompt = agent.render("fix-pr", number=str(n), title=pr["title"], findings=qodo.describe(findings))
+        if head not in st.pushed:
+            st.attempted.append(head)
+            self.save(n, st)
         out = agent.codex(cfg, self.workdir, prompt, str(logs / "fix.md"), writable=True)
         record["report"] = out["report"][-6000:]
-        disputes = [l.strip("- ").strip() for l in (work.scratch(self.workdir, "disagree.md") or "").splitlines() if l.strip()]
-        disputed_ids = [str(f.get("id")) for f in findings if any(str(f.get("id")) in d for d in disputes)]
+        ev.add("agent", ok=out["ok"], code=out.get("code"))
+        if not out["ok"]:
+            reason = agent.failure_reason(out)
+            record["agentFailure"] = reason
+            patch = logs / "fix.patch"
+            work.save_patch(self.workdir, head, patch)
+            self.stop(pr, st, reason, f"The patch is saved locally at `{patch}`.")
+            return "stopped"
+        try:
+            parsed = agent.parse_disputes(work.scratch(self.workdir, "disagree.md"), findings)
+        except ValueError as e:
+            record["disputeError"] = str(e)
+            self.stop(pr, st, str(e))
+            return "stopped"
+        disputes = [f"{finding_id}: {evidence}" for finding_id, evidence in parsed]
+        disputed_ids = {finding_id for finding_id, _ in parsed}
         record["disputes"] = disputes
-        st.seen.append(sorted(str(f.get("id")) for f in findings))
-        st.disputed = sorted(set(st.disputed) | set(disputed_ids))
-        ev.add("agent", ok=out["ok"], disputes=len(disputes))
+        ids = sorted(str(f["id"]) for f in findings)
+        undisputed = sorted(set(ids) - disputed_ids)
+        st.seen.append(ids)
+        st.disputed = sorted(set(st.disputed) | disputed_ids)
 
         if work.head(self.workdir) != head:
             self.stop(pr, st, "the agent made its own commits; nothing was pushed")
@@ -216,13 +235,16 @@ class Watcher:
         files = work.changed(self.workdir, head)
         record["files"] = files
         if not files:
-            if disputes:
-                self.save(n, st)
-                self.gh.comment(n, self.comment_text(head, None, findings, disputes, [], out["report"]))
-                self.gh.relabel(n, [cfg["labels"]["help"]], [cfg["labels"]["working"]])
-                return "disputed"
-            self.stop(pr, st, "the agent changed nothing and disputed nothing")
-            return "stopped"
+            record["undisputed"] = undisputed
+            if undisputed:
+                self.stop(pr, st, "the agent made no changes and left these findings undisputed: "
+                          + ", ".join(undisputed), "\n".join(f"- {d}" for d in disputes))
+                return "stopped"
+            st.gave_up_at, st.reason = head, "the agent disputed every finding and made no changes"
+            self.save(n, st)
+            self.gh.comment(n, self.comment_text(head, None, findings, disputes, [], out["report"]))
+            self.gh.relabel(n, [cfg["labels"]["help"]], [])
+            return "disputed"
         if self.scope_blocked(pr, st, logs, files):
             return "stopped"
 
@@ -236,14 +258,17 @@ class Watcher:
                       checks.feedback(res, new)[:6000])
             return "stopped"
 
-        ids = ", ".join(str(f.get("id")) for f in findings)
         record["files"] = work.changed(self.workdir, head)
         if self.scope_blocked(pr, st, logs, record["files"]):
             return "stopped"
         if not record["files"]:
-            self.stop(pr, st, "no changes remain after the checks")
+            record["undisputed"] = undisputed
+            reason = "no changes remain after the checks"
+            if undisputed:
+                reason += ". Findings left undisputed: " + ", ".join(undisputed)
+            self.stop(pr, st, reason)
             return "stopped"
-        sha = work.commit(self.workdir, f"Address Qodo findings on #{n}\n\nFindings: {ids}\n\n"
+        sha = work.commit(self.workdir, f"Address Qodo findings on #{n}\n\nFindings: {', '.join(ids)}\n\n"
                                         f"Implemented-By: Codex ({cfg['agent']['model']})\n{TRAILER}\n")
         must(["git", "-C", self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
               cfg["remote"], f"HEAD:refs/heads/{branch}"])
@@ -268,8 +293,9 @@ class Watcher:
         if disputes:
             lines += ["", "Disputed by the agent (a person decides; the factory will not retry these):"]
             lines += [f"- {d[:800]}" for d in disputes]
-        lines += ["", "<details><summary>Agent report</summary>", "", report[-6000:], "", "</details>",
-                  "", "Qodo reviews the new commit next; the factory never merges."]
+        lines += ["", "<details><summary>Agent report</summary>", "", report[-6000:], "", "</details>"]
+        if sha:
+            lines += ["", "Qodo reviews the new commit next; the factory never merges."]
         return "\n".join(lines)
 
 

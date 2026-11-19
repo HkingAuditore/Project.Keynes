@@ -72,6 +72,13 @@ def restore(workdir: str, path: str) -> None:
     sh(["git", "-C", workdir, "clean", "-fdq", "--", path])
 
 
+def save_patch(workdir: str, base: str, path: Path) -> None:
+    files = [".", f":(top,exclude,glob){SCRATCH}*"]
+    git(workdir, "add", "-A", "-N", "--", *files)
+    patch = must(["git", "-C", workdir, "diff", "--binary", base, "--", *files])
+    path.write_text(patch, encoding="utf-8")
+
+
 def commit(workdir: str, message: str) -> str:
     git(workdir, "add", "-A", "--", ".", f":(top,exclude,glob){SCRATCH}*")
     must(["git", "-C", workdir, "commit", "-q", "-F", "-"], stdin=message)
@@ -85,7 +92,7 @@ def push(workdir: str, remote: str, branch: str) -> None:
 def scratch(workdir: str, name: str) -> str | None:
     p = Path(workdir) / f"{SCRATCH}{name}"
     if p.exists():
-        text = p.read_text(encoding="utf-8").strip()
+        text = p.read_text(encoding="utf-8")
         p.unlink()
         return text
     return None

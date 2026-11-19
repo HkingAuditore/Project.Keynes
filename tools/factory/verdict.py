@@ -78,6 +78,8 @@ def judge(f: Facts) -> Verdict:
         human.append("local Qodo review findings left open after the round limit: " + ", ".join(f.local_blocking))
     if f.native_changed:
         human.append("C++ changed: rebuild and commit both macOS libraries, then run check_macos_runtime_extension.py")
+    if f.ci_state == "error":
+        human.append("the CI state could not be read")
     unknown = unknown_findings(f.findings)
     if unknown:
         human.append("findings with an unknown status or action_level: " + ", ".join(unknown))

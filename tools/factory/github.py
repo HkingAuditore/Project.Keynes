@@ -1,4 +1,4 @@
-"""GitHub calls through the `gh` CLI. Failures to write are collected, not swallowed."""
+"""GitHub calls through the `gh` CLI. CI query and write failures are recorded."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import json
 from common import must, sh
 
 
-def combine_ci(workflows: list[str], checks: list[str]) -> str:
+def combine_ci(workflows: list[str] | None, checks: list[str] | None) -> str:
+    if workflows is None or checks is None:
+        return "error"
     if not workflows or any(s != "completed" for s in workflows) or not checks:
         return "pending"
     rows = [line.partition("\t") for line in checks]
@@ -73,12 +75,17 @@ class GitHub:
         if not r.ok:
             self.errors.append(f"edit PR #{number}: {(r.err or r.out).strip()[-300:]}")
 
+    def _ci_rows(self, endpoint: str, query: str) -> list[str] | None:
+        r = sh(["gh", "api", endpoint, "--paginate", "--jq", query])
+        if r.ok:
+            return r.out.splitlines()
+        self.errors.append(f"read CI at {endpoint}: {(r.err or r.out).strip()[-300:]}")
+        return None
+
     def ci_state(self, sha: str) -> str:
-        workflows = sh(["gh", "api", f"repos/{self.repo}/actions/runs?head_sha={sha}",
-                        "--paginate", "--jq", ".workflow_runs[].status"])
-        statuses = workflows.out.splitlines() if workflows.ok else []
+        statuses = self._ci_rows(f"repos/{self.repo}/actions/runs?head_sha={sha}", ".workflow_runs[].status")
         if not statuses or any(s != "completed" for s in statuses):
-            return "pending"
-        checks = sh(["gh", "api", f"repos/{self.repo}/commits/{sha}/check-runs", "--paginate",
-                     "--jq", ".check_runs[] | [.status, (.conclusion // \"\")] | @tsv"])
-        return combine_ci(statuses, checks.out.splitlines() if checks.ok else [])
+            return combine_ci(statuses, [])
+        checks = self._ci_rows(f"repos/{self.repo}/commits/{sha}/check-runs",
+                               '.check_runs[] | [.status, (.conclusion // "")] | @tsv')
+        return combine_ci(statuses, checks)

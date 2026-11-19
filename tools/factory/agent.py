@@ -26,6 +26,28 @@ def codex(cfg: dict, workdir: str, prompt: str, report: str, writable: bool) -> 
     return {"ok": r.ok, "code": r.code, "report": text, "log": report + ".log"}
 
 
+def failure_reason(out: dict) -> str:
+    code = out["code"]
+    return "Codex timed out (exit 124)" if code == 124 else f"Codex failed (exit {code})"
+
+
+def parse_disputes(text: str | None, findings: list[dict]) -> list[tuple[str, str]]:
+    ids = {str(f["id"]) for f in findings}
+    disputes, bad = [], []
+    for line in (text or "").splitlines():
+        if not line.strip():
+            continue
+        finding_id, colon, evidence = line[2:].partition(":")
+        if (line.startswith("- ") and colon and finding_id in ids
+                and evidence.startswith(" ") and evidence.strip()):
+            disputes.append((finding_id, evidence.strip()))
+        else:
+            bad.append(repr(line))
+    if bad:
+        raise ValueError("invalid lines in .factory-disagree.md: " + ", ".join(bad))
+    return disputes
+
+
 def _items(lines: list[str] | None) -> list[str]:
     out = []
     for line in lines or []:
