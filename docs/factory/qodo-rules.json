@@ -1,0 +1,123 @@
+{
+  "scope": "/hrhgit/Project.Keynes/",
+  "note": "Rules a static guard cannot decide. Each names the document it comes from; docs/factory/rule-coverage.md lists what enforces every rule. Sync with tools/factory/sync_rules.py (creates missing rules by name, never edits or deletes).",
+  "rules": [
+    {
+      "name": "Keynes: simulation results must not depend on timing or load",
+      "source": "AGENTS.md; docs/architecture/design.md#确定性推进",
+      "category": "Correctness",
+      "severity": "error",
+      "content": "Check that production, consumption, price updates, planning cadence and command effective dates are decided only by the seed, content version, sealed command log and game day. Wall-clock time, frame rate, thread wake-ups, slice budgets or machine load may change when work finishes, never what it produces.",
+      "good_examples": "if day % PLANNING_PERIOD_DAYS == 0:\n    _run_planning(day)",
+      "bad_examples": "if Time.get_ticks_msec() - _last_plan_ms > 500:\n    _run_planning(day)  # result depends on machine speed"
+    },
+    {
+      "name": "Keynes: the front end only reads published frames",
+      "source": "AGENTS.md; docs/architecture/module-map.md#十二域以外 (显示与界面)",
+      "category": "Architecture",
+      "severity": "error",
+      "content": "Code under scripts/ui and scripts/rendering may read only the published, committed frame and forward player requests to the simulation. It must not read live simulation state to make decisions and must not write simulation state; the simulation decides where it stops to wait for the player.",
+      "good_examples": "var frame := host.published_frame()\nlabel.text = format_cash(frame.country_cash(id))\nhost.submit_player_command(cmd)",
+      "bad_examples": "if economy_runtime.cash_of(id) < cost:\n    economy_runtime.add_cash(id, cost)  # UI deciding and writing state"
+    },
+    {
+      "name": "Keynes: cross-module hand-offs go through committed views or intents",
+      "source": "docs/architecture/module-boundaries.md; docs/architecture/design.md#跨模块规则",
+      "category": "Architecture",
+      "severity": "error",
+      "content": "A module reads another module only through the owner's committed view (copy_committed_view / observe_committed_view) and changes it only by submitting an intent the owner accepts. Reject code that keeps a reference to another owner's snapshot or plan, holds its writable container, or patches its money, goods or population directly, including through pointers or aliases the text guards miss.",
+      "good_examples": "auto view = country_api::observe_committed_view(*country, day);\nfiscal_return_port().cash_to_cohort(intent);\nsubmit_transfer(intent);",
+      "bad_examples": "CountryState& s = country->mutable_state();\ns.treasury += refund;  // writes another owner's state"
+    },
+    {
+      "name": "Keynes: new continuation state is versioned, validated and installed atomically",
+      "source": "docs/architecture/development-guide.md#存档",
+      "category": "Reliability",
+      "severity": "error",
+      "content": "When a change adds state that affects later days (fractional remainders, per-cell dates, request or ACK cursors, id counters), check that its owner freezes a copy at the commit boundary, bumps the section version, validates length, finiteness and content identity, decodes completely before installing, and rejects older versions with an explicit error. Saving only a cursor or a display mirror is not enough.",
+      "good_examples": "if version != SECTION_VERSION:\n    return fail(\"PKEC version %d not supported\" % version)\nvar decoded := _decode_all(bytes)\nif decoded.is_err(): return decoded\n_install(decoded.value)",
+      "bad_examples": "_rain_remainder = bytes.decode_float(off)  # installed while decoding, no version bump, old saves default to 0"
+    },
+    {
+      "name": "Keynes: fix the root cause instead of relaxing the check",
+      "source": "AGENTS.md; docs/architecture/development-guide.md#存档",
+      "category": "Testability",
+      "severity": "error",
+      "content": "Flag changes that make a failing test or replay pass by loosening assertions, widening tolerances, lengthening timeouts, adding retries, running more days, deleting compared fields or changing a hash algorithm. A fix must come with root-cause evidence (reproduction, log or code path) and keep the original comparison.",
+      "good_examples": "assert_eq(restored_hash, live_hash)  # kept, the save now includes the missing cursor",
+      "bad_examples": "await wait_days(20)  # was 8; passes by waiting longer\nassert_true(abs(a - b) < 1000)  # was assert_eq(a, b)"
+    },
+    {
+      "name": "Keynes: native climate entry points fail loudly without fallback",
+      "source": "docs/architecture/development-guide.md#气候每日-native-only-边界",
+      "category": "Reliability",
+      "severity": "error",
+      "content": "In map_generator.gd's Pass-A, Pass-B, ocean, sea-ice and transpiration entry points, a missing extension, failed method probe or failed C++ call must push_error, keep the previous fields and return failure. It must not fall back to a GDScript full-map computation or return a successful empty result.",
+      "good_examples": "if not _native.has_method(\"run_pass_a\"):\n    push_error(\"climate pass A: native method missing\")\n    return false",
+      "bad_examples": "if not _native.has_method(\"run_pass_a\"):\n    return _run_pass_a_gdscript()  # silent fallback"
+    },
+    {
+      "name": "Keynes: daily stage functions stay engine-free",
+      "source": "docs/architecture/development-guide.md#改每日模块",
+      "category": "Reliability",
+      "severity": "error",
+      "content": "native_simulation_stage_<domain>.cpp functions run on both the inline path and the worker thread, so they must not touch Godot objects, resources or the GPU. Their bool return means continue traversal, not business success; success, waiting and failure stay in the existing stage/commit fields and fault state.",
+      "good_examples": "stage.result = StageResult::Waiting;\nreturn true;  // keep traversing; the wait is recorded in the stage",
+      "bad_examples": "Ref<Image> img = Image::create(w, h, false, Image::FORMAT_RF);  // Godot object on the worker\nreturn ok;  // bool used as business result"
+    },
+    {
+      "name": "Keynes: saves happen only at a committed boundary and never lose commands",
+      "source": "docs/architecture/development-guide.md#存档",
+      "category": "Reliability",
+      "severity": "error",
+      "content": "Saving must wait for a committed safe boundary through GameSaveCoordinator and must not capture Plan intermediates from a provider. Commands beyond the PKSR capacity must fail explicitly and keep every command. A failed load must not switch to a new world or continue a half-restored session.",
+      "good_examples": "if pending.size() > PKSR_COMMAND_CAPACITY:\n    return fail(\"save: %d pending commands exceed capacity\" % pending.size())",
+      "bad_examples": "pending = pending.slice(0, PKSR_COMMAND_CAPACITY)  # silently drops commands"
+    },
+    {
+      "name": "Keynes: background-day tests wait for the committed day and receive results",
+      "source": "docs/architecture/development-guide.md#存档 (手动推进后台日的测试)",
+      "category": "Testability",
+      "severity": "warning",
+      "content": "Tests that advance background days manually must wait with wait_for_runtime_day for the committed date and run the production result-receive step (e.g. the host's _service_runtime_liveness) before asserting. Waiting only until the observed day grows, or using 'one more day after observing' as the completion condition, is wrong.",
+      "good_examples": "await wait_for_runtime_day(host, target_day)\nhost._service_runtime_liveness()",
+      "bad_examples": "while host.current_day() <= seen_day:\n    await get_tree().process_frame"
+    },
+    {
+      "name": "Keynes: session components get narrow dependencies and one daily entry",
+      "source": "docs/architecture/development-guide.md#会话与宿主脚本",
+      "category": "Architecture",
+      "severity": "warning",
+      "content": "Components split out of world_runtime_host.gd receive narrow Callable or RefCounted dependencies, never the whole host, and never add a second daily-advance entry. Callbacks handed to signals or save services must be Callables bound to the host, not the component's own unbound methods.",
+      "good_examples": "_daily = WorldRuntimeDailyAdapter.new(Callable(host, \"_advance_day\"))",
+      "bad_examples": "_daily = WorldRuntimeDailyAdapter.new(host)\nsave_service.on_saved = Callable(self, \"_on_saved\")  # component method, not host-bound"
+    },
+    {
+      "name": "Keynes: GDScript splits keep the public surface and literals",
+      "source": "docs/architecture/development-guide.md#机械搬迁与拆分",
+      "category": "Maintainability",
+      "severity": "warning",
+      "content": "When splitting a GDScript file, public methods and signals stay in the original file as thin forwards and responsibilities move to RefCounted collaborators (pure transforms to static helpers), not extends chains. Adding a host. prefix must not change string literals or comments, and Callable(self, ...) or method names passed as values must still point at the host.",
+      "good_examples": "func export_report() -> Dictionary:\n    return _report.export_report()",
+      "bad_examples": "extends \"res://scripts/ui/game_ui_manager_base.gd\"\nemit_signal(\"host.day_changed\")  # prefix leaked into a literal"
+    },
+    {
+      "name": "Keynes: shader optimisations are judged by real GPU work",
+      "source": "AGENTS.md",
+      "category": "Performance",
+      "severity": "recommendation",
+      "content": "Do not count a shader if-branch as saved work: pixels in one batch taking different branches often execute both paths. Prefer skipping whole batches or removing unused paths at compile time, and justify the gain with measured frame time at the same quality and resolution.",
+      "good_examples": "#ifdef WEATHER_RAIN\n    color = apply_rain(color, uv);\n#endif",
+      "bad_examples": "if (rain_amount > 0.0) {  // claimed as a speed-up without frame-time numbers\n    color = apply_rain(color, uv);\n}"
+    },
+    {
+      "name": "Keynes: treasury construction checks the regime capability",
+      "source": "docs/architecture/development-guide.md#政治体制与国库建造权限",
+      "category": "Correctness",
+      "severity": "error",
+      "content": "Economy construction quote and apply must both reject requests from a country whose frozen CountryReadView lacks CountryApi::CAP_TREASURY_CONSTRUCTION. Regime state belongs to Country and must not be written to HexCell, DataCore or the Ideology POD; restoring an old save must not default to allowing treasury construction.",
+      "good_examples": "if (!(view.capability_bits & CountryApi::CAP_TREASURY_CONSTRUCTION)) {\n    return QuoteResult::rejected(QuoteReject::RegimeForbids);\n}",
+      "bad_examples": "// quote checks the capability, apply does not\nreturn apply_construction(request);"
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+"""Factory tests: the verdict, the ticket gate, plan parsing and the guard list. Stdlib only."""
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import agent  # noqa: E402
+import checks  # noqa: E402
+from ticket import criteria, gate, touching  # noqa: E402
+from verdict import Facts, judge  # noqa: E402
+
+HEAD = "abc123"
+
+
+def ready(**kw) -> Facts:
+    base = dict(head=HEAD, checks_sha=HEAD, review_status="completed", review_sha=HEAD,
+                ci_state="success", findings=[])
+    base.update(kw)
+    return Facts(**base)
+
+
+def finding(fid, status="pending", level="action_required"):
+    return {"id": fid, "attribution_status": status, "action_level": level, "title": f"t{fid}"}
+
+
+class VerdictTest(unittest.TestCase):
+    def test_ready_needs_every_fact(self):
+        self.assertEqual(judge(ready()).verdict, "READY")
+
+    def test_review_of_older_commit_is_not_done(self):
+        self.assertEqual(judge(ready(review_sha="old")).verdict, "NOT_DONE")
+
+    def test_review_still_running_is_not_done(self):
+        self.assertEqual(judge(ready(review_status="started")).verdict, "NOT_DONE")
+
+    def test_checks_on_another_commit_are_not_done(self):
+        self.assertEqual(judge(ready(checks_sha="old")).verdict, "NOT_DONE")
+
+    def test_ci_pending_is_not_done(self):
+        self.assertEqual(judge(ready(ci_state="pending")).verdict, "NOT_DONE")
+        self.assertEqual(judge(ready(ci_state=None)).verdict, "NOT_DONE")
+
+    def test_ci_failure_needs_fix(self):
+        self.assertEqual(judge(ready(ci_state="failure")).verdict, "NEEDS_FIX")
+
+    def test_each_open_status_blocks(self):
+        for s in ("pending", "partial_implementation", "not_implemented", "focus_areas_edited"):
+            self.assertEqual(judge(ready(findings=[finding(1, s)])).verdict, "NEEDS_FIX", s)
+
+    def test_closed_findings_do_not_block(self):
+        for s in ("implemented", "full_implementation", "dismissed", "detected_after_merge", "outdated"):
+            self.assertEqual(judge(ready(findings=[finding(1, s)])).verdict, "READY", s)
+
+    def test_informational_is_listed_not_blocking(self):
+        v = judge(ready(findings=[finding(1, level="informational")]))
+        self.assertEqual(v.verdict, "READY")
+        self.assertEqual(len(v.for_human), 1)
+
+    def test_unknown_status_needs_human(self):
+        self.assertEqual(judge(ready(findings=[finding(1, "weird")])).verdict, "NEEDS_HUMAN")
+
+    def test_new_failures_need_fix(self):
+        self.assertEqual(judge(ready(new_failures=["regression"])).verdict, "NEEDS_FIX")
+
+    def test_round_limit_reached_needs_human(self):
+        f = ready(findings=[finding(1)], review_rounds=3, review_round_limit=3)
+        self.assertEqual(judge(f).verdict, "NEEDS_HUMAN")
+        f = ready(findings=[finding(1)], review_rounds=2, review_round_limit=3)
+        self.assertEqual(judge(f).verdict, "NEEDS_FIX")
+
+    def test_human_reasons_win(self):
+        cases = [dict(stopped_by="x"), dict(plan_questions=["q"]), dict(disagreements=["d"]),
+                 dict(base_failures=["static:a.py"]), dict(human_paths=["tools/ci/size_baseline.json"]),
+                 dict(native_changed=True), dict(local_blocking=["L1"]), dict(review_stalled=True)]
+        for kw in cases:
+            self.assertEqual(judge(ready(**kw)).verdict, "NEEDS_HUMAN", kw)
+
+
+class TicketTest(unittest.TestCase):
+    BODY = "Intro\n\n## Acceptance criteria\n- [ ] one\n2. two\n\n## Notes\n- [ ] not a criterion\n"
+
+    def test_criteria_checkbox_and_numbered(self):
+        self.assertEqual(criteria(self.BODY), ["one", "two"])
+
+    def test_chinese_heading(self):
+        self.assertEqual(criteria("## 验收标准\n1. 甲\n"), ["甲"])
+
+    def test_gate(self):
+        self.assertEqual(gate("t", self.BODY, [], ["blocked"]), [])
+        self.assertTrue(gate("t", "no section", [], []))
+        self.assertTrue(gate("t", "## Acceptance criteria\njust text\n", [], []))
+        self.assertTrue(gate("t", self.BODY, ["blocked"], ["blocked"]))
+        self.assertTrue(gate("", self.BODY, [], []))
+
+    def test_touching(self):
+        files = ["tools/ci/size_baseline.json", "tools/ci/check_x.py", ".github/w.yml", "a.gd"]
+        self.assertEqual(touching(files, ["tools/ci/*baseline*.json"]), ["tools/ci/size_baseline.json"])
+        self.assertEqual(touching(files, [".github/"]), [".github/w.yml"])
+        self.assertEqual(touching(files, ["a"]), [])
+
+
+class PlanTest(unittest.TestCase):
+    PLAN = ("## Fit\nx\n## Reuse\nx\n## Affected\nx\n## Plan\n1. x\n"
+            "## Checks\n- `tools/ci/check_save_contracts.py`\n- rm -rf /\n## Questions\nnone\n")
+
+    def test_sections(self):
+        self.assertEqual(agent.plan_complete(self.PLAN), [])
+        self.assertEqual(agent.plan_questions(self.PLAN), [])
+        self.assertEqual(agent.plan_complete("## Fit\n"), ["reuse", "affected", "plan", "checks", "questions"])
+
+    def test_extra_checks_are_allowlisted(self):
+        ok, bad = checks.extra_checks(agent.plan_checks(self.PLAN), r"^tools/ci/[a-z0-9_]+\.py( --?[a-z0-9-]+)*$")
+        self.assertEqual(ok, ["tools/ci/check_save_contracts.py"])
+        self.assertEqual(bad, ["rm -rf /"])
+
+    def test_questions(self):
+        plan = self.PLAN.replace("## Questions\nnone", "## Questions\n- Should taxes round down?")
+        self.assertEqual(agent.plan_questions(plan), ["Should taxes round down?"])
+
+
+class GuardListTest(unittest.TestCase):
+    def test_reads_workflow_loop(self):
+        with tempfile.TemporaryDirectory() as d:
+            wf = Path(d) / "w.yml"
+            wf.write_text("run: |\n  for guard in a.py b.py \\\n      c.py; do\n    python \"$guard\"\n")
+            self.assertEqual(checks.static_guards(d, "w.yml"), ["a.py", "b.py", "c.py"])
+
+    def test_real_workflow_has_guards(self):
+        root = Path(__file__).resolve().parents[3]
+        wf = root / ".github" / "workflows" / "runtime-checks.yml"
+        if wf.exists():
+            self.assertIn("check_size_ratchet.py", checks.static_guards(str(root), ".github/workflows/runtime-checks.yml"))
+
+
+if __name__ == "__main__":
+    unittest.main()

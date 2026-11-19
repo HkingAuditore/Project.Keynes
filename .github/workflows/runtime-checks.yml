@@ -21,6 +21,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /tools/ci/
+            /tools/factory/
             /gdext/src/
             /gdext/tests/
             /Project/project-keynes/**/*.gd
@@ -46,6 +47,9 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+      - name: Factory tests
+        if: success() || failure()
+        run: python -m unittest discover -s tools/factory/tests -v
   authoring-and-thread-lifetime:
     runs-on: ubuntu-latest
     steps:
