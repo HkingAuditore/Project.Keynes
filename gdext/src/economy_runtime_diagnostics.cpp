@@ -22,6 +22,94 @@ using namespace variant_helpers;
 Dictionary NativeEconomyRuntime::fatal_context_report() const {
     Dictionary out;
     out["valid"] = _fatal_context.valid;
+    if (_investment_fatal_row.valid) {
+        // The BUILDING_COMMIT investment stage has no command/structural cursor,
+        // so the generic fields below stay at their defaults. Without this block
+        // a capital preflight fatal named no cell, type or leg at all. Emitted
+        // even when _fatal_context.valid is still false so a caller that reports
+        // before fail() runs (or the invariant probe) still sees the row.
+        Dictionary row;
+        row["branch"] = _investment_fatal_row.branch;
+        row["cell"] = _investment_fatal_row.cell;
+        row["type_id"] = _investment_fatal_row.type_id;
+        row["portfolio_index"] = _investment_fatal_row.portfolio_index;
+        row["portfolio_size"] = _investment_fatal_row.portfolio_size;
+        row["allocated_count"] = _investment_fatal_row.allocated_count;
+        row["owner_population"] = _investment_fatal_row.owner_population;
+        row["funding_capital"] = _investment_fatal_row.funding_capital;
+        row["merchant_credit"] = _investment_fatal_row.merchant_credit;
+        row["required_capital"] = _investment_fatal_row.required_capital;
+        row["carried"] = _investment_fatal_row.carried;
+        row["correction"] = _investment_fatal_row.correction;
+        row["sponsor_slot"] = _investment_fatal_row.sponsor_slot;
+        row["sponsor_handle"] =
+            static_cast<int64_t>(_investment_fatal_row.sponsor_handle);
+        row["sponsor_family_handle"] = static_cast<int64_t>(
+            _investment_fatal_row.sponsor_family_handle & 0x7fffffffffffffffULL);
+        row["sponsor_population"] = _investment_fatal_row.sponsor_population;
+        row["sponsor_funds"] = _investment_fatal_row.sponsor_funds;
+        row["owner_slot"] = _investment_fatal_row.owner_slot;
+        row["owner_funds"] = _investment_fatal_row.owner_funds;
+        row["source_drained"] = _investment_fatal_row.source_drained;
+        out["investment_row"] = row;
+    }
+    if (_construction_fatal_row.valid) {
+        // Same reason as the investment row: a BUILDING_COMMIT
+        // building_construction_preflight_*_drift stop has no cursor, so the
+        // generic fields are all defaults. Emitted before the _fatal_context.valid
+        // early-return so a reporter that runs before fail() still sees it.
+        Dictionary row;
+        row["reason"] = String::utf8(_construction_fatal_row.reason.c_str());
+        row["cell"] = _construction_fatal_row.cell;
+        row["type_id"] = _construction_fatal_row.type_id;
+        row["allocated_count"] = _construction_fatal_row.allocated_count;
+        row["total_cost"] = _construction_fatal_row.total_cost;
+        row["owner_slot"] = _construction_fatal_row.owner_slot;
+        row["owner_funds"] = _construction_fatal_row.owner_funds;
+        row["funding_gap"] = _construction_fatal_row.funding_gap;
+        row["debt_principal"] = _construction_fatal_row.debt_principal;
+        row["material_feasible"] = _construction_fatal_row.material_feasible;
+        row["good_count"] = _construction_fatal_row.good_count;
+        row["first_good_id"] = _construction_fatal_row.first_good_id;
+        row["first_required"] = _construction_fatal_row.first_required;
+        row["first_stock"] = _construction_fatal_row.first_stock;
+        row["portfolio_index"] = _construction_fatal_row.portfolio_index;
+        row["portfolio_size"] = _construction_fatal_row.portfolio_size;
+        row["capital_limited"] = _building_investment_capital_limited;
+        row["cost_envelope_trimmed"] = _building_investment_cost_envelope_trimmed;
+        row["pending_construction_count"] = pending_construction_count();
+        out["construction_row"] = row;
+    }
+    if (!_investment_leg_trace.empty()) {
+        // Every leg of the cell that was being committed, in execution order:
+        // what it carried / corrected / borrowed and how much the owner held when
+        // the material invoice was paid. A drift can be diagnosed from this alone
+        // even when the player cannot send the 40 MB save.
+        godot::Array legs;
+        for (const InvestmentLegTrace &leg : _investment_leg_trace) {
+            Dictionary row;
+            row["candidate"] = leg.candidate;
+            row["type_id"] = leg.type_id;
+            row["allocated"] = leg.allocated;
+            row["transition"] = leg.transition;
+            row["sponsor_slot"] = leg.sponsor_slot;
+            row["owner_slot"] = leg.owner_slot;
+            row["owner_population"] = leg.owner_population;
+            row["required_capital"] = leg.required_capital;
+            row["source_population_before"] = leg.source_population_before;
+            row["source_funds_before"] = leg.source_funds_before;
+            row["carried"] = leg.carried;
+            row["correction"] = leg.correction;
+            row["credit"] = leg.credit;
+            row["owner_funds_after_move"] = leg.owner_funds_after_move;
+            row["owner_funds_after_credit"] = leg.owner_funds_after_credit;
+            row["material_cost"] = leg.material_cost;
+            row["owner_funds_at_material"] = leg.owner_funds_at_material;
+            row["source_drained"] = leg.source_drained;
+            legs.push_back(row);
+        }
+        out["investment_legs"] = legs;
+    }
     if (!_fatal_context.valid) return out;
     out["reason"] = String::utf8(_fatal_context.reason.c_str());
     out["stage"] = stage_name(static_cast<Stage>(_fatal_context.stage));

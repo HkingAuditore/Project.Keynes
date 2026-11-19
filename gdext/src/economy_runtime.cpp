@@ -1660,6 +1660,48 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
     return move_cohort_population(source, cmd.cell, cmd.signature, cmd.population, error);
 }
 
+int64_t NativeEconomyRuntime::plan_cohort_move_cash(int32_t source_slot,
+        int32_t destination_cell, int64_t moved_population,
+        uint64_t preferred_family_handle, bool preferred_family_strict,
+        bool *will_drain_out) {
+    if (will_drain_out != nullptr) *will_drain_out = false;
+    if (source_slot < 0 ||
+        source_slot >= static_cast<int32_t>(population_store().active.size()))
+        return 0;
+    const int64_t source_pop = std::max<int64_t>(0,
+        population_store().population[source_slot]);
+    const int64_t move_pop = std::min(std::max<int64_t>(0, moved_population), source_pop);
+    if (move_pop == 0) return 0;
+    if (will_drain_out != nullptr) *will_drain_out = move_pop == source_pop;
+    const int64_t source_funds = std::max<int64_t>(0,
+        population_store().funds[source_slot]);
+    if (family_memberships().empty()) {
+        // No family lanes anywhere: the whole cohort is anonymous and the move
+        // is the plain per-capita share (same as before the split existed).
+        return cohort_move_cash(source_funds, source_pop, move_pop, false, 0, 0,
+            0, 0, _saturation_count, mul_div_sat);
+    }
+    // Same split the write performs: resolve the family/anonymous parties
+    // first, then let the shared rule turn that split into cash.
+    const int64_t anonymous_moved = plan_family_membership_move(source_slot,
+        destination_cell, move_pop, preferred_family_handle, preferred_family_strict);
+    int64_t family_claim = 0;
+    int64_t family_people = 0;
+    int64_t moved_claim = 0;
+    for (int32_t edge : _family_edge_scratch) {
+        family_people += std::max<int64_t>(0, family_memberships()[edge].people);
+        family_claim += std::max<int64_t>(0, family_memberships()[edge].cash_claim);
+    }
+    for (const FamilyMovePlanRow &row : _family_move_plan)
+        moved_claim = saturating_add(moved_claim, row.claim, _saturation_count);
+    const bool family_plan_valid = move_pop < source_pop &&
+        !_family_edge_scratch.empty();
+    const int64_t anonymous_people = std::max<int64_t>(0, source_pop - family_people);
+    return cohort_move_cash(source_funds, source_pop, move_pop, family_plan_valid,
+        moved_claim, family_claim, anonymous_moved, anonymous_people,
+        _saturation_count, mul_div_sat);
+}
+
 bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_cell,
                                                    int32_t dest_signature,
                                                    int64_t requested_pop,
@@ -1678,29 +1720,13 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     _structural_touched_cells.push_back(source_cell);
     _structural_touched_cells.push_back(cmd_cell);
     // Money follows people: family members carry their per-capita claim,
-    // anonymous movers the per-capita anonymous remainder.
-    int64_t move_funds = family_move_cash_share(population_store().funds[source],
-        move_pop, source_pop, _saturation_count, mul_div_sat);
-    if (!family_memberships().empty()) {
-        const int64_t anonymous_moved = plan_family_membership_move(source, cmd_cell,
-            move_pop, preferred_family_handle, preferred_family_strict);
-        if (move_pop < source_pop && !_family_edge_scratch.empty()) {
-            int64_t family_people = 0, family_claim = 0, moved_claim = 0;
-            for (int32_t edge : _family_edge_scratch) {
-                family_people += std::max<int64_t>(0, family_memberships()[edge].people);
-                family_claim += std::max<int64_t>(0, family_memberships()[edge].cash_claim);
-            }
-            for (const FamilyMovePlanRow &row : _family_move_plan)
-                moved_claim = saturating_add(moved_claim, row.claim, _saturation_count);
-            const int64_t source_funds = std::max<int64_t>(0, population_store().funds[source]);
-            const int64_t anonymous = std::max<int64_t>(0, source_pop - family_people);
-            const int64_t anonymous_funds = std::max<int64_t>(0, source_funds - family_claim);
-            const int64_t anonymous_move_funds = family_move_cash_share(anonymous_funds,
-                anonymous_moved, anonymous, _saturation_count, mul_div_sat);
-            move_funds = std::clamp<int64_t>(saturating_add(moved_claim,
-                anonymous_move_funds, _saturation_count), 0, source_funds);
-        }
-    }
+    // anonymous movers the per-capita anonymous remainder. Resolved through the
+    // shared rule so the portfolio replay and the investment pre-write gate
+    // compute exactly this transfer (economy_family_move_cash.h).
+    bool will_drain = false;
+    const int64_t move_funds = plan_cohort_move_cash(source, cmd_cell, move_pop,
+        preferred_family_handle, preferred_family_strict, &will_drain);
+    (void)will_drain;
     const int64_t move_income = move_pop == source_pop
                                     ? population_store().epoch_income[source]
                                     : mul_div_sat(population_store().epoch_income[source], move_pop, source_pop,
@@ -2022,6 +2048,11 @@ void NativeEconomyRuntime::retire_person(int32_t person_index) {
     }
     if (_modifier_runtime != nullptr)
         modifier_api::unregister_person_target(*_modifier_runtime, person_handle);
+    // An expedition payload owns the population unit of a travelling notable
+    // person. If some other authority retires that person (family dissolution),
+    // the payload must drop the reference before the slot generation bumps:
+    // a persisted handle that no restore accepts rejects the whole PKEC save.
+    drop_expedition_transit_person(person_handle);
     // Releasing the slot bumps the generation, so the retired handle can never
     // match again. Orphaned need rows are dropped by one compaction pass
     // instead of one full-array erase per retirement.

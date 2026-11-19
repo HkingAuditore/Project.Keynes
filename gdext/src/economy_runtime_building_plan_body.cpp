@@ -1389,6 +1389,16 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             }
         }
         constexpr int64_t recovery_probe_floor_q16 = 0;
+        // Dead by intent, not by accident: d3d061c96 replaced this old
+        // "recovery probe" capacity pass with the executable/viable restart
+        // decision above (pending_operating_state + credit_needed) and left the
+        // block behind with a zero floor. Its only consumer,
+        // economy_runtime_slice_execution.cpp's liquidation capacity, takes
+        // max(planned_utilization_q16, probe_capacity), so a missing writer
+        // degrades to planned utilization instead of blocking retirement.
+        // Delete the block (and the zero floor constant) in a dedicated cleanup;
+        // re-enabling it would double count _recovery_candidates and re-add a
+        // cost model of zero.
         if (false && type.kind != 2 && group.operating_state == 1 && !suspended_now &&
             group.recovery_cooldown_cycles == 0) {
             const int32_t owner_slot = find_cohort_slot(group.cell, group.owner_signature_id);

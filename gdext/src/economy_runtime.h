@@ -1802,6 +1802,13 @@ private:
     void promote_person_for_family(int32_t family_index);
     void register_person_effect(int32_t person_index);
     void retire_person(int32_t person_index);
+    // An expedition payload detaches its people from the cohort lane on
+    // purpose (cohort_handle == 0). `person_in_expedition_transit` marks such a
+    // travelling person so PERSON_COMMIT does not retire them mid-voyage, and
+    // `drop_expedition_transit_person` keeps the payload lanes consistent when
+    // some other authority (family dissolution) does retire one.
+    bool person_in_expedition_transit(uint64_t person_handle) const;
+    void drop_expedition_transit_person(uint64_t person_handle);
     void record_person_demography(int32_t cohort_slot,
                                   int64_t population_before,
                                   int64_t deaths);
