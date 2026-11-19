@@ -287,7 +287,7 @@ func _load_ideology_catalog_cooperative() -> Resource:
 	if _generator._loading_frames.canceled:
 		return null
 	var request := preload("res://scripts/game/loading_resource_request.gd").new(IDEOLOGY_CATALOG_PATH)
-	var start_failure := _ideology_catalog_request_failure(request.start_error, true, null)
+	var start_failure := _ideology_catalog_request_failure(request.start_error, false, null)
 	if not start_failure.is_empty():
 		push_error("[country-init] %s" % start_failure)
 		return null
