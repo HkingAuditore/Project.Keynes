@@ -14,4 +14,8 @@ if [ ! -e "$RUNNER/.git" ]; then
 fi
 git -C "$RUNNER" checkout -q --detach "$REMOTE/master"
 cd "$RUNNER"
+if [ ! -f tools/factory/run.py ]; then
+  echo "$(date -u +%FT%TZ) $REMOTE/master has no tools/factory/run.py yet; nothing to do"
+  exit 0
+fi
 exec ~/.local/bin/python3 tools/factory/run.py "$@"
