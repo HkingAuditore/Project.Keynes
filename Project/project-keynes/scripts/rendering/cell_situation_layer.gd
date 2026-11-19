@@ -91,7 +91,7 @@ func configure(map: MapData, camera: Camera2D, host, economy,
     _last_zoom = -1.0
     _query_due = 0.0
     _host.daily_tick_completed.connect(_on_daily_commit)
-    _host.simulation_committed.connect(_on_worker_commit)
+    _host.simulation_view_updated.connect(_on_worker_view)
     _hide_tooltip()
     queue_redraw()
 
@@ -101,8 +101,8 @@ func _disconnect_context() -> void:
         return
     if _host.daily_tick_completed.is_connected(_on_daily_commit):
         _host.daily_tick_completed.disconnect(_on_daily_commit)
-    if _host.simulation_committed.is_connected(_on_worker_commit):
-        _host.simulation_committed.disconnect(_on_worker_commit)
+    if _host.simulation_view_updated.is_connected(_on_worker_view):
+        _host.simulation_view_updated.disconnect(_on_worker_view)
 
 
 func _exit_tree() -> void:
@@ -114,7 +114,7 @@ func _on_daily_commit(_report: Dictionary) -> void:
     queue_redraw()
 
 
-func _on_worker_commit(_from: int, _to: int, _generation: int) -> void:
+func _on_worker_view(_from: int, _to: int, _generation: int) -> void:
     _dirty = true
     queue_redraw()
 

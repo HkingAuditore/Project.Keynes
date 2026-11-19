@@ -218,6 +218,19 @@ Dictionary DCWorldExt::get_natural_resource_regen_factors(
     return out;
 }
 
+bool DCWorldExt::natural_resource_slots_are_worker_owned(
+        const PackedStringArray &reserve_slots) const {
+    if (reserve_slots.is_empty() || !economy_worker_owns_natural_resources()) return false;
+    const auto &worker_slots = static_cast<const NativeEconomyRuntime *>(_economy_runtime)
+        ->building_resource_reserve_slots();
+    for (int64_t index = 0; index < reserve_slots.size(); ++index) {
+        const CharString slot = reserve_slots[index].utf8();
+        if (std::find(worker_slots.begin(), worker_slots.end(), slot.get_data()) ==
+                worker_slots.end()) return false;
+    }
+    return true;
+}
+
 Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     using godot::PackedFloat32Array;
     using godot::PackedStringArray;

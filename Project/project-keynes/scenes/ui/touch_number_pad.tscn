@@ -1,0 +1,343 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/touch_number_pad.gd" id="1"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2"]
+
+[node name="TouchNumberPad" type="Control"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 2
+theme = ExtResource("2")
+script = ExtResource("1")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.04, 0.03, 0.02, 0.55)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Paper" type="PanelContainer" parent="Center"]
+layout_mode = 2
+theme_type_variation = &"PKPaperPopup"
+
+[node name="Margin" type="MarginContainer" parent="Center/Paper"]
+layout_mode = 2
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 22
+
+[node name="Column" type="VBoxContainer" parent="Center/Paper/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Paper/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Modes" type="HBoxContainer" parent="Center/Paper/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Reading" type="HBoxContainer" parent="Center/Paper/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 2
+
+[node name="Value" type="Label" parent="Center/Paper/Margin/Column/Reading"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 40
+theme_override_colors/font_color = Color(0.12, 0.075, 0.04, 1)
+
+[node name="Unit" type="Label" parent="Center/Paper/Margin/Column/Reading"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 8
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+
+[node name="MoneyIcon" type="TextureRect" parent="Center/Paper/Margin/Column/Reading"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+custom_minimum_size = Vector2(26, 26)
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Hint" type="Label" parent="Center/Paper/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+autowrap_mode = 3
+
+[node name="Steps" type="HBoxContainer" parent="Center/Paper/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Body" type="HBoxContainer" parent="Center/Paper/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Digits" type="VBoxContainer" parent="Center/Paper/Margin/Column/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Grid" type="GridContainer" parent="Center/Paper/Margin/Column/Body/Digits"]
+layout_mode = 2
+columns = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="Bottom" type="HBoxContainer" parent="Center/Paper/Margin/Column/Body/Digits"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Actions" type="VBoxContainer" parent="Center/Paper/Margin/Column/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+custom_minimum_size = Vector2(124, 0)
+
+[node name="Percent" type="Button" parent="Center/Paper/Margin/Column/Modes"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(0, 50)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 20
+text = "%"
+size_flags_horizontal = 3
+
+[node name="Absolute" type="Button" parent="Center/Paper/Margin/Column/Modes"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(0, 50)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 20
+text = "定额"
+size_flags_horizontal = 3
+
+[node name="Step0" type="Button" parent="Center/Paper/Margin/Column/Steps"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(0, 58)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "-10"
+size_flags_horizontal = 3
+
+[node name="Step1" type="Button" parent="Center/Paper/Margin/Column/Steps"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(0, 58)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "-1"
+size_flags_horizontal = 3
+
+[node name="Step2" type="Button" parent="Center/Paper/Margin/Column/Steps"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(0, 58)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "+1"
+size_flags_horizontal = 3
+
+[node name="Step3" type="Button" parent="Center/Paper/Margin/Column/Steps"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(0, 58)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "+10"
+size_flags_horizontal = 3
+
+[node name="Digit7" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "7"
+
+[node name="Digit8" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "8"
+
+[node name="Digit9" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "9"
+
+[node name="Digit4" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "4"
+
+[node name="Digit5" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "5"
+
+[node name="Digit6" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "6"
+
+[node name="Digit1" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "1"
+
+[node name="Digit2" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "2"
+
+[node name="Digit3" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "3"
+
+[node name="Zero" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Bottom"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(232, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 24
+text = "0"
+
+[node name="Subsidy" type="Button" parent="Center/Paper/Margin/Column/Body/Digits/Bottom"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 20
+text = "补贴"
+
+[node name="Backspace" type="Button" parent="Center/Paper/Margin/Column/Body/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 20
+text = "退格"
+size_flags_vertical = 3
+
+[node name="Clear" type="Button" parent="Center/Paper/Margin/Column/Body/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 20
+text = "清空"
+size_flags_vertical = 3
+
+[node name="Cancel" type="Button" parent="Center/Paper/Margin/Column/Body/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 20
+text = "取消"
+size_flags_vertical = 3
+
+[node name="Confirm" type="Button" parent="Center/Paper/Margin/Column/Body/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+custom_minimum_size = Vector2(112, 86)
+theme_type_variation = &"PKPrimaryButton"
+theme_override_font_sizes/font_size = 20
+text = "确定"
+size_flags_vertical = 3
+
+[connection signal="gui_input" from="Shade" to="." method="_on_dim_input"]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Modes/Percent" to="." method="_request_mode" binds= [0]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Modes/Absolute" to="." method="_request_mode" binds= [1]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Steps/Step0" to="." method="_step" binds= [-10]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Steps/Step1" to="." method="_step" binds= [-1]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Steps/Step2" to="." method="_step" binds= [1]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Steps/Step3" to="." method="_step" binds= [10]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit7" to="." method="_push_digit" binds= ["7"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit8" to="." method="_push_digit" binds= ["8"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit9" to="." method="_push_digit" binds= ["9"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit4" to="." method="_push_digit" binds= ["4"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit5" to="." method="_push_digit" binds= ["5"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit6" to="." method="_push_digit" binds= ["6"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit1" to="." method="_push_digit" binds= ["1"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit2" to="." method="_push_digit" binds= ["2"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Grid/Digit3" to="." method="_push_digit" binds= ["3"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Bottom/Zero" to="." method="_push_digit" binds= ["0"]]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Digits/Bottom/Subsidy" to="." method="_toggle_sign"]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Actions/Backspace" to="." method="_backspace"]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Actions/Clear" to="." method="_clear"]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Actions/Cancel" to="." method="_on_cancel_pressed"]
+[connection signal="pressed" from="Center/Paper/Margin/Column/Body/Actions/Confirm" to="." method="_confirm"]

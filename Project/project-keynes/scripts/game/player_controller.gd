@@ -806,12 +806,12 @@ func _connect_runtime() -> void:
 	if _camera != null and _camera.has_signal("view_changed") \
 			and not _camera.view_changed.is_connected(_on_camera_view_changed):
 		_camera.view_changed.connect(_on_camera_view_changed)
-	if _runtime_host != null and _runtime_host.has_signal("simulation_committed") \
-			and not _runtime_host.simulation_committed.is_connected(_on_simulation_committed):
-		_runtime_host.simulation_committed.connect(_on_simulation_committed)
-	if _runtime_host != null and _runtime_host.has_signal("country_peer_serviced") \
-			and not _runtime_host.country_peer_serviced.is_connected(_on_country_peer_serviced):
-		_runtime_host.country_peer_serviced.connect(_on_country_peer_serviced)
+	if _runtime_host != null:
+		var runtime_callbacks := {"simulation_committed": _on_simulation_committed,
+			"simulation_view_updated": _on_simulation_view_updated, "country_peer_serviced": _on_country_peer_serviced}
+		for event in runtime_callbacks:
+			if _runtime_host.has_signal(event) and not _runtime_host.is_connected(event, runtime_callbacks[event]):
+				_runtime_host.connect(event, runtime_callbacks[event])
 	if _world_clock == null:
 		return
 	for signal_name in CLOCK_CALLBACKS:
@@ -821,21 +821,24 @@ func _connect_runtime() -> void:
 				CONNECT_DEFERRED if signal_name == &"control_changed" else 0)
 
 
-func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:
-	# ACTIVE worker commits are display-only on the Godot side. The worker owns
-	# the authoritative date; this callback refreshes only lightweight UI state.
+func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
-	if _ui_manager != null and _ui_manager.has_method("notify_committed_day"):
-		_ui_manager.notify_committed_day()
+	if _ui_manager != null and _ui_manager.has_method("refresh_committed_view"):
+		_ui_manager.refresh_committed_view()
+
+func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:
+	if _runtime_host == null or _world_clock == null:
+		return
+	if _ui_manager != null and _ui_manager.has_method("record_committed_day"):
+		_ui_manager.record_committed_day(to_day)
 	if _music_situation != null:
 		_music_situation.refresh_global_from_commit()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
-	# ACTIVE worker days settle here before Godot's own day signal.
 	_sync_ideology_draw()
 	_sync_era_music()
 	_sync_event_audio()
@@ -1095,7 +1098,8 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_era_music()
 	_sync_event_audio()
 	_refresh_era_advancement()
-	if not _runtime_host.uses_worker_day_commits():
+	var worker_days: bool = _runtime_host.uses_worker_day_commits()
+	if not worker_days:
 		_step_narrative_daily(day_idx)
 		if _music_situation != null:
 			_music_situation.refresh_global_from_commit()
@@ -1105,10 +1109,11 @@ func _on_day_changed(day_idx: int) -> void:
 			_player_country_handle)
 	var ui_started_usec := Time.get_ticks_usec()
 	var ui_breakdown: Dictionary = {}
-	if _ui_manager != null:
+	if _ui_manager != null and not worker_days:
 		ui_breakdown = _ui_manager.refresh_selected_daily_lines(false, day_idx)
-		if _ui_manager.has_method("notify_committed_day"):
-			_ui_manager.notify_committed_day()
+		if _ui_manager.has_method("record_committed_day"):
+			_ui_manager.record_committed_day(day_idx)
+			_ui_manager.refresh_committed_view()
 		# Country workspaces are event-driven. Daily ticks only patch the selected
 		# cell and clock; country/economy/ideology commits invalidate their section.
 		ui_breakdown["country_summary_ms"] = 0.0
@@ -1231,11 +1236,7 @@ func _sync_clock_visual_state() -> void:
 
 
 func _sync_time_ui() -> void:
-	if _ui_manager == null or _world_clock == null:
-		return
-	var calendar_date: Dictionary = _world_clock.calendar_date()
-	_ui_manager.update_time_state(_world_clock.year_index(), int(calendar_date.month),
-		int(calendar_date.day_of_month), _world_clock.paused, _world_clock.speed_multiplier)
+	_selection_component.sync_time_ui(self)
 
 
 func _resolve_player_country() -> Dictionary:

@@ -74,8 +74,8 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 	_dirty = true
 	_next_sample = _time
 	_host.daily_tick_completed.connect(_on_committed_day)
-	if _host.has_signal("simulation_committed"):
-		_host.simulation_committed.connect(_on_simulation_committed)
+	if _host.has_signal("simulation_view_updated"):
+		_host.simulation_view_updated.connect(_on_simulation_view_updated)
 	_intel = _host.building_visual_intel_cache()
 	if _intel != null:
 		_intel.visible_rows_updated.connect(_on_visible_rows_updated)
@@ -87,16 +87,20 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 	# 保证在屏幕内且不在迷雾里）。正常玩家没有 pk_debug.cfg ⇒ 不生效。
 	var probe_cfg := ConfigFile.new()
 	if probe_cfg.load("user://pk_debug.cfg") == OK:
-		var raw_probe = probe_cfg.get_value("render", "badge_probe_cell", -1)
+		var raw_probe: Variant = probe_cfg.get_value("render", "badge_probe_cell", -1)
 		var probe_cell := -1
-		if String(raw_probe).strip_edges().to_lower() == "center":
-			var cube: Vector3i = HexUtils.world_to_cube(_camera.global_position, _hex_size)
-			var offset := HexUtils.cube_to_offset(cube.x, cube.y)
-			if _map != null:
-				probe_cell = int(offset.y) * int(_map.width) + int(offset.x)
-		else:
-			probe_cell = int(raw_probe)
-		if probe_cell >= 0 and probe_cell < _map.cell_count():
+		if raw_probe is int:
+			probe_cell = raw_probe
+		elif raw_probe is String or raw_probe is StringName:
+			var probe_text := String(raw_probe).strip_edges()
+			if probe_text.is_valid_int():
+				probe_cell = probe_text.to_int()
+			elif probe_text.to_lower() == "center" and _camera != null and _map != null:
+				var cube := HexUtils.world_to_cube(_camera.global_position, _hex_size)
+				var cell := _map.get_cell_by_cube(cube)
+				if cell != null:
+					probe_cell = cell.index
+		if _map != null and probe_cell >= 0 and probe_cell < _map.cell_count():
 			_effects.append({"cell": probe_cell, "kind": &"colony", "caption": "PROBE",
 				"major": true, "age": 0.0, "duration": 99999.0, "reduced": false})
 			print("[activity-probe] badge at cell=%d world=%s" % [
@@ -107,9 +111,9 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 func _disconnect_context() -> void:
 	if is_instance_valid(_host) and _host.daily_tick_completed.is_connected(_on_committed_day):
 		_host.daily_tick_completed.disconnect(_on_committed_day)
-	if is_instance_valid(_host) and _host.has_signal("simulation_committed") \
-			and _host.simulation_committed.is_connected(_on_simulation_committed):
-		_host.simulation_committed.disconnect(_on_simulation_committed)
+	if is_instance_valid(_host) and _host.has_signal("simulation_view_updated") \
+			and _host.simulation_view_updated.is_connected(_on_simulation_view_updated):
+		_host.simulation_view_updated.disconnect(_on_simulation_view_updated)
 	if _intel != null and _intel.visible_rows_updated.is_connected(_on_visible_rows_updated):
 		_intel.visible_rows_updated.disconnect(_on_visible_rows_updated)
 	if is_instance_valid(_player) and _player.command_settled.is_connected(_on_command_settled):
@@ -124,7 +128,7 @@ func _on_committed_day(_report: Dictionary) -> void:
 	_dirty = true
 
 
-func _on_simulation_committed(_from_day: int, _to_day: int, _generation: int) -> void:
+func _on_simulation_view_updated(_from_day: int, _to_day: int, _generation: int) -> void:
 	_dirty = true
 
 

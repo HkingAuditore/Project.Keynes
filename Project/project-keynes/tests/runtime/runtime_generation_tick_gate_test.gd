@@ -45,6 +45,7 @@ func _run() -> void:
 		runtime.finish_daily_tick(0.0, {})
 		_expect("manual steps also finish while the frame clock is paused",
 			not generator.bio_occupancy_round_active())
+	_expect("game closes after the manual ticks", bool((await runtime.close_world()).get("ok", false)))
 	game.queue_free()
 	await process_frame
 	_finish()
@@ -69,4 +70,4 @@ func _expect(label: String, condition: bool) -> void:
 
 func _finish() -> void:
 	print("[runtime-generation-tick-gate] completed with %d failure(s)" % _failures)
-	quit(_failures)
+	call_deferred("quit", _failures)

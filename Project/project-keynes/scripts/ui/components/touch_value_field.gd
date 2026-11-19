@@ -13,7 +13,7 @@ extends Control
 ##
 ## 不写 class_name，由宿主 preload。
 
-const TouchNumberPad = preload("res://scripts/ui/components/touch_number_pad.gd")
+const TouchNumberPad = preload("res://scenes/ui/touch_number_pad.tscn")
 
 ## 手指移动超过这个距离（设计像素）就认为是在滑动列表，不弹键盘。
 const DRAG_TOLERANCE := 12.0
@@ -123,7 +123,7 @@ func _ensure_pad() -> Control:
 	var layer := _layer()
 	if layer == null:
 		return null
-	pad = TouchNumberPad.new()
+	pad = TouchNumberPad.instantiate()
 	pad.name = "TouchNumberPad"
 	layer.add_child(pad)
 	_pad = pad

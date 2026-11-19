@@ -5,7 +5,6 @@
 #include "runtime_authority_control.h"
 #include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
-#include "runtime_snapshot_ring.h"
 #include "runtime_published_view.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
@@ -938,7 +937,6 @@ public:
     uint64_t allocate_producer_sequence(uint32_t producer_id) override;
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
-    bool poll_commit_generation(uint64_t generation, RuntimeCommit &out);
     bool poll_receipt(RuntimeCommandReceipt &out);
     bool poll_country_command_receipts(
             uint64_t after_request_id, uint32_t limit,
@@ -1285,6 +1283,8 @@ private:
     void publish_day(int64_t from_day, int64_t day,
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
+    bool prepare_day_visuals(RuntimeCommit &commit,
+                             const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
     // Grant and revoke share one atomic state; a finishing day cannot undo stop.
     void publish_authority_grant(uint32_t mask) noexcept {
@@ -1376,15 +1376,8 @@ private:
     std::atomic<bool> _active_gate_blocked{false};
     std::atomic<int64_t> _committed_day{0};
     std::atomic<uint64_t> _generation{0};
-    // Lightweight commit header retained independently from the visual ring.
-    // If all three visual buffers are READING, the worker drops only visual
-    // intents while the main thread can still observe the authoritative day
-    // commit and its hash.
-    std::atomic<int64_t> _latest_from_day{0};
-    std::atomic<int64_t> _latest_committed_day{0};
-    std::atomic<uint64_t> _latest_produced_at_us{0};
-    std::atomic<uint32_t> _latest_dirty_families{0};
-    std::atomic<uint32_t> _latest_receipt_count{0};
+    // Slow readers can keep this commit while the worker publishes a new one.
+    std::shared_ptr<const RuntimeCommit> _latest_commit;
     std::atomic<uint64_t> _last_visual_publish_us{0};
     std::atomic<uint64_t> _snapshot_publish_throttled_count{0};
     // M4/M5 diagnostics. These fields describe the frozen input manifest and
@@ -1406,8 +1399,6 @@ private:
     std::atomic<uint32_t> _visual_intent_count{0};
     std::atomic<bool> _visual_full_refresh{false};
     std::atomic<uint64_t> _last_commit_produced_at_us{0};
-    std::array<std::atomic<uint64_t>, RUNTIME_DIRTY_FAMILY_COUNT>
-        _dirty_family_generations{};
     std::atomic<double> _ui_input_to_feedback_ms{0.0};
     std::atomic<double> _visual_apply_ms{0.0};
     std::atomic<double> _gpu_upload_ms{0.0};
@@ -1443,7 +1434,6 @@ private:
     std::thread _worker;
     std::shared_ptr<std::atomic<bool>> _worker_returned =
         std::make_shared<std::atomic<bool>>(true);
-    RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
     RuntimeEnvironmentInputRing _environment_ring;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_snapshot;

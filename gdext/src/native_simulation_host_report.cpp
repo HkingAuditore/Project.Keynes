@@ -94,7 +94,6 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.visual_intent_generation = _visual_intent_generation.load(std::memory_order_acquire);
     out.visual_intent_count = _visual_intent_count.load(std::memory_order_acquire);
     out.visual_full_refresh = _visual_full_refresh.load(std::memory_order_acquire);
-    out.snapshot_publish_drop_count = _snapshots.publish_drop_count();
     out.snapshot_publish_throttled_count =
         _snapshot_publish_throttled_count.load(std::memory_order_relaxed);
     out.worker_fault_count = _worker_fault_count.load(std::memory_order_relaxed);

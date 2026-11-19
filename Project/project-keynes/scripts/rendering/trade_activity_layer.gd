@@ -2,7 +2,7 @@ extends Node2D
 class_name TradeActivityLayer
 
 ## Bounded read-only observer. Two fixed batches sharing one MultiMesh, no per-order nodes or CPU animation.
-const VEHICLES: Texture2D = preload("res://assets/vfx/trade/vehicles_topdown_v2.png")
+const VEHICLES: TextureLayered = preload("res://assets/vfx/trade/vehicles_topdown_v2.png")
 const VEHICLE_SHADER: Shader = preload("res://shaders/trade_vehicle.gdshader")
 const PATH_WIDTH := 1024
 const INTEREST_CAP := 4096
@@ -158,7 +158,7 @@ func _ensure_batch() -> void:
 	_set_parameter("shadow_heights", PackedFloat32Array(UITokens.TRADE_SHADOW_HEIGHTS))
 	_set_parameter("shadow_footprint", UITokens.TRADE_SHADOW_FOOTPRINT)
 	_set_parameter("shadow_edge_softness", UITokens.TRADE_SHADOW_EDGE_SOFTNESS)
-	_set_parameter("vehicle_atlas", VEHICLES)
+	_set_parameter("vehicle_sprites", VEHICLES)
 	_set_parameter("travel_speed", UITokens.TRADE_SPEED)
 	_set_parameter("stale_fade_seconds", UITokens.TRADE_FADE_SECONDS)
 	_info.resize(UITokens.TRADE_ROUTE_CAP)
@@ -173,12 +173,10 @@ func _ensure_batch() -> void:
 	_batch = MultiMeshInstance2D.new()
 	_batch.name = "TradeVehicles"
 	_batch.multimesh = instances
-	_batch.texture = VEHICLES
 	_batch.material = _material
 	_shadow_batch = MultiMeshInstance2D.new()
 	_shadow_batch.name = "TradeShadows"
 	_shadow_batch.multimesh = instances
-	_shadow_batch.texture = VEHICLES
 	_shadow_batch.material = _shadow_material
 	_shadow_batch.z_index = -1
 	add_child(_shadow_batch)

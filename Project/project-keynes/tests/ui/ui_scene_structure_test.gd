@@ -33,10 +33,32 @@ func _run() -> void:
 	await _check_world_setup()
 	await _check_player_game()
 	_check_component_scenes()
+	_check_touch_number_pad()
 	await _check_embedded_object_detail_row_values()
 	_check_no_runtime_control_new()
 	print("ui scene structure: %d failures" % _failures.size())
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _check_touch_number_pad() -> void:
+	var pad := preload("res://scenes/ui/touch_number_pad.tscn").instantiate()
+	root.add_child(pad)
+	var submissions := []
+	pad.submitted.connect(func(value: String, mode: int) -> void:
+		submissions.append([value, mode]))
+	_expect("touch number pad starts hidden", not pad.visible)
+	pad.open({"title": "税率", "value": "7"})
+	pad.get_node("%Step2").pressed.emit()
+	pad.get_node("%Confirm").pressed.emit()
+	_expect("touch number pad applies the step and submits the value",
+		submissions == [["8", 0]] and not pad.is_open())
+	pad.open({"title": "定额", "value": "12", "mode": 1})
+	_expect("reopened touch number pad displays the current field title",
+		pad.get_node("%Title").text == "定额")
+	pad.get_node("%Cancel").pressed.emit()
+	_expect("touch number pad cancel leaves the last submission intact",
+		submissions == [["8", 0]] and not pad.is_open())
+	pad.free()
 
 
 func _check_theme_contract() -> void:

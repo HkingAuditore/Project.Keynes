@@ -16,6 +16,39 @@ var _building_visual_intel: BuildingVisualIntelCache = BuildingVisualIntelCacheS
 var _building_visual_type_count: int = -1
 var _building_visual_force_full_refresh: bool = false
 var _building_visual_diag_logged: bool = false
+var _presented_day := -1
+var _pending_from_day := -1
+var _pending_day := -1
+var _pending_generation := 0
+
+## Display can skip dates. Keep the first source date until the next frame,
+## independently from the notification sent for every settled day.
+func queue_worker_commit(from_day: int, day: int, generation: int) -> void:
+	if not needs_worker_view(generation):
+		return
+	if _pending_day < 0:
+		_pending_from_day = _presented_day if _presented_day >= 0 else from_day
+	_pending_day = day
+	_pending_generation = generation
+
+func needs_worker_view(generation: int) -> bool:
+	return generation > _pending_generation
+
+func publish_worker_view(publish: Callable) -> void:
+	if _pending_day < 0:
+		return
+	_presented_day = _pending_day
+	_pending_day = -1
+	publish.call(_pending_from_day, _presented_day, _pending_generation)
+
+func presented_worker_day() -> int:
+	return _presented_day
+
+func reset_worker_views() -> void:
+	_presented_day = -1
+	_pending_from_day = -1
+	_pending_day = -1
+	_pending_generation = 0
 
 func map_wrap_period_x() -> float:
 	return _wrap_period
@@ -31,6 +64,7 @@ func bind_resources(map: MapData, generator: Object, renderer: Object,
 	_wrap_period = wrap
 
 func release_resources() -> void:
+	reset_worker_views()
 	_current_map = null
 	_generator = null
 	_renderer = null

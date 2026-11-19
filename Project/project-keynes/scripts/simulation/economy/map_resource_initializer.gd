@@ -1,5 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 
+const NaturalResourceRecovery = preload("res://scripts/simulation/economy/natural_resource_recovery.gd")
+
 const RESOURCE_SCALAR_STRIDE := 32
 
 func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = false) -> void:
@@ -982,8 +984,8 @@ func run_natural_resource_pass_native(
 func run_natural_resource_pass_for_runtime_commit(day: int) -> Dictionary:
 	if _generator._sus_map == null:
 		return {"done": true, "path": "skip", "published_to_slot": false}
-	var live_cells = _generator.economy_live_cells()
-	return _generator.run_natural_resource_pass_scheduled(_generator._sus_map, maxi(0, day), live_cells)
+	return NaturalResourceRecovery.run_scheduled(_generator, _generator._sus_map,
+			maxi(0, day), _generator.economy_live_cells(), true)
 
 
 
@@ -1041,28 +1043,7 @@ func _commit_natural_resource_pass_days(day: int, cell_indices: PackedInt32Array
 
 
 func run_natural_resource_pass_scheduled(map_ref, day: int, live_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
-	if map_ref == null:
-		return _generator._remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
-	var n_cells: int = map_ref.cell_count()
-	_generator._ensure_natural_resource_cadence(n_cells, day)
-	var planned: Dictionary = _generator.collect_natural_resource_pass_cells(day, live_cells)
-	var cell_indices: PackedInt32Array = planned.get("cell_indices", PackedInt32Array())
-	var cell_dt_days: PackedInt32Array = planned.get("cell_dt_days", PackedInt32Array())
-	if cell_indices.is_empty():
-		return _generator._remember_natural_resource_report({
-			"done": true,
-			"path": "indexed_empty",
-			"published_to_slot": true,
-			"dt_days": 1,
-			"indexed_cell_count": 0,
-			"n_cells": n_cells,
-			"total_delta": 0.0,
-		})
-	var res: Dictionary = _generator.run_natural_resource_pass_native(map_ref, 1, cell_indices, cell_dt_days)
-	if bool(res.get("published_to_slot", false)):
-		_generator._commit_natural_resource_pass_days(day, cell_indices, planned.get("live_set", {}))
-	res["indexed_cell_count"] = cell_indices.size()
-	return res
+	return NaturalResourceRecovery.run_scheduled(_generator, map_ref, day, live_cells)
 
 
 

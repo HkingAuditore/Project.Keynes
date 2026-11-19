@@ -15,6 +15,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	_check_climate_input_matches_calendar_year()
 	var first := WorldClock.new()
 	var second := WorldClock.new()
 	first.auto_start = false
@@ -75,6 +76,32 @@ func _run() -> void:
 	await process_frame
 	print("player clock events: %d failures" % failures)
 	quit(0 if failures == 0 else 1)
+
+func _check_climate_input_matches_calendar_year() -> void:
+	var clock := WorldClock.new()
+	clock.days_per_year_count = 365
+	clock._last_day = 364
+	clock._last_season = 3
+	clock._last_year = 0
+	clock.seed_annual_climate(20260718)
+	var old_anomaly := clock.climate_anomaly
+	var old_rng_state := clock._rng.state
+	var new_anomaly := clock.climate_anomaly_for_day(365)
+	var years: Array[int] = []
+	var sampled: Array[float] = []
+	_expect("the final day of the old year keeps its current anomaly",
+		clock.climate_anomaly_for_day(364) == old_anomaly)
+	_expect("sampling the next year leaves the calendar and random state intact",
+		new_anomaly != old_anomaly and clock.climate_anomaly == old_anomaly
+		and clock._rng.state == old_rng_state and clock._last_year == 0)
+	clock.year_changed.connect(func(year): years.append(year))
+	clock.day_changed.connect(func(day): sampled.append(clock.climate_anomaly_for_day(day)))
+	clock._advance_one_sim_day()
+	sampled.append(clock.climate_anomaly_for_day(365))
+	_expect("new-year inputs agree on both sides of the calendar signal",
+		years == [1] and sampled == [new_anomaly, new_anomaly]
+		and clock.climate_anomaly == new_anomaly)
+	clock.free()
 
 func _pause_clock(clock: WorldClock) -> void:
 	clock.pause(true)

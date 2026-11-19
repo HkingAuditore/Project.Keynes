@@ -32,6 +32,8 @@ void DCWorldExt::_bind_generation_methods() {
     ClassDB::bind_method(
         D_METHOD("run_natural_resource_pass", "knobs"),
         &DCWorldExt::run_natural_resource_pass);
+    ClassDB::bind_method(D_METHOD("natural_resource_slots_are_worker_owned", "reserve_slots"),
+                         &DCWorldExt::natural_resource_slots_are_worker_owned);
     ClassDB::bind_method(
         D_METHOD("get_natural_resource_regen_factors", "resource_ids", "n_cells"),
         &DCWorldExt::get_natural_resource_regen_factors);

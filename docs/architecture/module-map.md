@@ -78,7 +78,7 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 
 天气场的一日输入在 `gdext/src/runtime_climate_weather_input.h`。物理场的只读交付、校验和存档编解码在 `gdext/src/runtime_climate_physics_state.cpp`。
 
-军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。
+军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。自然资源的日期检查与后台已结算时的跳过入口在 `scripts/simulation/economy/natural_resource_recovery.gd`。
 
 经济冷配置的共同实现位于 `scripts/economy/economy_facade_configuration.gd`，显示目录准备位于 `scripts/economy/economy_facade_display.gd`。
 异步资源请求的完成回收归 `scripts/game/loading_resource_request.gd`，取消世界不会阻塞等待解析。
@@ -127,7 +127,9 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 `scripts/game/graphics_quality_settings.gd`。主菜单和暂停菜单共用
 `scenes/ui/graphics_quality_options.tscn`。应用到地图和显示层的入口在
 `scripts/rendering/renderer_graphics_settings.gd`，陆地和水面绘制尺寸归同目录的
-`terrain_render_scale.gd`。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
+`terrain_render_scale.gd`，静止镜头的陆地材质缓存归 `land_base_cache.gd`。游戏设置服务根据地图交互状态应用帧率上限。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
+
+缩小绘制的雾层由 `rendering/fog_render_target.gd` 管理刷新时机，视野变化依据 `WorldData.fog_texture_revision`。全屏界面对地图的遮挡归 `rendering/map_draw_visibility.gd`，实际不透明背景由玩家场景登记。
 
 水面波纹、迷雾梯度和天气新旧值的数值纹理共用 `rendering/render_data_table.gd`。更新入口依次在 `renderer_shader_water.gd`、`fog_of_war_layer.gd`、`weather_layer.gd`。地面读取、植被与建筑的着色入口见 [地图绘制中的共享计算](feature-guides.md#地图绘制中的共享计算)，数据校验见 `tests/rendering/render_data_tables_test.gd`。
 

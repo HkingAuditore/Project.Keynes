@@ -284,6 +284,8 @@ var _cell_dyn_lut_bytes_cache: PackedByteArray = PackedByteArray()
 var _cell_eco_lut_bytes_cache: PackedByteArray = PackedByteArray()
 var _cell_bounce_lut_bytes_cache: PackedByteArray = PackedByteArray()
 var _cell_lut_active_transition_count: int = 0
+var _cell_offset_layout: Dictionary = {}
+var _cell_table_source_cache: Dictionary = {}
 
 # GM-only river Atlas probe. It samples a bounded set of river/non-river cells
 # at the LUT encode boundary so source values can be compared with published bytes.
@@ -321,30 +323,28 @@ var _wf_diag_skipped_full: int = 0  # 整图跳过 Image.update 的次数
 var _wf_diag_total_cells: int = 0   # cell_pixel_lists.size()，最近一次记录
 
 const PREBAKED_LOADING_DIR := "res://assets/textures/loading_prebaked_v1/"
+const PrebakedResourceRequest = preload("res://scripts/game/loading_resource_request.gd")
 static var _prebaked_images: Dictionary = {}
-
 static func prepare_shared_materials_async(frame_gate = null) -> void:
 	var paths := [PREBAKED_LOADING_DIR+"noise_rgba.res"]
 	var target := _terrain_material_size()
 	for i in TERRAIN_MATERIAL_TEXTURE_PATHS.size():
 		paths.append(PREBAKED_LOADING_DIR+"material_%d_%d.res" % [target,i])
+	if frame_gate != null and frame_gate.canceled:
+		return
+	var requests := {}
 	for path: String in paths:
-		if not _prebaked_images.has(path):
-			ResourceLoader.load_threaded_request(path)
+		if not _prebaked_images.has(path) and ResourceLoader.exists(path):
+			requests[path] = PrebakedResourceRequest.new(path)
 	var tree := Engine.get_main_loop() as SceneTree
-	for path: String in paths:
-		if _prebaked_images.has(path):
-			continue
-		while tree != null and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+	for path: String in requests:
+		var request: PrebakedResourceRequest = requests[path]
+		while not request.finished:
 			if frame_gate != null and frame_gate.canceled:
-				break
+				return
 			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
-		# Drain every requested load on cancellation too; threaded_get waits for
-		# the request to finish and releases the loader's pending ownership.
-		if frame_gate != null and frame_gate.canceled and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-			_prebaked_images[path] = ResourceLoader.load_threaded_get(path)
-		if ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_LOADED:
-			_prebaked_images[path] = ResourceLoader.load_threaded_get(path)
+		if request.result != null:
+			_prebaked_images[path] = request.result
 
 static func get_or_build_shared_noise_tex() -> ImageTexture:
 	if _shared_noise_tex == null:
@@ -767,6 +767,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_cell_eco_lut_bytes_cache = PackedByteArray()
 	_cell_bounce_lut_bytes_cache = PackedByteArray()
 	_cell_lut_active_transition_count = 0
+	_cell_offset_layout.clear()
+	_cell_table_source_cache.clear()
 	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
 	_vector_atlas_data = PackedByteArray()
 	_vector_atlas_data_size = Vector2i.ZERO
@@ -1081,6 +1083,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	await prepare_shared_materials_async(_loading_frames)
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	world.noise_tex = get_or_build_shared_noise_tex()
 	# [terrain-material-tiles] Shared static material array. B 方案起固定 5 层
 	# （0..3 原材质族 + 4=micro，见 _build_terrain_material_tex）。A missing import /

@@ -531,6 +531,25 @@ static func render_viewport_enabled() -> bool:
 	return _mobile_default_flag("render_viewport", false)
 
 
+static func render_debug_hidden_layers(cfg: ConfigFile) -> PackedStringArray:
+	var hide: Variant = cfg.get_value("render", "hide", "")
+	var needles := PackedStringArray()
+	if hide is String or hide is StringName:
+		for token in String(hide).to_lower().split(",", false):
+			var needle := token.strip_edges()
+			if not needle.is_empty():
+				needles.append(needle)
+	return needles
+
+
+static func render_debug_hides_layer(layer_name: StringName, needles: PackedStringArray) -> bool:
+	var name_lower := String(layer_name).to_lower()
+	for needle in needles:
+		if name_lower.contains(needle):
+			return true
+	return false
+
+
 ## 读 pk_debug.cfg 的 `[render]` 段：返回 -1（未设置）/ 0 / 1。进程内缓存。
 static func _debug_render_flag(key: String) -> int:
 	if not _debug_render_flags_loaded:

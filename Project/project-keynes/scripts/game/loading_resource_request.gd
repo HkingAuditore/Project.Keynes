@@ -7,13 +7,16 @@ static var pending_count := 0
 static var _pending: Dictionary = {}
 var finished := false
 var result: Resource
+var start_error := OK
 var _path: String
 var _tree: SceneTree
 
-func _init(path: String) -> void:
+func _init(path: String, type_hint: String = "Resource") -> void:
 	_path = path
 	_tree = Engine.get_main_loop() as SceneTree
-	if _tree == null or ResourceLoader.load_threaded_request(path, "Resource") != OK:
+	start_error = ERR_UNAVAILABLE if _tree == null \
+		else ResourceLoader.load_threaded_request(path, type_hint)
+	if start_error != OK:
 		finished = true
 		return
 	_pending[get_instance_id()] = self
@@ -32,3 +35,8 @@ func _poll() -> void:
 	_tree.process_frame.disconnect(_poll)
 	_tree = null
 	_pending.erase(get_instance_id())
+
+
+static func wait_for_pending(tree: SceneTree) -> void:
+	while pending_count > 0:
+		await tree.process_frame

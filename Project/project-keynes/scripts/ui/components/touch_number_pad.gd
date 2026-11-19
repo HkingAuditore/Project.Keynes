@@ -27,55 +27,43 @@ signal dismissed()
 
 const MODE_PERCENT := 0
 const MODE_ABSOLUTE := 1
-const KEY_SIZE := Vector2(112.0, 86.0)
-const KEY_GAP := 8
-## 主题必须自己挂：CanvasLayer 不是 Control，主题不会沿着它往下传，
-## 所以本项目每个 UI 场景都在根节点自挂 player_session_theme（见 country_panel.tscn 等）。
-## 这张纸片是纯代码构建的，同样得自己带上，否则 PKPaperPopup 取不到、面板退回默认深色。
-const PAPER_THEME := preload("res://assets/themes/player_session_theme.tres")
-const ACTION_KEY_WIDTH := 124.0
-const MODE_KEY_HEIGHT := 50.0
-const STEP_KEY_HEIGHT := 58.0
-const VALUE_FONT_SIZE := 40
-const UNIT_FONT_SIZE := 22
-const KEY_FONT_SIZE := 24
-const STEP_FONT_SIZE := 20
-const MONEY_ICON_SIZE := 26
-## 百分比最多「-1000」，定额最多十几位有效数字，14 字符足够且不会撑破读数行。
+## 百分比和定额共用的输入长度。
 const MAX_TEXT_LEN := 14
-const PANEL_MARGIN := 22.0
 
-var _title := ""
 var _suffix := ""
 var _hint := ""
 var _allow_negative := true
 var _show_modes := false
 var _mode := MODE_PERCENT
 var _text := ""
-var _built := false
-## 显式状态：Control 建出来默认 visible=true，不能拿 visible 当「已打开」。
 var _open := false
-var _value_label: Label
-var _unit_label: Label
-var _hint_label: Label
-var _mode_row: Control
-var _money_icon: TextureRect
-var _mode_keys: Dictionary = {}
-var _confirm_key: Button
+@onready var _value_label: Label = %Value
+@onready var _unit_label: Label = %Unit
+@onready var _hint_label: Label = %Hint
+@onready var _mode_row: Control = %Modes
+@onready var _money_icon: TextureRect = %MoneyIcon
+@onready var _mode_keys: Dictionary = {MODE_PERCENT: %Percent, MODE_ABSOLUTE: %Absolute}
+@onready var _confirm_key: Button = %Confirm
+
+
+func _ready() -> void:
+	var numeral := UITokens.dossier_font("numeral")
+	_value_label.add_theme_font_override("font", numeral)
+	_unit_label.add_theme_font_override("font", numeral)
+	MoneyDisplay.apply_icon(_money_icon, 26)
 
 
 ## ---------------------------------------------------------------- 对外
 
 ## config: title / suffix / value / hint / mode / show_modes / allow_negative
 func open(config: Dictionary) -> void:
-	_title = String(config.get("title", "调整数值"))
+	%Title.text = String(config.get("title", "调整数值"))
 	_suffix = String(config.get("suffix", ""))
 	_hint = String(config.get("hint", ""))
 	_mode = int(config.get("mode", MODE_PERCENT))
 	_show_modes = bool(config.get("show_modes", _mode != MODE_PERCENT))
 	_allow_negative = bool(config.get("allow_negative", true))
 	_text = String(config.get("value", "")).strip_edges()
-	_build_once()
 	_refresh()
 	_open = true
 	visible = true
@@ -104,200 +92,6 @@ func close() -> void:
 
 func is_open() -> bool:
 	return _open
-
-
-## ---------------------------------------------------------------- 构建
-
-func _build_once() -> void:
-	if _built:
-		return
-	_built = true
-	# 建好即隐藏：否则一个还没打开的键盘会连着半透明黑幕一起盖住整屏。
-	visible = false
-	theme = PAPER_THEME
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	focus_mode = Control.FOCUS_ALL
-
-	var dim := ColorRect.new()
-	dim.color = Color(0.04, 0.03, 0.02, 0.55)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	dim.gui_input.connect(_on_dim_input)
-	add_child(dim)
-
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(center)
-
-	var panel := PanelContainer.new()
-	# 纸片皮肤走主题的 PKPaperPopup（撕纸边），不要自己 add_theme_stylebox_override。
-	panel.theme_type_variation = &"PKPaperPopup"
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	center.add_child(panel)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", int(PANEL_MARGIN))
-	margin.add_theme_constant_override("margin_right", int(PANEL_MARGIN))
-	margin.add_theme_constant_override("margin_top", int(PANEL_MARGIN))
-	margin.add_theme_constant_override("margin_bottom", int(PANEL_MARGIN))
-	panel.add_child(margin)
-
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
-	margin.add_child(column)
-
-	var title := Label.new()
-	title.name = "Title"
-	title.theme_type_variation = &"PKSectionTitle"
-	column.add_child(title)
-	title.text = _title
-
-	column.add_child(_build_mode_row())
-	column.add_child(_build_value_row())
-	column.add_child(_build_hint_row())
-	column.add_child(_build_step_row())
-	column.add_child(_build_key_body())
-
-
-## 口径切换：% ↔ 定额。选中态借 PKPrimaryButton（主题里的亮纸），未选中是普通纸片。
-func _build_mode_row() -> Control:
-	var row := HBoxContainer.new()
-	row.name = "Modes"
-	row.add_theme_constant_override("separation", KEY_GAP)
-	for entry in [[MODE_PERCENT, "%"], [MODE_ABSOLUTE, "定额"]]:
-		var mode: int = entry[0]
-		var key := _make_key(String(entry[1]), STEP_FONT_SIZE, &"PKIconButton",
-			func() -> void: _request_mode(mode))
-		key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		key.custom_minimum_size = Vector2(0.0, MODE_KEY_HEIGHT)
-		row.add_child(key)
-		_mode_keys[mode] = key
-	_mode_row = row
-	return row
-
-
-func _build_value_row() -> Control:
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_END
-	row.add_theme_constant_override("separation", 6)
-	_value_label = Label.new()
-	_value_label.name = "Value"
-	var numeral := UITokens.dossier_font("numeral")
-	_value_label.add_theme_font_override("font", numeral)
-	_value_label.add_theme_font_size_override("font_size", VALUE_FONT_SIZE)
-	_value_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
-	row.add_child(_value_label)
-	_unit_label = Label.new()
-	_unit_label.name = "Unit"
-	_unit_label.add_theme_font_override("font", numeral)
-	_unit_label.add_theme_font_size_override("font_size", UNIT_FONT_SIZE)
-	_unit_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	_unit_label.size_flags_vertical = Control.SIZE_SHRINK_END
-	row.add_child(_unit_label)
-	# 定额税的单位是金币：和税率行一样用一枚图标顶着，不写「货币」二字。
-	_money_icon = TextureRect.new()
-	_money_icon.name = "MoneyIcon"
-	_money_icon.custom_minimum_size = Vector2(MONEY_ICON_SIZE, MONEY_ICON_SIZE)
-	_money_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_money_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_money_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_money_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_money_icon.visible = false
-	MoneyDisplay.apply_icon(_money_icon, MONEY_ICON_SIZE)
-	row.add_child(_money_icon)
-	return row
-
-
-func _build_hint_row() -> Control:
-	# 继承税率是这一格最重要的参照：弹窗盖住了下面那行说明，所以在这里补一次。
-	_hint_label = Label.new()
-	_hint_label.name = "Hint"
-	_hint_label.theme_type_variation = &"PKMutedLabel"
-	_hint_label.add_theme_font_size_override("font_size", 14)
-	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	return _hint_label
-
-
-func _build_step_row() -> Control:
-	var row := HBoxContainer.new()
-	row.name = "Steps"
-	row.add_theme_constant_override("separation", KEY_GAP)
-	var steps := [["-10", -10], ["-1", -1], ["+1", 1], ["+10", 10]]
-	for entry in steps:
-		var key := _make_key(String(entry[0]), KEY_FONT_SIZE, &"PKIconButton")
-		key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		key.custom_minimum_size = Vector2(0.0, STEP_KEY_HEIGHT)
-		var delta: int = entry[1]
-		key.pressed.connect(func() -> void: _step(delta))
-		row.add_child(key)
-	return row
-
-
-func _build_key_body() -> Control:
-	var body := HBoxContainer.new()
-	body.name = "Body"
-	body.add_theme_constant_override("separation", KEY_GAP)
-
-	var digits := VBoxContainer.new()
-	digits.name = "Digits"
-	digits.add_theme_constant_override("separation", KEY_GAP)
-	body.add_child(digits)
-
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", KEY_GAP)
-	grid.add_theme_constant_override("v_separation", KEY_GAP)
-	digits.add_child(grid)
-	for digit in ["7", "8", "9", "4", "5", "6", "1", "2", "3"]:
-		var key := _make_key(digit, KEY_FONT_SIZE, &"PKIconButton")
-		key.pressed.connect(func() -> void: _push_digit(digit))
-		grid.add_child(key)
-
-	# 末行：0 占两格宽（手机键盘的惯例），右边那格原本放小数点，
-	# 现在换成「补贴」—— 负税率就是倒给钱，玩家读这一格比读「负号」直接得多。
-	var bottom := HBoxContainer.new()
-	bottom.add_theme_constant_override("separation", KEY_GAP)
-	digits.add_child(bottom)
-	var zero := _make_key("0", KEY_FONT_SIZE, &"PKIconButton",
-		func() -> void: _push_digit("0"))
-	zero.custom_minimum_size = Vector2(KEY_SIZE.x * 2.0 + KEY_GAP, KEY_SIZE.y)
-	bottom.add_child(zero)
-	bottom.add_child(_make_key("补贴", STEP_FONT_SIZE, &"PKIconButton", _toggle_sign))
-
-	var actions := VBoxContainer.new()
-	actions.name = "Actions"
-	actions.add_theme_constant_override("separation", KEY_GAP)
-	actions.custom_minimum_size.x = ACTION_KEY_WIDTH
-	body.add_child(actions)
-	var action_keys := [
-		["退格", STEP_FONT_SIZE, &"PKIconButton", _backspace],
-		["清空", STEP_FONT_SIZE, &"PKIconButton", _clear],
-		["取消", STEP_FONT_SIZE, &"PKIconButton", _on_cancel_pressed],
-		["确定", STEP_FONT_SIZE, &"PKPrimaryButton", _confirm],
-	]
-	for entry in action_keys:
-		var key := _make_key(String(entry[0]), int(entry[1]), entry[2], entry[3])
-		key.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		actions.add_child(key)
-		if String(entry[0]) == "确定":
-			_confirm_key = key
-	return body
-
-
-func _make_key(label: String, font_size: int, variation: StringName,
-		on_press: Callable = Callable()) -> Button:
-	var key := Button.new()
-	key.text = label
-	key.theme_type_variation = variation
-	key.custom_minimum_size = KEY_SIZE
-	# 键盘已经抢到焦点：按钮再抢会把数字键事件变成按钮激活，回车会连按两下。
-	key.focus_mode = Control.FOCUS_NONE
-	key.add_theme_font_size_override("font_size", font_size)
-	if on_press.is_valid():
-		key.pressed.connect(on_press)
-	return key
 
 
 ## ---------------------------------------------------------------- 输入

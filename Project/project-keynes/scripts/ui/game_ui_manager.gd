@@ -297,10 +297,11 @@ func _on_country_research_signal_discovered(_event: Dictionary) -> void:
 func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 	_country_component.apply_economy_event_batch(self, _meta)
 
+func record_committed_day(day: int) -> void:
+	_country_component.record_committed_day(self, day)
 
-func notify_committed_day() -> void:
-	_country_component.notify_committed_day(self)
-
+func refresh_committed_view() -> void:
+	_country_component.refresh_committed_view(self)
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
 	_country_component.apply_ideology_settled(self, _result)

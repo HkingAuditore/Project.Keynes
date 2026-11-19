@@ -4,7 +4,7 @@ const ActivityScript = preload("res://scripts/rendering/map_activity_layer.gd")
 
 class HostStub extends Node:
 	signal daily_tick_completed(report: Dictionary)
-	signal simulation_committed(from_day: int, to_day: int, generation: int)
+	signal simulation_view_updated(from_day: int, to_day: int, generation: int)
 	var hex_size := 22.0
 	var fog := true
 	var intel := BuildingVisualIntelCache.new()
@@ -191,7 +191,7 @@ func _test_worker_committed_development(holder: Node2D) -> void:
 		activity._history.has(selected.index) and activity._effects.is_empty())
 	activity._time += 6.0
 	economy.population = 108
-	host.simulation_committed.emit(1, 2, 1)
+	host.simulation_view_updated.emit(1, 2, 1)
 	activity._process(0.02)
 	_expect("仅后台正式提交即可在普通缩放触发人口增长，大视窗不丢基线",
 		activity._effects.size() == 1 and activity._effects[0].kind == &"growth"
@@ -214,7 +214,7 @@ func _test_worker_committed_development(holder: Node2D) -> void:
 	activity._effects.clear()
 	activity._cooldowns.clear()
 	economy.pending = true
-	host.simulation_committed.emit(2, 3, 2)
+	host.simulation_view_updated.emit(2, 3, 2)
 	activity._time += 0.7
 	activity._process(0.02)
 	_expect("后台摘要未就绪时保留重试，不丢弃提交唤醒", activity._dirty)
@@ -225,7 +225,7 @@ func _test_worker_committed_development(holder: Node2D) -> void:
 	_expect("摘要稍后到达仍能触发真实增长", activity._effects.size() == 1
 		and activity._effects[0].caption == "+3 人")
 	activity.configure(map, camera, host, player, economy, null)
-	_expect("重绑只保留一个后台提交订阅", host.simulation_committed.get_connections().size() == 1)
+	_expect("重绑只保留一个显示数据更新订阅", host.simulation_view_updated.get_connections().size() == 1)
 	activity._effects.clear()
 	activity.observe_development(selected.index, 111, 3)
 	activity.play_activity(selected.index, &"growth", "+1 人")

@@ -1,5 +1,7 @@
 extends SceneTree
 
+const ResourceRequest = preload("res://scripts/game/loading_resource_request.gd")
+
 var checks := 0
 var failures := 0
 
@@ -13,8 +15,10 @@ func _run() -> void:
 	for frames in [0, 2, 5, 15, 40, 80]:
 		await _close_loading_world(frames)
 	await _close_during_catalog()
+	await ResourceRequest.wait_for_pending(self)
+	_expect("shutdown consumes each background resource request", ResourceRequest.pending_count == 0)
 	print("runtime loading exit: %d checks, %d failures" % [checks, failures])
-	quit(0 if failures == 0 else 1)
+	call_deferred("quit", 0 if failures == 0 else 1)
 
 func _check_player_loading_clock() -> void:
 	var game := preload("res://scenes/player_game.tscn").instantiate()

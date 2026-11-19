@@ -57,6 +57,11 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 5. 新独立日域会改 ABI（`RuntimeDomainId`），不能当普通表项加。
 6. 改 reads/writes 后同步模块描述符（`runtime_module_contracts.json`），跑 `check_module_contracts.py`；描述符是只读契约，不改调度顺序。新业务域要在 Freeze 入口登记 `RuntimeFrozenInputVersion`。
 
+## 每日结算与每帧显示
+
+剧情、账本等逐日读取者接收 `WorldRuntimeHost.simulation_committed`。地图提示、日期栏和已打开的面板接收 `simulation_view_updated`，同一帧只刷新最新的可显示日期。
+后台的日期、版本和显示补丁作为同一份提交发布。前台先应用提交日的天气，再发出逐日通知。军务与资源写回完成后才安排该日的显示更新。
+
 ## 跨域读取与请求
 
 - **新读边**：所有者提供返回独立副本的 `copy_committed_view()`，带 generation/day；消费端调用 `observe_committed_view()`，不保存 snapshot 引用，不读 plan，不把 plan preview 标成 committed。同步给 `check_committed_views.py` 加正例和直接/别名/成员指针绕行反例，并更新 `test_architecture_guards.py`。

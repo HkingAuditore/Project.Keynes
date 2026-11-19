@@ -215,11 +215,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _paused.store(start_paused, std::memory_order_release);
     _stop_requested.store(false, std::memory_order_release);
     _generation.store(start_generation, std::memory_order_release);
-    _latest_from_day.store(start_day, std::memory_order_release);
-    _latest_committed_day.store(start_day, std::memory_order_release);
-    _latest_produced_at_us.store(0, std::memory_order_release);
-    _latest_dirty_families.store(0, std::memory_order_release);
-    _latest_receipt_count.store(0, std::memory_order_release);
     _last_visual_publish_us.store(0, std::memory_order_release);
     _snapshot_publish_throttled_count.store(0, std::memory_order_release);
     _last_commit_produced_at_us.store(0, std::memory_order_release);
@@ -251,9 +246,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_authority_switch_audit_sequence.store(0,
         std::memory_order_release);
     _economy_authority_switch_audit_hash.store(0, std::memory_order_release);
-    for (auto &family_generation : _dirty_family_generations) {
-        family_generation.store(0, std::memory_order_release);
-    }
     _ui_input_to_feedback_ms.store(0.0, std::memory_order_release);
     _visual_apply_ms.store(0.0, std::memory_order_release);
     _gpu_upload_ms.store(0.0, std::memory_order_release);
@@ -432,7 +424,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _save_failed_request_id.store(0, std::memory_order_release);
     std::atomic_store_explicit(&_save_bundle,
         std::shared_ptr<const RuntimeSaveBundle>(), std::memory_order_release);
-    _snapshots.reset();
     // WorldRuntimeHost captures the initial immutable input immediately
     // before starting the worker. Preserve that frame so the OFF reference
     // can release it after the synchronous day boundary. A trace belonging to
@@ -457,6 +448,15 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     clear_climate_parity_divergence();
     reset_climate_parity_fields();
     _state_hash.store(start_state_hash, std::memory_order_release);
+    auto initial = std::make_shared<RuntimeCommit>();
+    RuntimeCommitHeader &initial_commit = initial->header;
+    initial_commit.generation = start_generation;
+    initial_commit.from_day = start_day;
+    initial_commit.committed_day = start_day;
+    initial_commit.state_hash = start_state_hash;
+    std::atomic_store_explicit(&_latest_commit,
+        std::shared_ptr<const RuntimeCommit>(std::move(initial)),
+        std::memory_order_release);
     // Restore input is staged outside the stopped timeline's queue. Its queued
     // future frames must not shadow the replacement snapshot during reseeding.
     const auto bootstrap_environment = restore_pending

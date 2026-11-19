@@ -95,6 +95,8 @@ static func _ready(host) -> void:
 	host._world_quad.name = "WorldQuad"
 	host._world_quad.z_index = 0
 	host.add_child(host._world_quad)
+	host._land_base_cache = host.LandBaseCache.new()
+	host.add_child(host._land_base_cache)
 	host._building_visual_layer = host.BuildingVisualLayerScript.new()
 	host._building_visual_layer.name = "BuildingVisualLayer"
 	host.add_child(host._building_visual_layer)

@@ -41,6 +41,8 @@ var _enabled := true
 var _hex := 22.0
 var _zoom := 1.0
 var _stats := {"cells_written": 0, "uploads": 0}
+var _frame_shader: Shader
+var _frame_values: Dictionary = {}
 ## QA/debug: shade only from remembered climate (ignore live dyn_lut).
 var memory_climate_only := false
 
@@ -279,11 +281,17 @@ func set_frame_state(time: float, state: Dictionary, memory_lut: Texture2D) -> v
 	if _material == null:
 		return
 	_material.set_shader_parameter("world_time", time)
-	for name in state:
-		_material.set_shader_parameter(name, state[name])
+	var values := state.duplicate()
 	if memory_climate_only:
-		_material.set_shader_parameter("has_dynamic_lut", false)
-	_material.set_shader_parameter("memory_lut", memory_lut)
+		values["has_dynamic_lut"] = false
+	values["memory_lut"] = memory_lut
+	var rebind := _frame_shader != _material.shader
+	for name in values:
+		var value: Variant = values[name]
+		if rebind or not _frame_values.has(name) or _frame_values[name] != value:
+			_material.set_shader_parameter(name, value)
+	_frame_shader = _material.shader
+	_frame_values = values
 
 func set_enabled(value: bool) -> void:
 	_enabled = value
