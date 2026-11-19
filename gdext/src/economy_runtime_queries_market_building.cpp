@@ -2606,11 +2606,21 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
         out["ok"] = false; out["reason"] = "person_handle_invalid"; return out;
     }
     int32_t family = -1, slot = -1;
-    if (!families_store().valid_handle(persons_store().family_handle[person], family) ||
-        !population_store().valid_handle(persons_store().cohort_handle[person], slot)) {
+    if (!families_store().valid_handle(persons_store().family_handle[person], family)) {
         out["ok"] = false; out["reason"] = "person_relation_invalid"; return out;
     }
-    const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
+    // A notable person travelling with a family expedition keeps no cohort lane
+    // until it lands (the payload owns the population unit). Report it as
+    // in-transit instead of failing the whole row, so the family dossier can
+    // still list the person while they are on the road.
+    const bool in_transit = !population_store().valid_handle(
+        persons_store().cohort_handle[person], slot);
+    if (in_transit && (persons_store().cohort_handle[person] != 0 ||
+        !person_in_expedition_transit(handle))) {
+        out["ok"] = false; out["reason"] = "person_relation_invalid"; return out;
+    }
+    const int32_t signature = in_transit ? -1
+        : static_cast<int32_t>(population_store().signature_id[slot]);
     const int32_t profession = signature >= 0 && signature < static_cast<int32_t>(
         _signatures.size()) ? _signatures[signature].profession_id : -1;
     const int32_t surname = families_store().surname_id[family];
@@ -2643,7 +2653,9 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
     out["name_disambiguator"] = static_cast<int32_t>(
         persons_store().name_disambiguator[person]);
     out["notable_since_day"] = persons_store().notable_since_day[person];
-    out["cell_idx"] = population_store().page_cell[slot / COHORT_PAGE_SIZE];
+    out["cell_idx"] = in_transit ? -1
+        : population_store().page_cell[slot / COHORT_PAGE_SIZE];
+    out["in_transit"] = in_transit;
     out["profession_id"] = profession; out["cash_claim"] = persons_store().cash_claim[person];
     out["family_equity_share_q32"] = persons_store().family_equity_share_q32[person];
     out["attributed_asset_value"] = attributed_asset;

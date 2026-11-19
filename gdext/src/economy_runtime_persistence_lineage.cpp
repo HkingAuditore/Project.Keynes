@@ -537,18 +537,35 @@ bool NativeEconomyRuntime::decode_restore_family_tables(
                 }
                 lane.person_begin = static_cast<uint32_t>(
                     family_expedition_person_handles().size());
-                for (uint32_t person = 0; person < lane.person_count; ++person) {
+                const uint32_t serialized_person_count = lane.person_count;
+                uint32_t kept_person_count = 0;
+                for (uint32_t person = 0; person < serialized_person_count; ++person) {
                     uint64_t person_handle = 0;
                     int32_t person_slot = -1;
                     if (!read_le(bytes, cursor, person_handle) ||
-                        !persons_store().valid_handle(person_handle, person_slot) ||
-                        persons_store().cohort_handle[person_slot] != 0 ||
-                        persons_store().family_handle[person_slot] != family_handle) {
+                        person_handle == 0) {
+                        error = "save_family_expedition_person_invalid";
+                        return false;
+                    }
+                    // Builds before the in-transit retirement fix retired every
+                    // notable person that was travelling, so their payloads
+                    // still carry a dead handle while population, funds and the
+                    // attribution lanes are intact. Keep the save: drop the
+                    // orphaned person lane instead of rejecting the whole world.
+                    if (!persons_store().valid_handle(person_handle, person_slot)) {
+                        ++_restore.dropped_transit_persons;
+                        continue;
+                    }
+                    if (persons_store().cohort_handle[person_slot] != 0 ||
+                        persons_store().family_handle[person_slot] !=
+                            family_handle) {
                         error = "save_family_expedition_person_invalid";
                         return false;
                     }
                     family_expedition_person_handles().push_back(person_handle);
+                    ++kept_person_count;
                 }
+                lane.person_count = kept_person_count;
                 payload_population += lane.people;
                 if (lane.anonymous != 0) payload_anonymous += lane.people;
                 family_expedition_payloads().push_back(lane);
