@@ -21,6 +21,7 @@ from runtime_test_hygiene import trace_environment, untracked, unexpected_artifa
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = (
     "tests/ui/era_advancement_panel_test.gd",
+    "tests/ui/annual_report_ui_test.gd",
     "tests/technology/era_advancement_service_test.gd",
     "tests/ideology/ideology_draw_flow_test.gd",
     "tests/game/player_controller_contract_test.gd",
