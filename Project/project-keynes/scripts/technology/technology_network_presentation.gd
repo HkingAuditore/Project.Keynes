@@ -124,6 +124,10 @@ static func modifier_delta_fraction(term: Dictionary) -> float:
 ## 把已求和的增量格式化为玩家文案。`_bp` 类统计的量纲是 1/100，单独折算。
 static func modifier_delta_text(delta: float, stat: String) -> String:
 	var percent := delta * 100.0
+	# `_add` 类统计（视野、士气）是绝对加量，不是比例；加百分号会读成「视野 +1000%」。
+	if stat.ends_with("_add"):
+		var absolute := ("%.1f" % absf(delta)).rstrip("0").rstrip(".")
+		return "%s%s" % ["+" if delta >= 0.0 else "-", absolute]
 	# 基准点（_bp）类统计：值的单位是 0.01%，直接乘 100 会变成 +20000% 这种胡话。
 	if stat.ends_with("_bp"):
 		# 基准点：100 bp = 1%。玩家看得懂的是百分比，不是 bp。

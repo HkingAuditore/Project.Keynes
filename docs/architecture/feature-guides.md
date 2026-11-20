@@ -592,6 +592,18 @@ restore 按默认值重建 policy 行）。所以 `MilitaryFacade.set_terrain()`
 `PlayerController._repush_military_budget()` 兜底。回归运行
 `tests/military/military_budget_terrain_refresh_test.gd`（带原生 same-topology 控制组）。
 
+## 科技详情栏效果优先级
+
+详情卡的 `DetailBlock` 顺序固定为：摘要 →【掌握后效果】→ 进度条 → 事实条（时代/领域/研究成本/
+路线）→【研究条件】→ 前置 → 后继 → 应用 → 按钮。效果块必须排在进度条、事实条和条件区之前：
+后期科技的条件区能顶到十几行（时代门槛 + 每条前置 + 每条研究路线），效果被推到滚动之外就是
+玩家说的「压在后面」。摘要行保留作「一眼扫完」的合并行，但它和逐条效果必须走
+`technology_network_presentation` 同一个格式化口径（`modifier_delta_fraction`：认 `operation`
+乘算、`_bp` 基点量纲、`_add` 绝对加量），详情卡不许自己再写一份 `value * 100`——那样会与摘要行
+自相矛盾（例如地主「+40000%」、训练时长「+90%」）。定向回归
+`tests/technology/technology_detail_card_effect_priority_test.gd` 与
+`tests/technology/technology_effect_text_units_test.gd`。
+
 ## 科技前置
 
 科技前置修改只写 `data/technology/technology_network.json`，同步知识基础、前置理由和静态连线；
