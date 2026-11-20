@@ -398,6 +398,8 @@ func _start_production_shadow_worker(host) -> void:
 	# 回退路径下 start 成功说明"内联起来了"，不是"worker 起来了"，diag 必须分得清。
 	host._web_worker_start_code = "inline_fallback" if host._web_worker_inline_fallback else "ok"
 	host._native_daily_inline_active = bool(started.get("native_daily_inline", false))
+	if host._native_environment_active and not native_environment and host._current_map != null:
+		host._current_map.resume_legacy_season_history()
 	host._native_environment_active = native_environment
 	host._calendar_admitted_through = -1
 	if host._world_clock != null:

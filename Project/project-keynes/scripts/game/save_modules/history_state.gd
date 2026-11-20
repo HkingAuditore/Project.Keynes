@@ -39,19 +39,33 @@ func _restore_annual_provider(sections: Dictionary, context: Dictionary) -> Dict
 	var facade = context.annual
 	return facade.restore_annual_state(bytes)
 
-func _can_narrative_provider(_context: Dictionary) -> Dictionary:
+func _can_narrative_provider(context: Dictionary) -> Dictionary:
+	if context.get("event_bus") == null:
+		return _result(false, "narrative_provider_missing", "剧情存档服务不可用。")
 	return _result(true, "ok", "")
 
 func _write_narrative_provider(context: Dictionary) -> Dictionary:
 	var bus = context.get("event_bus")
-	return {"ok": true, "sections": {"pknr": bus.capture_story() if bus != null else {}}}
+	if bus == null:
+		return _can_narrative_provider(context)
+	var state: Dictionary = bus.capture_story()
+	if state.is_empty():
+		return _result(false, "narrative_capture_failed", "剧情存档未返回状态。")
+	return {"ok": true, "sections": {"pknr": state}}
 
 func _restore_narrative_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var raw_state = sections.get("pknr", {})
+	if not sections.has("pknr"):
+		return _result(true, "ok", "")
+	var raw_state = sections["pknr"]
+	if not raw_state is Dictionary:
+		return _result(false, "narrative_archive_invalid", "剧情存档片段不是字典。")
+	if raw_state.is_empty():
+		push_warning("narrative_archive_empty: 剧情存档片段为空。")
+		return _result(true, "ok", "")
 	var bus = context.get("event_bus")
-	if bus != null and raw_state is Dictionary and not raw_state.is_empty():
-		return bus.restore_story(raw_state)
-	return _result(true, "ok", "")
+	if bus == null:
+		return _can_narrative_provider(context)
+	return bus.restore_story(raw_state)
 
 
 func section_codecs(id: StringName, _sections: PackedStringArray) -> Dictionary:

@@ -112,10 +112,16 @@ bool NativeSimulationHost::initialize_narrative(const Dictionary &packet, const 
     return true;
 }
 
-bool NativeSimulationHost::restore_narrative_checkpoint(const Dictionary &saved) {
-    if (!execution_has_stopped()) return false;
+Dictionary NativeSimulationHost::restore_narrative_checkpoint(const Dictionary &saved) {
+    if (!execution_has_stopped()) return narrative_response(false, "narrative_executor_running");
+    const String error = RuntimeNarrative::checkpoint_error(saved);
+    if (!error.is_empty()) {
+        auto result = narrative_response(false, "narrative_archive_invalid");
+        result["message"] = String("剧情存档损坏：") + error;
+        return result;
+    }
     _restored_narrative = saved.duplicate(true);
-    return true;
+    return narrative_response(true, "ok");
 }
 
 void NativeSimulationHost::publish_narrative_boundary(int64_t day) {
@@ -129,7 +135,9 @@ std::shared_ptr<const RuntimeNarrativeView> NativeSimulationHost::latest_narrati
 
 Dictionary NativeSimulationHost::capture_narrative() const {
     std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
-    return _executor_narrative ? _executor_narrative->capture() : _restored_narrative.duplicate(true);
+    if (_executor_narrative) return _executor_narrative->capture();
+    if (!_restored_narrative.is_empty()) return _restored_narrative.duplicate(true);
+    return RuntimeNarrative().capture();
 }
 
 const char *NativeSimulationHost::narrative_input_block() const {
@@ -298,9 +306,14 @@ bool NativeSimulationHost::service_narrative_requests() {
             } else if (request->kind == Kind::AI_RESULT) {
                 request->result = narrative.queue_ai_reply(request->args);
             } else if (request->kind == Kind::SET_AI) {
+                const Variant enabled = request->args.get("enabled", Variant());
+                if (enabled.get_type() != Variant::BOOL) {
+                    request->result = narrative_response(false, "narrative_ai_enabled_invalid");
+                    continue;
+                }
                 const int64_t effective_day = std::max(day + 1,
                     int64_t(request->args.get("effective_day", day + 1)));
-                narrative.set_ai_enabled(effective_day, request->args.get("enabled", false));
+                narrative.set_ai_enabled(effective_day, bool(enabled));
                 request->result["ok"] = true;
                 request->result["effective_day"] = effective_day;
             }

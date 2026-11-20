@@ -53,6 +53,7 @@ Dictionary RuntimeNarrative::capture() const {
     Dictionary out;
     out["schema"] = "PKNarrativeRuntime";
     out["version"] = 1;
+    if (_country == 0) return out;
     out["world_seed"] = static_cast<int64_t>(_seed);
     out["player_country_handle"] = static_cast<int64_t>(_country);
     out["next_offer_id"] = _next_offer;
@@ -65,8 +66,20 @@ Dictionary RuntimeNarrative::capture() const {
     out["last_fact_event_id"] = _last_fact;
     out["last_ai_request_day"] = _last_ai;
     out["next_ai_request_seq"] = _next_ai;
-    out["pending_ai_request"] = _pending_ai;
-    if (!_pending_ai_reply.is_empty()) out["pending_ai_reply"] = _pending_ai_reply;
+    out["pending_ai_request"] = Dictionary();
+    if (_pending_ai.size() == 1) {
+        out["pending_ai_request"] = _pending_ai.front().request;
+        if (!_pending_ai.front().reply.is_empty()) out["pending_ai_reply"] = _pending_ai.front().reply;
+    } else if (!_pending_ai.empty()) {
+        Array requests;
+        for (const auto &pending : _pending_ai) {
+            Dictionary row;
+            row["request"] = pending.request;
+            row["reply"] = pending.reply;
+            requests.push_back(row);
+        }
+        out["pending_ai_requests"] = requests;
+    }
     out["ai_enabled"] = _ai_enabled;
     Array ai_updates;
     for (const auto &[day, enabled] : _ai_updates) {
@@ -190,7 +203,7 @@ Dictionary RuntimeNarrative::capture() const {
     return out.duplicate(true);
 }
 
-void RuntimeNarrative::restore(const Dictionary &state) {
+void RuntimeNarrative::decode_checkpoint(const Dictionary &state) {
     if (state.is_empty()) return;
     _country = int64_t(state.get("player_country_handle", static_cast<int64_t>(_country)));
     _seed = std::max<int64_t>(1, state.get("world_seed", static_cast<int64_t>(_seed)));
@@ -227,10 +240,12 @@ void RuntimeNarrative::restore(const Dictionary &state) {
         if (row.size() == 2) _ai_updates.emplace_back(int64_t(row[0]), bool(row[1]));
     }
     const auto pending_ai = record_or_empty(state.get("pending_ai_request", Variant()));
-    if (pending_ai.has("effective_day")) {
-        _pending_ai = pending_ai.duplicate(true);
-        _pending_ai_reply = record_or_empty(state.get("pending_ai_reply", Variant())).duplicate(true);
-    }
+    if (pending_ai.has("effective_day")) _pending_ai.push_back({pending_ai.duplicate(true),
+        record_or_empty(state.get("pending_ai_reply", Variant())).duplicate(true)});
+    decode_records(state.get("pending_ai_requests", Array()), [&](const Dictionary &row) {
+        _pending_ai.push_back({Dictionary(row["request"]).duplicate(true),
+            Dictionary(row["reply"]).duplicate(true)});
+    });
 
     _active = record_or_empty(state.get("active_offer", Variant())).duplicate(true);
     decode_records(state.get("ready_queue", Array()),

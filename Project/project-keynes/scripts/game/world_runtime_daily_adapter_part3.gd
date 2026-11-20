@@ -7,16 +7,24 @@ const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd"
 func _apply_season_display(map: MapData, applied: Dictionary) -> bool:
 	if not applied.has("season_day") or map == null:
 		return false
-	var biome: PackedByteArray = applied.biome_history
-	var vegetation: PackedByteArray = applied.vegetation_history
-	var next: int = applied.season_history_next
-	var cells := map.iter_cells()
-	for i in cells.size():
-		var cell: HexCell = cells[i]
+	map.published_biome_history = applied.biome_history
+	map.published_vegetation_history = applied.vegetation_history
+	map.published_season_history_next = int(applied.season_history_next)
+	return true
+
+
+func _apply_published_cell_display(map: MapData, indices) -> void:
+	if map == null:
+		return
+	var water := MapData.is_water_lut()
+	for i in indices:
+		var cell := map.cell_at(i)
 		if cell == null:
 			continue
-		if cell.terrain != map.terrain_arr[i]:
-			cell.apply_terrain(map.terrain_arr[i])
+		var terrain: int = map.terrain_arr[i]
+		if cell.terrain != terrain:
+			cell.apply_terrain(terrain)
+		map.is_water_arr[i] = water[terrain]
 		cell.landform = map.landform_arr[i]
 		cell.vegetation = map.vegetation_arr[i]
 		cell.cover = map.cover_arr[i]
@@ -25,13 +33,6 @@ func _apply_season_display(map: MapData, applied: Dictionary) -> bool:
 			cell.current_state["landform"] = cell.landform
 			cell.current_state["vegetation"] = cell.vegetation
 			cell.current_state["cover"] = cell.cover
-		var begin := i * HexCell.HISTORY_LEN
-		cell.biome_history = biome.slice(begin, begin + HexCell.HISTORY_LEN)
-		cell.vegetation_history = vegetation.slice(begin, begin + HexCell.HISTORY_LEN)
-		cell._history_idx = next
-		cell._veg_history_idx = next
-	map.sync_is_water_arr_from_terrain()
-	return true
 
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
@@ -67,7 +68,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		if int(report.get("simulation_committed_day", -1)) != commit_day:
 			report = report.duplicate(false)
 			report["simulation_committed_day"] = commit_day
-		host._apply_climate_writeback_if_authoritative(report)
+		_apply_climate_writeback_if_authoritative(host, report, commit)
 		if not host._native_environment_active and host._runtime_climate_writeback_last_day < commit_day:
 			return
 	elif not host._native_environment_active and report_override.is_empty():
@@ -173,11 +174,7 @@ func _refresh_military_terrain_after_season(host) -> void:
 			print("[military] terrain refresh rejected: %s" % reason)
 
 
-## Whole-graph ACTIVE bypasses `MapGenerator.finish_season_refresh`'s daily path,
-## so the season edge is detected here. The facade's cover signature makes this
-## a no-op on every day whose cover did not actually change.
-
-
+# Kept for the explicit synchronous compatibility scheduler.
 func _refresh_military_terrain_on_season_edge(host, day_idx: int) -> void:
 	if host._military_terrain_season_index < 0:
 		host._military_terrain_season_index = host._world_clock.season_index_for_day(day_idx)
@@ -209,7 +206,7 @@ func military_report(host) -> Dictionary:
 ## 逐日读取者从这个信号取得已完整交接的数据。
 
 
-func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void:
+func _apply_climate_writeback_if_authoritative(host, report: Dictionary, commit: Dictionary = {}) -> void:
 	if not bool(report.get("climate_worker_authoritative", false)):
 		return
 	# 只接受严格递增的 worker 提交日。capacity barrier 期间，host 可能在
@@ -243,6 +240,12 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 	preload("res://scripts/game/world_runtime_climate_restore.gd").apply(host._generator, applied)
 	if host._native_environment_active:
 		host._world_clock.apply_native_climate_calendar(applied)
+		var map: MapData = host._current_map
+		if commit.has("display_class_cells"):
+			_apply_published_cell_display(map, commit.display_class_cells)
+		elif applied.has("season_day") and map != null:
+			# Cold restore installs a frame before the first batch is consumed.
+			_apply_published_cell_display(map, range(map.cell_count()))
 		if _apply_season_display(host._current_map, applied):
 			host._generator._last_season_refresh_day = int(applied.season_day) + 1
 			host._generator._last_season_refresh_breakdown = {"b_plus_path": "gdext_background"}

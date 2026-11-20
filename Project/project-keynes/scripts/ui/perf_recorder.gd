@@ -315,7 +315,7 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_country_pod_blocker",
 	# Cumulative worker-time counters: compare deltas across rows.
 	"runtime_graph_worker_time_execute_us", "runtime_graph_worker_time_input_wait_us",
-	"runtime_graph_worker_time_environment_wait_us", "runtime_graph_worker_time_main_tail_wait_us",
+	"runtime_graph_worker_time_environment_wait_us",
 	"runtime_graph_worker_time_input_retry_wait_us",
 	"runtime_graph_worker_time_clock_wait_us",
 	"runtime_graph_worker_time_save_build_us", "runtime_graph_worker_time_save_pause_us",
@@ -601,7 +601,7 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"country_pod_pending_checks", "country_pod_ack_pending",
 				"country_pod_blocker",
 				"worker_time_execute_us", "worker_time_input_wait_us",
-				"worker_time_environment_wait_us", "worker_time_main_tail_wait_us", "worker_time_input_retry_wait_us",
+				"worker_time_environment_wait_us", "worker_time_input_retry_wait_us",
 				"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
 				"worker_time_save_build_us", "worker_time_save_pause_us",
 				"worker_time_paused_us",

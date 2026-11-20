@@ -33,7 +33,7 @@ func _check_independence() -> void:
 	_expect("the independent-cell fact is admitted", int(fact.get("published", 0)) == 1)
 	if not await _advance_story(5):
 		return
-	var state := story_service.export_state()
+	var state := story_ext.capture_gameplay_narrative()
 	var pending: Array = state.get("stratum_unrest", {}).get("pending_independence", [])
 	_expect("the executor sends the creation request exactly once",
 		pending.size() == 1 and bool(pending[0].get("submitted", false)))
@@ -45,7 +45,7 @@ func _check_independence() -> void:
 	_expect("the territory changes on day 6 and has a stable rebel identity",
 		int(rebel.get("country_handle", 0)) > story_player
 		and country.snapshot(int(rebel.get("country_handle", 0))).get("country_id") == "rebel.%d.4" % REBEL_CELL)
-	state = story_service.export_state()
+	state = story_ext.capture_gameplay_narrative()
 	_expect("the executor removes the settled independence request",
 		state.get("stratum_unrest", {}).get("pending_independence", []).is_empty())
 	if not await _advance_story(8):

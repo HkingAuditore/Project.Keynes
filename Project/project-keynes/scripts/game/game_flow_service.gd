@@ -187,6 +187,7 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 		return
 	overlay.set_progress("preparing", 0.02)
 	while id == _transition_id and not request.finished:
+		overlay.set_progress("preparing", lerpf(0.02, 0.15, request.progress))
 		await frames.next_frame()
 	if id!=_transition_id:return
 	var scene := request.result as PackedScene

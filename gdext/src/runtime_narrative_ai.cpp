@@ -30,7 +30,7 @@ int RuntimeNarrative::ai_pressure(const NarrativeCountryView &country, const Nar
 }
 
 bool RuntimeNarrative::ai_allowed(int64_t day) const {
-    return _pending_ai.is_empty() && (_last_ai <= NEVER || day - _last_ai >= 60);
+    return _last_ai <= NEVER || day - _last_ai >= 60;
 }
 
 bool RuntimeNarrative::request_ai(const NarrativeDay &input, const NarrativeCellView &cell,
@@ -55,7 +55,7 @@ bool RuntimeNarrative::request_ai(const NarrativeDay &input, const NarrativeCell
         recent.push_back(_chronicle[i]);
     request["recent_chronicle"] = recent;
     _last_ai = input.day;
-    _pending_ai = request;
+    _pending_ai.push_back({std::move(request), {}});
     return true;
 }
 
@@ -96,8 +96,10 @@ void RuntimeNarrative::poll_probes(const NarrativeDay &input) {
             }
             const auto seeded = _last_seed.find(key);
             const int64_t held = input.day - row->since;
-            if (held < probe.dwell ||
-                narrative_key(_pending_ai.get("state_id", "")) == probe.id ||
+            if (held < probe.dwell || std::any_of(_pending_ai.begin(), _pending_ai.end(),
+                    [&](const auto &pending) {
+                        return narrative_key(pending.request.get("state_id", "")) == probe.id;
+                    }) ||
                 (seeded != _last_seed.end() && input.day - seeded->second < probe.cooldown)) continue;
             const bool has_pooled = std::any_of(_pool.begin(), _pool.end(),
                 [&](const auto &entry) { return entry.state == probe.id; });
@@ -166,18 +168,21 @@ void RuntimeNarrative::store_ai(const std::string &state, NarrativeDefinition &&
 
 Dictionary RuntimeNarrative::queue_ai_reply(const Dictionary &result) {
     const auto sequence = int64_t(result.get("ai_request_seq", -1));
-    if (_pending_ai.is_empty() || sequence != int64_t(_pending_ai.get("ai_request_seq", 0)))
+    const auto pending = std::find_if(_pending_ai.begin(), _pending_ai.end(), [&](const auto &entry) {
+        return sequence == int64_t(entry.request["ai_request_seq"]);
+    });
+    if (pending == _pending_ai.end())
         return narrative_response(false, "ai_request_unknown");
-    const int64_t day = _pending_ai["effective_day"];
+    const int64_t day = pending->request["effective_day"];
     if (int64_t(result.get("effective_day", -1)) != day)
         return narrative_response(false, "ai_reply_day_mismatch");
-    if (!_pending_ai_reply.is_empty())
+    if (!pending->reply.is_empty())
         return narrative_response(false, "ai_reply_already_received");
-    _pending_ai_reply["ok"] = result.get("ok", false);
-    if (bool(_pending_ai_reply["ok"]))
-        _pending_ai_reply["definition"] = result.get("definition", Dictionary());
+    pending->reply["ok"] = result.get("ok", false);
+    if (bool(pending->reply["ok"]))
+        pending->reply["definition"] = result.get("definition", Dictionary());
     else
-        _pending_ai_reply["code"] = result.get("code", "ai_generation_failed");
+        pending->reply["code"] = result.get("code", "ai_generation_failed");
     auto response = narrative_response(true, "ok");
     response["effective_day"] = day;
     return response;
@@ -197,10 +202,20 @@ void RuntimeNarrative::apply_ai_policy(int64_t day) {
     }
 }
 
-void RuntimeNarrative::apply_ai_reply(const NarrativeDay &input) {
-    if (_pending_ai.is_empty() || int64_t(_pending_ai["effective_day"]) != input.day) return;
-    const auto pending = std::exchange(_pending_ai, Dictionary());
-    const auto result = std::exchange(_pending_ai_reply, Dictionary());
+void RuntimeNarrative::apply_ai_replies(const NarrativeDay &input) {
+    for (auto it = _pending_ai.begin(); it != _pending_ai.end();) {
+        if (int64_t(it->request["effective_day"]) != input.day) {
+            ++it;
+            continue;
+        }
+        apply_ai_reply(input, *it);
+        it = _pending_ai.erase(it);
+    }
+}
+
+void RuntimeNarrative::apply_ai_reply(const NarrativeDay &input, const PendingAi &entry) {
+    const auto &pending = entry.request;
+    const auto &result = entry.reply;
     if (!bool(result.get("ok", false)) || input.country.territory.empty()) return;
     auto def = _catalog.compile_event(result.get("definition", Dictionary()));
     if (def.id.empty()) return;

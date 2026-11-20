@@ -6,6 +6,8 @@ const SEED := 20260727
 const COUNTRY_COUNT := 4
 const WARMUP_DAY := 34
 const RELEASE_DAYS := 3
+const HOLD_WATCHDOG_USEC := 5_000_000
+# Used only by tests that expect the executor to stay blocked on external input.
 const HOLD_MSEC := 100
 const SPEED := 100.0
 const CLAIM_DAY := 4
@@ -44,6 +46,9 @@ func _run() -> void:
 		_expect("hold started after the warmup boundary", int(hold.start_day) == WARMUP_DAY)
 		_expect("one request admitted all three days", int(hold.admitted_through) == days)
 		_expect("A: all admitted days commit without a foreground frame", int(hold.committed_after) == days)
+		_expect("A: the executor stopped at the admitted boundary", bool(hold.at_limit))
+		_expect("A: the display did not consume anything during the hold",
+			int(hold.display_before) == int(hold.display_after))
 		_expect("the foreground consumes the three days in order together",
 			stalled.get("last_batch_size", 0) == RELEASE_DAYS)
 		print("BACKGROUND_DAILY_HOLD=" + JSON.stringify(hold))
@@ -253,9 +258,21 @@ func _run_hold(host: WorldRuntimeHost, target_day: int) -> Dictionary:
 	var frames_before := Engine.get_process_frames()
 	var started := Time.get_ticks_usec()
 	var admitted_through := host._admit_runtime_calendar(target_day + 1)
-	OS.delay_msec(HOLD_MSEC)
-	var committed_after := int(ext.runtime_committed_day())
 	var state := generator.get_runtime_control_state()
+	var at_limit := false
+	while true:
+		var worker_state := String(state.get("simulation_host_state", "STOPPED"))
+		var committed := int(state.get("simulation_committed_day", -1))
+		at_limit = committed == admitted_through and worker_state == "PAUSED"
+		if at_limit or committed > admitted_through or worker_state in ["FAULTED", "STOPPED", "STOPPING"]:
+			break
+		if Time.get_ticks_usec() - started >= HOLD_WATCHDOG_USEC:
+			push_error("A: executor did not stop at the admitted day %d: %s" % [admitted_through, state])
+			break
+		# Give the worker CPU time without pumping the scene tree.
+		OS.delay_usec(1000)
+		state = generator.get_runtime_control_state()
+	var committed_after := int(ext.runtime_committed_day())
 	return {
 		"requested_through": target_day, "admitted_through": admitted_through,
 		"start_day": settled_before, "committed_after": committed_after,
@@ -263,6 +280,7 @@ func _run_hold(host: WorldRuntimeHost, target_day: int) -> Dictionary:
 		"display_before": display_before, "display_after": host._runtime_commit_day,
 		"hold_usec": Time.get_ticks_usec() - started,
 		"process_frames": Engine.get_process_frames() - frames_before,
+		"at_limit": at_limit, "executor": state,
 		"worker_healthy": bool(state.get("authority_ready", false)) and state.get("simulation_host_state") != "FAULTED",
 	}
 

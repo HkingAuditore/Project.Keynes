@@ -963,7 +963,7 @@ Dictionary DCWorldExt::get_gameplay_narrative_view() const {
     out["active_offer"] = view->active_offer.duplicate(true);
     out["ready_queue"] = view->queue.duplicate(true);
     out["chronicle"] = view->chronicle.duplicate(true);
-    out["ai_request"] = view->ai_request.duplicate(true);
+    out["ai_requests"] = view->ai_requests.duplicate(true);
     out["waiting_for_external_input_day"] = view->waiting_for_external_input_day;
     out["ai_enabled"] = view->ai_enabled;
     out["ai_enabled_requested"] = view->ai_enabled_requested;
@@ -977,10 +977,7 @@ Dictionary DCWorldExt::capture_gameplay_narrative() const {
 
 Dictionary DCWorldExt::submit_gameplay_narrative(StringName kind, Dictionary args) {
     if (!_runtime_host) return narrative_response(false, "narrative_runtime_unavailable");
-    if (kind == StringName("restore")) {
-        const bool restored = _runtime_host->restore_narrative_checkpoint(args);
-        return narrative_response(restored, restored ? "ok" : "narrative_executor_running");
-    }
+    if (kind == StringName("restore")) return _runtime_host->restore_narrative_checkpoint(args);
     auto request = std::make_shared<RuntimeNarrativeRequest>();
     using Kind = RuntimeNarrativeRequest::Kind;
     if (kind == StringName("choose")) request->kind = Kind::CHOOSE;

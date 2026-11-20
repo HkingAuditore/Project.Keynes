@@ -9,7 +9,7 @@ var _fast_headless := false
 
 # Godot sleeps between headless iterations even with low-processor mode off.
 # At 100x the default 6.9 ms sleep can consume most of a day's 10 ms budget
-# while a completed simulation is waiting for its main-thread handoff.
+# before the next clock admission.
 const FAST_HEADLESS_SLEEP_USEC := 500
 static var _fast_headless_sessions := 0
 static var _previous_sleep_usec := 0

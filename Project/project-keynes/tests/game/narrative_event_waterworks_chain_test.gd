@@ -208,7 +208,7 @@ func _check_authorized_route() -> void:
 	_choose_story(0)
 	if not await _advance_story(6):
 		return
-	var saved := story_service.export_state()
+	var saved := story_ext.capture_gameplay_narrative()
 	var flag := "cell:%d:flag_canal_authorized" % story_cell
 	_expect("authorization raises the story flag", saved.get("story_flags", {}).has(flag))
 	var future: Array = saved.get("scheduled_events", [])
@@ -246,7 +246,7 @@ func _check_authorized_route() -> void:
 	_choose_story(0)
 	if not await _advance_story(37):
 		return
-	future = story_service.export_state().get("scheduled_events", [])
+	future = story_ext.capture_gameplay_narrative().get("scheduled_events", [])
 	_expect("silt irrigation schedules the legacy beat two years after the choice",
 		future.size() == 1 and future[0].get("due_day") == 767)
 	if not await _advance_story(246):
@@ -272,7 +272,7 @@ func _check_abandoned_route() -> void:
 	if not await _advance_story(6):
 		return
 	var flag := "cell:%d:flag_canal_abandoned" % story_cell
-	var saved := story_service.export_state()
+	var saved := story_ext.capture_gameplay_narrative()
 	_expect("dismissal raises the abandoned flag", saved.get("story_flags", {}).has(flag))
 	var future: Array = saved.get("scheduled_events", [])
 	_expect("dismissal schedules the abandoned beat on day 26",
@@ -284,7 +284,7 @@ func _check_abandoned_route() -> void:
 	_choose_story(0)
 	if not await _advance_story(27):
 		return
-	saved = story_service.export_state()
+	saved = story_ext.capture_gameplay_narrative()
 	_expect("keeping the survey clears the abandoned flag", not saved.get("story_flags", {}).has(flag))
 	future = saved.get("scheduled_events", [])
 	_expect("keeping the survey re-schedules completion on day 147",

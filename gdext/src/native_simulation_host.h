@@ -763,7 +763,7 @@ public:
     std::shared_ptr<const RuntimeEraRewardView> latest_era_reward() const;
     std::shared_ptr<const RuntimeEraAdvancementView> latest_era_advancement() const;
     bool initialize_narrative(const godot::Dictionary &, const godot::Dictionary &);
-    bool restore_narrative_checkpoint(const godot::Dictionary &);
+    godot::Dictionary restore_narrative_checkpoint(const godot::Dictionary &);
     std::shared_ptr<const RuntimeNarrativeView> latest_narrative() const;
     godot::Dictionary capture_narrative() const;
     bool submit_narrative_choice_request(std::shared_ptr<struct RuntimeNarrativeRequest>);

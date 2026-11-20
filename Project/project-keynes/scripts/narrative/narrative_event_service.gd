@@ -15,7 +15,6 @@ const CatalogPacket = preload("res://scripts/narrative/narrative_catalog_packet.
 var _bus = null
 var _country: int = 0
 var _view: Dictionary = {}
-var _last_popup_day: int = -999
 var _last_ai_request: int = 0
 var _last_record: int = 0
 var _session_generation := 0
@@ -41,7 +40,6 @@ func release_world() -> Dictionary:
 	_country = 0
 	_view = {}
 	_session_generation += 1
-	_last_popup_day = -999
 	_last_ai_request = 0
 	_last_record = 0
 	_notice_history.clear()
@@ -56,11 +54,11 @@ func catalog() -> NarrativeEventCatalog:
 
 func consume_committed() -> void:
 	_refresh_view()
-	var request: Dictionary = _view.get("ai_request", {})
-	var sequence := int(request.get("ai_request_seq", 0))
-	if sequence > _last_ai_request:
-		_last_ai_request = sequence
-		ai_generation_requested.emit(request.duplicate(true))
+	for request: Dictionary in _view.get("ai_requests", []):
+		var sequence := int(request.get("ai_request_seq", 0))
+		if sequence > _last_ai_request:
+			_last_ai_request = sequence
+			ai_generation_requested.emit(request.duplicate(true))
 	var records: Array = _view.get("chronicle", [])
 	var fresh: Array[Dictionary] = []
 	for row: Dictionary in records:
@@ -122,10 +120,6 @@ func set_ai_enabled(enabled: bool) -> void:
 		_refresh_view()
 
 
-func ai_enabled_setting() -> bool:
-	return bool(_view.get("ai_enabled_requested", false))
-
-
 func ai_reply_handler(request: Dictionary) -> Callable:
 	return _submit_ai_reply.bind(_session_generation,
 		int(request.get("ai_request_seq", 0)), int(request.get("effective_day", -1)))
@@ -182,10 +176,6 @@ func chronicle_total_count(filter_cell: int = -1) -> int:
 	return get_chronicle(0, 256, filter_cell).size()
 
 
-func export_state() -> Dictionary:
-	return _bus.capture_story() if _bus != null else {}
-
-
 func _request(kind: StringName, args: Dictionary) -> Dictionary:
 	if _bus == null:
 		return {"ok": false, "code": "narrative_runtime_unavailable"}
@@ -197,7 +187,6 @@ func _refresh_view() -> void:
 		return
 	var previous := int(_view.get("active_offer", {}).get("offer_id", 0))
 	_view = _bus.story_view()
-	_last_popup_day = int(_view.get("last_popup_day", -999))
 	var offer := active_offer()
 	if not offer.is_empty() and int(offer.offer_id) != previous:
 		offer_ready.emit(offer)

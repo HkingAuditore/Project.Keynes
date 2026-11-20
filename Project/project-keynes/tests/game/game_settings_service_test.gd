@@ -62,7 +62,25 @@ func _run() -> void:
 		and is_equal_approx(float(validated.master_volume), 1.0))
 	_check_graphics_options(service)
 	_check_map_frame_limit(service)
+	_check_global_ai_preference(service)
 	_finish()
+
+
+func _check_global_ai_preference(service: Node) -> void:
+	service.update({"ai_narrative_enabled": true}, false)
+	var menu := preload("res://scenes/ui/pause_menu.tscn").instantiate() as PauseMenu
+	root.add_child(menu)
+	var controller := PlayerController.new()
+	var manager := GameUIManager.new()
+	manager._pause_menu = menu
+	manager.set_player_controller(controller)
+	menu._show_ai_settings()
+	var control := menu._rows.get_child(0).get_node("Column/Enabled") as CheckButton
+	_expect("global AI form reads the global preference with an unbound session",
+		control.button_pressed and service.values().ai_narrative_enabled)
+	manager.free()
+	controller.free()
+	menu.free()
 
 
 func _check_graphics_options(service: Node) -> void:

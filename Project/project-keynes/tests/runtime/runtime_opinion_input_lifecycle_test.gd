@@ -58,9 +58,10 @@ func _run() -> int:
 		_expect("the stopped world has a full input queue", not target.environment_ring_has_capacity())
 		_expect("complete bundle prepares on the already-used host", target.restore_runtime_bundle(saved.bytes).get("ok", false))
 		_expect("the saved Country checkpoint restores before startup", target.restore_country_runtime_checkpoint(saved.country_pkcn).get("ok", false))
-		# Environment rows are restored by their owner before the Host starts.
-		# The PKSR envelope carries their identity, not the map's row payload.
-		_capture_input(target, 1)
+		# Replace the previous timeline's environment before startup. The
+		# threaded executor consumes a ready day 1 immediately, so seed its
+		# restored day 0 and let _opinion_day publish the next day.
+		_capture_input(target, 1 if inline_mode else 0)
 		var restarted: Dictionary = target.start_runtime_worker(_opinion_config(inline_mode))
 		if not restarted.get("ok", false): print("[opinion-restart] ", restarted)
 		_expect("restored target starts", restarted.get("ok", false))
@@ -94,7 +95,7 @@ func _run() -> int:
 		await _stop(target)
 		_expect("the original timeline can be restored again", target.restore_runtime_bundle(saved.bytes).get("ok", false))
 		_expect("its Country checkpoint restores again", target.restore_country_runtime_checkpoint(saved.country_pkcn).get("ok", false))
-		_capture_input(target, 1)
+		_capture_input(target, 1 if inline_mode else 0)
 		_expect("the second restored executor starts", target.start_runtime_worker(_opinion_config(inline_mode)).get("ok", false))
 		var unused: Dictionary = target.get_runtime_thread_report()
 		_expect("repeated restore reports the restored Ideology date", unused.get("ideology_pod_committed_day", -1) <= 1)

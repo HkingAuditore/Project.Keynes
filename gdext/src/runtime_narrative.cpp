@@ -2,6 +2,8 @@
 
 #include "runtime_events_authority.h"
 
+#include <godot_cpp/variant/utility_functions.hpp>
+
 #include <algorithm>
 #include <cstdlib>
 #include <numeric>
@@ -30,14 +32,22 @@ bool contains(const std::vector<int32_t> &cells, int32_t cell) {
 } // namespace
 
 bool RuntimeNarrative::configure(const Dictionary &packet, const Dictionary &archive) {
-    if (!_catalog.configure(packet)) return false;
-    _country = int64_t(packet.get("country", 0));
-    _seed = std::max<int64_t>(1, packet.get("seed", 1));
-    _days_per_year = std::max<int64_t>(1, packet.get("days_per_year", 365));
-    _ai_enabled = packet.get("ai_enabled", false);
-    _pause_mask = static_cast<uint16_t>(int32_t(packet.get("event_pause_mask", 255)));
-    restore(archive);
-    return _country != 0;
+    const String error = checkpoint_error(archive);
+    if (!error.is_empty()) {
+        UtilityFunctions::push_error("narrative_archive_invalid: ", error);
+        return false;
+    }
+    RuntimeNarrative decoded;
+    if (!decoded._catalog.configure(packet)) return false;
+    decoded._country = int64_t(packet.get("country", 0));
+    decoded._seed = std::max<int64_t>(1, packet.get("seed", 1));
+    decoded._days_per_year = std::max<int64_t>(1, packet.get("days_per_year", 365));
+    decoded._ai_enabled = packet.get("ai_enabled", false);
+    decoded._pause_mask = static_cast<uint16_t>(int32_t(packet.get("event_pause_mask", 255)));
+    decoded.decode_checkpoint(archive);
+    if (decoded._country == 0) return false;
+    *this = std::move(decoded);
+    return true;
 }
 
 bool RuntimeNarrative::paced(int64_t day) const {
@@ -205,12 +215,15 @@ void RuntimeNarrative::followups(const NarrativeDay &input) {
         const auto &territory = input.country.territory;
         const int32_t cell = !territory.empty() && !contains(territory, item.cell) ?
             territory.front() : item.cell;
-        if (item.event.empty() && _pending_ai.is_empty() && _ai_enabled &&
-            !item.hint.strip_edges().is_empty() && !item.requested && input.day >= item.due - 3) {
+        const auto *authored = definition(item.event);
+        const bool on_prefetch_day = input.day == item.due - RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS;
+        const bool previous_window = item.event.empty() && input.day >= item.due - 3;
+        if (!authored && _ai_enabled && !item.requested && !item.hint.strip_edges().is_empty() &&
+                (on_prefetch_day || previous_window)) {
             item.requested = request_ai(input, input.sample(cell, false), item, {}, {}, {}, true);
         }
         if (input.day >= item.due) {
-            if (const auto *def = definition(item.event)) enqueue(*def, input, cell, item.chain, true);
+            if (authored) enqueue(*authored, input, cell, item.chain, true);
         } else {
             _followups.push_back(std::move(item));
         }
@@ -280,7 +293,7 @@ int64_t RuntimeNarrative::step(const NarrativeDay &input,
     unrest(input, facts);
     fact_notices(input, facts);
     prune(input.day);
-    apply_ai_reply(input);
+    apply_ai_replies(input);
     followups(input);
     std::array<const RuntimeEventsRecord *, 64> batch{};
     size_t count = 0;
@@ -325,10 +338,11 @@ std::shared_ptr<const RuntimeNarrativeView> RuntimeNarrative::view(int64_t commi
     for (auto it = _chronicle.begin(); it != _chronicle.end(); ++it)
         if (it->has("pending_economy_effects")) first = std::next(it);
     for (; first != _chronicle.end(); ++first) out->chronicle.push_back(*first);
-    if (_pending_ai_reply.is_empty() && !_pending_ai.is_empty()) {
-        out->ai_request = _pending_ai;
-        const int64_t due = _pending_ai["effective_day"];
-        if (due == committed_day + 1) out->waiting_for_external_input_day = due;
+    for (const auto &pending : _pending_ai) {
+        if (!pending.reply.is_empty()) continue;
+        out->ai_requests.push_back(pending.request);
+        const int64_t deadline = pending.request["effective_day"];
+        if (deadline == committed_day + 1) out->waiting_for_external_input_day = deadline;
     }
     out->ai_enabled = _ai_enabled;
     out->ai_enabled_requested = _ai_updates.empty() ? _ai_enabled : _ai_updates.back().second;

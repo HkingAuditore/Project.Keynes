@@ -95,7 +95,7 @@ void NativeSimulationHost::publish_cell_lut_changes(RuntimeDayTail &tail, const 
     if (state.terrain.size() != count || state.vegetation.size() != count ||
         state.cover.size() != count || state.weather_type.size() != count) return;
 
-    const auto &opening = _world_environment->narrative_geography();
+    const auto &opening_landform = _world_environment->opening_landform();
     const auto &prior = previous && previous->climate ? &previous->climate->payload : nullptr;
     const auto &old_age = previous ? &previous->cell_luts.transition_age : nullptr;
     const bool initialized = _cell_lut_words.size() == count;
@@ -110,7 +110,7 @@ void NativeSimulationHost::publish_cell_lut_changes(RuntimeDayTail &tail, const 
         const uint8_t vegetation = state.vegetation[cell];
         const uint8_t fog = tail.vision && tail.vision->fog_enabled ? tail.vision->fog[cell] : 255;
         const uint8_t landform = tail.climate->season && tail.climate->season->landform.size() == count
-            ? tail.climate->season->landform[cell] : opening.landform[cell];
+            ? tail.climate->season->landform[cell] : opening_landform[cell];
         const float temp = state.temperature[cell];
         const float moisture = state.moisture[cell];
         const float snow = state.snow_cover[cell];
@@ -137,7 +137,7 @@ void NativeSimulationHost::publish_cell_lut_changes(RuntimeDayTail &tail, const 
             (uint32_t(pk_q01_byte(state.vapor[cell])) << 24);
         const auto &season = previous && previous->climate ? previous->climate->season : nullptr;
         const uint8_t old_landform = season && season->landform.size() == count
-            ? season->landform[cell] : opening.landform[cell];
+            ? season->landform[cell] : opening_landform[cell];
         const std::array<uint32_t, 4> words{classes, dynamics, ecology, weather};
         if (!initialized || classes != _cell_lut_words[cell][0] || old_landform != landform)
             _executor_cell_lut_pending[cell] |= 3;

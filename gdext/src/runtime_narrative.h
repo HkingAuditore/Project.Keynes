@@ -36,7 +36,7 @@ struct RuntimeNarrativeView {
     godot::Array queue, chronicle;
     uint16_t pause_mask = 0x00ff;
     int64_t unrest_fact = -1;
-    godot::Dictionary ai_request;
+    godot::Array ai_requests;
     int64_t waiting_for_external_input_day = -1;
     bool ai_enabled = false;
     bool ai_enabled_requested = false;
@@ -58,6 +58,7 @@ public:
     int64_t step(const NarrativeDay &input, const std::vector<RuntimeEventsRecord> &facts,
                  int64_t acknowledged);
     godot::Dictionary capture() const;
+    static godot::String checkpoint_error(const godot::Dictionary &);
     std::shared_ptr<const RuntimeNarrativeView> view(int64_t committed_day) const;
     godot::Dictionary queue_choice(int64_t day, const godot::Dictionary &args, bool automatic = false);
     godot::Dictionary take_due_choice(int64_t day);
@@ -144,7 +145,8 @@ private:
     std::vector<UnrestPending> _unrest_checks;
     std::vector<Independence> _independence;
     std::vector<NarrativeIndependenceAction> _independence_actions;
-    godot::Dictionary _pending_ai, _pending_ai_reply;
+    struct PendingAi { godot::Dictionary request, reply; };
+    std::vector<PendingAi> _pending_ai;
     // Offers and records keep the established pknr/presentation shape. No
     // condition reads the presentation payload to sample the simulation.
     std::vector<RuntimeNotice> _notices;
@@ -182,7 +184,8 @@ private:
     bool request_ai(const NarrativeDay &, const NarrativeCellView &, const Followup &request,
         const godot::String &fact = {}, const std::string &state = {},
         const godot::String &state_hint = {}, bool scheduled = false);
-    void apply_ai_reply(const NarrativeDay &);
+    void apply_ai_replies(const NarrativeDay &);
+    void apply_ai_reply(const NarrativeDay &, const PendingAi &);
     bool ai_event_eligible(const NarrativeDefinition &, const NarrativeDay &,
                            const NarrativeCellView &) const;
     void store_ai(const std::string &state, NarrativeDefinition &&, int32_t cell, int64_t day);
@@ -195,7 +198,7 @@ private:
     const NarrativeDefinition *definition(const std::string &) const;
     godot::Dictionary context(const NarrativeDay &, const NarrativeCellView &) const;
     godot::String date_text(int64_t day) const;
-    void restore(const godot::Dictionary &);
+    void decode_checkpoint(const godot::Dictionary &);
 };
 
 godot::String narrative_format(const godot::String &, const godot::Dictionary &);

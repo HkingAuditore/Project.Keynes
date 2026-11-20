@@ -45,7 +45,7 @@ func _check_hungry_chain() -> void:
 		_expect("the outcome replaces the original scene prose",
 			dialog._outcome_narrative_label.visible and not dialog._body_label.visible)
 	dialog.free()
-	var state := story_service.export_state()
+	var state := story_ext.capture_gameplay_narrative()
 	_expect("opening the granary raises the local gruel flag",
 		state.get("story_flags", {}).has("cell:%d:flag_gruel_kitchen" % story_cell))
 	var followups: Array = state.get("scheduled_events", [])
@@ -61,7 +61,7 @@ func _check_hungry_chain() -> void:
 		records = _story_records()
 		_expect("registering the survivors buys long-term capacity and leaves a grudge",
 			records.size() == 2 and records[0].applied_effects_summary.has("本地农业 +5%，540 日")
-			and not story_service.export_state().get("weight_biases", []).is_empty())
+			and not story_ext.capture_gameplay_narrative().get("weight_biases", []).is_empty())
 
 
 func _test_definition_quote_roundtrip() -> void:

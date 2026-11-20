@@ -24,6 +24,7 @@ func _run() -> void:
 	_test_state_probe_contract()
 	_test_ai_sandbox_and_image_cache()
 	_test_player_controller_integration()
+	_test_story_archive()
 	await _test_story_and_diary()
 	await _test_ai_fixed_day()
 	print("narrative event runtime: %d checks, %d failures" % [_checks, _failures])
@@ -43,13 +44,19 @@ func _check_ai_fixed_day() -> void:
 		return
 	var bus: GameplayEventBus = story_host.get_generator().get_gameplay_event_bus()
 	var view := bus.story_view()
-	var request: Dictionary = view.get("ai_request", {})
+	var requests: Array = view.get("ai_requests", [])
+	var request: Dictionary = requests[0] if not requests.is_empty() else {}
 	var landing_day := 1 + int(view.ai_reply_delay_days)
 	_expect("AI request snapshots its committed cell and fixed landing day",
 		request.get("day") == 1 and request.get("effective_day") == landing_day
 		and request.get("cell_ctx", {}).get("day") == 1 and request.get("cell_idx") == story_cell)
 	if request.is_empty():
 		return
+	for invalid in [{}, {"enabled": 1}, {"enabled": "false"}]:
+		var rejected := bus.submit_story_request(&"ai_enabled", invalid)
+		_expect("malformed AI setting leaves the active and requested values enabled",
+			rejected.get("code") == "narrative_ai_enabled_invalid" and not rejected.has("effective_day")
+			and bus.story_view().get("ai_enabled") == true and bus.story_view().get("ai_enabled_requested") == true)
 	var setting := bus.submit_story_request(&"ai_enabled", {"enabled": false})
 	var seal_day := int(request.day) + 1
 	_expect("AI off is dated and leaves the already-issued request intact",
@@ -58,7 +65,7 @@ func _check_ai_fixed_day() -> void:
 	if not await _advance_story(seal_day):
 		return
 	_expect("AI off takes effect on the admitted day",
-		bus.story_view().get("ai_enabled") == false and bus.story_view().get("ai_request") == request)
+		bus.story_view().get("ai_enabled") == false and bus.story_view().get("ai_requests") == [request])
 	print("NARRATIVE_AI_SETTING day=", setting.get("effective_day"),
 		" inline=", story_host._native_daily_inline_active)
 	if not await _advance_story(landing_day - 1):
@@ -90,6 +97,35 @@ func _check_ai_fixed_day() -> void:
 		offer.get("event_id") == "evt.ai.fixture" and offer.get("day") == landing_day
 		and is_equal_approx(float(offer.get("temperature", INF)), story_host.current_map().temp_arr[story_cell]))
 	print("NARRATIVE_AI_FIXED_DAY request=1 landed=", landing_day)
+
+
+func _test_story_archive() -> void:
+	var provider := preload("res://scripts/game/save_modules/history_state.gd").new()
+	_expect("missing narrative bus cannot write a successful empty archive",
+		provider._can_narrative_provider({}).get("code") == "narrative_provider_missing"
+		and not provider._write_narrative_provider({}).get("ok", true))
+	_expect("a present malformed section returns a diagnostic",
+		provider._restore_narrative_provider({"pknr": []}, {}).get("code") == "narrative_archive_invalid")
+	var ext := DCWorldExt.new()
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "paused": true})
+	var checkpoint := {"next_offer_id": 3, "story_flags": {"cell:0:valid": {"value": 1}}}
+	_expect("an older checkpoint with absent optional fields can be staged",
+		ext.submit_gameplay_narrative(&"restore", checkpoint).get("ok", false))
+	var damaged := checkpoint.duplicate(true)
+	damaged.next_offer_id = 99
+	damaged.stratum_unrest = {"pending_stage_checks": [{"cell": "bad"}]}
+	var rejected := ext.submit_gameplay_narrative(&"restore", damaged)
+	_expect("corrupt archive names the bad field and leaves the previous candidate whole",
+		rejected.get("code") == "narrative_archive_invalid"
+		and "pending_stage_checks[0].cell" in String(rejected.get("message", ""))
+		and ext.capture_gameplay_narrative() == checkpoint)
+	damaged.erase("stratum_unrest")
+	damaged.pending_choice = {"offer_id": 1, "offer_generation": 1, "option_index": 0, "effective_day": "bad"}
+	rejected = ext.submit_gameplay_narrative(&"restore", damaged)
+	_expect("a pending choice with a corrupt date leaves the previous candidate whole",
+		rejected.get("code") == "narrative_archive_invalid"
+		and "pending_choice.effective_day" in String(rejected.get("message", ""))
+		and ext.capture_gameplay_narrative() == checkpoint)
 
 
 func _test_state_probe_contract() -> void:

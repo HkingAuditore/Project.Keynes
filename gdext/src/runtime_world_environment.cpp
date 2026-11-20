@@ -400,6 +400,10 @@ const RuntimeEnvironmentSnapshot &RuntimeWorldEnvironment::narrative_geography()
     return _state->prepared ? *_state->prepared : _state->opening;
 }
 
+const std::vector<uint8_t> &RuntimeWorldEnvironment::opening_landform() const {
+    return _state->opening.landform;
+}
+
 RuntimeClimateCalendar RuntimeWorldEnvironment::calendar(int64_t day) const {
     const auto &state = *_state;
     return state.prepared && state.prepared->day > day ? state.calendar_committed : state.calendar_prepared;

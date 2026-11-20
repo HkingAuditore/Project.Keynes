@@ -45,18 +45,21 @@ const ClimateWritebackAdapter := preload(
 var _climate_writeback_adapter := ClimateWritebackAdapter.new()
 
 
-class WritebackProbe extends WorldRuntimeHost:
+class CommitWritebackProbe extends "res://scripts/game/world_runtime_daily_adapter_part3.gd":
 	var requested_day := -1
+	var requested_generation := -1
 	var writeback_ready := false
 
+	func _apply_climate_writeback_if_authoritative(host, report: Dictionary, commit: Dictionary = {}) -> void:
+		requested_day = int(report["simulation_committed_day"])
+		requested_generation = int(commit.get("generation", -1))
+		if writeback_ready:
+			host._runtime_climate_writeback_last_day = requested_day
+
+class WritebackProbe extends WorldRuntimeHost:
 	func _runtime_control_state() -> Dictionary:
 		return {"simulation_thread_mode": "ACTIVE", "authority_ready": true,
 			"climate_worker_authoritative": true, "simulation_committed_day": 23}
-
-	func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
-		requested_day = int(report["simulation_committed_day"])
-		if writeback_ready:
-			_runtime_climate_writeback_last_day = requested_day
 
 	func finish_daily_tick(_ui_ms: float, _ui_breakdown: Dictionary = {}) -> void:
 		pass
@@ -64,6 +67,8 @@ class WritebackProbe extends WorldRuntimeHost:
 
 func _check_matching_weather_day() -> bool:
 	var host := WritebackProbe.new()
+	var writeback := CommitWritebackProbe.new()
+	host._daily_adapter._part3 = writeback
 	host._generator = CommitSource.new()
 	host._runtime_ready_for_ticks = true
 	host._runtime_commit_generation = 23
@@ -71,8 +76,8 @@ func _check_matching_weather_day() -> bool:
 	var received: Array[int] = []
 	host.simulation_committed.connect(func(_from, day, _generation): received.append(day))
 	host._consume_runtime_commit_if_ready()
-	var waited := received.is_empty() and host.requested_day == 24
-	host.writeback_ready = true
+	var waited := received.is_empty() and writeback.requested_day == 24 and writeback.requested_generation == 24
+	writeback.writeback_ready = true
 	host._consume_runtime_commit_if_ready()
 	var delivered := received == [24] and host._runtime_climate_writeback_last_day == 24
 	host.free()

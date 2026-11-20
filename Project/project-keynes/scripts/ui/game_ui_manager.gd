@@ -865,8 +865,6 @@ func set_player_controller(controller) -> void:
 	if _pause_menu != null:
 		_pause_menu.event_pause_reader = Callable(controller.narrative_service(), "event_pause_mask") \
 			if controller != null and controller.has_method("narrative_service") else Callable()
-		_pause_menu.ai_narrative_reader = Callable(controller.narrative_service(), "ai_enabled_setting") \
-			if controller != null and controller.has_method("narrative_service") else Callable()
 	_connect_era_advancement_signals()
 	if _player_controller != null and _player_controller.has_signal("command_completed"):
 		var audio_callback := Callable(self, "_on_player_command_completed_audio")

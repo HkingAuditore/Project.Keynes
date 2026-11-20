@@ -330,9 +330,6 @@ func synchronize_environment_display_for_save() -> bool:
 var _runtime_commit_generation: int = 0
 var _runtime_commit_day: int = -1
 var _runtime_last_commit: Dictionary = {}
-## Military committed-day cursor for whole-graph ACTIVE. The military day reads
-## committed Country/Economy state, so it can only run after the commit that
-## exposes day D; `target` stays queued until that boundary is visible.
 ## Season index whose cover the military terrain layer currently holds; -1 until
 ## the first observed day.
 var _military_terrain_season_index: int = -1

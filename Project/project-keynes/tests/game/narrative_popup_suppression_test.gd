@@ -53,7 +53,7 @@ func _check_policy() -> void:
 	var category := Categories.category("evt.ages.first_seed")
 	var mask := 255 ^ (1 << category)
 	var change := story_service.update_event_pause_mask(mask)
-	var before := story_service.export_state()
+	var before := story_ext.capture_gameplay_narrative()
 	print("EVENT_PAUSE_BOUNDARY receipt=", change, " stored=", before.get("event_pause_mask"),
 		" pending=", before.get("pending_event_pause_masks"))
 	_expect("changing the active choice's category takes effect on day 3",
@@ -70,10 +70,10 @@ func _check_policy() -> void:
 		records.size() == 1 and bool(records[0].get("automatically_chosen", false))
 		and records[0].get("resolved_day") == 3 and records[0].get("chosen_option_index") == 0)
 	_expect("the policy is stored only after it takes effect",
-		story_service.export_state().get("event_pause_mask") == mask)
+		story_ext.capture_gameplay_narrative().get("event_pause_mask") == mask)
 	if not await _advance_story(4):
 		return
-	var foundry: Dictionary = story_service.export_state().get("pending_choice", {})
+	var foundry: Dictionary = story_ext.capture_gameplay_narrative().get("pending_choice", {})
 	_expect("the one-option foundry is a default non-stopping notice",
 		int(foundry.get("effective_day", -1)) == 5 and not story_service.has_active_offer())
 	if not await _advance_story(5):
@@ -84,9 +84,11 @@ func _check_policy() -> void:
 		and records[0].get("resolved_day") == 5)
 	story_clock.pause(true)
 	var saved_speed := story_clock.speed_multiplier
-	story_service.update_event_pause_mask(65535)
+	# Leave notices running so the scheduled choice owns the next stop.
+	var restored_policy := story_service.update_event_pause_mask(255)
 	_expect("an event setting preserves the player's explicit pause and speed",
-		story_clock.paused and story_clock.speed_multiplier == saved_speed)
+		restored_policy.get("ok", false) and restored_policy.get("effective_day") == 6
+		and story_clock.paused and story_clock.speed_multiplier == saved_speed)
 	story_clock.pause(false)
 	if not await _advance_story(6):
 		return
