@@ -77,8 +77,36 @@ day 24 的 `manual_3` 只有 1.03 MiB），决定项是格数 × 历史填充度
 `-Json` 输出机器可读报告。四档实测通过：`manual_1`（CLM2 ABI 9）与 `manual_2`（ABI 8）都能定位历史 lane，
 旧标记 `IDP1` 不再中断内段遍历，`-Verify` 21 段全通过；`-Deep` 单档耗时约 1.4 s。
 
-未覆盖：本轮只加诊断，未改动任何持久化内容。瘦身方案（去历史 lane、ECP2 只存一份、ECP1 停写、
-缩略图降采样）要同步改 CLM2 ABI、`state_hash` 与 golden 用例，并跑 60 天/2 年/10 年一致性回归，尚未实施。
+已按上表四项实施（旧档读取路径保留）：
+
+- **CLM2 v10 去历史环**：`RuntimeClimateAuthority::serialize` 不再写 `temperature_history`；
+  `RuntimeClimateStore::state_hash()` 用同一份冻结字段表但不混历史，旧算法以 `state_hash_abi8()` 冻结，
+  restore 按 ABI 分支（v9 读完整 lane 并用 `state_hash_abi8` 复核，v10 补零环跳过该 lane）。
+  `CLIMATE_SECTION_ABI_MIN_SUPPORTED` 仍是 9，迁移自检保留并新增“ABI 9 必须仍可读”的断言。
+  历史环仍留在内存里（kernel 每天照常追加），本轮只停止持久化与哈希，未动逐日写入路径。
+- **ECP2 单份**：`build_save_bundle` 仍捕获一次（poll 要把它交给容器 `ecp2` 段），但不再写进 PKSR、
+  不再置 `RUNTIME_SAVE_SECTION_ECONOMY_ECP2`；解析侧在该位缺失时改用 `restore_bundle` 传入的外部
+  section（先做 marker 与 `decode_ecp2` 校验），带内嵌副本的旧 bundle 仍走原分支。
+- **ECP1 停写**：移除 `encode_ecp1` 调用，`RUNTIME_SAVE_SECTION_ECONOMY_POD` 不再置位；解析端旧分支保留。
+- **缩略图**：新增 `scripts/game/save_preview_codec.gd`（480 px 宽、JPEG q0.82，按 magic 嗅探 PNG/JPEG/WebP），
+  `player_state.gd` 与 `main_menu.gd` 改用它；headless 仍写 1×1 PNG 兜底。
+
+实测（同一测试夹具、40×28 / 1120 格）：旧格式 0.57 MiB → 新格式 0.35 MiB（−39%）。`-Deep` 对比：
+旧档 365 天历史 1.56 MiB、ECP1 4.34 MiB、容器与内嵌 ECP2 各 8.92 MiB；新档三项全部消失，
+`ecp2` 只剩容器一份。6400 格按同比例预计 9.96 → 约 2.2 MiB。
+
+验证：`runtime_climate_authority_test` 通过（含 ABI 9 可读、历史逐字节保留、当前哈希一致，以及 ABI 8 及更旧仍以
+`expected_10_got_N` 明确拒绝）；`runtime_inline_save_restore_test` 116 项 0 失败；
+`game_save_roundtrip_test`（`PK_GAME_SAVE_ROUNDTRIP_TEST=1` + 独立 `PK_SAVE_DIR`）0 失败，恢复后跑完整经济结算周期、
+日志中 `population_error=0`、`money_error=0`；新增 `tests/game/save_preview_codec_test.gd` 10 项 0 失败；
+`check_save_contracts.py` 与 `check_save_section_contracts.py` 0 违规；debug/release 扩展均构建通过；
+60 天无头 soak 60/60 天提交、0 ledger 失败。
+
+未覆盖：跨版本端到端读档没跑成。玩家存档都早于当前 catalog（`manual_1` 卡在 `pkcm_restore_failed`、
+`autosave` 卡在 `effect_pod_save_header_invalid`，均为既有不兼容，用改前扩展复现结果一致）；
+改用“旧扩展写档 + 新扩展读档”对照时，当前工作树正被并行编辑 UI 脚本，**新格式**存档同样卡在
+`runtime_never_became_ready`，该对照无效，需在工作树安静后重跑。2 年/10 年 soak 与逐日一致性对比本轮未跑；
+soak CSV 不含人口/货币/货品守恒列，守恒证据来自 roundtrip 日志而非 soak。
 
 ## 早期时代夜间火光（2026-11-20）
 
