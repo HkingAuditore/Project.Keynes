@@ -1,6 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 
 const RESOURCE_SCALAR_STRIDE := 32
+const BioOccupancyGuaranteeScript = preload("res://scripts/geography/map_generation/bio_occupancy_guarantee.gd")
 
 func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = false) -> void:
 	if map_ref == null:
@@ -880,6 +881,7 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 		fields.size(), n_cells, wall_ms, float(report.get("elapsed_ms", 0.0)),
 		str(report.get("stage_ms", {}))])
 	_generator._log_bio_occupancy_seed_native(report, bio_knobs)
+	BioOccupancyGuaranteeScript.ensure_after_boot(_generator, map_ref, report)
 	return true
 
 

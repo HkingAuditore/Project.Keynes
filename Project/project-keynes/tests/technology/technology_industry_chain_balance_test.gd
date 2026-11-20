@@ -31,8 +31,8 @@ const RUNTIME_GOOD_SINKS := {
 }
 const RUNTIME_TECHNOLOGY_CONSUMERS := {
 	"tech.river_transport": "domestic river and lake transport capability",
-	"tech.celestial_navigation": "domestic shallow-sea transport capability",
-	"tech.oceanic_navigation": "domestic open-ocean transport capability",
+	"tech.military.coastal_transport": "domestic shallow-sea transport capability",
+	"tech.celestial_navigation": "domestic open-ocean transport capability",
 	"tech.oceanic_ship_design": "domestic deep-ocean transport capability",
 }
 

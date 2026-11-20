@@ -10636,6 +10636,169 @@
 			}
 		},
 		{
+			"id": "tech.river_transport",
+			"display_name": "河运",
+			"era_id": "agrarian",
+			"domain_id": "engineering",
+			"cost_points": 8400.0,
+			"layout_order": 92.5,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "institution",
+			"effect_profile": "trade",
+			"secondary_route_tags": [
+				"route.geography.river",
+				"route.trade.maritime"
+			],
+			"hard_prerequisite_ids": [
+				"tech.fishing_boats"
+			],
+			"reveal_condition": {
+				"operator": 2.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "landform.freshwater_access",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "landform.river_valley",
+						"value": 1.0
+					}
+				]
+			},
+			"is_milestone": false,
+			"is_era_key": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [],
+			"modifier_terms": [],
+			"expected_bindings": [
+				{
+					"kind": 2.0,
+					"id": "method_marine_fish_collector_r2"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "runtime",
+					"id": "water.river_transport",
+					"binding_kind": 0.0,
+					"subject": "NativeEconomyRuntime.water_capability",
+					"attribute": "river_and_lake_corridor",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeEconomyRuntime::water_capability_for_country",
+					"status": "runtime_consumed",
+					"display_name": "河运与湖泊走廊"
+				},
+				{
+					"kind": "building",
+					"id": "method_marine_fish_collector_r2",
+					"binding_kind": 2.0,
+					"subject": "building.method_marine_fish_collector_r2",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "帆船渔场"
+				}
+			],
+			"effect_summary": "开启航道：河运与湖泊走廊；解锁建筑：帆船渔场",
+			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
+			"application_target_ids": [],
+			"terminal_reason": "",
+			"branch_family_id": "branch.maritime_logistics",
+			"era_entry_milestone_id": "tech.settled_knowledge",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "河运需要先见过可用水系，制造产出不是水路存在的证据。",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [
+				"河运由渔舟造船经验放大为载货船只与航道组织。"
+			],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [
+				{
+					"id": "research_route.river_transport.grounded_knowledge",
+					"display_name": "专业知识整合",
+					"route_type": "professional_knowledge",
+					"condition": {
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.early_trade",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.trade.goods_2",
+								"value": 1.0
+							}
+						]
+					},
+					"description": "以「早期贸易」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
+				},
+				{
+					"id": "research_route.river_transport.grounded_capacity",
+					"display_name": "组织与经营能力",
+					"route_type": "institutional_capacity",
+					"condition": {
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.record_keeping",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.settlement.tier_2_180d",
+								"value": 1.0
+							}
+						]
+					},
+					"description": "以「记事制度」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
+				}
+			],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "节点专属发展问题：河运",
+			"topology_review": {
+				"role": "continuation",
+				"rationale": "该节点沿既有知识轴递进，保留一条不可替代的核心前置。",
+				"expected_hard_family_ids": [
+					"branch.construction_materials"
+				]
+			},
+			"building_unlock_review": {
+				"policy": "support_only",
+				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+			},
+			"knowledge_basis": {
+				"required_ids": [
+					"tech.fishing_boats"
+				],
+				"alternative_groups": [
+					[
+						"tech.early_trade"
+					],
+					[
+						"tech.record_keeping"
+					]
+				],
+				"exemption_reason": ""
+			}
+		},
+		{
 			"id": "tech.rainfed_field_system",
 			"display_name": "雨养田体系",
 			"era_id": "agrarian",
@@ -20287,87 +20450,67 @@
 			}
 		},
 		{
-			"id": "tech.river_transport",
-			"display_name": "河运",
+			"id": "tech.military.coastal_transport",
+			"display_name": "近海运兵",
 			"era_id": "kingdom",
 			"domain_id": "engineering",
 			"cost_points": 11000.0,
-			"layout_order": 143.0,
+			"layout_order": 143.5,
 			"network_role": "branch",
 			"anchor_kind": "branch",
-			"node_role": "institution",
-			"effect_profile": "trade",
+			"node_role": "handling",
+			"effect_profile": "military",
 			"secondary_route_tags": [
-				"route.geography.river",
-				"route.trade.maritime"
+				"route.institution.ocean"
 			],
 			"hard_prerequisite_ids": [
 				"tech.fishing_boats"
 			],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "landform.freshwater_access",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "landform.river_valley",
-						"value": 1.0
-					}
-				]
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
-			"is_era_key": true,
+			"is_era_key": false,
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"modifier_terms": [],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "method_marine_fish_collector_r2"
-				}
-			],
+			"expected_bindings": [],
 			"content_effects": [
 				{
 					"kind": "runtime",
-					"id": "water.river_transport",
+					"id": "military.coastal_transport",
+					"binding_kind": 0.0,
+					"subject": "MilitaryCatalog.water_shallow_bit",
+					"attribute": "coastal_embarkation",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "MilitaryCatalogCompiler::unlock_tech_ids",
+					"status": "runtime_consumed",
+					"display_name": "水路通行与沿岸登陆"
+				},
+				{
+					"kind": "runtime",
+					"id": "water.shallow_sea_transport",
 					"binding_kind": 0.0,
 					"subject": "NativeEconomyRuntime.water_capability",
-					"attribute": "river_and_lake_corridor",
+					"attribute": "shallow_sea_corridor",
 					"operation": "unlock",
 					"value": 1.0,
 					"implementation": "NativeEconomyRuntime::water_capability_for_country",
 					"status": "runtime_consumed",
-					"display_name": "河运与湖泊走廊"
-				},
-				{
-					"kind": "building",
-					"id": "method_marine_fish_collector_r2",
-					"binding_kind": 2.0,
-					"subject": "building.method_marine_fish_collector_r2",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "帆船渔场"
+					"display_name": "浅海运输走廊"
 				}
 			],
-			"effect_summary": "开启航道：河运与湖泊走廊；解锁建筑：帆船渔场",
-			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
+			"effect_summary": "开启航道：浅海运输走廊；开放能力：沿岸渡水（湖、浅海）",
+			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
-			"terminal_reason": "",
+			"terminal_reason": "本节点不开放建筑与数值修正，它把浅海航道与军队沿岸渡水交给同一套水级门控：湖泊、浅海、远海、深海按格子水级判定，不再以连续水格数量为依据。",
 			"branch_family_id": "branch.maritime_logistics",
 			"era_entry_milestone_id": "tech.agrarian_society",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "河运需要先见过可用水系，制造产出不是水路存在的证据。",
+			"reveal_category": "practice_diffusion",
+			"reveal_summary": "近海运兵由渔舟的沿岸航行与一次次沿岸调兵实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"河运由渔舟造船经验放大为载货船只与航道组织。"
+				"近海运兵沿用渔舟的沿海航行与靠泊经验。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -20379,30 +20522,9 @@
 			"support_buildings": [],
 			"research_routes": [
 				{
-					"id": "research_route.river_transport.grounded_knowledge",
+					"id": "research_route.military.coastal_transport.grounded_knowledge",
 					"display_name": "专业知识整合",
 					"route_type": "professional_knowledge",
-					"condition": {
-						"operator": 1.0,
-						"children": [
-							{
-								"kind": 0.0,
-								"id": "tech.early_trade",
-								"value": 1.0
-							},
-							{
-								"kind": 1.0,
-								"id": "development.trade.goods_2",
-								"value": 1.0
-							}
-						]
-					},
-					"description": "以「早期贸易」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
-				},
-				{
-					"id": "research_route.river_transport.grounded_capacity",
-					"display_name": "组织与经营能力",
-					"route_type": "institutional_capacity",
 					"condition": {
 						"operator": 1.0,
 						"children": [
@@ -20413,26 +20535,45 @@
 							},
 							{
 								"kind": 1.0,
-								"id": "development.settlement.tier_2_180d",
+								"id": "development.population.500_90d",
 								"value": 1.0
 							}
 						]
 					},
 					"description": "以「记事制度」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
+				},
+				{
+					"id": "research_route.military.coastal_transport.grounded_capacity",
+					"display_name": "组织与经营能力",
+					"route_type": "institutional_capacity",
+					"condition": {
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.road_engineering",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.trade.goods_2",
+								"value": 1.0
+							}
+						]
+					},
+					"description": "以「道路工程」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
 				}
 			],
 			"route_exemption_reason": "",
-			"reveal_template_reason": "节点专属发展问题：河运",
+			"reveal_template_reason": "军事节点“近海运兵”保留其专属战术或工程观察对象",
 			"topology_review": {
-				"role": "continuation",
-				"rationale": "该节点沿既有知识轴递进，保留一条不可替代的核心前置。",
-				"expected_hard_family_ids": [
-					"branch.construction_materials"
-				]
+				"role": "branch",
+				"rationale": "该节点在既有产业与制度路线上分出一条军事支路，由可见硬前置保证知识来源。",
+				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
 				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"rationale": "本科技不直接呈现新建筑，它开放沿海运兵的水格通行能力。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -20440,10 +20581,10 @@
 				],
 				"alternative_groups": [
 					[
-						"tech.early_trade"
+						"tech.record_keeping"
 					],
 					[
-						"tech.record_keeping"
+						"tech.road_engineering"
 					]
 				],
 				"exemption_reason": ""
@@ -27652,6 +27793,152 @@
 			}
 		},
 		{
+			"id": "tech.celestial_navigation",
+			"display_name": "天文导航",
+			"era_id": "empire",
+			"domain_id": "science",
+			"cost_points": 46000.0,
+			"layout_order": 178.5,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "handling",
+			"effect_profile": "observation",
+			"secondary_route_tags": [
+				"route.geography.coast",
+				"route.institution.calendar"
+			],
+			"hard_prerequisite_ids": [
+				"tech.celestial_calendars",
+				"tech.magnetic_navigation"
+			],
+			"reveal_condition": {
+				"operator": 2.0,
+				"children": [
+					{
+						"kind": 1.0,
+						"id": "landform.coast",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "landform.coastal_estuary",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "contact.maritime_vessel",
+						"value": 1.0
+					},
+					{
+						"kind": 1.0,
+						"id": "development.trade.quantity_100",
+						"value": 1.0
+					}
+				]
+			},
+			"is_milestone": false,
+			"is_era_key": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [],
+			"modifier_terms": [],
+			"expected_bindings": [],
+			"content_effects": [
+				{
+					"kind": "runtime",
+					"id": "water.far_sea_transport",
+					"binding_kind": 0.0,
+					"subject": "NativeEconomyRuntime.water_capability",
+					"attribute": "far_sea_corridor",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeEconomyRuntime::water_capability_for_country",
+					"status": "runtime_consumed",
+					"display_name": "远海运输走廊"
+				}
+			],
+			"effect_summary": "开启航道：远海运输走廊",
+			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
+			"application_target_ids": [],
+			"terminal_reason": "天文导航是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由远海走廊单独消费",
+			"branch_family_id": "branch.maritime_logistics",
+			"era_entry_milestone_id": "tech.kingdom_administration",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "观察海岸/河口、实际接触外国船体，或真实贸易形成远途定位问题后揭示天文导航。",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [
+				"天文导航沿用天文历法的星位观测。",
+				"远离海岸时需要罗盘与天测共同定向。"
+			],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [
+				{
+					"id": "research_route.celestial_navigation.knowledge_integration",
+					"display_name": "天文导航·专业知识整合",
+					"route_type": "professional_knowledge",
+					"description": "掌握自然哲学，并以“知识产业就业达到250人并持续360日”验证天文导航的专业知识整合；核心硬前置仍须全部完成。",
+					"condition": {
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.natural_philosophy",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.employment.knowledge.250_360d",
+								"value": 1.0
+							}
+						]
+					}
+				},
+				{
+					"id": "research_route.celestial_navigation.operating_practice",
+					"display_name": "天文导航·生产经营实践",
+					"route_type": "industrial_practice",
+					"description": "掌握河运，并以“已发生至少一个跨国贸易伙伴的实际交付”验证天文导航的生产经营实践；核心硬前置仍须全部完成。",
+					"condition": {
+						"kind": 1.0,
+						"id": "development.trade.partners_1",
+						"value": 1.0
+					}
+				}
+			],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "按该科技的实际观察/产业问题逐项审查：商品作物种类与星位航海观察不相干；采用海岸观察、真实船舶接触或远途贸易压力。",
+			"topology_review": {
+				"role": "terminal",
+				"rationale": "该节点结束当前路线生命周期或承担时代里程碑收束。",
+				"expected_hard_family_ids": [
+					"branch.water_wind"
+				]
+			},
+			"building_unlock_review": {
+				"policy": "support_only",
+				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+			},
+			"knowledge_basis": {
+				"required_ids": [
+					"tech.celestial_calendars",
+					"tech.magnetic_navigation"
+				],
+				"alternative_groups": [
+					[
+						"tech.natural_philosophy"
+					]
+				],
+				"exemption_reason": ""
+			}
+		},
+		{
 			"id": "tech.urban_waterworks",
 			"display_name": "城市水务",
 			"era_id": "empire",
@@ -30121,137 +30408,6 @@
 			}
 		},
 		{
-			"id": "tech.military.coastal_transport",
-			"display_name": "近海运兵",
-			"era_id": "empire",
-			"domain_id": "engineering",
-			"cost_points": 25000.0,
-			"layout_order": 0.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "handling",
-			"effect_profile": "military",
-			"secondary_route_tags": [
-				"route.institution.ocean"
-			],
-			"hard_prerequisite_ids": [
-				"tech.fishing_boats"
-			],
-			"reveal_condition": {
-
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": false,
-			"is_starter_eligible": false,
-			"starter_capability_tags": [],
-			"modifier_terms": [],
-			"expected_bindings": [],
-			"content_effects": [
-				{
-					"kind": "runtime",
-					"id": "military.coastal_transport",
-					"binding_kind": 0.0,
-					"subject": "MilitaryCatalog.coastal_transport_bit",
-					"attribute": "coastal_embarkation",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "MilitaryCatalogCompiler::unlock_tech_ids",
-					"status": "runtime_consumed",
-					"display_name": "水路通行与沿岸登陆"
-				}
-			],
-			"effect_summary": "开放能力：水路通行与沿岸登陆",
-			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
-			"application_target_ids": [],
-			"terminal_reason": "本节点不开放建筑与数值修正，它把沿海运兵能力交给军事运行时的水格门控（连续水格 ≤ 3）。",
-			"branch_family_id": "branch.maritime_logistics",
-			"era_entry_milestone_id": "tech.kingdom_administration",
-			"reveal_category": "practice_diffusion",
-			"reveal_summary": "近海运兵由渔舟的沿海航行与一次次沿岸调兵实践揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [
-				"近海运兵沿用渔舟的沿海航行与靠泊经验。"
-			],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [
-				{
-					"id": "research_route.military.coastal_transport.grounded_knowledge",
-					"display_name": "专业知识整合",
-					"route_type": "professional_knowledge",
-					"condition": {
-						"operator": 1.0,
-						"children": [
-							{
-								"kind": 0.0,
-								"id": "tech.record_keeping",
-								"value": 1.0
-							},
-							{
-								"kind": 1.0,
-								"id": "development.population.500_90d",
-								"value": 1.0
-							}
-						]
-					},
-					"description": "以「记事制度」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
-				},
-				{
-					"id": "research_route.military.coastal_transport.grounded_capacity",
-					"display_name": "组织与经营能力",
-					"route_type": "institutional_capacity",
-					"condition": {
-						"operator": 1.0,
-						"children": [
-							{
-								"kind": 0.0,
-								"id": "tech.road_engineering",
-								"value": 1.0
-							},
-							{
-								"kind": 1.0,
-								"id": "development.trade.goods_2",
-								"value": 1.0
-							}
-						]
-					},
-					"description": "以「道路工程」及对应实际产业/聚落规模组织本项研究；不替代硬前置和上一时代里程碑。"
-				}
-			],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "军事节点“近海运兵”保留其专属战术或工程观察对象",
-			"topology_review": {
-				"role": "branch",
-				"rationale": "该节点在既有产业与制度路线上分出一条军事支路，由可见硬前置保证知识来源。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑，它开放沿海运兵的水格通行能力。"
-			},
-			"knowledge_basis": {
-				"required_ids": [
-					"tech.fishing_boats"
-				],
-				"alternative_groups": [
-					[
-						"tech.record_keeping"
-					],
-					[
-						"tech.road_engineering"
-					]
-				],
-				"exemption_reason": ""
-			}
-		},
-		{
 			"id": "tech.military.legion_logistics",
 			"display_name": "军需体系",
 			"era_id": "empire",
@@ -31748,152 +31904,6 @@
 			}
 		},
 		{
-			"id": "tech.celestial_navigation",
-			"display_name": "天文导航",
-			"era_id": "exploration",
-			"domain_id": "science",
-			"cost_points": 60000.0,
-			"layout_order": 194.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "handling",
-			"effect_profile": "observation",
-			"secondary_route_tags": [
-				"route.geography.coast",
-				"route.institution.calendar"
-			],
-			"hard_prerequisite_ids": [
-				"tech.celestial_calendars",
-				"tech.magnetic_navigation"
-			],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "landform.coast",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "landform.coastal_estuary",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "contact.maritime_vessel",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "development.trade.quantity_100",
-						"value": 1.0
-					}
-				]
-			},
-			"is_milestone": false,
-			"is_era_key": true,
-			"is_starting": false,
-			"is_starter_eligible": false,
-			"starter_capability_tags": [],
-			"modifier_terms": [],
-			"expected_bindings": [],
-			"content_effects": [
-				{
-					"kind": "runtime",
-					"id": "water.shallow_sea_transport",
-					"binding_kind": 0.0,
-					"subject": "NativeEconomyRuntime.water_capability",
-					"attribute": "shallow_sea_corridor",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "NativeEconomyRuntime::water_capability_for_country",
-					"status": "runtime_consumed",
-					"display_name": "浅海运输走廊"
-				}
-			],
-			"effect_summary": "开启航道：浅海运输走廊",
-			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
-			"application_target_ids": [],
-			"terminal_reason": "天文导航是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由航运作业28%与浅海走廊共同消费",
-			"branch_family_id": "branch.maritime_logistics",
-			"era_entry_milestone_id": "tech.imperial_integration",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "观察海岸/河口、实际接触外国船体，或真实贸易形成远途定位问题后揭示天文导航。",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [
-				"天文导航沿用天文历法的星位观测。",
-				"远离海岸时需要罗盘与天测共同定向。"
-			],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [
-				{
-					"id": "research_route.celestial_navigation.knowledge_integration",
-					"display_name": "天文导航·专业知识整合",
-					"route_type": "professional_knowledge",
-					"description": "掌握地图学，并以“知识产业就业达到250人并持续360日”验证天文导航的专业知识整合；核心硬前置仍须全部完成。",
-					"condition": {
-						"operator": 1.0,
-						"children": [
-							{
-								"kind": 0.0,
-								"id": "tech.cartography",
-								"value": 1.0
-							},
-							{
-								"kind": 1.0,
-								"id": "development.employment.knowledge.250_360d",
-								"value": 1.0
-							}
-						]
-					}
-				},
-				{
-					"id": "research_route.celestial_navigation.operating_practice",
-					"display_name": "天文导航·生产经营实践",
-					"route_type": "industrial_practice",
-					"description": "掌握河运，并以“已发生至少一个跨国贸易伙伴的实际交付”验证天文导航的生产经营实践；核心硬前置仍须全部完成。",
-					"condition": {
-						"kind": 1.0,
-						"id": "development.trade.partners_1",
-						"value": 1.0
-					}
-				}
-			],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "按该科技的实际观察/产业问题逐项审查：商品作物种类与星位航海观察不相干；采用海岸观察、真实船舶接触或远途贸易压力。",
-			"topology_review": {
-				"role": "terminal",
-				"rationale": "该节点结束当前路线生命周期或承担时代里程碑收束。",
-				"expected_hard_family_ids": [
-					"branch.water_wind"
-				]
-			},
-			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
-			},
-			"knowledge_basis": {
-				"required_ids": [
-					"tech.celestial_calendars",
-					"tech.magnetic_navigation"
-				],
-				"alternative_groups": [
-					[
-						"tech.cartography"
-					]
-				],
-				"exemption_reason": ""
-			}
-		},
-		{
 			"id": "tech.screw_press_printing",
 			"display_name": "螺旋压印",
 			"era_id": "exploration",
@@ -32936,18 +32946,6 @@
 			],
 			"content_effects": [
 				{
-					"kind": "runtime",
-					"id": "water.far_sea_transport",
-					"binding_kind": 0.0,
-					"subject": "NativeEconomyRuntime.water_capability",
-					"attribute": "far_sea_corridor",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "NativeEconomyRuntime::water_capability_for_country",
-					"status": "runtime_consumed",
-					"display_name": "远海运输走廊"
-				},
-				{
 					"kind": "good",
 					"id": "oceanic_vessels",
 					"binding_kind": 1.0,
@@ -32973,7 +32971,7 @@
 					"display_name": "远洋造船厂"
 				}
 			],
-			"effect_summary": "开启航道：远海运输走廊；解锁物资：远洋船舶；解锁建筑：远洋造船厂；「海上作业」生产家族建筑产出 +48%",
+			"effect_summary": "解锁物资：远洋船舶；解锁建筑：远洋造船厂；「海上作业」生产家族建筑产出 +48%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",

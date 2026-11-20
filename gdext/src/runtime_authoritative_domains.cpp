@@ -448,9 +448,90 @@ bool RuntimeClimateStore::validate(std::string &error) const {
     return true;
 }
 
-uint64_t RuntimeClimateStore::state_hash() const {
+namespace {
+
+// The ABI 6 field list and its order are frozen: old CLM2 sections validate
+// against exactly this reduction. ABI 10 stops persisting temperature_history,
+// so the live hash drops that lane while the ABI <= 9 validators keep mixing it
+// in through the same body.
+uint64_t climate_abi6_field_hash(const RuntimeClimateStore &store,
+                                 bool include_temperature_history) {
+    uint64_t hash = mix(FNV_OFFSET, store.generation);
+    hash = mix(hash, store.climate_generation);
+    hash = mix(hash, static_cast<uint64_t>(store.committed_day));
+    hash = mix(hash, store.rng_state);
+    hash = mix(hash, store.annual_rng_state);
+    hash = mix(hash, store.history_cursor);
+    uint32_t anomaly_bits = 0;
+    std::memcpy(&anomaly_bits, &store.climate_anomaly, sizeof(anomaly_bits));
+    hash = mix(hash, anomaly_bits);
+    hash = mix_vector(hash, store.temperature);
+    hash = mix_vector(hash, store.temperature_30d_ema);
+    hash = mix_vector(hash, store.temperature_365d_ema);
+    hash = mix_vector(hash, store.temperature_baseline);
+    hash = mix_vector(hash, store.thermal_energy);
+    hash = mix_vector(hash, store.moisture);
+    hash = mix_vector(hash, store.plant_available_water);
+    hash = mix_vector(hash, store.water_balance_30d);
+    hash = mix_vector(hash, store.weather_precipitation);
+    hash = mix_vector(hash, store.weather_intensity);
+    hash = mix_vector(hash, store.vapor);
+    hash = mix_vector(hash, store.cloud_water);
+    hash = mix_vector(hash, store.cloud_cover);
+    hash = mix_vector(hash, store.convergence);
+    hash = mix_vector(hash, store.instability);
+    hash = mix_vector(hash, store.weather_type);
+    hash = mix_vector(hash, store.weather_prev_type);
+    hash = mix_vector(hash, store.weather_target_type);
+    hash = mix_vector(hash, store.weather_transition_alpha);
+    hash = mix_vector(hash, store.snow_cover);
+    hash = mix_vector(hash, store.snowpack);
+    hash = mix_vector(hash, store.sea_ice);
+    hash = mix_vector(hash, store.runoff);
+    hash = mix_vector(hash, store.groundwater);
+    hash = mix_vector(hash, store.river_storage);
+    hash = mix_vector(hash, store.river_discharge);
+    hash = mix_vector(hash, store.riparian_moisture);
+    hash = mix_vector(hash, store.vegetation_vitality);
+    hash = mix_vector(hash, store.vegetation_growth_pressure);
+    hash = mix_vector(hash, store.vegetation_heat_stress);
+    hash = mix_vector(hash, store.vegetation_drought_stress);
+    hash = mix_vector(hash, store.vegetation_cold_stress);
+    hash = mix_vector(hash, store.vegetation_growth_streak);
+    hash = mix_vector(hash, store.vegetation_drought_streak);
+    hash = mix_vector(hash, store.vegetation_succession_candidate);
+    // B8-2：synoptic ψ 是 worker 自持的跨天状态，必须进 state_hash，否则
+    // save→restore 之后 hash 校验会漏掉它、parity 也看不见它的漂移。
+    hash = mix_vector(hash, store.synoptic_psi);
+    hash = mix_vector(hash, store.synoptic_psi_prev);
+    hash = mix_vector(hash, store.vegetation);
+    hash = mix_vector(hash, store.base_vegetation);
+    // cyclone_state 是可变长 blob：先混长度再逐字节混，保证长度变化一定改变 hash。
+    hash = mix(hash, static_cast<uint64_t>(store.cyclone_state.size()));
+    for (uint8_t value : store.cyclone_state) hash = mix(hash, value);
+    if (include_temperature_history)
+        hash = mix_vector(hash, store.temperature_history);
+    uint32_t drift_bits = 0;
+    std::memcpy(&drift_bits, &store.annual_temperature_drift, sizeof(drift_bits));
+    hash = mix(hash, drift_bits);
+    return hash;
+}
+
+} // namespace
+
+uint64_t RuntimeClimateStore::state_hash_abi8() const {
     uint64_t hash = state_hash_abi7();
-    // ABI 8：terrain / cover 只进当前 state_hash，不进冻结的 abi6/abi7。
+    // ABI 8：terrain / cover 只进 abi8/abi9，不进冻结的 abi6/abi7。
+    hash = mix_vector(hash, terrain);
+    hash = mix_vector(hash, cover);
+    return hash;
+}
+
+uint64_t RuntimeClimateStore::state_hash() const {
+    // ABI 10：temperature_history 不再落盘，因此不能进入“写档时盖章、读档时
+    // 复算”的哈希；其余字段与顺序保持 ABI 6 原样。
+    uint64_t hash = climate_abi6_field_hash(*this, false);
+    hash = mix_vector(hash, physics_state);
     hash = mix_vector(hash, terrain);
     hash = mix_vector(hash, cover);
     return hash;
@@ -461,64 +542,7 @@ uint64_t RuntimeClimateStore::state_hash_abi7() const {
 }
 
 uint64_t RuntimeClimateStore::state_hash_abi6() const {
-    uint64_t hash = mix(FNV_OFFSET, generation);
-    hash = mix(hash, climate_generation);
-    hash = mix(hash, static_cast<uint64_t>(committed_day));
-    hash = mix(hash, rng_state);
-    hash = mix(hash, annual_rng_state);
-    hash = mix(hash, history_cursor);
-    uint32_t anomaly_bits = 0;
-    std::memcpy(&anomaly_bits, &climate_anomaly, sizeof(anomaly_bits));
-    hash = mix(hash, anomaly_bits);
-    hash = mix_vector(hash, temperature);
-    hash = mix_vector(hash, temperature_30d_ema);
-    hash = mix_vector(hash, temperature_365d_ema);
-    hash = mix_vector(hash, temperature_baseline);
-    hash = mix_vector(hash, thermal_energy);
-    hash = mix_vector(hash, moisture);
-    hash = mix_vector(hash, plant_available_water);
-    hash = mix_vector(hash, water_balance_30d);
-    hash = mix_vector(hash, weather_precipitation);
-    hash = mix_vector(hash, weather_intensity);
-    hash = mix_vector(hash, vapor);
-    hash = mix_vector(hash, cloud_water);
-    hash = mix_vector(hash, cloud_cover);
-    hash = mix_vector(hash, convergence);
-    hash = mix_vector(hash, instability);
-    hash = mix_vector(hash, weather_type);
-    hash = mix_vector(hash, weather_prev_type);
-    hash = mix_vector(hash, weather_target_type);
-    hash = mix_vector(hash, weather_transition_alpha);
-    hash = mix_vector(hash, snow_cover);
-    hash = mix_vector(hash, snowpack);
-    hash = mix_vector(hash, sea_ice);
-    hash = mix_vector(hash, runoff);
-    hash = mix_vector(hash, groundwater);
-    hash = mix_vector(hash, river_storage);
-    hash = mix_vector(hash, river_discharge);
-    hash = mix_vector(hash, riparian_moisture);
-    hash = mix_vector(hash, vegetation_vitality);
-    hash = mix_vector(hash, vegetation_growth_pressure);
-    hash = mix_vector(hash, vegetation_heat_stress);
-    hash = mix_vector(hash, vegetation_drought_stress);
-    hash = mix_vector(hash, vegetation_cold_stress);
-    hash = mix_vector(hash, vegetation_growth_streak);
-    hash = mix_vector(hash, vegetation_drought_streak);
-    hash = mix_vector(hash, vegetation_succession_candidate);
-    // B8-2：synoptic ψ 是 worker 自持的跨天状态，必须进 state_hash，否则
-    // save→restore 之后 hash 校验会漏掉它、parity 也看不见它的漂移。
-    hash = mix_vector(hash, synoptic_psi);
-    hash = mix_vector(hash, synoptic_psi_prev);
-    hash = mix_vector(hash, vegetation);
-    hash = mix_vector(hash, base_vegetation);
-    // cyclone_state 是可变长 blob：先混长度再逐字节混，保证长度变化一定改变 hash。
-    hash = mix(hash, static_cast<uint64_t>(cyclone_state.size()));
-    for (uint8_t value : cyclone_state) hash = mix(hash, value);
-    hash = mix_vector(hash, temperature_history);
-    uint32_t drift_bits = 0;
-    std::memcpy(&drift_bits, &annual_temperature_drift, sizeof(drift_bits));
-    hash = mix(hash, drift_bits);
-    return hash;
+    return climate_abi6_field_hash(*this, true);
 }
 
 void RuntimeCountryStore::reset(uint32_t cells, uint32_t countries) {
