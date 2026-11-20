@@ -1,4 +1,5 @@
 #include "runtime_climate_kernel.h"
+#include "simulation_math.h"
 #include "runtime_climate_weather_input.h"
 #include "economy_cost_probe.h"
 #include "parallel_dispatcher.h"
@@ -311,7 +312,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
         const double diffuse = std::clamp(double(k.wind_momentum_diffuse_w_daily), 0.0, 0.5);
         w.momentum_active = w.momentum_advect_w > 0.0 || diffuse > 0.0;
         const double grid_s = std::sqrt(double(n) / 15000.0);
-        w.diffuse_w = std::min(0.5, (1.0 - std::pow(1.0 - diffuse, elapsed)) * grid_s * grid_s);
+        w.diffuse_w = std::min(0.5, (1.0 - simulation_math::pow(1.0 - diffuse, elapsed)) * grid_s * grid_s);
         std::vector<float> fx, fy;
         if (w.momentum_active) {
             fx.resize(n); fy.resize(n);

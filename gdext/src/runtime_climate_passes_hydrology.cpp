@@ -1,4 +1,5 @@
 #include "runtime_climate_passes.h"
+#include "simulation_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -60,12 +61,12 @@ void hydrology_pass_pure(const HydrologyKnobs &k,
     const float plant_soil_buffer_weight = k.plant_soil_buffer_weight;
     const float plant_drought_penalty = k.plant_drought_penalty;
     const float dt_days = k.dt_days;
-    const float baseflow_recession_eff = 1.0f - std::pow(1.0f - baseflow_recession, dt_days);
-    const float discharge_ema_eff = 1.0f - std::pow(1.0f - discharge_ema, dt_days);
-    const float nonriver_discharge_decay = std::pow(1.0f - discharge_ema * 0.5f, dt_days);
-    const float soil_decay_eff = std::pow(0.985f, dt_days);
-    const float water_balance_ema_eff = 1.0f - std::pow(1.0f - (1.0f / 30.0f), dt_days);
-    const float moisture_response_alpha = 1.0f - std::pow(1.0f - moisture_response_rate, dt_days);
+    const float baseflow_recession_eff = 1.0f - simulation_math::pow(1.0f - baseflow_recession, dt_days);
+    const float discharge_ema_eff = 1.0f - simulation_math::pow(1.0f - discharge_ema, dt_days);
+    const float nonriver_discharge_decay = simulation_math::pow(1.0f - discharge_ema * 0.5f, dt_days);
+    const float soil_decay_eff = simulation_math::pow(0.985f, dt_days);
+    const float water_balance_ema_eff = 1.0f - simulation_math::pow(1.0f - (1.0f / 30.0f), dt_days);
+    const float moisture_response_alpha = 1.0f - simulation_math::pow(1.0f - moisture_response_rate, dt_days);
 
     const int32_t * const __restrict NB = lanes.neighbor_indices;
     const bool has_neighbor_indices = NB != nullptr;
@@ -174,7 +175,7 @@ void hydrology_pass_pure(const HydrologyKnobs &k,
         float outflow = incoming[size_t(i)];
         if (is_channel) {
             const float release_daily = is_lake ? lake_release : channel_release;
-            const float release = 1.0f - std::pow(1.0f - release_daily, dt_days);
+            const float release = 1.0f - simulation_math::pow(1.0f - release_daily, dt_days);
             STORAGE[i] = std::max(0.0f, STORAGE[i] + incoming[size_t(i)]);
             outflow = STORAGE[i] * release;
             STORAGE[i] = std::max(0.0f, STORAGE[i] - outflow);
@@ -212,10 +213,10 @@ void hydrology_pass_pure(const HydrologyKnobs &k,
         q_max = std::max(q_max, Q[i]);
         river_q.push_back(Q[i]);
     }
-    const float denom = std::log1p(std::max(q_max, 0.001f));
+    const float denom = simulation_math::log1p(std::max(q_max, 0.001f));
     for (int i = 0; i < n_cells; ++i) {
         if (HAS_RIV[i] == 0 && !wf_is_water_terrain(TERR[i])) continue;
-        const float q_norm = dc_clampf(std::log1p(std::max(0.0f, Q[i])) / denom, 0.0f, 1.0f);
+        const float q_norm = dc_clampf(simulation_math::log1p(std::max(0.0f, Q[i])) / denom, 0.0f, 1.0f);
         Q30[i] = dc_clampf(Q30[i] + (q_norm - Q30[i]) * discharge_ema_eff, 0.0f, 1.0f);
         if (HAS_RIV[i] != 0 && Q30[i] > flood_threshold) ++flood_candidate_count;
         if (HAS_RIV[i] != 0) {

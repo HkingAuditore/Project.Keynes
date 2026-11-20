@@ -3,6 +3,7 @@
 #include "runtime_golden_diagnostics.h"
 #include "country_core_apply.h"
 #include "economy_api.h"
+#include <algorithm>
 #include <cstring>
 #include <type_traits>
 #include <cstdlib>
@@ -403,7 +404,18 @@ uint64_t events_hash(const RuntimeEventsSnapshot &state) {
         trace_continuation_column("EVENTS", state.committed_day, "idempotency", std::array<uint64_t, 3>{uint64_t(row.key), uint64_t(row.request_id), uint64_t(row.event_id)});
     hash.add(state.committed_day); hash.add(state.next_event_id); hash.add(state.capacity);
     hash.add(state.dropped_event_count); hash.add(state.first_dropped_event_id);
-    rows(hash, state.events); rows(hash, state.consumer_acks); rows(hash, state.idempotency);
+    rows(hash, state.events);
+    // The score reads this cursor at display cadence. Trigger and narrative
+    // acknowledgements still participate in the simulation digest.
+    constexpr uint64_t music_consumer = 4407092808345815469ull; // pk_music_situation
+    const auto simulation_consumer = [](const RuntimeEventsConsumerAck &ack) {
+        return ack.consumer_key != music_consumer;
+    };
+    hash.add(std::count_if(state.consumer_acks.begin(), state.consumer_acks.end(),
+                           simulation_consumer));
+    for (const auto &ack : state.consumer_acks)
+        if (simulation_consumer(ack)) add_row(hash, ack);
+    rows(hash, state.idempotency);
     const char *path = runtime_switch_value(RuntimeSwitch::PK_SIM_DAY_TRACE);
     if (path != nullptr && *path) {
         std::ofstream trace(std::string(path) + ".continuation", std::ios::app);

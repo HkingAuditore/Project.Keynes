@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -555,7 +556,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // 阈值冻结在 ref 尺寸的值。N <= ref 时 k=1、换算系数 1，与旧行为逐位一致。
     // base pass 的造山/山脊噪声已按 feature_scale 改为格距定义，只剩未抵消的那部分放大需要扩半径。
     const double relief_ref_cells = std::max(100.0, getd(profile, "relief_ref_cells", 2400.0));
-    const double relief_feature_scale = std::pow(
+    const double relief_feature_scale = simulation_math::pow(
             std::max(1.0, std::sqrt(double(n) / std::max(100.0, getd(profile, "feature_ref_cells", 2400.0)))),
             std::clamp(getd(profile, "feature_scale_exp", 1.0), 0.0, 1.0));
     const double relief_ideal_radius = std::max(1.0, std::sqrt(double(n) / relief_ref_cells) / relief_feature_scale);
@@ -564,7 +565,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double geomorph_relief_n = std::min(double(n), relief_ref_cells);
     constexpr double plateau_relief_ref_cells = 15000.0;
     constexpr double plateau_relief_scale_exp = 0.25;
-    const double plateau_relief_scale = std::pow(
+    const double plateau_relief_scale = simulation_math::pow(
             std::min(1.0, plateau_relief_ref_cells / std::max(1.0, geomorph_relief_n)),
             plateau_relief_scale_exp);
     const double plateau_max_relief = plateau_max_relief_base * plateau_relief_scale;
@@ -591,10 +592,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // 把 mountain/rift/badlands 的局部高差门槛放大到候选集之外。
     // peak_min_prominence 维持不缩（PEAK 有 land/N 数量上限主控）。
     const double relief_thresh_scale_exp = getd(profile, "relief_thresh_scale_exp", 0.25);
-    const double relief_thresh_scale = std::pow(
+    const double relief_thresh_scale = simulation_math::pow(
             std::max(0.25, PK_GEN_REF_CELLS / std::max(1.0, double(n))),
             relief_thresh_scale_exp);
-    const double geomorph_relief_scale = std::pow(
+    const double geomorph_relief_scale = simulation_math::pow(
             std::max(0.25, PK_GEN_REF_CELLS / std::max(1.0, geomorph_relief_n)),
             relief_thresh_scale_exp);
     const double mountain_min_relief = mountain_min_relief_base * geomorph_relief_scale;
@@ -614,7 +615,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // 河多。下限 0.25 仅防极端小图阈值归零。
     constexpr double river_map_reference_cells = 15000.0;
     constexpr double river_map_scale_exponent = 1.0;
-    const double river_map_scale = std::pow(
+    const double river_map_scale = simulation_math::pow(
             std::max(0.25, double(n) / river_map_reference_cells),
             river_map_scale_exponent);
     const int channel_init = std::max(2, int(std::round(double(river_channel_init_base) * river_map_scale)));
@@ -623,7 +624,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // lockstep with channel_init so large-map short tributaries are pruned
     // proportionally rather than retained at a relatively weaker rate.
     const int hydro_river_min_length = std::max(1, int(std::round(
-            double(hydro_river_min_length_base) * std::pow(river_map_scale, 1.0))));
+            double(hydro_river_min_length_base) * simulation_math::pow(river_map_scale, 1.0))));
 
     PackedInt32Array q_arr = input.get("q_arr", PackedInt32Array());
     PackedInt32Array r_arr = input.get("r_arr", PackedInt32Array());
@@ -843,7 +844,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     auto ocean_influence = [&](int i) -> double {
         const int dd = dist_ocean[size_t(i)];
         if (dd < 0) return 0.0;
-        return std::exp(-double(dd) / std::max(coastal_temp_scale, 0.5));
+        return simulation_math::exp(-double(dd) / std::max(coastal_temp_scale, 0.5));
     };
     // 生成期分类温度：纬度钟形 - 海拔惩罚，再按海洋邻近度拉向温带。与 base pass gen_temp 一致，
     // 保证 base/post_base 同一套温度→biome 判定（gen_once）。运行时温度场 TEMP[] 不受影响。
@@ -1060,8 +1061,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             const int rs_col = i % width;
             const double rs_rc = 8.0 * double(width) / PK_TWO_PI;
             const double rs_theta = PK_TWO_PI * (double(rs_col) / double(width));
-            const double jitter = double(rs_warp->get_noise_3d(std::cos(rs_theta) * rs_rc,
-                                                               std::sin(rs_theta) * rs_rc,
+            const double jitter = double(rs_warp->get_noise_3d(simulation_math::cos(rs_theta) * rs_rc,
+                                                               simulation_math::sin(rs_theta) * rs_rc,
                                                                double(R[i]) * 8.0)) * 0.04;
             const PkWind2 wind = pk_wind_belt_wind_at(row_norm(i), 1.0, jitter);
             const int dir = pk_upwind_dir_index_from_wind(wind.x, wind.y);
@@ -1219,8 +1220,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (RIV[i] != 0) max_river_flow = std::max(max_river_flow, flow[size_t(i)] * float(flow_eq_scale));
     }
     const double river_threshold_eq = double(river_threshold) * flow_eq_scale;
-    const double log_min_flow = std::log1p(std::max(river_threshold_eq, 0.0));
-    const double log_max_flow = std::log1p(std::max(double(max_river_flow), river_threshold_eq + 0.001));
+    const double log_min_flow = simulation_math::log1p(std::max(river_threshold_eq, 0.0));
+    const double log_max_flow = simulation_math::log1p(std::max(double(max_river_flow), river_threshold_eq + 0.001));
     const double inv_log_range = 1.0 / std::max(log_max_flow - log_min_flow, 0.001);
     // 生态保留旧归一标尺，视觉河宽调参不得静默改变大河、三角洲和泛滥平原阈值。
     std::vector<float> river_ecology_flow(size_t(n), 0.0f);
@@ -1234,7 +1235,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         // [river-hierarchy 2026-07-31] 地板 0.15→0.06、跨度 0.85→0.94：旧地板把大量
         // 近阈值支流顶到同一宽度带，再经 stamp 幂律后视觉几乎无差。压低地板后小支流
         // 真正变细，干流仍可顶到 1.0。
-        const double raw_norm = (std::log1p(std::max(double(flow[size_t(i)]) * flow_eq_scale, 0.0)) - log_min_flow) * inv_log_range;
+        const double raw_norm = (simulation_math::log1p(std::max(double(flow[size_t(i)]) * flow_eq_scale, 0.0)) - log_min_flow) * inv_log_range;
         river_ecology_flow[size_t(i)] = float(std::clamp(0.15 + raw_norm * 0.85, 0.15, 1.0));
         RFLOW_OUT[i] = float(std::clamp(0.06 + raw_norm * 0.94, 0.06, 1.0));
     }
@@ -1525,7 +1526,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             if (wd <= 0) continue;                                   // 0=水体自身/无效；只回灌陆地近邻带
             const uint8_t kind = water_src_kind[size_t(i)];
             if (kind == 1) {                                         // 湖滨增湿带（floor）
-                const float decay = std::exp(-float(wd) / lake_moist_scale);
+                const float decay = simulation_math::exp(-float(wd) / lake_moist_scale);
                 const float floor_m = lake_moist_floor * decay;
                 if (M[i] < floor_m) { M[i] = floor_m; ++lakeshore_moist_touched; }
             } else if (kind == 2) {                                 // 河谷 riparian 地板 + 增湿（封顶）
@@ -1536,7 +1537,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                     const float floor_m = river_riparian_floor + 0.06f * flow_strength;
                     if (M[i] < floor_m) { M[i] = floor_m; ++riparian_moist_touched; }
                 }
-                const float add = river_riparian_gain * std::exp(-float(wd) / river_riparian_scale);
+                const float add = river_riparian_gain * simulation_math::exp(-float(wd) / river_riparian_scale);
                 if (add > 0.0f) {
                     float m = M[i] + add;
                     if (m > 1.0f) m = 1.0f;
@@ -1712,7 +1713,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             if (pk_is_water_terrain(TERR[ni])) continue;   // 不抬海/湖/海岸，避免环山探进水里
             if (VOLC[ni]) continue;                         // 邻居自身是火山则不二次抬升
             // 方位抖动破除完美圆环 artifact（确定性 hash，无 RNG → 不影响落点 parity）。
-            const double hv = std::sin(double(cand) * 12.9898 + double(d) * 78.233) * 43758.5453;
+            const double hv = simulation_math::sin(double(cand) * 12.9898 + double(d) * 78.233) * 43758.5453;
             const double jitter = 0.80 + 0.40 * (hv - std::floor(hv));
             E[ni] = float(pk_clamp01(double(E[ni]) + volcano_rim_height * jitter));
         }
@@ -2192,7 +2193,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                         const double th = PK_TWO_PI * (double(col) / double(width));
                         const double rc = double(width) / PK_TWO_PI;
                         const double bn = double(lake_floor_noise->get_noise_3d(
-                            std::cos(th) * rc, std::sin(th) * rc, double(R[c])));
+                            simulation_math::cos(th) * rc, simulation_math::sin(th) * rc, double(R[c])));
                         depth01 += bn * PK_LAKE_BASIN_AMP * depth01;
                         if (depth01 < 0.0) depth01 = 0.0; else if (depth01 > 1.0) depth01 = 1.0;
                     }
@@ -2815,7 +2816,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             if (terr_hist[t] <= 0) continue;
             ++distinct_terr;
             const double p = double(terr_hist[t]) / double(n);
-            entropy -= p * std::log2(p);
+            entropy -= p * simulation_math::log2(p);
         }
         const int land_count_qa = n - water_count;
         qa_metrics["water_bodies"] = water_bodies;

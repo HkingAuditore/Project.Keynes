@@ -1,4 +1,5 @@
 #include "modifier_runtime.h"
+#include "simulation_math.h"
 
 #include "country_api.h"
 #include "economy_api.h"
@@ -756,7 +757,7 @@ double ModifierRuntime::scaled_factor(const TermDefinition &term, int32_t stacks
     const double magnitude = static_cast<double>(magnitude_q16) /
         static_cast<double>(Q16_ONE);
     const double interpolated = 1.0 + (term.factor - 1.0) * magnitude;
-    return std::pow(interpolated, static_cast<double>(stacks));
+    return simulation_math::pow(interpolated, static_cast<double>(stacks));
 }
 
 double ModifierRuntime::bucket_factor(const Bucket &bucket) const {

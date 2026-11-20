@@ -11,14 +11,14 @@
 // 因 L、inv_denom = 1/(1+L) 及 P 的各项系数都是「每资源常数」，可代数化简为
 //   P = C0 + C1*tn + C2*m，   reserve' = (reserve + P) * inv_denom
 //   C0 = gen_base + gen_self - decay_base, C1 = gen_temp - decay_temp, C2 = gen_moisture - decay_moisture
-// per-cell 除法被提到资源外，内层只剩 clamp + 两个 FMA + 一个乘 —— 既适合多核分块，
+// per-cell 除法被提到资源外，内层只剩 clamp 和乘加 —— 既适合多核分块，
 // 也适合 AVX2 向量化。
 //
 // 性能路径（与 pass_a / ocean / weather 同范式）：
 //   - 多核：先预筛动态资源，再用一次 pk::parallel_for_range_with_emit 按 cell
 //           分块；每个 task 内循环全部动态资源，避免"每资源一次 WTP dispatch"的
 //           小图固定开销。total_delta 走 thread-local DeltaEmit 串行 reduce。
-//   - SIMD：PK_HAVE_AVX2 时内层 8 cell/iter（loadu/fmadd/min/max + land_gate blendv），
+//   - SIMD：PK_HAVE_AVX2 时内层 8 cell/iter，分别舍入乘法和加法，并清零不适生的水格，
 //           尾段与非 AVX2 构建走同一标量 helper，保证 lane/tail/标量三者数值一致。
 //
 // 与 run_runtime_hydrology_pass 同契约：Dictionary 返回，published_to_slot 标识是否
@@ -86,19 +86,19 @@ inline void natres_simd_block(float *__restrict R, const float *__restrict T,
     __m256 tn = _mm256_mul_ps(_mm256_sub_ps(vt, vlo), vinv_span);
     tn = _mm256_min_ps(_mm256_max_ps(tn, vzero), vone);
 
-    __m256 p = _mm256_fmadd_ps(vc1, tn, vc0);  // C1*tn + C0
-    p = _mm256_fmadd_ps(vc2, vm, p);           // C2*m  + (C1*tn+C0)
+    __m256 p = _mm256_add_ps(vc0, _mm256_mul_ps(vc1, tn));
+    p = _mm256_add_ps(p, _mm256_mul_ps(vc2, vm));
 
     __m256 v = _mm256_mul_ps(_mm256_add_ps(vr, p), vinv_denom);
     v = _mm256_max_ps(v, vzero);
 
     if (land_gate) {
-        // 水面格保持原值：land_mask = (WATER==0) → 取 v，否则取原 reserve。
+        // 和标量路径一样清除水格里残留的陆地资源。
         const __m128i w8 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(WATER + i));
         const __m256i w32 = _mm256_cvtepu8_epi32(w8);
         const __m256i land_i = _mm256_cmpeq_epi32(w32, _mm256_setzero_si256());
         const __m256 land_mask = _mm256_castsi256_ps(land_i);
-        v = _mm256_blendv_ps(vr, v, land_mask);
+        v = _mm256_and_ps(v, land_mask);
     }
 
     vacc = _mm256_add_ps(vacc, _mm256_sub_ps(v, vr));

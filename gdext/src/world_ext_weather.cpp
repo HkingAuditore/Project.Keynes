@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -1664,13 +1665,13 @@ double DCWorldExt::run_weather_front_advect_pass(Dictionary knobs) {
             // delta_angle = angle_to(from, to) = atan2(cross, dot)（与 GDScript Vector2.angle_to 等价）
             const float dot_   = fx * wax + fy * way;
             const float cross_ = fx * way - fy * wax;
-            float delta = std::atan2(cross_, dot_);
+            float delta = simulation_math::atan2(cross_, dot_);
             if (delta > max_turn) delta = max_turn;
             else if (delta < -max_turn) delta = -max_turn;
 
             // out = from.rotated(delta)
-            const float cs = std::cos(delta);
-            const float sn = std::sin(delta);
+            const float cs = simulation_math::cos(delta);
+            const float sn = simulation_math::sin(delta);
             float out_x = fx * cs - fy * sn;
             float out_y = fx * sn + fy * cs;
             const float ol2 = length2(out_x, out_y);
@@ -1711,7 +1712,7 @@ double DCWorldExt::run_weather_front_advect_pass(Dictionary knobs) {
         float visual_i = 0.0f;
         if (raw_i > 0.0f) {
             // pow(raw_i, 0.55) * smoothstep(0, 0.08, raw_i)
-            const float pw = std::pow(raw_i, 0.55f);
+            const float pw = simulation_math::pow(raw_i, 0.55f);
             const float ss = smoothstep_fn(0.0f, 0.08f, raw_i);
             visual_i = clampf(pw * ss, 0.0f, 1.0f);
         }

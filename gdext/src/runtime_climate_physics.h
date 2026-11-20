@@ -17,6 +17,7 @@
 // 第二批：wind field 主循环（含热力季风与 NS Phase 1 动量项）。
 // 后续：psi SOR / upwelling / wind traj。
 
+#include "simulation_math.h"
 #include <cstdint>
 #include <cmath>
 #include <cstring>
@@ -86,7 +87,7 @@ inline double pk_wind_subsolar_signed(double orbital_phase, double axial_tilt_de
     constexpr double PI_HALF = 1.57079632679489661923;
     constexpr double TAU = 6.28318530717958647692;
     const double decl_rad = axial_tilt_deg * (3.14159265358979323846 / 180.0) *
-        std::cos(TAU * pk_wind_orbital_progress(orbital_phase));
+        simulation_math::cos(TAU * pk_wind_orbital_progress(orbital_phase));
     return pk_wind_clamp(decl_rad / PI_HALF, -1.0, 1.0);
 }
 

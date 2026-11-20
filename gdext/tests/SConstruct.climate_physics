@@ -6,9 +6,10 @@ SConsignFile(str(build / 'physics.sconsign.dblite'))
 env = Environment()
 env.Append(CPPPATH=[str(root / 'src')])
 if env['PLATFORM'] == 'win32':
-    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2', '/utf-8'])
+    env.Append(CCFLAGS=['/fp:strict', '/O2', '/utf-8'],
+               CXXFLAGS=['/std:c++17', '/EHsc'], CFLAGS=['/std:c11'])
 else:
-    env.Append(CCFLAGS=['-std=c++17', '-O2'])
+    env.Append(CCFLAGS=['-ffp-contract=off', '-O2'], CXXFLAGS=['-std=c++17'])
 worker = ARGUMENTS.get('worker', '0') == '1'
 sources = ['runtime_climate_physics.cpp', 'runtime_climate_physics_state.cpp',
            'runtime_climate_formulas.cpp']
@@ -24,6 +25,8 @@ if worker:
     ]
 objects = [env.Object(str(build / name.replace('.cpp', '')), str(root / 'src' / name))
            for name in sources]
+objects += [env.Object(str(build / 'simulation_math' / Path(str(source)).stem), source)
+            for source in Glob('../thirdparty/simulation_math/*.c')]
 objects.append(env.Object(str(build / ('worker_test' if worker else 'physics_test')),
                           'runtime_climate_physics_focused_test.cpp'))
 Default(env.Program(str(build / ('worker_focused' if worker else 'physics_focused')), objects))

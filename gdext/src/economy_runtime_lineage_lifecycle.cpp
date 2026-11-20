@@ -527,24 +527,16 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
     struct Key {
         uint64_t family = 0;
         int32_t cell = -1;
-        bool operator==(const Key &other) const {
-            return family == other.family && cell == other.cell;
-        }
-    };
-    struct KeyHash {
-        size_t operator()(const Key &key) const noexcept {
-            uint64_t value = key.family;
-            value ^= static_cast<uint64_t>(static_cast<uint32_t>(key.cell)) +
-                0x9e3779b97f4a7c15ULL + (value << 6U) + (value >> 2U);
-            return static_cast<size_t>(value);
+        bool operator<(const Key &other) const noexcept {
+            return std::tie(family, cell) < std::tie(other.family, other.cell);
         }
     };
     struct Aggregate {
         int64_t population = 0, cash = 0, asset = 0;
         int64_t satisfaction_weighted = 0;
     };
-    std::unordered_map<Key, Aggregate, KeyHash> aggregates;
-    aggregates.reserve(family_memberships().size() + family_ownerships().size());
+    // Iteration allocates branch handles and schedules their effects.
+    std::map<Key, Aggregate> aggregates;
     for (const FamilyMembershipEdge &edge : family_memberships()) {
         int32_t family = -1, slot = -1;
         if (!families_store().valid_handle(edge.family_handle, family) ||
@@ -603,8 +595,7 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
                 _saturation_count), _saturation_count);
     }
 
-    std::unordered_map<Key, int32_t, KeyHash> existing;
-    existing.reserve(family_influences().active.size());
+    std::map<Key, int32_t> existing;
     for (int32_t branch = 0; branch < static_cast<int32_t>(
             family_influences().active.size()); ++branch)
         if (family_influences().active[branch] != 0)

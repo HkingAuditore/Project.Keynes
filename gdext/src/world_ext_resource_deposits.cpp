@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include <godot_cpp/classes/noise.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -175,7 +176,7 @@ void allocate_ranked_budget(float *arr, const std::vector<RankedCell> &ranked,
         const double relative = clampd(
                 (ranked[size_t(ranks[size_t(rank)])].suit - cutoff_suit) / suit_span,
                 0.0, 1.0);
-        const double weight = std::pow(std::max(relative, 0.001), richness_exponent);
+        const double weight = simulation_math::pow(std::max(relative, 0.001), richness_exponent);
         weights[size_t(rank)] = weight;
         weight_sum += weight;
     }
