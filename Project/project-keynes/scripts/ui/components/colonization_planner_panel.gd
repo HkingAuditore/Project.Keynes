@@ -920,6 +920,8 @@ func _preparing_missing_text(handle: int, state: int, snapshot: Dictionary = {},
 			lines.append("仍缺旅途补给（食品、衣物或必需工具），等源地备货")
 		"MATERIALS":
 			lines.append("仍缺开工建材，等源地产出")
+		"TOPUP":
+			lines.append("开工包总量已达标，仍在按日补买个别物资的差额")
 		"INCOMPLETE":
 			lines.append("开工包尚未凑齐可出发的完整方案，等源地备货")
 	var procurement := _procurement_status_text(snap)

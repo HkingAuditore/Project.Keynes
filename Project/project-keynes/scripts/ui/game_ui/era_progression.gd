@@ -52,6 +52,8 @@ func _close_era_panel(host) -> void:
 		host._era_panel.close()
 	if host._era_indicator != null and (host._era_reward_dialog == null or not host._era_reward_dialog.visible):
 		host._era_indicator.set_expanded(false)
+	# 时代纸笺也是玩家的窗口：关掉后静置的叙事弹窗才接上。
+	host.notify_workspace_closed()
 
 
 

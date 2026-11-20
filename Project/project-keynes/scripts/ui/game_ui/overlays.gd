@@ -267,6 +267,9 @@ func annual_other_modal_open(host) -> bool:
 
 func show_narrative_event_offer(host, offer: Dictionary) -> void:
 	host._ensure_narrative_ui()
+	# [popup-deferral 2026-11-20] 正常路径下 NarrativeEventFlow 已经保证这些窗口是关着的
+	# （开着就静置），这里只剩兜底：万一某个入口漏了 gate，宁可收起卷宗也不让弹窗压在
+	# 全屏卷宗后面变成看不见的模态。
 	if host._country_panel != null and host._country_panel.is_panel_open():
 		host.close_country_panel()
 	if host._colonization_panel != null and host._colonization_panel.visible:
@@ -317,11 +320,44 @@ func show_narrative_chronicle(host, records: Array) -> void:
 func close_narrative_chronicle(host) -> void:
 	if host._narrative_chronicle_panel != null and host._narrative_chronicle_panel.has_method("close_panel"):
 		host._narrative_chronicle_panel.close_panel()
+		notify_workspace_closed(host)
 
 
 
 func is_narrative_chronicle_open(host) -> bool:
 	return host._narrative_chronicle_panel != null and host._narrative_chronicle_panel.visible
+
+
+## [popup-deferral 2026-11-20] 玩家正占着屏幕的显式窗口。叙事弹窗遇到这些窗口时不抢焦点，
+## 由 NarrativeEventFlow 先静置（停表 + 提示音），窗口关掉后再展示。
+## 右侧地块档案与暂停菜单不算：前者是选格后的常驻看板，后者本来就停了表。
+func is_player_workspace_open(host) -> bool:
+	if host._country_panel != null and host._country_panel.is_panel_open():
+		return true
+	if host._colonization_panel != null and host._colonization_panel.visible:
+		return true
+	if host.is_peace_window_open():
+		return true
+	if host.is_era_panel_open():
+		return true
+	if host._gm_console != null and host._gm_console.is_panel_open():
+		return true
+	if host.is_narrative_chronicle_open():
+		return true
+	if host._right_panel != null and (host._right_panel.building_workspace_open()
+			or host._right_panel.family_workspace_open()
+			or host._right_panel.military_dossier_open()):
+		return true
+	return false
+
+
+## 窗口关掉后把静置事件交回展示流程。必须延后一帧：关窗与开窗常常在同一个输入回合
+## （时代纸笺 → 国家卷宗），同步重查会在「旧的关了、新的还没显示」的缝隙里把弹窗抢进来。
+func notify_workspace_closed(host) -> void:
+	if host._player_controller == null \
+			or not host._player_controller.has_method("recheck_narrative_popup"):
+		return
+	host._player_controller.call_deferred("recheck_narrative_popup")
 
 
 
@@ -459,6 +495,7 @@ func toggle_gm_panel(host) -> void:
 		return
 	if host._gm_console.is_panel_open():
 		host._gm_console.close_panel()
+		notify_workspace_closed(host)
 	else:
 		host._gm_console.open_panel()
 

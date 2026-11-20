@@ -730,6 +730,8 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 			lines.append("仍缺路上口粮，等源地产出")
 		"MATERIALS":
 			lines.append("仍缺开工建材，等源地产出")
+		"TOPUP":
+			lines.append("开工包总量已达标，仍在按日补买个别物资的差额")
 	var procurement := _procurement_status_text(snap)
 	if not procurement.is_empty():
 		lines.append(procurement)
@@ -775,6 +777,8 @@ func _good_name(good_id: int) -> String:
 
 
 static func _procurement_reason_text(reason: String) -> String:
+	if reason.find("procurement_budget_exhausted") >= 0:
+		return "派遣储备额度今日已用尽，明天按新额度继续补买"
 	if reason.find("cash_insufficient") >= 0:
 		return "国库现金不足"
 	if reason.find("stock_insufficient") >= 0 or reason.find("goods_insufficient") >= 0 \
@@ -784,7 +788,7 @@ static func _procurement_reason_text(reason: String) -> String:
 		return "国家资产通道未开放"
 	if reason.find("merchant_missing") >= 0:
 		return "源地没有可收款的商人"
-	return reason
+	return "国库采购被拒绝（原因码 %s）" % reason
 
 
 static func _stock_percent(required: int, missing: int) -> int:
