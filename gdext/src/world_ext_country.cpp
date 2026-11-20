@@ -82,7 +82,7 @@ const char *country_command_receipt_code_name(
 } // namespace
 
 Dictionary DCWorldExt::poll_country_command_receipts(
-        int64_t after_request_id, int limit) {
+        int64_t after_publication, int limit) {
     Dictionary out;
     if (_runtime_host == nullptr) {
         out["ok"] = false;
@@ -90,15 +90,16 @@ Dictionary DCWorldExt::poll_country_command_receipts(
         return out;
     }
     std::vector<CountryCommandReceipt> receipts;
-    _runtime_host->poll_country_command_receipts(
-        static_cast<uint64_t>(std::max<int64_t>(0, after_request_id)),
+    const int64_t cursor = std::max<int64_t>(0, after_publication);
+    _runtime_host->poll_country_command_publications(
+        static_cast<uint64_t>(cursor),
         static_cast<uint32_t>(std::clamp(limit, 0, 4096)), receipts);
     Array rows;
-    uint64_t last_request_id = static_cast<uint64_t>(
-        std::max<int64_t>(0, after_request_id));
+    int64_t publication = cursor;
     for (const CountryCommandReceipt &receipt : receipts) {
         Dictionary row;
         row["request_id"] = static_cast<int64_t>(receipt.request_id);
+        row["publication_sequence"] = ++publication;
         row["producer_id"] = static_cast<int>(receipt.producer_id);
         row["sequence"] = static_cast<int64_t>(receipt.sequence);
         row["effective_day"] = receipt.effective_day;
@@ -107,13 +108,12 @@ Dictionary DCWorldExt::poll_country_command_receipts(
         row["status"] = country_command_receipt_code_name(receipt.code);
         row["reason"] = String(receipt.reason.c_str());
         rows.push_back(row);
-        last_request_id = std::max(last_request_id, receipt.request_id);
     }
     out["ok"] = true;
     out["available"] = !receipts.empty();
     out["receipts"] = rows;
     out["count"] = rows.size();
-    out["last_request_id"] = static_cast<int64_t>(last_request_id);
+    out["last_publication_sequence"] = publication;
     return out;
 }
 

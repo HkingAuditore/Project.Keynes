@@ -232,6 +232,9 @@ func present(model: Dictionary, ceremonial: bool = true) -> void:
 	move_to_front()
 	_update_layout()
 	_settle_paper()
+	var confirmation_error := String(_model.get("confirmation_error", ""))
+	if not confirmation_error.is_empty():
+		_show_toast(confirmation_error)
 
 	if not bool(_model.get("available", false)):
 		if _reader.cover() != null:
@@ -279,7 +282,11 @@ func finish_opening() -> void:
 
 func _copy_report() -> void:
 	DisplayServer.clipboard_set(String(_model.get("full_text", "")))
-	_toast.text = "完整报告已复制"
+	_show_toast("完整报告已复制")
+
+
+func _show_toast(message: String) -> void:
+	_toast.text = message
 	_toast.visible = true
 	_toast.modulate.a = 1.0
 	if _toast_tween != null and _toast_tween.is_valid():

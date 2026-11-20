@@ -538,6 +538,38 @@ bool RuntimeCountryPodAdapter::validate_snapshot(
     return true;
 }
 
+namespace {
+constexpr size_t COUNTRY_COMMAND_WIRE_SIZE = 112u + RUNTIME_COUNTRY_STABLE_ID_CAPACITY +
+    RUNTIME_COUNTRY_DISPLAY_NAME_CAPACITY;
+static_assert(COUNTRY_COMMAND_WIRE_SIZE <= RUNTIME_MAX_COMMAND_PAYLOAD);
+}
+
+bool is_country_day_observation(const RuntimeCommandEnvelope &envelope) {
+    return envelope.domain == static_cast<uint16_t>(RuntimeDomainId::COUNTRY) &&
+        envelope.producer_id == COUNTRY_OBSERVATION_ARCHIVE_PRODUCER &&
+        envelope.opcode == CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL;
+}
+
+RuntimeCommandPacket encode_country_packet(const RuntimeCountryCommand &command) {
+    RuntimeCommandPacket packet;
+    auto &envelope = packet.envelope;
+    envelope.request_id = command.request_id;
+    envelope.producer_id = command.producer_id;
+    envelope.sequence = command.sequence;
+    envelope.observed_generation = command.observed_generation;
+    envelope.requested_day = command.requested_day;
+    envelope.effective_day = command.effective_day;
+    envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
+    envelope.opcode = command.opcode;
+    std::vector<uint8_t> payload;
+    payload.reserve(COUNTRY_COMMAND_WIRE_SIZE);
+    append_command(payload, command);
+    envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::copy(payload.begin(), payload.end(), packet.payload.begin());
+    packet.submit_order = command.submit_order;
+    return packet;
+}
+
 bool RuntimeCountryPodAdapter::decode_command(
         const RuntimeCommandPacket &packet, RuntimeCountryCommand &command,
         std::string &error) {
@@ -549,12 +581,16 @@ bool RuntimeCountryPodAdapter::decode_command(
         error = "invalid_command_payload";
         return false;
     }
-    if (envelope.payload_size != sizeof(RuntimeCountryCommand)) {
+    if (envelope.payload_size != COUNTRY_COMMAND_WIRE_SIZE) {
         error = "invalid_country_command_payload_size";
         return false;
     }
-    std::memcpy(&command, packet.payload.data() + envelope.payload_offset,
-                sizeof(RuntimeCountryCommand));
+    Reader reader{packet.payload.data() + envelope.payload_offset, envelope.payload_size};
+    if (!read_command(reader, command) || reader.cursor != reader.size ||
+            command.opcode != envelope.opcode) {
+        error = "invalid_country_command_payload";
+        return false;
+    }
     command.request_id = envelope.request_id;
     command.producer_id = envelope.producer_id;
     command.sequence = envelope.sequence;
@@ -1242,7 +1278,7 @@ uint64_t RuntimeCountryPodAuthority::hash_business_state(
 
 bool RuntimeCountryPodAuthority::plan_day(
         int64_t day, uint64_t input_generation, RuntimeCountryPodPlan &plan,
-        std::string &error) {
+        std::string &error, const std::vector<RuntimeCountryCommand> *observations) {
     error.clear();
     plan = RuntimeCountryPodPlan{};
     if (!_bootstrapped) {
@@ -1268,9 +1304,10 @@ bool RuntimeCountryPodAuthority::plan_day(
     plan.header.input_generation = input_generation;
     plan.header.base_generation = _state.generation;
     plan.header.preflight_ok = 1;
-    plan.commands.reserve(_pending.size());
+    plan.commands.reserve(_pending.size() + (observations ? observations->size() : 0));
     for (const RuntimeCountryCommand &command : _pending)
         if (command.effective_day <= day) plan.commands.push_back(command);
+    if (observations) plan.commands.insert(plan.commands.end(), observations->begin(), observations->end());
     std::sort(plan.commands.begin(), plan.commands.end(),
         [](const RuntimeCountryCommand &lhs, const RuntimeCountryCommand &rhs) {
             return ResolveOrder{lhs.effective_day, lhs.sequence, lhs.submit_order, lhs.request_id} <
@@ -1449,17 +1486,13 @@ bool RuntimeCountryPodAuthority::commit_day(
     if (changed) next.generation = _next_generation++;
     next.state_hash = hash_business_state(next);
     _state = std::move(next);
-    for (const RuntimeCountryCommand &command : plan.rejected_cell_taxes) {
-        _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
-            [&](const RuntimeCountryCommand &queued) {
-                return queued.request_id == command.request_id;
-            }), _pending.end());
-    }
+    // The plan took every due queued command. Internal observations never
+    // occupy that queue, so removing them must not scan it once per signal.
+    _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
+        [&](const RuntimeCountryCommand &queued) {
+            return queued.effective_day <= plan.header.day;
+        }), _pending.end());
     for (const RuntimeCountryCommand &command : plan.commands) {
-        _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
-            [&](const RuntimeCountryCommand &queued) {
-                return queued.request_id == command.request_id;
-            }), _pending.end());
         RuntimeCommandReceipt receipt;
         receipt.request_id = command.request_id;
         receipt.producer_id = command.producer_id;
@@ -1502,17 +1535,13 @@ bool RuntimeCountryPodAuthority::commit_rejected_day(
     }
     next.state_hash = hash_business_state(next);
     _state = std::move(next);
-    for (const RuntimeCountryCommand &command : plan.rejected_cell_taxes) {
-        _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
-            [&](const RuntimeCountryCommand &queued) {
-                return queued.request_id == command.request_id;
-            }), _pending.end());
-    }
+    // The plan took every due queued command. Internal observations never
+    // occupy that queue, so removing them must not scan it once per signal.
+    _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
+        [&](const RuntimeCountryCommand &queued) {
+            return queued.effective_day <= plan.header.day;
+        }), _pending.end());
     for (const RuntimeCountryCommand &command : plan.commands) {
-        _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
-            [&](const RuntimeCountryCommand &queued) {
-                return queued.request_id == command.request_id;
-            }), _pending.end());
         RuntimeCommandReceipt receipt;
         receipt.request_id = command.request_id;
         receipt.producer_id = command.producer_id;

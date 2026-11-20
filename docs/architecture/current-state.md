@@ -63,14 +63,18 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
   明确暂停、进入存档安全边界，或遇到待答复事项时，执行器在日界停住。
 - **命令**。后台受理时立即取请求日、已封口日加一和已提交日加一的最大值，在回执里
   返回生效日。未受理的命令回执带原因。已排队的命令在生效日接受领土、科技和资源等规则检查，失败时发布结果。1× 下下一日若已封口，当前发出的命令最早在再下一日生效。
-  同一份带生效日的命令日志在不同帧率和负载下逐日复现。
+  同一份带生效日的命令日志在不同帧率和负载下逐日复现。外部命令按批发布，执行器按游标取走；
+  封口、取收件和制作存档无需持有前台的受理锁。科技面板按终态的发布序号翻页，用请求编号关联结果。
+  开拓在生效日复核当日路线、占用和人口，时代晋升在当日国家结算后、经济开始前处理采购请求。
+  同日军费修改依序合并，超过 100% 的一条在结算时拒绝。
 - **发布**。后台按日发布轻量记录，并保留最新的显示帧。主线程每帧一次取走全部可用日记录，
   用同批最新数据画图，保留逐日回执、账本和通知的顺序。资源、地块分类和过渡列按变格合并。
   视野跟随发布帧刷新。季节历史保留为整份只读数据，面板选中地块时才切出该格。
   无线程 Web 逐帧读取待处理的建筑显示地块，沿用同一套原生实例规划和区块上传。
 - **等答复**。年报、时代奖励、剧情、家族扶持和理念候选都由执行器在提交边界判定和发布。
   同时待答时依次处理时代奖励、剧情及其外部输入、年报、家族扶持、理念。处理一项后可以在
-  同一日继续等另一项。前台按发布原因开窗、转发答复和显示回执。
+  同一日继续等另一项。前台按发布原因开窗、转发答复和显示回执。年报状态和详情来自发布记录，
+  确认失败保留待处理项。在途 AI 请求在读档会话绑定后交给请求客户端，回包仍按原定日结算。
 - **候选**。GM 隐藏弹窗是有生效日的会话命令。生效后，玩家地块的家族候选保留并允许继续推进。
   理念抽取与重抽按实际受理日结算。手动暂停时，执行器自行放行到该命令的日期，候选发布后停住。
   关闭理念候选发送一次对应代际的确认，候选及手动暂停状态保留。0× 与手动暂停停止日历放行，
@@ -130,6 +134,8 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 - **只读查询**：Economy 读 Country 的 27 种查询经 `CountryReadView`（借用所有者的只读函数表，不保证多次查询共享同一快照）。税率、科技、领土仍在 `capture_country_epoch` 用 `copy_economy_snapshot` 冻结。
 - **写入请求**：Economy→Country 的写全部走所有者端口（财政返还/预留/征收、采购、现金与物资转移、科研、国库支出）；`country_writes` 预算为 0，直接调用、别名、成员指针都不能重新引入。
 - **请求队列**：Host 通用命令、Country 命令、Economy 命令（含军事 24/30–34）、Trigger 命令共享 `runtime_resolve_contract.h` 的入队与顺序键；Effect→Modifier/Events、Ideology→Modifier 和同步 Effect 批次仍用各自既有协议。请求与保存位置的对照见 [module-boundaries.md](module-boundaries.md#请求与提交)。
+- **观察和告警**：执行器内生成的视野、物种科研观察独立按日交付给国家域，仍用同一顺序键。
+  模块等待的现实耗时用于诊断。明确的日结算错误带原因终止，延迟的有效回执仍可继续当天结算。
 - **冻结输入**：`runtime_freeze_contract.h` 的 `RuntimeFrozenInputVersion` 登记 session、day、generation、命令水位和 committed/in-flight；Climate、Country、Economy 已登记。Climate 仍在 day plan 之前完成输入捕获和提交。
 - **跨域读接口**。Ideology 读 Country 已提交结果，Country 向 Effect 查询身份和完成状态，Economy 与 Family 读 Effect、Modifier，Climate 读 Modifier 和 Economy。正式日计划中的 Military 通过 Country、Economy 的已提交接口读取数据，分域诊断仍可调用同步桥接。30 个域对的逐项处置在 `tools/ci/cross_domain_inventory.json`。
 
@@ -140,7 +146,7 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 | Ideology 首个意见/国家快照未发布、未配置 | 保留首次装配兼容；不发伪 ACK，ready=false |
 | Trigger ACK barrier / retry / stale / rejected、未配置/未启动 | 保留列出的原策略，不制造新 ACK |
 | Effect 同日已提交重访 | 幂等重访；遇 drain/catchup 错误停车，不再宣布完成 |
-| Country/Economy peer 等待 | stall、continuation_pending 与超时故障保留；部分旧注释仍称 soft，实际已不完成 |
+| Country/Economy peer 等待 | 等待期间保持当天的继续位置。墙钟只用于告警，收到有效回执后接着结算当天。 |
 | Modifier 上游未授权、SHADOW/OFF | 仅用于独立诊断与原生用例 |
 
 Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。保留原因清单由 `check_resolve_apply.py` 核对，新增原因不能静默加入。
@@ -153,7 +159,10 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 
 `_executor_pending_commands` 与未完成日的 `_executor_day_environment` 属于世界，由当前执行器独占访问。后台和 inline 共用待执行列表及冻结输入；停止不销毁它们。`native_simulation_host_lifecycle.cpp` 负责执行器启动：同一世界保持 ACTIVE 且授权范围不变时，只更换执行器，保留业务状态、日期、编号、确认结果、发布游标和日内继续位置；不重新初始化已提交的域。未完成日标记也随后台/inline 交接，不能在替换执行器后保存半日状态。
 
-新世界与重启分开：已启动过的 `DCWorldExt` 再 `configure_country` 时，先要求执行器确实退出，并在私有候选对象中验证配置；失败保留旧世界。成功后解除经济对旧 OwnedState 的借用，替换 Host 并重新连接适配层，Country 对象地址保持稳定，区分新旧世界的 session epoch 继续递增，新的 Host 回复协议编号也从旧值继续增加；同一世界重启则保持编号。`make_new_world_host` 在替换前重新验证并安装已配置的 Modifier、Effect、Trigger、Ideology 规则定义，以及 Modifier 稳定键到内部编号的映射；不复制旧实例、命令、确认记录、输入、意见、快照或读取进度。主线程的规则对象也清理旧实例和读取进度，使新世界从较小编号发布的结果可立即接收；同一世界重启不执行这项清理。Effect 与 Modifier 的状态清理分别集中在 `effect_runtime_lifecycle.cpp` 和 `modifier_runtime_lifecycle.cpp`。旧世界日期及授权证明不会进入新世界。读档则安装存档中的世界状态。未来命令及需要重试的命令不重新挤入实时入口。保存格式仍为 PKSR v5；待执行命令超过原有 4096 条容量时明确拒绝保存并保留现场全部命令。
+新世界与重启分开：已启动过的 `DCWorldExt` 再 `configure_country` 时，先要求执行器确实退出，并在私有候选对象中验证配置；失败保留旧世界。成功后解除经济对旧 OwnedState 的借用，替换 Host 并重新连接适配层，Country 对象地址保持稳定，区分新旧世界的 session epoch 继续递增，新的 Host 回复协议编号也从旧值继续增加；同一世界重启则保持编号。`make_new_world_host` 在替换前重新验证并安装已配置的 Modifier、Effect、Trigger、Ideology 规则定义，以及 Modifier 稳定键到内部编号的映射；不复制旧实例、命令、确认记录、输入、意见、快照或读取进度。主线程的规则对象也清理旧实例和读取进度，使新世界从较小编号发布的结果可立即接收；同一世界重启不执行这项清理。Effect 与 Modifier 的状态清理分别集中在 `effect_runtime_lifecycle.cpp` 和 `modifier_runtime_lifecycle.cpp`。旧世界日期及授权证明不会进入新世界。读档则安装存档中的世界状态。未来命令及需要重试的命令不重新挤入实时入口。保存格式仍为 PKSR v5。待执行的通用命令超过 4096 条时明确拒绝保存，并保留现场全部命令。
+
+PKSR 的国家命令负载逐字段按固定字节顺序编码。执行器产生的待交付科研观察使用专用标记保存，
+读档后回到对应日期的观察列表。它们不占通用命令的 4096 条配额。
 
 同一世界重新捕获 Country 输入时，已由原生运行时接管的国家状态取自最近一次已提交副本，不覆盖成冻结的旧同步副本；重复发布同一内容身份的目录不清除请求及确认记录。新的国家配置会经过上述新世界入口。CLOCK_WAIT 在等待锁内复查停止、保存、暂停和速度变化；通知早于实际等待也不会遗失。
 

@@ -785,8 +785,8 @@ func annual_report_history(host, offset: int = 0, limit: int = 64) -> Dictionary
 	return host._annual_reports.history(offset, limit)
 
 
-func mark_annual_report_presented(host, report_id: int) -> void:
-	host._annual_reports.mark_presented(report_id)
+func mark_annual_report_presented(host, report_id: int) -> Dictionary:
+	return host._annual_reports.mark_presented(report_id)
 
 
 func annual_reports_waiting_for_year(host, year: int) -> bool:

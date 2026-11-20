@@ -42,22 +42,6 @@
 namespace pk {
 
 namespace {
-// Peer-stall fault threshold. Production keeps the protocol default; headless
-// test suites on a loaded machine may raise it via PK_PEER_STALL_TIMEOUT_MS so
-// wall-clock contention is not reported as a protocol deadlock.
-uint64_t peer_stall_fault_timeout_ms() {
-    static const uint64_t value = [] () -> uint64_t {
-        const char *raw = pk::runtime_switch_value(pk::RuntimeSwitch::PK_PEER_STALL_TIMEOUT_MS);
-        if (raw == nullptr || raw[0] == '\0')
-            return RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS;
-        const unsigned long long parsed = std::strtoull(raw, nullptr, 10);
-        return parsed >= RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
-            ? static_cast<uint64_t>(parsed)
-            : RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS;
-    }();
-    return value;
-}
-
 // Stateless diagnostic tags shared with the daily-plan assembly.
 const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
     switch (domain) {
@@ -79,7 +63,7 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 } // namespace
 
 void NativeSimulationHost::request_stop() {
-    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+    std::lock_guard<std::mutex> admission(_command_producer_mutex);
     request_stop_locked();
 }
 
@@ -170,7 +154,7 @@ int64_t NativeSimulationHost::command_seal_day() const noexcept {
     const int64_t next = committed_day_value() + 1;
     if (_world_environment) {
         return std::max(next,
-            _command_frozen_through.load(std::memory_order_acquire) + 1);
+            frozen_command_day() + 1);
     }
     const bool climate_driven =
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
@@ -265,37 +249,15 @@ void NativeSimulationHost::clear_day_stall_peer_bits() {
                          RUNTIME_DAY_STALL_ECONOMY_INPUT);
 }
 
-bool NativeSimulationHost::fault_if_peer_stall_timed_out(
-        int64_t day, const char *fault_code) {
-    // Derived-only stalls (pending_intents without note_day_stall) never armed
-    // the timer — capacity forensics then showed peer_ms=0 forever. Arm here.
-    if (_day_stall_peer_since_us.load(std::memory_order_acquire) == 0u &&
-        (_country_worker_protocol.pending_intents != 0 ||
-         (_day_stall_reason_mask.load(std::memory_order_acquire) &
-          (RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
-           RUNTIME_DAY_STALL_FISCAL_PEER)) != 0u)) {
-        note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
-                           RUNTIME_DAY_STALL_EFFECT_ACK,
-                       day);
-    }
-    const uint64_t since =
-        _day_stall_peer_since_us.load(std::memory_order_acquire);
-    if (since == 0u) return false;
-    const uint64_t elapsed_ms = (now_us() - since) / 1000u;
-    if (elapsed_ms < peer_stall_fault_timeout_ms()) return false;
-    const uint32_t mask = day_stall_reason_mask();
-    const std::string fault_line = pk::log_format(
-        "[day-stall-fault] day=%lld stall=0x%x peer_ms=%llu code=%s ring=%zu",
-        static_cast<long long>(day), mask, static_cast<unsigned long long>(elapsed_ms),
-        std::string(fault_code != nullptr ? fault_code : "peer_stall_timeout").c_str(),
-        _environment_ring.size());
-    // print + printerr: Godot console may hide stderr-only lines.
-    pk::log_line(fault_line);
-    pk::log_line(fault_line, true);
-    set_fault(fault_code != nullptr && fault_code[0] != '\0'
-                  ? fault_code
-                  : "peer_stall_timeout");
-    return true;
+void NativeSimulationHost::log_slow_peer(int64_t day) {
+    const auto since = _day_stall_peer_since_us.load(std::memory_order_acquire);
+    if (since == 0 || since == _last_peer_stall_warning) return;
+    const auto ms = (now_us() - since) / 1000u;
+    if (ms < 5000u) return;
+    _last_peer_stall_warning = since;
+    pk::log_info("[day-stall] day=%lld stall=0x%x peer_ms=%llu ring=%zu",
+        static_cast<long long>(day), day_stall_reason_mask(),
+        static_cast<unsigned long long>(ms), _environment_ring.size());
 }
 
 void NativeSimulationHost::worker_main() {
@@ -316,8 +278,6 @@ void NativeSimulationHost::worker_main() {
     pending_commands.reserve(RUNTIME_COMMAND_QUEUE_CAPACITY);
     int64_t logged_pending_day = -1;
     uint32_t logged_pending_mask = 0;
-    int64_t events_failed_wait_day = -1;
-    uint64_t events_failed_since_us = 0;
     size_t pending_begin = 0;
     std::vector<RuntimeCommandReceipt> day_receipts;
     day_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
@@ -440,11 +400,9 @@ void NativeSimulationHost::worker_main() {
             if (_stop_requested.load(std::memory_order_acquire)) break;
             _state.store(RuntimeWorkerState::RUNNING, std::memory_order_release);
             const auto drain_commands = [&] {
-                RuntimeCommandPacket incoming;
-                while (pop_command(incoming)) {
-                    pending_commands.push_back(incoming);
-                    pending_commands_dirty = true;
-                }
+                const size_t previous = pending_commands.size();
+                drain_command_inbox(pending_commands);
+                pending_commands_dirty |= previous != pending_commands.size();
                 publish_pending_count();
             };
             const bool country_delivery_boundary =
@@ -503,20 +461,10 @@ void NativeSimulationHost::worker_main() {
                 if (try_fault_injection("worker.inflight.before")) {
                     break;
                 }
-                if (_world_environment) {
-                    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
-                    std::lock_guard<std::mutex> control(_control_mutex);
-                    if (player_requests_pending_locked()) break;
-                    _command_frozen_through.store(day, std::memory_order_release);
-                }
+                if (_world_environment && !try_freeze_command_inputs(day)) break;
                 const bool narrative_commands = prepare_narrative_day(day);
                 if (state() == RuntimeWorkerState::FAULTED) break;
-                {
-                    // No producer can receive a date in a day whose inputs
-                    // have already been taken from the queue.
-                    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
-                    if (country_delivery_boundary || narrative_commands) drain_commands();
-                }
+                if (country_delivery_boundary || narrative_commands) drain_commands();
                 day_receipts.clear();
                 if (pending_commands_dirty) {
                     std::stable_sort(pending_commands.begin() +
@@ -866,38 +814,6 @@ void NativeSimulationHost::worker_main() {
                                 static_cast<long long>(climate_committed));
                         }
                     }
-                    // Events 硬失败不设任何 stall 位，peer 超时永不触发；
-                    // 环满后主线程停在 capacity barrier，表现为无声卡死。
-                    if ((missing & runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u &&
-                        _events_failed_day.load(std::memory_order_acquire) == day) {
-                        if (events_failed_wait_day != day) {
-                            events_failed_wait_day = day;
-                            events_failed_since_us = now_us();
-                        } else if ((now_us() - events_failed_since_us) / 1000u >=
-                                   peer_stall_fault_timeout_ms()) {
-                            char events_reason[64];
-                            size_t er = 0;
-                            for (; er + 1 < sizeof(events_reason) &&
-                                   er < _events_pod_fallback_reason.size(); ++er) {
-                                events_reason[er] = _events_pod_fallback_reason[er].load(
-                                    std::memory_order_acquire);
-                                if (events_reason[er] == '\0') break;
-                            }
-                            events_reason[er] = '\0';
-                            const std::string fault_line = pk::log_format(
-                                "[day-stall-fault] day=%lld events_day_failed reason=%s "
-                                "ring=%zu",
-                                static_cast<long long>(day), std::string(events_reason).c_str(),
-                                _environment_ring.size());
-                            pk::log_line(fault_line);
-                            pk::log_line(fault_line, true);
-                            set_fault("events_day_failed");
-                            break;
-                        }
-                    } else {
-                        events_failed_wait_day = -1;
-                    }
-
                     if (_state.load(std::memory_order_acquire) ==
                         RuntimeWorkerState::FAULTED) {
                         break;
@@ -924,14 +840,6 @@ void NativeSimulationHost::worker_main() {
                     }
                     // 捕获输入时主线程必须可取得边界锁；等待期间没有公式写入。
                     boundary_lock.unlock();
-                    // Peer-stall timeout must win over prepare-spin. Otherwise
-                    // prepared>0 busy-retries the day forever while Host is
-                    // stuck on a full Climate ring (day≈2745 hang: armed
-                    // fiscal stall, weather LUT for minutes, then faulted).
-                    if (fault_if_peer_stall_timed_out(
-                            day, "day_wait_peer_stall_timeout")) {
-                        break;
-                    }
                     if (prepared_before_wait > 0u) {
                         // Origin assets are now pollable; retry this day without
                         // waiting for an external wake that may never arrive.
@@ -1025,10 +933,7 @@ void NativeSimulationHost::worker_main() {
                     });
                     _worker_timing.finish_main_wait();
                     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
-                    if (fault_if_peer_stall_timed_out(
-                            day, "day_wait_peer_stall_timeout")) {
-                        break;
-                    }
+                    log_slow_peer(day);
                     break;
                     } // missing != 0
                 }

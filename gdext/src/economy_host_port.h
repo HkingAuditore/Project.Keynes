@@ -66,6 +66,10 @@ public:
     virtual void commit_military_construction(
         int32_t cell, int32_t building, int32_t slot, int64_t day, int64_t ready_day) = 0;
 
+    // The current day has applied its fog policy; the physical frame is the
+    // executor's last committed visibility until today's vision stage.
+    virtual const std::vector<uint8_t> *colonization_visibility() const = 0;
+
     // Annual development report.
     virtual bool annual_development_enabled() const = 0;
     virtual uint64_t annual_country_handle() const = 0;

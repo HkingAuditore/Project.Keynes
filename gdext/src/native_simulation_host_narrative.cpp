@@ -265,16 +265,20 @@ Dictionary NativeSimulationHost::submit_narrative_choice_request(
         return narrative_response(false, "narrative_ai_enabled_invalid");
     int64_t day = std::max<int64_t>(0, args.get("effective_day", 0));
     {
-        auto admission = lock_command_admission(day);
+        auto admission = admit_command(day);
         const auto current = state();
-        if (!admission.owns_lock() || !_executor_narrative || !_world_environment ||
+        if (!admission.accepted() || !_executor_narrative || !_world_environment ||
                 current == RuntimeWorkerState::STOPPED || current == RuntimeWorkerState::FAULTED ||
                 current == RuntimeWorkerState::STOPPING || _stop_requested.load(std::memory_order_acquire))
             return narrative_response(false, "narrative_runtime_unavailable");
         std::lock_guard<std::mutex> control(_control_mutex);
         const auto view = latest_narrative();
         if (!view) return narrative_response(false, "narrative_runtime_unavailable");
-        if (_narrative_requests.size() == RUNTIME_COMMAND_QUEUE_CAPACITY)
+        // Pending replies are bounded by published request IDs. They must be
+        // accepted even when the ordinary inbox is full: a day may need that
+        // exact reply before it can make any progress.
+        if (request->kind != Kind::AI_RESULT &&
+                _narrative_requests.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY)
             return narrative_response(false, "narrative_command_queue_full");
         if (request->kind == Kind::CHOOSE) {
             if (std::any_of(_narrative_requests.begin(), _narrative_requests.end(),

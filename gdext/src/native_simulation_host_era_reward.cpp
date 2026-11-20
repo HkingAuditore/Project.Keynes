@@ -48,8 +48,8 @@ godot::Dictionary NativeSimulationHost::submit_era_reward_request(
     if (request->command() != nullptr) {
         int64_t day = std::max<int64_t>(0, request->effective_day);
         {
-            auto admission = lock_command_admission(day);
-            if (!admission.owns_lock() || !available()) return reject("effect_runtime_unavailable");
+            auto admission = admit_command(day);
+            if (!admission.accepted() || !available()) return reject("effect_runtime_unavailable");
             std::lock_guard<std::mutex> control(_control_mutex);
             if (_era_reward_requests.size() == RUNTIME_COMMAND_QUEUE_CAPACITY)
                 return reject("era_command_queue_full");
@@ -100,11 +100,11 @@ bool NativeSimulationHost::service_era_reward_requests() {
         auto &effect = *_effect_adapter_runtime;
         bool reward_changed = false;
         for (const auto &request : requests) {
-            auto &reply = request->result;
             if (request->kind != RuntimeEraRewardRequest::Kind::SELECT) {
-                execute_era_advancement_request(*request);
+                _player_confirmation.era_advancement.push_back(request);
                 continue;
             }
+            auto &reply = request->result;
             const int64_t day = request->effective_day;
             // A choice of the already published offer can reserve its modifiers
             // now. The dated Modifier commit still decides whether it settles.
@@ -186,6 +186,21 @@ bool NativeSimulationHost::service_era_reward_requests() {
     }
     _control_cv.notify_all();
     return true;
+}
+
+void NativeSimulationHost::prepare_era_advancement_day(int64_t day) {
+    auto &orders = _player_confirmation.era_advancement;
+    for (auto it = orders.begin(); it != orders.end();) {
+        const auto &request = **it;
+        if (request.effective_day > day) {
+            ++it;
+            continue;
+        }
+        execute_era_advancement_request(**it);
+        (*it)->result["settled_day"] = day;
+        publish_boundary_command_result(request.command(), request.advancement_sequence, request.result);
+        it = orders.erase(it);
+    }
 }
 
 const char *NativeSimulationHost::settle_era_rewards(DayExecution &day) {

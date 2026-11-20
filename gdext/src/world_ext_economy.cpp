@@ -1784,9 +1784,9 @@ Dictionary DCWorldExt::queue_treasury_sponsored_build(
     if (_economy_runtime == nullptr) return unavailable();
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
-    auto admission = worker_owned ? _runtime_host->lock_command_admission(effective_day)
-                                  : std::unique_lock<std::mutex>();
-    if (worker_owned && !admission.owns_lock()) return unavailable();
+    auto admission = worker_owned ? _runtime_host->admit_command(effective_day)
+                                  : RuntimeCommandAdmission();
+    if (worker_owned && !admission.accepted()) return unavailable();
     return economy_api::queue_treasury_sponsored_build(*runtime_from(_economy_runtime),
         country_handle, cell_idx, type_id, effective_day, sequence,
         worker_owned);
@@ -1798,9 +1798,9 @@ Dictionary DCWorldExt::queue_treasury_sponsored_demolish(
     if (_economy_runtime == nullptr) return unavailable();
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
-    auto admission = worker_owned ? _runtime_host->lock_command_admission(effective_day)
-                                  : std::unique_lock<std::mutex>();
-    if (worker_owned && !admission.owns_lock()) return unavailable();
+    auto admission = worker_owned ? _runtime_host->admit_command(effective_day)
+                                  : RuntimeCommandAdmission();
+    if (worker_owned && !admission.accepted()) return unavailable();
     return economy_api::queue_treasury_sponsored_demolish(*runtime_from(_economy_runtime),
         country_handle, cell_idx, type_id, count, effective_day, sequence,
         worker_owned);
@@ -1875,9 +1875,9 @@ Dictionary DCWorldExt::queue_canal_construction(
         request.sequence = sequence;
         return forward_economy_boundary_request(*_runtime_host, std::move(request));
     }
-    auto admission = _runtime_host ? _runtime_host->lock_command_admission(effective_day)
-                                    : std::unique_lock<std::mutex>();
-    if (_runtime_host && !admission.owns_lock()) return unavailable();
+    auto admission = _runtime_host ? _runtime_host->admit_command(effective_day)
+                                    : RuntimeCommandAdmission();
+    if (_runtime_host && !admission.accepted()) return unavailable();
     return runtime_from(_economy_runtime)->queue_canal_construction(
         country_handle, quote_token, effective_day, sequence);
 }
@@ -2071,9 +2071,9 @@ Dictionary DCWorldExt::cancel_family_colonization(
     }
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
-    auto admission = worker_owned ? _runtime_host->lock_command_admission(effective_day)
-                                  : std::unique_lock<std::mutex>();
-    if (worker_owned && !admission.owns_lock()) return unavailable();
+    auto admission = worker_owned ? _runtime_host->admit_command(effective_day)
+                                  : RuntimeCommandAdmission();
+    if (worker_owned && !admission.accepted()) return unavailable();
     return runtime_from(_economy_runtime)->submit_family_colonization_cancel(
         country_handle, expedition_handle, effective_day, sequence,
         worker_owned);
@@ -2180,9 +2180,9 @@ Dictionary DCWorldExt::submit_family_founding_choice(
         request.sequence = sequence;
         return forward_economy_boundary_request(*_runtime_host, std::move(request));
     }
-    auto admission = _runtime_host ? _runtime_host->lock_command_admission(effective_day)
-                                    : std::unique_lock<std::mutex>();
-    if (_runtime_host && !admission.owns_lock()) return unavailable();
+    auto admission = _runtime_host ? _runtime_host->admit_command(effective_day)
+                                    : RuntimeCommandAdmission();
+    if (_runtime_host && !admission.accepted()) return unavailable();
     Dictionary result = runtime_from(_economy_runtime)->submit_family_founding_choice(
         offer_id, generation, choice_index, effective_day, sequence);
     if (bool(result.get("ok", false))) result["effective_day"] = effective_day;

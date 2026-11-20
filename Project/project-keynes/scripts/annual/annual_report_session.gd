@@ -61,9 +61,7 @@ func snapshot(report_id: int) -> Dictionary:
 func history(offset: int = 0, limit: int = 64) -> Dictionary:
 	return _ext.get_annual_report_history(offset, limit) if _configured else {"ok": false, "reports": []}
 
-func mark_presented(report_id: int) -> void:
-	if _configured:
-		var receipt: Dictionary = _ext.mark_annual_report_presented(report_id)
-		if bool(receipt.get("ok", false)):
-			_last_announced = report_id
-		poll()
+func mark_presented(report_id: int) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "admitted": false, "code": "annual_unconfigured", "report_id": report_id}
+	return _ext.mark_annual_report_presented(report_id)

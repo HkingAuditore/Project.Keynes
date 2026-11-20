@@ -336,16 +336,7 @@ bool NativeSimulationHost::submit_era_milestone(RuntimeEraAdvancement &state,
         row.aux = aux;
         row.value = value;
         row.weights_bp.fill(0);
-        RuntimeCommandPacket packet;
-        packet.envelope.request_id = row.request_id;
-        packet.envelope.sequence = row.sequence;
-        packet.envelope.requested_day = requested;
-        packet.envelope.effective_day = effective;
-        packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-        packet.envelope.opcode = opcode;
-        packet.envelope.payload_size = sizeof(row);
-        std::memcpy(packet.payload.data(), &row, sizeof(row));
-        packets.push_back(packet);
+        packets.push_back(encode_country_packet(row));
     };
     if (consume_goods) {
         const Array basket = procurement_goods(state, era);
@@ -411,7 +402,7 @@ void NativeSimulationHost::execute_era_advancement_request(RuntimeEraRewardReque
     const auto grant_prelude = [&] {
         if (state.target != 1 ||
             input.has_technology(era_at(state, 0).get("milestone", -1), true) ||
-            submit_era_milestone(state, 0, request.effective_day, day, state.next_sequence++, false))
+            submit_era_milestone(state, 0, day, day + 1, state.next_sequence++, false))
             state.prelude_granted = true;
     };
     switch (request.kind) {
@@ -486,7 +477,8 @@ void NativeSimulationHost::execute_era_advancement_request(RuntimeEraRewardReque
     }
     if (request.kind != Kind::BIND_ADVANCEMENT && request.kind != Kind::RESTORE_ADVANCEMENT &&
             bool(request.result.get("ok", false))) request.result["effective_day"] = day;
-    std::atomic_store(&_published_era_advancement, make_view(state, input));
+    if (request.command() == nullptr)
+        std::atomic_store(&_published_era_advancement, make_view(state, input));
 }
 
 bool NativeSimulationHost::settle_player_regime(

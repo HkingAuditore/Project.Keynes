@@ -130,51 +130,13 @@ func submit(commands: Array[Dictionary], preserve_effective_days: bool = false) 
 ## the Host. Admission is reported by submit(); this cursor closes the
 ## Accepted -> Committed/RejectedAtExecution lifecycle without consuming the
 ## generic runtime receipt queue used by other domains.
-func poll_worker_command_receipts(after_request_id: int = 0,
+func poll_worker_command_receipts(after_publication: int = 0,
 		limit: int = 128) -> Dictionary:
 	if _world_ext == null:
 		return {"ok": false, "code": "country_worker_receipt_api_missing"}
-	return _world_ext.poll_country_command_receipts(maxi(after_request_id, 0),
+	return _world_ext.poll_country_command_receipts(maxi(after_publication, 0),
 		clampi(limit, 1, 4096))
 
-
-func submit_observation_batch(handle: int, cells: PackedInt32Array,
-		signals: PackedInt32Array, effective_day: int) -> Dictionary:
-	if not _configured or cells.size() != signals.size():
-		return {"ok": false, "reason": "country_observation_batch_invalid"}
-	var n := cells.size()
-	if n == 0:
-		return {"ok": true, "accepted": 0}
-	var batch := {
-		"opcodes": PackedInt32Array(), "effective_days": PackedInt64Array(),
-		"sequences": PackedInt64Array(), "target_handles": PackedInt64Array(),
-		"cell_indices": cells, "aux_i32": signals, "domain_i32": PackedInt32Array(),
-		"position_i32": PackedInt32Array(), "weight0_bp": PackedInt32Array(),
-		"weight1_bp": PackedInt32Array(), "weight2_bp": PackedInt32Array(),
-		"weight3_bp": PackedInt32Array(), "value_i64": PackedInt64Array(),
-		"tax_kinds": PackedInt32Array(), "tax_item_indices": PackedInt32Array(),
-		"tax_rate_basis_points": PackedInt32Array(),
-		"tax_assessment_modes": PackedInt32Array(),
-		"stable_ids": PackedStringArray(),
-		"display_names": PackedStringArray(),
-	}
-	for key in ["opcodes", "effective_days", "sequences", "target_handles",
-			"domain_i32", "position_i32", "weight0_bp", "weight1_bp", "weight2_bp",
-			"weight3_bp", "value_i64", "tax_kinds", "tax_item_indices",
-			"tax_rate_basis_points", "tax_assessment_modes", "stable_ids",
-			"display_names"]:
-		batch[key].resize(n)
-	for i in range(n):
-		batch.opcodes[i] = Opcode.DISCOVER_COUNTRY_SIGNAL
-		batch.effective_days[i] = effective_day
-		batch.sequences[i] = i
-		batch.target_handles[i] = handle
-		batch.value_i64[i] = 1
-		batch.domain_i32[i] = -1
-		batch.position_i32[i] = -1
-		batch.tax_kinds[i] = -1
-		batch.tax_item_indices[i] = -1
-	return _world_ext.submit_country_commands(batch)
 
 func create_country(stable_id: StringName, display_name: String, first_cell: int,
 		effective_day: int, sequence: int) -> Dictionary:

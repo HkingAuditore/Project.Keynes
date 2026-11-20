@@ -793,8 +793,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool expedition_player =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
-        int32_t family = -1;
-        int32_t expedition = -1;
         const bool target_ok = (cmd.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT || cmd.opcode == COMMAND_MILITARY_PURCHASE || cmd.opcode == COMMAND_MILITARY_PURCHASE_ACK) ? (cmd.i64_0 >= 0 && cmd.i64_1 >= 0) : cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ? military_procurement_demand_valid(cmd)
             : family_reward ? family_ledger_command_preflight(cmd)
             : split_policy
@@ -818,12 +816,9 @@ Dictionary NativeEconomyRuntime::end_restore() {
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)
             : expedition_player
             ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
-                ? ((cmd.target_handle == 0 ||
-                    families_store().valid_handle(cmd.target_handle, family)) &&
-                   cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
-                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() &&
-                   cmd.i64_0 >= 1)
-                : family_expeditions_store().valid_handle(cmd.target_handle, expedition))
+                ? (cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
+                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() && cmd.i64_0 >= 1)
+                : cmd.target_handle != 0)
             : market_target
             ? (cmd.i32_0 >= 0 && cmd.i32_0 < market_store().market_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < market_store().good_count.get() &&

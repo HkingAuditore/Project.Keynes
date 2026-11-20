@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -88,6 +89,14 @@ struct AnnualDevelopmentReport {
     std::vector<AnnualBreakdown> industry_totals, resource_totals;
     int64_t first_gdp = 0, last_gdp = 0, first_people_days = 0,
         last_people_days = 0, first_days = 0, last_days = 0;
+};
+
+struct AnnualReportPublication {
+    uint64_t revision = 0;
+    int64_t day = -1;
+    uint64_t ready = 0;
+    bool reward_pending = false;
+    std::shared_ptr<const std::vector<AnnualDevelopmentReport>> history;
 };
 
 // NativeSimulationHost owns this reducer. Its mutex is held by the host, never

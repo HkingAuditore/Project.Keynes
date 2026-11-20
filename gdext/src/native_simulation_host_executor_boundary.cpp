@@ -65,7 +65,7 @@ bool NativeSimulationHost::try_stop_at_day_boundary() {
     std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
     if (!boundary.owns_lock() ||
         _inline_day_pending.load(std::memory_order_acquire)) return false;
-    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+    std::lock_guard<std::mutex> admission(_command_producer_mutex);
     {
         std::lock_guard<std::mutex> control(_control_mutex);
         if (player_requests_pending_locked()) return false;
@@ -88,14 +88,14 @@ bool NativeSimulationHost::service_save_request(
         _climate_wait_cv.notify_all();
         _control_cv.notify_all();
     }
+    uint64_t intake_watermark = 0;
     {
-        std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
         std::lock_guard<std::mutex> control(_control_mutex);
         if (has_pending_climate_input() || player_requests_pending_locked() ||
             !_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
-        RuntimeCommandPacket queued;
-        while (pop_command(queued)) pending_commands.push_back(std::move(queued));
+        intake_watermark = _command_enqueue_pos.load(std::memory_order_acquire);
     }
+    drain_command_inbox_through(pending_commands, intake_watermark);
     const uint64_t request_id = _save_request_id.load(std::memory_order_acquire);
     _economy_pending_command_count.store(static_cast<uint32_t>(std::min<size_t>(
         pending_commands.size(), std::numeric_limits<uint32_t>::max())), std::memory_order_release);

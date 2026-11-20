@@ -225,6 +225,7 @@ struct MilitaryCommand {
     int32_t radius = 0;
     int32_t unit_from = -1;
     int32_t unit_to = -1;
+    // For budget edits, this unused argument carries the player's receipt ID.
     int64_t count = 0;
     // Training, formation and map orders carry the player's receipt sequence
     // here. Zero identifies an internal or standalone order for those opcodes.

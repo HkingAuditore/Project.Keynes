@@ -984,19 +984,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
                 mirrored.value = command.value;
                 copy_fixed(mirrored.stable_id, command.stable_id);
                 copy_fixed(mirrored.display_name, command.display_name);
-                RuntimeCommandPacket packet;
-                packet.envelope.request_id = mirrored.request_id;
-                packet.envelope.producer_id = mirrored.producer_id;
-                packet.envelope.sequence = mirrored.sequence;
-                packet.envelope.requested_day = mirrored.requested_day;
-                packet.envelope.effective_day = mirrored.effective_day;
-                packet.envelope.domain = static_cast<uint16_t>(
-                    RuntimeDomainId::COUNTRY);
-                packet.envelope.opcode = mirrored.opcode;
-                packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
-                std::memcpy(packet.payload.data(), &mirrored,
-                            sizeof(RuntimeCountryCommand));
-                packets.push_back(packet);
+                packets.push_back(encode_country_packet(mirrored));
                 // Always remember the Host request id. Effect may submit while
                 // the sync facade still owns writes (mask not granted yet) and
                 // Country can flip to worker authority before the local pending

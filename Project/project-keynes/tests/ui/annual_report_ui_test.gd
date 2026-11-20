@@ -20,15 +20,19 @@ class ControllerStub:
 class HostStub:
 	signal annual_report_ready(id: int)
 	var ready := true
+	var refuse := false
 	var marked := 0
 	var marked_ids: Array[int] = []
 	func annual_report_status() -> Dictionary: return {"ok": ready}
 	func annual_report_snapshot(_id: int) -> Dictionary: return Fixture.fixture()
 	func annual_report_history(_offset: int, _limit: int) -> Dictionary: return {"reports": [{"id": 1, "year": 0, "grade": "S"}]}
 	func annual_report_catalogs() -> Dictionary: return {}
-	func mark_annual_report_presented(id: int) -> void:
+	func mark_annual_report_presented(id: int) -> Dictionary:
+		if refuse:
+			return {"ok": false, "admitted": false, "code": "annual_report_reward_pending"}
 		marked = id
 		marked_ids.append(id)
+		return {"ok": true, "admitted": true, "code": "queued"}
 
 class UiStub:
 	signal annual_history_requested()
@@ -295,6 +299,17 @@ func _run() -> void:
 	second_ui.annual_report_closed.emit(2)
 	second_flow.try_present()
 	_expect("history navigation acknowledges all viewed years without duplicate popup", second_host.marked_ids == [1, 2] and second_ui.opened == 2 and not second_flow.is_open())
+	var denied_host := HostStub.new()
+	denied_host.refuse = true
+	var denied_ui := UiStub.new()
+	var denied_flow := Flow.new()
+	denied_flow.configure(ControllerStub.new(), denied_host, denied_ui)
+	denied_flow.queue_report(1)
+	denied_ui.annual_report_closed.emit(1)
+	var denied: Dictionary = denied_flow.capture()
+	print("REVIEW_ANNUAL_REFUSAL=", denied)
+	_expect("a rejected native acknowledgment preserves the viewed report",
+		denied.get("viewed", []).has(1) and denied_host.marked_ids.is_empty())
 	workspace.queue_free()
 	top.queue_free()
 	bar.queue_free()

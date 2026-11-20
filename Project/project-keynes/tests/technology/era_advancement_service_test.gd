@@ -3,12 +3,14 @@ extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 const Service = preload("res://scripts/era/era_advancement_service.gd")
 const Rules = preload("res://scripts/era/era_advancement_catalog.gd")
 const START_DAY := 25
-const PURCHASE_DAY := 27
-const PROMOTION_DAY := 29
-const REWARD_DAY := 31
+const EXECUTION_DAY := 27
+const PURCHASE_DAY := 29
+const PROMOTION_DAY := 31
+const REWARD_DAY := 33
 
 var _advance := Service.new()
 var _sequence := 980000
+var _terminals := {}
 
 
 func _run() -> void:
@@ -54,13 +56,15 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 	var family_policy := host.set_gm_toggle("ui.hide_all_except_gm", true)
 	_expect("the procurement fixture keeps unrelated family offers open without stopping",
 		family_policy.get("effective_day", -1) == 1)
-	_expect("the executor rejects starting before any eligibility",
-		(await _advancement_result(host, "start", 2)).get("code") == "era_advance_conditions_unmet")
+	host.simulation_command_results.connect(func(rows: Array) -> void:
+		for row: Dictionary in rows:
+			_terminals[int(row.get("sequence", -1))] = row)
+	var ineligible_start := _queue_advancement("start", 2)
 	var invalid_policy := _next_sequence()
 	_advance.set_policy(10001, 0, 2, invalid_policy)
-	var refusal := await _wait_boundary_result(host, "procurement.set_policy", invalid_policy)
-	_expect("policy outside 0–10000 is rejected without a date", refusal.get("admitted") == false
-		and not refusal.has("effective_day"))
+	var starts: Array[int] = []
+	var resumes: Array[int] = []
+	var opening_budget: Dictionary = opening.budget
 	var advances: Array = []
 	_advance.era_advanced.connect(func(old: int, next: int, _buffs: PackedStringArray): advances.append([old, next]))
 	var market := -1
@@ -90,6 +94,9 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				market = int(economy.market_cell_snapshot(cell).get("market_id", -1))
 				for good in ["logs", "gathered_plants", "game_meat", "clothing"]:
 					_stock(ext, EconomyFacade.Opcode.ADD_STOCK, market, good_ids.find(good), 0, 5000000)
+			2:
+				_check_advancement(ineligible_start, day, false, "era_advance_conditions_unmet")
+				_check_advancement(invalid_policy, day, false, "procurement_share_invalid")
 			4:
 				for i in range(470):
 					_expect("sponsor a real commercial building", bool(economy.treasury_sponsored_build(
@@ -101,21 +108,30 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				_expect("only settled research and two economy gates permit starting",
 					bool(model.can_start) and bool(model.conditions[0].mandatory) and bool(model.conditions[0].met)
 					and int(model.conditions_met) >= Rules.CONDITIONS_REQUIRED)
-				var policy := _advance.set_policy(10000, 0, PURCHASE_DAY, _next_sequence())
-				_expect("the accepted policy retains its requested day", bool(policy.ok) and int(policy.effective_day) == PURCHASE_DAY)
-				_expect("starting the real purchase succeeds", bool((await _advancement_result(host, "start", PURCHASE_DAY)).get("ok", false)))
-				var started := _advance.capture()
-				for row in Rules.procurement_goods(1):
-					frozen.append(Rules.required_quantity(row, started.frozen_territory))
-				_expect("the authored requirements freeze at purchase start",
-					started.required_quantities == frozen and String(started.phase) == "purchasing")
-				_expect("starting a second purchase is rejected",
-					(await _advancement_result(host, "start", PURCHASE_DAY)).get("code") == "era_advance_in_progress")
-				_expect("pause is admitted", bool((await _advancement_result(host, "pause", PURCHASE_DAY)).get("ok", false)))
+				opening_budget = model.budget
+				var policy := _advance.set_policy(10000, 0, EXECUTION_DAY, _next_sequence())
+				_expect("policy is admitted for D+2", bool(policy.ok) and int(policy.effective_day) == EXECUTION_DAY)
+				for action: String in ["start", "start", "pause", "pause", "resume", "resume", "pause"]:
+					starts.append(_queue_advancement(action, EXECUTION_DAY))
+			START_DAY + 1:
+				print("REVIEW_ERA_EARLY day=", day, " phase=", _advance.capture().get("phase"))
+				_expect("the dated D+2 requests leave D+1 idle", model.status == "ready"
+					and _advance.capture().required_quantities.is_empty()
+					and model.budget.treasury_share_bp == opening_budget.treasury_share_bp
+					and not _terminals.has(starts[0]))
+			EXECUTION_DAY:
+				_check_advancement(starts[0], day, true, "era_advance_started")
+				_check_advancement(starts[1], day, false, "era_advance_in_progress")
+				_check_advancement(starts[2], day, true, "era_advance_paused")
+				_check_advancement(starts[3], day, false, "era_advance_not_purchasing")
+				_check_advancement(starts[4], day, true, "era_advance_resumed")
+				_check_advancement(starts[5], day, false, "era_advance_not_paused")
+				_check_advancement(starts[6], day, true, "era_advance_paused")
 				var paused := _advance.capture()
-				_expect("paused purchase retains frozen requirements", paused.required_quantities == frozen)
-				_expect("pausing twice is rejected",
-					(await _advancement_result(host, "pause", PURCHASE_DAY)).get("code") == "era_advance_not_purchasing")
+				for row in Rules.procurement_goods(1):
+					frozen.append(Rules.required_quantity(row, paused.frozen_territory))
+				_expect("the authored requirements freeze on the accepted start day and remain through pause",
+					paused.required_quantities == frozen and String(paused.phase) == "paused")
 				_expect("restoring an executing world is rejected before touching it",
 					_advance.stage_restore(paused).get("code") == "era_session_setup_requires_stopped_executor")
 				var stopped := await host._stop_previous_runtime_worker()
@@ -125,20 +141,26 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				host._start_runtime_executor()
 				_expect("reading the restored player section keeps the order", _advance.preview().status == "paused"
 					and _advance.to_save().required_quantities == frozen)
-				_expect("resuming queues the same order", bool((await _advancement_result(host, "resume", PURCHASE_DAY)).get("ok", false))
-					and _advance.to_save().required_quantities == frozen)
-				_expect("resuming twice is rejected",
-					(await _advancement_result(host, "resume", PURCHASE_DAY)).get("code") == "era_advance_not_paused")
+				resumes.append(_queue_advancement("resume", PURCHASE_DAY))
+				resumes.append(_queue_advancement("resume", PURCHASE_DAY))
+			PURCHASE_DAY - 1:
+				_expect("the restored plan stays paused until the dated resume",
+					model.status == "paused" and _advance.to_save().required_quantities == frozen
+					and not _terminals.has(resumes[0]))
 			PURCHASE_DAY:
+				_check_advancement(resumes[0], day, true, "era_advance_resumed")
+				_check_advancement(resumes[1], day, false, "era_advance_not_paused")
+				_expect("the resume keeps the frozen quantities",
+					_advance.to_save().required_quantities == frozen)
 				var stock: Dictionary = economy.country_procurement_snapshot(handle)
-				_expect("goods from the market complete procurement on day 27", int(stock.era_cash_spent_total) > 0
+				_expect("goods from the market complete procurement on the resume day", int(stock.era_cash_spent_total) > 0
 					and model.status == "completing" and int(_advance.to_save().completion_day) == day)
 				for row in model.costs:
 					_expect("the completed purchase has exact required stock", int(row.in_treasury) == int(row.required))
 				_expect("reading the view never repeats or advances the completion",
 					_advance.refresh(day, true) == model and _advance.refresh(day, true) == model)
 			PROMOTION_DAY - 1:
-				_expect("the pending batch does not advance before day 29", int(model.current_era_index) == 0
+				_expect("the pending batch does not advance before the milestone day", int(model.current_era_index) == 0
 					and model.status == "completing" and advances.is_empty())
 			PROMOTION_DAY:
 				_expect("the acknowledged milestone clears the order and announces once",
@@ -157,12 +179,19 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 	return {}
 
 
-func _advancement_result(host: WorldRuntimeHost, action: String, day: int) -> Dictionary:
+func _queue_advancement(action: String, day: int) -> int:
 	var sequence := _next_sequence()
 	var admission: Dictionary = _advance.call(action, day, sequence)
 	_expect("%s enters the inbox with its date" % action,
 		admission.get("admitted") == true and admission.get("effective_day") == day)
-	return await _wait_boundary_result(host, "era.advance." + action, sequence)
+	return sequence
+
+
+func _check_advancement(sequence: int, day: int, ok: bool, code: String) -> void:
+	var result: Dictionary = _terminals.get(sequence, {})
+	_expect("day %d produces %s (%s)" % [day, code, result], result.get("ok") == ok
+		and result.get("code") == code and result.get("settled_day") == day
+		and (result.has("effective_day") if ok else not result.has("effective_day")))
 
 
 func _stock(ext: Object, op: int, cell: int, good: int, cohort: int, value: int) -> void:

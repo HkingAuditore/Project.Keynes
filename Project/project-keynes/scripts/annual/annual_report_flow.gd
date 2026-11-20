@@ -14,6 +14,7 @@ var _history_offset: int = 0
 var _catalogs: Dictionary = {}
 var _reopen_pending: bool = false
 var _viewed: Array[int] = []
+var _confirmation_error := ""
 func configure(controller, host, ui) -> void:
 	_controller = controller
 	_host = host
@@ -126,6 +127,8 @@ func _select_report(id: int, ceremonial: bool = false) -> void:
 	# 每次重取。
 	_catalogs = _host.annual_report_catalogs()
 	var model: Dictionary = ViewModel.build(report, previous, _catalogs)
+	if not _confirmation_error.is_empty():
+		model["confirmation_error"] = _confirmation_error
 	# 纪事是末章，只加文字。没有缓存就不加，报告与今天完全一致。
 	var chronicle := ""
 	if _scribe != null:
@@ -144,17 +147,29 @@ func _load_history(offset: int) -> void:
 	var rows: Array = history.get("reports", [])
 	_ui.set_annual_history(rows, _history_offset, rows.size() == 64)
 
-func _on_closed(id: int) -> void:
+func _on_closed(_id: int) -> void:
 	if not _open:
 		return
 	_open = false
 	# Closing after browsing history also acknowledges the annual report the
 	# player actually opened first, rather than reopening it immediately.
-	if _viewed.has(_queued):
-		_queued = 0
+	var unconfirmed: Array[int] = []
+	_confirmation_error = ""
 	for viewed_id in _viewed:
-		_host.mark_annual_report_presented(viewed_id)
-	_viewed.clear()
+		var receipt: Dictionary = _host.mark_annual_report_presented(viewed_id)
+		if bool(receipt.get("admitted", false)):
+			if viewed_id == _queued:
+				_queued = 0
+		else:
+			unconfirmed.append(viewed_id)
+			_confirmation_error = {
+				"annual_report_reward_pending": "年报奖励尚未结算，暂时无法确认。",
+				"annual_report_not_found": "这份年报尚未准备好。",
+			}.get(receipt.get("code", ""), "年报暂时无法确认。")
+	_viewed = unconfirmed
+	if not unconfirmed.is_empty():
+		_report_id = unconfirmed[0]
+		_reopen_pending = true
 
 
 func capture() -> Dictionary:
@@ -163,6 +178,7 @@ func capture() -> Dictionary:
 
 
 func restore(state: Dictionary) -> void:
+	_confirmation_error = ""
 	_report_id = int(state.get("report_id", 0))
 	_viewed.clear()
 	for id in state.get("viewed", []):

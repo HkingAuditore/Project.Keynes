@@ -15,7 +15,9 @@ const CatalogPacket = preload("res://scripts/narrative/narrative_catalog_packet.
 var _bus = null
 var _country: int = 0
 var _view: Dictionary = {}
-var _last_ai_request: int = 0
+var _dispatched_ai_requests: Dictionary = {}
+var _pending_ai_replies: Dictionary = {}
+var _executor_started := false
 var _last_record: int = 0
 var _session_generation := 0
 var _catalog: NarrativeEventCatalog
@@ -26,12 +28,16 @@ func bind_world(generator, clock: WorldClock, country: int, seed: int,
 	_country = country
 	_bus = generator.get_gameplay_event_bus()
 	_session_generation += 1
+	_dispatched_ai_requests.clear()
+	_pending_ai_replies.clear()
+	_executor_started = false
 	var packet := CatalogPacket.build(catalog(), generator, clock, country, seed, enable_ai, pause_mask)
 	if _bus == null or not _bus.configure_story(packet):
 		return {"ok": false, "code": "narrative_executor_configure_failed"}
 	_refresh_view()
 	var records: Array = _view.get("chronicle", [])
 	_last_record = 0 if records.is_empty() else int(records[0].get("record_id", 0))
+	_dispatch_ai_requests()
 	return {"ok": true}
 
 
@@ -40,7 +46,9 @@ func release_world() -> Dictionary:
 	_country = 0
 	_view = {}
 	_session_generation += 1
-	_last_ai_request = 0
+	_dispatched_ai_requests.clear()
+	_pending_ai_replies.clear()
+	_executor_started = false
 	_last_record = 0
 	_notice_history.clear()
 	return {"ok": true}
@@ -52,13 +60,16 @@ func catalog() -> NarrativeEventCatalog:
 	return _catalog
 
 
+func executor_started() -> void:
+	_executor_started = true
+	for sequence: int in _pending_ai_replies.keys():
+		_forward_ai_reply(sequence)
+	consume_committed()
+
+
 func consume_committed() -> void:
 	_refresh_view()
-	for request: Dictionary in _view.get("ai_requests", []):
-		var sequence := int(request.get("ai_request_seq", 0))
-		if sequence > _last_ai_request:
-			_last_ai_request = sequence
-			ai_generation_requested.emit(request.duplicate(true))
+	_dispatch_ai_requests()
 	var records: Array = _view.get("chronicle", [])
 	var fresh: Array[Dictionary] = []
 	for row: Dictionary in records:
@@ -71,6 +82,14 @@ func consume_committed() -> void:
 		choice_resolved.emit(row)
 	if not fresh.is_empty():
 		chronicle_updated.emit()
+
+
+func _dispatch_ai_requests() -> void:
+	for request: Dictionary in _view.get("ai_requests", []):
+		var sequence := int(request.get("ai_request_seq", 0))
+		if sequence > 0 and not _dispatched_ai_requests.has(sequence):
+			_dispatched_ai_requests[sequence] = true
+			ai_generation_requested.emit(request.duplicate(true))
 
 
 func event_pause_mask() -> int:
@@ -135,7 +154,19 @@ func _submit_ai_reply(result: Dictionary, session_generation: int, sequence: int
 		payload["definition"] = CatalogPacket.encode_event(definition)
 	else:
 		payload["code"] = result.get("code", "ai_generation_failed")
-	_request(&"ai_result", payload)
+	_pending_ai_replies[sequence] = payload
+	# The transport can complete synchronously while a restored session is still
+	# binding. world_ready delivers the buffered reply after the executor starts.
+	if _executor_started:
+		_forward_ai_reply(sequence)
+
+
+func _forward_ai_reply(sequence: int) -> void:
+	var receipt := _request(&"ai_result", _pending_ai_replies[sequence])
+	if bool(receipt.get("admitted", false)):
+		_pending_ai_replies.erase(sequence)
+	else:
+		push_warning("AI story reply %d was not admitted (%s)" % [sequence, receipt.get("code", "")])
 
 
 func consume_notices(days: Array) -> void:

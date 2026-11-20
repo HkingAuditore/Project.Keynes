@@ -83,7 +83,7 @@ class AnnualFeed extends RefCounted:
 	func get_annual_report_history(offset: int, limit: int) -> Dictionary: return {"ok": true, "reports": [get_annual_report_snapshot(1)], "offset": offset, "limit": limit}
 	func mark_annual_report_presented(id: int) -> Dictionary:
 		presented.append(id)
-		return {"ok": true}
+		return {"ok": true, "admitted": true, "code": "ok", "report_id": id}
 
 func _init() -> void:
 	call_deferred("_run")
@@ -154,8 +154,8 @@ func _run() -> void:
 	_check("annual report", old.annual_report_snapshot(1) == current.annual_report_snapshot(1))
 	_check("annual history", old.annual_report_history(0, 3) == current.annual_report_history(0, 3))
 	_check("annual waiting", old.annual_reports_waiting_for_year(1) == current.annual_reports_waiting_for_year(1))
-	old.mark_annual_report_presented(1)
-	current.mark_annual_report_presented(1)
+	_check("annual acknowledgment receipt", old.mark_annual_report_presented(1) ==
+		current.mark_annual_report_presented(1))
 	_check("annual presented", old._annual_reports._ext.presented == current._annual_reports._ext.presented)
 	for host in [old, current]:
 		host._world_clock.free()

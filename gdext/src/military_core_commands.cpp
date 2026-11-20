@@ -347,21 +347,6 @@ bool MilitaryCore::validate_command(MilitaryCommand &command, std::string &error
                     return false;
                 }
             }
-            // 三项之和必须 <= 100%：未传的通道沿用当前值，这样 UI 只推一项时
-            // 校验的仍然是玩家最终会看到的那个组合，而不是一份残缺的配置。
-            const int32_t slot_now = country_slot_for_handle(command.country);
-            const MilitaryCountryPolicy &now = _policies[(size_t)slot_now];
-            const int32_t wage = command.ints.size() >= 1 && command.ints[0] >= 0
-                                     ? command.ints[0] : now.budget_wage_bp;
-            const int32_t upkeep = command.ints.size() >= 2 && command.ints[1] >= 0
-                                       ? command.ints[1] : now.budget_upkeep_bp;
-            const int32_t procurement =
-                command.ints.size() >= 3 && command.ints[2] >= 0
-                    ? command.ints[2] : now.procurement_share_bp;
-            if (static_cast<int64_t>(wage) + upkeep + procurement > 10000) {
-                error = "command_budget_channels_exceed_10000";
-                return false;
-            }
             break;
         }
         case MCMD_ARMY_CREATE: {
@@ -494,11 +479,6 @@ bool MilitaryCore::validate_command(MilitaryCommand &command, std::string &error
             std::sort(command.cells.begin(), command.cells.end());
             command.cells.erase(std::unique(command.cells.begin(), command.cells.end()),
                                 command.cells.end());
-            if (command.cells.empty() ||
-                command.cells.size() > (size_t)MILITARY_MAX_EXPLORATION_CELLS) {
-                error = "command_bad_exploration_cells";
-                return false;
-            }
             for (int32_t cell : command.cells) {
                 if (cell < 0 || cell >= _terrain.cell_count) {
                     error = "command_bad_exploration_cells";
@@ -688,19 +668,27 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             policy.wage_absolute = cmd.value;
             return;
         case MCMD_POLICY_SET_PROCUREMENT:
-            policy.procurement_share_bp = (int32_t)cmd.value;
-            return;
         case MCMD_POLICY_SET_BUDGET: {
-            // -1 表示「本次不改」，让 UI 只推变化的那一项；其余按传入值落库。
-            // 采购占比走 ints[2] 而不是复用 value，因为 value 已经是总份额。
-            if (cmd.value >= 0)
-                policy.budget_share_bp = (int32_t)std::min<int64_t>(cmd.value, 10000);
-            if (cmd.ints.size() >= 1 && cmd.ints[0] >= 0)
-                policy.budget_wage_bp = std::min(cmd.ints[0], 10000);
-            if (cmd.ints.size() >= 2 && cmd.ints[1] >= 0)
-                policy.budget_upkeep_bp = std::min(cmd.ints[1], 10000);
-            if (cmd.ints.size() >= 3 && cmd.ints[2] >= 0)
-                policy.procurement_share_bp = std::min(cmd.ints[2], 10000);
+            const auto share = [&](size_t index, int32_t current) {
+                return index < cmd.ints.size() && cmd.ints[index] >= 0
+                    ? cmd.ints[index] : current;
+            };
+            const bool procurement_only = cmd.op == MCMD_POLICY_SET_PROCUREMENT;
+            const int32_t wage = share(0, policy.budget_wage_bp);
+            const int32_t upkeep = share(1, policy.budget_upkeep_bp);
+            const int32_t procurement = procurement_only ? static_cast<int32_t>(cmd.value)
+                : share(2, policy.procurement_share_bp);
+            if (wage + upkeep + procurement > 10000) {
+                if (cmd.count > 0) _player_command_rejections.push_back({
+                    procurement_only ? "military.policy.set_procurement" : "military.policy.set_budget",
+                    cmd.count, "command_budget_channels_exceed_10000"});
+                return;
+            }
+            if (!procurement_only && cmd.value >= 0)
+                policy.budget_share_bp = static_cast<int32_t>(cmd.value);
+            policy.budget_wage_bp = wage;
+            policy.budget_upkeep_bp = upkeep;
+            policy.procurement_share_bp = procurement;
             return;
         }
         case MCMD_BARRACKS_PAUSE:
@@ -717,7 +705,11 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             const int64_t have = std::max<int64_t>(0,
                 garrison_heads_for_unit(_lots, cmd.cell, country, (int16_t)from_unit) - reserved);
             const int64_t count = std::min(have, cmd.count);
-            if (count <= 0) return;
+            if (count <= 0) {
+                if (player_order) _player_command_rejections.push_back({
+                    "military.train", cmd.value, "command_no_training_garrison"});
+                return;
+            }
             const MilitaryUnitType &to = _catalog.units[(size_t)cmd.unit_to];
             MilitaryCellState *st = cell_state(cmd.cell, false);
             int32_t speed = MILITARY_Q16;

@@ -93,8 +93,8 @@ bool NativeSimulationHost::run_day_events(DayExecution &day, int64_t event_day) 
             RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u;
-    // Probe mode records a rejected attempt once. Authority mode must retry
-    // the same sealed day and cannot advance its watermark on failure.
+    // A malformed input packet has a receipt. Plan or commit failure means
+    // the sealed day cannot proceed, even if more time is available.
     if (events_ok || !events_authoritative)
         _events_last_processed_day = event_day;
     _events_failed_day.store(events_ok || !events_authoritative ? -1 : event_day,
@@ -117,7 +117,11 @@ bool NativeSimulationHost::run_day_events(DayExecution &day, int64_t event_day) 
             events_report.fallback_reason[i], std::memory_order_release);
         if (events_report.fallback_reason[i] == '\0') break;
     }
-    if (!events_ok) return false;
+    if (!events_ok) {
+        if (events_authoritative && state() != RuntimeWorkerState::FAULTED)
+            set_fault(events_report.fallback_reason);
+        return false;
+    }
     uint32_t events_slot = 0;
     if (_events_snapshots.try_begin_write(events_slot)) {
         _events_snapshots.write_buffer(events_slot) = _events_authority.snapshot();

@@ -77,7 +77,8 @@ public:
     void remove_pending_commands(const std::vector<uint64_t> &request_ids) noexcept;
     size_t remove_pending_producer(uint64_t producer_id) noexcept;
     bool plan_day(int64_t day, uint64_t input_generation,
-                  RuntimeCountryPodPlan &plan, std::string &error);
+                  RuntimeCountryPodPlan &plan, std::string &error,
+                  const std::vector<RuntimeCountryCommand> *observations = nullptr);
     bool commit_day(RuntimeCountryPodPlan &plan,
                     const std::vector<RuntimeDomainAck> &acks,
                     std::string &error);

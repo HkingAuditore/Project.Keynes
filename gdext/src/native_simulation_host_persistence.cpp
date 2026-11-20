@@ -241,13 +241,14 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     size_t cursor = SCALAR_HEADER_SIZE;
     const size_t payload_end = size - sizeof(uint64_t);
     uint32_t command_count = 0;
-    if (!read_u32(cursor, command_count) ||
-        command_count > RUNTIME_COMMAND_QUEUE_CAPACITY) {
+    if (!read_u32(cursor, command_count) || cursor + 4u > payload_end ||
+        command_count > (payload_end - cursor - 4u) / 52u) {
         error = "runtime_bundle_command_count_invalid";
         return false;
     }
     cursor += 4u;
     parsed.pending_commands.reserve(command_count);
+    uint32_t regular_commands = 0;
     for (uint32_t i = 0; i < command_count; ++i) {
         RuntimeCommandPacket packet;
         RuntimeCommandEnvelope &envelope = packet.envelope;
@@ -282,6 +283,11 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         if (envelope.payload_size > 0) {
             std::memcpy(packet.payload.data(), bytes + cursor,
                         envelope.payload_size);
+        }
+        if (!is_country_day_observation(envelope) &&
+                ++regular_commands > RUNTIME_COMMAND_QUEUE_CAPACITY) {
+            error = "runtime_bundle_command_count_invalid";
+            return false;
         }
         cursor += envelope.payload_size;
         parsed.pending_commands.push_back(std::move(packet));
@@ -991,6 +997,18 @@ void NativeSimulationHost::build_save_bundle(
     bundle->environment_day = _environment_day.load(std::memory_order_acquire);
     bundle->time_debt_days = _time_debt_days.load(std::memory_order_acquire);
     bundle->pending_commands = pending_commands;
+    for (const auto &day : _country_observations)
+        for (const auto &observation : day.second) {
+            auto packet = encode_country_packet(observation);
+            packet.envelope.producer_id = COUNTRY_OBSERVATION_ARCHIVE_PRODUCER;
+            bundle->pending_commands.push_back(std::move(packet));
+        }
+    if (!_country_observations.empty()) {
+        // The archive has no live submit-order lane. Save the two inboxes
+        // in their original order so restore can rebuild the tie-break.
+        std::stable_sort(bundle->pending_commands.begin(), bundle->pending_commands.end(),
+            [](const auto &a, const auto &b) { return a.submit_order < b.submit_order; });
+    }
     for (size_t i = 0; i < _producer_sequences.size(); ++i) {
         bundle->producer_sequences[i] = _producer_sequences[i].load(
             std::memory_order_acquire);
@@ -1069,7 +1087,7 @@ void NativeSimulationHost::build_save_bundle(
                     return;
                 }
             }
-            for (const RuntimeCommandPacket &packet : pending_commands) {
+            for (const RuntimeCommandPacket &packet : bundle->pending_commands) {
                 if (packet.envelope.domain !=
                         static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
                     packet.envelope.request_id == 0) {
@@ -1079,7 +1097,8 @@ void NativeSimulationHost::build_save_bundle(
                 if (existing == states.end()) {
                     CountryCommandReceipt accepted;
                     accepted.request_id = packet.envelope.request_id;
-                    accepted.producer_id = packet.envelope.producer_id;
+                    accepted.producer_id = is_country_day_observation(packet.envelope)
+                        ? 0 : packet.envelope.producer_id;
                     accepted.sequence = packet.envelope.sequence;
                     accepted.effective_day = packet.envelope.effective_day;
                     accepted.generation = checkpoint.generation;

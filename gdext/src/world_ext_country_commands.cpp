@@ -151,20 +151,7 @@ Dictionary enqueue_country_host_command_batch(
         command.value = values[index];
         country_copy_fixed(command.stable_id, stable_ids[index]);
         country_copy_fixed(command.display_name, display_names[index]);
-        RuntimeCommandPacket packet;
-        packet.envelope.request_id = command.request_id;
-        packet.envelope.producer_id = command.producer_id;
-        packet.envelope.sequence = command.sequence;
-        packet.envelope.observed_generation = command.observed_generation;
-        packet.envelope.requested_day = command.requested_day;
-        packet.envelope.effective_day = command.effective_day;
-        packet.envelope.domain = static_cast<uint16_t>(
-            RuntimeDomainId::COUNTRY);
-        packet.envelope.opcode = opcode;
-        packet.envelope.payload_offset = 0;
-        packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
-        std::memcpy(packet.payload.data(), &command, sizeof(command));
-        packets.push_back(packet);
+        packets.push_back(encode_country_packet(command));
     }
     std::vector<int64_t> admitted_days;
     if (!host.enqueue_batch(std::move(packets), &admitted_days)) {

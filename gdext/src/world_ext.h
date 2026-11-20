@@ -2102,7 +2102,7 @@ public:
                                         const godot::PackedByteArray &is_water);
     godot::Dictionary submit_country_commands(const godot::Dictionary &packed_batch);
     godot::Dictionary poll_country_command_receipts(
-            int64_t after_request_id = 0, int limit = 128);
+            int64_t after_publication = 0, int limit = 128);
     bool runtime_country_host_receipt_self_test() const;
     bool runtime_country_shadow_parity_self_test() const;
     void set_country_sync_store_writes_forbidden(bool forbidden);

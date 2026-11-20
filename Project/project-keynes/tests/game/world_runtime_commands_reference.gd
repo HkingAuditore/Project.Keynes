@@ -240,8 +240,8 @@ func annual_report_snapshot(report_id: int) -> Dictionary:
 func annual_report_history(offset: int = 0, limit: int = 64) -> Dictionary:
 	return _annual_reports.history(offset, limit)
 
-func mark_annual_report_presented(report_id: int) -> void:
-	_annual_reports.mark_presented(report_id)
+func mark_annual_report_presented(report_id: int) -> Dictionary:
+	return _annual_reports.mark_presented(report_id)
 
 func annual_reports_waiting_for_year(year: int) -> bool:
 	return _annual_reports.waiting_for_year(year)

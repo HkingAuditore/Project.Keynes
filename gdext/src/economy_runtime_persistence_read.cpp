@@ -300,6 +300,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_command_payload_truncated";
                 return false;
             }
+            if (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION) {
+                cmd.expedition_route_hash = cmd.effect_idempotency_key;
+                cmd.effect_idempotency_key = 0;
+            }
             if (cmd.effect_request_id < 0 ||
                 (cmd.effect_request_id == 0 && cmd.effect_idempotency_key != 0) ||
                 (cmd.effect_request_id != 0 && cmd.effect_idempotency_key == 0)) {

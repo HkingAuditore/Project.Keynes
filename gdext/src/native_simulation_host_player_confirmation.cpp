@@ -186,8 +186,8 @@ void NativeSimulationHost::prepare_player_ideology_responses(int64_t day, bool o
 godot::Dictionary NativeSimulationHost::submit_player_confirmation(Confirmation request) {
     int64_t day = request.kind == Confirmation::Kind::POPUP_POLICY ? request.day : 0;
     {
-        auto admission = lock_command_admission(day);
-        if (!admission.owns_lock() || !_world_environment || state() == RuntimeWorkerState::STOPPED ||
+        auto admission = admit_command(day);
+        if (!admission.accepted() || !_world_environment || state() == RuntimeWorkerState::STOPPED ||
                 state() == RuntimeWorkerState::FAULTED || _stop_requested.load(std::memory_order_acquire))
             return confirmation_receipt(false, "player_confirmation_unavailable");
         std::lock_guard<std::mutex> control(_control_mutex);
@@ -260,7 +260,8 @@ std::vector<uint8_t> NativeSimulationHost::encode_player_confirmation(int64_t da
     const auto &state = _player_confirmation;
     const int64_t advance = state.advance_through.load(std::memory_order_acquire);
     if (!state.hide_popups && state.dismissed_ideology == 0 && advance <= day &&
-            state.popup_updates.empty() && state.era_selections.empty()) return {};
+            state.popup_updates.empty() && state.era_selections.empty() &&
+            state.era_advancement.empty()) return {};
     CheckpointWriter writer;
     writer.field(uint8_t(state.hide_popups));
     writer.field(state.dismissed_ideology);
@@ -275,6 +276,19 @@ std::vector<uint8_t> NativeSimulationHost::encode_player_confirmation(int64_t da
         wire.field(request->choice);
         wire.field(request->advancement_sequence);
     });
+    if (!state.era_advancement.empty()) {
+        writer.rows(state.era_advancement, [](auto &wire, const auto &request) {
+            wire.field(static_cast<uint8_t>(request->kind));
+            wire.field(request->country_handle);
+            wire.field(request->effective_day);
+            wire.field(request->advancement_sequence);
+            const auto &policy = request->advancement;
+            wire.field(int32_t(policy.get("treasury_share_bp", 200)));
+            wire.field(int32_t(policy.get("research_share_bp", 5000)));
+            wire.field(int32_t(policy.get("era_share_bp", -1)));
+            wire.field(int32_t(policy.get("colonization_share_bp", -1)));
+        });
+    }
     return std::move(writer.bytes);
 }
 
@@ -285,6 +299,7 @@ void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t
     state.advance_through.store(-1, std::memory_order_release);
     state.popup_updates.clear();
     state.era_selections.clear();
+    state.era_advancement.clear();
     if (bytes.empty()) return;
     CheckpointReader reader{bytes.data(), bytes.size()};
     uint8_t hide = 0;
@@ -292,6 +307,7 @@ void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t
     int64_t advance = -1;
     std::vector<std::pair<int64_t, uint8_t>> updates;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> selections;
+    std::deque<std::shared_ptr<RuntimeEraRewardRequest>> advancement;
     if (!reader.field(hide) || hide > 1 || !reader.field(dismissed) || !reader.field(advance) ||
             !reader.rows(updates, [day](auto &wire, auto &update) {
                 return wire.field(update.first) && update.first > day &&
@@ -301,7 +317,24 @@ void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t
                 return wire.field(request->effective_day) && request->effective_day > day &&
                     wire.field(request->offer_generation) && wire.field(request->choice) &&
                     wire.field(request->advancement_sequence);
-            }) || reader.cursor != reader.size) {
+            }) || (reader.cursor < reader.size && !reader.rows(advancement, [day](auto &wire, auto &request) {
+                using Kind = RuntimeEraRewardRequest::Kind;
+                request = std::make_shared<RuntimeEraRewardRequest>();
+                uint8_t kind = 0;
+                int32_t treasury, research, era, colonization;
+                if (!wire.field(kind) || kind < static_cast<uint8_t>(Kind::START_ADVANCEMENT) ||
+                        kind > static_cast<uint8_t>(Kind::SET_ADVANCEMENT_POLICY) ||
+                        !wire.field(request->country_handle) || !wire.field(request->effective_day) ||
+                        request->effective_day <= day || !wire.field(request->advancement_sequence) ||
+                        !wire.field(treasury) || !wire.field(research) || !wire.field(era) ||
+                        !wire.field(colonization)) return false;
+                request->kind = static_cast<Kind>(kind);
+                request->advancement["treasury_share_bp"] = treasury;
+                request->advancement["research_share_bp"] = research;
+                request->advancement["era_share_bp"] = era;
+                request->advancement["colonization_share_bp"] = colonization;
+                return true;
+            })) || reader.cursor != reader.size) {
         log_error("player confirmation restore: runtime_bundle_player_confirmation_invalid");
         return;
     }
@@ -310,6 +343,7 @@ void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t
     if (advance > day) state.advance_through.store(advance, std::memory_order_release);
     state.popup_updates.insert(updates.begin(), updates.end());
     state.era_selections = std::move(selections);
+    state.era_advancement = std::move(advancement);
 }
 
 } // namespace pk

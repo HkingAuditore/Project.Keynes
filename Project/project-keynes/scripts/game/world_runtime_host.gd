@@ -1193,8 +1193,8 @@ func annual_report_snapshot(report_id: int) -> Dictionary:
 	return _generation_adapter.annual_report_snapshot(self, report_id)
 func annual_report_history(offset: int = 0, limit: int = 64) -> Dictionary:
 	return _generation_adapter.annual_report_history(self, offset, limit)
-func mark_annual_report_presented(report_id: int) -> void:
-	_generation_adapter.mark_annual_report_presented(self, report_id)
+func mark_annual_report_presented(report_id: int) -> Dictionary:
+	return _generation_adapter.mark_annual_report_presented(self, report_id)
 func annual_reports_waiting_for_year(year: int) -> bool:
 	return _generation_adapter.annual_reports_waiting_for_year(self, year)
 func annual_report_catalogs() -> Dictionary:

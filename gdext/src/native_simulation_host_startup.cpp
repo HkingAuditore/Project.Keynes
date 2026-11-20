@@ -171,9 +171,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     } else {
         // Commands still in ingress are accepted work too. Drain before the
         // transport is reinitialized, preserving their original identities.
-        std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
-        RuntimeCommandPacket queued;
-        while (pop_command(queued)) _executor_pending_commands.push_back(std::move(queued));
+        std::lock_guard<std::mutex> lock(_command_producer_mutex);
+        drain_command_inbox(_executor_pending_commands);
     }
     {
         std::lock_guard<std::mutex> lock(_control_mutex);
@@ -193,6 +192,23 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _prestart_modifier_commands.clear();
     }
     seed_executor_command_orders();
+    if (restore_pending) {
+        _country_observations.clear();
+        auto &pending = _executor_pending_commands;
+        pending.erase(std::remove_if(pending.begin(), pending.end(), [&](const auto &packet) {
+            if (!is_country_day_observation(packet.envelope)) return false;
+            RuntimeCountryCommand observation;
+            std::string error;
+            if (!RuntimeCountryPodAdapter::decode_command(packet, observation, error)) {
+                log_error("country observation restore: %s", error.c_str());
+                return true;
+            }
+            observation.producer_id = 0;
+            reserve_command_request_ids_through(observation.request_id);
+            _country_observations[observation.effective_day].push_back(std::move(observation));
+            return true;
+        }), pending.end());
+    }
     _executor_day_environment.reset();
     _inline_day_pending.store(false, std::memory_order_release);
     // The caller's flag is only an eligibility request.  Coverage is proven
@@ -214,7 +230,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
     publish_narrative_boundary(start_day);
-    _command_frozen_through.store(start_day, std::memory_order_release);
+    _command_seal.store(start_day * 2, std::memory_order_release);
     _clock_requested_day.store(start_day, std::memory_order_release);
     _calendar_suspended.store(start_paused, std::memory_order_release);
     _display_consumed_day.store(start_day, std::memory_order_release);
@@ -414,9 +430,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _command_enqueue_pos.store(0, std::memory_order_relaxed);
     _command_dequeue_pos.store(0, std::memory_order_relaxed);
-    for (uint64_t i = 0; i < RUNTIME_COMMAND_QUEUE_CAPACITY; ++i) {
-        _command_slots[i].sequence.store(i, std::memory_order_relaxed);
-    }
     _receipt_write.store(0, std::memory_order_relaxed);
     _receipt_read.store(0, std::memory_order_relaxed);
     for (size_t i = 0; i < _producer_sequences.size(); ++i) {
@@ -955,6 +968,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
         if (restore_pending) {
             _country_command_terminals.clear();
+            _country_command_publications.clear();
             _country_command_states.clear();
         }
         if (restored_country_checkpoint_valid) {
@@ -964,7 +978,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             }
             for (const CountryCommandReceipt &receipt :
                      restored_country_checkpoint.terminal_receipts) {
-                _country_command_terminals.emplace(receipt.request_id, receipt);
+                if (_country_command_terminals.emplace(receipt.request_id, receipt).second &&
+                    receipt.producer_id != COUNTRY_AI_PRODUCER_ID)
+                    _country_command_publications.push_back(receipt.request_id);
             }
         }
         _country_pod_plan = RuntimeCountryPodPlan{};

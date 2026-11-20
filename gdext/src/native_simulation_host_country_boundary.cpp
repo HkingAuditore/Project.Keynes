@@ -220,6 +220,7 @@ bool NativeSimulationHost::publish_country_catalog(
     _economy_origin_asset_queue.clear();
     _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
     _country_command_terminals.clear();
+    _country_command_publications.clear();
     _country_command_states.clear();
     _country_pod_plan = RuntimeCountryPodPlan{};
     _country_worker_protocol = CountryPeerProtocolStatus{};
@@ -538,17 +539,7 @@ bool NativeSimulationHost::country_shadow_parity_self_test(std::string &error) c
             ? "country_parity_self_test_reference_failed" : publish_error;
         return false;
     }
-    RuntimeCommandPacket packet;
-    packet.envelope.request_id = rename.request_id;
-    packet.envelope.producer_id = rename.producer_id;
-    packet.envelope.sequence = rename.sequence;
-    packet.envelope.requested_day = rename.requested_day;
-    packet.envelope.effective_day = rename.effective_day;
-    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-    packet.envelope.opcode = rename.opcode;
-    packet.envelope.payload_offset = 0;
-    packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
-    std::memcpy(packet.payload.data(), &rename, sizeof(rename));
+    RuntimeCommandPacket packet = encode_country_packet(rename);
     RuntimeDayCommit commit;
     std::string stage_error;
     auto ack_worker_intents = [&]() {
@@ -1175,18 +1166,7 @@ bool NativeSimulationHost::country_command_receipt_self_test(
     valid_command.target_handle = 0;
     valid_command.weights_bp = {2500, 2500, 2500, 2500};
 
-    RuntimeCommandPacket valid_packet;
-    valid_packet.envelope.request_id = valid_command.request_id;
-    valid_packet.envelope.producer_id = valid_command.producer_id;
-    valid_packet.envelope.sequence = valid_command.sequence;
-    valid_packet.envelope.requested_day = valid_command.requested_day;
-    valid_packet.envelope.effective_day = valid_command.effective_day;
-    valid_packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-    valid_packet.envelope.opcode = valid_command.opcode;
-    valid_packet.envelope.payload_offset = 0;
-    valid_packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
-    std::memcpy(valid_packet.payload.data(), &valid_command,
-                sizeof(valid_command));
+    RuntimeCommandPacket valid_packet = encode_country_packet(valid_command);
 
     RuntimeCommandPacket malformed_packet;
     malformed_packet.envelope.request_id = 9902;

@@ -617,8 +617,6 @@ func _runtime_climate_neighbor_offsets_for_map(map: MapData) -> PackedInt32Array
 	return _get_runtime_climate_capture()._runtime_climate_neighbor_offsets_for_map(map)
 func _runtime_climate_trace_has_older_pending(day: int) -> bool:
 	return _get_runtime_climate_capture()._runtime_climate_trace_has_older_pending(day)
-func _notify_save_prefetch_suspend() -> void:
-	_get_runtime_climate_capture()._notify_save_prefetch_suspend()
 func environment_publish_callsite_mask() -> int:
 	return _get_runtime_climate_capture().environment_publish_callsite_mask()
 func environment_publish_diagnostics() -> Dictionary:

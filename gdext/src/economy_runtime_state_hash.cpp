@@ -1337,7 +1337,8 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
         mix_u64(static_cast<uint64_t>(cmd.i64_0));
         mix_u64(static_cast<uint64_t>(cmd.i64_1));
         mix_u64(static_cast<uint64_t>(cmd.effect_request_id));
-        mix_u64(cmd.effect_idempotency_key);
+        mix_u64(cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
+            ? cmd.expedition_route_hash : cmd.effect_idempotency_key);
     }
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
         const auto group = building_view(pk_row);

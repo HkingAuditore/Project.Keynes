@@ -336,8 +336,8 @@
                                 bool *source_drained_out = nullptr,
                                 uint64_t preferred_family_handle = 0,
                                 bool preferred_family_strict = false);
-    bool apply_start_family_expedition(const Command &cmd,
-                                       std::string &error);
+    bool apply_start_family_expedition(const Command &cmd, std::string &error,
+        const uint8_t *visible = nullptr, int32_t visible_count = 0, uint64_t kit_identity = 0);
     bool apply_cancel_family_expedition(const Command &cmd,
                                         std::string &error);
     bool apply_settle_family_expedition(const Command &cmd,
@@ -378,7 +378,7 @@
                                        const ColonizationKitPlan &kit);
     void refresh_preparing_family_expedition_missing(int32_t expedition);
     void abort_preparing_family_expedition(int32_t expedition, int64_t day,
-                                           uint8_t kind, const char *code);
+                                           uint8_t kind, const char *code, int64_t sequence = 0);
     bool launch_preparing_family_expedition(int32_t expedition, int64_t day,
                                             const ColonizationKitPlan &kit,
                                             std::string &error);
@@ -400,10 +400,7 @@
                                              int64_t effective_day,
                                              int64_t settled_day,
                                              uint8_t kind, const char *code);
-    bool pending_family_expedition_target_taken(uint64_t country_handle,
-                                                int32_t target_cell) const;
-    bool pending_family_expedition_cancel_taken(uint64_t expedition_handle) const;
-    bool has_pending_family_expedition_player_command() const;
+    bool pending_family_expedition_target_taken(uint64_t country_handle, int32_t target_cell) const;
     bool apply_family_expedition_player_command(const Command &cmd,
                                                 std::string &error);
     int64_t family_population_in_cell(uint64_t family_handle,

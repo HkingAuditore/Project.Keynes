@@ -469,8 +469,8 @@ bool NativeSimulationHost::submit_vision_observations(
         uint64_t country, int64_t day, std::vector<uint64_t> &observations) {
     if (observations.empty() || country == 0) return true;
     order_observations(observations);
-    std::vector<RuntimeCommandPacket> packets;
-    packets.reserve(observations.size());
+    auto &due = _country_observations[day];
+    due.reserve(due.size() + observations.size());
     for (size_t i = 0; i < observations.size(); ++i) {
         RuntimeCountryCommand command;
         // Keep the existing observation producer and request-id stream.
@@ -485,17 +485,10 @@ bool NativeSimulationHost::submit_vision_observations(
         command.weights_bp.fill(0);
         command.value = 1;
 
-        auto &packet = packets.emplace_back();
-        packet.envelope.request_id = command.request_id;
-        packet.envelope.sequence = command.sequence;
-        packet.envelope.requested_day = day;
-        packet.envelope.effective_day = day;
-        packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-        packet.envelope.opcode = command.opcode;
-        packet.envelope.payload_size = sizeof(command);
-        std::memcpy(packet.payload.data(), &command, sizeof(command));
+        command.submit_order = _command_submit_order.fetch_add(1u, std::memory_order_relaxed) + 1u;
+        due.push_back(command);
     }
-    return enqueue_batch_at(std::move(packets), nullptr, false);
+    return true;
 }
 
 bool NativeSimulationHost::submit_species_observations(

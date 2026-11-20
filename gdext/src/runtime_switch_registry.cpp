@@ -87,7 +87,6 @@ constexpr RuntimeSwitchDescriptor switches[] = {
     {"PK_GOLDEN_DOMAINS", "关闭覆盖；原调用点解析", "只读逐域黄金摘要", true},
     {"PK_INLINE_DAY_BUDGET_MS", "30000 ms；空串同；非正数为 0", "内联日执行预算", false},
     {"PK_INLINE_PARALLEL", "关闭覆盖；原调用点解析", "允许内联日线程池", false},
-    {"PK_PEER_STALL_TIMEOUT_MS", "RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS；空串同；仅允许增大", "国家经济互等故障超时", false},
     {"PK_RUNTIME_INPUT_HASH_FULL", "关闭覆盖；原调用点解析", "完整重算冻结输入哈希", true},
     {"PK_RUNTIME_INPUT_HASH_VERIFY", "关闭覆盖；原调用点解析", "核对冻结输入哈希复用", true},
     {"PK_RUNTIME_WATERFALL_CSV", "不输出文件；空串也不打开", "运行时阶段耗时 CSV 文件", true},

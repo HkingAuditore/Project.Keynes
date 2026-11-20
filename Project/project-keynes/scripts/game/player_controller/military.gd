@@ -118,6 +118,8 @@ static func command_rejection_message(code: String) -> String:
 		"not_own_territory": "只能编成本国可控领土上的驻军。",
 		"cell_occupied": "被占领的地块不能编成部队。",
 		"command_no_local_garrison": "当地没有可编成部队的驻军。",
+		"command_no_training_garrison": "当地没有可用于训练的驻军。",
+		"command_budget_channels_exceed_10000": "军费各项份额合计不能超过 100%。",
 		"command_unknown_army": "部队已不存在。",
 		"command_not_owner": "只能指挥本国部队。",
 		"command_army_in_engagement": "交战中无法开始探路。",

@@ -170,8 +170,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 }
             }
         }
+        const auto observed = _country_observations.find(day);
+        const auto *observations = observed == _country_observations.end() ? nullptr : &observed->second;
         bool country_planned = _country_pod_authority.plan_day(
-            day, input_generation, _country_pod_plan, error);
+            day, input_generation, _country_pod_plan, error, observations);
         if (!country_planned &&
             country_ai != nullptr &&
             _country_pod_authority.remove_pending_producer(COUNTRY_AI_PRODUCER_ID) > 0) {
@@ -179,7 +181,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             if (country_ai != nullptr) country_ai->reject_staged(day, error.c_str());
             error.clear();
             country_planned = _country_pod_authority.plan_day(
-                day, input_generation, _country_pod_plan, error);
+                day, input_generation, _country_pod_plan, error, observations);
         }
         if (!country_planned) {
             if (country_ai != nullptr) country_ai->abort(day);
@@ -503,16 +505,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
     if (economy_asset_waiting) {
         // Do not soft-commit Country to escape this wait. Host liveness must
         // pump peers; soft-commit here previously raced with Climate capacity
-        // and stranded research ACKs. Park with a stall bit; timeout → fault.
+        // and stranded research ACKs. Park with a stall bit until a peer result arrives.
         note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
                            RUNTIME_DAY_STALL_FISCAL_PEER,
                        day);
-        if (fault_if_peer_stall_timed_out(
-                day, "country_economy_asset_peer_stall_timeout")) {
-            error = "country_economy_asset_peer_stall_timeout";
-            commit.preflight_ok = 0;
-            return false;
-        }
         error = "country_economy_asset_results_pending";
         commit.preflight_ok = 0;
         commit.continuation_pending = 1;
@@ -699,12 +695,6 @@ bool NativeSimulationHost::execute_country_worker_stage(
             _climate_wait_cv.notify_all();
             _control_cv.notify_all();
         }
-        if (fault_if_peer_stall_timed_out(
-                day, "country_worker_peer_stall_timeout")) {
-            error = "country_worker_peer_stall_timeout";
-            commit.preflight_ok = 0;
-            return false;
-        }
         error = "country_worker_peer_results_pending";
         commit.preflight_ok = 0;
         commit.continuation_pending = 1;
@@ -727,6 +717,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             commit.preflight_ok = 0;
             return false;
         }
+        _country_observations.erase(day);
         publish_rejected_cell_taxes();
         publish_country_command_terminals(
             _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
@@ -809,6 +800,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
         commit.preflight_ok = 0;
         return false;
     }
+    _country_observations.erase(day);
     publish_rejected_cell_taxes();
     publish_country_command_terminals(
         _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,

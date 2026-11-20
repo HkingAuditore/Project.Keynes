@@ -29,8 +29,8 @@ godot::Dictionary NativeSimulationHost::submit_economy_boundary_request(
     if (request->command()) {
         int64_t day = std::max<int64_t>(0, request->effective_day);
         {
-            auto admission = lock_command_admission(day);
-            if (!admission.owns_lock() || !available()) return out;
+            auto admission = admit_command(day);
+            if (!admission.accepted() || !available()) return out;
             std::lock_guard<std::mutex> control(_control_mutex);
             if (_economy_boundary_requests.size() == RUNTIME_COMMAND_QUEUE_CAPACITY) {
                 out["code"] = "economy_command_queue_full";
@@ -90,6 +90,11 @@ godot::Dictionary NativeSimulationHost::submit_economy_boundary_request(
     out["busy"] = true;
     out["code"] = "economy_busy_retry";
     return out;
+}
+
+const std::vector<uint8_t> *NativeSimulationHost::colonization_visibility() const {
+    if (!_executor_vision || !_executor_vision->frame) return nullptr;
+    return _executor_vision->fog_enabled ? &_executor_vision->frame->visible : &_executor_vision->all_visible;
 }
 
 bool NativeSimulationHost::service_economy_boundary_requests() {

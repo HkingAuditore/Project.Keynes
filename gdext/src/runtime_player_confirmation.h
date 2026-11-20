@@ -33,6 +33,7 @@ struct RuntimePlayerConfirmation {
     uint32_t dismissed_ideology = 0;
     std::map<int64_t, bool> popup_updates;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> era_selections;
+    std::deque<std::shared_ptr<RuntimeEraRewardRequest>> era_advancement;
     std::deque<RuntimePlayerConfirmationRequest> requests; // control mutex
     bool ideology_input_changed = false; // control mutex
     std::atomic<int64_t> advance_through{-1};

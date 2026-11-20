@@ -36,7 +36,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 	var original_frame: Dictionary
 	var target := -1
 	var quote := {}
-	for day in range(1, 7):
+	for day in range(1, 9):
 		_publish_day(host, clock, day)
 		var settled := await _wait_golden_read_boundary(host, economy, day)
 		_expect("day %d settles with vision display failure allowed" % day, settled)
@@ -44,7 +44,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 			return {}
 		var frame: Dictionary = ext.get_runtime_vision_frame(-1)
 		_expect("fog change takes effect exactly on day two and day six",
-			bool(frame.fog_enabled) == (day < 2 or day == 6))
+			bool(frame.fog_enabled) == (day < 2 or day >= 6))
 		if not test_host.skip_display:
 			_expect("GM fog readback agrees with the installed frame",
 				host.get_gm_toggle_state("visual.fog_of_war").get("enabled") == frame.fog_enabled)
@@ -119,13 +119,16 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 						int(quote.quote_tokens[0]), 8, 950003)
 					_expect("the request is admitted before route revalidation", pending.get("admitted") == true
 						and pending.get("effective_day") == 8)
-					var refused := await _wait_boundary_result(host, "family.colonization.start", 950003)
-					_expect("re-enabled fog rejects a stale quote for a hidden route",
-						refused.get("admitted") == false and not refused.has("effective_day")
-						and String(refused.get("code", "")) == "colonization_requote_required"
-						and String(refused.get("message", "")) == "colonization_route_not_visible")
 				_expect("fog display is restored from the authoritative physical frame",
 					map.visible_arr == frame.physical_visible and map.fog_k_arr == frame.fog_k_arr)
+			8:
+				var receipt_batch: Dictionary = ext.get_family_colonization_receipts(player, 0, 32)
+				var refused := false
+				for row: Dictionary in receipt_batch.get("receipts", []):
+					if row.sequence == 950003:
+						refused = row.effective_day == 8 and row.settled_day == 8 \
+							and row.code == "colonization_route_not_visible"
+				_expect("re-enabled fog rejects the old quote on its effective day", refused)
 	print("FOG_VISIBILITY_COMMANDS off_day=2 on_day=6 hidden_route=", target)
 	return {}
 

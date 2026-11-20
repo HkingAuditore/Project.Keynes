@@ -1482,6 +1482,9 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
             if (parse_military_command(source, row.command, row.error)) {
                 row.command_name = std::string("military.") + String(source["op"]).utf8().get_data();
                 row.caller_sequence = source.get("caller_sequence", 0);
+                if (row.command.op == MCMD_POLICY_SET_BUDGET ||
+                        row.command.op == MCMD_POLICY_SET_PROCUREMENT)
+                    row.command.count = row.caller_sequence;
                 if (row.command.op == MCMD_TRAIN || row.command.op == MCMD_ARMY_CREATE ||
                     row.command.op == MCMD_ARMY_MOVE || row.command.op == MCMD_ARMY_AREA_CONTROL ||
                     row.command.op == MCMD_ARMY_EXPLORE) {
@@ -1564,15 +1567,7 @@ bool NativeMilitaryRuntime::submit_military_country_commands(
             command.tax_kind = -1;
             command.tax_item = -1;
             command.value = row.value;
-            RuntimeCommandPacket &packet = packets.emplace_back();
-            packet.envelope.request_id = command.request_id;
-            packet.envelope.sequence = command.sequence;
-            packet.envelope.requested_day = command.requested_day;
-            packet.envelope.effective_day = command.effective_day;
-            packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-            packet.envelope.opcode = command.opcode;
-            packet.envelope.payload_size = sizeof(command);
-            std::memcpy(packet.payload.data(), &command, sizeof(command));
+            packets.push_back(encode_country_packet(command));
         }
         std::vector<uint64_t> ids;
         for (const auto &packet : packets) ids.push_back(packet.envelope.request_id);

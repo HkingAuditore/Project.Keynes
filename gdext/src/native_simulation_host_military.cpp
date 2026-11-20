@@ -37,10 +37,10 @@ bool NativeSimulationHost::military_executor_active() const noexcept {
 bool NativeSimulationHost::submit_military_commands(std::shared_ptr<MilitaryCommandBatch> batch) {
     {
         int64_t day = 0;
-        auto admission = lock_command_admission(day);
-        if (!admission.owns_lock() || !military_executor_active()) return false;
+        auto admission = admit_command(day);
+        if (!admission.accepted() || !military_executor_active()) return false;
         batch->committed_at_admission = committed_day_value();
-        batch->frozen_at_admission = _command_frozen_through.load(std::memory_order_acquire);
+        batch->frozen_at_admission = frozen_command_day();
         batch->day = std::max({day, batch->committed_at_admission + 1, batch->frozen_at_admission + 1});
         if (!_executor_military->stamp_commands(*batch)) return true;
         std::lock_guard<std::mutex> control(_control_mutex);
@@ -115,6 +115,7 @@ const char *NativeSimulationHost::stage_military(DayExecution &day) {
             godot::Dictionary result;
             result["ok"] = false;
             result["code"] = rejection.reason;
+            result["settled_day"] = index;
             publish_boundary_command_result(rejection.command, rejection.caller_sequence, std::move(result));
         }
         if (!static_cast<bool>(military.last_result.get("ok", false)) &&

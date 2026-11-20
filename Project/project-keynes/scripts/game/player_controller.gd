@@ -1545,7 +1545,7 @@ func _configure_narrative_runtime() -> void:
 	module.configure("narrative", ["restore"], ["world.narrative"], _prepare_narrative_session,
 		_cancel_narrative_session, _narrative_service.release_world)
 	_runtime_host.register_session_module(module)
-	var consume: Callable = _narrative_service.consume_committed.unbind(4)
+	var consume: Callable = _narrative_service.executor_started.unbind(4)
 	if not _runtime_host.world_ready.is_connected(consume):
 		_runtime_host.world_ready.connect(consume)
 	var settings := get_node_or_null("/root/GameSettings")

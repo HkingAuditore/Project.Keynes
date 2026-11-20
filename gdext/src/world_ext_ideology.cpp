@@ -295,9 +295,9 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
     // Main-thread ingress to the worker's queue is sealed like every other lane.
     // The worker's own Trigger and Effect stages queue Ideology commands directly.
     int64_t earliest = days.is_empty() ? 0 : *std::min_element(days.ptr(), days.ptr() + days.size());
-    auto admission = worker_authoritative ? _runtime_host->lock_command_admission(earliest)
-                                          : std::unique_lock<std::mutex>();
-    if (worker_authoritative && !admission.owns_lock()) return unavailable();
+    auto admission = worker_authoritative ? _runtime_host->admit_command(earliest)
+                                          : RuntimeCommandAdmission();
+    if (worker_authoritative && !admission.accepted()) return unavailable();
     const int64_t seal_day = worker_authoritative ? _runtime_host->command_seal_day() : 0;
     std::vector<RuntimeIdeologyPodCommand> commands;
     commands.reserve(opcodes.size());

@@ -245,6 +245,9 @@ func _run_worker_card_acceptance() -> int:
 				bool(gates.get("ok", false)), str(gates)):
 			continue
 		_next_sequence = int(gates.get("next_sequence", _next_sequence))
+		tick = _drive_days(host, clock, ext, tick, 2)
+		_expect("%s: Country commits the gates before submitting discovery" % key,
+			IdeologyDrawGateHelper.draw_gates_landed(host, key, handle))
 		_stage("%s: read base" % key)
 		# An additive card is measured as a DELTA: reading with base 0 isolates the
 		# sum_add component, so the assert is "+300 bp", not "x1.30" (which depends
@@ -431,44 +434,23 @@ func _run_worker_card_acceptance() -> int:
 		_expect("%s: worker keeps committing days after a second equip" % key,
 			day_after > day_before,
 			"worker_committed_day %d -> %d" % [day_before, day_after])
-		# R-3b: the reason the probe above used to fail. `step_ideology_instance_refresh`
-		# requested a boundary turn whenever it lost the economy input lock and never
-		# completed it, so the worker parked between semantic days for the rest of the
-		# session (`native_simulation_host.cpp:15284`) -- every later day was a no-op.
-		# The counter is now per client and the ideology path completes on both exits,
-		# so a session that is still making progress must show ZERO outstanding
-		# requests. Asserting it here is what makes the stall a test failure rather
-		# than a silently shorter run.
 		var final_report: Dictionary = ext.get_runtime_thread_report()
-		# The boundary bit is released at the TOP of the next refresh call, so a run
-		# that ends while the last refresh had to skip leaves it set by design (the
-		# worker is parked until the next tick asks again). One extra call is what a
-		# real session does every frame; without it the assertion below would measure
-		# "the session stopped mid-skip", not "a client is stranded".
-		if ext.has_method("step_ideology_instance_refresh"):
-			ext.step_ideology_instance_refresh(tick)
-			final_report = ext.get_runtime_thread_report()
-		var outstanding := int(final_report.get(
-			"main_boundary_service_requests", -1))
-		_expect("%s: no client is left waiting for a boundary turn (outstanding=%d)"
-			% [key, outstanding], outstanding == 0,
-			("ideology=%s trigger=%s state=%s") % [
-				str(final_report.get("main_boundary_service_ideology", "?")),
-				str(final_report.get("main_boundary_service_trigger", "?")),
-				str(final_report.get("simulation_host_state", "?"))])
-		# 4. The GDScript intent fallback must stay SILENT under a 0xFFF mask.
-		#
-		# When the worker owns EFFECT it drains the intents itself, so any reply from
-		# `_service_ideology_worker_intents_if_authoritative` would be a duplicate claim
-		# that the effect committed. Both counters therefore have to be 0 here; a
-		# non-zero value means the pump fired where it should not have.
-		var reply_report: Dictionary = host.get_ideology_intent_reply_report()
-		_expect("%s: GDScript never re-replied for the worker (duplicate=%d unknown=%d)"
-			% [key, int(reply_report.get("duplicate_acks", -1)),
-				int(reply_report.get("unknown_acks", -1))],
-			int(reply_report.get("duplicate_acks", -1)) == 0 and
-				int(reply_report.get("unknown_acks", -1)) == 0,
-			str(reply_report))
+		var days: Dictionary = final_report.get("worker_main_wait_by_day", {})
+		var front_waits := 0
+		for committed_day in range(day_before + 1, day_after + 1):
+			for reason in days.get(committed_day, {}).values():
+				front_waits += int(reason.count)
+		_expect("%s: the second equip never waits for foreground services" % key,
+			final_report.has("worker_main_wait_by_day") and front_waits == 0
+				and String(final_report.get("fault_code", "")).is_empty(),
+			"waits=%d fault=%s" % [front_waits, final_report.get("fault_code", "")])
+		var terminals: Dictionary = ext.poll_ideology_receipts(0, 64)
+		var equip_outcomes := 0
+		for i in range(int(terminals.get("count", 0))):
+			if int(terminals.opcodes[i]) == 5 and int(terminals.ideology_ids[i]) == dense:
+				equip_outcomes += int(terminals.statuses[i] == 2)
+		_expect("%s: both equip submissions have exactly one settled result each" % key,
+			equip_outcomes == 2, str(terminals))
 		# 0c: LEVEL-UP and RELOCATION on the WORKER path.
 		#
 		# The main-thread test (`ideology_card_content_test._test_level_up_replaces_rows`)

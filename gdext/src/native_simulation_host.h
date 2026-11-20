@@ -1,4 +1,5 @@
 #pragma once
+#include "runtime_command_admission.h"
 #include "runtime_pod_protocol.h"
 #include "native_simulation_host_status.h"
 #include "runtime_worker_timing.h"
@@ -93,7 +94,7 @@ public:
                        bool &reward_pending, size_t &count) const;
     bool annual_report(uint64_t id, AnnualDevelopmentReport &out) const;
     std::vector<AnnualDevelopmentReport> annual_history(uint32_t offset, uint32_t limit) const;
-    bool mark_annual_presented(uint64_t id);
+    const char *mark_annual_presented(uint64_t id);
     std::vector<uint8_t> encode_annual_save() const;
     bool restore_annual_save(const uint8_t *bytes, size_t size, std::string &error);
 
@@ -188,7 +189,7 @@ public:
     }
     // First day whose command inputs have not been frozen.
     int64_t command_seal_day() const noexcept;
-    std::unique_lock<std::mutex> lock_command_admission(int64_t &effective_day);
+    RuntimeCommandAdmission admit_command(int64_t &effective_day);
     godot::Array take_boundary_command_results(bool &colonization_quotes_ready);
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
@@ -201,9 +202,7 @@ public:
     // bit — Country commit must not erase Economy fiscal/input stalls.
     void clear_day_stall_bits(uint32_t bits);
     void clear_day_stall_peer_bits();
-    // Returns true if peer stall exceeded RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
-    // and set_fault was called.
-    bool fault_if_peer_stall_timed_out(int64_t day, const char *fault_code);
+    void log_slow_peer(int64_t day);
     // publish 描述这一天生产 Climate 各段的真实执行情况（跑没跑、用的什么输入），
     // 全部字段可选；见 RuntimeClimateReferencePublish。
     bool publish_climate_reference(
@@ -881,7 +880,6 @@ public:
     uint64_t allocate_command_request_id() override;
     void reserve_command_request_ids_through(uint64_t maximum) noexcept;
     uint64_t allocate_producer_sequence(uint32_t producer_id) override;
-    bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
     std::shared_ptr<const RuntimeClimateSnapshot> latest_climate_display() const;
     std::shared_ptr<const RuntimeCommit> take_day_publications(
@@ -893,6 +891,8 @@ public:
             std::vector<CountryCommandReceipt> &out);
     // Point lookup for Effect ACK. Cursor polls skip lower Effect terminals
     // once an unrelated Country commit advances the high-water mark.
+    void poll_country_command_publications(uint64_t after_sequence, uint32_t limit,
+        std::vector<CountryCommandReceipt> &out);
     bool try_country_command_terminal(
             uint64_t request_id, CountryCommandReceipt &out) override;
     bool country_command_receipt_self_test(std::string &error) const;
@@ -1237,7 +1237,15 @@ private:
             CountryCommandReceiptCode code, uint64_t generation,
             const char *reason, bool include_superseded_ai = false);
     void retire_country_ai_ingress(const std::vector<RuntimeCommandPacket> &packets);
-    bool pop_command(RuntimeCommandPacket &out);
+    bool try_freeze_command_inputs(int64_t day);
+    void drain_command_inbox(std::vector<RuntimeCommandPacket> &out) {
+        drain_command_inbox_through(out, _command_enqueue_pos.load(std::memory_order_acquire));
+    }
+    void drain_command_inbox_through(std::vector<RuntimeCommandPacket> &out, uint64_t end);
+    void register_country_acceptance(const RuntimeCommandPacket &packet);
+    int64_t frozen_command_day() const noexcept {
+        return (_command_seal.load(std::memory_order_acquire) & ~int64_t{1}) / 2;
+    }
     bool launch_executor(bool paused);
     bool resume_same_world_executor(double speed, bool paused);
     bool push_receipt(const RuntimeCommandReceipt &receipt);
@@ -1278,7 +1286,6 @@ private:
     static bool command_packet_before(const RuntimeCommandPacket &a, const RuntimeCommandPacket &b);
 
     struct CommandQueueSlot {
-        std::atomic<uint64_t> sequence{0};
         RuntimeCommandPacket packet{};
     };
 
@@ -1302,6 +1309,9 @@ private:
     std::atomic<RuntimeWorkerState> _state{RuntimeWorkerState::STOPPED};
     mutable std::mutex _annual_mutex;
     AnnualDevelopmentLedger _annual_ledger;
+    std::shared_ptr<const AnnualReportPublication> _published_annual;
+    bool _annual_history_changed = false;
+    void publish_annual_view_locked();
     std::atomic<bool> _annual_enabled{false};
     std::atomic<uint64_t> _annual_country{0};
     uint64_t _annual_queued_reward = 0;
@@ -1368,6 +1378,7 @@ private:
     bool submit_era_milestone(RuntimeEraAdvancement &state, int32_t era,
         int64_t requested, int64_t effective, int64_t sequence, bool consume_goods);
     bool service_era_reward_requests();
+    void prepare_era_advancement_day(int64_t day);
     const char *stage_narrative(DayExecution &);
     bool service_narrative_requests();
     void request_stop_locked();
@@ -1417,6 +1428,7 @@ private:
             _player_confirmation.ideology_input_changed;
     }
     bool service_economy_boundary_requests();
+    const std::vector<uint8_t> *colonization_visibility() const override;
     std::atomic<int64_t> _events_ingress_cursor{1};
     bool service_military_commands();
     const char *stage_military(DayExecution &day);
@@ -1444,11 +1456,12 @@ private:
     std::atomic<double> _ui_input_to_feedback_ms{0.0};
     std::atomic<double> _visual_apply_ms{0.0};
     std::atomic<double> _gpu_upload_ms{0.0};
-    // Bounded MPMC queue.  The per-slot sequence protocol lets multiple UI
-    // producers reserve distinct slots without a mutex or a blocking retry.
+    // The inbox publishes a whole input batch with one write-cursor update.
     std::atomic<uint64_t> _command_enqueue_pos{0};
     std::atomic<uint64_t> _command_dequeue_pos{0};
-    mutable std::mutex _command_enqueue_mutex;
+    std::map<int64_t, std::vector<RuntimeCountryCommand>> _country_observations;
+    std::mutex _command_producer_mutex;
+    std::vector<RuntimeCommandPacket> _executor_inbox;
     // Monotonic admission order for the shared command boundary. This is
     // independent of producer-local sequence numbers and is Country's final
     // same-day tie-breaker.
@@ -1709,6 +1722,7 @@ private:
     // drained by a request-id cursor so a terminal result cannot be confused
     // with an admission acknowledgement.
     std::map<uint64_t, CountryCommandReceipt> _country_command_terminals;
+    std::vector<uint64_t> _country_command_publications;
     // Complete Host-side request lifecycle. The terminal map is only the
     // cursor-visible projection; this map also retains Accepted requests so a
     // save can prove that every restored Country pending packet is admissible.
@@ -1867,12 +1881,14 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
-    std::atomic<int64_t> _command_frozen_through{-1};
+    // Twice the last sealed day, with the low bit marking an input publication.
+    std::atomic<int64_t> _command_seal{-2};
     std::atomic<int64_t> _economy_input_requested_day{-1};
     // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
     std::atomic<uint32_t> _day_stall_reason_mask{0};
     std::atomic<int64_t> _day_stall_day{-1};
     std::atomic<uint64_t> _day_stall_peer_since_us{0};
+    uint64_t _last_peer_stall_warning = 0;
     // Last day-plan gap seen by the retry loop. Written by the worker, read by
     // the main-thread report; monotonically overwritten, never cleared -- a
     // stale value still names the last stage that held the calendar, which is

@@ -52,7 +52,6 @@ constexpr uint32_t RUNTIME_DAY_STALL_FISCAL_PEER = 1u << 4;
 constexpr uint32_t RUNTIME_DAY_STALL_ECONOMY_INPUT = 1u << 5;
 // Soft-commit-as-deadlock-escape is forbidden; peer stalls past this wall-time
 // become an observable FAULTED stop instead of silent calendar advance.
-constexpr uint64_t RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS = 5000u;
 constexpr uint32_t RUNTIME_SNAPSHOT_RING_SIZE = 3u;
 constexpr uint32_t RUNTIME_DIRTY_FAMILY_COUNT = 9u;
 constexpr uint32_t RUNTIME_DOMAIN_INTENT_CAPACITY = 8192u;
@@ -157,6 +156,7 @@ struct RuntimeCommandEnvelope {
 };
 
 struct RuntimeCommandPacket {
+    uint64_t admission_generation = 0; // Ingress metadata, not part of the save payload.
     RuntimeCommandEnvelope envelope;
     // Assigned exactly once by the accepting Host queue. It is deliberately
     // outside the legacy wire envelope so PKSR v2 remains readable while the
@@ -1374,6 +1374,11 @@ struct RuntimeCountryCommand {
     std::array<char, RUNTIME_COUNTRY_STABLE_ID_CAPACITY> stable_id{};
     std::array<char, RUNTIME_COUNTRY_DISPLAY_NAME_CAPACITY> display_name{};
 };
+
+RuntimeCommandPacket encode_country_packet(const RuntimeCountryCommand &command);
+// PKSR uses this reserved producer value only for its executor observation rows.
+constexpr uint32_t COUNTRY_OBSERVATION_ARCHIVE_PRODUCER = 0xffffffffu;
+bool is_country_day_observation(const RuntimeCommandEnvelope &envelope);
 
 struct RuntimeCountryCommandBatch {
     uint32_t count = 0;

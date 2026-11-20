@@ -1209,9 +1209,15 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         over.op = MCMD_POLICY_SET_BUDGET;
         over.country = handle_for(0);
         over.ints = {4001, -1, -1};
-        ST_CHECK(!sim.core.submit(over, error) &&
-                     error == "command_budget_channels_exceed_10000",
-                 "budget envelope: a partial update is checked against stored channels");
+        over.count = 123;
+        ST_CHECK(sim.core.submit(over, error),
+                 "budget envelope: a partial update is admitted for settlement");
+        sim.step();
+        const auto rejections = sim.core.take_player_command_rejections();
+        ST_CHECK(rejections.size() == 1 && rejections[0].caller_sequence == 123 &&
+                     std::string(rejections[0].reason) == "command_budget_channels_exceed_10000" &&
+                     sim.core.policies()[0].budget_wage_bp == 4000,
+                 "budget envelope: an over-limit partial update is rejected on its effective day");
         MilitaryCommand equal;
         equal.op = MCMD_POLICY_SET_BUDGET;
         equal.country = handle_for(0);

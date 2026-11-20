@@ -373,7 +373,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int64_t>(payload, cmd.i64_1);
             append_le<uint64_t>(payload, cmd.submit_order);
             append_le<int64_t>(payload, cmd.effect_request_id);
-            append_le<uint64_t>(payload, cmd.effect_idempotency_key);
+            append_le<uint64_t>(payload, cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
+                ? cmd.expedition_route_hash : cmd.effect_idempotency_key);
         }
         if (_save.command_cursor >= static_cast<int32_t>(_pending_commands.size())) ++_save.section;
         return make_save_chunk(SAVE_SECTION_COMMANDS,

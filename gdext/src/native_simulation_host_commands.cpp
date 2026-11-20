@@ -54,16 +54,25 @@ bool NativeSimulationHost::enqueue_batch(
     return enqueue_batch_at(std::move(packets), effective_days, true);
 }
 
-std::unique_lock<std::mutex> NativeSimulationHost::lock_command_admission(
-        int64_t &effective_day) {
-    std::unique_lock<std::mutex> admission(_command_enqueue_mutex);
-    if (!_world_environment || on_worker_thread() || effective_day < 0) return admission;
+RuntimeCommandAdmission NativeSimulationHost::admit_command(int64_t &effective_day) {
+    if (on_worker_thread()) return RuntimeCommandAdmission(true);
+    RuntimeCommandAdmission admission(_command_producer_mutex, _command_seal);
     const auto current = state();
-    if (current == RuntimeWorkerState::FAULTED || current == RuntimeWorkerState::STOPPED ||
-        current == RuntimeWorkerState::STOPPING || _stop_requested.load(std::memory_order_acquire))
-        return {};
-    effective_day = std::max(effective_day, command_seal_day());
+    if (_world_environment && (current == RuntimeWorkerState::FAULTED ||
+            current == RuntimeWorkerState::STOPPED || current == RuntimeWorkerState::STOPPING ||
+            _stop_requested.load(std::memory_order_acquire))) return {};
+    if (_world_environment && effective_day >= 0)
+        effective_day = std::max(effective_day, command_seal_day());
     return admission;
+}
+
+bool NativeSimulationHost::try_freeze_command_inputs(int64_t day) {
+    std::lock_guard<std::mutex> control(_control_mutex);
+    if (player_requests_pending_locked()) return false;
+    int64_t seal = _command_seal.load(std::memory_order_acquire);
+    if ((seal & 1) != 0) return false;
+    return _command_seal.compare_exchange_strong(seal, day * 2,
+        std::memory_order_acq_rel, std::memory_order_acquire);
 }
 
 bool NativeSimulationHost::enqueue_batch_at(
@@ -74,8 +83,8 @@ bool NativeSimulationHost::enqueue_batch_at(
     if (packets.empty()) return false;
     // A day that already owns the execution boundary must finish delivering
     // its consequences even if stop revoked admission for future days.
-    const bool settling = on_worker_thread() &&
-        _worker_day_inflight.load(std::memory_order_acquire) != 0;
+    const bool executor = on_worker_thread();
+    const bool settling = executor && _worker_day_inflight.load(std::memory_order_acquire) != 0;
     const auto accepts = [settling](RuntimeWorkerState state) {
         return state != RuntimeWorkerState::STOPPED &&
             state != RuntimeWorkerState::FAULTED &&
@@ -87,76 +96,41 @@ bool NativeSimulationHost::enqueue_batch_at(
         [](const auto &a, const auto &b) {
             return a.envelope.effective_day < b.envelope.effective_day;
         })->envelope.effective_day);
-    auto lock = seal ? lock_command_admission(earliest)
-                     : std::unique_lock<std::mutex>(_command_enqueue_mutex);
-    if (!lock.owns_lock() || !accepts(_state.load(std::memory_order_acquire)) ||
+    auto admission = admit_command(earliest);
+    if (!admission.accepted() || !accepts(_state.load(std::memory_order_acquire)) ||
         (!settling && _stop_requested.load(std::memory_order_acquire))) return false;
     const uint64_t write = _command_enqueue_pos.load(std::memory_order_relaxed);
     const uint64_t read = _command_dequeue_pos.load(std::memory_order_acquire);
+    const size_t executor_pending = executor ? _executor_inbox.size() : 0;
     if (packets.size() > RUNTIME_COMMAND_QUEUE_CAPACITY ||
-        write - read > RUNTIME_COMMAND_QUEUE_CAPACITY - packets.size()) {
+        write - read + executor_pending > RUNTIME_COMMAND_QUEUE_CAPACITY - packets.size()) {
         _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    for (size_t index = 0; index < packets.size(); ++index) {
-        const uint64_t position = write + static_cast<uint64_t>(index);
-        CommandQueueSlot &slot = _command_slots[
-            position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        const uint64_t sequence = slot.sequence.load(std::memory_order_acquire);
-        if (sequence != position) {
-            _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
-            return false;
-        }
-    }
     if (admit_peer && !admit_peer()) return false;
-    // Main-thread requests can only target unsealed days. The executor can
-    // enqueue a consequence of today's settlement at its exact D+1 date.
+    // The executor may enqueue a consequence of today's settlement at its
+    // exact D+1 date. External input captures the fence while admitting.
     const int64_t seal_day = seal ? command_seal_day() : 0;
     if (effective_days != nullptr) effective_days->reserve(packets.size());
     for (size_t index = 0; index < packets.size(); ++index) {
         RuntimeCommandPacket &packet = packets[index];
-        packet.envelope.effective_day =
-            std::max(packet.envelope.effective_day, seal_day);
+        packet.envelope.effective_day = std::max(packet.envelope.effective_day, seal_day);
         if (effective_days != nullptr)
             effective_days->push_back(packet.envelope.effective_day);
         if (packet.submit_order == 0) {
             packet.submit_order = _command_submit_order.fetch_add(
                 1u, std::memory_order_relaxed) + 1u;
         }
-        const uint64_t position = write + static_cast<uint64_t>(index);
-        CommandQueueSlot &slot = _command_slots[
-            position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        slot.packet = packet;
-        slot.sequence.store(position + 1, std::memory_order_release);
-    }
-    // Country's typed lifecycle begins at Host admission. Keep this state
-    // under the same transport mutex used by terminal publication so a save
-    // boundary cannot observe a pending packet without its Accepted record.
-    {
-        std::lock_guard<std::mutex> country_lock(_country_transport_mutex);
-        for (const RuntimeCommandPacket &packet : packets) {
-            if (packet.envelope.domain !=
-                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
-                packet.envelope.request_id == 0) {
-                continue;
-            }
-            if (_country_command_states.find(packet.envelope.request_id) !=
-                    _country_command_states.end()) {
-                continue;
-            }
-            CountryCommandReceipt receipt;
-            receipt.request_id = packet.envelope.request_id;
-            receipt.producer_id = packet.envelope.producer_id;
-            receipt.sequence = packet.envelope.sequence;
-            receipt.effective_day = packet.envelope.effective_day;
-            receipt.generation = _generation.load(std::memory_order_acquire);
-            receipt.code = CountryCommandReceiptCode::ACCEPTED;
-            _country_command_states.emplace(receipt.request_id,
-                                             std::move(receipt));
+        packet.admission_generation = _generation.load(std::memory_order_acquire);
+        if (executor) {
+            _executor_inbox.push_back(std::move(packet));
+        } else {
+            const uint64_t position = write + static_cast<uint64_t>(index);
+            _command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY].packet = std::move(packet);
         }
     }
-    _command_enqueue_pos.store(write + packets.size(),
-                               std::memory_order_release);
+    if (!executor)
+        _command_enqueue_pos.store(write + packets.size(), std::memory_order_release);
     _last_command_admitted_us.store(now_us(), std::memory_order_release);
     _control_cv.notify_one();
     return true;
@@ -237,38 +211,37 @@ uint64_t NativeSimulationHost::allocate_producer_sequence(uint32_t producer_id) 
     return _fallback_producer_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
-bool NativeSimulationHost::pop_command(RuntimeCommandPacket &out) {
-    uint64_t position = _command_dequeue_pos.load(std::memory_order_relaxed);
-    CommandQueueSlot *slot = nullptr;
-    for (;;) {
-        slot = &_command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        const uint64_t sequence = slot->sequence.load(std::memory_order_acquire);
-        const int64_t difference = static_cast<int64_t>(sequence - (position + 1));
-        if (difference == 0) {
-            if (_command_dequeue_pos.compare_exchange_weak(
-                    position, position + 1, std::memory_order_relaxed,
-                    std::memory_order_relaxed)) {
-                break;
-            }
-        } else if (difference < 0) {
-            return false;
-        } else {
-            position = _command_dequeue_pos.load(std::memory_order_relaxed);
-        }
-    }
-    out = slot->packet;
-    slot->sequence.store(position + RUNTIME_COMMAND_QUEUE_CAPACITY,
-                         std::memory_order_release);
-    return true;
+void NativeSimulationHost::register_country_acceptance(const RuntimeCommandPacket &packet) {
+    const auto &envelope = packet.envelope;
+    if (envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
+            envelope.request_id == 0) return;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    CountryCommandReceipt receipt;
+    receipt.request_id = envelope.request_id;
+    receipt.producer_id = envelope.producer_id;
+    receipt.sequence = envelope.sequence;
+    receipt.effective_day = envelope.effective_day;
+    receipt.generation = packet.admission_generation;
+    _country_command_states.try_emplace(receipt.request_id, std::move(receipt));
 }
 
-bool NativeSimulationHost::next_command(RuntimeCommandPacket &out) const {
-    const uint64_t position = _command_dequeue_pos.load(std::memory_order_relaxed);
-    const CommandQueueSlot &slot = _command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-    const uint64_t sequence = slot.sequence.load(std::memory_order_acquire);
-    if (sequence != position + 1) return false;
-    out = slot.packet;
-    return true;
+void NativeSimulationHost::drain_command_inbox_through(
+        std::vector<RuntimeCommandPacket> &out, uint64_t end) {
+    // The acquired cursor is a complete batch boundary. Later admissions
+    // belong to the next drain. The producer may reuse slots only after the
+    // corresponding packet has been moved out of the ring.
+    const uint64_t begin = _command_dequeue_pos.load(std::memory_order_relaxed);
+    for (uint64_t position = begin; position < end; ++position) {
+        auto &packet = _command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY].packet;
+        register_country_acceptance(packet);
+        out.push_back(std::move(packet));
+    }
+    _command_dequeue_pos.store(end, std::memory_order_release);
+    for (auto &packet : _executor_inbox) {
+        register_country_acceptance(packet);
+        out.push_back(std::move(packet));
+    }
+    _executor_inbox.clear();
 }
 
 bool NativeSimulationHost::push_receipt(const RuntimeCommandReceipt &receipt) {
@@ -349,6 +322,8 @@ void NativeSimulationHost::publish_country_command_terminals(
         receipt.code = code;
         if (reason != nullptr) receipt.reason = reason;
         _country_command_states[receipt.request_id] = receipt;
+        if (receipt.producer_id != COUNTRY_AI_PRODUCER_ID)
+            _country_command_publications.push_back(receipt.request_id);
         _country_command_terminals.emplace(receipt.request_id,
                                            std::move(receipt));
     }
@@ -392,6 +367,19 @@ bool NativeSimulationHost::poll_country_command_receipts(
         out.push_back(it->second);
     }
     return true;
+}
+
+void NativeSimulationHost::poll_country_command_publications(
+        uint64_t after_sequence, uint32_t limit,
+        std::vector<CountryCommandReceipt> &out) {
+    out.clear();
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    const size_t begin = std::min<uint64_t>(after_sequence, _country_command_publications.size());
+    const size_t end = std::min(_country_command_publications.size(),
+        begin + std::min<uint32_t>(limit, 4096u));
+    out.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i)
+        out.push_back(_country_command_terminals.at(_country_command_publications[i]));
 }
 
 bool NativeSimulationHost::try_country_command_terminal(
@@ -446,8 +434,7 @@ void NativeSimulationHost::drain_inline_day_commands(
     day_commands.clear();
     day_receipts.clear();
     admitted_submit_order = 0;
-    RuntimeCommandPacket incoming;
-    while (pop_command(incoming)) _executor_pending_commands.push_back(std::move(incoming));
+    drain_command_inbox(_executor_pending_commands);
     std::stable_sort(_executor_pending_commands.begin(), _executor_pending_commands.end(),
                      command_packet_before);
     for (const auto &packet : _executor_pending_commands)
@@ -572,18 +559,17 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     day_commands.reserve(16u);
     std::vector<RuntimeCommandReceipt> day_receipts;
     uint64_t admitted_submit_order = 0;
+    const int64_t previous_seal = frozen_command_day();
+    if (_world_environment && !try_freeze_command_inputs(day)) {
+        runtime_copy_text(out.reason, "inline_daily_command_input_pending");
+        return out;
+    }
     prepare_narrative_day(day);
     if (state() == RuntimeWorkerState::FAULTED) {
         runtime_copy_text(out.reason, "narrative_choice_apply_failed");
         return out;
     }
-    const int64_t previous_seal = _command_frozen_through.load(std::memory_order_acquire);
-    {
-        std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
-        drain_inline_day_commands(day, day_commands, day_receipts, admitted_submit_order);
-        if (_world_environment)
-            _command_frozen_through.store(day, std::memory_order_release);
-    }
+    drain_inline_day_commands(day, day_commands, day_receipts, admitted_submit_order);
     const double speed = _speed_days_per_second.load(std::memory_order_acquire);
     _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
     _day_waterfall.begin(day);
@@ -616,7 +602,9 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     out.country_peer_progress =
         _country_peer_signal.load(std::memory_order_acquire) != peer_signal;
     if (_inline_budget_exceeded) {
-        _command_frozen_through.store(previous_seal, std::memory_order_release);
+        int64_t expected = day * 2;
+        _command_seal.compare_exchange_strong(expected, previous_seal * 2,
+            std::memory_order_acq_rel, std::memory_order_acquire);
         // 看门狗掐断：这一天没有提交，也不该被当成"缺 peer"再重试 —— 重试只
         // 会再花一次同样的预算。调用方看到的是可上报的一次明确失败。
         runtime_copy_text(out.reason, "inline_daily_day_budget_exceeded");
@@ -632,7 +620,9 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         return out;
     }
     if (day_commit.preflight_ok == 0) {
-        _command_frozen_through.store(previous_seal, std::memory_order_release);
+        int64_t expected = day * 2;
+        _command_seal.compare_exchange_strong(expected, previous_seal * 2,
+            std::memory_order_acq_rel, std::memory_order_acquire);
         // 没提交：收据与命令都退回，等调用方泵完 peer 再试同一天。
         _executor_pending_commands.insert(_executor_pending_commands.begin(),
             day_commands.begin(), day_commands.end());

@@ -27,21 +27,6 @@ int64_t limited_quantity(const NarrativeEffect &effect, int64_t available) {
     return std::clamp<int64_t>(requested, 0, maximum);
 }
 
-RuntimeCommandPacket country_packet(const RuntimeCountryCommand &command) {
-    RuntimeCommandPacket packet;
-    auto &envelope = packet.envelope;
-    envelope.request_id = command.request_id;
-    envelope.producer_id = command.producer_id;
-    envelope.sequence = command.sequence;
-    envelope.requested_day = command.requested_day;
-    envelope.effective_day = command.effective_day;
-    envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-    envelope.opcode = command.opcode;
-    envelope.payload_size = sizeof(command);
-    std::memcpy(packet.payload.data(), &command, sizeof(command));
-    return packet;
-}
-
 template <size_t N>
 void copy_identity(std::array<char, N> &target, const std::string &value) {
     const size_t length = std::min(N - 1, value.size());
@@ -67,7 +52,7 @@ bool NativeSimulationHost::dispatch_narrative_independence(int64_t day) {
         command.cell = action.cell;
         copy_identity(command.stable_id, action.stable_id);
         copy_identity(command.display_name, action.display_name);
-        if (!enqueue_batch_at({country_packet(command)}, nullptr, false)) return false;
+        if (!enqueue_batch_at({encode_country_packet(command)}, nullptr, false)) return false;
     }
     return true;
 }
@@ -155,7 +140,7 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
             command.aux = static_cast<int32_t>(found - catalog.signal_ids.begin());
             command.weights_bp.fill(0);
             command.value = 1;
-            packets.push_back(country_packet(command));
+            packets.push_back(encode_country_packet(command));
             break;
         }
         case NarrativeEffect::GRANT_TRAIT:
