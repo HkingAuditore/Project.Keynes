@@ -942,6 +942,22 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 - **展板内容不外溢**：纸片用 `PKPaperPopup`，内容放内层 `MarginContainer` 留出撕纸边的位置；
   绝不用 `add_theme_stylebox_override("panel", ...)` 覆盖——那会把撕纸边顶成圆角纯色板。
   表头写列名不写标题，空表整张纸片不渲染，行数按可用高度三段压缩（5 行 → 3 行 → 只留市价）。
+- **展板可覆盖左侧工具栏**：展板靠 HUD 左边缘放置，不沿用地图安全区的工具栏横向留白；
+  物资与阶层纸面宽 520、正文 18px，列宽与图标一起放大。垂直方向仍避开顶栏和底栏，
+  可用高度不足 650 时阶层压到三行，不足 510 时只留物资；不通过整体缩小文字适配。
+- **展板与图例工具栏互斥**：`game_ui/overlays.gd` 订阅展板实际 `visibility_changed`，
+  调用 `MapOverlayToolbar.set_board_obscured()`。展板入场时工具栏纸片用 `UIAnimation`
+  在 120ms 内淡出并立即禁用整棵子树的鼠标交互；展板 130ms 退场完成后才启动 180ms 恢复淡入。
+  减少动效时立即切换，快速重入取消旧退场，暂停期间动画仍完成。不改工具栏根节点的可见性，
+  避免覆盖派遣等工作区的显隐控制；保留当前分类和地图图层请求。
+  回归入口：`tests/ui/cell_board_toolbar_transition_test.gd` 与带渲染的
+  `tests/ui/cell_board_screenshot_qa.gd`。
+- **悬停物种**：`CellHoverViewModel` 经 `CellInspectorViewModel.local_species_badges()` 复用地理档案的
+  `bio_occupancy_bits_arr`、物种目录和玩家已完成科技识别规则，不把资源储量当成物种占据。
+  图标集中在 `IconCatalog` 的 `bio.*` 语义映射；缺少专用动物位图时复用动物图标并配物种名称。
+  卡片资源下方按图标与名称的自然宽度紧排全部已识别物种，放不下时换行，空集合整行隐藏；
+  槽位复用，卡片高度、阴影、
+  屏幕边缘翻转及展板避让随实际行数调整，不新增悬停查询或模拟写入。
 - **数据口径**：市价表的五类物资是「五个角色各挑一个还没被选走的物资」，不是「同一物资
   重复五次」；未解锁物资（`good_technology_available == 0`）与本地尚无价格的物资不参与。
   民情表的影响力 = `population + owner_employed × opinion_owner_influence_weight(2)
@@ -1068,3 +1084,41 @@ GDScript 硬编码 0.30/0.09，两边从未同步）。生产保持 **0.30**。
 
 另外：`soft_cap` 本身**在压缩总降水**，抬它会让雨更猛也更多（0.16→0.20 使陆地降水格 24.76%→30.80%），
 不是「同量水重新分配」。
+
+## 玩家 UI 文案精简
+
+- 状态标题已表达结论时，tooltip 不再附同义解释；干旱、洪泛只显示状态名。
+- 数值告警保留具体对象、程度及数据日期；禁用原因、后果、量程和图例语义必须保留。
+- 工具栏用短标题表达用途；风向/洋流保留颜色与强度映射，不重复“显示各地区当前……”；
+  军需路线、区域任务等范围含义写入标题。
+- 空资源不插入“自然资源”空节；未识别资源的科技限制仍显示。条件列表不再附“完成以下条件”引导。
+- 删除说明时同步收缩提示框、隐藏空注脚。地块告警按内容尺寸贴边定位，不保留固定 270px 宽度。
+- 年报复制全文使用展示单位；不附重复的原始整数账目和内部缩放因子。
+
+## 生物分布图标
+
+生物覆盖层的条目由 `ResearchSignalCatalog.BIO_OCCUPANCY_BY_ID` 定义，图标键直接保留 `bio.*` 物种身份；具体纸贴只在 `IconCatalog` 映射。已有作物图标复用商品纸贴，动物和蚕使用 `species_01.png` 的独立裁切。禁止将具体物种统一映射到作物、牲畜或植被类别图标。缺失映射须通过 `IconCatalog.has_icon()` 发出诊断。
+
+新增图集须在 `assets/icons/paper/manifest.json` 记录语义、裁切与参考图，以支持 `tools/art/build_paper_icon_atlases.py` 重建。回归入口为 `tests/ui/icon_catalog_audit_test.gd`，同时检查全部物种的覆盖、独立图标身份及像素重复。
+
+- 顶栏悬停卡须单独检查 `hud_status_view_model.gd`，不能只查经济总览。统计窗口已在页头、
+  净额标签中标明时，不再附“按最近 N 日折算”“多日结算不会堆在一天”等计算说明。
+  有效收支无需空态脚注，未发布快照的错误原因仍保留；价格指数保留成本基准，删除加权公式。
+
+## 战争迷雾的连续遮罩
+
+- `PK_CELL_FIELD` 迷雾显示用连续三格权重；坐标扰动在原始格心平滑归零以保护中心状态。禁止在格心附近局部切回锐化权重，这会在连续场上形成规则斑点。涉及极地 padding 的三角形仍沿用原有锐化，避免全可见地图边缘混入未知行。
+- 三角形、权重与边缘起伏分别在 `shaders/include/cell_field_overlays.gdshaderinc` 的 `pk_overlay_fog_tri`、`pk_overlay_fog_weights`、`pk_overlay_fog_edge_k` 定义，迷雾和天气门控共用。复用原两次噪声给过渡带增加凹凸，保留不规则云缘；`k<=0.05` 和全可见端不受影响，以维持遮挡证明。噪声频率由 `FogOfWarLayer.FOG_WARP_FREQ` 推送，默认 `0.010`；不新增噪声采样、纹理采样或绘制通道。
+- 保留原有扭曲长度上限与地形早退强制不透明约束；不改逐格玩法视野或存档。三格候选范围不变，既有浓雾裁剪的保守范围仍适用。
+- 回归：真实渲染运行 `tests/world/fog_cell_field_test.gd`、`tests/world/weather_overlay_field_test.gd`、`tests/rendering/fog_continuous_mask_test.gd`、`tests/rendering/render_data_tables_test.gd`；覆盖证明运行 `tests/rendering/terrain_draw_coverage_test.gd`。
+- 连续遮罩测试接受 `-- --baseline=<旧 shader 绝对路径> --output=<输出目录>`，在固定视野、时刻、画质和分辨率下输出前后图及 ABBA 顺序的 GPU 耗时；基线必须是修改前文件，不得从修改后的着色器构造弱化版替代。
+
+## 建筑差异化与精简
+
+- 同代独立建筑须提供实际原料、能源、地理或经营组织选择，或被真实系统消费的独立服务。不同名字、单纯放大岗位/配方/产量、工具品质门槛及产业链标注不能单独构成新功能。
+- 只有通用科技点产出的同代知识机构合并。研究效率、贸易速度、减灾等科技 Modifier 属于已完成科技，不能当成其解锁建筑的服务；删除建筑时保留有消费者的科技效果，移除只指向已删产业家族的空目标效果，不把专属大倍率叠到所有通用科研机构。
+- 地理条件必须在建筑条件字节码或本地自然资源列中实际执行，不能仅靠 `geography.*` 标签。水力设施须真实检查河流；纺织必须消费纤维，不能用土地资源直接生产布。多产品路线须比较副产物比例，不能把不同产品组合误判为单纯规模变化。
+- 删除的是作者目录中的独立类型，不是研究后自动退役旧建筑。保留的早期设施继续可建可营运。精简记录中的 `absorbed_by` 表示保留的玩法路线，不是旧存档建筑别名。
+- 删除前逐项核对 BuildingProfile 的同链前驱、GoodProfile 的生产许可、科技 expected/content/support bindings 和应用交汇、Modifier 家族目标、发展成就主体、Trigger selector 及开局规划。前驱应接回原有较早阶段，不可产生自环、跨链或同阶前驱。删除最后一个生产者时同步撤掉该科技对商品的生产许可；不伪造另一个建筑的直接解锁。
+- `data/technology/technology_network.json` 仍是科技唯一作者源；按当前存活资源同步受影响绑定，经 `tools/technology_tree/normalize_network.gd` 重建摘要。同步稳定 ID/内容清单并运行 `tools/prebake_loading_catalogs.gd`，不只删除 `.tres` 或修改 UI。目录身份变化沿用严格存档哈希拒绝，不静默套用新目录。
+- 每次增加或恢复建筑须通过 `tests/building/building_distinction_test.gd`（同代科研、配方/产品组合/岗位/地理去重、已删 ID、发展成就主体、保留科技效果），以及受影响的作物链、开局、建筑运行、每日确定性和目录加载回归。旧生成脚本不得绕过精简记录把已删类型重新加入目录。

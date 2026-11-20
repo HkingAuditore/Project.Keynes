@@ -16,7 +16,7 @@ signal payload_applied(cell_index: int)
 ## 地图地名层与左侧展板都靠这条信号对齐同一格，避免三处各自解析指针。
 signal hover_cell_changed(cell_index: int)
 
-const CARD_SIZE := Vector2(320.0, 184.0)
+const CARD_SIZE := Vector2(320.0, 176.0)
 const POINTER_OFFSET := Vector2(16.0, 18.0)
 const EDGE_MARGIN := 6.0
 
@@ -80,12 +80,14 @@ var _tween: Tween
 @onready var _chips: Array[PanelContainer] = [
 	$Paper/Body/ResourceRow/Chip1, $Paper/Body/ResourceRow/Chip2,
 	$Paper/Body/ResourceRow/Chip3]
+@onready var _species_row: HFlowContainer = $Paper/Body/SpeciesRow
+
 @onready var _resource_note: Label = $Paper/Body/ResourceRow/Note
 
 
 func _ready() -> void:
 	# DossierChart 等基类会把 mouse_filter 设成 PASS；卡片必须永久穿透，
-	# 否则 320×184 会吃掉整块地图的点击与拖拽。
+	# 否则 320×176 会吃掉整块地图的点击与拖拽。
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# 暂停菜单打开时也要能自己隐藏，否则会冻结在画面上。
 	process_mode = PROCESS_MODE_ALWAYS
@@ -316,11 +318,11 @@ func _safe_rect() -> Rect2:
 
 
 func _move_to(screen: Vector2, safe: Rect2) -> void:
-	var rect := placement_rect(screen, get_viewport_rect().size, safe)
+	var rect := placement_rect(screen, get_viewport_rect().size, safe, size)
 	if rect.size == Vector2.ZERO:
 		dismiss(true)
 		return
-	rect.position = avoid_overlap(rect.position, CARD_SIZE, _avoid_rect, safe)
+	rect.position = avoid_overlap(rect.position, size, _avoid_rect, safe)
 	position = rect.position
 
 
@@ -343,20 +345,20 @@ static func avoid_overlap(origin: Vector2, size: Vector2, avoid: Rect2,
 
 ## 指针右下偏移；右侧/下方不够就翻到另一侧，最后夹进安全区。
 ## 安全区比卡片还小（极小窗口）时返回空矩形 = 不出卡。
-static func placement_rect(pointer: Vector2, viewport: Vector2, safe: Rect2) -> Rect2:
+static func placement_rect(pointer: Vector2, viewport: Vector2, safe: Rect2, card_size: Vector2 = CARD_SIZE) -> Rect2:
 	if viewport.x <= 0.0 or viewport.y <= 0.0:
 		return Rect2()
-	if safe.size.x < CARD_SIZE.x + EDGE_MARGIN * 2.0 \
-			or safe.size.y < CARD_SIZE.y + EDGE_MARGIN * 2.0:
+	if safe.size.x < card_size.x + EDGE_MARGIN * 2.0 \
+			or safe.size.y < card_size.y + EDGE_MARGIN * 2.0:
 		return Rect2()
 	var pos := pointer + POINTER_OFFSET
-	if pos.x + CARD_SIZE.x > safe.end.x:
-		pos.x = pointer.x - CARD_SIZE.x - POINTER_OFFSET.x
-	if pos.y + CARD_SIZE.y > safe.end.y:
-		pos.y = pointer.y - CARD_SIZE.y - POINTER_OFFSET.y
-	pos.x = clampf(pos.x, safe.position.x + EDGE_MARGIN, safe.end.x - CARD_SIZE.x - EDGE_MARGIN)
-	pos.y = clampf(pos.y, safe.position.y + EDGE_MARGIN, safe.end.y - CARD_SIZE.y - EDGE_MARGIN)
-	return Rect2(pos, CARD_SIZE)
+	if pos.x + card_size.x > safe.end.x:
+		pos.x = pointer.x - card_size.x - POINTER_OFFSET.x
+	if pos.y + card_size.y > safe.end.y:
+		pos.y = pointer.y - card_size.y - POINTER_OFFSET.y
+	pos.x = clampf(pos.x, safe.position.x + EDGE_MARGIN, safe.end.x - card_size.x - EDGE_MARGIN)
+	pos.y = clampf(pos.y, safe.position.y + EDGE_MARGIN, safe.end.y - card_size.y - EDGE_MARGIN)
+	return Rect2(pos, card_size)
 
 
 # ───────────────────────────── 渲染 ─────────────────────────────
@@ -381,6 +383,7 @@ func apply_payload(new_payload: Dictionary, animate: bool = true) -> void:
 	_apply_tags(new_payload.get("tags", []))
 	_apply_population(new_payload)
 	_apply_resources(new_payload)
+	_apply_species(new_payload.get("species", []))
 
 	_sync_hover_cell_signal()
 	payload_applied.emit(_shown_cell)
@@ -435,6 +438,53 @@ func _apply_resources(new_payload: Dictionary) -> void:
 	_resource_note.text = String(new_payload.get("resource_note", ""))
 
 
+## 保留图标槽；跨日刷新只改内容，避免快进时销毁节点。
+func _apply_species(rows: Array) -> void:
+	while _species_row.get_child_count() < rows.size():
+		var entry := HBoxContainer.new()
+		entry.custom_minimum_size = Vector2(0, 20)
+		entry.add_theme_constant_override("separation", 2)
+		entry.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var icon := IconBadge.new()
+		icon.custom_minimum_size = Vector2(20, 20)
+		entry.add_child(icon)
+		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.add_theme_font_size_override("font_size", 10)
+		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		entry.add_child(label)
+		_species_row.add_child(entry)
+	for i in _species_row.get_child_count():
+		var entry := _species_row.get_child(i) as HBoxContainer
+		entry.visible = i < rows.size()
+		if not entry.visible:
+			continue
+		var row: Dictionary = rows[i]
+		(entry.get_child(0) as IconBadge).set_semantic(StringName(row.get("id", "")), UITokens.ECO)
+		(entry.get_child(1) as Label).text = String(row.get("text", ""))
+	_species_row.visible = not rows.is_empty()
+	# 按内容宽度紧接排列，行数计算与 FlowContainer 的换行一致。
+	var available_width := _paper.size.x - _paper.get_theme_stylebox("panel").get_minimum_size().x
+	var line_width := 0.0
+	var line_count := 0
+	for entry in _species_row.get_children():
+		if not entry.visible:
+			continue
+		var width: float = entry.get_combined_minimum_size().x
+		var gap := float(_species_row.get_theme_constant("h_separation")) if line_width > 0.0 else 0.0
+		if line_count == 0 or line_width + gap + width > available_width:
+			line_count += 1
+			line_width = width
+		else:
+			line_width += gap + width
+	var extra_height := float(line_count * 20 + maxi(0, line_count - 1) * _species_row.get_theme_constant("v_separation"))
+	custom_minimum_size = CARD_SIZE + Vector2(0, extra_height)
+	size = custom_minimum_size
+	_paper.offset_bottom = CARD_SIZE.y - 10.0 + extra_height
+	_shadow.offset_bottom = CARD_SIZE.y - 7.0 + extra_height
+
+
 func _apply_chip(chip: PanelContainer, row: Dictionary) -> void:
 	var icon := chip.get_node("Line/Icon") as IconBadge
 	if icon != null:
@@ -468,7 +518,7 @@ func _show(animate: bool) -> void:
 	modulate.a = 0.0
 	scale = Vector2.ONE * SETTLE_SCALE
 	# 缩放锚点放在背离指针的那一角，视觉上"从指针旁展开"。
-	pivot_offset = Vector2(CARD_SIZE.x - 8.0, CARD_SIZE.y - 8.0)
+	pivot_offset = size - Vector2(8.0, 8.0)
 	_tween = create_tween().set_parallel(true)
 	_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_tween.tween_property(self, "modulate:a", 1.0, FADE_IN_SEC)
@@ -539,7 +589,7 @@ func debug_show_cell(cell_index: int, screen_pos: Vector2) -> bool:
 	apply_payload(built, false)
 	modulate.a = 1.0
 	scale = Vector2.ONE
-	var rect := placement_rect(screen_pos, get_viewport_rect().size, _safe_rect())
+	var rect := placement_rect(screen_pos, get_viewport_rect().size, _safe_rect(), size)
 	if rect.size == Vector2.ZERO:
 		dismiss(true)
 		return false

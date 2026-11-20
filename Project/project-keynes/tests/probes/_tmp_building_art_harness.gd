@@ -16,9 +16,9 @@ const ROWS := 6
 const HEX := 22.0
 # Per row: authored type id -> building count, and [tier, living, rich, poor].
 const ROW_MIX := [
-	{"tenant_paddy": 8, "wheat_farm": 3},
-	{"wheat_farm": 60, "pastoral_camp": 20, "bakery": 10, "merchant_post": 4},
-	{"textile_mill": 120, "tannery": 40, "merchant_post": 30, "wheat_farm": 10},
+	{"tenant_paddy": 8, "rainfed_wheat_plot": 3},
+	{"rainfed_wheat_plot": 60, "pastoral_camp": 20, "bakery": 10, "merchant_post": 4},
+	{"textile_mill": 120, "tannery": 40, "merchant_post": 30, "rainfed_wheat_plot": 10},
 	{"coal_mine": 80, "bloomery": 60, "fired_brick_kiln": 20, "stone_collector": 10},
 	{"merchant_post": 300, "classical_academy": 80, "computers_plant": 40, "bakery": 30},
 	{"marine_fish_collector": 30, "timber_collector": 20, "salt_collector": 10},

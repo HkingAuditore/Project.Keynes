@@ -112,17 +112,17 @@ const RANGE_LABEL: Dictionary = {
 # 通道适用域 / 无效区域提示。DebugConsole 与 OverlayLegend 用它区分
 # “没有数据”和“该地块类型不适用 / 强度太低无方向”。
 const DOMAIN_HINT: Dictionary = {
-	MODE.VEGETATION_VITALITY: "仅陆地有效；水域透明不是缺数据。",
-	MODE.OCEAN_CURRENT: "仅水域有效；陆地透明，近零洋流会显示很暗。",
-	MODE.OCEAN_HEAT_TRANSPORT: "仅水域有效；陆地透明，0.5 为中性热输运。",
-	MODE.UPWELLING: "仅水域有效；陆地透明，0.5 为中性。",
-	MODE.WIND_DIR: "风速接近 0 时方向无意义，会记为 invalid。",
-	MODE.OCEAN_CURRENT_DIR: "仅水域有效；静水或陆地无方向，会记为 invalid。",
-	MODE.WIND_STRESS_CURL: "仅水域有效；陆地透明，0.5 为中性。",
-	MODE.OCEAN_PSI: "仅水域有效；陆地透明，0.5 为中性。",
+	MODE.VEGETATION_VITALITY: "仅陆地",
+	MODE.OCEAN_CURRENT: "仅水域",
+	MODE.OCEAN_HEAT_TRANSPORT: "仅水域",
+	MODE.UPWELLING: "仅水域",
+	MODE.WIND_DIR: "静风无方向",
+	MODE.OCEAN_CURRENT_DIR: "仅水域；静水无方向",
+	MODE.WIND_STRESS_CURL: "仅水域",
+	MODE.OCEAN_PSI: "仅水域",
 	MODE.DEMO_THERMAL_GRADIENT: "仅 demo 数据存在时有效；数组为空会透明。",
-	MODE.RESOURCE_RESERVE: "零储量、不适生或不适用地区保持透明。",
-	MODE.BIO_OCCUPANCY: "透明区域当前没有该物种。",
+	MODE.RESOURCE_RESERVE: "透明：无可用储量",
+	MODE.BIO_OCCUPANCY: "透明：未目击",
 }
 
 

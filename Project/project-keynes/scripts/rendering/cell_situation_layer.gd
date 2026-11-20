@@ -2,7 +2,7 @@ extends Control
 
 ## 常驻近景告警。仅投影屏幕内可见格，批量读 committed economy；不推进模拟。
 const TITLES := ["生活物资短缺", "工业品短缺", "消费品短缺", "阶层不满",
-    "正在干旱", "正在洪泛", "失业率高", "建筑岗位空缺", "阶层组织度"]
+    "干旱", "洪泛", "失业率高", "建筑岗位空缺", "阶层组织度"]
 const CLASS_NAMES := {"general": "一般居民", "farmer": "农民", "worker": "工人",
     "technology": "知识阶层", "merchant": "商人", "capitalist": "资本所有者",
     "landowner": "地主", "aristocrat": "贵族", "artisan": "工匠"}
@@ -59,8 +59,7 @@ func _ready() -> void:
     _tooltip_label = Label.new()
     _tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
     _tooltip_label.add_theme_font_size_override("font_size", 14)
-    _tooltip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    _tooltip_label.custom_minimum_size.x = 270
+    _tooltip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
     _tooltip.add_child(_tooltip_label)
     add_child(_tooltip)
     _tooltip.hide()
@@ -485,9 +484,10 @@ func _update_tooltip() -> void:
         return
     _hover_key = "%d:%d" % [int(hit.cell), int(hit.kind)]
     _tooltip_label.text = tooltip_for(int(hit.cell), int(hit.kind))
+    _tooltip.reset_size()
     var local := get_global_transform_with_canvas().affine_inverse() * _mouse_position
     _tooltip.position = (local + Vector2(16, 16)).clamp(
-        Vector2(4, 4), (size - Vector2(300, 140)).max(Vector2(4, 4)))
+        Vector2(4, 4), (size - _tooltip.size - Vector2(4, 4)).max(Vector2(4, 4)))
     _tooltip.show()
 
 
@@ -505,14 +505,16 @@ func tooltip_for(cell: int, kind: int) -> String:
         var text := "%s\n%s阶层 · 综合满意度 %.0f%%" % [TITLES[kind],
             String(CLASS_NAMES.get(cls, cls)).trim_suffix("阶层"), 100.0 - severity * 100.0 / 65536.0]
         if day >= 0:
-            text += "\n最近本地结算：第 %d 天" % day
+            text += "\n截至：第 %d 天" % day
         return text
     if row.is_empty():
         return ""
     var text := String(TITLES[kind])
+    if kind in [4, 5]:
+        return text
     if kind == 8:
         var stage := clampi(int(row.get("mobilization", 0)), 0, 4)
-        return "%s\n最高阶段：%s\n点开地块查看各阶层的组织度明细。" % [
+        return "%s\n最高阶段：%s" % [
             text, MOBILIZATION_STAGE_LABELS[stage]]
     var score := float(row.severity[kind]) * 100.0 / 65536.0
     if kind < 3:
@@ -522,13 +524,9 @@ func tooltip_for(cell: int, kind: int) -> String:
     elif kind == 6:
         text += "\n失业人口占比 %.0f%%" % score
     elif kind == 7:
-        text += "\n当前用工计划中 %.0f%% 的岗位空缺\n也可能受到职业门槛或工资吸引力限制。" % score
-    elif kind == 4:
-        text += "\n当前天气已判定为干旱。"
-    else:
-        text += "\n当前地表处于洪泛状态。"
+        text += "\n岗位空缺 %.0f%%" % score
     if kind not in [4, 5] and int(row.day) >= 0:
-        text += "\n最近本地结算：%s" % WorldClock.date_text_for_day(int(row.day))
+        text += "\n截至：%s" % WorldClock.date_text_for_day(int(row.day))
     return text
 
 

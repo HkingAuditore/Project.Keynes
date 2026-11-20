@@ -470,7 +470,7 @@ func _build_overview_Branch_ring_specs(branches: Array) -> Array:
 			{"label": "主支威望", "ratio": clampf(score_pct / 100.0, 0.0, 1.0),
 				"sub": "威望 %s" % String(primary.get("prestige_label", "0")),
 				"color": UITokens.DOSSIER_OXBLOOD,
-				"tooltip": "主分支威望综合得分为人口、资金与产业份额的加权结果"},
+				"tooltip": "主支威望"},
 			{"label": "人口份额", "ratio": clampf(pop_pct / 100.0, 0.0, 1.0),
 				"sub": String(primary.get("population_share_text", "%.0f%%" % pop_pct)),
 				"color": UITokens.DOSSIER_VERDIGRIS,
@@ -1371,7 +1371,7 @@ func _update_header() -> void:
 	_prestige_value.text = String(header.get("prestige_progress_text", "0%"))
 	_prestige_caption.text = "威望 %s" % String(header.get("prestige_label", "0"))
 	if _prestige_plate != null:
-		_prestige_plate.tooltip_text = "家族威望 %s（当前综合得分 %s）\n由家族在分支地块的人口份额、资金份额与产业份额共同决定。" % [
+		_prestige_plate.tooltip_text = "威望 %s · 得分 %s" % [
 			String(header.get("prestige_label", "0")),
 			String(header.get("prestige_progress_text", "0%"))]
 

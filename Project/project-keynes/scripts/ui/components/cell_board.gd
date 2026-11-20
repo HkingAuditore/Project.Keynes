@@ -12,7 +12,7 @@ class_name CellBoard
 
 signal resolved(cell_index: int, ok: bool)
 
-const BOARD_WIDTH := 340.0
+const BOARD_WIDTH := 520.0
 const COLUMN_GAP := 10.0
 const SLOT_COUNT := 5
 
@@ -28,37 +28,36 @@ const SLIDE_OUT_SEC := 0.13
 const SLIDE_OFFSET := 20.0
 const STAGGER_SEC := 0.06
 
-const ROW_HEIGHT := 28.0
-const COHORT_ROW_HEIGHT := 56.0
-const COHORT_LINE_HEIGHT := 22.0
-const COHORT_SIGNAL_HEIGHT := 20.0
-const HEADER_HEIGHT := 18.0
-const COLUMN_SEPARATION := 6.0
+const ROW_HEIGHT := 36.0
+const COHORT_ROW_HEIGHT := 64.0
+const COHORT_LINE_HEIGHT := 28.0
+const COHORT_SIGNAL_HEIGHT := 26.0
+const HEADER_HEIGHT := 26.0
+const COLUMN_SEPARATION := 8.0
 
-const MARKET_NAME_MIN := 92.0
-const MARKET_BAR_W := 32.0
-const MARKET_STOCK_W := 44.0
-const MARKET_PRICE_W := 52.0
-const COHORT_NAME_MIN := 66.0
-const COHORT_POP_W := 56.0
-const COHORT_FUNDS_W := 54.0
-const COHORT_INCOME_W := 54.0
-const COHORT_LIVING_MIN := 84.0
-const COHORT_SIGNAL_W := 86.0
+const MARKET_NAME_MIN := 132.0
+const MARKET_BAR_W := 48.0
+const MARKET_STOCK_W := 80.0
+const MARKET_PRICE_W := 80.0
+const COHORT_NAME_MIN := 90.0
+const COHORT_POP_W := 76.0
+const COHORT_FUNDS_W := 90.0
+const COHORT_INCOME_W := 88.0
+const COHORT_LIVING_MIN := 104.0
+const COHORT_SIGNAL_W := 124.0
 
-const BAR_HEIGHT := 6.0
+const BAR_HEIGHT := 8.0
 const SHARE_BAR_HEIGHT := 2.0
 
-## 纸面上的正文字号：9px 汉字在 1600 宽逻辑分辨率下已经糊成墨点，
-## 所以表头 10、正文与数值 12、次要读数 11。
-const HEADER_SIZE := 10
-const NAME_SIZE := 12
-const VALUE_SIZE := 12
-const SMALL_SIZE := 11
+## 扩大的纸面同时增大文字，避免只增加留白而读数仍然偏小。
+const HEADER_SIZE := 16
+const NAME_SIZE := 18
+const VALUE_SIZE := 18
+const SMALL_SIZE := 16
 
 ## 三段压缩的可用高度阈值（可用高度 = 地图安全区高度）。
-const FULL_HEIGHT := 540.0
-const COMPACT_HEIGHT := 420.0
+const FULL_HEIGHT := 650.0
+const COMPACT_HEIGHT := 510.0
 const COHORTS_HEIGHT := 320.0
 
 var _map: MapData
@@ -75,6 +74,7 @@ var _show_market := true
 var _show_cohorts := true
 var _suppressed := false
 var _slide_tween: Tween
+var _hiding := false
 
 var _slide: Control
 var _column: VBoxContainer
@@ -223,7 +223,7 @@ func _make_icon_header(icon_key: StringName, label_width: float, text: String) -
 	row.add_theme_constant_override("separation", 4)
 	var badge := IconMark.new()
 	badge.semantic = icon_key
-	badge.custom_minimum_size = Vector2(11.0, 11.0)
+	badge.custom_minimum_size = Vector2(18.0, 18.0)
 	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(badge)
 	var label := _make_header_text(text)
@@ -293,7 +293,7 @@ func _build_market_row() -> Dictionary:
 	root.add_child(line)
 
 	var badge := IconMark.new()
-	badge.custom_minimum_size = Vector2(16.0, 16.0)
+	badge.custom_minimum_size = Vector2(24.0, 24.0)
 	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	line.add_child(badge)
 
@@ -339,7 +339,7 @@ func _build_cohort_row() -> Dictionary:
 	root.add_child(line)
 
 	var badge := IconMark.new()
-	badge.custom_minimum_size = Vector2(16.0, 16.0)
+	badge.custom_minimum_size = Vector2(24.0, 24.0)
 	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	line.add_child(badge)
 
@@ -368,7 +368,7 @@ func _build_cohort_row() -> Dictionary:
 	# 后两条用同一套 0..1 量程的细条，读者不需要看刻度也知道谁更高。
 	var signals := _make_row_box("Signals", COHORT_SIGNAL_HEIGHT)
 	signals.add_theme_constant_override("separation", 4)
-	signals.add_child(_make_spacer(16.0))
+	signals.add_child(_make_spacer(24.0))
 	root.add_child(signals)
 
 	var living := HBoxContainer.new()
@@ -377,16 +377,16 @@ func _build_cohort_row() -> Dictionary:
 	living.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	living.add_theme_constant_override("separation", 3)
 	var living_badge := IconMark.new()
-	living_badge.custom_minimum_size = Vector2(12.0, 12.0)
+	living_badge.custom_minimum_size = Vector2(18.0, 18.0)
 	living_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	living.add_child(living_badge)
 	var living_label := _make_value_label(SMALL_SIZE, UITokens.DOSSIER_INK_SOFT)
 	living.add_child(living_label)
 	signals.add_child(living)
 
-	var satisfaction := _make_signal_cell(COHORT_SIGNAL_W, 30.0, UITokens.DOSSIER_VERDIGRIS)
+	var satisfaction := _make_signal_cell(COHORT_SIGNAL_W, MARKET_BAR_W, UITokens.DOSSIER_VERDIGRIS)
 	signals.add_child(satisfaction["root"])
-	var organization := _make_signal_cell(COHORT_SIGNAL_W, 30.0, UITokens.ACCENT)
+	var organization := _make_signal_cell(COHORT_SIGNAL_W, MARKET_BAR_W, UITokens.ACCENT)
 	signals.add_child(organization["root"])
 
 	# 当地影响力占比：贴在阶层名下面的一小截铜色横线，长度就是占比。
@@ -394,7 +394,7 @@ func _build_cohort_row() -> Dictionary:
 	var share_row := HBoxContainer.new()
 	share_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	share_row.add_theme_constant_override("separation", 0)
-	share_row.add_child(_make_spacer(16.0))
+	share_row.add_child(_make_spacer(24.0))
 	root.add_child(share_row)
 	var share := _make_ratio_bar(0.0, SHARE_BAR_HEIGHT, UITokens.DOSSIER_BRASS)
 	(share["root"] as Control).size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -655,6 +655,12 @@ func _set_fill_color(bar: Dictionary, color: Color) -> void:
 
 
 func show_board(animate: bool) -> void:
+	if _hiding:
+		_kill_slide_tween()
+		_hiding = false
+		_slide.position = Vector2.ZERO
+		_market_card.modulate.a = 1.0
+		_cohort_card.modulate.a = 1.0
 	if not visible:
 		visible = true
 		modulate.a = 1.0
@@ -687,12 +693,16 @@ func hide_board(immediate: bool) -> void:
 	_shown_cell = -1
 	if not visible:
 		return
+	if _hiding and not immediate:
+		return
 	_kill_slide_tween()
 	if immediate or UIAnimation.reduced_motion():
+		_hiding = false
 		visible = false
 		_slide.position = Vector2.ZERO
 		modulate.a = 1.0
 		return
+	_hiding = true
 	_slide_tween = create_tween().set_parallel(true)
 	_slide_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	_slide_tween.tween_property(_slide, "position:x", -SLIDE_OFFSET * 0.6, SLIDE_OUT_SEC)
@@ -701,6 +711,7 @@ func hide_board(immediate: bool) -> void:
 
 
 func _finish_hide() -> void:
+	_hiding = false
 	visible = false
 	_slide.position = Vector2.ZERO
 	modulate.a = 1.0

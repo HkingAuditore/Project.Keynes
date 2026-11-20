@@ -44,6 +44,8 @@ func _ensure_cell_board(host) -> void:
 		layout._cell_board = board
 		# 两块浮层不互相遮挡：展板一出现就把自己的矩形推给卡片避让。
 		board.visibility_changed.connect(func() -> void:
+			if host._map_overlay_toolbar != null:
+				host._map_overlay_toolbar.set_board_obscured(board.visible)
 			if host._cell_hover_card == null:
 				return
 			host._cell_hover_card.set_avoid_rect(board.get_global_rect() \

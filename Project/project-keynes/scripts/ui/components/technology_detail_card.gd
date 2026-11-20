@@ -109,8 +109,8 @@ func show_unknown(condition_items: Array = [], state: int = 0) -> void:
 	_name.text = "未知科技"
 	_state_label.text = STATE_NAMES[clampi(state, 0, 1)]
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	_placeholder.visible = not condition_items.is_empty()
-	_placeholder.text = "完成以下条件以发现该科技"
+	_placeholder.visible = false
+	_placeholder.text = ""
 	_detail_block.visible = true
 	for child in _detail_block.get_children():
 		child.visible = child == _condition_title or child == _conditions

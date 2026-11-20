@@ -518,7 +518,7 @@ func army_readiness() -> Dictionary:
 		"low_morale": low_morale,
 		"worst_supply": worst_supply if worst_supply <= 1.0 else 0.0,
 		"morale_caption": ("%d 支部队士气低落" % low_morale) if low_morale > 0
-			else "%d 支部队按兵力加权" % _armies.size() if _armies.size() > 0 else "尚无野战部队",
+			else "",
 		"supply_caption": ("最低 %s %s" % [worst_name, _percent(worst_supply)])
 			if not worst_name.is_empty() else "尚无野战部队",
 	}
@@ -547,9 +547,6 @@ func _overview_insights(soldiers: int, deficit: int, pay_ratio: float,
 	if waiting > 0:
 		insights.append(_insight("equipment", "%d 笔训练订单在等装备到货。" % waiting,
 			"military.plan.training", UITokens.DOSSIER_BRASS))
-	if _as_array(_snapshot.get("wars", null)).is_empty() and insights.size() < 2:
-		insights.append(_insight("peace", "当前没有战争，军费全部用于常备与后勤。",
-			"military.war.truce", UITokens.DOSSIER_INK_MUTED))
 	return insights.slice(0, 4)
 
 

@@ -92,13 +92,13 @@ func refresh_overview(model: Dictionary) -> void:
 		String(model.get("territory_tooltip", "当前国家持有的有效地块数")),
 		UITokens.ARCHIVE_INK_MUTED, "", "country.world")
 	%CPI.set_data("CPI", String(model.get("cpi", "—")),
-		String(model.get("cpi_tooltip", "居民需求加权的消费价格指数")),
+		String(model.get("cpi_tooltip", "消费物价")),
 		UITokens.ACCENT, "", "metric.goods")
 	%PPI.set_data("PPI", String(model.get("ppi", "—")),
-		String(model.get("ppi_tooltip", "生产供给加权的生产者价格指数")),
+		String(model.get("ppi_tooltip", "生产物价")),
 		UITokens.ARCHIVE_INK_MUTED, "", "economy.building.factory")
 	%Satisfaction.set_data("人民平均满意度", String(model.get("satisfaction", "—")),
-		String(model.get("satisfaction_tooltip", "全国人口加权的满意度均值")),
+		String(model.get("satisfaction_tooltip", "人民平均满意度")),
 		UITokens.ECO, "", "population.heart")
 	%LivingStandard.set_data("人民生活水平", String(model.get("living_standard", "—")),
 		String(model.get("living_standard_tooltip", "人民生活水平")),

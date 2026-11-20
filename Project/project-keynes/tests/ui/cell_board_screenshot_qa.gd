@@ -5,7 +5,8 @@ extends SceneTree
 ## 产物写到 tmp/ 下的临时目录（已 gitignore），便于人工核对剪纸纸片、图标比例与纸签层级。
 const OUTPUT_DIR := "res://tmp/cell_board_qa"
 const BOARD_SCENE := "res://scenes/ui/cell_board.tscn"
-const VIEWPORTS := [Vector2i(1600, 900), Vector2i(1280, 720)]
+const VIEWPORTS := [Vector2i(1600, 900), Vector2i(1280, 720),
+	Vector2i(2560, 1080), Vector2i(720, 480)]
 
 
 class QaEconomy extends RefCounted:
@@ -109,6 +110,7 @@ func _run() -> void:
 
 func _capture_board(viewport: Vector2i) -> void:
 	DisplayServer.window_set_size(viewport)
+	root.size = viewport
 	await process_frame
 	var background := _make_background(viewport)
 	root.add_child(background)
@@ -126,20 +128,42 @@ func _capture_board(viewport: Vector2i) -> void:
 	var inspector := CellInspectorViewModel.new()
 	inspector.set_context(map, generator, null, clock, 0.42, 22.0)
 
+	var toolbar := preload("res://scenes/ui/map_overlay_toolbar.tscn").instantiate() as MapOverlayToolbar
+	toolbar.theme = load("res://assets/themes/player_session_theme.tres")
+	root.add_child(toolbar)
 	var board := (load(BOARD_SCENE) as PackedScene).instantiate() as CellBoard
 	root.add_child(board)
+	board.visibility_changed.connect(func() -> void:
+		toolbar.set_board_obscured(board.visible))
 	board.configure(map, null,
 		func() -> Object: return generator.get_economy_facade(), inspector, clock)
-	board.apply_available_height(float(viewport.y) - 120.0)
-	board.position = Vector2(112.0, 76.0)
-	board.custom_minimum_size = Vector2(CellBoard.BOARD_WIDTH, 0.0)
+	var layout := preload("res://scripts/ui/game_hud_layout.gd").new()
+	layout._viewport = root
+	layout._cell_board = board
+	layout._layout_cell_board()
 	if not board.debug_show_cell(0):
 		_failures.append("展板截图：debug_show_cell 失败")
 	board.modulate.a = 1.0
+	await create_timer(UITokens.ANIM_FAST + 0.05).timeout
 	await process_frame
 	await process_frame
+	var column := board.get_node("Slide/Column") as Control
+	if column.size.x > CellBoard.BOARD_WIDTH + 0.5:
+		_failures.append("展板内容超出纸面宽度：%s" % viewport)
+	if board.position.y + column.size.y > float(viewport.y):
+		_failures.append("展板内容超出窗口底部：%s" % viewport)
+	if not is_equal_approx(board.position.x, UITokens.SPACE_MD):
+		_failures.append("展板未贴 HUD 左边缘：%s" % viewport)
 	await _save("%s/board_%dx%d.png" % [OUTPUT_DIR, viewport.x, viewport.y])
+	if toolbar.get_node("PrimaryPanel").visible:
+		_failures.append("展板可见时工具栏未隐藏：%s" % viewport)
+	board.hide_board(false)
+	await create_timer(CellBoard.SLIDE_OUT_SEC + UITokens.ANIM_MED + 0.08).timeout
+	if not toolbar.get_node("PrimaryPanel").visible:
+		_failures.append("展板退场后工具栏未恢复：%s" % viewport)
+	await _save("%s/toolbar_restored_%dx%d.png" % [OUTPUT_DIR, viewport.x, viewport.y])
 	board.free()
+	toolbar.free()
 	background.free()
 
 

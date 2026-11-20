@@ -90,6 +90,12 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 验收入口为 `Project/project-keynes/tests/world/loading_catalog_cooperative_test.gd` 与
 `tests/world/cooperative_world_generation_test.gd`；专项契约见 feature-guides 的加载期目录准备。
 
+建筑内容精简决策在 `Project/project-keynes/tools/technology_tree/building_distinction_review.json`；
+差异化、删除引用和发展成就主体的回归为
+`Project/project-keynes/tests/building/building_distinction_test.gd`。
+目录增删还须检查 `Project/project-keynes/scripts/research/development_achievement_catalog.gd`、
+科技的完整门槛及生产许可，并重烘 `Project/project-keynes/tools/prebake_loading_catalogs.gd`。
+
 ## 读不动的大文件
 
 下列文件远超行数上限，不要整读；用符号搜索定位后只读相关函数。完整清单是 `tools/ci/size_baseline.json`。
@@ -130,6 +136,9 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 `terrain_render_scale.gd`。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
 
 水面波纹、迷雾梯度和天气新旧值的数值纹理共用 `rendering/render_data_table.gd`。更新入口依次在 `renderer_shader_water.gd`、`fog_of_war_layer.gd`、`weather_layer.gd`。地面读取、植被与建筑的着色入口见 [地图绘制中的共享计算](feature-guides.md#地图绘制中的共享计算)，数据校验见 `tests/rendering/render_data_tables_test.gd`。
+
+迷雾连续遮罩与天气视野门控共用 `shaders/include/cell_field_overlays.gdshaderinc` 的权重函数；
+真实 GPU 遮罩、混合视野格心与可选前后耗时对照见 `Project/project-keynes/tests/rendering/fog_continuous_mask_test.gd`。
 
 提交前整理的脚本职责位置见 [源文件职责拆分](source-module-splits.md) 的“移动端 PR 提交前的长度与依赖修复”。
 原生开拓的存储、查询、人口载荷分别在 `gdext/src/economy_runtime_colonization_store.cpp`、

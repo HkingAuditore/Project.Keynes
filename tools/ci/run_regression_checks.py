@@ -26,6 +26,7 @@ TESTS = (
     "tests/game/player_controller_contract_test.gd",
     "tests/ui/inspector_live_patch_test.gd",
     "tests/building/building_visual_catalog_test.gd",
+    "tests/building/building_distinction_test.gd",
     "tests/world/vegetation_family_layer_test.gd",
     "tests/rendering/veg_variant_parity_probe.gd",
     "tests/rendering/terrain_draw_coverage_test.gd",

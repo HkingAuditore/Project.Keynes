@@ -761,6 +761,13 @@ func _append_bio_facts_to_geography(category: Dictionary, idx: int,
 		visibility: Dictionary = {}) -> void:
 	return _Overview_delegate._append_bio_facts_to_geography(self, category, idx, visibility)
 
+## 悬停与地理档案共用占据位、名称和科技识别规则。
+func local_species_badges(idx: int, technology_ids: PackedStringArray) -> Array:
+	return _cell_bio_badges(idx, {
+		"enforce_discovery": true, "technology_ids": technology_ids,
+	})
+
+
 func _cell_bio_badges(idx: int, visibility: Dictionary = {}) -> Array:
 	return _Overview_delegate._cell_bio_badges(self, idx, visibility)
 

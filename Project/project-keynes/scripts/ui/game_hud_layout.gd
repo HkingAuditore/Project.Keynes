@@ -116,8 +116,8 @@ func _layout_family_founding_dialog() -> void:
 	_family_founding_dialog.set_safe_area(_base_map_safe_area())
 
 
-## 悬停展板贴地图安全区左上角：它在工具栏右侧、顶栏下方，宽度固定，
-## 高度按可用空间决定能放几张表。
+## 悬停展板贴 HUD 左边缘、顶栏下方，允许覆盖互斥使用的图例工具栏。
+## 高度仍按地图安全区决定能放几张表。
 func _layout_cell_board() -> void:
 	if _cell_board == null:
 		return
@@ -125,7 +125,7 @@ func _layout_cell_board() -> void:
 	var available := maxf(safe.size.y - UITokens.SPACE_MD * 2.0, 0.0)
 	_cell_board.apply_available_height(available)
 	_cell_board.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_cell_board.offset_left = safe.position.x + UITokens.SPACE_MD
+	_cell_board.offset_left = UITokens.SPACE_MD
 	_cell_board.offset_top = safe.position.y + UITokens.SPACE_MD
 	_cell_board.offset_right = _cell_board.offset_left + CellBoard.BOARD_WIDTH
 	_cell_board.offset_bottom = _cell_board.offset_top + _cell_board.desired_height()

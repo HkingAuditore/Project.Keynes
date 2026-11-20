@@ -193,7 +193,7 @@ func _build_visuals() -> void:
 			"month_area":
 				_add_chart("各月已结算增加值", _month_chart(visual))
 			"radar":
-				_add_chart("满意度（人口加权）", _radar_chart(visual))
+				_add_chart("满意度", _radar_chart(visual))
 			"bars":
 				_add_chart(String(visual.get("label", "分项")), _bars_chart(visual))
 			"stairs":

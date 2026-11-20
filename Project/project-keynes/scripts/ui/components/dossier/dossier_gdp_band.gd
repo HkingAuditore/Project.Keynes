@@ -181,7 +181,6 @@ func _tooltip() -> String:
 	var lines := PackedStringArray()
 	if not _has_data:
 		lines.append(_reason if not _reason.is_empty() else "年度产值暂不可用")
-		lines.append("等经济结算提交后这里会显示本年度累计产值。")
 		return "\n".join(lines)
 	lines.append("%s：%s" % [title, _money(_value)])
 	if not is_nan(_per_capita):
