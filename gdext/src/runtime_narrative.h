@@ -36,6 +36,9 @@ struct RuntimeNarrativeView {
     uint16_t pause_mask = 0x00ff;
     int64_t unrest_fact = -1;
     godot::Dictionary ai_request;
+    int64_t waiting_for_external_input_day = -1;
+    bool ai_enabled = false;
+    bool ai_enabled_requested = false;
 };
 
 // Control requests run between committed days. The response is written before
@@ -66,8 +69,9 @@ public:
     godot::Dictionary complete_choice(godot::Dictionary result);
     std::vector<NarrativeIndependenceAction> take_independence_actions();
     int64_t allocate_modifier_source() { return _next_modifier_source++; }
-    godot::Dictionary accept_ai(const NarrativeDay &input, const godot::Dictionary &result);
-    void set_ai_enabled(bool enabled) { _ai_enabled = enabled; }
+    godot::Dictionary queue_ai_reply(const godot::Dictionary &result);
+    void set_ai_enabled(int64_t day, bool enabled);
+    void apply_ai_policy(int64_t day);
     uint64_t player() const { return _country; }
     const RuntimeNarrativeCatalog &catalog() const { return _catalog; }
     bool placing_choice() const { return !_choice_record.is_empty(); }
@@ -118,6 +122,7 @@ private:
     uint64_t _country = 0, _seed = 1;
     int64_t _days_per_year = 365, _day = -1;
     bool _ai_enabled = false;
+    std::deque<std::pair<int64_t, bool>> _ai_updates;
     uint16_t _pause_mask = 0x00ff;
     std::deque<std::pair<int64_t, uint16_t>> _pause_updates;
     godot::Dictionary _pending_choice;
@@ -137,7 +142,7 @@ private:
     std::vector<UnrestPending> _unrest_checks;
     std::vector<Independence> _independence;
     std::vector<NarrativeIndependenceAction> _independence_actions;
-    godot::Dictionary _pending_ai;
+    godot::Dictionary _pending_ai, _pending_ai_reply;
     // Offers and records keep the established pknr/presentation shape. No
     // condition reads the presentation payload to sample the simulation.
     godot::Dictionary _active, _choice_record, _choice_context;
@@ -174,6 +179,9 @@ private:
     bool request_ai(const NarrativeDay &, const NarrativeCellView &, const Followup &request,
         const godot::String &fact = {}, const std::string &state = {},
         const godot::String &state_hint = {}, bool scheduled = false);
+    void apply_ai_reply(const NarrativeDay &);
+    bool ai_event_eligible(const NarrativeDefinition &, const NarrativeDay &,
+                           const NarrativeCellView &) const;
     void store_ai(const std::string &state, NarrativeDefinition &&, int32_t cell, int64_t day);
     static int ai_pressure(const NarrativeCountryView &, const NarrativeCellView &);
     std::vector<int32_t> sampled_cells(const NarrativeDay &) const;

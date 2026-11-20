@@ -1626,12 +1626,6 @@ func set_popups_suppressed(enabled: bool) -> void:
 func _is_suppressed_popup_pause_source(source: String) -> bool:
 	return _narrative_component._is_suppressed_popup_pause_source(self, source)
 
-func export_narrative_state() -> Dictionary:
-	return _narrative_component.export_narrative_state(self)
-
-func restore_narrative_state(state: Dictionary) -> Dictionary:
-	return _narrative_component.restore_narrative_state(self, state)
-
 func open_narrative_chronicle(filter_cell: int = -1) -> void:
 	_narrative_component.open_narrative_chronicle(self, filter_cell)
 
@@ -1643,9 +1637,12 @@ func _configure_narrative_runtime() -> void:
 	module.configure("narrative", ["restore"], ["world.narrative"], _prepare_narrative_session,
 		_cancel_narrative_session, _narrative_service.release_world)
 	_runtime_host.register_session_module(module)
+	var consume: Callable = _narrative_service.consume_committed.unbind(4)
+	if not _runtime_host.world_ready.is_connected(consume):
+		_runtime_host.world_ready.connect(consume)
 	var settings := get_node_or_null("/root/GameSettings")
-	if settings != null and not settings.settings_changed.is_connected(_on_narrative_settings_changed):
-		settings.settings_changed.connect(_on_narrative_settings_changed)
+	if settings != null and not settings.ai_narrative_changed.is_connected(_on_narrative_settings_changed):
+		settings.ai_narrative_changed.connect(_on_narrative_settings_changed)
 	if settings != null and not settings.event_pause_changed.is_connected(_on_event_pause_changed):
 		settings.event_pause_changed.connect(_on_event_pause_changed)
 
@@ -1669,8 +1666,8 @@ func _on_event_pause_changed(mask: int) -> void:
 	_narrative_service.update_event_pause_mask(mask)
 
 
-func _on_narrative_settings_changed(settings: Dictionary) -> void:
-	_narrative_service.set_ai_enabled(bool(settings.get("ai_narrative_enabled", false)))
+func _on_narrative_settings_changed(enabled: bool) -> void:
+	_narrative_service.set_ai_enabled(enabled)
 
 
 func _on_narrative_offer_changed(offer: Dictionary) -> void:
@@ -1682,11 +1679,4 @@ func _on_narrative_event_resolved(record: Dictionary) -> void:
 func _on_narrative_ai_generation_requested(request_spec: Dictionary) -> void:
 	if _narrative_ai_client == null or _narrative_service == null:
 		return
-	_narrative_ai_client.request_event_generation(request_spec, func(res: Dictionary) -> void:
-		if _narrative_service == null:
-			return
-		# 回执的落地判定（时效、归属、节奏）归服务层：控制器只转发传输结果。
-		var arrival_day: int = int(_world_clock.day_index()) if _world_clock != null else -1
-		_narrative_service.accept_ai_generation(res, arrival_day)
-		_narrative_flow.try_present()
-	)
+	_narrative_ai_client.request_event_generation(request_spec, _narrative_service.ai_reply_handler(request_spec))

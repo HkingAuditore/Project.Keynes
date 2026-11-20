@@ -63,6 +63,7 @@ RuntimeResourceDisplayPatch NativeSimulationHost::take_resource_display_patch() 
 void NativeSimulationHost::reset_day_tail_for_world_change() {
     _world_environment.reset();
     _executor_narrative.reset();
+    _restored_narrative = godot::Dictionary();
     std::atomic_store(&_published_narrative, std::shared_ptr<const RuntimeNarrativeView>());
     _clock_requested_day.store(-1, std::memory_order_release);
     _executor_bio.reset();

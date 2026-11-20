@@ -261,6 +261,14 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
     return out;
 }
 
+bool RuntimeNarrative::ai_event_eligible(const NarrativeDefinition &def, const NarrativeDay &input,
+        const NarrativeCellView &cell) const {
+    return weight(def, input, cell) > 0 &&
+        std::any_of(def.options.begin(), def.options.end(), [&](const auto &option) {
+            return requirement(option, input.country, false).is_empty();
+        });
+}
+
 bool RuntimeNarrative::enqueue(const NarrativeDefinition &def, const NarrativeDay &input,
         int32_t cell, const std::string &chain, bool bypass, const Dictionary &meta,
         int64_t chain_salt, const Array &odds) {

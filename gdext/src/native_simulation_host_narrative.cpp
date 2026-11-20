@@ -105,9 +105,16 @@ NarrativeCellView sample_geography(const RuntimeEnvironmentSnapshot &geo, int32_
 bool NativeSimulationHost::initialize_narrative(const Dictionary &packet, const Dictionary &saved) {
     if (!execution_has_stopped()) return false;
     auto narrative = std::make_shared<RuntimeNarrative>();
-    if (!narrative->configure(packet, saved)) return false;
+    if (!narrative->configure(packet, saved.is_empty() ? _restored_narrative : saved)) return false;
+    _restored_narrative = Dictionary();
     _executor_narrative = std::move(narrative);
     publish_narrative_boundary(_committed_day.load(std::memory_order_acquire));
+    return true;
+}
+
+bool NativeSimulationHost::restore_narrative_checkpoint(const Dictionary &saved) {
+    if (!execution_has_stopped()) return false;
+    _restored_narrative = saved.duplicate(true);
     return true;
 }
 
@@ -122,12 +129,15 @@ std::shared_ptr<const RuntimeNarrativeView> NativeSimulationHost::latest_narrati
 
 Dictionary NativeSimulationHost::capture_narrative() const {
     std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
-    return _executor_narrative ? _executor_narrative->capture() : Dictionary();
+    return _executor_narrative ? _executor_narrative->capture() : _restored_narrative.duplicate(true);
 }
 
-bool NativeSimulationHost::narrative_needs_choice() const {
+const char *NativeSimulationHost::narrative_input_block() const {
     const auto view = latest_narrative();
-    return _world_environment && view && !view->active_offer.is_empty();
+    if (!_world_environment || !view) return nullptr;
+    if (!view->active_offer.is_empty()) return "narrative_choice_required";
+    if (view->waiting_for_external_input_day >= 0) return "narrative_external_input_required";
+    return nullptr;
 }
 
 void RuntimeNarrative::sample_country(const RuntimeCountryPodSnapshot &country,
@@ -220,6 +230,7 @@ bool NativeSimulationHost::prepare_narrative_day(int64_t day) {
     if (!_executor_narrative || !_world_environment) return false;
     auto &narrative = *_executor_narrative;
     narrative.apply_pause_policy(day);
+    narrative.apply_ai_policy(day);
     narrative.queue_automatic_choice(day);
     const auto choice = narrative.take_due_choice(day);
     if (choice.is_empty()) return false;
@@ -275,11 +286,12 @@ bool NativeSimulationHost::service_narrative_requests() {
                 request->result["ok"] = true;
                 request->result["effective_day"] = effective_day;
             } else if (request->kind == Kind::AI_RESULT) {
-                request->result = narrative.accept_ai(sample_narrative_day(
-                    request->args.get("arrival_day", day)), request->args);
+                request->result = narrative.queue_ai_reply(request->args);
             } else if (request->kind == Kind::SET_AI) {
-                narrative.set_ai_enabled(request->args.get("enabled", false));
+                const int64_t effective_day = command_seal_day();
+                narrative.set_ai_enabled(effective_day, request->args.get("enabled", false));
                 request->result["ok"] = true;
+                request->result["effective_day"] = effective_day;
             }
         }
         publish_narrative_boundary(day);

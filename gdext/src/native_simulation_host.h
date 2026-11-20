@@ -771,6 +771,7 @@ public:
     std::shared_ptr<const RuntimeEraRewardView> latest_era_reward() const;
     std::shared_ptr<const RuntimeEraAdvancementView> latest_era_advancement() const;
     bool initialize_narrative(const godot::Dictionary &, const godot::Dictionary &);
+    bool restore_narrative_checkpoint(const godot::Dictionary &);
     std::shared_ptr<const RuntimeNarrativeView> latest_narrative() const;
     godot::Dictionary capture_narrative() const;
     bool submit_narrative_choice_request(std::shared_ptr<struct RuntimeNarrativeRequest>);
@@ -1358,7 +1359,7 @@ private:
     const char *stage_narrative(DayExecution &);
     bool service_narrative_requests();
     void publish_narrative_boundary(int64_t);
-    bool narrative_needs_choice() const;
+    const char *narrative_input_block() const;
     struct NarrativeDay sample_narrative_day(int64_t) const;
     void sample_narrative_military(struct NarrativeCountryView &) const;
     bool prepare_narrative_day(int64_t);
@@ -1384,6 +1385,7 @@ private:
     std::deque<std::shared_ptr<AnnualPresentationRequest>> _annual_presentations;
     std::deque<std::shared_ptr<RuntimeNarrativeRequest>> _narrative_requests;
     std::shared_ptr<class RuntimeNarrative> _executor_narrative;
+    godot::Dictionary _restored_narrative;
     std::shared_ptr<const RuntimeNarrativeView> _published_narrative;
     std::shared_ptr<const RuntimeEraRewardView> _published_era_reward;
     std::shared_ptr<RuntimeEraAdvancement> _era_advancement;

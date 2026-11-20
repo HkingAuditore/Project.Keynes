@@ -23,6 +23,7 @@ var _rows_scroll: ScrollContainer
 var _pending_destructive_action: String = ""
 var _panel_generation := 0
 var event_pause_reader: Callable
+var ai_narrative_reader: Callable
 
 
 func _ready() -> void:
@@ -246,7 +247,8 @@ func _show_ai_settings() -> void:
 	var form := AiSettingsFormScene.instantiate() as ScrollContainer
 	_rows.add_child(form)
 	var enabled := form.get_node("Column/Enabled") as CheckButton
-	enabled.button_pressed = bool(current.get("ai_narrative_enabled", false))
+	enabled.button_pressed = bool(ai_narrative_reader.call()) if ai_narrative_reader.is_valid() \
+		else bool(current.get("ai_narrative_enabled", false))
 	var llm_url := _ai_field(form, "LlmUrl", String(current.get("ai_llm_base_url", "")))
 	var llm_model := _ai_field(form, "LlmModel", String(current.get("ai_llm_model", "")))
 	var llm_key := _ai_field(form, "LlmKey", String(keys.get("llm_api_key", "")))

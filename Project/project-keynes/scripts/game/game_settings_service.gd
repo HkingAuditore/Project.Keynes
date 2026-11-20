@@ -2,6 +2,7 @@ extends Node
 
 signal settings_changed(settings: Dictionary)
 signal event_pause_changed(mask: int)
+signal ai_narrative_changed(enabled: bool)
 
 ## 移动端 UI 缩放策略的唯一入口（content_scale_mode/aspect/factor + 安全区）。
 ## 用 preload 而不是 class_name：新脚本还没进 global_script_class_cache 时裸类名会编译失败。
@@ -82,6 +83,8 @@ func update(values_to_apply: Dictionary, persist: bool = true) -> Dictionary:
 	settings_changed.emit(values())
 	if values_to_apply.has("event_pause_mask"):
 		event_pause_changed.emit(int(_settings.event_pause_mask))
+	if values_to_apply.has("ai_narrative_enabled"):
+		ai_narrative_changed.emit(bool(_settings.ai_narrative_enabled))
 	return {"ok": true, "code": "ok", "message": ""}
 
 

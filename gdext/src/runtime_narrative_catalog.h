@@ -85,6 +85,9 @@ struct NarrativeProbe {
 
 class RuntimeNarrativeCatalog {
 public:
+    // 18 s transport timeout at the measured 1000x executor median of 65.8 ms/day.
+    static constexpr int64_t AI_REPLY_DELAY_DAYS = 274;
+
     bool configure(const godot::Dictionary &packet);
     NarrativeDefinition compile_event(const godot::Dictionary &definition) const;
     const NarrativeDefinition *find(const std::string &id) const;

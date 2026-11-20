@@ -312,7 +312,8 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 		for step in ["climate_writeback", "environment_capture", "environment_publish_hold",
 				"modifier_snapshot_install", "season_freeze", "season_install", "annual_year_boundary_input",
 				"narrative_daily", "stratum_unrest_daily", "narrative_choice_resolution",
-				"narrative_effect_delivery", "stratum_independence_delivery"]:
+				"narrative_effect_delivery", "stratum_independence_delivery",
+				"narrative_ai_sampling", "narrative_ai_eligibility", "narrative_ai_apply"]:
 			_expect("%s has no main-thread round trip on day %d" % [step, day],
 				int(steps.get(step, 0)) == 0)
 		for step in steps:
@@ -358,6 +359,14 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 			int(tasks.get("ideology_projection", {}).get("count", 0)) == 0)
 
 
+func _seed_narrative_archive(host: WorldRuntimeHost, archive: Dictionary) -> void:
+	var module := preload("res://scripts/game/runtime_session_module.gd").new()
+	module.configure("story_fixture", ["restore"], [], func() -> Dictionary:
+		return host.get_generator().get_gameplay_event_bus().restore_story(archive),
+		host._session_noop, host._session_ok)
+	_expect("register narrative checkpoint fixture", bool(host.register_session_module(module).get("ok", false)))
+
+
 func _check_narrative_boundary() -> void:
 	var clock := WorldClock.new()
 	clock.auto_start = false
@@ -368,10 +377,7 @@ func _check_narrative_boundary() -> void:
 	root.add_child(host)
 	host.configure(null, null, clock)
 	host.set_climate_authority_override("force_on")
-	var controller := PlayerController.new()
-	root.add_child(controller)
-	controller.configure(null, null, host, clock, null)
-	controller.restore_narrative_state({
+	_seed_narrative_archive(host, {
 		"last_popup_day": 0,
 		"next_offer_id": 2,
 		"ready_queue": [{"offer_id": 1, "cell_idx": -1, "bypass_pacing": false}],
@@ -380,6 +386,9 @@ func _check_narrative_boundary() -> void:
 			{"due_day": 2, "event_id": "evt.ages.first_grave", "chain_id": "scheduled_second"},
 		],
 	})
+	var controller := PlayerController.new()
+	root.add_child(controller)
+	controller.configure(null, null, host, clock, null)
 	var configured := host.configure_session({
 		"kind": "new_game", "config": _background_config().to_dictionary()})
 	_expect("formal narrative session configures", bool(configured.get("ok", false)))

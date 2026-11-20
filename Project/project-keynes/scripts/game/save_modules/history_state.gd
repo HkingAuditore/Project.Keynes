@@ -39,20 +39,18 @@ func _restore_annual_provider(sections: Dictionary, context: Dictionary) -> Dict
 	var facade = context.annual
 	return facade.restore_annual_state(bytes)
 
-func _can_narrative_provider(context: Dictionary) -> Dictionary:
+func _can_narrative_provider(_context: Dictionary) -> Dictionary:
 	return _result(true, "ok", "")
 
 func _write_narrative_provider(context: Dictionary) -> Dictionary:
-	var state: Dictionary = context.get("player").export_narrative_state() \
-		if context.get("player") != null and context.get("player").has_method("export_narrative_state") \
-		else {}
-	return {"ok": true, "sections": {"pknr": state}}
+	var bus = context.get("event_bus")
+	return {"ok": true, "sections": {"pknr": bus.capture_story() if bus != null else {}}}
 
 func _restore_narrative_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var raw_state = sections.get("pknr", {})
-	var state: Dictionary = raw_state if raw_state is Dictionary else {}
-	if context.get("player") != null and context.get("player").has_method("restore_narrative_state"):
-		return context.get("player").restore_narrative_state(state)
+	var bus = context.get("event_bus")
+	if bus != null and raw_state is Dictionary and not raw_state.is_empty():
+		return bus.restore_story(raw_state)
 	return _result(true, "ok", "")
 
 

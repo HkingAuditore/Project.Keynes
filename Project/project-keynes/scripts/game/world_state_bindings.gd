@@ -67,12 +67,10 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 				"intel": host.building_visual_intel_cache() if host != null else null,
 				"type_count": host.building_visual_type_count() if host != null else -1,
 				"refresh_vision": _method(host, "refresh_country_visuals")}
-		"journal":
+		"journal", "pknr":
 			return {"event_bus": source.get("event_bus")}
 		"pkar":
 			return {"annual": _facade(generator, "country")}
-		"pknr":
-			return {"player": source.get("player")}
 		"player_session":
 			return {"session": source.session, "set_session": source.set_session,
 				"player": source.get("player"), "viewport": source.get("viewport"),

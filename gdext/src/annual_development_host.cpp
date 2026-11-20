@@ -92,7 +92,7 @@ std::vector<AnnualDevelopmentReport> NativeSimulationHost::annual_history(uint32
 const char *NativeSimulationHost::player_confirmation_block() const {
     const auto era_reward = latest_era_reward();
     if (era_reward && era_reward->needs_choice) return "era_reward_choice_required";
-    if (narrative_needs_choice()) return "narrative_choice_required";
+    if (const char *block = narrative_input_block()) return block;
     if (!annual_development_enabled() || !annual_worker_managed()) return nullptr;
     std::lock_guard<std::mutex> lock(_annual_mutex);
     const auto report = _annual_ledger.ready_report_id();

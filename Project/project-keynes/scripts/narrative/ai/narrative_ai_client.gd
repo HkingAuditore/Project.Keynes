@@ -132,11 +132,13 @@ func request_event_generation(
 	var messages := NarrativeAiPromptBuilderScript.build_messages(
 		cell_ctx, chronicle, chain_hint, allowed_goods, allowed_buildings, fact_hint, state_hint
 	)
-	var custom_event_id := "evt.ai.%d_%d" % [int(request_spec.get("day", cell_ctx.get("day", 1))), req_id]
+	var sequence := int(request_spec.get("ai_request_seq", -1))
+	var custom_event_id := "evt.ai.%d_%d" % [
+		int(request_spec.get("day", cell_ctx.get("day", 1))), sequence if sequence > 0 else req_id]
 	# 服务层用 ai_request_seq 认领回执；client 只负责原样回带，不解释它。
 	var routing := {
 		"request_id": req_id,
-		"ai_request_seq": int(request_spec.get("ai_request_seq", -1)),
+		"ai_request_seq": sequence,
 		"cell_idx": int(request_spec.get("cell_idx", cell_ctx.get("cell_idx", -1))),
 		"chain_id": String(request_spec.get("chain_id", "")),
 		"state_id": String(request_spec.get("state_id", "")),

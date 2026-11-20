@@ -211,8 +211,12 @@ func poll_events(
 	return batch
 
 
-func configure_story(packet: Dictionary, state: Dictionary) -> bool:
-	return _world_ext != null and _world_ext.configure_gameplay_narrative(packet, state)
+func configure_story(packet: Dictionary) -> bool:
+	return _world_ext != null and _world_ext.configure_gameplay_narrative(packet, {})
+
+
+func restore_story(state: Dictionary) -> Dictionary:
+	return submit_story_request(&"restore", state)
 
 
 func story_view() -> Dictionary:

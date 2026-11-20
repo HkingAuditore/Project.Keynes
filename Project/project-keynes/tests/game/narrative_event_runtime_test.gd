@@ -25,8 +25,70 @@ func _run() -> void:
 	_test_ai_sandbox_and_image_cache()
 	_test_player_controller_integration()
 	await _test_story_and_diary()
+	await _test_ai_fixed_day()
 	print("narrative event runtime: %d checks, %d failures" % [_checks, _failures])
 	call_deferred("quit", 0 if _failures == 0 else 1)
+
+
+func _test_ai_fixed_day() -> void:
+	if await _start_story({"ai_enabled": true, "scheduled_events": [
+		{"due_day": 4, "chain_id": "ai_fixture", "ai_prompt_hint": "记录开荒。"},
+	]}, [&"evt.chain.ancient_foundry_legacy"]):
+		await _check_ai_fixed_day()
+	await _close_story()
+
+
+func _check_ai_fixed_day() -> void:
+	if not await _advance_story(1):
+		return
+	var bus: GameplayEventBus = story_host.get_generator().get_gameplay_event_bus()
+	var request: Dictionary = bus.story_view().get("ai_request", {})
+	const LANDING_DAY := 275
+	_expect("AI request snapshots its committed cell and fixed landing day",
+		request.get("day") == 1 and request.get("effective_day") == LANDING_DAY
+		and request.get("cell_ctx", {}).get("day") == 1 and request.get("cell_idx") == story_cell)
+	if request.is_empty():
+		return
+	var setting := bus.submit_story_request(&"ai_enabled", {"enabled": false})
+	var seal_day := 2 if story_host._native_daily_inline_active else 3
+	_expect("AI off is dated and leaves the already-issued request intact",
+		setting.get("ok") == true and setting.get("effective_day") == seal_day
+		and bus.story_view().get("ai_enabled") == true)
+	if not await _advance_story(seal_day):
+		return
+	_expect("AI off takes effect on the admitted day",
+		bus.story_view().get("ai_enabled") == false and bus.story_view().get("ai_request") == request)
+	print("NARRATIVE_AI_SETTING day=", setting.get("effective_day"),
+		" inline=", story_host._native_daily_inline_active)
+	if not await _advance_story(LANDING_DAY - 1):
+		return
+	_expect("no offer lands early and the AI setting is now disabled",
+		not story_service.has_active_offer() and bus.story_view().get("ai_enabled") == false)
+	_publish_day(story_host, story_clock, LANDING_DAY)
+	if story_host._native_daily_inline_active:
+		_expect("inline waits at the same external-input boundary",
+			story_host._runtime_native_daily_inline_last.get("reason") == "narrative_external_input_required")
+	var frames := Engine.get_process_frames()
+	OS.delay_msec(HOLD_MSEC)
+	_expect("admitted landing day cannot advance without input",
+		Engine.get_process_frames() == frames and story_ext.runtime_committed_day() == LANDING_DAY - 1
+		and bus.story_view().get("waiting_for_external_input_day") == LANDING_DAY)
+	var reply := {
+		"ai_request_seq": request.get("ai_request_seq"), "effective_day": LANDING_DAY - 1,
+		"ok": true, "definition": _story_fixture_event("evt.ai.fixture", []),
+	}
+	_expect("reply dated for another day is rejected",
+		bus.submit_story_request(&"ai_result", reply).get("code") == "ai_reply_day_mismatch")
+	reply.effective_day = LANDING_DAY
+	_expect("reply resumes the same scheduled day",
+		bus.submit_story_request(&"ai_result", reply).get("effective_day") == LANDING_DAY)
+	if not await _advance_story(LANDING_DAY):
+		return
+	var offer := story_service.active_offer()
+	_expect("AI candidate lands on the scheduled day even after the switch was turned off",
+		offer.get("event_id") == "evt.ai.fixture" and offer.get("day") == LANDING_DAY
+		and is_equal_approx(float(offer.get("temperature", INF)), story_host.current_map().temp_arr[story_cell]))
+	print("NARRATIVE_AI_FIXED_DAY request=1 landed=", LANDING_DAY)
 
 
 func _test_state_probe_contract() -> void:

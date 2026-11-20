@@ -196,9 +196,6 @@ void RuntimeNarrative::prune(int64_t day) {
     _tracking.erase(std::remove_if(_tracking.begin(), _tracking.end(), [&](const auto &row) {
         return day - row.seen > 60;
     }), _tracking.end());
-    if (!_pending_ai.is_empty() && day - int64_t(_pending_ai.get("day", day)) > 60) {
-        _pending_ai.clear();
-    }
 }
 
 void RuntimeNarrative::followups(const NarrativeDay &input) {
@@ -283,6 +280,7 @@ int64_t RuntimeNarrative::step(const NarrativeDay &input,
     unrest(input, facts);
     fact_notices(input, facts);
     prune(input.day);
+    apply_ai_reply(input);
     followups(input);
     std::array<const RuntimeEventsRecord *, 64> batch{};
     size_t count = 0;
@@ -322,7 +320,13 @@ std::shared_ptr<const RuntimeNarrativeView> RuntimeNarrative::view(int64_t commi
     out->unrest_fact = _last_unrest_fact;
     for (const auto &row : _queue) out->queue.push_back(row);
     for (const auto &row : _chronicle) out->chronicle.push_back(row);
-    out->ai_request = _pending_ai;
+    if (_pending_ai_reply.is_empty() && !_pending_ai.is_empty()) {
+        out->ai_request = _pending_ai;
+        const int64_t due = _pending_ai["effective_day"];
+        if (due == committed_day + 1) out->waiting_for_external_input_day = due;
+    }
+    out->ai_enabled = _ai_enabled;
+    out->ai_enabled_requested = _ai_updates.empty() ? _ai_enabled : _ai_updates.back().second;
     return out;
 }
 } // namespace pk

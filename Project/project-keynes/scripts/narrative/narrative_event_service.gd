@@ -16,8 +16,7 @@ var _view: Dictionary = {}
 var _last_popup_day: int = -999
 var _last_ai_request: int = 0
 var _last_record: int = 0
-var _ai_enabled := false
-var _saved: Dictionary = {}
+var _session_generation := 0
 var _catalog: NarrativeEventCatalog
 
 
@@ -25,12 +24,13 @@ func bind_world(generator, clock: WorldClock, country: int, seed: int,
 		enable_ai: bool, pause_mask: int = 255) -> Dictionary:
 	_country = country
 	_bus = generator.get_gameplay_event_bus()
-	_ai_enabled = enable_ai
+	_session_generation += 1
 	var packet := CatalogPacket.build(catalog(), generator, clock, country, seed, enable_ai, pause_mask)
-	if _bus == null or not _bus.configure_story(packet, _saved):
+	if _bus == null or not _bus.configure_story(packet):
 		return {"ok": false, "code": "narrative_executor_configure_failed"}
-	_saved = {}
 	_refresh_view()
+	var records: Array = _view.get("chronicle", [])
+	_last_record = 0 if records.is_empty() else int(records[0].get("record_id", 0))
 	return {"ok": true}
 
 
@@ -38,7 +38,7 @@ func release_world() -> Dictionary:
 	_bus = null
 	_country = 0
 	_view = {}
-	_saved = {}
+	_session_generation += 1
 	_last_popup_day = -999
 	_last_ai_request = 0
 	_last_record = 0
@@ -53,6 +53,11 @@ func catalog() -> NarrativeEventCatalog:
 
 func consume_committed() -> void:
 	_refresh_view()
+	var request: Dictionary = _view.get("ai_request", {})
+	var sequence := int(request.get("ai_request_seq", 0))
+	if sequence > _last_ai_request:
+		_last_ai_request = sequence
+		ai_generation_requested.emit(request.duplicate(true))
 	var records: Array = _view.get("chronicle", [])
 	var fresh: Array[Dictionary] = []
 	for row: Dictionary in records:
@@ -109,19 +114,31 @@ func choose_option(args: Dictionary, sequence: int) -> Dictionary:
 
 
 func set_ai_enabled(enabled: bool) -> void:
-	if _bus == null or enabled == _ai_enabled:
+	if _bus != null:
+		_request(&"ai_enabled", {"enabled": enabled})
+		_refresh_view()
+
+
+func ai_enabled_setting() -> bool:
+	return bool(_view.get("ai_enabled_requested", false))
+
+
+func ai_reply_handler(request: Dictionary) -> Callable:
+	return _submit_ai_reply.bind(_session_generation,
+		int(request.get("ai_request_seq", 0)), int(request.get("effective_day", -1)))
+
+
+func _submit_ai_reply(result: Dictionary, session_generation: int, sequence: int, day: int) -> void:
+	if session_generation != _session_generation or _bus == null:
 		return
-	if bool(_request(&"ai_enabled", {"enabled": enabled}).get("ok", false)):
-		_ai_enabled = enabled
-
-
-func accept_ai_generation(result: Dictionary, arrival_day: int) -> void:
-	var payload := result.duplicate()
-	var definition = result.get("definition", null)
-	payload["definition"] = CatalogPacket.encode_event(definition) if definition != null else {}
-	payload["arrival_day"] = arrival_day
+	var definition = result.get("definition")
+	var accepted := bool(result.get("ok", false)) and definition != null
+	var payload := {"ai_request_seq": sequence, "effective_day": day, "ok": accepted}
+	if accepted:
+		payload["definition"] = CatalogPacket.encode_event(definition)
+	else:
+		payload["code"] = result.get("code", "ai_generation_failed")
 	_request(&"ai_result", payload)
-	_refresh_view()
 
 
 func get_chronicle(offset: int = 0, limit: int = 64, filter_cell: int = -1) -> Array[Dictionary]:
@@ -138,14 +155,7 @@ func chronicle_total_count(filter_cell: int = -1) -> int:
 
 
 func export_state() -> Dictionary:
-	return _bus.capture_story() if _bus != null else _saved.duplicate(true)
-
-
-func restore_state(state: Dictionary) -> Dictionary:
-	_saved = state.duplicate(true)
-	var records: Array = _saved.get("chronicle", [])
-	_last_record = 0 if records.is_empty() else int(records[0].get("record_id", 0))
-	return {"ok": true}
+	return _bus.capture_story() if _bus != null else {}
 
 
 func _request(kind: StringName, args: Dictionary) -> Dictionary:
@@ -165,8 +175,3 @@ func _refresh_view() -> void:
 		offer_ready.emit(offer)
 	elif offer.is_empty() and previous != 0:
 		offer_changed.emit(offer)
-	var request: Dictionary = _view.get("ai_request", {})
-	var sequence := int(request.get("ai_request_seq", 0))
-	if sequence > _last_ai_request:
-		_last_ai_request = sequence
-		ai_generation_requested.emit(request)

@@ -58,14 +58,6 @@ static func _is_suppressed_popup_pause_source(host, source: String) -> bool:
 
 
 
-func export_narrative_state(host) -> Dictionary:
-	return host._narrative_service.export_state()
-
-
-func restore_narrative_state(host, state: Dictionary) -> Dictionary:
-	return host._narrative_service.restore_state(state)
-
-
 func open_narrative_chronicle(host, filter_cell: int = -1) -> void:
 	if host._ui_manager == null or host._narrative_service == null:
 		return

@@ -23,6 +23,10 @@ func _start_story(archive: Dictionary, event_ids: Array = [], config: NewGameCon
 	root.add_child(story_host)
 	story_host.configure(null, null, story_clock)
 	story_host.set_climate_authority_override("force_on")
+	archive = archive.duplicate(true)
+	if not archive.has("event_pause_mask"):
+		archive["event_pause_mask"] = 255
+	_seed_narrative_archive(story_host, archive)
 	story_controller = PlayerController.new()
 	root.add_child(story_controller)
 	story_controller.configure(null, null, story_host, story_clock, null)
@@ -32,10 +36,6 @@ func _start_story(archive: Dictionary, event_ids: Array = [], config: NewGameCon
 		story_service._catalog = NarrativeEventCatalog.new()
 		for event_id in event_ids:
 			story_service._catalog.register_event(authored.get_event(StringName(event_id)))
-	archive = archive.duplicate(true)
-	if not archive.has("event_pause_mask"):
-		archive["event_pause_mask"] = 255
-	story_controller.restore_narrative_state(archive)
 	if config == null:
 		config = _background_config()
 	var configured := story_host.configure_session({"kind": "new_game", "config": config.to_dictionary()})

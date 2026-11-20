@@ -66,6 +66,16 @@ Dictionary RuntimeNarrative::capture() const {
     out["last_ai_request_day"] = _last_ai;
     out["next_ai_request_seq"] = _next_ai;
     out["pending_ai_request"] = _pending_ai;
+    if (!_pending_ai_reply.is_empty()) out["pending_ai_reply"] = _pending_ai_reply;
+    out["ai_enabled"] = _ai_enabled;
+    Array ai_updates;
+    for (const auto &[day, enabled] : _ai_updates) {
+        Array row;
+        row.push_back(day);
+        row.push_back(enabled);
+        ai_updates.push_back(row);
+    }
+    if (!ai_updates.is_empty()) out["pending_ai_settings"] = ai_updates;
     out["last_state_probe_day"] = _last_probe;
     out["event_pause_mask"] = static_cast<int32_t>(_pause_mask);
     out["last_notification_fact"] = _last_notification_fact;
@@ -209,7 +219,18 @@ void RuntimeNarrative::restore(const Dictionary &state) {
             _pause_updates.emplace_back(int64_t(row[0]), static_cast<uint16_t>(int32_t(row[1])));
     }
     _last_ai = state.get("last_ai_request_day", NEVER);
-    _pending_ai = record_or_empty(state.get("pending_ai_request", Variant())).duplicate(true);
+    _ai_enabled = state.get("ai_enabled", _ai_enabled);
+    const auto ai_updates = rows_or_empty(state.get("pending_ai_settings", Variant()));
+    for (int64_t index = 0; index < ai_updates.size(); ++index) {
+        if (ai_updates[index].get_type() != Variant::ARRAY) continue;
+        const Array row = ai_updates[index];
+        if (row.size() == 2) _ai_updates.emplace_back(int64_t(row[0]), bool(row[1]));
+    }
+    const auto pending_ai = record_or_empty(state.get("pending_ai_request", Variant()));
+    if (pending_ai.has("effective_day")) {
+        _pending_ai = pending_ai.duplicate(true);
+        _pending_ai_reply = record_or_empty(state.get("pending_ai_reply", Variant())).duplicate(true);
+    }
 
     _active = record_or_empty(state.get("active_offer", Variant())).duplicate(true);
     decode_records(state.get("ready_queue", Array()),
