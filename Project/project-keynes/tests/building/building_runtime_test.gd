@@ -2621,7 +2621,7 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var signatures: PackedStringArray = catalog.signature_keys
 	var goods: PackedStringArray = catalog.good_ids
-	var oral_memory_id := building_ids.find("early_knowledge_institution" if scarce_materials else "oral_memory_circle")
+	var oral_memory_id := building_ids.find("early_knowledge_institution")
 	var gathering_id := building_ids.find("gathering_ground")
 	var oral_memory_technology := technology_ids.find("tech.oral_memory_practice")
 	var early_knowledge_technology := technology_ids.find("tech.early_knowledge_institution")

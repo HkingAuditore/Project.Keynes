@@ -178,12 +178,6 @@ static func build_ledger(snapshot: Dictionary) -> Control:
 		ArtScript.q16(int(snapshot.get("point_ledger_opinion_factor_q16", 65536))),
 		ArtScript.q16(int(snapshot.get("point_ledger_gain_factor_q16", 65536)))]
 	column.add_child(ArtScript.label(factors, 12, ArtScript.INK_MUTED))
-	var explanation := ArtScript.label(
-		"满意度按各阶层影响力加权，影响本期理念点收益。",
-		14, ArtScript.INK_MUTED, HORIZONTAL_ALIGNMENT_LEFT)
-	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	explanation.custom_minimum_size.x = 340
-	column.add_child(explanation)
 	column.add_child(ArtScript.label("本期 +%s    累计 %s" % [
 		ArtScript.q16(int(snapshot.get("point_ledger_gain_q16", 0))),
 		ArtScript.q16(int(snapshot.get("lifetime_points_q16", 0)))], 14, ArtScript.VERMILION))

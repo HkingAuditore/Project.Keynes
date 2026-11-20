@@ -280,7 +280,7 @@ func _test_board_widget() -> void:
 	root.add_child(board)
 	board.configure(_map, null,
 		func() -> Object: return _economy, _inspector, _clock)
-	board.apply_available_height(600.0)
+	board.apply_available_height(CellBoard.FULL_HEIGHT)
 	if not board.debug_show_cell(0):
 		_failures.append("debug_show_cell 应能展示有数据的格子")
 	_expect("展板默认 MOUSE_FILTER_IGNORE", board.mouse_filter == Control.MOUSE_FILTER_IGNORE)

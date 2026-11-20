@@ -382,7 +382,7 @@ func _assert_explicit_economic_sectors(catalog: Dictionary) -> void:
 	var ids: PackedStringArray = catalog.building_type_ids
 	var sectors: PackedInt32Array = catalog.building_economic_sectors
 	assert(sectors.size() == ids.size())
-	for farm_id in ["subsistence_farm", "wheat_farm", "rice_collector",
+	for farm_id in ["subsistence_farm", "rainfed_wheat_plot", "bunded_rice_field",
 			"rainfed_maize_field", "pastoral_camp", "landed_estate",
 			"medicinal_herbs_collector"]:
 		var index := ids.find(farm_id)
@@ -390,8 +390,9 @@ func _assert_explicit_economic_sectors(catalog: Dictionary) -> void:
 	for mine_id in ["coal_mine", "iron_ore_collector", "copper_ore_collector"]:
 		var index := ids.find(mine_id)
 		assert(index >= 0 and int(sectors[index]) == 1, mine_id)
-	for knowledge_id in ["oral_memory_circle", "seasonal_observation_shelter",
-			"pastoral_council_tent", "tide_observation_hut", "flood_calendar_shrine"]:
+	for knowledge_id in ["early_knowledge_institution", "scribal_school", "classical_academy",
+			"chartered_university", "learned_society", "industrial_research_laboratory",
+			"national_laboratory", "computing_research_center", "machine_intelligence_institute"]:
 		var knowledge_index := ids.find(knowledge_id)
 		assert(knowledge_index >= 0 and int(sectors[knowledge_index]) == 4, knowledge_id)
 
@@ -682,8 +683,7 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 			"tech.serf_obligations"])
 	_assert_building_supports(catalog, "rubber_tapping_camp",
 		["tech.rubber_identification", "tech.wild_latex_tapping"])
-	_assert_building_supports(catalog, "coal_adit",
-		["tech.surface_coal_collection", "tech.masonry"])
+	_assert_technology_has_binding(catalog, "tech.coal_mining", 2, "coal_mine")
 	_assert_building_supports(catalog, "natural_copper_workshop",
 		["tech.natural_copper_identification", "tech.stone_knapping"])
 	_assert_building_supports(catalog, "copper_ore_collector",
@@ -720,7 +720,7 @@ func _assert_estate_institution_scope(catalog: Dictionary) -> void:
 	var direct_owners := {
 		"tech.estate_cereal_management": ["landed_estate", "method_wheat_farm_r3"],
 		"tech.crop_breeding": ["method_wheat_farm_r5"],
-		"tech.rice_water_control": ["method_rice_collector_r3"],
+		"tech.tenant_paddy_management": ["tenant_paddy", "sharecrop_paddy"],
 		"tech.estate_paddy_management": ["method_rice_collector_r5"],
 		"tech.indentured_contracts": ["method_flax_collector_r3"],
 		"tech.long_term_leases": ["method_flax_collector_r5"],
@@ -741,7 +741,7 @@ func _assert_estate_institution_scope(catalog: Dictionary) -> void:
 		for binding in _technology_bindings(catalog, technology_id):
 			assert(String(binding.id) not in ["method_wheat_farm_r3",
 				"method_wheat_farm_r5", "method_flax_collector_r3",
-				"method_flax_collector_r5", "method_rice_collector_r3",
+				"method_flax_collector_r5", "tenant_paddy",
 				"method_rice_collector_r5"],
 				"agronomy technology directly unlocks an estate institution method: %s -> %s" % [
 					technology_id, binding.id])
@@ -800,10 +800,6 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 			["tech.autonomous_systems", "tech.smart_grid", "tech.distributed_intelligence"]],
 		["hydropower_station", "tech.water_power",
 			["tech.hydraulic_engineering", "tech.electric_generation", "tech.electric_grid"]],
-		["watershed_governance_center", "tech.hydrological_remote_sensing",
-			["tech.hydraulic_engineering", "tech.geographic_information_systems"]],
-		["smart_water_network", "tech.algorithmic_governance",
-			["tech.hydrological_remote_sensing", "tech.smart_grid", "tech.autonomous_systems"]],
 		["method_forest_remote_sensing", "tech.satellite_observation",
 			["tech.forest_management", "tech.geographic_information_systems"]],
 		["method_autonomous_forestry", "tech.autonomous_systems",
@@ -861,8 +857,7 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 	_assert_capital_input_gain(catalog, "ranching_station",
 		"method_smart_husbandry", capital_goods)
 
-	for conditioned_id in ["hydropower_station", "watershed_governance_center",
-			"smart_water_network", "method_forest_remote_sensing",
+	for conditioned_id in ["hydropower_station", "method_forest_remote_sensing",
 			"method_autonomous_forestry", "method_highland_precision_agriculture",
 			"method_smart_husbandry", "method_specialty_commodity_plantation"]:
 		var building := (catalog.building_type_ids as PackedStringArray).find(conditioned_id)

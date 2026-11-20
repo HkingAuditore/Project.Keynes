@@ -2,6 +2,8 @@
 
 先读 [current-state.md](current-state.md) 和 [design.md](design.md)，确定数据所有者、运行线程和真正的提交点；边界规则见 [module-boundaries.md](module-boundaries.md)。目标接口不是已有 API。
 
+建筑内容增删与同代重复审查遵循 [建筑差异化与精简](feature-guides.md#建筑差异化与精简)，包括产业链、科技许可、发展成就和加载快照的同步要求。
+
 ### 政治体制与国库建造权限
 
 政治入口的 canonical section id 是 `politics`，页面内保留 `regime` 与 `ideology` 两个

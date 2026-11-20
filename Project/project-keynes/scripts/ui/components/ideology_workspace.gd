@@ -785,12 +785,7 @@ func _support_summary(live: Dictionary, direction: int) -> String:
 
 
 func _support_tooltip(live: Dictionary, direction: int) -> String:
-	# The old per-class "加权贡献" line printed `influence x stance`, a raw product
-	# whose unit the player could not read. The real per-class numbers are the
-	# income change and the resulting stance, shown in the detail sheet where one
-	# native call per card is affordable.
-	return "%s\n%s" % [_support_summary(live, direction),
-		"支持评分 = 各阶层立场按影响力加权；立场 = 该阶层收入变化 × 5。"]
+	return _support_summary(live, direction)
 
 
 func _display_name(metadata: Dictionary, ideology_id: int) -> String:

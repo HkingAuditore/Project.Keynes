@@ -1683,11 +1683,11 @@
 				},
 				{
 					"kind": 2.0,
-					"id": "earth_digging_pit"
+					"id": "primitive_clay_pit"
 				},
 				{
-					"kind": 2.0,
-					"id": "primitive_clay_pit"
+					"kind": 3.0,
+					"id": "clay"
 				}
 			],
 			"content_effects": [
@@ -1706,18 +1706,6 @@
 				},
 				{
 					"kind": "building",
-					"id": "earth_digging_pit",
-					"binding_kind": 2.0,
-					"subject": "building.earth_digging_pit",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "土料挖掘坑"
-				},
-				{
-					"kind": "building",
 					"id": "primitive_clay_pit",
 					"binding_kind": 2.0,
 					"subject": "building.primitive_clay_pit",
@@ -1726,10 +1714,22 @@
 					"value": 1.0,
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "原始黏土坑"
+					"display_name": "黏土挖掘坑"
+				},
+				{
+					"kind": "resource",
+					"id": "clay",
+					"binding_kind": 3.0,
+					"subject": "resource.clay",
+					"attribute": "local_resource_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "ResourceProfile.discovery_technology_tags",
+					"status": "existing_binding",
+					"display_name": "黏土"
 				}
 			],
-			"effect_summary": "解锁物资：黏土；解锁建筑：土料挖掘坑、原始黏土坑",
+			"effect_summary": "解锁物资：黏土；解锁建筑：黏土挖掘坑；可利用资源：黏土",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -2017,10 +2017,6 @@
 				{
 					"id": "method_spice_plants_collector_r6",
 					"name": "机械化香料种植园"
-				},
-				{
-					"id": "spice_commercial_plantation",
-					"name": "商业香料种植园"
 				},
 				{
 					"id": "spice_plants_collector",
@@ -4334,8 +4330,8 @@
 			},
 			"support_buildings": [
 				{
-					"id": "flax_collector",
-					"name": "亚麻农场"
+					"id": "flax_retting_pit",
+					"name": "沤麻池"
 				},
 				{
 					"id": "household_flax_plot",
@@ -5627,30 +5623,12 @@
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "oral_memory_circle"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "oral_memory_circle",
-					"binding_kind": 2.0,
-					"subject": "building.oral_memory_circle",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "口述记忆圈"
-				}
-			],
-			"effect_summary": "解锁建筑：口述记忆圈；社会领域研究效率 +2.7%；「研究机构」生产家族建筑产出 +36%；知识部门产出 +24%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "社会领域研究效率 +2.7%；「研究机构」生产家族建筑产出 +36%；知识部门产出 +24%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
-			"terminal_reason": "口述记忆实践是观察、科学与计算在当前目录中的应用端点，其终点效果由technology_points、oral_memory_circle消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "backbone.knowledge_computation",
 			"era_entry_milestone_id": "",
 			"reveal_category": "general_knowledge",
@@ -5728,30 +5706,12 @@
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "seasonal_observation_shelter"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "seasonal_observation_shelter",
-					"binding_kind": 2.0,
-					"subject": "building.seasonal_observation_shelter",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "物候观察棚"
-				}
-			],
-			"effect_summary": "解锁建筑：物候观察棚；农业领域研究效率 +3%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "农业领域研究效率 +3%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
-			"terminal_reason": "物候观察实践是自然史、生物学与育种科学在当前目录中的应用端点，其终点效果由technology_points、seasonal_observation_shelter消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "branch.natural_history",
 			"era_entry_milestone_id": "",
 			"reveal_category": "environment_observation",
@@ -5830,30 +5790,12 @@
 					"runtime_consumer": "NativeEconomyRuntime::capture_country_epoch"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "tide_observation_hut"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "tide_observation_hut",
-					"binding_kind": 2.0,
-					"subject": "building.tide_observation_hut",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "潮汐观察屋"
-				}
-			],
-			"effect_summary": "解锁建筑：潮汐观察屋；全社会贸易运输速度 +3%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "全社会贸易运输速度 +3%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "潮汐与航向记忆是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由technology_points、tide_observation_hut消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "branch.maritime_logistics",
 			"era_entry_milestone_id": "",
 			"reveal_category": "environment_observation",
@@ -7659,27 +7601,9 @@
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "lorekeeper_circle"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "lorekeeper_circle",
-					"binding_kind": 2.0,
-					"subject": "building.lorekeeper_circle",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "传知者议事圈"
-				}
-			],
-			"effect_summary": "解锁建筑：传知者议事圈；「研究机构」生产家族建筑产出 +36%；知识部门产出 +24%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "「研究机构」生产家族建筑产出 +36%；知识部门产出 +24%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -8417,27 +8341,9 @@
 					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "flood_calendar_shrine"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "flood_calendar_shrine",
-					"binding_kind": 2.0,
-					"subject": "building.flood_calendar_shrine",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "洪水历法祭所"
-				}
-			],
-			"effect_summary": "解锁建筑：洪水历法祭所；洪灾损失 -6%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "洪灾损失 -6%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -8532,30 +8438,12 @@
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "pastoral_council_tent"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "pastoral_council_tent",
-					"binding_kind": 2.0,
-					"subject": "building.pastoral_council_tent",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "牧群路线议事帐"
-				}
-			],
-			"effect_summary": "解锁建筑：牧群路线议事帐；农业领域研究效率 +3%；「畜牧业」生产家族建筑产出 +21.3%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "农业领域研究效率 +3%；「畜牧业」生产家族建筑产出 +21.3%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "牧群路线记忆是草原、马匹与畜牧业在当前目录中的应用端点，其终点效果由technology_points、pastoral_council_tent消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "branch.pastoral_livestock",
 			"era_entry_milestone_id": "tech.settled_knowledge",
 			"reveal_category": "environment_observation",
@@ -10856,15 +10744,35 @@
 			],
 			"expected_bindings": [
 				{
+					"kind": 1.0,
+					"id": "bast_fiber"
+				},
+				{
 					"kind": 2.0,
 					"id": "household_flax_plot"
 				},
 				{
 					"kind": 3.0,
 					"id": "arable_land"
+				},
+				{
+					"kind": 3.0,
+					"id": "fertile_soil"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "bast_fiber",
+					"binding_kind": 1.0,
+					"subject": "good.bast_fiber",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "亚麻杆"
+				},
 				{
 					"kind": "building",
 					"id": "household_flax_plot",
@@ -10888,9 +10796,21 @@
 					"implementation": "ResourceProfile.discovery_technology_tags",
 					"status": "existing_binding",
 					"display_name": "旱地承载力"
+				},
+				{
+					"kind": "resource",
+					"id": "fertile_soil",
+					"binding_kind": 3.0,
+					"subject": "resource.fertile_soil",
+					"attribute": "local_resource_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "ResourceProfile.discovery_technology_tags",
+					"status": "existing_binding",
+					"display_name": "肥沃土壤"
 				}
 			],
-			"effect_summary": "解锁建筑：家庭亚麻试种圃；可利用资源：旱地承载力；农业部门产出 +11.3%",
+			"effect_summary": "解锁物资：亚麻杆；解锁建筑：家庭亚麻试种圃；可利用资源：旱地承载力、肥沃土壤；农业部门产出 +11.3%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -10935,16 +10855,12 @@
 					"name": "菜蔬农场"
 				},
 				{
-					"id": "flax_collector",
-					"name": "亚麻农场"
+					"id": "flax_retting_pit",
+					"name": "沤麻池"
 				},
 				{
 					"id": "highland_tuber_plot",
 					"name": "冷凉高地块茎田"
-				},
-				{
-					"id": "improved_domestic_loom",
-					"name": "改良家用织机"
 				},
 				{
 					"id": "improved_smallholding",
@@ -11278,6 +11194,14 @@
 				},
 				{
 					"kind": 1.0,
+					"id": "clay"
+				},
+				{
+					"kind": 1.0,
+					"id": "pottery"
+				},
+				{
+					"kind": 1.0,
 					"id": "tin"
 				},
 				{
@@ -11310,6 +11234,30 @@
 					"status": "existing_binding",
 					"display_name": "砖块",
 					"summary_visible": true
+				},
+				{
+					"kind": "good",
+					"id": "clay",
+					"binding_kind": 1.0,
+					"subject": "good.clay",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "黏土"
+				},
+				{
+					"kind": "good",
+					"id": "pottery",
+					"binding_kind": 1.0,
+					"subject": "good.pottery",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "陶器"
 				},
 				{
 					"kind": "good",
@@ -11373,7 +11321,7 @@
 					"display_name": "升焰陶窑"
 				}
 			],
-			"effect_summary": "解锁物资：砖块、锡；解锁建筑：露天黏土坑、土法炼锡炉、烧砖窑、升焰陶窑；地理专长「火山」产出 +33.3%",
+			"effect_summary": "解锁物资：砖块、黏土、陶器、锡；解锁建筑：露天黏土坑、土法炼锡炉、烧砖窑、升焰陶窑；地理专长「火山」产出 +33.3%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -11425,10 +11373,6 @@
 				{
 					"id": "ore_bronzesmith_camp",
 					"name": "露天青铜作坊"
-				},
-				{
-					"id": "printing_academy",
-					"name": "印刷学社"
 				}
 			],
 			"research_routes": [
@@ -12342,11 +12286,27 @@
 			"modifier_terms": [],
 			"expected_bindings": [
 				{
+					"kind": 1.0,
+					"id": "wheat_grain"
+				},
+				{
 					"kind": 2.0,
 					"id": "rainfed_wheat_plot"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "wheat_grain",
+					"binding_kind": 1.0,
+					"subject": "good.wheat_grain",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "小麦"
+				},
 				{
 					"kind": "building",
 					"id": "rainfed_wheat_plot",
@@ -12360,7 +12320,7 @@
 					"display_name": "雨养小麦地"
 				}
 			],
-			"effect_summary": "解锁建筑：雨养小麦地",
+			"effect_summary": "解锁物资：小麦；解锁建筑：雨养小麦地",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -12380,12 +12340,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "wheat_farm",
-					"name": "小麦农场"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [
 				{
 					"id": "research_route.rainfed_wheat.practice",
@@ -13024,10 +12979,6 @@
 				},
 				{
 					"kind": 2.0,
-					"id": "flax_collector"
-				},
-				{
-					"kind": 2.0,
 					"id": "flax_retting_pit"
 				}
 			],
@@ -13047,18 +12998,6 @@
 				},
 				{
 					"kind": "building",
-					"id": "flax_collector",
-					"binding_kind": 2.0,
-					"subject": "building.flax_collector",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "亚麻农场"
-				},
-				{
-					"kind": "building",
 					"id": "flax_retting_pit",
 					"binding_kind": 2.0,
 					"subject": "building.flax_retting_pit",
@@ -13070,7 +13009,7 @@
 					"display_name": "沤麻池"
 				}
 			],
-			"effect_summary": "解锁物资：亚麻纤维；解锁建筑：亚麻农场、沤麻池；「布匹织造」生产家族建筑产出 +28.8%；「专用商品作物」生产家族建筑产出 +26.4%",
+			"effect_summary": "解锁物资：亚麻纤维；解锁建筑：沤麻池；「布匹织造」生产家族建筑产出 +28.8%；「专用商品作物」生产家族建筑产出 +26.4%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -13093,6 +13032,10 @@
 				{
 					"id": "guild_weaving_house",
 					"name": "行会织造坊"
+				},
+				{
+					"id": "improved_domestic_loom",
+					"name": "改良家用织机"
 				},
 				{
 					"id": "method_flax_collector_r10",
@@ -13801,6 +13744,10 @@
 			"expected_bindings": [
 				{
 					"kind": 1.0,
+					"id": "logs"
+				},
+				{
+					"kind": 1.0,
 					"id": "lumber"
 				},
 				{
@@ -13813,6 +13760,18 @@
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "logs",
+					"binding_kind": 1.0,
+					"subject": "good.logs",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "原木"
+				},
 				{
 					"kind": "good",
 					"id": "lumber",
@@ -13851,7 +13810,7 @@
 					"display_name": "伐木场"
 				}
 			],
-			"effect_summary": "解锁物资：木材；解锁建筑：锯木场、伐木场；木材 -10%",
+			"effect_summary": "解锁物资：原木、木材；解锁建筑：锯木场、伐木场；木材 -10%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -13878,10 +13837,6 @@
 				{
 					"id": "cabinetmaker_workshop",
 					"name": "细木家具工坊"
-				},
-				{
-					"id": "cadastral_office",
-					"name": "地籍管理局"
 				},
 				{
 					"id": "classical_academy",
@@ -14026,10 +13981,6 @@
 				{
 					"id": "scribal_school",
 					"name": "书记学校"
-				},
-				{
-					"id": "spice_commercial_plantation",
-					"name": "商业香料种植园"
 				},
 				{
 					"id": "spice_plants_collector",
@@ -17099,9 +17050,27 @@
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
 				}
 			],
-			"expected_bindings": [],
-			"content_effects": [],
-			"effect_summary": "商品「稻米」产量 +25%",
+			"expected_bindings": [
+				{
+					"kind": 3.0,
+					"id": "paddy_land"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "resource",
+					"id": "paddy_land",
+					"binding_kind": 3.0,
+					"subject": "resource.paddy_land",
+					"attribute": "local_resource_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "ResourceProfile.discovery_technology_tags",
+					"status": "existing_binding",
+					"display_name": "水田承载力"
+				}
+			],
+			"effect_summary": "可利用资源：水田承载力；商品「稻米」产量 +25%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -17125,10 +17094,6 @@
 				{
 					"id": "method_rice_collector_r10",
 					"name": "自动化稻作农场"
-				},
-				{
-					"id": "rice_collector",
-					"name": "稻作农场"
 				}
 			],
 			"research_routes": [],
@@ -20466,7 +20431,9 @@
 			"hard_prerequisite_ids": [
 				"tech.fishing_boats"
 			],
-			"reveal_condition": {},
+			"reveal_condition": {
+
+			},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -20500,7 +20467,7 @@
 					"display_name": "浅海运输走廊"
 				}
 			],
-			"effect_summary": "开启航道：浅海运输走廊；开放能力：沿岸渡水（湖、浅海）",
+			"effect_summary": "开放能力：水路通行与沿岸登陆；开启航道：浅海运输走廊",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "本节点不开放建筑与数值修正，它把浅海航道与军队沿岸渡水交给同一套水级门控：湖泊、浅海、远海、深海按格子水级判定，不再以连续水格数量为依据。",
@@ -21088,10 +21055,6 @@
 				{
 					"id": "method_printed_materials_plant_r7",
 					"name": "电气印刷厂"
-				},
-				{
-					"id": "movable_type_print_shop",
-					"name": "活字印刷坊"
 				},
 				{
 					"id": "paper_plant",
@@ -21687,6 +21650,18 @@
 			],
 			"expected_bindings": [
 				{
+					"kind": 1.0,
+					"id": "corn_grain"
+				},
+				{
+					"kind": 1.0,
+					"id": "potatoes"
+				},
+				{
+					"kind": 1.0,
+					"id": "wheat_grain"
+				},
+				{
 					"kind": 2.0,
 					"id": "tenant_potato_field"
 				},
@@ -21697,13 +21672,45 @@
 				{
 					"kind": 2.0,
 					"id": "tenant_rainfed_wheat_field"
-				},
-				{
-					"kind": 2.0,
-					"id": "wheat_farm"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "corn_grain",
+					"binding_kind": 1.0,
+					"subject": "good.corn_grain",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "玉米"
+				},
+				{
+					"kind": "good",
+					"id": "potatoes",
+					"binding_kind": 1.0,
+					"subject": "good.potatoes",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "马铃薯"
+				},
+				{
+					"kind": "good",
+					"id": "wheat_grain",
+					"binding_kind": 1.0,
+					"subject": "good.wheat_grain",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "小麦"
+				},
 				{
 					"kind": "building",
 					"id": "tenant_potato_field",
@@ -21739,21 +21746,9 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "佃作雨养小麦田"
-				},
-				{
-					"kind": "building",
-					"id": "wheat_farm",
-					"binding_kind": 2.0,
-					"subject": "building.wheat_farm",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "小麦农场"
 				}
 			],
-			"effect_summary": "解锁建筑：佃作马铃薯田、佃作雨养玉米田、佃作雨养小麦田、小麦农场；农业部门产出 +7.5%",
+			"effect_summary": "解锁物资：玉米、马铃薯、小麦；解锁建筑：佃作马铃薯田、佃作雨养玉米田、佃作雨养小麦田；农业部门产出 +7.5%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "佃作谷物是食物、保存与公共储备在当前目录中的应用端点，其终点效果由tenant_rainfed_maize_field、tenant_rainfed_wheat_field消费",
@@ -21876,12 +21871,8 @@
 			"modifier_terms": [],
 			"expected_bindings": [
 				{
-					"kind": 2.0,
-					"id": "method_rice_collector_r3"
-				},
-				{
-					"kind": 2.0,
-					"id": "rice_collector"
+					"kind": 1.0,
+					"id": "rice_grain"
 				},
 				{
 					"kind": 2.0,
@@ -21894,28 +21885,16 @@
 			],
 			"content_effects": [
 				{
-					"kind": "building",
-					"id": "method_rice_collector_r3",
-					"binding_kind": 2.0,
-					"subject": "building.method_rice_collector_r3",
-					"attribute": "construction_and_production_access",
+					"kind": "good",
+					"id": "rice_grain",
+					"binding_kind": 1.0,
+					"subject": "good.rice_grain",
+					"attribute": "production_access",
 					"operation": "unlock",
 					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
+					"implementation": "GoodProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "佃作稻庄"
-				},
-				{
-					"kind": "building",
-					"id": "rice_collector",
-					"binding_kind": 2.0,
-					"subject": "building.rice_collector",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "稻作农场"
+					"display_name": "稻米"
 				},
 				{
 					"kind": "building",
@@ -21942,7 +21921,7 @@
 					"display_name": "佃作水田"
 				}
 			],
-			"effect_summary": "解锁建筑：佃作稻庄、稻作农场、分成水田、佃作水田",
+			"effect_summary": "解锁物资：稻米；解锁建筑：分成水田、佃作水田",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -23731,27 +23710,9 @@
 					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "method_stone_collector_r2"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "method_stone_collector_r2",
-					"binding_kind": 2.0,
-					"subject": "building.method_stone_collector_r2",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "石料场"
-				}
-			],
-			"effect_summary": "解锁建筑：石料场；洪灾损失 -8%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "洪灾损失 -8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -24439,18 +24400,6 @@
 			"starter_capability_tags": [],
 			"modifier_terms": [
 				{
-					"stat": "country.output.family.cadastral_institution_factor",
-					"operation": 0.0,
-					"value": 0.36,
-					"subject_kind": "building_family",
-					"subject_id": "cadastral_institution",
-					"subject_display_name": "地籍制度",
-					"effect_class": "生产家族产出",
-					"effect_rationale": "庄园核算提高地籍制度建筑产出。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
-				},
-				{
 					"stat": "country.trade.capacity_factor",
 					"operation": 0.0,
 					"value": 0.04,
@@ -24465,7 +24414,7 @@
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "「地籍制度」生产家族建筑产出 +36%；贸易容量 +4%",
+			"effect_summary": "贸易容量 +4%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "庄园核算是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -26616,15 +26565,27 @@
 			],
 			"expected_bindings": [
 				{
-					"kind": 2.0,
-					"id": "chartered_university"
+					"kind": 1.0,
+					"id": "technology_points"
 				},
 				{
 					"kind": 2.0,
-					"id": "printing_academy"
+					"id": "chartered_university"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
 				{
 					"kind": "building",
 					"id": "chartered_university",
@@ -26636,21 +26597,9 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "特许大学"
-				},
-				{
-					"kind": "building",
-					"id": "printing_academy",
-					"binding_kind": 2.0,
-					"subject": "building.printing_academy",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "印刷学社"
 				}
 			],
-			"effect_summary": "解锁建筑：特许大学、印刷学社；社会领域研究效率 +7.3%；「研究机构」生产家族建筑产出 +36%",
+			"effect_summary": "解锁物资：科技值；解锁建筑：特许大学；社会领域研究效率 +7.3%；「研究机构」生产家族建筑产出 +36%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -27402,16 +27351,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "cadastral_office",
-					"name": "地籍管理局"
-				},
-				{
-					"id": "printing_academy",
-					"name": "印刷学社"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [
 				{
 					"id": "research_route.woodblock_printing.grounded_knowledge",
@@ -27526,27 +27466,9 @@
 					"runtime_consumer": "NativeCountryRuntime / NativeEconomyRuntime epoch freeze"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "movable_type_print_shop"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "movable_type_print_shop",
-					"binding_kind": 2.0,
-					"subject": "building.movable_type_print_shop",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "活字印刷坊"
-				}
-			],
-			"effect_summary": "解锁建筑：活字印刷坊；研究成本 -8%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "研究成本 -8%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -27997,6 +27919,14 @@
 			],
 			"expected_bindings": [
 				{
+					"kind": 1.0,
+					"id": "construction_components"
+				},
+				{
+					"kind": 1.0,
+					"id": "raw_stone"
+				},
+				{
 					"kind": 2.0,
 					"id": "classical_public_works"
 				},
@@ -28006,6 +27936,30 @@
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "construction_components",
+					"binding_kind": 1.0,
+					"subject": "good.construction_components",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "建筑构件"
+				},
+				{
+					"kind": "good",
+					"id": "raw_stone",
+					"binding_kind": 1.0,
+					"subject": "good.raw_stone",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "原石"
+				},
 				{
 					"kind": "building",
 					"id": "classical_public_works",
@@ -28031,7 +27985,7 @@
 					"display_name": "规模化采石场"
 				}
 			],
-			"effect_summary": "解锁建筑：公共营造场、规模化采石场；人口自然死亡率 -3.6%",
+			"effect_summary": "解锁物资：建筑构件、原石；解锁建筑：公共营造场、规模化采石场；人口自然死亡率 -3.6%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 4 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "城市水务是水力、风力、水务与流域工程在当前目录中的应用端点，其终点效果由营造方法25%消费",
@@ -28050,12 +28004,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "smart_water_network",
-					"name": "智能水网控制中心"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [
 				{
 					"id": "research_route.urban_waterworks.grounded_knowledge",
@@ -28949,27 +28898,9 @@
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "coal_adit"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "coal_adit",
-					"binding_kind": 2.0,
-					"subject": "building.coal_adit",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "煤层平硐"
-				}
-			],
-			"effect_summary": "解锁建筑：煤层平硐；煤 -8%；采掘部门产出 +19.3%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "煤 -8%；采掘部门产出 +19.3%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 4 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -35741,12 +35672,16 @@
 			"modifier_terms": [],
 			"expected_bindings": [
 				{
-					"kind": 2.0,
-					"id": "cotton_collector"
+					"kind": 1.0,
+					"id": "seed_cotton"
+				},
+				{
+					"kind": 1.0,
+					"id": "spices"
 				},
 				{
 					"kind": 2.0,
-					"id": "spice_commercial_plantation"
+					"id": "cotton_collector"
 				},
 				{
 					"kind": 2.0,
@@ -35754,6 +35689,30 @@
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "seed_cotton",
+					"binding_kind": 1.0,
+					"subject": "good.seed_cotton",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "籽棉"
+				},
+				{
+					"kind": "good",
+					"id": "spices",
+					"binding_kind": 1.0,
+					"subject": "good.spices",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "香料"
+				},
 				{
 					"kind": "building",
 					"id": "cotton_collector",
@@ -35768,18 +35727,6 @@
 				},
 				{
 					"kind": "building",
-					"id": "spice_commercial_plantation",
-					"binding_kind": 2.0,
-					"subject": "building.spice_commercial_plantation",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "商业香料种植园"
-				},
-				{
-					"kind": "building",
 					"id": "spice_plants_collector",
 					"binding_kind": 2.0,
 					"subject": "building.spice_plants_collector",
@@ -35791,10 +35738,10 @@
 					"display_name": "香料种植园"
 				}
 			],
-			"effect_summary": "解锁建筑：棉花农场、商业香料种植园、香料种植园",
+			"effect_summary": "解锁物资：籽棉、香料；解锁建筑：棉花农场、香料种植园",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "种植园庄园管理是热带作物与商品农业在当前目录中的应用端点，其终点效果由cotton_collector、method_flax_collector_r3、method_flax_collector_r5、spice_plants_collector消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "branch.tropical_commodities",
 			"era_entry_milestone_id": "tech.imperial_integration",
 			"reveal_category": "practice_diffusion",
@@ -37025,18 +36972,6 @@
 			"reveal_summary": "聚落扩张到需要划界、分田与征税规模后，土地测量成为独立技艺。",
 			"modifier_terms": [
 				{
-					"stat": "country.output.family.cadastral_institution_factor",
-					"operation": 0.0,
-					"value": 0.45,
-					"subject_kind": "country",
-					"subject_id": "cadastral_institution",
-					"subject_display_name": "地籍机构",
-					"effect_class": "制度产出",
-					"effect_rationale": "可复核的地籍让土地登记、买卖与征税第一次有共同依据。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
-				},
-				{
 					"stat": "country.construction.cost_factor",
 					"operation": 0.0,
 					"value": -0.03,
@@ -37132,7 +37067,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"expected_bindings": [],
-			"effect_summary": "「地籍机构」生产家族建筑产出 +45%；建造成本 -3%",
+			"effect_summary": "建造成本 -3%",
 			"application_target_rationales": [],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
@@ -38870,10 +38805,6 @@
 				{
 					"id": "method_concrete_plant_r9",
 					"name": "自动化混凝土厂"
-				},
-				{
-					"id": "watershed_governance_center",
-					"name": "流域治理中心"
 				}
 			],
 			"research_routes": [
@@ -40922,30 +40853,6 @@
 			"starter_capability_tags": [],
 			"modifier_terms": [
 				{
-					"stat": "country.output.family.cadastral_institution_factor",
-					"operation": 0.0,
-					"value": 0.75,
-					"subject_kind": "building_family",
-					"subject_id": "cadastral_institution",
-					"subject_display_name": "地籍制度",
-					"effect_class": "生产家族产出",
-					"effect_rationale": "地产测绘提高地籍制度建筑产出。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
-				},
-				{
-					"stat": "country.output.family.geospatial_analysis_institution_factor",
-					"operation": 0.0,
-					"value": 0.75,
-					"subject_kind": "building_family",
-					"subject_id": "geospatial_analysis_institution",
-					"subject_display_name": "地理分析机构",
-					"effect_class": "生产家族产出",
-					"effect_rationale": "地产测绘提高地理分析机构产出。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
-				},
-				{
 					"stat": "country.tax.income.landlord.rate_bp",
 					"operation": 0.0,
 					"value": 400.0,
@@ -40958,30 +40865,12 @@
 					"runtime_consumer": "NativeEconomyRuntime / NativeCountryRuntime epoch freeze"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "cadastral_office"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "cadastral_office",
-					"binding_kind": 2.0,
-					"subject": "building.cadastral_office",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "地籍管理局"
-				}
-			],
-			"effect_summary": "解锁建筑：地籍管理局；「地籍制度」生产家族建筑产出 +75%；「地理分析机构」生产家族建筑产出 +75%；地主 +4%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "地主 +4%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "地产测绘是土地产权、租佃与乡村制度在当前目录中的应用端点，其终点效果由cadastral_office消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "branch.land_institutions",
 			"era_entry_milestone_id": "tech.global_exchange",
 			"reveal_category": "practice_diffusion",
@@ -44226,6 +44115,26 @@
 			],
 			"expected_bindings": [
 				{
+					"kind": 1.0,
+					"id": "bast_fiber"
+				},
+				{
+					"kind": 1.0,
+					"id": "cloth"
+				},
+				{
+					"kind": 1.0,
+					"id": "clothing"
+				},
+				{
+					"kind": 1.0,
+					"id": "cotton_fiber"
+				},
+				{
+					"kind": 1.0,
+					"id": "seed_cotton"
+				},
+				{
 					"kind": 2.0,
 					"id": "clothing_plant"
 				},
@@ -44251,6 +44160,66 @@
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "bast_fiber",
+					"binding_kind": 1.0,
+					"subject": "good.bast_fiber",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "亚麻杆"
+				},
+				{
+					"kind": "good",
+					"id": "cloth",
+					"binding_kind": 1.0,
+					"subject": "good.cloth",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "布料"
+				},
+				{
+					"kind": "good",
+					"id": "clothing",
+					"binding_kind": 1.0,
+					"subject": "good.clothing",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "衣物"
+				},
+				{
+					"kind": "good",
+					"id": "cotton_fiber",
+					"binding_kind": 1.0,
+					"subject": "good.cotton_fiber",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "棉纤维"
+				},
+				{
+					"kind": "good",
+					"id": "seed_cotton",
+					"binding_kind": 1.0,
+					"subject": "good.seed_cotton",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "籽棉"
+				},
 				{
 					"kind": "building",
 					"id": "clothing_plant",
@@ -44324,7 +44293,7 @@
 					"display_name": "蒸汽纺织厂"
 				}
 			],
-			"effect_summary": "解锁建筑：制衣厂、改良家用织机、机械轧棉厂、机械化棉花农场、机械化亚麻农场、蒸汽纺织厂；商品「煤」生产投入 +4%；「布匹织造」生产家族建筑产出 +48%",
+			"effect_summary": "解锁物资：亚麻杆、布料、衣物、棉纤维、籽棉；解锁建筑：制衣厂、改良家用织机、机械轧棉厂、机械化棉花农场、机械化亚麻农场、蒸汽纺织厂；商品「煤」生产投入 +4%；「布匹织造」生产家族建筑产出 +48%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -48806,18 +48775,6 @@
 			"reveal_summary": "人口与聚落规模把土地矛盾推到无法回避时，土地改革被揭示。",
 			"modifier_terms": [
 				{
-					"stat": "country.output.family.cadastral_institution_factor",
-					"operation": 0.0,
-					"value": 0.45,
-					"subject_kind": "country",
-					"subject_id": "cadastral_institution",
-					"subject_display_name": "地籍机构",
-					"effect_class": "制度产出",
-					"effect_rationale": "统一登记与清丈让土地权利可查、可交易、可征税，地籍机构的能力被真正用上。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
-				},
-				{
 					"stat": "country.tax.income.landlord.rate_bp",
 					"operation": 0.0,
 					"value": 200.0,
@@ -48913,7 +48870,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"expected_bindings": [],
-			"effect_summary": "「地籍机构」生产家族建筑产出 +45%；地主 +2%",
+			"effect_summary": "地主 +2%",
 			"application_target_rationales": [],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
@@ -49340,15 +49297,27 @@
 			],
 			"expected_bindings": [
 				{
-					"kind": 2.0,
-					"id": "industrial_research_laboratory"
+					"kind": 1.0,
+					"id": "technology_points"
 				},
 				{
 					"kind": 2.0,
-					"id": "polytechnic_institute"
+					"id": "industrial_research_laboratory"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
 				{
 					"kind": "building",
 					"id": "industrial_research_laboratory",
@@ -49360,21 +49329,9 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "工业研究实验室"
-				},
-				{
-					"kind": "building",
-					"id": "polytechnic_institute",
-					"binding_kind": 2.0,
-					"subject": "building.polytechnic_institute",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "综合工学院"
 				}
 			],
-			"effect_summary": "解锁建筑：工业研究实验室、综合工学院；「研究机构」生产家族建筑产出 +12%；科研机构产出 +10%",
+			"effect_summary": "解锁物资：科技值；解锁建筑：工业研究实验室；「研究机构」生产家族建筑产出 +12%；科研机构产出 +10%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -59644,6 +59601,10 @@
 					"id": "nuclear_fuel"
 				},
 				{
+					"kind": 1.0,
+					"id": "pharmaceuticals"
+				},
+				{
 					"kind": 2.0,
 					"id": "nuclear_fuel_plant"
 				},
@@ -59667,6 +59628,18 @@
 					"summary_visible": true
 				},
 				{
+					"kind": "good",
+					"id": "pharmaceuticals",
+					"binding_kind": 1.0,
+					"subject": "good.pharmaceuticals",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "药品"
+				},
+				{
 					"kind": "building",
 					"id": "nuclear_fuel_plant",
 					"binding_kind": 2.0,
@@ -59688,10 +59661,10 @@
 					"value": 1.0,
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "核医学制药中心"
+					"display_name": "核医学制药厂"
 				}
 			],
-			"effect_summary": "解锁物资：核燃料；解锁建筑：核燃料厂、核医学制药中心",
+			"effect_summary": "解锁物资：核燃料、药品；解锁建筑：核燃料厂、核医学制药厂",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "核燃料循环是电力、核能、电网与智能能源在当前目录中的应用端点，其终点效果由method_nuclear_fuel_plant_r10消费",
@@ -63108,12 +63081,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "geospatial_analysis_center",
-					"name": "地理空间分析中心"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [
 				{
 					"id": "research_route.networked_computing.subject_knowledge",
@@ -64446,22 +64414,22 @@
 			"starter_capability_tags": [],
 			"modifier_terms": [
 				{
-					"stat": "country.output.family.geospatial_analysis_institution_factor",
+					"stat": "country.research.engineering_efficiency",
 					"operation": 0.0,
-					"value": 0.36,
-					"subject_kind": "building_family",
-					"subject_id": "geospatial_analysis_institution",
-					"subject_display_name": "地理分析机构",
-					"effect_class": "生产家族产出",
-					"effect_rationale": "地理信息系统提高地理分析机构产出。",
+					"value": 0.05,
+					"subject_kind": "society",
+					"subject_id": "country.research.engineering_efficiency",
+					"subject_display_name": "工程领域研究效率",
+					"effect_class": "研究效率",
+					"effect_rationale": "地理信息系统复用测绘与空间资料，提高工程研究效率；不再增设只产通用科技点的分析中心。",
 					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+					"runtime_consumer": "NativeCountryRuntime::process_research_day"
 				}
 			],
 			"expected_bindings": [
 				{
-					"kind": 2.0,
-					"id": "geospatial_analysis_center"
+					"kind": 1.0,
+					"id": "limestone"
 				},
 				{
 					"kind": 2.0,
@@ -64470,16 +64438,16 @@
 			],
 			"content_effects": [
 				{
-					"kind": "building",
-					"id": "geospatial_analysis_center",
-					"binding_kind": 2.0,
-					"subject": "building.geospatial_analysis_center",
-					"attribute": "construction_and_production_access",
+					"kind": "good",
+					"id": "limestone",
+					"binding_kind": 1.0,
+					"subject": "good.limestone",
+					"attribute": "production_access",
 					"operation": "unlock",
 					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
+					"implementation": "GoodProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "地理空间分析中心"
+					"display_name": "石灰岩"
 				},
 				{
 					"kind": "building",
@@ -64494,7 +64462,7 @@
 					"display_name": "工业石灰岩矿场"
 				}
 			],
-			"effect_summary": "解锁建筑：地理空间分析中心、工业石灰岩矿场；「地理分析机构」生产家族建筑产出 +36%",
+			"effect_summary": "解锁物资：石灰岩；解锁建筑：工业石灰岩矿场；工程领域研究效率 +5%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [
 				"tech.precision_agriculture",
@@ -64526,10 +64494,6 @@
 				{
 					"id": "method_forest_remote_sensing",
 					"name": "森林遥感经营站"
-				},
-				{
-					"id": "watershed_governance_center",
-					"name": "流域治理中心"
 				}
 			],
 			"research_routes": [
@@ -65831,30 +65795,12 @@
 					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2.0,
-					"id": "watershed_governance_center"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "watershed_governance_center",
-					"binding_kind": 2.0,
-					"subject": "building.watershed_governance_center",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "流域治理中心"
-				}
-			],
-			"effect_summary": "解锁建筑：流域治理中心；旱灾损失 -12%；洪灾损失 -12%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "旱灾损失 -12%；洪灾损失 -12%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "水文遥感是制图、地学、遥感与空间分析在当前目录中的应用端点，其终点效果由watershed_governance_center消费",
+			"terminal_reason": "该路线通过已有科技效果与通用产业设施发挥作用，不另增同功能建筑。",
 			"branch_family_id": "branch.geoscience_gis",
 			"era_entry_milestone_id": "tech.atomic_modernity",
 			"reveal_category": "environment_observation",
@@ -65870,12 +65816,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "smart_water_network",
-					"name": "智能水网控制中心"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [
 				{
 					"id": "research_route.hydrological_remote_sensing.subject_knowledge",
@@ -70390,7 +70331,7 @@
 			"effect_summary": "全社会生产投入 -3%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 11 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "算法治理是劳工、管理与生产组织在当前目录中的应用端点，其终点效果由smart_water_network消费",
+			"terminal_reason": "算法治理通过全社会生产投入减免改善已有设施，不另增同功能建筑。",
 			"branch_family_id": "branch.labor_management",
 			"era_entry_milestone_id": "tech.information_society",
 			"reveal_category": "practice_diffusion",
@@ -72065,15 +72006,27 @@
 			],
 			"expected_bindings": [
 				{
-					"kind": 2.0,
-					"id": "method_rice_collector_r10"
+					"kind": 1.0,
+					"id": "rice_grain"
 				},
 				{
 					"kind": 2.0,
-					"id": "smart_water_network"
+					"id": "method_rice_collector_r10"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "good",
+					"id": "rice_grain",
+					"binding_kind": 1.0,
+					"subject": "good.rice_grain",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "稻米"
+				},
 				{
 					"kind": "building",
 					"id": "method_rice_collector_r10",
@@ -72085,21 +72038,9 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "自动化稻作农场"
-				},
-				{
-					"kind": "building",
-					"id": "smart_water_network",
-					"binding_kind": 2.0,
-					"subject": "building.smart_water_network",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "智能水网控制中心"
 				}
 			],
-			"effect_summary": "解锁建筑：自动化稻作农场、智能水网控制中心；水田生产·旱灾损失 -20%；水田生产·洪灾损失 -20%；农业部门产出 +26.5%",
+			"effect_summary": "解锁物资：稻米；解锁建筑：自动化稻作农场；水田生产·旱灾损失 -20%；水田生产·洪灾损失 -20%；农业部门产出 +26.5%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 11 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "自适应灌溉是水稻、水田与灌溉农业在当前目录中的应用端点，其终点效果由稻米28%消费",
@@ -73807,6 +73748,12 @@
 		},
 		{
 			"from": "tech.early_trade",
+			"to": "tech.river_transport",
+			"kind": "alternative",
+			"route_id": "research_route.river_transport.grounded_knowledge"
+		},
+		{
+			"from": "tech.early_trade",
 			"to": "tech.commodity_money",
 			"kind": "hard"
 		},
@@ -73820,12 +73767,6 @@
 			"from": "tech.early_trade",
 			"to": "tech.market_institutions",
 			"kind": "hard"
-		},
-		{
-			"from": "tech.early_trade",
-			"to": "tech.river_transport",
-			"kind": "alternative",
-			"route_id": "research_route.river_transport.grounded_knowledge"
 		},
 		{
 			"from": "tech.early_trade",
@@ -74738,12 +74679,12 @@
 		},
 		{
 			"from": "tech.fishing_boats",
-			"to": "tech.wind_power",
+			"to": "tech.military.coastal_transport",
 			"kind": "hard"
 		},
 		{
 			"from": "tech.fishing_boats",
-			"to": "tech.military.coastal_transport",
+			"to": "tech.wind_power",
 			"kind": "hard"
 		},
 		{
@@ -74935,6 +74876,12 @@
 		},
 		{
 			"from": "tech.record_keeping",
+			"to": "tech.river_transport",
+			"kind": "alternative",
+			"route_id": "research_route.river_transport.grounded_capacity"
+		},
+		{
+			"from": "tech.record_keeping",
 			"to": "tech.household_landholding",
 			"kind": "hard"
 		},
@@ -75041,9 +74988,9 @@
 		},
 		{
 			"from": "tech.record_keeping",
-			"to": "tech.river_transport",
+			"to": "tech.military.coastal_transport",
 			"kind": "alternative",
-			"route_id": "research_route.river_transport.grounded_capacity"
+			"route_id": "research_route.military.coastal_transport.grounded_knowledge"
 		},
 		{
 			"from": "tech.record_keeping",
@@ -75209,12 +75156,6 @@
 		},
 		{
 			"from": "tech.record_keeping",
-			"to": "tech.military.coastal_transport",
-			"kind": "alternative",
-			"route_id": "research_route.military.coastal_transport.grounded_knowledge"
-		},
-		{
-			"from": "tech.record_keeping",
 			"to": "tech.military.legion_logistics",
 			"kind": "alternative",
 			"route_id": "research_route.military.legion_logistics.grounded_knowledge"
@@ -75230,6 +75171,23 @@
 			"to": "tech.military.siegecraft",
 			"kind": "alternative",
 			"route_id": "research_route.military.siegecraft.grounded_knowledge"
+		},
+		{
+			"from": "tech.river_transport",
+			"to": "tech.magnetic_navigation",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.river_transport",
+			"to": "tech.mercantile_networks",
+			"kind": "alternative",
+			"route_id": "research_route.mercantile_networks.operating_practice"
+		},
+		{
+			"from": "tech.river_transport",
+			"to": "tech.chartered_companies",
+			"kind": "alternative",
+			"route_id": "research_route.chartered_companies.operating_practice"
 		},
 		{
 			"from": "tech.rainfed_field_system",
@@ -76013,6 +75971,12 @@
 		},
 		{
 			"from": "tech.road_engineering",
+			"to": "tech.military.coastal_transport",
+			"kind": "alternative",
+			"route_id": "research_route.military.coastal_transport.grounded_capacity"
+		},
+		{
+			"from": "tech.road_engineering",
 			"to": "tech.kingdom_administration",
 			"kind": "milestone_candidate"
 		},
@@ -76051,12 +76015,6 @@
 		},
 		{
 			"from": "tech.road_engineering",
-			"to": "tech.military.coastal_transport",
-			"kind": "alternative",
-			"route_id": "research_route.military.coastal_transport.grounded_capacity"
-		},
-		{
-			"from": "tech.road_engineering",
 			"to": "tech.military.heavy_cavalry",
 			"kind": "alternative",
 			"route_id": "research_route.military.heavy_cavalry.grounded_capacity"
@@ -76086,21 +76044,9 @@
 			"route_id": "research_route.land_surveying.knowledge_integration"
 		},
 		{
-			"from": "tech.river_transport",
-			"to": "tech.magnetic_navigation",
+			"from": "tech.military.coastal_transport",
+			"to": "tech.military.naval_transport",
 			"kind": "hard"
-		},
-		{
-			"from": "tech.river_transport",
-			"to": "tech.mercantile_networks",
-			"kind": "alternative",
-			"route_id": "research_route.mercantile_networks.operating_practice"
-		},
-		{
-			"from": "tech.river_transport",
-			"to": "tech.chartered_companies",
-			"kind": "alternative",
-			"route_id": "research_route.chartered_companies.operating_practice"
 		},
 		{
 			"from": "tech.crop_rotation",
@@ -76440,6 +76386,12 @@
 			"from": "tech.canal_engineering",
 			"to": "tech.polder_engineering",
 			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_philosophy",
+			"to": "tech.celestial_navigation",
+			"kind": "alternative",
+			"route_id": "research_route.celestial_navigation.knowledge_integration"
 		},
 		{
 			"from": "tech.natural_philosophy",
@@ -76836,12 +76788,17 @@
 		},
 		{
 			"from": "tech.magnetic_navigation",
+			"to": "tech.celestial_navigation",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.magnetic_navigation",
 			"to": "tech.imperial_integration",
 			"kind": "milestone_candidate"
 		},
 		{
-			"from": "tech.magnetic_navigation",
-			"to": "tech.celestial_navigation",
+			"from": "tech.celestial_navigation",
+			"to": "tech.oceanic_navigation",
 			"kind": "hard"
 		},
 		{
@@ -76984,11 +76941,6 @@
 			"route_id": "research_route.mercantile_networks.knowledge_integration"
 		},
 		{
-			"from": "tech.military.coastal_transport",
-			"to": "tech.military.naval_transport",
-			"kind": "hard"
-		},
-		{
 			"from": "tech.military.legion_logistics",
 			"to": "tech.military.combat_medicine",
 			"kind": "alternative",
@@ -77033,12 +76985,6 @@
 		},
 		{
 			"from": "tech.cartography",
-			"to": "tech.celestial_navigation",
-			"kind": "alternative",
-			"route_id": "research_route.celestial_navigation.knowledge_integration"
-		},
-		{
-			"from": "tech.cartography",
 			"to": "tech.oceanic_navigation",
 			"kind": "hard"
 		},
@@ -77071,11 +77017,6 @@
 		{
 			"from": "tech.cartography",
 			"to": "tech.geographic_information_systems",
-			"kind": "hard"
-		},
-		{
-			"from": "tech.celestial_navigation",
-			"to": "tech.oceanic_navigation",
 			"kind": "hard"
 		},
 		{
@@ -81680,23 +81621,6 @@
 			]
 		},
 		{
-			"id": "app.flax_collector",
-			"display_name": "亚麻农场",
-			"description": "亚麻农场由3项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "agrarian",
-			"domain_id": "engineering",
-			"industry_chain_id": "branch.textile_fibers",
-			"layout_order": 119.01,
-			"required_technology_ids": [
-				"tech.flax_retting",
-				"tech.wild_flax_collection",
-				"tech.rainfed_field_system"
-			],
-			"building_ids": [
-				"flax_collector"
-			]
-		},
-		{
 			"id": "app.cottage_weaving",
 			"display_name": "家庭纺织坊",
 			"description": "家庭纺织坊由3项已掌握知识自动形成，不消耗研究点。",
@@ -82253,38 +82177,6 @@
 			]
 		},
 		{
-			"id": "app.wheat_farm",
-			"display_name": "小麦农场",
-			"description": "小麦农场由2项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "kingdom",
-			"domain_id": "agriculture",
-			"industry_chain_id": "backbone.food_storage",
-			"layout_order": 157.01,
-			"required_technology_ids": [
-				"tech.tenant_cereal_farming",
-				"tech.rainfed_wheat_cultivation"
-			],
-			"building_ids": [
-				"wheat_farm"
-			]
-		},
-		{
-			"id": "app.rice_collector",
-			"display_name": "稻作农场",
-			"description": "稻作农场由2项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "kingdom",
-			"domain_id": "agriculture",
-			"industry_chain_id": "branch.rice_irrigation",
-			"layout_order": 158.01,
-			"required_technology_ids": [
-				"tech.tenant_paddy_management",
-				"tech.rice_paddy_cultivation"
-			],
-			"building_ids": [
-				"rice_collector"
-			]
-		},
-		{
 			"id": "app.tenant_paddy",
 			"display_name": "佃作水田",
 			"description": "佃作水田由2项已掌握知识自动形成，不消耗研究点。",
@@ -82626,22 +82518,6 @@
 			]
 		},
 		{
-			"id": "app.movable_type_print_shop",
-			"display_name": "活字印刷坊",
-			"description": "活字印刷坊由2项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "empire",
-			"domain_id": "engineering",
-			"industry_chain_id": "backbone.tools_machinery",
-			"layout_order": 176.01,
-			"required_technology_ids": [
-				"tech.movable_type_printing",
-				"tech.plant_fiber_papermaking"
-			],
-			"building_ids": [
-				"movable_type_print_shop"
-			]
-		},
-		{
 			"id": "app.saltpeter_collector",
 			"display_name": "硝石矿",
 			"description": "硝石矿由2项已掌握知识自动形成，不消耗研究点。",
@@ -82705,23 +82581,6 @@
 			],
 			"building_ids": [
 				"chartered_university"
-			]
-		},
-		{
-			"id": "app.printing_academy",
-			"display_name": "印刷学社",
-			"description": "印刷学社由3项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "empire",
-			"domain_id": "society",
-			"industry_chain_id": "backbone.institutions_exchange",
-			"layout_order": 181.01,
-			"required_technology_ids": [
-				"tech.chartered_universities",
-				"tech.woodblock_printing",
-				"tech.kiln_firing"
-			],
-			"building_ids": [
-				"printing_academy"
 			]
 		},
 		{
@@ -83079,23 +82938,6 @@
 			]
 		},
 		{
-			"id": "app.spice_commercial_plantation",
-			"display_name": "商业香料种植园",
-			"description": "商业香料种植园由3项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "exploration",
-			"domain_id": "society",
-			"industry_chain_id": "branch.tropical_commodities",
-			"layout_order": 211.01,
-			"required_technology_ids": [
-				"tech.estate_plantation_management",
-				"tech.wild_spice_collection",
-				"tech.timber_sawing"
-			],
-			"building_ids": [
-				"spice_commercial_plantation"
-			]
-		},
-		{
 			"id": "app.spice_plants_collector",
 			"display_name": "香料种植园",
 			"description": "香料种植园由3项已掌握知识自动形成，不消耗研究点。",
@@ -83334,23 +83176,6 @@
 			],
 			"building_ids": [
 				"scientific_instrument_works"
-			]
-		},
-		{
-			"id": "app.cadastral_office",
-			"display_name": "地籍管理局",
-			"description": "地籍管理局由3项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "enlightenment",
-			"domain_id": "society",
-			"industry_chain_id": "branch.land_institutions",
-			"layout_order": 239.01,
-			"required_technology_ids": [
-				"tech.property_cadastre",
-				"tech.woodblock_printing",
-				"tech.timber_sawing"
-			],
-			"building_ids": [
-				"cadastral_office"
 			]
 		},
 		{
@@ -83671,7 +83496,7 @@
 			"layout_order": 251.01,
 			"required_technology_ids": [
 				"tech.textile_machinery",
-				"tech.rainfed_field_system"
+				"tech.flax_retting"
 			],
 			"building_ids": [
 				"improved_domestic_loom"
@@ -84947,8 +84772,8 @@
 		},
 		{
 			"id": "app.nuclear_medicine_center",
-			"display_name": "核医学制药中心",
-			"description": "核医学制药中心由3项已掌握知识自动形成，不消耗研究点。",
+			"display_name": "核医学制药厂",
+			"description": "核医学制药厂由3项已掌握知识自动形成，不消耗研究点。",
 			"era_id": "atomic",
 			"domain_id": "engineering",
 			"industry_chain_id": "branch.electric_intelligent_energy",
@@ -85404,23 +85229,6 @@
 			]
 		},
 		{
-			"id": "app.watershed_governance_center",
-			"display_name": "流域治理中心",
-			"description": "流域治理中心由3项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "information",
-			"domain_id": "science",
-			"industry_chain_id": "branch.geoscience_gis",
-			"layout_order": 331.01,
-			"required_technology_ids": [
-				"tech.hydrological_remote_sensing",
-				"tech.geographic_information_systems",
-				"tech.hydraulic_engineering"
-			],
-			"building_ids": [
-				"watershed_governance_center"
-			]
-		},
-		{
 			"id": "app.method_industrial_machinery_plant_r9",
 			"display_name": "数字化工业机械厂",
 			"description": "数字化工业机械厂由2项已掌握知识自动形成，不消耗研究点。",
@@ -85451,22 +85259,6 @@
 			],
 			"building_ids": [
 				"method_rice_collector_r8"
-			]
-		},
-		{
-			"id": "app.geospatial_analysis_center",
-			"display_name": "地理空间分析中心",
-			"description": "地理空间分析中心由2项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "information",
-			"domain_id": "engineering",
-			"industry_chain_id": "branch.geoscience_gis",
-			"layout_order": 336.01,
-			"required_technology_ids": [
-				"tech.geographic_information_systems",
-				"tech.networked_computing"
-			],
-			"building_ids": [
-				"geospatial_analysis_center"
 			]
 		},
 		{
@@ -86240,23 +86032,6 @@
 			]
 		},
 		{
-			"id": "app.smart_water_network",
-			"display_name": "智能水网控制中心",
-			"description": "智能水网控制中心由3项已掌握知识自动形成，不消耗研究点。",
-			"era_id": "intelligent",
-			"domain_id": "agriculture",
-			"industry_chain_id": "branch.rice_irrigation",
-			"layout_order": 357.01,
-			"required_technology_ids": [
-				"tech.adaptive_irrigation",
-				"tech.hydrological_remote_sensing",
-				"tech.urban_waterworks"
-			],
-			"building_ids": [
-				"smart_water_network"
-			]
-		},
-		{
 			"id": "app.method_aluminum_plant_r10",
 			"display_name": "智能冶铝厂",
 			"description": "智能冶铝厂由3项已掌握知识自动形成，不消耗研究点。",
@@ -86341,6 +86116,39 @@
 			],
 			"building_ids": [
 				"method_stainless_steel_plant_r10"
+			]
+		},
+		{
+			"id": "app.public_health_center",
+			"display_name": "公共卫生制药厂",
+			"description": "公共卫生制药厂由2项已掌握知识自动形成，不消耗研究点。",
+			"era_id": "atomic",
+			"domain_id": "society",
+			"industry_chain_id": "branch.public_health",
+			"layout_order": 302.01,
+			"required_technology_ids": [
+				"tech.public_health_systems",
+				"tech.modern_medicine"
+			],
+			"building_ids": [
+				"public_health_center"
+			]
+		},
+		{
+			"id": "app.flax_retting_pit",
+			"display_name": "沤麻池",
+			"description": "沤麻池由3项已掌握知识自动形成，不消耗研究点。",
+			"era_id": "agrarian",
+			"domain_id": "engineering",
+			"industry_chain_id": "branch.textile_fibers",
+			"layout_order": 119.01,
+			"required_technology_ids": [
+				"tech.flax_retting",
+				"tech.wild_flax_collection",
+				"tech.rainfed_field_system"
+			],
+			"building_ids": [
+				"flax_retting_pit"
 			]
 		}
 	]

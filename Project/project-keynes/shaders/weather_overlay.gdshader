@@ -158,7 +158,7 @@ uniform float fog_field_band = 0.6;
 // fog_of_war.gdshader 逐像素一致（方案 §3.7：云的消失边界与薄纱边界是同一条线）。
 // 扭曲决定 k 在哪儿取样 ⇒ 参数一旦分家，函数再一致边界也会错开。
 // ⚠ 单位：freq = 1 / 世界单位；amp 要再乘 hex_size（见 pk_soft_warp_tiled 的说明）。
-uniform float fog_warp_freq = 0.0042;
+uniform float fog_warp_freq = 0.010;
 uniform float fog_warp_amp = 0.55;
 
 // weather_table 层号：必须与 bakers/cell_lut_baker.gd 的 WEATHER_TABLE_LAYER_* 同值。
@@ -983,7 +983,7 @@ FrontField sample_field_weather(vec2 world_pos) {
 	PkHexTri t = pk_overlay_tri(wp, g, ws);
 	vec3 w = t.w_raw;
 
-	// 视野门控（方案 §3.7）：与迷雾显示**同一组函数 + 同一组参数**（pk_hex_sharpen +
+	// 视野门控（方案 §3.7）：与迷雾显示**同一组函数 + 同一组参数**（pk_overlay_fog_weights +
 	// pk_overlay_fog_k + pk_overlay_fog_visibility），三格 k 读 cell_table.aux.R。
 	// 放在所有云计算之前：不可见处直接退成无云，顺带把三层云 / TOD 光照 / 投影阴影
 	// 整条管线一起省掉。
@@ -995,18 +995,19 @@ FrontField sample_field_weather(vec2 world_pos) {
 	// 真源（fog_of_war_layer.gd 的常量），由 weather_layer.gd 从真源推给本材质。
 	float fog_vis = 1.0;
 	if (fog_mask_enabled && cell_table_bound) {
-		// 迷雾显示的 k 用**锐化后**的权重与自己的带宽（方案 §3.6）：天气门控必须跟着走，
+		// 迷雾显示的 k 用连续权重与格心/极地保护：天气门控必须跟着走，
 		// 否则「已探索未可见」区域里云消失的位置与薄纱边界会各走一条线。
 		float fog_band = clamp(fog_field_band, 1e-4, PK_FIELD_BAND_MAX);
 		vec2 ws_fog = pk_soft_warp_tiled(wp, wrap_period_x, fog_warp_freq, fog_warp_amp * hex_size);
 		// 约束 2 的同一上限（与 fog_of_war.gdshader 的 fog_warp_amax 逐式相同，band 也取自
 		// 同一组参数）：不加这一步，|warp| 超过 A_max 的像素上取样点就会与迷雾错开。
 		float fog_amax = max(PK_HEX_SQRT3 * 0.5 - fog_band * 0.5, 0.0) * hex_size;
-		PkHexTri t_fog = pk_overlay_tri(wp, g, wx_clamp_length(ws_fog, fog_amax));
-		vec3 w_fog = pk_hex_sharpen(t_fog.w_raw, fog_band);
+		PkHexTri t_fog = pk_overlay_fog_tri(wp, g, wx_clamp_length(ws_fog, fog_amax));
+		vec3 w_fog = pk_overlay_fog_weights(t_fog, g, fog_band);
 		float fog_k = pk_overlay_fog_k(w_fog,
 				wx_fetch_fog_k(t_fog.c0, g), wx_fetch_fog_k(t_fog.c1, g),
 				wx_fetch_fog_k(t_fog.c2, g));
+		fog_k = pk_overlay_fog_edge_k(fog_k, ws_fog, fog_warp_amp * hex_size);
 		fog_vis = pk_overlay_fog_visibility(fog_k);
 		if (fog_vis < 0.01) {
 			return best;

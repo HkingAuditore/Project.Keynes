@@ -104,10 +104,10 @@ const NON_TAX_OUTFLOW_FALLBACK_LABEL := "其他支出"
 const PRICE_INDICES: Array[Dictionary] = [
 	{"id": "cpi", "label": "CPI", "name": "消费者物价",
 		"q16_key": "consumer_price_index_q16", "valid_key": "consumer_price_index_valid",
-		"basis": "按家庭需求量加权，100 = 消费品的成本锚。"},
+		"basis": "100 = 消费品成本"},
 	{"id": "ppi", "label": "PPI", "name": "生产者物价",
 		"q16_key": "producer_price_index_q16", "valid_key": "producer_price_index_valid",
-		"basis": "按供给量加权，100 = 全部可售物资的成本锚。"},
+		"basis": "100 = 可售物资成本"},
 ]
 
 ## 与原生 consumption_living_standard_level() 的 0..6 台阶同序。

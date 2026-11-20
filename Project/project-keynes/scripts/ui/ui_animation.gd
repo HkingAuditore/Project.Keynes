@@ -115,6 +115,36 @@ static func fade_slide_out(control: Control, offset: Vector2 = Vector2(28.0, 0.0
 	)
 
 
+## 保持当前透明度反向过渡；不改布局坐标，隐藏后也不保留可点击的子控件。
+static func fade_visibility(control: Control, shown: bool,
+		duration: float = UITokens.ANIM_FAST) -> void:
+	if control == null:
+		return
+	_kill_active(control)
+	# 接管尚未走完的滑入/滑出时，恢复布局落点，避免半途位置被留到下一次显示。
+	if control.has_meta("_ui_rest_position"):
+		control.position = control.get_meta("_ui_rest_position")
+	if not shown and not control.visible:
+		control.modulate.a = 1.0
+		return
+	if reduced_motion() or duration <= 0.0:
+		control.visible = shown
+		control.modulate.a = 1.0
+		return
+	if shown and not control.visible:
+		control.modulate.a = 0.0
+	control.visible = true
+	var tween := control.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	control.set_meta("_ui_active_tween", tween)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.set_ease(Tween.EASE_OUT if shown else Tween.EASE_IN)
+	tween.tween_property(control, "modulate:a", 1.0 if shown else 0.0, duration)
+	tween.tween_callback(func() -> void:
+		control.visible = shown
+		control.modulate.a = 1.0
+		control.remove_meta("_ui_active_tween"))
+
+
 static func crossfade(control: Control, duration: float = UITokens.ANIM_FAST) -> void:
 	if control == null:
 		return

@@ -449,7 +449,7 @@ func _tooltip_for(index: int) -> String:
 		return ""
 	var definition: Dictionary = _definitions[index]
 	if not _is_known(index):
-		return "未知科技\n可研究后才会显示名称与效果"
+		return "未知科技"
 	return "%s · %s" % [String(definition.get("display_name", "")),
 		STATE_NAMES[clampi(_state_of(index), 0, STATE_NAMES.size() - 1)]]
 

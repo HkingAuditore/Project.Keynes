@@ -7,13 +7,13 @@ class_name MilitaryMapToolbar
 const BUTTON_SCENE := preload("res://scenes/ui/map_overlay_icon_button.tscn")
 const BUTTON_SIZE := Vector2(48.0, 48.0)
 const ITEMS := [
-	{"id": &"armies", "icon": &"military.banner", "title": "部队", "hint": "显示己方与已发现的部队"},
-	{"id": &"front", "icon": &"military.war.front", "title": "战线", "hint": "显示交战接触边"},
-	{"id": &"battle", "icon": &"military.war.battle", "title": "交战", "hint": "显示正在发生的战斗"},
-	{"id": &"occupation", "icon": &"military.war.score", "title": "占领", "hint": "显示军事控制区域"},
-	{"id": &"area", "icon": &"military.plan.barracks", "title": "控制区", "hint": "显示选中部队的区域任务"},
-	{"id": &"convoy", "icon": &"military.ledger.convoy", "title": "车队", "hint": "显示军需运输路线"},
-	{"id": &"route", "icon": &"action.pin", "title": "行军", "hint": "显示选中部队的行军路线"},
+	{"id": &"armies", "icon": &"military.banner", "title": "部队"},
+	{"id": &"front", "icon": &"military.war.front", "title": "战线"},
+	{"id": &"battle", "icon": &"military.war.battle", "title": "交战"},
+	{"id": &"occupation", "icon": &"military.war.score", "title": "占领"},
+	{"id": &"area", "icon": &"military.plan.barracks", "title": "区域任务"},
+	{"id": &"convoy", "icon": &"military.ledger.convoy", "title": "军需路线"},
+	{"id": &"route", "icon": &"action.pin", "title": "行军路线"},
 ]
 
 signal layer_toggled(layer_id: StringName, enabled: bool)
@@ -30,7 +30,7 @@ func _ready() -> void:
 		button.name = String(item.id).capitalize()
 		button.custom_minimum_size = BUTTON_SIZE
 		button.focus_mode = Control.FOCUS_NONE # map gesture overlay boundary
-		button.tooltip_text = "%s\n%s" % [String(item.title), String(item.hint)]
+		button.tooltip_text = String(item.title)
 		IconButton.apply(button, item.icon, 32, button.tooltip_text, true, true)
 		button.pressed.connect(_on_pressed.bind(StringName(item.id), button))
 		$Panel/Margin/Column.add_child(button)

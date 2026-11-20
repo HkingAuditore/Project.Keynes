@@ -2710,6 +2710,79 @@
           612
         ]
       }
+    },
+    {
+      "name": "species_01",
+      "columns": 4,
+      "rows": 2,
+      "semantics": [
+        "species.horse",
+        "species.sheep",
+        "species.goat",
+        "species.cattle",
+        "species.pig",
+        "species.camel",
+        "species.yak",
+        "species.silkworm"
+      ],
+      "style_reference": "res://assets/icons/paper/goods_02.png (passed as referenced_image_paths to built-in image_gen)",
+      "prompt": "Strictly match goods_02.png rough black crayon outlines, colored-pencil hatching, flat warm fills, close-cut off-white paper rims; 4x2 transparent atlas: horse, sheep, goat, cattle / pig, camel, yak, silkworm with mulberry leaf and cocoon. No labels or background.",
+      "actual_rows": 2,
+      "row_edges_px": [
+        0,
+        512,
+        1024
+      ],
+      "regions": {
+        "species.horse": [
+          16,
+          91,
+          397,
+          374
+        ],
+        "species.sheep": [
+          416,
+          103,
+          336,
+          372
+        ],
+        "species.goat": [
+          773,
+          93,
+          349,
+          376
+        ],
+        "species.cattle": [
+          1138,
+          111,
+          386,
+          357
+        ],
+        "species.pig": [
+          18,
+          595,
+          370,
+          341
+        ],
+        "species.camel": [
+          401,
+          566,
+          346,
+          375
+        ],
+        "species.yak": [
+          760,
+          565,
+          375,
+          381
+        ],
+        "species.silkworm": [
+          1157,
+          583,
+          352,
+          352
+        ]
+      }
     }
   ]
 }

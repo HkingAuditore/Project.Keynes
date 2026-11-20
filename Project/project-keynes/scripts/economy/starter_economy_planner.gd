@@ -252,32 +252,6 @@ static func select_construction_backbone(map: MapData, cell_idx: int) -> Diction
 		"出生点没有可工的枯枝采集营。")
 
 
-static func _preferred_knowledge_for_region(region: String) -> Dictionary:
-	match region:
-		"coastal":
-			return {
-				"tech_id": "tech.tide_observation",
-				"building_id": "tide_observation_hut",
-			}
-		"floodplain":
-			return {
-				"tech_id": "tech.flood_calendar_practice",
-				"building_id": "flood_calendar_shrine",
-			}
-		"arid_highland":
-			return {
-				"tech_id": "tech.pastoral_route_memory",
-				"building_id": "pastoral_council_tent",
-			}
-		"tropical_forest":
-			return {
-				"tech_id": "tech.phenology_observation",
-				"building_id": "seasonal_observation_shelter",
-			}
-		_:
-			return {"tech_id": "", "building_id": ""}
-
-
 static func _knowledge_building_operable(map: MapData, cell_idx: int,
 		building_id: String) -> bool:
 	var profile = _building_profile_by_id(building_id)
