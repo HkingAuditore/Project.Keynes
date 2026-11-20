@@ -86,6 +86,12 @@ var _last_configure_result: Dictionary = {}
 var _last_daily_report: Dictionary = {}
 var _terrain_signature := 0
 var _terrain_cells := 0
+var _terrain_width := 0
+var _terrain_height := 0
+## 上一次成功推送的邻居表。原生只把「shape 或邻居表变了」当作换地形，其余一律
+## 原地换数组并保住状态（military_core.cpp 的 `same_topology`），所以这里也必须
+## 按同一条件判断，才能知道这次推送会不会把原生状态清掉。
+var _terrain_neighbors := PackedInt32Array()
 var _terrain_set_day := -1
 var _ai_player_handles := PackedInt64Array()
 var _missing_api_reason := ""
@@ -146,6 +152,10 @@ func configure(world_ext: DCWorldExt, economy_catalog: Dictionary,
 	_event_cursor = 0
 	_restored_event_progress.clear()
 	_terrain_signature = 0
+	_terrain_cells = 0
+	_terrain_width = 0
+	_terrain_height = 0
+	_terrain_neighbors = PackedInt32Array()
 	_terrain_set_day = -1
 	_last_configure_result = result.duplicate(false)
 	_last_configure_result["catalog_hash"] = _catalog_hash
@@ -199,14 +209,25 @@ func set_terrain(map, day: int = -1, force: bool = false,
 	var tiers := settlement_tiers
 	if tiers.size() != int(map.cell_count()):
 		tiers = _settlement_tiers_from_map(map, int(map.cell_count()))
-	# temporary: remove once MilitaryCore::set_terrain stops resetting
-	# Native MilitaryCore::set_terrain calls reset_state(): every push wipes
-	# armies, wars, policies, pending commands and the step cursor. Only the
-	# configure-time push may do that; a seasonal cover refresh on a live world
-	# must keep military state, so snapshot it through PKMI and restore it onto
-	# the new terrain (same shape, so the transactional restore validates).
+	# MilitaryCore::set_terrain only calls reset_state() when the push changes the
+	# topology (shape or neighbour table); a same-topology push swaps the arrays in
+	# place and keeps wars, armies, lots, policies and the step cursor (design §21).
+	# So the PKMI snapshot-and-restore below is a fallback for the resetting case
+	# only — and it must never run on the same-topology path, which is exactly the
+	# seasonal cover refresh path (`refresh_military_terrain`).
+	#
+	# Why it must not: PKMI deliberately omits the transient budget shares
+	# (write_policies does not write budget_share_bp / budget_wage_bp /
+	# budget_upkeep_bp / budget_enabled; restore rebuilds the policy rows at their
+	# defaults), so the round trip silently reset the player's military budget to
+	# 0 / 60% / 20% on the first season edge after he set it.
+	var same_topology := terrain_ready() \
+		and int(map.cell_count()) == _terrain_cells \
+		and int(map.width) == _terrain_width \
+		and int(map.height) == _terrain_height \
+		and neighbors == _terrain_neighbors
 	var preserved := PackedByteArray()
-	if terrain_ready() and _terrain_cells == int(map.cell_count()):
+	if not same_topology and terrain_ready():
 		var encoded = _world_ext.encode_military_state()
 		if encoded is PackedByteArray:
 			preserved = encoded
@@ -225,8 +246,14 @@ func set_terrain(map, day: int = -1, force: bool = false,
 	if bool(result.get("ok", false)):
 		_terrain_signature = signature
 		_terrain_cells = int(map.cell_count())
+		_terrain_width = int(map.width)
+		_terrain_height = int(map.height)
+		_terrain_neighbors = neighbors
 		_terrain_set_day = day
 		invalidate_maintenance_cache()
+		# A same-topology push keeps native state by itself; only a resetting push
+		# depends on (and may fail) the snapshot restore.
+		result["state_preserved"] = same_topology
 		if not preserved.is_empty():
 			# Native call on purpose: restore_state() rewinds the event cursor,
 			# but the restored ring keeps its ids, so forwarding must continue.

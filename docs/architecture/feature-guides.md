@@ -569,6 +569,19 @@ epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回�
 `tests/economy/military_deferred_cash_conservation_test.gd`，同时验证真实待回执行恢复、
 防重、后续经济结算与三项守恒；只观察军事回执成功不足以证明账目正确。
 
+## 军事预算份额与季节地形重推
+
+国库页的三条预算份额（`budget_share_bp` / `budget_wage_bp` / `budget_upkeep_bp`）按需求 9.3 是
+transient，不进 PKMI（`military_core_save.cpp` 的 `write_policies` 只写 `procurement_share_bp`，
+restore 按默认值重建 policy 行）。所以 `MilitaryFacade.set_terrain()` 不得对整份军事状态无条件做
+`encode_military_state()` → `restore_military_state()` 往返：那一圈会把玩家调好的档位打回默认
+（总份额 0、通道 60%/20%），而季节 cover 重推每季都走一次，玩家看到的就是「过几个 tick 自己归零」。
+原生只在 shape 或邻居表变化时才 `reset_state()`（`military_core.cpp` 的 same_topology 分支），
+同拓扑推送原地换数组、policy 原位保留；facade 必须按同一条规则判断，只对真换拓扑的推送做快照
+恢复，同拓扑路径如实把 `state_preserved` 报成 true，读档类重推仍由
+`PlayerController._repush_military_budget()` 兜底。回归运行
+`tests/military/military_budget_terrain_refresh_test.gd`（带原生 same-topology 控制组）。
+
 ## 科技前置
 
 科技前置修改只写 `data/technology/technology_network.json`，同步知识基础、前置理由和静态连线；
