@@ -8,7 +8,7 @@ const PauseMenuScene := preload("res://scenes/ui/pause_menu.tscn")
 const OUTPUT_DIR := "res://tmp/narrative_ui_qa"
 
 
-## 只给截图用的日历桩：让题头显示「第 N 年 · M 月 D 日」而不是兜底的「第 N 日」。
+## 只给截图用的日历桩：让题头显示「1年2月14日」而不是空白。
 class ClockStub extends RefCounted:
 	const DAYS_PER_YEAR := 360
 	const DAYS_PER_MONTH := 30

@@ -1372,6 +1372,9 @@ func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
 	return _visual_adapter._refresh_building_visual_intel(self, vision_report)
 func player_country_slot() -> int:
 	return _visual_adapter.player_country_slot(self)
+## 地图地名层：悬停纸签由 UI 侧驱动（悬停卡决定当前格），只读这个入口。
+func settlement_label_layer() -> SettlementLabelLayer:
+	return _presentation._settlement_label_layer
 func finalize_save_restore_visuals() -> Dictionary:
 	return _visual_adapter.finalize_save_restore_visuals(self)
 func _saved_player_start_cell() -> int:

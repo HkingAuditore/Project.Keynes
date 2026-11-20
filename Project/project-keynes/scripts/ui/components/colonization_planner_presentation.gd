@@ -300,7 +300,8 @@ static func _refresh_expedition_detail(host) -> void:
 		host._preview_metrics.text = "派遣 %s 人" % UITokens.format_compact_number_cn(float(people), 0)
 	host._preview_effects.text = host._preparing_missing_text(host._selected_expedition, state, snap, false)
 	var due = int(snap.get("due_day", view.get("due_day", -1)))
-	host._preview_route.text = "第 %d 日抵达" % due if state != 4 and due >= 0 else ""
+	host._preview_route.text = ("%s抵达" % WorldClock.date_text_for_day(due)) \
+		if state != 4 and due >= 0 else ""
 	host._paint_expedition_card(host._preview_title.text, host._preview_metrics.text,
 		host._preview_effects.text, host._preview_route.text)
 	host._preview_state_pill.text = host._state_text(state)
@@ -313,7 +314,7 @@ static func _refresh_expedition_detail(host) -> void:
 	if snap.has("target_cell"):
 		facts.append({"id": "target", "title": "目的地", "value": host._cell_name(int(snap.target_cell)), "icon": "system.target"})
 	if not host._preview_route.text.is_empty():
-		facts.append({"id": "due", "title": "预计抵达", "value": host._preview_route.text, "icon": "family.metric.time"})
+		facts.append({"id": "due", "title": "预计抵达", "value": WorldClock.date_text_for_day(due), "icon": "family.metric.time"})
 	host._route_facts.set_facts(facts)
 	host._route_facts.visible = not facts.is_empty()
 	var meters: Array = []
@@ -458,7 +459,7 @@ static func _update_preview_route(host, quote: Dictionary) -> void:
 		host._paint_route_card(quote)
 		return
 	host._preview_route.text = "目的地 · %s
-预计 %d 日抵达
+预计 %d 日后抵达
 %s" % [host._cell_name(host._target_cell),
 		int(quote.get("travel_days", 1)), host._kit_summary_text(quote)]
 	if bool(quote.get("kit_partial", false)):

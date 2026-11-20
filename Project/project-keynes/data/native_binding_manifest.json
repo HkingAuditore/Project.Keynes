@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 662,
+  "count": 664,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -154,6 +154,7 @@
     "drain_country_ai_record_rows",
     "drain_derived_cell_layer",
     "economy_deadline_critical",
+    "economy_replay_incident",
     "economy_should_run",
     "effect_instance_fire_acked",
     "effect_program_is_managed",
@@ -210,6 +211,7 @@
     "get_annual_report_history",
     "get_annual_report_snapshot",
     "get_annual_report_status",
+    "get_build_id",
     "get_building_cell_snapshot",
     "get_building_notable_people",
     "get_building_visual_snapshot",

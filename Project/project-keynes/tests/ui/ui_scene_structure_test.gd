@@ -18,7 +18,10 @@ const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
 	"colonization_planner_panel.gd", "world_setup.gd",
 	"ideology_art.gd", "ideology_card.gd", "ideology_point_scroll.gd",
 	"ideology_slot_niche.gd", "ideology_workspace.gd",
-	"ideology_workspace_presentation.gd"]
+	"ideology_workspace_presentation.gd",
+	# 悬停展板是固定五行 × 两表的读数面板，行内还带比例条；
+	# 每一行的列宽必须与其他行逐像素对齐，声明式 .tscn 反而更容易改出错位。
+	"cell_board.gd"]
 
 var _failures := PackedStringArray()
 

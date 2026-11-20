@@ -2,6 +2,8 @@ extends RefCounted
 
 ## Stateless validation and per-call command assembly; host owns admission and sequence.
 const HostValueHelpers = preload("res://scripts/game/world_runtime_host_values.gd")
+## 事故包生产者。GM 导出与 fatal 观察点共用同一份实现（preload，不用 class_name）。
+const IncidentBundle = preload("res://scripts/game/incident_bundle.gd")
 const GM_SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
 const GM_CASH_SCALE: int = 10000
 const GM_GOODS_SCALE: int = 1000
@@ -11,6 +13,7 @@ static func _gm_command_specs(technologies: PackedStringArray = PackedStringArra
 		buildings: PackedStringArray = PackedStringArray()) -> Array:
 	return [
 		{"id": "diagnostics.dump_atlas_river_probe", "label": "Export Atlas river probe", "category": "diagnostics", "destructive": false, "args": []},
+		{"id": "diagnostics.export_incident_bundle", "label": "导出故障包", "category": "诊断", "destructive": false, "args": []},
 		{"id": "time.pause", "label": "暂停/继续模拟", "category": "时间", "destructive": false,
 			"args": [{"name": "state", "type": "enum", "required": false,
 				"default": "toggle", "choices": PackedStringArray(["toggle", "on", "off"])}]},
@@ -217,4 +220,53 @@ static func submit_simulation_command(host, command_id: String, args: Dictionary
 	var response = host._gm_ok("指令已排入第 %d 日的权威命令队列。" % admitted_day, true, admitted_day)
 	response["data"] = result
 	return response
+
+
+## GM「导出故障包」：随时可导出，不要求世界已经 fatal。
+## 无 fatal 时包里只有 world + hashes + 最近 N 天诊断；cell 切片取当前选中格
+## （没有选中格时只写一个空切片并记 missing:cell）。
+## 返回 {"ok":true,"path":...} 或 host._gm_error(...)，与其它 _gm_* 约定一致。
+static func export_incident_bundle(host) -> Dictionary:
+	if host._generator == null:
+		return host._gm_error("world_not_ready", "世界尚未生成，无法导出故障包。")
+	var generator = host._generator
+	var economy_report: Dictionary = {}
+	if generator.has_method("get_economy_report"):
+		var value = generator.get_economy_report()
+		if value is Dictionary:
+			economy_report = value
+	var fatal := bool(economy_report.get("fatal", false))
+	var selected_cell := -1
+	if host._selected_cell != null:
+		selected_cell = int(host._selected_cell.index)
+	var context := {
+		"generator": generator,
+		"economy_report": economy_report,
+		"kind": "fatal" if fatal else "manual",
+		"reason": String(economy_report.get("fatal_reason", "")) if fatal else "manual_export",
+		"producer": "world_runtime_gm_commands.gd",
+		"cell": selected_cell,
+		"world": _gm_incident_world(host),
+	}
+	if host._world_clock != null:
+		context["day"] = int(host._world_clock.day_index())
+	var result: Dictionary = IncidentBundle.write(context)
+	if not bool(result.get("ok", false)):
+		return host._gm_error("incident_bundle_failed",
+			"故障包导出失败：%s" % String(result.get("reason", "unknown")), result)
+	var response = host._gm_ok("故障包已导出：%s（%d 字节）" % [
+		String(result.get("path", "")), int(result.get("bytes", 0))], false, -1)
+	response["path"] = String(result.get("path", ""))
+	response["data"] = result
+	return response
+
+
+## 事故包需要的世界标量。MapGenerator 不暴露地图尺寸，只有 host 侧知道，
+## 所以 fatal 观察点与 GM 导出都从这里取，避免各写一份。
+static func _gm_incident_world(host) -> Dictionary:
+	return {
+		"seed": int(host._last_seed),
+		"width": int(host._current_map.width) if host._current_map != null else 0,
+		"height": int(host._current_map.height) if host._current_map != null else 0,
+	}
 

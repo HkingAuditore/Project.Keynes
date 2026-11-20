@@ -855,3 +855,82 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 悬停和点选共用浮标命中与视野检查。PlayerController 以浮标归属选格，议和、军令和军务
 拾取优先级沿用正式会话。回归入口为 `cell_situation_snapshot_test.gd`、
 `cell_situation_layer_test.gd` 和 `cell_situation_worker_test.gd`。
+
+## 故障诊断基建（2026-11-19）
+
+改动任何 `fail()` / `error = "..."` / 诊断上报前，先读这一节。台账是唯一真相，
+代码是它的实现，不是反过来。
+
+- **新增或改名一个 error 字符串 = 先登记台账**。`gdext/src/**/*.cpp` 里任何
+  `error = "..."` / `fail("...")` / `set_restore_rejected_reason("...")` 都会被
+  `tools/ci/check_fault_taxonomy.py --strict` 扫到；未登记就红。补登记用
+  `--bootstrap-missing`（只增不改，先以 `kind=unknown` 入库），再人工补
+  `kind/stage/witness/playbook`，最后 `--write-doc` 重生成 `docs/runtime/invariants.md`。
+  **不要**靠放宽正则或加白名单前缀绕过。
+- `kind=fatal` 的条目必须在 `gdext/src/fault_taxonomy.h` 里有 assert_id 绑定，
+  `--check-cpp-ids` 会核。ID（`INV-<MODULE>-<NNNN>`）永不复用；合并断言时保留
+  `status=retired` 的墓碑。
+- `fatal_context_report()` 的 `witness` 只放 POD 标量，字段名与台账 `witness` schema
+  一一对应。既有扁平键（`investment_row` / `construction_row` / `investment_legs`）
+  是旧日志与旧 fixture 的契约，**只增不改**。
+- `.pkinc` 是诊断产物：不进 PKEC/PKSV、不参与状态哈希、不可当存档加载。
+  格式契约见 `docs/runtime/incident-bundle-schema.md`；生产者
+  `scripts/game/incident_bundle.gd` + `incident_cell_slice.gd`（拆两文件是因为单文件
+  会顶到 size ratchet 的 800 行上限），消费者 `tools/ci/inspect_incident.py` 与
+  `tests/runtime/incident_replay.gd`。
+- **现场里拿不到的字段如实记 `missing:`，不许造数**。当前如实记 missing 的有
+  `commands.structural/ledger`、`pending_construction` 的物料需求、`hashes.economy_state_hash`、
+  `hashes.ledger_hash`、`world.formal_start`。要给它们补数据，先在对应模块的 facade 上加
+  薄包装（不要在 `scripts/game` 直调别的模块的原生绑定，`check_script_native_access` 会拦）。
+- 全量 PKEC 现场**按需**：默认只写 `.pkinc`；要全量用 `PK_FORENSICS_FULL=1` 或调用方
+  传 `extra.full_snapshot=true`（GM 手动导出走这条）。别再把「每次 fatal 一份 40 MB」
+  写回默认路径。
+- 重放的 `reproduced` 判据是「同一 reason + witness 关键字段逐一相等」。被排除的字段
+  必须出现在 `uncompared` 里可审计；不许为了让自己绿而扩大排除列表。
+- 提交前核验：`.\tools\ci\verify.ps1 -Quick`（static，约 20 s）。它里面有两条 `known-red`
+  是本轮之前的既有漂移（`check_cpp_deps.py` / `check_size_ratchet.py`），`-Strict` 下才判失败；
+  新引入的失败不许塞进 known-red。
+- `tools/ci` 里读源码的脚本一律显式 `encoding="utf-8"`。中文 Windows 的 locale 默认是 GBK，
+  不写编码就会在 UTF-8 源码上抛 `UnicodeDecodeError`（`check_module_contracts.py` 与
+  `check_cpp_deps.py` 就是这么坏的，本轮已修）。
+- `kind=fatal` 是**有硬性条件的登记**：`witness` 非空且值只能是 i32/i64/f64/bool/str，
+  `playbook` ≥3 步且每步非空，`stage`/`owner` 非空；缺一项 `--strict` 就退出 1 并点名
+  （`INV-XXX-0001 (reason): 缺什么`）。无历史豁免、无白名单，2026-11-19 起对每一条新登记生效。
+- `--review` 是**审阅清单，不是门禁**：列出 `kind=unknown` 但名字像停机点的条目
+  （含 `_fatal`/`_drift`/`_mismatch`/`_violat`/`_rejected`/`_must`/`_invalid`），给首次出现的
+  `文件:行` 并按文件分组计数；它不参与 `--strict`、不改退出码。列表长是正常的，别为好看调窄。
+- **抓不到的限制（如实记账）**：`--bootstrap-missing` 只会写 `kind=unknown`，所以"该标 fatal
+  却标成 unknown"这条门禁看不见；也不做启发式猜测兜底——猜错会逼人瞎标，比诚实的 unknown 更贵。
+
+## 地图悬停展板与地名层（2026-11-20）
+
+改 `scripts/rendering/settlement_label_layer.gd`、`scripts/ui/cell_board*.gd`、
+`scenes/ui/cell_board.tscn`、`CellHoverCard` 或任何「悬停某格显示什么」的功能时看这节。
+
+- **指针语义只有一处**：`CellHoverCard` 的 `hover_cell_changed(cell_index)`（-1 = 无）是唯一
+  的悬停格广播源。它已经处理了指针静止、速度抑制、指针是否落在 UI 上、相机平移/缩放、
+  暂停、触摸、安全区与迷雾可见性。新增消费者只许订阅这条信号，不许自己再读
+  `get_mouse_position()` 或复判这六件事——两套判定一定会互相打脸（卡片退场、纸签还在）。
+- **停稳门槛分两级**：地名纸签跟着卡片走（130ms 静止）；左侧展板自己再加 300ms 停留，
+  因为展板要开两个原生 per-cell 快照。`CellHoverCard.SETTLE_MSEC` 与
+  `CellBoard.DWELL_MSEC` 的差值就是这两级。
+- **原生 read-view 是有限资源**：每个 `(query, cell)` 订阅占一条，上限 128 条、TTL 5s。
+  逐格 hover 都去查会把它打满，进而拖慢经济线程。所以：只对已定居格查、按 `cell:day`
+  缓存、未就绪时按 `pending` 重试而不是拿旧值冒充当日、展板只在停稳后查一次。
+  新增 per-cell 读数接入展板前先确认它在 read-view 里、并且能容忍 `ok=false / busy=true`。
+- **地名 LOD 的口径**：繁荣等级就是人口档（2 乡村 / 3 小镇 / 4 县城 / 5 城市 / 6 都市），
+  所以「远看只显示少数几个」与「远看只显示大城」是同一件事。缩放阈值四档被
+  `tests/country/settlement_label_layer_test.gd` 锁住；要改档位就同时改测试与本节。
+  首都通过 `set_player_capital_cell()` 豁免筛选，由
+  `world_runtime_visual_adapter._player_capital_cell()` 在视觉刷新时从
+  `country_facade.snapshot(handle)["capital_cell"]` 推一次，不进每帧路径。
+- **环向地图只画一份拷贝**：`nearest_display_world` 取最近拷贝后不要再叠加 ±period 的
+  第二份，否则接缝上会出现两枚同名纸签（曾真实出现）。
+- **展板内容不外溢**：纸片用 `PKPaperPopup`，内容放内层 `MarginContainer` 留出撕纸边的位置；
+  绝不用 `add_theme_stylebox_override("panel", ...)` 覆盖——那会把撕纸边顶成圆角纯色板。
+  表头写列名不写标题，空表整张纸片不渲染，行数按可用高度三段压缩（5 行 → 3 行 → 只留市价）。
+- **数据口径**：市价表的五类物资是「五个角色各挑一个还没被选走的物资」，不是「同一物资
+  重复五次」；未解锁物资（`good_technology_available == 0`）与本地尚无价格的物资不参与。
+  民情表的影响力 = `population + owner_employed × opinion_owner_influence_weight(2)
+  + funds / opinion_funds_per_influence(1000000)`，与理念系统同源；组织度按职业读，
+  缺失时留空轨道，不写 0%。

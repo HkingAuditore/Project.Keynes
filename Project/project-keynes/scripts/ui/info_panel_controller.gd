@@ -518,18 +518,19 @@ func refresh_emergent_lines() -> void:
 	if _emergent_ice_label != null:
 		if _world_clock != null and _world_clock.has_method("calendar_date"):
 			var cal: Dictionary = _world_clock.calendar_date()
-			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
-				int(cal.month), int(cal.day_of_month), int(cal.day_of_year), int(cal.days_per_year)
+			_emergent_ice_label.text = "日期：%s（年内已过 %d/%d 天）" % [
+				WorldClock.date_text_for_day(_world_clock.day_index(), _world_clock.days_per_year()),
+				int(cal.day_of_year), int(cal.days_per_year)
 			]
 		elif _generator != null:
 			var phase: float = _world_clock.season_phase() if _world_clock != null else 0.0
 			var cal_fallback: Dictionary = _generator.month_of_year(phase)
-			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
+			_emergent_ice_label.text = "日期：%d月%d日（年内已过 %d/%d 天）" % [
 				int(cal_fallback.month), int(cal_fallback.day_of_month),
 				int(cal_fallback.day_of_year), int(cal_fallback.get("days_per_year", 365))
 			]
 		else:
-			_emergent_ice_label.text = "日历：—"
+			_emergent_ice_label.text = "日期：—"
 
 	# 行 4：太阳直射点 + 日射相对年均（True Insolation-Driven 因果链可视化）
 	if _emergent_sun_label != null and _generator != null and _world_clock != null:

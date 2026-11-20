@@ -423,6 +423,10 @@ var _start_tick: int = 0
 var _hit_limit: bool = false
 var _detail_mode: String = "CORE"
 var _detail_period_days: int = 30
+# 采样间隔：每隔 N 个 fast tick 记一行（默认 1 = 每帧都记，与历史行为一致）。
+# 真机长跑（60~120 秒）用它把 CSV 体积和录制自身的 GDScript 开销压下来。
+var _sample_every: int = 1
+var _sample_counter: int = 0
 var _export_dir_override: String = ""
 var _export_name_override: String = ""
 
@@ -457,18 +461,21 @@ func configure_export(output_dir: String, csv_name: String = "") -> void:
 
 
 # 开始录制：清空缓冲。多次调用 start 等价于"丢弃旧录制重开"。
-func start(detail_mode: String = "CORE", detail_period_days: int = 30) -> void:
+func start(detail_mode: String = "CORE", detail_period_days: int = 30,
+		sample_every: int = 1) -> void:
 	_rows.clear()
 	_recording = true
 	_hit_limit = false
 	_detail_mode = "DETAIL" if detail_mode.to_upper() == "DETAIL" else "CORE"
 	_detail_period_days = maxi(1, detail_period_days)
+	_sample_every = maxi(1, sample_every)
+	_sample_counter = 0
 	if _main != null and _main.has_method("get_fast_tick_count"):
 		_start_tick = int(_main.get_fast_tick_count())
 	else:
 		_start_tick = 0
-	print("[perf-record] start (start_tick=%d mode=%s detail_period=%d)" % [
-		_start_tick, _detail_mode, _detail_period_days])
+	print("[perf-record] start (start_tick=%d mode=%s detail_period=%d sample_every=%d)" % [
+		_start_tick, _detail_mode, _detail_period_days, _sample_every])
 
 
 # 停止录制并导出。
@@ -539,6 +546,10 @@ func on_fast_tick(sample: Dictionary) -> void:
 	if not _recording:
 		return
 	if _hit_limit:
+		return
+	# 采样间隔放在最前面：跳过的帧连一行字典都不拼，长跑开销可忽略。
+	_sample_counter += 1
+	if _sample_every > 1 and (_sample_counter % _sample_every) != 0:
 		return
 	if _authoritative_after_day >= 0:
 		var graph: Dictionary = sample.get("runtime_graph", {})

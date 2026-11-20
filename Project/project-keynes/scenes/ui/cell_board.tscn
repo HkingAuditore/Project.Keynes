@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/cell_board.gd" id="1_board"]
+[ext_resource type="Theme" uid="uid://cnjby7mpvii16" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
+
+[node name="CellBoard" type="Control"]
+custom_minimum_size = Vector2(340, 0)
+offset_right = 340.0
+mouse_filter = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_board")

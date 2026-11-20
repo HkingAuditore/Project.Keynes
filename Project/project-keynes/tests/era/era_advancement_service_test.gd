@@ -162,10 +162,17 @@ func _init() -> void:
 	var tech_row: Dictionary = _condition(model, "tech")
 	_expect("tech condition counts non-milestone stone technologies",
 		int(tech_row.target) > 0 and not bool(tech_row.met))
-	_fill_tech_ratio(country, technology, 0, 0.62)
+	# 门槛从目录常量推导：重调比例后这两条断言仍验证「差一项不达标」「够数即达标」。
+	var tech_gate := int(tech_row.target)
+	var gate_label := "%d%%" % int(round(CatalogScript.TECH_COMPLETION_RATIO * 100.0))
+	_fill_tech_count(country, technology, 0, tech_gate - 1)
 	model = service.refresh(0, true)
-	_expect("62% stone technologies satisfies the 60% tech condition",
-		bool(_condition(model, "tech").met))
+	_expect("%s stone technology gate rejects one short (%d/%d)" % [gate_label, tech_gate - 1, tech_gate],
+		not bool(_condition(model, "tech").met) and String(model.status) == "locked")
+	_fill_tech_count(country, technology, 0, tech_gate)
+	model = service.refresh(0, true)
+	_expect("%s stone technology gate is met at the exact threshold (%d/%d)"
+		% [gate_label, tech_gate, tech_gate], bool(_condition(model, "tech").met))
 	_expect("tech + two economy conditions make era ready",
 		String(model.status) == "ready" and int(model.conditions_met) == 3 and bool(model.can_start))
 	# 石器前置与农耕里程碑都带「全社会经济产出 +7%」，聚合后压成一行 +14%，
@@ -386,17 +393,22 @@ func _check_snapshot_shape(model: Dictionary) -> void:
 		int(model.conditions_required) == 3)
 
 
-func _fill_tech_ratio(country: FakeCountry, technology: Dictionary, era_index: int,
-		ratio: float) -> void:
+func _fill_tech_count(country: FakeCountry, technology: Dictionary, era_index: int,
+		count: int) -> void:
+	var candidates := _era_candidates(technology, era_index)
+	for i in range(clampi(count, 0, candidates.size())):
+		country.states[int(candidates[i])] = 5
+
+
+## Non-milestone research technologies of one era, in catalog order.
+func _era_candidates(technology: Dictionary, era_index: int) -> Array:
 	var era_id := String((technology.technology_era_ids_ordered as PackedStringArray)[era_index])
 	var candidates: Array = []
 	for index in range((technology.technology_ids as PackedStringArray).size()):
 		if String(technology.technology_era_ids[index]) == era_id \
 				and (int(technology.technology_flags[index]) & 2) == 0:
 			candidates.append(index)
-	var needed := int(ceil(float(candidates.size()) * ratio))
-	for i in range(needed):
-		country.states[int(candidates[i])] = 5
+	return candidates
 
 
 func _condition(model: Dictionary, key: String) -> Dictionary:

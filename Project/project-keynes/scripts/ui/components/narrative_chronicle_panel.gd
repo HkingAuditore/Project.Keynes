@@ -273,7 +273,7 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	# 日期行只补标题里缺的定位信息，避免同一行重复地名。
 	var date_text := String(rec.get("date_text", "")).strip_edges()
 	if date_text.is_empty():
-		date_text = "第 %d 日" % day
+		date_text = WorldClock.date_text_for_day(day)
 	var date_parts := PackedStringArray([date_text])
 	if not settlement.is_empty() and not title_text.contains(settlement):
 		date_parts.append(settlement)

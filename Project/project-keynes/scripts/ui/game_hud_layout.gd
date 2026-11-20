@@ -28,6 +28,7 @@ const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 
 var _panel_diag_printed: bool = false
 var _panel_right_limit: float = 0.0
+var _cell_board: CellBoard
 var _colonization_panel: ColonizationPlannerPanel
 var _country_action_bar: CountryActionBar
 var _family_founding_dialog: FamilyFoundingDialog
@@ -113,6 +114,21 @@ func _layout_family_founding_dialog() -> void:
 		_right_panel != null and _right_panel.visible and _right_panel.detail_open())
 	# The dossier is placed against HUD bounds; camera bounds additionally exclude it.
 	_family_founding_dialog.set_safe_area(_base_map_safe_area())
+
+
+## 悬停展板贴地图安全区左上角：它在工具栏右侧、顶栏下方，宽度固定，
+## 高度按可用空间决定能放几张表。
+func _layout_cell_board() -> void:
+	if _cell_board == null:
+		return
+	var safe := map_safe_area()
+	var available := maxf(safe.size.y - UITokens.SPACE_MD * 2.0, 0.0)
+	_cell_board.apply_available_height(available)
+	_cell_board.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_cell_board.offset_left = safe.position.x + UITokens.SPACE_MD
+	_cell_board.offset_top = safe.position.y + UITokens.SPACE_MD
+	_cell_board.offset_right = _cell_board.offset_left + CellBoard.BOARD_WIDTH
+	_cell_board.offset_bottom = _cell_board.offset_top + _cell_board.desired_height()
 
 
 func _layout_overlay_legend() -> void:
@@ -209,6 +225,8 @@ func _layout_top_bar() -> void:
 	UIAnimation.refresh_rest_position(_top_bar)
 	# 顶栏高度一变，左侧图层工具条的安全起点也跟着变，永远不许压到日历纸框。
 	_layout_map_overlay_toolbar()
+	# 悬停展板贴的是同一块地图安全区，顶栏变高时也要跟着下移。
+	_layout_cell_board()
 
 
 func _layout_map_overlay_toolbar() -> void:

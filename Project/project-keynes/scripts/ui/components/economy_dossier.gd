@@ -253,7 +253,9 @@ func _render_page() -> void:
 	var day_min := int(summary.get("state_day_min", -1))
 	var day_max := int(summary.get("state_day_max", -1))
 	if day_min >= 0 and day_max > day_min:
-		_show_status("各城市结算日不同步：数据跨第 %d–%d 日" % [day_min, day_max], false)
+		_show_status("各城市结算日不同步：数据跨%s至%s" % [
+			WorldClock.date_text_for_day(day_min),
+			WorldClock.date_text_for_day(day_max)], false)
 	else:
 		_status_label.visible = false
 	if current != null and current.has_method("refresh"):

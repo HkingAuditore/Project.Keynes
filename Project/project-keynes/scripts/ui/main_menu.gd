@@ -449,11 +449,11 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 	slot_badge.text = label
 	if bool(slot.get("exists", false)):
 		var cname := String(slot.get("country_name", "未知国家"))
-		var day_num := str(slot.get("day", 0))
+		var day_num := int(slot.get("day", 0))
 		var w_str := str(slot.get("width", 0))
 		var h_str := str(slot.get("height", 0))
 		var saved_at := String(slot.get("saved_at", "")).replace("T", " ")
-		title_label.text = "%s · 第 %s 天" % [cname, day_num]
+		title_label.text = "%s · %s" % [cname, WorldClock.date_text_for_day(day_num)]
 		saved_at_label.text = saved_at
 		description.text = "%s × %s" % [w_str, h_str]
 		if save_service != null and save_service.has_method("load_preview"):

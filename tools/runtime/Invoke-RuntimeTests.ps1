@@ -15,7 +15,9 @@ param(
     [string]$RepoRoot = (Get-Location).Path,
     [string]$OutDir = '',
     [string]$GodotExe = '',
-    [ValidateRange(30, 3600)]
+    # Hard per-test cap. A headless fixture that never quits used to hang the
+    # whole verification command (R7-1), so it is enforced, not just declared.
+    [ValidateRange(1, 3600)]
     [int]$TimeoutSeconds = 600
 )
 
@@ -96,10 +98,110 @@ $knownRed = @(
     'runtime_ideology_parity_test'
 )
 
+## Kills a hung test and everything it spawned.
+##
+## The Godot *_console.exe launcher starts the engine executable as a child, so
+## killing the launcher pid alone leaves the engine (and the hang) behind:
+## taskkill /T takes the children with it and /F is required because a stuck
+## headless engine never answers a polite close request.
+function Stop-ProcessTree {
+    param([System.Diagnostics.Process]$Process)
+
+    if ($null -eq $Process) { return }
+    $processId = $Process.Id
+    # A refused taskkill writes to stderr; under Stop mode a native command's
+    # stderr becomes a terminating NativeCommandError, so this stays local.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & taskkill.exe /PID $processId /T /F *> $null
+    }
+    catch {
+        # taskkill missing or refused: the direct kill below is the fallback.
+    }
+    finally { $ErrorActionPreference = $previousErrorAction }
+
+    try { $Process.WaitForExit(10000) | Out-Null } catch { }
+    if (-not $Process.HasExited) {
+        try { $Process.Kill() } catch { }
+        try { $Process.WaitForExit(5000) | Out-Null } catch { }
+    }
+}
+
+## Runs one headless test with both streams captured to their own file and a
+## hard timeout.
+##
+## Start-Process -PassThru leaves ExitCode unset under Windows PowerShell 5.1
+## (observed on 5.1.22621), so [System.Diagnostics.Process] is constructed
+## directly, as in tools/runtime/Invoke-SaveReplay.ps1. The two streams are read
+## asynchronously, so neither can deadlock on a full pipe buffer, and a merged
+## `2>&1 | Tee-Object` pipeline (also a Stop-mode NativeCommandError source) is
+## not involved any more.
+function Invoke-CapturedTest {
+    param(
+        [string]$GodotExe,
+        [string[]]$Arguments,
+        [string]$StdoutPath,
+        [string]$StderrPath,
+        [int]$TimeoutSeconds
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $GodotExe
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $quoted = foreach ($argument in $Arguments) {
+        if ($argument -match '[\s"]') { '"' + ($argument -replace '"', '\"') + '"' }
+        else { $argument }
+    }
+    $startInfo.Arguments = ($quoted -join ' ')
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $process = $null
+    try {
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+    }
+    catch {
+        $message = "failed to start '$GodotExe': $($_.Exception.Message)"
+        [System.IO.File]::WriteAllText($StdoutPath, $message, $utf8)
+        [System.IO.File]::WriteAllText($StderrPath, '', $utf8)
+        return [pscustomobject]@{ exit_code = -1; timed_out = $false; start_error = $message }
+    }
+
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $timedOut = $false
+    # This wait is the fix: a fixture that never quits must not hang the command.
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        $timedOut = $true
+        Stop-ProcessTree -Process $process
+    }
+
+    $stdoutText = ''
+    $stderrText = ''
+    if ($stdoutTask.Wait(20000) -and -not $stdoutTask.IsFaulted) { $stdoutText = $stdoutTask.Result }
+    if ($stderrTask.Wait(20000) -and -not $stderrTask.IsFaulted) { $stderrText = $stderrTask.Result }
+    [System.IO.File]::WriteAllText($StdoutPath, $stdoutText, $utf8)
+    [System.IO.File]::WriteAllText($StderrPath, $stderrText, $utf8)
+
+    $exitCode = -1
+    if ($process.HasExited) {
+        try { $exitCode = $process.ExitCode } catch { $exitCode = -1 }
+    }
+    $process.Dispose()
+    return [pscustomobject]@{ exit_code = $exitCode; timed_out = $timedOut; start_error = '' }
+}
+
 $results = @()
 foreach ($relative in $tests) {
     $name = [System.IO.Path]::GetFileNameWithoutExtension($relative)
     $logPath = Join-Path $logDir "$name.log"
+    # stderr has its own file until the run is over; both are merged below.
+    $stderrPath = "$logPath.err"
     Write-Host "running $name ..." -NoNewline
 
     $started = Get-Date
@@ -110,22 +212,30 @@ foreach ($relative in $tests) {
         '--path', $project,
         '--script', "res://$relative"
     )
-    # Godot writes warnings and the RID-leak notice to stderr. Under Stop mode a
-    # merged pipeline turns the first one into a terminating NativeCommandError,
-    # so the child process gets its own Continue scope.
-    $previousErrorAction = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Out-Null
-        $exitCode = $LASTEXITCODE
-    }
-    finally { $ErrorActionPreference = $previousErrorAction }
+    $run = Invoke-CapturedTest -GodotExe $godot -Arguments $godotArgs `
+        -StdoutPath $logPath -StderrPath $stderrPath -TimeoutSeconds $TimeoutSeconds
     $elapsed = ((Get-Date) - $started).TotalSeconds
+    $exitCode = $run.exit_code
 
-    $logText = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw } else { '' }
-    if ($null -eq $logText) { $logText = '' }
+    # Godot writes warnings and the RID-leak notice to stderr, so both captured
+    # files are merged into the single log path the marker scan and the archive
+    # read. A timed-out test keeps whatever it printed before the kill.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $logText = ''
+    foreach ($streamPath in @($logPath, $stderrPath)) {
+        if (Test-Path -LiteralPath $streamPath) {
+            $logText += [System.IO.File]::ReadAllText($streamPath, [System.Text.Encoding]::UTF8)
+        }
+    }
+    if ($run.timed_out) {
+        $logText += "[runtime-tests] TIMEOUT after ${TimeoutSeconds}s: the fixture did not quit, process tree killed`r`n"
+    }
+    [System.IO.File]::WriteAllText($logPath, $logText, $utf8)
+    Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+
     $markers = [regex]::Matches($logText, $failurePattern) | ForEach-Object { $_.Value } | Select-Object -Unique
-    $passed = ($exitCode -eq 0) -and ($markers.Count -eq 0)
+    # A timeout is never a pass, whatever the killed process reported as exit code.
+    $passed = ($exitCode -eq 0) -and ($markers.Count -eq 0) -and (-not $run.timed_out)
 
     $results += [ordered]@{
         name            = $name
@@ -137,9 +247,12 @@ foreach ($relative in $tests) {
         failure_markers = @($markers)
         passed          = $passed
         known_red       = ($knownRed -contains $name)
+        timed_out       = [bool]$run.timed_out
+        timeout_seconds = $TimeoutSeconds
     }
 
-    $verdict = if ($passed) { 'PASS' }
+    $verdict = if ($run.timed_out) { "TIMEOUT ($($TimeoutSeconds)s, killed)" }
+        elseif ($passed) { 'PASS' }
         elseif ($knownRed -contains $name) { "KNOWN-RED (exit=$exitCode markers=$($markers -join ','))" }
         else { "FAIL (exit=$exitCode markers=$($markers -join ','))" }
     Write-Host " $verdict  [$([math]::Round($elapsed,1))s]"
@@ -153,10 +266,13 @@ foreach ($result in $results) {
     [void]$builder.AppendLine("TEST   : $($result.name)")
     [void]$builder.AppendLine("SCRIPT : $($result.script)")
     [void]$builder.AppendLine("EXIT   : $($result.exit_code)   PASSED: $($result.passed)   $($result.elapsed_seconds)s")
+    if ($result.timed_out) {
+        [void]$builder.AppendLine("TIMEOUT: killed after $($result.timeout_seconds)s without an exit")
+    }
     [void]$builder.AppendLine('=' * 78)
     $individual = Join-Path $logDir "$($result.name).log"
     if (Test-Path -LiteralPath $individual) {
-        [void]$builder.AppendLine((Get-Content -LiteralPath $individual -Raw))
+        [void]$builder.AppendLine([System.IO.File]::ReadAllText($individual, [System.Text.Encoding]::UTF8))
     }
     [void]$builder.AppendLine()
 }
@@ -170,14 +286,19 @@ if (Test-Path -LiteralPath $scanLog) {
 
 $passCount = @($results | Where-Object { $_.passed }).Count
 $knownRedResults = @($results | Where-Object { (-not $_.passed) -and $_.known_red })
-$blockingFailures = @($results | Where-Object { (-not $_.passed) -and (-not $_.known_red) })
+$timeoutResults = @($results | Where-Object { $_.timed_out })
+# A timeout is already reported as its own blocking category, so it is excluded
+# here instead of being double counted.
+$blockingFailures = @($results | Where-Object { (-not $_.passed) -and (-not $_.known_red) -and (-not $_.timed_out) })
 $summary = [ordered]@{
     generated_utc = (Get-Date).ToUniversalTime().ToString('o')
     godot         = $godot
+    timeout_seconds = $TimeoutSeconds
     total         = $results.Count
     passed        = $passCount
     known_red     = $knownRedResults.Count
     failed        = $blockingFailures.Count
+    timed_out     = @($timeoutResults | ForEach-Object { $_.name })
     known_red_tests = @($knownRedResults | ForEach-Object { $_.name })
     results       = $results
 }
@@ -185,17 +306,26 @@ $summary | ConvertTo-Json -Depth 6 |
     Set-Content -LiteralPath (Join-Path $OutDir 'test-summary.json') -Encoding UTF8
 
 Write-Host ''
-Write-Host "$passCount/$($results.Count) passed, $($knownRedResults.Count) known-red, $($blockingFailures.Count) failed -> $OutDir"
+Write-Host "$passCount/$($results.Count) passed, $($knownRedResults.Count) known-red, $($timeoutResults.Count) timed out (${TimeoutSeconds}s limit), $($blockingFailures.Count) failed -> $OutDir"
 if ($knownRedResults.Count -gt 0) {
     Write-Host 'known-red (non-blocking, 05 §2.8):' -ForegroundColor Yellow
     foreach ($result in $knownRedResults) {
         Write-Host "  $($result.name)  exit=$($result.exit_code)  $($result.failure_markers -join ' | ')"
     }
 }
-if ($blockingFailures.Count -gt 0) {
+if ($timeoutResults.Count -gt 0) {
+    Write-Host "timed out (no exit within ${TimeoutSeconds}s, process tree killed):" -ForegroundColor Yellow
+    foreach ($result in $timeoutResults) {
+        Write-Host "  $($result.name)  TIMEOUT ($($result.timeout_seconds)s, killed)  [$($result.elapsed_seconds)s]  $($result.log)"
+    }
+}
+if ($blockingFailures.Count -gt 0 -or $timeoutResults.Count -gt 0) {
     Write-Host 'failed:' -ForegroundColor Yellow
     foreach ($result in $blockingFailures) {
         Write-Host "  $($result.name)  exit=$($result.exit_code)  $($result.failure_markers -join ' | ')"
+    }
+    foreach ($result in $timeoutResults) {
+        Write-Host "  $($result.name)  TIMEOUT ($($result.timeout_seconds)s, killed)  exit=$($result.exit_code)"
     }
     exit 1
 }

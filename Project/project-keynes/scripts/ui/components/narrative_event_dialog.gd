@@ -520,10 +520,10 @@ func present_offer(offer: Dictionary) -> void:
 	_title_label.text = String(offer.get("title", "事件"))
 	_locate_button.visible = _cell_idx >= 0
 
-	# 题头只留日历：第 N 年 · M 月 D 日。地名在标题里，地貌/气温不再上题头。
+	# 题头只留日历：1年2月14日。地名在标题里，地貌/气温不再上题头。
 	var date_text := String(offer.get("date_text", "")).strip_edges()
 	if date_text.is_empty():
-		date_text = "第 %d 日" % int(offer.get("day", 1))
+		date_text = WorldClock.date_text_for_day(int(offer.get("day", 0)))
 	_kicker_label.text = date_text
 
 	for child in _tags_row.get_children():

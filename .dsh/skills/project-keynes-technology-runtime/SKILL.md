@@ -114,7 +114,9 @@ activation remains unchanged and must not re-check a gate.
 ## Verify
 
 Player era advancement is owned by `EraAdvancementCatalog` / `EraAdvancementService`, separate from
-researchable technology costs. Technology completion at 80% is mandatory, plus any two of population,
+researchable technology costs. Completion of the current era's non-milestone, non-`app.*`
+technologies at `EraAdvancementCatalog.TECH_COMPLETION_RATIO` (currently 45%, `ceil`) is mandatory,
+plus any two of population,
 completed building units and current-era trade orders. Economic gates use base + per-cell × owned
 territory; procurement uses an era multiplier and additive base + per-cell quantities. Preserve frozen
 purchase orders across pause/restore, including orders started under earlier balance values. Run

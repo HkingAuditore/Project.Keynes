@@ -1,6 +1,16 @@
 ---
 name: project-keynes-ideology-runtime
-description: Guide Project.Keynes native ideology-system development and review: IdeologyCatalog compilation (cards, synergies, route tags 体系, target selectors and DNF tag predicates, declarative effect programs), NativeIdeologyRuntime (collection, slots, offers with pity/refine/ban, era decay, understanding, levels, gates, synergies, runtime magnitude overrides 卡改卡), class-opinion support gates, exclusion groups, ACK-gated Effect/Modifier transitions, PKID schema 7 persistence, IdeologyFacade/PlayerController/UI, and verification. Use whenever the user mentions 理念, ideology, 民族精神, national spirit, 三选一抽卡, 抽卡保底, 精进, 封存, ideology slots, 阶层民意, class opinion, ideology synergy, 体系羁绊, route_tag, 地块级理念, 目标标签, 选择器, 卡改卡, override, PKID, ideology_runtime, ideology workspace, or wants to add/change/debug an ideology card, its cell-level effect, its synergy, or the ideology panel.
+description: >-
+  Guide Project.Keynes native ideology-system development and review: IdeologyCatalog compilation
+  (cards, synergies, route tags 体系, target selectors and DNF tag predicates, declarative effect
+  programs), NativeIdeologyRuntime (collection, slots, offers with pity/refine/ban, era decay,
+  understanding, levels, gates, synergies, runtime magnitude overrides 卡改卡), class-opinion support
+  gates, exclusion groups, ACK-gated Effect/Modifier transitions, PKID schema 7 persistence,
+  IdeologyFacade/PlayerController/UI, and verification. Use whenever the user mentions 理念,
+  ideology, 民族精神, national spirit, 三选一抽卡, 抽卡保底, 精进, 封存, ideology slots, 阶层民意, class opinion,
+  ideology synergy, 体系羁绊, route_tag, 地块级理念, 目标标签, 选择器, 卡改卡, override, PKID, ideology_runtime,
+  ideology workspace, or wants to add/change/debug an ideology card, its cell-level effect, its
+  synergy, or the ideology panel.
 ---
 
 # Project.Keynes Ideology Runtime

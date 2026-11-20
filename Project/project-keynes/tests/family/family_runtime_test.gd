@@ -958,7 +958,7 @@ func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
 			"display_name", "")) == "求雨"
 		and String((facade._family_effect_displays.get(
 			"family.effect.rain_prayer", {}) as Dictionary).get(
-			"description", "")).find("降雨触发下限降低2%") >= 0
+			"description", "")).find("降雨触发下限降低5%") >= 0
 		and String((facade._family_modifier_displays.get(
 			"family.city.extractive_output_boost", {}) as Dictionary).get(
 			"display_name", "")) == "采掘产出加成"

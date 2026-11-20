@@ -1227,7 +1227,7 @@ func _append_construction_rows(host, rows: Array, snapshot: Dictionary, type_ids
 			"building_type_id": building_id,
 			"count": "%d" % (int(counts[i]) if i < counts.size() else 0),
 			"owner": "业主 · %s" % h._owner_profession_name(snapshot, owner),
-			"status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0),
+			"status": "建造中 · %s完工" % WorldClock.date_text_for_day(int(ready_days[i]) if i < ready_days.size() else 0),
 			"profit": "—",
 			"profit_label": "未投产",
 			"accent": UITokens.WARN,

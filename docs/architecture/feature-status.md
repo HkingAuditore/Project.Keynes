@@ -2525,3 +2525,300 @@ Apple M2、Godot 4.6.3、Metal Mobile，使用同一份 macOS Release 原生库�
   （`1年3月28日`），无裁字。
 - 未做：整游戏内地图与顶栏的多分辨率 A/B 截图；`Project/perf-validation` 镜像（该目录与主工程
   已大幅漂移，按既有约定不同步）。
+
+## 运行时故障基建 R1–R6（2026-11-19）
+
+计划：[docs/plans/runtime-fault-infrastructure-plan.md](../plans/runtime-fault-infrastructure-plan.md)；
+逐项执行清单与实测数字：[docs/plans/runtime-fault-infrastructure-checklist.md](../plans/runtime-fault-infrastructure-checklist.md)。
+`.pkinc` 格式契约：[docs/runtime/incident-bundle-schema.md](../runtime/incident-bundle-schema.md)。
+
+目标是「玩家报错 → 定位到根因」从平均 7 轮文件往返压到 1 轮：现场自带构建 ID、断言 ID 与
+过程量；故障现场可离线重放；新增 fatal 必须先登记台账否则 CI 红。**本轮不改任何断言逻辑与
+经济账本写入顺序**，只加诊断、复现与治理能力。
+
+### 关键量（本机实测，Windows + Godot 4.6.2 + MSVC，不是估计）
+
+| 指标 | 改动前 | 改动后 |
+| --- | --- | --- |
+| 现场可交付体积 | 40.6 MB `economy.pkec` × 131 份 / 1.07 GB | **1.6 KB** `.pkinc`（同一现场形状） |
+| 现场是否可知「哪次构建」 | 只能反推二进制里有没有某个字符串 | `build_id=<sha>+<utc>` 在 report/fatal_context/`.pkinc`/GM 面板 |
+| 现场是否可知「哪条断言」 | 裸字符串，无 ID、无台账 | `assert_id=INV-ECON-0042` + witness 对象 |
+| 离线复现 | 无入口 | `reproduced=true`、`diff=[]`；篡改 witness → `reproduced=false` 且 `diff` 点名字段 |
+| 400 天 soak（60×40） | ≈ 11 s/天（debug）⇒ 约 1.2 h | **34.6 s** |
+| 提交前核验 | 手工拼命令 | `.\tools\ci\verify.ps1 -Quick` → GREEN（16.6 s） |
+
+### R4.1 结论：快照「能写不能读」是**返回字典缺键**，不是 PKEC header 缺段
+
+这份结论否掉了计划里 H1/H2/H3 三个候选，改按「字段没被上报」处理：
+
+- `NativeEconomyRuntime::begin_save()` 的返回字典只有 `ok/chunk_bytes/schema_version/catalog_hash/committed_day`，
+  **从不返回** `generation` 与 `state_hash`；而 `runtime_forensics.gd` 读的是
+  `begun.get("state_hash", 0)` / `begun.get("generation", 0)`，于是恒为 0。
+- 同一份现场里 `country.pkcn` 是 `native_generation:1` / 非零哈希，正因为 `country_runtime_persistence.cpp`
+  的 `begin_save` 有 `out["state_hash"] = state_hash(); out["generation"] = _generation;`。
+- `restore_eligible` 在 C++ 里**整个仓库不存在**，是 `runtime_forensics.gd` 里硬编码的 `false`。
+- 快照本身是可恢复形态：`epoch_active:false`、`snapshot_boundary:"committed_boundary"`、
+  `economy.pkec ok:true schema:65`、42.5 MB 完整写出。PKEC 头里也确实有 `_committed_generation`
+  （写在 `SAVE_SECTION_CADENCE_STATE` footer）。
+- 唯一真实的缺口是 **Economy 自己的 `state_hash` 从来不存盘**（头里只有 catalog/environment/event/
+  prosperity/family 各 hash 与 Country 的配对 hash），所以该值只能在 `begin_save` 时实时算；
+  新增 `state_hash_source:"live_economy_state_hash"` 明说它不来自文件。恢复并不需要它
+  （恢复校验的是 Country 身份 + catalog hash + 形状/计数）。
+
+修完后 `begin_forensics_save()` 实测：`generation=2  state_hash=1283621631749218751
+restore_eligible=true  epoch_active=false`。
+
+### R1 断言台账与构建标识
+
+- `docs/runtime/invariants.json` 登记 **2731** 条 reason（`gdext/src` 351 个 `.cpp`，3323 处出现点）。
+  计划 §4.6 预估「150–300 条」低估了一个量级：那是 fatal 的量级，实际 error 字符串是 2731 条。
+  其中 `kind=fatal` 4 条已完成 witness/playbook（INV-ECON-0040/0041/0042、INV-SAVE-0001），
+  其余 2727 条先以 `kind=unknown` 入库，按模块分批补（ECON 882 / COUNTRY 469 / CORE 376 / EFFECT 299 /
+  CLIMATE 230 / MODIFIER 129 / SAVE 121 / MILITARY 113 / TRIGGER 107）。
+- `tools/ci/check_fault_taxonomy.py`：扫描 + `--strict/--json/--suggest/--bootstrap-missing/--write-doc/
+  --check-cpp-ids`；`--strict` 1.2 s 退出 0；未登记 reason 会打印 `文件:行` 并退出 1（负路径已验）。
+  `--write-doc` 幂等（两次 sha256 相同 + 解析模型重序列化与磁盘字节逐字节相等）。
+- 构建标识：SCons 生成 `gdext/src/pk_build_id_generated.h`（`<git short sha>+<UTC>`，无 git 退化
+  `nogit+<utc>`）。**没有**按计划字面给每个 TU 加 `-DPK_BUILD_ID`：那会让每个 object 的命令行
+  每次构建都变脏，空转的 scons 也要全量重编重链。实测两个在用 DLL 里都是
+  `e6b869a3a+20261119T140626Z`。另加不依赖任何 runtime 的 `DCWorldExt::get_build_id()`，
+  冷会话（经济尚未 bootstrap）也能问出构建号。
+- 三个 flat 键 `investment_row` / `construction_row` / `investment_legs` 原样保留，`assert_id` 与
+  `witness` 是新增键 —— 旧日志与旧 fixture 不受影响。
+
+### R2 事故包 `.pkinc`
+
+- 生产者 `scripts/game/incident_bundle.gd`（打包/裁剪/落盘）+ `scripts/game/incident_cell_slice.gd`
+  （场景切片采集）。拆两个文件是因为单文件顶到 size ratchet 的 800 行上限，而两者的改动理由不同
+  （采集要认识 facade，打包只认字典与字节）。
+- `runtime_forensics.gd` 在 economy fatal 观察点之后追加写包，路径与快照同源（`tmp/incidents/`，
+  移动端 `user://incidents/`），保留最近 10 份。
+- 实测：真跑 `capture_and_dump("economy_fatal")` 落盘 **1605 字节 / 7 成员**；
+  `python tools/ci/inspect_incident.py` 校验 6/6 成员 sha256 通过。改 1 字节 → 指出
+  `cell.json sha256 不符` 并 exit 2；删成员 → `缺成员 world.json` exit 2；类型违约 → `violated` exit 1。
+- 契约里**如实记 missing** 而非造数的项（`MANIFEST.notes`）：`commands.structural` / `commands.ledger`
+  （经济命令队列无公开查询）、`pending_construction` 的 `required_good/required_qty/stock`、
+  `hashes.economy_state_hash`（`economy_facade` 没包装该原生绑定，从 `scripts/game` 直调会触发
+  `check_script_native_access` 跨模块拦截）、`hashes.ledger_hash`、`world.formal_start`。
+
+### R3 离线重放 `--replay-incident`
+
+- `EconomyInvariantProbe::replay_incident(Dictionary)` + `DCWorldExt::economy_replay_incident`
+  （绑定在 `world_ext_bind_economy.cpp`，`native_binding_manifest.json` 664 methods）。
+- 入口 `tests/runtime/incident_replay.gd`：解包 → 逐成员 sha256 → 调绑定 → 单行
+  `[incident-replay/result]`；退出码 0 复现 / 1 未复现 / 2 包或环境问题。
+- 实测（真实 `.pkinc`，INV-ECON-0042）：`reproduced=true`、`diff=[]`、`witness_after` 与
+  `witness_before` 逐字段一致。反证：只把 `witness.json` 的 `owner_funds` 由 900 改成 900000
+  并重算 MANIFEST 使其包内自洽 → `reproduced=false`、
+  `diff=[{"field":"owner_funds","expected":900000,"actual":900}]`、exit 1。
+- **判据的一处窄化必须说明**：`building_construction_preflight_funds_drift` 下不比较
+  `first_good_id/first_required/first_stock` —— funds 分支结构性地只写 `-1/0/0`，那三个是 stock 分支
+  的证据字段，比较它们等于比较该分支从未计算的值。排除项写进 `uncompared` 键可审计，
+  `incident_replay.gd` 会把它一并透出；其余字段仍逐字段严格相等。
+- `--emit-fixture` 产出的两份 C++ 片段都过 MSVC `cl /Zs /EHsc /std:c++17 /utf-8`。
+- `INV-ECON-0040`（投资资金漂移）的重放是**尽力而为**：`.pkinc` 不记录 runtime slot id 与 family
+  成员关系，只能按 `cohorts[]` 顺序 + witness 值反解；若该腿已被前置 trim gate 抑制，会如实返回
+  `assert_fired=false` + `detail=assertion_no_longer_fires: …`，不会假绿。
+  `save_family_expedition_person_invalid` 直接返回 `assert_point_not_replayable`（需要 PKEC 恢复
+  路径与全量 person/family 表，`.pkinc` 按契约不带）。
+
+### R4 快照可加载
+
+- `generation`/`state_hash`/`restore_eligible` 如实上报；`runtime_forensics.gd` 不再硬编码
+  `restore_eligible=false`；**全量快照改为按需**（默认只写 `.pkinc`，`PK_FORENSICS_FULL=1`
+  或 GM 手动才写 PKEC）—— 这条直接关掉了「每次 fatal 一份 40 MB」的默认行为。
+  两条分支都实测过：默认 → `economic_snapshots={"skipped":true,"reason":"full_snapshot_disabled",
+  "enable":"PK_FORENSICS_FULL=1"}`；开关打开 → 真的进 `_dump_economic_snapshots`。
+- `--load-forensics`（`PK_FORENSICS_LOAD=1` + `PK_FORENSICS_DIR`）已能真正加载并推进一天。
+  实测（`PK_FORENSICS_SELFCHECK=1` 用生产写包接口现写 69.7 KB `country.pkcn` +
+  29.7 MB `economy.pkec`，再走本入口加载）：`restored_country=true`、`restored_economy=true`、
+  `economy_restore_path=pkec_stream`（pkec 分块流共 43 个 record）、`start_day=1 → end_day=2`、
+  `advanced_days=1`、`fatal=false`，账本 `population_error=0 / money_error=0 / goods_error=0`、
+  `audit_incomplete=false`；两次加载 `state_hash_stable=true`（country
+  `-5621575443963560309`、economy `29127171950644891` 两次完全一致）。只读约束：
+  `writes_saves=false`、`autosave_disabled=true`、全程不调 save、退出不写玩家槽位。
+- 打通它踩到的两个真因，下一个人别再踩：
+  1. `begin_country_restore` 的前置是 `economy->country_restore_allowed() = !_bootstrapped`，
+     而 `configure_economy()` 只置 `_configured` 不置 `_bootstrapped`。所以**不要用
+     `begin_new_game` 建世界**（gameplay start 会 bootstrap 经济），改成
+     「`DCWorldExt` + `configure_country` + `configure_economy`」的 configure-only 世界即可。
+     仓库里 `tests/economy/economy_cadence_runtime_test.gd` 等十几个测试本来就这么恢复 PKCN。
+  2. PKEC 流是**按 record 组帧**的（16 字节头 `magic/schema/section/records/payload_bytes`），
+     按固定 4 MiB 切块 feed 会拦腰截断 record 头 → `save_chunk_header_invalid`；
+     必须按 `16 + payload_bytes` 切分。
+- **旧批次快照（2026-11-18 day 2506）仍然拒收，原因是 catalog 漂移而非加载器缺陷**：
+  国家流在 `end_country_restore` 报 `country_restore_rejected:catalog_hash_mismatch`。该快照头
+  `schema=16` 与当前 `country::SCHEMA_VERSION=16` 相同，规模完全一致（goods 172 / professions 50 /
+  buildings 470 / technologies 433 / research_signals 227），但 `saved_catalog` 与当前
+  `catalog_hash()`（`-506376025623507606`）不同 —— 净数量不变说明是改名/重排而非增删。
+  这是 fail-closed 的设计，**不要**为读旧快照加 catalog 兼容白名单（会把「旧快照静默套到
+  catalog 已变的构建上」的风险带回来）。旧批次现场的正确用法是走 R3 的 `.pkinc` 重放
+  （不需要 catalog 逐字节一致）。
+
+### R5 无头复现提速
+
+- `tools/runtime/Use-GdextLibrary.ps1` 做 `.gdextension` 的 debug/release 映射切换，往返
+  hash `D8A99BBF…B045 → 8D22B653…4C4D → D8A99BBF…B045`（identical）、`git diff` 0 行；
+  `verify.ps1` 有防呆项守住「别把 release 映射提交进去」。
+- `Invoke-SaveReplay.ps1` 新增 `-UntilDay` / `-StopOnFault`(exit 2) / `-Bundle` / `-Release` / `-Json`，
+  顺带把一直声明但没实现的 `-TimeoutSeconds` 修好（PS 5.1 的 `Start-Process -PassThru` 拿不到
+  ExitCode，改用 `.NET Process` 抓双流）。
+- 新增 `tools/runtime/Invoke-Soak.ps1`（包装 `headless_perf_record.gd`，统一 `tmp/soak_<stamp>/` + `summary.json`）。
+- **修掉 `headless_perf_record.gd` 的 `rows == measured_samples` off-by-one**。根因不是端点差 1，
+  而是「样本写入点不受预算约束、主循环 break 检查在写之后」，且 `measured_samples` 来自
+  「主循环观测次数」而一次观测可覆盖多个 commit。改法：`_sample_budget_reached()` 在 4 个产行点
+  截断、`measured_samples` 改为实际写入行数、非 fatal 时 `expected_rows` 恒为 `days`
+  （比原来更严，authority=off 也不再走恒真比较）。前后：`rows=11 expected=10 exit 6` →
+  `rows=10 expected=10 PASS`；400 天 soak `rows=400/expected=400`。
+- 实测 400 天 soak（60×40）**34.6 s**（19.1 s 世界生成 + 9.3 s 仿真窗口），`fatal=false`、
+  `ledger_failures=0`。吞吐 45.2 days/s 未打到 50 的 checkpoint，按约定只记 warning。
+  目标「400 天 ≤ 10 分钟」达成（快 17 倍）。
+- 注：仍有一处吞吐 checkpoint 未达（45.2 < 50 days/s），以及 `climate_authority=off` 模式在本构建
+  里本就跑不出 commit（改前改后都失败，现在会明确报行数不符而不是靠恒真比较假绿）。
+
+### R6 CI 一键核验与产物治理
+
+- `tools/ci/verify.ps1` 唯一入口：`static` / `build` / `suites` / `soak` 四阶段，
+  `-Quick` 只跑 static，`-WithSoak` 才跑 soak，`-DryRun` 只规划，`-Strict` 把 known-red 也算失败。
+  退出码 0 全绿 / 1 失败 / 2 环境问题；写 `tmp/verify_<stamp>.json` + 人读摘要。
+  实测 `-Quick` → **GREEN exit=0（16.6 s）**。
+  **未完整跑通的阶段**：`suites` 一次全量尝试在跑到第 38/42 个测试（`family_effect_restore_forward_test`，
+  22:22）之后停滞，未能产出一份完整的 suites 汇总；`build` 阶段未通过 verify 跑（当时的增量构建由
+  C++ 改动方并行持有），但 debug 与 release 两个 target 都已单独构建到 0 错误。
+  这两条要在下一次全量核验里补齐，别的阶段都已留证。
+- 顺带发现一处**既有**的静默红：`tests/dots_completion/dots_completion_gate.gd` 的 `(d)` 两条
+  静态契约断言在源文件拆分之后失效了 —— 门禁读 `native_simulation_host.cpp` 找
+  `D7_TRANSACTION_MAGIC`/`"D7T1"`，但这两个标记已在 `native_simulation_host_journal.cpp`；
+  读 `world_runtime_host.gd` 找 `config["authoritative_domain_mask"] = ...`，但该赋值已搬到
+  `world_runtime_generation_adapter.gd`（且写法是 `host.runtime_authority_domain_mask`）。
+  与本计划无关（本计划没动这三处），但既然发现了就记在这里，下一次动那两个文件的人顺手修。
+- 沿用仓库既有惯例（`Invoke-RuntimeTests.ps1` 的 `$knownRed`）设 `known-red` 机制，只装
+  **HEAD 既有、与本计划无关**的漂移：`check_cpp_deps.py`（6 条依赖边，点到的文件与 baseline 均
+  未在本轮改动）与 `check_size_ratchet.py`（18 条，渲染/UI/geography 等）。人读摘要里单列原因。
+- 本轮新增代码引入的 4 处 size ratchet 超限，按仓库惯例在**同一次改动里刷新 reviewed baseline**
+  （`world_runtime_gm_adapter_part1.gd` 961→972、`economy_runtime.h` 2352→2365、
+  `economy_runtime_diagnostics.cpp` 2975→3073、`economy_runtime_persistence.cpp` 2035→2042）。
+- `check_large_blobs.py`：暂存区单文件 > 5 MB 失败（`git cat-file -s :<path>` 取索引体积），
+  白名单按目录放行既有入库大文件，并明确「本项目不使用 Git LFS」。实测 6 MB 假文件 exit 1。
+- `prune_tmp.ps1`：保留「最新 N 份 ∩ 最近 D 天」。实测 `-DryRun` 列出 `132 dir(s) → delete 112,
+  975.36 MB`。
+- **修掉两个 Windows 上必崩的既有工具**：`check_module_contracts.py` 与 `check_cpp_deps.py`
+  读源码时没指定编码，中文 Windows 的 GBK 默认编码解 UTF-8 源码直接 `UnicodeDecodeError`。
+  补 `encoding="utf-8"` 后都能跑到 0 violations / 只剩既有依赖漂移。这条正是计划 §9.2
+  「23 个脚本的 Windows 适配清单」要发现的东西：实际是 33 个 `.py`，其中 **15 个需要本机适配**。
+  清单写进 `docs/build-from-source.md` 的「Windows 单机核验」一节。
+
+### 未达成与原因（下一轮直接从这里接）
+
+1. **台账分类**：2727 条 `kind=unknown` 待分批补 `kind/stage/witness/playbook`（计划给两周窗口）。
+2. **`INV-ECON-0040` 精确重放**：`.pkinc` 不记录 runtime slot id 与 family 成员关系，只能按
+   `cohorts[]` 顺序 + witness 值反解；要精确重放得给 `cell.json` 扩 slot/family 列，属 schema v2 议题。
+3. **`.pkinc` 的四个 missing 字段**：`commands.structural/ledger`、`economy_state_hash`、
+   `ledger_hash` 需要各模块 facade 加薄包装（`scripts/game` 直调别模块原生绑定会被
+   `check_script_native_access` 拦），属模块归属问题，不在本轮。
+4. **旧批次全量快照不可加载**：catalog 漂移导致 `catalog_hash_mismatch`，见上。这是 fail-closed
+   的正确行为；旧现场请走 `.pkinc` 重放。
+5. **release 相对 debug 的提速没兑现计划预期**：400 天 soak 的耗时主要在世界生成（19 s）与
+   harness 开销，release 只把仿真窗口从 9.3 s 压到 8.3 s（`authoritative_days_per_second` 45.2 → 50.3）。
+   计划 §8.2-A 想要的「5–20×」要到「靠存档跳过世界生成」的回放路径上才显出来。
+6. **`check_cpp_deps.py` 与 `check_size_ratchet.py` 仍是 known-red**：都是 HEAD 既有的漂移
+   （依赖边 6 条 / 18 个超限文件，全部落在本计划没碰的文件上）。`-Strict` 下判失败。
+
+### 一轮核验暴露的既有红：`runtime_country_parity_test`（2026-11-19 诊断，未修）
+
+把全量 suites 跑完（首次真正跑完，41 个测试 640 s）之后，唯一红的是
+`tests/runtime/runtime_country_parity_test.gd`：`33 checks, 5 failures`，稳定复现（6 次运行逐字一致，
+只有计时计数抖动 → 不是负载竞态）。**与本轮故障基建改动无关**，证据：运行 DLL 的
+`build_id=e6b869a3a+20261119T140626Z` 对得上工作区；`gdext/src` 里只改了 8 个 economy 侧文件，
+`runtime_climate_*` / `native_simulation_day_shadow.cpp` / `runtime_country_pod.cpp` / `country_*` /
+`native_simulation_host_worker.cpp` 全部未改（最后一次触碰是 `3ac23d64c`，11-17）；
+经济→国家的唯一通道 TP 库存已被 `country_goods` 相等排除。**证据等级是推断（强），没做二进制 A/B**
+（目录里现成的旧 DLL 早于 `world_ext` 的握手方法表，用它 A/B 会因握手失败而混淆结论）。
+
+5 个失败只有 **2 条根因**（用 `PK_COUNTRY_SOAK_DAYS=2` 让 `budget=8` 走不到 tick 14 即可分离：
+F1/F4 变绿、F2/F3/F5 照旧红）：
+
+**RC-1 业务状态分叉** → F2/F3/F5。`first_mismatch_day=2`，字段 `research_deferred_points`（int64 lane）。
+比较器在它之前已比过 `country_cash`/`country_goods`/队列/队长/权重/自动采购/已得+待激活科技/研究信号，
+全相等；两侧公式文字也相同，所以只剩三种可能：**POD 科技激活路径没有像参考那样把这笔 deferred 清零**
+（`country_runtime_research.cpp:915` 有清零，`runtime_country_pod.cpp` 全文没有处置 0）、
+lane 形状不同（空 vector vs `{0,0}` 被 `operator!=` 判不等）、或 Modifier 派生的
+`research_efficiency/cost_factor`（不在比较表里）不同。
+
+**RC-2 worker 日死锁** → F1/F4。tick=14 的 graph token 恒 `status==3`、`pinned=country,effect`，
+两条互锁：① worker 日卡在 11 且 `preflight_ok=0`，而 spurious-preflight 逃生分支要求
+`_requested_authority_mask != 0`，纯 SHADOW host 不请求 ACTIVE 域 → 永远走不进去；
+② `effect_pending` 永久 latch —— SHADOW 日执行里 Effect 是唯一不受 `climate_ok` 门控的域阶段，
+整天 commit 前就推进 POD 日，而 SHADOW 路径没有 ACTIVE 路径那条 `day<=committed` soft-skip
+（`native_simulation_stage_effect.cpp:44-47` 的注释写死了「再规划会死在 effect_pod_day_not_sequential
+并永久 pin 0xFFF」）。`stall=climate_capacity@-1` 是派生位不是原因（该位从不 `note_day_stall`，
+所以 `day_stall_day` 恒 -1，没法用它定位是哪天）。
+另外 `test:331` 的 400 pulse 与设计里 `RUNTIME_GRAPH_STALL_RELEASE_PULSES=1200` 不一致，
+**harness 永远看不到设计里的自锁放行** —— 这属测试假设过期，不是断言过严。
+
+**顺带两条气候侧观察**（不单独成红，但同属既有问题）：day 3 起天气场整片偏移
+（`vapor oob=502/600`、`instability 377/600`，相对差约 7%），`plant_available_water` 只是字段表里
+最靠前的受害者；`terrain[0] ref=20 worker=0` 是 **worker 没写回海冰翻转**（20 = `SEA_ICE`），
+不是默认值 —— 同日冰分数逐 bit 相等、只有当天新翻的冰带错（`oob=60/600`），指向
+`si_apply_terrain_flips` 这个门（C++ 默认 false，GDScript 置 true）在 round 里没被打开。
+
+**挡住结案的诊断缺口**：`native_simulation_host_country_boundary.cpp` 的 `record_country_parity_locked`
+只记字段名、不记两侧值，所以上面 RC-1 的三种可能没法一眼排除。建议对齐
+`runtime_climate_parity_first_difference` 的做法，记 `reference_bits/worker_bits`（向量记 size + 首个差异项）。
+另 `test:388` 的「compared worker hash 非零」因未比较的 publish 也写 hash 而恒真，无区分力。
+
+完整证据与 6 份日志在 `tmp/parity_diag/DIAGNOSIS.md`（`tmp/` 会被轮转清掉，结论已固化在本节）。
+
+## 地图悬停展板与地名 LOD（2026-11-20）
+
+地图界面补齐四件事，都是显示层，不碰模拟与存档字段：地块地名纸签、左侧市价/民情展板、
+聚落地名常驻与 LOD、以及悬停期间的统一指针语义。
+
+**1. 地名层改成保留式 + 三档视觉。** `scripts/rendering/settlement_label_layer.gd` 原来每次
+相机移动都整层重排、且固定 176×24 的碰撞矩形；现在按「第 N 名 → 第 N 槽」分配槽位，
+同格同槽不重播淡入，只有进出视野/换档才淡入淡出。视觉三档：首都 = 纸签 + 火漆印
+（`decoration.wax_seal`）+ 朱红字，繁荣等级 ≥5 = 纸签 + 墨字，其余 = 描边米色字。
+碰撞矩形改成按实际字宽计算，远档能多留几个大城。
+
+**2. LOD 从等级阈值改成「等级阈值 + 屏幕预算 + 首都豁免」。** 阈值沿用原有四档
+（<0.45 → 5、<0.75 → 4、<1.2 → 3、其余 2，测试锁定未改），另加远/中/近/贴脸
+14/26/44/72 枚的屏幕预算，首都用 `CAPITAL_BONUS` 直接越过筛选。首都是政治事实、
+日内不变，所以在 `refresh_country_visuals` 里从
+`country_facade.snapshot(handle)["capital_cell"]` 推一次，不进每帧路径。
+顺带修掉一个真 bug：环向地图的 ±period 拷贝会让同一聚落同时画两份同名纸签；
+现在只取离相机最近的一份拷贝（最近的都出屏，其余只会更远）。
+
+**3. 悬停纸签。** `set_hover_cell(cell)` 由悬停卡驱动，纸签在地块上方 16px 处升起 7px 淡入
+（`_hover_rise_px` 单独存一份再叠加，动画期间新目标位置不会被每帧覆盖），悬停格自己的
+常驻标签同时让位，避免同一句地名出现两次。
+
+**4. 左侧展板。** 新增 `scripts/ui/cell_board_view_model.gd`（数据）与
+`scripts/ui/components/cell_board.gd` + `scenes/ui/cell_board.tscn`（呈现）。
+市价表一次线性扫描选出需求最大/本地供给最大/价格最高/价格最低/缺口最大五类物资，
+每个角色只在「还没被选走」的物资里挑，所以不会重复；未解锁物资与本地尚无价格的物资
+不参与。民情表按当地影响力取前五，口径与理念系统一致
+（`population + owner_employed × 2 + funds / 1000000`，与 `IdeologyProfile` 默认值同源，
+拿到配置后可用 `set_influence_weights()` 覆盖）。组织度按职业读
+`cell_mobilization_snapshot`，缺失时该格留空轨道而不是伪造 0%。
+两者都只读原生已发布快照，按 `cell:day` 缓存，且只在指针停稳 300ms 后才查
+（原生 read-view 只有 128 条订阅位，逐格 hover 直接查会把它打满）。
+
+**指针语义只有一处。** `CellHoverCard` 新增 `hover_cell_changed(cell_index)`（-1 = 无），
+只在真的换格时发；地名层与展板都订阅它，不再各自解析指针或复判可见性/迷雾/滚轮。
+
+**验证**（本轮实际运行）：
+
+- `godot --headless --editor --quit` → 0 个 `Parse Error` / `Failed to load script` / `SCRIPT ERROR`。
+- `tests/country/settlement_label_layer_test.gd` 5 checks / 0 failures（原有 5 条断言一字未改）。
+- `tests/ui/cell_board_test.gd` 39 checks / 0 failures（新增：五类物资选择与去重、未解锁过滤、
+  影响力排序、组织度缺失、read-view pending 契约、三段压缩、LOD 档位、首都豁免、悬停纸签、
+  卡片避开展板）。
+- `tests/ui/cell_hover_card_test.gd`、`tests/ui/cell_hover_view_model_test.gd` 通过。
+- `tests/ui/cell_board_screenshot_qa.gd`（带渲染）在 1600×900 与 1280×720 各出两张图：
+  纸签层级、火漆印位置、展板列宽与纸边留白已按截图返工三轮（首轮价格列被纸毛边切掉、
+  正文字号 9px 糊成墨点、火漆印挂在纸签外侧）。
+
+**未覆盖**：本轮没有跑起来真实世界会话，所以「真实经济负载下 read-view 订阅是否被
+逐格 hover 打满」「自动生成的聚落名在纸签上的折行表现」只有推理没有实测；截图探针用的是
+构造数据。`tests/ui/ui_scene_structure_test.gd` 有 10 条失败来自 `touch_number_pad.gd`
+（已提交文件未加入该测试的 `SCRIPT_EXCLUSIONS`），与本次改动无关，未顺带修改。

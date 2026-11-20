@@ -262,6 +262,11 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     out["schema_version"] = SCHEMA_VERSION;
     out["catalog_hash"] = _catalog_hash.get();
     out["committed_day"] = _last_committed_day.get();
+    // R4-2: generation / state_hash / restore_eligible. Without them the fatal
+    // snapshot manifest recorded native_generation=0 and native_state_hash=0 for
+    // a 42 MB archive that was in fact written at a committed boundary, while the
+    // paired country.pkcn recorded generation=1 and a real hash.
+    write_save_identity_report(out);
     return out;
 }
 

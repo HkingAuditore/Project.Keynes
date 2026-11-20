@@ -1265,7 +1265,7 @@ func _layout_top_bar() -> void:
 ## 最后一个只靠 .tscn 烘焙 anchor+offset、却没有任何运行期重新结算的 HUD 节点。
 ## Web 上已经证明这类节点拿不到声明式布局：PlayerTopBar / RightPanel 之前就是同一
 ## 症状，后来靠运行期兜底修好；工具条漏在外面，于是它的 rect 落成默认的 (0,0)，
-## PrimaryPanel 被摆到屏幕左上角，正好盖住顶栏左侧的日历图标和"第N年"纸框
+## PrimaryPanel 被摆到屏幕左上角，正好盖住顶栏左侧的日历图标和日期纸框
 ## （截图里的"图标和日历重合"）。
 ##
 ## 这里和顶栏/详情面板走完全相同的路径：取实时值 → set_anchors_preset → 写

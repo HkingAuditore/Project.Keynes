@@ -202,7 +202,7 @@ func _check_cashflow() -> void:
 	_expect("cashflow formats the signed net", String(flow.net_text) == "+61"
 		and bool(flow.net_positive))
 	_expect("cashflow day text follows the settlement sample day",
-		String(flow.day_text) == "第 42 日")
+		String(flow.day_text) == "1年2月11日")
 	var income_segments: Array = flow.income_segments
 	var expense_segments: Array = flow.expense_segments
 	_expect("cashflow stacks only the levied tax kinds, largest first",

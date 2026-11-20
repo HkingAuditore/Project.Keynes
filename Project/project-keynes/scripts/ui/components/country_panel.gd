@@ -423,7 +423,7 @@ func _country_summary_line() -> String:
 	if technologies > 0:
 		parts.append("科技 %d" % technologies)
 	if day >= 0:
-		parts.append("第 %d 日" % day)
+		parts.append(WorldClock.date_text_for_day(day))
 	return " · ".join(parts)
 
 
