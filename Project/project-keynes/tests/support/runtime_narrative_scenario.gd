@@ -22,7 +22,7 @@ func _start_story(archive: Dictionary, event_ids: Array = [], config: NewGameCon
 	story_host.runtime_economy_auto_pod_active = true
 	root.add_child(story_host)
 	story_host.configure(null, null, story_clock)
-	story_host.set_climate_authority_override("force_on")
+
 	archive = archive.duplicate(true)
 	if not archive.has("event_pause_mask"):
 		archive["event_pause_mask"] = 255

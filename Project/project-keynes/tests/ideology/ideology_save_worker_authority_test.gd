@@ -1147,10 +1147,16 @@ func _run_main_thread_negative_control(captured: Dictionary) -> void:
 				int(layer_restored["basis_eligible_day"]),
 				int((captured["state"] as Dictionary)["basis_confirmed_day"]),
 				int((captured["state"] as Dictionary)["basis_eligible_day"])])
-	# A main-thread day: `run_ideology_daily` is NOT suppressed here, so it settles on the
-	# main thread and must leave the restored rows alone (nothing to equip, nothing to
-	# promote). This is the leg that would break if the import had become a second writer.
-	_drive_day(w)
+	# Exercise the native standalone decoder's first step without starting a
+	# second world scheduler. The restored rows have no staged card changes.
+	var ideology: Dictionary = {}
+	for _slice in range(MAX_SLICES_PER_DAY):
+		ideology = ext.run_ideology_daily(1)
+		if not bool(ideology.get("ok", false)) or bool(ideology.get("done", false)):
+			break
+	w["tick"] = 1
+	w["last_ideology"] = ideology
+	w["last_suppressed"] = bool(ideology.get("suppressed", false))
 	var rows_after_day := _idea_rows(ext, handle)
 	var layer_after_day := _layer_state(ext)
 	print("[NC/MAIN] after one main-thread day %d: rows=%s confirmed/eligible=%d/%d "
@@ -1163,6 +1169,7 @@ func _run_main_thread_negative_control(captured: Dictionary) -> void:
 	_expect("NC/MAIN[3/3]: one real main-thread ideology day leaves the restored rows "
 		+ "and dates alone, and the day RAN on the main thread (not suppressed)",
 		rows_after_day == rows_restored
+			and bool(ideology.get("ok", false)) and bool(ideology.get("done", false))
 			and int(layer_after_day["basis_confirmed_day"])
 				== int(layer_restored["basis_confirmed_day"])
 			and not bool(w["last_suppressed"]),
@@ -1486,16 +1493,12 @@ func _build_world(spec: Dictionary, worker: bool) -> Dictionary:
 	host.initial_seed = seed
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = bool(spec.get("authority", false))
-	host.runtime_shadow_on_generate = bool(spec.get("shadow_on_generate", true))
+	host.start_executor_on_generate = bool(spec.get("shadow_on_generate", true))
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = int(spec.get("mask", MASK_WORKER_IDEOLOGY))
 	host.runtime_parity_forcing = bool(spec.get("parity_forcing", false))
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	if bool(spec.get("authority", false)):
-		host.set_climate_authority_override("force_on")
 	var config := NewGameConfig.create_default()
 	config.country.name = "W %s" % name
 	config.country.foreign_count = int(spec.get("foreign_count", 1))
@@ -1592,58 +1595,8 @@ func _drive_day(w: Dictionary) -> Dictionary:
 				% [String(w["name"]), fault, int(w["tick"])]
 				+ "remaining days are not driven and what was measured is reported")
 		return {"ok": false, "fault": fault}
-	if bool(w.get("executor", false)):
-		return _drive_executor_day(w, ext, host, clock)
-	w["tick"] = int(w["tick"]) + 1
-	var day := int(w["tick"])
-	clock.current_day = float(day)
-	_service_peers(ext)
-	# As each production frame does: consume the committed day, which also
-	# reports the main-thread day tail the worker waits for (main_day_tail_gate).
-	host._consume_runtime_commit_if_ready()
-	if ext.has_method("publish_ideology_worker_inputs"):
-		ext.publish_ideology_worker_inputs()
-	host.run_daily_tick(day, clock.season_phase_for_day(day))
-	host.finish_daily_tick(0.0, {})
-	# Production settle handshake only on the main-thread side; under worker authority
-	# the worker's own graph owns it and a second handshake here would double-apply.
-	var ideology: Dictionary = {}
-	var slices := 0
-	for _slice in range(MAX_SLICES_PER_DAY):
-		slices += 1
-		ideology = ext.run_ideology_daily(day)
-		if not bool(ideology.get("ok", true)):
-			break
-		if bool(ideology.get("suppressed", false)):
-			break
-		if bool(ideology.get("done", false)):
-			break
-	w["last_ideology"] = ideology
-	w["last_suppressed"] = bool(ideology.get("suppressed", false))
-	w["slices"] = int(w.get("slices", 0)) + slices
-	if not bool(ideology.get("suppressed", false)):
-		for _slice in range(16):
-			var effect_slice: Dictionary = ext.run_effect_daily(day)
-			w["last_effect"] = effect_slice
-			if not bool(effect_slice.get("ok", true)):
-				break
-			if bool(effect_slice.get("done", true)):
-				break
-		ext.dispatch_effect_native_modifier()
-		ext.run_modifier_daily(day)
-		ext.ack_effect_native_modifier()
-	if bool(ideology.get("suppressed", false)):
-		# Waiting for the worker does not apply its snapshot to the main-thread
-		# mirror. Service the same production handoff that runs each UI frame,
-		# including one final pass after the committed day releases its lock.
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_await_pod_day(w, before, _pod_wait_ms)
-		host._service_runtime_liveness(Time.get_ticks_usec(), false)
-	var drained: Dictionary = ext.drain_derived_cell_layer(day)
-	_record_day(w, day, {}, drained)
-	return {"ok": true, "day": day, "slices": slices, "drained": drained,
-		"suppressed": bool(ideology.get("suppressed", false))}
+	assert(bool(w.get("executor", false)), "only executor worlds advance days")
+	return _drive_executor_day(w, ext, host, clock)
 
 
 func _drive_executor_day(w: Dictionary, ext: Object, host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
@@ -1655,7 +1608,7 @@ func _drive_executor_day(w: Dictionary, ext: Object, host: WorldRuntimeHost, clo
 	w["last_suppressed"] = bool(probe.get("suppressed", false))
 	w["last_ideology"] = probe
 	clock.current_day = float(day + 1)
-	host._on_clock_day_changed(day + 1)
+	host._admit_runtime_calendar(day + 1)
 	var deadline := Time.get_ticks_msec() + _pod_wait_ms
 	while Time.get_ticks_msec() < deadline:
 		host._process(0.0)
@@ -1739,7 +1692,7 @@ func _await_pod_day(w: Dictionary, before: int, timeout_ms: int) -> int:
 	while Time.get_ticks_msec() < deadline:
 		# This fixture drives days synchronously, so _process cannot perform the
 		# normal input/peer/snapshot work while this wait is on the call stack.
-		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec(), false)
+		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec())
 		var report: Dictionary = ext.get_runtime_thread_report()
 		day = int(report.get("ideology_pod_committed_day", -1))
 		if day > before:

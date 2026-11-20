@@ -49,8 +49,6 @@ func _run() -> void:
 	_test_compact_fallback()
 	_test_derived_player_controller_segment()
 	_test_host_gate_follows_clock()
-	_test_day_advance_claim()
-	_test_daily_tick_executors_are_scene_exclusive()
 	_finish()
 
 
@@ -205,41 +203,6 @@ func _test_host_gate_follows_clock() -> void:
 	clock.free()
 
 
-# ─── 8. 单日单推进声明 ───────────────────────────────────────────────────
-
-func _test_day_advance_claim() -> void:
-	var clock = WorldClockScript.new()
-	_expect("首个执行者拿到当天声明", clock.claim_day_advance(&"native_inline", 5))
-	_expect("同一 day 的第二个人拿不到", not clock.claim_day_advance(&"main_sus", 5))
-	_expect("声明所有者仍是第一个执行者", clock.day_advance_owner() == &"native_inline")
-	_expect("撞车计数 = 1", clock.day_advance_duplicate_count() == 1)
-	_expect("跨日后重新开放", clock.claim_day_advance(&"main_sus", 6))
-	_expect("跨日后所有者更新", clock.day_advance_owner() == &"main_sus")
-	clock.free()
-
-
-# ─── 9. 日级执行者在场景上是互斥的（根因证据）────────────────────────────
-
-func _test_daily_tick_executors_are_scene_exclusive() -> void:
-	# 生产玩家场景只有 WorldRuntimeHost（+ PlayerController），调试场景只有
-	# main.gd。两者不可能同时监听同一个 WorldClock —— 这是"sus_tick_daily 被调
-	# 两次"这一假设不成立的根因，锁成测试以免将来被静默改坏。
-	var player_scene := FileAccess.get_file_as_string("res://scenes/player_game.tscn")
-	var main_scene := FileAccess.get_file_as_string("res://scenes/main.tscn")
-	_expect("player_game.tscn 存在", not player_scene.is_empty())
-	_expect("main.tscn 存在", not main_scene.is_empty())
-	_expect("player_game.tscn 有 RuntimeHost 节点", player_scene.contains("[node name=\"RuntimeHost\""))
-	_expect("main.tscn 没有 RuntimeHost 节点", not main_scene.contains("RuntimeHost"))
-	_expect("player_game.tscn 不挂 main.gd", not player_scene.contains("main.gd"))
-	_expect("main.tscn 挂的是 main.gd", main_scene.contains("res://scripts/main.gd"))
-	# 生产入口只能是 player_game.tscn：GameFlowService 的 PLAYER_GAME_SCENE。
-	var flow_src := FileAccess.get_file_as_string("res://scripts/game/game_flow_service.gd")
-	_expect("GameFlow 只加载 player_game.tscn",
-		flow_src.contains("PLAYER_GAME_SCENE := \"res://scenes/player_game.tscn\""))
-
-
-# ─── 工具 ────────────────────────────────────────────────────────────────
-## 一个不在场景树里的 WorldClock：_ready 不跑，所以探针开关与 RNG 显式给。
 func _make_clock(start_day: int) -> WorldClock:
 	var clock := WorldClock.new()
 	clock.day_cost_probe_on = true

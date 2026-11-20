@@ -275,40 +275,6 @@ func finalize_save_restore_runtime() -> Dictionary:
 	return {"ok": true}
 
 
-func advance_save_boundary() -> void:
-	# Save requests freeze the clock.  Drain the same ordered native Effect
-	# chain that a normal daily SUS tick would run before continuing Country and
-	# Economy at their own safe boundaries.  This keeps PKEF, PKCN, PKEC and the
-	# gameplay journal from being captured on opposite sides of an ACK.
-	if _generator._world_clock_ref == null or _generator._sus == null:
-		return
-	var day: int = _generator._world_clock_ref.day_index()
-	var ctx := SusTickContext.make(day, day, _generator._world_clock_ref.season_phase(),
-		_generator._world_clock_ref.speed_multiplier, &"save_boundary")
-	_generator._drain_native_effect_ack_chain(ctx)
-	# country 是存档边界里唯一没有"推进者"的域：时钟已 pause，而
-	# _continue_economy_inflight() 的 runtime-graph 分支被
-	# needs_continuation_pulse() 挡住（暂停期间没人举 barrier），于是
-	# country_should_run(day) 只能一直为真，_wait_for_safe_boundary() 空转到
-	# 停顿上限失败（web 90 帧 → "保存不了"）。这里按 country 当前的 owner 补推：
-	#   * runtime graph 拥有 country -> 直接 pulse 一次（与正常帧同一条链路）；
-	#   * GDScript country_daily 拥有 country -> continue_system 切片。
-	# 两者都幂等：country 已经空闲时循环一次都不会进。
-	if _generator._runtime_graph_active and _generator._data_core_world_ext != null :
-		if not _generator.native_daily_round_active() and not _generator.bio_occupancy_round_active():
-			_generator._advance_runtime_graph_pulse(day)
-	elif _generator._country_daily_job != null and _generator._country_facade != null \
-			and _generator._country_facade.should_run(day):
-		var country_slices := 0
-		while country_slices < _generator.SAVE_BOUNDARY_COUNTRY_MAX_SLICES \
-				and _generator._country_facade.should_run(day):
-			_generator._sus.continue_system(&"country_daily", ctx)
-			country_slices += 1
-			# Country 会注册新的 Effect 命令；不接着排 ACK 链的话
-			# country_should_run 会因为"等 ACK"保持为真。
-			_generator._drain_native_effect_ack_chain(ctx)
-	_generator._continue_economy_inflight(day)
-
 func _ensure_continuation_perf_pending() -> void:
 	if not _generator._continuation_perf_pending.is_empty():
 		return
@@ -1067,8 +1033,7 @@ func _bind_cell_facade_with_cids(cell: Object, facade_on: bool,
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_generator._sus_map = map
 	_generator._sus_world = world
-	# 生成收尾即刻建立散布同步基线：此后任何 tick 级写入（含 season-0 reconcile、
-	# 海冰、veg_dyn）都会在 finish_daily_tick 被 diff 捕获并补发散布刷新。
+	# 生成收尾建立散布同步基线，供显示侧比较已发布的地块变化。
 	_generator._loading_profile_step("scatter_snapshot")
 	_generator._prime_scatter_sync_snapshot(map)
 	await _generator._yield_generation_frame()
@@ -1707,10 +1672,6 @@ func set_world_clock_ref(world_clock_node) -> void:
 		_generator._economy_daily_job.world_clock = _generator._world_clock_ref
 	if _generator._bio_occupancy_daily_job != null:
 		_generator._bio_occupancy_daily_job.world_clock = _generator._world_clock_ref
-	if _generator._world_clock_ref.has_signal("simulation_backpressure_pulse"):
-		var continuation_cb := Callable(_generator, "_continue_economy_inflight")
-		if not _generator._world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
-			_generator._world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
 	if _generator._ocean_currents_job != null:
 		_generator._ocean_currents_job.season_phase_getter = Callable(_generator._world_clock_ref, "season_phase")
 	# 任务 8：把 world_clock getter 注入给气候 / 天气 Job。

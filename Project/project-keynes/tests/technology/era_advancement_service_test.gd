@@ -119,7 +119,7 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				_expect("the executor stopped at the committed day", stopped.get("ok") == true)
 				_expect("the saved purchase is staged while the executor is stopped",
 					_advance.stage_restore(paused).get("ok") == true)
-				host._start_production_shadow_worker()
+				host._start_runtime_executor()
 				_expect("reading the restored player section keeps the order", _advance.preview().status == "paused"
 					and _advance.to_save().required_quantities == frozen)
 				_expect("resuming queues the same order", bool((await _advancement_result(host, "resume", PURCHASE_DAY)).get("ok", false))

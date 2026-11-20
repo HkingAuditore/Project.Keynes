@@ -505,13 +505,6 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 				print("[save] boundary wait frame=%d code=%s condition=%s detail=%s" % [
 					frame, code, String(boundary.get("blocking_condition", "")),
 					JSON.stringify(_boundary_diagnostics())])
-		if String(boundary.get("blocking_condition", "")) == "day_tail_pending":
-			# Complete the committed day even if the host's frame callback is suspended.
-			_runtime_host._consume_runtime_commit_if_ready()
-		elif not _runtime_host._native_environment_active and frame % 2 == 0:
-			var generator := _runtime_host.generator()
-			if generator != null and generator.has_method("advance_save_boundary"):
-				generator.advance_save_boundary()
 		await get_tree().process_frame
 	if not _session_active(generation):
 		return _session_cancelled()
@@ -681,9 +674,6 @@ func _worker_idle_blocker(thread: Dictionary) -> String:
 		return "inline_day_pending" if bool(thread.get("inline_day_pending", false)) else ""
 	if host_state in ["STARTING", "RUNNING", "SAVE_PENDING"]:
 		return "state_%s" % host_state.to_lower()
-	if not _runtime_host._native_environment_active and host_state != "STOPPED" \
-			and int(thread.get("environment_ring_pending", 0)) > 0:
-		return "environment_ring_pending"
 	if int(thread.get("worker_day_inflight", 0)) > 0:
 		return "worker_day_inflight"
 	return ""

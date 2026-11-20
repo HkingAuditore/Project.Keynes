@@ -88,57 +88,15 @@ var test_economy_population_scale: int = 0
 @export var ocean_current_visual_enabled: bool = true
 @export var sea_ice_atlas_enabled: bool = false
 @export var mobile_terrain_horizon_enabled: bool = false
-## Web-only escape hatch. Export/runtime property works without browser environment variables.
-@export var runtime_web_allow_gdscript_daily_fallback: bool = false
-## 生成/读档完成后在生产路径启动 SHADOW worker。探针可先打开
-## runtime_parity_forcing，再让这里启动，避免二次 start 被热切换拒绝。
-var runtime_shadow_on_generate: bool = true
+## Diagnostic worlds can prepare their data without starting a runtime.
+var start_executor_on_generate: bool = true
 var runtime_parity_forcing: bool = false
 ## Events POD remains an opt-in probe in Stage I. It mirrors the legacy journal
 ## and never becomes part of the ACTIVE authority mask.
 var runtime_events_probe_enabled: bool = false
-## Forwarded into start_runtime_worker. Default ACTIVE_ONLY (SHADOW StageOps = 0).
-var runtime_economy_execution_mode: String = "ACTIVE_ONLY"
-## Keep auto POD_ACTIVE off for player sessions until Effect ACK under worker
-## ownership no longer pins country/economy day barriers.
+## Economy can promote its committed mirror after the initial complete day.
 var runtime_economy_auto_pod_active: bool = true
-## 把 Climate 域交给 worker 当权威（per-domain ACTIVE），其余十一个域留在主线程。
-## 打开后 dispatch_system_schedule 一次性抑制 14 个 climate 节点，MapData 由
-## _consume_runtime_commit_if_ready 里的回灌写。
-##
-## 这是运行时可回退的开关：关掉它并重启 worker 即回到同步路径，主线程重新算
-## climate。回退不需要重新生成世界——回灌一直把 worker 状态刷进 MapData，
-## slot 与 MapData 在抑制期间保持同步。
-##
-## 生产默认【开】。抑制面覆盖 native daily slice 图里的 14 个 climate 节点，
-## SeasonRefreshSystem 仍留在主线程（它是 SUS 里按 period_ticks 自驱的独立
-## system，不在那张图里，而且它是地理级重算，本就该是主线程权威）。
-##
-## 后台负责气候时，下一天的输入等上一天气候写回 MapData 后再采集。
-## 在同一日期完成到期的季节刷新。不同地图规模的写回开销见
-## docs/architecture/migration.md 第 38 节及 docs/architecture/feature-status.md。
-var runtime_climate_authority_enabled: bool = true
-## Domains requested for worker authority. Capability default remains the full
-## Production request mask. Default is the full twelve-domain graph (0xFFF).
-## Player sessions use the same mask so Trigger/Effect/Economy leave the main
-## thread; 0x806 remains available for focused Climate|Country|COMMIT soaks.
-@export var runtime_authority_domain_mask: int = 0xFFF
-## native_daily_inline：单线程内联日。
-##
-## Web/wasm 上没有可用的 worker 线程。实测证据（浏览器 diag）：
-##   fault_code = day_wait_peer_stall_timeout
-##   simulation_thread_mode = OFF（requested = ACTIVE）
-##   required_domain_mask = 4095 / implemented = 4095 / missing = 0
-## 也就是说 ACTIVE 会被 per-domain 门降级成 OFF；而 Country 域的日屏障本来就是
-## "等主线程把 CountryPeerIntent 泵进 Effect/Economy 再回传 result"，浏览器里
-## 那条泵链不跑，worker 线程一旦起来就只会等到 5s 超时 → FAULTED → 日历冻结。
-##
-## 打开后 host 不再 spawn 线程，12 域日屏障由主线程逐日串行执行
-## （DCWorldExt.run_native_daily_inline_day）；缺 peer 时当场把 Country peer
-## 适配器推一轮再重试同一天，而不是在条件变量上等另一个线程。
-##
-## 桌面端默认不开：浏览器里(OS.has_feature("web"))才生效；桌面/headless 想验证
-## 这条路径要显式给 PK_NATIVE_DAILY_INLINE=1（A/B 用）。
+## Threadless Web executes the native graph on the calling thread.
 @export var runtime_native_daily_inline: bool = true
 ## Web can request the background executor instead of running it inline.
 @export var runtime_web_worker: bool = false
@@ -151,8 +109,8 @@ var _web_worker_start_ok: bool = false
 ## 互斥，一旦"worker 要了却起不来"，两边都不成立 ⇒ **没有任何日屏障执行者**
 ## ⇒ 日历停在 day 1（web 上表现为"世界不动"，且 fault_code 为空，极难查）。
 var _web_worker_inline_fallback: bool = false
-## 本次会话是否真的走内联日。只有 _start_production_shadow_worker 成功把它置真
-## 之后，_on_clock_day_changed 才会接管日历的推进。
+## 本次会话是否真的走内联日。只有 _start_runtime_executor 成功把它置真
+## 之后，_admit_runtime_calendar 才会接管日历的推进。
 var _native_daily_inline_active: bool = false
 var _runtime_native_daily_inline_days: int = 0
 var _runtime_native_daily_inline_pending_days: int = 0
@@ -169,17 +127,6 @@ var _runtime_climate_writeback_memcpy_ms: float = 0.0
 var _runtime_climate_writeback_flush_ms: float = 0.0
 ## 写回环的发布丢弃计数（worker 侧 ring 满时递增）。B8 的 50/50 验收要求它为 0。
 var _runtime_climate_writeback_drops: int = 0
-## B8 P3：等待切片。C++ 侧是条件变量等待，返回一次有界切片后由本层 pump
-## Country peer 服务再进入下一次等待 —— 纯 C++ 等待无法回调 Godot 服务
-## Country/Economy barrier，两者互等就是死锁。
-const RUNTIME_CLIMATE_WAIT_SLICE_MS: int = 10
-## B8-4：Climate ACTIVE 启用策略。requested 来自
-## runtime_climate_authority_enabled（会话/玩家想不想要），effective 由
-## override + 实测阈值决定。阈值证据落地前 auto 保持历史默认，见 policy 文件。
-const ClimateAuthorityPolicyScript = preload("res://scripts/game/climate_authority_policy.gd")
-# Use the preload instance type — not class_name ClimateAuthorityPolicy — so
-# dependents (e.g. game_save_coordinator) can parse before global class registry.
-var _climate_authority_policy = ClimateAuthorityPolicyScript.new()
 var _climate_runtime = preload("res://scripts/game/world_runtime_climate.gd").new()
 
 var _renderer: HexRenderer = null
@@ -244,10 +191,6 @@ var _pending_tick_start_usec: int = 0
 var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
 var _pending_tick_skipped_day: bool = false
-var _climate_capacity_pending_day: int = -1
-var _climate_capacity_pending_since_msec: int = 0
-const _CLIMATE_CAPACITY_STALL_DIAG_MSEC := 3000
-var _climate_capacity_stall_next_diag_msec: int = 0
 var _map_overlay_request: Dictionary:
 	get: return _overlay._map_overlay_request
 	set(value): _overlay._map_overlay_request = value
@@ -332,14 +275,11 @@ func synchronize_environment_display_for_save() -> bool:
 var _runtime_commit_generation: int = 0
 var _runtime_commit_day: int = -1
 var _runtime_last_commit: Dictionary = {}
-## Season index whose cover the military terrain layer currently holds; -1 until
-## the first observed day.
-var _military_terrain_season_index: int = -1
 var _runtime_last_visual_apply_ms: float = 0.0
 var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
 ## Day-callback and host-_process segments for the perf CSV. Day fields are the
-## most recent `_on_clock_day_changed`. Process fields accumulate until the next
+## most recent `_admit_runtime_calendar`. Process fields accumulate until the next
 ## perf row, then reset, so a row is the pump cost since the previous row.
 var _sched_day_total_ms: float = 0.0
 var _sched_day_report_ms: float = 0.0
@@ -358,8 +298,6 @@ var _dcp_finish_ms: float = 0.0
 var _dcp_resource_ms: float = 0.0
 var _dcp_military_ms: float = 0.0
 var _dcp_visual_ms: float = 0.0
-## 单日单推进声明是否启用（web / 显式内联 A/B）。桌面恒 false。
-var _day_barrier_claim_enabled: bool = false
 var _sched_proc_frames: int = 0
 var _sched_proc_economy_input_ms: float = 0.0
 ## day_changed 里容量检查/输入抓取被拒绝的次数（只在前 8 次打日志，避免刷屏）。
@@ -399,7 +337,6 @@ var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
 ## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
 var _gm_hide_all_except_gm: bool = false
-var _gm_click_claim_pending_days: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false
 var _gm_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
 var _gm_tod_cycle_uv: Vector2 = Vector2(0.25, 0.5)
@@ -432,8 +369,8 @@ func _session_preparation_active() -> bool:
 	return _generation_adapter._session_preparation_active(self)
 func _session_preparation_failure() -> Dictionary:
 	return _generation_adapter._session_preparation_failure(self)
-func _start_production_shadow_worker() -> void:
-	_generation_adapter._start_production_shadow_worker(self)
+func _start_runtime_executor() -> void:
+	_generation_adapter._start_runtime_executor(self)
 func _stop_previous_runtime_worker() -> Dictionary:
 	return await _generation_adapter._stop_previous_runtime_worker(self)
 var _generation_adapter = preload("res://scripts/game/world_runtime_generation_adapter.gd").new()
@@ -444,10 +381,6 @@ func configure(
 	map_overlay_layer: DataOverlayLayer = null
 ) -> void:
 	_clock_binding.detach()
-	if _world_clock != null:
-		var old_day_callback := Callable(self, "_on_clock_day_changed")
-		if _world_clock.day_changed.is_connected(old_day_callback):
-			_world_clock.day_changed.disconnect(old_day_callback)
 	if _camera != null and _camera.zoom_changed.is_connected(_on_camera_zoom_changed):
 		_camera.zoom_changed.disconnect(_on_camera_zoom_changed)
 	if _camera != null and _camera.view_changed.is_connected(_on_camera_view_changed):
@@ -458,10 +391,6 @@ func configure(
 	if _renderer != null and _world_clock != null:
 		_renderer.configure_shader_clock(_world_clock.set_visual_shader_days_per_year)
 	_map_overlay_layer = map_overlay_layer
-	if _world_clock != null:
-		var day_callback := Callable(self, "_on_clock_day_changed")
-		if not _world_clock.day_changed.is_connected(day_callback):
-			_world_clock.day_changed.connect(day_callback)
 	if _camera != null:
 		_camera.zoom_changed.connect(_on_camera_zoom_changed)
 		_camera.view_changed.connect(_on_camera_view_changed)
@@ -469,57 +398,41 @@ func configure(
 		_on_camera_view_changed(_camera.current_world_view_rect(), _camera.position, _camera.zoom.x)
 	set_process(false)
 	_init_tod_profile()
-	_day_barrier_claim_enabled = OS.has_feature("web") or _native_daily_inline_requested()
 
 
 func _sched_elapsed_ms(started_usec: int) -> float:
 	return float(Time.get_ticks_usec() - started_usec) / 1000.0
 
 
-## native_daily_inline：把这一天在调用线程上跑完。
-##
-## 与 worker 权威路径同序：回灌(第 N-1 天) → peer 泵 → capture(第 N 天输入)
-## → 主线程执行 12 域日屏障 → 消费提交。区别只有"谁执行"：这里没有另一个线程，
-## 所以任何一步都不允许去等条件变量；缺 peer 时由 C++ 侧在同一线程上把 Country
-## peer 适配器推一轮再重试同一天。
-func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionary:
-	return _daily_adapter._run_native_daily_inline_day(self, day_idx, report)
+## Both native execution modes use the same clock admission. The inline
+## executor uses the frame callback because this platform has no worker.
 func _admit_runtime_calendar(date: int) -> int:
+	if not _runtime_ready_for_ticks or not _native_environment_active \
+			or _runtime_worker_fault_paused:
+		return _calendar_admitted_through
 	var ext = _generator.get_data_core_world_ext()
 	_calendar_admitted_through = int(ext.request_runtime_calendar_day(date))
 	return _calendar_admitted_through
 
 
-func _on_clock_day_changed(day_idx: int) -> void:
-	if _world_clock != null and _world_clock._publishing_runtime_date:
+func _run_admitted_inline_day() -> void:
+	if not _native_daily_inline_active or not _runtime_ready_for_ticks \
+			or _runtime_worker_fault_paused \
+			or _calendar_admitted_through <= maxi(0, _runtime_commit_day):
 		return
-	# 首日挂死定位：进入/离开日 tick 各发一条带绝对时间戳的事件，
-	# 静默前最后一条就能区分"挂在 tick 里"还是"挂在 tick 之后"。
-	WebTelemetry.emit("day_tick", {"s": "begin", "day": day_idx})
-	# Web 单日成本探针：host 这一段的**唯一**一次 epoch 采样。桌面 _dcp_on() 为
-	# 假 → 走 else 分支，与原实现逐语句等价。
+	var date := maxi(0, _runtime_commit_day) + 2
+	WebTelemetry.emit("day_tick", {"s": "begin", "day": date})
+	var started := Time.get_ticks_usec()
+	_daily_adapter._run_native_daily_inline_day(self, date)
+	_sched_day_total_ms = _sched_elapsed_ms(started)
 	if _dcp_on():
-		var dcp_usec := Time.get_ticks_usec()
-		_clock_day_changed_impl(day_idx)
-		_dcp_publish_day(Time.get_ticks_usec() - dcp_usec)
-	else:
-		_clock_day_changed_impl(day_idx)
-	WebTelemetry.emit("day_tick", {"s": "end", "day": day_idx})
+		_dcp_publish_day(Time.get_ticks_usec() - started)
+	WebTelemetry.emit("day_tick", {"s": "end", "day": date})
 
 
 ## Web 单日成本探针总开关（world 时钟持有桶）。桌面恒假。
 func _dcp_on() -> bool:
 	return _world_clock != null and _world_clock.day_cost_probe_on
-
-
-## 单日单推进声明（见 world_clock.gd 的 claim_day_advance）。
-## 只有 web / 显式内联 A/B 才登记：桌面上 main.gd 与 WorldRuntimeHost 从不出现在
-## 同一个场景里（player_game.tscn 无 main.gd，main.tscn 无 RuntimeHost），声明
-## 恒为空，写它没有任何收益 —— 保持桌面路径零多余写入。
-func _claim_day_for_native(day_idx: int, owner: StringName) -> void:
-	if not _day_barrier_claim_enabled or _world_clock == null:
-		return
-	_world_clock.claim_day_advance(owner, day_idx)
 
 
 ## 把 host 这一天的分段一次性交给 WorldClock 的日桶。每个 tag 只写一次。
@@ -540,8 +453,6 @@ func _dcp_publish_day(elapsed_usec: int) -> void:
 	clock.day_cost_add(&"vis", _dcp_visual_ms)
 
 
-func _clock_day_changed_impl(day_idx: int) -> void:
-	_daily_adapter._clock_day_changed_impl(self, day_idx)
 func _on_camera_zoom_changed(value: float) -> void:
 	if _renderer != null:
 		_renderer.set_camera_zoom(value)
@@ -792,8 +703,6 @@ func _web_worker_requested() -> bool:
 	return _daily_adapter._web_worker_requested(self)
 func _clear_web_daily_fallback_failure() -> void:
 	_daily_adapter._clear_web_daily_fallback_failure(self)
-func _web_gdscript_daily_fallback_allowed() -> bool:
-	return _daily_adapter._web_gdscript_daily_fallback_allowed(self)
 func _reject_web_daily_fallback(code: String, reason: String) -> bool:
 	return _daily_adapter._reject_web_daily_fallback(self, code, reason)
 func _preparation_process_frame() -> void:
@@ -805,8 +714,6 @@ func is_loading_session() -> bool:
 
 
 # Daily and worker methods delegate to the passive adapter.
-func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
-	return _daily_adapter.run_daily_tick(self, day_idx, season_phase)
 func _bind_overlay_resources() -> void:
 	_daily_adapter._bind_overlay_resources(self)
 func set_map_overlay(request: Dictionary) -> void:
@@ -826,18 +733,13 @@ func _emit_web_frame_probe(frame_usec: int) -> void:
 func _emit_web_beat(frame_usec: int) -> void:
 	_daily_adapter._emit_web_beat(self, frame_usec)
 func _process(_delta: float) -> void:
+	_run_admitted_inline_day()
 	_daily_adapter._process(self, _delta)
 	_presentation.publish_worker_view(simulation_view_updated.emit)
-func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void:
-	_daily_adapter._service_runtime_liveness(self, frame_usec, _capacity_pending)
+func _service_runtime_liveness(frame_usec: int) -> void:
+	_daily_adapter._service_runtime_liveness(self, frame_usec)
 func _service_runtime_progress(frame_usec: int) -> void:
 	_daily_adapter._service_runtime_progress(self, frame_usec)
-func _arm_climate_capacity_pending(day_idx: int) -> void:
-	_daily_adapter._arm_climate_capacity_pending(self, day_idx)
-func _clear_climate_capacity_pending() -> void:
-	_daily_adapter._clear_climate_capacity_pending(self)
-func _note_climate_capacity_pending_stall() -> void:
-	_daily_adapter._note_climate_capacity_pending_stall(self)
 func _runtime_control_state() -> Dictionary:
 	return _daily_adapter._runtime_control_state(self)
 func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
@@ -854,24 +756,13 @@ func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
 	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec)
 func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	_daily_adapter._consume_runtime_commit_if_ready(self, report_override)
-func _refresh_military_terrain_after_season() -> void:
-	_daily_adapter._refresh_military_terrain_after_season(self)
-func _refresh_military_terrain_on_season_edge(day_idx: int) -> void:
-	_daily_adapter._refresh_military_terrain_on_season_edge(self, day_idx)
 func military_report() -> Dictionary:
 	return _daily_adapter.military_report(self)
 func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 	_daily_adapter._apply_climate_writeback_if_authoritative(self, report)
-func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
-	return _daily_adapter.wait_for_climate_consumed(self, after_environment_generation)
-func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
-	return _climate_runtime.set_runtime_climate_authority_enabled(self, enabled)
-func _restart_worker_with_current_policy() -> Dictionary:
-	return _climate_runtime._restart_worker_with_current_policy(self)
-func set_climate_authority_override(mode: String) -> Dictionary:
-	return _climate_runtime.set_climate_authority_override(self, mode)
-func _resolve_climate_authority_policy() -> Dictionary:
-	return _climate_runtime._resolve_climate_authority_policy(self)
+func restart_runtime_executor() -> Dictionary:
+	return _lifecycle.restart_runtime_executor(self)
+
 func climate_authority_diagnostics() -> Dictionary:
 	return _climate_runtime.climate_authority_diagnostics(self)
 func _map_overlay_refresh_interval_msec() -> int:

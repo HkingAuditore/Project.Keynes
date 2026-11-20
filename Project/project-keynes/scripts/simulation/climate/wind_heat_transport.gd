@@ -172,62 +172,6 @@ func _ensure_vegdyn_lut() -> void:
 
 
 
-func refresh_yearly(map: MapData, _world: WorldData) -> void:
-	if _generator._last_cfg == null:
-		return
-	for cell: HexCell in map.all_cells():
-		if _generator._is_water(cell.terrain):
-			continue
-		# 永久 biome 不参与生态漂移（雪山土壤本来就稳定）
-		if cell.base_terrain == TerrainType.TERRAIN.MOUNTAIN \
-				or cell.base_terrain == TerrainType.TERRAIN.SNOW:
-			continue
-		# Milestone 1：评分换源到 vegetation_history（粒度更细，与真实植被绑定）
-		# 若 vegetation_history 还没攒够（新地图前几季），fallback 到 biome_history 老评分
-		var score: float = 0.0
-		if cell.vegetation_history.is_empty():
-			score = _generator._ecosystem_score(cell.biome_history)
-		else:
-			score = _generator._ecosystem_score_vegetation(cell.vegetation_history)
-		# clamp 让平稳期漂得更慢
-		var eco_clamp: float = _generator._c().eco_score_clamp
-		score = clampf(score, -eco_clamp, eco_clamp) / eco_clamp
-		cell.base_moisture = clampf(cell.base_moisture + score * _generator._c().eco_drift_amp, 0.0, 1.0)
-
-# Milestone 1：基于 VegetationType.eco_score 表的细粒度评分。
-# RAINFOREST/SUBTROPICAL_FOREST > FOREST/MANGROVE/SWAMP > GRASSLAND/SAVANNA >
-# STEPPE/SHRUB > DESERT_SCRUB/XERIC_DESERT 负分。详见 vegetation_type.gd。
-
-func _ecosystem_score_vegetation(history: PackedByteArray) -> float:
-	if history.is_empty():
-		return 0.0
-	var n: int = history.size()
-	var total: float = 0.0
-	for i in range(n):
-		total += VegetationType.eco_score(int(history[i]))
-	return total / float(n)
-
-# 老 biome_history 评分（M1 fallback / 兼容）：FOREST/SWAMP/JUNGLE/TAIGA 正分；DESERT 负分。
-
-func _ecosystem_score(history: PackedByteArray) -> float:
-	if history.is_empty():
-		return 0.0
-	var n: int = history.size()
-	var positive: float = 0.0
-	var negative: float = 0.0
-	for i in range(n):
-		var b: int = int(history[i])
-		match b:
-			TerrainType.TERRAIN.FOREST:    positive += 1.0
-			TerrainType.TERRAIN.JUNGLE:    positive += 1.2
-			TerrainType.TERRAIN.SWAMP:     positive += 1.0
-			TerrainType.TERRAIN.TAIGA:     positive += 0.8
-			TerrainType.TERRAIN.GRASSLAND: positive += 0.5
-			TerrainType.TERRAIN.SAVANNA:   positive += 0.4
-			TerrainType.TERRAIN.STEPPE:    negative += 0.3
-			TerrainType.TERRAIN.DESERT:    negative += 1.0
-	return (positive - negative) / float(n)
-
 # 名义季节温度偏移：只用于旧 refresh_seasonal 行缓存兼容；运行时气候链条
 # 始终由太阳几何 -> 日照偏差 -> 热惯性推进。
 # ny ∈ [0, 1]：0 = 北极，0.5 = 赤道，1 = 南极。

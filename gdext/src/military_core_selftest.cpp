@@ -651,6 +651,18 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
     ST_CHECK(sim.core.controller_of(kEnclave) == 0, "capture: controller of enclave is the attacker");
     ST_CHECK(has_event(sim.core, MILITARY_EVENT_CELL_CONTROL_CHANGED), "CELL_CONTROL_CHANGED event emitted");
     ST_CHECK(sim.core.report().cells_captured > 0 || sim.core.control_revision() > 0, "control revision bumped");
+    {
+        MilitaryCommand formation;
+        formation.op = MCMD_ARMY_CREATE;
+        formation.country = handle_for(2);
+        formation.cell = kEnclave;
+        formation.value = 912;
+        sim.core.apply_command(formation, sim.day);
+        const auto rejected = sim.core.take_player_command_rejections();
+        ST_CHECK(rejected.size() == 1 && rejected[0].caller_sequence == 912 &&
+                     std::string(rejected[0].reason) == "cell_occupied",
+                 "player formation: a foreign controller rejects a local order");
+    }
     ST_STEP(sim, sim.day + 2);   // let run_wars record the full occupation
     // PKMI round trip mid-war (armies, engagements history, wars, events).
     {
@@ -1208,11 +1220,7 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(sim.core.submit(equal, error),
                  "budget envelope: channels totalling exactly 100% are accepted");
     }
-    // (6) Transient (需求 9.3). Two identical cores that differ ONLY in the three
-    // NEW budget fields have to agree on both the hash and the encoded bytes.
-    // `procurement_share_bp` is deliberately NOT in that set: it predates this
-    // work and is already a persisted policy field, so the procurement channel
-    // reuses it instead of introducing a second, unsaved copy.
+    // (6) The executor saves the current envelope with the military policy.
     {
         std::string error;
         MilitaryCore plain;
@@ -1232,12 +1240,10 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(budgeted.budget_split(0, cash).enabled &&
                      !plain.budget_split(0, cash).enabled,
                  "budget envelope: the two cores really differ on the envelope");
-        ST_CHECK(plain.state_hash() == budgeted.state_hash(),
-                 "budget envelope: the three budget fields stay out of state_hash");
-        ST_CHECK(plain.encode() == budgeted.encode(),
-                 "budget envelope: the three budget fields stay out of PKMI");
-        // A restored core therefore comes back with no envelope: the player
-        // session re-pushes the policy, which is the documented contract.
+        ST_CHECK(plain.state_hash() != budgeted.state_hash(),
+                 "budget envelope: committed shares change the state hash");
+        ST_CHECK(plain.encode() != budgeted.encode(),
+                 "budget envelope: PKMI records non-default shares");
         const std::vector<uint8_t> bytes = budgeted.encode();
         MilitaryCore restored;
         restored.configure(make_catalog(), 60602, error);
@@ -1245,8 +1251,9 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(restored.restore(bytes.data(), bytes.size(), error),
                  "budget envelope: PKMI restore accepts the stream");
         const int32_t slot = restored.country_slot_for_handle(handle_for(0));
-        ST_CHECK(slot >= 0 && !restored.budget_split(slot, cash).enabled,
-                 "budget envelope: a restored core starts with no envelope");
+        ST_CHECK(slot >= 0 && restored.budget_split(slot, cash).enabled &&
+                     restored.state_hash() == budgeted.state_hash() && restored.encode() == bytes,
+                 "budget envelope: the restored policy and committed bytes agree");
     }
     // (7) Settlement (任务 7 / 需求 5.2, 5.3, 7.1). Runs the real `step_day`
     // path over a recruited garrison instead of re-deriving the arithmetic here:

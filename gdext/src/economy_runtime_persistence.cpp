@@ -805,14 +805,14 @@ Dictionary NativeEconomyRuntime::end_restore() {
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 == 1 &&
-               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+               cmd.treasury_construction_policy_valid())
             : treasury_demolish
             ? (_country_runtime != nullptr && country_reads().valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) &&
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 > 0 &&
-               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+               cmd.treasury_construction_policy_valid())
             : canal_build
             ? (_country_runtime != nullptr && country_reads().valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)

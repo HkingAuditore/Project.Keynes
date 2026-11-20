@@ -2,74 +2,6 @@ extends RefCounted
 
 ## Extracted world_runtime_daily_adapter.gd group 1; state stays with host.
 
-func run_daily_tick(host, day_idx: int, season_phase: float) -> Dictionary:
-	if host._runtime_worker_fault_paused:
-		return {}
-	if not host._runtime_ready_for_ticks or host._generator == null or host._world_clock == null:
-		return {}
-	if host._native_environment_active:
-		_clock_day_changed_impl(host, day_idx)
-		return {"worker_managed": true}
-	host._pending_tick_start_usec = Time.get_ticks_usec()
-	if host._renderer != null:
-		host._renderer.set_season_phase(season_phase)
-		host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-	if host._generator.has_method("set_current_fast_tick_idx"):
-		host._generator.set_current_fast_tick_idx(host._fast_tick_count + 1)
-
-	var t_sus_usec = Time.get_ticks_usec()
-	var report: Dictionary = host._generator.sus_tick_daily(host._world_clock, day_idx, season_phase)
-	var capture: Dictionary = report.get("runtime_climate_capture", {})
-	if bool(capture.get("pending", false)):
-		host._arm_climate_capacity_pending(day_idx)
-	if bool(report.get("worker_managed", false)):
-		host._pending_tick_start_usec = 0
-		return report
-	host._pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
-	host._refresh_military_terrain_on_season_edge(day_idx)
-	# Web 单日成本探针：host 这一处 sus_tick_daily（s2）与它调度的日级 Job 分项。
-	# 桌面 _dcp_on() 为假 → 既不记时也不额外读一次 SUS 报告。
-	if host._dcp_on():
-		host._world_clock.day_cost_add(&"s2", host._pending_tick_sus_ms)
-		if host._generator.has_method("sus_report_last_tick"):
-			host._world_clock.day_cost_jobs_from(host._generator.sus_report_last_tick())
-	# Country ACTIVE day barriers park on peer intents. Callers that drive
-	# ticks without idling WorldRuntimeHost._process (headless tests, catch-up
-	# batches) still need the transport drained on every day boundary.
-	if not host._native_environment_active:
-		host._consume_modifier_worker_snapshot_if_authoritative()
-	host._consume_country_worker_read_view_if_authoritative()
-	host._fast_tick_count += 1
-	if host._renderer != null and host._generator.has_method("has_pending_detail_scatter_refresh") \
-			and bool(host._generator.has_pending_detail_scatter_refresh()) \
-			and host._renderer.has_method("queue_detail_scatter_refresh"):
-		if host._generator.has_method("consume_pending_detail_scatter_changes") \
-				and host._renderer.has_method("queue_detail_scatter_changes"):
-			host._renderer.queue_detail_scatter_changes(host._generator.consume_pending_detail_scatter_changes())
-		else:
-			host._renderer.queue_detail_scatter_refresh(host._generator.consume_pending_detail_scatter_refresh_indices())
-	var t_render_usec = Time.get_ticks_usec()
-	if host._renderer != null:
-		if host._renderer.has_method("set_weather_field_texture") and host._world_data != null:
-			host._renderer.set_weather_field_texture(null)
-		if host._renderer.has_method("refresh_terrain_weather_field_tex"):
-			host._renderer.refresh_terrain_weather_field_tex()
-		if bool(report.get("fronts_changed", false)) and host._renderer.has_method("set_weather_fronts"):
-			host._renderer.set_weather_fronts(report.get("fronts", []))
-	host._pending_tick_render_ms = (Time.get_ticks_usec() - t_render_usec) / 1000.0
-	if host._settlement_label_layer != null:
-		host._settlement_label_layer.sync_from_runtime()
-	# 玩家场景每次 day_changed 都真实执行一次 SUS；weather 自身的 stride/policy
-	# 不能把同日 climate/economy job 误标成“整日未刷新”。
-	host._pending_tick_skipped_day = false
-	host._last_tick_report = report.duplicate()
-	host._annual_reports.poll()
-	host.daily_tick_completed.emit(host._last_tick_report)
-	host.mark_map_overlay_dirty(&"authoritative_daily_flush")
-	return host._last_tick_report
-
-
-
 func _bind_overlay_resources(host) -> void:
 	host._overlay.bind_resources(host._renderer, host._map_overlay_layer, host._current_map,
 		host._world_data, host._view_adapter, host._generator, host._world_clock,
@@ -98,12 +30,6 @@ func mark_map_overlay_dirty(host, _reason: StringName = &"runtime") -> void:
 func map_overlay_diagnostics(host) -> Dictionary:
 	host._bind_overlay_resources()
 	return host._overlay.map_overlay_diagnostics()
-## Host frame split (liveness vs progress):
-## - liveness: peer pumps, snapshot ACKs, same-day economy capture, capacity
-##   retry. MUST run every frame even when the climate input ring is full.
-## - progress: country read-view, building visual, map overlay. May be skipped
-##   under climate_input_capacity_day_barrier so peer ACKs get the frame budget.
-
 ## Web 心跳：每 2 秒把「日历走到第几天 / 快进次数 / worker 状态」推到事件通道。
 ## agent 侧 tail tmp/web_events.jsonl 就能判断页面活着、日历在走还是在原地空转，
 ## 不需要截图轮询。
@@ -202,38 +128,11 @@ func _process(host, _delta: float) -> void:
 	host._sched_proc_frames += 1
 	host._emit_web_frame_probe(frame_usec)
 	host._emit_web_beat(frame_usec)
-	var capacity_pending = (
-		host._climate_capacity_pending_day >= 0 and not host._runtime_worker_fault_paused)
 	host._web_mark("liveness_begin")
-	host._service_runtime_liveness(frame_usec, capacity_pending)
+	host._service_runtime_liveness(frame_usec)
 	host._web_mark("liveness_end")
 	host._annual_reports.poll()
 	host._web_mark("annual_poll_end")
-	if capacity_pending:
-		host._note_climate_capacity_pending_stall()
-		# Receive this frame's committed result before testing whether the
-		# retained input can be published. Receiving it after the retry can
-		# leave the worker idle until the next frame even though its input is ready.
-		host._consume_runtime_commit_if_ready()
-		# Retry the next required packet once its source day has committed.
-		var cap_report: Dictionary = host._runtime_control_state()
-		if not cap_report.is_empty():
-			var worker_committed = int(cap_report.get(
-				"simulation_committed_day", cap_report.get("committed_day", -1)))
-			if worker_committed >= host._climate_capacity_pending_day:
-				host._climate_capacity_pending_day = worker_committed + 1
-		if not bool(cap_report.get("authority_ready", false)) \
-				or int(cap_report.get("simulation_committed_day", -1)) >= host._climate_capacity_pending_day - 2:
-			host._on_clock_day_changed(host._climate_capacity_pending_day)
-		if host._climate_capacity_pending_day >= 0:
-			host._observe_runtime_worker_fault()
-			host._poll_runtime_health()
-			# ---- Military layers
-			if host.military_map_layers != null and host.military_map_layers.has_method("poll_snapshot"):
-				host.military_map_layers.poll_snapshot()
-			# ---- Military layers
-			host._sched_proc_last_total_ms = host._sched_elapsed_ms(frame_usec)
-			return
 	host._web_mark("progress_begin")
 	host._service_runtime_progress(frame_usec)
 	host._web_mark("progress_end")
@@ -243,42 +142,20 @@ func _process(host, _delta: float) -> void:
 var _construction_receipt_poll_ms: int = 0
 
 
-func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -> void:
-	var segment_usec = frame_usec
-	if host._runtime_ready_for_ticks and host._generator != null:
-		var ext = host._generator.get_data_core_world_ext()
-		if ext != null:
-			# -1 只服务 worker 请求的同日输入，不推进经济公式。
-			if not host._native_environment_active:
-				var captured: Dictionary = ext.capture_economy_day_inputs(-1)
-				if bool(captured.get("captured", false)):
-					var input: Dictionary = captured.get("input_capture_generation", {})
-					host._generator.record_runtime_main_step(int(input.get("sample_day", -1)), &"economy_input")
-		# 营造回执不能只等经济 pulse：worker PAUSED / 日历冻结时 pulse 不来，
-		# 玩家会一直停在「已排队」。这里按墙钟节流做一次纯读轮询，
-		# facade 的游标保证同一条回执不会被重复派发。
-		var receipt_now := Time.get_ticks_msec()
-		if receipt_now - _construction_receipt_poll_ms >= 250:
-			_construction_receipt_poll_ms = receipt_now
-			if host._generator.has_method("get_economy_facade"):
-				var economy = host._generator.get_economy_facade()
-				if economy != null and economy.has_method(
-						"dispatch_construction_command_receipts"):
-					economy.dispatch_construction_command_receipts()
-	host._sched_proc_economy_input_ms += host._sched_elapsed_ms(segment_usec)
-	segment_usec = Time.get_ticks_usec()
-	host._sched_proc_peer_ms += host._sched_elapsed_ms(segment_usec)
-	segment_usec = Time.get_ticks_usec()
-	host._consume_modifier_worker_snapshot_if_authoritative()
-	host._sched_proc_snapshots_ms += host._sched_elapsed_ms(segment_usec)
-
+func _service_runtime_liveness(host, frame_usec: int) -> void:
+	if not host._runtime_ready_for_ticks or host._generator == null:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _construction_receipt_poll_ms >= 250:
+		_construction_receipt_poll_ms = now
+		var economy = host._generator.get_economy_facade()
+		if economy != null:
+			economy.dispatch_construction_command_receipts()
+	host._sched_proc_economy_input_ms += host._sched_elapsed_ms(frame_usec)
 
 
 func _service_runtime_progress(host, frame_usec: int) -> void:
 	var segment_usec = Time.get_ticks_usec()
-	if not host._native_environment_active:
-		host._consume_country_worker_read_view_if_authoritative()
-	host._sched_proc_country_read_ms += host._sched_elapsed_ms(segment_usec)
 	host._consume_runtime_commit_if_ready()
 	host._observe_runtime_worker_fault()
 	host._poll_runtime_health()
@@ -302,63 +179,9 @@ func _service_runtime_progress(host, frame_usec: int) -> void:
 
 
 
-func _arm_climate_capacity_pending(host, day_idx: int) -> void:
-	if host._climate_capacity_pending_day != day_idx:
-		host._generator.record_runtime_main_step(maxi(0, day_idx - 1), &"environment_publish_hold")
-		host._climate_capacity_pending_since_msec = Time.get_ticks_msec()
-		host._climate_capacity_stall_next_diag_msec = 0
-	host._climate_capacity_pending_day = day_idx
-	if host._world_clock != null:
-		host._world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
-
-
-
-func _clear_climate_capacity_pending(host) -> void:
-	host._climate_capacity_pending_day = -1
-	host._climate_capacity_pending_since_msec = 0
-	host._climate_capacity_stall_next_diag_msec = 0
-	if host._world_clock != null:
-		host._world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
-
-
-
-
-## G4 moved host responsibilities
-func _run_native_daily_inline_day(host, day_idx: int, report: Dictionary) -> Dictionary:
-	var ext = host._generator.get_data_core_world_ext() \
-		if host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("run_native_daily_inline_day"):
-		if host._reject_web_daily_fallback("web_native_daily_api_missing", "缺少原生日推进入口，请更新网页原生模块"):
-			return {"ok": false, "code": "native_daily_inline_api_missing"}
-		if host._native_daily_inline_active:
-			push_error("[runtime-inline] run_native_daily_inline_day 缺失：回退到主线程 daily tick")
-			host._native_daily_inline_active = false
-		return {"ok": false, "code": "native_daily_inline_api_missing"}
-	var segment_usec = Time.get_ticks_usec()
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "enter"})
-	# 单日单推进声明：今天由**内联执行器**推进。同一 day 上若已有别人声明过
-	# （正常不会发生：生产场景里只有本 host 推进模拟），main.gd 那套 GDScript
-	# SUS 日 tick 会自己让位。这里只是登记，不影响本函数的执行。
-	host._claim_day_for_native(day_idx, &"native_inline")
-	host._apply_climate_writeback_if_authoritative(report)
-	host._sched_day_climate_writeback_ms += host._sched_elapsed_ms(segment_usec)
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_writeback"})
-	segment_usec = Time.get_ticks_usec()
-	host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_transport"})
-	# 输入日必须等于 host 的 committed_day+1。内联日没有跨线程重试，错日会直接
-	# 停在 inline_daily_environment_day_mismatch，所以这里按 host 的提交水印取值。
-	var host_day = int(report.get("simulation_committed_day",
-		report.get("committed_day", -1)))
-	var next_day = host_day + 1
-	segment_usec = Time.get_ticks_usec()
-	if not host._native_environment_active and host._generator.has_method("publish_environment_through"):
-		host._generator.publish_environment_through(
-			maxi(0, next_day), host._world_clock.season_phase_for_day(day_idx),
-			MapGenerator.ENV_CALLSITE_INLINE_DAY)
-	host._sched_day_capture_ms += host._sched_elapsed_ms(segment_usec)
-	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_capture",
-		"ms": int(host._sched_elapsed_ms(segment_usec))})
+func _run_native_daily_inline_day(host, day_idx: int) -> void:
+	var ext = host._generator.get_data_core_world_ext()
+	var segment_usec := Time.get_ticks_usec()
 	# 探针：native 调用本身的独立 epoch（桌面 _dcp_on() 为假时连计时都不做）。
 	var _dcp_native_usec: int = Time.get_ticks_usec() if host._dcp_on() else 0
 	var result: Dictionary = ext.run_native_daily_inline_day()
@@ -396,10 +219,9 @@ func _run_native_daily_inline_day(host, day_idx: int, report: Dictionary) -> Dic
 		host._runtime_native_daily_inline_pending_days += 1
 		# 静默冻结是最难查的失败形态：每 30 次至少留一行能指名原因的日志。
 		if host._runtime_native_daily_inline_pending_days % 30 == 1:
-			print("[runtime-inline] day=%d pending reason=%s attempts=%d peer_pumped=%d host_day=%d" % [
+			print("[runtime-inline] day=%d pending reason=%s committed=%d" % [
 				day_idx, String(result.get("reason", "?")),
-				int(result.get("attempts", 0)), int(result.get("peer_pumped", 0)),
-				host_day])
+				int(result.get("committed_day", -1))])
 	# 提交已经发布；把同一份提交落到 MapData/slot，本帧的 UI/渲染就能读到今天。
 	#
 	# inline_day 计时结束后，才写回提交并安排界面刷新。
@@ -407,100 +229,10 @@ func _run_native_daily_inline_day(host, day_idx: int, report: Dictionary) -> Dic
 		var dcp_commit_usec = Time.get_ticks_usec()
 		# 复用同一调用栈里刚取的那份 report（内联日没有 worker 线程，两次读取
 		# 必然同值），省掉一天里第二次 get_runtime_thread_report() 打包。
-		host._consume_runtime_commit_if_ready(report)
+		host._consume_runtime_commit_if_ready()
 		host._dcp_commit_ms = float(Time.get_ticks_usec() - dcp_commit_usec) / 1000.0
 	else:
 		host._consume_runtime_commit_if_ready()
-	return result
-
-
-func _clock_day_changed_impl(host, day_idx: int) -> void:
-	if host._runtime_worker_fault_paused:
-		return
-	# OFF/SHADOW keep the synchronous reference authority in this host. The
-	# PlayerController only consumes the resulting state for UI; it must not be
-	# another simulation entry point.
-	var day_started_usec = Time.get_ticks_usec()
-	host._sched_day_report_ms = 0.0
-	host._sched_day_snapshots_ms = 0.0
-	host._sched_day_climate_writeback_ms = 0.0
-	host._sched_day_climate_wait_ms = 0.0
-	host._sched_day_capture_ms = 0.0
-	host._sched_day_country_peer_ms = 0.0
-	host._sched_day_country_read_ms = 0.0
-	# Web 单日成本探针的 host 分段（未开探针时这几行只是置 0，全部是本类私有
-	# 字段，没有任何生产读取点）。
-	host._dcp_inline_ms = 0.0
-	host._dcp_commit_ms = 0.0
-	host._dcp_publish_ms = 0.0
-	host._dcp_finish_ms = 0.0
-	host._dcp_resource_ms = 0.0
-	host._dcp_military_ms = 0.0
-	host._dcp_visual_ms = 0.0
-	if not host._runtime_ready_for_ticks or host._generator == null or host._world_clock == null:
-		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
-		return
-	var segment_usec = Time.get_ticks_usec()
-	var report: Dictionary = host._generator.get_runtime_thread_report() \
-		if host._native_daily_inline_active else host._runtime_control_state()
-	host._sched_day_report_ms = host._sched_elapsed_ms(segment_usec)
-	if host._native_environment_active:
-		if host._native_daily_inline_active:
-			host._run_native_daily_inline_day(day_idx, report)
-		else:
-			host._claim_day_for_native(day_idx, &"native_worker")
-			host._admit_runtime_calendar(day_idx)
-		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
-		return
-	# native_daily_inline：没有 worker 线程，这一天的 12 域日屏障就在本线程上跑。
-	# 必须放在下面的 capacity wait 之前 —— 内联执行者自己消费环境帧，ring 容量
-	# 从来不是问题，去等一个"worker 消费"的信号只会把主线程钉住。
-	if host._native_daily_inline_active:
-		host._annual_reports.before_day(day_idx)
-		host._run_native_daily_inline_day(day_idx, report)
-		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
-		return
-	# Capacity waits must yield to _process so peer ACKs and writeback keep
-	# running. Retain this semantic day instead of dropping a rejected input.
-	if bool(report.get("climate_worker_authoritative", false)):
-		segment_usec = Time.get_ticks_usec()
-		var capacity = host.wait_for_climate_consumed(0)
-		host._sched_day_climate_wait_ms += host._sched_elapsed_ms(segment_usec)
-		if not bool(capacity.get("ok", false)):
-			# Peer pump before parking: Country/fiscal soft-commit may be what
-			# frees ring capacity. wait_for_climate_consumed(0) does not pump.
-			segment_usec = Time.get_ticks_usec()
-			host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
-			host._arm_climate_capacity_pending(day_idx)
-			host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
-			return
-	host._clear_climate_capacity_pending()
-	host._annual_reports.before_day(day_idx)
-	# 兼容调度先接收上一日气候，再采集下一日的输入，避免帧顺序决定更新结果。
-	if bool(report.get("climate_worker_authoritative", false)):
-		host._consume_modifier_worker_snapshot_if_authoritative()
-	host._apply_climate_writeback_if_authoritative(report)
-	if bool(report.get("climate_worker_authoritative", false)):
-		# B8 P3：等输入 ring 有空位再 capture（after_generation=0）。
-		# 允许最多 SLOT_COUNT-1 天流水线，大地图不再被“等上一份完全消费”串成单槽。
-		# serial_wait soak 仍可显式传具体 generation。
-		segment_usec = Time.get_ticks_usec()
-		var capacity_result = host.wait_for_climate_consumed(0)
-		host._sched_day_climate_wait_ms += host._sched_elapsed_ms(segment_usec)
-		if not bool(capacity_result.get("ok", false)):
-			segment_usec = Time.get_ticks_usec()
-			host._sched_day_country_peer_ms += host._sched_elapsed_ms(segment_usec)
-			host._arm_climate_capacity_pending(day_idx)
-			host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
-			return
-	segment_usec = Time.get_ticks_usec()
-	# 单日单推进声明：今天由本 host 的 GDScript SUS tick 推进。若 main.gd 也挂在
-	# 同一场景（当前不会），它的 sus_tick_daily 会看到这条声明并让位。
-	host._claim_day_for_native(day_idx, &"host_sus")
-	host.run_daily_tick(day_idx, host._world_clock.season_phase_for_day(day_idx))
-	host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
-
-
 func _native_daily_inline_requested(host) -> bool:
 	if not host.runtime_native_daily_inline:
 		return false
@@ -583,15 +315,10 @@ func _clear_web_daily_fallback_failure(host) -> void:
 		host._world_clock.clear_authority_fault_hold()
 
 
-func _web_gdscript_daily_fallback_allowed(host) -> bool:
-	return host.runtime_web_allow_gdscript_daily_fallback \
-		or OS.get_environment("PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK") == "1"
-
-
-## Return true only when this Web session must stop instead of using the legacy tick.
+## Record a Web executor startup failure.
 
 func _reject_web_daily_fallback(host, code: String, reason: String) -> bool:
-	if not host._is_web_build() or host._web_gdscript_daily_fallback_allowed():
+	if not host._is_web_build():
 		return false
 	if host._runtime_worker_fault_paused:
 		return true
@@ -605,7 +332,7 @@ func _reject_web_daily_fallback(host, code: String, reason: String) -> bool:
 	WebTelemetry.emit("web_daily_executor_failed", {"code": code, "reason": reason})
 	host._emit_world_generation_failure("runtime_executor", code,
 		"网页模拟无法启动：%s" % reason,
-		"请更新网页和原生模块，并启用原生执行器及气候权威。诊断用旧脚本回退需显式打开逃生开关。")
+		"请更新网页和游戏组件。")
 	return true
 
 

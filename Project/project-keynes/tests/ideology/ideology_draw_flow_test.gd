@@ -245,6 +245,7 @@ func _fixture() -> Dictionary:
 	controller.set("_runtime_host", HostStub.new())
 	controller.set("_world_clock", clock)
 	controller.set("_ideology_facade", ideology)
+	controller.set("_country_facade", CountryFacadeStub.new())
 	controller.set("_player_country_handle", 77)
 	return {"controller": controller, "clock": clock, "ideology": ideology}
 

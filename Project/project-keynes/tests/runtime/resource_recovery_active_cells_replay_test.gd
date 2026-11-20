@@ -67,7 +67,7 @@ func _replay(resume: bool, checkpoint: bool) -> Array:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var save_service := root.get_node("GameSave")
 	root.get_node("GameFlow").set_session({"new_game_config": config.to_dictionary()})
 	var request := {"kind": "load_game", "slot_id": "manual_3"} if resume \

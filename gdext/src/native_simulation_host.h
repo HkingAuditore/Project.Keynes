@@ -586,6 +586,11 @@ public:
     bool on_worker_thread() const noexcept override {
         return RuntimeExecutionContext::active_for(this);
     }
+    const char *preflight_military_construction(
+        uint64_t country, int32_t cell, int32_t type, bool demolishing,
+        int64_t day, int32_t &building, int32_t &slot) const override;
+    void commit_military_construction(
+        int32_t cell, int32_t building, int32_t slot, int64_t day, int64_t ready_day) override;
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
                                    std::string &error) override;
     bool finish_worker_country_asset(uint64_t request_id,
@@ -1096,6 +1101,7 @@ private:
     bool stage_input_capture(DayExecution &, RuntimeDomainPlan &);
     bool stage_climate(DayExecution &, RuntimeDomainPlan &);
     bool stage_country(DayExecution &, RuntimeDomainPlan &);
+    void publish_rejected_cell_taxes();
     bool stage_trigger_input(DayExecution &, RuntimeDomainPlan &);
     bool stage_ideology(DayExecution &, RuntimeDomainPlan &);
     bool stage_effect(DayExecution &, RuntimeDomainPlan &);

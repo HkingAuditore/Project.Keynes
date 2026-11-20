@@ -19,6 +19,7 @@ struct RuntimeCountryPodPlan {
     RuntimeDomainHeader header{};
     RuntimeCountryPodSnapshot next_state{};
     std::vector<RuntimeCountryCommand> commands;
+    std::vector<RuntimeCountryCommand> rejected_cell_taxes;
     std::vector<RuntimeCommandReceipt> receipts;
     std::vector<RuntimeDomainIntent> intents;
     // Country-owned Economy transactions are published as a separate typed

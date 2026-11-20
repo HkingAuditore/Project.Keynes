@@ -311,47 +311,6 @@ func _advance_one_sim_day() -> void:
 		_apply_year_rollover(day_year)
 
 
-# ─── 单日单推进声明（day advance claim）──────────────────────────────────
-# 一个 (day) 只允许**一个执行者**真正推进模拟。
-#
-# 现状：生产玩家场景 scenes/player_game.tscn 的 day_changed 监听者只有
-# WorldRuntimeHost 与 PlayerController，其中只有 host 推进模拟；调试场景
-# scenes/main.tscn 只有 main.gd。两者互斥，所以这条声明在当前所有场景上恒
-# 成立、行为不变。它的价值是把"一天只跑一次"从**约定**变成**结构**：
-# 权威（inline / worker）已经接管当日时，main.gd 的 GDScript SUS 日 tick 会
-# 让位，不会再出现"两套日级 job 各跑一遍"。
-#
-# 它**不是互斥锁**：只登记，谁让位由调用点决定。WorldRuntimeHost 不让位，
-# 因为它在 capacity barrier 下会对同一个 day 再次进入本函数（同日重试），
-# 那是有意的再入，不是重复推进。
-# 按 day 记，跨日自动失效；撞车次数进 day_cost_seg 的 `dup`（正常恒 0）。
-var _day_advance_day: int = -1
-var _day_advance_owner: StringName = &""
-var _day_advance_dups: int = 0
-
-func claim_day_advance(owner: StringName, day_idx: int) -> bool:
-	if _day_advance_day == day_idx:
-		_day_advance_dups += 1
-		if day_cost_probe_on:
-			_dcp_seg[&"dup"] = float(_day_advance_dups)
-		return false
-	_day_advance_day = day_idx
-	_day_advance_owner = owner
-	return true
-
-
-func day_advance_owner() -> StringName:
-	return _day_advance_owner
-
-
-func day_advance_claim_day() -> int:
-	return _day_advance_day
-
-
-func day_advance_duplicate_count() -> int:
-	return _day_advance_dups
-
-
 # ─── Web 单日成本探针 ────────────────────────────────────────────────────
 # 见文件头 _dcp_seg 上方的契约说明与 tmp/next/day_cost_IMPL.md。
 # 所有入口首行判 day_cost_probe_on，桌面（非 web、未开 PK_DAY_COST_PROBE）

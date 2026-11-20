@@ -228,11 +228,9 @@ func _check_authority_contract() -> void:
 		and mask_block.contains("RuntimeDomainId::ECONOMY")
 	_expect_gate_contract("(d) implemented_domain_mask is COMMIT|CLIMATE|COUNTRY|TRIGGER|MODIFIER|EFFECT|IDEOLOGY|EVENTS|ECONOMY", mask_ok)
 
-	# The production request is deliberately configurable per session, but its
-	# default must remain the currently proven 0xFFF until M5 promotion evidence
-	# exists. Keep the static gate aligned with that explicit source contract.
-	var request_ok := world_host.contains("config[\"authoritative_domain_mask\"] = runtime_authority_domain_mask") \
-		and world_host.contains("@export var runtime_authority_domain_mask: int = 0xFFF")
+	var startup := _read_text("res://scripts/game/world_runtime_generation_adapter.gd")
+	var request_ok := startup.contains('"authoritative_domain_mask": 0xFFF') \
+		and startup.contains('"simulation_thread_mode": "ACTIVE"')
 	_expect_gate_contract("(d) production worker default request is exactly 0xFFF", request_ok)
 
 	var d7_marker_ok := host_source.contains("D7_TRANSACTION_MAGIC") \

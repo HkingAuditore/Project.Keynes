@@ -6,15 +6,14 @@ func _prepare_world_data(host) -> Dictionary:
 	var seed_override: int = host._session_prepare_options.seed
 	host._runtime_ready_for_ticks = false
 	host._native_environment_active = false
+	host._player_country_handle = 0
 	# Reset the late-loading progress before rebinding presentation.
 	host._visual_progress = 0.0
-	host._clear_climate_capacity_pending()
 	host._runtime_commit_generation = 0
 	host._runtime_commit_day = -1
 	host._runtime_last_commit.clear()
 	host._runtime_vision_result.clear()
 	host._vision_dirty_indices = PackedInt32Array()
-	host._military_terrain_season_index = -1
 	host._country_worker_read_generation = 0
 	host._country_worker_read_last_day = -1
 	host._country_worker_read_last_result.clear()
@@ -200,7 +199,7 @@ func _prepare_world_simulation(host) -> Dictionary:
 			push_error("年度报告初始化失败：%s" % String(annual_result.get("reason", "未知原因")))
 		if not host._annual_reports.report_ready.is_connected(host._on_annual_report_ready):
 			host._annual_reports.report_ready.connect(host._on_annual_report_ready)
-	host._start_production_shadow_worker()
+	host._start_runtime_executor()
 	if not host._load_slot_id.is_empty(): host._apply_climate_writeback_if_authoritative(host._generator.get_runtime_thread_report())
 	if host._is_web_build() and host._runtime_worker_fault_paused:
 		return {"ok": false, "code": host._web_worker_start_code}
@@ -238,10 +237,10 @@ func _session_preparation_failure(host) -> Dictionary:
 		else String(host.last_world_generation_error.get("reason", "world_prepare_failed"))}
 
 
-func _start_production_shadow_worker(host) -> void:
+func _start_runtime_executor(host) -> void:
 	# 决策留痕：这一行是 web 上"worker 为什么起不来"的第一现场。
 	# 之前它不打印，只能靠 diag 反推，代价是一整轮排查。
-	print("[runtime-worker] decide web=%s web_worker=%s inline_requested=%s meta=%s env=%s runtime_native_daily_inline=%s fallback=%s shadow_on_generate=%s" % [
+	print("[runtime-worker] decide web=%s web_worker=%s inline_requested=%s meta=%s env=%s runtime_native_daily_inline=%s fallback=%s start_on_generate=%s" % [
 		str(host._is_web_build()),
 		str(host._web_worker_requested()),
 		str(host._native_daily_inline_requested()),
@@ -249,52 +248,22 @@ func _start_production_shadow_worker(host) -> void:
 		str(OS.get_environment("PK_WEB_WORKER")),
 		str(host.runtime_native_daily_inline),
 		str(host._web_worker_inline_fallback),
-		str(host.runtime_shadow_on_generate)])
-	if not host.runtime_shadow_on_generate:
+		str(host.start_executor_on_generate)])
+	if not host.start_executor_on_generate:
 		if host._reject_web_daily_fallback("web_native_executor_disabled", "原生执行器启动已关闭"):
 			return
-		print("[runtime-worker] skipped: runtime_shadow_on_generate=false")
+		print("[runtime-worker] skipped: start_executor_on_generate=false")
 		return
 	if host._generator == null or not host._generator.has_method("start_runtime_worker"):
 		if host._reject_web_daily_fallback("web_native_start_api_missing", "缺少原生启动接口"):
 			return
 		print("[runtime-worker] skipped: generator or start_runtime_worker unavailable")
 		return
-	# ── web 的两种执行者先算清楚，再决定要不要进下面这段 ──────────────
-	#
-	# 关键：**「内联」也是由本函数启动的**（config["native_daily_inline"]=true 时
-	# host 不 spawn 线程，日屏障由调用线程执行）。所以这里**不能**写成
-	# `if web and not worker: return` —— 那会把内联也一起关掉，web 默认路径
-	# 就只剩 GDScript SUS 日 tick（`day_cost.inl=0 / s2>0`，日历推不动）。
-	# 早退只有一个合法理由：web 上两种执行者都不要。
-	var web_wants_worker = host._web_worker_requested()
-	var web_wants_inline = host._native_daily_inline_requested()
-	if host._is_web_build() and not web_wants_worker and not web_wants_inline:
-		if host._reject_web_daily_fallback("web_native_executor_not_requested", "worker 与 inline 均未请求"):
-			return
-		print("[runtime-worker] web build: neither worker nor inline requested; " +
-			"GDScript daily tick drives the calendar")
+	var want_inline: bool = host._native_daily_inline_requested()
+	if host._is_web_build() and not host._web_worker_requested() and not want_inline:
+		host._reject_web_daily_fallback(
+			"web_native_executor_not_requested", "worker 与 inline 均未请求")
 		return
-	# B8-4：先解析策略，再决定 worker 以什么模式启动。requested 是会话请求，
-	# effective 才是本机/本地图真实生效的模式；诊断里两者都保留。
-	var authority_policy: Dictionary = host._resolve_climate_authority_policy()
-	var climate_authority_active = bool(authority_policy.get("enabled", false))
-	# web 上没有 ACTIVE 就没有 worker/inline 可言（内联日本身要求 ACTIVE，
-	# host 会用 `inline_daily_requires_active` 拒绝）。这时保持既有的
-	# GDScript SUS 日 tick，**不要** spawn 一个 SHADOW 线程陪跑。
-	if host._is_web_build() and not climate_authority_active:
-		if host._reject_web_daily_fallback("web_climate_authority_disabled",
-				"气候权威已关闭：%s" % String(authority_policy.get("reason", "unknown"))):
-			return
-		host._web_worker_start_code = "authority_policy_disabled:%s" % String(
-			authority_policy.get("reason", "unknown"))
-		print("[runtime-worker] web build: climate authority disabled (%s); " +
-			"worker not started, GDScript daily tick drives the calendar" \
-			% String(authority_policy.get("reason", "unknown")))
-		return
-	# Web 不再强制降级：那次"worker 图 commit 不了 day"的实际原因是首帧 shader 编译
-	# 45s 把整帧堵住（见 docs/web-export.md §9）。shader 裁剪后 ACTIVE 正常工作。
-	# 只有 ACTIVE 才推进日历；SHADOW 会停在 day 1。
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator.has_method("get_data_core_world_ext") else null
 	if ext != null and host.runtime_parity_forcing:
@@ -302,64 +271,29 @@ func _start_production_shadow_worker(host) -> void:
 	host._runtime_climate_writeback_generation = 0
 	host._runtime_climate_writeback_days = 0
 	host._runtime_climate_writeback_last_day = -1
-	var config: Dictionary = {
-		"simulation_thread_mode": "SHADOW",
-		"graph_coverage_complete": false,
-		# A worker lifetime resumes on the calendar the host is already on. This used
-		# to be a hardcoded 0, which is only right for a FRESH world: a policy flip
-		# stops the worker and calls straight back in here (`_restart_worker_with_
-		# current_policy`), so the restarted worker was told to replay from day 0 while
-		# every domain pod and every domain store was still at the day it stopped on.
-		# The first replayed day then either soft-skips forever (`plan.day <=
-		# committed`) or faults the Climate kernel (`climate_day_not_monotonic`), and
-		# because the authority grant is deferred until a day commits, the reported
-		# mask stayed 0x000 for the rest of the session.
+	var config := {
+		"simulation_thread_mode": "ACTIVE",
+		"graph_coverage_complete": true,
+		"authoritative_domain_mask": 0xFFF,
 		"day": host._world_clock.day_index() if host._world_clock != null else 0,
 		"speed_days_per_second": 1.0,
 		"paused": true,
 		"events_probe_enabled": host.runtime_events_probe_enabled,
-		"economy_execution_mode": host.runtime_economy_execution_mode,
+		"economy_execution_mode": "ACTIVE_ONLY",
+		"economy_stage_ops_mutate": true,
+		"economy_production_writer": "stage_ops",
+		"economy_auto_pod_active": host.runtime_economy_auto_pod_active,
+		"native_daily_inline": want_inline,
 	}
-	# Phase-2.4.5: StageOps is the production writer unless parity probe mode
-	# (ACTIVE_WITH_PARITY cannot share mutate StageOps with compact).
-	# Phase-2.6.1: auto-promote POD_ACTIVE after complete committed mirror.
-	if String(host.runtime_economy_execution_mode) != "ACTIVE_WITH_PARITY":
-		config["economy_stage_ops_mutate"] = true
-		config["economy_production_writer"] = "stage_ops"
-		# The worker promotes Economy to POD_ACTIVE itself, between days.
-		config["economy_auto_pod_active"] = host.runtime_economy_auto_pod_active
-	if climate_authority_active:
-		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
-		# 线程安全"，不是整图。
-		# Player/default play requests the full graph (0xFFF) so Trigger/Effect/
-		# Economy are worker-owned. Focused Climate|Country|COMMIT (0x806) remains
-		# available by setting runtime_authority_domain_mask for soaks/debug.
-		# Phase 2-6：Economy 与 Climate|Country|Modifier|Effect|Ideology|Trigger|Events
-		# 同开关进入生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
-		# Events 的授予只表示 worker 侧镜像 + 阶段位；legacy GameplayEventBus journal
-		# 仍是生产消费源，消费者迁移是后续 PR。
-		if not bool(host._country_worker_transport_capture.get("ok", false)) \
-				and host._generator != null \
-				and host._generator.has_method("capture_country_worker_inputs"):
-			host._country_worker_transport_capture = \
-				host._generator.capture_country_worker_inputs()
+	if not bool(host._country_worker_transport_capture.get("ok", false)):
+		host._country_worker_transport_capture = host._generator.capture_country_worker_inputs()
 		if not bool(host._country_worker_transport_capture.get("ok", false)):
-			if host._reject_web_daily_fallback("web_country_capture_failed",
-					String(host._country_worker_transport_capture.get("code", "missing"))):
-				return
-			push_error(
-				"[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events|Economy ACTIVE refused: Country capture incomplete (%s)" % [
-					String(host._country_worker_transport_capture.get("code", "missing"))])
+			var code := String(host._country_worker_transport_capture.get("code", "missing"))
+			host._web_worker_start_code = code
+			host._reject_web_daily_fallback("web_country_capture_failed", code)
+			push_error("[runtime-worker] Country capture failed: %s" % code)
 			return
-		config["simulation_thread_mode"] = "ACTIVE"
-		config["graph_coverage_complete"] = true
-		config["authoritative_domain_mask"] = host.runtime_authority_domain_mask
-	# native_daily_inline：日屏障改在调用线程执行，只对 ACTIVE 有意义。显式写 false：
-	# 遗留的 true 会让 host 不 spawn 线程，而调用方以为 worker 起了。
-	var want_inline = climate_authority_active and web_wants_inline
-	config["native_daily_inline"] = want_inline
-	var native_environment: bool = climate_authority_active and host.runtime_authority_domain_mask == 0xFFF
-	if native_environment and not host._native_environment_active:
+	if not host._native_environment_active:
 		var seeded: Dictionary = host._generator.initialize_world_environment()
 		if not bool(seeded.get("ok", false)):
 			host._observe_runtime_worker_fault({"simulation_host_state": "FAULTED",
@@ -371,26 +305,14 @@ func _start_production_shadow_worker(host) -> void:
 	if not bool(started.get("ok", false)):
 		host._web_worker_start_ok = false
 		host._web_worker_start_code = String(started.get("code", "unknown"))
-		if climate_authority_active:
-			# 权威启动失败不能静默退回 SHADOW：主线程的 climate/country 抑制门读的是
-			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算。
-			# 但调用方以为已经转权威了，所以这里必须响。
-			push_error("[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events authority start refused: %s (%s)" % [
-				String(started.get("code", "unknown")),
-				String(started.get("message", ""))])
-		else:
-			push_warning("[runtime-worker] SHADOW start deferred: %s" % String(
-				started.get("code", "unknown")))
-		# web 上 worker 没起来，而内联又被互斥关掉 ⇒ 没有任何执行者。必须当场
-		# 退回内联，否则日历停在 day 1（用户看到的"世界不动"）。
-		# 判据用 `runtime_native_daily_inline`（用户是否允许内联），不要求
-		# "worker 被要过" —— 起不来就是起不来，与谁请求的无关。
+		push_error("[runtime-worker] native executor start refused: %s (%s)" % [
+			host._web_worker_start_code, String(started.get("message", ""))])
 		if host._is_web_build() and host.runtime_native_daily_inline and not want_inline \
 				and not host._web_worker_inline_fallback:
 			print("[runtime-worker] web start failed (%s) -> falling back to native_daily_inline" \
 				% host._web_worker_start_code)
 			host._web_worker_inline_fallback = true
-			host._start_production_shadow_worker()
+			host._start_runtime_executor()
 			return
 		host._reject_web_daily_fallback("web_native_start_failed", host._web_worker_start_code)
 		return
@@ -398,12 +320,10 @@ func _start_production_shadow_worker(host) -> void:
 	# 回退路径下 start 成功说明"内联起来了"，不是"worker 起来了"，diag 必须分得清。
 	host._web_worker_start_code = "inline_fallback" if host._web_worker_inline_fallback else "ok"
 	host._native_daily_inline_active = bool(started.get("native_daily_inline", false))
-	if host._native_environment_active and not native_environment and host._current_map != null:
-		host._current_map.resume_legacy_season_history()
-	host._native_environment_active = native_environment
+	host._native_environment_active = true
 	host._calendar_admitted_through = -1
 	if host._world_clock != null:
-		host._world_clock.set_native_climate_calendar(native_environment)
+		host._world_clock.set_native_climate_calendar(true)
 	# 二次校验：请求了 worker 却反馈 inline=true，说明配置没生效。宁可回退内联，
 	# 也不要留一个"看起来起了、其实日屏障还在主线程"的状态。
 	if not host._native_daily_inline_active and bool(want_inline):
@@ -413,14 +333,11 @@ func _start_production_shadow_worker(host) -> void:
 			return
 		push_error("[runtime-worker] native_daily_inline requested but host reported false")
 	if host._world_clock != null:
-		host._world_clock.bind_runtime_calendar(Callable(host, "_admit_runtime_calendar")
-			if native_environment and not want_inline else Callable())
-	if climate_authority_active:
-		print("[runtime-worker] production ACTIVE started mask=",
-			host.runtime_authority_domain_mask,
-			" auto_pod=", host.runtime_economy_auto_pod_active,
-			" inline=", host._native_daily_inline_active,
-			" web_worker=", host._web_worker_requested())
+		host._world_clock.bind_runtime_calendar(Callable(host, "_admit_runtime_calendar"))
+	print("[runtime-worker] production ACTIVE started mask=", 0xFFF,
+		" auto_pod=", host.runtime_economy_auto_pod_active,
+		" inline=", host._native_daily_inline_active,
+		" web_worker=", host._web_worker_requested())
 	host._sync_runtime_worker_clock()
 
 

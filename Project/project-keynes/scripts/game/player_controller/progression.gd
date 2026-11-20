@@ -443,7 +443,6 @@ func capture_view_state(host) -> Dictionary:
 		"ideology_draw_start_day": host._ideology_draw_start_day,
 		"ideology_draw_sequence": host._ideology_draw_sequence,
 		"era_advancement": host._era_advancement.capture(),
-		"military_budget": host._military_budget_state.duplicate(),
 		"narrative_event_view": host._narrative_flow.capture(),
 		"narrative_notices": host._narrative_service.capture_notice_history(),
 	}
@@ -507,29 +506,15 @@ func restore_view_state(host, map, state: Dictionary) -> void:
 	host._sync_family_founding_offer()
 	host._sync_ideology_draw()
 	host._sync_era_music(true)
-	host._restore_military_budget(state.get("military_budget", {}))
 	host._annual_report_flow.try_present()
 	host._narrative_flow.try_present()
 
 func _resolve_player_country(host) -> Dictionary:
 	if host._runtime_host == null or host._world_clock == null:
 		return host._result(false, "runtime_unavailable", "游戏尚未就绪，请稍后再试。")
-	var generator: Variant = host._runtime_host.generator()
-	if generator == null or not generator.has_method("gameplay_start_report") \
-			or not generator.has_method("get_country_facade"):
-		return host._result(false, "session_unavailable", "当前不是可操作的正式玩家会话。")
-	var start: Dictionary = generator.gameplay_start_report()
-	var facade = generator.get_country_facade()
-	var cell_idx := int(start.get("cell", -1))
-	if not bool(start.get("ok", false)) or facade == null or cell_idx < 0:
+	if host._country_facade == null or host._player_country_handle == 0:
 		return host._result(false, "session_unavailable", "当前会话没有玩家国家。")
-	var summary: Dictionary = facade.cell_summary(cell_idx)
-	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)):
-		return host._result(false, "player_country_unavailable", "玩家国家尚未可用。")
-	host._player_country_handle = int(summary.get("country_handle", 0))
-	if host._player_country_handle == 0:
-		return host._result(false, "player_country_unavailable", "玩家国家句柄无效。")
-	return {"ok": true, "code": "ok", "message": "", "facade": facade}
+	return {"ok": true, "code": "ok", "message": "", "facade": host._country_facade}
 
 func _request_research_queue(host, facade, operation: String, args: Dictionary,
 		effective_day: int, sequence: int) -> Dictionary:
@@ -563,27 +548,10 @@ func _validate_command_args(host, id: StringName, args: Dictionary, facade = nul
 		host._family_founding_offer_id,
 		host._family_founding_generation,
 		host.is_milestone_technology,
-		host._validate_owned_cell,
 		host.ideology_offer_eligibility,
-		host._military_facade,
-		host._completed_technology_ids,
-		host._state_building_gate,
-		host._player_owns_military_cell,
-		host._player_country_handle,
 		id,
 		args,
 		facade)
-
-func _validate_owned_cell(host, facade, cell: int) -> Dictionary:
-	if facade == null or cell < 0:
-		return host._result(false, "invalid_cell", "地块无效。")
-	var summary: Dictionary = facade.cell_summary(cell)
-	if not bool(summary.get("ok", false)):
-		return host._result(false, "invalid_cell", "地块无效。")
-	if not bool(summary.get("owned", false)) or \
-			int(summary.get("country_handle", 0)) != host._player_country_handle:
-		return host._result(false, "territory_not_owned", "只能修改玩家领土的地块税率。")
-	return host._result(true, "ok", "")
 
 func _next_effective_day(host) -> int:
 	if host._runtime_host != null and host._runtime_host._native_environment_active:

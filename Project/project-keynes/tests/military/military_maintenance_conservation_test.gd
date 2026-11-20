@@ -457,7 +457,7 @@ func _boot_world() -> bool:
 		return false
 	var runtime_ext = _host.get_generator().get_data_core_world_ext() \
 		if _host.get_generator().has_method("get_data_core_world_ext") else null
-	if _host.runtime_climate_authority_enabled and runtime_ext != null \
+	if _host._native_environment_active and runtime_ext != null \
 			and runtime_ext.has_method("set_runtime_clock"):
 		runtime_ext.set_runtime_clock(false, 50.0)
 	return true

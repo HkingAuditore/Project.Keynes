@@ -553,7 +553,7 @@ func _test_save_roundtrip(host: WorldRuntimeHost, clock: WorldClock, ext: Object
 	# Restart the worker on the restored bundle and drive REAL worker days.
 	#
 	# This is what production does: `world_runtime_host.gd:804` calls
-	# `_start_production_shadow_worker()` right after `restore_prepared_game(...)`
+	# `_start_runtime_executor()` right after `restore_prepared_game(...)`
 	# restores the PKSR bundle, so "restore then start the worker" is the shipped order,
 	# not a test artefact.
 	#
@@ -674,16 +674,14 @@ func _build_world() -> Dictionary:
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
 	# ── production authority, verbatim from player_game.gd ──────────────────
-	host.runtime_climate_authority_enabled = true
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = 0xFFF
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
 	# Pinned before generation, exactly like the production comment says
 	# (在生成前钉死 force_on，避免 AUTO 策略或 GM 残值把会话退回 SHADOW).
-	host.set_climate_authority_override("force_on")
+
 	var config := NewGameConfig.create_default()
 	config.country.name = "C0 Worker"
 	config.country.foreign_count = 1

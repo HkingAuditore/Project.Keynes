@@ -63,7 +63,7 @@ func _replay(restored_day: int, slot_index: int, checkpoints: bool) -> Array:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var request := {"kind": "load_game", "slot_id": SLOTS[slot_index]} if restored_day > 0 \
 		else {"kind": "new_game", "config": config.to_dictionary()}
 	root.get_node("GameFlow").set_session({"new_game_config": config.to_dictionary()})

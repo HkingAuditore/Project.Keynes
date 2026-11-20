@@ -58,6 +58,14 @@ public:
             const noexcept = 0;
     virtual bool economy_parity_shadow_enabled() const noexcept = 0;
 
+    // The construction preflight is read-only. The same executor applies the
+    // reserved Military slot only after Economy completed its settlement.
+    virtual const char *preflight_military_construction(
+        uint64_t country, int32_t cell, int32_t type, bool demolishing,
+        int64_t day, int32_t &building, int32_t &slot) const = 0;
+    virtual void commit_military_construction(
+        int32_t cell, int32_t building, int32_t slot, int64_t day, int64_t ready_day) = 0;
+
     // Annual development report.
     virtual bool annual_development_enabled() const = 0;
     virtual uint64_t annual_country_handle() const = 0;

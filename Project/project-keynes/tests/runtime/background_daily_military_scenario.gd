@@ -313,7 +313,7 @@ func check_coverage() -> void:
 static func settle_clock_day(host: WorldRuntimeHost, clock: WorldClock,
 		tree: SceneTree, day: int) -> bool:
 	clock.current_day = float(day + 1)
-	host._on_clock_day_changed(day + 1)
+	host._admit_runtime_calendar(day + 1)
 	var deadline := Time.get_ticks_usec() + 60000000
 	while Time.get_ticks_usec() < deadline:
 		host._process(0.0)

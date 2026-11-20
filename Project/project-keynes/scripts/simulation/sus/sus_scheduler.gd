@@ -5,11 +5,10 @@ class_name SlicedUpdateScheduler
 ## simulation jobs.
 ##
 ## Lifecycle:
-##   1. main.gd / MapGenerator creates an instance (RefCounted; no scene tree
+##   1. MapGenerator or a diagnostic caller creates an instance (RefCounted; no scene tree
 ##      attachment needed).
 ##   2. Each subsystem registers its SusJob via register_job().
-##   3. main.gd._on_day_changed (or _on_season_changed / _on_year_changed) calls
-##      tick(ctx) once per dispatch, passing a freshly-built SusTickContext.
+##   3. The diagnostic caller passes its SusTickContext to tick(ctx).
 ##   4. SUS sorts jobs by priority, gates by policy.should_run() and depends_on,
 ##      then drives run_slice() repeatedly until either:
 ##        a. The job reports done = true.

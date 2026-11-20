@@ -207,6 +207,12 @@ struct MilitaryIntentReceipt {
     int64_t request_sequence = 0;
 };
 
+struct MilitaryPlayerCommandRejection {
+    const char *command;
+    int64_t caller_sequence;
+    const char *reason;
+};
+
 // Dated order admitted through the host and applied by the military owner.
 struct MilitaryCommand {
     uint16_t op = 0;          // MilitaryCommandOp
@@ -220,6 +226,8 @@ struct MilitaryCommand {
     int32_t unit_from = -1;
     int32_t unit_to = -1;
     int64_t count = 0;
+    // Training, formation and map orders carry the player's receipt sequence
+    // here. Zero identifies an internal or standalone order for those opcodes.
     int64_t value = 0;
     std::vector<int32_t> cells;     // area cells / ceded cells
     std::vector<int32_t> ints;      // config shares (unit, bp pairs), template rows, treaty terms

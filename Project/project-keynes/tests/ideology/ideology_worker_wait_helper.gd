@@ -53,7 +53,7 @@ static func drive_worker_day(host: WorldRuntimeHost, clock: WorldClock,
 		ext: Object, day: int, speed: float,
 		hang_guard_ms: int = 10000) -> Dictionary:
 	clock.current_day = float(day)
-	host.run_daily_tick(day, clock.season_phase_for_day(day))
+	host._admit_runtime_calendar(day + 1)
 	host.finish_daily_tick(0.0, {})
 	# One host frame first, so the inputs published below carry what the day
 	# just produced rather than the previous revision.

@@ -420,6 +420,7 @@ public:
 
     enum ConstructionOwnershipPolicy : int32_t {
         OWNERSHIP_TREASURY_SPONSORED_PRIVATE = 1,
+        OWNERSHIP_TREASURY_MILITARY_ORDER = 2,
     };
 
     NativeEconomyRuntime();
@@ -756,14 +757,14 @@ public:
     // contract as the canal / family-colonization lanes).
     godot::Dictionary queue_treasury_sponsored_build(
         int64_t country_handle, int32_t cell_idx, int32_t type_id,
-        int64_t effective_day, int64_t sequence, bool queue_for_worker);
+        int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
     // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
     // economy ledger first, and the military bookkeeping command is only
     // forwarded afterwards (requirement 6.5).
     godot::Dictionary queue_treasury_sponsored_demolish(
         int64_t country_handle, int32_t cell_idx, int32_t type_id,
         int64_t count, int64_t effective_day, int64_t sequence,
-        bool queue_for_worker);
+        bool queue_for_worker, bool military_order = false);
     godot::Dictionary canal_route_quote(
         int64_t country_handle, int32_t start_cell, int32_t end_cell,
         const godot::PackedInt32Array &waypoints);
@@ -2354,7 +2355,7 @@ private:
     void stage_construction_receipt(const Command &cmd, bool ok,
                                     const char *code, int64_t cash_paid = 0,
                                     int64_t treasury_goods_used = 0,
-                                    int64_t market_goods_used = 0);
+                                    int64_t market_goods_used = 0, const char *step = "economy");
 };
 
 #include "economy_runtime_internal_arithmetic.h"

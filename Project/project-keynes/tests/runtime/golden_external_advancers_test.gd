@@ -36,7 +36,7 @@ func _run() -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	_expect("golden configures", bool(host.configure_session({
 		"kind": "new_game", "config": config.to_dictionary()}).get("ok", false)))
 	await host.generate_world()

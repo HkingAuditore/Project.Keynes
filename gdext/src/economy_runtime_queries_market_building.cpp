@@ -1845,7 +1845,13 @@ Dictionary NativeEconomyRuntime::construction_command_receipts(
         Dictionary row;
         row["receipt_id"] = receipt.receipt_id;
         row["sequence"] = receipt.sequence;
-        row["effective_day"] = receipt.effective_day;
+        row["admitted"] = receipt.ok;
+        if (receipt.ok) row["effective_day"] = receipt.effective_day;
+        if (receipt.military_order) {
+            row["command"] = receipt.demolishing
+                ? "military.state.demolish" : "military.state.build";
+            if (!receipt.ok) row["step"] = receipt.step;
+        }
         row["settled_day"] = receipt.settled_day;
         row["country_handle"] = static_cast<int64_t>(receipt.country_handle);
         row["cell_idx"] = receipt.cell;

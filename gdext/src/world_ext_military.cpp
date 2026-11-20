@@ -1411,10 +1411,6 @@ Dictionary DCWorldExt::run_military_catch_up(const Dictionary &ctx) {
     return run_military_daily(ctx);
 }
 
-// ===========================================================================
-// command batches
-// ===========================================================================
-
 bool NativeMilitaryRuntime::submit(MilitaryCommand command, std::string &error) {
     command.sequence = static_cast<uint64_t>(++_military_sequence);
     if (command.country != 0 && core().country_slot_for_handle(command.country) < 0)
@@ -1450,7 +1446,8 @@ bool NativeMilitaryRuntime::stamp_commands(MilitaryCommandBatch &batch) const {
         if (!row.error.empty()) continue;
         row.effective_day = std::max(row.command.effective_day, batch.day);
         row.command.effective_day = row.effective_day;
-        if (!frame) row.error = "military_executor_unavailable";
+        if (row.caller_sequence > 0) accepted = true;
+        else if (!frame) row.error = "military_executor_unavailable";
         else if (frame->view->validate_command(row.command, row.error)) accepted = true;
     }
     return accepted;
@@ -1461,7 +1458,12 @@ void NativeMilitaryRuntime::admit(MilitaryCommandBatch &batch) {
         if (!row.error.empty()) continue;
         row.effective_day = std::max(row.command.effective_day, batch.day);
         row.command.effective_day = row.effective_day;
-        submit(std::move(row.command), row.error);
+        if (row.caller_sequence > 0 &&
+            (row.command.op == MCMD_STATE_BUILD || row.command.op == MCMD_STATE_DEMOLISH)) {
+            queue_player_construction(row);
+        } else {
+            submit(std::move(row.command), row.error);
+        }
     }
     batch.sequence = _military_sequence;
 }
@@ -1480,6 +1482,17 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
             if (parse_military_command(source, row.command, row.error)) {
                 row.command_name = std::string("military.") + String(source["op"]).utf8().get_data();
                 row.caller_sequence = source.get("caller_sequence", 0);
+                if (row.command.op == MCMD_TRAIN || row.command.op == MCMD_ARMY_CREATE ||
+                    row.command.op == MCMD_ARMY_MOVE || row.command.op == MCMD_ARMY_AREA_CONTROL ||
+                    row.command.op == MCMD_ARMY_EXPLORE) {
+                    row.command.value = row.caller_sequence;
+                }
+                if (row.command.op == MCMD_TRAIN && row.caller_sequence > 0)
+                    _military->resolve_training_units(source, row.command);
+                if (row.command.op == MCMD_CONFIG_SET && source.has("shares")) {
+                    row.command.value = row.caller_sequence;
+                    _military->resolve_config_shares(source, row.command, row.error);
+                }
             }
         }
     }
@@ -1509,7 +1522,9 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
     out["admitted"] = accepted > 0;
     out["accepted"] = accepted;
     out["rejected"] = rejected;
-    out["code"] = rejected.is_empty() ? String("ok") : String("military_command_rejected");
+    out["code"] = rejected.is_empty() ? String("ok") :
+        batch.size() == 1 ? String(request->rows.front().error.c_str()) :
+        String("military_command_rejected");
     out["effective_days"] = effective_days;
     if (accepted > 0) {
         out["effective_day"] = *std::max_element(effective_days.ptr(), effective_days.ptr() + effective_days.size());

@@ -597,6 +597,10 @@ func _on_player_command_settled(host, id: StringName, result: Dictionary) -> voi
 		if host._era_panel != null:
 			host._era_panel.show_command_result(result)
 		return
+	if String(id).begins_with("country.tax.cell."):
+		if not bool(result.get("ok", false)) and host._right_panel != null:
+			host._right_panel.show_tax_rejection(result)
+		return
 	if String(id).begins_with("military."):
 		host._on_military_command_settled(id, result)
 		return
@@ -1303,7 +1307,21 @@ func apply_ideology_settled(host, _result: Dictionary) -> void:
 ## 命令后请求一次，让「已排队」的反馈和面板数值同步。
 
 
-func apply_military_command_settled(host, _id: StringName, _result: Dictionary) -> void:
+func apply_military_command_settled(host, id: StringName, result: Dictionary) -> void:
+	var panel = host._right_panel
+	if panel != null:
+		var ok := bool(result.get("ok", false))
+		var message := String(result.get("message", ""))
+		if id in [&"military.state.build", &"military.state.demolish"]:
+			panel.release_military_ledger_busy()
+			panel.set_military_ledger_feedback(message, ok)
+			panel.set_construction_feedback(message, ok)
+		elif not ok and id in [&"military.army.create", &"military.train"]:
+			panel.set_military_army_feedback(message, false)
+			panel.set_military_ledger_feedback(message, false)
+		elif not ok and id in [&"military.army.move", &"military.army.area_control",
+				&"military.army.explore"]:
+			panel.set_military_dossier_feedback(message, false)
 	host._mark_country_panel_dirty(host.COUNTRY_DIRTY_MILITARY, "military_commit")
 	# 宣战/议和在军事运行时里落地，外交页的战事与关系必须在同一天跟上。
 	host._mark_country_panel_dirty(host.COUNTRY_DIRTY_DIPLOMACY, "military_commit")

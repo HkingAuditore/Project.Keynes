@@ -187,24 +187,10 @@ func _bind_settlement_labels() -> void:
 
 
 ## G4 moved host responsibilities
-func on_season_changed(host, season_idx: int) -> void:
+func on_season_changed(host, _season_idx: int) -> void:
 	if host._generator == null or host._current_map == null or host._world_data == null:
 		return
 	host.mark_map_overlay_dirty(&"season_changed")
-	if host._native_environment_active:
-		return
-	var cp = host._generator._c() if host._generator.has_method("_c") else null
-	var use_legacy = false
-	if cp != null and "season_refresh_legacy_signal" in cp:
-		use_legacy = bool(cp.season_refresh_legacy_signal)
-	if not use_legacy:
-		return
-	if host._generator.has_method("queue_season_refresh"):
-		host._generator.queue_season_refresh(season_idx)
-	else:
-		host._generator.refresh_seasonal(host._current_map, host._world_data, season_idx)
-
-
 func on_year_changed(host, _year_idx: int) -> void:
 	if host._generator != null and host._current_map != null and host._world_data != null:
 		host.mark_map_overlay_dirty(&"year_changed")

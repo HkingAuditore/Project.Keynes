@@ -19,10 +19,22 @@ class UiProbe extends RefCounted:
 		dates.append(Vector3i(year, month, day))
 
 
+class CommitDisplay extends RefCounted:
+	var closed_frames := 0
+	func finish_runtime_display_frame() -> void:
+		closed_frames += 1
+	func apply_runtime_economy_resource_writeback() -> Dictionary:
+		return {"ok": true, "applied": false}
+
 class CommitSource extends MapGenerator:
-	func poll_runtime_commit(after_generation: int = 0, _take_days: bool = false) -> Dictionary:
-		return {"ok": true, "available": after_generation < 24,
-			"from_day": 23, "committed_day": 24, "generation": 24}
+	var display := CommitDisplay.new()
+	func get_data_core_world_ext():
+		return display
+	func publish_worker_climate_visuals(_defer: bool = false, _commit: Dictionary = {}) -> Dictionary:
+		return {"ok": true}
+	func poll_runtime_commit(after_generation: int = 0, take_days: bool = false) -> Dictionary:
+		return {"ok": true, "available": after_generation < 24 and take_days,
+			"from_day": 23, "committed_day": 24, "generation": 24, "days": [{"day": 24}]}
 
 class MusicProbe extends RefCounted:
 	var refreshes := 0
@@ -59,10 +71,14 @@ class CommitWritebackProbe extends "res://scripts/game/world_runtime_daily_adapt
 class WritebackProbe extends WorldRuntimeHost:
 	func _runtime_control_state() -> Dictionary:
 		return {"simulation_thread_mode": "ACTIVE", "authority_ready": true,
+			"requested_simulation_thread_mode": "ACTIVE",
 			"climate_worker_authoritative": true, "simulation_committed_day": 23}
 
 	func finish_daily_tick(_ui_ms: float, _ui_breakdown: Dictionary = {}) -> void:
 		pass
+
+	func apply_runtime_vision_display() -> Dictionary:
+		return {"ok": true}
 
 
 func _check_matching_weather_day() -> bool:
@@ -70,18 +86,18 @@ func _check_matching_weather_day() -> bool:
 	var writeback := CommitWritebackProbe.new()
 	host._daily_adapter._part3 = writeback
 	host._generator = CommitSource.new()
+	host._native_environment_active = true
 	host._runtime_ready_for_ticks = true
 	host._runtime_commit_generation = 23
 	host._runtime_climate_writeback_last_day = 23
 	var received: Array[int] = []
 	host.simulation_committed.connect(func(_from, day, _generation): received.append(day))
 	host._consume_runtime_commit_if_ready()
-	var waited := received.is_empty() and writeback.requested_day == 24 and writeback.requested_generation == 24
-	writeback.writeback_ready = true
-	host._consume_runtime_commit_if_ready()
-	var delivered := received == [24] and host._runtime_climate_writeback_last_day == 24
+	var delivered: bool = received == [24] and writeback.requested_day == 24 \
+		and writeback.requested_generation == 24 and host._runtime_climate_writeback_last_day == 23 \
+		and host._generator.display.closed_frames == 1
 	host.free()
-	return waited and delivered
+	return delivered
 
 
 func _check_empty_consumed_climate_writeback() -> bool:

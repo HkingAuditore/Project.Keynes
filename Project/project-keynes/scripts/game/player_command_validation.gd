@@ -116,13 +116,7 @@ static func _validate_command_args(
 		_family_founding_offer_id: int,
 		_family_founding_generation: int,
 		is_milestone_technology: Callable,
-		_validate_owned_cell: Callable,
 		ideology_offer_eligibility: Callable,
-		_military_facade: Callable,
-		_completed_technology_ids: Callable,
-		_state_building_gate: Callable,
-		_player_owns_military_cell: Callable,
-		_player_country_handle: int,
 		id: StringName,
 		args: Dictionary,
 		facade = null) -> Dictionary:
@@ -188,17 +182,6 @@ static func _validate_command_args(
 				var item_id := StringName(args.get("item_id", &""))
 				if item_id.is_empty() or not _tax_item_exists(facade, kind, item_id):
 					return _result(false, "invalid_tax_item", "税务细项目标无效。")
-			if id == COMMAND_CELL_TAX_SET_DEFAULT or \
-					id == COMMAND_CELL_TAX_CLEAR_DEFAULT or \
-					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
-					id == COMMAND_CELL_TAX_CLEAR_OVERRIDE:
-				var owned: Dictionary = _validate_owned_cell.call(facade, int(args.get("cell", -1)))
-				if not bool(owned.ok):
-					return owned
-		COMMAND_CELL_TAX_CLEAR_ALL:
-			var owned: Dictionary = _validate_owned_cell.call(facade, int(args.get("cell", -1)))
-			if not bool(owned.ok):
-				return owned
 		COMMAND_CONSTRUCTION_BUILD:
 			if StringName(args.get("building_id", &"")).is_empty():
 				return _result(false, "invalid_args", "缺少建筑标识。")
@@ -206,15 +189,6 @@ static func _validate_command_args(
 					!= &"treasury_sponsored_private":
 				return _result(false, "unsupported_ownership_policy",
 					"当前版本仅支持国库资助私人经营。")
-			var owned: Dictionary = _validate_owned_cell.call(facade, int(args.get("cell_idx", -1)))
-			if not bool(owned.ok):
-				return _result(false, "construction_cell_not_owned",
-					"只能在玩家领土内修建建筑。")
-			if facade != null and facade.has_method("has_political_capability") \
-				and not facade.has_political_capability(_player_country_handle,
-					&"treasury_construction"):
-				return _result(false, "political_regime_lacks_treasury_construction",
-					"当前体制不开放国库建造。")
 		COMMAND_POLITICAL_REGIME_SET:
 			var regime_id := StringName(args.get("regime_id", &""))
 			if regime_id.is_empty() or facade == null \
@@ -328,35 +302,9 @@ static func _validate_command_args(
 			if int(args.get("cell", -1)) < 0 or String(args.get("to", "")).is_empty() \
 					or int(args.get("count", 0)) <= 0:
 				return _result(false, "invalid_args", "训练命令缺少地块、兵种或人数。")
-			# 与官营建筑一致：兵种未解锁时不允许手动下达训练命令。原生
-			# MCMD_TRAIN 拿不到当日 digest，闸门放在唯一的命令入口。
-			var train_facade = _military_facade.call()
-			if train_facade != null and train_facade.has_method("catalog"):
-				var train_catalog: Dictionary = train_facade.catalog()
-				var train_units: Array = train_catalog.get("units", []) if \
-					train_catalog.get("units", null) is Array else []
-				var train_tech := ""
-				for unit_row in train_units:
-					if unit_row is Dictionary and String((unit_row as Dictionary).get(
-							"id", "")) == String(args.get("to", "")):
-						train_tech = String((unit_row as Dictionary).get("tech", ""))
-						break
-				if not train_tech.is_empty():
-					var train_researched = _completed_technology_ids.call()
-					if train_researched == null:
-						return _result(false, "technology_unknown",
-							"科技状态暂不可读，稍后再试。")
-					if not (train_researched as PackedStringArray).has(train_tech):
-						return _result(false, "technology_locked", "尚未解锁这项科技。")
 		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
 			if int(args.get("cell", -1)) < 0 or int(args.get("building", -1)) < 0:
 				return _result(false, "invalid_args", "官营建筑命令缺少地块或建筑。")
-			# 拆除不查科技：打下别人城市的旧城墙也要能拆，只是仍需在本国领土上。
-			var gate: Dictionary = _state_building_gate.call(int(args.get("cell", -1)),
-				int(args.get("building", -1)), id == COMMAND_MILITARY_STATE_DEMOLISH)
-			if not bool(gate.get("ok", false)):
-				return _result(false, String(gate.get("code", "technology_locked")),
-					String(gate.get("message", "该官营建筑尚未解锁。")))
 		COMMAND_MILITARY_WAGE:
 			var wage_mode := int(args.get("mode", -1))
 			if wage_mode < 0 or wage_mode > 1:
@@ -372,10 +320,6 @@ static func _validate_command_args(
 			var units = args.get("units", {})
 			if cell < 0 or not units is Dictionary or units.is_empty():
 				return _result(false, "invalid_args", "编成部队需要所在格和驻军兵种。")
-			var army_gate: Dictionary = _player_owns_military_cell.call(cell)
-			if not bool(army_gate.get("ok", false)):
-				return _result(false, String(army_gate.get("code", "not_own_territory")),
-					String(army_gate.get("message", "只能编成本国可控领土上的驻军。")))
 		COMMAND_MILITARY_ARMY_STATION, COMMAND_MILITARY_ARMY_STOP, \
 				COMMAND_MILITARY_ARMY_DISBAND:
 			if int(args.get("army", 0)) <= 0:
@@ -389,7 +333,7 @@ static func _validate_command_args(
 			var area_cells = args.get("cells", PackedInt32Array())
 			var radius := int(args.get("radius", 0))
 			if (not area_cells is PackedInt32Array or (area_cells as PackedInt32Array).is_empty()) \
-					and radius <= 0:
+					and (radius <= 0 or int(args.get("cell", -1)) < 0):
 				return _result(false, "invalid_args", "军事控制需要框选或中心格半径。")
 			if radius > 6:
 				return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
@@ -403,9 +347,8 @@ static func _validate_command_args(
 				return _result(false, "invalid_args", "探查半径必须在 1–6 格之间。")
 			var explore_cells = args.get("cells", PackedInt32Array())
 			if not explore_cells is PackedInt32Array \
-					or (explore_cells as PackedInt32Array).is_empty() \
 					or (explore_cells as PackedInt32Array).size() > 256:
-				return _result(false, "invalid_args", "探查范围必须为 1–256 格。")
+				return _result(false, "invalid_args", "探查范围上限为 256 格。")
 		COMMAND_MILITARY_ARMY_STANCE:
 			var stance := int(args.get("stance", -1))
 			if stance < 0 or stance > 4:

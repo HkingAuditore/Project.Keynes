@@ -14,18 +14,6 @@ var _wind_calls := 0
 var _wind_count := -1
 
 
-class ValidationController:
-
-	extends PlayerController
-
-	var gate_calls: Array = []
-
-	func _state_building_gate(cell: int, building: int,
-			demolishing: bool = false) -> Dictionary:
-		gate_calls.append([cell, building, demolishing])
-		return {"ok": false, "code": "technology_locked", "message": "blocked by owner"}
-
-
 func _initialize() -> void:
 	call_deferred("_run")
 
@@ -71,19 +59,17 @@ func _check_conditions() -> void:
 
 
 func _check_validation_ports() -> void:
-	var controller := ValidationController.new()
-	var other := ValidationController.new()
+	var controller := PlayerController.new()
 	var sequence := int(controller._command_sequence)
-	var rejected := controller._validate_command_args(
+	var checked := controller._validate_command_args(
 		PlayerController.COMMAND_MILITARY_STATE_BUILD, {"cell": 12, "building": 3})
-	_expect(not rejected.ok and rejected.code == "technology_locked",
-		"extracted validation respects the controller's actual owner gate")
-	_expect(controller.gate_calls == [[12, 3, false]] and other.gate_calls.is_empty(),
-		"validation callbacks remain bound to the requesting controller")
+	_expect(checked.ok, "build parameters pass without a country or technology snapshot")
+	_expect(not controller._validate_command_args(PlayerController.COMMAND_MILITARY_STATE_BUILD,
+		{"cell": -1, "building": 3}).ok, "invalid build parameters still reject before forwarding")
 	var weights := controller._validate_command_args(
 		PlayerController.COMMAND_RESEARCH_SET_WEIGHTS,
 		{"weights_bp": PackedInt32Array([2500, 2500, 2500, 2500])})
-	_expect(weights.ok and controller.gate_calls.size() == 1,
+	_expect(weights.ok,
 		"unrelated command validation does not invoke military capabilities")
 	controller._era_reward_generation = 7
 	var choice := {"offer_generation": 7, "choice_index": 1}
@@ -95,7 +81,6 @@ func _check_validation_ports() -> void:
 	_expect(int(controller._command_sequence) == sequence,
 		"read-only validation never allocates command sequence numbers")
 	controller.free()
-	other.free()
 
 
 func _check_family_projection() -> void:

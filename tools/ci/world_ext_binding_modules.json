@@ -99,7 +99,7 @@
     "generation": ["scripts/geography", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers", "scripts/simulation/economy/map_resource_initializer.gd", "scripts/simulation/climate/mapgen_climate_passes_a.gd"],
     "bake_encoders": ["scripts/rendering/bakers", "scripts/rendering/renderer_terrain_horizon.gd"],
     "visual": ["scripts/rendering", "scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd"],
-    "demo": ["scripts/main.gd", "scripts/main/debug_tools.gd"]
+    "demo": ["scripts/ui/tile_data_recorder.gd"]
   },
   "test_only": [
     "abort_country_authority_handoff",

@@ -1440,14 +1440,14 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH &&
-            (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+            (!cmd.treasury_construction_policy_valid() ||
              _country_runtime == nullptr || !country_reads().valid_handle(
                  static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&
             (cmd.i64_0 != 1 ||
-             cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+             !cmd.treasury_construction_policy_valid() ||
              _country_runtime == nullptr || !country_reads().valid_handle(
                  static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);

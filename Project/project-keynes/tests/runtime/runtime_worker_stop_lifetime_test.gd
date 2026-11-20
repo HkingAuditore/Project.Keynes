@@ -71,7 +71,7 @@ func _run() -> void:
 	# waiting for a PAUSED worker would miss the lifetime race entirely.
 	for day in range(1, 21):
 		clock.current_day = day
-		host.run_daily_tick(day, clock.season_phase_for_day(day))
+		host._admit_runtime_calendar(day + 1)
 		host.finish_daily_tick(0.0, {})
 		for _poll in range(200):
 			var report: Dictionary = ext.get_runtime_thread_report()

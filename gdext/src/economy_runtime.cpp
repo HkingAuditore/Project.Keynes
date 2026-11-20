@@ -593,6 +593,46 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
     }
     if (cash == 0 && goods_total == 0) return true;
+    std::vector<int32_t> living_merchants;
+    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
+        for (int32_t edge = _merchant_offsets[merchant_cell];
+             edge < _merchant_offsets[merchant_cell + 1]; ++edge) {
+            const int32_t slot = _merchant_slots[edge];
+            if (is_merchant_slot(slot) && slot >= 0 &&
+                slot < static_cast<int32_t>(population_store().population.size()) &&
+                population_store().population[slot] > 0)
+                living_merchants.push_back(slot);
+        }
+    }
+    if (cash > 0 && living_merchants.empty()) {
+        error = "country_treasury_peer_merchant_missing";
+        return false;
+    }
+    int64_t merchant_population = 0;
+    for (const int32_t slot : living_merchants)
+        merchant_population = saturating_add(
+            merchant_population, population_store().population[slot], _saturation_count);
+    int64_t prefix = 0;
+    int64_t distributed = 0;
+    for (const int32_t slot : living_merchants) {
+        prefix = saturating_add(prefix, population_store().population[slot], _saturation_count);
+        const int64_t next = mul_div_sat(
+            cash, prefix, merchant_population, _saturation_count);
+        const int64_t share = std::max<int64_t>(0, next - distributed);
+        distributed = next;
+        if (population_store().funds[slot] >
+                std::numeric_limits<int64_t>::max() - share ||
+            population_store().epoch_income[slot] >
+                std::numeric_limits<int64_t>::max() - share) {
+            error = "country_treasury_peer_merchant_credit_overflow";
+            return false;
+        }
+    }
+    if (cash > 0 && distributed != cash) {
+        error = "country_treasury_peer_merchant_distribution_drift";
+        return false;
+    }
+
     // Country is the unique treasury writer in production. When Economy is
     // running on the worker and Country is the worker-authoritative peer, use
     // the same-thread prepare/service/finish cycle so construction does not
@@ -658,46 +698,6 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
         if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
             return false;
-    }
-
-    std::vector<int32_t> living_merchants;
-    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
-        for (int32_t edge = _merchant_offsets[merchant_cell];
-             edge < _merchant_offsets[merchant_cell + 1]; ++edge) {
-            const int32_t slot = _merchant_slots[edge];
-            if (is_merchant_slot(slot) && slot >= 0 &&
-                slot < static_cast<int32_t>(population_store().population.size()) &&
-                population_store().population[slot] > 0)
-                living_merchants.push_back(slot);
-        }
-    }
-    if (cash > 0 && living_merchants.empty()) {
-        error = "country_treasury_peer_merchant_missing";
-        return false;
-    }
-    int64_t merchant_population = 0;
-    for (const int32_t slot : living_merchants)
-        merchant_population = saturating_add(
-            merchant_population, population_store().population[slot], _saturation_count);
-    int64_t prefix = 0;
-    int64_t distributed = 0;
-    for (const int32_t slot : living_merchants) {
-        prefix = saturating_add(prefix, population_store().population[slot], _saturation_count);
-        const int64_t next = mul_div_sat(
-            cash, prefix, merchant_population, _saturation_count);
-        const int64_t share = std::max<int64_t>(0, next - distributed);
-        distributed = next;
-        if (population_store().funds[slot] >
-                std::numeric_limits<int64_t>::max() - share ||
-            population_store().epoch_income[slot] >
-                std::numeric_limits<int64_t>::max() - share) {
-            error = "country_treasury_peer_merchant_credit_overflow";
-            return false;
-        }
-    }
-    if (cash > 0 && distributed != cash) {
-        error = "country_treasury_peer_merchant_distribution_drift";
-        return false;
     }
 
     godot::PackedInt32Array ids;

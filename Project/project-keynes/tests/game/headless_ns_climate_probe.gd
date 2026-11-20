@@ -103,7 +103,7 @@ func _run() -> int:
 	for day in range(1, days + 1):
 		clock.current_day = float(day)
 		var phase := clock.season_phase_for_day(day)
-		host.run_daily_tick(day, phase)
+		host._admit_runtime_calendar(day + 1)
 		host.finish_daily_tick(0.0, {})
 		var drained := _drain_hard_barrier(clock, day)
 		if not bool(drained.get("ok", false)):

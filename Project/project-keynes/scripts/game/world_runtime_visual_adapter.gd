@@ -398,15 +398,18 @@ func _resolve_fog_of_war_enabled(host) -> bool:
 
 
 func _resolve_player_country_slot(host) -> int:
-	if host._current_map == null:
-		return -1
-	var start_cell = _resolve_player_start_cell(host)
-	if start_cell < 0 or start_cell >= host._current_map.country_slot_arr.size():
-		return -1
-	return int(host._current_map.country_slot_arr[start_cell])
+	var country := _resolve_player_country_handle(host)
+	return int(country & 0xffffffff) if country > 0 else -1
 
 
 func _resolve_player_country_handle(host) -> int:
+	if host._player_country_handle != 0:
+		return host._player_country_handle
+	var sections: Dictionary = host._pending_load_bundle.get("sections", {})
+	var player_context: Dictionary = sections.get("player_context", {})
+	var saved := int(player_context.get("player_country_handle", 0))
+	if saved != 0:
+		return saved
 	if host._generator == null or not host._generator.has_method("get_country_facade"):
 		return 0
 	var start_cell = _resolve_player_start_cell(host)

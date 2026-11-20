@@ -40,6 +40,29 @@
 
 namespace pk {
 
+void NativeSimulationHost::publish_rejected_cell_taxes() {
+    const auto &rejected = _country_pod_plan.rejected_cell_taxes;
+    if (rejected.empty()) return;
+    constexpr const char *reason = "country_cell_tax_territory_invalid";
+    publish_country_command_terminals(rejected,
+        CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+        _country_pod_authority.generation(), reason);
+    constexpr const char *names[] = {"country.tax.cell.set_default",
+        "country.tax.cell.clear_default", "country.tax.cell.set_override",
+        "country.tax.cell.clear_override", "country.tax.cell.clear_all"};
+    for (const auto &row : rejected) {
+        godot::Dictionary result;
+        result["ok"] = false;
+        result["code"] = reason;
+        result["cell"] = row.cell;
+        result["kind"] = row.tax_kind;
+        result["item_id"] = godot::String(row.stable_id.data());
+        publish_boundary_command_result(
+            names[row.opcode - CountryApi::COMMAND_SET_CELL_TAX_DEFAULT],
+            static_cast<int64_t>(row.sequence), std::move(result));
+    }
+}
+
 bool NativeSimulationHost::execute_country_worker_stage(
         int64_t day, uint64_t input_generation,
         const std::vector<RuntimeCommandPacket> &day_commands,
@@ -704,6 +727,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             commit.preflight_ok = 0;
             return false;
         }
+        publish_rejected_cell_taxes();
         publish_country_command_terminals(
             _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
             _country_pod_authority.generation(), nullptr);
@@ -785,6 +809,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
         commit.preflight_ok = 0;
         return false;
     }
+    publish_rejected_cell_taxes();
     publish_country_command_terminals(
         _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
         _country_pod_authority.generation(), nullptr);

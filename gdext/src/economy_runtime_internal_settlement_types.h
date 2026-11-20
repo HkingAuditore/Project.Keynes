@@ -46,6 +46,9 @@
         int64_t cash_paid = 0;
         int64_t treasury_goods_used = 0;
         int64_t market_goods_used = 0;
+        bool military_order = false;
+        bool demolishing = false;
+        const char *step = "economy";
     };
 
     enum CanalSourceKind : uint8_t {

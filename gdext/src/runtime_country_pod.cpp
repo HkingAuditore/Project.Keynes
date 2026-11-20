@@ -1277,7 +1277,8 @@ bool RuntimeCountryPodAuthority::plan_day(
                 ResolveOrder{rhs.effective_day, rhs.sequence, rhs.submit_order, rhs.request_id};
         });
     plan.header.work_units = plan.commands.size();
-    for (const RuntimeCountryCommand &command : plan.commands) {
+    for (auto it = plan.commands.begin(); it != plan.commands.end();) {
+        const RuntimeCountryCommand &command = *it;
         if (command.observed_generation != 0 &&
             command.observed_generation != _state.generation) {
             error = "stale_command_generation";
@@ -1286,10 +1287,17 @@ bool RuntimeCountryPodAuthority::plan_day(
             return false;
         }
         if (!apply_command(plan.next_state, command, plan, error)) {
+            if (error == "country_cell_tax_territory_invalid") {
+                plan.rejected_cell_taxes.push_back(command);
+                it = plan.commands.erase(it);
+                error.clear();
+                continue;
+            }
             plan.header.preflight_ok = 0;
             copy_reason(plan.header.fallback_reason, sizeof(plan.header.fallback_reason), error);
             return false;
         }
+        ++it;
     }
     // Run the research boundary after commands, matching the production
     // ordering. The second pass is a continuation inside the same semantic
@@ -1441,6 +1449,12 @@ bool RuntimeCountryPodAuthority::commit_day(
     if (changed) next.generation = _next_generation++;
     next.state_hash = hash_business_state(next);
     _state = std::move(next);
+    for (const RuntimeCountryCommand &command : plan.rejected_cell_taxes) {
+        _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
+            [&](const RuntimeCountryCommand &queued) {
+                return queued.request_id == command.request_id;
+            }), _pending.end());
+    }
     for (const RuntimeCountryCommand &command : plan.commands) {
         _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
             [&](const RuntimeCountryCommand &queued) {
@@ -1488,6 +1502,12 @@ bool RuntimeCountryPodAuthority::commit_rejected_day(
     }
     next.state_hash = hash_business_state(next);
     _state = std::move(next);
+    for (const RuntimeCountryCommand &command : plan.rejected_cell_taxes) {
+        _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
+            [&](const RuntimeCountryCommand &queued) {
+                return queued.request_id == command.request_id;
+            }), _pending.end());
+    }
     for (const RuntimeCountryCommand &command : plan.commands) {
         _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
             [&](const RuntimeCountryCommand &queued) {

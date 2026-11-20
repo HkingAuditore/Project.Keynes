@@ -50,10 +50,6 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 	_generator._sus.configure_job_from_profile(
 		_generator._economy_daily_job, scheduler_profile, false, &"economy_daily", 1)
 	_generator._runtime_register_system(_generator._economy_daily_job)
-	if _generator._world_clock_ref != null and _generator._world_clock_ref.has_signal("simulation_backpressure_pulse"):
-		var continuation_cb := Callable(_generator, "_continue_economy_inflight")
-		if not _generator._world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
-			_generator._world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
 	return {"ok": true}
 
 

@@ -2,43 +2,6 @@ extends RefCounted
 
 ## Extracted world_runtime_daily_adapter.gd group 2; state stays with host.
 
-func _note_climate_capacity_pending_stall(host) -> void:
-	if host._climate_capacity_pending_day < 0 or host._climate_capacity_pending_since_msec <= 0:
-		return
-	var now_msec = Time.get_ticks_msec()
-	var stalled_ms = now_msec - host._climate_capacity_pending_since_msec
-	if stalled_ms < host._CLIMATE_CAPACITY_STALL_DIAG_MSEC:
-		return
-	if now_msec < host._climate_capacity_stall_next_diag_msec:
-		return
-	host._climate_capacity_stall_next_diag_msec = now_msec + host._CLIMATE_CAPACITY_STALL_DIAG_MSEC
-	var report = host._generator.get_runtime_thread_report() \
-		if host._generator != null and host._generator.has_method("get_runtime_thread_report") else {}
-	push_warning("[climate-capacity-stall] day=%d pending_ms=%d stall=0x%x ring=%s worker=%s committed=%s economy_input=%s country_peer=%s"
-		% [host._climate_capacity_pending_day, stalled_ms,
-			int(report.get("day_stall_reason_mask", 0)),
-			str(report.get("environment_ring_pending", -1)),
-			str(report.get("simulation_host_state", report.get("state", "?"))),
-			str(report.get("simulation_committed_day", report.get("committed_day", -1))),
-			str(report.get("economy_input_requested_day", -1)),
-			str(report.get("country_worker_waiting_for_peer", false))])
-	host.RuntimeForensics.capture_and_dump("climate_input_capacity_stalled", host._generator,
-		host._world_clock, "stall", {
-			"stalled_day": host._climate_capacity_pending_day,
-			"stalled_ms": stalled_ms,
-			"day_stall_reason_mask": report.get("day_stall_reason_mask", 0),
-			"environment_ring_pending": report.get("environment_ring_pending", -1),
-			"economy_input_requested_day": report.get("economy_input_requested_day", -1),
-			"country_worker_waiting_for_peer": report.get(
-				"country_worker_waiting_for_peer", false),
-			"simulation_committed_day": report.get(
-				"simulation_committed_day", report.get("committed_day", -1)),
-		})
-
-
-## Read live authority gates without constructing the full diagnostic report.
-
-
 func _runtime_control_state(host) -> Dictionary:
 	if host._generator == null:
 		return {}
@@ -108,18 +71,6 @@ func get_runtime_fault_diagnostics(host) -> Dictionary:
 func is_runtime_fault_paused(host) -> bool:
 	return host._runtime_worker_fault_paused
 
-
-## Host-side Country intent drain. SHADOW replays typed results without
-## touching Effect/Modifier/Economy. ACTIVE invokes the already-attached
-## production peer adapter and returns its typed result to the worker; the
-## adapter itself does not mutate Country state.
-
-
-## ACTIVE Country's only MapData read-back boundary.  The worker snapshot is
-## immutable and stays on the native side; this method copies either the
-## generation-contiguous sparse owner patch or an explicit full bootstrap /
-## recovery snapshot.  It never waits for the worker and never calls the
-## synchronous Country write API.
 
 ## E8 ACTIVE Modifier write-back. Non-blocking: drops intermediate generations.
 ## Targets legacy ModifierRuntime (not MapData arrays). main_wait_on_sim_us stays 0.
@@ -245,15 +196,3 @@ func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> 
 	host.refresh_country_visuals(host._country_visual_refresh_reason)
 	host._country_visual_last_refresh_ms = host._sched_elapsed_ms(started_usec)
 	host._country_visual_refresh_run_count += 1
-
-
-## ACTIVE worker 的唯一主线程消费点。poll_runtime_commit() 只返回不可变提交
-## 元数据；视觉 intent 采用有界预算分片消费。这里绝不调用 run_daily_tick、
-## 不读取 runtime store，也不等待 worker。
-##
-## `report_override`：同一调用栈里刚刚取过的 runtime report。内联日没有 worker
-## 线程，两次读取必然同值，因此传进来可以省掉一天里第二次
-## get_runtime_thread_report() 的打包/拷贝，并且把**已经由调用方做过的**
-## climate 回灌跳过一次（同一个 report、同一个 committed_day，回灌的单调日门
-## 保证第二次调用本来就是空转）。非 override 调用（每帧 _process）行为不变。
-

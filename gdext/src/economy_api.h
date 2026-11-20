@@ -627,8 +627,8 @@ void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy);
 // ---- State building and procurement bindings (world_ext_economy.cpp, world_ext_military.cpp)
 bool military_purchase_receipt(const NativeEconomyRuntime &economy, int64_t sequence, int64_t &quantity, int64_t &cash);
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units);
-godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
-godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
+godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
+godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
 godot::Dictionary family_colonization_quotes(NativeEconomyRuntime &economy,
     int64_t country, int32_t target, int64_t family, int32_t source, int32_t offset, int32_t limit,
     const uint8_t *visible, int32_t visible_count, uint64_t vision_revision);

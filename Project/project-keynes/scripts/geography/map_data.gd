@@ -261,7 +261,6 @@ var _lat_lut_baked: bool = false
 var terrain_arr:            PackedByteArray = PackedByteArray()
 var published_biome_history := PackedByteArray()
 var published_vegetation_history := PackedByteArray()
-var published_season_history_next := 0
 var landform_arr:           PackedByteArray = PackedByteArray()
 var vegetation_arr:         PackedByteArray = PackedByteArray()
 var base_terrain_arr:       PackedByteArray = PackedByteArray()
@@ -611,17 +610,6 @@ func season_history_for(cell: HexCell, vegetation: bool) -> PackedByteArray:
 	if start >= 0 and start + HexCell.HISTORY_LEN <= history.size():
 		return history.slice(start, start + HexCell.HISTORY_LEN)
 	return cell.vegetation_history if vegetation else cell.biome_history
-
-func resume_legacy_season_history() -> void:
-	if published_biome_history.is_empty() and published_vegetation_history.is_empty():
-		return
-	for cell: HexCell in iter_cells():
-		cell.biome_history = season_history_for(cell, false)
-		cell.vegetation_history = season_history_for(cell, true)
-		cell._history_idx = published_season_history_next
-		cell._veg_history_idx = published_season_history_next
-	published_biome_history = PackedByteArray()
-	published_vegetation_history = PackedByteArray()
 
 func sync_is_water_arr_from_terrain() -> void:
 	var n: int = mini(terrain_arr.size(), is_water_arr.size())

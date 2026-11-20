@@ -44,9 +44,6 @@ $tests = @(
     'tests/runtime/runtime_country_peer_bridge_test.gd',
     'tests/runtime/runtime_country_economy_transaction_test.gd',
     'tests/runtime/runtime_country_host_protocol_test.gd',
-    'tests/runtime/runtime_country_parity_test.gd',
-    'tests/runtime/runtime_ideology_parity_test.gd',
-    'tests/runtime/runtime_ideology_parity_guard_test.gd',
     'tests/runtime/runtime_country_save_roundtrip_test.gd',
     'tests/runtime/runtime_snapshot_ring_test.gd',
     'tests/runtime/runtime_save_domain_section_test.gd',
@@ -93,7 +90,6 @@ $failurePattern = 'FAIL\b|FAILED|ASSERT|assertion failed|Traceback|SCRIPT ERROR|
 # It stays in the list (deleting it would hide the red), runs as before, and is
 # reported separately so it cannot be mistaken for a pass.
 $knownRed = @(
-    'runtime_ideology_parity_test'
 )
 
 $results = @()

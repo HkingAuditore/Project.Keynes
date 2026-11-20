@@ -156,8 +156,6 @@ func _test_player_explore_order() -> void:
 		"explore selection is bounded to 256 cells")
 	_expect(facade.preview_calls == 0,
 		"explore draft never calls preview_path")
-	var preview_cells: PackedInt32Array = controller._military_order_preview.get(
-		"area", PackedInt32Array()).duplicate()
 	var confirmed: Dictionary = controller.confirm_military_arm_order()
 	_expect(bool(confirmed.get("ok", false)), "explore confirmation is accepted")
 	_expect(controller.submitted.size() == 1, "confirmation emits one command")
@@ -168,8 +166,8 @@ func _test_player_explore_order() -> void:
 			"confirmation uses military.army.explore")
 		_expect(int(args.get("army", 0)) == 7 and int(args.get("cell", -1)) == 100,
 			"confirmation sends army and anchor")
-		_expect(args.get("cells", PackedInt32Array()) == preview_cells,
-			"confirmation sends the highlighted selection")
+		_expect(not args.has("cells"),
+			"confirmation leaves cell selection to the executor")
 		_expect(int(args.get("radius", 0)) == 6,
 			"confirmation sends the chosen radius")
 	_expect(controller.military_arm_order().is_empty() == false \

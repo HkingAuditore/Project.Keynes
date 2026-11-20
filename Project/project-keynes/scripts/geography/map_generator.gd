@@ -378,7 +378,6 @@ var _military_registered_graph_active: bool = false
 var _military_registered_graph_mode: int = 0
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
-const SAVE_BOUNDARY_COUNTRY_MAX_SLICES := 8
 const NATIVE_DAILY_CONTINUATION_SLICE_HEADROOM_MS := 3.0
 const BIO_OCCUPANCY_SLICE_CELLS := 2048
 const EFFECT_ACK_CHAIN_MAX_PASSES := 8
@@ -600,8 +599,6 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 	return _get_map_runtime_bridge().prepare_economy_save_restore_runtime()
 func finalize_save_restore_runtime() -> Dictionary:
 	return _get_map_runtime_bridge().finalize_save_restore_runtime()
-func advance_save_boundary() -> void:
-	_get_map_runtime_bridge().advance_save_boundary()
 func native_daily_climate_suppressed() -> bool:
 	return _data_core_world_ext != null and _data_core_world_ext.climate_main_thread_suppressed()
 func _runtime_climate_failure(code: String, reason: String = "", day: int = -1) -> Dictionary:
@@ -1514,12 +1511,7 @@ const WEATHER_VITALITY_PENALTY: Dictionary = {
 }
 func _ensure_vegdyn_lut() -> void:
 	_get_wind_heat_transport()._ensure_vegdyn_lut()
-func refresh_yearly(map: MapData, _world: WorldData) -> void:
-	_get_wind_heat_transport().refresh_yearly(map, _world)
-func _ecosystem_score_vegetation(history: PackedByteArray) -> float:
-	return _get_wind_heat_transport()._ecosystem_score_vegetation(history)
-func _ecosystem_score(history: PackedByteArray) -> float:
-	return _get_wind_heat_transport()._ecosystem_score(history)
+
 func _season_temp_offset(ny: float, season: int) -> float:
 	var phase_mid: float = float(season) + 0.5
 	return _insolation_season_offset(ny, phase_mid)

@@ -84,7 +84,7 @@ const COMMAND_ERA_ADVANCE_RESUME = PlayerCommandValidation.COMMAND_ERA_ADVANCE_R
 const COMMAND_PROCUREMENT_SET_POLICY = PlayerCommandValidation.COMMAND_PROCUREMENT_SET_POLICY
 const COMMAND_NARRATIVE_CHOOSE = PlayerCommandValidation.COMMAND_NARRATIVE_CHOOSE
 ## 军事（Military v1）。与契约 §2 的 op 字符串一一对应：面板只发语义命令，
-## 控制器把它们翻译成军事 facade 的一行 batch 提交，生效日 D+1。
+## 控制器把它们翻译成军事 facade 的一行 batch 提交，由后台返回生效日。
 const COMMAND_MILITARY_FORCE_TARGET = PlayerCommandValidation.COMMAND_MILITARY_FORCE_TARGET
 const COMMAND_MILITARY_CONFIG_SHARES = PlayerCommandValidation.COMMAND_MILITARY_CONFIG_SHARES
 const COMMAND_MILITARY_QUALITY_POLICY = PlayerCommandValidation.COMMAND_MILITARY_QUALITY_POLICY
@@ -466,11 +466,7 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 				int(args.get("colonization_share_bp",
 					EraAdvancementServiceScript.SHARE_UNSET)))
 		_:
-			if id == COMMAND_MILITARY_STATE_BUILD:
-				result = _submit_state_build_command(args, effective_day, sequence)
-			elif id == COMMAND_MILITARY_STATE_DEMOLISH:
-				result = _submit_state_demolish_command(args, effective_day, sequence)
-			elif MILITARY_COMMANDS.has(id):
+			if MILITARY_COMMANDS.has(id):
 				result = _submit_military_command(id, args, effective_day, sequence)
 			else:
 				result = _result(false, "unsupported_command", "该正式玩家命令尚未开放。")
@@ -535,9 +531,8 @@ func get_family_dispatch_candidates(source_cell: int, offset: int = 0,
 	var ready := _resolve_player_country()
 	if not bool(ready.get("ok", false)):
 		return ready
-	var owned := _validate_owned_cell(ready.facade, source_cell)
-	if not bool(owned.get("ok", false)):
-		return owned
+	if not is_player_owned_cell(source_cell):
+		return _result(false, "territory_not_owned", "只能查看本国地块的开拓候选。")
 	if _economy_facade == null:
 		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_cell_snapshot(source_cell, offset, limit)
@@ -636,9 +631,10 @@ func get_family_traits(family_handle: int) -> Dictionary:
 
 
 func is_player_owned_cell(cell: int) -> bool:
-	var ready := _resolve_player_country()
-	return bool(ready.get("ok", false)) and bool(
-		_validate_owned_cell(ready.facade, cell).get("ok", false))
+	if _country_facade == null or cell < 0 or _player_country_handle == 0:
+		return false
+	var published: Dictionary = _country_facade.cell_summary(cell)
+	return int(published.get("country_handle", 0)) == _player_country_handle
 
 
 ## ─── 触屏 GM 手势：三指双击 ──────────────────────────────────────────
@@ -843,6 +839,12 @@ func _on_simulation_command_results(results: Array) -> void:
 		elif id in [COMMAND_ERA_ADVANCE_START, COMMAND_ERA_ADVANCE_PAUSE,
 				COMMAND_ERA_ADVANCE_RESUME, COMMAND_PROCUREMENT_SET_POLICY]:
 			_refresh_era_advancement(true)
+		elif not bool(result.get("ok", false)):
+			var code := String(result.get("code", "command_rejected"))
+			if code == "country_cell_tax_territory_invalid":
+				result["message"] = "只能修改本国领土的地块税率。"
+			elif String(id).begins_with("military."):
+				result["message"] = PlayerControllerMilitaryScript.command_rejection_message(code)
 		command_settled.emit(id, result)
 
 
@@ -949,7 +951,7 @@ func _on_country_committed(report: Dictionary) -> void:
 func _on_construction_command_settled(result: Dictionary) -> void:
 	if int(result.get("country_handle", 0)) != _player_country_handle:
 		return
-	command_settled.emit(COMMAND_CONSTRUCTION_BUILD, result)
+	command_settled.emit(StringName(result.get("command", COMMAND_CONSTRUCTION_BUILD)), result)
 
 
 func _on_family_colonization_settled(result: Dictionary) -> void:
@@ -1261,10 +1263,6 @@ func _tax_assessment_mode(args: Dictionary) -> int:
 	return PlayerCommandValidation._tax_assessment_mode(args)
 
 
-func _validate_owned_cell(facade, cell: int) -> Dictionary:
-	return _progression_component._validate_owned_cell(self, facade, cell)
-
-
 func _next_effective_day() -> int:
 	return _progression_component._next_effective_day(self)
 
@@ -1317,18 +1315,6 @@ static func _military_command_entry(id: StringName, args: Dictionary) -> Diction
 
 
 var _military_last_sequence := -1
-## 玩家亲手设过的军事预算份额（任务 10 / 需求 9.3）。
-##
-## 原生侧这三个份额是 transient：不进 PKMI、不进 `state_hash`，读档后归零，
-## 也就是退回「无信封、按现金与需求直接结算」的旧行为。不重推的话，玩家存档
-## 里的预算控制会静默消失，面板显示的份额还会和原生真实政策对不上。
-##
-## 所以会话自己留一份，读档时原样重推一次。`-1` 表示该项从未被玩家碰过：
-## 重推时原样传回，原生按未传入项沿用当前值，与当时的行为完全等价。
-var _military_budget_state := {
-	"total_bp": -1, "wage_bp": -1, "upkeep_bp": -1, "procurement_bp": -1,
-}
-var _military_budget_repushed := false
 # Army order awaiting a map click (design §14.2). "move" previews the path on the
 # first click and confirms on the second; "area" takes the first click as centre.
 var _military_order_army := 0
@@ -1425,39 +1411,12 @@ func clear_military_map_selection() -> void:
 func has_military_runtime() -> bool:
 	return _military_component.has_military_runtime(self)
 
-func _state_building_gate(cell: int, building: int,
-		demolishing: bool = false) -> Dictionary:
-	return _military_component._state_building_gate(self, cell, building, demolishing)
-
-func _player_owns_military_cell(cell: int) -> Dictionary:
-	return _military_component._player_owns_military_cell(self, cell)
-
-func _completed_technology_ids():
-	return _military_component._completed_technology_ids(self)
-
-func _submit_state_build_command(args: Dictionary, effective_day: int,
-		sequence: int) -> Dictionary:
-	return _military_component._submit_state_build_command(self, args, effective_day, sequence)
-
-func _submit_state_demolish_command(args: Dictionary, effective_day: int,
-		sequence: int) -> Dictionary:
-	return _military_component._submit_state_demolish_command(self, args, effective_day, sequence)
-
 func _submit_military_command(id: StringName, args: Dictionary,
 		effective_day: int, sequence: int) -> Dictionary:
 	return _military_component._submit_military_command(self, id, args, effective_day, sequence)
 
 func military_last_sequence() -> int:
 	return _military_component.military_last_sequence(self)
-
-func _remember_military_budget(args: Dictionary) -> void:
-	_military_component._remember_military_budget(self, args)
-
-func _restore_military_budget(state) -> void:
-	_military_component._restore_military_budget(self, state)
-
-func _repush_military_budget() -> bool:
-	return _military_component._repush_military_budget(self)
 
 func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dictionary:
 	return _military_component.begin_military_arm_order(self, army, mode, radius)

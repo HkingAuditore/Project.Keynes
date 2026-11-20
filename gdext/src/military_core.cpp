@@ -1248,6 +1248,11 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<uint8_t>(h, p.wage_mode);
         h = mix_scalar<int64_t>(h, p.wage_absolute);
         h = mix_scalar<int32_t>(h, p.procurement_share_bp);
+        if (p.budget_share_bp != 0 || p.budget_wage_bp != 6000 || p.budget_upkeep_bp != 2000) {
+            h = mix_scalar<int32_t>(h, p.budget_share_bp);
+            h = mix_scalar<int32_t>(h, p.budget_wage_bp);
+            h = mix_scalar<int32_t>(h, p.budget_upkeep_bp);
+        }
         h = mix_scalar<int32_t>(h, p.pay_ratio_30_q16);
         h = mix_scalar<int64_t>(h, p.per_soldier_cost);
         for (int32_t bp : p.config_share_bp) h = mix_scalar<int32_t>(h, bp);

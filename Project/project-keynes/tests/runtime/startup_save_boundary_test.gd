@@ -17,7 +17,7 @@ class ControlledHost extends WorldRuntimeHost:
 		var annual: Dictionary = _annual_reports.configure(_generator, _world_clock,
 			_resolve_player_country_handle())
 		if not annual.get("ok", false): return annual
-		_start_production_shadow_worker()
+		_start_runtime_executor()
 		_clock_binding.attach(_world_clock, _generator.set_runtime_clock_threaded,
 			_runtime_session.set_running)
 		return {"ok": true}
@@ -48,7 +48,7 @@ func _check_startup(inline_mode: bool) -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	_expect("startup fixture configures", host.configure_session({
 		"kind": "new_game", "config": config.to_dictionary()}).get("ok", false))
 	await host.generate_world()
@@ -85,7 +85,7 @@ func _check_startup(inline_mode: bool) -> void:
 	clock.pause(false)
 	for day in range(1, 9):
 		clock.current_day = float(day + 1)
-		host._on_clock_day_changed(day + 1)
+		host._admit_runtime_calendar(day + 1)
 		host.step()
 		for frame in 1200:
 			host.step()

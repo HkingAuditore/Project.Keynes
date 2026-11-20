@@ -92,7 +92,7 @@ func _run_world(stall: bool, military_scenario: bool = false) -> Dictionary:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var configured := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
 	_expect("formal new game configures", bool(configured.get("ok", false)))
 	var result := {}
@@ -281,7 +281,7 @@ func _wait_boundary_result(host: WorldRuntimeHost, command: String, sequence: in
 func _publish_day(host: WorldRuntimeHost, clock: WorldClock, day: int) -> void:
 	if host._native_daily_inline_active:
 		clock.current_day = float(day + 1)
-		host._on_clock_day_changed(day + 1)
+		host._admit_runtime_calendar(day + 1)
 	else:
 		host._admit_runtime_calendar(day + 1)
 
@@ -444,7 +444,7 @@ func _check_narrative_boundary() -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	_seed_narrative_archive(host, {
 		"last_popup_day": 0,
 		"next_offer_id": 2,

@@ -13,6 +13,7 @@
   "composition_roots": {
     "world_ext.cpp": "Godot binding layer owns MilitaryCore",
     "world_ext_military.cpp": "Godot binding layer owns MilitaryCore",
+    "world_ext_military_construction.cpp": "Executor adapter reserves and applies MilitaryCore construction slots",
     "world_ext_military_digest.cpp": "Godot binding layer opens country slots and freezes MilitaryCore inputs"
   },
   "legacy_includers": [],

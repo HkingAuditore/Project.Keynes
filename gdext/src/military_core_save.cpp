@@ -56,6 +56,7 @@ constexpr uint16_t kSection_PurchaseOrders = 24;
 // forgive or double-count a shortage, and the disrepair verdict would reset to
 // "fine" on every load.
 constexpr uint16_t kSection_Maintenance = 25;
+constexpr uint16_t kSection_BudgetEnvelope = 26;
 constexpr uint16_t kSection_End = 0xFFFF;
 
 // Sanity caps so a corrupt length can never trigger an enormous allocation.
@@ -640,6 +641,18 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     w.begin(kSection_Policies);
     write_policies(w, *this);
     w.end();
+    if (std::any_of(_policies.begin(), _policies.end(), [](const MilitaryCountryPolicy &p) {
+            return p.budget_share_bp != 0 || p.budget_wage_bp != 6000 || p.budget_upkeep_bp != 2000;
+        })) {
+        w.begin(kSection_BudgetEnvelope);
+        w.u32(static_cast<uint32_t>(_policies.size()));
+        for (const auto &policy : _policies) {
+            w.i32(policy.budget_share_bp);
+            w.i32(policy.budget_wage_bp);
+            w.i32(policy.budget_upkeep_bp);
+        }
+        w.end();
+    }
 
     // ---- sparse cell state
     w.begin(kSection_CellStates);
@@ -1404,6 +1417,29 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     p.config_share_bp.assign(m, 0);
                     for (uint32_t k = 0; k < m; ++k) p.config_share_bp[k] = r.i32();
                     if (!r.ok()) break;
+                }
+                break;
+            }
+            case kSection_BudgetEnvelope: {
+                if (r.section_remaining() < sizeof(uint32_t)) {
+                    error = "pkmi_bad_budget_envelope";
+                    return false;
+                }
+                const uint32_t n = r.u32();
+                if (n != tmp._policies.size() || r.section_remaining() != n * 12ULL) {
+                    error = "pkmi_bad_budget_envelope";
+                    return false;
+                }
+                for (auto &policy : tmp._policies) {
+                    policy.budget_share_bp = r.i32();
+                    policy.budget_wage_bp = r.i32();
+                    policy.budget_upkeep_bp = r.i32();
+                    if (policy.budget_share_bp < 0 || policy.budget_share_bp > 10000 ||
+                        policy.budget_wage_bp < 0 || policy.budget_wage_bp > 10000 ||
+                        policy.budget_upkeep_bp < 0 || policy.budget_upkeep_bp > 10000) {
+                        error = "pkmi_bad_budget_envelope";
+                        return false;
+                    }
                 }
                 break;
             }

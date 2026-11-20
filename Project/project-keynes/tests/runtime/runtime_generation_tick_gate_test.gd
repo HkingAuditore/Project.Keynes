@@ -44,13 +44,13 @@ func _run() -> void:
 func _check_native_days(runtime: WorldRuntimeHost, clock: WorldClock) -> void:
 	clock.set_process(false)
 	var generator := runtime.get_generator()
-	_expect("formal generation starts the whole graph", runtime._native_environment_active
-		and runtime.runtime_authority_domain_mask == 0xfff)
 	var report := generator.get_runtime_thread_report()
+	_expect("formal generation starts the whole graph", runtime._native_environment_active
+		and int(report.get("requested_authority_mask", 0)) == 0xfff)
 	var day := int(report.get("simulation_committed_day", 0)) + 1
 	for expected in [day, day + 1]:
 		clock.current_day = float(expected + 1)
-		runtime._on_clock_day_changed(expected + 1)
+		runtime._admit_runtime_calendar(expected + 1)
 		for _frame in range(FRAME_LIMIT):
 			runtime._process(0.0)
 			report = generator.get_runtime_thread_report()
@@ -71,8 +71,9 @@ func _on_world_generation_started(runtime: WorldRuntimeHost, clock: WorldClock) 
 	_expect("generation closes the daily tick boundary",
 		not runtime.is_runtime_ready_for_ticks())
 	_expect("generation pauses the world clock", clock.paused)
-	_expect("closed tick boundary has no scheduler side effects",
-		runtime.run_daily_tick(1, 0.0).is_empty())
+	var before: int = runtime._calendar_admitted_through
+	runtime._admit_runtime_calendar(2)
+	_expect("closed tick boundary admits no day", runtime._calendar_admitted_through == before)
 
 
 func _expect(label: String, condition: bool) -> void:

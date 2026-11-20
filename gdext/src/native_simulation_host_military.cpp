@@ -80,6 +80,21 @@ bool NativeSimulationHost::service_military_commands() {
     return true;
 }
 
+const char *NativeSimulationHost::preflight_military_construction(
+        uint64_t country, int32_t cell, int32_t type, bool demolishing,
+        int64_t day, int32_t &building, int32_t &slot) const {
+    const auto *state = _country_pod_authority.borrow_state();
+    if (!_executor_military || state == nullptr || !on_worker_thread())
+        return "military_executor_unavailable";
+    return _executor_military->preflight_construction(
+        *state, country, cell, type, demolishing, day, building, slot);
+}
+
+void NativeSimulationHost::commit_military_construction(
+        int32_t cell, int32_t building, int32_t slot, int64_t day, int64_t ready_day) {
+    _executor_military->commit_construction(cell, building, slot, day, ready_day);
+}
+
 const char *NativeSimulationHost::stage_military(DayExecution &day) {
     if (!_executor_military || day.commit.completed_domain_mask != RUNTIME_ALL_DOMAIN_MASK ||
         _requested_authority_mask.load(std::memory_order_acquire) != RUNTIME_ALL_DOMAIN_MASK) return nullptr;
@@ -96,6 +111,12 @@ const char *NativeSimulationHost::stage_military(DayExecution &day) {
     }
     if (military.should_run(index)) {
         military.last_result = military.run_day(index);
+        for (const auto &rejection : military.take_player_rejections()) {
+            godot::Dictionary result;
+            result["ok"] = false;
+            result["code"] = rejection.reason;
+            publish_boundary_command_result(rejection.command, rejection.caller_sequence, std::move(result));
+        }
         if (!static_cast<bool>(military.last_result.get("ok", false)) &&
             godot::String(military.last_result.get("reason", "")) != "military_intent_submit_failed")
             return "military_stage_failed";

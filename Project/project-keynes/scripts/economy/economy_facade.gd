@@ -625,7 +625,8 @@ func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
 
 static func _demolish_result_message(code: String) -> String:
 	return {
-		"ok": "拆除已受理。",
+		"ok": "拆除已完成。",
+		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
 		"demolish_queued": "拆除已排队，将在下一个经济结算边界执行。",
 		"demolish_target_invalid": "拆除目标无效。",
 		"demolish_not_state_owned": "该建筑不属于官营，无法按官营方式拆除。",
@@ -653,8 +654,10 @@ func dispatch_construction_command_receipts() -> void:
 		var type_id := int(result.get("type_id", -1))
 		result["building_id"] = String(stable_ids[type_id]) if type_id >= 0 \
 				and type_id < stable_ids.size() else ""
-		result["message"] = _construction_result_message(
-			String(result.get("code", "command_rejected")))
+		var code := String(result.get("code", "command_rejected"))
+		result["message"] = _demolish_result_message(code) \
+			if String(result.get("command", "")) == "military.state.demolish" \
+			else _construction_result_message(code)
 		print("[construction] receipt id=%s seq=%s cell=%s type=%s ok=%s code=%s settled_day=%s" % [
 			str(result.get("receipt_id", -1)), str(result.get("sequence", -1)),
 			str(result.get("cell_idx", -1)), str(result.get("type_id", -1)),
@@ -846,6 +849,8 @@ static func _construction_result_message(code: String) -> String:
 		"ok": "建筑已开工。",
 		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
 		"construction_technology_locked": "建造所需科技尚未解锁。",
+		"technology_locked": "建造所需科技尚未解锁。",
+		"military_construction_schedule_full": "当地官营建筑的营造排期已满。",
 		"construction_obsolete": "已有更高阶生产方式；当前方式仍可建造。",
 		"construction_conditions_failed": "目标地块不满足建筑放置条件。",
 		"construction_resource_unavailable": "当地自然资源承载不足。",
