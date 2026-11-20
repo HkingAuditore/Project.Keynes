@@ -115,7 +115,12 @@ func _test_moderate_warm_humid_open_ocean_releases_latent_rain() -> void:
 	ws.tick_one_day(map, _world(), 1, 0.02, 1.5)
 	var q2 := ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
 	var wt: int = int(q2.get("type", WeatherType.WT.CLEAR))
-	_expect(wt in [WeatherType.WT.RAIN, WeatherType.WT.STORM],
+	# 断言「release latent marine rain」这个性质，而不是某一个具体雨种：MONSOON(7) 也是降水类型
+	# （wf_is_precip_weather_type 含 7），暖湿海面 + instability 0.61 判成热带暴雨属合理结果。
+	# W3 重标定后该格由 RAIN 变 MONSOON（precip 0.105）。判据改为「是降水类型 且 precip > 0.06」，
+	# 比原白名单多了一条降水率下限 —— 是加严，不是放宽。
+	_expect(wt in [WeatherType.WT.RAIN, WeatherType.WT.STORM, WeatherType.WT.MONSOON]
+			and float(q2.get("precip", 0.0)) > 0.06,
 		"moderate warm humid open ocean should release latent marine rain (type=%d precip=%.3f cloud_water=%.3f cloud=%.3f vapor=%.3f instability=%.3f)" % [
 			wt,
 			float(q2.get("precip", 0.0)),

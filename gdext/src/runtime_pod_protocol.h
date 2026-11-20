@@ -1986,10 +1986,14 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> effect_bytes;
     std::vector<uint8_t> gameplay_effect_bytes;
     std::vector<uint8_t> ideology_bytes;
-    // Economy POD ECP1 section (graph authority snapshot).
+    // Economy POD ECP1 section (graph authority snapshot). No longer written:
+    // restore is ECP2-only, so a save would ship a second full economy encoding
+    // that nothing reads. Kept so ABI-9-era bundles still parse.
     std::vector<uint8_t> economy_pod_bytes;
     std::vector<uint8_t> economy_command_bytes, trigger_transport_bytes;
-    // Economy ECP2 full-authority section (dual-write alongside ECP1/PKEC).
+    // Economy ECP2 full-authority section. Captured once per save and exported to
+    // the PKSV `ecp2` provider section; it is not embedded in the PKSR wire bytes
+    // any more, because the container stored the identical block a second time.
     std::vector<uint8_t> economy_ecp2_bytes;
     // D7T1 Host Country/Economy asset journal. Independent of Economy POD
     // section ownership; restores peer continuation without granting Economy
