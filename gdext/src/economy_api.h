@@ -638,6 +638,12 @@ godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy
     int64_t country, int64_t family, int32_t source, int32_t target, int64_t population,
     int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
     int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
+godot::Dictionary submit_family_colonization_cancel(NativeEconomyRuntime &economy,
+    int64_t country, int64_t expedition, int64_t day, int64_t sequence);
+godot::Dictionary submit_family_founding_choice(NativeEconomyRuntime &economy,
+    int64_t offer, int64_t generation, int32_t choice, int64_t day, int64_t sequence);
+godot::Dictionary queue_canal_construction(NativeEconomyRuntime &economy,
+    int64_t country, int64_t quote, int64_t day, int64_t sequence);
 godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country);
 void sample_narrative_cell(const NativeEconomyRuntime &, NarrativeCellView &, bool detailed);
 std::vector<NarrativeEconomyNotice> narrative_economy_notices(

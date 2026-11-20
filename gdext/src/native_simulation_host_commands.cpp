@@ -58,29 +58,12 @@ std::unique_lock<std::mutex> NativeSimulationHost::lock_command_admission(
         int64_t &effective_day) {
     std::unique_lock<std::mutex> admission(_command_enqueue_mutex);
     if (!_world_environment || on_worker_thread() || effective_day < 0) return admission;
-    const auto available = [this] {
-        const auto state = _state.load(std::memory_order_acquire);
-        return state != RuntimeWorkerState::FAULTED && state != RuntimeWorkerState::STOPPED &&
-            state != RuntimeWorkerState::STOPPING && !_stop_requested.load(std::memory_order_acquire);
-    };
-    while (available()) {
-        const int64_t frozen = _command_frozen_through.load(std::memory_order_acquire);
-        if (frozen <= committed_day_value() || effective_day > frozen) {
-            effective_day = std::max(effective_day, command_seal_day());
-            return admission;
-        }
-        // Today's input has already been taken. Receive this request at the
-        // next commit boundary, without holding up the executing day.
-        admission.unlock();
-        {
-            std::unique_lock<std::mutex> control(_control_mutex);
-            _control_cv.wait(control, [&] {
-                return committed_day_value() >= frozen || !available();
-            });
-        }
-        admission.lock();
-    }
-    return {};
+    const auto current = state();
+    if (current == RuntimeWorkerState::FAULTED || current == RuntimeWorkerState::STOPPED ||
+        current == RuntimeWorkerState::STOPPING || _stop_requested.load(std::memory_order_acquire))
+        return {};
+    effective_day = std::max(effective_day, command_seal_day());
+    return admission;
 }
 
 bool NativeSimulationHost::enqueue_batch_at(
@@ -591,10 +574,12 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         runtime_copy_text(out.reason, "narrative_choice_apply_failed");
         return out;
     }
+    const int64_t previous_seal = _command_frozen_through.load(std::memory_order_acquire);
     {
         std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
         drain_inline_day_commands(day, day_commands, day_receipts, admitted_submit_order);
-        if (_world_environment) _command_frozen_through.store(day, std::memory_order_release);
+        if (_world_environment)
+            _command_frozen_through.store(day, std::memory_order_release);
     }
     const double speed = _speed_days_per_second.load(std::memory_order_acquire);
     _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
@@ -628,6 +613,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     out.country_peer_progress =
         _country_peer_signal.load(std::memory_order_acquire) != peer_signal;
     if (_inline_budget_exceeded) {
+        _command_frozen_through.store(previous_seal, std::memory_order_release);
         // 看门狗掐断：这一天没有提交，也不该被当成"缺 peer"再重试 —— 重试只
         // 会再花一次同样的预算。调用方看到的是可上报的一次明确失败。
         runtime_copy_text(out.reason, "inline_daily_day_budget_exceeded");
@@ -643,6 +629,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         return out;
     }
     if (day_commit.preflight_ok == 0) {
+        _command_frozen_through.store(previous_seal, std::memory_order_release);
         // 没提交：收据与命令都退回，等调用方泵完 peer 再试同一天。
         _executor_pending_commands.insert(_executor_pending_commands.begin(),
             day_commands.begin(), day_commands.end());
@@ -730,9 +717,6 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _day_waterfall.mark(RuntimeDayWaterfall::WORKER_PUBLISH_DAY);
     _day_waterfall.finish(true, day_commit.completed_domain_mask);
     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
-    // 内联模式没有等待者；保留这一行是为了让"提交后唤醒"的语义与 worker 一致，
-    // 将来若有人在 CV 上等一天完成也不会漏唤醒。
-    _control_cv.notify_all();
     out.committed = true;
     out.continuation_pending = false;
     out.commit_tail_ms = std::chrono::duration<double, std::milli>(

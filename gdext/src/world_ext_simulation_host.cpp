@@ -1191,6 +1191,7 @@ void DCWorldExt::sim_trace_main_write(const char *tag) {
 
 Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
     Dictionary out;
+    out["admitted"] = false;
     if (!_runtime_host || _runtime_host->state() == RuntimeWorkerState::STOPPED) {
         out["ok"] = false;
         out["pending"] = false;
@@ -1283,6 +1284,7 @@ Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
         return out;
     }
     out["ok"] = true;
+    out["admitted"] = true;
     out["pending"] = true;
     out["request_id"] = static_cast<int64_t>(packet.envelope.request_id);
     out["producer_id"] = static_cast<int>(packet.envelope.producer_id);
@@ -1338,6 +1340,10 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_d
         if (!resources.cells.empty())
             _runtime_display_resources = std::make_shared<RuntimeResourceDisplayPatch>(std::move(resources));
         commit = *publication;
+    }
+    if (take_days) {
+        const Array results = _runtime_host->take_boundary_command_results();
+        if (!results.is_empty()) out["boundary_results"] = results;
     }
     if (!publication && (take_days || !_runtime_host->poll_commit(after, commit))) {
         out["ok"] = true;

@@ -52,7 +52,8 @@ func _check_war_notice() -> void:
 	_choose_story(0)
 	if await _advance_story(4):
 		_expect("confirming a notice records it on the following day",
-			not _story_records().is_empty() and int(_story_records()[0].resolved_day) == 4)
+			not _story_records().is_empty() and int(_story_records()[0].resolved_day) == 4
+			and _story_records()[0].get("notice_only") == true)
 
 
 func _check_batched_war_notice() -> void:

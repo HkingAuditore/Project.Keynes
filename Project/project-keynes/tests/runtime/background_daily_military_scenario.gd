@@ -37,6 +37,7 @@ var _prior_ration := -1
 var _prior_fact_id := 0
 var _fact_ids := PackedInt64Array()
 var _sequence := 920000
+var _expected_military_sequence := 0
 
 
 func _init(host: WorldRuntimeHost, check: Callable, restored_day: int = 0) -> void:
@@ -116,6 +117,7 @@ func issue_for_day(day: int) -> void:
 # point both the old military formula and the Country seal target this day.
 func _issue_military_on_boundary(_from_day: int, finished_day: int, _generation: int) -> void:
 	var day := finished_day + 1
+	_expected_military_sequence = int(_military.report().get("sequence_cursor", 0))
 	match day:
 		6:
 			var state_building: int = _military.state_building_ids().find("warrior_lodge")
@@ -188,6 +190,8 @@ func _transfer(cell: int, country: int, day: int) -> void:
 
 func _record(receipt: Dictionary, command: Dictionary) -> void:
 	_check.call("military scenario admitted %s: %s" % [command.op, receipt], bool(receipt.get("ok", false)))
+	if receipt.has("committed_at_admission"):
+		_expected_military_sequence += int(receipt.get("accepted", 0))
 	if String(command.op).begins_with("military.") or receipt.has("effective_day"):
 		_check.call("military scenario kept the effective day for %s" % command.op,
 			int(receipt.get("effective_day", -1)) == int(command.effective_day))
@@ -214,7 +218,21 @@ func _find_march_target() -> int:
 	return -1
 
 
-func collect_day(day: int) -> void:
+func collect_day(day: int, max_slices: int) -> void:
+	# Future commands are returned immediately and installed at the worker boundary.
+	# Sample both the report and the archive after the pending commands are published.
+	var ledger: Dictionary
+	var ready := false
+	for _slice in range(max_slices):
+		if int(_military.report().get("sequence_cursor", -1)) == _expected_military_sequence:
+			ledger = economy.building_cell_snapshot(_capital) if day >= 15 else {}
+			if day < 15 or (ledger.has("group_type_ids") and int(ledger.get("read_view_day", day)) == day):
+				ready = true
+				break
+		await _host.get_tree().process_frame
+	_check.call("military admissions and building snapshot published at day %d" % day, ready)
+	if not ready:
+		return
 	var forces: Dictionary = _military.country_snapshot(_player)
 	evidence.recruited_heads = maxi(evidence.recruited_heads, int(forces.get("soldiers_total", 0)))
 	evidence.field_heads = maxi(evidence.field_heads, int(forces.get("soldiers_in_armies", 0)))
@@ -270,7 +288,6 @@ func collect_day(day: int) -> void:
 		evidence.new_occupancy_from_production += 1
 	_prior_species = _map.bio_occupancy_bits_arr.duplicate()
 	if day >= 15:
-		var ledger := economy.building_cell_snapshot(_capital)
 		var introduction := false
 		for row in ledger.group_type_ids.size():
 			var id: String = ledger.building_type_ids[ledger.group_type_ids[row]]

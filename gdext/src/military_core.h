@@ -795,6 +795,7 @@ public:
     // ---- commands (military_core.cpp); validated on submit, applied at
     // the start of step_day(effective_day).
     bool submit(MilitaryCommand command, std::string &error);
+    bool validate_command(MilitaryCommand &command, std::string &error) const;
     // Applies one validated command (owner: military_core.cpp).
     void apply_command(const MilitaryCommand &cmd, int64_t day);
     // Submit helper: true when command.army is owned by command.country.

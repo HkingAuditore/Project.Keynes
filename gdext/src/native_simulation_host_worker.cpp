@@ -80,6 +80,10 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 
 void NativeSimulationHost::request_stop() {
     std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+    request_stop_locked();
+}
+
+void NativeSimulationHost::request_stop_locked() {
     _authority_control.revoke();
     RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
@@ -355,7 +359,7 @@ void NativeSimulationHost::worker_main() {
                _state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
-            if (service_military_commands() || service_colonization_requests() ||
+            if (service_military_commands() || service_economy_boundary_requests() ||
                 service_era_reward_requests() || service_annual_presentations() ||
                 service_narrative_requests()) continue;
 
@@ -496,8 +500,12 @@ void NativeSimulationHost::worker_main() {
                 if (try_fault_injection("worker.inflight.before")) {
                     break;
                 }
-                // Include commands delivered during the main boundary service;
-                // draining before that service made their admission race a day.
+                if (_world_environment) {
+                    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+                    std::lock_guard<std::mutex> control(_control_mutex);
+                    if (player_requests_pending_locked()) break;
+                    _command_frozen_through.store(day, std::memory_order_release);
+                }
                 const bool narrative_commands = prepare_narrative_day(day);
                 if (state() == RuntimeWorkerState::FAULTED) break;
                 {
@@ -505,8 +513,6 @@ void NativeSimulationHost::worker_main() {
                     // have already been taken from the queue.
                     std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
                     if (country_delivery_boundary || narrative_commands) drain_commands();
-                    if (_world_environment)
-                        _command_frozen_through.store(day, std::memory_order_release);
                 }
                 day_receipts.clear();
                 if (pending_commands_dirty) {
@@ -1136,7 +1142,7 @@ void NativeSimulationHost::worker_main() {
     {
         std::lock_guard<std::mutex> control(_control_mutex);
         _military_commands.clear();
-        _colonization_requests.clear();
+        _economy_boundary_requests.clear();
         _era_reward_requests.clear();
         _narrative_requests.clear();
         _annual_presentations.clear();

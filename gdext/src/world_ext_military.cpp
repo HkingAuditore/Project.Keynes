@@ -1443,6 +1443,19 @@ bool NativeMilitaryRuntime::submit_independence(
     return submit(std::move(command), error);
 }
 
+bool NativeMilitaryRuntime::stamp_commands(MilitaryCommandBatch &batch) const {
+    const auto frame = read();
+    bool accepted = false;
+    for (auto &row : batch.rows) {
+        if (!row.error.empty()) continue;
+        row.effective_day = std::max(row.command.effective_day, batch.day);
+        row.command.effective_day = row.effective_day;
+        if (!frame) row.error = "military_executor_unavailable";
+        else if (frame->view->validate_command(row.command, row.error)) accepted = true;
+    }
+    return accepted;
+}
+
 void NativeMilitaryRuntime::admit(MilitaryCommandBatch &batch) {
     for (auto &row : batch.rows) {
         if (!row.error.empty()) continue;
@@ -1463,10 +1476,15 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
         if (batch[i].get_type() != Variant::DICTIONARY) {
             row.error = "military_command_not_object";
         } else {
-            parse_military_command(batch[i], row.command, row.error);
+            const Dictionary source = batch[i];
+            if (parse_military_command(source, row.command, row.error)) {
+                row.command_name = std::string("military.") + String(source["op"]).utf8().get_data();
+                row.caller_sequence = source.get("caller_sequence", 0);
+            }
         }
     }
-    if (military_executor_active()) {
+    const bool executor_owned = military_executor_active();
+    if (executor_owned) {
         if (!_runtime_host->submit_military_commands(request))
             return military_fail("military_executor_unavailable");
     } else {
@@ -1488,13 +1506,19 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
     const int64_t accepted = batch.size() - rejected.size();
     Dictionary out;
     out["ok"] = rejected.is_empty();
+    out["admitted"] = accepted > 0;
     out["accepted"] = accepted;
     out["rejected"] = rejected;
     out["code"] = rejected.is_empty() ? String("ok") : String("military_command_rejected");
     out["effective_days"] = effective_days;
-    if (accepted > 0)
+    if (accepted > 0) {
         out["effective_day"] = *std::max_element(effective_days.ptr(), effective_days.ptr() + effective_days.size());
-    out["next_sequence"] = request->sequence;
+        if (executor_owned) {
+            out["committed_at_admission"] = request->committed_at_admission;
+            out["frozen_at_admission"] = request->frozen_at_admission;
+        }
+    }
+    if (!executor_owned) out["next_sequence"] = request->sequence;
     return out;
 }
 

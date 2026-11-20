@@ -531,13 +531,6 @@ func _resolve_player_country(host) -> Dictionary:
 	host._player_country_handle = int(summary.get("country_handle", 0))
 	if host._player_country_handle == 0:
 		return host._result(false, "player_country_unavailable", "玩家国家句柄无效。")
-	var reward_binding: Dictionary = facade.bind_era_reward_player_country(
-		host._player_country_handle) if facade.has_method(
-			"bind_era_reward_player_country") else {"ok": false,
-				"reason": "era_reward_runtime_unavailable"}
-	if not bool(reward_binding.get("ok", false)):
-		return host._result(false, String(reward_binding.get("reason",
-			"era_reward_player_bind_failed")), "玩家时代奖励身份绑定失败。")
 	return {"ok": true, "code": "ok", "message": "", "facade": facade}
 
 func _request_research_queue(host, facade, operation: String, args: Dictionary,

@@ -125,7 +125,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 		if not settled:
 			print("BACKGROUND_MILITARY_UNSETTLED=" + JSON.stringify(host.get_generator().get_runtime_thread_report()))
 			break
-		scenario.collect_day(day)
+		await scenario.collect_day(day, MAX_SLICES_PER_DAY)
 		rows.append(await _summary(host, scenario.ext, day))
 	scenario.check_coverage()
 	print("BACKGROUND_MILITARY_COVERAGE=" + JSON.stringify(scenario.evidence))
@@ -224,23 +224,59 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, stall: bool) -> Di
 func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
 		economy, military, player: int) -> void:
 	var settled_day := WARMUP_DAY + RELEASE_DAYS
+	var requested := settled_day + 1
 	var target := MILITARY_TARGET + 1
+	var ext: Object = economy.world_ext()
 	clock.set_speed(1.0)
-	var admission: Dictionary = military.set_target(player, 0, target)
-	_expect("1x military command admitted after day %d" % settled_day, bool(admission.get("ok", false)))
-	_expect("military_seal_1x: accepted for D+1", int(admission.get("effective_day", -1)) == settled_day + 1)
-	if host._native_daily_inline_active:
-		_publish_day(host, clock, settled_day + 1)
-	else:
-		_expect("1x release cannot lead the committed day by more than one",
-			host._admit_runtime_calendar(settled_day + RELEASE_DAYS + 1) == settled_day + 1)
-	_expect("military_seal_1x: D+1 commits", await _wait_golden_read_boundary(host, economy, settled_day + 1))
-	_expect("military_seal_1x: the target changed on D+1",
-		int(military.country_snapshot(player).get("target_value", -1)) == target
-		and int(military.report().get("background_day", -1)) == settled_day + 1)
-	print("MILITARY_SEAL_1X issued_after=%d admitted=%d settled=%d" % [
-		settled_day, admission.get("effective_day", -1), military.report().get("background_day", -1)])
+	clock._process_runtime_calendar(float(RELEASE_DAYS))
+	_expect("1x release cannot lead the committed day by more than one",
+		clock._runtime_calendar_through == requested)
+	var watchdog := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
+	while int(ext.get_runtime_thread_report().get("worker_day_inflight", 0)) == 0 \
+			and int(ext.runtime_committed_day()) == settled_day and Time.get_ticks_usec() < watchdog:
+		OS.delay_usec(50)
+	var began := Time.get_ticks_usec()
+	var admission: Dictionary = military.submit([{"op": "force.set_target", "country": player,
+		"count": 0, "value": target, "effective_day": requested}])
+	var elapsed := Time.get_ticks_usec() - began
+	var admitted := int(admission.get("effective_day", -1))
+	var committed := int(admission.get("committed_at_admission", -1))
+	var frozen := int(admission.get("frozen_at_admission", -1))
+	var expected := maxi(requested, maxi(committed + 1, frozen + 1))
+	_expect("military_seal_1x: receipt has the actual admission boundary",
+		bool(admission.get("ok", false)) and committed >= settled_day and frozen >= settled_day)
+	_expect("military_seal_1x: acceptance does not wait for the day", elapsed < 5_000)
+	_expect("military_seal_1x: date comes from the admission boundary", admitted == expected)
+	for day in range(settled_day + 1, expected + 1):
+		if day > requested:
+			clock._process_runtime_calendar(1.0)
+		if not await _wait_golden_read_boundary(host, economy, day):
+			_expect("military_seal_1x: day %d commits" % day, false)
+			return
+		var actual := int(military.country_snapshot(player).get("target_value", -1))
+		_expect("military_seal_1x: target matches the receipt on day %d" % day,
+			actual == (target if day == admitted else MILITARY_TARGET))
+	_expect("military_seal_1x: military settles on the admitted day",
+		int(military.report().get("background_day", -1)) == admitted)
+	print("MILITARY_SEAL_1X requested=%d committed=%d frozen=%d admitted=%d settled=%d elapsed_us=%d" % [
+		requested, committed, frozen, admitted, military.report().get("background_day", -1), elapsed])
 
+
+func _wait_boundary_result(host: WorldRuntimeHost, command: String, sequence: int) -> Dictionary:
+	var matched: Array[Dictionary] = []
+	var consume := func(results: Array) -> void:
+		for row: Dictionary in results:
+			if row.get("command") == command and row.get("sequence") == sequence:
+				matched.append(row)
+	host.simulation_command_results.connect(consume)
+	for _slice in range(MAX_SLICES_PER_DAY):
+		host._consume_runtime_commit_if_ready()
+		if not matched.is_empty():
+			break
+		await process_frame
+	host.simulation_command_results.disconnect(consume)
+	_expect("backend published %s result for request %d" % [command, sequence], not matched.is_empty())
+	return {} if matched.is_empty() else matched.front()
 
 func _publish_day(host: WorldRuntimeHost, clock: WorldClock, day: int) -> void:
 	if host._native_daily_inline_active:

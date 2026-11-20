@@ -19,6 +19,17 @@ struct RuntimeEraRewardRequest {
     godot::Dictionary advancement;
     godot::Dictionary result;
     bool done = false; // Guarded by the executor control mutex.
+
+    const char *command() const {
+        switch (kind) {
+            case Kind::SELECT: return "era_reward.choose";
+            case Kind::START_ADVANCEMENT: return "era.advance.start";
+            case Kind::PAUSE_ADVANCEMENT: return "era.advance.pause";
+            case Kind::RESUME_ADVANCEMENT: return "era.advance.resume";
+            case Kind::SET_ADVANCEMENT_POLICY: return "procurement.set_policy";
+            default: return nullptr;
+        }
+    }
 };
 
 struct RuntimeEraRewardView {

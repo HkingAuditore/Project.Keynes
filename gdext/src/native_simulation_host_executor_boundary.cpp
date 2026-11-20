@@ -2,8 +2,31 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 namespace pk {
+
+void NativeSimulationHost::publish_boundary_command_result(const char *command,
+        int64_t sequence, godot::Dictionary result) {
+    result["command"] = godot::String(command);
+    result["sequence"] = sequence;
+    const bool admitted = result.get("ok", false);
+    result["admitted"] = admitted;
+    if (!admitted) result.erase("effective_day");
+    std::lock_guard<std::mutex> control(_control_mutex);
+    _boundary_command_results.push_back(std::move(result));
+}
+
+godot::Array NativeSimulationHost::take_boundary_command_results() {
+    std::deque<godot::Dictionary> results;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        results.swap(_boundary_command_results);
+    }
+    godot::Array out;
+    for (const auto &result : results) out.push_back(result);
+    return out;
+}
 
 bool NativeSimulationHost::command_packet_before(
         const RuntimeCommandPacket &a, const RuntimeCommandPacket &b) {
@@ -35,7 +58,12 @@ bool NativeSimulationHost::try_stop_at_day_boundary() {
     std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
     if (!boundary.owns_lock() ||
         _inline_day_pending.load(std::memory_order_acquire)) return false;
-    request_stop();
+    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (player_requests_pending_locked()) return false;
+    }
+    request_stop_locked();
     return true;
 }
 
@@ -53,11 +81,15 @@ bool NativeSimulationHost::service_save_request(
         _climate_wait_cv.notify_all();
         _control_cv.notify_all();
     }
-    if (has_pending_climate_input() ||
-        !_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
+    {
+        std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (has_pending_climate_input() || player_requests_pending_locked() ||
+            !_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
+        RuntimeCommandPacket queued;
+        while (pop_command(queued)) pending_commands.push_back(std::move(queued));
+    }
     const uint64_t request_id = _save_request_id.load(std::memory_order_acquire);
-    RuntimeCommandPacket queued;
-    while (pop_command(queued)) pending_commands.push_back(std::move(queued));
     _economy_pending_command_count.store(static_cast<uint32_t>(std::min<size_t>(
         pending_commands.size(), std::numeric_limits<uint32_t>::max())), std::memory_order_release);
     _state.store(RuntimeWorkerState::SAVE_PENDING, std::memory_order_release);

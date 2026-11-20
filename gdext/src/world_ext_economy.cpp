@@ -8,7 +8,7 @@
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
 #include "native_simulation_host.h"
-#include "runtime_colonization_request.h"
+#include "runtime_economy_boundary_request.h"
 #include "runtime_economy_ecp2.h"
 #include "pk_log.h"
 
@@ -57,14 +57,9 @@ Dictionary unavailable() {
     return out;
 }
 
-Dictionary forward_colonization_request(NativeSimulationHost &host,
-                                        RuntimeColonizationRequest request) {
-    auto pending = std::make_shared<RuntimeColonizationRequest>(std::move(request));
-    if (host.submit_colonization_request(pending)) return std::move(pending->result);
-    Dictionary out;
-    out["ok"] = false;
-    out["code"] = "colonization_executor_unavailable";
-    return out;
+Dictionary forward_economy_boundary_request(NativeSimulationHost &host,
+                                        RuntimeEconomyBoundaryRequest request) {
+    return host.submit_economy_boundary_request(std::make_shared<RuntimeEconomyBoundaryRequest>(std::move(request)));
 }
 
 using ReadQuery = NativeEconomyRuntime::ReadQuery;
@@ -1871,6 +1866,15 @@ Dictionary DCWorldExt::queue_canal_construction(
         int64_t country_handle, int64_t quote_token,
         int64_t effective_day, int64_t sequence) {
     if (_economy_runtime == nullptr) return unavailable();
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::BUILD_CANAL;
+        request.country_handle = country_handle;
+        request.quote_token = quote_token;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     auto admission = _runtime_host ? _runtime_host->lock_command_admission(effective_day)
                                     : std::unique_lock<std::mutex>();
     if (_runtime_host && !admission.owns_lock()) return unavailable();
@@ -1959,14 +1963,14 @@ Dictionary DCWorldExt::get_family_colonization_quotes(
         int64_t country_handle, int target_cell, int64_t family_filter,
         int source_filter, int offset, int limit) {
     if (_runtime_host && _runtime_host->vision_executor_active()) {
-        RuntimeColonizationRequest request;
+        RuntimeEconomyBoundaryRequest request;
         request.country_handle = country_handle;
         request.family_handle = family_filter;
         request.source_cell = source_filter;
         request.target_cell = target_cell;
         request.offset = offset;
         request.limit = limit;
-        return forward_colonization_request(*_runtime_host, std::move(request));
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
     }
     if (_economy_runtime == nullptr || _map_data == nullptr) {
         Dictionary out;
@@ -2003,11 +2007,11 @@ Dictionary DCWorldExt::get_family_colonization_quotes(
 Dictionary DCWorldExt::get_family_colonization_quote_detail(
         int64_t quote_token, int64_t population) const {
     if (_runtime_host && _runtime_host->vision_executor_active()) {
-        RuntimeColonizationRequest request;
-        request.kind = RuntimeColonizationRequest::Kind::QUOTE_DETAIL;
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::QUOTE_DETAIL;
         request.quote_token = quote_token;
         request.population = population;
-        return forward_colonization_request(*_runtime_host, std::move(request));
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
     }
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
@@ -2021,8 +2025,8 @@ Dictionary DCWorldExt::start_family_colonization(
         int target_cell, int64_t population, int64_t quote_token,
         int64_t effective_day, int64_t sequence) {
     if (_runtime_host && _runtime_host->vision_executor_active()) {
-        RuntimeColonizationRequest request;
-        request.kind = RuntimeColonizationRequest::Kind::START;
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::START;
         request.country_handle = country_handle;
         request.family_handle = family_handle;
         request.source_cell = source_cell;
@@ -2031,7 +2035,7 @@ Dictionary DCWorldExt::start_family_colonization(
         request.quote_token = quote_token;
         request.effective_day = effective_day;
         request.sequence = sequence;
-        return forward_colonization_request(*_runtime_host, std::move(request));
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
     }
     if (_economy_runtime == nullptr || _map_data == nullptr) return unavailable();
     const Variant visible_variant = _map_data->get(StringName("visible_arr"));
@@ -2056,6 +2060,15 @@ Dictionary DCWorldExt::cancel_family_colonization(
         int64_t country_handle, int64_t expedition_handle,
         int64_t effective_day, int64_t sequence) {
     if (_economy_runtime == nullptr) return unavailable();
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::CANCEL;
+        request.country_handle = country_handle;
+        request.subject_id = expedition_handle;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
     auto admission = worker_owned ? _runtime_host->lock_command_admission(effective_day)
@@ -2157,6 +2170,16 @@ Dictionary DCWorldExt::submit_family_founding_choice(
         int64_t offer_id, int64_t generation, int choice_index,
         int64_t effective_day, int64_t sequence) {
     if (_economy_runtime == nullptr) return unavailable();
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::FOUNDING_CHOICE;
+        request.subject_id = offer_id;
+        request.offer_generation = generation;
+        request.choice = choice_index;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     auto admission = _runtime_host ? _runtime_host->lock_command_admission(effective_day)
                                     : std::unique_lock<std::mutex>();
     if (_runtime_host && !admission.owns_lock()) return unavailable();

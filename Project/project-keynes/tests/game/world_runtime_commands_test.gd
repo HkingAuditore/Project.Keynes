@@ -81,7 +81,9 @@ class AnnualFeed extends RefCounted:
 	func get_annual_report_status() -> Dictionary: return {"ok": true, "last_day": 24, "ready_report_id": 1}
 	func get_annual_report_snapshot(id: int) -> Dictionary: return {"ok": true, "id": id, "totals": {"gdp": 130, "revenue": 150, "input_cost": 20}, "complete": true}
 	func get_annual_report_history(offset: int, limit: int) -> Dictionary: return {"ok": true, "reports": [get_annual_report_snapshot(1)], "offset": offset, "limit": limit}
-	func mark_annual_report_presented(id: int) -> void: presented.append(id)
+	func mark_annual_report_presented(id: int) -> Dictionary:
+		presented.append(id)
+		return {"ok": true}
 
 func _init() -> void:
 	call_deferred("_run")

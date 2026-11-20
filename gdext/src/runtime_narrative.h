@@ -31,6 +31,7 @@ struct NarrativeIndependenceAction {
 
 struct RuntimeNarrativeView {
     int64_t day = -1;
+    uint64_t country = 0;
     int64_t popup_day = -999;
     godot::Dictionary active_offer;
     godot::Array queue, chronicle;
@@ -42,13 +43,12 @@ struct RuntimeNarrativeView {
     bool ai_enabled_requested = false;
 };
 
-// Control requests run between committed days. The response is written before
-// signaling the requesting thread under the host control mutex.
+// Admission dates are fixed before the request reaches the executor.
 struct RuntimeNarrativeRequest {
     enum class Kind { CHOOSE, AI_RESULT, SET_AI, PAUSE_POLICY };
     Kind kind = Kind::CHOOSE;
-    godot::Dictionary args, result;
-    bool done = false;
+    godot::Dictionary args;
+    int64_t day = -1;
 };
 
 class RuntimeNarrative {
@@ -61,6 +61,8 @@ public:
     static godot::String checkpoint_error(const godot::Dictionary &);
     std::shared_ptr<const RuntimeNarrativeView> view(int64_t committed_day) const;
     godot::Dictionary queue_choice(int64_t day, const godot::Dictionary &args, bool automatic = false);
+    static godot::Dictionary validate_offer(const godot::Dictionary &offer, uint64_t country,
+        const godot::Dictionary &args);
     godot::Dictionary take_due_choice(int64_t day);
     void queue_automatic_choice(int64_t day);
     void set_pause_policy(int64_t day, uint16_t mask);

@@ -49,13 +49,15 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	if report.is_empty():
 		report = host._runtime_control_state()
 	host._observe_runtime_worker_fault(report)
-	if String(report.get("simulation_thread_mode", report.get(
-			"requested_simulation_thread_mode", "OFF"))) != "ACTIVE":
-		return
-	if not bool(report.get("simulation_worker_ready", report.get(
-			"authority_ready", false))):
+	if host._native_environment_active:
+		if String(report.get("requested_simulation_thread_mode", "OFF")) != "ACTIVE":
+			return
+	elif String(report.get("simulation_thread_mode", "OFF")) != "ACTIVE" \
+			or not bool(report.get("simulation_worker_ready", report.get("authority_ready", false))):
 		return
 	var commit: Dictionary = host._generator.poll_runtime_commit(host._runtime_commit_generation, true)
+	if commit.has("boundary_results"):
+		host.simulation_command_results.emit(commit["boundary_results"])
 	var received_new_commit = bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > host._runtime_commit_generation

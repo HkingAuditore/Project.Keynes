@@ -30,9 +30,13 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 	var opening := _advance.preview()
 	_check_model(opening)
 	_expect("the opening settlement cannot advance", opening.get("status") == "locked")
-	_expect("the executor rejects starting before any eligibility", _advance.start(2, _next_sequence()).get("code") == "era_advance_conditions_unmet")
-	_expect("policy outside 0–10000 is rejected",
-		not bool(_advance.set_policy(10001, 0, 2, _next_sequence()).get("ok", false)))
+	_expect("the executor rejects starting before any eligibility",
+		(await _advancement_result(host, "start", 2)).get("code") == "era_advance_conditions_unmet")
+	var invalid_policy := _next_sequence()
+	_advance.set_policy(10001, 0, 2, invalid_policy)
+	var refusal := await _wait_boundary_result(host, "procurement.set_policy", invalid_policy)
+	_expect("policy outside 0–10000 is rejected without a date", refusal.get("admitted") == false
+		and not refusal.has("effective_day"))
 	var advances: Array = []
 	_advance.era_advanced.connect(func(old: int, next: int, _buffs: PackedStringArray): advances.append([old, next]))
 	var market := -1
@@ -75,26 +79,26 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 					and int(model.conditions_met) >= Rules.CONDITIONS_REQUIRED)
 				var policy := _advance.set_policy(10000, 0, PURCHASE_DAY, _next_sequence())
 				_expect("the accepted policy retains its requested day", bool(policy.ok) and int(policy.effective_day) == PURCHASE_DAY)
-				_expect("starting the real purchase succeeds", bool(_advance.start(PURCHASE_DAY, _next_sequence()).get("ok", false)))
+				_expect("starting the real purchase succeeds", bool((await _advancement_result(host, "start", PURCHASE_DAY)).get("ok", false)))
 				var started := _advance.capture()
 				for row in Rules.procurement_goods(1):
 					frozen.append(Rules.required_quantity(row, started.frozen_territory))
 				_expect("the authored requirements freeze at purchase start",
 					started.required_quantities == frozen and String(started.phase) == "purchasing")
 				_expect("starting a second purchase is rejected",
-					_advance.start(PURCHASE_DAY, _next_sequence()).get("code") == "era_advance_in_progress")
-				_expect("pause is admitted", bool(_advance.pause(PURCHASE_DAY, _next_sequence()).get("ok", false)))
+					(await _advancement_result(host, "start", PURCHASE_DAY)).get("code") == "era_advance_in_progress")
+				_expect("pause is admitted", bool((await _advancement_result(host, "pause", PURCHASE_DAY)).get("ok", false)))
 				var paused := _advance.capture()
 				_expect("paused purchase retains frozen requirements", paused.required_quantities == frozen)
 				_expect("pausing twice is rejected",
-					_advance.pause(PURCHASE_DAY, _next_sequence()).get("code") == "era_advance_not_purchasing")
+					(await _advancement_result(host, "pause", PURCHASE_DAY)).get("code") == "era_advance_not_purchasing")
 				_advance.restore(paused)
 				_expect("reading the restored player section keeps the order", _advance.preview().status == "paused"
 					and _advance.to_save().required_quantities == frozen)
-				_expect("resuming queues the same order", bool(_advance.resume(PURCHASE_DAY, _next_sequence()).get("ok", false))
+				_expect("resuming queues the same order", bool((await _advancement_result(host, "resume", PURCHASE_DAY)).get("ok", false))
 					and _advance.to_save().required_quantities == frozen)
 				_expect("resuming twice is rejected",
-					_advance.resume(PURCHASE_DAY, _next_sequence()).get("code") == "era_advance_not_paused")
+					(await _advancement_result(host, "resume", PURCHASE_DAY)).get("code") == "era_advance_not_paused")
 			PURCHASE_DAY:
 				var stock: Dictionary = economy.country_procurement_snapshot(handle)
 				_expect("goods from the market complete procurement on day 27", int(stock.era_cash_spent_total) > 0
@@ -121,6 +125,14 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 			var choice: Dictionary = country.choose_era_reward(int(offer.offer_generation), 0, day + 2)
 			_expect("the choice keeps the exact sealed day", bool(choice.ok) and int(choice.effective_day) == day + 2)
 	return {}
+
+
+func _advancement_result(host: WorldRuntimeHost, action: String, day: int) -> Dictionary:
+	var sequence := _next_sequence()
+	var admission: Dictionary = _advance.call(action, day, sequence)
+	_expect("%s enters the inbox with its date" % action,
+		admission.get("admitted") == true and admission.get("effective_day") == day)
+	return await _wait_boundary_result(host, "era.advance." + action, sequence)
 
 
 func _stock(ext: Object, op: int, cell: int, good: int, cohort: int, value: int) -> void:

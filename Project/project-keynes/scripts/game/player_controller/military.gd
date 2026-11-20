@@ -192,11 +192,14 @@ func _submit_state_build_command(host, args: Dictionary, effective_day: int,
 		var out = host._result(false, forwarded_code,
 			"营造已由国库出资排队，但军事排期未能登记。")
 		out["economy_code"] = String(paid.get("code", "construction_queued"))
+		out["admitted"] = true
+		out["effective_day"] = paid["effective_day"]
 		return out
 	var settled = host._result(true, "construction_queued",
 		"营造已由国库出资排队，将在下一个经济结算边界执行。")
 	settled["building_id"] = String(building_id)
 	settled["economy_sequence"] = sequence
+	settled["effective_day"] = paid["effective_day"]
 	return settled
 
 
@@ -250,11 +253,14 @@ func _submit_state_demolish_command(host, args: Dictionary, effective_day: int,
 		var out = host._result(false, forwarded_code,
 			"拆除已由经济账本受理，但军事侧记账未能登记。")
 		out["economy_code"] = String(removed.get("code", "demolish_queued"))
+		out["admitted"] = true
+		out["effective_day"] = removed["effective_day"]
 		return out
 	var settled = host._result(true, "demolish_queued",
 		"拆除已排队，将在下一个经济结算边界执行。")
 	settled["building_id"] = String(building_id)
 	settled["economy_sequence"] = sequence
+	settled["effective_day"] = removed["effective_day"]
 	return settled
 
 
@@ -266,6 +272,8 @@ func _submit_military_command(host, id: StringName, args: Dictionary,
 		return host._result(false, "runtime_unavailable", "军事机构尚未接通。")
 	var entry = host._military_command_entry(id, args)
 	entry["country"] = host._player_country_handle
+	entry["effective_day"] = effective_day
+	entry["caller_sequence"] = sequence
 	if not facade.has_method(host.MILITARY_FACADE_SUBMIT_METHOD):
 		return host._result(false, "runtime_unavailable",
 			"军事机构尚未接通：缺少军事命令入口。")

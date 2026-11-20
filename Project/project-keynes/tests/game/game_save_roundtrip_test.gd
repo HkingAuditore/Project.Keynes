@@ -267,11 +267,15 @@ func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> vo
 	])
 	clock.set_speed(1.0)
 	clock.pause(false)
+	var submitted_offer := -1
 	for frame in range(1200):
 		await get_tree().process_frame
 		var offer: Dictionary = player.narrative_service().active_offer()
-		if not offer.is_empty() and not _answer_narrative(player, generator, offer):
-			break
+		if not offer.is_empty() and int(offer.offer_id) != submitted_offer:
+			if not _answer_narrative(player, generator, offer):
+				break
+			# The published offer can remain visible until the worker receives the choice.
+			submitted_offer = int(offer.offer_id)
 		clock.pause(false)
 		var economy: Dictionary = generator.get_economy_report()
 		if bool(economy.get("fatal", false)):

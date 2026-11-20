@@ -36,11 +36,12 @@ bool RuntimeNarrative::ai_allowed(int64_t day) const {
 bool RuntimeNarrative::request_ai(const NarrativeDay &input, const NarrativeCellView &cell,
         const Followup &item, const String &fact, const std::string &state,
         const String &state_hint, bool scheduled) {
-    if (!ai_allowed(input.day)) return false;
+    if (!scheduled && !ai_allowed(input.day)) return false;
     Dictionary request;
     request["ai_request_seq"] = _next_ai++;
     request["day"] = input.day;
-    request["effective_day"] = input.day + RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS;
+    request["effective_day"] = scheduled ? item.due :
+        input.day + RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS;
     request["due_day"] = item.due;
     request["scheduled_followup"] = scheduled;
     request["cell_idx"] = cell.cell;
@@ -54,7 +55,7 @@ bool RuntimeNarrative::request_ai(const NarrativeDay &input, const NarrativeCell
     for (size_t i = 0; i < std::min<size_t>(3, _chronicle.size()); ++i)
         recent.push_back(_chronicle[i]);
     request["recent_chronicle"] = recent;
-    _last_ai = input.day;
+    if (!scheduled) _last_ai = input.day;
     _pending_ai.push_back({std::move(request), {}});
     return true;
 }

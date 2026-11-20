@@ -45,7 +45,7 @@ namespace pk {
 struct VisionResearchState;
 struct RuntimeGoldenSnapshot;
 struct MilitaryCommandBatch;
-struct RuntimeColonizationRequest;
+struct RuntimeEconomyBoundaryRequest;
 struct RuntimeEraRewardRequest;
 struct RuntimeEraAdvancement;
 struct RuntimeEraAdvancementView;
@@ -187,6 +187,7 @@ public:
     // First day whose command inputs have not been frozen.
     int64_t command_seal_day() const noexcept;
     std::unique_lock<std::mutex> lock_command_admission(int64_t &effective_day);
+    godot::Array take_boundary_command_results();
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -416,7 +417,7 @@ public:
     std::shared_ptr<const RuntimeVisionFrame> latest_vision() const;
     bool submit_fog_command(bool enabled, int64_t &effective_day);
     bool vision_executor_active() const noexcept;
-    bool submit_colonization_request(std::shared_ptr<RuntimeColonizationRequest> request);
+    godot::Dictionary submit_economy_boundary_request(std::shared_ptr<RuntimeEconomyBoundaryRequest> request);
     bool military_executor_active() const noexcept;
     bool submit_military_commands(std::shared_ptr<MilitaryCommandBatch> batch);
     uint64_t allocate_command_request_id_for_ingress() override;
@@ -766,10 +767,10 @@ public:
     godot::Dictionary restore_narrative_checkpoint(const godot::Dictionary &);
     std::shared_ptr<const RuntimeNarrativeView> latest_narrative() const;
     godot::Dictionary capture_narrative() const;
-    bool submit_narrative_choice_request(std::shared_ptr<struct RuntimeNarrativeRequest>);
+    godot::Dictionary submit_narrative_choice_request(std::shared_ptr<struct RuntimeNarrativeRequest>);
     bool enqueue_event_consumer_ack(uint64_t consumer, int64_t event, int64_t day,
         uint64_t generation, bool seal);
-    bool submit_era_reward_request(std::shared_ptr<RuntimeEraRewardRequest> request);
+    godot::Dictionary submit_era_reward_request(std::shared_ptr<RuntimeEraRewardRequest> request);
     bool effect_adapter_owned() const noexcept {
         return _effect_adapter_runtime != nullptr && !execution_has_stopped();
     }
@@ -1272,12 +1273,6 @@ private:
         RuntimeCommandPacket packet{};
     };
 
-    struct AnnualPresentationRequest {
-        uint64_t report_id;
-        bool presented = false;
-        bool done = false;
-    };
-
     struct ClimateParityFieldAccumulator {
         std::atomic<uint64_t> diverged_days{0};
         std::atomic<uint64_t> compared_days{0};
@@ -1354,6 +1349,7 @@ private:
     bool service_era_reward_requests();
     const char *stage_narrative(DayExecution &);
     bool service_narrative_requests();
+    void request_stop_locked();
     void publish_narrative_boundary(int64_t);
     const char *narrative_input_block() const;
     struct NarrativeDay sample_narrative_day(int64_t) const;
@@ -1377,10 +1373,13 @@ private:
                           const std::function<bool()> &admit_peer = {});
     std::shared_ptr<NativeMilitaryRuntime> _executor_military;
     std::deque<std::shared_ptr<MilitaryCommandBatch>> _military_commands; // _control_mutex
-    std::deque<std::shared_ptr<RuntimeColonizationRequest>> _colonization_requests;
+    std::deque<std::shared_ptr<RuntimeEconomyBoundaryRequest>> _economy_boundary_requests;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> _era_reward_requests;
-    std::deque<std::shared_ptr<AnnualPresentationRequest>> _annual_presentations;
+    std::deque<uint64_t> _annual_presentations;
     std::deque<std::shared_ptr<RuntimeNarrativeRequest>> _narrative_requests;
+    std::deque<godot::Dictionary> _boundary_command_results;
+    void publish_boundary_command_result(const char *command, int64_t sequence,
+                                         godot::Dictionary result);
     std::shared_ptr<class RuntimeNarrative> _executor_narrative;
     godot::Dictionary _restored_narrative;
     std::shared_ptr<const RuntimeNarrativeView> _published_narrative;
@@ -1388,10 +1387,10 @@ private:
     std::shared_ptr<RuntimeEraAdvancement> _era_advancement;
     std::shared_ptr<const RuntimeEraAdvancementView> _published_era_advancement;
     bool player_requests_pending_locked() const noexcept {
-        return !_military_commands.empty() || !_colonization_requests.empty() ||
+        return !_military_commands.empty() || !_economy_boundary_requests.empty() ||
             !_era_reward_requests.empty() || !_annual_presentations.empty() || !_narrative_requests.empty();
     }
-    bool service_colonization_requests();
+    bool service_economy_boundary_requests();
     std::atomic<int64_t> _events_ingress_cursor{1};
     bool service_military_commands();
     const char *stage_military(DayExecution &day);

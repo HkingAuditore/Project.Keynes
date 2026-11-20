@@ -7,6 +7,8 @@
 #include "runtime_era_reward.h"
 #include "runtime_golden_diagnostics.h"
 
+#include <algorithm>
+
 namespace pk {
 namespace {
 
@@ -27,32 +29,73 @@ std::shared_ptr<const RuntimeEraRewardView> NativeSimulationHost::capture_era_re
     return view;
 }
 
-bool NativeSimulationHost::submit_era_reward_request(
+godot::Dictionary NativeSimulationHost::submit_era_reward_request(
         std::shared_ptr<RuntimeEraRewardRequest> request) {
-    std::unique_lock<std::mutex> control(_control_mutex);
     const auto available = [&] {
         const auto current = state();
         return effect_adapter_owned() && current != RuntimeWorkerState::FAULTED &&
             current != RuntimeWorkerState::STOPPING &&
             !_stop_requested.load(std::memory_order_acquire);
     };
-    if (!available()) return false;
+    const auto reject = [](const char *code) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["admitted"] = false;
+        out["code"] = code;
+        out["reason"] = code;
+        return out;
+    };
+    if (const char *command = request->command(); command != nullptr) {
+        const auto kind = request->kind;
+        int64_t day = std::max<int64_t>(0, request->effective_day);
+        {
+            auto admission = lock_command_admission(day);
+            if (!admission.owns_lock() || !available()) return reject("effect_runtime_unavailable");
+            std::lock_guard<std::mutex> control(_control_mutex);
+            if (_era_reward_requests.size() == RUNTIME_COMMAND_QUEUE_CAPACITY)
+                return reject("era_command_queue_full");
+            if (kind == RuntimeEraRewardRequest::Kind::SELECT) {
+                const auto view = latest_era_reward();
+                if (!view || godot::String(view->offer.get("status", "")) != "OPEN" ||
+                        int64_t(view->offer.get("offer_generation", 0)) != request->offer_generation ||
+                        std::any_of(_era_reward_requests.begin(), _era_reward_requests.end(),
+                            [kind](const auto &queued) { return queued->kind == kind; }))
+                    return reject("era_reward_offer_generation_stale");
+                if (request->choice < 0 || request->choice >= 3)
+                    return reject("era_reward_choice_invalid");
+            }
+            request->effective_day = day;
+            _era_reward_requests.push_back(request);
+        }
+        if (inline_daily_mode()) service_era_reward_requests();
+        else _control_cv.notify_one();
+        godot::Dictionary out;
+        out["ok"] = true;
+        out["admitted"] = true;
+        out["pending"] = true;
+        out["code"] = "queued";
+        out["effective_day"] = day;
+        return out;
+    }
+    // Session binding and restore complete before commands are enabled.
+    std::unique_lock<std::mutex> control(_control_mutex);
+    if (!available()) return reject("effect_runtime_unavailable");
     _era_reward_requests.push_back(request);
     if (inline_daily_mode()) {
         control.unlock();
         service_era_reward_requests();
-        return request->done;
+        return request->result;
     }
     _control_cv.notify_all();
     _control_cv.wait(control, [&] { return request->done || !available(); });
-    return request->done;
+    return request->done ? request->result : reject("effect_runtime_unavailable");
 }
 
 bool NativeSimulationHost::service_era_reward_requests() {
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> requests;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
-        requests.swap(_era_reward_requests);
+        requests = _era_reward_requests;
     }
     if (requests.empty()) return false;
     {
@@ -74,7 +117,7 @@ bool NativeSimulationHost::service_era_reward_requests() {
                 execute_era_advancement_request(*request);
                 continue;
             }
-            const int64_t day = std::max(request->effective_day, command_seal_day());
+            const int64_t day = request->effective_day;
             reply = effect.choose_era_reward(request->offer_generation, request->choice, day, true);
             if (!bool(reply.get("ok", false))) continue;
             reward_changed = true;
@@ -131,9 +174,15 @@ bool NativeSimulationHost::service_era_reward_requests() {
         }
         std::atomic_store(&_published_era_reward, capture_era_reward());
     }
+    for (const auto &request : requests) {
+        if (const char *command = request->command())
+            publish_boundary_command_result(command, request->advancement_sequence, request->result);
+    }
     {
         std::lock_guard<std::mutex> control(_control_mutex);
         for (const auto &request : requests) request->done = true;
+        _era_reward_requests.erase(_era_reward_requests.begin(),
+                                   _era_reward_requests.begin() + requests.size());
     }
     _control_cv.notify_all();
     return true;

@@ -501,9 +501,6 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result["message"] = _colonization_command_message(colonize_code)
 	if not result.has("message"):
 		result["message"] = String(result.get("reason", ""))
-	if not result.has("effective_day"):
-		var admitted_days: PackedInt64Array = result.get("effective_days", PackedInt64Array())
-		result["effective_day"] = effective_day if admitted_days.is_empty() else admitted_days[0]
 	result["sequence"] = sequence
 	return _complete_command(id, result)
 
@@ -804,6 +801,7 @@ func _connect_runtime() -> void:
 	if _runtime_host != null:
 		var runtime_callbacks := {"simulation_committed": _on_simulation_committed,
 			"simulation_day_records": _on_simulation_day_records,
+			"simulation_command_results": _on_simulation_command_results,
 			"simulation_view_updated": _on_simulation_view_updated}
 		for event in runtime_callbacks:
 			if _runtime_host.has_signal(event) and not _runtime_host.is_connected(event, runtime_callbacks[event]):
@@ -828,6 +826,22 @@ func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) 
 
 func _on_simulation_day_records(records: Array) -> void:
 	_narrative_service.consume_notices(records)
+
+func _on_simulation_command_results(results: Array) -> void:
+	for result: Dictionary in results:
+		var id := StringName(result.get("command", ""))
+		if id == COMMAND_ERA_REWARD_CHOOSE:
+			_sync_era_reward_offer()
+			if not bool(result.get("ok", false)) and _ui_manager != null:
+				_ui_manager.show_era_reward_error(String(result.get("reason", "")))
+		elif id in [COMMAND_FAMILY_COLONIZATION_START, COMMAND_FAMILY_COLONIZATION_CANCEL]:
+			if bool(result.get("ok", false)):
+				continue
+			result["message"] = _colonization_command_message(String(result.get("code", "")))
+		elif id in [COMMAND_ERA_ADVANCE_START, COMMAND_ERA_ADVANCE_PAUSE,
+				COMMAND_ERA_ADVANCE_RESUME, COMMAND_PROCUREMENT_SET_POLICY]:
+			_refresh_era_advancement(true)
+		command_settled.emit(id, result)
 
 
 func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:
@@ -1346,8 +1360,15 @@ static func _colonization_command_message(code: String) -> String:
 
 
 func _complete_command(id: StringName, result: Dictionary) -> Dictionary:
-	if not result.has("effective_day"):
-		result["effective_day"] = -1
+	var admitted := bool(result.get("admitted", result.get("ok", false)))
+	if admitted:
+		var admitted_days: PackedInt64Array = result.get("effective_days", PackedInt64Array())
+		if not result.has("effective_day") and not admitted_days.is_empty():
+			result["effective_day"] = admitted_days[0]
+	else:
+		result.erase("effective_day")
+		result.erase("effective_days")
+	result["admitted"] = admitted
 	if not result.has("sequence"):
 		result["sequence"] = -1
 	command_completed.emit(id, result)

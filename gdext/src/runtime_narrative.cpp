@@ -216,10 +216,9 @@ void RuntimeNarrative::followups(const NarrativeDay &input) {
         const int32_t cell = !territory.empty() && !contains(territory, item.cell) ?
             territory.front() : item.cell;
         const auto *authored = definition(item.event);
-        const bool on_prefetch_day = input.day == item.due - RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS;
-        const bool previous_window = item.event.empty() && input.day >= item.due - 3;
         if (!authored && _ai_enabled && !item.requested && !item.hint.strip_edges().is_empty() &&
-                (on_prefetch_day || previous_window)) {
+                input.day < item.due &&
+                input.day >= item.due - RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS) {
             item.requested = request_ai(input, input.sample(cell, false), item, {}, {}, {}, true);
         }
         if (input.day >= item.due) {
@@ -325,6 +324,7 @@ int64_t RuntimeNarrative::step(const NarrativeDay &input,
 std::shared_ptr<const RuntimeNarrativeView> RuntimeNarrative::view(int64_t committed_day) const {
     auto out = std::make_shared<RuntimeNarrativeView>();
     out->day = committed_day;
+    out->country = _country;
     out->popup_day = _last_popup;
     if (_pending_choice.is_empty() && !_active.is_empty() &&
             stops_for(_active, pause_policy_for(committed_day + 1)))

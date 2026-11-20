@@ -27,11 +27,14 @@ struct MilitaryCommandBatch {
         int64_t effective_day = -1;
         MilitaryCommand command;
         std::string error;
+        std::string command_name;
+        int64_t caller_sequence = 0;
     };
     std::vector<Row> rows;
     int64_t day = -1;
+    int64_t committed_at_admission = -1;
+    int64_t frozen_at_admission = -1;
     int64_t sequence = 0;
-    bool done = false;
 };
 
 // Military -> Country/Economy command rows, built by
@@ -105,6 +108,7 @@ public:
 
     bool should_run(int64_t day) const;
     bool submit(MilitaryCommand command, std::string &error);
+    bool stamp_commands(MilitaryCommandBatch &batch) const;
     void admit(MilitaryCommandBatch &batch);
     bool submit_independence(uint64_t old_owner, uint64_t new_owner, int32_t cell, int64_t day);
     godot::Dictionary run_day(int64_t day);

@@ -4,6 +4,7 @@
 #include "runtime_vision.h"
 #include "world_ext.h"
 
+#include <algorithm>
 #include <atomic>
 #include <utility>
 
@@ -34,25 +35,29 @@ bool NativeSimulationHost::military_executor_active() const noexcept {
 }
 
 bool NativeSimulationHost::submit_military_commands(std::shared_ptr<MilitaryCommandBatch> batch) {
-    std::unique_lock<std::mutex> control(_control_mutex);
-    const auto available = [&] {
-        const auto state = _state.load(std::memory_order_acquire);
-        return military_executor_active() && state != RuntimeWorkerState::FAULTED &&
-            state != RuntimeWorkerState::STOPPING && !_stop_requested.load(std::memory_order_acquire);
-    };
-    if (!available()) return false;
-    _military_commands.push_back(batch);
-    if (inline_daily_mode()) {
-        control.unlock();
-        service_military_commands();
-        return batch->done;
+    {
+        int64_t day = 0;
+        auto admission = lock_command_admission(day);
+        if (!admission.owns_lock() || !military_executor_active()) return false;
+        batch->committed_at_admission = committed_day_value();
+        batch->frozen_at_admission = _command_frozen_through.load(std::memory_order_acquire);
+        batch->day = std::max({day, batch->committed_at_admission + 1, batch->frozen_at_admission + 1});
+        if (!_executor_military->stamp_commands(*batch)) return true;
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (_military_commands.size() == RUNTIME_COMMAND_QUEUE_CAPACITY) return false;
+        _military_commands.push_back(std::make_shared<MilitaryCommandBatch>(*batch));
     }
-    _control_cv.notify_all();
-    _control_cv.wait(control, [&] { return batch->done || !available(); });
-    return batch->done;
+    if (inline_daily_mode()) service_military_commands();
+    else _control_cv.notify_one();
+    return true;
 }
 
 bool NativeSimulationHost::service_military_commands() {
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (_military_commands.empty()) return false;
+    }
+    std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
     std::deque<std::shared_ptr<MilitaryCommandBatch>> pending;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
@@ -62,15 +67,16 @@ bool NativeSimulationHost::service_military_commands() {
     auto &military = *_executor_military;
     military.country_state = _country_pod_authority.borrow_state();
     for (const auto &batch : pending) {
-        batch->day = committed_day_value() + 1;
         military.admit(*batch);
+        for (const auto &row : batch->rows) {
+            if (row.effective_day < 0 || row.error.empty()) continue;
+            godot::Dictionary result;
+            result["ok"] = false;
+            result["code"] = godot::String(row.error.c_str());
+            publish_boundary_command_result(row.command_name.c_str(), row.caller_sequence, std::move(result));
+        }
     }
     military.publish(military.last_result);
-    {
-        std::lock_guard<std::mutex> control(_control_mutex);
-        for (const auto &batch : pending) batch->done = true;
-    }
-    _control_cv.notify_all();
     return true;
 }
 

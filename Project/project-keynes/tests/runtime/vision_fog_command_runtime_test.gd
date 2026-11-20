@@ -107,11 +107,15 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 				_expect("fog on sealed for day six", bool(on.ok) and int(on.effective_day) == 6)
 			6:
 				if target >= 0:
-					var refused: Dictionary = economy.start_family_colonization(player,
+					var pending: Dictionary = economy.start_family_colonization(player,
 						int(quote.family_handles[0]), int(quote.source_cells[0]), target, 1,
 						int(quote.quote_tokens[0]), 8, 950003)
+					_expect("the request is admitted before route revalidation", pending.get("admitted") == true
+						and pending.get("effective_day") == 8)
+					var refused := await _wait_boundary_result(host, "family.colonization.start", 950003)
 					_expect("re-enabled fog rejects a stale quote for a hidden route",
-						not bool(refused.ok) and String(refused.code) == "colonization_requote_required"
+						refused.get("admitted") == false and not refused.has("effective_day")
+						and String(refused.get("code", "")) == "colonization_requote_required"
 						and String(refused.get("message", "")) == "colonization_route_not_visible")
 				_expect("fog display is restored from the authoritative physical frame",
 					map.visible_arr == frame.physical_visible and map.fog_k_arr == frame.fog_k_arr)

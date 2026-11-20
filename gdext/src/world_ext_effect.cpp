@@ -481,8 +481,7 @@ Dictionary DCWorldExt::bind_era_reward_player_country(int64_t country_handle) {
         auto request = std::make_shared<RuntimeEraRewardRequest>();
         request->kind = RuntimeEraRewardRequest::Kind::BIND_PLAYER;
         request->country_handle = static_cast<uint64_t>(country_handle);
-        if (!_runtime_host->submit_era_reward_request(request)) return unavailable();
-        return request->result;
+        return _runtime_host->submit_era_reward_request(std::move(request));
     }
     std::string error;
     const bool ok = runtime_from(_effect_runtime)
@@ -510,8 +509,7 @@ Dictionary DCWorldExt::submit_era_advancement(const String &action,
     request->effective_day = day;
     request->advancement_sequence = sequence;
     request->advancement = data.duplicate(true);
-    if (!_runtime_host->submit_era_reward_request(request)) return unavailable();
-    return request->result;
+    return _runtime_host->submit_era_reward_request(std::move(request));
 }
 
 Dictionary DCWorldExt::get_era_advancement_view() const {
@@ -544,8 +542,7 @@ Dictionary DCWorldExt::choose_era_reward(int64_t offer_generation,
         request->offer_generation = offer_generation;
         request->choice = choice_index;
         request->effective_day = effective_day;
-        if (!_runtime_host->submit_era_reward_request(request)) return unavailable();
-        return request->result;
+        return _runtime_host->submit_era_reward_request(std::move(request));
     }
     return runtime_from(_effect_runtime)->choose_era_reward(
         offer_generation, choice_index, effective_day);

@@ -139,7 +139,7 @@ func _run() -> void:
 		var day := int(command.day)
 		if mode == "resume" and day <= save_day: continue
 		if annual or scenario == "calendar":
-			_confirm_ready_report(host, clock, day)
+			await _confirm_ready_report(host, clock, day)
 		if scenario == "military" and day == 1:
 			# Every barracks needs a military technology; the scenario grants
 			# the earliest one (warrior lodge) instead of researching it. Like
@@ -404,6 +404,10 @@ func _confirm_ready_report(host: WorldRuntimeHost, clock: WorldClock, next_day: 
 	if report_id <= 0 or next_day <= report_id * clock.days_per_year():
 		return
 	host.mark_annual_report_presented(report_id)
+	for _slice in range(MAX_SLICES_PER_DAY):
+		if bool(host.annual_report_snapshot(report_id).get("presented", false)):
+			break
+		await process_frame
 	_expect("player confirms annual report before day %d" % next_day,
 		bool(host.annual_report_snapshot(report_id).get("presented", false)))
 

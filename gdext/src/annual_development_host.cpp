@@ -108,44 +108,39 @@ bool NativeSimulationHost::mark_annual_presented(uint64_t id) {
         std::lock_guard<std::mutex> lock(_annual_mutex);
         return _annual_ledger.mark_presented(id);
     }
-    std::unique_lock<std::mutex> control(_control_mutex);
-    const auto available = [&] {
-        return !_stop_requested.load(std::memory_order_acquire) &&
-            state() != RuntimeWorkerState::STOPPED && state() != RuntimeWorkerState::FAULTED;
-    };
-    if (!available()) return false;
-    auto request = std::make_shared<AnnualPresentationRequest>(AnnualPresentationRequest{id});
-    _annual_presentations.push_back(request);
-    if (inline_daily_mode()) {
-        control.unlock();
-        service_annual_presentations();
-        return request->presented;
+    AnnualDevelopmentReport report;
+    if (!annual_report(id, report) || !report.reward_settled) return false;
+    {
+        int64_t day = 0;
+        auto admission = lock_command_admission(day);
+        if (!admission.owns_lock() || _stop_requested.load(std::memory_order_acquire) ||
+                state() == RuntimeWorkerState::STOPPED || state() == RuntimeWorkerState::FAULTED)
+            return false;
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (std::find(_annual_presentations.begin(), _annual_presentations.end(), id) ==
+                _annual_presentations.end()) _annual_presentations.push_back(id);
     }
-    _control_cv.notify_all();
-    _control_cv.wait(control, [&] { return request->done || !available(); });
-    return request->done && request->presented;
+    if (inline_daily_mode()) service_annual_presentations();
+    else _control_cv.notify_one();
+    return true;
 }
 
 bool NativeSimulationHost::service_annual_presentations() {
-    std::deque<std::shared_ptr<AnnualPresentationRequest>> requests;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (_annual_presentations.empty()) return false;
+    }
+    std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
+    std::deque<uint64_t> requests;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
         requests.swap(_annual_presentations);
     }
-    if (requests.empty()) return false;
-    {
-        std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
-        std::lock_guard<std::mutex> lock(_annual_mutex);
-        for (const auto &request : requests)
-            request->presented = _annual_ledger.mark_presented(request->report_id);
-    }
-    {
-        std::lock_guard<std::mutex> control(_control_mutex);
-        for (const auto &request : requests) request->done = true;
-    }
-    _control_cv.notify_all();
+    std::lock_guard<std::mutex> lock(_annual_mutex);
+    for (const auto id : requests) _annual_ledger.mark_presented(id);
     return true;
 }
+
 std::vector<uint8_t> NativeSimulationHost::encode_annual_save() const{std::lock_guard<std::mutex> lock(_annual_mutex);std::vector<uint8_t> bytes;if(_annual_ledger.configured())_annual_ledger.encode(bytes);return bytes;}
 bool NativeSimulationHost::restore_annual_save(const uint8_t *bytes,size_t size,std::string &error){
     std::lock_guard<std::mutex> lock(_annual_mutex);if(!_annual_ledger.restore(bytes,size,error))return false;

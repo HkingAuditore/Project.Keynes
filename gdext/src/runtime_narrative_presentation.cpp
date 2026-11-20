@@ -74,6 +74,7 @@ PackedInt32Array normalized(const Array &outcomes) {
 Dictionary narrative_response(bool ok, const char *code, const char *message) {
     Dictionary result;
     result["ok"] = ok;
+    if (!ok) result["admitted"] = false;
     result["code"] = code;
     result["message"] = text(message);
     return result;
@@ -457,11 +458,16 @@ void RuntimeNarrative::apply_pause_policy(int64_t day) {
 }
 
 Dictionary RuntimeNarrative::validate_choice(const Dictionary &args) const {
-    if (placing_choice() || int64_t(args.get("country", 0)) != int64_t(_country) ||
-        int64_t(args.get("offer_id", -1)) != int64_t(_active.get("offer_id", -2)) ||
-        int64_t(args.get("offer_generation", -1)) != int64_t(_active.get("offer_generation", -2)))
+    return validate_offer(placing_choice() ? Dictionary() : _active, _country, args);
+}
+
+Dictionary RuntimeNarrative::validate_offer(const Dictionary &offer, uint64_t country,
+        const Dictionary &args) {
+    if (offer.is_empty() || int64_t(args.get("country", 0)) != int64_t(country) ||
+        int64_t(args.get("offer_id", -1)) != int64_t(offer.get("offer_id", -2)) ||
+        int64_t(args.get("offer_generation", -1)) != int64_t(offer.get("offer_generation", -2)))
         return narrative_response(false, "narrative_offer_mismatch", "事件已过期。");
-    const Array options = _active.get("options", Array());
+    const Array options = offer.get("options", Array());
     const int64_t option = args.get("option_index", -1);
     if (option < 0 || option >= options.size())
         return narrative_response(false, "narrative_option_invalid", "选项无效。");
@@ -509,6 +515,7 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
             "event_id", "title", "body_text", "speaker", "quote_text", "image_key",
             "image_path", "tags", "chain_id", "meta", "is_ai_generated"})
         record[key] = _active[key];
+    if (bool(_active.get("notice_only", false))) record["notice_only"] = true;
     record["record_id"] = _next_record;
     record["resolved_day"] = _choice_day;
     record["automatically_chosen"] = args.get("automatic", false);

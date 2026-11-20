@@ -986,9 +986,7 @@ Dictionary DCWorldExt::submit_gameplay_narrative(StringName kind, Dictionary arg
     else if (kind == StringName("pause_policy")) request->kind = Kind::PAUSE_POLICY;
     else return narrative_response(false, "narrative_command_invalid");
     request->args = args.duplicate(true);
-    if (!_runtime_host->submit_narrative_choice_request(request))
-        return narrative_response(false, "narrative_runtime_unavailable");
-    return request->result;
+    return _runtime_host->submit_narrative_choice_request(std::move(request));
 }
 
 Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {

@@ -257,73 +257,102 @@ bool NativeSimulationHost::prepare_narrative_day(int64_t day) {
     return true;
 }
 
-bool NativeSimulationHost::submit_narrative_choice_request(
+Dictionary NativeSimulationHost::submit_narrative_choice_request(
         std::shared_ptr<RuntimeNarrativeRequest> request) {
-    std::unique_lock<std::mutex> control(_control_mutex);
-    const auto available = [&] {
+    using Kind = RuntimeNarrativeRequest::Kind;
+    auto &args = request->args;
+    if (request->kind == Kind::SET_AI && Variant(args.get("enabled", Variant())).get_type() != Variant::BOOL)
+        return narrative_response(false, "narrative_ai_enabled_invalid");
+    int64_t day = std::max<int64_t>(0, args.get("effective_day", 0));
+    {
+        auto admission = lock_command_admission(day);
         const auto current = state();
-        return _executor_narrative && _world_environment && current != RuntimeWorkerState::STOPPED &&
-            current != RuntimeWorkerState::FAULTED && current != RuntimeWorkerState::STOPPING &&
-            !_stop_requested.load(std::memory_order_acquire);
-    };
-    if (!available()) return false;
-    _narrative_requests.push_back(request);
-    if (inline_daily_mode()) {
-        control.unlock();
-        service_narrative_requests();
-        return request->done;
+        if (!admission.owns_lock() || !_executor_narrative || !_world_environment ||
+                current == RuntimeWorkerState::STOPPED || current == RuntimeWorkerState::FAULTED ||
+                current == RuntimeWorkerState::STOPPING || _stop_requested.load(std::memory_order_acquire))
+            return narrative_response(false, "narrative_runtime_unavailable");
+        std::lock_guard<std::mutex> control(_control_mutex);
+        const auto view = latest_narrative();
+        if (!view) return narrative_response(false, "narrative_runtime_unavailable");
+        if (_narrative_requests.size() == RUNTIME_COMMAND_QUEUE_CAPACITY)
+            return narrative_response(false, "narrative_command_queue_full");
+        if (request->kind == Kind::CHOOSE) {
+            if (std::any_of(_narrative_requests.begin(), _narrative_requests.end(),
+                    [](const auto &queued) { return queued->kind == Kind::CHOOSE; }))
+                return narrative_response(false, "narrative_choice_already_pending");
+            const auto check = RuntimeNarrative::validate_offer(view->active_offer, view->country, args);
+            if (!bool(check.get("ok", false))) return check;
+        } else if (request->kind == Kind::AI_RESULT) {
+            const int64_t sequence = args.get("ai_request_seq", -1);
+            if (std::any_of(_narrative_requests.begin(), _narrative_requests.end(),
+                    [sequence](const auto &queued) {
+                        return queued->kind == Kind::AI_RESULT &&
+                            int64_t(queued->args.get("ai_request_seq", -1)) == sequence;
+                    }))
+                return narrative_response(false, "ai_reply_already_received");
+            bool found = false;
+            for (int64_t i = 0; i < view->ai_requests.size(); ++i) {
+                const Dictionary pending = view->ai_requests[i];
+                if (int64_t(pending["ai_request_seq"]) != sequence) continue;
+                const int64_t deadline = pending["effective_day"];
+                if (int64_t(args.get("effective_day", -1)) != deadline || day != deadline)
+                    return narrative_response(false, "ai_reply_day_mismatch");
+                found = true;
+                break;
+            }
+            if (!found) return narrative_response(false, "ai_request_unknown");
+        }
+        request->day = day;
+        _narrative_requests.push_back(request);
     }
-    _control_cv.notify_all();
-    _control_cv.wait(control, [&] { return request->done || !available(); });
-    return request->done;
+    if (inline_daily_mode()) service_narrative_requests();
+    else _control_cv.notify_one();
+    auto receipt = narrative_response(true, "ok");
+    receipt["admitted"] = true;
+    receipt["effective_day"] = day;
+    if (request->kind == Kind::CHOOSE) {
+        receipt["offer_id"] = args.get("offer_id", 0);
+        receipt["pending"] = true;
+    }
+    return receipt;
 }
 
 bool NativeSimulationHost::service_narrative_requests() {
     std::deque<std::shared_ptr<RuntimeNarrativeRequest>> requests;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
-        requests.swap(_narrative_requests);
+        requests = _narrative_requests;
     }
     if (requests.empty()) return false;
     {
         std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
         auto &narrative = *_executor_narrative;
-        const int64_t day = _committed_day.load(std::memory_order_acquire);
+        using Kind = RuntimeNarrativeRequest::Kind;
         for (const auto &request : requests) {
-            using Kind = RuntimeNarrativeRequest::Kind;
-            if (request->kind == Kind::CHOOSE) {
-                request->result = narrative.queue_choice(day + 1, request->args);
-            } else if (request->kind == Kind::PAUSE_POLICY) {
-                // A stopped day has no simulation work ahead of the pending reply.
-                // A policy can replace that reply with an automatic choice on D+1.
-                const auto view = narrative.view(day);
-                const int64_t effective_day = view->active_offer.is_empty() ?
-                    std::max(day + 1, command_seal_day()) : day + 1;
-                narrative.set_pause_policy(effective_day,
-                    static_cast<uint16_t>(int32_t(request->args.get("mask", 255))));
-                request->result["ok"] = true;
-                request->result["effective_day"] = effective_day;
-            } else if (request->kind == Kind::AI_RESULT) {
-                request->result = narrative.queue_ai_reply(request->args);
-            } else if (request->kind == Kind::SET_AI) {
-                const Variant enabled = request->args.get("enabled", Variant());
-                if (enabled.get_type() != Variant::BOOL) {
-                    request->result = narrative_response(false, "narrative_ai_enabled_invalid");
-                    continue;
-                }
-                const int64_t effective_day = std::max(day + 1,
-                    int64_t(request->args.get("effective_day", day + 1)));
-                narrative.set_ai_enabled(effective_day, bool(enabled));
-                request->result["ok"] = true;
-                request->result["effective_day"] = effective_day;
+            switch (request->kind) {
+                case Kind::CHOOSE:
+                    if (!bool(narrative.queue_choice(request->day, request->args).get("ok", false)))
+                        set_fault("narrative_admitted_choice_invalid");
+                    break;
+                case Kind::PAUSE_POLICY:
+                    narrative.set_pause_policy(request->day,
+                        static_cast<uint16_t>(int32_t(request->args.get("mask", 255))));
+                    break;
+                case Kind::AI_RESULT:
+                    if (!bool(narrative.queue_ai_reply(request->args).get("ok", false)))
+                        set_fault("narrative_admitted_reply_invalid");
+                    break;
+                case Kind::SET_AI:
+                    narrative.set_ai_enabled(request->day, bool(request->args["enabled"]));
+                    break;
             }
         }
-        publish_narrative_boundary(day);
+        publish_narrative_boundary(committed_day_value());
     }
     {
         std::lock_guard<std::mutex> control(_control_mutex);
-        for (const auto &request : requests) request->done = true;
-        _control_cv.notify_all();
+        _narrative_requests.erase(_narrative_requests.begin(),
+                                  _narrative_requests.begin() + requests.size());
     }
     return true;
 }

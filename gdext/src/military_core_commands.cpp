@@ -172,6 +172,14 @@ bool military_disembark_army(MilitaryCore &core, int32_t army) {
 // ============================================================== submit
 
 bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
+    if (_configured && command.effective_day >= _last_day && command.sequence == 0)
+        command.sequence = _next_sequence++;
+    if (!validate_command(command, error)) return false;
+    _pending.push_back(std::move(command));
+    return true;
+}
+
+bool MilitaryCore::validate_command(MilitaryCommand &command, std::string &error) const {
     error.clear();
     if (!_configured) {
         error = "military_not_configured";
@@ -182,7 +190,6 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
         error = "command_day_in_past";
         return false;
     }
-    command.sequence = (command.sequence != 0) ? command.sequence : _next_sequence++;
     // Army-scoped commands (move / stance / stop / area_control) may omit the
     // country: the formation knows its owner, and requiring the caller to
     // repeat it only surfaces command_missing_country from the map layer.
@@ -378,7 +385,10 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
         }
         case MCMD_ARMY_STATION:
             if (!need_country()) return false;
-            if (!need_country_owns_army(has_country, command)) return false;
+            if (!need_country_owns_army(has_country, command)) {
+                error = "command_not_owner";
+                return false;
+            }
             if (!need_army()) return false;
             break;
         case MCMD_ARMY_TRANSFER: {
@@ -471,7 +481,10 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             break;
         case MCMD_ARMY_EXPLORE: {
             if (!need_country()) return false;
-            if (!need_country_owns_army(has_country, command)) return false;
+            if (!need_country_owns_army(has_country, command)) {
+                error = "command_not_owner";
+                return false;
+            }
             if (!need_army()) return false;
             if (!need_cell(command.cell)) return false;
             if (command.radius < 1 || command.radius > MILITARY_MAX_AREA_RADIUS) {
@@ -528,7 +541,6 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             error = "command_unknown_op";
             return false;
     }
-    _pending.push_back(std::move(command));
     return true;
 }
 

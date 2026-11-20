@@ -593,6 +593,13 @@ func _on_player_command_completed_audio(host, id: StringName, result: Dictionary
 
 
 func _on_player_command_settled(host, id: StringName, result: Dictionary) -> void:
+	if id in [&"era.advance.start", &"era.advance.pause", &"era.advance.resume"]:
+		if host._era_panel != null:
+			host._era_panel.show_command_result(result)
+		return
+	if String(id).begins_with("military."):
+		host._on_military_command_settled(id, result)
+		return
 	if bool(result.get("ok", false)):
 		var cues = {&"ideology.equip": &"ideology_use",
 			&"ideology.unequip": &"ideology_unequip", &"ideology.promote": &"ideology_promote"}

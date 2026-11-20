@@ -84,6 +84,7 @@ func history(offset: int = 0, limit: int = 64) -> Dictionary:
 
 func mark_presented(report_id: int) -> void:
 	if _configured:
-		_ext.mark_annual_report_presented(report_id)
-		_last_announced = 0
+		var receipt: Dictionary = _ext.mark_annual_report_presented(report_id)
+		if bool(receipt.get("ok", false)):
+			_last_announced = report_id
 		poll()

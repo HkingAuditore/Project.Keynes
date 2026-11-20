@@ -389,7 +389,7 @@ void NativeSimulationHost::execute_era_advancement_request(RuntimeEraRewardReque
         economy_summary.get("building_units", 0),
         economy_api::country_procurement_snapshot(economy, state.country),
         reward_pending(*_effect_adapter_runtime)};
-    const int64_t day = std::max(request.effective_day, command_seal_day());
+    const int64_t day = request.command() ? request.effective_day : command_seal_day();
     state.next_sequence = std::max(state.next_sequence, request.advancement_sequence + 1);
     const int64_t sequence = request.advancement_sequence;
     const auto grant_prelude = [&] {
@@ -466,6 +466,8 @@ void NativeSimulationHost::execute_era_advancement_request(RuntimeEraRewardReque
         default:
             break;
     }
+    if (request.kind != Kind::BIND_ADVANCEMENT && request.kind != Kind::RESTORE_ADVANCEMENT &&
+            bool(request.result.get("ok", false))) request.result["effective_day"] = day;
     std::atomic_store(&_published_era_advancement, make_view(state, input));
 }
 

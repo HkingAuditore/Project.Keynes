@@ -431,6 +431,8 @@ godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_build(
     out["sequence"] = sequence;
     auto reject = [&](const char *code) {
         out["ok"] = false;
+        out["admitted"] = false;
+        out.erase("effective_day");
         out["code"] = godot::String(code);
         out["message"] = godot::String(code);
         return out;
@@ -837,6 +839,8 @@ godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_demolish(
     out["sequence"] = sequence;
     auto reject = [&](const char *code) {
         out["ok"] = false;
+        out["admitted"] = false;
+        out.erase("effective_day");
         out["code"] = godot::String(code);
         out["message"] = godot::String(code);
         return out;

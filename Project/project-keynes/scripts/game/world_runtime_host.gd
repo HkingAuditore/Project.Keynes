@@ -7,6 +7,7 @@ signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator,
 signal daily_tick_completed(report: Dictionary)
 signal simulation_committed(from_day: int, to_day: int, generation: int)
 signal simulation_day_records(records: Array)
+signal simulation_command_results(results: Array)
 signal simulation_view_updated(from_day: int, to_day: int, generation: int)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)

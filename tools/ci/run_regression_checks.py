@@ -65,6 +65,7 @@ TESTS = (
     "tests/world/loading_catalog_cooperative_test.gd",
     "tests/world/loading_snapshot_cancel_test.gd",
     "tests/runtime/runtime_inline_save_restore_test.gd",
+    "tests/runtime/runtime_inline_budget_admission_test.gd",
     "tests/runtime/runtime_executor_boundary_test.gd",
     "tests/runtime/native_world_handshake_test.gd",
     "tests/runtime/runtime_world_lifecycle_test.gd",

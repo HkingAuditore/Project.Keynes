@@ -46,9 +46,10 @@ func _check_ai_fixed_day() -> void:
 	var view := bus.story_view()
 	var requests: Array = view.get("ai_requests", [])
 	var request: Dictionary = requests[0] if not requests.is_empty() else {}
-	var landing_day := 1 + int(view.ai_reply_delay_days)
-	_expect("AI request snapshots its committed cell and fixed landing day",
+	const landing_day := 4
+	_expect("short reservation snapshots its committed cell and retains the original landing day",
 		request.get("day") == 1 and request.get("effective_day") == landing_day
+		and request.get("scheduled_followup") == true and view.ai_reply_delay_days == 90
 		and request.get("cell_ctx", {}).get("day") == 1 and request.get("cell_idx") == story_cell)
 	if request.is_empty():
 		return
@@ -65,7 +66,7 @@ func _check_ai_fixed_day() -> void:
 	if not await _advance_story(seal_day):
 		return
 	_expect("AI off takes effect on the admitted day",
-		bus.story_view().get("ai_enabled") == false and bus.story_view().get("ai_requests") == [request])
+		bus.story_view().get("ai_enabled") == false and bus.story_view().get("ai_requests") == requests)
 	print("NARRATIVE_AI_SETTING day=", setting.get("effective_day"),
 		" inline=", story_host._native_daily_inline_active)
 	if not await _advance_story(landing_day - 1):

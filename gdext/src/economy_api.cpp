@@ -253,6 +253,18 @@ godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy
 godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country) {
     return economy.country_procurement_snapshot(country);
 }
+godot::Dictionary submit_family_colonization_cancel(NativeEconomyRuntime &economy,
+    int64_t country, int64_t expedition, int64_t day, int64_t sequence) {
+    return economy.submit_family_colonization_cancel(country, expedition, day, sequence, true);
+}
+godot::Dictionary submit_family_founding_choice(NativeEconomyRuntime &economy,
+    int64_t offer, int64_t generation, int32_t choice, int64_t day, int64_t sequence) {
+    return economy.submit_family_founding_choice(offer, generation, choice, day, sequence);
+}
+godot::Dictionary queue_canal_construction(NativeEconomyRuntime &economy,
+    int64_t country, int64_t quote, int64_t day, int64_t sequence) {
+    return economy.queue_canal_construction(country, quote, day, sequence);
+}
 godot::Dictionary era_advancement_economy_summary(const NativeEconomyRuntime &economy, int64_t country) {
     return economy.country_economy_overview(country, "summary", -1, -1, 0, 64);
 }

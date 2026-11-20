@@ -108,7 +108,7 @@ func _sample_replay_days(host: WorldRuntimeHost, clock: WorldClock, restored_day
 		_expect("military replay settles day %d" % day, settled)
 		if not settled:
 			break
-		scenario.collect_day(day)
+		await scenario.collect_day(day, MAX_SLICES_PER_DAY)
 		var row := await _summary(host, scenario.ext, day)
 		row["pkmi"] = _military_archive_hash(host)
 		rows.append(row)

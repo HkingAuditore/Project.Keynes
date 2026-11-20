@@ -116,7 +116,7 @@ func _init() -> void:
 		&"infrastructure.canal.build", {"quote_token": 7})
 	_expect("canal command remains API-only and unsupported by PlayerController",
 		_code(canal_rejected) == "unsupported_command"
-		and int(canal_rejected.get("effective_day", -2)) == -1
+		and canal_rejected.get("admitted") == false and not canal_rejected.has("effective_day")
 		and int(canal_rejected.get("sequence", -2)) == -1
 		and not PlayerControllerScript.SUPPORTED_COMMANDS.has(
 			&"infrastructure.canal.build"))
