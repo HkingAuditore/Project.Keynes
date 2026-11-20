@@ -477,11 +477,11 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
 
 Dictionary DCWorldExt::bind_era_reward_player_country(int64_t country_handle) {
     if (_effect_runtime == nullptr) return unavailable();
-    if (_runtime_host != nullptr && _runtime_host->effect_adapter_owned()) {
-        auto request = std::make_shared<RuntimeEraRewardRequest>();
-        request->kind = RuntimeEraRewardRequest::Kind::BIND_PLAYER;
-        request->country_handle = static_cast<uint64_t>(country_handle);
-        return _runtime_host->submit_era_reward_request(std::move(request));
+    if (_runtime_host && !_runtime_host->execution_has_stopped()) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = "era_session_setup_requires_stopped_executor";
+        return out;
     }
     std::string error;
     const bool ok = runtime_from(_effect_runtime)
@@ -495,7 +495,7 @@ Dictionary DCWorldExt::bind_era_reward_player_country(int64_t country_handle) {
 
 Dictionary DCWorldExt::submit_era_advancement(const String &action,
         int64_t country, int64_t day, int64_t sequence, const Dictionary &data) {
-    if (!_runtime_host || !_runtime_host->effect_adapter_owned()) return unavailable();
+    if (!_runtime_host) return unavailable();
     using Kind = RuntimeEraRewardRequest::Kind;
     auto request = std::make_shared<RuntimeEraRewardRequest>();
     if (action == "bind") request->kind = Kind::BIND_ADVANCEMENT;

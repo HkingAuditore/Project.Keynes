@@ -45,7 +45,7 @@ godot::Dictionary NativeSimulationHost::submit_era_reward_request(
         out["reason"] = code;
         return out;
     };
-    if (const char *command = request->command(); command != nullptr) {
+    if (request->command() != nullptr) {
         const auto kind = request->kind;
         int64_t day = std::max<int64_t>(0, request->effective_day);
         {
@@ -77,18 +77,14 @@ godot::Dictionary NativeSimulationHost::submit_era_reward_request(
         out["effective_day"] = day;
         return out;
     }
-    // Session binding and restore complete before commands are enabled.
-    std::unique_lock<std::mutex> control(_control_mutex);
-    if (!available()) return reject("effect_runtime_unavailable");
-    _era_reward_requests.push_back(request);
-    if (inline_daily_mode()) {
-        control.unlock();
-        service_era_reward_requests();
-        return request->result;
-    }
-    _control_cv.notify_all();
-    _control_cv.wait(control, [&] { return request->done || !available(); });
-    return request->done ? request->result : reject("effect_runtime_unavailable");
+    if (state() != RuntimeWorkerState::STOPPED || !execution_has_stopped())
+        return reject("era_session_setup_requires_stopped_executor");
+    auto &setup = request->kind == RuntimeEraRewardRequest::Kind::BIND_ADVANCEMENT
+        ? _era_advancement_bind : _era_advancement_restore;
+    setup = std::move(request);
+    godot::Dictionary out;
+    out["ok"] = true;
+    return out;
 }
 
 bool NativeSimulationHost::service_era_reward_requests() {
@@ -104,15 +100,6 @@ bool NativeSimulationHost::service_era_reward_requests() {
         bool reward_changed = false;
         for (const auto &request : requests) {
             auto &reply = request->result;
-            if (request->kind == RuntimeEraRewardRequest::Kind::BIND_PLAYER) {
-                std::string error;
-                const bool bound = effect.bind_era_reward_player_country_pod(
-                    request->country_handle, error);
-                reply["ok"] = bound;
-                if (!bound) reply["reason"] = godot::String(error.c_str());
-                continue;
-            }
-
             if (request->kind != RuntimeEraRewardRequest::Kind::SELECT) {
                 execute_era_advancement_request(*request);
                 continue;
@@ -180,7 +167,6 @@ bool NativeSimulationHost::service_era_reward_requests() {
     }
     {
         std::lock_guard<std::mutex> control(_control_mutex);
-        for (const auto &request : requests) request->done = true;
         _era_reward_requests.erase(_era_reward_requests.begin(),
                                    _era_reward_requests.begin() + requests.size());
     }

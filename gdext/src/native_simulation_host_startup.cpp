@@ -1146,7 +1146,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
-    return launch_executor(paused);
+    return install_era_advancement_setup() && launch_executor(paused);
 }
 
 } // namespace pk

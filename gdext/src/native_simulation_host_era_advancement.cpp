@@ -305,6 +305,22 @@ std::shared_ptr<const RuntimeEraAdvancementView> NativeSimulationHost::latest_er
     return std::atomic_load(&_published_era_advancement);
 }
 
+bool NativeSimulationHost::install_era_advancement_setup() {
+    if (!_effect_adapter_runtime) return true;
+    for (auto *pending : {&_era_advancement_bind, &_era_advancement_restore}) {
+        if (!*pending) continue;
+        auto request = std::move(*pending);
+        execute_era_advancement_request(*request);
+        if (!bool(request->result.get("ok", false))) {
+            const String code = request->result.get("code", "era_advancement_setup_failed");
+            set_fault(code.utf8().get_data());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool NativeSimulationHost::submit_era_milestone(RuntimeEraAdvancement &state,
         int32_t era, int64_t requested, int64_t effective, int64_t sequence, bool consume_goods) {
     std::vector<RuntimeCommandPacket> packets;
@@ -404,6 +420,8 @@ void NativeSimulationHost::execute_era_advancement_request(RuntimeEraRewardReque
                 state.known_era = current_era(state, input);
                 state.trade_era = state.known_era;
             }
+            if (sequence > 0)
+                request.result = submit_policy(economy, state, state.policy, day, sequence);
             break;
         case Kind::RESTORE_ADVANCEMENT: {
             state.restore(request.advancement);

@@ -527,6 +527,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         runtime_copy_text(out.reason, "inline_daily_stop_requested");
         return out;
     }
+    service_economy_boundary_requests();
     // 与 worker 日事务同一把边界锁。内联模式下执行者就是调用线程，这把锁在
     // 这里只是"一天一个事务"的互斥，不会再有人跨线程等它。
     std::unique_lock<std::mutex> boundary_lock(_economy_authority_boundary_mutex);

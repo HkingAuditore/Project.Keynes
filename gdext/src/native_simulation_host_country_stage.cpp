@@ -377,10 +377,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 if (s_late_fold_left.fetch_sub(
                         1, std::memory_order_relaxed) > 0) {
                     pk::log_info(
-                        "[country][active] late-fold rejected day=%d "
-                        "request=%d reason=%s",
-                        day,
-                        static_cast<int64_t>(packet.envelope.request_id),
+                        "[country][active] late-fold rejected day=%lld "
+                        "request=%llu reason=%s",
+                        static_cast<long long>(day),
+                        static_cast<unsigned long long>(packet.envelope.request_id),
                         command_error.c_str());
                 }
                 continue;
@@ -404,8 +404,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
                             1, std::memory_order_relaxed) > 0) {
                         pk::log_info(
                             "[country][active] late-fold research catch-up "
-                            "failed day=%d reason=%s",
-                            day, research_error.c_str());
+                            "failed day=%lld reason=%s",
+                            static_cast<long long>(day), research_error.c_str());
                     }
                 }
             }
@@ -415,11 +415,11 @@ bool NativeSimulationHost::execute_country_worker_stage(
             if (s_late_fold_ok_left.fetch_sub(
                     1, std::memory_order_relaxed) > 0) {
                 pk::log_info(
-                    "[country][active] late-fold ok day=%d request=%d "
-                    "opcode=%d",
-                    day,
-                    static_cast<int64_t>(packet.envelope.request_id),
-                    static_cast<int64_t>(command.opcode));
+                    "[country][active] late-fold ok day=%lld request=%llu "
+                    "opcode=%u",
+                    static_cast<long long>(day),
+                    static_cast<unsigned long long>(packet.envelope.request_id),
+                    static_cast<unsigned>(command.opcode));
             }
         }
     }
@@ -662,10 +662,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                                  _country_pod_plan.header.dirty_families);
                     std::fflush(stderr);
                     pk::log_info(
-                        "[country][active] peer-wait preview day=%d "
-                        "commands=%d",
-                        day,
-                        static_cast<int64_t>(_country_pod_plan.commands.size()));
+                        "[country][active] peer-wait preview day=%lld "
+                        "commands=%zu",
+                        static_cast<long long>(day),
+                        _country_pod_plan.commands.size());
                 }
             }
         }

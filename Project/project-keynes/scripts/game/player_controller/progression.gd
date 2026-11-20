@@ -143,30 +143,29 @@ func get_era_advancement_blocked_reason(host) -> String:
 
 
 
-func _bind_era_advancement(host) -> void:
-	if host._era_advancement == null:
-		return
+func prepare_era_session(host, save_service: Node) -> Dictionary:
+	var handle: int = host._runtime_host._resolve_player_country_handle()
+	if handle == 0:
+		return {"ok": true}
+	var generator = host._runtime_host.generator()
+	var country = generator.get_country_facade()
+	var bound: Dictionary = country.bind_era_reward_player_country(handle)
+	if not bool(bound.get("ok", false)):
+		return {"ok": false, "code": bound.get("reason", "era_reward_player_bind_failed")}
+	var regimes: Array = country.political_regime_catalog_view().get("definitions", [])
+	var loading: bool = host._runtime_host.is_loading_session()
+	var sequence: int = 0 if loading else host._allocate_command_sequence()
+	if not host._era_advancement.bind(country, generator.get_economy_facade(), handle, regimes, sequence):
+		return {"ok": false, "code": "era_advancement_bind_failed"}
+	var saved: Dictionary = save_service.pending_era_advancement() if loading and save_service != null else {}
+	return host._era_advancement.stage_restore(saved)
+
+
+func connect_era_advancement_view(host) -> void:
 	if not host._era_advancement.changed.is_connected(host._on_era_advancement_changed):
 		host._era_advancement.changed.connect(host._on_era_advancement_changed)
 	if not host._era_advancement.era_advanced.is_connected(host._on_era_advancement_advanced):
 		host._era_advancement.era_advanced.connect(host._on_era_advancement_advanced)
-	if host._country_facade == null or host._player_country_handle == 0:
-		return
-	var regimes: Array = []
-	if host._country_facade.has_method("political_regime_catalog_view"):
-		regimes = host._country_facade.political_regime_catalog_view().get("definitions", [])
-	var newly_bound: bool = host._era_advancement.bind(host._country_facade, host._economy_facade,
-		host._player_country_handle, Callable(host, "_allocate_command_sequence"), regimes)
-	if newly_bound:
-		if host._runtime_host == null or not host._runtime_host.is_loading_session():
-			host._era_advancement.push_runtime_state(host._next_effective_day())
-		host._refresh_era_advancement(true)
-
-
-
-func _restore_era_advancement(host, state) -> void:
-	host._bind_era_advancement()
-	host._era_advancement.restore(state if state is Dictionary else {})
 	host._refresh_era_advancement(true)
 
 
@@ -508,7 +507,6 @@ func restore_view_state(host, map, state: Dictionary) -> void:
 	host._sync_family_founding_offer()
 	host._sync_ideology_draw()
 	host._sync_era_music(true)
-	host._restore_era_advancement(state.get("era_advancement", {}))
 	host._restore_military_budget(state.get("military_budget", {}))
 	host._annual_report_flow.try_present()
 	host._narrative_flow.try_present()

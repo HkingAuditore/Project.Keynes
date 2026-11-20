@@ -445,6 +445,7 @@ static func _show_family_preview(host, quote: Dictionary, hovering: bool = false
 		var detail: Dictionary = host._quote_preview_cache.get(route_key, {})
 		if detail.is_empty() and host._controller != null:
 			detail = host._controller.get_family_colonization_quote_detail(int(quote.quote_token), people)
+			host._await_quote_read(&"hover", detail, host._show_hover_preview)
 			if bool(detail.get("ok", false)):
 				host._quote_preview_cache[route_key] = detail
 		if bool(detail.get("ok", false)):

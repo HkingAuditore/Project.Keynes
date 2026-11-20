@@ -58,6 +58,8 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	var commit: Dictionary = host._generator.poll_runtime_commit(host._runtime_commit_generation, true)
 	if commit.has("boundary_results"):
 		host.simulation_command_results.emit(commit["boundary_results"])
+	if bool(commit.get("colonization_quotes_ready", false)):
+		host.colonization_quotes_ready.emit()
 	var received_new_commit = bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > host._runtime_commit_generation

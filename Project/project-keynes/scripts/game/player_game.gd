@@ -150,6 +150,9 @@ func _configure_runtime() -> void:
 	var save: Node = _game_save()
 	if save != null:
 		save.bind_runtime(_runtime_host, _world_clock, _player_controller)
+	var era_session: Dictionary = _player_controller.register_era_session(save)
+	if not bool(era_session.get("ok", false)):
+		push_error("时代会话初始化失败：%s" % era_session.get("code", "module_invalid"))
 	# 生成前钉死 force_on，避免 AUTO 策略或 GM 残值把会话退回 SHADOW。
 	_runtime_host.set_climate_authority_override(
 		"force_on" if _runtime_host.runtime_climate_authority_enabled else "force_off")

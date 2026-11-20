@@ -102,11 +102,10 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 static int s_econ_climate_gate_left = 8;
                 if (s_econ_climate_gate_left-- > 0) {
                     pk::log_info(
-                        "[economy-climate-gate] day=%d climate_ok=0 "
-                        "stall=0x%x ring=%d",
-                        plan.context.day,
-                        static_cast<int64_t>(day_stall_reason_mask()),
-                        static_cast<int64_t>(_environment_ring.size()));
+                        "[economy-climate-gate] day=%lld climate_ok=0 "
+                        "stall=0x%x ring=%zu",
+                        static_cast<long long>(plan.context.day),
+                        day_stall_reason_mask(), _environment_ring.size());
                 }
             }
             stage.completed = 0;
@@ -348,14 +347,14 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                     static int s_fiscal_stall_left = 12;
                     if (s_fiscal_stall_left-- > 0) {
                         pk::log_info(
-                            "[economy-fiscal-stall] day=%d reason=%s "
-                            "stall=0x%x work=%d ring=%d climate_committed=%d",
-                            plan.context.day,
+                            "[economy-fiscal-stall] day=%lld reason=%s "
+                            "stall=0x%x work=%llu ring=%zu climate_committed=%lld",
+                            static_cast<long long>(plan.context.day),
                             std::string(economy_error.c_str()).c_str(),
-                            static_cast<int64_t>(day_stall_reason_mask()),
-                            static_cast<int64_t>(economy_work),
-                            static_cast<int64_t>(_environment_ring.size()),
-                            climate_committed);
+                            day_stall_reason_mask(),
+                            static_cast<unsigned long long>(economy_work),
+                            _environment_ring.size(),
+                            static_cast<long long>(climate_committed));
                     }
                 }
                 commit.continuation_pending = 1;
@@ -372,15 +371,15 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 static int s_unknown_pending_left = 12;
                 if (s_unknown_pending_left-- > 0) {
                     pk::log_info(
-                        "[economy-pending-stall] day=%d reason=%s "
-                        "stall=0x%x work=%d ring=%d",
-                        plan.context.day,
+                        "[economy-pending-stall] day=%lld reason=%s "
+                        "stall=0x%x work=%llu ring=%zu",
+                        static_cast<long long>(plan.context.day),
                         std::string(economy_error.empty()
                                           ? "pending_input"
                                           : economy_error.c_str()).c_str(),
-                        static_cast<int64_t>(day_stall_reason_mask()),
-                        static_cast<int64_t>(economy_work),
-                        static_cast<int64_t>(_environment_ring.size()));
+                        day_stall_reason_mask(),
+                        static_cast<unsigned long long>(economy_work),
+                        _environment_ring.size());
                 }
             }
             if (fault_if_peer_stall_timed_out(

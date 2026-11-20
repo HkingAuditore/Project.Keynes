@@ -1342,8 +1342,10 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_d
         commit = *publication;
     }
     if (take_days) {
-        const Array results = _runtime_host->take_boundary_command_results();
+        bool quotes_ready;
+        const Array results = _runtime_host->take_boundary_command_results(quotes_ready);
         if (!results.is_empty()) out["boundary_results"] = results;
+        if (quotes_ready) out["colonization_quotes_ready"] = true;
     }
     if (!publication && (take_days || !_runtime_host->poll_commit(after, commit))) {
         out["ok"] = true;

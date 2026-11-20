@@ -338,6 +338,11 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 	return result
 
 
+func pending_era_advancement() -> Dictionary:
+	var state: Variant = _pending_view.get("era_advancement", {})
+	return state if state is Dictionary else {}
+
+
 func apply_pending_view(map: MapData) -> void:
 	if _pending_view.is_empty():
 		return

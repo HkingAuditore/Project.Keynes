@@ -734,11 +734,13 @@ uint32_t NativeSimulationHost::resolve_pending_country_effect_peers() {
                             t.received_ack_mask);
                         tx += buf;
                     }
-                    pk::log_info("[tech-ack-diag/unacked] tech=%d fire_seq=%d "
-                                 "acked_seq=%d next_due=%d pod_day=%d%s",
-                                 static_cast<int64_t>(intent.technology),
-                                 fire_seq, acked_seq, next_due,
-                                 snap.committed_day, tx.c_str());
+                    pk::log_info("[tech-ack-diag/unacked] tech=%d fire_seq=%lld "
+                                 "acked_seq=%lld next_due=%lld pod_day=%lld%s",
+                                 static_cast<int>(intent.technology),
+                                 static_cast<long long>(fire_seq),
+                                 static_cast<long long>(acked_seq),
+                                 static_cast<long long>(next_due),
+                                 static_cast<long long>(snap.committed_day), tx.c_str());
                 }
                 continue;
             }
@@ -767,9 +769,8 @@ uint32_t NativeSimulationHost::resolve_pending_country_effect_peers() {
         static int s_promote_left = 16;
         if (s_promote_left-- > 0) {
             pk::log_info(
-                "[tech-ack-diag/promote] pending→READY count=%d stall=0x%x",
-                static_cast<int64_t>(promoted),
-                static_cast<int64_t>(day_stall_reason_mask()));
+                "[tech-ack-diag/promote] pending→READY count=%u stall=0x%x",
+                promoted, day_stall_reason_mask());
         }
     }
     return promoted;

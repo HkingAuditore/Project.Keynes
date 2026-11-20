@@ -445,10 +445,10 @@ void NativeSimulationHost::set_fault(const char *code) {
         _economy_pod_authority.state_hash(), std::memory_order_release);
     // Godot console often drops stderr-only; always surface the code.
     const std::string fault_line = pk::log_format(
-        "[runtime-worker-fault] code=%s day=%d ring=%d",
+        "[runtime-worker-fault] code=%s day=%lld ring=%zu",
         std::string(value).c_str(),
-        _committed_day.load(std::memory_order_relaxed),
-        static_cast<int64_t>(_environment_ring.size()));
+        static_cast<long long>(_committed_day.load(std::memory_order_relaxed)),
+        _environment_ring.size());
     pk::log_line(fault_line);
     pk::log_line(fault_line, true);
 }

@@ -41,6 +41,7 @@ var _preview_route: Label
 var _footer_selection: Label
 var _preview_cache: Dictionary = {}
 var _quote_preview_cache: Dictionary = {}
+var _pending_quote_reads: Dictionary = {}
 var _local_families: Dictionary = {}
 var _display_order: Array = []
 var _hover_family := ""
@@ -194,8 +195,33 @@ func _ready() -> void:
 	_layout_left_panel()
 	visible = false
 
+
+func _on_colonization_quotes_ready() -> void:
+	var reads := _pending_quote_reads
+	_pending_quote_reads = {}
+	if not visible or _current_tab != "quotes":
+		return
+	for read: Callable in reads.values():
+		read.call()
+
+
+func _await_quote_read(kind: StringName, result: Dictionary, read: Callable) -> bool:
+	if not bool(result.get("pending", false)):
+		_pending_quote_reads.erase(kind)
+		return false
+	_pending_quote_reads[kind] = read
+	return true
+
 func set_player_controller(controller) -> void:
+	if _controller == controller:
+		return
+	var ready := _on_colonization_quotes_ready
+	if is_instance_valid(_controller) and _controller.has_signal("colonization_quotes_ready"):
+		_controller.colonization_quotes_ready.disconnect(ready)
+	_pending_quote_reads.clear()
 	_controller = controller
+	if is_instance_valid(_controller) and _controller.has_signal("colonization_quotes_ready"):
+		_controller.colonization_quotes_ready.connect(ready)
 
 
 func open_target(target_cell: int, family_filter: int = 0,
@@ -211,6 +237,7 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_detail_valid = false
 	_preview_cache.clear()
 	_quote_preview_cache.clear()
+	_pending_quote_reads.clear()
 	_local_families.clear()
 	_display_order.clear()
 	_hover_family = ""
@@ -265,6 +292,7 @@ func close_panel() -> void:
 	if not visible:
 		return
 	visible = false
+	_pending_quote_reads.clear()
 	_target_picking = false
 	_source_picking = false
 	_hover_timer.stop()
@@ -335,6 +363,7 @@ func refresh_visible() -> void:
 
 func _on_tab_selected(tab_id: String) -> void:
 	if tab_id == "expeditions":
+		_pending_quote_reads.clear()
 		_show_expeditions()
 	else:
 		_show_quotes()
@@ -391,6 +420,7 @@ func _on_source_city_selected(index: int) -> void:
 	if source == _source_filter:
 		_update_start_enabled()
 		return
+	_pending_quote_reads.erase(&"target")
 	_source_filter = source
 	if _directory_mode:
 		_selected_quote.clear()
@@ -434,6 +464,7 @@ func _show_quotes() -> void:
 		page = _load_source_cities()
 	else:
 		page = _get_source_quotes()
+	_await_quote_read(&"page", page, _show_quotes)
 	_economy_busy = bool(page.get("busy", false))
 	if not bool(page.get("ok", false)):
 		var code := String(page.get("code", "command_rejected"))
@@ -751,6 +782,10 @@ func _refresh_selected_kit() -> void:
 	if _controller != null:
 		detail = _controller.get_family_colonization_quote_detail(
 			int(_selected_quote.get("quote_token", 0)), int(_population.value))
+	if _await_quote_read(&"detail", detail, _refresh_selected_kit):
+		_detail_valid = false
+		_update_start_enabled()
+		return
 	_economy_busy = _economy_busy or bool(detail.get("busy", false))
 	if not bool(detail.get("ok", false)):
 		_detail_valid = _transient_query_failure(String(detail.get("code", "")), detail)
@@ -789,6 +824,7 @@ func _update_start_enabled() -> void:
 	_population_row.visible = on_quotes and has_selection
 	_start.visible = on_quotes
 	_start.disabled = not has_selection or _target_cell < 0 or _target_picking \
+		or _pending_quote_reads.has(&"target") \
 		or int(_selected_quote.get("quote_token", 0)) <= 0 or not _detail_valid \
 		or int(_population.value) > int(_selected_quote.get("maximum_population", 1))
 	var count := int(_population.value) if has_selection else 0
@@ -1109,6 +1145,7 @@ func begin_target_selection() -> void:
 
 func cancel_target_selection() -> void:
 	_target_picking = false
+	_pending_quote_reads.erase(&"target")
 	_update_start_enabled()
 
 
@@ -1120,6 +1157,7 @@ func begin_source_selection() -> void:
 	if _source_first or _source_picking:
 		return
 	_target_picking = false
+	_pending_quote_reads.erase(&"target")
 	_source_picking = true
 	_update_start_enabled()
 	source_selection_requested.emit()
@@ -1156,11 +1194,11 @@ func handle_map_cell(cell: int) -> bool:
 			return true
 		# 不是可派遣城市：把这次点按当成“改目的地”，
 		# 省掉“先按按钮才能在地图上选点”的往返。
-		if try_target_cell(cell, true):
+		if try_target_cell(cell, true, handle_map_cell.bind(cell)):
 			return true
 		_set_feedback_line("点地图上的青绿环换出发城；点可见空地改目的地。", UITokens.RISK)
 		return false
-	if try_target_cell(cell):
+	if try_target_cell(cell, false, handle_map_cell.bind(cell)):
 		return true
 	# 目的地不合法，但这格本身是另一个候选出发城 —— 玩家要点的是出发地。
 	if not _source_first and cell != _source_filter and _select_source_cell(cell):
@@ -1183,22 +1221,32 @@ func _select_source_cell(cell: int) -> bool:
 	return true
 
 
-func try_target_cell(cell: int, quiet: bool = false) -> bool:
+func try_target_cell(cell: int, quiet: bool = false, on_read: Callable = Callable()) -> bool:
 	if _controller == null or cell < 0:
 		return false
 	var family := int(_selected_quote.get("family_handle", 0))
 	var page: Dictionary = _controller.get_family_colonization_quotes(cell, family, _source_filter, 0, 256)
+	var next := on_read if on_read.is_valid() else try_target_cell.bind(cell, quiet)
+	if _await_quote_read(&"target", page, next):
+		_update_start_enabled()
+		return true
 	if not bool(page.get("ok", false)):
+		_update_start_enabled()
 		if not quiet:
 			_set_feedback_line(_reason_text(String(page.get("code", "colonization_target_invalid"))),
 				UITokens.RISK)
 		return false
 	if family > 0 and int(page.get("total", 0)) <= 0:
+		_update_start_enabled()
 		if not quiet:
 			# total 为 0 有两种完全不同的原因：全国无路可达（水域或不可通行
 			# 地形隔断），或这条路线不收这个家族。补一条「不限城市、不限家族」
 			# 的报价就能分开；只有失败路径才会多发这一次查询。
-			if _any_source_reaches(cell):
+			var probe: Dictionary = _controller.get_family_colonization_quotes(cell, 0, -1, 0, 1)
+			if _await_quote_read(&"target", probe, next):
+				_update_start_enabled()
+				return true
+			if not bool(probe.get("ok", false)) or int(probe.get("total", 0)) > 0:
 				_set_feedback_line("该家族当前无法从此城前往此地，请选择其他目的地。",
 					UITokens.RISK)
 			else:
@@ -1213,15 +1261,6 @@ func try_target_cell(cell: int, quiet: bool = false) -> bool:
 	_show_quotes()
 	_update_start_enabled()
 	return true
-
-
-func _any_source_reaches(cell: int) -> bool:
-	var probe: Dictionary = _controller.get_family_colonization_quotes(cell, 0, -1, 0, 1)
-	# 查询本身失败（结算中、快照未就绪）时不要断言「无路可走」，
-	# 回退到不指明原因的家族文案。
-	if not bool(probe.get("ok", true)):
-		return true
-	return int(probe.get("total", 0)) > 0
 
 
 func _set_feedback_line(message: String, color: Color, tooltip: String = "") -> void:

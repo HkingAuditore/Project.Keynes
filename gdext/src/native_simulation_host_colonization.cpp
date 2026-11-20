@@ -4,6 +4,8 @@
 #include "runtime_economy_boundary_request.h"
 #include "runtime_vision.h"
 
+#include <algorithm>
+
 namespace pk {
 
 bool NativeSimulationHost::vision_executor_active() const noexcept {
@@ -37,8 +39,7 @@ godot::Dictionary NativeSimulationHost::submit_economy_boundary_request(
             request->effective_day = day;
             _economy_boundary_requests.push_back(request);
         }
-        if (inline_daily_mode()) service_economy_boundary_requests();
-        else _control_cv.notify_one();
+        _control_cv.notify_one();
         out["ok"] = true;
         out["admitted"] = true;
         out["pending"] = true;
@@ -50,17 +51,45 @@ godot::Dictionary NativeSimulationHost::submit_economy_boundary_request(
         out["sequence"] = request->sequence;
         return out;
     }
-    std::unique_lock<std::mutex> control(_control_mutex);
-    if (!available()) return out;
-    _economy_boundary_requests.push_back(request);
-    if (inline_daily_mode()) {
-        control.unlock();
-        service_economy_boundary_requests();
-        return request->result;
+    std::shared_ptr<const RuntimeEconomyBoundaryRequest> published;
+    bool queued = false;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (!available()) return out;
+        const auto existing = std::find_if(_colonization_read_results.begin(),
+            _colonization_read_results.end(), [&](const auto &entry) {
+                return entry->same_query(*request);
+            });
+        // A request completed between frames may already be older than the
+        // latest commit. Deliver its snapshot once before requesting a refresh.
+        if (existing != _colonization_read_results.end() && (*existing)->query_day >= 0 &&
+                (!(*existing)->result_seen || (*existing)->query_day >= committed_day_value())) {
+            (*existing)->result_seen = true;
+            published = *existing;
+        } else if ((existing == _colonization_read_results.end() || (*existing)->query_day >= 0) &&
+                _economy_boundary_requests.size() < RUNTIME_COMMAND_QUEUE_CAPACITY) {
+            constexpr size_t read_capacity = 128;
+            if (existing != _colonization_read_results.end()) _colonization_read_results.erase(existing);
+            if (_colonization_read_results.size() == read_capacity) {
+                const auto ready = std::find_if(_colonization_read_results.begin(),
+                    _colonization_read_results.end(), [](const auto &entry) {
+                        return entry->query_day >= 0;
+                    });
+                if (ready != _colonization_read_results.end()) _colonization_read_results.erase(ready);
+            }
+            if (_colonization_read_results.size() < read_capacity) {
+                _colonization_read_results.push_back(request);
+                _economy_boundary_requests.push_back(std::move(request));
+                queued = true;
+            }
+        }
     }
-    _control_cv.notify_all();
-    _control_cv.wait(control, [&] { return request->done || !available(); });
-    return request->done ? request->result : out;
+    if (published) return published->result.duplicate(true);
+    if (queued) _control_cv.notify_one();
+    out["pending"] = true;
+    out["busy"] = true;
+    out["code"] = "economy_busy_retry";
+    return out;
 }
 
 bool NativeSimulationHost::service_economy_boundary_requests() {
@@ -124,13 +153,18 @@ bool NativeSimulationHost::service_economy_boundary_requests() {
             request->result["country_handle"] = request->country_handle;
             if (bool(request->result.get("ok", false))) request->result["effective_day"] = request->effective_day;
             publish_boundary_command_result(command, request->sequence, request->result);
+        } else {
+            request->result["read_view_day"] = committed_day_value();
         }
     }
     {
         std::lock_guard<std::mutex> control(_control_mutex);
-        for (const auto &request : requests) request->done = true;
+        for (const auto &request : requests) {
+            if (request->command()) continue;
+            request->query_day = committed_day_value();
+            _colonization_quotes_ready = true;
+        }
     }
-    _control_cv.notify_all();
     return true;
 }
 

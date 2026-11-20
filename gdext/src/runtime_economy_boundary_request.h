@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <tuple>
 #include <godot_cpp/variant/dictionary.hpp>
 
 namespace pk {
@@ -22,7 +23,17 @@ struct RuntimeEconomyBoundaryRequest {
     int64_t effective_day = -1;
     int64_t sequence = 0;
     godot::Dictionary result;
-    bool done = false; // _control_mutex
+    int64_t query_day = -1; // Published under _control_mutex after result is ready.
+    bool result_seen = false;
+
+    bool same_query(const RuntimeEconomyBoundaryRequest &other) const {
+        if (kind != other.kind) return false;
+        if (kind == Kind::QUOTE_DETAIL)
+            return quote_token == other.quote_token && population == other.population;
+        return std::tie(country_handle, family_handle, source_cell, target_cell, offset, limit) ==
+               std::tie(other.country_handle, other.family_handle, other.source_cell,
+                        other.target_cell, other.offset, other.limit);
+    }
 
     const char *command() const {
         switch (kind) {

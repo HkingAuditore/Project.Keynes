@@ -48,7 +48,7 @@ bool NativeSimulationHost::resume_same_world_executor(double speed, bool paused)
     publish_authority_grant(lifetime_granted_mask() &
         _requested_authority_mask.load(std::memory_order_acquire));
     _stop_requested.store(false, std::memory_order_release);
-    return launch_executor(paused);
+    return install_era_advancement_setup() && launch_executor(paused);
 }
 
 bool NativeSimulationHost::launch_executor(bool paused) {

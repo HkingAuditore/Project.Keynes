@@ -17,11 +17,13 @@ void NativeSimulationHost::publish_boundary_command_result(const char *command,
     _boundary_command_results.push_back(std::move(result));
 }
 
-godot::Array NativeSimulationHost::take_boundary_command_results() {
+godot::Array NativeSimulationHost::take_boundary_command_results(bool &colonization_quotes_ready) {
+    if (inline_daily_mode() && !execution_has_stopped()) service_economy_boundary_requests();
     std::deque<godot::Dictionary> results;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
         results.swap(_boundary_command_results);
+        colonization_quotes_ready = std::exchange(_colonization_quotes_ready, false);
     }
     godot::Array out;
     for (const auto &result : results) out.push_back(result);

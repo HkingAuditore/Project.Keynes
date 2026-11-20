@@ -187,7 +187,7 @@ public:
     // First day whose command inputs have not been frozen.
     int64_t command_seal_day() const noexcept;
     std::unique_lock<std::mutex> lock_command_admission(int64_t &effective_day);
-    godot::Array take_boundary_command_results();
+    godot::Array take_boundary_command_results(bool &colonization_quotes_ready);
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -1339,6 +1339,7 @@ private:
     const char *player_confirmation_block() const;
     bool service_annual_presentations();
     void execute_era_advancement_request(RuntimeEraRewardRequest &request);
+    bool install_era_advancement_setup();
     const char *stage_era_advancement(DayExecution &day);
     const char *stage_prepare_environment(DayExecution &day);
     std::shared_ptr<const RuntimeEnvironmentSnapshot> executor_environment_for_day(int64_t day);
@@ -1374,6 +1375,8 @@ private:
     std::shared_ptr<NativeMilitaryRuntime> _executor_military;
     std::deque<std::shared_ptr<MilitaryCommandBatch>> _military_commands; // _control_mutex
     std::deque<std::shared_ptr<RuntimeEconomyBoundaryRequest>> _economy_boundary_requests;
+    std::deque<std::shared_ptr<RuntimeEconomyBoundaryRequest>> _colonization_read_results;
+    bool _colonization_quotes_ready = false;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> _era_reward_requests;
     std::deque<uint64_t> _annual_presentations;
     std::deque<std::shared_ptr<RuntimeNarrativeRequest>> _narrative_requests;
@@ -1386,6 +1389,7 @@ private:
     std::shared_ptr<const RuntimeEraRewardView> _published_era_reward;
     std::shared_ptr<RuntimeEraAdvancement> _era_advancement;
     std::shared_ptr<const RuntimeEraAdvancementView> _published_era_advancement;
+    std::shared_ptr<RuntimeEraRewardRequest> _era_advancement_bind, _era_advancement_restore;
     bool player_requests_pending_locked() const noexcept {
         return !_military_commands.empty() || !_economy_boundary_requests.empty() ||
             !_era_reward_requests.empty() || !_annual_presentations.empty() || !_narrative_requests.empty();

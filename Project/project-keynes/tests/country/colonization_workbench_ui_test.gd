@@ -1,6 +1,7 @@
 extends SceneTree
 
 class DispatchStub extends RefCounted:
+	signal colonization_quotes_ready()
 	var count := 8
 	var quote_calls := 0
 	var preview_calls := 0
@@ -11,6 +12,7 @@ class DispatchStub extends RefCounted:
 	var modern_unlocked := false
 	var single_source := false
 	var expedition_count := 0
+	var pending_target := -1
 
 	func dispatch_cell_display_name(cell: int) -> String:
 		return {3: "长安", 8: "洛阳", 22: "临海新城", 24: "北方谷地"}.get(cell, "目的地")
@@ -58,6 +60,8 @@ class DispatchStub extends RefCounted:
 	func get_family_colonization_quotes(target: int, family: int, source: int,
 			offset: int, limit: int) -> Dictionary:
 		quote_calls += 1
+		if target == pending_target:
+			return {"ok": false, "pending": true, "busy": true, "code": "economy_busy_retry"}
 		if target == 999 or target == source:
 			return {"ok": false, "code": "colonization_target_invalid"}
 		if target == 55:
@@ -230,8 +234,21 @@ func _run() -> void:
 	panel.cancel_target_selection()
 	_expect("canceling map selection leaves the ready dispatch intact", panel._target_cell == 22 and not panel._start.disabled)
 	panel.begin_target_selection()
+	stub.pending_target = 24
+	_expect("an unpublished route consumes the click without changing the selected destination",
+		panel.try_target_cell(24) and panel._target_cell == 22 and panel._start.disabled)
+	panel.cancel_target_selection()
+	stub.pending_target = -1
+	stub.colonization_quotes_ready.emit()
+	_expect("a route published after cancellation cannot replace the selected destination",
+		panel._target_cell == 22 and not panel._start.disabled)
+	panel.begin_target_selection()
+	stub.pending_target = 24
+	panel.try_target_cell(24)
+	stub.pending_target = -1
+	stub.colonization_quotes_ready.emit()
 	_expect("changing the destination preserves the branch and people and updates the quote",
-		panel.try_target_cell(24) and panel._title.text == "开拓"
+		panel._target_cell == 24 and panel._title.text == "开拓"
 		and panel._selected_quote.family_handle == 11 and int(panel._population.value) == 2
 		and int(panel._selected_quote.quote_token) != int(before.quote_token))
 	var row_id: int = panel._quote_row_refs["3:11"].get_instance_id()

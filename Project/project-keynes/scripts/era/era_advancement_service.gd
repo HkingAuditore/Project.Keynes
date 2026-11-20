@@ -13,20 +13,18 @@ var _country
 var _ext: Object
 var _handle := 0
 var _displayed_era := -1
-var _sequence_provider: Callable
 var _catalog_cache: Dictionary = {}
 var _era_tech_indices: Array = []
 
 
-func bind(country, economy, handle: int, sequence_provider: Callable = Callable(),
-		regime_definitions: Array = []) -> bool:
+func bind(country, economy, handle: int, regime_definitions: Array = [],
+		opening_policy_sequence: int = 0) -> bool:
 	if country == _country and handle == _handle and is_bound():
 		return false
 	_country = country
 	_ext = country.world_ext() if country != null and country.has_method("world_ext") else null
 	_handle = handle
 	_displayed_era = -1
-	_sequence_provider = sequence_provider
 	_catalog_cache.clear()
 	_era_tech_indices.clear()
 	if not is_bound() or economy == null:
@@ -36,11 +34,18 @@ func bind(country, economy, handle: int, sequence_provider: Callable = Callable(
 	for row in regime_definitions:
 		regimes[String(row.id)] = row.get("modifier_definition_keys", PackedStringArray())
 	config["political_regimes"] = regimes
-	var result := _submit("bind", 0, 0, config)
+	var result := _submit("bind", 0, opening_policy_sequence, config)
 	if not bool(result.get("ok", false)):
 		_ext = null
 		return false
 	return true
+
+
+func release_world() -> Dictionary:
+	_country = null
+	_ext = null
+	_handle = 0
+	return {"ok": true}
 
 
 func is_bound() -> bool:
@@ -77,12 +82,6 @@ func set_policy(treasury_share_bp: int, research_share_bp: int, day: int, sequen
 		"era_share_bp": era_share_bp,
 		"colonization_share_bp": colonization_share_bp,
 	})
-
-
-func push_runtime_state(day: int) -> void:
-	var settings := policy()
-	if not settings.is_empty() and _sequence_provider.is_valid():
-		_submit("policy", day, int(_sequence_provider.call()), settings)
 
 
 func policy() -> Dictionary:
@@ -133,10 +132,8 @@ func capture() -> Dictionary:
 	return _view().get("save", {})
 
 
-func restore(state: Dictionary) -> void:
-	if not state.is_empty():
-		_submit("restore", 0, 0, state)
-	_displayed_era = int(snapshot().get("current_era_index", -1))
+func stage_restore(state: Dictionary) -> Dictionary:
+	return {"ok": true} if state.is_empty() else _submit("restore", 0, 0, state)
 
 
 func _compile(economy) -> Dictionary:

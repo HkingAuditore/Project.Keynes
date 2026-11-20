@@ -282,6 +282,14 @@ func _start(controller, cell_count: int, population_cap: int) -> int:
 	var last_kind := ""
 	for target in range(mini(cell_count, target_limit)):
 		var page: Dictionary = controller.get_family_colonization_quotes(target, 0, -1, 0, 8)
+		for _frame in BOUNDARY_WAIT_FRAMES:
+			if not bool(page.get("pending", false)):
+				break
+			await get_tree().process_frame
+			page = controller.get_family_colonization_quotes(target, 0, -1, 0, 8)
+		if bool(page.get("pending", false)):
+			push_error("[colonization-probe] no quote published for target %d" % target)
+			return -1
 		if not bool(page.get("ok", false)):
 			last_code = String(page.get("code", ""))
 			if bool(page.get("busy", false)):

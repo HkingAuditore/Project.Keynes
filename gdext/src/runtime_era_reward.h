@@ -7,7 +7,7 @@ namespace pk {
 
 struct RuntimeEraRewardRequest {
     enum class Kind {
-        BIND_PLAYER, SELECT, BIND_ADVANCEMENT, RESTORE_ADVANCEMENT,
+        SELECT, BIND_ADVANCEMENT, RESTORE_ADVANCEMENT,
         START_ADVANCEMENT, PAUSE_ADVANCEMENT, RESUME_ADVANCEMENT, SET_ADVANCEMENT_POLICY,
     };
     Kind kind = Kind::SELECT;
@@ -18,7 +18,6 @@ struct RuntimeEraRewardRequest {
     int64_t advancement_sequence = 0;
     godot::Dictionary advancement;
     godot::Dictionary result;
-    bool done = false; // Guarded by the executor control mutex.
 
     const char *command() const {
         switch (kind) {

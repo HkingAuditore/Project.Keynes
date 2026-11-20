@@ -17,6 +17,27 @@ func _run() -> void:
 	_finish()
 
 
+func _create_host() -> WorldRuntimeHost:
+	var host := WorldRuntimeHost.new()
+	var module := preload("res://scripts/game/runtime_session_module.gd").new()
+	module.configure("era_test", ["restore"], ["world.era"], _prepare_era.bind(host),
+		func() -> void: pass, _advance.release_world)
+	_expect("register era initialization before executor startup",
+		bool(host.register_session_module(module).get("ok", false)))
+	return host
+
+
+func _prepare_era(host: WorldRuntimeHost) -> Dictionary:
+	var generator := host.get_generator()
+	var country = generator.get_country_facade()
+	var handle := int(country.cell_summary(int(generator.gameplay_start_report().cell)).country_handle)
+	var reward: Dictionary = country.bind_era_reward_player_country(handle)
+	_expect("the native reward planner binds the player before startup", bool(reward.get("ok", false)))
+	var bound: bool = _advance.bind(country, generator.get_economy_facade(), handle)
+	_expect("advancement binds the executor session before startup", bound)
+	return {"ok": bound and bool(reward.get("ok", false))}
+
+
 func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> Dictionary:
 	var generator := host.get_generator()
 	var economy = generator.get_economy_facade()
@@ -24,9 +45,9 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 	var ext: Object = economy.world_ext()
 	var cell := int(generator.gameplay_start_report().get("cell", -1))
 	var handle := int(country.cell_summary(cell).get("country_handle", 0))
-	_expect("the native reward planner binds the player", bool(country.bind_era_reward_player_country(handle).get("ok", false)))
-	_expect("advancement binds the executor session", _advance.bind(country, economy, handle, _next_sequence))
-	_expect("rebinding the same session retains state", not _advance.bind(country, economy, handle, _next_sequence))
+	_expect("rebinding the same session retains state", not _advance.bind(country, economy, handle))
+	_expect("live reward rebinding cannot touch the executing session",
+		country.bind_era_reward_player_country(handle).get("reason") == "era_session_setup_requires_stopped_executor")
 	var opening := _advance.preview()
 	_check_model(opening)
 	_expect("the opening settlement cannot advance", opening.get("status") == "locked")
@@ -92,7 +113,13 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				_expect("paused purchase retains frozen requirements", paused.required_quantities == frozen)
 				_expect("pausing twice is rejected",
 					(await _advancement_result(host, "pause", PURCHASE_DAY)).get("code") == "era_advance_not_purchasing")
-				_advance.restore(paused)
+				_expect("restoring an executing world is rejected before touching it",
+					_advance.stage_restore(paused).get("code") == "era_session_setup_requires_stopped_executor")
+				var stopped := await host._stop_previous_runtime_worker()
+				_expect("the executor stopped at the committed day", stopped.get("ok") == true)
+				_expect("the saved purchase is staged while the executor is stopped",
+					_advance.stage_restore(paused).get("ok") == true)
+				host._start_production_shadow_worker()
 				_expect("reading the restored player section keeps the order", _advance.preview().status == "paused"
 					and _advance.to_save().required_quantities == frozen)
 				_expect("resuming queues the same order", bool((await _advancement_result(host, "resume", PURCHASE_DAY)).get("ok", false))

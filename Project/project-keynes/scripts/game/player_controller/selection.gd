@@ -235,11 +235,7 @@ func refresh_country_binding(host) -> void:
 		if not host._ideology_facade.command_settled.is_connected(ideology_callback):
 			host._ideology_facade.command_settled.connect(ideology_callback)
 	if host._country_facade != null:
-		var ready: Dictionary = host._resolve_player_country()
-		if bool(ready.get("ok", false)) and host._country_facade.has_method("bind_era_reward_player_country"):
-			var reward: Dictionary = host._country_facade.bind_era_reward_player_country(host._player_country_handle)
-			if not bool(reward.get("ok", false)):
-				push_error("玩家时代奖励身份绑定失败：%s" % reward.get("reason", "era_reward_player_bind_failed"))
+		host._resolve_player_country()
 		host._configure_music_situation()
 		# 读档可能早于国家句柄解析：那时重推只会因为句柄为 0 而放弃，
 		# 这里在绑定完成后补一次，避免预算控制静默失效。
@@ -247,7 +243,7 @@ func refresh_country_binding(host) -> void:
 		host._sync_era_reward_offer()
 		host._sync_era_music(true)
 	host._sync_family_founding_offer()
-	host._bind_era_advancement()
+	host._progression_component.connect_era_advancement_view(host)
 	host._configure_narrative_runtime()
 
 

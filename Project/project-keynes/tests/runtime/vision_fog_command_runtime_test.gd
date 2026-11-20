@@ -56,9 +56,14 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 				var forged := map.visible_arr.duplicate()
 				forged.fill(1)
 				map.visible_arr = forged
-				var blocked: Dictionary = economy.family_colonization_quotes(player, hidden, 0, -1, 0, 1)
+				var request: Callable = economy.family_colonization_quotes.bind(player, hidden, 0, -1, 0, 1)
+				var first: Dictionary = request.call()
+				_expect("the first quote request returns while the executor owns the read",
+					first.get("pending") == true and first.get("busy") == true)
+				var blocked := await _published_quote(host, request)
 				_expect("making a display cell visible does not authorize colonization",
-					not bool(blocked.ok) and String(blocked.code) == "colonization_target_invalid")
+					not bool(blocked.get("ok", false)) and blocked.get("code") == "colonization_target_invalid"
+					and blocked.get("read_view_day") == day)
 				test_host.skip_display = true
 			2:
 				var claim: Dictionary = country.transfer_territory(hidden, player, 4, 950001, true)
@@ -83,14 +88,16 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 				var forged := map.visible_arr.duplicate()
 				forged.fill(0)
 				map.visible_arr = forged
-				var result := _hidden_quote(economy, map, start, player)
+				var result := await _hidden_quote(host, economy, map, start, player)
 				target = int(result.get("target", -1))
 				quote = result.get("quote", {})
 				_expect("fog off opens routes even with a hidden display", target >= 0)
 				if target >= 0:
 					var token := int(quote.quote_tokens[0])
-					var detail: Dictionary = ext.get_family_colonization_quote_detail(token, 1)
-					_expect("the executor publishes the valid route", bool(detail.ok))
+					var detail := await _published_quote(host,
+						ext.get_family_colonization_quote_detail.bind(token, 1))
+					_expect("the executor publishes the valid route at the same boundary",
+						bool(detail.get("ok", false)) and detail.get("read_view_day") == day)
 					var sent: Dictionary = economy.start_family_colonization(player,
 						int(quote.family_handles[0]), int(quote.source_cells[0]), target, 1, token, 5, 950002)
 					_expect("starting that expedition is queued for day five",
@@ -123,7 +130,19 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 	return {}
 
 
-func _hidden_quote(economy, map: MapData, start: int, player: int) -> Dictionary:
+func _published_quote(host: WorldRuntimeHost, request: Callable) -> Dictionary:
+	var started := Time.get_ticks_usec()
+	var quote: Dictionary = request.call()
+	while bool(quote.get("pending", false)) and Time.get_ticks_usec() - started < HOLD_WATCHDOG_USEC:
+		await process_frame
+		host._consume_runtime_commit_if_ready()
+		quote = request.call()
+	_expect("the quote is published without advancing the clock: %s" % quote.get("code", ""),
+		not bool(quote.get("pending", false)))
+	return quote
+
+
+func _hidden_quote(host: WorldRuntimeHost, economy, map: MapData, start: int, player: int) -> Dictionary:
 	var origin := HexUtils.offset_to_cube(start % map.width, start / map.width)
 	for cell in map.cell_count():
 		if map.physical_visible_arr[cell] != 0 or map.is_water_arr[cell] != 0 or map.country_slot_arr[cell] >= 0:
@@ -131,7 +150,8 @@ func _hidden_quote(economy, map: MapData, start: int, player: int) -> Dictionary
 		var distance := HexUtils.cube_distance(origin, HexUtils.offset_to_cube(cell % map.width, cell / map.width))
 		if distance > 10:
 			continue
-		var quote: Dictionary = economy.family_colonization_quotes(player, cell, 0, -1, 0, 1)
+		var quote := await _published_quote(host,
+			economy.family_colonization_quotes.bind(player, cell, 0, -1, 0, 1))
 		if bool(quote.get("ok", false)) and not quote.get("quote_tokens", PackedInt64Array()).is_empty():
 			return {"target": cell, "quote": quote}
 	return {}

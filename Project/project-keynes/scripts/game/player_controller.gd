@@ -34,6 +34,7 @@ var _suppression_resume_running: bool = false
 signal selection_changed(cell)
 signal command_completed(id: StringName, result: Dictionary)
 signal command_settled(id: StringName, result: Dictionary)
+signal colonization_quotes_ready()
 signal regeneration_requested()
 signal country_committed(report: Dictionary)
 signal era_reward_offer_changed(offer: Dictionary)
@@ -802,6 +803,7 @@ func _connect_runtime() -> void:
 		var runtime_callbacks := {"simulation_committed": _on_simulation_committed,
 			"simulation_day_records": _on_simulation_day_records,
 			"simulation_command_results": _on_simulation_command_results,
+			"colonization_quotes_ready": colonization_quotes_ready.emit,
 			"simulation_view_updated": _on_simulation_view_updated}
 		for event in runtime_callbacks:
 			if _runtime_host.has_signal(event) and not _runtime_host.is_connected(event, runtime_callbacks[event]):
@@ -1541,11 +1543,12 @@ func get_procurement_policy() -> Dictionary:
 func get_era_advancement_blocked_reason() -> String:
 	return _progression_component.get_era_advancement_blocked_reason(self)
 
-func _bind_era_advancement() -> void:
-	_progression_component._bind_era_advancement(self)
-
-func _restore_era_advancement(state) -> void:
-	_progression_component._restore_era_advancement(self, state)
+func register_era_session(save_service: Node) -> Dictionary:
+	var module := preload("res://scripts/game/runtime_session_module.gd").new()
+	module.configure("era", ["restore"], ["world.era"],
+		_progression_component.prepare_era_session.bind(self, save_service),
+		func() -> void: pass, _era_advancement.release_world)
+	return _runtime_host.register_session_module(module)
 
 func _refresh_era_advancement(force: bool = false) -> void:
 	_progression_component._refresh_era_advancement(self, force)

@@ -283,10 +283,10 @@ bool NativeSimulationHost::fault_if_peer_stall_timed_out(
     if (elapsed_ms < peer_stall_fault_timeout_ms()) return false;
     const uint32_t mask = day_stall_reason_mask();
     const std::string fault_line = pk::log_format(
-        "[day-stall-fault] day=%d stall=0x%x peer_ms=%d code=%s ring=%d",
-        day, static_cast<int64_t>(mask), static_cast<int64_t>(elapsed_ms),
+        "[day-stall-fault] day=%lld stall=0x%x peer_ms=%llu code=%s ring=%zu",
+        static_cast<long long>(day), mask, static_cast<unsigned long long>(elapsed_ms),
         std::string(fault_code != nullptr ? fault_code : "peer_stall_timeout").c_str(),
-        static_cast<int64_t>(_environment_ring.size()));
+        _environment_ring.size());
     // print + printerr: Godot console may hide stderr-only lines.
     pk::log_line(fault_line);
     pk::log_line(fault_line, true);
@@ -760,15 +760,15 @@ void NativeSimulationHost::worker_main() {
                         if (s_full_mask_preflight_left.fetch_sub(
                                 1, std::memory_order_relaxed) > 0) {
                             pk::log_info(
-                                "[runtime-day-wait] day=%d missing=0x0 "
+                                "[runtime-day-wait] day=%lld missing=0x0 "
                                 "forcing advance (spurious preflight_ok=0) "
-                                "ring=%d climate_committed=%d continuation=%d "
+                                "ring=%zu climate_committed=%lld continuation=%d "
                                 "stall=0x%x",
-                                day,
-                                static_cast<int64_t>(_environment_ring.size()),
-                                climate_committed,
-                                static_cast<int64_t>(day_commit.continuation_pending),
-                                static_cast<int64_t>(day_stall_reason_mask()));
+                                static_cast<long long>(day),
+                                _environment_ring.size(),
+                                static_cast<long long>(climate_committed),
+                                static_cast<int>(day_commit.continuation_pending),
+                                day_stall_reason_mask());
                         }
                         // Only drop envs for this worker day (and earlier).
                         // Never drain through climate_committed when it is
@@ -815,14 +815,13 @@ void NativeSimulationHost::worker_main() {
                         }
                         country_fallback[fb] = '\0';
                         pk::log_info(
-                            "[runtime-day-wait] day=%d env_day=%d missing=0x%x "
-                            "stall=0x%x economy_input=%d ring=%d country=%s",
-                            day,
-                            environment ? environment->day : -1,
-                            static_cast<int64_t>(missing),
-                            static_cast<int64_t>(day_stall_reason_mask()),
-                            economy_input_requested_day(),
-                            static_cast<int64_t>(_environment_ring.size()),
+                            "[runtime-day-wait] day=%lld env_day=%lld missing=0x%x "
+                            "stall=0x%x economy_input=%lld ring=%zu country=%s",
+                            static_cast<long long>(day),
+                            static_cast<long long>(environment ? environment->day : -1),
+                            missing, day_stall_reason_mask(),
+                            static_cast<long long>(economy_input_requested_day()),
+                            _environment_ring.size(),
                             country_fallback);
                         // Economy incomplete with no stall bit has no CV wake
                         // source once Climate capacity fills. Arm a peer stall
@@ -855,13 +854,13 @@ void NativeSimulationHost::worker_main() {
                             }
                             yield_reason[yi] = '\0';
                             pk::log_info(
-                                "[runtime-day-wait] day=%d armed fiscal stall "
-                                "for economy-missing-without-stall ring=%d "
-                                "yield=%s climate_committed=%d",
-                                day,
-                                static_cast<int64_t>(_environment_ring.size()),
+                                "[runtime-day-wait] day=%lld armed fiscal stall "
+                                "for economy-missing-without-stall ring=%zu "
+                                "yield=%s climate_committed=%lld",
+                                static_cast<long long>(day),
+                                _environment_ring.size(),
                                 std::string(yield_reason).c_str(),
-                                climate_committed);
+                                static_cast<long long>(climate_committed));
                         }
                     }
                     // Events 硬失败不设任何 stall 位，peer 超时永不触发；
@@ -883,10 +882,10 @@ void NativeSimulationHost::worker_main() {
                             }
                             events_reason[er] = '\0';
                             const std::string fault_line = pk::log_format(
-                                "[day-stall-fault] day=%d events_day_failed reason=%s "
-                                "ring=%d",
-                                day, std::string(events_reason).c_str(),
-                                static_cast<int64_t>(_environment_ring.size()));
+                                "[day-stall-fault] day=%lld events_day_failed reason=%s "
+                                "ring=%zu",
+                                static_cast<long long>(day), std::string(events_reason).c_str(),
+                                _environment_ring.size());
                             pk::log_line(fault_line);
                             pk::log_line(fault_line, true);
                             set_fault("events_day_failed");
@@ -1127,9 +1126,9 @@ void NativeSimulationHost::worker_main() {
         // throws away the only cheap evidence. Log what() before publishing the same
         // fault code, so a worker that dies after a restart says why.
         const std::string line = pk::log_format(
-            "[runtime-worker-exception] what=%s day=%d",
+            "[runtime-worker-exception] what=%s day=%lld",
             error.what() != nullptr ? error.what() : "unknown",
-            _committed_day.load(std::memory_order_relaxed));
+            static_cast<long long>(_committed_day.load(std::memory_order_relaxed)));
         pk::log_line(line);
         pk::log_line(line, true);
         set_fault("unhandled_worker_exception");
@@ -1143,6 +1142,8 @@ void NativeSimulationHost::worker_main() {
         std::lock_guard<std::mutex> control(_control_mutex);
         _military_commands.clear();
         _economy_boundary_requests.clear();
+        _colonization_read_results.clear();
+        _colonization_quotes_ready = false;
         _era_reward_requests.clear();
         _narrative_requests.clear();
         _annual_presentations.clear();

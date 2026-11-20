@@ -83,8 +83,8 @@ bool NativeSimulationHost::run_day_events(DayExecution &day, int64_t event_day) 
         static std::atomic<int> s_events_reject_logs_left{16};
         if (s_events_reject_logs_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
             pk::log_info(
-                "[runtime-events] day=%d rejected=%d reason=%s",
-                event_day, static_cast<int64_t>(events_report.rejected_commands),
+                "[runtime-events] day=%lld rejected=%u reason=%s",
+                static_cast<long long>(event_day), events_report.rejected_commands,
                 std::string(events_report.fallback_reason).c_str());
         }
     }
