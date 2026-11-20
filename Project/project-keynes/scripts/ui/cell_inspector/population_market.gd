@@ -499,6 +499,7 @@ func _population_category(host, snapshot: Dictionary, market_snapshot: Dictionar
 		"gauges": gauges,
 		"metrics": local_metrics,
 		"cohort_rows": rows,
+		"class_discontent": snapshot.get("class_discontent", {}),
 		"list_header": {"lead": "阶层 · 族群 · 生活水平 · 满意度" if mixed_identity else "阶层 · 生活水平 · 满意度",
 			"indent": 41.0, "columns": [
 			{"text": "人口", "width": 54.0}, {"text": "存款/净收", "width": 72.0}]},

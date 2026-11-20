@@ -519,6 +519,77 @@ Dictionary NativeEconomyRuntime::mobilization_odds(
     return out;
 }
 
+Dictionary NativeEconomyRuntime::resolve_player_mobilization(
+        const Dictionary &choice) {
+    Dictionary out;
+    auto reject = [&](const char *code) {
+        out["ok"] = false;
+        out["code"] = code;
+        return out;
+    };
+    if (!_bootstrapped || _fatal || _save.active || _restore.active || epoch_active())
+        return reject("economy_busy_retry");
+    const int32_t cell = choice.get("cell", -1);
+    const int32_t profession = choice.get("profession", -1);
+    const int32_t stage = choice.get("stage", 0);
+    const int32_t action = choice.get("action", -1);
+    const int64_t owner = choice.get("owner_handle", int64_t{0});
+    const bool success = choice.get("success", false);
+    if (cell < 0 || cell >= _cell_count.get() || stage < 1 || stage > 4 ||
+        action < 0 || action > 5 || (action == 5 && !success))
+        return reject("mobilization_choice_invalid");
+    const int32_t row_index = _stratum_mobilization.find(cell, profession);
+    if (row_index < 0 || owner == 0 || _country_runtime == nullptr ||
+        country_reads().country_handle_for_cell(cell) != owner)
+        return reject("mobilization_choice_stale");
+    const auto &row = _stratum_mobilization.rows[static_cast<size_t>(row_index)];
+    if (row.stage != stage || (row.flags & 8) != 0 ||
+        (action == 5 && (row.flags & kMobCapitalFlag) != 0))
+        return reject("mobilization_choice_stale");
+
+    Command payment;
+    const int64_t amount = choice.get("cash", int64_t{0});
+    if (amount > 0) {
+        const int64_t recipient = choice.get("cohort_handle", int64_t{0});
+        const int64_t day = choice.get("effective_day", int64_t{-1});
+        const int64_t sequence = choice.get("sequence", int64_t{-1});
+        int32_t slot = -1;
+        if ((action != 0 && action != 1) || day < 0 || sequence < 0)
+            return reject("mobilization_payment_invalid");
+        const auto &pop = population_store();
+        if (!pop.valid_handle(static_cast<uint64_t>(recipient), slot) ||
+            pop.population[slot] <= 0 || pop.page_cell[slot / COHORT_PAGE_SIZE] != cell) {
+            // A queued offer names the locality, so a cohort merged or moved
+            // since quoting can be replaced by a currently resident cohort.
+            slot = -1;
+            pop.for_each_in_cell(cell, [&](int32_t candidate) {
+                const int64_t heads = pop.population[candidate];
+                if (heads > 0 && (slot < 0 || heads > pop.population[slot])) slot = candidate;
+            });
+            if (slot < 0) return reject("mobilization_choice_stale");
+        }
+        payment.opcode = COMMAND_TRANSFER_TO_COHORT;
+        payment.effective_day = day;
+        payment.sequence = sequence;
+        payment.target_handle = pop.handle_for_slot(slot);
+        payment.i64_0 = amount;
+        payment.i64_1 = owner;
+    }
+    if (!apply_mobilization_result(cell, profession, action, success))
+        return reject("mobilization_choice_stale");
+    if (amount > 0) {
+        // The caller holds the economy boundary. Admit the payment to the
+        // persisted queue so a save taken before the next epoch carries it.
+        payment.submit_order = _next_submit_order++;
+        _pending_commands.push_back(payment);
+    }
+    out["ok"] = true;
+    out["queued_cash"] = amount;
+    out["independence_pending"] = (row.flags & 8) != 0;
+    out["stage"] = static_cast<int32_t>(row.stage);
+    return out;
+}
+
 bool NativeEconomyRuntime::apply_mobilization_result(
         int32_t cell, int32_t profession, int32_t action, bool success) {
     const int32_t row_index = _stratum_mobilization.find(cell, profession);

@@ -1,8 +1,11 @@
 #include "economy_runtime.h"
 #include "economy_runtime_building_investment_internal.h"
 #include "economy_runtime_test_access.h"
+#include "runtime_switch_registry.h"
 
 #include <array>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 namespace pk {
@@ -181,6 +184,65 @@ bool EconomyTargetSelectorTests::run_building_investment_review(std::string &err
         inv._building_investment_payback_days[0] != 0) {
         error = "investment_replacement_inherited_another_buildings_review";
         return false;
+    }
+
+    const char *track_b = runtime_switch_value(RuntimeSwitch::PK_ECONOMY_TRACK_B);
+    const char *spread = runtime_switch_value(RuntimeSwitch::PK_ECONOMY_TRACK_B_COMMIT_SPREAD);
+    if ((!track_b || std::strcmp(track_b, "0") != 0) &&
+        (!spread || std::atoi(spread) != 1)) {
+        auto review_runtime = std::make_unique<NativeEconomyRuntime>();
+        auto &review = *review_runtime;
+        review._cell_count = 702;
+        review._startup_demand_runtime_mode = 0;
+        review._inspector_trace_cell = 682;
+        review._building_types.resize(1);
+        NativeEconomyRuntime::BuildingGroup incumbent;
+        incumbent.cell = 682;
+        incumbent.type_id = 0;
+        incumbent.count = 1;
+        review.append_building_group(incumbent);
+        review._building_cell_offsets.assign(683, 0);
+        review._building_cell_offsets.resize(703, 1);
+        review._epoch_building_cells = {682};
+        review._stage = NativeEconomyRuntime::Stage::BUILDING_COMMIT;
+        review._building_commit_phase = 4;
+        review._current_day = 1462;
+        review._track_b_investment_cells_pending = {12, 701};
+        review._investment_review_cell_indices = {682, 701};
+        int64_t work_done = 0;
+        int32_t cursor_start = 0;
+        int32_t cursor_end = 0;
+        bool building_range_used = false;
+        const auto advance = [&] {
+            return review.advance_building_commit_chunk(work_done, cursor_start,
+                cursor_end, building_range_used, error, false, nullptr,
+                0, nullptr, nullptr, nullptr, 0.0);
+        };
+        if (advance() != NativeEconomyRuntime::BuildingCommitChunkResult::ContinueFusing ||
+            review._building_commit_phase != 5 ||
+            review._investment_review_cell_indices != std::vector<int32_t>{12, 701, 682}) {
+            error = "investment_carry_erased_newly_due_cell";
+            return false;
+        }
+        for (int32_t day = 1462; day <= 1464; ++day) {
+            if (advance() != NativeEconomyRuntime::BuildingCommitChunkResult::ContinueFusing)
+                return false;
+            if (review._track_b_investment_cells_pending.empty()) break;
+            review._current_day = day + 1;
+            review._epoch_id = review._epoch_id.get() + 1;
+            review._building_commit_phase = 4;
+            review._investment_review_cell_indices.clear();
+            if (advance() != NativeEconomyRuntime::BuildingCommitChunkResult::ContinueFusing)
+                return false;
+        }
+        if (review._investment_review_cells != 3 ||
+            review._investment_diagnostic_cell != 682 ||
+            review._investment_existing_by_cell_type.count(
+                NativeEconomyRuntime::BuildingInvestmentCellContext::cell_key(682, 0)) != 1 ||
+            !review._track_b_investment_cells_pending.empty()) {
+            error = "investment_carry_did_not_review_all_cells_with_incumbents";
+            return false;
+        }
     }
     return true;
 }

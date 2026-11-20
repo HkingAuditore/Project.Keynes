@@ -12,12 +12,12 @@ const StratumRebellionContentScript = preload(
 func _init() -> void:
 	var service = StratumUnrestServiceScript.new()
 	var def = StratumRebellionContentScript.build(
-		1, "农户", "测试城", [0], {0: PackedInt32Array([40000, 25536])}, [50])
+		1, "农户", "测试城", [0])
 	var soldier = StratumRebellionContentScript.build(
-		1, "军士", "测试城", [0], {0: PackedInt32Array([40000, 25536])}, [50],
+		1, "军士", "测试城", [0],
 		"soldier")
 	var merchant = StratumRebellionContentScript.build(
-		1, "商人", "测试城", [0], {0: PackedInt32Array([40000, 25536])}, [50],
+		1, "商人", "测试城", [0],
 		"merchant")
 	var ok: bool = service != null and def != null and def.options.size() == 1 \
 		and String(soldier.body_text).contains("营") \

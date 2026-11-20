@@ -179,11 +179,12 @@ func _military_cell_model(host, facade, snapshot: Dictionary, country: Dictionar
 	# 本格的建筑维护行（D7）：有实物快照就按建筑类型各读各的满足率/可用天数/失修，
 	# 没有（旧 DLL / 未接通）就退回国家级 `disrepair` 旗标，行为与旧版一致。
 	var maintenance_by_index = host._military_maintenance_rows(facade, cell_idx)
+	var market_stock: Dictionary = h._construction_local_stock(h._market_snapshot(cell_idx)) if can_build else {}
 	var buildings: Array = []
 	for role_def in host.STATE_BUILDING_ROLES:
 		buildings.append(host._state_building_entry(role_def, snapshot,
 			building_rows, researched, gate_known, can_build, facade, cell_idx,
-			maintenance_by_index))
+			maintenance_by_index, market_stock))
 	# 驻军条上的读数一律照实给（包括 0）：玩家要靠这些数字判断"这一格能养多少兵、
 	# 还差多少、征召排了多少、训练快不快"，所以没有部队时也要显示 0 而不是整条消失。
 	return {
@@ -351,7 +352,7 @@ func _military_training_rows(host, snapshot: Dictionary, units: Dictionary) -> A
 func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 		catalog_rows: Array, researched: PackedStringArray, gate_known: bool,
 		can_build: bool, facade = null, cell_idx: int = -1,
-		maintenance_by_index: Dictionary = {}) -> Dictionary:
+		maintenance_by_index: Dictionary = {}, market_stock: Dictionary = {}) -> Dictionary:
 	var h = host
 	var role = int(role_def.get("role", -1))
 	var role_id = String(role_def.get("id", ""))
@@ -479,6 +480,52 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 			host._state_building_standing_cost(display_row, count))
 	elif action == "locked":
 		tooltip = host._state_building_lock_tooltip(role_rows, researched, gate_known)
+	var reason: String = cost.get("reason_text", "")
+	var status := "已建成" if count > 0 else "未建成"
+	var status_tone := "neutral"
+	var is_quoting: bool = target >= 0 and action in ["build", "upgrade", "rebuild"]
+	if is_quoting:
+		status = "受阻" if not reason.is_empty() else "可" + action_label
+		status_tone = "risk" if not reason.is_empty() else "good"
+	elif action == "building":
+		status = "在建"
+	elif action == "locked":
+		status = "未解锁"
+		status_tone = "risk"
+		reason = tooltip
+	elif not can_build:
+		reason = h._construction_military_block_text(snapshot)
+
+	var has_future: bool = is_quoting or action == "building"
+	var current_daily := _state_building_current_upkeep(h, role_id, role_rows, current, snapshot, count)
+	var future_daily := -1
+	if has_future:
+		future_daily = building_upkeep(h, display_row)
+		if role_id == "barracks":
+			future_daily += current_daily
+	var preview := building_hover_preview(h, role_id, display_row,
+		disrepair and not has_future, current_daily, future_daily, maintenance)
+	var hover := {
+		"name": display_name, "icon": icon, "role_label": label,
+		"tier": int(display_row.get("tier", -1)),
+		"eligible": is_quoting and not bool(cost.get("blocked", false)),
+		"status_text": status, "status_tone": status_tone, "reason_text": reason,
+		"cash_required": int(cost.get("cash_required", 0)), "cash_text": String(cost.get("cash_text", "")),
+		"cash_blocked": cost.get("reason_code") == "construction_treasury_cash_insufficient",
+		"days": pending_days if action == "building" else int(cost.get("build_days", 0)),
+		"days_label": "剩余工期" if action == "building" else "工期",
+		"material_status": h._construction_material_status_rows(cost.get("materials", []), market_stock),
+		"preview": preview,
+	}
+	var demolish_hover := {}
+	if can_demolish:
+		var built: Dictionary = current.row
+		demolish_hover = {
+			"name": String(built.get("name", label)),
+			"icon": IconCatalog.military_building_semantic(String(built.get("id", "")), role_id, current_tier),
+			"role_label": label, "tier": current_tier, "status_text": "拆除",
+			"reason_text": "拆除后不退还建材",
+		}
 	# 实物维护不是「成本」而是「这座建筑现在被养得怎么样」：单独一行，附在提示卡尾部。
 	# 没有维护行（未接通 / 未建成）时整行为空，提示卡与本改动前逐字一致。
 	if not maintenance_text.is_empty():
@@ -511,6 +558,8 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 		"cost_cash_text": String(cost.get("cash_text", "")),
 		"cost_reason": String(cost.get("reason_text", "")),
 		"tooltip": tooltip,
+		"hover": hover,
+		"demolish_hover": demolish_hover,
 		# ---- 实物维护（D7 / S4-6）：这一类型自己的满足率 / 可用天数 / 失修 ----
 		# `disrepair` 已按建筑类型判定（无维护行时等于国家级旗标），
 		# `satisfaction_bp` / `cover_days_x10` 是原生整数口径：万分比与十分之一日。
@@ -521,6 +570,67 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 		"shortage_reason": int(maintenance.get("shortage_reason", 0)),
 		"maintenance_text": maintenance_text,
 	}
+
+
+static func building_upkeep(host, row: Dictionary) -> int:
+	return int(round(maxf(0.0, float(row.get("upkeep", 0.0))) * host.MONEY_SCALE))
+
+
+func _state_building_current_upkeep(host, role: String, tiers: Array, current: Dictionary,
+		snapshot: Dictionary, count: int) -> int:
+	var counts = snapshot.get("barracks_tiers")
+	if role != "barracks" or not counts is PackedInt32Array:
+		return building_upkeep(host, current.get("row", {})) * count
+	var daily := 0
+	for entry: Dictionary in tiers:
+		var tier := int(entry.row.get("tier", -1))
+		if tier >= 0 and tier < counts.size():
+			daily += building_upkeep(host, entry.row) * int(counts[tier])
+	return daily
+
+
+static func building_hover_preview(host, role: String, row: Dictionary, disrepair: bool,
+		current_daily: int, future_daily: int, maintenance: Dictionary = {}) -> Dictionary:
+	var outputs: Array = []
+	if not row.is_empty():
+		match role:
+			"barracks":
+				outputs.append({"name": "驻军名额", "icon": &"military.banner",
+					"text": "+%s 人" % host._count_text(int(row.get("capacity", 0)))})
+			"fortification":
+				var bonus := float(row.get("fort_bonus", 0.0)) * (0.5 if disrepair else 1.0)
+				outputs.append({"name": "守备加成", "icon": &"military.building.fortification",
+					"text": "+%d%%" % int(round(bonus * 100.0))})
+			"war_college":
+				outputs.append({"name": "训练速度", "icon": &"military.plan.training",
+					"text": "×%s" % host._one_decimal(float(row.get("training_speed", 1.0)))})
+
+	var upkeep: Array = []
+	if current_daily > 0:
+		upkeep.append({"name": "当前日维护费", "icon": &"metric.treasury",
+			"text": "%s 金币/日" % host._money_text(current_daily)})
+	if future_daily >= 0 and future_daily != current_daily:
+		upkeep.append({"name": "建成后日维护费", "icon": &"metric.treasury",
+			"text": "%s 金币/日" % host._money_text(future_daily)})
+	if not maintenance.is_empty():
+		var supply := {"name": "物资维护满足率", "icon": &"metric.goods",
+			"text": "%.0f%%" % (clampi(int(maintenance.get("ratio_bp", 0)), 0, 10000) / 100.0)}
+		var issue := int(maintenance.get("shortage_reason", 0))
+		var supply_status := PackedStringArray()
+		if bool(int(maintenance.get("disrepair", 0))):
+			supply_status.append("失修")
+		if issue > 0 and issue < MAINTENANCE_REASON_TEXT.size():
+			supply_status.append(MAINTENANCE_REASON_TEXT[issue])
+		if not supply_status.is_empty():
+			supply["detail"] = " · ".join(supply_status)
+			supply["detail_accent"] = UITokens.DOSSIER_OXBLOOD
+		upkeep.append(supply)
+		var cover := int(maintenance.get("days_cover_x10", -1))
+		if cover >= 0:
+			upkeep.append({"name": "储备可用", "icon": &"system.calendar",
+				"text": _maintenance_days_text(cover)})
+	return {"outputs_title": "建成收益" if future_daily >= 0 else "建筑效果",
+		"outputs": outputs, "upkeep": upkeep}
 
 
 ## 一座官营建筑的建材与工期成本，供行内成本总览与 hover 提示卡使用。

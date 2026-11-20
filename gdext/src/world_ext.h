@@ -3799,6 +3799,7 @@ private:
     // rebellion outcome to the sparse row. Never touches conserved ledgers.
     bool apply_mobilization_result(int cell_idx, int profession, int action,
                                    bool success);
+    godot::Dictionary resolve_player_mobilization(const godot::Dictionary &choice);
     void translate_military_intent(const MilitaryIntent &intent, int64_t effective_day,
                                    const MilitaryWorldDigest &digest,
                                    std::vector<MilitaryCountryCommand> &country,

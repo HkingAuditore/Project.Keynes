@@ -11,6 +11,8 @@ const ICON_KEYS := [&"situation.food_shortage", &"situation.industry_shortage",
     &"situation.flood", &"situation.unemployment", &"situation.vacant_jobs",
     &"situation.discontent"]
 const MOBILIZATION_STAGE_LABELS := ["平息", "不满", "抗议", "示威", "叛乱"]
+const DISCONTENT_KIND := 3
+const DISCONTENT_FLAG := 1 << DISCONTENT_KIND
 
 var _map: MapData
 var _camera: Camera2D
@@ -29,6 +31,8 @@ var _time := 0.0
 var _cursor := 0
 var _candidates := PackedInt32Array()
 var _rows: Dictionary = {}
+var _population_cell := -1
+var _population_discontent: Dictionary = {}
 var _icons: Array[Texture2D] = []
 var _hits: Array[Dictionary] = []
 var _last_transform := Transform2D()
@@ -83,6 +87,7 @@ func configure(map: MapData, camera: Camera2D, host, economy,
     if anchor_cfg.load("user://pk_debug.cfg") == OK:
         _debug_anchor = bool(anchor_cfg.get_value("render", "situation_anchor", false))
     _rows.clear()
+    set_population_discontent(-1, {})
     _hits.clear()
     _candidates.clear()
     _cursor = 0
@@ -259,6 +264,7 @@ func apply_snapshot(packet: Dictionary) -> void:
     var classes: PackedInt32Array = packet.get("worst_class_ids", PackedInt32Array())
     var class_ids: PackedStringArray = packet.get("class_ids", PackedStringArray())
     var days: PackedInt64Array = packet.get("state_days", PackedInt64Array())
+    var generation := int(packet.get("economy_generation", -1))
     var mobilization: PackedInt32Array = packet.get(
         "mobilization_stage", PackedInt32Array())
     if cells.size() != flags.size() or severity.size() != cells.size() * 8 \
@@ -270,14 +276,25 @@ func apply_snapshot(packet: Dictionary) -> void:
         if not _can_show(cell):
             _rows.erase(cell)
             continue
+        var previous: Dictionary = _rows.get(cell, {})
+        if generation < int(previous.get("economy_generation", -1)):
+            continue
         var class_id := int(classes[index])
-        _rows[cell] = {"flags": int(flags[index]),
+        var row := {"flags": int(flags[index]),
             "severity": severity.slice(index * 8, index * 8 + 8),
             "causes": causes.slice(index * 3, index * 3 + 3),
             "class_id": String(class_ids[class_id]) if class_id >= 0 \
                 and class_id < class_ids.size() else "",
             "mobilization": int(mobilization[index]) if index < mobilization.size() else 0,
+            "economy_generation": generation,
             "day": int(days[index])}
+        var population: Dictionary = previous.get("population_discontent", {})
+        if cell == _population_cell and not _population_discontent.is_empty():
+            if int(_population_discontent.get("economy_generation", -1)) >= int(population.get("economy_generation", -1)):
+                population = _population_discontent
+        if int(population.get("economy_generation", -1)) >= generation and not population.is_empty():
+            row["population_discontent"] = population
+        _rows[cell] = row
     queue_redraw()
 
 
@@ -337,6 +354,56 @@ func _can_show(cell: int) -> bool:
         and _map.visible_arr[cell] != 0))
 
 
+func set_population_discontent(cell: int, discontent: Dictionary) -> void:
+    if cell == _population_cell and discontent == _population_discontent:
+        return
+    _population_cell = cell
+    _population_discontent = discontent
+    if _rows.has(cell) and not discontent.is_empty():
+        var row: Dictionary = _rows[cell]
+        var cached: Dictionary = row.get("population_discontent", {})
+        var latest := maxi(int(row.get("economy_generation", -1)),
+            int(cached.get("economy_generation", -1)))
+        if int(discontent.get("economy_generation", -1)) >= latest:
+            row["population_discontent"] = discontent
+    queue_redraw()
+
+
+func _displayed_population_discontent(cell: int, row: Dictionary) -> Dictionary:
+    if cell == _population_cell:
+        return _population_discontent
+    return row.get("population_discontent", {})
+
+
+func _visible_flags(cell: int, row: Dictionary) -> int:
+    var flags := int(row.get("flags", 0))
+    var discontent := _displayed_population_discontent(cell, row)
+    if not discontent.is_empty():
+        flags &= ~DISCONTENT_FLAG
+        if bool(discontent.get("active", false)):
+            flags |= DISCONTENT_FLAG
+    return flags
+
+
+func _hit_at_screen(screen: Vector2) -> Dictionary:
+    if not _near or not is_visible_in_tree():
+        return {}
+    var local := get_global_transform_with_canvas().affine_inverse() * screen
+    # The last drawn icon is on top if two icon rectangles overlap.
+    for index in range(_hits.size() - 1, -1, -1):
+        var hit: Dictionary = _hits[index]
+        var cell := int(hit.cell)
+        if hit.rect.has_point(local) and _can_show(cell) \
+                and (int(hit.kind) != DISCONTENT_KIND \
+                    or (_visible_flags(cell, _rows.get(cell, {})) & DISCONTENT_FLAG) != 0):
+            return hit
+    return {}
+
+
+func pick_cell_at_screen(screen: Vector2) -> int:
+    return int(_hit_at_screen(screen).get("cell", -1))
+
+
 func _screen_center(cell: int) -> Vector2:
     var hex := _map.cell_at(cell)
     var world := HexUtils.cube_to_world(hex.q, hex.r, _hex_size)
@@ -366,16 +433,20 @@ func _draw() -> void:
             draw_line(anchor - Vector2(14, 0), anchor + Vector2(14, 0), Color(1, 0, 1, 0.9), 1.5)
             draw_line(anchor - Vector2(0, 14), anchor + Vector2(0, 14), Color(1, 0, 1, 0.9), 1.5)
     var side := UITokens.MAP_SITUATION_ICON_SIZE
-    for cell in _rows:
+    var cells := _rows.keys()
+    if _population_cell >= 0 and not _rows.has(_population_cell):
+        cells.append(_population_cell)
+    for cell in cells:
         if not _can_show(int(cell)):
             continue
-        var row: Dictionary = _rows[cell]
+        var row: Dictionary = _rows.get(cell, {})
+        var flags := _visible_flags(int(cell), row)
         var kinds: Array[int] = []
         for kind in range(9):
             if kind == 8:
                 if int(row.get("mobilization", 0)) <= 0:
                     continue
-            elif not (int(row.flags) & (1 << kind)):
+            elif not (flags & (1 << kind)):
                 continue
             kinds.append(kind)
         if kinds.is_empty():
@@ -408,21 +479,34 @@ func _update_tooltip() -> void:
     if hovered != null and hovered != self:
         _hide_tooltip()
         return
-    for hit in _hits:
-        if hit.rect.has_point(_mouse_position) and _can_show(int(hit.cell)):
-            var key := "%d:%d" % [int(hit.cell), int(hit.kind)]
-            # Re-apply text as data changes; the tooltip node itself is stable.
-            _hover_key = key
-            _tooltip_label.text = tooltip_for(int(hit.cell), int(hit.kind))
-            _tooltip.position = (_mouse_position + Vector2(16, 16)).clamp(
-                Vector2(4, 4), get_viewport_rect().size - Vector2(300, 140))
-            _tooltip.show()
-            return
-    _hide_tooltip()
+    var hit := _hit_at_screen(_mouse_position)
+    if hit.is_empty():
+        _hide_tooltip()
+        return
+    _hover_key = "%d:%d" % [int(hit.cell), int(hit.kind)]
+    _tooltip_label.text = tooltip_for(int(hit.cell), int(hit.kind))
+    var local := get_global_transform_with_canvas().affine_inverse() * _mouse_position
+    _tooltip.position = (local + Vector2(16, 16)).clamp(
+        Vector2(4, 4), (size - Vector2(300, 140)).max(Vector2(4, 4)))
+    _tooltip.show()
 
 
 func tooltip_for(cell: int, kind: int) -> String:
     var row: Dictionary = _rows.get(cell, {})
+    if kind == DISCONTENT_KIND:
+        if (_visible_flags(cell, row) & DISCONTENT_FLAG) == 0:
+            return ""
+        var population := _displayed_population_discontent(cell, row)
+        var detail := population if not population.is_empty() else row
+        var cls := String(detail.get("class_id", ""))
+        var severity := int(row.severity[DISCONTENT_KIND]) if population.is_empty() \
+            else int(population["severity_q16"])
+        var day := int(detail.get("state_day", detail.get("day", -1)))
+        var text := "%s\n%s阶层 · 综合满意度 %.0f%%" % [TITLES[kind],
+            String(CLASS_NAMES.get(cls, cls)).trim_suffix("阶层"), 100.0 - severity * 100.0 / 65536.0]
+        if day >= 0:
+            text += "\n最近本地结算：第 %d 天" % day
+        return text
     if row.is_empty():
         return ""
     var text := String(TITLES[kind])
@@ -435,9 +519,6 @@ func tooltip_for(cell: int, kind: int) -> String:
         var good := int(row.causes[kind])
         var name := String(_economy.good_display_name(good)) if _economy != null and good >= 0 else ""
         text += "\n%s缺口 %.0f%%" % [name + "：" if not name.is_empty() else "", score]
-    elif kind == 3:
-        var cls := String(row.class_id)
-        text += "\n%s：综合满意度 %.0f%%" % [String(CLASS_NAMES.get(cls, cls)), 100.0 - score]
     elif kind == 6:
         text += "\n失业人口占比 %.0f%%" % score
     elif kind == 7:

@@ -127,6 +127,8 @@ var _state_last_seed: Dictionary = {}
 var _ai_event_pool: Array[Dictionary] = []
 var _next_pool_id: int = 1
 
+var _rebellion_preview: Callable
+var _rebellion_resolve: Callable
 var _active_offer: Dictionary = {}
 var _ready_queue: Array[Dictionary] = []
 var _cooldowns: Dictionary = {}
@@ -192,8 +194,20 @@ func catalog() -> NarrativeEventCatalog:
 	return _catalog
 
 
-func active_offer() -> Dictionary:
-	return _active_offer.duplicate(true)
+func bind_rebellion(preview: Callable, resolve: Callable) -> void:
+	_rebellion_preview = preview
+	_rebellion_resolve = resolve
+
+
+func _prepare_offer(offer: Dictionary) -> bool:
+	var meta: Dictionary = offer.get("meta", {})
+	if meta.get("kind") != "rebellion" or offer.get("stratum_choices_prepared", false):
+		return true
+	return _rebellion_preview.is_valid() and bool(_rebellion_preview.call(offer))
+
+
+func active_offer(prepare: bool = true) -> Dictionary:
+	return _active_offer.duplicate(true) if not prepare or _prepare_offer(_active_offer) else {}
 
 
 func has_active_offer() -> bool:
@@ -210,7 +224,7 @@ func ready_queue() -> Array[Dictionary]:
 
 func promote_next_offer() -> Dictionary:
 	if not _active_offer.is_empty():
-		return _active_offer.duplicate(true)
+		return active_offer()
 	if _ready_queue.is_empty():
 		return {}
 	var day: int = int(_world_clock.day_index()) if _world_clock != null and _world_clock.has_method("day_index") else _last_pulse_day
@@ -1267,6 +1281,9 @@ func _promote_next_ready_offer(day: int) -> void:
 			if popup_pacing_blocked(day):
 				index += 1
 				continue
+		if not _prepare_offer(next_offer):
+			index += 1
+			continue
 		_ready_queue.remove_at(index)
 		_active_offer = next_offer.duplicate(true)
 		_last_popup_day = day
@@ -1288,6 +1305,8 @@ func choose_option(
 	if int(_active_offer.get("offer_id", -1)) != offer_id \
 			or int(_active_offer.get("offer_generation", -1)) != offer_generation:
 		return {"ok": false, "code": "narrative_offer_mismatch", "message": "事件已过期。"}
+	if not _prepare_offer(_active_offer):
+		return {"ok": false, "code": "economy_busy_retry", "message": "组织度结算尚未就绪。"}
 	var options: Array = _active_offer.get("options", [])
 	if option_index < 0 or option_index >= options.size():
 		return {"ok": false, "code": "narrative_option_invalid", "message": "选项无效。"}
@@ -1314,7 +1333,9 @@ func choose_option(
 		"outcome_narrative": "",
 		"effects": [],
 	}
-	if not outcomes.is_empty():
+	if outcomes.size() == 1:
+		chosen_outcome = outcomes[0]
+	elif outcomes.size() > 1:
 		var weights := PackedInt64Array()
 		for out_item in outcomes:
 			weights.append(maxi(1, int((out_item as Dictionary).get("probability_q16", Q16_ONE))))
@@ -1325,12 +1346,21 @@ func choose_option(
 		outcome_idx = clampi(outcome_idx, 0, outcomes.size() - 1)
 		chosen_outcome = outcomes[outcome_idx]
 
-	var raw_effects: Array = chosen_outcome.get("effects", [])
-	var effect_res := NarrativeEffectAdapterScript.apply_effects(
-		raw_effects, cell_ctx, self, _generator,
-		_player_country_handle, cell_idx, effective_day, sequence_alloc
-	)
-	var applied_summaries: PackedStringArray = effect_res.get("applied_summaries", PackedStringArray())
+	var applied_summaries := PackedStringArray()
+	if _active_offer.get("meta", {}).get("kind") == "rebellion":
+		if not _rebellion_resolve.is_valid():
+			return {"ok": false, "code": "mobilization_unavailable", "message": "组织度结算尚未就绪。"}
+		var resolution: Dictionary = _rebellion_resolve.call(_active_offer,
+			option_index, chosen_outcome, effective_day, sequence_alloc)
+		if not bool(resolution.get("ok", false)):
+			return resolution
+		chosen_outcome = resolution.get("outcome", chosen_outcome)
+		applied_summaries = PackedStringArray(resolution.get("applied_summaries", []))
+	else:
+		var effect_res := NarrativeEffectAdapterScript.apply_effects(
+			chosen_outcome.get("effects", []), cell_ctx, self, _generator,
+			_player_country_handle, cell_idx, effective_day, sequence_alloc)
+		applied_summaries = effect_res.get("applied_summaries", PackedStringArray())
 
 	var ev_id_str := String(_active_offer.get("event_id", ""))
 	_completed_one_shots[ev_id_str] = effective_day

@@ -4,6 +4,7 @@ extends SceneTree
 ## option resolution, concession payment, and the independence -> war sequence.
 
 const ServiceScript = preload("res://scripts/politics/stratum_unrest_service.gd")
+const Rng = preload("res://scripts/narrative/narrative_rng.gd")
 const ContentScript = preload("res://scripts/politics/stratum_rebellion_content.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
@@ -49,32 +50,41 @@ class MockEconomy:
 	var applied: Array = []
 	var payments: Array = []
 	var stage := 4
+	var reject_choice := false
+	var population_busy := false
 	func cell_mobilization_snapshot(_cell: int) -> Dictionary:
 		return {"ok": true, "rows": [{"profession": 0, "stage": stage, "flags": 1}]}
 	func is_configured() -> bool: return true
-	func mobilization_odds(_cell: int, _prof: int, _action: int, _spend: int) -> Dictionary:
-		return {"ok": true, "p_success_q16": 40000, "cost_bp": 50}
+	func mobilization_odds(_cell: int, _prof: int, _action: int, spend: int) -> Dictionary:
+		return {"ok": true, "p_success_q16": 13107 if spend == 50 else 3277,
+			"cost_bp": 50, "stage": stage}
 	func apply_mobilization_result(cell: int, prof: int, action: int, success: bool) -> bool:
 		applied.append([cell, prof, action, success])
 		if not success:
 			stage = mini(4, stage + 1)
 		return true
+	func resolve_player_mobilization(choice: Dictionary) -> Dictionary:
+		if reject_choice:
+			return {"ok": false, "code": "economy_busy_retry"}
+		apply_mobilization_result(choice.cell, choice.profession, choice.action, choice.success)
+		if int(choice.cash) > 0:
+			payments.append([choice.cohort_handle, choice.cash, choice.effective_day, choice.sequence])
+		return {"ok": true, "queued_cash": choice.cash, "stage": stage}
 	func settlement_display_name(_cell: int) -> String: return "测试城"
 	func profession_ids() -> PackedStringArray: return PackedStringArray(["merchant"])
 	func population_cell_snapshot(_cell: int, _details: bool) -> Dictionary:
+		if population_busy:
+			return {"busy": true}
 		return {"handles": PackedInt64Array([77]), "populations": PackedInt64Array([100])}
-	func transfer_country_cash_to_cohort(_country: int, cohort: int, amount: int,
-			_day: int, _seq: int) -> Dictionary:
-		payments.append([cohort, amount])
-		return {"ok": true}
 
 
 class MockCountry:
 	var handle := 1
+	var treasury_cash := 100000
 	func cell_summary(_cell: int) -> Dictionary:
 		return {"country_handle": handle, "country_slot": 0, "territory_count": 2}
 	func snapshot(_handle: int) -> Dictionary:
-		return {"ok": true, "cash": 100000, "territory_cells": PackedInt32Array([5])}
+		return {"ok": true, "cash": treasury_cash, "territory_count": 2, "territory_cells": PackedInt32Array([5])}
 	func create_country(_stable_id: StringName, _name: String, _cell: int,
 			_day: int, _seq: int) -> Dictionary:
 		handle = 9
@@ -103,6 +113,7 @@ func _run_and_quit() -> void:
 func _run() -> void:
 	_test_player_delivery()
 	_test_followup_delivery()
+	_test_paid_choice_preview_and_roll()
 	var service = ServiceScript.new()
 	var economy := MockEconomy.new()
 	var country := MockCountry.new()
@@ -110,18 +121,15 @@ func _run() -> void:
 	service.configure(null, null, MockClock.new(), null, economy, country,
 		military, 1, 12345)
 	service.step_daily(9)
-	var record := {
-		"chosen_option_index": 0,
-		"rolled_outcome_index": 0,
-		"day": 9,
+	var offer := {
+		"options": [{}],
 		"meta": {
 			"kind": "rebellion", "cell": 5, "profession": 0, "stage": 4,
-			"owner_handle": 1,
-			"actions": [ContentScript.ACTION_ABANDON],
-			"cost_bps": [0],
+			"owner_handle": 1, "actions": [ContentScript.ACTION_ABANDON],
 		},
 	}
-	service.on_offer_resolved(record)
+	service.resolve_player_choice(offer, 0, {"rebellion_success": true,
+		"probability_q16": 65536}, 9, Callable())
 	_expect("abandon applies as a successful action",
 		economy.applied.size() == 1 and
 		int(economy.applied[0][2]) == ContentScript.ACTION_ABANDON and
@@ -137,30 +145,6 @@ func _run() -> void:
 		int(military.wars[0][1]) == 9)
 	_expect("the independence queue drains after the war",
 		service.export_state().get("pending_independence", []).is_empty())
-
-	# A concession pays treasury cash to the local primary cohort.
-	var paid := MockEconomy.new()
-	var paid_service = ServiceScript.new()
-	paid_service.configure(null, null, MockClock.new(), null, paid,
-		MockCountry.new(), MockMilitary.new(), 1, 12345)
-	paid_service.step_daily(1)
-	paid_service.on_offer_resolved({
-		"chosen_option_index": 0,
-		"rolled_outcome_index": 0,
-		"day": 1,
-		"meta": {
-			"kind": "rebellion", "cell": 5, "profession": 0, "stage": 1,
-			"owner_handle": 1,
-			"actions": [ContentScript.ACTION_CONCEDE],
-			"cost_bps": [50],
-		},
-	})
-	_expect("concession pays the primary cohort",
-		paid.payments.size() == 1 and int(paid.payments[0][0]) == 77 and
-		int(paid.payments[0][1]) == 500)
-	_expect("concession still applies the native result",
-		paid.applied.size() == 1 and
-		int(paid.applied[0][2]) == ContentScript.ACTION_CONCEDE)
 
 
 func _test_player_delivery() -> void:
@@ -190,8 +174,16 @@ func _test_player_delivery() -> void:
 		ui.shown.get("event_id") == "evt.rebellion.stage_4" and clock.paused)
 	if not offer.is_empty():
 		var actions: Array = offer.get("meta", {}).get("actions", [])
+		_expect("stage four labels match the underlying amnesty, suppression, and secession actions",
+			offer.options[actions.find(ContentScript.ACTION_AMNESTY)].text == "开城招安"
+			and offer.options[actions.find(ContentScript.ACTION_REPRESS)].text == "调兵镇压"
+			and offer.options[actions.find(ContentScript.ACTION_ABANDON)].text == "带兵退出此城")
 		var abandon_index := actions.find(ContentScript.ACTION_ABANDON)
 		if abandon_index >= 0:
+			var branches: Array = offer.options[abandon_index].outcomes
+			_expect("abandon shows one certain independence outcome", branches.size() == 1
+				and branches[0].probability_q16 == 65536
+				and "独立" in " ".join(branches[0].effect_summaries))
 			service.choose_option(offer.offer_id, offer.offer_generation, abandon_index, 10)
 	_expect("the formal narrative service routes a choice back to the unrest service",
 		economy.applied.size() == 1)
@@ -245,6 +237,74 @@ func _test_followup_delivery() -> void:
 	controller._step_narrative_daily(11)
 	_expect("the consumed fact and recovered stage are not queued again",
 		service.ready_queue_size() == 0)
+	controller.free()
+
+
+func _test_paid_choice_preview_and_roll() -> void:
+	var economy := MockEconomy.new()
+	economy.stage = 1
+	var controller = PlayerControllerScript.new()
+	root.add_child(controller)
+	controller._runtime_host = MockRuntimeHost.new()
+	controller._player_country_handle = 1
+	controller._economy_facade = economy
+	var country := MockCountry.new()
+	controller._country_facade = country
+	controller._configure_narrative_runtime()
+	controller._step_narrative_daily(9)
+	var narrative = controller.narrative_service()
+	var offer: Dictionary = narrative.active_offer()
+	var option: Dictionary = offer.get("options", [])[0]
+	var branches: Array = option.get("outcomes", [])
+	_expect("paid concession uses the funded odds in the visible offer",
+		int(branches[0].probability_q16) == 13107)
+	_expect("concession previews organization and its cost in both branches",
+		"组织度" in " ".join(branches[0].effect_summaries)
+		and "国库" in " ".join(branches[0].effect_summaries)
+		and "国库" in " ".join(branches[1].effect_summaries))
+	var bribery: Dictionary = offer.options[1]
+	_expect("bribery previews the same cash obligation and funded odds",
+		bribery.rebellion_cash == option.rebellion_cash
+		and bribery.outcomes[0].probability_q16 == branches[0].probability_q16)
+	var effective_day := 10
+	var salt := int(offer.chain_salt) * 131 + 7
+	for day in range(10, 100):
+		var roll := Rng.hash64(1, day, 1, 5, salt) % 65536
+		if roll >= 3277 and roll < 13107:
+			effective_day = day
+			break
+	var legacy: Dictionary = narrative.export_state()
+	legacy.active_offer.erase("stratum_choices_prepared")
+	legacy.active_offer.options[0].outcomes[0].probability_q16 = 3277
+	legacy.active_offer.options[0].outcomes[0].effect_summaries = []
+	legacy.active_offer.options[0].text = "旧选项"
+	narrative.restore_state(bytes_to_var(var_to_bytes(legacy)))
+	economy.population_busy = true
+	_expect("temporarily unavailable population data defers the quote",
+		narrative.active_offer().is_empty() and narrative.has_active_offer())
+	economy.population_busy = false
+	_expect("an already-open offer from an old save gets the updated effects and odds",
+		narrative.active_offer().options[0].outcomes[0] == branches[0]
+		and narrative.active_offer().options[0].text == option.text)
+	economy.reject_choice = true
+	var rejected: Dictionary = narrative.choose_option(offer.offer_id, offer.offer_generation, 0, effective_day)
+	_expect("a rejected choice neither changes the state nor consumes the offer",
+		not rejected.get("ok", true) and narrative.has_active_offer()
+		and economy.applied.is_empty() and economy.payments.is_empty())
+	economy.reject_choice = false
+	var result: Dictionary = narrative.choose_option(offer.offer_id, offer.offer_generation, 0, effective_day)
+	_expect("a roll between the unfunded and funded odds succeeds",
+		result.get("outcome_index", -1) == 0 and economy.applied.size() == 1 and economy.applied[0][3])
+	_expect("concession queues the quoted payment to the primary cohort on the effective day",
+		economy.payments.size() == 1 and economy.payments[0].slice(0, 3) == [77, 500, effective_day])
+	_expect("the chronicle includes the applied organization effects",
+		"组织度" in " ".join(result.get("record", {}).get("applied_effects_summary", [])))
+	country.treasury_cash = 0
+	narrative.restore_state(bytes_to_var(var_to_bytes(legacy)))
+	var unfunded: Dictionary = narrative.active_offer().options[0]
+	_expect("an empty treasury keeps the unfunded odds and shows no fictitious payment",
+		unfunded.rebellion_cash == 0 and unfunded.outcomes[0].probability_q16 == 3277
+		and not "国库" in " ".join(unfunded.outcomes[0].effect_summaries))
 	controller.free()
 
 

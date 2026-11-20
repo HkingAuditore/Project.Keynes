@@ -613,8 +613,8 @@ func _military_training_rows(snapshot: Dictionary, units: Dictionary) -> Array:
 func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 		catalog_rows: Array, researched: PackedStringArray, gate_known: bool,
 		can_build: bool, facade = null, cell_idx: int = -1,
-		maintenance_by_index: Dictionary = {}) -> Dictionary:
-	return _Military_delegate._state_building_entry(self, role_def, snapshot, catalog_rows, researched, gate_known, can_build, facade, cell_idx, maintenance_by_index)
+		maintenance_by_index: Dictionary = {}, market_stock: Dictionary = {}) -> Dictionary:
+	return _Military_delegate._state_building_entry(self, role_def, snapshot, catalog_rows, researched, gate_known, can_build, facade, cell_idx, maintenance_by_index, market_stock)
 
 func _state_building_cost(facade, building_index: int,
 		building_row: Dictionary, cash_available: int, cell_idx: int,

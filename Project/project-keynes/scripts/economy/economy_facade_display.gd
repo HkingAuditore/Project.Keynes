@@ -152,6 +152,8 @@ static func attach_building_display_metadata(host, snapshot: Dictionary) -> void
 		"building_input_category_ids", "building_input_min_quality_levels",
 		"building_input_candidate_offsets", "building_input_candidate_good_ids",
 		"building_input_candidate_efficiency_q16", "building_upgrade_family_ids",
+		"building_construction_offsets", "building_construction_good_ids",
+		"building_construction_quantities",
 		"building_construction_candidate_offsets", "building_construction_candidate_good_ids",
 		"building_construction_candidate_efficiency_q16",
 		"building_upgrade_family_indices", "building_upgrade_tiers",

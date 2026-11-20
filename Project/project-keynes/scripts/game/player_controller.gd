@@ -188,6 +188,7 @@ var _runtime_host = null
 var _world_clock = null
 var _ui_manager = null
 var _selected_cell = null
+var _cell_situation_picker: Callable
 var _player_country_handle := 0
 var _command_sequence := 1
 var _pause_before_menu := false
@@ -884,6 +885,10 @@ func _connect_ui() -> void:
 	refresh_country_binding()
 
 
+func set_cell_situation_picker(picker: Callable) -> void:
+	_cell_situation_picker = picker
+
+
 func _on_tile_tapped(world_pos: Vector2) -> void:
 	if _runtime_host == null or _runtime_host.current_map() == null:
 		return
@@ -891,12 +896,17 @@ func _on_tile_tapped(world_pos: Vector2) -> void:
 		_runtime_host.hex_size)
 	# 议和窗口开着时地图就是「交割选格」：部队/战线拾取必须让路，否则停在候选格上的
 	# 部队棋子会先抢走这次点击。
-	if cell != null and _peace_window_open():
-		select_cell(cell)
+	if _peace_window_open():
+		if cell != null:
+			select_cell(cell)
 		return
 	# 部队指令模式下地图点击是目标格，保持旧语义；否则先给军务档案一次拾取机会。
 	if _military_order_mode.is_empty() and cell != null and military_map_pick(world_pos):
 		return
+	if _military_order_mode.is_empty() and _cell_situation_picker.is_valid() and _camera != null:
+		var alert_cell := int(_cell_situation_picker.call(_camera.safe_world_to_screen(world_pos)))
+		if alert_cell >= 0:
+			cell = _runtime_host.current_map().cell_at(alert_cell)
 	if cell != null:
 		select_cell(cell)
 
