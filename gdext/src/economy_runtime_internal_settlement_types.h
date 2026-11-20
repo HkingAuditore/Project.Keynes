@@ -1385,6 +1385,10 @@
     // -1 = no national policy (legacy behaviour); otherwise remaining cash
     // allowance for colonization procurement today.
     int64_t colonization_procurement_allowance(uint64_t country_handle, int64_t day);
+    // The epoch freeze only grants the channel to countries that already had a
+    // preparing party at the boundary; a party created mid-epoch repairs the
+    // missing budget here instead of being refused until the next epoch.
+    void ensure_epoch_colonization_budget(uint64_t country_handle);
     void consume_colonization_procurement_allowance(uint64_t country_handle,
                                                     int64_t cash);
     void note_procurement_cash(uint64_t country_handle, int32_t kind, int64_t cash);

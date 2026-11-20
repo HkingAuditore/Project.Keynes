@@ -338,7 +338,7 @@ tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `rol
 - 每日在 `run_movement()` 前规划：已探索目标直接 resolved；否则选最近未解决目标，并在半径
   0..2 的候选观察点中按稳定次序尝试。每军最多实际到达 3 个观察点。
 - 探路 passability 与普通 `find_path()` 分离：陆地只允许无主/本国控制，战争状态也不进入
-  他国控制格；水域继续遵守海运科技和连续水格限制。
+  他国控制格；水域继续按水级（湖/浅海/远海/深海）门控，与贸易航道同一张表。
 - 每任务每日 ≤2 次 A*，每国每日 ≤8 个规划槽、≤16 次探路 A*；共享全国 32 次路径预算中
   保留至少 16 次给区域控制。预算耗尽返回 `DAILY_BUDGET_EXHAUSTED` 并在次日重试。
 - 全部目标解决后返回 origin；origin 失效时用 `nearest_friendly_cell()`；无安全路线则
@@ -664,8 +664,8 @@ python tools/ci/check_save_contracts.py
 8. `get_military_cell_snapshot` 的 `observer` 被忽略（未按迷雾过滤）；统帅恒为空位。
 9. 占领不切换 Economy 税收/补贴归属；controller 只在 Military。
 10. 人员模型：士兵不随部队移动，无随军/客籍消费、无 `ArmyPersonnelStore`（设计 §5.7、PKEC v59 未实现）。
-11. ~~海运只有 `EMBARKED` 损耗豁免~~：已接入 coastal/ocean transport 科技、连续水格限制、
-    海运运力成本与上岸姿态恢复；仍无独立海军单位与封锁。
+11. ~~海运只有 `EMBARKED` 损耗豁免~~：已接入四档水级（河运/近海运兵/天文导航/远洋船舶设计）、
+    海运运力成本与上岸姿态恢复；「连续水格 ≤ 3」已删除。仍无独立海军单位与封锁。
 12. ~~注释漂移（worker 推进 military）~~：已更正为主线程 `run_military_daily` + host 整图补跑。
 13. ~~`GameplayEventBus` payload 注释不一致~~：已按 §10 原生字段更正。LEVY 原生事件未填
     `payload_schema`（=0），由 `GameplayEventBus.military_payload_schema()` 回填 25。
@@ -694,3 +694,67 @@ python tools/ci/check_save_contracts.py
 `GameUIManager` 通过 `update_military_arm_order` 更新显示，不改 MilitaryCore 权威、每日调度或 PKMI。
 探路按钮、半径行、`E/Enter/Esc/右键`、44dp 热区和焦点链见
 [部队指挥交互与验证](../ui/military-army-controls.md)。
+
+## 招兵面板的两处数据通路缺陷（2026-11-20）
+
+玩家存档复盘（`autosave.pksv` day 6570）：6 个国家的 `target_value` 全为 0、`pending` 为空、
+`last_day` 等于存档日、lot 段为空表。军事日正常推进（30 日维护实付 799），但招募目标从未被写入，
+于是 `plan = min(effective_target − country_soldiers, open_sum) = 0`、`quota` 恒为 0，
+ENLIST/LEVY 一条都不发——「兵额 8 / 在驻 0 / 配额 0」只是这个零的自洽结果，不是兵营被锁。
+
+1. **目标滑条只有 `drag_ended` 提交**（`military_workspace.gd`）。键盘、点击轨道、无障碍调整
+   都不发这个信号；而每 200ms 的刷新又会用原生 `target_value` 把把手写回去，玩家的调整被静默
+   回滚成 0。现在 `value_changed` 走 250ms 防抖提交，`drag_ended` 仍然「松手即提交」；提交值在
+   快照追上之前用 `_target_pending_mode/_value` 覆盖，模式与数值都对上才释放。重复值不再发第二条
+   命令，点当前模式也不再照发一条「value = 滑条当前值」（滑条停在 0 时那条等于清零）。
+2. **「人数 / 预算」两个模式签不是 toggle**：`IconButton.apply_with_text()` 的 `toggle` 参数默认
+   `false`，且 `configure()` 无条件写 `button.toggle_mode = toggle`。漏传就退化成普通按钮：
+   `button_pressed` 恒 false，而 `BaseButton::set_pressed_no_signal(false)` 在
+   `!toggle_mode && !pressed` 时直接早退，两个签会同时显示为按下。后果是「预算」模式进不去，
+   `_commit_target()` 一律按人数模式提交，货币数值会被当成兵数。已按 toggle 装配。
+3. **国库页的「军事」板块永远「暂不可用」**：经济章的 `CountryViewModel.build("economy")` 从不
+   装配 `military` 段，`fiscal_budget_page` 读到空字典 → `available=false` → 「军事账目尚未就绪」。
+   新增 `CountryViewModel.build_military_spending_model()`：只取 `get_military_country_snapshot` +
+   实物维护两项读数（不装部队/目录/科技闸门，避免国库页每刷新多读三份原生数据），产出与
+   `military_spending_model` 同键的段；事件驱动 `build()` 与 `_build_full_legacy()` 两条路径都接上。
+4. **`policy.set_budget` 不在玩家命令白名单**：`PlayerController.SUPPORTED_COMMANDS` 缺
+   `COMMAND_MILITARY_BUDGET`，财政页四个滑条提交一律 `unsupported_command`（提示「该正式玩家命令
+   尚未开放」）。已补白名单，并在 `PlayerCommandValidation` 加份额范围校验（`total_bp` 0..10000，
+   通道 `-1` 表示本次不改）。
+
+验证：新增 `tests/ui/military_target_commit_test.gd`（防抖提交、不回弹、快照追上释放、拖动即提交、
+重复模式点击不提交、模式切换走预算）与 `tests/ui/fiscal_military_model_test.gd`（四类快照状态的
+段产出）；`tests/ui/fiscal_military_block_test.gd`、`tests/ui/military_config_command_test.gd`
+回归 0 失败；`tests/game/player_country_ui_smoke_test.gd` 0 失败，并新增三条断言（经济章模型带
+`military` 段、段内带信封通道、会话有 facade 时 `available=true`）。
+
+未覆盖：目标命令仍是 D+1 落库（提交成功只代表入队）；滑条量程（50000 人 / 50000 货币）是 UI
+常量，原生只校验非负；`budget_share_bp` / `budget_wage_bp` / `budget_upkeep_bp` 仍不进 PKMI
+（`write_policies` 不写这三项），读档后由 `PlayerController._repush_military_budget()` 重推。
+
+### 文案契约（同日）
+
+面板不长篇解释，只说要紧的字和数：
+
+- 命令受理的反馈统一是 `命令已下达`（`player_controller/military.gd`）。不要写「已排队，将在下一
+  游戏日生效」这类整句——生效日由运行时排期，玩家不需要在提示里读一遍机制。
+- 国库页军事栏不再有说明行与组标签（`独立信封 · 军饷 / 维护 / 装备给养`、`招募本身不拨款…`、
+  `未启用时按现金结算…`、`每日信封 A：军饷 B…` 都删了）。信封行只写 `未启用` / `每日 X`，三条
+  通道滑条各自带份额与日额，结算行只写实付。
+- 通道脚注只保留带数字的状态字：`超支 X` / `待购 N 件` / `暂停`；没有这些状态就不出现。通道
+  脚注的「超支/待购」语义仍由 `military_spending_model` 的 `*_overspend` 与
+  `procurement_deferred_units` 决定，去掉的只是句式。
+
+### 地块名的数据源（同日）
+
+`MilitaryViewModel.cell_name()` 以前读的 `cell_names` 只有测试夹具会填，于是兵营行、训练行与
+割地表全写「未命名地块」。现在：
+
+- 装配：`CountryViewModel.build_military_model()` 把表装进军事段（`section["cell_names"]`），
+  数据来自 Economy 的具名聚落 —— `named_settlement_snapshot()` 首读，`settlement_delta(revision)`
+  增量；按 `revision` 缓存，名字没变时每次刷新只是一次空读。只收 `name_active != 0` 且名字非空
+  的格（未命名聚落行在原生里也带占位名）。读失败（worker 忙、旧 DLL）保留上一份。
+- 取名链：`cell_name()` = 具名聚落 > 作者地区名（`MapGenerator.region_name_for_cell`）> `地块 N`。
+  割地表用 `settlement_name()` 判断「这一格有没有自己的名字」，不能用 `cell_name()`（它会退回
+  地区名，那样每格都算「有名字」）。
+- 兼容：`MilitaryViewModel.configure()` 仍读顶层的 `cell_names`，截图夹具与旧调用面不用改。

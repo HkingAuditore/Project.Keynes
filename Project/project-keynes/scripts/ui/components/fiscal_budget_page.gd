@@ -53,13 +53,12 @@ const SECTION_META := {
 	"colonization": {"title": "开拓", "icon": &"metric.territory",
 		"tone": UITokens.DOSSIER_VERDIGRIS, "note": "派遣储备，供新地块开拓使用"},
 	"military": {"title": "军事", "icon": &"military.banner",
-		"tone": UITokens.DOSSIER_OXBLOOD,
-		"note": "招募本身不拨款；花销落在军饷、维护与装备给养"},
+		"tone": UITokens.DOSSIER_OXBLOOD, "note": ""},
 }
 const POOL_TAG_TEXT := "共同额度 · 科技 / 时代收购 / 开拓 合计 100%"
-const MILITARY_TAG_TEXT := "独立信封 · 军饷 / 维护 / 装备给养"
-## 「两个池互不相加」直接画在顶部纸带的分栏与右列脚注里，不再另占一张纸：
-## 右栏军事板块本身就已经很高，再挂便笺会把四条共同额度挤回首屏之外。
+## 军事栏不挂组标签：标题与读数在卡片头上，「独立信封 · 军饷 / 维护 / 装备给养」
+## 这类说明只是复述下面三条通道的名字。空串让 `_make_group` 只占等高位置。
+const MILITARY_TAG_TEXT := ""
 
 const PAD_X := 2.0
 const PAD_TOP := 2.0
@@ -302,11 +301,19 @@ func _make_group(name: String, tag_text: String, tone: Color,
 	group.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	group.add_theme_constant_override("separation", 8)
 	_columns.add_child(group)
-	var tag := BudgetRibbonScript.GroupTag.new() as Control
-	tag.name = "GroupTag"
-	tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tag.configure(tag_text, tone)
-	group.add_child(tag)
+	if tag_text.is_empty():
+		# 空标签只占高度，不画一条没有内容的纸带：两栏首卡仍然对齐。
+		var spacer := UIControlParts.control()
+		spacer.name = "GroupTagSpacer"
+		spacer.custom_minimum_size = Vector2(0.0, BudgetRibbonScript.GroupTag.TAG_HEIGHT)
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		group.add_child(spacer)
+	else:
+		var tag := BudgetRibbonScript.GroupTag.new() as Control
+		tag.name = "GroupTag"
+		tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tag.configure(tag_text, tone)
+		group.add_child(tag)
 	if with_grid:
 		_pool_grid = UIControlParts.grid_container()
 		_pool_grid.name = "PoolGrid"
@@ -352,8 +359,9 @@ func _wire_focus_chain() -> void:
 			control.focus_neighbor_bottom = (chain[index + 1] as Control).get_path()
 
 
-## 各分区正文：共同额度池里每条通道挂一条份额滑条；军事挂预算板块；
-## 每个分区底下留一行小字说明特殊状态（暂停 / 自动分配 / 无待办需求）。
+## 各分区正文：共同额度池里每条通道挂一条份额滑条；军事挂预算板块。
+## 只有共同额度池的三条通道带有状态脚注（暂停 / 自动分配 / 无待办需求）；
+## 军事栏的标题与读数已经说明一切，不再另起一行说明文字。
 func _build_section_body(section_id: String, entry: Dictionary) -> void:
 	var body := entry.body as VBoxContainer
 	if body == null:
@@ -409,7 +417,6 @@ func _build_military_block(body: VBoxContainer, entry: Dictionary) -> void:
 	block.budget_committed.connect(_on_military_budget_committed)
 	body.add_child(block)
 	_military_block = block
-	_add_detail_label(body, entry)
 
 
 func _add_detail_label(body: VBoxContainer, entry: Dictionary) -> void:
@@ -506,7 +513,6 @@ func _refresh_section_values(section_id: String) -> void:
 			if _military_block != null:
 				_military_block.set_state(_military_model(),
 					_military_editable())
-			_set_detail(entry, _military_detail_text())
 
 ## 说明行只在异常状态出现：正常运行时的日额已经画在滑条右侧读数里，
 ## 再写一行只会把 2×2 网格的纸撑高、把第四块挤出首屏。
@@ -779,23 +785,6 @@ func _military_value_text() -> String:
 		+ int(military.get("maintenance_paid_last_period", 0)) \
 		+ int(military.get("procurement_paid_last_period", 0))
 	return _money(total) + "/日"
-
-func _military_detail_text() -> String:
-	var military: Dictionary = _model.get("military", {})
-	if not bool(military.get("available", false)):
-		return "军事账目尚未就绪。"
-	if not bool(military.get("envelope_enabled", false)):
-		return "军事预算未启用，花销按现金与需求直接结算；启用后可按份额封顶。"
-	var days := maxi(1, int(military.get("window_days", 30)))
-	return "每日信封 %s（军饷 %s · 维护 %s · 采购 %s）；近 %d 日实付折日均 %s" % [
-		_money(int(military.get("envelope_daily", 0))),
-		_money(maxi(0, int(military.get("wage_budget_daily", 0)))),
-		_money(maxi(0, int(military.get("upkeep_budget_daily", 0)))),
-		_money(maxi(0, int(military.get("procurement_budget_daily", 0)))),
-		days,
-		_money(int(military.get("wage_paid_last_period", 0))
-			+ int(military.get("maintenance_paid_last_period", 0))
-			+ int(military.get("procurement_paid_last_period", 0)))]
 
 func _money(value: int) -> String:
 	return UITokens.format_compact_number_cn(float(maxi(0, value)) / 10000.0, 2)

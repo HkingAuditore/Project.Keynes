@@ -220,7 +220,9 @@ dispatch 的二次价格、库存、现金、运力和拓扑检查保证部分�
 不含跨国贸易、关税、自贸区、外交、逐边拥堵、运输工资、运输建筑产能、港口建筑或换装作业。
 陆海联运复用同一陆地六邻接图：海格只是走廊几何，海岸陆地是传送门；不占领水面，也不把海洋
 标成可贸易节点。河运独立；海事等级嵌套（深海可走远海/浅海，远海可走浅海）。湖泊在河运或
-海事 ≥ 1 时通行。`tech.fishing_boats` 只保留产出 Modifier，不开放运输。
+海事 ≥ 1 时通行。四档各由一个科技发放，一档一个时代：湖泊 = `tech.river_transport`（农耕）、
+浅海 = `tech.military.coastal_transport`（王国）、远海 = `tech.celestial_navigation`（帝国）、
+深海 = `tech.oceanic_ship_design`（探索）；`tech.fishing_boats` 只保留产出 Modifier，不开放运输。
 ## 2026-07-18 bounded planner completion
 
 The profile default planning slice permits 32 completed route searches (valid

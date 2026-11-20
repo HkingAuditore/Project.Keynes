@@ -870,6 +870,14 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
             family_expedition_cargo().insert(family_expedition_cargo().end(),
                 cargo.begin(), cargo.end());
             family_expeditions_store().cargo_count.write_scalar(expedition, static_cast<uint32_t>(cargo.size()), market_mutation_sink());
+            // The line that was rejected earlier finally landed: drop the note so
+            // the panel stops reporting a refusal that no longer blocks anything.
+            const auto rejection =
+                _family_expedition_procurement_rejections.find(expedition);
+            if (rejection != _family_expedition_procurement_rejections.end() &&
+                rejection->second.good == good &&
+                rejection->second.cargo_flags == cargo_flags)
+                _family_expedition_procurement_rejections.erase(rejection);
             note_family_expedition_audit_invalidation();
         }
         error.clear();
@@ -1006,6 +1014,10 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     const bool needs_complete_kit = kit.place_buildings != 0 &&
         party_people >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
     const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
+    // The party exists from this point, so this epoch needs the colonization
+    // channel even though its budget freeze already ran. Restoring it here also
+    // keeps the fiscal page honest before the first purchase attempt.
+    ensure_epoch_colonization_budget(quote.country_handle);
     auto occupy_preparing = [&]() {
         family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
         family_expeditions_store().kit_building_count.write_scalar(expedition, 0, market_mutation_sink());
