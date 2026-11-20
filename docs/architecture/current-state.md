@@ -115,7 +115,7 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
-| climate | CLM2 v9 | environment | — |
+| climate | CLM2 v10 | environment | — |
 | country | PKCN v16 | country | environment |
 | military | PKMI v6 | country | country |
 | effect | PKEF v14 | rules | military |
@@ -138,7 +138,11 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
   trail、冻结 explored、fog 和派生索引不入档，恢复时重建。`military_for_each_lot_ordered`
   不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
 - PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1，主线程入口与日执行者两个游标）、军事事件转发进度（MDJ1）。
-- CLM2 v9：权威 extras 与天气初始化状态。
+- CLM2 v10：权威 extras 与天气初始化状态。v9 及更早的 payload 还带一份 365 天逐格温度环
+  （`cells × 365 × f32`），只被滚动写入和 `state_hash` 使用，玩法读的是 `temperature_365d_ema`；
+  v10 起不再落盘、也不再进 `state_hash`，读 v9 旧档时按旧布局读完并用冻结的 `state_hash_abi8` 复核。
+- 天气场辐合（`convergence`）只有「有符号净流入」一种实现：`wf_wind_convergence_idx_{xy,cached}` +
+  GDScript 镜像两份，**无运行时开关**（`PK_CLIMATE_CONVERGENCE_LEGACY` 已退役，2026-11-20 W9）。
 
 ## 哈希与验证范围
 

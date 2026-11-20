@@ -3,6 +3,165 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 军事面板两处数据通路缺陷（2026-11-20）
+
+玩家报「完全无法招兵」，并附国库页「军事：暂不可用 / 军事账目尚未就绪」的截图。用玩家存档
+（`user://saves/autosave.pksv`，day 6570）解出 PKMI 段核对：6 个国家的 `target_value` 全为 0、
+命令队列 `pending` 为空、`last_day` 等于存档日、lot 段为空表、唯一的 cell_state 是 cell 1842
+（2 座 tier1 兵营 → 兵额 8、`quota=0`、`pending_enlist=0`），30 日维护实付 799。军事日一直在跑，
+招不到兵的原因是**招募目标恒为 0**：`plan = min(effective_target − soldiers, open_sum)` 因此为 0，
+配额冻在 0，一条 ENLIST/LEVY 都不发。
+
+四处改动：
+
+1. `military_workspace.gd` 的目标滑条原来只在 `drag_ended` 提交，键盘/点击轨道/无障碍调整没有提交
+   入口，而 200ms 的刷新会用原生旧值把把手写回去。现在 `value_changed` 走 250ms 防抖提交、
+   `drag_ended` 仍然松手即提交；提交值在快照追上之前由 `_target_pending_mode/_value` 覆盖，
+   不再回弹；重复值不重复发，点当前模式不再发「value = 滑条当前值」。
+2. 同文件的「人数 / 预算」两个模式签漏了 `IconButton.apply_with_text()` 的 `toggle=true`。该助手会
+   无条件写 `button.toggle_mode`，于是两个签退化成普通按钮：`button_pressed` 恒 false、
+   `set_pressed_no_signal(false)` 被 `!toggle_mode && !pressed` 早退挡掉（两个签会同时显示按下）。
+   后果是「预算」模式进不去，`_commit_target()` 一律按人数模式提交，货币值被当成兵数。
+3. 国库页的军费板块读 `model["military"]`，但经济章的 `CountryViewModel.build("economy")` 从不装配
+   这一段，板块因此永远「暂不可用」。新增 `build_military_spending_model()`，只取国家槽快照 +
+   实物维护两项读数，产出与 `military_spending_model` 同键的段，`build()` 与 `_build_full_legacy()`
+   都接上。
+4. `PlayerController.SUPPORTED_COMMANDS` 缺 `COMMAND_MILITARY_BUDGET`，军事预算信封的四个滑条
+   提交会一律 `unsupported_command`。已补白名单，并在 `PlayerCommandValidation` 加份额范围校验。
+
+验证：`tests/ui/military_target_commit_test.gd`、`tests/ui/fiscal_military_model_test.gd`（新增）
+与 `tests/ui/fiscal_military_block_test.gd`、`tests/ui/military_config_command_test.gd` 全 0 失败；
+`tests/game/player_country_ui_smoke_test.gd` 0 失败，新增三条断言（经济章模型带 `military` 段、
+段内带信封通道、有 facade 时 `available=true`）。
+
+未覆盖：目标命令仍是 D+1 落库；滑条量程（50000 人 / 50000 货币）是 UI 常量，原生只校验非负；
+`budget_*` 三个份额仍不进 PKMI，读档后靠 `_repush_military_budget()` 重推。
+
+同日接上地块名的数据源。`MilitaryViewModel.cell_name()` 读的 `cell_names` 以前只有测试夹具会填，
+生产环境没有装配者，于是兵营行、训练行与割地表一律写「未命名地块」。现在
+`CountryViewModel.build_military_model()` 把 Economy 的具名聚落表装进军事段
+（`named_settlement_snapshot()` 首读、`settlement_delta(revision)` 增量更新，按 revision 缓存；
+读视图排队或旧 DLL 时保留上一份），`MilitaryViewModel` 按**具名聚落 > 作者地区名 > `地块 N`**
+降级，`settlement_name()` 单独暴露聚落名供割地表判断「这一格有没有自己的名字」（不能拿
+`cell_name()` 判断，它已经会退回地区名）。夹具的顶层 `cell_names` 仍然认。
+实机验证：同一会话里军事模型带 6 条具名聚落（DIAG 打印，随后已移除）。
+新增 `tests/ui/military_cell_names_test.gd`（20 条断言：`name_active` 过滤、增量、整表替换、
+读失败保留、三级降级、割地表判定、夹具兼容）；`player_country_ui_smoke_test` 增一条
+「不再出现未命名占位」的实机断言。
+
+同日按维护者意见收敛文案：命令受理反馈统一为「命令已下达」（`player_controller/military.gd`，
+`game_ui_manager` 的编成回执同步）；国库页军事栏去掉说明行、组标签
+（`独立信封 · 军饷 / 维护 / 装备给养`）与「招募本身不拨款…」「未启用时按现金结算…」
+「每日信封 A：军饷 B…」三类整句，信封行只写 `未启用` / `每日 X`；通道脚注只留
+`超支 X` / `待购 N 件` / `暂停` 这类带数字的状态字。共同额度池那一侧的组标签与说明未动。
+对应的「无说明句」断言写进了 `tests/ui/fiscal_military_block_test.gd`（军事分区首行必须为空、
+脚注不得以句号收尾）与 `tests/ui/military_target_commit_test.gd`（状态行等于「命令已下达」）。
+
+## 存档体积构成与 Inspect-SaveSize（2026-11-20）
+
+实测 day 628、100×64（6400 格）的 `manual_1.pksv` 为 9.96 MiB（10,445,950 B），未压缩载荷 151.3 MiB，
+zstd 压缩比 0.066。按"该块单独 zstd -3 后占文件多少"拆解：365 天逐格温度历史 5.53 MiB（55.5%）、
+ECP2 经济快照两份各 1.12 MiB（22.6%，PKSR bundle 内一份 + 容器 `ecp2` 段一份，实测逐字节相同）、
+`preview` 全窗 PNG 0.86 MiB（8.6%）、ECP1 0.30 MiB（3.0%，恢复路径明确跳过）、`dynamic_world` 0.30 MiB、
+`environment` 0.10 MiB，其余 14 段合计不足 0.2 MiB。
+
+体积主因是 `RuntimeClimateAuthority::serialize` 无条件写 `_store.temperature_history`（`cells × 365 × f32`）。
+该 lane 只被滚动写入与 `state_hash` 使用，`runtime_climate_parity.h` 把它归为 worker bookkeeping，
+玩法读的是另一条 `temperature_365d_ema`；而它的压缩率只有 0.59，因此体积随格数线性抬升：
+6400 格是 8.91 MiB 原始 / 5.53 MiB 落盘。体积与天数不成正比（day 10838 的 `manual_2` 只有 7.42 MiB，
+day 24 的 `manual_3` 只有 1.03 MiB），决定项是格数 × 历史填充度。ECP1 每次保存都编码，
+但 `NativeSimulationHost` 启动时的注释与分支已写明 ECP1 不是权威恢复路径。
+
+新增 `tools/runtime/Inspect-SaveSize.ps1`：浅层只读 PKSV 头，报 provider manifest 与各段压缩/原始体积；
+`-Deep` 解出 PKSR 并拆到内段（含 CLM2 历史 lane、ECP1/ECP2 与重名段检测），`-Verify` 复核每段 sha256，
+`-Json` 输出机器可读报告。四档实测通过：`manual_1`（CLM2 ABI 9）与 `manual_2`（ABI 8）都能定位历史 lane，
+旧标记 `IDP1` 不再中断内段遍历，`-Verify` 21 段全通过；`-Deep` 单档耗时约 1.4 s。
+
+未覆盖：本轮只加诊断，未改动任何持久化内容。瘦身方案（去历史 lane、ECP2 只存一份、ECP1 停写、
+缩略图降采样）要同步改 CLM2 ABI、`state_hash` 与 golden 用例，并跑 60 天/2 年/10 年一致性回归，尚未实施。
+
+## 早期时代夜间火光（2026-11-20）
+
+玩家反馈石器、农耕聚落入夜后几乎全黑，要求加强早期时代的夜间照明。根因是夜灯只有窗光一条通道：
+`building_compound.gdshader` 的窗格从 `era >= 1.5`（王国时代）才开，早期聚落只剩环境光与月光；
+石圈广场的篝火核心半径 0.18 世界单位、亮度上限 1.0，实测被同格地物 decal 以 0.4 alpha 盖住，
+夜间只剩一个几乎看不见的暗点。
+
+改法全部在 shader，不改实例 buffer、调度、存档和物理：
+
+- Body 新增 `BUILDING_HEARTH_*` 一组常量。早期无窗民居每面墙给一个暖色门洞，门洞缩到亚像素以下
+  时退化成整条基座暖带；墙面按 `wall_t/he` 高度加火光反弹，屋面加一层基础火光加檐口更强的暖带，
+  不再出现纯黑体块。约 78% 的民居取 `hearth_lit`，其余只留半档，避免整村均匀发亮像雾；
+  `BF_MOUND`、`BM_HAY`（草堆、坟丘）照旧不发光。
+- 早期地面光晕从 `level 0.22 / falloff 2.6` 改为 `BUILDING_EARLY_HALO_LEVEL 0.5 / FALLOFF 2.4`
+  （大衰减系数让它更紧，不是一团雾），并按 `hearth_lit` 抖动。
+- 广场篝火（`building_ground_decal.gdshader`）改成亮核加铺装光池，核心半径 0.18→0.34、加
+  `exp(-r*1.9)*0.65` 光池与 7 Hz 闪烁，白天保留 0.30 底值（火堆白天可见）。
+- 远景字形（`building_macro.gdshader`）给早期时代补门洞暖点与地面暖核，避免远视角早期聚落变黑块。
+- 火光随时代按 `BUILDING_EARLY_FADE_START 1.5 / END 5.0` 淡出，启蒙时代以后回到原来的窗光；
+  窗光同时对王国、古典两代加 `×(1+0.35*early)` 的增益。
+
+验证：`tests/world/terrain_gi_test.gd` PASS（body/decal/macro 的 legacy 与 tiled 变体都能编译）。
+四套建筑视觉测试全过（layer 31 项、catalog、intel 21 项、native bridge 34 项）。用生产建筑层
+（`BuildingVisualLayer` + 原生规划器）在同一镜头拍改前/改后：早期石圈篝火照亮、民居屋顶由
+近黑变成暖褐并带一圈收紧的光晕，王国与古典屋顶同样由黑转暖，远景 zoom 9 从“几乎全黑”变成
+可读的暖色聚落。白天对照帧只有广场火点与风车叶片（`TIME` 驱动）有差异，屋顶/墙面补光只在
+`night > 0` 生效，现代（era 10）夜景不变。
+
+未覆盖：没有在真实地形、迷雾和移动端上目检（探针地面是替身色块）；远景 macro 的暖点没有截图，
+探针缺少 `map_index_atlas` 等世界纹理，macro 层画不出聚落，只有编译与代码审查。
+截图在 `tmp/building_night_tune/`（`beforeT_*` / `v2_*`）。
+
+## 物种出现保底（2026-11-20）
+
+小地图或单大陆世界里，部分 `bio.*` 物种会在整局里一格都不出现：生态包络（气候/湿度/海拔/植被/地貌
+标志/载体资源）与地图没有交集，或包络只有几格、被先播的同生态行会占满。辨识科技要求目击物种，
+而 `tech.reed_harvesting`（只认 `SIGNAL(bio.reed)`）又是 `野生稻采集 / 湿地稻作 / 稻田水利 / 精准灌溉`
+的硬前置，一旦缺种整条水稻线断掉。实测玩家可选最小尺寸 10×8（80 格、13 格陆地）：20 个物种里
+8 个 `occupied=0`，其中 5 个包络为空、3 个被行会占满。
+
+现在播种结束后走保底阶梯（`scripts/geography/map_generation/bio_occupancy_guarantee.gd`，融合 boot
+pass 与逐段 bootstrap 两条路径都接）：对 `occupied=0` 的物种逐级放宽**只对该物种生效**的播种输入
+（去植被掩码 → 去地貌标志 → 去载体资源 → 气候放宽到 persist 容差内 → 气候全放开）并重发
+`run_bio_seed_pass`；放宽物种的 `fill_keep≤0.08`、`max_cost≤3`，只留小片残存种群。小图行会占满格位时
+最后一步 `manual_relict` 按“离物种气候中心最近、未达每格 3 物种上限”的陆地格补一格（只破行会互斥，
+不破格位上限）。残存格可能落在目录气候带外，`_bio_occupancy_base_knobs()` 建缓存时用
+`realize_bounds()` 把这些物种的气候边界放宽到覆盖实际占领格，保底成功后作废 knobs 缓存并重置原生
+configure，使生成当次与读档后的日推进使用同一份地图本地边界（纯函数于占领位集+气候数组，重算一致）。
+
+验证：`tests/world/bio_coverage_guarantee_test.gd` 12 项全过。10×8：9 个物种被放宽
+（`drop_vegetation` 4、`widen_climate` 2、`map_extremes` 3）、`unplaceable=[]`，每个物种至少一格，
+残存格连续 3 日 persist 后仍在，同 seed 两次生成占领位集逐字节一致；14×10：放宽 4 种、无缺席。
+默认 60×40 世界保底完全不触发——日志没有 `guarantee` 行，20 个物种的
+envelope/hearth/occupied 逐项与改动前一致，说明健康地图的分布没有被改写。
+`tests/world/bio_guarantee_ladder_test.gd` 13 项（只放宽失败物种、原 knobs 不被污染、阶梯用尽报
+`unplaceable`）；`tests/world/bio_occupancy_pass_test.gd` 86 项不变全过。
+
+未覆盖：长读档循环下的 365 日残存稳定性（只验证 3 日）；气候与目录完全不相容的极端地图
+（例如全域无河湖湿地的干旱图上的芦苇）仍可能进入 `unplaceable` 日志，这属于地图本身不支持该物种。
+
+## 开拓筹备的派遣储备额度与逐日部分成交（2026-11-20）
+
+筹备期国库采购受「派遣储备」日额度约束（`colonization_daily`，周期开端冻结、按日补充、上限一个周期）。
+旧实现把一条物资缺口当成一次整行交易：金额超过剩余额度就记 `colonization_procurement_budget_exhausted`
+终态拒绝，而出发闸门要求每一行都买齐，于是一条缺口的价钱一旦超过本周期额度上限，队伍就带着
+「进度 100% / 开工包已齐套」永久停在筹备中。周期中途建立的队伍还会因为冻结时没有需求而整周期额度为 0，
+每次采购都判超额；面板把这个原因码原样显示给玩家，并保留昨天的拒单记录。
+
+现在按「当天剩余额度 ÷ 源地零售价」把该行裁成部分成交，剩余缺口次日重规划继续补买；当天已经买到货时
+后续行的等待不再写拒单；周期中途建队与第一次采购时用 `ensure_epoch_colonization_budget` 补发本周期通道
+预算与当天额度；同一行真正成交即清除旧拒单。`kit_blocker` 在两类总量达标、但逐项仍有差额时报 `TOPUP`，
+快照新增 `kit_topup_missing_units`；面板补上该原因码文案与 TOPUP 说明，未知原因码不再裸露为英文标识。
+
+专项回归 `tests/country/colonization_procurement_budget_test.gd` 先复现：国库 4000、0.1%/日 份额下
+40 天内 39 次整行拒单、托管 0 增长、队伍从未出发。修复后同一夹具第 3 天开始部分成交，第 17 天按额度攒够
+后出发，期间拒单 0 次；周期中途建立（强制 3 日周期）的队伍本周期额度从 0 恢复为 800000（国库 4000 ×
+2%/日，科技份额 0），并从源地买货。两组夹具的人口、货币、货品守恒差额均为 0。
+`family_colonization_runtime_test`、`colonization_planner_context_test`、`procurement_share_contract_test`
+三项回归通过；Windows 调试与发布扩展构建通过。`colonization_demand_runtime_test` 仍因
+`EconomyCatalog._carrying_need_goods` 缺失解析失败，`colonization_workbench_ui_test` 的三项摘要高度断言
+在改动前后的同一份扩展上都失败，两者均为既有问题、与本改动无关。
+
 ## 城市独立后日结算中断（2026-11-20）
 
 原日志中第 7102 日的国家阶段已经提交，经济在冻结输入时拒绝少一行的研究信号位图，全图提交停在第 7101 日。
@@ -1883,6 +2042,29 @@ PlayerController 的年度报告、叙事、时代奖励、家族创立和理念
 中的 GM 面板；关闭后恢复切换前的可见性。
 GM 总览的时钟诊断还显示 `last_pause_source`、`last_pause_day` 和
 `authority_fault_hold`，用于区分 UI 自动暂停与运行时故障保护。
+2026-11-20：事件弹窗改为「窗口开着就静置」。玩家反馈事件极端频繁、且每次都强行打断正在读的
+窗口。根因两处：① `GameUIManager.show_narrative_event_offer` 在展示前直接
+`close_country_panel()`，科技 / 经济(税收) / 军事 / 政治 / 外交卷宗被事件关掉；② 弹窗节奏按
+游戏日计（全局 60 日 + 每格每年两次），x5 速度下 60 日只有约 12 秒。改法：窗口开着时不展示、
+不改模态锁，由 `NarrativeEventFlow` 自己 `pause(true)` 并播一次提示音（复用已烘焙的
+`ideology_reveal`，未新增 FMOD 事件），暂停快照在静置那一刻登记一次，玩家中途自己按继续不会被
+按回去；窗口关闭路径（国家卷宗 / 营造 / 家族档案 / 军务档案 / 派遣 / 议和 / 史册 / GM / 时代
+纸笺）回调 `GameUIManager.notify_workspace_closed()`，内部延后一帧重查，流程另有 0.2 秒兜底
+重试。额度收紧为每格每游戏年一次，脉冲放行 25%→12.5%、AI 预热 4%→2%、事实 20%→10%。
+同日再次收紧（玩家反馈仍太密）：脉冲 12.5%→6.25%，AI 预热 2%→1%、事实 10%→5%、局势上限
+40%→20%。按脉冲模型估算两次弹窗间隔从约 220 天拉到约 380 天（≈ 每游戏年一次；x1 约 6 分钟、
+x5 约 76 秒、x10 约 38 秒）；实际略高频于估算，因为事实通道与定时后续不走脉冲骰子。
+`min_popup_gap_days`(60) 与 `pulse_interval_days`(20) 未动，本次只改概率，便于单独回退。
+验证：新增 `tests/game/narrative_window_deferral_test.gd`（30 项）与
+`tests/ui/narrative_workspace_gate_test.gd`（5 项，须不带 `--quit` 运行）；
+`narrative_popup_suppression_test.gd`（24 项）、`narrative_event_runtime_test.gd`（108 项）、
+`narrative_event_people_test.gd`（38 项）、`narrative_family_bridge_test.gd`（28 项）、
+`narrative_war_bridge_test.gd`（21 项）、`narrative_effect_radius_test.gd`（47 项）通过。
+`narrative_event_waterworks_chain_test.gd` 仍有 2 项既有失败：`narrative.levy.labor_satisfaction`
+的卡面百分比断言（该 stat 是点数不是百分比）与测试内 `_stat_key_for` 映射表未覆盖该键，属内容/
+用例漂移，本次未动。`player_country_ui_smoke_test.gd` 已按静置语义更新（待阅事件先决定掉，并断言
+卷宗没被挤掉），但它在本机无头环境世界启动后即 ACCESS_VIOLATION（HEAD 同样崩），本机无法用它取证。
+
 2026-11-19：恢复玩家叛乱事件链的会话接线。回归测试先复现了旧档已有第 4 阶动员却未投递事件，
 再验证首次提交补发、弹窗暂停、玩家选择、升阶续接及待独立队列序列化。叛乱服务 15 项、
 叙事运行时 108 项、弹窗屏蔽 24 项均通过，正式 PKSV 整档往返 0 失败。
@@ -2822,3 +3004,125 @@ lane 形状不同（空 vector vs `{0,0}` 被 `operator!=` 判不等）、或 Mo
 逐格 hover 打满」「自动生成的聚落名在纸签上的折行表现」只有推理没有实测；截图探针用的是
 构造数据。`tests/ui/ui_scene_structure_test.gd` 有 10 条失败来自 `touch_number_pad.gd`
 （已提交文件未加入该测试的 `SCRIPT_EXCLUSIONS`），与本次改动无关，未顺带修改。
+
+## 2026-11-20 水域通行改为「一档一个时代」
+
+**现状**：四档水级各自绑一个科技，军队与民事（贸易/开拓/殖民）共用同一张等级表。
+
+| 水级 | 地形 | 科技 | 时代 |
+| --- | --- | --- | --- |
+| 湖泊 | `LAKE` | `tech.river_transport` 河运 | 农耕（原王国） |
+| 浅海 | `COAST` | `tech.military.coastal_transport` 近海运兵 | 王国（原帝国） |
+| 远海 | `OCEAN` | `tech.celestial_navigation` 天文导航 | 帝国（原探索） |
+| 深海 | `DEEP_OCEAN` | `tech.oceanic_ship_design` 远洋船舶设计 | 探索（不变） |
+
+`tech.oceanic_navigation` 不再单独发放航道，只保留远洋船舶、远洋造船厂与「海上作业」+48%。
+天文导航的研究路线证据由「地图学」（探索）换成「自然哲学」（帝国），`knowledge_basis`
+替代组同步改；帆船渔场继续由「河运 + 渔舟 + 沿岸捕鱼 + 手工锯木」的应用交汇解锁，
+建筑与鱼货的科技标签仍挂 `tech.river_transport`（建筑只允许一个科技标签，且
+`technology_unlock_closure_audit_test` 要求鱼货的替代科技落在水产养殖的硬前置闭包内）。
+
+**代码**：`economy_runtime_catalog.cpp` 的 `_water_tech_shallow` / `_water_tech_far`
+改指向近海运兵与天文导航；epoch capture 复用同一组成员，无需另改。DLL basename 升为
+`dots_ext_water_tiers_v1`（debug + release），`dots_ext.gdextension` 已改指向。
+
+**验证（本轮实跑）**：
+
+- `technology_network_v5_contract_test`：433 节点 / 0 失败。
+- `technology_topology_audit_test`：PASS（433 节点 / 15 分支边）。
+- `technology_application_intersection_schema_test`：PASS。
+- `technology_water_corridor_card_test`：19 checks / 0 failures。
+- `technology_application_ui_test`、`era_advancement_service_test`：通过（135 checks / 0 失败）。
+- `tests/world/water_transport_runtime_test.gd`：0 failures（浅海=近海运兵、远海=天文导航）。
+- `tests/world/water_trade_real_map_test.gd`：0 failures（真实地图水运订单守恒）。
+- `military_native_binding_test`：功能性用例全部 ok；100k/2048/4096 bench p95 = 5.71 ms，
+  仍高于 2 ms 目标，属既有性能缺口。
+
+**既有未通过（与本次改动无关，未顺手修改）**：
+`technology_unlock_closure_audit_test` 5 条（药草种植园资源）；`technology_industry_chain_balance_test`
+35 条（纸/铁路产线升级收益与同代重复建筑）。
+
+**军队水级门禁**：同一天补齐，军队不再按「连续水格 ≤ 3」判定，详见下一节。存档：科技表与
+军事目录 hash 变化，旧 PKCN/PKMI 以 `catalog_hash_mismatch` 拒绝，按新开局处理。
+
+## 2026-11-20 军队水域通行改为按水级判定（删除连续水格 ≤ 3）
+
+**规则**：水格等级来自 landform（0 深海 / 1 远海 / 2 浅海 / 3 湖），与贸易航道共用
+`gdext/src/water_tier.h`；国家可进入「等级 ≤ 已解锁最高档」的水格，高档覆盖低档。
+科技对应：河运（农耕）= 湖、近海运兵（王国）= 浅海、天文导航（帝国）= 远海、
+远洋船舶设计（探索）= 深海。远洋运兵（探索）不再解除任何距离限制，只剩海运运力 +25%。
+距离不再参与判定：6 格宽的浅海与 1 格宽的浅海一样可渡（selftest 用 6 格横渡反证）。
+
+**代码**：
+- 新增 `gdext/src/water_tier.h`（四档 + landform 映射），`economy_runtime_water.cpp` 的
+  `classify_water_class` 改为调用同一函数，两个域不再各写一份映射。
+- `MilitaryCatalog` 的 `coastal_transport_bit / ocean_transport_bit` 换成
+  `water_lake_bit / water_shallow_bit / water_far_bit / water_deep_bit`；`military_catalog.json`
+  的 `unlock_tech_ids` 变为「河运 / 近海运兵 / 天文导航 / 远洋船舶设计」四槽，
+  `military_catalog_compiler.gd` 的 `_compile_naval_unlocks` 改名 `_compile_water_unlocks` 并校验四槽齐全。
+- `military_core_path.cpp`：删除 `kSeaRunMax / kSeaRunStates` 与 `(cell, water_run)` 状态维度，
+  `find_path` / `find_exploration_path` / `preview_path` 全部回到每格一个状态；`passable_for`
+  改走 `water_tier_from_landform` + 解锁档位比较。海格 1.5× 步成本、1.5 天/格、强制 EMBARKED、
+  0.2%/天损耗都不变。
+- DLL basename 仍是 `dots_ext_water_tiers_v1`，debug + release 已重编并重新指向。
+
+**验证（本轮实跑）**：
+- `tests/military/military_native_binding_test.gd`：naval 用例全部 ok —— 无科技时浅海与单格湖都被拒；
+  河运过湖不过浅海；近海运兵过 6 格浅海（反证距离不再限制）不过远海；天文导航过远海不过深海；
+  远洋船舶设计过深海且嵌套回湖/浅海/远海；预览天数仍为 3×1.5+1=6；EMBARKED / 上岸恢复姿态 /
+  0.2%/天损耗全部保持。100k bench p95 = 4.98 ms，仍高于 2 ms 目标（既有性能缺口，未变差）。
+- `tests/world/water_transport_runtime_test.gd`：0 failures（经济侧航道未回归）。
+- `godot --check-only` 逐个检查本轮改过的 GDScript：0 parse error。
+
+**未覆盖**：跑验证时工作树里另一条线（weather / physical_circulation / map_baker）正在改，
+`game_save_coordinator.gd` 等依赖脚本编译失败，导致需要整图启动的 GDScript 测试（军事目录
+`compile()` 全链路、军事烟雾测试）本轮无法运行；上述 GDScript 结论仅来自 `--check-only`。
+待那条线落地后需补跑：军事目录编译校验 + `military_runtime_smoke_test`（含既有 8 条 fixture 失败基线）。
+
+## 天气降水频率治理（2026-11-20，W1–W9）
+
+**问题**：玩家反馈「降水极其频繁」。实存档解码（CLM2 lane）显示陆地 55% 的格子同时在下雨，
+但下雨格只比平均湿 1.8 倍（地球量级约 10）—— 是「到处都是毛毛雨」，不是雨太多。
+
+**根因（按贡献排序，均已实测）**：
+
+1. `convergence` 是半波整流均值，均匀风场（零辐散）读 **0.3333**，却被当 0–1 物理辐合乘 1.00/1.95；
+2. RAIN 判定是单阈值 `precip > 0.040`，**无条件**通过 —— 下一点就报雨；
+3. STORM/MONSOON 判据比 RAIN 松，出现「RAIN 2.6% / MONSOON 13.8%」的排序倒挂；
+4. native daily 从未填 `wx->temp_anomaly` ⇒ 分类器距平恒 0 ⇒ 旱灾/热浪结构性不可达；
+5. `field_precip_spatial_smooth` 从未由 GDScript 下发，生产吃 C++ 默认 0.30。
+
+**改动**（C++ 权威 + GDScript 镜像同步）：convergence 改有符号净流入（四份镜像、开关已退役）、
+6 个消费者阈值按新分位重标（p50 0.376→0.016 / p90 0.537→0.458 / p95 0.612→0.636）、
+RAIN 改四项合取门（`weather_precip_classify_gate_land/water = 0.095/0.076`，`mp_cloud_gate` 0.22/0.12→0.18/0.10）、
+STORM/MONSOON 补过 `meaningful_precip`、补 `wx->temp_anomaly` 与独立的 `weather_classify_anomaly_cap=0.12`、
+空间平滑纳入 profile。详见 `docs/architecture/feature-guides.md` 的「天气场分类与降水频率」。
+
+**效果（60×40 / seed 20260727 / net 口径 / 365 日均衡）**：
+
+| 指标 | 玩家存档基线 | 现在（365 日均衡） |
+|---|---|---|
+| 陆地降水格 | 55.0% | **17.94%**（季节振幅 15.3–23.4%） |
+| 全图降水格 | 35.6% | 11.88% |
+| 陆地集中度 | 1.817 | **5.576** |
+| 高压区(ψ<−0.05)降水率 | 34.5% | 15.08% |
+| `moisture == 1.0` | 33.9% | 7.2% |
+| `land_moist_med` vs 生成期锚点 0.410 | 0.981（2.39×） | 0.452（**1.10×**） |
+| DROUGHT | 0 | 1.4% |
+
+净水收支随窗口收敛：day 0–60 漂移 11.07%/天 → day 180–365 **0.134%/天**（约等于闭合）。
+
+**验证**：`weather_convergence_metric_test` 3/3、`weather_field_solver_test` 26/26、
+`runtime_climate_parity_test` 175/175、`runtime_climate_stage_order_contract_test` 582/582、
+`native_daily_weather_split_graph_test` 25/25、`native_weather_daily_readiness_test` 12/12、
+`golden_day_hash_test` 203/203；120×80 × 12 日 19 s。退役 legacy 后 probe 37 个数值字段
+与退役前**逐位一致**。
+
+**遗留**：
+
+- HEATWAVE 仍为 0（其窗口 `temp_anom∈[0.04,0.05)` 且 `precip∈[0.006,0.012)` 被 DROUGHT 遮蔽），
+  需在「降 temp_anom 门到 0.03」与「调整与 DROUGHT 的排序/区分条件」之间二选一，改动必须带 30 日实测。
+- `climate_parity_probe.gd` 仍坏（legacy 生成路径），parity 目前由 `runtime_climate_parity_test` 覆盖。
+- `PK_CLIMATE_SYNOPTIC_OFF` 是同类长期 A/B 开关，本批未动，已记入「运行时开关存量清单」待后续处理。
+- 供给侧未改（`weather_land_evapotranspiration_gain` 保持 1.6）。A@1.30 的 365 日均衡是陆地 14.61%，
+  但会把 `land_moist_med` 压到 0.387（低于生成期锚点 0.410），故未采用。
