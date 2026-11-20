@@ -89,20 +89,6 @@ std::vector<AnnualDevelopmentReport> NativeSimulationHost::annual_history(uint32
     std::lock_guard<std::mutex> lock(_annual_mutex);std::vector<AnnualDevelopmentReport> result;const auto &rows=_annual_ledger.reports();limit=std::min<uint32_t>(limit,64);
     for(size_t i=offset;i<rows.size()&&result.size()<limit;++i)result.push_back(rows[rows.size()-1-i]);return result;
 }
-const char *NativeSimulationHost::player_confirmation_block() const {
-    const auto era_reward = latest_era_reward();
-    if (era_reward && era_reward->needs_choice) return "era_reward_choice_required";
-    if (const char *block = narrative_input_block()) return block;
-    if (!annual_development_enabled() || !annual_worker_managed()) return nullptr;
-    std::lock_guard<std::mutex> lock(_annual_mutex);
-    const auto report = _annual_ledger.ready_report_id();
-    // The old year closes one day before the reward and report are due.
-    // A zero reward can already be settled at close, so check the date too.
-    if (report != 0 && _annual_ledger.last_day() / _annual_ledger.days_per_year() >=
-            static_cast<int64_t>(report)) return "annual_report_confirmation_required";
-    return nullptr;
-}
-
 bool NativeSimulationHost::mark_annual_presented(uint64_t id) {
     if (!annual_worker_managed()) {
         std::lock_guard<std::mutex> lock(_annual_mutex);

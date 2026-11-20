@@ -308,7 +308,7 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 		"simulation.paused":
 			return {"ok": true, "enabled": host._world_clock.paused}
 		"ui.hide_all_except_gm":
-			return {"ok": true, "enabled": host._gm_hide_all_except_gm}
+			return {"ok": true, "enabled": bool(host.player_confirmation_view().get("hide_popups", false))}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": host._gm_click_claim_territory_enabled}
 		"system.autosave":
@@ -428,9 +428,10 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 	match toggle_id:
 		"ui.hide_all_except_gm":
-			host._gm_hide_all_except_gm = enabled
-			host.gm_toggle_changed.emit(toggle_id, enabled)
-			return host._gm_ok("界面已%s（GM 保留）。" % ("关闭" if enabled else "恢复"), false, -1)
+			var receipt: Dictionary = host.submit_player_confirmation("popup_policy", int(enabled))
+			if not bool(receipt.get("ok", false)):
+				return host._gm_error(String(receipt.get("code", "")), "弹窗设置未受理。")
+			return host._gm_ok("弹窗设置已排队。", true, int(receipt.effective_day))
 		"simulation.paused":
 			if host._world_clock == null:
 				return host._gm_error("clock_unavailable", "时钟尚未就绪。")

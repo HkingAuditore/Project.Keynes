@@ -528,7 +528,7 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 				"facade": ideology_facade,
 				"snapshot": native_ideology,
 				"catalog": ideology_catalog,
-			}),
+			}, country_handle),
 		}
 	return {"ideology": _ideology_model(country_handle)}
 
@@ -1198,12 +1198,13 @@ func _ideology_model(country_handle: int) -> Dictionary:
 			catalog.get("reason", "理念数据暂不可用。"))))}
 	return _decorate_ideology({
 		"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog,
-	})
+	}, country_handle)
 
-func _decorate_ideology(ideology: Dictionary) -> Dictionary:
-	var presentation := present_ideology(
-		ideology.get("snapshot", {}), ideology.get("catalog", {}))
-	ideology["presentation"] = presentation
+func _decorate_ideology(ideology: Dictionary, country_handle: int) -> Dictionary:
+	var snapshot: Dictionary = ideology.snapshot.duplicate()
+	snapshot["offer_eligibility"] = ideology.facade.preview_offer_eligibility(country_handle)
+	ideology["snapshot"] = snapshot
+	ideology["presentation"] = present_ideology(snapshot, ideology.catalog)
 	return ideology
 
 static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dictionary:

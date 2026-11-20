@@ -640,8 +640,12 @@ godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy
     int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
 godot::Dictionary submit_family_colonization_cancel(NativeEconomyRuntime &economy,
     int64_t country, int64_t expedition, int64_t day, int64_t sequence);
+int32_t player_family_founding_offer(const NativeEconomyRuntime &economy);
+godot::Dictionary family_founding_offer(const NativeEconomyRuntime &economy, int32_t offset);
 godot::Dictionary submit_family_founding_choice(NativeEconomyRuntime &economy,
-    int64_t offer, int64_t generation, int32_t choice, int64_t day, int64_t sequence);
+    int64_t offer, int64_t generation, int32_t choice, int64_t day, int64_t sequence,
+    bool check_now);
+godot::Array take_family_founding_receipts(NativeEconomyRuntime &economy);
 godot::Dictionary queue_canal_construction(NativeEconomyRuntime &economy,
     int64_t country, int64_t quote, int64_t day, int64_t sequence);
 godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country);

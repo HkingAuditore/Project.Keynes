@@ -690,7 +690,17 @@ NativeSimulationHost::ideology_pod_snapshot() const {
 bool NativeSimulationHost::encode_ideology_pod_save(
         std::vector<uint8_t> &bytes, std::string &error) const {
     if (!_ideology_pod_configured) { error = "ideology_pod_not_configured"; return false; }
-    _ideology_pod_authority.serialize(bytes);
+    {
+        std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+        if (_ideology_commands.empty()) {
+            _ideology_pod_authority.serialize(bytes);
+        } else {
+            auto candidate = _ideology_pod_authority;
+            for (const auto &command : _ideology_commands)
+                if (!candidate.queue_command(command, error)) return false;
+            candidate.serialize(bytes);
+        }
+    }
     if (bytes.empty()) { error = "ideology_pod_save_encode_failed"; return false; }
     return true;
 }
@@ -757,6 +767,7 @@ NativeSimulationHost::execute_ideology_worker_stage(
     assert(!opinion_view.data || opinion_view.observe(_opinion_view_version));
     auto opinion = opinion_view.data;
     if (opinion == nullptr) {
+        prepare_player_ideology_responses(day, true);
         error = "ideology_opinion_snapshot_missing";
         return Outcome::AWAITING_OPINION;
     }

@@ -535,10 +535,11 @@ Dictionary DCWorldExt::get_era_reward_offer() {
 
 Dictionary DCWorldExt::choose_era_reward(int64_t offer_generation,
                                         int choice_index,
-                                        int64_t effective_day) {
+                                        int64_t effective_day, int64_t sequence) {
     if (_effect_runtime == nullptr) return unavailable();
     if (_runtime_host != nullptr && _runtime_host->effect_adapter_owned()) {
         auto request = std::make_shared<RuntimeEraRewardRequest>();
+        request->advancement_sequence = sequence;
         request->offer_generation = offer_generation;
         request->choice = choice_index;
         request->effective_day = effective_day;

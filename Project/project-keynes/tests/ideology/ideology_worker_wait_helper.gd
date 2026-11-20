@@ -41,26 +41,24 @@ static func wait_until(
 	return bool(predicate.call())
 
 
-## One lockstep day for a worker test, driven the way the game drives it:
-## submit `day` through the host, run the worker clock until the worker commits
-## the frame that day publishes (day - 1, see publish_environment_through) and
-## the clock would let the next day start, then pause it again. While waiting,
-## the host runs its own per-frame service and the clock's continuation pulse,
-## so peers, inputs, snapshots and day barriers are handled as in a running
-## game. Returns {ok, day, committed_day, ideology_day}; on failure `ok` is
-## false and `code` plus the worker's own diagnosis say what it waited for.
+## Admit exactly one simulation day and wait for its commit before reading
+## the opinions and other results used by the next test step.
 static func drive_worker_day(host: WorldRuntimeHost, clock: WorldClock,
 		ext: Object, day: int, speed: float,
 		hang_guard_ms: int = 10000) -> Dictionary:
 	clock.current_day = float(day)
-	host._admit_runtime_calendar(day + 1)
 	host.finish_daily_tick(0.0, {})
 	# One host frame first, so the inputs published below carry what the day
 	# just produced rather than the previous revision.
 	host._process(0.0)
 	ext.publish_ideology_worker_inputs()
 	ext.set_runtime_clock(false, speed)
-	var result := wait_committed(host, ext, maxi(0, day - 1), hang_guard_ms)
+	var admitted := host._admit_runtime_calendar(day + 1)
+	var result := wait_committed(host, ext, day, hang_guard_ms)
+	if admitted != day or int(result["committed_day"]) != day:
+		result["ok"] = false
+		result["code"] = "unexpected_worker_day"
+		result["admitted"] = admitted
 	if bool(result.get("ok", false)):
 		_wait_day_barrier(host, clock, ext, day, result, hang_guard_ms)
 	ext.set_runtime_clock(true, speed)

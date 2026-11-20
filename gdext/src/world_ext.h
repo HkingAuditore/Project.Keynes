@@ -2296,7 +2296,7 @@ public:
     godot::Dictionary get_era_advancement_view() const;
     godot::Dictionary choose_era_reward(int64_t offer_generation,
                                         int choice_index,
-                                        int64_t effective_day);
+                                        int64_t effective_day, int64_t sequence = 0);
 
     // ---- bindings: modifier ----
     // Shared data-oriented Modifier runtime. Four domain stores are isolated;
@@ -2772,6 +2772,8 @@ public:
     godot::Dictionary configure_vision_research(const godot::Dictionary &config);
     godot::Dictionary get_runtime_vision_frame(int64_t after_revision) const;
     godot::Dictionary set_runtime_fog_enabled(bool enabled);
+    godot::Dictionary submit_player_confirmation(const godot::String &action, int64_t value,
+                                                 int64_t effective_day);
     godot::Dictionary run_vision_research_pass(const godot::Dictionary &knobs);
     godot::Dictionary filter_bio_research_observations(
         const godot::PackedInt32Array &cells,

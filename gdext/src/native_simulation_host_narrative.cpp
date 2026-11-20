@@ -333,6 +333,8 @@ bool NativeSimulationHost::service_narrative_requests() {
                 case Kind::CHOOSE:
                     if (!bool(narrative.queue_choice(request->day, request->args).get("ok", false)))
                         set_fault("narrative_admitted_choice_invalid");
+                    else
+                        admit_player_response_through(request->day);
                     break;
                 case Kind::PAUSE_POLICY:
                     narrative.set_pause_policy(request->day,

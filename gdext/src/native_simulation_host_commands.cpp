@@ -528,6 +528,8 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         return out;
     }
     service_economy_boundary_requests();
+    service_era_reward_requests();
+    service_player_confirmations();
     // 与 worker 日事务同一把边界锁。内联模式下执行者就是调用线程，这把锁在
     // 这里只是"一天一个事务"的互斥，不会再有人跨线程等它。
     std::unique_lock<std::mutex> boundary_lock(_economy_authority_boundary_mutex);
@@ -846,6 +848,7 @@ void NativeSimulationHost::publish_day(
         std::atomic_store(&_published_narrative, published->day_tail->narrative);
     if (published->day_tail && published->day_tail->era_advancement)
         std::atomic_store(&_published_era_advancement, published->day_tail->era_advancement);
+    finish_player_confirmation_day(day);
     {
         std::lock_guard<std::mutex> lock(_resource_display_mutex);
         merge_resource_display_patch();

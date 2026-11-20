@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 669,
+  "count": 670,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -647,6 +647,7 @@
     "submit_ideology_worker_ack",
     "submit_military_commands",
     "submit_modifier_commands",
+    "submit_player_confirmation",
     "submit_runtime_command",
     "submit_trigger_events",
     "submit_trigger_snapshots",

@@ -107,6 +107,7 @@
         {{24, 6}, "family.split_parents", EconomyFieldEncoding::CanonicalRecord, 1}};
     EconomyTrackedScalar<int64_t> _next_family_founding_offer_id{_metadata_changes,
         {{15, 31}, "family.next_founding_offer_id", EconomyFieldEncoding::I64, 8}, 1};
+    godot::Array _family_founding_receipts;
     std::vector<int32_t> _family_founding_offer_by_cell;
     bool _family_founding_offer_index_dirty = true;
     EconomyKeyedVariableRecords<FamilyModifierBinding> _family_modifier_bindings{{{24, 2}, "family_variable.family_modifier_bindings", EconomyFieldEncoding::CanonicalRecord, 1}};

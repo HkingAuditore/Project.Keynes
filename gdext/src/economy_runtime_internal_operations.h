@@ -1476,6 +1476,9 @@ private:
                                        int32_t choice_index);
     bool family_founding_player_choice(int32_t cell) const;
     int32_t family_founding_auto_choice(const FamilyFoundingOffer &offer) const;
+    const char *family_founding_choice_error(size_t offer_row,
+        int64_t generation, int32_t choice) const;
+    void publish_family_founding_choice_result(int64_t sequence, int64_t day, const char *reason);
     void apply_due_family_founding_choices();
     void rebuild_family_founding_offer_index();
     int32_t family_founding_offer_for_cell(int32_t cell);

@@ -1,9 +1,13 @@
 #pragma once
 
+#include <memory>
+
 #include "country_core.h"
 #include "runtime_pod_protocol.h"
 
 namespace pk {
+
+struct RuntimePlayerConfirmationView;
 
 struct RuntimeControlState {
     RuntimeWorkerState state = RuntimeWorkerState::STOPPED;
@@ -13,6 +17,8 @@ struct RuntimeControlState {
     uint32_t authoritative_domain_mask = 0;
     uint32_t requested_authority_mask = 0;
     int64_t committed_day = -1;
+    int64_t player_advance_through = -1;
+    std::shared_ptr<const RuntimePlayerConfirmationView> player_confirmation;
 };
 
 struct RuntimeInlineDayOutcome {

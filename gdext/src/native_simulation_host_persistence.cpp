@@ -224,7 +224,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT |
                                  RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT |
                                  RUNTIME_SAVE_SECTION_MILITARY_TERRAIN |
-                                 RUNTIME_SAVE_SECTION_SEASON_HISTORY)) != 0) {
+                                 RUNTIME_SAVE_SECTION_SEASON_HISTORY |
+                                 RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -900,7 +901,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     // payload is already covered by the whole bundle checksum.
     for (auto [section, bytes_out] : {
             std::make_pair(RUNTIME_SAVE_SECTION_MILITARY_TERRAIN, &parsed.military_terrain_bytes),
-            std::make_pair(RUNTIME_SAVE_SECTION_SEASON_HISTORY, &parsed.season_history_bytes)}) {
+            std::make_pair(RUNTIME_SAVE_SECTION_SEASON_HISTORY, &parsed.season_history_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION, &parsed.player_confirmation_bytes)}) {
         if ((parsed.section_mask & section) == 0u) continue;
         uint32_t length = 0;
         if (payload_end - cursor < 4u || !read_u32(cursor, length) ||
@@ -1266,6 +1268,9 @@ void NativeSimulationHost::build_save_bundle(
         bundle->season_history_bytes = _world_environment->capture_season_history(bundle->committed_day);
         if (!bundle->season_history_bytes.empty())
             bundle->section_mask |= RUNTIME_SAVE_SECTION_SEASON_HISTORY;
+        bundle->player_confirmation_bytes = encode_player_confirmation(bundle->committed_day);
+        if (!bundle->player_confirmation_bytes.empty())
+            bundle->section_mask |= RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION;
     }
 
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
@@ -1284,7 +1289,7 @@ void NativeSimulationHost::build_save_bundle(
             &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
             &bundle->ideology_bytes, &bundle->economy_pod_bytes,
             &bundle->economy_ecp2_bytes, &bundle->effect_transport_bytes,
-            &bundle->military_terrain_bytes, &bundle->season_history_bytes}) {
+            &bundle->military_terrain_bytes, &bundle->season_history_bytes, &bundle->player_confirmation_bytes}) {
         const size_t limit = section == &bundle->economy_ecp2_bytes
             ? std::numeric_limits<uint32_t>::max() : 64u * 1024u * 1024u;
         if (section->size() > limit) {
@@ -1545,7 +1550,7 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(ecp2_checksum);
     }
 
-    for (const auto *section : {&bundle->military_terrain_bytes, &bundle->season_history_bytes}) {
+    for (const auto *section : {&bundle->military_terrain_bytes, &bundle->season_history_bytes, &bundle->player_confirmation_bytes}) {
         if (section->empty()) continue;
         append_u32_le(static_cast<uint32_t>(section->size()));
         append_bytes(section->data(), section->size());

@@ -868,7 +868,7 @@ func set_player_controller(host, controller) -> void:
 	var bindings = {
 		"command_settled": "_on_player_command_settled",
 		"ideology_offer_ready": "_on_ideology_offer_ready",
-		"ideology_draw_state_changed": "_on_ideology_draw_state_changed",
+		"command_completed": "_on_player_command_completed",
 	}
 	if host._player_controller != null:
 		for signal_name in bindings:
@@ -884,8 +884,6 @@ func set_player_controller(host, controller) -> void:
 		if host._player_controller.has_signal(signal_name) \
 				and not host._player_controller.is_connected(signal_name, callback):
 			host._player_controller.connect(signal_name, callback)
-	if host._player_controller.has_method("ideology_draw_phase"):
-		host._draw_phase = String(host._player_controller.ideology_draw_phase())
 
 
 # --- model ----------------------------------------------------------------
@@ -907,8 +905,6 @@ func _apply_model(host, model: Dictionary) -> void:
 	host._presentation = ideology.get("presentation", {})
 	if host._presentation.is_empty():
 		host._presentation = CountryViewModel.present_ideology(host._snapshot, host._catalog)
-	if host._player_controller != null and host._player_controller.has_method("ideology_draw_phase"):
-		host._draw_phase = String(host._player_controller.ideology_draw_phase())
 	host._index_catalog()
 	var state_changes = host._index_states()
 	host._render_top()
@@ -1052,7 +1048,7 @@ func _render_top(host) -> void:
 
 
 func _draw_waiting(host) -> bool:
-	return host._draw_phase == "offer" or host._draw_phase == "reroll"
+	return host._pending_draw_sequence >= 0
 
 
 ## Per-card effect-instance totals for the card face.

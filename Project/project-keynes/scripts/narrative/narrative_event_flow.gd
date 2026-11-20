@@ -67,21 +67,12 @@ func is_open() -> bool:
 
 
 func _busy() -> bool:
-	if _controller != null:
-		if _controller.has_method("era_reward_locked") and bool(_controller.era_reward_locked()):
+	if _controller != null and _controller.has_method("player_confirmation_reason"):
+		var reason := String(_controller.player_confirmation_reason())
+		if not reason.is_empty() and reason != "narrative_choice_required":
 			return true
-		if _controller.has_method("family_founding_locked") and bool(_controller.family_founding_locked()):
-			return true
-		if _controller.has_method("ideology_draw_locked") and bool(_controller.ideology_draw_locked()):
-			return true
-		if _controller.has_method("ideology_draw_phase") and not String(_controller.ideology_draw_phase()).is_empty():
-			return true
-	if _ui_manager != null:
-		if _ui_manager.has_method("is_annual_report_open") and bool(_ui_manager.is_annual_report_open()):
-			return true
-		if _ui_manager.has_method("is_era_ceremony_playing") and bool(_ui_manager.is_era_ceremony_playing()):
-			return true
-	return false
+	return _ui_manager != null and _ui_manager.has_method("is_era_ceremony_playing") \
+		and bool(_ui_manager.is_era_ceremony_playing())
 
 
 func _resolve_active_offer() -> Dictionary:

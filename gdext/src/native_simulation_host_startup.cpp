@@ -1144,9 +1144,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _economy_production_runtime->take_worker_resource_mirror_cells(_executor_resource_display_cells);
         merge_resource_display_patch();
     }
+    if (restore_pending || !resuming_previous_lifetime)
+        restore_player_confirmation(_pending_restore_bundle.player_confirmation_bytes, start_day);
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
-    return install_era_advancement_setup() && launch_executor(paused);
+    if (!install_era_advancement_setup()) return false;
+    player_confirmation_block(start_day);
+    return launch_executor(paused);
 }
 
 } // namespace pk

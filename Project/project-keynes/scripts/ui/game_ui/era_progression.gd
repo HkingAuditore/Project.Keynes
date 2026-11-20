@@ -319,7 +319,7 @@ func _abort_era_ceremony(host) -> void:
 	host._era_ceremony_resume_clock = false
 
 
-## 大典期间暂停时钟（同时代奖励/家族创立的做法），只在由大典暂停时才恢复。
+## 大典只暂停演出时段。候选的等待一直由执行器持有。
 
 func _pause_clock_for_ceremony(host) -> void:
 	if host._world_clock == null or host._era_ceremony_resume_clock:
@@ -339,16 +339,7 @@ func _restore_clock_after_ceremony(host) -> void:
 	host._era_ceremony_resume_clock = false
 	if host._world_clock == null or not host._world_clock.paused:
 		return
-	# 演出期间若有其他流程接管时钟（时代奖励选择、暂停菜单），交还给它们。
 	if host._pause_menu != null and host._pause_menu.visible:
-		return
-	if host.is_era_reward_modal_open() or host.is_family_founding_modal_open() or host.is_annual_report_open():
-		return
-	if host._player_controller != null and host._player_controller.has_method("era_reward_locked") \
-			and bool(host._player_controller.era_reward_locked()):
-		return
-	if host._player_controller != null and host._player_controller.has_method("ideology_draw_locked") \
-			and bool(host._player_controller.ideology_draw_locked()):
 		return
 	host._world_clock.pause(false)
 	if host._player_controller != null and host._player_controller.has_method("sync_ui"):

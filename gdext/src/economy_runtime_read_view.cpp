@@ -1,7 +1,9 @@
 #include "economy_runtime.h"
+#include "economy_host_port.h"
 
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -152,6 +154,52 @@ Dictionary NativeEconomyRuntime::evaluate_read_query(const ReadKey &key) {
     out["ok"] = false;
     out["reason"] = "economy_read_query_unknown";
     return out;
+}
+
+const char *NativeEconomyRuntime::family_founding_choice_error(
+        size_t offer_row, int64_t generation, int32_t choice) const {
+    if (offer_row >= _family_founding_offers.size()) return "family_founding_offer_missing";
+    const auto &offer = _family_founding_offers[offer_row];
+    if (offer.generation != generation) return "family_founding_offer_stale";
+    if (offer.status != FAMILY_FOUNDING_OPEN) return "family_founding_offer_already_chosen";
+    if (choice < 0 || choice >= static_cast<int32_t>(offer.candidates.size()))
+        return "family_founding_choice_invalid";
+    if (_simulation_host && _simulation_host->economy_worker_owns_execution() &&
+            !family_founding_player_choice(offer.cell))
+        return "family_founding_offer_not_player";
+    return nullptr;
+}
+
+int32_t NativeEconomyRuntime::player_family_founding_offer() const {
+    if (_family_founding_choice_mode != 1) return -1;
+    for (size_t i = 0; i < _family_founding_offers.size(); ++i) {
+        const auto &offer = _family_founding_offers[i];
+        if (offer.status != FAMILY_FOUNDING_OPEN || !family_founding_player_choice(offer.cell))
+            continue;
+        const auto answered = std::any_of(_family_founding_choices.begin(), _family_founding_choices.end(),
+            [&](const auto &choice) { return choice.offer_id == offer.offer_id &&
+                family_founding_choice_error(i, choice.generation, choice.choice_index) == nullptr; });
+        if (!answered) return static_cast<int32_t>(i);
+    }
+    return -1;
+}
+
+void NativeEconomyRuntime::publish_family_founding_choice_result(
+        int64_t sequence, int64_t day, const char *reason) {
+    if (!_simulation_host || !_simulation_host->on_worker_thread() ||
+            !_simulation_host->economy_worker_owns_execution()) return;
+    Dictionary receipt;
+    receipt["ok"] = !reason;
+    receipt["code"] = reason ? reason : "ok";
+    receipt["reason"] = reason ? reason : "";
+    receipt["sequence"] = sequence;
+    receipt["settled_day"] = _current_day.get();
+    if (!reason) receipt["effective_day"] = day;
+    _family_founding_receipts.push_back(receipt);
+}
+
+godot::Array NativeEconomyRuntime::take_family_founding_receipts() {
+    return std::exchange(_family_founding_receipts, {});
 }
 
 void NativeEconomyRuntime::read_view_subscribe(const ReadKey &key) {

@@ -176,7 +176,8 @@ func sync_time_ui(host) -> void:
 			day = presented_day
 	var date: Dictionary = clock.calendar_date_for_day(day)
 	host._ui_manager.update_time_state(clock.year_index_for_day(day), int(date.month),
-		int(date.day_of_month), clock.paused, clock.speed_multiplier)
+		int(date.day_of_month), clock.paused or not host.player_confirmation_reason().is_empty(),
+		clock.speed_multiplier)
 
 
 
@@ -203,6 +204,7 @@ func refresh_country_binding(host) -> void:
 				old_colonization_callback):
 			host._economy_facade.family_colonization_settled.disconnect(
 				old_colonization_callback)
+	var previous_ideology = host._ideology_facade
 	if host._ideology_facade != null and host._ideology_facade.has_signal("command_settled"):
 		var old_ideology_callback = Callable(host, "_on_ideology_command_settled")
 		if host._ideology_facade.command_settled.is_connected(old_ideology_callback):
@@ -232,6 +234,8 @@ func refresh_country_binding(host) -> void:
 				colonization_callback):
 			host._economy_facade.family_colonization_settled.connect(
 				colonization_callback)
+	if host._ideology_facade != previous_ideology:
+		host._shown_ideology_generation = 0
 	if host._ideology_facade != null and host._ideology_facade.has_signal("command_settled"):
 		var ideology_callback = Callable(host, "_on_ideology_command_settled")
 		if not host._ideology_facade.command_settled.is_connected(ideology_callback):

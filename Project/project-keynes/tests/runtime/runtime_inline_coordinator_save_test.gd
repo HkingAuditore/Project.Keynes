@@ -58,6 +58,13 @@ func _run() -> void:
 	var pending := report.duplicate(true)
 	pending["inline_day_pending"] = true
 	_expect("a partial inline day still blocks formal capture", saves._worker_idle_blocker(pending) == "inline_day_pending")
+	clock.set_speed(10.0)
+	_expect("inline day 6 can be admitted while the clock runs", host._admit_runtime_calendar(7) == 6)
+	clock.set_speed(0.0)
+	host._process(0.0)
+	_expect("zero clock speed leaves the admitted inline day unstarted", ext.runtime_committed_day() == 5)
+	clock.set_speed(1.0)
+	clock.pause(true)
 	await _inline_day(host, clock, 6)
 	var expected_hash := str(ext.get_economy_state_hash())
 	_expect("source session closes", (await host.close_world()).get("ok", false))

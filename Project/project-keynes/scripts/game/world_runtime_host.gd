@@ -8,6 +8,7 @@ signal daily_tick_completed(report: Dictionary)
 signal simulation_committed(from_day: int, to_day: int, generation: int)
 signal simulation_day_records(records: Array)
 signal simulation_command_results(results: Array)
+signal player_confirmation_updated(view: Dictionary)
 signal colonization_quotes_ready()
 signal simulation_view_updated(from_day: int, to_day: int, generation: int)
 signal generation_progress(stage: String, fraction: float)
@@ -336,7 +337,7 @@ var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
 ## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
-var _gm_hide_all_except_gm: bool = false
+var _player_confirmation_view: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false
 var _gm_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
 var _gm_tod_cycle_uv: Vector2 = Vector2(0.25, 0.5)
@@ -415,12 +416,23 @@ func _admit_runtime_calendar(date: int) -> int:
 	return _calendar_admitted_through
 
 
+func _forward_runtime_clock(paused: bool, speed: float) -> void:
+	if paused or speed <= 0.0:
+		_calendar_admitted_through = -1
+	_generator.set_runtime_clock_threaded(paused, speed)
+
+
 func _run_admitted_inline_day() -> void:
 	if not _native_daily_inline_active or not _runtime_ready_for_ticks \
-			or _runtime_worker_fault_paused \
-			or _calendar_admitted_through <= maxi(0, _runtime_commit_day):
+			or _runtime_worker_fault_paused:
 		return
-	var date := maxi(0, _runtime_commit_day) + 2
+	var committed := maxi(0, _runtime_commit_day)
+	if _calendar_admitted_through <= committed:
+		var report := _runtime_control_state()
+		if int(report.get("player_advance_through", -1)) <= committed \
+				or not String(report.get("player_block_reason", "")).is_empty():
+			return
+	var date := committed + 2
 	WebTelemetry.emit("day_tick", {"s": "begin", "day": date})
 	var started := Time.get_ticks_usec()
 	_daily_adapter._run_native_daily_inline_day(self, date)
@@ -742,6 +754,31 @@ func _service_runtime_progress(frame_usec: int) -> void:
 	_daily_adapter._service_runtime_progress(self, frame_usec)
 func _runtime_control_state() -> Dictionary:
 	return _daily_adapter._runtime_control_state(self)
+
+func player_confirmation_view() -> Dictionary:
+	return _player_confirmation_view
+
+func _publish_player_confirmation(report: Dictionary) -> void:
+	if int(report.get("player_block_day", -1)) > maxi(0, _runtime_commit_day):
+		return
+	var view := {
+		"reason": String(report.get("player_block_reason", "")),
+		"hide_popups": bool(report.get("player_popups_suppressed", false)),
+		"family_offer": report.get("family_founding_offer", {}),
+		"ideology_generation": int(report.get("ideology_offer_generation", 0)),
+	}
+	if view == _player_confirmation_view:
+		return
+	var old_hidden := bool(_player_confirmation_view.get("hide_popups", false))
+	_player_confirmation_view = view
+	player_confirmation_updated.emit(view)
+	if bool(view.hide_popups) != old_hidden:
+		gm_toggle_changed.emit("ui.hide_all_except_gm", bool(view.hide_popups))
+
+func submit_player_confirmation(action: String, value: int) -> Dictionary:
+	if _generator == null or not _runtime_ready_for_ticks:
+		return {"ok": false, "code": "player_confirmation_unavailable"}
+	return _generator.get_data_core_world_ext().submit_player_confirmation(action, value, 0)
 func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 	_daily_adapter._observe_runtime_worker_fault(self, report)
 func get_runtime_fault_diagnostics() -> Dictionary:

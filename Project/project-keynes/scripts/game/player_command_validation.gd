@@ -112,11 +112,7 @@ const EraAdvancementServiceScript = preload("res://scripts/era/era_advancement_s
 static func _validate_command_args(
 		_economy_facade,
 		_ideology_facade,
-		_era_reward_generation: int,
-		_family_founding_offer_id: int,
-		_family_founding_generation: int,
 		is_milestone_technology: Callable,
-		ideology_offer_eligibility: Callable,
 		id: StringName,
 		args: Dictionary,
 		facade = null) -> Dictionary:
@@ -217,43 +213,17 @@ static func _validate_command_args(
 			if int(args.get("expedition_handle", 0)) == 0:
 				return _result(false, "invalid_args", "开拓队句柄无效。")
 		COMMAND_ERA_REWARD_CHOOSE:
-			var choice := int(args.get("choice_index", -1))
-			var generation := int(args.get("offer_generation", 0))
-			if choice < 0 or choice > 2 or generation <= 0 \
-					or generation != _era_reward_generation:
-				return _result(false, "era_reward_choice_invalid",
-					"时代奖励代际或选项无效。")
+			if int(args.get("offer_generation", 0)) <= 0 or int(args.get("choice_index", -1)) < 0:
+				return _result(false, "invalid_args", "时代奖励参数不完整。")
 		COMMAND_FAMILY_FOUNDING_CHOOSE:
-			if _economy_facade == null or not _economy_facade.has_method(
-					"submit_family_founding_choice"):
+			if _economy_facade == null:
 				return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
-			var founding_choice := int(args.get("choice_index", -1))
-			if founding_choice < 0 or founding_choice > 2 \
-					or int(args.get("offer_id", 0)) != _family_founding_offer_id \
-					or _family_founding_offer_id <= 0 \
-					or int(args.get("generation", 0)) != _family_founding_generation:
-				return _result(false, "family_founding_choice_invalid",
-					"家族候选已过期或选项无效。")
-		COMMAND_IDEOLOGY_OFFER:
+			if int(args.get("offer_id", 0)) <= 0 or int(args.get("generation", 0)) <= 0 \
+					or int(args.get("choice_index", -1)) < 0:
+				return _result(false, "invalid_args", "家族扶持参数不完整。")
+		COMMAND_IDEOLOGY_OFFER, COMMAND_IDEOLOGY_REROLL:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
-			# Never advance time for a draw the authority would reject.
-			var preview: Dictionary = ideology_offer_eligibility.call()
-			if not bool(preview.get("can_draw", false)):
-				var reason := String(preview.get("reason", "ideology_offer_unavailable"))
-				return _result(false, reason, CountryViewModel.ideology_player_reason(reason))
-		COMMAND_IDEOLOGY_REROLL:
-			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
-			var reroll_preview: Dictionary = ideology_offer_eligibility.call()
-			if not bool(reroll_preview.get("can_reroll", false)):
-				var reroll_reason := "ideology_offer_not_active" \
-					if not bool(reroll_preview.get("offer_active", false)) else (
-					"ideology_offer_pool_insufficient" \
-					if int(reroll_preview.get("pool_size", 0)) <= 0 \
-					else "ideology_points_insufficient")
-				return _result(false, reroll_reason,
-					CountryViewModel.ideology_player_reason(reroll_reason))
 		COMMAND_IDEOLOGY_CHOOSE:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")

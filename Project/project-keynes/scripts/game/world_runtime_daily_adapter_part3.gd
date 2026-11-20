@@ -78,6 +78,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host._runtime_commit_day = commit_day
 		if commit_day <= old_day or int(commit.get("from_day", -1)) == commit_day:
 			host._generator.get_data_core_world_ext().finish_runtime_display_frame()
+			host._publish_player_confirmation(host._runtime_control_state())
 			return
 		host._runtime_last_commit = commit
 		var records: Array = commit.get("days", [])
@@ -94,6 +95,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 				host._dcp_publish_ms = float(Time.get_ticks_usec() - publish_started_usec) / 1000.0
 	host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 	if not received_new_commit:
+		host._publish_player_confirmation(host._runtime_control_state() if commit.has("boundary_results") else report)
 		return
 	var ext = host._generator.get_data_core_world_ext()
 	var resource_usec := Time.get_ticks_usec()
@@ -135,6 +137,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host._world_clock.publish_runtime_date(host._runtime_commit_day)
 	if not days.is_empty():
 		host.simulation_day_records.emit(days)
+	host._publish_player_confirmation(host._runtime_control_state())
 	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
 	ext.finish_runtime_display_frame()
 	host._presentation.queue_worker_commit(from_day,

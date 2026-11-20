@@ -11,6 +11,7 @@ func _prepare_world_data(host) -> Dictionary:
 	host._visual_progress = 0.0
 	host._runtime_commit_generation = 0
 	host._runtime_commit_day = -1
+	host._player_confirmation_view.clear()
 	host._runtime_last_commit.clear()
 	host._runtime_vision_result.clear()
 	host._vision_dirty_indices = PackedInt32Array()
@@ -203,7 +204,7 @@ func _prepare_world_simulation(host) -> Dictionary:
 	if not host._load_slot_id.is_empty(): host._apply_climate_writeback_if_authoritative(host._generator.get_runtime_thread_report())
 	if host._is_web_build() and host._runtime_worker_fault_paused:
 		return {"ok": false, "code": host._web_worker_start_code}
-	host._clock_binding.attach(host._world_clock, host._generator.set_runtime_clock_threaded,
+	host._clock_binding.attach(host._world_clock, host._forward_runtime_clock,
 		host._runtime_session.set_running)
 	WebTelemetry.emit("bind_step", {"s": "worker_skipped"})
 	var initial_visible_building_cells = PackedInt32Array()

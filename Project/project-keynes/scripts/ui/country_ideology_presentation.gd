@@ -27,13 +27,17 @@ static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dicti
 	var points := int(snapshot.get("ideology_points_q16", 0))
 	var offer_active := bool(snapshot.get("offer_active", false))
 	var known: PackedInt32Array = snapshot.get("known_ids", PackedInt32Array())
-	var can_open_offer := not offer_active and points >= offer_cost
+	var eligibility: Dictionary = snapshot.get("offer_eligibility", {})
 	var baseline_ready := bool(snapshot.get("point_baseline_ready", false))
 	var last_gain := int(snapshot.get("point_ledger_gain_q16", 0))
 	# Keep the hint line empty unless the player is blocked.
 	var offer_hint := ""
-	if not offer_active and points < offer_cost:
-		offer_hint = "理念点不足（%s / %s）" % [_q16_display(points), _q16_display(offer_cost)]
+	if not offer_active:
+		var reason := String(eligibility.get("reason", ""))
+		if reason == "ideology_points_insufficient":
+			offer_hint = "理念点不足（%s / %s）" % [_q16_display(points), _q16_display(offer_cost)]
+		elif not reason.is_empty():
+			offer_hint = ideology_player_reason(reason)
 	# Slot milestones: aligned technology names, deltas and owned flags.
 	var unlock_names: PackedStringArray = catalog.get("capacity_unlock_technology_names",
 		catalog.get("capacity_unlock_technology_keys", PackedStringArray()))
@@ -65,7 +69,7 @@ static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dicti
 		"offer_cost_text": _q16_display(offer_cost),
 		"reroll_cost_q16": reroll_cost,
 		"reroll_cost_text": _q16_display(reroll_cost),
-		"can_reroll": offer_active and points >= reroll_cost,
+		"can_reroll": bool(eligibility.get("can_reroll", false)),
 		"draw_sequence": int(snapshot.get("draw_sequence", 0)),
 		"baseline_ready": baseline_ready,
 		"last_gain_q16": last_gain,
@@ -73,7 +77,7 @@ static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dicti
 		"point_history_q16": snapshot.get("point_history_q16", PackedInt64Array()),
 		"active_synergy_ids": snapshot.get("active_synergy_ids", PackedInt32Array()),
 		"offer_active": offer_active,
-		"can_open_offer": can_open_offer,
+		"can_open_offer": bool(eligibility.get("can_draw", false)),
 		"offer_hint": offer_hint,
 		"known_count": known.size(),
 		"empty": known.is_empty() and not offer_active,

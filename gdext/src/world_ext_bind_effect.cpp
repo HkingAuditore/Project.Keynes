@@ -87,8 +87,8 @@ void DCWorldExt::_bind_effect_methods() {
     ClassDB::bind_method(D_METHOD("get_era_reward_offer"),
                          &DCWorldExt::get_era_reward_offer);
     ClassDB::bind_method(D_METHOD("choose_era_reward", "offer_generation",
-                                  "choice_index", "effective_day"),
-                         &DCWorldExt::choose_era_reward);
+                                  "choice_index", "effective_day", "sequence"),
+                         &DCWorldExt::choose_era_reward, DEFVAL(0));
 }
 
 } // namespace pk

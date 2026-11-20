@@ -13,6 +13,7 @@ var _ext: Object
 var _country
 var _economy
 var _military
+var _building_view: Dictionary
 var _receipts := {}
 var _failures := 0
 var _checks := 0
@@ -236,7 +237,11 @@ func _advance(day: int) -> void:
 		_host._admit_runtime_calendar(day + 1)
 		_host._process(0.0)
 		if _host._runtime_commit_day == day:
-			return
+			var view: Dictionary = _economy.building_cell_snapshot(_capital)
+			if bool(view.get("ok", false)) and view.has("building_counts_by_type") \
+					and int(view.get("read_view_day", day)) == day:
+				_building_view = view
+				return
 		if _host.is_runtime_fault_paused():
 			break
 		await process_frame
@@ -328,11 +333,10 @@ func _check_military_dossier_feedback(ticket: Dictionary, message: String) -> vo
 
 
 func _construction_count(type_id: int) -> int:
-	var row: Dictionary = _economy.building_cell_snapshot(_capital)
-	var count := int(row.building_counts_by_type[type_id])
-	for i in range(row.construction_type_ids.size()):
-		if int(row.construction_type_ids[i]) == type_id:
-			count += int(row.construction_counts[i])
+	var count := int(_building_view.building_counts_by_type[type_id])
+	for i in range(_building_view.construction_type_ids.size()):
+		if int(_building_view.construction_type_ids[i]) == type_id:
+			count += int(_building_view.construction_counts[i])
 	return count
 
 

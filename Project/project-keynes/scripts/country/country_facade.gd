@@ -654,9 +654,9 @@ func era_reward_offer() -> Dictionary:
 
 
 func choose_era_reward(offer_generation: int, choice_index: int,
-		effective_day: int) -> Dictionary:
+		effective_day: int, sequence: int = 0) -> Dictionary:
 	return _world_ext.choose_era_reward(offer_generation, choice_index,
-		effective_day) if _configured else {
+		effective_day, sequence) if _configured else {
 				"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 func report() -> Dictionary:

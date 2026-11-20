@@ -51,6 +51,9 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 	var opening := _advance.preview()
 	_check_model(opening)
 	_expect("the opening settlement cannot advance", opening.get("status") == "locked")
+	var family_policy := host.set_gm_toggle("ui.hide_all_except_gm", true)
+	_expect("the procurement fixture keeps unrelated family offers open without stopping",
+		family_policy.get("effective_day", -1) == 1)
 	_expect("the executor rejects starting before any eligibility",
 		(await _advancement_result(host, "start", 2)).get("code") == "era_advance_conditions_unmet")
 	var invalid_policy := _next_sequence()

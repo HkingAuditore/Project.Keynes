@@ -75,8 +75,10 @@ std::shared_ptr<const RuntimeCommit> NativeSimulationHost::take_day_publications
         records.swap(_published_days);
         resources = std::exchange(_resource_display_patch, {});
         dirty_cells.swap(_cell_lut_pending);
+        std::lock_guard<std::mutex> control(_control_mutex);
         _display_consumed_day.store(latest->header.committed_day, std::memory_order_release);
     }
+    _control_cv.notify_all();
     for (size_t cell = 0; cell < dirty_cells.size(); ++cell) {
         if (dirty_cells[cell] & 1) delta.cells.push_back(static_cast<int32_t>(cell));
         if (dirty_cells[cell] & 2) delta.class_cells.push_back(static_cast<int32_t>(cell));

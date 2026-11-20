@@ -74,10 +74,10 @@ func _check_validation_ports() -> void:
 	controller._era_reward_generation = 7
 	var choice := {"offer_generation": 7, "choice_index": 1}
 	_expect(controller._validate_command_args(PlayerController.COMMAND_ERA_REWARD_CHOOSE, choice).ok,
-		"current reward generation is accepted")
+		"reward choice parameters pass")
 	controller._era_reward_generation = 8
-	_expect(not controller._validate_command_args(PlayerController.COMMAND_ERA_REWARD_CHOOSE, choice).ok,
-		"a later validation reads the updated generation instead of retaining a copied value")
+	_expect(controller._validate_command_args(PlayerController.COMMAND_ERA_REWARD_CHOOSE, choice).ok,
+		"the display generation cannot reject a reward choice")
 	_expect(int(controller._command_sequence) == sequence,
 		"read-only validation never allocates command sequence numbers")
 	controller.free()

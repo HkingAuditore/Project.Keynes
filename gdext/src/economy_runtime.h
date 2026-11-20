@@ -792,12 +792,14 @@ public:
                                              int32_t limit) const;
     godot::Dictionary submit_family_founding_choice(
         int64_t offer_id, int64_t generation, int32_t choice_index,
-        int64_t effective_day, int64_t sequence);
+        int64_t effective_day, int64_t sequence, bool check_now = true);
     godot::Dictionary family_industries(int64_t family_handle, int32_t offset,
                                         int32_t limit) const;
     godot::Dictionary family_notable_people(int64_t family_handle,
                                             int32_t offset,
                                             int32_t limit) const;
+    int32_t player_family_founding_offer() const;
+    godot::Array take_family_founding_receipts();
     godot::Dictionary family_colonization_quotes(
         int64_t country_handle, int32_t target_cell, int64_t family_filter,
         int32_t source_filter, int32_t offset, int32_t limit,

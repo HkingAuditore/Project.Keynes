@@ -119,10 +119,12 @@ void NativeSimulationHost::join_for_destruction() {
 }
 
 void NativeSimulationHost::set_clock(bool paused, double speed_days_per_second) {
+    const bool calendar_suspended = paused || !std::isfinite(speed_days_per_second) ||
+        speed_days_per_second <= 0.0;
     runtime_control_wakeup(_control_mutex, _control_cv, [&] {
         _worker_timing.pause(paused);
         _paused.store(paused, std::memory_order_release);
-        _calendar_suspended.store(paused, std::memory_order_release);
+        _calendar_suspended.store(calendar_suspended, std::memory_order_release);
         if (speed_days_per_second <= 1.0 && _world_environment) {
             const int64_t permitted = std::min(
                 _clock_requested_day.load(std::memory_order_relaxed), committed_day_value() + 1);
@@ -361,7 +363,7 @@ void NativeSimulationHost::worker_main() {
 
             if (service_military_commands() || service_economy_boundary_requests() ||
                 service_era_reward_requests() || service_annual_presentations() ||
-                service_narrative_requests()) continue;
+                service_narrative_requests() || service_player_confirmations()) continue;
 
             const bool retained_day_pending = active_environment != nullptr &&
                 active_environment->day == _committed_day.load(std::memory_order_acquire) + 1;
@@ -399,7 +401,7 @@ void NativeSimulationHost::worker_main() {
                  runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
             const auto daily_work_ready = [&] {
                 if (_world_environment) {
-                    return retained_day_pending ||
+                    return retained_day_pending || player_response_admits(committed_day_value() + 1) ||
                         (!_calendar_suspended.load(std::memory_order_acquire) &&
                          _clock_requested_day.load(std::memory_order_acquire) > committed_day_value());
                 }
@@ -417,7 +419,7 @@ void NativeSimulationHost::worker_main() {
                     (climate_driven && !_world_environment ? RuntimeWorkerTiming::ENVIRONMENT_WAIT
                                                           : RuntimeWorkerTiming::CLOCK_WAIT));
                 _control_cv.wait(lock, [&] {
-                    const bool blocked = player_confirmation_block() != nullptr;
+                    const bool blocked = awaiting_player;
                     const bool ready = _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) ||
                         player_requests_pending_locked() ||
@@ -493,9 +495,10 @@ void NativeSimulationHost::worker_main() {
                 }
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 if (_world_environment && !retained_day_pending &&
-                    (_calendar_suspended.load(std::memory_order_acquire) ||
-                     _clock_requested_day.load(std::memory_order_acquire) < day ||
-                     _save_requested.load(std::memory_order_acquire))) break;
+                    (_save_requested.load(std::memory_order_acquire) ||
+                     (!player_response_admits(day) &&
+                      (_calendar_suspended.load(std::memory_order_acquire) ||
+                       _clock_requested_day.load(std::memory_order_acquire) < day)))) break;
                 AtomicCounterScope day_scope(_worker_day_inflight);
                 if (try_fault_injection("worker.inflight.before")) {
                     break;
@@ -1147,6 +1150,8 @@ void NativeSimulationHost::worker_main() {
         _era_reward_requests.clear();
         _narrative_requests.clear();
         _annual_presentations.clear();
+        _player_confirmation.requests.clear();
+        _player_confirmation.ideology_input_changed = false;
         _control_cv.notify_all();
     }
     _worker_timing.stop();

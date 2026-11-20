@@ -137,10 +137,15 @@ bool NativeSimulationHost::service_economy_boundary_requests() {
                 r.result = economy_api::submit_family_colonization_cancel(*economy,
                     r.country_handle, r.subject_id, r.effective_day, r.sequence);
                 break;
-            case RuntimeEconomyBoundaryRequest::Kind::FOUNDING_CHOICE:
+            case RuntimeEconomyBoundaryRequest::Kind::FOUNDING_CHOICE: {
+                const auto confirmation = std::atomic_load(&_player_confirmation.published);
+                const bool stopped_for_family = confirmation && confirmation->family_offer_offset >= 0;
                 r.result = economy_api::submit_family_founding_choice(*economy,
-                    r.subject_id, r.offer_generation, r.choice, r.effective_day, r.sequence);
+                    r.subject_id, r.offer_generation, r.choice, r.effective_day, r.sequence,
+                    stopped_for_family && r.effective_day == committed_day_value() + 1);
+                if (bool(r.result.get("ok", false))) admit_player_response_through(r.effective_day);
                 break;
+            }
             case RuntimeEconomyBoundaryRequest::Kind::BUILD_CANAL:
                 r.result = economy_api::queue_canal_construction(*economy,
                     r.country_handle, r.quote_token, r.effective_day, r.sequence);
@@ -150,6 +155,8 @@ bool NativeSimulationHost::service_economy_boundary_requests() {
     }
     for (const auto &request : requests) {
         if (const char *command = request->command()) {
+            if (request->kind == RuntimeEconomyBoundaryRequest::Kind::FOUNDING_CHOICE &&
+                    bool(request->result.get("ok", false))) continue;
             request->result["country_handle"] = request->country_handle;
             if (bool(request->result.get("ok", false))) request->result["effective_day"] = request->effective_day;
             publish_boundary_command_result(command, request->sequence, request->result);

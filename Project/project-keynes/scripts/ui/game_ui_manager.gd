@@ -159,7 +159,7 @@ var _era_ceremony_resume_clock := false
 var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
-var _gm_popups_suppressed := false
+var _era_ceremony_suppressed := false
 var _gm_all_ui_suppressed := false
 var _gm_saved_ui_visibility: Dictionary = {}
 var _debug_layer: Control
@@ -478,8 +478,10 @@ func is_gm_available() -> bool:
 	return _overlay_component.is_gm_available(self)
 
 
-func set_popups_suppressed(enabled: bool) -> void:
-	_overlay_component.set_popups_suppressed(self, enabled)
+func set_era_ceremony_suppressed(enabled: bool) -> void:
+	_era_ceremony_suppressed = enabled
+	if enabled and is_era_ceremony_playing():
+		_era_ceremony.skip()
 
 
 func set_all_ui_suppressed(enabled: bool) -> void:
@@ -786,7 +788,7 @@ func _ensure_era_panel() -> void:
 
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
-	if _gm_popups_suppressed:
+	if _era_ceremony_suppressed:
 		# GM 屏蔽事件时只同步时代基线，不创建会暂停时钟的大典。
 		_era_celebrated_index = new_index
 		_era_ceremony_index = -1
@@ -1667,9 +1669,6 @@ func is_annual_report_open() -> bool:
 
 func close_annual_report() -> void:
 	_overlay_component.close_annual_report(self)
-
-func annual_other_modal_open(ignore_era_progress: bool = false) -> bool:
-	return _overlay_component.annual_other_modal_open(self, ignore_era_progress)
 
 func show_narrative_event_offer(offer: Dictionary) -> void:
 	_overlay_component.show_narrative_event_offer(self, offer)

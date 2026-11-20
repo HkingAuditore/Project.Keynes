@@ -697,7 +697,29 @@ static void append_runtime_control_state(Dictionary &out,
     out["country_worker_authoritative"] =
         (host.authoritative_domain_mask & runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u;
     out["simulation_committed_day"] = host.committed_day;
+    out["player_advance_through"] = host.player_advance_through;
+    if (const auto &view = host.player_confirmation) {
+        out["player_block_reason"] = view->reason ? view->reason : "";
+        out["player_block_day"] = view->day;
+        out["family_founding_offer"] = view->family_offer.duplicate(true);
+        out["ideology_offer_generation"] = view->ideology_generation;
+        out["player_popups_suppressed"] = view->hide_popups;
+    }
     out["interactive"] = host.interactive;
+}
+
+Dictionary DCWorldExt::submit_player_confirmation(const String &action, int64_t value,
+                                                   int64_t effective_day) {
+    using Kind = RuntimePlayerConfirmationRequest::Kind;
+    if (_runtime_host && action == "dismiss_ideology" && value > 0)
+        return _runtime_host->submit_player_confirmation({Kind::DISMISS_IDEOLOGY, value, effective_day});
+    if (_runtime_host && action == "popup_policy" && (value == 0 || value == 1))
+        return _runtime_host->submit_player_confirmation({Kind::POPUP_POLICY, value, effective_day});
+    Dictionary out;
+    out["ok"] = false;
+    out["admitted"] = false;
+    out["code"] = "player_confirmation_invalid";
+    return out;
 }
 
 Dictionary DCWorldExt::get_runtime_control_state() const {

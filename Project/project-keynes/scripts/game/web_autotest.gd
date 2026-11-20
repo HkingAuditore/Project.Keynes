@@ -540,13 +540,10 @@ func _modal_target() -> Dictionary:
 		return {}
 	if _ctrl_bool("era_reward_locked"):
 		var era := _era_reward_offer()
-		# SELECTED_PENDING = 已选待跨日结算，控制器自己会以 1x 推进并恢复，不能再动它。
 		if String(era.get("status", "NONE")) in ["OPEN", "ERROR"]:
 			return {"kind": "era_reward",
 				"key": "era:%d" % int(era.get("offer_generation", 0))}
 		return {}
-	# 纪元奖励持锁时，家族创立命令会被 PlayerController.request_command 直接拒绝，
-	# 所以只在没有纪元锁时处理，避免把重试预算浪费在必然失败的调用上。
 	if _ctrl_bool("family_founding_locked"):
 		var founding := _family_founding_offer()
 		if not founding.is_empty():
@@ -554,8 +551,6 @@ func _modal_target() -> Dictionary:
 				"key": "family:%d:%d" % [int(founding.get("offer_id", 0)),
 					int(founding.get("generation", 0))]}
 		return {}
-	# 理念抽取只有 presenting 阶段暂停时钟，也只有这个阶段有公开关闭接口；
-	# offer/choose/reroll 阶段由 PlayerController 自己按 IDEOLOGY_DRAW_TIMEOUT_DAYS 超时收尾。
 	if _ctrl_str("ideology_draw_phase") == "presenting":
 		return {"kind": "ideology_draw", "key": ""}
 	return {}
@@ -643,9 +638,10 @@ func _choose_family_founding() -> Dictionary:
 func _close_ideology_offer() -> Dictionary:
 	if not _controller.has_method("dismiss_ideology_offer"):
 		return {"ok": false, "code": "ideology_dismiss_api_missing"}
-	_controller.call("dismiss_ideology_offer")
-	if not _ctrl_str("ideology_draw_phase").is_empty():
-		return {"ok": false, "code": "ideology_still_presenting"}
+	var generation := int(_host.player_confirmation_view().get("ideology_generation", 0))
+	var receipt: Dictionary = _controller.call("dismiss_ideology_offer", generation)
+	if not bool(receipt.get("ok", false)):
+		return receipt
 	return {"ok": true, "via": "PlayerController.dismiss_ideology_offer"}
 
 
@@ -660,25 +656,10 @@ func _era_reward_offer() -> Dictionary:
 	return offer if bool(offer.get("ok", false)) else {}
 
 
-## 当前待玩家选择的家族创立 offer（与 PlayerController._sync_family_founding_offer
-## 使用同一套筛选规则：player_choice 且 status==OPEN 的第一个）。
 func _family_founding_offer() -> Dictionary:
-	if _controller == null or not _controller.has_method("get_economy_facade"):
-		return {}
-	var facade = _controller.call("get_economy_facade")
-	if facade == null or not facade.has_method("family_founding_offers"):
-		return {}
-	var snapshot: Dictionary = facade.call("family_founding_offers", 0, 64)
-	if not bool(snapshot.get("ok", false)):
-		return {}
-	for row in snapshot.get("offers", []):
-		if bool(row.get("player_choice", false)) \
-				and String(row.get("status", "")) == "OPEN":
-			return row
-	return {}
+	return _host.player_confirmation_view().get("family_offer", {})
 
 
-## 读 PlayerController 的既有公开布尔查询；缺方法一律当 false（不锁）。
 func _ctrl_bool(method_name: String) -> bool:
 	if _controller == null or not _controller.has_method(method_name):
 		return false
@@ -758,7 +739,6 @@ func _blocked_by() -> String:
 		return "unknown"
 	for pair in [
 		["era_reward_locked", "era_reward_offer"],
-		["ideology_draw_locked", "ideology_draw"],
 		["family_founding_locked", "family_founding_offer"],
 	]:
 		# 这些 getter 属于 PlayerController 的既有公开查询面；缺任一方法都当"未锁"。

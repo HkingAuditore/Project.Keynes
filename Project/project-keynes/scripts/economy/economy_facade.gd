@@ -1061,33 +1061,39 @@ func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
 	var result: Dictionary = _world_ext.get_family_founding_offers(offset, limit)
 	if not bool(result.get("ok", false)) or (result.get("offers", []) as Array).is_empty():
 		return result
-	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
 	for offer in result.get("offers", []):
-		var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
-		offer["settlement_name"] = settlement_name
-		var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
-		if split:
-			var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
-			offer["source_family_name"] = String(parent.get("family_name", "原家族"))
-		var plan_index := 0
-		for card in offer.get("candidates", []):
-			_decorate_family_founding_card(card, settlement_name)
-			if split:
-				plan_index += 1
-				card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
-				card["people_label"] = "分支族人"
-				card["choice_label"] = "确立此家风"
-				card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
+		decorate_family_founding_offer(offer)
 	return result
 
 
+func decorate_family_founding_offer(offer: Dictionary) -> void:
+	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
+	var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
+	offer["settlement_name"] = settlement_name
+	var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
+	if split:
+		var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
+		offer["source_family_name"] = String(parent.get("family_name", "原家族"))
+	var plan_index := 0
+	for card in offer.get("candidates", []):
+		_decorate_family_founding_card(card, settlement_name)
+		if split:
+			plan_index += 1
+			card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
+			card["people_label"] = "分支族人"
+			card["choice_label"] = "确立此家风"
+			card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
+
+
 func submit_family_founding_choice(offer_id: int, generation: int,
-		choice_index: int, effective_day: int) -> Dictionary:
+		choice_index: int, effective_day: int, sequence: int = 0) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
-	_family_founding_sequence += 1
+	if sequence == 0:
+		_family_founding_sequence += 1
+		sequence = _family_founding_sequence
 	return _world_ext.submit_family_founding_choice(offer_id, generation,
-		choice_index, maxi(0, effective_day), _family_founding_sequence)
+		choice_index, maxi(0, effective_day), sequence)
 
 
 func _decorate_family_founding_card(card: Dictionary, settlement_name: String) -> void:

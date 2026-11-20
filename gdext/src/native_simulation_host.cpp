@@ -49,6 +49,9 @@ NativeSimulationHost::ControlState NativeSimulationHost::control_state() const {
     out.authoritative_domain_mask = authority.granted_mask;
     out.requested_authority_mask = _requested_authority_mask.load(std::memory_order_acquire);
     out.committed_day = _committed_day.load(std::memory_order_acquire);
+    if (_calendar_suspended.load(std::memory_order_acquire))
+        out.player_advance_through = _player_confirmation.advance_through.load(std::memory_order_acquire);
+    out.player_confirmation = std::atomic_load(&_player_confirmation.published);
     return out;
 }
 

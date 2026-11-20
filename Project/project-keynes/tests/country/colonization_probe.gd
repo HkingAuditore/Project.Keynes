@@ -75,8 +75,8 @@ func _run() -> void:
 			if _new_game and stall > STALL_FRAMES:
 				push_error("[colonization-probe] clock stalled at day %d paused=%s founding=%s era=%s" % [
 					day, str(clock.paused if clock != null else null),
-					str(controller.get("_family_founding_locked")),
-					str(controller.get("_era_reward_locked"))])
+					str(controller.family_founding_locked()),
+					str(controller.era_reward_locked())])
 				_quit(1)
 				return
 			continue
@@ -219,10 +219,10 @@ func _begin_new_game() -> bool:
 
 
 func _drive(controller, clock: WorldClock, speed: float) -> void:
-	if bool(controller.get("_family_founding_locked")):
+	if bool(controller.family_founding_locked()):
 		var result: Dictionary = controller.request_command(&"family.founding.choose", {
 			"offer_id": int(controller.get("_family_founding_offer_id")),
-			"generation": int(controller.get("_family_founding_generation")),
+			"generation": int(controller._runtime_host.player_confirmation_view().family_offer.generation),
 			"choice_index": 0,
 		})
 		if bool(result.get("ok", false)):
@@ -230,15 +230,15 @@ func _drive(controller, clock: WorldClock, speed: float) -> void:
 		# Match the UI choice handler: the modal can pause daily callbacks, so
 		# refresh the resolved offer lock on frame pulses as well.
 		controller._sync_family_founding_offer()
-	if bool(controller.get("_era_reward_locked")):
+	if bool(controller.era_reward_locked()):
 		var era: Dictionary = controller.request_command(&"era_reward.choose", {
 			"offer_generation": int(controller.get("_era_reward_generation")),
 			"choice_index": 0,
 		})
 		if bool(era.get("ok", false)):
 			print("[colonization-probe] era reward chosen: %s" % JSON.stringify(era))
-	if clock != null and clock.paused and not bool(controller.get("_family_founding_locked")) \
-			and not bool(controller.get("_era_reward_locked")):
+	if clock != null and clock.paused and not bool(controller.family_founding_locked()) \
+			and not bool(controller.era_reward_locked()):
 		clock.set_speed(speed)
 		clock.pause(false)
 

@@ -329,8 +329,10 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
     if (!mirrored) result["worker_shadow_reason"] = String(error.c_str());
     if (worker_authoritative) {
         result["ok"] = mirrored;
-        if (mirrored) result["effective_days"] = admitted_days;
-        else result["reason"] = String(error.c_str());
+        if (mirrored) {
+            result["effective_days"] = admitted_days;
+            _runtime_host->wake_for_ideology_response(commands);
+        } else result["reason"] = String(error.c_str());
     }
     return result;
 }

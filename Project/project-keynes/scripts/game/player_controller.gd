@@ -26,11 +26,6 @@ var _military_component = PlayerControllerMilitaryScript.new()
 var _progression_component = PlayerControllerProgressionScript.new()
 var _selection_component = PlayerControllerSelectionScript.new()
 var _narrative_component = PlayerControllerNarrativeScript.new()
-## GM 事件屏蔽覆盖所有会自动锁时钟的玩家提示（年报、叙事、时代奖励、
-## 家族创立和理念抽取），避免只屏蔽两类弹窗后仍出现“随机暂停”。
-var _popups_suppressed: bool = false
-var _suppression_resume_running: bool = false
-
 signal selection_changed(cell)
 signal command_completed(id: StringName, result: Dictionary)
 signal command_settled(id: StringName, result: Dictionary)
@@ -41,11 +36,8 @@ signal era_reward_offer_changed(offer: Dictionary)
 signal family_founding_offer_changed(offer: Dictionary)
 signal narrative_event_offer_changed(offer: Dictionary)
 signal narrative_event_resolved(record: Dictionary)
-## Emitted once the native authority published a fresh three-card offer; the
-## clock is already paused when this fires.
+## A candidate is ready to display at the executor's stopped boundary.
 signal ideology_offer_ready(snapshot: Dictionary)
-## phase is "", "offer", "choose" or "reroll"; "" means the flow released.
-signal ideology_draw_state_changed(phase: String, detail: Dictionary)
 ## Era Advancement (docs/cpp-dots-runtime/era-advancement-runtime.md §5).
 signal era_advancement_changed(snapshot: Dictionary)
 signal era_advanced(old_index: int, new_index: int, buffs: PackedStringArray)
@@ -109,10 +101,6 @@ const COMMAND_MILITARY_ARMY_DISBAND = PlayerCommandValidation.COMMAND_MILITARY_A
 const COMMAND_MILITARY_WAR_DECLARE = PlayerCommandValidation.COMMAND_MILITARY_WAR_DECLARE
 const COMMAND_MILITARY_PEACE_PROPOSE = PlayerCommandValidation.COMMAND_MILITARY_PEACE_PROPOSE
 const COMMAND_MILITARY_PEACE_RESPOND = PlayerCommandValidation.COMMAND_MILITARY_PEACE_RESPOND
-## A draw/choose/reroll that has not settled after this many simulated days
-## releases the lock and restores the clock.
-const IDEOLOGY_DRAW_TIMEOUT_DAYS := 3
-
 const CLOCK_CALLBACKS := {
 	&"day_changed": &"_on_day_changed", &"season_changed": &"_on_season_changed",
 	&"year_changed": &"_on_year_changed", &"visual_day_phase_changed": &"_on_visual_day_phase_changed",
@@ -195,24 +183,11 @@ var _ideology_facade = null
 var _modifier_facade = null
 # Regime effects: the last (country, regime) pair whose Modifier rows were
 # reconciled. Empty means "not reconciled yet", so the first commit after a
-var _era_reward_locked := false
-var _era_reward_resume_running := false
-var _era_reward_previous_speed := 1.0
 var _era_reward_generation := 0
 var _era_reward_last_status := "NONE"
-var _family_founding_locked := false
-var _family_founding_resume_running := false
-var _family_founding_previous_speed := 1.0
+var _era_reward_dismissed_generation := 0
 var _family_founding_offer_id := 0
-var _family_founding_generation := 0
-# Ideology draw flow: pause + one-day steps until the native offer settles.
-var _ideology_draw_phase := ""
-var _ideology_draw_clock_saved := false
-var _ideology_draw_resume_running := false
-var _ideology_draw_previous_speed := 1.0
-var _ideology_draw_baseline_generation := 0
-var _ideology_draw_start_day := 0
-var _ideology_draw_sequence := -1
+var _shown_ideology_generation := 0
 
 
 func configure(
@@ -235,7 +210,7 @@ func configure(
 	_apply_camera_view_scale_compensation()
 	_connect_runtime()
 	_connect_ui()
-	_annual_report_flow.configure(self, _runtime_host, _world_clock, _ui_manager)
+	_annual_report_flow.configure(self, _runtime_host, _ui_manager)
 	_configure_narrative_runtime()
 	if _music_playback == null:
 		_music_playback = MusicSituationPlaybackScript.new()
@@ -272,13 +247,8 @@ func _apply_camera_view_scale_compensation() -> void:
 
 
 func _on_clock_control_changed(_paused: bool, _speed: float) -> void:
-	if _popups_suppressed and _suppression_resume_running and _world_clock != null \
-			and _world_clock.paused and not _world_clock.authority_fault_hold \
-			and _is_suppressed_popup_pause_source(String(_world_clock.last_pause_source)):
-		# 等这次时钟通知完成后释放被屏蔽提示申请的暂停。
-		# 只释放已知的 UI 自动暂停来源，保留手动暂停、存档暂停和故障保护。
-		_world_clock.pause(false)
-		_sync_clock_visual_state()
+	_sync_clock_visual_state()
+	_sync_time_ui()
 
 
 func music_situation_diagnostics() -> Dictionary:
@@ -305,23 +275,6 @@ func restore_view_state(map, state: Dictionary) -> void:
 
 
 func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
-	if _annual_report_flow.is_open():
-		return _complete_command(id, _result(false, "annual_report_open", "请先合卷，再处理国家事务。"))
-	if _era_reward_locked and id != COMMAND_ERA_REWARD_CHOOSE:
-		return _complete_command(id, _result(false,
-			"era_reward_choice_required", "必须先完成时代奖励选择。"))
-	if ideology_draw_locked() and id != COMMAND_ERA_REWARD_CHOOSE:
-		return _complete_command(id, _result(false,
-			"ideology_draw_in_progress", "正在抽取。"))
-	if _family_founding_locked and id != COMMAND_FAMILY_FOUNDING_CHOOSE \
-			and id != COMMAND_ERA_REWARD_CHOOSE:
-		return _complete_command(id, _result(false,
-			"family_founding_choice_required", "必须先选择要扶持的家族。"))
-	if _narrative_flow.is_locked() and id != COMMAND_NARRATIVE_CHOOSE \
-			and id != COMMAND_ERA_REWARD_CHOOSE \
-			and id != COMMAND_FAMILY_FOUNDING_CHOOSE:
-		return _complete_command(id, _result(false,
-			"narrative_choice_required", "请先处理当前事件。"))
 	if not SUPPORTED_COMMANDS.has(id):
 		return _complete_command(id, _result(false, "unsupported_command", "该正式玩家命令尚未开放。"))
 	if id == COMMAND_NARRATIVE_CHOOSE:
@@ -414,36 +367,20 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_ERA_REWARD_CHOOSE:
 			result = facade.choose_era_reward(
 				int(args.get("offer_generation", 0)),
-				int(args.get("choice_index", -1)), effective_day)
-			# The clock is still paused from OPEN; any caller (not just the
-			# modal) must re-sync so a day-advance settlement can start.
-			if bool(result.get("ok", false)):
-				call_deferred("_sync_era_reward_offer")
+				int(args.get("choice_index", -1)), effective_day, sequence)
 		COMMAND_FAMILY_FOUNDING_CHOOSE:
 			result = _economy_facade.submit_family_founding_choice(
 				int(args.get("offer_id", 0)), int(args.get("generation", 0)),
-				int(args.get("choice_index", -1)), effective_day)
-			if not bool(result.get("ok", false)):
-				result["code"] = String(result.get("reason", "command_rejected"))
-				result["message"] = "家族扶持选择未被接受，请重试。"
-			else:
-				result["message"] = "已选定扶持家族，将在下一次经济结算时立族。"
+				int(args.get("choice_index", -1)), effective_day, sequence)
 		COMMAND_IDEOLOGY_OFFER:
 			result = _ideology_facade.request_offer(
 				_player_country_handle, effective_day, sequence)
-			if bool(result.get("ok", false)):
-				_begin_ideology_draw("offer", sequence)
 		COMMAND_IDEOLOGY_CHOOSE:
 			result = _ideology_facade.choose_offer(_player_country_handle,
-				int(args.get("offer_generation", 0)),
-				int(args.get("choice_index", -1)), effective_day, sequence)
-			if bool(result.get("ok", false)):
-				_begin_ideology_draw("choose", sequence)
+				int(args.get("offer_generation", 0)), int(args.get("choice_index", -1)), effective_day, sequence)
 		COMMAND_IDEOLOGY_REROLL:
 			result = _ideology_facade.reroll_offer(_player_country_handle,
 				int(args.get("offer_generation", 0)), effective_day, sequence)
-			if bool(result.get("ok", false)):
-				_begin_ideology_draw("reroll", sequence)
 		COMMAND_IDEOLOGY_EQUIP:
 			result = _ideology_facade.equip(_player_country_handle,
 				int(args.get("ideology_id", -1)), effective_day, sequence)
@@ -745,13 +682,7 @@ func _dispatch_player_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	var debug_hotkeys_enabled := OS.is_debug_build()
 	if key.is_action_pressed(&"player_pause"):
-		if _annual_report_flow.is_open():
-			get_viewport().set_input_as_handled()
-		elif _family_founding_locked or _era_reward_locked:
-			get_viewport().set_input_as_handled()
-		elif ideology_draw_locked():
-			get_viewport().set_input_as_handled()
-		elif _world_clock != null:
+		if _world_clock != null:
 			_world_clock.toggle_pause()
 			sync_ui()
 			get_viewport().set_input_as_handled()
@@ -799,6 +730,7 @@ func _connect_runtime() -> void:
 		var runtime_callbacks := {"simulation_committed": _on_simulation_committed,
 			"simulation_day_records": _on_simulation_day_records,
 			"simulation_command_results": _on_simulation_command_results,
+			"player_confirmation_updated": _on_player_confirmation_updated,
 			"colonization_quotes_ready": colonization_quotes_ready.emit,
 			"simulation_view_updated": _on_simulation_view_updated}
 		for event in runtime_callbacks:
@@ -816,6 +748,8 @@ func _connect_runtime() -> void:
 func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
+	if _ideology_facade != null:
+		_ideology_facade.drain_receipts()
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
@@ -825,13 +759,33 @@ func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) 
 func _on_simulation_day_records(records: Array) -> void:
 	_narrative_service.consume_notices(records)
 
+func player_confirmation_reason() -> String:
+	if _runtime_host == null or not _runtime_host.has_method("player_confirmation_view"):
+		return ""
+	return String(_runtime_host.player_confirmation_view().get("reason", ""))
+
+
+func _on_player_confirmation_updated(_view: Dictionary) -> void:
+	_sync_era_reward_offer()
+	_sync_family_founding_offer()
+	_sync_ideology_draw()
+	_annual_report_flow.try_present()
+	_narrative_flow.try_present()
+	_sync_time_ui()
+
+
 func _on_simulation_command_results(results: Array) -> void:
 	for result: Dictionary in results:
 		var id := StringName(result.get("command", ""))
-		if id == COMMAND_ERA_REWARD_CHOOSE:
-			_sync_era_reward_offer()
-			if not bool(result.get("ok", false)) and _ui_manager != null:
-				_ui_manager.show_era_reward_error(String(result.get("reason", "")))
+		if id in [COMMAND_ERA_REWARD_CHOOSE, COMMAND_FAMILY_FOUNDING_CHOOSE]:
+			if not bool(result.get("ok", false)):
+				var reason := String(result.get("reason", ""))
+				result["message"] = _confirmation_error_message(reason)
+				if _ui_manager != null:
+					if id == COMMAND_ERA_REWARD_CHOOSE:
+						_ui_manager.show_era_reward_error(result.message)
+					else:
+						_ui_manager.show_family_founding_error(result.message)
 		elif id in [COMMAND_FAMILY_COLONIZATION_START, COMMAND_FAMILY_COLONIZATION_CANCEL]:
 			if bool(result.get("ok", false)):
 				continue
@@ -973,11 +927,6 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 		7: COMMAND_IDEOLOGY_PROMOTE,
 		10: COMMAND_IDEOLOGY_REROLL,
 	}.get(int(result.get("opcode", 0)), &"ideology.unknown") as StringName
-	if ideology_draw_locked() and int(result.get("sequence", -2)) == _ideology_draw_sequence:
-		if not bool(result.get("ok", false)):
-			_finish_ideology_draw(String(result.get("reason", "ideology_command_rejected")))
-		else:
-			_sync_ideology_draw()
 	command_settled.emit(command_id, result)
 
 
@@ -1132,31 +1081,12 @@ func _on_speed_changed(speed: float) -> void:
 
 
 func _on_pause_toggled(paused: bool) -> void:
-	if _annual_report_flow.is_open():
-		return
-	if _era_reward_locked:
-		sync_ui()
-		return
 	if _world_clock == null:
 		return
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
 			and _runtime_host.is_runtime_fault_paused() and not paused:
 		sync_ui()
 		return
-	if _family_founding_locked and not paused:
-		sync_ui()
-		return
-	if _narrative_flow.is_locked() and not paused:
-		sync_ui()
-		return
-	if ideology_draw_locked():
-		# The draw owns the clock until its one-day settlement lands.
-		sync_ui()
-		return
-	if _ideology_draw_phase == "presenting" and not paused:
-		# The player resumed manually; drop the saved clock instead of restoring it.
-		_ideology_draw_clock_saved = false
-		_finish_ideology_draw("")
 	_world_clock.pause(paused)
 	sync_ui()
 
@@ -1164,28 +1094,11 @@ func _on_pause_toggled(paused: bool) -> void:
 func _on_speed_selected(speed: float) -> void:
 	if _world_clock == null:
 		return
-	if _era_reward_locked:
-		sync_ui()
-		return
-	speed = clampf(speed, 1.0, 10.0)
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
 			and _runtime_host.is_runtime_fault_paused():
 		sync_ui()
 		return
-	if _family_founding_locked:
-		_family_founding_previous_speed = speed
-		_family_founding_resume_running = true
-		sync_ui()
-		return
-	if ideology_draw_locked() or _ideology_draw_phase == "presenting":
-		_ideology_draw_previous_speed = speed
-		_ideology_draw_resume_running = true
-		if _ideology_draw_phase == "presenting":
-			# Picking a speed while the offer is shown means "decide later".
-			_finish_ideology_draw("")
-		sync_ui()
-		return
-	_world_clock.set_speed(speed)
+	_world_clock.set_speed(clampf(speed, 1.0, 10.0))
 	_world_clock.pause(false)
 	sync_ui()
 
@@ -1242,15 +1155,23 @@ static func is_milestone_technology(technology_id: StringName) -> bool:
 	return _milestone_technology_ids.has(technology_id)
 
 
-static func _ideology_draw_failure_message(reason: String) -> String:
-	if reason.is_empty():
-		return ""
-	if reason == "ideology_draw_timeout":
-		return "抽取超时，请重试。"
-	return CountryViewModel.ideology_player_reason(reason)
+static func _confirmation_error_message(reason: String) -> String:
+	match reason:
+		"era_reward_offer_generation_stale":
+			return "这组时代奖励已过期，请查看当前候选。"
+		"era_reward_choice_invalid":
+			return "这个时代奖励选项无效。"
+		"family_founding_offer_missing", "family_founding_offer_stale":
+			return "这组家族候选已过期，请查看当前候选。"
+		"family_founding_offer_already_chosen":
+			return "这组家族候选已经选择。"
+		"family_founding_offer_not_player":
+			return "只能选择本国地块的家族候选。"
+		"family_founding_choice_invalid":
+			return "这个家族扶持选项无效。"
+	return reason
 
 
-## Close the visible offer without choosing; the offer stays pending natively.
 func _tax_item_exists(facade, kind: int, item_id: StringName) -> bool:
 	return PlayerCommandValidation._tax_item_exists(facade, kind, item_id)
 
@@ -1490,9 +1411,6 @@ func _sync_era_reward_offer() -> void:
 func era_reward_locked() -> bool:
 	return _progression_component.era_reward_locked(self)
 
-func era_reward_waiting_for_commit() -> bool:
-	return _era_reward_last_status == "SELECTED_PENDING"
-
 func get_era_advancement_snapshot() -> Dictionary:
 	return _progression_component.get_era_advancement_snapshot(self)
 
@@ -1522,9 +1440,6 @@ func _on_era_advancement_advanced(old_index: int, new_index: int,
 		buffs: PackedStringArray) -> void:
 	_progression_component._on_era_advancement_advanced(self, old_index, new_index, buffs)
 
-func ideology_draw_locked() -> bool:
-	return _progression_component.ideology_draw_locked(self)
-
 func ideology_draw_phase() -> String:
 	return _progression_component.ideology_draw_phase(self)
 
@@ -1534,17 +1449,17 @@ func ideology_offer_eligibility() -> Dictionary:
 func _ideology_player_snapshot() -> Dictionary:
 	return _progression_component._ideology_player_snapshot(self)
 
-func _begin_ideology_draw(phase: String, sequence: int) -> void:
-	_progression_component._begin_ideology_draw(self, phase, sequence)
-
 func _sync_ideology_draw() -> void:
 	_progression_component._sync_ideology_draw(self)
 
-func _finish_ideology_draw(failure_reason: String) -> void:
-	_progression_component._finish_ideology_draw(self, failure_reason)
+func dismiss_ideology_offer(generation: int) -> Dictionary:
+	return _progression_component.dismiss_ideology_offer(self, generation)
 
-func dismiss_ideology_offer() -> void:
-	_progression_component.dismiss_ideology_offer(self)
+func dismiss_displayed_ideology_offer() -> void:
+	if player_confirmation_reason() == "ideology_choice_required":
+		var view: Dictionary = _runtime_host.player_confirmation_view()
+		dismiss_ideology_offer(int(view.get("ideology_generation", 0)))
+
 
 func family_founding_locked() -> bool:
 	return _progression_component.family_founding_locked(self)
@@ -1618,12 +1533,6 @@ func narrative_ai_client():
 
 func narrative_event_locked() -> bool:
 	return _narrative_component.narrative_event_locked(self)
-
-func set_popups_suppressed(enabled: bool) -> void:
-	_narrative_component.set_popups_suppressed(self, enabled)
-
-func _is_suppressed_popup_pause_source(source: String) -> bool:
-	return _narrative_component._is_suppressed_popup_pause_source(self, source)
 
 func open_narrative_chronicle(filter_cell: int = -1) -> void:
 	_narrative_component.open_narrative_chronicle(self, filter_cell)

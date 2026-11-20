@@ -34,6 +34,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::get_runtime_thread_report);
     ClassDB::bind_method(D_METHOD("get_runtime_control_state"),
                          &DCWorldExt::get_runtime_control_state);
+    ClassDB::bind_method(D_METHOD("submit_player_confirmation", "action", "value", "effective_day"),
+                         &DCWorldExt::submit_player_confirmation);
     ClassDB::bind_method(D_METHOD("record_runtime_visual_timings",
                                   "ui_input_to_feedback_ms", "visual_apply_ms",
                                   "gpu_upload_ms"),

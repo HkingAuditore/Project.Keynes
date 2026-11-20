@@ -7,6 +7,7 @@
 #include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
 #include "runtime_day_tail.h"
+#include "runtime_player_confirmation.h"
 #include "runtime_published_view.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
@@ -66,6 +67,7 @@ public:
     // report (timers, transport queues and domain snapshots) to read a grant.
     using ControlState = RuntimeControlState;
     ControlState control_state() const;
+    godot::Dictionary submit_player_confirmation(RuntimePlayerConfirmationRequest request);
 
     // FAULTED describes a business failure, not thread completion. The token
     // is published by the worker wrapper after all worker_main locals unwind.
@@ -858,6 +860,7 @@ public:
     bool queue_ideology_pod_commands(
         const std::vector<RuntimeIdeologyPodCommand> &commands,
         std::string &error);
+    void wake_for_ideology_response(const std::vector<RuntimeIdeologyPodCommand> &commands);
     bool poll_ideology_pod_intent(RuntimeDomainIntent &intent);
     bool submit_ideology_pod_ack(const RuntimeDomainAck &ack,
                                  std::string &error);
@@ -1342,7 +1345,18 @@ private:
     const char *stage_ideology_projection(DayExecution &day);
     std::shared_ptr<const RuntimeIdeologyReadView> capture_ideology_read_view() const;
     const char *settle_era_rewards(DayExecution &day);
-    const char *player_confirmation_block() const;
+    const char *player_confirmation_block(int64_t published_day = -1);
+    RuntimePlayerConfirmation _player_confirmation;
+    uint64_t confirmation_country() const;
+    uint32_t player_ideology_offer() const;
+    bool ideology_response_queued(uint32_t generation) const;
+    void prepare_player_ideology_responses(int64_t day, bool opinion_missing);
+    bool service_player_confirmations();
+    bool player_response_admits(int64_t day) const;
+    void admit_player_response_through(int64_t day);
+    void finish_player_confirmation_day(int64_t day);
+    std::vector<uint8_t> encode_player_confirmation(int64_t day) const;
+    void restore_player_confirmation(const std::vector<uint8_t> &bytes, int64_t day);
     bool service_annual_presentations();
     void execute_era_advancement_request(RuntimeEraRewardRequest &request);
     bool install_era_advancement_setup();
@@ -1398,7 +1412,9 @@ private:
     std::shared_ptr<RuntimeEraRewardRequest> _era_advancement_bind, _era_advancement_restore;
     bool player_requests_pending_locked() const noexcept {
         return !_military_commands.empty() || !_economy_boundary_requests.empty() ||
-            !_era_reward_requests.empty() || !_annual_presentations.empty() || !_narrative_requests.empty();
+            !_era_reward_requests.empty() || !_annual_presentations.empty() ||
+            !_narrative_requests.empty() || !_player_confirmation.requests.empty() ||
+            _player_confirmation.ideology_input_changed;
     }
     bool service_economy_boundary_requests();
     std::atomic<int64_t> _events_ingress_cursor{1};

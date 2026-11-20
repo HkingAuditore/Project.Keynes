@@ -21,43 +21,6 @@ func narrative_event_locked(host) -> bool:
 	return host._narrative_flow != null and host._narrative_flow.is_locked()
 
 
-func set_popups_suppressed(host, enabled: bool) -> void:
-	if enabled and not host._popups_suppressed:
-		host._suppression_resume_running = host._world_clock != null and not host._world_clock.paused
-	host._popups_suppressed = enabled
-	host._annual_report_flow.set_popups_suppressed(enabled)
-	if not enabled:
-		return
-	# 已经锁住时钟的提示在开关切换瞬间也必须释放；原生 offer 保留，
-	# 之后可由玩家关闭屏蔽再正常领取。
-	if host._era_reward_locked:
-		if host._ui_manager != null and host._ui_manager.has_method("close_era_reward_offer"):
-			host._ui_manager.close_era_reward_offer()
-		host._era_reward_locked = false
-		if host._world_clock != null:
-			host._world_clock.set_speed(host._era_reward_previous_speed)
-			host._world_clock.pause(not host._era_reward_resume_running)
-	if host._family_founding_locked:
-		if host._ui_manager != null and host._ui_manager.has_method("close_family_founding_offer"):
-			host._ui_manager.close_family_founding_offer()
-		host._family_founding_locked = false
-		if host._world_clock != null:
-			host._world_clock.set_speed(host._family_founding_previous_speed)
-			host._world_clock.pause(not host._family_founding_resume_running)
-	if not host._ideology_draw_phase.is_empty():
-		host._finish_ideology_draw("popup_suppressed")
-
-
-
-static func _is_suppressed_popup_pause_source(host, source: String) -> bool:
-	for marker in ["_pause_clock", "open_era_reward_offer", "_sync_era_reward_offer",
-			"_sync_family_founding_offer", "_sync_ideology_draw", "_pause_clock_for_ceremony"]:
-		if source.find(marker) >= 0:
-			return true
-	return false
-
-
-
 func open_narrative_chronicle(host, filter_cell: int = -1) -> void:
 	if host._ui_manager == null or host._narrative_service == null:
 		return

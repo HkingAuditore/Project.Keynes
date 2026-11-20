@@ -53,9 +53,9 @@ int64_t NativeSimulationHost::request_runtime_calendar_day(int64_t date) {
 std::unique_lock<std::mutex> NativeSimulationHost::try_lock_economy_read_boundary() const {
     // The foreground admits days on the same thread as these compatibility
     // reads. Once it admits a day, use the published view until it settles.
-    if (_world_environment && !_calendar_suspended.load(std::memory_order_acquire) &&
-        _clock_requested_day.load(std::memory_order_acquire) >
-            _committed_day.load(std::memory_order_acquire)) return {};
+    if (_world_environment && (player_response_admits(committed_day_value() + 1) ||
+        (!_calendar_suspended.load(std::memory_order_acquire) &&
+         _clock_requested_day.load(std::memory_order_acquire) > committed_day_value()))) return {};
     return std::unique_lock<std::mutex>(_economy_authority_boundary_mutex, std::try_to_lock);
 }
 

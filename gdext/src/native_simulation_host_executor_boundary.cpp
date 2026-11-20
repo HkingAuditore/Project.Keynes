@@ -18,7 +18,12 @@ void NativeSimulationHost::publish_boundary_command_result(const char *command,
 }
 
 godot::Array NativeSimulationHost::take_boundary_command_results(bool &colonization_quotes_ready) {
-    if (inline_daily_mode() && !execution_has_stopped()) service_economy_boundary_requests();
+    if (inline_daily_mode() && !execution_has_stopped()) {
+        service_economy_boundary_requests();
+        service_era_reward_requests();
+        service_player_confirmations();
+        player_confirmation_block();
+    }
     std::deque<godot::Dictionary> results;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
@@ -118,6 +123,8 @@ bool NativeSimulationHost::service_save_request(
 
 void NativeSimulationHost::service_inline_save_request() {
     if (!inline_daily_mode() || !_save_requested.load(std::memory_order_acquire)) return;
+    service_economy_boundary_requests();
+    service_player_confirmations();
     auto boundary = try_lock_economy_input_capture();
     if (!boundary.owns_lock() || _inline_day_pending.load(std::memory_order_acquire)) return;
     const RuntimeExecutionContext execution_context(this,
