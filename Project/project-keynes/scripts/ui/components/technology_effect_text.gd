@@ -54,8 +54,10 @@ static func effect_items(definition: Dictionary) -> Array:
 	var modifier_texts := {}
 	for term_value in definition.get("modifier_terms", []):
 		var term: Dictionary = term_value
-		var value := int(round(float(term.get("value", 0.0)) * 100.0))
-		var delta := "%+d%%" % value
+		# 增量必须走 NetworkPresentation：它认得 operation（倍率/取反）和 `_bp`
+		# 基点量纲。这里曾经自己写 value*100 再取整，于是「地产测绘」的地主税率
+		# 400bp 显示成 +40000%，「军事测绘」的视野 +10 显示成 +1000%。
+		var delta := TechnologyNetworkValidatorScript.modifier_delta(term)
 		var subject := TechnologyNetworkValidatorScript.modifier_effect_subject(term)
 		var text := ""
 		if not subject.is_empty():

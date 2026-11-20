@@ -42047,7 +42047,7 @@
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "视野 +1000%；恶劣环境减员 -30%",
+			"effect_summary": "视野 +10；恶劣环境减员 -30%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "本节点以修正与支撑能力收束，不再单独开放建筑；其知识由后续军事节点与既有产业消费。",
