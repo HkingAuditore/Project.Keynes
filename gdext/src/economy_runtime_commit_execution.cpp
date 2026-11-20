@@ -259,8 +259,18 @@ NativeEconomyRuntime::advance_building_commit_chunk(
              commit_track_b_cadence4) == 0;
         if (commit_spread_active) {
             if (!_track_b_investment_cells_pending.empty()) {
+                const auto newly_due_cells = std::move(_investment_review_cell_indices);
                 _investment_review_cell_indices =
                     _track_b_investment_cells_pending;
+                // Finish older batches first while preserving every new review.
+                std::unordered_set<int32_t> queued_cells(
+                    _investment_review_cell_indices.begin(),
+                    _investment_review_cell_indices.end());
+                for (const int32_t cell : newly_due_cells) {
+                    if (queued_cells.insert(cell).second) {
+                        _investment_review_cell_indices.push_back(cell);
+                    }
+                }
                 _building_cell_cursor = 0;
                 _building_commit_phase = 5;
                 record_commit_phase(0);

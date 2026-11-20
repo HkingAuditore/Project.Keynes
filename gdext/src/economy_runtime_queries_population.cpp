@@ -1,4 +1,4 @@
-#include "economy_runtime.h"
+#include "economy_cell_class_satisfaction.h"
 
 #include <algorithm>
 #include <cmath>
@@ -468,9 +468,15 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         welfare_need_offsets.push_back(0);
     bool welfare_complete = include_details && settlement_batch != nullptr &&
         settlement_batch->welfare_entries.size() == slots.size();
+    EconomyCellClassSatisfaction class_satisfaction(_political_class_ids.size());
+    int64_t class_saturation = 0;
     for (int32_t slot : slots) {
         const int64_t composite_q16 = population_store().composite_satisfaction[slot];
         overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
+        const int32_t signature = population_store().signature_id[slot];
+        class_satisfaction.accumulate(_signatures[signature].profession_id,
+            _profession_political_class_index, population_store().population[slot],
+            composite_q16, class_saturation, saturating_add, saturating_mul);
         living_standard_levels.push_back(consumption_living_standard_level(slot));
         if (!include_details)
             continue;
@@ -524,6 +530,15 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         }
     }
     out["overall_satisfaction_by_cohort_q16"] = overall_satisfaction;
+    const auto worst_class = class_satisfaction.worst();
+    Dictionary class_discontent;
+    class_discontent["active"] = worst_class.discontent();
+    class_discontent["severity_q16"] = worst_class.severity_q16;
+    class_discontent["state_day"] = _cell_last_settlement_day[cell_idx];
+    class_discontent["economy_generation"] = static_cast<int64_t>(_committed_generation);
+    if (worst_class.class_index >= 0)
+        class_discontent["class_id"] = String(_political_class_ids[worst_class.class_index].c_str());
+    out["class_discontent"] = class_discontent;
     out["living_standard_level_by_cohort"] = living_standard_levels;
     if (include_details) {
         out["welfare_detail_available"] = welfare_complete;

@@ -56,8 +56,14 @@ bool NativeSimulationHost::service_save_request(
         _climate_wait_cv.notify_all();
         _control_cv.notify_all();
     }
-    if (has_pending_climate_input() ||
-        !_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
+    if (has_pending_climate_input()) return false;
+    // The inline caller already holds the boundary. The worker takes it only
+    // after the main-thread day tail has finished so capture and boundary
+    // mutations such as a player mobilization response cannot overlap.
+    std::unique_lock<std::mutex> economy_boundary;
+    if (!inline_daily_mode())
+        economy_boundary = std::unique_lock<std::mutex>(_economy_authority_boundary_mutex);
+    if (!_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
     const uint64_t request_id = _save_request_id.load(std::memory_order_acquire);
     RuntimeCommandPacket queued;
     while (pop_command(queued)) pending_commands.push_back(std::move(queued));

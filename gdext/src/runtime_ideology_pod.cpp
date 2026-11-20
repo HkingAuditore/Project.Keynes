@@ -147,8 +147,39 @@ void bit_set(std::vector<uint64_t> &bits, int32_t index, bool value) {
     else bits[static_cast<size_t>(index / 64)] &= ~mask;
 }
 
-uint64_t country_handle(const RuntimeCountryPodSnapshot &country, uint32_t slot) {
-    return (static_cast<uint64_t>(country.country_generation[slot]) << 32u) | slot;
+uint64_t country_handle(uint32_t generation, uint32_t slot) {
+    return (static_cast<uint64_t>(generation) << 32u) | slot;
+}
+
+void append_country_rows(
+        RuntimeIdeologyPodSnapshot &state, const RuntimeCountryPodSnapshot &country,
+        const RuntimeIdeologyOpinionSnapshot &opinion, const RuntimeIdeologyPodCatalog &catalog) {
+    const size_t first_new_slot = state.countries.size();
+    if (first_new_slot == country.country_count) return;
+    state.countries.resize(country.country_count);
+    const size_t idea_words = (catalog.definitions.size() + 63u) / 64u;
+    const size_t gate_words = (catalog.gate_count + 63u) / 64u;
+    const size_t synergy_words = (catalog.synergies.size() + 63u) / 64u;
+    for (uint32_t slot = static_cast<uint32_t>(first_new_slot);
+         slot < country.country_count; ++slot) {
+        auto &out = state.countries[slot];
+        if (country.country_active[slot] == 0) continue;
+        out.generation = country.country_generation[slot];
+        out.handle = country_handle(out.generation, slot);
+        out.ideology_points_q16 = catalog.starting_points_q16;
+        // Seed from the handle and the SHARED constant only. Seeding from
+        // `catalog.catalog_hash` made the two sides disagree by construction,
+        // because the main thread and the worker hash their catalogs with
+        // different functions.
+        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
+                                                         catalog.world_seed);
+        if (slot < opinion.country_count) out.opinion_revision = opinion.revision;
+        out.known_bits.assign(idea_words, 0);
+        out.banned_bits.assign(idea_words, 0);
+        out.gate_bits.assign(gate_words, 0);
+        out.synergy_bits.assign(synergy_words, 0);
+        out.ideas.resize(catalog.definitions.size());
+    }
 }
 
 void rebuild_active_idea_ids(RuntimeIdeologyPodCountryState &country) {
@@ -585,15 +616,21 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         country.country_research_signals.size() != static_cast<size_t>(country.country_count) * country.research_signal_words) {
         error = "ideology_country_snapshot_shape_invalid"; return false;
     }
-    const size_t lanes = static_cast<size_t>(country.country_count) * _catalog.class_count;
+    // Country commits before Ideology. Its new slots have no rows in the
+    // previous Economy commit. Validate the source's own shape and identities.
+    const uint32_t measured_countries = opinion.country_count;
+    const size_t lanes = static_cast<size_t>(measured_countries) * _catalog.class_count;
     // Revision 0 stays REJECTED. It was briefly relaxed for the A1 day-binding
     // experiment ("no opinion for this day" handed over as revision 0), but that
     // binding is not landed (05 §2.6) and the rejection is a real invariant:
     // `ideology_self_test_revision_rejection_failed` asserts it.
     if (opinion.revision == 0 || opinion.class_hash != _catalog.class_hash ||
-        opinion.class_count != _catalog.class_count || opinion.country_count != country.country_count ||
-        opinion.country_handles.size() != country.country_count ||
-        opinion.country_generations.size() != country.country_count ||
+        opinion.class_count != _catalog.class_count || measured_countries == 0 ||
+        measured_countries > country.country_count ||
+        (measured_countries < country.country_count &&
+         opinion.committed_day >= country.committed_day) ||
+        opinion.country_handles.size() != measured_countries ||
+        opinion.country_generations.size() != measured_countries ||
         opinion.population.size() != lanes || opinion.funds.size() != lanes ||
         opinion.owner_employed.size() != lanes || opinion.satisfaction_weighted.size() != lanes ||
         opinion.satisfaction_q16.size() != lanes) {
@@ -605,15 +642,15 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         (opinion.incidence_channel_count == 0
              ? (!opinion.class_incidence_q16.empty() ||
                 (!opinion.incidence_measured.empty() &&
-                 opinion.incidence_measured.size() != country.country_count))
-             : (opinion.incidence_measured.size() != country.country_count ||
+                 opinion.incidence_measured.size() != measured_countries))
+             : (opinion.incidence_measured.size() != measured_countries ||
                 opinion.class_incidence_q16.size() !=
                     lanes * static_cast<size_t>(opinion.incidence_channel_count)))) {
         error = "ideology_opinion_snapshot_shape_invalid"; return false;
     }
-    for (uint32_t slot = 0; slot < country.country_count; ++slot) {
+    for (uint32_t slot = 0; slot < measured_countries; ++slot) {
         if (opinion.country_generations[slot] != country.country_generation[slot] ||
-            opinion.country_handles[slot] != country_handle(country, slot)) {
+            opinion.country_handles[slot] != country_handle(country.country_generation[slot], slot)) {
             error = "ideology_country_generation_mismatch"; return false;
         }
     }
@@ -621,12 +658,12 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
     // table it was captured from. A newer/reused Country generation must not
     // replay commands against retained ideology state.
     if (!_current.countries.empty()) {
-        if (_current.countries.size() != country.country_count) {
+        if (_current.countries.size() > country.country_count) {
             error = "ideology_country_state_shape_mismatch"; return false;
         }
-        for (uint32_t slot = 0; slot < country.country_count; ++slot) {
+        for (uint32_t slot = 0; slot < _current.countries.size(); ++slot) {
             const auto &current = _current.countries[slot];
-            const uint64_t expected_handle = country_handle(country, slot);
+            const uint64_t expected_handle = country_handle(country.country_generation[slot], slot);
             if (country.country_active[slot] == 0) {
                 if (current.handle != 0) {
                     error = "ideology_country_state_generation_mismatch";
@@ -653,33 +690,9 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
     state.catalog_hash = _catalog.catalog_hash;
     state.input_generation = country.generation;
     state.opinion_revision = opinion.revision;
-    state.countries.resize(country.country_count);
-    const size_t idea_words = (_catalog.definitions.size() + 63u) / 64u;
-    const size_t gate_words = (_catalog.gate_count + 63u) / 64u;
-    const size_t synergy_words = (_catalog.synergies.size() + 63u) / 64u;
-    for (uint32_t slot = 0; slot < country.country_count; ++slot) {
-        auto &out = state.countries[slot];
-        if (country.country_active[slot] == 0) continue;
-        out.handle = country_handle(country, slot);
-        out.generation = country.country_generation[slot];
-        out.ideology_points_q16 = _catalog.starting_points_q16;
-        // Seed from the handle and the SHARED constant only. Seeding from
-        // `_catalog.catalog_hash` made the two sides disagree by construction,
-        // because the main thread and the worker hash their catalogs with
-        // different functions.
-        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
-                                                         _catalog.world_seed);
-        out.opinion_revision = opinion.revision;
-        out.known_bits.assign(idea_words, 0);
-        out.banned_bits.assign(idea_words, 0);
-        out.gate_bits.assign(gate_words, 0);
-        out.synergy_bits.assign(synergy_words, 0);
-        out.ideas.resize(_catalog.definitions.size());
-    }
+    append_country_rows(state, country, opinion, _catalog);
     state.state_hash = compute_state_hash(state);
     _current = std::move(state);
-    for (auto &country_row : _current.countries)
-        rebuild_active_idea_ids(country_row);
     _planned = _current;
     _plan_ready = false;
     return true;
@@ -1249,7 +1262,8 @@ bool RuntimeIdeologyPodAuthority::draw_offer(
 void RuntimeIdeologyPodAuthority::accrue_points(
         RuntimeIdeologyPodSnapshot &state,
         const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) const {
-    const size_t countries = state.countries.size();
+    // Wait for the first real row before initializing a new country's baseline.
+    const size_t countries = opinion.country_count;
     if (opinion.country_population.size() != countries ||
         opinion.country_buildings_installed.size() != countries ||
         opinion.country_trade_base_value.size() != countries) return;
@@ -1539,6 +1553,7 @@ bool RuntimeIdeologyPodAuthority::plan_day(
             _plan_ready = true;
             return true;
         }
+        append_country_rows(state, country, opinion, _catalog);
         state.round_day = day;
         state.phase = RuntimeIdeologyPodPhase::PENDING_TRANSITIONS;
         state.pending_cursor = state.command_cursor = 0;

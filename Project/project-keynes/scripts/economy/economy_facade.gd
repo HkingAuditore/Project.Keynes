@@ -346,6 +346,12 @@ func mobilization_odds(cell_idx: int, profession: int, action: int,
 		spend_bp)
 
 
+func resolve_player_mobilization(choice: Dictionary) -> Dictionary:
+	if not _configured or not _world_ext.has_method("resolve_player_mobilization"):
+		return {"ok": false, "code": "mobilization_unavailable"}
+	return _world_ext.resolve_player_mobilization(choice)
+
+
 func apply_mobilization_result(cell_idx: int, profession: int, action: int,
 		success: bool) -> bool:
 	if not _configured \

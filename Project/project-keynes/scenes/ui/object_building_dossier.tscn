@@ -5,6 +5,8 @@
 [ext_resource type="Script" uid="uid://ctit4vqjpihge" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="3_diverging"]
 [ext_resource type="Script" uid="uid://d0g2n3dvxeevs" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="4_stacked"]
 
+[ext_resource type="Script" path="res://scripts/ui/components/building/building_quantity_list.gd" id="5_quantity"]
+
 [node name="BuildingDossier" type="VBoxContainer" unique_id=1813135752]
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
@@ -71,6 +73,7 @@ size_flags_horizontal = 3
 script = ExtResource("4_stacked")
 
 [node name="CapacityCard" type="PanelContainer" parent="OverviewPage" unique_id=1747265439]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierAside"
@@ -87,14 +90,9 @@ theme_override_constants/separation = 8
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierSectionTitle"
-text = "劳动力配置"
+text = "开工与岗位"
 clip_text = true
 text_overrun_behavior = 3
-
-[node name="Hint" type="Label" parent="OverviewPage/CapacityCard/Box/Header" unique_id=2017210392]
-layout_mode = 2
-theme_type_variation = &"PKDossierMuted"
-text = "到岗"
 
 [node name="CapacityBars" type="Control" parent="OverviewPage/CapacityCard/Box" unique_id=1579320259]
 unique_name_in_owner = true
@@ -103,6 +101,7 @@ size_flags_horizontal = 3
 script = ExtResource("2_bars")
 
 [node name="Rule" type="ColorRect" parent="OverviewPage/CapacityCard/Box" unique_id=1090787586]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 1)
 layout_mode = 2
 mouse_filter = 2
@@ -112,7 +111,7 @@ color = Color(0.42, 0.29, 0.16, 0.24)
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierKicker"
-text = "岗位"
+text = "各岗位在岗 / 需用"
 clip_text = true
 text_overrun_behavior = 3
 
@@ -122,14 +121,8 @@ layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("2_bars")
 
-[node name="JobEmptyNote" type="Label" parent="OverviewPage/CapacityCard/Box" unique_id=1160389672]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKDossierCaption"
-autowrap_mode = 3
-
 [node name="ProductionCard" type="PanelContainer" parent="OverviewPage" unique_id=1564609049]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierAside"
@@ -146,27 +139,14 @@ theme_override_constants/separation = 8
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierSectionTitle"
-text = "投入与产出结构"
+text = "本期投入与产出"
 clip_text = true
 text_overrun_behavior = 3
 
-[node name="Hint" type="Label" parent="OverviewPage/ProductionCard/Box/Header" unique_id=574290232]
-layout_mode = 2
-theme_type_variation = &"PKDossierMuted"
-text = "每栋 / 每日"
-
-[node name="ProductionBars" type="Control" parent="OverviewPage/ProductionCard/Box" unique_id=566931210]
+[node name="ProductionRows" type="VBoxContainer" parent="OverviewPage/ProductionCard/Box"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("2_bars")
-
-[node name="ProductionEmptyNote" type="Label" parent="OverviewPage/ProductionCard/Box" unique_id=390945947]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKDossierCaption"
-autowrap_mode = 3
+script = ExtResource("5_quantity")
 
 [node name="UnusedInputsNote" type="Label" parent="OverviewPage/ProductionCard/Box" unique_id=1288231806]
 unique_name_in_owner = true
@@ -174,6 +154,26 @@ visible = false
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 autowrap_mode = 3
+
+[node name="ConstructionCard" type="PanelContainer" parent="OverviewPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/ConstructionCard"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="OverviewPage/ConstructionCard/Box"]
+layout_mode = 2
+theme_type_variation = &"PKDossierSectionTitle"
+text = "每栋基础建材"
+
+[node name="Requirements" type="VBoxContainer" parent="OverviewPage/ConstructionCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_quantity")
 
 [node name="OperationsPage" type="VBoxContainer" parent="." unique_id=142582309]
 unique_name_in_owner = true

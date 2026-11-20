@@ -1,6 +1,7 @@
 extends RefCounted
 
 const Recipes = preload("res://scripts/ui/cell_inspector/construction_recipes.gd")
+const Military = preload("res://scripts/ui/cell_inspector/military.gd")
 
 
 const ObjectDossiers = preload("res://scripts/ui/cell_inspector/object_dossiers.gd")
@@ -502,7 +503,8 @@ func _construction_military_row(host, facade, index: int, row: Dictionary,
 		"blocked": not eligible,
 		"reason_code": String(cost.get("reason_code", "")),
 		"reason_text": "" if eligible else reason,
-		"materials_text": materials_text if can_build else "",
+		"materials_text": materials_text,
+		"days": int(cost.get("build_days", 0)),
 		"cash_required": cash_required,
 		"cash_text": h._money_text(cash_required) if cash_required > 0 else "",
 		"market_used": 0,
@@ -510,6 +512,8 @@ func _construction_military_row(host, facade, index: int, row: Dictionary,
 			cost.get("materials", []), market_stock),
 		"cash_blocked": String(cost.get("reason_code", ""))
 			== "construction_treasury_cash_insufficient",
+		"preview": Military.building_hover_preview(h, role_id, row, false, 0,
+			Military.building_upkeep(h, row)),
 		"tooltip": "\n".join(tooltip_lines),
 	}
 
@@ -842,6 +846,7 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 			"reason_code": String(entry.get("reason_code", "")),
 			"reason_text": "" if eligible else reason_text,
 			"materials_text": h._construction_materials_text(materials),
+			"material_free": eligible and item.has("materials") and materials.is_empty(),
 			"cash_required": cash,
 			"cash_text": h._money_text(cash),
 			"days": int(entry.get("days", 0)),
@@ -849,6 +854,7 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 			"maturity": maturity,
 			"market_used": int(entry.get("market_used", 0)),
 			"material_status": material_status,
+			"preview": _construction_preview(host, placement, job_spec, unlocked_goods),
 			"cash_blocked": String(entry.get("reason_code", ""))
 				== "construction_treasury_cash_insufficient",
 			"tooltip": h._construction_tooltip(entry, item, materials, local_stock,
@@ -857,6 +863,68 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 		})
 	return rows
 
+
+
+func _construction_preview(host, placement: Dictionary, job_spec: Dictionary,
+		unlocked_goods: Dictionary) -> Dictionary:
+	var outputs: Array = []
+	var output_ids: PackedStringArray = placement.get("output_good_ids", PackedStringArray())
+	var output_amounts: PackedInt64Array = placement.get("output_quantities", PackedInt64Array())
+	for index in mini(output_ids.size(), output_amounts.size()):
+		var id := output_ids[index]
+		outputs.append({"name": host._good_display_name(id), "icon": IconCatalog.good_semantic(id),
+			"text": "%s 单位/日" % host._goods_scaled(output_amounts[index])})
+
+	var inputs: Array = []
+	var optional: Array = []
+	var input_ids: PackedStringArray = placement.get("input_good_ids", PackedStringArray())
+	var categories: PackedStringArray = placement.get("input_category_ids", PackedStringArray())
+	var amounts: PackedInt64Array = placement.get("input_quantities", PackedInt64Array())
+	var required: PackedInt32Array = placement.get("input_required_q16", PackedInt32Array())
+	for index in mini(input_ids.size(), amounts.size()):
+		var good_id := input_ids[index]
+		var candidates := Recipes.construction_input_candidates(placement, index, unlocked_goods)
+		var options: Array = []
+		for candidate in candidates:
+			if candidates.size() > 1 or candidate.id != good_id:
+				options.append({"name": host._good_display_name(candidate.id),
+					"icon": IconCatalog.good_semantic(candidate.id)})
+		var input_name: String = host._good_display_name(good_id)
+		if not options.is_empty() and index < categories.size() and categories[index] == "tools":
+			input_name = "工具"
+		var recipe := {"name": input_name,
+			"icon": IconCatalog.good_semantic(good_id),
+			"text": "%s 单位/日" % host._goods_scaled(amounts[index]), "options": options}
+		var is_optional := index < required.size() and required[index] > 0 and required[index] < 65536
+		(optional if is_optional else inputs).append(recipe)
+
+	var resources: PackedStringArray = placement.get("resource_ids", PackedStringArray())
+	var quantities: PackedInt64Array = placement.get("resource_quantities", PackedInt64Array())
+	var modes: PackedInt32Array = placement.get("resource_modes", PackedInt32Array())
+	for index in mini(resources.size(), mini(quantities.size(), modes.size())):
+		var id := resources[index]
+		var amount: String = host._goods_scaled(quantities[index])
+		inputs.append({
+			"name": host._resource_display_name(id),
+			"icon": IconCatalog.resource_semantic(id),
+			"text": "%s 单位储量" % amount if modes[index] == 1 else "%s 单位/日" % amount,
+		})
+
+	var jobs: Array = []
+	if bool(job_spec.get("ok", false)):
+		var owner_id := String(job_spec.get("owner_profession", ""))
+		var owner_slots := int(job_spec.get("owner_slots", 0))
+		if owner_slots > 0:
+			jobs.append({"name": "%s（业主）" % host._construction_profession_name(owner_id),
+				"icon": IconCatalog.profession_semantic(owner_id), "text": "%d 人" % owner_slots})
+		var professions: PackedStringArray = job_spec.get("employee_professions", PackedStringArray())
+		var slots: PackedInt64Array = job_spec.get("employee_slots", PackedInt64Array())
+		for index in mini(professions.size(), slots.size()):
+			if slots[index] > 0:
+				var id := professions[index]
+				jobs.append({"name": "%s（雇员）" % host._construction_profession_name(id),
+					"icon": IconCatalog.profession_semantic(id), "text": "%d 人" % slots[index]})
+	return {"outputs": outputs, "inputs": inputs, "optional": optional, "jobs": jobs}
 
 
 func _construction_materials_text(host, materials: Array) -> String:
@@ -874,8 +942,7 @@ func _construction_materials_text(host, materials: Array) -> String:
 	return text
 
 
-## 建造卡只需要展示真正的缺口：国库先覆盖一部分后，市场仍缺多少，
-## 以及本地市场现货是否足够。数量仍沿用报价的 GOODS_SCALE，展示换算留在 UI。
+## 报价按一栋建筑计算，国库供料之后才向本地市场采购。
 func _construction_material_status_rows(host, materials: Array,
 		local_stock: Dictionary) -> Array:
 	var h = host
@@ -883,18 +950,29 @@ func _construction_material_status_rows(host, materials: Array,
 	for raw in materials:
 		var material: Dictionary = raw
 		var good_id := String(material.get("good_id", ""))
+		var required := int(material.get("required", 0))
+		var treasury := int(material.get("treasury", 0))
 		var market_need := int(material.get("market", 0))
 		var market_stock := int(local_stock.get(good_id, 0))
-		var missing := maxi(0, market_need - market_stock)
+		var missing := maxi(0, required - treasury - market_need)
+		if local_stock.has(good_id):
+			missing += maxi(0, market_need - market_stock)
+		var sources := PackedStringArray()
+		if treasury > 0:
+			sources.append("国库供料" if treasury == required else "国库 %s" % h._goods_scaled(treasury))
+		if market_need > 0:
+			sources.append("全部市购" if market_need == required else "需市购 %s" % h._goods_scaled(market_need))
 		rows.append({
 			"name": String(material.get("name", "建材")),
 			"good_id": good_id,
 			"icon": String(IconCatalog.good_semantic(good_id)),
+			"text": "%s 单位" % h._goods_scaled(required),
+			"detail": "，".join(sources),
 			"missing": missing > 0,
 			"missing_text": h._goods_scaled(missing),
 			"market_stock_text": h._goods_scaled(market_stock),
 			"market_need_text": h._goods_scaled(market_need),
-			"reason": "市场无货" if missing > 0 else "",
+			"reason": ("市场无货" if market_stock == 0 else "市场库存不足") if missing > 0 else "",
 		})
 	return rows
 
@@ -931,10 +1009,15 @@ func _construction_tooltip(host, entry: Dictionary, item: Dictionary, materials:
 	var job_text = host._construction_job_text(job_spec)
 	if not job_text.is_empty():
 		lines.append("岗位：%s" % job_text)
-	var inputs = host._construction_recipe_side(
-		host._construction_input_recipe_rows(placement, unlocked_goods))
+	var inputs_by_type: Array = host._construction_input_recipe_rows(placement, unlocked_goods)
+	var inputs = host._construction_recipe_side(inputs_by_type.filter(
+		func(input: Dictionary) -> bool: return not bool(input.get("optional", false))))
 	if not inputs.is_empty():
 		lines.append("投入：%s" % inputs)
+	var optional_inputs = host._construction_recipe_side(inputs_by_type.filter(
+		func(input: Dictionary) -> bool: return bool(input.get("optional", false))))
+	if not optional_inputs.is_empty():
+		lines.append("可选投入：%s" % optional_inputs)
 	var resource_ids: PackedStringArray = placement.get("resource_ids", PackedStringArray())
 	var resource_quantities: PackedInt64Array = placement.get(
 		"resource_quantities", PackedInt64Array())
@@ -1135,7 +1218,26 @@ func _append_construction_rows(host, rows: Array, snapshot: Dictionary, type_ids
 		var type_idx = int(types[i])
 		var building_id = String(type_ids[type_idx]) \
 			if type_idx >= 0 and type_idx < type_ids.size() else ""
-		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (building_id if not building_id.is_empty() else "建筑"), "building_type_id": building_id, "count": "%d" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % h._owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": h._building_icon(building_id, snapshot, type_idx), "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
+		var name: String = type_names[type_idx] if type_idx >= 0 and type_idx < type_names.size() \
+			else (building_id if not building_id.is_empty() else "建筑")
+		var owner := int(owners[i]) if i < owners.size() else -1
+		rows.append({
+			"id": "construction_%d_%d" % [type_idx, i],
+			"name": name,
+			"building_type_id": building_id,
+			"count": "%d" % (int(counts[i]) if i < counts.size() else 0),
+			"owner": "业主 · %s" % h._owner_profession_name(snapshot, owner),
+			"status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0),
+			"profit": "—",
+			"profit_label": "未投产",
+			"accent": UITokens.WARN,
+			"icon": h._building_icon(building_id, snapshot, type_idx),
+			"job_rows": [],
+			"production_rows": [],
+			"finance": {},
+			"visible": true,
+			"construction_requirements": Recipes.construction_requirements(host, snapshot, type_idx),
+		})
 
 
 

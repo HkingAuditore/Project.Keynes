@@ -111,6 +111,12 @@ class EconomyStub extends RefCounted:
 	var reads := 0
 	var modern_unlocked := false
 	var snapshot_unavailable := false
+	var dispatches: Array = []
+	func start_family_colonization(country: int, family: int, source: int, target: int,
+			population: int, token: int, day: int, sequence: int) -> Dictionary:
+		dispatches.append([country, family, source, target, population, token, day, sequence])
+		return {"ok": true, "code": "colonization_queued"}
+
 	func family_cell_snapshot(_cell: int, _offset: int, _limit: int) -> Dictionary:
 		reads += 1
 		return {"ok": true, "family_handles": PackedInt64Array([11]), "populations": PackedInt64Array([6])}
@@ -139,6 +145,10 @@ class ControllerGuard extends PlayerController:
 	func _resolve_player_country() -> Dictionary:
 		_player_country_handle = 10
 		return {"ok": true, "facade": country}
+
+class ClockStub extends RefCounted:
+	func day_index() -> int:
+		return 42
 
 var _failures := 0
 
@@ -464,6 +474,23 @@ func _run_controller_guard() -> void:
 	var controller := ControllerGuard.new()
 	var economy := EconomyStub.new()
 	controller._economy_facade = economy
+	controller._world_clock = ClockStub.new()
+	var args := {"family_handle": 0, "source_cell": 3, "target_cell": 24,
+		"population": 5, "quote_token": 71}
+	var sequence := int(controller._command_sequence)
+	var result := controller.request_command(PlayerController.COMMAND_FAMILY_COLONIZATION_START, args)
+	_expect("anonymous migration reaches the economy with an explicit zero family handle",
+		result.get("ok", false) and economy.dispatches == [[10, 0, 3, 24, 5, 71, 42, sequence]])
+	var dispatch_count := economy.dispatches.size()
+	var next_sequence := int(controller._command_sequence)
+	for field in args.keys():
+		var incomplete := args.duplicate()
+		incomplete.erase(field)
+		result = controller.request_command(PlayerController.COMMAND_FAMILY_COLONIZATION_START, incomplete)
+		_expect("dispatch without %s is rejected before submission" % field,
+			not result.get("ok", true) and result.get("code") == "invalid_args"
+			and economy.dispatches.size() == dispatch_count
+			and controller._command_sequence == next_sequence)
 	_expect("dispatch readers reject foreign sources before accessing family state",
 		not controller.get_family_dispatch_candidates(8).get("ok", false) and economy.reads == 0)
 	var preview := controller.get_family_dispatch_preview(11, 3)

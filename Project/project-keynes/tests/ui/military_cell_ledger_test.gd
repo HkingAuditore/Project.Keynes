@@ -80,6 +80,11 @@ class FakeMilitaryFacade:
 class FakeEconomyFacade:
 	var military: FakeMilitaryFacade
 	var treasury_empty := false
+	var market_stock: Dictionary = {}
+
+	func market_cell_snapshot(_cell: int) -> Dictionary:
+		return {"good_ids": PackedStringArray(market_stock.keys()),
+			"stock": PackedInt64Array(market_stock.values())}
 
 	func construction_quotes(_country_handle: int, _cell: int,
 			building_indices: PackedInt32Array) -> Dictionary:
@@ -99,7 +104,7 @@ class FakeEconomyFacade:
 					"name": FakeMilitaryFacade.TEST_GOODS[int(goods[index]) % FakeMilitaryFacade.TEST_GOODS.size()],
 					"required": required,
 					"treasury": 0 if treasury_empty else required,
-					"market": 0,
+					"market": required if treasury_empty and not market_stock.is_empty() else 0,
 				})
 			var eligible := not treasury_empty or materials.is_empty()
 			items.append({
@@ -212,7 +217,7 @@ func _snapshot() -> Dictionary:
 
 func _view_model(researched: PackedStringArray, snapshot: Dictionary,
 		owned := true, treasury_empty := false,
-		catalog_override: Dictionary = {}) -> Dictionary:
+		catalog_override: Dictionary = {}, market_stock: Dictionary = {}) -> Dictionary:
 	var generator := FakeGenerator.new()
 	var country := FakeCountryFacade.new()
 	country.techs = researched
@@ -225,6 +230,7 @@ func _view_model(researched: PackedStringArray, snapshot: Dictionary,
 	var economy := FakeEconomyFacade.new()
 	economy.military = military
 	economy.treasury_empty = treasury_empty
+	economy.market_stock = market_stock
 	generator.country = country
 	generator.military = military
 	generator.economy = economy
@@ -370,7 +376,7 @@ func _test_tech_gate() -> void:
 ## 缺建材时必须说清因由，并收回主键：给一个按下去注定被拒的键比不给更糟。
 func _test_cost_blocking() -> void:
 	var blocked := _view_model(PackedStringArray(["tech.masonry"]), _snapshot(),
-		true, true)
+		true, true, {}, {"logs": 115000, "turf_block": 0, "raw_stone": 30000, "bricks": 15000})
 	var fort: Dictionary = (blocked["military_cell"]["buildings"] as Array)[1]
 	if String(fort.get("cost_reason", "")) != "建材不足":
 		_failures.append("blocked fortification cost_reason: %s" % String(
@@ -383,6 +389,13 @@ func _test_cost_blocking() -> void:
 		_failures.append("blocked fortification dropped its material text")
 	if not String(fort.get("tooltip", "")).contains("建材不足"):
 		_failures.append("blocked fortification tooltip omits the reason")
+	var hover: Dictionary = fort.get("hover", {})
+	var status_rows: Array = hover.get("material_status", [])
+	if status_rows.size() != 4 or String(hover.get("status_text", "")) != "受阻":
+		_failures.append("structured blocked hover dropped some materials or the disabled state")
+	elif status_rows[0].missing_text != "5" or not bool(status_rows[0].missing) \
+			or bool(status_rows[2].missing):
+		_failures.append("structured blocked hover lost the material-specific shortage")
 	# 提示卡是玩家核对清单的唯一落点：行内可以写「等 N 项」，
 	# 提示卡必须一种不漏，还要给出合计与每日维护。
 	var tooltip := String(fort.get("tooltip", ""))
@@ -620,44 +633,36 @@ func _test_ledger_component() -> void:
 		if demolish.position.x + demolish.size.x > primary.position.x + 0.5 \
 				and demolish.visible:
 			_failures.append("%s demolish chip overlaps the primary chip" % row.name)
-	# 提示卡必须是能换行的纸片卡，而不是原生 tooltip：原生提示不折行，
-	# 建材多项时会被压成一条长句甚至被屏幕边缘裁掉。
-	# 只构建一张卡来验证换行行为，按钮侧只查是否绑定了纸片构建器，
-	# 免得为了一次断言反复造节点。
-	var probe_row: Control = rows[1]
-	var card: Object = probe_row._make_custom_tooltip(
-		String(probe_row.tooltip_text))
-	if card == null:
-		_failures.append("building row has no paper tooltip card")
-	else:
-		var card_root: Control = card
-		var wrap_label: Label = null
-		for child in card_root.get_children():
-			if child is Label:
-				wrap_label = child
-				break
-		if wrap_label == null:
-			_failures.append("tooltip card has no text label")
-		else:
-			if wrap_label.autowrap_mode == TextServer.AUTOWRAP_OFF:
-				_failures.append("tooltip label does not wrap")
-			if wrap_label.text.strip_edges().is_empty():
-				_failures.append("tooltip card is empty")
-		card_root.free()
-	for raw in rows:
-		var row: Control = raw
-		# 悬停按钮时 Godot 只问按钮，裸 Button 会退回不换行的默认 TooltipPanel。
-		for chip_raw in [row.action_button(), row.demolish_button()]:
-			var chip: Button = chip_raw
-			if not chip.has_method("_make_custom_tooltip"):
-				_failures.append("%s chip cannot build a paper tooltip" % row.name)
-				continue
-			# 真调一次：绑定失效时它会返回 null，然后静默回退到原生提示。
-			var chip_card: Object = chip._make_custom_tooltip("建材：木材 30")
-			if chip_card == null:
-				_failures.append("%s chip fell back to the native tooltip" % row.name)
-			else:
-				(chip_card as Control).free()
+	var probe_row: Control = rows[0]
+	probe_row.preview_changed.emit(true, false)
+	await process_frame
+	var card: BuildingHoverCard = ledger._building_hover
+	var material: Node = card._requirement_list.get_child(0)
+	if not card.visible or card.theme_type_variation != &"PKPaperPopup":
+		_failures.append("military row did not open the shared paper card")
+	if card._title.text != "戍卫营" or material.get_node("Quantity").text != "40 单位":
+		_failures.append("hover lost the actual building and material amount")
+	if (material.get_node("Icon") as IconBadge).icon_key != &"good.logs":
+		_failures.append("military hover material has the wrong icon")
+	var benefit := card._outputs.get_node("List").get_child(0)
+	if benefit.get_node("Quantity").text != "+25 人":
+		_failures.append("military hover lost the numeric garrison benefit")
+	var upkeep := card._upkeep.get_node("List")
+	if upkeep.get_child_count() != 2 or upkeep.get_child(1).get_node("Quantity").text != "0.3 金币/日":
+		_failures.append("military hover lost the projected rebuild upkeep")
+	var changed := model.duplicate(true)
+	changed.buildings[0].hover.cash_required = 15000
+	changed.buildings[0].hover.cash_text = "1.5"
+	var nodes_before_hover_patch := _count_nodes(ledger)
+	ledger.set_model(changed)
+	if not card.visible or card._cost.text != "1.5":
+		_failures.append("open hover did not refresh its cash amount in place")
+	if _count_nodes(ledger) != nodes_before_hover_patch:
+		_failures.append("updating an open military hover rebuilt its nodes")
+	probe_row.preview_changed.emit(false, false)
+	if card.visible:
+		_failures.append("military hover persisted after pointer exit")
+	ledger.set_model(model)
 	var barracks_row = rows[0]
 	if not barracks_row.action_button().visible:
 		_failures.append("barracks action button hidden while rebuild is available")
@@ -681,6 +686,10 @@ func _test_ledger_component() -> void:
 	barracks_row.mouse_entered.emit()
 	if not barracks_row.demolish_button().visible:
 		_failures.append("demolish chip stayed hidden while hovering the row")
+	barracks_row.preview_changed.emit(true, true)
+	if not card.visible or card._status.text != "拆除" or card._requirements.visible:
+		_failures.append("demolition hover should show the existing building and its own action")
+	barracks_row.preview_changed.emit(false, false)
 	requests.clear()
 	barracks_row.demolish_button().pressed.emit()
 	if not barracks_row.confirm_pending():

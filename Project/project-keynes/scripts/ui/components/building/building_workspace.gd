@@ -324,10 +324,13 @@ func _focus_first_buildable() -> void:
 			as BuildingOptionRow
 		if row == null:
 			continue
-		var button := row.get_node_or_null("Row/BuildButton") as Button
-		if button != null and button.focus_mode != Control.FOCUS_NONE:
+		var button := row.get_node_or_null("%BuildButton") as Button
+		if button != null and not button.disabled:
 			button.grab_focus()
 			return
+	var current_sort := _sort_buttons.get(String(_model.get("sort", "recommended"))) as Button
+	if current_sort != null and current_sort.is_visible_in_tree():
+		current_sort.grab_focus()
 
 
 func _current_sort() -> String:

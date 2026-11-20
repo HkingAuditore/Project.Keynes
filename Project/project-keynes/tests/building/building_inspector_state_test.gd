@@ -30,6 +30,11 @@ func _initialize() -> void:
 	elif not String(finance.get("warning", "")).contains("停产中"):
 		_fail("zero cashflow still lacks suspension context")
 	else:
+		var materials: Array = row.get("construction_requirements", [])
+		if materials.size() != 1 or materials[0].text != "2.5 单位" \
+				or materials[0].icon != &"good.logs":
+			_fail("building dossier omitted the catalog material and its per-building amount")
+			return
 		_test_loss_breakdown_model()
 		print("[building-inspector-state] PASS")
 		quit(0)
@@ -114,11 +119,14 @@ func _suspended_silver_mine_snapshot() -> Dictionary:
 		"building_output_offsets": PackedInt32Array([0, 1]),
 		"building_output_good_ids": PackedInt32Array([0]),
 		"building_output_quantities": PackedInt64Array([2000]),
+		"building_construction_offsets": PackedInt32Array([0, 1]),
+		"building_construction_good_ids": PackedInt32Array([1]),
+		"building_construction_quantities": PackedInt64Array([2500]),
 		"building_resource_offsets": PackedInt32Array([0, 0]),
 		"building_production_resource_ids": PackedInt32Array(),
 		"building_production_resource_quantities": PackedInt64Array(),
 		"building_resource_ids": PackedStringArray(),
-		"good_ids": PackedStringArray(["silver"]),
+		"good_ids": PackedStringArray(["silver", "logs"]),
 	}
 
 

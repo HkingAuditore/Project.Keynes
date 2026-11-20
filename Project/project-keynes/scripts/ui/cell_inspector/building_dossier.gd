@@ -30,6 +30,8 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 	var staff_text = "%d / %d" % [staff_actual, staff_req] if staff_req > 0 else "—"
 
 	var actual_util = float(row.get("actual_utilization_float", -1.0))
+	var has_activity_sample: bool = actual_util >= 0.0
+	var in_construction := status_text.begins_with("建造中")
 	var planned_util = float(row.get("planned_utilization_float", 1.0))
 	if actual_util < 0.0:
 		var cap_pos = status_text.find("产能")
@@ -44,21 +46,17 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 	var is_halted = not state_summary.is_empty() or status_text.find("停") >= 0
 	var util_text = String(state_summary.get("label", "停产")) if is_halted \
 		else ("%.0f%%" % (actual_util * 100.0))
-	var util_caption = "正常运转"
-	if is_halted:
+	var util_caption := ""
+	if in_construction:
+		util_text = "未投产"
+	elif is_halted:
 		util_caption = String(state_summary.get("detail", "本期暂停生产"))
-	elif planned_util < 0.995:
-		util_caption = "计划限产 %.0f%%" % (planned_util * 100.0)
-	elif actual_util < 0.995:
-		util_caption = "受人力或环境制约"
-	else:
-		util_caption = "满负荷运转"
 
 	var finance: Dictionary = row.get("finance", {})
 	var rev_text = String(finance.get("revenue", "—"))
 	var cost_text = String(finance.get("cost", "—"))
 	var profit_positive = bool(finance.get("profit_positive", not profit_text.begins_with("-") and not profit_text.begins_with("−") and not is_halted))
-	var profit_caption = status_text
+	var profit_caption = ""
 	if not finance.is_empty():
 		profit_caption = "收 %s · 支 %s" % [rev_text, cost_text]
 
@@ -75,10 +73,11 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		},
 		{
 			"id": "building_utilization",
-			"title": "产能出力",
+			"title": "开工率",
 			"value": actual_util,
 			"kind": "text",
 			"text": util_text,
+			"ratio_meter": has_activity_sample and not in_construction and not is_halted,
 			"caption": util_caption,
 			"tone": "risk" if (is_halted or actual_util < 0.25) else ("warn" if actual_util < 0.75 else ""),
 			"positive_good": true,
@@ -92,7 +91,7 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 			"value": staff_ratio,
 			"kind": "text",
 			"text": staff_text,
-			"caption": ("到岗 %.0f%%" % (staff_ratio * 100.0)) if staff_req > 0 else "",
+			"caption": "",
 			"tone": "risk" if (staff_req > 0 and staff_ratio < 0.5) else ("warn" if (staff_req > 0 and staff_ratio < 0.99) else ""),
 			"positive_good": true,
 			"icon": &"population.profession.worker",
@@ -128,25 +127,23 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 			"icon": "status.warning",
 		})
 
-	var capacity_bars = [
-		{
-			"id": "cap_actual",
-			"label": "实际产能",
+	var capacity_bars = []
+	if not in_construction and not is_halted and planned_util < 0.995:
+		capacity_bars.append({
+			"id": "cap_plan",
+			"label": "计划开工",
 			"icon": &"economy.building.factory",
-			"value": clampf(actual_util, 0.0, 1.0),
-			"marker": clampf(planned_util, 0.0, 1.0) if planned_util < 0.995 else -1.0,
-			"text": util_text,
-			"color": UITokens.DOSSIER_OXBLOOD if actual_util < 0.25 else (UITokens.DOSSIER_BRASS if actual_util < 0.75 else UITokens.DOSSIER_VERDIGRIS),
-			"tooltip": "计划上限 %.1f%%" % (planned_util * 100.0),
-		},
-	]
-	if bool(row.get("has_climate_profile", false)):
+			"value": planned_util,
+			"text": "%.0f%%" % (planned_util * 100.0),
+			"color": UITokens.DOSSIER_BRASS,
+		})
+	if not is_halted and bool(row.get("has_climate_profile", false)):
 		var climate_cap = clampf(float(row.get("climate_capacity_float", 1.0)), 0.0, 1.0)
 		var temp_fit = clampf(float(row.get("temperature_fit_float", 1.0)), 0.0, 1.0)
 		var water_fit = clampf(float(row.get("water_fit_float", 1.0)), 0.0, 1.0)
 		capacity_bars.append({
 			"id": "cap_climate",
-			"label": "气候出力",
+			"label": "气候影响",
 			"icon": &"climate",
 			"value": climate_cap,
 			"text": "%.0f%%" % (climate_cap * 100.0),
@@ -157,14 +154,16 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		if temp_fit < 0.995 or water_fit < 0.995:
 			capacity_bars.append({
 				"id": "cap_temp",
-				"label": "温度适宜",
+				"label": "温度适宜度",
+				"icon": &"climate.temperature",
 				"value": temp_fit,
 				"text": "%.0f%%" % (temp_fit * 100.0),
 				"color": UITokens.DOSSIER_VERDIGRIS if temp_fit >= 0.85 else UITokens.DOSSIER_BRASS,
 			})
 			capacity_bars.append({
 				"id": "cap_water",
-				"label": "水分适宜",
+				"label": "水分适宜度",
+				"icon": &"climate.humidity",
 				"value": water_fit,
 				"text": "%.0f%%" % (water_fit * 100.0),
 				"color": UITokens.DOSSIER_SLATE if water_fit >= 0.85 else UITokens.DOSSIER_BRASS,
@@ -194,92 +193,42 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		job_bars.append({
 			"id": String(jdict.get("id", "job_%d" % idx)),
 			"label": jname,
-			"icon": &"family.metric.wealth" if is_owner_row else &"population.profession.worker",
+			"icon": jdict.get("icon", &"family.metric.wealth" if is_owner_row else &"population.profession.worker"),
 			"value": clamped_j,
-			"text": jval.split("（")[0].strip_edges(),
+			"text": "%s 人" % jval.split("（")[0].strip_edges(),
 			"color": UITokens.DOSSIER_OXBLOOD if clamped_j < 0.50 else (UITokens.DOSSIER_BRASS if clamped_j < 0.99 else UITokens.DOSSIER_VERDIGRIS),
 			"tooltip": "%s：%s" % [jname, jval],
 		})
 
 	var prod_rows: Array = row.get("production_rows", [])
-	var production_candidates = []
-	var unused_input_notes = PackedStringArray()
-	var prod_peak = 0.001
-	var has_natural_input = false
-	var has_natural_gen = false
-	for raw_p in prod_rows:
-		if not (raw_p is Dictionary):
-			continue
-		var pdict: Dictionary = raw_p
-		var pid = String(pdict.get("id", ""))
-		if pid.begins_with("natural_input"):
-			has_natural_input = true
-		elif pid.begins_with("natural_generation"):
-			has_natural_gen = true
-
-	for idx in range(prod_rows.size()):
-		var raw_p = prod_rows[idx]
-		if not (raw_p is Dictionary):
-			continue
-		var pdict: Dictionary = raw_p
-		var pid = String(pdict.get("id", "prod_%d" % idx))
-		if pid in ["climate_fit", "climate_lost_output", "input_none", "output_none"]:
-			continue
-		# 仅在同时有培育与消耗时才显示“自然资源净额”，避免与单向消耗行重复。
-		if pid == "resource_net" and not (has_natural_input and has_natural_gen):
-			continue
-		var full_name = String(pdict.get("name", ""))
-		var short_name = String(pdict.get("short_name", full_name))
-		var val_str = String(pdict.get("value", ""))
-		var rate_num = float(pdict.get("daily_per_building_float", absf(FamilyWorkspaceProjection._parse_leading_float(val_str, 0.0))))
-		var is_input = pid.begins_with("input_") or full_name.begins_with("原材料")
-		if is_input and rate_num <= 0.00001:
-			var cand_desc = String(pdict.get("candidates_detail", full_name.trim_prefix("原材料 · ")))
-			if not cand_desc.is_empty() and cand_desc != "无":
-				unused_input_notes.append(cand_desc)
-			continue
-		if short_name.length() > 14 and short_name.find("/") >= 0:
-			var first_part = short_name.split("/")[0].strip_edges()
-			short_name = "%s等" % first_part
-		var compact_val = val_str.replace(" 单位/栋/日", "/栋/日")
-		prod_peak = maxf(prod_peak, rate_num)
-		var bar_color = UITokens.DOSSIER_VERDIGRIS
-		var icon_key = &"metric.goods"
-		if pid.begins_with("output_") or full_name.begins_with("产出"):
-			bar_color = UITokens.DOSSIER_VERDIGRIS
-			icon_key = &"metric.goods"
-		elif pid.begins_with("natural_") or pid == "resource_net":
-			bar_color = UITokens.DOSSIER_SLATE if val_str.find("不足") < 0 else UITokens.DOSSIER_OXBLOOD
-			icon_key = &"economy.resource"
-		else:
-			bar_color = UITokens.DOSSIER_BRASS
-			icon_key = &"economy.building.factory"
-		production_candidates.append({
-			"id": pid,
-			"label": short_name,
-			"icon": icon_key,
-			"rate": rate_num,
-			"text": compact_val,
-			"color": bar_color,
-			"tooltip": "%s：%s" % [full_name, val_str],
-		})
-
 	var production_bars = []
-	for item in production_candidates:
-		var rate = float(item.rate)
+	var unused_input_notes = PackedStringArray()
+	var has_resource_use := prod_rows.any(func(item: Dictionary) -> bool:
+		return String(item.get("id", "")).begins_with("natural_input"))
+	var has_resource_growth := prod_rows.any(func(item: Dictionary) -> bool:
+		return String(item.get("id", "")).begins_with("natural_generation"))
+	for raw_p in prod_rows:
+		var item: Dictionary = raw_p
+		var item_id := String(item.get("id", ""))
+		if item_id in ["climate_fit", "climate_lost_output", "input_none", "output_none"]:
+			continue
+		if item_id == "resource_net" and not (has_resource_use and has_resource_growth):
+			continue
+		if bool(item.get("optional_input", false)) and float(item.get("daily_per_building_float", 0.0)) <= 0.0:
+			var candidates := String(item.get("candidates_detail", ""))
+			if not candidates.is_empty():
+				unused_input_notes.append(candidates)
+			continue
 		production_bars.append({
-			"id": item.id,
-			"label": item.label,
-			"icon": item.icon,
-			"value": clampf(rate / prod_peak, 0.08 if rate > 0.0 else 0.0, 1.0),
-			"text": item.text,
-			"color": item.color,
-			"tooltip": item.tooltip,
+			"name": String(item.get("short_name", item.get("name", ""))),
+			"icon": StringName(item.get("icon", &"metric.goods")),
+			"text": String(item.get("value", "")),
+			"detail": String(item.get("detail", "")),
 		})
 
-	var unused_inputs_summary = ""
+	var unused_inputs_summary := ""
 	if not unused_input_notes.is_empty():
-		unused_inputs_summary = "可选增产投入（当前未消耗）：%s。" % "；".join(unused_input_notes)
+		unused_inputs_summary = "可选增产投入（本期未用）\n%s" % "\n".join(unused_input_notes)
 
 	var cash_rev = float(finance.get("cash_revenue_float", 0.0))
 	var in_kind_rev = float(finance.get("in_kind_float", 0.0))
@@ -373,6 +322,7 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		"kpis": kpis,
 		"insights": insights,
 		"capacity_bars": capacity_bars,
+		"construction_requirements": row.get("construction_requirements", []),
 		"job_bars": job_bars,
 		"production_bars": production_bars,
 		"unused_inputs_summary": unused_inputs_summary,

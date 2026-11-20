@@ -9,8 +9,6 @@ const NarrativeEventDefinitionScript = preload(
 	"res://scripts/narrative/narrative_event_definition.gd")
 const NarrativeOptionScript = preload(
 	"res://scripts/narrative/narrative_option.gd")
-const NarrativeOutcomeScript = preload(
-	"res://scripts/narrative/narrative_outcome.gd")
 
 const ACTION_CONCEDE := 0
 const ACTION_BRIBE := 1
@@ -21,8 +19,7 @@ const ACTION_ABANDON := 5
 
 
 static func build(stage: int, profession_name: String, settlement_name: String,
-		actions: Array, probabilities: Dictionary, costs: Array,
-		profession_key: String = "") -> NarrativeEventDefinition:
+		actions: Array, profession_key: String = "") -> NarrativeEventDefinition:
 	var def := NarrativeEventDefinitionScript.new()
 	def.event_id = StringName("evt.rebellion.stage_%d" % clampi(stage, 1, 4))
 	def.trigger_channel = NarrativeEventDefinitionScript.TriggerChannel.SCHEDULED_ONLY
@@ -34,17 +31,10 @@ static func build(stage: int, profession_name: String, settlement_name: String,
 	def.tags = PackedStringArray(["unrest", "rebellion", "labor"])
 	def.title = _title(stage, settlement_name)
 	def.body_text = _body(stage, profession_name, settlement_name, profession_key)
-	for i in range(actions.size()):
-		var action := int(actions[i])
-		var option := _option(stage, action, costs[i] if i < costs.size() else 0)
-		var probs: PackedInt32Array = probabilities.get(i, PackedInt32Array([32768, 32768]))
-		var success_prob := int(probs[0]) if probs.size() > 0 else 32768
-		var failure_prob := int(probs[1]) if probs.size() > 1 else 65536 - success_prob
-		option.outcomes = [
-			_outcome(true, stage, action, success_prob),
-			_outcome(false, stage, action, failure_prob),
-		]
-		option.tooltip_hint = _tooltip(action, success_prob)
+	for action: int in actions:
+		var option := NarrativeOptionScript.new()
+		option.option_id = StringName("rebellion_%d_%d" % [stage, action])
+		option.text = option_text(stage, action)
 		def.options.append(option)
 	return def
 
@@ -74,19 +64,10 @@ static func option_text(stage: int, action: int) -> String:
 		"3_0": return "承诺改弦更张"
 		"3_1": return "收买领头的匠户"
 		"3_2": return "戒严，拿下首领"
-		"4_0": return "开城招安"
-		"4_1": return "调兵镇压"
-		"4_2": return "带兵退出此城"
+		"4_4": return "开城招安"
+		"4_2": return "调兵镇压"
+		"4_5": return "带兵退出此城"
 		_: return "静观其变"
-
-
-static func _option(stage: int, action: int, cost_bp: int) -> NarrativeOption:
-	var option := NarrativeOptionScript.new()
-	option.option_id = StringName("rebellion_%d_%d" % [stage, action])
-	option.text = option_text(stage, action)
-	if cost_bp > 0:
-		option.tooltip_hint = "耗费国库约 %d%%" % int(round(cost_bp / 100.0))
-	return option
 
 
 static func _title(stage: int, settlement: String) -> String:
@@ -138,48 +119,74 @@ static func _merchant_body(stage: int, profession: String, settlement: String) -
 			return "%s的商团自己出了人、出了钱，把城门和税关都看了起来。%s领头的人没有称王，只说从今日起，本城的捐税由会馆自己议。" % [settlement, profession]
 
 
-static func _outcome(success: bool, stage: int, action: int, probability: int) -> NarrativeOutcome:
-	var outcome := NarrativeOutcomeScript.new()
-	outcome.probability_q16 = clampi(probability, 1, 65535)
-	outcome.outcome_title = _outcome_title(success, stage, action)
-	outcome.outcome_narrative = _outcome_narrative(success, stage, action)
-	outcome.effects = []
-	return outcome
+static func outcome(success: bool, stage: int, action: int, probability: int,
+		cash: int, secession: bool) -> Dictionary:
+	var success_weight := probability if success else 65536 - probability
+	var success_percent := roundi(success_weight * 100.0 / 65536.0)
+	return {
+		"rebellion_success": success,
+		"probability_q16": probability,
+		"probability_percent": success_percent if success else 100 - success_percent,
+		"outcome_title": _outcome_title(success, action, secession),
+		"outcome_narrative": _outcome_narrative(success, action, secession),
+		"effect_summaries": effect_summaries(success, stage, action, cash, secession),
+	}
 
 
-static func _outcome_title(success: bool, stage: int, action: int) -> String:
+static func effect_summaries(success: bool, stage: int, action: int,
+		cash: int, secession: bool) -> PackedStringArray:
+	var effects := PackedStringArray()
+	if secession:
+		effects.append("城市将独立，旧主权国将宣战")
+	elif success and action == ACTION_AMNESTY:
+		effects.append("组织度清零，动员结束并进入冷却")
+	elif success:
+		effects.append("组织度下降，动员降一阶并冷却")
+	elif stage < 4:
+		effects.append("组织度上升，动员推进一阶")
+	else:
+		effects.append("组织度上升，叛乱持续")
+	if action == ACTION_REPRESS:
+		effects.append("加重镇压创伤")
+	if cash > 0:
+		effects.append("国库将拨 %s 给当地居民" % String.num(cash / 10000.0, 4))
+	return effects
+
+
+static func _outcome_title(success: bool, action: int, secession: bool) -> String:
+	if action == ACTION_IGNORE:
+		return "请愿声渐高"
 	if not success:
 		if action == ACTION_REPRESS:
 			return "压不住"
-		if stage >= 4:
+		if secession:
 			return "城头换了旗"
 		return "话说僵了"
 	match action:
 		ACTION_CONCEDE: return "暂时按下去了"
 		ACTION_BRIBE: return "各退一步"
 		ACTION_REPRESS: return "街面静了"
-		ACTION_IGNORE: return "没人再提"
 		ACTION_AMNESTY: return "收了刀兵"
 		ACTION_ABANDON: return "城还是那座城"
 		_: return "尘埃落定"
 
 
-static func _outcome_narrative(success: bool, stage: int, action: int) -> String:
+static func _outcome_narrative(success: bool, action: int, secession: bool) -> String:
+	if action == ACTION_IGNORE:
+		return "衙门没有回话。人群等了两天，散了；但那张状纸上的名字，被很多人记住了。"
 	if not success:
 		if action == ACTION_REPRESS:
 			return "兵丁进了街，人群却没有散。有人从巷子里扔出第一块石头；再往后，事情就不由官府说了算了。"
-		if stage >= 4:
+		if secession:
 			return "城里的旗换了颜色。旧日的官吏被请出衙门，仓房和城门落到了举事者手里。"
 		return "话没有谈拢。为首的人回去之后，来听的人反而更多了；衙门的告示贴在墙上，没人去撕，也没人去看。"
 	match action:
 		ACTION_CONCEDE:
-			return "开仓的粮食当天就发下去了。人群慢慢散开，有人临走时朝衙门的方向拱了拱手——这未必是感激，只是今年还能过得去。"
+			return "众人看着承诺一条条写进告示，这才慢慢散去。有人临走时回头望了一眼，记住了落款的日子。"
 		ACTION_BRIBE:
-			return "为首几个人被请进后堂，出来时袖子里多了些东西。街上的人看着他们，没有再问；事情就这样淡了下去。"
+			return "为首几个人被请进后堂。出来以后，他们劝守在街口的人先回家。到了傍晚，那条街又能过车了。"
 		ACTION_REPRESS:
 			return "兵丁把街口封了，为首的人被带走。街面很快安静下来，只是从此以后，夜里很少有人再在那一带走动。"
-		ACTION_IGNORE:
-			return "衙门没有回话。人群等了两天，散了；但那张状纸上的名字，被很多人记住了。"
 		ACTION_AMNESTY:
 			return "招安的告示贴出去，城里没有立刻放下刀兵。谈了三天，最后是领头的匠户先开了仓，把兵器堆在院子里。"
 		ACTION_ABANDON:
@@ -188,20 +195,10 @@ static func _outcome_narrative(success: bool, stage: int, action: int) -> String
 			return "事情暂时平息。"
 
 
-static func _tooltip(action: int, success_q16: int) -> String:
-	var percent := int(round(float(success_q16) * 100.0 / 65536.0))
+static func tooltip(action: int, funded: bool) -> String:
 	match action:
-		ACTION_CONCEDE:
-			return "成功率约 %d%%；成则组织度回落，败则对方更硬" % percent
-		ACTION_BRIBE:
-			return "成功率约 %d%%；花钱分化，成则缓一缓" % percent
+		ACTION_CONCEDE, ACTION_BRIBE:
+			return "这笔支出会提高成功率，两种结果均需支付。" if funded else "本次按无资金投入计算成功率。"
 		ACTION_REPRESS:
-			return "成功率约 %d%%；需驻军，败则可能直接独立" % percent
-		ACTION_IGNORE:
-			return "不掷骰；组织度与阶段都会前进"
-		ACTION_AMNESTY:
-			return "成功率约 %d%%；成则整条链终结" % percent
-		ACTION_ABANDON:
-			return "不掷骰；该地立即脱离并进入战争"
-		_:
-			return "成功率约 %d%%" % percent
+			return "当地驻军和补给会影响成功率。"
+	return ""

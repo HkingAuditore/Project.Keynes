@@ -139,6 +139,8 @@ func _configure_runtime() -> void:
 	_ui_manager.bind_gm_sun_camera(_camera)
 	_ui_manager.bind_player_camera(_camera)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
+	_player_controller.set_cell_situation_picker(_cell_situations.pick_cell_at_screen)
+	_ui_manager.population_discontent_changed.connect(_cell_situations.set_population_discontent)
 	# Injected after configure so the single-cell selection highlight and the
 	# many-cell card overlay stay independent: selecting a hex must not wipe the
 	# card's hits, and showing a card's hits must not move the selection.

@@ -1701,8 +1701,10 @@ Dictionary DCWorldExt::get_mobilization_odds(
         int cell_idx, int profession, int action, int64_t spend_bp) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
-    // Odds depend on the caller's spend, so this is a direct cold read rather
-    // than a cached committed read view.
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution() &&
+        !economy_live_readable(_runtime_host.get(), runtime, boundary))
+        return read_view_pending();
     return runtime->mobilization_odds(cell_idx, profession, action, spend_bp);
 }
 
@@ -1712,6 +1714,17 @@ bool DCWorldExt::apply_mobilization_result(
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     return runtime->apply_mobilization_result(cell_idx, profession, action,
                                               success);
+}
+
+Dictionary DCWorldExt::resolve_player_mobilization(const Dictionary &choice) {
+    if (_economy_runtime == nullptr) return unavailable();
+    auto *runtime = runtime_from(_economy_runtime);
+    const bool worker_owned = _runtime_host != nullptr &&
+        _runtime_host->economy_worker_owns_execution();
+    std::unique_lock<std::mutex> boundary;
+    if (worker_owned && !economy_live_readable(_runtime_host.get(), runtime, boundary))
+        return read_view_pending();
+    return runtime->resolve_player_mobilization(choice);
 }
 
 Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {

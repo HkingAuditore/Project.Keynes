@@ -49,9 +49,8 @@ func configure(generator, map, clock, narrative, economy, country, military,
 	_military = military
 	_player_handle = player_handle
 	_world_seed = maxi(1, world_seed)
-	if _narrative != null and _narrative.has_signal("offer_resolved"):
-		if not _narrative.offer_resolved.is_connected(on_offer_resolved):
-			_narrative.offer_resolved.connect(on_offer_resolved)
+	if _narrative != null:
+		_narrative.bind_rebellion(prepare_player_offer, resolve_player_choice)
 
 
 func set_player_country_handle(handle: int) -> void:
@@ -79,38 +78,57 @@ func step_daily(day: int) -> void:
 		_offer_player(key.x, key.y, int(player_stages[key]), _player_handle, day)
 
 
-func on_offer_resolved(record: Dictionary) -> void:
-	var meta: Dictionary = record.get("meta", {})
-	if String(meta.get("kind", "")) != "rebellion":
-		return
-	var actions: Array = meta.get("actions", [])
-	var costs: Array = meta.get("cost_bps", [])
-	var option_index := int(record.get("chosen_option_index", -1))
-	if option_index < 0 or option_index >= actions.size():
-		return
-	var cell := int(meta.get("cell", -1))
-	var profession := int(meta.get("profession", -1))
-	var stage := int(meta.get("stage", 1))
-	var owner_handle := int(meta.get("owner_handle", 0))
-	var action := int(actions[option_index])
-	var cost_bp := int(costs[option_index]) if option_index < costs.size() else 0
-	var success := int(record.get("rolled_outcome_index", 1)) == 0
+func resolve_player_choice(offer: Dictionary, option_index: int, outcome: Dictionary,
+		effective_day: int, sequence_alloc: Callable) -> Dictionary:
+	var meta: Dictionary = offer["meta"]
+	if meta.get("rebellion_obsolete", false):
+		return {"ok": true, "outcome": _obsolete_outcome()}
 	if _economy == null or not _economy.is_configured():
-		return
-	if action in [RebellionContentScript.ACTION_CONCEDE,
-			RebellionContentScript.ACTION_BRIBE]:
-		_pay_concession(cell, cost_bp, int(record.get("day", _last_day)))
-	if not _economy.apply_mobilization_result(cell, profession, action, success):
-		return
-	if action == RebellionContentScript.ACTION_ABANDON or \
-			(stage >= 4 and not success):
-		_queue_independence(cell, owner_handle)
-	elif not success:
-		# A decision between epochs can change the row before the next epoch
-		# starts, when its staging facts are cleared. Recheck the committed row.
+		return {"ok": false, "code": "mobilization_unavailable", "message": "组织度结算尚未就绪。"}
+	var option: Dictionary = offer["options"][option_index]
+	var cell := int(meta["cell"])
+	var profession := int(meta["profession"])
+	var stage := int(meta["stage"])
+	var owner := int(meta["owner_handle"])
+	var action := int(meta["actions"][option_index])
+	var success := bool(outcome["rebellion_success"])
+	var cash := int(option.get("rebellion_cash", 0))
+	var sequence := 0
+	if cash > 0:
+		if sequence_alloc.is_valid():
+			sequence = int(sequence_alloc.call())
+		else:
+			_sequence += 1
+			sequence = _sequence
+	var result: Dictionary = _economy.resolve_player_mobilization({
+		"cell": cell, "profession": profession, "stage": stage, "action": action,
+		"owner_handle": owner, "success": success, "cash": cash,
+		"cohort_handle": int(option.get("rebellion_cohort", 0)),
+		"effective_day": effective_day, "sequence": sequence,
+	})
+	if not result.get("ok", false):
+		var code := String(result.get("code", "mobilization_rejected"))
+		if code == "mobilization_choice_stale":
+			return {"ok": true, "outcome": _obsolete_outcome()}
+		return {"ok": false, "code": code, "message": "本次措施尚未执行，请稍后再试。"}
+	var secession := _can_secede(cell, owner) and (action == RebellionContentScript.ACTION_ABANDON
+		or bool(result.get("independence_pending", false)) or (stage == 4 and not success))
+	if secession:
+		_queue_independence(cell, owner)
+	elif not success and stage < 4:
+		# A choice can move the row before the next epoch clears its staged facts.
 		_pending_stage_checks.append({
-			"cell": cell, "profession": profession, "stage": stage, "owner_handle": owner_handle,
+			"cell": cell, "profession": profession, "stage": stage, "owner_handle": owner,
 		})
+	var settled := RebellionContentScript.outcome(success, stage, action,
+		int(outcome["probability_q16"]), int(result.get("queued_cash", 0)), secession)
+	return {"ok": true, "outcome": settled, "applied_summaries": settled["effect_summaries"]}
+
+
+static func _obsolete_outcome() -> Dictionary:
+	return {"probability_q16": 65536, "probability_percent": 100,
+		"outcome_title": "局势已变", "outcome_narrative": "这份处置已经过时。",
+		"effect_summaries": PackedStringArray(["原处置作废"])}
 
 
 func export_state() -> Dictionary:
@@ -272,26 +290,12 @@ func _offer_player(cell: int, profession: int, stage: int,
 		return
 	var chain_id := StringName("rebellion:%d:%d" % [cell, profession])
 	var offers: Array = _narrative.ready_queue()
-	offers.append(_narrative.active_offer())
+	offers.append(_narrative.active_offer(false))
 	for offer in offers:
 		if StringName(offer.get("chain_id", "")) == chain_id \
 				and int(offer.get("meta", {}).get("stage", 0)) == stage:
 			return
 	var actions: Array = RebellionContentScript.actions_for_stage(stage)
-	var probabilities := {}
-	var costs: Array = []
-	for i in range(actions.size()):
-		var action := int(actions[i])
-		var odds: Dictionary = _economy.mobilization_odds(cell, profession, action, 0)
-		var cost_bp := int(odds.get("cost_bp", 0))
-		costs.append(cost_bp)
-		if action == RebellionContentScript.ACTION_IGNORE:
-			probabilities[i] = PackedInt32Array([0, 65536])
-		elif action == RebellionContentScript.ACTION_ABANDON:
-			probabilities[i] = PackedInt32Array([65536, 0])
-		else:
-			var p := int(odds.get("p_success_q16", 32768))
-			probabilities[i] = PackedInt32Array([p, 65536 - p])
 	var settlement: String = _economy.settlement_display_name(cell)
 	if settlement.is_empty():
 		settlement = "本地"
@@ -301,8 +305,7 @@ func _offer_player(cell: int, profession: int, stage: int,
 	if profession >= 0 and profession < ids.size():
 		profession_key = String(ids[profession])
 	var def = RebellionContentScript.build(
-		stage, profession_name, settlement, actions, probabilities, costs,
-		profession_key)
+		stage, profession_name, settlement, actions, profession_key)
 	var chain_salt := int(NarrativeRngScript.hash64(
 		_world_seed, day, _player_handle, cell, profession * 31 + stage) & 0x7fffffff)
 	var meta := {
@@ -312,37 +315,97 @@ func _offer_player(cell: int, profession: int, stage: int,
 		"stage": stage,
 		"owner_handle": owner_handle,
 		"actions": actions,
-		"cost_bps": costs,
 	}
 	_narrative.enqueue_event_offer(
 		def, cell, day, chain_id,
-		true, {"settlement_name": settlement}, probabilities, chain_salt, meta)
+		true, {"settlement_name": settlement}, {}, chain_salt, meta)
 
 
-func _pay_concession(cell: int, cost_bp: int, day: int) -> void:
-	if cost_bp <= 0 or _country == null or _economy == null:
-		return
-	var country_snapshot: Dictionary = _country.snapshot(_player_handle)
-	var treasury_cash := int(country_snapshot.get("cash", 0))
-	var amount := int(treasury_cash * cost_bp / 10000)
-	if amount <= 0:
-		return
-	var cohort_handle := _primary_cohort(cell)
-	if cohort_handle == 0:
-		return
-	_sequence += 1
-	_economy.transfer_country_cash_to_cohort(
-		_player_handle, cohort_handle, amount, day, _sequence)
+func prepare_player_offer(offer: Dictionary) -> bool:
+	if _country == null or _economy == null or not _economy.is_configured():
+		return false
+	var meta: Dictionary = offer["meta"]
+	var cell := int(meta["cell"])
+	var profession := int(meta["profession"])
+	var stage := int(meta["stage"])
+	var owner := int(meta["owner_handle"])
+	var cell_summary: Dictionary = _country.cell_summary(cell)
+	var options: Array = offer["options"]
+	var actions: Array = meta["actions"]
+	var baseline: Dictionary = _economy.mobilization_odds(cell, profession, int(actions[0]), 0)
+	if baseline.get("busy", false):
+		return false
+	for index in range(options.size()):
+		options[index]["text"] = RebellionContentScript.option_text(stage, int(actions[index]))
+	if (owner != _player_handle or owner != int(cell_summary.get("country_handle", 0))
+			or not baseline.get("ok", false) or int(baseline.get("stage", stage)) != stage):
+		meta["rebellion_obsolete"] = true
+		for option: Dictionary in options:
+			option["outcomes"] = [_obsolete_outcome()]
+			option["tooltip_hint"] = ""
+		offer["stratum_choices_prepared"] = true
+		return true
+
+	var country_snapshot: Dictionary = _country.snapshot(owner)
+	var secession_possible := _can_secede(cell, owner, country_snapshot)
+	var cost_bp := int(baseline.get("cost_bp", 0))
+	# Only concession and bribery pay the existing treasury expense. Both roll
+	# with the same commitment that is handed to the native settlement command.
+	var treasury := maxi(0, int(country_snapshot.get("cash", 0)))
+	@warning_ignore("integer_division")
+	var amount := (treasury / 10000) * cost_bp + (treasury % 10000) * cost_bp / 10000
+	var cohort := 0
+	if stage < 4 and amount > 0:
+		var population: Dictionary = _economy.population_cell_snapshot(cell, true)
+		if population.get("busy", false):
+			return false
+		cohort = _primary_cohort(population)
+	for index in range(options.size()):
+		var action := int(actions[index])
+		var option: Dictionary = options[index]
+		var paid := cohort != 0 and action in [RebellionContentScript.ACTION_CONCEDE,
+			RebellionContentScript.ACTION_BRIBE]
+		var cash := amount if paid else 0
+		var p := 0
+		if action == RebellionContentScript.ACTION_ABANDON:
+			p = 65536
+			option["eligible"] = secession_possible
+			option["ineligible_reason"] = "首都或仅存的一座城不能放弃。" if not secession_possible else ""
+		elif action != RebellionContentScript.ACTION_IGNORE:
+			var odds := baseline
+			if index != 0 or paid:
+				odds = _economy.mobilization_odds(cell, profession, action, cost_bp if paid else 0)
+			if not odds.get("ok", false):
+				return false
+			p = clampi(int(odds["p_success_q16"]), 0, 65536)
+		var branches: Array[Dictionary] = []
+		if p > 0:
+			branches.append(RebellionContentScript.outcome(true, stage, action, p, cash,
+				action == RebellionContentScript.ACTION_ABANDON and secession_possible))
+		if p < 65536:
+			var secession := secession_possible and (stage == 4
+				or (stage == 3 and action == RebellionContentScript.ACTION_REPRESS))
+			branches.append(RebellionContentScript.outcome(false, stage, action, 65536 - p, cash, secession))
+		option["outcomes"] = branches
+		option["rebellion_cash"] = cash
+		option["rebellion_cohort"] = cohort if paid else 0
+		option["tooltip_hint"] = RebellionContentScript.tooltip(action, paid)
+	offer["stratum_choices_prepared"] = true
+	return true
 
 
-func _primary_cohort(cell: int) -> int:
-	if _economy == null:
-		return 0
-	var snapshot: Dictionary = _economy.population_cell_snapshot(cell, true)
+func _can_secede(cell: int, owner: int, country_snapshot: Dictionary = {}) -> bool:
+	if country_snapshot.is_empty():
+		country_snapshot = _country.snapshot(owner)
+	return (int(country_snapshot.get("territory_count", 0)) > 1
+		and int(country_snapshot.get("capital_cell", -1)) != cell)
+
+
+static func _primary_cohort(snapshot: Dictionary) -> int:
 	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
 	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
 	var best := 0
-	var best_pop := -1
+	var best_pop := 0
 	for i in range(mini(handles.size(), populations.size())):
 		if int(populations[i]) > best_pop:
 			best_pop = int(populations[i])

@@ -188,6 +188,11 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 `tests/ui/modern_economy_catalog_test.gd` 与 `tests/family/family_colonization_runtime_test.gd`，
 保留“仅有芦苇也能完成建材组”的替代回归。
 
+官营军事建筑在经济 `BuildingProfile` 声明建材组，国库报价和下单使用同一组候选与替代效率。
+战士营地、木栅兵营和夯土城垣解锁后，各建材组都可用原木支付。木栅兵营的木材槽可用原木以
+75% 效率替代。后续建筑沿用普通建筑的古典、工业和金属建材组，对应的电气设备和计算机仍是
+专用设备。军事目录的 `materials` 记录同一份基础配方的首选材料。
+
 建筑详情的亏损成因属于显示域：数据只读建筑已提交快照，不能在 UI 重新计算经营结果或写回
 经济状态。`last_revenue` 是营业税后的实收，`last_operating_cost` 是原料、工资应付与维护成本；
 营业税从 `last_business_tax_paid` 单独读取。图表展示时须将正营业税加回收入并计入总支出，
@@ -195,6 +200,12 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 亏损卡只在当前经营期确有负利润时渲染，停产状态只显示停产原因，不用零流量伪造亏损。
 验证入口为 `tests/building/building_inspector_state_test.gd`、`tests/ui/ui_scene_structure_test.gd`，
 以及 `tests/qa/cell_inspector_screenshot_qa.gd` 的建筑详情截图。
+
+营造目录逐项显示单栋报价的建材。国库供料、待市购量和市场缺口来自同一份报价。
+营造悬停卡先显示费用、工期与建材，产出、所需投入、岗位和可选增产使用目录结构化数据逐项显示。
+既有建筑详情展示目录中的单栋基础建材，实际下单以当前营造报价选定的建材及数量为准。
+实际开工率显示为百分比和满量程进度条，和岗位到岗人数、每栋实际产量分开呈现。
+基础产量来自目录，实际产量来自已发布的经营期流水。
 
 上游经济需求修复须运行
 `tests/building/building_runtime_test.gd -- --supply-chain-only`。
@@ -236,6 +247,10 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 原生回归 `EconomyTargetSelectorTests::run_building_investment_review` 经
 `tests/ideology/ideology_target_selector_test.gd` 进入，覆盖批次和续算保留、跳过保留、
 重新评估替换、解除受阻及建筑清理后重建。
+
+启用投资评审分日执行时，旧批次中尚未评审的地块优先，当天到期的地块按原有顺序追加。
+同一地块在待审队列里仅保留一次。同一天的投资准备使用本次待审地块的成员关系，
+评估按队列顺序执行。跨日待审队列继续使用存档中的原有地块序列。
 
 ## 经济冻结输入与标签采样
 
@@ -413,6 +428,10 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 军事界面命令
 
+地块军事页和营造目录的军事分类共用建筑悬停卡。建材数量取经济报价，逐项缺口取同格市场库存。
+已开工项目显示快照发布的剩余工期。兵营的当前日维护费按现存各档座数汇总，建成后的读数使用目标档；
+城防和军校的升级预览使用目标档的日维护费。
+
 军事纯 C++ 热路径的行为约束见
 [`military-performance-redesign-20261114.md`](../plans/military-performance-redesign-20261114.md)：
 采购周边按中心首次访问计算，首次物流准备前的断供探测仍返回 false；普通采购保留前
@@ -459,6 +478,16 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 
 阶层动员事件由玩家控制器在每日提交后投递，使用动员事实的独立游标，并复用叙事弹窗和暂停流程。
 叛乱服务状态随 `pknr` 保存。旧档缺少这份状态时，首次提交后以当前玩家领地的动员快照补发仍需处理的阶段。
+叙事弹窗展示前生成各选项的真实后果，显示与选择共用同一组原生概率。让步和收买按实际报价计算
+资金加成，两种结果均安排国库向当地居民拨款。置之不理与弃城各只有一个确定结果，首都和仅余城市
+不可弃城。读档恢复的旧弹窗在呈现前补齐这些字段。经济接受选择后才写入叙事史册，拨款进入既有
+可存档的待结算命令队列，经济忙碌时保留选择。验证入口为 `tests/politics/stratum_unrest_service_test.gd`
+和 `tests/economy/economy_stratum_save_restore_test.gd`。
+
+城市独立经 `CREATE_COUNTRY` 生效。国家提交时为新国家追加全零的研究信号位图行和两个空证据区间。
+经济在同一天冻结国家快照，校验位图行数与国家槽位数一致。理念读取昨日提交的民意，民意可以只覆盖
+当前国家槽位表的前缀，须逐槽校验国家身份。新国家按理念初始规则建行，收到首份实际民意时建立积分基线。
+验证入口为 `tests/runtime/runtime_inline_coordinator_save_test.gd`。
 
 - GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
 - 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
@@ -815,3 +844,14 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 - 回归入口：`tests/ui/player_top_bar_fit_test.gd`（顶栏日期不裁字）、
   `tests/ui/hud_status_card_test.gd` 与 `tests/economy/economy_dossier_view_model_test.gd`
   （结算日文案）、`tests/game/narrative_event_runtime_test.gd`（事件日期）。
+
+## 近景地块告警与人口页
+
+地图批次和单格人口快照共用原生阶层满意度聚合，按本格各政治阶层的人数加权，
+以最低阶层的综合满意度判定告警。人口页可见时，地图同格的「阶层不满」取面板已呈现
+的 `class_discontent`，并显示该人口快照的本地结算日。退出人口页后，地图保留同格较新的
+阶层结果，直到收到更新代次的地图批次。地图批次按格拒绝回退，天气告警独立刷新。
+
+悬停和点选共用浮标命中与视野检查。PlayerController 以浮标归属选格，议和、军令和军务
+拾取优先级沿用正式会话。回归入口为 `cell_situation_snapshot_test.gd`、
+`cell_situation_layer_test.gd` 和 `cell_situation_worker_test.gd`。

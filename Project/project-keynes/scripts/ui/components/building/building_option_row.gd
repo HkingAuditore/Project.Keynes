@@ -1,14 +1,7 @@
 extends PanelContainer
 class_name BuildingOptionRow
 
-## 营造目录的一行：剪纸建筑徽记 + 名称 + 成本 + 「营造」按钮。
-##
-## 按钮的可用性就是「这一项现在能不能建」的唯一表达：可用是深胭脂纸钮，
-## 不可用是浅纸 + 弱墨字；不可建时行内再写一句短因由（缺建材 / 资金不足 …）。
-## 全部细节（逐项建材、国库与市购拆分、单价、工期、岗位、配方）走 hover 提示，
-## 让单一界面保持简短。
-##
-## 节点全部来自 building_option_row.tscn；本脚本只写值。
+## 营造目录的一行，显示每栋建材、现金支出和停用原因。
 
 signal build_requested(building_id: StringName)
 signal hover_started(row: Dictionary, source: Control)
@@ -23,13 +16,15 @@ var _row_data: Dictionary = {}
 var _blocked := false
 var _pending := false
 
-@onready var _icon: IconBadge = $Row/Icon
-@onready var _name: Label = $Row/Info/Name
+@onready var _icon: IconBadge = $Row/Info/Summary/Icon
+@onready var _name: Label = $Row/Info/Summary/Name
 @onready var _meta: Label = $Row/Info/Meta
-@onready var _cash_row: Control = $Row/CashRow
-@onready var _cash_icon: TextureRect = $Row/CashRow/CashIcon
-@onready var _cash: Label = $Row/CashRow/Cash
-@onready var _build: Button = $Row/BuildButton
+@onready var _cash_row: Control = $Row/Info/Summary/CashRow
+@onready var _cash_icon: TextureRect = $Row/Info/Summary/CashRow/CashIcon
+@onready var _cash: Label = $Row/Info/Summary/CashRow/Cash
+@onready var _build: Button = %BuildButton
+@onready var _materials: VBoxContainer = $Row/Materials
+@onready var _material_list = $Row/Materials/List
 
 
 func _ready() -> void:
@@ -53,7 +48,13 @@ func set_row(row: Dictionary, pending: bool = false) -> void:
 		UITokens.DOSSIER_UMBER if _blocked else UITokens.DOSSIER_INK_SOFT)
 	_name.text = String(row.get("name", "建筑"))
 	_name.tooltip_text = _name.text
-	_meta.text = meta_text(row)
+	var materials: Array = row.get("material_status", [])
+	var quoted: Array = materials.filter(func(material: Dictionary) -> bool:
+		return material.has("text"))
+	_material_list.set_rows(quoted, false)
+	_materials.visible = not quoted.is_empty()
+	_meta.text = meta_text(row, _materials.visible)
+	_meta.visible = not _meta.text.is_empty()
 	_meta.tooltip_text = _meta.text
 	_meta.add_theme_color_override("font_color",
 		UITokens.DOSSIER_OXBLOOD if _blocked else UITokens.DOSSIER_INK_MUTED)
@@ -79,8 +80,12 @@ func is_pending() -> bool:
 
 
 ## 行内文字：不可建时先说因由，再说成本——玩家一眼看到「为什么点不动」。
-static func meta_text(row: Dictionary) -> String:
-	var materials := String(row.get("materials_text", "")).strip_edges()
+static func meta_text(row: Dictionary, has_material_rows: bool = false) -> String:
+	var materials := "" if has_material_rows else String(row.get("materials_text", "")).strip_edges()
+	if not materials.is_empty():
+		materials = "每栋建材 %s" % materials
+	elif bool(row.get("material_free", false)):
+		materials = "不耗建材"
 	var reason := String(row.get("reason_text", "")).strip_edges()
 	if reason.is_empty():
 		return materials

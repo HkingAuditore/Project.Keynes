@@ -38,12 +38,14 @@ static func _construction_input_recipe_rows(host, placement: Dictionary,
 	var rows: Array = []
 	var ids: PackedStringArray = placement.get("input_good_ids", PackedStringArray())
 	var quantities: PackedInt64Array = placement.get("input_quantities", PackedInt64Array())
+	var required: PackedInt32Array = placement.get("input_required_q16", PackedInt32Array())
 	for index in range(ids.size()):
 		rows.append({
 			"name": h._construction_input_candidate_label(placement, index, unlocked_goods),
 			"quantity": "%s/日" % h._goods_scaled(quantities[index]) \
 				if index < quantities.size() else "—",
 			"label": "原材料",
+			"optional": index < required.size() and required[index] > 0 and required[index] < 65536,
 		})
 	return rows
 
@@ -53,6 +55,21 @@ static func _construction_input_candidate_label(host, placement: Dictionary, inp
 	var h = host
 	var ids: PackedStringArray = placement.get("input_good_ids", PackedStringArray())
 	var fallback_id = String(ids[input_idx]) if input_idx >= 0 and input_idx < ids.size() else ""
+	var visible := construction_input_candidates(placement, input_idx, unlocked_goods)
+	if visible.is_empty():
+		return host._format_input_candidate_label(fallback_id, 65536)
+	var labels = PackedStringArray()
+	for entry in visible.slice(0, 3):
+		labels.append(host._format_input_candidate_label(
+			String(entry.id), int(entry.efficiency)))
+	var text = " / ".join(labels)
+	if visible.size() > labels.size():
+		text += " 等 %d 种" % visible.size()
+	return text
+
+
+static func construction_input_candidates(placement: Dictionary, input_idx: int,
+		unlocked_goods: Dictionary) -> Array[Dictionary]:
 	var offsets: PackedInt32Array = placement.get(
 		"input_candidate_offsets", PackedInt32Array())
 	var candidates: PackedStringArray = placement.get(
@@ -60,7 +77,7 @@ static func _construction_input_candidate_label(host, placement: Dictionary, inp
 	var efficiencies: PackedInt32Array = placement.get(
 		"input_candidate_efficiency_q16", PackedInt32Array())
 	if input_idx < 0 or input_idx + 1 >= offsets.size():
-		return host._format_input_candidate_label(fallback_id, 65536)
+		return []
 	var entries: Array[Dictionary] = []
 	for candidate_idx in range(int(offsets[input_idx]), int(offsets[input_idx + 1])):
 		if candidate_idx < 0 or candidate_idx >= candidates.size():
@@ -77,24 +94,13 @@ static func _construction_input_candidate_label(host, placement: Dictionary, inp
 			visible.append(entry)
 	if visible.is_empty():
 		visible = entries
-	if visible.is_empty():
-		return host._format_input_candidate_label(fallback_id, 65536)
 	visible.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var left_efficiency = int(a.efficiency)
 		var right_efficiency = int(b.efficiency)
 		if left_efficiency != right_efficiency:
 			return left_efficiency < right_efficiency
 		return String(a.id) < String(b.id))
-	var labels = PackedStringArray()
-	for entry in visible:
-		if labels.size() >= 3:
-			break
-		labels.append(host._format_input_candidate_label(
-			String(entry.id), int(entry.efficiency)))
-	var text = " / ".join(labels)
-	if visible.size() > labels.size():
-		text += " 等 %d 种" % visible.size()
-	return text
+	return visible
 
 
 static func _unlocked_good_ids(host, snapshot: Dictionary) -> Dictionary:
@@ -120,12 +126,37 @@ static func _construction_profession_name(host, profession_id: String) -> String
 	return profession_id
 
 
+static func construction_requirements(host, snapshot: Dictionary, type_idx: int) -> Array:
+	var offsets: PackedInt32Array = snapshot.get("building_construction_offsets", PackedInt32Array())
+	var indices: PackedInt32Array = snapshot.get("building_construction_good_ids", PackedInt32Array())
+	var quantities: PackedInt64Array = snapshot.get("building_construction_quantities", PackedInt64Array())
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var rows: Array = []
+	if type_idx < 0 or type_idx + 1 >= offsets.size():
+		return rows
+	var totals := {}
+	for edge in range(offsets[type_idx], mini(offsets[type_idx + 1],
+			mini(indices.size(), quantities.size()))):
+		var good_idx := indices[edge]
+		if good_idx >= 0 and good_idx < good_ids.size() and quantities[edge] > 0:
+			totals[good_idx] = int(totals.get(good_idx, 0)) + quantities[edge]
+	for good_idx in totals:
+		var good_id := good_ids[good_idx]
+		rows.append({
+			"name": host._good_display_name(good_id),
+			"icon": IconCatalog.good_semantic(good_id),
+			"text": "%s 单位" % host._goods_scaled(totals[good_idx]),
+		})
+	return rows
+
+
 static func _append_recipe_rows(host, rows: Array, snapshot: Dictionary, type_idx: int, kind: String,
 		actual_total: int, building_count: int, period_days: int, group_idx: int = -1) -> void:
 	var h = host
 	var offsets: PackedInt32Array = snapshot.get("building_%s_offsets" % kind, PackedInt32Array())
 	var good_indices: PackedInt32Array = snapshot.get("building_%s_good_ids" % kind, PackedInt32Array())
 	var quantities: PackedInt64Array = snapshot.get("building_%s_quantities" % kind, PackedInt64Array())
+	var required: PackedInt32Array = snapshot.get("building_input_required_q16", PackedInt32Array())
 	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
 	if type_idx < 0 or type_idx + 1 >= offsets.size():
 		return
@@ -151,9 +182,12 @@ static func _append_recipe_rows(host, rows: Array, snapshot: Dictionary, type_id
 			"name": "%s · %s" % ["原材料" if kind == "input" else "产出", good_label],
 			"short_name": "%s · %s" % ["投入" if kind == "input" else "产出", short_good],
 			"candidates_detail": good_label if kind == "input" else "",
+			"optional_input": kind == "input" and cursor < required.size()
+				and required[cursor] > 0 and required[cursor] < 65536,
 			"daily_per_building_float": float(actual) / 1000.0 / float(divisor),
 			"value": h._actual_daily_rate(actual, building_count, period_days),
-			"icon": "resource",
+			"detail": "基础产量 %s 单位/栋/日" % h._goods_scaled(quantity) if kind == "output" and quantity > 0 else "",
+			"icon": IconCatalog.good_semantic(stable_id),
 			"accent": UITokens.RESOURCE,
 		})
 
@@ -234,6 +268,10 @@ static func _append_resource_recipe_rows(host, rows: Array, snapshot: Dictionary
 	var modes: PackedInt32Array = snapshot.get("building_production_resource_modes", PackedInt32Array())
 	var access_modes: PackedInt32Array = snapshot.get(
 		"building_production_resource_access_modes", PackedInt32Array())
+	var local_reserve: PackedInt64Array = snapshot.get(
+		"building_resource_effective_reserve", PackedInt64Array())
+	var nearby_reserve: PackedInt64Array = snapshot.get(
+		"building_resource_accessible_effective_reserve", PackedInt64Array())
 	var resource_ids: PackedStringArray = snapshot.get("building_resource_ids", PackedStringArray())
 	if type_idx < 0 or type_idx + 1 >= offsets.size(): return
 	var begin = int(offsets[type_idx])
@@ -249,13 +287,21 @@ static func _append_resource_recipe_rows(host, rows: Array, snapshot: Dictionary
 		var actual = int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
 		var access_label = "邻域 · " if access_mode == 1 else ""
 		var row_name = "自然资源 · %s%s" % [access_label, h._resource_display_name(stable_id)]
-		var availability = "不足" if h._building_resource_depleted(snapshot, type_idx) else "充足"
-		var row_value = "每栋 %.3f · %s" % [float(quantity) / 1000.0, availability] if mode == 1 \
-			else "%s · %s" % [h._actual_daily_rate(actual, building_count, period_days), availability]
+		var row_value = "需 %s 单位/栋" % h._goods_scaled(quantity) if mode == 1 \
+			else h._actual_daily_rate(actual, building_count, period_days)
+		var resource_name: String = h._resource_display_name(stable_id)
+		var short_name := "%s%s %s" % [access_label, "承载" if mode == 1 else "开采", resource_name]
+		var reserve := nearby_reserve if access_mode == 1 else local_reserve
+		var detail := ""
+		if mode == 0 and resource_idx >= 0 and resource_idx < reserve.size():
+			detail = "当前可采 %s 单位" % h._goods_scaled(reserve[resource_idx])
 		rows.append({"id": "natural_input_%d" % cursor,
 			"name": row_name,
+			"short_name": short_name,
 			"value": row_value,
-			"icon": "eco", "accent": UITokens.ECO})
+			"detail": detail,
+			"icon": IconCatalog.resource_semantic(stable_id),
+			"accent": UITokens.ECO})
 
 
 static func _append_resource_generation_rows(host, rows: Array, snapshot: Dictionary, type_idx: int,
@@ -278,4 +324,5 @@ static func _append_resource_generation_rows(host, rows: Array, snapshot: Dictio
 		rows.append({"id": "natural_generation_%d" % cursor,
 			"name": "培育 · %s" % h._resource_display_name(stable_id),
 			"value": "%s · 待资源到位" % h._actual_daily_rate(actual, building_count, period_days),
-			"icon": "growth", "accent": UITokens.GOOD})
+			"icon": IconCatalog.resource_semantic(stable_id),
+			"accent": UITokens.GOOD})

@@ -1,63 +1,17 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="1_theme"]
 [ext_resource type="Script" path="res://scripts/ui/components/building/building_hover_card.gd" id="2_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="4_note"]
+[ext_resource type="Script" path="res://scripts/ui/components/building/building_quantity_list.gd" id="4_quantity"]
 
-[sub_resource type="StyleBoxTexture" id="CardPaper"]
-content_margin_left = 18.0
-content_margin_top = 14.0
-content_margin_right = 18.0
-content_margin_bottom = 14.0
-texture = ExtResource("4_note")
-texture_margin_left = 32.0
-texture_margin_top = 32.0
-texture_margin_right = 32.0
-texture_margin_bottom = 32.0
-expand_margin_left = 8.0
-expand_margin_top = 8.0
-expand_margin_right = 8.0
-expand_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="StatCard"]
-content_margin_left = 9.0
-content_margin_top = 6.0
-content_margin_right = 9.0
-content_margin_bottom = 6.0
-bg_color = Color(0.94, 0.88, 0.74, 0.58)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.42, 0.29, 0.16, 0.22)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-
-[sub_resource type="StyleBoxFlat" id="SectionCard"]
-content_margin_left = 9.0
-content_margin_top = 7.0
-content_margin_right = 9.0
-content_margin_bottom = 7.0
-bg_color = Color(0.94, 0.88, 0.74, 0.58)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.42, 0.29, 0.16, 0.16)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
+[ext_resource type="PackedScene" path="res://scenes/ui/money_icon.tscn" id="5_money"]
 
 [node name="BuildingHoverCard" type="PanelContainer"]
-custom_minimum_size = Vector2(500, 0)
 size_flags_vertical = 0
 mouse_filter = 2
 theme = ExtResource("1_theme")
-theme_override_styles/panel = SubResource("CardPaper")
+theme_type_variation = &"PKPaperPopup"
 script = ExtResource("2_script")
 
 [node name="Body" type="VBoxContainer" parent="."]
@@ -78,16 +32,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 1
 
-[node name="Kicker" type="Label" parent="Body/Header/Identity"]
-layout_mode = 2
-theme_type_variation = &"PKDossierKicker"
-theme_override_font_sizes/font_size = 10
-text = "建筑详情"
-
 [node name="Title" type="Label" parent="Body/Header/Identity"]
 layout_mode = 2
 theme_type_variation = &"PKDossierHeading"
-theme_override_font_sizes/font_size = 19
+theme_override_font_sizes/font_size = 23
 clip_text = true
 text_overrun_behavior = 3
 
@@ -100,7 +48,7 @@ text_overrun_behavior = 3
 [node name="Status" type="Label" parent="Body/Header"]
 layout_mode = 2
 size_flags_vertical = 1
-custom_minimum_size = Vector2(92, 34)
+custom_minimum_size = Vector2(76, 30)
 theme_type_variation = &"PKPaperTag"
 theme_override_font_sizes/font_size = 11
 horizontal_alignment = 1
@@ -112,163 +60,154 @@ layout_mode = 2
 mouse_filter = 2
 color = Color(0.48, 0.16, 0.1, 0.62)
 
-[node name="Stats" type="HBoxContainer" parent="Body"]
+[node name="Quote" type="PanelContainer" parent="Body"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_type_variation = &"PKDossierAside"
 
-[node name="Cost" type="PanelContainer" parent="Body/Stats"]
+[node name="Content" type="VBoxContainer" parent="Body/Quote"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Stats" type="HBoxContainer" parent="Body/Quote/Content"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Cost" type="HBoxContainer" parent="Body/Quote/Content/Stats"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("StatCard")
+theme_override_constants/separation = 5
 
-[node name="Text" type="VBoxContainer" parent="Body/Stats/Cost"]
+[node name="Icon" parent="Body/Quote/Content/Stats/Cost" instance=ExtResource("5_money")]
+layout_mode = 2
+
+[node name="Labels" type="VBoxContainer" parent="Body/Quote/Content/Stats/Cost"]
 layout_mode = 2
 theme_override_constants/separation = 0
 
-[node name="Label" type="Label" parent="Body/Stats/Cost/Text"]
-layout_mode = 2
-theme_type_variation = &"PKDossierMuted"
-theme_override_font_sizes/font_size = 10
-text = "现金投入"
-
-[node name="Value" type="Label" parent="Body/Stats/Cost/Text"]
-layout_mode = 2
-theme_type_variation = &"PKDossierValue"
-theme_override_font_sizes/font_size = 17
-text = "—"
-
-[node name="Duration" type="PanelContainer" parent="Body/Stats"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("StatCard")
-
-[node name="Text" type="VBoxContainer" parent="Body/Stats/Duration"]
-layout_mode = 2
-theme_override_constants/separation = 0
-
-[node name="Label" type="Label" parent="Body/Stats/Duration/Text"]
-layout_mode = 2
-theme_type_variation = &"PKDossierMuted"
-theme_override_font_sizes/font_size = 10
-text = "建造周期"
-
-[node name="Value" type="Label" parent="Body/Stats/Duration/Text"]
-layout_mode = 2
-theme_type_variation = &"PKDossierValue"
-theme_override_font_sizes/font_size = 17
-text = "—"
-
-[node name="Profit" type="PanelContainer" parent="Body/Stats"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("StatCard")
-
-[node name="Text" type="VBoxContainer" parent="Body/Stats/Profit"]
-layout_mode = 2
-theme_override_constants/separation = 0
-
-[node name="Label" type="Label" parent="Body/Stats/Profit/Text"]
-layout_mode = 2
-theme_type_variation = &"PKDossierMuted"
-theme_override_font_sizes/font_size = 10
-text = "估算毛利 / 日"
-
-[node name="Value" type="Label" parent="Body/Stats/Profit/Text"]
-layout_mode = 2
-theme_type_variation = &"PKDossierValue"
-theme_override_font_sizes/font_size = 17
-text = "—"
-
-[node name="Sections" type="VBoxContainer" parent="Body"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Flow" type="PanelContainer" parent="Body/Sections"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("SectionCard")
-
-[node name="Text" type="Label" parent="Body/Sections/Flow"]
-layout_mode = 2
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 2
-
-[node name="Employment" type="PanelContainer" parent="Body/Sections"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("SectionCard")
-
-[node name="Text" type="Label" parent="Body/Sections/Employment"]
-layout_mode = 2
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 2
-
-[node name="Materials" type="PanelContainer" parent="Body/Sections"]
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("SectionCard")
-
-[node name="Content" type="VBoxContainer" parent="Body/Sections/Materials"]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="Text" type="Label" parent="Body/Sections/Materials/Content"]
-layout_mode = 2
-theme_type_variation = &"PKDossierMuted"
-theme_override_font_sizes/font_size = 10
-autowrap_mode = 2
-
-[node name="Rows" type="VBoxContainer" parent="Body/Sections/Materials/Content"]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="Row0" type="HBoxContainer" parent="Body/Sections/Materials/Content/Rows"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Icon" parent="Body/Sections/Materials/Content/Rows/Row0" instance=ExtResource("3_icon")]
-custom_minimum_size = Vector2(24, 24)
-layout_mode = 2
-size_flags_vertical = 4
-
-[node name="Label" type="Label" parent="Body/Sections/Materials/Content/Rows/Row0"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 2
-
-[node name="Row1" type="HBoxContainer" parent="Body/Sections/Materials/Content/Rows"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Icon" parent="Body/Sections/Materials/Content/Rows/Row1" instance=ExtResource("3_icon")]
-custom_minimum_size = Vector2(24, 24)
-layout_mode = 2
-size_flags_vertical = 4
-
-[node name="Label" type="Label" parent="Body/Sections/Materials/Content/Rows/Row1"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 2
-
-[node name="Row2" type="HBoxContainer" parent="Body/Sections/Materials/Content/Rows"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Icon" parent="Body/Sections/Materials/Content/Rows/Row2" instance=ExtResource("3_icon")]
-custom_minimum_size = Vector2(24, 24)
-layout_mode = 2
-size_flags_vertical = 4
-
-[node name="Label" type="Label" parent="Body/Sections/Materials/Content/Rows/Row2"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 2
-
-[node name="Summary" type="Label" parent="Body"]
-visible = false
+[node name="Label" type="Label" parent="Body/Quote/Content/Stats/Cost/Labels"]
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
-autowrap_mode = 2
+text = "现金支出"
+
+[node name="Value" type="Label" parent="Body/Quote/Content/Stats/Cost/Labels"]
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 21
+
+[node name="Duration" type="HBoxContainer" parent="Body/Quote/Content/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="Icon" parent="Body/Quote/Content/Stats/Duration" instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Labels" type="VBoxContainer" parent="Body/Quote/Content/Stats/Duration"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="Body/Quote/Content/Stats/Duration/Labels"]
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text = "工期"
+
+[node name="Value" type="Label" parent="Body/Quote/Content/Stats/Duration/Labels"]
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 21
+
+[node name="Requirements" type="VBoxContainer" parent="Body/Quote/Content"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="Title" type="Label" parent="Body/Quote/Content/Requirements"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "每栋建材"
+
+[node name="List" type="VBoxContainer" parent="Body/Quote/Content/Requirements"]
+layout_mode = 2
+script = ExtResource("4_quantity")
+
+[node name="Materials" type="VBoxContainer" parent="Body/Quote/Content"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Flow" type="VBoxContainer" parent="Body"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Outputs" type="VBoxContainer" parent="Body/Flow"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Body/Flow/Outputs"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "每栋基础日产"
+
+[node name="List" type="VBoxContainer" parent="Body/Flow/Outputs"]
+layout_mode = 2
+script = ExtResource("4_quantity")
+
+[node name="Inputs" type="VBoxContainer" parent="Body/Flow"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Body/Flow/Inputs"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "生产所需"
+
+[node name="List" type="VBoxContainer" parent="Body/Flow/Inputs"]
+layout_mode = 2
+script = ExtResource("4_quantity")
+
+[node name="Upkeep" type="VBoxContainer" parent="Body"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Body/Upkeep"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "维护"
+
+[node name="List" type="VBoxContainer" parent="Body/Upkeep"]
+layout_mode = 2
+script = ExtResource("4_quantity")
+
+[node name="Employment" type="VBoxContainer" parent="Body"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Body/Employment"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "每栋岗位"
+
+[node name="List" type="VBoxContainer" parent="Body/Employment"]
+layout_mode = 2
+script = ExtResource("4_quantity")
+
+[node name="Optional" type="VBoxContainer" parent="Body"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Body/Optional"]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+text = "可选增产投入"
+
+[node name="List" type="VBoxContainer" parent="Body/Optional"]
+layout_mode = 2
+script = ExtResource("4_quantity")

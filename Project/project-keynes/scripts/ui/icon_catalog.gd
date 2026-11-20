@@ -1342,6 +1342,15 @@ static func good_semantic(stable_id: String) -> StringName:
 		else &"system.unknown"
 
 
+static func resource_semantic(stable_id: String) -> StringName:
+	match stable_id:
+		"timber": return &"resource.wood"
+		"wild_game": return &"resource.animal"
+		"stone": return &"resource.rock"
+	var key := StringName("resource.%s" % stable_id)
+	return key if PAPER_TEXTURES.has(key) else &"economy.resource"
+
+
 static func profession_semantic(stable_id: String) -> StringName:
 	return StringName("profession.%s" % stable_id) \
 		if PROFESSION_IDS.has(StringName(stable_id)) else &"system.unknown"

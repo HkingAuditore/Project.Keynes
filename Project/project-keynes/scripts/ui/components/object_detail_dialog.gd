@@ -977,9 +977,6 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 	var capacity_bars := root.get_node("%CapacityBars") as DossierBarList
 	var job_kicker := root.get_node("%JobKicker") as Label
 	var job_bars := root.get_node("%JobBars") as DossierBarList
-	var job_empty_note := root.get_node("%JobEmptyNote") as Label
-	var production_bars := root.get_node("%ProductionBars") as DossierBarList
-	var production_empty_note := root.get_node("%ProductionEmptyNote") as Label
 	var unused_inputs_note := root.get_node("%UnusedInputsNote") as Label
 	var finance_warning := root.get_node("%FinanceWarning") as Label
 	var finance_diverging_bar := root.get_node("%FinanceDivergingBar") as DossierDivergingBar
@@ -987,12 +984,10 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 	var cost_stacked_bar := root.get_node("%CostStackedBar") as DossierStackedBar
 	var finance_note := root.get_node("%FinanceNote") as Label
 
-	capacity_bars.label_width = 96.0
+	capacity_bars.label_width = 110.0
 	capacity_bars.value_width = 64.0
-	job_bars.label_width = 112.0
+	job_bars.label_width = 158.0
 	job_bars.value_width = 64.0
-	production_bars.label_width = 124.0
-	production_bars.value_width = 104.0
 
 	_fact_columns = [3]
 	_building_refs = {
@@ -1007,9 +1002,12 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 		"capacity_bars": capacity_bars,
 		"job_kicker": job_kicker,
 		"job_bars": job_bars,
-		"job_empty_note": job_empty_note,
-		"production_bars": production_bars,
-		"production_empty_note": production_empty_note,
+		"capacity_card": root.get_node("%CapacityCard"),
+		"job_rule": root.get_node("%Rule"),
+		"production_card": root.get_node("%ProductionCard"),
+		"production_rows": root.get_node("%ProductionRows"),
+		"construction_card": root.get_node("%ConstructionCard"),
+		"requirements": root.get_node("%Requirements"),
 		"unused_inputs_note": unused_inputs_note,
 		"finance_warning": finance_warning,
 		"finance_diverging_bar": finance_diverging_bar,
@@ -1067,30 +1065,24 @@ func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
 	var jbars_data: Array = dossier.get("job_bars", [])
 	var job_kicker := _building_refs.get("job_kicker") as Label
 	var job_bars := _building_refs.get("job_bars") as DossierBarList
-	var job_empty := _building_refs.get("job_empty_note") as Label
-	if job_kicker != null:
-		job_kicker.visible = not jbars_data.is_empty()
-	if job_bars != null:
-		job_bars.visible = not jbars_data.is_empty()
-		job_bars.set_rows(jbars_data)
-	if job_empty != null:
-		job_empty.text = "建造中或无专职岗位配置。"
-		job_empty.visible = jbars_data.is_empty()
+	var has_jobs := not jbars_data.is_empty()
+	job_kicker.visible = has_jobs
+	job_bars.visible = has_jobs
+	job_bars.set_rows(jbars_data)
+	_building_refs.job_rule.visible = has_jobs and cap_bars.visible
+	_building_refs.capacity_card.visible = has_jobs or cap_bars.visible
 
-	var pbars_data: Array = dossier.get("production_bars", [])
-	var prod_bars := _building_refs.get("production_bars") as DossierBarList
-	var prod_empty := _building_refs.get("production_empty_note") as Label
+	var production: Array = dossier.get("production_bars", [])
 	var unused_note := _building_refs.get("unused_inputs_note") as Label
-	if prod_bars != null:
-		prod_bars.visible = not pbars_data.is_empty()
-		prod_bars.set_rows(pbars_data)
-	if prod_empty != null:
-		prod_empty.text = "当前无日常投入或产出流水。"
-		prod_empty.visible = pbars_data.is_empty()
-	if unused_note != null:
-		var unused_str := String(dossier.get("unused_inputs_summary", ""))
-		unused_note.text = unused_str
-		unused_note.visible = not unused_str.is_empty()
+	unused_note.text = String(dossier.get("unused_inputs_summary", ""))
+	unused_note.visible = not unused_note.text.is_empty()
+	_building_refs.production_card.visible = not production.is_empty() or unused_note.visible
+	_building_refs.production_rows.set_rows(production)
+	_building_refs.production_rows.visible = not production.is_empty()
+
+	var requirements: Array = dossier.get("construction_requirements", [])
+	_building_refs.construction_card.visible = not requirements.is_empty()
+	_building_refs.requirements.set_rows(requirements)
 
 	var fwarn := _building_refs.get("finance_warning") as Label
 	if fwarn != null:

@@ -1405,6 +1405,7 @@ public:
     // it only mutates the sparse row and never touches conserved ledgers.
     bool apply_mobilization_result(int32_t cell, int32_t profession,
                                    int32_t action, bool success);
+    godot::Dictionary resolve_player_mobilization(const godot::Dictionary &choice);
     // Convenience read used by the ration path and by diagnostics.
     int32_t military_ration_satisfaction_q16(int32_t cell) const {
         return cell >= 0 &&

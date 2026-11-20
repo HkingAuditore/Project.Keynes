@@ -33,6 +33,7 @@ const TITLE_FONT_MIN := 18
 const ROW_LIST_KEYS = InspectorStructure.ROW_LIST_KEYS
 
 signal close_requested()
+signal population_discontent_changed(cell_index: int, discontent: Dictionary)
 signal tab_data_requested(tab_id: String)
 signal object_details_requested(request: Dictionary)
 signal detail_visibility_changed(open: bool)
@@ -52,6 +53,7 @@ signal military_dossier_action_requested(action: StringName, payload: Dictionary
 signal military_dossier_army_selected(handle: int)
 
 var _model: Dictionary = {}
+var _presented_population_discontent: Dictionary = {}
 var _current_tab := "geography"
 var _tabs_signature_cache := ""
 var _cell_index := -1
@@ -197,6 +199,7 @@ func _ready() -> void:
 	_chapter_nav.chapter_selected.connect(_on_tab_selected)
 	resized.connect(_on_inspector_resized)
 	_inspector_root.resized.connect(_sync_kpi_density)
+	_inspector_root.visibility_changed.connect(_emit_population_discontent)
 	_title_label.resized.connect(_fit_title_font)
 	_sync_split_layout()
 
@@ -232,6 +235,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 			_scroll.scroll_vertical = 0
 	_model = model
 	if _model.is_empty():
+		_publish_population_discontent({})
 		return
 	_apply_header(_model.get("header", {}), false)
 	if cell_changed and visible and is_inside_tree():
@@ -276,6 +280,7 @@ func apply_live_patch(patch: Dictionary) -> void:
 		_render_content(false)
 	else:
 		_apply_category_patch(category)
+		_publish_population_discontent(category)
 
 
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
@@ -304,6 +309,7 @@ func reset_for_world() -> void:
 	_model.clear()
 	_cell_index = -1
 	_current_tab = "geography"
+	_publish_population_discontent({})
 	_scroll_by_tab.clear()
 	_pending_tax.clear()
 	_draft_tax.clear()
@@ -440,6 +446,21 @@ func _render_content(reset_scroll: bool) -> void:
 	_restore_tax_drafts()
 	if reset_scroll and _scroll != null:
 		_scroll.scroll_vertical = 0
+	_publish_population_discontent(data)
+
+
+func _publish_population_discontent(category: Dictionary) -> void:
+	_presented_population_discontent = category.get("class_discontent", {}) \
+		if _current_tab == "population" else {}
+	_emit_population_discontent()
+
+
+func _emit_population_discontent() -> void:
+	if _inspector_root != null and _inspector_root.is_visible_in_tree() \
+			and not _presented_population_discontent.is_empty():
+		population_discontent_changed.emit(_cell_index, _presented_population_discontent)
+	else:
+		population_discontent_changed.emit(-1, {})
 
 
 func _capture_tax_drafts() -> void:
@@ -557,6 +578,7 @@ func _build_military_ledger(host: Control, model: Dictionary) -> void:
 		return
 	var ledger := MilitaryCellLedgerScene.instantiate()
 	host.add_child(ledger)
+	ledger.set_preview_boundary(self)
 	ledger.action_requested.connect(func(request: Dictionary) -> void:
 		military_state_building_requested.emit(request))
 	ledger.army_create_requested.connect(func(request: Dictionary) -> void:
