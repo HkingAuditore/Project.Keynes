@@ -1341,6 +1341,17 @@ void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,
         const int32_t magnitude = effect_id >= 0
             ? family_effect_prestige_magnitude_q16(effect_id, prestige)
             : binding.strength_q16;
+        // EVENT_ONCE pays out once per *trigger*, so every fire has to start from
+        // a fresh instance generation. The generation is what resets the fire
+        // bookkeeping (fire_sequence / effect_applied), rejects still-pending
+        // fire transactions of the previous trigger and keeps the command
+        // idempotency key distinct from it. Without the bump the same row keeps
+        // its identity, its pending transaction can be compacted without an ACK
+        // and the cadence then replays the payout with a new fire_sequence --
+        // which is exactly how city_founder's "+220 people" paid out once per
+        // day for 75 days in the reported save.
+        ++binding.generation;
+        if (binding.generation == 0) binding.generation = 1;
         std::string error;
         if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
                 binding.instance_id, program_key, binding.generation, 0x46414d45,

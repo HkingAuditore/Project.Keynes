@@ -392,6 +392,28 @@ Controller 本国权限门控和 UI 恢复／地图安全区。UI 夹具 8／40�
 就不得把规划目标量当作托管写入，也不得出发。旧实现在第一行被拒时直接返回，后续行（口粮、工具）
 永远轮不到，表现为"源地有货、国库有钱、进度永远 0%"。
 
+### 派遣储备额度与逐日部分成交（2026-11-20）
+
+有国家购买政策的国家，筹备期国库采购受 `colonization_procurement_allowance` 约束：
+`colonization_daily` 在周期开端由 `national_daily - research_daily` 再按时代收购／派遣储备的份额
+规则冻结，额度按日补充、上限 1 个周期（`colonization_daily × epoch_days`）；从未下发政策的国家
+返回 `-1`，不设上限。额度不足时**不再整行终态拒绝**：`reserve_preparing_family_expedition_cargo`
+按「当天剩余额度 ÷ 源地零售价」把该行裁成部分成交（`goods_cost` 向上取整，裁到刚好装得下），
+买到的量立即并入托管 cargo，剩余缺口由次日重规划继续补买，与"逐日囤积"的既有语义一致。
+修复前这里直接返回 `colonization_procurement_budget_exhausted`，而出发闸门要求每一行都买齐，
+所以只要一条缺口的价钱超过本周期额度上限，队伍就会带着"开工包已齐套 / 进度 100%"永久卡在筹备中；
+40 天限额夹具里连续 39 次整行拒单、托管 0 增长即为该路径的复现证据。
+
+`colonization_daily` 只在周期开端按「当时已处于 PREPARING 的队伍」决定是否给国家分配该通道预算
+（`freeze_epoch_procurement_budgets`）。周期中途新建的队伍因而拿到 0 额度，整个周期每次采购都判超额；
+`ensure_epoch_colonization_budget` 在该国第一次采购时按冻结的 `national_daily`／`other_daily`／
+`era_daily` 与三条份额规则补出同样的通道预算并发放当天额度。玩家侧没有 AI 的"周期冻结前登记意图"
+补偿（见 `country-ai-runtime.md` §2），这条补发就是它的对应物。
+
+当天一行都没买到时（额度连一个单位都不够、或该国根本没有该通道预算）才会留下拒单记录；当天已经
+买到货、只是后面的行在等额度补充，不写拒单。记录只在这一行真正成交、或队伍出发／取消时清除，
+不再把昨天的拒单一直挂在今天的面板上。
+
 规划与划账只看 `市场库存 + 已托管`，不再设开拓专用的源地口粮底线；源地家户生存仍由正常市场结算负责。
 
 齐套后 `launch_preparing_family_expedition` 只抽人口（cargo 已在托管里），并在此刻才写入
@@ -439,6 +461,10 @@ revision 5 起 identity 不再用于跳过重规划（每日必重规划），�
 的队伍直接出发。托管合计把口粮、衣物、工具各组物理量加在一起，可能盖住某一组缺口；
 闸门不通过时快照会把规划器的 `kit.*_missing_units` 并入缺口，不再显示 100%，
 两项都为 0 仍不能出发则报 `INCOMPLETE`。
+两类总量都达标、但逐项仍有差额时（替代品换过，或实时规划比冻结分母大），报告 `TOPUP` 而不是
+`READY`：进度分母按固定口径不倒退，出发闸门却按逐项差额买货，口径不同就必须让面板明说
+"总量已达标、仍在补买个别物资"。快照新增 `kit_topup_missing_units`（逐项差额合计，`GOODS_SCALE`）
+供 UI 与测试读取；`READY` 只在逐项差额也为 0 时出现。
 UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在建材还差一大截时显示 100%。
 桥接项显示为“补给”，包含食品、衣物与必需工具，不能全部标成“口粮”。
 快照另带只读采购诊断：`kit_procurement_pending` / `kit_procurement_phase` /
@@ -462,6 +488,9 @@ v36 在途队伍 cargo 为空，到达后不落成开工包。
 冻结周期内报价仍可读，`start/cancel` 在 `economy_busy` 时改为 `colonization_queued` /
 `colonization_cancel_queued` 并在下一轮 ledger 抽离或返程，
 以及本国已有人口格的 SETTLE-only 迁徙、`source == target` 无报价和外国目标拒绝。
+`tests/country/colonization_procurement_budget_test.gd` 锁定本节的额度规则：单条缺口大于一天额度时
+必须部分成交并在额度攒够后出发（旧实现 40 天内 39 次整行拒单、0 增长、永不出发），
+周期中途建立的队伍必须在第一次采购与建队时补发本周期额度。
 `player_controller_contract_test.gd` 覆盖开拓面板在结算中仍显示家族卡片，确认按钮可点并显示排队，以及按城市分组直接选择当地家族、只显示当地分支人口、默认填满当地可派遣人数、完整开工包「安家」文案、不完整绿地「开始筹备」、物资不够不再锁按钮。
 `colonization_planner_context_test.gd` 覆盖多页城市、同一家族从不同城市提交各自 token、
 切城清空旧选择、日刷新控件复用、来源消失失效、分支上下文预选和左侧响应式布局。

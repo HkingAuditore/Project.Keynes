@@ -61,7 +61,9 @@
   抢经济边界。`research_procurement_policy_for` 在有政策时用 `research_daily` 覆盖日预算
   （研究采购、研究需求信号、财政研究保底三处）。派遣：`refresh_epoch_colonization_demand`
   预算被 `colonization_daily × epoch_days` 截断，筹备期实际国库采购受按日补充、上限 1 周期的额度约束
-  （超额时 `colonization_procurement_budget_exhausted`，次日重试）。
+  （超额时按剩余额度部分成交、次日继续补买；连一个单位都买不起才记
+  `colonization_procurement_budget_exhausted`；周期中途新建的队伍由
+  `ensure_epoch_colonization_budget` 补发本周期额度）。
 - 时代收购 pass `run_government_era_procurement` 在 `GOVERNMENT_RESEARCH_PROCUREMENT` 阶段、
   研究采购完成后运行（slice 路径与 StageOps drain 路径都已接入），一次一笔 `GOOD_FROM_MARKET`，
   同步与 Country worker（`block_or_enqueue_country_worker_asset` + defer settlement）两路；

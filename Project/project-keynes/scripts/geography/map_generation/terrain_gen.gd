@@ -1,6 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 class_name DCTerrainGenerator
 const BioSummary = preload("res://scripts/geography/map_generation/bio_occupancy_summary.gd")
+const BioOccupancyGuaranteeScript = preload("res://scripts/geography/map_generation/bio_occupancy_guarantee.gd")
 
 func _init(generator) -> void:
 	_generator = generator
@@ -1200,6 +1201,8 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		_generator._bio_occupancy_knob_cache_map_id = map_id
 		_generator._bio_occupancy_knob_cache_n = n
 		_generator._bio_occupancy_knob_cache_version = _generator._BIO_OCCUPANCY_KNOB_CACHE_VERSION
+		# 保底残存格可能落在目录气候带外：把地图本地气候边界写回，persist 才不会次日剔除。
+		BioOccupancyGuaranteeScript.realize_bounds(_generator._bio_occupancy_knob_cache, map_ref)
 	var static_knobs: Dictionary = _generator._bio_occupancy_knob_cache
 	if _generator._bio_occupancy_native_configured_map_id != map_id \
 			and _generator._data_core_world_ext != null :
@@ -1321,12 +1324,6 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	map_ref.province_id_arr = provinces
 	knobs["province_ids"] = provinces
 	knobs["landmass_ids"] = landmass
-	if seed_res.is_empty():
-		seed_res = _generator._data_core_world_ext.run_bio_seed_pass(knobs)
-		if not bool(seed_res.get("ok", false)):
-			push_error("[bio-occupancy] seed pass failed: %s" % String(
-				seed_res.get("reason", "unknown")))
-			return
 	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
 	if occupancy.size() != n:
 		push_error("[bio-occupancy] occupancy output shape invalid")
@@ -1335,6 +1332,7 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	_generator._publish_bio_occupancy_to_runtime(map_ref)
 	_generator._log_bio_occupancy_seed(knobs, seed_res, int(province_res.get("landmass_count", 0)),
 		int(province_res.get("province_count", 0)))
+	BioOccupancyGuaranteeScript.ensure_after_boot(_generator, map_ref, seed_res)
 
 
 ## 生态播种诊断的「表头 + 每物种」段；两条路径（整段 native / 逐段 GDScript）
@@ -1371,17 +1369,8 @@ func _log_bio_occupancy_seed_summary(knobs: Dictionary, seed_res: Dictionary,
 
 func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: int,
 		province_count: int) -> void:
-	_generator._log_bio_occupancy_seed_summary(knobs, seed_res, landmass_count, province_count)
-	var landmass_ids := PackedInt32Array()
-	var classes_out := PackedStringArray()
-	var foods_out := PackedStringArray()
-	_generator._bio_landmass_summary_gdscript(
-		seed_res.get("occupancy_bits", PackedInt32Array()),
-		knobs.get("landmass_ids", PackedInt32Array()),
-		knobs, landmass_ids, classes_out, foods_out)
-	for i in range(landmass_ids.size()):
-		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
-			int(landmass_ids[i]), String(classes_out[i]), String(foods_out[i])])
+	BioOccupancyGuaranteeScript.log_seed(knobs, seed_res, landmass_count, province_count,
+		_generator)
 
 
 ## 融合 pass 返回的 landmass 摘要直接打印（聚合在 C++ 里做完）。

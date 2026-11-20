@@ -243,10 +243,11 @@ authoring-side `research_condition`。王国时代以后的主干、制度和生
 渔舟移至农耕时代，并以完成二者任一项作为显式替代路线。辨识节点维持有成本、
 需目击/储量信号，开局不赠送。芦苇、草皮、湿地、洪泛、旱作、水田、高地、河运与风力等节点
 使用科技级精确证据，避免从宽泛路线继承无关信号。国内水运能力由四个硬编码科技门控，不走
-Modifier、也不另开 capability 子系统：`tech.river_transport` 开河运与湖泊，
-`tech.celestial_navigation` 开浅海（探索时代才开海；`tech.fishing_boats` 只解锁渔舟生产建筑，
-不开放航区），
-`tech.oceanic_navigation` 开远海，`tech.oceanic_ship_design` 开深海。海事等级嵌套，河运独立。
+Modifier、也不另开 capability 子系统，一档一个时代：`tech.river_transport`（农耕）开河运与湖泊，
+`tech.military.coastal_transport`（王国）开浅海（`tech.fishing_boats` 只解锁渔舟生产建筑，不开放
+航区），`tech.celestial_navigation`（帝国）开远海，`tech.oceanic_ship_design`（探索）开深海。
+海事等级嵌套，河运独立；`tech.oceanic_navigation` 不再单独发放航道，它只保留远洋船舶、远洋造船厂
+与「海上作业」产出加成。
 `node_role == identification` 的 18 个辨识节点只允许本对象自身的 `bio.*` 目击、
 `resource.*` 储量，或匹配的 `contact.*` 样本接触作为揭示条件。栖息地、地貌、天气、
 发展成就、`breakthrough.*` 以及跨物种/跨矿种信号均不得替代对象本身；目录测试维护完整的
