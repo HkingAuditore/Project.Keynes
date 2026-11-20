@@ -492,11 +492,24 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 - GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
 - 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
 
-叙事事件额度统一为每格每游戏年两次：周期抽样、事实触发、普通 AI 事件共用
+叙事事件额度统一为每格每游戏年**一次**：周期抽样、事实触发、普通 AI 事件共用
 `NarrativeEventService` 的入队检查和展示检查。队列出队时丢弃当年已超额的普通事件，
 全局弹窗间隔未到则等待；定时后续事件可以越过等待项，且不消耗年度额度。
 AI 定时后续请求携带 `scheduled_followup`，生成结果重新进入定时队列，
 不得提前展示，也不得将普通 AI 预热结果当作定时后续豁免。
+
+- **弹窗静置**：玩家开着国家卷宗（科技 / 政治 / 经济(税收) / 军事 / 外交）、营造、家族档案、
+  军务档案、派遣、议和、史册、GM 面板或时代纸笺时，叙事弹窗不得展示，也不得替玩家关掉这些窗口。
+  `NarrativeEventFlow` 在静置那一刻自己 `pause(true)`（暂停快照也只在那时登记一次）并播一次
+  提示音，offer 留在服务的 `active_offer` 里不下线；窗口关闭后再展示，关闭弹窗时用同一份快照
+  恢复，不能把「静置暂停」当成玩家本来的状态记下来，否则关掉弹窗后时间再也不会走。玩家在静置
+  期间自己按继续，兜底重试不得再把他按回暂停。
+  窗口清单只在 `GameUIManager.is_player_workspace_open()` 里维护；新增窗口要同时在该清单和它的
+  关闭路径上接 `notify_workspace_closed()`（内部延后一帧重查——同一个输入回合里关旧窗、开新窗
+  不能把弹窗抢进来），流程另有 0.2 秒兜底重试，漏接只会晚一帧，不会卡死。
+  右侧地块档案与暂停菜单不算窗口：前者是选格后的常驻看板，后者本来就停了表。
+  回归入口：`tests/game/narrative_window_deferral_test.gd`、
+  `tests/game/player_country_ui_smoke_test.gd`（卷宗开着跑日的静态检查）。
 
 AI 事件有三个入口：脉冲预热、事实驱动（`GameplayEventBus` 白名单 `AI_FACT_HINTS`）
 和定时后续预取，共用 `ai_min_request_gap_days`（默认 60 日）节流与单条在途；概率按
@@ -934,3 +947,124 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
   民情表的影响力 = `population + owner_employed × opinion_owner_influence_weight(2)
   + funds / opinion_funds_per_influence(1000000)`，与理念系统同源；组织度按职业读，
   缺失时留空轨道，不写 0%。
+
+## 物种出现保底（2026-11-20）
+
+每个 `bio.*` 物种默认仍按目录包络（气候、湿度、海拔、植被掩码、地貌标志、载体资源）播种。播种结果里
+`occupied=0` 的物种会走保底阶梯（`scripts/geography/map_generation/bio_occupancy_guarantee.gd`，
+在融合 boot pass 与逐段 bootstrap 两条生成路径后都会检查）：逐级放宽只对该物种生效的播种输入，并向
+原生 `run_bio_seed_pass` 重发请求，顺序固定为 ① 去掉植被掩码 ② 去掉地貌标志（河湖/湿地/高地/干旱等）
+③ 去掉载体资源 ④ 气候带放宽到 persist 容差内（温度/湿度 0.11、海拔 0.075，必须小于
+`gdext/src/world_ext_bio.cpp` 的 `kPersistClimateMargin = 0.12`）⑤ 气候全放开（`map_extremes`）。
+被放宽的物种同时把 `fill_keep` 收到 ≤0.08、`max_cost` 收到 ≤3，只留小片残存种群。
+小图上生态行会（食物/放牧/纤维/特产）仍可能把格位占满，此时最后一步 `manual_relict` 直接按
+“离该物种气候中心最近、且未达每格 3 物种上限”的陆地格补一格，只放宽行会互斥、不突破格位上限。
+
+保底残存格可能落在目录气候带外，而每日 pass 的 `persist_ok` 会按目录边界剔除植株。因此
+`_bio_occupancy_base_knobs()` 建缓存时调用 `realize_bounds()`：把每个物种的气候边界放宽到覆盖它
+**实际占领格**的气候值（纯函数于占领位集 + 地图气候数组，同存档在任何会话重算结果相同）。保底播种
+成功后作废 knobs 缓存并重置原生 configure，使生成当次与读档后的日推进使用同一份地图本地边界，
+读档前后逐日行为一致。日常推进的植被/地貌标志/载体仍用目录定义，扩散仍受原规则约束；阶梯只改播种
+请求，已播上的物种结果不变。
+
+日志新增 `[bio-occupancy]   relax <signal> level=<id>` 与
+`[bio-occupancy] guarantee attempts=N relaxed=N by_level={...} unplaceable=[...]`。
+`unplaceable` 只应出现在地图完全不含该物种气候带的极端世界（例如没有任何河流/湿地的全干旱图上的芦苇）；
+正常 earth_like 世界不应出现。
+
+回归：`tests/world/bio_coverage_guarantee_test.gd` 在 10×8（玩家可选最小尺寸）与 14×10 上断言
+每个物种至少一格、单格不超过三个物种、保底残存格连续三日 persist 后仍在、同 seed 两次生成逐字节一致；
+`tests/world/bio_guarantee_ladder_test.gd` 用假的 `run_seed` 回调覆盖“只放宽失败物种、原 knobs 不被污染、
+阶梯用尽时报告 unplaceable”的纯逻辑。
+
+## 天气场分类与降水频率（2026-11-20）
+
+围绕「降水极其频繁」的治理，天气场的四个环节改了口径并在生产 profile 里标定。
+改动的入口全部在 `gdext/src/runtime_climate_pass_math.h` / `runtime_climate_passes_weather.cpp`
+与 GDScript 镜像 `scripts/weather/{field_solver_physics,field_solver,feedback,weather_system}.gd`。
+
+### 1. `convergence` 是「有符号净流入」，不是「风向一致度」
+
+旧实现是半波整流均值 `mean_d max(0, cos(self→nb, wind_nb))`：六角格 6 个等间隔方向上
+它恒在 0.29–1.25，**与风场有没有辐合无关** —— 均匀流（零辐散）实测读 0.3333。
+证据与回归：`tests/world/weather_convergence_metric_test.gd`（均匀风必须读 0、辐合中心 1.0、辐散中心 0）。
+
+新口径（`wf_wind_convergence_net_idx_{xy,cached}`）：
+
+```
+w_d     = clamp(|v_nb| / 1.2, 0, 1.25)
+inflow  = Σ_d max(0,  cos_in_d) · w_d
+outflow = Σ_d max(0, -cos_in_d) · w_d
+conv    = clamp((inflow - outflow) / (inflow + outflow), 0, 1)
+```
+
+均匀流 ⇒ 0；辐合中心 ⇒ 1；辐散 ⇒ 钳 0。**没有引入 gain 系数**（`weather_convergence_gain`
+仍是 dead，别拿它当缩放）；分布整体左移：p50 0.376 → **0.016**、p90 0.537 → 0.458、p95 0.612 → 0.636。
+
+口径由 `PK_CLIMATE_CONVERGENCE_LEGACY` 选择：未设置 = net（生产默认）；`1` = 旧口径（仅诊断回退）。
+解析在 knob 构造处完成（`weather_convergence_metric_from_switch`），进 kernel 的只有
+`WeatherFieldKnobs.convergence_metric`，保证 slice / thread / native-daily 同口径。
+
+**四份镜像必须同步**：`wf_wind_convergence_net_idx_xy`、`wf_wind_convergence_net_idx_cached`、
+`field_solver_physics.gd::wind_convergence_for_cell`、`::wind_convergence_idx`。
+注意 GDScript 的 legacy 分支**刻意保留**了旧缺陷（没有 speed 权重），只有 net 分支与 C++ 对齐；
+这个镜像差异在退役 legacy 时消失。
+
+### 2. 六个消费者阈值按新分位标定
+
+net 的 p50 只有 0.016，旧阈值是按 0.376 的假基线定的 —— 不重标定会让「锋生门几乎永远关着、
+海面释放门永远为 0」，真实辐合完全传不出去。现行值：
+
+| 消费者 | 现值 | 依据 |
+|---|---|---|
+| `frontal_convergence = smoothstep(a,b,conv)` | **(0.02, 0.46)** | 新 p50 处闭合、p90 处全开 |
+| `drv_cv = (conv−c)/d`（海面释放门） | **(0.02, 0.44)** | (p50, p90−p50) |
+| `strat_drive += conv*k` | **0.70** | 保持旧 p90 处贡献 0.60×0.537/0.458 |
+| `river_forcing_proxy` / `up_forcing_proxy` | **0.76** | 同比归一 |
+| `dynamic_forcing = conv*0.65` | **0.76** | 同上 |
+| `wf_apply_frontal_convergence_boost_idx::CONVERGENCE_THRESHOLD` | **0.64** | 新 p95 |
+
+这些是**物理常数**，两种口径共用；W9 退役 legacy 后不存在混用问题。
+
+### 3. RAIN 判定是四项合取，不是单阈值
+
+旧实现 `precip > 0.040`（陆）/`0.032`（水）**无条件**通过，等于「下一点就报雨」。
+现在四项同时满足才算降水：
+
+```
+precip > gate && effective_cloud > mp_cloud_gate
+       && precip_cloud_mass > 0.35·mp_cloud_gate && vapor > mp_vapor_gate
+```
+
+- `gate`：`ClimateProfile.weather_precip_classify_gate_land/water`（生产 **0.095 / 0.076**，
+  取自新口径下陆地降水率的 p80）。改这个 profile 就能改行为，不用重编。
+- `mp_cloud_gate`：**0.18（水）/ 0.10（陆）**。原 0.22/0.12 是「弱分支」的门，变硬条件后需要下调，
+  否则 20% 可见云量的暖湿海面会被判无云（`weather_field_solver_test` 的 marine 用例就是这条）。
+- **STORM 与 MONSOON 也必须先过 `meaningful_precip`**。否则它们的判据（`precip>0.065/0.053` + 云门）
+  比 RAIN 更松，会出现「RAIN 2.6% / MONSOON 13.8%」的排序倒挂。
+
+分类口径用 `weather_target_type`（分类器原始输出）；`weather_type` 要过类型过渡状态机，
+headless 短窗口里会停在 prev，不能拿来当验收读数。
+
+### 4. 温度距平是分类输入，与 distribute 的温度扰动上限是两件事
+
+- `wx->temp_anomaly = cell_temp − cell_temp_30d`（`world_ext_simulation_host_save.cpp`）。
+  在此之前这条 lane 从未赋值 ⇒ 分类器距平恒 0 ⇒ DROUGHT/HEATWAVE 结构性不可达。
+- `weather_classify_anomaly_cap`（**0.12**）只钳分类输入；
+  `weather_temp_anomaly_cap`（**0.025**）是 distribute 阶段改温度幅度的上限。**不可互换**，
+  混用会把天气对温度的扰动放大 5 倍。
+
+### 5. 降水空间平滑与「面积 = 1/集中度」
+
+`weather_field_precip_spatial_smooth` 现在由 `ClimateProfile` 显式下发（此前 C++ 吃默认 0.30、
+GDScript 硬编码 0.30/0.09，两边从未同步）。生产保持 **0.30**。
+
+反直觉但已被实测确认：**在硬降水率门下，平滑会压缩降水面积**（0.30→24.76%、0→32.46%），
+因为它削峰摊薄、让更多格子跌回门下。不要用「关平滑」来降面积。
+
+面积不是自由参数：`area = mean_P / P̄_rainy = 1/conc`，且 `P̄_rainy ≤ soft_cap(0.16)` ⇒
+**`area ≥ mean_P / 0.16`**。任何面积目标都必须附 `ΣP / mean_P / P̄_rainy / conc / 下界` 五个数，
+单独一个百分比不构成验收（`tests/world/weather_frequency_probe.gd` 会判这三条自洽性）。
+
+另外：`soft_cap` 本身**在压缩总降水**，抬它会让雨更猛也更多（0.16→0.20 使陆地降水格 24.76%→30.80%），
+不是「同量水重新分配」。

@@ -3,6 +3,8 @@ extends SceneTree
 
 var _failures := 0
 var _capture_dir := ""
+## 卷宗开着时事件是否走到了静置路径（本次改动的验收点之一）。
+var _deferred_seen := false
 
 
 func _init() -> void:
@@ -80,6 +82,18 @@ func _run() -> void:
 			_expect("%s panel opens" % section_id,
 				panel.is_panel_open() and panel.current_section() == section_id)
 			await _capture_workspace(section_id)
+			if section_id == "economy":
+				# 国库页的军费板块读经济章模型的 `military` 段。以前经济章不装配
+				# 这一段，板块永远「暂不可用 / 军事账目尚未就绪」。
+				var fiscal_military: Dictionary = panel.get("_model").get("military", {})
+				_expect("economy model carries the military spending section",
+					not fiscal_military.is_empty())
+				_expect("fiscal military section publishes the envelope channels",
+					fiscal_military.has("budget_wage_bp")
+						and fiscal_military.has("wage_paid_last_period"))
+				if fiscal_military.get("facade") != null:
+					_expect("fiscal military section is available in a live session",
+						bool(fiscal_military.get("available", false)))
 	# 军事面板（design §14.3）：军事机构未接通时必须给出可读的原因，接通时必须
 	# 有八个页签；两种情况下章节导航与动作条都不能被禁用。
 	var military_button := buttons.get("military") as Button
@@ -105,6 +119,12 @@ func _run() -> void:
 			_expect("military catalog exposes unit and equipment rows",
 				(military_vm.catalog().get("units", []) as Array).size() > 0
 					or military_vm.catalog().get("categories", null) != null)
+			# 地块名不再是「未命名地块」：具名聚落 > 地区名 > 地块序号。名字表由
+			# Economy 的聚落快照装配，读视图可能还在 worker 侧排队，所以这里钉的是
+			# 降级链（永远不再出现那句半截话），条数留给日志诊断。
+			print("[military] cell_names=%d" % int(military_vm.call("cell_name_count")))
+			_expect("cell names never fall back to the 未命名 placeholder",
+				String(military_vm.call("cell_name", 0)).find("未命名") < 0)
 		else:
 			_expect("military workspace explains why it is unavailable",
 				not String(military_model.get("reason", "")).is_empty())
@@ -955,7 +975,8 @@ func _finish() -> void:
 		_expect("UI session closes before scene teardown", bool((await host.close_world()).get("ok", false)))
 		game.queue_free()
 		await process_frame
-	print("=== player country UI smoke: %d failures ===" % _failures)
+	print("=== player country UI smoke: %d failures, deferred_seen=%s ===" % [
+		_failures, str(_deferred_seen)])
 	quit(0 if _failures == 0 else 1)
 
 
@@ -964,7 +985,18 @@ func _handle_narrative_offer(game: Node) -> bool:
 	# choose/acknowledge path as a player before expecting days to advance.
 	var controller := game.get_node("PlayerController")
 	var flow = controller.get("_narrative_flow")
-	if flow == null or not flow.is_locked():
+	if flow == null:
+		return true
+	# [popup-deferral 2026-11-20] 卷宗开着时事件改为静置：不弹窗、先停表提示。
+	# 这里按玩家行为处理——先把待阅事件决定掉，天数才会继续走；同时确认卷宗
+	# 没有被弹窗挤掉（这正是本次改动的验收点）。
+	var deferred: bool = bool(flow.is_deferred())
+	if deferred:
+		_deferred_seen = true
+		var country_panel = game.get_node("UI").get("_country_panel")
+		_expect("deferred offer leaves the open country dossier untouched",
+			country_panel != null and bool(country_panel.is_panel_open()))
+	if not flow.is_locked() and not deferred:
 		return true
 	var service = controller.get("_narrative_service")
 	var offer: Dictionary = service.active_offer()

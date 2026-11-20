@@ -46,6 +46,9 @@
     "country": 1,
     "visual": 3
   },
+  "Project/project-keynes/scripts/geography/map_generation/bio_occupancy_guarantee.gd": {
+    "climate": 1
+  },
   "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
     "core": 2,
     "runtime": 2

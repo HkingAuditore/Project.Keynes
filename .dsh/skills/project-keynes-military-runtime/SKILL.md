@@ -115,13 +115,18 @@ opcodes travel on the same POD lane as 24, and all of them name cohorts by **sig
   with `pkmi_lot_army_missing` (the seasonal terrain refresh walks this path).
 - `army.transfer` requires both formations in one cell (`command_armies_not_colocated`).
 
-Naval transport (design §7.4): water is impassable until the country unlocks
-`tech.military.coastal_transport` (runs of ≤3 consecutive water cells, land embark/disembark) or
-`tech.military.naval_transport` (no run limit). The gates read `MilitaryCatalog.coastal_transport_bit` /
-`ocean_transport_bit` (resolved from the catalog JSON, default -1) against the digest's unlock bits and
+Naval transport (design §7.4): water is gated by the cell's WATER TIER, never by the length of a
+crossing. The tier comes from the landform (0 deep / 1 far / 2 shallow / 3 lake, see
+`gdext/src/water_tier.h`, the same table the economy trade corridors use). Four technologies unlock
+one tier each: `tech.river_transport` (lake), `tech.military.coastal_transport` (shallow),
+`tech.celestial_navigation` (far), `tech.oceanic_ship_design` (deep); tiers nest, so a higher tier
+also covers the lower ones and a 6-cell-wide shallow shelf is crossable with the shallow bit alone.
+The gates read `MilitaryCatalog.water_lake_bit / water_shallow_bit / water_far_bit / water_deep_bit`
+(resolved from the catalog JSON `unlock_tech_ids`, default -1) against the digest's unlock bits and
 participate in the catalog hash. Sea steps cost 1.5x, an army at sea is forced to
 `MILITARY_STANCE_EMBARKED` and reverts on landing, takes 0.2%/day sea attrition, and never engages on
-water. `preview_path` applies the same gate; without the tech it must still refuse water.
+water. `find_path`, `find_exploration_path` and `preview_path` all search one state per cell; without
+the matching tier they must still refuse water.
 
 Get these right or the economy faults hours later:
 

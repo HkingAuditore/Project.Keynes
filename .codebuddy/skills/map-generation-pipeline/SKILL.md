@@ -120,6 +120,19 @@ one species per cell. Continent-scale landmasses keep a playable food + fiber/li
 floor. Satellite islets are skipped unless they are the unique argmax. `realm.*` is
 display metadata; seeding does not read it.
 
+**物种出现保底**（`scripts/geography/map_generation/bio_occupancy_guarantee.gd`）：播种结果里
+`occupied=0` 的物种按固定阶梯放宽只对该物种生效的播种输入——去植被掩码 → 去地貌标志 → 去载体资源 →
+气候放宽到 persist 容差内（0.11/0.075 < C++ `kPersistClimateMargin=0.12`）→ 气候全放开 `map_extremes`——
+再调一次 `run_bio_seed_pass`；放宽物种同时收小 `fill_keep`/`max_cost`，只留小片残存种群。小图上行会
+占满格位时最后一步 `manual_relict` 按“离气候中心最近且未达每格 3 物种上限”的陆地格补一格（只破行会
+互斥，不破格位上限）。残存格可能落在目录气候带外，所以 `_bio_occupancy_base_knobs()` 建缓存时用
+`realize_bounds()` 把该物种气候边界放宽到覆盖实际占领格（纯函数于占领位集+气候数组，读档后重算一致），
+并在保底播种后作废 knobs 缓存、重置原生 configure。日志看
+`[bio-occupancy] guarantee ... unplaceable=[...]`；回归 `tests/world/bio_coverage_guarantee_test.gd`
+（10×8/14×10 每物种至少一格、残存格三日 persist 不死、同 seed 逐字节一致）与
+`tests/world/bio_guarantee_ladder_test.gd`（阶梯纯逻辑）。改包络/标志语义、或改 C++ persist 容差时
+必须同步这一阶梯，否则保底会失效。
+
 ## 核心模式（写新 pass / 改 pass 时遵循）
 
 详见 `references/patterns.md`。要点速记：
