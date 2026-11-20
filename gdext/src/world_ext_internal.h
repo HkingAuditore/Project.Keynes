@@ -286,6 +286,10 @@ namespace {
 // 原先这里还有三份收 godot::Vector2 的便利包装（aligned_idx / upstream_vapor /
 // wind_convergence），它们和 POD 版本是两份逐位相同的实现。包装被删掉而不是保留
 // 转调，因为唯一的调用方是 stage 11 主循环，而主循环现在读 POD 的 pos_x/pos_y。
+//
+// 2026-11-20（W9）：`wf_wind_convergence_*` 的「半波整流」旧实现也已删除，现在只剩
+// 「有符号净流入」一种语义（POD + 几何缓存两个变体，GDScript 镜像两份）。运行时开关
+// PK_CLIMATE_CONVERGENCE_LEGACY 一并退役。别再重新引入第二套 convergence 语义。
 
 } // anonymous namespace (F.1 helpers)
 

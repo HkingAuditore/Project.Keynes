@@ -50,6 +50,15 @@ func _sync_profile_weather_knobs(host, cp: Resource) -> void:
 		host._field_vapor_precip_sink = clampf(float(cp.weather_vapor_precip_sink), 0.0, 1.0)
 	if cp.get("weather_precip_inertia") != null:
 		host._field_precip_inertia = clampf(float(cp.weather_precip_inertia), 0.05, 1.0)
+
+	if cp.get("weather_precip_classify_gate_land") != null:
+		host._field_classify_gate_land = clampf(float(cp.weather_precip_classify_gate_land), 0.0, 0.5)
+	if cp.get("weather_precip_classify_gate_water") != null:
+		host._field_classify_gate_water = clampf(float(cp.weather_precip_classify_gate_water), 0.0, 0.5)
+	if cp.get("weather_field_precip_spatial_smooth") != null:
+		host._field_precip_spatial_smooth = clampf(float(cp.weather_field_precip_spatial_smooth), 0.0, 0.8)
+	if cp.get("weather_classify_anomaly_cap") != null:
+		host._weather_classify_anomaly_cap = clampf(float(cp.weather_classify_anomaly_cap), 0.0, 0.5)
 	if cp.get("weather_field_precip_base_frac") != null:
 		host._field_precip_base_frac = clampf(float(cp.weather_field_precip_base_frac), 0.0, 1.0)
 	if cp.get("weather_field_cloud_reevap") != null:
@@ -154,6 +163,10 @@ func _build_weather_field_knobs(host, map: MapData, world: WorldData, n_cells: i
 			"field_precip_carryover_max": host._field_precip_carryover_max,
 			"field_vapor_precip_sink": host._field_vapor_precip_sink,
 			"field_precip_inertia": host._field_precip_inertia,
+			"field_precip_spatial_smooth": host._field_precip_spatial_smooth,
+			"weather_precip_classify_gate_land": host._field_classify_gate_land,
+			"weather_precip_classify_gate_water": host._field_classify_gate_water,
+			"weather_classify_anomaly_cap": host._weather_classify_anomaly_cap,
 			"field_precip_base_frac": host._field_precip_base_frac,
 			"field_cloud_reevap": host._field_cloud_reevap,
 			"field_cloud_inertia": host._field_cloud_inertia,
@@ -226,6 +239,10 @@ func _build_weather_field_knobs(host, map: MapData, world: WorldData, n_cells: i
 		"field_precip_carryover_max": host._field_precip_carryover_max,
 		"field_vapor_precip_sink": host._field_vapor_precip_sink,
 		"field_precip_inertia": host._field_precip_inertia,
+		"field_precip_spatial_smooth": host._field_precip_spatial_smooth,
+		"weather_precip_classify_gate_land": host._field_classify_gate_land,
+		"weather_precip_classify_gate_water": host._field_classify_gate_water,
+		"weather_classify_anomaly_cap": host._weather_classify_anomaly_cap,
 		"field_precip_base_frac": host._field_precip_base_frac,
 		"field_cloud_reevap": host._field_cloud_reevap,
 		"field_cloud_inertia": host._field_cloud_inertia,

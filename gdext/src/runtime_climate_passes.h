@@ -1270,6 +1270,8 @@ void cyclone_state_decode(const std::vector<uint8_t> &blob,
 
 // ─── stage 11 WEATHER：field solve 主循环 ───────────────────────────────────
 //
+
+//
 // 所有标量 knob 都在这里，热循环里不再有 knobs.get —— 原实现在循环内每 cell 各查
 // 一次 thermal_monsoon_enabled 和 cyclone_storm_type_id（一次 Dictionary 查找 +
 // 一次 Variant 转换 × n_cells），并且那两次查找是这个循环里唯一的 Godot 调用。
@@ -1341,6 +1343,16 @@ struct WeatherFieldKnobs {
     // 原本在热循环里查 knobs 的两个。
     bool    thermal_monsoon_enabled = false;
     uint8_t cyclone_storm_type_id = 2;
+
+
+    // W4：RAIN 判定的降水率门槛（陆/水各一档）。缺省值 = 旧的 0.040/0.032，
+    // 由 ClimateProfile.weather_precip_classify_gate_land/water 下发；W4 验收时改 profile，不改代码。
+    float classify_gate_land = 0.040f;
+    float classify_gate_water = 0.032f;
+
+    // W6：分类器用的温度距平钳制。与 distribute 改温度的 `weather_temp_anomaly_cap`(0.025)
+    // 是两件事 —— 混用会把天气对温度的扰动放大 5 倍。
+    float classify_anomaly_cap = 0.12f;
 };
 
 // per-cell in/out lane。read lane 是 tick 起始快照或 slot，write lane 视

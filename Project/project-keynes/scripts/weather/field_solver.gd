@@ -443,7 +443,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var river_flow_feedback: float = clampf(soa_river_q30[i] if soa_river_q30.size() == n_cells and has_river else 0.0, 0.0, 1.0)
 		var river_recycle_lock: float = 0.0
 		if has_river:
-			var river_forcing_proxy: float = maxf(convergence * 0.65, maxf(lift, 0.0) * 0.80)
+			var river_forcing_proxy: float = maxf(convergence * 0.76, maxf(lift, 0.0) * 0.80)  # W3: 0.65→0.76，保持旧 p90 处贡献
 			river_recycle_lock = clampf(smoothstep(0.035, 0.12, prev_precip[i]) \
 				* (1.0 - smoothstep(0.16, 0.44, river_forcing_proxy)) \
 				* (0.35 + river_flow_feedback * 0.65), 0.0, 1.0)
@@ -497,7 +497,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 			var up_river_q: float = clampf(soa_river_q30[upstream_idx] if soa_river_q30.size() == n_cells and up_has_river else 0.0, 0.0, 1.0)
 			var up_river_recycle_lock: float = 0.0
 			if up_has_river:
-				var up_forcing_proxy: float = clampf(soa_convergence_in[upstream_idx] * 0.65, 0.0, 1.0)
+				var up_forcing_proxy: float = clampf(soa_convergence_in[upstream_idx] * 0.76, 0.0, 1.0)
 				up_river_recycle_lock = clampf(smoothstep(0.035, 0.12, prev_precip[upstream_idx]) \
 					* (1.0 - smoothstep(0.16, 0.44, up_forcing_proxy)) \
 					* (0.35 + up_river_q * 0.65), 0.0, 1.0)
@@ -558,7 +558,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 				temp_max = maxf(temp_max, nb_temp_cell)
 		var temp_gradient: float = temp_max - temp_min
 		var relative_humidity: float = maxf(vapor / maxf(vapor_capacity, 0.001), 0.0)
-		var frontal_convergence: float = smoothstep(0.14, 0.46, convergence)
+		var frontal_convergence: float = smoothstep(0.02, 0.46, convergence)  # W3: 旧 0.14 按 p50=0.376 的假基线标的；net p50=0.016/p90=0.458
 		var humidity_front_gate: float = smoothstep(0.25, 0.78, relative_humidity)  # Stage2: 0.38→0.25 让冷湿锋面也成雨(温带过境雨团/冷区降雪)
 		var frontogenesis: float = clampf(frontal_convergence * smoothstep(0.04, 0.16, temp_gradient) * humidity_front_gate * _weather_system._field_frontogenesis_gain, 0.0, 1.0)
 		var lift_pos: float = maxf(lift, 0.0)
@@ -566,7 +566,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		# 锋面/海面层云·lake-effect),冷区权重高(与对流互补)。修 #4湖/#5a雪/#6山。镜像 world_ext.cpp。
 		var strat_cool: float = 1.0 - smoothstep(0.40, 0.62, temp)
 		var strat_humid: float = smoothstep(0.42, 0.70, relative_humidity)
-		var strat_drive: float = lift_pos * 0.90 + convergence * 0.60 + frontogenesis * 0.80
+		var strat_drive: float = lift_pos * 0.90 + convergence * 0.70 + frontogenesis * 0.80  # W3: 0.60→0.70
 		if on_water:
 			strat_drive += (0.22 + wind_mag * 0.30) * (1.0 - sea_ice * 0.92)
 		var stratiform: float = clampf(strat_humid * strat_cool * minf(strat_drive, 1.0) * _weather_system._field_stratiform_gain, 0.0, 1.0)  # [P3] 层状增益镜像 C++ field_stratiform_gain
@@ -600,7 +600,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 				near_land = not _weather_system._is_water_terrain(int(soa_terrain[downwind_idx]))
 			if near_land:
 				coastal_monsoon_flux = wind_mag * clampf(relative_humidity, 0.0, 1.0) * smoothstep(0.56, 0.76, temp) * 0.75
-		var dynamic_forcing: float = maxf(maxf(maxf(frontogenesis, convergence * 0.65), maxf(maxf(convective, ocean_convective), coastal_monsoon_flux)), stratiform)  # Stage11 含层状
+		var dynamic_forcing: float = maxf(maxf(maxf(frontogenesis, convergence * 0.76), maxf(maxf(convective, ocean_convective), coastal_monsoon_flux)), stratiform)  # Stage11 含层状；W3: conv 0.65→0.76
 		# Stage6: post-rain 抑制不再被强强迫完全豁免(原 ×(1-smoothstep) 在辐合带=0→雨带不自抑)。
 		# 改留 45% 残余(×(1-0.55·smoothstep))，让辐合带雨团下完也进入不应期→配合放电自发消散。
 		var post_rain_subsidence: float = smoothstep(0.035, 0.11, prev_precip[i]) * (1.0 - 0.55 * smoothstep(0.18, 0.55, dynamic_forcing))
@@ -676,7 +676,7 @@ func run_slice(cell_budget: int) -> Dictionary:
 		if on_water:
 			var drv_an: float = clampf(ocean_an / 0.16, 0.0, 1.0)
 			var drv_in: float = clampf((instability - 0.52) / 0.30, 0.0, 1.0)
-			var drv_cv: float = clampf((convergence - 0.38) / 0.16, 0.0, 1.0)
+			var drv_cv: float = clampf((convergence - 0.02) / 0.44, 0.0, 1.0)  # W3: 旧 (0.38,0.16)→(p50, p90-p50)
 			var drv_fr: float = clampf(frontogenesis / 0.16, 0.0, 1.0)
 			var drv_mn: float = clampf(coastal_monsoon_flux / 0.18, 0.0, 1.0)
 			var drv_hc: float = smoothstep(0.47, 0.69, relative_humidity) \
@@ -723,7 +723,9 @@ func run_slice(cell_budget: int) -> Dictionary:
 			precip = lerpf(precip, precip_target, post_rain_subsidence * 0.55)
 		# Stage10b 空间平滑(非对称)：强填洞(0.30)、弱削峰(×0.30→保超级单体暴雨)。镜像 world_ext.cpp。
 		var nbr_precip: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_precip) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_precip)
-		precip = lerpf(precip, nbr_precip, 0.30 if nbr_precip > precip else 0.09)
+		# W5：系数改为 profile 下发（旧实现硬编码 0.30/0.09，C++ 侧也从未收到 GDScript 的值）。
+		var smooth_k: float = _weather_system._field_precip_spatial_smooth
+		precip = lerpf(precip, nbr_precip, smooth_k if nbr_precip > precip else smooth_k * 0.30)
 		var effective_precip_floor: float = 0.014 if on_water else 0.018
 		if precip < 0.003:
 			precip = 0.0
