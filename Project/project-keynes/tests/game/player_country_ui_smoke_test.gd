@@ -120,9 +120,10 @@ func _run() -> void:
 				(military_vm.catalog().get("units", []) as Array).size() > 0
 					or military_vm.catalog().get("categories", null) != null)
 			# 地块名不再是「未命名地块」：具名聚落 > 地区名 > 地块序号。名字表由
-			# Economy 的聚落快照装配，读视图可能还在 worker 侧排队，所以这里钉的是
-			# 降级链（永远不再出现那句半截话），条数留给日志诊断。
-			print("[military] cell_names=%d" % int(military_vm.call("cell_name_count")))
+			# Economy 的聚落快照装配，读视图可能还在 worker 侧排队（此时计数为 0、
+			# 面板写地区名），所以这里钉的是降级链，条数只作日志诊断。
+			print("[military] settlement cell names=%d"
+				% int(military_vm.call("cell_name_count")))
 			_expect("cell names never fall back to the 未命名 placeholder",
 				String(military_vm.call("cell_name", 0)).find("未命名") < 0)
 		else:

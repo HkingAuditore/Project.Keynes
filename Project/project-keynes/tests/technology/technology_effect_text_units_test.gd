@@ -58,17 +58,24 @@ func _run() -> void:
 	# --- 量纲：基点与绝对加量不是百分比 ---
 	var basis_points := {"modifier_terms": [
 		_term("country.tax.income.landlord.rate_bp", 400.0, 0, "地主")]}
-	_expect("400bp reads as 地主 +4%, not +40000%",
-		_lines(basis_points).contains("地主 +4%"))
+	_expect("400bp reads as 地主税率 +4%, not +40000%",
+		_lines(basis_points).contains("地主税率 +4%"))
 
 	var satisfaction := {"modifier_terms": [
 		_term("economy.profession.worker.satisfaction_bp", 120.0, 0, "工人")]}
-	_expect("120bp reads as 工人 +1.2%", _lines(satisfaction).contains("工人 +1.2%"))
+	_expect("120bp reads as 工人满意度 +1.2%",
+		_lines(satisfaction).contains("工人满意度 +1.2%"))
+
+	# 概念名以 ModifierCatalog 为准，不跟着逐节点手写的名字漂移。
+	var renamed := {"modifier_terms": [
+		_term("country.research.society_efficiency", 0.092, 0, "社会研究效率")]}
+	_expect("subject follows the canonical label, not the per-node name",
+		_lines(renamed).contains("社会领域研究效率 +9.2%"))
 
 	var vision := {"modifier_terms": [
 		_term("country.military.vision_add", 10.0, 0, "视野")]}
-	_expect("absolute vision reads as 视野 +10, not +1000%",
-		_lines(vision).contains("视野 +10"))
+	_expect("absolute vision reads as 部队视野 +10, not +1000%",
+		_lines(vision).contains("部队视野 +10"))
 
 	# --- operation：2 是倍率，0.7 表示 -30%，不是 +70% ---
 	var attrition := {"modifier_terms": [

@@ -823,6 +823,8 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		"tech_gate_known": gate_known,
 		"generator": _generator,
 		"map": _map,
+		# 名字表必须跟着这条主路径一起交出去：兵营行、训练行与割地表都读它。
+		"cell_names": _cell_name_table(),
 		"query_ms": (Time.get_ticks_usec() - started_usec) / 1000.0,
 	}
 	# 财政页的军事只读实付板块。原生只给 30 日滑窗累计，这里统一折成日均，

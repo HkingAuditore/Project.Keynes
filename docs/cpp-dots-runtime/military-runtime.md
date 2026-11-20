@@ -754,6 +754,8 @@ ENLIST/LEVY 一条都不发——「兵额 8 / 在驻 0 / 配额 0」只是这�
   数据来自 Economy 的具名聚落 —— `named_settlement_snapshot()` 首读，`settlement_delta(revision)`
   增量；按 `revision` 缓存，名字没变时每次刷新只是一次空读。只收 `name_active != 0` 且名字非空
   的格（未命名聚落行在原生里也带占位名）。读失败（worker 忙、旧 DLL）保留上一份。
+  **注意有两条出口**：不可用时的早退字面量，和通过快照检查后重新赋值的那个 section——两处都要写
+  `cell_names`，只写一处的话可用状态下名字会整份丢掉。
 - 取名链：`cell_name()` = 具名聚落 > 作者地区名（`MapGenerator.region_name_for_cell`）> `地块 N`。
   割地表用 `settlement_name()` 判断「这一格有没有自己的名字」，不能用 `cell_name()`（它会退回
   地区名，那样每格都算「有名字」）。
