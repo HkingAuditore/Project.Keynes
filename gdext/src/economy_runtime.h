@@ -2110,6 +2110,14 @@ private:
     }
     void write_fiscal_continuation_report(godot::Dictionary &out) const;
     godot::Dictionary fatal_context_report() const;
+    // R1-7/R1-8: assert_id + typed witness for the reason last stopped on.
+    // Live in economy_runtime_fault_context.cpp; diagnostics only, never saved.
+    godot::String fatal_assert_id() const;
+    godot::Dictionary fatal_witness_report() const;
+    // R4-2: generation / state_hash / restore_eligible for begin_save()'s result.
+    // Lives in economy_runtime_fault_context.cpp so the persistence leaf does not
+    // grow for a diagnostics-only contract.
+    void write_save_identity_report(godot::Dictionary &out) const;
     int32_t locked_market_cycle_days() const;
     int32_t locked_slow_cycle_days() const;
     int32_t locked_plan_cycle_days() const;

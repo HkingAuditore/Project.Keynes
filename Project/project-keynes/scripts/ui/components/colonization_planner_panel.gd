@@ -945,15 +945,15 @@ func _procurement_status_text(snap: Dictionary) -> String:
 	if bool(snap.get("kit_procurement_blocked_by_peer", false)):
 		return "等待另一支开拓队的国库采购完成"
 	if bool(snap.get("kit_procurement_pending", false)):
-		return "正在用国库采购%s（第 %d 日开始）" % [
+		return "正在用国库采购%s（%s开始）" % [
 			_good_name(int(snap.get("kit_procurement_good_id", -1))),
-			int(snap.get("kit_procurement_started_day", -1))]
+			WorldClock.date_text_for_day(int(snap.get("kit_procurement_started_day", 0)))]
 	var reason := String(snap.get("kit_procurement_rejection", ""))
 	if reason.is_empty():
 		return ""
-	return "第 %d 日采购%s被拒：%s" % [
-		int(snap.get("kit_procurement_rejected_day", -1)),
+	return "采购%s被拒（%s）：%s" % [
 		_good_name(int(snap.get("kit_procurement_rejected_good_id", -1))),
+		WorldClock.date_text_for_day(int(snap.get("kit_procurement_rejected_day", 0))),
 		_procurement_reason_text(reason)]
 
 
@@ -980,7 +980,7 @@ func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:
 	if not missing.is_empty():
 		return missing
 	if due_day >= 0:
-		return "第 %d 日抵达" % due_day
+		return "预计%s抵达" % WorldClock.date_text_for_day(due_day)
 	return ""
 
 func _quotes_for_source(page: Dictionary) -> Array:

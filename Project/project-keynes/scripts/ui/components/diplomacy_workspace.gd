@@ -562,7 +562,7 @@ func _apply_sheet_actions(sheet: Dictionary) -> void:
 	var enabled := bool(gate.get("enabled", false)) and not pending
 	_declare_button.disabled = not enabled
 	_declare_button.tooltip_text = "向%s递交宣战" % String(sheet.name) if enabled \
-		else ("已递交" if pending else String(gate.get("reason", "")))
+		else ("已递交，次日生效" if pending else String(gate.get("reason", "")))
 	_declare_button.set_meta(&"handle", handle)
 
 
@@ -671,7 +671,7 @@ func _apply_war_sheet(sheet_value) -> void:
 		label.visible = visible_row
 		if visible_row:
 			var row := _as_dict(log[index])
-			label.text = "第 %d 日 · %s · %s" % [int(row.get("day", 0)),
+			label.text = "%s · %s · %s" % [WorldClock.date_text_for_day(int(row.get("day", 0))),
 				String(row.get("kind", "战事")), String(row.get("text", ""))]
 	_war_peace_button.visible = true
 	_war_peace_button.disabled = int(sheet.get("id", 0)) <= 0

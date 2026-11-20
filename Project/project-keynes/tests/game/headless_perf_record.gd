@@ -449,11 +449,15 @@ func _run() -> int:
 				# retains the day on the same capacity check; mirror that here.
 				var capacity_deadline := Time.get_ticks_usec() + 60000000
 				while not bool(host.wait_for_climate_consumed(0).get("ok", true)) \
-						and Time.get_ticks_usec() < capacity_deadline:
+						and Time.get_ticks_usec() < capacity_deadline \
+						and not _sample_budget_reached(
+							recorder, days, auth_measure_start_us):
 					host._consume_runtime_commit_if_ready()
 					harness_capacity_wait_count += 1
 					await process_frame
-			host._consume_runtime_commit_if_ready()
+			# The capacity wait above may already have filled the sample budget.
+			if not _sample_budget_reached(recorder, days, auth_measure_start_us):
+				host._consume_runtime_commit_if_ready()
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
 		if host.runtime_climate_authority_enabled:
@@ -464,6 +468,12 @@ func _run() -> int:
 			var writeback_window_started := Time.get_ticks_usec()
 			var writeback_deadline := writeback_window_started + 60000000
 			while Time.get_ticks_usec() < writeback_deadline:
+				# One consumed commit can append a recorder row, so the sample
+				# write point must respect the requested row budget. Without this
+				# a pipelined worker pushes rows past `days` and a healthy run
+				# exits with "CSV row count mismatch".
+				if _sample_budget_reached(recorder, days, auth_measure_start_us):
+					break
 				var consume_started := Time.get_ticks_usec()
 				host._consume_runtime_commit_if_ready()
 				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
@@ -593,14 +603,18 @@ func _run() -> int:
 			auth_measure_end_us = observed_commit_us
 			auth_measure_end_day = committed_day
 			# Commit consumption can precede its recorder callback by one frame.
-			host._consume_runtime_commit_if_ready()
-			if pipeline_depth == 0 and authoritative_measured >= days:
+			# Do not consume once the sample budget is filled: this call was the
+			# source of the extra CSV row, because it writes a row after the
+			# requested row count has already been reached.
+			if not _sample_budget_reached(recorder, days, auth_measure_start_us):
+				host._consume_runtime_commit_if_ready()
+			if pipeline_depth == 0 and (authoritative_measured >= days \
+					or _sample_budget_reached(recorder, days, auth_measure_start_us)):
 				break
-		# Under a pipeline the recorder samples at finish_daily_tick and this loop
-		# after the poll, so each can group several commits differently. The
-		# recorder rows are the measured samples.
-		if pipeline_depth > 0 and authoritative_observed > warmup_days \
-				and int(recorder.call("row_count")) >= days:
+		# The recorder rows are the measured samples, so a filled budget ends the
+		# run no matter how many commits one observation covered.
+		if pipeline_depth > 0 and _sample_budget_reached(
+				recorder, days, auth_measure_start_us):
 			break
 
 	# Only publish a late callback if a requested sample is still missing.
@@ -609,11 +623,17 @@ func _run() -> int:
 	if host.runtime_climate_authority_enabled and int(recorder.call("row_count")) < days:
 		await process_frame
 		host._consume_runtime_commit_if_ready()
-		if host.has_method("_publish_fast_tick_perf_sample"):
+		# The consume above can itself fill the budget; never append past it.
+		if int(recorder.call("row_count")) < days \
+				and host.has_method("_publish_fast_tick_perf_sample"):
 			host._publish_fast_tick_perf_sample(0.0, 0.0, 0.0, 0.0, false)
 
 	var recorded_rows := int(recorder.call("row_count"))
-	var measured_samples := recorded_rows if pipeline_depth > 0 else authoritative_measured
+	# Samples are counted where they are written. `authoritative_measured` counts
+	# main-loop observations, and one observation can cover several commits, so
+	# using it here made `rows == measured_samples` disagree whenever the worker
+	# caught up inside a single observation.
+	var measured_samples := recorded_rows
 	var output_path := String(recorder.call("stop_and_export"))
 	var country_perf_path := _write_country_perf_samples(
 		output_dir, country_perf_samples)
@@ -636,11 +656,13 @@ func _run() -> int:
 	var idle_wait_ms := 0.0
 	var adjusted_run_ms := run_ms
 	var lower_bound_run_ms := maxf(0.0, run_ms - writeback_window_ms)
-	var expected_rows := measured_samples if measured_samples > 0 else host.get_fast_tick_count()
+	# One CSV row per requested measured day. `measured_samples` is the recorder's
+	# own row count, so a mismatch can only mean the export and the recorder
+	# disagree, or the run stopped early. The fatal path keeps the historical
+	# fast-tick bound; it already fails through the fatal exit code.
+	var expected_rows := days if measured_samples > 0 else host.get_fast_tick_count()
 	if fatal:
 		expected_rows = host.get_fast_tick_count()
-	if host.runtime_climate_authority_enabled:
-		expected_rows = days
 	var rows_ok := rows == expected_rows
 	var effective_days := float(maxi(authoritative_measured, 0))
 	var auth_elapsed_ms := 0.0
@@ -835,6 +857,14 @@ func _drain_hard_barrier(clock: WorldClock, day: int) -> Dictionary:
 func _has_hard_barrier(clock: WorldClock) -> bool:
 	return clock._simulation_backpressure_sources.has(&"country_day_barrier") \
 		or clock._simulation_backpressure_sources.has(&"economy_day_barrier")
+
+
+## The recorder's row count is the sample count: stop_and_export writes exactly
+## those rows to the CSV. `measure_started_us` marks the measured window (it is
+## stamped when the warm-up rows are cleared), so this budget never applies to
+## warm-up samples or to a `days` smaller than `warmup_days`.
+func _sample_budget_reached(recorder, days: int, measure_started_us: int) -> bool:
+	return measure_started_us != 0 and int(recorder.call("row_count")) >= days
 
 
 func _csv_data_row_count(path: String) -> int:

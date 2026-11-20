@@ -326,7 +326,7 @@ def baseline_errors(baseline: dict, symbols: dict[str, str] | None = None) -> li
 def measure_country_writes(root: Path) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for path in sorted((root / "gdext/src").glob("economy_runtime*.cpp")):
-        for method in re.findall(r"\b_country_runtime\s*->\s*(\w+)\s*\(", code_only(path.read_text())):
+        for method in re.findall(r"\b_country_runtime\s*->\s*(\w+)\s*\(", code_only(path.read_text(encoding="utf-8"))):
             if method in COUNTRY_WRITE_CALLS:
                 counts[f"{path.relative_to(root).as_posix()}|{method}"] += 1
     return dict(sorted(counts.items()))
@@ -337,7 +337,7 @@ def country_write_errors(root: Path, baseline: dict[str, int]) -> list[str]:
     migrated = set(COUNTRY_WRITE_CALLS)
     migrated.add("begin_economy_fiscal_return")
     for path in sorted((root / "gdext/src").glob("economy_runtime*.cpp")):
-        code = code_only(path.read_text())
+        code = code_only(path.read_text(encoding="utf-8"))
         for method in sorted(migrated):
             if re.search(r"\b" + method + r"\b", code):
                 errors.append(f"{path.name}: {method} must use the owner intent port")
@@ -364,7 +364,7 @@ def main() -> int:
             errors.append(f"direct write lacks an explicit exception reason: {key}")
     if args.write_baseline and not errors:
         try:
-            moves = json.loads(args.moves.read_text()) if args.moves else {}
+            moves = json.loads(args.moves.read_text(encoding='utf-8')) if args.moves else {}
             baseline = updated_baseline(current, baseline, moves, contracts, symbols)
             baseline["country_writes"] = measure_country_writes(args.root)
             baseline["country_write_exceptions"] = {k: exceptions[k] for k in baseline["country_writes"]}

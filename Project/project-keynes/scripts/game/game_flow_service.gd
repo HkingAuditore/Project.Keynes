@@ -28,6 +28,9 @@ func _ready() -> void:
 	# tools/runtime/Invoke-SaveReplay.ps1。
 	_attach_headless_runner("PK_SAVE_REPLAY",
 		"res://tests/game/headless_save_replay.gd")
+	# 故障快照只读加载入口（--load-forensics），见 tests/game/headless_forensics_load.gd。
+	_attach_headless_runner("PK_FORENSICS_LOAD",
+		"res://tests/game/headless_forensics_load.gd")
 	_attach_headless_runner("PK_FAMILY_PROBE",
 		"res://tests/family/family_economy_probe.gd")
 	_attach_headless_runner("PK_COLONIZATION_PROBE",

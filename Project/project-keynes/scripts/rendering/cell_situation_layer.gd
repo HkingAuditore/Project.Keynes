@@ -528,7 +528,7 @@ func tooltip_for(cell: int, kind: int) -> String:
     else:
         text += "\n当前地表处于洪泛状态。"
     if kind not in [4, 5] and int(row.day) >= 0:
-        text += "\n最近本地结算：第 %d 天" % int(row.day)
+        text += "\n最近本地结算：%s" % WorldClock.date_text_for_day(int(row.day))
     return text
 
 

@@ -12,6 +12,9 @@ class_name CellHoverCard
 ## 内容只在 cache_key（格 : 日 : 归属槽）变化时重建；跟手只写 position。
 
 signal payload_applied(cell_index: int)
+## 当前悬停格变化（-1 = 指针不在任何可出信息的格子上）。
+## 地图地名层与左侧展板都靠这条信号对齐同一格，避免三处各自解析指针。
+signal hover_cell_changed(cell_index: int)
 
 const CARD_SIZE := Vector2(320.0, 184.0)
 const POINTER_OFFSET := Vector2(16.0, 18.0)
@@ -48,7 +51,10 @@ var _dirty := true
 var _dismissing := false
 var _shown_key := ""
 var _shown_cell := -1
+var _emitted_cell := -1
 var _payload: Dictionary = {}
+## 需要避让的矩形（左侧悬停展板）：卡片不许压在它上面，否则两块浮层互相遮挡。
+var _avoid_rect := Rect2()
 
 var _last_motion_ms := 0
 var _last_input_ms := 0
@@ -134,8 +140,22 @@ func set_suppressed(suppressed: bool) -> void:
 		dismiss(true)
 
 
+## 由左侧展板在显隐时推送：空矩形表示当前没有需要避让的浮层。
+func set_avoid_rect(rect: Rect2) -> void:
+	_avoid_rect = rect
+
+
 func current_cell_index() -> int:
 	return _shown_cell
+
+
+## 只在真的换格时发信号：dismiss() 会被每帧的抑制路径重复调用，
+## 每次都广播会让下游展板与地名层跟着空转。
+func _sync_hover_cell_signal() -> void:
+	if _shown_cell == _emitted_cell:
+		return
+	_emitted_cell = _shown_cell
+	hover_cell_changed.emit(_shown_cell)
 
 
 func payload() -> Dictionary:
@@ -300,7 +320,25 @@ func _move_to(screen: Vector2, safe: Rect2) -> void:
 	if rect.size == Vector2.ZERO:
 		dismiss(true)
 		return
+	rect.position = avoid_overlap(rect.position, CARD_SIZE, _avoid_rect, safe)
 	position = rect.position
+
+
+## 与避让矩形相交时，把卡片推到它右侧；右边放不下再退到左侧；两边都放不下就
+## 保持原位（宁可重叠也不飞出屏幕）。
+static func avoid_overlap(origin: Vector2, size: Vector2, avoid: Rect2,
+		safe: Rect2) -> Vector2:
+	if avoid.size.x <= 0.0 or avoid.size.y <= 0.0:
+		return origin
+	if not Rect2(origin, size).intersects(avoid):
+		return origin
+	var right := avoid.end.x + POINTER_OFFSET.x
+	if right + size.x <= safe.end.x - EDGE_MARGIN:
+		return Vector2(right, origin.y)
+	var left := avoid.position.x - size.x - POINTER_OFFSET.x
+	if left >= safe.position.x + EDGE_MARGIN:
+		return Vector2(left, origin.y)
+	return origin
 
 
 ## 指针右下偏移；右侧/下方不够就翻到另一侧，最后夹进安全区。
@@ -344,6 +382,7 @@ func apply_payload(new_payload: Dictionary, animate: bool = true) -> void:
 	_apply_population(new_payload)
 	_apply_resources(new_payload)
 
+	_sync_hover_cell_signal()
 	payload_applied.emit(_shown_cell)
 	if not visible:
 		_show(animate)
@@ -450,9 +489,11 @@ func _pulse_header() -> void:
 
 func dismiss(immediate: bool = true) -> void:
 	if not visible or _dismissing:
+		_sync_hover_cell_signal()
 		return
 	_shown_key = ""
 	_shown_cell = -1
+	_sync_hover_cell_signal()
 	if immediate or UIAnimation.reduced_motion():
 		_kill_tween()
 		visible = false

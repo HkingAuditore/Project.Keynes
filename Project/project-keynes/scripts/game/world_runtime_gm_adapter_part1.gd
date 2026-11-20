@@ -275,6 +275,9 @@ func execute_gm_command(host, command_id: String, raw_args: Dictionary) -> Dicti
 		if probe_baker == null or not probe_baker.has_method("dump_river_atlas_probe"):
 			return host._gm_error("baker_unavailable", "MapBaker 尚未就绪，无法导出采样。")
 		return probe_baker.dump_river_atlas_probe()
+	# 事故包导出不推进日历、不需要有效生效日，所以在时钟/模拟命令分支之前处理。
+	if command_id == "diagnostics.export_incident_bundle":
+		return preload("res://scripts/game/world_runtime_gm_commands.gd").export_incident_bundle(host)
 	if host._world_clock == null and command_id.begins_with("time."):
 		return host._gm_error("clock_unavailable", "时钟尚未就绪。")
 	if command_id == "time.pause":
@@ -653,6 +656,9 @@ func _gm_overview_snapshot(host) -> Dictionary:
 			"last_pause_source": String(host._world_clock.last_pause_source) if host._world_clock != null else "",
 			"last_pause_day": int(host._world_clock.last_pause_day) if host._world_clock != null else -1},
 		"runtime": {"fast_tick": host._fast_tick_count, "last_tick_ms": host._last_fast_tick_ms,
+			# 计划 R1-9：GM「运行时」段要有 build_id 行。C++ 还没注入时留空，
+			# 面板显示空串而不是让整页快照报错。
+			"build_id": String(economy_report.get("build_id", "")) if economy_report is Dictionary else "",
 			"sus": host.get_sus_last_tick_summary(), "timing": host._last_tick_timing.duplicate(false)},
 		"country": country_report,
 		"economy": economy_report,
@@ -689,8 +695,13 @@ func _observe_economy_fatal(host, report: Dictionary) -> void:
 	if host._economy_fatal_dumped_reason == reason:
 		return
 	host._economy_fatal_dumped_reason = reason
+	# world 标量只有 host 侧知道（MapGenerator 不暴露地图尺寸）；不传进去，
+	# 事故包的 world.json 就只能写 0 并记 missing。
 	host.RuntimeForensics.capture_and_dump(reason, host._generator, host._world_clock,
-		"economy_fatal", {"source": "world_runtime_host"})
+		"economy_fatal", {
+			"source": "world_runtime_host",
+			"world": host.HostGmCommands._gm_incident_world(host),
+		})
 
 
 ## 卡死看门狗。

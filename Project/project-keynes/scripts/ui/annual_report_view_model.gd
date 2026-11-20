@@ -245,7 +245,7 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 	_attach_visuals(chapters, report, tiers, old_tiers, dimensions, old_dimensions, industry_rows, resource_rows, parts, score_value)
 	_attach_notes(chapters, totals)
 
-	var title: String = "第 %d 年 · 年度报告" % year
+	var title: String = "%d年 · 年度报告" % year
 	var full_lines: Array[String] = [String(report.get("country_name", "本国")), title, "文明阶段：" + ERA_NAMES[era], ""]
 	for chapter in chapters:
 		full_lines.append("%s\n" % String(chapter.title))

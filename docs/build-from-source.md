@@ -358,3 +358,250 @@ FMOD Studio 版本固定在 **2.03.15**，命令行工具路径写死在
 - [ ] 要 Web：装 emsdk 4.0.20 到仓库根 `emsdk/`，跑 `Build-Web.cmd`
 - [ ] `serve_web.bat` + `python tools\verify_web_export.py` 过一遍
 - [ ] 要 Android：装 NDK，`gdext\build_android.bat`，再导 APK
+
+---
+
+## 10. Windows 单机核验（运行时故障基建 R6）
+
+> 本节落地 `docs/plans/runtime-fault-infrastructure-plan.md` §9。目标只有一个：
+> **改完运行时相关代码，用一条命令就知道自己有没有把东西弄坏**，不用再凭记忆拼
+> python / scons / godot 的命令行。实跑环境：Windows 11 + Windows PowerShell 5.1 +
+> Godot 4.6.2 console + Python 3.13 + SCons 4.x。
+
+### 10.1 一条命令 `tools\ci\verify.ps1`
+
+```bat
+.\tools\ci\verify.ps1              :: 全套：static + build + suites
+.\tools\ci\verify.ps1 -Quick       :: 只跑 static；改 GDScript / 文档时用这个
+.\tools\ci\verify.ps1 -SkipBuild   :: 跳过 C++ 构建（扩展已编好、或只改脚本）
+.\tools\ci\verify.ps1 -WithSoak    :: 追加 soak 阶段（默认不跑，10 min 量级）
+.\tools\ci\verify.ps1 -Strict      :: 发布前用：known-red 也当失败
+.\tools\ci\verify.ps1 -DryRun      :: 只打印将要执行的命令，一个进程都不起
+```
+
+其它参数：`-GodotExe`（不给就按 `GODOT_BIN` → `tools\runtime\Resolve-GodotBin.ps1`
+里的已知安装路径 → PATH 依次解析）、`-RepoRoot`、`-Jobs 4`（传给 `scons -j`）、
+`-StrictBuildId`（DLL 里找不到 `build_id` 符号从 WARN 升级为 FAIL）。
+
+**执行策略踩坑**：本机默认策略是 `Restricted` 时，直接 `.\tools\ci\verify.ps1`
+会报"在此系统上禁止运行脚本"。两种解法：
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ci\verify.ps1 -Quick
+:: 或者一次性放开当前用户
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+`verify.ps1` 内部再拉起 `tools\runtime\*.ps1` 时自带 `-ExecutionPolicy Bypass`，
+嵌套那一层不用另外处理。
+
+#### 四个阶段做什么
+
+| 阶段 | 内容 | 时长目标 |
+| --- | --- | --- |
+| `static` | `check_fault_taxonomy.py --strict`、`check_cpp_deps.py`、`check_size_ratchet.py`、`check_module_map.py`、`check_module_api.py`、`check_module_contracts.py`、`check_script_native_access.py`、`.gdextension` 防呆（§10.2）、`git diff --check`、`check_large_blobs.py`（§10.4） | ≤ 2 min（实测 10 项 ≈ 22 s） |
+| `build` | `cd gdext` → `scons platform=windows target=template_debug -j <Jobs>`，再扫生成的 DLL 里有没有 `PK_BUILD_ID` / `pk_build_id` 及它的值 | ≤ 6 min |
+| `suites` | 调 `tools\runtime\Invoke-RuntimeTests.ps1`，日志和 `test-summary.json` 落到 `tmp\verify_<ts>\runtime-tests\` | ≤ 15 min |
+| `soak` | 调 `tools\runtime\Invoke-Soak.ps1`；脚本还不存在时记 `skipped` | ≤ 10 min |
+
+- **`suites` 是串行的，别指望 4 路并行**：`Invoke-RuntimeTests.ps1` 的测试清单
+  写死在文件里，也不接受子集/并发参数。"切 4 组并发"要么改那个脚本，要么在
+  `verify.ps1` 里复制一份清单——两份清单一定会漂。所以当前按脚本原样串行跑，
+  摘要里显式标 `suites=serial`，JSON 里也有 `suites_mode`/`suites_reason`。
+  要真并行，得先给 `Invoke-RuntimeTests.ps1` 加 `-Tests`/`-Jobs` 参数。
+- **`build` 阶段找不到 build_id 只算 WARN**：本地 dll 可能是 R1 之前的产物。
+  发布前用 `-StrictBuildId` 让它变红。
+- 构建会抢 dll 锁：**编之前把 Godot 完全关掉**（见 §3.1），否则报 `LNK1104`。
+  另一个 agent/终端正在编同一个目录时，跑 `-Quick` 就够，别并发 scons。
+
+#### 退出码，和三种"没绿"
+
+| 退出码 | 含义 |
+| --- | --- |
+| `0` | 请求的检查全部通过，且**没有任何 skipped** |
+| `1` | 有 check 失败；或有 skipped（skipped 不算绿）；`-Strict` 下 known-red 也算失败 |
+| `2` | 环境问题：python / git / scons / godot 找不到、目录不对（什么都没验证） |
+
+三种非绿状态在摘要里分开列，不要混着看：
+
+| 状态 | 含义 | 影响退出码 |
+| --- | --- | --- |
+| `FAIL` | 真失败，红色列出，附最后 40 行输出 | 是 |
+| `KNOWN-RED` | 本检查里已登记的既有基线漂移（见脚本顶部 `$knownRed` 表），**照常运行、照常打印、不隐藏** | 否；`-Strict` 下是 |
+| `SKIP` | 脚本还不存在（如 R1 台账未落地、soak 未落地），黄色单列 | 是（`-Strict` 与否都一样：缺检查不能算通过） |
+| `WARN` | 只提醒（如 dll 里没有 build_id） | 否 |
+
+当前 `$knownRed` 只有两条，都是**与本基建无关的既有漂移**，改的是别人的活：
+
+- `check_cpp_deps.py`：HEAD 上 `economy → family` 的引用已超出
+  `tools/ci/cpp_deps_baseline.json`（6 条 key，`total 2175 > 2170`）。
+- `check_size_ratchet.py`：21 个文件超出 `tools/ci/size_baseline.json`（含
+  `scripts/ui/debug_console.gd 1736 > 1698`、`scripts/ui/icon_catalog.gd 1413 > 1406`、
+  `scripts/ui/perf_recorder.gd 977 > 966`）。
+
+**不要为了让 verify 变绿去改这两个 baseline**，也不要把它塞进 skipped；
+各自的功能落地时由各自的改动收紧基线，然后从 `$knownRed` 里删掉那一行
+（脚本会在该项通过时提示 `known-red entry now passes`）。
+
+#### 报告文件
+
+`tmp\verify_<yyyyMMdd_HHmmss>.json`，每次非 dry-run 运行都会写（红了也写）：
+
+```text
+schema / generated_utc / repo_root / godot / python
+modes          -Quick / -WithSoak / -SkipBuild / -Strict / -StrictBuildId / jobs
+suites_mode    "serial" + suites_reason
+stages[]       name、status、elapsed_seconds、items[]
+items[]        name、command、status、exit_code、elapsed_seconds、
+               known_red、known_red_reason、note、failure_output(最多 40 行)
+failed[] / known_red[] / skipped[]
+summary         verdict、total/passed/failed/known_red/skipped/warned、elapsed_seconds
+exit_code
+```
+
+`tmp\verify_*.json` 会一直堆，用 §10.5 的 `prune_tmp.ps1` 轮转。
+
+### 10.2 `.gdextension` release 映射残留（最容易变成"假故障"的坑）
+
+`Project/project-keynes/addons/dots_ext/dots_ext.gdextension` 的
+`windows.debug.x86_64` 必须指向 `.template_debug.` 的 dll。为了复现一个 release
+行为、或者用 release 库做 A/B 时把它改成 `template_release`，改完忘了改回来，
+**编辑器照样能启动，但加载的是另一套 ABI/断言级别**，之后所有运行时现象都是假的
+（历史现象：调试用 release 库跑集成，`build_id` 对不上、断言全被 NDEBUG 关掉）。
+
+`verify.ps1 -Quick` 的 `gdextension-mapping` 项就是防这个：读该文件、
+取 `windows.debug.x86_64` 的值，不是 `.template_debug.` 直接 FAIL（不是 WARN），
+并在输出里给出恢复命令。
+
+```bat
+:: 正常状态（当前仓库就是）
+windows.debug.x86_64 = "res://addons/dots_ext/bin/windows/dots_ext_country_border_fix.windows.template_debug.x86_64.dll"
+
+:: 被留在 release 映射上时，恢复：
+.\tools\runtime\Use-GdextLibrary.ps1 -Variant debug -Restore
+```
+
+改 `.gdextension` 时另有一条老规矩（§3.4）：**dll 的 basename 必须和这里的
+`[libraries]` 段逐字一致**。切换变体只允许改 `template_debug` ↔ `template_release`
+这一段，不要顺手换 basename，也不要 `git add` 实验产物。
+
+会临时改这个文件的脚本有两个来源：`tools/runtime/Invoke-Soak.ps1 -Release`（soak
+提速，用 `finally` 还原 debug 映射）和手工 A/B。前者正常结束会自己还原，但进程被
+强杀时还原不执行——所以**任何"奇怪"的运行时结果，先跑一次 `verify.ps1 -Quick`
+看 `gdextension-mapping` 那一项**，比翻日志快得多。
+
+### 10.3 `tools/ci` 脚本的 Windows 适配清单
+
+`tools/ci` 里现有 33 个 Python 脚本、14 个 JSON 注册表/基线，加上本轮新增的
+2 个 PowerShell 脚本（`verify.ps1`、`prune_tmp.ps1`）共 49 个文件。计划文档里写的
+"23 个脚本"是写作时的快照，**以本节实测为准**；下面逐个列，判断来自**实跑**，
+不是看文件名猜的。
+「可直接跑」= Windows 上不做任何改动就能跑完（退出码取决于各自基线状态，
+不一定 0）；「需本机适配」= 现在跑会崩或根本跑不了。
+
+**A. 可直接跑（12 个）**
+
+| 脚本 | 说明 |
+| --- | --- |
+| `check_fault_taxonomy.py --strict` | R1 台账；已进 `verify.ps1` static |
+| `check_cpp_deps.py` | 已补 `encoding="utf-8"`（R6 修复），否则 GBK 解码崩 |
+| `check_size_ratchet.py` | 行数棘轮；当前 22 条超出基线（known-red） |
+| `check_module_map.py` | `docs/architecture/module-map.md` 里的路径必须存在 |
+| `check_module_api.py` | 模块 API 边界契约 |
+| `check_module_contracts.py` | 已补 `encoding="utf-8"`（R6 修复） |
+| `check_script_native_access.py` | GDScript 跨模块 DCWorldExt 访问棘轮 |
+| `check_skill_mirrors.py` | 多 agent 目录下的 skill 副本漂移 |
+| `check_world_ext_bindings.py` | binding 归属模块一致性 |
+| `world_ext_bindings.py` | 上者的清单库；`--json/--refs` 直接可跑 |
+| `inspect_incident.py` | R2 事故包检查（读 zip + JSON，不碰文本编码） |
+| `check_large_blobs.py` | R6 新增大文件闸门（§10.4） |
+
+**B. 需本机适配（15 个）** —— 三类原因：Windows 默认 GBK 编码、macOS/Linux 专属
+路径或系统 API、需要本机没有的 C/C++ 编译器。
+
+| 脚本 | 适配点 |
+| --- | --- |
+| `check_cross_domain_inventory.py` | GBK：`read_text()` 未指定编码 → `UnicodeDecodeError: 'gbk'` |
+| `check_resolve_apply.py` | 同上 GBK |
+| `check_runtime_advancers.py` | 同上 GBK |
+| `check_runtime_switches.py` | 同上 GBK |
+| `check_save_contracts.py` | 同上 GBK |
+| `check_save_section_contracts.py` | 同上 GBK |
+| `check_committed_views.py` | 同上 GBK（`run_regression_checks.py` 的守卫清单里也有它，所以那条链在 Windows 上会一起断） |
+| `runtime_test_hygiene.py` | 硬编码 `/usr/bin/git`（`untracked()`）→ Windows 上找不到该路径 |
+| `run_regression_checks.py` | 导入上面的 `runtime_test_hygiene`，且 `--godot` 默认是 `godot`；两处都要给 |
+| `check_runtime_load_consistency.py` | `rg`（本机无）、`ps -Ao`（Unix）、`os.getloadavg()`（Windows 没有） |
+| `check_mobile_runtime_consistency.py` | 导入上一个模块 |
+| `test_runtime_load_consistency.py` | 断言里直接调 `os.getloadavg()` → `AttributeError` |
+| `test_regression_evidence.py` | `os.symlink` 需要开发者模式/管理员 → `OSError: [WinError 1314] 客户端没有所需的特权` |
+| `test_architecture_guards.py` | 需要 `clang++` 或 `g++` 编译 `gdext/tests/runtime_control_wakeup_test.cpp`；本机两者都没有 |
+| `main_boundary_wakeup_fixture.py` | 同上，是 `test_architecture_guards.py` 的编译夹具，无独立 CLI |
+
+GBK 那一批的统一修法就是显式 `encoding="utf-8"`（**不要**用
+`errors="ignore"` 把问题吞掉，那会把真正的编码错误藏起来）。R6 只修了
+`check_cpp_deps.py` / `check_module_contracts.py` 两个（它们在 static 链路上），
+其余谁改谁补。
+
+**C. 需 Godot 参数（5 个）** —— 都能跑，但必须把 Godot 可执行文件告诉它；
+注意 Windows 上要用 **console 版**（`..._console.exe`），普通 GUI 版 headless
+时 stdout 抢不到。
+
+| 脚本 | 适配点 |
+| --- | --- |
+| `check_committed_replay.py` | `--godot` 必填，`--log-dir` 必填 |
+| `check_replay_matrix.py` | `--godot`、`--log-dir` 都必填；`--full` 才有年度保存点 |
+| `check_golden_determinism.py` | `--godot` 默认取 `GODOT_BIN`，`--log-dir` 必填 |
+| `check_intent_baselines.py` | 同上，`--log-dir` 必填 |
+| `check_military_continuation.py` | `--godot` + `--military-fiscal-probe`（要单独编的测试扩展） |
+
+另外 `check_macos_runtime_extension.py` 不属于以上三类：它开头就
+`sys.platform != "darwin"` 直接报错，**只能在 macOS arm64 上跑**，Windows 上跳过。
+
+### 10.4 大文件闸门 `check_large_blobs.py`
+
+仓库**不使用 Git LFS**（`.gitattributes` 里没有任何 `filter=lfs`，也不打算加）。
+大文件一律放 GitHub Release asset 或网络盘；已经入库的历史产物在白名单里。
+
+```bat
+python tools/ci\check_large_blobs.py                     :: 查暂存区（默认 --staged）
+python tools/ci\check_large_blobs.py --max-mb 3          :: 收紧到 3 MB
+python tools/ci\check_large_blobs.py --path tmp\x.bin    :: 单测一个文件
+```
+
+- 只看**索引**（`git diff --cached`），也就是"这次 commit 会真的塞进仓库的东西"；
+  工作区里没 `git add` 的大文件不管。
+- 体积取自索引里的 blob（`git cat-file -s :<path>`）。`--numstat` 对二进制只给
+  `-`，所以它只用来标注"这个文件是二进制"，不用来算大小。
+- 白名单：`tools/ci/large_blobs_allowlist.json`，结构
+  `{"allow": [{"path": "...", "max_mb": 300, "why": "..."}]}`，`path` 支持
+  `fnmatch` 通配，`why` 必填（白名单是给评审看的理由，不是静音开关）。
+- 超标输出会写清路径、体积、超了多少、替代方案，以及"本项目不使用 LFS"。
+- 退出码：`0` 通过 / `1` 有超标（含 git 不可用等异常，闸门 fail-closed）。
+
+`verify.ps1` 的 static 阶段已经跑它，所以一次 commit 里混进 6 MB 文件会在
+`verify.ps1 -Quick` 直接红。
+
+### 10.5 tmp 产物轮转 `prune_tmp.ps1`
+
+`tmp/` 下的运行时产物（全量快照、事故包、replay 日志、verify 报告）会无限增长：
+本机实测 `tmp/runtime_snapshots_*` 有 **131 份、约 1.07 GB**，最新 20 份之外基本
+都是历史失败现场。
+
+```bat
+.\tools\ci\prune_tmp.ps1 -DryRun                     :: 先看要删什么（推荐：永远先 dry-run）
+.\tools\ci\prune_tmp.ps1                             :: 默认保留最新 20 份 + 最近 30 天
+.\tools\ci\prune_tmp.ps1 -KeepIncidents 5 -KeepDays 7
+```
+
+| 对象 | 规则 |
+| --- | --- |
+| `tmp/runtime_snapshots_*` | 目录名里的时间戳（解析不到就用 mtime）排序，**保留最新 `-KeepIncidents` 份且最近 `-KeepDays` 天**；超出数量窗口或超出时间窗口之一即删 |
+| `tmp/incidents/*.pkinc` | 保留最近 `-KeepIncidents` 个 |
+| `tmp/save_replay_*.log`、`tmp/verify_*.json` | 按 `-KeepDays` 删旧的 |
+
+`-DryRun` 打印每条要删的路径 + 单条体积 + 合计，一个字节都不动；非 dry-run 才真删。
+脚本只碰 `tmp/`，退出码恒为 `0`（它是维护步骤，不是闸门），所以没有挂进
+`verify.ps1` 尾部——**要不要删快照是你的决定，不该由一条核验命令替你做**。
+
+按默认参数实测：131 份快照里保留 20 份、列出 111 份待删、合计约 974 MB
+（`tmp/runtime_snapshots_*` 的旧现场都是全量快照，单份 9–29 MB）。

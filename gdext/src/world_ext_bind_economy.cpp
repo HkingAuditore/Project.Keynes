@@ -110,6 +110,9 @@ void DCWorldExt::_bind_economy_methods() {
                          &DCWorldExt::get_effect_input_revisions);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
                          &DCWorldExt::get_economy_report);
+    // R1-6: build identity without needing any runtime (cold session, failed start).
+    ClassDB::bind_method(D_METHOD("get_build_id"),
+                         &DCWorldExt::get_build_id);
     ClassDB::bind_method(D_METHOD("get_economy_committed_audit_report"),
                          &DCWorldExt::get_economy_committed_audit_report);
     ClassDB::bind_method(D_METHOD("get_country_class_opinion_snapshot"),
@@ -306,6 +309,9 @@ void DCWorldExt::_bind_economy_methods() {
                          &DCWorldExt::begin_economy_save, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("begin_economy_forensics_save", "chunk_bytes"),
                          &DCWorldExt::begin_economy_forensics_save, DEFVAL(4 * 1024 * 1024));
+    // R3: offline `.pkinc` incident replay (isolated runtime, live economy untouched).
+    ClassDB::bind_method(D_METHOD("economy_replay_incident", "incident"),
+                         &DCWorldExt::economy_replay_incident);
     ClassDB::bind_method(D_METHOD("read_economy_save_chunk", "max_bytes"),
                          &DCWorldExt::read_economy_save_chunk, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("end_economy_save"),

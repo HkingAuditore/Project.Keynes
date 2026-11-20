@@ -502,7 +502,7 @@ func _compare_bars(row: Dictionary, soldiers: int) -> Array:
 func _sheet_note(row: Dictionary) -> String:
 	var relation := _as_dict(row.relation)
 	if String(relation.get("state", "")) == "war":
-		return "正在交战 · 第 %d 日 · 战争分 %s" % [int(relation.get("days", 0)),
+		return "正在交战 · 已战 %d 日 · 战争分 %s" % [int(relation.get("days", 0)),
 			String(relation.get("score_text", "0"))]
 	if bool(row.adjacent):
 		return "接壤 · 边域 %d 面" % int(row.border_edges)

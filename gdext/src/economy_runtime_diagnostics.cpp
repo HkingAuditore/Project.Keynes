@@ -1,6 +1,7 @@
 #include "economy_runtime.h"
 #include "country_api.h"
 #include "economy_runtime_variant_helpers.h"
+#include "pk_build_id.h"
 
 #include <algorithm>
 #include <string>
@@ -22,6 +23,13 @@ using namespace variant_helpers;
 Dictionary NativeEconomyRuntime::fatal_context_report() const {
     Dictionary out;
     out["valid"] = _fatal_context.valid;
+    // R1-6: which binary produced this stop. Never persisted, never hashed.
+    out["build_id"] = String::utf8(pk::pk_build_id());
+    // R1-7/R1-8: assertion identity + ledger witness, emitted before the
+    // _fatal_context.valid early-return because the stages that fail without a
+    // command cursor record their row before fail() runs.
+    out["assert_id"] = fatal_assert_id();
+    out["witness"] = fatal_witness_report();
     if (_investment_fatal_row.valid) {
         // The BUILDING_COMMIT investment stage has no command/structural cursor,
         // so the generic fields below stay at their defaults. Without this block
@@ -1279,6 +1287,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
     out["fatal_context"] = fatal_context_report();
+    out["build_id"] = String::utf8(pk::pk_build_id());
     out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;
@@ -2948,6 +2957,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
     out["fatal_context"] = fatal_context_report();
+    out["build_id"] = String::utf8(pk::pk_build_id());
     out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_lag_budget_days"] = _commit_lag_budget_days;
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;

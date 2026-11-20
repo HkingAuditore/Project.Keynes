@@ -1811,6 +1811,13 @@ public:
     godot::PackedInt32Array get_economy_live_cells();
     // ---- end Economy military hooks ----
     godot::Dictionary get_economy_report() const;
+    // R1-6: "which binary is this?" without requiring any runtime. A cold
+    // `DCWorldExt.new()` (no economy bootstrapped, no worker) must still answer,
+    // which is what the taxonomy test and a player bug report need.
+    godot::String get_build_id() const;
+    // The cold `get_economy_report()` shape, including build_id. Kept next to
+    // get_build_id() so the two "no runtime yet" answers cannot drift apart.
+    godot::Dictionary economy_unavailable_report() const;
     // Review §3: the effect-input digest buckets each metric by this quantum, so
     // sub-quantum drift stops re-signing every card. 0 keeps the old exact
     // behaviour, which is the default until the numbers are chosen.
@@ -2001,6 +2008,9 @@ public:
     godot::Dictionary get_economy_csv_recording_status() const;
     godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
     godot::Dictionary begin_economy_forensics_save(int chunk_bytes = 4 * 1024 * 1024);
+    // R3: replay a `.pkinc` incident bundle offline. Owns an isolated runtime, so
+    // it works without a loaded world and cannot touch the live economy.
+    godot::Dictionary economy_replay_incident(const godot::Dictionary &incident);
     godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
     godot::Dictionary end_economy_save();
     godot::Dictionary capture_economy_ecp2(int flags = 0) const;

@@ -2,8 +2,11 @@ extends RefCounted
 
 # G5 collaborator. The host owns all mutable state; it is passed per call.
 
+const CellBoardScene = preload("res://scenes/ui/cell_board.tscn")
+
 func _ensure_cell_hover_card(host) -> void:
 	if host._cell_hover_card != null:
+		_ensure_cell_board(host)
 		return
 	var hud := host.get_node_or_null("UIRoot/HUDLayer") as Control
 	if hud == null:
@@ -15,7 +18,41 @@ func _ensure_cell_hover_card(host) -> void:
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(card)
 	host._cell_hover_card = card
+	# 悬停格语义只在这里解析一次；地名纸签与左侧展板都订阅这条信号。
+	card.hover_cell_changed.connect(func(cell: int) -> void:
+		_on_hover_cell_changed(host, cell))
+	_ensure_cell_board(host)
 	host._configure_cell_hover_card()
+
+
+## 左侧展板：复用悬停卡的「当前悬停格」信号，自己不再解析指针。
+## 展板实例与它的布局都挂在 HUD 布局组件上——它是既有各面板引用的落点，
+## 宿主只保留悬停卡与展板之间的信号连接。
+func _ensure_cell_board(host) -> void:
+	var layout = host._hud_layout_component
+	if layout == null:
+		return
+	if layout._cell_board == null:
+		var panel_layer := host.get_node_or_null("UIRoot/PanelLayer") as Control
+		if panel_layer == null:
+			return
+		var board := CellBoardScene.instantiate() as CellBoard
+		if board == null:
+			return
+		board.name = "CellBoard"
+		panel_layer.add_child(board)
+		layout._cell_board = board
+		# 两块浮层不互相遮挡：展板一出现就把自己的矩形推给卡片避让。
+		board.visibility_changed.connect(func() -> void:
+			if host._cell_hover_card == null:
+				return
+			host._cell_hover_card.set_avoid_rect(board.get_global_rect() \
+				if board.visible else Rect2()))
+		host.get_viewport().size_changed.connect(func() -> void:
+			layout._layout_cell_board())
+		if host._cell_hover_card != null:
+			board.on_hover_cell_changed(host._cell_hover_card.current_cell_index())
+	layout._layout_cell_board()
 
 
 func _on_military_layer_toggled(host, layer_id: StringName, enabled: bool) -> void:
@@ -444,6 +481,37 @@ func _configure_cell_hover_card(host) -> void:
 		return
 	host._cell_hover_card.configure(host._map, host._player_camera, host._hover_hex_size,
 		host._cell_hover_view_model, host._hover_blocked, host.map_safe_area)
+	_configure_cell_board(host)
+
+
+func _configure_cell_board(host) -> void:
+	var layout = host._hud_layout_component
+	if layout == null or layout._cell_board == null or host._map == null \
+			or host._cell_hover_view_model == null or host._inspector_view_model == null:
+		return
+	# 经济门面按需解析：世界绑定早于经济运行时绑定时，这里还拿不到对象。
+	layout._cell_board.configure(host._map, host._cell_hover_view_model,
+		func() -> Object: return host._economy_runtime_facade,
+		host._inspector_view_model, host._world_clock)
+	layout._layout_cell_board()
+
+
+## 悬停格变化的唯一分发点：地图地名纸签 + 左侧展板。
+func _on_hover_cell_changed(host, cell_index: int) -> void:
+	var layer = _settlement_label_layer(host)
+	if layer != null:
+		layer.set_hover_cell(cell_index)
+	var layout = host._hud_layout_component
+	if layout != null and layout._cell_board != null:
+		layout._cell_board.on_hover_cell_changed(cell_index)
+
+
+## 地名层由世界运行期持有；UI 只借用它的悬停纸签入口。
+func _settlement_label_layer(host):
+	if host._diagnostics_source == null \
+			or not host._diagnostics_source.has_method("settlement_label_layer"):
+		return null
+	return host._diagnostics_source.call("settlement_label_layer")
 
 
 func touch_layout_enabled(host) -> bool:

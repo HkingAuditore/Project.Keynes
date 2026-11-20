@@ -2,6 +2,8 @@ extends RefCounted
 
 ## Rendering bindings and profile uniforms; state stays owned by ResourceVisualLayer.
 
+const RendererMaterialPublishScript = preload("res://scripts/rendering/renderer_material_publish.gd")
+
 static func _sync_terrain_textures(host) -> void:
 	if host._material == null or host._material_geo == null or host._world == null:
 		return
@@ -96,8 +98,10 @@ static func _bind_terrain_textures(host, target: ShaderMaterial, tiles, tiled: b
 		target.set_shader_parameter("height_tex", host._world.height_tex)
 	var height_bound = tiles.height != null if tiled else host._world.height_tex != null
 	target.set_shader_parameter("has_height_tex", height_bound)
-	target.set_shader_parameter("has_flow_tex",
-		DCFeatureFlags.water_flowmap_enabled() and height_bound and not host._world.flow_buffer.is_empty())
+	# [river-flow-gate 2026-11-19] 与主地形同一个数据判定：关掉流动画不等于没有河。
+	# 这里若继续并进 DCFeatureFlags.water_flowmap_enabled()，移动端资源就不会再避让河道。
+	target.set_shader_parameter("has_flow_tex", RendererMaterialPublishScript.flow_channel_ready(
+		height_bound, host._world.flow_buffer.size(), host._world.hm_size))
 	target.set_shader_parameter("sea_level", host._world.sea_level)
 	target.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else host._world.terrain_horizon_tex != null)
 	target.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else host._world.terrain_normal_tex != null)

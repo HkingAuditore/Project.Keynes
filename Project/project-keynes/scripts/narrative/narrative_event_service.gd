@@ -633,7 +633,7 @@ func _maybe_request_fact_ai(day: int, ev_type: int, cell_idx: int, cell_ctx: Dic
 		return
 	var fact_name := String(AI_FACT_HINTS[ev_type])
 	var settlement := String(cell_ctx.get("settlement_name", "本地")).strip_edges()
-	var fact_hint := "%s（%s，第 %d 日）" % [fact_name, settlement, day]
+	var fact_hint := "%s（%s，%s）" % [fact_name, settlement, _format_calendar_date(day)]
 	_request_ai_generation(day, cell_idx, "", "", fact_hint, day + 1, false, cell_ctx)
 
 
@@ -944,8 +944,8 @@ func _days_per_year() -> int:
 	return 365
 
 
-## 事件弹窗与史册只显示日历（第 N 年 · M 月 D 日），不显示第几天、地貌与气温。
-## 没有时钟时退回「第 N 日」，只出现在无会话的测试/诊断路径。
+## 事件弹窗与史册只显示日历（1年2月14日），不显示第几天、地貌与气温。
+## 没有时钟时也按默认年长换算日期，只出现在无会话的测试/诊断路径。
 func _format_calendar_date(day: int) -> String:
 	return CalendarText._format_calendar_date(_world_clock, day)
 

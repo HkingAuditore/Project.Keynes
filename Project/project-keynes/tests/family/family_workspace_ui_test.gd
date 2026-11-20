@@ -221,7 +221,7 @@ func _sample_model() -> Dictionary:
 			{"label": "本家族人口", "value": "5.15万", "icon": "family.metric.population"},
 			{"label": "净资产", "value": "51.5万", "icon": "family.metric.wealth"},
 			{"label": "产业数", "value": "24", "icon": "family.metric.buildings"},
-			{"label": "创立时间", "value": "第0日", "icon": "family.metric.time"},
+			{"label": "创立时间", "value": "1年1月1日", "icon": "family.metric.time"},
 		],
 		"pages": {
 			"overview": {"traits": [], "preferences": preferences.slice(0, 4), "effects": [

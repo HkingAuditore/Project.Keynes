@@ -266,7 +266,21 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	if host._settlement_label_layer != null:
 		host._settlement_label_layer.set_fog_enabled(host._fog_of_war_enabled)
 		host._settlement_label_layer.mark_visibility_dirty()
+		host._settlement_label_layer.set_player_capital_cell(_player_capital_cell(host))
 	return out
+
+
+## 首都格不参与 LOD：无论拉到多远都留名。首都是政治事实、日内不变，
+## 所以只在视觉刷新时推一次，不进每帧路径。
+func _player_capital_cell(host) -> int:
+	if host._player_country_handle <= 0 or host._generator == null \
+			or not host._generator.has_method("get_country_facade"):
+		return -1
+	var facade = host._generator.get_country_facade()
+	if facade == null:
+		return -1
+	var snapshot: Dictionary = facade.snapshot(host._player_country_handle)
+	return int(snapshot.get("capital_cell", -1)) if bool(snapshot.get("ok", true)) else -1
 
 
 func _refresh_resource_visual_context(host) -> void:

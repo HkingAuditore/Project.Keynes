@@ -382,7 +382,7 @@ func _facts_for_row(kind: String, row: Dictionary) -> Array:
 				{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.DOSSIER_INK},
 				{"label": "产业资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.DOSSIER_INK},
 				{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.DOSSIER_VERDIGRIS},
-				{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.DOSSIER_INK_SOFT},
+				{"label": "创立日", "value": WorldClock.date_text_for_day(int(row.get("founded_day", 0))), "accent": UITokens.DOSSIER_INK_SOFT},
 				{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.DOSSIER_INK_MUTED},
 				{"label": "本地威望", "value": "%s · %s" % [
 					["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],

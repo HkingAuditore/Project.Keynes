@@ -603,7 +603,7 @@ func _test_ai_sandbox_and_image_cache() -> void:
 		img_prompt.find("Bronze Age") >= 0 and img_prompt.find("no text") >= 0)
 	var fact_messages := NarrativeAiPromptBuilderScript.build_messages(
 		cell_ctx, [], "", PackedStringArray(), PackedStringArray(),
-		"民生压力上升（临海城，第 30 日）")
+		"民生压力上升（临海城，1年1月31日）")
 	_expect("Fact hint reaches the user prompt as a triggering-fact section",
 		String((fact_messages[1] as Dictionary).get("content", "")).find("本次触发事实") >= 0)
 

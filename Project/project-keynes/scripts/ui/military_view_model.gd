@@ -1398,7 +1398,7 @@ func _war_status(slot: int) -> Dictionary:
 		var until := int(_player_controller.call("military_truce_until", slot))
 		if until > _day:
 			return {"war": false, "truce_until": until,
-				"reason": "停战至第 %d 日" % until}
+				"reason": "停战至%s" % WorldClock.date_text_for_day(until)}
 	return {"war": false, "truce_until": -1, "reason": ""}
 
 

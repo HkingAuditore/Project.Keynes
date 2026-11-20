@@ -22,7 +22,7 @@ def freeze_read_violations(root):
         # full repository is still required to contain every production file.
         if not path.exists():
             continue
-        code = code_only(path.read_text())
+        code = code_only(path.read_text(encoding='utf-8'))
         token = 'freeze_reads.register_read'
         if token not in code or f'RuntimeDomainId::{module.upper()}' not in code:
             errors.append(f'{module} missing frozen input registration')
@@ -59,7 +59,7 @@ def stage_order_violations(data):
 
 def violations(root, data):
     errors = []
-    if (root / HEADER).read_text() != render(data): errors.append('generated module contracts differ')
+    if (root / HEADER).read_text(encoding='utf-8') != render(data): errors.append('generated module contracts differ')
     modules = {m['id']: m for m in data['modules']}
     if len(modules) != 12: errors.append('expected twelve distinct modules')
     modules.update({m['id']: m for m in data.get('consumers', [])})
@@ -74,18 +74,18 @@ def violations(root, data):
         m = modules[edge['module']]
         if edge['owner'] not in [v.strip() for v in m['reads'].split(',')]:
             errors.append(edge['module']+' undeclared read of '+edge['owner'])
-        if not re.search(r'\b'+edge['call']+r'\s*\(', code_only((root/edge['source']).read_text())):
+        if not re.search(r'\b'+edge['call']+r'\s*\(', code_only((root/edge['source']).read_text(encoding='utf-8'))):
             errors.append('declared read missing: '+edge['source']+' '+edge['call'])
     for source, allowed in by_source.items():
-        code = code_only((root/source).read_text())
+        code = code_only((root/source).read_text(encoding='utf-8'))
         for call in apis - allowed:
             if re.search(r'\b'+call+r'\s*\(', code): errors.append(source+' unregistered read '+call)
     return errors
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,default=ROOT);p.add_argument('--write-header',action='store_true');a=p.parse_args()
-    data=json.loads((a.root/REGISTRY).read_text())
-    if a.write_header: (a.root/HEADER).write_text(render(data))
+    data=json.loads((a.root/REGISTRY).read_text(encoding='utf-8'))
+    if a.write_header: (a.root/HEADER).write_text(render(data), encoding='utf-8')
     errors=violations(a.root,data)
     for e in errors: print(e)
     print(f'module contracts: {len(data["modules"])} modules, {len(data["reviewed_reads"])} reviewed reads, {len(errors)} violations')

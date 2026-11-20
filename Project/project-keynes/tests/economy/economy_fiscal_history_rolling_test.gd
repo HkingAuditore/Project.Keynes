@@ -161,7 +161,7 @@ func _check_insufficient_history_falls_back() -> void:
 		not bool(flow.get("rolling", false))
 			and bool(flow.get("history_available", false))
 			and not bool(flow.get("can_roll", true))
-			and String(flow.get("day_text", "")) == "第 1 日")
+			and String(flow.get("day_text", "")) == "1年1月1日")
 
 
 func _check_country_sampler() -> void:
