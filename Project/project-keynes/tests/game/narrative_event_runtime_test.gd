@@ -392,9 +392,9 @@ func _test_shared_event_quota() -> void:
 	var service := NarrativeEventServiceScript.new()
 	service.configure(null, null, null, null, 1, 98765, catalog)
 	var def = catalog.get_event(&"evt.climate.bitter_frost")
-	for day in [20, 100]:
-		var offer := service.enqueue_event_offer(def, 3, day)
-		service.choose_option(int(offer.offer_id), int(offer.offer_generation), 1, day + 1)
+	# [event-rarity 2026-11-20] 同一地块每游戏年只剩一次额度：第二个普通事件在同一年进不来。
+	var first_offer := service.enqueue_event_offer(def, 3, 20)
+	service.choose_option(int(first_offer.offer_id), int(first_offer.offer_generation), 1, 21)
 	for channel in [0, 1]:
 		var ordinary = def.duplicate(true)
 		ordinary.trigger_channel = channel
@@ -413,7 +413,7 @@ func _test_shared_event_quota() -> void:
 	restored.on_day_committed(200)
 	_expect("restored over-quota queue cannot display ordinary events",
 		String(restored.active_offer().get("event_id", "")) == "scheduled" and restored.ready_queue_size() == 0)
-	_expect("scheduled followup does not consume quota", int(restored._cell_year_event_counts.get("0:3", 0)) == 2)
+	_expect("scheduled followup does not consume quota", int(restored._cell_year_event_counts.get("0:3", 0)) == 1)
 	var gap_service := NarrativeEventServiceScript.new()
 	gap_service.configure(null, null, null, null, 1, 98765, catalog)
 	gap_service._last_popup_day = 190

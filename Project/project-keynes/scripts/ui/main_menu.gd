@@ -1,6 +1,7 @@
 extends Control
 
 const MenuLayout = preload("res://scripts/ui/main_menu_layout.gd")
+const SavePreviewCodecScript = preload("res://scripts/game/save_preview_codec.gd")
 
 const ButtonContentScene := preload("res://scenes/ui/main_menu_button_content.tscn")
 const MenuButtonScene := preload("res://scenes/ui/main_menu_button.tscn")
@@ -459,8 +460,10 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 		if save_service != null and save_service.has_method("load_preview"):
 			var result: Dictionary = save_service.call("load_preview", slot_id)
 			if bool(result.get("ok", false)):
-				var image := Image.new()
-				if image.load_png_from_buffer(result.get("bytes", PackedByteArray())) == OK:
+				# New slots store a scaled JPEG; older ones a full-window PNG.
+				var image: Image = SavePreviewCodecScript.decode(
+					result.get("bytes", PackedByteArray()))
+				if not image.is_empty():
 					preview.texture = ImageTexture.create_from_image(image)
 					empty_seal.visible = false
 	else:

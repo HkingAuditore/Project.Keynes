@@ -21,6 +21,12 @@ func narrative_event_locked(host) -> bool:
 	return host._narrative_flow != null and host._narrative_flow.is_locked()
 
 
+## 玩家关掉自己窗口后的重查入口：静置中的事件在这一刻才允许展示。
+func recheck_narrative_popup(host) -> void:
+	if host._narrative_flow != null:
+		host._narrative_flow.try_present()
+
+
 func set_popups_suppressed(host, enabled: bool) -> void:
 	if enabled and not host._popups_suppressed:
 		host._suppression_resume_running = host._world_clock != null and not host._world_clock.paused

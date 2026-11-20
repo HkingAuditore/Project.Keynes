@@ -27,12 +27,19 @@ const Q16_ONE := 65536
 # 1 现实秒 = 1 游戏天（x1 速度）。旧档的默认节奏约为「每 8 天一次弹窗」（x5 速度下
 # 约 1.6 秒一次），实测过于密集，故整体下调约一个数量级：
 #   旧：脉冲每 5 天一次 × 60% 放行，且 15 天间隔仅在弹窗未关闭时生效 → 平均 8 天一次
-#   新：脉冲每 20 天一次 × 25% 放行，且 60 天间隔对全部弹窗通道无条件生效
-# 实测新节奏：1440 天（4 年）内约 10~16 次，平均 90~140 天一次
-# （x5 速度下约 18~28 秒一次）。链式/定时事件不受影响。
+#   目前：脉冲每 20 天一次 × 6.25% 放行，且 60 天间隔对全部弹窗通道无条件生效
+# 按脉冲模型估算（60 天间隔 + 平均 1/p 次脉冲，每次 20 天）：
+#   25%  → 约 140 天一次
+#   12.5% → 约 220 天一次
+#   6.25% → 约 380 天一次（≈ 每游戏年一次；x1 约 6 分钟、x5 约 76 秒、x10 约 38 秒）
+# 实际会略高于估算：事实通道（战事/营造/民生压力）和定时后续不走脉冲骰子。
+# 链式/定时事件不受弹窗间隔约束，也不会被年度额度卡断。
+# [event-rarity 2026-11-20] 玩家两次反馈事件太密。第一次：同一地块每游戏年最多一次
+# （原两次）、脉冲 25% → 12.5%。第二次：脉冲 12.5% → 6.25%，AI 三个入口同步减半。
+# 年度额度由脉冲/事实/普通 AI 三个通道共用，定时后续（bypass_pacing）不占额度。
 const DEFAULT_PULSE_INTERVAL_DAYS := 20
 const DEFAULT_MIN_POPUP_GAP_DAYS := 60
-const MAX_CELL_EVENTS_PER_YEAR := 2
+const MAX_CELL_EVENTS_PER_YEAR := 1
 const MAX_SAMPLED_CELLS_PER_PULSE := 8
 const MAX_CHRONICLE_RECORDS := 256
 const AI_PREFETCH_LEAD_DAYS := 3
@@ -74,13 +81,13 @@ const AI_POOL_FLUSH_LIMIT := 4
 
 var pulse_interval_days: int = DEFAULT_PULSE_INTERVAL_DAYS
 var min_popup_gap_days: int = DEFAULT_MIN_POPUP_GAP_DAYS
-var pulse_trigger_chance_q16: int = 16384 # ~25% per pulse when eligible events exist
+var pulse_trigger_chance_q16: int = 4096 # ~6.25% per pulse when eligible events exist
 ## 脉冲预热的基础概率；真实概率由 _ai_chance_q16() 按局势在 [base, ai_max_chance_q16] 间抬升。
-var ai_slot_chance_q16: int = 2621 # ~4% baseline
+var ai_slot_chance_q16: int = 655 # ~1% baseline
 ## 单条事实触发 AI 的基础概率；同样吃局势加权。
-var ai_fact_chance_q16: int = 13107 # ~20% baseline
+var ai_fact_chance_q16: int = 3277 # ~5% baseline
 ## 局势拉满（紧缺/不满/极端气候同时出现）时的概率上限。
-var ai_max_chance_q16: int = 26214 # ~40% ceiling
+var ai_max_chance_q16: int = 13107 # ~20% ceiling
 ## 两次 AI 请求的最小间隔，防止一次战争/一次饥荒把 API 打爆。
 ## 与全局弹窗间隔同档（60 日）：AI 事件不允许挤占静态事件的展示预算。
 var ai_min_request_gap_days: int = 60
