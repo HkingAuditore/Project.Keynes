@@ -42,6 +42,7 @@ class EconomyStub extends RefCounted:
 
 class GeneratorStub extends RefCounted:
 	var economy = null
+	var military = null
 	## cell -> 作者地区名
 	var regions: Dictionary = {}
 
@@ -49,10 +50,31 @@ class GeneratorStub extends RefCounted:
 		return economy
 
 	func get_military_facade():
-		return null
+		return military
 
 	func region_name_for_cell(cell: int) -> String:
 		return String(regions.get(cell, ""))
+
+
+## 走「军事段可用」的主路径：名字表必须跟着那条重新赋值的 section 一起交出去。
+class MilitaryFacadeStub extends RefCounted:
+	func is_configured() -> bool:
+		return true
+
+	func catalog() -> Dictionary:
+		return {"ok": true, "units": []}
+
+	func catalog_view() -> Dictionary:
+		return {}
+
+	func country_snapshot(_country: int) -> Dictionary:
+		return {"ok": true, "has_policy": true, "config_share_bp": PackedInt32Array()}
+
+	func armies(_country: int) -> Array:
+		return []
+
+	func maintenance_supported() -> bool:
+		return false
 
 
 func _init() -> void:
@@ -159,6 +181,23 @@ func _run() -> void:
 	})
 	_expect("top-level cell_names keeps the screenshot fixtures working",
 		String(fixture_vm.cell_name(3)) == "北岸")
+
+	# ---- 6. 主路径（军事段可用）也要带名字表 ----
+	# `build_military_model` 在通过快照检查后会**重新赋值** section；名字表如果只写在
+	# 开头那个字面量里，可用状态下就会整份丢掉（这条曾经真的漏了）。
+	generator.military = MilitaryFacadeStub.new()
+	var live_model := {}
+	var live_section: Dictionary = vm.build_military_model(42, live_model)
+	_expect("the available military section stays available",
+		bool(live_section.get("available", false)))
+	_expect("the available military section carries the cell-name table",
+		live_section.get("cell_names", null) is Dictionary
+			and (live_section["cell_names"] as Dictionary).size() >= 1)
+	var live_vm = MilitaryViewModelScript.new()
+	live_vm.configure(live_model)
+	_expect("the workspace reads names on the available path",
+		live_vm.cell_name_count() >= 1
+			and String(live_vm.cell_name(30)) == "北港")
 
 	print("military cell names: %d failures" % _failures)
 	quit(0 if _failures == 0 else 1)

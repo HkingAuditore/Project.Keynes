@@ -99,10 +99,12 @@ UI 反模式扫描输出在仓库 `tmp/species_ui_audit`，新增行人工复核
 读视图排队或旧 DLL 时保留上一份），`MilitaryViewModel` 按**具名聚落 > 作者地区名 > `地块 N`**
 降级，`settlement_name()` 单独暴露聚落名供割地表判断「这一格有没有自己的名字」（不能拿
 `cell_name()` 判断，它已经会退回地区名）。夹具的顶层 `cell_names` 仍然认。
-实机验证：同一会话里军事模型带 6 条具名聚落（DIAG 打印，随后已移除）。
-新增 `tests/ui/military_cell_names_test.gd`（20 条断言：`name_active` 过滤、增量、整表替换、
-读失败保留、三级降级、割地表判定、夹具兼容）；`player_country_ui_smoke_test` 增一条
-「不再出现未命名占位」的实机断言。
+实机验证：`player_country_ui_smoke_test` 在真实世界里读到 6 条具名聚落，军事面板的名表已装配。
+注意 `build_military_model` 有两处出口——不可用时的早退和通过快照检查后**重新赋值**的 section；
+名字表两处都要带（第一版只写在开头的字面量里，可用状态下整份丢掉，测试第 6 段专门钉它）。
+新增 `tests/ui/military_cell_names_test.gd`（24 条断言：`name_active` 过滤、增量、整表替换、
+读失败保留、三级降级、割地表判定、夹具兼容、可用主路径）；`player_country_ui_smoke_test` 另加
+一条「不再出现未命名占位」的实机断言。
 
 同日按维护者意见收敛文案：命令受理反馈统一为「命令已下达」（`player_controller/military.gd`，
 `game_ui_manager` 的编成回执同步）；国库页军事栏去掉说明行、组标签
@@ -154,14 +156,27 @@ day 24 的 `manual_3` 只有 1.03 MiB），决定项是格数 × 历史填充度
 `expected_10_got_N` 明确拒绝）；`runtime_inline_save_restore_test` 116 项 0 失败；
 `game_save_roundtrip_test`（`PK_GAME_SAVE_ROUNDTRIP_TEST=1` + 独立 `PK_SAVE_DIR`）0 失败，恢复后跑完整经济结算周期、
 日志中 `population_error=0`、`money_error=0`；新增 `tests/game/save_preview_codec_test.gd` 10 项 0 失败；
+新增 `tests/game/legacy_save_continuation_test.gd`（旧布局存档与当前布局存档各跑一次，均 0 失败，
+见下）；
 `check_save_contracts.py` 与 `check_save_section_contracts.py` 0 违规；debug/release 扩展均构建通过；
 60 天无头 soak 60/60 天提交、0 ledger 失败。
 
-未覆盖：跨版本端到端读档没跑成。玩家存档都早于当前 catalog（`manual_1` 卡在 `pkcm_restore_failed`、
-`autosave` 卡在 `effect_pod_save_header_invalid`，均为既有不兼容，用改前扩展复现结果一致）；
-改用“旧扩展写档 + 新扩展读档”对照时，当前工作树正被并行编辑 UI 脚本，**新格式**存档同样卡在
-`runtime_never_became_ready`，该对照无效，需在工作树安静后重跑。2 年/10 年 soak 与逐日一致性对比本轮未跑；
-soak CSV 不含人口/货币/货品守恒列，守恒证据来自 roundtrip 日志而非 soak。
+未覆盖 / 已知问题：`Invoke-SaveReplay` 的"冷启动直接装载存档"路径在本树上失效——它跑起来的世界
+从第 5 日重新开始、`eco_day=-1`，`_wait_for_runtime` 等不到 `PlayerGame` 成为 `current_scene`，
+因此对**当前格式**存档同样报 `runtime_never_became_ready`（提交前后各复现一次）。该入口不能用来
+验证旧档，需要单独修；修之前不要用它当读档回归。
+
+旧档兼容改用新夹具 `tests/game/legacy_save_continuation_test.gd`：先正常开局，再在会话内换入
+`PK_SAVE_DIR` 里暂存的存档（`PK_LEGACY_SAVE_CONTINUITY=1`，槽位 `PK_LEGACY_SAVE_SLOT`，默认 autosave），
+走与玩家"继续游戏"相同的 provider 恢复路径。用 23:15 之前的 debug 扩展写出的旧布局存档
+（`-Deep` 已确认：CLM2 ABI 9 + 1.56 MiB 历史环、ECP1 4.34 MiB、容器与内嵌 ECP2 各 8.92 MiB）
+实测 0 失败：`PKCN restored` / `PKCN and PKEC restored`、恢复后未 FAULTED、经济随存档恢复、
+逐日推进 731→732；同一夹具对当前格式存档同样 0 失败（恢复第 2 日、推进 5→6）。
+坑：恢复 finalize 会在世界变 live 之后重新套用存档里的暂停态，夹具必须逐帧重申时钟状态，
+否则会把"恢复后暂停"误判成"恢复后不再推进"。
+
+2 年/10 年 soak 与逐日一致性对比本轮未跑；soak CSV 不含人口/货币/货品守恒列，
+守恒证据来自 roundtrip 日志（`population_error=0`、`money_error=0`）而非 soak。
 
 ## 早期时代夜间火光（2026-11-20）
 

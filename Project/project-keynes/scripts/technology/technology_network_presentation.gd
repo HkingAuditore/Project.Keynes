@@ -107,6 +107,25 @@ static func modifier_effect_subject(term: Dictionary) -> String:
 		return "商品「%s」生产投入" % subject
 	if stat.begins_with("country.consumption.good."):
 		return "商品「%s」家庭消费" % subject
+	# 带实例维度的三类：职业税率、职业满意度、资源耗用/再生。概念词固定，
+	# 只有维度名取自数据。
+	if stat.begins_with("country.tax.income.") and stat.ends_with(".rate_bp"):
+		return "%s税率" % subject
+	if stat.begins_with("economy.profession.") and stat.ends_with(".satisfaction_bp"):
+		return "%s满意度" % subject
+	var parts := stat.split(".")
+	if parts.size() == 4 and parts[0] == "country" and parts[1] == "resource":
+		match String(parts[3]):
+			"use_factor":
+				return "%s耗用" % subject
+			"managed_generation_factor":
+				return "%s管护再生" % subject
+	# 其余概念名以 ModifierCatalog 的口径为准。subject_display_name 是逐节点手写的，
+	# 同一个 stat 在数据里能出现两三种叫法（社会研究效率 / 社会领域研究效率、
+	# 投入因子 / 全社会生产投入 / 生产投入），玩家没法把两个科技横向比较。
+	var canonical := String(ModifierCatalog.STAT_DISPLAY_NAMES.get(stat, ""))
+	if not canonical.is_empty():
+		return canonical
 	return subject
 
 
