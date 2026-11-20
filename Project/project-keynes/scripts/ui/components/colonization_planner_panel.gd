@@ -1151,8 +1151,16 @@ func map_stage() -> StringName:
 ## 地图左键点选的唯一入口：面板可见时每一步都直接吃地图点击。
 ## 返回 true 表示这次点按已被派发界面消费（调用方不应再打开地块档案）。
 func handle_map_cell(cell: int) -> bool:
-	if not visible or cell < 0 or _current_tab != "quotes":
+	if not visible or cell < 0:
 		return false
+	if _current_tab != "quotes":
+		# 地图左键始终交给派发工作区（打开期间不弹普通 Inspector）。派遣成功后
+		# 面板会自动切到「派遣进展」，而这里原先直接吃掉点击：玩家在地图上点
+		# 新的目的地毫无反应，表现为「连派多支队伍只有第一支成功」
+		# （2026-11-21 上报）。先回到派发列表，再按原来的步骤规则解释这次点击。
+		_show_quotes()
+		if not visible:
+			return false
 	if map_stage() == &"source":
 		if _select_source_cell(cell):
 			return true

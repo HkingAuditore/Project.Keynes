@@ -543,6 +543,16 @@ AI 叙事文本只写处境与后果，不写气温/价格/库存/人口/百分�
 及 `tests/family/family_colonization_runtime_test.gd -- --population-shrink-only`。
 旧套件基线限制见 current-state；机制契约见家族开拓运行时文档。
 
+工作区开着时地图左键归派发界面独占，这条对**所有页签**成立：`handle_map_cell` 不论当前停在
+「开拓」还是「派遣进展」都必须消费这次点选，进展页先切回派发列表再按原有步骤规则解释
+（`_show_quotes()` 后走 `map_stage()`），不得直接 `return false`。`game_ui_manager.show_cell_panel`
+会把被面板接管的点击整口吞掉，返回 false 不会退回普通 Inspector，玩家看到的只是「点新目的地
+毫无反应」。派遣/取消成功后 `set_command_result` 会自动切到「派遣进展」，旧实现只在该页吞掉
+点击，于是连续派遣只有第一支成功（2026-11-21 玩家上报）。回归用
+`tests/country/colonization_multi_dispatch_ui_test.gd`（目的地入口、排队结算回执、顶栏全国列表
+三条路径各派两支）与 `tests/family/family_colonization_multi_dispatch_test.gd`（原生侧两个不同
+目标各建一支队、同目标仍按设计返回 `colonization_duplicate_target`）。
+
 在途载荷里的人不是孤儿：`cohort_handle == 0` 且登记在 `family_expedition_person_handles()`
 中的要人由载荷持有，`PERSON_COMMIT` 不得按「cohort 无效」退场；任何权威真的要退场时必须走
 `retire_person`，由它在释放 slot 前摘掉载荷引用并修正后续 `person_begin`。回归用
