@@ -354,7 +354,7 @@ func _on_military_army_create_requested(request: Dictionary) -> void:
 	var ok := bool(result.get("ok", false))
 	var message := String(result.get("message", ""))
 	if message.is_empty():
-		message = "编成命令已排队，将在下一游戏日生效。" if ok else "部队编成未能排队。"
+		message = "命令已下达" if ok else "部队编成未能排队。"
 	if not ok and _right_panel != null \
 			and _right_panel.has_method("release_military_ledger_busy"):
 		_right_panel.release_military_ledger_busy()
@@ -1214,6 +1214,8 @@ func _on_inspector_detail_visibility_changed(open: bool) -> void:
 		_pending_object_request.clear()
 		_military_dossier_context.clear()
 		_military_dossier_pending = false
+		# 营造 / 家族档案 / 军务档案都走这条关闭回路。
+		notify_workspace_closed()
 	_layout_right_panel()
 	_layout_overlay_legend()
 	_layout_country_action_bar()
@@ -1665,6 +1667,15 @@ func close_annual_report() -> void:
 
 func annual_other_modal_open() -> bool:
 	return _overlay_component.annual_other_modal_open(self)
+
+## [popup-deferral 2026-11-20] 玩家正开着自己的窗口（国家卷宗 / 营造 / 家族档案 /
+## 军务档案 / 派遣 / 议和 / 史册 / GM / 时代纸笺）。叙事弹窗读它决定是否先静置。
+func is_player_workspace_open() -> bool:
+	return _overlay_component.is_player_workspace_open(self)
+
+## 上面那些窗口关掉后的回调入口，让静置的事件在同一时刻接上展示。
+func notify_workspace_closed() -> void:
+	_overlay_component.notify_workspace_closed(self)
 
 func show_narrative_event_offer(offer: Dictionary) -> void:
 	_overlay_component.show_narrative_event_offer(self, offer)

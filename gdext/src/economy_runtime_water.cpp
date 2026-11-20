@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "water_tier.h"
 
 #include <algorithm>
 #include <limits>
@@ -9,21 +10,12 @@ namespace pk {
 
 namespace {
 
-constexpr uint8_t kLandformDeepOcean = 0;
-constexpr uint8_t kLandformOcean = 1;
-constexpr uint8_t kLandformCoast = 2;
-constexpr uint8_t kLandformLake = 3;
 constexpr uint8_t kTerrainSeaIce = 20;
 
 uint8_t classify_water_class(uint8_t terrain, uint8_t landform) {
     if (terrain == kTerrainSeaIce) return NativeEconomyRuntime::WATER_CLASS_NONE;
-    switch (landform) {
-        case kLandformDeepOcean: return NativeEconomyRuntime::WATER_CLASS_DEEP;
-        case kLandformOcean: return NativeEconomyRuntime::WATER_CLASS_FAR;
-        case kLandformCoast: return NativeEconomyRuntime::WATER_CLASS_SHALLOW;
-        case kLandformLake: return NativeEconomyRuntime::WATER_CLASS_LAKE;
-        default: return NativeEconomyRuntime::WATER_CLASS_NONE;
-    }
+    // One mapping for both domains: see gdext/src/water_tier.h.
+    return water_tier_from_landform(landform);
 }
 
 bool graph_water_ok(uint8_t water_class, int32_t graph_index) {

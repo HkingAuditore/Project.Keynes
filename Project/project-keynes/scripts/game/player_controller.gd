@@ -163,6 +163,9 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_MILITARY_STATE_DEMOLISH: true,
 	COMMAND_MILITARY_WAGE: true,
 	COMMAND_MILITARY_PROCUREMENT: true,
+	# 军事预算信封（`policy.set_budget`）。缺了这一项，财政页的「军事预算 / 军饷 /
+	# 建筑维护 / 装备与给养」滑条提交时会被判成 unsupported_command，板块等于装饰。
+	COMMAND_MILITARY_BUDGET: true,
 	COMMAND_MILITARY_ARMY_CREATE: true,
 	COMMAND_MILITARY_ARMY_STATION: true,
 	COMMAND_MILITARY_ARMY_MOVE: true,
@@ -1703,6 +1706,9 @@ func narrative_ai_client():
 
 func narrative_event_locked() -> bool:
 	return _narrative_component.narrative_event_locked(self)
+
+func recheck_narrative_popup() -> void:
+	_narrative_component.recheck_narrative_popup(self)
 
 func set_popups_suppressed(enabled: bool) -> void:
 	_narrative_component.set_popups_suppressed(self, enabled)

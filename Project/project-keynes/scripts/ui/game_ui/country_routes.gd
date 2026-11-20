@@ -197,6 +197,8 @@ func close_country_panel(host) -> void:
 		host._country_view_model.invalidate_cache()
 	if host._country_action_bar != null:
 		host._country_action_bar.set_active("")
+	# 卷宗关掉这一刻才允许静置的叙事弹窗出现。
+	host.notify_workspace_closed()
 
 
 
@@ -448,6 +450,8 @@ func _on_dispatch_closed(host) -> void:
 		var cell = host._player_controller.selected_cell()
 		if cell != null:
 			host.show_cell_panel(cell)
+	# 派遣 / 议和窗口关掉：静置的叙事弹窗在同一拍接上。
+	host.notify_workspace_closed()
 
 
 # ── peace window (MilitaryPeaceWindow) ──────────────────────────────────
