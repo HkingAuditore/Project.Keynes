@@ -186,9 +186,13 @@ func _wait_golden_read_boundary(host: WorldRuntimeHost, economy, day: int) -> bo
 		host._process(0.0)
 		var runtime: Dictionary = host.get_generator().get_runtime_thread_report()
 		var modifier: Dictionary = economy.world_ext().get_modifier_report()
-		if host._runtime_tail_completed_day == day \
+		var at_read_boundary: bool = (not host._native_environment_active
+			or host._native_daily_inline_active
+			or runtime.get("simulation_host_state") == "PAUSED")
+		if host._runtime_commit_day == day \
 				and int(runtime.get("simulation_committed_day", -1)) == day \
 				and int(runtime.get("worker_day_inflight", -1)) == 0 \
+				and at_read_boundary \
 				and int(host._modifier_worker_snapshot_generation) == int(runtime.get(
 					"modifier_pod_snapshot_generation", -1)) \
 				and int(modifier.get("current_day", -1)) == day:

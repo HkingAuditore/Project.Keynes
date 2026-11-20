@@ -43,7 +43,7 @@ class HostProbe extends WorldRuntimeHost:
 	func _consume_runtime_commit_if_ready(_report_override: Dictionary = {}) -> void:
 		if consume_writeback_day >= 0:
 			_runtime_climate_writeback_last_day = consume_writeback_day
-			_runtime_tail_completed_day = consume_writeback_day
+			_runtime_commit_day = consume_writeback_day
 			var generator := _generator as GeneratorProbe
 			generator.committed_day = consume_writeback_day
 	func _observe_runtime_worker_fault(_report: Dictionary = {}) -> void: pass

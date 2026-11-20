@@ -1,8 +1,10 @@
 #include "world_ext.h"
+#include "runtime_economy_display.h"
 #include "native_simulation_host.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
 #include "runtime_day_tail.h"
+#include "world_ext_golden.h"
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
@@ -738,6 +740,8 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             return out;
         }
     }
+    _runtime_display_commit = {};
+    _runtime_display_resources.reset();
     _climate_physics_committed.reset();
     _climate_writeback_applied_generation = 0;
     _climate_writeback_applied_day = -1;
@@ -833,9 +837,6 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     } else {
         _runtime_host->attach_military(nullptr);
     }
-    // The inline executor already runs each day between main-thread frames.
-    _runtime_host->set_main_day_tail_gate(
-        !native_daily_inline && static_cast<bool>(config.get("main_day_tail_gate", false)));
     const bool owns_rule_adapters = mode == RuntimeSimulationMode::ACTIVE &&
         requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK;
     if (_ideology_runtime != nullptr) {
@@ -1250,8 +1251,7 @@ Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
     packet.envelope.requested_day = requested_day;
     packet.envelope.domain = static_cast<uint16_t>(domain);
     packet.envelope.opcode = static_cast<uint16_t>(opcode);
-    packet.envelope.effective_day = std::max<int64_t>(
-        packet.envelope.requested_day, _runtime_host->command_seal_day());
+    packet.envelope.effective_day = packet.envelope.requested_day;
     PackedByteArray payload;
     if (command.has("payload")) {
         const Variant payload_value = command["payload"];
@@ -1272,7 +1272,8 @@ Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
     packet.envelope.payload_offset = 0;
     packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
     if (!payload.is_empty()) std::memcpy(packet.payload.data(), payload.ptr(), payload.size());
-    if (!_runtime_host->enqueue(packet)) {
+    std::vector<int64_t> admitted_days;
+    if (!_runtime_host->enqueue_batch({packet}, &admitted_days)) {
         out["ok"] = false;
         out["pending"] = false;
         const RuntimeWorkerState state = _runtime_host->state();
@@ -1286,7 +1287,7 @@ Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
     out["request_id"] = static_cast<int64_t>(packet.envelope.request_id);
     out["producer_id"] = static_cast<int>(packet.envelope.producer_id);
     out["sequence"] = static_cast<int64_t>(packet.envelope.sequence);
-    out["effective_day"] = packet.envelope.effective_day;
+    out["effective_day"] = admitted_days.front();
     out["code"] = "ok";
     return out;
 }
@@ -1318,11 +1319,7 @@ Dictionary DCWorldExt::poll_runtime_receipts(int max_items) {
     return out;
 }
 
-void DCWorldExt::mark_runtime_day_tail_done(int64_t day) {
-    if (_runtime_host) _runtime_host->mark_main_day_tail_done(day);
-}
-
-Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {
+Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_days) {
     Dictionary out;
     if (!_runtime_host) {
         out["ok"] = false;
@@ -1330,8 +1327,19 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {
         return out;
     }
     RuntimeCommit commit;
+    std::deque<RuntimeDayRecord> records;
     const uint64_t after = static_cast<uint64_t>(std::max<int64_t>(0, after_generation));
-    if (!_runtime_host->poll_commit(after, commit)) {
+    RuntimeResourceDisplayPatch resources;
+    RuntimeCellLutDelta delta;
+    const auto publication = take_days
+        ? _runtime_host->take_day_publications(after, records, resources, delta) : nullptr;
+    if (publication) {
+        _runtime_display_commit = *publication;
+        if (!resources.cells.empty())
+            _runtime_display_resources = std::make_shared<RuntimeResourceDisplayPatch>(std::move(resources));
+        commit = *publication;
+    }
+    if (!publication && (take_days || !_runtime_host->poll_commit(after, commit))) {
         out["ok"] = true;
         out["pending"] = true;
         out["available"] = false;
@@ -1378,7 +1386,68 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation) {
         receipts.push_back(item);
     }
     out["receipts"] = receipts;
+    if (publication && commit.day_tail && commit.day_tail->climate) {
+        const auto pack_cells = [](const std::vector<int32_t> &cells) {
+            PackedInt32Array packed;
+            packed.resize(cells.size());
+            if (!cells.empty()) std::copy(cells.begin(), cells.end(), packed.ptrw());
+            return packed;
+        };
+        out["display_dirty_cells"] = pack_cells(delta.cells);
+        out["display_class_cells"] = pack_cells(delta.class_cells);
+        if (commit.day_tail->gdp) out["gdp"] = commit.day_tail->gdp->pack();
+    }
+    if (!records.empty()) {
+        Array days;
+        for (const auto &record : records) {
+            Dictionary daily;
+            daily["day"] = record.header.committed_day;
+            daily["generation"] = static_cast<int64_t>(record.header.generation);
+            daily["state_hash"] = static_cast<int64_t>(record.header.state_hash);
+            daily["business_hash"] = static_cast<int64_t>(record.business_hash);
+            daily["annual_reward_pending"] = record.annual_reward_pending;
+            if (record.fiscal) {
+                daily["fiscal"] = record.fiscal->fiscal;
+                daily["treasury_cash"] = record.fiscal->cash;
+            }
+            if (!record.notices.empty()) {
+                Array notices;
+                for (const auto &notice : record.notices) {
+                    Dictionary row;
+                    row["event_id"] = String(notice.id.c_str());
+                    row["title"] = String::utf8(notice.title.c_str());
+                    row["settlement_name"] = String::utf8(notice.settlement.c_str());
+                    row["cell_idx"] = notice.cell;
+                    row["event_category"] = notice.category;
+                    row["day"] = record.header.committed_day;
+                    row["notice_only"] = true;
+                    notices.push_back(row);
+                }
+                daily["notices"] = notices;
+            }
+            daily["produced_at_us"] = static_cast<int64_t>(record.header.produced_at_us);
+            Array daily_receipts;
+            for (const auto &receipt : record.receipts) {
+                Dictionary item;
+                item["request_id"] = static_cast<int64_t>(receipt.request_id);
+                item["producer_id"] = static_cast<int>(receipt.producer_id);
+                item["sequence"] = static_cast<int64_t>(receipt.sequence);
+                item["effective_day"] = receipt.effective_day;
+                item["generation"] = static_cast<int64_t>(receipt.generation);
+                item["code"] = static_cast<int>(receipt.code);
+                daily_receipts.push_back(item);
+            }
+            if (record.golden) daily["golden"] = runtime_golden_dictionary(*record.golden);
+            daily["receipts"] = daily_receipts;
+            days.push_back(daily);
+        }
+        out["days"] = days;
+    }
     return out;
+}
+
+void DCWorldExt::finish_runtime_display_frame() {
+    _runtime_display_commit = {};
 }
 
 Dictionary DCWorldExt::request_runtime_stop(bool preserve_day_boundary) {

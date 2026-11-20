@@ -1,6 +1,9 @@
 #include "native_simulation_host.h"
 
 #include "economy_runtime.h"
+#include "runtime_vision.h"
+#include "runtime_world_environment.h"
+#include "world_ext_internal_cell_luts.h"
 
 #include <utility>
 
@@ -60,6 +63,90 @@ RuntimeResourceDisplayPatch NativeSimulationHost::take_resource_display_patch() 
     return std::exchange(_resource_display_patch, {});
 }
 
+std::shared_ptr<const RuntimeCommit> NativeSimulationHost::take_day_publications(
+        uint64_t after, std::deque<RuntimeDayRecord> &records, RuntimeResourceDisplayPatch &resources,
+        RuntimeCellLutDelta &delta) {
+    std::shared_ptr<const RuntimeCommit> latest;
+    std::vector<uint8_t> dirty_cells;
+    {
+        std::lock_guard<std::mutex> lock(_resource_display_mutex);
+        latest = std::atomic_load(&_latest_commit);
+        if (!latest || latest->header.generation <= after) return {};
+        records.swap(_published_days);
+        resources = std::exchange(_resource_display_patch, {});
+        dirty_cells.swap(_cell_lut_pending);
+        _display_consumed_day.store(latest->header.committed_day, std::memory_order_release);
+    }
+    for (size_t cell = 0; cell < dirty_cells.size(); ++cell) {
+        if (dirty_cells[cell] & 1) delta.cells.push_back(static_cast<int32_t>(cell));
+        if (dirty_cells[cell] & 2) delta.class_cells.push_back(static_cast<int32_t>(cell));
+    }
+    return latest;
+}
+
+std::shared_ptr<const RuntimeClimateSnapshot> NativeSimulationHost::latest_climate_display() const {
+    const auto latest = std::atomic_load(&_latest_commit);
+    return latest && latest->day_tail ? latest->day_tail->climate : nullptr;
+}
+
+void NativeSimulationHost::publish_cell_lut_changes(RuntimeDayTail &tail, const RuntimeDayTail *previous) {
+    const auto &state = tail.climate->payload;
+    const size_t count = state.cell_count;
+    if (state.terrain.size() != count || state.vegetation.size() != count ||
+        state.cover.size() != count || state.weather_type.size() != count) return;
+
+    const auto &opening = _world_environment->narrative_geography();
+    const auto &prior = previous && previous->climate ? &previous->climate->payload : nullptr;
+    const auto &old_age = previous ? &previous->cell_luts.transition_age : nullptr;
+    const bool initialized = _cell_lut_words.size() == count;
+    _cell_lut_words.resize(count);
+    _executor_cell_lut_pending.assign(count, 0);
+    auto &frame = tail.cell_luts;
+    frame.previous_vitality.resize(count);
+    frame.transition_age.resize(count);
+    const uint8_t *water = _world_environment->water_terrain_lookup();
+    for (size_t cell = 0; cell < count; ++cell) {
+        const uint8_t terrain = state.terrain[cell];
+        const uint8_t vegetation = state.vegetation[cell];
+        const uint8_t fog = tail.vision && tail.vision->fog_enabled ? tail.vision->fog[cell] : 255;
+        const uint8_t landform = tail.climate->season && tail.climate->season->landform.size() == count
+            ? tail.climate->season->landform[cell] : opening.landform[cell];
+        const float temp = state.temperature[cell];
+        const float moisture = state.moisture[cell];
+        const float snow = state.snow_cover[cell];
+        const float vitality = state.vegetation_vitality[cell];
+        const auto cur_vitality = uint8_t(pk_q01_byte(vitality));
+        const bool has_prior = prior && prior->vegetation.size() == count && old_age && old_age->size() == count;
+        const uint8_t prev_veg = has_prior ? prior->vegetation[cell] : vegetation;
+        const auto prev_vitality = has_prior
+            ? uint8_t(pk_q01_byte(prior->vegetation_vitality[cell])) : cur_vitality;
+        const auto age = uint8_t(prev_veg != vegetation ? 255 : has_prior
+            ? std::max(0, int((*old_age)[cell]) - 18) : 0);
+        frame.previous_vitality[cell] = prev_vitality;
+        frame.transition_age[cell] = age;
+
+        const uint32_t classes = uint32_t(terrain) | (uint32_t(vegetation) << 8) |
+            (uint32_t(state.cover[cell]) << 16) | (uint32_t(fog) << 24);
+        const uint32_t dynamics = pk_atlas_sig_dynamic(temp, moisture, snow, vitality,
+            state.sea_ice[cell], water[terrain] != 0);
+        const uint32_t ecology = pk_atlas_sig_ecology(temp, moisture, snow, vitality, vegetation,
+            water[terrain] != 0, age, prev_vitality, 0);
+        const uint32_t weather = uint32_t(state.weather_type[cell]) |
+            (uint32_t(pk_q01_byte(state.weather_intensity[cell])) << 8) |
+            (uint32_t(pk_q01_byte(state.cloud_cover[cell])) << 16) |
+            (uint32_t(pk_q01_byte(state.vapor[cell])) << 24);
+        const auto &season = previous && previous->climate ? previous->climate->season : nullptr;
+        const uint8_t old_landform = season && season->landform.size() == count
+            ? season->landform[cell] : opening.landform[cell];
+        const std::array<uint32_t, 4> words{classes, dynamics, ecology, weather};
+        if (!initialized || classes != _cell_lut_words[cell][0] || old_landform != landform)
+            _executor_cell_lut_pending[cell] |= 3;
+        else if (words != _cell_lut_words[cell] || age != 0)
+            _executor_cell_lut_pending[cell] |= 1;
+        _cell_lut_words[cell] = words;
+    }
+}
+
 void NativeSimulationHost::reset_day_tail_for_world_change() {
     _world_environment.reset();
     _executor_narrative.reset();
@@ -75,6 +162,10 @@ void NativeSimulationHost::reset_day_tail_for_world_change() {
     }
     _executor_day_tail.reset();
     _executor_resource_display_cells.clear();
+    _published_days.clear();
+    _cell_lut_words.clear();
+    _cell_lut_pending.clear();
+    _executor_cell_lut_pending.clear();
     take_resource_display_patch();
 }
 

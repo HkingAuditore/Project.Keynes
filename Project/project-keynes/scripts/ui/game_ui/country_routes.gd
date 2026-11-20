@@ -1059,6 +1059,16 @@ func record_committed_day(host, committed_day: int) -> void:
 		host._country_view_model.sample_fiscal_history(committed_day)
 
 
+func record_committed_ledger(host, commit: Dictionary) -> void:
+	host._gdp_ledger.apply_committed_view(commit.gdp)
+	if host._country_view_model == null:
+		return
+	var history = host._country_view_model.fiscal_history()
+	for row: Dictionary in commit.days:
+		if row.has("fiscal"):
+			history.sample(int(row.fiscal.country_handle), row.fiscal, row.treasury_cash, row.day)
+
+
 func refresh_committed_view(host) -> void:
 	host._queue_era_indicator_refresh()
 	if host._country_panel != null and host._country_panel.is_panel_open() \

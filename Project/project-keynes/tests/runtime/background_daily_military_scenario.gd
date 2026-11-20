@@ -303,7 +303,7 @@ static func settle_clock_day(host: WorldRuntimeHost, clock: WorldClock,
 		var status := host.get_generator().get_runtime_control_state()
 		if status.get("simulation_host_state") == "FAULTED":
 			return false
-		if host._runtime_tail_completed_day == day and int(status.get("simulation_committed_day", -1)) == day:
+		if host._runtime_commit_day == day and int(status.get("simulation_committed_day", -1)) == day:
 			return true
 		await tree.process_frame
 	return false
@@ -311,9 +311,16 @@ static func settle_clock_day(host: WorldRuntimeHost, clock: WorldClock,
 
 static func stop_at_committed_day(host: WorldRuntimeHost, tree: SceneTree) -> bool:
 	var generator := host.get_generator()
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline:
+		var report := generator.get_runtime_thread_report()
+		if int(report.get("worker_day_inflight", 0)) == 0:
+			break
+		await tree.process_frame
+	if Time.get_ticks_msec() >= deadline:
+		return false
 	if not bool(generator.request_runtime_stop(true).get("ok", false)):
 		return false
-	var deadline := Time.get_ticks_msec() + 5000
 	while Time.get_ticks_msec() < deadline:
 		if bool(generator.get_runtime_control_state().get("simulation_executor_exited", false)):
 			return true

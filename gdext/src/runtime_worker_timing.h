@@ -10,9 +10,9 @@ class RuntimeWorkerTiming {
 public:
     enum Phase { EXECUTE, INPUT_WAIT, CLOCK_WAIT, SAVE_BUILD, SAVE_PAUSE,
                  PAUSED, OVERHEAD, BOUNDARY_WAIT, ENVIRONMENT_WAIT,
-                 MAIN_TAIL_WAIT, INPUT_RETRY_WAIT, COUNT };
+                 INPUT_RETRY_WAIT, COUNT };
     using Totals = std::array<uint64_t, COUNT>;
-    enum MainWaitReason { ENVIRONMENT_INPUT, DAY_TAIL, OTHER, MAIN_WAIT_REASON_COUNT };
+    enum MainWaitReason { ENVIRONMENT_INPUT, OTHER, MAIN_WAIT_REASON_COUNT };
     struct MainWaitCounter {
         uint64_t count = 0;
         uint64_t usec = 0;
@@ -99,7 +99,7 @@ private:
     }
     Phase bucket() const {
         if (phase == INPUT_WAIT || phase == CLOCK_WAIT || phase == ENVIRONMENT_WAIT ||
-                phase == MAIN_TAIL_WAIT || phase == INPUT_RETRY_WAIT) {
+                phase == INPUT_RETRY_WAIT) {
             if (saving) return SAVE_PAUSE;
             if (paused) return PAUSED;
         }

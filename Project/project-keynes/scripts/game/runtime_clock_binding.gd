@@ -35,8 +35,10 @@ func synchronize() -> void:
 func detach() -> void:
 	_set_fast_headless(false)
 	var clock = _clock_ref.get_ref() if _clock_ref != null else null
-	if clock != null and clock.control_changed.is_connected(_on_control_changed):
-		clock.control_changed.disconnect(_on_control_changed)
+	if clock != null:
+		if clock.control_changed.is_connected(_on_control_changed):
+			clock.control_changed.disconnect(_on_control_changed)
+		clock.bind_runtime_calendar(Callable())
 	_clock_ref = null
 	_apply = Callable()
 	_running = Callable()

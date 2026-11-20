@@ -118,6 +118,12 @@ void NativeSimulationHost::set_clock(bool paused, double speed_days_per_second) 
     runtime_control_wakeup(_control_mutex, _control_cv, [&] {
         _worker_timing.pause(paused);
         _paused.store(paused, std::memory_order_release);
+        _calendar_suspended.store(paused, std::memory_order_release);
+        if (speed_days_per_second <= 1.0 && _world_environment) {
+            const int64_t permitted = std::min(
+                _clock_requested_day.load(std::memory_order_relaxed), committed_day_value() + 1);
+            _clock_requested_day.store(permitted, std::memory_order_release);
+        }
         _speed_days_per_second.store(std::max(0.0, speed_days_per_second),
                                      std::memory_order_release);
     });
@@ -155,37 +161,16 @@ bool NativeSimulationHost::has_pending_climate_input() const {
 }
 
 int64_t NativeSimulationHost::command_seal_day() const noexcept {
-    const int64_t worker_next = _committed_day.load(std::memory_order_acquire) + 1;
-    const bool sealed =
+    const int64_t next = committed_day_value() + 1;
+    if (_world_environment) {
+        return std::max(next,
+            _command_frozen_through.load(std::memory_order_acquire) + 1);
+    }
+    const bool climate_driven =
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-    if (!sealed) return worker_next;
-    // Under the tail gate the worker has started at most tail_done+1, and only
-    // the main thread moves tail_done. Sealing at tail_done+2 lands everything
-    // the main thread derives from day D, before it marks D's tail, on D+1.
-    // The environment watermark runs ahead on frame timing, so it cannot be
-    // the seal here.
-    if (_main_day_tail_gate.load(std::memory_order_acquire))
-        return std::max(worker_next,
-                        _main_day_tail_done.load(std::memory_order_acquire) + 2);
-    return std::max(worker_next, next_environment_day());
-}
-
-void NativeSimulationHost::set_main_day_tail_gate(bool enabled) noexcept {
-    std::lock_guard<std::mutex> control_lock(_control_mutex);
-    _main_day_tail_gate.store(enabled, std::memory_order_release);
-    _control_cv.notify_all();
-}
-
-void NativeSimulationHost::mark_main_day_tail_done(int64_t day) noexcept {
-    {
-        std::lock_guard<std::mutex> control_lock(_control_mutex);
-        if (day <= _committed_day.load(std::memory_order_acquire) &&
-            day > _main_day_tail_done.load(std::memory_order_acquire))
-            _main_day_tail_done.store(day, std::memory_order_release);
-    }
-    _control_cv.notify_all();
+    return climate_driven ? std::max(next, next_environment_day()) : next;
 }
 
 bool NativeSimulationHost::environment_ring_full() const {
@@ -409,9 +394,12 @@ void NativeSimulationHost::worker_main() {
                 (_requested_authority_mask.load(std::memory_order_acquire) &
                  runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
             const auto daily_work_ready = [&] {
-                return has_pending_climate_input() || retained_day_pending ||
-                    (_world_environment && _clock_requested_day.load(std::memory_order_acquire) >
-                        _committed_day.load(std::memory_order_acquire));
+                if (_world_environment) {
+                    return retained_day_pending ||
+                        (!_calendar_suspended.load(std::memory_order_acquire) &&
+                         _clock_requested_day.load(std::memory_order_acquire) > committed_day_value());
+                }
+                return has_pending_climate_input() || retained_day_pending;
             };
             const bool climate_pending = daily_work_ready();
             const bool awaiting_player = player_confirmation_block() != nullptr;
@@ -433,17 +421,10 @@ void NativeSimulationHost::worker_main() {
                             daily_work_ready() :
                             (!_paused.load(std::memory_order_acquire) &&
                              _speed_days_per_second.load(std::memory_order_acquire) > 0.0)));
-                    if (!ready && climate_driven && !blocked) {
-                        const int64_t committed = _committed_day.load(std::memory_order_acquire);
-                        if (main_day_tail_pending()) {
-                            _worker_timing.observe_main_wait(committed, RuntimeWorkerTiming::DAY_TAIL);
-                        } else if (!_world_environment && !_paused.load(std::memory_order_acquire)) {
-                            _worker_timing.observe_main_wait(
-                                committed + 1, RuntimeWorkerTiming::ENVIRONMENT_INPUT);
-                        } else {
-                            _worker_timing.finish_main_wait();
-                        }
-                    }
+                    if (!ready && climate_driven && !_world_environment && !blocked &&
+                            !_paused.load(std::memory_order_acquire))
+                        _worker_timing.observe_main_wait(committed_day_value() + 1,
+                            RuntimeWorkerTiming::ENVIRONMENT_INPUT);
                     return ready;
                 });
                 _worker_timing.finish_main_wait();
@@ -495,24 +476,6 @@ void NativeSimulationHost::worker_main() {
                     player_confirmation_block()) break;
                 const int64_t from_day = _committed_day.load(std::memory_order_acquire);
                 const int64_t day = from_day + 1;
-                const auto tail_ready = [&] { return !main_day_tail_pending(); };
-                if (!tail_ready()) {
-                    std::unique_lock<std::mutex> control_lock(_control_mutex);
-                    _worker_timing.set(RuntimeWorkerTiming::MAIN_TAIL_WAIT);
-                    _control_cv.wait(control_lock, [&] {
-                        const bool ready = tail_ready() || player_requests_pending_locked() ||
-                            _stop_requested.load(std::memory_order_acquire) ||
-                            _save_requested.load(std::memory_order_acquire);
-                        if (!ready) {
-                            _worker_timing.observe_main_wait(from_day, RuntimeWorkerTiming::DAY_TAIL);
-                        }
-                        return ready;
-                    });
-                    _worker_timing.finish_main_wait();
-                    _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
-                    // A save or stop is served at the day boundary first.
-                    if (!tail_ready() || player_requests_pending_locked()) break;
-                }
                 // Keep the authority switch closed across the whole semantic
                 // day transaction through publication and generation release.
                 // Counting only execute_day_plan() leaves publication unprotected.
@@ -525,6 +488,10 @@ void NativeSimulationHost::worker_main() {
                     _worker_timing.finish_main_wait();
                 }
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+                if (_world_environment && !retained_day_pending &&
+                    (_calendar_suspended.load(std::memory_order_acquire) ||
+                     _clock_requested_day.load(std::memory_order_acquire) < day ||
+                     _save_requested.load(std::memory_order_acquire))) break;
                 AtomicCounterScope day_scope(_worker_day_inflight);
                 if (try_fault_injection("worker.inflight.before")) {
                     break;
@@ -533,7 +500,14 @@ void NativeSimulationHost::worker_main() {
                 // draining before that service made their admission race a day.
                 const bool narrative_commands = prepare_narrative_day(day);
                 if (state() == RuntimeWorkerState::FAULTED) break;
-                if (country_delivery_boundary || narrative_commands) drain_commands();
+                {
+                    // No producer can receive a date in a day whose inputs
+                    // have already been taken from the queue.
+                    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+                    if (country_delivery_boundary || narrative_commands) drain_commands();
+                    if (_world_environment)
+                        _command_frozen_through.store(day, std::memory_order_release);
+                }
                 day_receipts.clear();
                 if (pending_commands_dirty) {
                     std::stable_sort(pending_commands.begin() +
@@ -1076,7 +1050,7 @@ void NativeSimulationHost::worker_main() {
                     // schedule gate suppresses production the moment the grant
                     // lands, so the first suppressed tick must already have a
                     // snapshot to consume.
-                    if ((wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE))
+                    if (!_world_environment && (wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE))
                             != 0u) {
                         // Only a day Climate actually advanced may be
                         // published. The worker clock is free to run ahead of
@@ -1119,7 +1093,6 @@ void NativeSimulationHost::worker_main() {
                                                  std::memory_order_release);
                 _last_day_work_units.store(day_commit.work_units,
                                            std::memory_order_release);
-                _committed_day.store(day, std::memory_order_release);
                 _completed_days.fetch_add(1, std::memory_order_relaxed);
                 publish_day(from_day, day, day_commit, day_receipts);
                 _inline_day_pending.store(false, std::memory_order_release);

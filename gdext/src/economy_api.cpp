@@ -2,10 +2,20 @@
 // No logic lives here: each function calls exactly one member, unchanged.
 #include "economy_api.h"
 #include "economy_runtime.h"
+#include "runtime_economy_display.h"
 
 namespace pk {
 namespace economy_api { bool military_purchase_receipt(const NativeEconomyRuntime &e, int64_t s, int64_t &q, int64_t &c) { return e.military_purchase_receipt(s, q, c); } }
 namespace economy_api {
+
+std::vector<RuntimeGdpCell> capture_settlement_output(
+        const NativeEconomyRuntime &economy, uint64_t country) {
+    return economy.capture_settlement_output(country);
+}
+
+godot::Dictionary fiscal_snapshot(const NativeEconomyRuntime &economy, int64_t country) {
+    return economy.fiscal_snapshot(country);
+}
 
 EconomyNaturalResourceCatalogView natural_resource_catalog(const NativeEconomyRuntime &economy) {
     return economy.natural_resource_catalog();

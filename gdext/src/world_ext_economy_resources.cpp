@@ -129,13 +129,13 @@ Dictionary DCWorldExt::apply_runtime_economy_resource_writeback() {
     Dictionary out;
     out["ok"] = true;
     out["applied"] = false;
-    if (!_runtime_host || !_runtime_host->has_resource_display_patch()) return out;
+    if (!_runtime_host || (!_runtime_display_resources &&
+            (_runtime_display_commit.day_tail || !_runtime_host->has_resource_display_patch()))) return out;
     const auto *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
     const int32_t count = economy_api::cell_count(*economy);
     const auto catalog = economy_api::natural_resource_catalog(*economy);
     const auto &reserves = catalog.reserve_slots;
     const auto &changes = catalog.change_slots;
-    PackedStringArray published;
     std::vector<int> reserve_slots;
     std::vector<int> extra_slots;
     auto resolve = [&](const std::string &name, std::vector<int> &slots) {
@@ -155,20 +155,33 @@ Dictionary DCWorldExt::apply_runtime_economy_resource_writeback() {
         }
     }
     // Leave pending values available if the display slots were not ready.
-    const auto patch = _runtime_host->take_resource_display_patch();
+    auto published = std::exchange(_runtime_display_resources, {});
+    const auto patch = published ? std::move(*published) : _runtime_host->take_resource_display_patch();
     if (patch.cells.empty()) return out;
-    auto install = [&](int id, size_t resource, const std::vector<float> &values) {
+    std::vector<uint8_t> changed(patch.cells.size());
+    auto install = [&](int id, size_t resource, const std::vector<float> &values, bool reserve) {
+        const float *old = _slots[id].arr_f32.ptr();
+        bool differs = false;
+        for (size_t row = 0; row < patch.cells.size(); ++row) {
+            if (old[patch.cells[row]] == values[row * reserves.size() + resource]) continue;
+            differs = true;
+            if (reserve) changed[row] = 1;
+        }
+        if (!differs) return;
         float *dst = _slots.write[id].arr_f32.ptrw();
-        for (size_t cell = 0; cell < patch.cells.size(); ++cell)
-            dst[patch.cells[cell]] = values[cell * reserves.size() + resource];
+        for (size_t row = 0; row < patch.cells.size(); ++row)
+            dst[patch.cells[row]] = values[row * reserves.size() + resource];
+        _flush_slot_to_map(id, false);
     };
     for (size_t resource = 0; resource < reserves.size(); ++resource) {
-        install(reserve_slots[resource], resource, patch.reserve);
-        install(extra_slots[resource], resource, patch.extra);
-        published.append(String(reserves[resource].c_str()));
-        published.append(String(changes[resource].c_str()));
+        install(reserve_slots[resource], resource, patch.reserve, true);
+        install(extra_slots[resource], resource, patch.extra, false);
     }
-    flush_slots_to_map_keys(published);
+    PackedInt32Array cells;
+    for (size_t row = 0; row < patch.cells.size(); ++row)
+        if (changed[row]) cells.append(patch.cells[row]);
+    if (!cells.is_empty() && _map_data && _map_data->has_signal(StringName("resource_visual_inputs_changed")))
+        _map_data->emit_signal(StringName("resource_visual_inputs_changed"), 1, cells);
     out["applied"] = true;
     out["cells"] = static_cast<int64_t>(patch.cells.size());
     return out;

@@ -796,6 +796,7 @@ bool parse_military_command(const Dictionary &row, MilitaryCommand &command,
         return false;
     }
     command.op = op;
+    command.effective_day = dict_i64(row, "effective_day", 0);
     command.country = static_cast<uint64_t>(dict_i64(row, "country", 0));
     command.army = static_cast<uint64_t>(dict_i64(row, "army", 0));
     command.other = static_cast<uint64_t>(dict_i64(row, "other", 0));
@@ -1427,7 +1428,9 @@ bool NativeMilitaryRuntime::submit(MilitaryCommand command, std::string &error) 
 
 bool NativeMilitaryRuntime::submit_independence(
         uint64_t old_owner, uint64_t new_owner, int32_t cell, int64_t day) {
+    const bool created = core().country_slot_for_handle(new_owner) < 0;
     ensure_military_country_slots();
+    if (created) core().set_ai_country(core().country_slot_for_handle(new_owner), true);
     MilitaryCommand command;
     command.op = MCMD_WAR_DECLARE_FORCED;
     command.country = old_owner;
@@ -1443,7 +1446,8 @@ bool NativeMilitaryRuntime::submit_independence(
 void NativeMilitaryRuntime::admit(MilitaryCommandBatch &batch) {
     for (auto &row : batch.rows) {
         if (!row.error.empty()) continue;
-        row.command.effective_day = batch.day;
+        row.effective_day = std::max(row.command.effective_day, batch.day);
+        row.command.effective_day = row.effective_day;
         submit(std::move(row.command), row.error);
     }
     batch.sequence = _military_sequence;
@@ -1472,7 +1476,9 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
         _military->admit(*request);
     }
     Array rejected;
+    PackedInt64Array effective_days;
     for (const auto &row : request->rows) {
+        effective_days.push_back(row.error.empty() ? row.effective_day : -1);
         if (row.error.empty()) continue;
         Dictionary entry;
         entry["index"] = row.index;
@@ -1485,7 +1491,9 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
     out["accepted"] = accepted;
     out["rejected"] = rejected;
     out["code"] = rejected.is_empty() ? String("ok") : String("military_command_rejected");
-    if (accepted > 0) out["effective_day"] = request->day;
+    out["effective_days"] = effective_days;
+    if (accepted > 0)
+        out["effective_day"] = *std::max_element(effective_days.ptr(), effective_days.ptr() + effective_days.size());
     out["next_sequence"] = request->sequence;
     return out;
 }

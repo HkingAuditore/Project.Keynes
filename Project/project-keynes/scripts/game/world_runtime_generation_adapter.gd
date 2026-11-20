@@ -9,10 +9,8 @@ func _prepare_world_data(host) -> Dictionary:
 	# Reset the late-loading progress before rebinding presentation.
 	host._visual_progress = 0.0
 	host._clear_climate_capacity_pending()
-	host._runtime_notified_generation = 0
 	host._runtime_commit_generation = 0
 	host._runtime_commit_day = -1
-	host._runtime_tail_completed_day = -1
 	host._runtime_last_commit.clear()
 	host._runtime_vision_result.clear()
 	host._vision_dirty_indices = PackedInt32Array()
@@ -360,7 +358,6 @@ func _start_production_shadow_worker(host) -> void:
 	# 遗留的 true 会让 host 不 spawn 线程，而调用方以为 worker 起了。
 	var want_inline = climate_authority_active and web_wants_inline
 	config["native_daily_inline"] = want_inline
-	config["main_day_tail_gate"] = climate_authority_active and not want_inline
 	var native_environment: bool = climate_authority_active and host.runtime_authority_domain_mask == 0xFFF
 	if native_environment and not host._native_environment_active:
 		var seeded: Dictionary = host._generator.initialize_world_environment()
@@ -368,8 +365,7 @@ func _start_production_shadow_worker(host) -> void:
 			host._observe_runtime_worker_fault({"simulation_host_state": "FAULTED",
 				"fault_code": String(seeded.get("code", "runtime_environment_seed_failed"))})
 			return
-	host._runtime_notified_generation = 0
-	host._runtime_commit_generation = 0  # 新 worker 代数从 0 起，旧游标会挡住提交、停住日尾闸门
+	host._runtime_commit_generation = 0
 	host._presentation.reset_worker_views()
 	var started: Dictionary = host._generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
@@ -415,7 +411,8 @@ func _start_production_shadow_worker(host) -> void:
 			return
 		push_error("[runtime-worker] native_daily_inline requested but host reported false")
 	if host._world_clock != null:
-		host._world_clock.set_max_worker_lag_days(2 if native_environment and not want_inline else 0)
+		host._world_clock.bind_runtime_calendar(Callable(host, "_admit_runtime_calendar")
+			if native_environment and not want_inline else Callable())
 	if climate_authority_active:
 		print("[runtime-worker] production ACTIVE started mask=",
 			host.runtime_authority_domain_mask,

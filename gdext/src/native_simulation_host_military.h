@@ -24,6 +24,7 @@ struct RuntimeEnvironmentSnapshot;
 struct MilitaryCommandBatch {
     struct Row {
         int64_t index = 0;
+        int64_t effective_day = -1;
         MilitaryCommand command;
         std::string error;
     };

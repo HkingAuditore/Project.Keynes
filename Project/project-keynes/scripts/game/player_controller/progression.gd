@@ -446,11 +446,13 @@ func capture_view_state(host) -> Dictionary:
 		"era_advancement": host._era_advancement.capture(),
 		"military_budget": host._military_budget_state.duplicate(),
 		"narrative_event_view": host._narrative_flow.capture(),
+		"narrative_notices": host._narrative_service.capture_notice_history(),
 	}
 
 func restore_view_state(host, map, state: Dictionary) -> void:
 	host._annual_report_flow.restore(state.get("annual_report_view", {}))
 	host._narrative_flow.restore(state.get("narrative_event_view", {}))
+	host._narrative_service.restore_notice_history(state.get("narrative_notices", []))
 	host._command_sequence = maxi(1, int(state.get("next_command_sequence", 1)))
 	host._era_reward_resume_running = bool(state.get("era_reward_resume_running", false))
 	host._era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
@@ -593,6 +595,8 @@ func _validate_owned_cell(host, facade, cell: int) -> Dictionary:
 	return host._result(true, "ok", "")
 
 func _next_effective_day(host) -> int:
+	if host._runtime_host != null and host._runtime_host._native_environment_active:
+		return maxi(0, host._runtime_host._runtime_commit_day + 1)
 	return maxi(0, host._world_clock.day_index() + 1) if host._world_clock != null else 0
 
 

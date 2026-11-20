@@ -58,15 +58,13 @@ func _ensure_maritime_factor(map: MapData, decay_cells: float) -> PackedFloat32A
 # _async_pass_a_kernel_pure 的硬校验 lane 列表（gdext/src/runtime_climate_passes.cpp
 # 顶部的维度检查）。任一条 size != n_cells，共享内核直接 return false。
 
-func publish_worker_climate_visuals(defer_upload: bool) -> Dictionary:
-	# Reuse the production cell LUT encoders; no simulation or full map rebake.
+func publish_worker_climate_visuals(defer_upload: bool, commit: Dictionary = {}) -> Dictionary:
 	if _generator._baker == null or _generator._sus_map == null or _generator._last_world == null:
 		return {}
-	# Weather LUT is fully re-encoded here: the worker writes weather fields back
-	# but never weather_dirty_mask, so refresh_weather_lut_from_weather's dirty
-	# subset stays empty and the LUT would freeze at its world-gen contents.
+	var dirty: PackedInt32Array = commit.get("display_dirty_cells", PackedInt32Array())
 	return DCCellLutBaker.refresh_cell_luts_daily(_generator._baker,
-			_generator._sus_map, _generator._last_world, PackedInt32Array(), true, true, defer_upload)
+			_generator._sus_map, _generator._last_world, dirty,
+			not commit.has("display_dirty_cells"), true, defer_upload, commit)
 
 
 

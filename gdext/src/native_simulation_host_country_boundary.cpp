@@ -1066,9 +1066,7 @@ RuntimeCountryReadView NativeSimulationHost::country_worker_read_view(
     out.generation = _country_read_view_generation;
     out.patch_base_generation = _country_read_view_patch_base_generation;
     out.dirty_families = _country_read_view_dirty_families;
-    out.territory_watermark =
-        (_country_read_view_dirty_families & RUNTIME_DIRTY_COUNTRY_TERRITORY) != 0
-            ? _country_read_view_generation : 0;
+    out.territory_watermark = _country_read_view_territory_generation;
     out.research_watermark =
         (_country_read_view_dirty_families & RUNTIME_DIRTY_COUNTRY_STATE) != 0
             ? _country_read_view_generation : 0;

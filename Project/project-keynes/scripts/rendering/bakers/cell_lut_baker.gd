@@ -296,7 +296,7 @@ static func _probe_float(baker: MapBaker, values: PackedFloat32Array, idx: int) 
 static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cache_valid: bool = false,
 		publish_weather_lut: bool = true,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
-		force_full_encode: bool = true, defer_upload: bool = false) -> Dictionary:
+		force_full_encode: bool = true, defer_upload: bool = false, runtime_commit: Dictionary = {}) -> Dictionary:
 	var total_t0_us := Time.get_ticks_usec()
 	var report: Dictionary = {
 		"path": "gdscript",
@@ -352,6 +352,7 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 			"terrain_sea_ice": int(TerrainType.TERRAIN.SEA_ICE),
 			"veg_none": int(VegetationType.VEG.NONE),
 			"cache_valid": cache_valid,
+			"runtime_frame": runtime_commit.has("display_dirty_cells"),
 			"dirty_indices": dirty_indices,
 			"force_full_encode": force_full_encode,
 			"include_weather_lut": publish_weather_lut,
@@ -379,11 +380,13 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 				report["dirty_cells"] = n_cells \
 						if bool(out.get("full_encode", force_full_encode)) else dirty_indices.size()
 				var wlut: PackedByteArray = out.get("weather_lut", PackedByteArray())
+				var full := bool(out.get("full_encode", force_full_encode))
+				var classes: PackedInt32Array = runtime_commit.get("display_class_cells", dirty_indices)
 				if defer_upload:
-					_stage_cell_lut_upload(baker, world, e, d, c, wlut)
+					_stage_cell_lut_upload(baker, world, e, d, c, wlut, dirty_indices, classes, full)
 				else:
 					_publish_cell_lut_textures(baker, world, e, d, c, report,
-							dirty_indices, force_full_encode)
+							dirty_indices, full, classes)
 					if not wlut.is_empty():
 						report.merge(baker._publish_weather_lut_bytes(wlut, world, lw, lh), true)
 				report["lut_total_ms"] = float(Time.get_ticks_usec() - total_t0_us) / 1000.0
@@ -402,7 +405,8 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 		e: PackedByteArray, d: PackedByteArray, c: PackedByteArray, report: Dictionary,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
-		force_full_encode: bool = true) -> void:
+		force_full_encode: bool = true,
+		class_indices: PackedInt32Array = PackedInt32Array()) -> void:
 	var lw := world.lut_dims.x
 	var lh := world.lut_dims.y
 	var enum_changed: bool = world.enum_lut_tex == null \
@@ -471,7 +475,8 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 	# 那一个实例（与 _publish_weather_table_from_luts 同一先例）；null 时
 	# _publish_cell_table 自己会把 bound/layers 归零。
 	report.merge(_publish_cell_table(baker, baker._last_bake_map, world, e, d,
-		enum_changed, dyn_changed), true)
+		enum_changed or not class_indices.is_empty(), dyn_changed,
+		class_indices, force_full_encode), true)
 	var bounce_t0_us := Time.get_ticks_usec()
 	report["bounce_lut_published"] = false
 	if enum_changed or dyn_changed or world.bounce_lut_tex == null:
@@ -481,8 +486,13 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 
 static func _stage_cell_lut_upload(baker: MapBaker, world: WorldData,
 		enum_bytes: PackedByteArray, dyn_bytes: PackedByteArray, eco_bytes: PackedByteArray,
-		weather_bytes: PackedByteArray) -> void:
+		weather_bytes: PackedByteArray, dirty: PackedInt32Array,
+		classes: PackedInt32Array, full: bool) -> void:
 	var pending := world.staged_cell_lut_upload
+	pending["full_encode"] = full or bool(pending.get("full_encode", false))
+	if not pending.full_encode:
+		pending["dirty"] = _merge_staged_cells(pending.get("dirty", PackedInt32Array()), dirty)
+		pending["classes"] = _merge_staged_cells(pending.get("classes", PackedInt32Array()), classes)
 	pending["enum_bytes"] = enum_bytes
 	pending["dyn_bytes"] = dyn_bytes
 	pending["eco_bytes"] = eco_bytes
@@ -499,16 +509,32 @@ static func _stage_cell_lut_upload(baker: MapBaker, world: WorldData,
 	pending["weather_current"] = weather_bytes
 
 
+static func _merge_staged_cells(previous: PackedInt32Array, current: PackedInt32Array) -> PackedInt32Array:
+	if previous.is_empty():
+		return current
+	if current.is_empty():
+		return previous
+	var cells := {}
+	for cell in previous:
+		cells[cell] = true
+	for cell in current:
+		cells[cell] = true
+	return PackedInt32Array(cells.keys())
+
+
 static func flush_staged_cell_lut_upload(baker: MapBaker, world: WorldData) -> void:
 	if world == null or world.staged_cell_lut_upload.is_empty():
 		return
 	var pending := world.staged_cell_lut_upload
 	world.staged_cell_lut_upload = {}
 	_publish_cell_lut_textures(baker, world, pending["enum_bytes"],
-			pending["dyn_bytes"], pending["eco_bytes"], {})
+			pending["dyn_bytes"], pending["eco_bytes"], {}, pending.get("dirty", PackedInt32Array()),
+			pending.full_encode, pending.get("classes", PackedInt32Array()))
 	if pending.has("weather_current"):
 		_upload_weather_lut_pair(baker, world, world.lut_dims.x, world.lut_dims.y,
 				pending["weather_previous"], pending["weather_current"])
+		_publish_weather_table_from_luts(baker, world, pending["weather_current"],
+			world.lut_dims.x, world.lut_dims.y)
 
 
 # GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
@@ -606,7 +632,8 @@ static func cell_table_layer_target(n_cells: int, map_w: int, map_h: int) -> int
 # 由同一份 RGBA 数据派生。超出 index 空间时，第 4 层是占位图。
 static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 		enum_bytes: PackedByteArray, dyn_bytes: PackedByteArray,
-		static_changed: bool = true, state_changed: bool = true) -> Dictionary:
+		static_changed: bool = true, state_changed: bool = true,
+		class_indices: PackedInt32Array = PackedInt32Array(), full_classes: bool = true) -> Dictionary:
 	var report: Dictionary = {
 		"cell_table_published": false,
 		"cell_table_reason": "",
@@ -675,7 +702,8 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 	var images: Array[Image] = [null, null, null, null]
 	var required_images := [false, false, false, false]
 	if need_all or static_changed:
-		var packed := _cell_table_static_words(map, world, enum_bytes, classes.duplicate(), aux.duplicate())
+		var packed := _cell_table_static_words(map, world, enum_bytes, classes, aux,
+			class_indices, need_all or full_classes)
 		classes = packed[0]
 		aux = packed[1]
 		if need_all or classes != previous_class:
@@ -786,38 +814,28 @@ static func cell_table_images_valid(images: Array, required: Array) -> bool:
 
 
 static func _cell_table_static_words(map: MapData, world: WorldData, enums: PackedByteArray,
-		classes: PackedInt32Array, aux: PackedInt32Array) -> Array[PackedInt32Array]:
+		classes: PackedInt32Array, aux: PackedInt32Array,
+		indices: PackedInt32Array, full: bool) -> Array[PackedInt32Array]:
 	var count := map.cell_count()
-	var landforms := map.landform_arr
-	var fill_landforms := landforms.size() < count
-	if fill_landforms:
-		landforms = PackedByteArray()
-		landforms.resize(count)
-	var depth := PackedByteArray()
-	depth.resize(count)
-	# Same center-of-cell depth and 8-bit quantization as the full table.
-	var sea_norm := maxf(world.sea_level, 1e-4)
-	for cell in map.all_cells():
-		if cell == null or cell.index < 0 or cell.index >= count:
-			continue
-		var index: int = cell.index
-		if fill_landforms:
-			landforms[index] = int(cell.landform) & 0xff
-		if cell.water_depth > 1e-4:
-			var norm := PK_LAKE_DEPTH_NORM if cell.terrain == TerrainType.TERRAIN.LAKE else sea_norm
-			depth[index] = CellTableCodecScript.q01_byte(maxf(cell.water_depth - cell.elevation, 0.0) / norm)
+	full = full or classes.size() != count or aux.size() != count
 	classes.resize(count)
 	aux.resize(count)
-	var enum_words := enums.to_int32_array()
-	for index in count:
-		var packed := enum_words[index]
-		# Keep the enum RGB codes, replace A with the landform, and move fog A to aux R.
-		var class_word := (packed & 0x00ffffff) | (int(landforms[index]) << 24)
-		var aux_word := ((packed >> 24) & 0xff) | (int(depth[index]) << 8)
-		if (classes[index] & 0xffffffff) != class_word:
-			classes[index] = class_word
-		if aux[index] != aux_word:
-			aux[index] = aux_word
+	var landforms := map.landform_arr
+	var sea_norm := maxf(world.sea_level, 1e-4)
+	var words := enums.to_int32_array()
+	for row in (count if full else indices.size()):
+		var index := row if full else indices[row]
+		var cell := map.cell_at(index)
+		if cell == null:
+			continue
+		var landform := int(landforms[index]) if index < landforms.size() else int(cell.landform)
+		var depth := 0
+		if cell.water_depth > 1e-4:
+			var norm := PK_LAKE_DEPTH_NORM if cell.terrain == TerrainType.TERRAIN.LAKE else sea_norm
+			depth = CellTableCodecScript.q01_byte(maxf(cell.water_depth - cell.elevation, 0.0) / norm)
+		var word := words[index]
+		classes[index] = (word & 0x00ffffff) | (landform << 24)
+		aux[index] = ((word >> 24) & 0xff) | (depth << 8)
 	return [classes, aux]
 
 
@@ -920,7 +938,7 @@ static func _build_offset_to_index(map: MapData, map_w: int, map_h: int) -> Pack
 ##   layer_bytes  : 与 layer_ids 一一对应的、已是 offset 空间的字节
 static func weather_table_commit_plan(weather_src: PackedByteArray, wind_src: PackedByteArray,
 		o2i: PackedInt32Array, map_w: int, map_h: int, n_cells: int,
-		cur_before: int) -> Dictionary:
+		cur_before: int, identity: bool = false) -> Dictionary:
 	var plan: Dictionary = {
 		"ok": false,
 		"reason": "",
@@ -948,11 +966,14 @@ static func weather_table_commit_plan(weather_src: PackedByteArray, wind_src: Pa
 	if weather_src.size() < n_cells * bytes_per_cell or wind_src.size() < n_cells * bytes_per_cell:
 		plan.reason = "lut_payload_too_small"
 		return plan
-	var weather_layer: PackedByteArray = CellTableCodecScript.reorder_to_offset(
-		weather_src, o2i, map_w, map_h, bytes_per_cell, WEATHER_TABLE_PAD_TYPE)
-	var wind_layer: PackedByteArray = CellTableCodecScript.reorder_to_offset(
-		wind_src, o2i, map_w, map_h, bytes_per_cell, 0)
 	var want: int = map_w * map_h * bytes_per_cell
+	var weather_layer := weather_src if weather_src.size() == want else weather_src.slice(0, want)
+	var wind_layer := wind_src if wind_src.size() == want else wind_src.slice(0, want)
+	if not identity:
+		weather_layer = CellTableCodecScript.reorder_to_offset(
+			weather_src, o2i, map_w, map_h, bytes_per_cell, WEATHER_TABLE_PAD_TYPE)
+		wind_layer = CellTableCodecScript.reorder_to_offset(
+			wind_src, o2i, map_w, map_h, bytes_per_cell, 0)
 	if weather_layer.size() != want or wind_layer.size() != want:
 		# reorder_to_offset 在 texels<=0 时才返回空；这里等价于上面的尺寸检查，留着做双保险。
 		plan.reason = "reorder_size_mismatch"
@@ -1013,9 +1034,10 @@ static func _publish_weather_table(baker: MapBaker, map: MapData, world: WorldDa
 	var map_w: int = int(map.width)
 	var map_h: int = int(map.height)
 	var n_cells: int = map.cell_count()
-	var o2i: PackedInt32Array = _cell_offset_layout(baker, map, map_w, map_h).offsets
+	var layout := _cell_offset_layout(baker, map, map_w, map_h)
 	var plan: Dictionary = weather_table_commit_plan(
-		weather_bytes, wind_bytes, o2i, map_w, map_h, n_cells, world.weather_table_cur)
+		weather_bytes, wind_bytes, layout.offsets, map_w, map_h, n_cells,
+		world.weather_table_cur, layout.identity)
 	if not bool(plan.get("ok", false)):
 		world.weather_table_valid = false
 		world.weather_table_cur = -1
@@ -1055,8 +1077,8 @@ static func _publish_weather_table(baker: MapBaker, map: MapData, world: WorldDa
 		# ── 整张重建：4 层 Image 按层号排好，一次 create_from_images ─────────────
 		if not bool(plan.get("rebuild", false)):
 			# 增量计划但形状不对 ⇒ 提级成重建（首次 / 换图 / 上次失败 / 无 update_layer）。
-			plan = weather_table_commit_plan(weather_bytes, wind_bytes, o2i,
-				map_w, map_h, n_cells, -1)
+			plan = weather_table_commit_plan(weather_bytes, wind_bytes, layout.offsets,
+				map_w, map_h, n_cells, -1, layout.identity)
 			if not bool(plan.get("ok", false)):
 				world.weather_table_valid = false
 				world.weather_table_cur = -1
@@ -1344,13 +1366,14 @@ static func refresh_weather_lut_from_weather(baker: MapBaker, map: MapData, worl
 static func refresh_cell_luts_daily(baker: MapBaker, map: MapData, world: WorldData,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
 		force_full_encode: bool = true,
-		publish_weather_lut: bool = false, defer_upload: bool = false) -> Dictionary:
+		publish_weather_lut: bool = false, defer_upload: bool = false,
+		runtime_commit: Dictionary = {}) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
-	if defer_upload:
+	if defer_upload or not runtime_commit.is_empty():
 		return bake_cell_luts(baker, map, world, true, publish_weather_lut,
-				dirty_indices, force_full_encode, true)
+				dirty_indices, force_full_encode, defer_upload, runtime_commit)
 	return baker.bake_cell_luts(map, world, true, publish_weather_lut, dirty_indices, force_full_encode)
 
 

@@ -54,7 +54,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	if not bool(report.get("simulation_worker_ready", report.get(
 			"authority_ready", false))):
 		return
-	var commit: Dictionary = host._generator.poll_runtime_commit(host._runtime_commit_generation)
+	var commit: Dictionary = host._generator.poll_runtime_commit(host._runtime_commit_generation, true)
 	var received_new_commit = bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > host._runtime_commit_generation
@@ -70,28 +70,26 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host._apply_climate_writeback_if_authoritative(report)
 		if not host._native_environment_active and host._runtime_climate_writeback_last_day < commit_day:
 			return
-	elif report_override.is_empty():
+	elif not host._native_environment_active and report_override.is_empty():
 		host._apply_climate_writeback_if_authoritative(report)
 	var whole_graph = bool(report.get("authority_ready", false))
 	if received_new_commit:
 		var publish_started_usec = Time.get_ticks_usec()
 		var generation = int(commit.get("generation", 0))
-		var from_day := int(commit.get("from_day", -1))
-		if host._runtime_commit_generation == 0 and from_day >= 0:
-			# A restored boundary is already settled. The first new day's
-			# origin also identifies it if the restored header was not polled.
-			host._runtime_tail_completed_day = maxi(host._runtime_tail_completed_day, from_day)
+		var old_day: int = host._runtime_commit_day
 		host._runtime_commit_generation = generation
 		host._runtime_commit_day = commit_day
-		if commit_day <= host._runtime_tail_completed_day:
-			host._runtime_notified_generation = generation
+		if commit_day <= old_day or int(commit.get("from_day", -1)) == commit_day:
+			if host._native_environment_active:
+				host._generator.get_data_core_world_ext().finish_runtime_display_frame()
 			return
-		host._runtime_last_commit = commit.duplicate(false)
-		host._generator.record_runtime_main_step(commit_day, &"queue_day_tail")
-		# Whole-graph ACTIVE bypasses run_daily_tick. Record this exact day while
-		# the worker is still at the boundary. Presentation follows the tail.
+		host._runtime_last_commit = commit
+		var records: Array = commit.get("days", [])
+		host._runtime_last_commit["batch_from_day"] = int(records[0].day) - 1 if not records.is_empty() \
+			else int(commit.get("from_day", commit_day - 1))
+		# Whole-graph ACTIVE records the frame once after installing the last day.
 		if whole_graph:
-			host._fast_tick_count += 1
+			host._fast_tick_count += commit_day - maxi(0, old_day)
 			host._pending_tick_start_usec = publish_started_usec
 			host._pending_tick_sus_ms = 0.0
 			host._pending_tick_skipped_day = false
@@ -99,6 +97,8 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			if dcp:
 				host._dcp_publish_ms = float(Time.get_ticks_usec() - publish_started_usec) / 1000.0
 	host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
+	if not received_new_commit:
+		return
 	var ext = host._generator.get_data_core_world_ext()
 	var resource_usec := Time.get_ticks_usec()
 	var writeback := EconomyDisplay.apply_published_resources(ext)
@@ -117,31 +117,33 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		push_warning("Vision display snapshot: " + String(vision.get("reason", "")))
 	if whole_graph:
 		host._consume_country_worker_read_view_if_authoritative()
-	if host._runtime_commit_generation > host._runtime_notified_generation:
-		host._runtime_notified_generation = host._runtime_commit_generation
-		var from_day := int(host._runtime_last_commit.get("from_day", host._runtime_commit_day))
-		host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
-		if whole_graph:
-			var finish_usec := Time.get_ticks_usec()
-			host.finish_daily_tick(0.0)
-			if dcp:
-				host._dcp_finish_ms = float(Time.get_ticks_usec() - finish_usec) / 1000.0
-	_mark_runtime_day_tail(host, host._runtime_commit_day)
-	if host._runtime_tail_completed_day < host._runtime_commit_day \
-			and host._generator.get_data_core_world_ext() != null:
-		return
-	if not host._presentation.needs_worker_view(host._runtime_commit_generation):
-		return
+		if host._native_environment_active:
+			host._consume_modifier_worker_snapshot_if_authoritative()
+	var from_day := int(host._runtime_last_commit.batch_from_day)
+	var days: Array = commit.get("days", [])
+	if whole_graph:
+		var finish_usec := Time.get_ticks_usec()
+		host.finish_daily_tick(0.0)
+		if dcp:
+			host._dcp_finish_ms = float(Time.get_ticks_usec() - finish_usec) / 1000.0
 	var visual_started_us = Time.get_ticks_usec()
 	if bool(report.get("authority_ready", false)):
 		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
 				host._renderer, host._generator._baker, host._world_data)
-		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload)
+		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload, commit)
+		host._vision_dirty_indices = PackedInt32Array()
 		if host._renderer != null:
 			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
 			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
 		host.mark_map_overlay_dirty(&"worker_committed")
-	host._presentation.queue_worker_commit(int(host._runtime_last_commit.get("from_day", host._runtime_commit_day)),
+	if host._world_clock != null:
+		host._world_clock.publish_runtime_date(host._runtime_commit_day)
+	if not days.is_empty():
+		host.simulation_day_records.emit(days)
+	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
+	if host._native_environment_active:
+		ext.finish_runtime_display_frame()
+	host._presentation.queue_worker_commit(from_day,
 			host._runtime_commit_day, host._runtime_commit_generation)
 	host._runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - visual_started_us) / 1000.0
 	host._sched_proc_visual_ms += host._runtime_last_visual_apply_ms
@@ -152,18 +154,6 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			host._runtime_last_ui_feedback_ms,
 			host._runtime_last_visual_apply_ms,
 			host._runtime_last_gpu_upload_ms)
-
-
-## D+1 still waits for the later main-thread stages to settle day D.
-func _mark_runtime_day_tail(host, committed_day: int) -> void:
-	var ext = host._generator.get_data_core_world_ext() if committed_day >= 0 \
-		and host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("mark_runtime_day_tail_done"):
-		return
-	if committed_day > host._runtime_tail_completed_day:
-		host._generator.record_runtime_main_step(committed_day, &"acknowledge_day_tail")
-	host._runtime_tail_completed_day = maxi(host._runtime_tail_completed_day, committed_day)
-	ext.mark_runtime_day_tail_done(committed_day)
 
 
 ## Season refresh changes cover (snowline / flood / glacier), which feeds the
@@ -243,9 +233,7 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 			applied.get("code", "unknown")))
 		return
 	if not bool(applied.get("applied", false)):
-		# A consumed snapshot may contain no compatible fields. Its generation still
-		# closes this day's climate handoff; an unavailable snapshot reports the
-		# same generation we requested and must keep the day-tail gate closed.
+		# An empty compatible snapshot still advances the display cursor.
 		var consumed_generation := int(applied.get("generation", -1))
 		if consumed_generation > host._runtime_climate_writeback_generation:
 			host._runtime_climate_writeback_generation = consumed_generation

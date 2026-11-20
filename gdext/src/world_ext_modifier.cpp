@@ -1249,32 +1249,38 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
         out["reason"] = "modifier_not_worker_authoritative";
         return out;
     }
-    // The Modifier stage can fill its ring before the whole day commits.
-    // Read only at a settled boundary, and leave an admitted day to the worker.
-    auto boundary = _runtime_host->try_lock_economy_read_boundary();
-    if (!boundary.owns_lock()) {
-        out["ok"] = true;
-        out["reason"] = "economy_day_inflight";
-        return out;
-    }
     const uint64_t cursor = after_generation < 0
         ? std::numeric_limits<uint64_t>::max()
         : static_cast<uint64_t>(after_generation);
-    uint32_t slot = 0;
-    if (!_runtime_host->try_acquire_modifier_snapshot(cursor, slot)) {
+    RuntimeCommit display = _runtime_display_commit;
+    if (!display.day_tail) _runtime_host->poll_commit(0, display);
+    const auto committed = display.day_tail ? display.day_tail->modifier : nullptr;
+    RuntimeModifierPodSnapshot legacy;
+    if (!committed) {
+        // A partial executor still publishes this view before its other
+        // domains have settled. Copy it only at a day boundary.
+        auto boundary = _runtime_host->try_lock_economy_read_boundary();
+        if (!boundary.owns_lock()) {
+            out["ok"] = true;
+            out["reason"] = "economy_day_inflight";
+            return out;
+        }
+        uint32_t slot = 0;
+        if (!_runtime_host->try_acquire_modifier_snapshot(cursor, slot)) {
+            out["ok"] = true;
+            return out;
+        }
+        legacy = _runtime_host->modifier_snapshot_buffer(slot);
+        _runtime_host->release_modifier_snapshot(slot);
+    }
+    const auto &snapshot = committed ? *committed : legacy;
+    if (snapshot.generation <= cursor) {
         out["ok"] = true;
-        out["reason"] = "";
         return out;
     }
-    // Copy out of the ring before apply. Modifier release returns the slot to
-    // FREE; without a local copy a concurrent publish can rewrite the buffer
-    // while legacy Store vectors are still being rebuilt from it.
-    const RuntimeModifierPodSnapshot snapshot =
-        _runtime_host->modifier_snapshot_buffer(slot);
     const int64_t generation = static_cast<int64_t>(snapshot.generation);
     const int64_t committed_day = snapshot.committed_day;
     const int64_t state_hash = static_cast<int64_t>(snapshot.state_hash);
-    _runtime_host->release_modifier_snapshot(slot);
     bool shape_ok = snapshot.abi_version == RUNTIME_MODIFIER_POD_ABI_VERSION &&
         snapshot.catalog_hash == _runtime_host->modifier_pod_catalog_hash();
     for (const RuntimeModifierPodEntry &entry : snapshot.entries)

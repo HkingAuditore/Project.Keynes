@@ -731,7 +731,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.state, host.mode, host.authority_ready, report.interactive,
             host.authoritative_domain_mask, host.requested_authority_mask, host.committed_day});
         constexpr std::array<const char *, RuntimeWorkerTiming::MAIN_WAIT_REASON_COUNT> wait_names = {
-            "environment_input", "day_tail", "other"};
+            "environment_input", "other"};
         Dictionary waits_by_day;
         for (const auto &day : _runtime_host->main_waits_by_day()) {
             if (day.day < 0) continue;

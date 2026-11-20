@@ -22,11 +22,15 @@ func _run() -> void:
 	var days := WARMUP_DAY + RELEASE_DAYS
 	var normal_rows: Array = normal.get("rows", [])
 	var stalled_rows: Array = stalled.get("rows", [])
-	_expect("both executions sampled the full day range",
-		normal_rows.size() == days and stalled_rows.size() == days)
+	_expect("serial execution and the batch both reached the final day",
+		normal_rows.size() == days and stalled_rows.size() == WARMUP_DAY + 1
+		and int(stalled_rows.back().day) == days)
+	_expect("each day, including days in the held batch, has the same committed hashes",
+		normal.get("publications") == stalled.get("publications"))
 	_expect("command log, effective dates and map match", normal.get("commands") == stalled.get("commands"))
-	for index in range(mini(normal_rows.size(), stalled_rows.size())):
-		_expect("matching full daily summary at day %d" % (index + 1), normal_rows[index] == stalled_rows[index])
+	for index in range(stalled_rows.size()):
+		var day := int(stalled_rows[index].day)
+		_expect("matching full displayed summary at day %d" % day, normal_rows[day - 1] == stalled_rows[index])
 
 	print("BACKGROUND_DAILY_BASELINE=" + JSON.stringify({
 		"seed": SEED, "width": MAP_WIDTH, "height": MAP_HEIGHT, "countries": COUNTRY_COUNT,
@@ -38,12 +42,11 @@ func _run() -> void:
 		_expect("main thread actually stopped between process frames", int(hold.process_frames) == 0)
 		_expect("worker stayed ACTIVE and did not fault during hold", bool(hold.worker_healthy))
 		_expect("hold started after the warmup boundary", int(hold.start_day) == WARMUP_DAY)
-		_expect("current clock path admitted a real next simulation day", int(hold.admitted_through) > WARMUP_DAY)
+		_expect("one request admitted all three days", int(hold.admitted_through) == days)
+		_expect("A: all admitted days commit without a foreground frame", int(hold.committed_after) == days)
+		_expect("the foreground consumes the three days in order together",
+			stalled.get("last_batch_size", 0) == RELEASE_DAYS)
 		print("BACKGROUND_DAILY_HOLD=" + JSON.stringify(hold))
-		if _failures == 0:
-			_expect_target_failure("A", int(hold.committed_after) == WARMUP_DAY + RELEASE_DAYS,
-				"required %d days, committed %d since release (%d during hold)" % [
-					RELEASE_DAYS, int(hold.committed_after) - WARMUP_DAY, int(hold.committed_during_hold)])
 	else:
 		_expect("hold evidence recorded", false)
 
@@ -153,6 +156,8 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, stall: bool) -> Di
 	clock.set_speed(SPEED)
 	var rows: Array = []
 	var commands: Array = []
+	var published: Array = []
+	var last_batch_size := 0
 	var hold := {}
 	for day in range(1, WARMUP_DAY + RELEASE_DAYS + 1):
 		if day == CLAIM_DAY - 1:
@@ -163,20 +168,30 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, stall: bool) -> Di
 			commands.append({"operation": "transfer_territory", "cell": claim_cell,
 				"country": player_handle, "effective_day": CLAIM_DAY, "sequence": 910001})
 		if day == MILITARY_DAY - 1:
-			var order: Dictionary = military.set_target(player_handle, 0, MILITARY_TARGET)
+			var order: Dictionary = military.submit([{"op": "force.set_target", "country": player_handle,
+				"value": MILITARY_TARGET, "count": 0, "effective_day": MILITARY_DAY}])
 			_expect("military target admitted on the same day as the legacy settlement",
 				bool(order.get("ok", false)) and int(order.get("effective_day", -1)) == MILITARY_DAY)
 			commands.append({"operation": "military_target", "country": player_handle,
 				"effective_day": MILITARY_DAY, "mode": 0, "value": MILITARY_TARGET})
+		var target_day := day
+		if day > WARMUP_DAY:
+			OS.set_environment("PK_GOLDEN_DOMAINS", "0")
 		if stall and day == WARMUP_DAY + 1:
-			hold = _run_hold(host, clock, WARMUP_DAY + RELEASE_DAYS)
+			target_day = WARMUP_DAY + RELEASE_DAYS
+			hold = _run_hold(host, target_day)
 		else:
 			_publish_day(host, clock, day)
-		var settled := await _wait_golden_read_boundary(host, economy, day)
-		_expect("simulation and main tail both settle day %d" % day, settled)
+		var settled := await _wait_golden_read_boundary(host, economy, target_day)
+		_expect("simulation and display settle through day %d" % target_day, settled)
 		if not settled:
 			print("BACKGROUND_DAILY_UNSETTLED=" + JSON.stringify(generator.get_runtime_thread_report()))
 			break
+		var batch: Array = host._runtime_last_commit.get("days", [])
+		last_batch_size = batch.size()
+		for record in batch:
+			published.append([record.day, record.business_hash, record.get("golden", {})])
+		OS.set_environment("PK_GOLDEN_DOMAINS", "1")
 		if day == 1:
 			_expect("all 12 domains run on the worker", host.uses_worker_day_commits()
 				and int(generator.get_runtime_thread_report().get("authoritative_domain_mask", 0)) == 0xFFF)
@@ -188,11 +203,17 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, stall: bool) -> Di
 			_expect("military target takes effect in the background on the recorded day",
 				int(military.country_snapshot(player_handle).get("target_value", -1)) == MILITARY_TARGET
 				and int(military.report().get("background_day", -1)) == day)
-		rows.append(await _summary(host, ext, day))
+		rows.append(await _summary(host, ext, target_day))
+		if target_day > day:
+			break
 	var report := generator.get_runtime_thread_report()
 	if not stall and rows.size() == WARMUP_DAY + RELEASE_DAYS:
 		await _check_one_speed_military_seal(host, clock, economy, military, player_handle)
-	return {"rows": rows, "commands": commands, "hold": hold, "report": report}
+	_expect("every publication has same-day hashes", published.size() == WARMUP_DAY + RELEASE_DAYS
+		and published.all(func(row): return int(row[1]) != 0 and (row[0] > WARMUP_DAY
+			or (row[0] == row[2].get("day", -1) and row[2].get("ready", false)))))
+	return {"rows": rows, "commands": commands, "hold": hold, "report": report,
+		"publications": published, "last_batch_size": last_batch_size}
 
 
 func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
@@ -202,51 +223,47 @@ func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
 	clock.set_speed(1.0)
 	var admission: Dictionary = military.set_target(player, 0, target)
 	_expect("1x military command admitted after day %d" % settled_day, bool(admission.get("ok", false)))
-	var actual := -1
-	for day in range(settled_day + 1, settled_day + 3):
-		_publish_day(host, clock, day)
-		if not await _wait_golden_read_boundary(host, economy, day):
-			_expect("1x military seal day %d commits" % day, false)
-			return
-		if int(military.country_snapshot(player).get("target_value", -1)) == target:
-			actual = day
-			break
-	_expect("1x military command settles on its admitted day", actual == int(admission.get("effective_day", -2)))
-	_expect_target_failure("military_seal_1x", actual == settled_day + 1,
-		"issued after day %d; required day %d; admitted day %d, settled day %d" % [
-			settled_day, settled_day + 1, int(admission.get("effective_day", -1)), actual])
+	_expect("military_seal_1x: accepted for D+1", int(admission.get("effective_day", -1)) == settled_day + 1)
+	if host._native_daily_inline_active:
+		_publish_day(host, clock, settled_day + 1)
+	else:
+		_expect("1x release cannot lead the committed day by more than one",
+			host._admit_runtime_calendar(settled_day + RELEASE_DAYS + 1) == settled_day + 1)
+	_expect("military_seal_1x: D+1 commits", await _wait_golden_read_boundary(host, economy, settled_day + 1))
+	_expect("military_seal_1x: the target changed on D+1",
+		int(military.country_snapshot(player).get("target_value", -1)) == target
+		and int(military.report().get("background_day", -1)) == settled_day + 1)
+	print("MILITARY_SEAL_1X issued_after=%d admitted=%d settled=%d" % [
+		settled_day, admission.get("effective_day", -1), military.report().get("background_day", -1)])
 
 
 func _publish_day(host: WorldRuntimeHost, clock: WorldClock, day: int) -> void:
-	clock.current_day = float(day + 1)
-	host._on_clock_day_changed(day + 1)
+	if host._native_daily_inline_active:
+		clock.current_day = float(day + 1)
+		host._on_clock_day_changed(day + 1)
+	else:
+		host._admit_runtime_calendar(day + 1)
 
 
-func _run_hold(host: WorldRuntimeHost, clock: WorldClock, target_day: int) -> Dictionary:
+func _run_hold(host: WorldRuntimeHost, target_day: int) -> Dictionary:
 	var generator := host.get_generator()
 	var ext: Object = generator.get_data_core_world_ext()
 	var settled_before := int(ext.runtime_committed_day())
-	var tail_before := host._runtime_tail_completed_day
-	# Calendar admission no longer carries environment data. The remaining tail
-	# acknowledgement still limits this pause to one completed day.
-	host._on_clock_day_changed(target_day + 1)
-	var admitted_through := host._calendar_admitted_through
+	var display_before := host._runtime_commit_day
 	var frames_before := Engine.get_process_frames()
-	var committed_before := int(ext.runtime_committed_day())
 	var started := Time.get_ticks_usec()
+	var admitted_through := host._admit_runtime_calendar(target_day + 1)
 	OS.delay_msec(HOLD_MSEC)
-	var elapsed := Time.get_ticks_usec() - started
 	var committed_after := int(ext.runtime_committed_day())
 	var state := generator.get_runtime_control_state()
 	return {
 		"requested_through": target_day, "admitted_through": admitted_through,
-		"admitted_in_one_request": admitted_through,
-		"start_day": settled_before, "committed_before": committed_before,
-		"committed_after": committed_after, "committed_during_hold": committed_after - committed_before,
-		"tail_before_hold": tail_before, "tail_after_hold": host._runtime_tail_completed_day, "hold_usec": elapsed,
+		"start_day": settled_before, "committed_after": committed_after,
+		"committed_during_hold": committed_after - settled_before,
+		"display_before": display_before, "display_after": host._runtime_commit_day,
+		"hold_usec": Time.get_ticks_usec() - started,
 		"process_frames": Engine.get_process_frames() - frames_before,
 		"worker_healthy": bool(state.get("authority_ready", false)) and state.get("simulation_host_state") != "FAULTED",
-		"post_hold_waits": generator.get_runtime_thread_report().get("worker_main_wait_by_day", {}).get(committed_after, {}),
 	}
 
 
@@ -317,13 +334,10 @@ func _check_removed_round_trips(report: Dictionary, days: int) -> void:
 			_expect("%s has no main-thread round trip on day %d" % [step, day],
 				int(steps.get(step, 0)) == 0)
 		for step in steps:
-			if step not in ["queue_day_tail", "acknowledge_day_tail"]:
-				_expect("only notification queue and tail acknowledgement remain on day %d (%s)" % [day, step],
-					int(steps[step]) == 0)
+			_expect("no foreground simulation on day %d (%s)" % [day, step], int(steps[step]) == 0)
 		for reason in waits:
-			if reason != "day_tail":
-				_expect("only tail acknowledgement can block day %d (%s)" % [day, reason],
-					int(waits[reason].get("count", 0)) == 0)
+			_expect("no foreground wait on day %d (%s)" % [day, reason],
+				int(waits[reason].get("count", 0)) == 0)
 		var named_waits := 0
 		for task in tasks.values():
 			named_waits += int(task.count)
@@ -493,17 +507,8 @@ func _check_round_trips(report: Dictionary) -> void:
 		rows.append({"day": day, "wait_count": wait_count, "main_step_count": step_count,
 			"waits": waits, "main_steps": steps})
 	print("BACKGROUND_DAILY_ROUND_TRIPS=" + JSON.stringify(rows))
-	if _failures == 0:
-		_expect_target_failure("B", zero_every_day,
-			"required zero every day, counted %d waits and %d main steps across %d days" % [
-				total_waits, total_steps, WARMUP_DAY])
-
-
-func _expect_target_failure(case_id: String, target_met: bool, evidence: String) -> void:
-	_checks += 1
-	print("  [%s] %s %s" % ["XPASS" if target_met else "XFAIL", case_id, evidence])
-	if target_met:
-		_failures += 1
+	_expect("B: zero foreground steps and waits on every day", zero_every_day)
+	print("BACKGROUND_DAILY_B days=%d waits=%d main_steps=%d" % [WARMUP_DAY, total_waits, total_steps])
 
 
 func _finish() -> void:

@@ -501,7 +501,9 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result["message"] = _colonization_command_message(colonize_code)
 	if not result.has("message"):
 		result["message"] = String(result.get("reason", ""))
-	result["effective_day"] = effective_day
+	if not result.has("effective_day"):
+		var admitted_days: PackedInt64Array = result.get("effective_days", PackedInt64Array())
+		result["effective_day"] = effective_day if admitted_days.is_empty() else admitted_days[0]
 	result["sequence"] = sequence
 	return _complete_command(id, result)
 
@@ -801,6 +803,7 @@ func _connect_runtime() -> void:
 		_camera.view_changed.connect(_on_camera_view_changed)
 	if _runtime_host != null:
 		var runtime_callbacks := {"simulation_committed": _on_simulation_committed,
+			"simulation_day_records": _on_simulation_day_records,
 			"simulation_view_updated": _on_simulation_view_updated}
 		for event in runtime_callbacks:
 			if _runtime_host.has_signal(event) and not _runtime_host.is_connected(event, runtime_callbacks[event]):
@@ -823,11 +826,22 @@ func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) 
 	if _ui_manager != null and _ui_manager.has_method("refresh_committed_view"):
 		_ui_manager.refresh_committed_view()
 
+func _on_simulation_day_records(records: Array) -> void:
+	_narrative_service.consume_notices(records)
+
+
 func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
-	if _ui_manager != null and _ui_manager.has_method("record_committed_day"):
-		_ui_manager.record_committed_day(to_day)
+	if (_runtime_host._native_environment_active and _economy_facade != null
+			and _player_country_handle != 0):
+		_economy_facade.dispatch_family_colonization_receipts(_player_country_handle)
+	if _ui_manager != null:
+		var commit: Dictionary = _runtime_host._runtime_last_commit
+		if commit.has("gdp") and _ui_manager.has_method("record_committed_ledger"):
+			_ui_manager.record_committed_ledger(commit)
+		elif _ui_manager.has_method("record_committed_day"):
+			_ui_manager.record_committed_day(to_day)
 	if _music_situation != null:
 		_music_situation.refresh_global_from_commit()
 	_sync_era_reward_offer()
@@ -1033,6 +1047,8 @@ func _sync_event_audio() -> void:
 
 func _on_day_changed(day_idx: int) -> void:
 	if _runtime_host == null or _world_clock == null:
+		return
+	if _world_clock._publishing_runtime_date:
 		return
 	# Events are read from a completed day. The active worker signals that boundary separately.
 	_sync_era_reward_offer()

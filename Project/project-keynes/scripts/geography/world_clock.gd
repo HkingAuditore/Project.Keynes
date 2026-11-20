@@ -131,6 +131,10 @@ var visual_day_phase_held: bool = false
 # Phase 4：长期气候异常值（游戏内"全球温度偏移"），shader 直接读
 var climate_anomaly: float = 0.0
 var _native_climate_calendar := false
+var _runtime_calendar_admit: Callable
+var _runtime_calendar_through := -1
+var _runtime_calendar_fraction := 0.0
+var _publishing_runtime_date := false
 var _native_climate_year := -1
 
 # 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
@@ -413,11 +417,58 @@ func _dcp_group_any(tags: Array[StringName]) -> bool:
 func _dcp_elapsed_ms(started_usec: int) -> float:
 	return _day_cost_probe._dcp_elapsed_ms(started_usec)
 
+func bind_runtime_calendar(admit: Callable) -> void:
+	_runtime_calendar_admit = admit
+	_runtime_calendar_through = day_index() - 1
+	_runtime_calendar_fraction = 0.0
+
+
+func publish_runtime_date(committed: int) -> void:
+	if not _runtime_calendar_admit.is_valid() or committed + 1 <= _last_day:
+		return
+	_last_day = committed + 1
+	current_day = float(_last_day) + _runtime_calendar_fraction
+	_runtime_calendar_through = maxi(_runtime_calendar_through, committed)
+	_publishing_runtime_date = true
+	day_changed.emit(_last_day)
+	var season := season_index_for_day(_last_day)
+	if season != _last_season:
+		_last_season = season
+		season_changed.emit(season)
+	var year := year_index_for_day(_last_day)
+	if year != _last_year:
+		_last_year = year
+		_apply_year_rollover(year)
+	_publishing_runtime_date = false
+
+
+func _process_runtime_calendar(delta: float) -> void:
+	_runtime_calendar_fraction += delta * speed_multiplier
+	var elapsed_days := int(_runtime_calendar_fraction)
+	_runtime_calendar_fraction -= elapsed_days
+	if elapsed_days > 0:
+		_runtime_calendar_through = int(_runtime_calendar_admit.call(
+			_runtime_calendar_through + elapsed_days + 1))
+	current_day = float(_last_day) + _runtime_calendar_fraction
+	var dp := day_phase()
+	if _should_emit_day_phase(dp):
+		_last_emit_day_phase = dp
+		day_phase_changed.emit(dp)
+	var sp := season_phase()
+	if _should_emit_season_phase(sp):
+		_last_emit_season_phase = sp
+		season_phase_changed.emit(sp)
+	_advance_visual_day_phase(delta)
+
+
 func _process(delta: float) -> void:
 	if authority_fault_hold:
 		paused = true
 		return
 	if paused or speed_multiplier <= 0.0:
+		return
+	if _runtime_calendar_admit.is_valid():
+		_process_runtime_calendar(delta)
 		return
 	var proc_start_us: int = Time.get_ticks_usec()
 	# 自初始化兜底：_emit_initial_signals（call_deferred）可能晚于首帧 _process。

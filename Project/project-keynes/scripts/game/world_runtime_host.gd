@@ -6,6 +6,7 @@ signal world_generation_failed(reason: String)
 signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator, view_adapter: DCViewAdapter)
 signal daily_tick_completed(report: Dictionary)
 signal simulation_committed(from_day: int, to_day: int, generation: int)
+signal simulation_day_records(records: Array)
 signal simulation_view_updated(from_day: int, to_day: int, generation: int)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
@@ -320,15 +321,14 @@ func synchronize_environment_display_for_save() -> bool:
 	if not _native_environment_active:
 		return true
 	var committed: Dictionary = _runtime_control_state()
+	_consume_runtime_commit_if_ready(committed)
 	_apply_climate_writeback_if_authoritative(committed)
 	if _runtime_climate_writeback_last_day < int(committed.get("simulation_committed_day", -1)):
 		return false
 	_generator._write_runtime_enum_axes_dense(_current_map)
 	return true
 var _runtime_commit_generation: int = 0
-var _runtime_notified_generation: int = 0
 var _runtime_commit_day: int = -1
-var _runtime_tail_completed_day: int = -1
 var _runtime_last_commit: Dictionary = {}
 ## Military committed-day cursor for whole-graph ACTIVE. The military day reads
 ## committed Country/Economy state, so it can only run after the commit that
@@ -485,7 +485,15 @@ func _sched_elapsed_ms(started_usec: int) -> float:
 ## peer 适配器推一轮再重试同一天。
 func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionary:
 	return _daily_adapter._run_native_daily_inline_day(self, day_idx, report)
+func _admit_runtime_calendar(date: int) -> int:
+	var ext = _generator.get_data_core_world_ext()
+	_calendar_admitted_through = int(ext.request_runtime_calendar_day(date))
+	return _calendar_admitted_through
+
+
 func _on_clock_day_changed(day_idx: int) -> void:
+	if _world_clock != null and _world_clock._publishing_runtime_date:
+		return
 	# 首日挂死定位：进入/离开日 tick 各发一条带绝对时间戳的事件，
 	# 静默前最后一条就能区分"挂在 tick 里"还是"挂在 tick 之后"。
 	WebTelemetry.emit("day_tick", {"s": "begin", "day": day_idx})

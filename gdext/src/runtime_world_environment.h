@@ -45,6 +45,7 @@ public:
     bool restore_season_history(const std::vector<uint8_t> &bytes, int64_t day);
     RuntimeClimateCalendar calendar(int64_t day) const;
     const RuntimeEnvironmentSnapshot &narrative_geography() const;
+    const uint8_t *water_terrain_lookup() const;
 
 private:
     struct State;

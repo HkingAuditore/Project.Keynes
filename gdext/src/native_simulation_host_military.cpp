@@ -41,7 +41,6 @@ bool NativeSimulationHost::submit_military_commands(std::shared_ptr<MilitaryComm
             state != RuntimeWorkerState::STOPPING && !_stop_requested.load(std::memory_order_acquire);
     };
     if (!available()) return false;
-    batch->day = command_seal_day();
     _military_commands.push_back(batch);
     if (inline_daily_mode()) {
         control.unlock();
@@ -62,7 +61,10 @@ bool NativeSimulationHost::service_military_commands() {
     if (pending.empty()) return false;
     auto &military = *_executor_military;
     military.country_state = _country_pod_authority.borrow_state();
-    for (const auto &batch : pending) military.admit(*batch);
+    for (const auto &batch : pending) {
+        batch->day = committed_day_value() + 1;
+        military.admit(*batch);
+    }
     military.publish(military.last_result);
     {
         std::lock_guard<std::mutex> control(_control_mutex);

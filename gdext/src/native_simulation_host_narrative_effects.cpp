@@ -88,18 +88,24 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
     auto local = input.sample(cell, true);
     int64_t treasury = std::max<int64_t>(0, input.country.treasury_cash);
     std::vector<RuntimeCommandPacket> packets;
-    auto submit_economy = [&](EconomyApi::EffectCommand command, int64_t index) {
-        if (!_economy_production_runtime) return false;
+    std::vector<EconomyApi::EffectCommand> economy_commands;
+    PackedStringArray effect_failures;
+    std::vector<std::pair<NarrativeEffect, int64_t>> family_commands;
+    auto plan_economy = [&](EconomyApi::EffectCommand command, int64_t index) {
         command.effective_day = effect_day;
         command.sequence = allocate_producer_sequence(NARRATIVE_PRODUCER);
         command.idempotency_key = 0x4e41000000000000ull |
             (static_cast<uint64_t>(record_id) << 16) | uint16_t(index);
-        std::vector<int64_t> requests;
-        std::string error;
-        return economy_api::submit_effect_commands_pod(*_economy_production_runtime,
-            &command, 1, requests, error);
+        economy_commands.push_back(command);
     };
     const auto add_modifier = [&](const NarrativeEffect &effect, bool local, int32_t target, int32_t ring) {
+        const auto found = _modifier_definition_id_by_key_hash.find(
+            RuntimeEffectPodAuthority::hash_text(effect.key.c_str()));
+        if (found == _modifier_definition_id_by_key_hash.end()) {
+            const String reason = String("modifier_request_unknown:") + effect.key.c_str();
+            if (!effect_failures.has(reason)) effect_failures.push_back(reason);
+            return;
+        }
         RuntimeModifierPodCommand command;
         command.source_id = narrative.allocate_modifier_source();
         command.request_id = allocate_command_request_id_for_ingress();
@@ -113,10 +119,7 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
         command.entity_handle = local ? 0 : player;
         command.target_generation = local ? 0 : player >> 32;
         command.source_type = NARRATIVE_MODIFIER_SOURCE;
-        const auto found = _modifier_definition_id_by_key_hash.find(
-            RuntimeEffectPodAuthority::hash_text(effect.key.c_str()));
-        if (found != _modifier_definition_id_by_key_hash.end())
-            command.definition_id = found->second;
+        command.definition_id = found->second;
         command.duration_days = effect.duration;
         command.magnitude_q16 = ring == 0 || !effect.falloff ? effect.magnitude :
             std::max<int64_t>(1, (effect.magnitude * RING_SCALE[ring] + 32768) >> 16);
@@ -159,10 +162,7 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
         case NarrativeEffect::REMOVE_TRAIT: {
             const uint64_t family = local.family;
             if (!_economy_production_runtime || family == 0 || effect.key.empty()) break;
-            economy_api::submit_effect_family_trait(*_economy_production_runtime, family,
-                effect.key, effect.kind == NarrativeEffect::GRANT_TRAIT,
-                std::clamp<int64_t>(effect.magnitude, 49152, 81920), effect_day,
-                allocate_producer_sequence(NARRATIVE_PRODUCER));
+            family_commands.emplace_back(effect, allocate_producer_sequence(NARRATIVE_PRODUCER));
             break;
         }
         case NarrativeEffect::TREASURY_CASH_TO_COHORT:
@@ -178,7 +178,8 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
             command.target_handle = local.primary_cohort;
             command.i64_0 = amount;
             command.i64_1 = player;
-            if (submit_economy(command, index)) balance -= amount;
+            plan_economy(command, index);
+            balance -= amount;
             break;
         }
         case NarrativeEffect::ADD_POPULATION: {
@@ -193,8 +194,8 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
             command.opcode = EconomyApi::COMMAND_ADD_POPULATION;
             command.target_handle = local.primary_cohort;
             command.i64_0 = delta;
-            if (submit_economy(command, index))
-                local.population = std::max<int64_t>(0, local.population + delta);
+            plan_economy(command, index);
+            local.population = std::max<int64_t>(0, local.population + delta);
             break;
         }
         case NarrativeEffect::COUNTRY_GOOD_TO_MARKET:
@@ -222,15 +223,12 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
                 command.target_handle = reclaim ? player : 0;
                 command.i64_0 = limited_quantity(effect, local.stock(effect.key));
             }
-            if (command.i64_0 > 0) submit_economy(command, index);
+            if (command.i64_0 > 0) plan_economy(command, index);
             break;
         }
         default: break;
         }
     }
-    if (!packets.empty() && !enqueue_batch_at(std::move(packets), nullptr, false))
-        return narrative_response(false, "narrative_effect_queue_full");
-
     const Dictionary concession = result.get("concession", Dictionary());
     if (!concession.is_empty()) {
         EconomyApi::EffectCommand payment;
@@ -238,7 +236,37 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
         payment.target_handle = int64_t(concession["cohort"]);
         payment.i64_0 = int64_t(concession["amount"]);
         payment.i64_1 = player;
-        submit_economy(payment, effects.size());
+        plan_economy(payment, effects.size());
+    }
+    std::vector<int64_t> requests;
+    std::string error;
+    const auto admit_economy = [&] {
+        if (economy_commands.empty()) return true;
+        if (!_economy_production_runtime) {
+            error = "narrative_effect_economy_unavailable";
+            return false;
+        }
+        return economy_api::submit_effect_commands_pod(*_economy_production_runtime,
+            economy_commands.data(), economy_commands.size(), requests, error);
+    };
+    const bool admitted = packets.empty() ? admit_economy()
+        : enqueue_batch_at(std::move(packets), nullptr, false, admit_economy);
+    if (!admitted) {
+        effect_failures.push_back(error.empty() ? "narrative_effect_queue_full" : error.c_str());
+        result["effect_failures"] = effect_failures;
+        return narrative.complete_choice(std::move(result), false);
+    }
+    for (const auto &[effect, sequence] : family_commands) {
+        if (!economy_api::submit_effect_family_trait(*_economy_production_runtime, local.family,
+                effect.key, effect.kind == NarrativeEffect::GRANT_TRAIT,
+                std::clamp<int64_t>(effect.magnitude, 49152, 81920), effect_day, sequence))
+            effect_failures.push_back(String("narrative_family_trait_rejected:") + effect.key.c_str());
+    }
+    if (!effect_failures.is_empty()) result["effect_failures"] = effect_failures;
+    if (!requests.empty()) {
+        PackedInt64Array pending;
+        for (const auto id : requests) pending.push_back(id);
+        result["pending_economy_effects"] = pending;
     }
     const Dictionary meta = record.get("meta", Dictionary());
     if (_economy_production_runtime && String(meta.get("kind", "")) == "rebellion") {

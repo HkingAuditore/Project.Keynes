@@ -74,9 +74,9 @@ static func option_text(stage: int, action: int) -> String:
 		"3_0": return "承诺改弦更张"
 		"3_1": return "收买领头的匠户"
 		"3_2": return "戒严，拿下首领"
-		"4_0": return "开城招安"
-		"4_1": return "调兵镇压"
-		"4_2": return "带兵退出此城"
+		"4_4": return "开城招安"
+		"4_2": return "调兵镇压"
+		"4_5": return "带兵退出此城"
 		_: return "静观其变"
 
 

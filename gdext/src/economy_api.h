@@ -27,6 +27,7 @@ namespace godot { class Dictionary; class Array; class PackedInt32Array; class P
 namespace pk {
 
 class NativeEconomyRuntime;
+struct RuntimeGdpCell;
 struct NarrativeCellView;
 struct NarrativeUnrestRow;
 struct NarrativeUnrestOdds;
@@ -608,6 +609,9 @@ int32_t profession_count(const NativeEconomyRuntime &economy);
 int64_t last_committed_day(const NativeEconomyRuntime &economy);
 bool epoch_active(const NativeEconomyRuntime &economy);
 godot::Dictionary detail_report(const NativeEconomyRuntime &economy);
+std::vector<RuntimeGdpCell> capture_settlement_output(
+    const NativeEconomyRuntime &economy, uint64_t country);
+godot::Dictionary fiscal_snapshot(const NativeEconomyRuntime &economy, int64_t country);
 godot::Dictionary named_settlement_snapshot(const NativeEconomyRuntime &economy);
 bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
     const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,

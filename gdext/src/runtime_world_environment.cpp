@@ -354,6 +354,10 @@ std::shared_ptr<const RuntimeEnvironmentSnapshot> RuntimeWorldEnvironment::prepa
     return frame;
 }
 
+const uint8_t *RuntimeWorldEnvironment::water_terrain_lookup() const {
+    return _state->water_lut.ptr();
+}
+
 std::shared_ptr<const RuntimeSeasonView> RuntimeWorldEnvironment::season_view(int64_t day) const {
     const auto &state = *_state;
     return state.season && state.season->day <= day ? state.season : state.previous_season;

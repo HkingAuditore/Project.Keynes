@@ -214,7 +214,8 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 		host._player_country_slot = _resolve_player_country_slot(host)
 	out["vision"] = host._runtime_vision_result.duplicate(false)
 	var _cv_t3 = Time.get_ticks_usec()
-	out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices)
+	if not host._vision_dirty_indices.is_empty():
+		out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices)
 	host._vision_dirty_indices = PackedInt32Array()
 	host._runtime_vision_result.erase("newly_visible_cells")
 	_cv_phase(host, "lut", _cv_t3)

@@ -1768,6 +1768,12 @@ uint32_t RuntimeEconomyPodAuthority::commit_pending_commands() noexcept {
     return mutated;
 }
 
+const RuntimeEconomyPodReceipt *RuntimeEconomyPodAuthority::terminal_receipt(uint64_t request) const {
+    const auto result = std::find_if(_terminal_receipts.rbegin(), _terminal_receipts.rend(),
+        [request](const auto &row) { return row.request_id == request; });
+    return result != _terminal_receipts.rend() ? &*result : nullptr;
+}
+
 bool RuntimeEconomyPodAuthority::poll_receipt(
         RuntimeEconomyPodReceipt &out) noexcept {
     if (_receipts.empty()) return false;

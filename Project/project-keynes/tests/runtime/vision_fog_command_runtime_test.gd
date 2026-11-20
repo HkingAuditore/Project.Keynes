@@ -43,8 +43,8 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 		if not settled:
 			return {}
 		var frame: Dictionary = ext.get_runtime_vision_frame(-1)
-		_expect("fog change takes effect exactly on day three and day six",
-			bool(frame.fog_enabled) == (day < 3 or day == 6))
+		_expect("fog change takes effect exactly on day two and day six",
+			bool(frame.fog_enabled) == (day < 2 or day == 6))
 		if not test_host.skip_display:
 			_expect("GM fog readback agrees with the installed frame",
 				host.get_gm_toggle_state("visual.fog_of_war").get("enabled") == frame.fog_enabled)
@@ -52,7 +52,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 			1:
 				original_frame = frame
 				var off := host.set_gm_toggle("visual.fog_of_war", false)
-				_expect("fog off sealed for day three", bool(off.ok) and int(off.effective_day) == 3)
+				_expect("fog off sealed for day two", bool(off.ok) and int(off.effective_day) == 2)
 				var forged := map.visible_arr.duplicate()
 				forged.fill(1)
 				map.visible_arr = forged
@@ -95,8 +95,6 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 						int(quote.family_handles[0]), int(quote.source_cells[0]), target, 1, token, 5, 950002)
 					_expect("starting that expedition is queued for day five",
 						bool(sent.ok) and bool(sent.queued) and int(sent.effective_day) == 5)
-				var on := host.set_fog_of_war_enabled(true)
-				_expect("fog on sealed for day six", bool(on.ok) and int(on.effective_day) == 6)
 			5:
 				var receipt_batch: Dictionary = ext.get_family_colonization_receipts(player, 0, 16)
 				var exact_day := false
@@ -105,6 +103,8 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 						and int(receipt.effective_day) == 5 and int(receipt.settled_day) == 5
 						and int(receipt.expedition_handle) != 0)
 				_expect("the expedition settles on day five", exact_day)
+				var on := host.set_fog_of_war_enabled(true)
+				_expect("fog on sealed for day six", bool(on.ok) and int(on.effective_day) == 6)
 			6:
 				if target >= 0:
 					var refused: Dictionary = economy.start_family_colonization(player,
@@ -115,7 +115,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 						and String(refused.get("message", "")) == "colonization_route_not_visible")
 				_expect("fog display is restored from the authoritative physical frame",
 					map.visible_arr == frame.physical_visible and map.fog_k_arr == frame.fog_k_arr)
-	print("FOG_VISIBILITY_COMMANDS off_day=3 on_day=6 hidden_route=", target)
+	print("FOG_VISIBILITY_COMMANDS off_day=2 on_day=6 hidden_route=", target)
 	return {}
 
 

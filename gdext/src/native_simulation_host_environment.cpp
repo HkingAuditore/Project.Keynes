@@ -35,12 +35,17 @@ bool NativeSimulationHost::initialize_world_environment(RuntimeEnvironmentSnapsh
 int64_t NativeSimulationHost::request_runtime_calendar_day(int64_t date) {
     if (!_world_environment) return -1;
     std::lock_guard<std::mutex> lock(_control_mutex);
-    // Preserve the existing calendar's D+1 convention. Multi-day admission
-    // is still gated by the next committed day.
-    const int64_t committed = _committed_day.load(std::memory_order_acquire);
-    const int64_t available = std::min(date - 1, committed + 1);
-    const int64_t through = std::max(available, _clock_requested_day.load(std::memory_order_relaxed));
+    const int64_t committed = committed_day_value();
+    const int64_t displayed = _display_consumed_day.load(std::memory_order_acquire);
+    const int64_t lead = _speed_days_per_second.load(std::memory_order_acquire) <= 1.0
+        ? 1 : CALENDAR_LOOKAHEAD;
+    const int64_t ceiling = std::max(committed, std::min(committed + lead,
+        displayed + CALENDAR_LOOKAHEAD));
+    const int64_t requested = std::max<int64_t>(0, date) - 1;
+    const int64_t through = std::clamp(std::max(requested, _clock_requested_day.load(
+        std::memory_order_relaxed)), committed, ceiling);
     _clock_requested_day.store(through, std::memory_order_release);
+    _calendar_suspended.store(false, std::memory_order_release);
     _control_cv.notify_all();
     return through;
 }
@@ -48,7 +53,7 @@ int64_t NativeSimulationHost::request_runtime_calendar_day(int64_t date) {
 std::unique_lock<std::mutex> NativeSimulationHost::try_lock_economy_read_boundary() const {
     // The foreground admits days on the same thread as these compatibility
     // reads. Once it admits a day, use the published view until it settles.
-    if (_world_environment &&
+    if (_world_environment && !_calendar_suspended.load(std::memory_order_acquire) &&
         _clock_requested_day.load(std::memory_order_acquire) >
             _committed_day.load(std::memory_order_acquire)) return {};
     return std::unique_lock<std::mutex>(_economy_authority_boundary_mutex, std::try_to_lock);

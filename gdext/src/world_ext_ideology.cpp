@@ -292,13 +292,18 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
         if (!bool(result.get("ok", false)) || _runtime_host == nullptr)
             return result;
     }
-    bool mirrored = true;
-    std::string error;
     // Main-thread ingress to the worker's queue is sealed like every other lane.
     // The worker's own Trigger and Effect stages queue Ideology commands directly.
+    int64_t earliest = days.is_empty() ? 0 : *std::min_element(days.ptr(), days.ptr() + days.size());
+    auto admission = worker_authoritative ? _runtime_host->lock_command_admission(earliest)
+                                          : std::unique_lock<std::mutex>();
+    if (worker_authoritative && !admission.owns_lock()) return unavailable();
     const int64_t seal_day = worker_authoritative ? _runtime_host->command_seal_day() : 0;
+    std::vector<RuntimeIdeologyPodCommand> commands;
+    commands.reserve(opcodes.size());
+    PackedInt64Array admitted_days;
     for (int32_t index = 0; index < opcodes.size(); ++index) {
-        RuntimeIdeologyPodCommand command;
+        auto &command = commands.emplace_back();
         command.producer_id = producers.is_empty() ? 1u :
             static_cast<uint32_t>(std::max(0, producers[index]));
         command.sequence = static_cast<uint64_t>(std::max<int64_t>(0, sequences[index]));
@@ -316,13 +321,17 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
             std::max<int64_t>(0, offers[index]));
         command.choice_index = choices[index];
         command.gate_id = gates[index];
-        if (!_runtime_host->queue_ideology_pod_command(command, error)) {
-            mirrored = false;
-            break;
-        }
+        admitted_days.push_back(command.effective_day);
     }
+    std::string error;
+    const bool mirrored = _runtime_host->queue_ideology_pod_commands(commands, error);
     result["worker_shadow_mirrored"] = mirrored;
     if (!mirrored) result["worker_shadow_reason"] = String(error.c_str());
+    if (worker_authoritative) {
+        result["ok"] = mirrored;
+        if (mirrored) result["effective_days"] = admitted_days;
+        else result["reason"] = String(error.c_str());
+    }
     return result;
 }
 

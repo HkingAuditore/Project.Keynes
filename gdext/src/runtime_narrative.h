@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime_narrative_catalog.h"
+#include "runtime_pod_protocol.h"
 
 #include <deque>
 #include <memory>
@@ -63,10 +64,11 @@ public:
     void queue_automatic_choice(int64_t day);
     void set_pause_policy(int64_t day, uint16_t mask);
     void apply_pause_policy(int64_t day);
-    bool notice_policy_enabled() const { return (_pause_mask >> 8) != 0; }
+    std::vector<RuntimeNotice> take_notices();
     void economy_notices(const NarrativeDay &, const std::vector<NarrativeEconomyNotice> &);
     godot::Dictionary begin_choice(const NarrativeDay &input, const godot::Dictionary &args);
-    godot::Dictionary complete_choice(godot::Dictionary result);
+    godot::Dictionary complete_choice(godot::Dictionary result, bool apply_local = true);
+    void settle_economy_effects(const std::function<bool(int64_t, std::string &)> &receipt);
     std::vector<NarrativeIndependenceAction> take_independence_actions();
     int64_t allocate_modifier_source() { return _next_modifier_source++; }
     godot::Dictionary queue_ai_reply(const godot::Dictionary &result);
@@ -145,6 +147,7 @@ private:
     godot::Dictionary _pending_ai, _pending_ai_reply;
     // Offers and records keep the established pknr/presentation shape. No
     // condition reads the presentation payload to sample the simulation.
+    std::vector<RuntimeNotice> _notices;
     godot::Dictionary _active, _choice_record, _choice_context;
     godot::Array _choice_effects;
     std::deque<godot::Dictionary> _queue, _chronicle;

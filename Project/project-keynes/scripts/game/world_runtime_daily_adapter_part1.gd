@@ -36,7 +36,8 @@ func run_daily_tick(host, day_idx: int, season_phase: float) -> Dictionary:
 	# Country ACTIVE day barriers park on peer intents. Callers that drive
 	# ticks without idling WorldRuntimeHost._process (headless tests, catch-up
 	# batches) still need the transport drained on every day boundary.
-	host._consume_modifier_worker_snapshot_if_authoritative()
+	if not host._native_environment_active:
+		host._consume_modifier_worker_snapshot_if_authoritative()
 	host._consume_country_worker_read_view_if_authoritative()
 	host._fast_tick_count += 1
 	if host._renderer != null and host._generator.has_method("has_pending_detail_scatter_refresh") \
@@ -204,10 +205,6 @@ func _process(host, _delta: float) -> void:
 	var capacity_pending = (
 		host._climate_capacity_pending_day >= 0 and not host._runtime_worker_fault_paused)
 	host._web_mark("liveness_begin")
-	if host._native_environment_active:
-		var control: Dictionary = host._runtime_control_state()
-		host._world_clock.report_worker_lag_days(host._world_clock.day_index()
-			- int(control.get("simulation_committed_day", 0)))
 	host._service_runtime_liveness(frame_usec, capacity_pending)
 	host._web_mark("liveness_end")
 	host._annual_reports.poll()
@@ -279,7 +276,8 @@ func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -
 
 func _service_runtime_progress(host, frame_usec: int) -> void:
 	var segment_usec = Time.get_ticks_usec()
-	host._consume_country_worker_read_view_if_authoritative()
+	if not host._native_environment_active:
+		host._consume_country_worker_read_view_if_authoritative()
 	host._sched_proc_country_read_ms += host._sched_elapsed_ms(segment_usec)
 	host._consume_runtime_commit_if_ready()
 	host._observe_runtime_worker_fault()
@@ -451,8 +449,7 @@ func _clock_day_changed_impl(host, day_idx: int) -> void:
 			host._run_native_daily_inline_day(day_idx, report)
 		else:
 			host._claim_day_for_native(day_idx, &"native_worker")
-			var ext = host._generator.get_data_core_world_ext()
-			host._calendar_admitted_through = int(ext.request_runtime_calendar_day(day_idx))
+			host._admit_runtime_calendar(day_idx)
 		host._sched_day_total_ms = host._sched_elapsed_ms(day_started_usec)
 		return
 	# native_daily_inline：没有 worker 线程，这一天的 12 域日屏障就在本线程上跑。

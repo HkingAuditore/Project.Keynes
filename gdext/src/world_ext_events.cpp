@@ -954,6 +954,7 @@ bool DCWorldExt::configure_gameplay_narrative(Dictionary packet, Dictionary stat
 
 Dictionary DCWorldExt::get_gameplay_narrative_view() const {
     Dictionary out;
+    out["ai_reply_delay_days"] = RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS;
     const auto view = _runtime_host ? _runtime_host->latest_narrative() : nullptr;
     if (!view) return out;
     out["day"] = view->day;

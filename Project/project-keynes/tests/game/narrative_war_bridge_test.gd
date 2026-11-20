@@ -14,22 +14,32 @@ func _run() -> void:
 	if await _start_story({"event_pause_mask": mask}):
 		await _check_war_notice()
 	await _close_story()
+	if await _start_story({"event_pause_mask": 255}):
+		await _check_batched_war_notice()
+	await _close_story()
 	print("narrative war bridge: %d checks, %d failures" % [_checks, _failures])
 	call_deferred("quit", 0 if _failures == 0 else 1)
 
 
-func _check_war_notice() -> void:
-	var enemy := 0
+func _declare_war() -> bool:
 	var map := story_host.current_map()
+	var enemy := 0
 	for cell in map.cell_count():
 		if map.country_slot_arr[cell] > 0:
 			enemy = int(story_ext.get_country_cell_summary(cell).get("country_handle", 0))
 			break
 	_expect("the scenario has a foreign country", enemy != 0)
 	var military = story_host.get_generator().get_military_facade()
-	var order: Dictionary = military.declare_war_forced(enemy, story_player)
-	_expect("the permitted declaration is dated",
-		bool(order.get("ok", false)) and int(order.get("effective_day", -1)) == 2)
+	var order: Dictionary = military.submit([{"op": "war.declare_forced", "country": enemy,
+		"other": story_player, "effective_day": 2}])
+	var dated := bool(order.get("ok", false)) and int(order.get("effective_day", -1)) == 2
+	_expect("the permitted declaration is dated", dated)
+	return dated
+
+
+func _check_war_notice() -> void:
+	if not _declare_war():
+		return
 	if not await _advance_story(3):
 		return
 	var offer := story_service.active_offer()
@@ -43,6 +53,30 @@ func _check_war_notice() -> void:
 	if await _advance_story(4):
 		_expect("confirming a notice records it on the following day",
 			not _story_records().is_empty() and int(_story_records()[0].resolved_day) == 4)
+
+
+func _check_batched_war_notice() -> void:
+	if not _declare_war():
+		return
+	story_host.set_process(false)
+	_publish_day(story_host, story_clock, 4)
+	for _frame in range(MAX_SLICES_PER_DAY):
+		if story_ext.runtime_committed_day() >= 4:
+			break
+		await process_frame
+	_expect("a non-pausing notice allows the whole batch to settle",
+		story_ext.runtime_committed_day() == 4 and story_host._runtime_commit_day < 3)
+	story_host._consume_runtime_commit_if_ready()
+	var records: Array = story_host._runtime_last_commit.get("days", [])
+	var notices := story_service.chronicle_for_display(-1).filter(func(row: Dictionary) -> bool:
+		return row.event_id == "military.war_declared.player_defender")
+	_expect("the notice survives skipping the display of its day exactly once",
+		records.size() == 4 and notices.size() == 1 and notices[0].day == 3
+		and not story_service.has_active_offer())
+	var restored_service := NarrativeEventService.new()
+	restored_service.restore_notice_history(story_controller.capture_view_state().narrative_notices)
+	_expect("the player view preserves the notification after restore",
+		restored_service.chronicle_for_display(-1) == story_service.chronicle_for_display(-1))
 
 
 func _test_probes() -> void:

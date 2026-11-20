@@ -63,7 +63,7 @@ func open_narrative_chronicle(host, filter_cell: int = -1) -> void:
 		return
 	if host._ui_manager.has_method("show_narrative_chronicle"):
 		host._ui_manager.show_narrative_chronicle(
-			host._narrative_service.get_chronicle(0, 128, filter_cell)
+			host._narrative_service.chronicle_for_display(filter_cell)
 		)
 
 

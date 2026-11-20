@@ -33,7 +33,7 @@ void NativeSimulationHost::seed_executor_command_orders() {
 
 bool NativeSimulationHost::try_stop_at_day_boundary() {
     std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
-    if (!boundary.owns_lock() || main_day_tail_pending() ||
+    if (!boundary.owns_lock() ||
         _inline_day_pending.load(std::memory_order_acquire)) return false;
     request_stop();
     return true;
@@ -42,22 +42,6 @@ bool NativeSimulationHost::try_stop_at_day_boundary() {
 bool NativeSimulationHost::service_save_request(
         std::vector<RuntimeCommandPacket> &pending_commands) {
     if (!_save_requested.load(std::memory_order_acquire)) return false;
-    // Finish the remaining main-thread steps before saving day D.
-    if (main_day_tail_pending()) {
-        std::unique_lock<std::mutex> control_lock(_control_mutex);
-        _control_cv.wait(control_lock, [&] {
-            const bool ready = !main_day_tail_pending() ||
-                player_requests_pending_locked() ||
-                _stop_requested.load(std::memory_order_acquire);
-            if (!ready) {
-                _worker_timing.observe_main_wait(
-                    _committed_day.load(std::memory_order_acquire), RuntimeWorkerTiming::DAY_TAIL);
-            }
-            return ready;
-        });
-        _worker_timing.finish_main_wait();
-        if (main_day_tail_pending()) return false;
-    }
     // Pending environment frames describe future days and are regenerated on
     // restore. The caller must first finish any day that already consumed one.
     // Dropping them moves the publish watermark back to the committed day, so

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "runtime_pod_protocol.h"
+
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -8,12 +10,15 @@
 namespace pk {
 
 struct RuntimeVisionFrame;
+struct RuntimeClimateSnapshot;
 struct RuntimeEffectReadView;
 struct RuntimeEraRewardView;
 struct RuntimeNarrativeView;
 struct RuntimeGoldenSnapshot;
+struct RuntimeModifierPodSnapshot;
 struct RuntimeEraAdvancementView;
 struct RuntimeIdeologyReadView;
+struct RuntimeGdpDisplay;
 class TriggerRuntime;
 class NativeIdeologyRuntime;
 
@@ -33,12 +38,28 @@ struct RuntimeResourceDisplayPatch {
     std::vector<float> extra;
 };
 
+struct RuntimeCellLutFrame {
+    std::vector<uint8_t> previous_vitality;
+    std::vector<uint8_t> transition_age;
+};
+
+struct RuntimeCellLutDelta {
+    std::vector<int32_t> cells;
+    std::vector<int32_t> class_cells;
+};
+
 struct RuntimeDayTail {
     int32_t resource_recovery_cells = 0;
     int32_t species_diffused_cells = 0;
     int64_t species_introductions_consumed = 0;
     std::vector<int32_t> occupancy;
     std::shared_ptr<const RuntimeVisionFrame> vision;
+    std::shared_ptr<const RuntimeClimateSnapshot> climate;
+    RuntimeCountryReadView country;
+    std::shared_ptr<const RuntimeGdpDisplay> gdp;
+    std::shared_ptr<const RuntimeModifierPodSnapshot> modifier;
+    RuntimeCellLutFrame cell_luts;
+    std::vector<RuntimeNotice> notices;
     int32_t military_trail_cells = 0;
     int32_t vision_observations = 0;
     int32_t species_observations = 0;

@@ -300,6 +300,9 @@ func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 func record_committed_day(day: int) -> void:
 	_country_component.record_committed_day(self, day)
 
+func record_committed_ledger(commit: Dictionary) -> void:
+	_country_component.record_committed_ledger(self, commit)
+
 func refresh_committed_view() -> void:
 	_country_component.refresh_committed_view(self)
 

@@ -138,7 +138,7 @@ func _verify_display_failure_does_not_hold_tail(host: WorldRuntimeHost, clock: W
 	_expect("the latest species bitmap is still available",
 		bool(ext.apply_runtime_species_writeback().get("applied", false)))
 	print("ECOLOGY_DISPLAY_FAILURE=" + JSON.stringify({"resources": resources, "species": species,
-		"acknowledged_day": host._runtime_tail_completed_day}))
+		"acknowledged_day": host._runtime_commit_day}))
 
 
 func _capture_native_save(ext: Object) -> Dictionary:

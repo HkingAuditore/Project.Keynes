@@ -12,19 +12,6 @@ class DailyProbe extends RefCounted:
 	func ideology_needs_daily_continuation(_day: int) -> bool:
 		return local_slice_pending
 
-# Published days need no rule callbacks to release the remaining day-tail gate.
-class TailProbe extends RefCounted:
-	var marks: Array[int] = []
-	func mark_runtime_day_tail_done(day: int) -> void:
-		marks.append(day)
-	func record_runtime_main_step(_day: int, _step: StringName) -> void:
-		pass
-
-class PublishedWorld extends MapGenerator:
-	var steps: Array = []
-	func record_runtime_main_step(day: int, step: StringName) -> void:
-		steps.append([day, step])
-
 var _checks := 0
 var _failures := 0
 
@@ -45,28 +32,31 @@ func _init() -> void:
 	generator._advance_runtime_graph_pulse(4)
 	_expect("graph completion clears the scheduler's same-day barrier",
 		not clock.needs_continuation_pulse())
+	var dates: Array[int] = []
+	var admitted: Array[int] = []
+	clock.set_native_climate_calendar(true)
+	clock.current_day = 591.0
+	clock._last_day = 591
+	clock.bind_runtime_calendar(func(date: int) -> int:
+		admitted.append(date - 1)
+		return date - 1)
+	clock.day_changed.connect(func(date: int) -> void: dates.append(date))
+	clock.speed_multiplier = 100.0
+	clock._process_runtime_calendar(0.03)
+	_expect("a single clock call offers three days", admitted == [593])
+	_expect("admission alone does not advance the display", dates.is_empty() and clock.day_index() == 591)
+	clock.publish_runtime_date(593)
+	_expect("one batch emits one display date", dates == [594])
+	_expect("the display tracks the last settled date", clock.day_index() == 594)
+	clock.publish_runtime_date(593)
+	_expect("a repeated publication does not emit again", dates == [594])
+	clock.publish_runtime_date(592)
+	_expect("an older publication cannot rewind the display", clock.day_index() == 594)
+	clock.bind_runtime_calendar(Callable())
+	clock.publish_runtime_date(596)
+	_expect("an unbound session cannot publish to the clock", dates == [594])
+	_expect("unbinding preserves the displayed date", clock.day_index() == 594)
 	clock.free()
-	var host := WorldRuntimeHost.new()
-	var view := PublishedWorld.new()
-	var boundary := TailProbe.new()
-	view._data_core_world_ext = boundary
-	host._generator = view
-	var tail := preload("res://scripts/game/world_runtime_daily_adapter_part3.gd").new()
-	_expect("published world starts with no day tail", boundary.marks.is_empty())
-	tail._mark_runtime_day_tail(host, 591)
-	_expect("a published day releases the gate immediately", boundary.marks == [591])
-	_expect("a published day advances the foreground cursor", host._runtime_tail_completed_day == 591)
-	_expect("the only main step is acknowledging the published day",
-		view.steps == [[591, &"acknowledge_day_tail"]])
-	tail._mark_runtime_day_tail(host, 591)
-	_expect("re-reading a day records no simulation work", view.steps.size() == 1)
-	tail._mark_runtime_day_tail(host, 592)
-	_expect("the next published day releases the same gate", boundary.marks[-1] == 592)
-	_expect("the next day only records confirmation", view.steps[-1] == [592, &"acknowledge_day_tail"])
-	tail._mark_runtime_day_tail(host, 591)
-	_expect("an older display cursor cannot rewind the confirmed day", host._runtime_tail_completed_day == 592)
-	view._data_core_world_ext = null
-	host.free()
 	print("ideology day continuation: %d checks, %d failures" % [_checks, _failures])
 	quit(1 if _failures > 0 or _checks != 11 else 0)
 

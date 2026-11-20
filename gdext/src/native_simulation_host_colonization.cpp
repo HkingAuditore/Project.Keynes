@@ -67,7 +67,7 @@ bool NativeSimulationHost::service_colonization_requests() {
             case RuntimeColonizationRequest::Kind::START:
                 r.result = economy_api::submit_family_colonization_start(*economy,
                     r.country_handle, r.family_handle, r.source_cell, r.target_cell,
-                    r.population, r.quote_token, r.effective_day, r.sequence,
+                    r.population, r.quote_token, std::max(r.effective_day, command_seal_day()), r.sequence,
                     visible.data(), visible.size(), frame.revision, true);
                 break;
             }

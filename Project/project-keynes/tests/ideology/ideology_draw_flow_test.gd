@@ -46,6 +46,7 @@ class GeneratorStub:
 
 
 class HostStub:
+	var _native_environment_active := false
 	var gen := GeneratorStub.new()
 
 	func generator():

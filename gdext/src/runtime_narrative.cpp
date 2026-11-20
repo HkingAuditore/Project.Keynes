@@ -319,7 +319,12 @@ std::shared_ptr<const RuntimeNarrativeView> RuntimeNarrative::view(int64_t commi
     out->pause_mask = _pause_updates.empty() ? _pause_mask : _pause_updates.back().second;
     out->unrest_fact = _last_unrest_fact;
     for (const auto &row : _queue) out->queue.push_back(row);
-    for (const auto &row : _chronicle) out->chronicle.push_back(row);
+    // A newer choice must not overtake an earlier unsettled receipt on the
+    // presentation cursor.
+    auto first = _chronicle.begin();
+    for (auto it = _chronicle.begin(); it != _chronicle.end(); ++it)
+        if (it->has("pending_economy_effects")) first = std::next(it);
+    for (; first != _chronicle.end(); ++first) out->chronicle.push_back(*first);
     if (_pending_ai_reply.is_empty() && !_pending_ai.is_empty()) {
         out->ai_request = _pending_ai;
         const int64_t due = _pending_ai["effective_day"];

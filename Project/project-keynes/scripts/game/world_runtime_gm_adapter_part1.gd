@@ -764,7 +764,7 @@ func _web_barrier_diag(host) -> Dictionary:
 			"environment_ring_pending", "environment_frames_ahead",
 			# 累计耗时区分后台计算、输入交接、保存和暂停。
 			"worker_time_execute_us", "worker_time_input_wait_us",
-			"worker_time_environment_wait_us", "worker_time_main_tail_wait_us",
+			"worker_time_environment_wait_us",
 			"worker_time_input_retry_wait_us",
 			"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
 			"worker_time_overhead_us", "worker_time_paused_us",

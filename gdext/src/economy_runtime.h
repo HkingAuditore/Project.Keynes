@@ -73,6 +73,7 @@ struct TrackBDerivedCellWork {
 };
 
 struct RuntimeEconomyEcp2State;
+struct RuntimeGdpCell;
 
 class EffectRuntime;
 class EffectInstanceForwarder;
@@ -426,6 +427,7 @@ public:
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(EconomyHostPort *host) { _simulation_host = host; }
     AnnualEconomyFacts capture_annual_facts(uint64_t country_handle, bool flows) const;
+    std::vector<RuntimeGdpCell> capture_settlement_output(uint64_t country_handle) const;
     void publish_annual_development_facts();
     bool annual_observes_cell(int32_t cell) const;
     void record_annual_event(int32_t cell, AnnualMetric metric, int64_t value);

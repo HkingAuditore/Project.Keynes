@@ -417,7 +417,8 @@ std::shared_ptr<const RuntimeVisionFrame> NativeSimulationHost::latest_vision() 
 }
 
 Dictionary DCWorldExt::get_runtime_vision_frame(int64_t after_revision) const {
-    const auto frame = _runtime_host ? _runtime_host->latest_vision() : nullptr;
+    const auto &tail = _runtime_display_commit.day_tail;
+    const auto frame = tail ? tail->vision : (_runtime_host ? _runtime_host->latest_vision() : nullptr);
     if (frame && static_cast<int64_t>(frame->revision) != after_revision)
         return vision_frame_to_dictionary(*frame);
     Dictionary out;

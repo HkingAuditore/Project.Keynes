@@ -401,6 +401,7 @@ public:
     bool queue_command(const RuntimeEconomyPodCommand &command,
                        std::string &error);
     bool poll_receipt(RuntimeEconomyPodReceipt &out) noexcept;
+    const RuntimeEconomyPodReceipt *terminal_receipt(uint64_t request) const;
     uint32_t pending_command_count() const noexcept {
         return static_cast<uint32_t>(_commands.size());
     }

@@ -209,10 +209,19 @@ const char *NativeSimulationHost::stage_narrative(DayExecution &day) {
     const auto ack = std::lower_bound(events.consumer_acks.begin(), events.consumer_acks.end(),
         NARRATIVE_CONSUMER, [](const auto &row, uint64_t key) { return row.consumer_key < key; });
     const int64_t day_index = day.plan.context.day;
+    if (_economy_production_runtime) {
+        _executor_narrative->settle_economy_effects([&](int64_t request, std::string &error) {
+            bool complete = false, ok = false;
+            if (!economy_api::effect_command_result_pod(*_economy_production_runtime,
+                    request, complete, ok, error)) return true;
+            if (complete && !ok && error.empty()) error = "narrative_effect_economy_failed";
+            return complete;
+        });
+    }
     const auto input = sample_narrative_day(day_index);
     const int64_t next = _executor_narrative->step(input, events.events,
         ack == events.consumer_acks.end() || ack->consumer_key != NARRATIVE_CONSUMER ? 0 : ack->event_id);
-    if (_economy_production_runtime && _executor_narrative->notice_policy_enabled())
+    if (_economy_production_runtime)
         _executor_narrative->economy_notices(input, economy_api::narrative_economy_notices(
             *_economy_production_runtime, day_index, input.country.handle));
     if (!dispatch_narrative_independence(day_index + 1))
@@ -223,6 +232,7 @@ const char *NativeSimulationHost::stage_narrative(DayExecution &day) {
     if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
     _executor_narrative->queue_automatic_choice(day_index + 1);
     _executor_day_tail->narrative = _executor_narrative->view(day_index);
+    _executor_day_tail->notices = _executor_narrative->take_notices();
     return nullptr;
 }
 
@@ -288,7 +298,8 @@ bool NativeSimulationHost::service_narrative_requests() {
             } else if (request->kind == Kind::AI_RESULT) {
                 request->result = narrative.queue_ai_reply(request->args);
             } else if (request->kind == Kind::SET_AI) {
-                const int64_t effective_day = command_seal_day();
+                const int64_t effective_day = std::max(day + 1,
+                    int64_t(request->args.get("effective_day", day + 1)));
                 narrative.set_ai_enabled(effective_day, request->args.get("enabled", false));
                 request->result["ok"] = true;
                 request->result["effective_day"] = effective_day;

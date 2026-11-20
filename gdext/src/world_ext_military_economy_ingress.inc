@@ -187,11 +187,22 @@ bool NativeMilitaryRuntime::submit_military_economy_commands(
                     error = "military_economy_request_identity_exhausted";
                     return false;
                 }
-            // Nonzero identities always receive an individual admission result,
-            // including capacity and validation rejections. Keep those rows
-            // pending until their own terminal receipts.
-            for (const auto &packet : packets)
-                _runtime_host->submit_economy_pod_command(packet, error);
+            // Admission failure is per request, including capacity rejection.
+            // Retain earlier accepted rows when a later row is rejected.
+            for (size_t k = 0; k < packets.size(); ++k) {
+                const auto &packet = packets[k];
+                const auto &command = commands[rows[k]];
+                const bool tracked = _runtime_host->submit_economy_pod_command(packet, error);
+                const auto *terminal = _runtime_host->economy_pod_terminal(packet.request_id);
+                if (tracked && (!terminal || terminal->code == RuntimeEconomyCommandReceiptCode::Committed))
+                    continue;
+                for (auto &row : pending) {
+                    if ((row.authority == 2 || row.authority == 4) && row.sequence == command.sequence) {
+                        row.receipt_pending = 3;
+                        break;
+                    }
+                }
+            }
             return true;
         };
         if (cohort_rows.empty() && lane_rows.empty()) {

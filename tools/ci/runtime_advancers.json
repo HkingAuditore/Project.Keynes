@@ -71,13 +71,12 @@
       "id": "visual_delivery",
       "thread": "main",
       "reads": "published commit and dirty-family flags",
-      "writes": "daily completion acknowledgement; MapData/display mirrors; renderer uploads",
+      "writes": "MapData/display mirrors; renderer uploads",
       "trigger": "host frame consumption of commit and display refresh",
       "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
       "entrypoint": "_consume_runtime_commit_if_ready",
       "host_fields": [
-        "_runtime_commit_day",
-        "_runtime_tail_completed_day"
+        "_runtime_commit_day"
       ],
       "host_methods": []
     },

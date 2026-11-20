@@ -20,7 +20,7 @@ class UiProbe extends RefCounted:
 
 
 class CommitSource extends MapGenerator:
-	func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
+	func poll_runtime_commit(after_generation: int = 0, _take_days: bool = false) -> Dictionary:
 		return {"ok": true, "available": after_generation < 24,
 			"from_day": 23, "committed_day": 24, "generation": 24}
 

@@ -874,8 +874,8 @@ Dictionary DCWorldExt::apply_runtime_species_writeback() {
     Dictionary out;
     out["ok"] = true;
     out["applied"] = false;
-    RuntimeCommit commit;
-    if (!_runtime_host || !_runtime_host->poll_commit(0, commit) ||
+    RuntimeCommit commit = _runtime_display_commit;
+    if ((!commit.day_tail && (!_runtime_host || !_runtime_host->poll_commit(0, commit))) ||
         !commit.day_tail || commit.day_tail->occupancy.empty()) return out;
     const auto &tail = *commit.day_tail;
     const int slot = component_id(StringName("cell_bio_occupancy_bits"));

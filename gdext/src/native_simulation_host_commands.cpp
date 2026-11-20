@@ -54,9 +54,39 @@ bool NativeSimulationHost::enqueue_batch(
     return enqueue_batch_at(std::move(packets), effective_days, true);
 }
 
+std::unique_lock<std::mutex> NativeSimulationHost::lock_command_admission(
+        int64_t &effective_day) {
+    std::unique_lock<std::mutex> admission(_command_enqueue_mutex);
+    if (!_world_environment || on_worker_thread() || effective_day < 0) return admission;
+    const auto available = [this] {
+        const auto state = _state.load(std::memory_order_acquire);
+        return state != RuntimeWorkerState::FAULTED && state != RuntimeWorkerState::STOPPED &&
+            state != RuntimeWorkerState::STOPPING && !_stop_requested.load(std::memory_order_acquire);
+    };
+    while (available()) {
+        const int64_t frozen = _command_frozen_through.load(std::memory_order_acquire);
+        if (frozen <= committed_day_value() || effective_day > frozen) {
+            effective_day = std::max(effective_day, command_seal_day());
+            return admission;
+        }
+        // Today's input has already been taken. Receive this request at the
+        // next commit boundary, without holding up the executing day.
+        admission.unlock();
+        {
+            std::unique_lock<std::mutex> control(_control_mutex);
+            _control_cv.wait(control, [&] {
+                return committed_day_value() >= frozen || !available();
+            });
+        }
+        admission.lock();
+    }
+    return {};
+}
+
 bool NativeSimulationHost::enqueue_batch_at(
         std::vector<RuntimeCommandPacket> packets,
-        std::vector<int64_t> *effective_days, bool seal) {
+        std::vector<int64_t> *effective_days, bool seal,
+        const std::function<bool()> &admit_peer) {
     if (effective_days != nullptr) effective_days->clear();
     if (packets.empty()) return false;
     // A day that already owns the execution boundary must finish delivering
@@ -70,10 +100,13 @@ bool NativeSimulationHost::enqueue_batch_at(
     };
     if (!accepts(_state.load(std::memory_order_acquire))) return false;
 
-    // Serialise producers for the batch path. The consumer remains lock-free
-    // and may advance dequeue_pos while this lock is held.
-    std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
-    if (!accepts(_state.load(std::memory_order_acquire)) ||
+    int64_t earliest = std::max<int64_t>(0, std::min_element(packets.begin(), packets.end(),
+        [](const auto &a, const auto &b) {
+            return a.envelope.effective_day < b.envelope.effective_day;
+        })->envelope.effective_day);
+    auto lock = seal ? lock_command_admission(earliest)
+                     : std::unique_lock<std::mutex>(_command_enqueue_mutex);
+    if (!lock.owns_lock() || !accepts(_state.load(std::memory_order_acquire)) ||
         (!settling && _stop_requested.load(std::memory_order_acquire))) return false;
     const uint64_t write = _command_enqueue_pos.load(std::memory_order_relaxed);
     const uint64_t read = _command_dequeue_pos.load(std::memory_order_acquire);
@@ -92,6 +125,7 @@ bool NativeSimulationHost::enqueue_batch_at(
             return false;
         }
     }
+    if (admit_peer && !admit_peer()) return false;
     // Main-thread requests can only target unsealed days. The executor can
     // enqueue a consequence of today's settlement at its exact D+1 date.
     const int64_t seal_day = seal ? command_seal_day() : 0;
@@ -199,8 +233,9 @@ bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) 
         packet.submit_order = _command_submit_order.fetch_add(
             1u, std::memory_order_relaxed) + 1u;
     }
-    std::lock_guard<std::mutex> lock(_control_mutex);
+    std::unique_lock<std::mutex> lock(_control_mutex);
     if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::STOPPED) {
+        lock.unlock();
         if (!modifier_enqueue_allowed()) return false;
         return enqueue(std::move(packet));
     }
@@ -556,8 +591,11 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         runtime_copy_text(out.reason, "narrative_choice_apply_failed");
         return out;
     }
-    drain_inline_day_commands(day, day_commands, day_receipts,
-                              admitted_submit_order);
+    {
+        std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+        drain_inline_day_commands(day, day_commands, day_receipts, admitted_submit_order);
+        if (_world_environment) _command_frozen_through.store(day, std::memory_order_release);
+    }
     const double speed = _speed_days_per_second.load(std::memory_order_acquire);
     _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
     _day_waterfall.begin(day);
@@ -660,7 +698,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
             (day_commit.completed_domain_mask & wanted) == wanted) {
             publish_authority_grant(wanted);
         }
-        if ((wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u) {
+        if (!_world_environment && (wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u) {
             const int64_t climate_day = _climate_authority.store().committed_day;
             uint32_t slot = 0;
             if (climate_day > _climate_writeback_last_day.load(
@@ -684,7 +722,6 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _last_day_completed_stages.store(day_commit.completed_stage_count,
                                      std::memory_order_release);
     _last_day_work_units.store(day_commit.work_units, std::memory_order_release);
-    _committed_day.store(day, std::memory_order_release);
     _completed_days.fetch_add(1, std::memory_order_relaxed);
     publish_day(from_day, day, day_commit, day_receipts);
     _inline_day_pending.store(false, std::memory_order_release);
@@ -790,6 +827,32 @@ void NativeSimulationHost::publish_day(
         if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
         _executor_day_tail->golden = std::make_shared<RuntimeGoldenSnapshot>(capture_golden_snapshot(day));
     }
+    if (_world_environment) {
+        if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+        _executor_day_tail->country = country_worker_read_view(0);
+        if (_modifier_pod_configured) {
+            const auto &modifier = _modifier_pod_authority.snapshot();
+            const auto old = previous && previous->day_tail ? previous->day_tail->modifier : nullptr;
+            _executor_day_tail->modifier = old && old->generation == modifier.generation
+                ? old : std::make_shared<const RuntimeModifierPodSnapshot>(modifier);
+        }
+        auto climate = std::make_shared<RuntimeClimateSnapshot>();
+        capture_climate_display(*climate);
+        climate->generation = _climate_writeback_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+        climate->dirty_families = day_commit.dirty_families;
+        _executor_day_tail->climate = std::move(climate);
+    }
+    if (_world_environment) publish_cell_lut_changes(*_executor_day_tail,
+        previous ? previous->day_tail.get() : nullptr);
+    int64_t year_length = 0;
+    bool annual_reward_pending = false;
+    if (_world_environment && annual_development_enabled()) {
+        std::lock_guard<std::mutex> annual(_annual_mutex);
+        year_length = _annual_ledger.days_per_year();
+        annual_reward_pending = _annual_ledger.has_pending_reward();
+    }
+    const auto fiscal = year_length > 0 ? capture_economy_display(day, year_length,
+        *_executor_day_tail, previous ? previous->day_tail.get() : nullptr) : nullptr;
     published->day_tail = std::move(_executor_day_tail);
     publish_military_day();
     if (published->day_tail && published->day_tail->era_reward)
@@ -801,11 +864,30 @@ void NativeSimulationHost::publish_day(
     {
         std::lock_guard<std::mutex> lock(_resource_display_mutex);
         merge_resource_display_patch();
+        if (!_executor_cell_lut_pending.empty()) {
+            _cell_lut_pending.resize(_executor_cell_lut_pending.size());
+            for (size_t cell = 0; cell < _cell_lut_pending.size(); ++cell)
+                _cell_lut_pending[cell] |= _executor_cell_lut_pending[cell];
+        }
+        if (_world_environment) {
+            uint64_t business = mix_hash(
+                _climate_pod_state_hash.load(std::memory_order_relaxed),
+                _economy_pod_state_hash.load(std::memory_order_relaxed));
+            for (auto *hash : {&_trigger_pod_state_hash, &_ideology_pod_state_hash,
+                    &_effect_pod_state_hash, &_modifier_pod_state_hash, &_events_pod_state_hash})
+                business = mix_hash(business, hash->load(std::memory_order_relaxed));
+            business = mix_hash(business, published->day_tail->country.state_hash);
+            _published_days.push_back({header, published->receipts, published->day_tail->golden,
+                published->day_tail->notices, fiscal, business, annual_reward_pending});
+        }
+        std::lock_guard<std::mutex> control(_control_mutex);
+        _committed_day.store(day, std::memory_order_release);
+        _generation.store(generation, std::memory_order_release);
         std::atomic_store_explicit(&_latest_commit,
             std::shared_ptr<const RuntimeCommit>(std::move(published)),
             std::memory_order_release);
     }
-    _generation.store(generation, std::memory_order_release);
+    _control_cv.notify_all();
     _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);
     try_fault_injection("day.commit.after");
 }

@@ -45,6 +45,8 @@
 #include "components/slot.h"
 #include "runtime_pod_protocol.h"
 
+namespace pk { struct RuntimeResourceDisplayPatch; }
+
 namespace pk {
 
 class NativeSimulationHost;
@@ -632,8 +634,7 @@ public:
     godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
     godot::Dictionary poll_runtime_receipts(int max_items = 128);
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
-    godot::Dictionary poll_runtime_commit(int64_t after_generation);
-    void mark_runtime_day_tail_done(int64_t day);
+    godot::Dictionary poll_runtime_commit(int64_t after_generation, bool take_days = false);
     godot::Dictionary request_runtime_save(int64_t request_id);
     godot::Dictionary poll_runtime_save(int64_t request_id);
     godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes,
@@ -659,6 +660,9 @@ public:
     // "generation" by the previous successful call. Non-blocking, and a no-op
     // when the worker has not committed a newer day.
     godot::Dictionary apply_runtime_climate_writeback(int64_t after_generation);
+    void finish_runtime_display_frame();
+    RuntimeCommit _runtime_display_commit;
+    std::shared_ptr<RuntimeResourceDisplayPatch> _runtime_display_resources;
     // B8 P3: block until the worker has evaluated environment generation
     // `after_environment_generation` (plan attempt, not necessarily a commit).
     // timeout_ms < 0 waits until the condition or a terminal worker state;
@@ -3898,7 +3902,7 @@ private:
 
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);
-    void _flush_slot_to_map(int comp_id);
+    void _flush_slot_to_map(int comp_id, bool notify_resources = true);
     int  _bind_index_for_slot(int comp_id);
     // Reverse of the above: MapData property name -> slot name. The Climate
     // parity table names MapData arrays, so write-back needs to get from there

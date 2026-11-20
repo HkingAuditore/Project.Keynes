@@ -5,6 +5,8 @@ extends RefCounted
 signal offer_ready(offer: Dictionary)
 signal offer_changed(offer: Dictionary)
 signal chronicle_updated()
+
+var _notice_history: Array[Dictionary] = []
 signal choice_resolved(record: Dictionary)
 signal ai_generation_requested(request_spec: Dictionary)
 
@@ -42,6 +44,7 @@ func release_world() -> Dictionary:
 	_last_popup_day = -999
 	_last_ai_request = 0
 	_last_record = 0
+	_notice_history.clear()
 	return {"ok": true}
 
 
@@ -139,6 +142,31 @@ func _submit_ai_reply(result: Dictionary, session_generation: int, sequence: int
 	else:
 		payload["code"] = result.get("code", "ai_generation_failed")
 	_request(&"ai_result", payload)
+
+
+func consume_notices(days: Array) -> void:
+	for day: Dictionary in days:
+		for row: Dictionary in day.get("notices", []):
+			_notice_history.push_front(row)
+	if _notice_history.size() > 256:
+		_notice_history.resize(256)
+
+func capture_notice_history() -> Array[Dictionary]:
+	return _notice_history.duplicate(true)
+
+
+func restore_notice_history(rows: Array) -> void:
+	_notice_history.assign(rows.duplicate(true))
+
+
+func chronicle_for_display(filter_cell: int) -> Array[Dictionary]:
+	var records := get_chronicle(0, 256, filter_cell)
+	for row in _notice_history:
+		if filter_cell < 0 or int(row.cell_idx) == filter_cell:
+			records.append(row.duplicate(true))
+	records.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("resolved_day", a.get("day", -1))) > int(b.get("resolved_day", b.get("day", -1))))
+	return records.slice(0, 128)
 
 
 func get_chronicle(offset: int = 0, limit: int = 64, filter_cell: int = -1) -> Array[Dictionary]:

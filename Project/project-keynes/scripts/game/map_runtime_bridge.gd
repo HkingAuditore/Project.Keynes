@@ -150,10 +150,10 @@ func submit_runtime_command(command: Dictionary) -> Dictionary:
 	return _generator._data_core_world_ext.submit_runtime_command(command)
 
 
-func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
+func poll_runtime_commit(after_generation: int = 0, take_days: bool = false) -> Dictionary:
 	if _generator._data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
-	return _generator._data_core_world_ext.poll_runtime_commit(after_generation)
+	return _generator._data_core_world_ext.poll_runtime_commit(after_generation, take_days)
 
 
 func request_runtime_save(request_id: int) -> Dictionary:

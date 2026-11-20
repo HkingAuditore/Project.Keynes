@@ -1659,10 +1659,10 @@ func _drive_executor_day(w: Dictionary, ext: Object, host: WorldRuntimeHost, clo
 	var deadline := Time.get_ticks_msec() + _pod_wait_ms
 	while Time.get_ticks_msec() < deadline:
 		host._process(0.0)
-		if host._runtime_tail_completed_day == day or not _worker_fault(ext).is_empty():
+		if host._runtime_commit_day == day or not _worker_fault(ext).is_empty():
 			break
 		OS.delay_msec(2)
-	var settled := host._runtime_tail_completed_day == day
+	var settled := host._runtime_commit_day == day
 	_expect("executor settles complete day %d with its projection" % day, settled, str(ext.get_runtime_control_state()))
 	if settled:
 		w["tick"] = day

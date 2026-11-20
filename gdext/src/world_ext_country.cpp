@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "runtime_day_tail.h"
 #include "country_ai_core.h"
 #include "country_runtime.h"
 #include "effect_runtime.h"
@@ -946,8 +947,14 @@ Dictionary DCWorldExt::get_country_worker_read_view(
     }
     const uint64_t cursor = after_generation < 0
         ? 0u : static_cast<uint64_t>(after_generation);
-    const RuntimeCountryReadView view =
-        _runtime_host->country_worker_read_view(cursor);
+    const auto &tail = _runtime_display_commit.day_tail;
+    RuntimeCountryReadView view = tail && tail->country.snapshot
+        ? tail->country : _runtime_host->country_worker_read_view(cursor);
+    if (tail && tail->country.snapshot) {
+        view.available = view.generation > cursor;
+        view.full_snapshot_required = view.available &&
+            cursor != view.patch_base_generation && cursor < view.territory_watermark;
+    }
     out["ok"] = true;
     out["code"] = "ok";
     out["available"] = view.available;
@@ -1660,7 +1667,9 @@ NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
     // Prefer any worker-published Country snapshot even after FAULTED revoked
     // the authority grant. Falling back to the frozen sync store on revoke
     // resets the tech UI to bootstrap gen=1 / starter TP stock.
-    const auto snapshot = _runtime_host->country_asset_snapshot();
+    const auto &tail = _runtime_display_commit.day_tail;
+    const auto snapshot = tail && tail->country.snapshot
+        ? tail->country.snapshot : _runtime_host->country_asset_snapshot();
     if (!snapshot) return source;
     if (_country_query_runtime == nullptr)
         _country_query_runtime = new NativeCountryRuntime(*source);

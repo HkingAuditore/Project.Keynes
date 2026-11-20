@@ -577,8 +577,8 @@ func submit_country_economy_asset_result(result: Dictionary) -> Dictionary:
 	return _get_map_runtime_bridge().submit_country_economy_asset_result(result)
 func submit_runtime_command(command: Dictionary) -> Dictionary:
 	return _get_map_runtime_bridge().submit_runtime_command(command)
-func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
-	return _get_map_runtime_bridge().poll_runtime_commit(after_generation)
+func poll_runtime_commit(after_generation: int = 0, take_days: bool = false) -> Dictionary:
+	return _get_map_runtime_bridge().poll_runtime_commit(after_generation, take_days)
 func request_runtime_save(request_id: int) -> Dictionary:
 	return _get_map_runtime_bridge().request_runtime_save(request_id)
 func poll_runtime_save(request_id: int) -> Dictionary:
@@ -769,8 +769,8 @@ var _runtime_climate_distribute_reported: bool = false
 var _runtime_climate_field_reported: bool = false
 var _runtime_climate_worker_weather_embed_day: int = -1000000
 var _runtime_climate_worker_stage_b_call_index: int = -1
-func publish_worker_climate_visuals(defer_upload: bool = false) -> Dictionary:
-	return _get_mapgen_native_daily_runtime().publish_worker_climate_visuals(defer_upload)
+func publish_worker_climate_visuals(defer_upload: bool = false, commit: Dictionary = {}) -> Dictionary:
+	return _get_mapgen_native_daily_runtime().publish_worker_climate_visuals(defer_upload, commit)
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		authoritative: bool) -> Dictionary:
 	return _get_runtime_climate_capture()._build_runtime_climate_stage_knobs(map, day, authoritative)

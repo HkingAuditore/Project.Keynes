@@ -1,5 +1,7 @@
 #include "runtime_narrative.h"
 
+#include <utility>
+
 #include "military_bridge.h"
 #include "runtime_events_authority.h"
 
@@ -72,8 +74,11 @@ bool concerns_player(const NarrativeDay &input, const RuntimeEventsRecord &row) 
 
 void RuntimeNarrative::enqueue_notice(const NarrativeDay &input, int32_t cell, int32_t category,
         const char *id, const char *title) {
-    if ((_pause_mask & (1u << (8 + category))) == 0) return;
     const auto sampled = input.sample(cell, false);
+    if ((_pause_mask & (1u << (8 + category))) == 0) {
+        _notices.push_back({id, title, sampled.settlement, cell, category});
+        return;
+    }
     const String name = String::utf8(sampled.settlement.c_str());
     const String headline = String::utf8(title);
     Dictionary option;
@@ -101,6 +106,10 @@ void RuntimeNarrative::enqueue_notice(const NarrativeDay &input, int32_t cell, i
     _queue.push_back(offer);
 }
 
+std::vector<RuntimeNotice> RuntimeNarrative::take_notices() {
+    return std::exchange(_notices, {});
+}
+
 void RuntimeNarrative::fact_notices(const NarrativeDay &input,
         const std::vector<RuntimeEventsRecord> &facts) {
     if (_last_notice_era >= 0 && input.country.era > _last_notice_era)
@@ -109,7 +118,6 @@ void RuntimeNarrative::fact_notices(const NarrativeDay &input,
     for (const auto &row : facts) {
         if (row.event_id <= _last_notification_fact) continue;
         _last_notification_fact = row.event_id;
-        if (_pause_mask <= 0xff) continue;
         if (!concerns_player(input, row)) continue;
         if (row.type == 18 && row.payload_i0 != 0) continue; // Escalations have their own choices.
         if (row.type == MILITARY_EVENT_WAR_DECLARED && row.payload_i1 == input.country.slot) {

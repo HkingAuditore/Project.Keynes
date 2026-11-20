@@ -136,7 +136,8 @@ func _run() -> int:
 	print("[military-smoke] graph_active=%s capital=%d player=%d" % [
 		str(generator.runtime_graph_active()), capital, player])
 
-	var early: Dictionary = facade.set_target(player, 0, TARGET_HEADCOUNT)
+	var early: Dictionary = facade.submit([{"op": "force.set_target", "country": player,
+		"value": TARGET_HEADCOUNT, "effective_day": 2}])
 	_expect("opening military order is sealed for day two",
 		bool(early.get("ok", false)) and int(early.get("effective_day", -1)) == 2, str(early))
 	print("[military-smoke] pre-first-step set_target=%s" % JSON.stringify(early))
@@ -189,7 +190,8 @@ func _run() -> int:
 			var sponsored: Dictionary = econ_for_build.treasury_sponsored_build(
 				player, capital, StringName(type_ids[econ_id]), _day + 1,
 				_day * 1000 + 10 + _i)
-			var booked: Dictionary = facade.build_state_building(player, capital, barracks)
+			var booked: Dictionary = facade.submit([{"op": "state.build", "country": player,
+				"cell": capital, "unit_to": barracks, "effective_day": _day + 2}])
 			_expect("state.build accepted at capital",
 				bool(sponsored.get("ok", false)) and int(sponsored.get("effective_day", -1)) == _day + 1
 				and bool(booked.get("ok", false)) and int(booked.get("effective_day", -1)) == _day + 2,
@@ -264,17 +266,19 @@ func _run() -> int:
 		soldier_cohort = settled
 	print("[military-smoke] embark baseline day=%d capital_soldier=%d" % [_day,
 		soldier_cohort])
-	var frozen: Dictionary = facade.set_target(player, 0,
-		int(soldier_cohort))
+	var frozen: Dictionary = facade.submit([{"op": "force.set_target", "country": player,
+		"value": soldier_cohort, "effective_day": _day + 2}])
 	_expect("force.set_target freezes the roster before the embark",
 		bool(frozen.get("ok", false)), str(frozen))
-	var created: Dictionary = facade.create_army(player, capital, {})
+	var created: Dictionary = facade.submit([{"op": "army.create", "country": player,
+		"cell": capital, "units": {}, "effective_day": _day + 2}])
 	_expect("army.create accepted", bool(created.get("ok", false)), str(created))
 	var foreign := _foreign_target(map, country, player)
 	print("[military-smoke] foreign target=%s" % JSON.stringify(foreign))
 	_expect("a foreign country exists", int(foreign.get("handle", 0)) != 0)
 	if int(foreign.get("handle", 0)) != 0:
-		var war: Dictionary = facade.declare_war(player, int(foreign.handle))
+		var war: Dictionary = facade.submit([{"op": "war.declare", "country": player,
+			"other": int(foreign.handle), "effective_day": _day + 2}])
 		_expect("war.declare accepted", bool(war.get("ok", false)), str(war))
 	# The formation materialises on the next military day, and its Economy lane row
 	# is created by the epoch that applies the embark command, so wait for both
@@ -417,7 +421,8 @@ func _run() -> int:
 		personnel_before = int(before_move.get("personnel", -1))
 		var ration_before := int(before_move.get("ration_stock", 0))
 		var cell_before := int(before_move.get("cell", -1))
-		var moved: Dictionary = facade.move_army(handle, march_cell)
+		var moved: Dictionary = facade.submit([{"op": "army.move", "army": handle,
+			"cell": march_cell, "effective_day": _day + 2}])
 		_expect("army.move accepted", bool(moved.get("ok", false)), str(moved))
 		await _advance_to(_day + 6)
 		var after_move: Dictionary = facade.army(handle)
@@ -473,9 +478,9 @@ func _run() -> int:
 				break
 			if split_unit >= 0 and split_heads > 0:
 				var split_result: Dictionary = facade.submit([
-					{"op": "army.stop", "army": handle},
+					{"op": "army.stop", "army": handle, "effective_day": _day + 2},
 					{"op": "army.split", "country": player, "army": handle,
-						"units": {split_unit: split_heads}},
+						"units": {split_unit: split_heads}, "effective_day": _day + 2},
 				])
 				_expect("army.stop and army.split accepted on the sealed day",
 					bool(split_result.get("ok", false)) and int(split_result.get("accepted", 0)) == 2
@@ -517,7 +522,8 @@ func _run() -> int:
 				var detach_target := _march_target(map, facade, detached, detached_cell, 4)
 				if detach_target >= 0:
 					var detach_order_day := _day + 2
-					var detach_move: Dictionary = facade.move_army(detached, detach_target)
+					var detach_move: Dictionary = facade.submit([{"op": "army.move", "army": detached,
+						"cell": detach_target, "effective_day": detach_order_day}])
 					_expect("detached army.move accepted on the sealed day",
 						bool(detach_move.get("ok", false))
 							and int(detach_move.get("effective_day", -1)) == detach_order_day,
@@ -562,7 +568,8 @@ func _run() -> int:
 				var det_cell_now := int(facade.army(detached).get("cell", -1))
 				if det_cell_now != parent_cell_now:
 					var rally_order_day := _day + 2
-					var rally: Dictionary = facade.move_army(detached, parent_cell_now)
+					var rally: Dictionary = facade.submit([{"op": "army.move", "army": detached,
+						"cell": parent_cell_now, "effective_day": rally_order_day}])
 					_expect("rally accepted on the sealed day",
 						bool(rally.get("ok", false))
 							and int(rally.get("effective_day", -1)) == rally_order_day,
@@ -579,7 +586,7 @@ func _run() -> int:
 					+ _army_personnel(facade, detached)
 				var partial: Dictionary = facade.submit([{"op": "army.transfer",
 					"country": player, "army": handle, "other": detached,
-					"units": {-1: 1}}])
+					"units": {-1: 1}, "effective_day": _day + 2}])
 				_expect("army.transfer (partial) accepted",
 					bool(partial.get("ok", false))
 						and int(partial.get("effective_day", -1)) == _day + 2, str(partial))
@@ -593,7 +600,7 @@ func _run() -> int:
 					"%d -> %d" % [total_before, after_partial])
 				var whole: Dictionary = facade.submit([{"op": "army.transfer",
 					"country": player, "army": handle, "other": detached,
-					"units": {-1: 1000000}}])
+					"units": {-1: 1000000}, "effective_day": _day + 2}])
 				_expect("army.transfer (whole formation) accepted",
 					bool(whole.get("ok", false))
 						and int(whole.get("effective_day", -1)) == _day + 2, str(whole))
@@ -627,8 +634,8 @@ func _run() -> int:
 		var people_at_station := await _cell_population(econ, station_cell)
 		var soldiers_at_station := await _cell_soldiers(econ, station_cell)
 		var station: Dictionary = facade.submit([
-			{"op": "army.stop", "country": player, "army": handle},
-			{"op": "army.station", "country": player, "army": handle}])
+			{"op": "army.stop", "country": player, "army": handle, "effective_day": _day + 2},
+			{"op": "army.station", "country": player, "army": handle, "effective_day": _day + 2}])
 		_expect("army.station accepted", bool(station.get("ok", false)), str(station))
 		await _advance_to(_day + 4)
 		var people_after_station := await _cell_population(econ, station_cell)

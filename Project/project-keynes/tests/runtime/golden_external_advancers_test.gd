@@ -57,8 +57,9 @@ func _run() -> void:
 	var chain := "keynes-external-v5:seed=20260727:days1-4:target=0,2,3,4"
 	clock.pause(false)
 	for day in range(1, EXTERNAL_DAYS + 1):
-		# The previous day's tail is acknowledged, so today's inputs are sealed.
-		var target: Dictionary = military.set_target(handle, 0, day + 1)
+		# Keep the fixture's explicitly dated military target.
+		var target: Dictionary = military.submit([{"op": "force.set_target", "country": handle,
+			"value": day + 1, "effective_day": day + 1}])
 		_expect("v5 military target accepted on the first unsealed day",
 			bool(target.get("ok", false)) and int(target.get("effective_day", -1)) == day + 1)
 		admitted_targets[int(target.get("effective_day", -1))] = day + 1
@@ -71,7 +72,7 @@ func _run() -> void:
 		var caught_up := false
 		for _slice in range(MAX_SLICES_PER_DAY):
 			host._process(0.0)
-			if host._runtime_tail_completed_day == day:
+			if host._runtime_commit_day == day:
 				caught_up = true
 				break
 			await process_frame

@@ -909,7 +909,7 @@ bool DCWorldExt::_slot_is_visual_dirty(int comp_id) {
     return cached == 2;
 }
 
-void DCWorldExt::_flush_slot_to_map(int comp_id) {
+void DCWorldExt::_flush_slot_to_map(int comp_id, bool notify_resources) {
     if (!_map_data || comp_id < 0 || comp_id >= _slots.size()) return;
     const Slot &s = _slots[comp_id];
     {
@@ -996,7 +996,7 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
                     break;
                 }
             }
-            pk::notify_resource_visual_publication(_map_data, BIND_TABLE[i].property_name);
+            if (notify_resources) pk::notify_resource_visual_publication(_map_data, BIND_TABLE[i].property_name);
             if (any_visual_dirty || _pending_visual_dirty_dense) {
                 _pending_mark_dirty_all = true;
                 _native_dirty_report["flush_dirty_reason"] =

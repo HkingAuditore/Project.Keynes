@@ -13,7 +13,7 @@ func _run() -> void:
 	if OS.get_environment("PK_COMMITTED_REPLAY_SAVE_DAY").is_empty(): save_day = 2
 	var observe_days := maxi(4, int(OS.get_environment("PK_COMMITTED_REPLAY_DAYS")))
 	for day in range(5, observe_days + 1):
-		commands.append({"day": day, "operation": "military_target", "value": day + 1})
+		commands.append({"day": day, "operation": "military_target", "value": day + 1, "effective_day": day + 1})
 	var scenario := OS.get_environment("PK_COMMITTED_REPLAY_SCENARIO")
 	var config := NewGameConfig.create_default()
 	config.country.name = "Committed View Replay"
@@ -147,7 +147,8 @@ func _run() -> void:
 			# so it lands on the same day in every mode.
 			_expect("military technology granted", bool(host.execute_gm_command("country.grant_technology", {
 				"country_handle": handle, "technology_id": "tech.military.war_bands", "day": day + 1}).get("ok", false)))
-			var levy: Dictionary = military.set_levy_enabled(handle, true)
+			var levy: Dictionary = military.submit([{"op": "force.set_levy", "country": handle,
+				"count": 1, "effective_day": 2}])
 			_expect("military levy admitted for day two",
 				bool(levy.get("ok", false)) and int(levy.get("effective_day", -1)) == 2)
 		if scenario == "military" and day == 4:
@@ -193,7 +194,8 @@ func _run() -> void:
 					}).get("ok", false)))
 			_expect("military state building request admitted", state_building >= 0 and bool(economy.treasury_sponsored_build(
 				handle, cell, building_id, day + 1, 900001).get("ok", false)))
-			var barracks: Dictionary = military.build_state_building(handle, cell, state_building)
+			var barracks: Dictionary = military.submit([{"op": "state.build", "country": handle,
+				"cell": cell, "unit_to": state_building, "effective_day": 5}])
 			_expect("military state building admitted for day five", state_building >= 0
 				and bool(barracks.get("ok", false)) and int(barracks.get("effective_day", -1)) == 5)
 		if scenario == "military" and day == 20:
@@ -217,7 +219,8 @@ func _run() -> void:
 					militia_heads += int(lot.get("count", 0))
 			_expect("military completed barracks has posts", int(local.get("post_count", 0)) >= 4)
 			_expect("military recruited four local militia", militia_unit >= 0 and militia_heads >= 4)
-			var enlist: Dictionary = military.create_army(handle, cell, {militia_unit: 4})
+			var enlist: Dictionary = military.submit([{"op": "army.create", "country": handle,
+				"cell": cell, "units": {militia_unit: 4}, "effective_day": 21}])
 			_expect("military army admitted for day 21", militia_unit >= 0
 				and bool(enlist.get("ok", false)) and int(enlist.get("effective_day", -1)) == 21)
 		if scenario == "military" and day == 22:
@@ -230,7 +233,8 @@ func _run() -> void:
 			var armies: Array = military.armies(handle)
 			_expect("military war target found", military_enemy != 0 and not armies.is_empty())
 			if military_enemy != 0 and not armies.is_empty():
-				var war: Dictionary = military.declare_war(handle, military_enemy)
+				var war: Dictionary = military.submit([{"op": "war.declare", "country": handle,
+					"other": military_enemy, "effective_day": 23}])
 				_expect("military war admitted for day 23",
 					bool(war.get("ok", false)) and int(war.get("effective_day", -1)) == 23)
 				var army_handle := int(armies[0].handle)
@@ -243,7 +247,8 @@ func _run() -> void:
 						break
 				_expect("military move has a passable route", target >= 0)
 				if target >= 0:
-					var move: Dictionary = military.move_army(army_handle, target)
+					var move: Dictionary = military.submit([{"op": "army.move", "army": army_handle,
+						"cell": target, "effective_day": 23}])
 					_expect("military move admitted for day 23",
 						bool(move.get("ok", false)) and int(move.get("effective_day", -1)) == 23)
 		if scenario == "military" and day == 22 and vision_target >= 0:
@@ -253,7 +258,8 @@ func _run() -> void:
 			_expect("dated territory transfer accepted", bool(claim.get("ok", false))
 				and int(claim.get("effective_day", -1)) == day + 1)
 		_expect("known command", String(command.operation) == "military_target")
-		var receipt: Dictionary = military.set_target(handle, 0, int(command.value))
+		var receipt: Dictionary = military.submit([{"op": "force.set_target", "country": handle,
+			"value": int(command.value), "effective_day": int(command.get("effective_day", day + 1))}])
 		_expect("logged command admitted for day %d" % (day + 1),
 			bool(receipt.get("ok", false)) and int(receipt.get("effective_day", -1)) == day + 1)
 		var gm_receipt := {}
@@ -289,7 +295,7 @@ func _run() -> void:
 		var caught_up := false
 		for _slice in range(MAX_SLICES_PER_DAY):
 			host._process(0.0)
-			if host._runtime_tail_completed_day == day:
+			if host._runtime_commit_day == day:
 				caught_up = true
 				break
 			await process_frame

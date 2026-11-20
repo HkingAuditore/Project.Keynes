@@ -546,11 +546,13 @@ Dictionary RuntimeNarrative::begin_choice(const NarrativeDay &input, const Dicti
     return result;
 }
 
-Dictionary RuntimeNarrative::complete_choice(Dictionary result) {
+Dictionary RuntimeNarrative::complete_choice(Dictionary result, bool apply_local) {
     const int64_t date = _choice_record["resolved_day"];
     const int32_t cell = _choice_record["cell_idx"];
-    for (int64_t i = 0; i < _choice_effects.size(); ++i)
-        local_effect(compile_narrative_effect(_choice_effects[i]), cell, date);
+    if (apply_local) {
+        for (int64_t i = 0; i < _choice_effects.size(); ++i)
+            local_effect(compile_narrative_effect(_choice_effects[i]), cell, date);
+    }
     if (!bool(_active.get("notice_only", false)))
         _completed[narrative_key(_choice_record["event_id"])] = date;
     ++_next_record;
@@ -567,6 +569,13 @@ Dictionary RuntimeNarrative::complete_choice(Dictionary result) {
         for (int64_t index = 0; index < shown.size(); ++index)
             if (!shown[index].is_empty()) summaries.push_back(shown[index]);
     }
+    if (result.has("effect_failures")) {
+        _choice_record["effect_failures"] = result["effect_failures"];
+        summaries.clear();
+        summaries.push_back(String::utf8("部分效果未能生效。"));
+    }
+    if (result.has("pending_economy_effects"))
+        _choice_record["pending_economy_effects"] = result["pending_economy_effects"];
     _choice_record["applied_effects_summary"] = summaries;
     PackedStringArray displayed;
     for (int64_t index = 0; index < summaries.size(); ++index) displayed.push_back(summaries[index]);
@@ -582,4 +591,27 @@ Dictionary RuntimeNarrative::complete_choice(Dictionary result) {
     promote(_choice_day);
     return result;
 }
+void RuntimeNarrative::settle_economy_effects(
+        const std::function<bool(int64_t, std::string &)> &receipt) {
+    for (auto &row : _chronicle) {
+        const PackedInt64Array pending = row.get("pending_economy_effects", PackedInt64Array());
+        if (pending.is_empty()) continue;
+        PackedInt64Array remaining;
+        PackedStringArray failures = row.get("effect_failures", PackedStringArray());
+        for (int64_t i = 0; i < pending.size(); ++i) {
+            std::string reason;
+            if (!receipt(pending[i], reason)) remaining.push_back(pending[i]);
+            else if (!reason.empty()) failures.push_back(String(reason.c_str()));
+        }
+        if (!failures.is_empty()) {
+            row["effect_failures"] = failures;
+            Array summary;
+            summary.push_back(String::utf8("部分效果未能生效。"));
+            row["applied_effects_summary"] = summary;
+        }
+        if (remaining.is_empty()) row.erase("pending_economy_effects");
+        else row["pending_economy_effects"] = remaining;
+    }
+}
+
 } // namespace pk

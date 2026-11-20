@@ -200,8 +200,10 @@ static func _gm_error(code: String, message: String, data: Dictionary = {}) -> D
 static func submit_simulation_command(host, command_id: String, args: Dictionary) -> Dictionary:
 	if host._generator == null or host._world_clock == null:
 		return host._gm_error("world_not_ready", "世界尚未生成，无法提交该指令。")
-	var effective_day = int(args.get("day", host._world_clock.day_index() + 1))
-	if effective_day <= host._world_clock.day_index():
+	var first_day := int(host._runtime_commit_day) + 1 if host._native_environment_active \
+		else int(host._world_clock.day_index()) + 1
+	var effective_day := int(args.get("day", first_day))
+	if effective_day < 0 or (not host._native_environment_active and effective_day < first_day):
 		return host._gm_error("effective_day_invalid", "生效日必须晚于当前游戏日。")
 	var sequence = host._gm_sequence
 	host._gm_sequence += 2 if command_id == "economy.mint_to_treasury" else 1

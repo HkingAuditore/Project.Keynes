@@ -366,6 +366,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		and OS.get_environment("PK_SAVE_PROVIDER_HASH_SYNC") != "1"
 	_profile_save_window(true)
 	_world_clock.pause(true)
+	_runtime_host._sync_runtime_worker_clock()
 	var boundary: Dictionary = await _wait_for_safe_boundary(generation)
 	if not bool(boundary.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
@@ -376,6 +377,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return runtime_bundle
+	_runtime_host._consume_runtime_commit_if_ready()
 	if not _runtime_host.synchronize_environment_display_for_save():
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
@@ -584,11 +586,6 @@ func _can_save() -> Dictionary:
 		if _runtime_host.is_runtime_fault_paused() or String(thread.get("simulation_host_state", "")) == "FAULTED":
 			return _blocked_result("worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
 				String(_runtime_host.get_runtime_fault_diagnostics().get("fault_code", thread.get("fault_code", "unknown"))), "worker_faulted")
-		var committed_day := int(thread.get("simulation_committed_day", -1))
-		if bool(thread.get("authority_ready", false)) \
-				and committed_day > _runtime_host._runtime_tail_completed_day:
-			return _blocked_result("save_requires_committed_boundary",
-				"等待当日军务、视野和资源交接完成。", "day_tail_pending")
 		var idle_blocker := _worker_idle_blocker(thread)
 		if not idle_blocker.is_empty():
 			return _blocked_result("save_requires_idle_worker",
@@ -679,7 +676,8 @@ func _worker_idle_blocker(thread: Dictionary) -> String:
 		return "inline_day_pending" if bool(thread.get("inline_day_pending", false)) else ""
 	if host_state in ["STARTING", "RUNNING", "SAVE_PENDING"]:
 		return "state_%s" % host_state.to_lower()
-	if host_state != "STOPPED" and int(thread.get("environment_ring_pending", 0)) > 0:
+	if not _runtime_host._native_environment_active and host_state != "STOPPED" \
+			and int(thread.get("environment_ring_pending", 0)) > 0:
 		return "environment_ring_pending"
 	if int(thread.get("worker_day_inflight", 0)) > 0:
 		return "worker_day_inflight"

@@ -54,14 +54,14 @@ func _check_native_days(runtime: WorldRuntimeHost, clock: WorldClock) -> void:
 		for _frame in range(FRAME_LIMIT):
 			runtime._process(0.0)
 			report = generator.get_runtime_thread_report()
-			if runtime._runtime_tail_completed_day >= expected or report.get("simulation_host_state") == "FAULTED":
+			if runtime._runtime_commit_day >= expected or report.get("simulation_host_state") == "FAULTED":
 				break
 			await process_frame
 		_expect("all species updates commit before the next tick on day %d" % expected,
-			runtime._runtime_tail_completed_day == expected
+			runtime._runtime_commit_day == expected
 			and int(runtime._runtime_last_commit.get("committed_day", -1)) == expected
 			and bool(runtime._runtime_last_commit.get("species_writeback", false)))
-		if runtime._runtime_tail_completed_day != expected:
+		if runtime._runtime_commit_day != expected:
 			print("native_day_report=", JSON.stringify(report))
 			break
 

@@ -80,6 +80,9 @@ public:
     void publish_annual_economy(const AnnualEconomyFacts &facts) override;
     void commit_annual_day(int64_t day, const AnnualCountryFacts &country, uint64_t draws);
     void commit_annual_worker_day(int64_t day);
+    std::shared_ptr<const RuntimeFiscalDisplay> capture_economy_display(
+        int64_t day, int64_t year_length, RuntimeDayTail &tail,
+        const RuntimeDayTail *previous) const;
     void queue_annual_worker_reward(int64_t day);
     void settle_annual_worker_reward(const RuntimeIdeologyPodSnapshot &snapshot);
     bool annual_pending_reward(AnnualDevelopmentReport &out) const;
@@ -181,10 +184,9 @@ public:
     int64_t next_environment_day() const noexcept {
         return _environment_day.load(std::memory_order_acquire) + 1;
     }
-    // First day a command submitted now may take effect. With the main-day tail
-    // gate it is tail_done+2; otherwise the first day whose environment frame
-    // is not yet sealed (Climate authority), else committed+1.
+    // First day whose command inputs have not been frozen.
     int64_t command_seal_day() const noexcept;
+    std::unique_lock<std::mutex> lock_command_admission(int64_t &effective_day);
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -387,6 +389,9 @@ public:
     bool submit_economy_pod_command(const RuntimeEconomyPodCommand &command,
                                     std::string &error);
     bool poll_economy_pod_receipt(RuntimeEconomyPodReceipt &out) noexcept;
+    const RuntimeEconomyPodReceipt *economy_pod_terminal(uint64_t request) const {
+        return _economy_pod_authority.terminal_receipt(request);
+    }
     void set_economy_sync_writes_forbidden(bool forbidden) noexcept;
     int64_t economy_input_requested_day() const noexcept {
         return _economy_input_requested_day.load(std::memory_order_acquire);
@@ -403,10 +408,6 @@ public:
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
     }
-    // Day-tail tasks consume committed day D. The main thread acknowledges
-    // their results and D+1 inputs before the executor advances.
-    void set_main_day_tail_gate(bool enabled) noexcept;
-    void mark_main_day_tail_done(int64_t day) noexcept;
     void attach_bio_state(std::shared_ptr<struct RuntimeBioState> state) {
         _executor_bio = std::move(state);
     }
@@ -437,15 +438,6 @@ public:
     RuntimeResourceDisplayPatch take_resource_display_patch();
     // The caller retains the day-tail gate until it consumes this result.
     // The queued computation owns value data and never uses a scene object.
-    // The committed day's main-thread tail has not run yet. Before the Climate
-    // grant the main thread may be waiting for it without running a tail.
-    bool main_day_tail_pending() const noexcept {
-        return _main_day_tail_gate.load(std::memory_order_acquire) &&
-            (_authority_control.snapshot().granted_mask &
-             runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u &&
-            _main_day_tail_done.load(std::memory_order_acquire) <
-                _committed_day.load(std::memory_order_acquire);
-    }
     std::unique_lock<std::mutex> try_lock_economy_read_boundary() const;
     void complete_economy_input_capture() noexcept {
         {
@@ -882,6 +874,10 @@ public:
     uint64_t allocate_producer_sequence(uint32_t producer_id) override;
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
+    std::shared_ptr<const RuntimeClimateSnapshot> latest_climate_display() const;
+    std::shared_ptr<const RuntimeCommit> take_day_publications(
+        uint64_t after, std::deque<RuntimeDayRecord> &records, RuntimeResourceDisplayPatch &resources,
+        RuntimeCellLutDelta &delta);
     bool poll_receipt(RuntimeCommandReceipt &out);
     bool poll_country_command_receipts(
             uint64_t after_request_id, uint32_t limit,
@@ -1377,7 +1373,8 @@ private:
     bool submit_species_observations(int64_t day, const std::vector<int32_t> &cells,
                                       const std::vector<int32_t> &signals, int32_t &submitted);
     bool enqueue_batch_at(std::vector<RuntimeCommandPacket> packets,
-                          std::vector<int64_t> *effective_days, bool seal);
+                          std::vector<int64_t> *effective_days, bool seal,
+                          const std::function<bool()> &admit_peer = {});
     std::shared_ptr<NativeMilitaryRuntime> _executor_military;
     std::deque<std::shared_ptr<MilitaryCommandBatch>> _military_commands; // _control_mutex
     std::deque<std::shared_ptr<RuntimeColonizationRequest>> _colonization_requests;
@@ -1722,7 +1719,14 @@ private:
     std::vector<RuntimeCommandPacket> _executor_pending_commands;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _executor_day_environment;
     std::shared_ptr<class RuntimeWorldEnvironment> _world_environment;
+    static constexpr int64_t CALENDAR_LOOKAHEAD = 8;
     std::atomic<int64_t> _clock_requested_day{-1};
+    std::atomic<bool> _calendar_suspended{true};
+    std::atomic<int64_t> _display_consumed_day{-1};
+    std::deque<RuntimeDayRecord> _published_days; // protected by _resource_display_mutex
+    std::vector<uint8_t> _cell_lut_pending, _executor_cell_lut_pending;
+    std::vector<std::array<uint32_t, 4>> _cell_lut_words;
+    void publish_cell_lut_changes(RuntimeDayTail &tail, const RuntimeDayTail *previous);
     std::atomic<bool> _inline_day_pending{false};
     std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 
@@ -1838,8 +1842,7 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
-    std::atomic<bool> _main_day_tail_gate{false};
-    std::atomic<int64_t> _main_day_tail_done{-1};
+    std::atomic<int64_t> _command_frozen_through{-1};
     std::atomic<int64_t> _economy_input_requested_day{-1};
     // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
     std::atomic<uint32_t> _day_stall_reason_mask{0};

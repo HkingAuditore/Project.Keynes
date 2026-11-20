@@ -214,10 +214,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
     publish_narrative_boundary(start_day);
-    // The start day's tail is done: a save waits for it before packing. The
-    // caller's calendar is a day ahead after a load, and the seal is
-    // tail_done+2, so taking it would land the first day's commands a day late.
-    _main_day_tail_done.store(start_day, std::memory_order_release);
+    _command_frozen_through.store(start_day, std::memory_order_release);
+    _clock_requested_day.store(start_day, std::memory_order_release);
+    _calendar_suspended.store(start_paused, std::memory_order_release);
+    _display_consumed_day.store(start_day, std::memory_order_release);
+    _published_days.clear();
     _speed_days_per_second.store(std::max(0.0, start_speed),
                                  std::memory_order_release);
     _paused.store(start_paused, std::memory_order_release);
