@@ -1038,35 +1038,46 @@ bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_
     return true;
 }
 #include "military_core_procurement_selftest.inc"
-// --- 12. Naval transport (army-personnel contract 2 §2.1 / design §7.4).
+// --- 12. Water crossing (army-personnel contract 2 §2.1 / design §7.4).
 // The synthetic map only wraps east-west, so a full-width water band cuts it in
-// two and every land route between the shores has to cross exactly `band`
-// consecutive water cells. Those are the shapes the transport gate has to
-// classify: <= 3 water cells with the coastal technology, any width with the
-// ocean technology, nothing without either.
-MilitaryTerrainInput make_hex_terrain_with_water_band(int32_t first_row, int32_t band) {
+// two and every land route between the shores has to cross the band. The band's
+// landform decides WHICH water it is (lake / shallow / far / deep) and that is
+// the only gate: the number of water cells in a row is irrelevant.
+MilitaryTerrainInput make_hex_terrain_with_water_band(int32_t first_row, int32_t band,
+                                                      uint8_t water_landform = 2) {
     MilitaryTerrainInput t = make_hex_terrain(kW, kH);
     for (int32_t c = 0; c < t.cell_count; ++c) {
         const int32_t row = c / kW;
         if (row < first_row || row >= first_row + band) continue;
-        // Water cells keep the PLAIN terrain entry: whether they can be entered
-        // is the transport gate's decision, not the landform table's.
         t.is_water[(size_t)c] = 1;
         t.has_river[(size_t)c] = 0;
+        // Landform ids mirror scripts/geography/landform_type.gd: 0 deep ocean,
+        // 1 ocean, 2 coast (shallow), 3 lake.
+        t.landform[(size_t)c] = water_landform;
     }
     return t;
 }
-// Unlock bits: 0 = cannon (existing fixture), 1 = coastal transport,
-// 2 = ocean transport (army-personnel contract 2 §2.2 catalog slots).
-constexpr int32_t kCoastalTransportBit = 1;
-constexpr int32_t kOceanTransportBit = 2;
-constexpr uint64_t kCoastalUnlock = 1ull << kCoastalTransportBit;
-constexpr uint64_t kOceanUnlock = 1ull << kOceanTransportBit;
+// Unlock bits: 0 = cannon (existing fixture), 1..4 = lake/shallow/far/deep
+// water tiers (army-personnel contract 2 §2.2 catalog slots).
+constexpr int32_t kLakeBit = 1;
+constexpr int32_t kShallowBit = 2;
+constexpr int32_t kFarBit = 3;
+constexpr int32_t kDeepBit = 4;
+constexpr uint64_t kLakeUnlock = 1ull << kLakeBit;
+constexpr uint64_t kShallowUnlock = 1ull << kShallowBit;
+constexpr uint64_t kFarUnlock = 1ull << kFarBit;
+constexpr uint64_t kDeepUnlock = 1ull << kDeepBit;
+constexpr uint8_t kLandformDeepOcean = 0;
+constexpr uint8_t kLandformOcean = 1;
+constexpr uint8_t kLandformCoast = 2;
+constexpr uint8_t kLandformLake = 3;
 MilitaryCatalog make_naval_catalog() {
     MilitaryCatalog c = make_catalog();
-    c.unlock_count = 3;
-    c.coastal_transport_bit = kCoastalTransportBit;
-    c.ocean_transport_bit = kOceanTransportBit;
+    c.unlock_count = 5;
+    c.water_lake_bit = kLakeBit;
+    c.water_shallow_bit = kShallowBit;
+    c.water_far_bit = kFarBit;
+    c.water_deep_bit = kDeepBit;
     return c;
 }
 // Digest over a water-band map: water is unowned (crossing it must not open an

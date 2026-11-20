@@ -393,6 +393,18 @@ static func _validate_command_args(
 			var procurement_bp := int(args.get("bp", -1))
 			if procurement_bp < 0 or procurement_bp > 10000:
 				return _result(false, "invalid_args", "军需采购份额必须在 0–100% 之间。")
+		COMMAND_MILITARY_BUDGET:
+			# `-1` 是「本次不改」（沿用原生当前值），所以通道份额的合法区间是
+			# -1..10000；总份额不接受 -1：它要么启用信封，要么就是 0（关闭）。
+			var total_bp := int(args.get("total_bp", -1))
+			if total_bp < 0 or total_bp > 10000:
+				return _result(false, "invalid_args", "军事预算份额必须在 0–100% 之间。")
+			for key in ["wage_bp", "upkeep_bp", "procurement_bp"]:
+				if not args.has(key):
+					continue
+				var channel_bp := int(args[key])
+				if channel_bp < -1 or channel_bp > 10000:
+					return _result(false, "invalid_args", "军事通道份额必须在 0–100% 之间。")
 		COMMAND_MILITARY_ARMY_CREATE:
 			var cell := int(args.get("cell", -1))
 			var units = args.get("units", {})

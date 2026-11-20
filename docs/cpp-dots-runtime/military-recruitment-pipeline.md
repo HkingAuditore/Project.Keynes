@@ -119,13 +119,19 @@ ECONOMY_ASSET_TREASURY_SPEND, …, target_handle=army)`，由 peer 结算后在
 
 | 科技 | 能力 |
 | --- | --- |
-| `tech.military.coastal_transport`（近海运兵） | 连续水格 ≤ 3，且出发/登陆必须是陆地 |
-| `tech.military.naval_transport`（远洋运兵） | 取消连续水格上限（以近海为前提） |
+| `tech.river_transport`（河运，农耕） | 湖泊 |
+| `tech.military.coastal_transport`（近海运兵，王国） | 浅海 |
+| `tech.celestial_navigation`（天文导航，帝国） | 远海 |
+| `tech.oceanic_ship_design`（远洋船舶设计，探索） | 深海 |
 
-- 门控读 `MilitaryCatalog.coastal_transport_bit / ocean_transport_bit`（由
+- 水格等级由 landform 决定（0 深海 / 1 远海 / 2 浅海 / 3 湖，见 `gdext/src/water_tier.h`，与
+  `NativeEconomyRuntime` 的贸易航道用同一张表）；等级嵌套，高一级同时覆盖低等级。**不存在**
+  「连续水格数」限制：一条 6 格宽的浅海一样可以横渡。
+- 门控读 `MilitaryCatalog.water_lake_bit / water_shallow_bit / water_far_bit / water_deep_bit`（由
   `MilitaryCatalogCompiler` 从科技 id 解析，默认 -1 = 未解锁），判定用 digest 的
-  `country_unlock_bits`；两个位参与 catalog hash，改了就等于换目录（旧 PKMI 会被拒）。
-- `find_path` 搜索 `(cell, 已过连续水格数)` 状态；`preview_path` 同样门控，天数按陆 1.0 / 水 1.5。
+  `country_unlock_bits`；四个位参与 catalog hash，改了就等于换目录（旧 PKMI 会被拒）。
+- `find_path` / `find_exploration_path` / `preview_path` 均单状态搜索（每格一个状态）；
+  `preview_path` 天数按陆 1.0 / 水 1.5。
 - 在海格上姿态强制 `EMBARKED`，登陆恢复；海上每日 0.2% 损耗，不计陆地恶劣环境减员，不参与陆战。
 - 未解锁时 `find_path` 与 `preview_path` 必须拒绝水域（不得静默放行）。
 - **`MSTAT_NAVAL_TRANSPORT`（海运运力）缩放海格移动力与预览天数**：`sea = 1.5 × land ÷ transport`，运力夹在 `[1/8, 8]`，且永远不会比陆地便宜（下限 1.0× land）。

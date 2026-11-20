@@ -280,7 +280,7 @@ func _submit_military_command(host, id: StringName, args: Dictionary,
 	if bool(result.get("ok", false)):
 		result["code"] = String(result.get("code", "queued"))
 		if not result.has("message"):
-			result["message"] = "军事命令已排队，将在下一游戏日生效。"
+			result["message"] = "命令已下达"
 		host._military_last_sequence = sequence
 		if id == host.COMMAND_MILITARY_BUDGET:
 			host._remember_military_budget(args)

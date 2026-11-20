@@ -30,6 +30,11 @@ var _political_regime_catalog_cache: Dictionary = {}
 var _political_regime_catalog_facade = null
 var _military_catalog_cache: Dictionary = {}
 var _military_catalog_facade = null
+## 具名聚落名表（cell -> 名字）与它对应的 Economy 结算 revision。
+## 军事面板每行都要写地块名，而原生只给「有名字的聚落」这一份权威名单；按 revision
+## 增量维护，名字没变时每次刷新只有一次空读，不会把 2400 格扫一遍。
+var _cell_names: Dictionary = {}
+var _cell_names_revision := -1
 var _economy_history := EconomyHistoryBuffer.new()
 ## 国库收支的逐日趋势。与产值账本一样按已提交日采样，面板关闭时也继续走。
 var _fiscal_history := EconomyFiscalHistory.new()
@@ -383,6 +388,10 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	}
 	if normalized_section == "technology":
 		model.merge(build_static_catalog(), true)
+	if normalized_section == "economy":
+		# 国库页的军费板块读 `model["military"]`；经济章以前不装配这一段，
+		# 于是板块永远「暂不可用」。只装它要的那两项读数（见函数注释）。
+		build_military_spending_model(country_handle, model)
 	if normalized_section in ["military", "diplomacy"]:
 		model["good_ids"] = _good_stable_ids()
 		build_military_model(country_handle, model)
@@ -702,6 +711,9 @@ func build(section_id: String = "technology") -> Dictionary:
 		research["country_cash"] = cash
 		model["research"] = research
 		model.merge(build_static_catalog(), true)
+	if normalized_section == "economy":
+		# 与事件驱动的 `build()` 同源：国库页的军费板块要 `model["military"]`。
+		build_military_spending_model(country_handle, model)
 	if normalized_section in ["military", "diplomacy"]:
 		# 军事面板需要 dense good id → 稳定 id 的对照表来给装备类别起名。
 		model["good_ids"] = _good_stable_ids()
@@ -743,6 +755,10 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		# facade）。缺了它 `session_bound()` 恒为 false，战争页的邻国表就永远是空的。
 		"generator": _generator,
 		"map": _map,
+		# 兵营行、训练行与割地表都要写地块名。名字的权威在 Economy 的具名聚落，
+		# 这里一次装进段里：`MilitaryViewModel.cell_name()` 就不用自己再查原生，
+		# 面板也不至于因为拿不到名字而写「未命名地块」。
+		"cell_names": _cell_name_table(),
 	}
 	if facade == null:
 		model["military"] = section
@@ -813,6 +829,88 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 	# 三个通道口径相同（否则玩家会把 30 日总额当成一天的花销）。
 	section.merge(military_spending_model(snapshot,
 		_military_maintenance_model(facade, country_handle)), true)
+	model["military"] = section
+	return section
+
+## 地块名表（cell -> 具名聚落名），供军事面板写兵营行、训练行与割地表。
+##
+## 名字的权威在 Economy：`named_settlement_snapshot()` 给「哪些格有名字、叫什么」，
+## `settlement_delta(since)` 给增量。这里按 revision 缓存：名字没变时每次刷新只是一次
+## 空读；首次或 revision 跳变（含 `full_snapshot`）才重扫一遍。读失败（worker 忙、
+## 旧 DLL）时保留上一份，面板退回地区名而不是整列变空。
+##
+## 只收 `name_active != 0` 且名字非空的格：未命名的聚落行在原生里也带一串占位名，
+## 写进面板会比没有名字更糟。
+func _cell_name_table() -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return _cell_names
+	var economy = _generator.get_economy_facade()
+	if economy == null or not economy.has_method("settlement_delta"):
+		return _cell_names
+	var delta = economy.call("settlement_delta", _cell_names_revision)
+	if not (delta is Dictionary) or not bool((delta as Dictionary).get("ok", false)):
+		return _cell_names
+	var rows: Dictionary = delta
+	var revision := int(rows.get("revision", _cell_names_revision))
+	if revision == _cell_names_revision:
+		return _cell_names
+	if bool(rows.get("full_snapshot", false)):
+		_cell_names.clear()
+	var cells = rows.get("cell_indices", PackedInt32Array())
+	var names = rows.get("settlement_names", PackedStringArray())
+	var active = rows.get("name_active", PackedByteArray())
+	if cells is PackedInt32Array and names is PackedStringArray:
+		var count := mini((cells as PackedInt32Array).size(), (names as PackedStringArray).size())
+		for index in range(count):
+			var cell := int((cells as PackedInt32Array)[index])
+			if cell < 0:
+				continue
+			var named := not (active is PackedByteArray) or index >= (active as PackedByteArray).size() \
+				or int((active as PackedByteArray)[index]) != 0
+			var label := String((names as PackedStringArray)[index]).strip_edges()
+			if named and not label.is_empty():
+				_cell_names[cell] = label
+			else:
+				_cell_names.erase(cell)
+	_cell_names_revision = revision
+	return _cell_names
+
+## 财政（国库）章的军事支出段。
+##
+## 国库页只画三条通道的实付与信封读数（军饷 / 建筑维护 / 装备与给养采购），需要的
+## 输入就是 `military_spending_model` 的两项：国家槽快照 + 实物维护明细。整份军事
+## 模型（部队、目录、科技闸门、逐格快照）属于军事章；把它装进经济章等于每次刷新
+## 国库页都多读三份原生数据，只为一段根本读不到的字段付钱。
+##
+## 关键点：经济章的模型以前**完全没有** `military` 这个键，于是财政页拿到空字典，
+## 军事板块永远显示「暂不可用 / 军事账目尚未就绪」（2026-11-20 玩家截图里的红框）。
+## 这里产出的键集合与 `military_spending_model` 完全一致，所以财政页不必区分
+## 「经济章的军事段」与「军事章的军事段」。
+func build_military_spending_model(country_handle: int, model: Dictionary) -> Dictionary:
+	var facade = null
+	if _generator != null and _generator.has_method("get_military_facade"):
+		facade = _generator.get_military_facade()
+	var section := {
+		"available": false,
+		"reason": "军事机构尚未接通，军费账目暂不可读。",
+		"facade": facade,
+		"country_handle": country_handle,
+	}
+	if facade != null and facade.has_method("country_snapshot"):
+		var fetched = facade.call("country_snapshot", country_handle)
+		var snapshot: Dictionary = fetched if fetched is Dictionary else {}
+		if bool(snapshot.get("ok", false)):
+			var spending := military_spending_model(snapshot,
+				_military_maintenance_model(facade, country_handle))
+			section["available"] = bool(spending.get("available", false))
+			section["reason"] = ""
+			section.merge(spending, true)
+			if not bool(section.get("available", false)):
+				# 快照正常但没有国家政策槽：原生还没为这个国家开军事账。
+				section["reason"] = "军务政策尚未建立，军费账目暂不可读。"
+		elif not String(snapshot.get("reason", "")).is_empty():
+			section["reason"] = "军事数据暂不可用（%s）" % String(
+				snapshot.get("reason", ""))
 	model["military"] = section
 	return section
 

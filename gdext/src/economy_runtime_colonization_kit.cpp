@@ -1037,6 +1037,8 @@ void NativeEconomyRuntime::note_family_expedition_procurement_rejection(
 bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         int32_t expedition, ColonizationKitPlan &kit,
         std::string &error, int64_t day) {
+    ensure_epoch_colonization_budget(static_cast<uint64_t>(
+        family_expeditions_store().country_handle[expedition]));
     const int32_t source_cell = family_expeditions_store().source_cell[expedition];
     const uint32_t begin = family_expeditions_store().cargo_begin[expedition];
     const uint32_t count = family_expeditions_store().cargo_count[expedition];
@@ -1090,16 +1092,17 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
                           uint8_t cargo_flags) -> bool {
         if (delta == 0) return true;
         if (delta < 0) {
-            const int64_t quantity = -delta;
+            // The kit only launches once every line is bought, so a line that
+            // costs more than the remaining daily reserve can never be a
+            // terminal rejection: the party would wait forever at "kit
+            // complete" with nobody able to pay. Buy what today's allowance
+            // covers and let tomorrow's replan top up the difference.
+            int64_t quantity = -delta;
             const int32_t market = market_store().cell_to_market[source_cell];
             const int64_t price = market >= 0 && market < market_store().market_count.get()
                 ? std::max<int64_t>(0, market_store().price[
                     market_store().index(market, good)]) : 0;
-            const int64_t cash = goods_cost(quantity, price, _saturation_count);
-            std::vector<int32_t> ids{good};
-            std::vector<int64_t> treasury{0};
-            std::vector<int64_t> market_goods{quantity};
-            int64_t committed_cash = 0;
+            int64_t cash = goods_cost(quantity, price, _saturation_count);
             FamilyExpeditionProcurementContinuation &continuation =
                 _family_expedition_procurement_continuation;
             bool purchased = false;
@@ -1121,8 +1124,20 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
                 const int64_t allowance =
                     colonization_procurement_allowance(payer, day);
                 if (allowance >= 0 && cash > allowance) {
-                    error = "colonization_procurement_budget_exhausted";
-                    return false;
+                    const int64_t affordable = allowance > 0 && price > 0
+                        ? mul_div_sat(allowance, GOODS_SCALE, price,
+                            _saturation_count)
+                        : 0;
+                    quantity = std::min(quantity, std::max<int64_t>(0, affordable));
+                    // goods_cost rounds up, so trim until the partial line fits.
+                    while (quantity > 0 &&
+                           goods_cost(quantity, price, _saturation_count) > allowance)
+                        quantity = std::max<int64_t>(0, quantity - 1);
+                    if (quantity <= 0) {
+                        error = "colonization_procurement_budget_exhausted";
+                        return false;
+                    }
+                    cash = goods_cost(quantity, price, _saturation_count);
                 }
                 consume_colonization_procurement_allowance(payer, cash);
                 purchased = start_family_expedition_procurement(
@@ -1133,6 +1148,14 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
                 if (error.empty()) error = "colonization_treasury_purchase_failed";
                 return false;
             }
+            // This line finally went through: a previous terminal rejection for
+            // it is history and must stop rendering as a live blocker.
+            const auto rejection =
+                _family_expedition_procurement_rejections.find(expedition);
+            if (rejection != _family_expedition_procurement_rejections.end() &&
+                rejection->second.good == good &&
+                rejection->second.cargo_flags == cargo_flags)
+                _family_expedition_procurement_rejections.erase(rejection);
             auto acquired = std::find_if(old_cargo.begin(), old_cargo.end(),
                 [&](const FamilyExpeditionCargoLine &held) {
                     return held.good_id == good && held.flags == cargo_flags;
@@ -1214,6 +1237,7 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         }
     }
     bool short_lines = false;
+    bool bought_today = false;
     for (size_t kit_index = 0; kit_index < kit.cargo.size(); ++kit_index) {
         const FamilyExpeditionCargoLine &line = kit.cargo[kit_index];
         bool seen = false;
@@ -1231,12 +1255,20 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
             short_lines = true;
             continue;
         }
-        if (move_stock(line.good_id, -net_shortfall, line.flags)) continue;
+        if (move_stock(line.good_id, -net_shortfall, line.flags)) {
+            bought_today = true;
+            continue;
+        }
         const FamilyExpeditionProcurementContinuation &continuation =
             _family_expedition_procurement_continuation;
         if (continuation.active) return false;
-        note_family_expedition_procurement_rejection(expedition,
-            line.good_id, line.flags, day, error);
+        // A line refused after another line already spent today's allowance is
+        // not a stop the player has to act on: tomorrow's refill resumes it.
+        // Only a day that bought nothing keeps a refusal note to explain why.
+        if (!bought_today) {
+            note_family_expedition_procurement_rejection(expedition,
+                line.good_id, line.flags, day, error);
+        }
         error.clear();
         short_lines = true;
     }

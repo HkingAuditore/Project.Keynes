@@ -128,8 +128,6 @@ func _test_block_renders_three_paid_rows() -> void:
 	_expect("training row reports both counts",
 		block.training_text().contains("在训 200 人")
 		and block.training_text().contains("待装备 140 件"))
-	_expect("the block spells out that recruitment is not funded",
-		block.note_text().contains("招募本身不拨款"))
 	block.queue_free()
 
 
@@ -221,11 +219,9 @@ func _test_overspend_versus_deferred() -> void:
 	_expect("the deferred wording says 待购 rather than 超支",
 		block.channel_note("procurement").contains("待购")
 		and not block.channel_note("procurement").contains("超支"))
-	_expect("the overspend wording names the overspent amount",
-		block.channel_note("wage").contains("超支"))
-	_expect("the summary names both the envelope and the shortfall",
-		block.summary_text().contains("每日信封")
-		and block.summary_text().contains("待购"))
+	_expect("the overspend note is a state word plus the amount, not a sentence",
+		block.channel_note("wage").contains("超支")
+		and not block.channel_note("wage").ends_with("。"))
 	block.queue_free()
 
 
@@ -244,8 +240,9 @@ func _test_disabled_envelope_reads_as_legacy() -> void:
 	block.set_state(ViewModelScript.military_spending_model(snapshot))
 	_expect("an absent envelope is not reported as an enabled one",
 		not block.is_envelope_enabled())
-	_expect("the summary explains the legacy cash-driven path",
-		block.summary_text().contains("未启用"))
+	_expect("a disabled envelope writes no explanatory sentence",
+		block.channel_note("wage").is_empty()
+		or not block.channel_note("wage").ends_with("。"))
 	_expect("channel sliders are locked without an envelope",
 		block.channel_slider("wage") != null
 		and not block.channel_slider("wage").is_interactive())
@@ -280,9 +277,8 @@ func _test_fiscal_page_mounts_editable_block() -> void:
 		block != null and block.envelope_slider() != null
 		and block.envelope_slider().is_interactive())
 	var detail := _detail_text(page, "military")
-	_expect("the section note names all three channel ceilings",
-		detail.contains("每日信封") and detail.contains("军饷")
-		and detail.contains("维护") and detail.contains("采购"))
+	_expect("the military section carries no explanatory line",
+		detail.is_empty())
 	# 渲染过程零命令：只有玩家提交滑条时才发 military.policy.set_budget。
 	_expect("rendering the block issues no command at all",
 		controller.commands.is_empty())

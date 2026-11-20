@@ -27,6 +27,9 @@ const VIEW_MODEL_SCRIPT = preload("res://scripts/ui/military_view_model.gd")
 const UnitRosterScript = preload("res://scripts/ui/components/military/military_unit_roster.gd")
 
 const LIVE_REFRESH_INTERVAL_MSEC := 200
+## 目标滑条的提交延迟：键盘、点击轨道等没有 `drag_ended` 的调整靠它落库；
+## 鼠标拖动在松手时立即提交，不等这个计时器。
+const TARGET_COMMIT_DELAY_SEC := 0.25
 const NARROW_WIDTH := 820.0
 const HEADCOUNT_MAX := 50000.0
 const BUDGET_MAX := 50000.0
@@ -57,6 +60,15 @@ var _selected_war := 0
 var _forces: Dictionary = {}
 var _war_data: Dictionary = {}
 var _slider_dragging := false
+## 目标滑条的待提交值（`_target_pending_mode >= 0` 即视为有）。
+##
+## 命令在 D+1 才落库，而面板每 200ms 用原生快照重画一次。快照追上之前若把把手
+## 写回原生旧值，玩家看到的就是「拖了等于没拖、永远招不到兵」（2026-11-20 用玩家
+## 存档复盘：target_value 恒为 0，配额随之恒为 0）。所以要留一份本地覆盖，等到
+## 快照的模式与数值都与提交值一致才释放。
+var _target_pending_mode := -1
+var _target_pending_value := -1.0
+var _target_commit_timer: Timer
 var _flash_text := ""
 ## Short viewport (phone landscape): the KPI band collapses to one dense line.
 var _short := false
@@ -122,14 +134,24 @@ func _ready() -> void:
 	_refresh_timer.one_shot = true
 	add_child(_refresh_timer)
 	_refresh_timer.timeout.connect(_flush_pending_refresh)
+	_target_commit_timer = Timer.new()
+	_target_commit_timer.one_shot = true
+	_target_commit_timer.wait_time = TARGET_COMMIT_DELAY_SEC
+	add_child(_target_commit_timer)
+	_target_commit_timer.timeout.connect(_commit_target)
 	# Keep the index page compact: every action has a semantic paper icon, and
 	# the caption is short enough to scan without turning the page into a manual.
 	IconButton.apply_with_text(_overview_war_link, &"military.war.front", "战线",
 		IconButton.MEDIUM, "打开战争与战线")
+	# 「人数 / 预算」是互斥的模式签：必须真的开 toggle。`apply_with_text` 的
+	# `toggle` 参数默认 false，而它会无条件 `button.toggle_mode = toggle`；漏了这
+	# 一项两个按钮就退化成普通按钮——按下去不保持、`set_pressed_no_signal(false)`
+	# 也无效，`button_pressed` 恒 false。结果是「预算」模式根本进不去，拖动提交
+	# 一律按人数模式发出去（金额被当成兵数）。
 	IconButton.apply_with_text(_mode_headcount, &"military.plan.target", "人数",
-		IconButton.MEDIUM, "按目标兵力设置")
+		IconButton.MEDIUM, "按目标兵力设置", true)
 	IconButton.apply_with_text(_mode_budget, &"metric.treasury", "预算",
-		IconButton.MEDIUM, "按每日军费设置")
+		IconButton.MEDIUM, "按每日军费设置", true)
 	IconButton.apply_with_text(_quality_best, &"military.plan.quality", "优先",
 		IconButton.MEDIUM, "优先采购更高品质装备", true)
 	IconButton.apply_with_text(_quality_cheap, &"metric.treasury", "节省",
@@ -183,7 +205,10 @@ func _refresh_layout() -> void:
 func _bind_forces() -> void:
 	_target_slider.drag_started.connect(func() -> void: _slider_dragging = true)
 	_target_slider.drag_ended.connect(_on_target_drag_ended)
-	_target_slider.value_changed.connect(func(_v: float) -> void: _update_target_readout())
+	# 键盘、点击轨道、无障碍调整都不会发 `drag_ended`；只挂 drag_ended 会让这些
+	# 输入永远发不出命令，下一次 200ms 刷新再把把手写回原生旧值。所以值一变就
+	# 更新读数，非拖动状态再走一次防抖提交。
+	_target_slider.value_changed.connect(_on_target_value_changed)
 	_mode_headcount.pressed.connect(_on_target_mode.bind(0))
 	_mode_budget.pressed.connect(_on_target_mode.bind(1))
 	_quality_best.pressed.connect(_request.bind(
@@ -549,14 +574,25 @@ func _refresh_overview() -> void:
 
 func _refresh_forces() -> void:
 	_forces = _vm.build("forces")
-	var mode := int(_forces.get("target_mode", 0))
+	var snapshot_mode := int(_forces.get("target_mode", 0))
+	var raw := float(_forces.get("target_value", 0))
+	var snapshot_value := raw if snapshot_mode == 0 \
+		else raw / MilitaryViewModel.MONEY_SCALE
+	# 原生已经落库（模式与数值都对上）：释放本地覆盖，此后完全跟随快照。
+	if _target_pending_mode >= 0 and snapshot_mode == _target_pending_mode \
+			and is_equal_approx(snapshot_value, _target_pending_value):
+		_target_pending_mode = -1
+		_target_pending_value = -1.0
+	# 待提交期间以玩家刚选定的模式为准，否则切到「预算」后按钮与量程会在快照追上
+	# 之前闪回「人数」。
+	var mode := _target_pending_mode if _target_pending_mode >= 0 else snapshot_mode
 	_mode_headcount.set_pressed_no_signal(mode == 0)
 	_mode_budget.set_pressed_no_signal(mode == 1)
 	_target_slider.max_value = HEADCOUNT_MAX if mode == 0 else BUDGET_MAX
 	_target_slider.step = 100.0 if mode == 0 else 50.0
-	if not _slider_dragging:
-		var raw := float(_forces.get("target_value", 0))
-		_target_slider.set_value_no_signal(raw if mode == 0 else raw / MilitaryViewModel.MONEY_SCALE)
+	# 拖动中或还有待提交值时不动把手：写回旧值就是「拖了没用」的假象。
+	if not _slider_dragging and _target_pending_mode < 0:
+		_target_slider.set_value_no_signal(snapshot_value)
 	_update_target_readout()
 	var policy := int(_forces.get("quality_policy", 0))
 	_quality_best.set_pressed_no_signal(policy == 0)
@@ -617,19 +653,43 @@ func _update_target_readout() -> void:
 	MoneyDisplay.apply_icon(_cost_icon, 14)
 
 
+## 用户改了滑条值。拖动中只更新读数（松手时统一提交，免得每 100 人发一条命令）；
+## 其余输入（键盘、点击轨道、无障碍调整）没有 `drag_ended`，靠防抖计时器落库。
+func _on_target_value_changed(_value: float) -> void:
+	_update_target_readout()
+	if _slider_dragging:
+		return
+	if _target_commit_timer != null:
+		_target_commit_timer.start()
+
+
 func _on_target_drag_ended(_changed_value: bool) -> void:
 	_slider_dragging = false
+	_commit_target()
+
+
+## 提交当前滑条位置。松手与防抖到期都走这里；同一个值不重复发命令。
+func _commit_target() -> void:
+	if _target_commit_timer != null:
+		_target_commit_timer.stop()
 	_submit_target(1 if _mode_budget.button_pressed else 0)
 
 
 func _on_target_mode(mode: int) -> void:
 	_mode_headcount.set_pressed_no_signal(mode == 0)
 	_mode_budget.set_pressed_no_signal(mode == 1)
+	var current_mode := _target_pending_mode if _target_pending_mode >= 0 \
+		else int(_forces.get("target_mode", 0))
+	if mode == current_mode:
+		# 重复点当前模式：只同步按钮状态，不发命令。以前这里会照发一条
+		# 「value = 滑条当前值」的命令，滑条停在 0 时等于把招募目标清零。
+		return
 	var per := float(_forces.get("per_soldier_cost", 0)) / MilitaryViewModel.MONEY_SCALE
 	if per > 0.0:
 		# Keep the same force size when switching units of the slider.
 		var converted := _target_slider.value * per if mode == 1 else _target_slider.value / per
 		_target_slider.max_value = BUDGET_MAX if mode == 1 else HEADCOUNT_MAX
+		_target_slider.step = 50.0 if mode == 1 else 100.0
 		_target_slider.set_value_no_signal(converted)
 	_update_target_readout()
 	_submit_target(mode)
@@ -637,8 +697,19 @@ func _on_target_mode(mode: int) -> void:
 
 func _submit_target(mode: int) -> void:
 	var value := _target_slider.value
+	if mode == _target_pending_mode and is_equal_approx(value, _target_pending_value):
+		return
 	var raw := int(round(value * MilitaryViewModel.MONEY_SCALE)) if mode == 1 else int(round(value))
-	_request(PlayerControllerScript.COMMAND_MILITARY_FORCE_TARGET, {"mode": mode, "value": raw})
+	_target_pending_mode = mode
+	_target_pending_value = value
+	var result: Dictionary = _request(
+		PlayerControllerScript.COMMAND_MILITARY_FORCE_TARGET, {"mode": mode, "value": raw})
+	if bool(result.get("ok", false)):
+		return
+	# 没被受理（会话未就绪 / 参数被拒）：立刻放弃覆盖，下一次刷新把把手退回原生
+	# 真值。顶部那句拒绝理由由 `_request` 留下，不在这里用本地值假装已生效。
+	_target_pending_mode = -1
+	_target_pending_value = -1.0
 
 
 func _on_toggle(enabled: bool, command: StringName) -> void:
@@ -902,15 +973,16 @@ func _on_front_selected(row_id) -> void:
 
 # ── commands ────────────────────────────────────────────────────────────
 
-func _request(id: StringName, args: Dictionary) -> void:
+func _request(id: StringName, args: Dictionary) -> Dictionary:
 	if _player_controller == null or not _player_controller.has_method("request_command"):
 		_flash("命令暂未接通，请稍后重试。", true)
-		return
+		return {}
 	var result: Dictionary = _player_controller.request_command(id, args)
 	if bool(result.get("ok", false)):
 		_flash(String(result.get("message", "已下达。")), false)
 	else:
 		_flash(String(result.get("message", "命令未生效，请重试或查看军情。")), true)
+	return result
 
 
 func _flash(text: String, danger: bool) -> void:
