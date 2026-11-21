@@ -57,7 +57,7 @@
 
 ## Issue 模式（只能手动）
 
-由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
+由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
 
 ```mermaid
 flowchart TD
@@ -94,9 +94,9 @@ flowchart TD
 | 关卡 | 必须满足 | 证据 | 不满足时 |
 |---|---|---|---|
 | G0 工单 | 标题；`## Acceptance criteria` 或 `## 验收标准` 下有勾选框或编号条目；没有跳过标签 | issue 正文和标签 | `agent-needs-help`，移除 `ready-for-agent`，评论列出原因 |
-| 计划 | 六个小节齐全，Questions 为 `none`，额外检查命令符合允许格式 | Codex 只读输出，贴在 issue 上 | 有问题或命令被拒绝时交给人 |
+| 计划 | 六个小节齐全，Questions 为 `none`，额外检查命令符合允许格式（`tools/ci/<脚本>.py`，可带 `--参数` 和 `tests/<路径>.gd`；开头的 `python3` 会去掉） | Codex 只读输出，贴在 issue 上 | 有问题或命令被拒绝时交给人 |
 | 范围 | `.github/`、`tools/factory/`、`tools/ci/`、`.qodo/`、基线、契约文件、`gdext/godot-cpp/` 和 `gdext/rebuild.sh` 由人处理。C++ 改动只可附带本轮通过验证的两份 macOS 库；C++ 没改时恢复生成的库文件 | 每次提交前重查 `git diff`、未跟踪文件和子模块状态，核对库目录的改动和重编产物 | 提交前发现越界或库文件不符合要求就停下 |
-| 检查 | 工作树完整，检查脚本和测试目录齐全；在 base 上通过的检查，在改动后也要通过。C++ 改动时先跑 `gdext/rebuild.sh`，再导入项目，然后用 `check_macos_runtime_extension.py` 分别验证两份库。每次执行回归都先导入候选项目 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 工作树不完整或检查入口缺失时立即停下，记录错误并打 `agent-needs-help`。Issue 实现阶段把普通检查的失败日志尾部发给 Codex，最多尝试 3 次。PR 模式报告失败并停下 |
+| 检查 | 工作树完整，检查脚本和测试目录齐全；推送前**所有**检查都要通过，master 上原本就失败的也算（AGENTS.md：推送前修复已发现的问题，不能因为是既有失败就留到以后）。base 上的失败只用来告诉 Codex 哪些是改动前就有的。C++ 改动时先跑 `gdext/rebuild.sh`，再导入项目，然后用 `check_macos_runtime_extension.py` 分别验证两份库。每次执行回归都先导入候选项目 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 工作树不完整或检查入口缺失时立即停下，记录错误并打 `agent-needs-help`。Issue 实现阶段把普通检查的失败日志尾部发给 Codex，最多尝试 3 次。PR 模式报告失败并停下 |
 | 本地评审（默认尽力而为） | Qodo 对未提交改动没有阻塞项（action_required / remediation_recommended） | `qodo review --repo hrhgit/Project.Keynes --json` | 评审失败或覆盖不完整时记入运行记录和 PR 正文，继续走 PR 评审。若配置要求本地评审，则停下交给人 |
 | PR 评审 | Qodo 对**当前头部提交**的评审已完成，没有未关闭的阻塞项 | `qodo read pr-review-session findings` | 最多 3 轮修复；同一批问题重复就停 |
 | CI | 头部提交至少有一次 GitHub Actions 工作流运行，所有工作流和检查都已结束，检查全部成功 | GitHub Actions 和 check runs | 等待中为 NOT_DONE，检查失败为 NEEDS_FIX，查询失败时立即停下并给出 NEEDS_HUMAN |

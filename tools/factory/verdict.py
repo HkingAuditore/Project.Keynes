@@ -110,9 +110,6 @@ def judge(f: Facts) -> Verdict:
     human += [f"the plan asks: {q}" for q in f.plan_questions]
     human += [f"the plan check was rejected by the allowlist: {c}" for c in f.rejected_checks]
     human += [f"the agent disagrees with a finding: {d}" for d in f.disagreements]
-    if f.base_failures:
-        human.append("master already fails " + ", ".join(f.base_failures)
-                     + "; AGENTS.md requires fixing found failures before a push")
     if f.human_paths:
         human.append("protected files changed and need a human check: " + ", ".join(f.human_paths))
     if f.local_blocking:

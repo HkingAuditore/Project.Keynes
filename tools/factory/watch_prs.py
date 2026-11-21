@@ -83,9 +83,8 @@ def merge_path_blocker(files: list[ChangedFile], cfg: dict) -> str | None:
     return None
 
 
-def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
-           changed_files: list[ChangedFile] | None = None, ci: CIFacts | None = None) -> Decision:
-    """Pure decision for one PR from GitHub metadata, the Qodo review read and the saved state."""
+def skip_before_review(pr: dict, state: PrState, cfg: dict) -> Decision | None:
+    """Skips that need no Qodo read, so tick() does not spend a review lookup on them."""
     head = pr["headRefOid"]
     if pr.get("isDraft"):
         return Decision("skip", "draft")
@@ -94,8 +93,21 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
     labels = set(pr.get("labels") or [])
     if labels.intersection(cfg["skipLabels"]):
         return Decision("skip", "has a skip label")
+    if (pr.get("headRefName") or "").startswith(cfg["issueBranchPrefix"]) and cfg["labels"]["handoff"] not in labels:
+        return Decision("skip", "the issue runner has not handed this PR over")
     if state.gave_up_at == head:
         return Decision("skip", f"stopped at this head ({state.reason}); waiting for a person")
+    return None
+
+
+def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
+           changed_files: list[ChangedFile] | None = None, ci: CIFacts | None = None) -> Decision:
+    """Pure decision for one PR from GitHub metadata, the Qodo review read and the saved state."""
+    head = pr["headRefOid"]
+    early = skip_before_review(pr, state, cfg)
+    if early is not None:
+        return early
+    labels = set(pr.get("labels") or [])
     if pr.get("mergeable") == "UNKNOWN":
         return Decision("skip", "waiting for GitHub to determine mergeability")
     if pr.get("mergeable") == "CONFLICTING":
@@ -210,6 +222,10 @@ class Watcher:
         for pr in self.prs(only):
             st = self.load(pr["number"])
             review = None
+            early = skip_before_review(pr, st, self.cfg)
+            if early is not None:
+                print(json.dumps({"pr": pr["number"], "action": "skip", "reason": early.reason}), flush=True)
+                continue
             if pr.get("mergeable") not in ("CONFLICTING", "UNKNOWN"):
                 review = qodo.pr_review(self.cfg["tools"]["qodo"], pr["url"])
             args = (pr, review, st, self.cfg)

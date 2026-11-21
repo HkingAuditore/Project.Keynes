@@ -63,7 +63,7 @@ class Run:
         self.candidate = checks.Candidate(cfg, self.workdir, self.facts)
         self.logs = home / "logs" / f"{number}-{self.stamp}"
         self.logs.mkdir(parents=True, exist_ok=True)
-        self.branch = f"agent/issue-{number}"
+        self.branch = f"{cfg['issueBranchPrefix']}{number}"
         self.pr: dict | None = None
         self.remove_trigger = False
         self.record: dict = {"issue": number, "started": self.stamp, "branch": self.branch}
@@ -85,7 +85,8 @@ class Run:
         base = self.facts.head or self.base
         files = work.changed(self.workdir, base)
         res, after = self.candidate.run(base, files, self.path(f"checks-{label}"), extra)
-        new = checks.new_failures(res, base_failed)
+        # AGENTS.md: found failures are fixed before a push, including ones master already had.
+        new = checks.failed(res)
         self.ev.add("checks", label=label, failed=checks.failed(res), new=new, results=res)
         _, self.facts.human_paths, _ = self.candidate.scope(after)
         return res, new
@@ -166,6 +167,10 @@ class Run:
                 self.ev.add("implement", attempt=attempt, result="checks pass")
                 return True
             feedback = checks.feedback(res, new)
+            old = [n for n in new if n in base_failed]
+            if old:
+                feedback += ("\n\nThese also failed on master before your change. AGENTS.md requires "
+                             "fixing found failures before a push, so they are yours too: " + ", ".join(old))
         self.facts.stopped_by = f"checks still fail after {self.cfg['limits']['implementAttempts']} attempts"
         if new:
             self.facts.stopped_by += ": " + ", ".join(new)
@@ -368,12 +373,22 @@ class Run:
         if not self.commit_checked(f"{title}\n\nImplemented-By: Codex ({cfg['agent']['model']})\n"):
             return
         work.push(self.workdir, cfg["remote"], self.branch)
+        # The PR poller skips issue branches until finish() adds the hand-off label on READY.
         self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan))
         self.record["pr"] = self.pr["url"]
         self.ev.add("pr", url=self.pr["url"], head=self.facts.head)
         self.pr_loop(issue, extra, base_failed)
 
     def finish(self) -> int:
+        if not self.pr and self.facts.head and not self.dry:
+            # The PR may exist even if create_pr() raised after `gh pr create`; find it so it gets a label.
+            try:
+                self.pr = self.gh.open_pr(self.branch)
+            except Exception as e:
+                self.gh.errors.append(f"look up PR for {self.branch}: {e}")
+            if self.pr:
+                self.record["pr"] = self.pr["url"]
+                self.facts.stopped_by = self.facts.stopped_by or "the PR was opened but the run lost track of it"
         if self.pr:
             try:
                 remote_head = (self.gh.open_pr(self.branch) or {}).get("headRefOid")
@@ -401,6 +416,19 @@ class Run:
             done = v.verdict == "READY"
             remove = [L["working"], L["trigger"]] if self.remove_trigger else [L["working"]]
             self.gh.relabel(self.number, [L["done"] if done else L["help"]], remove)
+            if self.pr:
+                # READY hands the PR to the poller; anything else stays with a person.
+                if done:
+                    err = self.gh.relabel(self.pr["number"], [L["handoff"]], [])
+                    if err:
+                        # The poller skips issue branches without the label, so a person must hand it over.
+                        self.gh.relabel(self.pr["number"], [L["help"]], [])
+                        self.gh.comment(self.pr["number"],
+                                        f"### Factory could not hand this PR to the poller\n\n{err}\n\n"
+                                        f"Add `{L['handoff']}` and remove `{L['help']}` to let the poller review and merge it.",
+                                        pull_request=True)
+                else:
+                    self.gh.relabel(self.pr["number"], [L["help"]], [])
         self.record["githubErrors"] = self.gh.errors
         out.write_text(json.dumps(self.record, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"verdict {v.verdict}: {out}")

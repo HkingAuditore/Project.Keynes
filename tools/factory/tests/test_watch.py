@@ -68,6 +68,18 @@ class Decide(unittest.TestCase):
         self.assertEqual(self.d(p=pr(isCrossRepository=True), r=r).action, "skip")
         self.assertEqual(self.d(p=pr(labels=["blocked"]), r=r).action, "skip")
 
+    def test_skips_issue_branches_until_handed_over(self):
+        # No label is the safe state: an issue PR whose labelling failed is still skipped.
+        owned = pr(headRefName="agent/issue-11", labels=[])
+        reason = "the issue runner has not handed this PR over"
+        self.assertEqual(self.d(p=owned, r=review(findings=[finding("x")])).reason, reason)
+        self.assertEqual(self.d(p={**owned, "mergeable": "CONFLICTING"}).action, "skip")
+        cfg = load_config()
+        self.assertEqual(decide(owned, review(), PrState(), cfg).reason, reason)
+        handed = {**owned, "labels": ["factory-handoff"]}
+        self.assertEqual(self.d(p=handed, r=review(findings=[finding("x")])).action, "fix")
+        self.assertEqual(self.d(p=pr(headRefName="feature/x"), r=review(findings=[finding("x")])).action, "fix")
+
     def test_does_not_retry_where_it_stopped(self):
         st = PrState(gave_up_at=HEAD, reason="x")
         self.assertEqual(self.d(r=review(findings=[finding("x")]), st=st).action, "skip")
@@ -440,7 +452,16 @@ class MergeWorkflow(unittest.TestCase):
         self.watcher.prs.return_value = [self.pr, next_pr]
         with patch("qodo.pr_review", return_value=review()) as reviewed:
             self.assertEqual(self.watcher.tick(None), 0)
-        self.assertEqual([c.args[1] for c in reviewed.call_args_list], [self.pr["url"], next_pr["url"]])
+        # PR 8's skip label needs no review, so tick() does not read one for it.
+        self.assertEqual([c.args[1] for c in reviewed.call_args_list], [self.pr["url"]])
+        self.assert_no_merge_command()
+
+    def test_unhanded_issue_pr_costs_no_review_lookup(self):
+        issue_pr = {**self.pr, "number": 8, "headRefName": "agent/issue-11", "url": "https://example.invalid/pr/8"}
+        self.watcher.prs.return_value = [issue_pr]
+        with patch("qodo.pr_review", return_value=review()) as reviewed:
+            self.assertEqual(self.watcher.tick(None), 0)
+        reviewed.assert_not_called()
         self.assert_no_merge_command()
 
     def test_passed_reruns_replace_failed_ci_attempts(self):
