@@ -145,7 +145,7 @@ class IssueWorkflowTest(TempFactory):
         run = self.make_run()
         run.gh.relabel.return_value = None
         run.gh.open_pr.return_value = None
-        command = "tools/ci/check_committed_replay.py --checkpoint --trace --days 10"
+        command = "tools/ci/check_committed_replay.py --checkpoint --out /tmp/replay"
         with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
               patch("checks.base_results", return_value=[]),
               patch.object(run, "plan", return_value=f"## Checks\n- {command}"),

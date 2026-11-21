@@ -38,18 +38,29 @@ def static_guards(workdir: str, workflow: str) -> list[str]:
     return [w for w in m.group(1).replace("\\", " ").split() if w.endswith(".py")]
 
 
-def extra_checks(plan_checks: list[str], pattern: str) -> tuple[list[str], list[str]]:
-    """Split plan-requested commands into allowed ones and rejected ones."""
+def already_run(cfg: dict) -> tuple[set[str], set[str]]:
+    """Commands and scripts the factory runs on its own: the default regression, and the native
+    runtime check, which runs on both libraries whenever native sources change."""
+    c = cfg["checks"]
+    return {" ".join(c["regression"])}, {c["nativeRuntimeCheck"]}
+
+
+def extra_checks(plan_checks: list[str], pattern: str,
+                 covered: tuple[set[str], set[str]] = (set(), set())) -> tuple[list[str], list[str], list[str]]:
+    """Split plan-requested commands into allowed, rejected and already-run ones."""
     rx = re.compile(pattern)
-    ok, bad = [], []
+    commands, scripts = covered
+    ok, bad, dup = [], [], []
     for c in plan_checks:
         c = c.strip()
         bare = re.sub(r"^python3? +", "", c)
-        if rx.match(bare):
+        if bare in commands or bare.split(" ", 1)[0] in scripts:
+            dup.append(c)
+        elif rx.match(bare):
             ok.append(bare)
         else:
             bad.append(c)
-    return ok, bad
+    return ok, bad, dup
 
 
 class Runner:

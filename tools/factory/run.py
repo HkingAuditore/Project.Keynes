@@ -358,8 +358,9 @@ class Run:
         plan = self.plan(issue)
         if plan is None or self.facts.plan_questions:
             return
-        extra, rejected = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"])
-        self.record["extraChecks"] = {"run": extra, "rejected": rejected}
+        extra, rejected, dup = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"],
+                                                   checks.already_run(cfg))
+        self.record["extraChecks"] = {"run": extra, "rejected": rejected, "alreadyRun": dup}
         self.facts.rejected_checks = rejected
         if rejected:
             return
