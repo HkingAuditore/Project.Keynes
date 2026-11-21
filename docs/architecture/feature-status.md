@@ -3289,3 +3289,30 @@ STORM/MONSOON 补过 `meaningful_precip`、补 `wx->temp_anomaly` 与独立的 `
 - 全量审计未宣称通过：修改前已记录的目录内容失败仍存在；科技/产业时序审计 35→31 项，无新增项；药草 5 条种植地依赖闭包失败与隔离的修改前目录逐项一致。额外隔离复跑确认铜矿效率 1 项和金银矿 6 项失败原本存在。未放宽相关断言，也未用重试或延长超时掩盖失败。重复判定修正了误用 dependency-group offsets 作为 building offsets 的索引问题，改查实际地理条件、产品比例及军事角色/建材路线。
 - 静态总护栏仍有非本轮文件的 size ratchet 46 项、skill mirror 6 项失败；没有上调尺寸基线或修改无关 skill。
 - 证据：本机 `.codex/tmp/building-distinction-delivery-20261121/`（含 summary、content_audit、baseline_comparison、editor-import），`.codex/tmp/building-distinction-final-intents-20261121/`，以及 `.codex/tmp/building-distinction-original-complete/` 的隔离原目录对照。未进行图形实玩或长周期经济平衡验收；未修改原生公式、ABI 或存档段格式。
+
+## 2026-11-21 第 2 批：10 条 trade.good 消费点接通（705 → 715）
+
+- 范围：把 10 条 `country.trade.good.*` 的容量/速度消费点在真实运行路径上接通，消费点接通数 **705 → 715**。6 条容量（`wool` / `horses` / `spices` / `iron_ore` / `cloth` / `glassware`）落在 `gdext/src/economy_runtime_trade.cpp:770`（读数组）、`:772-783`（乘法）、`:781`（`offered`）；4 条速度（`wool` / `horses` / `spices` / `salt`）落在 `gdext/src/economy_runtime_trade_settlement.cpp:1441-1449`。承载科技节点为 `tech.market_institutions` / `tech.steppe_caravan_corridor` / `tech.oasis_caravan_junction` / `tech.caravan_water_rights`。两文件合计 +49 行（`trade.cpp` +21 / `settlement.cpp` +28），无第三处改动。
+- 证据一（激活器非真空）：modifier store 读值证明 `wool.capacity_factor` 被送到 **98304**，不是「声明了但没生效」。
+- 证据二（精确倍数）：活车道诊断显示该因子在 `economy_runtime_trade.cpp:764-785` 处按精确倍数放大成交量，×1.5 与 ×1.0 各自可失败；该 lane 受**目的地侧**约束。诊断跑使用 env-gated trace 与因子 override，**只作诊断、不作验收件，跑完已拆除**。
+- 四臂降为中性证明：L1 / L3 与 L0 逐字节一致（`salt` 的 −5% 会经库存与价格传导，故 L1 不能当 A4 的隔离证明），仅 L2 出现差异且方向为成交量上升。四臂统一单大陆 + `days=120` + `pipeline_depth=0`；默认群岛世界 120 天零交易，不用于任何臂。
+- `state_hash` 跨跑不一致已定性：`country_ai_hash_memory`（`country_ai_core.cpp:1266-1290`，污染源 `last_*_day` 与两个 EMA）与 `economy_runtime_state_hash.cpp`（墙钟切片、cell 结算日/代次、待处理命令；该文件属外来 WIP，钉内容 blob `936ef9a39e18b576cec1be71935dd205cd2eebac` / 91,581 B）。结论：**决策结果可复现，记录节奏依赖墙钟；含这些字段的哈希不可跨跑复现**。
+- A1 双源已闭环：独立命令复现 `compile_counts={"economy":1,"modifier":1}`，同轮 `cache_hits={"economy":4,"modifier":1}`（两次目录加载，一次真编译一次命中，不矛盾）。`modifier_term_invalid` 不是 result 行字段、只能按 token 计数，五臂实测全 0。
+- 明确不覆盖：自然经济里「羊毛贸易量上升」**未证**（该商品 120 天 0 条 trace、不参与贸易）；诊断车道只证明了乘子生效，不等于自然经济成交量上升。
+- 3 条 pending 留下批：`barracks_capacity_factor` ×2（`military_core_store.cpp:812-819`）、`convoy_escort_factor` ×1（`military_core_logistics.cpp:954-961`）。
+- 独立发现（记录、不修）：默认群岛 120 天零交易；国家 125 天停在 1 格；国内贸易结构上不可能；A4 的 7 个商品不参与贸易。
+- 已知滞后：10 条 term 的 `runtime_consumer` 仍是 A4 之前的行号，未改（改会动产品哈希 `2A6D20FE`，而本批验收正引该哈希）。
+- 被排除的跑（不进任何计数）：缺 `csv stop` 的首份 L3（由 L3b 顶替）、缺 result 行的 L0b、缺 `--` 致参数未生效退回 `days=50` 的一次开局。
+- 口径与已知风险：`gdext/src` 现 **19** 个 dirty（A3 四 + A4 二 + 外来 13，含 `economy_runtime_state_hash.cpp`）；DLL 归因只按源码差异，不按二进制可重建（PE 时间戳）。最终臂 DLL `E820EF79` / 16,508,928 B；产品 JSON `2A6D20FE` / 2,845,758 B / 467 节点 · 718 效果 · 787 硬前置 · 683 解锁。
+
+## 2026-11-21 第 3 批：B 组 3 条死 stat 补读点（715 → 718/718）
+
+- 范围：给 3 条「有写入、无读取」的死 stat 补真实读点，消费点接通数 **715 → 718/718**。`country.military.barracks_capacity_factor`（`tech.military.war_bands` / `tech.military.standing_army`）乘进 `gdext/src/military_core_store.cpp:815` 的 posts 汇总，读取在 `:825`（`MSTAT_BARRACKS_CAPACITY`）；`country.military.convoy_escort_factor`（`tech.military.radio_command`）读取在 `gdext/src/military_core_logistics.cpp:964`（`MSTAT_CONVOY_ESCORT`），`:966` 出 `escort`。
+- 中性对照：默认值 1.0 时 48 行 / 4800 posts **逐字节不变**；非默认值按精确倍数变化（`factor 72089`：164000 → 180398 posts，q16 下界 180401 / 十进制 180400 作为反例排除）；封顶在缩放后仍生效（`524288`；把乘法挪到封顶之后得 `527995`）。护航以同一批 shipment + 同一批 rng roll 反读拦截边界：`risk(1.0)=16384`、`risk(1.5)=13107`。
+- 七条断言全绿，并做了三次变异证「能红」：读点换常量（兵营）→ `factor 72089` 红；乘法挪到封顶之后 → `cap still enforced` 红而 72089 仍绿；读点换常量（护航）→ `escort 1.5` 红。Assay 另建仓库外变异副本（`5A149F5F`）独立复现同一红绿组合。
+- **交付范围自述**：本批原定只改两个文件，实际交付三个——`military_core_selftest.cpp`（+172）是 Chief 裁定随产品交付的可失败防回归凭据，「断言写进去」与「断言能失败」是两件事，故留在树里。三文件 `+191 / −3`，blob 为 `f513f715df12…` / `b9a3b1bbd5b1…` / `167f43a40019…`。
+- **边界**：`718/718` = 「读点已接 + 编译通过 + 断言可失败」，**不是实机可观测**。两条读点在世界里都没有流量（`posts_for_cell` 60 天 0 次调用、`_shipments` 120 天为空）。不得据此宣称「军事容量/护航在游戏中生效」。
+- 声明修订：`country.trade.good.*` 那 10 条原声明指向国家维度那段（`economy_runtime_trade.cpp:749-762`、`economy_runtime_trade_settlement.cpp:1412-1420`），照声明当场验会扑空；改为逐商品段 `760-783`（6 条）与 `1426-1447`（4 条）。属「声明指错门」，读点本身一直通。
+- DLL：debug `C9676342` / 16,527,872 B / 17:57:23；release `42E33AB4` / 14,217,728 B / 17:58:39。`bench big p95` 为**既有 FAIL**（本批 5.0875，基线 `E820EF79` 4.525 同样红），按断言原文逐条声明剔除，不按前缀豁免。
+- 判据教训（可复用）：stdout 报告在 **37,339 字符处被截断、断在汉字中间**，不能当 ok 清单；同名断言 808 行只有 476 种，必须用多重集差；`cap fixture is above the cap before truncation` 只是防真空前置守卫，不是封顶生效的证据。
+- 最终产物 `technology_network.json` = **`F561CF2A` / 2,845,758 B / 18:09:30 / LF**（相对上一版 `1EB93EBD` 恰为 `10 10`，只改那 10 个声明串）。`implementation_plan.md` §7 六项落地检查表已在这一版上复跑：**6/6 通过**（JSON 解析与 41 键、term 十字段、U+2212=0、unmapped 0、主干 66/66、unit 语义 0 违例）。
