@@ -2,6 +2,7 @@ extends "res://tests/support/runtime_narrative_scenario.gd"
 
 const IDEOLOGY_STOP := "ideology_choice_required"
 const FAMILY_STOP := "family_founding_choice_required"
+const STOPPED_CONFIRMATION := "executor_stopped_before_player_confirmation_service"
 
 
 class ReceiptSurface:
@@ -23,6 +24,7 @@ func _run() -> void:
 	if not await _start_story({"ai_enabled": false}, [&"evt.chain.ancient_foundry_legacy"]):
 		_finish()
 		return
+	_expect("native ideology and shutdown receipt checks pass", story_ext.runtime_ideology_pod_self_test())
 	story_controller.refresh_country_binding()
 	story_controller.command_settled.connect(_record_receipt)
 	story_controller.ideology_offer_ready.connect(func(snapshot: Dictionary) -> void:
@@ -110,7 +112,7 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 
 	var dismiss := story_controller.dismiss_ideology_offer(generation)
 	_expect("close sends a native confirmation", bool(dismiss.get("ok", false)))
-	if not await _wait_for_after(5, ""):
+	if not await _wait_for(6, ""):
 		return false
 	_expect("close preserves the offer and manual pause",
 		bool(_ideology.snapshot(story_player).get("offer_active", false)) and story_clock.paused)
@@ -137,12 +139,13 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 		bool(_ideology.snapshot(story_player).get("offer_active", false)))
 	var saved_confirmation := await _save_runtime_bundle(2401)
 	_expect("dismissed candidate state is saved",
-		bool(saved_confirmation.get("ready", false)) and not PackedByteArray(
+		bool(saved_confirmation.get("ready", false)) and int(saved_confirmation.get("committed_day", -1)) == 10
+		and not PackedByteArray(
 			saved_confirmation.get("bytes", PackedByteArray())).is_empty())
+	var settled_before_stop := _settled.size()
 	var stopping_dismiss := story_controller.dismiss_ideology_offer(generation)
 	_expect("stop-race close is accepted before stopping",
 		bool(stopping_dismiss.get("ok", false)) and bool(stopping_dismiss.get("pending", false)))
-	var settled_before_stop := _settled.size()
 	story_ext.request_runtime_stop()
 	var stop_deadline := Time.get_ticks_msec() + 3000
 	while not story_ext.get_runtime_control_state().get("simulation_executor_exited", false) and \
@@ -153,7 +156,10 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 	var terminal := _dismissal_terminal_since(settled_before_stop)
 	_expect("accepted close has a terminal result when the executor stops",
 		terminal.size() > 0 and (bool(terminal.get("ok", false)) or
-			String(terminal.get("reason", "")) == "executor_stopped_before_player_confirmation_service"))
+			String(terminal.get("reason", "")) == STOPPED_CONFIRMATION))
+	var expected_code := "ok" if bool(terminal.get("ok", false)) else STOPPED_CONFIRMATION
+	_expect("terminal close carries code %s: %s" % [expected_code, terminal],
+		String(terminal.get("code", "")) == expected_code)
 	_expect("worker exits before confirmation restore",
 		bool(story_ext.get_runtime_control_state().get("simulation_executor_exited", false)))
 	var restored_confirmation := story_ext.restore_runtime_bundle(
@@ -163,18 +169,21 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 		PackedByteArray(saved_confirmation.get("country_pkcn", PackedByteArray())))
 	_expect("dismissed confirmation country checkpoint restores",
 		bool(restored_country.get("ok", false)))
-	var restored_day := int(story_ext.runtime_committed_day()) + 1
-	var restored_environment := story_host._generator.capture_runtime_inputs_for_worker(restored_day)
-	_expect("restored world publishes its next environment frame",
-		bool(restored_environment.get("ok", false)))
-	story_ext.set_runtime_clock(true, 0.0)
+	# Restoring the bundle clears the native world environment. Seed it as a normal load does.
+	story_host._native_environment_active = false
 	story_host._start_runtime_executor()
-	_expect("restored worker starts", story_host._web_worker_start_ok)
+	_expect("restored worker starts with its world environment",
+		story_host._web_worker_start_ok and story_host._native_environment_active)
+	story_host._consume_runtime_commit_if_ready()
 	_expect("restored candidate remains dismissed and available",
 		bool(_ideology.snapshot(story_player).get("offer_active", false)) and
-			String(story_controller.player_confirmation_reason()).is_empty())
-	story_ext.set_runtime_clock(false, 0.0001)
-	_expect("restored calendar submits the next day", await _wait_for_after(restored_day - 1, ""))
+		int(story_ext.get_runtime_control_state().get("ideology_offer_generation", 0)) == generation and
+		story_controller.player_confirmation_reason().is_empty())
+	var next_day := int(saved_confirmation.get("committed_day", -1)) + 1
+	story_clock._process(1.0 / story_clock.speed_multiplier)
+	if not await _wait_for(next_day, ""):
+		return false
+	_expect("restored calendar displays the next day", story_clock.day_index() == next_day + 1)
 	return true
 
 
@@ -283,30 +292,18 @@ func _hold_at(day: int, reason: String, target: int) -> bool:
 
 func _wait_for(day: int, reason: String) -> bool:
 	var limit := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
-	var report := story_ext.get_runtime_control_state()
+	var report := {}
 	while Time.get_ticks_usec() < limit:
-		if int(report.get("simulation_committed_day", -1)) > day or report.get("simulation_host_state") == "FAULTED":
+		story_host._consume_runtime_commit_if_ready()
+		report = story_ext.get_runtime_control_state()
+		var committed := int(report.get("simulation_committed_day", -1))
+		if committed > day or report.get("simulation_host_state") == "FAULTED":
 			break
-		if story_host._runtime_commit_day == day and story_controller.player_confirmation_reason() == reason:
+		if committed == day and story_host._runtime_commit_day == day and \
+				story_controller.player_confirmation_reason() == reason:
 			return true
 		await process_frame
-		report = story_ext.get_runtime_control_state()
-	_expect("day %d publishes %s: %s" % [day, reason, report], false)
-	return false
-
-
-func _wait_for_after(day: int, reason: String) -> bool:
-	var limit := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
-	var report := story_ext.get_runtime_control_state()
-	while Time.get_ticks_usec() < limit:
-		if report.get("simulation_host_state") == "FAULTED":
-			break
-		if int(report.get("simulation_committed_day", -1)) > day and \
-				String(story_controller.player_confirmation_reason()) == reason:
-			return true
-		await process_frame
-		report = story_ext.get_runtime_control_state()
-	_expect("calendar advances beyond day %d with no confirmation block: %s" % [day, report], false)
+	_expect("day %d publishes %s (received day %d): %s" % [day, reason, story_host._runtime_commit_day, report], false)
 	return false
 
 

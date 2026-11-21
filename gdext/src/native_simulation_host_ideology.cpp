@@ -734,6 +734,21 @@ bool NativeSimulationHost::ideology_pod_self_test(std::string *out_error) const 
             *out_error = "ideology_pod_snapshot_ring_self_test_failed";
         return false;
     }
+    // Start the worker with a queued dismissal and a stop already requested.
+    // This exercises the shutdown receipt without racing normal service.
+    const auto stopping = std::make_unique<NativeSimulationHost>();
+    stopping->_state.store(RuntimeWorkerState::PAUSED);
+    stopping->_player_confirmation.requests.push_back({
+        RuntimePlayerConfirmationRequest::Kind::DISMISS_IDEOLOGY, 1, 0});
+    stopping->request_stop();
+    stopping->worker_main();
+    bool quotes_ready;
+    const auto receipts = stopping->take_boundary_command_results(quotes_ready);
+    if (receipts.size() != 1 || godot::String(godot::Dictionary(receipts[0]).get("code", "")) !=
+            "executor_stopped_before_player_confirmation_service") {
+        if (out_error != nullptr) *out_error = "ideology_dismiss_stop_receipt_code_invalid";
+        return false;
+    }
     return true;
 }
 

@@ -1065,9 +1065,11 @@ void NativeSimulationHost::worker_main() {
         _control_cv.notify_all();
     }
     for (const auto &request : abandoned_confirmations) {
+        constexpr const char *code = "executor_stopped_before_player_confirmation_service";
         godot::Dictionary result;
         result["ok"] = false;
-        result["reason"] = "executor_stopped_before_player_confirmation_service";
+        result["code"] = code;
+        result["reason"] = code;
         result["settled_day"] = committed_day_value();
         const char *command = request.kind == RuntimePlayerConfirmationRequest::Kind::DISMISS_IDEOLOGY
             ? "ideology.offer.dismiss" : "ui.hide_all_except_gm";
