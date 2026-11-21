@@ -223,13 +223,20 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, stall: bool) -> Di
 func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
 		economy, military, player: int) -> void:
 	var settled_day := WARMUP_DAY + RELEASE_DAYS
-	var requested := settled_day + 1
+	var known_committed_through_day := settled_day + 1
+	# The only day that can be frozen while this one-day worker is in flight is
+	# settled_day + 1. Request the following day so either side of the worker's
+	# freeze race has the same independently known admission date.
+	var known_frozen_through_day := settled_day + 1
+	var requested := settled_day + 2
+	var expected := maxi(requested, maxi(known_committed_through_day + 1,
+		known_frozen_through_day + 1))
 	var target := MILITARY_TARGET + 1
 	var ext: Object = economy.world_ext()
 	clock.set_speed(1.0)
 	clock._process_runtime_calendar(float(RELEASE_DAYS))
 	_expect("1x release cannot lead the committed day by more than one",
-		clock._runtime_calendar_through == requested)
+		clock._runtime_calendar_through == known_frozen_through_day)
 	var watchdog := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
 	while int(ext.get_runtime_thread_report().get("worker_day_inflight", 0)) == 0 \
 			and int(ext.runtime_committed_day()) == settled_day and Time.get_ticks_usec() < watchdog:
@@ -241,13 +248,19 @@ func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
 	var admitted := int(admission.get("effective_day", -1))
 	var committed := int(admission.get("committed_at_admission", -1))
 	var frozen := int(admission.get("frozen_at_admission", -1))
-	var expected := maxi(requested, maxi(committed + 1, frozen + 1))
 	_expect("military_seal_1x: receipt has the actual admission boundary",
-		bool(admission.get("ok", false)) and committed >= settled_day and frozen >= settled_day)
+		bool(admission.get("ok", false)) and committed >= settled_day
+		and committed <= known_committed_through_day and frozen >= settled_day
+		and frozen <= known_frozen_through_day)
 	_expect("military_seal_1x: acceptance does not wait for the day", elapsed < 5_000)
-	_expect("military_seal_1x: date comes from the admission boundary", admitted == expected)
+	# submit_military_commands() in native_simulation_host_military.cpp calls
+	# admit_command(), then takes max(requested, committed+1, frozen+1). With
+	# requested=39, with committed and frozen each capped at 38, expected is 39.
+	# An admission boundary one day early returns 38 and fails this assertion;
+	# deriving expected from the receipt would make that error self-consistent.
+	_expect("military_seal_1x: date matches the independent test input", admitted == expected)
 	for day in range(settled_day + 1, expected + 1):
-		if day > requested:
+		if day > int(clock._runtime_calendar_through):
 			clock._process_runtime_calendar(1.0)
 		if not await _wait_golden_read_boundary(host, economy, day):
 			_expect("military_seal_1x: day %d commits" % day, false)
