@@ -33,6 +33,7 @@ signal annual_history_requested()
 signal annual_report_closed(report_id: int)
 signal annual_report_selected(report_id: int)
 signal annual_history_page_requested(offset: int)
+signal annual_report_workspace_available()
 signal narrative_event_option_selected(offer_id: int, offer_generation: int, option_index: int)
 signal narrative_event_outcome_acknowledged()
 signal narrative_chronicle_requested()
@@ -1054,11 +1055,15 @@ func _bind_ui() -> void:
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
+	var modal_layer := get_node("UIRoot/ModalLayer") as Control
 	_annual_report_workspace = AnnualReportWorkspaceScene.instantiate()
-	get_node("UIRoot/ModalLayer").add_child(_annual_report_workspace)
+	modal_layer.add_child(_annual_report_workspace)
 	_annual_report_workspace.closed.connect(func(id: int) -> void: annual_report_closed.emit(id))
 	_annual_report_workspace.report_selected.connect(func(id: int) -> void: annual_report_selected.emit(id))
 	_annual_report_workspace.history_page_requested.connect(func(offset: int) -> void: annual_history_page_requested.emit(offset))
+	modal_layer.visibility_changed.connect(_announce_annual_report_workspace)
+	_annual_report_workspace.tree_entered.connect(_announce_annual_report_workspace)
+	_announce_annual_report_workspace()
 	_pause_menu = get_node("UIRoot/ModalLayer/PauseMenu") as PauseMenu
 	_pause_menu.visibility_requested.connect(
 		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
@@ -1649,6 +1654,19 @@ func _set_local_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 
 func _on_runtime_gm_toggle_changed(toggle_id: String, enabled: bool) -> void:
 	_overlay_component._on_runtime_gm_toggle_changed(self, toggle_id, enabled)
+
+
+func can_open_annual_report() -> bool:
+	if not is_instance_valid(_annual_report_workspace) or not _annual_report_workspace.is_inside_tree():
+		return false
+	var modal_layer := _annual_report_workspace.get_parent() as Control
+	return modal_layer != null and modal_layer.is_visible_in_tree()
+
+
+func _announce_annual_report_workspace() -> void:
+	if can_open_annual_report():
+		annual_report_workspace_available.emit()
+
 
 func show_annual_report(model: Dictionary, ceremonial: bool) -> void:
 	_overlay_component.show_annual_report(self, model, ceremonial)

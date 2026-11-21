@@ -26,6 +26,9 @@ func configure(controller, host, ui) -> void:
 		_ui.annual_report_closed.connect(_on_closed)
 		_ui.annual_report_selected.connect(_select_report)
 		_ui.annual_history_page_requested.connect(_load_history)
+	if _ui != null and _ui.has_signal("annual_report_workspace_available"):
+		# Present after Godot finishes mounting or showing the workspace.
+		_ui.annual_report_workspace_available.connect(try_present, CONNECT_DEFERRED)
 	_ensure_scribe()
 
 
@@ -82,13 +85,14 @@ func _confirmation_reason() -> String:
 func try_present() -> void:
 	if _host == null or _ui == null or _open:
 		return
+	if _ui.has_method("can_open_annual_report") and not _ui.can_open_annual_report():
+		return
 	var reason := _confirmation_reason()
 	if not reason.is_empty() and reason != "annual_report_confirmation_required":
 		return
 	if _reopen_pending:
 		if not bool(_host.annual_report_status().get("ok", false)):
 			return
-		_reopen_pending = false
 		_show(_report_id, false)
 	elif _queued > 0 and reason == "annual_report_confirmation_required":
 		var id := _queued
@@ -113,15 +117,14 @@ func _show(id: int, ceremonial: bool) -> void:
 	_report_id = id
 	_history_offset = 0
 	_select_report(id, ceremonial)
-	_load_history(0)
+	if _open:
+		_load_history(0)
 
 
 func _select_report(id: int, ceremonial: bool = false) -> void:
 	_report_id = id
 	var report: Dictionary = _host.annual_report_snapshot(id) if id > 0 else {}
 	var previous: Dictionary = _host.annual_report_snapshot(id - 1) if id > 1 else {}
-	if bool(report.get("ok", false)) and not _viewed.has(id):
-		_viewed.append(id)
 	# 目录里现在带「这一矿种认出来了没有」，而认矿会跨年发生 —— 缓存住就会在
 	# 第一次开卷那一刻把资源栏永久钉死。这里不是热路径（开卷一次、换年一次），
 	# 每次重取。
@@ -139,6 +142,11 @@ func _select_report(id: int, ceremonial: bool = false) -> void:
 	if _ui.has_method("is_annual_report_open") and not bool(_ui.is_annual_report_open()):
 		push_error("[annual] report workspace failed to open for id=%d" % id)
 		_open = false
+		_reopen_pending = true
+		return
+	_reopen_pending = false
+	if bool(report.get("ok", false)) and not _viewed.has(id):
+		_viewed.append(id)
 
 
 func _load_history(offset: int) -> void:
