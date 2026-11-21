@@ -361,6 +361,8 @@ class Run:
         extra, rejected, dup = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"],
                                                    checks.already_run(cfg))
         self.record["extraChecks"] = {"run": extra, "rejected": rejected, "alreadyRun": dup}
+        # It only runs when native sources change; judge() flags the request if they do not.
+        self.facts.native_requested = checks.requests_native(dup, cfg)
         self.facts.rejected_checks = rejected
         if rejected:
             return

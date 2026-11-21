@@ -45,6 +45,17 @@ def already_run(cfg: dict) -> tuple[set[str], set[str]]:
     return {" ".join(c["regression"])}, {c["nativeRuntimeCheck"]}
 
 
+def native_line(command: str, script: str) -> bool:
+    """The native runtime check alone, with flags, plain values or `<placeholder>` values and no
+    shell syntax, so nothing else can ride along on the line."""
+    value = r"( [A-Za-z0-9_./-]+| <[A-Za-z0-9 _./-]+>)?"
+    return re.fullmatch(re.escape(script) + rf"( --?[a-z0-9-]+{value})*", command) is not None
+
+
+def requests_native(lines: list[str], cfg: dict) -> bool:
+    return any(native_line(re.sub(r"^python3? +", "", c.strip()), cfg["checks"]["nativeRuntimeCheck"]) for c in lines)
+
+
 def extra_checks(plan_checks: list[str], pattern: str,
                  covered: tuple[set[str], set[str]] = (set(), set())) -> tuple[list[str], list[str], list[str]]:
     """Split plan-requested commands into allowed, rejected and already-run ones."""
@@ -54,7 +65,7 @@ def extra_checks(plan_checks: list[str], pattern: str,
     for c in plan_checks:
         c = c.strip()
         bare = re.sub(r"^python3? +", "", c)
-        if bare in commands or bare.split(" ", 1)[0] in scripts:
+        if bare in commands or any(native_line(bare, s) for s in scripts):
             dup.append(c)
         elif rx.match(bare):
             ok.append(bare)

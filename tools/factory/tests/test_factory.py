@@ -179,6 +179,25 @@ class PlanTest(unittest.TestCase):
                                "tools/ci/check_macos_runtime_extension.py --library <debug library path>"])
         self.assertEqual(ok, ["tools/ci/run_regression_checks.py --jobs 2 tests/economy/a_test.gd"])
         self.assertEqual(bad, ["tools/ci/check_save_contracts.py <path>"])
+        self.assertTrue(checks.requests_native(dup, cfg))
+
+    def test_native_check_line_cannot_carry_another_command(self):
+        cfg = load_config()
+        lines = ["tools/ci/check_macos_runtime_extension.py --library x.dylib; rm -rf /",
+                 "tools/ci/check_macos_runtime_extension.py && tools/ci/check_save_contracts.py",
+                 "tools/ci/check_macos_runtime_extension.py --library $(whoami)"]
+        ok, bad, dup = checks.extra_checks(lines, cfg["checks"]["extraCheckPattern"], checks.already_run(cfg))
+        self.assertEqual((ok, dup), ([], []))
+        self.assertEqual(bad, lines)
+        self.assertFalse(checks.requests_native(bad, cfg))
+
+    def test_requested_native_check_that_did_not_run_needs_a_person(self):
+        facts = Facts(native_requested=True)
+        self.assertIn("the plan asked for the macOS runtime check, but no native sources changed, so it did not run",
+                      judge(facts).reasons)
+        facts.native_changed = facts.native_rebuilt = facts.native_runtime_ok = facts.native_libraries_committed = True
+        self.assertNotIn("the plan asked for the macOS runtime check, but no native sources changed, so it did not run",
+                         judge(facts).reasons)
 
     def test_questions(self):
         plan = self.PLAN.replace("## Questions\nnone", "## Questions\n- Should taxes round down?")
