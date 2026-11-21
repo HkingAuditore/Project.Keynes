@@ -90,6 +90,27 @@ const TECHNOLOGY_STATS := [
 	["country.military.rule.hold_the_line", 0.0, 4.0],
 	["country.military.rule.encirclement", 0.0, 4.0],
 	["country.military.rule.home_ground", 0.0, 4.0],
+	# Per-good trade factors (tech tree stage 4, "A 组"). Same clamp envelope and
+	# the same two consumption points as `country.trade.{capacity,speed}_factor`
+	# above, but keyed by good so a card can say "this good trades more/faster".
+	#
+	# Appended at the tail for the usual reason: every dense stat id already
+	# shipped must keep its position. These ten keys are registered here and
+	# ONLY here -- the authored `default_modifier_catalog.tres` deliberately does
+	# not repeat them, because the resource catalog compiles first and a second
+	# definition would both shift every id after it and turn this row into a
+	# dead duplicate (see the skip in modifier_catalog.gd's TECHNOLOGY_STATS
+	# loop). Key spelling is the frozen CSV's: `country.trade.good.<good>.<dim>_factor`.
+	["country.trade.good.wool.capacity_factor", 0.0, 8.0],
+	["country.trade.good.wool.speed_factor", 0.0, 8.0],
+	["country.trade.good.horses.capacity_factor", 0.0, 8.0],
+	["country.trade.good.horses.speed_factor", 0.0, 8.0],
+	["country.trade.good.spices.capacity_factor", 0.0, 8.0],
+	["country.trade.good.spices.speed_factor", 0.0, 8.0],
+	["country.trade.good.iron_ore.capacity_factor", 0.0, 8.0],
+	["country.trade.good.salt.speed_factor", 0.0, 8.0],
+	["country.trade.good.cloth.capacity_factor", 0.0, 8.0],
+	["country.trade.good.glassware.capacity_factor", 0.0, 8.0],
 ]
 
 ## Cell-level military stats (design §16.1 DerivedCellFront, `group_handle = cell`).
