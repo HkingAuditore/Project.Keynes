@@ -82,6 +82,7 @@ const _FEATURE_FLAGS_PATH: String = "res://scripts/data_core/feature_flags.gd"
 const _BASELINE_PATH: String = "res://tests/dots_completion/baseline.json"
 const _NATIVE_HOST_HEADER_PATH: String = "gdext/src/native_simulation_host.h"
 const _NATIVE_HOST_PERSISTENCE_PATH: String = "gdext/src/native_simulation_host_persistence.cpp"
+const _NATIVE_HOST_JOURNAL_PATH: String = "gdext/src/native_simulation_host_journal.cpp"
 const _WORLD_RUNTIME_HOST_PATH: String = "res://scripts/game/world_runtime_host.gd"
 const _ECONOMY_PERSISTENCE_PATH: String = "gdext/src/economy_runtime_persistence_codec.h"
 
@@ -207,9 +208,11 @@ func _check_authority_contract() -> void:
 	print("─── (d) D12 authority / D7 journal contract ─────")
 	var host_header := _read_repo_text(_NATIVE_HOST_HEADER_PATH)
 	var host_persistence := _read_repo_text(_NATIVE_HOST_PERSISTENCE_PATH)
+	var host_journal := _read_repo_text(_NATIVE_HOST_JOURNAL_PATH)
 	var world_host := _read_text(_WORLD_RUNTIME_HOST_PATH)
 	var economy_persistence := _read_repo_text(_ECONOMY_PERSISTENCE_PATH)
-	if host_header == "" or host_persistence == "" or world_host == "" or economy_persistence == "":
+	if host_header == "" or host_persistence == "" or host_journal == "" \
+		or world_host == "" or economy_persistence == "":
 		_internal_errors.append("authority contract source file missing")
 		return
 
@@ -233,8 +236,10 @@ func _check_authority_contract() -> void:
 
 	var d7_marker_ok := host_persistence.contains("D7_SECTION_MARKER") \
 		and host_persistence.contains("\"D7T1\"") \
+		and host_journal.contains("constexpr uint32_t D7_TRANSACTION_MAGIC") \
+		and host_journal.contains("d7_append_u32(out, D7_TRANSACTION_MAGIC)") \
 		and economy_persistence.contains("SAVE_SECTION_FISCAL_PEER = 30")
-	_expect_gate_contract("(d) D7T1 transport and fiscal peer section are present", d7_marker_ok)
+	_expect_gate_contract("(d) D7T1 journal serializer and fiscal peer section are present", d7_marker_ok)
 
 
 func _expect_gate_contract(label: String, ok: bool) -> void:
