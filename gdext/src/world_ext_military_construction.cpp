@@ -128,7 +128,7 @@ const char *NativeMilitaryRuntime::preflight_construction(const RuntimeCountryPo
     int32_t free_slots = 0;
     for (int32_t i = 0; i < MILITARY_STATE_BUILD_SLOTS; ++i) {
         if (cell_state == nullptr || cell_state->construction_building[i] < 0 ||
-            (due_echoes == 0 && cell_state->construction_done_day[i] <= day)) {
+            cell_state->construction_done_day[i] <= day) {
             if (slot < 0) slot = i;
             ++free_slots;
         }
