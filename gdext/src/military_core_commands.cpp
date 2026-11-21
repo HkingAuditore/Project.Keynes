@@ -1,5 +1,6 @@
 #include "military_core.h"
 #include "military_core_personnel_internal.h"
+#include "pk_log.h"
 
 #include <algorithm>
 #include <atomic>
@@ -751,17 +752,14 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             // the authoritative completion is the economy building group's
             // pending-construction row. Only compatibility orders approximate
             // that date with the catalog duration.
-            const int64_t done_day = day + std::max(1, b.build_days);
-            int32_t slot = -1;
-            for (int32_t k = 0; k < 3; ++k) {
-                if (st->construction_building[k] < 0) {
-                    slot = k;
-                    break;
-                }
+            for (int32_t slot = 0; slot < MILITARY_STATE_BUILD_SLOTS; ++slot) {
+                if (!st->construction_slot_available(slot, day)) continue;
+                st->construction_building[slot] = cmd.unit_to;
+                st->construction_done_day[slot] = day + std::max(1, b.build_days);
+                return;
             }
-            if (slot < 0) slot = 0;
-            st->construction_building[slot] = cmd.unit_to;
-            st->construction_done_day[slot] = done_day;
+            log_error("[military] military_construction_schedule_full cell=%d building=%d day=%lld",
+                cmd.cell, cmd.unit_to, static_cast<long long>(day));
             return;
         }
         case MCMD_STATE_DEMOLISH: {
