@@ -79,9 +79,11 @@ class GitHub:
                             "--json", "number,url,headRefOid"])
         return items[0] if items else None
 
-    def create_pr(self, branch: str, base: str, title: str, body: str) -> dict:
+    def create_pr(self, branch: str, base: str, title: str, body: str, labels: list[str] | None = None) -> dict:
+        # gh resolves --label names before it creates the PR, so a bad label creates no PR.
+        args = [x for name in labels or [] for x in ("--label", name)]
         must(["gh", "pr", "create", "-R", self.repo, "--head", branch, "--base", base,
-              "--title", title, "--body-file", "-"], stdin=body)
+              "--title", title, "--body-file", "-", *args], stdin=body)
         pr = self.open_pr(branch)
         if not pr:
             raise RuntimeError("the PR was created but cannot be found")

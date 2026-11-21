@@ -109,7 +109,7 @@ class IssueWorkflowTest(TempFactory):
               patch.object(run, "commit_checked", return_value=True), patch("work.push"),
               patch.object(run, "pr_loop")):
             run.go(ISSUE)
-        run.gh.relabel.assert_called_with(9, ["factory-issue-run"], [])
+        self.assertEqual(run.gh.create_pr.call_args.kwargs["labels"], ["factory-issue-run"])
         for ready, expected in ((False, call(9, ["agent-needs-help"], [])), (True, call(9, [], ["factory-issue-run"]))):
             with self.subTest(ready=ready):
                 run.gh.relabel.reset_mock()
@@ -118,6 +118,18 @@ class IssueWorkflowTest(TempFactory):
                 with patch.object(issue_runner, "judge", return_value=verdict):
                     run.finish()
                 self.assertEqual(run.gh.relabel.call_args_list[-1], expected)
+
+    def test_failed_hand_off_leaves_a_way_to_retry(self):
+        run = self.make_run()
+        run.pr = {"number": 9, "url": "https://example.invalid/pr/9"}
+        run.gh.open_pr.return_value = None
+        run.gh.relabel.side_effect = lambda n, add, remove: "relabel #9: 502" if remove == ["factory-issue-run"] else None
+        with patch.object(issue_runner, "judge", return_value=Verdict("READY", [], [])):
+            run.finish()
+        self.assertIn(call(9, ["agent-needs-help"], []), run.gh.relabel.call_args_list)
+        pr_comments = [c for c in run.gh.comment.call_args_list if c.args[0] == 9]
+        self.assertEqual(len(pr_comments), 1)
+        self.assertIn("Remove `factory-issue-run`", pr_comments[0].args[1])
 
     def test_rejected_plan_check_stops_before_implementation(self):
         run = self.make_run()

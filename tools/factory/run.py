@@ -373,12 +373,11 @@ class Run:
         if not self.commit_checked(f"{title}\n\nImplemented-By: Codex ({cfg['agent']['model']})\n"):
             return
         work.push(self.workdir, cfg["remote"], self.branch)
-        self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan))
+        # The label keeps the PR poller off this PR until the issue run has a verdict. It is set
+        # when the PR is created, so no PR exists without it.
+        self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan),
+                                    labels=[cfg["labels"]["issueRun"]])
         self.record["pr"] = self.pr["url"]
-        # Keep the PR poller off this PR until the issue run has a verdict.
-        err = self.gh.relabel(self.pr["number"], [cfg["labels"]["issueRun"]], [])
-        if err:
-            raise RuntimeError(err)
         self.ev.add("pr", url=self.pr["url"], head=self.facts.head)
         self.pr_loop(issue, extra, base_failed)
 
@@ -413,7 +412,14 @@ class Run:
             if self.pr:
                 # READY hands the PR to the poller; anything else stays with a person.
                 if done:
-                    self.gh.relabel(self.pr["number"], [], [L["issueRun"]])
+                    err = self.gh.relabel(self.pr["number"], [], [L["issueRun"]])
+                    if err:
+                        # The poller skips the PR while the label is set, so a person must hand it over.
+                        self.gh.relabel(self.pr["number"], [L["help"]], [])
+                        self.gh.comment(self.pr["number"],
+                                        f"### Factory could not hand this PR to the poller\n\n{err}\n\n"
+                                        f"Remove `{L['issueRun']}` and `{L['help']}` to let the poller review and merge it.",
+                                        pull_request=True)
                 else:
                     self.gh.relabel(self.pr["number"], [L["help"]], [])
         self.record["githubErrors"] = self.gh.errors
