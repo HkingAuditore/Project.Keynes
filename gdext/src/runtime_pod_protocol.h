@@ -52,7 +52,6 @@ constexpr uint32_t RUNTIME_DAY_STALL_FISCAL_PEER = 1u << 4;
 constexpr uint32_t RUNTIME_DAY_STALL_ECONOMY_INPUT = 1u << 5;
 // Soft-commit-as-deadlock-escape is forbidden; peer stalls past this wall-time
 // become an observable FAULTED stop instead of silent calendar advance.
-constexpr uint64_t RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS = 5000u;
 constexpr uint32_t RUNTIME_SNAPSHOT_RING_SIZE = 3u;
 constexpr uint32_t RUNTIME_DIRTY_FAMILY_COUNT = 9u;
 constexpr uint32_t RUNTIME_DOMAIN_INTENT_CAPACITY = 8192u;
@@ -100,6 +99,13 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1u << 11;
 // M3 GAMEPLAY_EFFECT transaction state. This section is independent from
 // Effect's EFP1 catalog/instance state and Events' EVT1 journal.
 constexpr uint32_t RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT = 1u << 12;
+constexpr uint32_t RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT = 1u << 13;
+constexpr uint32_t RUNTIME_SAVE_SECTION_MILITARY_TERRAIN = 1u << 14;
+constexpr uint32_t RUNTIME_SAVE_SECTION_SEASON_HISTORY = 1u << 15;
+constexpr uint32_t RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION = 1u << 16;
+constexpr uint32_t RUNTIME_SAVE_SECTION_VISION = 1u << 17;
+constexpr uint32_t RUNTIME_SAVE_SECTION_BIO = 1u << 18;
+constexpr uint32_t RUNTIME_SAVE_SECTION_CLIMATE_CALENDAR = 1u << 19;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -153,6 +159,7 @@ struct RuntimeCommandEnvelope {
 };
 
 struct RuntimeCommandPacket {
+    uint64_t admission_generation = 0; // Ingress metadata, not part of the save payload.
     RuntimeCommandEnvelope envelope;
     // Assigned exactly once by the accepting Host queue. It is deliberately
     // outside the legacy wire envelope so PKSR v2 remains readable while the
@@ -406,6 +413,7 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<int32_t> neighbor_offsets;
     std::vector<int32_t> neighbor_indices;
     std::vector<int32_t> hydro_parent;
+    std::vector<int32_t> province_ids;
     std::vector<uint8_t> terrain;
     std::vector<uint8_t> landform;
     std::vector<uint8_t> vegetation;
@@ -417,6 +425,8 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<uint8_t> trade_passable_lut;
     std::vector<int32_t> trade_move_cost_lut;
     std::vector<uint8_t> visible;
+    std::vector<uint8_t> military_base_landform;
+    std::vector<uint8_t> military_settlement_tier;
     std::vector<float> building_resource_reserve;
     std::vector<float> building_resource_extra;
     // S3（断点 2 的解法）：生产 Climate round 的输入缓冲，由主线程 capture 时用
@@ -459,6 +469,7 @@ struct RuntimeEnvironmentSnapshot {
     // 季末 season refresh 跑了没。为真时 worker 在当天 advance 之前把 moisture
     // 从 input 收回来——那一天 moisture 不是 worker 算的。
     bool  climate_season_refresh_ran = false;
+    std::vector<float> season_growth_pressure;
     // Climate 是不是在 worker 手上（= 主线程那侧被抑制门整段关掉了）。
     //
     // 生产被抑制之后，凡是「由生产 pass 顺带记录、再随 reference publish 交给 worker」
@@ -1367,6 +1378,11 @@ struct RuntimeCountryCommand {
     std::array<char, RUNTIME_COUNTRY_DISPLAY_NAME_CAPACITY> display_name{};
 };
 
+RuntimeCommandPacket encode_country_packet(const RuntimeCountryCommand &command);
+// PKSR uses this reserved producer value only for its executor observation rows.
+constexpr uint32_t COUNTRY_OBSERVATION_ARCHIVE_PRODUCER = 0xffffffffu;
+bool is_country_day_observation(const RuntimeCommandEnvelope &envelope);
+
 struct RuntimeCountryCommandBatch {
     uint32_t count = 0;
     std::array<RuntimeCountryCommand,
@@ -1414,26 +1430,30 @@ struct RuntimeCommitHeader {
     std::array<uint64_t, RUNTIME_DIRTY_FAMILY_COUNT> dirty_family_generations{};
 };
 
-struct RuntimeVisualIntent {
-    uint32_t family = 0;
-    uint32_t cell_index = 0;
-    uint32_t field_id = 0;
-    int32_t value_i32 = 0;
-    float value_f32 = 0.0f;
+struct RuntimeDayTail;
+struct RuntimeGoldenSnapshot;
+struct RuntimeFiscalDisplay;
+
+struct RuntimeNotice {
+    std::string id, title, settlement;
+    int32_t cell = -1;
+    int32_t category = 0;
 };
 
-struct RuntimeVisualIntentBatch {
-    uint64_t generation = 0;
-    int64_t committed_day = -1;
-    uint64_t state_hash = 0;
-    uint8_t full_refresh = 0;
-    std::vector<RuntimeVisualIntent> intents;
+struct RuntimeDayRecord {
+    RuntimeCommitHeader header;
+    std::vector<RuntimeCommandReceipt> receipts;
+    std::shared_ptr<const RuntimeGoldenSnapshot> golden;
+    std::vector<RuntimeNotice> notices;
+    std::shared_ptr<const RuntimeFiscalDisplay> fiscal;
+    uint64_t business_hash = 0;
+    bool annual_reward_pending = false;
 };
 
 struct RuntimeCommit {
     RuntimeCommitHeader header;
-    std::vector<RuntimeVisualIntent> visual_intents;
     std::vector<RuntimeCommandReceipt> receipts;
+    std::shared_ptr<const RuntimeDayTail> day_tail;
 };
 
 struct RuntimeThreadReport {
@@ -1477,8 +1497,6 @@ struct RuntimeThreadReport {
     uint64_t generation = 0;
     uint64_t state_hash = 0;
     uint64_t last_commit_produced_at_us = 0;
-    uint64_t last_visual_publish_at_us = 0;
-    double snapshot_staleness_ms = 0.0;
     // Main-thread visual timings are fed back through the facade. They stay in
     // the POD report so CSV/diagnostic consumers have one stable namespace.
     double ui_input_to_feedback_ms = 0.0;
@@ -1487,7 +1505,7 @@ struct RuntimeThreadReport {
     // Facade calls are intentionally non-blocking.  Keep this explicit in
     // the report so a future bridge cannot silently introduce a wait.
     uint64_t main_wait_on_sim_us = 0;
-    std::array<uint64_t, 11> worker_time_us{};
+    std::array<uint64_t, 10> worker_time_us{};
     uint64_t environment_generation = 0;
     int64_t environment_day = 0;
     uint32_t environment_cell_count = 0;
@@ -1502,14 +1520,9 @@ struct RuntimeThreadReport {
     uint32_t gameplay_effect_pending = 0;
     uint32_t gameplay_effect_terminal = 0;
     uint64_t gameplay_effect_state_hash = 0;
-    uint64_t visual_intent_generation = 0;
-    uint32_t visual_intent_count = 0;
-    uint8_t visual_full_refresh = 0;
     uint64_t stale_environment_rejected = 0;
     uint64_t command_queue_capacity_exceeded = 0;
     uint64_t receipt_queue_capacity_exceeded = 0;
-    uint64_t snapshot_publish_drop_count = 0;
-    uint64_t snapshot_publish_throttled_count = 0;
     uint64_t worker_fault_count = 0;
     uint64_t completed_days = 0;
     uint32_t day_stage_count = 0;
@@ -1984,7 +1997,14 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> modifier_bytes;
     std::vector<uint8_t> events_bytes;
     std::vector<uint8_t> effect_bytes;
+    std::vector<uint8_t> effect_transport_bytes;
     std::vector<uint8_t> gameplay_effect_bytes;
+    std::vector<uint8_t> military_terrain_bytes;
+    std::vector<uint8_t> season_history_bytes;
+    std::vector<uint8_t> player_confirmation_bytes;
+    std::vector<uint8_t> vision_bytes, bio_bytes, climate_calendar_bytes;
+    // The container writes these as separate PKSV sections using the same capture.
+    std::vector<uint8_t> narrative_bytes, military_bytes;
     std::vector<uint8_t> ideology_bytes;
     // Economy POD ECP1 section (graph authority snapshot).
     std::vector<uint8_t> economy_pod_bytes;

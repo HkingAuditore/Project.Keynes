@@ -1,5 +1,6 @@
 #include <cassert>
 #include "native_simulation_day_context.h"
+#include "runtime_vision.h"
 #include "economy_runtime.h"
 #include "economy_authority_transfer.h"
 #include "pk_log.h"
@@ -94,18 +95,16 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
         // Host day loop when effective writer is STAGE_OPS (opt-in; start
         // gate still refuses until BOUNDED_KERNELS lands).
         if (climate_authority_requested && !active_climate_ok) {
-            // No peer wake source — arm a stall so day-wait timeout can fire
-            // instead of parking forever with stall=0x0.
+            // Keep the incomplete Climate boundary visible in diagnostics.
             note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER, plan.context.day);
             {
                 static int s_econ_climate_gate_left = 8;
                 if (s_econ_climate_gate_left-- > 0) {
                     pk::log_info(
-                        "[economy-climate-gate] day=%d climate_ok=0 "
-                        "stall=0x%x ring=%d",
-                        plan.context.day,
-                        static_cast<int64_t>(day_stall_reason_mask()),
-                        static_cast<int64_t>(_environment_ring.size()));
+                        "[economy-climate-gate] day=%lld climate_ok=0 "
+                        "stall=0x%x ring=%zu",
+                        static_cast<long long>(plan.context.day),
+                        day_stall_reason_mask(), _environment_ring.size());
                 }
             }
             stage.completed = 0;
@@ -118,6 +117,8 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
             stage.completed = 0;
             return true;
         }
+        if (_country_pod_authority.committed_day() == plan.context.day)
+            prepare_era_advancement_day(plan.context.day);
         const EconomyProductionWriter production_writer =
             economy_production_writer_effective();
         open_granted_economy_d7_gates(*this, *_economy_production_runtime);
@@ -154,6 +155,13 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                     worker_climate_input.geography[0] = std::move(climate_view.categories[2]);
                 if (climate_view.categories[3].size() == economy_day_input->fields[0].size())
                     worker_climate_input.geography[2] = std::move(climate_view.categories[3]);
+                economy_day_input = &worker_climate_input;
+            }
+            if (_executor_vision) {
+                if (economy_day_input != &worker_climate_input)
+                    worker_climate_input = *economy_day_input;
+                worker_climate_input.geography[5] = _executor_vision->frame->visible;
+                worker_climate_input.fog_solved = true;
                 economy_day_input = &worker_climate_input;
             }
             if (std::FILE *trace = sim_day_trace_file()) {
@@ -329,25 +337,18 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                     _climate_wait_cv.notify_all();
                     _control_cv.notify_all();
                 }
-                if (fault_if_peer_stall_timed_out(
-                        plan.context.day,
-                        "economy_fiscal_peer_stall_timeout")) {
-                    stage.completed = 0;
-                    commit.preflight_ok = 0;
-                    return true;
-                }
                 {
                     static int s_fiscal_stall_left = 12;
                     if (s_fiscal_stall_left-- > 0) {
                         pk::log_info(
-                            "[economy-fiscal-stall] day=%d reason=%s "
-                            "stall=0x%x work=%d ring=%d climate_committed=%d",
-                            plan.context.day,
+                            "[economy-fiscal-stall] day=%lld reason=%s "
+                            "stall=0x%x work=%llu ring=%zu climate_committed=%lld",
+                            static_cast<long long>(plan.context.day),
                             std::string(economy_error.c_str()).c_str(),
-                            static_cast<int64_t>(day_stall_reason_mask()),
-                            static_cast<int64_t>(economy_work),
-                            static_cast<int64_t>(_environment_ring.size()),
-                            climate_committed);
+                            day_stall_reason_mask(),
+                            static_cast<unsigned long long>(economy_work),
+                            _environment_ring.size(),
+                            static_cast<long long>(climate_committed));
                     }
                 }
                 commit.continuation_pending = 1;
@@ -364,23 +365,16 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 static int s_unknown_pending_left = 12;
                 if (s_unknown_pending_left-- > 0) {
                     pk::log_info(
-                        "[economy-pending-stall] day=%d reason=%s "
-                        "stall=0x%x work=%d ring=%d",
-                        plan.context.day,
+                        "[economy-pending-stall] day=%lld reason=%s "
+                        "stall=0x%x work=%llu ring=%zu",
+                        static_cast<long long>(plan.context.day),
                         std::string(economy_error.empty()
                                           ? "pending_input"
                                           : economy_error.c_str()).c_str(),
-                        static_cast<int64_t>(day_stall_reason_mask()),
-                        static_cast<int64_t>(economy_work),
-                        static_cast<int64_t>(_environment_ring.size()));
+                        day_stall_reason_mask(),
+                        static_cast<unsigned long long>(economy_work),
+                        _environment_ring.size());
                 }
-            }
-            if (fault_if_peer_stall_timed_out(
-                    plan.context.day,
-                    "economy_pending_input_stall_timeout")) {
-                stage.completed = 0;
-                commit.preflight_ok = 0;
-                return true;
             }
             commit.continuation_pending = 1;
             stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;

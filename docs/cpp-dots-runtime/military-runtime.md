@@ -19,12 +19,13 @@
 | | `military_core_ai.cpp` | AI 军事议程（每国错峰 30 日主决策） |
 | | `military_core_save.cpp` | PKMI v6 编解码（事务式 restore；section 23 探路、24 采购订单、25 维护行） |
 | | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`；含自动探路、维护定点余量与采购闭环、PKMI v6 覆盖 |
-| Godot 桥 | `gdext/src/world_ext_military.cpp` | 目录解析、digest 采集、意图→Country/Economy 命令翻译、回执、查询、渲染快照、PKMI 外层包装 |
+| Godot 桥 | `gdext/src/world_ext_military.cpp` | 军务任务交接、意图→Country/Economy 命令翻译、回执、查询、渲染快照、PKMI 外层包装 |
+| | `gdext/src/world_ext_military_digest.cpp` | 采集已提交的 Country/Economy 输入 |
 | | `gdext/src/world_ext_economy_military.cpp` | `set_military_ration_satisfaction`（口粮满足率推给 Economy）、`collect_military_economy_receipts`（Economy 结算 trace → 回执） |
 | GDScript | `scripts/military/military_facade.gd` | 冷路径 facade，全部 `has_method` 守卫（旧 DLL 零成本降级） |
 | | `scripts/military/military_catalog_compiler.gd` | `data/military/military_catalog.json` → dense id 字典；口粮候选来自 `soldier_household` |
 | | `scripts/simulation/systems/military_daily_system.gd` | DCSystem `military_daily`，事件转发到 `GameplayEventBus` |
-| 接线 | `map_generator.gd`（`_configure_military_runtime` / `_maybe_register_military_system` / `refresh_military_terrain`）、`world_runtime_host.gd`（整图补跑、季节地形、图层节点）、`game_save_coordinator.gd`（`pkmi` provider）、`player_controller.gd`（`military.*` 命令白名单） | |
+| 接线 | `map_generator.gd`（`_configure_military_runtime` / `_maybe_register_military_system` / `refresh_military_terrain`）、`world_runtime_host.gd`（季节地形、图层节点）、`world_runtime_daily_adapter_part3.gd`（整日结算交接）、`game_save_coordinator.gd`（`pkmi` provider）、`player_controller.gd`（`military.*` 命令白名单） | |
 | 渲染 | `scripts/rendering/military_*.gd`、`shaders/military_*.gdshader` | §9 |
 | UI | `scripts/ui/military_view_model.gd`、`scripts/ui/components/military_workspace.gd` + `components/military/*` | 只读快照 + 语义命令 |
 
@@ -51,7 +52,8 @@
 - Military **读 D 日已提交**的 Country/Economy（`capture_military_digest`：`copy_economy_snapshot`、
   `cash_for_slot`、`military_read_cell_view`、`military_read_market`、`military_read_state_buildings`、
   `has_technology`、Modifier `effective_value`），**只写自己的 store**，产出生效于 D+1 的意图。
-- 不新增 `RuntimeDomainId`；Military 不是 worker domain，永远在主线程同步执行。
+- 整日后台模式在核心结算后冻结军务输入，将行军、战斗、招募、口粮和兵员对账交给日执行线程。
+  主线程安装完成的结果、接收玩家命令并发送 D+1 批次。同步模式使用同一计算。
 - 所有权变化（割地、吞并）只走 Country 命令，照常触发 `country_committed`。
 - 状态全整数（q16 / MONEY_SCALE=10000 / GOODS_SCALE=1000），RNG 只由 `(seed, key, day)` 派生。
 - 人员模型（`military_core.cpp` 头注释）：士兵始终是**家乡格**的 Economy soldier cohort；army 中的 lot
@@ -65,8 +67,8 @@
 2. `capture_military_digest` 采集 D 日视图（同时为每个活跃国家 `ensure_country_slot`）。
 3. `apply_military_deferred_cash` 执行前一日的 `SPEND_CASH`（D+1 财政预留/收回适配）；
    `collect_military_receipts` 折叠所有已到终态的待回执行（Country 回执游标 + Economy 结算事件，§5.1）。
-4. `MilitaryCore::step_day(day, digest, receipts, intents)`。
-5. `publish_military_ration_satisfaction` → Economy（真实驻军口粮满足率，§5.2）。
+4. `MilitaryCore::step_day(day, digest, receipts, intents)`，随后计算驻军口粮、人数和部队账簿差额。
+5. 将当日驻军及部队的口粮结果交给 Economy（§5.2），同时保留计算期间接收的后续命令。
 6. 意图翻译为 Country / Economy 命令批，`effective_day = day + 1`，经 `submit_country_commands` /
    `submit_economy_commands` 提交；新行**追加**到跨日的 `_military_pending_intents`，直到发出回执才移除。
 7. 返回 report（§10）+ `intents_submitted / country_ops / economy_ops / capture_ms / state_hash`。
@@ -113,15 +115,13 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
   `slice_budget_ms=0.8`、`AlwaysPolicy`；`declare_reads/writes` 为空（不写 DataCore cell component）。
 - **非整图路径**：`should_run` → `facade.should_run(day)`；`tick` 调 `facade.run_daily(day)`，随后
   `forward_military_events()`。
-- **整图 ACTIVE**：`MilitaryDailySystem.should_run` 恒 false（`generator.runtime_graph_active()`）。
-  `WorldRuntimeHost._consume_runtime_commit_if_ready` 每观察到一个已提交日调用
-  `_queue_runtime_military_commit(day)`，同帧 `_drain_runtime_military_commits()` 每帧最多补跑
-  `RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME = 4` 日：`facade.should_run(day)` 为真则 `facade.run_daily(day)`，
-  否则只推进游标；每个补跑日之前先调用 `_prepare_military_exploration_day(day)`，每日后调用 job 的
-  `forward_military_events()`。首次观察只回补最近 4 日。
-  worker **从不**推进 Military；`facade.catch_up` / `run_military_catch_up` 只是带同一防重入守卫的主线程
-  `run_military_daily` 别名。
-  耗时记入 `_dcp_military_ms`（日成本键 `mil`）。
+- **整日后台模式**：旧 `MilitaryDailySystem` 让出日推进。主线程从已提交的第 D 天取输入并复制
+  Military 状态，`run_military_daily` 把计算交给当天的日执行线程，并返回 `pending` 供后续帧查询。
+  同一天复用同一个任务。结果就绪后，主线程安装候选状态、保留计算期间收到的后续命令、
+  转发当天军务事件，并提交 D+1 的 Country/Economy 命令。之后按同一天的军务结果处理视野，
+  当天交接完成才放行下一日。
+- **同步模式**：`run_military_daily` 使用同一计算，`run_military_catch_up` 是兼容入口。
+  主线程军务交接耗时记入 `_dcp_military_ms`（日成本键 `mil`）。
 - **季节地形**：`refresh_military_terrain` 在季节刷新后重推 cover（facade 按 `hash(cover)` 跳过未变化）；
   整图 ACTIVE 由 host 的 `_refresh_military_terrain_on_season_edge` 检测季节边。
 
@@ -660,13 +660,13 @@ python tools/ci/check_save_contracts.py
    UI 调 `set_render_selection` 才显示。
 6. 恢复后 `_front_edges` 清空，直到下一次控制/交战变化才逐格重建（`military_core_save.cpp:1462`）。
 7. 交战 Plan 阶段未并行；`vision_patch_cells` 仍是军事 report 的兼容计数，部队视野
-   已由 Host 的已提交 render snapshot 接入统一 `VisionSolver`，不单独维护军事迷雾补丁。
+   从当天已提交的玩家军队位置取得，交给统一的物理视野计算。
 8. `get_military_cell_snapshot` 的 `observer` 被忽略（未按迷雾过滤）；统帅恒为空位。
 9. 占领不切换 Economy 税收/补贴归属；controller 只在 Military。
 10. 人员模型：士兵不随部队移动，无随军/客籍消费、无 `ArmyPersonnelStore`（设计 §5.7、PKEC v59 未实现）。
 11. ~~海运只有 `EMBARKED` 损耗豁免~~：已接入 coastal/ocean transport 科技、连续水格限制、
     海运运力成本与上岸姿态恢复；仍无独立海军单位与封锁。
-12. ~~注释漂移（worker 推进 military）~~：已更正为主线程 `run_military_daily` + host 整图补跑。
+12. 整日模式的军务计算已移到日执行线程。输入复制、状态安装和跨域命令交接仍由主线程执行（§4）。
 13. ~~`GameplayEventBus` payload 注释不一致~~：已按 §10 原生字段更正。LEVY 原生事件未填
     `payload_schema`（=0），由 `GameplayEventBus.military_payload_schema()` 回填 25。
 14. 设计稿 §22 写 PKCN v14 承载 `cell_controller` 与 PKEC v59；当前 controller 在 PKMI v4，

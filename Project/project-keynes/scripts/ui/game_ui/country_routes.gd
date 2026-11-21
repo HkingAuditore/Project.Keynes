@@ -593,6 +593,17 @@ func _on_player_command_completed_audio(host, id: StringName, result: Dictionary
 
 
 func _on_player_command_settled(host, id: StringName, result: Dictionary) -> void:
+	if id in [&"era.advance.start", &"era.advance.pause", &"era.advance.resume"]:
+		if host._era_panel != null:
+			host._era_panel.show_command_result(result)
+		return
+	if String(id).begins_with("country.tax.cell."):
+		if not bool(result.get("ok", false)) and host._right_panel != null:
+			host._right_panel.show_tax_rejection(result)
+		return
+	if String(id).begins_with("military."):
+		host._on_military_command_settled(id, result)
+		return
 	if bool(result.get("ok", false)):
 		var cues = {&"ideology.equip": &"ideology_use",
 			&"ideology.unequip": &"ideology_unequip", &"ideology.promote": &"ideology_promote"}
@@ -1059,6 +1070,17 @@ func record_committed_day(host, committed_day: int) -> void:
 		host._country_view_model.sample_fiscal_history(committed_day)
 
 
+func record_committed_ledger(host, commit: Dictionary) -> void:
+	host._gdp_ledger.apply_committed_view(commit.gdp)
+	if host._country_view_model != null and commit.has("fiscal_history"):
+		host._country_view_model.fiscal_history().apply_committed_view(commit.fiscal_history)
+	# The header's daily reading is independent of the slower category refresh.
+	if host._selected_cell != null and host._right_panel != null and host._inspector_view_model != null:
+		var cell := int(host._selected_cell.index)
+		if VisionSolver.fog_state(host._map, cell) == VisionSolver.FOG_VISIBLE:
+			host._right_panel.apply_published_gdp(host._inspector_view_model._gdp_kpi(cell))
+
+
 func refresh_committed_view(host) -> void:
 	host._queue_era_indicator_refresh()
 	if host._country_panel != null and host._country_panel.is_panel_open() \
@@ -1286,7 +1308,21 @@ func apply_ideology_settled(host, _result: Dictionary) -> void:
 ## 命令后请求一次，让「已排队」的反馈和面板数值同步。
 
 
-func apply_military_command_settled(host, _id: StringName, _result: Dictionary) -> void:
+func apply_military_command_settled(host, id: StringName, result: Dictionary) -> void:
+	var panel = host._right_panel
+	if panel != null:
+		var ok := bool(result.get("ok", false))
+		var message := String(result.get("message", ""))
+		if id in [&"military.state.build", &"military.state.demolish"]:
+			panel.release_military_ledger_busy()
+			panel.set_military_ledger_feedback(message, ok)
+			panel.set_construction_feedback(message, ok)
+		elif not ok and id in [&"military.army.create", &"military.train"]:
+			panel.set_military_army_feedback(message, false)
+			panel.set_military_ledger_feedback(message, false)
+		elif not ok and id in [&"military.army.move", &"military.army.area_control",
+				&"military.army.explore"]:
+			panel.set_military_dossier_feedback(message, false)
 	host._mark_country_panel_dirty(host.COUNTRY_DIRTY_MILITARY, "military_commit")
 	# 宣战/议和在军事运行时里落地，外交页的战事与关系必须在同一天跟上。
 	host._mark_country_panel_dirty(host.COUNTRY_DIRTY_DIPLOMACY, "military_commit")

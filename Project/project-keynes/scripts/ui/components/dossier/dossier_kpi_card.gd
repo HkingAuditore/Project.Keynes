@@ -31,6 +31,7 @@ var text_value := ""
 var decimals := -1
 ## "risk" 让数值与说明转为朱砂色，"warn" 转为黄铜色；空串为常规墨色。
 var tone := ""
+var _snap_value := false
 var _value := 0.0
 var _from_value := 0.0
 var _delta := NAN
@@ -52,6 +53,7 @@ func set_metric(data: Dictionary) -> void:
 	icon_key = StringName(data.get("icon", &""))
 	_from_value = _displayed_value()
 	_value = float(data.get("value", 0.0))
+	_snap_value = bool(data.get("snap_value", false))
 	if is_nan(_from_value) or is_nan(_value):
 		_from_value = _value
 	_delta = float(data.get("delta", NAN))
@@ -100,7 +102,7 @@ func _draw_reading(origin: Vector2, text: String, size_px: int, color: Color,
 
 
 func _displayed_value() -> float:
-	if not _has_grown:
+	if _snap_value or not _has_grown:
 		return _value
 	return lerpf(_from_value, _value, _blend)
 

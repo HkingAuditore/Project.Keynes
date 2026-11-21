@@ -154,10 +154,11 @@ bool NativeEconomyRuntime::military_read_state_buildings(
 void NativeEconomyRuntime::military_read_market(
         int32_t good, std::vector<int32_t> &out_cells,
         std::vector<int64_t> &out_sellable,
-        std::vector<int64_t> &out_price) const {
+        std::vector<int64_t> &out_price, std::vector<uint8_t> &out_stocked) const {
     out_cells.clear();
     out_sellable.clear();
     out_price.clear();
+    out_stocked.clear();
     const MarketStore &market = market_store();
     if (good < 0 || good >= market.good_count.get()) return;
     const int32_t markets = std::min(market.market_count.get(),
@@ -166,6 +167,7 @@ void NativeEconomyRuntime::military_read_market(
     out_cells.reserve(static_cast<size_t>(markets));
     out_sellable.reserve(static_cast<size_t>(markets));
     out_price.reserve(static_cast<size_t>(markets));
+    out_stocked.reserve(static_cast<size_t>(markets));
     for (int32_t m = 0; m < markets; ++m) {
         // A market without a live merchant cannot sell to the army.
         if (_merchant_primary_slot[static_cast<size_t>(m)] < 0) continue;
@@ -182,6 +184,29 @@ void NativeEconomyRuntime::military_read_market(
         out_cells.push_back(cell);
         out_sellable.push_back(sellable);
         out_price.push_back(std::max<int64_t>(0, market.price[index]));
+        out_stocked.push_back(stock > 0);
+    }
+}
+
+void NativeEconomyRuntime::military_read_equipment_production(
+        const std::vector<int32_t> &cells, const std::vector<uint8_t> &equipment,
+        std::vector<uint8_t> &out) const {
+    out.assign(cells.size() * equipment.size(), 0);
+    for (const BuildingType &type : _building_types) {
+        const int32_t type_id = static_cast<int32_t>(&type - _building_types.data());
+        for (int32_t col = 0; col < type.output_count; ++col) {
+            const auto &output = _building_outputs[type.output_begin + col];
+            const int32_t good = output.good_id;
+            if (good < 0 || static_cast<size_t>(good) >= equipment.size() ||
+                !equipment[good] || output.quantity <= 0)
+                continue;
+            for (size_t slot = 0; slot < cells.size(); ++slot) {
+                auto &available = out[slot * equipment.size() + good];
+                if (available || cells[slot] < 0) continue;
+                available = good_production_available(cells[slot], good, false) &&
+                    building_available(cells[slot], type_id, false);
+            }
+        }
     }
 }
 

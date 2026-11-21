@@ -154,14 +154,12 @@ func _build_world() -> Dictionary:
 	# with only the starter profession has no landlord or merchant cohort to measure.
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = true
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = 0xFFF
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var config := NewGameConfig.create_default()
 	config.country.name = "C0 X16"
 	config.country.foreign_count = 1

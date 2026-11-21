@@ -288,6 +288,7 @@ struct MilitaryLotStore {
     std::vector<int16_t> unit_type;
     std::vector<int16_t> equip_quality_q8;  // average actual quality * 256
     std::vector<int32_t> kit_q16;           // weighted per-slot delivery factor
+    std::vector<uint16_t> partial_equipment; // packed grades of incompletely equipped lots
     std::vector<int32_t> condition_q16;     // equipment condition 0.5..1.0
     std::vector<int64_t> count;
     std::vector<int32_t> free_list;
@@ -308,6 +309,7 @@ struct MilitaryTrainingOrder {
     int16_t delivered_quality_q8 = 0;  // weakest actually delivered slot (q8), 0 = none yet
     uint64_t equipped_slot_mask = 0;   // one bit per delivered equipment category
     std::array<int8_t, MILITARY_MAX_EQUIP_SLOTS> slot_delivered_quality{};
+    uint16_t source_partial_equipment = 0; // same-unit re-equipment only
 };
 
 struct MilitaryArmyStore {
@@ -520,23 +522,17 @@ struct MilitaryCountryPolicy {
     int32_t procurement_share_bp = 2000;
     // ---- budget envelope (任务 6). `budget_share_bp <= 0` means "no envelope":
     // wages / upkeep / procurement settle against cash and demand exactly as
-    // before, which is what every foreign AI country and every save loaded
-    // without a re-pushed player policy must keep doing. The three channel
+    // before. The three channel
     // shares are percentages of the envelope and must sum to <= 10000; the
     // procurement channel reuses `procurement_share_bp` above rather than
     // duplicating it, so there is one number for that channel everywhere.
-    //
-    // These four fields are TRANSIENT by design (需求 9.3): they stay out of
-    // PKMI and out of `state_hash`, and the player session re-pushes them after
-    // a load, exactly like `era_advancement`.
     int32_t budget_share_bp = 0;
     int32_t budget_wage_bp = 6000;
     int32_t budget_upkeep_bp = 2000;
     std::vector<int32_t> config_share_bp;   // per unit type, sum <= 10000
     // ---- budget settlement outcome (任务 7 / 需求 5.2, 5.3, 7.1) ----------
     // Rewritten from scratch by every wage/upkeep settlement, so these describe
-    // the LAST settled day rather than a running total. Transient like the
-    // shares above: never saved, never hashed.
+    // the LAST settled day rather than a running total.
     //
     // The three numbers per channel answer three different questions, and
     // conflating them is the easiest way to make the panel lie:
@@ -719,24 +715,6 @@ struct MilitaryCacheRow {
 
 // ---------------------------------------------------------------- runtime
 
-struct MilitaryCommand {
-    uint16_t op = 0;          // MilitaryCommandOp
-    int64_t effective_day = 0;
-    uint64_t sequence = 0;
-    uint64_t country = 0;     // issuing country handle
-    uint64_t army = 0;
-    uint64_t other = 0;       // second army / target country / war id
-    int32_t cell = -1;
-    int32_t radius = 0;
-    int32_t unit_from = -1;
-    int32_t unit_to = -1;
-    int64_t count = 0;
-    int64_t value = 0;
-    std::vector<int32_t> cells;     // area cells / ceded cells
-    std::vector<int32_t> ints;      // config shares (unit, bp pairs), template rows, treaty terms
-    std::vector<int64_t> longs;
-};
-
 enum MilitaryCommandOp : uint16_t {
     MCMD_NONE = 0,
     MCMD_FORCE_SET_TARGET = 1,        // count=mode, value
@@ -811,6 +789,7 @@ public:
     // ---- commands (military_core.cpp); validated on submit, applied at
     // the start of step_day(effective_day).
     bool submit(MilitaryCommand command, std::string &error);
+    bool validate_command(MilitaryCommand &command, std::string &error) const;
     // Applies one validated command (owner: military_core.cpp).
     void apply_command(const MilitaryCommand &cmd, int64_t day);
     // Submit helper: true when command.army is owned by command.country.
@@ -860,7 +839,7 @@ public:
     const std::vector<uint8_t> &exploration_view() const { return _exploration_explored_view; }
     int64_t exploration_view_day() const { return _exploration_view_day; }
     uint64_t exploration_view_revision() const { return _exploration_view_revision; }
-    bool has_exploration_work() const;
+    bool has_exploration_work(int64_t through_day = -1) const;
     std::vector<MilitaryEvent> events_after(uint64_t after_id, size_t limit) const;
     int64_t country_soldiers(int32_t slot) const;
     int32_t posts_for_cell(int32_t cell, int32_t country_slot) const;
@@ -897,6 +876,7 @@ public:
     // other; not part of the bridge API.
     // military_core.cpp
     void apply_due_commands(int64_t day);
+    std::vector<MilitaryPlayerCommandRejection> take_player_command_rejections();
     void reconcile_receipts(const std::vector<MilitaryIntentReceipt> &receipts);
     void reconcile_soldier_roster(const MilitaryWorldDigest &digest);
     // Rebuilds `barracks_count` / `fort_tier` / `college_tier` for every cell
@@ -930,6 +910,7 @@ public:
     void update_force_targets(const MilitaryWorldDigest &digest);
     void run_recruitment(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     void run_training(const MilitaryWorldDigest &digest);
+    void run_reequipment(const MilitaryWorldDigest &digest, int32_t country, bool upgrade_quality);
     void run_reinforcement(const MilitaryWorldDigest &digest);
     void update_morale_org(const MilitaryWorldDigest &digest);
     void run_wages_and_upkeep(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
@@ -972,7 +953,7 @@ public:
     void destroy_army(int32_t army_slot);
     int32_t lot_find_or_create(uint8_t kind, int32_t location, int32_t country_slot,
                                int16_t unit, int16_t quality_q8,
-                               int32_t kit_q16 = MILITARY_Q16);
+                               int32_t kit_q16 = MILITARY_Q16, uint16_t partial_equipment = 0);
     int64_t lot_remove_casualties(uint8_t kind, int32_t location, int64_t count); // proportional
     MilitaryCellState *cell_state(int32_t cell, bool create);
     // Military stock custody helpers (military_core_logistics.cpp).
@@ -1228,6 +1209,7 @@ public:
     std::vector<int32_t> _heap;
     std::vector<uint8_t> _cell_owner_dirty;   // per cell, owner/control moved this day
     std::vector<int64_t> _country_annual_revenue;   // by slot, MONEY_SCALE (digest mirror)
+    std::vector<MilitaryPlayerCommandRejection> _player_command_rejections;
     MilitaryWorldDigest _last_digest;         // last day's committed view (cold queries)
     MilitaryMarketDayReuse *_market_day_reuse = nullptr; // borrowed only within step_day
     std::vector<int32_t> _country_era;        // by slot, era index mirror (militia scaling)

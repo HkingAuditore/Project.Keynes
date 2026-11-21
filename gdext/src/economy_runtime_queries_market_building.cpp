@@ -1834,7 +1834,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
 }
 
 Dictionary NativeEconomyRuntime::construction_command_receipts(
-        int64_t after_receipt_id, int32_t limit) const {
+        int64_t after_receipt_id, int32_t limit, int64_t settled_day) const {
     Dictionary out;
     limit = std::clamp(limit, 1, 256);
     Array receipts;
@@ -1842,10 +1842,17 @@ Dictionary NativeEconomyRuntime::construction_command_receipts(
     for (const ConstructionCommandReceipt &receipt :
          _committed_construction_receipts) {
         if (receipt.receipt_id <= after_receipt_id) continue;
+        if (settled_day >= 0 && receipt.settled_day != settled_day) continue;
         Dictionary row;
         row["receipt_id"] = receipt.receipt_id;
         row["sequence"] = receipt.sequence;
-        row["effective_day"] = receipt.effective_day;
+        row["admitted"] = receipt.ok;
+        if (receipt.ok) row["effective_day"] = receipt.effective_day;
+        if (receipt.military_order) {
+            row["command"] = receipt.demolishing
+                ? "military.state.demolish" : "military.state.build";
+            if (!receipt.ok) row["step"] = receipt.step;
+        }
         row["settled_day"] = receipt.settled_day;
         row["country_handle"] = static_cast<int64_t>(receipt.country_handle);
         row["cell_idx"] = receipt.cell;
@@ -1857,7 +1864,7 @@ Dictionary NativeEconomyRuntime::construction_command_receipts(
         row["market_goods_used"] = receipt.market_goods_used;
         receipts.push_back(row);
         last_receipt_id = receipt.receipt_id;
-        if (receipts.size() >= limit) break;
+        if (settled_day < 0 && receipts.size() >= limit) break;
     }
     out["ok"] = true;
     out["receipts"] = receipts;
@@ -1989,31 +1996,16 @@ Dictionary NativeEconomyRuntime::submit_family_trait_commands(
     std::vector<FamilyTraitCommand> commands;
     commands.reserve(count);
     for (size_t i = 0; i < count; ++i) {
-        const auto trait_it = std::lower_bound(_family_trait_ids.begin(),
-            _family_trait_ids.end(), keys[i]);
-        int32_t family = -1;
-        if (operations[i] < 1 || operations[i] > 3 ||
-            trait_it == _family_trait_ids.end() || *trait_it != keys[i] ||
-            !families_store().valid_handle(static_cast<uint64_t>(handles[i]), family) ||
-            days[i] < 0) {
+        std::string error;
+        const int32_t id = resolve_family_trait_command(operations[i], handles[i], keys[i],
+            strengths[i], days[i], error);
+        if (id < 0) {
             out["ok"] = false;
-            out["reason"] = "family_trait_command_entry_invalid";
+            out["reason"] = error.c_str();
             return out;
         }
-        const int32_t trait_id = static_cast<int32_t>(
-            trait_it - _family_trait_ids.begin());
-        if (operations[i] != 2 &&
-            (strengths[i] < _family_trait_strength_min_q16[trait_id] ||
-             strengths[i] > _family_trait_strength_max_q16[trait_id] ||
-             (strengths[i] - _family_trait_strength_min_q16[trait_id]) %
-                 _family_trait_strength_step_q16[trait_id] != 0)) {
-            out["ok"] = false;
-            out["reason"] = "family_trait_command_strength_invalid";
-            return out;
-        }
-        commands.push_back({operations[i], static_cast<uint64_t>(handles[i]),
-            trait_id, strengths[i], days[i], priorities[i], sequences[i],
-            ++_next_submit_order});
+        commands.push_back({operations[i], static_cast<uint64_t>(handles[i]), id,
+            strengths[i], days[i], priorities[i], sequences[i], ++_next_submit_order});
     }
     _family_trait_commands.insert(_family_trait_commands.end(),
         commands.begin(), commands.end());

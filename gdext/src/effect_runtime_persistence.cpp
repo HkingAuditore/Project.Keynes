@@ -83,6 +83,22 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
     if (!candidate.apply_pod_snapshot(snapshot, error) ||
         candidate._instances[0].activation_sequence != activation)
         return fail("effect_pod_activation_changed_on_refresh");
+    // Economy may begin a claim before the next catalog snapshot is applied.
+    // Its transaction and the next catalog fire must both survive the merge.
+    constexpr uint64_t country_handle = uint64_t{1} << 32;
+    constexpr uint64_t expedition_handle = country_handle | 1u;
+    candidate.begin_executor_transaction_namespace();
+    int64_t claim_transaction = 0;
+    if (!candidate.enqueue_family_colonization_pod(19, 13, 19,
+            country_handle, 1, expedition_handle, 1, 20, 0, error,
+            &claim_transaction))
+        return false;
+    snapshot.generation = 3;
+    snapshot.transactions[0].transaction_id = 6;
+    if (!candidate.apply_pod_snapshot(snapshot, error)) return false;
+    if (candidate.transaction_status_pod(claim_transaction) != PLANNED ||
+            candidate.transaction_status_pod(6) != ACKED)
+        return fail("effect_pod_family_claim_transaction_lost");
     // Reproduce the old bridge's exact omissions, including its original POD hash.
     // Reproduce the old bridge's exact omissions, then prove the SAVE format
     // rejects them: since the v12 bump the version gate refuses anything but

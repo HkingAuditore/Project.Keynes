@@ -7,15 +7,13 @@ extends SceneTree
 # the GDScript save boundary. It did not: GameSaveCoordinator validated the PKSR
 # header with `section_mask == 1`, while the host always writes at least
 # RUNTIME_ENVELOPE|DOMAIN_POD and adds CLIMATE once the climate store has cells.
-# That equality rejected every real bundle. Because the production path never
-# starts a worker yet, the whole branch was unreachable and the defect stayed
-# latent. This test pins the header contract, the validator, and the restore.
+# That equality rejected every real bundle. This test pins the header
+# contract, the validator, and the restore.
 
 const MAP_WIDTH := 30
 const MAP_HEIGHT := 20
 const SEED := 20260906
 const WORKER_SPEED_DAYS_PER_SECOND := 400.0
-const MAX_BARRIER_PULSES_PER_DAY := 400
 const WORKER_WAIT_TIMEOUT_MSEC := 5000
 const WORKER_POLL_MSEC := 2
 const MAX_SAVE_POLL_MSEC := 5000
@@ -63,6 +61,7 @@ func _expect(label: String, condition: bool) -> void:
 
 func _run() -> int:
 	print("=== CLM2 save roundtrip (GDScript layer) ===")
+	OS.set_environment("PK_GOLDEN_DOMAINS", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_expect("DCWorldExt available", false)
 		return 3
@@ -75,21 +74,21 @@ func _run() -> int:
 	clock.pause(true)
 
 	var host := WorldRuntimeHost.new()
-	host.map_width = MAP_WIDTH
-	host.map_height = MAP_HEIGHT
-	host.initial_seed = SEED
-	# This test owns the Climate save boundary. Keep Economy on its valid empty
-	# production bootstrap; the synthetic economy fixture requires construction
-	# resources that this climate seed intentionally does not guarantee.
-	host.generate_test_economy_data = false
-	host.runtime_parity_forcing = true
-	# This harness measures CLM2 bytes on the SHADOW trace path. ACTIVE
-	# suppresses production Climate and would starve climate_pod_parity_compared.
-	host.runtime_climate_authority_enabled = false
 	get_root().add_child(host)
 	host.configure(null, null, clock)
+	clock.set_process(false)
 
-	await host.generate_world(SEED)
+	var config := NewGameConfig.create_default()
+	config.base.map_width = MAP_WIDTH
+	config.base.map_height = MAP_HEIGHT
+	config.base.initial_seed = SEED
+	config.country.foreign_count = 0
+	var prepared := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
+	_expect("formal new game configured", bool(prepared.get("ok", false)))
+	if not bool(prepared.get("ok", false)):
+		_teardown(host, clock)
+		return 4
+	await host.generate_world()
 	var generator: MapGenerator = host.get_generator()
 	if generator == null:
 		_expect("world generation succeeded", false)
@@ -100,46 +99,18 @@ func _run() -> int:
 		_expect("%s is exported" % method, ext != null and ext.has_method(method))
 	if _failures > 0:
 		return 4
-	# The generated host starts its SHADOW worker with the production ECP2
-	# dual-write gate.  This climate-only fixture intentionally has no economy
-	# settlement, so that gate would reject an otherwise valid CLM2 save with
-	# `save_requires_first_settlement`. Restart the same worker from its current
-	# snapshot with the optional ECP2 capture disabled; the climate save boundary
-	# remains the subject of this test.
-	ext.request_runtime_stop()
-	_expect("the generated worker stops before save-mode restart", _await_stopped(ext))
-	var save_mode_worker: Dictionary = ext.start_runtime_worker({
-		"simulation_thread_mode": "SHADOW",
-		"graph_coverage_complete": false,
-		"day": 0,
-		"speed_days_per_second": WORKER_SPEED_DAYS_PER_SECOND,
-		"paused": false,
-		"economy_ecp2_dual_write": false,
-	})
-	_expect("the climate-only save worker restarts (%s)" % String(
-		save_mode_worker.get("code", "unknown")),
-		bool(save_mode_worker.get("ok", false)))
-	if not bool(save_mode_worker.get("ok", false)):
-		_teardown(host, clock)
-		return 6
-	# The restart reseeds the generation-time frame and keeps the trace whose
-	# front day is the restart's first day, so day 1 is already queued.
-
-	# generate_world already started SHADOW. Reconfigure cadence and keep forcing.
-	ext.set_runtime_climate_parity_forcing(true)
-	var clocked: Dictionary = ext.set_runtime_clock(true, WORKER_SPEED_DAYS_PER_SECOND) \
-		if ext.has_method("set_runtime_clock") else {}
-	if not bool(clocked.get("ok", false)):
-		_expect("worker clock reconfigured (%s)" % String(clocked.get("code", "unknown")), false)
-		return 6
-
-	var climate_days := _tick_until_climate_committed(ext, host, clock)
+	var clocked: Dictionary = ext.set_runtime_clock(false, WORKER_SPEED_DAYS_PER_SECOND)
+	_expect("production executor clock accepts requests", bool(clocked.get("ok", false)))
+	var climate_days := await _tick_until_climate_committed(ext, host)
 	_expect("the worker committed at least %d climate day(s)" % CLIMATE_DAYS_BEFORE_SAVE,
 		climate_days >= CLIMATE_DAYS_BEFORE_SAVE)
-	var pre_save_report: Dictionary = ext.get_runtime_thread_report()
-	var pre_save_climate_hash := int(pre_save_report.get("climate_pod_state_hash", 0))
-	_expect("the climate store reduced to a non-zero hash before saving",
-		pre_save_climate_hash != 0)
+	var pre_save_report: Dictionary = ext.get_runtime_perf_snapshot(3)
+	var golden: Dictionary = pre_save_report.get("golden_domains", {})
+	var domains: Dictionary = golden.get("domains", {})
+	var pre_save_climate_hash := int(domains.get("CLIMATE", {}).get("hash", 0))
+	_expect("the climate store published a non-zero hash at the saved boundary",
+		bool(golden.get("ready", false)) and int(golden.get("day", -1)) == climate_days
+		and pre_save_climate_hash != 0)
 
 	var polled := _capture_bundle(ext)
 	if not bool(polled.get("ready", false)):
@@ -154,7 +125,6 @@ func _run() -> int:
 
 	# restore_bundle refuses to run against a live worker, which is the same
 	# ordering the load path uses: stop, restore, then start on the restored state.
-	ext.set_runtime_climate_parity_forcing(false)
 	ext.request_runtime_stop()
 	_expect("the worker reached STOPPED before restore", _await_stopped(ext))
 	_check_restore(ext, bytes, polled, pre_save_climate_hash)
@@ -272,18 +242,29 @@ func _check_restore(ext, bytes: PackedByteArray, polled: Dictionary,
 		bool(restored.get("ok", false)))
 	if not bool(restored.get("ok", false)):
 		return
+	var country: Dictionary = ext.restore_country_runtime_checkpoint(polled.country_pkcn)
+	_expect("the canonical Country checkpoint restores before starting (%s)" %
+		String(country.get("code", "")), bool(country.get("ok", false)))
+	if not bool(country.get("ok", false)):
+		return
 
 	# The bundle is only adopted when the next start consumes it, so the actual
 	# roundtrip assertion is what the worker reports after restarting on it.
 	var restarted: Dictionary = ext.start_runtime_worker({
-		"simulation_thread_mode": "SHADOW",
-		"graph_coverage_complete": false,
+		"simulation_thread_mode": "ACTIVE",
+		"graph_coverage_complete": true,
+		"authoritative_domain_mask": 0xFFF,
+		"day": int(polled.get("committed_day", 0)),
 		"speed_days_per_second": WORKER_SPEED_DAYS_PER_SECOND,
 		"paused": true,
-		"economy_ecp2_dual_write": false,
+		"economy_stage_ops_mutate": true,
+		"economy_production_writer": "stage_ops",
+		"economy_auto_pod_active": true,
 	})
-	_expect("the worker restarts on the restored bundle (%s)" % String(
-		restarted.get("code", "unknown")), bool(restarted.get("ok", false)))
+	var startup: Dictionary = restarted.get("thread_report", {})
+	_expect("the worker restarts on the restored bundle (%s, %s)" % [
+		restarted.get("code", "unknown"), startup.get("fault_code", "")],
+		bool(restarted.get("ok", false)))
 	if not bool(restarted.get("ok", false)):
 		return
 	# start() returns before the worker has published its first report, so the
@@ -364,38 +345,18 @@ func _capture_bundle(ext, request_id: int = 1) -> Dictionary:
 		"thread_report": ext.get_runtime_thread_report()}
 
 
-# Ticks the production path and lets the worker consume one trace frame per tick
-# until enough climate days have been compared. Returns the number of days that
-# actually reached the climate store.
-func _tick_until_climate_committed(ext, host: WorldRuntimeHost,
-		clock: WorldClock) -> int:
-	var committed := 0
-	var tick := 0
-	var budget := CLIMATE_DAYS_BEFORE_SAVE * 8 + 24
-	while committed < CLIMATE_DAYS_BEFORE_SAVE and tick < budget:
-		tick += 1
-		var phase := clock.season_phase_for_day(tick)
-		clock.current_day = float(tick)
-		host.run_daily_tick(tick, phase)
-		host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier(clock) and pulses < MAX_BARRIER_PULSES_PER_DAY:
-			clock.simulation_backpressure_pulse.emit(tick)
-			pulses += 1
-		var consumed_before := int(ext.get_runtime_thread_report().get(
-			"climate_trace_consumed", 0))
-		ext.set_runtime_clock(false, WORKER_SPEED_DAYS_PER_SECOND)
+func _tick_until_climate_committed(ext, host: WorldRuntimeHost) -> int:
+	for day in range(1, CLIMATE_DAYS_BEFORE_SAVE + 1):
+		host._admit_runtime_calendar(day + 1)
 		var deadline := Time.get_ticks_msec() + WORKER_WAIT_TIMEOUT_MSEC
-		while Time.get_ticks_msec() < deadline:
-			if int(ext.get_runtime_thread_report().get("climate_trace_consumed", 0)) \
-					> consumed_before:
+		while Time.get_ticks_msec() < deadline and host._runtime_commit_day < day:
+			host._process(0.0)
+			if host.is_runtime_fault_paused():
 				break
-			OS.delay_msec(WORKER_POLL_MSEC)
-		ext.set_runtime_clock(true, WORKER_SPEED_DAYS_PER_SECOND)
-		OS.delay_msec(WORKER_POLL_MSEC)
-		if bool(ext.get_runtime_thread_report().get("climate_pod_parity_compared", false)):
-			committed += 1
-	return committed
+			await process_frame
+		if host._runtime_commit_day != day:
+			break
+	return int(ext.get_runtime_thread_report().get("climate_committed_day", -1))
 
 
 func _await_restored_day(ext, expected_day: int) -> Dictionary:
@@ -417,14 +378,6 @@ func _await_stopped(ext) -> bool:
 			return true
 		OS.delay_msec(WORKER_POLL_MSEC)
 	return false
-
-
-func _has_hard_barrier(clock: WorldClock) -> bool:
-	# The continuation path now owns native daily, biology, and ideology
-	# same-day work as well as the original country/economy barriers.  Keep the
-	# climate-input-capacity barrier out: that source is retried by the host's
-	# capacity loop, not by a continuation pulse.
-	return clock.needs_continuation_pulse()
 
 
 func _teardown(host: WorldRuntimeHost, clock: WorldClock) -> void:

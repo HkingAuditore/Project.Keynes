@@ -124,7 +124,7 @@ int64_t military_grid_cells(const DCWorldExt &world) {
 Dictionary DCWorldExt::set_military_country_metrics(const Array &rows) {
     Dictionary out;
     out["ok"] = true;
-    if (_military_runtime == nullptr) {
+    if (!_military) {
         out["ok"] = false;
         out["reason"] = "military_unavailable";
         return out;
@@ -201,7 +201,7 @@ Dictionary DCWorldExt::set_military_country_metrics(const Array &rows) {
 Dictionary DCWorldExt::set_military_cell_tags(const Array &tags) {
     Dictionary out;
     out["ok"] = true;
-    if (_military_runtime == nullptr) {
+    if (!_military) {
         out["ok"] = false;
         out["reason"] = "military_unavailable";
         return out;

@@ -103,6 +103,8 @@ public:
     bool effect_command_result_pod(int64_t request_id, bool &complete,
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
+    std::vector<uint8_t> capture_effect_adapter() const;
+    void restore_effect_adapter(const std::vector<uint8_t> &bytes);
     bool should_run(int64_t day_index) const;
     // Pending future technology activations are not a half-applied Country
     // command. Annual snapshots must wait for the actual batch/seal only.
@@ -570,7 +572,7 @@ private:
         bool empty() const { return count == 0; }
     };
 
-    struct EffectCommandResult {
+    struct CountryEffectCommandResult {
         uint8_t complete = 0;
         uint8_t ok = 0;
         std::string reason;
@@ -1037,7 +1039,7 @@ private:
     std::vector<Command> _pending_commands;
     std::deque<CountryCommandReceipt> _typed_receipts;
     std::unordered_map<uint64_t, CountryCommandReceipt> _typed_request_state;
-    std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
+    std::unordered_map<int64_t, CountryEffectCommandResult> _effect_command_results;
     std::unordered_map<uint64_t, int64_t> _effect_command_idempotency;
     // Host request_id → Effect request_id while Country writes are worker-owned.
     std::unordered_map<uint64_t, int64_t> _effect_host_request_map;

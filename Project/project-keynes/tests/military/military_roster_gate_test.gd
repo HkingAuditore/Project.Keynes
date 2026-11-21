@@ -6,8 +6,8 @@ extends SceneTree
 ##
 ##   godot --path Project/project-keynes -s res://tests/military/military_roster_gate_test.gd
 
-const CountryViewModelScript = preload("res://scripts/ui/country_view_model.gd")
-const MilitaryViewModelScript = preload("res://scripts/ui/military_view_model.gd")
+var _country_view_model_script: GDScript
+var _military_view_model_script: GDScript
 const CompilerScript = preload("res://scripts/military/military_catalog_compiler.gd")
 
 const Q16 := 65536
@@ -16,6 +16,13 @@ var _failures := PackedStringArray()
 
 
 func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	# Load the UI after project startup so the test releases its scene resources at exit.
+	_country_view_model_script = load("res://scripts/ui/country_view_model.gd")
+	_military_view_model_script = load("res://scripts/ui/military_view_model.gd")
 	_check_compiler_carries_authored_copy()
 	_check_country_model_wires_names_and_gate()
 	_check_gate_filters_roster_and_codex()
@@ -104,10 +111,10 @@ func _check_gate_filters_roster_and_codex() -> void:
 	var bronze_tech := _unit_tech("bronze_spearmen")
 	var tribal_tech := _unit_tech("tribal_warriors")
 	var model := _country_model(_researched([bronze_tech]))
-	var vm = MilitaryViewModelScript.new()
+	var vm = _military_view_model_script.new()
 	vm.configure(model)
-	var spears := vm.unit_index("bronze_spearmen")
-	var iron := vm.unit_index("iron_infantry")
+	var spears: int = vm.unit_index("bronze_spearmen")
+	var iron: int = vm.unit_index("iron_infantry")
 	_expect("bronze spearmen index resolves", spears >= 0)
 	_expect("iron infantry index resolves", iron >= 0)
 	_expect("researched unit is unlocked", vm.unit_unlocked(spears))
@@ -118,7 +125,7 @@ func _check_gate_filters_roster_and_codex() -> void:
 	_expect("militia is always unlocked", vm.unit_unlocked(vm.unit_index("militia")))
 	_expect("tribal warriors stay locked without composite tools",
 		not vm.unit_unlocked(vm.unit_index("tribal_warriors")))
-	var equipped_vm = MilitaryViewModelScript.new()
+	var equipped_vm = _military_view_model_script.new()
 	equipped_vm.configure(_country_model(_researched([tribal_tech])))
 	_expect("tribal warriors unlock with composite tools",
 		equipped_vm.unit_unlocked(equipped_vm.unit_index("tribal_warriors")))
@@ -162,7 +169,7 @@ func _check_gate_filters_roster_and_codex() -> void:
 func _check_unknown_gate_shows_everything() -> void:
 	var model := _country_model(PackedStringArray())
 	model["country_facade"] = null
-	var vm = MilitaryViewModelScript.new()
+	var vm = _military_view_model_script.new()
 	vm.configure(model)
 	_expect("unknown gate is reported", not vm.gate_known())
 	_expect("unknown gate unlocks everything",
@@ -186,7 +193,7 @@ func _country_model(researched: PackedStringArray) -> Dictionary:
 		"current_day": 40,
 		"good_ids": PackedStringArray(),
 	}
-	var vm = CountryViewModelScript.new()
+	var vm = _country_view_model_script.new()
 	var section := {
 		"available": true,
 		"facade": null,

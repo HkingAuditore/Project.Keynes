@@ -7,6 +7,11 @@
 namespace pk::persistence_codec {
 constexpr uint32_t OWNED_STATE_MAGIC = 0x414F534Fu; // "OSOA"
 constexpr uint32_t OWNED_STATE_VERSION = 4u;
+constexpr uint32_t OWNED_PENDING_STRUCTURE_BLOCK = 14u;
+constexpr uint32_t OWNED_POPULATION_RECONCILE_BLOCK = 15u;
+constexpr uint32_t OWNED_PROCUREMENT_BLOCK = 16u;
+constexpr uint32_t OWNED_TRADE_PLAN_BLOCK = 17u;
+constexpr uint32_t OWNED_LIVING_COST_EXCEPTIONS_BLOCK = 18u;
 
 inline void owned_put_u32(std::vector<uint8_t> &out, uint32_t value) {
     for (int i = 0; i < 4; ++i)
@@ -156,14 +161,14 @@ inline bool validate_owned_state_soa(const std::vector<uint8_t> &wire) {
         wire.data() + hash_at + 8u, wire.size() - hash_at - 8u);
     if (actual_hash != expected_hash) return false;
     uint32_t seen = 0;
-    // Sections 1..6 and 8..13 are required. Section 7 is the optional epoch cursor.
+    // Section 7 is the epoch cursor. The pending structure block is optional.
     // Journal / market-signal payloads live in ECP2 domain blobs, not OSOA.
     // Reject unknown ids fail-closed.
     while (cursor < wire.size()) {
         uint32_t id = 0, payload_size = 0;
         if (!read_owned_u32(wire.data(), wire.size(), cursor, id) ||
             !read_owned_u32(wire.data(), wire.size(), cursor, payload_size) ||
-            id < 1u || id > 13u || (seen & (1u << id)) != 0u ||
+            id < 1u || id > OWNED_LIVING_COST_EXCEPTIONS_BLOCK || (seen & (1u << id)) != 0u ||
             payload_size > wire.size() - cursor) return false;
         seen |= 1u << id;
         // Sections 1..4 may legitimately be empty (e.g. no trade escrow /
@@ -232,14 +237,19 @@ inline void append_publication_block(std::vector<uint8_t> &wire,
     const uint64_t hash = owned_fnv1a(wire.data() + 40u, wire.size() - 40u);
     binary_codec::store_le(wire.data() + 32u, hash);
 }
-inline std::vector<uint8_t> publication_block(const std::vector<uint8_t> &wire, uint32_t wanted = 8u) {
+inline std::vector<uint8_t> publication_block(const std::vector<uint8_t> &wire, uint32_t wanted = 8u,
+                                              bool *present = nullptr) {
+    if (present) *present = false;
     size_t cursor = 40u;
     while (cursor < wire.size()) {
         uint32_t id = 0, size = 0;
         if (!read_owned_u32(wire.data(), wire.size(), cursor, id) ||
             !read_owned_u32(wire.data(), wire.size(), cursor, size) ||
             size > wire.size() - cursor) return {};
-        if (id == wanted) return {wire.begin() + cursor, wire.begin() + cursor + size};
+        if (id == wanted) {
+            if (present) *present = true;
+            return {wire.begin() + cursor, wire.begin() + cursor + size};
+        }
         cursor += size;
     }
     return {};

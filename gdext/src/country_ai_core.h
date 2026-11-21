@@ -6,6 +6,7 @@
 // same commands on every platform, so the worker path, the synchronous path and
 // a save/load round trip stay byte-identical.
 
+#include "country_api.h"
 #include "runtime_pod_protocol.h"
 
 #include <array>
@@ -184,45 +185,6 @@ struct CountryAiCatalog {
 
 // A cohort below this essentials satisfaction counts as hungry.
 constexpr int32_t COUNTRY_AI_HUNGRY_ESSENTIALS_Q16 = 58982; // 0.9
-
-// Committed Economy facts, published once per Economy commit. Money flows are
-// per day: an Economy batch spans a variable number of days.
-struct CountryAiEconomyRow {
-    uint64_t country_handle = 0;
-    int64_t population = 0;
-    int32_t satisfaction_q16 = 0;
-    int32_t essentials_q16 = 0;
-    int64_t tax_paid = 0;
-    int64_t subsidy_received = 0;
-    int64_t income = 0;
-    int64_t expense = 0;
-    int32_t family_count = 0;
-    int32_t expeditions_active = 0;
-    uint32_t ai_colonization_failures = 0;
-    uint32_t ai_colonization_started = 0;
-    // Food-flow carrying capacity over owned cells, in persons. Births slow
-    // once a cell's population passes ~90% of its K_eff, so the load is
-    // population-weighted: a one-person colony must not dominate it.
-    int64_t carrying_k_eff = 0;
-    int64_t carrying_k_geo = 0;
-    int32_t carrying_load_q16 = 0;
-    // Population share below COUNTRY_AI_HUNGRY_ESSENTIALS_Q16; the mean
-    // essentials value hides one starving cell.
-    int32_t hungry_share_q16 = 0;
-};
-
-struct CountryAiEconomyDigest {
-    uint64_t revision = 0;
-    int64_t commit_day = -1;
-    std::vector<CountryAiEconomyRow> rows; // sorted by country_handle
-    // Indexed like the Country business-tax items: 1 when the building type
-    // has a survival-food output.
-    std::vector<uint8_t> food_building_types;
-    // Per-map-cell living population at digest publish (0 for empty/unowned).
-    // Used by colonize reinforce to find thin own-territory outposts.
-    std::vector<int64_t> cell_population;
-    const CountryAiEconomyRow *find(uint64_t handle) const;
-};
 
 // Persisted per-slot memory. Fixed-size POD so encode/hash are trivial.
 struct CountryAiMemory {

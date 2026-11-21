@@ -1,5 +1,7 @@
 extends SceneTree
 
+const LoadingCatalogBake = preload("res://tools/loading_catalog_bake.gd")
+
 var failures: Array[String] = []
 
 func _initialize() -> void:
@@ -47,10 +49,11 @@ func _run() -> void:
 		for x in 32:
 			var value := DCTerrainBaker.terrain_detail_bake_scalar(baker._detail_noise,baker._ridge_noise,-20.0+(float(x)+.5)*5.0,-20.0+(float(y)+.5)*(100.0/24.0),150.0,10.0,.7,1.3)
 			expect("detail parity %d,%d" % [x,y],detail.data[y*32+x]==DCTerrainBaker.terrain_detail_to_byte(value,.7,1.3))
-	LoadingCatalogCache.invalidate()
 	var economy := EconomyCatalog.compile_native_catalog()
 	var effect: Dictionary = EffectDomainCatalog.build().compile_native_catalog()
-	await LoadingCatalogCache.prepare(ext)
+	var snapshot_dir := "user://test_loading_catalog_%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
+	expect("bake this process's catalog fixture", LoadingCatalogBake.bake(snapshot_dir) == OK)
+	await LoadingCatalogCache.prepare(ext, null, snapshot_dir)
 	expect("catalog snapshot matches source compiler",economy==LoadingCatalogCache.economy_catalog())
 	var cached_effect := LoadingCatalogCache.effect_catalog()
 	expect("effect extension IR survives serialization",cached_effect != null and effect==cached_effect.compile_native_catalog())
@@ -67,6 +70,9 @@ func _run() -> void:
 		and not (effect.get("family_effect_keys", PackedStringArray()) as PackedStringArray).is_empty())
 	LoadingCatalogCache.invalidate()
 	expect("invalidated Effect columns cannot be used", LoadingCatalogCache.effect_native_columns().is_empty())
+	for filename in LoadingCatalogBake.SNAPSHOT_FILES:
+		DirAccess.remove_absolute(snapshot_dir.path_join(filename))
+	DirAccess.remove_absolute(snapshot_dir)
 	for failure in failures: push_error(failure)
 	print("[native-loading-tasks] %d failures" % failures.size())
 	quit(0 if failures.is_empty() else 1)

@@ -56,6 +56,7 @@ constexpr uint16_t kSection_PurchaseOrders = 24;
 // forgive or double-count a shortage, and the disrepair verdict would reset to
 // "fine" on every load.
 constexpr uint16_t kSection_Maintenance = 25;
+constexpr uint16_t kSection_BudgetEnvelope = 26;
 constexpr uint16_t kSection_End = 0xFFFF;
 
 // Sanity caps so a corrupt length can never trigger an enormous allocation.
@@ -103,6 +104,7 @@ public:
     bool ok() const { return _ok; }
     size_t pos() const { return _pos; }
     size_t remaining() const { return _ok ? _size - _pos : 0; }
+    size_t section_remaining() const { return _section_end > _pos ? _section_end - _pos : 0; }
     bool need(size_t n) {
         if (!_ok || _pos + n > _size) {
             _ok = false;
@@ -288,6 +290,15 @@ void write_index_continuation(Writer &w, const MilitaryCore &c) {
     write_index_vector(w, c._armies.generation);
     write_index_vector(w, c._armies.free_list);
     write_index_vector(w, c._army_lane_pending);
+    bool partial = std::any_of(c._training.begin(), c._training.end(),
+        [](const auto &order) { return order.source_partial_equipment != 0; });
+    for (size_t row = 0; row < c._lots.active.size() && !partial; ++row)
+        partial = c._lots.active[row] && c._lots.partial_equipment[row] != 0;
+    if (partial) {
+        for (size_t row = 0; row < c._lots.active.size(); ++row)
+            w.u16(c._lots.active[row] ? c._lots.partial_equipment[row] : 0);
+        for (const auto &order : c._training) w.u16(order.source_partial_equipment);
+    }
 }
 bool read_index_continuation(Reader &r, MilitaryCore &c) {
     if (!read_index_vector(r, c._lots.location_kind) ||
@@ -300,11 +311,18 @@ bool read_index_continuation(Reader &r, MilitaryCore &c) {
         !read_index_vector(r, c._lots.count) ||
         !read_index_vector(r, c._lots.free_list)) return false;
     c._lot_index_ok = r.u8() != 0;
-    return read_index_vector(r, c._lot_next) &&
+    if (!(read_index_vector(r, c._lot_next) &&
         read_index_vector(r, c._lot_link_kind) && read_index_vector(r, c._lot_link_loc) &&
         read_index_vector(r, c._lot_army_head) && read_index_vector(r, c._lot_cell_head) &&
         read_index_vector(r, c._armies.generation) && read_index_vector(r, c._armies.free_list) &&
-        read_index_vector(r, c._army_lane_pending);
+        read_index_vector(r, c._army_lane_pending))) return false;
+    c._lots.partial_equipment.resize(c._lots.active.size(), 0);
+    if (r.section_remaining() == 0) return true;
+    const size_t grades = c._lots.active.size() + c._training.size();
+    if (r.section_remaining() < grades * sizeof(uint16_t)) return false;
+    for (auto &kit : c._lots.partial_equipment) kit = r.u16();
+    for (auto &order : c._training) order.source_partial_equipment = r.u16();
+    return r.ok();
 }
 
 
@@ -623,6 +641,18 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     w.begin(kSection_Policies);
     write_policies(w, *this);
     w.end();
+    if (std::any_of(_policies.begin(), _policies.end(), [](const MilitaryCountryPolicy &p) {
+            return p.budget_share_bp != 0 || p.budget_wage_bp != 6000 || p.budget_upkeep_bp != 2000;
+        })) {
+        w.begin(kSection_BudgetEnvelope);
+        w.u32(static_cast<uint32_t>(_policies.size()));
+        for (const auto &policy : _policies) {
+            w.i32(policy.budget_share_bp);
+            w.i32(policy.budget_wage_bp);
+            w.i32(policy.budget_upkeep_bp);
+        }
+        w.end();
+    }
 
     // ---- sparse cell state
     w.begin(kSection_CellStates);
@@ -1390,6 +1420,29 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 }
                 break;
             }
+            case kSection_BudgetEnvelope: {
+                if (r.section_remaining() < sizeof(uint32_t)) {
+                    error = "pkmi_bad_budget_envelope";
+                    return false;
+                }
+                const uint32_t n = r.u32();
+                if (n != tmp._policies.size() || r.section_remaining() != n * 12ULL) {
+                    error = "pkmi_bad_budget_envelope";
+                    return false;
+                }
+                for (auto &policy : tmp._policies) {
+                    policy.budget_share_bp = r.i32();
+                    policy.budget_wage_bp = r.i32();
+                    policy.budget_upkeep_bp = r.i32();
+                    if (policy.budget_share_bp < 0 || policy.budget_share_bp > 10000 ||
+                        policy.budget_wage_bp < 0 || policy.budget_wage_bp > 10000 ||
+                        policy.budget_upkeep_bp < 0 || policy.budget_upkeep_bp > 10000) {
+                        error = "pkmi_bad_budget_envelope";
+                        return false;
+                    }
+                }
+                break;
+            }
             case kSection_CellStates: {
                 const uint32_t n = r.u32();
                 if (n > kMaxRows) {
@@ -1883,8 +1936,8 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
             max_tpl_end = std::max(max_tpl_end, (size_t)(toff + tlen));
         }
     }
-    tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + (ptrdiff_t)max_path_end);
-    tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + (ptrdiff_t)max_tpl_end);
+    tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + static_cast<std::ptrdiff_t>(max_path_end));
+    tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + static_cast<std::ptrdiff_t>(max_tpl_end));
 
     // Slot payload, free-list order and linked sets are continuation state.
     if (tmp._cell_states.size() > 1) {
@@ -1911,38 +1964,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         if (c >= 0 && (size_t)c < tmp._cell_state_index.size()) tmp._cell_state_index[(size_t)c] = (int32_t)i;
     }
     tmp.rebuild_cell_index();
-    // Exploration routes are regular army paths; the last cell must still name
-    // the observation / return target the task persisted.
-    for (const MilitaryExplorationTask &task : tmp._explorations) {
-        if (!task.active) continue;
-        int32_t army_slot = -1;
-        if (!tmp.resolve_army(task.army_handle, army_slot)) {
-            error = "pkmi_exploration_army_missing";
-            return false;
-        }
-        const MilitaryArmyStore &a = tmp._armies;
-        const int32_t len = a.path_len[(size_t)army_slot];
-        if (len <= 0) continue;
-        const int32_t off = a.path_offset[(size_t)army_slot];
-        if (off < 0 || (size_t)(off + len) > tmp._path_cells.size()) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-        const int32_t expected =
-            task.phase == MILITARY_EXPLORATION_RETURNING
-                ? task.return_cell : task.current_observation_cell;
-        if (expected < 0 ||
-            tmp._path_cells[(size_t)(off + len - 1)] != expected) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-        if (task.phase == MILITARY_EXPLORATION_PAUSED_BATTLE ||
-            task.phase == MILITARY_EXPLORATION_COMPLETE ||
-            task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-    }
+    if (!military_validate_restored_exploration_paths(tmp, error)) return false;
     // Army caches are saved verbatim (refreshing here would diverge from the
     // live cache, which lags condition decay and needs the era mirror).
     return true;

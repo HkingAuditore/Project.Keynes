@@ -353,7 +353,7 @@ building/market transaction
 
 出生与死亡不在本阶段：`EPOCH_BEGIN` 从持久化状态派生分支人口学行（占比、目标占比、困难度、
 出生/死亡权重，`family_demography_weights_ms`）；市场 worker 对可能含家族成员的 cohort 只发出
-`MarketResult.family_demography` 死亡事件，主线程合并时按死亡权重分摊到成员边与匿名；
+`MarketResult.family_demography` 死亡事件，经济执行器合并时按死亡权重分摊到成员边与匿名；
 `STRUCTURAL_COMMIT` 的出生命令按出生权重把新生儿记入家族在无业 cohort 的成员边。
 出生归属的家族基准份额取 `min(实际占比, 目标占比)`，其余基准份额留给匿名新生儿；
 超过目标的既有成员保持身份，因此纯家族开拓地通过后续出生逐步恢复匿名人口，而不会永久封闭立族来源。

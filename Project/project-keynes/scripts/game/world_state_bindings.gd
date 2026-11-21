@@ -10,8 +10,10 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 		"dynamic_world":
 			var ext = generator.get_data_core_world_ext() if generator != null else null
 			return {"world": source.get("world"), "session": source.session,
-				"restore_base_moisture": func():
-					ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"])),
+				"restore_geography_view": func():
+					if ext != null:
+						ext.refresh_slots_from_map_keys(PackedStringArray([
+							"cell_base_moisture", "cell_landmass_id", "cell_province_id"])),
 				"base_moisture": func():
 					return ext.snapshot_f32(ext.component_id("cell_base_moisture")) if ext != null else PackedFloat32Array()}
 		"environment":
@@ -33,8 +35,8 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 				"native_country_pkcn": source.get("native_country_pkcn", PackedByteArray()),
 				"prepare_economy": _method(generator, "prepare_economy_save_restore_runtime")}
 		"pkmi":
-			return {"military": _facade(generator, "military"), "country": _facade(generator, "country"),
-				"military_progress": generator.get_military_daily_job() if generator != null else null}
+			return {"military": _facade(generator, "military"),
+				"native_pkmi": source.get("native_pkmi", PackedByteArray())}
 		"pkai":
 			return {"country_ai": _facade(generator, "country_ai"), "country": _facade(generator, "country")}
 		"ecp2":
@@ -52,17 +54,13 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 				"ideology_report": _method(generator, "get_ideology_report")}
 		"pkfg":
 			return {"map": host.current_map() if host != null else null,
-				"fog_enabled": host.is_fog_of_war_enabled() if host != null else false,
-				"player_slot": host.player_country_slot() if host != null else -1,
 				"intel": host.building_visual_intel_cache() if host != null else null,
-				"type_count": host.building_visual_type_count() if host != null else -1,
-				"refresh_vision": _method(host, "refresh_country_visuals")}
-		"journal":
-			return {"event_bus": source.get("event_bus")}
+				"type_count": host.building_visual_type_count() if host != null else -1}
+		"journal", "pknr":
+			return {"event_bus": source.get("event_bus"),
+				"native_pknr": source.get("native_pknr", PackedByteArray())}
 		"pkar":
 			return {"annual": _facade(generator, "country")}
-		"pknr":
-			return {"player": source.get("player")}
 		"player_session":
 			return {"session": source.session, "set_session": source.set_session,
 				"player": source.get("player"), "viewport": source.get("viewport"),

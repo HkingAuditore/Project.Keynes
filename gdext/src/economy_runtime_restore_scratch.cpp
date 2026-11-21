@@ -46,6 +46,7 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _epoch_previous_producer_merchant_sold.clear();
     _labor_signals.clear(_cell_count.get());
     _trade_plan.clear_transient();
+    _trade_active_key_idle_cycles.clear();
     _trade_signal_clock_keys.clear();
     _trade_signal_bulk_keys_scratch.clear();
     _trade_signal_first_seen_day.clear();

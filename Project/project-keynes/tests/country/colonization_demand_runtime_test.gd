@@ -1,5 +1,7 @@
 extends "res://tests/family/family_colonization_runtime_test.gd"
 
+const CarryingCatalogCompiler = preload("res://scripts/economy/economy_carrying_catalog_compiler.gd")
+
 func _init() -> void:
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("economy catalog compiles", bool(compiled.get("ok", false)))
@@ -159,7 +161,7 @@ func _food_good_indices(catalog: Dictionary) -> PackedInt32Array:
 	var result := PackedInt32Array()
 	for need in ["staple_food", "protein", "produce"]:
 		var stable := (catalog.need_ids as PackedStringArray).find(need)
-		for good in EconomyCatalogScript._carrying_need_goods(stable, catalog):
+		for good in CarryingCatalogCompiler._carrying_need_goods(stable, catalog):
 			if not result.has(good):
 				result.append(good)
 	return result

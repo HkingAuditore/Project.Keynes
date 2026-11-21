@@ -41,7 +41,7 @@ const SOURCE_GDSCRIPT: int = 2
 const SOURCE_DEBUG: int = 3
 ## 4 is the native PK_EVENT_SOURCE_EFFECT (EffectRuntime PUBLISH_EVENT rows).
 const SOURCE_EFFECT: int = 4
-## Military facts forwarded by MilitaryDailySystem. The bus and TriggerRuntime
+## Military facts published by the native runtime. The bus and TriggerRuntime
 ## carry the source id verbatim (TriggerRuntime keeps a cursor per source,
 ## source_count 64), so military rules match on this dedicated id instead of
 ## sharing SOURCE_NATIVE's cursor or colliding with SOURCE_DEBUG.
@@ -209,6 +209,28 @@ func poll_events(
 	if int(batch.get("count", 0)) > 0:
 		event_batch_polled.emit(batch)
 	return batch
+
+
+func configure_story(packet: Dictionary) -> bool:
+	return _world_ext != null and _world_ext.configure_gameplay_narrative(packet, {})
+
+
+func restore_story(state: Dictionary) -> Dictionary:
+	return submit_story_request(&"restore", state)
+
+
+func story_view() -> Dictionary:
+	return _world_ext.get_gameplay_narrative_view() if _world_ext != null else {}
+
+
+func capture_story() -> Dictionary:
+	return _world_ext.capture_gameplay_narrative() if _world_ext != null else {}
+
+
+func submit_story_request(kind: StringName, args: Dictionary) -> Dictionary:
+	if _world_ext == null:
+		return {"ok": false, "code": "narrative_runtime_unavailable"}
+	return _world_ext.submit_gameplay_narrative(kind, args)
 
 
 func ack_events(consumer_id: StringName, up_to_event_id: int) -> Dictionary:

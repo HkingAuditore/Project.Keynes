@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -200,7 +201,7 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                                     ? float(cp_struct["runtime_moisture_base_relax_rate"]) : 0.24f;
     if (moisture_relax < 0.0f) moisture_relax = 0.0f;
     else if (moisture_relax > 1.0f) moisture_relax = 1.0f;
-    const float moisture_relax_eff = 1.0f - std::pow(1.0f - moisture_relax, thermal_dt);
+    const float moisture_relax_eff = 1.0f - simulation_math::pow(1.0f - moisture_relax, thermal_dt);
     float moisture_vapor_w = cp_struct.has("runtime_moisture_weather_vapor_weight")
                                     ? float(cp_struct["runtime_moisture_weather_vapor_weight"]) : 0.12f;
     if (moisture_vapor_w < 0.0f) moisture_vapor_w = 0.0f;
@@ -244,9 +245,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     // 窗口实际膨胀到 30·dt / 365·dt 天，m30 跟不上季节循环、与 m365 一起趋近年均→temp_anomaly 坍缩到≈0
     // →DROUGHT/HEATWAVE 结构性不可达。等效多日 alpha=1-(1-base)^dt；dt<=1 时恰为 base（逐位无回归）。
     const float ema_alpha_30  = (thermal_dt <= 1.0f) ? (1.0f / 30.0f)
-                                    : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
+                                    : (1.0f - simulation_math::pow(1.0f - 1.0f / 30.0f, thermal_dt));
     const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
-                                    : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
+                                    : (1.0f - simulation_math::pow(1.0f - annual_ema_alpha, thermal_dt));
     // ─── 5. Acquire array views & validate sizes ────────────────────────
     // arr_*.ptrw() on the *internal* slot data is the legitimate write
     // path — bind_map_data shared CoW with GDScript so writes propagate.
@@ -656,9 +657,9 @@ void DCWorldExt::_ensure_enso_basin_cache(
             double sx = 0.0, sy = 0.0;
             for (int idx : c.cells) {
                 const double a = 2.0 * M_PI * double(pos_x[idx]) / double(wrap_period_x);
-                sx += std::cos(a); sy += std::sin(a);
+                sx += simulation_math::cos(a); sy += simulation_math::sin(a);
             }
-            cx = std::atan2(sy, sx) * double(wrap_period_x) / (2.0 * M_PI);
+            cx = simulation_math::atan2(sy, sx) * double(wrap_period_x) / (2.0 * M_PI);
         } else {
             for (int idx : c.cells) cx += pos_x[idx];
             cx /= std::max<size_t>(1, c.cells.size());

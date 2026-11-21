@@ -21,7 +21,6 @@ import world_ext_bindings
 import check_world_ext_bindings as binding_guard
 import check_script_native_access as script_access
 import runtime_test_hygiene as hygiene
-import main_boundary_wakeup_fixture
 import subprocess
 import os
 import json
@@ -39,7 +38,6 @@ class GuardsTest(unittest.TestCase):
                             str(resolve_apply.ROOT / 'gdext/tests/runtime_control_wakeup_test.cpp'),
                             '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True, timeout=10)
-            main_boundary_wakeup_fixture.verify(compiler, resolve_apply.ROOT, Path(directory))
 
     def test_resolve_apply_actual_source_negatives(self):
         data=json.loads((resolve_apply.ROOT/resolve_apply.REGISTRY).read_text())

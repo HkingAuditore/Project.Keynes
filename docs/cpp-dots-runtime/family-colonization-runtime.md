@@ -205,9 +205,9 @@ CLAIM 路径在 Country priority 255 ACK 之后，空闲经济周期可在 `EPOC
 前立即落地；本国迁徙没有 Country 前置，Economy 可在同一切片消费 SETTLE。
 空闲入口必须先 `process_due` 把到达队伍 enqueue，再 `dispatch_native_economy`：
 到达当日的 SETTLE 在第一次 dispatch 时还不存在，若只在 `process_due` 之前派发，
-本国迁徙会停在 `SETTLING`（面板「落地结算中」）直到下一次空闲周期。生产 ACTIVE
-下 Effect POD 评估可归 worker，但开拓 CLAIM+SETTLE 仍挂在主线程 `EffectRuntime`；
-runtime graph / Economy idle 边界必须始终 `dispatch_native_country` +
+本国迁徙会停在 `SETTLING`（面板「落地结算中」）直到下一次空闲周期。开拓 CLAIM+SETTLE
+仍经同步 `EffectRuntime` 的兼容交接，属于待迁移工作。维护这条路径时，
+runtime graph / Economy idle 边界仍要 `dispatch_native_country` +
 `dispatch_native_economy`（不得因 EFFECT worker 权威 skip），否则 CLAIM 永不提交、
 开拓队永久停在 `SETTLING`。
 

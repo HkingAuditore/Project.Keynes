@@ -793,8 +793,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool expedition_player =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
-        int32_t family = -1;
-        int32_t expedition = -1;
         const bool target_ok = (cmd.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT || cmd.opcode == COMMAND_MILITARY_PURCHASE || cmd.opcode == COMMAND_MILITARY_PURCHASE_ACK) ? (cmd.i64_0 >= 0 && cmd.i64_1 >= 0) : cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ? military_procurement_demand_valid(cmd)
             : family_reward ? family_ledger_command_preflight(cmd)
             : split_policy
@@ -805,25 +803,22 @@ Dictionary NativeEconomyRuntime::end_restore() {
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 == 1 &&
-               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+               cmd.treasury_construction_policy_valid())
             : treasury_demolish
             ? (_country_runtime != nullptr && country_reads().valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) &&
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 > 0 &&
-               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+               cmd.treasury_construction_policy_valid())
             : canal_build
             ? (_country_runtime != nullptr && country_reads().valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)
             : expedition_player
             ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
-                ? ((cmd.target_handle == 0 ||
-                    families_store().valid_handle(cmd.target_handle, family)) &&
-                   cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
-                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() &&
-                   cmd.i64_0 >= 1)
-                : family_expeditions_store().valid_handle(cmd.target_handle, expedition))
+                ? (cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
+                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() && cmd.i64_0 >= 1)
+                : cmd.target_handle != 0)
             : market_target
             ? (cmd.i32_0 >= 0 && cmd.i32_0 < market_store().market_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < market_store().good_count.get() &&
@@ -1350,7 +1345,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_person_indices();
     rebuild_family_demography_weights();
     _bootstrapped = true;
-    military_soldier_profession(); // Rebuild the catalog lookup before the first restored quote.
     _track_b_investment_cells_pending.swap(_restore.track_b_investment_cells_pending);
     _track_b_derived_cell_cache.swap(_restore.track_b_derived_cell_cache);
     _track_b_derived_cell_cache_day = _restore.track_b_derived_cell_cache_day;

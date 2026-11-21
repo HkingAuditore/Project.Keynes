@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -293,7 +294,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     hk.dt_days = knobs.has("dt_days")
         ? dc_clampf(float(knobs["dt_days"]), 1.0f, 30.0f) : 1.0f;
     const float moisture_response_alpha =
-        1.0f - std::pow(1.0f - hk.moisture_response_rate, hk.dt_days);
+        1.0f - simulation_math::pow(1.0f - hk.moisture_response_rate, hk.dt_days);
     PackedInt32Array neighbor_indices;
     if (knobs.has("neighbor_indices")) {
         neighbor_indices = knobs["neighbor_indices"];

@@ -12,25 +12,27 @@ class ClockStub:
 	func set_speed(value: float) -> void: speed_multiplier = value
 
 class ControllerStub:
-	var locked := false
+	var reason := "annual_report_confirmation_required"
 	var synced := 0
-	func era_reward_locked() -> bool: return locked
-	func family_founding_locked() -> bool: return false
-	func ideology_draw_phase() -> String: return ""
+	func player_confirmation_reason() -> String: return reason
 	func sync_ui() -> void: synced += 1
 
 class HostStub:
 	signal annual_report_ready(id: int)
 	var ready := true
+	var refuse := false
 	var marked := 0
 	var marked_ids: Array[int] = []
 	func annual_report_status() -> Dictionary: return {"ok": ready}
 	func annual_report_snapshot(_id: int) -> Dictionary: return Fixture.fixture()
 	func annual_report_history(_offset: int, _limit: int) -> Dictionary: return {"reports": [{"id": 1, "year": 0, "grade": "S"}]}
 	func annual_report_catalogs() -> Dictionary: return {}
-	func mark_annual_report_presented(id: int) -> void:
+	func mark_annual_report_presented(id: int) -> Dictionary:
+		if refuse:
+			return {"ok": false, "admitted": false, "code": "annual_report_reward_pending"}
 		marked = id
 		marked_ids.append(id)
+		return {"ok": true, "admitted": true, "code": "queued"}
 
 class UiStub:
 	signal annual_history_requested()
@@ -38,7 +40,6 @@ class UiStub:
 	signal annual_report_selected(id: int)
 	signal annual_history_page_requested(offset: int)
 	var opened := 0
-	func annual_other_modal_open() -> bool: return false
 	func show_annual_report(_model: Dictionary, _ceremonial: bool) -> void: opened += 1
 	func set_annual_history(_rows: Array, _offset: int, _has_more: bool) -> void: pass
 
@@ -268,39 +269,47 @@ func _run() -> void:
 	var controller := ControllerStub.new()
 	var ui := UiStub.new()
 	var flow = Flow.new()
-	flow.configure(controller,host,clock,ui)
-	controller.locked = true
+	flow.configure(controller, host, ui)
+	controller.reason = "era_reward_choice_required"
 	flow.queue_report(1)
-	_expect("annual waits for blocking choices", ui.opened == 0 and not clock.paused)
-	controller.locked = false
+	_expect("annual waits for the executor to select it", ui.opened == 0 and not clock.paused)
+	controller.reason = "annual_report_confirmation_required"
 	flow.try_present()
-	_expect("annual pauses after the other modal ends", ui.opened == 1 and clock.paused)
-	# 只把 WorldClock.paused 置真停不住游戏：worker 权威下日历跑在原生线程里，
-	# 唯一的暂停通道是 sync_ui() → WorldRuntimeHost.on_clock_running_changed
-	# → set_runtime_clock_threaded。开卷必须顺路把它推出去。
-	_expect("annual open pushes the pause into the runtime", controller.synced > 0)
+	_expect("published annual stop opens the report", ui.opened == 1 and not clock.paused)
+	_expect("annual presentation sends no clock update", controller.synced == 0)
 	var state: Dictionary = flow.capture()
 	ui.annual_report_closed.emit(1)
-	_expect("close restores previous 50x state", not clock.paused and clock.speed_multiplier == 50.0 and host.marked == 1)
+	_expect("close acknowledges the report and keeps 50x", not clock.paused and clock.speed_multiplier == 50.0 and host.marked == 1)
 	host.ready = false
 	flow.restore(state)
 	flow.try_present()
 	_expect("load waits for native report facade", ui.opened == 1)
 	host.ready = true
 	flow.try_present()
-	_expect("load reopens report with original resume intent", ui.opened == 2 and clock.paused)
+	_expect("load reopens the published report without pausing the clock", ui.opened == 2 and not clock.paused)
 	ui.annual_report_closed.emit(1)
-	_expect("loaded report restores original running state", not clock.paused and clock.speed_multiplier == 50.0)
+	_expect("loaded report keeps the user's original clock", not clock.paused and clock.speed_multiplier == 50.0)
 	var second_host := HostStub.new()
 	var second_ui := UiStub.new()
 	var second_flow = Flow.new()
-	second_flow.configure(ControllerStub.new(), second_host, ClockStub.new(), second_ui)
+	second_flow.configure(ControllerStub.new(), second_host, second_ui)
 	second_flow.queue_report(1)
 	second_ui.annual_report_selected.emit(2)
 	second_flow.queue_report(1)
 	second_ui.annual_report_closed.emit(2)
 	second_flow.try_present()
 	_expect("history navigation acknowledges all viewed years without duplicate popup", second_host.marked_ids == [1, 2] and second_ui.opened == 2 and not second_flow.is_open())
+	var denied_host := HostStub.new()
+	denied_host.refuse = true
+	var denied_ui := UiStub.new()
+	var denied_flow := Flow.new()
+	denied_flow.configure(ControllerStub.new(), denied_host, denied_ui)
+	denied_flow.queue_report(1)
+	denied_ui.annual_report_closed.emit(1)
+	var denied: Dictionary = denied_flow.capture()
+	print("REVIEW_ANNUAL_REFUSAL=", denied)
+	_expect("a rejected native acknowledgment preserves the viewed report",
+		denied.get("viewed", []).has(1) and denied_host.marked_ids.is_empty())
 	workspace.queue_free()
 	top.queue_free()
 	bar.queue_free()

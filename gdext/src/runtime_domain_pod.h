@@ -184,7 +184,6 @@ public:
                      const RuntimeEnvironmentSnapshot *environment,
                      const RuntimeCountryPodSnapshot *country,
                      RuntimeDayCommit &day_commit,
-                     std::vector<RuntimeVisualIntent> &visual_intents,
                      std::vector<RuntimeCommandReceipt> &receipts);
 
     // PKSR section codec. The codec is little-endian, bounded and entirely
@@ -221,8 +220,7 @@ private:
     RuntimeDomainReport run_input_capture(const RuntimeDayContext &context,
                                           const RuntimeEnvironmentSnapshot *environment);
     RuntimeDomainReport run_climate(const RuntimeDayContext &context,
-                                    const RuntimeEnvironmentSnapshot *environment,
-                                    std::vector<RuntimeVisualIntent> &visuals);
+                                    const RuntimeEnvironmentSnapshot *environment);
     RuntimeDomainReport run_country(const RuntimeDayContext &context,
                                     const RuntimeCountryPodSnapshot *country,
                                     std::vector<RuntimeDomainIntent> &intents);

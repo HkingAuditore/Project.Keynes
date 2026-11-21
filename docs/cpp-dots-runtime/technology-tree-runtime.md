@@ -44,8 +44,8 @@
 
 ## 已达成条件的科研证据交付与未知节点详情（2026-10-18）
 
-完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`，但 Trigger 的效果交付仍由
-主线程负责。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
+完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`。Trigger 的效果交付仍经
+主线程兼容层，属于待迁移工作。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
 科研信号命令或通知，复用 Trigger → Effect → Country 命令与真实 Country receipt。交付在暂停时
 不主动启动；在途命令继续收取 receipt。Effect worker 快照暂缓覆盖正在交付的 facade 事务，
 直到 Country receipt 完成且 Trigger 确认成功入队；确认队列背压时重试，不能把 admission
@@ -406,7 +406,7 @@ Modifier 已经落地；若 instance 仍未 ACK，则在该国家日直接套用
 因此单项队列在达到成本后不会因为没有下一项或没有新的入队命令而停留在“研发中”。
 已登记但未 ACK 的 instance 每个国家日会被重新排入 Effect 队列。GM “揭示全部未来科技”只写 discovered bit。
 
-Country ACTIVE（worker 唯一写者）下这条链走 Host peer：`run_research_day` 每个国家日发一条
+Country ACTIVE（worker 唯一写者）下，当前兼容链路走 Host peer：`run_research_day` 每个国家日发一条
 `ENSURE_TECHNOLOGY_EFFECT` intent，主线程 peer 适配器把 `technology.<id>` instance 登记到
 **Effect POD**（F8 下同步 `EffectRuntime` 只是回灌目标，往它 upsert 不会让 worker 看到），
 并按 POD 快照里的 fire/ACK 判定 READY。适配器答 PENDING 时该 intent **不再重新入队**：

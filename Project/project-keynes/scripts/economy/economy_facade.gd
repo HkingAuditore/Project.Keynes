@@ -625,7 +625,8 @@ func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
 
 static func _demolish_result_message(code: String) -> String:
 	return {
-		"ok": "拆除已受理。",
+		"ok": "拆除已完成。",
+		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
 		"demolish_queued": "拆除已排队，将在下一个经济结算边界执行。",
 		"demolish_target_invalid": "拆除目标无效。",
 		"demolish_not_state_owned": "该建筑不属于官营，无法按官营方式拆除。",
@@ -644,25 +645,32 @@ func dispatch_construction_command_receipts() -> void:
 		return
 	var page: Dictionary = _world_ext.get_construction_command_receipts(
 		_construction_receipt_cursor, 64)
-	if not bool(page.get("ok", false)):
-		return
+	if bool(page.get("ok", false)):
+		emit_construction_command_receipts(page.get("receipts", []))
+
+
+func emit_construction_command_receipts(receipts: Array) -> void:
 	var stable_ids: PackedStringArray = _catalog.get(
 		"building_type_ids", PackedStringArray())
-	for raw in page.get("receipts", []):
-		var result: Dictionary = raw
+	for raw: Dictionary in receipts:
+		var receipt_id := int(raw.get("receipt_id", -1))
+		if receipt_id <= _construction_receipt_cursor:
+			continue
+		_construction_receipt_cursor = receipt_id
+		var result := raw.duplicate()
 		var type_id := int(result.get("type_id", -1))
 		result["building_id"] = String(stable_ids[type_id]) if type_id >= 0 \
 				and type_id < stable_ids.size() else ""
-		result["message"] = _construction_result_message(
-			String(result.get("code", "command_rejected")))
+		var code := String(result.get("code", "command_rejected"))
+		result["message"] = _demolish_result_message(code) \
+			if String(result.get("command", "")) == "military.state.demolish" \
+			else _construction_result_message(code)
 		print("[construction] receipt id=%s seq=%s cell=%s type=%s ok=%s code=%s settled_day=%s" % [
 			str(result.get("receipt_id", -1)), str(result.get("sequence", -1)),
 			str(result.get("cell_idx", -1)), str(result.get("type_id", -1)),
 			str(result.get("ok", false)), str(result.get("code", "")),
 			str(result.get("settled_day", -1))])
 		construction_command_settled.emit(result)
-	_construction_receipt_cursor = maxi(_construction_receipt_cursor,
-		int(page.get("last_receipt_id", _construction_receipt_cursor)))
 
 
 func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
@@ -812,17 +820,23 @@ func dispatch_family_colonization_receipts(country_handle: int) -> void:
 	var cursor := int(_colonization_receipt_cursors.get(country_handle, 0))
 	var page: Dictionary = _world_ext.get_family_colonization_receipts(
 		country_handle, cursor, 64)
-	if not bool(page.get("ok", false)):
-		return
-	for raw in page.get("receipts", []):
-		var result: Dictionary = raw
-		result["country_handle"] = country_handle
+	if bool(page.get("ok", false)):
+		emit_family_colonization_receipts(page.get("receipts", []), country_handle)
+
+
+func emit_family_colonization_receipts(receipts: Array, country_handle: int = 0) -> void:
+	for raw: Dictionary in receipts:
+		var country := int(raw.get("country_handle", country_handle))
+		var receipt_id := int(raw.get("receipt_id", -1))
+		if receipt_id <= int(_colonization_receipt_cursors.get(country, 0)):
+			continue
+		_colonization_receipt_cursors[country] = receipt_id
+		var result := raw.duplicate()
+		result["country_handle"] = country
 		var code := String(result.get("code", ""))
 		result["ok"] = not code.begins_with("colonization_")
 		result["message"] = _colonization_result_message(code)
 		family_colonization_settled.emit(result)
-	_colonization_receipt_cursors[country_handle] = maxi(cursor,
-		int(page.get("last_receipt_id", cursor)))
 
 
 static func _colonization_result_message(code: String) -> String:
@@ -835,6 +849,10 @@ static func _colonization_result_message(code: String) -> String:
 		"RELOCATED": "迁徙成功，人员已并入目标地块。",
 		"RETURNED": "开拓队已返回原出发地。",
 		"colonization_requote_required": "地图、视野或领土已变化，排队派遣未能出发。",
+		"colonization_route_not_visible": "开拓路线已不在视野内，队伍未能出发。",
+		"colonization_route_territory_invalid": "开拓路线的领土已变化，队伍未能出发。",
+		"colonization_route_not_passable": "开拓路线已无法通行，队伍未能出发。",
+		"colonization_expedition_invalid": "找不到这支可以取消的开拓队。",
 		"colonization_population_insufficient": "结算时源分支人口已不足，排队派遣未能出发。",
 		"colonization_duplicate_target": "本国已有队伍前往该目标，排队派遣未能出发。",
 		"colonization_family_cell_capacity": "目标地块家族已满，排队派遣未能出发。",
@@ -846,6 +864,8 @@ static func _construction_result_message(code: String) -> String:
 		"ok": "建筑已开工。",
 		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
 		"construction_technology_locked": "建造所需科技尚未解锁。",
+		"technology_locked": "建造所需科技尚未解锁。",
+		"military_construction_schedule_full": "当地官营建筑的营造排期已满。",
 		"construction_obsolete": "已有更高阶生产方式；当前方式仍可建造。",
 		"construction_conditions_failed": "目标地块不满足建筑放置条件。",
 		"construction_resource_unavailable": "当地自然资源承载不足。",
@@ -1056,33 +1076,39 @@ func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
 	var result: Dictionary = _world_ext.get_family_founding_offers(offset, limit)
 	if not bool(result.get("ok", false)) or (result.get("offers", []) as Array).is_empty():
 		return result
-	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
 	for offer in result.get("offers", []):
-		var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
-		offer["settlement_name"] = settlement_name
-		var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
-		if split:
-			var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
-			offer["source_family_name"] = String(parent.get("family_name", "原家族"))
-		var plan_index := 0
-		for card in offer.get("candidates", []):
-			_decorate_family_founding_card(card, settlement_name)
-			if split:
-				plan_index += 1
-				card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
-				card["people_label"] = "分支族人"
-				card["choice_label"] = "确立此家风"
-				card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
+		decorate_family_founding_offer(offer)
 	return result
 
 
+func decorate_family_founding_offer(offer: Dictionary) -> void:
+	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
+	var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
+	offer["settlement_name"] = settlement_name
+	var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
+	if split:
+		var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
+		offer["source_family_name"] = String(parent.get("family_name", "原家族"))
+	var plan_index := 0
+	for card in offer.get("candidates", []):
+		_decorate_family_founding_card(card, settlement_name)
+		if split:
+			plan_index += 1
+			card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
+			card["people_label"] = "分支族人"
+			card["choice_label"] = "确立此家风"
+			card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
+
+
 func submit_family_founding_choice(offer_id: int, generation: int,
-		choice_index: int, effective_day: int) -> Dictionary:
+		choice_index: int, effective_day: int, sequence: int = 0) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
-	_family_founding_sequence += 1
+	if sequence == 0:
+		_family_founding_sequence += 1
+		sequence = _family_founding_sequence
 	return _world_ext.submit_family_founding_choice(offer_id, generation,
-		choice_index, maxi(0, effective_day), _family_founding_sequence)
+		choice_index, maxi(0, effective_day), sequence)
 
 
 func _decorate_family_founding_card(card: Dictionary, settlement_name: String) -> void:

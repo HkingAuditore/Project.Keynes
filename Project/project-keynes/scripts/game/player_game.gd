@@ -89,25 +89,6 @@ func _attach_web_autotest() -> void:
 	add_child(soak)
 
 
-func _apply_stage_c_debug_metadata() -> void:
-	# Stage C is a development-only measurement hook. It is intentionally read
-	# before WorldRuntimeHost.configure() because the authority choice is
-	# consumed during world bind/generation. No product setting or GM toggle is
-	# added for this path.
-	if not OS.is_debug_build():
-		return
-	if not Engine.has_meta(&"stage_c_authority_mode"):
-		return
-	var mode := String(Engine.get_meta(&"stage_c_authority_mode", "")).to_upper()
-	if mode not in ["ACTIVE", "OFF"]:
-		push_warning("[stage-c] ignored invalid authority mode: %s" % mode)
-		return
-	_runtime_host.runtime_climate_authority_enabled = mode == "ACTIVE"
-	print("[stage-c] authority=%s worker=%s" % [
-		mode, "ACTIVE" if mode == "ACTIVE" else "SHADOW",
-	])
-
-
 func _on_viewport_size_changed() -> void:
 	if _viewport_refit_pending:
 		return
@@ -122,20 +103,6 @@ func _refit_after_viewport_resize() -> void:
 
 func _configure_runtime() -> void:
 	_map_overlay.set_alpha(0.58)
-	# 正式玩家会话：整图 worker ACTIVE（0xFFF）。Effect→Country ACK 与 soft-settle
-	# 已修好，不再用 0x806 把 Trigger 等留在主线程拖垮 50x 日历吞吐。
-	_runtime_host.runtime_climate_authority_enabled = true
-	if OS.is_debug_build() and Engine.has_meta(&"stage_c_auto_pod_active"):
-		_runtime_host.runtime_economy_auto_pod_active = bool(Engine.get_meta(&"stage_c_auto_pod_active"))
-		Engine.remove_meta(&"stage_c_auto_pod_active")
-	_runtime_host.runtime_authority_domain_mask = 0xFFF
-	# Web 曾经在这里把权威位退回主线程（当时浏览器里 native worker 图的 day barrier
-	# 收不了尾）。后来查明那次"卡死"的真正原因是首帧着色器编译 45s 把整帧堵住，
-	# shader 裁剪之后 worker 图可以正常 commit day —— 而**只有 ACTIVE 才推进日历**
-	# （SHADOW 只做 parity 对比，日历会停在 day 1）。所以 web 不再降级。
-	# Apply the explicit A/B request after production defaults; otherwise OFF
-	# is silently overwritten and both arms measure ACTIVE.
-	_apply_stage_c_debug_metadata()
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_ui_manager.bind_gm_sun_camera(_camera)
@@ -150,9 +117,9 @@ func _configure_runtime() -> void:
 	var save: Node = _game_save()
 	if save != null:
 		save.bind_runtime(_runtime_host, _world_clock, _player_controller)
-	# 生成前钉死 force_on，避免 AUTO 策略或 GM 残值把会话退回 SHADOW。
-	_runtime_host.set_climate_authority_override(
-		"force_on" if _runtime_host.runtime_climate_authority_enabled else "force_off")
+	var era_session: Dictionary = _player_controller.register_era_session(save)
+	if not bool(era_session.get("ok", false)):
+		push_error("时代会话初始化失败：%s" % era_session.get("code", "module_invalid"))
 
 
 func _connect_signals() -> void:
@@ -160,6 +127,7 @@ func _connect_signals() -> void:
 	_runtime_host.world_generation_failed.connect(_on_world_generation_failed)
 	_runtime_host.generation_progress.connect(_ui_manager.set_generation_progress)
 	_runtime_host.gm_toggle_changed.connect(_on_gm_runtime_toggle_changed)
+	_runtime_host.player_confirmation_updated.connect(_on_player_confirmation_updated)
 	_player_controller.selection_changed.connect(_runtime_host.set_selected_cell)
 	_player_controller.regeneration_requested.connect(_regenerate_world)
 	_ui_manager.fit_requested.connect(_on_fit_requested)
@@ -216,7 +184,10 @@ func _on_world_ready(
 	)
 	_ui_manager.set_world_summary(map.width, map.height, map.cell_count(), _runtime_host.last_seed())
 	print("[player-ready-step] UI context %.1fms" % [float(Time.get_ticks_usec()-ready_t0)/1000.0])
-	await get_tree().process_frame
+	var frames = _runtime_host._session_frames
+	await frames.next_frame()
+	if frames.canceled:
+		return
 	_player_controller.sync_ui()
 	var start_report: Dictionary = generator.gameplay_start_report() \
 		if generator != null and generator.has_method("gameplay_start_report") else {}
@@ -224,15 +195,18 @@ func _on_world_ready(
 		if not _runtime_host.is_loading_session():
 			var start_cell := map.cell_at(int(start_report.get("cell", -1)))
 			if start_cell != null:
-				await get_tree().process_frame
+				await frames.next_frame()
+				if frames.canceled:
+					return
 				var select_t0 := Time.get_ticks_usec()
 				_player_controller.select_cell(start_cell)
 				print("[player-ready-step] select %.1fms" % [float(Time.get_ticks_usec()-select_t0)/1000.0])
 		var flow: Node = _game_flow()
-		if flow != null:
+		if flow != null and not _runtime_host.is_loading_session():
 			flow.set_session({
 				"new_game_config": _runtime_host.session_config(),
 				"player_country_id": "country.player",
+				"player_country_handle": _player_controller.get_player_country_handle(),
 				"start_cell": int(start_report.get("cell", -1)),
 				"precious_resource": String(start_report.get("precious_resource", "")),
 			})
@@ -328,20 +302,17 @@ func _on_day_night_toggled(enabled: bool) -> void:
 
 
 func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
-	if toggle_id == "ui.suppress_popups":
-		if _player_controller != null:
-			_player_controller.set_popups_suppressed(enabled)
-		if _ui_manager != null and _ui_manager.has_method("set_popups_suppressed"):
-			_ui_manager.set_popups_suppressed(enabled)
-	elif toggle_id == "simulation.paused":
+	if toggle_id == "simulation.paused":
 		_player_controller.sync_ui()
-	elif toggle_id == "ui.hide_all_except_gm":
-		if enabled and _player_controller != null:
-			_player_controller.set_popups_suppressed(true)
-		if _ui_manager != null and _ui_manager.has_method("set_all_ui_suppressed"):
-			_ui_manager.set_all_ui_suppressed(enabled)
 	elif toggle_id == "visual.day_night":
 		day_night_enabled = enabled
+
+
+func _on_player_confirmation_updated(view: Dictionary) -> void:
+	if _ui_manager != null:
+		# Required responses still need a visible surface while GM hides the HUD.
+		_ui_manager.set_era_ceremony_suppressed(bool(view.hide_popups))
+		_ui_manager.set_all_ui_suppressed(bool(view.hide_popups) and String(view.reason).is_empty())
 
 
 func _unhandled_key_input(event: InputEvent) -> void:

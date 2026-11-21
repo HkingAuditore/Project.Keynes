@@ -176,7 +176,8 @@ func sync_time_ui(host) -> void:
 			day = presented_day
 	var date: Dictionary = clock.calendar_date_for_day(day)
 	host._ui_manager.update_time_state(clock.year_index_for_day(day), int(date.month),
-		int(date.day_of_month), clock.paused, clock.speed_multiplier)
+		int(date.day_of_month), clock.paused or not host.player_confirmation_reason().is_empty(),
+		clock.speed_multiplier)
 
 
 
@@ -203,11 +204,14 @@ func refresh_country_binding(host) -> void:
 				old_colonization_callback):
 			host._economy_facade.family_colonization_settled.disconnect(
 				old_colonization_callback)
+	var previous_ideology = host._ideology_facade
 	if host._ideology_facade != null and host._ideology_facade.has_signal("command_settled"):
 		var old_ideology_callback = Callable(host, "_on_ideology_command_settled")
 		if host._ideology_facade.command_settled.is_connected(old_ideology_callback):
 			host._ideology_facade.command_settled.disconnect(old_ideology_callback)
 	host._country_facade = next
+	host._player_country_handle = host._runtime_host._resolve_player_country_handle() \
+		if next != null else 0
 	host._economy_facade = generator.get_economy_facade() if generator != null \
 			and generator.has_method("get_economy_facade") else null
 	host._ideology_facade = generator.get_ideology_facade() if generator != null \
@@ -230,20 +234,18 @@ func refresh_country_binding(host) -> void:
 				colonization_callback):
 			host._economy_facade.family_colonization_settled.connect(
 				colonization_callback)
+	if host._ideology_facade != previous_ideology:
+		host._shown_ideology_generation = 0
 	if host._ideology_facade != null and host._ideology_facade.has_signal("command_settled"):
 		var ideology_callback = Callable(host, "_on_ideology_command_settled")
 		if not host._ideology_facade.command_settled.is_connected(ideology_callback):
 			host._ideology_facade.command_settled.connect(ideology_callback)
 	if host._country_facade != null:
-		host._resolve_player_country()
 		host._configure_music_situation()
-		# 读档可能早于国家句柄解析：那时重推只会因为句柄为 0 而放弃，
-		# 这里在绑定完成后补一次，避免预算控制静默失效。
-		host._repush_military_budget()
 		host._sync_era_reward_offer()
 		host._sync_era_music(true)
 	host._sync_family_founding_offer()
-	host._bind_era_advancement()
+	host._progression_component.connect_era_advancement_view(host)
 	host._configure_narrative_runtime()
 
 

@@ -70,7 +70,7 @@ namespace pk {
 // Defined in world_ext_bio.cpp where the opaque slice state is complete.
 void destroy_bio_occupancy_slice_state(void *state);
 void destroy_bio_native_config_state(void *state);
-void destroy_vision_research_state(void *state);
+void destroy_season_round_state(void *state);
 
 using namespace godot;
 
@@ -118,9 +118,6 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
         if (_effect_forwarder)
             _effect_forwarder->attach(static_cast<EffectRuntime *>(_effect_runtime), _runtime_host.get());
         attach_country_ai_to_host();
-        _runtime_commit_cache = RuntimeCommit{};
-        _runtime_commit_cache_generation = 0;
-        _runtime_commit_cache_valid = false;
         _climate_physics_committed.reset();
         _climate_physics_capture_ready = false;
         _climate_writeback_applied_generation = 0;
@@ -167,12 +164,7 @@ DCWorldExt::~DCWorldExt() {
         delete static_cast<CountryAiRuntime *>(_country_ai_runtime);
         _country_ai_runtime = nullptr;
     }
-    if (_military_runtime != nullptr) {
-        // Main-thread synchronous runtime: the worker was joined above, so no
-        // thread can still be reading Military state.
-        delete static_cast<MilitaryCore *>(_military_runtime);
-        _military_runtime = nullptr;
-    }
+    _military.reset();
     if (_ideology_runtime != nullptr) {
         delete static_cast<NativeIdeologyRuntime *>(_ideology_runtime);
         _ideology_runtime = nullptr;
@@ -244,7 +236,7 @@ DCWorldExt::~DCWorldExt() {
     // start_season_round；析构走 PackedArray RAII（input_knobs / soil_moisture_arr /
     // veg_growth_pressure_arr 的 CoW refcount），无 OS 句柄。
     if (_season_round != nullptr) {
-        delete static_cast<SeasonRoundState *>(_season_round);
+        destroy_season_round_state(_season_round);
         _season_round = nullptr;
     }
     if (_bio_occupancy_slice_state != nullptr) {
@@ -255,10 +247,7 @@ DCWorldExt::~DCWorldExt() {
         destroy_bio_native_config_state(_bio_native_config_state);
         _bio_native_config_state = nullptr;
     }
-    if (_vision_research_state != nullptr) {
-        destroy_vision_research_state(_vision_research_state);
-        _vision_research_state = nullptr;
-    }
+
 }
 
 // ─── Component registry ────────────────────────────────────────────────────
@@ -610,12 +599,20 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
         UtilityFunctions::push_error("[DCWorldExt] bind_map_data: null map_data");
         return false;
     }
+    if (_runtime_host && (_runtime_host->state() != RuntimeWorkerState::STOPPED ||
+                          !_runtime_host->execution_has_stopped())) {
+        UtilityFunctions::push_error("[DCWorldExt] bind_map_data requires a stopped executor");
+        return false;
+    }
     _native_daily_visual_commit_pending = false;
     _pending_mark_dirty_all = false;
     _pending_visual_dirty_mask = PackedByteArray();
     _pending_visual_dirty_count = 0;
     _pending_visual_dirty_dense = false;
     _economy_resource_slot_resident.clear();
+    _natural_resource_last_day.clear();
+    _natural_resource_was_live.clear();
+    _natural_resource_live_mark.clear();
     // A newly bound MapData may have a different restored canal mask even
     // when the DCWorldExt object itself is reused. Force one sparse topology
     // compilation before the next hydrology pass.
@@ -713,6 +710,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
     }
 
     _bound = (bound_count > 0);
+    if (_bound && _runtime_host) _runtime_host->reset_day_tail_for_world_change();
     UtilityFunctions::print("[DCWorldExt] bind_map_data: ", bound_count,
                             " components bound (auto-registered=", auto_registered,
                             "; snapshot model; see world_ext.cpp comment & charter §11)");
@@ -911,7 +909,7 @@ bool DCWorldExt::_slot_is_visual_dirty(int comp_id) {
     return cached == 2;
 }
 
-void DCWorldExt::_flush_slot_to_map(int comp_id) {
+void DCWorldExt::_flush_slot_to_map(int comp_id, bool notify_resources) {
     if (!_map_data || comp_id < 0 || comp_id >= _slots.size()) return;
     const Slot &s = _slots[comp_id];
     {
@@ -998,7 +996,7 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
                     break;
                 }
             }
-            pk::notify_resource_visual_publication(_map_data, BIND_TABLE[i].property_name);
+            if (notify_resources) pk::notify_resource_visual_publication(_map_data, BIND_TABLE[i].property_name);
             if (any_visual_dirty || _pending_visual_dirty_dense) {
                 _pending_mark_dirty_all = true;
                 _native_dirty_report["flush_dirty_reason"] =

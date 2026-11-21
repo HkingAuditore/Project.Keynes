@@ -330,6 +330,27 @@ bool build_derived_cell_front(
 
 // ── Resumable materialise ────────────────────────────────────────────────
 //
+namespace {
+struct RampValue {
+    double magnitude = 0.0;
+    bool available = false;
+};
+
+RampValue sample_fold_ramp(const DerivedMaterializeOptions &options,
+        const DerivedProgramContribution &program,
+        const DerivedProgramContribution::Term &term, int32_t cell) {
+    if (options.program_magnitude_sampler != nullptr && term.program_key != nullptr) {
+        double magnitude = (*options.program_magnitude_sampler)(
+            *term.program_key, cell, program.source_country);
+        if (program.magnitude_scale != 1.0) magnitude *= program.magnitude_scale;
+        return {magnitude, true};
+    }
+    if (options.ramp_sampler == nullptr || term.metric_id < 0) return {};
+    const double sample = (*options.ramp_sampler)(term.metric_id, cell, program.source_country);
+    return {evaluate_ramp_magnitude(term, sample), true};
+}
+} // namespace
+
 // The fold state lives HERE, not in a function body. That is the entire point: the
 // first sharding attempt kept it as locals and looped a `slice` vector that was
 // never passed to the builder, so it did one full build while looking sharded
@@ -341,6 +362,9 @@ struct DerivedCellMaterializeJob::Impl {
     uint64_t epoch_id = 0;
     uint64_t execution_contract_hash = 0;
     DerivedMaterializeOptions options;
+    std::vector<RampValue> frozen_ramps;
+    size_t ramp_cursor = 0;
+    bool ramps_frozen = false;
 
     std::unordered_map<int32_t, std::unordered_map<int32_t, Accumulator>> folded;
     // One entry per unique (stat, cell) pair, filled as nodes are created. This is what
@@ -378,6 +402,24 @@ const DerivedMaterializeReport &DerivedCellMaterializeJob::live_report() const {
     return _impl->report;
 }
 
+void DerivedCellMaterializeJob::freeze_ramp_inputs(
+        const std::vector<DerivedProgramContribution> &contributions) {
+    for (const auto &program : contributions) {
+        if (program.backend != CellProgramBackend::DerivedCell) continue;
+        for (const auto &term : program.terms) {
+            if (term.stat_id < 0 ||
+                term.magnitude_source != DerivedProgramContribution::MagnitudeSource::RampMetric)
+                continue;
+            for (const int32_t cell : program.cells) {
+                if (cell >= 0)
+                    _impl->frozen_ramps.push_back(sample_fold_ramp(_impl->options, program, term, cell));
+            }
+        }
+    }
+    _impl->options = {};
+    _impl->ramps_frozen = true;
+}
+
 bool DerivedCellMaterializeJob::fold_step(
         const std::vector<DerivedProgramContribution> &contributions,
         double budget_ms) {
@@ -387,7 +429,6 @@ bool DerivedCellMaterializeJob::fold_step(
         _impl->cell_total_known = true;
         _impl->total_cells = count_derived_cell_visits(contributions);
     }
-    const DerivedRampSampler *ramp_sampler = _impl->options.ramp_sampler;
     DerivedMaterializeReport &out_report = _impl->report;
     const StepClock::time_point started = StepClock::now();
 
@@ -438,56 +479,20 @@ bool DerivedCellMaterializeJob::fold_step(
                 double term_factor = term.factor;
                 if (term.magnitude_source ==
                         DerivedProgramContribution::MagnitudeSource::RampMetric) {
-                    // PREFER the program's own instruction stream. `metric * ramp_scale`
-                    // is only correct for a stream that is exactly `EMIT metric` with
-                    // unit scale; the shipped ramp cards compute
-                    // `CONST a -> READ_METRIC -> CONST b -> MIN -> MUL -> EMIT`, so the
-                    // fallback drops both the clamp and the constant (M5-13).
-                    const DerivedProgramMagnitudeSampler *program_sampler =
-                        _impl->options.program_magnitude_sampler;
-                    if (program_sampler != nullptr && term.program_key != nullptr) {
-                        const double magnitude = (*program_sampler)(
-                            *term.program_key, cell, program.source_country);
-                        ++out_report.ramp_terms_evaluated;
-                        if (term.operation == 0) {
-                            term_add = magnitude;
-                            term_factor = 1.0;
-                        } else {
-                            term_add = 0.0;
-                            term_factor = magnitude;
-                        }
-                        if (program.magnitude_scale != 1.0) {
-                            if (term.operation == 0)
-                                term_add *= program.magnitude_scale;
-                            else
-                                term_factor *= program.magnitude_scale;
-                        }
-                        if (term.operation == 0) {
-                            slot.sum_add += term_add;
-                            if (term_factor != 1.0) {
-                                if (term_factor == 0.0) ++slot.zero_factor_count;
-                                else slot.product_nonzero *= term_factor;
-                            }
-                        } else {
-                            if (term_factor == 0.0) ++slot.zero_factor_count;
-                            else slot.product_nonzero *= term_factor;
-                        }
-                        continue;
-                    }
-                    if (ramp_sampler == nullptr || term.metric_id < 0) {
+                    const RampValue ramp = _impl->ramps_frozen
+                        ? _impl->frozen_ramps[_impl->ramp_cursor++]
+                        : sample_fold_ramp(_impl->options, program, term, cell);
+                    if (!ramp.available) {
                         ++out_report.ramp_terms_deferred;
                         continue;
                     }
-                    const double sampled = (*ramp_sampler)(
-                        term.metric_id, cell, program.source_country);
                     ++out_report.ramp_terms_evaluated;
-                    const double magnitude = evaluate_ramp_magnitude(term, sampled);
                     if (term.operation == 0) {
-                        term_add = magnitude;
+                        term_add = ramp.magnitude;
                         term_factor = 1.0;
                     } else {
                         term_add = 0.0;
-                        term_factor = magnitude;
+                        term_factor = ramp.magnitude;
                     }
                 }
                 if (term.operation == 0) {

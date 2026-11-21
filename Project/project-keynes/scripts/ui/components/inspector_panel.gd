@@ -278,6 +278,13 @@ func apply_live_patch(patch: Dictionary) -> void:
 		_apply_category_patch(category)
 
 
+func apply_published_gdp(data: Dictionary) -> void:
+	for card: DossierKpiCard in _kpi_cards:
+		if card.visible and card.metric_id == "kpi_gdp":
+			card.set_metric(data)
+			return
+
+
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
 	if tab_id == "" or category.is_empty():
 		return
@@ -775,7 +782,7 @@ func _on_tax_override_requested(
 	var result: Dictionary = _player_controller.request_command(command, args)
 	var key := _tax_key(kind, item_id if scope != "default" else "default")
 	if bool(result.get("ok", false)):
-		_mark_tax_pending(key, rate, "set", mode)
+		_mark_tax_pending(key, rate, result, "set", mode)
 	else:
 		_resolve_tax_editor_key(key)
 
@@ -798,15 +805,16 @@ func _on_tax_reset_requested(scope: String, kind: String, item_id: String) -> vo
 		var rate := 0
 		if not refs.is_empty():
 			rate = int((refs[0] as TaxLaneEditor).lane_data().get("default_rate", 0))
-		_mark_tax_pending(key, rate, "clear")
+		_mark_tax_pending(key, rate, result, "clear")
 	else:
 		_resolve_tax_editor_key(key)
 
 
-func _mark_tax_pending(key: String, rate: int, op: String = "set",
+func _mark_tax_pending(key: String, rate: int, receipt: Dictionary, op: String,
 		mode: int = 0) -> void:
 	_pending_tax[key] = {
-		"effective_day": int(_tax_context.get("current_day", -1)) + 1,
+		"effective_day": int(receipt.get("effective_day", -1)),
+		"sequence": int(receipt.get("sequence", -1)),
 		"policy_version": int(_tax_context.get("policy_version", -1)),
 		"rate": rate,
 		"mode": mode,
@@ -814,6 +822,19 @@ func _mark_tax_pending(key: String, rate: int, op: String = "set",
 	}
 	for editor_value in _tax_editors.get(key, []):
 		(editor_value as TaxLaneEditor).mark_pending(rate, mode)
+
+
+func show_tax_rejection(result: Dictionary) -> void:
+	if int(result.get("cell", -1)) != _cell_index:
+		return
+	for key: String in _pending_tax.keys():
+		if int(_pending_tax[key].get("sequence", -1)) != int(result.get("sequence", -2)):
+			continue
+		_pending_tax.erase(key)
+		_resolve_tax_editor_key(key)
+		for editor: TaxLaneEditor in _tax_editors.get(key, []):
+			editor.show_rejection(String(result.get("message", "")))
+		return
 
 
 func _resolve_tax_pending(context: Dictionary, category: Dictionary = {}) -> void:

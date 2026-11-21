@@ -324,8 +324,6 @@ func _poll() -> void:
 	_feed.set_clock(_clock)
 	_refresh_player_slot_binding()
 	_feed.poll(_ext, int(_feed.revision), _player_slot)
-	if _host != null and _host.has_method("_observe_military_render_feed"):
-		_host._observe_military_render_feed(_feed)
 	_last_poll_usec = Time.get_ticks_usec() - started
 	_poll_accum_usec += _last_poll_usec
 	_poll_frames += 1

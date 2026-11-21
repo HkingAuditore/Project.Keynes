@@ -58,6 +58,9 @@ public:
         const RuntimeEconomyEcp2State &state, std::string &error);
     static bool restore_climate_continuation(NativeEconomyRuntime &runtime,
         const RuntimeEconomyEcp2State &state, std::string &error);
+    static std::vector<uint8_t> capture_trade_continuation(const NativeEconomyRuntime &runtime);
+    static void restore_trade_continuation(NativeEconomyRuntime &runtime,
+        const std::vector<uint8_t> &wire);
     static void append_continuations(const NativeEconomyRuntime &runtime, std::vector<uint8_t> &wire);
     static bool validate_continuations(const NativeEconomyRuntime &runtime,
         const RuntimeEconomyEcp2State &state, std::string &error);

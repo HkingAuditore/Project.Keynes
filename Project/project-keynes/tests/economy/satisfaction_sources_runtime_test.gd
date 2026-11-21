@@ -10,12 +10,8 @@ extends SceneTree
 ## actually resolve, and that a resolved definition moves the frozen bias and
 ## the cohort composite.
 ##
-## It also pins the narrative adapter's calling convention for the new keys:
-## absolute-value definitions must be applied with magnitude_q16 = 1.0.
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
-const NarrativeEffectAdapterScript = preload(
-	"res://scripts/narrative/narrative_effect_adapter.gd")
 const NarrativeEffectSpecScript = preload(
 	"res://scripts/narrative/narrative_effect_spec.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
@@ -85,42 +81,6 @@ var _checks := 0
 var _failures := 0
 
 
-class StubModifierFacade extends RefCounted:
-	var calls: Array[Dictionary] = []
-
-	func is_configured() -> bool:
-		return true
-
-	func queue_apply(definition_key: StringName, target: Dictionary,
-			source: Dictionary, duration_days: int, stacks: int,
-			effective_day: int, producer_id: int,
-			magnitude_q16: int = Q16_ONE) -> int:
-		calls.append({
-			"definition_key": String(definition_key),
-			"target": target.duplicate(true),
-			"source": source.duplicate(true),
-			"duration_days": duration_days,
-			"stacks": stacks,
-			"effective_day": effective_day,
-			"producer_id": producer_id,
-			"magnitude_q16": magnitude_q16,
-		})
-		return calls.size()
-
-
-class StubGenerator extends RefCounted:
-	var facade: Object = null
-
-	func get_modifier_facade() -> Object:
-		return facade
-
-	func get_economy_facade() -> Object:
-		return null
-
-	func get_country_facade() -> Object:
-		return null
-
-
 func _init() -> void:
 	_run()
 	print("=== satisfaction sources %s: checks=%d failures=%d ===" % [
@@ -147,7 +107,6 @@ func _run() -> void:
 	_test_regime_balance(modifiers)
 	_test_regime_charter(modifiers)
 	_test_family_effect_binding(economy, modifiers)
-	_test_adapter_calling_convention()
 	if ClassDB.class_exists("DCWorldExt"):
 		_test_frozen_channel(economy, modifiers)
 	else:
@@ -408,37 +367,6 @@ func _test_official_family_effect(economy: Dictionary, modifiers: Dictionary) ->
 	var binding: Dictionary = official.validate_domain_bindings(economy, modifiers)
 	_expect("every official family effect binds against the real catalogs (%s)" %
 		str(binding.get("reason", "")), bool(binding.get("ok", false)))
-
-
-## The adapter must forward the definition key verbatim and keep magnitude 1.0
-## for the absolute-value definitions. A percent factor here would divide the
-## authored basis points by 100.
-func _test_adapter_calling_convention() -> void:
-	var facade := StubModifierFacade.new()
-	var generator := StubGenerator.new()
-	generator.facade = facade
-	var effect := {
-		"kind": NarrativeEffectSpecScript.parse_kind("COUNTRY_MODIFIER"),
-		"target_key": RELIEF,
-		"magnitude_q16": Q16_ONE,
-		"duration_days": 120,
-		"custom_label": "adapter stub label",
-	}
-	var result: Dictionary = NarrativeEffectAdapterScript.apply_effects(
-		[effect], {}, null, generator, 4242, 0, 11, func() -> int: return 1)
-	_expect("adapter reports success", bool(result.get("ok", false)))
-	_expect("adapter forwards exactly one modifier call", facade.calls.size() == 1)
-	if facade.calls.is_empty():
-		return
-	var call: Dictionary = facade.calls[0]
-	_expect("adapter forwards the definition key unchanged",
-		String(call.get("definition_key", "")) == RELIEF)
-	_expect("adapter keeps magnitude 1.0 for an absolute-value definition",
-		int(call.get("magnitude_q16", 0)) == Q16_ONE)
-	_expect("adapter keeps the authored duration",
-		int(call.get("duration_days", 0)) == 120)
-	_expect("adapter targets the player country entity",
-		int((call.get("target", {}) as Dictionary).get("entity_handle", 0)) == 4242)
 
 
 ## End-to-end native half: apply a definition, let the Modifier domain commit,

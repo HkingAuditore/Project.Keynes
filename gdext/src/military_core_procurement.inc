@@ -116,8 +116,7 @@ bool equipment_candidate_allowed(const MilitaryCatalog &catalog,
                                  const DemandEntry &entry, int32_t good) {
     if (entry.cls >= 0) return true;
     const int32_t quality = equip_good_quality(catalog, good);
-    if (quality <= 0) return false;
-    return entry.core == 0 || quality >= entry.min_quality;
+    return equipment_quality_allowed(entry.core != 0, entry.min_quality, quality);
 }
 
 uint8_t equipment_quality_priority(const MilitaryCatalog &catalog,
@@ -370,6 +369,10 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
             const MilitaryTrainingOrder &order = _training[(size_t)h.holder];
             const MilitaryUnitType &type = _catalog.units[(size_t)order.to_unit];
             for (int32_t si = 0; si < type.slot_count; ++si) {
+                if (order.source_partial_equipment != 0 && order.slot_delivered_quality[si] > 0)
+                    continue;
+                if (!equipment_slot_available(_catalog, digest, order.country_slot, type, si))
+                    continue;
                 const int64_t per_100 = type.slot_qty_per_100[(size_t)si];
                 if (per_100 <= 0) continue;
                 const int32_t category = type.slot_category[(size_t)si];

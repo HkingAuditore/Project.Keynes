@@ -893,12 +893,14 @@ bool MilitaryCore::ai_decision_due(int64_t day) const {
 
 bool MilitaryCore::should_run(int64_t day) const {
     if (!_configured) return false;
-    if (!_pending.empty()) return true;
+    if (std::any_of(_pending.begin(), _pending.end(), [day](const MilitaryCommand &command) {
+        return command.effective_day <= day;
+    })) return true;
     // Physical maintenance (design S3/S4): a country whose only work is keeping
     // its buildings repaired, or waiting on a paid purchase, must still step -
     // otherwise the maintenance pass never runs and the orders never settle.
     if (!_maint_rows.empty() || !_purchase_orders.empty()) return true;
-    if (has_exploration_work()) return true;
+    if (has_exploration_work(day)) return true;
     const bool upkeep_day = (day % kUpkeepPeriod) == 0;
     const bool recruit_day = (day % kRecruitCheckPeriod) == 0;
     for (int32_t slot = 0; slot < (int32_t)_armies.active.size(); ++slot) {
@@ -1018,6 +1020,8 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<int16_t>(h, _lots.unit_type[i]);
         h = mix_scalar<int16_t>(h, _lots.equip_quality_q8[i]);
         h = mix_scalar<int32_t>(h, _lots.kit_q16[i]);
+        if (_lots.partial_equipment[i] != 0)
+            h = mix_scalar<uint16_t>(h, _lots.partial_equipment[i]);
         h = mix_scalar<int32_t>(h, _lots.condition_q16[i]);
         h = mix_scalar<int64_t>(h, _lots.count[i]);
     }
@@ -1083,6 +1087,8 @@ uint64_t MilitaryCore::state_hash() const {
             h = mix_scalar<int8_t>(h, quality);
         h = mix_scalar<int16_t>(h, o.delivered_quality_q8);
         h = mix_scalar<uint64_t>(h, o.equipped_slot_mask);
+        if (o.source_partial_equipment != 0)
+            h = mix_scalar<uint16_t>(h, o.source_partial_equipment);
     }
     h = mix_scalar<uint64_t>(h, (uint64_t)_stocks.size());
     for (const MilitaryStockRow &r : _stocks) {
@@ -1242,6 +1248,11 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<uint8_t>(h, p.wage_mode);
         h = mix_scalar<int64_t>(h, p.wage_absolute);
         h = mix_scalar<int32_t>(h, p.procurement_share_bp);
+        if (p.budget_share_bp != 0 || p.budget_wage_bp != 6000 || p.budget_upkeep_bp != 2000) {
+            h = mix_scalar<int32_t>(h, p.budget_share_bp);
+            h = mix_scalar<int32_t>(h, p.budget_wage_bp);
+            h = mix_scalar<int32_t>(h, p.budget_upkeep_bp);
+        }
         h = mix_scalar<int32_t>(h, p.pay_ratio_30_q16);
         h = mix_scalar<int64_t>(h, p.per_soldier_cost);
         for (int32_t bp : p.config_share_bp) h = mix_scalar<int32_t>(h, bp);

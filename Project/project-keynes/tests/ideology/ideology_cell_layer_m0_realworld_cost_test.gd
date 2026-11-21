@@ -101,7 +101,6 @@ func _run() -> void:
 	# only Modifier buckets (`economy_runtime.cpp:7072-7097`) and never touches
 	# ideology state, so a directly injected row is equivalent to what an equipped
 	# cell card produces.
-	_host.runtime_authority_domain_mask = 0xFFF & ~0x040 & ~0x100
 	get_root().add_child(_host)
 	# `_init()` runs before the tree is entered, so a child added here reports
 	# `is_inside_tree() == false` for the rest of the frame and `generate_world()`
@@ -336,7 +335,7 @@ func _run_day() -> void:
 
 	var phase: float = _clock.season_phase_for_day(int(_day))
 	_clock.current_day = float(int(_day))
-	_host.run_daily_tick(int(_day), phase)
+	_host._admit_runtime_calendar(int(_day) + 1)
 	_host.finish_daily_tick(0.0, {})
 
 	var pulses := 0
@@ -432,7 +431,7 @@ func _sample_epochs(label: String) -> Array:
 		_day = int(_day) + 1
 		var phase: float = _clock.season_phase_for_day(int(_day))
 		_clock.current_day = float(int(_day))
-		_host.run_daily_tick(int(_day), phase)
+		_host._admit_runtime_calendar(int(_day) + 1)
 		_host.finish_daily_tick(0.0, {})
 		# Drain hard barriers so the day actually commits; the same pulse loop the
 		# parity gate uses, with the same bound.

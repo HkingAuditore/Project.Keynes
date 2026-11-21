@@ -10,7 +10,6 @@ const SetupSeedActionsScene := preload("res://scenes/ui/setup_seed_actions.tscn"
 const SetupCellCountScene := preload("res://scenes/ui/setup_cell_count.tscn")
 
 const MAIN_SCENE_PATH := "res://scenes/player_game.tscn"
-const DEBUG_SCENE_PATH := "res://scenes/main.tscn"
 const SETTINGS_PATH := "user://world_setup_settings.json"
 const WORLD_SETUP_META := &"world_setup_config"
 const SetupFieldRowScene := preload("res://scenes/ui/setup_field_row.tscn")
@@ -210,10 +209,6 @@ func _build_ui() -> void:
 	start_btn.custom_minimum_size = _button_min_size(120.0)
 	start_btn.size_flags_horizontal = _button_h_size_flags()
 	start_btn.pressed.connect(_on_start_pressed)
-	var debug_btn := %DebugButton as Button
-	debug_btn.custom_minimum_size = _button_min_size(120.0)
-	debug_btn.size_flags_horizontal = _button_h_size_flags()
-	debug_btn.pressed.connect(_on_debug_pressed)
 	var body := %ResponsiveBody as BoxContainer
 	body.vertical = _mobile_layout
 	_build_base_panel(%BaseSettings)
@@ -232,7 +227,7 @@ func _apply_responsive_layout() -> void:
 	for side in ["left", "top", "right", "bottom"]:
 		(%Margin as MarginContainer).add_theme_constant_override(
 			"margin_%s" % side, outer_margin)
-	for button in [%ResetButton, %StartButton, %DebugButton]:
+	for button in [%ResetButton, %StartButton]:
 		button.custom_minimum_size.y = TOUCH_BUTTON_HEIGHT if mobile else DESKTOP_CONTROL_HEIGHT
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_SHRINK_CENTER
 	for row in get_tree().get_nodes_in_group("world_setup_field_rows"):
@@ -552,13 +547,6 @@ func _on_start_pressed() -> void:
 	Engine.set_meta(WORLD_SETUP_META, config)
 	_save_settings(config)
 	get_tree().change_scene_to_file(MAIN_SCENE_PATH)
-
-
-func _on_debug_pressed() -> void:
-	var config := _build_config()
-	Engine.set_meta(WORLD_SETUP_META, config)
-	_save_settings(config)
-	get_tree().change_scene_to_file(DEBUG_SCENE_PATH)
 
 
 func _sync_render_quality_setting() -> void:

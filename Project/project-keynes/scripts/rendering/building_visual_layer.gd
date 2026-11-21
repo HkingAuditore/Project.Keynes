@@ -52,7 +52,7 @@ const TERRAIN_LIGHTING_PARAMS := [
 ]
 
 # Settlement layout (lots, streets, plaza, era-specific building volumes) is
-# planned per cell by NativeBuildingVisualCache on its own worker thread. Only
+# planned per cell by NativeBuildingVisualCache on a worker or in Web slices. Only
 # cells whose last-seen row changed are submitted; the main thread uploads
 # finished chunks as a concatenation of cached cells. Each body instance is one
 # building volume and each decal instance one ground feature; the shared ABI is

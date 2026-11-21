@@ -25,6 +25,11 @@
 
 namespace pk {
 
+struct RuntimeEffectReadView {
+    godot::Dictionary report;
+    godot::Dictionary adapters;
+};
+
 class ModifierRuntime;
 class NativeCountryRuntime;
 class NativeEconomyRuntime;
@@ -714,6 +719,7 @@ public:
     // worker-committed POD snapshot. Generation must be monotonic.
     bool apply_pod_snapshot(const struct RuntimeEffectPodSnapshot &snapshot,
                             std::string &error);
+    void begin_executor_transaction_namespace() noexcept;
     uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
     // Day the committed Effect state belongs to. The split-authority settle uses
     // it as the submission watermark: a worker Modifier snapshot whose
@@ -790,7 +796,8 @@ public:
     // the transaction back to PLANNED so the next settle retries it. Without this
     // a single rejected enqueue would stall the equip forever.
     void discard_worker_modifier_rows(const std::vector<int64_t> &transaction_ids);
-    godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime);
+    godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime,
+                                               bool trigger_delivery = false);
     godot::Dictionary ack_native_country(NativeCountryRuntime *country_runtime);
     // Soft-settle leftover PREFLIGHTED Country bindings after a real Host
     // receipt drain under COUNTRY worker authority. Colonization CLAIM/SETTLE
@@ -869,7 +876,11 @@ public:
     bool notify_era_reward_technology_activated_pod(
         uint64_t country_handle, int32_t technology_id, int64_t day_index,
         std::string &error);
-    godot::Dictionary era_reward_offer_snapshot();
+    godot::Dictionary era_reward_offer_snapshot() const;
+    bool era_reward_requires_choice() const noexcept {
+        return _era_reward_offer.status == 1 || _era_reward_offer.status == 4;
+    }
+    bool has_pending_research_discovery(uint64_t country, int32_t signal) const;
     // host_commit: under worker Effect authority this runtime is a read
     // replica and cannot own transactions. The selection is then recorded
     // without one (transaction_id 0) and the caller commits the selected

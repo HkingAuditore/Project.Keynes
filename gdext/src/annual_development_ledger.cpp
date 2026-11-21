@@ -191,6 +191,7 @@ void AnnualDevelopmentLedger::finish_year(uint64_t draws){
     _current.reward_sequence=_current.id;
     if(!_current.complete||_current.reward_q16==0)_current.reward_settled=1;
     _reports.push_back(_current);++_revision;
+    advance_report_cursors();
 }
 void AnnualDevelopmentLedger::evaluate(AnnualDevelopmentReport &r,const AnnualDevelopmentReport *prev,const AnnualDevelopmentProfile &p,uint64_t draws){
     if(!r.complete){r.score_bp=0;r.grade=6;r.reward_q16=0;return;}
@@ -221,11 +222,43 @@ void AnnualDevelopmentLedger::evaluate(AnnualDevelopmentReport &r,const AnnualDe
     if(r.grade==5)r.reward_q16=runtime_ideology_offer_cost_q16(p.offer_cost,p.offer_growth_percent,p.max_offer_cost,draws)/2;
     r.reward_q16=r.reward_q16/10;
 }
-bool AnnualDevelopmentLedger::has_pending_reward() const{while(_reward_cursor<_reports.size()&&_reports[_reward_cursor].reward_settled)++_reward_cursor;return _reward_cursor<_reports.size();}
-uint64_t AnnualDevelopmentLedger::ready_report_id() const{while(_ready_cursor<_reports.size()&&_reports[_ready_cursor].presented)++_ready_cursor;return _ready_cursor<_reports.size()&&_reports[_ready_cursor].reward_settled?_reports[_ready_cursor].id:0;}
+void AnnualDevelopmentLedger::advance_report_cursors() {
+    while (_reward_cursor < _reports.size() && _reports[_reward_cursor].reward_settled)
+        ++_reward_cursor;
+    while (_ready_cursor < _reports.size() && _reports[_ready_cursor].presented)
+        ++_ready_cursor;
+}
+bool AnnualDevelopmentLedger::has_pending_reward() const { return _reward_cursor < _reports.size(); }
+uint64_t AnnualDevelopmentLedger::ready_report_id() const {
+    if (_ready_cursor < _reports.size() && _reports[_ready_cursor].reward_settled)
+        return _reports[_ready_cursor].id;
+    return 0;
+}
 AnnualDevelopmentReport *AnnualDevelopmentLedger::pending_reward(){return has_pending_reward()?&_reports[_reward_cursor]:nullptr;}
-bool AnnualDevelopmentLedger::settle_reward(uint64_t seq){for(auto &r:_reports)if(r.reward_sequence==seq){if(!r.reward_settled){r.reward_settled=1;++_revision;}return true;}return false;}
-bool AnnualDevelopmentLedger::mark_presented(uint64_t id){for(auto &r:_reports)if(r.id==id&&r.reward_settled){if(!r.presented){r.presented=1;++_revision;}return true;}return false;}
+bool AnnualDevelopmentLedger::settle_reward(uint64_t sequence) {
+    for (auto &report : _reports) {
+        if (report.reward_sequence != sequence) continue;
+        if (!report.reward_settled) {
+            report.reward_settled = 1;
+            ++_revision;
+            advance_report_cursors();
+        }
+        return true;
+    }
+    return false;
+}
+bool AnnualDevelopmentLedger::mark_presented(uint64_t id) {
+    for (auto &report : _reports) {
+        if (report.id != id || !report.reward_settled) continue;
+        if (!report.presented) {
+            report.presented = 1;
+            ++_revision;
+            advance_report_cursors();
+        }
+        return true;
+    }
+    return false;
+}
 void AnnualDevelopmentLedger::encode(std::vector<uint8_t> &bytes) const {
     bytes.clear();auto copy=*this;Writer c{bytes};uint32_t magic=0x52414b50,version=1;c(magic);c(version);
     c(copy._handle);c(copy._revision);c(copy._economy_revision);c(copy._length);c(copy._last_day);c(copy._tracked_since);
@@ -250,6 +283,7 @@ bool AnnualDevelopmentLedger::restore(const uint8_t *bytes,size_t size,std::stri
         // year contains raw accumulators, so it can continue under the current profile.
         if(saved_profile_is_older){next._profile=_profile;next._current.scoring_version=_profile.version;}
     }
+    next.advance_report_cursors();
     *this=std::move(next);return true;
 }
 bool annual_development_self_test(std::string &error){

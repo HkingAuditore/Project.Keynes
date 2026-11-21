@@ -278,7 +278,7 @@ func _gdp_kpi(host, cell_idx: int) -> Dictionary:
 	var per_day_text = UITokens.format_compact_number_cn(per_day, 1)
 	return {
 		"id": "kpi_gdp", "title": "GDP", "icon": &"metric.treasury",
-		"kind": "money", "value": ytd, "decimals": 0,
+		"kind": "money", "value": ytd, "decimals": 0, "snap_value": true,
 		"caption": "日均 %s" % per_day_text,
 		"tooltip": "本地年内累计产值（已计 %d/%d 天）。收入法：建筑营收 − 中间投入 − 维护 = 工资 + 营业盈余，不含营业税。日均 %s。" % [days, days_per_year, per_day_text],
 	}

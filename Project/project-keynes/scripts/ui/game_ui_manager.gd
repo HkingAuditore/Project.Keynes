@@ -155,11 +155,10 @@ var _era_ceremony_parent: Control
 var _era_ceremony_index := -1
 var _era_ceremony_landed_name := ""
 var _era_celebrated_index := -1
-var _era_ceremony_resume_clock := false
 var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
-var _gm_popups_suppressed := false
+var _era_ceremony_suppressed := false
 var _gm_all_ui_suppressed := false
 var _gm_saved_ui_visibility: Dictionary = {}
 var _debug_layer: Control
@@ -299,6 +298,9 @@ func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 
 func record_committed_day(day: int) -> void:
 	_country_component.record_committed_day(self, day)
+
+func record_committed_ledger(commit: Dictionary) -> void:
+	_country_component.record_committed_ledger(self, commit)
 
 func refresh_committed_view() -> void:
 	_country_component.refresh_committed_view(self)
@@ -475,8 +477,10 @@ func is_gm_available() -> bool:
 	return _overlay_component.is_gm_available(self)
 
 
-func set_popups_suppressed(enabled: bool) -> void:
-	_overlay_component.set_popups_suppressed(self, enabled)
+func set_era_ceremony_suppressed(enabled: bool) -> void:
+	_era_ceremony_suppressed = enabled
+	if enabled and is_era_ceremony_playing():
+		_era_ceremony.skip()
 
 
 func set_all_ui_suppressed(enabled: bool) -> void:
@@ -783,8 +787,8 @@ func _ensure_era_panel() -> void:
 
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
-	if _gm_popups_suppressed:
-		# GM 屏蔽事件时只同步时代基线，不创建会暂停时钟的大典。
+	if _era_ceremony_suppressed:
+		# GM 屏蔽事件时只同步时代基线，不播放大典。
 		_era_celebrated_index = new_index
 		_era_ceremony_index = -1
 		return
@@ -820,7 +824,6 @@ func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArra
 		host.move_child(_era_ceremony, _pause_menu.get_index())
 	_era_ceremony.emblem_landed.connect(_on_era_ceremony_landed.bind(new_index))
 	_era_ceremony.finished.connect(_on_era_ceremony_finished)
-	_pause_clock_for_ceremony()
 	_era_ceremony.play({
 		"old_era_id": _era_indicator_view_model.era_id_for(old_index),
 		"new_era_id": new_id, "new_era_name": new_name,
@@ -859,6 +862,9 @@ func set_player_controller(controller) -> void:
 			_player_controller.command_settled.disconnect(old_settled)
 	_disconnect_era_advancement_signals()
 	_player_controller = controller
+	if _pause_menu != null:
+		_pause_menu.event_pause_reader = Callable(controller.narrative_service(), "event_pause_mask") \
+			if controller != null and controller.has_method("narrative_service") else Callable()
 	_connect_era_advancement_signals()
 	if _player_controller != null and _player_controller.has_signal("command_completed"):
 		var audio_callback := Callable(self, "_on_player_command_completed_audio")
@@ -1578,12 +1584,6 @@ func _on_era_ceremony_finished() -> void:
 func _abort_era_ceremony() -> void:
 	_era_component._abort_era_ceremony(self)
 
-func _pause_clock_for_ceremony() -> void:
-	_era_component._pause_clock_for_ceremony(self)
-
-func _restore_clock_after_ceremony() -> void:
-	_era_component._restore_clock_after_ceremony(self)
-
 func _notify_era_promoted(model: Dictionary) -> void:
 	_era_component._notify_era_promoted(self, model)
 
@@ -1661,9 +1661,6 @@ func is_annual_report_open() -> bool:
 
 func close_annual_report() -> void:
 	_overlay_component.close_annual_report(self)
-
-func annual_other_modal_open() -> bool:
-	return _overlay_component.annual_other_modal_open(self)
 
 func show_narrative_event_offer(offer: Dictionary) -> void:
 	_overlay_component.show_narrative_event_offer(self, offer)

@@ -300,6 +300,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_command_payload_truncated";
                 return false;
             }
+            if (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION) {
+                cmd.expedition_route_hash = cmd.effect_idempotency_key;
+                cmd.effect_idempotency_key = 0;
+            }
             if (cmd.effect_request_id < 0 ||
                 (cmd.effect_request_id == 0 && cmd.effect_idempotency_key != 0) ||
                 (cmd.effect_request_id != 0 && cmd.effect_idempotency_key == 0)) {
@@ -321,6 +325,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_commands;
         }
     } else if (section == SAVE_SECTION_BUILDINGS) {
+        const size_t first_group = building_count();
         for (uint32_t record = 0; record < records; ++record) {
             BuildingGroup group;
             int32_t roles = 0;
@@ -469,8 +474,20 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 _building_role_bonus_paid.push_back(bonus_paid);
                 _building_role_forecast_pay_ratio_q16.push_back(0);
             }
+            group.last_maintenance_cost = maintenance_from_operating_cost(
+                group.last_operating_cost, group.last_input_cost, group.last_wages_due);
             append_building_group(group);
             ++_restore.restored_buildings;
+        }
+        while (schema >= 64 && cursor < bytes.size()) {
+            uint32_t row = 0;
+            int64_t paid = 0;
+            if (!read_le(bytes, cursor, row) || !read_le(bytes, cursor, paid) ||
+                row >= records || paid < 0) {
+                error = "save_building_maintenance_exception_invalid";
+                return false;
+            }
+            building_at(first_group + row).last_maintenance_cost = paid;
         }
     } else if (section == SAVE_SECTION_CONSTRUCTION) {
         for (uint32_t record = 0; record < records; ++record) {
@@ -565,6 +582,19 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _epoch_previous_producer_sellable.push_back(previous_sellable);
             _epoch_previous_producer_merchant_sold.push_back(previous_merchant_sold);
             ++_restore.restored_signals;
+        }
+        if (schema >= 64 && cursor < bytes.size()) {
+            for (auto *values : {&_epoch_producer_sellable_current,
+                    &_epoch_producer_merchant_sold_current,
+                    &_epoch_previous_producer_sellable,
+                    &_epoch_previous_producer_merchant_sold}) {
+                uint32_t size = 0;
+                if (!read_le(bytes, cursor, size) || size > values->size()) {
+                    error = "save_market_signal_observation_size_invalid";
+                    return false;
+                }
+                values->resize(size);
+            }
         }
     } else if (section == SAVE_SECTION_LABOR_SIGNALS) {
         for (uint32_t record = 0; record < records; ++record) {

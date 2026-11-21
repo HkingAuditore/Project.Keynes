@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -237,7 +238,7 @@ struct RuntimeEconomyFamilyStore {
                      uint32_t influence_count, uint32_t trait_command_count,
                      uint32_t expedition_count) const noexcept;
     void append_wire(std::vector<uint8_t> &out) const;
-    bool load_wire(const uint8_t *data, size_t size, uint32_t family_count,
+    bool load_wire(const uint8_t *data, std::size_t size, uint32_t family_count,
                    uint32_t membership_count, uint32_t ownership_count,
                    uint32_t person_count, uint32_t person_need_count,
                    uint32_t trait_count, uint32_t influence_count,

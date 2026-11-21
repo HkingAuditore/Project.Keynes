@@ -13,9 +13,9 @@ namespace pk {
 struct BuildingVisualCacheState;
 
 // Per-cell settlement layout cache for BuildingVisualLayer. The main thread
-// submits only cells whose last-seen building row changed; one dedicated
-// worker plans them off-thread (no Godot API on the worker) and stores the
-// encoded instances per cell. Chunk upload is a concatenation of cached cells.
+// submits only cells whose last-seen building row changed. A dedicated worker
+// plans them off-thread, or the frame poll plans a slice on threadless Web.
+// Chunk upload is a concatenation of the encoded instances per cell.
 class NativeBuildingVisualCache : public godot::RefCounted {
     GDCLASS(NativeBuildingVisualCache, godot::RefCounted);
 

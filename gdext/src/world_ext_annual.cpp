@@ -73,7 +73,15 @@ Dictionary DCWorldExt::get_annual_report_history(int32_t offset,int32_t limit) c
     for(const auto&r:_runtime_host->annual_history(static_cast<uint32_t>(std::max(0,offset)),static_cast<uint32_t>(std::clamp(limit,1,64))))rows.append(report(r,false));
     d["reports"]=rows;return d;
 }
-Dictionary DCWorldExt::mark_annual_report_presented(int64_t id){return result(_runtime_host&&id>0&&_runtime_host->mark_annual_presented(static_cast<uint64_t>(id)));}
+Dictionary DCWorldExt::mark_annual_report_presented(int64_t id) {
+    const char *error = !_runtime_host ? "annual_unconfigured" : id <= 0 ? "annual_report_id_invalid"
+        : _runtime_host->mark_annual_presented(static_cast<uint64_t>(id));
+    Dictionary reply = result(error == nullptr, error == nullptr ? "" : error);
+    reply["admitted"] = error == nullptr;
+    reply["code"] = error == nullptr ? "ok" : error;
+    reply["report_id"] = id;
+    return reply;
+}
 PackedByteArray DCWorldExt::capture_annual_report_state() const{
     PackedByteArray out;if(!_runtime_host)return out;const auto bytes=_runtime_host->encode_annual_save();out.resize(static_cast<int64_t>(bytes.size()));if(!bytes.empty())std::copy(bytes.begin(),bytes.end(),out.ptrw());return out;
 }

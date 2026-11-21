@@ -436,8 +436,7 @@ func refresh_military_terrain(day: int = -1) -> Dictionary:
 	return result
 
 
-## AI 军事议程：玩家国以外的所有国家。player_handles 为空时按
-## gameplay start 的 is_player 标记解析；读档后由 PKAI/PKMI 恢复路径再调一次。
+## 正式开局时启用外国的军事 AI。读档沿用 PKMI 中保存的各国状态。
 
 func _arm_military_ai(player_handles: PackedInt64Array) -> Dictionary:
 	if _generator._military_facade == null or not _generator._military_facade.is_configured():
@@ -472,7 +471,7 @@ func _maybe_register_military_system() -> void:
 	_generator._military_registered_graph_active = _generator._runtime_graph_active
 	_generator._military_registered_graph_mode = graph_mode
 	_generator._military_daily_job = MilitaryDailySystemScript.new(
-		_generator._military_facade, _generator._world_clock_ref, _generator, _generator._gameplay_event_bus)
+		_generator._military_facade, _generator)
 	_generator._sus.configure_job_from_profile(_generator._military_daily_job, cp, false,
 		MilitaryFacadeScript.SYSTEM_ID, 1)
 	_generator._runtime_register_system(_generator._military_daily_job)

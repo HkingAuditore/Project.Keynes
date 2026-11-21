@@ -37,7 +37,6 @@ func _init() -> void:
 	generator.profile.weather_albedo_stride = 1
 	generator.profile.fast_slow_layering_enabled = false
 	generator.profile.sim_stagger_enabled = false
-	generator.profile.weather_refresh_stride = 1
 	var capture := Capture.new()
 	capture._generator = generator
 	var system := SeasonRefreshSystem.new(generator, map, WorldData.new())

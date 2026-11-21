@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "runtime_day_tail.h"
 #include "country_ai_core.h"
 #include "country_runtime.h"
 #include "effect_runtime.h"
@@ -81,7 +82,7 @@ const char *country_command_receipt_code_name(
 } // namespace
 
 Dictionary DCWorldExt::poll_country_command_receipts(
-        int64_t after_request_id, int limit) {
+        int64_t after_publication, int limit) {
     Dictionary out;
     if (_runtime_host == nullptr) {
         out["ok"] = false;
@@ -89,15 +90,16 @@ Dictionary DCWorldExt::poll_country_command_receipts(
         return out;
     }
     std::vector<CountryCommandReceipt> receipts;
-    _runtime_host->poll_country_command_receipts(
-        static_cast<uint64_t>(std::max<int64_t>(0, after_request_id)),
+    const int64_t cursor = std::max<int64_t>(0, after_publication);
+    _runtime_host->poll_country_command_publications(
+        static_cast<uint64_t>(cursor),
         static_cast<uint32_t>(std::clamp(limit, 0, 4096)), receipts);
     Array rows;
-    uint64_t last_request_id = static_cast<uint64_t>(
-        std::max<int64_t>(0, after_request_id));
+    int64_t publication = cursor;
     for (const CountryCommandReceipt &receipt : receipts) {
         Dictionary row;
         row["request_id"] = static_cast<int64_t>(receipt.request_id);
+        row["publication_sequence"] = ++publication;
         row["producer_id"] = static_cast<int>(receipt.producer_id);
         row["sequence"] = static_cast<int64_t>(receipt.sequence);
         row["effective_day"] = receipt.effective_day;
@@ -106,13 +108,12 @@ Dictionary DCWorldExt::poll_country_command_receipts(
         row["status"] = country_command_receipt_code_name(receipt.code);
         row["reason"] = String(receipt.reason.c_str());
         rows.push_back(row);
-        last_request_id = std::max(last_request_id, receipt.request_id);
     }
     out["ok"] = true;
     out["available"] = !receipts.empty();
     out["receipts"] = rows;
     out["count"] = rows.size();
-    out["last_request_id"] = static_cast<int64_t>(last_request_id);
+    out["last_publication_sequence"] = publication;
     return out;
 }
 
@@ -946,8 +947,14 @@ Dictionary DCWorldExt::get_country_worker_read_view(
     }
     const uint64_t cursor = after_generation < 0
         ? 0u : static_cast<uint64_t>(after_generation);
-    const RuntimeCountryReadView view =
-        _runtime_host->country_worker_read_view(cursor);
+    const auto &tail = _runtime_display_commit.day_tail;
+    RuntimeCountryReadView view = tail && tail->country.snapshot
+        ? tail->country : _runtime_host->country_worker_read_view(cursor);
+    if (tail && tail->country.snapshot) {
+        view.available = view.generation > cursor;
+        view.full_snapshot_required = view.available &&
+            cursor != view.patch_base_generation && cursor < view.territory_watermark;
+    }
     out["ok"] = true;
     out["code"] = "ok";
     out["available"] = view.available;
@@ -1272,6 +1279,11 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         out["code"] = "country_worker_adapter_limit_invalid";
         return out;
     }
+    if (_runtime_host->effect_adapter_owned()) {
+        out["ok"] = true;
+        out["code"] = "country_executor_owned";
+        return out;
+    }
     const RuntimeThreadReport host_report = _runtime_host->report();
     if (!shadow_replay &&
         (host_report.mode != RuntimeSimulationMode::ACTIVE ||
@@ -1398,6 +1410,7 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
     String notification_error;
     NativeSimulationHost::CountryWorkerNotification notification;
     while (notified < max_intents &&
+           !_runtime_host->effect_adapter_owned() &&
            _runtime_host->poll_country_worker_notification(notification)) {
         ++notified;
         // SHADOW keeps planning on the sync store, which already notified.
@@ -1475,6 +1488,7 @@ Dictionary DCWorldExt::restore_country_runtime_checkpoint(
             ? "country_checkpoint_restore_failed" : error.c_str());
         return out;
     }
+    country_runtime_from(_country_runtime)->restore_effect_adapter(checkpoint.effect_adapter);
     out["ok"] = true;
     out["code"] = "ok";
     publish_restored_country_territory(out);
@@ -1653,7 +1667,9 @@ NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
     // Prefer any worker-published Country snapshot even after FAULTED revoked
     // the authority grant. Falling back to the frozen sync store on revoke
     // resets the tech UI to bootstrap gen=1 / starter TP stock.
-    const auto snapshot = _runtime_host->country_asset_snapshot();
+    const auto &tail = _runtime_display_commit.day_tail;
+    const auto snapshot = tail && tail->country.snapshot
+        ? tail->country.snapshot : _runtime_host->country_asset_snapshot();
     if (!snapshot) return source;
     if (_country_query_runtime == nullptr)
         _country_query_runtime = new NativeCountryRuntime(*source);

@@ -869,6 +869,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         return false;
     }
     if (commands == nullptr || count == 0) { error = "country_effect_command_empty"; return false; }
+    const bool trigger_delivery = commands[0].trigger_delivery;
     request_ids.clear();
     request_ids.reserve(count);
     std::vector<Command> staged;
@@ -928,7 +929,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         command.submit_order = ++_submit_order;
         command.effect_request_id = _next_effect_request_id++;
         command.effect_idempotency_key = source.idempotency_key;
-        _effect_command_results.emplace(command.effect_request_id, EffectCommandResult{});
+        _effect_command_results.emplace(command.effect_request_id, CountryEffectCommandResult{});
         _effect_command_idempotency[source.idempotency_key] = command.effect_request_id;
         request_ids.push_back(command.effect_request_id);
         staged.push_back(std::move(command));
@@ -955,8 +956,9 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
             };
             for (const Command &command : staged) {
                 RuntimeCountryCommand mirrored;
-                mirrored.request_id =
-                    _simulation_host->allocate_command_request_id();
+                mirrored.request_id = trigger_delivery
+                    ? _simulation_host->allocate_command_request_id_for_ingress()
+                    : _simulation_host->allocate_command_request_id();
                 mirrored.producer_id = 0;
                 mirrored.sequence = command.sequence > 0
                     ? static_cast<uint64_t>(command.sequence)
@@ -982,19 +984,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
                 mirrored.value = command.value;
                 copy_fixed(mirrored.stable_id, command.stable_id);
                 copy_fixed(mirrored.display_name, command.display_name);
-                RuntimeCommandPacket packet;
-                packet.envelope.request_id = mirrored.request_id;
-                packet.envelope.producer_id = mirrored.producer_id;
-                packet.envelope.sequence = mirrored.sequence;
-                packet.envelope.requested_day = mirrored.requested_day;
-                packet.envelope.effective_day = mirrored.effective_day;
-                packet.envelope.domain = static_cast<uint16_t>(
-                    RuntimeDomainId::COUNTRY);
-                packet.envelope.opcode = mirrored.opcode;
-                packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
-                std::memcpy(packet.payload.data(), &mirrored,
-                            sizeof(RuntimeCountryCommand));
-                packets.push_back(packet);
+                packets.push_back(encode_country_packet(mirrored));
                 // Always remember the Host request id. Effect may submit while
                 // the sync facade still owns writes (mask not granted yet) and
                 // Country can flip to worker authority before the local pending
@@ -1059,7 +1049,7 @@ void NativeCountryRuntime::drain_effect_host_command_receipts() {
             receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION ||
             receipt.code == CountryCommandReceiptCode::ADMISSION_REJECTED;
         if (!committed && !rejected) continue;
-        EffectCommandResult &result =
+        CountryEffectCommandResult &result =
             _effect_command_results[mapped->second];
         result.complete = 1;
         result.ok = committed ? 1 : 0;

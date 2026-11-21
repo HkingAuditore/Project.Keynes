@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
+#include "country_api.h"
 #include "country_ai_core.h"
 #include "economy_hash.h"
 #include "runtime_economy_family_side_tables.h"
@@ -38,11 +39,19 @@ NativeEconomyRuntime::~NativeEconomyRuntime() = default;
 
 void NativeEconomyRuntime::reset_country_ai_pending() {
     import_country_ai_pending({}, {}, 0);
+    restore_country_ai_digest(nullptr);
 }
 
 std::shared_ptr<const CountryAiEconomyDigest> NativeEconomyRuntime::country_ai_digest() const {
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
     return _country_ai->digest;
+}
+
+void NativeEconomyRuntime::restore_country_ai_digest(
+        std::shared_ptr<const CountryAiEconomyDigest> digest) {
+    std::lock_guard<std::mutex> lock(_country_ai->mutex);
+    _country_ai->digest_revision = digest ? digest->revision : 0;
+    _country_ai->digest = std::move(digest);
 }
 
 void NativeEconomyRuntime::set_country_ai_family_preferences(
@@ -77,7 +86,6 @@ void NativeEconomyRuntime::queue_research_procurement_policy(
     update.sequence = sequence;
     std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
     update.order = _procurement_inbox->next_order++;
-    _procurement_inbox->requested_policy[update.country_handle] = update;
     _procurement_inbox->updates.push_back(std::move(update));
 }
 

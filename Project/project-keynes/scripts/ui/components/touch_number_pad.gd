@@ -16,6 +16,7 @@ extends Control
 ##   · 只有「确定」才提交，提交仍走宿主原有的解析 + 次日生效链路；
 ##   · 口径（% / 定额）也在这张纸片上切，跟着「确定」一起提交 ——
 ##     取消不会给存档留下半个「归零」状态；
+##   · 显示口径按钮时，可用键盘 % 切换。
 ##   · 只收整数：税率按 1 个百分点一档、定额按 1 金币一档，小数点没有用武之地。
 ##
 ## 不写 class_name：新脚本未进 global_script_class_cache 时裸类名编译会失败
@@ -42,7 +43,7 @@ var _open := false
 @onready var _hint_label: Label = %Hint
 @onready var _mode_row: Control = %Modes
 @onready var _money_icon: TextureRect = %MoneyIcon
-@onready var _mode_keys: Dictionary = {MODE_PERCENT: %Percent, MODE_ABSOLUTE: %Absolute}
+@onready var _mode_keys: Dictionary = {int(MODE_PERCENT): %Percent, int(MODE_ABSOLUTE): %Absolute}
 @onready var _confirm_key: Button = %Confirm
 
 
@@ -104,10 +105,8 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 		return
 	var key := event as InputEventKey
-	if key == null:
-		return
-	_handle_key(key)
-	accept_event()
+	if key != null and _handle_key(key):
+		accept_event()
 
 
 ## 安卓返回键 / 手柄 B 走 player_cancel，不一定落在有焦点的控件上，所以补一道。
@@ -128,6 +127,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _handle_key(key: InputEventKey) -> bool:
 	if not key.pressed or key.echo:
 		return false
+	if _show_modes and key.unicode == KEY_PERCENT:
+		_request_mode(MODE_ABSOLUTE if _mode == MODE_PERCENT else MODE_PERCENT)
+		return true
 	match key.keycode:
 		KEY_ENTER, KEY_KP_ENTER:
 			_confirm()

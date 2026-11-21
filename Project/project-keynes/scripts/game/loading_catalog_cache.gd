@@ -57,10 +57,10 @@ static func invalidate() -> void:
 	_technology.clear()
 	_research.clear()
 
-static func prepare(ext: Object, frame_gate = null) -> void:
+static func prepare(ext: Object, frame_gate = null, directory: String = DIRECTORY) -> void:
 	if _ready:
 		return
-	var manifest_path := DIRECTORY+"sources.json"
+	var manifest_path := directory.path_join("sources.json")
 	if not FileAccess.file_exists(manifest_path):
 		_miss("缺少快照清单 %s" % manifest_path)
 		return
@@ -77,14 +77,14 @@ static func prepare(ext: Object, frame_gate = null) -> void:
 			return
 	var missing := PackedStringArray()
 	for filename: String in SNAPSHOT_FILES:
-		if not ResourceLoader.exists(DIRECTORY+filename):
+		if not ResourceLoader.exists(directory.path_join(filename)):
 			missing.append(filename)
 	if not missing.is_empty():
 		_miss("快照文件缺失：%s" % ", ".join(missing))
 		return
 	var paths := PackedStringArray()
 	for filename: String in SNAPSHOT_FILES:
-		paths.append(DIRECTORY + filename)
+		paths.append(directory.path_join(filename))
 	var resources: Array[Resource] = await _load_snapshots(paths, frame_gate)
 	if resources.size() != SNAPSHOT_FILES.size():
 		return

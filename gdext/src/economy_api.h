@@ -22,11 +22,16 @@
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
 
-namespace godot { class Dictionary; class Array; }
+namespace godot { class Dictionary; class Array; class PackedInt32Array; class PackedInt64Array; }
 
 namespace pk {
 
 class NativeEconomyRuntime;
+struct RuntimeGdpCell;
+struct NarrativeCellView;
+struct NarrativeUnrestRow;
+struct NarrativeUnrestOdds;
+struct NarrativeEconomyNotice;
 
 // P3-B: everything a reader depends on is published as ONE immutable snapshot.
 // Reading the counters one by one let a card see metric A's new revision next to
@@ -62,6 +67,19 @@ struct EconomyMilitaryCellView {
     std::vector<int64_t> unemployed;    // unemployed-profession heads
     std::vector<int64_t> soldiers;      // soldier-profession heads
     std::vector<uint8_t> has_merchant;  // a live merchant serves the cell
+};
+
+struct EconomyNaturalResourceProfile {
+    std::array<float, 20> coefficients{};
+    int32_t habitat_mode = 0;
+    int32_t temperature_signal = 0;
+    int32_t moisture_signal = 0;
+};
+
+struct EconomyNaturalResourceCatalogView {
+    const std::vector<std::string> &ids;
+    const std::vector<std::string> &reserve_slots;
+    const std::vector<std::string> &change_slots;
 };
 
 struct EconomyApi {
@@ -495,6 +513,8 @@ bool submit_effect_commands_pod(NativeEconomyRuntime &economy,
                                 const EconomyApi::EffectCommand *commands,
                                 size_t count, std::vector<int64_t> &request_ids,
                                 std::string &error);
+bool submit_effect_family_trait(NativeEconomyRuntime &economy, uint64_t family,
+    const std::string &trait, bool grant, int32_t strength, int64_t day, int64_t sequence);
 bool effect_command_result_pod(const NativeEconomyRuntime &economy,
                                int64_t request_id, bool &complete, bool &ok,
                                std::string &reason);
@@ -516,6 +536,14 @@ void collect_own_tagged_cells(const NativeEconomyRuntime &economy,
                               int32_t country_slot, int32_t tag,
                               std::vector<int32_t> &out_cells);
 int32_t cell_count(const NativeEconomyRuntime &economy);
+EconomyNaturalResourceCatalogView natural_resource_catalog(const NativeEconomyRuntime &economy);
+void configure_natural_resources(NativeEconomyRuntime &economy,
+                                 const std::vector<EconomyNaturalResourceProfile> &profiles);
+bool natural_resources_configured(const NativeEconomyRuntime &economy);
+bool natural_resources_seeded(const NativeEconomyRuntime &economy);
+bool seed_natural_resources(NativeEconomyRuntime &economy, int64_t day,
+                           const std::vector<const float *> &reserves,
+                           const std::vector<const float *> &changes);
 int32_t building_neighbor(const NativeEconomyRuntime &economy, int32_t cell,
                           int32_t direction);
 void collect_effect_target_cells(
@@ -551,7 +579,12 @@ void notify_era_milestone_activated(NativeEconomyRuntime &economy,
 
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 void military_read_cell_view(const NativeEconomyRuntime &economy, EconomyMilitaryCellView &out, int32_t good_count = 0);
-void military_read_market(const NativeEconomyRuntime &economy, int32_t good, std::vector<int32_t> &out_cells, std::vector<int64_t> &out_sellable, std::vector<int64_t> &out_price);
+void military_read_market(const NativeEconomyRuntime &economy, int32_t good,
+    std::vector<int32_t> &cells, std::vector<int64_t> &sellable,
+    std::vector<int64_t> &price, std::vector<uint8_t> &stocked);
+void military_read_equipment_production(const NativeEconomyRuntime &economy,
+    const std::vector<int32_t> &cells, const std::vector<uint8_t> &equipment,
+    std::vector<uint8_t> &out);
 int32_t military_soldier_profession(NativeEconomyRuntime &economy);
 int32_t military_unemployed_profession(const NativeEconomyRuntime &economy);
 int32_t military_merchant_profession(const NativeEconomyRuntime &economy);
@@ -576,6 +609,11 @@ int32_t profession_count(const NativeEconomyRuntime &economy);
 int64_t last_committed_day(const NativeEconomyRuntime &economy);
 bool epoch_active(const NativeEconomyRuntime &economy);
 godot::Dictionary detail_report(const NativeEconomyRuntime &economy);
+void serve_read_view(NativeEconomyRuntime &economy, bool requested);
+std::vector<RuntimeGdpCell> capture_settlement_output(
+    const NativeEconomyRuntime &economy, uint64_t country);
+godot::Dictionary fiscal_snapshot(const NativeEconomyRuntime &economy, int64_t country);
+godot::Dictionary named_settlement_snapshot(const NativeEconomyRuntime &economy);
 bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
     const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
     const uint8_t *passable, const int32_t *move_cost, int32_t count,
@@ -590,8 +628,39 @@ void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy);
 // ---- State building and procurement bindings (world_ext_economy.cpp, world_ext_military.cpp)
 bool military_purchase_receipt(const NativeEconomyRuntime &economy, int64_t sequence, int64_t &quantity, int64_t &cash);
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units);
-godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
-godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
+godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
+godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
+godot::Dictionary family_colonization_quotes(NativeEconomyRuntime &economy,
+    int64_t country, int32_t target, int64_t family, int32_t source, int32_t offset, int32_t limit,
+    const uint8_t *visible, int32_t visible_count, uint64_t vision_revision);
+godot::Dictionary family_colonization_quote_detail(const NativeEconomyRuntime &economy,
+    int64_t quote, int64_t population);
+godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy,
+    int64_t country, int64_t family, int32_t source, int32_t target, int64_t population,
+    int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
+    int32_t visible_count, uint64_t vision_revision, bool queue_for_worker);
+godot::Dictionary submit_family_colonization_cancel(NativeEconomyRuntime &economy,
+    int64_t country, int64_t expedition, int64_t day, int64_t sequence);
+int32_t player_family_founding_offer(const NativeEconomyRuntime &economy);
+godot::Dictionary family_founding_offer(const NativeEconomyRuntime &economy, int32_t offset);
+godot::Dictionary submit_family_founding_choice(NativeEconomyRuntime &economy,
+    int64_t offer, int64_t generation, int32_t choice, int64_t day, int64_t sequence,
+    bool check_now);
+godot::Array take_family_founding_receipts(NativeEconomyRuntime &economy);
+godot::Dictionary queue_canal_construction(NativeEconomyRuntime &economy,
+    int64_t country, int64_t quote, int64_t day, int64_t sequence);
+godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country);
+void sample_narrative_cell(const NativeEconomyRuntime &, NarrativeCellView &, bool detailed);
+std::vector<NarrativeEconomyNotice> narrative_economy_notices(
+    const NativeEconomyRuntime &, int64_t day, uint64_t country);
+bool narrative_unrest_rows(const NativeEconomyRuntime &, int32_t cell, std::vector<NarrativeUnrestRow> &);
+NarrativeUnrestOdds narrative_unrest_odds(const NativeEconomyRuntime &, int32_t cell, int32_t profession, int32_t action);
+bool settle_narrative_unrest(NativeEconomyRuntime &, int32_t cell, int32_t profession, int32_t action, bool success);
+const std::vector<std::string> &narrative_professions(const NativeEconomyRuntime &);
+godot::Dictionary era_advancement_economy_summary(const NativeEconomyRuntime &economy, int64_t country);
+godot::Dictionary set_era_procurement_target(NativeEconomyRuntime &economy,
+    int64_t country, bool active, const godot::PackedInt32Array &goods,
+    const godot::PackedInt64Array &quantities, int64_t day, int64_t sequence);
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy);
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell);

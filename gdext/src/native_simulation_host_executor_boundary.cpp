@@ -1,9 +1,73 @@
 #include "native_simulation_host.h"
 
+#include "economy_api.h"
+
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 namespace pk {
+
+void NativeSimulationHost::publish_boundary_command_result(const char *command,
+        int64_t sequence, godot::Dictionary result) {
+    result["command"] = godot::String(command);
+    result["sequence"] = sequence;
+    const bool admitted = result.get("ok", false);
+    result["admitted"] = admitted;
+    if (!admitted) result.erase("effective_day");
+    std::lock_guard<std::mutex> control(_control_mutex);
+    _boundary_command_results.push_back(std::move(result));
+}
+
+godot::Array NativeSimulationHost::take_boundary_command_results(bool &colonization_quotes_ready) {
+    if (inline_daily_mode() && !execution_has_stopped()) {
+        service_economy_read_view();
+        service_economy_boundary_requests();
+        service_era_reward_requests();
+        service_player_confirmations();
+        player_confirmation_block();
+    }
+    std::lock_guard<std::mutex> control(_control_mutex);
+    colonization_quotes_ready = std::exchange(_colonization_quotes_ready, false);
+    return std::exchange(_boundary_command_results, {});
+}
+
+bool NativeSimulationHost::economy_worker_owns_execution() const noexcept {
+    const auto current = _state.load(std::memory_order_acquire);
+    return current != RuntimeWorkerState::STOPPED &&
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        _economy_production_runtime != nullptr &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u;
+}
+
+bool NativeSimulationHost::player_requests_pending_locked() const noexcept {
+    return !_military_commands.empty() || !_economy_boundary_requests.empty() ||
+        !_era_reward_requests.empty() || !_annual_presentations.empty() ||
+        !_narrative_requests.empty() || !_player_confirmation.requests.empty() ||
+        _player_confirmation.ideology_input_changed;
+}
+
+void NativeSimulationHost::request_economy_read_view() {
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (_economy_read_view_requested) return;
+        _economy_read_view_requested = true;
+    }
+    _control_cv.notify_one();
+}
+
+void NativeSimulationHost::service_economy_read_view() {
+    if (!_economy_production_runtime || !economy_worker_owns_execution() ||
+            _inline_day_pending.load(std::memory_order_acquire)) return;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (!std::exchange(_economy_read_view_requested, false)) return;
+    }
+    const RuntimeExecutionContext context(this,
+        _requested_authority_mask.load(std::memory_order_acquire));
+    economy_api::serve_read_view(*_economy_production_runtime, true);
+}
 
 bool NativeSimulationHost::command_packet_before(
         const RuntimeCommandPacket &a, const RuntimeCommandPacket &b) {
@@ -31,20 +95,22 @@ void NativeSimulationHost::seed_executor_command_orders() {
     }
 }
 
+bool NativeSimulationHost::try_stop_at_day_boundary() {
+    std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
+    if (!boundary.owns_lock() ||
+        _inline_day_pending.load(std::memory_order_acquire)) return false;
+    std::lock_guard<std::mutex> admission(_command_producer_mutex);
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (player_requests_pending_locked()) return false;
+    }
+    request_stop_locked();
+    return true;
+}
+
 bool NativeSimulationHost::service_save_request(
         std::vector<RuntimeCommandPacket> &pending_commands) {
     if (!_save_requested.load(std::memory_order_acquire)) return false;
-    // A bundle at committed day D carries the main thread's day-D tail
-    // (Military, resource recovery): restore marks that tail done. The main
-    // thread keeps running it while it polls for the bundle.
-    if (main_day_tail_pending()) {
-        std::unique_lock<std::mutex> control_lock(_control_mutex);
-        _control_cv.wait(control_lock, [&] {
-            return !main_day_tail_pending() ||
-                _stop_requested.load(std::memory_order_acquire);
-        });
-        if (main_day_tail_pending()) return false;
-    }
     // Pending environment frames describe future days and are regenerated on
     // restore. The caller must first finish any day that already consumed one.
     // Dropping them moves the publish watermark back to the committed day, so
@@ -56,11 +122,15 @@ bool NativeSimulationHost::service_save_request(
         _climate_wait_cv.notify_all();
         _control_cv.notify_all();
     }
-    if (has_pending_climate_input() ||
-        !_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
+    uint64_t intake_watermark = 0;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (has_pending_climate_input() || player_requests_pending_locked() ||
+            !_save_requested.exchange(false, std::memory_order_acq_rel)) return false;
+        intake_watermark = _command_enqueue_pos.load(std::memory_order_acquire);
+    }
+    drain_command_inbox_through(pending_commands, intake_watermark);
     const uint64_t request_id = _save_request_id.load(std::memory_order_acquire);
-    RuntimeCommandPacket queued;
-    while (pop_command(queued)) pending_commands.push_back(std::move(queued));
     _economy_pending_command_count.store(static_cast<uint32_t>(std::min<size_t>(
         pending_commands.size(), std::numeric_limits<uint32_t>::max())), std::memory_order_release);
     _state.store(RuntimeWorkerState::SAVE_PENDING, std::memory_order_release);
@@ -87,6 +157,8 @@ bool NativeSimulationHost::service_save_request(
 
 void NativeSimulationHost::service_inline_save_request() {
     if (!inline_daily_mode() || !_save_requested.load(std::memory_order_acquire)) return;
+    service_economy_boundary_requests();
+    service_player_confirmations();
     auto boundary = try_lock_economy_input_capture();
     if (!boundary.owns_lock() || _inline_day_pending.load(std::memory_order_acquire)) return;
     const RuntimeExecutionContext execution_context(this,

@@ -1,6 +1,5 @@
 extends "res://scripts/simulation/generator_context.gd"
 
-const NaturalResourceRecovery = preload("res://scripts/simulation/economy/natural_resource_recovery.gd")
 
 const RESOURCE_SCALAR_STRIDE := 32
 
@@ -906,9 +905,10 @@ func run_natural_resource_pass_native(
 		map_ref,
 		dt_days: int = 1,
 		cell_indices: PackedInt32Array = PackedInt32Array(),
-		cell_dt_days: PackedInt32Array = PackedInt32Array()) -> Dictionary:
+		cell_dt_days: PackedInt32Array = PackedInt32Array(),
+		schedule_day: int = -1, live_cells: PackedInt32Array = PackedInt32Array(),
+		live_catchup: bool = false) -> Dictionary:
 	var t_wall: int = Time.get_ticks_usec()
-	dt_days = clampi(dt_days, 1, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
 	if map_ref == null:
 		return _generator._remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
 	var n_cells: int = map_ref.cell_count()
@@ -942,6 +942,14 @@ func run_natural_resource_pass_native(
 		refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
 		_generator._natural_resource_pass_knobs["n_cells"] = n_cells
 		_generator._natural_resource_pass_knobs["dt_days"] = dt_days
+		if schedule_day >= 0:
+			_generator._natural_resource_pass_knobs["schedule_day"] = schedule_day
+			_generator._natural_resource_pass_knobs["scheduled_live_cells"] = live_cells
+			_generator._natural_resource_pass_knobs["live_catchup"] = live_catchup
+		else:
+			_generator._natural_resource_pass_knobs.erase("schedule_day")
+			_generator._natural_resource_pass_knobs.erase("scheduled_live_cells")
+			_generator._natural_resource_pass_knobs.erase("live_catchup")
 		if cell_indices.is_empty():
 			_generator._natural_resource_pass_knobs.erase("cell_indices")
 			_generator._natural_resource_pass_knobs.erase("cell_dt_days")
@@ -954,14 +962,13 @@ func run_natural_resource_pass_native(
 		knob_update_ms = (Time.get_ticks_usec() - knob_update_started) / 1000.0
 		var native_call_started: int = Time.get_ticks_usec()
 		var res: Dictionary = _generator._data_core_world_ext.run_natural_resource_pass(_generator._natural_resource_pass_knobs)
-		native_reason = String(res.get("reason", "native_failed"))
+		native_reason = String(res.get("reason", res.get("fallback_reason", "native_failed")))
 		var native_call_ms: float = (Time.get_ticks_usec() - native_call_started) / 1000.0
 		res["factor_lookup_ms"] = factor_lookup_ms
 		res["slot_refresh_ms"] = refresh_ms
 		res["knob_update_ms"] = knob_update_ms
 		res["native_call_ms"] = native_call_ms
 		if bool(res.get("published_to_slot", false)):
-			res["dt_days"] = dt_days
 			res["wrapper_wall_ms"] = (Time.get_ticks_usec() - t_wall) / 1000.0
 			res["wrapper_overhead_ms"] = max(0.0, float(res.get("wrapper_wall_ms", 0.0)) - float(res.get("native_ms", 0.0)))
 			return _generator._remember_natural_resource_report(res)
@@ -981,97 +988,13 @@ func run_natural_resource_pass_native(
 
 
 
-func run_natural_resource_pass_for_runtime_commit(day: int) -> Dictionary:
-	if _generator._sus_map == null:
-		return {"done": true, "path": "skip", "published_to_slot": false}
-	return NaturalResourceRecovery.run_scheduled(_generator, _generator._sus_map,
-			maxi(0, day), _generator.economy_live_cells(), true)
-
-
-
-func _reset_natural_resource_cadence(n_cells: int, last_day: int) -> void:
-	_generator._natural_resource_last_day.resize(maxi(0, n_cells))
-	_generator._natural_resource_was_live.resize(maxi(0, n_cells))
-	_generator._natural_resource_last_day.fill(last_day)
-	_generator._natural_resource_was_live.fill(0)
-
-
-
-func _natural_resource_dt_for_cell(cell: int, day: int, is_live: bool) -> int:
-	var last: int = int(_generator._natural_resource_last_day[cell])
-	var elapsed: int = clampi(day - last, 1, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
-	if is_live and int(_generator._natural_resource_was_live[cell]) != 0:
-		elapsed = clampi(elapsed, 1, _generator.NATURAL_RESOURCE_LIVE_CATCHUP_MAX_DAYS)
-	return elapsed
-
-
-
-func collect_natural_resource_pass_cells(day: int, live_cells: PackedInt32Array) -> Dictionary:
-	var n_cells: int = _generator._natural_resource_last_day.size()
-	var live_set := {}
-	var cell_indices := PackedInt32Array()
-	var cell_dt_days := PackedInt32Array()
-	for cell in live_cells:
-		var idx := int(cell)
-		if idx < 0 or idx >= n_cells:
-			continue
-		live_set[idx] = true
-		if int(_generator._natural_resource_last_day[idx]) >= day:
-			continue
-		cell_indices.append(idx)
-		cell_dt_days.append(_generator._natural_resource_dt_for_cell(idx, day, true))
-	var bucket: int = posmod(day, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
-	for idx in range(bucket, n_cells, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE):
-		if live_set.has(idx):
-			continue
-		if int(_generator._natural_resource_last_day[idx]) >= day:
-			continue
-		cell_indices.append(idx)
-		cell_dt_days.append(_generator._natural_resource_dt_for_cell(idx, day, false))
-	return {"cell_indices": cell_indices, "cell_dt_days": cell_dt_days, "live_set": live_set}
-
-
-
-func _commit_natural_resource_pass_days(day: int, cell_indices: PackedInt32Array, live_set: Dictionary) -> void:
-	for cell in cell_indices:
-		var idx := int(cell)
-		if idx < 0 or idx >= _generator._natural_resource_last_day.size():
-			continue
-		_generator._natural_resource_last_day[idx] = day
-		_generator._natural_resource_was_live[idx] = 1 if live_set.has(idx) else 0
-
-
-
 func run_natural_resource_pass_scheduled(map_ref, day: int, live_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
-	return NaturalResourceRecovery.run_scheduled(_generator, map_ref, day, live_cells)
-
+	return run_natural_resource_pass_native(map_ref, 1, PackedInt32Array(), PackedInt32Array(), maxi(0, day), live_cells)
 
 
 func catchup_natural_resources_for_live_cells(day: int) -> Dictionary:
-	if _generator._sus_map == null:
-		return {"done": true, "path": "skip", "indexed_cell_count": 0}
-	_generator._ensure_natural_resource_cadence(_generator._sus_map.cell_count(), day)
-	var live: PackedInt32Array = _generator.economy_live_cells()
-	var due := PackedInt32Array()
-	var dts := PackedInt32Array()
-	var live_set := {}
-	for cell in live:
-		var idx := int(cell)
-		if idx < 0 or idx >= _generator._natural_resource_last_day.size():
-			continue
-		live_set[idx] = true
-		if int(_generator._natural_resource_last_day[idx]) >= day:
-			continue
-		due.append(idx)
-		dts.append(_generator._natural_resource_dt_for_cell(idx, day, true))
-	if due.is_empty():
-		return {"done": true, "path": "catchup_empty", "indexed_cell_count": 0}
-	var res: Dictionary = _generator.run_natural_resource_pass_native(_generator._sus_map, 1, due, dts)
-	if bool(res.get("published_to_slot", false)):
-		_generator._commit_natural_resource_pass_days(day, due, live_set)
-	res["indexed_cell_count"] = due.size()
-	return res
-
+	return run_natural_resource_pass_native(_generator._sus_map, 1, PackedInt32Array(),
+		PackedInt32Array(), maxi(0, day), _generator.economy_live_cells(), true)
 
 
 func dump_climate_daily_round_slots_stats() -> Dictionary:

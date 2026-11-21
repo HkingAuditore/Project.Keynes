@@ -178,7 +178,7 @@ func refresh_info_panel() -> void:
 
 	# ── 三条独立轴（地貌 / 当前植被 / 地表覆盖）
 	# B.1：landform / vegetation / cover / snow_cover 走 ViewAdapter（schema-mirrored）；
-	# base_vegetation / vegetation_history 仍直读 cell（HexCell-only 无 SoA 对位）。
+	# base_vegetation 保留开局地块的基线。
 	var landform_v: int = ad.get_landform(idx) if ad != null else int(cell.landform)
 	_landform_label.text = "地貌：%s" % LandformType.name_cn(landform_v)
 	var vegetation_v: int = ad.get_vegetation(idx) if ad != null else int(cell.vegetation)
@@ -227,7 +227,7 @@ func refresh_info_panel() -> void:
 
 	# ── 近期植被演替（vegetation_history 环形缓冲，最近 8 季）
 	# Milestone 1：换源到独立植被轴，粒度更细；空缓冲时回退到 biome_history
-	var veg_history := cell.vegetation_history
+	var veg_history := _current_map.season_history_for(cell, true)
 	if not veg_history.is_empty():
 		var names := PackedStringArray()
 		for i in range(veg_history.size()):
@@ -235,7 +235,7 @@ func refresh_info_panel() -> void:
 		_history_label.visible = true
 		_history_label.text = "近期植被：%s" % " → ".join(names)
 	else:
-		var bio_history := cell.biome_history
+		var bio_history := _current_map.season_history_for(cell, false)
 		if bio_history.is_empty():
 			_history_label.visible = false
 		else:

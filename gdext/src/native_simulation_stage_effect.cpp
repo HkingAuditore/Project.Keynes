@@ -96,14 +96,12 @@ bool NativeSimulationHost::stage_effect(DayExecution &day, RuntimeDomainPlan &st
                      catchup_fired > 0) &&
                     s_drain_left-- > 0) {
                     pk::log_info(
-                        "[tech-ack-diag/soft-skip] day=%d committed=%d "
-                        "queued_before=%d instances=%d unfired_due=%d "
-                        "nudged=%d catchup=%d drain_err=%s catchup_err=%s",
-                        plan.context.day, effect_committed,
-                        static_cast<int64_t>(queued_before),
-                        static_cast<int64_t>(snap.instances.size()),
-                        unfired_due, static_cast<int64_t>(nudged),
-                        static_cast<int64_t>(catchup_fired),
+                        "[tech-ack-diag/soft-skip] day=%lld committed=%lld "
+                        "queued_before=%zu instances=%zu unfired_due=%d "
+                        "nudged=%u catchup=%u drain_err=%s catchup_err=%s",
+                        static_cast<long long>(plan.context.day),
+                        static_cast<long long>(effect_committed),
+                        queued_before, snap.instances.size(), unfired_due, nudged, catchup_fired,
                         std::string(drain_error.c_str()).c_str(),
                         std::string(catchup_error.c_str()).c_str());
                 }
@@ -114,11 +112,10 @@ bool NativeSimulationHost::stage_effect(DayExecution &day, RuntimeDomainPlan &st
                 static int s_no_promote_left = 8;
                 if (s_no_promote_left-- > 0) {
                     pk::log_info(
-                        "[tech-ack-diag/soft-skip-no-promote] day=%d "
-                        "catchup=%d promoted=0 (Modifier ACK may still be "
+                        "[tech-ack-diag/soft-skip-no-promote] day=%lld "
+                        "catchup=%u promoted=0 (Modifier ACK may still be "
                         "pending; Country stage runs before Effect)",
-                        plan.context.day,
-                        static_cast<int64_t>(catchup_fired));
+                        static_cast<long long>(plan.context.day), catchup_fired);
                 }
             }
             _effect_day_stage_ok = true;

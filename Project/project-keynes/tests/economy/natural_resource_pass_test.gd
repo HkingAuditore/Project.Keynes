@@ -193,39 +193,38 @@ func _slot_index(slots: PackedStringArray, name: String) -> int:
 
 
 func _test_wilderness_bucket_selection() -> void:
-	var gen := MapGenerator.new()
-	gen._reset_natural_resource_cadence(120, 0)
-	var live := PackedInt32Array([0, 4, 8])
-	var planned: Dictionary = gen.collect_natural_resource_pass_cells(1, live)
-	var indices: PackedInt32Array = planned.get("cell_indices", PackedInt32Array())
-	var dts: PackedInt32Array = planned.get("cell_dt_days", PackedInt32Array())
-	var seen := {}
-	for k in range(indices.size()):
-		seen[int(indices[k])] = int(dts[k])
-	_expect("live cells always enter the resource pass",
-		seen.has(0) and seen.has(4) and seen.has(8))
-	_expect("wilderness bucket day 1 includes cell % 60 == 1",
-		seen.has(1) and seen.has(61) and not seen.has(2))
-	_expect("live and wilderness catchup dt is the real elapsed interval",
-		int(seen.get(0, -1)) == 1 and int(seen.get(1, -1)) == 1)
+	if not ClassDB.class_exists("DCWorldExt"):
+		_skip("DCWorldExt class not found")
+		return
+	const CELL_COUNT := 120
+	var map := MapData.new(CELL_COUNT, 1)
+	map._alloc_soa(CELL_COUNT)
+	var ext := DCWorldExt.new()
+	_expect("native scheduler binds the test map", ext.bind_map_data(map))
+	var knobs := ResourceProfileRegistry.build_pass_knobs()
+	knobs["n_cells"] = CELL_COUNT
+	knobs["scheduled_live_cells"] = PackedInt32Array([0, 4, 8])
+	knobs["schedule_day"] = 1
+	var first := ext.run_natural_resource_pass(knobs)
 	_expect("day-1 indexed set is live union one wilderness bucket",
-		indices.size() == 5)
-	var later: Dictionary = gen.collect_natural_resource_pass_cells(60, live)
-	var later_seen := {}
-	for cell in later.get("cell_indices", PackedInt32Array()):
-		later_seen[int(cell)] = true
+		first.get("cell_indices") == PackedInt32Array([0, 4, 8, 1, 61]))
+	_expect("live and wilderness catchup dt is the real elapsed interval",
+		first.get("cell_dt_days") == PackedInt32Array([1, 1, 1, 1, 1]))
+	knobs["schedule_day"] = 60
+	var later := ext.run_natural_resource_pass(knobs)
 	_expect("wilderness 60-day bucket does not rescan every empty cell",
-		later_seen.has(0) and later_seen.has(60) and not later_seen.has(1)
-		and int(later.get("cell_indices", PackedInt32Array()).size()) == 4)
-	var same_bucket := PackedInt32Array([61, 8])
-	var due: Dictionary = gen.collect_natural_resource_pass_cells(61, same_bucket)
+		later.get("cell_indices") == PackedInt32Array([0, 4, 8, 60]))
+	_expect("recently live cells cap catchup without changing the wilderness interval",
+		later.get("cell_dt_days") == PackedInt32Array([5, 5, 5, 60]))
+	knobs["scheduled_live_cells"] = PackedInt32Array([61, 8])
+	knobs["schedule_day"] = 61
+	var due := ext.run_natural_resource_pass(knobs)
 	_expect("live cells retain input order and occur only once in the due bucket",
-		due.cell_indices == PackedInt32Array([61, 8, 1]))
-	_expect("catchup preserves the elapsed-day cap for every due cell",
-		due.cell_dt_days == PackedInt32Array([60, 60, 60]))
-	gen._commit_natural_resource_pass_days(61, due.cell_indices, due.live_set)
+		due.get("cell_indices") == PackedInt32Array([61, 8, 1]))
+	_expect("catchup observes the previous commit dates",
+		due.get("cell_dt_days") == PackedInt32Array([60, 1, 60]))
 	_expect("a repeated call for an applied day has no due cells",
-		gen.collect_natural_resource_pass_cells(61, same_bucket).cell_indices.is_empty())
+		ext.run_natural_resource_pass(knobs).get("cell_indices") == PackedInt32Array())
 
 
 # ─── 3. 原生 pass + A/B 对拍 ─────────────────────────────────────

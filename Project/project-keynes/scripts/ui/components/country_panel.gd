@@ -106,10 +106,10 @@ func _ready() -> void:
 	_country_mark.modulate = Color.WHITE
 	_setup_navigation()
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭国家事务")
-	close_button.pressed.connect(close_panel)
+	close_button.pressed.connect(close_from_player)
 	var compact_close := get_node("%CompactClose") as Button
 	IconButton.apply(compact_close, &"action.close", IconButton.SMALL, "关闭国家事务")
-	compact_close.pressed.connect(close_panel)
+	compact_close.pressed.connect(close_from_player)
 	UIAnimation.bind_tactile_button(compact_close)
 	_economy_dossier.locate_cell_requested.connect(func(cell): locate_cell_requested.emit(cell))
 	if _politics_workspace.has_signal("target_cells_requested"):
@@ -162,6 +162,12 @@ func show_section(section_id: String, model: Dictionary) -> void:
 		modulate.a = 1.0
 		# 窗口布局由锚点和容器负责；淡入同时取消尚未结束的关闭动画。
 		UIAnimation.crossfade(self, UITokens.ANIM_MED)
+
+
+func close_from_player() -> void:
+	if _section_id == "politics" and _player_controller != null:
+		_player_controller.dismiss_displayed_ideology_offer()
+	close_panel()
 
 
 func close_panel() -> void:

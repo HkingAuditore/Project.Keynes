@@ -7,21 +7,14 @@ signal report_ready(report_id: int)
 const ProfileScript = preload("res://scripts/annual/annual_report_profile.gd")
 var _ext: Object
 var _clock: WorldClock
-var _sync_day: int = -1
 var _last_announced: int = 0
-var _boundary_day: int = -1
 var _configured: bool = false
-var _generator
-var _boundary_input_sent: bool = false
-var _can_capture_environment: Callable
 
-func configure(generator, clock: WorldClock, handle: int, can_capture_environment := Callable()) -> Dictionary:
-	_can_capture_environment = can_capture_environment
+func configure(generator, clock: WorldClock, handle: int) -> Dictionary:
 	_configured = false
-	_generator = generator
 	_clock = clock
 	_ext = generator.get_data_core_world_ext() if generator != null else null
-	if _ext == null or false or handle == 0:
+	if _ext == null or handle == 0:
 		return {"ok": false, "reason": "annual_api_unavailable"}
 	# Economy/Country setup can fail before the simulation module is prepared.  In
 	# that case the facades are intentionally left null; report configuration must
@@ -41,45 +34,14 @@ func configure(generator, clock: WorldClock, handle: int, can_capture_environmen
 	_configured = bool(result.get("ok", false))
 	return result
 
-func before_day(day: int) -> void:
-	if not _configured:
-		return
-	_sync_day = day
-	if not bool(status().get("worker_managed", false)):
-		_clock.request_simulation_backpressure(&"annual_report_commit_barrier", true)
-	if day > 0 and day % _clock.days_per_year() == 0:
-		_boundary_day = day
-		_boundary_input_sent = false
-		_clock.request_simulation_backpressure(&"annual_report_day_barrier", true)
-
 func poll() -> void:
 	if not _configured:
 		return
-	if _sync_day >= 0:
-		_ext.commit_annual_reports(_sync_day)
 	var state: Dictionary = _ext.get_annual_report_status()
 	if not bool(state.get("ok", false)):
 		return
-	if int(state.get("last_day", -1)) >= _sync_day:
-		_clock.request_simulation_backpressure(&"annual_report_commit_barrier", false)
-	# The ordinary driver freezes day - 1. At the year fence, explicitly
-	# supply the first new-year input after the old year is sealed so its
-	# already-fixed reward can commit without advancing the visible calendar.
-	if _boundary_day >= 0 and bool(state.get("worker_managed", false)) \
-			and int(state.get("last_day", -1)) >= _boundary_day - 1 \
-			and int(state.get("last_day", -1)) < _boundary_day and not _boundary_input_sent:
-		if _can_capture_environment.is_valid() and not _can_capture_environment.call(_boundary_day):
-			return
-		var captured: Dictionary = _generator.publish_environment_through(
-			_boundary_day, _clock.season_phase_for_day(_boundary_day))
-		_boundary_input_sent = bool(captured.get("ok", false))
-	if _boundary_day >= 0 and int(state.get("last_day", -1)) >= _boundary_day \
-			and not bool(state.get("reward_pending", false)):
-		_clock.request_simulation_backpressure(&"annual_report_day_barrier", false)
-		_boundary_day = -1
 	var report_id: int = int(state.get("ready_report_id", 0))
-	if _boundary_day < 0 and report_id > 0 and report_id != _last_announced \
-			and _clock.day_index() >= report_id * _clock.days_per_year():
+	if report_id > 0 and report_id != _last_announced:
 		_last_announced = report_id
 		report_ready.emit(report_id)
 
@@ -99,7 +61,7 @@ func snapshot(report_id: int) -> Dictionary:
 func history(offset: int = 0, limit: int = 64) -> Dictionary:
 	return _ext.get_annual_report_history(offset, limit) if _configured else {"ok": false, "reports": []}
 
-func mark_presented(report_id: int) -> void:
-	if _configured:
-		_ext.mark_annual_report_presented(report_id)
-		_last_announced = 0
+func mark_presented(report_id: int) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "admitted": false, "code": "annual_unconfigured", "report_id": report_id}
+	return _ext.mark_annual_report_presented(report_id)

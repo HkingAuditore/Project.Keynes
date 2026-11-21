@@ -54,8 +54,7 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.missing_domain_mask = out.required_domain_mask & ~out.implemented_domain_mask;
     out.completion_gate_missing_domain_mask = _completion_gate_missing_domain_mask.load(std::memory_order_acquire);
     out.active_gate_blocked = _active_gate_blocked.load(std::memory_order_acquire);
-    out.requested_authority_mask =
-        _requested_authority_mask.load(std::memory_order_acquire);
+    out.requested_authority_mask = control.requested_authority_mask;
     out.authoritative_domain_mask = control.authoritative_domain_mask;
     out.active_evidence_mask =
         _active_evidence_mask.load(std::memory_order_acquire);
@@ -91,11 +90,6 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.gameplay_effect_pending = _gameplay_effect_pending.load(std::memory_order_acquire);
     out.gameplay_effect_terminal = _gameplay_effect_terminal.load(std::memory_order_acquire);
     out.gameplay_effect_state_hash = _gameplay_effect_state_hash.load(std::memory_order_acquire);
-    out.visual_intent_generation = _visual_intent_generation.load(std::memory_order_acquire);
-    out.visual_intent_count = _visual_intent_count.load(std::memory_order_acquire);
-    out.visual_full_refresh = _visual_full_refresh.load(std::memory_order_acquire);
-    out.snapshot_publish_throttled_count =
-        _snapshot_publish_throttled_count.load(std::memory_order_relaxed);
     out.worker_fault_count = _worker_fault_count.load(std::memory_order_relaxed);
     out.completed_days = _completed_days.load(std::memory_order_relaxed);
     out.day_stage_count = _last_day_stage_count.load(std::memory_order_acquire);
@@ -443,14 +437,6 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.state_hash = _state_hash.load(std::memory_order_acquire);
     out.last_commit_produced_at_us = _last_commit_produced_at_us.load(
         std::memory_order_acquire);
-    out.last_visual_publish_at_us = _last_visual_publish_us.load(
-        std::memory_order_acquire);
-    if (out.last_visual_publish_at_us != 0) {
-        const uint64_t now = now_us();
-        out.snapshot_staleness_ms = now >= out.last_visual_publish_at_us
-            ? static_cast<double>(now - out.last_visual_publish_at_us) / 1000.0
-            : 0.0;
-    }
     out.ui_input_to_feedback_ms = _ui_input_to_feedback_ms.load(
         std::memory_order_acquire);
     out.visual_apply_ms = _visual_apply_ms.load(std::memory_order_acquire);

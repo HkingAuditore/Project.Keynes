@@ -1,5 +1,6 @@
 #include "world_ext.h"
 #include "building_visual_cache.h"
+#include "building_visual_instance_selection.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -2149,34 +2150,6 @@ void encode_ground(const GroundInstance &g, float cell_scale, float *dst) {
     dst[15] = (float(g.kind) + 0.5f) / 16.0f;
 }
 
-// Marks at most `cap` entries, lowest rank first; ties at the cutoff resolve
-// in input order. Returns the kept count.
-size_t select_by_rank(const std::vector<float> &ranks, size_t cap, std::vector<uint8_t> &keep) {
-    keep.assign(ranks.size(), 1);
-    if (ranks.size() <= cap) {
-        return ranks.size();
-    }
-    std::vector<float> sorted = ranks;
-    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(cap), sorted.end());
-    const float cutoff = sorted[cap];
-    size_t below = 0;
-    for (float r : ranks) {
-        if (r < cutoff) ++below;
-    }
-    size_t ties = cap - below;
-    size_t kept = 0;
-    for (size_t n = 0; n < ranks.size(); ++n) {
-        bool take = ranks[n] < cutoff;
-        if (!take && ranks[n] == cutoff && ties > 0) {
-            take = true;
-            --ties;
-        }
-        keep[n] = take ? 1 : 0;
-        kept += take ? 1U : 0U;
-    }
-    return kept;
-}
-
 } // namespace
 
 godot::Dictionary DCWorldExt::bake_building_visual_chunk(godot::Dictionary knobs) {
@@ -2301,7 +2274,7 @@ godot::Dictionary DCWorldExt::bake_building_visual_chunk(godot::Dictionary knobs
         ranks.push_back(b.rank);
     }
     std::vector<uint8_t> keep_mask;
-    const size_t body_keep = select_by_rank(ranks, static_cast<size_t>(instance_cap), keep_mask);
+    const size_t body_keep = building_visual::select_by_rank(ranks, static_cast<size_t>(instance_cap), keep_mask);
 
     const float cell_scale = 1.0f / float(std::max(1, cell_count - 1));
     PackedFloat32Array buffer;
@@ -2353,6 +2326,12 @@ godot::Dictionary DCWorldExt::bake_building_visual_chunk(godot::Dictionary knobs
 }
 
 namespace {
+
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+constexpr bool kBuildingVisualThreaded = false;
+#else
+constexpr bool kBuildingVisualThreaded = true;
+#endif
 
 // A single cell never needs the chunk fair-share budget.
 constexpr int kUnboundedCellCap = 1 << 24;
@@ -2532,7 +2511,7 @@ struct BuildingVisualCacheState {
         lots = po.lot_total;
     }
 
-    void worker_main() {
+    void plan_queued(std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max()) {
         PlanOutputs po;
         std::vector<int32_t> types;
         std::vector<int64_t> counts;
@@ -2547,10 +2526,12 @@ struct BuildingVisualCacheState {
             int plan_quality = 1;
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                work_cv.wait(lock, [this] { return stop || !queue.empty(); });
-                if (stop) {
+                if constexpr (kBuildingVisualThreaded) {
+                    work_cv.wait(lock, [this] { return stop || !queue.empty(); });
+                } else if (queue.empty() || std::chrono::steady_clock::now() >= deadline) {
                     return;
                 }
+                if (stop) return;
                 cell = queue.front();
                 queue.pop_front();
                 auto it = cells.find(cell);
@@ -2612,7 +2593,9 @@ struct BuildingVisualCacheState {
 
     void start_worker() {
         stop = false;
-        worker = std::thread([this] { worker_main(); });
+        if constexpr (kBuildingVisualThreaded) {
+            worker = std::thread([this] { plan_queued(); });
+        }
     }
 
     void stop_worker() {
@@ -2625,7 +2608,6 @@ struct BuildingVisualCacheState {
             worker.join();
         }
         std::lock_guard<std::mutex> lock(mutex);
-        stop = false;
         in_flight = 0;
         idle_cv.notify_all();
     }
@@ -2857,6 +2839,9 @@ void NativeBuildingVisualCache::set_quality(int quality) {
 
 godot::PackedInt32Array NativeBuildingVisualCache::take_ready_chunks() {
     BuildingVisualCacheState &s = *_state;
+    if constexpr (!kBuildingVisualThreaded) {
+        s.plan_queued(std::chrono::steady_clock::now() + std::chrono::microseconds(1500));
+    }
     PackedInt32Array out;
     std::lock_guard<std::mutex> lock(s.mutex);
     out.resize(static_cast<int64_t>(s.ready_list.size()));
@@ -2932,7 +2917,7 @@ godot::Dictionary NativeBuildingVisualCache::build_chunk(int chunk_id, int insta
             lots += c.lots;
         }
         std::vector<uint8_t> keep;
-        body_keep = select_by_rank(ranks, static_cast<size_t>(std::max(0, instance_cap)), keep);
+        body_keep = building_visual::select_by_rank(ranks, static_cast<size_t>(std::max(0, instance_cap)), keep);
         decal_keep = std::min(decal_total, static_cast<size_t>(std::max(0, instance_cap)) * 2U);
         buffer.resize(static_cast<int64_t>(body_keep) * 16);
         decal_buffer.resize(static_cast<int64_t>(decal_keep) * 16);
@@ -2974,8 +2959,13 @@ godot::Dictionary NativeBuildingVisualCache::build_chunk(int chunk_id, int insta
 
 bool NativeBuildingVisualCache::wait_idle(int timeout_msec) {
     BuildingVisualCacheState &s = *_state;
+    const auto timeout = std::chrono::milliseconds(std::max(0, timeout_msec));
+    if constexpr (!kBuildingVisualThreaded) {
+        s.plan_queued(std::chrono::steady_clock::now() + timeout);
+        return s.queue.empty();
+    }
     std::unique_lock<std::mutex> lock(s.mutex);
-    return s.idle_cv.wait_for(lock, std::chrono::milliseconds(std::max(0, timeout_msec)),
+    return s.idle_cv.wait_for(lock, timeout,
             [&s] { return s.queue.empty() && s.in_flight == 0; });
 }
 

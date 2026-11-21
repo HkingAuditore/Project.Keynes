@@ -199,9 +199,7 @@ func get_gm_capabilities(host) -> Dictionary:
 		"commands": host._gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
-			{"id": "ui.suppress_popups", "label": "屏蔽事件与报告弹窗", "group": "界面"},
 			{"id": "ui.hide_all_except_gm", "label": "关闭所有界面（保留 GM）", "group": "界面"},
-			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
@@ -309,12 +307,8 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 	match toggle_id:
 		"simulation.paused":
 			return {"ok": true, "enabled": host._world_clock.paused}
-		"ui.suppress_popups":
-			return {"ok": true, "enabled": host._gm_suppress_popups}
 		"ui.hide_all_except_gm":
-			return {"ok": true, "enabled": host._gm_hide_all_except_gm}
-		"simulation.climate_worker_authority":
-			return {"ok": true, "enabled": host.runtime_climate_authority_enabled}
+			return {"ok": true, "enabled": bool(host.player_confirmation_view().get("hide_popups", false))}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": host._gm_click_claim_territory_enabled}
 		"system.autosave":
@@ -433,16 +427,11 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 
 func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 	match toggle_id:
-		"ui.suppress_popups":
-			host._gm_suppress_popups = enabled
-			host.gm_toggle_changed.emit(toggle_id, enabled)
-			var response: Dictionary = host._gm_ok("事件与报告弹窗已%s。" % ("屏蔽" if enabled else "恢复"), false, -1)
-			response["enabled"] = host._gm_suppress_popups
-			return response
 		"ui.hide_all_except_gm":
-			host._gm_hide_all_except_gm = enabled
-			host.gm_toggle_changed.emit(toggle_id, enabled)
-			return host._gm_ok("界面已%s（GM 保留）。" % ("关闭" if enabled else "恢复"), false, -1)
+			var receipt: Dictionary = host.submit_player_confirmation("popup_policy", int(enabled))
+			if not bool(receipt.get("ok", false)):
+				return host._gm_error(String(receipt.get("code", "")), "弹窗设置未受理。")
+			return host._gm_ok("弹窗设置已排队。", true, int(receipt.effective_day))
 		"simulation.paused":
 			if host._world_clock == null:
 				return host._gm_error("clock_unavailable", "时钟尚未就绪。")
@@ -452,8 +441,6 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 						host._runtime_last_fault_diagnostics.get("fault_code", "faulted")))
 			host._world_clock.pause(enabled)
 			host.on_clock_running_changed(not enabled)
-		"simulation.climate_worker_authority":
-			host.set_runtime_climate_authority_enabled(enabled)
 		"simulation.click_claim_territory":
 			return host._gm_set_click_claim_territory_enabled(enabled)
 		"system.autosave":
@@ -467,7 +454,7 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 		"visual.day_night":
 			host.set_day_night_enabled(enabled)
 		"visual.fog_of_war":
-			host.set_fog_of_war_enabled(enabled)
+			return host.set_fog_of_war_enabled(enabled)
 		"visual.water_effect":
 			if not host._gm_call_renderer_toggle("set_water_effect_enabled", enabled):
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
@@ -778,7 +765,7 @@ func _web_barrier_diag(host) -> Dictionary:
 			"environment_ring_pending", "environment_frames_ahead",
 			# 累计耗时区分后台计算、输入交接、保存和暂停。
 			"worker_time_execute_us", "worker_time_input_wait_us",
-			"worker_time_environment_wait_us", "worker_time_main_tail_wait_us",
+			"worker_time_environment_wait_us",
 			"worker_time_input_retry_wait_us",
 			"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
 			"worker_time_overhead_us", "worker_time_paused_us",
@@ -791,20 +778,12 @@ func _web_barrier_diag(host) -> Dictionary:
 			out[key] = graph[key]
 	# 时钟侧限流状态不在 graph 字典里，直接取。
 	if host._world_clock != null:
-		out["worker_lead_days"] = host._world_clock.get_worker_lead_days() \
-			if host._world_clock.has_method("get_worker_lead_days") else 0
-		out["max_worker_lead_days"] = host._world_clock.get_max_worker_lead_days() \
-			if host._world_clock.has_method("get_max_worker_lead_days") else 0
-		out["lead_blocked_frames"] = host._world_clock.get_lead_blocked_frame_count() \
-			if host._world_clock.has_method("get_lead_blocked_frame_count") else 0
 		out["worker_lag_days"] = host._world_clock.get_worker_lag_days() \
 			if host._world_clock.has_method("get_worker_lag_days") else 0
 		out["max_worker_lag_days"] = host._world_clock.get_max_worker_lag_days() \
 			if host._world_clock.has_method("get_max_worker_lag_days") else 0
 		out["lag_blocked_frames"] = host._world_clock.get_lag_blocked_frame_count() \
 			if host._world_clock.has_method("get_lag_blocked_frame_count") else 0
-	out["environment_prefetch_days"] = host._environment_prefetch_days_active
-	out["environment_lead_budget_days"] = host._max_worker_lead_days
 	out["web_worker"] = host._web_worker_requested()
 	# web worker 的启动结论 + 内联回退状态。这两项让"为什么没起"不用再 grep 日志：
 	#   web_worker_start_code == ""            → 还没走到启动（世界还没生成完）

@@ -123,7 +123,6 @@ custom_minimum_size = Vector2(124, 0)
 [node name="Percent" type="Button" parent="Center/Paper/Margin/Column/Modes"]
 unique_name_in_owner = true
 layout_mode = 2
-focus_mode = 0
 custom_minimum_size = Vector2(0, 50)
 theme_type_variation = &"PKIconButton"
 theme_override_font_sizes/font_size = 20
@@ -133,7 +132,6 @@ size_flags_horizontal = 3
 [node name="Absolute" type="Button" parent="Center/Paper/Margin/Column/Modes"]
 unique_name_in_owner = true
 layout_mode = 2
-focus_mode = 0
 custom_minimum_size = Vector2(0, 50)
 theme_type_variation = &"PKIconButton"
 theme_override_font_sizes/font_size = 20

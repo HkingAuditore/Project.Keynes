@@ -310,7 +310,10 @@ func generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 	var final_res: Dictionary = PkmapIOScript.native_result_from_payload(payload, header)
 	if _generator._terrain_generator == null:
 		_generator._terrain_generator = TerrainGeneratorScript.new(_generator)
+	var frame_gate = _generator._loading_frames
 	var map: MapData = await _generator._terrain_generator.assemble_native_result(final_res, cfg)
+	if frame_gate.canceled:
+		return null
 	if map == null:
 		push_error("[native_generation/pkmap] assemble_native_result 失败；中止，不回退程序生成")
 		_generator._native_generation_base_report = {
@@ -424,7 +427,10 @@ func generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	}
 	if _generator._terrain_generator == null:
 		_generator._terrain_generator = TerrainGeneratorScript.new(_generator)
+	var frame_gate = _generator._loading_frames
 	var map: MapData = await _generator._terrain_generator.assemble_native_result(final_res, cfg)
+	if frame_gate.canceled:
+		return null
 	if map == null:
 		push_warning("[native_generation] final result invalid（装配失败）；中止生成")
 		return null
@@ -624,7 +630,7 @@ func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 	}
 
 
-# Fast-tick perf opt (A)：weather_refresh_stride 跳日时复用的活跃 fronts 快照。
+# 活跃天气前沿的显示快照。
 # 正常日 refresh_daily 结束时写入；跳日分支直接返回此快照，保持 renderer 显示
 # 不抖动，同时完全跳过 transpiration / albedo / vegetation / weather→map 反馈
 # 以及 baker 的增量重烘。
@@ -754,7 +760,6 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_generator._last_climate_breakdown.clear()
 	_generator._current_season = -1
 	_generator._weather_stage_b_call_index = -1
-	_generator._native_daily_last_weather_embed_day = -1000000
 	# 阶段 2：新一代地图的纬度/海拔变了，静态 wind baseline 缓存必须失效重算。
 	_generator._native_wind_baseline_cache = PackedFloat32Array()
 	_generator._native_wind_baseline_cache_map = null
@@ -1119,9 +1124,7 @@ func get_runtime_perf_snapshot(detail_level: int = 0) -> Dictionary:
 	# P1：环境帧发布者的 GDScript 侧账本（C++ 侧看不到谁在打包）。
 	snapshot["environment_publish_callsite_mask"] = _generator._environment_publish_callsite_mask
 	snapshot["environment_publish_count"] = _generator._environment_publish_count
-	snapshot["environment_publish_suppressed"] = _generator._environment_publish_suppressed
 	snapshot["environment_publish_orphan_day"] = _generator._environment_publish_orphan_day
-	snapshot["environment_publisher_callsite"] = _generator._worker_environment_publisher_callsite
 	snapshot["environment_frames_ahead"] = maxi(0,
 		int(snapshot.get("simulation_environment_day", 0)) \
 		- int(snapshot.get("simulation_committed_day", 0)))

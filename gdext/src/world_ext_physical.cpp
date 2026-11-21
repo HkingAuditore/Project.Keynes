@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -485,7 +486,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const double grid_s = std::sqrt(double(n_cells) / 15000.0);
     double diffuse_w = 0.0;
     if (momentum_diffuse_w_daily > 0.0) {
-        diffuse_w = 1.0 - std::pow(1.0 - momentum_diffuse_w_daily, wind_elapsed_days);
+        diffuse_w = 1.0 - simulation_math::pow(1.0 - momentum_diffuse_w_daily, wind_elapsed_days);
         diffuse_w *= grid_s * grid_s;
         if (diffuse_w > 0.5) diffuse_w = 0.5;
     }

@@ -22,7 +22,7 @@ func _run() -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	root.get_node("GameFlow").set_session({"new_game_config": config.to_dictionary()})
 	_expect("inline formal session configures", host.configure_session({"kind": "new_game", "config": config.to_dictionary()}).get("ok", false))
 	var saves := root.get_node("GameSave")
@@ -58,6 +58,13 @@ func _run() -> void:
 	var pending := report.duplicate(true)
 	pending["inline_day_pending"] = true
 	_expect("a partial inline day still blocks formal capture", saves._worker_idle_blocker(pending) == "inline_day_pending")
+	clock.set_speed(10.0)
+	_expect("inline day 6 can be admitted while the clock runs", host._admit_runtime_calendar(7) == 6)
+	clock.set_speed(0.0)
+	host._process(0.0)
+	_expect("zero clock speed leaves the admitted inline day unstarted", ext.runtime_committed_day() == 5)
+	clock.set_speed(1.0)
+	clock.pause(true)
 	await _inline_day(host, clock, 6)
 	var expected_hash := str(ext.get_economy_state_hash())
 	_expect("source session closes", (await host.close_world()).get("ok", false))
@@ -67,7 +74,7 @@ func _run() -> void:
 	restored.runtime_economy_auto_pod_active = true
 	root.add_child(restored)
 	restored.configure(null, null, clock)
-	restored.set_climate_authority_override("force_on")
+
 	_expect("inline saved session prepares", restored.configure_session({"kind": "load_game", "slot_id": "manual_2"}).get("ok", false))
 	saves.bind_runtime(restored, clock, null)
 	await restored.generate_world()
@@ -79,7 +86,7 @@ func _run() -> void:
 	var receipts: Array = restored_ext.poll_country_command_receipts(0, 100).get("receipts", [])
 	_expect("the saved rename has a durable result", not receipts.is_empty())
 	for repeat in 2:
-		_expect("formal same-policy restart succeeds", restored.set_climate_authority_override("force_on").get("ok", false))
+		_expect("formal same-policy restart succeeds", restored.restart_runtime_executor().get("ok", false))
 		_expect("formal restart retains the committed name", restored_ext.get_country_snapshot(handle).get("country_name", "") == "Restart Country")
 		_expect("formal restart retains Country business state", restored_ext.get_country_worker_read_view(0).get("state_hash", 0) == country_hash)
 		_expect("formal restart retains unclaimed results", restored_ext.poll_country_command_receipts(0, 100).get("receipts", []) == receipts)
@@ -112,7 +119,7 @@ func _run() -> void:
 
 func _inline_day(host: WorldRuntimeHost, clock: WorldClock, day: int) -> void:
 	clock.current_day = float(day + 1)
-	host._on_clock_day_changed(day + 1)
+	host._admit_runtime_calendar(day + 1)
 	host._process(0.0)
 	await process_frame
 	var ext: Object = host.generator().get_data_core_world_ext()

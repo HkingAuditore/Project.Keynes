@@ -39,25 +39,6 @@
 
 namespace pk {
 
-void NativeSimulationHost::complete_main_boundary_service(MainBoundaryClient client) noexcept {
-    const uint32_t bit = main_boundary_client_bit(client);
-    {
-        // Pair predicate publication with the worker's check-to-wait
-        // transition. Atomics alone can lose this notification before
-        // wait_for enters its wait, leaving the 5 ms timeout to wake it.
-        std::lock_guard<std::mutex> control_lock(_control_mutex);
-        uint32_t observed = _main_boundary_service_requested.load(
-            std::memory_order_acquire);
-        while ((observed & bit) != 0) {
-            if (_main_boundary_service_requested.compare_exchange_weak(observed,
-                    observed & ~bit, std::memory_order_acq_rel,
-                    std::memory_order_acquire))
-                break;
-        }
-    }
-    _control_cv.notify_all();
-}
-
 NativeSimulationHost::ControlState NativeSimulationHost::control_state() const {
     ControlState out;
     out.state = _state.load(std::memory_order_acquire);
@@ -66,7 +47,11 @@ NativeSimulationHost::ControlState NativeSimulationHost::control_state() const {
     out.authority_ready = authority.ready;
     out.interactive = _interactive.load(std::memory_order_acquire);
     out.authoritative_domain_mask = authority.granted_mask;
+    out.requested_authority_mask = _requested_authority_mask.load(std::memory_order_acquire);
     out.committed_day = _committed_day.load(std::memory_order_acquire);
+    if (_calendar_suspended.load(std::memory_order_acquire))
+        out.player_advance_through = _player_confirmation.advance_through.load(std::memory_order_acquire);
+    out.player_confirmation = std::atomic_load(&_player_confirmation.published);
     return out;
 }
 
@@ -112,13 +97,9 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 
 NativeSimulationHost::NativeSimulationHost(uint64_t previous_country_session_epoch)
     : _country_worker_session_epoch(std::max<uint64_t>(1u, previous_country_session_epoch)) {
-    _pod_visual_intents.reserve(RUNTIME_DOMAIN_INTENT_CAPACITY);
     _pod_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
     for (auto &sequence : _producer_sequences) {
         sequence.store(0, std::memory_order_relaxed);
-    }
-    for (uint64_t i = 0; i < RUNTIME_COMMAND_QUEUE_CAPACITY; ++i) {
-        _command_slots[i].sequence.store(i, std::memory_order_relaxed);
     }
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     _fault_injection_armed.store(false, std::memory_order_relaxed);
@@ -221,6 +202,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         std::vector<RuntimeCommandReceipt> &day_receipts,
         uint64_t admitted_submit_order) {
     RuntimeDayCommit commit;
+    _executor_day_tail.reset();
     // native_daily_inline 分域计时开关。worker 日恒为 false，所以这条 worker 路径
     // 不为任何探针付账（只有每 stage 一次原子读）。内联日一切都在调用线程上，
     // 累加器不需要原子。
@@ -240,7 +222,6 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         commit.preflight_ok = 0;
         return commit;
     }
-    _pod_visual_intents.clear();
     // INPUT_CAPTURE is a real freeze boundary, not merely a validation bit.
     // 仅复用本次调用中、同一不可变对象已经由 Climate kernel 计算的完整哈希。
     // 不按 day/generation 猜测跨调用内容；重试或未跑 Climate 时仍完整计算。
@@ -395,6 +376,30 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     if (try_fault_injection("day.plan.after")) {
         commit.preflight_ok = 0;
     }
+    // Both executors reach this table only after the daily domains settle.
+    // Keep the table in gameplay order, before either caller publishes the day.
+    using DayTailStage = const char *(NativeSimulationHost::*)(DayExecution &);
+    static constexpr DayTailStage day_tail_stages[]{
+        &NativeSimulationHost::stage_natural_resource_recovery,
+        &NativeSimulationHost::stage_bio_occupancy,
+        &NativeSimulationHost::stage_military,
+        &NativeSimulationHost::stage_vision,
+        &NativeSimulationHost::stage_effect_adapter,
+        &NativeSimulationHost::stage_trigger_delivery,
+        &NativeSimulationHost::stage_ideology_projection,
+        &NativeSimulationHost::stage_era_advancement,
+        &NativeSimulationHost::stage_prepare_environment,
+        &NativeSimulationHost::stage_narrative,
+    };
+    if (commit.preflight_ok != 0) {
+        for (const auto stage : day_tail_stages) {
+            if (const char *error = (this->*stage)(day)) {
+                set_fault(error);
+                commit.preflight_ok = 0;
+                break;
+            }
+        }
+    }
     return commit;
 }
 
@@ -440,10 +445,10 @@ void NativeSimulationHost::set_fault(const char *code) {
         _economy_pod_authority.state_hash(), std::memory_order_release);
     // Godot console often drops stderr-only; always surface the code.
     const std::string fault_line = pk::log_format(
-        "[runtime-worker-fault] code=%s day=%d ring=%d",
+        "[runtime-worker-fault] code=%s day=%lld ring=%zu",
         std::string(value).c_str(),
-        _committed_day.load(std::memory_order_relaxed),
-        static_cast<int64_t>(_environment_ring.size()));
+        static_cast<long long>(_committed_day.load(std::memory_order_relaxed)),
+        _environment_ring.size());
     pk::log_line(fault_line);
     pk::log_line(fault_line, true);
 }

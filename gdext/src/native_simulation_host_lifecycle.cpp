@@ -33,9 +33,8 @@ bool NativeSimulationHost::resume_same_world_executor(double speed, bool paused)
     // Only the executor is being replaced. Stores, clocks, cursors, receipts,
     // and the current day's frozen input belong to the same world.
     {
-        std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
-        RuntimeCommandPacket queued;
-        while (pop_command(queued)) _executor_pending_commands.push_back(std::move(queued));
+        std::lock_guard<std::mutex> lock(_command_producer_mutex);
+        drain_command_inbox(_executor_pending_commands);
     }
     seed_executor_command_orders();
     _economy_pending_command_count.store(static_cast<uint32_t>(
@@ -48,7 +47,7 @@ bool NativeSimulationHost::resume_same_world_executor(double speed, bool paused)
     publish_authority_grant(lifetime_granted_mask() &
         _requested_authority_mask.load(std::memory_order_acquire));
     _stop_requested.store(false, std::memory_order_release);
-    return launch_executor(paused);
+    return install_era_advancement_setup() && launch_executor(paused);
 }
 
 bool NativeSimulationHost::launch_executor(bool paused) {

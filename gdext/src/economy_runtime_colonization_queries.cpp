@@ -224,8 +224,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             token = trace_hash_mix(token, value);
         token &= 0x7fffffffffffffffULL;
         if (token == 0) token = 1;
-        if (_colonization_quote_cache.size() >= COLONIZATION_QUOTE_CACHE_LIMIT &&
-            !has_pending_family_expedition_player_command()) {
+        if (_colonization_quote_cache.size() >= COLONIZATION_QUOTE_CACHE_LIMIT) {
             _colonization_quote_cache.clear();
             _colonization_quote_index.clear();
             _colonization_quote_route_cells.clear();

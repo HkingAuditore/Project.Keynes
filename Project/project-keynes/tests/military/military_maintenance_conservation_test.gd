@@ -38,12 +38,12 @@
 
 extends SceneTree
 
+const RuntimeScenario = preload("res://tests/runtime/background_daily_military_scenario.gd")
+
 const SEED := 20260727
 const MAP_W := 60
 const MAP_H := 40
 const FOREIGN_COUNT := 3
-const PIPELINE_DEPTH := 3
-const MAX_BARRIER_PULSES_PER_DAY := 4096
 const BARE_DAYS := 30
 const DEFAULT_WORLD_DAYS := 30
 const DEFAULT_BUILD_WAIT_DAYS := 60
@@ -365,6 +365,20 @@ func _section_world() -> void:
 	_expect("world: PKMI encodes", not bytes.is_empty(), "bytes=%d" % bytes.size())
 	if bytes.is_empty():
 		return
+	var save := get_root().get_node("GameSave")
+	if OS.get_environment("PK_SAVE_DIR").is_empty():
+		_expect("world: the test save directory is set", false)
+		return
+	get_root().get_node("GameFlow").set_session({"new_game_config": _host._new_game_config})
+	save.bind_runtime(_host, _clock, null)
+	var checkpoint: Dictionary = await save.request_manual_save("manual_1")
+	_expect("world: full save at the military checkpoint", bool(checkpoint.get("ok", false)), str(checkpoint))
+	if not bool(checkpoint.get("ok", false)):
+		return
+	var stopped := await RuntimeScenario.stop_at_committed_day(_host, self)
+	_expect("world: executor retires at the committed day for PKMI restore", stopped)
+	if not stopped:
+		return
 	var restored: Dictionary = _facade.restore_state(bytes)
 	_expect("world: PKMI restores", bool(restored.get("ok", false)), str(restored))
 	_expect("world: restore preserves state_hash",
@@ -373,6 +387,20 @@ func _section_world() -> void:
 	_expect("world: re-encode is byte identical", _facade.encode_state() == bytes,
 		"%d vs %d bytes" % [(_facade.encode_state() as PackedByteArray).size(),
 			bytes.size()])
+
+	var closed := await _host.close_world()
+	_expect("world: checkpoint session closes", bool(closed.get("ok", false)))
+	var load_request := _host.configure_session({"kind": "load_game", "slot_id": "manual_1"})
+	_expect("world: checkpoint load is accepted", bool(load_request.get("ok", false)), str(load_request))
+	if not bool(load_request.get("ok", false)):
+		return
+	save.bind_runtime(_host, _clock, null)
+	await _host.generate_world()
+	_expect("world: checkpoint resumes on the same settled day", _host.is_runtime_ready_for_ticks()
+		and int(_host.get_generator().get_runtime_control_state().get("simulation_committed_day", -1)) == _day)
+	if not _host.is_runtime_ready_for_ticks():
+		return
+	_facade = _host.get_generator().get_military_facade()
 
 	# --- continue after the restore --------------------------------------
 	var continued_bad := PackedStringArray()
@@ -401,6 +429,7 @@ func _boot_world() -> bool:
 	_clock.initial_speed = 50.0
 	_clock.debug_step_log = false
 	get_root().add_child(_clock)
+	_clock.set_process(false)
 	_clock.set_speed(50.0)
 	_clock.pause(true)
 	_host = WorldRuntimeHost.new()
@@ -428,7 +457,7 @@ func _boot_world() -> bool:
 		return false
 	var runtime_ext = _host.get_generator().get_data_core_world_ext() \
 		if _host.get_generator().has_method("get_data_core_world_ext") else null
-	if _host.runtime_climate_authority_enabled and runtime_ext != null \
+	if _host._native_environment_active and runtime_ext != null \
 			and runtime_ext.has_method("set_runtime_clock"):
 		runtime_ext.set_runtime_clock(false, 50.0)
 	return true
@@ -437,55 +466,15 @@ func _boot_world() -> bool:
 func _advance_to(target_day: int) -> bool:
 	if not _economy_is_healthy():
 		return false
-	var generator := _host.get_generator()
 	while _day < target_day:
-		_day += 1
-		_clock.current_day = float(_day)
-		var phase := _clock.season_phase_for_day(_day)
-		if _host.runtime_climate_authority_enabled:
-			var capacity_deadline := Time.get_ticks_usec() + 60000000
-			while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
-					and Time.get_ticks_usec() < capacity_deadline:
-				_host._consume_runtime_commit_if_ready()
-				if not _economy_is_healthy():
-					return false
-				await process_frame
-			_host._consume_runtime_commit_if_ready()
-		_host.run_daily_tick(_day, phase)
-		_host.finish_daily_tick(0.0, {})
-		if _host.runtime_climate_authority_enabled:
-			var deadline := Time.get_ticks_usec() + 60000000
-			while Time.get_ticks_usec() < deadline:
-				_host._consume_runtime_commit_if_ready()
-				if not _economy_is_healthy():
-					return false
-				var progress: Dictionary = generator.get_runtime_thread_report()
-				if int(progress.get("simulation_committed_day",
-						progress.get("committed_day", -1))) >= _day - 1 - PIPELINE_DEPTH:
-					break
-				await process_frame
-		var pulses := 0
-		while _has_hard_barrier() and pulses < MAX_BARRIER_PULSES_PER_DAY:
-			_clock.simulation_backpressure_pulse.emit(_day)
-			pulses += 1
-			await process_frame
-			if not _economy_is_healthy():
-				return false
-		if _has_hard_barrier():
-			_expect("hard barrier drains at day %d" % _day, false)
+		if not await RuntimeScenario.settle_clock_day(_host, _clock, self, _day + 1):
+			_expect("formal clock settles day %d" % (_day + 1), false)
 			_advance_failed = true
 			return false
+		_day += 1
 		if not _economy_is_healthy():
 			return false
-	for _frame in range(64):
-		_host._consume_runtime_commit_if_ready()
-		if _facade == null or int(_facade.report().get("last_step_day", -1)) \
-				>= _day - 1 - PIPELINE_DEPTH:
-			break
-		await process_frame
-		if not _economy_is_healthy():
-			return false
-	return _economy_is_healthy()
+	return true
 
 
 func _economy_is_healthy() -> bool:
@@ -500,9 +489,7 @@ func _economy_is_healthy() -> bool:
 	return true
 
 
-func _has_hard_barrier() -> bool:
-	return _clock._simulation_backpressure_sources.has(&"country_day_barrier") \
-		or _clock._simulation_backpressure_sources.has(&"economy_day_barrier")
+
 
 
 # ------------------------------------------------------------------ bytes

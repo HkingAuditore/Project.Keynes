@@ -7,6 +7,7 @@
 // 不得 include godot_cpp。这一条约束就是“worker 可用”的全部含义。
 
 #include "runtime_climate_passes.h"
+#include "simulation_math.h"
 #include "parallel_dispatcher.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
@@ -97,7 +98,7 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     float thermal_dt = (float)in.scalars.thermal_dt_days;
     if (thermal_dt < 1.0f) thermal_dt = 1.0f;
     else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
-    const float moisture_relax_eff = 1.0f - std::pow(1.0f - moisture_relax, thermal_dt);
+    const float moisture_relax_eff = 1.0f - simulation_math::pow(1.0f - moisture_relax, thermal_dt);
     const float thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
     const float thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
     const float thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
@@ -119,9 +120,9 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     // dt <= 1 时刻意走"直接取基础 alpha"这一支而不是统一算 1-(1-a)^dt：后者在
     // dt == 1 时会引入一次 pow 往返的末位误差，非加速档就不再逐位一致。
     const float ema_alpha_30 = (thermal_dt <= 1.0f) ? (1.0f / 30.0f)
-        : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
+        : (1.0f - simulation_math::pow(1.0f - 1.0f / 30.0f, thermal_dt));
     const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
-        : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
+        : (1.0f - simulation_math::pow(1.0f - annual_ema_alpha, thermal_dt));
 
     constexpr uint8_t COVER_GLACIER = 2;
 

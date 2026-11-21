@@ -84,6 +84,14 @@ if env["platform"] == "web" and env["wasm_simd"]:
 # flags: the library builders retain the original environment. Hot loops can
 # then inline exact fixed-point helpers across domain source files.
 env = env.Clone()
+# Simulation arithmetic must round the same way on hardware with and without
+# fused multiply-add, including WebAssembly's scalar floating-point operations.
+if env.get("is_msvc", False):
+    env.AppendUnique(CCFLAGS=["/fp:strict"])
+    env.AppendUnique(CFLAGS=["/std:c11"])
+else:
+    env.AppendUnique(CCFLAGS=["-ffp-contract=off"])
+
 if (env["runtime_lto"] and env["platform"] == "windows" and
         env.get("is_msvc", False) and env["optimize"] in ("speed", "speed_trace")):
     env.AppendUnique(CCFLAGS=["/GL"])
@@ -94,6 +102,7 @@ sources = (
     + Glob("src/components/*.cpp")
     + Glob("src/systems/*.cpp")
     + Glob("src/profiles/*.cpp")
+    + Glob("thirdparty/simulation_math/*.c")
 )
 
 # ---------------------------------------------------------------------------

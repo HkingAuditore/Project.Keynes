@@ -48,18 +48,9 @@ func _write_military_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("military")
 	if facade == null or not facade.is_configured():
 		return {"ok": true, "sections": {"pkmi": PackedByteArray()}}
-	var bytes: PackedByteArray = facade.encode_state()
+	var bytes: PackedByteArray = context.get("native_pkmi", PackedByteArray())
 	if bytes.is_empty():
-		# A configured facade that cannot encode is a real failure: writing an
-		# empty section would silently reset every army on the next load.
-		return _result(false, "pkmi_save_failed", "Military state serialization failed")
-	var job = context.get("military_progress")
-	var progress: PackedInt64Array = facade.capture_pending_event_progress() if job == null else PackedInt64Array(job.capture_event_progress())
-	var tail := PackedByteArray()
-	tail.resize(28)
-	tail.encode_u32(0, 0x314a444d) # MDJ1
-	for i in range(3): tail.encode_s64(4 + i * 8, progress[i])
-	bytes.append_array(tail)
+		return _result(false, "pkmi_save_failed", "Military state missing from committed checkpoint")
 	return {"ok": true, "sections": {"pkmi": bytes}}
 
 func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
@@ -79,34 +70,11 @@ func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Di
 		# Save written before the military runtime: start from an empty military
 		# store rather than refusing the load.
 		return {"ok": true, "restored": false, "reason": "pkmi_absent_migration"}
-	if bytes.size() < 28 or bytes.decode_u32(bytes.size() - 28) != 0x314a444d:
-		return _result(false, "military_forwarder_version_mismatch", "军事事件保存游标版本不匹配，需要 MDJ1。")
-	var progress := PackedInt64Array()
-	for i in range(3): progress.append(bytes.decode_s64(bytes.size() - 24 + i * 8))
-	if progress[0] < 0 or progress[1] < -1 or progress[2] < 0:
-		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
-	var result: Dictionary = facade.restore_state(bytes.slice(0, bytes.size() - 28))
+	var result: Dictionary = facade.restore_state(bytes)
 	if not bool(result.get("ok", false)):
 		return _result(false, "pkmi_restore_failed",
 			String(result.get("reason", "Military PKMI restore failed")))
-	var job = context.get("military_progress")
-	if job == null and not facade.restore_pending_event_progress(progress):
-		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
-	if job != null and not job.restore_event_progress(progress):
-		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
-	# AI arming is part of the military store's meaning: after a restore, every
-	# non-player country must be AI again or the armed forces stop planning.
-	var player_handles: PackedInt64Array = facade.ai_player_handles()
-	if player_handles.is_empty():
-		var player_context = sections.get("player_context", {})
-		var start_cell := int(player_context.get("start_cell", -1)) \
-			if player_context is Dictionary else -1
-		var country = context.country
-		var handle := int(country.cell_summary(start_cell).get("country_handle", 0)) \
-			if country != null and start_cell >= 0 else 0
-		if handle != 0:
-			player_handles = PackedInt64Array([handle])
-	facade.arm_ai(player_handles)
+	# PKMI owns the AI flags and decision dates, including for newly created countries.
 	return result
 
 func _can_country_ai_provider(context: Dictionary) -> Dictionary:

@@ -650,11 +650,10 @@ RuntimeDayCommit NativeSimulationHost::execute_shadow_day(DayExecution &day) {
                                                std::memory_order_release);
         if (first_stage_fallback[i] == '\0') break;
     }
-    _pod_visual_intents.clear();
     _pod_receipts.clear();
     const bool pipeline_ok = _pod_pipeline.execute_day(
         diagnostic_context, climate_environment, country_snapshot.get(),
-        commit, _pod_visual_intents, _pod_receipts);
+        commit, _pod_receipts);
     const RuntimeDomainPipelineReport &pipeline_report = _pod_pipeline.report();
     RuntimeEconomyPodSnapshot economy_snapshot;
     _pod_pipeline.snapshot_economy(economy_snapshot);

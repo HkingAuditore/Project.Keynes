@@ -128,12 +128,8 @@ func _gm_set_click_claim_territory_enabled(host, enabled: bool) -> Dictionary:
 		if host._generator == null or host._world_clock == null or host._current_map == null:
 			return host._gm_error("world_not_ready", "世界尚未生成，无法启用点击接管。")
 		if host._player_country_handle == 0:
-			host._player_country_handle = host._resolve_player_country_handle()
-		if host._player_country_handle == 0:
 			return host._gm_error("player_country_unavailable", "无法解析玩家国家，点击接管未启用。")
 	host._gm_click_claim_territory_enabled = enabled
-	if not enabled:
-		host._gm_click_claim_pending_days.clear()
 	host.gm_toggle_changed.emit("simulation.click_claim_territory", enabled)
 	return {"ok": true, "code": "ok", "enabled": enabled,
 		"message": "点击地块接管领土已%s。" % ("启用" if enabled else "关闭")}
@@ -145,38 +141,36 @@ func _gm_claim_selected_cell(host, cell: HexCell) -> void:
 	if host._current_map == null or cell_idx < 0 or cell_idx >= host._current_map.cell_count():
 		host._gm_emit_claim_result(host._gm_error("invalid_cell", "所选地块无效。"), cell_idx)
 		return
-	if cell_idx < host._current_map.is_water_arr.size() and host._current_map.is_water_arr[cell_idx] != 0:
-		host._gm_emit_claim_result(host._gm_error("water_territory", "水域不能成为国家领土。"), cell_idx)
-		return
-	if host._player_country_handle == 0:
-		host._player_country_handle = host._resolve_player_country_handle()
 	if host._player_country_handle == 0:
 		host._gm_emit_claim_result(host._gm_error("player_country_unavailable", "无法解析玩家国家。"), cell_idx)
 		return
-	var facade = host._generator.get_country_facade() if host._generator != null \
-		and host._generator.has_method("get_country_facade") else null
-	if facade == null:
-		host._gm_emit_claim_result(host._gm_error("country_facade_unavailable", "国家运行时尚未就绪。"), cell_idx)
-		return
-	var current_handle = int(facade.cell_summary(cell_idx).get("country_handle", 0))
-	if current_handle == host._player_country_handle:
-		host._gm_emit_claim_result({"ok": true, "code": "already_owned", "queued": false,
-			"effective_day": -1, "message": "地块 #%d 已属于玩家国家。" % cell_idx,
-			"data": {}}, cell_idx)
-		return
-	var current_day = host._world_clock.day_index() if host._world_clock != null else -1
-	var pending_day = int(host._gm_click_claim_pending_days.get(cell_idx, -1))
-	if pending_day >= current_day:
-		host._gm_emit_claim_result({"ok": true, "code": "already_queued", "queued": true,
-			"effective_day": pending_day, "message": "地块 #%d 已排队等待接管。" % cell_idx,
-			"data": {}}, cell_idx)
-		return
 	var result = host.execute_gm_command("country.transfer_territory", {
 		"cell": cell_idx, "country_handle": host._player_country_handle})
-	if bool(result.get("ok", false)) and bool(result.get("queued", false)):
-		host._gm_click_claim_pending_days[cell_idx] = int(result.get("effective_day", current_day + 1))
+	var ids: PackedInt64Array = result.get("data", {}).get("request_ids", PackedInt64Array())
+	if bool(result.get("ok", false)) and not ids.is_empty():
+		host._gm_territory_requests[ids[0]] = cell_idx
 	host._gm_emit_claim_result(result, cell_idx)
 
+
+
+func consume_territory_receipts(host) -> void:
+	if host._gm_territory_requests.is_empty():
+		return
+	var country = host._generator.get_country_facade()
+	if country == null:
+		return
+	var batch: Dictionary = country.poll_worker_command_receipts(host._gm_territory_publication)
+	host._gm_territory_publication = int(batch.get("last_publication_sequence", host._gm_territory_publication))
+	for row: Dictionary in batch.get("receipts", []):
+		var request := int(row.request_id)
+		if not host._gm_territory_requests.has(request):
+			continue
+		var cell := int(host._gm_territory_requests[request])
+		host._gm_territory_requests.erase(request)
+		var succeeded := String(row.status) == "Committed"
+		var result: Dictionary = host._gm_ok("领土已接管。", false, int(row.effective_day)) if succeeded \
+			else host._gm_error(String(row.reason), "接管被拒绝：%s" % String(row.reason), row)
+		_gm_emit_claim_result(host, result, cell)
 
 
 func _gm_emit_claim_result(host, raw_result: Dictionary, cell_idx: int) -> void:

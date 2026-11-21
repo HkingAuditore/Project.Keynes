@@ -41,6 +41,18 @@ func reset(country_handle: int = 0) -> void:
 	_last_settlement = {}
 
 
+func apply_committed_view(view: Dictionary) -> void:
+	_country_handle = view.country_handle
+	_days = view.days
+	_income = view.income
+	_expense = view.expense
+	_cash_days = view.cash_days
+	_cash_values = view.cash_values
+	_settlement_days = view.settlement_days
+	_settlements = view.settlements
+	_last_settlement = view.last_settlement
+
+
 func country_handle() -> int:
 	return _country_handle
 

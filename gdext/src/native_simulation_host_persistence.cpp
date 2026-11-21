@@ -7,6 +7,7 @@
 #endif
 #include "native_simulation_host.h"
 #include "native_simulation_day_context.h"
+#include "native_simulation_host_military.h"
 #include "runtime_module_descriptor.h"
 #include <cassert>
 #include "country_core_apply.h"
@@ -35,6 +36,7 @@
 #endif
 #include "native_simulation_host_support.h"
 #include "runtime_control_wakeup.h"
+#include "runtime_world_environment.h"
 namespace pk {
 namespace {
 void d7_append_u32(std::vector<uint8_t> &out, uint32_t value) {
@@ -219,7 +221,14 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_ECONOMY_ASSET |
                                  RUNTIME_SAVE_SECTION_ECONOMY_POD |
                                  RUNTIME_SAVE_SECTION_ECONOMY_ECP2 |
-                                 RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT)) != 0) {
+                                 RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT |
+                                 RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT |
+                                 RUNTIME_SAVE_SECTION_MILITARY_TERRAIN |
+                                 RUNTIME_SAVE_SECTION_SEASON_HISTORY |
+                                 RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION |
+                                 RUNTIME_SAVE_SECTION_VISION |
+                                 RUNTIME_SAVE_SECTION_BIO |
+                                 RUNTIME_SAVE_SECTION_CLIMATE_CALENDAR)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -235,13 +244,14 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     size_t cursor = SCALAR_HEADER_SIZE;
     const size_t payload_end = size - sizeof(uint64_t);
     uint32_t command_count = 0;
-    if (!read_u32(cursor, command_count) ||
-        command_count > RUNTIME_COMMAND_QUEUE_CAPACITY) {
+    if (!read_u32(cursor, command_count) || cursor + 4u > payload_end ||
+        command_count > (payload_end - cursor - 4u) / 52u) {
         error = "runtime_bundle_command_count_invalid";
         return false;
     }
     cursor += 4u;
     parsed.pending_commands.reserve(command_count);
+    uint32_t regular_commands = 0;
     for (uint32_t i = 0; i < command_count; ++i) {
         RuntimeCommandPacket packet;
         RuntimeCommandEnvelope &envelope = packet.envelope;
@@ -276,6 +286,11 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         if (envelope.payload_size > 0) {
             std::memcpy(packet.payload.data(), bytes + cursor,
                         envelope.payload_size);
+        }
+        if (!is_country_day_observation(envelope) &&
+                ++regular_commands > RUNTIME_COMMAND_QUEUE_CAPACITY) {
+            error = "runtime_bundle_command_count_invalid";
+            return false;
         }
         cursor += envelope.payload_size;
         parsed.pending_commands.push_back(std::move(packet));
@@ -891,6 +906,30 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    // The optional Effect inbox follows the final authority section. Its
+    // payload is already covered by the whole bundle checksum.
+    for (auto [section, bytes_out] : {
+            std::make_pair(RUNTIME_SAVE_SECTION_MILITARY_TERRAIN, &parsed.military_terrain_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_SEASON_HISTORY, &parsed.season_history_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION, &parsed.player_confirmation_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_VISION, &parsed.vision_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_BIO, &parsed.bio_bytes),
+            std::make_pair(RUNTIME_SAVE_SECTION_CLIMATE_CALENDAR, &parsed.climate_calendar_bytes)}) {
+        if ((parsed.section_mask & section) == 0u) continue;
+        uint32_t length = 0;
+        if (payload_end - cursor < 4u || !read_u32(cursor, length) ||
+                length > payload_end - cursor - 4u) {
+            error = "runtime_bundle_producer_cursor_invalid";
+            return false;
+        }
+        cursor += 4u;
+        bytes_out->assign(bytes + cursor, bytes + cursor + length);
+        cursor += length;
+    }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT) != 0u) {
+        parsed.effect_transport_bytes.assign(bytes + cursor, bytes + payload_end);
+        cursor = payload_end;
+    }
     if (cursor != payload_end) {
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
@@ -917,7 +956,6 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     // GPU/Object state is intentionally outside the runtime bundle. The next
     // committed visual batch must therefore be a reconstructible full refresh
     // after any successful restore, even when the visual ring had no drop.
-    _visual_full_refresh.store(true, std::memory_order_release);
     if (try_fault_injection("restore.swap.before")) {
         error = "restore_swap_fault_injected_before";
         _pending_restore_bundle = RuntimeSaveBundle{};
@@ -965,6 +1003,18 @@ void NativeSimulationHost::build_save_bundle(
     bundle->environment_day = _environment_day.load(std::memory_order_acquire);
     bundle->time_debt_days = _time_debt_days.load(std::memory_order_acquire);
     bundle->pending_commands = pending_commands;
+    for (const auto &day : _country_observations)
+        for (const auto &observation : day.second) {
+            auto packet = encode_country_packet(observation);
+            packet.envelope.producer_id = COUNTRY_OBSERVATION_ARCHIVE_PRODUCER;
+            bundle->pending_commands.push_back(std::move(packet));
+        }
+    if (!_country_observations.empty()) {
+        // The archive has no live submit-order lane. Save the two inboxes
+        // in their original order so restore can rebuild the tie-break.
+        std::stable_sort(bundle->pending_commands.begin(), bundle->pending_commands.end(),
+            [](const auto &a, const auto &b) { return a.submit_order < b.submit_order; });
+    }
     for (size_t i = 0; i < _producer_sequences.size(); ++i) {
         bundle->producer_sequences[i] = _producer_sequences[i].load(
             std::memory_order_acquire);
@@ -1029,13 +1079,13 @@ void NativeSimulationHost::build_save_bundle(
                            existing->second.effective_day != receipt.effective_day) {
                     const auto &previous = existing->second;
                     if (previous.code == CountryCommandReceiptCode::ACCEPTED &&
-                        receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION &&
-                        receipt.producer_id == COUNTRY_AI_PRODUCER_ID &&
+                        _country_command_terminals.find(receipt.request_id) !=
+                            _country_command_terminals.end() &&
                         previous.producer_id == receipt.producer_id &&
                         previous.sequence == receipt.sequence &&
-                        previous.effective_day == receipt.effective_day &&
-                        receipt.reason == "country_ai_superseded_by_worker") {
-                        // 只读副本保留旧接收记录；Host 的 AI 收尾终态优先。
+                        previous.effective_day == receipt.effective_day) {
+                        // A restored read replica can retain the admission
+                        // receipt after the Host completes the same command.
                         existing->second = receipt;
                         continue;
                     }
@@ -1043,7 +1093,7 @@ void NativeSimulationHost::build_save_bundle(
                     return;
                 }
             }
-            for (const RuntimeCommandPacket &packet : pending_commands) {
+            for (const RuntimeCommandPacket &packet : bundle->pending_commands) {
                 if (packet.envelope.domain !=
                         static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
                     packet.envelope.request_id == 0) {
@@ -1053,7 +1103,8 @@ void NativeSimulationHost::build_save_bundle(
                 if (existing == states.end()) {
                     CountryCommandReceipt accepted;
                     accepted.request_id = packet.envelope.request_id;
-                    accepted.producer_id = packet.envelope.producer_id;
+                    accepted.producer_id = is_country_day_observation(packet.envelope)
+                        ? 0 : packet.envelope.producer_id;
                     accepted.sequence = packet.envelope.sequence;
                     accepted.effective_day = packet.envelope.effective_day;
                     accepted.generation = checkpoint.generation;
@@ -1164,6 +1215,8 @@ void NativeSimulationHost::build_save_bundle(
             return;
         }
         bundle->section_mask |= RUNTIME_SAVE_SECTION_EFFECT;
+        bundle->effect_transport_bytes = encode_effect_transport();
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT;
     }
     if (_ideology_pod_configured) {
         std::string ideology_save_error;
@@ -1231,6 +1284,22 @@ void NativeSimulationHost::build_save_bundle(
         bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_ECP2;
     }
 
+    if (_world_environment && _executor_military) {
+        bundle->military_terrain_bytes = _executor_military->capture_terrain();
+        if (!bundle->military_terrain_bytes.empty())
+            bundle->section_mask |= RUNTIME_SAVE_SECTION_MILITARY_TERRAIN;
+    }
+    if (_world_environment) {
+        bundle->season_history_bytes = _world_environment->capture_season_history(bundle->committed_day);
+        if (!bundle->season_history_bytes.empty())
+            bundle->section_mask |= RUNTIME_SAVE_SECTION_SEASON_HISTORY;
+        bundle->player_confirmation_bytes = encode_player_confirmation(bundle->committed_day);
+        if (!bundle->player_confirmation_bytes.empty())
+            bundle->section_mask |= RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION;
+    }
+
+    capture_world_continuation(*bundle);
+
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
     // carries an explicit ABI/section mask, followed by a bounded pending
     // command tail and producer cursors. The checksum remains the final eight
@@ -1246,7 +1315,9 @@ void NativeSimulationHost::build_save_bundle(
             &bundle->trigger_bytes, &bundle->modifier_bytes, &bundle->events_bytes,
             &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
             &bundle->ideology_bytes, &bundle->economy_pod_bytes,
-            &bundle->economy_ecp2_bytes}) {
+            &bundle->economy_ecp2_bytes, &bundle->effect_transport_bytes,
+            &bundle->military_terrain_bytes, &bundle->season_history_bytes, &bundle->player_confirmation_bytes,
+            &bundle->vision_bytes, &bundle->bio_bytes, &bundle->climate_calendar_bytes}) {
         const size_t limit = section == &bundle->economy_ecp2_bytes
             ? std::numeric_limits<uint32_t>::max() : 64u * 1024u * 1024u;
         if (section->size() > limit) {
@@ -1507,6 +1578,15 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(ecp2_checksum);
     }
 
+    for (const auto *section : {&bundle->military_terrain_bytes, &bundle->season_history_bytes, &bundle->player_confirmation_bytes,
+            &bundle->vision_bytes, &bundle->bio_bytes, &bundle->climate_calendar_bytes}) {
+        if (section->empty()) continue;
+        append_u32_le(static_cast<uint32_t>(section->size()));
+        append_bytes(section->data(), section->size());
+    }
+    if (!bundle->effect_transport_bytes.empty()) {
+        append_bytes(bundle->effect_transport_bytes.data(), bundle->effect_transport_bytes.size());
+    }
     const uint64_t checksum = economy_save_hash_bytes(
         bundle->bytes.data(), bundle->bytes.size());
     bundle->checksum = checksum;

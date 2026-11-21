@@ -183,11 +183,11 @@ func _queue_player_scene() -> Error:
 func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, frames,
 		request: ResourceRequest) -> void:
 	await frames.next_frame()
-	var load_progress: Array = []
+	if id != _transition_id:
+		return
+	overlay.set_progress("preparing", 0.02)
 	while id == _transition_id and not request.finished:
-		ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE, load_progress)
-		var stage_frac := float(load_progress[0]) if not load_progress.is_empty() else 0.0
-		overlay.set_progress("preparing", clampf(stage_frac * 0.12, 0.02, 0.12))
+		overlay.set_progress("preparing", lerpf(0.02, 0.15, request.progress))
 		await frames.next_frame()
 	if id!=_transition_id:return
 	var scene := request.result as PackedScene

@@ -107,6 +107,7 @@
         {{24, 6}, "family.split_parents", EconomyFieldEncoding::CanonicalRecord, 1}};
     EconomyTrackedScalar<int64_t> _next_family_founding_offer_id{_metadata_changes,
         {{15, 31}, "family.next_founding_offer_id", EconomyFieldEncoding::I64, 8}, 1};
+    godot::Array _family_founding_receipts;
     std::vector<int32_t> _family_founding_offer_by_cell;
     bool _family_founding_offer_index_dirty = true;
     EconomyKeyedVariableRecords<FamilyModifierBinding> _family_modifier_bindings{{{24, 2}, "family_variable.family_modifier_bindings", EconomyFieldEncoding::CanonicalRecord, 1}};
@@ -887,9 +888,11 @@
     std::vector<int32_t> _worker_resource_last_day;
     std::vector<uint8_t> _worker_resource_was_live;
     std::vector<uint8_t> _worker_resource_cell_live;
+    std::vector<int32_t> _worker_resource_live_cells;
     std::vector<uint8_t> _worker_resource_mirror_mark;
     std::vector<int32_t> _worker_resource_mirror_cells;
     std::vector<float> _worker_resource_regen_factors;
+    int32_t _worker_resource_recovered_cells = 0;
     bool advance_worker_resource_reserves(const RuntimeEconomyDayInput &input,
                                           std::string &error);
     void fold_worker_resource_deltas();

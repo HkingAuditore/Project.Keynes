@@ -455,7 +455,7 @@ func _adapter_float(host, method: String, idx: int, fallback: float) -> float:
 func _history_values(host, cell: HexCell) -> Array:
 	var h = host
 	var values = []
-	var hist: Array = cell.vegetation_history if not cell.vegetation_history.is_empty() else cell.biome_history
+	var hist: PackedByteArray = _season_history(host, cell)
 	for raw in hist:
 		values.append(float(raw))
 	if values.size() < 2:
@@ -631,12 +631,19 @@ static func resource_density_band(v: float) -> String:
 func _history_badges(host, cell: HexCell) -> Array:
 	var h = host
 	var badges = []
-	var hist: Array = cell.vegetation_history if not cell.vegetation_history.is_empty() else cell.biome_history
+	var hist: PackedByteArray = _season_history(host, cell)
 	var start = maxi(hist.size() - 6, 0)
 	for i in range(start, hist.size()):
 		badges.append({"text": VegetationType.name_cn(int(hist[i])), "accent": UITokens.ECO})
 	return badges
 
+
+func _season_history(host, cell: HexCell) -> PackedByteArray:
+	var map: MapData = host._map
+	if map == null:
+		return cell.biome_history if cell.vegetation_history.is_empty() else cell.vegetation_history
+	var vegetation := map.season_history_for(cell, true)
+	return map.season_history_for(cell, false) if vegetation.is_empty() else vegetation
 
 
 func _densify_series(host, source: Array, target_count: int) -> Array:

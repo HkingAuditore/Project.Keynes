@@ -1,4 +1,5 @@
 #include "native_simulation_host.h"
+#include "runtime_era_reward.h"
 #include <algorithm>
 #include <cassert>
 
@@ -9,10 +10,13 @@ bool NativeSimulationHost::configure_annual_development(uint64_t handle,int64_t 
     std::lock_guard<std::mutex> lock(_annual_mutex);
     if(_annual_ledger.configured()){
         if(_annual_ledger.country_handle()!=handle||_annual_ledger.days_per_year()!=length){error="annual_session_identity_changed";return false;}
-        return _annual_ledger.update_profile(profile,error);
+        if (!_annual_ledger.update_profile(profile,error)) return false;
+        publish_annual_view_locked();
+        return true;
     }
     if(!_annual_ledger.configure(handle,length,day,profile,error))return false;
     _annual_ledger.seed(baseline,country);_annual_ledger.commit_day(day,country,0);_annual_queued_reward=0;
+    publish_annual_view_locked();
     _annual_country.store(handle,std::memory_order_release);
     _annual_enabled.store(true,std::memory_order_release);return true;
 }
@@ -22,7 +26,9 @@ void NativeSimulationHost::publish_annual_economy(const AnnualEconomyFacts &fact
 }
 void NativeSimulationHost::commit_annual_day(int64_t day,const AnnualCountryFacts &country,uint64_t draws){
     if(!annual_development_enabled())return;
-    std::lock_guard<std::mutex> lock(_annual_mutex);_annual_ledger.commit_day(day,country,draws);
+    std::lock_guard<std::mutex> lock(_annual_mutex);
+    _annual_ledger.commit_day(day,country,draws);
+    publish_annual_view_locked();
 }
 void NativeSimulationHost::commit_annual_worker_day(int64_t day){
     if(!annual_development_enabled()||!domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)||!domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))return;
@@ -69,29 +75,112 @@ void NativeSimulationHost::settle_annual_worker_reward(const RuntimeIdeologyPodS
     if(!annual_development_enabled())return;
     std::lock_guard<std::mutex> lock(_annual_mutex);
     for(const auto &receipt:snapshot.receipts)if(receipt.producer_id==ANNUAL_REWARD_PRODUCER){
-        if(receipt.status==RuntimeIdeologyPodReceiptStatus::SETTLED)_annual_ledger.settle_reward(receipt.sequence);
+        if (receipt.status == RuntimeIdeologyPodReceiptStatus::SETTLED) {
+            const auto before = _annual_ledger.revision();
+            _annual_ledger.settle_reward(receipt.sequence);
+            _annual_history_changed |= before != _annual_ledger.revision();
+        }
         // A rejected internal grant is visible as pending, never as paid.
     }
 }
 bool NativeSimulationHost::annual_pending_reward(AnnualDevelopmentReport &out) const{
     std::lock_guard<std::mutex> lock(_annual_mutex);for(const auto &r:_annual_ledger.reports())if(!r.reward_settled){out=r;return true;}return false;
 }
-void NativeSimulationHost::settle_annual_reward(uint64_t sequence){std::lock_guard<std::mutex> lock(_annual_mutex);_annual_ledger.settle_reward(sequence);}
+void NativeSimulationHost::settle_annual_reward(uint64_t sequence) {
+    std::lock_guard<std::mutex> lock(_annual_mutex);
+    _annual_history_changed |= _annual_ledger.settle_reward(sequence);
+    publish_annual_view_locked();
+}
 void NativeSimulationHost::annual_status(uint64_t &revision,int64_t &day,uint64_t &ready,bool &pending,size_t &count) const{
-    std::lock_guard<std::mutex> lock(_annual_mutex);revision=_annual_ledger.revision();day=_annual_ledger.last_day();ready=0;pending=false;count=_annual_ledger.reports().size();
-    ready=_annual_ledger.ready_report_id();pending=_annual_ledger.has_pending_reward();
+    const auto view = std::atomic_load(&_published_annual);
+    revision = view ? view->revision : 0;
+    day = view ? view->day : -1;
+    ready = view ? view->ready : 0;
+    pending = view && view->reward_pending;
+    count = view ? view->history->size() : 0;
 }
 bool NativeSimulationHost::annual_report(uint64_t id,AnnualDevelopmentReport &out) const{
-    std::lock_guard<std::mutex> lock(_annual_mutex);for(const auto &r:_annual_ledger.reports())if(r.id==id){out=r;return true;}return false;
+    const auto view = std::atomic_load(&_published_annual);
+    if (view) for (const auto &report : *view->history) if (report.id == id) {
+        out = report;
+        return true;
+    }
+    return false;
 }
 std::vector<AnnualDevelopmentReport> NativeSimulationHost::annual_history(uint32_t offset,uint32_t limit) const{
-    std::lock_guard<std::mutex> lock(_annual_mutex);std::vector<AnnualDevelopmentReport> result;const auto &rows=_annual_ledger.reports();limit=std::min<uint32_t>(limit,64);
-    for(size_t i=offset;i<rows.size()&&result.size()<limit;++i)result.push_back(rows[rows.size()-1-i]);return result;
+    const auto view = std::atomic_load(&_published_annual);
+    std::vector<AnnualDevelopmentReport> result;
+    if (!view) return result;
+    const auto &rows = *view->history;
+    limit = std::min<uint32_t>(limit, 64);
+    for (size_t i = offset; i < rows.size() && result.size() < limit; ++i)
+        result.push_back(rows[rows.size() - 1 - i]);
+    return result;
 }
-bool NativeSimulationHost::mark_annual_presented(uint64_t id){std::lock_guard<std::mutex> lock(_annual_mutex);return _annual_ledger.mark_presented(id);}
+const char *NativeSimulationHost::mark_annual_presented(uint64_t id) {
+    if (!annual_development_enabled()) return "annual_unconfigured";
+    AnnualDevelopmentReport report;
+    if (!annual_report(id, report)) return "annual_report_not_found";
+    if (!report.reward_settled) return "annual_report_reward_pending";
+    if (report.presented) return nullptr;
+    if (!annual_worker_managed()) {
+        std::lock_guard<std::mutex> lock(_annual_mutex);
+        if (!_annual_ledger.mark_presented(id)) return "annual_report_not_found";
+        _annual_history_changed = true;
+        publish_annual_view_locked();
+        return nullptr;
+    }
+    {
+        int64_t day = 0;
+        auto admission = admit_command(day);
+        if (!admission.accepted() || _stop_requested.load(std::memory_order_acquire) ||
+                state() == RuntimeWorkerState::STOPPED || state() == RuntimeWorkerState::FAULTED)
+            return "annual_executor_unavailable";
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (std::find(_annual_presentations.begin(), _annual_presentations.end(), id) ==
+                _annual_presentations.end()) _annual_presentations.push_back(id);
+    }
+    if (inline_daily_mode()) service_annual_presentations();
+    else _control_cv.notify_one();
+    return nullptr;
+}
+
+bool NativeSimulationHost::service_annual_presentations() {
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (_annual_presentations.empty()) return false;
+    }
+    std::lock_guard<std::mutex> boundary(_economy_authority_boundary_mutex);
+    std::deque<uint64_t> requests;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        requests.swap(_annual_presentations);
+    }
+    std::lock_guard<std::mutex> lock(_annual_mutex);
+    for (const auto id : requests) _annual_history_changed |= _annual_ledger.mark_presented(id);
+    publish_annual_view_locked();
+    return true;
+}
+
 std::vector<uint8_t> NativeSimulationHost::encode_annual_save() const{std::lock_guard<std::mutex> lock(_annual_mutex);std::vector<uint8_t> bytes;if(_annual_ledger.configured())_annual_ledger.encode(bytes);return bytes;}
 bool NativeSimulationHost::restore_annual_save(const uint8_t *bytes,size_t size,std::string &error){
     std::lock_guard<std::mutex> lock(_annual_mutex);if(!_annual_ledger.restore(bytes,size,error))return false;
+    _annual_history_changed = true;
+    publish_annual_view_locked();
     _annual_country.store(_annual_ledger.country_handle(),std::memory_order_release);_annual_enabled.store(true,std::memory_order_release);_annual_queued_reward=0;return true;
+}
+void NativeSimulationHost::publish_annual_view_locked() {
+    const auto previous = std::atomic_load(&_published_annual);
+    auto view = std::make_shared<AnnualReportPublication>();
+    view->revision = _annual_ledger.revision();
+    view->day = _annual_ledger.last_day();
+    view->ready = _annual_ledger.ready_report_id();
+    view->reward_pending = _annual_ledger.has_pending_reward();
+    const auto &reports = _annual_ledger.reports();
+    view->history = !previous || _annual_history_changed || previous->history->size() != reports.size()
+        ? std::make_shared<const std::vector<AnnualDevelopmentReport>>(reports)
+        : previous->history;
+    _annual_history_changed = false;
+    std::atomic_store(&_published_annual, std::shared_ptr<const AnnualReportPublication>(std::move(view)));
 }
 } // namespace pk

@@ -9,6 +9,7 @@
 // replay order is the only thing that decides determinism (sec 21.5).
 
 #include "military_core.h"
+#include "simulation_math.h"
 #include "military_core_internal.h"
 
 #include <algorithm>
@@ -158,7 +159,7 @@ int64_t sum_lot_value(const MilitaryCore &core, size_t army_slot, bool attack) {
         // v3: fold the *actually delivered* equipment quality into live combat,
         // exactly as refresh_army_cache does for the UI / AI numbers.
         const int64_t eq = lot_equip_factor_q16(type, core._lots.equip_quality_q8[s],
-                                                core._lots.kit_q16[s]);
+                                                core._lots.kit_q16[s], core._lots.partial_equipment[s]);
         const int64_t per = attack ? type.attack_q16 : type.defense_q16;
         sum += mul_q(mul_q(mul_q(core._lots.count[s], per), factor), eq);
     });
@@ -219,8 +220,8 @@ int32_t gauss_q16(uint64_t seed, uint64_t key, int64_t day, int32_t sigma_q16) {
     double u1 = (double)r1 / (double)(1ull << 53);
     const double u2 = (double)r2 / (double)(1ull << 53);
     if (u1 < 1e-12) u1 = 1e-12;
-    const double radius = std::sqrt(-2.0 * std::log(u1));
-    const double value = radius * std::cos(6.283185307179586 * u2);
+    const double radius = std::sqrt(-2.0 * simulation_math::log(u1));
+    const double value = radius * simulation_math::cos(6.283185307179586 * u2);
     const double scaled = value * (double)sigma_q16;
     const double limit = 8.0 * (double)sigma_q16;
     if (scaled > limit) return (int32_t)limit;
@@ -1014,7 +1015,8 @@ void MilitaryCore::capture_cell(int32_t index, const MilitaryWorldDigest &digest
                         const int32_t to = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army,
                                                               previous, _lots.unit_type[(size_t)i],
                                                               _lots.equip_quality_q8[(size_t)i],
-                                                              _lots.kit_q16[(size_t)i]);
+                                                              _lots.kit_q16[(size_t)i],
+                                                              _lots.partial_equipment[(size_t)i]);
                         if (to < 0) return;
                         _lots.count[(size_t)to] += move;
                         _lots.count[(size_t)i] = 0;
@@ -1068,7 +1070,8 @@ void MilitaryCore::retreat_or_annihilate(int32_t army, int32_t from_cell, int32_
             if (_lots.location[i] != army) continue;
             const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, from_cell,
                                                     _lots.country_slot[i], _lots.unit_type[i],
-                                                    _lots.equip_quality_q8[i], _lots.kit_q16[i]);
+                                                    _lots.equip_quality_q8[i], _lots.kit_q16[i],
+                                                    _lots.partial_equipment[i]);
             if (dest < 0) continue;
             _lots.count[(size_t)dest] += _lots.count[i];
             _lots.count[i] = 0;

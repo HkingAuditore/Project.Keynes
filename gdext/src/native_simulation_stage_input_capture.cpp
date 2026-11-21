@@ -47,6 +47,7 @@ bool NativeSimulationHost::stage_input_capture(DayExecution &day, RuntimeDomainP
             commit.preflight_ok = 0;
             return false;
         }
+        apply_fog_commands(day.day_commands);
         stage.work_units = 1;
         stage.completed = 1;
         commit.work_units += stage.work_units;

@@ -1,18 +1,101 @@
-extends "res://tests/runtime/authority_stage_c_client_runner.gd"
+extends Node
+
+var _args := {}
+var _player: PlayerGame
+var _host: WorldRuntimeHost
+var _clock: WorldClock
+var _world_ready := false
+
+
+func _ready() -> void:
+	call_deferred("_begin_formal_session")
+
+
+func _begin_formal_session() -> void:
+	for argument in OS.get_cmdline_user_args():
+		var split := argument.find("=")
+		if split > 0:
+			_args[argument.substr(0, split)] = argument.substr(split + 1)
+	var tree := get_tree()
+	# GameFlow replaces the current scene. Keep this observer in the root.
+	if tree.current_scene == self:
+		tree.current_scene = null
+	var config := NewGameConfig.create_default()
+	config.country.name = "Income Tax Player"
+	config.country.foreign_count = int(_args.get("foreign_count", 3))
+	config.base.map_width = int(_args.get("width", 60))
+	config.base.map_height = int(_args.get("height", 40))
+	config.base.initial_seed = int(_args.get("seed", 20260718))
+	config.apply_land_layout("two")
+	var result: Dictionary = GameFlow.begin_new_game(config)
+	if not bool(result.get("ok", false)):
+		_fail("GameFlow.begin_new_game failed: %s" % JSON.stringify(result))
+		return
+	while not tree.current_scene is PlayerGame:
+		await tree.process_frame
+	_player = tree.current_scene
+	_host = _player.get_node("RuntimeHost") as WorldRuntimeHost
+	_clock = _player.get_node("WorldClock") as WorldClock
+	_host.world_ready.connect(_on_world_ready)
+	if _host.is_runtime_ready_for_ticks():
+		_on_world_ready(null, null, _host.get_generator(), null)
+
+
+func _runtime_report() -> Dictionary:
+	return _host.get_generator().get_runtime_thread_report()
+
+
+func _fail(message: String) -> void:
+	push_error("[income-tax-player] %s" % message)
+	get_tree().quit(2)
+
+
+func _enabled(value) -> bool:
+	return String(value).to_lower() in ["1", "true", "yes", "on"]
+
+
+func _answer_story_prompt(controller: PlayerController) -> bool:
+	var flow = controller.narrative_flow()
+	if not flow.is_locked():
+		return true
+	if not flow.get("_outcome_record").is_empty():
+		flow.on_outcome_acknowledged()
+		return true
+	var offer: Dictionary = controller.narrative_service().active_offer()
+	if offer.is_empty():
+		return true
+	var options: Array = offer.get("options", [])
+	for index in options.size():
+		if not bool(options[index].get("eligible", true)):
+			continue
+		var answer: Dictionary = flow.on_option_chosen(int(offer.offer_id),
+			int(offer.offer_generation), index)
+		if bool(answer.get("ok", false)):
+			print("[income-tax-player/story] %s option=%d day=%d" % [
+				offer.event_id, index, int(answer.effective_day)])
+			return true
+		_fail("story response was rejected: %s" % answer)
+		return false
+	_fail("story offer has no eligible option: %s" % offer.get("event_id", ""))
+	return false
 
 
 func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	if _world_ready:
 		return
 	_world_ready = true
-	_apply_fixed_client_settings()
+	_clock.set_speed(float(_args.get("speed", 50.0)))
+	_clock.pause(false)
 	var generator := _host.get_generator()
 	var country = generator.get_country_facade()
 	var ext = generator.get_data_core_world_ext()
 	var handle := int(ext.get_country_cell_summary(_host._resolve_player_start_cell()).country_handle)
+	var controller := _player.get_node("PlayerController") as PlayerController
 	var started := Time.get_ticks_msec()
 	# Let the production worker establish its writer before the UI-equivalent command.
 	while int(_runtime_report().get("simulation_committed_day", -1)) < 5:
+		if not _answer_story_prompt(controller):
+			return
 		if Time.get_ticks_msec() - started > 30000:
 			_fail("income test worker did not start")
 			return
@@ -24,7 +107,6 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	var consumption_rate := int(_args.get("consumption_rate", -10000))
 	var subsidy_kind := int(_args.get("subsidy_kind", 1))
 	var measurement_started := Time.get_ticks_usec()
-	var controller = _player.get_node("PlayerController")
 	var mixed_fiscal := _enabled(_args.get("mixed_fiscal", "false"))
 	var subsidy_index := subsidy_kind
 	if mixed_fiscal:
@@ -43,6 +125,8 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	var mixed_seen := false
 	var last_observed_day := -1
 	while int(_runtime_report().get("simulation_committed_day", -1)) < day + 50:
+		if not _answer_story_prompt(controller):
+			return
 		var report := _runtime_report()
 		if int(report.get("worker_fault_count", 0)) > 0 or Time.get_ticks_msec() - started > 60000:
 			print("[income-tax-player/economy] %s" % ext.get_economy_report())
@@ -63,7 +147,15 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 		_fail("mixed fiscal fixture never returned unused subsidy and collected income tax together")
 		return
 	_clock.pause(true)
-	_host.on_clock_running_changed(false)
+	while true:
+		var control: Dictionary = ext.get_runtime_control_state()
+		if String(control.get("state", "")) == "PAUSED" \
+				and int(control.get("simulation_committed_day", -1)) == _host._runtime_commit_day:
+			break
+		if Time.get_ticks_msec() - started > 60000:
+			_fail("the final fiscal boundary did not publish: %s" % control)
+			return
+		await get_tree().process_frame
 	var economy: Dictionary = ext.get_economy_report()
 	var fiscal: Dictionary = ext.get_country_fiscal_snapshot(handle)
 	var policy: Dictionary = country.tax_policy_snapshot(handle)

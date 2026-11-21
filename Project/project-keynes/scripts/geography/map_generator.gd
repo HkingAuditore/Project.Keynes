@@ -144,16 +144,12 @@ var _runtime_climate_topology_generation: int = 1
 var _runtime_climate_topology_map_id: int = 0
 var _runtime_climate_neighbor_offsets: PackedInt32Array = PackedInt32Array()
 var _runtime_climate_neighbor_offsets_map_id: int = 0
-var _worker_environment_publisher_callsite: int = 0
-var _save_prefetch_suspend_callback: Callable = Callable()
 var _environment_publish_callsite_mask: int = 0
 var _environment_publish_count: int = 0
-var _environment_publish_suppressed: int = 0
 var _environment_publish_orphan_day: int = -1
 const ENV_CALLSITE_HOST_DAY_CHANGED := 1
 const ENV_CALLSITE_SUS_TICK := 2
 const ENV_CALLSITE_INLINE_DAY := 4
-const ENV_CALLSITE_PREFETCH := 8
 var _last_climate_breakdown: Dictionary = {}
 var _pending_season_refresh: bool = false
 var _season_refresh_in_progress: bool = false
@@ -231,16 +227,14 @@ func mark_runtime_terrain_mirror_dirty() -> void:
 func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 	return _get_native_generation_bridge()._climate_views_from_world(cp)
 var _last_active_fronts: Array[WeatherFront] = [] as Array[WeatherFront]
-var _weather_stride_logged: int = -1
 var _refresh_daily_call_index: int = -1
 var _weather_stage_b_call_index: int = -1
 var _native_daily_hydrology_call_index: int = -1
-var _native_daily_last_weather_embed_day: int = -1000000
 var _typed_fields_migrated: bool = false
 var _sus = null
 var _sus_bootstrap: RefCounted = null
 var _data_core_world: DCWorld = null
-var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
+var _data_core_world_ext: RefCounted = null
 var _gameplay_event_bus: GameplayEventBus = GameplayEventBusScript.new()
 const _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS: int = 12
 var _dc_terrain_mirror_sync_log_count: int = 0
@@ -384,7 +378,6 @@ var _military_registered_graph_active: bool = false
 var _military_registered_graph_mode: int = 0
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
-const SAVE_BOUNDARY_COUNTRY_MAX_SLICES := 8
 const NATIVE_DAILY_CONTINUATION_SLICE_HEADROOM_MS := 3.0
 const BIO_OCCUPANCY_SLICE_CELLS := 2048
 const EFFECT_ACK_CHAIN_MAX_PASSES := 8
@@ -409,10 +402,6 @@ var _deposit_noise_cache: Dictionary = {}
 var _natural_resource_regen_factors_valid: bool = false
 var _natural_resource_regen_factor_prime_ms: float = 0.0
 var _last_natural_resource_report: Dictionary = {}
-const NATURAL_RESOURCE_WILDERNESS_STRIDE: int = 60
-const NATURAL_RESOURCE_LIVE_CATCHUP_MAX_DAYS: int = 5
-var _natural_resource_last_day: PackedInt32Array = PackedInt32Array()
-var _natural_resource_was_live: PackedByteArray = PackedByteArray()
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
 	"cell_temp",
 	"cell_moisture",
@@ -540,18 +529,8 @@ func get_ideology_report() -> Dictionary:
 	return _get_map_rules_initializer().get_ideology_report()
 func get_modifier_report() -> Dictionary:
 	return _get_map_rules_initializer().get_modifier_report()
-func apply_runtime_trigger_snapshot(after_generation: int) -> Dictionary:
-	return _get_map_rules_initializer().apply_runtime_trigger_snapshot(after_generation)
-func apply_runtime_ideology_snapshot(after_generation: int) -> Dictionary:
-	return _get_map_rules_initializer().apply_runtime_ideology_snapshot(after_generation)
-func step_ideology_instance_refresh(day_index: int) -> Dictionary:
-	return _get_map_rules_initializer().step_ideology_instance_refresh(day_index)
-func step_ideology_derived_rebuild(day_index: int) -> Dictionary:
-	return _get_map_rules_initializer().step_ideology_derived_rebuild(day_index)
 func apply_runtime_modifier_snapshot(after_generation: int) -> Dictionary:
 	return _get_map_rules_initializer().apply_runtime_modifier_snapshot(after_generation)
-func apply_runtime_effect_snapshot(after_generation: int) -> Dictionary:
-	return _get_map_rules_initializer().apply_runtime_effect_snapshot(after_generation)
 func get_economy_report() -> Dictionary:
 	return _economy_facade.report() if _economy_facade != null else {"configured": false}
 func get_economy_perf_report() -> Dictionary:
@@ -566,6 +545,8 @@ func set_runtime_qos_threaded(interactive: bool) -> Dictionary:
 	return _get_map_runtime_bridge().set_runtime_qos_threaded(interactive)
 func get_runtime_thread_report() -> Dictionary:
 	return _get_map_runtime_bridge().get_runtime_thread_report()
+func record_runtime_main_step(day: int, step: StringName) -> void:
+	_get_map_runtime_bridge().record_runtime_main_step(day, step)
 func get_runtime_control_state() -> Dictionary:
 	return _get_map_runtime_bridge().get_runtime_control_state()
 func record_runtime_visual_timings(ui_input_to_feedback_ms: float,
@@ -595,14 +576,8 @@ func submit_country_economy_asset_result(result: Dictionary) -> Dictionary:
 	return _get_map_runtime_bridge().submit_country_economy_asset_result(result)
 func submit_runtime_command(command: Dictionary) -> Dictionary:
 	return _get_map_runtime_bridge().submit_runtime_command(command)
-func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
-	return _get_map_runtime_bridge().poll_runtime_commit(after_generation)
-func flush_runtime_economy_resource_writeback() -> Dictionary:
-	return _get_map_runtime_bridge().flush_runtime_economy_resource_writeback()
-func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
-		max_items: int) -> Dictionary:
-	return _get_map_runtime_bridge().consume_runtime_visual_patch(
-		generation, family, cursor, max_items)
+func poll_runtime_commit(after_generation: int = 0, take_days: bool = false) -> Dictionary:
+	return _get_map_runtime_bridge().poll_runtime_commit(after_generation, take_days)
 func request_runtime_save(request_id: int) -> Dictionary:
 	return _get_map_runtime_bridge().request_runtime_save(request_id)
 func poll_runtime_save(request_id: int) -> Dictionary:
@@ -610,8 +585,8 @@ func poll_runtime_save(request_id: int) -> Dictionary:
 func restore_runtime_bundle(bytes: PackedByteArray,
 		external_ecp2: PackedByteArray = PackedByteArray()) -> Dictionary:
 	return _get_map_runtime_bridge().restore_runtime_bundle(bytes, external_ecp2)
-func request_runtime_stop() -> Dictionary:
-	return _get_map_runtime_bridge().request_runtime_stop()
+func request_runtime_stop(preserve_day_boundary: bool = false) -> Dictionary:
+	return _get_map_runtime_bridge().request_runtime_stop(preserve_day_boundary)
 func set_economy_diagnostics_enabled(enabled: bool) -> void:
 	_get_map_runtime_bridge().set_economy_diagnostics_enabled(enabled)
 func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
@@ -624,8 +599,6 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 	return _get_map_runtime_bridge().prepare_economy_save_restore_runtime()
 func finalize_save_restore_runtime() -> Dictionary:
 	return _get_map_runtime_bridge().finalize_save_restore_runtime()
-func advance_save_boundary() -> void:
-	_get_map_runtime_bridge().advance_save_boundary()
 func native_daily_climate_suppressed() -> bool:
 	return _data_core_world_ext != null and _data_core_world_ext.climate_main_thread_suppressed()
 func _runtime_climate_failure(code: String, reason: String = "", day: int = -1) -> Dictionary:
@@ -644,20 +617,15 @@ func _runtime_climate_neighbor_offsets_for_map(map: MapData) -> PackedInt32Array
 	return _get_runtime_climate_capture()._runtime_climate_neighbor_offsets_for_map(map)
 func _runtime_climate_trace_has_older_pending(day: int) -> bool:
 	return _get_runtime_climate_capture()._runtime_climate_trace_has_older_pending(day)
-func set_worker_environment_publisher(callsite: int) -> void:
-	_get_runtime_climate_capture().set_worker_environment_publisher(callsite)
-func set_save_prefetch_suspend_callback(callback: Callable) -> void:
-	_get_runtime_climate_capture().set_save_prefetch_suspend_callback(callback)
-func _notify_save_prefetch_suspend() -> void:
-	_get_runtime_climate_capture()._notify_save_prefetch_suspend()
-func worker_environment_publisher_callsite() -> int:
-	return _get_runtime_climate_capture().worker_environment_publisher_callsite()
 func environment_publish_callsite_mask() -> int:
 	return _get_runtime_climate_capture().environment_publish_callsite_mask()
 func environment_publish_diagnostics() -> Dictionary:
 	return _get_runtime_climate_capture().environment_publish_diagnostics()
 func _runtime_environment_publish_allowed(callsite: int, day: int) -> bool:
 	return _get_runtime_climate_capture()._runtime_environment_publish_allowed(callsite, day)
+func initialize_world_environment(notice_history: Array = []) -> Dictionary:
+	return _get_runtime_climate_capture().initialize_world_environment(notice_history)
+
 func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		callsite: int = 0) -> Dictionary:
 	return _get_runtime_climate_capture().capture_runtime_inputs_for_worker(day, phase, callsite)
@@ -796,8 +764,8 @@ var _runtime_climate_distribute_reported: bool = false
 var _runtime_climate_field_reported: bool = false
 var _runtime_climate_worker_weather_embed_day: int = -1000000
 var _runtime_climate_worker_stage_b_call_index: int = -1
-func publish_worker_climate_visuals(defer_upload: bool = false) -> Dictionary:
-	return _get_mapgen_native_daily_runtime().publish_worker_climate_visuals(defer_upload)
+func publish_worker_climate_visuals(defer_upload: bool = false, commit: Dictionary = {}) -> Dictionary:
+	return _get_mapgen_native_daily_runtime().publish_worker_climate_visuals(defer_upload, commit)
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		authoritative: bool) -> Dictionary:
 	return _get_runtime_climate_capture()._build_runtime_climate_stage_knobs(map, day, authoritative)
@@ -857,24 +825,10 @@ func _native_daily_season_refresh_state_snapshot() -> Dictionary:
 	return _get_native_daily_bundle_builder()._native_daily_season_refresh_state_snapshot()
 func _native_daily_weather_active_bootstrap_allowed(readiness: Dictionary) -> bool:
 	return _get_native_daily_bundle_builder()._native_daily_weather_active_bootstrap_allowed(readiness)
-func _native_daily_weather_cadence_stride(cp_now) -> int:
-	return _get_native_daily_bundle_builder()._native_daily_weather_cadence_stride(cp_now)
-func _native_daily_weather_cadence_due(cp_now, ctx: SusTickContext) -> bool:
-	return _get_native_daily_bundle_builder()._native_daily_weather_cadence_due(cp_now, ctx)
 func _native_daily_split_weather_node_enabled(cp_now) -> bool:
 	return _get_native_daily_bundle_builder()._native_daily_split_weather_node_enabled(cp_now)
 func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
 	return _get_native_daily_bundle_builder()._native_daily_weather_clock_values(default_phase)
-func _build_native_daily_weather_super_knobs(
-		ctx: SusTickContext,
-		map: MapData,
-		world: WorldData,
-		phase_default: float,
-		stage_b_knobs: Dictionary,
-		runtime_hydrology_active: bool,
-		commit_side_effects: bool,
-		force_weather_embed: bool) -> Dictionary:
-	return _get_native_daily_bundle_builder()._build_native_daily_weather_super_knobs(ctx, map, world, phase_default, stage_b_knobs, runtime_hydrology_active, commit_side_effects, force_weather_embed)
 func _native_daily_boundary_contract(bundle: Dictionary, commit_side_effects: bool) -> Dictionary:
 	return _get_native_daily_bundle_builder()._native_daily_boundary_contract(bundle, commit_side_effects)
 func _native_daily_static_bundle_cache_key(map: MapData, cp_now) -> String:
@@ -890,9 +844,8 @@ func _build_native_daily_bundle(
 		commit_side_effects: bool = false,
 		sea_ice_dt_cap_days: float = 30.0,
 		commit_sea_ice_side_effects: bool = true,
-		force_weather_embed: bool = false,
 		defer_heavy_pass_knobs: bool = false) -> Dictionary:
-	return _get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, _world, commit_side_effects, sea_ice_dt_cap_days, commit_sea_ice_side_effects, force_weather_embed, defer_heavy_pass_knobs)
+	return _get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, _world, commit_side_effects, sea_ice_dt_cap_days, commit_sea_ice_side_effects, defer_heavy_pass_knobs)
 func _merge_native_daily_slice_patch_local(patch: Dictionary) -> void:
 	_get_native_daily_bundle_builder()._merge_native_daily_slice_patch_local(patch)
 func _native_daily_effective_yield_nodes(cp) -> PackedInt32Array:
@@ -1123,20 +1076,6 @@ func economy_live_cells() -> PackedInt32Array:
 	if _data_core_world_ext != null:
 		return _data_core_world_ext.get_economy_live_cells()
 	return PackedInt32Array()
-func run_natural_resource_pass_for_runtime_commit(day: int) -> Dictionary:
-	return _get_map_resource_initializer().run_natural_resource_pass_for_runtime_commit(day)
-func _reset_natural_resource_cadence(n_cells: int, last_day: int) -> void:
-	_get_map_resource_initializer()._reset_natural_resource_cadence(n_cells, last_day)
-func _ensure_natural_resource_cadence(n_cells: int, day: int) -> void:
-	if _natural_resource_last_day.size() != n_cells \
-			or _natural_resource_was_live.size() != n_cells:
-		_reset_natural_resource_cadence(n_cells, maxi(day - 1, 0))
-func _natural_resource_dt_for_cell(cell: int, day: int, is_live: bool) -> int:
-	return _get_map_resource_initializer()._natural_resource_dt_for_cell(cell, day, is_live)
-func collect_natural_resource_pass_cells(day: int, live_cells: PackedInt32Array) -> Dictionary:
-	return _get_map_resource_initializer().collect_natural_resource_pass_cells(day, live_cells)
-func _commit_natural_resource_pass_days(day: int, cell_indices: PackedInt32Array, live_set: Dictionary) -> void:
-	_get_map_resource_initializer()._commit_natural_resource_pass_days(day, cell_indices, live_set)
 func run_natural_resource_pass_scheduled(map_ref, day: int, live_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	return _get_map_resource_initializer().run_natural_resource_pass_scheduled(map_ref, day, live_cells)
 func catchup_natural_resources_for_live_cells(day: int) -> Dictionary:
@@ -1396,15 +1335,18 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 	_get_terrain_generator()._log_bio_occupancy_seed(knobs, seed_res, landmass_count, province_count)
 func _log_bio_occupancy_seed_native(report: Dictionary, knobs: Dictionary) -> void:
 	_get_terrain_generator()._log_bio_occupancy_seed_native(report, knobs)
-func _bio_landmass_summary_gdscript(occupancy: PackedInt32Array,
-		landmass: PackedInt32Array, knobs: Dictionary,
-		out_landmass: PackedInt32Array, out_classes: PackedStringArray,
-		out_foods: PackedStringArray) -> void:
-	_get_terrain_generator()._bio_landmass_summary_gdscript(occupancy, landmass, knobs, out_landmass, out_classes, out_foods)
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 		day_index: int = 0, slice_enabled: bool = false,
 		bio_slice_cells: int = BIO_OCCUPANCY_SLICE_CELLS) -> Dictionary:
-	return _get_terrain_generator().run_bio_occupancy_pass_native(map_ref, run_diffusion, day_index, slice_enabled, bio_slice_cells)
+	return _get_terrain_generator().run_bio_occupancy_pass_native(map_ref, run_diffusion,
+		day_index, slice_enabled, bio_slice_cells)
+func _resolve_bio_observation_country_handle() -> int:
+	if _bio_observation_country_handle == 0 and _country_facade != null:
+		var start_cell := int(gameplay_start_report().get("cell", -1))
+		if start_cell >= 0:
+			_bio_observation_country_handle = int(_country_facade.cell_summary(
+				start_cell).get("country_handle", 0))
+	return _bio_observation_country_handle
 static func _is_permanent_landform(t: int) -> bool:
 	return t == TerrainType.TERRAIN.OASIS \
 			or t == TerrainType.TERRAIN.DELTA \
@@ -1545,8 +1487,6 @@ func active_weather_fronts() -> Array[WeatherFront]:
 	if _weather_system == null:
 		return [] as Array[WeatherFront]
 	return _weather_system.active_fronts()
-func set_weather_refresh_stride(s: int) -> void:
-	_get_climate_pass_b_module().set_weather_refresh_stride(s)
 func set_daily_climate_refresh_stride(s: int) -> void:
 	_get_wind_heat_transport().set_daily_climate_refresh_stride(s)
 func _build_transpiration_donor_table() -> PackedFloat32Array:
@@ -1569,12 +1509,7 @@ const WEATHER_VITALITY_PENALTY: Dictionary = {
 }
 func _ensure_vegdyn_lut() -> void:
 	_get_wind_heat_transport()._ensure_vegdyn_lut()
-func refresh_yearly(map: MapData, _world: WorldData) -> void:
-	_get_wind_heat_transport().refresh_yearly(map, _world)
-func _ecosystem_score_vegetation(history: PackedByteArray) -> float:
-	return _get_wind_heat_transport()._ecosystem_score_vegetation(history)
-func _ecosystem_score(history: PackedByteArray) -> float:
-	return _get_wind_heat_transport()._ecosystem_score(history)
+
 func _season_temp_offset(ny: float, season: int) -> float:
 	var phase_mid: float = float(season) + 0.5
 	return _insolation_season_offset(ny, phase_mid)

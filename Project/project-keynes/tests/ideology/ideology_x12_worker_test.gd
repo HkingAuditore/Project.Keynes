@@ -548,19 +548,17 @@ func _build_world() -> Dictionary:
 	host.initial_seed = SEED
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = true
 	host.runtime_economy_auto_pod_active = true
 	# GAMEPLAY_EFFECT's ACTIVE worker only admits event-publish packets. Keep
 	# Economy/Effect/Modifier/Country worker-owned while the built-in canal
 	# action uses its existing synchronous commit seam.
 	# The card path uses the worker Effect POD; keep all production domains
 	# available so a missing gameplay-only bit cannot stall the fixture.
-	host.runtime_authority_domain_mask = 0xFFF
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var config := NewGameConfig.create_default()
 	config.country.name = "C0 X12"
 	config.country.foreign_count = 1

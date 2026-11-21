@@ -3,22 +3,21 @@ extends RefCounted
 ## Passive visual/vision adapter. Host owns state and signals.
 
 func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
-	if host._renderer == null or host._current_map == null or host._world_data == null:
+	if host._current_map == null or host._world_data == null:
 		return
 	# A headless session owns the same simulation authorities but has no valid
 	# texture-array backend. Rebinding a restored world used to instantiate all
 	# vegetation layers against DummyTexture, emit hundreds of null-image
 	# failures and eventually crash before the first post-restore economy day.
 	# Keep country/research event ingress alive without constructing visual state.
-	if DisplayServer.get_name() == "headless":
+	if host._renderer == null or DisplayServer.get_name() == "headless":
 		host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host)
 		host._player_country_slot = _resolve_player_country_slot(host)
 		host._player_country_handle = _resolve_player_country_handle(host)
 		_connect_country_committed(host)
-		# Keep monotonic exploration and discovery ingress identical to a visual
-		# session. Only texture/LUT/border publication is omitted.
-		host._loading_visual_step("_refresh_vision()")
-		_refresh_vision(host)
+		if host._load_slot_id.is_empty():
+			host._loading_visual_step("initialize_runtime_vision")
+			_initialize_runtime_vision(host, false)
 		return
 	host._renderer.hex_size = host.hex_size
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
@@ -146,6 +145,9 @@ func _bind_country_visuals(host) -> void:
 	if host._renderer != null and host._renderer.has_method("set_fog_of_war_enabled"):
 		host._renderer.set_fog_of_war_enabled(host._fog_of_war_enabled, host.fog_early_out_enabled)
 	_connect_country_committed(host)
+	if not host._load_slot_id.is_empty():
+		return
+	_initialize_runtime_vision(host, false)
 	var report = refresh_country_visuals(host, "world_ready")
 	var vision: Dictionary = report.get("vision", {})
 	var border: Dictionary = report.get("border", {})
@@ -175,18 +177,9 @@ func _on_country_committed(host, report: Dictionary) -> void:
 	if host._player_country_slot < 0:
 		host._player_country_slot = _resolve_player_country_slot(host)
 	if int(report.get("changed_cells", 0)) > 0:
-		# CLAIM may be published by the worker before the deferred visual refresh
-		# pulse. Push the immutable territory snapshot immediately so MapData,
-		# market-cell ownership and the border layer cannot observe the old owner.
-		_sync_country_territory_to_map(host)
 		host._country_visual_refresh_pending = true
 		host._country_visual_refresh_reason = "country_territory_committed"
-		return
-	var capability_now = _has_remote_observation_capability(host)
-	if capability_now != host._remote_observation_capability:
-		host._remote_observation_capability = capability_now
-		var vision = _refresh_vision(host)
-		_republish_cell_luts(host, host._vision_dirty_indices)
+
 
 func _on_research_signal_discovered(host, event: Dictionary) -> void:
 	if host._generator == null or not host._generator.has_method("get_gameplay_event_bus"):
@@ -202,10 +195,6 @@ func _on_research_signal_discovered(host, event: Dictionary) -> void:
 		int(event.get("country_handle", 0)), 1)
 
 
-## 重算视野 → 把知识度推进 enum_lut.a → 重建国界 mesh。
-## 返回诊断信息（GM 面板 / 测试用）。
-## Web 长帧定位：refresh_country_visuals 的分段耗时。
-
 func _cv_phase(host, name: String, started_usec: int) -> void:
 	if not WebTelemetry.enabled():
 		return
@@ -218,43 +207,17 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	var out = {"reason": reason, "vision": {}, "border": {}, "lut": {}}
 	if host._current_map == null or host._world_data == null:
 		return out
-	# Native CLAIM 先写 NativeCountryRuntime，再经 DataCore CoW 镜像到 MapData。
-	# 若 country_committed 抢在 flush 之前触发，视野会用旧 country_slot_arr 解算，
-	# 国界/Inspector 随后看到新领土，邻格就只剩迷雾柔边「看起来亮了」。
 	var _cv_t = Time.get_ticks_usec()
 	out["territory_sync"] = _sync_country_territory_to_map(host)
 	_cv_phase(host, "territory_sync", _cv_t)
 	if host._player_country_slot < 0:
 		host._player_country_slot = _resolve_player_country_slot(host)
-	var previous_visible = host._current_map.visible_arr.duplicate()
-	# 首解前 enum_lut.a 按全知 255 编码，而 fog_dirty_indices 是对内存里全 0 的
-	# fog_k_arr 求差，只覆盖首都周边；首次发布必须全量重编码，否则其余格子保持全知。
-	var first_fog_publish = not host._current_map.fog_solved
-	var _cv_t2 = Time.get_ticks_usec()
-	out["vision"] = _refresh_vision(host)
-	_cv_phase(host, "vision", _cv_t2)
-	if not out["vision"].has("newly_visible_cells"):
-		var changed = PackedInt32Array()
-		var newly_visible = PackedInt32Array()
-		var newly_hidden = PackedInt32Array()
-		for cell in host._current_map.cell_count():
-			var before: int = previous_visible[cell] \
-				if cell < previous_visible.size() else 0
-			var after: int = host._current_map.visible_arr[cell] \
-				if cell < host._current_map.visible_arr.size() else 0
-			if before == after:
-				continue
-			changed.append(cell)
-			if after != 0:
-				newly_visible.append(cell)
-			else:
-				newly_hidden.append(cell)
-		out["vision"]["visibility_changed_cells"] = changed
-		out["vision"]["newly_visible_cells"] = newly_visible
-		out["vision"]["newly_hidden_cells"] = newly_hidden
-		out["vision"]["vision_revision"] = host._current_map.vision_revision
+	out["vision"] = host._runtime_vision_result.duplicate(false)
 	var _cv_t3 = Time.get_ticks_usec()
-	out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices, first_fog_publish)
+	if not host._vision_dirty_indices.is_empty():
+		out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices)
+	host._vision_dirty_indices = PackedInt32Array()
+	host._runtime_vision_result.erase("newly_visible_cells")
 	_cv_phase(host, "lut", _cv_t3)
 	_refresh_resource_visual_context(host)
 	var _cv_t4 = Time.get_ticks_usec()
@@ -341,6 +304,9 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
 			"vision": {"ok": false, "reason": "读档后无法绑定玩家国家，视野不可解算。",
 				"detail": unbound_detail}}
+	var seeded := _initialize_runtime_vision(host, true)
+	if not bool(seeded.get("ok", false)):
+		return {"vision": seeded, "border": {}, "lut": {}}
 	return refresh_country_visuals(host, "save_restore_finalized")
 
 
@@ -406,51 +372,44 @@ func is_fog_of_war_enabled(host) -> bool:
 	return host._fog_of_war_enabled
 
 
-## GM 与场景配置共用这一入口；开启请求仍受正式对局上下文门控。
-
-func set_fog_of_war_enabled(host, enabled: bool) -> void:
-	host.fog_of_war_enabled = enabled
-	var previous_fog_enabled = host._fog_of_war_enabled
-	host._fog_of_war_enabled = _resolve_fog_of_war_enabled(host)
-	if previous_fog_enabled != host._fog_of_war_enabled:
-		host._building_visual_force_full_refresh = true
-	if host._renderer != null and host._renderer.has_method("set_fog_of_war_enabled"):
-		host._renderer.set_fog_of_war_enabled(host._fog_of_war_enabled, host.fog_early_out_enabled)
-	if host._current_map != null and host._world_data != null:
-		refresh_country_visuals(host, "gm_fog_toggle")
+func set_fog_of_war_enabled(host, enabled: bool) -> Dictionary:
+	if not host._runtime_ready_for_ticks:
+		host.fog_of_war_enabled = enabled
+		return {"ok": true}
+	var ext = host._generator.get_data_core_world_ext()
+	if ext == null:
+		return {"ok": false, "code": "vision_fog_command_unavailable"}
+	return ext.set_runtime_fog_enabled(enabled)
 
 
-## 迷雾只在正式对局里生效。调试 / 沙盒路径（没有 gameplay start context，
-## country.default 铺满全部陆地）保持全图可见，否则整张地图会被云盖死。
-
-func _resolve_fog_of_war_enabled(host) -> bool:
-	# ?fog=off（web_autotest 写入 Engine meta）只用于诊断/截图：关掉全部战争迷雾，
-	# 让画面直接呈现"最高可用画质"。正常入口读不到这个 meta。
-	if bool(Engine.get_meta("pk_fog_off", false)):
+## Only formal games enable fog. The QA overrides are read during session setup.
+func _fog_allowed(host) -> bool:
+	if bool(Engine.get_meta("pk_fog_off", false)) or OS.get_environment("PK_FOG_OFF") == "1":
 		return false
-	# [fog-off-qa 2026-11-03] 真机反馈"去掉战争迷雾就闪烁"，需要能在安卓上复现
-	# 关雾后的画面做 A/B（安卓读不到 web 的 Engine meta）。仅 QA 用，正常包无该文件。
-	if OS.get_environment("PK_FOG_OFF") == "1":
-		return false
-	var fog_cfg = ConfigFile.new()
+	var fog_cfg := ConfigFile.new()
 	if fog_cfg.load("user://pk_debug.cfg") == OK \
 			and bool(fog_cfg.get_value("render", "fog_off", false)):
-		return false
-	if not host.fog_of_war_enabled:
 		return false
 	return _resolve_player_start_cell(host) >= 0
 
 
+func _resolve_fog_of_war_enabled(host) -> bool:
+	return host.fog_of_war_enabled and _fog_allowed(host)
+
+
 func _resolve_player_country_slot(host) -> int:
-	if host._current_map == null:
-		return -1
-	var start_cell = _resolve_player_start_cell(host)
-	if start_cell < 0 or start_cell >= host._current_map.country_slot_arr.size():
-		return -1
-	return int(host._current_map.country_slot_arr[start_cell])
+	var country := _resolve_player_country_handle(host)
+	return int(country & 0xffffffff) if country > 0 else -1
 
 
 func _resolve_player_country_handle(host) -> int:
+	if host._player_country_handle != 0:
+		return host._player_country_handle
+	var sections: Dictionary = host._pending_load_bundle.get("sections", {})
+	var player_context: Dictionary = sections.get("player_context", {})
+	var saved := int(player_context.get("player_country_handle", 0))
+	if saved != 0:
+		return saved
 	if host._generator == null or not host._generator.has_method("get_country_facade"):
 		return 0
 	var start_cell = _resolve_player_start_cell(host)
@@ -490,247 +449,103 @@ func _sync_country_territory_to_map(host) -> Dictionary:
 	return ext.sync_country_territory_to_map()
 
 
-func _refresh_vision(host) -> Dictionary:
-	if host._military_vision_render_revision < 0:
-		poll_military_vision_revision(host)
-	var ext = host._generator.get_data_core_world_ext() if host._generator != null \
-		and host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("run_vision_research_pass") \
-			or not _ensure_native_vision_configured(host, ext):
-		var fallback = VisionSolver.solve(host._current_map, host._world_data,
-			host._player_country_slot, host._military_vision_source_cells)
-		host._current_map.physical_visible_arr = host._current_map.visible_arr.duplicate()
-		host._vision_dirty_indices.resize(host._current_map.cell_count())
-		for cell in host._current_map.cell_count():
-			host._vision_dirty_indices[cell] = cell
-		return fallback
-	var facade = host._generator.get_country_facade() if host._generator.has_method("get_country_facade") else null
-	host._remote_observation_capability = _has_remote_observation_capability(host)
-	var result: Dictionary = ext.run_vision_research_pass({
-		"player_slot": host._player_country_slot,
-		"remote_observation": host._remote_observation_capability,
-		"country_slots": host._current_map.country_slot_arr,
-		"military_source_cells": host._military_vision_source_cells,
-		"visible": host._current_map.physical_visible_arr,
-		"explored": host._current_map.explored_arr,
-		"fog_k": host._current_map.fog_k_arr,
-		"bio_occupancy_bits": host._current_map.bio_occupancy_bits_arr,
-	})
-	if not bool(result.get("ok", false)):
-		var solved = VisionSolver.solve(host._current_map, host._world_data,
-			host._player_country_slot, host._military_vision_source_cells)
-		host._current_map.physical_visible_arr = host._current_map.visible_arr.duplicate()
-		return solved
-	host._current_map.physical_visible_arr = result.get("physical_visible", PackedByteArray())
-	host._current_map.explored_arr = result.get("explored_arr", PackedByteArray())
-	host._current_map.fog_k_arr = result.get("fog_k_arr", PackedByteArray())
-	host._current_map.visible_arr = host._current_map.physical_visible_arr.duplicate()
-	host._vision_dirty_indices = result.get("fog_dirty_indices", PackedInt32Array())
-	if not host._fog_of_war_enabled:
-		# 渲染直通不写回物理视野，也不把历史探索伪造成研究资格。
-		host._vision_dirty_indices.resize(host._current_map.cell_count())
-		for cell in host._current_map.cell_count():
-			host._current_map.visible_arr[cell] = 1
-			host._current_map.fog_k_arr[cell] = 255
-			host._vision_dirty_indices[cell] = cell
-	host._current_map.fog_solved = true
-	host._current_map.vision_revision += 1
-	var revealed: PackedInt32Array = result.get("resource_visual_visible_cells", PackedInt32Array())
-	# Disabling fog already requests a full observation through set_context.
-	# Physical vision commits must not restart that full sweep every day.
-	if host._fog_of_war_enabled and not revealed.is_empty():
-		host._current_map.publish_resource_visual_inputs(
-			MapData.RESOURCE_VISUAL_BANDS | MapData.RESOURCE_VISUAL_CLIMATE |
-			MapData.RESOURCE_VISUAL_GEOMETRY, revealed)
-	_submit_native_observations(host, facade, result)
-	return result
-
-
-## Poll the military render revision once per frame. The snapshot is a committed
-## read-only projection, so this is safe for both legacy SUS and whole-graph
-## ACTIVE. When a player's army moves, queue the same coalesced visual refresh
-## used by territory changes; no second visibility state is introduced.
-func poll_military_vision_revision(host) -> void:
-	# On graphical sessions MilitaryMapLayers already owns the one native
-	# render-snapshot poll for the frame; it forwards the frozen feed below.
-	if host.military_map_layers != null \
-			and host._military_vision_render_revision >= 0:
-		return
-	if host._generator == null or not host._generator.has_method("get_military_facade"):
-		return
-	var facade = host._generator.get_military_facade()
-	if facade == null or not facade.is_configured() or not facade.has_method("render_snapshot"):
-		return
-	var source_slot_changed: bool = host._military_vision_source_slot != host._player_country_slot
-	var after_revision: int = host._military_vision_render_revision
-	if source_slot_changed:
-		after_revision = -1
-	var snapshot: Variant = facade.render_snapshot(after_revision)
-	if not snapshot is Dictionary or not bool(snapshot.get("ok", false)):
-		return
-	var revision := int(snapshot.get("revision", host._military_vision_render_revision))
-	var fresh: bool = revision != host._military_vision_render_revision or source_slot_changed
-	if fresh:
-		host._military_vision_render_revision = revision
-		host._military_vision_source_slot = host._player_country_slot
-		var sources_changed := _update_military_vision_sources(host, snapshot)
-		if host._military_vision_render_revision >= 0 \
-				and (source_slot_changed or sources_changed):
-			host._country_visual_refresh_pending = true
-			host._country_visual_refresh_reason = "military_vision_committed"
-
-
-## Graphical path hook from MilitaryMapLayers after its single native poll.
-## Headless/mobile sessions use poll_military_vision_revision() directly.
-func observe_military_render_feed(host, feed) -> void:
-	if feed == null or not bool(feed.ok) or host._current_map == null:
-		return
-	var source_slot_changed: bool = host._military_vision_source_slot != host._player_country_slot
-	var revision: int = int(feed.revision)
-	if not source_slot_changed and revision == host._military_vision_render_revision:
-		return
-	var previous: PackedInt32Array = host._military_vision_source_cells
-	var out := PackedInt32Array()
-	for index in feed.army_count:
-		if int(feed.army_owner[index]) != host._player_country_slot:
-			continue
-		var cell := int(feed.army_cell[index])
-		if cell >= 0 and cell < host._current_map.cell_count():
-			out.append(cell)
-	host._military_vision_render_revision = revision
-	host._military_vision_source_slot = host._player_country_slot
-	host._military_vision_source_cells = out
-	if source_slot_changed or previous != out:
-		host._country_visual_refresh_pending = true
-		host._country_visual_refresh_reason = "military_vision_committed"
-
-
-func _update_military_vision_sources(host, snapshot: Dictionary) -> bool:
-	var previous: PackedInt32Array = host._military_vision_source_cells
-	if host._current_map == null:
-		host._military_vision_source_cells = PackedInt32Array()
-		return previous != host._military_vision_source_cells
-	var rows: Variant = snapshot.get("armies", {})
-	if not rows is Dictionary:
-		host._military_vision_source_cells = PackedInt32Array()
-		return previous != host._military_vision_source_cells
-	var cells: Variant = rows.get("cell", PackedInt32Array())
-	var owners: Variant = rows.get("owner_slot", PackedInt32Array())
-	if not cells is PackedInt32Array or not owners is PackedInt32Array:
-		host._military_vision_source_cells = PackedInt32Array()
-		return previous != host._military_vision_source_cells
-	var out := PackedInt32Array()
-	var count := mini(cells.size(), owners.size())
-	for index in count:
-		if int(owners[index]) == host._player_country_slot:
-			var cell := int(cells[index])
-			if cell >= 0 and cell < host._current_map.cell_count():
-				out.append(cell)
-	host._military_vision_source_cells = out
-	return previous != out
-
-
-func _ensure_native_vision_configured(host, ext: Object) -> bool:
-	var n = host._current_map.cell_count()
-	var map_id = host._current_map.get_instance_id()
-	if host._native_vision_configured_n == n and host._native_vision_configured_map_id == map_id:
-		return true
+func _initialize_runtime_vision(host, restored: bool) -> Dictionary:
+	var map: MapData = host._current_map
+	var ext = host._generator.get_data_core_world_ext()
+	if ext == null:
+		return {"ok": false, "reason": "vision_native_unavailable"}
+	var n := map.cell_count()
 	if host._world_data.cell_view_height.size() != n or host._world_data.cell_view_block.size() != n:
-		var baked = VisionSolver.bake_static_fields(host._current_map, host._world_data)
+		var baked := VisionSolver.bake_static_fields(map, host._world_data)
 		if not bool(baked.get("ok", false)):
-			return false
-	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
-	var configured: Dictionary = ext.configure_vision_research({
+			return baked
+	var signal_catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var country = host._generator.get_country_facade()
+	if country == null:
+		return {"ok": false, "reason": "vision_country_state_unavailable"}
+	var tech_ids: PackedStringArray = country.native_catalog().get("technology_ids", PackedStringArray())
+	var seeded: Dictionary = ext.configure_vision_research({
 		"cell_count": n,
-		"neighbor_indices": host._current_map.neighbor_indices_packed(),
+		"neighbor_indices": map.neighbor_indices_packed(),
 		"view_height": host._world_data.cell_view_height,
 		"view_block": host._world_data.cell_view_block,
-		"signal_offsets": host._current_map.cell_research_signal_offsets,
-		"signal_ids": host._current_map.cell_research_signal_ids,
-		"bio_bits": catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
-		"bio_signals": catalog.get("research_bio_signal_ids", PackedInt32Array()),
+		"signal_offsets": map.cell_research_signal_offsets,
+		"signal_ids": map.cell_research_signal_ids,
+		"bio_bits": signal_catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
+		"bio_signals": signal_catalog.get("research_bio_signal_ids", PackedInt32Array()),
+		"world_day": host._world_clock.day_index() if host._world_clock != null else 0,
+		"player_start_cell": _resolve_player_start_cell(host),
+		"remote_technology": tech_ids.find("tech.magnetic_navigation"),
+		"occupancy": map.bio_occupancy_bits_arr,
+		"fog_available": _fog_allowed(host),
+		"fog_enabled": host.fog_of_war_enabled,
+		"restored": restored,
 	})
-	if bool(configured.get("ok", false)):
-		host._native_vision_configured_n = n
-		host._native_vision_configured_map_id = map_id
-		host._current_map.physical_visible_arr = PackedByteArray()
-	return bool(configured.get("ok", false))
+	if not bool(seeded.get("ok", false)):
+		push_error("Vision setup: " + String(seeded.get("reason", seeded.get("code", "unknown"))))
+		return seeded
+	return apply_runtime_vision_display(host)
 
 
-func _has_remote_observation_capability(host) -> bool:
-	if host._player_country_handle == 0:
-		host._player_country_handle = _resolve_player_country_handle(host)
-	var facade = host._generator.get_country_facade() if host._generator != null \
-		and host._generator.has_method("get_country_facade") else null
-	if facade == null or host._player_country_handle == 0:
-		return false
-	if host._magnetic_navigation_dense_id == -2:
-		var ids: PackedStringArray = facade.native_catalog().get(
-			"technology_ids", PackedStringArray())
-		host._magnetic_navigation_dense_id = ids.find("tech.magnetic_navigation")
-	return host._magnetic_navigation_dense_id >= 0 and facade.has_completed_technology(
-		host._player_country_handle, host._magnetic_navigation_dense_id)
-
-
-func _submit_native_observations(host, facade, result: Dictionary) -> void:
-	if facade == null or host._player_country_handle == 0:
-		return
-	var cells: PackedInt32Array = result.get("observation_cells", PackedInt32Array())
-	var signals: PackedInt32Array = result.get("observation_signals", PackedInt32Array())
-	if cells.size() != signals.size() or cells.is_empty():
-		return
-	var day = host._world_clock.day_index() + 1 if host._world_clock != null else 1
-	facade.submit_observation_batch(host._player_country_handle, cells, signals, day)
-
-func _submit_discovered_map_signals(host, previous: PackedByteArray) -> void:
-	if host._current_map == null or previous.size() != host._current_map.explored_arr.size() \
-			or host._generator == null or not host._generator.has_method("get_country_facade"):
-		return
-	var facade = host._generator.get_country_facade()
-	var handle = _resolve_player_country_handle(host)
-	if facade == null or handle == 0:
-		return
-	var commands: Array[Dictionary] = []
-	var effective_day = host._world_clock.day_index() + 1 if host._world_clock != null else 1
-	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
-	var offsets = host._current_map.cell_research_signal_offsets
-	var ids = host._current_map.cell_research_signal_ids
-	var values = host._current_map.cell_research_signal_values
-	var csr_ok = offsets.size() == host._current_map.cell_count() + 1 and ids.size() == values.size()
-	for cell in host._current_map.cell_count():
-		if previous[cell] != 0 or host._current_map.explored_arr[cell] == 0:
-			continue
-		var seq = 0
-		if csr_ok:
-			var begin = int(offsets[cell])
-			var end = int(offsets[cell + 1])
-			for edge in range(begin, end):
-				commands.append({
-					"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
-					"target_handle": handle,
-					"signal": int(ids[edge]),
-					"cell": cell,
-					"value": 1,
-					"effective_day": effective_day,
-					"sequence": cell * 64 + seq,
-				})
-				seq += 1
-		if cell < host._current_map.bio_occupancy_bits_arr.size():
-			var occ_signals = ResearchSignalCatalog.occupancy_signal_indices(
-				catalog, int(host._current_map.bio_occupancy_bits_arr[cell]))
-			for signal_index in occ_signals:
-				commands.append({
-					"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
-					"target_handle": handle,
-					"signal": int(signal_index),
-					"cell": cell,
-					"value": 1,
-					"effective_day": effective_day,
-					"sequence": cell * 64 + seq,
-				})
-				seq += 1
-	if not commands.is_empty():
-		facade.submit(commands)
+func apply_runtime_vision_display(host) -> Dictionary:
+	var map: MapData = host._current_map
+	if map == null or host._generator == null:
+		return {"ok": true, "applied": false}
+	var ext = host._generator.get_data_core_world_ext()
+	if ext == null:
+		return {"ok": true, "applied": false}
+	var frame: Dictionary = ext.get_runtime_vision_frame(map.vision_revision if map.fog_solved else 0)
+	if not frame.has("physical_visible"):
+		return {"ok": true, "applied": false}
+	var physical: PackedByteArray = frame.physical_visible
+	var explored: PackedByteArray = frame.explored_arr
+	var fog: PackedByteArray = frame.fog_k_arr
+	var count := map.cell_count()
+	if physical.size() != count or explored.size() != count or fog.size() != count:
+		return {"ok": false, "reason": "vision_display_shape_invalid"}
+	var enabled := bool(frame.fog_enabled)
+	var enabled_changed: bool = host._fog_of_war_enabled != enabled
+	var visible := physical
+	if not enabled:
+		visible = physical.duplicate()
+		fog.fill(255)
+		visible.fill(1)
+	var pending_dirty := {}
+	for cell in host._vision_dirty_indices:
+		pending_dirty[cell] = true
+	var revealed := PackedInt32Array()
+	var compare := map.fog_solved and map.fog_k_arr.size() == count and map.visible_arr.size() == count
+	for cell in count:
+		if not compare or map.fog_k_arr[cell] != fog[cell] or map.visible_arr[cell] != visible[cell]:
+			pending_dirty[cell] = true
+		if enabled and visible[cell] != 0 and (not compare or map.visible_arr[cell] == 0):
+			revealed.append(cell)
+	map.physical_visible_arr = physical
+	map.explored_arr = explored
+	map.fog_k_arr = fog
+	map.visible_arr = visible
+	map.fog_solved = true
+	map.vision_revision = int(frame.revision)
+	host._vision_dirty_indices = PackedInt32Array(pending_dirty.keys())
+	var pending_revealed: PackedInt32Array = host._runtime_vision_result.get(
+		"newly_visible_cells", PackedInt32Array())
+	pending_revealed.append_array(revealed)
+	frame["newly_visible_cells"] = pending_revealed
+	frame["vision_revision"] = map.vision_revision
+	frame["applied"] = true
+	host._runtime_vision_result = frame
+	host._country_visual_refresh_pending = true
+	host._country_visual_refresh_reason = "committed_vision"
+	host._fog_of_war_enabled = enabled
+	if enabled_changed:
+		host._building_visual_force_full_refresh = true
+		if host._renderer != null:
+			host._renderer.set_fog_of_war_enabled(enabled, host.fog_early_out_enabled)
+		host.gm_toggle_changed.emit("visual.fog_of_war", enabled)
+	if not revealed.is_empty():
+		map.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS |
+			MapData.RESOURCE_VISUAL_CLIMATE | MapData.RESOURCE_VISUAL_GEOMETRY, revealed)
+	return frame
 
 
 ## 迷雾值住在 enum_lut 的 A 通道，所以视野一变就必须重烘一次 LUT。

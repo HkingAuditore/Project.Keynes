@@ -98,7 +98,7 @@ func _exercise_treasury_reserve() -> bool:
 		METRIC_TREASURY_RESERVE, 3 * Q16_ONE, true)
 	_ext.refresh_effect_input_digest_for_test()
 	var trade_capacity_before := _read_country_stat(TRADE_CAPACITY_STAT)
-	if not _equip("treasury_reserve"):
+	if not await _equip("treasury_reserve"):
 		return false
 	if not await _set_reserve_and_refresh(3):
 		return false
@@ -125,7 +125,7 @@ func _exercise_treasury_reserve() -> bool:
 
 
 func _exercise_silver_standard() -> bool:
-	if not _equip("silver_standard"):
+	if not await _equip("silver_standard"):
 		return false
 	if not await _set_reserve_and_refresh(10):
 		return false
@@ -150,7 +150,7 @@ func _exercise_subsidy_state() -> bool:
 	if not await _set_metric_and_refresh(
 			METRIC_NET_TAX_BURDEN, int(0.04 * Q16_ONE), "net tax 4%"):
 		return false
-	if not _equip("subsidy_state"):
+	if not await _equip("subsidy_state"):
 		return false
 	var target := _first_reported_cell_target()
 	if not _require("subsidy_state: target report selects an owned cell",
@@ -310,16 +310,14 @@ func _build_world() -> Dictionary:
 	host.initial_seed = SEED
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = true
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = 0xFFF
 	# The worker services its peer inline in this headless loop. Leave the parity /
 	# forced-playback gate off (`X16` uses the same setting for the same reason).
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var config := NewGameConfig.create_default()
 	config.country.name = "C0 country ramp"
 	config.country.foreign_count = 1
@@ -389,9 +387,13 @@ func _equip(card: String) -> bool:
 		return false
 	_next_sequence = maxi(_next_sequence, int(gates.get(
 		"next_sequence", _next_sequence)))
-	# The worker checks the frozen Country technology snapshot, so let the grant
-	# commit before submitting DISCOVER.
-	_drive_days(1)
+	# A Country grant can be admitted while the previous day's tail is open.
+	# Wait for the completed technology before testing the card requirement.
+	if not _require("%s: completed gate technology is visible" % card,
+			await WorkerWaitHelper.wait_for(
+				func() -> bool: return DrawGateHelper.draw_gates_landed(_host, card, _handle),
+				3, 20000, func() -> void: _tick = _drive_days(1))):
+		return false
 	var discovered: Dictionary = _submit([{
 		"op": 1, "day": _tick, "handle": _handle, "idea": dense}])
 	if not _require("%s: worker accepts discover" % card,

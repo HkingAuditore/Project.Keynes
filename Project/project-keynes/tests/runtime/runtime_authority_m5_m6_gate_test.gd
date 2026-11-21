@@ -44,7 +44,7 @@ func _run() -> void:
 	_expect("M5 exposes all three pending-domain ACTIVE diagnostics",
 		all_active_report.has("input_capture_generation")
 		and all_active_report.has("gameplay_effect_generation")
-		and all_active_report.has("visual_intent_generation")
+		and all_active_report.has("last_commit_produced_at_us")
 		and all_active_report.has("completion_gate_missing_domain_mask"))
 	_ext.request_runtime_stop()
 	OS.delay_msec(80)

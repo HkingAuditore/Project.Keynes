@@ -214,11 +214,6 @@ extends Resource
 # days reuse the last active fronts snapshot. Auto-adjusted by main.gd on
 # speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.
-@export_range(1, 8, 1) var weather_refresh_stride: int = 1
-# When true, main.gd may retune weather_refresh_stride on speed changes
-# (x1=1, x5=4, x20=8). Disable this when the profile should be the single
-# source of truth for weather cadence.
-@export var weather_refresh_auto_stride_by_speed: bool = true
 @export_range(1, 30, 1) var weather_albedo_stride: int = 10
 # 2026-05-19 vegetation-survival-rebalance v2：植被 pass 频率从 10 → 5，
 # 配合 vitality_change_rate 提升后让漂移更密集地写回 vitality / streak。
@@ -361,7 +356,6 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 15, 1) var sim_stagger_ocean_phase: int = 0
 @export_range(0, 15, 1) var sim_stagger_native_environment_phase: int = 0
 @export_range(0, 15, 1) var sim_stagger_dynamic_visual_phase: int = 2
-@export_range(0, 15, 1) var sim_stagger_weather_phase: int = 4
 @export_range(0, 15, 1) var sim_stagger_enum_atlas_phase: int = 4
 @export_range(0, 15, 1) var sim_stagger_sea_ice_phase: int = 6
 

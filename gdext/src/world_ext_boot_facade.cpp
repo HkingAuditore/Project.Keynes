@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -132,7 +133,7 @@ PackedFloat32Array boot_estuary_strength(int n, const PackedByteArray &lf_arr,
         if (outlet < 0 || outlet >= n) continue;
         if (!lf_is_open_sea(int(lf[outlet]))) continue;
         const double flow = have_river_flow ? double(river_flow[source]) : 1.0;
-        const double flow_signal = 1.0 - std::exp(-std::max(flow, 0.0) * 0.25);
+        const double flow_signal = 1.0 - simulation_math::exp(-std::max(flow, 0.0) * 0.25);
         const double mouth_strength = 0.75 + 0.25 * flow_signal;
         const float mouth = float(mouth_strength);
         dst[source] = std::max(dst[source], mouth);

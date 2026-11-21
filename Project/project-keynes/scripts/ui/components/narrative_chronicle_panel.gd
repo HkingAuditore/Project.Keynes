@@ -305,7 +305,12 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	choice_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
 	choice_lbl.add_theme_font_size_override("font_size", 14)
 	choice_lbl.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK_SOFT)
-	vbox.add_child(choice_lbl)
+	if bool(rec.get("notice_only", false)):
+		choice_lbl.text = String(rec.get("settlement_name", ""))
+	if not choice_lbl.text.is_empty():
+		vbox.add_child(choice_lbl)
+	else:
+		choice_lbl.free()
 
 	var effects: PackedStringArray = PackedStringArray(rec.get("applied_effects_summary", []))
 	if not effects.is_empty():

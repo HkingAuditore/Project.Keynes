@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "runtime_world_environment.h"
 #include "native_simulation_host.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
@@ -349,6 +350,10 @@ int64_t DCWorldExt::runtime_next_environment_day() const {
     return _runtime_host->next_environment_day();
 }
 
+int64_t DCWorldExt::request_runtime_calendar_day(int64_t date) {
+    return _runtime_host ? _runtime_host->request_runtime_calendar_day(date) : -1;
+}
+
 Dictionary DCWorldExt::apply_runtime_climate_writeback(
         int64_t after_generation) {
     SimTraceWriteGuard sim_trace_guard{this, "apply_runtime_climate_writeback"};
@@ -371,10 +376,13 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
         out["code"] = "runtime_writeback_map_unavailable";
         return out;
     }
+    const auto batch_climate = _runtime_display_commit.day_tail
+        ? _runtime_display_commit.day_tail->climate : nullptr;
+    const auto display = batch_climate ? batch_climate : _runtime_host->latest_climate_display();
     uint32_t slot = 0;
-    if (!_runtime_host->try_acquire_climate_writeback(
-            after_generation < 0 ? 0u : static_cast<uint64_t>(after_generation),
-            slot)) {
+    const bool has_ring = !display && _runtime_host->try_acquire_climate_writeback(
+        static_cast<uint64_t>(after_generation), slot);
+    if ((!display || display->generation <= static_cast<uint64_t>(after_generation)) && !has_ring) {
         // 不是错误：worker 还没提交更新的一天。ok=true / applied=false 让调用方的
         // 游标保持不动，而不是把"这一帧没有新数据"当成失败去重试。
         out["ok"] = true;
@@ -385,12 +393,12 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
             static_cast<int64_t>(_runtime_host->climate_writeback_drop_count());
         return out;
     }
-    const RuntimeClimateSnapshot &snapshot =
-        _runtime_host->climate_writeback_buffer(slot);
+    const RuntimeClimateSnapshot &snapshot = display ? *display
+        : _runtime_host->climate_writeback_buffer(slot);
     const RuntimeClimateStore &store = snapshot.payload;
     const int cell_count = static_cast<int>(store.cell_count);
     if (cell_count <= 0) {
-        _runtime_host->release_climate_writeback(slot);
+        if (has_ring) _runtime_host->release_climate_writeback(slot);
         out["ok"] = false;
         out["applied"] = false;
         out["code"] = "runtime_writeback_empty_store";
@@ -411,7 +419,7 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     if (!physics_error.empty() || (physics &&
             (physics->cell_count != cell_count || physics->committed_day != snapshot.committed_day ||
              physics->input_generation != snapshot.input_generation))) {
-        _runtime_host->release_climate_writeback(slot);
+        if (has_ring) _runtime_host->release_climate_writeback(slot);
         _climate_physics_committed.reset();
         out["ok"] = false; out["applied"] = false;
         out["code"] = physics_error.empty()
@@ -428,7 +436,7 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
             const int sid = component_id(StringName(name));
             if (sid < 0 || sid >= _slots.size() || _slots[sid].dtype != SlotDType::F32 ||
                 (_slots[sid].external_ref && _slots[sid].arr_f32.size() != cell_count)) {
-                _runtime_host->release_climate_writeback(slot);
+                if (has_ring) _runtime_host->release_climate_writeback(slot);
                 _climate_physics_committed.reset();
                 out["ok"] = false; out["applied"] = false;
                 out["code"] = String("physics_writeback_slot_invalid:") + name;
@@ -648,6 +656,28 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     };
     apply_extra_u8("weather_field_init", "cell_weather_field_init",
                    snapshot.weather_field_init);
+    if (const auto &season = snapshot.season) {
+        apply_extra("base_moisture", "cell_base_moisture", season->base_moisture);
+        apply_extra_u8("landform", "cell_landform", season->landform);
+        if (season->day > _climate_writeback_applied_day) {
+            const auto bytes = [](const std::vector<uint8_t> &lane) {
+                PackedByteArray array;
+                array.resize(static_cast<int64_t>(lane.size()));
+                std::memcpy(array.ptrw(), lane.data(), lane.size());
+                return array;
+            };
+            _map_data->set("base_landform_arr", bytes(season->base_landform));
+            out["season_day"] = season->day;
+            out["biome_history"] = bytes(season->biome_history);
+            out["vegetation_history"] = bytes(season->vegetation_history);
+            out["season_history_next"] = static_cast<int64_t>(season->history_next);
+        }
+    }
+    if (const auto &calendar = snapshot.calendar) {
+        out["climate_rng_year"] = calendar->year;
+        out["climate_rng_state"] = calendar->rng_state;
+        out["climate_anomaly"] = calendar->anomaly;
+    }
 
     if (!snapshot.restored_capture_cursors.empty()) {
         PackedFloat64Array cursors; cursors.resize(snapshot.restored_capture_cursors.size());
@@ -665,7 +695,7 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     const auto copy_done = std::chrono::steady_clock::now();
     // Release before flushing: the flush writes MapData, which the worker never
     // touches, so there is no reason to keep a ring slot occupied across it.
-    _runtime_host->release_climate_writeback(slot);
+    if (has_ring) _runtime_host->release_climate_writeback(slot);
 
     flush_slots_to_map_keys(touched_slots);
     _climate_physics_committed = apply_physics ? std::move(physics) : nullptr;

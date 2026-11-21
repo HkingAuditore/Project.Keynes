@@ -10,6 +10,12 @@ class AudioSituation extends RefCounted:
 		deltas.append(delta)
 		return {"tension_write_due": false}
 
+class CeremonySurface extends RefCounted:
+	var _era_indicator: EraIndicator
+	var _era_ceremony: EraAscensionCeremony
+	var _era_ceremony_index := 1
+	var _player_controller = null
+
 var failures := 0
 func _initialize() -> void:
 	call_deferred("_run")
@@ -29,12 +35,11 @@ func _run() -> void:
 	var controller := Controller.new()
 	root.add_child(controller)
 	controller.configure(null, null, null, first, null)
-	controller.set_popups_suppressed(true)
 	_pause_clock(first)
-	_expect("the pause call completes before deferred suppression", first.paused)
+	_expect("the manual pause is immediate", first.paused)
 	await process_frame
 	await process_frame
-	_expect("a suppressed offer releases its own automatic pause", not first.paused)
+	_expect("display callbacks leave the manual pause in place", first.paused)
 	first.pause(true)
 	await process_frame
 	_expect("manual pause remains effective", first.paused)
@@ -61,15 +66,19 @@ func _run() -> void:
 	_pause_clock(second)
 	await process_frame
 	await process_frame
-	_expect("the replacement clock receives automatic-pause events", not second.paused)
-	controller.set_popups_suppressed(false)
-	_pause_clock(second)
+	_expect("the replacement clock keeps its own manual pause", second.paused)
+	second.pause(false)
 	await process_frame
-	_expect("disabling suppression keeps the offer pause", second.paused)
+	_expect("the replacement clock resumes when requested", not second.paused)
 	var situation := AudioSituation.new()
 	playback.situation = situation
 	playback._process(0.25)
 	_expect("the presentation driver keeps music smoothing active", situation.deltas == [0.25])
+	second.pause(true)
+	var ceremony := CeremonySurface.new()
+	preload("res://scripts/ui/game_ui/era_progression.gd").new()._on_era_ceremony_finished(ceremony)
+	_expect("ending a ceremony does not release a manual pause", second.paused)
+	_expect("ending a ceremony clears the displayed era", ceremony._era_ceremony_index == -1)
 	controller.free()
 	first.free()
 	second.free()

@@ -1,257 +1,288 @@
-extends SceneTree
+extends "res://tests/support/runtime_narrative_scenario.gd"
 
-## PlayerController ideology draw flow against stubs: preview gate, pause +
-## single-day step, offer presentation, choose/reroll settlement, rejection,
-## timeout and player_view persistence. No native runtime required.
-
-const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
+const IDEOLOGY_STOP := "ideology_choice_required"
+const FAMILY_STOP := "family_founding_choice_required"
 
 
-class ClockStub:
-	signal day_changed(day: int)
-	signal season_changed(season: int)
-	signal year_changed(year: int)
-	signal visual_day_phase_changed(phase: float)
-	signal speed_changed(speed: float)
-	var paused := true
-	var speed_multiplier := 4.0
-	var day := 10
+class ReceiptSurface:
+	var error := ""
 
-	func day_index() -> int:
-		return day
+	func show_era_reward_error(message: String) -> void:
+		error = message
 
-	func pause(value: bool) -> void:
-		paused = value
-
-	func set_speed(value: float) -> void:
-		speed_multiplier = value
+	func show_family_founding_error(message: String) -> void:
+		error = message
 
 
-class CountryFacadeStub:
-	func cell_summary(_cell: int) -> Dictionary:
-		return {"ok": true, "owned": true, "country_handle": 77}
-
-	func bind_era_reward_player_country(_handle: int) -> Dictionary:
-		return {"ok": true}
+var _settled: Array[Dictionary] = []
+var _ideology: IdeologyFacade
+var _offers_shown: Array[int] = []
 
 
-class GeneratorStub:
-	var country := CountryFacadeStub.new()
+func _run() -> void:
+	if not await _start_story({"ai_enabled": false}, [&"evt.chain.ancient_foundry_legacy"]):
+		_finish()
+		return
+	story_controller.refresh_country_binding()
+	story_controller.command_settled.connect(_record_receipt)
+	story_controller.ideology_offer_ready.connect(func(snapshot: Dictionary) -> void:
+		_offers_shown.append(int(snapshot.offer_generation)))
+	var workspace := (load("res://scenes/ui/ideology_workspace.tscn") as PackedScene).instantiate() as IdeologyWorkspace
+	root.add_child(workspace)
+	workspace.set_player_controller(story_controller)
+	_ideology = story_host.get_generator().get_ideology_facade()
+	story_clock.set_speed(10.0)
+	story_clock.pause(true)
+	story_ext.set_runtime_clock(true, 10.0)
 
-	func gameplay_start_report() -> Dictionary:
-		return {"ok": true, "cell": 3}
+	await _test_ideology(workspace)
+	workspace.free()
+	await _close_story()
 
-	func get_country_facade():
-		return country
-
-
-class HostStub:
-	var gen := GeneratorStub.new()
-
-	func generator():
-		return gen
-
-	func on_clock_running_changed(_running: bool) -> void:
-		pass
-
-
-class IdeologyStub:
-	var points := 0
-	var offer_active := false
-	var generation := 0
-	var pool := 6
-	var requests: Array = []
-
-	func preview_offer_eligibility(_handle: int) -> Dictionary:
-		var reason := ""
-		if offer_active:
-			reason = "ideology_offer_pending"
-		elif points < 131072:
-			reason = "ideology_points_insufficient"
-		return {"ok": true, "can_draw": reason.is_empty(), "reason": reason,
-			"can_reroll": offer_active and points >= 65536, "offer_active": offer_active,
-			"pool_size": pool, "cost_q16": 131072}
-
-	func snapshot(_handle: int) -> Dictionary:
-		return {"ok": true, "offer_active": offer_active, "offer_generation": generation,
-			"offer_ids": PackedInt32Array([0, 1, 2]) if offer_active else PackedInt32Array()}
-
-	func request_offer(_handle: int, day: int, sequence: int) -> Dictionary:
-		requests.append(["offer", day, sequence])
-		return {"ok": true, "sequence": sequence, "effective_day": day}
-
-	func choose_offer(_handle: int, gen: int, choice: int, day: int, sequence: int) -> Dictionary:
-		requests.append(["choose", gen, choice, day, sequence])
-		return {"ok": true, "sequence": sequence, "effective_day": day}
-
-	func reroll_offer(_handle: int, gen: int, day: int, sequence: int) -> Dictionary:
-		requests.append(["reroll", gen, day, sequence])
-		return {"ok": true, "sequence": sequence, "effective_day": day}
-
-	func equip(_handle: int, _idea: int, day: int, sequence: int) -> Dictionary:
-		return {"ok": true, "sequence": sequence, "effective_day": day}
+	var profile = load("res://data/economy/default_economy.tres")
+	profile.family_min_founder_people = 1
+	profile.family_household_people_per_owner_slot = 1
+	profile.family_milestone_populations = PackedInt64Array([60])
+	if await _start_story({"ai_enabled": false}, [&"evt.chain.ancient_foundry_legacy"]):
+		_settled.clear()
+		story_controller.refresh_country_binding()
+		story_controller.command_settled.connect(_record_receipt)
+		_ideology = story_host.get_generator().get_ideology_facade()
+		story_clock.set_speed(10.0)
+		story_clock.pause(false)
+		story_ext.set_runtime_clock(false, 10.0)
+		await _test_family()
+		await _close_story()
+	_finish()
 
 
-var _failures := 0
-var _checks := 0
+func _test_ideology(workspace: IdeologyWorkspace) -> bool:
+	var unavailable := story_controller.request_command(&"ideology.offer")
+	_expect("a day-one draw goes to the executor", bool(unavailable.get("ok", false)))
+	if not await _wait_for(1, ""):
+		return false
+	_expect("day one returns the missing opinion reason on its date",
+		await _has_receipt(unavailable, "ideology_opinion_snapshot_missing"))
+
+	var empty := story_controller.request_command(&"ideology.offer")
+	_expect("points are checked by the executor", bool(empty.get("ok", false)))
+	if not await _wait_for(2, ""):
+		return false
+	_expect("insufficient points are rejected on the command date",
+		await _has_receipt(empty, "ideology_points_insufficient"))
+	_expect("the ideology panel shows the draw rejection",
+		workspace._hint.text == CountryViewModel.ideology_player_reason("ideology_points_insufficient"))
+
+	var free := _ideology.submit([{"opcode": IdeologyFacade.Opcode.GRANT_FREE_DRAW,
+		"country_handle": story_player, "value_q16": 1, "effective_day": 3,
+		"producer_id": 77, "source_priority": -1, "sequence": 1}])
+	_expect("fixture grants a draw without adding reroll points", bool(free.get("ok", false)))
+	var draw := story_controller.request_command(&"ideology.offer")
+	_expect("paused draw is admitted for day 3", int(draw.get("effective_day", -1)) == 3)
+	if not await _wait_for(3, IDEOLOGY_STOP):
+		return false
+	var generation := int(_ideology.snapshot(story_player).get("offer_generation", 0))
+	_expect("candidate is presented from the stopped commit",
+		_offers_shown == [generation] and generation > 0)
+	_expect("paused draw keeps manual pause and speed", story_clock.paused and story_clock.speed_multiplier == 10.0)
+
+	var reroll := story_controller.request_command(&"ideology.reroll", {"offer_generation": generation})
+	_expect("reroll with no points is forwarded", bool(reroll.get("ok", false)))
+	if not await _wait_for(4, IDEOLOGY_STOP):
+		return false
+	_expect("reroll rejection preserves the candidate and publishes the reason",
+		await _has_receipt(reroll, "ideology_points_insufficient") and
+		int(_ideology.snapshot(story_player).get("offer_generation", 0)) == generation)
+	_expect("the ideology panel shows the reroll rejection",
+		workspace._hint.text == CountryViewModel.ideology_player_reason("ideology_points_insufficient"))
+
+	var grant := _ideology.submit([{"opcode": IdeologyFacade.Opcode.GRANT_IDEOLOGY_POINTS,
+		"country_handle": story_player, "value_q16": 2000 * 65536, "effective_day": 5,
+		"producer_id": 77, "source_priority": -1, "sequence": 2}])
+	_expect("fixture supplies reroll points on day 5", bool(grant.get("ok", false)))
+	var new_offer := story_controller.request_command(&"ideology.reroll", {"offer_generation": generation})
+	_expect("reroll has an effective date", int(new_offer.get("effective_day", -1)) == 5)
+	if not await _wait_for(5, IDEOLOGY_STOP):
+		return false
+	generation += 1
+	_expect("reroll stops again on its new candidate",
+		_offers_shown == [generation - 1, generation])
+
+	var dismiss := story_controller.dismiss_ideology_offer(generation)
+	_expect("close sends a native confirmation", bool(dismiss.get("ok", false)))
+	if not await _wait_for(5, ""):
+		return false
+	_expect("close preserves the offer and manual pause",
+		bool(_ideology.snapshot(story_player).get("offer_active", false)) and story_clock.paused)
+
+	story_clock.pause(false)
+	story_ext.set_runtime_clock(false, 10.0)
+	_publish_day(story_host, story_clock, 6)
+	if not await _wait_for(6, ""):
+		return false
+	var pick := story_controller.request_command(&"ideology.choose", {
+		"offer_generation": generation, "choice_index": 0})
+	_expect("later choice is admitted with a date", int(pick.get("effective_day", -1)) == 7)
+	_publish_day(story_host, story_clock, 7)
+	if not await _wait_for(7, ""):
+		return false
+	_expect("later choice consumes the same generation",
+		not bool(_ideology.snapshot(story_player).get("offer_active", true)))
+
+	var running_draw := story_controller.request_command(&"ideology.offer")
+	_expect("10x draw is admitted for day 8", int(running_draw.get("effective_day", -1)) == 8)
+	_expect("multiple admitted days stop at the draw commit", await _hold_at(8, IDEOLOGY_STOP, 10))
+	generation = int(_ideology.snapshot(story_player).get("offer_generation", 0))
+	_expect("10x draw never pauses the foreground clock", not story_clock.paused and story_clock.speed_multiplier == 10.0)
+	story_controller.dismiss_ideology_offer(generation)
+	if not await _wait_for(10, ""):
+		return false
+	_expect("running clock continues and the 10x candidate stays available",
+		bool(_ideology.snapshot(story_player).get("offer_active", false)))
+	return true
 
 
-func _init() -> void:
-	# Support gate is a different authority with its own fixtures; this one
-	# exercises its own mechanism, so configure the material model as absent.
-	IdeologyCatalog.support_gate_enabled = false
-	var fixture := _fixture()
-	var controller = fixture.controller
-	var clock: ClockStub = fixture.clock
-	var ideology: IdeologyStub = fixture.ideology
-	var ready_events: Array = []
-	var phases: Array = []
-	controller.ideology_offer_ready.connect(func(snapshot: Dictionary) -> void:
-		ready_events.append(snapshot))
-	controller.ideology_draw_state_changed.connect(func(phase: String, detail: Dictionary) -> void:
-		phases.append([phase, detail]))
+func _test_family() -> void:
+	var population := await _published_economy(story_ext.get_population_cell_snapshot.bind(story_cell, false))
+	var cohorts := PackedInt64Array(population.get("handles", []))
+	_expect("the starter has a population cohort", not cohorts.is_empty())
+	if cohorts.is_empty():
+		return
+	var ids := PackedInt64Array()
+	var opcodes := PackedInt32Array()
+	var amounts := PackedInt64Array()
+	for handle in cohorts:
+		ids.append(9200 + ids.size())
+		opcodes.append(EconomyFacade.Opcode.ADD_POPULATION)
+		amounts.append(4000)
+	var growth := story_ext.submit_economy_pod_commands({
+		"request_ids": ids, "opcodes": opcodes, "target_cohorts": cohorts, "payload0s": amounts,
+	})
+	_expect("population increase is admitted", bool(growth.get("ok", false)))
+	_publish_day(story_host, story_clock, 2)
+	if not await _wait_for(2, ""):
+		return
+	_ideology.submit([{"opcode": IdeologyFacade.Opcode.GRANT_FREE_DRAW,
+		"country_handle": story_player, "value_q16": 1, "effective_day": 3,
+		"producer_id": 77, "source_priority": -1, "sequence": 1}])
+	var draw := story_controller.request_command(&"ideology.offer")
+	_expect("the draw is dated for the family candidate day", int(draw.get("effective_day", -1)) == 3)
+	if not await _hold_at(3, FAMILY_STOP, 6):
+		return
+	_expect("family takes priority when both candidates publish",
+		bool(_ideology.snapshot(story_player).get("offer_active", false)))
+	var view := story_host.player_confirmation_view()
+	var offer: Dictionary = view.get("family_offer", {})
+	_expect("the family cards belong to the stopped day",
+		int(offer.get("created_day", -1)) == 3 and int(offer.get("cell", -1)) == story_cell and not story_clock.paused)
 
-	# 1. Insufficient points: rejected without touching the clock.
-	var rejected: Dictionary = controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	_expect("draw without points is rejected by the preview gate",
-		not bool(rejected.get("ok", true))
-		and String(rejected.get("code", "")) == "ideology_points_insufficient")
-	_expect("rejected draw never advances time",
-		clock.paused and is_equal_approx(clock.speed_multiplier, 4.0)
-		and ideology.requests.is_empty())
+	var invalid := story_controller.request_command(&"family.founding.choose", {
+		"offer_id": int(offer.get("offer_id", 0)),
+		"generation": int(offer.get("generation", 0)) + 1,
+		"choice_index": 0})
+	_expect("stale family selection reaches the executor",
+		bool(invalid.get("ok", false)) and await _has_receipt(invalid, "family_founding_offer_stale"))
+	var stale_era := story_controller.request_command(&"era_reward.choose", {
+		"offer_generation": 99, "choice_index": 0})
+	_expect("stale era selection reaches the executor",
+		bool(stale_era.get("ok", false)) and await _has_receipt(stale_era, "era_reward_offer_generation_stale"))
 
-	# 2. Paused draw: submit, run at 1x, lock other commands.
-	ideology.points = 196608
-	var drawn: Dictionary = controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	_expect("draw is accepted", bool(drawn.get("ok", false)))
-	_expect("draw steps the paused clock at 1x",
-		not clock.paused and is_equal_approx(clock.speed_multiplier, 1.0))
-	_expect("draw locks other player commands", controller.ideology_draw_locked()
-		and String(controller.request_command(
-			PlayerControllerScript.COMMAND_IDEOLOGY_EQUIP, {"ideology_id": 1}).get("code", "")) \
-			== "ideology_draw_in_progress")
-	var state: Dictionary = controller.capture_view_state()
-	_expect("player_view captures the in-flight draw",
-		String(state.get("ideology_draw_phase", "")) == "offer"
-		and bool(state.get("ideology_draw_clock_saved", false))
-		and not bool(state.get("ideology_draw_resume_running", true)))
+	var display := ReceiptSurface.new()
+	story_controller._ui_manager = display
+	story_controller._on_simulation_command_results([_find_receipt(invalid)])
+	_expect("the family dialog receives the translated backend reason",
+		display.error == PlayerController._confirmation_error_message("family_founding_offer_stale") and not display.error.is_empty())
+	story_controller._on_simulation_command_results([_find_receipt(stale_era)])
+	_expect("the era dialog receives the translated backend reason",
+		display.error == PlayerController._confirmation_error_message("era_reward_offer_generation_stale") and not display.error.is_empty())
+	story_controller._ui_manager = null
+	_expect("invalid replies leave the original stop", int(story_ext.runtime_committed_day()) == 3)
 
-	# 3. Settlement publishes the offer: pause and present.
-	clock.day = 11
-	ideology.offer_active = true
-	ideology.generation = 1
-	controller._sync_ideology_draw()
-	_expect("settled offer pauses the clock and emits offer_ready",
-		clock.paused and ready_events.size() == 1
-		and controller.ideology_draw_phase() == "presenting"
-		and not controller.ideology_draw_locked())
+	var hide := story_host.set_gm_toggle("ui.hide_all_except_gm", true)
+	_expect("GM hide is an effective-day command", int(hide.get("effective_day", -1)) == 4)
+	if not await _wait_for(3, IDEOLOGY_STOP):
+		return
+	_expect("GM policy has not taken effect while the next stop is in force",
+		not bool(story_host.player_confirmation_view().get("hide_popups", true)))
+	story_controller.dismiss_displayed_ideology_offer()
+	if not await _wait_for(6, ""):
+		return
+	var saved_offer := await _get_family_offer()
+	_expect("GM hiding advances past the same pending candidate",
+		bool(story_host.player_confirmation_view().get("hide_popups", false)) and
+		saved_offer.get("offer_id", 0) == offer.get("offer_id", -1) and saved_offer.get("status") == "OPEN")
 
-	# 4. Reroll: same pause+step flow, new generation re-presents.
-	var reroll: Dictionary = controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_REROLL, {"offer_generation": 1})
-	_expect("reroll is accepted and steps time",
-		bool(reroll.get("ok", false)) and not clock.paused
-		and controller.ideology_draw_phase() == "reroll")
-	clock.day = 12
-	ideology.generation = 2
-	controller._sync_ideology_draw()
-	_expect("rerolled offer is presented again",
-		ready_events.size() == 2 and clock.paused)
-
-	# 5. Choose: step one day, finish once the offer is consumed, restore clock.
-	var chosen: Dictionary = controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_CHOOSE,
-		{"offer_generation": 2, "choice_index": 1})
-	_expect("choose is accepted and steps time",
-		bool(chosen.get("ok", false)) and not clock.paused
-		and controller.ideology_draw_phase() == "choose")
-	clock.day = 13
-	ideology.offer_active = false
-	controller._sync_ideology_draw()
-	_expect("choosing restores the original paused clock and speed",
-		controller.ideology_draw_phase().is_empty() and clock.paused
-		and is_equal_approx(clock.speed_multiplier, 4.0))
-
-	# 6. Running clock: restored to running after the draw.
-	clock.paused = false
-	clock.speed_multiplier = 2.0
-	ideology.points = 196608
-	controller.request_command(PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	clock.day = 14
-	ideology.offer_active = true
-	ideology.generation = 3
-	controller._sync_ideology_draw()
-	controller.dismiss_ideology_offer()
-	_expect("dismissing a presented offer restores the running clock",
-		not clock.paused and is_equal_approx(clock.speed_multiplier, 2.0)
-		and controller.ideology_draw_phase().is_empty())
-
-	# 7. Rejection settlement unlocks with a reason.
-	ideology.offer_active = false
-	clock.paused = true
-	clock.speed_multiplier = 4.0
-	var seq_result: Dictionary = controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	controller._on_ideology_command_settled({"country_handle": 77, "opcode": 3,
-		"sequence": int(seq_result.get("sequence", -1)), "ok": false,
-		"reason": "ideology_offer_pool_insufficient"})
-	var last: Array = phases[phases.size() - 1]
-	_expect("native rejection unlocks, restores the clock and reports why",
-		not controller.ideology_draw_locked() and clock.paused
-		and String((last[1] as Dictionary).get("reason", "")) == "ideology_offer_pool_insufficient"
-		and not String((last[1] as Dictionary).get("message", "")).is_empty())
-
-	# 8. Timeout after three unsettled days.
-	controller.request_command(PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	clock.day += 4
-	controller._sync_ideology_draw()
-	last = phases[phases.size() - 1]
-	_expect("an unsettled draw times out after three days",
-		not controller.ideology_draw_locked() and clock.paused
-		and String((last[1] as Dictionary).get("reason", "")) == "ideology_draw_timeout")
-
-	# 9. Restore an in-flight draw from player_view and complete it.
-	var restored_fixture := _fixture()
-	var restored = restored_fixture.controller
-	var restored_clock: ClockStub = restored_fixture.clock
-	var restored_ideology: IdeologyStub = restored_fixture.ideology
-	restored_clock.day = 11
-	restored_ideology.offer_active = true
-	restored_ideology.generation = 1
-	restored.restore_view_state(null, state)
-	_expect("restored draw resumes and presents the settled offer",
-		restored.ideology_draw_phase() == "presenting" and restored_clock.paused)
-	restored_ideology.offer_active = false
-	restored._sync_ideology_draw()
-	_expect("restored draw releases its saved clock once resolved",
-		restored.ideology_draw_phase().is_empty()
-		and is_equal_approx(restored_clock.speed_multiplier, 4.0))
-
-	_expect("an invalid draw configuration also has a readable rejection",
-		not CountryViewModel.ideology_player_reason("ideology_offer_weight_invalid").is_empty())
-	controller.free()
-	restored.free()
-	print("ideology draw flow: %d checks, %d failures" % [_checks, _failures])
-	call_deferred("quit", 0 if _failures == 0 else 1)
+	var chosen := story_controller.request_command(&"family.founding.choose", {
+		"offer_id": int(offer.offer_id), "generation": int(offer.generation), "choice_index": 0})
+	var day := int(chosen.get("effective_day", -1))
+	_expect("hidden candidate remains selectable", day == 7)
+	_publish_day(story_host, story_clock, 7)
+	if await _wait_for(day, ""):
+		_expect("family receives a successful terminal receipt", await _has_receipt(chosen, ""))
+		var families := await _published_economy(
+			story_ext.get_family_cell_snapshot.bind(story_cell, 0, 64), day)
+		_expect("the chosen offered house appears",
+			PackedInt64Array(families.get("stable_ids", [])).has(int(offer.candidates[0].stable_id)))
 
 
-func _fixture() -> Dictionary:
-	var controller = PlayerControllerScript.new()
-	var clock := ClockStub.new()
-	var ideology := IdeologyStub.new()
-	controller.set("_runtime_host", HostStub.new())
-	controller.set("_world_clock", clock)
-	controller.set("_ideology_facade", ideology)
-	controller.set("_player_country_handle", 77)
-	return {"controller": controller, "clock": clock, "ideology": ideology}
+func _hold_at(day: int, reason: String, target: int) -> bool:
+	_publish_day(story_host, story_clock, target)
+	if story_host._native_daily_inline_active:
+		return await _wait_for(day, reason)
+	var frames := Engine.get_process_frames()
+	var limit := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
+	var report := story_ext.get_runtime_control_state()
+	while report.get("simulation_host_state") not in ["FAULTED", "STOPPED"]:
+		if report.get("simulation_host_state") == "PAUSED" and int(report.get("simulation_committed_day", 0)) >= day:
+			break
+		if Time.get_ticks_usec() >= limit:
+			break
+		OS.delay_usec(500)
+		report = story_ext.get_runtime_control_state()
+	_expect("waiting on %s required zero foreground frames" % reason,
+		Engine.get_process_frames() == frames and report.get("player_block_reason") == reason
+		and int(report.get("simulation_committed_day", -1)) == day)
+	return await _wait_for(day, reason)
 
 
-func _expect(label: String, condition: bool) -> void:
-	_checks += 1
-	if condition:
-		print("  [OK] %s" % label)
-	else:
-		_failures += 1
-		push_error("[FAIL] %s" % label)
+func _wait_for(day: int, reason: String) -> bool:
+	var limit := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
+	var report := story_ext.get_runtime_control_state()
+	while Time.get_ticks_usec() < limit:
+		if int(report.get("simulation_committed_day", -1)) > day or report.get("simulation_host_state") == "FAULTED":
+			break
+		if story_host._runtime_commit_day == day and story_controller.player_confirmation_reason() == reason:
+			return true
+		await process_frame
+		report = story_ext.get_runtime_control_state()
+	_expect("day %d publishes %s: %s" % [day, reason, report], false)
+	return false
+
+
+func _get_family_offer() -> Dictionary:
+	var page := await _published_economy(story_economy.family_founding_offers,
+		int(story_ext.runtime_committed_day()))
+	var rows: Array = page.get("offers", [])
+	return {} if rows.is_empty() else rows[0]
+
+
+func _record_receipt(id: StringName, result: Dictionary) -> void:
+	var row := result.duplicate(false)
+	row["command"] = id
+	_settled.append(row)
+
+
+func _find_receipt(command: Dictionary) -> Dictionary:
+	for row in _settled:
+		if row.get("sequence", -1) == command.get("sequence", -2):
+			return row
+	return {}
+
+
+func _has_receipt(command: Dictionary, reason: String) -> bool:
+	var deadline := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
+	var row := _find_receipt(command)
+	while row.is_empty() and Time.get_ticks_usec() < deadline:
+		await process_frame
+		row = _find_receipt(command)
+	return not row.is_empty() and bool(row.get("ok", false)) == reason.is_empty() and row.get("reason", "") == reason

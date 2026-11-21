@@ -39,7 +39,7 @@
 #include "runtime_economy_army_personnel.h"
 // END army personnel lane
 #include "runtime_pod_protocol.h"
-#include "country_read_view.h"
+#include "country_api.h"
 #include "natural_resource_kernel.h"
 #include "trade_visual_cache.h"
 #include "annual_development_ledger.h"
@@ -73,6 +73,7 @@ struct TrackBDerivedCellWork {
 };
 
 struct RuntimeEconomyEcp2State;
+struct RuntimeGdpCell;
 
 class EffectRuntime;
 class EffectInstanceForwarder;
@@ -419,6 +420,7 @@ public:
 
     enum ConstructionOwnershipPolicy : int32_t {
         OWNERSHIP_TREASURY_SPONSORED_PRIVATE = 1,
+        OWNERSHIP_TREASURY_MILITARY_ORDER = 2,
     };
 
     NativeEconomyRuntime();
@@ -426,6 +428,7 @@ public:
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(EconomyHostPort *host) { _simulation_host = host; }
     AnnualEconomyFacts capture_annual_facts(uint64_t country_handle, bool flows) const;
+    std::vector<RuntimeGdpCell> capture_settlement_output(uint64_t country_handle) const;
     void publish_annual_development_facts();
     bool annual_observes_cell(int32_t cell) const;
     void record_annual_event(int32_t cell, AnnualMetric metric, int64_t value);
@@ -689,8 +692,8 @@ public:
     // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
     // epoch; this value identifies the latest committed aggregate state.
     uint64_t committed_generation() const { return _committed_generation; }
-    void drain_bio_introduces(godot::PackedInt32Array &cells,
-                              godot::PackedInt32Array &bits);
+    void take_bio_introduces(std::vector<int32_t> &cells,
+                            std::vector<int32_t> &bits);
     godot::PackedInt32Array economy_live_cells_query();
     godot::Dictionary report() const;
     godot::Dictionary committed_audit_report() const;
@@ -747,21 +750,22 @@ public:
         int64_t country_handle, int32_t cell_idx,
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
-                                                     int32_t limit) const;
+                                                     int32_t limit,
+                                                     int64_t settled_day = -1) const;
     // Player-facing treasury construction ingress. `submit_commands` is
     // fail-closed while StageOps owns production, so a formal build request
     // reaches the epoch command queue through this boundary instead (same
     // contract as the canal / family-colonization lanes).
     godot::Dictionary queue_treasury_sponsored_build(
         int64_t country_handle, int32_t cell_idx, int32_t type_id,
-        int64_t effective_day, int64_t sequence, bool queue_for_worker);
+        int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
     // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
     // economy ledger first, and the military bookkeeping command is only
     // forwarded afterwards (requirement 6.5).
     godot::Dictionary queue_treasury_sponsored_demolish(
         int64_t country_handle, int32_t cell_idx, int32_t type_id,
         int64_t count, int64_t effective_day, int64_t sequence,
-        bool queue_for_worker);
+        bool queue_for_worker, bool military_order = false);
     godot::Dictionary canal_route_quote(
         int64_t country_handle, int32_t start_cell, int32_t end_cell,
         const godot::PackedInt32Array &waypoints);
@@ -781,18 +785,22 @@ public:
     godot::Dictionary family_traits(int64_t family_handle) const;
     godot::Dictionary family_branch_effects(int64_t family_handle,
                                             int32_t cell) const;
+    bool submit_effect_family_trait(uint64_t family, const std::string &trait, bool grant,
+        int32_t strength, int64_t day, int64_t sequence);
     godot::Dictionary submit_family_trait_commands(
         const godot::Dictionary &packed_batch);
     godot::Dictionary family_founding_offers(int32_t offset,
                                              int32_t limit) const;
     godot::Dictionary submit_family_founding_choice(
         int64_t offer_id, int64_t generation, int32_t choice_index,
-        int64_t effective_day, int64_t sequence);
+        int64_t effective_day, int64_t sequence, bool check_now = true);
     godot::Dictionary family_industries(int64_t family_handle, int32_t offset,
                                         int32_t limit) const;
     godot::Dictionary family_notable_people(int64_t family_handle,
                                             int32_t offset,
                                             int32_t limit) const;
+    int32_t player_family_founding_offer() const;
+    godot::Array take_family_founding_receipts();
     godot::Dictionary family_colonization_quotes(
         int64_t country_handle, int32_t target_cell, int64_t family_filter,
         int32_t source_filter, int32_t offset, int32_t limit,
@@ -848,6 +856,11 @@ public:
     // Per-cell stratum-mobilization rows (organization/stage/cooldown). Returns
     // an empty list when the cell has no aggrieved profession.
     godot::Dictionary cell_mobilization_snapshot(int32_t cell_idx) const;
+    void sample_narrative_cell(NarrativeCellView &, bool detailed) const;
+    std::vector<NarrativeEconomyNotice> narrative_economy_notices(int64_t day, uint64_t country) const;
+    bool narrative_unrest_rows(int32_t cell, std::vector<NarrativeUnrestRow> &) const;
+    NarrativeUnrestOdds calculate_mobilization_odds(int32_t cell, int32_t profession,
+        int32_t action, int64_t spend_bp, godot::Dictionary *details) const;
     // Bounded country-level summary for the top bar/alerts.
     godot::Dictionary country_mobilization_summary(int32_t country_slot) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
@@ -903,6 +916,7 @@ public:
         return !_epoch_active && day_index > _last_committed_day &&
                _building_context_day != day_index;
     }
+    const std::vector<std::string> &resource_ids() const { return _resource_ids; }
     const std::vector<std::string> &building_resource_reserve_slots() const {
         return _resource_reserve_slots;
     }
@@ -920,20 +934,16 @@ public:
         int32_t temperature_signal = 0;
         int32_t moisture_signal = 0;
     };
-    void configure_worker_natural_resources(
-        std::vector<WorkerNaturalResource> resources);
-    bool worker_natural_resources_configured() const {
-        return !_worker_natural_resources.empty() &&
-            _worker_natural_resources.size() == _resource_ids.size();
-    }
-    bool worker_resource_seeded() const { return _worker_resource_seeded; }
+    EconomyNaturalResourceCatalogView natural_resource_catalog() const;
+    void configure_worker_natural_resources(const std::vector<EconomyNaturalResourceProfile> &profiles);
+    bool worker_natural_resources_configured() const;
+    bool worker_resource_seeded() const;
+    int32_t worker_resource_recovered_cells() const;
+    bool seed_worker_resource_reserves(int64_t initial_day,
+        const std::vector<const float *> &reserves, const std::vector<const float *> &changes);
     void take_worker_resource_mirror_cells(std::vector<int32_t> &out);
-    const std::vector<float> &worker_resource_reserve_lanes() const {
-        return _worker_resource_reserve;
-    }
-    const std::vector<float> &worker_resource_extra_lanes() const {
-        return _worker_resource_extra;
-    }
+    const std::vector<float> &worker_resource_reserve_lanes() const;
+    const std::vector<float> &worker_resource_extra_lanes() const;
     struct CommittedGameplayFact {
         int32_t kind = 0;
         int32_t cell = -1;
@@ -1234,7 +1244,8 @@ public:
     // at Economy commit, preferences are frozen inputs read by FAMILY_COMMIT,
     // and colonization intents are converted into ordinary expedition
     // commands at the next epoch open.
-    std::shared_ptr<const struct CountryAiEconomyDigest> country_ai_digest() const;
+    std::shared_ptr<const CountryAiEconomyDigest> country_ai_digest() const;
+    void restore_country_ai_digest(std::shared_ptr<const CountryAiEconomyDigest> digest);
     void set_country_ai_family_preferences(std::vector<struct CountryAiFamilyPreferenceRow> rows);
     void queue_country_ai_colonization(std::vector<struct CountryAiColonizationIntent> intents);
     // AI research shares become ordinary procurement policies (whole treasury
@@ -1337,12 +1348,12 @@ public:
         std::vector<uint8_t> poor_buckets;
     };
     godot::Dictionary evaluate_read_query(const ReadKey &key);
-    void read_view_subscribe(const ReadKey &key);
+    bool read_view_subscribe(const ReadKey &key);
     std::shared_ptr<const ReadView> read_view() const {
         return std::atomic_load_explicit(&_read_view, std::memory_order_acquire);
     }
     // Caller must hold the economy authority boundary with no epoch open.
-    void serve_read_view();
+    void serve_read_view(bool requested = false);
     void publish_building_visual_view();
     std::shared_ptr<const BuildingVisualView> building_visual_view() const {
         return std::atomic_load_explicit(&_building_visual_view,
@@ -1667,7 +1678,9 @@ public:
     // operating floor; `price` is MONEY_SCALE per 1.0 good.
     void military_read_market(int32_t good, std::vector<int32_t> &out_cells,
                               std::vector<int64_t> &out_sellable,
-                              std::vector<int64_t> &out_price) const;
+                              std::vector<int64_t> &out_price, std::vector<uint8_t> &out_stocked) const;
+    void military_read_equipment_production(const std::vector<int32_t> &cells,
+        const std::vector<uint8_t> &equipment, std::vector<uint8_t> &out) const;
     // Dense soldier / unemployed profession ids (resolved from the profession
     // catalog; -1 when the catalog predates the military content).
     int32_t military_soldier_profession();
@@ -2134,6 +2147,8 @@ private:
     void refresh_cell_activity_tiers(int64_t day_index);
     void request_cell_wake(int32_t cell);
     int32_t tier_review_period_days(uint8_t tier) const;
+    void collect_economy_live_cells(std::vector<int32_t> &cells,
+                                    std::vector<int64_t> *population_totals) const;
     void rebuild_economy_live_cells();
     void capture_epoch_country_population();
     void refresh_cadence_estimates();
@@ -2343,7 +2358,7 @@ private:
     void stage_construction_receipt(const Command &cmd, bool ok,
                                     const char *code, int64_t cash_paid = 0,
                                     int64_t treasury_goods_used = 0,
-                                    int64_t market_goods_used = 0);
+                                    int64_t market_goods_used = 0, const char *step = "economy");
 };
 
 #include "economy_runtime_internal_arithmetic.h"

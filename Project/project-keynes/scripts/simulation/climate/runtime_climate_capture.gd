@@ -24,7 +24,8 @@ func sample_anomaly() -> float:
 	return float(value) if value != null else 0.0
 
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
-		authoritative: bool, defer_thermal_equator: bool = false) -> Dictionary:
+		authoritative: bool, defer_thermal_equator: bool = false,
+		session_seed: bool = false) -> Dictionary:
 	if not authoritative or map == null:
 		return {}
 	var cp_now = _generator._c()
@@ -42,35 +43,14 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 			physics["ocean_period_days"] = maxi(1, int(cp_now.ocean_currents_period_ticks))
 			physics["world_seed"] = _generator._last_seed
 			out["physics_knobs"] = physics
-	# Stage B follows weather rounds. Vapor and precipitation are solved daily.
-	var stride: int = _generator._get_native_daily_bundle_builder()._native_daily_weather_cadence_stride(cp_now)
-	var stage_b_due: bool = true
-	# capture 失败会在同一天重试；节拍必须按日而不是按调用推进。
-	var stage_b_repeat_day: bool = day == _generator._runtime_climate_worker_weather_embed_day
-	if stride > 1 and not stage_b_repeat_day:
-		if _generator._runtime_climate_worker_weather_embed_day <= -1000000:
-			# 冷启动首跑日与 legacy weather bucket 对齐（StridePolicy 在
-			# (day+phase)%stride==0 首跑，即 day=stride-phase）。
-			var phase: int = 0
-			if cp_now.get("sim_stagger_enabled") != null \
-					and bool(cp_now.sim_stagger_enabled):
-				var raw: int = int(cp_now.sim_stagger_weather_phase) \
-						if cp_now.get("sim_stagger_weather_phase") != null else 4
-				phase = posmod(raw, stride)
-			var first_due_day: int = (stride - phase) if phase > 0 else stride
-			stage_b_due = day >= first_due_day
-		else:
-			stage_b_due = (day - _generator._runtime_climate_worker_weather_embed_day) >= stride
-	if stage_b_due:
-		if not stage_b_repeat_day:
-			_generator._runtime_climate_worker_weather_embed_day = day
-			_generator._runtime_climate_worker_stage_b_call_index += 1
-		out["weather_round"] = true
-		# The production builder uses the same cadence and elapsed game days.
-		var stage_b: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_stage_b_knobs(
-			map, cp_now, _generator._runtime_climate_worker_stage_b_call_index, float(stride), day + 1)
-		if not stage_b.is_empty():
-			out["stage_b"] = stage_b
+	if not session_seed and day != _generator._runtime_climate_worker_weather_embed_day:
+		_generator._runtime_climate_worker_weather_embed_day = day
+		_generator._runtime_climate_worker_stage_b_call_index += 1
+	var stage_index: int = 0 if session_seed else _generator._runtime_climate_worker_stage_b_call_index
+	var stage_b: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_stage_b_knobs(
+		map, cp_now, stage_index, 1.0, 0 if session_seed else day + 1)
+	if not stage_b.is_empty():
+		out["stage_b"] = stage_b
 	# The worker reuses the production precipitation and snowpack configuration.
 	if _generator._weather_system != null \
 			and _generator._weather_system.has_method("build_distribute_knobs_for_worker"):
@@ -187,7 +167,7 @@ func _build_runtime_climate_round_input(
 # （lane 走 slots）也不能依赖 job 实例。任何一侧改了 profile 字段名，三份都要改。
 
 func _build_runtime_climate_round_scalar_knobs(
-		map: MapData, season_phase: float) -> Dictionary:
+		map: MapData, season_phase: float, session_seed: bool = false) -> Dictionary:
 	var cp = _generator._c()
 	if cp == null or _generator._last_cfg == null:
 		return {}
@@ -261,7 +241,7 @@ func _build_runtime_climate_round_scalar_knobs(
 	d["si_dt_days"] = float(_generator._consume_sea_ice_dt_days()) if _generator.has_method("_consume_sea_ice_dt_days") else 1.0
 	# 生产在调 sea_ice pass 之前把 t_form/t_melt 各减去 climate_anomaly * 0.10
 	# （_generator._apply_sea_ice_daily_pass）。worker 要用同一组阈值，所以这个偏移要在这里做。
-	var ca_now := sample_anomaly()
+	var ca_now := 0.0 if session_seed else sample_anomaly()
 	if not is_equal_approx(ca_now, 0.0):
 		si_t_form = clampf(si_t_form - 0.10 * ca_now, 0.0, 1.0)
 		si_t_melt = clampf(si_t_melt - 0.10 * ca_now, 0.0, 1.0)
@@ -293,35 +273,7 @@ func _runtime_climate_catalog_hash_for_map(map: MapData) -> int:
 	var map_id := map.get_instance_id()
 	if _generator._runtime_climate_catalog_map_id == map_id and _generator._runtime_climate_catalog_hash > 0:
 		return _generator._runtime_climate_catalog_hash
-	var hashing := HashingContext.new()
-	hashing.start(HashingContext.HASH_SHA256)
-	hashing.update("runtime-climate-catalog-v1\n".to_utf8_buffer())
-	_runtime_climate_hash_append(hashing, "abi", 3)
-	_runtime_climate_hash_append(hashing, "width", int(map.width))
-	_runtime_climate_hash_append(hashing, "height", int(map.height))
-	_runtime_climate_hash_append(hashing, "cells", int(map.cell_count()))
-	var cp = _generator._c()
-	if cp != null:
-		# Only immutable numeric/profile knobs belong in the catalog. Dynamic
-		# day fields are deliberately excluded and remain input snapshot data.
-		for field_name in PackedStringArray([
-			"solar_amplitude", "lapse_rate", "sea_ice_freeze_threshold",
-			"sea_ice_melt_threshold", "soil_water_capacity", "hydrology_enabled",
-			"weather_advect_use_wind_vector", "veg_feedback_elev_decay",
-		]):
-			var field_value = cp.get(field_name)
-			if field_value != null:
-				_runtime_climate_hash_append(hashing, field_name, field_value)
-	# Static map identity is included once per generated MapData instance. These
-	# arrays are not re-read by the worker; they only detect a mismatched map.
-	_runtime_climate_hash_append(hashing, "elevation", map.elevation_arr)
-	_runtime_climate_hash_append(hashing, "lat_norm", map.cell_lat_norm_arr)
-	_runtime_climate_hash_append(hashing, "terrain", map.terrain_arr)
-	_runtime_climate_hash_append(hashing, "landform", map.landform_arr)
-	_runtime_climate_hash_append(hashing, "water", map.is_water_arr)
-	_runtime_climate_hash_append(hashing, "hydro_parent", map.hydro_parent_arr)
-	_runtime_climate_hash_append(hashing, "neighbours", map.neighbor_indices_packed())
-	_generator._runtime_climate_catalog_hash = _runtime_climate_hash_digest_value(hashing.finish())
+	_generator._runtime_climate_catalog_hash = RuntimeClimateHash.catalog_hash(map, _generator._c())
 	_generator._runtime_climate_catalog_map_id = map_id
 	return _generator._runtime_climate_catalog_hash
 
@@ -381,23 +333,9 @@ func _runtime_climate_trace_has_older_pending(day: int) -> bool:
 # ─── P1：环境帧发布者所有权 ────────────────────────────────────────────────
 # `callsite` 为 0（默认）⇒ 所有权为空 ⇒ 任何调用点都能发，与改动前逐字节相同。
 
-func set_worker_environment_publisher(callsite: int) -> void:
-	_generator._worker_environment_publisher_callsite = maxi(callsite, 0)
-
-
 ## 存盘窗口的预发布暂停回调。`_generator.request_runtime_save()` 是 game_save_coordinator
 ## 直接调的入口（不经过 WorldRuntimeHost），所以"先降 K 再 drain ring"必须由
 ## 发布权的真正持有者在这里收口。
-
-func set_save_prefetch_suspend_callback(callback: Callable) -> void:
-	_generator._save_prefetch_suspend_callback = callback
-
-func _notify_save_prefetch_suspend() -> void:
-	if _generator._save_prefetch_suspend_callback.is_valid():
-		_generator._save_prefetch_suspend_callback.call("request_runtime_save")
-
-func worker_environment_publisher_callsite() -> int:
-	return _generator._worker_environment_publisher_callsite
 
 func environment_publish_callsite_mask() -> int:
 	return _generator._environment_publish_callsite_mask
@@ -406,25 +344,13 @@ func environment_publish_diagnostics() -> Dictionary:
 	return {
 		"environment_publish_callsite_mask": _generator._environment_publish_callsite_mask,
 		"environment_publish_count": _generator._environment_publish_count,
-		"environment_publish_suppressed": _generator._environment_publish_suppressed,
 		"environment_publish_orphan_day": _generator._environment_publish_orphan_day,
-		"environment_publisher_callsite": _generator._worker_environment_publisher_callsite,
 	}
 
 
 ## 今天这一天还该不该由本调用点发布环境帧。
 ## 返回 false 时调用方必须**什么都不做**：不打包、不递增 generation —— 打包了却
 ## 被别人抢先发，只会得到 `runtime_input_stale` 的静默丢弃（并让 generation 空洞）。
-
-func _runtime_environment_publish_allowed(callsite: int, day: int) -> bool:
-	if _generator._worker_environment_publisher_callsite == 0:
-		return true
-	if callsite == _generator._worker_environment_publisher_callsite:
-		return true
-	_generator._environment_publish_suppressed += 1
-	_generator._environment_publish_orphan_day = day
-	return false
-
 
 ## Day the next environment frame must carry, as NativeSimulationHost tracks it
 ## (-1 without a runtime host). Publishers never infer it from their own clock.
@@ -482,20 +408,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 			and _generator._world_clock_ref.has_method("season_phase") else 0.0
 	if is_nan(phase) or is_inf(phase) or day < 0:
 		return _runtime_climate_failure("runtime_input_value_invalid", "day/season phase is not finite", day)
-	# P1：所有权检查必须在**任何**打包动作之前。打包本身要做季节刷新重算与
-	# 26+10 条 lane 的拷贝，先打包再被拒就白付一次；更糟的是打包会推进
-	# `_generator._runtime_input_generation`，让真正的发布者拿到一个空洞的代次。
-	if not _runtime_environment_publish_allowed(callsite, day):
-		_generator._capture_trace("suppressed day=%d callsite=%d publisher=%d" % [
-			day, callsite, _generator._worker_environment_publisher_callsite])
-		return {
-			"ok": true,
-			"suppressed": true,
-			"day": day,
-			"code": "runtime_input_publisher_superseded",
-			"publisher": _generator._worker_environment_publisher_callsite,
-			"callsite": callsite,
-		}
+	# 只由指定发布者消耗输入编号。
 	if _generator._runtime_climate_trace_pending.has(day):
 		var cached: Dictionary = _generator._runtime_climate_trace_pending[day]
 		_generator._capture_trace("cached day=%d callsite=%d" % [day, callsite])
@@ -514,41 +427,57 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	var thread_report: Dictionary = {}
 	if _generator._data_core_world_ext != null:
 		thread_report = _generator.get_runtime_thread_report()
-		# The thread report names this key simulation_environment_generation.
-		# Reading the bare name always returned 0, so the counter never synced
-		# with the host; after a load it restarted at 1 below the restored
-		# Climate authority's last input generation.
 		_generator._runtime_input_generation = maxi(
 			_generator._runtime_input_generation,
 			int(thread_report.get("simulation_environment_generation",
 				thread_report.get("environment_generation", 0))))
 		if _generator._climate_authority_grant_pending(thread_report):
-			# P1：预发布器**不许**在这里等。这个等待是 10ms 切片 + 200us 忙等的
-			# 主线程自旋（上限 60s），而预发布器的设计前提就是"失败即返回、下一帧
-			# 再来"。它等的东西（worker 提交到 captured day）恰好由预发布自己喂
-			# 出来，在这里等就是等自己 —— 正是 web 上"首日卡 24 秒"的形态。
-			if callsite != _generator.ENV_CALLSITE_PREFETCH:
-				thread_report = _generator._wait_climate_authority_grant()
-	# Synchronous same-day capture. Retries and the year fence can arrive on
-	# different display frames; the elapsed game days come from the packet.
+			thread_report = _generator._wait_climate_authority_grant()
+	# The packet date governs capture, including retries across the year fence.
 	var previous_date: int = calendar_day
-	if bool(thread_report.get("climate_worker_authoritative", false)):
+	if bool(thread_report.get("climate_worker_authoritative", false)) \
+			or bool(thread_report.get("whole_graph_requested", false)):
 		calendar_day = day + 1
 	var result := _capture_environment(map, day, phase, callsite, thread_report)
 	calendar_day = previous_date
 	return result
 
 
+func initialize_world_environment(notice_history: Array = []) -> Dictionary:
+	var map: MapData = _generator._sus_map
+	var clock: WorldClock = _generator._world_clock_ref
+	var profile = _generator._c()
+	var config := clock.opening_climate_seed()
+	config["display_notice_history"] = notice_history
+	config["days_per_year"] = clock.days_per_year()
+	config["climate_random_drift"] = clock.climate_random_drift
+	config["climate_anomaly_max"] = clock.climate_anomaly_max
+	config["season"] = _generator._build_season_round_knobs(map, 0)
+	config["season_period"] = int(profile.season_refresh_period_ticks)
+	config["albedo_stride"] = int(profile.weather_albedo_stride)
+	config["vegetation_stride"] = int(profile.weather_vegetation_dynamics_stride)
+	config["feedback_stride"] = int(profile.weather_feedback_stride)
+	config["convergence_stride"] = int(profile.weather_convergence_refresh_stride)
+	config["ice_form"] = float(profile.sea_ice_form_threshold)
+	config["ice_melt"] = float(profile.sea_ice_melt_threshold)
+	config["volcano_landform"] = int(LandformType.LF.VOLCANO)
+	config["volcanoes"] = map.has_volcano_arr
+	config["water_lut"] = MapData.is_water_lut()
+	config["river_flow"] = map.river_flow_arr
+	return _capture_environment(map, clock.day_index() + 1, clock.season_phase(), 0,
+		{"climate_worker_authoritative": true, "climate_worker_prepares_thermal_equator": true}, config)
+
+
 func _capture_environment(map: MapData, day: int, phase: float,
-		callsite: int, thread_report: Dictionary) -> Dictionary:
+		callsite: int, thread_report: Dictionary, session_config: Dictionary = {}) -> Dictionary:
 	# The due season refresh completes before its fields enter the worker packet.
-	if bool(thread_report.get("climate_worker_authoritative", false)) \
-			and _generator._season_refresh_job != null:
-		# Eligibility comes from this game's date, not how often SUS had enough
-		# frame budget to probe the job. CLM2 restores the completed boundary.
-		_generator._season_refresh_job.run_due_round_for_capture(day)
+	if session_config.is_empty() and _generator._season_refresh_job != null \
+			and bool(thread_report.get("climate_worker_authoritative", false)):
+		var season_slices: int = _generator._season_refresh_job.run_due_round_for_capture(day)
+		if season_slices > 0:
+			_generator.record_runtime_main_step(day - 1, &"season_install")
 		if bool(_generator._season_refresh_job.season_refresh_state_snapshot().get("round_active", false)):
-			return _runtime_climate_failure("season_refresh_incomplete", "Season refresh has not completed for this input day", day)
+			return {"ok": false, "pending": true, "code": "season_refresh_incomplete", "day": day}
 	var next_generation := maxi(1, _generator._runtime_input_generation + 1)
 	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
 	var topology_generation := _runtime_climate_topology_generation_for_map(map)
@@ -572,7 +501,7 @@ func _capture_environment(map: MapData, day: int, phase: float,
 			"trade LUTs must both be empty or both contain 256 entries", day)
 	var input_generation := next_generation
 	_generator._capture_trace("publish day=%d gen=%d callsite=%d" % [day, input_generation, callsite])
-	var result: Dictionary = _generator._data_core_world_ext.capture_runtime_inputs({
+	var inputs := {
 		"generation": input_generation,
 		"climate_catalog_abi_version": 3,
 		"climate_catalog_hash": catalog_hash,
@@ -582,8 +511,6 @@ func _capture_environment(map: MapData, day: int, phase: float,
 		"season_phase": phase,
 		"climate_anomaly": sample_anomaly(),
 		"topology_generation": topology_generation,
-		"vision_revision": map.vision_revision,
-		"fog_solved": map.fog_solved,
 		"cell_temp": map.temp_arr,
 		"cell_temp_30d": map.temp_30d_arr,
 		"cell_moisture": map.moisture_arr,
@@ -624,6 +551,7 @@ func _capture_environment(map: MapData, day: int, phase: float,
 		"neighbor_indices": map.neighbor_indices_packed(),
 		"neighbor_offsets": neighbor_offsets,
 		"hydro_parent": hydro_parent,
+		"province_ids": map.province_id_arr,
 		"terrain": map.terrain_arr,
 		"landform": map.landform_arr,
 		"vegetation": map.vegetation_arr,
@@ -634,14 +562,16 @@ func _capture_environment(map: MapData, day: int, phase: float,
 		"canal_water": map.canal_water_arr,
 		"trade_passable_lut": trade_passable,
 		"trade_move_cost_lut": trade_cost,
-		"visible": map.physical_visible_arr,
+		"military_base_landform": map.base_landform_arr,
+		"military_settlement_tier": _generator._get_map_country_initializer()._military_settlement_tiers(map),
 		"building_resource_reserve": building_reserve,
 		"building_resource_extra": building_extra,
 		# S3：生产 Climate round 的输入缓冲。worker 用它调共享纯内核，替代原来
 		# worker 侧自己重写的 stage 近似实现。
 		# ACTIVE 下这个字典还负责带全套 round scalars（见该函数里的说明）—— 那是
 		# 「海冰不显示」「季节振幅只剩 62.5%」的共同根因所在。
-		"climate_round_input": _build_runtime_climate_round_input(
+		"climate_round_input": _build_runtime_climate_round_scalar_knobs(map, phase, true) \
+			if not session_config.is_empty() else _build_runtime_climate_round_input(
 			map, phase,
 			bool(thread_report.get("climate_worker_authoritative", false))),
 		"climate_round_static_knobs": {
@@ -669,17 +599,9 @@ func _capture_environment(map: MapData, day: int, phase: float,
 		# for the same day.
 		"climate_stage_knobs": _build_runtime_climate_stage_knobs(
 			map, day, bool(thread_report.get("climate_worker_authoritative", false)),
-			bool(thread_report.get("climate_worker_prepares_thermal_equator", false))),
-		# season refresh 今天跑过没有。worker 内核用它决定要不要把 moisture 与
-		# plant_available_water 从 input 收回来 —— 那一天这两个字段的权威是主线程，
-		# 不是 worker（season refresh 没有搬进 worker，它是地理级重算）。
-		#
-		# SHADOW 下这个标志由 reference publish 填（RuntimeClimateTrace）；ACTIVE 不
-		# 走 trace，所以它一直是 false，收回机制整个失效。表现是 PAW 停在 worker 那份
-		# 陈旧副本上、每 48 天才被 vegetation_dynamics 动一次，而生产侧每 30 天就被
-		# season refresh 重算一次。
-		#
-		# 权威下到期的 season refresh 已在本函数开头跑完。
+			bool(thread_report.get("climate_worker_prepares_thermal_equator", false)),
+			not session_config.is_empty()),
+		# 只有慢层结果写回后才提交对应输入，气候据此接收重算字段。
 		"climate_season_refresh_ran": _generator._season_refresh_edge_pending(),
 		# Climate 在 worker 手上时，worker 要自己补上「生产被抑制后就停更」的那些
 		# 记录：round scalars（season_phase）与 PAW。两处都不能无条件做，否则
@@ -687,7 +609,13 @@ func _capture_environment(map: MapData, day: int, phase: float,
 		"climate_worker_authoritative": bool(
 			thread_report.get("climate_worker_authoritative", false)),
 		"climate_capture_cursors": preload("res://scripts/game/world_runtime_climate_restore.gd").capture(_generator),
-	})
+	}
+	if not session_config.is_empty():
+		inputs["world_environment_config"] = session_config
+		return _generator._data_core_world_ext.capture_runtime_inputs(inputs)
+	if callsite != 0 or day > 1:
+		_generator.record_runtime_main_step(day, &"environment_capture")
+	var result: Dictionary = _generator._data_core_world_ext.capture_runtime_inputs(inputs)
 	_generator._capture_trace("result day=%d ok=%s code=%s" % [
 		day, str(result.get("ok", false)), String(result.get("code", ""))])
 	if bool(result.get("ok", false)):

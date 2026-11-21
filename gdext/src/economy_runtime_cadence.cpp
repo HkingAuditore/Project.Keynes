@@ -117,13 +117,9 @@ bool NativeEconomyRuntime::cell_due_investment_review(int32_t cell,
     return cell_in_market_workset(cell, day);
 }
 
-void NativeEconomyRuntime::rebuild_economy_live_cells() {
-    _economy_live_cells.clear();
-    const size_t cell_slots = static_cast<size_t>(std::max(0, _cell_count.get()));
-    if (_cell_population_total.size() != cell_slots)
-        _cell_population_total.assign(cell_slots, 0);
-    else
-        std::fill(_cell_population_total.begin(), _cell_population_total.end(), 0);
+void NativeEconomyRuntime::collect_economy_live_cells(
+        std::vector<int32_t> &cells, std::vector<int64_t> *population_totals) const {
+    cells.clear();
     const int32_t page_count = static_cast<int32_t>(population_store().page_cell.size());
     for (int32_t page = 0; page < page_count; ++page) {
         const int32_t cell = population_store().page_cell[page];
@@ -132,21 +128,24 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             total += std::max<int64_t>(0, population_store().population[slot]);
         });
-        _cell_population_total[static_cast<size_t>(cell)] = total;
-        if (total > 0) _economy_live_cells.push_back(cell);
+        if (population_totals) (*population_totals)[static_cast<size_t>(cell)] = total;
+        if (total > 0) cells.push_back(cell);
     }
     for (const int32_t cell : _building_active_cells) {
         if (cell >= 0 && cell < _cell_count.get())
-            _economy_live_cells.push_back(cell);
+            cells.push_back(cell);
     }
     for (const auto pending : pending_construction()) {
         if (pending.count > 0 && pending.cell >= 0 && pending.cell < _cell_count.get())
-            _economy_live_cells.push_back(pending.cell);
+            cells.push_back(pending.cell);
     }
-    std::sort(_economy_live_cells.begin(), _economy_live_cells.end());
-    _economy_live_cells.erase(
-        std::unique(_economy_live_cells.begin(), _economy_live_cells.end()),
-        _economy_live_cells.end());
+    std::sort(cells.begin(), cells.end());
+    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+}
+
+void NativeEconomyRuntime::rebuild_economy_live_cells() {
+    _cell_population_total.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
+    collect_economy_live_cells(_economy_live_cells, &_cell_population_total);
     auto published = std::make_shared<const std::vector<int32_t>>(_economy_live_cells);
     std::lock_guard<std::mutex> lock(_economy_live_cells_published_mutex);
     _economy_live_cells_published = std::move(published);

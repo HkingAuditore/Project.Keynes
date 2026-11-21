@@ -22,6 +22,7 @@
 //      处调用点不需要任何改动。
 
 #include "runtime_climate_formulas.h"
+#include "simulation_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -385,7 +386,7 @@ static inline float pk_vegetation_climate_score_for_type(
     const float dt = (temperature - ideal_temp) / st;
     float dm = (moisture - ideal_moist) / sm;
     if (dm > 0.0f && pk_vegetation_is_wet_type(veg)) dm *= 0.25f;
-    return float(std::exp(-0.5 * double(dt * dt + dm * dm)));
+    return float(simulation_math::exp(-0.5 * double(dt * dt + dm * dm)));
 }
 
 static inline bool pk_vegetation_candidate_allowed(uint8_t terrain, uint8_t veg) {

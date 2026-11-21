@@ -63,6 +63,7 @@ jobs:
             tools/map_authoring
             gdext/src
             gdext/tests
+            gdext/thirdparty/simulation_math
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

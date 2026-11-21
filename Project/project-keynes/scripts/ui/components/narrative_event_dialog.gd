@@ -727,8 +727,9 @@ func set_illustration_texture(tex: Texture2D) -> void:
 
 
 func show_outcome(resolution: Dictionary) -> void:
-	if _main_sheet == null:
-		_build_ui()
+	var record: Dictionary = resolution.get("record", {})
+	if not is_offer_open():
+		present_offer(record)
 	_showing_outcome = true
 	_options_vbox.visible = false
 	_error_label.visible = false
@@ -739,7 +740,6 @@ func show_outcome(resolution: Dictionary) -> void:
 	_quote_block.visible = false
 
 	var outcome: Dictionary = resolution.get("outcome", {})
-	var record: Dictionary = resolution.get("record", {})
 	var prob_pct := int(outcome.get("probability_percent", record.get("outcome_probability_percent", 100)))
 	var out_title := String(outcome.get("outcome_title", record.get("outcome_title", "已执行")))
 	# 概率分支才需要标出命中比例；确定结果没有额外信息。

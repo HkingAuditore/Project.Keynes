@@ -21,9 +21,11 @@ from runtime_test_hygiene import trace_environment, untracked, unexpected_artifa
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = (
     "tests/ui/era_advancement_panel_test.gd",
+    "tests/ui/annual_report_ui_test.gd",
     "tests/technology/era_advancement_service_test.gd",
     "tests/ideology/ideology_draw_flow_test.gd",
     "tests/game/player_controller_contract_test.gd",
+    "tests/game/player_command_authority_test.gd",
     "tests/ui/inspector_live_patch_test.gd",
     "tests/building/building_visual_catalog_test.gd",
     "tests/world/vegetation_family_layer_test.gd",
@@ -46,7 +48,6 @@ TESTS = (
     "tests/game/world_runtime_preparation_test.gd",
     "tests/game/world_runtime_restore_preparation_test.gd",
     "tests/game/world_runtime_lifecycle_test.gd",
-    "tests/game/web_daily_fallback_test.gd",
     "tests/game/world_runtime_commands_test.gd",
     "tests/game/world_runtime_modifier_writeback_test.gd",
     "tests/game/runtime_clock_binding_test.gd",
@@ -65,7 +66,13 @@ TESTS = (
     "tests/world/loading_catalog_cooperative_test.gd",
     "tests/world/loading_snapshot_cancel_test.gd",
     "tests/runtime/runtime_inline_save_restore_test.gd",
+    "tests/runtime/runtime_inline_budget_admission_test.gd",
     "tests/runtime/runtime_executor_boundary_test.gd",
+    "tests/runtime/runtime_review_military_test.gd",
+    "tests/runtime/runtime_review_research_test.gd",
+    "tests/runtime/runtime_review_colonization_test.gd",
+    "tests/runtime/vision_observation_capacity_test.gd",
+    "tests/family/family_effect_ordering_test.gd",
     "tests/runtime/native_world_handshake_test.gd",
     "tests/runtime/runtime_world_lifecycle_test.gd",
     "tests/runtime/runtime_world_rules_rebuild_test.gd",
@@ -73,7 +80,6 @@ TESTS = (
     "tests/runtime/startup_save_boundary_test.gd",
     "tests/runtime/economy_settlement_save_boundary_test.gd",
     "tests/game/player_clock_event_test.gd",
-    "tests/runtime/runtime_economy_worker_restart_test.gd",
     "tests/ideology/ideology_execution_contract_manifest_test.gd",
     "tests/ideology/ideology_target_selector_test.gd",
     "tests/ideology/ideology_save_worker_authority_test.gd",
@@ -122,12 +128,10 @@ TESTS = (
     "tests/runtime/inflight_save_boundary_test.gd",
     "tests/runtime/environment_save_continuation_test.gd",
     "tests/runtime/runtime_clock_overload_recovery_test.gd",
-    "tests/runtime/runtime_climate_capacity_backpressure_test.gd",
     "tests/runtime/mobile_clock_budget_test.gd",
     "tests/runtime/mobile_runtime_worker_test.gd",
     "tests/rendering/cloud_weather_quality_test.gd",
     "tests/rendering/mobile_msaa_policy_test.gd",
-    "tests/rendering/terrain_render_scale_test.gd",
     "tests/world/season_refresh_schedule_test.gd",
     "tests/world/season_refresh_consumer_test.gd",
     "tests/runtime/runtime_event_restore_cursor_test.gd",
@@ -185,8 +189,8 @@ def fixture_errors(name: str, lines: list[str]) -> list[str]:
         if sum(bool(re.fullmatch(success_pattern, line)) for line in lines) != 1:
             declarations.append("expected exactly one successful stratum save roundtrip summary")
     if name == "loading_snapshot_cancel_test":
-        # This test intentionally loads one malformed resource. Only the two
-        # exact diagnostics for its declared temporary path are permitted.
+        # This test intentionally loads one malformed resource. ResourceLoader.load
+        # reports its failure in addition to the parser and format loader.
         marker = "[loading-snapshot-cancel] broken_resource="
         paths = [line[len(marker):] for line in lines if line.startswith(marker)]
         if len(paths) != 1 or not re.fullmatch(
@@ -196,6 +200,7 @@ def fixture_errors(name: str, lines: list[str]) -> list[str]:
             expected.extend((
                 f"ERROR: {paths[0]}:1 - Parse Error: Expected '['.",
                 f"ERROR: Failed loading resource: {paths[0]}.",
+                f"ERROR: Error loading resource: '{paths[0]}'.",
             ))
     errors = [line for line in lines if (
         "SCRIPT ERROR:" in line or "[FAIL]" in line or line.startswith("FAIL:") or

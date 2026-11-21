@@ -182,6 +182,11 @@ func has_capture_round_pending() -> bool:
 	return _capture_round_pending
 
 
+func _periodic_capture_due(day: int) -> bool:
+	return day > 1 and posmod(day - 1, maxi(1, period_ticks)) == 0 \
+		and int(generator.get("_last_season_refresh_day")) < day + 1
+
+
 ## Capture days are consecutive simulation days. Refresh after each complete
 ## period: 31, 61, ... for period 30. The completed boundary is already saved
 ## by CLM2, in WorldClock's day+1 convention; no unsaved tick counter is needed.
@@ -194,9 +199,7 @@ func run_due_round_for_capture(day: int) -> int:
 		return continued
 	if _uses_legacy_signal():
 		return run_round_for_capture() if _capture_round_pending else finish_round_now()
-	if day <= 1 or posmod(day - 1, maxi(1, period_ticks)) != 0:
-		return 0
-	if int(generator.get("_last_season_refresh_day")) >= day + 1:
+	if not _periodic_capture_due(day):
 		return 0
 	_capture_round_pending = true
 	var slices := run_round_for_capture()
@@ -310,6 +313,8 @@ func tick(_ctx) -> Dictionary:
 	if _b_plus_active:
 		var bp_max_us: int = int(slice_budget_ms * 1000.0)
 		var bp_res: Dictionary = generator.run_season_round_slice_b_plus(map, world_data, bp_max_us)
+		if bool(bp_res.get("pending", false)):
+			return {"done": false, "pending": true}
 		var bp_done: bool = bool(bp_res.get("done", false)) or bool(bp_res.get("fallback", false))
 		var bp_stages_done: int = int(bp_res.get("stages_done", _stage))
 		var bp_elapsed_ms_inner: float = float(bp_res.get("elapsed_ms", 0.0))

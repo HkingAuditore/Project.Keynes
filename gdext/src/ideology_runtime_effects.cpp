@@ -1,4 +1,5 @@
 #include "ideology_runtime.h"
+#include "simulation_math.h"
 #include "ideology_runtime_internal.h"
 #include "ideology_runtime_common.inc"
 #include <cstdio>
@@ -756,7 +757,7 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
                 row.add = term.operation == ModifierApi::ADD
                     ? term.value * stacks * scaled_magnitude : 0.0;
                 row.factor = term.operation == ModifierApi::ADD
-                    ? 1.0 : std::pow(term.value, stacks);
+                    ? 1.0 : simulation_math::pow(term.value, stacks);
             }
             out.push_back(row);
         }
@@ -1025,7 +1026,7 @@ bool NativeIdeologyRuntime::collect_effect_activations(
                     // TAG_SOURCE_COUNT, so this is a no-op for kinds 12/14/15.
                     scaled.add *= single.magnitude_scale;
                     if (scaled.operation != 0)
-                        scaled.factor = std::pow(scaled.factor,
+                        scaled.factor = simulation_math::pow(scaled.factor,
                             single.magnitude_scale);
                     single.terms.push_back(scaled);
                 }

@@ -212,12 +212,10 @@ scons platform=web arch=wasm32 threads=yes lto=none disable_exceptions=no -j16 t
 是关闭的，脚本化 `.tres` 的默认值会读成 `null`，烘出来的快照是错的（历史现象：
 `Loading catalog export bake failed: Invalid data`）。细节见 [`docs/web-export.md` §8](./web-export.md#8-预烘加载目录loading-catalog-prebake)。
 
-### 4.5 `nothreads` 变体是个陷阱
+### 4.5 线程版与无线程兼容版
 
-`threads=no` + `variant/thread_support=false` 能进主菜单、能生成世界，但加载到 98%
-主线程硬卡死（画面完全冻结）。原因是 `gdext/src/native_simulation_host.cpp` 用
-`std::thread` + 条件变量驱动每日仿真，没有 pthread 时 worker 不推进。
-**除非你先把 host 改成单线程内联模式，否则不要用这个变体。**
+正式 Web 导出用 `threads=yes` 和 `variant/thread_support=true`，默认后台模拟。
+无线程构建使用同步兼容执行器。历史加载卡顿与当前验证范围见 [Web 导出](web-export.md)。
 
 ### 4.6 本地预览与验证
 

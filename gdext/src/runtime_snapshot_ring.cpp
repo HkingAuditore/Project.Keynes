@@ -8,7 +8,6 @@ RuntimeSnapshotRing::RuntimeSnapshotRing() {
     // protocol maximum up front so publishing a READY buffer never performs a
     // vector allocation while the simulation thread is catching up.
     for (auto &buffer : _buffers) {
-        buffer.visual_intents.reserve(RUNTIME_COMMAND_QUEUE_CAPACITY);
         buffer.receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
     }
 }
@@ -119,10 +118,9 @@ void RuntimeSnapshotRing::reset() {
     _published_index.store(0, std::memory_order_relaxed);
     for (uint32_t i = 0; i < RUNTIME_SNAPSHOT_RING_SIZE; ++i) {
         // Keep the constructor's bounded capacities across world restarts.
-        // Assigning a temporary RuntimeCommit here would release the vectors
+        // Assigning a temporary RuntimeCommit here would release the vector
         // and reintroduce allocator work on the first post-restart publish.
         _buffers[i].header = RuntimeCommitHeader{};
-        _buffers[i].visual_intents.clear();
         _buffers[i].receipts.clear();
         _states[i].store(FREE, std::memory_order_relaxed);
     }

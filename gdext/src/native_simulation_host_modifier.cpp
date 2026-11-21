@@ -208,7 +208,8 @@ bool NativeSimulationHost::modifier_pod_self_test(std::string *out_error) const 
 std::shared_ptr<const RuntimeEnvironmentSnapshot>
 NativeSimulationHost::environment_snapshot() const {
     // 诊断 / 物理派生读 latest；worker 日计划必须走 environment_input_for_plan。
-    if (auto latest = _environment_ring.latest()) return latest;
+    if (!_world_environment)
+        if (auto latest = _environment_ring.latest()) return latest;
     return std::atomic_load_explicit(&_environment_snapshot, std::memory_order_acquire);
 }
 
@@ -449,13 +450,12 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
             if (s_def_left-- > 0) {
                 pk::log_info(
                     "[tech-ack-diag/modifier] definition_id unresolved "
-                    "request=%d seq=%d domain=%d payload0=%d hashes=%d",
-                    static_cast<int64_t>(command.request_id),
-                    static_cast<int64_t>(command.sequence),
-                    static_cast<int64_t>(command.domain),
-                    static_cast<int64_t>(intent.payload[0]),
-                    static_cast<int64_t>(
-                        _modifier_definition_id_by_key_hash.size()));
+                    "request=%llu seq=%llu domain=%u payload0=%lld hashes=%zu",
+                    static_cast<unsigned long long>(command.request_id),
+                    static_cast<unsigned long long>(command.sequence),
+                    static_cast<unsigned>(command.domain),
+                    static_cast<long long>(intent.payload[0]),
+                    _modifier_definition_id_by_key_hash.size());
             }
         }
         modifier_intents.push_back(command);
@@ -520,13 +520,13 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
         static int s_mod_fail_left = 12;
         if (s_mod_fail_left-- > 0 && !modifier_intents.empty()) {
             pk::log_info(
-                "[tech-ack-diag/modifier] plan_day FAILED day=%d intents=%d "
-                "reason=%s def0=%d scope0=%d src_type0=%d",
-                day, static_cast<int64_t>(modifier_intents.size()),
+                "[tech-ack-diag/modifier] plan_day FAILED day=%lld intents=%zu "
+                "reason=%s def0=%d scope0=%d src_type0=%llu",
+                static_cast<long long>(day), modifier_intents.size(),
                 std::string(modifier_error.c_str()).c_str(),
-                static_cast<int64_t>(modifier_intents.front().definition_id),
-                static_cast<int64_t>(modifier_intents.front().scope),
-                static_cast<int64_t>(modifier_intents.front().source_type));
+                modifier_intents.front().definition_id,
+                modifier_intents.front().scope,
+                static_cast<unsigned long long>(modifier_intents.front().source_type));
         }
         _modifier_pod_authority.discard_plan();
     }
@@ -577,7 +577,7 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
             modifier_slot_reserved = false;
             _modifier_pod_snapshot_generation.store(
                 modifier_snapshot.generation, std::memory_order_release);
-            refresh_economy_modifier_view(modifier_snapshot);
+            refresh_economy_modifier_view(_modifier_pod_authority.snapshot());
         }
     } else {
         authority_ok = false;

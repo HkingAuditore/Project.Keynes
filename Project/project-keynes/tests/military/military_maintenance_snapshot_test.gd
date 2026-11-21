@@ -27,12 +27,12 @@
 
 extends SceneTree
 
+const RuntimeScenario = preload("res://tests/runtime/background_daily_military_scenario.gd")
+
 const SEED := 20260727
 const MAP_W := 60
 const MAP_H := 40
 const FOREIGN_COUNT := 3
-const PIPELINE_DEPTH := 3
-const MAX_BARRIER_PULSES_PER_DAY := 4096
 const DEFAULT_SETTLE_DAYS := 6
 ## The cheapest barracks builds in 10 days, but construction waits for its
 ## materials to appear in the cell's market ring, so the ceiling is generous.
@@ -427,6 +427,7 @@ func _boot_world() -> bool:
 	_clock.initial_speed = 50.0
 	_clock.debug_step_log = false
 	get_root().add_child(_clock)
+	_clock.set_process(false)
 	_clock.set_speed(50.0)
 	_clock.pause(true)
 	_host = WorldRuntimeHost.new()
@@ -454,7 +455,7 @@ func _boot_world() -> bool:
 		return false
 	var runtime_ext = _host.get_generator().get_data_core_world_ext() \
 		if _host.get_generator().has_method("get_data_core_world_ext") else null
-	if _host.runtime_climate_authority_enabled and runtime_ext != null \
+	if _host._native_environment_active and runtime_ext != null \
 			and runtime_ext.has_method("set_runtime_clock"):
 		runtime_ext.set_runtime_clock(false, 50.0)
 	return true
@@ -662,54 +663,15 @@ func _ring_recipe_stock(cell: int, barracks: int) -> Dictionary:
 
 
 func _advance_to(target_day: int) -> void:
-	var generator := _host.get_generator()
 	while _day < target_day:
+		if not await RuntimeScenario.settle_clock_day(_host, _clock, self, _day + 1):
+			_expect("formal clock settles day %d" % (_day + 1), false)
+			return
 		_day += 1
-		_clock.current_day = float(_day)
-		var phase := _clock.season_phase_for_day(_day)
-		if _host.runtime_climate_authority_enabled:
-			var capacity_deadline := Time.get_ticks_usec() + 60000000
-			while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
-					and Time.get_ticks_usec() < capacity_deadline:
-				_host._consume_runtime_commit_if_ready()
-				await process_frame
-			_host._consume_runtime_commit_if_ready()
-		_host.run_daily_tick(_day, phase)
-		_host.finish_daily_tick(0.0, {})
-		if _host.runtime_climate_authority_enabled:
-			var deadline := Time.get_ticks_usec() + 60000000
-			while Time.get_ticks_usec() < deadline:
-				_host._consume_runtime_commit_if_ready()
-				var progress: Dictionary = generator.get_runtime_thread_report()
-				if int(progress.get("simulation_committed_day",
-						progress.get("committed_day", -1))) >= _day - 1 - PIPELINE_DEPTH:
-					break
-				await process_frame
-		var pulses := 0
-		while _has_hard_barrier() and pulses < MAX_BARRIER_PULSES_PER_DAY:
-			_clock.simulation_backpressure_pulse.emit(_day)
-			pulses += 1
-			await process_frame
-		if _has_hard_barrier():
-			_expect("hard barrier drains at day %d" % _day, false)
+		var economy: Dictionary = _host.get_generator().get_economy_report()
+		if bool(economy.get("fatal", false)):
+			_expect("economy stays non-fatal (day %d)" % _day, false, str(economy.get("fatal_reason", "")))
 			return
-		if bool(generator.get_economy_report().get("fatal", false)):
-			_expect("economy stays non-fatal (day %d)" % _day, false,
-				str(generator.get_economy_report().get("fatal_reason", "")))
-			return
-	# Let the host drain committed military days (whole-graph ACTIVE replays at
-	# most 4 per frame) before the caller inspects state.
-	for _frame in range(64):
-		_host._consume_runtime_commit_if_ready()
-		if _facade == null or int(_facade.report().get("last_step_day", -1)) \
-				>= _day - 1 - PIPELINE_DEPTH:
-			break
-		await process_frame
-
-
-func _has_hard_barrier() -> bool:
-	return _clock._simulation_backpressure_sources.has(&"country_day_barrier") \
-		or _clock._simulation_backpressure_sources.has(&"economy_day_barrier")
 
 
 # ------------------------------------------------------------------ helpers

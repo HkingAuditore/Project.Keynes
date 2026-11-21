@@ -143,7 +143,7 @@ NativeCountryRuntime::compute_reference_hashes() const {
     std::sort(result_ids.begin(), result_ids.end());
     hash_count(out.effect, result_ids.size());
     for (int64_t id : result_ids) {
-        const EffectCommandResult &result = _effect_command_results.at(id);
+        const CountryEffectCommandResult &result = _effect_command_results.at(id);
         hash_bytes(out.effect, &id, sizeof(id));
         hash_bytes(out.effect, &result.complete, sizeof(result.complete));
         hash_bytes(out.effect, &result.ok, sizeof(result.ok));

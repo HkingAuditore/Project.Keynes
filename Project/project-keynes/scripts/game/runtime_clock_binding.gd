@@ -9,7 +9,7 @@ var _fast_headless := false
 
 # Godot sleeps between headless iterations even with low-processor mode off.
 # At 100x the default 6.9 ms sleep can consume most of a day's 10 ms budget
-# while a completed simulation is waiting for its main-thread handoff.
+# before the next clock admission.
 const FAST_HEADLESS_SLEEP_USEC := 500
 static var _fast_headless_sessions := 0
 static var _previous_sleep_usec := 0
@@ -35,8 +35,10 @@ func synchronize() -> void:
 func detach() -> void:
 	_set_fast_headless(false)
 	var clock = _clock_ref.get_ref() if _clock_ref != null else null
-	if clock != null and clock.control_changed.is_connected(_on_control_changed):
-		clock.control_changed.disconnect(_on_control_changed)
+	if clock != null:
+		if clock.control_changed.is_connected(_on_control_changed):
+			clock.control_changed.disconnect(_on_control_changed)
+		clock.bind_runtime_calendar(Callable())
 	_clock_ref = null
 	_apply = Callable()
 	_running = Callable()

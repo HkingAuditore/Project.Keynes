@@ -17,6 +17,9 @@
 
 namespace pk {
 
+struct RuntimeSeasonView;
+struct RuntimeClimateCalendar;
+
 struct RuntimeClimateVerticalReport {
     uint64_t work_units = 0;
     uint32_t changed_cells = 0;
@@ -54,6 +57,8 @@ struct RuntimeClimateVerticalReport {
 };
 
 struct RuntimeClimateSnapshot {
+    std::shared_ptr<const RuntimeSeasonView> season;
+    std::shared_ptr<const RuntimeClimateCalendar> calendar;
     uint64_t generation = 0;
     int64_t committed_day = -1;
     uint64_t input_generation = 0;
@@ -94,11 +99,8 @@ struct RuntimeClimateSnapshot {
 // Worker -> main-thread handoff for ACTIVE Climate write-back.
 //
 // Same three-slot protocol as RuntimeSnapshotRing, with a Climate store as the
-// payload instead of a RuntimeCommit. It is a separate ring rather than a new
-// field on that one because the visual ring is published on a throttle and may
-// legitimately drop frames: dropping a visual patch loses a repaint, dropping
-// an authoritative day loses the day itself. This one is only written at a
-// committed day boundary, so it never drops while a reader keeps up.
+// payload. Publish at the committed day boundary so the main thread can
+// install that day's climate fields before delivering the day to consumers.
 //
 // Neither side ever blocks. The worker skips publishing when all non-reading
 // slots are busy (counted, not silently swallowed) and the main thread simply
@@ -262,6 +264,10 @@ public:
     bool serialize(std::vector<uint8_t> &bytes, std::string &error) const;
     bool restore(const uint8_t *bytes, size_t size, std::string &error);
     const std::vector<double> &capture_cursors() const { return _continuation.capture_cursors; }
+    const RuntimeClimateKernel::Continuation &continuation() const { return _continuation; }
+    std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState> copy_committed_physics() const {
+        return _kernel.copy_physics_writeback(_store);
+    }
     static bool self_test(std::string &error);
 
 private:

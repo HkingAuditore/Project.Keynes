@@ -60,7 +60,7 @@
 
 `country_ai_for_worker()` 只在 Host 为 ACTIVE、请求了 Country 权威、且 AI 为 ACTIVE 时返回实例。
 
-### 3.2 同步路径（非 worker 权威 / 主线程）
+### 3.2 现有同步兼容路径
 
 `DCWorldExt::run_country_slice` 调用 `country_ai_sync_plan(day)` 和
 `country_ai_sync_finish(day, ok, out)`。同一内核从 `export_pod_snapshot` 规划，以

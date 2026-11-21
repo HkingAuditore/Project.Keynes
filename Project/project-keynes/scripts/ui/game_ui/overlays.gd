@@ -221,13 +221,6 @@ func close_annual_report(host) -> void:
 
 
 
-func annual_other_modal_open(host) -> bool:
-	return host.is_era_reward_modal_open() or host.is_family_founding_modal_open() \
-		or host.is_narrative_event_modal_open() \
-		or (host._pause_menu != null and host._pause_menu.visible)
-
-
-
 func show_narrative_event_offer(host, offer: Dictionary) -> void:
 	host._ensure_narrative_ui()
 	if host._country_panel != null and host._country_panel.is_panel_open():
@@ -289,15 +282,6 @@ func is_narrative_chronicle_open(host) -> bool:
 
 
 
-func set_popups_suppressed(host, enabled: bool) -> void:
-	host._gm_popups_suppressed = enabled
-	if not enabled:
-		return
-	if host.is_era_ceremony_playing():
-		host._era_ceremony.skip()
-	if host._narrative_event_dialog != null and host._narrative_event_dialog.has_method("close_offer"):
-		host._narrative_event_dialog.close_offer()
-
 func dismiss_overlay_menu(host) -> bool:
 	if host._player_controller != null and not String(
 			host._player_controller.military_arm_order().get("mode", "")).is_empty():
@@ -335,6 +319,8 @@ func dismiss_overlay_menu(host) -> bool:
 		host._colonization_panel.close_panel()
 		return true
 	if host._country_panel != null and host._country_panel.is_panel_open():
+		if host._country_panel.current_section() == "politics" and host._player_controller != null:
+			host._player_controller.dismiss_displayed_ideology_offer()
 		host.close_country_panel()
 		return true
 	if host._gm_console != null and host._gm_console.is_panel_open():
