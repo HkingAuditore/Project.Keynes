@@ -21,7 +21,7 @@ Other modules, save sections, committed views, bindings, tests or skills the cha
 Numbered implementation steps. Keep the ticket's scope; list anything you would add beyond it under Questions instead.
 
 ## Checks
-One line per extra check command the module map's "必跑" column or the feature guide requires for this change, written as `tools/ci/<script>.py [--flags]`, without `--godot` or `--log-dir`. The factory already runs every static guard, the map-authoring unit tests and the default regression, so do not repeat those. Write `none` if nothing else applies.
+One line per extra check command the module map's "必跑" column or the feature guide requires for this change, written as `tools/ci/<script>.py [--flags]` (a focused regression is `tools/ci/run_regression_checks.py tests/<path>.gd`), without `--godot` or `--log-dir`. The factory already runs every static guard, the map-authoring unit tests and the default regression, so do not repeat those. Write `none` if nothing else applies.
 
 ## Questions
 Decisions only a person can make (gameplay rules, scope changes, conflicts between the ticket and AGENTS.md or the architecture docs). One per line starting with `- `. Write `none` if there are none.

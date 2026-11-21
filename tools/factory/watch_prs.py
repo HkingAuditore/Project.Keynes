@@ -94,6 +94,8 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
     labels = set(pr.get("labels") or [])
     if labels.intersection(cfg["skipLabels"]):
         return Decision("skip", "has a skip label")
+    if cfg["labels"]["issueRun"] in labels:
+        return Decision("skip", "the issue runner owns this PR")
     if state.gave_up_at == head:
         return Decision("skip", f"stopped at this head ({state.reason}); waiting for a person")
     if pr.get("mergeable") == "UNKNOWN":

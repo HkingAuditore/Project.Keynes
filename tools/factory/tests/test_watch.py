@@ -68,6 +68,13 @@ class Decide(unittest.TestCase):
         self.assertEqual(self.d(p=pr(isCrossRepository=True), r=r).action, "skip")
         self.assertEqual(self.d(p=pr(labels=["blocked"]), r=r).action, "skip")
 
+    def test_skips_prs_the_issue_runner_owns(self):
+        owned = pr(labels=["factory-issue-run"])
+        self.assertEqual(self.d(p=owned, r=review(findings=[finding("x")])).reason, "the issue runner owns this PR")
+        self.assertEqual(self.d(p=pr(labels=["factory-issue-run"], mergeable="CONFLICTING")).action, "skip")
+        cfg = load_config()
+        self.assertEqual(decide(owned, review(), PrState(), cfg).reason, "the issue runner owns this PR")
+
     def test_does_not_retry_where_it_stopped(self):
         st = PrState(gave_up_at=HEAD, reason="x")
         self.assertEqual(self.d(r=review(findings=[finding("x")]), st=st).action, "skip")

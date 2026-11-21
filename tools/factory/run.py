@@ -85,7 +85,8 @@ class Run:
         base = self.facts.head or self.base
         files = work.changed(self.workdir, base)
         res, after = self.candidate.run(base, files, self.path(f"checks-{label}"), extra)
-        new = checks.new_failures(res, base_failed)
+        # AGENTS.md: found failures are fixed before a push, including ones master already had.
+        new = checks.failed(res)
         self.ev.add("checks", label=label, failed=checks.failed(res), new=new, results=res)
         _, self.facts.human_paths, _ = self.candidate.scope(after)
         return res, new
@@ -166,6 +167,10 @@ class Run:
                 self.ev.add("implement", attempt=attempt, result="checks pass")
                 return True
             feedback = checks.feedback(res, new)
+            old = [n for n in new if n in base_failed]
+            if old:
+                feedback += ("\n\nThese also failed on master before your change. AGENTS.md requires "
+                             "fixing found failures before a push, so they are yours too: " + ", ".join(old))
         self.facts.stopped_by = f"checks still fail after {self.cfg['limits']['implementAttempts']} attempts"
         if new:
             self.facts.stopped_by += ": " + ", ".join(new)
@@ -370,6 +375,10 @@ class Run:
         work.push(self.workdir, cfg["remote"], self.branch)
         self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan))
         self.record["pr"] = self.pr["url"]
+        # Keep the PR poller off this PR until the issue run has a verdict.
+        err = self.gh.relabel(self.pr["number"], [cfg["labels"]["issueRun"]], [])
+        if err:
+            raise RuntimeError(err)
         self.ev.add("pr", url=self.pr["url"], head=self.facts.head)
         self.pr_loop(issue, extra, base_failed)
 
@@ -401,6 +410,12 @@ class Run:
             done = v.verdict == "READY"
             remove = [L["working"], L["trigger"]] if self.remove_trigger else [L["working"]]
             self.gh.relabel(self.number, [L["done"] if done else L["help"]], remove)
+            if self.pr:
+                # READY hands the PR to the poller; anything else stays with a person.
+                if done:
+                    self.gh.relabel(self.pr["number"], [], [L["issueRun"]])
+                else:
+                    self.gh.relabel(self.pr["number"], [L["help"]], [])
         self.record["githubErrors"] = self.gh.errors
         out.write_text(json.dumps(self.record, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"verdict {v.verdict}: {out}")

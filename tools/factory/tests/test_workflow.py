@@ -24,7 +24,7 @@ import work
 from common import Events, Result, load_config
 from github import GitHub
 from run import Run
-from verdict import CIFacts, CIRun
+from verdict import CIFacts, CIRun, Verdict
 from watch_prs import PrState, Watcher
 
 
@@ -78,13 +78,46 @@ class IssueWorkflowTest(TempFactory):
 
     def test_failed_final_lookup_still_comments_relabels_and_records(self):
         run = self.make_run()
-        run.pr = {"url": "https://example.invalid/pr/7"}
+        run.pr = {"number": 9, "url": "https://example.invalid/pr/9"}
         run.gh.open_pr.side_effect = RuntimeError("service unavailable")
         self.assertEqual(run.finish(), 1)
         run.gh.comment.assert_called_once()
-        run.gh.relabel.assert_called_once_with(7, ["agent-needs-help"], ["agent-working"])
+        self.assertEqual(run.gh.relabel.call_args_list,
+                         [call(7, ["agent-needs-help"], ["agent-working"]), call(9, ["agent-needs-help"], [])])
         record = json.loads((self.root / "runs" / f"7-{run.stamp}.json").read_text())
         self.assertIn("service unavailable", record["githubErrors"][0])
+
+    def test_master_failures_still_block_a_push(self):
+        # AGENTS.md: found failures are fixed before a push, even ones master already had.
+        run = self.make_run()
+        run.candidate = Mock()
+        run.candidate.run.return_value = ([{"name": "regression", "ok": False, "code": 1, "log": "x"},
+                                           {"name": "static:a.py", "ok": True, "code": 0, "log": "y"}], [])
+        run.candidate.scope.return_value = ([], [], [])
+        with patch("work.changed", return_value=["a.gd"]):
+            _, blocking = run.run_checks("t", [], ["regression"])
+        self.assertEqual(blocking, ["regression"])
+
+    def test_issue_pr_is_labelled_until_the_verdict(self):
+        run = self.make_run()
+        run.gh.relabel.return_value = None
+        run.gh.open_pr.return_value = None
+        run.gh.create_pr.return_value = {"number": 9, "url": "https://example.invalid/pr/9"}
+        with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.base_results", return_value=[]), patch.object(run, "plan", return_value=""),
+              patch.object(run, "implement", return_value=True), patch.object(run, "local_review", return_value=True),
+              patch.object(run, "commit_checked", return_value=True), patch("work.push"),
+              patch.object(run, "pr_loop")):
+            run.go(ISSUE)
+        run.gh.relabel.assert_called_with(9, ["factory-issue-run"], [])
+        for ready, expected in ((False, call(9, ["agent-needs-help"], [])), (True, call(9, [], ["factory-issue-run"]))):
+            with self.subTest(ready=ready):
+                run.gh.relabel.reset_mock()
+                run.gh.open_pr.return_value = None
+                verdict = Verdict("READY" if ready else "NEEDS_HUMAN", [], [])
+                with patch.object(issue_runner, "judge", return_value=verdict):
+                    run.finish()
+                self.assertEqual(run.gh.relabel.call_args_list[-1], expected)
 
     def test_rejected_plan_check_stops_before_implementation(self):
         run = self.make_run()

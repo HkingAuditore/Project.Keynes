@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import agent  # noqa: E402
 import checks  # noqa: E402
+from common import load_config  # noqa: E402
 from ticket import criteria, gate, touching  # noqa: E402
 from verdict import Facts, classify, judge  # noqa: E402
 
@@ -92,6 +93,11 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(v.verdict, "NEEDS_HUMAN")
         self.assertIn(command, v.reasons[0])
 
+    def test_master_failures_alone_do_not_need_a_person(self):
+        # A run only reaches a verdict with a pushed head once every check passed,
+        # so failures master had before the change are history, not a reason to stop.
+        self.assertEqual(judge(ready(base_failures=["regression"])).verdict, "READY")
+
     def test_new_failures_need_fix(self):
         self.assertEqual(judge(ready(new_failures=["regression"])).verdict, "NEEDS_FIX")
 
@@ -103,7 +109,7 @@ class VerdictTest(unittest.TestCase):
 
     def test_human_reasons_win(self):
         cases = [dict(stopped_by="x"), dict(plan_questions=["q"]), dict(disagreements=["d"]),
-                 dict(base_failures=["static:a.py"]), dict(human_paths=["tools/ci/size_baseline.json"]),
+                 dict(human_paths=["tools/ci/size_baseline.json"]),
                  dict(native_changed=True), dict(local_blocking=["L1"]), dict(review_stalled=True)]
         for kw in cases:
             self.assertEqual(judge(ready(**kw)).verdict, "NEEDS_HUMAN", kw)
@@ -145,6 +151,20 @@ class PlanTest(unittest.TestCase):
         ok, bad = checks.extra_checks(agent.plan_checks(self.PLAN), r"^tools/ci/[a-z0-9_]+\.py( --?[a-z0-9-]+)*$")
         self.assertEqual(ok, ["tools/ci/check_save_contracts.py"])
         self.assertEqual(bad, ["rm -rf /"])
+
+    def test_extra_checks_accept_python_prefix_and_focused_tests(self):
+        pattern = load_config()["checks"]["extraCheckPattern"]
+        plan = ("## Checks\n- `python3 tools/ci/run_regression_checks.py tests/economy/trade_test.gd`\n"
+                "- tools/ci/check_save_contracts.py --strict\n"
+                "- tools/ci/run_regression_checks.py tests/../secret.gd\n"
+                "- tools/ci/run_regression_checks.py tests/a.gd; rm -rf /\n"
+                "- python3 -c 'print(1)'\n")
+        ok, bad = checks.extra_checks(agent.plan_checks(plan), pattern)
+        self.assertEqual(ok, ["tools/ci/run_regression_checks.py tests/economy/trade_test.gd",
+                              "tools/ci/check_save_contracts.py --strict"])
+        self.assertEqual(bad, ["tools/ci/run_regression_checks.py tests/../secret.gd",
+                               "tools/ci/run_regression_checks.py tests/a.gd; rm -rf /",
+                               "python3 -c 'print(1)'"])
 
     def test_questions(self):
         plan = self.PLAN.replace("## Questions\nnone", "## Questions\n- Should taxes round down?")

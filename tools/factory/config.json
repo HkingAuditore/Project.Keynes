@@ -10,7 +10,8 @@
     "trigger": "ready-for-agent",
     "working": "agent-working",
     "done": "agent-done",
-    "help": "agent-needs-help"
+    "help": "agent-needs-help",
+    "issueRun": "factory-issue-run"
   },
   "skipLabels": ["needs-investigation", "blocked"],
   "tools": {
@@ -46,7 +47,7 @@
     "nativeImport": ["--headless", "--path", "Project/project-keynes", "--import"],
     "nativeRuntimeCheck": "tools/ci/check_macos_runtime_extension.py",
     "regression": ["tools/ci/run_regression_checks.py", "--jobs", "4"],
-    "extraCheckPattern": "^tools/ci/[a-z0-9_]+\\.py( --?[a-z0-9-]+)*$"
+    "extraCheckPattern": "^tools/ci/[a-z0-9_]+\\.py( --?[a-z0-9-]+| tests/[a-z0-9_/]+\\.gd)*$"
   },
   "paths": {
     "forbidden": [".github/", "tools/factory/", ".qodo/", "tools/ci/"],

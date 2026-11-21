@@ -43,7 +43,12 @@ def extra_checks(plan_checks: list[str], pattern: str) -> tuple[list[str], list[
     rx = re.compile(pattern)
     ok, bad = [], []
     for c in plan_checks:
-        (ok if rx.match(c.strip()) else bad).append(c.strip())
+        c = c.strip()
+        bare = re.sub(r"^python3? +", "", c)
+        if rx.match(bare):
+            ok.append(bare)
+        else:
+            bad.append(c)
     return ok, bad
 
 
@@ -144,7 +149,7 @@ class Runner:
             parts = shlex.split(cmd)
             self._require_path(parts[0])
             args = [self.py, *parts]
-            if "--godot" not in parts and any(p.endswith(("replay.py", "matrix.py", "determinism.py")) for p in parts):
+            if "--godot" not in parts and any(p.endswith(("replay.py", "matrix.py", "determinism.py", "regression_checks.py")) for p in parts):
                 args += ["--godot", godot, "--log-dir", str(self.logdir / f"extra-{int(time.time())}")]
             results.append(run_check(f"extra:{cmd}", args))
         return results
