@@ -28,6 +28,7 @@ class Generator extends MapGenerator:
 		coordinator.finish_season_refresh(null, null, season)
 
 func _init() -> void:
+	_test_published_season_history_lookup()
 	var map := MapData.new(1, 1)
 	map.set_cell(HexCell.new())
 	var generator := Generator.new()
@@ -74,6 +75,35 @@ func _init() -> void:
 	clock.free()
 	print("season refresh consumer: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func _test_published_season_history_lookup() -> void:
+	var map := MapData.new(1, 1)
+	var cell := HexCell.new()
+	cell.index = 1
+	cell.biome_history = PackedByteArray([1, 2, 3, 4, 5, 6, 7, 8])
+	cell.vegetation_history = PackedByteArray([11, 12, 13, 14, 15, 16, 17, 18])
+	map.set_cell(cell)
+	map.published_biome_history = PackedByteArray([21, 22, 23, 24, 25, 26, 27, 28])
+	map.published_vegetation_history = PackedByteArray([31, 32, 33, 34, 35, 36, 37, 38])
+	_expect("missing published biome history does not read cell mirror",
+		map.season_history_for(cell, false).is_empty())
+	_expect("missing biome publication is diagnosed",
+		map._season_history_missing_warning_keys.has("biome"))
+	_expect("missing published vegetation history does not read cell mirror",
+		map.season_history_for(cell, true).is_empty())
+	_expect("missing vegetation publication is diagnosed",
+		map._season_history_missing_warning_keys.has("vegetation"))
+	map.season_history_for(cell, false)
+	_expect("repeated missing lookup does not repeat the warning",
+		map._season_history_missing_warning_keys.size() == 2)
+	map.published_biome_history.append_array(PackedByteArray([41, 42, 43, 44, 45, 46, 47, 48]))
+	map.published_vegetation_history.append_array(PackedByteArray([51, 52, 53, 54, 55, 56, 57, 58]))
+	_expect("published biome history returns the requested cell slice",
+		map.season_history_for(cell, false) == PackedByteArray([41, 42, 43, 44, 45, 46, 47, 48]))
+	_expect("published vegetation history returns the requested cell slice",
+		map.season_history_for(cell, true) == PackedByteArray([51, 52, 53, 54, 55, 56, 57, 58]))
+	_expect("repaired publication clears its diagnostic",
+		not map._season_history_missing_warning_keys.has("vegetation"))
 
 func _expect(label: String, ok: bool) -> void:
 	checks += 1
