@@ -599,6 +599,10 @@ class Watcher:
             if blocker:
                 record["reason"] = blocker
                 ev.add("push-skipped", reason=blocker)
+                if blocker == "the PR base changed before push":
+                    # The merge was against a base that has since moved; retry this head on the next poll.
+                    st.update_attempted.remove(head)
+                    self.save(n, st)
                 return "head moved" if blocker == "head moved" else "skipped"
             try:
                 work.git(self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
