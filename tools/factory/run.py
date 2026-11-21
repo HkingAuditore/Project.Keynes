@@ -63,7 +63,7 @@ class Run:
         self.candidate = checks.Candidate(cfg, self.workdir, self.facts)
         self.logs = home / "logs" / f"{number}-{self.stamp}"
         self.logs.mkdir(parents=True, exist_ok=True)
-        self.branch = f"agent/issue-{number}"
+        self.branch = f"{cfg['issueBranchPrefix']}{number}"
         self.pr: dict | None = None
         self.remove_trigger = False
         self.record: dict = {"issue": number, "started": self.stamp, "branch": self.branch}
@@ -373,15 +373,22 @@ class Run:
         if not self.commit_checked(f"{title}\n\nImplemented-By: Codex ({cfg['agent']['model']})\n"):
             return
         work.push(self.workdir, cfg["remote"], self.branch)
-        # The label keeps the PR poller off this PR until the issue run has a verdict. It is set
-        # when the PR is created, so no PR exists without it.
-        self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan),
-                                    labels=[cfg["labels"]["issueRun"]])
+        # The PR poller skips issue branches until finish() adds the hand-off label on READY.
+        self.pr = self.gh.create_pr(self.branch, cfg["base"], title, self.pr_body(issue, plan))
         self.record["pr"] = self.pr["url"]
         self.ev.add("pr", url=self.pr["url"], head=self.facts.head)
         self.pr_loop(issue, extra, base_failed)
 
     def finish(self) -> int:
+        if not self.pr and self.facts.head and not self.dry:
+            # The PR may exist even if create_pr() raised after `gh pr create`; find it so it gets a label.
+            try:
+                self.pr = self.gh.open_pr(self.branch)
+            except Exception as e:
+                self.gh.errors.append(f"look up PR for {self.branch}: {e}")
+            if self.pr:
+                self.record["pr"] = self.pr["url"]
+                self.facts.stopped_by = self.facts.stopped_by or "the PR was opened but the run lost track of it"
         if self.pr:
             try:
                 remote_head = (self.gh.open_pr(self.branch) or {}).get("headRefOid")
@@ -412,13 +419,13 @@ class Run:
             if self.pr:
                 # READY hands the PR to the poller; anything else stays with a person.
                 if done:
-                    err = self.gh.relabel(self.pr["number"], [], [L["issueRun"]])
+                    err = self.gh.relabel(self.pr["number"], [L["handoff"]], [])
                     if err:
-                        # The poller skips the PR while the label is set, so a person must hand it over.
+                        # The poller skips issue branches without the label, so a person must hand it over.
                         self.gh.relabel(self.pr["number"], [L["help"]], [])
                         self.gh.comment(self.pr["number"],
                                         f"### Factory could not hand this PR to the poller\n\n{err}\n\n"
-                                        f"Remove `{L['issueRun']}` and `{L['help']}` to let the poller review and merge it.",
+                                        f"Add `{L['handoff']}` and remove `{L['help']}` to let the poller review and merge it.",
                                         pull_request=True)
                 else:
                     self.gh.relabel(self.pr["number"], [L["help"]], [])

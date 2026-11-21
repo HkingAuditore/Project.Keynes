@@ -57,7 +57,7 @@
 
 ## Issue 模式（只能手动）
 
-由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Issue 模式开出的 PR 带 `factory-issue-run` 标签，PR 轮询跳过带这个标签的 PR，避免两边同时修同一个 PR 或在结论出来前合并。结论为 READY 时工厂去掉这个标签，交给 PR 轮询按合并条件处理；其他结论保留它并加 `agent-needs-help`，由人处理。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
+由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
 
 ```mermaid
 flowchart TD

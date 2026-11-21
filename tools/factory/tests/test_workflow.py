@@ -109,8 +109,7 @@ class IssueWorkflowTest(TempFactory):
               patch.object(run, "commit_checked", return_value=True), patch("work.push"),
               patch.object(run, "pr_loop")):
             run.go(ISSUE)
-        self.assertEqual(run.gh.create_pr.call_args.kwargs["labels"], ["factory-issue-run"])
-        for ready, expected in ((False, call(9, ["agent-needs-help"], [])), (True, call(9, [], ["factory-issue-run"]))):
+        for ready, expected in ((False, call(9, ["agent-needs-help"], [])), (True, call(9, ["factory-handoff"], []))):
             with self.subTest(ready=ready):
                 run.gh.relabel.reset_mock()
                 run.gh.open_pr.return_value = None
@@ -123,13 +122,24 @@ class IssueWorkflowTest(TempFactory):
         run = self.make_run()
         run.pr = {"number": 9, "url": "https://example.invalid/pr/9"}
         run.gh.open_pr.return_value = None
-        run.gh.relabel.side_effect = lambda n, add, remove: "relabel #9: 502" if remove == ["factory-issue-run"] else None
+        run.gh.relabel.side_effect = lambda n, add, remove: "relabel #9: 502" if add == ["factory-handoff"] else None
         with patch.object(issue_runner, "judge", return_value=Verdict("READY", [], [])):
             run.finish()
         self.assertIn(call(9, ["agent-needs-help"], []), run.gh.relabel.call_args_list)
         pr_comments = [c for c in run.gh.comment.call_args_list if c.args[0] == 9]
         self.assertEqual(len(pr_comments), 1)
-        self.assertIn("Remove `factory-issue-run`", pr_comments[0].args[1])
+        self.assertIn("Add `factory-handoff`", pr_comments[0].args[1])
+
+    def test_finish_finds_a_pr_that_create_pr_lost(self):
+        # gh created the PR but the lookup after it failed, so run.pr was never set.
+        run = self.make_run()
+        run.facts.head = HEAD
+        run.gh.open_pr.return_value = {"number": 9, "url": "https://example.invalid/pr/9", "headRefOid": HEAD}
+        run.gh.relabel.return_value = None
+        with patch.object(issue_runner, "judge", wraps=issue_runner.judge) as judge:
+            run.finish()
+        self.assertEqual(judge.call_args.args[0].stopped_by, "the PR was opened but the run lost track of it")
+        self.assertEqual(run.gh.relabel.call_args_list[-1], call(9, ["agent-needs-help"], []))
 
     def test_rejected_plan_check_stops_before_implementation(self):
         run = self.make_run()

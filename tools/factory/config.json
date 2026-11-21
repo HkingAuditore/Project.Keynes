@@ -11,8 +11,9 @@
     "working": "agent-working",
     "done": "agent-done",
     "help": "agent-needs-help",
-    "issueRun": "factory-issue-run"
+    "handoff": "factory-handoff"
   },
+  "issueBranchPrefix": "agent/issue-",
   "skipLabels": ["needs-investigation", "blocked"],
   "tools": {
     "python": "~/.local/bin/python3",
