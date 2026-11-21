@@ -182,8 +182,8 @@
   `temp_baseline_year_arr` 减海拔降温），所以读档重算结果一致，不需要入存档。水面和不可通行地形
   为 −Q16；温度、湿度、海拔超出开局选点范围（`start_location_profile.gd`）为 −Q16/2；其余按
   温度 0.40、湿度 0.35、海拔 0.25 加权的宜居度映射到 1..Q16。
-- 意图附带 `vision_radius` 内的可见格列表。经济侧用它做 `family_colonization_quotes` 预检，
-  所以 AI 不会看到迷雾外的报价。
+- 意图附带 `vision_radius` 内的可见格列表。经济侧用同一份列表做 `family_colonization_quotes`
+  预检和当期派遣的路线复核。命令直接携带所选候选的路线校验值，报价缓存失效时也能复核。
 - **补人优先于拓荒**：若本国领土 ≥ 2 格，且存在人口 `< colonize_min_population` 的本国陆地格，
   先对最稀薄格发 `reinforce_intent`（Economy `relocate`）；没有稀薄格时才对无主前沿发
   `colonize_intent`。无前沿时仍可补人，不再被 `colonize_no_frontier` 卡死。
