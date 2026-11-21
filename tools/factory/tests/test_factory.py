@@ -148,7 +148,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(agent.plan_complete("## Fit\n"), ["reuse", "affected", "plan", "checks", "questions"])
 
     def test_extra_checks_are_allowlisted(self):
-        ok, bad = checks.extra_checks(agent.plan_checks(self.PLAN), r"^tools/ci/[a-z0-9_]+\.py( --?[a-z0-9-]+)*$")
+        ok, bad, _ = checks.extra_checks(agent.plan_checks(self.PLAN), r"^tools/ci/[a-z0-9_]+\.py( --?[a-z0-9-]+)*$")
         self.assertEqual(ok, ["tools/ci/check_save_contracts.py"])
         self.assertEqual(bad, ["rm -rf /"])
 
@@ -159,12 +159,45 @@ class PlanTest(unittest.TestCase):
                 "- tools/ci/run_regression_checks.py tests/../secret.gd\n"
                 "- tools/ci/run_regression_checks.py tests/a.gd; rm -rf /\n"
                 "- python3 -c 'print(1)'\n")
-        ok, bad = checks.extra_checks(agent.plan_checks(plan), pattern)
+        ok, bad, _ = checks.extra_checks(agent.plan_checks(plan), pattern)
         self.assertEqual(ok, ["tools/ci/run_regression_checks.py tests/economy/trade_test.gd",
                               "tools/ci/check_save_contracts.py --strict"])
         self.assertEqual(bad, ["tools/ci/run_regression_checks.py tests/../secret.gd",
                                "tools/ci/run_regression_checks.py tests/a.gd; rm -rf /",
                                "python3 -c 'print(1)'"])
+
+    def test_checks_the_factory_already_runs_are_not_rejected(self):
+        # Issues #23-#26: these two lines in a plan stopped the run as rejected checks.
+        cfg = load_config()
+        plan = ("## Checks\n- tools/ci/run_regression_checks.py --jobs 4\n"
+                "- tools/ci/check_macos_runtime_extension.py --library <debug library path>\n"
+                "- tools/ci/run_regression_checks.py --jobs 2 tests/economy/a_test.gd\n"
+                "- tools/ci/check_save_contracts.py <path>\n")
+        ok, bad, dup = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"],
+                                           checks.already_run(cfg))
+        self.assertEqual(dup, ["tools/ci/run_regression_checks.py --jobs 4",
+                               "tools/ci/check_macos_runtime_extension.py --library <debug library path>"])
+        self.assertEqual(ok, ["tools/ci/run_regression_checks.py --jobs 2 tests/economy/a_test.gd"])
+        self.assertEqual(bad, ["tools/ci/check_save_contracts.py <path>"])
+        self.assertTrue(checks.requests_native(dup, cfg))
+
+    def test_native_check_line_cannot_carry_another_command(self):
+        cfg = load_config()
+        lines = ["tools/ci/check_macos_runtime_extension.py --library x.dylib; rm -rf /",
+                 "tools/ci/check_macos_runtime_extension.py && tools/ci/check_save_contracts.py",
+                 "tools/ci/check_macos_runtime_extension.py --library $(whoami)"]
+        ok, bad, dup = checks.extra_checks(lines, cfg["checks"]["extraCheckPattern"], checks.already_run(cfg))
+        self.assertEqual((ok, dup), ([], []))
+        self.assertEqual(bad, lines)
+        self.assertFalse(checks.requests_native(bad, cfg))
+
+    def test_requested_native_check_that_did_not_run_needs_a_person(self):
+        facts = Facts(native_requested=True)
+        self.assertIn("the plan asked for the macOS runtime check, but no native sources changed, so it did not run",
+                      judge(facts).reasons)
+        facts.native_changed = facts.native_rebuilt = facts.native_runtime_ok = facts.native_libraries_committed = True
+        self.assertNotIn("the plan asked for the macOS runtime check, but no native sources changed, so it did not run",
+                         judge(facts).reasons)
 
     def test_questions(self):
         plan = self.PLAN.replace("## Questions\nnone", "## Questions\n- Should taxes round down?")

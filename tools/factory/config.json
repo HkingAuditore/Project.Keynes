@@ -48,7 +48,7 @@
     "nativeImport": ["--headless", "--path", "Project/project-keynes", "--import"],
     "nativeRuntimeCheck": "tools/ci/check_macos_runtime_extension.py",
     "regression": ["tools/ci/run_regression_checks.py", "--jobs", "4"],
-    "extraCheckPattern": "^tools/ci/[a-z0-9_]+\\.py( --?[a-z0-9-]+| tests/[a-z0-9_/]+\\.gd)*$"
+    "extraCheckPattern": "^tools/ci/[a-z0-9_]+\\.py( --?[a-z0-9-]+| [0-9]+| tests/[a-z0-9_/]+\\.gd)*$"
   },
   "paths": {
     "forbidden": [".github/", "tools/factory/", ".qodo/", "tools/ci/"],

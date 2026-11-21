@@ -38,18 +38,40 @@ def static_guards(workdir: str, workflow: str) -> list[str]:
     return [w for w in m.group(1).replace("\\", " ").split() if w.endswith(".py")]
 
 
-def extra_checks(plan_checks: list[str], pattern: str) -> tuple[list[str], list[str]]:
-    """Split plan-requested commands into allowed ones and rejected ones."""
+def already_run(cfg: dict) -> tuple[set[str], set[str]]:
+    """Commands and scripts the factory runs on its own: the default regression, and the native
+    runtime check, which runs on both libraries whenever native sources change."""
+    c = cfg["checks"]
+    return {" ".join(c["regression"])}, {c["nativeRuntimeCheck"]}
+
+
+def native_line(command: str, script: str) -> bool:
+    """The native runtime check alone, with flags, plain values or `<placeholder>` values and no
+    shell syntax, so nothing else can ride along on the line."""
+    value = r"( [A-Za-z0-9_./-]+| <[A-Za-z0-9 _./-]+>)?"
+    return re.fullmatch(re.escape(script) + rf"( --?[a-z0-9-]+{value})*", command) is not None
+
+
+def requests_native(lines: list[str], cfg: dict) -> bool:
+    return any(native_line(re.sub(r"^python3? +", "", c.strip()), cfg["checks"]["nativeRuntimeCheck"]) for c in lines)
+
+
+def extra_checks(plan_checks: list[str], pattern: str,
+                 covered: tuple[set[str], set[str]] = (set(), set())) -> tuple[list[str], list[str], list[str]]:
+    """Split plan-requested commands into allowed, rejected and already-run ones."""
     rx = re.compile(pattern)
-    ok, bad = [], []
+    commands, scripts = covered
+    ok, bad, dup = [], [], []
     for c in plan_checks:
         c = c.strip()
         bare = re.sub(r"^python3? +", "", c)
-        if rx.match(bare):
+        if bare in commands or any(native_line(bare, s) for s in scripts):
+            dup.append(c)
+        elif rx.match(bare):
             ok.append(bare)
         else:
             bad.append(c)
-    return ok, bad
+    return ok, bad, dup
 
 
 class Runner:

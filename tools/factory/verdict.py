@@ -57,6 +57,7 @@ class Facts(NativeFacts):
     stopped_by: str | None = None
     plan_questions: list[str] = field(default_factory=list)
     rejected_checks: list[str] = field(default_factory=list)
+    native_requested: bool = False
     disagreements: list[str] = field(default_factory=list)
     base_failures: list[str] = field(default_factory=list)
     checks_sha: str | None = None
@@ -121,6 +122,8 @@ def judge(f: Facts) -> Verdict:
             human.append("C++ changed and both macOS runtime checks have not passed")
         if not f.native_libraries_committed:
             human.append("C++ changed and both verified macOS libraries have not been committed")
+    if f.native_requested and not f.native_changed:
+        human.append("the plan asked for the macOS runtime check, but no native sources changed, so it did not run")
     if f.ci_state == "error":
         human.append("the CI state could not be read")
     unknown = unknown_findings(f.findings)
