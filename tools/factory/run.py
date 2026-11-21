@@ -253,9 +253,34 @@ class Run:
         if problems or self.facts.human_paths:
             return False
         res, new = self.run_checks(f"fix-{time.time_ns()}", extra, base_failed)
+        rounds = self.cfg["limits"].get("checkFixRounds", 0)
+        session = out.get("session")
+        for attempt in range(1, rounds + 1):
+            if not new or self.facts.human_paths:
+                break
+            # Same repair loop as the PR watcher: hand Codex the failing checks in the fixing conversation.
+            prompt = agent.render("fix-checks", number=str(self.number), title=issue["title"],
+                                  feedback=checks.feedback(res, new))
+            out = agent.codex(self.cfg, self.workdir, prompt, self.path(f"fix-checks-{attempt}-{int(time.time())}.md"),
+                              writable=True, session=session)
+            session = out.get("session") or session
+            self.record.setdefault("reports", []).append(out["report"][-4000:])
+            if not out["ok"]:
+                self.stop_failed_agent(out, f"check-fix round {attempt} after {source}", base)
+                return False
+            if work.head(self.workdir) != base:
+                self.facts.stopped_by = "the agent made its own commits"
+                return False
+            problems = self.scope_problems()
+            if problems:
+                self.facts.stopped_by = problems[0]
+            if problems or self.facts.human_paths:
+                return False
+            res, new = self.run_checks(f"fix-checks-{attempt}-{time.time_ns()}", extra, base_failed)
         self.facts.new_failures = new
         if new:
-            self.facts.stopped_by = "checks fail after the review fix: " + ", ".join(new)
+            tried = f" and {rounds} check-fix round{'s' if rounds != 1 else ''}" if rounds else ""
+            self.facts.stopped_by = f"checks fail after the review fix{tried}: " + ", ".join(new)
             return False
         return not self.facts.human_paths
 
