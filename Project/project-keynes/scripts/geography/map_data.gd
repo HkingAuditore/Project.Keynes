@@ -609,7 +609,7 @@ func season_history_for(cell: HexCell, vegetation: bool) -> PackedByteArray:
 	var start := cell.index * HexCell.HISTORY_LEN
 	if start >= 0 and start + HexCell.HISTORY_LEN <= history.size():
 		return history.slice(start, start + HexCell.HISTORY_LEN)
-	return cell.vegetation_history if vegetation else cell.biome_history
+	return PackedByteArray()
 
 func sync_is_water_arr_from_terrain() -> void:
 	var n: int = mini(terrain_arr.size(), is_water_arr.size())
