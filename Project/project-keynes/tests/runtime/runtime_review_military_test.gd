@@ -7,7 +7,7 @@ func _run() -> void:
 
 func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
 	var scenario := MilitaryScenario.new(host, _expect)
-	if not scenario.ready():
+	if not await scenario.ready(MAX_SLICES_PER_DAY):
 		return {}
 	var generator := host.get_generator()
 	var military: MilitaryFacade = generator.get_military_facade()

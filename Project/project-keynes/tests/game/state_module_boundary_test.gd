@@ -57,8 +57,11 @@ func _init() -> void:
 	var sections := {"new_game_config": {}, "dynamic_world": world.serialize()}
 	var context := {"world": world, "session": {}}
 	_expect("legacy geography without species still restores", modules.dynamic_world.restore_sections(sections, context).ok)
+	var before_species: Dictionary = world.serialize().cells
 	sections.dynamic_world.cells["cell_bio_occupancy_bits"] = PackedInt32Array([0])
-	_expect("species column must cover the saved map", modules.dynamic_world.restore_sections(sections, context).code == "species_state_invalid")
+	_expect("geography leaves species restoration to the native archive",
+		modules.dynamic_world.restore_sections(sections, context).ok
+		and world.serialize().cells == before_species)
 	sections.dynamic_world.n_cells = 1
 	_expect("saved map dimensions must match the live map", modules.dynamic_world.restore_sections(sections, context).code == "dynamic_world_shape_invalid")
 	print("state module boundaries: %d checks, %d failures" % [checks, failures])

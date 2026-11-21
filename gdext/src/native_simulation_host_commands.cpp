@@ -840,30 +840,23 @@ void NativeSimulationHost::publish_day(
         std::atomic_store(&_published_era_advancement, published->day_tail->era_advancement);
     finish_player_confirmation_day(day);
     {
-        std::lock_guard<std::mutex> lock(_resource_display_mutex);
-        merge_resource_display_patch();
-        if (!_executor_cell_lut_pending.empty()) {
-            _cell_lut_pending.resize(_executor_cell_lut_pending.size());
-            for (size_t cell = 0; cell < _cell_lut_pending.size(); ++cell)
-                _cell_lut_pending[cell] |= _executor_cell_lut_pending[cell];
-        }
-        if (_world_environment) {
-            uint64_t business = mix_hash(
-                _climate_pod_state_hash.load(std::memory_order_relaxed),
-                _economy_pod_state_hash.load(std::memory_order_relaxed));
-            for (auto *hash : {&_trigger_pod_state_hash, &_ideology_pod_state_hash,
-                    &_effect_pod_state_hash, &_modifier_pod_state_hash, &_events_pod_state_hash})
-                business = mix_hash(business, hash->load(std::memory_order_relaxed));
-            business = mix_hash(business, published->day_tail->country.state_hash);
-            _published_days.push_back({header, published->receipts, published->day_tail->golden,
-                published->day_tail->notices, fiscal, business, annual_reward_pending});
-        }
         std::lock_guard<std::mutex> control(_control_mutex);
         _committed_day.store(day, std::memory_order_release);
         _generation.store(generation, std::memory_order_release);
         std::atomic_store_explicit(&_latest_commit,
-            std::shared_ptr<const RuntimeCommit>(std::move(published)),
+            std::shared_ptr<const RuntimeCommit>(published),
             std::memory_order_release);
+    }
+    if (_world_environment) {
+        uint64_t business = mix_hash(
+            _climate_pod_state_hash.load(std::memory_order_relaxed),
+            _economy_pod_state_hash.load(std::memory_order_relaxed));
+        for (auto *hash : {&_trigger_pod_state_hash, &_ideology_pod_state_hash,
+                &_effect_pod_state_hash, &_modifier_pod_state_hash, &_events_pod_state_hash})
+            business = mix_hash(business, hash->load(std::memory_order_relaxed));
+        business = mix_hash(business, published->day_tail->country.state_hash);
+        publish_display_batch(published, {header, published->receipts, published->day_tail->golden,
+            published->day_tail->notices, fiscal, business, annual_reward_pending});
     }
     _control_cv.notify_all();
     _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);

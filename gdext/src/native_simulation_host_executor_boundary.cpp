@@ -1,5 +1,7 @@
 #include "native_simulation_host.h"
 
+#include "economy_api.h"
+
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -19,20 +21,52 @@ void NativeSimulationHost::publish_boundary_command_result(const char *command,
 
 godot::Array NativeSimulationHost::take_boundary_command_results(bool &colonization_quotes_ready) {
     if (inline_daily_mode() && !execution_has_stopped()) {
+        service_economy_read_view();
         service_economy_boundary_requests();
         service_era_reward_requests();
         service_player_confirmations();
         player_confirmation_block();
     }
-    std::deque<godot::Dictionary> results;
+    std::lock_guard<std::mutex> control(_control_mutex);
+    colonization_quotes_ready = std::exchange(_colonization_quotes_ready, false);
+    return std::exchange(_boundary_command_results, {});
+}
+
+bool NativeSimulationHost::economy_worker_owns_execution() const noexcept {
+    const auto current = _state.load(std::memory_order_acquire);
+    return current != RuntimeWorkerState::STOPPED &&
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        _economy_production_runtime != nullptr &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u;
+}
+
+bool NativeSimulationHost::player_requests_pending_locked() const noexcept {
+    return !_military_commands.empty() || !_economy_boundary_requests.empty() ||
+        !_era_reward_requests.empty() || !_annual_presentations.empty() ||
+        !_narrative_requests.empty() || !_player_confirmation.requests.empty() ||
+        _player_confirmation.ideology_input_changed;
+}
+
+void NativeSimulationHost::request_economy_read_view() {
     {
         std::lock_guard<std::mutex> control(_control_mutex);
-        results.swap(_boundary_command_results);
-        colonization_quotes_ready = std::exchange(_colonization_quotes_ready, false);
+        if (_economy_read_view_requested) return;
+        _economy_read_view_requested = true;
     }
-    godot::Array out;
-    for (const auto &result : results) out.push_back(result);
-    return out;
+    _control_cv.notify_one();
+}
+
+void NativeSimulationHost::service_economy_read_view() {
+    if (!_economy_production_runtime || !economy_worker_owns_execution() ||
+            _inline_day_pending.load(std::memory_order_acquire)) return;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        if (!std::exchange(_economy_read_view_requested, false)) return;
+    }
+    const RuntimeExecutionContext context(this,
+        _requested_authority_mask.load(std::memory_order_acquire));
+    economy_api::serve_read_view(*_economy_production_runtime, true);
 }
 
 bool NativeSimulationHost::command_packet_before(

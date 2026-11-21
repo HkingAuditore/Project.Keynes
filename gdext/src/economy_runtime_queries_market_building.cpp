@@ -1834,7 +1834,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
 }
 
 Dictionary NativeEconomyRuntime::construction_command_receipts(
-        int64_t after_receipt_id, int32_t limit) const {
+        int64_t after_receipt_id, int32_t limit, int64_t settled_day) const {
     Dictionary out;
     limit = std::clamp(limit, 1, 256);
     Array receipts;
@@ -1842,6 +1842,7 @@ Dictionary NativeEconomyRuntime::construction_command_receipts(
     for (const ConstructionCommandReceipt &receipt :
          _committed_construction_receipts) {
         if (receipt.receipt_id <= after_receipt_id) continue;
+        if (settled_day >= 0 && receipt.settled_day != settled_day) continue;
         Dictionary row;
         row["receipt_id"] = receipt.receipt_id;
         row["sequence"] = receipt.sequence;
@@ -1863,7 +1864,7 @@ Dictionary NativeEconomyRuntime::construction_command_receipts(
         row["market_goods_used"] = receipt.market_goods_used;
         receipts.push_back(row);
         last_receipt_id = receipt.receipt_id;
-        if (receipts.size() >= limit) break;
+        if (settled_day < 0 && receipts.size() >= limit) break;
     }
     out["ok"] = true;
     out["receipts"] = receipts;

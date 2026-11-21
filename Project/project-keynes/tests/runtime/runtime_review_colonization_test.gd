@@ -5,7 +5,6 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 	var generator := host.get_generator()
 	var country = generator.get_country_facade()
 	var economy = generator.get_economy_facade()
-	var ext = generator.get_data_core_world_ext()
 	var start := int(generator.gameplay_start_report().get("cell", -1))
 	var player := int(country.cell_summary(start).get("country_handle", 0))
 	clock.set_speed(SPEED)
@@ -35,7 +34,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 					int(quote.source_cells[0]), target, 10, int(quote.quote_tokens[0]), 3, 961001)
 				_expect("first expedition admitted for day three", first.get("effective_day") == 3)
 			3:
-				var receipt := _receipt(ext, player, 961001)
+				var receipt := _receipt(host, 961001)
 				print("REVIEW_EXPEDITION_FIRST ", receipt)
 				var expedition := int(receipt.get("expedition_handle", 0))
 				_expect("fixture holds the target while preparing", expedition > 0 and receipt.get("code") == "PREPARING")
@@ -47,9 +46,9 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 				_expect("cancel and start both admitted for day four", cancelled.get("effective_day") == 4
 					and started.get("effective_day") == 4)
 			4:
-				var second := _receipt(ext, player, 961003)
+				var second := _receipt(host, 961003)
 				print("REVIEW_EXPEDITION_ORDER result=", results.get(961003, {}), " settlement=", second)
-				var cancelled := _receipt(ext, player, 961002)
+				var cancelled := _receipt(host, 961002)
 				_expect("the earlier cancellation releases the target for the same-day expedition",
 					cancelled.get("code") == "CANCELLED" and cancelled.get("settled_day") == 4
 					and second.get("settled_day") == 4 and second.get("code") == "PREPARING"
@@ -59,9 +58,8 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 	return {}
 
 
-func _receipt(ext: Object, player: int, sequence: int) -> Dictionary:
-	var batch: Dictionary = ext.get_family_colonization_receipts(player, 0, 32)
-	for row: Dictionary in batch.get("receipts", []):
+func _receipt(host: WorldRuntimeHost, sequence: int) -> Dictionary:
+	for row: Dictionary in host._runtime_last_commit.get("colonization_receipts", []):
 		if row.sequence == sequence:
 			return row
 	return {}

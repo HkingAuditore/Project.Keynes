@@ -4,6 +4,8 @@
 #include "runtime_narrative.h"
 #include "runtime_world_environment.h"
 
+#include <godot_cpp/variant/utility_functions.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <string_view>
@@ -138,6 +140,14 @@ Dictionary NativeSimulationHost::capture_narrative() const {
     if (_executor_narrative) return _executor_narrative->capture();
     if (!_restored_narrative.is_empty()) return _restored_narrative.duplicate(true);
     return RuntimeNarrative().capture();
+}
+
+std::vector<uint8_t> NativeSimulationHost::capture_narrative_save_bytes() const {
+    const auto saved = _executor_narrative ? _executor_narrative->capture()
+        : RuntimeNarrative().capture();
+    const auto wire = UtilityFunctions::var_to_bytes(saved);
+    return wire.is_empty() ? std::vector<uint8_t>{}
+        : std::vector<uint8_t>(wire.ptr(), wire.ptr() + wire.size());
 }
 
 const char *NativeSimulationHost::narrative_input_block() const {

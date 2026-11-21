@@ -29,6 +29,7 @@ var _capital: int
 var _player: int
 var _enemy := 0
 var _militia: int
+var _construction_market := -1
 var _army := 0
 var _march_target := -1
 var _explored_before_orders := PackedByteArray()
@@ -72,10 +73,20 @@ func _print_construction(receipt: Dictionary) -> void:
 		print("BACKGROUND_MILITARY_CONSTRUCTION=" + JSON.stringify(receipt))
 
 
-func ready() -> bool:
+func ready(max_slices: int) -> bool:
 	var valid := _capital >= 0 and _militia >= 0 and _player > 0 and _enemy > 0
 	_check.call("military scenario opens with a player, a militia unit and a foreign country", valid)
-	return valid
+	if not valid:
+		return false
+	for _slice in range(max_slices):
+		var market := economy.market_cell_snapshot(_capital)
+		if bool(market.get("ok", false)):
+			_construction_market = int(market.get("market_id", -1))
+			if _construction_market >= 0:
+				return true
+		await _host.get_tree().process_frame
+	_check.call("the capital's published construction market is available", false)
+	return false
 
 
 func issue_for_day(day: int) -> void:
@@ -162,7 +173,6 @@ func _issue_military_on_boundary(_from_day: int, finished_day: int, _generation:
 
 func _build(id: StringName, effective_day: int) -> void:
 	var profile: Resource = load("res://data/economy/buildings/%s.tres" % id)
-	var market_id := int(economy.market_cell_snapshot(_capital).get("market_id", -1))
 	var good_ids := economy.good_ids()
 	for index in profile.construction_good_ids.size():
 		var good := good_ids.find(profile.construction_good_ids[index])
@@ -172,9 +182,9 @@ func _build(id: StringName, effective_day: int) -> void:
 			"request_ids": PackedInt64Array([_sequence]),
 			"opcodes": PackedInt32Array([EconomyFacade.Opcode.ADD_STOCK]),
 			"payload0s": PackedInt64Array([amount]),
-			"target_cells": PackedInt32Array([market_id]),
+			"target_cells": PackedInt32Array([_construction_market]),
 			"target_countries": PackedInt64Array([good]),
-		}), {"op": "add_construction_stock", "market": market_id, "good": good, "amount": amount,
+		}), {"op": "add_construction_stock", "market": _construction_market, "good": good, "amount": amount,
 			"effective_day": effective_day, "sequence": _sequence})
 	_sequence += 1
 	_record(economy.treasury_sponsored_build(_player, _capital, id, effective_day, _sequence),

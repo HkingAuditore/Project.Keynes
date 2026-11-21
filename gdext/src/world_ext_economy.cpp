@@ -97,25 +97,18 @@ bool economy_live_readable(const NativeSimulationHost *host,
     return boundary.owns_lock() && !runtime->epoch_active();
 }
 
-// Worker-owned economy is read live only while this thread holds the authority
-// boundary between epochs; otherwise from the worker-published commit view.
+// Unowned stores serve diagnostic queries directly. The formal executor answers
+// queries from its own published view, including while paused.
 template <class Live>
-Dictionary committed_read(const NativeSimulationHost *host,
+Dictionary committed_read(NativeSimulationHost *host,
                           NativeEconomyRuntime *runtime, ReadKey key,
                           Live &&live) {
     if (host == nullptr || !host->economy_worker_owns_execution()) return live();
-    {
-        std::unique_lock<std::mutex> boundary;
-        if (economy_live_readable(host, runtime, boundary)) {
-            Dictionary out = live();
-            out["read_view_source"] = "live_boundary";
-            out["read_view_pending"] = false;
-            return out;
-        }
-    }
     key.seal();
-    runtime->read_view_subscribe(key);
+    const bool subscribed = runtime->read_view_subscribe(key);
     const auto view = runtime->read_view();
+    if (subscribed || (view && view->committed_day < host->committed_day_value()))
+        host->request_economy_read_view();
     if (view != nullptr) {
         if (const NativeEconomyRuntime::ReadViewEntry *entry = view->find(key)) {
             Dictionary out = entry->value.duplicate(true);
@@ -1586,13 +1579,10 @@ Dictionary DCWorldExt::get_trade_visual_snapshot(
     auto *runtime = runtime_from(_economy_runtime);
     runtime->trade_visual_cache.request(cells, visible, vision_revision, selected_cell, enabled);
     if (enabled) {
-        if (_runtime_host == nullptr || !_runtime_host->economy_worker_owns_execution()) {
+        if (_runtime_host == nullptr || !_runtime_host->economy_worker_owns_execution())
             runtime->trade_visual_cache.step(*runtime);
-        } else {
-            std::unique_lock<std::mutex> boundary;
-            if (economy_live_readable(_runtime_host.get(), runtime, boundary))
-                runtime->trade_visual_cache.step(*runtime);
-        }
+        else
+            _runtime_host->request_economy_read_view();
     }
     Dictionary out = runtime->trade_visual_cache.snapshot();
     if (!static_cast<bool>(out.get("ok", false))) return out;
@@ -1694,13 +1684,9 @@ Dictionary DCWorldExt::get_building_visual_snapshot(
     if (host != nullptr && host->economy_worker_owns_execution()) {
         PackedInt32Array cells = requested_cells;
         cells.append_array(_building_visual_pending_cells);
-        {
-            std::unique_lock<std::mutex> boundary;
-            if (economy_live_readable(host, runtime, boundary))
-                runtime->publish_building_visual_view();
-        }
         const auto view = runtime->building_visual_view();
         if (view == nullptr) {
+            _runtime_host->request_economy_read_view();
             // Newly visible cells are consumed by the caller; keep them for the
             // first call that has a committed view.
             _building_visual_pending_cells = cells;
@@ -1741,11 +1727,6 @@ Dictionary DCWorldExt::consume_building_visual_dirty_cells() {
     const NativeSimulationHost *host = _runtime_host.get();
     if (host == nullptr || !host->economy_worker_owns_execution())
         return runtime->consume_building_visual_dirty_cells();
-    {
-        std::unique_lock<std::mutex> boundary;
-        if (economy_live_readable(host, runtime, boundary))
-            runtime->publish_building_visual_view();
-    }
     const auto view = runtime->building_visual_view();
     Dictionary out;
     out["ok"] = true;

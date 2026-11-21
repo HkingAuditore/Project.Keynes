@@ -645,12 +645,19 @@ func dispatch_construction_command_receipts() -> void:
 		return
 	var page: Dictionary = _world_ext.get_construction_command_receipts(
 		_construction_receipt_cursor, 64)
-	if not bool(page.get("ok", false)):
-		return
+	if bool(page.get("ok", false)):
+		emit_construction_command_receipts(page.get("receipts", []))
+
+
+func emit_construction_command_receipts(receipts: Array) -> void:
 	var stable_ids: PackedStringArray = _catalog.get(
 		"building_type_ids", PackedStringArray())
-	for raw in page.get("receipts", []):
-		var result: Dictionary = raw
+	for raw: Dictionary in receipts:
+		var receipt_id := int(raw.get("receipt_id", -1))
+		if receipt_id <= _construction_receipt_cursor:
+			continue
+		_construction_receipt_cursor = receipt_id
+		var result := raw.duplicate()
 		var type_id := int(result.get("type_id", -1))
 		result["building_id"] = String(stable_ids[type_id]) if type_id >= 0 \
 				and type_id < stable_ids.size() else ""
@@ -664,8 +671,6 @@ func dispatch_construction_command_receipts() -> void:
 			str(result.get("ok", false)), str(result.get("code", "")),
 			str(result.get("settled_day", -1))])
 		construction_command_settled.emit(result)
-	_construction_receipt_cursor = maxi(_construction_receipt_cursor,
-		int(page.get("last_receipt_id", _construction_receipt_cursor)))
 
 
 func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
@@ -815,17 +820,23 @@ func dispatch_family_colonization_receipts(country_handle: int) -> void:
 	var cursor := int(_colonization_receipt_cursors.get(country_handle, 0))
 	var page: Dictionary = _world_ext.get_family_colonization_receipts(
 		country_handle, cursor, 64)
-	if not bool(page.get("ok", false)):
-		return
-	for raw in page.get("receipts", []):
-		var result: Dictionary = raw
-		result["country_handle"] = country_handle
+	if bool(page.get("ok", false)):
+		emit_family_colonization_receipts(page.get("receipts", []), country_handle)
+
+
+func emit_family_colonization_receipts(receipts: Array, country_handle: int = 0) -> void:
+	for raw: Dictionary in receipts:
+		var country := int(raw.get("country_handle", country_handle))
+		var receipt_id := int(raw.get("receipt_id", -1))
+		if receipt_id <= int(_colonization_receipt_cursors.get(country, 0)):
+			continue
+		_colonization_receipt_cursors[country] = receipt_id
+		var result := raw.duplicate()
+		result["country_handle"] = country
 		var code := String(result.get("code", ""))
 		result["ok"] = not code.begins_with("colonization_")
 		result["message"] = _colonization_result_message(code)
 		family_colonization_settled.emit(result)
-	_colonization_receipt_cursors[country_handle] = maxi(cursor,
-		int(page.get("last_receipt_id", cursor)))
 
 
 static func _colonization_result_message(code: String) -> String:

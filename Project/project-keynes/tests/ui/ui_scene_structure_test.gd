@@ -48,6 +48,14 @@ func _check_touch_number_pad() -> void:
 		submissions.append([value, mode]))
 	_expect("touch number pad starts hidden", not pad.visible)
 	pad.open({"title": "税率", "value": "7"})
+	var shortcut := InputEventKey.new()
+	shortcut.pressed = true
+	shortcut.keycode = KEY_5
+	shortcut.shift_pressed = true
+	shortcut.unicode = KEY_PERCENT
+	root.push_input(shortcut)
+	_expect("percent shortcut is inactive while the mode row is hidden",
+		pad.get_node("%Value").text == "7" and int(pad.get("_mode")) == 0)
 	pad.get_node("%Step2").pressed.emit()
 	pad.get_node("%Confirm").pressed.emit()
 	_expect("touch number pad applies the step and submits the value",
@@ -63,6 +71,13 @@ func _check_touch_number_pad() -> void:
 	percent.pressed.emit()
 	_expect("only the percent mode is highlighted after switching",
 		percent.theme_type_variation == &"PKPrimaryButton" and absolute.theme_type_variation == &"PKIconButton")
+	root.push_input(shortcut)
+	_expect("the percent key selects the other mode without submitting",
+		absolute.theme_type_variation == &"PKPrimaryButton"
+		and pad.get_node("%Value").text == "0" and submissions == [["8", 0]])
+	root.push_input(shortcut)
+	_expect("the same key returns to the percent mode",
+		percent.theme_type_variation == &"PKPrimaryButton")
 	_expect("reopened touch number pad displays the current field title",
 		pad.get_node("%Title").text == "定额")
 	pad.get_node("%Cancel").pressed.emit()

@@ -8,6 +8,7 @@ namespace pk {
 namespace economy_api { bool military_purchase_receipt(const NativeEconomyRuntime &e, int64_t s, int64_t &q, int64_t &c) { return e.military_purchase_receipt(s, q, c); } }
 namespace economy_api {
 
+void serve_read_view(NativeEconomyRuntime &economy, bool requested) { economy.serve_read_view(requested); }
 std::vector<RuntimeGdpCell> capture_settlement_output(
         const NativeEconomyRuntime &economy, uint64_t country) {
     return economy.capture_settlement_output(country);

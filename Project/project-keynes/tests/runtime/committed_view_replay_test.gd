@@ -174,7 +174,7 @@ func _run() -> void:
 			var material_qty: PackedInt64Array = profile.construction_quantities
 			_expect("military fixture has a real construction recipe",
 				not material_ids.is_empty() and material_ids.size() == material_qty.size())
-			var market: Dictionary = economy.market_cell_snapshot(cell)
+			var market := await _published_economy(economy.market_cell_snapshot.bind(cell), day - 1)
 			var market_id := int(market.get("market_id", -1))
 			var good_ids: PackedStringArray = economy.good_ids()
 			_expect("military construction market exists", market_id >= 0)
@@ -199,10 +199,7 @@ func _run() -> void:
 			_expect("military state building admitted for day five", state_building >= 0
 				and bool(barracks.get("ok", false)) and int(barracks.get("effective_day", -1)) == 5)
 		if scenario == "military" and day == 20:
-			# Settlement has its own committed-read publication boundary. The
-			# receipt must prove actual day-5 settlement before army creation;
-			# a queued request or an ephemeral POD receipt is not that proof.
-			economy.dispatch_construction_command_receipts()
+			# Use the receipt delivered in the day-five display publication.
 			_expect("military construction actually settled on day five",
 				bool(military_construction.get("ok", false))
 				and int(military_construction.get("sequence", -1)) == 900001
@@ -360,8 +357,10 @@ func _run() -> void:
 			_expect("dated rename takes effect on its requested day", actual_name == expected_name)
 			rows[-1]["country_name"] = actual_name
 		if scenario == "calendar":
+			var native_rng = host._runtime_last_commit.get("climate_rng_state")
+			_expect("the displayed day includes its native climate RNG state", native_rng is int)
 			rows[-1]["calendar"] = [clock._last_season, clock._last_year,
-				clock.climate_anomaly, str(clock._rng.state)]
+				clock.climate_anomaly, str(native_rng)]
 		if annual:
 			if day == save_day and mode != "resume":
 				for _frame in range(MAX_SLICES_PER_DAY):

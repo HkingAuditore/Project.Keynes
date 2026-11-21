@@ -44,6 +44,8 @@ public:
     std::vector<uint8_t> capture_season_history(int64_t day) const;
     bool restore_season_history(const std::vector<uint8_t> &bytes, int64_t day);
     RuntimeClimateCalendar calendar(int64_t day) const;
+    std::vector<uint8_t> capture_calendar(int64_t day) const;
+    bool restore_calendar(const std::vector<uint8_t> &bytes);
     const RuntimeEnvironmentSnapshot &narrative_geography() const;
     const std::vector<uint8_t> &opening_landform() const;
     const uint8_t *water_terrain_lookup() const;

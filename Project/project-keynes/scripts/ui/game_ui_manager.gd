@@ -155,7 +155,6 @@ var _era_ceremony_parent: Control
 var _era_ceremony_index := -1
 var _era_ceremony_landed_name := ""
 var _era_celebrated_index := -1
-var _era_ceremony_resume_clock := false
 var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
@@ -789,7 +788,7 @@ func _ensure_era_panel() -> void:
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
 	if _era_ceremony_suppressed:
-		# GM 屏蔽事件时只同步时代基线，不创建会暂停时钟的大典。
+		# GM 屏蔽事件时只同步时代基线，不播放大典。
 		_era_celebrated_index = new_index
 		_era_ceremony_index = -1
 		return
@@ -825,7 +824,6 @@ func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArra
 		host.move_child(_era_ceremony, _pause_menu.get_index())
 	_era_ceremony.emblem_landed.connect(_on_era_ceremony_landed.bind(new_index))
 	_era_ceremony.finished.connect(_on_era_ceremony_finished)
-	_pause_clock_for_ceremony()
 	_era_ceremony.play({
 		"old_era_id": _era_indicator_view_model.era_id_for(old_index),
 		"new_era_id": new_id, "new_era_name": new_name,
@@ -1585,12 +1583,6 @@ func _on_era_ceremony_finished() -> void:
 
 func _abort_era_ceremony() -> void:
 	_era_component._abort_era_ceremony(self)
-
-func _pause_clock_for_ceremony() -> void:
-	_era_component._pause_clock_for_ceremony(self)
-
-func _restore_clock_after_ceremony() -> void:
-	_era_component._restore_clock_after_ceremony(self)
 
 func _notify_era_promoted(model: Dictionary) -> void:
 	_era_component._notify_era_promoted(self, model)

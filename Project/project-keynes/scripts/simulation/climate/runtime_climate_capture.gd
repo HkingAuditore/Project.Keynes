@@ -443,12 +443,12 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	return result
 
 
-func initialize_world_environment() -> Dictionary:
+func initialize_world_environment(notice_history: Array = []) -> Dictionary:
 	var map: MapData = _generator._sus_map
 	var clock: WorldClock = _generator._world_clock_ref
 	var profile = _generator._c()
-	var config := clock.export_state()
-	config["climate_year"] = int(config.get("climate_rng_year", config.last_year))
+	var config := clock.opening_climate_seed()
+	config["display_notice_history"] = notice_history
 	config["days_per_year"] = clock.days_per_year()
 	config["climate_random_drift"] = clock.climate_random_drift
 	config["climate_anomaly_max"] = clock.climate_anomaly_max

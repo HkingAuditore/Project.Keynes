@@ -14,7 +14,6 @@ const CLAIM_DAY := 4
 const MILITARY_DAY := 5
 const MILITARY_TARGET := 2
 const MilitaryScenario = preload("res://tests/runtime/background_daily_military_scenario.gd")
-const CountryStateProvider = preload("res://scripts/game/save_modules/country_state.gd")
 
 
 func _run() -> void:
@@ -113,7 +112,7 @@ func _run_world(stall: bool, military_scenario: bool = false) -> Dictionary:
 
 func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
 	var scenario := MilitaryScenario.new(host, _expect)
-	if not scenario.ready():
+	if not await scenario.ready(MAX_SLICES_PER_DAY):
 		return {}
 	var rows: Array = []
 	clock.set_speed(SPEED)
@@ -343,13 +342,23 @@ func _summary(host: WorldRuntimeHost, ext: Object, day: int) -> Dictionary:
 
 
 func _military_archive_hash(host: WorldRuntimeHost) -> String:
-	var generator := host.get_generator()
-	var archive := CountryStateProvider.new()._write_military_provider({
-		"military": generator.get_military_facade(),
-		"military_progress": generator.get_military_daily_job(),
-	})
-	var bytes: PackedByteArray = archive.get("sections", {}).get("pkmi", PackedByteArray())
-	_expect("complete PKMI including the event cursor is available", not bytes.is_empty())
+	var ext := host.get_generator().get_data_core_world_ext() as DCWorldExt
+	var day := int(ext.runtime_committed_day())
+	var request_id := 920000000 + day
+	var request: Dictionary = ext.request_runtime_save(request_id)
+	var archive: Dictionary
+	if request.get("ok", false):
+		for _slice in range(MAX_SLICES_PER_DAY):
+			archive = ext.poll_runtime_save(request_id)
+			if archive.get("ready", false) or not archive.get("ok", false):
+				break
+			await process_frame
+	var bytes: PackedByteArray = archive.get("pkmi", PackedByteArray())
+	_expect("complete PKMI including the event cursor is available for day %d" % day,
+		archive.get("committed_day", -1) == day and bytes.size() > 28
+		and bytes.decode_u32(bytes.size() - 28) == 0x314a444d)
+	if bytes.is_empty():
+		return ""
 	var hash_context := HashingContext.new()
 	hash_context.start(HashingContext.HASH_SHA256)
 	hash_context.update(bytes)

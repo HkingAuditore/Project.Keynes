@@ -431,7 +431,7 @@ func _build_world() -> Dictionary:
 	if not _require("Effect input digest refreshes",
 			bool(_ext.refresh_effect_input_digest_for_test().get("ok", false))):
 		return {}
-	var population := _find_population_cohort()
+	var population := await _find_population_cohort()
 	if population.is_empty():
 		return {}
 	return {
@@ -453,7 +453,12 @@ func _find_population_cohort() -> Dictionary:
 		if int(_ext.get_country_cell_summary(cell).get(
 				"country_handle", 0)) != _handle:
 			continue
-		var snapshot: Dictionary = _ext.get_population_cell_snapshot(cell, false)
+		var snapshot: Dictionary
+		for _frame in range(512):
+			snapshot = _ext.get_population_cell_snapshot(cell, false)
+			if bool(snapshot.get("ok", false)):
+				break
+			await process_frame
 		var handles: PackedInt64Array = snapshot.get(
 			"handles", PackedInt64Array())
 		if not handles.is_empty():

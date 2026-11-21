@@ -117,7 +117,7 @@ func _run() -> void:
 	print("---------- RAW ----------")
 	print(content)
 	var validated := Validator.validate_and_sanitize(
-		content, ctx, PackedStringArray(), "evt.ai.live_probe")
+		content, ctx, "evt.ai.live_probe")
 	print("---------- VALIDATED ok=%s code=%s ----------" % [
 		validated.get("ok", false), validated.get("code", "")])
 	if not bool(validated.get("ok", false)):

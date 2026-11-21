@@ -623,8 +623,8 @@ func environment_publish_diagnostics() -> Dictionary:
 	return _get_runtime_climate_capture().environment_publish_diagnostics()
 func _runtime_environment_publish_allowed(callsite: int, day: int) -> bool:
 	return _get_runtime_climate_capture()._runtime_environment_publish_allowed(callsite, day)
-func initialize_world_environment() -> Dictionary:
-	return _get_runtime_climate_capture().initialize_world_environment()
+func initialize_world_environment(notice_history: Array = []) -> Dictionary:
+	return _get_runtime_climate_capture().initialize_world_environment(notice_history)
 
 func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		callsite: int = 0) -> Dictionary:

@@ -5,6 +5,8 @@ extends RefCounted
 func _prepare_world_data(host) -> Dictionary:
 	var seed_override: int = host._session_prepare_options.seed
 	host._runtime_ready_for_ticks = false
+	host._gm_territory_requests.clear()
+	host._gm_territory_publication = 0
 	host._native_environment_active = false
 	host._player_country_handle = 0
 	# Reset the late-loading progress before rebinding presentation.
@@ -201,7 +203,14 @@ func _prepare_world_simulation(host) -> Dictionary:
 		if not host._annual_reports.report_ready.is_connected(host._on_annual_report_ready):
 			host._annual_reports.report_ready.connect(host._on_annual_report_ready)
 	host._start_runtime_executor()
-	if not host._load_slot_id.is_empty(): host._apply_climate_writeback_if_authoritative(host._generator.get_runtime_thread_report())
+	if not host._load_slot_id.is_empty():
+		var restored: Dictionary = host._generator.poll_runtime_commit(0, false)
+		if bool(restored.get("available", false)):
+			host._runtime_commit_day = int(restored.committed_day)
+			host._runtime_commit_generation = int(restored.generation)
+		var report: Dictionary = host._runtime_control_state()
+		host._apply_climate_writeback_if_authoritative(report)
+		host._publish_player_confirmation(report)
 	if host._is_web_build() and host._runtime_worker_fault_paused:
 		return {"ok": false, "code": host._web_worker_start_code}
 	host._clock_binding.attach(host._world_clock, host._forward_runtime_clock,
@@ -295,7 +304,9 @@ func _start_runtime_executor(host) -> void:
 			push_error("[runtime-worker] Country capture failed: %s" % code)
 			return
 	if not host._native_environment_active:
-		var seeded: Dictionary = host._generator.initialize_world_environment()
+		var sections: Dictionary = host._pending_load_bundle.get("sections", {})
+		var view: Dictionary = sections.get("player_view", {})
+		var seeded: Dictionary = host._generator.initialize_world_environment(view.get("narrative_notices", []))
 		if not bool(seeded.get("ok", false)):
 			host._observe_runtime_worker_fault({"simulation_host_state": "FAULTED",
 				"fault_code": String(seeded.get("code", "runtime_environment_seed_failed"))})

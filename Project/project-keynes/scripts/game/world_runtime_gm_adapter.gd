@@ -72,6 +72,9 @@ func _gm_set_click_claim_territory_enabled(host, enabled: bool) -> Dictionary:
 	return _part2._gm_set_click_claim_territory_enabled(host, enabled)
 func _gm_claim_selected_cell(host, cell: HexCell) -> void:
 	_part2._gm_claim_selected_cell(host, cell)
+func consume_territory_receipts(host) -> void:
+	_part2.consume_territory_receipts(host)
+
 func _gm_emit_claim_result(host, raw_result: Dictionary, cell_idx: int) -> void:
 	_part2._gm_emit_claim_result(host, raw_result, cell_idx)
 func _gm_scaled_positive(host, value, scale: int) -> int:

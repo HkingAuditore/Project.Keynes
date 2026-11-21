@@ -1072,12 +1072,13 @@ func record_committed_day(host, committed_day: int) -> void:
 
 func record_committed_ledger(host, commit: Dictionary) -> void:
 	host._gdp_ledger.apply_committed_view(commit.gdp)
-	if host._country_view_model == null:
-		return
-	var history = host._country_view_model.fiscal_history()
-	for row: Dictionary in commit.days:
-		if row.has("fiscal"):
-			history.sample(int(row.fiscal.country_handle), row.fiscal, row.treasury_cash, row.day)
+	if host._country_view_model != null and commit.has("fiscal_history"):
+		host._country_view_model.fiscal_history().apply_committed_view(commit.fiscal_history)
+	# The header's daily reading is independent of the slower category refresh.
+	if host._selected_cell != null and host._right_panel != null and host._inspector_view_model != null:
+		var cell := int(host._selected_cell.index)
+		if VisionSolver.fog_state(host._map, cell) == VisionSolver.FOG_VISIBLE:
+			host._right_panel.apply_published_gdp(host._inspector_view_model._gdp_kpi(cell))
 
 
 func refresh_committed_view(host) -> void:

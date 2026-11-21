@@ -464,11 +464,6 @@ func _initialize_runtime_vision(host, restored: bool) -> Dictionary:
 	if country == null:
 		return {"ok": false, "reason": "vision_country_state_unavailable"}
 	var tech_ids: PackedStringArray = country.native_catalog().get("technology_ids", PackedStringArray())
-	var fog_enabled: bool = host.fog_of_war_enabled
-	if restored:
-		var sections: Dictionary = host._pending_load_bundle.get("sections", {})
-		var fog_state: Dictionary = sections.get("pkfg", {})
-		fog_enabled = bool(fog_state.get("fog_enabled", fog_enabled))
 	var seeded: Dictionary = ext.configure_vision_research({
 		"cell_count": n,
 		"neighbor_indices": map.neighbor_indices_packed(),
@@ -481,10 +476,9 @@ func _initialize_runtime_vision(host, restored: bool) -> Dictionary:
 		"world_day": host._world_clock.day_index() if host._world_clock != null else 0,
 		"player_start_cell": _resolve_player_start_cell(host),
 		"remote_technology": tech_ids.find("tech.magnetic_navigation"),
-		"explored": map.explored_arr,
 		"occupancy": map.bio_occupancy_bits_arr,
 		"fog_available": _fog_allowed(host),
-		"fog_enabled": fog_enabled,
+		"fog_enabled": host.fog_of_war_enabled,
 		"restored": restored,
 	})
 	if not bool(seeded.get("ok", false)):

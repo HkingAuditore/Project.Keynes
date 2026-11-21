@@ -3,6 +3,7 @@
 #include "country_runtime.h"
 #include "native_simulation_day_context.h"
 #include "runtime_day_tail.h"
+#include "runtime_checkpoint_wire.h"
 #include "parallel_dispatcher.h"
 
 #include <godot_cpp/core/error_macros.hpp>
@@ -725,6 +726,12 @@ bool DCWorldExt::seed_runtime_bio(const NativeEconomyRuntime &economy) {
     state->round.seed = config->seed;
     state->round.species = config->species;
     copy_packed(occupancy, state->round.previous);
+    if (!_runtime_host->restore_bio_seed(state->round.previous)) return false;
+    if (!std::equal(state->round.previous.begin(), state->round.previous.end(), occupancy.ptr())) {
+        auto &slot = _slots.write[config->occupancy_slot];
+        std::copy(state->round.previous.begin(), state->round.previous.end(), slot.arr_i32.ptrw());
+        _flush_slot_to_map(config->occupancy_slot);
+    }
     const auto &reserves = economy.building_resource_reserve_slots();
     for (const int32_t slot : config->reserve_slot_ids) {
         const auto name = String(_slots[slot].name).utf8();
@@ -733,6 +740,24 @@ bool DCWorldExt::seed_runtime_bio(const NativeEconomyRuntime &economy) {
         state->carrier_resources.push_back(static_cast<size_t>(resource - reserves.begin()));
     }
     _runtime_host->attach_bio_state(std::move(state));
+    return true;
+}
+
+std::vector<uint8_t> NativeSimulationHost::capture_bio_state() const {
+    if (!_executor_bio) return {};
+    CheckpointWriter out;
+    for (const auto cell : _executor_bio->round.previous) out.field(cell);
+    return std::move(out.bytes);
+}
+
+bool NativeSimulationHost::restore_bio_seed(std::vector<int32_t> &occupancy) const {
+    if (!_has_pending_restore ||
+        (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_BIO) == 0) return true;
+    const auto &bytes = _pending_restore_bundle.bio_bytes;
+    if (bytes.size() != occupancy.size() * sizeof(int32_t)) return false;
+    CheckpointReader in{bytes.data(), bytes.size()};
+    for (auto &cell : occupancy)
+        if (!in.field(cell)) return false;
     return true;
 }
 

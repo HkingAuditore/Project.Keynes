@@ -103,9 +103,8 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 					_expect("starting that expedition is queued for day five",
 						bool(sent.ok) and bool(sent.queued) and int(sent.effective_day) == 5)
 			5:
-				var receipt_batch: Dictionary = ext.get_family_colonization_receipts(player, 0, 16)
 				var exact_day := false
-				for receipt in receipt_batch.get("receipts", []):
+				for receipt in host._runtime_last_commit.get("colonization_receipts", []):
 					exact_day = exact_day or (int(receipt.sequence) == 950002
 						and int(receipt.effective_day) == 5 and int(receipt.settled_day) == 5
 						and int(receipt.expedition_handle) != 0)
@@ -122,9 +121,8 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 				_expect("fog display is restored from the authoritative physical frame",
 					map.visible_arr == frame.physical_visible and map.fog_k_arr == frame.fog_k_arr)
 			8:
-				var receipt_batch: Dictionary = ext.get_family_colonization_receipts(player, 0, 32)
 				var refused := false
-				for row: Dictionary in receipt_batch.get("receipts", []):
+				for row: Dictionary in host._runtime_last_commit.get("colonization_receipts", []):
 					if row.sequence == 950003:
 						refused = row.effective_day == 8 and row.settled_day == 8 \
 							and row.code == "colonization_route_not_visible"

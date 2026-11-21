@@ -386,42 +386,41 @@ func _run() -> void:
 	_expect("daily economy refresh patches visible values",
 		String(economy.call("cash_text")) == "2.23万" \
 			and String(economy.call("good_value_text", "grain")) == "2.5")
-	# 合成财政快照期间暂停仿真日 tick：否则真实 country_committed 会把
-	# 真实模型刷进工作区，覆盖合成快照，断言结果取决于时钟落点。
-	var economy_race_paused := clock.paused
-	clock.paused = true
+	# The same workspace in isolation receives only this synthetic history.
+	var coalesced := (load("res://scenes/ui/economy_workspace.tscn") as PackedScene).instantiate()
+	root.add_child(coalesced)
 	var live_summary := synthetic_model.duplicate(true)
 	live_summary["current_day"] = 100
 	live_summary["fiscal"] = {
 		"collected": PackedInt64Array([10000, 0, 0, 0, 0]),
 	}
-	economy.call("set_model", live_summary)
+	coalesced.call("set_model", live_summary)
 	_expect("economy summary paints immediately when opened",
-		String(economy.call("tax_text")) == "1")
+		String(coalesced.call("tax_text")) == "1")
 	var burst_summary := live_summary.duplicate(true)
 	burst_summary["current_day"] = 101
 	burst_summary["fiscal"] = {
 		"collected": PackedInt64Array([20000, 0, 0, 0, 0]),
 	}
-	economy.call("refresh_model", burst_summary)
+	coalesced.call("refresh_model", burst_summary)
 	burst_summary = burst_summary.duplicate(true)
 	burst_summary["current_day"] = 102
 	burst_summary["fiscal"] = {
 		"collected": PackedInt64Array([30000, 0, 0, 0, 0]),
 	}
-	economy.call("refresh_model", burst_summary)
+	coalesced.call("refresh_model", burst_summary)
 	_expect("rapid economy ticks retain the stable rendered summary",
-		String(economy.call("tax_text")) == "1")
+		String(coalesced.call("tax_text")) == "1")
 	# 慢帧环境下（无头 + 原生仿真占帧）SceneTreeTimer 与 _process 的
 	# 200ms 窗口对齐是竞态；改为轮询截止，语义不变：合并后的更新必须
 	# 应用最新财政快照。
 	var coalesce_deadline := Time.get_ticks_msec() + 2000
-	while String(economy.call("tax_text")) != "3" \
+	while String(coalesced.call("tax_text")) != "3" \
 			and Time.get_ticks_msec() < coalesce_deadline:
 		await process_frame
 	_expect("coalesced economy summary applies the newest fiscal snapshot",
-		String(economy.call("tax_text")) == "3")
-	clock.paused = economy_race_paused
+		String(coalesced.call("tax_text")) == "3")
+	coalesced.free()
 
 	ui.open_country_section("technology")
 	await process_frame
@@ -462,31 +461,11 @@ func _run() -> void:
 	_expect("compact country dossier folds chapters into a horizontal navigator",
 		bool(compact_dossier_navigation.get("mobile_visible", false))
 		and not bool(compact_dossier_navigation.get("desktop_visible", true)))
+	await _check_compact_treasury_scroll(panel.get_parent(), synthetic_model)
 	ui.open_country_section("economy")
 	dossier.select_chapter("treasury")
 	await process_frame
 	await process_frame
-	var goods_scroll: ScrollContainer = economy.scroll_container()
-	_expect("compact economy treasury uses a bounded vertical scroll",
-		goods_scroll != null \
-			and goods_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED \
-			and goods_scroll.size.y > 0.0 \
-			and compact_rect.encloses(goods_scroll.get_global_rect()))
-	await _capture_workspace("economy_treasury")
-	goods_scroll.scroll_vertical = int(goods_scroll.get_v_scroll_bar().max_value
-		- goods_scroll.get_v_scroll_bar().page)
-	await process_frame
-	await process_frame
-	var reachable_goods_row := false
-	for row in (economy.get("_rows") as Dictionary).values():
-		var control := (row as Dictionary).get("control") as Control
-		if String(row.get("page", "")) == "treasury" and control != null \
-				and control.is_visible_in_tree() \
-				and goods_scroll.get_global_rect().intersects(control.get_global_rect()):
-			reachable_goods_row = true
-	_expect("compact treasury scroll reaches actual goods rows", reachable_goods_row)
-	await _capture_workspace("economy_treasury_scrolled")
-	goods_scroll.scroll_vertical = 0
 	var compact_workspace := panel.get("_technology_workspace") as Control
 	var compact_tree := compact_workspace.tree_view() as Control
 	var compact_navigation: Dictionary = compact_workspace.navigation_report()
@@ -917,6 +896,38 @@ func _run() -> void:
 		await create_timer(UITokens.ANIM_FAST + 0.05).timeout
 	_expect("Escape closes country panel", not panel.is_panel_open())
 	_finish()
+
+
+func _check_compact_treasury_scroll(parent: Node, model: Dictionary) -> void:
+	# Render known stock in the shipped panel without racing a real ledger refresh.
+	var fixture := (load("res://scenes/ui/country_panel.tscn") as PackedScene).instantiate() as CountryPanel
+	parent.add_child(fixture)
+	fixture.focus_economy_chapter("treasury")
+	fixture.show_section("economy", model)
+	await process_frame
+	await process_frame
+	var bounds: Rect2 = fixture.layout_diagnostics().dialog_rect
+	var finance := fixture.get("_economy_dossier") as EconomyDossier
+	var workspace := finance.economy_workspace()
+	var goods_scroll: ScrollContainer = workspace.scroll_container()
+	_expect("compact economy treasury uses a bounded vertical scroll",
+		goods_scroll != null \
+			and goods_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED \
+			and goods_scroll.size.y > 0.0 \
+			and bounds.encloses(goods_scroll.get_global_rect()))
+	await _capture_workspace("economy_treasury")
+	var scrollbar := goods_scroll.get_v_scroll_bar()
+	goods_scroll.scroll_vertical = int(scrollbar.max_value - scrollbar.page)
+	await process_frame
+	await process_frame
+	var rows: Dictionary = workspace.get("_rows")
+	var grain: Dictionary = rows.get("treasury:grain", {})
+	var card := grain.get("control") as Control
+	_expect("compact treasury scroll reaches actual goods rows",
+		card != null and card.is_visible_in_tree()
+		and goods_scroll.get_global_rect().intersects(card.get_global_rect()))
+	await _capture_workspace("economy_treasury_scrolled")
+	fixture.free()
 
 
 func _capture_workspace(section_id: String) -> void:

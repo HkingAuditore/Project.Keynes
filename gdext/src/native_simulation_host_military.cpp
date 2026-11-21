@@ -1,3 +1,4 @@
+#include "runtime_checkpoint_wire.h"
 #include "native_simulation_day_context.h"
 #include "native_simulation_host_military.h"
 #include "pk_log.h"
@@ -9,6 +10,46 @@
 #include <utility>
 
 namespace pk {
+
+namespace {
+godot::Dictionary invalid_military_event_checkpoint() {
+    godot::Dictionary out;
+    out["ok"] = false;
+    out["reason"] = "military_forwarder_invalid";
+    return out;
+}
+} // namespace
+
+std::vector<uint8_t> NativeMilitaryRuntime::encode_checkpoint() const {
+    CheckpointWriter out;
+    out.bytes = encode();
+    out.field(uint32_t{0x314a444d}); // MDJ1
+    out.field(event_cursor);
+    out.field(event_tick);
+    out.field(events_forwarded);
+    return std::move(out.bytes);
+}
+
+godot::Dictionary NativeMilitaryRuntime::restore_checkpoint(const godot::PackedByteArray &bytes) {
+    constexpr int64_t tail_size = 28;
+    const int64_t tail_at = bytes.size() - tail_size;
+    if (tail_at < 0 || bytes.decode_u32(tail_at) != 0x314a444d) {
+        return restore(bytes);
+    }
+    const int64_t cursor = bytes.decode_s64(tail_at + 4);
+    const int64_t tick = bytes.decode_s64(tail_at + 12);
+    const int64_t forwarded = bytes.decode_s64(tail_at + 20);
+    if (cursor < 0 || tick < -1 || forwarded < 0)
+        return invalid_military_event_checkpoint();
+    auto result = restore(bytes.slice(0, tail_at));
+    if (bool(result.get("ok", false))) {
+        event_cursor = cursor;
+        event_tick = tick;
+        events_forwarded = forwarded;
+    }
+    return result;
+}
+
 
 void NativeSimulationHost::sample_narrative_military(NarrativeCountryView &out) const {
     if (_executor_military) sample_narrative_military_country(_executor_military->core(), out);

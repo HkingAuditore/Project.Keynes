@@ -6,7 +6,7 @@ signal offer_ready(offer: Dictionary)
 signal offer_changed(offer: Dictionary)
 signal chronicle_updated()
 
-var _notice_history: Array[Dictionary] = []
+var _notice_history: Array = []
 signal choice_resolved(record: Dictionary)
 signal ai_generation_requested(request_spec: Dictionary)
 
@@ -169,19 +169,16 @@ func _forward_ai_reply(sequence: int) -> void:
 		push_warning("AI story reply %d was not admitted (%s)" % [sequence, receipt.get("code", "")])
 
 
-func consume_notices(days: Array) -> void:
-	for day: Dictionary in days:
-		for row: Dictionary in day.get("notices", []):
-			_notice_history.push_front(row)
-	if _notice_history.size() > 256:
-		_notice_history.resize(256)
+func apply_notice_history(history: Array) -> void:
+	_notice_history = history
 
-func capture_notice_history() -> Array[Dictionary]:
+
+func capture_notice_history() -> Array:
 	return _notice_history.duplicate(true)
 
 
 func restore_notice_history(rows: Array) -> void:
-	_notice_history.assign(rows.duplicate(true))
+	_notice_history = rows.duplicate(true)
 
 
 func chronicle_for_display(filter_cell: int) -> Array[Dictionary]:

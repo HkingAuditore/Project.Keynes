@@ -396,6 +396,30 @@ bool RuntimeWorldEnvironment::restore_season_history(const std::vector<uint8_t> 
     return true;
 }
 
+std::vector<uint8_t> RuntimeWorldEnvironment::capture_calendar(int64_t day) const {
+    const auto state = calendar(day);
+    uint64_t anomaly = 0;
+    std::memcpy(&anomaly, &state.anomaly, sizeof(anomaly));
+    CheckpointWriter out;
+    out.field(state.year);
+    out.field(state.rng_state);
+    out.field(anomaly);
+    return std::move(out.bytes);
+}
+
+bool RuntimeWorldEnvironment::restore_calendar(const std::vector<uint8_t> &bytes) {
+    CheckpointReader in{bytes.data(), bytes.size()};
+    RuntimeClimateCalendar calendar;
+    uint64_t anomaly = 0;
+    if (!in.field(calendar.year) || !in.field(calendar.rng_state) || !in.field(anomaly) ||
+            in.cursor != in.size || calendar.year < 0) return false;
+    std::memcpy(&calendar.anomaly, &anomaly, sizeof(anomaly));
+    if (!std::isfinite(calendar.anomaly)) return false;
+    _state->rng->set_state(static_cast<uint64_t>(calendar.rng_state));
+    _state->calendar_committed = _state->calendar_prepared = calendar;
+    return true;
+}
+
 const RuntimeEnvironmentSnapshot &RuntimeWorldEnvironment::narrative_geography() const {
     return _state->prepared ? *_state->prepared : _state->opening;
 }

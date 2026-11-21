@@ -149,7 +149,7 @@ func request_event_generation(
 	if active_mock.is_valid():
 		var raw_reply: Variant = active_mock.call(request_spec, messages)
 		var validated := NarrativeAiValidatorScript.validate_and_sanitize(
-			raw_reply, cell_ctx, allowed_goods, custom_event_id
+			raw_reply, cell_ctx, custom_event_id
 		)
 		if bool(validated.get("ok", false)):
 			validated["definition"] = NarrativeEventDefinitionScript.from_dict(validated.get("event_dict", {}))
@@ -218,7 +218,7 @@ func request_event_generation(
 					content_str = String((msg as Dictionary).get("content", ""))
 
 		var validated := NarrativeAiValidatorScript.validate_and_sanitize(
-			content_str, cell_ctx, allowed_goods, custom_event_id
+			content_str, cell_ctx, custom_event_id
 		)
 		if bool(validated.get("ok", false)):
 			validated["definition"] = NarrativeEventDefinitionScript.from_dict(validated.get("event_dict", {}))

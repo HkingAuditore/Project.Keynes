@@ -1,6 +1,7 @@
 #include "native_simulation_day_context.h"
 #include "pk_log.h"
 #include "runtime_world_environment.h"
+#include "native_simulation_host_military.h"
 
 #include <algorithm>
 
@@ -22,14 +23,33 @@ bool NativeSimulationHost::initialize_world_environment(RuntimeEnvironmentSnapsh
         error = "runtime_environment_seed_shape_invalid";
         return false;
     }
+    _display_notices = godot::Array(config.get("display_notice_history", godot::Array())).duplicate(true);
     _world_environment = std::make_shared<RuntimeWorldEnvironment>(std::move(seed), config);
     if (_has_pending_restore &&
             (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_SEASON_HISTORY) != 0 &&
             !_world_environment->restore_season_history(_pending_restore_bundle.season_history_bytes,
                 _pending_restore_bundle.committed_day))
         log_error("season history restore: runtime_bundle_season_history_invalid");
+    if (_has_pending_restore &&
+            (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_CLIMATE_CALENDAR) != 0 &&
+            !_world_environment->restore_calendar(_pending_restore_bundle.climate_calendar_bytes)) {
+        error = "climate_calendar_checkpoint_invalid";
+        return false;
+    }
     _clock_requested_day.store(-1, std::memory_order_release);
     return true;
+}
+
+void NativeSimulationHost::capture_world_continuation(RuntimeSaveBundle &bundle) const {
+    if (!_world_environment) return;
+    bundle.vision_bytes = capture_vision_state();
+    bundle.bio_bytes = capture_bio_state();
+    bundle.climate_calendar_bytes = _world_environment->capture_calendar(bundle.committed_day);
+    if (!bundle.vision_bytes.empty()) bundle.section_mask |= RUNTIME_SAVE_SECTION_VISION;
+    if (!bundle.bio_bytes.empty()) bundle.section_mask |= RUNTIME_SAVE_SECTION_BIO;
+    if (!bundle.climate_calendar_bytes.empty()) bundle.section_mask |= RUNTIME_SAVE_SECTION_CLIMATE_CALENDAR;
+    bundle.narrative_bytes = capture_narrative_save_bytes();
+    if (_executor_military) bundle.military_bytes = _executor_military->encode_checkpoint();
 }
 
 int64_t NativeSimulationHost::request_runtime_calendar_day(int64_t date) {

@@ -3844,8 +3844,9 @@ PackedByteArray DCWorldExt::encode_military_state() const {
 Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     if (!_military) return military_unavailable();
     if (military_executor_active()) return military_fail("military_executor_owns_state");
-    _military_render_selected_army = 0;
-    return _military->restore(bytes);
+    auto result = _military->restore_checkpoint(bytes);
+    if (bool(result.get("ok", false))) _military_render_selected_army = 0;
+    return result;
 }
 
 // ===========================================================================

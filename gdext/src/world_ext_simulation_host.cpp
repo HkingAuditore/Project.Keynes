@@ -1329,17 +1329,16 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_d
         return out;
     }
     RuntimeCommit commit;
-    std::deque<RuntimeDayRecord> records;
     const uint64_t after = static_cast<uint64_t>(std::max<int64_t>(0, after_generation));
-    RuntimeResourceDisplayPatch resources;
-    RuntimeCellLutDelta delta;
-    const auto publication = take_days
-        ? _runtime_host->take_day_publications(after, records, resources, delta) : nullptr;
+    const auto publication = take_days ? _runtime_host->take_day_publications(after) : nullptr;
     if (publication) {
-        _runtime_display_commit = *publication;
-        if (!resources.cells.empty())
-            _runtime_display_resources = std::make_shared<RuntimeResourceDisplayPatch>(std::move(resources));
-        commit = *publication;
+        _runtime_display_commit.header = publication->commit->header;
+        _runtime_display_commit.day_tail = publication->commit->day_tail;
+        if (!publication->resources.cells.empty())
+            _runtime_display_resources = std::shared_ptr<const RuntimeResourceDisplayPatch>(
+                publication, &publication->resources);
+        commit.header = publication->commit->header;
+        commit.day_tail = publication->commit->day_tail;
     }
     if (take_days) {
         bool quotes_ready;
@@ -1382,74 +1381,18 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_d
             static_cast<int64_t>(h.dirty_family_generations[i]);
     }
     out["dirty_family_generations"] = dirty_family_generations;
-    Array receipts;
-    for (const RuntimeCommandReceipt &receipt : commit.receipts) {
-        Dictionary item;
-        item["request_id"] = static_cast<int64_t>(receipt.request_id);
-        item["producer_id"] = static_cast<int>(receipt.producer_id);
-        item["sequence"] = static_cast<int64_t>(receipt.sequence);
-        item["effective_day"] = receipt.effective_day;
-        item["generation"] = static_cast<int64_t>(receipt.generation);
-        item["code"] = static_cast<int>(receipt.code);
-        receipts.push_back(item);
-    }
-    out["receipts"] = receipts;
-    if (publication && commit.day_tail && commit.day_tail->climate) {
-        const auto pack_cells = [](const std::vector<int32_t> &cells) {
-            PackedInt32Array packed;
-            packed.resize(cells.size());
-            if (!cells.empty()) std::copy(cells.begin(), cells.end(), packed.ptrw());
-            return packed;
-        };
-        out["display_dirty_cells"] = pack_cells(delta.cells);
-        out["display_class_cells"] = pack_cells(delta.class_cells);
-        if (commit.day_tail->gdp) out["gdp"] = commit.day_tail->gdp->pack();
-    }
-    if (!records.empty()) {
-        Array days;
-        for (const auto &record : records) {
-            Dictionary daily;
-            daily["day"] = record.header.committed_day;
-            daily["generation"] = static_cast<int64_t>(record.header.generation);
-            daily["state_hash"] = static_cast<int64_t>(record.header.state_hash);
-            daily["business_hash"] = static_cast<int64_t>(record.business_hash);
-            daily["annual_reward_pending"] = record.annual_reward_pending;
-            if (record.fiscal) {
-                daily["fiscal"] = record.fiscal->fiscal;
-                daily["treasury_cash"] = record.fiscal->cash;
-            }
-            if (!record.notices.empty()) {
-                Array notices;
-                for (const auto &notice : record.notices) {
-                    Dictionary row;
-                    row["event_id"] = String(notice.id.c_str());
-                    row["title"] = String::utf8(notice.title.c_str());
-                    row["settlement_name"] = String::utf8(notice.settlement.c_str());
-                    row["cell_idx"] = notice.cell;
-                    row["event_category"] = notice.category;
-                    row["day"] = record.header.committed_day;
-                    row["notice_only"] = true;
-                    notices.push_back(row);
-                }
-                daily["notices"] = notices;
-            }
-            daily["produced_at_us"] = static_cast<int64_t>(record.header.produced_at_us);
-            Array daily_receipts;
-            for (const auto &receipt : record.receipts) {
-                Dictionary item;
-                item["request_id"] = static_cast<int64_t>(receipt.request_id);
-                item["producer_id"] = static_cast<int>(receipt.producer_id);
-                item["sequence"] = static_cast<int64_t>(receipt.sequence);
-                item["effective_day"] = receipt.effective_day;
-                item["generation"] = static_cast<int64_t>(receipt.generation);
-                item["code"] = static_cast<int>(receipt.code);
-                daily_receipts.push_back(item);
-            }
-            if (record.golden) daily["golden"] = runtime_golden_dictionary(*record.golden);
-            daily["receipts"] = daily_receipts;
-            days.push_back(daily);
-        }
-        out["days"] = days;
+    out["receipts"] = publication ? publication->receipts : pack_runtime_receipts(commit.receipts);
+    if (publication) {
+        out["display_dirty_cells"] = publication->changed_cells;
+        out["display_class_cells"] = publication->changed_classes;
+        out["days"] = publication->records;
+        out["notice_history"] = publication->notices;
+        if (!publication->construction_receipts.is_empty())
+            out["construction_receipts"] = publication->construction_receipts;
+        if (!publication->colonization_receipts.is_empty())
+            out["colonization_receipts"] = publication->colonization_receipts;
+        if (!publication->gdp.is_empty()) out["gdp"] = publication->gdp;
+        if (!publication->fiscal_history.is_empty()) out["fiscal_history"] = publication->fiscal_history;
     }
     return out;
 }

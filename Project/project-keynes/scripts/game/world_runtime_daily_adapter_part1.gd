@@ -128,30 +128,12 @@ func _process(host, _delta: float) -> void:
 	host._sched_proc_frames += 1
 	host._emit_web_frame_probe(frame_usec)
 	host._emit_web_beat(frame_usec)
-	host._web_mark("liveness_begin")
-	host._service_runtime_liveness(frame_usec)
-	host._web_mark("liveness_end")
 	host._annual_reports.poll()
 	host._web_mark("annual_poll_end")
 	host._web_mark("progress_begin")
 	host._service_runtime_progress(frame_usec)
 	host._web_mark("progress_end")
 	host._sched_proc_last_total_ms = host._sched_elapsed_ms(frame_usec)
-
-
-var _construction_receipt_poll_ms: int = 0
-
-
-func _service_runtime_liveness(host, frame_usec: int) -> void:
-	if not host._runtime_ready_for_ticks or host._generator == null:
-		return
-	var now := Time.get_ticks_msec()
-	if now - _construction_receipt_poll_ms >= 250:
-		_construction_receipt_poll_ms = now
-		var economy = host._generator.get_economy_facade()
-		if economy != null:
-			economy.dispatch_construction_command_receipts()
-	host._sched_proc_economy_input_ms += host._sched_elapsed_ms(frame_usec)
 
 
 func _service_runtime_progress(host, frame_usec: int) -> void:

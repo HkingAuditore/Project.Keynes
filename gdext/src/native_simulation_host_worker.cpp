@@ -321,6 +321,7 @@ void NativeSimulationHost::worker_main() {
                _state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
+            service_economy_read_view();
             if (service_military_commands() || service_economy_boundary_requests() ||
                 service_era_reward_requests() || service_annual_presentations() ||
                 service_narrative_requests() || service_player_confirmations()) continue;
@@ -383,6 +384,7 @@ void NativeSimulationHost::worker_main() {
                     const bool ready = _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) ||
                         player_requests_pending_locked() ||
+                        (_economy_read_view_requested && !retained_day_pending) ||
                         (!blocked && (climate_driven ?
                             daily_work_ready() :
                             (!_paused.load(std::memory_order_acquire) &&
@@ -426,6 +428,7 @@ void NativeSimulationHost::worker_main() {
                         std::chrono::duration<double>(seconds_until_day)), [&] {
                     return _stop_requested.load(std::memory_order_acquire) ||
                         player_requests_pending_locked() || _save_requested.load(std::memory_order_acquire) ||
+                        (_economy_read_view_requested && !retained_day_pending) ||
                         _paused.load(std::memory_order_acquire) ||
                         _speed_days_per_second.load(std::memory_order_acquire) != speed;
                 });

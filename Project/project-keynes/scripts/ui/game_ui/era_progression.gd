@@ -306,7 +306,8 @@ func _on_era_ceremony_finished(host) -> void:
 		host._era_indicator.reveal_pending_era(false)
 	host._era_ceremony = null
 	host._era_ceremony_index = -1
-	host._restore_clock_after_ceremony()
+	if host._player_controller != null:
+		host._player_controller.open_era_reward_offer()
 
 
 
@@ -315,35 +316,6 @@ func _abort_era_ceremony(host) -> void:
 		host._era_ceremony.abort()
 	host._era_ceremony = null
 	host._era_ceremony_index = -1
-	# 世界已切换：不恢复旧世界的时钟状态。
-	host._era_ceremony_resume_clock = false
-
-
-## 大典只暂停演出时段。候选的等待一直由执行器持有。
-
-func _pause_clock_for_ceremony(host) -> void:
-	if host._world_clock == null or host._era_ceremony_resume_clock:
-		return
-	if host._world_clock.paused:
-		return
-	host._era_ceremony_resume_clock = true
-	host._world_clock.pause(true)
-	if host._player_controller != null and host._player_controller.has_method("sync_ui"):
-		host._player_controller.sync_ui()
-
-
-
-func _restore_clock_after_ceremony(host) -> void:
-	if not host._era_ceremony_resume_clock:
-		return
-	host._era_ceremony_resume_clock = false
-	if host._world_clock == null or not host._world_clock.paused:
-		return
-	if host._pause_menu != null and host._pause_menu.visible:
-		return
-	host._world_clock.pause(false)
-	if host._player_controller != null and host._player_controller.has_method("sync_ui"):
-		host._player_controller.sync_ui()
 
 
 ## 时代晋升是必须被看见的一刻：徽记特效、顶栏日历换字和纸贴提醒三件事同时发生。

@@ -84,6 +84,27 @@ func _run() -> void:
 	_player.command_settled.connect(func(id: StringName, result: Dictionary) -> void:
 		_receipts[int(result.get("sequence", -1))] = {"id": id, "result": result.duplicate(true)})
 	_ext.set_runtime_clock(false, 50.0)
+	_economy.market_cell_snapshot(_capital)
+	var overview: Dictionary = _economy.country_economy_overview(_ours, "summary")
+	_expect("the idle economy panel only reads a published view",
+		String(overview.get("read_view_source", "")) in ["pending", "committed_view"])
+	var water := map.is_water_arr.find(1)
+	var claims: Array[Dictionary] = []
+	var capture_claim := func(_id: String, result: Dictionary) -> void: claims.append(result)
+	_host.gm_action_completed.connect(capture_claim)
+	_host._player_country_handle = _ours
+	if water >= 0:
+		_host._gm_claim_selected_cell(map.cell_at(water))
+	_expect("GM forwards clicks over water through Country admission",
+		claims.size() == 1 and claims[0].get("queued", false))
+	var invalid_receipts: Array[Dictionary] = []
+	var capture_invalid := func(result: Dictionary) -> void:
+		if int(result.get("sequence", -1)) == 479:
+			invalid_receipts.append(result)
+	_economy.construction_command_settled.connect(capture_invalid)
+	var invalid_country: Dictionary = _ext.queue_treasury_sponsored_build(987654, _capital, 1, 1, 479)
+	_expect("the construction inbox does not check the country's current handle",
+		invalid_country.get("admitted", false) and invalid_country.get("effective_day") == 1)
 
 	var barracks := int(_military.state_building_ids().find("warrior_lodge"))
 	var row: Dictionary = _military.catalog().state_buildings[barracks]
@@ -117,16 +138,14 @@ func _run() -> void:
 	var locked_train := _issue(&"military.train", {"cell": _capital, "to": locked_unit, "count": 1})
 	var foreign_demolish := _issue(&"military.state.demolish",
 		{"cell": _foreign_cell, "building": barracks})
-	# A draft can outlive the army that was selected for it.
-	_player._military_order_mode = "explore"
-	_player._military_order_target = _capital
-	_player._military_order_radius = 1
-	_player._military_order_army = 4294968296
+	# An invalid published handle may still be forwarded as a draft.
+	var armed: Dictionary = _player.begin_military_arm_order(4294968296, "explore")
+	_expect("an unknown army can begin a nonbinding draft", armed.get("ok", false))
+	_player.military_arm_order_click(_capital)
 	var vanished: Dictionary = _player.confirm_military_arm_order()
 	_expect("a stale draft is forwarded as a dated request",
 		vanished.get("admitted") == true and vanished.get("effective_day") == own_tax.get("effective_day"))
 	await _advance(int(own_tax.get("effective_day", 1)))
-	_economy.dispatch_construction_command_receipts()
 	for ticket in foreign_tax:
 		_rejected(ticket, "country_cell_tax_territory_invalid")
 	_expect("valid same-day tax still committed",
@@ -136,6 +155,17 @@ func _run() -> void:
 	_rejected(locked_build, "construction_technology_locked")
 	_rejected(locked_train, "technology_locked")
 	_rejected(foreign_demolish, "construction_cell_not_owned")
+	_expect("the GM console gets the authoritative water rejection",
+		claims.size() == 2 and not claims[1].get("ok", true)
+		and claims[1].get("code") == "country_transfer_cell_invalid")
+	_host.gm_action_completed.disconnect(capture_claim)
+	_economy.construction_command_settled.disconnect(capture_invalid)
+	_expect("the display batch delivers the rejection once on the settlement day",
+		invalid_receipts.size() == 1 and invalid_receipts[0].get("code") == "construction_target_invalid"
+		and invalid_receipts[0].get("admitted") == false
+		and invalid_receipts[0].get("settled_day") == own_tax.effective_day)
+	print("FOREGROUND_AUTHORITY gm=", claims, " construction=", invalid_receipts,
+		" read_source=", overview.get("read_view_source"))
 	_rejected(vanished, "command_unknown_army")
 	_check_tax_feedback(foreign_tax[0])
 	_check_construction_feedback(foreign_build, _foreign_cell,
@@ -155,7 +185,6 @@ func _run() -> void:
 	var slots := _schedules()
 	var cashless := _issue(&"military.state.build", {"cell": _capital, "building": barracks})
 	await _advance(int(cashless.get("effective_day", _day() + 1)))
-	_economy.dispatch_construction_command_receipts()
 	var failure := _rejected(cashless, "construction_treasury_cash_insufficient")
 	_expect("cash rejection leaves all construction legs untouched",
 		failure.get("step") == "economy" and failure.get("cash_paid") == 0
@@ -171,7 +200,6 @@ func _run() -> void:
 		requests.append(_issue(&"military.state.build", {"cell": _capital, "building": barracks}))
 	var settle_day := int(requests[0].get("effective_day", -1))
 	await _advance(settle_day)
-	_economy.dispatch_construction_command_receipts()
 	var cash_paid := 0
 	for index in range(slots.size()):
 		var reply: Dictionary = _receipts.get(int(requests[index].sequence), {}).get("result", {})
@@ -188,7 +216,6 @@ func _run() -> void:
 	_check_military_feedback(requests.back(), "当地官营建筑的营造排期已满。")
 	var missing_demolish := _issue(&"military.state.demolish", {"cell": _capital, "building": barracks})
 	await _advance(int(missing_demolish.effective_day))
-	_economy.dispatch_construction_command_receipts()
 	_rejected(missing_demolish, "demolish_state_building_absent")
 	_expect("rejected demolition does not cancel active construction",
 		_construction_count(build_type) == before + slots.size() and _schedules().count(barracks) == slots.size())
@@ -198,7 +225,6 @@ func _run() -> void:
 	var built := _construction_count(build_type)
 	var demolish := _issue(&"military.state.demolish", {"cell": _capital, "building": barracks})
 	await _advance(int(demolish.effective_day))
-	_economy.dispatch_construction_command_receipts()
 	var removed: Dictionary = _receipts.get(int(demolish.sequence), {}).get("result", {})
 	_expect("demolition removes exactly one completed lot",
 		removed.get("ok", false) and removed.get("settled_day") == demolish.effective_day

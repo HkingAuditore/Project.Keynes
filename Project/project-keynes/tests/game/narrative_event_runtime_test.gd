@@ -27,6 +27,7 @@ func _run() -> void:
 	_test_story_archive()
 	await _test_story_and_diary()
 	await _test_ai_fixed_day()
+	await _test_ai_landing_balance()
 	print("narrative event runtime: %d checks, %d failures" % [_checks, _failures])
 	call_deferred("quit", 0 if _failures == 0 else 1)
 
@@ -98,6 +99,111 @@ func _check_ai_fixed_day() -> void:
 		offer.get("event_id") == "evt.ai.fixture" and offer.get("day") == landing_day
 		and is_equal_approx(float(offer.get("temperature", INF)), story_host.current_map().temp_arr[story_cell]))
 	print("NARRATIVE_AI_FIXED_DAY request=1 landed=", landing_day)
+
+
+func _test_ai_landing_balance() -> void:
+	var decoded := []
+	var option_rows: Array = []
+	for funded in [false, true]:
+		var config := _background_config()
+		config.research.starting_country_cash = 100
+		if not await _start_story({"ai_enabled": true, "last_ai_request_day": 1, "scheduled_events": [
+			{"due_day": 4, "chain_id": "cash_fixture", "ai_prompt_hint": "赈济。"},
+		]}, [&"evt.chain.ancient_foundry_legacy"], config):
+			await _close_story()
+			return
+		if not await _advance_story(1):
+			await _close_story()
+			return
+		var bus: GameplayEventBus = story_host.get_generator().get_gameplay_event_bus()
+		var requests: Array = bus.story_view().get("ai_requests", [])
+		_expect("the landing fixture publishes one request", requests.size() == 1)
+		if requests.size() != 1:
+			await _close_story()
+			return
+		var request: Dictionary = requests[0]
+		var client := NarrativeAiClientScript.new()
+		root.add_child(client)
+		client.set_mock_llm_responder(func(_spec, _messages): return {
+			"title": "开仓议", "body_text": "居民商议赈济。",
+			"options": [
+				{"text": "开仓拨款", "require_treasury_cash": 350},
+				{"text": "按实发放", "effects": [
+					{"kind": "TREASURY_CASH_TO_COHORT", "amount": 300},
+					{"kind": "MARKET_ADD_STOCK", "target_key": "logs", "amount": 100000},
+					{"kind": "MARKET_ADD_STOCK", "target_key": "fixture_unknown_good", "amount": 10},
+					{"kind": "CITY_MODIFIER", "target_key": "non_existent_hallucinated_modifier_key",
+						"magnitude_q16": 60000, "duration_days": 999, "radius_cells": 9, "falloff": 5},
+					{"kind": "COUNTRY_MODIFIER", "target_key": "ideology.country.output.agriculture_factor.gain",
+						"radius_cells": 2, "falloff": 1},
+					{"kind": "COHORT_CASH_TO_TREASURY", "amount": 2000000},
+				]},
+			],
+		})
+		# The prompt's catalog is not authoritative for decoding the answer.
+		request["allowed_goods"] = PackedStringArray(["fixture_unknown_good"])
+		var forward := story_service.ai_reply_handler(request)
+		client.request_event_generation(request, func(result):
+			decoded.append(result.get("event_dict", {}))
+			forward.call(result))
+		client.free()
+		bus.submit_story_request(&"ai_enabled", {"enabled": false})
+		var country: CountryFacade = story_host.get_generator().get_country_facade()
+		if funded:
+			var donors: Dictionary = {}
+			for cell in story_host.current_map().cell_count():
+				var handle := int(country.cell_summary(cell).get("country_handle", 0))
+				if handle == 0 or handle == story_player or donors.has(handle):
+					continue
+				donors[handle] = true
+				var transfer: Dictionary = country.transfer_cash_between(handle, story_player, 90, 3,
+					92000 + donors.size())
+				_expect("the incoming transfer is admitted for day 3",
+					transfer.get("ok", false) and transfer.get("effective_day", -1) == 3)
+			_expect("three foreign treasuries fund the fixture", donors.size() == 3)
+		if not await _advance_story(3):
+			await _close_story()
+			return
+		var balance := int(country.treasury_snapshot(story_player).get("cash", -1))
+		_expect("the funds arrive after the request and before landing",
+			balance == (370 if funded else 100))
+		if await _advance_story(4):
+			var offer := story_service.active_offer()
+			var options: Array = offer.get("options", [])
+			_expect("the same reply lands on its appointment day", int(offer.get("day", -1)) == 4
+				and options.size() == 2)
+			if options.size() == 2:
+				var effects: Array = options[1].outcomes[0].effects
+				_expect("the landing catalog keeps the real good and removes the unknown good",
+					effects.size() == 5 and effects[1].target_key == "logs")
+				if effects.size() == 5:
+					var city: Dictionary = effects[2]
+					var national: Dictionary = effects[3]
+					_expect("only the executor applies the AI goods and remittance ceilings",
+						int(effects[1].int_value) == 50000 and int(effects[4].int_value) == 1000000)
+					_expect("AI city limits are applied to the published modifier",
+						city.target_key == "economy.city.building.manufacturing_output_factor"
+						and int(city.magnitude_q16) == 32768 and int(city.duration_days) == 365
+						and int(city.radius_cells) == 2 and int(city.falloff) == 1)
+					_expect("the AI city range label matches the published radius",
+						String(options[1].outcomes[0].effect_summaries[2]).contains("周边 2 环"))
+					_expect("country modifiers have no locality or radius",
+						not bool(national.scope_to_cell) and int(national.radius_cells) == 0
+						and int(national.falloff) == 0)
+				var paid := int(effects[0].int_value) if not effects.is_empty() else -1
+				var eligible := bool(options[0].eligible)
+				_expect("only the landing balance determines eligibility and the amount",
+					eligible == funded and paid == (300 if funded else 100))
+				option_rows.append([balance, eligible, paid])
+		await _close_story()
+	_expect("the client transports identical definitions without rewriting money or goods",
+		decoded.size() == 2 and decoded[0] == decoded[1]
+		and int(decoded[0].options[0].require_treasury_cash) == 350
+		and decoded[0].options[1].outcomes[0].effects.size() == 6
+		and int(decoded[0].options[1].outcomes[0].effects[1].int_value) == 100000
+		and int(decoded[0].options[1].outcomes[0].effects[3].magnitude_q16) == 60000
+		and int(decoded[0].options[1].outcomes[0].effects[5].int_value) == 2000000)
+	print("AI_LANDING_BALANCE ", option_rows)
 
 
 func _test_story_archive() -> void:
@@ -288,7 +394,7 @@ func _test_ai_sandbox_and_image_cache() -> void:
 		],
 	}
 	var numeric_res := NarrativeAiValidatorScript.validate_and_sanitize(
-		numeric_raw, cell_ctx, PackedStringArray(), "evt.ai.numeric")
+		numeric_raw, cell_ctx, "evt.ai.numeric")
 	var numeric_event: Dictionary = numeric_res.get("event_dict", {})
 	_expect("temperature readings become the placeholder without dropping the sentence",
 		bool(numeric_res.get("ok", false))
@@ -345,9 +451,9 @@ func _test_ai_sandbox_and_image_cache() -> void:
 		probs.size() == 2 and probs[0] + probs[1] == 65536)
 	var out0: NarrativeOutcome = opt0.outcomes[0] as NarrativeOutcome
 	var eff0: NarrativeEffectSpec = out0.effects[0] as NarrativeEffectSpec
-	_expect("Hallucinated modifier key is safely mapped to a live ADD key and clamped",
+	_expect("Modifier keys are decoded while the executor receives the requested magnitude and duration",
 		eff0.target_key == &"economy.city.building.manufacturing_output_factor"
-		and eff0.duration_days <= 365)
+		and eff0.magnitude_q16 == 327680 and eff0.duration_days == 99999)
 
 	# Test malformed JSON rejection
 	var bad_res := NarrativeAiValidatorScript.validate_and_sanitize("not a json at all {{{", cell_ctx)

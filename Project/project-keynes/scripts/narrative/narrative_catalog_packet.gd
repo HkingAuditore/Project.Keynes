@@ -86,9 +86,16 @@ static func encode_event(event: NarrativeEventDefinition) -> Dictionary:
 		row["require_good_name"] = EffectSpec._friendly_good_name(option.require_good_id)
 		for outcome_idx in range(option.outcomes.size()):
 			var descriptions: Array[String] = []
-			for effect in option.outcomes[outcome_idx].effects:
+			var outcome: Dictionary = row.outcomes[outcome_idx]
+			var effects: Array = option.outcomes[outcome_idx].effects
+			for effect_idx in effects.size():
+				var effect: NarrativeEffectSpec = effects[effect_idx]
+				if event.is_ai_generated and effect.kind in [
+						EffectSpec.Kind.COUNTRY_GOOD_TO_MARKET, EffectSpec.Kind.MARKET_GOOD_TO_COUNTRY,
+						EffectSpec.Kind.MARKET_ADD_STOCK, EffectSpec.Kind.MARKET_REMOVE_STOCK]:
+					outcome.effects[effect_idx]["target_display_name"] = EffectSpec._friendly_good_name(effect.target_key)
 				descriptions.append(effect.describe())
-			row.outcomes[outcome_idx]["effect_descriptions"] = descriptions
+			outcome["effect_descriptions"] = descriptions
 	for index in range(event.on_trigger_effects.size()):
 		raw.on_trigger_effects[index]["description"] = event.on_trigger_effects[index].describe()
 	return raw

@@ -166,7 +166,7 @@ func _test_describe_label() -> void:
 		custom.describe() == "渠口周边 2 环农业 +4%，540 日")
 
 
-# ─── 5b. AI 接口：解析并 clamp 范围字段 ────────────────────────────────────
+# ─── 5b. AI 接口：解析范围字段，范围约束由执行器结算 ────────────────────────
 
 func _test_ai_validator_range_fields() -> void:
 	var cell_ctx := {"day": 320, "cell_idx": CENTER, "treasury_cash": 10000}
@@ -178,10 +178,10 @@ func _test_ai_validator_range_fields() -> void:
 		"radius_cells": 9,
 		"falloff": 5,
 	}, cell_ctx)
-	_expect("AI CITY_MODIFIER clamps radius to 2", int(city.get("radius_cells", -1)) == 2)
-	_expect("AI CITY_MODIFIER clamps falloff to 1", int(city.get("falloff", -1)) == 1)
-	_expect("AI CITY_MODIFIER fallback label states the range",
-		String(city.get("custom_label", "")).contains("周边 2 环"))
+	_expect("AI CITY_MODIFIER sends the requested radius", int(city.get("radius_cells", -1)) == 9)
+	_expect("AI CITY_MODIFIER sends the requested falloff", int(city.get("falloff", -1)) == 5)
+	_expect("AI CITY_MODIFIER leaves the final radius label for settlement",
+		String(city.get("custom_label", "?")).is_empty())
 
 	var country := _sanitize_first_effect({
 		"kind": "COUNTRY_MODIFIER",
@@ -191,8 +191,8 @@ func _test_ai_validator_range_fields() -> void:
 		"radius_cells": 2,
 		"falloff": 1,
 	}, cell_ctx)
-	_expect("AI COUNTRY_MODIFIER forces radius/falloff to 0",
-		int(country.get("radius_cells", -1)) == 0 and int(country.get("falloff", -1)) == 0)
+	_expect("AI COUNTRY_MODIFIER forwards radius and falloff unchanged",
+		int(country.get("radius_cells", -1)) == 2 and int(country.get("falloff", -1)) == 1)
 
 
 func _sanitize_first_effect(effect: Dictionary, cell_ctx: Dictionary) -> Dictionary:

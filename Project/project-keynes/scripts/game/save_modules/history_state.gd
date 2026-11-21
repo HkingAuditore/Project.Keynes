@@ -45,13 +45,11 @@ func _can_narrative_provider(context: Dictionary) -> Dictionary:
 	return _result(true, "ok", "")
 
 func _write_narrative_provider(context: Dictionary) -> Dictionary:
-	var bus = context.get("event_bus")
-	if bus == null:
-		return _can_narrative_provider(context)
-	var state: Dictionary = bus.capture_story()
-	if state.is_empty():
-		return _result(false, "narrative_capture_failed", "剧情存档未返回状态。")
-	return {"ok": true, "sections": {"pknr": state}}
+	var bytes: PackedByteArray = context.get("native_pknr", PackedByteArray())
+	if bytes.is_empty():
+		return _result(false, "narrative_capture_failed", "剧情状态不在原生提交包中。")
+	return {"ok": true, "sections": {"pknr": bytes}}
+
 
 func _restore_narrative_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	if not sections.has("pknr"):

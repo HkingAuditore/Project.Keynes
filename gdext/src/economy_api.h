@@ -609,6 +609,7 @@ int32_t profession_count(const NativeEconomyRuntime &economy);
 int64_t last_committed_day(const NativeEconomyRuntime &economy);
 bool epoch_active(const NativeEconomyRuntime &economy);
 godot::Dictionary detail_report(const NativeEconomyRuntime &economy);
+void serve_read_view(NativeEconomyRuntime &economy, bool requested);
 std::vector<RuntimeGdpCell> capture_settlement_output(
     const NativeEconomyRuntime &economy, uint64_t country);
 godot::Dictionary fiscal_snapshot(const NativeEconomyRuntime &economy, int64_t country);

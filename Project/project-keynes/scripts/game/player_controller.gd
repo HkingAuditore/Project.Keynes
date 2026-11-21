@@ -756,8 +756,11 @@ func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) 
 	if _ui_manager != null and _ui_manager.has_method("refresh_committed_view"):
 		_ui_manager.refresh_committed_view()
 
-func _on_simulation_day_records(records: Array) -> void:
-	_narrative_service.consume_notices(records)
+func _on_simulation_day_records(_records: Array) -> void:
+	var commit: Dictionary = _runtime_host._runtime_last_commit
+	_narrative_service.apply_notice_history(commit.get("notice_history", []))
+	if _ui_manager != null and commit.has("gdp"):
+		_ui_manager.record_committed_ledger(commit)
 
 func player_confirmation_reason() -> String:
 	if _runtime_host == null or not _runtime_host.has_method("player_confirmation_view"):
@@ -802,18 +805,9 @@ func _on_simulation_command_results(results: Array) -> void:
 		command_settled.emit(id, result)
 
 
-func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:
+func _on_simulation_committed(_from_day: int, _to_day: int, _generation: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
-	if (_runtime_host._native_environment_active and _economy_facade != null
-			and _player_country_handle != 0):
-		_economy_facade.dispatch_family_colonization_receipts(_player_country_handle)
-	if _ui_manager != null:
-		var commit: Dictionary = _runtime_host._runtime_last_commit
-		if commit.has("gdp") and _ui_manager.has_method("record_committed_ledger"):
-			_ui_manager.record_committed_ledger(commit)
-		elif _ui_manager.has_method("record_committed_day"):
-			_ui_manager.record_committed_day(to_day)
 	if _music_situation != null:
 		_music_situation.refresh_global_from_commit()
 	_sync_era_reward_offer()

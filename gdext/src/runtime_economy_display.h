@@ -4,7 +4,11 @@
 #include <deque>
 #include <map>
 
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
+#include <godot_cpp/variant/packed_int64_array.hpp>
 
 namespace pk {
 
@@ -33,6 +37,18 @@ struct RuntimeGdpDisplay {
 struct RuntimeFiscalDisplay {
     int64_t cash = 0;
     godot::Dictionary fiscal;
+};
+
+struct RuntimeFiscalHistory {
+    void record(int64_t day, const RuntimeFiscalDisplay &sample);
+    godot::Dictionary pack() const;
+
+    int64_t country = 0;
+    godot::PackedInt32Array days, cash_days, settlement_days;
+    godot::PackedFloat32Array income, expense;
+    godot::PackedInt64Array cash_values;
+    godot::Array settlements;
+    godot::Dictionary last_settlement;
 };
 
 } // namespace pk

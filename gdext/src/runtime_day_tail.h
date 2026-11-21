@@ -2,6 +2,10 @@
 
 #include "runtime_pod_protocol.h"
 
+#include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
+
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -38,15 +42,26 @@ struct RuntimeResourceDisplayPatch {
     std::vector<float> extra;
 };
 
+// A producer-built snapshot of all display changes since the last take.
+struct RuntimeDisplayBatch {
+    std::shared_ptr<const RuntimeCommit> commit;
+    godot::Array records;
+    godot::Array notices;
+    godot::Array receipts;
+    godot::Array construction_receipts;
+    godot::Array colonization_receipts;
+    godot::Dictionary gdp, fiscal_history;
+    godot::PackedInt32Array changed_cells, changed_classes;
+    RuntimeResourceDisplayPatch resources;
+    std::vector<uint8_t> cell_flags;
+};
+
 struct RuntimeCellLutFrame {
     std::vector<uint8_t> previous_vitality;
     std::vector<uint8_t> transition_age;
 };
 
-struct RuntimeCellLutDelta {
-    std::vector<int32_t> cells;
-    std::vector<int32_t> class_cells;
-};
+godot::Array pack_runtime_receipts(const std::vector<RuntimeCommandReceipt> &receipts);
 
 struct RuntimeDayTail {
     int32_t resource_recovery_cells = 0;

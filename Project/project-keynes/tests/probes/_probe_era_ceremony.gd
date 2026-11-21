@@ -38,7 +38,7 @@ func _run() -> void:
 	await _capture("merged_live")
 	ui.call("_close_era_panel")
 	await create_timer(0.3).timeout
-	# 2) 科技卷宗打开 + 时钟运行时晋升：大典压过卷宗，并暂停时钟。
+	# 2) 科技卷宗打开 + 时钟运行时晋升：大典压过卷宗，保持时钟状态。
 	ui.open_country_section("technology")
 	clock.pause(false)
 	for _i in range(10):
@@ -52,7 +52,7 @@ func _run() -> void:
 	await process_frame
 	var playing := bool(ui.call("is_era_ceremony_playing"))
 	print("[probe] ceremony playing=%s clock_paused=%s" % [str(playing), str(clock.paused)])
-	ok = ok and playing and clock.paused
+	ok = ok and playing and not clock.paused
 	await create_timer(1.6).timeout
 	await _capture("live_ceremony_burn")
 	await create_timer(0.8).timeout

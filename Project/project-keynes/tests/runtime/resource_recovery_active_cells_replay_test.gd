@@ -136,7 +136,7 @@ func _sample_replay(host: WorldRuntimeHost, clock: WorldClock, resume: bool, che
 		var row := await _summary(host, ext, day)
 		# Compare the entire PKMI bridge and core, including every AI slot and
 		# its decision date. The country projection omits those fields.
-		row["military_pkmi_sha256"] = _military_archive_hash(host)
+		row["military_pkmi_sha256"] = await _military_archive_hash(host)
 		var pasture: PackedFloat32Array = ext.snapshot_f32(pasture_slot)
 		if day >= CHECKPOINT_DAY - 2 and day <= CHECKPOINT_DAY + 1:
 			var active: PackedInt32Array = ext.get_economy_live_cells()

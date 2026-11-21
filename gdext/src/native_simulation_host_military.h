@@ -124,6 +124,8 @@ public:
     bool submit_independence(uint64_t old_owner, uint64_t new_owner, int32_t cell, int64_t day);
     godot::Dictionary run_day(int64_t day);
     std::vector<uint8_t> encode() const;
+    std::vector<uint8_t> encode_checkpoint() const;
+    godot::Dictionary restore_checkpoint(const godot::PackedByteArray &bytes);
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
     void publish(godot::Dictionary report);
     std::shared_ptr<const Published> read() const;

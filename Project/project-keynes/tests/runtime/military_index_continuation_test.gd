@@ -34,6 +34,15 @@ func _run() -> void:
 	var bad: Dictionary = adapter._restore_military_provider(
 		{"pkmi": PackedByteArray([1, 2, 3])}, {"military": facade})
 	ok = not bool(bad.get("ok", true)) \
-		and String(bad.get("code", "")) == "military_forwarder_version_mismatch" and ok
+		and bad.get("code") == "pkmi_restore_failed" and ok
+	var invalid_tail := PackedByteArray()
+	invalid_tail.resize(28)
+	invalid_tail.encode_u32(0, 0x314a444d)
+	invalid_tail.encode_s64(4, -1)
+	var invalid_archive: PackedByteArray = ext.encode_military_state()
+	invalid_archive.append_array(invalid_tail)
+	bad = adapter._restore_military_provider({"pkmi": invalid_archive}, {"military": facade})
+	ok = not bool(bad.get("ok", true)) and bad.get("message") == "military_forwarder_invalid" \
+		and ext.capture_military_event_progress() == progress and ok
 	print("MILITARY_EVENT_CURSOR: native restore exact, invalid cursor and invalid MDJ1 rejected: " + str(ok))
 	quit(0 if ok else 1)

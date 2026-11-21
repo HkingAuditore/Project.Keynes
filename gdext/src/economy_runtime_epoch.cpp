@@ -1432,24 +1432,11 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
              (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(_signatures.size())))) {
             return reject_epoch_command(cmd);
         }
-        if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
-             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD ||
-             cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH) &&
+        // Treasury construction validates in its settlement handler, which
+        // publishes a terminal receipt for every accepted command.
+        if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
-            return reject_epoch_command(cmd);
-        }
-        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH &&
-            (!cmd.treasury_construction_policy_valid() ||
-             _country_runtime == nullptr || !country_reads().valid_handle(
-                 static_cast<int64_t>(cmd.target_handle)))) {
-            return reject_epoch_command(cmd);
-        }
-        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&
-            (cmd.i64_0 != 1 ||
-             !cmd.treasury_construction_policy_valid() ||
-             _country_runtime == nullptr || !country_reads().valid_handle(
-                 static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_BUILD_CANAL &&

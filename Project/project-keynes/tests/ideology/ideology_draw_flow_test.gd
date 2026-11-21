@@ -143,7 +143,8 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 
 
 func _test_family() -> void:
-	var cohorts := PackedInt64Array(story_ext.get_population_cell_snapshot(story_cell, false).get("handles", []))
+	var population := await _published_economy(story_ext.get_population_cell_snapshot.bind(story_cell, false))
+	var cohorts := PackedInt64Array(population.get("handles", []))
 	_expect("the starter has a population cohort", not cohorts.is_empty())
 	if cohorts.is_empty():
 		return
@@ -206,7 +207,7 @@ func _test_family() -> void:
 	story_controller.dismiss_displayed_ideology_offer()
 	if not await _wait_for(6, ""):
 		return
-	var saved_offer := _get_family_offer()
+	var saved_offer := await _get_family_offer()
 	_expect("GM hiding advances past the same pending candidate",
 		bool(story_host.player_confirmation_view().get("hide_popups", false)) and
 		saved_offer.get("offer_id", 0) == offer.get("offer_id", -1) and saved_offer.get("status") == "OPEN")
@@ -218,7 +219,8 @@ func _test_family() -> void:
 	_publish_day(story_host, story_clock, 7)
 	if await _wait_for(day, ""):
 		_expect("family receives a successful terminal receipt", await _has_receipt(chosen, ""))
-		var families := story_ext.get_family_cell_snapshot(story_cell, 0, 64)
+		var families := await _published_economy(
+			story_ext.get_family_cell_snapshot.bind(story_cell, 0, 64), day)
 		_expect("the chosen offered house appears",
 			PackedInt64Array(families.get("stable_ids", [])).has(int(offer.candidates[0].stable_id)))
 
@@ -258,7 +260,9 @@ func _wait_for(day: int, reason: String) -> bool:
 
 
 func _get_family_offer() -> Dictionary:
-	var rows: Array = story_economy.family_founding_offers().get("offers", [])
+	var page := await _published_economy(story_economy.family_founding_offers,
+		int(story_ext.runtime_committed_day()))
+	var rows: Array = page.get("offers", [])
 	return {} if rows.is_empty() else rows[0]
 
 

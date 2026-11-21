@@ -156,7 +156,8 @@ Dictionary DCWorldExt::apply_runtime_economy_resource_writeback() {
     }
     // Leave pending values available if the display slots were not ready.
     auto published = std::exchange(_runtime_display_resources, {});
-    const auto patch = published ? std::move(*published) : _runtime_host->take_resource_display_patch();
+    const auto bootstrap = published ? RuntimeResourceDisplayPatch{} : _runtime_host->take_resource_display_patch();
+    const auto &patch = published ? *published : bootstrap;
     if (patch.cells.empty()) return out;
     std::vector<uint8_t> changed(patch.cells.size());
     auto install = [&](int id, size_t resource, const std::vector<float> &values, bool reserve) {

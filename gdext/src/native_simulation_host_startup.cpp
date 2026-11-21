@@ -234,7 +234,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _clock_requested_day.store(start_day, std::memory_order_release);
     _calendar_suspended.store(start_paused, std::memory_order_release);
     _display_consumed_day.store(start_day, std::memory_order_release);
-    _published_days.clear();
+    std::atomic_store(&_published_display, std::shared_ptr<const RuntimeDisplayBatch>());
     _speed_days_per_second.store(std::max(0.0, start_speed),
                                  std::memory_order_release);
     _paused.store(start_paused, std::memory_order_release);
@@ -1158,7 +1158,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _economy_production_runtime->worker_resource_seeded()) {
         std::lock_guard<std::mutex> display(_resource_display_mutex);
         _economy_production_runtime->take_worker_resource_mirror_cells(_executor_resource_display_cells);
-        merge_resource_display_patch();
+        merge_resource_display_patch(_resource_display_patch);
+        _executor_resource_display_cells.clear();
     }
     if (restore_pending || !resuming_previous_lifetime)
         restore_player_confirmation(_pending_restore_bundle.player_confirmation_bytes, start_day);

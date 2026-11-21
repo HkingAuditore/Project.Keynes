@@ -133,11 +133,18 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
 			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
 		host.mark_map_overlay_dirty(&"worker_committed")
-	if host._world_clock != null:
-		host._world_clock.publish_runtime_date(host._runtime_commit_day)
 	if not days.is_empty():
 		host.simulation_day_records.emit(days)
+	if host._world_clock != null:
+		host._world_clock.publish_runtime_date(host._runtime_commit_day)
+	if commit.has("construction_receipts"):
+		host._generator.get_economy_facade().emit_construction_command_receipts(
+			commit["construction_receipts"])
+	if commit.has("colonization_receipts"):
+		host._generator.get_economy_facade().emit_family_colonization_receipts(
+			commit["colonization_receipts"])
 	host._publish_player_confirmation(host._runtime_control_state())
+	host._gm_adapter.consume_territory_receipts(host)
 	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
 	ext.finish_runtime_display_frame()
 	host._presentation.queue_worker_commit(from_day,
@@ -193,6 +200,8 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary, commit:
 	preload("res://scripts/game/world_runtime_climate_restore.gd").apply(host._generator, applied)
 	if host._native_environment_active:
 		host._world_clock.apply_native_climate_calendar(applied)
+		if not commit.is_empty() and applied.has("climate_rng_state"):
+			commit["climate_rng_state"] = applied["climate_rng_state"]
 		var map: MapData = host._current_map
 		if commit.has("display_class_cells"):
 			_apply_published_cell_display(map, commit.display_class_cells)

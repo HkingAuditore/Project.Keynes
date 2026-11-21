@@ -451,16 +451,19 @@ godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_build(
         out["message"] = godot::String(code);
         return out;
     };
-    if (!_bootstrapped) return reject("economy_not_bootstrapped");
-    if (_fatal) return reject("economy_fatal");
-    if (_save.active || _restore.active) return reject("save_restore_active");
-    if (effective_day < 0 || sequence < 0 || cell_idx < 0 ||
-        cell_idx >= _cell_count.get() || type_id < 0 ||
-        type_id >= static_cast<int32_t>(_building_types.size()))
-        return reject("construction_target_invalid");
-    if (_country_runtime == nullptr ||
-        !country_reads().valid_handle(country_handle))
-        return reject("construction_target_invalid");
+    if (effective_day < 0 || sequence < 0) return reject("construction_target_invalid");
+    if (!queue_for_worker) {
+        if (!_bootstrapped) return reject("economy_not_bootstrapped");
+        if (_fatal) return reject("economy_fatal");
+        if (_save.active || _restore.active) return reject("save_restore_active");
+        if (effective_day < 0 || sequence < 0 || cell_idx < 0 ||
+            cell_idx >= _cell_count.get() || type_id < 0 ||
+            type_id >= static_cast<int32_t>(_building_types.size()))
+            return reject("construction_target_invalid");
+        if (_country_runtime == nullptr ||
+            !country_reads().valid_handle(country_handle))
+            return reject("construction_target_invalid");
+    }
     Command command;
     command.opcode = COMMAND_TREASURY_SPONSORED_BUILD;
     command.effective_day = effective_day;
@@ -481,6 +484,7 @@ godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_build(
         _pending_commands.push_back(command);
     }
     out["ok"] = true;
+    out["admitted"] = true;
     out["code"] = "construction_queued";
     out["message"] = "construction_queued";
     out["queued"] = true;
@@ -872,17 +876,20 @@ godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_demolish(
         out["message"] = godot::String(code);
         return out;
     };
-    if (!_bootstrapped) return reject("economy_not_bootstrapped");
-    if (_fatal) return reject("economy_fatal");
-    if (_save.active || _restore.active) return reject("save_restore_active");
-    if (effective_day < 0 || sequence < 0 || count <= 0 || cell_idx < 0 ||
-        cell_idx >= _cell_count.get() || type_id < 0 ||
-        type_id >= static_cast<int32_t>(_building_types.size()))
-        return reject("demolish_target_invalid");
-    if (_country_runtime == nullptr ||
-        !country_reads().valid_handle(country_handle))
-        return reject("demolish_target_invalid");
-    if (_building_types[type_id].kind != 3) return reject("demolish_not_state_owned");
+    if (effective_day < 0 || sequence < 0) return reject("demolish_target_invalid");
+    if (!queue_for_worker) {
+        if (!_bootstrapped) return reject("economy_not_bootstrapped");
+        if (_fatal) return reject("economy_fatal");
+        if (_save.active || _restore.active) return reject("save_restore_active");
+        if (effective_day < 0 || sequence < 0 || count <= 0 || cell_idx < 0 ||
+            cell_idx >= _cell_count.get() || type_id < 0 ||
+            type_id >= static_cast<int32_t>(_building_types.size()))
+            return reject("demolish_target_invalid");
+        if (_country_runtime == nullptr ||
+            !country_reads().valid_handle(country_handle))
+            return reject("demolish_target_invalid");
+        if (_building_types[type_id].kind != 3) return reject("demolish_not_state_owned");
+    }
     Command command;
     command.opcode = COMMAND_TREASURY_SPONSORED_DEMOLISH;
     command.effective_day = effective_day;
@@ -900,6 +907,7 @@ godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_demolish(
         _pending_commands.push_back(command);
     }
     out["ok"] = true;
+    out["admitted"] = true;
     out["code"] = "demolish_queued";
     out["message"] = "demolish_queued";
     out["queued"] = true;

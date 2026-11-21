@@ -278,6 +278,13 @@ func apply_live_patch(patch: Dictionary) -> void:
 		_apply_category_patch(category)
 
 
+func apply_published_gdp(data: Dictionary) -> void:
+	for card: DossierKpiCard in _kpi_cards:
+		if card.visible and card.metric_id == "kpi_gdp":
+			card.set_metric(data)
+			return
+
+
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
 	if tab_id == "" or category.is_empty():
 		return

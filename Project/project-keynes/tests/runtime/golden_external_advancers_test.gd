@@ -2,6 +2,7 @@ extends "res://tests/runtime/golden_day_hash_test.gd"
 
 # Independent world and command log; the v1-v4 fixture is never modified.
 const EXTERNAL_DAYS := 4
+const FAMILY_CELLS_PER_BATCH := 32
 const FAMILY_FIELDS := ["family_handles", "stable_ids", "populations", "cash_claims",
     "owned_buildings", "home_cells", "origin_cells", "origin_ethnicity_ids",
     "culture_group_ids", "notable_person_counts", "prestige_levels", "prestige_scores_q16"]
@@ -105,29 +106,32 @@ func _run() -> void:
 		var people: Array = []
 		var handles: Array[int] = []
 		var all_family_reads := true
-		for index in range(host.get_current_map().cell_count()):
-			var offset := 0
-			while true:
-				var family: Dictionary = ext.get_family_cell_snapshot(index, offset, 64)
+		var cell_count := host.get_current_map().cell_count()
+		for first_cell in range(0, cell_count, FAMILY_CELLS_PER_BATCH):
+			var end_cell := mini(cell_count, first_cell + FAMILY_CELLS_PER_BATCH)
+			var pages := await _published_family_pages(ext, day, first_cell, end_cell)
+			for index in range(first_cell, end_cell):
+				var family: Dictionary = pages.get(index, {})
+				var offset := 0
+				while _current_read(family, day):
+					if int(family.get("total", 0)) > 0:
+						families.append([index, offset, _fields(family, FAMILY_FIELDS)])
+						for id in family.get("family_handles", PackedInt64Array()):
+							if not handles.has(int(id)):
+								handles.append(int(id))
+					if not bool(family.get("has_more", false)):
+						break
+					offset += 64
+					family = await _published_economy(ext.get_family_cell_snapshot.bind(index, offset, 64), day)
 				all_family_reads = all_family_reads and _current_read(family, day)
-				if not _current_read(family, day):
-					break
-				if int(family.get("total", 0)) > 0:
-					families.append([index, offset, _fields(family, FAMILY_FIELDS)])
-					for id in family.get("family_handles", PackedInt64Array()):
-						if not handles.has(int(id)):
-							handles.append(int(id))
-				if not bool(family.get("has_more", false)):
-					break
-				offset += 64
 		_expect("v5 all family reads are current committed state", all_family_reads)
 		for id in handles:
 			var offset := 0
 			while true:
-				var list: Dictionary = ext.get_family_notable_people(id, offset, 64)
+				var list := await _published_economy(ext.get_family_notable_people.bind(id, offset, 64), day)
 				_expect("v5 people list is committed", _current_read(list, day))
 				for person_id in list.get("person_handles", PackedInt64Array()):
-					var person: Dictionary = ext.get_notable_person_snapshot(person_id)
+					var person := await _published_economy(ext.get_notable_person_snapshot.bind(person_id), day)
 					_expect("v5 person is committed", _current_read(person, day))
 					people.append(_fields(person, PERSON_FIELDS))
 				if not bool(list.get("has_more", false)):
@@ -153,6 +157,22 @@ func _run() -> void:
 	host.free()
 	clock.free()
 	_finish()
+
+# Subscribe to one group at a time so published pages remain in the bounded cache.
+func _published_family_pages(ext: Object, day: int, first_cell: int, end_cell: int) -> Dictionary:
+	var pages := {}
+	for _slice in range(MAX_SLICES_PER_DAY):
+		for cell in range(first_cell, end_cell):
+			if pages.has(cell):
+				continue
+			var page: Dictionary = ext.get_family_cell_snapshot(cell, 0, 64)
+			if _current_read(page, day):
+				pages[cell] = page
+		if pages.size() == end_cell - first_cell:
+			break
+		await process_frame
+	return pages
+
 
 func _current_read(value: Dictionary, day: int) -> bool:
 	return bool(value.get("ok", false)) and not bool(value.get("read_view_pending", false)) and int(value.get("read_view_day", day)) == day

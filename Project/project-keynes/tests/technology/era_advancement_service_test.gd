@@ -85,13 +85,15 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				for index in _advance._era_technologies(0):
 					_expect("grant the researched stone technology", bool(country.grant_technology(handle,
 						StringName(_advance._catalog().technology_ids[index]), 3, _next_sequence(), true).get("ok", false)))
-				var pop: Dictionary = economy.population_cell_snapshot(cell)
+				var pop := await _published_economy(economy.population_cell_snapshot.bind(cell), day)
 				var cohorts: PackedInt64Array = pop.get("handles", PackedInt64Array())
 				_expect("the starting settlement has a cohort", not cohorts.is_empty())
 				if cohorts.is_empty():
 					break
 				_stock(ext, EconomyFacade.Opcode.ADD_POPULATION, cell, 0, cohorts[0], 520)
-				market = int(economy.market_cell_snapshot(cell).get("market_id", -1))
+				var market_row := await _published_economy(economy.market_cell_snapshot.bind(cell), day)
+				market = int(market_row.get("market_id", -1))
+				_expect("the opening market was published", market >= 0)
 				for good in ["logs", "gathered_plants", "game_meat", "clothing"]:
 					_stock(ext, EconomyFacade.Opcode.ADD_STOCK, market, good_ids.find(good), 0, 5000000)
 			2:
@@ -152,8 +154,8 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, _stall: bool) -> D
 				_check_advancement(resumes[1], day, false, "era_advance_not_paused")
 				_expect("the resume keeps the frozen quantities",
 					_advance.to_save().required_quantities == frozen)
-				var stock: Dictionary = economy.country_procurement_snapshot(handle)
-				_expect("goods from the market complete procurement on the resume day", int(stock.era_cash_spent_total) > 0
+				var stock := await _published_economy(economy.country_procurement_snapshot.bind(handle), day)
+				_expect("goods from the market complete procurement on the resume day", int(stock.get("era_cash_spent_total", 0)) > 0
 					and model.status == "completing" and int(_advance.to_save().completion_day) == day)
 				for row in model.costs:
 					_expect("the completed purchase has exact required stock", int(row.in_treasury) == int(row.required))

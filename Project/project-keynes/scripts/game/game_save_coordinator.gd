@@ -400,10 +400,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 			_restore_clock_mode(was_paused, previous_speed, generation)
 			_busy = false
 			return _result(false, "save_ecology_writeback_failed", "资源或物种未能写入地图，已取消保存。")
-	var collected := _collect_sections(was_paused, previous_speed,
-		 runtime_bundle.get("bytes", PackedByteArray()),
-		 runtime_bundle.get("country_pkcn", PackedByteArray()),
-		 runtime_bundle.get("economy_ecp2", PackedByteArray()), defer_provider_hashes)
+	var collected := _collect_sections(was_paused, previous_speed, runtime_bundle, defer_provider_hashes)
 	if not bool(collected.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
@@ -680,15 +677,14 @@ func _worker_idle_blocker(thread: Dictionary) -> String:
 
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
-		native_runtime_bundle: PackedByteArray = PackedByteArray(),
-		native_country_pkcn: PackedByteArray = PackedByteArray(),
-		native_economy_ecp2: PackedByteArray = PackedByteArray(),
-		defer_provider_hashes: bool = false) -> Dictionary:
+		native_bundle: Dictionary, defer_provider_hashes: bool = false) -> Dictionary:
 	var generator := _runtime_host.generator()
 	var context := _provider_context(_runtime_host, generator, saved_paused, saved_speed)
-	context["native_runtime_bundle"] = native_runtime_bundle
-	context["native_country_pkcn"] = native_country_pkcn
-	context["native_economy_ecp2"] = native_economy_ecp2
+	context["native_runtime_bundle"] = native_bundle.get("bytes", PackedByteArray())
+	context["native_country_pkcn"] = native_bundle.get("country_pkcn", PackedByteArray())
+	context["native_economy_ecp2"] = native_bundle.get("economy_ecp2", PackedByteArray())
+	context["native_pkmi"] = native_bundle.get("pkmi", PackedByteArray())
+	context["native_pknr"] = native_bundle.get("pknr", PackedByteArray())
 	var sections := {}
 	var provider_manifest: Array = []
 	var provider_hash_payloads: Array = []
@@ -1043,7 +1039,9 @@ func _capture_native_runtime_bundle(generation: int = -1) -> Dictionary:
 					"后台 runtime bundle 校验失败。")
 			return {"ok": true, "bytes": bytes,
 				"country_pkcn": polled.get("country_pkcn", PackedByteArray()),
-				"economy_ecp2": polled.get("economy_ecp2", PackedByteArray())}
+				"economy_ecp2": polled.get("economy_ecp2", PackedByteArray()),
+				"pkmi": polled.get("pkmi", PackedByteArray()),
+				"pknr": polled.get("pknr", PackedByteArray())}
 		var state := String(generator.get_runtime_thread_report().get(
 			"simulation_host_state", ""))
 		if state == "FAULTED":

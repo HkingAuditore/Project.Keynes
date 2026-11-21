@@ -103,6 +103,9 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_EFFECT_TRANSPORT = 1u << 13;
 constexpr uint32_t RUNTIME_SAVE_SECTION_MILITARY_TERRAIN = 1u << 14;
 constexpr uint32_t RUNTIME_SAVE_SECTION_SEASON_HISTORY = 1u << 15;
 constexpr uint32_t RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION = 1u << 16;
+constexpr uint32_t RUNTIME_SAVE_SECTION_VISION = 1u << 17;
+constexpr uint32_t RUNTIME_SAVE_SECTION_BIO = 1u << 18;
+constexpr uint32_t RUNTIME_SAVE_SECTION_CLIMATE_CALENDAR = 1u << 19;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -1999,6 +2002,9 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> military_terrain_bytes;
     std::vector<uint8_t> season_history_bytes;
     std::vector<uint8_t> player_confirmation_bytes;
+    std::vector<uint8_t> vision_bytes, bio_bytes, climate_calendar_bytes;
+    // The container writes these as separate PKSV sections using the same capture.
+    std::vector<uint8_t> narrative_bytes, military_bytes;
     std::vector<uint8_t> ideology_bytes;
     // Economy POD ECP1 section (graph authority snapshot).
     std::vector<uint8_t> economy_pod_bytes;

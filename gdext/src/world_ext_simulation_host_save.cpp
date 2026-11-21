@@ -1598,6 +1598,14 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
         bundle->gameplay_effect_bytes.size());
     out["ideology_bytes"] = static_cast<int64_t>(bundle->ideology_bytes.size());
     out["country_pkcn"] = country_pkcn;
+    const auto packed = [](const std::vector<uint8_t> &source) {
+        PackedByteArray bytes;
+        bytes.resize(static_cast<int64_t>(source.size()));
+        if (!source.empty()) std::copy(source.begin(), source.end(), bytes.ptrw());
+        return bytes;
+    };
+    out["pkmi"] = packed(bundle->military_bytes);
+    out["pknr"] = packed(bundle->narrative_bytes);
     out["economy_ecp2"] = economy_ecp2;
     out["checksum"] = static_cast<int64_t>(bundle->checksum);
     out["bytes"] = bytes;

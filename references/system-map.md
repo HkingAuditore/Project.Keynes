@@ -144,16 +144,11 @@ world_setup.tscn
   -> MapData._build_indices() + init_soa_from_bake()
   -> DCWorld.bind_map_data(map)
   -> DCWorldExt.bind_map_data(map)
-  -> MapGenerator._setup_sus()
-  -> WorldClock.day_changed
-  -> PlayerController
-  -> WorldRuntimeHost.run_daily_tick()
-  -> MapGenerator.sus_tick_daily()
-  -> DCSystemScheduler / SUS / SusSchedulerExt
-  -> DCSystem or SusJob run_slice()
-  -> GDScript wrapper chooses native pass or fallback
-  -> DCWorldExt run_* pass writes slots / returns report
-  -> flush, snapshot, atlas update, UI/debug/render consume
+  -> NativeSimulationHost setup with opening world columns
+  -> WorldClock advances the admission cursor
+  -> background executor / inline executor runs the same daily plan
+  -> atomic publication of a committed display batch
+  -> WorldRuntimeHost applies latest display and player-facing records
 ```
 
 核心边界：
@@ -235,21 +230,9 @@ world_setup.tscn
 
 ## 调度与每日 tick
 
-`WorldClock` 是日级模拟的权威 tick 源。`WorldClock._process()` 采用 best-effort 吞吐模型：倍速是目标天/秒，每帧最多推进有限天数，并用 `sim_frame_budget_ms` 和 `max_sim_days_per_frame` 防止高倍速死亡螺旋。
+时钟推进放行游标。原生执行器运行正式日计划，在需要玩家回应或外部输入时自行停住。显示时钟随已消费的提交前进。
 
-每日链路：
-
-```text
-WorldClock.day_changed(day_idx)
-  -> main.gd._on_day_changed(...)
-  -> MapGenerator.sus_tick_daily(world_clock, day_idx, season_phase)
-  -> SusTickContext.make(...)
-  -> DCSystemScheduler.tick(ctx)
-  -> internal SUS / SusSchedulerExt
-  -> job.run_slice(ctx)
-```
-
-当前 `_setup_sus()` 恒走 `DCSystemScheduler` 路径，并用 DCSystem wrappers 注册生产系统。legacy `SusScheduler` / `SusJob` 仍保留同形语义和部分兼容壳。
+`MapGenerator.sus_tick_daily()`、`DCSystemScheduler.tick(ctx)`、`SusSchedulerExt` 仍供分域诊断及兼容探针调用。正式游戏和无线程 Web 均使用同一原生日计划。
 
 主要 runtime jobs/systems：
 
@@ -266,7 +249,7 @@ WorldClock.day_changed(day_idx)
 - `enum_atlas_upload`：terrain/biome/cover/vegetation 视觉 enum atlas 增量上传。
 - `dynamic_visual_atlas_upload`：dynamic/ecology/smooth/ice LUT 或 atlas 刷新。
 - `native_daily_sim`：native daily graph/probe/active 路径，仍受 gate 控制，不能默认视为所有系统的权威。
-- `military_daily`：旧 SUS 路径在 Country/Economy 之后同步推进军务（priority 270）。整日后台模式由日执行线程计算军务，主线程用 D 日已提交数据安排任务、安装结果并提交 D+1 命令。见下方「Military runtime module map」。
+- `military_daily`：旧 SUS 路径在 Country/Economy 之后同步推进军务（priority 270）。正式模式由执行器计算军务、安排意图和交付回执，界面读发布视图。见下方「Military runtime module map」。
 
 调度字段要稳定：
 
@@ -715,10 +698,9 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
   `world_ext_military_economy_ingress.inc`（37 进 POD 车道的字段编码）。
 - GDScript：`scripts/military/military_facade.gd`、`military_catalog_compiler.gd`（`data/military/military_catalog.json`）、
   `scripts/simulation/systems/military_daily_system.gd`；接线在 `map_generator.gd`（配置/注册/季节地形）、
-  `world_runtime_daily_adapter_part3.gd`（整日军务与视野交接）、
-  `world_runtime_vision_boundary.gd`（已提交军队位置和探索轨迹交给视野计算）、
-  `world_runtime_host.gd`（图层节点、探路 trail/explored）、
-  `game_save_coordinator.gd`（`pkmi`、保存前 trail flush）、`player_controller.gd`（`military.*` 命令与探路草稿）。
+  `world_runtime_daily_adapter_part3.gd`（批量读取已提交显示）、
+  `world_runtime_host.gd`（图层节点）、
+  `game_save_coordinator.gd`（保存原生边界发布的 `pkmi`）、`player_controller.gd`（`military.*` 命令与探路草稿）。
 - 视觉：`scripts/rendering/military_render_feed.gd`、`military_map_layers.gd` 与 z5–11 的 `military_*_layer.gd`，
   `shaders/military_*.gdshader`；全部低于迷雾 z12。`military_army_token_layer.gd` 内含纸片/formation
   双 backend，`military_formation_catalog.gd` 只做 dense unit→生图动作原型的冷路径映射；

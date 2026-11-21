@@ -26,8 +26,6 @@ func _emit_web_beat(host, frame_usec: int) -> void:
 	_part1._emit_web_beat(host, frame_usec)
 func _process(host, _delta: float) -> void:
 	_part1._process(host, _delta)
-func _service_runtime_liveness(host, frame_usec: int) -> void:
-	_part1._service_runtime_liveness(host, frame_usec)
 func _service_runtime_progress(host, frame_usec: int) -> void:
 	_part1._service_runtime_progress(host, frame_usec)
 func _runtime_control_state(host) -> Dictionary:

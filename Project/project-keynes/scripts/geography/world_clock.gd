@@ -135,7 +135,6 @@ var _runtime_calendar_admit: Callable
 var _runtime_calendar_through := -1
 var _runtime_calendar_fraction := 0.0
 var _publishing_runtime_date := false
-var _native_climate_year := -1
 
 # 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
 # -1.0 是哨兵值，表示"从来没发射过"，第一次 _process 必发。
@@ -632,7 +631,6 @@ func seed_annual_climate(world_seed: int) -> void:
 	if _rng == null:
 		_rng = RandomNumberGenerator.new()
 	_rng.seed = world_seed
-	_native_climate_year = -1
 
 func climate_anomaly_for_day(day_idx: int) -> float:
 	if _rng == null or _last_year < 0 or year_index_for_day(day_idx) <= _last_year:
@@ -656,8 +654,6 @@ func set_native_climate_calendar(active: bool) -> void:
 func apply_native_climate_calendar(view: Dictionary) -> void:
 	if not view.has("climate_rng_year"):
 		return
-	_native_climate_year = int(view.climate_rng_year)
-	_rng.state = int(view.climate_rng_state)
 	climate_anomaly = float(view.climate_anomaly)
 
 func _sample_annual_climate_anomaly() -> float:
@@ -846,6 +842,15 @@ func clear_authority_fault_hold() -> void:
 	authority_fault_hold = false
 
 
+func opening_climate_seed() -> Dictionary:
+	return {
+		"climate_anomaly": climate_anomaly,
+		"climate_year": maxi(0, _last_year),
+		"rng_seed": _rng.seed if _rng != null else 0,
+		"rng_state": _rng.state if _rng != null else 0,
+	}
+
+
 func export_state() -> Dictionary:
 	return {
 		"schema": "WorldClock",
@@ -855,15 +860,11 @@ func export_state() -> Dictionary:
 		"paused": paused,
 		"speed_multiplier": speed_multiplier,
 		"visual_day_phase": visual_day_phase,
-		"climate_anomaly": climate_anomaly,
 		"last_day": _last_day,
 		"last_season": _last_season,
 		"last_year": _last_year,
-		"climate_rng_year": _native_climate_year if _native_climate_year >= 0 else _last_year,
 		"last_emit_day_phase": _last_emit_day_phase,
 		"last_emit_season_phase": _last_emit_season_phase,
-		"rng_seed": _rng.seed if _rng != null else 0,
-		"rng_state": _rng.state if _rng != null else 0,
 	}
 
 
@@ -876,16 +877,9 @@ func restore_state(state: Dictionary) -> Dictionary:
 	speed_multiplier = maxf(float(state.get("speed_multiplier", 1.0)), 0.0)
 	visual_day_phase = fposmod(float(state.get("visual_day_phase", 0.25)), 1.0)
 	visual_day_phase_held = false
-	climate_anomaly = clampf(float(state.get("climate_anomaly", 0.0)),
-		-climate_anomaly_max, climate_anomaly_max)
 	_last_day = int(state.get("last_day", int(floor(current_day))))
 	_last_season = int(state.get("last_season", season_index_for_day(_last_day)))
 	_last_year = int(state.get("last_year", year_index_for_day(_last_day)))
-	_native_climate_year = int(state.get("climate_rng_year", -1))
-	if _rng == null:
-		_rng = RandomNumberGenerator.new()
-	_rng.seed = int(state.get("rng_seed", 0))
-	_rng.state = int(state.get("rng_state", _rng.state))
 	_apply_phase_step_for_speed(speed_multiplier)
 	# Applying the speed tier resets the publication cursors. Restore them after
 	# the tier thresholds so the next emitted phases match the saved timeline.

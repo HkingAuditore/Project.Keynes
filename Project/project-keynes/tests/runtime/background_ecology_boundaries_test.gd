@@ -2,6 +2,7 @@ extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 
 const LAST_DISPLAY_DAY := 6
 var _inline := false
+var _direct_next_occupancy := PackedInt32Array()
 
 
 class InlineHost extends WorldRuntimeHost:
@@ -44,9 +45,13 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, skip_display: bool
 		if not _direct_commit(host, clock, day):
 			return {}
 		if not skip_display or day == 1 or day == LAST_DISPLAY_DAY:
+			var batch: Dictionary = ext.poll_runtime_commit(0, true)
+			_expect("resource installation consumes the published batch for day %d" % day,
+				batch.get("committed_day", -1) == day)
 			patch = ext.apply_runtime_economy_resource_writeback()
 			_expect("resource display takes the accumulated rows", bool(patch.get("applied", false)))
 			_expect("species display installs a whole bitmap", bool(ext.apply_runtime_species_writeback().get("applied", false)))
+			ext.finish_runtime_display_frame()
 	var map := host.current_map()
 	var resources: Array = []
 	for profile in ResourceProfileRegistry.ordered():
@@ -58,6 +63,9 @@ func _sample_world(host: WorldRuntimeHost, clock: WorldClock, skip_display: bool
 	_expect("a second take is empty", not bool(ext.apply_runtime_economy_resource_writeback().get("applied", true)))
 	if skip_display:
 		await _verify_in_place_restore(host, clock, ext, occupancy)
+	elif _direct_commit(host, clock, LAST_DISPLAY_DAY + 1):
+		ext.apply_runtime_species_writeback()
+		_direct_next_occupancy = map.bio_occupancy_bits_arr.duplicate()
 	return {"resources": resources, "occupancy": occupancy, "cells": patch.get("cells", 0)}
 
 
@@ -166,7 +174,7 @@ func _verify_in_place_restore(host: WorldRuntimeHost, clock: WorldClock, ext: Ob
 	_expect("the reused instance has a different bitmap", old_occupancy != blank)
 	ext.request_runtime_stop()
 	_expect("inline executor is stopped", bool(ext.get_runtime_thread_report().get("simulation_executor_exited", false)))
-	# Install the restored geography column exactly where the world provider does.
+	# Deliberately invalidate the display copy before restoring the native archive.
 	map.bio_occupancy_bits_arr = blank
 	ext.refresh_slots_from_map_keys(PackedStringArray(["cell_bio_occupancy_bits"]))
 	var restored: Dictionary = ext.restore_runtime_bundle(bytes, ecp2)
@@ -190,11 +198,15 @@ func _verify_in_place_restore(host: WorldRuntimeHost, clock: WorldClock, ext: Ob
 	if not bool(started.get("ok", false)):
 		print("ECOLOGY_SAME_INSTANCE_START=" + JSON.stringify(started))
 		return
+	_expect("the archive restores the saved bitmap before any new day settles",
+		map.bio_occupancy_bits_arr == old_occupancy and ext.runtime_committed_day() == LAST_DISPLAY_DAY)
 	if _direct_commit(host, clock, LAST_DISPLAY_DAY + 1):
 		var result: Dictionary = ext.apply_runtime_species_writeback()
-		_expect("restored geography replaces the old bitmap on first commit",
-			bool(result.get("applied", false)) and map.bio_occupancy_bits_arr == blank)
+		_expect("the first commit continues from the restored bitmap exactly as direct execution",
+			bool(result.get("applied", false)) and not _direct_next_occupancy.is_empty()
+			and map.bio_occupancy_bits_arr == _direct_next_occupancy)
 		print("ECOLOGY_IN_PLACE_RESTORE=" + JSON.stringify({
 			"old_sha256": _digest(old_occupancy.to_byte_array().hex_encode()),
-			"blank": map.bio_occupancy_bits_arr == blank, "day": LAST_DISPLAY_DAY + 1,
+			"matches_direct": map.bio_occupancy_bits_arr == _direct_next_occupancy,
+			"day": LAST_DISPLAY_DAY + 1,
 		}))

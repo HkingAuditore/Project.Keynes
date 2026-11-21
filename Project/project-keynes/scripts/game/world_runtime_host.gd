@@ -335,6 +335,8 @@ var _country_worker_read_patch_count: int = 0
 var _country_worker_read_full_snapshot_count: int = 0
 var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
+var _gm_territory_requests := {}
+var _gm_territory_publication := 0
 var _gm_click_claim_territory_enabled: bool = false
 ## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
 var _player_confirmation_view: Dictionary = {}
@@ -748,8 +750,6 @@ func _process(_delta: float) -> void:
 	_run_admitted_inline_day()
 	_daily_adapter._process(self, _delta)
 	_presentation.publish_worker_view(simulation_view_updated.emit)
-func _service_runtime_liveness(frame_usec: int) -> void:
-	_daily_adapter._service_runtime_liveness(self, frame_usec)
 func _service_runtime_progress(frame_usec: int) -> void:
 	_daily_adapter._service_runtime_progress(self, frame_usec)
 func _runtime_control_state() -> Dictionary:

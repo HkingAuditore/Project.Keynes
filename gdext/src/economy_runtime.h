@@ -750,7 +750,8 @@ public:
         int64_t country_handle, int32_t cell_idx,
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
-                                                     int32_t limit) const;
+                                                     int32_t limit,
+                                                     int64_t settled_day = -1) const;
     // Player-facing treasury construction ingress. `submit_commands` is
     // fail-closed while StageOps owns production, so a formal build request
     // reaches the epoch command queue through this boundary instead (same
@@ -1347,12 +1348,12 @@ public:
         std::vector<uint8_t> poor_buckets;
     };
     godot::Dictionary evaluate_read_query(const ReadKey &key);
-    void read_view_subscribe(const ReadKey &key);
+    bool read_view_subscribe(const ReadKey &key);
     std::shared_ptr<const ReadView> read_view() const {
         return std::atomic_load_explicit(&_read_view, std::memory_order_acquire);
     }
     // Caller must hold the economy authority boundary with no epoch open.
-    void serve_read_view();
+    void serve_read_view(bool requested = false);
     void publish_building_visual_view();
     std::shared_ptr<const BuildingVisualView> building_visual_view() const {
         return std::atomic_load_explicit(&_building_visual_view,

@@ -1,6 +1,8 @@
 #include "native_simulation_host.h"
 
 #include "economy_runtime.h"
+#include "runtime_economy_display.h"
+#include "world_ext_golden.h"
 #include "runtime_vision.h"
 #include "runtime_world_environment.h"
 #include "world_ext_internal_cell_luts.h"
@@ -27,15 +29,13 @@ const char *NativeSimulationHost::stage_natural_resource_recovery(DayExecution &
     return nullptr;
 }
 
-// Called from publish_day with the display lock held until the commit is visible.
-void NativeSimulationHost::merge_resource_display_patch() {
+void NativeSimulationHost::merge_resource_display_patch(RuntimeResourceDisplayPatch &patch) const {
     if (_executor_resource_display_cells.empty()) return;
     const auto *economy = _economy_production_runtime;
     const size_t count = static_cast<size_t>(economy->cell_count());
     const auto &reserve = economy->worker_resource_reserve_lanes();
     const auto &extra = economy->worker_resource_extra_lanes();
     const size_t resource_count = economy->building_resource_reserve_slots().size();
-    auto &patch = _resource_display_patch;
     for (const int32_t cell : _executor_resource_display_cells) {
         const auto [entry, inserted] = patch.offsets.try_emplace(cell, patch.reserve.size());
         const size_t offset = entry->second;
@@ -50,7 +50,6 @@ void NativeSimulationHost::merge_resource_display_patch() {
             patch.extra[offset + resource] = extra[lane];
         }
     }
-    _executor_resource_display_cells.clear();
 }
 
 bool NativeSimulationHost::has_resource_display_patch() const {
@@ -63,27 +62,165 @@ RuntimeResourceDisplayPatch NativeSimulationHost::take_resource_display_patch() 
     return std::exchange(_resource_display_patch, {});
 }
 
-std::shared_ptr<const RuntimeCommit> NativeSimulationHost::take_day_publications(
-        uint64_t after, std::deque<RuntimeDayRecord> &records, RuntimeResourceDisplayPatch &resources,
-        RuntimeCellLutDelta &delta) {
-    std::shared_ptr<const RuntimeCommit> latest;
-    std::vector<uint8_t> dirty_cells;
-    {
-        std::lock_guard<std::mutex> lock(_resource_display_mutex);
-        latest = std::atomic_load(&_latest_commit);
-        if (!latest || latest->header.generation <= after) return {};
-        records.swap(_published_days);
-        resources = std::exchange(_resource_display_patch, {});
-        dirty_cells.swap(_cell_lut_pending);
-        std::lock_guard<std::mutex> control(_control_mutex);
-        _display_consumed_day.store(latest->header.committed_day, std::memory_order_release);
+namespace {
+
+godot::Dictionary pack_record(const RuntimeDayRecord &record) {
+    godot::Dictionary daily;
+    daily["day"] = record.header.committed_day;
+    daily["generation"] = static_cast<int64_t>(record.header.generation);
+    daily["state_hash"] = static_cast<int64_t>(record.header.state_hash);
+    daily["business_hash"] = static_cast<int64_t>(record.business_hash);
+    daily["annual_reward_pending"] = record.annual_reward_pending;
+    daily["produced_at_us"] = static_cast<int64_t>(record.header.produced_at_us);
+    if (record.fiscal) {
+        daily["fiscal"] = record.fiscal->fiscal;
+        daily["treasury_cash"] = record.fiscal->cash;
     }
-    _control_cv.notify_all();
-    for (size_t cell = 0; cell < dirty_cells.size(); ++cell) {
-        if (dirty_cells[cell] & 1) delta.cells.push_back(static_cast<int32_t>(cell));
-        if (dirty_cells[cell] & 2) delta.class_cells.push_back(static_cast<int32_t>(cell));
+    if (record.golden) daily["golden"] = runtime_golden_dictionary(*record.golden);
+    return daily;
+}
+
+godot::Array pack_notices(const RuntimeDayRecord &record) {
+    godot::Array rows;
+    for (const auto &notice : record.notices) {
+        godot::Dictionary row;
+        row["event_id"] = godot::String(notice.id.c_str());
+        row["title"] = godot::String::utf8(notice.title.c_str());
+        row["settlement_name"] = godot::String::utf8(notice.settlement.c_str());
+        row["cell_idx"] = notice.cell;
+        row["event_category"] = notice.category;
+        row["day"] = record.header.committed_day;
+        row["notice_only"] = true;
+        rows.push_back(row);
     }
-    return latest;
+    return rows;
+}
+
+godot::Array pack_colonization_receipts(const NativeEconomyRuntime &economy, int64_t country, int64_t day) {
+    godot::Array result;
+    int64_t after = 0;
+    constexpr int32_t page_size = 256;
+    do {
+        const auto page = economy.family_colonization_receipts(country, after, page_size);
+        const godot::Array rows = page["receipts"];
+        for (int64_t i = 0; i < rows.size(); ++i) {
+            godot::Dictionary row = rows[i];
+            if (int64_t(row["settled_day"]) != day) continue;
+            row["country_handle"] = country;
+            result.push_back(row);
+        }
+        if (rows.size() < page_size) break;
+        after = page["last_receipt_id"];
+    } while (true);
+    return result;
+}
+
+godot::Array append_receipts(const godot::Array &older, const godot::Array &newer) {
+    if (older.is_empty()) return newer;
+    if (newer.is_empty()) return older;
+    auto result = older.duplicate();
+    result.append_array(newer);
+    return result;
+}
+
+} // namespace
+
+godot::Array pack_runtime_receipts(const std::vector<RuntimeCommandReceipt> &receipts) {
+    godot::Array rows;
+    for (const auto &receipt : receipts) {
+        godot::Dictionary row;
+        row["request_id"] = static_cast<int64_t>(receipt.request_id);
+        row["producer_id"] = static_cast<int>(receipt.producer_id);
+        row["sequence"] = static_cast<int64_t>(receipt.sequence);
+        row["effective_day"] = receipt.effective_day;
+        row["generation"] = static_cast<int64_t>(receipt.generation);
+        row["code"] = static_cast<int>(receipt.code);
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+void NativeSimulationHost::publish_display_batch(std::shared_ptr<const RuntimeCommit> commit,
+                                                 const RuntimeDayRecord &record) {
+    auto row = pack_record(record);
+    const auto notices = pack_notices(record);
+    const auto receipts = pack_runtime_receipts(record.receipts);
+    godot::Array construction_receipts, colonization_receipts;
+    if (_economy_production_runtime) {
+        construction_receipts = _economy_production_runtime->construction_command_receipts(
+            0, 256, record.header.committed_day)["receipts"];
+        const auto player = confirmation_country();
+        if (player != 0)
+            colonization_receipts = pack_colonization_receipts(
+                *_economy_production_runtime, static_cast<int64_t>(player), record.header.committed_day);
+    }
+    const auto gdp = commit->day_tail->gdp ? commit->day_tail->gdp->pack() : godot::Dictionary();
+    row["receipts"] = receipts;
+    if (!notices.is_empty()) {
+        row["notices"] = notices;
+        auto history = _display_notices.duplicate();
+        for (int64_t i = 0; i < notices.size(); ++i) history.push_front(notices[i]);
+        if (history.size() > 256) history.resize(256);
+        _display_notices = std::move(history);
+    }
+    if (record.fiscal) {
+        if (!_display_finances) _display_finances = std::make_shared<RuntimeFiscalHistory>();
+        _display_finances->record(record.header.committed_day, *record.fiscal);
+    }
+    const auto fiscal = _display_finances ? _display_finances->pack() : godot::Dictionary();
+    auto older = std::atomic_load(&_published_display);
+    do {
+        auto batch = std::make_shared<RuntimeDisplayBatch>();
+        batch->commit = commit;
+        batch->records = older ? older->records.duplicate() : godot::Array();
+        batch->records.push_back(row);
+        batch->notices = _display_notices;
+        batch->receipts = receipts;
+        batch->construction_receipts = older
+            ? append_receipts(older->construction_receipts, construction_receipts) : construction_receipts;
+        batch->colonization_receipts = older
+            ? append_receipts(older->colonization_receipts, colonization_receipts) : colonization_receipts;
+        batch->gdp = gdp;
+        batch->fiscal_history = fiscal;
+        if (older) {
+            batch->resources = older->resources;
+            batch->cell_flags = older->cell_flags;
+        }
+        merge_resource_display_patch(batch->resources);
+        batch->cell_flags.resize(_executor_cell_lut_pending.size());
+        for (size_t cell = 0; cell < batch->cell_flags.size(); ++cell) {
+            const uint8_t change = batch->cell_flags[cell] |= _executor_cell_lut_pending[cell];
+            if (change & 1) batch->changed_cells.push_back(static_cast<int32_t>(cell));
+            if (change & 2) batch->changed_classes.push_back(static_cast<int32_t>(cell));
+        }
+        // A consumer can remove the previous batch while the producer builds
+        // this one. Rebuild from the new prefix only when that take wins.
+        if (std::atomic_compare_exchange_strong(&_published_display, &older,
+                std::shared_ptr<const RuntimeDisplayBatch>(std::move(batch)))) break;
+    } while (true);
+    _executor_resource_display_cells.clear();
+}
+
+std::shared_ptr<const RuntimeDisplayBatch> NativeSimulationHost::take_day_publications(uint64_t after) {
+    auto batch = std::atomic_load(&_published_display);
+    while (batch && batch->commit->header.generation > after) {
+        if (std::atomic_compare_exchange_weak(&_published_display, &batch,
+                std::shared_ptr<const RuntimeDisplayBatch>())) {
+            {
+                std::lock_guard<std::mutex> control(_control_mutex);
+                _display_consumed_day.store(batch->commit->header.committed_day, std::memory_order_release);
+            }
+            _control_cv.notify_all();
+            return batch;
+        }
+    }
+    return {};
+}
+
+void NativeSimulationHost::reset_display_batch() {
+    std::atomic_store(&_published_display, std::shared_ptr<const RuntimeDisplayBatch>());
+    _display_finances.reset();
+    _display_notices = {};
 }
 
 std::shared_ptr<const RuntimeClimateSnapshot> NativeSimulationHost::latest_climate_display() const {
@@ -164,9 +301,8 @@ void NativeSimulationHost::reset_day_tail_for_world_change() {
     }
     _executor_day_tail.reset();
     _executor_resource_display_cells.clear();
-    _published_days.clear();
+    reset_display_batch();
     _cell_lut_words.clear();
-    _cell_lut_pending.clear();
     _executor_cell_lut_pending.clear();
     take_resource_display_patch();
 }

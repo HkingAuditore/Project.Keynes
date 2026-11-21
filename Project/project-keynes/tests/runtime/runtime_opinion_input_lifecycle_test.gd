@@ -19,11 +19,15 @@ func _run() -> int:
 	catalog.erase("ok")
 	for inline_mode in [false, true]:
 		var source: Object = _opinion_world(catalog, true)
+		# The split-domain source has no day-one input. Once the worker starts,
+		# its partial plan can defer new read pages until a commit. Record the
+		# expected native opinion at the already committed day-zero boundary.
+		var source_opinion: Dictionary = source.get_country_class_opinion_snapshot()
+		_expect("source timeline has its initial Economy opinion",
+			source_opinion.get("commit_day", -1) == 0 and source_opinion.get("revision", 0) > 0)
 		_expect("source world starts with a committed initial opinion", source.start_runtime_worker(
 			_opinion_config(inline_mode)).get("ok", false))
 		var saved := await _opinion_save(source)
-		var restored_opinion: Dictionary = source.get_country_class_opinion_snapshot()
-		_expect("saved timeline retains its initial Economy opinion", restored_opinion.get("commit_day", -1) == 0)
 		await _stop(source)
 
 		var target: Object = _opinion_world(catalog, false)
@@ -72,10 +76,14 @@ func _run() -> int:
 			var after: Dictionary = target.get_runtime_thread_report()
 			_expect("restored Ideology now commits day one", after.get("ideology_pod_committed_day", -1) == 1)
 			_expect("complete restore discards the other timeline's cached daily opinion",
-				after.get("ideology_parity_worker_opinion_committed_day", -1) == restored_opinion.get("commit_day", -2))
+				after.get("ideology_parity_worker_opinion_committed_day", -1) == source_opinion.get("commit_day", -2))
 			_expect("restored Ideology consumes the saved opinion revision",
-				after.get("ideology_parity_worker_opinion_revision", -1) == restored_opinion.get("revision", -2))
-			var opinion: Dictionary = target.get_country_class_opinion_snapshot()
+				after.get("ideology_parity_worker_opinion_revision", -1) == source_opinion.get("revision", -2))
+			var opinion := await _published_opinion(target)
+			_expect("the opinion query returns a released snapshot", opinion.get("ok", false))
+			if not opinion.get("ok", false):
+				await _stop(target)
+				continue
 			var population: PackedInt64Array = opinion.population.duplicate()
 			var weighted: PackedInt64Array = opinion.satisfaction_weighted.duplicate()
 			for row in population.size():
@@ -102,13 +110,13 @@ func _run() -> int:
 		_expect("restore does not report an opinion consumed on the other timeline",
 			(unused.get("ideology_parity_worker_opinion_committed_day", -1) == -1
 			and unused.get("ideology_parity_worker_opinion_revision", -1) == 0)
-			or (unused.get("ideology_parity_worker_opinion_committed_day", -1) == restored_opinion.get("commit_day", -2)
-			and unused.get("ideology_parity_worker_opinion_revision", -1) == restored_opinion.get("revision", -2)))
+			or (unused.get("ideology_parity_worker_opinion_committed_day", -1) == source_opinion.get("commit_day", -2)
+			and unused.get("ideology_parity_worker_opinion_revision", -1) == source_opinion.get("revision", -2)))
 		if await _opinion_day(target, inline_mode, 1):
 			var replayed: Dictionary = target.get_runtime_thread_report()
 			_expect("repeated restore consumes its own committed input",
-				replayed.get("ideology_parity_worker_opinion_committed_day", -1) == restored_opinion.get("commit_day", -2)
-				and replayed.get("ideology_parity_worker_opinion_revision", -1) == restored_opinion.get("revision", -2))
+				replayed.get("ideology_parity_worker_opinion_committed_day", -1) == source_opinion.get("commit_day", -2)
+				and replayed.get("ideology_parity_worker_opinion_revision", -1) == source_opinion.get("revision", -2))
 		await _stop(target)
 	return 0
 
@@ -118,6 +126,16 @@ func _opinion_config(inline_mode: bool) -> Dictionary:
 	config.economy_auto_pod_active = true
 	config.economy_production_writer = "stage_ops"
 	return config
+
+
+func _published_opinion(ext: Object) -> Dictionary:
+	for _frame in range(512):
+		var row: Dictionary = ext.get_country_class_opinion_snapshot()
+		if bool(row.get("ok", false)):
+			return row
+		ext.poll_runtime_commit(0, true)
+		await process_frame
+	return {}
 
 func _opinion_world(catalog: Dictionary, initial_opinion: bool) -> Object:
 	var ext := DCWorldExt.new()

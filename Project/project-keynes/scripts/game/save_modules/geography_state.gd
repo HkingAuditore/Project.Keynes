@@ -17,11 +17,7 @@ func _write_world_provider(context: Dictionary) -> Dictionary:
 		var base: PackedFloat32Array = capture.call()
 		if base.size() == int(state.n_cells):
 			state.cells["cell_base_moisture"] = base
-	var capture_species: Callable = context.get("species", Callable())
-	if capture_species.is_valid():
-		var bits: PackedInt32Array = capture_species.call()
-		if bits.size() == int(state.n_cells):
-			state.cells["cell_bio_occupancy_bits"] = bits
+	state.cells.erase("cell_bio_occupancy_bits")
 	return {"ok": true, "sections": {
 		"new_game_config": context.session.get("new_game_config", {}),
 		"dynamic_world": state,
@@ -34,15 +30,14 @@ func _restore_world_provider(sections: Dictionary, context: Dictionary) -> Dicti
 	if not cells is Dictionary or not saved_cell_count is int \
 			or saved_cell_count != context.world.entity_count():
 		return _result(false, "dynamic_world_shape_invalid", "存档的地块数据与当前地图不匹配。")
-	var bits = cells.get("cell_bio_occupancy_bits")
-	if cells.has("cell_bio_occupancy_bits") and (not bits is PackedInt32Array or bits.size() != saved_cell_count):
-		return _result(false, "species_state_invalid", "存档中的物种分布与地图大小不匹配。")
+	if cells.has("cell_bio_occupancy_bits"):
+		state = state.duplicate()
+		state.cells = cells.duplicate()
+		state.cells.erase("cell_bio_occupancy_bits")
 	context.world.deserialize(state)
-	var restore_species: Callable = context.get("restore_species", Callable())
-	if restore_species.is_valid():
-		restore_species.call(bits if bits is PackedInt32Array else PackedInt32Array())
-	var restore_base: Callable = context.get("restore_base_moisture", Callable())
-	if restore_base.is_valid(): restore_base.call()
+	var restore_geography: Callable = context.get("restore_geography_view", Callable())
+	if restore_geography.is_valid():
+		restore_geography.call()
 	return _result(true, "ok", "")
 
 func _can_environment_provider(context: Dictionary) -> Dictionary:

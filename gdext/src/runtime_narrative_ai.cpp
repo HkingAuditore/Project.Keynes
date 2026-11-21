@@ -12,6 +12,182 @@ bool owns(const NarrativeCountryView &country, int32_t cell) {
     return std::find(country.territory.begin(), country.territory.end(), cell) != country.territory.end();
 }
 String text(const std::string &value) { return String::utf8(value.c_str()); }
+
+bool normalize_ai_effect_amounts(Dictionary &row) {
+    const int32_t kind = row.get("kind", 0);
+    const int64_t requested_value = row.get("int_value", 0);
+    const int64_t requested_ratio = row.get("ratio_bp", 0);
+    int64_t value = requested_value;
+    int64_t ratio = requested_ratio <= 0 ? 0 :
+        std::clamp<int64_t>(requested_ratio, 50, 2000);
+    const bool city = kind == NarrativeEffect::CITY_MODIFIER;
+    const int64_t radius = city ? std::clamp<int64_t>(row.get("radius_cells", 0), 0, 2) : 0;
+    const int64_t falloff = city ? std::clamp<int64_t>(row.get("falloff", 0), 0, 1) : 0;
+    if (city || kind == NarrativeEffect::ADD_POPULATION)
+        row["scope_to_cell"] = true;
+    else if (kind == NarrativeEffect::COUNTRY_MODIFIER)
+        row["scope_to_cell"] = false;
+
+    switch (kind) {
+    case NarrativeEffect::TREASURY_CASH_TO_COHORT:
+    case NarrativeEffect::COHORT_CASH_TO_TREASURY:
+        if (kind == NarrativeEffect::COHORT_CASH_TO_TREASURY)
+            value = std::min<int64_t>(value, 1000000);
+        if (value <= 0) {
+            value = 0;
+            if (ratio == 0) ratio = 500;
+        }
+        break;
+    case NarrativeEffect::COUNTRY_GOOD_TO_MARKET:
+    case NarrativeEffect::MARKET_GOOD_TO_COUNTRY:
+    case NarrativeEffect::MARKET_ADD_STOCK:
+    case NarrativeEffect::MARKET_REMOVE_STOCK:
+        if (value > 0) {
+            value = std::min<int64_t>(value, 50000);
+        } else {
+            value = kind == NarrativeEffect::MARKET_ADD_STOCK ? 100 : 0;
+            if (ratio == 0 && value == 0) ratio = 500;
+        }
+        break;
+    case NarrativeEffect::ADD_POPULATION:
+        value = std::clamp<int64_t>(value, -3000, 3000);
+        ratio = value != 0 ? 0 : std::clamp<int64_t>(requested_ratio, -3000, 3000);
+        if (value == 0 && ratio == 0) ratio = 800;
+        break;
+    case NarrativeEffect::SET_FLAG:
+    case NarrativeEffect::CLEAR_FLAG:
+        value = std::clamp<int64_t>(value, 1, 100);
+        break;
+    case NarrativeEffect::WEIGHT_BIAS:
+        value = std::clamp<int64_t>(value != 0 ? value : 50, -300, 500);
+        break;
+    }
+    const int64_t duration = row.get("duration_days", 90);
+    const int64_t magnitude = row.get("magnitude_q16", 9830);
+    const bool changed = value != requested_value || ratio != requested_ratio ||
+        duration < 15 || duration > 365 || magnitude < 3277 || magnitude > 32768 ||
+        radius != int64_t(row.get("radius_cells", 0)) || falloff != int64_t(row.get("falloff", 0));
+    row["int_value"] = value;
+    row["ratio_bp"] = ratio;
+    row["duration_days"] = std::clamp<int64_t>(duration, 15, 365);
+    row["magnitude_q16"] = std::clamp<int64_t>(magnitude, 3277, 32768);
+    row["radius_cells"] = radius;
+    row["falloff"] = falloff;
+    return changed;
+}
+
+String ai_effect_amount_label(const NarrativeEffect &effect, const String &good_name) {
+    const auto days = String::num_int64(effect.duration);
+    const auto ratio = String::num(effect.ratio / 100.0, 1) + "%";
+    switch (effect.kind) {
+    case NarrativeEffect::CITY_MODIFIER:
+    case NarrativeEffect::COUNTRY_MODIFIER: {
+        const bool city = effect.kind == NarrativeEffect::CITY_MODIFIER;
+        const auto percent = String::num_int64((effect.magnitude * 100 + 32768) / 65536);
+        String line = String::utf8(city ? "本地修正 " : "全国修正 ") +
+            (String(effect.key.c_str()).ends_with(".cut") ? "-" : "+") +
+            percent + String::utf8("%，") + days + String::utf8(" 日");
+        if (city && effect.radius > 0)
+            line += String::utf8("（周边 ") + String::num_int64(effect.radius) + String::utf8(" 环）");
+        return line;
+    }
+    case NarrativeEffect::ADD_POPULATION:
+        return String::utf8("本地人口 ") + (effect.value < 0 || effect.ratio < 0 ? "-" : "+") +
+            (effect.value != 0 ? String::num_int64(std::abs(effect.value)) + String::utf8(" 人") :
+                String::num(std::abs(effect.ratio) / 100.0, 1) + "%");
+    case NarrativeEffect::COHORT_CASH_TO_TREASURY:
+        return String::utf8("本地人数最多的居民群体上缴国库 ") +
+            (effect.value > 0 ? String::num_int64(effect.value >= 10000 && effect.value % 100 == 0
+                ? (effect.value + 5000) / 10000 : effect.value) : ratio);
+    case NarrativeEffect::COUNTRY_GOOD_TO_MARKET:
+    case NarrativeEffect::MARKET_GOOD_TO_COUNTRY:
+    case NarrativeEffect::MARKET_ADD_STOCK:
+    case NarrativeEffect::MARKET_REMOVE_STOCK: {
+        const char *const prefix[] = {"国家储备投放 ", "本地市场征调 ", "本地市场新增 ", "本地市场减少 "};
+        const auto amount = effect.value > 0 ? String::num_int64(
+            effect.value >= 1000 && effect.value % 100 == 0
+            ? (effect.value + 500) / 1000 : effect.value) + String::utf8(" 单位") : ratio;
+        return String::utf8(prefix[effect.kind - NarrativeEffect::COUNTRY_GOOD_TO_MARKET]) +
+            good_name + " " + amount;
+    }
+    case NarrativeEffect::SET_FLAG:
+        return String::utf8("标记 ") + text(effect.key) + String::utf8("，") + days + String::utf8(" 日");
+    case NarrativeEffect::WEIGHT_BIAS:
+        return String::utf8("事件权重 ") + (effect.value >= 0 ? "+" : "") +
+            String::num_int64(effect.value) + String::utf8("，") + days + String::utf8(" 日");
+    case NarrativeEffect::SCHEDULE:
+        return days + String::utf8(" 日后触发 ") + text(effect.key);
+    default:
+        return {};
+    }
+}
+
+Dictionary settle_ai_definition(const Dictionary &reply, const NarrativeCountryView &country,
+        const std::vector<std::string> &goods) {
+    Dictionary def = reply.duplicate(true);
+    const Array options = def.get("options", Array());
+    const auto known_good = [&](const std::string &id) {
+        return std::find(goods.begin(), goods.end(), id) != goods.end();
+    };
+    for (int64_t i = 0; i < options.size(); ++i) {
+        const Dictionary option = options[i];
+        const Array outcomes = option.get("outcomes", Array());
+        for (int64_t j = 0; j < outcomes.size(); ++j) {
+            Dictionary outcome = outcomes[j];
+            const Array input = outcome.get("effects", Array());
+            const Array descriptions = outcome.get("effect_descriptions", Array());
+            Array effects, lines;
+            int64_t cash = std::max<int64_t>(0, country.treasury_cash);
+            for (int64_t k = 0; k < input.size(); ++k) {
+                Dictionary row = input[k];
+                const bool adjusted = normalize_ai_effect_amounts(row);
+                const auto effect = compile_narrative_effect(row);
+                if ((effect.kind == NarrativeEffect::COUNTRY_GOOD_TO_MARKET ||
+                     effect.kind == NarrativeEffect::MARKET_GOOD_TO_COUNTRY ||
+                     effect.kind == NarrativeEffect::MARKET_ADD_STOCK ||
+                     effect.kind == NarrativeEffect::MARKET_REMOVE_STOCK) &&
+                        !known_good(effect.key)) continue;
+                if (effect.kind == NarrativeEffect::CITY_MODIFIER) {
+                    const std::string prefix = "economy.city.good.";
+                    const auto suffix = effect.key.find(".output_factor", prefix.size());
+                    if (effect.key.compare(0, prefix.size(), prefix) == 0 &&
+                        (suffix == std::string::npos ||
+                         !known_good(effect.key.substr(prefix.size(), suffix - prefix.size()))))
+                        continue;
+                }
+                String line = k < descriptions.size()
+                    ? String(descriptions[k]) : String(row.get("custom_label", ""));
+                const String good_name = row.get("target_display_name", text(effect.key));
+                row.erase("target_display_name");
+                const String custom = row.get("custom_label", "");
+                if (custom.is_empty() && (adjusted || effect.kind == NarrativeEffect::CITY_MODIFIER ||
+                    effect.kind == NarrativeEffect::COUNTRY_MODIFIER || effect.kind == NarrativeEffect::ADD_POPULATION)) {
+                    const String bounded = ai_effect_amount_label(effect, good_name);
+                    if (!bounded.is_empty()) line = bounded;
+                }
+                if (effect.kind == NarrativeEffect::TREASURY_CASH_TO_COHORT) {
+                    const int32_t ratio = std::clamp<int64_t>(effect.ratio, 0, 10000);
+                    const int64_t wanted = effect.value > 0 ? effect.value
+                        : (cash / 10000) * ratio + (cash % 10000) * ratio / 10000;
+                    const int64_t amount = std::min(wanted, cash);
+                    if (amount == 0) continue;
+                    cash -= amount;
+                    row["int_value"] = amount;
+                    row["ratio_bp"] = 0;
+                    const int64_t shown = amount >= 10000 && amount % 100 == 0
+                        ? amount / 10000 + (amount % 10000 >= 5000 ? 1 : 0) : amount;
+                    line = String::utf8("国库转出 ") + String::num_int64(shown) +
+                        String::utf8(" 给本地人数最多的居民群体");
+                }
+                effects.push_back(row);
+                lines.push_back(line);
+            }
+            outcome["effects"] = effects;
+            outcome["effect_descriptions"] = lines;
+        }
+    }
+    return def;
+}
 } // namespace
 
 int RuntimeNarrative::ai_pressure(const NarrativeCountryView &country, const NarrativeCellView &cell) {
@@ -218,7 +394,8 @@ void RuntimeNarrative::apply_ai_reply(const NarrativeDay &input, const PendingAi
     const auto &pending = entry.request;
     const auto &result = entry.reply;
     if (!bool(result.get("ok", false)) || input.country.territory.empty()) return;
-    auto def = _catalog.compile_event(result.get("definition", Dictionary()));
+    auto def = _catalog.compile_event(settle_ai_definition(
+        result.get("definition", Dictionary()), input.country, _catalog.good_ids));
     if (def.id.empty()) return;
     const int32_t target = pending.get("cell_idx", -1);
     const int32_t cell = owns(input.country, target) ? target : input.country.territory.front();

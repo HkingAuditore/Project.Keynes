@@ -1324,8 +1324,14 @@ bool RuntimeCountryPodAuthority::plan_day(
             return false;
         }
         if (!apply_command(plan.next_state, command, plan, error)) {
-            if (error == "country_cell_tax_territory_invalid") {
-                plan.rejected_cell_taxes.push_back(command);
+            auto *rejected = error == "country_cell_tax_territory_invalid"
+                ? &plan.rejected_cell_taxes : nullptr;
+            // Direct transfers are independent; military peace batches are atomic.
+            if (command.producer_id == 0u && command.opcode == CountryApi::COMMAND_TRANSFER_TERRITORY &&
+                    error == "country_transfer_cell_invalid")
+                rejected = &plan.rejected_territory_transfers;
+            if (rejected) {
+                rejected->push_back(command);
                 it = plan.commands.erase(it);
                 error.clear();
                 continue;
@@ -1336,12 +1342,7 @@ bool RuntimeCountryPodAuthority::plan_day(
         }
         ++it;
     }
-    // Run the research boundary after commands, matching the production
-    // ordering. The second pass is a continuation inside the same semantic
-    // day: it never allocates research points again because the first pass
-    // advances last_research_day, but it can activate a newly completed
-    // content-only technology immediately or emit the peer barrier for a
-    // technology completed by the first pass.
+    // Both research passes use the same day stamp, so points are allocated once.
     if (!run_research_day(plan.next_state, day, plan, error) ||
         !run_research_day(plan.next_state, day, plan, error)) {
         plan.header.preflight_ok = 0;

@@ -93,7 +93,7 @@ func _sample_replay_days(host: WorldRuntimeHost, clock: WorldClock, restored_day
 		slot_index: int, checkpoints: bool) -> Array:
 	var scenario := MilitaryScenario.new(host, _expect, restored_day)
 	var rows: Array = []
-	if not scenario.ready():
+	if not await scenario.ready(MAX_SLICES_PER_DAY):
 		return rows
 	var directory := OS.get_environment("PK_SAVE_DIR")
 	if restored_day > 0:
@@ -110,7 +110,7 @@ func _sample_replay_days(host: WorldRuntimeHost, clock: WorldClock, restored_day
 			break
 		await scenario.collect_day(day, MAX_SLICES_PER_DAY)
 		var row := await _summary(host, scenario.ext, day)
-		row["pkmi"] = _military_archive_hash(host)
+		row["pkmi"] = await _military_archive_hash(host)
 		rows.append(row)
 		var index := MILITARY_CHECKPOINT_DAYS.find(day)
 		if checkpoints and index >= 0:

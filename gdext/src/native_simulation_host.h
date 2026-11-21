@@ -398,14 +398,7 @@ public:
     int64_t economy_input_requested_day() const noexcept {
         return _economy_input_requested_day.load(std::memory_order_acquire);
     }
-    bool economy_worker_owns_execution() const noexcept override {
-        const auto current = _state.load(std::memory_order_acquire);
-        return current != RuntimeWorkerState::STOPPED &&
-            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
-            _economy_production_runtime != nullptr &&
-            (_requested_authority_mask.load(std::memory_order_acquire) &
-             runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u;
-    }
+    bool economy_worker_owns_execution() const noexcept override;
     std::unique_lock<std::mutex> try_lock_economy_input_capture() {
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
@@ -415,6 +408,9 @@ public:
     }
     void attach_military(std::shared_ptr<NativeMilitaryRuntime> military);
     void attach_vision(std::shared_ptr<VisionResearchState> vision);
+    bool restore_vision_seed(std::vector<uint8_t> &explored, bool &enabled,
+                             uint64_t &player_handle) const;
+    bool restore_bio_seed(std::vector<int32_t> &occupancy) const;
     std::shared_ptr<const RuntimeVisionFrame> latest_vision() const;
     bool submit_fog_command(bool enabled, int64_t &effective_day);
     bool vision_executor_active() const noexcept;
@@ -436,6 +432,7 @@ public:
                                     std::string &error);
     bool has_bio_state() const noexcept { return bool(_executor_bio); }
     void reset_day_tail_for_world_change();
+    void request_economy_read_view();
     bool has_resource_display_patch() const;
     RuntimeResourceDisplayPatch take_resource_display_patch();
     // The caller retains the day-tail gate until it consumes this result.
@@ -882,9 +879,7 @@ public:
     uint64_t allocate_producer_sequence(uint32_t producer_id) override;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
     std::shared_ptr<const RuntimeClimateSnapshot> latest_climate_display() const;
-    std::shared_ptr<const RuntimeCommit> take_day_publications(
-        uint64_t after, std::deque<RuntimeDayRecord> &records, RuntimeResourceDisplayPatch &resources,
-        RuntimeCellLutDelta &delta);
+    std::shared_ptr<const struct RuntimeDisplayBatch> take_day_publications(uint64_t after);
     bool poll_receipt(RuntimeCommandReceipt &out);
     bool poll_country_command_receipts(
             uint64_t after_request_id, uint32_t limit,
@@ -1104,7 +1099,7 @@ private:
     bool stage_input_capture(DayExecution &, RuntimeDomainPlan &);
     bool stage_climate(DayExecution &, RuntimeDomainPlan &);
     bool stage_country(DayExecution &, RuntimeDomainPlan &);
-    void publish_rejected_cell_taxes();
+    void publish_country_input_rejections();
     bool stage_trigger_input(DayExecution &, RuntimeDomainPlan &);
     bool stage_ideology(DayExecution &, RuntimeDomainPlan &);
     bool stage_effect(DayExecution &, RuntimeDomainPlan &);
@@ -1115,7 +1110,10 @@ private:
     bool stage_visual(DayExecution &, RuntimeDomainPlan &);
     bool stage_commit(DayExecution &, RuntimeDomainPlan &);
     const char *stage_natural_resource_recovery(DayExecution &);
-    void merge_resource_display_patch();
+    void merge_resource_display_patch(RuntimeResourceDisplayPatch &patch) const;
+    void publish_display_batch(std::shared_ptr<const RuntimeCommit> commit,
+                               const RuntimeDayRecord &record);
+    void reset_display_batch();
     const char *stage_bio_occupancy(DayExecution &);
     static uint64_t now_us();
     static uint64_t mix_hash(uint64_t value, uint64_t input);
@@ -1411,7 +1409,7 @@ private:
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> _era_reward_requests;
     std::deque<uint64_t> _annual_presentations;
     std::deque<std::shared_ptr<RuntimeNarrativeRequest>> _narrative_requests;
-    std::deque<godot::Dictionary> _boundary_command_results;
+    godot::Array _boundary_command_results;
     void publish_boundary_command_result(const char *command, int64_t sequence,
                                          godot::Dictionary result);
     std::shared_ptr<class RuntimeNarrative> _executor_narrative;
@@ -1421,17 +1419,17 @@ private:
     std::shared_ptr<RuntimeEraAdvancement> _era_advancement;
     std::shared_ptr<const RuntimeEraAdvancementView> _published_era_advancement;
     std::shared_ptr<RuntimeEraRewardRequest> _era_advancement_bind, _era_advancement_restore;
-    bool player_requests_pending_locked() const noexcept {
-        return !_military_commands.empty() || !_economy_boundary_requests.empty() ||
-            !_era_reward_requests.empty() || !_annual_presentations.empty() ||
-            !_narrative_requests.empty() || !_player_confirmation.requests.empty() ||
-            _player_confirmation.ideology_input_changed;
-    }
+    bool player_requests_pending_locked() const noexcept;
     bool service_economy_boundary_requests();
+    void service_economy_read_view();
+    bool _economy_read_view_requested = false; // protected by _control_mutex
     const std::vector<uint8_t> *colonization_visibility() const override;
     std::atomic<int64_t> _events_ingress_cursor{1};
     bool service_military_commands();
     const char *stage_military(DayExecution &day);
+    void capture_world_continuation(RuntimeSaveBundle &bundle) const;
+    std::vector<uint8_t> capture_bio_state() const, capture_vision_state() const;
+    std::vector<uint8_t> capture_narrative_save_bytes() const;
     void publish_military_day();
     std::shared_ptr<struct RuntimeBioState> _executor_bio;
     std::vector<int32_t> _executor_resource_display_cells;
@@ -1762,8 +1760,10 @@ private:
     std::atomic<int64_t> _clock_requested_day{-1};
     std::atomic<bool> _calendar_suspended{true};
     std::atomic<int64_t> _display_consumed_day{-1};
-    std::deque<RuntimeDayRecord> _published_days; // protected by _resource_display_mutex
-    std::vector<uint8_t> _cell_lut_pending, _executor_cell_lut_pending;
+    std::shared_ptr<const RuntimeDisplayBatch> _published_display;
+    std::shared_ptr<struct RuntimeFiscalHistory> _display_finances;
+    godot::Array _display_notices;
+    std::vector<uint8_t> _executor_cell_lut_pending;
     std::vector<std::array<uint32_t, 4>> _cell_lut_words;
     void publish_cell_lut_changes(RuntimeDayTail &tail, const RuntimeDayTail *previous);
     std::atomic<bool> _inline_day_pending{false};

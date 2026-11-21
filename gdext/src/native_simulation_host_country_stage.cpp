@@ -40,7 +40,12 @@
 
 namespace pk {
 
-void NativeSimulationHost::publish_rejected_cell_taxes() {
+void NativeSimulationHost::publish_country_input_rejections() {
+    const auto &territory = _country_pod_plan.rejected_territory_transfers;
+    if (!territory.empty())
+        publish_country_command_terminals(territory,
+            CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+            _country_pod_authority.generation(), "country_transfer_cell_invalid");
     const auto &rejected = _country_pod_plan.rejected_cell_taxes;
     if (rejected.empty()) return;
     constexpr const char *reason = "country_cell_tax_territory_invalid";
@@ -718,7 +723,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             return false;
         }
         _country_observations.erase(day);
-        publish_rejected_cell_taxes();
+        publish_country_input_rejections();
         publish_country_command_terminals(
             _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
             _country_pod_authority.generation(), nullptr);
@@ -801,7 +806,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
         return false;
     }
     _country_observations.erase(day);
-    publish_rejected_cell_taxes();
+    publish_country_input_rejections();
     publish_country_command_terminals(
         _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
         _country_pod_authority.generation(), nullptr);

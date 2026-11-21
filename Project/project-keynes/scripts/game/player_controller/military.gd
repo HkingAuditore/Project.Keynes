@@ -154,12 +154,6 @@ func begin_military_arm_order(host, army: int, mode: String, radius: int = 1) ->
 		return host._result(false, "invalid_args", "未知的部队指令。")
 	if (mode == "area" or mode == "explore") and (radius < 1 or radius > 6):
 		return host._result(false, "invalid_args", "选定半径必须在 1–6 格之间。")
-	var detail: Dictionary = facade.army(army)
-	if not bool(detail.get("ok", false)) or int(detail.get("owner_slot", -1)) != \
-			int(host._player_country_handle & 0xFFFFFFFF):
-		return host._result(false, "not_owner", "只能指挥本国部队。")
-	if mode == "explore" and int(detail.get("engagement", -1)) >= 0:
-		return host._result(false, "army_in_engagement", "交战中无法开始探路。")
 	host.cancel_military_arm_order()
 	host._military_order_army = army
 	host._military_order_mode = mode
@@ -257,10 +251,6 @@ func military_arm_order_click(host, cell: int) -> bool:
 		host._clear_military_path_preview()
 		host.clear_cell_highlights()
 		var explore_cells = host._military_area_cells(cell, host._military_order_radius)
-		if explore_cells.is_empty():
-			host._military_order_message = "探查范围为空，请重新选择中心。"
-			host._notify_military_arm_order()
-			return true
 		host._military_order_target = cell
 		host._military_order_preview = {"area": explore_cells, "days": 0,
 			"cells": PackedInt32Array()}

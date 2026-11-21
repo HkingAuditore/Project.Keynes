@@ -2,6 +2,7 @@
 #include "country_api.h"
 #include "native_simulation_host_military.h"
 #include "native_simulation_day_context.h"
+#include "runtime_checkpoint_wire.h"
 #include "runtime_vision.h"
 
 #include <algorithm>
@@ -185,16 +186,29 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
             return out;
         }
         state->owners = std::move(country_view.cell_country_slot);
+        const bool restored = bool(config.get("restored", false));
         const int32_t start = config.get("player_start_cell", -1);
         state->player_slot = start >= 0 && start < n ? state->owners[start] : -1;
         if (state->player_slot >= 0 && size_t(state->player_slot) < country_view.country_handles.size())
             state->player_handle = country_view.country_handles[state->player_slot];
+        bool fog = config.get("fog_enabled", false);
+        std::vector<uint8_t> explored(static_cast<size_t>(n), 0);
+        if (restored && !_runtime_host->restore_vision_seed(explored, fog, state->player_handle)) {
+            out["reason"] = "vision_checkpoint_invalid";
+            return out;
+        }
+        if (restored) {
+            const auto row = std::find(country_view.country_handles.begin(),
+                country_view.country_handles.end(), state->player_handle);
+            state->player_slot = row == country_view.country_handles.end() ? -1
+                : static_cast<int32_t>(row - country_view.country_handles.begin());
+        }
         state->remote_technology = config.get("remote_technology", -1);
         state->remote = state->remote_technology >= 0 &&
             country_api::has_completed_technology(*country, state->player_handle, state->remote_technology);
         state->fog_available = static_cast<bool>(config.get("fog_available", false)) &&
             state->player_handle != 0;
-        state->fog_enabled = state->fog_available && static_cast<bool>(config.get("fog_enabled", false));
+        state->fog_enabled = state->fog_available && fog;
         state->all_visible.assign(size_t(n), 1);
         if (_military) state->military_sources = _military->vision_sources(state->player_slot);
         VisionResearchWork work;
@@ -203,8 +217,7 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
         work.player_slot = state->player_slot;
         work.remote = state->remote;
         work.military_sources = state->military_sources;
-        work.previous_explored = copy_column<uint8_t>(
-            PackedByteArray(config.get("explored", PackedByteArray())));
+        work.previous_explored = std::move(explored);
         work.occupancy = copy_column<int32_t>(
             PackedInt32Array(config.get("occupancy", PackedInt32Array())));
         if (work.previous_explored.size() != size_t(n) || work.occupancy.size() != size_t(n)) {
@@ -396,6 +409,31 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
     out["resource_visual_visible_cells"] = packed_i32(work.resource_visible);
     unpack_observations(work.observations, out);
     return out;
+}
+
+std::vector<uint8_t> NativeSimulationHost::capture_vision_state() const {
+    if (!_executor_vision || !_executor_vision->frame) return {};
+    const auto &state = *_executor_vision;
+    CheckpointWriter out;
+    out.field(state.player_handle);
+    out.field(static_cast<uint8_t>(state.fog_enabled));
+    const auto &explored = state.frame->explored;
+    out.bytes.insert(out.bytes.end(), explored.begin(), explored.end());
+    return std::move(out.bytes);
+}
+
+bool NativeSimulationHost::restore_vision_seed(std::vector<uint8_t> &explored,
+        bool &enabled, uint64_t &player_handle) const {
+    if (!_has_pending_restore ||
+        (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_VISION) == 0) return true;
+    const auto &bytes = _pending_restore_bundle.vision_bytes;
+    CheckpointReader in{bytes.data(), bytes.size()};
+    uint8_t fog = 0;
+    if (!in.field(player_handle) || !in.field(fog) || fog > 1 ||
+        in.size - in.cursor != explored.size()) return false;
+    std::copy(bytes.begin() + in.cursor, bytes.end(), explored.begin());
+    enabled = fog != 0;
+    return true;
 }
 
 void NativeSimulationHost::attach_vision(std::shared_ptr<VisionResearchState> vision) {

@@ -11,13 +11,10 @@ class AudioSituation extends RefCounted:
 		return {"tension_write_due": false}
 
 class CeremonySurface extends RefCounted:
-	var _world_clock: WorldClock
-	var _era_ceremony_resume_clock := true
-	var _pause_menu: Control
-	var _player_controller: PlayerController
-
-	func is_era_reward_modal_open() -> bool:
-		return true
+	var _era_indicator: EraIndicator
+	var _era_ceremony: EraAscensionCeremony
+	var _era_ceremony_index := 1
+	var _player_controller = null
 
 var failures := 0
 func _initialize() -> void:
@@ -79,9 +76,9 @@ func _run() -> void:
 	_expect("the presentation driver keeps music smoothing active", situation.deltas == [0.25])
 	second.pause(true)
 	var ceremony := CeremonySurface.new()
-	ceremony._world_clock = second
-	preload("res://scripts/ui/game_ui/era_progression.gd").new()._restore_clock_after_ceremony(ceremony)
-	_expect("the ceremony restores its own pause while the executor holds the reward", not second.paused)
+	preload("res://scripts/ui/game_ui/era_progression.gd").new()._on_era_ceremony_finished(ceremony)
+	_expect("ending a ceremony does not release a manual pause", second.paused)
+	_expect("ending a ceremony clears the displayed era", ceremony._era_ceremony_index == -1)
 	controller.free()
 	first.free()
 	second.free()

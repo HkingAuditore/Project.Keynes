@@ -6,8 +6,8 @@ class UiProbe extends RefCounted:
 	var dates: Array[Vector3i] = []
 	var refreshes := 0
 
-	func record_committed_day(day: int) -> void:
-		days.append(day)
+	func record_committed_ledger(commit: Dictionary) -> void:
+		days.append(int(commit.gdp.day))
 
 	func refresh_selected_daily_lines(_force: bool, day: int) -> void:
 		rendered.append(day)
@@ -144,6 +144,9 @@ func _init() -> void:
 	var frames: Array[Array] = []
 	host.connect("simulation_view_updated", func(from, to, generation):
 		frames.append([from, to, generation]))
+	var rows: Array = [{"day": 21}, {"day": 22}, {"day": 23}, {"day": 24}]
+	host._runtime_last_commit = {"gdp": {"day": 24}, "days": rows, "notice_history": []}
+	host.simulation_day_records.emit(rows)
 	for day in range(21, 25):
 		host._presentation.call("queue_worker_commit", day - 1, day, day)
 		host.simulation_committed.emit(day - 1, day, day)
@@ -165,7 +168,7 @@ func _init() -> void:
 	clock.free()
 	host.free()
 	var ok := no_early_frame and coalesced and crossed_gap and restarted and correct_date \
-		and ui.days == [21, 22, 23, 24] and ui.rendered == [24, 27, 1] and ui.refreshes == 3 \
+		and ui.days == [24] and ui.rendered == [24, 27, 1] and ui.refreshes == 3 \
 		and daily_audio and music.refreshes == 4 and _check_matching_weather_day() \
 		and _check_empty_consumed_climate_writeback()
 	print("Simulation presentation coalescing: ", ok)
