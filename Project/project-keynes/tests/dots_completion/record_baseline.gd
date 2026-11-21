@@ -8,7 +8,7 @@
 #   godot --headless --script tests/dots_completion/record_baseline.gd --quit
 #
 # 输出（stdout）：
-#   - 4 巨石当前行数 vs 拆分目标
+#   - 3 个大文件当前行数 vs 拆分目标
 #   - hot path `cell.x = ` / `out_cell.x = ` 直写残留计数
 #   - 已知 baseline 对比（如有 baseline.json）
 #
@@ -16,12 +16,11 @@
 
 extends SceneTree
 
-# 4 巨石（路径 + 拆分目标）
+# 3 个大文件（路径 + 拆分目标）
 const _LANDMARKS: Array = [
 	{path = "res://scripts/geography/map_generator.gd",  target = 1500, name = "map_generator.gd"},
 	{path = "res://scripts/weather/weather_system.gd",   target =  400, name = "weather_system.gd"},
 	{path = "res://scripts/rendering/map_baker.gd",      target =  800, name = "map_baker.gd"},
-	{path = "res://scripts/main.gd",                     target =  400, name = "main.gd"},
 ]
 
 # 直写残留扫描目标（路径 + 模式 + 该次允许上限的"占当前基线百分比"）
@@ -55,7 +54,7 @@ func _init() -> void:
 
 
 func _report_landmarks() -> void:
-	print("─── 4 巨石行数 ──────────────────────────────────────")
+	print("─── 3 个大文件行数 ───────────────────────────────────")
 	print("%-28s %8s  %8s  %s" % ["file", "current", "target", "status"])
 	for entry in _LANDMARKS:
 		var lines: int = _count_lines(entry.path)

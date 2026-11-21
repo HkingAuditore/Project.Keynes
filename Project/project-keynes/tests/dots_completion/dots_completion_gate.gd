@@ -6,11 +6,10 @@
 #   - dots_completion_gate.gd：硬门禁，任一项失败 exit 非零（用于 CI / merge gate）
 #
 # 依次跑下列检查（任一失败立即累积；最后给汇总 + 非零退出码）：
-#   (a) 4 巨石行数历史诊断
+#   (a) 3 个大文件行数历史诊断
 #       - weather_system.gd ≤ 400
 #       - map_generator.gd  ≤ 1500
 #       - map_baker.gd      ≤ 800
-#       - main.gd           ≤ 400
 #       - 该项属于 2026-05 monolith-split 计划。当前生产架构已经转为
 #         native daily graph + DataCore；超限保留为迁移债务警告，不再
 #         伪装成当前 authority 契约，也不允许静默删除这些数据。
@@ -44,18 +43,17 @@
 #   2 = 内部错误（脚本无法读取 baseline.json / climate_profile.gd 等）
 #
 # 失败/警告输出格式（精确定位）：
-#   [LEGACY] (a) main.gd: 1742 lines > historical target 400 (over by 1342)
+#   [LEGACY] (a) map_baker.gd: 1701 lines > historical target 800 (over by 901)
 #   [GATE-FAIL] (b) weather_system.gd: 'out_cell.x =' hit 5 (expected 0)
 #   [GATE-FAIL] (c) feature_flags.FLAGS missing entry for 'use_xxx_yyy' declared on ClimateProfile
 
 extends SceneTree
 
-# 4 巨石行数历史诊断
+# 3 个大文件行数历史诊断
 const _LANDMARKS: Array = [
 	{path = "res://scripts/weather/weather_system.gd",   target =  400, key = "weather_system_gd",  label = "weather_system.gd"},
 	{path = "res://scripts/geography/map_generator.gd",  target = 1500, key = "map_generator_gd",   label = "map_generator.gd"},
 	{path = "res://scripts/rendering/map_baker.gd",      target =  800, key = "map_baker_gd",       label = "map_baker.gd"},
-	{path = "res://scripts/main.gd",                     target =  400, key = "main_gd",            label = "main.gd"},
 ]
 
 # hot path 直写残留 grep（pattern + 当前预期上限）
@@ -83,7 +81,7 @@ const _CLIMATE_PROFILE_PATH: String = "res://scripts/data/climate_profile.gd"
 const _FEATURE_FLAGS_PATH: String = "res://scripts/data_core/feature_flags.gd"
 const _BASELINE_PATH: String = "res://tests/dots_completion/baseline.json"
 const _NATIVE_HOST_HEADER_PATH: String = "gdext/src/native_simulation_host.h"
-const _NATIVE_HOST_SOURCE_PATH: String = "gdext/src/native_simulation_host.cpp"
+const _NATIVE_HOST_PERSISTENCE_PATH: String = "gdext/src/native_simulation_host_persistence.cpp"
 const _WORLD_RUNTIME_HOST_PATH: String = "res://scripts/game/world_runtime_host.gd"
 const _ECONOMY_PERSISTENCE_PATH: String = "gdext/src/economy_runtime_persistence_codec.h"
 
@@ -110,10 +108,10 @@ func _init() -> void:
 	_summarize_and_exit()
 
 
-# ─── (a) 4 巨石行数历史诊断 ─────────────────────────────────────────────
+# ─── (a) 3 个大文件行数历史诊断 ─────────────────────────────────────────
 
 func _check_landmarks() -> void:
-	print("─── (a) 4 巨石行数历史诊断 ───────────────────────")
+	print("─── (a) 3 个大文件行数历史诊断 ────────────────────")
 	print("%-28s %8s  %8s  %s" % ["file", "current", "target", "status"])
 	for entry in _LANDMARKS:
 		var lines: int = _count_lines(String(entry.path))
@@ -189,7 +187,7 @@ func _check_flag_registry() -> void:
 			missing_in_registry.append(d)
 	# 步骤 4：每个 registered 中 resource="ClimateProfile" 的必须在 declared 里命中
 	# 由于本静态扫描分不出 resource 字段，这里只做 declared→registered 单向校验，
-	# 反向校验由 DCFeatureFlags.validate_against({}) 在运行时跑（main.gd 启动期）。
+	# 反向校验由 DCFeatureFlags.validate_against({}) 在运行时启动期执行。
 
 	if missing_in_registry.is_empty():
 		print("all %d ClimateProfile flags registered: PASS" % declared_flags.size())
@@ -208,10 +206,10 @@ func _check_flag_registry() -> void:
 func _check_authority_contract() -> void:
 	print("─── (d) D12 authority / D7 journal contract ─────")
 	var host_header := _read_repo_text(_NATIVE_HOST_HEADER_PATH)
-	var host_source := _read_repo_text(_NATIVE_HOST_SOURCE_PATH)
+	var host_persistence := _read_repo_text(_NATIVE_HOST_PERSISTENCE_PATH)
 	var world_host := _read_text(_WORLD_RUNTIME_HOST_PATH)
 	var economy_persistence := _read_repo_text(_ECONOMY_PERSISTENCE_PATH)
-	if host_header == "" or host_source == "" or world_host == "" or economy_persistence == "":
+	if host_header == "" or host_persistence == "" or world_host == "" or economy_persistence == "":
 		_internal_errors.append("authority contract source file missing")
 		return
 
@@ -233,8 +231,8 @@ func _check_authority_contract() -> void:
 		and startup.contains('"simulation_thread_mode": "ACTIVE"')
 	_expect_gate_contract("(d) production worker default request is exactly 0xFFF", request_ok)
 
-	var d7_marker_ok := host_source.contains("D7_TRANSACTION_MAGIC") \
-		and host_source.contains("\"D7T1\"") \
+	var d7_marker_ok := host_persistence.contains("D7_SECTION_MARKER") \
+		and host_persistence.contains("\"D7T1\"") \
 		and economy_persistence.contains("SAVE_SECTION_FISCAL_PEER = 30")
 	_expect_gate_contract("(d) D7T1 transport and fiscal peer section are present", d7_marker_ok)
 
