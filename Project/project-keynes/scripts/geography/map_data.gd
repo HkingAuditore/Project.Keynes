@@ -261,6 +261,7 @@ var _lat_lut_baked: bool = false
 var terrain_arr:            PackedByteArray = PackedByteArray()
 var published_biome_history := PackedByteArray()
 var published_vegetation_history := PackedByteArray()
+var _season_history_missing_warning_keys: Dictionary = {}
 var landform_arr:           PackedByteArray = PackedByteArray()
 var vegetation_arr:         PackedByteArray = PackedByteArray()
 var base_terrain_arr:       PackedByteArray = PackedByteArray()
@@ -608,8 +609,19 @@ func season_history_for(cell: HexCell, vegetation: bool) -> PackedByteArray:
 	var history := published_vegetation_history if vegetation else published_biome_history
 	var start := cell.index * HexCell.HISTORY_LEN
 	if start >= 0 and start + HexCell.HISTORY_LEN <= history.size():
+		_season_history_missing_warning_keys.erase(_season_history_warning_key(vegetation))
 		return history.slice(start, start + HexCell.HISTORY_LEN)
+	var warning_key := _season_history_warning_key(vegetation)
+	if not _season_history_missing_warning_keys.has(warning_key):
+		_season_history_missing_warning_keys[warning_key] = true
+		push_warning("MapData season history publication is incomplete: %s history has %d bytes; cell %d needs bytes %d..%d" % [
+			"vegetation" if vegetation else "biome", history.size(), cell.index,
+			start, start + HexCell.HISTORY_LEN - 1,
+		])
 	return PackedByteArray()
+
+func _season_history_warning_key(vegetation: bool) -> String:
+	return "vegetation" if vegetation else "biome"
 
 func sync_is_water_arr_from_terrain() -> void:
 	var n: int = mini(terrain_arr.size(), is_water_arr.size())
