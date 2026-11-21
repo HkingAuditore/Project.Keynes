@@ -383,6 +383,24 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
         }
         bool queued = false;
         if (best_i >= 0) {
+            const Dictionary detail = family_colonization_quote_detail(
+                tokens[best_i], 0);
+            const PackedInt32Array route = detail.get(
+                "route_cells", PackedInt32Array());
+            const PackedInt32Array cumulative = detail.get(
+                "cumulative_costs", PackedInt32Array());
+            if (!static_cast<bool>(detail.get("ok", false)) || route.is_empty() ||
+                route.size() != cumulative.size()) {
+                note(intent.country_handle, false);
+                continue;
+            }
+            uint64_t route_hash = 1469598103934665603ULL;
+            for (int64_t i = 0; i < route.size(); ++i) {
+                route_hash = trace_hash_mix(route_hash,
+                    static_cast<uint32_t>(route[i]));
+                route_hash = trace_hash_mix(route_hash,
+                    static_cast<uint32_t>(cumulative[i]));
+            }
             Command command;
             command.opcode = COMMAND_START_FAMILY_EXPEDITION;
             command.effective_day = day_index;
@@ -393,7 +411,8 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
             command.i32_0 = sources[best_i];
             command.i32_1 = intent.target_cell;
             command.i64_0 = best_population;
-            command.i64_1 = tokens[best_i];
+            command.i64_1 = static_cast<int64_t>(intent.country_handle);
+            command.expedition_route_hash = route_hash;
             command.submit_order = _next_submit_order++;
             _pending_commands.push_back(command);
             queued = true;

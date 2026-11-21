@@ -7,6 +7,8 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryAiCatalogScript = preload("res://scripts/country/country_ai_catalog.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
+const EffectCatalogScript = preload("res://scripts/effect/effect_catalog.gd")
 const CELLS := 9
 const DAYS := 60
 const RESTORE_DAY := 25
@@ -132,6 +134,135 @@ func _run() -> void:
 		and int(probe_report.get("commands_emitted", -1)) == 0
 		and int((probe_tax.default_rates as PackedInt32Array)[0]) == 0
 		and _queued_count(probe.ext.get_country_research_snapshot(int(probe.handles[1]))) == 0)
+	_run_ai_colonization_regression()
+
+
+func _run_ai_colonization_regression() -> void:
+	var colonizer := CountryAiCatalogScript.load_default()
+	colonizer.think_days = 1
+	colonizer.colonize_days = 1
+	colonizer.colonize_min_reserve_days = 0
+	colonizer.colonize_min_country_population = 1
+	colonizer.colonize_min_population_per_cell = 0
+	colonizer.colonize_essentials_floor = 0.0
+	colonizer.colonize_hungry_share_max = 1.0
+	var ai_compiled: Dictionary = colonizer.compile_native_catalog(73023)
+	_expect("colonization AI catalog compiles", bool(ai_compiled.get("ok", false)))
+	if not bool(ai_compiled.get("ok", false)):
+		return
+	var world := _world(ai_compiled.catalog, true)
+	var ext: Object = world.ext
+	var country_handle := int(world.handles[1])
+	var map := MapData.new(CELLS, 1)
+	for cell_index in range(CELLS):
+		var cell := HexCell.new(cell_index, 0)
+		cell.terrain = TerrainType.TERRAIN.PLAIN
+		cell.landform = LandformType.LF.PLAIN
+		map.set_cell(cell)
+	map._build_indices()
+	map.init_soa_from_bake()
+	map.visible_arr.fill(1)
+	map.explored_arr.fill(1)
+	map.vision_revision = 1
+	_expect("AI colonization map binds", bool(ext.bind_map_data(map)))
+	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
+	modifier_catalog.erase("ok")
+	_expect("AI colonization modifier runtime configures",
+		bool(ext.configure_modifiers(modifier_catalog, CELLS).get("ok", false)))
+	var effect_catalog := EffectCatalogScript.new()
+	_expect("AI colonization effect runtime configures",
+		bool(ext.configure_effects(effect_catalog.compile_native_catalog()).get("ok", false)))
+	var economy_catalog := _catalog.duplicate(true)
+	var birth_rates: PackedInt64Array = economy_catalog.signature_birth_rate_q32
+	birth_rates.fill(0)
+	economy_catalog.signature_birth_rate_q32 = birth_rates
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.family_runtime_mode = "ACTIVE"
+	profile.family_founding_choice_mode = "AUTO"
+	profile.family_min_founder_people = 20
+	profile.starvation_death_rate_q32 = 0
+	_expect("AI colonization economy configures", bool(ext.configure_economy(
+		economy_catalog, profile, CELLS, 73023).get("ok", false)))
+	var neighbors := _line_neighbors()
+	var terrain := PackedByteArray()
+	terrain.resize(CELLS)
+	terrain.fill(2)
+	var passable := PackedByteArray()
+	var costs := PackedInt32Array()
+	passable.resize(256)
+	costs.resize(256)
+	passable[2] = 1
+	costs[2] = 2
+	ext.capture_economy_trade_topology(neighbors, terrain, passable, costs, 1)
+	var signatures: PackedStringArray = economy_catalog.signature_keys
+	var forager := signatures.find("forager|default")
+	var merchant := signatures.find("merchant|default")
+	var stock := PackedInt64Array()
+	stock.resize(CELLS * (economy_catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000)
+	var buildings := PackedInt64Array([1])
+	var building_type := (economy_catalog.building_type_ids as PackedStringArray).find(
+		"gathering_ground")
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([4, 4]),
+		"signature_ids": PackedInt32Array([forager, merchant]),
+		"population": PackedInt64Array([500, 20]),
+		"funds": PackedInt64Array([1000000000, 1000000000]),
+		"forced_named_cells": PackedInt32Array([4]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([4]),
+		"building_type_ids": PackedInt32Array([building_type]),
+		"building_owner_signature_ids": PackedInt32Array([forager]),
+		"building_counts": buildings,
+		"founder_family_cells": PackedInt32Array([4]),
+		"founder_family_building_type_ids": PackedInt32Array([building_type]),
+		"founder_family_owner_signature_ids": PackedInt32Array([forager]),
+	})
+	_expect("AI source family bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		print("AI colonization economy bootstrap=", boot)
+		return
+	var values := PackedInt32Array()
+	values.resize(CELLS)
+	values.fill(65536)
+	ext.set_country_ai_topology(neighbors, values)
+	var player_handles := PackedInt64Array([int(world.handles[0])])
+	ext.set_country_ai_excluded_handles(player_handles)
+	_expect("opening Country day commits", bool(ext.run_country_slice(
+		{"day_index": 0, "tick_index": 0}).get("ok", false)))
+	_expect("opening economy day publishes the colonization digest",
+		_run_economy_day(ext, 0))
+	var ai_day: Dictionary = ext.run_country_slice({"day_index": 1, "tick_index": 1})
+	_expect("AI colonization decision commits", bool(ai_day.get("ok", false)))
+	var decision_report: Dictionary = ext.get_country_ai_report()
+	_expect("fixed seed produces an AI colonization intent",
+		int(decision_report.get("colonization_intents", 0)) > 0)
+	_expect("effective day creates an actual AI expedition",
+		_run_economy_day(ext, 1)
+		and int(ext.get_family_expeditions(country_handle, 0, 64).get("total", 0)) == 1)
+	var receipts: Dictionary = ext.get_family_colonization_receipts(
+		country_handle, 0, 64)
+	var receipt_rows: Array = receipts.get("receipts", [])
+	_expect("accepted AI command receipt names its owning country",
+		int(receipts.get("count", 0)) > 0 and not receipt_rows.is_empty()
+		and String(receipt_rows.back().get("code", "")) in ["STARTED", "PREPARING"])
+
+
+func _run_economy_day(ext: Object, day: int) -> bool:
+	var report: Dictionary = {}
+	for tick in range(2048):
+		report = ext.run_economy_slice({"day_index": day,
+			"tick_index": day * 1000 + tick})
+		if bool(report.get("fatal", false)):
+			print("AI colonization economy day failed day=", day,
+				" reason=", report.get("fatal_reason", ""))
+			return false
+		if bool(report.get("done", false)):
+			return true
+	print("AI colonization economy day did not finish day=", day)
+	return false
 
 
 func _world(ai_catalog: Dictionary, arm: bool) -> Dictionary:
