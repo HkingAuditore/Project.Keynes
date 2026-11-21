@@ -452,7 +452,16 @@ class MergeWorkflow(unittest.TestCase):
         self.watcher.prs.return_value = [self.pr, next_pr]
         with patch("qodo.pr_review", return_value=review()) as reviewed:
             self.assertEqual(self.watcher.tick(None), 0)
-        self.assertEqual([c.args[1] for c in reviewed.call_args_list], [self.pr["url"], next_pr["url"]])
+        # PR 8's skip label needs no review, so tick() does not read one for it.
+        self.assertEqual([c.args[1] for c in reviewed.call_args_list], [self.pr["url"]])
+        self.assert_no_merge_command()
+
+    def test_unhanded_issue_pr_costs_no_review_lookup(self):
+        issue_pr = {**self.pr, "number": 8, "headRefName": "agent/issue-11", "url": "https://example.invalid/pr/8"}
+        self.watcher.prs.return_value = [issue_pr]
+        with patch("qodo.pr_review", return_value=review()) as reviewed:
+            self.assertEqual(self.watcher.tick(None), 0)
+        reviewed.assert_not_called()
         self.assert_no_merge_command()
 
     def test_passed_reruns_replace_failed_ci_attempts(self):
