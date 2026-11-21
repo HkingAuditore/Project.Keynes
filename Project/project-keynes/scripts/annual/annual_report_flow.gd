@@ -137,8 +137,11 @@ func _select_report(id: int, ceremonial: bool = false) -> void:
 		ViewModel.append_chronicle_chapter(model, chronicle)
 	_ui.show_annual_report(model, ceremonial)
 	if _ui.has_method("is_annual_report_open") and not bool(_ui.is_annual_report_open()):
-		push_error("[annual] report workspace failed to open for id=%d" % id)
+		push_warning("[annual] report workspace failed to open for id=%d" % id)
 		_open = false
+		# The executor still owns this confirmation point. Keep the published report
+		# and let the normal presentation hooks retry instead of losing the queue.
+		_reopen_pending = true
 
 
 func _load_history(offset: int) -> void:

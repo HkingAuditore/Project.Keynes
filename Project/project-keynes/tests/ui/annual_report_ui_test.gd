@@ -40,7 +40,13 @@ class UiStub:
 	signal annual_report_selected(id: int)
 	signal annual_history_page_requested(offset: int)
 	var opened := 0
-	func show_annual_report(_model: Dictionary, _ceremonial: bool) -> void: opened += 1
+	var open := false
+	var fail_next_open := false
+	func show_annual_report(_model: Dictionary, _ceremonial: bool) -> void:
+		opened += 1
+		open = not fail_next_open
+		fail_next_open = false
+	func is_annual_report_open() -> bool: return open
 	func set_annual_history(_rows: Array, _offset: int, _has_more: bool) -> void: pass
 
 func _init() -> void:
@@ -310,6 +316,23 @@ func _run() -> void:
 	print("REVIEW_ANNUAL_REFUSAL=", denied)
 	_expect("a rejected native acknowledgment preserves the viewed report",
 		denied.get("viewed", []).has(1) and denied_host.marked_ids.is_empty())
+	var failed_open_host := HostStub.new()
+	var failed_open_ui := UiStub.new()
+	failed_open_ui.fail_next_open = true
+	var failed_open_flow := Flow.new()
+	failed_open_flow.configure(ControllerStub.new(), failed_open_host, failed_open_ui)
+	failed_open_flow.queue_report(1)
+	var failed_open_state: Dictionary = failed_open_flow.capture()
+	_expect("failed report opening preserves the executor confirmation for retry",
+		not failed_open_flow.is_open() and failed_open_state.get("open", false)
+		and failed_open_state.get("report_id", 0) == 1
+		and failed_open_host.marked_ids.is_empty())
+	failed_open_flow.try_present()
+	_expect("a later presentation hook reopens the failed report",
+		failed_open_flow.is_open() and failed_open_ui.opened == 2)
+	failed_open_ui.annual_report_closed.emit(1)
+	_expect("closing the reopened report acknowledges the executor stop",
+		failed_open_host.marked_ids == [1])
 	workspace.queue_free()
 	top.queue_free()
 	bar.queue_free()
