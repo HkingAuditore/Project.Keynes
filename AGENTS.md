@@ -1,3 +1,30 @@
+# Project.Keynes
+
+A procedural hex-world economy and civilization simulation. Godot 4.6 runs the UI and orchestration in GDScript; the simulation runs in a C++ GDExtension (`gdext/`). Current work: moving each simulated day's computation from the main thread to one background executor. Target and status: `docs/architecture/design.md`, `docs/architecture/migration.md`.
+
+## Setup
+
+- Clone with submodules: `git clone --recurse-submodules` (godot-cpp is required).
+- Build the native extension: `gdext/rebuild.sh` (macOS), `gdext\rebuild.bat` (Windows). Toolchains and exports: `docs/build-from-source.md`.
+- Open `Project/project-keynes/` in Godot 4.6; main scene `scenes/main.tscn`.
+
+## Verify
+
+- Static architecture guards, the list CI runs: `.github/workflows/runtime-checks.yml`, step "Static architecture guards" (run each `python tools/ci/<guard>.py`).
+- Factory tests: `python -m unittest discover -s tools/factory/tests`.
+- Runtime and save regressions (needs Godot and the built extension): `python tools/ci/run_regression_checks.py --import --roundtrip`.
+- Same-input, same-result checks: `python tools/ci/check_golden_determinism.py`, `python tools/ci/check_replay_matrix.py`.
+
+## Project rules
+
+Each rule says where it applies, why, and what enforces it. The full list of 32 rules and their enforcement is in `docs/factory/rule-coverage.md`; the 13 that only review can judge are Qodo rules in `docs/factory/qodo-rules.json`.
+
+1. **Load must not decide results.** Where: everything that computes a simulated day (C++ runtime, GDScript adapters). Why: the same seed, content and sealed commands must give the same day, byte for byte; when machine load once changed the economy's cadence, the same world diverged. Enforced by: `check_golden_determinism.py`, `check_replay_matrix.py`, Qodo rule "simulation results must not depend on timing or load".
+2. **The front end only reads published frames.** Where: `scripts/ui/`, `scripts/rendering/`. Why: the simulation is one timeline owned by the executor; a UI that reads live state shows a mix of days. Enforced by: `check_script_native_access.py` (native access only), Qodo rule "the front end only reads published frames".
+3. **Modules meet only through their API header and committed views.** Where: C++ runtime modules. Why: a module should be changeable by reading only it and the headers it depends on. Enforced by: `check_module_api.py`, `check_cpp_deps.py`, `check_committed_views.py`, Qodo rule "cross-module hand-offs go through committed views or intents".
+4. **Fix the root cause.** Where: every failing test and every fix handed to an agent. Why: loosened asserts, longer timeouts and retries hide the bug that broke determinism. Enforced by: Qodo rule "fix the root cause instead of relaxing the check", factory prompts.
+5. **New continuation state is versioned and installed whole.** Where: save sections and state that later days read. Why: a missing field only shows up as a cold-load divergence days later. Enforced by: `check_save_contracts.py`, `check_replay_matrix.py`, Qodo rule "new continuation state is versioned, validated and installed atomically".
+
 ## Harness
 
 - 找模块的文件、接口、存档段、测试和 skill，先查 `docs/architecture/module-map.md`；功能专项约束写入 `docs/architecture/feature-guides.md`，带日期的现状与验证记录写入 `docs/architecture/feature-status.md`，不写进通用开发指南。
