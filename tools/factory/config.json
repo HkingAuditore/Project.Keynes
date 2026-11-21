@@ -23,9 +23,9 @@
     "codex": "codex"
   },
   "agent": {
-    "model": "gpt-6-luna",
-    "effort": "high",
-    "timeoutMinutes": 60
+    "model": "gpt-6.2-sol",
+    "effort": "max",
+    "timeoutMinutes": 120
   },
   "limits": {
     "implementAttempts": 3,
