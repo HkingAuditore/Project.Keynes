@@ -31,6 +31,7 @@
 #include <limits>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -1049,6 +1050,7 @@ void NativeSimulationHost::worker_main() {
     // Complete already accepted value-only work before a same-world restart.
     compact_pending_commands(true);
     publish_pending_count();
+    std::deque<RuntimePlayerConfirmationRequest> abandoned_confirmations;
     {
         std::lock_guard<std::mutex> control(_control_mutex);
         _military_commands.clear();
@@ -1058,9 +1060,18 @@ void NativeSimulationHost::worker_main() {
         _era_reward_requests.clear();
         _narrative_requests.clear();
         _annual_presentations.clear();
-        _player_confirmation.requests.clear();
+        abandoned_confirmations.swap(_player_confirmation.requests);
         _player_confirmation.ideology_input_changed = false;
         _control_cv.notify_all();
+    }
+    for (const auto &request : abandoned_confirmations) {
+        godot::Dictionary result;
+        result["ok"] = false;
+        result["reason"] = "executor_stopped_before_player_confirmation_service";
+        result["settled_day"] = committed_day_value();
+        const char *command = request.kind == RuntimePlayerConfirmationRequest::Kind::DISMISS_IDEOLOGY
+            ? "ideology.offer.dismiss" : "ui.hide_all_except_gm";
+        publish_boundary_command_result(command, 0, std::move(result));
     }
     _worker_timing.stop();
     // STOPPED is the restart handoff: even timing cleanup must precede it,

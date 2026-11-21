@@ -110,19 +110,15 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 
 	var dismiss := story_controller.dismiss_ideology_offer(generation)
 	_expect("close sends a native confirmation", bool(dismiss.get("ok", false)))
-	if not await _wait_for(5, ""):
+	if not await _wait_for_after(5, ""):
 		return false
 	_expect("close preserves the offer and manual pause",
 		bool(_ideology.snapshot(story_player).get("offer_active", false)) and story_clock.paused)
-
-	story_clock.pause(false)
-	story_ext.set_runtime_clock(false, 10.0)
-	_publish_day(story_host, story_clock, 6)
-	if not await _wait_for(6, ""):
-		return false
 	var pick := story_controller.request_command(&"ideology.choose", {
 		"offer_generation": generation, "choice_index": 0})
 	_expect("later choice is admitted with a date", int(pick.get("effective_day", -1)) == 7)
+	story_clock.pause(false)
+	story_ext.set_runtime_clock(false, 10.0)
 	_publish_day(story_host, story_clock, 7)
 	if not await _wait_for(7, ""):
 		return false
@@ -139,6 +135,46 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 		return false
 	_expect("running clock continues and the 10x candidate stays available",
 		bool(_ideology.snapshot(story_player).get("offer_active", false)))
+	var saved_confirmation := await _save_runtime_bundle(2401)
+	_expect("dismissed candidate state is saved",
+		bool(saved_confirmation.get("ready", false)) and not PackedByteArray(
+			saved_confirmation.get("bytes", PackedByteArray())).is_empty())
+	var stopping_dismiss := story_controller.dismiss_ideology_offer(generation)
+	_expect("stop-race close is accepted before stopping",
+		bool(stopping_dismiss.get("ok", false)) and bool(stopping_dismiss.get("pending", false)))
+	var settled_before_stop := _settled.size()
+	story_ext.request_runtime_stop()
+	var stop_deadline := Time.get_ticks_msec() + 3000
+	while not story_ext.get_runtime_control_state().get("simulation_executor_exited", false) and \
+			Time.get_ticks_msec() < stop_deadline:
+		story_host._process(0.0)
+		await process_frame
+	story_host._process(0.0)
+	var terminal := _dismissal_terminal_since(settled_before_stop)
+	_expect("accepted close has a terminal result when the executor stops",
+		terminal.size() > 0 and (bool(terminal.get("ok", false)) or
+			String(terminal.get("reason", "")) == "executor_stopped_before_player_confirmation_service"))
+	_expect("worker exits before confirmation restore",
+		bool(story_ext.get_runtime_control_state().get("simulation_executor_exited", false)))
+	var restored_confirmation := story_ext.restore_runtime_bundle(
+		PackedByteArray(saved_confirmation.get("bytes", PackedByteArray())))
+	_expect("dismissed confirmation bundle restores", bool(restored_confirmation.get("ok", false)))
+	var restored_country := story_ext.restore_country_runtime_checkpoint(
+		PackedByteArray(saved_confirmation.get("country_pkcn", PackedByteArray())))
+	_expect("dismissed confirmation country checkpoint restores",
+		bool(restored_country.get("ok", false)))
+	var restored_day := int(story_ext.runtime_committed_day()) + 1
+	var restored_environment := story_host._generator.capture_runtime_inputs_for_worker(restored_day)
+	_expect("restored world publishes its next environment frame",
+		bool(restored_environment.get("ok", false)))
+	story_ext.set_runtime_clock(true, 0.0)
+	story_host._start_runtime_executor()
+	_expect("restored worker starts", story_host._web_worker_start_ok)
+	_expect("restored candidate remains dismissed and available",
+		bool(_ideology.snapshot(story_player).get("offer_active", false)) and
+			String(story_controller.player_confirmation_reason()).is_empty())
+	story_ext.set_runtime_clock(false, 0.0001)
+	_expect("restored calendar submits the next day", await _wait_for_after(restored_day - 1, ""))
 	return true
 
 
@@ -259,6 +295,21 @@ func _wait_for(day: int, reason: String) -> bool:
 	return false
 
 
+func _wait_for_after(day: int, reason: String) -> bool:
+	var limit := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
+	var report := story_ext.get_runtime_control_state()
+	while Time.get_ticks_usec() < limit:
+		if report.get("simulation_host_state") == "FAULTED":
+			break
+		if int(report.get("simulation_committed_day", -1)) > day and \
+				String(story_controller.player_confirmation_reason()) == reason:
+			return true
+		await process_frame
+		report = story_ext.get_runtime_control_state()
+	_expect("calendar advances beyond day %d with no confirmation block: %s" % [day, report], false)
+	return false
+
+
 func _get_family_offer() -> Dictionary:
 	var page := await _published_economy(story_economy.family_founding_offers,
 		int(story_ext.runtime_committed_day()))
@@ -279,6 +330,13 @@ func _find_receipt(command: Dictionary) -> Dictionary:
 	return {}
 
 
+func _dismissal_terminal_since(first_index: int) -> Dictionary:
+	for index in range(_settled.size() - 1, first_index - 1, -1):
+		if String(_settled[index].get("command", "")) == "ideology.offer.dismiss":
+			return _settled[index]
+	return {}
+
+
 func _has_receipt(command: Dictionary, reason: String) -> bool:
 	var deadline := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
 	var row := _find_receipt(command)
@@ -286,3 +344,19 @@ func _has_receipt(command: Dictionary, reason: String) -> bool:
 		await process_frame
 		row = _find_receipt(command)
 	return not row.is_empty() and bool(row.get("ok", false)) == reason.is_empty() and row.get("reason", "") == reason
+
+
+
+func _save_runtime_bundle(request_id: int) -> Dictionary:
+	var accepted: Dictionary = story_host._generator.request_runtime_save(request_id)
+	if not bool(accepted.get("pending", false)):
+		return accepted
+	var deadline := Time.get_ticks_msec() + 5000
+	var saved := {}
+	while Time.get_ticks_msec() < deadline:
+		saved = story_host._generator.poll_runtime_save(request_id)
+		if bool(saved.get("ready", false)) or not bool(saved.get("ok", true)):
+			return saved
+		story_host._process(0.0)
+		await process_frame
+	return {"ok": false, "code": "ticket_save_not_ready"}
