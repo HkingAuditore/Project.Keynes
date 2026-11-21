@@ -1287,6 +1287,10 @@ private:
     std::vector<int32_t> _country_good_output_stat_ids;
     std::vector<int32_t> _country_good_input_stat_ids;
     std::vector<int32_t> _country_good_consumption_stat_ids;
+    // Per-good trade factors. Same resolution rule as the three vectors above:
+    // indexed in `_good_ids` order, -1 when that good declares no such stat.
+    std::vector<int32_t> _country_good_trade_capacity_stat_ids;
+    std::vector<int32_t> _country_good_trade_speed_stat_ids;
     std::vector<int32_t> _country_resource_use_stat_ids;
     std::vector<int32_t> _country_resource_generation_stat_ids;
     // X16: indexed by `profession_id`; -1 means the stat is absent.
@@ -1496,6 +1500,15 @@ private:
     std::vector<int32_t> _epoch_country_climate_profile_loss_factor_q16;
     std::vector<int32_t> _epoch_country_trade_capacity_factor_q16;
     std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
+    // Dense [country][good] Q16 twins of the two rows above, from
+    // `country.trade.good.<good>.{capacity,speed}_factor` (tech tree stage 4).
+    // Same two trade consumption points, one dimension finer: `country.trade.*`
+    // stays the country-wide factor (ideology cards and tax content write it),
+    // these multiply on top per good. A good that declares no such stat keeps
+    // the Q16_ONE the epoch assign wrote -- never 0, which would silently zero
+    // every trade of that good.
+    std::vector<int32_t> _epoch_country_good_trade_capacity_factor_q16;
+    std::vector<int32_t> _epoch_country_good_trade_speed_factor_q16;
     std::vector<uint8_t> _epoch_country_water_capability;
     std::vector<int32_t> _epoch_country_construction_cost_factor_q16;
     std::vector<int32_t> _epoch_country_construction_time_factor_q16;

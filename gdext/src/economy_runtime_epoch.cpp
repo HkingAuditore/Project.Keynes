@@ -317,6 +317,11 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     reset_cell_metric(_merchant_trade_purchase_by_cell);
     reset_cell_metric(_merchant_trade_sale_by_cell);
     reset_cell_metric(_merchant_credit_drawn_by_cell);
+    // Market-keyed twins of the same epoch metric family. Cleared rather
+    // than resized: the merge rewrites every settled market each day, so a
+    // market that produced no retail this epoch must not keep a stale pool.
+    _merchant_household_retail_by_market.clear();
+    _market_merchant_population.clear();
     _owner_working_capital_reserved = 0;
     _production_input_reserved = 0;
     _production_input_reserve_shortfall = 0;

@@ -459,6 +459,15 @@ bool NativeEconomyRuntime::capture_country_epoch(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_trade_speed_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    // Dense [country][good] twins. Q16_ONE -- not 0 -- is the whole point: a good
+    // with no `country.trade.good.*` stat keeps the neutral factor, while a zero
+    // fill would silently kill every trade of that good without any error.
+    _epoch_country_good_trade_capacity_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _good_ids.size(), Q16_ONE);
+    _epoch_country_good_trade_speed_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _good_ids.size(), Q16_ONE);
     _epoch_country_water_capability.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     auto country_has_frozen_tech = [&](int32_t country, int32_t tech) {
@@ -757,6 +766,33 @@ bool NativeEconomyRuntime::capture_country_epoch(
                 modifier_factor_q16(
                     modifier_api::country_trade_speed_factor(*_modifier_runtime,
                         _epoch_country_handles[static_cast<size_t>(country)]));
+            // Per-good trade factors, filled the same way as the
+            // `country.output.good.*` block above: stat id -1 means "this good
+            // declares nothing", which leaves the Q16_ONE from the epoch assign.
+            // Shape guard: both vectors are resolved in `_good_ids` order, so a
+            // mismatch means configuration did not run; skip rather than index
+            // out of range (neutral factors, same as an absent stat).
+            if (_country_good_trade_capacity_stat_ids.size() == _good_ids.size() &&
+                _country_good_trade_speed_stat_ids.size() == _good_ids.size()) {
+                for (size_t good = 0; good < _good_ids.size(); ++good) {
+                    const size_t good_index = static_cast<size_t>(country) *
+                        _good_ids.size() + good;
+                    const int32_t capacity_stat =
+                        _country_good_trade_capacity_stat_ids[good];
+                    if (capacity_stat >= 0)
+                        _epoch_country_good_trade_capacity_factor_q16[good_index] =
+                            modifier_factor_q16(modifier_api::effective_value(*_modifier_runtime,
+                                ModifierApi::COUNTRY, capacity_stat, country_handle,
+                                0, 1.0));
+                    const int32_t speed_stat =
+                        _country_good_trade_speed_stat_ids[good];
+                    if (speed_stat >= 0)
+                        _epoch_country_good_trade_speed_factor_q16[good_index] =
+                            modifier_factor_q16(modifier_api::effective_value(*_modifier_runtime,
+                                ModifierApi::COUNTRY, speed_stat, country_handle,
+                                0, 1.0));
+                }
+            }
             _epoch_country_construction_cost_factor_q16[country] =
                 modifier_factor_q16(
                     modifier_api::country_construction_cost_factor(*_modifier_runtime,

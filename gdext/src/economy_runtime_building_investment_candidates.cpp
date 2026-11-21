@@ -789,6 +789,18 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
         int64_t shortage_q16 = driver.pressure_q16;
         int64_t utilization_q16 = driver.utilization_q16;
         int64_t driver_deficit = driver.deficit;
+        // A merchant post sells no good: it has no marketable output, so the
+        // market-signal gate and every output-derived gate below are blind to
+        // it and rejected it unconditionally before this lane existed. Price
+        // its owner seat from the market retail pool instead.
+        const bool service_post = is_merchant_service_post(type);
+        int64_t service_owner_income_per_day = 0;
+        if (service_post) {
+            service_owner_income_per_day = merchant_retail_owner_income_per_day(
+                cell, std::max<int64_t>(1, type.owner_slots_per_building),
+                std::max<int64_t>(1, type.owner_slots_per_building),
+                _saturation_count);
+        }
         // Shadow-derived demand is only a pricing/investment pressure
         // signal.  It must not by itself justify a normal greenfield or
         // expansion candidate, even when an incumbent has already left
@@ -870,7 +882,7 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             diagnostic->driver_sell_through_q16 = driver.sell_through_q16;
             diagnostic->driver_discard_q16 = driver.discard_q16;
         }
-        if (driver.good_id < 0) {
+        if (driver.good_id < 0 && !service_post) {
             ++_investment_market_signal_rejections;
             reject(INVESTMENT_REJECTION_MARKET_SIGNAL);
             continue;
@@ -879,6 +891,19 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             ++_investment_market_signal_rejections;
             reject(INVESTMENT_REJECTION_MARKET_SIGNAL);
             continue;
+        }
+        if (service_post) {
+            // A post is either staffed or it is not, so executable utilization
+            // is full whenever the pool can pay a seat. The pool itself is the
+            // demand evidence the goods lane would have taken from a shortage
+            // signal, so the shortage branch below is satisfied by construction
+            // and the climate/hard-input clamp is skipped for this lane.
+            utilization_q16 = service_owner_income_per_day > 0 ? Q16_ONE : 0;
+            shortage_q16 = utilization_q16;
+            driver_deficit = service_owner_income_per_day;
+            driver.deficit = driver_deficit;
+            driver.pressure_q16 = shortage_q16;
+            driver.utilization_q16 = utilization_q16;
         }
         if (!evaluate_building_conditions(type_id, cell)) {
             ++_building_investment_blocked_resources;
@@ -1290,13 +1315,15 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
         // Soft-tool coverage lowers throughput via soft_efficiency below,
         // and must not undercut the executable intensity incumbents already
         // revealed in this cell.
-        utilization_q16 = std::min(utilization_q16, climate_capacity_q16);
-        if (revealed_util_q16 > 0) {
-            utilization_q16 = std::min(utilization_q16,
-                std::max(hard_input_coverage_bound_q16, revealed_util_q16));
-        } else {
-            utilization_q16 = std::min(utilization_q16,
-                hard_input_coverage_bound_q16);
+        if (!service_post) {
+            utilization_q16 = std::min(utilization_q16, climate_capacity_q16);
+            if (revealed_util_q16 > 0) {
+                utilization_q16 = std::min(utilization_q16,
+                    std::max(hard_input_coverage_bound_q16, revealed_util_q16));
+            } else {
+                utilization_q16 = std::min(utilization_q16,
+                    hard_input_coverage_bound_q16);
+            }
         }
         if (utilization_q16 <= 0) {
             // Preserve upstream construction pressure even when the
@@ -1477,6 +1504,13 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                         _saturation_count);
                 }
             }
+            if (service_post && service_owner_income_per_day > 0) {
+                // Merchant seat income, already net of income tax at
+                // settlement. It funds wages and owner livelihood exactly like
+                // a goods receipt so the margin gates below read one number.
+                daily_cash_revenue = saturating_add(daily_cash_revenue,
+                    service_owner_income_per_day, _saturation_count);
+            }
             // Let the same expected revenue that drives the investment
             // decision fund a bounded profit share for labour.  This keeps
             // investment from pricing a scarce role at an obsolete catalog
@@ -1540,6 +1574,14 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                         eligible_cost_base, daily_variable_cost,
                         owner_livelihood, 1, 1, _saturation_count);
                 daily_after_tax_cash_revenue = tax_quote.after_tax_cash;
+                if (service_post && service_owner_income_per_day > 0) {
+                    // The tax quote prices goods receipts only, and the retail
+                    // pool was already taxed when the market settled it. Add
+                    // it back so the income gate does not read zero again.
+                    daily_after_tax_cash_revenue = saturating_add(
+                        daily_after_tax_cash_revenue,
+                        service_owner_income_per_day, _saturation_count);
+                }
             }
             // Incumbent expansion: forecast the marginal building from
             // revealed local unit economics so soft-input stock quotes

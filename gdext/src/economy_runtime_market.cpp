@@ -2168,6 +2168,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         merchant_population = saturating_add(merchant_population,
             population_store().population[slot], sat);
     }
+    result.merchant_population = merchant_population;
     if (revenue > 0 && merchant_population <= 0) {
         error = "market_revenue_has_no_merchant_owner";
         return false;
@@ -2220,6 +2221,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
         }
         const int64_t net_share = saturating_sub(share, income_tax, sat);
+        // Merchant household income is real cash booked to the cohort, never
+        // to a building. Record the market total so the merchant post
+        // projection can attribute a share of it to an owner seat.
+        result.merchant_household_retail = saturating_add(
+            result.merchant_household_retail, net_share, sat);
         population_store().funds.write_scalar(slot, saturating_add(
             population_store().funds[slot], net_share, sat), market_mutation_sink());
         population_store().epoch_income.write_scalar(slot, saturating_add(

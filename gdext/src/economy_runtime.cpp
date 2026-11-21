@@ -844,6 +844,42 @@ bool NativeEconomyRuntime::cell_has_technology(int32_t cell, int32_t technology_
 // Building command/construction mutation implementations live in
 // economy_runtime_building_construction.cpp.
 
+bool NativeEconomyRuntime::is_merchant_service_post(const BuildingType &type) const {
+    // A merchant post sells no good, so every goods-receipt gate in the
+    // investment and employment paths reads zero for it. Its owner income is
+    // the market's household retail pool instead.
+    return type.output_count <= 0 && type.owner_profession_id >= 0 &&
+        type.owner_profession_id == _merchant_profession_id;
+}
+
+int64_t NativeEconomyRuntime::merchant_retail_owner_income_per_day(
+        int32_t cell, int64_t owner_slots, int64_t extra_slots,
+        int64_t &sat) const {
+    if (cell < 0 || cell >= _cell_count.get() || owner_slots <= 0) return 0;
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 ||
+        static_cast<size_t>(market) >= _merchant_household_retail_by_market.size() ||
+        static_cast<size_t>(market) >= _market_merchant_population.size()) return 0;
+    const int64_t pool_per_day =
+        _merchant_household_retail_by_market[static_cast<size_t>(market)];
+    if (pool_per_day <= 0) return 0;
+    // Only a share of the market pool is attributable to posts; the rest is
+    // itinerant trade no post may claim. This is the free-entry cap and the
+    // single tuning knob for how commercial a settlement can become.
+    const int64_t shared_pool = mul_div_sat(pool_per_day,
+        std::clamp<int64_t>(_merchant_service_post_share_q16, 1, Q16_ONE),
+        Q16_ONE, sat);
+    const int64_t merchant_population = std::max<int64_t>(0,
+        _market_merchant_population[static_cast<size_t>(market)]);
+    // Marginal dilution: a new seat competes with the merchants who already
+    // live here, so the projection never promises a new post the incumbent
+    // per-capita income. At equilibrium this equals the living floor and
+    // investment stops on its own -- no hard population cap needed.
+    const int64_t denominator = std::max<int64_t>(1, saturating_add(
+        merchant_population, std::max<int64_t>(0, extra_slots), sat));
+    return mul_div_sat(shared_pool, owner_slots, denominator, sat);
+}
+
 int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         BuildingGroupConstRef group, int64_t &sat) const {
     if (group.type_id < 0 ||
@@ -981,8 +1017,18 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     // move. Scaling that stale quote again invents income and causes workers
     // to oscillate between otherwise equivalent lots. In-kind income is added
     // exactly once below and is never a cash tax base.
-    const int64_t quoted_revenue = observed_capacity
+    int64_t quoted_revenue = observed_capacity
         ? observed_receipts : std::max<int64_t>(0, group.last_expected_revenue);
+    // Merchant posts book no building receipt at all: their owner income is
+    // the market retail pool, which `process_market_cell` already settled as
+    // cash to the merchant cohort. Attribute a share of it to the owner seats
+    // this lot actually staffs. Pure attribution -- no cash is created -- so
+    // funds, conservation and the cashflow ledger are untouched.
+    if (is_merchant_service_post(type) && owner_jobs > 0) {
+        quoted_revenue = saturating_add(quoted_revenue,
+            merchant_retail_owner_income_per_day(
+                group.cell, owner_jobs, 0, sat), sat);
+    }
     const uint8_t owner_tax_mask = static_cast<uint8_t>(
         (1U << CountryApi::TAX_INCOME) |
         (1U << CountryApi::TAX_BUSINESS));

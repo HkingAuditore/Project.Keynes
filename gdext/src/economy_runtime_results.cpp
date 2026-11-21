@@ -58,6 +58,8 @@ void NativeEconomyRuntime::MarketResult::reset() {
     price_ms = 0.0;
     merchant_count = 0;
     merchant_repairs = 0;
+    merchant_household_retail = 0;
+    merchant_population = 0;
     price_ceiling_observations.clear();
     price_ceiling_expansions = price_ceiling_recoveries = price_ceiling_blocked_rises = 0;
     price_cap_hits = 0;

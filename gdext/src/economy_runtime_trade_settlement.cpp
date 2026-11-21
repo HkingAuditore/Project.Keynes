@@ -1419,6 +1419,34 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 _epoch_country_trade_speed_factor_q16[source_country]) +
                 _epoch_country_trade_speed_factor_q16[destination_country]) / 2;
         }
+        // A4: the per-good speed factor multiplies the two-end country average,
+        // so a card that names one good changes only that good's transit time.
+        // The array defaults to Q16_ONE, which keeps the previous behaviour
+        // bit-for-bit when no per-good modifier is active.
+        const int32_t candidate_good = candidate.good;
+        if (candidate_good >= 0 && source_country >= 0 && destination_country >= 0) {
+            const size_t good_count = _good_ids.size();
+            const size_t source_good_index =
+                static_cast<size_t>(source_country) * good_count +
+                static_cast<size_t>(candidate_good);
+            const size_t destination_good_index =
+                static_cast<size_t>(destination_country) * good_count +
+                static_cast<size_t>(candidate_good);
+            if (good_count > 0 &&
+                static_cast<size_t>(candidate_good) < good_count &&
+                source_good_index <
+                    _epoch_country_good_trade_speed_factor_q16.size() &&
+                destination_good_index <
+                    _epoch_country_good_trade_speed_factor_q16.size()) {
+                const int64_t good_speed_factor = (static_cast<int64_t>(
+                    _epoch_country_good_trade_speed_factor_q16[source_good_index]) +
+                    _epoch_country_good_trade_speed_factor_q16[destination_good_index]) / 2;
+                if (good_speed_factor != Q16_ONE) {
+                    speed_factor = mul_div_sat(speed_factor, good_speed_factor,
+                        Q16_ONE, _saturation_count);
+                }
+            }
+        }
         const int64_t effective_speed = std::max<int64_t>(
             1, mul_div_sat(_trade_speed_cost_per_day.get(), speed_factor,
                            Q16_ONE, _saturation_count));

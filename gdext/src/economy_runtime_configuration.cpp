@@ -164,6 +164,26 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "country.consumption.good." + good_id + "_factor") : -1);
     }
+    // Per-good trade factors: same generated-key family as the three vectors
+    // above, resolved once here so the epoch capture only walks dense ids.
+    // A good without the stat resolves to -1, which is LEGAL -- only the goods
+    // that actually declare `country.trade.good.<good>.{capacity,speed}_factor`
+    // get a non-neutral value. Do not add these to the `any_of(id < 0)`
+    // failure gate below: that gate means "the catalog is missing something
+    // every good must have", and these ten keys are declared for seven goods
+    // out of the whole good list.
+    _country_good_trade_capacity_stat_ids.clear();
+    _country_good_trade_speed_stat_ids.clear();
+    _country_good_trade_capacity_stat_ids.reserve(_good_ids.size());
+    _country_good_trade_speed_stat_ids.reserve(_good_ids.size());
+    for (const std::string &good_id : _good_ids) {
+        _country_good_trade_capacity_stat_ids.push_back(_modifier_runtime != nullptr
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
+                "country.trade.good." + good_id + ".capacity_factor") : -1);
+        _country_good_trade_speed_stat_ids.push_back(_modifier_runtime != nullptr
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
+                "country.trade.good." + good_id + ".speed_factor") : -1);
+    }
     _country_resource_use_stat_ids.clear();
     _country_resource_generation_stat_ids.clear();
     for (const std::string &resource_id : _resource_ids) {

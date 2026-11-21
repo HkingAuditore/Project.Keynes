@@ -992,6 +992,18 @@
                                      const std::vector<int64_t> *living_cost_cache = nullptr) const;
     int64_t projected_owner_income_per_day(BuildingGroupConstRef group,
                                            int64_t &sat) const;
+    // Owner cash a merchant post can claim from its market's settled household
+    // retail pool. `extra_slots` is the number of owner seats that will be
+    // added to the market's merchant population by the decision being priced:
+    // 0 for an already staffed lot, the seat count for a vacancy or a new
+    // building. Dilution is what caps free entry.
+    int64_t merchant_retail_owner_income_per_day(int32_t cell,
+                                                 int64_t owner_slots,
+                                                 int64_t extra_slots,
+                                                 int64_t &sat) const;
+    // True for the zero-output building types whose owner income is the
+    // market retail pool rather than a goods receipt.
+    bool is_merchant_service_post(const BuildingType &type) const;
     OwnerOpportunityQuote owner_opportunity_quote(
         BuildingGroupConstRef group, int64_t owner_fillability_q16,
         int64_t employee_fillability_q16, int64_t &sat) const;

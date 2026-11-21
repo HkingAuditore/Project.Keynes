@@ -1405,6 +1405,21 @@
     std::vector<int64_t> _merchant_trade_purchase_by_cell;
     std::vector<int64_t> _merchant_trade_sale_by_cell;
     std::vector<int64_t> _merchant_credit_drawn_by_cell;
+    // [market] Merchant household retail share of the most recently settled
+    // day, net of income tax. Market-keyed, not cell-keyed: `process_market_cell`
+    // distributes one market's household spend across that market's living
+    // merchants, so the pool a merchant post can claim belongs to the market.
+    // Merchant population is captured in the same settlement pass so the
+    // projection never rescans cohorts. Both reset with the other epoch
+    // metrics and are not persisted -- the same contract as the
+    // `_merchant_procurement_*_by_cell` family above.
+    std::vector<int64_t> _merchant_household_retail_by_market;
+    std::vector<int64_t> _market_merchant_population;
+    // Design knob: the share of household retail attributable to merchant
+    // *posts*. The rest is itinerant trade a post count must not claim.
+    // Free entry would otherwise split the whole market pool down to the
+    // living floor and multiply merchant population by ~10x.
+    int32_t _merchant_service_post_share_q16 = Q16_ONE / 3;
     int64_t _production_input_reserved = 0;
     int64_t _production_input_reserve_shortfall = 0;
     int64_t _construction_material_reserved = 0;

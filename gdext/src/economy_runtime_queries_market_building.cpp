@@ -388,6 +388,13 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
         0, procurement_retail - procurement_paid);
     out["merchant_trade_purchase_cash"] = trade_purchase;
     out["merchant_trade_sale_cash"] = trade_sale;
+    // Split the two components of `merchant_operating_outflow` that were
+    // folded in but never published. Without them a per-cell audit can see
+    // cash leave but cannot tell spending from construction capital, so a
+    // cell that liquidates inventory to fund a post looks identical to a
+    // leak. Read-only projections of existing epoch metrics.
+    out["merchant_procurement_paid"] = procurement_paid;
+    out["merchant_credit_drawn"] = credit_drawn;
     out["merchant_operating_outflow"] = operating_outflow;
     out["merchant_liquidity_coverage_q16"] = operating_outflow > 0
         ? mul_div_sat(merchant_cash, Q16_ONE, operating_outflow,

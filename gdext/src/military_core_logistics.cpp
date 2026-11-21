@@ -955,7 +955,15 @@ void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
         if (threat > 0) {
             const int64_t guard = _guard[static_cast<size_t>(next)];
             const int64_t value_units = std::max<int64_t>(1, shipment.value / MILITARY_MONEY_SCALE);
-            const int64_t escort = (static_cast<int64_t>(ESCORT_BASE_Q16) * value_units) >> 16;
+            // B2: convoy escort scales `ESCORT_BASE_Q16` by the country stat
+            // (q16, 1.0 base, military_core.h) before the value conversion. The
+            // divisor is the same q16 constant, so a 65536 stat leaves the
+            // legacy escort value bit-equal (13107 stays 13107).
+            const int64_t escort_q16 = mul_div(
+                static_cast<int64_t>(ESCORT_BASE_Q16),
+                static_cast<int64_t>(stat_q16(digest, slot, MSTAT_CONVOY_ESCORT)),
+                (int64_t)MILITARY_Q16);
+            const int64_t escort = (escort_q16 * value_units) >> 16;
             const int64_t denominator = threat + guard + escort;
             int64_t risk_q16 = denominator > 0 ? (threat * INTERCEPT_CAP_Q16) / denominator : 0;
             if (risk_q16 > INTERCEPT_CAP_Q16) risk_q16 = INTERCEPT_CAP_Q16;

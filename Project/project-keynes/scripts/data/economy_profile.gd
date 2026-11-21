@@ -258,6 +258,11 @@ extends Resource
 ## A non-merchant cohort only changes profession into merchant when its
 ## projected disposable-income improvement reaches this Q16 threshold.
 @export_range(1, 65536, 1) var investment_merchant_transition_min_improvement_q16: int = 32768
+## Share of a market's settled household retail that a merchant *post* may
+## claim as owner income (zero-output merchant buildings such as the trading
+## post). This is the free-entry cap: 1.0 splits the whole pool down to the
+## living floor and builds roughly ten times the merchant population.
+@export_range(1, 65536, 1) var merchant_service_post_share_q16: int = 21845
 @export_range(1, 65536, 1) var recovery_liquidation_max_share_q16: int = 16384
 @export_range(0, 65536, 1) var resource_min_reserve_q16: int = 22938
 ## Optional managed-harvest policy. Zero is open access: extractors may
@@ -479,6 +484,7 @@ func to_native_profile() -> Dictionary:
 		"investment_new_type_seed_buildings": investment_new_type_seed_buildings,
 		"investment_displacement_min_advantage_q16": investment_displacement_min_advantage_q16,
 		"investment_merchant_transition_min_improvement_q16": investment_merchant_transition_min_improvement_q16,
+		"merchant_service_post_share_q16": merchant_service_post_share_q16,
 		"recovery_liquidation_max_share_q16": recovery_liquidation_max_share_q16,
 		"resource_min_reserve_q16": resource_min_reserve_q16,
 		"resource_safe_harvest_q16": resource_safe_harvest_q16,
