@@ -10,6 +10,7 @@ habitat_mode = "land"
 init_reserve_scale = 8
 init_min_coverage = 0.05
 init_min_reserve = 2491125.0
+init_continent_floor_cells = 3
     temp_lo = 0.0
     temp_hi = 1.0
 gen_base = 0

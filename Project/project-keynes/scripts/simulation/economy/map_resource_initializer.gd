@@ -371,6 +371,7 @@ func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 		scalars[base + 27] = float(p.init_climate_fit)
 		scalars[base + 28] = float(p.temp_lo)
 		scalars[base + 29] = float(p.temp_hi)
+		scalars[base + 30] = float(p.init_continent_floor_cells)
 
 		field_names.append(ResourceProfileRegistry.reserve_map_field(p))
 		habitat_codes[r] = ResourceProfileRegistry.habitat_code(p)
@@ -437,6 +438,7 @@ func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 		"landform": map_ref.landform_arr,
 		"has_river": map_ref.has_river_arr,
 		"is_lake": map_ref.is_lake_seed_arr,
+		"is_water": map_ref.is_water_arr,
 		"has_volcano": map_ref.has_volcano_arr,
 		"ocean_x": map_ref.ocean_current_x_arr,
 		"ocean_y": map_ref.ocean_current_y_arr,
