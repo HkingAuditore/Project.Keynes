@@ -599,6 +599,10 @@ struct MilitaryCellState {
     int64_t requisition_until_day = -1;
     int64_t construction_done_day[MILITARY_STATE_BUILD_SLOTS] = {-1, -1, -1};
     int32_t construction_building[MILITARY_STATE_BUILD_SLOTS] = {-1, -1, -1};
+
+    bool construction_slot_available(int32_t slot, int64_t day) const {
+        return construction_building[slot] < 0 || construction_done_day[slot] <= day;
+    }
 };
 
 struct MilitaryReport {

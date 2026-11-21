@@ -113,8 +113,8 @@ const char *NativeMilitaryRuntime::preflight_construction(const RuntimeCountryPo
                  state.technology_words + (tech >> 6)] & (uint64_t{1} << (tech & 63))) == 0)
             return "technology_locked";
     }
-    // Reuse slots whose former order completes at this boundary. The core
-    // expires those slots when it applies today's orders.
+    // Reserve capacity for due compatibility orders using the same slots
+    // they can reuse when the core applies them later today.
     const auto &states = core().cell_states();
     const auto state_row = std::lower_bound(states.begin(), states.end(), cell,
         [](const MilitaryCellState &row, int32_t key) { return row.cell < key; });
@@ -127,8 +127,7 @@ const char *NativeMilitaryRuntime::preflight_construction(const RuntimeCountryPo
         });
     int32_t free_slots = 0;
     for (int32_t i = 0; i < MILITARY_STATE_BUILD_SLOTS; ++i) {
-        if (cell_state == nullptr || cell_state->construction_building[i] < 0 ||
-            cell_state->construction_done_day[i] <= day) {
+        if (cell_state == nullptr || cell_state->construction_slot_available(i, day)) {
             if (slot < 0) slot = i;
             ++free_slots;
         }
