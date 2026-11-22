@@ -114,8 +114,9 @@ bool DCWorldExt::runtime_effect_adapter_parity_self_test() {
 }
 
 bool DCWorldExt::runtime_ideology_pod_self_test() const {
+    const auto probe = std::make_unique<NativeSimulationHost>();
     std::string error;
-    const bool ok = RuntimeIdeologyPodAuthority::self_test(error);
+    const bool ok = probe->ideology_pod_self_test(&error);
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_ideology_pod_self_test: ") +

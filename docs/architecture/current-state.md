@@ -170,6 +170,8 @@ PKSR 的国家命令负载逐字段按固定字节顺序编码。执行器产生
 
 同一世界重新捕获 Country 输入时，已由原生运行时接管的国家状态取自最近一次已提交副本，不覆盖成冻结的旧同步副本；重复发布同一内容身份的目录不清除请求及确认记录。新的国家配置会经过上述新世界入口。CLOCK_WAIT 在等待锁内复查停止、保存、暂停和速度变化；通知早于实际等待也不会遗失。
 
+理念候选关闭由后台确认代次。确认成功且它解除当前理念阻塞时，若日历暂停，则通过 `advance_through` 放行下一日；关闭代次和有效的未来许可均由 `PLAYER_CONFIRMATION` 段保存和恢复。停止时，队列中仍未服务的已受理玩家确认会得到终结回执，`code` 和 `reason` 均为 `executor_stopped_before_player_confirmation_service`。停止检查在入队锁内再次执行，避免请求落在 worker 清理之后。
+
 正式保存入口按 `worker_day_inflight` 和 `inline_day_pending` 判断内联日界。内联执行在首次完整提交时关闭 Country/Economy 的旧同步写入口。同一世界显式重启时，`world_runtime_lifecycle.gd` 等执行器退出后才重新交接。`get_runtime_thread_report` 的 `executor_serial_only` 供诊断调用线程配置。
 
 复用对象读档时，已经验证的 PKSR 且旧执行器退出后，地图输入按待恢复存档的日期检查，独立暂存新输入；旧世界的日期与满队列不阻止这一步。启动用暂存输入重新建立队列，不读取旧队列的未来帧。没有待恢复存档或执行器仍运行时，原日期、递增编号和容量检查继续生效。
