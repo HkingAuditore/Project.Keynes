@@ -27,7 +27,8 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         int64_t country_handle_value, int32_t target_cell,
         int64_t family_filter_value, int32_t source_filter, int32_t offset,
         int32_t limit, const uint8_t *visible, int32_t visible_count,
-        uint64_t vision_revision) {
+        uint64_t vision_revision, std::vector<uint64_t> *route_hashes) {
+    if (route_hashes != nullptr) route_hashes->clear();
     const auto started = std::chrono::steady_clock::now();
     Dictionary out;
     const uint64_t country_handle = static_cast<uint64_t>(country_handle_value);
@@ -177,7 +178,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         dest_kit_identity = dest_preview.dest_identity;
     }
     struct Candidate { uint64_t family; int32_t source; int64_t maximum;
-        int32_t cost; int32_t days; uint64_t token; };
+        int32_t cost; int32_t days; uint64_t token; uint64_t route_hash; };
     std::vector<Candidate> candidates;
     // One emitter for both kinds of party: a family branch (family_handle != 0)
     // and a plain settler caravan (family_handle == 0). The route, token and
@@ -259,7 +260,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             _colonization_quote_cache[existing->second] = entry;
         }
         candidates.push_back({family_handle, source,
-            maximum_population, entry.route_cost, entry.travel_days, token});
+            maximum_population, entry.route_cost, entry.travel_days, token, route_hash});
     };
     for (const int32_t source : reached_sources) {
         if (source == target_cell) continue;
@@ -321,6 +322,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             ? anonymous_population_in_cell(candidates[i].source) : 0);
         costs.push_back(candidates[i].cost); days.push_back(candidates[i].days);
         tokens.push_back(static_cast<int64_t>(candidates[i].token));
+        if (route_hashes != nullptr) route_hashes->push_back(candidates[i].route_hash);
     }
     out["ok"] = true; out["target_cell"] = target_cell;
     fill_colonization_query_flags(out);
