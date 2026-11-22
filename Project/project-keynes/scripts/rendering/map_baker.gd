@@ -1,4 +1,5 @@
 class_name MapBaker
+const MapBakeCacheReset = preload("res://scripts/rendering/map_bake_cache_reset.gd")
 const MapMaterialAssets = preload("res://scripts/rendering/map_material_assets.gd")
 
 # 生成期阶段进度信号。main.gd 的 splash overlay 接此信号显示阶段提示，
@@ -712,66 +713,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_rng.seed = seed_val
 	_init_noise(seed_val)
 
-	# 重新烘焙世界 → 失效旧海冰独立纹理缓冲与 cell-byte 快照。
-	_sea_ice_only_buf = PackedByteArray()
-	_sea_ice_cache_size = Vector2i.ZERO
-	_sea_ice_pixel_to_cell_idx = PackedInt32Array()
-	_last_sea_ice_cell_bytes = {}
-	_last_sea_ice_cell_bytes_packed = PackedByteArray()
-	# 阶段 P：cover / vegetation 的增量缓存同样要随地图重生 / 重烘失效。
-	_last_cover_cell_bytes = {}
-	_last_vegetation_cell_bytes = {}
-	_last_cover_cell_bytes_packed = PackedByteArray()
-	_last_vegetation_cell_bytes_packed = PackedByteArray()
-	_cover_cache_size = Vector2i.ZERO
-	_vegetation_cache_size = Vector2i.ZERO
-	# J: biome 增量缓存随地图重生失效（首次 rebake_biome_axes_only 走 fallback 重建路径）
-	_last_biome_cell_bytes = {}
-	_last_biome_cell_bytes_packed = PackedByteArray()
-	_biome_cache_size = Vector2i.ZERO
-	# 阶段 P2：enum_atlas 交错 data 缓存随地图重生失效（首次 _encode_enum_atlas 会重新填）
-	_enum_atlas_data = PackedByteArray()
-	_enum_atlas_data_size = Vector2i.ZERO
-	# plan/sim-2ms-simd-dirty-budget：地图重生 → enum atlas 整张重烘必走 GPU upload；
-	# 累积的 throttle 计数同步清零，避免老 axis 的 pending dirty 在新地图上误触发自愈。
-	force_flush_enum_atlas_throttle()
-	# weather_field 增量缓存：地图重生 → 缓冲与 sig 失效；首次 bake_weather_field_only 会重建。
-	_weather_field_buf = PackedByteArray()
-	_weather_field_cache_size = Vector2i.ZERO
-	_last_weather_field_cell_sigs = {}
-	# dynamic_cell_atlas 增量缓存同样随地图重生失效。
-	_dynamic_cell_atlas_buf = PackedByteArray()
-	_dynamic_cell_atlas_cache_size = Vector2i.ZERO
-	_last_dynamic_cell_sigs = {}
-	_ecology_visual_atlas_buf = PackedByteArray()
-	_ecology_visual_atlas_cache_size = Vector2i.ZERO
-	_last_ecology_visual_sigs = {}
-	# map-visual-overhaul-v1：新 atlas 缓存随地图重生失效
-	_dyn_atlas_smooth_buf = PackedByteArray()
-	_dyn_atlas_smooth_cache_size = Vector2i.ZERO
-	_last_dyn_smooth_cell_sigs = {}
-	_ice_state_buf = PackedByteArray()
-	_ice_state_cache_size = Vector2i.ZERO
-	_last_ice_state_cell_bytes = {}
-	_last_ecology_veg_bytes = {}
-	_last_ecology_vitality_bytes = {}
-	_ecology_transition_age_bytes = {}
-	# P1-E：SoA 镜像同步清空，下一次 ecology cache prepare 时按 N 重 resize 填零
-	_eco_veg_bytes_arr = PackedByteArray()
-	_eco_vitality_bytes_arr = PackedByteArray()
-	_eco_transition_age_arr = PackedByteArray()
-	_eco_soa_initialized = false
-	_eco_active_decay_set = {}  # plan/dirty-push-atlas-encode 阶段 E：地图重生时清空
-	_cell_enum_lut_bytes_cache = PackedByteArray()
-	_cell_dyn_lut_bytes_cache = PackedByteArray()
-	_cell_eco_lut_bytes_cache = PackedByteArray()
-	_cell_bounce_lut_bytes_cache = PackedByteArray()
-	_cell_lut_active_transition_count = 0
-	_cell_offset_layout.clear()
-	_cell_table_source_cache.clear()
-	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
-	_vector_atlas_data = PackedByteArray()
-	_vector_atlas_data_size = Vector2i.ZERO
+	MapBakeCacheReset.reset_for_bake(self)
 
 	var world := WorldData.new()
 	world.world_bounds = compute_world_bounds(map.width, map.height, hex_size)

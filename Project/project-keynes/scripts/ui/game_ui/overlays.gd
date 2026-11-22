@@ -199,7 +199,7 @@ func _on_runtime_gm_toggle_changed(host, toggle_id: String, enabled: bool) -> vo
 
 
 func show_annual_report(host, model: Dictionary, ceremonial: bool) -> void:
-	if host._annual_report_workspace != null:
+	if host.can_open_annual_report():
 		host._annual_report_workspace.present(model, ceremonial)
 
 
@@ -211,7 +211,7 @@ func set_annual_history(host, rows: Array, offset: int, has_more: bool) -> void:
 
 
 func is_annual_report_open(host) -> bool:
-	return host._annual_report_workspace != null and host._annual_report_workspace.visible
+	return is_instance_valid(host._annual_report_workspace) and host._annual_report_workspace.is_visible_in_tree()
 
 
 

@@ -224,15 +224,29 @@ func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
 		economy, military, player: int) -> void:
 	var settled_day := WARMUP_DAY + RELEASE_DAYS
 	var requested := settled_day + 1
+	var expected := settled_day + 2
 	var target := MILITARY_TARGET + 1
 	var ext: Object = economy.world_ext()
 	clock.set_speed(1.0)
+	_expect("military seal starts at the settled boundary",
+		int(ext.runtime_committed_day()) == settled_day
+		and clock._runtime_calendar_through == settled_day)
 	clock._process_runtime_calendar(float(RELEASE_DAYS))
 	_expect("1x release cannot lead the committed day by more than one",
 		clock._runtime_calendar_through == requested)
+	# In this executor-owned world, the environment day is published only
+	# after the worker freezes command inputs. The in-flight count starts earlier.
 	var watchdog := Time.get_ticks_usec() + HOLD_WATCHDOG_USEC
-	while int(ext.get_runtime_thread_report().get("worker_day_inflight", 0)) == 0 \
-			and int(ext.runtime_committed_day()) == settled_day and Time.get_ticks_usec() < watchdog:
+	while true:
+		var runtime: Dictionary = ext.get_runtime_thread_report()
+		var environment_day := int(runtime.get("simulation_environment_day", -1))
+		var committed_day := int(ext.runtime_committed_day())
+		if environment_day == requested or committed_day == requested:
+			break
+		if Time.get_ticks_usec() >= watchdog:
+			_expect("military_seal_1x: timed out waiting for day %d to freeze or commit (environment_day=%d worker_day_inflight=%d committed_day=%d)" % [
+				requested, environment_day, int(runtime.get("worker_day_inflight", -1)), committed_day], false)
+			return
 		OS.delay_usec(50)
 	var began := Time.get_ticks_usec()
 	var admission: Dictionary = military.submit([{"op": "force.set_target", "country": player,
@@ -241,13 +255,13 @@ func _check_one_speed_military_seal(host: WorldRuntimeHost, clock: WorldClock,
 	var admitted := int(admission.get("effective_day", -1))
 	var committed := int(admission.get("committed_at_admission", -1))
 	var frozen := int(admission.get("frozen_at_admission", -1))
-	var expected := maxi(requested, maxi(committed + 1, frozen + 1))
 	_expect("military_seal_1x: receipt has the actual admission boundary",
-		bool(admission.get("ok", false)) and committed >= settled_day and frozen >= settled_day)
+		bool(admission.get("ok", false)) and frozen == requested
+		and (committed == settled_day or committed == requested))
 	_expect("military_seal_1x: acceptance does not wait for the day", elapsed < 5_000)
-	_expect("military_seal_1x: date comes from the admission boundary", admitted == expected)
+	_expect("military_seal_1x: date advances past the frozen day", admitted == expected)
 	for day in range(settled_day + 1, expected + 1):
-		if day > requested:
+		if day > int(clock._runtime_calendar_through):
 			clock._process_runtime_calendar(1.0)
 		if not await _wait_golden_read_boundary(host, economy, day):
 			_expect("military_seal_1x: day %d commits" % day, false)

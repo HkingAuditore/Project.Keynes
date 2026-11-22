@@ -6,6 +6,8 @@
   "home": "~/.keynes-factory",
   "autoMerge": true,
   "autoUpdateConflicts": true,
+  "autoClaimIssues": true,
+  "acceptAgentDisputes": true,
   "labels": {
     "trigger": "ready-for-agent",
     "working": "agent-working",
@@ -23,9 +25,9 @@
     "codex": "codex"
   },
   "agent": {
-    "model": "gpt-6-luna",
-    "effort": "high",
-    "timeoutMinutes": 60
+    "model": "gpt-6.2-sol",
+    "effort": "max",
+    "timeoutMinutes": 120
   },
   "limits": {
     "implementAttempts": 3,

@@ -421,6 +421,10 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 军事界面命令
 
+- 官营建造付款前先为当天应执行的兼容指令预留槽位。两条路径都可使用空槽和完工日为当天或更早的槽位。
+  兼容指令无可用槽位时保留现有订单，并记录 `military_construction_schedule_full`。
+  同日完工与两种建造并行的用例由 `tests/game/player_command_authority_test.gd` 覆盖。
+
 军事纯 C++ 热路径的行为约束见
 [`military-performance-redesign-20261114.md`](../plans/military-performance-redesign-20261114.md)：
 采购周边按中心首次访问计算，首次物流准备前的断供探测仍返回 false；普通采购保留前

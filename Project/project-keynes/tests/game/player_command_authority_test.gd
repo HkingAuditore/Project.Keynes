@@ -196,24 +196,36 @@ func _run() -> void:
 		_transfer_cash(_theirs, _ours, _day() + 1, 520))
 	await _advance(_day() + 1)
 	var requests: Array[Dictionary] = []
-	for _i in range(slots.size() + 1):
+	requests.append(_issue(&"military.state.build", {"cell": _capital, "building": barracks}))
+	var first_day := int(requests[0].get("effective_day", -1))
+	await _advance(first_day)
+	var first_reply: Dictionary = _receipts.get(int(requests[0].sequence), {}).get("result", {})
+	_expect("first schedule order settles", first_reply.get("ok") == true
+		and int(first_reply.get("cash_paid", 0)) > 0)
+	var first_done_days: PackedInt32Array = _military.cell_snapshot(_capital, _ours).construction_done_days
+	var first_ready_day := first_done_days[0]
+	var fill_day := mini(first_ready_day - 10, _day() + 1)
+	await _advance(fill_day)
+	for _i in range(slots.size() - 1):
 		requests.append(_issue(&"military.state.build", {"cell": _capital, "building": barracks}))
-	var settle_day := int(requests[0].get("effective_day", -1))
-	await _advance(settle_day)
-	var cash_paid := 0
-	for index in range(slots.size()):
+	var fill_settle_day := int(requests.back().get("effective_day", -1))
+	await _advance(fill_settle_day)
+	var cash_paid := int(first_reply.get("cash_paid", 0))
+	for index in range(1, requests.size()):
 		var reply: Dictionary = _receipts.get(int(requests[index].sequence), {}).get("result", {})
 		_expect("successful build %d pays and settles on the admitted day" % index,
-			reply.get("ok") == true and reply.get("settled_day") == settle_day
+			reply.get("ok") == true and reply.get("settled_day") == fill_settle_day
 			and int(reply.get("cash_paid", 0)) > 0)
 		cash_paid += int(reply.get("cash_paid", 0))
-	var full := _rejected(requests.back(), "military_construction_schedule_full")
+	var full_ticket := _issue(&"military.state.build", {"cell": _capital, "building": barracks})
+	await _advance(int(full_ticket.get("effective_day", -1)))
+	var full := _rejected(full_ticket, "military_construction_schedule_full")
 	_expect("schedule rejection has no economy effects and preserves the earlier slots",
 		full.get("step") == "military" and full.get("cash_paid") == 0
 		and full.get("treasury_goods_used") == 0 and full.get("market_goods_used") == 0
 		and cash_paid > 0 and _construction_count(build_type) == before + slots.size()
 		and _schedules().count(barracks) == slots.size())
-	_check_military_feedback(requests.back(), "当地官营建筑的营造排期已满。")
+	_check_military_feedback(full_ticket, "当地官营建筑的营造排期已满。")
 	var missing_demolish := _issue(&"military.state.demolish", {"cell": _capital, "building": barracks})
 	await _advance(int(missing_demolish.effective_day))
 	_rejected(missing_demolish, "demolish_state_building_absent")
@@ -230,6 +242,55 @@ func _run() -> void:
 		removed.get("ok", false) and removed.get("settled_day") == demolish.effective_day
 		and built == before + slots.size() and _construction_count(build_type) == built - 1
 		and _schedules().count(barracks) == 0)
+	var overlap_first := _issue(&"military.state.build", {"cell": _capital, "building": barracks})
+	var overlap_second := _issue(&"military.state.build", {"cell": _capital, "building": barracks})
+	_expect("the first two overlap projects start together",
+		overlap_first.get("effective_day") == overlap_second.get("effective_day"))
+	await _advance(int(overlap_first.get("effective_day", -1)))
+	await _advance(_day() + 1)
+	var overlap_sibling := _issue(&"military.state.build", {"cell": _capital, "building": barracks})
+	await _advance(int(overlap_sibling.get("effective_day", -1)))
+	var first_days: PackedInt32Array = _military.cell_snapshot(_capital, _ours).construction_done_days
+	var overlap_ready_day := first_days[0]
+	var compatibility_building := int(_military.state_building_ids().find("palisade_barracks"))
+	_expect("fixture has a distinct building for the compatibility command",
+		compatibility_building >= 0 and compatibility_building != barracks)
+	await _advance(overlap_ready_day - 1)
+	var before_overlap: Dictionary = _military.cell_snapshot(_capital, _ours)
+	var overlap_days: PackedInt32Array = before_overlap.construction_done_days
+	_expect("every slot is occupied and exactly two builds complete the next day",
+		before_overlap.construction_buildings.count(barracks) == slots.size()
+		and overlap_days.count(overlap_ready_day) == 2 and overlap_days[-1] > overlap_ready_day + 1)
+	var count_before_overlap := _construction_count(build_type)
+	var compatibility_command := {"op": "state.build", "country": _ours,
+		"cell": _capital, "unit_to": compatibility_building,
+		"effective_day": overlap_ready_day}
+	var compatibility: Dictionary = _military.submit([compatibility_command])
+	_expect("compatibility build is queued for the completing day",
+		bool(compatibility.get("ok", false)) and int(compatibility.get("accepted", 0)) == 1)
+	var overlap := _issue(&"military.state.build", {"cell": _capital, "building": barracks})
+	_expect("overlap build is due with the compatibility command and completion",
+		int(overlap.get("effective_day", -1)) == overlap_ready_day)
+	await _advance(overlap_ready_day)
+	var overlap_reply: Dictionary = _receipts.get(int(overlap.sequence), {}).get("result", {})
+	_expect("same-day completion frees capacity for the legal treasury build",
+		overlap_reply.get("ok") == true and overlap_reply.get("settled_day") == overlap_ready_day
+		and int(overlap_reply.get("cash_paid", 0)) > 0)
+	var after_overlap: Dictionary = _military.cell_snapshot(_capital, _ours)
+	var overlap_schedules: PackedInt32Array = after_overlap.construction_buildings
+	_expect("the paid and compatibility builds both keep their military slots (%s)" % [overlap_schedules],
+		overlap_schedules.count(barracks) == slots.size() - 1
+		and overlap_schedules.count(compatibility_building) == 1
+		and _construction_count(build_type) == count_before_overlap + 1)
+	compatibility_command.effective_day = overlap_ready_day + 1
+	var full_compatibility: Dictionary = _military.submit([compatibility_command])
+	_expect("the compatibility command is queued while the schedule is full",
+		bool(full_compatibility.get("ok", false)) and int(full_compatibility.get("accepted", 0)) == 1)
+	await _advance(overlap_ready_day + 1)
+	var full_overlap: Dictionary = _military.cell_snapshot(_capital, _ours)
+	_expect("a compatibility command with no free slot preserves all current orders",
+		full_overlap.construction_buildings == overlap_schedules
+		and full_overlap.construction_done_days == after_overlap.construction_done_days)
 	await _check_edit_and_identity()
 
 
