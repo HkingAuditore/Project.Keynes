@@ -61,6 +61,7 @@ class Facts(NativeFacts):
     disagreements: list[str] = field(default_factory=list)
     accepted_disputes: list[str] = field(default_factory=list)  # disputed by the agent and settled its way
     base_failures: list[str] = field(default_factory=list)
+    base_extra_failures: list[str] = field(default_factory=list)  # plan-requested checks that already fail on the base
     checks_sha: str | None = None
     new_failures: list[str] = field(default_factory=list)
     human_paths: list[str] = field(default_factory=list)

@@ -10,6 +10,7 @@
 # 单一全屏 quad mesh + WorldData 的 4 张高分辨率纹理 + world_map.gdshader v5。
 class_name HexRenderer
 extends Node2D
+const RendererWebPolicy = preload("res://scripts/rendering/renderer_web_policy.gd")
 const RendererCameraDetail = preload("res://scripts/rendering/renderer_camera_detail.gd")
 const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 const RendererSceneServices = preload("res://scripts/rendering/renderer_scene_services.gd")
@@ -87,24 +88,9 @@ const DETAIL_PLAN_FINALIZE: int = 7
 		hex_size = maxf(4.0, v)
 		RendererSceneServices._after_hex_size(self)
 
-## 探针开关（已定案，保留 false）：web 上用 3 行 shader 替换 world_map。
-## 结论：换掉后首帧仍然 45s，所以世界材质不是元凶，见 weather_layer 的裁剪变体。
-const PK_WEB_TRIVIAL_WORLD_SHADER_PROBE := false
-## 探针：web 上跳过 deferred 植被填充（图层仍创建），用来判定长帧是否来自填充。
-const PK_WEB_SKIP_DEFERRED_VEG_SEED := false
-## Web 天气表现层总闸（只在高画质下绘制）。
-## 判定见 `_web_weather_layer_draw_allowed()`：
-##   - 玩家设置「高」→ `visual_quality >= 2` → 绘制；
-##   - QA 的 `?tier=high`（autotest 把 mobile tier 推到 HIGH）→ 也按高画质处理；
-##   - 低 / 中 / auto → 不绘制（对象仍在、所有 set_* 照常、天气**模拟**不受影响）。
-## 实测依据：weather_overlay 那套在 ANGLE 上把每帧
-## 拖到几十秒，94% 采样卡在 blitOffscreenFramebuffer 的 getParameter（GPU 排队同步）。
-## 不绘制后：10x 跑满一年、最大帧间隔 2 秒。
-## 落地注意：**不能**只在 `_ready` 里写一次 `visible = false` ——
-## `WeatherLayer._refresh_visibility()` 在有 LUT/fronts 时会自己把 visible 置 true
-## （setup() 里就会），必须走 `_apply_weather_layer_render_gate()` 把门交给天气层收敛。
-## 置 false 是应急总闸：web 上任何画质都不绘制。
-const PK_WEB_ENABLE_WEATHER_LAYER := true
+const PK_WEB_TRIVIAL_WORLD_SHADER_PROBE := RendererWebPolicy.PK_WEB_TRIVIAL_WORLD_SHADER_PROBE
+const PK_WEB_SKIP_DEFERRED_VEG_SEED := RendererWebPolicy.PK_WEB_SKIP_DEFERRED_VEG_SEED
+const PK_WEB_ENABLE_WEATHER_LAYER := RendererWebPolicy.PK_WEB_ENABLE_WEATHER_LAYER
 
 @export var shader_path: String = "res://shaders/world_map.gdshader"
 # 运行期会复制该材质并持续写入大量 Packed* shader uniforms。把资源引用保留在
@@ -936,17 +922,13 @@ const TERRAIN_COVERAGE_MESH_PATH := "res://scripts/rendering/terrain_coverage_me
 ## Web 一次性取证：地表发白/黑屏时到底哪张 LUT/地形纹理是空的。
 var _web_lut_probe_done := false
 var _web_veg_defer_started := false
-## Web 专用：把 9 层植被的 setup 推迟到进世界之后。实测这段在 wasm 里要 4.1 秒，
-## 直接压在加载窗口里；植被只是观感层，晚 2-3 秒出现可以接受。
-## Web 正式策略：天气层保留对象、只有高画质才绘制（见 PK_WEB_ENABLE_WEATHER_LAYER 注释）。
-## PROBE：隐藏地图 quad 本身（隔离"地图绘制/图集上传"是否造成长帧）。
-const PK_WEB_HIDE_WORLD_QUAD := false
-const PK_WEB_MINIMAL_LAYERS := false
-const PK_WEB_LAYER_FOG := true
-const PK_WEB_LAYER_BORDER := true
-const PK_WEB_LAYER_WEATHER := true
-const PK_WEB_LAYER_BUILDING := false
-const PK_WEB_DEFER_VEG_LAYERS := true
+const PK_WEB_HIDE_WORLD_QUAD := RendererWebPolicy.PK_WEB_HIDE_WORLD_QUAD
+const PK_WEB_MINIMAL_LAYERS := RendererWebPolicy.PK_WEB_MINIMAL_LAYERS
+const PK_WEB_LAYER_FOG := RendererWebPolicy.PK_WEB_LAYER_FOG
+const PK_WEB_LAYER_BORDER := RendererWebPolicy.PK_WEB_LAYER_BORDER
+const PK_WEB_LAYER_WEATHER := RendererWebPolicy.PK_WEB_LAYER_WEATHER
+const PK_WEB_LAYER_BUILDING := RendererWebPolicy.PK_WEB_LAYER_BUILDING
+const PK_WEB_DEFER_VEG_LAYERS := RendererWebPolicy.PK_WEB_DEFER_VEG_LAYERS
 ## 已绑到材质上的 LUT 纹理对象。不依赖 get_shader_parameter() 回读：
 ## web/GLES3 上回读不可靠，会让"过期检测"每帧命中、白白重绑并连带重推迷雾 uniform。
 var _lut_bound := {}
@@ -1115,12 +1097,8 @@ var _building_visual_layer: BuildingVisualLayer = null
 
 func get_last_detail_drain_ms() -> float: return RendererSceneServices.get_last_detail_drain_ms(self)
 
-## [cell-field 2026-11-18] 项目设置侧的解析格界开关（转发给 RendererShaderWater）。
-## 与 _init() 的 export 初值走同一个函数，保证「部署期默认值」与「运行期实际行为」
-## 读的是同一个设置。注意 v1 它只对桌面 Vulkan / 移动有效（见 terrain_cell_field_enabled
-## 与 RendererShaderWater._cell_field_active 的注释）。
 static func cell_field_setting_enabled() -> bool:
-	return RendererShaderWater.cell_field_setting_enabled()
+	return RendererWebPolicy.cell_field_setting_enabled()
 
 ## [cell-field 2026-11-18] 项目设置只作为**初值**来源：部署期配置决定默认，运行期权威
 ## 仍是 export 变量（GM 面板要能双向热切，见 terrain_cell_field_enabled 的注释）。

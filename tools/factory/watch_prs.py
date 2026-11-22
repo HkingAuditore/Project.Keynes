@@ -427,6 +427,21 @@ class Watcher:
         ev.add("moved", expected=expected, got=got)
         return True
 
+    def base_moved(self, base: str, checked: str, now: str, ev: Events) -> bool:
+        """The base moved since the checks ran. Moves that touch only the factory's own files cannot
+        change what the checks saw, so they do not count."""
+        try:
+            work.git(self.workdir, "fetch", "-q", self.cfg["remote"], base)
+            files = work.git(self.workdir, "diff", "--name-only", checked, now).split("\n")
+        except RuntimeError as e:
+            ev.add("base-diff-failed", error=str(e))
+            return True
+        files = [f for f in files if f]
+        ours = tuple(self.cfg["paths"].get("factoryOnly", ["tools/factory/", "docs/factory/"]))
+        moved = [f for f in files if not f.startswith(ours)]
+        ev.add("base-moved", checked=checked, now=now, files=len(files), other=moved[:20])
+        return bool(moved)
+
     def update_preflight(self, pr: dict, base: str, parent: str, ev: Events) -> str | None:
         try:
             fresh = self.gh.pr_merge_state(pr["number"])
@@ -436,7 +451,9 @@ class Watcher:
         if fresh["headRefOid"] != pr["headRefOid"]:
             ev.add("moved", expected=pr["headRefOid"], got=fresh["headRefOid"])
             return "head moved"
-        if fresh["baseRefName"] != base or fresh["baseRefOid"] != parent:
+        if fresh["baseRefName"] != base:
+            return "the PR base changed before push"
+        if fresh["baseRefOid"] != parent and self.base_moved(base, parent, fresh["baseRefOid"], ev):
             return "the PR base changed before push"
         if fresh["state"] != "OPEN" or fresh["isDraft"] or fresh["isCrossRepository"]:
             return "the PR is no longer open and eligible for conflict updates"
@@ -549,6 +566,8 @@ class Watcher:
                     return stop(record["agentFailure"], record["report"])
                 resolutions.extend([f"- `{path}` · resolved by Codex." for path in text])
 
+            repaired = False
+
             def merge_problem(files: list[str]) -> str | None:
                 if work.head(self.workdir) != head or work.merge_head(self.workdir) != parent:
                     return "the working checkout no longer has the expected pending merge"
@@ -565,15 +584,37 @@ class Watcher:
             reason = merge_problem(files) or self.scope_problem(files, candidate, before_commit=False)
             if reason:
                 return stop(reason)
-            res, files = candidate.run(head, files, str(logs / "checks-update"), [])
-            after = checks.failed(res)
-            new = [name for name in after if name in passed_on_both]
-            native_failed = [name for name in after if name.startswith("native-")]
-            ev.add("checks-after", failed=after, new=new, nativeFailed=native_failed)
-            record["checks"].update(after=after, new=new, nativeFailed=native_failed, results=res)
-            record["files"] = files
-            if self.update_head_moved(pr, ev):
-                return "head moved"
+            rounds, session = cfg["limits"].get("checkFixRounds", 0), None
+            for attempt in range(rounds + 1):
+                res, files = candidate.run(head, files, str(logs / ("checks-update" if attempt == 0 else f"checks-update-{attempt}")), [])
+                after = checks.failed(res)
+                new = [name for name in after if name in passed_on_both]
+                native_failed = [name for name in after if name.startswith("native-")]
+                ev.add("checks-after", failed=after, new=new, nativeFailed=native_failed, attempt=attempt)
+                record["checks"].update(after=after, new=new, nativeFailed=native_failed, results=res)
+                record["files"] = files
+                if self.update_head_moved(pr, ev):
+                    return "head moved"
+                if not new or native_failed or attempt == rounds:
+                    break
+                # Two changes that each fit can fail together. Give Codex the failing checks on the pending merge.
+                prompt = agent.render("fix-update", number=str(n), title=pr["title"], base=base,
+                                      feedback=checks.feedback(res, new))
+                out = agent.codex(cfg, self.workdir, prompt, str(logs / f"fix-update-{attempt + 1}.md"), writable=True,
+                                  session=session)
+                session = out.get("session") or session
+                record.setdefault("checkFixReports", []).append(out["report"][-4000:])
+                ev.add("check-fix", attempt=attempt + 1, ok=out["ok"], code=out.get("code"))
+                if self.update_head_moved(pr, ev):
+                    return "head moved"
+                if not out["ok"]:
+                    return stop(agent.failure_reason(out) + " while fixing the checks that fail after the merge",
+                                out["report"])
+                repaired = True
+                files = candidate.changed(head)
+                reason = merge_problem(files) or self.scope_problem(files, candidate, before_commit=False)
+                if reason:
+                    return stop(reason)
             # The required native gates block even without a baseline result.
             blocking = sorted(set(new) | set(native_failed))
             if blocking:
@@ -589,7 +630,7 @@ class Watcher:
             if reason:
                 return stop(reason)
             message = f"Merge {base} into {pr['headRefName']}\n\n{TRAILER}\n"
-            if text:
+            if text or repaired:
                 message += f"Implemented-By: Codex ({cfg['agent']['model']})\n"
             sha = work.commit(self.workdir, message, staged=True)
             if work.git(self.workdir, "show", "-s", "--format=%P", sha).split() != [head, parent]:
@@ -623,6 +664,8 @@ class Watcher:
                      *(resolutions or ["Git merged cleanly with the fetched base."])]
             if text:
                 lines += ["", "Codex resolution notes", "", record["report"]]
+            if repaired:
+                lines += ["", "Codex repaired checks that failed after the merge", "", *record["checkFixReports"]]
             lines += ["", facts.report(), "", "Checks", ""]
             lines += [f"- `{row['name']}` · {'passed' if row['ok'] else 'failed'}" for row in res]
             for label, failures in (("PR head", parent_failures["head"]), (base, parent_failures["base"])):

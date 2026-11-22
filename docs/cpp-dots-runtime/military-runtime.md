@@ -17,10 +17,12 @@
 | | `military_core_logistics.cpp` | 3 格采购（§9.3）、威胁/护卫场、车队与拦截、消耗、征发、物资账本 |
 | | `military_core_war.cpp` | 战争、交战段（plan→replay）、会战、夺格/撤退/歼灭、战争分、区域任务、和议/赔款/吞并、增量战线、controller |
 | | `military_core_ai.cpp` | AI 军事议程（每国错峰 30 日主决策） |
-| | `military_core_save.cpp` | PKMI v6 编解码（事务式 restore；section 23 探路、24 采购订单、25 维护行） |
-| | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`；含自动探路、维护定点余量与采购闭环、PKMI v6 覆盖 |
-| Godot 桥 | `gdext/src/world_ext_military.cpp` | 军务任务交接、意图→Country/Economy 命令翻译、回执、查询、渲染快照、PKMI 外层包装 |
-| | `gdext/src/world_ext_military_digest.cpp` | 采集已提交的 Country/Economy 输入 |
+| | `military_core_save.cpp` | PKMI v6 解码（事务式 restore；section 23 探路、24 采购订单、25 维护行） |
+| | `military_core_save_write.cpp` | PKMI v6 编码；与解码共用的格式常量与读写器在 `military_core_save_internal.h` |
+| | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`；含自动探路、维护定点余量与采购闭环、PKMI v6 覆盖；军饷/预算/采购/守恒夹具在 `military_core_payroll_budget_selftest.inc` |
+| Godot 桥 | `gdext/src/world_ext_military.cpp` | 军务配置与绑定、查询、渲染快照、PKMI 外层包装、自测/基准入口 |
+| | `gdext/src/world_ext_military_digest.cpp` | 每日桥 `NativeMilitaryRuntime::run_day`、意图→Country/Economy 命令翻译（D+1）、口粮、采集已提交的 Country/Economy 输入 |
+| | `gdext/src/native_simulation_host_military_receipts.cpp` | 命令提交与回执游标、延迟现金 `apply_military_deferred_cash`；共用意图工具在 `world_ext_internal_military_intents.h` |
 | | `gdext/src/world_ext_economy_military.cpp` | `set_military_ration_satisfaction`（口粮满足率推给 Economy）、`collect_military_economy_receipts`（Economy 结算 trace → 回执） |
 | GDScript | `scripts/military/military_facade.gd` | 冷路径 facade，全部 `has_method` 守卫（旧 DLL 零成本降级） |
 | | `scripts/military/military_catalog_compiler.gd` | `data/military/military_catalog.json` → dense id 字典；口粮候选来自 `soldier_household` |
@@ -658,7 +660,7 @@ python tools/ci/check_save_contracts.py
 4. ~~口粮恒满额~~（已修复，§5.2）；部队（army lot）口粮不回写 Economy，因 cohort 留在家乡格。
 5. ~~选择/战线进度恒空~~（已修复，§9）；`risk_q16` 仍是路线成本代理而非拦截概率。`MilitaryAreaLayer` 需由
    UI 调 `set_render_selection` 才显示。
-6. 恢复后 `_front_edges` 清空，直到下一次控制/交战变化才逐格重建（`military_core_save.cpp:1462`）。
+6. 恢复后 `_front_edges` 清空，直到下一次控制/交战变化才逐格重建（`military_core_save.cpp:1384`）。
 7. 交战 Plan 阶段未并行；`vision_patch_cells` 仍是军事 report 的兼容计数，部队视野
    从当天已提交的玩家军队位置取得，交给统一的物理视野计算。
 8. `get_military_cell_snapshot` 的 `observer` 被忽略（未按迷雾过滤）；统帅恒为空位。
