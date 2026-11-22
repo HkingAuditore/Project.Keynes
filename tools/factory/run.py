@@ -500,6 +500,10 @@ def main() -> int:
     if issue.get("state", "OPEN") != "OPEN":
         print(f"issue #{a.issue} is {issue['state'].lower()}; nothing to do")
         return 0
+    if not a.dry and cfg["labels"]["trigger"] not in issue["labels"]:
+        # Claimed by another run (or never queued): starting again would only mark it for a person.
+        print(f"issue #{a.issue} has no {cfg['labels']['trigger']} label; nothing to do")
+        return 0
     lock = Path(cfg["home"]) / "lock"
     if not a.dry and not take_lock(lock):
         print("another factory run holds the lock")
