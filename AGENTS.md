@@ -17,13 +17,14 @@ A procedural hex-world economy and civilization simulation. Godot 4.6 runs the U
 
 ## Project rules
 
-Each rule says where it applies, why, and what enforces it. The full list of 32 rules and their enforcement is in `docs/factory/rule-coverage.md`; the 13 that only review can judge are Qodo rules in `docs/factory/qodo-rules.json`.
+Each rule says where it applies, why, and what enforces it. The full list of 33 rules and their enforcement is in `docs/factory/rule-coverage.md`; the 14 that only review can judge are Qodo rules in `docs/factory/qodo-rules.json`.
 
 1. **Load must not decide results.** Where: everything that computes a simulated day (C++ runtime, GDScript adapters). Why: the same seed, content and sealed commands must give the same day, byte for byte; when machine load once changed the economy's cadence, the same world diverged. Enforced by: `check_golden_determinism.py`, `check_replay_matrix.py`, Qodo rule "simulation results must not depend on timing or load".
 2. **The front end only reads published frames.** Where: `scripts/ui/`, `scripts/rendering/`. Why: the simulation is one timeline owned by the executor; a UI that reads live state shows a mix of days. Enforced by: `check_script_native_access.py` (native access only), Qodo rule "the front end only reads published frames".
 3. **Modules meet only through their API header and committed views.** Where: C++ runtime modules. Why: a module should be changeable by reading only it and the headers it depends on. Enforced by: `check_module_api.py`, `check_cpp_deps.py`, `check_committed_views.py`, Qodo rule "cross-module hand-offs go through committed views or intents".
 4. **Fix the root cause.** Where: every failing test and every fix handed to an agent. Why: loosened asserts, longer timeouts and retries hide the bug that broke determinism. Enforced by: Qodo rule "fix the root cause instead of relaxing the check", factory prompts.
 5. **New continuation state is versioned and installed whole.** Where: save sections and state that later days read. Why: a missing field only shows up as a cold-load divergence days later. Enforced by: `check_save_contracts.py`, `check_replay_matrix.py`, Qodo rule "new continuation state is versioned, validated and installed atomically".
+6. **Gates, parsers, allowlists and validators are tested with inputs they must refuse.** Where: `tools/factory/` and any code that decides whether something may proceed. Why: a gate whose tests only feed it good input passes while accepting bad input (a broken transport, a command with a second command appended, an unknown status read as clean); Qodo found this class in 19 of 158 findings on our PRs. Enforced by: `tools/factory/tests/test_gates_refuse.py` (every gate-named function must be listed with a refused input), Qodo rule "gates are tested with inputs they must refuse".
 
 ## Harness
 
