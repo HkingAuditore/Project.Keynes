@@ -8,6 +8,6 @@ Each side fits on its own, so the failure comes from the two changes together. M
 
 Do not commit, abort or reset the merge, branch, push or stash. Do not loosen assertions, raise baselines or limits, lengthen timeouts, add retries or add silent fallbacks to make a check pass.
 
-Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person. Leave the tracked native libraries to the factory. It rebuilds and checks both macOS libraries when native source changes, so you do not need to build them.
+Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person. Leave changes under `Project/project-keynes/addons/dots_ext/bin/` to a person. The factory builds and checks the macOS libraries locally when native source changes.
 
 Finish with a short report: one line per failed check saying what caused it and what you changed.

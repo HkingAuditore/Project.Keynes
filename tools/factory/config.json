@@ -46,6 +46,10 @@
       ["-m", "unittest", "discover", "-s", "tools/map_authoring/tests"]
     ],
     "nativePaths": ["gdext/src/", "gdext/tests/", "gdext/SConstruct", "gdext/site_scons/"],
+    "nativeBuildOutputs": [
+      "Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.macos.template_debug.arm64.dylib",
+      "Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.macos.template_release.arm64.dylib"
+    ],
     "nativeRebuild": "gdext/rebuild.sh",
     "nativeImport": ["--headless", "--path", "Project/project-keynes", "--import"],
     "nativeRuntimeCheck": "tools/ci/check_macos_runtime_extension.py",
@@ -55,10 +59,8 @@
   "paths": {
     "forbidden": [".github/", "tools/factory/", ".qodo/", "tools/ci/"],
     "needsHuman": ["tools/ci/*baseline*.json", "tools/ci/module_api/", "tools/ci/module_api_shared.json", "tools/ci/cross_domain_inventory.json", "gdext/godot-cpp/", "gdext/rebuild.sh"],
-    "trackedBinaries": "Project/project-keynes/addons/dots_ext/bin/",
-    "nativeLibraries": [
-      "Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.macos.template_debug.arm64.dylib",
-      "Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.macos.template_release.arm64.dylib"
+    "trackedBinaries": [
+      "Project/project-keynes/addons/dots_ext/bin/"
     ]
   }
 }

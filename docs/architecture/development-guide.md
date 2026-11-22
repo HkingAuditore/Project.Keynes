@@ -158,7 +158,7 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 ~/.local/bin/scons -C gdext platform=macos target=template_release arch=arm64 dev_build=no -j8
 ```
 
-交付已追踪的 macOS arm64 程序库时，两种配置都要重编。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
+验证 macOS arm64 原生代码改动时，两种配置都要在本地重编。在 `Project/project-keynes` 生成的 dylib 由 Git 忽略。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
 
 | 检查 | 命令要点 | 何时必须跑 |
 |---|---|---|

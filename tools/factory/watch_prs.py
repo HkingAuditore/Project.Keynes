@@ -77,13 +77,10 @@ def merge_blocker(pr: dict, cfg: dict) -> str | None:
 
 def merge_path_blocker(files: list[ChangedFile], cfg: dict) -> str | None:
     paths = [path for f in files for path in (f.filename, f.previous_filename) if path is not None]
-    forbidden, human, native = work.scope(cfg, paths)
+    forbidden, human, _ = work.scope(cfg, paths)
     protected = sorted(set(forbidden + human))
     if protected:
         return f"a person merges this PR because it touches protected paths ({', '.join(protected)})"
-    updated = {f.filename for f in files if f.status not in ("removed", "unchanged")}
-    if native and not set(cfg["paths"]["nativeLibraries"]).issubset(updated):
-        return "C++ changed but the macOS libraries were not rebuilt"
     return None
 
 
@@ -251,7 +248,10 @@ class Watcher:
             if self.dry or d.action == "skip":
                 continue
             if ci is not None and d.action in ("merge", "stop"):
-                result = self.apply_merge_decision(pr, st, d, review["review_session"], ci)
+                paths = [path for f in changed_files or [] for path in (f.filename, f.previous_filename)
+                         if path is not None]
+                native = work.scope(self.cfg, paths)[2]
+                result = self.apply_merge_decision(pr, st, d, review["review_session"], ci, native=bool(native))
                 if result is not None:
                     return result
                 continue
@@ -305,7 +305,8 @@ class Watcher:
             return "the PR changed-file count changed before merge"
         return None
 
-    def apply_merge_decision(self, pr: dict, st: PrState, decision: Decision, session: dict, ci: CIFacts) -> int | None:
+    def apply_merge_decision(self, pr: dict, st: PrState, decision: Decision, session: dict, ci: CIFacts,
+                             *, native: bool) -> int | None:
         """Record this merge decision. A preflight skip lets the tick continue to the next PR."""
         n, sha = pr["number"], pr["headRefOid"]
         record = {"pr": n, "url": pr["url"], "head": sha, "started": self.stamp,
@@ -317,7 +318,24 @@ class Watcher:
             self.stop(pr, st, error, "\n".join(self.gh.errors))
         else:
             skipped = self.merge_preflight(pr)
-            if skipped is None:
+            if skipped is None and native:
+                try:
+                    if not self.prepare_head(pr, Events()):
+                        skipped = "the PR head changed before the native checks"
+                    else:
+                        logdir = self.home / "logs" / f"merge-pr-{n}-{self.stamp}"
+                        results = record["nativeChecks"] = []
+                        checks.Runner(self.cfg, self.workdir, str(logdir)).run_native(results)
+                        failures = checks.failed(results)
+                        if failures:
+                            error = "the PR has failing native checks: " + ", ".join(failures)
+                            self.stop(pr, st, error, checks.feedback(results, failures))
+                        else:
+                            skipped = self.merge_preflight(pr)
+                except (RuntimeError, OSError) as e:
+                    error = f"the native checks could not run: {e}"
+                    self.stop(pr, st, error)
+            if skipped is None and error is None:
                 try:
                     result = self.gh.merge_pr(n, sha)
                     record.update(outcome=result.outcome, mergeCommit=result.commit)
@@ -375,7 +393,7 @@ class Watcher:
         protected = sorted(set(bad + human))
         if protected:
             return f"the change touches files a person must handle ({', '.join(protected)})"
-        return candidate.commit_problem(files, native) if before_commit else None
+        return candidate.commit_problem(native) if before_commit else None
 
     def fix(self, pr: dict, st: PrState, findings: list[dict]) -> int:
         return self.run_change(pr, st, "fix", findings)
@@ -544,26 +562,18 @@ class Watcher:
             if protected:
                 return stop("conflicts in paths a person must handle: " + ", ".join(protected))
 
-            libraries = sorted(set(paths) & set(cfg["paths"]["nativeLibraries"]))
-            text = sorted(set(paths) - set(libraries))
-            binary = work.binary_conflicts(self.workdir, head, parent, text)
+            binary = work.binary_conflicts(self.workdir, head, parent, paths)
             if binary:
                 return stop("binary conflicts a person must handle: " + ", ".join(binary))
             resolutions = []
-            for path in libraries:
-                side = "ours" if "2" in conflicts[path] else "theirs"
-                spec = f":(top,literal){path}"
-                work.git(self.workdir, "checkout", f"--{side}", "--", spec)
-                work.git(self.workdir, "add", "--", spec)
-                resolutions.append(f"- `{path}` · took {side} for the merge, then rebuilt and verified it.")
 
             if work.git(self.workdir, "diff", "--cached", "--name-only", head, "--", work.GODOT_CPP):
                 synced_submodule = True
                 work.update_godot_cpp(self.workdir)
-            candidate = checks.Candidate(cfg, self.workdir, facts, merge_parent=parent, force_native=bool(libraries))
-            if text:
+            candidate = checks.Candidate(cfg, self.workdir, facts, merge_parent=parent)
+            if paths:
                 clean_entries = work.stage_zero_entries(self.workdir)
-                prompt = agent.render("resolve-conflicts", files="\n".join(f"- `{path}`" for path in text))
+                prompt = agent.render("resolve-conflicts", files="\n".join(f"- `{path}`" for path in paths))
                 out = agent.codex(cfg, self.workdir, prompt, str(logs / "resolve-conflicts.md"), writable=True)
                 record["report"] = out["report"]
                 ev.add("agent", ok=out["ok"], code=out.get("code"))
@@ -578,7 +588,7 @@ class Watcher:
                                 record.get("agentFailure", ""))
                 if not out["ok"]:
                     return stop(record["agentFailure"], record["report"])
-                resolutions.extend([f"- `{path}` · resolved by Codex." for path in text])
+                resolutions.extend([f"- `{path}` · resolved by Codex." for path in paths])
 
             repaired = False
 
@@ -588,7 +598,7 @@ class Watcher:
                 unresolved = sorted(work.unmerged(self.workdir))
                 if unresolved:
                     return "unmerged paths remain: " + ", ".join(unresolved)
-                marked = work.conflict_markers(self.workdir, sorted(set(paths + files) - set(libraries)))
+                marked = work.conflict_markers(self.workdir, sorted(set(paths + files)))
                 if marked:
                     return "conflict markers remain: " + ", ".join(marked)
                 return None
@@ -638,13 +648,22 @@ class Watcher:
             reason = merge_problem(files)
             if reason:
                 return stop(reason)
+            # Inspect worktree changes against the index as well as the merge parents.
+            # A rebuilt legacy binary might match a parent and vanish from the merge scope.
+            unstaged = work.git(self.workdir, "diff", "--name-only", "--no-renames", "-z").split("\0")
+            binaries = work.binary_changes(cfg, unstaged)
+            if binaries:
+                return stop("binary files changed in the working tree: " + ", ".join(binaries))
+            reason = self.scope_problem(files, candidate, before_commit=True)
+            if reason:
+                return stop(reason)
             work.stage(self.workdir)
             record["files"] = candidate.changed(head)
             reason = self.scope_problem(record["files"], candidate, before_commit=True)
             if reason:
                 return stop(reason)
             message = f"Merge {base} into {pr['headRefName']}\n\n{TRAILER}\n"
-            if text or repaired:
+            if paths or repaired:
                 message += f"Implemented-By: Codex ({cfg['agent']['model']})\n"
             sha = work.commit(self.workdir, message, staged=True)
             if work.git(self.workdir, "show", "-s", "--format=%P", sha).split() != [head, parent]:
@@ -676,7 +695,7 @@ class Watcher:
             lines = [f"### Factory updated this branch from `{base}`", "",
                      f"Pushed merge commit `{sha}`.", "", "Conflict resolutions", "",
                      *(resolutions or ["Git merged cleanly with the fetched base."])]
-            if text:
+            if paths:
                 lines += ["", "Codex resolution notes", "", record["report"]]
             if repaired:
                 lines += ["", "Codex repaired checks that failed after the merge", "", *record["checkFixReports"]]

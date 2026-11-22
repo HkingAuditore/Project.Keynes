@@ -184,22 +184,16 @@ def remote_head(workdir: str, remote: str, branch: str) -> str | None:
 
 def scope(cfg: dict, files: list[str]) -> tuple[list[str], list[str], list[str]]:
     return (touching(files, cfg["paths"]["forbidden"]),
-            touching(files, cfg["paths"]["needsHuman"]),
+            sorted(set(touching(files, cfg["paths"]["needsHuman"]) + binary_changes(cfg, files))),
             touching(files, cfg["checks"]["nativePaths"]))
 
 
 def binary_changes(cfg: dict, files: list[str]) -> list[str]:
-    return touching(files, [cfg["paths"]["trackedBinaries"]])
+    return touching(files, cfg["paths"]["trackedBinaries"])
 
 
 def dirty(workdir: str) -> bool:
     return bool(changed(workdir, "HEAD"))
-
-
-def restore(workdir: str, path: str) -> None:
-    """Discard staged and unstaged build outputs in a tracked folder."""
-    git(workdir, "restore", "--source=HEAD", "--staged", "--worktree", "--", path)
-    git(workdir, "clean", "-fdq", "--", path)
 
 
 def _write_patch(workdir: str, base: str, path: Path, *files: str, ignore_submodules: str) -> None:

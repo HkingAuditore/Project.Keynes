@@ -15,7 +15,7 @@ For each finding:
 
 Do not commit, branch, push or stash. Do not loosen assertions, lengthen timeouts, add retries or add silent fallbacks to make a finding go away.
 
-Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person. Leave the tracked native libraries to the factory. It rebuilds and checks both macOS libraries when native source changes.
-The factory commits only the two macOS arm64 libraries. A finding that asks for the Linux, Windows, Android or Web libraries to be rebuilt, or for export or `.gdextension` library selection to change, is outside what one ticket does: dispute it with that reason and change nothing for it.
+Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person. Leave changes under `Project/project-keynes/addons/dots_ext/bin/` to a person. The factory builds and checks the macOS libraries locally when native source changes.
+A finding that asks for the Linux, Windows, Android or Web libraries to be rebuilt, or for export or `.gdextension` library selection to change, is outside what one ticket does: dispute it with that reason and change nothing for it.
 
 Finish with a short report: one line per finding id saying fixed (and how) or disputed (and why).
