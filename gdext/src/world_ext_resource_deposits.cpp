@@ -277,6 +277,12 @@ bool read_sparse_weights(const Dictionary &knobs, const char *keys_key,
 constexpr int32_t kMinContinentCells = 8;
 constexpr float kMinContinentShare = 0.18f;
 
+// 「保底配额资格」门槛：只决定哪些陆块参与资源的保底配额（:744），
+// 不参与上面「大陆」定义，也不改 world_ext_bio 的任何行为。
+// 与 kMinContinentCells 刻意分开：continent_floor 随最大陆地面积涨（56×38 上是 48），
+// 会把这些陆块整段跳过配额，导致缺盐/硅砂/锡的 37、33、11 格陆块拿不到保底。
+constexpr int32_t kMinQuotaCells = 8;
+
 void label_landmasses(const uint8_t *water, const int32_t *neighbors, int n,
         std::vector<int32_t> &landmass_of, std::vector<int32_t> &landmass_size) {
     landmass_of.assign(size_t(n), 0);
@@ -732,8 +738,10 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                 if (l > 0 && values[i] >= floor_v) ++have[size_t(l)];
             }
             for (size_t l = 1; l < landmass_size.size(); ++l) {
-                // 面积门槛：礁石/小岛不算大陆，不参与配额（与生态保底同口径）。
-                if (landmass_size[l] < continent_floor) continue;
+                // 配额资格门槛：用独立的 kMinQuotaCells，不用 continent_floor。
+                // 礁石/碎岛仍不算；但 37/33/11 格这种「够不上大陆、却真缺矿」的陆块
+                // 现在参与配额。大陆定义（continent_floor）一个字没动。
+                if (landmass_size[l] < kMinQuotaCells) continue;
                 const int q = std::min(floor_n,
                         std::max(1, int(std::ceil(0.01 * double(landmass_size[l])))));
                 if (have[l] < q) {
