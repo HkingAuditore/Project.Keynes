@@ -40,3 +40,4 @@ Each rule says where it applies, why, and what enforces it. The full list of 33 
 - 交给外部 AI 的修复任务，提示词要求它先写清根因证据（复现条件、日志或代码路径）再改代码；靠放宽断言、加长超时、加重试绕过问题的补丁不采用。
 - 评估 Shader 优化时，按 GPU 实际执行的工作量判断。同一批像素走不同的 `if` 分支时，许多 GPU 会执行两条路径，驱动也可能把分支展开。优先省掉整批工作或在编译期裁掉不用的路径，收益用相同画质和分辨率的实际帧时间验证。
 - 工厂（`tools/factory/`）定时查看 fork 上打开的 PR，Qodo 评审出阻塞项后让 Codex 在 PR 分支上修复；它不自动认领 issue，issue 模式只能手动运行（`run.py --issue N`）。流程、关卡和规则覆盖见 `docs/factory/README.md`。工厂的结论由 `tools/factory/verdict.py` 从事实算出，agent 的自述不算数；Qodo 对头部提交的评审没有未关闭的阻塞项、CI 全部成功时，工厂自动合并（`config.json` 的 `autoMerge` 可关闭）。`tools/factory/sync_rules.py` 只创建缺失的规则。修改已有规则先用 `qodo rules update`，再同步 `docs/factory/qodo-rules.json`。
+- 任何编码 agent（含 Codex、交互会话）交付前遵守质量关卡：有效的 High / Medium 发现必须修完，所有 Low 发现报告给人，Qodo 对当前头部提交的评审完成后才能说完成；细则见 `docs/factory/quality-gate.md`，工厂在 `tools/factory/verdict.py` 里执行。

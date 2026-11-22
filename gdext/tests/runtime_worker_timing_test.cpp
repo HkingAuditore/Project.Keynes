@@ -31,8 +31,11 @@ int main() {
         wait();
         assert(t.snapshot()[phase] > 0);
     }
-    const auto before_pause = t.snapshot();
+    // snapshot() adds the open interval without settling it, so a snapshot taken
+    // before pause(true) can be a microsecond short of what pause() settles.
+    // Compare against the state right after the pause has settled.
     t.pause(true);
+    const auto before_pause = t.snapshot();
     t.set(Timing::INPUT_RETRY_WAIT);
     wait();
     const auto while_paused = t.snapshot();

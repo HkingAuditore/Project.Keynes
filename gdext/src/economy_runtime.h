@@ -801,13 +801,7 @@ public:
                                             int32_t limit) const;
     int32_t player_family_founding_offer() const;
     godot::Array take_family_founding_receipts();
-    godot::Dictionary family_colonization_quotes(
-        int64_t country_handle, int32_t target_cell, int64_t family_filter,
-        int32_t source_filter, int32_t offset, int32_t limit,
-        const uint8_t *visible, int32_t visible_count,
-        uint64_t vision_revision);
-    godot::Dictionary family_colonization_quote_detail(
-        int64_t quote_token, int64_t population = -1) const;
+#include "economy_runtime_internal_colonization_quotes.h"
     void fill_colonization_query_flags(godot::Dictionary &out) const;
     godot::Dictionary submit_family_colonization_start(
         int64_t country_handle, int64_t family_handle, int32_t source_cell,

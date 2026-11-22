@@ -460,7 +460,7 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
         const Command &cmd, std::string &error) {
     const bool ok = cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION
         ? apply_cancel_family_expedition(cmd, error)
-        : apply_start_family_expedition(cmd, error);
+        : apply_queued_family_expedition_start(cmd, error);
     if (ok) return true;
     append_colonization_command_receipt(static_cast<uint64_t>(cmd.i64_1),
         cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION ? cmd.target_handle : 0,

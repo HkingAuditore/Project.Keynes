@@ -45,7 +45,6 @@ class NativeFacts:
     native_changed: bool = False
     native_rebuilt: bool = False
     native_runtime_ok: bool = False
-    native_libraries_committed: bool = False
 
     def report(self) -> str:
         return " · ".join(f"`{item.name}={str(getattr(self, item.name)).lower()}`" for item in fields(NativeFacts))
@@ -122,8 +121,6 @@ def judge(f: Facts) -> Verdict:
             human.append("C++ changed and the macOS rebuild did not pass")
         if not f.native_runtime_ok:
             human.append("C++ changed and both macOS runtime checks have not passed")
-        if not f.native_libraries_committed:
-            human.append("C++ changed and both verified macOS libraries have not been committed")
     if f.native_requested and not f.native_changed:
         human.append("the plan asked for the macOS runtime check, but no native sources changed, so it did not run")
     if f.ci_state == "error":

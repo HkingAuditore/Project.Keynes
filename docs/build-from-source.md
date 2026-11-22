@@ -63,9 +63,9 @@ git submodule update --init --recursive
 
 ## 3. 原生扩展 `dots_ext`（更新后先重新编译）
 
-仓库自带的各平台二进制不一定与当前源码同步。例如旧 macOS 库缺少
-`start_runtime_worker`，会让当前模拟和运行检查失败。更新源码后先重建
-debug/release 两份库，再完全重启 Godot。`SConstruct` 默认启用
+正式项目（`Project/project-keynes`）的 macOS `dots_ext` dylib 由本地构建，Git 会忽略它们。首次检出或更新 C++ 源码后，
+运行 `gdext/rebuild.sh` 生成 debug/release 两份库，再完全重启 Godot。仓库中其他平台
+的二进制也可能落后于源码。`SConstruct` 默认启用
 `disable_exceptions=no`，因为当前原生模拟需要捕获 C++ 异常；关闭会编译失败。
 
 ### 3.1 Windows

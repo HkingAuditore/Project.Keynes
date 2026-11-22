@@ -13,7 +13,7 @@ The investigation plan (from a read-only pass over the code):
 
 Rules for this run:
 - Change only what the ticket and plan need. Leave `.github/`, `tools/factory/`, `tools/ci/`, `.qodo/`, `gdext/godot-cpp/` and `gdext/rebuild.sh` to a person.
-- Leave the tracked native libraries to the factory. It rebuilds and checks both macOS libraries when native source changes.
+- Leave changes under `Project/project-keynes/addons/dots_ext/bin/` to a person. The factory builds and checks the macOS libraries locally when native source changes.
 - Do not commit, branch, push or stash. Leave all changes in the working tree; the factory commits them.
 - Find the root cause before changing code. Do not loosen assertions, lengthen timeouts, add retries, add days or change hashes to make a check pass.
 - Add or update tests that prove each acceptance criterion.
