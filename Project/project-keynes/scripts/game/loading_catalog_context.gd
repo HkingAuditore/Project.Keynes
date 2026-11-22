@@ -65,12 +65,13 @@ func default_resource(path: String, loader: Callable) -> Resource:
 func stage(label: String) -> void:
 	Engine.set_meta(&"loading_step", "catalog / " + label)
 
-func checkpoint(label: String) -> void:
+## Returns whether the request may continue after this checkpoint.
+func checkpoint(label: String) -> bool:
 	if canceled:
-		return
+		return false
 	var elapsed := Time.get_ticks_usec() - _slice_started
 	if elapsed < WORK_SLICE_USEC:
-		return
+		return true
 	stage(label)
 	var tree := Engine.get_main_loop() as SceneTree
 	if frame_gate != null:
@@ -79,6 +80,7 @@ func checkpoint(label: String) -> void:
 		await tree.process_frame
 	yielded_frames += 1
 	_slice_started = Time.get_ticks_usec()
+	return not canceled
 
 func dictionary(kind: String, inputs: Array, compiler: Callable,
 		arguments: Array) -> Dictionary:

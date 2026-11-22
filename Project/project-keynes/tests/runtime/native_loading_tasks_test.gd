@@ -1,6 +1,8 @@
 extends SceneTree
 
 const LoadingCatalogBake = preload("res://tools/loading_catalog_bake.gd")
+const CatalogContext = preload("res://scripts/game/loading_catalog_context.gd")
+const LoadingFrameGate = preload("res://scripts/geography/loading_frame_gate.gd")
 
 var failures: Array[String] = []
 
@@ -61,8 +63,12 @@ func _run() -> void:
 	expect("prebaked Effect columns match source compiler", prebaked_effect == effect)
 	prebaked_effect.erase("effect_keys")
 	expect("prebaked Effect columns do not share caller edits", LoadingCatalogCache.effect_native_columns() == effect)
+	var canceled_context := CatalogContext.new(LoadingFrameGate.new())
+	canceled_context.frame_gate.cancel()
+	var canceled_effect: Resource = await EffectDomainCatalog.build_cooperative(canceled_context)
+	expect("canceled Effect build returns no warm snapshot", canceled_effect == null)
 	var effect_override := FamilyEffectCatalog.new()
-	var override_context := preload("res://scripts/game/loading_catalog_context.gd").new()
+	var override_context := CatalogContext.new()
 	var custom_effect: Resource = await EffectDomainCatalog.build_cooperative(override_context, effect_override)
 	var custom_columns: Dictionary = custom_effect.compile_native_catalog() if custom_effect != null else {}
 	expect("explicit Effect override bypasses the default snapshot", bool(custom_columns.get("ok", false))
