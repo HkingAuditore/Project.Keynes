@@ -49,14 +49,19 @@ class QualityGateTest(unittest.TestCase):
                 else:
                     self.assertEqual(v.verdict, "READY")
 
-    def test_low_is_reported_to_a_person_not_dropped(self):
-        low = next(level for _, level, gate in self.rows() if gate == "reported")
-        v = judge(facts(findings=[finding(low)]))
-        self.assertEqual(v.verdict, "READY")
-        self.assertEqual(len(v.for_human), 1)
-        self.assertIn(f"t-{low}", v.for_human[0])
+    def test_reported_levels_reach_a_person_not_dropped(self):
+        reported = [level for _, level, gate in self.rows() if gate == "reported"]
+        self.assertTrue(reported)
+        for level in reported:
+            with self.subTest(level=level):
+                v = judge(facts(findings=[finding(level)]))
+                self.assertEqual(v.verdict, "READY")
+                self.assertEqual(len(v.for_human), 1)
+                self.assertIn(f"t-{level}", v.for_human[0])
 
     def test_a_settled_blocking_finding_does_not_block(self):
+        # "dismissed" includes findings the factory agent disputed and the factory dismissed in Qodo
+        # (run.py, watch_prs.py); the page names that as the gate's main limit.
         for status in ("implemented", "dismissed"):
             with self.subTest(status=status):
                 self.assertEqual(judge(facts(findings=[finding("action_required", status)])).verdict, "READY")
