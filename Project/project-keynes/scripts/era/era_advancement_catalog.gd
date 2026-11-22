@@ -68,7 +68,7 @@ const PROCUREMENT := [
 	# agrarian -> kingdom
 	[{"good_id": "adobe_brick", "per_cell": 25 * GOODS_SCALE, "floor": 60 * GOODS_SCALE},
 		{"good_id": "pottery", "per_cell": 15 * GOODS_SCALE, "floor": 40 * GOODS_SCALE},
-		{"good_id": "bronze_tools", "per_cell": 5 * GOODS_SCALE, "floor": 12 * GOODS_SCALE}],
+		{"good_id": "copper_tools", "per_cell": 5 * GOODS_SCALE, "floor": 12 * GOODS_SCALE}],
 	# kingdom -> empire
 	[{"good_id": "bricks", "per_cell": 25 * GOODS_SCALE, "floor": 80 * GOODS_SCALE},
 		{"good_id": "wrought_iron", "per_cell": 8 * GOODS_SCALE, "floor": 25 * GOODS_SCALE},
@@ -81,7 +81,7 @@ const PROCUREMENT := [
 		{"good_id": "furniture", "per_cell": 10 * GOODS_SCALE, "floor": 30 * GOODS_SCALE}],
 	# exploration -> enlightenment
 	[{"good_id": "paper", "per_cell": 20 * GOODS_SCALE, "floor": 80 * GOODS_SCALE},
-		{"good_id": "glass", "per_cell": 15 * GOODS_SCALE, "floor": 60 * GOODS_SCALE},
+		{"good_id": "lime", "per_cell": 15 * GOODS_SCALE, "floor": 60 * GOODS_SCALE},
 		{"good_id": "printed_materials", "per_cell": 12 * GOODS_SCALE, "floor": 50 * GOODS_SCALE},
 		{"good_id": "tools", "per_cell": 12 * GOODS_SCALE, "floor": 50 * GOODS_SCALE}],
 	# enlightenment -> steam

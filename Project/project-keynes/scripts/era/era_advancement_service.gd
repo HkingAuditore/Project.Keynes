@@ -48,6 +48,19 @@ const COMPLETION_TIMEOUT_DAYS := 5
 const TECHNOLOGY_STATE_PENDING := 4
 const TECHNOLOGY_STATE_COMPLETED := 5
 const FLAG_MILESTONE := 2
+## Narrow read-time migration for the two basket rows swapped in the catalog
+## (target era 2 `bronze_tools` → `copper_tools`, target era 5 `glass` → `lime`).
+## `restore` keeps the saved basket and never reconciles it with the catalog, so
+## an in-flight purchase would otherwise keep chasing a good the catalog no longer
+## asks for. Rules: match by good id (never by row index — catalog order can
+## change), rewrite the id in place, keep the quantity, never seize what the
+## treasury already bought, never restart the purchase. Idempotent by
+## construction: a rewritten id no longer matches a source id.
+## Deliberately narrow: only these two goods, never "basket ≠ catalog → restart".
+const BASKET_GOOD_ID_MIGRATIONS := {
+	"bronze_tools": "copper_tools",
+	"glass": "lime",
+}
 
 var _country = null
 var _economy = null
@@ -539,6 +552,14 @@ func to_save() -> Dictionary:
 		"colonization_share_bp": _colonization_share_bp,
 	}
 
+static func _migrate_basket_good_ids(good_ids: PackedStringArray) -> PackedStringArray:
+	var out := good_ids.duplicate()
+	for i in range(out.size()):
+		var replacement := String(BASKET_GOOD_ID_MIGRATIONS.get(String(out[i]), ""))
+		if not replacement.is_empty():
+			out[i] = replacement
+	return out
+
 func restore(state: Dictionary) -> void:
 	var keep_country = _country
 	var keep_economy = _economy
@@ -565,6 +586,10 @@ func restore(state: Dictionary) -> void:
 		_target_era = -1
 		_required_good_ids = PackedStringArray()
 		_required_quantities = PackedInt64Array()
+	# Narrow id-matched migration of the two swapped catalog rows. Quantities,
+	# phase, target era and the treasury are left untouched; a second restore of
+	# the same state is a no-op because the old ids are gone.
+	_required_good_ids = _migrate_basket_good_ids(_required_good_ids)
 	_known_era = int(state.get("known_era", -1))
 	_trade_era = int(state.get("trade_era", -1))
 	_trade_accumulated = maxi(0, int(state.get("trade_accumulated", 0)))
