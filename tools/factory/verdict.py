@@ -59,6 +59,7 @@ class Facts(NativeFacts):
     rejected_checks: list[str] = field(default_factory=list)
     native_requested: bool = False
     disagreements: list[str] = field(default_factory=list)
+    accepted_disputes: list[str] = field(default_factory=list)  # disputed by the agent and settled its way
     base_failures: list[str] = field(default_factory=list)
     checks_sha: str | None = None
     new_failures: list[str] = field(default_factory=list)

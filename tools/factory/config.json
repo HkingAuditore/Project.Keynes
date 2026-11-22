@@ -7,6 +7,7 @@
   "autoMerge": true,
   "autoUpdateConflicts": true,
   "autoClaimIssues": true,
+  "acceptAgentDisputes": true,
   "labels": {
     "trigger": "ready-for-agent",
     "working": "agent-working",

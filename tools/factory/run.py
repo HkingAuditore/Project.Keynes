@@ -56,6 +56,7 @@ class Run:
         self.gh = GitHub(cfg["repo"])
         self.ev = Events()
         self.facts = Facts(review_round_limit=cfg["limits"]["prReviewRounds"])
+        self.accepted: set[str] = set()   # finding ids the agent disputed and the factory settled its way
         self.stamp = time.strftime("%Y%m%d-%H%M%S")
         home = Path(cfg["home"])
         self.home = home
@@ -213,7 +214,9 @@ class Run:
             if not rev["complete"] and self.cfg["limits"].get("localReviewRequired", True):
                 self.facts.stopped_by = "the required Qodo local review was incomplete"
                 return False
-            ids = tuple(sorted(str(b.get("id")) for b in rev["blocking"]))
+            # Findings the agent disputed are settled: its judgement wins over Qodo's.
+            open_blocking = [b for b in rev["blocking"] if str(b.get("id")) not in self.accepted]
+            ids = tuple(sorted(str(b.get("id")) for b in open_blocking))
             if not ids:
                 return True
             if ids in seen:
@@ -221,7 +224,7 @@ class Run:
             seen.add(ids)
             if rnd == self.cfg["limits"]["localReviewRounds"]:
                 break
-            if not self.fix(issue, rev["blocking"], "local review of uncommitted changes", False, extra, base_failed):
+            if not self.fix(issue, open_blocking, "local review of uncommitted changes", False, extra, base_failed):
                 return False
             recent = [f"Addressed local-review findings {', '.join(ids)}; fixes only."]
         self.facts.local_blocking = list(ids)
@@ -243,7 +246,7 @@ class Run:
         except ValueError as e:
             self.stop_with_patch(str(e), base)
             return False
-        self.facts.disagreements += [f"{finding_id}: {evidence}" for finding_id, evidence in disputes]
+        self.accept_disputes(disputes, committed)
         if work.head(self.workdir) != base:
             self.facts.stopped_by = "the agent made its own commits"
             return False
@@ -284,11 +287,31 @@ class Run:
             return False
         return not self.facts.human_paths
 
+    def accept_disputes(self, disputes: list[tuple[str, str]], committed: bool) -> None:
+        """The agent's judgement wins over Qodo's. Local findings are just set aside; PR findings are
+        dismissed in Qodo with the agent's evidence. Only a dispute that cannot be recorded goes to a person."""
+        for finding_id, evidence in disputes:
+            entry = f"{finding_id}: {evidence}"
+            if not self.cfg.get("acceptAgentDisputes", True):
+                self.facts.disagreements.append(entry)
+                continue
+            error = qodo.dismiss(self.cfg["tools"]["qodo"], finding_id,
+                                 qodo.accepted_explanation(evidence)) if committed else None
+            if error:
+                self.record.setdefault("dismissErrors", {})[finding_id] = error
+                self.facts.disagreements.append(f"{entry} (dismissing it in Qodo failed: {error[:200]})")
+                continue
+            self.accepted.add(finding_id)
+            self.facts.accepted_disputes.append(entry)
+
     def pr_body(self, issue: dict, plan: str) -> str:
         crit = "\n".join(f"- [ ] {c}" for c in criteria(issue["body"]))
         reports = self.record.get("reports") or [""]
         skipped = self.record.get("localReviewSkipped")
         local = (f"Qodo local review did not run: {skipped[:400]}\n\n" if skipped else "")
+        if self.facts.accepted_disputes:
+            local += ("Findings the agent disputed, settled its way (its judgement takes precedence):\n"
+                      + "\n".join(f"- {d[:800]}" for d in self.facts.accepted_disputes) + "\n\n")
         if self.facts.local_review_incomplete:
             local += "Qodo local review coverage was incomplete. See the factory run record for details.\n\n"
         return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n{local}"
@@ -329,6 +352,11 @@ class Run:
             if not self.fix(issue, block, f"PR review of {head[:10]}", True, extra, base_failed):
                 return
             if not work.dirty(self.workdir):
+                if set(ids) <= self.accepted:
+                    # Every finding was disputed and dismissed in Qodo; re-read so the verdict sees them closed.
+                    self.facts.findings = (qodo.pr_review(self.cfg["tools"]["qodo"], self.pr["url"]) or {}).get(
+                        "findings") or self.facts.findings
+                    return
                 self.facts.review_stalled = True
                 return
             if not self.commit_checked(f"Issue #{self.number}: address Qodo findings {', '.join(ids)}\n\n"

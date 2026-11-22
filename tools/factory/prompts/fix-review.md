@@ -7,7 +7,7 @@ The change is already in this working tree{committed}. Qodo reported these open 
 For each finding:
 1. Check it against the code. Find the code path, the condition that triggers it and its effect.
 2. If it is real, fix the root cause and add or adjust a test that would have caught it.
-3. If it is wrong, do not change code for it. Append to `.factory-disagree.md` in the repository root using exactly `- <finding id>: <evidence>`, one finding per line, the id exactly as given. Use the bare id as shown below. Include the file and line in the evidence so a person can decide.
+3. If it is wrong, do not change code for it. Append to `.factory-disagree.md` in the repository root using exactly `- <finding id>: <evidence>`, one finding per line, the id exactly as given. Use the bare id as shown below. Include the file and line in the evidence: the factory dismisses the finding in Qodo with it, so dispute only what you are sure is wrong.
 
    ```text
    - abc123: example.gd:42 validates the value before use.

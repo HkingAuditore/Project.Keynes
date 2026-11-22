@@ -121,8 +121,6 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
         if head in state.pushed and state.rounds >= limit:
             return Decision("stop", f"{limit} factory rounds used and the branch still conflicts")
         return Decision("update", "GitHub reports merge conflicts")
-    if head not in state.pushed and head in state.attempted:
-        return Decision("skip", "Codex already ran at this head; waiting for a person")
     if review is None:
         return Decision("skip", "Qodo review could not be read")
     session = review.get("review_session") or {}
@@ -172,6 +170,9 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
     block = [f for f in open_blocking if str(f.get("id")) not in state.disputed]
     if not block:
         return Decision("skip", "only findings the agent disputed are open; a person decides")
+    # Only gates another fix: a head whose findings the agent settled (dismissed disputes) may still merge.
+    if head not in state.pushed and head in state.attempted:
+        return Decision("skip", "Codex already ran at this head; waiting for a person")
     ids = sorted(str(f.get("id")) for f in block)
     round_limit = cfg["limits"]["prReviewRounds"]
     rounds = state.rounds if head in state.pushed else 0
@@ -671,7 +672,19 @@ class Watcher:
         ids = sorted(str(f["id"]) for f in findings)
         undisputed = sorted(set(ids) - disputed_ids)
         st.seen.append(ids)
-        st.disputed = sorted(set(st.disputed) | disputed_ids)
+        # The agent's judgement wins over Qodo's: close each disputed finding in Qodo with its evidence.
+        # Only a dismissal that fails is left for a person.
+        unsettled = set(disputed_ids)
+        if cfg.get("acceptAgentDisputes", True):
+            for finding_id, evidence in parsed:
+                error = qodo.dismiss(cfg["tools"]["qodo"], finding_id, qodo.accepted_explanation(evidence))
+                if error:
+                    record.setdefault("dismissErrors", {})[finding_id] = error
+                else:
+                    unsettled.discard(finding_id)
+                    record.setdefault("dismissed", []).append(finding_id)
+            ev.add("disputes-dismissed", dismissed=record.get("dismissed", []), failed=sorted(unsettled))
+        st.disputed = sorted(set(st.disputed) | unsettled)
 
         if work.head(self.workdir) != head:
             self.stop(pr, st, "the agent made its own commits; nothing was pushed")
@@ -684,10 +697,16 @@ class Watcher:
                 self.stop(pr, st, "the agent made no changes and left these findings undisputed: "
                           + ", ".join(undisputed), "\n".join(f"- {d}" for d in disputes))
                 return "stopped"
+            text = self.comment_text(head, None, findings, disputes, [], out["report"],
+                                     settled=not unsettled) + f"\n\n{facts.report()}"
+            if not unsettled:
+                # Every finding is closed in Qodo; the next poll merges this head if CI is green.
+                self.save(n, st)
+                self.gh.comment(n, text, pull_request=True)
+                return "disputed"
             st.gave_up_at, st.reason = head, "the agent disputed every finding and made no changes"
             self.save(n, st)
-            self.gh.comment(n, self.comment_text(head, None, findings, disputes, [], out["report"]) + f"\n\n{facts.report()}",
-                            pull_request=True)
+            self.gh.comment(n, text, pull_request=True)
             self.gh.relabel(n, [cfg["labels"]["help"]], [])
             return "disputed"
         if self.scope_blocked(pr, st, logs, files, candidate):
@@ -746,12 +765,13 @@ class Watcher:
         st.gave_up_at = st.reason = None
         self.save(n, st)
         ev.add("pushed", sha=sha, round=st.rounds)
-        self.gh.comment(n, self.comment_text(head, sha, findings, disputes, before, out["report"]) + f"\n\n{facts.report()}",
+        self.gh.comment(n, self.comment_text(head, sha, findings, disputes, before, out["report"],
+                                               settled=not unsettled) + f"\n\n{facts.report()}",
                         pull_request=True)
         return "pushed"
 
     def comment_text(self, head: str, sha: str | None, findings: list[dict], disputes: list[str],
-                     before: list[str], report: str) -> str:
+                     before: list[str], report: str, settled: bool = False) -> str:
         lines = [f"### Factory fix for Qodo findings on {head[:10]}", ""]
         if sha:
             lines.append(f"Pushed {sha[:10]} to this branch. Checks: nothing that passed on {head[:10]} fails now.")
@@ -760,7 +780,10 @@ class Watcher:
         else:
             lines.append("Nothing was pushed: the agent disputes every finding below.")
         lines += ["", "Findings sent to Codex:"] + [f"- `{f.get('id')}` {f.get('title')}" for f in findings]
-        if disputes:
+        if disputes and settled:
+            lines += ["", "Disputed by the agent and dismissed in Qodo (the agent's judgement takes precedence):"]
+            lines += [f"- {d[:800]}" for d in disputes]
+        elif disputes:
             lines += ["", "Disputed by the agent (a person decides; the factory will not retry these):"]
             lines += [f"- {d[:800]}" for d in disputes]
         lines += ["", "<details><summary>Agent report</summary>", "", report[-6000:], "", "</details>"]

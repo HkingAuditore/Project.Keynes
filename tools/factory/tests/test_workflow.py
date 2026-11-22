@@ -25,7 +25,7 @@ from common import Events, Result, load_config
 from github import GitHub
 from run import Run
 from verdict import CIFacts, CIRun, Verdict
-from watch_prs import PrState, Watcher
+from watch_prs import PrState, Watcher, decide
 
 
 ISSUE = {"title": "Example", "body": "## Acceptance criteria\n1. Pass\n", "labels": ["ready-for-agent"]}
@@ -45,6 +45,8 @@ class TempFactory(unittest.TestCase):
         self.cfg = load_config()
         self.cfg["home"] = str(self.root)
         self.enterContext(redirect_stdout(io.StringIO()))
+        # Never reach the real Qodo service from a test; a test that cares sets the outcome.
+        self.dismiss = self.enterContext(patch("qodo.dismiss", return_value=None))
 
     def write_file(self, root, path, text=""):
         target = root / path
@@ -244,6 +246,23 @@ class IssueWorkflowTest(TempFactory):
         for path in paths:
             self.assertIn(str(path), run.facts.stopped_by)
 
+    def test_agent_disputes_are_settled_its_way(self):
+        run = self.make_run()
+        run.accept_disputes([("local", "a.gd:1")], committed=False)
+        self.dismiss.assert_not_called()  # local findings are only set aside
+        run.accept_disputes([("pr", "b.gd:2")], committed=True)
+        self.dismiss.assert_called_once()
+        self.assertEqual(self.dismiss.call_args.args[1], "pr")
+        self.dismiss.return_value = "exit 1"
+        run.accept_disputes([("bad", "c.gd:3")], committed=True)
+        self.assertEqual(run.accepted, {"local", "pr"})
+        self.assertEqual(run.facts.accepted_disputes, ["local: a.gd:1", "pr: b.gd:2"])
+        self.assertEqual(len(run.facts.disagreements), 1)
+        self.assertIn("bad: c.gd:3", run.facts.disagreements[0])
+        run.cfg = {**run.cfg, "acceptAgentDisputes": False}
+        run.accept_disputes([("off", "d.gd:4")], committed=True)
+        self.assertIn("off: d.gd:4", run.facts.disagreements)
+
     def test_issue_review_fix_stops_on_invalid_dispute_file(self):
         run = self.make_run()
         paths = [run.logs / "fix.patch", run.logs / "fix.gdext__godot-cpp.patch"]
@@ -424,7 +443,34 @@ class WatchWorkflowTest(TempFactory):
                     self.assertIn(str(path), watcher.gh.comment.call_args.args[1])
                 watcher.gh.relabel.assert_called_with(7, [], ["agent-working"])
 
-    def test_disputed_head_runs_codex_once_across_two_ticks(self):
+    def test_disputed_findings_are_dismissed_and_the_head_can_merge(self):
+        watcher = self.make_watcher()
+        later = {**FINDING, "id": "later"}
+        with (patch.object(watcher, "prs", return_value=[PR]),
+              patch("qodo.pr_review", side_effect=[review(FINDING), review(FINDING, later)]),
+              patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("work.head", return_value=HEAD), patch("work.changed", return_value=[]),
+              patch("checks.base_results", return_value=[]),
+              patch("work.scratch", return_value="- `f`: file.gd:42"),
+              patch("agent.codex", return_value={"ok": True, "report": ""}) as codex):
+            self.assertEqual(watcher.tick(None), 0)
+            self.assertEqual(watcher.tick(None), 0)
+        codex.assert_called_once()
+        self.dismiss.assert_called_once()
+        self.assertEqual(self.dismiss.call_args.args[1], "f")
+        self.assertIn("file.gd:42", self.dismiss.call_args.args[2])
+        state = watcher.load(7)
+        self.assertIsNone(state.gave_up_at)
+        self.assertEqual(state.disputed, [])
+        self.assertEqual(self.read_record(watcher)["outcome"], "disputed")
+        self.assertIn("dismissed in Qodo", watcher.gh.comment.call_args.args[1])
+        self.assertNotIn(call(7, ["agent-needs-help"], ["agent-working"]), watcher.gh.relabel.call_args_list)
+        # With the dispute settled, a clean review of the same head is no longer held for a person.
+        cfg = {**self.cfg, "autoMerge": False}
+        self.assertEqual(decide(PR, review(), state, cfg).reason, "no open blocking findings at the head")
+
+    def test_failed_dismissal_leaves_the_dispute_to_a_person(self):
+        self.dismiss.return_value = "exit 1"
         watcher = self.make_watcher()
         later = {**FINDING, "id": "later"}
         with (patch.object(watcher, "prs", return_value=[PR]),
@@ -458,7 +504,7 @@ class WatchWorkflowTest(TempFactory):
                 self.assertEqual(candidate_checks.call_count, int(bool(edits)))
                 state = watcher.load(7)
                 self.assertEqual(state.gave_up_at, HEAD)
-                self.assertEqual(state.disputed, ["f-long"])
+                self.assertEqual(state.disputed, [])  # dismissed in Qodo; only undisputed ids stop the fix
                 self.assertIn("f, other", state.reason)
                 record = self.read_record(watcher)
                 self.assertEqual(record["outcome"], "stopped")
