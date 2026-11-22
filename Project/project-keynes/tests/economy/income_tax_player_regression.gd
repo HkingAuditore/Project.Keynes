@@ -198,6 +198,8 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 		return
 	var settlement_day := int(fiscal.get("sample_day", -1))
 	var audit: Dictionary = ext.get_economy_committed_audit_report()
+	# The audit carries no fatal flag; keep the economy report's fatal check.
+	var economy: Dictionary = ext.get_economy_report()
 	var policy: Dictionary = country.tax_policy_snapshot(handle)
 	print("[income-tax-player/policy] rates=%s modes=%s receipts=%s" % [
 		policy.get("default_rates_basis_points", []), policy.get("default_assessment_modes", []), country.poll_worker_command_receipts()])
@@ -229,12 +231,13 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	if mixed_fiscal and (subsidy_paid.size() != 5 or subsidy_paid[subsidy_index] <= 0):
 		_fail("consumption subsidy was not paid: %s" % fiscal)
 		return
-	if not bool(audit.get("available", false)) or bool(audit.get("audit_incomplete", true)) \
+	if bool(economy.get("fatal", false)) \
+			or not bool(audit.get("available", false)) or bool(audit.get("audit_incomplete", true)) \
 			or settlement_day < 0 or int(audit.get("day", -1)) != settlement_day \
 			or int(audit.get("money_error", -1)) != 0 or int(audit.get("goods_error", -1)) != 0 \
 			or int(audit.get("population_error", -1)) != 0 or collected.is_empty() \
 			or (income_rate > 0 and collected[0] <= 0):
-		_fail("income settlement did not conserve/collect: %s / %s" % [audit, fiscal])
+		_fail("income settlement did not conserve/collect: %s / %s / fatal=%s" % [audit, fiscal, economy.get("fatal", false)])
 		return
 	var elapsed_ms := float(Time.get_ticks_usec() - measurement_started) / 1000.0
 	print("[income-tax-player/timing] income_rate=%d mixed=%s run_ms=%.1f days_per_second=%.2f cumulative_subsidy_paid=%s" % [income_rate, mixed_fiscal, elapsed_ms, 50000.0 / elapsed_ms, subsidy_paid])
