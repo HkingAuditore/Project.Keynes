@@ -115,6 +115,9 @@ GATES = {
     ],
     "scope": [
         ("a forbidden path is reported as forbidden", lambda: work.scope(CFG, ["tools/factory/a.py"])[0] == ["tools/factory/a.py"]),
+        ("a binary in either project requires a person",
+         lambda: all(work.scope(CFG, [path + "macos/libdots_ext.dylib"])[1] == [path + "macos/libdots_ext.dylib"]
+                     for path in CFG["paths"]["trackedBinaries"])),
         ("an ordinary path is reported in no list", lambda: work.scope(CFG, ["docs/a.md"]) == ([], [], [])),
     ],
     "gate": [

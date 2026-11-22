@@ -119,3 +119,7 @@ gdext/*.err.log
 **/android/build/.gradle/
 # SCons 签名数据库：每次编译整份改写，纯缓存（单个 52MB）。
 *.sconsign.dblite
+
+# macOS dots_ext libraries are built locally.
+/Project/project-keynes/addons/dots_ext/bin/macos/*.dylib
+/Project/perf-validation/addons/dots_ext/bin/macos/*.dylib

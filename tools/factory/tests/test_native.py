@@ -23,10 +23,12 @@ class NativeWorkflowTest(TempFactory):
         self.cfg["home"] = str(home)
         self.repo = home / "work"
         self.repo.mkdir(parents=True)
-        self.libraries = self.cfg["paths"]["nativeLibraries"]
-        self.extra_binary = self.cfg["paths"]["trackedBinaries"] + "other.so"
+        self.libraries = self.cfg["checks"]["nativeBuildOutputs"]
+        self.extra_binary = self.cfg["paths"]["trackedBinaries"][0] + "other.so"
         self.cfg["checks"]["unit"] = []
         self.write_guard_list(self.repo)
+        ignore = (Path(__file__).resolve().parents[3] / ".gitignore").read_text()
+        self.write_file(self.repo, ".gitignore", ignore)
         for name in (self.cfg["checks"]["nativeRebuild"], self.cfg["checks"]["nativeRuntimeCheck"],
                      self.cfg["checks"]["regression"][0], SOURCE, "edit.gd", *self.libraries, self.extra_binary):
             self.write_file(self.repo, name, "old")
@@ -35,7 +37,7 @@ class NativeWorkflowTest(TempFactory):
         work.git(str(self.repo), "config", "user.name", "Factory Test")
         self.base = work.commit(str(self.repo), "base")
 
-    def run_workflow(self, mode, *, failure=None, extra_binary=False, tamper=False,
+    def run_workflow(self, mode, *, failure=None, extra_binary=False, tamper=False, stage_binary=False,
                      native=True, submodule=False, review_fix=False, unchanged_library=None):
         self.setup_repo(mode)
         stages = []
@@ -53,7 +55,8 @@ class NativeWorkflowTest(TempFactory):
             else:
                 self.write_file(self.repo, "edit.gd", "updated script")
                 self.write_file(self.repo, self.libraries[0], "agent output")
-                work.git(str(self.repo), "add", "--", self.libraries[0])
+            if stage_binary:
+                work.git(str(self.repo), "add", "-f", "--", self.libraries[0])
             return {"ok": True, "code": 0, "report": ""}
 
         def check_process(args, *, cwd, timeout, log, env):
@@ -81,7 +84,7 @@ class NativeWorkflowTest(TempFactory):
                 if extra_binary:
                     self.write_file(self.repo, self.extra_binary, "changed other platform")
                 if not native:
-                    self.assertEqual((self.repo / self.libraries[0]).read_text(), "old")
+                    self.assertEqual((self.repo / self.libraries[0]).read_text(), "agent output")
                 if tamper or not native:
                     self.write_file(self.repo, self.libraries[0], "rewritten by regression")
             stages.append(stage)
@@ -125,9 +128,9 @@ class NativeWorkflowTest(TempFactory):
         record = json.loads(record_path.read_text())
         return stages, prompts, record, gh, commit, push
 
-    def assert_native_facts(self, record, changed, rebuilt, runtime_ok, committed):
-        keys = ("native_changed", "native_rebuilt", "native_runtime_ok", "native_libraries_committed")
-        self.assertEqual([record["facts"][key] for key in keys], [changed, rebuilt, runtime_ok, committed])
+    def assert_native_facts(self, record, changed, rebuilt, runtime_ok):
+        keys = ("native_changed", "native_rebuilt", "native_runtime_ok")
+        self.assertEqual([record["facts"][key] for key in keys], [changed, rebuilt, runtime_ok])
 
     def test_native_build_import_probes_commit_and_push_in_both_modes(self):
         for mode in ("pr", "issue"):
@@ -135,15 +138,18 @@ class NativeWorkflowTest(TempFactory):
                 stages, _, record, gh, commit, push = self.run_workflow(mode)
                 self.assertEqual(stages, [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT,
                                           *(checks.runtime_name(lib) for lib in self.libraries), "regression"])
-                self.assertEqual(work.changed(str(self.repo), self.base), sorted([SOURCE, *self.libraries]))
+                self.assertEqual(work.changed(str(self.repo), self.base), [SOURCE])
                 self.assertFalse(work.dirty(str(self.repo)))
                 commit.assert_called_once()
                 push.assert_called_once()
-                self.assert_native_facts(record, True, True, True, True)
+                self.assert_native_facts(record, True, True, True)
                 if mode == "issue":
                     gh.relabel.assert_any_call(7, ["agent-done"], ["agent-working"])
                 message = gh.create_pr.call_args.args[-1] if mode == "issue" else gh.comment.call_args.args[1]
-                self.assertIn("native_libraries_committed=true", message)
+                self.assertIn("native_runtime_ok=true", message)
+                self.assertEqual(work.git(str(self.repo), "ls-files", "--", *self.libraries), "")
+                for lib in self.libraries:
+                    self.assertTrue((self.repo / lib).is_file())
 
     def test_failed_rebuild_skips_import_and_probes_and_never_publishes(self):
         for mode in ("pr", "issue"):
@@ -154,9 +160,9 @@ class NativeWorkflowTest(TempFactory):
                 self.assertIn("native-rebuild", prompts[-1])
                 self.assertEqual(len(prompts), 2)
                 self.assertIn(checks.NATIVE_REBUILD, gh.comment.call_args.args[1])
-                self.assert_native_facts(record, True, False, False, False)
+                self.assert_native_facts(record, True, False, False)
                 for lib in self.libraries:
-                    self.assertEqual((self.repo / lib).read_text(), "old")
+                    self.assertFalse((self.repo / lib).exists())
                 commit.assert_not_called()
                 push.assert_not_called()
 
@@ -164,7 +170,7 @@ class NativeWorkflowTest(TempFactory):
         stages, _, record, gh, commit, push = self.run_workflow("pr", failure=checks.NATIVE_IMPORT)
         self.assertEqual(stages, [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT] * 2)
         self.assertIn(checks.NATIVE_IMPORT, gh.comment.call_args.args[1])
-        self.assert_native_facts(record, True, True, False, False)
+        self.assert_native_facts(record, True, True, False)
         commit.assert_not_called()
         push.assert_not_called()
 
@@ -172,12 +178,12 @@ class NativeWorkflowTest(TempFactory):
         for mode in ("pr", "issue"):
             with self.subTest(mode=mode):
                 attempts = 2
-                first, second = [checks.runtime_name(lib) for lib in self.cfg["paths"]["nativeLibraries"]]
+                first, second = [checks.runtime_name(lib) for lib in self.cfg["checks"]["nativeBuildOutputs"]]
                 stages, _, record, gh, commit, push = self.run_workflow(mode, failure=first)
                 self.assertEqual(stages, [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT, first, second,
                                           "regression"] * attempts)
                 self.assertIn(first, gh.comment.call_args.args[1])
-                self.assert_native_facts(record, True, True, False, False)
+                self.assert_native_facts(record, True, True, False)
                 commit.assert_not_called()
                 push.assert_not_called()
 
@@ -185,7 +191,7 @@ class NativeWorkflowTest(TempFactory):
         for mode in ("pr", "issue"):
             with self.subTest(mode=mode):
                 _, _, record, gh, commit, push = self.run_workflow(mode, extra_binary=True)
-                self.assert_native_facts(record, True, True, True, False)
+                self.assert_native_facts(record, True, True, True)
                 self.assertIn(self.extra_binary, gh.comment.call_args.args[1])
                 commit.assert_not_called()
                 push.assert_not_called()
@@ -194,27 +200,35 @@ class NativeWorkflowTest(TempFactory):
         for mode in ("pr", "issue"):
             with self.subTest(mode=mode):
                 _, _, record, gh, commit, push = self.run_workflow(mode, tamper=True)
-                self.assert_native_facts(record, True, True, True, False)
+                self.assert_native_facts(record, True, True, True)
                 self.assertIn("differ from this run's rebuild outputs", gh.comment.call_args.args[1])
                 commit.assert_not_called()
                 push.assert_not_called()
 
-    def test_both_validated_libraries_must_be_changed(self):
-        library = self.cfg["paths"]["nativeLibraries"][1]
-        _, _, record, gh, commit, push = self.run_workflow("pr", unchanged_library=library)
-        self.assert_native_facts(record, True, True, True, False)
-        self.assertIn(f"missing: {library}", gh.comment.call_args.args[1])
-        commit.assert_not_called()
-        push.assert_not_called()
+    def test_unchanged_build_bytes_do_not_block_a_source_commit(self):
+        _, _, record, _, commit, push = self.run_workflow("pr", unchanged_library=self.cfg["checks"]["nativeBuildOutputs"][1])
+        self.assert_native_facts(record, True, True, True)
+        self.assertEqual(work.changed(str(self.repo), self.base), [SOURCE])
+        commit.assert_called_once()
+        push.assert_called_once()
 
-    def test_non_native_change_restores_binaries_in_both_modes(self):
+    def test_force_added_dylib_stops_both_fix_modes(self):
+        for mode in ("pr", "issue"):
+            with self.subTest(mode=mode):
+                stages, _, _, gh, commit, push = self.run_workflow(mode, stage_binary=True)
+                self.assertEqual(stages, [])
+                self.assertIn(self.libraries[0], gh.comment.call_args.args[1])
+                commit.assert_not_called()
+                push.assert_not_called()
+
+    def test_non_native_change_leaves_ignored_build_outputs_local(self):
         for mode in ("pr", "issue"):
             with self.subTest(mode=mode):
                 stages, _, record, _, commit, push = self.run_workflow(mode, native=False)
                 self.assertEqual(stages, ["regression"])
                 self.assertEqual(work.changed(str(self.repo), self.base), ["edit.gd"])
                 self.assertFalse(work.dirty(str(self.repo)))
-                self.assert_native_facts(record, False, False, False, False)
+                self.assert_native_facts(record, False, False, False)
                 commit.assert_called_once()
                 push.assert_called_once()
 
@@ -224,7 +238,7 @@ class NativeWorkflowTest(TempFactory):
                 stages, _, record, gh, commit, push = self.run_workflow(mode, submodule=True)
                 self.assertEqual(stages, [])
                 self.assertIn("gdext/godot-cpp", gh.comment.call_args.args[1])
-                self.assert_native_facts(record, False, False, False, False)
+                self.assert_native_facts(record, False, False, False)
                 commit.assert_not_called()
                 push.assert_not_called()
 
@@ -232,7 +246,7 @@ class NativeWorkflowTest(TempFactory):
         stages, _, record, _, commit, push = self.run_workflow("issue", review_fix=True)
         self.assertEqual(stages.count(checks.NATIVE_REBUILD), 1)
         self.assertEqual(work.git(str(self.repo), "diff", "--name-only", "HEAD^", "HEAD"), "edit.gd")
-        self.assert_native_facts(record, True, True, True, True)
+        self.assert_native_facts(record, True, True, True)
         self.assertEqual(commit.call_count, 2)
         self.assertEqual(push.call_count, 2)
 

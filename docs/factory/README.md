@@ -16,7 +16,7 @@
 | Qodo 还没评审头部提交，或评审进行中 | 跳过，下一轮再看 |
 | 评审以 failed 等非 completed 状态结束，或评审项的状态或未关闭项的处理级别无法识别 | 停下，打 `agent-needs-help` |
 | 头部提交上没有未关闭的阻塞项，且 CI、文件范围、标签和 GitHub 可合并状态均满足下方条件 | 请求 GitHub 合并到 fork，按下方规则评论并写运行记录 |
-| PR 改到受保护路径、改了 C++ 但缺少任一份重编的 macOS 库，或无法读取完整的改动文件列表 | 跳过自动合并，记录原因 |
+| PR 改到受保护路径（含 dots_ext 库目录），或无法读取完整的改动文件列表 | 跳过自动合并，记录原因 |
 | 无法读取 CI | 停下，打 `agent-needs-help`，写运行记录 |
 | CI 未完成、有非成功结论，或 GitHub 尚未确认可合并 | 跳过，下一轮再看 |
 | 合并命令失败 | 停下，打 `agent-needs-help`，把错误写入运行记录 |
@@ -29,16 +29,16 @@
 | Codex 没改文件 | 停下，打 `agent-needs-help`。有异议的条目交给人判断，其余阻塞项列出 ID |
 | 异议格式有误，或 ID 不在本次交给 Codex 的评审项中 | 停下，打 `agent-needs-help`，列出有问题的行，保存本地补丁并列出路径 |
 | 检出时发现头部提交已变 | 停掉本次修复，记入运行记录，下一轮查看新提交 |
-| 修复改到 C++ | 工厂重编两种 macOS 库，导入项目，分别验证两份库；检查通过且库目录只改了这两份文件，才把它们和源码一起提交、推送 |
+| 修复改到 C++ | 工厂在本地重编两种 macOS 库，导入项目并逐库验证。通过后提交、推送源码，生成的库留在本地 |
 | 修复改到 `gdext/godot-cpp/`、`gdext/rebuild.sh`、基线或契约文件、`.github/`、`tools/factory/`、`tools/ci/` 或 `.qodo/` | 停下交给人，保存本地补丁并列出路径。跑检查前和提交前各查一次范围 |
 
 人往分支上推了新提交，轮数重新计算。同一个由人推送的头部提交最多交给 Codex 修复一次。每次修复或更新结束都移除 `agent-working`。每个 PR 的状态存在 `~/.keynes-factory/prs/<编号>.json`，每次修复或更新的记录存在 `~/.keynes-factory/runs/pr-<编号>-<时间>.json`。工厂的提交带 `Fixed-By: keynes-factory`，用到 Codex 的提交另带 `Implemented-By: Codex`。**工厂推送后，正在这个分支上工作的人必须先执行 `git pull`，再继续修改。**
 
 ### 更新有冲突的分支
 
-- `autoUpdateConflicts` 默认开启。工厂先检查 PR 头部与最新取到的 `fork/master`，分别记录结果并复用按提交缓存的通过项，再将已检查的目标提交合入工作树，暂不提交。普通检查在两个父提交上都通过、在合入后失败时才阻止更新。所需的库重编、导入和逐库验证必须通过。
-- 已跟踪的 macOS 库发生冲突时，先取一侧，再从合并后的源码重编两份库，即使 C++ 未改。文本冲突交给 Codex 保留双方意图，并逐文件说明处理方式。Codex 只能改冲突文件。工厂对照交接前的 Git 暂存区，发现其他文件被改动、删除或新增时，列出路径、中止合并并打 `agent-needs-help`。Codex 失败、未解决的路径或残留冲突标记也会让工厂停下。
-- 受保护路径（`paths.forbidden`、`paths.needsHuman`）、子模块或其他二进制文件发生冲突时，工厂中止合并，列出路径并打 `agent-needs-help`。提交前核对范围，只计算与两个父提交都不同的文件。
+- `autoUpdateConflicts` 默认开启。工厂先检查 PR 头部与最新取到的 `fork/master`，分别记录结果并复用按提交缓存的普通检查。无已跟踪的 macOS 库时先为对应提交本地构建，再将已检查的目标提交合入工作树，暂不提交。普通检查在两个父提交上都通过、在合入后失败时才阻止更新。所需的库重编、导入和逐库验证必须通过。
+- 文本冲突交给 Codex 保留双方意图，并逐文件说明处理方式。Codex 只能改冲突文件。工厂对照交接前的 Git 暂存区，发现其他文件被改动、删除或新增时，列出路径、中止合并并打 `agent-needs-help`。Codex 失败、未解决的路径或残留冲突标记也会让工厂停下。
+- 受保护路径（`paths.forbidden`、`paths.needsHuman`）、子模块或二进制文件（包括旧分支仍跟踪的 macOS 库）发生冲突时，工厂中止合并，列出路径并打 `agent-needs-help`。提交前核对范围，只计算与两个父提交都不同的文件。
 - 合并后的检查如果出现"PR 头和目标分支上都通过、合并后才失败"的项（例如两边各自没超尺寸基线，合在一起超了），工厂把失败日志交给 Codex，在尚未提交的合并上修，最多 `limits.checkFixRounds` 轮；修不好才停下并打 `agent-needs-help`。
 - 工厂创建 `Merge <base> into <branch>` 合并提交。推送前重读 PR 并核对标签、头部和目标提交，有变化就放弃本轮；目标分支只有 `tools/factory/` 和 `docs/factory/` 下的文件变了不算变化，因为它们不影响检查结果。推送成功后，工厂在 PR 上评论冲突处理、重编和检查结果。更新算一轮，与评审修复共用 `prReviewRounds` 上限。同一个头部提交最多尝试更新一次。工厂刚更新完又遇到同一组冲突文件时停下并打 `agent-needs-help`。
 
@@ -48,7 +48,7 @@
 - PR 必须来自 fork 内的分支，已退出草稿且没有跳过标签、`agent-needs-help`、`agent-working` 或 `no-auto-merge`。GitHub 必须报告 `MERGEABLE`，尚无法判断时等下一轮。
 - Qodo 必须已完成对当前头部提交的评审。所有评审项的状态和处理级别都要能识别，所有阻塞项都要关闭。Codex 提出异议的评审项按它的判断处理（见下），关闭失败的才交给人；仅供参考的评审项会列在评论中。
 - 当前头部提交至少有一条 GitHub Actions 工作流。每个工作流和每项检查只看最新一次运行，均须完成且结论为 `success`。重跑成功后，旧的失败结果不再阻止合并。读取失败时停下交给人。
-- 读取 PR 相对目标分支的完整改动文件列表。触及 `paths.forbidden` 或 `paths.needsHuman`（如 `.github/`、`tools/factory/`、`tools/ci/`、`.qodo/`、基线、`gdext/godot-cpp/` 和 `gdext/rebuild.sh`）的 PR 由人合并。触及 `checks.nativePaths` 时，PR 必须包含两份重编后的 macOS 库（`paths.nativeLibraries`），否则跳过。文件列表读取失败时也跳过。
+- 读取 PR 相对目标分支的完整改动文件列表。触及 `paths.forbidden` 或 `paths.needsHuman`（如 `.github/`、`tools/factory/`、`tools/ci/`、`.qodo/`、基线、`gdext/godot-cpp/` 和 `gdext/rebuild.sh`）的 PR 由人合并。两个 `dots_ext/bin/` 目录的文件改动也由人处理。文件列表读取失败时跳过。触及 `checks.nativePaths` 时，工厂在当前头部提交上本地重编、导入并逐库验证，随后重新核对 PR 状态。
 - 合并前重读 PR。标签、头部提交、目标分支或可合并状态有变化时，跳过并记录原因。合并命令仍绑定评审过的头部提交。
 - 合并命令成功后，工厂再次读取 PR。确认预期的头部提交已合并时，记录合并提交，评论列出评审提交、CI 运行和仅供参考的评审项。若查询失败，仍记录合并成功，合并提交留空并记下查询错误。若 GitHub 返回其他状态或头部提交，则记录 `not_merged`，评论说明 GitHub 返回的状态，并打 `agent-needs-help`。打标签成功后，移除标签即可重试。若打标签失败，工厂在本地记录当前提交已停止，等分支收到新提交后再检查。合并记录存在 `~/.keynes-factory/runs/merge-pr-<编号>-<时间>.json`。
 
@@ -81,7 +81,7 @@ flowchart TD
   L -- 有阻塞项 --> F1[Codex 修复或写出反驳证据] --> C
   F1 -- Codex 退出失败或异议格式有误 --> H
   L -- 结束 --> S2{提交前重查范围}
-  S2 -- 触及受保护文件或缺少本次验证过的两份库 --> H
+  S2 -- 触及受保护文件或本次原生验证未通过 --> H
   S2 -- 通过 --> PR[提交、推送、在 fork 开 PR]
   PR --> R{Qodo PR 评审完成于头部提交<br/>+ CI 结束}
   R -- 有阻塞项且未到 3 轮 --> F2[Codex 修复 → 检查 → 推送] --> R
@@ -100,13 +100,13 @@ flowchart TD
 |---|---|---|---|
 | G0 工单 | 标题；`## Acceptance criteria` 或 `## 验收标准` 下有勾选框或编号条目；没有跳过标签 | issue 正文和标签 | `agent-needs-help`，移除 `ready-for-agent`，评论列出原因 |
 | 计划 | 六个小节齐全，Questions 为 `none`，额外检查命令符合允许格式（`tools/ci/<脚本>.py`，可带 `--参数` 和 `tests/<路径>.gd`；开头的 `python3` 会去掉） | Codex 只读输出，贴在 issue 上 | 有问题或命令被拒绝时交给人 |
-| 范围 | `.github/`、`tools/factory/`、`tools/ci/`、`.qodo/`、基线、契约文件、`gdext/godot-cpp/` 和 `gdext/rebuild.sh` 由人处理。C++ 改动只可附带本轮通过验证的两份 macOS 库；C++ 没改时恢复生成的库文件 | 每次提交前重查 `git diff`、未跟踪文件和子模块状态，核对库目录的改动和重编产物 | 提交前发现越界或库文件不符合要求就停下 |
+| 范围 | `.github/`、`tools/factory/`、`tools/ci/`、`.qodo/`、基线、契约文件、`gdext/godot-cpp/`、`gdext/rebuild.sh` 和两个 `dots_ext/bin/` 目录由人处理。macOS dylib 是本地构建产物 | 每次提交前重查 `git diff`、未跟踪文件和子模块状态，核对库目录的改动和重编产物 | 提交前发现越界或库文件不符合要求就停下 |
 | 检查 | 工作树完整，检查脚本和测试目录齐全；推送前**所有**检查都要通过，master 上原本就失败的也算（AGENTS.md：推送前修复已发现的问题，不能因为是既有失败就留到以后）。base 上的失败只用来告诉 Codex 哪些是改动前就有的。C++ 改动时先跑 `gdext/rebuild.sh`，再导入项目，然后用 `check_macos_runtime_extension.py` 分别验证两份库。每次执行回归都先导入候选项目 | 每项检查的日志，存在 `~/.keynes-factory/logs/` | 工作树不完整或检查入口缺失时立即停下，记录错误并打 `agent-needs-help`。Issue 实现阶段把普通检查的失败日志尾部发给 Codex，最多尝试 3 次。PR 模式报告失败并停下 |
 | 本地评审（默认尽力而为） | Qodo 对未提交改动没有阻塞项（action_required / remediation_recommended） | `qodo review --repo hrhgit/Project.Keynes --json` | 评审失败或覆盖不完整时记入运行记录和 PR 正文，继续走 PR 评审。若配置要求本地评审，则停下交给人 |
 | PR 评审 | Qodo 对**当前头部提交**的评审已完成，没有未关闭的阻塞项 | `qodo read pr-review-session findings` | 最多 3 轮修复；同一批问题重复就停 |
 | CI | 头部提交至少有一次 GitHub Actions 工作流运行，所有工作流和检查都已结束，检查全部成功 | GitHub Actions 和 check runs | 等待中为 NOT_DONE，检查失败为 NEEDS_FIX，查询失败时立即停下并给出 NEEDS_HUMAN |
 
-结论的先后顺序：NEEDS_HUMAN → NOT_DONE（证据不全）→ NEEDS_FIX → READY。master 本身有检查失败、Codex 对某条评审有不同意见，或评审状态无法识别时，交给人处理。C++ 改动以本轮的重编、两份库的运行验证和提交结果为准，缺少任一项也交给人。这四项事实写入运行记录和 PR 正文或评论。仅供参考的评审结果会列出来，由人决定。
+结论的先后顺序：NEEDS_HUMAN → NOT_DONE（证据不全）→ NEEDS_FIX → READY。master 本身有检查失败、Codex 对某条评审有不同意见，或评审状态无法识别时，交给人处理。C++ 改动必须通过本轮的本地重编、项目导入和两份库的运行验证。重编与验证结果写入运行记录和 PR 正文或评论。仅供参考的评审结果会列出来，由人决定。
 
 ## 运行
 
@@ -132,7 +132,7 @@ python3 -m unittest discover -s tools/factory/tests
 ## 已知限制
 
 - Codex 在沙箱里运行，不能联网，所以计划步骤没有调用 Qodo Codebase Wisdom，只读本地代码和文档。
-- C++ 检查在 Apple Silicon macOS 上运行，覆盖已跟踪的 arm64 debug 和 release 库。其他平台的库改动交给人。
+- C++ 检查在 Apple Silicon macOS 上运行，覆盖本地构建的 arm64 debug 和 release 库。库目录的改动交给人。
 - 本地没有跑 CI 里的 C++ sanitizer 用例；这部分以 PR 上的 CI 结果为准。
 - Qodo 本地评审目前跑不起来：评审服务在 120 秒内检出不了这个仓库的 base（2026-11-19 两次都超时）。所以 `localReviewRequired` 设为 `false`，本地评审失败时只记录，不拦；把关的是 PR 上对头部提交的 Qodo 评审，`verdict.py` 没有它就不会给 READY。
 - 工作树的 `origin` 是上游，Qodo 里没有连上游，所以本地评审显式传 `--repo hrhgit/Project.Keynes`。

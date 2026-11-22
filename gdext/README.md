@@ -39,9 +39,9 @@ builds are incremental.
 ## Building (macOS)
 
 Close Godot, then run `cd gdext && ./rebuild.sh` to rebuild both debug and
-release libraries from the current source. The tracked macOS libraries may be
-older than the scripts and lack the worker interfaces; rebuilding is required
-before running or testing a newly updated checkout.
+release libraries from the current source. Git ignores these build outputs.
+Build them before running or testing a fresh checkout and after updating
+native source.
 
 `SConstruct` defaults `disable_exceptions=no` because the native runtime throws
 invariant errors and catches them at the worker boundary. Disabling exceptions

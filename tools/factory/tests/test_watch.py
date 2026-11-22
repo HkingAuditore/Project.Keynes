@@ -485,18 +485,32 @@ class MergeWorkflow(unittest.TestCase):
                 self.files = [{"filename": "a.txt", "status": "renamed", "previous_filename": path}]
                 self.assert_skipped("a person merges this PR")
 
-    def test_native_changes_require_both_libraries(self):
-        libs = self.watcher.cfg["paths"]["nativeLibraries"]
-        self.files = [{"filename": "gdext/src/world.cpp", "status": "modified"},
-                      {"filename": libs[0], "status": "modified"}]
-        self.pr["changedFiles"] = self.fresh_pr["changedFiles"] = 2
-        self.assert_skipped("C++ changed but the macOS libraries were not rebuilt")
-        self.pr["changedFiles"] = self.fresh_pr["changedFiles"] = 3
-        self.files.append({"filename": libs[1], "status": "removed"})
-        self.assert_skipped("C++ changed but the macOS libraries were not rebuilt")
-        self.files[-1]["status"] = "modified"
-        self.assertEqual(self.watcher.tick(None), 0)
+    def test_native_changes_without_libraries_merge_after_local_checks(self):
+        self.files = [{"filename": "gdext/src/world.cpp", "status": "modified"}]
+        with (patch.object(self.watcher, "prepare_head", return_value=True) as checkout,
+              patch("checks.Runner.run_native") as native):
+            self.assertEqual(self.watcher.tick(None), 0)
+        checkout.assert_called_once()
+        native.assert_called_once()
         self.assertEqual(self.record()["outcome"], "merged")
+
+    def test_failed_native_checks_keep_source_only_pr_from_merging(self):
+        self.files = [{"filename": "gdext/src/world.cpp", "status": "modified"}]
+        with (patch.object(self.watcher, "prepare_head", return_value=True),
+              patch("checks.Runner.run_native",
+                    side_effect=lambda rows: rows.append({"name": "native-rebuild", "ok": False,
+                                                          "code": 1, "log": str(self.home / "rebuild.log")}))):
+            (self.home / "rebuild.log").write_text("build failed")
+            self.assertEqual(self.watcher.tick(None), 1)
+        self.assert_no_merge_command()
+        self.assert_stopped("the PR has failing native checks")
+
+    def test_binary_additions_and_modifications_require_a_person(self):
+        for path in self.watcher.cfg["paths"]["trackedBinaries"]:
+            for status in ("added", "modified"):
+                with self.subTest(path=path, status=status):
+                    self.files = [{"filename": path + "macos/libdots_ext.dylib", "status": status}]
+                    self.assert_skipped("a person merges this PR")
 
     def test_failed_or_incomplete_changed_files_query_skips(self):
         self.fail_files = True

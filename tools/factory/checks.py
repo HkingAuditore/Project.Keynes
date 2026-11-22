@@ -114,7 +114,7 @@ class Runner:
         return {"name": name, "ok": r.ok, "code": r.code, "log": log,
                 "seconds": round(time.time() - started)}
 
-    def _run_native(self, results: list[dict]) -> bool:
+    def run_native(self, results: list[dict]) -> bool:
         c, tools = self.cfg["checks"], self.cfg["tools"]
         rebuild = Path(c["nativeRebuild"])
         self._require_path(str(rebuild.parent), directory=True)
@@ -122,7 +122,7 @@ class Runner:
         args = c["nativeImport"]
         self._require_path(args[args.index("--path") + 1], directory=True)
         self._require_path(c["nativeRuntimeCheck"])
-        libraries = self.cfg["paths"]["nativeLibraries"]
+        libraries = self.cfg["checks"]["nativeBuildOutputs"]
         # Force both targets to be produced here, even if SCons retained its object cache.
         for lib in libraries:
             (Path(self.workdir) / lib).unlink(missing_ok=True)
@@ -160,7 +160,7 @@ class Runner:
         for args in c["unit"]:
             self._require_unit_target(args)
             results.append(run_check("unit:" + " ".join(args[-1:]), [self.py, *args]))
-        if native and not self._run_native(results):
+        if native and not self.run_native(results):
             return results
         godot = self.cfg["tools"]["godot"]
         reg_logs = str(self.logdir / f"regression-{int(time.time())}")
@@ -197,9 +197,9 @@ class Candidate:
     """Check one pending commit against its parent and retain its build evidence."""
 
     def __init__(self, cfg: dict, workdir: str, facts: NativeFacts, *,
-                 merge_parent: str | None = None, force_native: bool = False) -> None:
+                 merge_parent: str | None = None) -> None:
         self.cfg, self.workdir, self.facts = cfg, workdir, facts
-        self.merge_parent, self.force_native = merge_parent, force_native
+        self.merge_parent = merge_parent
         self.inputs: dict[str, str | None] = {}
         self.built: dict[str, str | None] = {}
 
@@ -211,90 +211,50 @@ class Candidate:
     def scope(self, files: list[str]) -> tuple[list[str], list[str], list[str]]:
         bad, human, native = work.scope(self.cfg, files)
         if self.merge_parent is not None:
-            # Master can bring native input changes that are outside the PR's resolution scope.
-            from_head = work.changed(self.workdir, "HEAD")
-            native = work.scope(self.cfg, from_head)[2]
-            if work.GODOT_CPP in from_head:
+            # The merged checkout can differ from either parent's native build inputs.
+            from_parents = sorted(set(work.changed(self.workdir, "HEAD")) |
+                                  set(work.changed(self.workdir, self.merge_parent)))
+            native = work.scope(self.cfg, from_parents)[2]
+            if work.GODOT_CPP in from_parents:
                 native.append(work.GODOT_CPP)
-        if native or self.force_native:
-            if self.facts.native_libraries_committed:
-                self.facts.native_rebuilt = self.facts.native_runtime_ok = self.facts.native_libraries_committed = False
+        if native:
             self.facts.native_changed = True
-        if native or self.force_native or self.merge_parent is not None:
-            human = sorted(set(human) | (set(work.binary_changes(self.cfg, files)) - set(self.expected_libraries)))
         return bad, human, native
-
-    @property
-    def expected_libraries(self) -> list[str]:
-        return self.cfg["paths"]["nativeLibraries"]
-
-    def discard_binaries(self, files: list[str]) -> list[str]:
-        binaries = set(work.binary_changes(self.cfg, files))
-        if binaries:
-            work.restore(self.workdir, self.cfg["paths"]["trackedBinaries"])
-        return [path for path in files if path not in binaries]
 
     def _digests(self, files: list[str]) -> dict[str, str | None]:
         return {path: file_digest(Path(self.workdir) / path) for path in files}
 
     def run(self, base: str, files: list[str], logdir: str, extra: list[str]) -> tuple[list[dict], list[str]]:
         _, _, native = self.scope(files)
-        rebuild = bool(native) or self.force_native
-        self.inputs, self.built = self._digests(native), {}
-        if rebuild or not self.facts.native_libraries_committed:
-            self.facts.native_changed = rebuild
+        if native or self.inputs:
+            self.facts.native_changed = bool(native)
             self.facts.native_rebuilt = self.facts.native_runtime_ok = False
-        if not rebuild and self.merge_parent is None:
-            self.discard_binaries(files)
-        results = Runner(self.cfg, self.workdir, logdir).run(rebuild, extra)
-        if rebuild:
+        self.inputs, self.built = self._digests(native), {}
+        results = Runner(self.cfg, self.workdir, logdir).run(bool(native), extra)
+        if native:
             by_name = {row["name"]: row for row in results}
             build = by_name.get(NATIVE_REBUILD, {})
             self.facts.native_rebuilt = build.get("ok", False)
-            self.facts.native_runtime_ok = all(by_name.get(runtime_name(lib), {}).get("ok", False)
-                                               for lib in self.expected_libraries)
+            self.facts.native_runtime_ok = (
+                by_name.get(NATIVE_IMPORT, {}).get("ok", False)
+                and all(by_name.get(runtime_name(lib), {}).get("ok", False)
+                        for lib in self.cfg["checks"]["nativeBuildOutputs"])
+            )
             self.built = build.get("libraries", {})
-        after = self.changed(base)
-        if self.merge_parent is not None:
-            return results, after
-        if not rebuild and not work.scope(self.cfg, after)[2]:
-            after = self.discard_binaries(after)
-        elif rebuild and not self.facts.native_runtime_ok:
-            # A failed rebuild can leave one or both targets missing. Restore the parents'
-            # libraries for the next repair attempt, while preserving any out-of-scope changes.
-            if set(work.binary_changes(self.cfg, after)).issubset(self.expected_libraries):
-                after = self.discard_binaries(after)
-        return results, after
+        return results, self.changed(base)
 
-    def commit_problem(self, files: list[str], native: list[str]) -> str | None:
-        changed = set(work.binary_changes(self.cfg, files))
-        if not (native or self.force_native):
-            if self.inputs:
-                return "C++ files changed after the native checks"
-            if self.merge_parent is not None and changed:
-                return "native libraries changed without a rebuild"
-            return None
+    def commit_problem(self, native: list[str]) -> str | None:
+        if not native:
+            return "C++ files changed after the native checks" if self.inputs else None
         if (self.inputs != self._digests(native) or
                 not (self.facts.native_rebuilt and self.facts.native_runtime_ok)):
             return "both macOS libraries must be rebuilt and pass runtime checks for the current C++ changes"
-        expected = set(self.expected_libraries)
-        # A verified rebuild in a merge can reproduce either parent's library byte for byte.
-        if self.merge_parent is None and changed != expected:
-            missing = ", ".join(sorted(expected - changed))
-            unexpected = ", ".join(sorted(changed - expected))
-            return f"expected exactly the two rebuilt macOS libraries to change (missing: {missing or 'none'}; unexpected: {unexpected or 'none'})"
         if any(not digest or self.built.get(lib) != digest
-               for lib, digest in self._digests(self.expected_libraries).items()):
+               for lib, digest in self._digests(self.cfg["checks"]["nativeBuildOutputs"]).items()):
             return "the macOS libraries differ from this run's rebuild outputs"
-        if self.merge_parent is not None:
-            tracked = work.git(self.workdir, "ls-files", "-z", "--", *self.expected_libraries)
-            if not expected.issubset(tracked.split("\0")):
-                return "the merge must include both rebuilt macOS libraries"
         return None
 
     def committed(self) -> None:
-        if self.inputs or self.force_native:
-            self.facts.native_libraries_committed = True
         self.inputs, self.built = {}, {}
 
 
@@ -322,8 +282,13 @@ def base_results(cfg: dict, workdir: str, sha: str, cache_dir: str, logdir: str)
     """Reuse passing checks on the same base commit. Retry failed or missing checks."""
     cache = Path(cache_dir) / f"{sha}.json"
     cached = json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else []
-    results = Runner(cfg, workdir, logdir).run(native=False, extra=[], cached=cached)
-    passed = [r for r in results if r["ok"]]
+    libraries = cfg["checks"]["nativeBuildOutputs"]
+    tracked = work.git(workdir, "ls-files", "-z", "--", *libraries).split("\0")
+    # Older parents carry their own libraries. New parents need local builds even
+    # when their ordinary check results are cached.
+    native = not set(libraries).issubset(tracked)
+    results = Runner(cfg, workdir, logdir).run(native=native, extra=[], cached=cached)
+    passed = [r for r in results if r["ok"] and not r["name"].startswith("native-")]
     if passed != cached:
         cache.parent.mkdir(parents=True, exist_ok=True)
         tmp = cache.with_suffix(".tmp")
