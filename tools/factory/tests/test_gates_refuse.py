@@ -17,6 +17,7 @@ import agent
 import checks
 import ticket
 import verdict
+import work
 import watch_prs
 from common import load_config
 
@@ -81,8 +82,21 @@ GATES = {
     ],
     "extra_checks": [
         ("a command outside the allowlist is rejected", lambda: checks.extra_checks(["rm -rf x"], r"^godot ")[1] == ["rm -rf x"]),
-        ("an allowlisted prefix with a second command is not accepted silently", lambda: "x" not in
-            checks.extra_checks(["godot a; rm x"], r"^godot [a-z./_]+$")[0]),
+        ("an allowlisted prefix with a second command is rejected, not accepted",
+         lambda: checks.extra_checks(["godot a; rm x"], r"^godot [a-z./_]+$")[:2] == ([], ["godot a; rm x"])),
+    ],
+    "matches": [
+        ("a folder pattern does not match a sibling that shares its prefix", lambda: not ticket.matches("tools/factory2/x.py", "tools/factory/")),
+        ("an exact pattern does not match a longer path", lambda: not ticket.matches("a/bc", "a/b")),
+        ("a glob does not match across a different name", lambda: not ticket.matches("tools/ci/other.json", "tools/ci/*baseline*.json")),
+    ],
+    "touching": [
+        ("an unprotected file is not reported", lambda: ticket.touching(["docs/a.md"], CFG["paths"]["forbidden"]) == []),
+        ("a protected file is reported", lambda: ticket.touching([".github/x.yml"], CFG["paths"]["forbidden"]) == [".github/x.yml"]),
+    ],
+    "scope": [
+        ("a forbidden path is reported as forbidden", lambda: work.scope(CFG, ["tools/factory/a.py"])[0] == ["tools/factory/a.py"]),
+        ("an ordinary path is reported in no list", lambda: work.scope(CFG, ["docs/a.md"]) == ([], [], [])),
     ],
     "gate": [
         ("empty title", lambda: bool(ticket.gate("", "## Acceptance criteria\n- [ ] a", [], []))),
@@ -99,7 +113,7 @@ GATES = {
     ],
 }
 
-NAME_PARTS = ("gate", "parse", "classify", "validate", "allowed", "native_line", "extra_checks", "unknown_findings")
+NAME_PARTS = ("matches", "touching", "scope", "gate", "parse", "classify", "validate", "allowed", "native_line", "extra_checks", "unknown_findings")
 EXEMPT = {"gate": "registered as ticket.gate"}
 
 
@@ -134,7 +148,11 @@ class GatesRefuse(unittest.TestCase):
 
 
 # Functions whose names match but that are not gates; each needs a reason.
-KNOWN_UNLISTED = {}
+KNOWN_UNLISTED = {
+    "scope_problems": "calls work.scope, whose refusals are in GATES; the stop is exercised in test_workflow.py",
+    "scope_problem": "calls Candidate.scope over work.scope; refusals are in GATES",
+    "scope_blocked": "reports scope_problem's result; refusals are in GATES",
+}
 
 if __name__ == "__main__":
     unittest.main()
