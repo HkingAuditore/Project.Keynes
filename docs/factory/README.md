@@ -1,6 +1,6 @@
 # 工厂
 
-工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。工厂**不会自动认领 issue**，issue 模式只能手动运行。合到 fork 后，再由人向上游提 PR。
+工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。定时轮询处理完 PR 后，还会认领最早的一张可做工单（见下文 Issue 模式）。合到 fork 后，再由人向上游提 PR。
 
 代码在 `tools/factory/`，配置在 `tools/factory/config.json`，Qodo 评审规则在 [qodo-rules.json](qodo-rules.json)，每条规则由什么强制见 [rule-coverage.md](rule-coverage.md)，人工纠正记录在 [corrections.md](corrections.md)。
 
@@ -55,13 +55,13 @@
 
 补丁都保存在本次日志目录。主仓库的补丁是 `fix.patch`，有改动的子模块各有一份以子模块路径命名的补丁，例如 `fix.gdext__godot-cpp.patch`。停下时会列出所有保存的路径。
 
-## Issue 模式（只能手动）
+## Issue 模式
 
-由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
+每次定时轮询在处理完 PR 后运行 `run.py --next`（`config.json` 的 `autoClaimIssues`，默认开）：按创建时间取最早一张打了 `ready-for-agent`、没有 `agent-working` / `agent-needs-help` / 跳过标签、且 `agent/issue-N` 分支上没有打开的 PR 的 issue，与 `run.py --issue N` 一样处理；锁被占用时这一轮不认领。认领时移除 `ready-for-agent`，所以一张工单只会被自动认领一次；结论不是 READY 时要人移除 `agent-needs-help` 并重新加 `ready-for-agent` 才会再跑。也可以手动运行 `run.py --issue N` 指定工单。已关闭的 issue 直接跳过。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
 
 ```mermaid
 flowchart TD
-  T[人运行 run.py --issue N<br/>issue 带 ready-for-agent] --> G0{G0 工单检查<br/>有标题、有验收标准条目、<br/>没有 blocked / needs-investigation}
+  T[轮询 run.py --next 或人运行 run.py --issue N<br/>issue 带 ready-for-agent] --> G0{G0 工单检查<br/>有标题、有验收标准条目、<br/>没有 blocked / needs-investigation}
   G0 -- 不通过 --> H[agent-needs-help<br/>移除 ready-for-agent，评论写明原因]
   G0 -- 通过 --> W[认领：agent-working<br/>工作树重置到 fork/master]
   W --> B[在 base 上跑检查<br/>按提交缓存通过项]

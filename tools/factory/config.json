@@ -6,6 +6,7 @@
   "home": "~/.keynes-factory",
   "autoMerge": true,
   "autoUpdateConflicts": true,
+  "autoClaimIssues": true,
   "labels": {
     "trigger": "ready-for-agent",
     "working": "agent-working",

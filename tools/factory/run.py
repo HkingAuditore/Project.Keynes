@@ -463,17 +463,43 @@ class Run:
         return 1 if self.gh.errors else 0
 
 
+def claimable(tickets: list[dict], cfg: dict) -> list[int]:
+    """Open `ready-for-agent` tickets the poller may start, oldest first.
+
+    A ticket that is being worked on or waits for a person is not taken again."""
+    L = cfg["labels"]
+    held = set(cfg["skipLabels"]) | {L["working"], L["help"]}
+    return [t["number"] for t in tickets if L["trigger"] in t["labels"] and not held.intersection(t["labels"])]
+
+
+def next_ticket(gh: GitHub, cfg: dict) -> int | None:
+    for number in claimable(gh.tickets(cfg["labels"]["trigger"]), cfg):
+        if not gh.open_pr(f"{cfg['issueBranchPrefix']}{number}"):
+            return number
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--issue", type=int)
+    ap.add_argument("--next", action="store_true", help="take the oldest claimable ticket (the poller runs this)")
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
     cfg = load_config()
     gh = GitHub(cfg["repo"])
+    if a.next and not a.issue:
+        if not cfg.get("autoClaimIssues", False):
+            return 0
+        a.issue = next_ticket(gh, cfg)
+        if not a.issue:
+            return 0
     if not a.issue:
-        print("issue mode is manual: pass --issue N (the poller only watches PRs, see watch_prs.py)")
+        print("pass --issue N, or --next to take the oldest claimable ready-for-agent ticket")
         return 2
     issue = gh.issue(a.issue)
+    if issue.get("state", "OPEN") != "OPEN":
+        print(f"issue #{a.issue} is {issue['state'].lower()}; nothing to do")
+        return 0
     lock = Path(cfg["home"]) / "lock"
     if not a.dry and not take_lock(lock):
         print("another factory run holds the lock")

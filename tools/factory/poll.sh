@@ -1,5 +1,6 @@
 #!/bin/zsh -l
-# One poll: refresh the runner worktree to the fork's master, then look at the open PRs once.
+# One poll: refresh the runner worktree to the fork's master, look at the open PRs once,
+# then start the oldest claimable ready-for-agent ticket if no run holds the lock.
 # launchd starts this through `/bin/zsh -l` so PATH has gh, git, codex and node.
 set -eu
 : "${KEYNES_REPO:?set KEYNES_REPO to the main Project.Keynes checkout}"
@@ -23,4 +24,11 @@ if [ ! -f tools/factory/watch_prs.py ]; then
   echo "$(date -u +%FT%TZ) tools/factory/watch_prs.py is missing from $RUNNER" >&2
   exit 1
 fi
-exec "${KEYNES_FACTORY_PYTHON:-python3}" tools/factory/watch_prs.py "$@"
+py="${KEYNES_FACTORY_PYTHON:-python3}"
+# PRs first; then, on a plain poll, at most one ready-for-agent ticket (run.py --next).
+rc=0
+"$py" tools/factory/watch_prs.py "$@" || rc=$?
+if [ "$#" -eq 0 ]; then
+  "$py" tools/factory/run.py --next || rc=$?
+fi
+exit $rc
