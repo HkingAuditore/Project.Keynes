@@ -453,7 +453,17 @@ class Watcher:
             return "head moved"
         if fresh["baseRefName"] != base:
             return "the PR base changed before push"
-        if fresh["baseRefOid"] != parent and self.base_moved(base, parent, fresh["baseRefOid"], ev):
+        # GitHub's baseRefOid is refreshed only when the PR head is pushed, so it can name a commit far
+        # behind the branch. A stale value would refuse every push, and with no push it never refreshes.
+        # Read the branch itself.
+        try:
+            now = work.remote_head(self.workdir, self.cfg["remote"], base)
+        except RuntimeError as e:
+            ev.add("base-read-failed", error=str(e))
+            now = None
+        if now is None:
+            return "the PR base could not be read before push"
+        if now != parent and self.base_moved(base, parent, now, ev):
             return "the PR base changed before push"
         if fresh["state"] != "OPEN" or fresh["isDraft"] or fresh["isCrossRepository"]:
             return "the PR is no longer open and eligible for conflict updates"

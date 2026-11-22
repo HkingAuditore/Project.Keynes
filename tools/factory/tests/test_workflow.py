@@ -867,6 +867,42 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(self.remote_head(), self.pr["headRefOid"])
         self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
 
+    def test_stale_base_sha_in_github_metadata_does_not_skip_the_push(self):
+        # GitHub refreshes baseRefOid only on a head push; PR #34 kept an 11-20 base for days.
+        self.text_conflict()
+        self.fresh_fields = {"baseRefOid": "0" * 40}
+        self.tick()
+        self.assert_merge(used_codex=True)
+
+    def test_base_moved_on_the_remote_skips_the_push_even_if_github_metadata_did_not_move(self):
+        self.text_conflict()
+        self.move_base_during_the_update("other/later.txt")
+        resolve = self.codex.side_effect
+
+        def keep_stale_metadata(*args, **kwargs):
+            report = resolve(*args, **kwargs)
+            self.fresh_fields = {"baseRefOid": self.base}
+            return report
+
+        self.codex.side_effect = keep_stale_metadata
+        record = self.tick()
+        self.assertEqual(record["reason"], "the PR base changed before push")
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
+
+    def test_unreadable_base_branch_refuses_the_push(self):
+        self.text_conflict()
+        real = work.remote_head
+
+        def no_base(workdir, remote, branch):
+            return None if branch == "master" else real(workdir, remote, branch)
+
+        self.enterContext(patch("work.remote_head", side_effect=no_base))
+        record = self.tick()
+        self.assertEqual(record["outcome"], "skipped")
+        self.assertEqual(record["reason"], "the PR base could not be read before push")
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+
     def test_check_missing_on_one_parent_is_not_a_regression_from_both(self):
         self.text_conflict()
         self.parent_results["base"].pop()
