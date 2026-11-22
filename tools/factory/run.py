@@ -87,7 +87,9 @@ class Run:
         files = work.changed(self.workdir, base)
         res, after = self.candidate.run(base, files, self.path(f"checks-{label}"), extra)
         # AGENTS.md: found failures are fixed before a push, including ones master already had.
-        new = checks.failed(res)
+        # A plan-requested check that already fails on the base says nothing about this change, so
+        # it does not hold the work up. The default checks keep the rule above.
+        new = [n for n in checks.failed(res) if n not in self.facts.base_extra_failures]
         self.ev.add("checks", label=label, failed=checks.failed(res), new=new, results=res)
         _, self.facts.human_paths, _ = self.candidate.scope(after)
         return res, new
@@ -312,6 +314,9 @@ class Run:
         if self.facts.accepted_disputes:
             local += ("Findings the agent disputed, settled its way (its judgement takes precedence):\n"
                       + "\n".join(f"- {d[:800]}" for d in self.facts.accepted_disputes) + "\n\n")
+        if self.facts.base_extra_failures:
+            local += ("Plan-requested checks that already fail on the base and were not held against this change:\n"
+                      + "\n".join(f"- `{n}`" for n in self.facts.base_extra_failures) + "\n\n")
         if self.facts.local_review_incomplete:
             local += "Qodo local review coverage was incomplete. See the factory run record for details.\n\n"
         return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n{local}"
@@ -414,6 +419,10 @@ class Run:
         extra, rejected, dup = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"],
                                                    checks.already_run(cfg))
         self.record["extraChecks"] = {"run": extra, "rejected": rejected, "alreadyRun": dup}
+        if extra and not rejected:
+            self.facts.base_extra_failures = checks.failed(
+                checks.Runner(cfg, self.workdir, self.path("checks-base-extra")).run_extras(extra))
+            self.ev.add("base-extra-checks", failed=self.facts.base_extra_failures)
         # It only runs when native sources change; judge() flags the request if they do not.
         self.facts.native_requested = checks.requests_native(dup, cfg)
         self.facts.rejected_checks = rejected

@@ -167,6 +167,14 @@ class Runner:
         self._require_path(c["regression"][0])
         reg = [self.py, *c["regression"], "--godot", godot, "--log-dir", reg_logs, "--import"]
         results.append(run_check("regression", reg))
+        results += self.run_extras(extra, run_check)
+        return results
+
+    def run_extras(self, extra: list[str], run_check=None) -> list[dict]:
+        """The commands the plan asked for on top of the default checks."""
+        run_check = run_check or (lambda name, args, cwd=None: self._run(name, args, cwd))
+        godot = self.cfg["tools"]["godot"]
+        results = []
         for cmd in extra:
             parts = shlex.split(cmd)
             self._require_path(parts[0])

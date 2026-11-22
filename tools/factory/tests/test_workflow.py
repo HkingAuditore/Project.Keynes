@@ -100,6 +100,34 @@ class IssueWorkflowTest(TempFactory):
             _, blocking = run.run_checks("t", [], ["regression"])
         self.assertEqual(blocking, ["regression"])
 
+    def test_requested_check_that_fails_on_the_base_does_not_block_a_push(self):
+        extra = "extra:tools/ci/run_regression_checks.py tests/world/slow_test.gd"
+        run = self.make_run()
+        run.facts.base_extra_failures = [extra]
+        run.candidate = Mock()
+        run.candidate.run.return_value = ([{"name": extra, "ok": False, "code": 1, "log": "x"},
+                                           {"name": "static:a.py", "ok": False, "code": 1, "log": "y"}], [])
+        run.candidate.scope.return_value = ([], [], [])
+        with patch("work.changed", return_value=["a.gd"]):
+            _, blocking = run.run_checks("t", [], [])
+        self.assertEqual(blocking, ["static:a.py"])
+
+    def test_go_runs_requested_checks_on_the_base_before_implementing(self):
+        extra = "tools/ci/run_regression_checks.py tests/world/slow_test.gd"
+        run = self.make_run()
+        run.gh.relabel.return_value = None
+        run.gh.open_pr.return_value = None
+        seen = []
+        with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.base_results", return_value=[]), patch.object(run, "plan", return_value="plan"),
+              patch("agent.plan_checks", return_value=[extra]),
+              patch("checks.Runner") as runner,
+              patch.object(run, "implement", side_effect=lambda *a: seen.append(list(run.facts.base_extra_failures)) or False)):
+            runner.return_value.run_extras.return_value = [{"name": f"extra:{extra}", "ok": False, "code": 1, "log": "x"}]
+            run.go(ISSUE)
+        runner.return_value.run_extras.assert_called_once_with([extra])
+        self.assertEqual(seen, [[f"extra:{extra}"]])
+
     def test_issue_pr_is_labelled_until_the_verdict(self):
         run = self.make_run()
         run.gh.relabel.return_value = None
