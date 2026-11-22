@@ -148,6 +148,65 @@ static bool psi_alias(bool all_land) {
 }
 
 #ifdef PK_TEST_CLIMATE_WORKER
+static bool ocean_land_inflow() {
+    using namespace pk::pk_async_climate;
+    constexpr float full_inflow = 0.0056f;
+    const uint8_t water[] = {0, 1, 1};
+    const float x[] = {0.0f, -1.0f, 0.0f};
+    const float y[] = {0.0f, 0.0f, -1.0f};
+    const int32_t neighbors[] = {1, 2, -1, -1, -1, -1};
+    OceanLandKnobs knobs;
+    knobs.n_cells = 3;
+    knobs.end_idx = 1;
+    knobs.effective_leak = 0.5f;
+    knobs.tta_blend_rate = 0.5f;
+    knobs.tta_decay_rate = 0.25f;
+
+    struct Result { float transport; float ocean; };
+    const auto run = [&](float shoreward, float prev, float background,
+                         float second_shoreward = 0.0f) {
+        // Tangential flow keeps both neighbors above the speed floor even at zero projection.
+        const float current_x[] = {0.0f, shoreward, 0.005f};
+        const float current_y[] = {0.0f, 0.005f, second_shoreward};
+        float transport[] = {prev, -0.125f, -0.25f};
+        float ocean[] = {background, 0.0f, 0.0f};
+        ocean_land_pure(knobs, {water, x, y, current_x, current_y, neighbors, transport, ocean});
+        return Result{transport[0], ocean[0]};
+    };
+
+    const Result tiny = run(1e-10f, 0.0f, 0.0f);
+    CHECK(tiny.transport < 0.0f && tiny.transport > -1e-8f);
+    CHECK(tiny.ocean == tiny.transport);
+
+    constexpr float previous = 0.03125f;
+    constexpr float background = 0.0625f;
+    for (float shoreward : {0.0f, -1e-10f, -0.02f}) {
+        const Result no_inflow = run(shoreward, previous, background);
+        CHECK(no_inflow.transport == 0.0234375f && no_inflow.ocean == 0.08f);
+    }
+    const Result tiny_with_memory = run(1e-10f, previous, background);
+    CHECK(tiny_with_memory.transport == 0.0234375f && tiny_with_memory.ocean == 0.08f);
+
+    // Scaling the full single-neighbor result (-1/32) also scales its ocean term
+    // on both sides of the old 1e-5 write cutoff.
+    for (float divisor : {4096.0f, 2048.0f}) {
+        const Result weak = run(full_inflow / divisor, 0.0f, 0.0f);
+        CHECK(weak.transport == -0.03125f / divisor && weak.ocean == weak.transport);
+    }
+    const Result half = run(full_inflow / 2.0f, previous, background);
+    CHECK(half.transport == (0.0234375f - 0.015625f) * 0.5f);
+    CHECK(half.ocean == (0.08f + 0.046875f) * 0.5f);
+
+    for (float shoreward : {full_inflow, 0.02f}) {
+        const Result full = run(shoreward, previous, background);
+        CHECK(full.transport == -0.015625f && full.ocean == 0.046875f);
+    }
+    // Two individually weak flows reach full transfer together, with both sources weighted in.
+    const Result combined = run(full_inflow / 2.0f, 0.0f, 0.0f, full_inflow / 2.0f);
+    CHECK(combined.transport == -0.046875f && combined.ocean == combined.transport);
+    return true;
+}
+
 static bool validate_large_environment() {
     constexpr int cells = 4097;
     pk::RuntimeEnvironmentSnapshot input;
@@ -273,7 +332,7 @@ int main() {
 #endif
     if (!state_roundtrip() || !forcing_and_divergence() || !psi_alias(false) || !psi_alias(true)) return 1;
 #ifdef PK_TEST_CLIMATE_WORKER
-    if (!worker_progress(false) || !worker_progress(true)) return 1;
+    if (!ocean_land_inflow() || !worker_progress(false) || !worker_progress(true)) return 1;
 #endif
     std::puts("PASS climate physics focused tests");
     return 0;
