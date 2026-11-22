@@ -81,3 +81,21 @@ def describe(findings: list[dict]) -> str:
         parts.append(f"- id `{f.get('id')}` [{f.get('action_level')}] {f.get('title')} at {where}\n"
                      f"  {(f.get('description') or '').strip()[:1500]}")
     return "\n".join(parts)
+
+
+def dismiss(qodo: str, finding_id: str, explanation: str) -> str | None:
+    """Close one PR finding without a code change because the factory agent disputed it.
+
+    The agent's judgement wins over Qodo's (a standing decision). Returns None on success, else the error.
+    """
+    r = sh([qodo, "pr-review-session", "dismiss", "--finding-ids", finding_id, "--reason", "rejected",
+            "--explanation", explanation[:2000], "--json"], timeout=120)
+    data = _parse(r.out) or {}
+    outcome = ((data.get("results") or {}).get(finding_id) or {}).get("status")
+    if r.ok and outcome == "dismissed":
+        return None
+    return f"exit {r.code}, outcome {outcome!r}: {(r.err or r.out).strip()[-300:]}"
+
+
+def accepted_explanation(evidence: str) -> str:
+    return f"Disputed by the factory agent (Codex), whose judgement takes precedence: {evidence}"

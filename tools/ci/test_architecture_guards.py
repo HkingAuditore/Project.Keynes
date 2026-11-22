@@ -225,8 +225,6 @@ class GuardsTest(unittest.TestCase):
             leaf.write_text("pass\n" * 810)
             baseline = size.measure(root)
             self.assertFalse(size.violations(baseline, baseline))
-            leaf.write_text("pass\n" * 860)
-            self.assertFalse(size.violations(size.measure(root), baseline))
             leaf.write_text("pass\n" * 861)
             self.assertEqual(len(size.violations(size.measure(root), baseline)), 1)
             current = size.measure(root)
@@ -249,7 +247,7 @@ class GuardsTest(unittest.TestCase):
             capture_output=True, text=True, env=env,
         )
 
-    def test_size_growth_warning_and_github_annotation(self):
+    def test_size_growth_and_github_error_annotation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             leaf = root / "Project/project-keynes/scripts/leaf.gd"
@@ -267,12 +265,45 @@ class GuardsTest(unittest.TestCase):
                     if github is not None:
                         env["GITHUB_ACTIONS"] = github
                     result = self.run_size_guard(root, env=env)
-                    expected = [f"warning: {message}"]
+                    expected = []
                     if github == "true":
-                        expected.append(f"::warning file={name}::{message}")
-                    expected.append("size ratchet: 1 files, 0 violations, 1 growth warnings")
-                    self.assertEqual(result.returncode, 0, result.stderr)
+                        expected.append(f"::error file={name}::{message}")
+                    expected.extend([
+                        "size ratchet: 1 files, 1 violations, 0 growth warnings",
+                        f"{name}: 850 lines > 810 (threshold 800)",
+                    ])
+                    self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_size_baselined_file_with_no_growth_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text("pass\n" * 810)
+            (root / "baseline.json").write_text(json.dumps(
+                {"version": 1, "files": size.measure(root)}))
+
+            result = self.run_size_guard(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [
+                "size ratchet: 1 files, 0 violations, 0 growth warnings",
+            ])
+
+    def test_size_baselined_file_with_one_added_line_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text("pass\n" * 810)
+            (root / "baseline.json").write_text(json.dumps(
+                {"version": 1, "files": size.measure(root)}))
+            with leaf.open("a") as source:
+                source.write("\n")
+
+            result = self.run_size_guard(root)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("leaf.gd: 811 lines > 810 (threshold 800)", result.stdout)
 
     def test_size_baseline_write_leaves_file_unchanged_when_nothing_tightens(self):
         with tempfile.TemporaryDirectory() as directory:

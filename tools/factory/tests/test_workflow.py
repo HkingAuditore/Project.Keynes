@@ -25,7 +25,7 @@ from common import Events, Result, load_config
 from github import GitHub
 from run import Run
 from verdict import CIFacts, CIRun, Verdict
-from watch_prs import PrState, Watcher
+from watch_prs import PrState, Watcher, decide
 
 
 ISSUE = {"title": "Example", "body": "## Acceptance criteria\n1. Pass\n", "labels": ["ready-for-agent"]}
@@ -45,6 +45,8 @@ class TempFactory(unittest.TestCase):
         self.cfg = load_config()
         self.cfg["home"] = str(self.root)
         self.enterContext(redirect_stdout(io.StringIO()))
+        # Never reach the real Qodo service from a test; a test that cares sets the outcome.
+        self.dismiss = self.enterContext(patch("qodo.dismiss", return_value=None))
 
     def write_file(self, root, path, text=""):
         target = root / path
@@ -97,6 +99,34 @@ class IssueWorkflowTest(TempFactory):
         with patch("work.changed", return_value=["a.gd"]):
             _, blocking = run.run_checks("t", [], ["regression"])
         self.assertEqual(blocking, ["regression"])
+
+    def test_requested_check_that_fails_on_the_base_does_not_block_a_push(self):
+        extra = "extra:tools/ci/run_regression_checks.py tests/world/slow_test.gd"
+        run = self.make_run()
+        run.facts.base_extra_failures = [extra]
+        run.candidate = Mock()
+        run.candidate.run.return_value = ([{"name": extra, "ok": False, "code": 1, "log": "x"},
+                                           {"name": "static:a.py", "ok": False, "code": 1, "log": "y"}], [])
+        run.candidate.scope.return_value = ([], [], [])
+        with patch("work.changed", return_value=["a.gd"]):
+            _, blocking = run.run_checks("t", [], [])
+        self.assertEqual(blocking, ["static:a.py"])
+
+    def test_go_runs_requested_checks_on_the_base_before_implementing(self):
+        extra = "tools/ci/run_regression_checks.py tests/world/slow_test.gd"
+        run = self.make_run()
+        run.gh.relabel.return_value = None
+        run.gh.open_pr.return_value = None
+        seen = []
+        with (patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("checks.base_results", return_value=[]), patch.object(run, "plan", return_value="plan"),
+              patch("agent.plan_checks", return_value=[extra]),
+              patch("checks.Runner") as runner,
+              patch.object(run, "implement", side_effect=lambda *a: seen.append(list(run.facts.base_extra_failures)) or False)):
+            runner.return_value.run_extras.return_value = [{"name": f"extra:{extra}", "ok": False, "code": 1, "log": "x"}]
+            run.go(ISSUE)
+        runner.return_value.run_extras.assert_called_once_with([extra])
+        self.assertEqual(seen, [[f"extra:{extra}"]])
 
     def test_issue_pr_is_labelled_until_the_verdict(self):
         run = self.make_run()
@@ -243,6 +273,23 @@ class IssueWorkflowTest(TempFactory):
         self.assertIn("Codex timed out", run.facts.stopped_by)
         for path in paths:
             self.assertIn(str(path), run.facts.stopped_by)
+
+    def test_agent_disputes_are_settled_its_way(self):
+        run = self.make_run()
+        run.accept_disputes([("local", "a.gd:1")], committed=False)
+        self.dismiss.assert_not_called()  # local findings are only set aside
+        run.accept_disputes([("pr", "b.gd:2")], committed=True)
+        self.dismiss.assert_called_once()
+        self.assertEqual(self.dismiss.call_args.args[1], "pr")
+        self.dismiss.return_value = "exit 1"
+        run.accept_disputes([("bad", "c.gd:3")], committed=True)
+        self.assertEqual(run.accepted, {"local", "pr"})
+        self.assertEqual(run.facts.accepted_disputes, ["local: a.gd:1", "pr: b.gd:2"])
+        self.assertEqual(len(run.facts.disagreements), 1)
+        self.assertIn("bad: c.gd:3", run.facts.disagreements[0])
+        run.cfg = {**run.cfg, "acceptAgentDisputes": False}
+        run.accept_disputes([("off", "d.gd:4")], committed=True)
+        self.assertIn("off: d.gd:4", run.facts.disagreements)
 
     def test_issue_review_fix_stops_on_invalid_dispute_file(self):
         run = self.make_run()
@@ -424,7 +471,34 @@ class WatchWorkflowTest(TempFactory):
                     self.assertIn(str(path), watcher.gh.comment.call_args.args[1])
                 watcher.gh.relabel.assert_called_with(7, [], ["agent-working"])
 
-    def test_disputed_head_runs_codex_once_across_two_ticks(self):
+    def test_disputed_findings_are_dismissed_and_the_head_can_merge(self):
+        watcher = self.make_watcher()
+        later = {**FINDING, "id": "later"}
+        with (patch.object(watcher, "prs", return_value=[PR]),
+              patch("qodo.pr_review", side_effect=[review(FINDING), review(FINDING, later)]),
+              patch("work.ensure"), patch("work.prepare", return_value=HEAD),
+              patch("work.head", return_value=HEAD), patch("work.changed", return_value=[]),
+              patch("checks.base_results", return_value=[]),
+              patch("work.scratch", return_value="- `f`: file.gd:42"),
+              patch("agent.codex", return_value={"ok": True, "report": ""}) as codex):
+            self.assertEqual(watcher.tick(None), 0)
+            self.assertEqual(watcher.tick(None), 0)
+        codex.assert_called_once()
+        self.dismiss.assert_called_once()
+        self.assertEqual(self.dismiss.call_args.args[1], "f")
+        self.assertIn("file.gd:42", self.dismiss.call_args.args[2])
+        state = watcher.load(7)
+        self.assertIsNone(state.gave_up_at)
+        self.assertEqual(state.disputed, [])
+        self.assertEqual(self.read_record(watcher)["outcome"], "disputed")
+        self.assertIn("dismissed in Qodo", watcher.gh.comment.call_args.args[1])
+        self.assertNotIn(call(7, ["agent-needs-help"], ["agent-working"]), watcher.gh.relabel.call_args_list)
+        # With the dispute settled, a clean review of the same head is no longer held for a person.
+        cfg = {**self.cfg, "autoMerge": False}
+        self.assertEqual(decide(PR, review(), state, cfg).reason, "no open blocking findings at the head")
+
+    def test_failed_dismissal_leaves_the_dispute_to_a_person(self):
+        self.dismiss.return_value = "exit 1"
         watcher = self.make_watcher()
         later = {**FINDING, "id": "later"}
         with (patch.object(watcher, "prs", return_value=[PR]),
@@ -458,7 +532,7 @@ class WatchWorkflowTest(TempFactory):
                 self.assertEqual(candidate_checks.call_count, int(bool(edits)))
                 state = watcher.load(7)
                 self.assertEqual(state.gave_up_at, HEAD)
-                self.assertEqual(state.disputed, ["f-long"])
+                self.assertEqual(state.disputed, [])  # dismissed in Qodo; only undisputed ids stop the fix
                 self.assertIn("f, other", state.reason)
                 record = self.read_record(watcher)
                 self.assertEqual(record["outcome"], "stopped")
@@ -650,7 +724,7 @@ class ConflictUpdateTest(TempFactory):
         self.watcher.gh.relabel.assert_any_call(7, ["agent-needs-help"], ["agent-working"])
         self.assertIn(reason, self.watcher.gh.comment.call_args.args[1])
 
-    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n", stage=True):
+    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n", stage=True, session=None):
         self.assertIn("edit.gd", prompt)
         self.assertTrue(writable)
         self.write_file(Path(workdir), "edit.gd", text)
@@ -718,13 +792,118 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(record["checks"]["new"], [])
         self.assertEqual(record["checks"]["beforeByParent"], {"head": [], "base": ["known"]})
 
-    def test_check_that_passed_on_both_parents_blocks_the_update(self):
-        self.text_conflict()
+    def fail_regression(self):
         self.after[1].update(ok=False, code=1, log=str(self.root / "regression.log"))
+
+    def test_check_that_passed_on_both_parents_and_cannot_be_repaired_blocks_the_update(self):
+        self.text_conflict()
+        resolve = self.codex.side_effect
+        repairs = []
+
+        def resolve_then_change_nothing(cfg, workdir, prompt, report, writable, **kwargs):
+            if not repairs and "edit.gd" in prompt:
+                repairs.append(None)
+                return resolve(cfg, workdir, prompt, report, writable, **kwargs)
+            repairs.append(prompt)
+            return {"ok": True, "code": 0, "report": "nothing to change", "session": "s1"}
+
+        self.codex.side_effect = resolve_then_change_nothing
+        self.fail_regression()
         record = self.tick()
         self.assert_stopped("the update has failing checks: regression")
         self.assertEqual(record["checks"]["new"], ["regression"])
+        self.assertEqual(len(repairs), 1 + self.cfg["limits"]["checkFixRounds"])
+        self.assertIn("pending merge", repairs[1])
+        self.assertIn("regression", repairs[1])
         self.assertEqual([c.args[2] for c in self.baseline.call_args_list], [self.pr["headRefOid"], self.base])
+
+    def test_codex_repairs_a_check_that_fails_only_after_the_merge(self):
+        self.text_conflict()
+        resolve = self.codex.side_effect
+
+        def resolve_then_repair(cfg, workdir, prompt, report, writable, **kwargs):
+            if "edit.gd" in prompt:
+                return resolve(cfg, workdir, prompt, report, writable, **kwargs)
+            self.after[1]["ok"] = True
+            self.write_file(Path(workdir), "split.gd", "moved\n")
+            return {"ok": True, "code": 0, "report": "regression: moved a responsibility out", "session": "s1"}
+
+        self.codex.side_effect = resolve_then_repair
+        self.fail_regression()
+        record = self.tick()
+        sha = self.assert_merge(used_codex=True)
+        self.assertEqual(work.git(str(self.remote), "show", f"{sha}:split.gd"), "moved")
+        self.assertEqual(len(record["checkFixReports"]), 1)
+        self.assertIn("Codex repaired checks", self.watcher.gh.comment.call_args.args[1])
+
+    def move_base_during_the_update(self, path):
+        resolve = self.codex.side_effect
+
+        def resolve_then_move(*args, **kwargs):
+            report = resolve(*args, **kwargs)
+            self.move_base(path)
+            return report
+
+        self.codex.side_effect = resolve_then_move
+
+    def move_base(self, path):
+        src = str(self.source)
+        work.git(src, "checkout", "-q", "master")
+        self.write_file(self.source, path, "later")
+        sha = self.commit(self.source)
+        work.git(src, "push", "-q", str(self.remote), "master")
+        self.fresh_fields = {"baseRefOid": sha}
+
+    def test_base_moved_by_factory_files_only_does_not_skip_the_push(self):
+        self.text_conflict()
+        self.move_base_during_the_update("tools/factory/later.txt")
+        self.tick()
+        self.assert_merge(used_codex=True)
+
+    def test_base_moved_by_other_files_skips_the_push_and_allows_a_retry(self):
+        self.text_conflict()
+        self.move_base_during_the_update("other/later.txt")
+        self.tick()
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
+
+    def test_stale_base_sha_in_github_metadata_does_not_skip_the_push(self):
+        # GitHub refreshes baseRefOid only on a head push; PR #34 kept an 11-20 base for days.
+        self.text_conflict()
+        self.fresh_fields = {"baseRefOid": "0" * 40}
+        self.tick()
+        self.assert_merge(used_codex=True)
+
+    def test_base_moved_on_the_remote_skips_the_push_even_if_github_metadata_did_not_move(self):
+        self.text_conflict()
+        self.move_base_during_the_update("other/later.txt")
+        resolve = self.codex.side_effect
+
+        def keep_stale_metadata(*args, **kwargs):
+            report = resolve(*args, **kwargs)
+            self.fresh_fields = {"baseRefOid": self.base}
+            return report
+
+        self.codex.side_effect = keep_stale_metadata
+        record = self.tick()
+        self.assertEqual(record["reason"], "the PR base changed before push")
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
+
+    def test_unreadable_base_branch_refuses_the_push(self):
+        self.text_conflict()
+        real = work.remote_head
+
+        def no_base(workdir, remote, branch):
+            return None if branch == "master" else real(workdir, remote, branch)
+
+        self.enterContext(patch("work.remote_head", side_effect=no_base))
+        record = self.tick()
+        self.assertEqual(record["outcome"], "skipped")
+        self.assertEqual(record["reason"], "the PR base could not be read before push")
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        # A failed read says nothing about this head, so the next poll tries it again.
+        self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
 
     def test_check_missing_on_one_parent_is_not_a_regression_from_both(self):
         self.text_conflict()

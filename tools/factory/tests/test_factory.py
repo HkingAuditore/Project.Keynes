@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import agent  # noqa: E402
 import checks  # noqa: E402
 from common import load_config  # noqa: E402
+from run import claimable  # noqa: E402
 from ticket import criteria, gate, touching  # noqa: E402
 from verdict import Facts, classify, judge  # noqa: E402
 
@@ -136,6 +137,21 @@ class TicketTest(unittest.TestCase):
         self.assertEqual(touching(files, ["tools/ci/*baseline*.json"]), ["tools/ci/size_baseline.json"])
         self.assertEqual(touching(files, [".github/"]), [".github/w.yml"])
         self.assertEqual(touching(files, ["a"]), [])
+
+
+class ClaimTest(unittest.TestCase):
+    def test_takes_ready_tickets_oldest_first_and_skips_held_ones(self) -> None:
+        cfg = load_config()
+        L = cfg["labels"]
+        tickets = [
+            {"number": 7, "labels": [L["trigger"]]},
+            {"number": 3, "labels": [L["trigger"], L["working"]]},
+            {"number": 4, "labels": [L["trigger"], L["help"]]},
+            {"number": 5, "labels": [L["trigger"], cfg["skipLabels"][0]]},
+            {"number": 6, "labels": []},
+            {"number": 9, "labels": [L["trigger"], "bug"]},
+        ]
+        self.assertEqual(claimable(tickets, cfg), [7, 9])
 
 
 class PlanTest(unittest.TestCase):

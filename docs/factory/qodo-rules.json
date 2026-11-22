@@ -118,6 +118,15 @@
       "content": "Economy construction quote and apply must both reject requests from a country whose frozen CountryReadView lacks CountryApi::CAP_TREASURY_CONSTRUCTION. Regime state belongs to Country and must not be written to HexCell, DataCore or the Ideology POD; restoring an old save must not default to allowing treasury construction.",
       "good_examples": "if (!(view.capability_bits & CountryApi::CAP_TREASURY_CONSTRUCTION)) {\n    return QuoteResult::rejected(QuoteReject::RegimeForbids);\n}",
       "bad_examples": "// quote checks the capability, apply does not\nreturn apply_construction(request);"
+    },
+    {
+      "name": "Keynes: gates are tested with inputs they must refuse",
+      "source": "AGENTS.md#project-rules (rule 6)",
+      "category": "Correctness",
+      "severity": "error",
+      "content": "A new or changed gate, parser, allowlist or validator in tools/factory/ (or any code that decides whether something may proceed) must come with a test that feeds it an input it has to refuse: malformed, empty, unknown, or carrying extra syntax. Tests that only show good input being accepted do not count. Unknown values must be refused, not read as clean, and the function must be listed in GATES in tools/factory/tests/test_gates_refuse.py.",
+      "good_examples": "GATES[\"native_line\"] = [(\"a second command after ;\", lambda: not native_line(SCRIPT + \" ; rm x\", SCRIPT))]",
+      "bad_examples": "def test_native_line(): assert native_line(SCRIPT + \" --flag\", SCRIPT)  # only the accepted case"
     }
   ]
 }

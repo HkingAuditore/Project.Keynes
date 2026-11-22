@@ -55,6 +55,10 @@ class Decision:
     needs_ci: bool = False
 
 
+# update_preflight refusals that say nothing about the merge itself, so the same head is tried again.
+RETRY_UPDATE = {"the PR base changed before push", "the PR base could not be read before push"}
+
+
 def automation_skip_labels(cfg: dict) -> set[str]:
     labels = cfg["labels"]
     return {*cfg["skipLabels"], labels["help"], labels["working"]}
@@ -121,8 +125,6 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
         if head in state.pushed and state.rounds >= limit:
             return Decision("stop", f"{limit} factory rounds used and the branch still conflicts")
         return Decision("update", "GitHub reports merge conflicts")
-    if head not in state.pushed and head in state.attempted:
-        return Decision("skip", "Codex already ran at this head; waiting for a person")
     if review is None:
         return Decision("skip", "Qodo review could not be read")
     session = review.get("review_session") or {}
@@ -172,6 +174,9 @@ def decide(pr: dict, review: dict | None, state: PrState, cfg: dict, *,
     block = [f for f in open_blocking if str(f.get("id")) not in state.disputed]
     if not block:
         return Decision("skip", "only findings the agent disputed are open; a person decides")
+    # Only gates another fix: a head whose findings the agent settled (dismissed disputes) may still merge.
+    if head not in state.pushed and head in state.attempted:
+        return Decision("skip", "Codex already ran at this head; waiting for a person")
     ids = sorted(str(f.get("id")) for f in block)
     round_limit = cfg["limits"]["prReviewRounds"]
     rounds = state.rounds if head in state.pushed else 0
@@ -426,6 +431,21 @@ class Watcher:
         ev.add("moved", expected=expected, got=got)
         return True
 
+    def base_moved(self, base: str, checked: str, now: str, ev: Events) -> bool:
+        """The base moved since the checks ran. Moves that touch only the factory's own files cannot
+        change what the checks saw, so they do not count."""
+        try:
+            work.git(self.workdir, "fetch", "-q", self.cfg["remote"], base)
+            files = work.git(self.workdir, "diff", "--name-only", checked, now).split("\n")
+        except RuntimeError as e:
+            ev.add("base-diff-failed", error=str(e))
+            return True
+        files = [f for f in files if f]
+        ours = tuple(self.cfg["paths"].get("factoryOnly", ["tools/factory/", "docs/factory/"]))
+        moved = [f for f in files if not f.startswith(ours)]
+        ev.add("base-moved", checked=checked, now=now, files=len(files), other=moved[:20])
+        return bool(moved)
+
     def update_preflight(self, pr: dict, base: str, parent: str, ev: Events) -> str | None:
         try:
             fresh = self.gh.pr_merge_state(pr["number"])
@@ -435,7 +455,19 @@ class Watcher:
         if fresh["headRefOid"] != pr["headRefOid"]:
             ev.add("moved", expected=pr["headRefOid"], got=fresh["headRefOid"])
             return "head moved"
-        if fresh["baseRefName"] != base or fresh["baseRefOid"] != parent:
+        if fresh["baseRefName"] != base:
+            return "the PR base changed before push"
+        # GitHub's baseRefOid is refreshed only when the PR head is pushed, so it can name a commit far
+        # behind the branch. A stale value would refuse every push, and with no push it never refreshes.
+        # Read the branch itself.
+        try:
+            now = work.remote_head(self.workdir, self.cfg["remote"], base)
+        except RuntimeError as e:
+            ev.add("base-read-failed", error=str(e))
+            now = None
+        if now is None:
+            return "the PR base could not be read before push"
+        if now != parent and self.base_moved(base, parent, now, ev):
             return "the PR base changed before push"
         if fresh["state"] != "OPEN" or fresh["isDraft"] or fresh["isCrossRepository"]:
             return "the PR is no longer open and eligible for conflict updates"
@@ -548,6 +580,8 @@ class Watcher:
                     return stop(record["agentFailure"], record["report"])
                 resolutions.extend([f"- `{path}` · resolved by Codex." for path in text])
 
+            repaired = False
+
             def merge_problem(files: list[str]) -> str | None:
                 if work.head(self.workdir) != head or work.merge_head(self.workdir) != parent:
                     return "the working checkout no longer has the expected pending merge"
@@ -564,15 +598,37 @@ class Watcher:
             reason = merge_problem(files) or self.scope_problem(files, candidate, before_commit=False)
             if reason:
                 return stop(reason)
-            res, files = candidate.run(head, files, str(logs / "checks-update"), [])
-            after = checks.failed(res)
-            new = [name for name in after if name in passed_on_both]
-            native_failed = [name for name in after if name.startswith("native-")]
-            ev.add("checks-after", failed=after, new=new, nativeFailed=native_failed)
-            record["checks"].update(after=after, new=new, nativeFailed=native_failed, results=res)
-            record["files"] = files
-            if self.update_head_moved(pr, ev):
-                return "head moved"
+            rounds, session = cfg["limits"].get("checkFixRounds", 0), None
+            for attempt in range(rounds + 1):
+                res, files = candidate.run(head, files, str(logs / ("checks-update" if attempt == 0 else f"checks-update-{attempt}")), [])
+                after = checks.failed(res)
+                new = [name for name in after if name in passed_on_both]
+                native_failed = [name for name in after if name.startswith("native-")]
+                ev.add("checks-after", failed=after, new=new, nativeFailed=native_failed, attempt=attempt)
+                record["checks"].update(after=after, new=new, nativeFailed=native_failed, results=res)
+                record["files"] = files
+                if self.update_head_moved(pr, ev):
+                    return "head moved"
+                if not new or native_failed or attempt == rounds:
+                    break
+                # Two changes that each fit can fail together. Give Codex the failing checks on the pending merge.
+                prompt = agent.render("fix-update", number=str(n), title=pr["title"], base=base,
+                                      feedback=checks.feedback(res, new))
+                out = agent.codex(cfg, self.workdir, prompt, str(logs / f"fix-update-{attempt + 1}.md"), writable=True,
+                                  session=session)
+                session = out.get("session") or session
+                record.setdefault("checkFixReports", []).append(out["report"][-4000:])
+                ev.add("check-fix", attempt=attempt + 1, ok=out["ok"], code=out.get("code"))
+                if self.update_head_moved(pr, ev):
+                    return "head moved"
+                if not out["ok"]:
+                    return stop(agent.failure_reason(out) + " while fixing the checks that fail after the merge",
+                                out["report"])
+                repaired = True
+                files = candidate.changed(head)
+                reason = merge_problem(files) or self.scope_problem(files, candidate, before_commit=False)
+                if reason:
+                    return stop(reason)
             # The required native gates block even without a baseline result.
             blocking = sorted(set(new) | set(native_failed))
             if blocking:
@@ -588,7 +644,7 @@ class Watcher:
             if reason:
                 return stop(reason)
             message = f"Merge {base} into {pr['headRefName']}\n\n{TRAILER}\n"
-            if text:
+            if text or repaired:
                 message += f"Implemented-By: Codex ({cfg['agent']['model']})\n"
             sha = work.commit(self.workdir, message, staged=True)
             if work.git(self.workdir, "show", "-s", "--format=%P", sha).split() != [head, parent]:
@@ -599,6 +655,10 @@ class Watcher:
             if blocker:
                 record["reason"] = blocker
                 ev.add("push-skipped", reason=blocker)
+                if blocker in RETRY_UPDATE:
+                    # The base moved, or could not be read this time; retry this head on the next poll.
+                    st.update_attempted.remove(head)
+                    self.save(n, st)
                 return "head moved" if blocker == "head moved" else "skipped"
             try:
                 work.git(self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
@@ -618,6 +678,8 @@ class Watcher:
                      *(resolutions or ["Git merged cleanly with the fetched base."])]
             if text:
                 lines += ["", "Codex resolution notes", "", record["report"]]
+            if repaired:
+                lines += ["", "Codex repaired checks that failed after the merge", "", *record["checkFixReports"]]
             lines += ["", facts.report(), "", "Checks", ""]
             lines += [f"- `{row['name']}` · {'passed' if row['ok'] else 'failed'}" for row in res]
             for label, failures in (("PR head", parent_failures["head"]), (base, parent_failures["base"])):
@@ -667,7 +729,19 @@ class Watcher:
         ids = sorted(str(f["id"]) for f in findings)
         undisputed = sorted(set(ids) - disputed_ids)
         st.seen.append(ids)
-        st.disputed = sorted(set(st.disputed) | disputed_ids)
+        # The agent's judgement wins over Qodo's: close each disputed finding in Qodo with its evidence.
+        # Only a dismissal that fails is left for a person.
+        unsettled = set(disputed_ids)
+        if cfg.get("acceptAgentDisputes", True):
+            for finding_id, evidence in parsed:
+                error = qodo.dismiss(cfg["tools"]["qodo"], finding_id, qodo.accepted_explanation(evidence))
+                if error:
+                    record.setdefault("dismissErrors", {})[finding_id] = error
+                else:
+                    unsettled.discard(finding_id)
+                    record.setdefault("dismissed", []).append(finding_id)
+            ev.add("disputes-dismissed", dismissed=record.get("dismissed", []), failed=sorted(unsettled))
+        st.disputed = sorted(set(st.disputed) | unsettled)
 
         if work.head(self.workdir) != head:
             self.stop(pr, st, "the agent made its own commits; nothing was pushed")
@@ -680,10 +754,16 @@ class Watcher:
                 self.stop(pr, st, "the agent made no changes and left these findings undisputed: "
                           + ", ".join(undisputed), "\n".join(f"- {d}" for d in disputes))
                 return "stopped"
+            text = self.comment_text(head, None, findings, disputes, [], out["report"],
+                                     settled=not unsettled) + f"\n\n{facts.report()}"
+            if not unsettled:
+                # Every finding is closed in Qodo; the next poll merges this head if CI is green.
+                self.save(n, st)
+                self.gh.comment(n, text, pull_request=True)
+                return "disputed"
             st.gave_up_at, st.reason = head, "the agent disputed every finding and made no changes"
             self.save(n, st)
-            self.gh.comment(n, self.comment_text(head, None, findings, disputes, [], out["report"]) + f"\n\n{facts.report()}",
-                            pull_request=True)
+            self.gh.comment(n, text, pull_request=True)
             self.gh.relabel(n, [cfg["labels"]["help"]], [])
             return "disputed"
         if self.scope_blocked(pr, st, logs, files, candidate):
@@ -742,12 +822,13 @@ class Watcher:
         st.gave_up_at = st.reason = None
         self.save(n, st)
         ev.add("pushed", sha=sha, round=st.rounds)
-        self.gh.comment(n, self.comment_text(head, sha, findings, disputes, before, out["report"]) + f"\n\n{facts.report()}",
+        self.gh.comment(n, self.comment_text(head, sha, findings, disputes, before, out["report"],
+                                               settled=not unsettled) + f"\n\n{facts.report()}",
                         pull_request=True)
         return "pushed"
 
     def comment_text(self, head: str, sha: str | None, findings: list[dict], disputes: list[str],
-                     before: list[str], report: str) -> str:
+                     before: list[str], report: str, settled: bool = False) -> str:
         lines = [f"### Factory fix for Qodo findings on {head[:10]}", ""]
         if sha:
             lines.append(f"Pushed {sha[:10]} to this branch. Checks: nothing that passed on {head[:10]} fails now.")
@@ -756,7 +837,10 @@ class Watcher:
         else:
             lines.append("Nothing was pushed: the agent disputes every finding below.")
         lines += ["", "Findings sent to Codex:"] + [f"- `{f.get('id')}` {f.get('title')}" for f in findings]
-        if disputes:
+        if disputes and settled:
+            lines += ["", "Disputed by the agent and dismissed in Qodo (the agent's judgement takes precedence):"]
+            lines += [f"- {d[:800]}" for d in disputes]
+        elif disputes:
             lines += ["", "Disputed by the agent (a person decides; the factory will not retry these):"]
             lines += [f"- {d[:800]}" for d in disputes]
         lines += ["", "<details><summary>Agent report</summary>", "", report[-6000:], "", "</details>"]

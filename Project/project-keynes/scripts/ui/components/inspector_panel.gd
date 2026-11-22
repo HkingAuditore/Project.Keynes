@@ -1,5 +1,6 @@
 class_name InspectorPanel
 extends PanelContainer
+const InspectorTaxDrafts = preload("res://scripts/ui/components/inspector_tax_drafts.gd")
 
 const InspectorStructure = preload("res://scripts/ui/components/inspector_structure.gd")
 const InspectorCategoryPatch = preload("res://scripts/ui/components/inspector_category_patch.gd")
@@ -450,32 +451,11 @@ func _render_content(reset_scroll: bool) -> void:
 
 
 func _capture_tax_drafts() -> void:
-	_draft_tax.clear()
-	for key_value in _tax_editors.keys():
-		var key := String(key_value)
-		if _pending_tax.has(key):
-			continue
-		for editor_value in _tax_editors[key]:
-			var editor := editor_value as TaxLaneEditor
-			if editor == null or not editor.is_editing():
-				continue
-			_draft_tax[key] = editor.displayed_rate()
-			break
+	InspectorTaxDrafts._capture_tax_drafts(_draft_tax, _tax_editors, _pending_tax)
 
 
 func _restore_tax_drafts() -> void:
-	if _draft_tax.is_empty():
-		return
-	for key_value in _draft_tax.keys():
-		var key := String(key_value)
-		if _pending_tax.has(key):
-			continue
-		var rate := int(_draft_tax[key])
-		for editor_value in _tax_editors.get(key, []):
-			var editor := editor_value as TaxLaneEditor
-			if editor != null and not editor.is_pending():
-				editor.apply_draft(rate)
-	_draft_tax.clear()
+	InspectorTaxDrafts._restore_tax_drafts(_draft_tax, _tax_editors, _pending_tax)
 
 
 func _build_category_content(data: Dictionary) -> void:
@@ -693,15 +673,7 @@ func _tax_summary(lanes: Array) -> String:
 
 
 func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
-	if editor == null:
-		return
-	var item_key := "default" if String(lane.get("scope", "item")) == "default" \
-		else String(lane.get("item_id", ""))
-	var key := _tax_key(String(lane.get("kind", "")), item_key)
-	if _pending_tax.has(key):
-		editor.mark_pending(
-			int(_pending_tax[key].get("rate", lane.get("base", 0))),
-			int(_pending_tax[key].get("mode", lane.get("mode", 0))))
+	InspectorTaxDrafts._restore_lane_pending(_pending_tax, _tax_key, editor, lane)
 
 
 func _rebuild_tax_editor_registry() -> void:

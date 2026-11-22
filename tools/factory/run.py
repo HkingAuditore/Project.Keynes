@@ -56,6 +56,7 @@ class Run:
         self.gh = GitHub(cfg["repo"])
         self.ev = Events()
         self.facts = Facts(review_round_limit=cfg["limits"]["prReviewRounds"])
+        self.accepted: set[str] = set()   # finding ids the agent disputed and the factory settled its way
         self.stamp = time.strftime("%Y%m%d-%H%M%S")
         home = Path(cfg["home"])
         self.home = home
@@ -86,7 +87,9 @@ class Run:
         files = work.changed(self.workdir, base)
         res, after = self.candidate.run(base, files, self.path(f"checks-{label}"), extra)
         # AGENTS.md: found failures are fixed before a push, including ones master already had.
-        new = checks.failed(res)
+        # A plan-requested check that already fails on the base says nothing about this change, so
+        # it does not hold the work up. The default checks keep the rule above.
+        new = [n for n in checks.failed(res) if n not in self.facts.base_extra_failures]
         self.ev.add("checks", label=label, failed=checks.failed(res), new=new, results=res)
         _, self.facts.human_paths, _ = self.candidate.scope(after)
         return res, new
@@ -213,7 +216,9 @@ class Run:
             if not rev["complete"] and self.cfg["limits"].get("localReviewRequired", True):
                 self.facts.stopped_by = "the required Qodo local review was incomplete"
                 return False
-            ids = tuple(sorted(str(b.get("id")) for b in rev["blocking"]))
+            # Findings the agent disputed are settled: its judgement wins over Qodo's.
+            open_blocking = [b for b in rev["blocking"] if str(b.get("id")) not in self.accepted]
+            ids = tuple(sorted(str(b.get("id")) for b in open_blocking))
             if not ids:
                 return True
             if ids in seen:
@@ -221,7 +226,7 @@ class Run:
             seen.add(ids)
             if rnd == self.cfg["limits"]["localReviewRounds"]:
                 break
-            if not self.fix(issue, rev["blocking"], "local review of uncommitted changes", False, extra, base_failed):
+            if not self.fix(issue, open_blocking, "local review of uncommitted changes", False, extra, base_failed):
                 return False
             recent = [f"Addressed local-review findings {', '.join(ids)}; fixes only."]
         self.facts.local_blocking = list(ids)
@@ -243,7 +248,7 @@ class Run:
         except ValueError as e:
             self.stop_with_patch(str(e), base)
             return False
-        self.facts.disagreements += [f"{finding_id}: {evidence}" for finding_id, evidence in disputes]
+        self.accept_disputes(disputes, committed)
         if work.head(self.workdir) != base:
             self.facts.stopped_by = "the agent made its own commits"
             return False
@@ -253,17 +258,65 @@ class Run:
         if problems or self.facts.human_paths:
             return False
         res, new = self.run_checks(f"fix-{time.time_ns()}", extra, base_failed)
+        rounds = self.cfg["limits"].get("checkFixRounds", 0)
+        session = out.get("session")
+        for attempt in range(1, rounds + 1):
+            if not new or self.facts.human_paths:
+                break
+            # Same repair loop as the PR watcher: hand Codex the failing checks in the fixing conversation.
+            prompt = agent.render("fix-checks", number=str(self.number), title=issue["title"],
+                                  feedback=checks.feedback(res, new))
+            out = agent.codex(self.cfg, self.workdir, prompt, self.path(f"fix-checks-{attempt}-{int(time.time())}.md"),
+                              writable=True, session=session)
+            session = out.get("session") or session
+            self.record.setdefault("reports", []).append(out["report"][-4000:])
+            if not out["ok"]:
+                self.stop_failed_agent(out, f"check-fix round {attempt} after {source}", base)
+                return False
+            if work.head(self.workdir) != base:
+                self.facts.stopped_by = "the agent made its own commits"
+                return False
+            problems = self.scope_problems()
+            if problems:
+                self.facts.stopped_by = problems[0]
+            if problems or self.facts.human_paths:
+                return False
+            res, new = self.run_checks(f"fix-checks-{attempt}-{time.time_ns()}", extra, base_failed)
         self.facts.new_failures = new
         if new:
-            self.facts.stopped_by = "checks fail after the review fix: " + ", ".join(new)
+            tried = f" and {rounds} check-fix round{'s' if rounds != 1 else ''}" if rounds else ""
+            self.facts.stopped_by = f"checks fail after the review fix{tried}: " + ", ".join(new)
             return False
         return not self.facts.human_paths
+
+    def accept_disputes(self, disputes: list[tuple[str, str]], committed: bool) -> None:
+        """The agent's judgement wins over Qodo's. Local findings are just set aside; PR findings are
+        dismissed in Qodo with the agent's evidence. Only a dispute that cannot be recorded goes to a person."""
+        for finding_id, evidence in disputes:
+            entry = f"{finding_id}: {evidence}"
+            if not self.cfg.get("acceptAgentDisputes", True):
+                self.facts.disagreements.append(entry)
+                continue
+            error = qodo.dismiss(self.cfg["tools"]["qodo"], finding_id,
+                                 qodo.accepted_explanation(evidence)) if committed else None
+            if error:
+                self.record.setdefault("dismissErrors", {})[finding_id] = error
+                self.facts.disagreements.append(f"{entry} (dismissing it in Qodo failed: {error[:200]})")
+                continue
+            self.accepted.add(finding_id)
+            self.facts.accepted_disputes.append(entry)
 
     def pr_body(self, issue: dict, plan: str) -> str:
         crit = "\n".join(f"- [ ] {c}" for c in criteria(issue["body"]))
         reports = self.record.get("reports") or [""]
         skipped = self.record.get("localReviewSkipped")
         local = (f"Qodo local review did not run: {skipped[:400]}\n\n" if skipped else "")
+        if self.facts.accepted_disputes:
+            local += ("Findings the agent disputed, settled its way (its judgement takes precedence):\n"
+                      + "\n".join(f"- {d[:800]}" for d in self.facts.accepted_disputes) + "\n\n")
+        if self.facts.base_extra_failures:
+            local += ("Plan-requested checks that already fail on the base and were not held against this change:\n"
+                      + "\n".join(f"- `{n}`" for n in self.facts.base_extra_failures) + "\n\n")
         if self.facts.local_review_incomplete:
             local += "Qodo local review coverage was incomplete. See the factory run record for details.\n\n"
         return (f"Closes #{self.number}\n\n## Acceptance criteria\n{crit}\n\n{local}"
@@ -304,6 +357,11 @@ class Run:
             if not self.fix(issue, block, f"PR review of {head[:10]}", True, extra, base_failed):
                 return
             if not work.dirty(self.workdir):
+                if set(ids) <= self.accepted:
+                    # Every finding was disputed and dismissed in Qodo; re-read so the verdict sees them closed.
+                    self.facts.findings = (qodo.pr_review(self.cfg["tools"]["qodo"], self.pr["url"]) or {}).get(
+                        "findings") or self.facts.findings
+                    return
                 self.facts.review_stalled = True
                 return
             if not self.commit_checked(f"Issue #{self.number}: address Qodo findings {', '.join(ids)}\n\n"
@@ -361,6 +419,10 @@ class Run:
         extra, rejected, dup = checks.extra_checks(agent.plan_checks(plan), cfg["checks"]["extraCheckPattern"],
                                                    checks.already_run(cfg))
         self.record["extraChecks"] = {"run": extra, "rejected": rejected, "alreadyRun": dup}
+        if extra and not rejected:
+            self.facts.base_extra_failures = checks.failed(
+                checks.Runner(cfg, self.workdir, self.path("checks-base-extra")).run_extras(extra))
+            self.ev.add("base-extra-checks", failed=self.facts.base_extra_failures)
         # It only runs when native sources change; judge() flags the request if they do not.
         self.facts.native_requested = checks.requests_native(dup, cfg)
         self.facts.rejected_checks = rejected
@@ -438,17 +500,47 @@ class Run:
         return 1 if self.gh.errors else 0
 
 
+def claimable(tickets: list[dict], cfg: dict) -> list[int]:
+    """Open `ready-for-agent` tickets the poller may start, oldest first.
+
+    A ticket that is being worked on or waits for a person is not taken again."""
+    L = cfg["labels"]
+    held = set(cfg["skipLabels"]) | {L["working"], L["help"]}
+    return [t["number"] for t in tickets if L["trigger"] in t["labels"] and not held.intersection(t["labels"])]
+
+
+def next_ticket(gh: GitHub, cfg: dict) -> int | None:
+    for number in claimable(gh.tickets(cfg["labels"]["trigger"]), cfg):
+        if not gh.open_pr(f"{cfg['issueBranchPrefix']}{number}"):
+            return number
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--issue", type=int)
+    ap.add_argument("--next", action="store_true", help="take the oldest claimable ticket (the poller runs this)")
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
     cfg = load_config()
     gh = GitHub(cfg["repo"])
+    if a.next and not a.issue:
+        if not cfg.get("autoClaimIssues", False):
+            return 0
+        a.issue = next_ticket(gh, cfg)
+        if not a.issue:
+            return 0
     if not a.issue:
-        print("issue mode is manual: pass --issue N (the poller only watches PRs, see watch_prs.py)")
+        print("pass --issue N, or --next to take the oldest claimable ready-for-agent ticket")
         return 2
     issue = gh.issue(a.issue)
+    if issue.get("state", "OPEN") != "OPEN":
+        print(f"issue #{a.issue} is {issue['state'].lower()}; nothing to do")
+        return 0
+    if not a.dry and cfg["labels"]["trigger"] not in issue["labels"]:
+        # Claimed by another run (or never queued): starting again would only mark it for a person.
+        print(f"issue #{a.issue} has no {cfg['labels']['trigger']} label; nothing to do")
+        return 0
     lock = Path(cfg["home"]) / "lock"
     if not a.dry and not take_lock(lock):
         print("another factory run holds the lock")

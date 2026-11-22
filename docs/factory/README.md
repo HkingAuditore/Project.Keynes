@@ -1,6 +1,6 @@
 # 工厂
 
-工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。工厂**不会自动认领 issue**，issue 模式只能手动运行。合到 fork 后，再由人向上游提 PR。
+工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。定时轮询处理完 PR 后，还会认领最早的一张可做工单（见下文 Issue 模式）。合到 fork 后，再由人向上游提 PR。
 
 代码在 `tools/factory/`，配置在 `tools/factory/config.json`，Qodo 评审规则在 [qodo-rules.json](qodo-rules.json)，每条规则由什么强制见 [rule-coverage.md](rule-coverage.md)，人工纠正记录在 [corrections.md](corrections.md)。
 
@@ -39,13 +39,14 @@
 - `autoUpdateConflicts` 默认开启。工厂先检查 PR 头部与最新取到的 `fork/master`，分别记录结果并复用按提交缓存的通过项，再将已检查的目标提交合入工作树，暂不提交。普通检查在两个父提交上都通过、在合入后失败时才阻止更新。所需的库重编、导入和逐库验证必须通过。
 - 已跟踪的 macOS 库发生冲突时，先取一侧，再从合并后的源码重编两份库，即使 C++ 未改。文本冲突交给 Codex 保留双方意图，并逐文件说明处理方式。Codex 只能改冲突文件。工厂对照交接前的 Git 暂存区，发现其他文件被改动、删除或新增时，列出路径、中止合并并打 `agent-needs-help`。Codex 失败、未解决的路径或残留冲突标记也会让工厂停下。
 - 受保护路径（`paths.forbidden`、`paths.needsHuman`）、子模块或其他二进制文件发生冲突时，工厂中止合并，列出路径并打 `agent-needs-help`。提交前核对范围，只计算与两个父提交都不同的文件。
-- 工厂创建 `Merge <base> into <branch>` 合并提交。推送前重读 PR 并核对标签、头部和目标提交，有变化就放弃本轮。推送成功后，工厂在 PR 上评论冲突处理、重编和检查结果。更新算一轮，与评审修复共用 `prReviewRounds` 上限。同一个头部提交最多尝试更新一次。工厂刚更新完又遇到同一组冲突文件时停下并打 `agent-needs-help`。
+- 合并后的检查如果出现"PR 头和目标分支上都通过、合并后才失败"的项（例如两边各自没超尺寸基线，合在一起超了），工厂把失败日志交给 Codex，在尚未提交的合并上修，最多 `limits.checkFixRounds` 轮；修不好才停下并打 `agent-needs-help`。
+- 工厂创建 `Merge <base> into <branch>` 合并提交。推送前重读 PR 并核对标签、头部和目标提交，有变化就放弃本轮；目标分支只有 `tools/factory/` 和 `docs/factory/` 下的文件变了不算变化，因为它们不影响检查结果。推送成功后，工厂在 PR 上评论冲突处理、重编和检查结果。更新算一轮，与评审修复共用 `prReviewRounds` 上限。同一个头部提交最多尝试更新一次。工厂刚更新完又遇到同一组冲突文件时停下并打 `agent-needs-help`。
 
 ### 自动合并
 
 - `autoMerge` 默认开启。设为 `false` 时，工厂仍可更新冲突分支和修复评审问题。
 - PR 必须来自 fork 内的分支，已退出草稿且没有跳过标签、`agent-needs-help`、`agent-working` 或 `no-auto-merge`。GitHub 必须报告 `MERGEABLE`，尚无法判断时等下一轮。
-- Qodo 必须已完成对当前头部提交的评审。所有评审项的状态和处理级别都要能识别，所有阻塞项都要关闭。有异议的阻塞项交给人处理，仅供参考的评审项会列在评论中。
+- Qodo 必须已完成对当前头部提交的评审。所有评审项的状态和处理级别都要能识别，所有阻塞项都要关闭。Codex 提出异议的评审项按它的判断处理（见下），关闭失败的才交给人；仅供参考的评审项会列在评论中。
 - 当前头部提交至少有一条 GitHub Actions 工作流。每个工作流和每项检查只看最新一次运行，均须完成且结论为 `success`。重跑成功后，旧的失败结果不再阻止合并。读取失败时停下交给人。
 - 读取 PR 相对目标分支的完整改动文件列表。触及 `paths.forbidden` 或 `paths.needsHuman`（如 `.github/`、`tools/factory/`、`tools/ci/`、`.qodo/`、基线、`gdext/godot-cpp/` 和 `gdext/rebuild.sh`）的 PR 由人合并。触及 `checks.nativePaths` 时，PR 必须包含两份重编后的 macOS 库（`paths.nativeLibraries`），否则跳过。文件列表读取失败时也跳过。
 - 合并前重读 PR。标签、头部提交、目标分支或可合并状态有变化时，跳过并记录原因。合并命令仍绑定评审过的头部提交。
@@ -53,15 +54,17 @@
 
 两种模式都从仓库根目录的 `.factory-disagree.md` 读取异议，每行严格按 `- <评审项 ID>: <证据>` 写一项。ID 必须和交给 Codex 时给出的一致，可以直接写，也可以用一对反引号包住。证据写明相关文件和行号。空行可跳过。格式有误或 ID 不认识时保存补丁，列出问题行交给人处理。
 
+本地 AI（Codex）的判断优先于 Qodo（`config.json` 的 `acceptAgentDisputes`，默认开）：PR 上的评审项由工厂调用 `qodo pr-review-session dismiss`（理由 `rejected`，说明里附 Codex 的证据）关闭，并在评论中列出；Issue 模式本地评审的异议项不再算阻塞项，PR 上的照样关闭，异议都列在 PR 描述里，不让结论变成需要人处理。Codex 异议了全部评审项又没改代码时，PR 轮询不再停下，下一轮按合并条件处理同一提交。只有关闭失败的评审项才像以前一样交给人。关掉这个开关就恢复为所有异议都交给人。
+
 补丁都保存在本次日志目录。主仓库的补丁是 `fix.patch`，有改动的子模块各有一份以子模块路径命名的补丁，例如 `fix.gdext__godot-cpp.patch`。停下时会列出所有保存的路径。
 
-## Issue 模式（只能手动）
+## Issue 模式
 
-由人对一张打了 `ready-for-agent` 的 issue 运行 `run.py --issue N` 才会开始，定时任务不会运行它。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
+每次定时轮询在处理完 PR 后运行 `run.py --next`（`config.json` 的 `autoClaimIssues`，默认开）：按创建时间取最早一张打了 `ready-for-agent`、没有 `agent-working` / `agent-needs-help` / 跳过标签、且 `agent/issue-N` 分支上没有打开的 PR 的 issue，与 `run.py --issue N` 一样处理；锁被占用时这一轮不认领。认领时移除 `ready-for-agent`，所以一张工单只会被自动认领一次；结论不是 READY 时要人移除 `agent-needs-help` 并重新加 `ready-for-agent` 才会再跑。也可以手动运行 `run.py --issue N` 指定工单。已关闭或没有 `ready-for-agent` 的 issue 直接跳过（`--dry` 只看 G0，不受此限）。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
 
 ```mermaid
 flowchart TD
-  T[人运行 run.py --issue N<br/>issue 带 ready-for-agent] --> G0{G0 工单检查<br/>有标题、有验收标准条目、<br/>没有 blocked / needs-investigation}
+  T[轮询 run.py --next 或人运行 run.py --issue N<br/>issue 带 ready-for-agent] --> G0{G0 工单检查<br/>有标题、有验收标准条目、<br/>没有 blocked / needs-investigation}
   G0 -- 不通过 --> H[agent-needs-help<br/>移除 ready-for-agent，评论写明原因]
   G0 -- 通过 --> W[认领：agent-working<br/>工作树重置到 fork/master]
   W --> B[在 base 上跑检查<br/>按提交缓存通过项]
@@ -88,6 +91,8 @@ flowchart TD
   V -- READY --> D[agent-done<br/>后续由 PR 模式检查合并条件]
   V -- NEEDS_FIX / NOT_DONE / NEEDS_HUMAN --> H
 ```
+
+计划里要求的额外检查，会在计划写完后先在目标分支上跑一遍。基线上就失败的额外检查（例如和这次改动无关的耗时检查）不挡这次改动，PR 描述里会列出；静态护栏和默认回归仍然是任何失败都要修。
 
 ## 质量关卡
 
