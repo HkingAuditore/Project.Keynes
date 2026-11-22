@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check source line counts against review thresholds.
 
-New files must stay within their threshold. Files in the baseline get a
-50-line growth allowance and warn whenever they exceed their recorded count.
+New files must stay within their threshold. Files in the baseline must stay
+at or below their recorded count.
 Physical lines include comments and blanks. --write-baseline only lowers or
 drops existing entries and saves any tightening before reporting growth and new
 oversized files as errors.
@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-GROWTH_ALLOWANCE = 50
+GROWTH_ALLOWANCE = 0
 # Explicit ownership, not a loose filename heuristic. New orchestrators must
 # be registered here; ordinary leaf files use the language threshold.
 ORCHESTRATORS = {
@@ -76,10 +76,13 @@ def main() -> int:
             f"{name} grew {baseline[name]['lines']} -> {entry['lines']} lines (threshold {entry['limit']}); "
             "split it before adding more, see docs/architecture/development-guide.md"
         )
-        print(f"warning: {message}")
+        growth_is_error = args.write_baseline or entry["lines"] > baseline[name]["lines"] + GROWTH_ALLOWANCE
+        if not growth_is_error:
+            print(f"warning: {message}")
+            warnings += 1
         if os.environ.get("GITHUB_ACTIONS") == "true":
-            print(f"::warning file={name}::{message}")
-        warnings += 1
+            level = "error" if growth_is_error else "warning"
+            print(f"::{level} file={name}::{message}")
 
     baseline_summary = ""
     if args.write_baseline:

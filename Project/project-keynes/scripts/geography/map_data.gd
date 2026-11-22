@@ -3,6 +3,7 @@
 # 存储所有 HexCell，以 Vector3i(q, r, s) 为键的 Dictionary
 
 class_name MapData
+const MapLatitudeBake = preload("res://scripts/geography/map_latitude_bake.gd")
 const Queries = preload("res://scripts/geography/map_data_queries.gd")
 
 ## Presentation input publication, after the authoritative arrays have landed.
@@ -1086,28 +1087,7 @@ func apply_pending_generation_ecology() -> void:
 ## 由 map_generator._bake_temp_baseline_year_native 在 DCWorldExt bind 后调用并 flush 回本数组。
 ## 本函数里的 temp_baseline_year 循环仅作 GDScript fallback（ext 未编译 / 未 bind 时兜底）。
 func bake_lat_temp_year_lut(generator) -> void:
-	if not _soa_built:
-		push_warning("[map_data] bake_lat_temp_year_lut: SoA not built; call rebuild_soa_from_cells() first")
-		return
-	if generator == null:
-		push_warning("[map_data] bake_lat_temp_year_lut: generator is null")
-		return
-	var n: int = _cell_array.size()
-	cell_lat_norm_arr.resize(n)
-	temp_baseline_year_arr.resize(n)
-	for i in range(n):
-		var c: HexCell = _cell_array[i]
-		var ny: float = float(generator.public_cube_row_norm(c))
-		cell_lat_norm_arr[i] = ny
-		# fallback only：权威值由 C++ run_temp_baseline_year_bake 写入（见函数顶部注释）。
-		# 公式统一走 DCClimateMath.lat_temp_bell（全工程单一来源），与 C++ pk_lat_temp_bell 同源。
-		var lat_temp: float = DCClimateMath.lat_temp_bell_from_ny(ny)
-		if lat_temp < 0.0:
-			lat_temp = 0.0
-		elif lat_temp > 1.0:
-			lat_temp = 1.0
-		temp_baseline_year_arr[i] = lat_temp
-	_lat_lut_baked = true
+	MapLatitudeBake.bake_lat_temp_year_lut(self, generator)
 
 func has_lat_lut() -> bool:
 	return _lat_lut_baked
