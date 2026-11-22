@@ -35,6 +35,7 @@ def measure(root: Path) -> dict[str, dict[str, int]]:
     candidates = list((root / "Project/project-keynes").rglob("*.gd"))
     candidates += list((root / "gdext/src").rglob("*.cpp"))
     candidates += list((root / "gdext/src").rglob("*.h"))
+    candidates += list((root / "gdext/src").rglob("*.inc"))  # included bodies count like the .cpp they extend
     for path in sorted(candidates):
         relative = path.relative_to(root)
         if (EXCLUDED_PARTS.intersection(relative.parts) or ".gen." in path.name
