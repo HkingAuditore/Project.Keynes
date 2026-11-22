@@ -724,7 +724,7 @@ class ConflictUpdateTest(TempFactory):
         self.watcher.gh.relabel.assert_any_call(7, ["agent-needs-help"], ["agent-working"])
         self.assertIn(reason, self.watcher.gh.comment.call_args.args[1])
 
-    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n", stage=True):
+    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n", stage=True, session=None):
         self.assertIn("edit.gd", prompt)
         self.assertTrue(writable)
         self.write_file(Path(workdir), "edit.gd", text)
@@ -792,13 +792,80 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(record["checks"]["new"], [])
         self.assertEqual(record["checks"]["beforeByParent"], {"head": [], "base": ["known"]})
 
-    def test_check_that_passed_on_both_parents_blocks_the_update(self):
-        self.text_conflict()
+    def fail_regression(self):
         self.after[1].update(ok=False, code=1, log=str(self.root / "regression.log"))
+
+    def test_check_that_passed_on_both_parents_and_cannot_be_repaired_blocks_the_update(self):
+        self.text_conflict()
+        resolve = self.codex.side_effect
+        repairs = []
+
+        def resolve_then_change_nothing(cfg, workdir, prompt, report, writable, **kwargs):
+            if not repairs and "edit.gd" in prompt:
+                repairs.append(None)
+                return resolve(cfg, workdir, prompt, report, writable, **kwargs)
+            repairs.append(prompt)
+            return {"ok": True, "code": 0, "report": "nothing to change", "session": "s1"}
+
+        self.codex.side_effect = resolve_then_change_nothing
+        self.fail_regression()
         record = self.tick()
         self.assert_stopped("the update has failing checks: regression")
         self.assertEqual(record["checks"]["new"], ["regression"])
+        self.assertEqual(len(repairs), 1 + self.cfg["limits"]["checkFixRounds"])
+        self.assertIn("pending merge", repairs[1])
+        self.assertIn("regression", repairs[1])
         self.assertEqual([c.args[2] for c in self.baseline.call_args_list], [self.pr["headRefOid"], self.base])
+
+    def test_codex_repairs_a_check_that_fails_only_after_the_merge(self):
+        self.text_conflict()
+        resolve = self.codex.side_effect
+
+        def resolve_then_repair(cfg, workdir, prompt, report, writable, **kwargs):
+            if "edit.gd" in prompt:
+                return resolve(cfg, workdir, prompt, report, writable, **kwargs)
+            self.after[1]["ok"] = True
+            self.write_file(Path(workdir), "split.gd", "moved\n")
+            return {"ok": True, "code": 0, "report": "regression: moved a responsibility out", "session": "s1"}
+
+        self.codex.side_effect = resolve_then_repair
+        self.fail_regression()
+        record = self.tick()
+        sha = self.assert_merge(used_codex=True)
+        self.assertEqual(work.git(str(self.remote), "show", f"{sha}:split.gd"), "moved")
+        self.assertEqual(len(record["checkFixReports"]), 1)
+        self.assertIn("Codex repaired checks", self.watcher.gh.comment.call_args.args[1])
+
+    def move_base_during_the_update(self, path):
+        resolve = self.codex.side_effect
+
+        def resolve_then_move(*args, **kwargs):
+            report = resolve(*args, **kwargs)
+            self.move_base(path)
+            return report
+
+        self.codex.side_effect = resolve_then_move
+
+    def move_base(self, path):
+        src = str(self.source)
+        work.git(src, "checkout", "-q", "master")
+        self.write_file(self.source, path, "later")
+        sha = self.commit(self.source)
+        work.git(src, "push", "-q", str(self.remote), "master")
+        self.fresh_fields = {"baseRefOid": sha}
+
+    def test_base_moved_by_factory_files_only_does_not_skip_the_push(self):
+        self.text_conflict()
+        self.move_base_during_the_update("tools/factory/later.txt")
+        self.tick()
+        self.assert_merge(used_codex=True)
+
+    def test_base_moved_by_other_files_skips_the_push_and_allows_a_retry(self):
+        self.text_conflict()
+        self.move_base_during_the_update("other/later.txt")
+        self.tick()
+        self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
 
     def test_check_missing_on_one_parent_is_not_a_regression_from_both(self):
         self.text_conflict()
