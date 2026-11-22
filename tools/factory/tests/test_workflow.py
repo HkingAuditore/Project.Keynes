@@ -29,6 +29,7 @@ from watch_prs import PrState, Watcher, decide
 
 
 ISSUE = {"title": "Example", "body": "## Acceptance criteria\n1. Pass\n", "labels": ["ready-for-agent"]}
+IGNORE_NATIVE_BUILD_OUTPUTS = "/Project/project-keynes/addons/dots_ext/bin/macos/*.dylib\n"
 HEAD = "a" * 40
 FINDING = {"id": "f", "attribution_status": "pending", "action_level": "action_required"}
 PR = {"number": 7, "headRefOid": HEAD, "headRefName": "issue", "title": "Example",
@@ -651,13 +652,18 @@ class ConflictUpdateTest(TempFactory):
         work.git(str(repo), "commit", "-qm", "test checkout")
         return work.head(str(repo))
 
-    def prepare_conflict(self, paths):
+    def prepare_conflict(self, paths, *, remove_libraries=()):
+        self.write_versions({lib: b"\0original" for lib in self.libraries})
         self.write_versions({path: versions[0] for path, versions in paths.items()})
         self.write_file(self.source, ".github/master.yml", "old check")
         self.write_file(self.source, "unrelated.txt", "unchanged")
         self.write_file(self.source, "script.sh", "#!/bin/sh\n")
         common = self.commit(self.source)
         self.write_versions({path: versions[1] for path, versions in paths.items()})
+        if remove_libraries:
+            self.write_file(self.source, ".gitignore", IGNORE_NATIVE_BUILD_OUTPUTS)
+            for lib in remove_libraries:
+                (self.source / lib).unlink()
         # This protected file arrives cleanly from master and is outside the resolution scope.
         self.write_file(self.source, ".github/master.yml", "upstream check")
         self.base = self.commit(self.source)
@@ -747,8 +753,7 @@ class ConflictUpdateTest(TempFactory):
         self.codex.assert_not_called()
 
     def native_conflict(self):
-        self.write_file(self.source, ".gitignore",
-                        (Path(__file__).resolve().parents[3] / ".gitignore").read_text())
+        self.write_file(self.source, ".gitignore", IGNORE_NATIVE_BUILD_OUTPUTS)
         self.prepare_conflict({"edit.gd": (b"old", b"master", b"pr"),
                                "gdext/src/example.cpp": (b"old", b"master", b"old")})
         self.codex.side_effect = self.resolve_text
@@ -764,6 +769,50 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(work.git(str(self.remote), "ls-tree", "-r", sha, "--", *self.libraries), "")
         for lib in self.libraries:
             self.assertTrue((self.checkout / lib).is_file())
+
+    def test_update_refuses_unstaged_rebuild_of_tracked_dylib(self):
+        lib = self.libraries[0]
+        self.prepare_conflict({"edit.gd": (b"old", b"master", b"pr"),
+                               "gdext/src/example.cpp": (b"old", b"master", b"old"),
+                               lib: (b"\0original", b"\0master", b"\0original")})
+        self.codex.side_effect = self.resolve_text
+        self.build = True
+        # Matching the PR parent hides the rebuild from the two-parent scope check.
+        self.rebuilt = [b"\0original", b"\0original"]
+        with patch("work.stage", wraps=work.stage) as stage:
+            record = self.tick()
+        self.assertEqual(record["files"], ["edit.gd"])
+        self.assert_stopped("binary files changed in the working tree: " + lib)
+        stage.assert_not_called()
+
+    def test_update_rebuilds_and_probes_libraries_removed_by_master(self):
+        self.prepare_conflict({"edit.gd": (b"old", b"master", b"pr")}, remove_libraries=self.libraries)
+        self.codex.side_effect = self.resolve_text
+        self.build = True
+        self.rebuilt = [b"\0debug", b"\0release"]
+
+        def rebuild_missing_libraries(native, extra):
+            for lib in self.libraries:
+                self.assertFalse((self.checkout / lib).exists(), lib)
+            return self.check_candidate(native, extra)
+
+        self.runner.side_effect = rebuild_missing_libraries
+        record = self.tick()
+        sha = self.assert_merge(used_codex=True)
+        self.runner.assert_called_once_with(True, [])
+        self.assertEqual([row["name"] for row in record["checks"]["results"] if row["name"].startswith("native-")],
+                         [checks.NATIVE_REBUILD, checks.NATIVE_IMPORT, *map(checks.runtime_name, self.libraries)])
+        self.assertEqual(work.git(str(self.remote), "ls-tree", "-r", sha, "--", *self.libraries), "")
+        for lib, data in zip(self.libraries, self.rebuilt):
+            self.assertEqual((self.checkout / lib).read_bytes(), data)
+
+    def test_update_with_libraries_and_no_cpp_change_does_not_rebuild(self):
+        self.text_conflict()
+        self.tick()
+        self.assert_merge(used_codex=True)
+        self.runner.assert_called_once_with(False, [])
+        for lib in self.libraries:
+            self.assertEqual((self.checkout / lib).read_bytes(), b"\0original")
 
     def test_required_native_check_failure_blocks_without_a_baseline(self):
         self.native_conflict()

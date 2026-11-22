@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from test_workflow import FINDING, ISSUE, PR, TempFactory
+from test_workflow import FINDING, IGNORE_NATIVE_BUILD_OUTPUTS, ISSUE, PR, TempFactory
 
 import checks
 import work
@@ -27,8 +27,7 @@ class NativeWorkflowTest(TempFactory):
         self.extra_binary = self.cfg["paths"]["trackedBinaries"][0] + "other.so"
         self.cfg["checks"]["unit"] = []
         self.write_guard_list(self.repo)
-        ignore = (Path(__file__).resolve().parents[3] / ".gitignore").read_text()
-        self.write_file(self.repo, ".gitignore", ignore)
+        self.write_file(self.repo, ".gitignore", IGNORE_NATIVE_BUILD_OUTPUTS)
         for name in (self.cfg["checks"]["nativeRebuild"], self.cfg["checks"]["nativeRuntimeCheck"],
                      self.cfg["checks"]["regression"][0], SOURCE, "edit.gd", *self.libraries, self.extra_binary):
             self.write_file(self.repo, name, "old")

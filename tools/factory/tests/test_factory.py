@@ -249,8 +249,9 @@ class GuardListTest(unittest.TestCase):
     def test_real_workflow_has_guards(self):
         root = Path(__file__).resolve().parents[3]
         wf = root / ".github" / "workflows" / "runtime-checks.yml"
-        if wf.exists():
-            self.assertIn("check_size_ratchet.py", checks.static_guards(str(root), ".github/workflows/runtime-checks.yml"))
+        if not wf.is_file():
+            self.skipTest("the repository workflow is outside this checkout")
+        self.assertIn("check_size_ratchet.py", checks.static_guards(str(root), ".github/workflows/runtime-checks.yml"))
 
 
 if __name__ == "__main__":

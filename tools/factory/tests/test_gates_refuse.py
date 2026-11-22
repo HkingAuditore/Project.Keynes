@@ -115,9 +115,9 @@ GATES = {
     ],
     "scope": [
         ("a forbidden path is reported as forbidden", lambda: work.scope(CFG, ["tools/factory/a.py"])[0] == ["tools/factory/a.py"]),
-        ("a binary in either project requires a person",
-         lambda: all(work.scope(CFG, [path + "macos/libdots_ext.dylib"])[1] == [path + "macos/libdots_ext.dylib"]
-                     for path in CFG["paths"]["trackedBinaries"])),
+        ("a project-keynes binary requires a person",
+         lambda: work.scope(CFG, ["Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.dylib"])[1]
+                 == ["Project/project-keynes/addons/dots_ext/bin/macos/libdots_ext.dylib"]),
         ("an ordinary path is reported in no list", lambda: work.scope(CFG, ["docs/a.md"]) == ([], [], [])),
     ],
     "gate": [
@@ -169,9 +169,12 @@ class GatesRefuse(unittest.TestCase):
         self.assertEqual(missing, [], "gate-like functions with no refusal test; add them to GATES")
 
     def test_rule_text_matches_the_evidence_and_names_this_test(self):
+        rules = FACTORY.parents[1] / "AGENTS.md"
+        if not rules.is_file():
+            self.skipTest("the repository rules are outside this checkout")
         import count_findings
         c = count_findings.count()
-        text = (FACTORY.parents[1] / "AGENTS.md").read_text()
+        text = rules.read_text()
         self.assertIn(f"{c['gate_input']} of {c['total']} findings", text)
         self.assertIn("test_gates_refuse.py", text)
 

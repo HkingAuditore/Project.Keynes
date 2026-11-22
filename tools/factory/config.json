@@ -60,8 +60,7 @@
     "forbidden": [".github/", "tools/factory/", ".qodo/", "tools/ci/"],
     "needsHuman": ["tools/ci/*baseline*.json", "tools/ci/module_api/", "tools/ci/module_api_shared.json", "tools/ci/cross_domain_inventory.json", "gdext/godot-cpp/", "gdext/rebuild.sh"],
     "trackedBinaries": [
-      "Project/project-keynes/addons/dots_ext/bin/",
-      "Project/perf-validation/addons/dots_ext/bin/"
+      "Project/project-keynes/addons/dots_ext/bin/"
     ]
   }
 }

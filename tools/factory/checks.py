@@ -200,6 +200,7 @@ class Candidate:
                  merge_parent: str | None = None) -> None:
         self.cfg, self.workdir, self.facts = cfg, workdir, facts
         self.merge_parent = merge_parent
+        self.rebuild_for_merge = False
         self.inputs: dict[str, str | None] = {}
         self.built: dict[str, str | None] = {}
 
@@ -226,12 +227,19 @@ class Candidate:
 
     def run(self, base: str, files: list[str], logdir: str, extra: list[str]) -> tuple[list[dict], list[str]]:
         _, _, native = self.scope(files)
-        if native or self.inputs:
+        if self.merge_parent is not None:
+            # Merging the removal of tracked outputs can delete the local copies.
+            # Keep the requirement through retries and the final commit check.
+            self.rebuild_for_merge = self.rebuild_for_merge or any(
+                not (Path(self.workdir) / lib).is_file() for lib in self.cfg["checks"]["nativeBuildOutputs"]
+            )
+        rebuild = bool(native) or self.rebuild_for_merge
+        if rebuild or self.inputs:
             self.facts.native_changed = bool(native)
             self.facts.native_rebuilt = self.facts.native_runtime_ok = False
         self.inputs, self.built = self._digests(native), {}
-        results = Runner(self.cfg, self.workdir, logdir).run(bool(native), extra)
-        if native:
+        results = Runner(self.cfg, self.workdir, logdir).run(rebuild, extra)
+        if rebuild:
             by_name = {row["name"]: row for row in results}
             build = by_name.get(NATIVE_REBUILD, {})
             self.facts.native_rebuilt = build.get("ok", False)
@@ -244,11 +252,11 @@ class Candidate:
         return results, self.changed(base)
 
     def commit_problem(self, native: list[str]) -> str | None:
-        if not native:
+        if not native and not self.rebuild_for_merge:
             return "C++ files changed after the native checks" if self.inputs else None
         if (self.inputs != self._digests(native) or
                 not (self.facts.native_rebuilt and self.facts.native_runtime_ok)):
-            return "both macOS libraries must be rebuilt and pass runtime checks for the current C++ changes"
+            return "both macOS libraries must be rebuilt and pass runtime checks for this checkout"
         if any(not digest or self.built.get(lib) != digest
                for lib, digest in self._digests(self.cfg["checks"]["nativeBuildOutputs"]).items()):
             return "the macOS libraries differ from this run's rebuild outputs"
