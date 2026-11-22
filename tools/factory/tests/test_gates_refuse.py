@@ -45,6 +45,25 @@ def skipped(**kw):
     return watch_prs.skip_before_review(pr(**kw), watch_prs.PrState(), CFG) is not None
 
 
+def preflight_refuses(kind, *, remote_base="base1", moved=True):
+    """Run a preflight on a fake watcher; True when it returned a refusal."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock, patch
+    p = {"number": 7, "headRefOid": "head1", "headRefName": "agent/issue-1", "baseRefName": "master",
+         "baseRefOid": "base1", "labels": [], "changedFiles": 1}
+    fresh = {**p, "state": "OPEN", "isDraft": False, "isCrossRepository": False, "mergeable": "MERGEABLE"}
+    if kind == "update":
+        fresh["labels"] = [CFG["labels"]["working"]]
+    me = SimpleNamespace(cfg=CFG, workdir="/nonexistent", gh=Mock(errors=[]),
+                         base_moved=lambda *a: moved)
+    me.gh.pr_merge_state.return_value = fresh
+    with patch("work.remote_head", return_value=remote_base):
+        if kind == "update":
+            return watch_prs.Watcher.update_preflight(me, p, "master", "base1", Mock()) is not None
+        fresh["headRefOid"] = "other"
+        return watch_prs.Watcher.merge_preflight(me, p) is not None
+
+
 # name -> list of (description, callable returning True when the gate refused the input)
 GATES = {
     "parse_disputes": [
@@ -104,6 +123,13 @@ GATES = {
         ("heading with no items", lambda: bool(ticket.gate("t", "## Acceptance criteria\nnothing", [], []))),
         ("a skip label", lambda: bool(ticket.gate("t", "## Acceptance criteria\n- [ ] a", ["no-agent"], ["no-agent"]))),
     ],
+    "update_preflight": [
+        ("an unreadable base branch", lambda: preflight_refuses("update", remote_base=None, moved=False)),
+        ("a base that moved on the remote", lambda: preflight_refuses("update", remote_base="base2")),
+    ],
+    "merge_preflight": [
+        ("a head that changed before merge", lambda: preflight_refuses("merge")),
+    ],
     "skip_before_review": [
         ("a draft PR", lambda: skipped(isDraft=True)),
         ("a PR from another repository", lambda: skipped(isCrossRepository=True)),
@@ -113,7 +139,7 @@ GATES = {
     ],
 }
 
-NAME_PARTS = ("matches", "touching", "scope", "gate", "parse", "classify", "validate", "allowed", "native_line", "extra_checks", "unknown_findings")
+NAME_PARTS = ("matches", "touching", "scope", "gate", "parse", "classify", "validate", "allowed", "native_line", "extra_checks", "unknown_findings", "preflight")
 EXEMPT = {"gate": "registered as ticket.gate"}
 
 

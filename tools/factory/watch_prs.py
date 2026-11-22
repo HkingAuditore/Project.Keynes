@@ -55,6 +55,10 @@ class Decision:
     needs_ci: bool = False
 
 
+# update_preflight refusals that say nothing about the merge itself, so the same head is tried again.
+RETRY_UPDATE = {"the PR base changed before push", "the PR base could not be read before push"}
+
+
 def automation_skip_labels(cfg: dict) -> set[str]:
     labels = cfg["labels"]
     return {*cfg["skipLabels"], labels["help"], labels["working"]}
@@ -651,8 +655,8 @@ class Watcher:
             if blocker:
                 record["reason"] = blocker
                 ev.add("push-skipped", reason=blocker)
-                if blocker == "the PR base changed before push":
-                    # The merge was against a base that has since moved; retry this head on the next poll.
+                if blocker in RETRY_UPDATE:
+                    # The base moved, or could not be read this time; retry this head on the next poll.
                     st.update_attempted.remove(head)
                     self.save(n, st)
                 return "head moved" if blocker == "head moved" else "skipped"

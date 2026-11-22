@@ -902,6 +902,8 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(record["outcome"], "skipped")
         self.assertEqual(record["reason"], "the PR base could not be read before push")
         self.assertEqual(self.remote_head(), self.pr["headRefOid"])
+        # A failed read says nothing about this head, so the next poll tries it again.
+        self.assertNotIn(self.pr["headRefOid"], self.watcher.load(7).update_attempted)
 
     def test_check_missing_on_one_parent_is_not_a_regression_from_both(self):
         self.text_conflict()
