@@ -29,11 +29,10 @@ def finding(fid, status="pending", level="action_required"):
 
 
 class VerdictTest(unittest.TestCase):
-    def test_native_change_needs_all_three_facts(self):
-        native = dict(native_changed=True, native_rebuilt=True, native_runtime_ok=True,
-                      native_libraries_committed=True)
+    def test_native_change_needs_rebuild_and_runtime_evidence(self):
+        native = dict(native_changed=True, native_rebuilt=True, native_runtime_ok=True)
         self.assertEqual(judge(ready(**native)).verdict, "READY")
-        for fact in ("native_rebuilt", "native_runtime_ok", "native_libraries_committed"):
+        for fact in ("native_rebuilt", "native_runtime_ok"):
             with self.subTest(fact=fact):
                 self.assertEqual(judge(ready(**(native | {fact: False}))).verdict, "NEEDS_HUMAN")
 
@@ -211,7 +210,7 @@ class PlanTest(unittest.TestCase):
         facts = Facts(native_requested=True)
         self.assertIn("the plan asked for the macOS runtime check, but no native sources changed, so it did not run",
                       judge(facts).reasons)
-        facts.native_changed = facts.native_rebuilt = facts.native_runtime_ok = facts.native_libraries_committed = True
+        facts.native_changed = facts.native_rebuilt = facts.native_runtime_ok = True
         self.assertNotIn("the plan asked for the macOS runtime check, but no native sources changed, so it did not run",
                          judge(facts).reasons)
 
@@ -250,8 +249,9 @@ class GuardListTest(unittest.TestCase):
     def test_real_workflow_has_guards(self):
         root = Path(__file__).resolve().parents[3]
         wf = root / ".github" / "workflows" / "runtime-checks.yml"
-        if wf.exists():
-            self.assertIn("check_size_ratchet.py", checks.static_guards(str(root), ".github/workflows/runtime-checks.yml"))
+        if not wf.is_file():
+            self.skipTest("the repository workflow is outside this checkout")
+        self.assertIn("check_size_ratchet.py", checks.static_guards(str(root), ".github/workflows/runtime-checks.yml"))
 
 
 if __name__ == "__main__":

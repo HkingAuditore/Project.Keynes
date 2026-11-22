@@ -17,13 +17,14 @@ A procedural hex-world economy and civilization simulation. Godot 4.6 runs the U
 
 ## Project rules
 
-Each rule says where it applies, why, and what enforces it. The full list of 32 rules and their enforcement is in `docs/factory/rule-coverage.md`; the 13 that only review can judge are Qodo rules in `docs/factory/qodo-rules.json`.
+Each rule says where it applies, why, and what enforces it. The full list of 33 rules and their enforcement is in `docs/factory/rule-coverage.md`; the 14 that only review can judge are Qodo rules in `docs/factory/qodo-rules.json`.
 
 1. **Load must not decide results.** Where: everything that computes a simulated day (C++ runtime, GDScript adapters). Why: the same seed, content and sealed commands must give the same day, byte for byte; when machine load once changed the economy's cadence, the same world diverged. Enforced by: `check_golden_determinism.py`, `check_replay_matrix.py`, Qodo rule "simulation results must not depend on timing or load".
 2. **The front end only reads published frames.** Where: `scripts/ui/`, `scripts/rendering/`. Why: the simulation is one timeline owned by the executor; a UI that reads live state shows a mix of days. Enforced by: `check_script_native_access.py` (native access only), Qodo rule "the front end only reads published frames".
 3. **Modules meet only through their API header and committed views.** Where: C++ runtime modules. Why: a module should be changeable by reading only it and the headers it depends on. Enforced by: `check_module_api.py`, `check_cpp_deps.py`, `check_committed_views.py`, Qodo rule "cross-module hand-offs go through committed views or intents".
 4. **Fix the root cause.** Where: every failing test and every fix handed to an agent. Why: loosened asserts, longer timeouts and retries hide the bug that broke determinism. Enforced by: Qodo rule "fix the root cause instead of relaxing the check", factory prompts.
 5. **New continuation state is versioned and installed whole.** Where: save sections and state that later days read. Why: a missing field only shows up as a cold-load divergence days later. Enforced by: `check_save_contracts.py`, `check_replay_matrix.py`, Qodo rule "new continuation state is versioned, validated and installed atomically".
+6. **Gates, parsers, allowlists and validators are tested with inputs they must refuse.** Where: `tools/factory/` and any code that decides whether something may proceed. Why: a gate whose tests only feed it good input passes while accepting bad input (a broken transport, a command with a second command appended, an unknown status read as clean); Qodo found this class in 19 of 158 findings on our PRs. Enforced by: `tools/factory/tests/test_gates_refuse.py` (every gate-named function must be listed with a refused input), Qodo rule "gates are tested with inputs they must refuse".
 
 ## Harness
 
@@ -39,3 +40,4 @@ Each rule says where it applies, why, and what enforces it. The full list of 32 
 - 交给外部 AI 的修复任务，提示词要求它先写清根因证据（复现条件、日志或代码路径）再改代码；靠放宽断言、加长超时、加重试绕过问题的补丁不采用。
 - 评估 Shader 优化时，按 GPU 实际执行的工作量判断。同一批像素走不同的 `if` 分支时，许多 GPU 会执行两条路径，驱动也可能把分支展开。优先省掉整批工作或在编译期裁掉不用的路径，收益用相同画质和分辨率的实际帧时间验证。
 - 工厂（`tools/factory/`）定时查看 fork 上打开的 PR，Qodo 评审出阻塞项后让 Codex 在 PR 分支上修复；它不自动认领 issue，issue 模式只能手动运行（`run.py --issue N`）。流程、关卡和规则覆盖见 `docs/factory/README.md`。工厂的结论由 `tools/factory/verdict.py` 从事实算出，agent 的自述不算数；Qodo 对头部提交的评审没有未关闭的阻塞项、CI 全部成功时，工厂自动合并（`config.json` 的 `autoMerge` 可关闭）。`tools/factory/sync_rules.py` 只创建缺失的规则。修改已有规则先用 `qodo rules update`，再同步 `docs/factory/qodo-rules.json`。
+- 任何编码 agent（含 Codex、交互会话）交付前遵守质量关卡：有效的 High / Medium 发现必须修完，所有 Low 发现报告给人，Qodo 对当前头部提交的评审完成后才能说完成；细则见 `docs/factory/quality-gate.md`，工厂在 `tools/factory/verdict.py` 里执行。

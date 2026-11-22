@@ -29,6 +29,8 @@ jobs:
             /.*/skills/
             /docs/architecture/
             /docs/plans/
+            /docs/factory/
+            /AGENTS.md
             /.github/workflows/
       - uses: actions/setup-python@v5
         with:

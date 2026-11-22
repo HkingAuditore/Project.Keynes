@@ -403,6 +403,7 @@
     bool pending_family_expedition_target_taken(uint64_t country_handle, int32_t target_cell) const;
     bool apply_family_expedition_player_command(const Command &cmd,
                                                 std::string &error);
+    bool apply_queued_family_expedition_start(const Command &cmd, std::string &error);
     int64_t family_population_in_cell(uint64_t family_handle,
                                       int32_t cell) const;
     int64_t family_dispatchable_population_in_cell(uint64_t family_handle,

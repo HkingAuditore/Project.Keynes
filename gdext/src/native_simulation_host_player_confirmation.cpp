@@ -7,6 +7,7 @@
 #include "runtime_narrative.h"
 
 #include <algorithm>
+#include <cstring>
 #include <utility>
 
 namespace pk {
@@ -191,6 +192,9 @@ godot::Dictionary NativeSimulationHost::submit_player_confirmation(Confirmation 
                 state() == RuntimeWorkerState::FAULTED || _stop_requested.load(std::memory_order_acquire))
             return confirmation_receipt(false, "player_confirmation_unavailable");
         std::lock_guard<std::mutex> control(_control_mutex);
+        if (state() == RuntimeWorkerState::STOPPED || state() == RuntimeWorkerState::FAULTED ||
+                _stop_requested.load(std::memory_order_acquire))
+            return confirmation_receipt(false, "player_confirmation_unavailable");
         if (_player_confirmation.requests.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY)
             return confirmation_receipt(false, "player_confirmation_queue_full");
         request.day = day;
@@ -218,11 +222,17 @@ bool NativeSimulationHost::service_player_confirmations() {
         } else {
             const auto generation = player_ideology_offer();
             const bool current = generation != 0 && generation == request.value;
+            const char *blocked_on = current ? player_confirmation_block() : nullptr;
+            const bool dismisses_calendar_block = blocked_on != nullptr &&
+                std::strcmp(blocked_on, IDEOLOGY_CHOICE) == 0;
             auto result = confirmation_receipt(current,
                 current ? "ok" : "ideology_offer_generation_stale");
             if (current) {
                 _player_confirmation.dismissed_ideology = generation;
                 result["settled_day"] = committed_day_value();
+                // Removing the block is not itself permission to advance a paused calendar.
+                if (dismisses_calendar_block)
+                    admit_player_response_through(committed_day_value() + 1);
             }
             publish_boundary_command_result("ideology.offer.dismiss", 0, std::move(result));
         }

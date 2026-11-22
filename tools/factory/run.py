@@ -108,11 +108,11 @@ class Run:
         if problems or self.facts.human_paths:
             return False
         _, _, native = work.scope(self.cfg, files)
-        problem = self.candidate.commit_problem(files, native)
+        problem = self.candidate.commit_problem(native)
         if problem:
             self.facts.stopped_by = problem
             return False
-        if not native and not self.candidate.discard_binaries(files):
+        if not files:
             self.facts.stopped_by = "no changes remain after the checks"
             return False
         self.facts.head = self.facts.checks_sha = work.commit(self.workdir, message)

@@ -86,6 +86,7 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 - 修改执行器保存或命令交接时，复用 `native_simulation_host_executor_boundary.cpp` 的共同服务与排序规则。inline 的保存处理也必须取得日边界锁，并检查跨调用的未完成日标记；不能仅以当前没有 C++ 调用正在执行来认定可保存。运行 `runtime_inline_save_restore_test.gd`，覆盖后台/inline 四种存读档组合、未来命令、一次性回执、重复保存、未完成日和保存失败。命令超出 PKSR 既定容量时要明确失败并保留全部命令，检查处理完命令后可再次保存，不能静默截断。
 - 正式 inline 保存还必须运行 `runtime_inline_coordinator_save_test.gd`，覆盖运行中/暂停时保存、读档后继续及经济状态比较。协调器按 `inline_day_pending` 和真实调用边界判断，不能要求 inline 的 RUNNING 自动变成 PAUSED。
 - 停止、保存及时钟控制条件统一经 `runtime_control_wakeup` 在等待锁内发布。`runtime_control_wakeup_test.cpp` 固定检查与等待之间的窗口；`runtime_executor_boundary_test.gd` 验证实际停止通知、四种执行器重启组合、入口及待执行命令、编号连续、一次性结算，以及启动拒绝后原会话可继续。待执行列表归世界，停止不能销毁，重启不能清空；重复或无效启动必须先拒绝再修改配置。
+- 玩家关闭理念候选且该代次解除当前理念阻塞时，后台还要放行已提交日的下一日；该推进许可与已关闭代次一同保存在 `PLAYER_CONFIRMATION` 段。停止时在队列锁内取出未服务的已受理确认，并发布 `executor_stopped_before_player_confirmation_service` 终结回执；入队也要在锁内复查停止状态，避免停止清理之后再塞入请求。`ideology_draw_flow_test.gd` 覆盖暂停日历关闭后自动提交下一日、存档后恢复候选关闭状态并继续，以及关闭/停止竞态回执；相关存档续跑须保留完整确认段。
 - CLOCK_WAIT 必须带停止、保存、暂停与速度变化的条件检查；仅把通知放在锁内仍不能保护无条件的计时等待。执行器测试覆盖单次控制通知、inline+SHADOW 拒绝后的存档恢复，以及未完成日跨后台/inline 替换后的冻结输入和保存阻止。
 - `runtime_world_lifecycle_test.gd` 区分同一世界重启与复用对象创建新世界，检查已提交国家状态、未领取确认、连续日期、新世界命令隔离及运行中拒绝重配；新世界身份编号必须递增，无效配置（包括后段校验失败）保留旧世界及其编号。正式 inline 用例还在保存恢复后重复应用策略，并逐项比较国家状态及下一日整份经济哈希。保留这些比较，不能只检查重启成功或名称未变。`runtime_world_rules_rebuild_test.gd` 另在后台和 inline 各覆盖三代新世界：规则在 Country 前配置、规则内容变化、直接复用定义、无效配置后旧世界续跑。检查实际 Effect 执行与 Modifier 数值、Trigger 输出及规则快照接收，并确认旧实例/事件没有混入；仅有日期推进或 ready=true 不算规则生效。
 - 相同 ACTIVE 授权范围的重启走 `native_simulation_host_lifecycle.cpp`，只替换执行器，世界状态与日内继续位置不重建。新世界由停止后的 `configure_country` 建立：先在私有候选中验证，成功后再配置原 Country 对象，保持地址稳定及 session epoch 递增。新 Host 从旧 Host 带入回复协议编号作为起点，首次启动再递增，不能让旧回复与新请求复用身份；同一世界重启保持原编号。替换前用 `make_new_world_host` 把当前已验证的 Modifier、Effect、Trigger、Ideology 规则定义及 Modifier 稳定键映射安装到私有候选中，任何失败都保留旧世界。规则定义与世界状态分开：不复制旧实例、请求、回执、输入、意见、快照或读取进度。替换成功时清理规则主线程对象中的旧世界状态，Effect/Modifier 的快照读取进度必须随状态清理重置，不能保留成新世界首份结果的拒收门槛。替换 Host 前必须解除经济对其 OwnedState 的借用，并重新连接 Country/Economy/Effect 适配层。重复捕获相同 Country 目录不能清掉终态确认；新世界和读档才更换相应记录。
@@ -158,7 +159,7 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 ~/.local/bin/scons -C gdext platform=macos target=template_release arch=arm64 dev_build=no -j8
 ```
 
-交付已追踪的 macOS arm64 程序库时，两种配置都要重编。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
+验证 macOS arm64 原生代码改动时，两种配置都要在本地重编。在 `Project/project-keynes` 生成的 dylib 由 Git 忽略。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
 
 | 检查 | 命令要点 | 何时必须跑 |
 |---|---|---|
