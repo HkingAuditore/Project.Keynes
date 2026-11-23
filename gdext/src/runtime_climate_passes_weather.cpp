@@ -266,6 +266,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
                   idx, first_up, POSX, POSY, NB, FIELD, wdx, wdy, n_cells,
                   weather_cell_pos_scale, weather_wrap_width_x, field_advect_steps);
     };
+    // W9：口径只剩一种（有符号净流入），开关与 legacy 分支已退役。
     auto wx_convergence = [&](int idx) -> float {
         return use_geom_cache
             ? wf_wind_convergence_idx_cached(idx, NB, GEOM_DX, GEOM_DY, GEOM_INVD,
@@ -429,7 +430,8 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
             : 0.0f;
         float river_recycle_lock = 0.0f;
         if (has_river) {
-            float river_forcing_proxy = convergence * 0.65f;
+            // W3 重标定：0.65 → 0.76，保持「旧 p90(0.537) 处贡献不变」：0.65*0.537/0.458 ≈ 0.76
+            float river_forcing_proxy = convergence * 0.76f;
             const float lift_forcing = (lift > 0.0f) ? lift * 0.80f : 0.0f;
             if (lift_forcing > river_forcing_proxy) river_forcing_proxy = lift_forcing;
             river_recycle_lock = wf_smoothstep(0.035f, 0.12f, PP[i])
@@ -480,7 +482,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
                 : 0.0f;
             float up_river_recycle_lock = 0.0f;
             if (up_has_river) {
-                const float up_forcing_proxy = dc_clampf(PREV_CNV[upstream_idx] * 0.65f, 0.0f, 1.0f);
+                const float up_forcing_proxy = dc_clampf(PREV_CNV[upstream_idx] * 0.76f, 0.0f, 1.0f);
                 up_river_recycle_lock = wf_smoothstep(0.035f, 0.12f, PP[upstream_idx])
                     * (1.0f - wf_smoothstep(0.16f, 0.44f, up_forcing_proxy))
                     * (0.35f + up_river_q * 0.65f);
@@ -522,7 +524,9 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         const float psi = (PSI != nullptr) ? PSI[i] : 0.0f;
         float relative_humidity = vapor / ((vapor_capacity > 0.001f) ? vapor_capacity : 0.001f);
         if (relative_humidity < 0.0f) relative_humidity = 0.0f;
-        const float frontal_convergence = wf_smoothstep(0.14f, 0.46f, convergence);
+        // W3：net 口径 p50=0.016 / p90=0.458；旧 (0.14,0.46) 是按 p50=0.376 的假基线标的，
+        // 新场下 p50 处必须闭合、p90 处全开 ⇒ (p50, p90)。
+        const float frontal_convergence = wf_smoothstep(0.02f, 0.46f, convergence);
         const float humidity_front_gate = wf_smoothstep(0.25f, 0.78f, relative_humidity);  // Stage2: 0.38→0.25 冷湿锋面成雨
         float frontogenesis = frontal_convergence * wf_smoothstep(0.04f, 0.16f, temp_gradient)
                             * humidity_front_gate * field_frontogenesis_gain;
@@ -536,7 +540,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         const float strat_cool = 1.0f - wf_smoothstep(0.40f, 0.62f, temp);       // 暖→0(交给对流) 冷→1
         const float oro_elev = wf_smoothstep(0.45f, 0.82f, ELEV[i]);             // 高地形(山地)抬升强度,供 stratiform + trig 复用
         const float strat_humid = wf_smoothstep(0.32f, 0.62f, relative_humidity); // Stage14f 0.42→0.32 中湿(山地/冷区 rh~0.39)也成层状雨
-        float strat_drive = lift_pos * 0.90f + convergence * 0.60f + frontogenesis * 0.80f
+        float strat_drive = lift_pos * 0.90f + convergence * 0.70f + frontogenesis * 0.80f
                           + oro_elev * 0.35f;                                     // 弱化静态山地云源，避免固定山地永雨
         if (on_water) strat_drive += (0.22f + wind_mag * 0.30f) * (1.0f - local_sea_ice * 0.92f);
         if (strat_drive > 1.0f) strat_drive = 1.0f;
@@ -591,7 +595,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
                 0.0f, MONS[static_cast<size_t>(i)]);
         }
         float dynamic_forcing = frontogenesis;
-        const float convergence_forcing = convergence * 0.65f;
+        const float convergence_forcing = convergence * 0.76f;
         if (convergence_forcing > dynamic_forcing) dynamic_forcing = convergence_forcing;
         if (convective > dynamic_forcing) dynamic_forcing = convective;
         if (ocean_convective > dynamic_forcing) dynamic_forcing = ocean_convective;
@@ -734,7 +738,8 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
             if (drv_an < 0.0f) drv_an = 0.0f; else if (drv_an > 1.0f) drv_an = 1.0f;
             float drv_in = (instability - 0.52f) / 0.30f;
             if (drv_in < 0.0f) drv_in = 0.0f; else if (drv_in > 1.0f) drv_in = 1.0f;
-            float drv_cv = (convergence - 0.38f) / 0.16f;
+            // W3：旧 (0.38,0.16) 是按 p50=0.376 标的；新场用 (p50, p90-p50)=(0.02, 0.44)。
+            float drv_cv = (convergence - 0.02f) / 0.44f;
             if (drv_cv < 0.0f) drv_cv = 0.0f; else if (drv_cv > 1.0f) drv_cv = 1.0f;
             float drv_fr = frontogenesis / 0.16f;
             if (drv_fr < 0.0f) drv_fr = 0.0f; else if (drv_fr > 1.0f) drv_fr = 1.0f;
@@ -821,7 +826,8 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
             temp, vapor, provisional_cloud, cloud_water, precip, instability,
             ocean_an, wind_len, temp_anom_i,
             std::max(onshore_moist_flux, coastal_monsoon_flux),
-            cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls);
+            cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls,
+            knobs.classify_gate_land, knobs.classify_gate_water);
         const bool quiet_non_precip = !wf_is_precip_weather_type(pre_wt) && quiet_core > 0.0f;
         if ((precip < 0.003f || quiet_non_precip) && quiet_core > 0.0f) {
             float clear_cap = 0.065f + dynamic_forcing * 0.12f;
@@ -874,8 +880,9 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
             temp, vapor, cloud, cloud_water, precip, instability,
             ocean_an, wind_len, temp_anom_i,
             std::max(onshore_moist_flux, coastal_monsoon_flux),
-            cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls);
-        if (cyclone_lift >= 0.58f && on_water) {
+            cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls,
+            knobs.classify_gate_land, knobs.classify_gate_water);
+        if (cyclone_lift >= 0.58f && on_water && wf_is_precip_weather_type(wt)) {
             wt = cyclone_storm_type_id;
         }
         if (!wf_is_precip_weather_type(wt) && precip > 0.0f) {
@@ -909,7 +916,8 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         if (refresh_convergence && apply_convergence_boost) {
             wf_apply_frontal_convergence_boost_idx(
                 i, TR, AA, NB, climate_anomaly, convergence,
-                temp, vapor, ocean_an,
+                temp, vapor, ocean_an, cloud_water, on_water,
+                on_water ? knobs.classify_gate_water : knobs.classify_gate_land,
                 cloud, precip, instability, wt, intensity);
         }
 

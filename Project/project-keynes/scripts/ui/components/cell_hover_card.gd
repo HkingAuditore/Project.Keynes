@@ -12,6 +12,7 @@ class_name CellHoverCard
 ## 内容只在 cache_key（格 : 日 : 归属槽）变化时重建；跟手只写 position。
 
 signal payload_applied(cell_index: int)
+signal hover_cell_changed(cell_index: int)
 
 const CARD_SIZE := Vector2(320.0, 184.0)
 const POINTER_OFFSET := Vector2(16.0, 18.0)
@@ -48,6 +49,8 @@ var _dirty := true
 var _dismissing := false
 var _shown_key := ""
 var _shown_cell := -1
+var _emitted_cell := -1
+var _avoid_rect := Rect2()
 var _payload: Dictionary = {}
 
 var _last_motion_ms := 0
@@ -136,6 +139,18 @@ func set_suppressed(suppressed: bool) -> void:
 
 func current_cell_index() -> int:
 	return _shown_cell
+
+
+func set_avoid_rect(rect: Rect2) -> void:
+	if rect != _avoid_rect:
+		_avoid_rect = rect
+		_dirty = true
+
+
+func _sync_hover_cell_signal() -> void:
+	if _shown_cell != _emitted_cell:
+		_emitted_cell = _shown_cell
+		hover_cell_changed.emit(_shown_cell)
 
 
 func payload() -> Dictionary:
@@ -300,7 +315,22 @@ func _move_to(screen: Vector2, safe: Rect2) -> void:
 	if rect.size == Vector2.ZERO:
 		dismiss(true)
 		return
-	position = rect.position
+	position = avoid_overlap(rect.position, rect.size, _avoid_rect, safe)
+
+
+static func avoid_overlap(origin: Vector2, card_size: Vector2, avoid: Rect2, safe: Rect2) -> Vector2:
+	if not avoid.has_area() or not Rect2(origin, card_size).intersects(avoid):
+		return origin
+	if fits_right_of(avoid.end.x, safe, card_size.x):
+		return Vector2(avoid.end.x + POINTER_OFFSET.x, origin.y)
+	var left := avoid.position.x - card_size.x - POINTER_OFFSET.x
+	if left >= safe.position.x + EDGE_MARGIN:
+		return Vector2(left, origin.y)
+	return origin
+
+
+static func fits_right_of(edge: float, safe: Rect2, card_width: float = CARD_SIZE.x) -> bool:
+	return edge + POINTER_OFFSET.x + card_width <= safe.end.x - EDGE_MARGIN
 
 
 ## 指针右下偏移；右侧/下方不够就翻到另一侧，最后夹进安全区。
@@ -344,6 +374,7 @@ func apply_payload(new_payload: Dictionary, animate: bool = true) -> void:
 	_apply_population(new_payload)
 	_apply_resources(new_payload)
 
+	_sync_hover_cell_signal()
 	payload_applied.emit(_shown_cell)
 	if not visible:
 		_show(animate)
@@ -453,6 +484,7 @@ func dismiss(immediate: bool = true) -> void:
 		return
 	_shown_key = ""
 	_shown_cell = -1
+	_sync_hover_cell_signal()
 	if immediate or UIAnimation.reduced_motion():
 		_kill_tween()
 		visible = false

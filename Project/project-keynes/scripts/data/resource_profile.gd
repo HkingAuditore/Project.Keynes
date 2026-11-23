@@ -166,6 +166,11 @@ var habitat_mode: String = "legacy"
 @export_range(0.0, 1.0, 0.001) var init_micro_coverage: float = 0.0
 @export_range(0.0, 0.5, 0.001) var init_micro_reserve_share: float = 0.0
 @export_range(0.0, 10000000000.0, 1.0) var init_micro_min_reserve: float = 0.0
+## 每块大陆的保底格数上限（0 = 不做大陆保底）。实际配额 =
+## min(本值, max(1, ceil(1% × 该大陆陆地格数)))，由 C++ 在 deposit pass 末尾算；
+## 配额资格只按陆块自身格数判定，从 8 格起算。
+## 保底格储量不由这里配置，固定取本资源已有的 init_min_reserve（最小真矿）。
+@export_range(0, 16, 1) var init_continent_floor_cells: int = 0
 
 # ─── 扩展初始储量因子（「地块自身情况」，map generation 仅一次）──────────
 # 默认 0 / {} → 不参与，保持与旧公式逐位一致（向后兼容）。

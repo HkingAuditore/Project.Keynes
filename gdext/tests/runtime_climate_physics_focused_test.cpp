@@ -324,13 +324,76 @@ static bool worker_progress(bool all_land) {
 }
 #endif
 
+static bool frontal_precipitation_requires_support() {
+    const float temp[] = {0.65f, 0.30f};
+    const float anomaly[] = {0.0f, 0.0f};
+    const int32_t neighbors[] = {1, -1, -1, -1, -1, -1};
+    float cloud = 0.0f, precip = 0.0f, instability = 0.0f, intensity = 0.0f;
+    uint8_t type = 0;
+    pk::wf_apply_frontal_convergence_boost_idx(0, temp, anomaly, neighbors,
+        0.0f, 1.0f, temp[0], 0.15f, 0.0f, 0.0f, true, 0.076f,
+        cloud, precip, instability, type, intensity);
+    CHECK(cloud > 0.4f && precip == 0.0f && type == 0);
+    pk::wf_apply_frontal_convergence_boost_idx(0, temp, anomaly, neighbors,
+        0.0f, 1.0f, temp[0], 0.40f, 0.0f, 0.20f, true, 0.076f,
+        cloud, precip, instability, type, intensity);
+    CHECK(precip > 0.076f && type == 1);
+    return true;
+}
+
+#ifdef PK_TEST_CLIMATE_WORKER
+static bool dry_cyclone_does_not_override_weather_type() {
+    using namespace pk::pk_async_climate;
+    WeatherFieldKnobs knobs;
+    knobs.n_cells = 1;
+    knobs.use_next_outputs = true;
+    knobs.classify_gate_water = 0.076f;
+    const float temp = 0.62f, zero = 0.0f, wind = 1.0f;
+    const uint8_t ocean = 0, empty = 0;
+    const int32_t neighbors[] = {-1, -1, -1, -1, -1, -1};
+    float vapor = -1.0f, cloud = -1.0f, precip = -1.0f;
+    float instability = -1.0f, intensity = -1.0f, convergence = -1.0f;
+    int32_t type = -1;
+    WeatherFieldLanes lanes;
+    lanes.temp_read = &temp;
+    lanes.moisture_read = lanes.air_anomaly = &zero;
+    lanes.wind_x = lanes.wind_speed = &wind;
+    lanes.wind_y = &zero;
+    lanes.terrain = &ocean;
+    lanes.has_river = lanes.vegetation = &empty;
+    lanes.elevation = lanes.pos_x = lanes.pos_y = &zero;
+    lanes.neighbor_indices = neighbors;
+    lanes.prev_vapor = lanes.prev_precip = lanes.temp_transport_anomaly = &zero;
+    lanes.prev_convergence = lanes.prev_cloud = &zero;
+    lanes.out_vapor = &vapor;
+    lanes.out_cloud = &cloud;
+    lanes.out_precip = &precip;
+    lanes.out_instability = &instability;
+    lanes.out_intensity = &intensity;
+    lanes.out_convergence = &convergence;
+    lanes.out_type_i32 = &type;
+    const uint32_t tag = 3;
+    const float lift = 0.65f;
+    WeatherFieldState state;
+    state.cyclone_tag = &tag;
+    state.cyclone_tag_count = 1;
+    state.cyclone_generation = tag;
+    state.cyclone_lift = &lift;
+    state.cyclone_x = state.cyclone_y = &zero;
+    weather_field_solve_pure(knobs, lanes, state, 0, 1);
+    CHECK(type == 0 && precip == 0.0f);
+    return true;
+}
+#endif
+
 int main() {
     std::string error;
     if (!self_test(error)) { std::fprintf(stderr, "%s\n", error.c_str()); return 1; }
 #ifdef PK_TEST_CLIMATE_WORKER
-    if (!validate_large_environment()) return 1;
+    if (!validate_large_environment() || !dry_cyclone_does_not_override_weather_type()) return 1;
 #endif
-    if (!state_roundtrip() || !forcing_and_divergence() || !psi_alias(false) || !psi_alias(true)) return 1;
+    if (!state_roundtrip() || !forcing_and_divergence() || !psi_alias(false) ||
+        !psi_alias(true) || !frontal_precipitation_requires_support()) return 1;
 #ifdef PK_TEST_CLIMATE_WORKER
     if (!ocean_land_inflow() || !worker_progress(false) || !worker_progress(true)) return 1;
 #endif

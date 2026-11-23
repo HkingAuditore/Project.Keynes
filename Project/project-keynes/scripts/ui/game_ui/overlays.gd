@@ -2,6 +2,8 @@ extends RefCounted
 
 # G5 collaborator. The host owns all mutable state; it is passed per call.
 
+const CellBoardScene = preload("res://scenes/ui/cell_board.tscn")
+
 func _ensure_cell_hover_card(host) -> void:
 	if host._cell_hover_card != null:
 		return
@@ -15,7 +17,29 @@ func _ensure_cell_hover_card(host) -> void:
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(card)
 	host._cell_hover_card = card
+	_ensure_cell_board(host)
 	host._configure_cell_hover_card()
+
+
+func _ensure_cell_board(host) -> void:
+	var layout = host._hud_layout_component
+	if layout == null or layout._cell_board != null:
+		return
+	var panel_layer := host.get_node_or_null("UIRoot/PanelLayer") as Control
+	if panel_layer == null:
+		return
+	var board := CellBoardScene.instantiate() as CellBoard
+	panel_layer.add_child(board)
+	layout._cell_board = board
+	layout._cell_hover_card = host._cell_hover_card
+	if host._cell_hover_card != null:
+		host._cell_hover_card.hover_cell_changed.connect(board.on_hover_cell_changed)
+		host._cell_hover_card.payload_applied.connect(board.on_hover_cell_refreshed)
+	board.visibility_changed.connect(func() -> void:
+		if host._map_overlay_toolbar != null:
+			host._map_overlay_toolbar.set_board_obscured(board.visible)
+		layout.sync_board_avoidance())
+	layout._layout_cell_board()
 
 
 func _on_military_layer_toggled(host, layer_id: StringName, enabled: bool) -> void:
@@ -430,6 +454,12 @@ func _configure_cell_hover_card(host) -> void:
 		return
 	host._cell_hover_card.configure(host._map, host._player_camera, host._hover_hex_size,
 		host._cell_hover_view_model, host._hover_blocked, host.map_safe_area)
+	var board: CellBoard = host._hud_layout_component._cell_board
+	if board != null:
+		board.configure(host._map,
+			func() -> Object: return host._economy_runtime_facade,
+			host._inspector_view_model, host._world_clock)
+		host._hud_layout_component._layout_cell_board()
 
 
 func touch_layout_enabled(host) -> bool:

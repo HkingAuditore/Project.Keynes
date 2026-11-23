@@ -1,0 +1,279 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/cell_board.gd" id="board"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="theme"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="badge"]
+[ext_resource type="PackedScene" path="res://scenes/ui/cell_board_market_row.tscn" id="market_row"]
+[ext_resource type="PackedScene" path="res://scenes/ui/cell_board_cohort_row.tscn" id="cohort_row"]
+
+[node name="CellBoard" type="Control"]
+mouse_filter = 2
+custom_minimum_size = Vector2(520, 0)
+process_mode = 3
+visible = false
+theme = ExtResource("theme")
+script = ExtResource("board")
+
+[node name="Slide" type="Control" parent="."]
+layout_mode = 0
+mouse_filter = 2
+custom_minimum_size = Vector2(520, 0)
+
+[node name="Column" type="VBoxContainer" parent="Slide"]
+layout_mode = 0
+mouse_filter = 2
+custom_minimum_size = Vector2(520, 0)
+theme_override_constants/separation = 10
+
+[node name="MarketCard" type="PanelContainer" parent="Slide/Column"]
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"PKPaperPopup"
+
+[node name="Margin" type="MarginContainer" parent="Slide/Column/MarketCard"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 6
+
+[node name="Body" type="VBoxContainer" parent="Slide/Column/MarketCard/Margin"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Header" type="HBoxContainer" parent="Slide/Column/MarketCard/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 26)
+theme_override_constants/separation = 8
+
+[node name="Lead" type="HBoxContainer" parent="Slide/Column/MarketCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(132, 26)
+theme_override_constants/separation = 4
+size_flags_horizontal = 3
+
+[node name="Icon" parent="Slide/Column/MarketCard/Margin/Body/Header/Lead" instance=ExtResource("badge")]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 18)
+size_flags_vertical = 4
+
+[node name="Title" type="Label" parent="Slide/Column/MarketCard/Margin/Body/Header/Lead"]
+layout_mode = 2
+mouse_filter = 2
+autowrap_mode = 0
+horizontal_alignment = 0
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "物资"
+
+[node name="StockScale" type="Label" parent="Slide/Column/MarketCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(48, 26)
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 12
+theme_type_variation = &"PKDossierKicker"
+
+[node name="Stock" type="Label" parent="Slide/Column/MarketCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(80, 26)
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "储量"
+
+[node name="Price" type="Label" parent="Slide/Column/MarketCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(80, 26)
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "价格"
+
+[node name="Rule" type="Control" parent="Slide/Column/MarketCard/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 5)
+
+[node name="Line" type="ColorRect" parent="Slide/Column/MarketCard/Margin/Body/Rule"]
+layout_mode = 1
+mouse_filter = 2
+anchor_right = 1.0
+offset_top = 1.0
+offset_bottom = 2.0
+color = Color(0.42, 0.29, 0.16, 0.38)
+
+[node name="Lead" type="ColorRect" parent="Slide/Column/MarketCard/Margin/Body/Rule"]
+layout_mode = 1
+mouse_filter = 2
+offset_right = 26.0
+offset_top = 1.0
+offset_bottom = 2.0
+color = Color(0.69, 0.49, 0.24, 1)
+
+[node name="Rows" type="VBoxContainer" parent="Slide/Column/MarketCard/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 0
+
+[node name="Row1" parent="Slide/Column/MarketCard/Margin/Body/Rows" instance=ExtResource("market_row")]
+layout_mode = 2
+
+[node name="Row2" parent="Slide/Column/MarketCard/Margin/Body/Rows" instance=ExtResource("market_row")]
+layout_mode = 2
+
+[node name="Row3" parent="Slide/Column/MarketCard/Margin/Body/Rows" instance=ExtResource("market_row")]
+layout_mode = 2
+
+[node name="Row4" parent="Slide/Column/MarketCard/Margin/Body/Rows" instance=ExtResource("market_row")]
+layout_mode = 2
+
+[node name="Row5" parent="Slide/Column/MarketCard/Margin/Body/Rows" instance=ExtResource("market_row")]
+layout_mode = 2
+
+[node name="CohortCard" type="PanelContainer" parent="Slide/Column"]
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"PKPaperPopup"
+
+[node name="Margin" type="MarginContainer" parent="Slide/Column/CohortCard"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 6
+
+[node name="Body" type="VBoxContainer" parent="Slide/Column/CohortCard/Margin"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Header" type="HBoxContainer" parent="Slide/Column/CohortCard/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 26)
+theme_override_constants/separation = 8
+
+[node name="Lead" type="HBoxContainer" parent="Slide/Column/CohortCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(90, 26)
+theme_override_constants/separation = 4
+size_flags_horizontal = 3
+
+[node name="Icon" parent="Slide/Column/CohortCard/Margin/Body/Header/Lead" instance=ExtResource("badge")]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 18)
+size_flags_vertical = 4
+
+[node name="Title" type="Label" parent="Slide/Column/CohortCard/Margin/Body/Header/Lead"]
+layout_mode = 2
+mouse_filter = 2
+autowrap_mode = 0
+horizontal_alignment = 0
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "阶层"
+
+[node name="Population" type="Label" parent="Slide/Column/CohortCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(76, 26)
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "人口"
+
+[node name="Funds" type="Label" parent="Slide/Column/CohortCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(90, 26)
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "存款"
+
+[node name="Income" type="Label" parent="Slide/Column/CohortCard/Margin/Body/Header"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(88, 26)
+autowrap_mode = 0
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 16
+theme_type_variation = &"PKDossierKicker"
+text = "收入"
+
+[node name="Rule" type="Control" parent="Slide/Column/CohortCard/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+custom_minimum_size = Vector2(0, 5)
+
+[node name="Line" type="ColorRect" parent="Slide/Column/CohortCard/Margin/Body/Rule"]
+layout_mode = 1
+mouse_filter = 2
+anchor_right = 1.0
+offset_top = 1.0
+offset_bottom = 2.0
+color = Color(0.42, 0.29, 0.16, 0.38)
+
+[node name="Lead" type="ColorRect" parent="Slide/Column/CohortCard/Margin/Body/Rule"]
+layout_mode = 1
+mouse_filter = 2
+offset_right = 26.0
+offset_top = 1.0
+offset_bottom = 2.0
+color = Color(0.69, 0.49, 0.24, 1)
+
+[node name="Rows" type="VBoxContainer" parent="Slide/Column/CohortCard/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 3
+
+[node name="Row1" parent="Slide/Column/CohortCard/Margin/Body/Rows" instance=ExtResource("cohort_row")]
+layout_mode = 2
+
+[node name="Row2" parent="Slide/Column/CohortCard/Margin/Body/Rows" instance=ExtResource("cohort_row")]
+layout_mode = 2
+
+[node name="Row3" parent="Slide/Column/CohortCard/Margin/Body/Rows" instance=ExtResource("cohort_row")]
+layout_mode = 2
+
+[node name="Row4" parent="Slide/Column/CohortCard/Margin/Body/Rows" instance=ExtResource("cohort_row")]
+layout_mode = 2
+
+[node name="Row5" parent="Slide/Column/CohortCard/Margin/Body/Rows" instance=ExtResource("cohort_row")]
+layout_mode = 2
+
+[node name="DwellTimer" type="Timer" parent="."]
+one_shot = true
+
+[node name="RetryTimer" type="Timer" parent="."]
+one_shot = true

@@ -328,6 +328,8 @@ Dictionary DCWorldExt::run_boot_facade_pass(const Dictionary &knobs) {
             out["deposit_fields"] = deposit_fields;
             out["deposit_reserves"] = reserves;
             out["deposit_native_ms"] = deposit.get("elapsed_ms", 0.0);
+            out["deposit_quota_cells"] = deposit.get("quota_cells", 0);
+            out["deposit_quota_unmet"] = deposit.get("quota_unmet", 0);
         } else {
             out["deposit_reason"] = deposit.get("reason", String("unknown"));
         }

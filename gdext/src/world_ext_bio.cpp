@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "world_ext_landmasses.h"
 #include "economy_runtime.h"
 #include "country_runtime.h"
 #include "native_simulation_day_context.h"
@@ -1030,30 +1031,11 @@ Dictionary DCWorldExt::run_bio_province_pass(const Dictionary &knobs) {
     province.resize(n);
     int32_t *lm = landmass.ptrw();
     int32_t *pv = province.ptrw();
-    std::memset(lm, 0, size_t(n) * sizeof(int32_t));
     std::memset(pv, 0, size_t(n) * sizeof(int32_t));
 
-    int32_t landmass_count = 0;
+    const int32_t landmass_count = label_world_landmasses(water, nb, n, lm);
     std::vector<int32_t> stack;
     stack.reserve(size_t(n));
-    for (int cell = 0; cell < n; ++cell) {
-        if (water[cell] != 0 || lm[cell] != 0) continue;
-        ++landmass_count;
-        stack.clear();
-        stack.push_back(cell);
-        lm[cell] = landmass_count;
-        while (!stack.empty()) {
-            const int32_t cur = stack.back();
-            stack.pop_back();
-            const int32_t base = cur * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nxt = nb[base + d];
-                if (nxt < 0 || nxt >= n || water[nxt] != 0 || lm[nxt] != 0) continue;
-                lm[nxt] = landmass_count;
-                stack.push_back(nxt);
-            }
-        }
-    }
 
     int32_t province_count = 0;
     for (int cell = 0; cell < n; ++cell) {
@@ -1182,6 +1164,7 @@ Dictionary DCWorldExt::run_bio_bootstrap_pass(const Dictionary &knobs) {
     Dictionary seed_knobs = knobs.duplicate(false);
     seed_knobs["landmass_ids"] = province.get("landmass_ids", PackedInt32Array());
     seed_knobs["province_ids"] = province.get("province_ids", PackedInt32Array());
+    seed_knobs["seed_missing_species"] = true;
     Dictionary out = run_bio_seed_pass(seed_knobs);
     if (!bool(out.get("ok", false))) return out;
 
@@ -1544,6 +1527,30 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
         }
     }
 
+    // Seed at most one relict for an absent species. Use the daily climate
+    // limits and the same occupancy rules as normal natural seeding.
+    if (bool(knobs.get("seed_missing_species", false))) {
+        for (int s = 0; s < sp.count; ++s) {
+            const int32_t bit = sp.bits[s];
+            if (occupied_n[s] != 0 || bit < 0 || bit >= 32) continue;
+            int best = -1;
+            float best_distance = std::numeric_limits<float>::infinity();
+            for (int cell = 0; cell < n; ++cell) {
+                if (landmass[cell] <= 0 || !persist_ok(cell, s, sp, water, temp, moist, elev) ||
+                    !natural_slot_free(cell, s, sp, occ)) continue;
+                const float distance = std::abs(temp[cell] - 0.5f * (sp.temp_lo[s] + sp.temp_hi[s])) +
+                    std::abs(moist[cell] - 0.5f * (sp.moist_lo[s] + sp.moist_hi[s])) +
+                    std::abs(elev[cell] - 0.5f * (sp.elev_lo[s] + sp.elev_hi[s]));
+                if (distance >= best_distance) continue;
+                best_distance = distance;
+                best = cell;
+            }
+            if (best < 0) continue;
+            occ[best] = int32_t(uint32_t(occ[best]) | (uint32_t{1} << bit));
+            origin_ids[s] = landmass[best];
+            occupied_n[s] = hearth_n[s] = seeded_n[s] = 1;
+        }
+    }
     out["ok"] = true;
     out["path"] = String("gdext");
     out["occupancy_bits"] = occupancy;

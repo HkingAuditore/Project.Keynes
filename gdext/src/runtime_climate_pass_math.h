@@ -863,49 +863,6 @@ inline float wf_upstream_vapor_idx_from_first_xy(
 }
 
 // POD position variant of wf_wind_convergence_idx.
-inline float wf_wind_convergence_idx_xy(int idx,
-                                        const float *POSX, const float *POSY,
-                                        const int32_t *NB,
-                                        const float *WX, const float *WY,
-                                        const float *WSPD,
-                                        float wrap_width_x) {
-    const float self_x = POSX[idx];
-    const float self_y = POSY[idx];
-    float incoming = 0.0f;
-    int   checked  = 0;
-    const int base = idx * 6;
-    for (int d = 0; d < 6; ++d) {
-        const int32_t nb_idx = NB[base + d];
-        if (nb_idx < 0) continue;
-        float dx = 0.0f;
-        float dy = 0.0f;
-        wf_wrapped_delta(POSX[nb_idx], POSY[nb_idx], self_x, self_y,
-                         wrap_width_x, dx, dy);
-        const float dl2 = dx * dx + dy * dy;
-        if (dl2 <= 0.0001f) continue;
-        const float wx = WX[nb_idx];
-        const float wy = WY[nb_idx];
-        const float wl2 = wx * wx + wy * wy;
-        if (wl2 <= 0.0001f) continue;
-        const float inv_d = 1.0f / std::sqrt(dl2);
-        const float inv_w = 1.0f / std::sqrt(wl2);
-        float cos_in = (dx * wx + dy * wy) * (inv_d * inv_w);
-        if (cos_in < 0.0f) cos_in = 0.0f;
-        const float wsp = (WSPD != nullptr)
-            ? wf_wind_speed_norm(wx, wy, WSPD[nb_idx]) : std::sqrt(wl2);
-        float speed_w = wsp / 1.2f;
-        if (speed_w < 0.20f) speed_w = 0.20f;
-        else if (speed_w > 1.25f) speed_w = 1.25f;
-        incoming += cos_in * speed_w;
-        checked  += 1;
-    }
-    if (checked == 0) return 0.0f;
-    float v = incoming / float(checked);
-    if (v < 0.0f) v = 0.0f;
-    else if (v > 1.0f) v = 1.0f;
-    return v;
-}
-
 // ─── 邻域几何缓存版（bit-equal 加速变体）────────────────────────────────────
 // 与上面三个逐位等价，只把热循环里每次重算的 self->nb wrapped delta 与
 // 1/sqrt(dl2) 换成调用方预算的缓存 NB_DX/NB_DY/NB_INVD（n*6，dir 序）。
@@ -960,19 +917,75 @@ inline float wf_upstream_vapor_idx_from_first_cached(
     return sum_v / weight;
 }
 
+// ─── 风场辐合：有符号净流入 ─────────────────────────────────────────────────
+//
+// 旧实现（半波整流均值 `mean_d max(0, cos(self→nb, wind_nb))`）已在 W9 退役：
+// 六角格 6 个等间隔方向上它恒在 0.29–1.25，**与风场有没有辐合无关** ——
+// 均匀流（零辐散）实测读 0.3333。回归：tests/world/weather_convergence_metric_test.gd
+//
+// 现行口径：
+//   w_d     = clamp(|v_nb| / 1.2, 0, 1.25)
+//   inflow  = Σ_d max(0,  cos_in_d) · w_d
+//   outflow = Σ_d max(0, -cos_in_d) · w_d
+//   conv    = clamp((inflow - outflow) / (inflow + outflow), 0, 1)
+//
+// 均匀流 ⇒ 0；辐合中心 ⇒ 1；辐散 ⇒ 钳 0。输出 [0,1]，消费者阈值按此分布标定
+// （p50≈0.016 / p90≈0.458 / p95≈0.636），见 docs/architecture/feature-guides.md。
+inline float wf_wind_convergence_idx_xy(int idx,
+                                            const float *POSX, const float *POSY,
+                                            const int32_t *NB,
+                                            const float *WX, const float *WY,
+                                            const float *WSPD,
+                                            float wrap_width_x) {
+    const float self_x = POSX[idx];
+    const float self_y = POSY[idx];
+    float inflow = 0.0f;
+    float outflow = 0.0f;
+    const int base = idx * 6;
+    for (int d = 0; d < 6; ++d) {
+        const int32_t nb_idx = NB[base + d];
+        if (nb_idx < 0) continue;
+        float dx = 0.0f;
+        float dy = 0.0f;
+        wf_wrapped_delta(POSX[nb_idx], POSY[nb_idx], self_x, self_y,
+                         wrap_width_x, dx, dy);
+        const float dl2 = dx * dx + dy * dy;
+        if (dl2 <= 0.0001f) continue;
+        const float wx = WX[nb_idx];
+        const float wy = WY[nb_idx];
+        const float wl2 = wx * wx + wy * wy;
+        if (wl2 <= 0.0001f) continue;
+        const float inv_d = 1.0f / std::sqrt(dl2);
+        const float inv_w = 1.0f / std::sqrt(wl2);
+        const float cos_in = (dx * wx + dy * wy) * (inv_d * inv_w);
+        const float wsp = (WSPD != nullptr)
+            ? wf_wind_speed_norm(wx, wy, WSPD[nb_idx]) : std::sqrt(wl2);
+        float speed_w = wsp / 1.2f;
+        if (speed_w < 0.0f) speed_w = 0.0f;
+        else if (speed_w > 1.25f) speed_w = 1.25f;
+        if (cos_in > 0.0f) inflow += cos_in * speed_w;
+        else outflow += -cos_in * speed_w;
+    }
+    const float denom = inflow + outflow;
+    if (denom <= 1e-4f) return 0.0f;
+    const float net = (inflow - outflow) / denom;
+    if (net <= 0.0f) return 0.0f;
+    return (net > 1.0f) ? 1.0f : net;
+}
+
 inline float wf_wind_convergence_idx_cached(
         int idx, const int32_t *NB,
         const float *NB_DX, const float *NB_DY, const float *NB_INVD,
         const float *WX, const float *WY, const float *WSPD) {
-    float incoming = 0.0f;
-    int   checked  = 0;
+    float inflow = 0.0f;
+    float outflow = 0.0f;
     const int base = idx * 6;
     for (int d = 0; d < 6; ++d) {
         const int32_t nb_idx = NB[base + d];
         if (nb_idx < 0) continue;
         const float inv_d = NB_INVD[base + d];
-        if (inv_d <= 0.0f) continue;          // dl2<=1e-4 哨兵：与原 dl2 跳过等价
-        // 原版 dx,dy = wf_wrapped_delta(POS[nb], self) = self-nb = -(self->nb)。
+        if (inv_d <= 0.0f) continue;          // dl2<=1e-4 哨兵
+        // 与旧口径一致：dx,dy = self - nb = -(self->nb)。
         const float dx = -NB_DX[base + d];
         const float dy = -NB_DY[base + d];
         const float wx = WX[nb_idx];
@@ -980,21 +993,20 @@ inline float wf_wind_convergence_idx_cached(
         const float wl2 = wx * wx + wy * wy;
         if (wl2 <= 0.0001f) continue;
         const float inv_w = 1.0f / std::sqrt(wl2);
-        float cos_in = (dx * wx + dy * wy) * (inv_d * inv_w);
-        if (cos_in < 0.0f) cos_in = 0.0f;
+        const float cos_in = (dx * wx + dy * wy) * (inv_d * inv_w);
         const float wsp = (WSPD != nullptr)
             ? wf_wind_speed_norm(wx, wy, WSPD[nb_idx]) : std::sqrt(wl2);
         float speed_w = wsp / 1.2f;
-        if (speed_w < 0.20f) speed_w = 0.20f;
+        if (speed_w < 0.0f) speed_w = 0.0f;
         else if (speed_w > 1.25f) speed_w = 1.25f;
-        incoming += cos_in * speed_w;
-        checked  += 1;
+        if (cos_in > 0.0f) inflow += cos_in * speed_w;
+        else outflow += -cos_in * speed_w;
     }
-    if (checked == 0) return 0.0f;
-    float v = incoming / float(checked);
-    if (v < 0.0f) v = 0.0f;
-    else if (v > 1.0f) v = 1.0f;
-    return v;
+    const float denom = inflow + outflow;
+    if (denom <= 1e-4f) return 0.0f;
+    const float net = (inflow - outflow) / denom;
+    if (net <= 0.0f) return 0.0f;
+    return (net > 1.0f) ? 1.0f : net;
 }
 
 inline float wf_precip_terrain_damping_factor(uint8_t terrain) {
@@ -1034,9 +1046,54 @@ inline float wf_apply_precip_stability(uint8_t terrain, float precip,
     return out;
 }
 
+// Cyclone thresholds were calibrated against the mean of inward components.
+template <typename Delta>
+inline float wf_cyclone_inward_wind(int idx, const int32_t *neighbors,
+        const float *wind_x, const float *wind_y, const float *wind_speed,
+        const Delta &delta) {
+    float incoming = 0.0f;
+    int checked = 0;
+    for (int d = 0; d < 6; ++d) {
+        const int neighbor = neighbors[idx * 6 + d];
+        if (neighbor < 0) continue;
+        float dx, dy;
+        delta(neighbor, idx, dx, dy);
+        const float dl2 = dx * dx + dy * dy;
+        const float wx = wind_x[neighbor], wy = wind_y[neighbor];
+        const float wl2 = wx * wx + wy * wy;
+        if (dl2 <= 0.0001f || wl2 <= 0.0001f) continue;
+        const float cosine = (dx * wx + dy * wy) *
+            ((1.0f / std::sqrt(dl2)) * (1.0f / std::sqrt(wl2)));
+        const float speed = wind_speed ? wf_wind_speed_norm(wx, wy, wind_speed[neighbor])
+                                       : std::sqrt(wl2);
+        incoming += std::max(0.0f, cosine) * std::clamp(speed / 1.2f, 0.20f, 1.25f);
+        ++checked;
+    }
+    return checked > 0 ? std::min(1.0f, incoming / float(checked)) : 0.0f;
+}
+
+inline float wf_cyclone_inward_wind_xy(int idx, const float *pos_x, const float *pos_y,
+        const int32_t *neighbors, const float *wind_x, const float *wind_y,
+        const float *wind_speed, float wrap_width_x) {
+    return wf_cyclone_inward_wind(idx, neighbors, wind_x, wind_y, wind_speed,
+        [&](int from, int to, float &dx, float &dy) {
+            wf_wrapped_delta(pos_x[from], pos_y[from], pos_x[to], pos_y[to],
+                             wrap_width_x, dx, dy);
+        });
+}
+
 // Mirror weather_system.gd::_classify_field_weather_core.
 // WeatherType.WT: CLEAR=0 RAIN=1 STORM=2 BLIZZARD=3 DROUGHT=4 FOG=5 HEATWAVE=6
 //                 MONSOON=7
+inline bool wf_meets_precipitation_gate(float vapor, float cloud, float cloud_water,
+                                         float precip, bool is_water, float gate) {
+    const float cloud_gate = is_water ? 0.18f : 0.10f;
+    const float vapor_gate = is_water ? 0.28f : 0.09f;
+    return precip > gate && std::max(cloud, cloud_water * 1.25f) > cloud_gate &&
+        std::max(cloud_water, precip * 0.70f) > cloud_gate * 0.35f &&
+        vapor > vapor_gate;
+}
+
 inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud,
                                             float cloud_water, float precip,
                                             float instability, float ocean_an,
@@ -1045,11 +1102,11 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
                                             bool cold_precip_as_blizzard,
                                             float snow_classification_margin,
                                             bool is_water,
-                                            float snow_cover) {
+                                            float snow_cover,
+                                            float gate_land = 0.040f,
+                                            float gate_water = 0.032f) {
     const bool warm  = temp > 0.55f;
     const float humid_gate     = is_water ? 0.28f  : 0.09f;
-    const float mp_cloud_gate  = is_water ? 0.22f  : 0.12f;
-    const float mp_vapor_gate  = is_water ? 0.28f  : 0.09f;
     const float monsoon_vapor  = is_water ? 0.40f  : 0.14f;
     const float monsoon_precip = is_water ? 0.055f : 0.065f;
     const float monsoon_cloud  = is_water ? 0.45f  : 0.24f;
@@ -1058,11 +1115,12 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     const bool humid = vapor > humid_gate;
     const float effective_cloud = (cloud > cloud_water * 1.25f) ? cloud : (cloud_water * 1.25f);
     const float precip_cloud_mass = (cloud_water > precip * 0.70f) ? cloud_water : (precip * 0.70f);
-    const float precip_gate = is_water ? 0.032f : 0.040f;
-    const float weak_precip_gate = is_water ? 0.022f : 0.030f;
-    const bool meaningful_precip = precip > precip_gate ||
-        (precip > weak_precip_gate && effective_cloud > mp_cloud_gate &&
-         precip_cloud_mass > mp_cloud_gate * 0.35f && vapor > mp_vapor_gate);
+    // W4：两段门合成一段 —— 降水率 + 三项支持条件。旧实现里 `precip > precip_gate`
+    // 是**无条件**通过的，等于「下一点就报雨」；这是「到处都是降水图标」的直接成因之一。
+    // 门槛值来自 ClimateProfile（陆/水各一档），缺省保持旧的 0.040 / 0.032 以便回滚。
+    const float precip_gate = is_water ? gate_water : gate_land;
+    const bool meaningful_precip = wf_meets_precipitation_gate(
+        vapor, cloud, cloud_water, precip, is_water, precip_gate);
 
     if (cold_precip_as_blizzard && meaningful_precip) {
         if (temp <= 0.24f)
@@ -1078,7 +1136,9 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     const bool warm_ocean_core = is_water && ocean_an > 0.05f &&
         instability > 0.64f && precip > 0.060f && effective_cloud > 0.24f &&
         precip_cloud_mass > 0.045f;
-    if (warm && humid &&
+    // W4 补丁：STORM 与 MONSOON 一样必须过 meaningful_precip。旧逻辑里两者的判据比 RAIN 松，
+    // 新门上线后出现「RAIN 2.7% / STORM 7.5% / MONSOON 5.7%」的倒挂 —— 中强度格被抢判成强天气。
+    if (warm && humid && meaningful_precip &&
         ((instability > 0.70f && precip > 0.065f && precip_cloud_mass > 0.050f) ||
          warm_ocean_core))
         return 2; // STORM
@@ -1093,8 +1153,10 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
         precip_cloud_mass > monsoon_cloud * 0.45f;
     const bool monsoon_flow_gate = monsoon_driver > monsoon_flux_gate ||
         inland_monsoon_plume;
-    if (warm && sustained_precip && effective_cloud > monsoon_cloud * 0.82f &&
-        monsoon_flow_gate)
+    // W4 补丁：MONSOON 也必须先过 meaningful_precip。旧逻辑里它自成一档，判据比 RAIN 更松，
+    // p80 门上线后出现「RAIN 2.6% / MONSOON 13.8%」的排序倒挂 —— 高强度格被抢判成热带暴雨。
+    if (warm && meaningful_precip && sustained_precip &&
+        effective_cloud > monsoon_cloud * 0.82f && monsoon_flow_gate)
         return 7; // MONSOON
     if (meaningful_precip)
         return 1; // RAIN
@@ -1159,12 +1221,12 @@ inline float wf_field_intensity_for_type(uint8_t wt, float temp, float vapor,
 inline void wf_apply_frontal_convergence_boost_idx(
         int idx, const float *T, const float *AA, const int32_t *NB,
         float climate_anomaly, float convergence,
-        float temp_self, float vapor, float ocean_an,
-        float &cloud, float &precip, float &instability, uint8_t &wt,
-        float &intensity) {
+        float temp_self, float vapor, float ocean_an, float cloud_water,
+        bool is_water, float precip_gate, float &cloud, float &precip,
+        float &instability, uint8_t &wt, float &intensity) {
     constexpr float STORM_TEMP_DIFF = 0.28f;
-    constexpr float WEAK_TEMP_DIFF = 0.06f;
-    constexpr float CONVERGENCE_THRESHOLD = 0.45f;
+    // W3：旧 0.45 是按 legacy 口径（p50=0.376）标的；net 口径 p95=0.636 ⇒ 0.64。
+    constexpr float CONVERGENCE_THRESHOLD = 0.64f;
     if (convergence < CONVERGENCE_THRESHOLD) return;
 
     float t_min = temp_self;
@@ -1191,22 +1253,19 @@ inline void wf_apply_frontal_convergence_boost_idx(
     if (frontal_score < 0.45f) return;
 
     const float cloud_min = 0.25f + frontal_score * 0.20f;
-    const bool frontal_precip_allowed = vapor > 0.09f;
-    const float precip_min = frontal_precip_allowed
-        ? (0.05f + frontal_score * 0.12f) : 0.0f;
+    const float precip_min = 0.05f + frontal_score * 0.12f;
     const float inst_min = 0.25f + frontal_score * 0.15f;
     if (cloud < cloud_min) cloud = cloud_min;
-    if (frontal_precip_allowed && precip < precip_min) precip = precip_min;
     if (instability < inst_min) instability = inst_min;
     if (cloud > 1.0f) cloud = 1.0f;
     if (precip > 1.0f) precip = 1.0f;
     if (instability > 1.0f) instability = 1.0f;
 
-    if (temp_diff < WEAK_TEMP_DIFF && (wt == 2 || wt == 7)) {
-        wt = 1; // RAIN
-    }
-    if (!wf_is_precip_weather_type(wt) && precip >= 0.040f) {
-        wt = 1; // RAIN
+    const float boosted_precip = std::max(precip, precip_min);
+    if (wf_meets_precipitation_gate(vapor, cloud, cloud_water, boosted_precip,
+                                    is_water, precip_gate)) {
+        precip = boosted_precip;
+        if (!wf_is_precip_weather_type(wt)) wt = 1; // RAIN
     }
     intensity = wf_field_intensity_for_type(
         wt, temp_self, vapor, cloud, precip, instability, ocean_an);

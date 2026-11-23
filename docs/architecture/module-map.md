@@ -107,6 +107,11 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 独立气候用例直接调用 `season_refresh_system.gd`、`runtime_climate_capture.gd`。相关用例为
 `tests/world/season_refresh_consumer_test.gd` 与 `tests/world/season_refresh_schedule_test.gd`。
 资源视觉入口：`Project/project-keynes/scripts/rendering/resource_visual_layer.gd` 持有工作队列/预算/记忆；同目录 `resource_visual_geometry.gd`、`resource_visual_materials.gd`、`resource_visual_work_queue.gd` 分别处理实例、材质、变化调度。变化由 `MapData.resource_visual_inputs_changed` 接入，原生数组发布映射在 `gdext/src/resource_visual_publication.h`。验证见 `tests/economy/resource_visual_update_test.gd` 和 `resource_visual_perf_test.gd`。`MapData` 只读查询归 `Project/project-keynes/scripts/geography/map_data_queries.gd`，生物占领诊断汇总归 `Project/project-keynes/scripts/geography/map_generation/bio_occupancy_summary.gd`。
+
+大陆矿产配额由 `gdext/src/world_ext_resource_deposits.cpp` 计算，陆块编号归
+`gdext/src/world_ext_landmasses.h`。玩家落点筛选和陆块大小由 `scripts/game/start_location_candidates.gd` 提供。
+近景地块看板的数据整理由 `scripts/ui/cell_board_view_model.gd` 处理，缩略图编码和格式识别归
+`scripts/game/save_preview_codec.gd`。
 `gdext/src/resource_visual_builder.h`、`gdext/src/resource_visual_builder.cpp` 注册独立的 `NativeResourceVisualBuilder` 纯计算类，
 经 `rendering/resource_visual_native_slice.gd` 接入单个同步片段；首次区域输入准备归
 `rendering/resource_visual_chunk_inputs.gd`。像素对象表与数值列的发布归 `WorldData`，三处

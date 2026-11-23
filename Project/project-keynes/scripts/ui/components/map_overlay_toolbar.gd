@@ -32,6 +32,7 @@ var _category_buttons: Dictionary = {}
 var _mode_buttons: Array[Button] = []
 var _close_button: Button
 var _warned_missing_icons: Dictionary = {}
+var _board_obscured := false
 
 
 func _ready() -> void:
@@ -63,6 +64,29 @@ func _ready() -> void:
 	_close_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_close_button.pressed.connect(_on_clear_pressed)
 	_resource_scroll.gui_input.connect(_on_resource_scroll_gui_input)
+
+
+## 只隐藏工具栏的纸片，保留根节点给派遣等工作区管理整体可见性。
+func set_board_obscured(obscured: bool) -> void:
+	if _board_obscured == obscured:
+		return
+	_board_obscured = obscured
+	if obscured:
+		var focused := get_viewport().gui_get_focus_owner()
+		if focused != null and is_ancestor_of(focused):
+			get_viewport().gui_release_focus()
+	_sync_board_presentation()
+
+
+func _sync_board_presentation() -> void:
+	for panel in [_primary_panel, _secondary_panel]:
+		panel.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED \
+			if _board_obscured else Control.MOUSE_BEHAVIOR_INHERITED
+	UIAnimation.fade_visibility(_primary_panel, not _board_obscured,
+		UITokens.ANIM_FAST if _board_obscured else UITokens.ANIM_MED)
+	UIAnimation.fade_visibility(_secondary_panel,
+		not _board_obscured and _category != Category.NONE,
+		UITokens.ANIM_FAST if _board_obscured else UITokens.ANIM_MED)
 
 
 func set_resource_discovery_context(
@@ -116,6 +140,11 @@ func _set_category(category: int) -> void:
 	for key in _category_buttons:
 		var category_button: Button = _category_buttons[key]
 		category_button.button_pressed = int(key) == category
+	if _board_obscured:
+		if category != Category.NONE:
+			_rebuild_secondary()
+		_sync_board_presentation()
+		return
 	if category == Category.NONE:
 		if _secondary_panel.visible:
 			UIAnimation.fade_slide_out(

@@ -10,6 +10,7 @@ habitat_mode = "land"
 init_reserve_scale = 8
 init_min_coverage = 0.05
 init_min_reserve = 10000000.0
+init_continent_floor_cells = 3
 init_target_coverage = 0.05
 init_target_reserve_density = 300000000
 init_richness_exponent = 1.3

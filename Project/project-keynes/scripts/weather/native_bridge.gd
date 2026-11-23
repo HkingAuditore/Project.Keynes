@@ -50,6 +50,13 @@ func _sync_profile_weather_knobs(host, cp: Resource) -> void:
 		host._field_vapor_precip_sink = clampf(float(cp.weather_vapor_precip_sink), 0.0, 1.0)
 	if cp.get("weather_precip_inertia") != null:
 		host._field_precip_inertia = clampf(float(cp.weather_precip_inertia), 0.05, 1.0)
+
+	if cp.get("weather_precip_classify_gate_land") != null:
+		host._field_classify_gate_land = clampf(float(cp.weather_precip_classify_gate_land), 0.0, 0.5)
+	if cp.get("weather_precip_classify_gate_water") != null:
+		host._field_classify_gate_water = clampf(float(cp.weather_precip_classify_gate_water), 0.0, 0.5)
+	if cp.get("weather_field_precip_spatial_smooth") != null:
+		host._field_precip_spatial_smooth = clampf(float(cp.weather_field_precip_spatial_smooth), 0.0, 0.8)
 	if cp.get("weather_field_precip_base_frac") != null:
 		host._field_precip_base_frac = clampf(float(cp.weather_field_precip_base_frac), 0.0, 1.0)
 	if cp.get("weather_field_cloud_reevap") != null:
@@ -115,97 +122,23 @@ func _build_weather_field_knobs(host, map: MapData, world: WorldData, n_cells: i
 		for i in range(n_cells):
 			var c: HexCell = cells_l[i]
 			temp_anom_arr[i] = float(c.temperature_transport_anomaly)
-	# ─── Phase A.3 fast path：从 KnobsHandle 拿标量段缓存 Dict ──────────
-	# 动态字段（SoA cache / PackedArray ref / temp_anom_arr）仍每帧准备并 merge。
-	# 标量段在 ClimateProfile 不变的稳态下复用缓存 Dict（CoW 引用 ++）。
-	if host._knobs_handle != null and host._knobs_handle.has_method("to_field_knobs_dict"):
-		# day_counter / season_phase 每帧可能变 → 这里同步推一次（dirty-write 内部
-		# 走值比较，无变化时不拉 dirty，缓存 Dict 命中）。
+	# 共用实时字段；支持 KnobsHandle 的构建从缓存读取其余标量。
+	var use_resident_knobs: bool = host._knobs_handle != null \
+		and host._knobs_handle.has_method("to_field_knobs_dict")
+	if use_resident_knobs:
 		host._push_resident_knobs_from_cp(host._cp_for_front_flag)
-		var dynamic_fields: Dictionary = {
-			"start_idx": start_idx,
-			"end_idx": end_idx_resolved,
-			"n_cells": n_cells,
-			"season_idx": host._field_solver._field_slice_season_idx,
-			"climate_anomaly": host._field_solver._field_slice_climate_anomaly,
-			"refresh_convergence": host._field_solver._field_slice_refresh_convergence,
-			"weather_lat_te_norm": host._field_solver._field_slice_lat_te_norm,
-			"weather_solve_tick": host._field_solve_tick,
-			"cell_pos": host._field_solver._field_slice_cell_pos,
-			"weather_wrap_width_x": host._field_solver._field_slice_wrap_width_x,
-			"weather_cell_pos_scale": host._field_solver._field_slice_cell_pos_scale,
-			"temp_anomaly": map.temp_anomaly_arr,
-			"neighbor_indices": host._field_solver._field_slice_neighbor_indices,
-			"prev_vapor": host._field_solver._field_slice_prev_vapor,
-			"prev_precip": host._field_solver._field_slice_prev_precip,
-			"prev_cloud_water": map.weather_cloud_water_arr,
-			"temp_read_arr": host._field_solver._field_slice_temp_read,
-			"moisture_read_arr": host._field_solver._field_slice_moisture_read,
-			"snow_cover_read_arr": host._field_solver._field_slice_snow_cover_read,
-			"temp_transport_anomaly": temp_anom_arr,
-			"out_vapor": host._field_solver._field_slice_next_vapor,
-			"out_cloud": host._field_solver._field_slice_next_cloud,
-			"out_cloud_water": host._field_solver._field_slice_next_cloud_water,
-			"out_precip": host._field_solver._field_slice_next_precip,
-			"out_instability": host._field_solver._field_slice_next_instability,
-			"out_intensity": host._field_solver._field_slice_next_intensity,
-			"out_convergence": host._field_solver._field_slice_next_convergence,
-			"out_type": host._field_solver._field_slice_next_type,
-			"field_precip_carryover_max": host._field_precip_carryover_max,
-			"field_vapor_precip_sink": host._field_vapor_precip_sink,
-			"field_precip_inertia": host._field_precip_inertia,
-			"field_precip_base_frac": host._field_precip_base_frac,
-			"field_cloud_reevap": host._field_cloud_reevap,
-			"field_cloud_inertia": host._field_cloud_inertia,
-			"field_vapor_relax_rate": host._field_vapor_relax_rate,
-			"field_orographic_lift_cap": host._field_orographic_lift_cap,
-			"field_wet_terrain_precip_damping": host._field_wet_terrain_precip_damping,
-			"field_lake_precip_damping": host._field_lake_precip_damping,
-			"field_lake_evap_scale": host._field_lake_evap_scale,
-			"field_extreme_precip_soft_cap": host._field_extreme_precip_soft_cap,
-			"field_extreme_precip_softness": host._field_extreme_precip_softness,
-			"field_land_evapotranspiration_gain": host._field_land_evapotranspiration_gain,
-			"field_precip_rh_threshold": host._field_precip_rh_threshold,
-			"field_ocean_precip_suppression": host._field_ocean_precip_suppression,
-			"field_frontogenesis_gain": host._field_frontogenesis_gain,
-			"field_thermal_conv_precip": host._field_thermal_conv_precip,
-			"field_stratiform_gain": host._field_stratiform_gain,
-			"field_omega_ascent_gain": host._field_omega_ascent_gain,
-			"field_cool_season_vapor_floor": host._field_cool_season_vapor_floor,
-			"field_rain_shadow_drying": host._field_rain_shadow_drying,
-			"field_vapor_transport_gain": host._field_vapor_transport_gain,
-			"cold_precip_as_blizzard": host._cold_precip_as_blizzard,
-			"snow_classification_margin": host._snow_classification_margin,
-			"weather_transition_enabled": transition_enabled,
-			"weather_transition_alpha_rate": transition_alpha_rate,
-			"weather_transition_dt_days": host._weather_transition_dt_days,
-		}
-		return host._merge_resident_knobs_with_dynamic(host._knobs_handle.to_field_knobs_dict(), dynamic_fields)
-	# ─── Fallback：原 builder 路径（与 Phase A.3 之前 100% bit-equal）──
-	return {
+	var dynamic_fields: Dictionary = {
 		"start_idx": start_idx,
 		"end_idx": end_idx_resolved,
 		"n_cells": n_cells,
 		"season_idx": host._field_solver._field_slice_season_idx,
 		"climate_anomaly": host._field_solver._field_slice_climate_anomaly,
-		"season_phase": host._season_phase,
-		"world_bounds_pos_y": host._world_bounds.position.y,
-		"world_bounds_size_y": host._world_bounds.size.y,
+		"refresh_convergence": host._field_solver._field_slice_refresh_convergence,
 		"weather_lat_te_norm": host._field_solver._field_slice_lat_te_norm,
 		"weather_solve_tick": host._field_solve_tick,
-		"refresh_convergence": host._field_solver._field_slice_refresh_convergence,
+		"cell_pos": host._field_solver._field_slice_cell_pos,
 		"weather_wrap_width_x": host._field_solver._field_slice_wrap_width_x,
 		"weather_cell_pos_scale": host._field_solver._field_slice_cell_pos_scale,
-		"apply_convergence_boost": not host._field_verify_enabled,
-		"hex_size": host._hex_size,
-		"field_advect_steps": host._field_advect_steps,
-		"field_diffusion": host._field_diffusion,
-		"field_condensation_gain": host._field_condensation_gain,
-		"field_orographic_lift_gain": host._field_orographic_lift_gain,
-		"field_convergence_gain": host._field_convergence_gain,
-		"field_ocean_evap_gain": host._field_ocean_evap_gain,
-		"field_precip_decay": host._field_precip_decay,
-		"cell_pos": host._field_solver._field_slice_cell_pos,
 		"temp_anomaly": map.temp_anomaly_arr,
 		"neighbor_indices": host._field_solver._field_slice_neighbor_indices,
 		"prev_vapor": host._field_solver._field_slice_prev_vapor,
@@ -226,6 +159,9 @@ func _build_weather_field_knobs(host, map: MapData, world: WorldData, n_cells: i
 		"field_precip_carryover_max": host._field_precip_carryover_max,
 		"field_vapor_precip_sink": host._field_vapor_precip_sink,
 		"field_precip_inertia": host._field_precip_inertia,
+		"field_precip_spatial_smooth": host._field_precip_spatial_smooth,
+		"weather_precip_classify_gate_land": host._field_classify_gate_land,
+		"weather_precip_classify_gate_water": host._field_classify_gate_water,
 		"field_precip_base_frac": host._field_precip_base_frac,
 		"field_cloud_reevap": host._field_cloud_reevap,
 		"field_cloud_inertia": host._field_cloud_inertia,
@@ -252,6 +188,22 @@ func _build_weather_field_knobs(host, map: MapData, world: WorldData, n_cells: i
 		"weather_transition_alpha_rate": transition_alpha_rate,
 		"weather_transition_dt_days": host._weather_transition_dt_days,
 	}
+	if use_resident_knobs:
+		return host._merge_resident_knobs_with_dynamic(host._knobs_handle.to_field_knobs_dict(), dynamic_fields)
+	dynamic_fields["season_phase"] = host._season_phase
+	dynamic_fields["world_bounds_pos_y"] = host._world_bounds.position.y
+	dynamic_fields["world_bounds_size_y"] = host._world_bounds.size.y
+	dynamic_fields["apply_convergence_boost"] = not host._field_verify_enabled
+	dynamic_fields["hex_size"] = host._hex_size
+	dynamic_fields["field_advect_steps"] = host._field_advect_steps
+	dynamic_fields["field_diffusion"] = host._field_diffusion
+	dynamic_fields["field_condensation_gain"] = host._field_condensation_gain
+	dynamic_fields["field_orographic_lift_gain"] = host._field_orographic_lift_gain
+	dynamic_fields["field_convergence_gain"] = host._field_convergence_gain
+	dynamic_fields["field_ocean_evap_gain"] = host._field_ocean_evap_gain
+	dynamic_fields["field_precip_decay"] = host._field_precip_decay
+	return dynamic_fields
+
 
 # 调用 C++ 端 run_weather_field_solve_pass。返回 elapsed_ms (≥0) 或 -1.0。
 # 任何异常都被 catch 成 -1.0，让上层透明回退。
@@ -562,6 +514,7 @@ func _build_weather_summary_knobs(host, map: MapData, world: WorldData) -> Dicti
 			"cell_q_arr": host._summary_q_cache,
 			"cell_r_arr": host._summary_r_cache,
 			"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+			"weather_wrap_width_x": host._field_solver._world_wrap_width_x(map),
 			"cyclone_wake_days": host._cyclone_wake_days,
 			"cyclone_storm_type_id": int(WeatherType.WT.STORM),
 			"water_terrain_ids": water_ids,
@@ -584,6 +537,7 @@ func _build_weather_summary_knobs(host, map: MapData, world: WorldData) -> Dicti
 		"radius_scale": 1.05,
 		# WT 枚举常量（C++ 不直读 GDScript Resource，传过来用整型即可）
 		"wt_clear": int(WeatherType.WT.CLEAR),
+		"weather_wrap_width_x": host._field_solver._world_wrap_width_x(map),
 		"cyclone_wake_days": host._cyclone_wake_days,
 		"cyclone_storm_type_id": int(WeatherType.WT.STORM),
 		"water_terrain_ids": water_ids,
