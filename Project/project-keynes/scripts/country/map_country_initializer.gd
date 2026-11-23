@@ -125,7 +125,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		_generator._country_facade = null
 		return
 	await _generator._yield_generation_frame()
+	if catalog_context.canceled:
+		return
 	var economy_configured: Dictionary = await _configure_economy_runtime_cooperative(map, seed_value)
+	if catalog_context.canceled:
+		return
 	if not bool(economy_configured.get("ok", false)):
 		push_error("[economy] configure failed: %s" % String(
 			economy_configured.get("reason", "unknown")))

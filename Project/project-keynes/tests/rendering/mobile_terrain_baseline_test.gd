@@ -1,0 +1,181 @@
+extends SceneTree
+
+## Checks the Issue #54 map, visibility cases and benchmark settings headlessly.
+## --explored prepares exploration memory with fog still enabled.
+## --fog-off selects the separate diagnostic. Frame measurements run separately.
+const GraphicsQualitySettings = preload("res://scripts/game/graphics_quality_settings.gd")
+const WebAutotest = preload("res://scripts/game/web_autotest.gd")
+const MAP_SIZE := Vector2i(60, 40)
+const WINDOW_SIZE := Vector2i(1600, 960)
+const SEED := 20260718
+const FOREIGN_COUNT := 3
+
+var _checks := 0
+var _failures := 0
+
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	if not root.is_node_ready():
+		await root.ready
+	await process_frame
+	var args := OS.get_cmdline_user_args()
+	var fog_enabled := not args.has("--fog-off")
+	var explored_fixture := args.has("--explored")
+	if explored_fixture and not fog_enabled:
+		push_error("--explored requires fog. Run --fog-off separately.")
+		quit(1)
+		return
+	Engine.set_meta("pk_fog_off", not fog_enabled)
+	var settings := root.get_node("GameSettings")
+	# Set every draw option so earlier custom settings cannot leak into a trial.
+	var applied: Dictionary = settings.update({
+		"window_mode": "windowed",
+		"resolution_width": WINDOW_SIZE.x,
+		"resolution_height": WINDOW_SIZE.y,
+		"ui_scale_percent": 100,
+		"ui_layout_mode": "fit",
+		"ui_layout_scale": 100,
+		"vsync": false,
+		"render_quality": "low",
+		"graphics_custom": true,
+		"map_render_scale": 100,
+		"fog_render_scale": 50,
+		"water_detail": 0,
+		"vegetation_detail": 0,
+		"weather_detail": 0,
+		"cloud_shadow": false,
+		"frame_rate_limit": 0,
+		"autosave_enabled": false,
+	}, false)
+	_check(applied.ok, "benchmark settings apply without saving")
+	var config := WebAutotest.build_config({"seed": SEED, "width": MAP_SIZE.x, "height": MAP_SIZE.y})
+	config.country.foreign_count = FOREIGN_COUNT
+	var clock := WorldClock.new()
+	clock.auto_start = false
+	root.add_child(clock)
+	var host := WorldRuntimeHost.new()
+	root.add_child(host)
+	host.configure(null, null, clock)
+	var started := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
+	_check(started.ok, "formal new game accepts the benchmark config")
+	if not started.ok:
+		quit(1)
+		return
+	await host.generate_world()
+	var map := host.current_map()
+	var ready := map != null and host.is_runtime_ready_for_ticks()
+	_check(ready, "formal new game publishes the map and starts the executor")
+	if not ready:
+		quit(1)
+		return
+	var countries: Dictionary[int, bool] = {}
+	for slot in map.country_slot_arr:
+		if slot >= 0:
+			countries[slot] = true
+	var explored := map.explored_arr.count(1)
+	var visible := map.visible_arr.count(1)
+	_check(Vector2i(map.width, map.height) == MAP_SIZE and host.last_seed() == SEED,
+		"generated seed and world size match the benchmark")
+	_check(countries.size() == FOREIGN_COUNT + 1, "four countries own starting territory")
+	_check(clock.speed_multiplier == 1.0 and clock.day_index() == 0, "opening date at 1x")
+	_check(explored > 0 and explored < map.cell_count(), "opening fog memory is only partly explored")
+	_check(host.is_fog_of_war_enabled() == fog_enabled, "requested fog mode reaches the world")
+	if fog_enabled:
+		_check(visible > 0 and visible <= explored, "opening visibility stays within exploration memory")
+	else:
+		_check(visible == map.cell_count() and map.fog_k_arr.count(255) == map.cell_count(),
+			"fog-off shows every cell without exploring it")
+	_check(Engine.max_fps == 0, "engine frame cap disabled")
+
+	var remembered_land := 0
+	if explored_fixture:
+		await _prepare_explored_map(host, map)
+		remembered_land = _count_remembered_land(map)
+		_check(host.is_fog_of_war_enabled(), "exploration leaves fog enabled")
+		_check(remembered_land * 2 > map.is_water_arr.count(0), "most land remains explored under fog")
+		_check(map.explored_arr.count(0) > 0, "the explored fixture keeps unexplored cells")
+
+	for percent in [100, 75]:
+		settings.update({"map_render_scale": percent}, false)
+		_check_profile(settings.values(), percent, false)
+		_check_profile(settings.values(), percent, true)
+	var scene := ("explored" if explored_fixture else "opening") if fog_enabled else "fog-off"
+	print("[mobile-terrain-baseline] scene=%s seed=%d map=%s countries=%d fog=%s explored=%d visible=%d remembered_land=%d/%d" %
+		[scene, host.last_seed(), MAP_SIZE, countries.size(), host.is_fog_of_war_enabled(),
+			map.explored_arr.count(1), map.visible_arr.count(1), remembered_land, map.is_water_arr.count(0)])
+
+	var closed := await host.close_world()
+	_check(closed.ok, "formal session closes")
+	host.queue_free()
+	clock.queue_free()
+	await process_frame
+	print("mobile terrain baseline: %d checks, %d failures" % [_checks, _failures])
+	quit(int(_failures != 0))
+
+
+func _prepare_explored_map(host: WorldRuntimeHost, map: MapData) -> void:
+	var opening_owners := map.country_slot_arr.duplicate()
+	var opening_visible := map.visible_arr.duplicate()
+	# Use temporary territory as observation points. The executor publishes both
+	# the reveal and the later loss of sight, leaving real exploration memory.
+	var locations := PackedInt32Array()
+	for row in range(2, map.height, 4):
+		for column in range(2, map.width, 4):
+			var cell: int = row * map.width + column
+			if map.is_water_arr[cell] == 0 and opening_owners[cell] < 0:
+				locations.append(cell)
+	var country := host.get_generator().get_country_facade() as CountryFacade
+	var player := host._resolve_player_country_handle()
+	for day in [1, 2]:
+		var batch: Array[Dictionary] = []
+		for cell in locations:
+			batch.append({"opcode": CountryFacade.Opcode.TRANSFER_TERRITORY,
+				"cell": cell, "target_handle": player if day == 1 else 0,
+				"effective_day": day, "sequence": day * map.cell_count() + cell})
+		var accepted := country.submit(batch, true)
+		_check(accepted.ok, "exploration territory commands admitted for day %d" % day)
+		if not accepted.ok:
+			return
+		var admitted := host._admit_runtime_calendar(day + 1)
+		_check(admitted == day, "executor admits exactly day %d at 1x" % day)
+		if admitted != day:
+			return
+		while host._runtime_commit_day < day and not host.is_runtime_fault_paused():
+			await process_frame
+		_check(host._runtime_commit_day == day, "executor publishes day %d" % day)
+		if host._runtime_commit_day != day:
+			return
+	_check(map.country_slot_arr == opening_owners, "exploration restores the opening borders")
+	_check(map.visible_arr == opening_visible, "temporary sight returns to the opening extent")
+
+
+func _count_remembered_land(map: MapData) -> int:
+	var count := 0
+	for cell in map.cell_count():
+		if map.is_water_arr[cell] == 0 and map.explored_arr[cell] != 0 and map.visible_arr[cell] == 0:
+			count += 1
+	return count
+
+
+func _check_profile(values: Dictionary, percent: int, mobile: bool) -> void:
+	var profile := GraphicsQualitySettings.resolve(values, mobile)
+	_check(values.window_mode == "windowed" and not values.vsync
+		and Vector2i(values.resolution_width, values.resolution_height) == WINDOW_SIZE,
+		"window preferences match the benchmark")
+	_check(profile.render_quality == "low" and profile.map_render_scale == percent
+		and profile.fog_render_scale == 50 and profile.frame_rate_limit == 0,
+		"both platforms resolve the same %d%% low profile" % percent)
+	_check(profile.water_detail == 0 and profile.vegetation_detail == 0
+		and profile.weather_detail == 0 and not profile.cloud_shadow,
+		"map scale preserves low water, vegetation, weather and cloud shadows")
+
+
+func _check(ok: bool, description: String) -> void:
+	_checks += 1
+	if not ok:
+		_failures += 1
+		push_error(description)

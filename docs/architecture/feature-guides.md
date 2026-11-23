@@ -679,6 +679,7 @@ FamilyTrait / Modifier / Effect 资源在可让帧工作开始前用 `duplicate_
 Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成后才调用原生安装接口。
 Effect 每次等待结束都检查本次请求是否取消。取消时返回 `null`，由调用方读取
 `context.canceled` 并回收上下文。目录校验失败时仍由 `_reject()` 记录具体原因。
+国家开局准备在进入和返回经济配置时检查同一请求的取消状态。主动关闭走会话回收流程。
 同步调用方仍使用原公开 API。`loading_catalog_cooperative_test.gd` 比较同步/协作全部
 目录列、Effect 扩展与显示文字，并覆盖调用方修改返回值、同实例覆盖输入修改、
 开始前取消与中途取消。有线程时大型理念资源由加载线程准备，无线程 Web 按依赖分帧加载并保留已加载资源，

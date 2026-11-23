@@ -3,6 +3,59 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 移动低档大片地形慢帧复测（#54，2026-11-23）
+
+复测起点为 `7ebdf9d20`，与本机记录的 `fork/master` 一致。GitHub 域名解析失败，远端最新提交待核对。
+历史参考 `7ca1ca31a` 的两份原始日志均为六国、关闭迷雾。Apple M2、Godot 4.6.3、
+Metal Mobile、1600×960 窗口、种子 20260718、60×40、1 倍速，日志报告 VSync 和引擎限帧关闭。
+
+| 历史桌面移动低档诊断 | 陆水绘制尺寸 | 样本数 | 平均帧/秒 | 帧间隔 P95 |
+| --- | ---: | ---: | ---: | ---: |
+| 100% | 1600×960 | 721 | 60.0 | 19.70 ms |
+| 75% | 1200×720 | 720 | 60.0 | 19.74 ms |
+
+历史样本是游戏循环间隔。把陆水放到子视口的试验也经过窗口呈现，无法单独估算呈现等待和 GPU 耗时。
+Godot 的关闭垂直同步参数仍受驱动限制。[Godot 命令行说明](https://docs.godotengine.org/en/4.6/tutorials/editor/command_line_tutorial.html)
+原始记录在 `/tmp/keynes-perf.sVCEH5/visibleLow100.log` 和 `visibleLow75.log`。
+
+本轮执行环境查询到 0 个活动显示器，Metal 返回空设备。最小 Godot 项目的 Metal 和 Vulkan
+窗口均停在系统服务初始化，`xctrace` 无法写入其缓存目录。`xcdevice` 只列出本机 Mac，
+CoreDevice 初始化超时。桌面本轮有效绘制样本为 0，手机覆盖为 0 台。
+当前版本的慢帧、呈现等待和 CPU/GPU 耗时、陆水与植被的单层成本、改前改后交替复测及同帧画面对照均待图形环境验证。
+
+无窗口样本通过 `WorldRuntimeHost` 的正式开局入口准备，固定种子 20260718、60×40、四国与 1 倍速。
+探索场景用两日正式领土命令临时获得观察点再归还，核对后台发布的探索记忆、恢复的领土和开局可见范围。
+两次探索场景结果一致。初期完整玩家场景探测两次在 Godot 清理字体时崩溃，场景数据检查现直接走世界宿主。
+[场景测试](../../Project/project-keynes/tests/rendering/mobile_terrain_baseline_test.gd)
+
+| 无窗口场景 | 已探索格 | 当前可见格 | 已探索且当前被雾遮挡的陆地 | 检查通过数 |
+| --- | ---: | ---: | ---: | ---: |
+| 开局迷雾 | 66 | 66 | 0 / 456 | 23 |
+| 大片已探索，迷雾开启 | 1248 | 66 | 366 / 456 | 34 |
+| 单列诊断，关雾 | 66 | 2400 | 0 / 456 | 23 |
+
+三组均核对 1600×960 窗口设置、关闭垂直同步与引擎限帧、地表 100% 与 75%、迷雾 50%，
+以及两种地表清晰度下相同的水面、植被、天气与云影设置。实际绘制尺寸待实绘。
+同时传入探索与关雾参数会被拒绝。
+
+```sh
+godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd
+godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --explored
+godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --fog-off
+```
+
+- 工具栏用例原先在 60 ms 定时器结束时判断退场中段。固定 200 ms 一帧复现读取时动画已经结束，
+  工具栏已恢复。现直接推进到动画中点并等待实际完成信号，正常时序和固定 200 ms 一帧均通过。
+  [工具栏回归](../../Project/project-keynes/tests/ui/cell_board_toolbar_transition_test.gd)
+- 加载退出用例在经济目录准备阶段复现主动取消被误报为配置失败。国家开局准备现在使用当前请求的取消状态
+  结束等待中的配置。新增检查在改前报告该错误，改后 20 项通过，覆盖目录和世界的释放。
+  [加载退出回归](../../Project/project-keynes/tests/runtime/runtime_loading_exit_test.gd)
+
+`run_regression_checks.py --jobs 4 --roundtrip` 通过 128 项，含逐日回放和存读档。
+单独通过的无窗口检查涵盖画质设置、陆水缩放、迷雾与地表裁剪、陆地缓存条件、云与天气、
+平移缩放边界、地图与植被接缝、绘制顺序和后台视野开关。迷雾及地表缩放的像素检查需要真实绘制。
+本轮日志在 `/tmp/keynes54-resume.GfkNzUjD`。Qodo 身份检查返回 `not_logged_in`，评审待完成。
+
 ## 稀疏经济需求缓存（#53，2026-11-23）
 
 改前以本地 `fork/master` 的 `6ce469e952a2466ad1e4bab42984158861125037` 为基准，
