@@ -76,6 +76,30 @@ def parse_disputes(text: str | None, findings: list[dict]) -> list[tuple[str, st
     return disputes
 
 
+def parse_conflict_resolutions(report: str, paths: list[str]) -> dict[str, tuple[str, str]]:
+    try:
+        entries = json.loads(report)
+    except json.JSONDecodeError as e:
+        raise ValueError("Conflict resolution report must be a JSON array") from e
+    if not isinstance(entries, list):
+        raise ValueError("Conflict resolution report must be a JSON array")
+    expected = set(paths)
+    resolutions = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {"path", "action", "reason"}:
+            raise ValueError("Each conflict resolution must contain path, action and reason")
+        path, action, reason = entry["path"], entry["action"], entry["reason"]
+        if not isinstance(path, str) or path not in expected or path in resolutions:
+            raise ValueError(f"Unexpected or duplicate conflict path: {path!r}")
+        if action not in ("keep", "delete") or not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"Conflict resolution for {path!r} requires a keep/delete action and a reason")
+        resolutions[path] = (action, reason.strip())
+    missing = sorted(expected - resolutions.keys())
+    if missing:
+        raise ValueError("Missing conflict resolutions: " + ", ".join(missing))
+    return resolutions
+
+
 def _items(lines: list[str] | None) -> list[str]:
     out = []
     for line in lines or []:

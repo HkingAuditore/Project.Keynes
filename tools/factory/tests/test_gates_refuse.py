@@ -6,9 +6,11 @@ enforced by this test and not by anyone remembering it.
 """
 
 import ast
+import json
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 FACTORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FACTORY))
@@ -32,6 +34,31 @@ def refuses_dispute(text):
     except ValueError:
         return True
     return False
+
+
+def refuses_resolution(entries):
+    try:
+        agent.parse_conflict_resolutions(json.dumps(entries), ["file.gd"])
+    except ValueError:
+        return True
+    return False
+
+
+def refuses_conflict_file(action, make_file):
+    with TemporaryDirectory() as tmp:
+        path = Path(tmp) / "file.gd"
+        make_file(path)
+        try:
+            work.validate_conflict_files(tmp, {path.name: (action, "Combine both edits")})
+        except ValueError:
+            return True
+        return False
+
+
+def symlink_to_text(path):
+    target = path.with_name("target.txt")
+    target.write_text("Valid text")
+    path.symlink_to(target)
 
 
 def pr(**kw):
@@ -75,6 +102,21 @@ GATES = {
         ("no space after the colon", lambda: refuses_dispute("- f1:evidence")),
         ("backtick left inside the id", lambda: refuses_dispute("- `f1: evidence")),
         ("one good line and one bad line", lambda: refuses_dispute("- f1: ok\n- f9: no")),
+    ],
+    "parse_conflict_resolutions": [
+        ("report is not an array", lambda: refuses_resolution({"file.gd": "keep"})),
+        ("missing path", lambda: refuses_resolution([])),
+        ("unrelated path", lambda: refuses_resolution([{"path": "../file.gd", "action": "keep", "reason": "Merge"}])),
+        ("duplicate path", lambda: refuses_resolution([{"path": "file.gd", "action": "keep", "reason": "Merge"}] * 2)),
+        ("unknown action", lambda: refuses_resolution([{"path": "file.gd", "action": "skip", "reason": "Merge"}])),
+        ("empty reason", lambda: refuses_resolution([{"path": "file.gd", "action": "keep", "reason": "  "}])),
+    ],
+    "validate_conflict_files": [
+        ("declared deletion still exists", lambda: refuses_conflict_file("delete", lambda p: p.touch())),
+        ("kept file is missing", lambda: refuses_conflict_file("keep", lambda p: None)),
+        ("kept path is a directory", lambda: refuses_conflict_file("keep", lambda p: p.mkdir())),
+        ("kept file is a symlink", lambda: refuses_conflict_file("keep", symlink_to_text)),
+        ("kept file is binary", lambda: refuses_conflict_file("keep", lambda p: p.write_bytes(b"\0binary"))),
     ],
     "classify_level": [
         ("missing level is unknown", lambda: verdict.classify_level(None) == "unknown"),

@@ -588,7 +588,17 @@ class Watcher:
                                 record.get("agentFailure", ""))
                 if not out["ok"]:
                     return stop(record["agentFailure"], record["report"])
-                resolutions.extend([f"- `{path}` · resolved by Codex." for path in paths])
+                if work.head(self.workdir) != head or work.merge_head(self.workdir) != parent:
+                    return stop("the working checkout no longer has the expected pending merge")
+                if work.unmerged(self.workdir) != conflicts:
+                    return stop("Codex changed the conflict entries in the index")
+                try:
+                    choices = agent.parse_conflict_resolutions(out["report"], paths)
+                    work.validate_conflict_files(self.workdir, choices)
+                except ValueError as e:
+                    return stop(str(e), out["report"])
+                work.git(self.workdir, "add", "-A", "--", *[f":(top,literal){path}" for path in paths])
+                resolutions.extend(f"- `{path}` · {choices[path][0]}: {choices[path][1]}" for path in paths)
 
             repaired = False
 
@@ -695,8 +705,6 @@ class Watcher:
             lines = [f"### Factory updated this branch from `{base}`", "",
                      f"Pushed merge commit `{sha}`.", "", "Conflict resolutions", "",
                      *(resolutions or ["Git merged cleanly with the fetched base."])]
-            if paths:
-                lines += ["", "Codex resolution notes", "", record["report"]]
             if repaired:
                 lines += ["", "Codex repaired checks that failed after the merge", "", *record["checkFixReports"]]
             lines += ["", facts.report(), "", "Checks", ""]
