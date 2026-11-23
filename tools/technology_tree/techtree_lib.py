@@ -99,6 +99,21 @@ class Model:
             row = read_tres(path)
             self.goods[row["id"]] = row
             self.good_paths[row["id"]] = path
+        # Substitution categories and production quality, needed to expand an edge
+        # declared by input_category_ids the way the engine does at compile time.
+        self.substitution_categories: dict[str, list[str]] = defaultdict(list)
+        self.good_quality: dict[str, int] = {}
+        for good_id, row in self.goods.items():
+            try:
+                self.good_quality[good_id] = int(row.get("production_quality_level", 0) or 0)
+            except (TypeError, ValueError):
+                self.good_quality[good_id] = 0
+            for category in row.get("substitution_category_ids", []):
+                name = str(category).strip()
+                if name:
+                    self.substitution_categories[name].append(good_id)
+        for members in self.substitution_categories.values():
+            members.sort()
         self.resources = {}
         for path in sorted(RESOURCES_DIR.glob("*.tres")):
             row = read_tres(path)
@@ -162,22 +177,42 @@ class Model:
         acceptable set, which is all the closure check needs.  Choosing a gate
         technology needs the split form: an edge that accepts four grains must be
         gated by a technology that does not stand for only one of them.
+
+        An edge declared by ``input_category_ids`` has no explicit candidate list;
+        the engine expands it from the good substitution categories at compile time
+        (``economy_building_catalog_compile_steps.gd:533-541``).  This model must do
+        the same or it sees one representative good where the game sees five, which
+        is how a single-crop gate could be chosen for a category-wide input.
+
         Returns ``(kind, declared_good, [tags_of_candidate_0, ...])``.
         """
         row = self.buildings[building_id]
         required_q16 = row.get("input_required_q16", [])
         offsets = row.get("input_candidate_offsets", [])
         candidates = row.get("input_candidate_good_ids", [])
+        categories = row.get("input_category_ids", [])
+        min_levels = row.get("input_min_quality_levels", [])
         out = []
         for edge, good in enumerate(row.get("input_good_ids", [])):
             if edge < len(required_q16) and int(required_q16[edge]) < 65536:
                 continue
             scan = [good]
             if edge + 1 < len(offsets) and offsets[edge + 1] > offsets[edge]:
-                scan = list(candidates[offsets[edge]:offsets[edge + 1]])
+                scan = [str(c) for c in candidates[offsets[edge]:offsets[edge + 1]]]
+            elif edge < len(categories) and str(categories[edge]).strip():
+                scan = self.category_members(str(categories[edge]).strip(), edge, min_levels)
+                if not scan:
+                    scan = [good]
             out.append(("input_good", good,
                         [list(self.good_tags(candidate)) for candidate in scan]))
         return out
+
+    def category_members(self, category_id: str, edge: int, min_levels) -> list[str]:
+        """Goods of a substitution category that clear the edge's quality gate."""
+        minimum = int(min_levels[edge]) if edge < len(min_levels) else 0
+        return [good_id for good_id in self.substitution_categories.get(category_id, [])
+                if self.good_quality.get(good_id, 0) >= minimum]
+
 
     def dependency_groups(self, building_id: str, include_construction: bool):
         """Yields (kind, id, acceptable_tech_set) exactly like EconomyCatalog."""

@@ -12450,7 +12450,7 @@
 				"route.crop.wheat"
 			],
 			"hard_prerequisite_ids": [
-				"tech.rainfed_wheat_cultivation",
+				"tech.rainfed_field_system",
 				"tech.composite_tools"
 			],
 			"reveal_condition": {
@@ -12536,7 +12536,7 @@
 				"tech.grain_baking"
 			],
 			"prerequisite_rationales": [
-				"该科技需要先掌握 「雨养小麦田」。",
+				"该科技需要先掌握 「雨养田体系」。",
 				"该科技需要先掌握 「复合工具」。"
 			],
 			"branch_successor_rationales": [
@@ -12593,7 +12593,7 @@
 			},
 			"knowledge_basis": {
 				"required_ids": [
-					"tech.rainfed_wheat_cultivation",
+					"tech.rainfed_field_system",
 					"tech.composite_tools"
 				],
 				"alternative_groups": [],
@@ -49869,7 +49869,7 @@
 			"hard_prerequisite_ids": [
 				"tech.interchangeable_parts",
 				"tech.factory_system",
-				"tech.wild_maize_collection"
+				"tech.manufactory_system"
 			],
 			"reveal_condition": {
 				"kind": 1.0,
@@ -49945,7 +49945,7 @@
 			"prerequisite_rationales": [
 				"该科技需要先掌握 「互换零件」。",
 				"该科技需要先掌握 「工厂制」。",
-				"该科技需要先掌握 「野生玉米采集」。"
+				"该科技需要先掌握 「手工工场」。"
 			],
 			"branch_successor_rationales": [
 				"该科技是后续节点「大规模生产」的直接前置。"
@@ -50017,7 +50017,7 @@
 				"required_ids": [
 					"tech.interchangeable_parts",
 					"tech.factory_system",
-					"tech.wild_maize_collection"
+					"tech.manufactory_system"
 				],
 				"alternative_groups": [
 					[
