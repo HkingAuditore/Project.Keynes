@@ -46202,14 +46202,6 @@
 				{
 					"kind": 2.0,
 					"id": "steam_steel_works"
-				},
-				{
-					"kind": 2.0,
-					"id": "steel_rolling_mill"
-				},
-				{
-					"kind": 1.0,
-					"id": "structural_steel"
 				}
 			],
 			"content_effects": [
@@ -46262,34 +46254,9 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "焦炭炼钢厂"
-				},
-				{
-					"kind": "building",
-					"id": "steel_rolling_mill",
-					"binding_kind": 2.0,
-					"subject": "building.steel_rolling_mill",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "型钢轧机"
-				},
-				{
-					"kind": "good",
-					"id": "structural_steel",
-					"binding_kind": 1.0,
-					"subject": "good.structural_steel",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "结构钢",
-					"summary_visible": true
 				}
 			],
-			"effect_summary": "解锁物资：焦炭、钢材、结构钢；解锁建筑：焦化厂、焦炭炼钢厂、型钢轧机；建筑「copper_plant」产出 +18%；建筑「steam_steel_works」产出 +12.5%；「steelmaking」生产家族建筑产出 +21%；商品「coal」生产投入 +4%",
+			"effect_summary": "解锁物资：焦炭、钢材；解锁建筑：焦化厂、焦炭炼钢厂；建筑「copper_plant」产出 +18%；建筑「steam_steel_works」产出 +12.5%；「steelmaking」生产家族建筑产出 +21%；商品「coal」生产投入 +4%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "焦炭冶炼是铜、锡、有色金属与特种合金在当前目录中的应用端点，其终点效果由coke、steel、coke_ovens、steel_plant消费",
@@ -46317,10 +46284,6 @@
 				{
 					"id": "steam_steel_works",
 					"name": "焦炭炼钢厂"
-				},
-				{
-					"id": "steel_rolling_mill",
-					"name": "型钢轧机"
 				}
 			],
 			"research_routes": [

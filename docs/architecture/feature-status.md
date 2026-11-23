@@ -3316,3 +3316,14 @@ STORM/MONSOON 补过 `meaningful_precip`、补 `wx->temp_anomaly` 与独立的 `
 - DLL：debug `C9676342` / 16,527,872 B / 17:57:23；release `42E33AB4` / 14,217,728 B / 17:58:39。`bench big p95` 为**既有 FAIL**（本批 5.0875，基线 `E820EF79` 4.525 同样红），按断言原文逐条声明剔除，不按前缀豁免。
 - 判据教训（可复用）：stdout 报告在 **37,339 字符处被截断、断在汉字中间**，不能当 ok 清单；同名断言 808 行只有 476 种，必须用多重集差；`cap fixture is above the cap before truncation` 只是防真空前置守卫，不是封顶生效的证据。
 - 最终产物 `technology_network.json` = **`F561CF2A` / 2,845,758 B / 18:09:30 / LF**（相对上一版 `1EB93EBD` 恰为 `10 10`，只改那 10 个声明串）。`implementation_plan.md` §7 六项落地检查表已在这一版上复跑：**6/6 通过**（JSON 解析与 41 键、term 十字段、U+2212=0、unmapped 0、主干 66/66、unit 语义 0 违例）。
+
+## 2026-11-23 物资合并第 1 组：删结构钢与型钢轧机（货 172→171，建筑 450→449）
+
+- 依据：172 件货 / 450 座建筑的全量取证。`structural_steel` 只有 1 座产出建筑、**0 个精确输入消费者**、0 处家户/军事/晋升篮子引用；它的 216 个建造槽全部是 `structural_metal` **类别槽**（216 座建筑各 1 个），而 `steel` 的 `substitution_category_ids` 本来就含 `structural_metal`，所以删货不动任何建造 BOM。
+- 纯损耗：`steel_rolling_mill` 投入 24,800 钢 + 8,600 煤 + 900 工具，产出 19,200 结构钢/日，产出无人消费——是一座把钢材换成更贵同质材料的净损耗转换。
+- 已实现：删 `data/goods/structural_steel.tres`、`data/economy/buildings/steel_rolling_mill.tres`；`technology_network.json` 的 `tech.coke_smelting` 去掉 2 条 `expected_bindings`、2 条 `content_effects`、1 条 `support_buildings`，`effect_summary` 同步改文。链条复核：`steelmaking` 链删后为 `steam_steel_works`(step 1, entry) → `steel_plant`(step 2, mainline)，无断层、无悬空 `predecessor_building_ids`。
+- 验证：`modern_economy_catalog_test` 的「货条目数 = goods 目录 profile 数」通过（171 = 171），目录编译通过；`technology_content_binding_audit_test` PASS 且全文 0 处提到 steel；`building_progression_catalog_test` PASS；`icon_catalog_audit_test` PASS（图标是图集贴纸，`good_structural_steel` 贴纸保留、未重排 `goods_05` 图集）。`verify.ps1 -Quick` = 7 通过 / 1 红 / 2 既有红。
+- 已知红（均非本次）：`check_fault_taxonomy.py` 报 `gdext/src/runtime_climate_authority.cpp:699` 的 `climate_section_version_mismatch_expected_` 未登记；`check_cpp_deps.py`、`check_size_ratchet.py` 是工具自述的既有基线漂移。`modern_economy_catalog_test` 余下 15 条红：12 条 `*/protein` 变体（同一工作区另一路正在改消费方案）、`chariot_wright` 工具槽、4 条 `method_*_r8` 伪升级、`wrought_iron`/`raw_hide` 单候选。
+- 未做（必须紧跟，不能算完成）：`data/loading_catalog_v1/*.res` **未重烘**。快照指纹校验只在编辑器内执行，导出包无条件使用快照——不重烘则导出包里仍是含结构钢的旧目录。重烘须等另一路 `food_fat` / `grain` / 12 套消费方案落定后由单人执行：`Godot_v4.6.2-stable_win64_console.exe --headless --path <项目> --script res://tools/prebake_loading_catalogs.gd`。
+- 未做：`tools/technology_tree/technology_tree_report.{md,html}` 未重生成——导出器在**改前就红**（`stable_technology_id_manifest_mismatch`：清单 433 个科技、数据 467 个，多 37 缺 3），与本次无关，不能拿它当验证手段。
+- 存档：目录身份已变，旧 PKEC/PKCN/PKRS 按 fail-closed `catalog_hash_mismatch` 拒绝，不做索引静默映射（沿用既有策略）。
