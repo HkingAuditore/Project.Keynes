@@ -281,6 +281,23 @@ cell_tax、building_factors_and_development。它们测量本次准备各段的�
 相同完整采样日和输入；默认 CSV 按线程和日期汇总，最后未刷新的一日不计入比较，
 `PK_ECONOMY_COST_CSV_FULL` 逐样本模式不用于吞吐量结论。
 
+### 逐日需求缓存
+
+`gdext/src/economy_runtime_demand_basis.cpp` 为当日工资、生产留存和家庭市场共用的
+需求计算结果分配紧凑行。建筑和市场按各自的结算顺序登记，重合格使用同一行。
+就业后的预填仍重新计算建筑格，随后生产与家庭市场才能复用这份结果。直接执行到
+工作集之外时，执行器按实际地块登记。工作线程只读索引、写自己负责的行。未登记或
+无效格可用已有计算直接得到结果，由执行器负责增设行和扩容。
+
+开始新的一日时清空格到行的对应关系，保留已分配空间供下一日复用。同日续算或更换
+执行器沿用现有结果。重配、重新开局、读档安装和失败回滚释放缓存，随后按恢复的输入
+重新计算。缓存属于经济内部的临时工作数据。
+
+稳定边界的 `get_economy_report().demand_basis_cache` 给出 `sample_day`、
+`allocated_slots`（已分配的整行容量）、`registered_cells`（当日已分行地块数）和
+`valid_cells`（当日已写好结果的地块数）。`values_bytes` 是五类结果的容量字节数，
+`index_bytes` 包括格号索引和行的有效标记，两项均计入 `memory_bytes`。
+
 验证入口为 `tests/ideology/ideology_target_selector_test.gd`（调用
 `economy_runtime_country_cache_tests.cpp`、`economy_runtime_building_metrics_tests.cpp`
 和 `economy_runtime_effect_selector_tests.cpp`

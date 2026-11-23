@@ -5,5 +5,7 @@ namespace pk {
 class EconomyInvariantProbe final {
 public:
     static bool run(std::string &error);
+private:
+    static bool run_demand_basis_cache(std::string &error);
 };
 }

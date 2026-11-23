@@ -3,6 +3,86 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 稀疏经济需求缓存（#53，2026-11-23）
+
+改前以本地 `fork/master` 的 `6ce469e952a2466ad1e4bab42984158861125037` 为基准，
+与本地上游 `master` 记录的源码树一致。配置、开日和缺项补建都按全图放大两列需求变体
+与三列需求。当前目录有 687 个变体和 181 项需求，每格结果需要 15,336 字节。
+两种正式四国地图在开局时都有 0 格已写，之后 55 个提交日每天都实际写入 4 格。
+改后开局无需求缓存分配，结算时使用 4 行，格号索引随地图大小增长。
+
+下表为各尺寸改前、改后交替三轮。内存取第 55 日提交后的经济报告，三次内存读数
+相同。结算日/秒取中位数，括号中为最小值和最大值。
+
+| 地图 | 保留行数，改前 → 改后 | 五类结果 MiB，改前 → 改后 | 经济总内存 MiB，改前 → 改后 | 结算日/秒，改前 → 改后 |
+|---|---:|---:|---:|---:|
+| 60×40 | 2400 → 4 | 35.1013 → 0.0585 | 75.4007 → 40.3488 | 33.12（33.03–33.23）→ 33.23（32.81–33.28） |
+| 100×64 | 6400 → 4 | 93.6035 → 0.0585 | 207.0407 → 113.4713 | 15.57（15.50–15.57）→ 16.03（15.56–16.29） |
+
+100×64 的索引容量从 51,200 字节降至 25,632 字节，经济总内存少 93.57 MiB（45.2%）。
+该图开局经济内存从 167.09 MiB 降至 73.44 MiB，60×40 从 60.13 MiB 降至 25.01 MiB。
+各版各尺寸均有 50 条实测记录，三账误差为 0，无经济故障。结算速度范围有重叠。
+录制器的 50 日/秒检查在这些逐日等待样本中均为未达标，退出码为 9。
+
+构建和测速使用仓库外独立副本，macOS arm64、Apple Clang 21.0.0、
+Godot `4.6.3.stable.official.7d41c59c4`，测速加载 `template_debug` 扩展。
+调试库的 SHA-256 改前为 `23e2b957938d945f8f3b49b913d51e96d429880f3690213e7512275f74183ab8`，
+改后为 `0135b26ffac6a23b8bbdac0bfca825edd4459e5af1398e77313b49e4dc8fd31d`。
+改前副本只加了六列容量和日期戳计数，同一录制探针用于两版。工具默认的流水模式
+在首轮 60×40 仅录出 31 行，正式对照用自带的逐日等待模式，保留 5 天预热和 50 天实测。
+临时 Godot 配置为测试进程提供独立用户数据和可读的本机证书文件。
+
+```bash
+scons -C gdext platform=macos target=template_debug arch=arm64 dev_build=no -j8
+scons -C gdext platform=macos target=template_release arch=arm64 dev_build=no -j8
+godot --headless --path Project/project-keynes --script res://tests/game/headless_perf_record.gd -- \
+  seed=20260718 foreign_count=3 warmup_days=5 days=50 speed=50 pipeline_depth=0 \
+  width=60 height=40 output_dir="$issue53_run_dir"
+# 同样参数再跑 width=100 height=64，使用新的输出目录。
+```
+
+两张正式地图各 55 天的完整经济摘要和八个域的提交摘要逐日一致。
+`economy_sparse_workset_parity_test.gd` 在 6400 格地图检查开局空间和两处远距聚落的
+实际行。`economy_cadence_runtime_test.gd` 检查换日、建筑与家庭市场重合、多个任务的
+首次写入与串行一致、同日读档、失败回滚及重新开局。原生用例经
+`runtime_authority_m5_m6_gate_test.gd` 检查未登记格、就业后刷新、跨日重用和容量上限。
+
+主场景与表外场景均通过三次对照，七个指令场景共 21 次对照通过。
+第 27 日存档的 40 日检查和第 365 日自动存档检查各有四条一致轨迹。
+额外用改后库读入改前库写出的存档，
+第 28 至 40 日逐日一致。ECP2 ABI 4、schema 63 和内部 PKEC 65 沿用原格式。
+改后的 debug 和 release 扩展分别通过 10 项指定库探针，release SHA-256 为
+`21b7618ddab2e91af9d6f53a0a84096ab39813ae1b1cf8a27a30ec479d235605`。
+默认回归、续跑矩阵、自动存档和整档往返共 128 项通过。额外的 6400 格缓存用例、
+理念标签压力用例（43 项检查）及随同运行的整档往返也通过。
+
+改前先为主场景、表外场景和七个指令场景分别用 `--runs 3 --write-candidate` 取数。
+改后使用这些仓库外的文件。以下命令在对应副本执行，`$issue53_logs` 下每个检查用新目录。
+
+```bash
+python3 tools/ci/check_golden_determinism.py --godot "$issue53_godot" --runs 3 \
+  --log-dir "$issue53_logs/golden-after" --compare-to "$issue53_root/golden-before.json"
+python3 tools/ci/check_golden_determinism.py --godot "$issue53_godot" --runs 3 --external-only \
+  --log-dir "$issue53_logs/external-after" --compare-to "$issue53_root/external-before.json"
+python3 tools/ci/check_intent_baselines.py --godot "$issue53_godot" --runs 3 \
+  --log-dir "$issue53_logs/intents-after" --compare-to "$issue53_root/intents-before.json"
+python3 tools/ci/run_regression_checks.py --godot "$issue53_godot" --roundtrip \
+  --log-dir "$issue53_logs/focused-final" tests/ideology/ideology_tag_snapshot_stress_test.gd \
+  tests/economy/economy_sparse_workset_parity_test.gd
+python3 tools/ci/run_regression_checks.py --godot "$issue53_godot" --roundtrip --jobs 3 \
+  --log-dir "$issue53_logs/default-after"
+python3 tools/ci/check_committed_replay.py --godot "$issue53_godot" --checkpoint --trace \
+  --year-days 365 --save-day 27 --days 40 --log-dir "$issue53_logs/checkpoint-after"
+python3 tools/ci/check_replay_matrix.py --godot "$issue53_godot" --annual \
+  --log-dir "$issue53_logs/annual-after"
+python3 tools/ci/check_macos_runtime_extension.py --godot "$issue53_godot" \
+  --library "$issue53_lib" --log-dir "$issue53_native_logs"
+```
+
+原始 CSV、报告、构建记录与临时取数补丁保存在 `/private/tmp/keynes-issue53.Ja2pDy`。
+本轮覆盖 macOS arm64。编辑器导入在沙箱中报 ObjectDB 快照目录错误，回归使用已导入
+的资源。远端 GitHub 无法连通，Qodo CLI 回报 `not_logged_in`，工厂提交后的审查待完成。
+
 ## 上游地图、天气、地块看板与存档缩略图（2026-11-23）
 
 - 锡、盐、石灰石、硅砂与锌按适合开采的陆块补齐最低数量，合格陆块从 8 格起算。配额和仍缺的数量进入生成诊断。
