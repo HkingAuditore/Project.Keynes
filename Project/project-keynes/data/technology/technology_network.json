@@ -79153,11 +79153,6 @@
 			"kind": "hard"
 		},
 		{
-			"from": "tech.wild_maize_collection",
-			"to": "tech.assembly_line",
-			"kind": "hard"
-		},
-		{
 			"from": "tech.wheat_identification",
 			"to": "tech.wild_wheat_collection",
 			"kind": "branch"
@@ -80663,6 +80658,11 @@
 		},
 		{
 			"from": "tech.rainfed_field_system",
+			"to": "tech.grain_threshing",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.rainfed_field_system",
 			"to": "tech.upland_rice_propagation",
 			"kind": "hard"
 		},
@@ -80905,11 +80905,6 @@
 			"from": "tech.rainfed_wheat_cultivation",
 			"to": "tech.grain_threshing",
 			"kind": "branch"
-		},
-		{
-			"from": "tech.rainfed_wheat_cultivation",
-			"to": "tech.grain_threshing",
-			"kind": "hard"
 		},
 		{
 			"from": "tech.rainfed_wheat_cultivation",
@@ -83787,6 +83782,11 @@
 			"to": "tech.industrial_organization",
 			"kind": "alternative",
 			"route_id": "research_route.industrial_organization.operating_practice"
+		},
+		{
+			"from": "tech.manufactory_system",
+			"to": "tech.assembly_line",
+			"kind": "hard"
 		},
 		{
 			"from": "tech.military.corned_powder",
