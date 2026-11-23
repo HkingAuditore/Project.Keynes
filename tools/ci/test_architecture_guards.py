@@ -21,7 +21,6 @@ import world_ext_bindings
 import check_world_ext_bindings as binding_guard
 import check_script_native_access as script_access
 import runtime_test_hygiene as hygiene
-import main_boundary_wakeup_fixture
 import subprocess
 import os
 import json
@@ -39,7 +38,6 @@ class GuardsTest(unittest.TestCase):
                             str(resolve_apply.ROOT / 'gdext/tests/runtime_control_wakeup_test.cpp'),
                             '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True, timeout=10)
-            main_boundary_wakeup_fixture.verify(compiler, resolve_apply.ROOT, Path(directory))
 
     def test_resolve_apply_actual_source_negatives(self):
         data=json.loads((resolve_apply.ROOT/resolve_apply.REGISTRY).read_text())
@@ -227,8 +225,11 @@ class GuardsTest(unittest.TestCase):
             leaf.write_text("pass\n" * 810)
             baseline = size.measure(root)
             self.assertFalse(size.violations(baseline, baseline))
-            leaf.write_text("pass\n" * 811)
+            leaf.write_text("pass\n" * 861)
             self.assertEqual(len(size.violations(size.measure(root), baseline)), 1)
+            current = size.measure(root)
+            current[leaf.relative_to(root).as_posix()]["limit"] = 1000
+            self.assertEqual(len(size.violations(current, baseline)), 1)
             leaf.write_text("pass\n" * 809)
             self.assertFalse(size.violations(size.measure(root), baseline))
             leaf.with_name("new.gd").write_text("pass\n" * 801)
@@ -238,6 +239,146 @@ class GuardsTest(unittest.TestCase):
                 excluded.parent.mkdir(parents=True)
                 excluded.write_text("pass\n" * 9999)
             self.assertEqual(len(size.measure(root)), 2)
+
+    def run_size_guard(self, root, *args, env=None):
+        return subprocess.run(
+            [sys.executable, size.__file__, "--root", str(root),
+             "--baseline", str(root / "baseline.json"), *args],
+            capture_output=True, text=True, env=env,
+        )
+
+    def test_size_growth_and_github_error_annotation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text("pass\n" * 850)
+            name = leaf.relative_to(root).as_posix()
+            (root / "baseline.json").write_text(json.dumps(
+                {"version": 1, "files": {name: {"lines": 810, "limit": 800}}}))
+            message = (f"{name} grew 810 -> 850 lines (threshold 800); "
+                       "split it before adding more, see docs/architecture/development-guide.md")
+            env = os.environ.copy()
+            env.pop("GITHUB_ACTIONS", None)
+            for github in (None, "false", "true"):
+                with self.subTest(github=github):
+                    if github is not None:
+                        env["GITHUB_ACTIONS"] = github
+                    result = self.run_size_guard(root, env=env)
+                    expected = []
+                    if github == "true":
+                        expected.append(f"::error file={name}::{message}")
+                    expected.extend([
+                        "size ratchet: 1 files, 1 violations, 0 growth warnings",
+                        f"{name}: 850 lines > 810 (threshold 800)",
+                    ])
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_size_baselined_file_with_no_growth_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text("pass\n" * 810)
+            (root / "baseline.json").write_text(json.dumps(
+                {"version": 1, "files": size.measure(root)}))
+
+            result = self.run_size_guard(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [
+                "size ratchet: 1 files, 0 violations, 0 growth warnings",
+            ])
+
+    def test_size_baselined_file_with_one_added_line_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text("pass\n" * 810)
+            (root / "baseline.json").write_text(json.dumps(
+                {"version": 1, "files": size.measure(root)}))
+            with leaf.open("a") as source:
+                source.write("\n")
+
+            result = self.run_size_guard(root)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("leaf.gd: 811 lines > 810 (threshold 800)", result.stdout)
+
+    def test_size_baseline_write_leaves_file_unchanged_when_nothing_tightens(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text("pass\n" * 810)
+            path = root / "baseline.json"
+            path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
+            before = path.read_bytes()
+
+            new_file = leaf.with_name("new.gd")
+            new_file.write_text("pass\n" * 801)
+            result = self.run_size_guard(root, "--write-baseline")
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("new.gd: 801 lines > 800 (threshold)", result.stdout)
+            self.assertIn("split the file", result.stdout)
+            self.assertEqual(path.read_bytes(), before)
+
+            new_file.unlink()
+            leaf.write_text("pass\n" * 811)
+            result = self.run_size_guard(root, "--write-baseline")
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("leaf.gd: 811 lines > 810 (baseline)", result.stdout)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_size_baseline_write_tightens_despite_growth_and_new_oversize(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "Project/project-keynes/scripts"
+            scripts.mkdir(parents=True)
+            shrinking = scripts / "shrinking.gd"
+            growing = scripts / "growing.gd"
+            removed = scripts / "removed.gd"
+            for source in (shrinking, growing, removed):
+                source.write_text("pass\n" * 850)
+            path = root / "baseline.json"
+            path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
+            shrinking.write_text("pass\n" * 849)
+            growing.write_text("pass\n" * 851)
+            removed.unlink()
+            (scripts / "new.gd").write_text("pass\n" * 801)
+
+            result = self.run_size_guard(root, "--write-baseline")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("growing.gd: 851 lines > 850 (baseline)", result.stdout)
+            self.assertIn("new.gd: 801 lines > 800 (threshold)", result.stdout)
+            self.assertEqual(json.loads(path.read_text()), {
+                "version": 1, "files": {
+                    growing.relative_to(root).as_posix(): {"lines": 850, "limit": 800},
+                    shrinking.relative_to(root).as_posix(): {"lines": 849, "limit": 800},
+                },
+            })
+            self.assertIn("baseline entries lowered=1, dropped=1", result.stdout)
+
+    def test_size_baseline_write_lowers_and_drops_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf.parent.mkdir(parents=True)
+            other = leaf.with_name("other.gd")
+            for source in (leaf, other):
+                source.write_text("pass\n" * 850)
+            path = root / "baseline.json"
+            path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
+            leaf.write_text("pass\n" * 849)
+            other.write_text("pass\n" * 800)
+            result = self.run_size_guard(root, "--write-baseline")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(path.read_text()), {
+                "version": 1, "files": {
+                    leaf.relative_to(root).as_posix(): {"lines": 849, "limit": 800},
+                },
+            })
+            self.assertIn("baseline entries lowered=1, dropped=1", result.stdout)
 
     def test_foreign_include_and_type_increases_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

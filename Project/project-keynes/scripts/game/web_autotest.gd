@@ -46,13 +46,6 @@ const WORLD_READY_FAIL_MSEC: int = 180000
 const MODAL_ATTEMPT_CAP: int = 8
 const MODAL_ATTEMPT_GAP_MSEC: int = 1000
 
-# 无人值守性能录制：与 GM 面板同一个 PerfRecorder、同一份 CSV schema，但由
-# user://pk_debug.cfg 的 [perf] 段驱动（真机上点不了三指双击 GM 手势）。
-# 没有该段时一行代码都不会执行，普通玩家零影响。
-const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
-# 逐帧渲染遥测（render_trace_*.csv）：GPU/CPU 侧分段的渲染耗时，见 render_perf_probe.gd。
-const RenderPerfProbeScript = preload("res://scripts/game/render_perf_probe.gd")
-
 # 参数只解析一次：主菜单读它来开局、player_game 里的跟车节点读它来跑 soak，
 # 两处必须看到同一份值（同一页面生命周期内 URL 不会变）。
 static var _params: Dictionary = {}
@@ -91,14 +84,6 @@ static func _raw_query() -> String:
 	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if arg.begins_with("--autotest-query="):
 			return arg.trim_prefix("--autotest-query=").strip_edges()
-	# 真机没有环境变量，extra_args 又是打包期烘死的：允许用 user://pk_debug.cfg 的
-	# [autotest] query=... 逐轮切换 soak 参数，同一份 APK 内做 A/B 不必重新导出。
-	# 普通玩家没有这个文件 ⇒ 完全不生效。
-	var cfg := ConfigFile.new()
-	if cfg.load("user://pk_debug.cfg") == OK and cfg.has_section("autotest"):
-		var query := String(cfg.get_value("autotest", "query", "")).strip_edges()
-		if not query.is_empty():
-			return query
 	# 非 web 平台没有浏览器桥，直接当"没有参数"处理。
 	if not OS.has_feature("web"):
 		return ""
@@ -295,18 +280,6 @@ var _modal_submitted: Dictionary = {}
 # 最近一次关闭尝试的返回码/文案，modal_undismissable 时作为现场证据。
 var _modal_last_error: Dictionary = {}
 
-# 性能录制（[perf] 段驱动）：recorder 实例、配置快照、延迟启动计时。
-var _perf_recorder: RefCounted = null
-var _perf_cfg: Dictionary = {}
-var _perf_pending: bool = false
-var _perf_start_at_msec: int = -1
-var _perf_started_msec: int = 0
-var _perf_window_s: float = 0.0
-var _render_probe: RefCounted = null
-var _perf_freezes_clock: bool = false
-var _perf_prev_max_fps: int = 60
-var _perf_prev_vsync: int = 1
-
 
 ## player_game 在 add_child 之前注入宿主 / 时钟引用，本节点不自己去满树 find。
 func configure(host: Node, clock: WorldClock) -> void:
@@ -340,16 +313,6 @@ func _process(_delta: float) -> void:
 	if not _running or _finished:
 		return
 	var now_msec := Time.get_ticks_msec()
-	# 逐帧渲染采样必须每帧都跑到（下面的 100ms 轮询节流会漏帧）。
-	if _render_probe != null:
-		_render_probe.call("on_frame")
-	if _perf_pending and now_msec >= _perf_start_at_msec:
-		_start_perf_record()
-	# 墙钟窗口优先于"达标天数"：真机 A/B 要的是固定时长，而不是固定天数
-	# （高画质下每秒天数会掉，按天数收尾会让两轮窗口长度不可比）。
-	if _perf_recorder != null and _perf_window_s > 0.0 \
-			and float(now_msec - _perf_started_msec) >= _perf_window_s * 1000.0:
-		_finish_perf_record("window")
 	if now_msec < _next_poll_msec:
 		return
 	_next_poll_msec = now_msec + POLL_INTERVAL_MSEC
@@ -435,223 +398,10 @@ func _enter_world(now_msec: int) -> void:
 		"paused": _clock.paused if _clock != null else true,
 		"elapsed_ms": now_msec - _started_msec,
 	})
-	_schedule_perf_record(now_msec)
-
-
-## ── 无人值守性能录制 ─────────────────────────────────────────────────────
-## pk_debug.cfg 的 [perf] 段（也接受环境变量 PK_PERF_RECORD=1 作总开关）：
-##   record=1|0         总开关
-##   mode=CORE|DETAIL   DETAIL 才展开 job / breakdown 列（默认 DETAIL）
-##   detail_ticks=30    DETAIL 展开周期（fast tick 数）
-##   sample_every=1     每 N 帧记一行；长跑用来压 CSV 体积与录制自身开销
-##   delay_s=0          进世界后延迟多少秒再开录（跳过建图 / 首日着色器编译）
-##   csv=名字.csv        输出文件名（默认 perf_record_<时间戳>.csv）
-##   dir=user://perf    输出目录（默认 user://perf）
-##
-## 录像器就是 GM 面板那一个（PerfRecorder），CSV 列与 headless 跑出来的完全一致，
-## 所以真机数据可以和桌面 / headless 数据直接对拍。
-func _perf_config() -> Dictionary:
-	var out := {
-		"enabled": false,
-		"mode": "DETAIL",
-		"detail_ticks": 30,
-		"sample_every": 1,
-		"delay_s": 0.0,
-		"window_s": 0.0,
-		"suppress_popups": true,
-		"freeze_clock": false,
-		"sweep_mode": "hide",
-		"max_fps": -1,
-		"vsync": -1,
-		"render_trace": true,
-		"render_sweep": false,
-		"sweep_step_s": 10.0,
-		"sweep_settle_s": 2.5,
-		"render_csv": "",
-		"csv": "",
-		"dir": "",
-	}
-	if OS.get_environment("PK_PERF_RECORD").strip_edges() == "1":
-		out["enabled"] = true
-	var cfg := ConfigFile.new()
-	if cfg.load("user://pk_debug.cfg") == OK and cfg.has_section("perf"):
-		out["enabled"] = _perf_bool(cfg.get_value("perf", "record", false)) \
-			or bool(out["enabled"])
-		out["mode"] = String(cfg.get_value("perf", "mode", out["mode"])).strip_edges()
-		out["detail_ticks"] = maxi(1, int(cfg.get_value("perf", "detail_ticks", out["detail_ticks"])))
-		out["sample_every"] = maxi(1, int(cfg.get_value("perf", "sample_every", out["sample_every"])))
-		out["delay_s"] = maxf(0.0, float(cfg.get_value("perf", "delay_s", out["delay_s"])))
-		out["window_s"] = maxf(0.0, float(cfg.get_value("perf", "window_s", out["window_s"])))
-		# 叙事事件 / 年鉴 / 纪元奖励 / 家族创立都会 pause(true) 并锁会话。性能录制
-		# 要的是稳定负载，不是弹窗；默认打开"按默认选项自动结算"，可用
-		# [perf] suppress_popups=0 关掉做对照。
-		out["suppress_popups"] = _perf_bool(
-			cfg.get_value("perf", "suppress_popups", out["suppress_popups"]))
-		# 逐帧渲染遥测：render_trace 默认开；render_sweep=1 时按层逐一关掉做 A/B。
-		out["render_trace"] = _perf_bool(
-			cfg.get_value("perf", "render_trace", out["render_trace"]))
-		out["render_sweep"] = _perf_bool(
-			cfg.get_value("perf", "render_sweep", out["render_sweep"]))
-		out["sweep_step_s"] = maxf(3.0, float(cfg.get_value("perf", "sweep_step_s", out["sweep_step_s"])))
-		out["sweep_settle_s"] = maxf(0.0, float(cfg.get_value("perf", "sweep_settle_s", out["sweep_settle_s"])))
-		out["render_csv"] = String(cfg.get_value("perf", "render_csv", "")).strip_edges()
-		# 冻结时钟：渲染层扫描时让世界内容不再变化，否则后面的分段天然更重
-		# （人口/建筑在 80 秒里会长起来），逐层差值会被世界演进污染。
-		out["freeze_clock"] = _perf_bool(
-			cfg.get_value("perf", "freeze_clock", out["freeze_clock"]))
-		out["sweep_mode"] = String(cfg.get_value("perf", "sweep_mode", out["sweep_mode"])).strip_edges().to_lower()
-		out["max_fps"] = int(cfg.get_value("perf", "max_fps", out["max_fps"]))
-		out["vsync"] = int(cfg.get_value("perf", "vsync", out["vsync"]))
-		out["csv"] = String(cfg.get_value("perf", "csv", "")).strip_edges()
-		out["dir"] = String(cfg.get_value("perf", "dir", "")).strip_edges()
-	return out
-
-
-static func _perf_bool(value: Variant) -> bool:
-	if value is bool:
-		return value
-	if value is int or value is float:
-		return int(value) != 0
-	return String(value).strip_edges().to_lower() in ["1", "true", "yes", "on"]
-
-
-func _schedule_perf_record(now_msec: int) -> void:
-	var cfg := _perf_config()
-	if not bool(cfg.get("enabled", false)):
-		return
-	_perf_cfg = cfg
-	var delay_ms := int(float(cfg.get("delay_s", 0.0)) * 1000.0)
-	if delay_ms > 0:
-		_perf_pending = true
-		_perf_start_at_msec = now_msec + delay_ms
-		print("[perf-record][autotest] scheduled in %dms" % delay_ms)
-		return
-	_start_perf_record()
-
-
-func _start_perf_record() -> void:
-	_perf_pending = false
-	if _perf_recorder != null or _host == null:
-		return
-	var cfg := _perf_cfg if not _perf_cfg.is_empty() else _perf_config()
-	if bool(cfg.get("suppress_popups", true)):
-		_apply_popup_suppression()
-	var recorder: RefCounted = PerfRecorderScript.new()
-	if recorder.has_method("bind_main"):
-		recorder.call("bind_main", _host)
-	var csv_name := String(cfg.get("csv", ""))
-	var out_dir := String(cfg.get("dir", ""))
-	if not csv_name.is_empty() or not out_dir.is_empty():
-		recorder.call("configure_export", out_dir, csv_name)
-	if _host.has_method("set_perf_recorder"):
-		_host.call("set_perf_recorder", recorder)
-	_perf_recorder = recorder
-	_perf_started_msec = Time.get_ticks_msec()
-	_perf_window_s = maxf(0.0, float(cfg.get("window_s", 0.0)))
-	# 帧率上限 / vsync 覆盖：手机上 resolve() 固定给 60，测真实天花板必须能关。
-	# -1 = 不改；0 = 不限制。
-	var fps_cap := int(cfg.get("max_fps", -1))
-	if fps_cap >= 0:
-		_perf_prev_max_fps = Engine.max_fps
-		Engine.max_fps = fps_cap
-		print("[perf-record][autotest] Engine.max_fps=%d (was %d)" % [fps_cap, _perf_prev_max_fps])
-	var vsync_mode := int(cfg.get("vsync", -1))
-	if vsync_mode >= 0:
-		_perf_prev_vsync = int(DisplayServer.window_get_vsync_mode())
-		DisplayServer.window_set_vsync_mode(
-			DisplayServer.VSYNC_ENABLED if vsync_mode == 1 else DisplayServer.VSYNC_DISABLED)
-		print("[perf-record][autotest] vsync=%d (was %d)" % [vsync_mode, _perf_prev_vsync])
-	recorder.call("start", String(cfg.get("mode", "DETAIL")),
-		int(cfg.get("detail_ticks", 30)), int(cfg.get("sample_every", 1)))
-	_start_render_probe(cfg)
-	if bool(cfg.get("freeze_clock", false)) and _clock != null:
-		_perf_freezes_clock = true
-		_clock.pause(true)
-		print("[perf-record][autotest] clock frozen for the render window")
-	print("[perf-record][autotest] recording mode=%s detail_ticks=%d sample_every=%d window_s=%.1f csv=%s" % [
-		String(cfg.get("mode", "DETAIL")), int(cfg.get("detail_ticks", 30)),
-		int(cfg.get("sample_every", 1)), _perf_window_s,
-		csv_name if not csv_name.is_empty() else "<auto>"])
-
-
-## 逐帧渲染遥测：renderer 与 UI 从 player_game 场景按固定路径取，不做全树搜索。
-## render_sweep=0 时只录一段 baseline（不切层），这样普通 perf 轮也能拿到
-## "GPU/CPU 侧渲染耗时 + draw call" 的逐帧序列。
-func _start_render_probe(cfg: Dictionary) -> void:
-	if not bool(cfg.get("render_trace", true)):
-		return
-	var game := get_parent()
-	var renderer: Node = game.get_node_or_null("WorldRoot/HexRenderer") if game != null else null
-	var ui_root: Node = game.get_node_or_null("UI/UIRoot") if game != null else null
-	var segments: Array = []
-	if bool(cfg.get("render_sweep", false)):
-		var step_s := float(cfg.get("sweep_step_s", 10.0))
-		var settle_s := float(cfg.get("sweep_settle_s", 2.5))
-		print("[render-probe] sweep enabled step=%.1fs settle=%.1fs" % [step_s, settle_s])
-	else:
-		segments = [["baseline", []]]
-	# dir 为空时退回 user://perf：手机上就是 files/perf，和 perf_record CSV 同目录。
-	var out_dir := String(cfg.get("dir", "")).strip_edges()
-	if out_dir.is_empty():
-		out_dir = "user://perf"
-	var probe: RefCounted = RenderPerfProbeScript.new()
-	probe.call("configure", renderer, ui_root, segments,
-		float(cfg.get("sweep_step_s", 10.0)), float(cfg.get("sweep_settle_s", 2.5)),
-		out_dir, String(cfg.get("render_csv", "")), String(cfg.get("sweep_mode", "hide")))
-	probe.call("start")
-	_render_probe = probe
-
-
-## 弹窗抑制：GM 面板的 ui.suppress_popups 同一套公开入口。PlayerController 会
-## 把叙事事件 / 年鉴的 flow 都切到"按默认选项自动结算"，不再锁时钟。
-func _apply_popup_suppression() -> void:
-	var applied: Array[String] = []
-	if _controller != null and _controller.has_method("set_popups_suppressed"):
-		_controller.call("set_popups_suppressed", true)
-		applied.append("controller")
-	if _ui != null and _ui.has_method("set_popups_suppressed"):
-		_ui.call("set_popups_suppressed", true)
-		applied.append("ui")
-	print("[perf-record][autotest] popups suppressed: %s" %
-		(", ".join(applied) if not applied.is_empty() else "<none>"))
-
-
-## 停录 + 落盘。导出是同步写盘（几千行 × 几百列），成功后打一行带完整路径的
-## 标记，供 adb 侧脚本判定"可以收数据了"。
-func _finish_perf_record(reason: String) -> void:
-	if _perf_recorder == null:
-		return
-	var recorder := _perf_recorder
-	_perf_recorder = null
-	var rows := int(recorder.call("row_count")) if recorder.has_method("row_count") else -1
-	var path := String(recorder.call("stop_and_export")) \
-		if recorder.has_method("stop_and_export") else ""
-	# 渲染遥测与 perf CSV 同时收尾：两层 CSV 的窗口严格对齐。
-	if _render_probe != null:
-		var probe := _render_probe
-		_render_probe = null
-		var trace_path := String(probe.call("stop_and_export")) \
-			if probe.has_method("stop_and_export") else ""
-		print("[perf-record][autotest] render trace path=%s" %
-			(trace_path if not trace_path.is_empty() else "<none>"))
-	if _perf_freezes_clock and _clock != null:
-		_perf_freezes_clock = false
-		_clock.pause(false)
-	if Engine.max_fps != _perf_prev_max_fps and _perf_prev_max_fps > 0:
-		Engine.max_fps = _perf_prev_max_fps
-	if _host != null and _host.has_method("set_perf_recorder"):
-		_host.call("set_perf_recorder", null)
-	print("[perf-record][autotest] done reason=%s rows=%d wall_s=%.1f path=%s" % [
-		reason, rows, float(Time.get_ticks_msec() - _perf_started_msec) / 1000.0,
-		path if not path.is_empty() else "<none>"])
 
 
 ## 每 100ms 一次的验收循环：故障 → 已知弹窗 → 日推进看门狗 → 暂停看门狗 → pass → 进度。
 func _poll_soak(now_msec: int) -> void:
-	# 渲染扫描期间时钟是故意冻结的：暂停/停滞看门狗全部跳过，否则 15s 后就会
-	# 以 clock_paused 判失败（那不是故障，是测量手段）。
-	if _perf_freezes_clock:
-		return
 	# 1) 运行时故障优先。WorldRuntimeHost 进 FAULTED 时会自己 pause(true)，
 	#    这时若报 clock_paused 会掩盖真因，所以先查故障态并带上 fault_code。
 	if _host != null and _host.has_method("is_runtime_fault_paused") \
@@ -790,13 +540,10 @@ func _modal_target() -> Dictionary:
 		return {}
 	if _ctrl_bool("era_reward_locked"):
 		var era := _era_reward_offer()
-		# SELECTED_PENDING = 已选待跨日结算，控制器自己会以 1x 推进并恢复，不能再动它。
 		if String(era.get("status", "NONE")) in ["OPEN", "ERROR"]:
 			return {"kind": "era_reward",
 				"key": "era:%d" % int(era.get("offer_generation", 0))}
 		return {}
-	# 纪元奖励持锁时，家族创立命令会被 PlayerController.request_command 直接拒绝，
-	# 所以只在没有纪元锁时处理，避免把重试预算浪费在必然失败的调用上。
 	if _ctrl_bool("family_founding_locked"):
 		var founding := _family_founding_offer()
 		if not founding.is_empty():
@@ -804,8 +551,6 @@ func _modal_target() -> Dictionary:
 				"key": "family:%d:%d" % [int(founding.get("offer_id", 0)),
 					int(founding.get("generation", 0))]}
 		return {}
-	# 理念抽取只有 presenting 阶段暂停时钟，也只有这个阶段有公开关闭接口；
-	# offer/choose/reroll 阶段由 PlayerController 自己按 IDEOLOGY_DRAW_TIMEOUT_DAYS 超时收尾。
 	if _ctrl_str("ideology_draw_phase") == "presenting":
 		return {"kind": "ideology_draw", "key": ""}
 	return {}
@@ -893,9 +638,10 @@ func _choose_family_founding() -> Dictionary:
 func _close_ideology_offer() -> Dictionary:
 	if not _controller.has_method("dismiss_ideology_offer"):
 		return {"ok": false, "code": "ideology_dismiss_api_missing"}
-	_controller.call("dismiss_ideology_offer")
-	if not _ctrl_str("ideology_draw_phase").is_empty():
-		return {"ok": false, "code": "ideology_still_presenting"}
+	var generation := int(_host.player_confirmation_view().get("ideology_generation", 0))
+	var receipt: Dictionary = _controller.call("dismiss_ideology_offer", generation)
+	if not bool(receipt.get("ok", false)):
+		return receipt
 	return {"ok": true, "via": "PlayerController.dismiss_ideology_offer"}
 
 
@@ -910,25 +656,10 @@ func _era_reward_offer() -> Dictionary:
 	return offer if bool(offer.get("ok", false)) else {}
 
 
-## 当前待玩家选择的家族创立 offer（与 PlayerController._sync_family_founding_offer
-## 使用同一套筛选规则：player_choice 且 status==OPEN 的第一个）。
 func _family_founding_offer() -> Dictionary:
-	if _controller == null or not _controller.has_method("get_economy_facade"):
-		return {}
-	var facade = _controller.call("get_economy_facade")
-	if facade == null or not facade.has_method("family_founding_offers"):
-		return {}
-	var snapshot: Dictionary = facade.call("family_founding_offers", 0, 64)
-	if not bool(snapshot.get("ok", false)):
-		return {}
-	for row in snapshot.get("offers", []):
-		if bool(row.get("player_choice", false)) \
-				and String(row.get("status", "")) == "OPEN":
-			return row
-	return {}
+	return _host.player_confirmation_view().get("family_offer", {})
 
 
-## 读 PlayerController 的既有公开布尔查询；缺方法一律当 false（不锁）。
 func _ctrl_bool(method_name: String) -> bool:
 	if _controller == null or not _controller.has_method(method_name):
 		return false
@@ -955,8 +686,6 @@ func pass_soak(day: int) -> void:
 		"wall_s": _wall_seconds(now_msec),
 		"days_per_s": _days_per_second(day, now_msec),
 	})
-	# 先落盘再停轮询：CSV 里包含到达目标日的最后一帧。
-	_finish_perf_record("pass")
 	set_process(false)
 
 
@@ -978,8 +707,6 @@ func fail(reason: String, fields: Dictionary = {}) -> void:
 		payload["modal_stuck_ms"] = Time.get_ticks_msec() \
 			- int(_modal_submitted.get("msec", 0))
 	_report("autotest_fail", payload)
-	# 失败也要把已录到的帧落盘：现场就在这几千行里。
-	_finish_perf_record("fail:%s" % reason)
 	set_process(false)
 
 
@@ -1012,7 +739,6 @@ func _blocked_by() -> String:
 		return "unknown"
 	for pair in [
 		["era_reward_locked", "era_reward_offer"],
-		["ideology_draw_locked", "ideology_draw"],
 		["family_founding_locked", "family_founding_offer"],
 	]:
 		# 这些 getter 属于 PlayerController 的既有公开查询面；缺任一方法都当"未锁"。

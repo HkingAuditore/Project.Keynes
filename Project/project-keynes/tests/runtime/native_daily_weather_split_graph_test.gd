@@ -154,7 +154,6 @@ func _make_profile() -> ClimateProfile:
 	profile.weather_field_enabled = true
 	profile.runtime_hydrology_enabled = true
 	profile.sim_stagger_enabled = false
-	profile.weather_refresh_stride = 1
 	profile.dynamic_visual_atlas_upload_stride = 8
 	profile.enum_atlas_upload_stride = 8
 	return profile

@@ -14,6 +14,10 @@ void DCWorldExt::_bind_visual_methods() {
                           &DCWorldExt::bake_building_visual_chunk);
     ClassDB::bind_method(D_METHOD("configure_vision_research", "config"),
                          &DCWorldExt::configure_vision_research);
+    ClassDB::bind_method(D_METHOD("get_runtime_vision_frame", "after_revision"),
+                         &DCWorldExt::get_runtime_vision_frame);
+    ClassDB::bind_method(D_METHOD("set_runtime_fog_enabled", "enabled"),
+                         &DCWorldExt::set_runtime_fog_enabled);
     ClassDB::bind_method(D_METHOD("run_vision_research_pass", "knobs"),
                          &DCWorldExt::run_vision_research_pass);
     ClassDB::bind_method(D_METHOD("filter_bio_research_observations", "cells", "signals"),

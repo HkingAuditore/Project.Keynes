@@ -1,4 +1,4 @@
-// military_core_save.cpp - PKMI v7 encode/restore of the whole Military state
+// military_core_save.cpp - PKMI v7 restore of the whole Military state
 // (owner: A1).
 //
 // Layout: every record is a little-endian fixed-width field sequence (no struct
@@ -12,6 +12,7 @@
 
 #include "military_core.h"
 #include "military_core_internal.h"
+#include "military_core_save_internal.h"
 
 #include <algorithm>
 #include <cstring>
@@ -22,241 +23,6 @@ namespace pk {
 
 namespace {
 
-constexpr uint16_t kSection_HeaderEnd = 0;
-constexpr uint16_t kSection_Counters = 1;
-constexpr uint16_t kSection_Pending = 2;
-constexpr uint16_t kSection_Lots = 3;
-constexpr uint16_t kSection_Training = 4;
-constexpr uint16_t kSection_Armies = 5;
-constexpr uint16_t kSection_PathArena = 6;
-constexpr uint16_t kSection_Templates = 7;
-constexpr uint16_t kSection_Stocks = 8;
-constexpr uint16_t kSection_Shipments = 9;
-constexpr uint16_t kSection_Engagements = 10;
-constexpr uint16_t kSection_Wars = 11;
-constexpr uint16_t kSection_Truces = 12;
-constexpr uint16_t kSection_Reparations = 13;
-constexpr uint16_t kSection_BattleLog = 14;
-constexpr uint16_t kSection_Areas = 15;
-constexpr uint16_t kSection_Policies = 16;
-constexpr uint16_t kSection_CellStates = 17;
-constexpr uint16_t kSection_Controller = 18;
-constexpr uint16_t kSection_Ledger = 19;
-constexpr uint16_t kSection_Events = 20;
-constexpr uint16_t kSection_Ai = 21;
-constexpr uint16_t kSection_IndexContinuation = 22;
-constexpr uint16_t kSection_Exploration = 23;
-// 24: paid-but-unsettled purchase orders (physical maintenance design §2 D7).
-// A row exists between the PROCURE_GOOD emission and the real fill receipt, so
-// it MUST survive a save: losing it would leave a treasury already debited with
-// nobody to hand the goods to.
-constexpr uint16_t kSection_PurchaseOrders = 24;
-// 25: physical maintenance objects (design D2/D3). The fixed-point carry and the
-// 5-day window MUST survive a save: restoring without them would silently
-// forgive or double-count a shortage, and the disrepair verdict would reset to
-// "fine" on every load.
-constexpr uint16_t kSection_Maintenance = 25;
-constexpr uint16_t kSection_End = 0xFFFF;
-
-// Sanity caps so a corrupt length can never trigger an enormous allocation.
-constexpr uint32_t kMaxRows = 4u * 1024u * 1024u;
-
-class Writer {
-public:
-    std::vector<uint8_t> out;
-
-    void u8(uint8_t v) { out.push_back(v); }
-    void u16(uint16_t v) {
-        out.push_back((uint8_t)(v & 0xFF));
-        out.push_back((uint8_t)(v >> 8));
-    }
-    void u32(uint32_t v) {
-        for (int i = 0; i < 4; ++i) out.push_back((uint8_t)((v >> (8 * i)) & 0xFF));
-    }
-    void u64(uint64_t v) {
-        for (int i = 0; i < 8; ++i) out.push_back((uint8_t)((v >> (8 * i)) & 0xFF));
-    }
-    void i8(int8_t v) { u8((uint8_t)v); }
-    void i16(int16_t v) { u16((uint16_t)v); }
-    void i32(int32_t v) { u32((uint32_t)v); }
-    void i64(int64_t v) { u64((uint64_t)v); }
-    void begin(uint16_t id) {
-        u16(id);
-        u32(0);   // patched by end()
-        _patch.push_back(out.size() - 4);
-    }
-    void end() {
-        const size_t patch = _patch.back();
-        _patch.pop_back();
-        const uint32_t len = (uint32_t)(out.size() - patch - 4);
-        for (int i = 0; i < 4; ++i) out[patch + (size_t)i] = (uint8_t)((len >> (8 * i)) & 0xFF);
-    }
-
-private:
-    std::vector<size_t> _patch;
-};
-
-class Reader {
-public:
-    Reader(const uint8_t *data, size_t size) : _data(data), _size(size) {}
-
-    bool ok() const { return _ok; }
-    size_t pos() const { return _pos; }
-    size_t remaining() const { return _ok ? _size - _pos : 0; }
-    bool need(size_t n) {
-        if (!_ok || _pos + n > _size) {
-            _ok = false;
-            return false;
-        }
-        return true;
-    }
-    uint8_t u8() {
-        if (!need(1)) return 0;
-        return _data[_pos++];
-    }
-    uint16_t u16() {
-        if (!need(2)) return 0;
-        const uint16_t v = (uint16_t)(_data[_pos] | ((uint16_t)_data[_pos + 1] << 8));
-        _pos += 2;
-        return v;
-    }
-    uint32_t u32() {
-        if (!need(4)) return 0;
-        uint32_t v = 0;
-        for (int i = 0; i < 4; ++i) v |= (uint32_t)_data[_pos + (size_t)i] << (8 * i);
-        _pos += 4;
-        return v;
-    }
-    uint64_t u64() {
-        if (!need(8)) return 0;
-        uint64_t v = 0;
-        for (int i = 0; i < 8; ++i) v |= (uint64_t)_data[_pos + (size_t)i] << (8 * i);
-        _pos += 8;
-        return v;
-    }
-    int8_t i8() { return (int8_t)u8(); }
-    int16_t i16() { return (int16_t)u16(); }
-    int32_t i32() { return (int32_t)u32(); }
-    int64_t i64() { return (int64_t)u64(); }
-    uint32_t open_section() {
-        const uint16_t id = u16();
-        const uint32_t len = u32();
-        if (!_ok) return 0;
-        if (id == kSection_End) {   // END carries a checksum (magic ^ size), not a length
-            _section_end = _pos;
-            return id;
-        }
-        if (len > remaining()) {
-            _ok = false;
-            return 0;
-        }
-        _section_end = _pos + len;
-        return id;
-    }
-    void close_section() {
-        if (!_ok) return;
-        if (_pos != _section_end) {
-            // Tolerate forward-compatible extra bytes inside a section.
-            if (_section_end > _pos) _pos = _section_end;
-        }
-    }
-
-private:
-    const uint8_t *_data = nullptr;
-    size_t _size = 0;
-    size_t _pos = 0;
-    size_t _section_end = 0;
-    bool _ok = true;
-};
-
-// -------------------------------------------------------------- writers
-
-void write_lots(Writer &w, const MilitaryLotStore &s) {
-    w.u32((uint32_t)s.active.size());
-    for (size_t i = 0; i < s.active.size(); ++i) {
-        w.u8(s.active[i]);
-        if (!s.active[i]) continue;
-        w.u8(s.location_kind[i]);
-        w.i32(s.location[i]);
-        w.i32(s.country_slot[i]);
-        w.i16(s.unit_type[i]);
-        w.i16(s.equip_quality_q8[i]);
-        w.i32(s.kit_q16[i]);
-        w.i32(s.condition_q16[i]);
-        w.i64(s.count[i]);
-    }
-}
-
-void write_armies(Writer &w, const MilitaryArmyStore &s) {
-    w.u32((uint32_t)s.active.size());
-    for (size_t i = 0; i < s.active.size(); ++i) {
-        w.u8(s.active[i]);
-        if (!s.active[i]) continue;
-        w.u32(s.generation[i]);
-        w.i32(s.owner_slot[i]);
-        w.i32(s.cell[i]);
-        w.i32(s.next_cell[i]);
-        w.i32(s.move_points_q16[i]);
-        w.u8(s.stance[i]);
-        w.u8(s.mission[i]);
-        w.i32(s.target_cell[i]);
-        w.i32(s.area_id[i]);
-        w.i32(s.organization_q16[i]);
-        w.i32(s.morale_q16[i]);
-        w.i32(s.supply_ratio_q16[i]);
-        w.i32(s.ration_ratio_q16[i]);
-        w.i32(s.pay_ratio_q16[i]);
-        // Path spans are stored relative to the compacted arena; encode() has
-        // already remapped path_offset into the compacted numbering.
-        w.i32(s.path_offset[i]);
-        w.i32(s.path_len[i]);
-        w.i32(s.path_cursor[i]);
-        w.u8(s.reinforce_enabled[i]);
-        w.i32(s.template_offset[i]);
-        w.i32(s.template_len[i]);
-        w.u64(s.commander_slot[i]);
-        w.i64(s.cached_headcount[i]);
-        w.i64(s.cached_attack_q16[i]);
-        w.i64(s.cached_defense_q16[i]);
-        w.i32(s.cached_speed_q16[i]);
-        w.i32(s.engagement[i]);
-        w.i64(s.moved_day[i]);
-        w.i32(s.prev_cell[i]);
-        w.u32(s.name_seed[i]);
-        w.i64(s.funds[i]);
-    }
-}
-
-void write_policies(Writer &w, const MilitaryCore &core) {
-    w.u32((uint32_t)core._policies.size());
-    for (size_t i = 0; i < core._policies.size(); ++i) {
-        const MilitaryCountryPolicy &p = core._policies[i];
-        w.u64(i < core._policy_handle.size() ? core._policy_handle[i] : 0);
-        w.u8(p.target_mode);
-        w.i64(p.target_value);
-        w.i64(p.effective_target);
-        w.u8(p.levy_enabled);
-        w.u8(p.auto_retrain);
-        w.u8(p.auto_discharge);
-        w.u8(p.quality_policy);
-        w.u8(p.wage_mode);
-        w.i64(p.wage_absolute);
-        w.i32(p.procurement_share_bp);
-        w.i32(p.pay_ratio_30_q16);
-        w.i64(p.spend_payroll_30);
-        w.i64(p.spend_procurement_30);
-        w.i64(p.spend_upkeep_30);
-        w.i64(p.per_soldier_cost);
-        w.u32((uint32_t)p.config_share_bp.size());
-        for (int32_t bp : p.config_share_bp) w.i32(bp);
-    }
-}
-
-
-template<class T> void write_index_vector(Writer &w, const std::vector<T> &values) {
-    w.u32((uint32_t)values.size());
-    for (T value : values) w.i64((int64_t)value);
-}
 template<class T> bool read_index_vector(Reader &r, std::vector<T> &values) {
     const uint32_t n = r.u32();
     if (n > kMaxRows || n > r.remaining() / 8) return false;
@@ -269,26 +35,6 @@ template<class T> bool read_index_vector(Reader &r, std::vector<T> &values) {
     }
     return r.ok();
 }
-void write_index_continuation(Writer &w, const MilitaryCore &c) {
-    write_index_vector(w, c._lots.location_kind);
-    write_index_vector(w, c._lots.location);
-    write_index_vector(w, c._lots.country_slot);
-    write_index_vector(w, c._lots.unit_type);
-    write_index_vector(w, c._lots.equip_quality_q8);
-    write_index_vector(w, c._lots.kit_q16);
-    write_index_vector(w, c._lots.condition_q16);
-    write_index_vector(w, c._lots.count);
-    write_index_vector(w, c._lots.free_list);
-    w.u8(c._lot_index_ok ? 1 : 0);
-    write_index_vector(w, c._lot_next);
-    write_index_vector(w, c._lot_link_kind);
-    write_index_vector(w, c._lot_link_loc);
-    write_index_vector(w, c._lot_army_head);
-    write_index_vector(w, c._lot_cell_head);
-    write_index_vector(w, c._armies.generation);
-    write_index_vector(w, c._armies.free_list);
-    write_index_vector(w, c._army_lane_pending);
-}
 bool read_index_continuation(Reader &r, MilitaryCore &c) {
     if (!read_index_vector(r, c._lots.location_kind) ||
         !read_index_vector(r, c._lots.location) ||
@@ -300,457 +46,22 @@ bool read_index_continuation(Reader &r, MilitaryCore &c) {
         !read_index_vector(r, c._lots.count) ||
         !read_index_vector(r, c._lots.free_list)) return false;
     c._lot_index_ok = r.u8() != 0;
-    return read_index_vector(r, c._lot_next) &&
+    if (!(read_index_vector(r, c._lot_next) &&
         read_index_vector(r, c._lot_link_kind) && read_index_vector(r, c._lot_link_loc) &&
         read_index_vector(r, c._lot_army_head) && read_index_vector(r, c._lot_cell_head) &&
         read_index_vector(r, c._armies.generation) && read_index_vector(r, c._armies.free_list) &&
-        read_index_vector(r, c._army_lane_pending);
+        read_index_vector(r, c._army_lane_pending))) return false;
+    c._lots.partial_equipment.resize(c._lots.active.size(), 0);
+    if (r.section_remaining() == 0) return true;
+    const size_t grades = c._lots.active.size() + c._training.size();
+    if (r.section_remaining() < grades * sizeof(uint16_t)) return false;
+    for (auto &kit : c._lots.partial_equipment) kit = r.u16();
+    for (auto &order : c._training) order.source_partial_equipment = r.u16();
+    return r.ok();
 }
 
 
 } // namespace
-
-// ============================================================== encode
-
-std::vector<uint8_t> MilitaryCore::encode() const {
-
-    Writer w;
-    w.out.reserve(1u << 16);
-    // ---- header
-    w.u32(PKMI_MAGIC);
-    w.u32(PKMI_VERSION);
-    w.u64(_catalog.hash);
-    w.u64(_seed);
-    w.i32(_terrain.cell_count);
-    w.i32(_terrain.width);
-    w.i32(_terrain.height);
-    w.i64(_last_day);
-
-    // ---- counters
-    w.begin(kSection_Counters);
-    w.u64(_next_sequence);
-    w.u64(_next_id);
-    w.u64(_next_event_id);
-    w.u64(_control_revision);
-    w.u64(_front_revision);
-    w.u32((uint32_t)_path_daily_requests.size());
-    for (int32_t n : _path_daily_requests) w.i32(n);
-    w.u32((uint32_t)_pending.size());
-    w.end();
-
-    // ---- pending commands
-    w.begin(kSection_Pending);
-    w.u32((uint32_t)_pending.size());
-    for (const MilitaryCommand &c : _pending) {
-        w.u16(c.op);
-        w.i64(c.effective_day);
-        w.u64(c.sequence);
-        w.u64(c.country);
-        w.u64(c.army);
-        w.u64(c.other);
-        w.i32(c.cell);
-        w.i32(c.radius);
-        w.i32(c.unit_from);
-        w.i32(c.unit_to);
-        w.i64(c.count);
-        w.i64(c.value);
-        w.u32((uint32_t)c.cells.size());
-        for (int32_t v : c.cells) w.i32(v);
-        w.u32((uint32_t)c.ints.size());
-        for (int32_t v : c.ints) w.i32(v);
-        w.u32((uint32_t)c.longs.size());
-        for (int64_t v : c.longs) w.i64(v);
-    }
-    w.end();
-
-    // ---- lots
-    w.begin(kSection_Lots);
-    write_lots(w, _lots);
-    w.end();
-
-    // ---- training orders
-    w.begin(kSection_Training);
-    w.u32((uint32_t)_training.size());
-    for (const MilitaryTrainingOrder &o : _training) {
-        w.u64(o.id);
-        w.i32(o.country_slot);
-        w.i32(o.cell);
-        w.i16(o.from_unit);
-        w.i16(o.to_unit);
-        w.i64(o.count);
-        w.i32(o.days_total);
-        w.i32(o.days_done);
-        w.u8(o.equipment_ready);
-        w.u8(o.manual);
-        w.i16(o.quality_q8);
-        for (int8_t quality : o.slot_delivered_quality) w.i8(quality);
-        w.i16(o.delivered_quality_q8);
-        w.u64(o.equipped_slot_mask);
-    }
-    w.end();
-
-    // ---- armies (with a compacted path arena and template arena)
-    std::vector<int32_t> path_out;
-    std::vector<int32_t> template_out;
-    std::vector<int32_t> remap_off(_armies.active.size(), 0);
-    std::vector<int32_t> remap_tpl(_armies.active.size(), 0);
-    for (size_t i = 0; i < _armies.active.size(); ++i) {
-        if (!_armies.active[i]) continue;
-        const int32_t off = _armies.path_offset[i];
-        const int32_t len = _armies.path_len[i];
-        if (off >= 0 && len > 0 && (size_t)(off + len) <= _path_cells.size()) {
-            remap_off[i] = (int32_t)path_out.size();
-            path_out.insert(path_out.end(), _path_cells.begin() + off, _path_cells.begin() + off + len);
-        } else {
-            remap_off[i] = 0;
-        }
-        const int32_t toff = _armies.template_offset[i];
-        const int32_t tlen = _armies.template_len[i];
-        if (toff >= 0 && tlen > 0 && (size_t)(toff + tlen) <= _template_rows.size()) {
-            remap_tpl[i] = (int32_t)template_out.size();
-            template_out.insert(template_out.end(), _template_rows.begin() + toff,
-                                _template_rows.begin() + toff + tlen);
-        } else {
-            remap_tpl[i] = 0;
-        }
-    }
-    w.begin(kSection_Armies);
-    {
-        // Write armies with remapped spans by temporarily shadowing the offsets.
-        MilitaryArmyStore shadow = _armies;
-        for (size_t i = 0; i < shadow.active.size(); ++i) {
-            if (!shadow.active[i]) continue;
-            shadow.path_offset[i] = remap_off[i];
-            shadow.template_offset[i] = remap_tpl[i];
-        }
-        write_armies(w, shadow);
-    }
-    w.end();
-
-    w.begin(kSection_PathArena);
-    w.u32((uint32_t)path_out.size());
-    for (int32_t v : path_out) w.i32(v);
-    w.end();
-
-    w.begin(kSection_Templates);
-    w.u32((uint32_t)template_out.size());
-    for (int32_t v : template_out) w.i32(v);
-    w.end();
-
-    // ---- stocks
-    w.begin(kSection_Stocks);
-    w.u32((uint32_t)_stocks.size());
-    for (const MilitaryStockRow &r : _stocks) {
-        w.u8(r.holder_kind);
-        w.i32(r.holder);
-        w.i32(r.country_slot);
-        w.i32(r.good);
-        w.i64(r.qty);
-    }
-    w.end();
-
-    // ---- shipments
-    w.begin(kSection_Shipments);
-    w.u32((uint32_t)_shipments.size());
-    for (const MilitaryShipment &s : _shipments) {
-        w.u64(s.id);
-        w.i32(s.country_slot);
-        w.u8(s.dest_kind);
-        w.i32(s.dest);
-        w.u64(s.dest_handle);
-        w.i32(s.origin_cell);
-        w.i32(s.current_cell);
-        w.i32(s.good);
-        w.i32(s.real_good);
-        w.i8(s.quality);
-        w.i64(s.qty);
-        w.i64(s.value);
-        w.i64(s.departure_day);
-        w.i64(s.eta_day);
-        w.i32(s.route_cost_q16);
-        w.i32(s.progress_q16);
-        w.i32(s.blocked_days);
-    }
-    w.end();
-
-    // ---- purchase orders (section 24)
-    w.begin(kSection_PurchaseOrders);
-    w.u32((uint32_t)std::max(1, _next_purchase_id));
-    w.u32((uint32_t)_purchase_orders.size());
-    for (const MilitaryPurchaseOrder &o : _purchase_orders) {
-        w.u16(o.intent.kind);
-        w.i32(o.intent.cell);
-        w.i32(o.intent.good);
-        w.u64(o.intent.country_a);
-        w.i64(o.intent.count);
-        w.i64(o.intent.amount);
-        w.u64(o.intent.source_id);          // stable request identity
-        w.u8(o.channel);
-        w.i32(o.destination_cell);
-        w.u8(o.dest_kind);
-        w.i32(o.dest);
-        w.u64(o.dest_handle);
-        w.i32(o.stock_good);
-        w.i32(o.real_good);
-        w.i32(o.category);
-        w.i8(o.quality);
-        w.i32(o.route_cost_q16);
-        w.i32(o.days);
-    }
-    w.end();
-
-    // ---- maintenance objects (section 25)
-    w.begin(kSection_Maintenance);
-    w.u32((uint32_t)_maint_rows.size());
-    for (const MilitaryMaintenanceRow &r : _maint_rows) {
-        w.u8(r.kind);
-        w.i32(r.country_slot);
-        w.i32(r.cell);
-        w.i32(r.object_id);
-        w.u8(r.holder_kind);
-        w.i32(r.holder);
-        w.i32(r.units);
-        for (int32_t m = 0; m < MILITARY_MAX_REPAIR_MATERIALS; ++m) w.i64(r.acc_q32[m]);
-        w.i64(r.window_need);
-        w.i64(r.window_met);
-        w.i32(r.window_days);
-        w.i32(r.ratio_bp);
-        w.u8(r.disrepair);
-    }
-    w.end();
-
-    // ---- engagements
-    w.begin(kSection_Engagements);
-    w.u32((uint32_t)_engagements.size());
-    for (const MilitaryEngagement &e : _engagements) {
-        w.i32(e.cell_a);
-        w.i32(e.cell_b);
-        w.i32(e.attacker_side_cell);
-        w.i32(e.attacker_slot);
-        w.i32(e.defender_slot);
-        w.i32(e.war_id);
-        w.i32(e.progress_q16);
-        w.i64(e.start_day);
-        w.i32(e.idle_days);
-        w.i32(e.days_since_battle);
-        w.i64(e.casualties_attacker);
-        w.i64(e.casualties_defender);
-        w.u8(e.active);
-    }
-    w.end();
-
-    // ---- wars
-    w.begin(kSection_Wars);
-    w.u32((uint32_t)_wars.size());
-    for (const MilitaryWar &x : _wars) {
-        w.i32(x.id);
-        w.i32(x.attacker_slot);
-        w.i32(x.defender_slot);
-        w.u64(x.attacker_handle);
-        w.u64(x.defender_handle);
-        w.i64(x.start_day);
-        w.i32(x.score_battle_q16);
-        w.i32(x.score_annihilation_q16);
-        w.i32(x.score_attrition_q16);
-        w.i64(x.attacker_losses);
-        w.i64(x.defender_losses);
-        w.i64(x.last_rejected_offer_day_a);
-        w.i64(x.last_rejected_offer_day_b);
-        w.i64(x.fully_occupied_since_a);
-        w.i64(x.fully_occupied_since_b);
-        w.u8(x.active);
-    }
-    w.end();
-
-    // ---- truces
-    w.begin(kSection_Truces);
-    w.u32((uint32_t)_truces.size());
-    for (const MilitaryTruce &t : _truces) {
-        w.i32(t.slot_a);
-        w.i32(t.slot_b);
-        w.i64(t.until_day);
-    }
-    w.end();
-
-    // ---- reparation schedules
-    w.begin(kSection_Reparations);
-    w.u32((uint32_t)_reparations.size());
-    for (const MilitaryReparation &r : _reparations) {
-        w.u64(r.payer);
-        w.u64(r.receiver);
-        w.i64(r.installment);
-        w.i32(r.remaining);
-        w.i64(r.next_day);
-        w.i64(r.arrears);
-        w.i32(r.war_id);
-    }
-    w.end();
-
-    // ---- battle log (last MILITARY_BATTLE_LOG_CAPACITY rows)
-    w.begin(kSection_BattleLog);
-    {
-        const size_t keep = std::min<size_t>(_battle_log.size(), (size_t)MILITARY_BATTLE_LOG_CAPACITY);
-        const size_t first = _battle_log.size() - keep;
-        w.u32((uint32_t)keep);
-        for (size_t i = first; i < _battle_log.size(); ++i) {
-            const MilitaryBattleLogRow &b = _battle_log[i];
-            w.i64(b.day);
-            w.i32(b.cell);
-            w.i32(b.war_id);
-            w.i32(b.winner_slot);
-            w.i32(b.loser_slot);
-            w.i64(b.winner_losses);
-            w.i64(b.loser_losses);
-            w.i32(b.score_gain_q16);
-        }
-    }
-    w.end();
-
-    // ---- areas
-    w.begin(kSection_Areas);
-    w.u32((uint32_t)_areas.size());
-    for (const MilitaryArea &a : _areas) {
-        w.i32(a.id);
-        w.i32(a.owner_slot);
-        w.i64(a.last_eval_day);
-        w.u8(a.active);
-        w.u32((uint32_t)a.cells.size());
-        for (int32_t c : a.cells) w.i32(c);
-    }
-    w.end();
-
-    // ---- per-country policy
-    w.begin(kSection_Policies);
-    write_policies(w, *this);
-    w.end();
-
-    // ---- sparse cell state
-    w.begin(kSection_CellStates);
-    w.u32((uint32_t)_cell_states.size());
-    for (const MilitaryCellState &st : _cell_states) {
-        w.i32(st.cell);
-        // Derived cache (requirement 6.1): the economy building groups are the
-        // count of record, but the tuple is still written so a restored save
-        // reproduces the same day-0 cache and the same state hash. The first
-        // `step_day` after the restore rebuilds it from the ledger anyway, and
-        // any difference is reported by `report().state_cache_repairs`.
-        for (int32_t t = 0; t < 8; ++t) w.i32(st.barracks_count[t]);
-        w.i32(st.fort_tier);
-        w.i32(st.college_tier);
-        w.u8(st.paused);
-        w.u8(st.disrepair);
-        w.i64(st.pending_enlist);
-        w.i64(st.quota);
-        w.i64(st.requisition_until_day);
-        for (int32_t k = 0; k < 3; ++k) {
-            w.i64(st.construction_done_day[k]);
-            w.i32(st.construction_building[k]);
-        }
-    }
-    w.end();
-
-    // ---- cell controller (sparse: write (cell, slot) pairs)
-    w.begin(kSection_Controller);
-    {
-        uint32_t count = 0;
-        for (int32_t v : _cell_controller) {
-            if (v >= 0) ++count;
-        }
-        w.u32((uint32_t)_cell_controller.size());
-        w.u32(count);
-        for (size_t i = 0; i < _cell_controller.size(); ++i) {
-            if (_cell_controller[i] < 0) continue;
-            w.i32((int32_t)i);
-            w.i32(_cell_controller[i]);
-        }
-    }
-    w.end();
-
-    // ---- ledger
-    w.begin(kSection_Ledger);
-    w.i64(_ledger_received);
-    w.i64(_ledger_consumed);
-    w.i64(_ledger_intercepted_out);
-    w.i64(_ledger_intercepted_in);
-    w.i64(_ledger_returned);
-    w.i64(_ledger_stock);
-    w.i64(_ledger_transit);
-    w.end();
-
-    // ---- events ring
-    w.begin(kSection_Events);
-    w.u32((uint32_t)_events.size());
-    for (const MilitaryEvent &e : _events) {
-        w.u64(e.id);
-        w.i64(e.day);
-        w.u16(e.type);
-        w.u16(e.payload_schema);
-        w.i32(e.cell);
-        w.u64(e.i0);
-        w.u64(e.i1);
-        w.u64(e.i2);
-        w.u64(e.i3);
-        w.i64(e.value);
-    }
-    w.end();
-
-    // ---- AI agenda memory
-    w.begin(kSection_Ai);
-    w.u32((uint32_t)_ai_country.size());
-    for (size_t i = 0; i < _ai_country.size(); ++i) {
-        w.u8(_ai_country[i]);
-        w.i64(i < _ai_next_decision_day.size() ? _ai_next_decision_day[i] : 0);
-    }
-    w.end();
-
-    // ---- player auto-exploration rows (section 23) ------------------------
-    // Always written, including an empty table. Trail / explored view / fog
-    // are host-owned and intentionally absent.
-    w.begin(kSection_Exploration);
-    w.u32((uint32_t)_explorations.size());
-    for (const MilitaryExplorationTask &task : _explorations) {
-        w.u8(task.active ? 1 : 0);
-        w.i32(task.row_index);
-        w.u64(task.army_handle);
-        w.i32(task.owner_slot);
-        w.u64(task.owner_handle);
-        w.i32(task.origin_cell);
-        w.i32(task.return_cell);
-        w.i32(task.anchor_cell);
-        w.i32(task.radius);
-        w.u32((uint32_t)task.selected_count);
-        for (int32_t i = 0; i < task.selected_count; ++i)
-            w.i32(task.selected_cells[(size_t)i]);
-        for (int32_t word = 0; word < 4; ++word) {
-            w.u64(task.seen_mask[(size_t)word]);
-            w.u64(task.visited_mask[(size_t)word]);
-            w.u64(task.blocked_mask[(size_t)word]);
-        }
-        w.u8(task.phase);
-        w.u8(task.pause_reason);
-        w.u8(task.result);
-        w.u8(task.resume_phase);
-        w.i32(task.focus_index);
-        w.i32(task.current_observation_cell);
-        w.i32(task.observer_tries);
-        for (int32_t cell : task.reached_observer_cells) w.i32(cell);
-        w.u32(task.tried_observer_mask);
-        w.i64(task.started_day);
-        w.i64(task.last_progress_day);
-        w.i64(task.last_plan_day);
-        w.i64(task.complete_day);
-        w.u8(task.return_fallback);
-    }
-    w.end();
-
-    w.begin(kSection_IndexContinuation);
-    write_index_continuation(w, *this);
-    w.end();
-
-    w.u16(kSection_End);
-    w.u32(PKMI_MAGIC ^ (uint32_t)w.out.size());
-    return w.out;
-}
 
 // ============================================================== restore
 
@@ -1390,6 +701,29 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 }
                 break;
             }
+            case kSection_BudgetEnvelope: {
+                if (r.section_remaining() < sizeof(uint32_t)) {
+                    error = "pkmi_bad_budget_envelope";
+                    return false;
+                }
+                const uint32_t n = r.u32();
+                if (n != tmp._policies.size() || r.section_remaining() != n * 12ULL) {
+                    error = "pkmi_bad_budget_envelope";
+                    return false;
+                }
+                for (auto &policy : tmp._policies) {
+                    policy.budget_share_bp = r.i32();
+                    policy.budget_wage_bp = r.i32();
+                    policy.budget_upkeep_bp = r.i32();
+                    if (policy.budget_share_bp < 0 || policy.budget_share_bp > 10000 ||
+                        policy.budget_wage_bp < 0 || policy.budget_wage_bp > 10000 ||
+                        policy.budget_upkeep_bp < 0 || policy.budget_upkeep_bp > 10000) {
+                        error = "pkmi_bad_budget_envelope";
+                        return false;
+                    }
+                }
+                break;
+            }
             case kSection_CellStates: {
                 const uint32_t n = r.u32();
                 if (n > kMaxRows) {
@@ -1883,8 +1217,8 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
             max_tpl_end = std::max(max_tpl_end, (size_t)(toff + tlen));
         }
     }
-    tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + (ptrdiff_t)max_path_end);
-    tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + (ptrdiff_t)max_tpl_end);
+    tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + static_cast<std::ptrdiff_t>(max_path_end));
+    tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + static_cast<std::ptrdiff_t>(max_tpl_end));
 
     // Slot payload, free-list order and linked sets are continuation state.
     if (tmp._cell_states.size() > 1) {
@@ -1911,38 +1245,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         if (c >= 0 && (size_t)c < tmp._cell_state_index.size()) tmp._cell_state_index[(size_t)c] = (int32_t)i;
     }
     tmp.rebuild_cell_index();
-    // Exploration routes are regular army paths; the last cell must still name
-    // the observation / return target the task persisted.
-    for (const MilitaryExplorationTask &task : tmp._explorations) {
-        if (!task.active) continue;
-        int32_t army_slot = -1;
-        if (!tmp.resolve_army(task.army_handle, army_slot)) {
-            error = "pkmi_exploration_army_missing";
-            return false;
-        }
-        const MilitaryArmyStore &a = tmp._armies;
-        const int32_t len = a.path_len[(size_t)army_slot];
-        if (len <= 0) continue;
-        const int32_t off = a.path_offset[(size_t)army_slot];
-        if (off < 0 || (size_t)(off + len) > tmp._path_cells.size()) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-        const int32_t expected =
-            task.phase == MILITARY_EXPLORATION_RETURNING
-                ? task.return_cell : task.current_observation_cell;
-        if (expected < 0 ||
-            tmp._path_cells[(size_t)(off + len - 1)] != expected) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-        if (task.phase == MILITARY_EXPLORATION_PAUSED_BATTLE ||
-            task.phase == MILITARY_EXPLORATION_COMPLETE ||
-            task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN) {
-            error = "pkmi_exploration_bad_phase";
-            return false;
-        }
-    }
+    if (!military_validate_restored_exploration_paths(tmp, error)) return false;
     // Army caches are saved verbatim (refreshing here would diverge from the
     // live cache, which lags condition decay and needs the era mirror).
     return true;

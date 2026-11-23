@@ -1,4 +1,6 @@
 #include "world_ext.h"
+#include "world_ext_landmasses.h"
+#include "simulation_math.h"
 
 #include <godot_cpp/classes/noise.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -181,7 +183,7 @@ void allocate_ranked_budget(float *arr, const std::vector<RankedCell> &ranked,
         const double relative = clampd(
                 (ranked[size_t(ranks[size_t(rank)])].suit - cutoff_suit) / suit_span,
                 0.0, 1.0);
-        const double weight = std::pow(std::max(relative, 0.001), richness_exponent);
+        const double weight = simulation_math::pow(std::max(relative, 0.001), richness_exponent);
         weights[size_t(rank)] = weight;
         weight_sum += weight;
     }
@@ -267,55 +269,8 @@ bool read_sparse_weights(const Dictionary &knobs, const char *keys_key,
     return true;
 }
 
-// ── 大陆标号：6 邻接 BFS，与 gdext/src/world_ext_bio.cpp:895-912 同算法、
-// 同一邻接表访问顺序；验收 V10 逐格比对 map.landmass_id_arr。
-// landmass_of[i] = 0 表示水面/未标记，>0 为大陆标号；landmass_size[L] 为该陆块格数。
-//
-// 「大陆」面积门槛：与生态保底同口径。常量与算法复述自
-// gdext/src/world_ext_bio.cpp:392-393（kMinContinentCells / kMinContinentShare）
-// 与 :1115-1120（largest_land × share 取门槛），两边必须同步改。
-constexpr int32_t kMinContinentCells = 8;
-constexpr float kMinContinentShare = 0.18f;
-
-// 「保底配额资格」门槛：只决定哪些陆块参与资源的保底配额（:744），
-// 不参与上面「大陆」定义，也不改 world_ext_bio 的任何行为。
-// 与 kMinContinentCells 刻意分开：continent_floor 随最大陆地面积涨（56×38 上是 48），
-// 会把这些陆块整段跳过配额，导致缺盐/硅砂/锡的 37、33、11 格陆块拿不到保底。
+// 矿点配额取决于陆块自身的规模，和生态保底的大陆门槛独立。
 constexpr int32_t kMinQuotaCells = 8;
-
-void label_landmasses(const uint8_t *water, const int32_t *neighbors, int n,
-        std::vector<int32_t> &landmass_of, std::vector<int32_t> &landmass_size) {
-    landmass_of.assign(size_t(n), 0);
-    int32_t landmass_count = 0;
-    std::vector<int32_t> stack;
-    stack.reserve(size_t(n));
-    for (int cell = 0; cell < n; ++cell) {
-        if (water[cell] != 0 || landmass_of[size_t(cell)] != 0) continue;
-        ++landmass_count;
-        stack.clear();
-        stack.push_back(int32_t(cell));
-        landmass_of[size_t(cell)] = landmass_count;
-        while (!stack.empty()) {
-            const int32_t cur = stack.back();
-            stack.pop_back();
-            const int32_t base = cur * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nxt = neighbors[base + d];
-                if (nxt < 0 || nxt >= n || water[nxt] != 0
-                        || landmass_of[size_t(nxt)] != 0) {
-                    continue;
-                }
-                landmass_of[size_t(nxt)] = landmass_count;
-                stack.push_back(nxt);
-            }
-        }
-    }
-    landmass_size.assign(size_t(landmass_count) + 1, 0);
-    for (int cell = 0; cell < n; ++cell) {
-        const int32_t l = landmass_of[size_t(cell)];
-        if (l > 0) landmass_size[size_t(l)] += 1;
-    }
-}
 
 } // namespace
 
@@ -451,17 +406,12 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
     // 大陆标号只算一次，供所有资源的配额段复用。is_water 缺失 → 不标、配额整段跳过。
     std::vector<int32_t> landmass_of;
     std::vector<int32_t> landmass_size;
-    int32_t continent_floor = 0;
     if (have_landmass) {
-        label_landmasses(water_arr.ptr(), neighbors, n, landmass_of, landmass_size);
-        int32_t largest_land = 0;
-        for (size_t l = 1; l < landmass_size.size(); ++l) {
-            largest_land = std::max(largest_land, landmass_size[l]);
-        }
-        // max(8, round(0.18 × 最大陆地))：与 world_ext_bio.cpp:1115-1120 同一式子，
-        // 连 float 中间量也一致，保证两边「大陆」定义逐位相同。
-        continent_floor = std::max(kMinContinentCells,
-                int32_t(std::lround(float(largest_land) * kMinContinentShare)));
+        landmass_of.resize(static_cast<size_t>(n));
+        const int32_t count = label_world_landmasses(
+            water_arr.ptr(), neighbors, n, landmass_of.data());
+        landmass_size.assign(static_cast<size_t>(count) + 1, 0);
+        for (int32_t landmass : landmass_of) ++landmass_size[static_cast<size_t>(landmass)];
     }
 
     // 纯诊断，不进存档、不进 state hash。
@@ -555,8 +505,11 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
         int quota_unmet = 0;   // 本资源遍历完候选集仍未补满的格数
 
         const bool use_ranked_distribution = p.target_coverage > 0.0;
+        const bool apply_landmass_quota = have_landmass &&
+                p.continent_floor_cells > 0.0 && p.min_reserve > 0.0;
         const bool collect_ranked =
-                use_ranked_distribution || (p.min_coverage > 0.0 && p.min_reserve > 0.0);
+                use_ranked_distribution || apply_landmass_quota ||
+                (p.min_coverage > 0.0 && p.min_reserve > 0.0);
         std::vector<RankedCell> ranked;
         if (collect_ranked) {
             ranked.reserve(size_t(n));
@@ -653,12 +606,14 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                             * clampd(p.min_coverage, 0.0, 1.0))));
         }
 
-        if (target_cells > 0) {
+        if (target_cells > 0 || apply_landmass_quota) {
             std::sort(ranked.begin(), ranked.end(),
                     [](const RankedCell &a, const RankedCell &b) {
                         if (a.suit != b.suit) return a.suit > b.suit;
                         return a.cell < b.cell;
                     });
+        }
+        if (target_cells > 0) {
             if (use_ranked_distribution) {
                 for (const RankedCell &rc : ranked) {
                     values[rc.cell] = 0.0f;
@@ -727,8 +682,7 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
         // 不动 cutoff_suit、不改已入选格，只可能把零头抬到最小真矿（逐格只增不减）。
         // float 与 float 比：floor_v 与 values[] 同为 float32，写进去的就是同一个值。
         const float floor_v = float(p.min_reserve);
-        if (p.continent_floor_cells > 0.0 && p.min_reserve > 0.0
-                && have_landmass && !ranked.empty() && continent_floor > 0) {
+        if (apply_landmass_quota) {
             const int floor_n = std::max(1, int(std::lround(p.continent_floor_cells)));
             std::vector<int32_t> have(landmass_size.size(), 0);
             std::vector<int32_t> need(landmass_size.size(), 0);
@@ -738,9 +692,6 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                 if (l > 0 && values[i] >= floor_v) ++have[size_t(l)];
             }
             for (size_t l = 1; l < landmass_size.size(); ++l) {
-                // 配额资格门槛：用独立的 kMinQuotaCells，不用 continent_floor。
-                // 礁石/碎岛仍不算；但 37/33/11 格这种「够不上大陆、却真缺矿」的陆块
-                // 现在参与配额。大陆定义（continent_floor）一个字没动。
                 if (landmass_size[l] < kMinQuotaCells) continue;
                 const int q = std::min(floor_n,
                         std::max(1, int(std::ceil(0.01 * double(landmass_size[l])))));

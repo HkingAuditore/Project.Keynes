@@ -18,13 +18,7 @@ func _can_economy_provider(context: Dictionary) -> Dictionary:
 
 func _write_economy_provider(context: Dictionary) -> Dictionary:
 	var shared_ecp2: PackedByteArray = context.get("native_economy_ecp2", PackedByteArray())
-	if not shared_ecp2.is_empty() and OS.get_environment("PK_SAVE_ECP2_REUSE_DISABLE") != "1":
-		if OS.get_environment("PK_SAVE_ECP2_REUSE_VERIFY") == "1":
-			var reference: Dictionary = context.economy.capture_ecp2(0)
-			if not bool(reference.get("ok", false)) or reference.get("bytes") != shared_ecp2:
-				return _result(false, "ecp2_shared_capture_mismatch",
-					"冻结 ECP2 与完整捕获结果不一致。")
-			print("[save/ecp2-reuse] full byte comparison passed bytes=%d" % shared_ecp2.size())
+	if not shared_ecp2.is_empty():
 		return {"ok": true, "sections": {"ecp2": shared_ecp2}}
 	var facade = context.economy
 	var captured: Dictionary = facade.capture_ecp2(0)
@@ -49,14 +43,6 @@ func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dic
 		return _result(false, "ecp2_restore_failed",
 			String(result.get("restore_rejected_reason",
 				result.get("reason", "经济 ECP2 恢复失败。"))))
-	# Saves written before the in-transit retirement fix carry payload person
-	# lanes whose notable person no longer exists. Population, funds and the
-	# attribution lanes are authoritative, so the runtime drops those lanes
-	# instead of rejecting the world; keep the count visible for support.
-	var dropped_transit: int = int(result.get("dropped_transit_persons", 0))
-	if dropped_transit > 0:
-		push_warning(
-			"[save/restore] dropped %d retired in-transit notable person lane(s) from this save" % dropped_transit)
 	# ECP2 owns the authored building catalog. Bind it before PKFG is restored so
 	# building intel type indices are checked against the authoritative type count.
 	if context.refresh_buildings.is_valid():

@@ -1,7 +1,6 @@
 #include "economy_cost_probe.h"
 #include "economy_effect_forward.h"
 #include "economy_runtime.h"
-#include "economy_family_move_cash.h"
 #include "economy_hash.h"
 #include "runtime_switch_registry.h"
 #include "economy_graph_kernels.h"
@@ -594,6 +593,46 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
     }
     if (cash == 0 && goods_total == 0) return true;
+    std::vector<int32_t> living_merchants;
+    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
+        for (int32_t edge = _merchant_offsets[merchant_cell];
+             edge < _merchant_offsets[merchant_cell + 1]; ++edge) {
+            const int32_t slot = _merchant_slots[edge];
+            if (is_merchant_slot(slot) && slot >= 0 &&
+                slot < static_cast<int32_t>(population_store().population.size()) &&
+                population_store().population[slot] > 0)
+                living_merchants.push_back(slot);
+        }
+    }
+    if (cash > 0 && living_merchants.empty()) {
+        error = "country_treasury_peer_merchant_missing";
+        return false;
+    }
+    int64_t merchant_population = 0;
+    for (const int32_t slot : living_merchants)
+        merchant_population = saturating_add(
+            merchant_population, population_store().population[slot], _saturation_count);
+    int64_t prefix = 0;
+    int64_t distributed = 0;
+    for (const int32_t slot : living_merchants) {
+        prefix = saturating_add(prefix, population_store().population[slot], _saturation_count);
+        const int64_t next = mul_div_sat(
+            cash, prefix, merchant_population, _saturation_count);
+        const int64_t share = std::max<int64_t>(0, next - distributed);
+        distributed = next;
+        if (population_store().funds[slot] >
+                std::numeric_limits<int64_t>::max() - share ||
+            population_store().epoch_income[slot] >
+                std::numeric_limits<int64_t>::max() - share) {
+            error = "country_treasury_peer_merchant_credit_overflow";
+            return false;
+        }
+    }
+    if (cash > 0 && distributed != cash) {
+        error = "country_treasury_peer_merchant_distribution_drift";
+        return false;
+    }
+
     // Country is the unique treasury writer in production. When Economy is
     // running on the worker and Country is the worker-authoritative peer, use
     // the same-thread prepare/service/finish cycle so construction does not
@@ -659,46 +698,6 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
         if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
             return false;
-    }
-
-    std::vector<int32_t> living_merchants;
-    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
-        for (int32_t edge = _merchant_offsets[merchant_cell];
-             edge < _merchant_offsets[merchant_cell + 1]; ++edge) {
-            const int32_t slot = _merchant_slots[edge];
-            if (is_merchant_slot(slot) && slot >= 0 &&
-                slot < static_cast<int32_t>(population_store().population.size()) &&
-                population_store().population[slot] > 0)
-                living_merchants.push_back(slot);
-        }
-    }
-    if (cash > 0 && living_merchants.empty()) {
-        error = "country_treasury_peer_merchant_missing";
-        return false;
-    }
-    int64_t merchant_population = 0;
-    for (const int32_t slot : living_merchants)
-        merchant_population = saturating_add(
-            merchant_population, population_store().population[slot], _saturation_count);
-    int64_t prefix = 0;
-    int64_t distributed = 0;
-    for (const int32_t slot : living_merchants) {
-        prefix = saturating_add(prefix, population_store().population[slot], _saturation_count);
-        const int64_t next = mul_div_sat(
-            cash, prefix, merchant_population, _saturation_count);
-        const int64_t share = std::max<int64_t>(0, next - distributed);
-        distributed = next;
-        if (population_store().funds[slot] >
-                std::numeric_limits<int64_t>::max() - share ||
-            population_store().epoch_income[slot] >
-                std::numeric_limits<int64_t>::max() - share) {
-            error = "country_treasury_peer_merchant_credit_overflow";
-            return false;
-        }
-    }
-    if (cash > 0 && distributed != cash) {
-        error = "country_treasury_peer_merchant_distribution_drift";
-        return false;
     }
 
     godot::PackedInt32Array ids;
@@ -844,42 +843,6 @@ bool NativeEconomyRuntime::cell_has_technology(int32_t cell, int32_t technology_
 // Building command/construction mutation implementations live in
 // economy_runtime_building_construction.cpp.
 
-bool NativeEconomyRuntime::is_merchant_service_post(const BuildingType &type) const {
-    // A merchant post sells no good, so every goods-receipt gate in the
-    // investment and employment paths reads zero for it. Its owner income is
-    // the market's household retail pool instead.
-    return type.output_count <= 0 && type.owner_profession_id >= 0 &&
-        type.owner_profession_id == _merchant_profession_id;
-}
-
-int64_t NativeEconomyRuntime::merchant_retail_owner_income_per_day(
-        int32_t cell, int64_t owner_slots, int64_t extra_slots,
-        int64_t &sat) const {
-    if (cell < 0 || cell >= _cell_count.get() || owner_slots <= 0) return 0;
-    const int32_t market = market_store().cell_to_market[cell];
-    if (market < 0 ||
-        static_cast<size_t>(market) >= _merchant_household_retail_by_market.size() ||
-        static_cast<size_t>(market) >= _market_merchant_population.size()) return 0;
-    const int64_t pool_per_day =
-        _merchant_household_retail_by_market[static_cast<size_t>(market)];
-    if (pool_per_day <= 0) return 0;
-    // Only a share of the market pool is attributable to posts; the rest is
-    // itinerant trade no post may claim. This is the free-entry cap and the
-    // single tuning knob for how commercial a settlement can become.
-    const int64_t shared_pool = mul_div_sat(pool_per_day,
-        std::clamp<int64_t>(_merchant_service_post_share_q16, 1, Q16_ONE),
-        Q16_ONE, sat);
-    const int64_t merchant_population = std::max<int64_t>(0,
-        _market_merchant_population[static_cast<size_t>(market)]);
-    // Marginal dilution: a new seat competes with the merchants who already
-    // live here, so the projection never promises a new post the incumbent
-    // per-capita income. At equilibrium this equals the living floor and
-    // investment stops on its own -- no hard population cap needed.
-    const int64_t denominator = std::max<int64_t>(1, saturating_add(
-        merchant_population, std::max<int64_t>(0, extra_slots), sat));
-    return mul_div_sat(shared_pool, owner_slots, denominator, sat);
-}
-
 int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         BuildingGroupConstRef group, int64_t &sat) const {
     if (group.type_id < 0 ||
@@ -1017,18 +980,8 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     // move. Scaling that stale quote again invents income and causes workers
     // to oscillate between otherwise equivalent lots. In-kind income is added
     // exactly once below and is never a cash tax base.
-    int64_t quoted_revenue = observed_capacity
+    const int64_t quoted_revenue = observed_capacity
         ? observed_receipts : std::max<int64_t>(0, group.last_expected_revenue);
-    // Merchant posts book no building receipt at all: their owner income is
-    // the market retail pool, which `process_market_cell` already settled as
-    // cash to the merchant cohort. Attribute a share of it to the owner seats
-    // this lot actually staffs. Pure attribution -- no cash is created -- so
-    // funds, conservation and the cashflow ledger are untouched.
-    if (is_merchant_service_post(type) && owner_jobs > 0) {
-        quoted_revenue = saturating_add(quoted_revenue,
-            merchant_retail_owner_income_per_day(
-                group.cell, owner_jobs, 0, sat), sat);
-    }
     const uint8_t owner_tax_mask = static_cast<uint8_t>(
         (1U << CountryApi::TAX_INCOME) |
         (1U << CountryApi::TAX_BUSINESS));
@@ -1706,48 +1659,6 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
     return move_cohort_population(source, cmd.cell, cmd.signature, cmd.population, error);
 }
 
-int64_t NativeEconomyRuntime::plan_cohort_move_cash(int32_t source_slot,
-        int32_t destination_cell, int64_t moved_population,
-        uint64_t preferred_family_handle, bool preferred_family_strict,
-        bool *will_drain_out) {
-    if (will_drain_out != nullptr) *will_drain_out = false;
-    if (source_slot < 0 ||
-        source_slot >= static_cast<int32_t>(population_store().active.size()))
-        return 0;
-    const int64_t source_pop = std::max<int64_t>(0,
-        population_store().population[source_slot]);
-    const int64_t move_pop = std::min(std::max<int64_t>(0, moved_population), source_pop);
-    if (move_pop == 0) return 0;
-    if (will_drain_out != nullptr) *will_drain_out = move_pop == source_pop;
-    const int64_t source_funds = std::max<int64_t>(0,
-        population_store().funds[source_slot]);
-    if (family_memberships().empty()) {
-        // No family lanes anywhere: the whole cohort is anonymous and the move
-        // is the plain per-capita share (same as before the split existed).
-        return cohort_move_cash(source_funds, source_pop, move_pop, false, 0, 0,
-            0, 0, _saturation_count, mul_div_sat);
-    }
-    // Same split the write performs: resolve the family/anonymous parties
-    // first, then let the shared rule turn that split into cash.
-    const int64_t anonymous_moved = plan_family_membership_move(source_slot,
-        destination_cell, move_pop, preferred_family_handle, preferred_family_strict);
-    int64_t family_claim = 0;
-    int64_t family_people = 0;
-    int64_t moved_claim = 0;
-    for (int32_t edge : _family_edge_scratch) {
-        family_people += std::max<int64_t>(0, family_memberships()[edge].people);
-        family_claim += std::max<int64_t>(0, family_memberships()[edge].cash_claim);
-    }
-    for (const FamilyMovePlanRow &row : _family_move_plan)
-        moved_claim = saturating_add(moved_claim, row.claim, _saturation_count);
-    const bool family_plan_valid = move_pop < source_pop &&
-        !_family_edge_scratch.empty();
-    const int64_t anonymous_people = std::max<int64_t>(0, source_pop - family_people);
-    return cohort_move_cash(source_funds, source_pop, move_pop, family_plan_valid,
-        moved_claim, family_claim, anonymous_moved, anonymous_people,
-        _saturation_count, mul_div_sat);
-}
-
 bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_cell,
                                                    int32_t dest_signature,
                                                    int64_t requested_pop,
@@ -1766,13 +1677,29 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     _structural_touched_cells.push_back(source_cell);
     _structural_touched_cells.push_back(cmd_cell);
     // Money follows people: family members carry their per-capita claim,
-    // anonymous movers the per-capita anonymous remainder. Resolved through the
-    // shared rule so the portfolio replay and the investment pre-write gate
-    // compute exactly this transfer (economy_family_move_cash.h).
-    bool will_drain = false;
-    const int64_t move_funds = plan_cohort_move_cash(source, cmd_cell, move_pop,
-        preferred_family_handle, preferred_family_strict, &will_drain);
-    (void)will_drain;
+    // anonymous movers the per-capita anonymous remainder.
+    int64_t move_funds = proportional_cash_share(population_store().funds[source],
+        move_pop, source_pop, _saturation_count);
+    if (!family_memberships().empty()) {
+        const int64_t anonymous_moved = plan_family_membership_move(source, cmd_cell,
+            move_pop, preferred_family_handle, preferred_family_strict);
+        if (move_pop < source_pop && !_family_edge_scratch.empty()) {
+            int64_t family_people = 0, family_claim = 0, moved_claim = 0;
+            for (int32_t edge : _family_edge_scratch) {
+                family_people += std::max<int64_t>(0, family_memberships()[edge].people);
+                family_claim += std::max<int64_t>(0, family_memberships()[edge].cash_claim);
+            }
+            for (const FamilyMovePlanRow &row : _family_move_plan)
+                moved_claim = saturating_add(moved_claim, row.claim, _saturation_count);
+            const int64_t source_funds = std::max<int64_t>(0, population_store().funds[source]);
+            const int64_t anonymous = std::max<int64_t>(0, source_pop - family_people);
+            const int64_t anonymous_funds = std::max<int64_t>(0, source_funds - family_claim);
+            const int64_t anonymous_move_funds = proportional_cash_share(anonymous_funds,
+                anonymous_moved, anonymous, _saturation_count);
+            move_funds = std::clamp<int64_t>(saturating_add(moved_claim,
+                anonymous_move_funds, _saturation_count), 0, source_funds);
+        }
+    }
     const int64_t move_income = move_pop == source_pop
                                     ? population_store().epoch_income[source]
                                     : mul_div_sat(population_store().epoch_income[source], move_pop, source_pop,
@@ -2094,11 +2021,6 @@ void NativeEconomyRuntime::retire_person(int32_t person_index) {
     }
     if (_modifier_runtime != nullptr)
         modifier_api::unregister_person_target(*_modifier_runtime, person_handle);
-    // An expedition payload owns the population unit of a travelling notable
-    // person. If some other authority retires that person (family dissolution),
-    // the payload must drop the reference before the slot generation bumps:
-    // a persisted handle that no restore accepts rejects the whole PKEC save.
-    drop_expedition_transit_person(person_handle);
     // Releasing the slot bumps the generation, so the retired handle can never
     // match again. Orphaned need rows are dropped by one compaction pass
     // instead of one full-array erase per retirement.

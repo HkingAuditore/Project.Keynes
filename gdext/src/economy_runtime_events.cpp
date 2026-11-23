@@ -1501,7 +1501,10 @@ void NativeEconomyRuntime::trace_commit_epoch(int64_t population_error,
         _committed_construction_receipts.push_back(std::move(receipt));
     }
     _staging_construction_receipts.clear();
-    while (_committed_construction_receipts.size() > 256U) {
+    // The display batch consumes all of today's receipts, including days
+    // with more entries than the diagnostic history page can return.
+    while (_committed_construction_receipts.size() > 256U &&
+           _committed_construction_receipts.front().settled_day < _current_day.get()) {
         _committed_construction_receipts.pop_front();
     }
     const int64_t leg_count = static_cast<int64_t>(_staging_events.legs.size());

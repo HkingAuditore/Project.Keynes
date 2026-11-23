@@ -70,6 +70,8 @@ static func build_cooperative(context, family_effect_catalog_override: Resource 
 
 static func _build(context, family_effect_catalog_override: Resource,
 		ideology_effect_catalog_override: Resource) -> Resource:
+	if context != null and context.canceled:
+		return null
 	if family_effect_catalog_override == null \
 			and ideology_effect_catalog_override == null:
 		var precompiled := LoadingCatalogCache.effect_catalog()
@@ -92,10 +94,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 	# They append to whatever Economy declares: Economy owns the prefix and
 	# may grow without forcing this lane to guess or reserve a base id.
 	for scalar_metric_key in SCALAR_METRIC_KEYS:
-		if context != null:
-			await context.checkpoint("effect")
-			if context.canceled:
-				return null
+		if context != null and not await context.checkpoint("effect"):
+			return null
 		catalog.metric_keys.append(String(scalar_metric_key))
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
@@ -118,10 +118,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 			or technology_recipe_versions.size() != technology_ids.size():
 		return _reject("effect_catalog_technology_recipe_shape_invalid")
 	for i in range(mini(technology_ids.size(), technology_modifiers.size())):
-		if context != null:
-			await context.checkpoint("effect")
-			if context.canceled:
-				return null
+		if context != null and not await context.checkpoint("effect"):
+			return null
 		if i < technology_flags.size() and (int(technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
 		var modifier_key := String(technology_modifiers[i])
@@ -133,10 +131,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 			int(technology_recipe_versions[i]), String(technology_ids[i]), modifier_key,
 			i, int(technology_catalog.technology_domain_indices[i])))
 	for row in TriggerCatalogScript.breakthrough_effect_rows():
-		if context != null:
-			await context.checkpoint("effect")
-			if context.canceled:
-				return null
+		if context != null and not await context.checkpoint("effect"):
+			return null
 		var program_key := "trigger.country.%s" % String(row.signal_id)
 		if definition_seen.has(program_key):
 			return _reject("effect_catalog_trigger_country_key_duplicate")
@@ -148,10 +144,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 	if not bool(era_reward_ir.get("ok", false)):
 		return _reject("effect_catalog_era_reward_unavailable")
 	for reward_definition in EraRewardCatalogScript.effect_definitions():
-		if context != null:
-			await context.checkpoint("effect")
-			if context.canceled:
-				return null
+		if context != null and not await context.checkpoint("effect"):
+			return null
 		var reward_key := String(reward_definition.key)
 		if definition_seen.has(reward_key):
 			return _reject("effect_catalog_era_reward_key_duplicate")
@@ -175,10 +169,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 			return _reject("effect_catalog_family_effect_unavailable")
 		var family_definitions: Array = family_effect_ir.get("definitions", [])
 		for definition in family_definitions:
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			var family_key := String(definition.key)
 			if definition_seen.has(family_key):
 				return _reject("effect_catalog_family_effect_key_duplicate")
@@ -187,15 +179,15 @@ static func _build(context, family_effect_catalog_override: Resource,
 		family_effect_ir.erase("ok")
 		family_effect_ir.erase("definitions")
 		for extension_key in family_effect_ir:
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			catalog.native_extensions[extension_key] = family_effect_ir[extension_key]
 
 	var economy_catalog: Dictionary = EconomyCatalogScript.compile_native_catalog(
 		family_effect_catalog) if context == null else await EconomyCatalogScript.compile_native_catalog_cooperative(
 		context, family_effect_catalog_override)
+	if context != null and context.canceled:
+		return null
 	# 标签词典（设计文档 §1 / §27）必须建在**理念效果编译之前**：卡面写的
 	# `target_selector_tag` 要在 to_effect_definition() 之后、入表之前解析成
 	# `param[1]` 的 1-based id（L5-14）。空表等于「没有标签」，原生侧据此
@@ -204,8 +196,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 	var tag_ids := {}
 	if bool(economy_catalog.get("ok", false)):
 		var tag_dictionary: Dictionary = TargetTagDictionaryScript.build(economy_catalog)
-		if context != null:
-			await context.checkpoint("target_tags")
+		if context != null and not await context.checkpoint("target_tags"):
+			return null
 		if not bool(tag_dictionary.get("ok", false)):
 			return _reject("effect_catalog_target_tag_dictionary_invalid:%s" % String(
 				tag_dictionary.get("reason", "")))
@@ -215,10 +207,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 		# untyped so callers can build it cheaply, so the conversion happens once
 		# here — the single place that crosses the typed boundary.
 		for tag in tag_dictionary.get("tags", []):
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			tag_list.append(tag)
 		tag_ids = TargetTagDictionaryScript.tag_id_map(tag_list)
 	if bool(economy_catalog.get("ok", false)):
@@ -236,10 +226,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 				var targets: PackedInt32Array = trait_columns.get(
 					"family_trait_modifier_targets", PackedInt32Array())
 				for i in range(keys.size()):
-					if context != null:
-						await context.checkpoint("effect_rows")
-						if context.canceled:
-							return null
+					if context != null and not await context.checkpoint("effect_rows"):
+						return null
 					if String(keys[i]).is_empty() or (i < targets.size() and int(targets[i]) != 0):
 						continue
 					var program_key := "family.modifier.%s" % String(keys[i])
@@ -257,8 +245,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 			return null
 		var rewrite_tags_error := _append_ideology_rewrite_tags(
 			tag_list, tag_ids, rewrite_source)
-		if context != null:
-			await context.checkpoint("ideology_rewrite_tags")
+		if context != null and not await context.checkpoint("ideology_rewrite_tags"):
+			return null
 		if not rewrite_tags_error.is_empty():
 			return _reject(rewrite_tags_error)
 
@@ -271,12 +259,14 @@ static func _build(context, family_effect_catalog_override: Resource,
 	if modifier_catalog_resource != null:
 		modifier_catalog = modifier_catalog_resource.compile_native_catalog() if context == null \
 			else await modifier_catalog_resource.compile_native_catalog_cooperative(context)
+		if context != null and context.canceled:
+			return null
 	if family_effect_catalog != null:
 		var family_domain_validation: Dictionary = \
 			family_effect_catalog.validate_domain_bindings(
 				economy_catalog, modifier_catalog)
-		if context != null:
-			await context.checkpoint("family_domain_validation")
+		if context != null and not await context.checkpoint("family_domain_validation"):
+			return null
 		if not bool(family_domain_validation.get("ok", false)):
 			return _reject("effect_catalog_family_domain_binding_invalid:%s" % String(
 				family_domain_validation.get("reason", "")))
@@ -286,10 +276,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 		var modifier_domains: PackedInt32Array = modifier_catalog.get(
 			"definition_domains", PackedInt32Array())
 		for i in range(modifier_keys.size()):
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			if i >= modifier_domains.size() or int(modifier_domains[i]) not in [2, 3]:
 				continue
 			var person_program := "person.modifier.%s" % String(modifier_keys[i])
@@ -301,10 +289,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 		# executable command row per existing Modifier definition keeps stable
 		# definition keys in the cold catalog and avoids runtime string lookup.
 		for i in range(modifier_keys.size()):
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			if i >= modifier_domains.size():
 				continue
 			var trigger_modifier_key := String(modifier_keys[i])
@@ -318,10 +304,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 			definitions.append(_trigger_modifier_definition(
 				trigger_modifier_key, int(modifier_domains[i])))
 	for economy_row in _trigger_economy_command_rows():
-		if context != null:
-			await context.checkpoint("effect")
-			if context.canceled:
-				return null
+		if context != null and not await context.checkpoint("effect"):
+			return null
 		var economy_program := "trigger.economy.%s" % String(economy_row.command_key)
 		if definition_seen.has(economy_program):
 			continue
@@ -334,13 +318,17 @@ static func _build(context, family_effect_catalog_override: Resource,
 	# compiled by EffectRuntime so domain mutation remains ACK-gated there.
 	var ideology_catalog: Resource = IdeologyCatalogScript.load_default() if context == null \
 		else await context.default_resource(IdeologyCatalogScript.DEFAULT_PATH, IdeologyCatalogScript.load_default)
+	if context != null and context.canceled:
+		return null
 	var ideology_country_catalog: Dictionary = EconomyCatalogScript.compile_native_catalog() if context == null \
 		else await EconomyCatalogScript.compile_native_catalog_cooperative(context)
+	if context != null and context.canceled:
+		return null
 	if ideology_catalog != null and bool(ideology_country_catalog.get("ok", false)):
 		var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(
 			ideology_country_catalog, ideology_country_catalog)
-		if context != null:
-			await context.checkpoint("ideology_columns")
+		if context != null and not await context.checkpoint("ideology_columns"):
+			return null
 		if not bool(ideology_ir.get("ok", false)):
 			return _reject("effect_catalog_ideology_command_unavailable:%s" % String(
 				ideology_ir.get("reason", "")))
@@ -348,10 +336,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 		# A route with no scalar row would compile to an id that is never
 		# published, so enforce the pairing where both tables are available.
 		for route_key in ideology_ir.get("route_keys", PackedStringArray()):
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			var route_metric := "ideology.scalar.route_count.%s" % String(route_key)
 			if not catalog.metric_keys.has(route_metric):
 				return _reject("effect_catalog_ideology_route_scalar_missing:%s"
@@ -365,10 +351,8 @@ static func _build(context, family_effect_catalog_override: Resource,
 		ideology_effects = IdeologyEffectCatalogScript.load_default()
 	if ideology_effects != null:
 		for effect in ideology_effects.effects:
-			if context != null:
-				await context.checkpoint("effect_rows")
-				if context.canceled:
-					return null
+			if context != null and not await context.checkpoint("effect_rows"):
+				return null
 			if effect == null or not effect is IdeologyEffectDefinitionScript:
 				continue
 			# Re-run the card's own rulebook rather than re-deriving it here.

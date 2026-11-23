@@ -5,6 +5,10 @@ extends SceneTree
 const LIMIT := 64 * 1024 * 1024
 const OFFSET := 1469598103934665603
 const PRIME := 1099511628211
+const PKSR_SECTION_MASK_OFFSET := 85
+const PKSR_ECP2_SECTION := 1 << 11
+const PKSR_EFFECT_TRANSPORT_SECTION := 1 << 13
+const EMPTY_EFFECT_TRANSPORT_SIZE := 28
 var _failures := 0
 var _checks := 0
 
@@ -41,7 +45,22 @@ func _run() -> void:
 		_finish()
 		return
 	base.resize(base.size() - 8)
-	base.encode_u32(85, base.decode_u32(85) | 2048)
+	var section_mask := base.decode_u32(PKSR_SECTION_MASK_OFFSET)
+	var effect_transport := PackedByteArray()
+	if (section_mask & PKSR_EFFECT_TRANSPORT_SECTION) != 0:
+		# ETQ1 is the last PKSR section. The idle fixture has no entries in
+		# its four queues, so insert the synthetic ECP2 before this tail.
+		var tail_offset := base.size() - EMPTY_EFFECT_TRANSPORT_SIZE
+		var empty_tail := tail_offset >= 0 and base.decode_u32(tail_offset) == 0x31515445
+		for offset in range(tail_offset + 12, base.size(), 4):
+			empty_tail = empty_tail and base.decode_u32(offset) == 0
+		_expect("idle save has an empty Effect transport tail", empty_tail)
+		if not empty_tail:
+			_finish()
+			return
+		effect_transport = base.slice(tail_offset)
+		base.resize(tail_offset)
+	base.encode_u32(PKSR_SECTION_MASK_OFFSET, section_mask | PKSR_ECP2_SECTION)
 
 	var prefix := PackedByteArray()
 	prefix.resize(24 + 4 + 128)
@@ -73,7 +92,8 @@ func _run() -> void:
 	var full := prefix + zeros + suffix
 	var full_checksum := _hash_parts(prefix, zero_count, suffix)
 	var healthy := _bundle(base, full, full_checksum,
-		_hash_parts(_section_prefix(base, full.size()) + prefix, zero_count, suffix))
+		_hash_parts(_section_prefix(base, full.size()) + prefix, zero_count, suffix),
+		effect_transport)
 	var restored: Dictionary = ext.restore_runtime_bundle(healthy)
 	_expect("complete ECP2 above 64 MiB restores", bool(restored.get("restored", false)))
 	_expect("complete ECP2 needs no recovery", not bool(restored.get("recovered_truncated_ecp2", false)))
@@ -81,7 +101,8 @@ func _run() -> void:
 	var truncated := full.slice(0, LIMIT)
 	var cut_checksum := _hash_parts(prefix, LIMIT - prefix.size(), PackedByteArray())
 	var legacy := _bundle(base, truncated, cut_checksum,
-		_hash_parts(_section_prefix(base, LIMIT) + prefix, LIMIT - prefix.size(), PackedByteArray()))
+		_hash_parts(_section_prefix(base, LIMIT) + prefix, LIMIT - prefix.size(), PackedByteArray()),
+		effect_transport)
 	var rejected: Dictionary = ext.restore_runtime_bundle(legacy)
 	_expect("truncation without complete duplicate is rejected",
 		String(rejected.get("code", "")) == "ecp2_content_hash_mismatch")
@@ -112,12 +133,15 @@ func _section_prefix(base: PackedByteArray, size: int) -> PackedByteArray:
 
 
 func _bundle(base: PackedByteArray, payload: PackedByteArray, checksum: int,
-		body_hash: int) -> PackedByteArray:
-	var trailer := PackedByteArray()
-	trailer.resize(16)
-	trailer.encode_u64(0, checksum)
-	trailer.encode_u64(8, _fnv(trailer.slice(0, 8), body_hash))
-	return _section_prefix(base, payload.size()) + payload + trailer
+		body_hash: int, effect_transport: PackedByteArray) -> PackedByteArray:
+	var section_checksum := PackedByteArray()
+	section_checksum.resize(8)
+	section_checksum.encode_u64(0, checksum)
+	var trailer := section_checksum + effect_transport
+	var bundle_checksum := PackedByteArray()
+	bundle_checksum.resize(8)
+	bundle_checksum.encode_u64(0, _fnv(trailer, body_hash))
+	return _section_prefix(base, payload.size()) + payload + trailer + bundle_checksum
 
 
 func _hash_parts(prefix: PackedByteArray, zeros: int, suffix: PackedByteArray) -> int:

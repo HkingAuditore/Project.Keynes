@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -189,7 +190,8 @@ public:
     // between contributions without cutting a program's own fold in half.
     //
     // Returns true when there is nothing left to do for `day`.
-    bool step_derived_rebuild(int64_t day, std::string &error);
+    bool step_derived_rebuild(int64_t day, std::string &error,
+                              bool finish_in_day = false);
     // Plan §11.5: the identity that says "this save was produced under these execution
     // rules". Computed ON DEMAND from the version vector plus the compile identities, so
     // it always reflects the configuration in force -- a configure-time stamp would depend

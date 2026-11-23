@@ -2,8 +2,6 @@ extends RefCounted
 
 ## Rendering bindings and profile uniforms; state stays owned by ResourceVisualLayer.
 
-const RendererMaterialPublishScript = preload("res://scripts/rendering/renderer_material_publish.gd")
-
 static func _sync_terrain_textures(host) -> void:
 	if host._material == null or host._material_geo == null or host._world == null:
 		return
@@ -92,20 +90,14 @@ static func _bind_terrain_textures(host, target: ShaderMaterial, tiles, tiled: b
 			["visual_layer_size", layout.layer_size], ["visual_logical_resolution", layout.logical_size]]:
 			target.set_shader_parameter(pair[0], Vector2(pair[1]))
 		target.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
-		target.set_shader_parameter("terrain_edge_layers_bound", tiles.edge_distance != null)
-		target.set_shader_parameter("visual_edge_distance_tiles", tiles.edge_distance)
 	else:
 		target.set_shader_parameter("terrain_horizon_tex", host._world.terrain_horizon_tex)
 		target.set_shader_parameter("terrain_normal_tex", host._world.terrain_normal_tex)
 		target.set_shader_parameter("height_tex", host._world.height_tex)
-		target.set_shader_parameter("terrain_edge_distance_tex", host._world.terrain_edge_distance_tex)
-		target.set_shader_parameter("terrain_edge_layers_bound", host._world.terrain_edge_distance_tex != null)
 	var height_bound = tiles.height != null if tiled else host._world.height_tex != null
 	target.set_shader_parameter("has_height_tex", height_bound)
-	# [river-flow-gate 2026-11-19] 与主地形同一个数据判定：关掉流动画不等于没有河。
-	# 这里若继续并进 DCFeatureFlags.water_flowmap_enabled()，移动端资源就不会再避让河道。
-	target.set_shader_parameter("has_flow_tex", RendererMaterialPublishScript.flow_channel_ready(
-		height_bound, host._world.flow_buffer.size(), host._world.hm_size))
+	target.set_shader_parameter("has_flow_tex",
+		DCFeatureFlags.water_flowmap_enabled() and height_bound and not host._world.flow_buffer.is_empty())
 	target.set_shader_parameter("sea_level", host._world.sea_level)
 	target.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else host._world.terrain_horizon_tex != null)
 	target.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else host._world.terrain_normal_tex != null)
@@ -177,3 +169,41 @@ static func _bind_art(host) -> void:
 	host._set_param("art_material_bound", art.material != null)
 	if art.material != null:
 		host._set_param("art_material", art.material)
+
+## The clock can move each frame while the wind, lighting and bound textures stay the same.
+static func sync_frame_bindings(host, time: float, sun: Vector3, state: Dictionary) -> void:
+	var dyn: Texture2D = host._world.dyn_lut_tex if host._world != null else null
+	var eco: Texture2D = host._world.eco_lut_tex if host._world != null else null
+	var enums: Texture2D = host._world.enum_lut_tex if host._world != null else null
+	var resource_shader: Shader = host._material.shader
+	var geology_shader: Shader = host._material_geo.shader
+	var cover: ResourceGroundCover = host._cover
+	var inputs := {"state": state, "sun": sun, "dyn": dyn, "eco": eco, "enum": enums,
+		"resource_shader": resource_shader, "geology_shader": geology_shader}
+	if cover != null:
+		inputs.merge({"cover_shader": cover.material().shader, "memory_only": cover.memory_climate_only,
+			"memory": host._memory_texture, "fog": host._fog})
+	var previous: Dictionary = host._last_frame_bindings
+	var old_inputs: Dictionary = previous.get("inputs", {})
+	if inputs == old_inputs:
+		if cover != null:
+			cover.material().set_shader_parameter("world_time", time)
+		return
+
+	var values := state.duplicate()
+	values.merge({"tod_sun_dir": sun})
+	values.merge({"dyn_lut": dyn, "has_dynamic_lut": dyn != null,
+		"eco_lut": eco, "has_ecology_lut": eco != null, "enum_lut": enums}, true)
+	var old_values: Dictionary = previous.get("values", {})
+	var rebind: bool = old_inputs.get("resource_shader") != resource_shader or old_inputs.get("geology_shader") != geology_shader
+	for name in values:
+		var value: Variant = values[name]
+		if rebind or not old_values.has(name) or old_values[name] != value:
+			host._set_param(name, value)
+	inputs.state = state.duplicate()
+	host._last_frame_bindings = {"inputs": inputs, "values": values}
+	if cover != null:
+		var cover_state := state.duplicate()
+		cover_state.merge({"tod_sun_dir": sun, "fog_enabled": host._fog, "dyn_lut": dyn,
+			"has_dynamic_lut": dyn != null, "enum_lut": enums}, true)
+		cover.set_frame_state(time, cover_state, host._memory_texture)

@@ -1,7 +1,7 @@
+#include "runtime_narrative_context.h"
 // Military bridge (owner: B). Godot <-> pk::MilitaryCore.
 //
-// Authority: Military is a main-thread synchronous runtime (contract §0.1). It
-// reads the COMMITTED day-D view of Country and Economy, mutates ONLY its own
+// Military reads the committed day-D view of Country and Economy and updates its own
 // store, and emits intent rows that are submitted to Country/Economy through
 // their existing command batches with effective day D+1. Receipts come back the
 // next military day. Military never writes another domain's state directly.
@@ -69,6 +69,8 @@
 #include "military_core.h"
 #include "modifier_api.h"
 #include "native_simulation_host.h"
+#include "native_simulation_host_military.h"
+#include "world_ext_internal_military_intents.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -80,12 +82,189 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace pk {
 
+void sample_narrative_military_country(const MilitaryCore &core, NarrativeCountryView &out) {
+    const int32_t slot = core.country_slot_for_handle(out.handle);
+    if (slot < 0) return;
+    out.military_available = true;
+    out.soldiers = core.country_soldiers(slot);
+    const auto &armies = core.armies();
+    for (size_t army = 0; army < armies.active.size(); ++army)
+        if (armies.active[army] && armies.owner_slot[army] == slot)
+            out.soldiers_in_armies += armies.cached_headcount[army];
+    for (const auto &war : core.wars()) {
+        if (war.attacker_handle != out.handle && war.defender_handle != out.handle) continue;
+        out.wars.push_back(war.id);
+        if (!war.active) continue;
+        const int32_t score = war.score_battle_q16 + war.score_annihilation_q16 + war.score_attrition_q16;
+        ++out.war_count;
+        out.war_score = std::min<int64_t>(out.war_score, war.attacker_slot == slot ? score : -score);
+        out.war_losses += war.attacker_losses + war.defender_losses;
+    }
+    out.at_war = out.war_count > 0;
+}
+
+
+
 using namespace godot;
+
+NativeMilitaryRuntime::NativeMilitaryRuntime() : _core(std::make_unique<MilitaryCore>()) {}
+NativeMilitaryRuntime::~NativeMilitaryRuntime() = default;
+
+std::vector<int32_t> NativeMilitaryRuntime::vision_sources(int32_t country_slot) const {
+    std::vector<int32_t> cells;
+    if (country_slot < 0) return cells;
+    const auto &armies = core().armies();
+    for (size_t i = 0; i < armies.active.size(); ++i)
+        if (armies.active[i] && armies.owner_slot[i] == country_slot && armies.cell[i] >= 0)
+            cells.push_back(armies.cell[i]);
+    std::sort(cells.begin(), cells.end());
+    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+    return cells;
+}
+
+std::vector<int32_t> NativeMilitaryRuntime::take_vision_trail(int32_t country_slot) {
+    auto cells = core().exploration_trail(country_slot);
+    if (!cells.empty()) core().clear_exploration_trail(country_slot);
+    return cells;
+}
+
+void NativeMilitaryRuntime::prepare_exploration(int32_t player_slot,
+        const std::vector<uint8_t> &explored, int64_t day, uint64_t revision) {
+    if (player_slot >= 0 && core().has_exploration_work())
+        core().set_exploration_view(player_slot, explored.data(), explored.size(), day, revision);
+}
+
+void NativeMilitaryRuntime::publish(godot::Dictionary report) {
+    auto frame = std::make_shared<Published>();
+    frame->view = std::make_shared<MilitaryCore>(core());
+    frame->archive = encode();
+    frame->state_hash = static_cast<int64_t>(core().state_hash() & 0x7fffffffffffffffll);
+    frame->last_step_day = _military_last_step_day;
+    frame->executor_day = _military_last_background_day;
+    frame->sequence = _military_sequence;
+    frame->pending_intents = static_cast<int64_t>(_military_pending_intents.size());
+    frame->revision = _military_render_revision;
+    frame->event_cursor = event_cursor;
+    frame->event_tick = event_tick;
+    frame->events_forwarded = events_forwarded;
+    if (_economy_runtime != nullptr) {
+        frame->lane_supported = true;
+        frame->lane_pay_supported = economy_api::military_army_lane_pay_supported(*_economy_runtime);
+        const auto &armies = core().armies();
+        frame->lane_population.assign(armies.active.size(), -1);
+        frame->lane_funds.assign(armies.active.size(), -1);
+        for (size_t index = 0; index < armies.active.size(); ++index) {
+            if (!armies.active[index]) continue;
+            const auto handle = core().army_handle(static_cast<int32_t>(index));
+            frame->lane_population[index] = economy_api::military_army_population(*_economy_runtime, handle);
+            frame->lane_funds[index] = economy_api::military_army_funds(*_economy_runtime, handle);
+        }
+    }
+    frame->result = std::move(report);
+    std::atomic_store_explicit(&_published, std::shared_ptr<const Published>(std::move(frame)),
+        std::memory_order_release);
+}
+
+std::shared_ptr<const NativeMilitaryRuntime::Published> NativeMilitaryRuntime::read() const {
+    return std::atomic_load_explicit(&_published, std::memory_order_acquire);
+}
+
+bool NativeMilitaryRuntime::forward_events(int64_t day, DCWorldExt *legacy) {
+    for (;;) {
+        const auto events = core().events_after(static_cast<uint64_t>(event_cursor), 256u);
+        if (events.empty()) return true;
+        for (size_t begin = 0; begin < events.size(); begin += RUNTIME_EVENTS_MAX_BATCH_RECORDS) {
+            const size_t end = std::min(events.size(), begin + RUNTIME_EVENTS_MAX_BATCH_RECORDS);
+            std::vector<RuntimeEventsRecord> records;
+            records.reserve(end - begin);
+            for (size_t i = begin; i < end; ++i) {
+                const auto &event = events[i];
+                auto &record = records.emplace_back();
+                if (!legacy) record.event_id = _runtime_host->allocate_events_ingress_key();
+                record.tick = event.day;
+                record.type = std::clamp<int32_t>(event.type, 40, 47);
+                record.source = 5;
+                record.entity_id = static_cast<int32_t>(event.i0);
+                record.entity_handle = event.i0;
+                record.cell_idx = event.cell;
+                record.payload_schema = event.payload_schema;
+                record.value_i64 = event.value;
+                record.payload_i0 = static_cast<int32_t>(event.i0);
+                record.payload_i1 = static_cast<int32_t>(event.i1);
+                record.payload_i2 = static_cast<int32_t>(event.i2);
+                record.payload_i3 = static_cast<int32_t>(event.i3);
+            }
+            if (legacy) {
+                if (!legacy->publish_legacy_military_events(records)) return false;
+            } else {
+                std::string error;
+                if (!_runtime_host->enqueue_legacy_event_batch(
+                        records, day + 1, _runtime_host->report().generation + 1, error))
+                    return false;
+            }
+            events_forwarded += static_cast<int64_t>(records.size());
+            event_cursor = static_cast<int64_t>(events[end - 1].id);
+            event_tick = events[end - 1].day;
+        }
+    }
+}
+
+const char *NativeMilitaryRuntime::prepare_day(const RuntimeEnvironmentSnapshot &environment) {
+    // Military terrain changes at the seasonal refresh boundary. Daily weather
+    // also changes cover, but those changes never refreshed military costs.
+    if (!environment.climate_season_refresh_ran) return nullptr;
+    const auto &current = core().terrain();
+    const size_t count = static_cast<size_t>(current.cell_count);
+    const auto &landform = environment.military_base_landform.empty() ? current.landform : environment.military_base_landform;
+    const auto &tiers = environment.military_settlement_tier.empty() ? current.settlement_tier : environment.military_settlement_tier;
+    if (environment.cover.size() != count || environment.vegetation.size() != count ||
+        environment.is_water.size() != count || landform.size() != count || tiers.size() != count)
+        return "military_season_terrain_shape_invalid";
+    if (current.cover == environment.cover && current.vegetation == environment.vegetation &&
+        current.landform == landform && current.settlement_tier == tiers &&
+        current.is_water == environment.is_water) return nullptr;
+    auto terrain = current;
+    terrain.cover = environment.cover;
+    terrain.vegetation = environment.vegetation;
+    terrain.landform = landform;
+    terrain.settlement_tier = tiers;
+    terrain.is_water = environment.is_water;
+    std::string error;
+    return core().set_terrain(std::move(terrain), error) ? nullptr : "military_season_terrain_invalid";
+}
+
+std::vector<uint8_t> NativeMilitaryRuntime::capture_terrain() const {
+    const auto &terrain = core().terrain();
+    std::vector<uint8_t> bytes;
+    bytes.reserve(static_cast<size_t>(terrain.cell_count) * 5);
+    for (const auto *lane : {&terrain.landform, &terrain.vegetation, &terrain.cover,
+                            &terrain.is_water, &terrain.settlement_tier})
+        bytes.insert(bytes.end(), lane->begin(), lane->end());
+    return bytes;
+}
+
+bool NativeMilitaryRuntime::restore_terrain(const std::vector<uint8_t> &bytes, std::string &error) {
+    const size_t cells = static_cast<size_t>(core().terrain().cell_count);
+    if (bytes.size() != cells * 5) {
+        error = "military_terrain_checkpoint_size_invalid";
+        return false;
+    }
+    auto terrain = core().terrain();
+    auto next = bytes.begin();
+    for (auto *lane : {&terrain.landform, &terrain.vegetation, &terrain.cover,
+                      &terrain.is_water, &terrain.settlement_tier}) {
+        lane->assign(next, next + cells);
+        next += cells;
+    }
+    return core().set_terrain(std::move(terrain), error);
+}
+
 
 namespace {
 
@@ -215,19 +394,7 @@ std::vector<uint8_t> dict_u8_array(const Dictionary &d, const char *key) {
     return out;
 }
 
-Dictionary military_fail(const char *reason) {
-    Dictionary out;
-    out["ok"] = false;
-    out["reason"] = String(reason);
-    return out;
-}
-
 Dictionary military_unavailable() { return military_fail("military_unavailable"); }
-
-MilitaryCore *core_from(void *opaque) { return static_cast<MilitaryCore *>(opaque); }
-const MilitaryCore *core_from(const void *opaque) {
-    return static_cast<const MilitaryCore *>(opaque);
-}
 
 // --------------------------------------------------------------- op table
 
@@ -595,12 +762,10 @@ bool parse_catalog(const Dictionary &catalog, MilitaryCatalog &out, std::string 
     out.economy_good_count = std::max(0, dict_i32(catalog, "economy_good_count", 0));
     out.ration_need_per_head_q16 = std::max<int32_t>(
         1, q16_from_float(dict_f64(catalog, "ration_need_per_head", 1.0)));
-    // Water-crossing gates (contract-2 §2.2): resolved by MilitaryCatalogCompiler
-    // from the four navigation technologies. -1 means the catalog has no such bit.
-    out.water_lake_bit = dict_i32(catalog, "water_lake_bit", -1);
-    out.water_shallow_bit = dict_i32(catalog, "water_shallow_bit", -1);
-    out.water_far_bit = dict_i32(catalog, "water_far_bit", -1);
-    out.water_deep_bit = dict_i32(catalog, "water_deep_bit", -1);
+    // Naval transport gates (contract-2 §2.2): resolved by MilitaryCatalogCompiler
+    // from the two transport technologies. -1 means the catalog has no such bit.
+    out.coastal_transport_bit = dict_i32(catalog, "coastal_transport_bit", -1);
+    out.ocean_transport_bit = dict_i32(catalog, "ocean_transport_bit", -1);
     return true;
 }
 
@@ -618,6 +783,7 @@ bool parse_military_command(const Dictionary &row, MilitaryCommand &command,
         return false;
     }
     command.op = op;
+    command.effective_day = dict_i64(row, "effective_day", 0);
     command.country = static_cast<uint64_t>(dict_i64(row, "country", 0));
     command.army = static_cast<uint64_t>(dict_i64(row, "army", 0));
     command.other = static_cast<uint64_t>(dict_i64(row, "other", 0));
@@ -668,165 +834,14 @@ bool parse_military_command(const Dictionary &row, MilitaryCommand &command,
 
 // --------------------------------------------------------------- digest
 
-// Military statistics the core consumes (MilitaryStatId order, q16). The
-// bridge reads real Modifier values when a Modifier runtime is attached and
-// falls back to the design defaults otherwise, so a world without military
-// content still simulates.
-const char *const kMilitaryStatKeys[MSTAT_COUNT] = {
-    "country.military.attack_factor",
-    "country.military.defense_factor",
-    "country.military.speed_factor",
-    "country.military.logistics_move_factor",
-    "country.military.supply_transport_factor",
-    "country.military.supply_consumption_factor",
-    "country.military.barracks_capacity_factor",
-    "country.military.levy_rate",
-    "country.military.wage_factor",
-    "country.military.training_time_factor",
-    "country.military.desertion_factor",
-    "country.military.casualty_factor",
-    "country.military.attrition_factor",
-    "country.military.organization_recovery_factor",
-    "country.military.morale_add",
-    "country.military.fortification_factor",
-    "country.military.frontage_factor",
-    "country.military.militia_factor",
-    "country.military.occupation_tax_efficiency",
-    "country.military.naval_transport_factor",
-    "country.military.vision_add",
-    // Keys must match ModifierCatalog.TECHNOLOGY_STATS (modifier_catalog.gd).
-    "country.military.convoy_escort_factor",
-    "country.military.rule.mutual_support",
-    "country.military.rule.last_stand",
-    "country.military.rule.blitz",
-    "country.military.rule.hold_the_line",
-    "country.military.rule.encirclement",
-    "country.military.rule.home_ground",
-};
-
-// Design §13 / §12.1 defaults in q16 for the stats whose base is not 1.0.
-int32_t military_stat_default_q16(int32_t stat) {
-    switch (stat) {
-    case MSTAT_LEVY_RATE: return (MILITARY_Q * 3) / 100;  // 3% of cell population
-    case MSTAT_WAGE: return (MILITARY_Q * 13) / 10;       // 1.3
-    case MSTAT_OCCUPATION_TAX: return MILITARY_Q / 2;      // 0.5
-    case MSTAT_MORALE_ADD:
-    case MSTAT_VISION_ADD:
-    case MSTAT_RULE_MUTUAL_SUPPORT:
-    case MSTAT_RULE_LAST_STAND:
-    case MSTAT_RULE_BLITZ:
-    case MSTAT_RULE_HOLD_THE_LINE:
-    case MSTAT_RULE_ENCIRCLEMENT:
-    case MSTAT_RULE_HOME_GROUND: return 0;
-    default: return MILITARY_Q;
-    }
-}
-
 } // namespace
 
 // ===========================================================================
 // lifecycle
 // ===========================================================================
 
-Dictionary DCWorldExt::configure_military(const Dictionary &catalog, int64_t seed) {
-    MilitaryCatalog parsed;
-    std::string error;
-    if (!parse_catalog(catalog, parsed, error)) {
-        Dictionary out;
-        out["ok"] = false;
-        out["reason"] = String(error.c_str());
-        return out;
-    }
-    if (_military_runtime == nullptr) _military_runtime = new MilitaryCore();
-    MilitaryCore *core = core_from(_military_runtime);
-    // A catalog reconfiguration must not lose the map: configure() resets the
-    // state but keeps the previous terrain, so the same input is reinstalled.
-    const MilitaryTerrainInput keep = core->terrain();
-    if (!core->configure(std::move(parsed), static_cast<uint64_t>(seed), error)) {
-        Dictionary out;
-        out["ok"] = false;
-        out["reason"] = String(error.c_str());
-        return out;
-    }
-    // Dense technology id per unlock bit, captured once so the daily digest only
-    // needs one has_technology() probe per referenced technology.
-    _military_unlock_tech_ids = dict_i32_array(catalog, "unlock_tech_ids");
-    if (keep.cell_count > 0) {
-        std::string terrain_error;
-        core->set_terrain(keep, terrain_error);
-    }
-    _military_last_step_day = -1;
-    _military_sequence = 0;
-    _military_pending_intents.clear();
-    _military_forced_run_day = -1;
-    _military_economy_event_cursor = -1;
-    _military_economy_seen_day = -1;
-    _military_render_selected_army = 0;
-    if (_military_receipts) _military_receipts->after_request_id = 0;
-    // Open a slot for every active country now, so commands submitted before
-    // the first stepped military day resolve their issuing country.
-    const int32_t countries_opened = ensure_military_country_slots();
-    ++_military_render_revision;
-    const MilitaryCatalog &configured = core->catalog();
-    Dictionary out;
-    out["ok"] = true;
-    out["reason"] = String();
-    out["countries_opened"] = static_cast<int64_t>(countries_opened);
-    out["catalog_hash"] = static_cast<int64_t>(configured.hash);
-    out["unit_count"] = static_cast<int64_t>(configured.units.size());
-    out["category_count"] = static_cast<int64_t>(configured.categories.size());
-    out["state_building_count"] = static_cast<int64_t>(configured.state_buildings.size());
-    out["unlock_count"] = static_cast<int64_t>(configured.unlock_count);
-    out["militia_unit"] = static_cast<int64_t>(configured.militia_unit);
-    out["seed"] = seed;
-    return out;
-}
-
-Dictionary DCWorldExt::set_military_terrain(const Dictionary &terrain) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    MilitaryTerrainInput input;
-    input.cell_count = dict_i32(terrain, "cell_count", -1);
-    input.width = dict_i32(terrain, "width", 0);
-    input.height = dict_i32(terrain, "height", 0);
-    input.neighbors = dict_i32_array(terrain, "neighbors");
-    input.landform = dict_u8_array(terrain, "landform");
-    input.vegetation = dict_u8_array(terrain, "vegetation");
-    input.cover = dict_u8_array(terrain, "cover");
-    input.is_water = dict_u8_array(terrain, "is_water");
-    input.has_river = dict_u8_array(terrain, "has_river");
-    input.settlement_tier = dict_u8_array(terrain, "settlement_tier");
-    std::string error;
-    if (!core_from(_military_runtime)->set_terrain(std::move(input), error)) {
-        Dictionary out;
-        out["ok"] = false;
-        out["reason"] = String(error.c_str());
-        return out;
-    }
-    // Size the reusable digest lanes once per terrain, so the daily capture only
-    // fills them and never allocates.
-    const int32_t cells = std::max(0, core_from(_military_runtime)->terrain().cell_count);
-    MilitaryDigestScratch &scratch = _military_digest_scratch;
-    scratch.cell_population.assign(static_cast<size_t>(cells), 0);
-    scratch.cell_unemployed.assign(static_cast<size_t>(cells), 0);
-    scratch.cell_soldiers.assign(static_cast<size_t>(cells), 0);
-    scratch.cell_has_merchant.assign(static_cast<size_t>(cells), 0);
-    scratch.country_cash.clear();
-    scratch.country_annual_revenue.clear();
-    scratch.country_unlock_bits.clear();
-    scratch.country_stat_q16.clear();
-    ++_military_render_revision;
-    Dictionary out;
-    out["ok"] = true;
-    out["reason"] = String();
-    out["cell_count"] = static_cast<int64_t>(cells);
-    out["width"] = static_cast<int64_t>(core_from(_military_runtime)->terrain().width);
-    out["height"] = static_cast<int64_t>(core_from(_military_runtime)->terrain().height);
-    return out;
-}
-
-bool DCWorldExt::military_should_run(int64_t day) const {
-    if (_military_runtime == nullptr) return false;
-    const MilitaryCore *core = core_from(_military_runtime);
+bool NativeMilitaryRuntime::should_run(int64_t day) const {
+    const auto *core = &this->core();
     if (!core->configured()) return false;
     // One step per day and never backwards: re-running a day would submit its
     // D+1 intents twice.
@@ -844,576 +859,170 @@ bool DCWorldExt::military_should_run(int64_t day) const {
     return core->should_run(day);
 }
 
-int32_t DCWorldExt::ensure_military_country_slots() {
-    if (_military_runtime == nullptr || _country_runtime == nullptr) return 0;
-    NativeCountryRuntime *country = static_cast<NativeCountryRuntime *>(_country_runtime);
+int32_t NativeMilitaryRuntime::ensure_military_country_slots() {
+    if (country_state == nullptr && _country_runtime == nullptr) return 0;
     CountryEconomySnapshot snapshot;
-    if (!country_api::copy_economy_snapshot(*country, snapshot)) return 0;
-    MilitaryCore *core = core_from(_military_runtime);
+    if (country_state == nullptr && !country_api::copy_economy_snapshot(*_country_runtime, snapshot)) return 0;
     int32_t active = 0;
-    for (size_t slot = 0; slot < snapshot.country_handles.size(); ++slot) {
-        const uint64_t handle = snapshot.country_handles[slot];
+    const size_t size = country_state ? country_state->country_active.size()
+        : snapshot.country_handles.size();
+    for (size_t slot = 0; slot < size; ++slot) {
+        const uint64_t handle = country_state ?
+            (country_state->country_active[slot] != 0 ?
+                (uint64_t(country_state->country_generation[slot]) << 32) | slot : 0)
+            : snapshot.country_handles[slot];
         if (handle == 0) continue;
-        core->ensure_country_slot(handle);
+        core().ensure_country_slot(handle);
         ++active;
     }
     return active;
 }
 
-// ===========================================================================
-// digest capture (day D committed Country + Economy)
-// ===========================================================================
+Dictionary DCWorldExt::configure_military(const Dictionary &catalog, int64_t seed) {
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
+    MilitaryCatalog parsed;
+    std::string error;
+    if (!parse_catalog(catalog, parsed, error)) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    if (!_military) _military = std::make_shared<NativeMilitaryRuntime>();
+    bind_military_dependencies();
+    MilitaryCore *core = &_military->core();
+    // A catalog reconfiguration must not lose the map: configure() resets the
+    // state but keeps the previous terrain, so the same input is reinstalled.
+    const MilitaryTerrainInput keep = core->terrain();
+    if (!core->configure(std::move(parsed), static_cast<uint64_t>(seed), error)) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    // Dense technology id per unlock bit, captured once so the daily digest only
+    // needs one has_technology() probe per referenced technology.
+    _military->_military_unlock_tech_ids = dict_i32_array(catalog, "unlock_tech_ids");
+    if (keep.cell_count > 0) {
+        std::string terrain_error;
+        core->set_terrain(keep, terrain_error);
+    }
+    _military->_military_last_step_day = -1;
+    _military->_military_last_background_day = -1;
+    _military->_military_sequence = 0;
+    _military->_military_pending_intents.clear();
+    _military->_military_forced_run_day = -1;
+    _military->_military_economy_event_cursor = -1;
+    _military->_military_economy_seen_day = -1;
+    _military_render_selected_army = 0;
+    if (_military->_military_receipts) _military->_military_receipts->after_request_id = 0;
+    // Open a slot for every active country now, so commands submitted before
+    // the first stepped military day resolve their issuing country.
+    const int32_t countries_opened = _military->ensure_military_country_slots();
+    ++_military->_military_render_revision;
+    const MilitaryCatalog &configured = core->catalog();
+    Dictionary out;
+    out["ok"] = true;
+    out["reason"] = String();
+    out["countries_opened"] = static_cast<int64_t>(countries_opened);
+    out["catalog_hash"] = static_cast<int64_t>(configured.hash);
+    out["unit_count"] = static_cast<int64_t>(configured.units.size());
+    out["category_count"] = static_cast<int64_t>(configured.categories.size());
+    out["state_building_count"] = static_cast<int64_t>(configured.state_buildings.size());
+    out["unlock_count"] = static_cast<int64_t>(configured.unlock_count);
+    out["militia_unit"] = static_cast<int64_t>(configured.militia_unit);
+    out["seed"] = seed;
+    return out;
+}
 
-void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
-                                         MilitaryDigestScratch &scratch,
-                                         const MilitaryCatalog &catalog,
-                                         bool *economy_ready) {
-    if (economy_ready != nullptr) *economy_ready = false;
-    const int32_t cells = std::max(0, core_from(_military_runtime)->terrain().cell_count);
-    digest.day = -1;
-    // The digest object is reused across days, so the state building lanes must
-    // be reset up front: an economy read that fails below must not leave
-    // yesterday's rows in place, because the core would rebuild its cache from
-    // stale ledger data instead of keeping what the save restored.
-    digest.state_lanes_present = false;
-    digest.state_lane_rows = 0;
-    // ---- Country: one pinned committed projection ----
-    int32_t country_count = 0;
-    std::vector<int64_t> cash(std::max<size_t>(scratch.country_cash.size(), 1), 0);
-    std::vector<int32_t> owner;
-    std::vector<uint64_t> handles;
-    if (_country_runtime != nullptr) {
-        NativeCountryRuntime *country = static_cast<NativeCountryRuntime *>(_country_runtime);
-        CountryEconomySnapshot snapshot;
-        if (country_api::copy_economy_snapshot(*country, snapshot)) {
-            country_count = snapshot.country_count;
-            owner = std::move(snapshot.cell_country_slot);
-            handles = std::move(snapshot.country_handles);
-            cash.assign(static_cast<size_t>(country_count), 0);
-            for (int32_t slot = 0; slot < country_count; ++slot)
-                cash[static_cast<size_t>(slot)] = country_api::cash_for_slot(*country, slot);
-        }
+Dictionary DCWorldExt::set_military_terrain(const Dictionary &terrain) {
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
+    if (!_military) return military_unavailable();
+    MilitaryTerrainInput input;
+    input.cell_count = dict_i32(terrain, "cell_count", -1);
+    input.width = dict_i32(terrain, "width", 0);
+    input.height = dict_i32(terrain, "height", 0);
+    input.neighbors = dict_i32_array(terrain, "neighbors");
+    input.landform = dict_u8_array(terrain, "landform");
+    input.vegetation = dict_u8_array(terrain, "vegetation");
+    input.cover = dict_u8_array(terrain, "cover");
+    input.is_water = dict_u8_array(terrain, "is_water");
+    input.has_river = dict_u8_array(terrain, "has_river");
+    input.settlement_tier = dict_u8_array(terrain, "settlement_tier");
+    std::string error;
+    if (!_military->core().set_terrain(std::move(input), error)) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
     }
-    if (owner.size() < static_cast<size_t>(cells)) owner.resize(static_cast<size_t>(cells), -1);
-    if (owner.size() > static_cast<size_t>(cells)) owner.resize(static_cast<size_t>(cells));
-    // Military stores policy rows by slot, and a slot only exists once the core
-    // has seen the handle. Open one per active country here, in slot order, so
-    // `submit()` (which rejects unknown countries) and the policy queries below
-    // agree with the digest rows. Idempotent: existing slots keep their state.
-    MilitaryCore *core = core_from(_military_runtime);
-    for (int32_t slot = 0; slot < country_count; ++slot) {
-        const uint64_t handle = static_cast<size_t>(slot) < handles.size()
-            ? handles[static_cast<size_t>(slot)] : 0;
-        if (handle == 0) continue;
-        core->ensure_country_slot(handle);
-    }
-    digest.cell_owner_slot = std::move(owner);
-    digest.country_capacity = country_count;
-    digest.country_handle = std::move(handles);
-    digest.country_cash = std::move(cash);
-    digest.country_era.assign(static_cast<size_t>(country_count), 0);
-    digest.country_annual_revenue.assign(static_cast<size_t>(country_count), 0);
-    digest.country_capital_cell.assign(static_cast<size_t>(country_count), -1);
-    digest.country_soldier_living_cost.assign(static_cast<size_t>(country_count), 0);
-    // ---- Economy: dense per-cell lanes + sparse military-supply markets ----
+    // Size the reusable digest lanes once per terrain, so the daily capture only
+    // fills them and never allocates.
+    const int32_t cells = std::max(0, _military->core().terrain().cell_count);
+    auto &scratch = _military->_military_digest_scratch;
     scratch.cell_population.assign(static_cast<size_t>(cells), 0);
     scratch.cell_unemployed.assign(static_cast<size_t>(cells), 0);
     scratch.cell_soldiers.assign(static_cast<size_t>(cells), 0);
     scratch.cell_has_merchant.assign(static_cast<size_t>(cells), 0);
-    scratch.market_cell.clear();
-    scratch.market_good.clear();
-    scratch.market_sellable.clear();
-    scratch.market_price.clear();
-    if (_economy_runtime != nullptr) {
-        NativeEconomyRuntime *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
-        if (economy_ready != nullptr)
-            *economy_ready = economy_api::military_command_window_open(*economy);
-        EconomyMilitaryCellView view;
-        economy_api::military_read_cell_view(*economy, view, catalog.economy_good_count);
-        const size_t n = std::min(view.population.size(), static_cast<size_t>(cells));
-        for (size_t cell = 0; cell < n; ++cell) {
-            scratch.cell_population[cell] = view.population[cell];
-            scratch.cell_unemployed[cell] = view.unemployed[cell];
-            scratch.cell_soldiers[cell] = view.soldiers[cell];
-            scratch.cell_has_merchant[cell] = view.has_merchant[cell];
-        }
-        // Supply goods plus every repair material; a good shared by several
-        // classes or recipes is captured once.
-        std::vector<int32_t> goods;
-        for (int32_t cls = 0; cls < MILITARY_SUPPLY_CLASSES; ++cls) {
-            for (const int32_t good : catalog.supply_goods[static_cast<size_t>(cls)]) {
-                if (good < 0) continue;
-                if (std::find(goods.begin(), goods.end(), good) == goods.end())
-                    goods.push_back(good);
-            }
-        }
-        // ---- physical maintenance materials (design D3 / R1) ----------------
-        // Repair materials are ordinary goods that belong to NO supply class, so
-        // a digest built only from `supply_goods` never quotes them and the
-        // maintenance buy pass can never see a market row for them. The palette is
-        // small (the 17 buildings and 24 units share ~20 distinct goods), so this
-        // roughly doubles the quoted set rather than exploding it.
-        for (const MilitaryUnitType &unit : catalog.units) {
-            for (const MilitaryRepairMaterial &mat : unit.repair_materials) {
-                if (mat.good < 0) continue;
-                if (std::find(goods.begin(), goods.end(), mat.good) == goods.end())
-                    goods.push_back(mat.good);
-            }
-        }
-        for (const MilitaryStateBuilding &building : catalog.state_buildings) {
-            for (const MilitaryRepairMaterial &mat : building.repair_materials) {
-                if (mat.good < 0) continue;
-                if (std::find(goods.begin(), goods.end(), mat.good) == goods.end())
-                    goods.push_back(mat.good);
-            }
-        }
-        std::sort(goods.begin(), goods.end());
-        for (const int32_t good : goods) {
-            std::vector<int32_t> market_cells;
-            std::vector<int64_t> sellable;
-            std::vector<int64_t> price;
-            economy_api::military_read_market(*economy, good, market_cells, sellable, price);
-            for (size_t i = 0; i < market_cells.size(); ++i) {
-                scratch.market_cell.push_back(market_cells[i]);
-                scratch.market_good.push_back(good);
-                scratch.market_sellable.push_back(sellable[i]);
-                scratch.market_price.push_back(price[i]);
-            }
-        }
-        for (int32_t slot = 0; slot < country_count; ++slot)
-            digest.country_soldier_living_cost[static_cast<size_t>(slot)] =
-                economy_api::military_soldier_living_cost(*economy, slot);
-        // The economy's kind-3 building groups are the ledger of record for
-        // every state lot; the core rebuilds its cache from these rows and never
-        // counts anything itself (requirement 6.1-6.3). A non-authoritative
-        // read leaves `state_lanes_present` false, which tells the core to keep
-        // the cache it has instead of zeroing it.
-        std::vector<int32_t> state_cells;
-        std::vector<int32_t> state_types;
-        std::vector<int32_t> state_roles;
-        std::vector<int64_t> state_units;
-        if (economy_api::military_read_state_buildings(*economy, state_cells, state_types,
-                                                   state_roles, state_units)) {
-            scratch.state_cell.swap(state_cells);
-            scratch.state_type_id.swap(state_types);
-            scratch.state_state_role.swap(state_roles);
-            scratch.state_units.swap(state_units);
-            digest.state_lanes_present = true;
-            digest.state_lane_rows = static_cast<int32_t>(scratch.state_cell.size());
-        }
-    }
-    digest.cell_population = scratch.cell_population;
-    digest.cell_unemployed = scratch.cell_unemployed;
-    digest.cell_soldiers = scratch.cell_soldiers;
-    digest.cell_has_merchant = scratch.cell_has_merchant;
-    digest.market_cell = scratch.market_cell;
-    digest.market_good = scratch.market_good;
-    digest.market_sellable = scratch.market_sellable;
-    digest.market_price = scratch.market_price;
-    // Copied (not moved) because the scratch is reused next day; the copy only
-    // costs the sparse state rows, which are a few hundred at most.
-    digest.state_cell = scratch.state_cell;
-    digest.state_type_id = scratch.state_type_id;
-    digest.state_state_role = scratch.state_state_role;
-    digest.state_units = scratch.state_units;
-    // ---- Technology unlock bits: one row per country, bit = unlock_bit ----
-    // `_military_unlock_tech_ids` records the dense technology id each bit
-    // stands for at configure time, so a country's row is one
-    // has_technology() probe per referenced technology.
-    const int32_t unlock_bits = static_cast<int32_t>(_military_unlock_tech_ids.size());
-    digest.unlock_words = (unlock_bits + 63) / 64;
-    digest.country_unlock_bits.assign(
-        static_cast<size_t>(country_count) * static_cast<size_t>(digest.unlock_words), 0);
-    if (_country_runtime != nullptr && unlock_bits > 0) {
-        NativeCountryRuntime *country = static_cast<NativeCountryRuntime *>(_country_runtime);
-        for (int32_t slot = 0; slot < country_count; ++slot) {
-            uint64_t *row = digest.country_unlock_bits.data() +
-                static_cast<size_t>(slot) * static_cast<size_t>(digest.unlock_words);
-            for (int32_t bit = 0; bit < unlock_bits; ++bit) {
-                const int32_t tech = _military_unlock_tech_ids[static_cast<size_t>(bit)];
-                if (tech < 0 || !country_api::has_technology(*country, slot, tech)) continue;
-                row[bit >> 6] |= (uint64_t{1} << static_cast<uint32_t>(bit & 63));
-            }
-        }
-    }
-    // ---- Military Modifier stats (q16, design defaults when absent) ----
-    digest.stat_count = MSTAT_COUNT;
-    digest.country_stat_q16.assign(
-        static_cast<size_t>(country_count) * static_cast<size_t>(MSTAT_COUNT), 0);
-    for (int32_t slot = 0; slot < country_count; ++slot) {
-        const uint64_t handle = slot < static_cast<int32_t>(digest.country_handle.size())
-            ? digest.country_handle[static_cast<size_t>(slot)] : 0;
-        for (int32_t stat = 0; stat < MSTAT_COUNT; ++stat) {
-            int32_t value = military_stat_default_q16(stat);
-            if (_modifier_runtime != nullptr && handle != 0) {
-                const double base = static_cast<double>(value) / static_cast<double>(MILITARY_Q);
-                const double effective = modifier_api::effective_value(
-                    *static_cast<ModifierRuntime *>(_modifier_runtime), ModifierApi::COUNTRY,
-                                      kMilitaryStatKeys[static_cast<size_t>(stat)],
-                                      handle, 0, base);
-                if (std::isfinite(effective))
-                    value = q16_from_float(effective);
-            }
-            digest.country_stat_q16[static_cast<size_t>(slot) *
-                static_cast<size_t>(MSTAT_COUNT) + static_cast<size_t>(stat)] = value;
-        }
-    }
-}
-
-// ===========================================================================
-// intent submission (military D -> Country/Economy D+1 commands)
-// ===========================================================================
-
-namespace {
-
-// Country opcodes the military bridge is allowed to submit. 23/24/27 are the
-// treaty opcodes the Country owner adds; 22/25/26 stay reserved for Country.
-constexpr int32_t MCOUNTRY_TRANSFER_TERRITORY = 3;
-constexpr int32_t MCOUNTRY_CONSUME_TREASURY_GOODS = 21;
-constexpr int32_t MCOUNTRY_TRANSFER_CASH = 23;
-constexpr int32_t MCOUNTRY_TRANSFER_GOODS = 24;
-constexpr int32_t MCOUNTRY_ANNEX = 27;
-
-// Economy opcodes from the public contract.
-constexpr int32_t MECONOMY_TRANSFER_TO_COHORT = EconomyApi::COMMAND_TRANSFER_TO_COHORT;
-constexpr int32_t MECONOMY_REMOVE_STOCK = EconomyApi::COMMAND_REMOVE_STOCK;
-constexpr int32_t MECONOMY_ADD_POPULATION = EconomyApi::COMMAND_ADD_POPULATION;
-constexpr int32_t MECONOMY_CHANGE_SIGNATURE = EconomyApi::COMMAND_CHANGE_SIGNATURE;
-constexpr int32_t MECONOMY_CONVERT_COHORT = EconomyApi::COMMAND_MILITARY_CONVERT_COHORT;   // B: (cell, src sig, dst sig, heads)
-constexpr int32_t MECONOMY_MARKET_GOOD_TO_COUNTRY = EconomyApi::COMMAND_MARKET_GOOD_TO_COUNTRY;
-// Army personnel lane (army-personnel contract §1.2). Same POD lane as 24:
-// payload0 = heads, payload1 = destination lane for MERGE_LANES, target_cohort
-// = army handle, target_cell = the cell, target_country = soldier signature.
-constexpr int32_t MECONOMY_ARMY_EMBARK = EconomyApi::COMMAND_ARMY_EMBARK;
-constexpr int32_t MECONOMY_ARMY_DISEMBARK = EconomyApi::COMMAND_ARMY_DISEMBARK;
-constexpr int32_t MECONOMY_ARMY_MERGE_LANES = EconomyApi::COMMAND_ARMY_MERGE_LANES;
-// Split / partial transfer (army-personnel contract-2 §1.1). Lane -> lane like
-// 32, so no cohort is named and no structural command is needed: payload0 =
-// heads actually moved, payload1 = destination army handle, target_cohort =
-// source army handle. payload0 <= 0 means "the whole lane" on the Economy side;
-// Military emits 32 for that case instead (contract §1.2).
-constexpr int32_t MECONOMY_ARMY_SPLIT_LANES = EconomyApi::COMMAND_ARMY_SPLIT_LANES;
-// Army pay (army-pay contract §3, Economy opcode 34): payload0 = MONEY_SCALE
-// amount, payload1 = country handle, target_cohort = army handle. Treasury cash
-// only — no cohort and no structural command — so it rides the same POD lane as
-// 24/30-33 and is deduplicated by `sequence` there.
-constexpr int32_t MECONOMY_ARMY_LANE_PAY = EconomyApi::COMMAND_ARMY_LANE_PAY;
-
-bool is_army_lane_opcode(int32_t opcode) {
-    return opcode == MECONOMY_ARMY_EMBARK || opcode == MECONOMY_ARMY_DISEMBARK ||
-           opcode == MECONOMY_ARMY_MERGE_LANES || opcode == MECONOMY_ARMY_SPLIT_LANES ||
-           opcode == MECONOMY_ARMY_LANE_PAY;
-}
-
-// Both lane feature methods exist in this build; retain their runtime answers.
-bool army_lane_split_supported(const NativeEconomyRuntime *runtime) {
-    if (runtime == nullptr) return false;
-    return economy_api::military_army_lane_split_supported(*runtime);
-}
-
-bool army_lane_pay_supported(const NativeEconomyRuntime *runtime) {
-    if (runtime == nullptr) return false;
-    return economy_api::military_army_lane_pay_supported(*runtime);
-}
-
-} // namespace
-
-// Army personnel lane helpers, defined in world_ext_economy_military.cpp.
-// Null Economy answers false / -1; this build has all lane bindings.
-bool economy_army_lane_supported(const void *economy);
-int64_t economy_army_lane_population(void *economy, uint64_t army_handle);
-int64_t economy_army_lane_funds(void *economy, uint64_t army_handle);
-bool economy_set_army_ration(void *economy, uint64_t army_handle, int32_t q16);
-
-namespace {
-
-// Army personnel lane reconcile (army-personnel contract §2.1). Economy owns
-// natural deaths and the lane row, so Military only ever READS the lane and
-// trims its own lots down to it — it never grows a formation and never writes
-// Economy. Two hard rules from the recruitment pipeline apply verbatim:
-//   * a lane read of 0 is not evidence of death (a busy worker read view reports
-//     zero), so only a positive reading may trim;
-//   * heads already booked but still in flight (embarkation emitted, receipt
-//     pending) are part of the ceiling, or the army is trimmed the day it forms.
-int64_t reconcile_army_lane_personnel(NativeEconomyRuntime *economy, MilitaryCore &core) {
-    if (economy == nullptr) return 0;
-    if (!economy_army_lane_supported(economy)) return 0;
-    int64_t trimmed = 0;
-    const MilitaryArmyStore &armies = core.armies();
-    for (size_t slot = 0; slot < armies.active.size(); ++slot) {
-        if (armies.active[slot] == 0) continue;
-        const int64_t booked = armies.cached_headcount[slot];
-        if (booked <= 0) continue;
-        const uint64_t handle = core.army_handle(static_cast<int32_t>(slot));
-        if (handle == 0) continue;
-        const int64_t lane = economy_army_lane_population(economy, handle);
-        if (lane <= 0) continue;
-        const int64_t allowed = lane + core.army_lane_pending(static_cast<int32_t>(slot));
-        if (booked <= allowed) continue;
-        core.trim_army_lots(static_cast<int32_t>(slot), allowed);
-        core.refresh_army_cache(static_cast<int32_t>(slot));
-        trimmed += booked - allowed;
-    }
-    return trimmed;
-}
-
-} // namespace
-
-Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    MilitaryCore *core = core_from(_military_runtime);
-    if (!core->configured()) return military_fail("military_not_configured");
-    const int64_t day = dict_i64(ctx, "day_index", -1);
-    if (day < 0) return military_fail("military_day_invalid");
-    if (core->terrain().cell_count <= 0) return military_fail("military_terrain_missing");
+    scratch.country_cash.clear();
+    scratch.country_annual_revenue.clear();
+    scratch.country_unlock_bits.clear();
+    scratch.country_stat_q16.clear();
+    ++_military->_military_render_revision;
     Dictionary out;
     out["ok"] = true;
-    out["day_index"] = day;
-    out["path"] = "native_military";
-    if (day <= _military_last_step_day) {
-        // The day was already stepped by the other entry point (daily system vs
-        // whole-graph catch-up). Re-running it would double-submit D+1 intents.
-        out["skipped"] = true;
-        out["reason"] = "military_day_already_stepped";
-        out["intents_submitted"] = static_cast<int64_t>(0);
-        out["country_ops"] = static_cast<int64_t>(0);
-        out["economy_ops"] = static_cast<int64_t>(0);
-        return out;
-    }
-    // ---- 1. Committed D digest ----
-    const auto capture_started = std::chrono::steady_clock::now();
-    MilitaryWorldDigest digest;
-    bool economy_ready = false;
-    capture_military_digest(digest, _military_digest_scratch, core->catalog(), &economy_ready);
-    digest.day = day;
-    const double capture_ms = static_cast<double>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - capture_started).count()) / 1000.0;
-    // ---- 2. Receipts for every pending intent that reached a terminal state ----
-    // Rows survive across days until their authority reports a terminal
-    // outcome (or they time out), so a late Economy epoch never loses a receipt.
-    apply_military_deferred_cash(day);
-    std::vector<MilitaryIntentReceipt> receipts;
-    collect_military_receipts(day, receipts);
-    // Personnel commands settle on the Economy boundary after the original
-    // digest capture.  When a terminal personnel receipt is visible, refresh
-    // the small population view before Military reconciles its garrison lots;
-    // using the older digest here leaves the roster one command behind.
-    bool refresh_soldier_view = false;
-    for (const MilitaryIntentReceipt &receipt : receipts) {
-        if (receipt.kind == MILITARY_INTENT_ENLIST ||
-            receipt.kind == MILITARY_INTENT_LEVY ||
-            receipt.kind == MILITARY_INTENT_DISCHARGE ||
-            receipt.kind == MILITARY_INTENT_CASUALTY ||
-            receipt.kind == MILITARY_INTENT_ARMY_EMBARK ||
-            receipt.kind == MILITARY_INTENT_ARMY_DISEMBARK) {
-            refresh_soldier_view = true;
-            break;
-        }
-    }
-    if (refresh_soldier_view && _economy_runtime != nullptr) {
-        EconomyMilitaryCellView current_view;
-        economy_api::military_read_cell_view(
-            *static_cast<NativeEconomyRuntime *>(_economy_runtime),
-            current_view, core->catalog().economy_good_count);
-        digest.cell_population = current_view.population;
-        digest.cell_unemployed = current_view.unemployed;
-        digest.cell_soldiers = current_view.soldiers;
-        digest.cell_has_merchant = current_view.has_merchant;
-    }
-    // A discharge is booked out of the Military lots when its intent is
-    // emitted, while Economy applies the cohort conversion at effective_day.
-    // If the next Military day is admitted before that Economy day commits,
-    // the digest still contains the old soldier cohort.  Reuse the existing
-    // bridge rows as the in-flight record and subtract only rows whose
-    // effective day is still ahead of Economy's committed watermark.  Once the
-    // command has committed, the refresh above (or the normal next capture)
-    // supplies the post-conversion cohort, so it is never subtracted twice.
-    if (_economy_runtime != nullptr && !digest.cell_soldiers.empty()) {
-        const NativeEconomyRuntime &economy =
-            *static_cast<NativeEconomyRuntime *>(_economy_runtime);
-        const int64_t committed_day = economy_api::last_committed_day(economy);
-        for (const MilitaryPendingIntent &row : _military_pending_intents) {
-            if (row.authority != 2 || row.receipt_pending != 1 ||
-                row.kind != MILITARY_INTENT_DISCHARGE || row.cell < 0 ||
-                static_cast<size_t>(row.cell) >= digest.cell_soldiers.size() ||
-                row.effective_day <= committed_day)
-                continue;
-            const int64_t heads = std::max<int64_t>(0, row.count);
-            digest.cell_soldiers[static_cast<size_t>(row.cell)] = std::max<int64_t>(
-                0, digest.cell_soldiers[static_cast<size_t>(row.cell)] - heads);
-        }
-    }
-    // ---- 3. The military day ----
-    std::vector<MilitaryIntent> intents;
-    intents.reserve(256);
-    std::string error;
-    if (!core->step_day(day, digest, receipts, intents, error)) {
-        out["ok"] = false;
-        out["reason"] = String(error.c_str());
-        out["capture_ms"] = capture_ms;
-        return out;
-    }
-    _military_last_step_day = day;
-    // Commands due on or before this day were applied by step_day.
-    if (_military_forced_run_day >= 0 && _military_forced_run_day <= day)
-        _military_forced_run_day = -1;
-    // ---- 3b. Publish the ration satisfaction Economy consumes ----
-    // Design §9.2: the soldier's staple/protein needs are supplied in kind from
-    // the military ration stock, so Economy reads their satisfaction from here
-    // instead of buying them on the market. The core keeps the per-holder ration
-    // ratio; the garrison lane is per cell, which is what Economy needs.
-    if (_economy_runtime != nullptr) {
-        publish_military_ration_satisfaction(*core_from(_military_runtime), digest, intents);
-    }
-    // ---- 3c. Reconcile the army personnel lanes against Economy -----------
-    // Read-and-trim only (contract §2.1): a formation never books more people
-    // than its lane holds, and Economy is never written from here.
-    int64_t army_lane_trimmed = 0;
-    if (_economy_runtime != nullptr) {
-        army_lane_trimmed = reconcile_army_lane_personnel(
-            static_cast<NativeEconomyRuntime *>(_economy_runtime), *core);
-    }
-    // ---- 4. Translate intents into D+1 command batches ----
-    const int64_t effective_day = day + 1;
-    std::vector<MilitaryCountryCommand> country_commands;
-    std::vector<MilitaryEconomyCommand> economy_commands;
-    std::vector<MilitaryPendingIntent> pending;
-    pending.reserve(intents.size());
-    for (const auto &receipt : receipts) {
-        if (receipt.kind != MILITARY_INTENT_PROCURE_GOOD || receipt.request_sequence <= 0) continue;
-        MilitaryEconomyCommand ack;
-        ack.opcode = EconomyApi::COMMAND_MILITARY_PURCHASE_ACK;
-        ack.effective_day = effective_day; ack.sequence = ++_military_sequence;
-        ack.i64_0 = receipt.request_sequence;
-        economy_commands.push_back(ack);
-    }
-    int32_t unsequenced = 0;
-    for (const MilitaryIntent &intent : intents) {
-        translate_military_intent(intent, effective_day, digest, country_commands,
-                                  economy_commands, pending, unsequenced);
-    }
-    int64_t country_ops = static_cast<int64_t>(country_commands.size());
-    int64_t economy_ops = static_cast<int64_t>(economy_commands.size());    std::string submit_error;
-    const bool country_ok = country_commands.empty() ||
-        submit_military_country_commands(country_commands, pending, submit_error);
-    const bool economy_ok = economy_commands.empty() ||
-        submit_military_economy_commands(economy_commands, pending, submit_error);    // Rows whose authority rejected the whole batch are reported back as failed
-    // receipts so the core can reconcile them on the next day.
-    if (!country_ok || !economy_ok) {
-        out["submit_error"] = String(submit_error.c_str());
-        for (MilitaryPendingIntent &row : pending) {
-            const bool refused = (row.authority == 1 && !country_ok) ||
-                                 ((row.authority == 2 || row.authority == 4) && !economy_ok);
-            if (!refused) continue;
-            // No receipt will arrive for a batch the authority refused.
-            row.receipt_pending = 0;
-        }
-    }
-    // Append today's rows to the cross-day pending set. Rows that already failed
-    // here (no source cohort, refused batch) are kept as "resolved failed" so the
-    // next fold reports them to the core instead of silently dropping them.
-    // Rows of earlier days stay until their own terminal receipt / timeout.
-    for (MilitaryPendingIntent &row : pending) {
-        if (row.receipt_pending == 0) row.receipt_pending = 3;
-        _military_pending_intents.push_back(row);
-    }
-    // ---- 5. Report ----
-    const MilitaryReport &report = core->report();
-    // Any successful day may change authoritative army rows even when the
-    // battle loop reports idle: command application, merges/splits, supply,
-    // morale, training and composition can all settle without an intent.
-    // The feed must observe that day boundary instead of waiting for movement.
-    ++_military_render_revision;
-    out["ok"] = country_ok && economy_ok;
-    out["reason"] = (country_ok && economy_ok) ? String() : String("military_intent_submit_failed");
-    out["path"] = "native_military";
-    out["skipped"] = false;
-    out["day_ms"] = report.day_ms;
-    out["capture_ms"] = capture_ms;
-    out["armies_active"] = static_cast<int64_t>(report.armies_active);
-    out["armies_moving"] = static_cast<int64_t>(report.armies_moving);
-    out["engagements_active"] = static_cast<int64_t>(report.engagements_active);
-    out["wars_active"] = static_cast<int64_t>(report.wars_active);
-    out["soldiers_total"] = report.soldiers_total;
-    out["astar_expansions"] = report.astar_expansions;
-    out["area_evals"] = static_cast<int64_t>(report.area_evals);
-    out["threat_field_cells"] = static_cast<int64_t>(report.threat_field_cells);
-    out["convoys_due"] = static_cast<int64_t>(report.convoys_due);
-    out["convoy_hops"] = report.convoy_hops;
-    out["front_edges_touched"] = static_cast<int64_t>(report.front_edges_touched);
-    out["vision_patch_cells"] = static_cast<int64_t>(report.vision_patch_cells);
-    out["event_coalesced"] = static_cast<int64_t>(report.event_coalesced);
-    out["reconcile_delta"] = report.reconcile_delta;
-    // The day's payroll split by holder (army-pay contract §2.3). A test (or a
-    // panel) can tell "who got paid today" apart from the 30-day EWMA.
-    out["payroll_garrison"] = report.payroll_garrison;
-    out["payroll_army"] = report.payroll_army;
-    out["intents_emitted"] = static_cast<int64_t>(report.intents_emitted);
-    // Physical maintenance (design §5): settled spend, recipe demand and the
-    // consumed part, the paid-but-undelivered backlog, and how many maintenance
-    // objects the pass walked (a sparse pass reports a small row count).
-    out["maintenance_spend"] = report.maintenance_spend;
-    out["maintenance_need_goods"] = report.maintenance_need_goods;
-    out["maintenance_met_goods"] = report.maintenance_met_goods;
-    out["maintenance_backlog"] = report.maintenance_backlog;
-    out["maintenance_rows"] = static_cast<int64_t>(report.maintenance_rows);
-    out["maintenance_disrepair_rows"] =
-        static_cast<int64_t>(report.maintenance_disrepair_rows);
-    out["maintenance_ms"] = report.maintenance_ms;
-    out["intents_submitted"] = static_cast<int64_t>(pending.size());
-    out["receipts_folded"] = static_cast<int64_t>(receipts.size());
-    out["country_ops"] = country_ops;
-    out["economy_ops"] = economy_ops;
-    // Army personnel lane telemetry (contract §2): how many rows went to the
-    // economy this day, whether the loaded economy can carry them at all, and
-    // how many heads the lane reconcile trimmed.
-    int64_t army_lane_ops = 0;
-    for (const MilitaryEconomyCommand &command : economy_commands) {
-        if (is_army_lane_opcode(command.opcode)) ++army_lane_ops;
-    }
-    out["army_lane_ops"] = army_lane_ops;
-    out["army_lane_supported"] = _economy_runtime != nullptr &&
-        economy_army_lane_supported(_economy_runtime);
-    // Split / partial-transfer lane support (contract-2 §1.1, opcode 33): the
-    // smoke test gates its split/transfer conservation assertions on this, so an
-    // economy DLL that predates 33 skips them instead of failing them.
-    out["army_split_lane_supported"] = army_lane_split_supported(
-        static_cast<const NativeEconomyRuntime *>(_economy_runtime));
-    // Army pay support (army-pay contract §3.3, opcode 34): same gate contract as
-    // the split lanes above, so a DLL without 34 skips the pay assertions instead
-    // of failing them.
-    out["army_pay_supported"] = army_lane_pay_supported(
-        static_cast<const NativeEconomyRuntime *>(_economy_runtime));
-    int64_t army_pay_ops = 0;
-    for (const MilitaryEconomyCommand &command : economy_commands) {
-        if (command.opcode == MECONOMY_ARMY_LANE_PAY) ++army_pay_ops;
-    }
-    out["army_pay_ops"] = army_pay_ops;
-    // Diagnostic for the army-pay gate: paying needs a synchronous treasury debit,
-    // which is only available while Country accepts sync store writes.
-    out["army_pay_sync_cash_available"] = _country_runtime != nullptr &&
-        !country_api::sync_store_writes_forbidden(
-             *static_cast<NativeCountryRuntime *>(_country_runtime));
-    out["army_lane_trimmed"] = army_lane_trimmed;
-    out["economy_ready"] = economy_ready;
-    out["effective_day"] = effective_day;
-    out["sequence_cursor"] = _military_sequence;
-    out["command_cursor"] = static_cast<int64_t>(core->_pending.size());
-    out["state_hash"] = static_cast<int64_t>(core->state_hash() & 0x7fffffffffffffffll);
+    out["reason"] = String();
+    out["cell_count"] = static_cast<int64_t>(cells);
+    out["width"] = static_cast<int64_t>(_military->core().terrain().width);
+    out["height"] = static_cast<int64_t>(_military->core().terrain().height);
     return out;
 }
 
+bool DCWorldExt::military_executor_active() const {
+    return _military && _runtime_host && _runtime_host->military_executor_active();
+}
+
+void DCWorldExt::bind_military_dependencies() {
+    _military->country_state = nullptr;
+    _military->_runtime_host = _runtime_host.get();
+    _military->_country_runtime = static_cast<NativeCountryRuntime *>(_country_runtime);
+    _military->_economy_runtime = static_cast<NativeEconomyRuntime *>(_economy_runtime);
+    _military->_modifier_runtime = static_cast<ModifierRuntime *>(_modifier_runtime);
+}
+
+std::shared_ptr<const MilitaryCore> DCWorldExt::read_military_core() const {
+    if (!_military) return {};
+    if (military_executor_active()) {
+        if (const auto frame = _military->read()) return frame->view;
+    }
+    return std::shared_ptr<const MilitaryCore>(_military, &_military->core());
+}
+
+bool DCWorldExt::military_should_run(int64_t day) const {
+    return _military && !military_executor_active() && _military->should_run(day);
+}
+
+Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
+    if (!_military) return military_unavailable();
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
+    bind_military_dependencies();
+    const int64_t day = dict_i64(ctx, "day_index", -1);
+    auto report = _military->run_day(day);
+    const auto events_before = _military->events_forwarded;
+    if (!_military->forward_events(day, this))
+        return military_fail("military_events_submission_failed");
+    report["events_forwarded"] = _military->events_forwarded - events_before;
+    return report;
+}
+
 Dictionary DCWorldExt::run_military_catch_up(const Dictionary &ctx) {
-    if (_military_runtime == nullptr) return military_unavailable();
+    if (!_military) return military_unavailable();
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
     const int64_t day = dict_i64(ctx, "day_index", -1);
     Dictionary out;
     if (day < 0) return military_fail("military_day_invalid");
-    // The worker never steps Military. In whole-graph ACTIVE, WorldRuntimeHost
-    // replays every committed day on the main thread (facade.run_daily ->
-    // run_military_daily); this entry point is the same main-thread step with
-    // the one-step-per-day guard, kept for callers that use `catch_up`.
-    if (day <= _military_last_step_day) {
+    // Both executors share the guard, including callers using catch_up.
+    if (day <= _military->_military_last_step_day) {
         out["ok"] = true;
         out["path"] = "native_military_catch_up";
         out["skipped"] = true;
@@ -1424,1032 +1033,133 @@ Dictionary DCWorldExt::run_military_catch_up(const Dictionary &ctx) {
     return run_military_daily(ctx);
 }
 
-// ===========================================================================
-// command batches
-// ===========================================================================
-
-Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    if (!core_from(_military_runtime)->configured()) return military_fail("military_not_configured");
-    Array rejected;
-    int64_t accepted = 0;
-    for (int64_t i = 0; i < batch.size(); ++i) {
-        Dictionary row_out;
-        if (batch[i].get_type() != Variant::DICTIONARY) {
-            row_out["index"] = i;
-            row_out["reason"] = String("military_command_not_object");
-            rejected.push_back(row_out);
-            continue;
-        }
-        const Dictionary row = batch[i];
-        MilitaryCommand command;
-        std::string error;
-        if (!parse_military_command(row, command, error)) {
-            row_out["index"] = i;
-            row_out["reason"] = String(error.c_str());
-            rejected.push_back(row_out);
-            continue;
-        }
-        // Every command applies on the next military day (design §6.2); `stop`
-        // is the documented same-day exception and still lands on D+1 because
-        // D has already been stepped when the player clicks.
-        command.effective_day = _military_last_step_day + 1;
-        command.sequence = static_cast<uint64_t>(++_military_sequence);
-        // Lazily open the issuing country's slot (resolved against the Country
-        // authority) so a command before the first military day is not
-        // rejected as command_unknown_country.
-        if (command.country != 0 && _country_runtime != nullptr &&
-            core_from(_military_runtime)->country_slot_for_handle(command.country) < 0 &&
-            country_api::valid_handle(
-                *static_cast<NativeCountryRuntime *>(_country_runtime), static_cast<int64_t>(command.country))) {
-            ensure_military_country_slots();
-        }
-        const int64_t effective_day = command.effective_day;
-        if (!core_from(_military_runtime)->submit(std::move(command), error)) {
-            row_out["index"] = i;
-            row_out["reason"] = String(error.c_str());
-            rejected.push_back(row_out);
-            continue;
-        }
-        if (_military_forced_run_day < 0 || effective_day < _military_forced_run_day)
-            _military_forced_run_day = effective_day;
-        ++accepted;
-    }
-    Dictionary out;
-    out["ok"] = rejected.is_empty();
-    out["accepted"] = accepted;
-    out["rejected"] = rejected;
-    out["code"] = rejected.is_empty() ? String("ok") : String("military_command_rejected");
-    out["next_sequence"] = _military_sequence;
-    return out;
-}
-
-bool DCWorldExt::submit_military_country_commands(
-        const std::vector<MilitaryCountryCommand> &commands,
-        std::vector<MilitaryPendingIntent> &pending, std::string &error) {
-    if (commands.empty()) return true;
-    if (_country_runtime == nullptr) {
-        error = "military_country_unavailable";
-        return false;
-    }
-    const int64_t count = static_cast<int64_t>(commands.size());
-    PackedInt32Array opcodes, cells, aux, domains, positions, w0, w1, w2, w3,
-        tax_kinds, tax_items, tax_rates, tax_modes;
-    PackedInt64Array days, sequences, targets, values;
-    PackedStringArray stable_ids, names;
-    opcodes.resize(count);
-    cells.resize(count);
-    aux.resize(count);
-    domains.resize(count);
-    positions.resize(count);
-    w0.resize(count); w1.resize(count); w2.resize(count); w3.resize(count);
-    tax_kinds.resize(count);
-    tax_items.resize(count);
-    tax_rates.resize(count);
-    tax_modes.resize(count);
-    days.resize(count);
-    sequences.resize(count);
-    targets.resize(count);
-    values.resize(count);
-    stable_ids.resize(count);
-    names.resize(count);
-    for (int64_t i = 0; i < count; ++i) {
-        const MilitaryCountryCommand &c = commands[static_cast<size_t>(i)];
-        opcodes[i] = c.opcode;
-        cells[i] = c.cell;
-        aux[i] = c.aux;
-        domains[i] = c.domain;
-        positions[i] = -1;
-        w0[i] = 0; w1[i] = 0; w2[i] = 0; w3[i] = 0;
-        tax_kinds[i] = -1;
-        tax_items[i] = -1;
-        tax_rates[i] = 0;
-        tax_modes[i] = 0;
-        days[i] = c.effective_day;
-        sequences[i] = c.sequence;
-        targets[i] = c.target_handle;
-        values[i] = c.value;
-        stable_ids[i] = String();
-        names[i] = String();
-    }
-    Dictionary batch;
-    batch["opcodes"] = opcodes;
-    batch["effective_days"] = days;
-    batch["sequences"] = sequences;
-    batch["target_handles"] = targets;
-    batch["cell_indices"] = cells;
-    batch["aux_i32"] = aux;
-    batch["domain_i32"] = domains;
-    batch["position_i32"] = positions;
-    batch["weight0_bp"] = w0;
-    batch["weight1_bp"] = w1;
-    batch["weight2_bp"] = w2;
-    batch["weight3_bp"] = w3;
-    batch["value_i64"] = values;
-    batch["tax_kinds"] = tax_kinds;
-    batch["tax_item_indices"] = tax_items;
-    batch["tax_rate_basis_points"] = tax_rates;
-    batch["tax_assessment_modes"] = tax_modes;
-    batch["stable_ids"] = stable_ids;
-    batch["display_names"] = names;
-    if (!_military_receipts) _military_receipts = std::make_unique<MilitaryReceiptCursor>();
-    const Dictionary submitted = submit_country_commands(batch);
-    if (!static_cast<bool>(submitted.get("ok", false))) {
-        error = String(submitted.get("code", submitted.get("reason",
-            "military_country_submit_rejected"))).utf8().get_data();
-        return false;
-    }
-    // Stamp request ids so the next day's receipt poll can match rows.
-    if (submitted.has("request_ids") &&
-        submitted["request_ids"].get_type() == Variant::PACKED_INT64_ARRAY) {
-        const PackedInt64Array request_ids = submitted["request_ids"];
-        for (int64_t i = 0; i < count && i < request_ids.size(); ++i) {
-            for (MilitaryPendingIntent &row : pending) {
-                if (row.authority != 1 || row.sequence != commands[static_cast<size_t>(i)].sequence)
-                    continue;
-                row.request_id = request_ids[i];
-            }
-            if (request_ids[i] > _military_receipts->after_request_id)
-                _military_receipts->after_request_id = request_ids[i];
-        }
-    }
+bool NativeMilitaryRuntime::submit(MilitaryCommand command, std::string &error) {
+    command.sequence = static_cast<uint64_t>(++_military_sequence);
+    if (command.country != 0 && core().country_slot_for_handle(command.country) < 0)
+        ensure_military_country_slots();
+    const auto day = command.effective_day;
+    if (!core().submit(std::move(command), error)) return false;
+    if (_military_forced_run_day < 0 || day < _military_forced_run_day)
+        _military_forced_run_day = day;
     return true;
 }
 
-#include "world_ext_military_economy_ingress.inc"
-
-// ===========================================================================
-// receipts (Country command terminals + Economy settlements ->
-// MilitaryIntentReceipt). `_military_pending_intents` is a cross-day set:
-// a row leaves it only when a receipt is emitted for it (terminal ok/fail or
-// timeout), so ENLIST/LEVY always reach MilitaryCore::reconcile_receipts.
-// ===========================================================================
-
-namespace {
-// A row whose authority never reported back is failed after this many days
-// past its effective day (Economy epochs are daily; Country commits are D+1).
-constexpr int64_t kMilitaryReceiptTimeoutDays = 8;
-// Numeric range of the core's stable purchase request ids (physical-maintenance
-// design D6). Economy keys POD admission and receipt rows on `sequence` alone,
-// so purchase identities live above the bridge counter's range and can never
-// alias an unrelated command.
-constexpr int64_t kMilitaryPurchaseSequenceBase = 1ll << 40;
-} // namespace
-
-void DCWorldExt::collect_military_receipts(int64_t day,
-                                           std::vector<MilitaryIntentReceipt> &out) {
-    out.clear();
-    if (_military_pending_intents.empty()) return;
-    // Economy rows (authority 2) settle through Economy trace events.
-    collect_military_economy_receipts(day, out);
-    if (_runtime_host == nullptr) {
-        // Without a worker the sync country facade commits on its own day; there
-        // is no per-command receipt, so an intent is assumed committed once its
-        // effective day has been reached by the country runtime.
-        int64_t committed_day = -1;
-        if (_country_runtime != nullptr)
-            committed_day = country_api::last_committed_day(
-                *static_cast<NativeCountryRuntime *>(_country_runtime));
-        for (MilitaryPendingIntent &row : _military_pending_intents) {
-            if (row.authority != 1 || row.receipt_pending != 1 ||
-                row.effective_day > committed_day) continue;
-            row.receipt_pending = 2;
-        }
-    } else {
-        // Worker authority: fold every terminal receipt after the cursor.
-        if (!_military_receipts) _military_receipts = std::make_unique<MilitaryReceiptCursor>();
-        MilitaryReceiptCursor &cursor = *_military_receipts;
-        std::vector<CountryCommandReceipt> receipts;
-        _runtime_host->poll_country_command_receipts(
-            static_cast<uint64_t>(std::max<int64_t>(0, cursor.after_request_id)), 512, receipts);
-        for (const CountryCommandReceipt &receipt : receipts) {
-            cursor.after_request_id = std::max<int64_t>(cursor.after_request_id,
-                static_cast<int64_t>(receipt.request_id));
-            const bool terminal =
-                receipt.code == CountryCommandReceiptCode::COMMITTED ||
-                receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION;
-            if (!terminal) continue;
-            const bool ok = receipt.code == CountryCommandReceiptCode::COMMITTED;
-            for (MilitaryPendingIntent &row : _military_pending_intents) {
-                if (row.authority != 1 || row.receipt_pending != 1 ||
-                    row.request_id != static_cast<int64_t>(receipt.request_id))
-                    continue;
-                row.receipt_pending = ok ? 2 : 3;
-                break;
-            }
-        }
-        // The cursor can skip a terminal that landed before the stamp; look the
-        // still-open rows up directly.
-        for (MilitaryPendingIntent &row : _military_pending_intents) {
-            if (row.authority != 1 || row.receipt_pending != 1 || row.request_id <= 0) continue;
-            CountryCommandReceipt receipt;
-            if (!_runtime_host->try_country_command_terminal(
-                    static_cast<uint64_t>(row.request_id), receipt))
-                continue;
-            if (receipt.code == CountryCommandReceiptCode::COMMITTED)
-                row.receipt_pending = 2;
-            else if (receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION)
-                row.receipt_pending = 3;
-        }
-    }
-    // Emit resolved rows (in pending/sequence order), time out stale ones, and
-    // compact the set.
-    size_t write = 0;
-    for (size_t i = 0; i < _military_pending_intents.size(); ++i) {
-        MilitaryPendingIntent row = _military_pending_intents[i];
-        // Authority 4 rows used to be excluded from the timeout, which meant a
-        // lost purchase receipt kept the row (and the core's in-flight order)
-        // open forever: a good could never be re-ordered for that holder and
-        // the day never looked idle again. A paid purchase is still bounded by
-        // the same window; the core settles it as an unmet fill and releases
-        // the order.
-        if (row.receipt_pending == 1 &&
-            day > row.effective_day + kMilitaryReceiptTimeoutDays)
-            row.receipt_pending = 3;
-        if (row.receipt_pending == 2) {
-            auto receipt = military_receipt_from(row, true, row.count, row.amount);
-            receipt.request_sequence = row.sequence;
-            out.push_back(receipt);
-            continue;
-        }
-        if (row.receipt_pending == 3 || row.receipt_pending == 0) {
-            auto receipt = military_receipt_from(row, false, 0, 0);
-            receipt.request_sequence = row.sequence;
-            out.push_back(receipt);
-            continue;
-        }
-        _military_pending_intents[write++] = row;
-    }
-    _military_pending_intents.resize(write);
+bool NativeMilitaryRuntime::submit_independence(
+        uint64_t old_owner, uint64_t new_owner, int32_t cell, int64_t day) {
+    const bool created = core().country_slot_for_handle(new_owner) < 0;
+    ensure_military_country_slots();
+    if (created) core().set_ai_country(core().country_slot_for_handle(new_owner), true);
+    MilitaryCommand command;
+    command.op = MCMD_WAR_DECLARE_FORCED;
+    command.country = old_owner;
+    command.other = new_owner;
+    command.effective_day = day;
+    std::string error;
+    if (!submit(command, error)) return false;
+    command.op = MCMD_GARRISON_TRANSFER_CELL;
+    command.cell = cell;
+    return submit(std::move(command), error);
 }
 
-void DCWorldExt::apply_military_deferred_cash(int64_t day) {
-    // SPEND_CASH rows settle on military day D+1. The compatibility helper's
-    // reserve/collect pair debits then credits the same treasury. Its receipt
-    // is not a terminal cash sink and must not register an Economy burn.
-    if (_military_pending_intents.empty()) return;
-    NativeEconomyRuntime *economy = _economy_runtime == nullptr ? nullptr
-        : static_cast<NativeEconomyRuntime *>(_economy_runtime);
-    for (MilitaryPendingIntent &row : _military_pending_intents) {
-        if (row.authority != 3 || row.receipt_pending != 1) continue;
-        if (row.effective_day > day) continue;
-        if (economy == nullptr || !economy_api::military_command_window_open(*economy)) {
-            // Retry next day; the timeout fails the row eventually.
-            continue;
-        }
-        const int64_t collected = economy_api::military_collect_cash(*economy,
-            static_cast<int64_t>(row.country_handle), row.amount);
-        row.amount = collected;
-        row.count = collected > 0 ? 1 : 0;
-        row.receipt_pending = collected > 0 ? 2 : 3;
+bool NativeMilitaryRuntime::stamp_commands(MilitaryCommandBatch &batch) const {
+    const auto frame = read();
+    bool accepted = false;
+    for (auto &row : batch.rows) {
+        if (!row.error.empty()) continue;
+        row.effective_day = std::max(row.command.effective_day, batch.day);
+        row.command.effective_day = row.effective_day;
+        if (row.caller_sequence > 0) accepted = true;
+        else if (!frame) row.error = "military_executor_unavailable";
+        else if (frame->view->validate_command(row.command, row.error)) accepted = true;
     }
+    return accepted;
 }
 
-// ===========================================================================
-// intent translation
-// ===========================================================================
-
-void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
-                                           int64_t effective_day,
-                                           const MilitaryWorldDigest &digest,
-                                           std::vector<MilitaryCountryCommand> &country,
-                                           std::vector<MilitaryEconomyCommand> &economy,
-                                           std::vector<MilitaryPendingIntent> &pending,
-                                           int32_t &unsequenced) {
-    (void)digest;
-    (void)unsequenced;
-    MilitaryPendingIntent row;
-    row.kind = intent.kind;
-    row.cell = intent.cell;
-    row.good = intent.good;
-    row.source_id = intent.source_id;
-    row.country_handle = intent.country_a;
-    row.count = intent.count;
-    row.amount = intent.amount;
-    row.effective_day = effective_day;
-    const auto next_sequence = [this]() { return ++_military_sequence; };
-    NativeEconomyRuntime *economy_runtime = _economy_runtime == nullptr ? nullptr
-        : static_cast<NativeEconomyRuntime *>(_economy_runtime);
-    const int32_t soldier_profession = economy_runtime == nullptr ? -1
-        : economy_api::military_soldier_profession(*economy_runtime);
-    const int32_t unemployed_profession = economy_runtime == nullptr ? -1
-        : economy_api::military_unemployed_profession(*economy_runtime);
-    // LEVY draws from the cell's non-merchant employee cohorts once the
-    // unemployed pool is exhausted (design 5.4), so it must not reuse the
-    // ENLIST source. The candidate list is built from the province catalog
-    // (dense profession ids), never from a cohort scan.
-    std::vector<int32_t> levy_professions;
-    if (intent.kind == MILITARY_INTENT_LEVY && economy_runtime != nullptr) {
-        const int32_t count = economy_api::profession_count(*economy_runtime);
-        levy_professions.reserve(static_cast<size_t>(std::max(0, count)));
-        for (int32_t profession = 0; profession < count; ++profession) {
-            if (profession == soldier_profession || profession == unemployed_profession ||
-                profession == economy_api::military_merchant_profession(*economy_runtime))
-                continue;
-            levy_professions.push_back(profession);
-        }
-    }
-
-    switch (intent.kind) {
-    case MILITARY_INTENT_ENLIST:
-    case MILITARY_INTENT_LEVY:
-    case MILITARY_INTENT_DISCHARGE:
-    case MILITARY_INTENT_CASUALTY: {
-        // All four are cohort transitions on the cell's soldier cohort
-        // (contract §0.5).
-        if (economy_runtime == nullptr || intent.cell < 0) return;
-        const int64_t heads = std::max<int64_t>(0, intent.count);
-        if (heads == 0) return;
-        uint64_t handle = 0;
-        int32_t target_signature = -1;
-        switch (intent.kind) {
-        case MILITARY_INTENT_ENLIST: {
-            // unemployed -> soldier: the source is the cell's unemployed cohort
-            // (lowest ethnicity that still has people).
-            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
-                intent.cell, unemployed_profession);
-            target_signature = soldier_profession;
-            if (handle == 0) {
-                // No unemployed pool in the cell: the enlist cannot be
-                // conserved, so it is reported back as a failed receipt instead
-                // of being silently dropped.
-                row.receipt_pending = 0;
-                pending.push_back(row);
-                return;
-            }
-            break;
-        }
-        case MILITARY_INTENT_LEVY: {
-            // Forced service: unemployed first, then any other cohort the
-            // state may draft (employee lanes of the same cell).
-            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
-                intent.cell, unemployed_profession);
-            if (handle == 0) {
-                handle = economy_api::military_cohort_handle_from_professions(*economy_runtime,
-                    intent.cell, levy_professions.data(),
-                    static_cast<int32_t>(levy_professions.size()));
-            }
-            target_signature = soldier_profession;
-            if (handle == 0) {
-                // Nothing left that may be drafted.
-                row.receipt_pending = 0;
-                pending.push_back(row);
-                return;
-            }
-            break;
-        }
-        case MILITARY_INTENT_DISCHARGE:
-            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
-                intent.cell, soldier_profession);
-            target_signature = unemployed_profession;
-            break;
-        default:
-            // CASUALTY: negative population on the soldier cohort.
-            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
-                intent.cell, soldier_profession);
-            target_signature = -1;
-            break;
-        }
-        if (handle == 0) return;
-        // CHANGE_SIGNATURE names a SIGNATURE id, not a profession id, and the
-        // cohort keeps its ethnicity through the transition: resolve
-        // (target_profession, source ethnicity) explicitly instead of relying on
-        // the dense profession row and the signature row sharing an index.
-        if (target_signature >= 0 && intent.kind != MILITARY_INTENT_CASUALTY) {
-            const int32_t ethnicity = economy_api::military_cohort_ethnicity(*economy_runtime,
-                static_cast<uint64_t>(handle));
-            // Resolve with the ECONOMY runtime's own table for this cell: the
-            // bridge's profession id and the executor's signature id are not
-            // guaranteed to line up, and a mismatch silently moves people into
-            // another profession (unemployed drains, soldier cohort stays 0).
-            int32_t resolved = economy_api::military_signature_for_cell_ethnicity(*economy_runtime,
-                intent.cell, target_signature);
-            if (resolved < 0 && ethnicity >= 0)
-                resolved = economy_api::military_signature_for(*economy_runtime, target_signature, ethnicity);
-            if (resolved < 0) {
-                row.receipt_pending = 0;
-                pending.push_back(row);
-                return;
-            }
-            target_signature = resolved;
-        }
-        MilitaryEconomyCommand command;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(handle);
-        if (intent.kind == MILITARY_INTENT_CASUALTY) {
-            // The dead cannot be more than the cell's live soldier cohort.
-            const int64_t alive = economy_api::military_soldier_heads(*economy_runtime, intent.cell);
-            const int64_t dead = std::min(heads, alive);
-            if (dead <= 0) {
-                row.receipt_pending = 0;
-                pending.push_back(row);
-                return;
-            }
-            command.opcode = MECONOMY_ADD_POPULATION;
-            command.i64_0 = -dead;
-            command.i32_0 = intent.cell;
-            row.count = dead;
+void NativeMilitaryRuntime::admit(MilitaryCommandBatch &batch) {
+    for (auto &row : batch.rows) {
+        if (!row.error.empty()) continue;
+        row.effective_day = std::max(row.command.effective_day, batch.day);
+        row.command.effective_day = row.effective_day;
+        if (row.caller_sequence > 0 &&
+            (row.command.op == MCMD_STATE_BUILD || row.command.op == MCMD_STATE_DEMOLISH)) {
+            queue_player_construction(row);
         } else {
-            if (target_signature < 0) return;
-            // B: name the cohorts by signature, never by slot id. Economy
-            // resolves both inside whichever store owns the day and moves the
-            // people there, so this works under whole-graph ACTIVE without
-            // reopening the legacy ingress.
-            const int32_t source_signature =
-                economy_api::military_cohort_signature(*economy_runtime, static_cast<uint64_t>(handle));
-            command.opcode = MECONOMY_CONVERT_COHORT;
-            row.count = heads;
-            command.i32_0 = intent.cell;
-            command.i32_1 = source_signature;
-            command.i64_0 = heads;
-            command.i64_1 = target_signature;
+            submit(std::move(row.command), row.error);
         }
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = command.target_handle;
-        row.target_signature = command.opcode == MECONOMY_CHANGE_SIGNATURE ? command.i32_0 : -1;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
     }
-    case MILITARY_INTENT_PAY_WAGES: {
-        if (economy_runtime == nullptr || intent.cell < 0 || intent.amount <= 0) return;
-        const uint64_t handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
-            intent.cell, soldier_profession);
-        if (handle == 0) return;
-        MilitaryEconomyCommand command;
-        command.opcode = MECONOMY_TRANSFER_TO_COHORT;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(handle);
-        command.i64_0 = intent.amount;
-        command.i64_1 = static_cast<int64_t>(intent.country_a);
-        command.i32_0 = intent.cell;
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = command.target_handle;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_PROCUREMENT_DEMAND:
-    case MILITARY_INTENT_PROCURE_GOOD: {
-        const bool forecast = intent.kind == MILITARY_INTENT_PROCUREMENT_DEMAND;
-        if (economy_runtime == nullptr || (!forecast && (intent.cell < 0 ||
-            intent.good < 0 || intent.count <= 0 || intent.country_a == 0))) return;
-        MilitaryEconomyCommand command;
-        command.opcode = forecast ? EconomyApi::COMMAND_MILITARY_PROCUREMENT_DEMAND : EconomyApi::COMMAND_MILITARY_PURCHASE;
-        command.effective_day = effective_day;
-        // A paid purchase carries the core's STABLE request id in `source_id`
-        // (physical-maintenance design D6). Reusing it as the economy sequence
-        // makes the identity survive a save/restore and lets Economy answer a
-        // repeated submission with the same receipt instead of buying twice;
-        // the forecast row has no such identity and keeps the bridge counter.
-        // The offset keeps purchase identities in their own numeric range: the
-        // bridge counter also starts at 1 and Economy keys POD admission and
-        // receipt rows on `sequence` alone, so the two must never collide.
-        command.sequence = (!forecast && intent.source_id > 0)
-                               ? (kMilitaryPurchaseSequenceBase + static_cast<int64_t>(intent.source_id))
-                               : next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);
-        command.i32_0 = intent.cell;
-        command.i32_1 = intent.good;
-        command.i64_0 = intent.count;
-        command.i64_1 = intent.amount;
-        if (!forecast) { // Paid purchases require a real terminal; never optimistic.
-            row.authority = 4;
-            row.sequence = command.sequence;
-            row.receipt_pending = 1;
-            row.opcode = command.opcode;
-            row.target_handle = command.target_handle;
-            pending.push_back(row);
-        }
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_CONSUME_TREASURY_GOOD: {
-        if (intent.country_a == 0 || intent.good < 0 || intent.count <= 0) return;
-        MilitaryCountryCommand command;
-        command.opcode = MCOUNTRY_CONSUME_TREASURY_GOODS;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);
-        command.aux = intent.good;
-        command.value = intent.count;
-        row.authority = 1;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        pending.push_back(row);
-        country.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_REQUISITION: {
-        // Explicit market stock delta, no payment (COMMAND_REMOVE_STOCK).
-        if (economy_runtime == nullptr || intent.cell < 0 || intent.good < 0 ||
-            intent.count <= 0)
-            return;
-        MilitaryEconomyCommand command;
-        command.opcode = MECONOMY_REMOVE_STOCK;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = 0;
-        command.i32_0 = intent.cell;
-        command.i32_1 = intent.good;
-        command.i64_0 = std::max<int64_t>(0, intent.count);
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = 0;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_SPEND_CASH: {
-        // Military upkeep / building cash. Country has no "debit cash" opcode,
-        // so this retains the cash-neutral fiscal reserve/collect adapter. It is
-        // deferred to D+1 (apply_military_deferred_cash at the start of the
-        // next military day) so it reads the same committed treasury the rest
-        // of the D+1 batch does; the receipt carries the collected amount, and
-        // a shortfall reports the smaller committed_amount.
-        if (economy_runtime == nullptr || intent.country_a == 0 || intent.amount <= 0) return;
-        row.authority = 3;
-        row.receipt_pending = 1;
-        row.sequence = next_sequence();
-        pending.push_back(row);
-        return;
-    }
-    case MILITARY_INTENT_STATE_BUILD: {
-        // A state building request (see MILITARY_INTENT_STATE_BUILD in
-        // military_bridge.h). This is the only settlement path for a state lot:
-        // the economy charges the treasury for the real materials and, only
-        // when it accepted the order, the core gets the bookkeeping command
-        // that schedules the completion day.
-        if (economy_runtime == nullptr || intent.country_a == 0 ||
-            intent.cell < 0 || intent.count <= 0)
-            return;
-        MilitaryCore *core = core_from(_military_runtime);
-        const int32_t building = static_cast<int32_t>(intent.count);
-        if (building >= static_cast<int32_t>(core->_catalog.state_buildings.size()))
-            return;
-        const int32_t economy_type = core->_catalog.state_buildings[
-            static_cast<size_t>(building)].economy_building_id;
-        // A catalog compiled before this bridge leaves the column at -1: those
-        // lots have no economy profile, therefore no bill, therefore they are
-        // not built at all instead of being built for free.
-        if (economy_type < 0) return;
-        const Dictionary queued = economy_api::queue_treasury_sponsored_build(*economy_runtime,
-            static_cast<int64_t>(intent.country_a), intent.cell, economy_type,
-            effective_day, next_sequence(), false);
-        if (!bool(queued.get("ok", false))) return;
-        // The economy owns the schedule; the core only mirrors it. Feeding the
-        // accepted lot back through the ordinary command queue keeps the
-        // pending construction slots and the completion day on one code path.
-        MilitaryCommand command;
-        command.op = MCMD_STATE_BUILD;
-        command.country = intent.country_a;
-        command.cell = intent.cell;
-        command.unit_to = building;
-        command.effective_day = effective_day;
-        command.sequence = static_cast<uint64_t>(next_sequence());
-        std::string command_error;
-        core->submit(std::move(command), command_error);
-        // Deliberately no `pending` row: this branch already holds the economy's
-        // synchronous accept/reject, so there is nothing left to await, and the
-        // core's receipt fold has no case for this kind. Pushing an authority=2
-        // row here would sit unresolved until the receipt timeout and then emit
-        // a failure the core ignores anyway.
-        return;
-    }
-    case MILITARY_INTENT_STATE_DEMOLISH: {
-        // The mirror of STATE_BUILD on the removal side. The economy drops the
-        // unit from the ledger row first and only an accepted removal is echoed
-        // back as MCMD_STATE_DEMOLISH, so the ledger is always the first to
-        // change and the core can never report a demolition the ledger did not
-        // record (requirement 6.5). `count` carries the state building index,
-        // exactly like STATE_BUILD; one unit per request.
-        if (economy_runtime == nullptr || intent.country_a == 0 ||
-            intent.cell < 0 || intent.count <= 0)
-            return;
-        MilitaryCore *core = core_from(_military_runtime);
-        const int32_t building = static_cast<int32_t>(intent.count);
-        if (building >= static_cast<int32_t>(core->_catalog.state_buildings.size()))
-            return;
-        const int32_t economy_type = core->_catalog.state_buildings[
-            static_cast<size_t>(building)].economy_building_id;
-        // A catalog compiled before this bridge leaves the column at -1: the lot
-        // has no economy profile, so it is not in the ledger and there is
-        // nothing that could remove it.
-        if (economy_type < 0) return;
-        const Dictionary queued = economy_api::queue_treasury_sponsored_demolish(*economy_runtime,
-            static_cast<int64_t>(intent.country_a), intent.cell, economy_type, 1,
-            effective_day, next_sequence(), false);
-        if (!bool(queued.get("ok", false))) return;
-        MilitaryCommand command;
-        command.op = MCMD_STATE_DEMOLISH;
-        command.country = intent.country_a;
-        command.cell = intent.cell;
-        command.unit_to = building;
-        command.effective_day = effective_day;
-        command.sequence = static_cast<uint64_t>(next_sequence());
-        std::string command_error;
-        core->submit(std::move(command), command_error);
-        // No `pending` row: the economy's accept/reject above is synchronous.
-        return;
-    }
-    case MILITARY_INTENT_ARMY_EMBARK:
-    case MILITARY_INTENT_ARMY_DISEMBARK: {
-        // Army personnel lane (army-personnel contract §1.2, opcode 30/31).
-        // The lane row is named by ARMY HANDLE (target_cohort) and the cohort by
-        // (cell, signature) — never by slot id, same rule as opcode 24. Economy
-        // resolves the soldier|ethnicity signature itself; the bridge only offers
-        // the signature it can see for the cell, and -1 means "you decide".
-        if (economy_runtime == nullptr || intent.cell < 0 || intent.source_id == 0) return;
-        const int64_t heads = std::max<int64_t>(0, intent.count);
-        if (heads == 0) return;
-        int32_t signature = -1;
-        if (soldier_profession >= 0) {
-            signature = economy_api::military_signature_for_cell_ethnicity(*economy_runtime,
-                intent.cell, soldier_profession);
-        }
-        MilitaryEconomyCommand command;
-        command.opcode = intent.kind == MILITARY_INTENT_ARMY_EMBARK
-            ? MECONOMY_ARMY_EMBARK : MECONOMY_ARMY_DISEMBARK;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.source_id);  // army handle
-        command.i32_0 = intent.cell;
-        command.i32_1 = signature;
-        command.i64_0 = heads;
-        command.i64_1 = 0;
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = command.target_handle;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_ARMY_MERGE_LANES: {
-        // Opcode 32: fold the source lane into the destination lane. payload1
-        // carries the destination army handle; the source is target_cohort.
-        if (economy_runtime == nullptr || intent.country_a == 0 || intent.country_b == 0) return;
-        MilitaryEconomyCommand command;
-        command.opcode = MECONOMY_ARMY_MERGE_LANES;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);   // source lane
-        command.i64_0 = std::max<int64_t>(0, intent.count);
-        command.i64_1 = static_cast<int64_t>(intent.country_b);           // destination
-        command.i32_0 = intent.cell;
-        command.i32_1 = -1;
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = command.target_handle;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_ARMY_SPLIT_LANES: {
-        // Opcode 33 (contract-2 §1.1/§1.2): move the heads a split / partial
-        // transfer actually moved from the source formation's lane into the
-        // destination formation's lane. payload0 = heads, payload1 = destination
-        // army handle, target_cohort = source army handle — the same key layout
-        // as 32, and lane -> lane names no cohort, so no signature is needed.
-        if (intent.country_a == 0 || intent.country_b == 0 ||
-            intent.country_a == intent.country_b)
-            return;
-        const int64_t heads = std::max<int64_t>(0, intent.count);
-        if (heads == 0) return;
-        if (economy_runtime == nullptr) return;
-        if (!army_lane_split_supported(economy_runtime)) {
-            // Feature detection (contract-2 §1.1): this Economy build does not
-            // implement opcode 33. Emitting the row anyway would be rejected as an
-            // unknown opcode and could take the whole batch down. Report it as a
-            // failed receipt instead — a no-op command plus one pending row
-            // failure, never a crash — and Military stays on the pre-split-lane
-            // model (the lots have already moved, so only the lane bookkeeping is
-            // skipped).
-            row.authority = 2;
-            row.receipt_pending = 0;
-            row.opcode = MECONOMY_ARMY_SPLIT_LANES;
-            row.target_handle = static_cast<int64_t>(intent.country_a);
-            pending.push_back(row);
-            return;
-        }
-        MilitaryEconomyCommand command;
-        command.opcode = MECONOMY_ARMY_SPLIT_LANES;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);   // source lane
-        command.i64_0 = heads;                                            // heads moved
-        command.i64_1 = static_cast<int64_t>(intent.country_b);           // destination
-        command.i32_0 = intent.cell;
-        // Unused by opcode 33 (lane -> lane), but 0 rather than -1 so the legacy
-        // settlement fold (`expected_i1 == 0` for this opcode) can match the row
-        // and settle it instead of letting it time out.
-        command.i32_1 = 0;
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = command.target_handle;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_ARMY_PAY: {
-        // Opcode 34 (army-pay contract §3): the wages of the heads that march
-        // with the formation, paid into its lane from the treasury.
-        //   payload0 = amount (MONEY_SCALE), payload1 = country handle,
-        //   target_cohort = army handle (the lane key 30-33 already use).
-        // No cohort is named and no structural command is involved, so the row
-        // rides the same POD lane as 24/30-33 and is deduplicated there by
-        // `sequence`.
-        //
-        // The receipt needs the PRE-PAYMENT lane balance, because the only
-        // truth Economy can report afterwards is the new balance and a lane also
-        // spends cash on guest consumption the same day. `row.count` carries
-        // that base value: the fold reads military_army_funds(handle) and books
-        // max(0, now - prev) clamped to the amount requested.
-        if (intent.source_id == 0 || intent.country_a == 0 || intent.amount <= 0)
-            return;
-        if (economy_runtime == nullptr) return;
-        if (!army_lane_pay_supported(economy_runtime)) {
-            // Feature detection (contract §3.3): this Economy build has no
-            // opcode 34. Emitting the row anyway would be an unknown opcode at
-            // admission; report a failed receipt instead — a no-op command plus
-            // one failed pending row, never a crash — and Military keeps the
-            // pre-army-pay model (the formation's people are simply not paid
-            // through the lane this day).
-            row.authority = 2;
-            row.receipt_pending = 0;
-            row.opcode = MECONOMY_ARMY_LANE_PAY;
-            row.target_handle = static_cast<int64_t>(intent.source_id);
-            pending.push_back(row);
-            return;
-        }
-        MilitaryEconomyCommand command;
-        command.opcode = MECONOMY_ARMY_LANE_PAY;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.source_id);  // army handle
-        command.i64_0 = intent.amount;                                   // MONEY_SCALE
-        command.i64_1 = static_cast<int64_t>(intent.country_a);           // payer
-        // Unused by opcode 34 (the lane knows its own cell), but 0 rather than
-        // -1 so the settlement fold can match the row and settle it.
-        command.i32_0 = intent.cell;
-        command.i32_1 = 0;
-        row.authority = 2;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        row.opcode = command.opcode;
-        row.target_handle = command.target_handle;
-        // Base value for the receipt: the lane's cash before this payment.
-        // Economy answers 0 for a lane that does not exist yet, which is also
-        // the correct base (a new lane starts empty), so the read is unconditional.
-        row.count = economy_api::military_army_funds(*economy_runtime,
-            static_cast<uint64_t>(intent.source_id));
-        row.amount = intent.amount;
-        pending.push_back(row);
-        economy.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_TRANSFER_TERRITORY: {
-        if (intent.cell < 0 || intent.country_b == 0) return;
-        MilitaryCountryCommand command;
-        command.opcode = MCOUNTRY_TRANSFER_TERRITORY;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_b);
-        command.cell = intent.cell;
-        row.authority = 1;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        pending.push_back(row);
-        country.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_TRANSFER_CASH: {
-        // Opcode 23: target_handle = payer, cell/aux = receiver slot/generation
-        // (contract §0.4), value = MONEY_SCALE.
-        if (intent.country_a == 0 || intent.country_b == 0 || intent.amount <= 0) return;
-        MilitaryCountryCommand command;
-        command.opcode = MCOUNTRY_TRANSFER_CASH;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);
-        command.cell = static_cast<int32_t>(intent.country_b & 0xFFFFFFFFull);
-        command.aux = static_cast<int32_t>(intent.country_b >> 32u);
-        command.value = intent.amount;
-        row.authority = 1;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        pending.push_back(row);
-        country.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_TRANSFER_GOODS: {
-        // Opcode 24: same receiver encoding, domain = dense good.
-        if (intent.country_a == 0 || intent.country_b == 0 || intent.good < 0 ||
-            intent.count <= 0)
-            return;
-        MilitaryCountryCommand command;
-        command.opcode = MCOUNTRY_TRANSFER_GOODS;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);
-        command.cell = static_cast<int32_t>(intent.country_b & 0xFFFFFFFFull);
-        command.aux = static_cast<int32_t>(intent.country_b >> 32u);
-        command.domain = intent.good;
-        command.value = intent.count;
-        row.authority = 1;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        pending.push_back(row);
-        country.push_back(command);
-        return;
-    }
-    case MILITARY_INTENT_ANNEX_COUNTRY: {
-        // Opcode 27: target_handle = victim, cell/aux = annexer slot/generation.
-        if (intent.country_a == 0 || intent.country_b == 0) return;
-        MilitaryCountryCommand command;
-        command.opcode = MCOUNTRY_ANNEX;
-        command.effective_day = effective_day;
-        command.sequence = next_sequence();
-        command.target_handle = static_cast<int64_t>(intent.country_a);
-        command.cell = static_cast<int32_t>(intent.country_b & 0xFFFFFFFFull);
-        command.aux = static_cast<int32_t>(intent.country_b >> 32u);
-        row.authority = 1;
-        row.sequence = command.sequence;
-        row.receipt_pending = 1;
-        pending.push_back(row);
-        country.push_back(command);
-        return;
-    }
-    default:
-        return;
-    }
+    batch.sequence = _military_sequence;
 }
 
-MilitaryIntentReceipt DCWorldExt::military_receipt_from(
-        const MilitaryPendingIntent &row, bool ok, int64_t committed_count,
-        int64_t committed_amount) {
-    MilitaryIntentReceipt receipt;
-    receipt.kind = row.kind;
-    receipt.ok = ok ? 1 : 0;
-    receipt.cell = row.cell;
-    receipt.source_id = row.source_id;
-    receipt.committed_count = ok ? committed_count : 0;
-    receipt.committed_amount = ok ? committed_amount : 0;
-    return receipt;
-}
-
-// ===========================================================================
-// ration satisfaction (design §9.2: staple/protein are supplied in kind)
-// ===========================================================================
-
-void DCWorldExt::publish_military_ration_satisfaction(
-        const MilitaryCore &core, const MilitaryWorldDigest &digest,
-        const std::vector<MilitaryIntent> &intents) {
-    if (_economy_runtime == nullptr) return;
-    NativeEconomyRuntime *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
-    const int32_t soldier_profession = economy_api::military_soldier_profession(*economy);
-    if (soldier_profession < 0) return;
-    // Real per-cell garrison ration satisfaction for the day just stepped,
-    // reconstructed from public const state (military_core.h is frozen):
-    //   need  = garrison heads * ration_need_per_head (need units, q16 scale),
-    //   met   = ration goods the holder consumed today (the
-    //           CONSUME_TREASURY_GOOD intents run_consumption emitted with
-    //           source_id = (holder_kind << 32) | holder) * supply yield,
-    //           plus ration units still held after consumption (a stocked
-    //           garrison that already ate its fill reads 1.0).
-    // Ratio = min(1, met / need) in q16. Garrisons are home-cell soldiers, so
-    // the lane is per cell, which is what Economy reads. Terrain/consumption
-    // multipliers scale need and consumption alike and are omitted.
-    // The published set replaces the previous one, so a cell whose garrison
-    // disappeared reads 1.0 again. Army lots are not home-cell cohorts in v1 (the soldier
-    // cohort stays on its home cell), so only garrison lots are published.
-    const int32_t cells_total = core.terrain().cell_count;
-    if (cells_total <= 0) return;
-    static thread_local std::vector<int64_t> heads;
-    static thread_local std::vector<int64_t> met;
-    static thread_local std::vector<int32_t> touched;
-    static thread_local std::vector<uint8_t> published_prev;
-    if (heads.size() != static_cast<size_t>(cells_total)) {
-        heads.assign(static_cast<size_t>(cells_total), 0);
-        met.assign(static_cast<size_t>(cells_total), 0);
-        published_prev.assign(static_cast<size_t>(cells_total), 0);
-    }
-    touched.clear();
-    const MilitaryLotStore &lots = core.lots();
-    for (size_t i = 0; i < lots.active.size(); ++i) {
-        if (!lots.active[i] || lots.count[i] <= 0) continue;
-        if (lots.location_kind[i] != MILITARY_LOT_GARRISON) continue;
-        const int32_t cell = lots.location[i];
-        if (cell < 0 || cell >= cells_total) continue;
-        if (heads[static_cast<size_t>(cell)] == 0) touched.push_back(cell);
-        heads[static_cast<size_t>(cell)] += lots.count[i];
-    }
-    const MilitaryCatalog &catalog = core.catalog();
-    const std::vector<int32_t> &ration_goods = catalog.supply_goods[MILITARY_SUPPLY_RATION];
-    const std::vector<int32_t> &ration_yield = catalog.supply_yield_q16[MILITARY_SUPPLY_RATION];
-    const auto yield_of = [&](int32_t good) -> int32_t {
-        for (size_t g = 0; g < ration_goods.size(); ++g) {
-            if (ration_goods[g] != good) continue;
-            const int32_t y = g < ration_yield.size() ? ration_yield[g] : MILITARY_Q;
-            return y > 0 ? y : MILITARY_Q;
-        }
-        return 0;
-    };
-    const auto mul_q = [](int64_t v, int32_t q) { return (v * static_cast<int64_t>(q)) >> 16; };
-    for (const MilitaryIntent &intent : intents) {
-        if (intent.kind != MILITARY_INTENT_CONSUME_TREASURY_GOOD) continue;
-        if ((intent.source_id >> 32) != MILITARY_LOT_GARRISON) continue;
-        const int32_t cell = static_cast<int32_t>(intent.source_id & 0xffffffffu);
-        if (cell < 0 || cell >= cells_total || heads[static_cast<size_t>(cell)] <= 0) continue;
-        const int32_t y = yield_of(intent.good);
-        if (y <= 0) continue;
-        met[static_cast<size_t>(cell)] += mul_q(intent.count, y);
-    }
-    for (const MilitaryStockRow &row : core.stocks()) {
-        if (row.holder_kind != MILITARY_LOT_GARRISON || row.qty <= 0) continue;
-        const int32_t cell = row.holder;
-        if (cell < 0 || cell >= cells_total || heads[static_cast<size_t>(cell)] <= 0) continue;
-        const int32_t y = yield_of(row.good);
-        if (y <= 0) continue;
-        met[static_cast<size_t>(cell)] += mul_q(row.qty, y);
-    }
-    (void)digest;
-    const int32_t per_head = catalog.ration_need_per_head_q16 > 0
-        ? catalog.ration_need_per_head_q16 : MILITARY_Q;
-    std::sort(touched.begin(), touched.end());
-    std::vector<int32_t> cells;
-    std::vector<int32_t> ratios;
-    std::vector<int32_t> garrison_cells;
-    std::vector<int32_t> garrison_heads_list;
-    cells.reserve(touched.size());
-    ratios.reserve(touched.size());
-    garrison_cells.reserve(touched.size());
-    garrison_heads_list.reserve(touched.size());
-    std::vector<uint8_t> now_published(published_prev.size(), 0);
-    for (const int32_t cell : touched) {
-        const size_t c = static_cast<size_t>(cell);
-        const int64_t need = mul_q(heads[c], per_head);
-        int64_t ratio = MILITARY_Q;
-        if (need > 0) ratio = std::min<int64_t>(MILITARY_Q, (met[c] * MILITARY_Q) / need);
-        cells.push_back(cell);
-        ratios.push_back(static_cast<int32_t>(std::max<int64_t>(0, ratio)));
-        garrison_cells.push_back(cell);
-        garrison_heads_list.push_back(static_cast<int32_t>(std::min<int64_t>(
-            heads[c], std::numeric_limits<int32_t>::max())));
-        now_published[c] = 1;
-        heads[c] = 0;
-        met[c] = 0;
-    }
-    // Garrisons that vanished since the last publish go back to 1.0.
-    for (size_t c = 0; c < published_prev.size(); ++c) {
-        if (published_prev[c] == 0 || now_published[c] != 0) continue;
-        cells.push_back(static_cast<int32_t>(c));
-        ratios.push_back(MILITARY_Q);
-    }
-    published_prev.swap(now_published);
-    if (!cells.empty()) {
-        economy_api::set_military_ration_satisfaction(*economy, cells, ratios);
-    }
-    // Suppression odds need the same per-cell garrison headcount. This is a
-    // sparse push (only cells that hold garrison lots this day); Economy keeps
-    // the dense read lane itself.
-    if (!garrison_cells.empty()) {
-        economy_api::set_military_cell_garrison(
-            *economy, garrison_cells, garrison_heads_list);
-    }
-    // ---- army lanes (contract §2.2) --------------------------------------
-    // A deployed formation is not a home-cell cohort: its people sit in an
-    // Economy lane keyed by army handle, so the staple/protein satisfaction has
-    // to be published per formation. The core already keeps the 3-day EMA of
-    // exactly that ratio (run_consumption, sec 10 morale input); no
-    // reconstruction is needed here. Garrisons keep the per-cell lane above.
-    if (economy_army_lane_supported(economy)) {
-        const MilitaryArmyStore &armies = core.armies();
-        for (size_t slot = 0; slot < armies.active.size(); ++slot) {
-            if (armies.active[slot] == 0) continue;
-            if (armies.cached_headcount[slot] <= 0) continue;
-            const uint64_t handle = core.army_handle(static_cast<int32_t>(slot));
-            if (handle == 0) continue;
-            const int32_t q16 = std::clamp<int32_t>(
-                armies.ration_ratio_q16[slot], 0, MILITARY_Q);
-            economy_set_army_ration(economy, handle, q16);
+Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
+    if (!_military) return military_unavailable();
+    auto request = std::make_shared<MilitaryCommandBatch>();
+    request->rows.reserve(batch.size());
+    for (int64_t i = 0; i < batch.size(); ++i) {
+        auto &row = request->rows.emplace_back();
+        row.index = i;
+        if (batch[i].get_type() != Variant::DICTIONARY) {
+            row.error = "military_command_not_object";
+        } else {
+            const Dictionary source = batch[i];
+            if (parse_military_command(source, row.command, row.error)) {
+                row.command_name = std::string("military.") + String(source["op"]).utf8().get_data();
+                row.caller_sequence = source.get("caller_sequence", 0);
+                if (row.command.op == MCMD_POLICY_SET_BUDGET ||
+                        row.command.op == MCMD_POLICY_SET_PROCUREMENT)
+                    row.command.count = row.caller_sequence;
+                if (row.command.op == MCMD_TRAIN || row.command.op == MCMD_ARMY_CREATE ||
+                    row.command.op == MCMD_ARMY_MOVE || row.command.op == MCMD_ARMY_AREA_CONTROL ||
+                    row.command.op == MCMD_ARMY_EXPLORE) {
+                    row.command.value = row.caller_sequence;
+                }
+                if (row.command.op == MCMD_TRAIN && row.caller_sequence > 0)
+                    _military->resolve_training_units(source, row.command);
+                if (row.command.op == MCMD_CONFIG_SET && source.has("shares")) {
+                    row.command.value = row.caller_sequence;
+                    _military->resolve_config_shares(source, row.command, row.error);
+                }
+            }
         }
     }
+    const bool executor_owned = military_executor_active();
+    if (executor_owned) {
+        if (!_runtime_host->submit_military_commands(request))
+            return military_fail("military_executor_unavailable");
+    } else {
+        bind_military_dependencies();
+        request->day = _runtime_host && _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::COUNTRY)
+            ? _runtime_host->command_seal_day() : _military->_military_last_step_day + 1;
+        _military->admit(*request);
+    }
+    Array rejected;
+    PackedInt64Array effective_days;
+    for (const auto &row : request->rows) {
+        effective_days.push_back(row.error.empty() ? row.effective_day : -1);
+        if (row.error.empty()) continue;
+        Dictionary entry;
+        entry["index"] = row.index;
+        entry["reason"] = String(row.error.c_str());
+        rejected.push_back(entry);
+    }
+    const int64_t accepted = batch.size() - rejected.size();
+    Dictionary out;
+    out["ok"] = rejected.is_empty();
+    out["admitted"] = accepted > 0;
+    out["accepted"] = accepted;
+    out["rejected"] = rejected;
+    out["code"] = rejected.is_empty() ? String("ok") :
+        batch.size() == 1 ? String(request->rows.front().error.c_str()) :
+        String("military_command_rejected");
+    out["effective_days"] = effective_days;
+    if (accepted > 0) {
+        out["effective_day"] = *std::max_element(effective_days.ptr(), effective_days.ptr() + effective_days.size());
+        if (executor_owned) {
+            out["committed_at_admission"] = request->committed_at_admission;
+            out["frozen_at_admission"] = request->frozen_at_admission;
+        }
+    }
+    if (!executor_owned) out["next_sequence"] = request->sequence;
+    return out;
 }
 
 // ===========================================================================
@@ -2457,14 +1167,17 @@ void DCWorldExt::publish_military_ration_satisfaction(
 // ===========================================================================
 
 Dictionary DCWorldExt::get_military_report() {
-    if (_military_runtime == nullptr) {
+    if (!_military) {
         Dictionary out = military_unavailable();
         out["configured"] = false;
         return out;
     }
-    const MilitaryCore *core = core_from(_military_runtime);
+    const auto published = military_executor_active() ? _military->read() : nullptr;
+    const auto frame = published ? published->view : read_military_core();
+    const MilitaryCore *core = frame.get();
     const MilitaryReport &report = core->report();
     Dictionary out;
+    out["background_day"] = published ? published->executor_day : _military->_military_last_background_day;
     out["ok"] = true;
     out["configured"] = core->configured();
     out["day"] = report.day;
@@ -2504,26 +1217,53 @@ Dictionary DCWorldExt::get_military_report() {
     out["state_role_mismatch"] = static_cast<int64_t>(report.state_role_mismatch);
     out["configured_units"] = static_cast<int64_t>(core->catalog().units.size());
     out["catalog_hash"] = static_cast<int64_t>(core->catalog().hash);
-    out["last_step_day"] = _military_last_step_day;
-    out["sequence_cursor"] = _military_sequence;
-    out["pending_intents"] = static_cast<int64_t>(_military_pending_intents.size());
+    out["last_step_day"] = published ? published->last_step_day : _military->_military_last_step_day;
+    out["sequence_cursor"] = published ? published->sequence : _military->_military_sequence;
+    out["pending_intents"] = published ? published->pending_intents : static_cast<int64_t>(_military->_military_pending_intents.size());
     out["ledger_received"] = core->_ledger_received;
     out["ledger_consumed"] = core->_ledger_consumed;
     out["ledger_stock"] = core->ledger_stock_total();
     out["ledger_transit"] = core->ledger_transit_total();
     out["has_terrain"] = core->terrain().cell_count > 0;
     out["cell_count"] = static_cast<int64_t>(core->terrain().cell_count);
-    out["state_hash"] = static_cast<int64_t>(core->state_hash() & 0x7fffffffffffffffll);
-    out["render_revision"] = _military_render_revision;
+    out["state_hash"] = published ? published->state_hash : static_cast<int64_t>(core->state_hash() & 0x7fffffffffffffffll);
+    out["render_revision"] = published ? published->revision : _military->_military_render_revision;
     return out;
+}
+
+Dictionary DCWorldExt::get_military_daily_result() const {
+    if (military_executor_active()) {
+        if (const auto published = _military->read()) return published->result.duplicate(false);
+    }
+    return {};
+}
+
+PackedInt64Array DCWorldExt::capture_military_event_progress() const {
+    PackedInt64Array out;
+    if (!_military) return out;
+    const auto published = military_executor_active() ? _military->read() : nullptr;
+    out.append(published ? published->event_cursor : _military->event_cursor);
+    out.append(published ? published->event_tick : _military->event_tick);
+    out.append(published ? published->events_forwarded : _military->events_forwarded);
+    return out;
+}
+
+bool DCWorldExt::restore_military_event_progress(const PackedInt64Array &progress) {
+    if (!_military || military_executor_active() || progress.size() != 3 ||
+        progress[0] < 0 || progress[1] < -1 || progress[2] < 0) return false;
+    _military->event_cursor = progress[0];
+    _military->event_tick = progress[1];
+    _military->events_forwarded = progress[2];
+    return true;
 }
 
 // Physical maintenance view (design §4 / D7). Read-only: it never mutates the
 // core, never books a purchase and never touches the ledger. Everything is a
 // Packed array of the same length so the panel can render a table from one poll.
 Dictionary DCWorldExt::get_military_maintenance_snapshot(int64_t country) const {
-    if (_military_runtime == nullptr) return military_unavailable();
-    const MilitaryCore *core = core_from(_military_runtime);
+    if (!_military) return military_unavailable();
+    const auto frame = read_military_core();
+    const MilitaryCore *core = frame.get();
     PackedInt32Array out_country, out_cell, out_kind, out_object, out_ratio,
         out_days, out_disrepair, out_reason;
     PackedInt64Array out_units, out_need, out_stock, out_inbound;
@@ -2619,8 +1359,9 @@ Dictionary DCWorldExt::get_military_maintenance_snapshot(int64_t country) const 
 }
 
 Dictionary DCWorldExt::get_military_country_snapshot(int64_t country) const {
-    if (_military_runtime == nullptr) return military_unavailable();
-    const MilitaryCore *core = core_from(_military_runtime);
+    if (!_military) return military_unavailable();
+    const auto frame = read_military_core();
+    const MilitaryCore *core = frame.get();
     const int32_t slot = core->country_slot_for_handle(static_cast<uint64_t>(country));
     if (slot < 0) return military_fail("military_country_slot_unknown");
     Dictionary out;
@@ -2799,8 +1540,9 @@ Dictionary DCWorldExt::get_military_country_snapshot(int64_t country) const {
 
 Array DCWorldExt::get_military_armies(int64_t country) const {
     Array out;
-    if (_military_runtime == nullptr) return out;
-    const MilitaryCore *core = core_from(_military_runtime);
+    if (!_military) return out;
+    const auto frame = read_military_core();
+    const MilitaryCore *core = frame.get();
     const int32_t slot = core->country_slot_for_handle(static_cast<uint64_t>(country));
     if (slot < 0) {
         // 0 means "every army", which the map UI uses for the overview.
@@ -2840,8 +1582,10 @@ Array DCWorldExt::get_military_armies(int64_t country) const {
 }
 
 Dictionary DCWorldExt::get_military_army(int64_t army) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    const MilitaryCore *core = core_from(_military_runtime);
+    if (!_military) return military_unavailable();
+    const auto published = military_executor_active() ? _military->read() : nullptr;
+    const auto frame = published ? published->view : read_military_core();
+    const MilitaryCore *core = frame.get();
     int32_t slot = -1;
     if (!core->resolve_army(static_cast<uint64_t>(army), slot))
         return military_fail("military_army_unknown");
@@ -2875,26 +1619,20 @@ Dictionary DCWorldExt::get_military_army(int64_t army) {
     // holds in the formation's lane row. They are the same people and must stay
     // equal, so both are reported (an older economy without the lane bindings
     // reports the military book and lane_supported = false).
-    const bool lane_supported = _economy_runtime != nullptr &&
-        economy_army_lane_supported(_economy_runtime);
-    int64_t lane_population = -1;
-    if (lane_supported) {
-        lane_population = economy_army_lane_population(_economy_runtime,
-            core->army_handle(slot));
-    }
-    out["lane_supported"] = lane_supported;
-    out["lane_population"] = lane_population;
     // Lane cash: what the formation's people actually hold in Economy. Army pay
     // (contract §3) lands here, so the smoke test asserts on this instead of the
     // Military-side `funds` mirror, which only the pre-lane bookkeeping touched.
-    int64_t lane_funds = -1;
-    if (lane_supported) {
-        lane_funds = economy_army_lane_funds(_economy_runtime,
-            core->army_handle(slot));
-    }
+    const int64_t lane_population = published
+        ? (published->lane_supported ? published->lane_population[s] : -1)
+        : economy_army_lane_population(_economy_runtime, core->army_handle(slot));
+    const int64_t lane_funds = published
+        ? (published->lane_supported ? published->lane_funds[s] : -1)
+        : economy_army_lane_funds(_economy_runtime, core->army_handle(slot));
+    out["lane_supported"] = published ? published->lane_supported : economy_army_lane_supported(_economy_runtime);
+    out["lane_population"] = lane_population;
     out["lane_funds"] = lane_funds;
-    out["lane_pay_supported"] = army_lane_pay_supported(
-        static_cast<const NativeEconomyRuntime *>(_economy_runtime));
+    out["lane_pay_supported"] = published ? published->lane_pay_supported :
+        army_lane_pay_supported(static_cast<const NativeEconomyRuntime *>(_economy_runtime));
     out["personnel"] = lane_population >= 0 ? lane_population : armies.cached_headcount[s];
     out["personnel_pending"] = core->army_lane_pending(slot);
     // Ration still in the formation's store (need units of the ration class).
@@ -2994,67 +1732,11 @@ Dictionary DCWorldExt::get_military_army(int64_t army) {
     return out;
 }
 
-Dictionary DCWorldExt::set_military_exploration_observer(int64_t observer_slot) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    if (observer_slot < -1) return military_fail("military_observer_invalid");
-    core_from(_military_runtime)->set_exploration_observer(
-        static_cast<int32_t>(observer_slot));
-    Dictionary out;
-    out["ok"] = true;
-    out["observer_slot"] = observer_slot;
-    return out;
-}
-
-Dictionary DCWorldExt::set_military_exploration_view(
-        int64_t observer_slot, const PackedByteArray &explored,
-        int64_t day, int64_t revision) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    if (observer_slot < -1 || day < -1 || revision < 0)
-        return military_fail("military_exploration_view_invalid");
-    const int32_t observer = static_cast<int32_t>(observer_slot);
-    const uint8_t *data = explored.is_empty() ? nullptr : explored.ptr();
-    core_from(_military_runtime)->set_exploration_view(
-        observer, data, static_cast<size_t>(explored.size()), day,
-        static_cast<uint64_t>(revision));
-    Dictionary out;
-    out["ok"] = true;
-    out["observer_slot"] = observer_slot;
-    out["cells"] = static_cast<int64_t>(explored.size());
-    out["day"] = day;
-    out["revision"] = revision;
-    return out;
-}
-
-PackedInt32Array DCWorldExt::get_military_vision_trail(int64_t observer_slot) const {
-    PackedInt32Array out;
-    if (_military_runtime == nullptr) return out;
-    const std::vector<int32_t> &trail = core_from(_military_runtime)->exploration_trail(
-        static_cast<int32_t>(observer_slot));
-    out.resize(static_cast<int64_t>(trail.size()));
-    for (size_t i = 0; i < trail.size(); ++i)
-        out[static_cast<int64_t>(i)] = trail[i];
-    return out;
-}
-
-Dictionary DCWorldExt::clear_military_vision_trail(int64_t observer_slot) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    core_from(_military_runtime)->clear_exploration_trail(
-        static_cast<int32_t>(observer_slot));
-    Dictionary out;
-    out["ok"] = true;
-    out["observer_slot"] = observer_slot;
-    return out;
-}
-
-bool DCWorldExt::has_military_exploration_work() const {
-    if (_military_runtime == nullptr) return false;
-    return core_from(_military_runtime)->has_exploration_work();
-}
-
 Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer) const {
-    if (_military_runtime == nullptr) return military_unavailable();
+    if (!_military) return military_unavailable();
     (void)observer;  // v1: the military roster is not fog-filtered
-    const MilitaryCore *core = core_from(_military_runtime);
+    const auto frame = read_military_core();
+    const MilitaryCore *core = frame.get();
     if (cell < 0 || cell >= core->terrain().cell_count)
         return military_fail("military_cell_out_of_range");
     const int32_t c = static_cast<int32_t>(cell);
@@ -3160,22 +1842,26 @@ Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer
 }
 
 Dictionary DCWorldExt::get_military_render_snapshot(int64_t after_revision) {
-    if (_military_runtime == nullptr) {
+    if (!_military) {
         Dictionary out = military_unavailable();
         out["available"] = false;
         out["revision"] = after_revision;
         return out;
     }
-    const MilitaryCore *core = core_from(_military_runtime);
+    const auto published = military_executor_active() ? _military->read() : nullptr;
+    const auto frame = published ? published->view : read_military_core();
+    int64_t revision = _military_render_selection_revision +
+        (published ? published->revision : _military->_military_render_revision);
+    const MilitaryCore *core = frame.get();
     Dictionary out;
     out["ok"] = true;
     out["available"] = true;
-    out["revision"] = _military_render_revision;
+    out["revision"] = revision;
     const int64_t control_revision = static_cast<int64_t>(core->control_revision());
     const int64_t front_revision = static_cast<int64_t>(core->front_revision());
     out["control_revision"] = control_revision;
     out["front_revision"] = front_revision;
-    if (after_revision == _military_render_revision &&
+    if (after_revision == revision &&
         control_revision == _military_render_control_revision &&
         front_revision == _military_render_front_revision) {
         // Unchanged: the feed keeps its previous arrays and does no work.
@@ -3183,7 +1869,10 @@ Dictionary DCWorldExt::get_military_render_snapshot(int64_t after_revision) {
         return out;
     }
     out["unchanged"] = false;
-    _military_render_revision = std::max<int64_t>(_military_render_revision, after_revision);
+    if (after_revision > revision) {
+        _military_render_selection_revision += after_revision - revision;
+        revision = after_revision;
+    }
     _military_render_control_revision = control_revision;
     _military_render_front_revision = front_revision;
     // ---- armies ----
@@ -3446,10 +2135,10 @@ Dictionary DCWorldExt::get_military_render_snapshot(int64_t after_revision) {
 }
 
 Dictionary DCWorldExt::set_military_render_selection(int64_t army) {
-    if (_military_runtime == nullptr) return military_unavailable();
+    if (!_military) return military_unavailable();
     if (army != 0) {
         int32_t slot = -1;
-        if (!core_from(_military_runtime)->resolve_army(static_cast<uint64_t>(army), slot))
+        if (!read_military_core()->resolve_army(static_cast<uint64_t>(army), slot))
             return military_fail("military_army_unknown");
     }
     Dictionary out;
@@ -3458,15 +2147,18 @@ Dictionary DCWorldExt::set_military_render_selection(int64_t army) {
     out["changed"] = army != _military_render_selected_army;
     if (army != _military_render_selected_army) {
         _military_render_selected_army = army;
-        ++_military_render_revision;  // the feed rebuilds on revision change
+        ++_military_render_selection_revision;  // the feed rebuilds on revision change
     }
-    out["revision"] = _military_render_revision;
+    const auto published = military_executor_active() ? _military->read() : nullptr;
+    out["revision"] = _military_render_selection_revision +
+        (published ? published->revision : _military->_military_render_revision);
     return out;
 }
 
 Dictionary DCWorldExt::get_military_control_snapshot() const {
-    if (_military_runtime == nullptr) return military_unavailable();
-    const MilitaryCore *core = core_from(_military_runtime);
+    if (!_military) return military_unavailable();
+    const auto frame = read_military_core();
+    const MilitaryCore *core = frame.get();
     const std::vector<int32_t> &controllers = core->cell_controller();
     PackedInt32Array cells, slots;
     for (size_t i = 0; i < controllers.size(); ++i) {
@@ -3485,8 +2177,8 @@ Dictionary DCWorldExt::get_military_control_snapshot() const {
 
 Array DCWorldExt::poll_military_events(int64_t after_id, int64_t limit) const {
     Array out;
-    if (_military_runtime == nullptr) return out;
-    const std::vector<MilitaryEvent> events = core_from(_military_runtime)->events_after(
+    if (!_military) return out;
+    const std::vector<MilitaryEvent> events = read_military_core()->events_after(
         static_cast<uint64_t>(std::max<int64_t>(0, after_id)),
         static_cast<size_t>(std::clamp<int64_t>(limit, 1, MILITARY_EVENT_RING_CAPACITY)));
     for (const MilitaryEvent &event : events) {
@@ -3507,11 +2199,11 @@ Array DCWorldExt::poll_military_events(int64_t after_id, int64_t limit) const {
 }
 
 Dictionary DCWorldExt::preview_military_path(int64_t army, int64_t cell) {
-    if (_military_runtime == nullptr) return military_unavailable();
+    if (!_military) return military_unavailable();
     if (cell < 0) return military_fail("military_cell_out_of_range");
     std::vector<int32_t> cells;
     int32_t days = 0;
-    if (!core_from(_military_runtime)->preview_path(static_cast<uint64_t>(army),
+    if (!read_military_core()->preview_path(static_cast<uint64_t>(army),
             static_cast<int32_t>(cell), cells, days))
         return military_fail("military_path_unreachable");
     PackedInt32Array out_cells;
@@ -3527,7 +2219,7 @@ Dictionary DCWorldExt::preview_military_path(int64_t army, int64_t cell) {
 
 Dictionary DCWorldExt::evaluate_military_peace(int64_t war_id, int64_t proposer,
                                                const Array &terms) const {
-    if (_military_runtime == nullptr) return military_unavailable();
+    if (!_military) return military_unavailable();
     std::vector<int32_t> ints;
     std::vector<int64_t> longs;
     std::string error;
@@ -3537,7 +2229,7 @@ Dictionary DCWorldExt::evaluate_military_peace(int64_t war_id, int64_t proposer,
         out["reason"] = String(error.c_str());
         return out;
     }
-    const MilitaryPeaceEvaluation evaluation = core_from(_military_runtime)->evaluate_peace(
+    const MilitaryPeaceEvaluation evaluation = read_military_core()->evaluate_peace(
         static_cast<int32_t>(war_id), static_cast<uint64_t>(proposer), ints, longs);
     Dictionary out;
     out["ok"] = evaluation.valid;
@@ -3554,8 +2246,9 @@ Dictionary DCWorldExt::evaluate_military_peace(int64_t war_id, int64_t proposer,
 }
 
 Dictionary DCWorldExt::get_military_catalog_view() const {
-    if (_military_runtime == nullptr) return military_unavailable();
-    const MilitaryCatalog &catalog = core_from(_military_runtime)->catalog();
+    if (!_military) return military_unavailable();
+    const auto frame = read_military_core();
+    const MilitaryCatalog &catalog = frame->catalog();
     Dictionary out;
     out["ok"] = true;
     out["catalog_hash"] = static_cast<int64_t>(catalog.hash);
@@ -3661,10 +2354,8 @@ Dictionary DCWorldExt::get_military_catalog_view() const {
 // persistence
 // ===========================================================================
 
-PackedByteArray DCWorldExt::encode_military_state() const {
-    PackedByteArray bytes;
-    if (_military_runtime == nullptr) return bytes;
-    const std::vector<uint8_t> core_bytes = core_from(_military_runtime)->encode();
+std::vector<uint8_t> NativeMilitaryRuntime::encode() const {
+    const std::vector<uint8_t> core_bytes = core().encode();
     std::vector<uint8_t> out;
     out.reserve(core_bytes.size() + 8 * (_military_pending_intents.size() * 9 + 4) + 64);
     const auto append_u32 = [](std::vector<uint8_t> &buffer, uint32_t value) {
@@ -3704,13 +2395,10 @@ PackedByteArray DCWorldExt::encode_military_state() const {
         append_u32(out, static_cast<uint32_t>(row.target_signature));
         append_u32(out, static_cast<uint32_t>(row.opcode));
     }
-    bytes.resize(static_cast<int64_t>(out.size()));
-    if (!out.empty()) std::memcpy(bytes.ptrw(), out.data(), out.size());
-    return bytes;
+    return out;
 }
 
-Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
-    if (_military_runtime == nullptr) return military_unavailable();
+Dictionary NativeMilitaryRuntime::restore(const PackedByteArray &bytes) {
     if (bytes.is_empty()) return military_fail("pkmi_empty");
     const uint8_t *data = bytes.ptr();
     const size_t size = static_cast<size_t>(bytes.size());
@@ -3734,7 +2422,7 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
         return military_fail("pkmi_wrapper_version_mismatch_expected_4");
     if (!read_u32(core_size) || size - at < core_size) return military_fail("pkmi_wrapper_truncated");
     std::string error;
-    if (!core_from(_military_runtime)->restore(data + at, core_size, error)) {
+    if (!core().restore(data + at, core_size, error)) {
         Dictionary out;
         out["ok"] = false;
         out["reason"] = String(error.c_str());
@@ -3792,9 +2480,8 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     _military_economy_event_cursor = -1;
     _military_economy_seen_day = -1;
     _military_forced_run_day = -1;
-    _military_render_selected_army = 0;
     ++_military_render_revision;
-    const MilitaryReport &report = core_from(_military_runtime)->report();
+    const MilitaryReport &report = core().report();
     Dictionary out;
     out["ok"] = true;
     out["reason"] = String();
@@ -3803,8 +2490,26 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     out["pending_intents"] = static_cast<int64_t>(_military_pending_intents.size());
     out["sequence_cursor"] = _military_sequence;
     out["state_hash"] = static_cast<int64_t>(
-        core_from(_military_runtime)->state_hash() & 0x7fffffffffffffffll);
+        core().state_hash() & 0x7fffffffffffffffll);
     return out;
+}
+
+PackedByteArray DCWorldExt::encode_military_state() const {
+    if (!_military) return {};
+    const auto frame = military_executor_active() ? _military->read() : nullptr;
+    const std::vector<uint8_t> wire = frame ? frame->archive : _military->encode();
+    PackedByteArray out;
+    out.resize(static_cast<int64_t>(wire.size()));
+    if (!wire.empty()) std::memcpy(out.ptrw(), wire.data(), wire.size());
+    return out;
+}
+
+Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
+    if (!_military) return military_unavailable();
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
+    auto result = _military->restore_checkpoint(bytes);
+    if (bool(result.get("ok", false))) _military_render_selected_army = 0;
+    return result;
 }
 
 // ===========================================================================
@@ -3897,11 +2602,12 @@ Dictionary DCWorldExt::run_military_bench(const Dictionary &cfg) {
 }
 
 Dictionary DCWorldExt::set_military_ai_player_handles(const PackedInt64Array &handles) {
-    if (_military_runtime == nullptr) return military_unavailable();
-    MilitaryCore *core = core_from(_military_runtime);
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
+    if (!_military) return military_unavailable();
+    MilitaryCore *core = &_military->core();
     int32_t arming_errors = 0;
     // Make sure every active country owns a slot before slot -> handle lookups.
-    ensure_military_country_slots();
+    _military->ensure_military_country_slots();
     // Every country slot the digest knows becomes AI unless it is a player.
     int32_t country_count = 0;
     if (_country_runtime != nullptr) {
@@ -3932,9 +2638,10 @@ Dictionary DCWorldExt::set_military_ai_player_handles(const PackedInt64Array &ha
 }
 
 Dictionary DCWorldExt::set_military_ai_country(int64_t slot, int64_t ai) {
-    if (_military_runtime == nullptr) return military_unavailable();
+    if (military_executor_active()) return military_fail("military_executor_owns_state");
+    if (!_military) return military_unavailable();
     if (slot < 0 || slot >= MILITARY_MAX_ARMIES) return military_fail("military_slot_invalid");
-    core_from(_military_runtime)->set_ai_country(static_cast<int32_t>(slot), ai != 0);
+    _military->core().set_ai_country(static_cast<int32_t>(slot), ai != 0);
     Dictionary out;
     out["ok"] = true;
     out["slot"] = slot;

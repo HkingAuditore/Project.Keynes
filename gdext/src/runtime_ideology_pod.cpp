@@ -2,6 +2,7 @@
 #include "runtime_ideology_pod.h"
 
 #include "runtime_ideology_draw_kernel.h"
+#include "runtime_ideology_pod_save_internal.h"
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -12,93 +13,12 @@
 namespace pk {
 namespace {
 
-constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
-constexpr uint64_t FNV_PRIME = 1099511628211ull;
-constexpr uint32_t SAVE_MAGIC = 0x32504449u; // IDP2
-constexpr uint32_t SAVE_END = 0x21444e45u;
-constexpr uint32_t MAX_SAVE_BYTES = 64u * 1024u * 1024u;
-// Matches NativeIdeologyRuntime::MAX_ERA_INDEX so a command accepted by the
-// main runtime can never be rejected by the worker (or vice versa).
-constexpr int32_t kMaxEraIndex = 63;
 constexpr uint8_t ACQUIRE_DISCOVER = 1u;
 constexpr uint8_t ACQUIRE_DRAW = 2u;
 constexpr uint16_t EFFECT_TRANSITION_OPCODE = 1u;
 constexpr int64_t Q16_ONE = 65536;
 // Economy MONEY_SCALE: trade weights are authored per whole money unit.
 constexpr int64_t TRADE_MONEY_SCALE = 10000;
-
-template <typename T, bool = std::is_enum_v<std::remove_cv_t<T>>>
-struct raw_type { using type = std::remove_cv_t<T>; };
-template <typename T>
-struct raw_type<T, true> { using type = std::underlying_type_t<std::remove_cv_t<T>>; };
-
-template <typename T>
-void append_le(std::vector<uint8_t> &out, T value) {
-    using Raw = typename raw_type<T>::type;
-    using U = std::make_unsigned_t<Raw>;
-    U bits = static_cast<U>(static_cast<Raw>(value));
-    for (size_t i = 0; i < sizeof(Raw); ++i) {
-        out.push_back(static_cast<uint8_t>(bits & static_cast<U>(0xffu)));
-        bits >>= 8u;
-    }
-}
-
-template <typename T>
-bool read_le(const uint8_t *data, size_t size, size_t &cursor, T &value) {
-    using Raw = typename raw_type<T>::type;
-    using U = std::make_unsigned_t<Raw>;
-    if (data == nullptr || cursor > size || size - cursor < sizeof(Raw)) return false;
-    U bits = 0;
-    for (size_t i = 0; i < sizeof(Raw); ++i)
-        bits |= static_cast<U>(data[cursor + i]) << (i * 8u);
-    cursor += sizeof(Raw);
-    value = static_cast<T>(static_cast<Raw>(bits));
-    return true;
-}
-
-uint64_t hash_bytes(uint64_t hash, const void *data, size_t size) {
-    const auto *bytes = static_cast<const uint8_t *>(data);
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= FNV_PRIME;
-    }
-    return hash;
-}
-
-template <typename T>
-uint64_t hash_value(uint64_t hash, const T &value) {
-    return hash_bytes(hash, &value, sizeof(value));
-}
-
-template <typename T>
-uint64_t hash_vector(uint64_t hash, const std::vector<T> &values) {
-    hash = hash_value(hash, static_cast<uint64_t>(values.size()));
-    for (const T &value : values) hash = hash_value(hash, value);
-    return hash;
-}
-
-uint64_t hash_text_vector(uint64_t hash, const std::vector<std::string> &values) {
-    hash = hash_value(hash, static_cast<uint64_t>(values.size()));
-    for (const std::string &value : values)
-        hash = hash_bytes(hash, value.data(), value.size());
-    return hash;
-}
-
-template <typename T>
-void append_vector(std::vector<uint8_t> &out, const std::vector<T> &values) {
-    append_le<uint32_t>(out, static_cast<uint32_t>(values.size()));
-    for (const T value : values) append_le<T>(out, value);
-}
-
-template <typename T>
-bool read_vector(const uint8_t *data, size_t size, size_t &cursor,
-                 std::vector<T> &out, uint32_t limit) {
-    uint32_t count = 0;
-    if (!read_le(data, size, cursor, count) || count > limit) return false;
-    out.resize(count);
-    for (T &value : out) if (!read_le(data, size, cursor, value)) return false;
-    return true;
-}
 
 int64_t add_sat(int64_t a, int64_t b) {
     if (b > 0 && a > std::numeric_limits<int64_t>::max() - b)
@@ -147,48 +67,8 @@ void bit_set(std::vector<uint64_t> &bits, int32_t index, bool value) {
     else bits[static_cast<size_t>(index / 64)] &= ~mask;
 }
 
-uint64_t country_handle(uint32_t generation, uint32_t slot) {
-    return (static_cast<uint64_t>(generation) << 32u) | slot;
-}
-
-void append_country_rows(
-        RuntimeIdeologyPodSnapshot &state, const RuntimeCountryPodSnapshot &country,
-        const RuntimeIdeologyOpinionSnapshot &opinion, const RuntimeIdeologyPodCatalog &catalog) {
-    const size_t first_new_slot = state.countries.size();
-    if (first_new_slot == country.country_count) return;
-    state.countries.resize(country.country_count);
-    const size_t idea_words = (catalog.definitions.size() + 63u) / 64u;
-    const size_t gate_words = (catalog.gate_count + 63u) / 64u;
-    const size_t synergy_words = (catalog.synergies.size() + 63u) / 64u;
-    for (uint32_t slot = static_cast<uint32_t>(first_new_slot);
-         slot < country.country_count; ++slot) {
-        auto &out = state.countries[slot];
-        if (country.country_active[slot] == 0) continue;
-        out.generation = country.country_generation[slot];
-        out.handle = country_handle(out.generation, slot);
-        out.ideology_points_q16 = catalog.starting_points_q16;
-        // Seed from the handle and the SHARED constant only. Seeding from
-        // `catalog.catalog_hash` made the two sides disagree by construction,
-        // because the main thread and the worker hash their catalogs with
-        // different functions.
-        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
-                                                         catalog.world_seed);
-        if (slot < opinion.country_count) out.opinion_revision = opinion.revision;
-        out.known_bits.assign(idea_words, 0);
-        out.banned_bits.assign(idea_words, 0);
-        out.gate_bits.assign(gate_words, 0);
-        out.synergy_bits.assign(synergy_words, 0);
-        out.ideas.resize(catalog.definitions.size());
-    }
-}
-
-void rebuild_active_idea_ids(RuntimeIdeologyPodCountryState &country) {
-    country.active_idea_ids.clear();
-    country.active_idea_ids.reserve(country.ideas.size());
-    for (uint32_t ideology_id = 0; ideology_id < country.ideas.size(); ++ideology_id) {
-        if (country.ideas[ideology_id].location != RuntimeIdeologyPodLocation::INACTIVE)
-            country.active_idea_ids.push_back(ideology_id);
-    }
+uint64_t country_handle(const RuntimeCountryPodSnapshot &country, uint32_t slot) {
+    return (static_cast<uint64_t>(country.country_generation[slot]) << 32u) | slot;
 }
 
 uint64_t producer_high_watermark(
@@ -249,200 +129,6 @@ bool RuntimeIdeologyPodAuthority::command_less(
                     a.sequence, a.submit_order) <
            std::tie(b.effective_day, b.source_priority, b.producer_id,
                     b.sequence, b.submit_order);
-}
-
-uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
-        const RuntimeIdeologyPodCatalog &catalog) {
-    uint64_t hash = FNV_OFFSET;
-    hash = hash_value(hash, catalog.abi_version);
-    hash = hash_value(hash, catalog.country_catalog_hash);
-    // The offer RNG depends on it, so a peer with a different world seed draws a
-    // different card from the same sequence and must be rejected up front.
-    hash = hash_value(hash, catalog.world_seed);
-    hash = hash_value(hash, catalog.class_hash);
-    hash = hash_value(hash, catalog.class_count);
-    hash = hash_value(hash, catalog.technology_count);
-    hash = hash_value(hash, catalog.research_signal_count);
-    hash = hash_value(hash, catalog.gate_count);
-    hash = hash_value(hash, catalog.ideology_capacity);
-    hash = hash_value(hash, catalog.spirit_capacity);
-    hash = hash_value(hash, catalog.ideology_capacity_max);
-    hash = hash_value(hash, catalog.spirit_capacity_max);
-    hash = hash_value(hash, catalog.offer_cost_q16);
-    hash = hash_value(hash, catalog.offer_cost_growth_percent);
-    hash = hash_value(hash, catalog.offer_cost_max_q16);
-    hash = hash_value(hash, catalog.reroll_cost_percent);
-    hash = hash_value(hash, catalog.starting_points_q16);
-    hash = hash_value(hash, catalog.point_population_weight_q16);
-    hash = hash_value(hash, catalog.point_building_weight_q16);
-    hash = hash_value(hash, catalog.point_trade_weight_q16);
-    hash = hash_value(hash, catalog.point_gain_cap_q16);
-    hash = hash_value(hash, catalog.point_gain_stat_id);
-    hash = hash_text_vector(hash, catalog.route_keys);
-    hash = hash_value(hash, catalog.point_population_factor_stat_id);
-    hash = hash_value(hash, catalog.point_building_factor_stat_id);
-    hash = hash_value(hash, catalog.point_trade_factor_stat_id);
-    hash = hash_value(hash, catalog.opinion_factor_floor_stat_id);
-    hash = hash_text_vector(hash, catalog.school_keys);
-    hash = hash_vector(hash, catalog.school_strength_factor_stat_ids);
-    hash = hash_value(hash, catalog.understanding_gain_stat_id);
-    hash = hash_value(hash, catalog.reroll_cost_stat_id);
-    hash = hash_value(hash, catalog.owner_influence_weight);
-    hash = hash_value(hash, catalog.funds_per_influence);
-    hash = hash_value(hash, catalog.max_commands_per_slice);
-    hash = hash_value(hash, catalog.max_transition_commands);
-    hash = hash_value(hash, catalog.max_transition_polls_per_slice);
-    hash = hash_value(hash, catalog.max_active_visits_per_slice);
-    for (const auto &d : catalog.definitions) {
-        hash = hash_value(hash, d.acquisition); hash = hash_value(hash, d.rarity_weight);
-        hash = hash_value(hash, d.copy_left_programs);
-        hash = hash_value(hash, d.copyable);
-        hash = hash_value(hash, d.school_index);
-        hash = hash_value(hash, d.ideology_cost); hash = hash_value(hash, d.spirit_cost);
-        hash = hash_value(hash, d.min_spirit_level); hash = hash_value(hash, d.level_begin);
-        hash = hash_value(hash, d.level_count); hash = hash_value(hash, d.technology_begin);
-        hash = hash_value(hash, d.technology_count); hash = hash_value(hash, d.signal_begin);
-        hash = hash_value(hash, d.signal_count); hash = hash_value(hash, d.gate_begin);
-        hash = hash_value(hash, d.gate_count); hash = hash_value(hash, d.stance_begin);
-        hash = hash_value(hash, d.stance_count);
-        for (int32_t value : d.support_threshold_q16) hash = hash_value(hash, value);
-        hash = hash_value(hash, d.exclusion_group_id);
-        hash = hash_value(hash, d.era_index);
-        hash = hash_value(hash, d.route_mask);
-    }
-    for (const auto &level : catalog.levels) {
-        hash = hash_value(hash, level.threshold_q16);
-        hash = hash_value(hash, level.daily_understanding_q16);
-        hash = hash_value(hash, level.modifier_begin);
-        hash = hash_value(hash, level.modifier_count);
-        hash = hash_value(hash, level.on_enter_free_draws);
-    }
-    hash = hash_vector(hash, catalog.technology_requirements);
-    hash = hash_vector(hash, catalog.signal_requirements);
-    hash = hash_vector(hash, catalog.gate_requirements);
-    // Peers that disagree on the decay curve would draw different cards from the
-    // same seed, so the curve is part of the catalog contract.
-    hash = hash_vector(hash, catalog.era_decay_bp);
-    hash = hash_vector(hash, catalog.era_milestone_technologies);
-    // 精进 changes which cards may appear at all, so it belongs in the contract
-    // for the same reason the decay curve does.
-    hash = hash_value(hash, catalog.refine_weight_bp);
-    hash = hash_value(hash, catalog.refine_understanding_q16);
-    hash = hash_value(hash, catalog.draw_count);
-    for (const auto &stance : catalog.class_stances) {
-        hash = hash_value(hash, stance.class_index);
-        for (int32_t value : stance.stance_q16) hash = hash_value(hash, value);
-        for (int32_t value : stance.critical_min_q16) hash = hash_value(hash, value);
-    }
-    for (const auto &requirement : catalog.synergy_requirements) {
-        hash = hash_value(hash, requirement.ideology_id);
-        hash = hash_value(hash, requirement.minimum_level);
-        hash = hash_value(hash, requirement.location_mask);
-    }
-    for (const auto &synergy : catalog.synergies) {
-        hash = hash_value(hash, synergy.requirement_begin);
-        hash = hash_value(hash, synergy.requirement_count);
-        hash = hash_value(hash, synergy.min_count);
-        hash = hash_value(hash, synergy.modifier_begin);
-        hash = hash_value(hash, synergy.modifier_count);
-    }
-    hash = hash_vector(hash, catalog.ideology_synergy_offsets);
-    hash = hash_vector(hash, catalog.ideology_synergy_ids);
-    for (const auto *rows : {&catalog.level_modifiers, &catalog.synergy_modifiers}) {
-        hash = hash_value(hash, static_cast<uint64_t>(rows->size()));
-        for (const auto &row : *rows) {
-            hash = hash_value(hash, row.definition_key_hash);
-            hash = hash_value(hash, row.domain);
-            hash = hash_value(hash, row.magnitude_q16);
-        }
-    }
-    hash = hash_value(hash, static_cast<uint64_t>(catalog.capacity_unlocks.size()));
-    for (const auto &unlock : catalog.capacity_unlocks) {
-        hash = hash_value(hash, unlock.technology_id);
-        hash = hash_value(hash, unlock.ideology_delta);
-        hash = hash_value(hash, unlock.spirit_delta);
-    }
-    return hash;
-}
-
-uint64_t RuntimeIdeologyPodAuthority::compute_state_hash(
-        const RuntimeIdeologyPodSnapshot &state) {
-    uint64_t hash = FNV_OFFSET;
-    hash = hash_value(hash, state.catalog_hash); hash = hash_value(hash, state.input_generation);
-    hash = hash_value(hash, state.opinion_revision); hash = hash_value(hash, state.generation);
-    hash = hash_value(hash, state.committed_day); hash = hash_value(hash, state.round_day);
-    hash = hash_value(hash, state.phase); hash = hash_value(hash, state.pending_cursor);
-    hash = hash_value(hash, state.command_cursor); hash = hash_value(hash, state.active_country_cursor);
-    hash = hash_value(hash, state.active_idea_cursor); hash = hash_value(hash, state.next_submit_order);
-    hash = hash_value(hash, static_cast<uint64_t>(state.producer_high_watermarks.size()));
-    for (const auto &watermark : state.producer_high_watermarks) {
-        hash = hash_value(hash, watermark.producer_id);
-        hash = hash_value(hash, watermark.sequence);
-    }
-    hash = hash_value(hash, static_cast<uint64_t>(state.countries.size()));
-    for (const auto &country : state.countries) {
-        hash = hash_value(hash, country.handle); hash = hash_value(hash, country.generation);
-        hash = hash_value(hash, country.ideology_points_q16); hash = hash_value(hash, country.rng_state);
-        hash = hash_value(hash, country.free_draws);
-        hash = hash_value(hash, country.points_revision); hash = hash_value(hash, country.baseline_ready);
-        hash = hash_value(hash, country.history_count); hash = hash_value(hash, country.history_head);
-        hash = hash_value(hash, country.baseline_population); hash = hash_value(hash, country.baseline_buildings);
-        hash = hash_value(hash, country.lifetime_points_q16);
-    hash = hash_value(hash, country.trade_paid_day);
-        hash = hash_value(hash, country.ledger.population_q16); hash = hash_value(hash, country.ledger.building_q16);
-        hash = hash_value(hash, country.ledger.trade_q16); hash = hash_value(hash, country.ledger.opinion_factor_q16);
-        hash = hash_value(hash, country.ledger.gain_factor_q16); hash = hash_value(hash, country.ledger.gain_q16);
-        hash = hash_value(hash, country.ledger.day);
-        for (int64_t value : country.history_q16) hash = hash_value(hash, value);
-        hash = hash_value(hash, country.draw_sequence); hash = hash_value(hash, country.ideology_slots_used);
-        hash = hash_value(hash, country.spirit_slots_used); hash = hash_value(hash, country.unlocked_era);
-        hash = hash_value(hash, country.opinion_revision);
-        hash = hash_value(hash, country.offer.generation); hash = hash_value(hash, country.offer.active);
-        hash = hash_value(hash, country.offer.choice_count);
-        for (int32_t id : country.offer.ideology_ids) hash = hash_value(hash, id);
-        hash = hash_vector(hash, country.known_bits); hash = hash_vector(hash, country.banned_bits);
-        hash = hash_vector(hash, country.gate_bits);
-        hash = hash_vector(hash, country.synergy_bits);
-        hash = hash_vector(hash, country.active_idea_ids);
-        hash = hash_value(hash, static_cast<uint64_t>(country.ideas.size()));
-        for (const auto &idea : country.ideas) {
-            hash = hash_value(hash, idea.understanding_q16); hash = hash_value(hash, idea.level);
-            hash = hash_value(hash, idea.entered_levels); hash = hash_value(hash, idea.generation);
-            hash = hash_value(hash, idea.location); hash = hash_value(hash, idea.slot_index);
-        }
-    }
-    hash = hash_value(hash, static_cast<uint64_t>(state.commands.size()));
-    for (const auto &command : state.commands) {
-        hash = hash_value(hash, command.request_id); hash = hash_value(hash, command.source_priority);
-        hash = hash_value(hash, command.producer_id); hash = hash_value(hash, command.sequence);
-        hash = hash_value(hash, command.submit_order); hash = hash_value(hash, command.requested_day);
-        hash = hash_value(hash, command.effective_day); hash = hash_value(hash, command.opcode);
-        hash = hash_value(hash, command.country_handle); hash = hash_value(hash, command.ideology_id);
-        hash = hash_value(hash, command.value_q16); hash = hash_value(hash, command.offer_generation);
-        hash = hash_value(hash, command.choice_index); hash = hash_value(hash, command.gate_id);
-    }
-    hash = hash_value(hash, static_cast<uint64_t>(state.pending_transitions.size()));
-    for (const auto &transition : state.pending_transitions) {
-        hash = hash_value(hash, transition.intent_id); hash = hash_value(hash, transition.request_id);
-        hash = hash_value(hash, transition.producer_id); hash = hash_value(hash, transition.sequence);
-        hash = hash_value(hash, transition.effective_day); hash = hash_value(hash, transition.country_slot);
-        hash = hash_value(hash, transition.country_generation); hash = hash_value(hash, transition.ideology_id);
-        hash = hash_value(hash, transition.desired_level); hash = hash_value(hash, transition.desired_entered_levels);
-        hash = hash_value(hash, transition.desired_location);
-        hash = hash_value(hash, transition.desired_slot_index);
-        hash = hash_value(hash, transition.intent_emitted);
-        hash = hash_value(hash, transition.previous_entered_levels);
-        hash = hash_vector(hash, transition.desired_synergy_bits);
-    }
-    hash = hash_value(hash, static_cast<uint64_t>(state.receipts.size()));
-    for (const auto &receipt : state.receipts) {
-        hash = hash_value(hash, receipt.request_id); hash = hash_value(hash, receipt.producer_id);
-        hash = hash_value(hash, receipt.sequence); hash = hash_value(hash, receipt.status);
-        hash = hash_value(hash, receipt.opcode); hash = hash_value(hash, receipt.country_handle);
-        hash = hash_value(hash, receipt.ideology_id); hash = hash_value(hash, receipt.settled_day);
-        hash = hash_value(hash, receipt.reason_code);
-    }
-    return hash;
 }
 
 bool RuntimeIdeologyPodAuthority::validate_catalog(
@@ -616,21 +302,15 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         country.country_research_signals.size() != static_cast<size_t>(country.country_count) * country.research_signal_words) {
         error = "ideology_country_snapshot_shape_invalid"; return false;
     }
-    // Country commits before Ideology. Its new slots have no rows in the
-    // previous Economy commit. Validate the source's own shape and identities.
-    const uint32_t measured_countries = opinion.country_count;
-    const size_t lanes = static_cast<size_t>(measured_countries) * _catalog.class_count;
+    const size_t lanes = static_cast<size_t>(country.country_count) * _catalog.class_count;
     // Revision 0 stays REJECTED. It was briefly relaxed for the A1 day-binding
     // experiment ("no opinion for this day" handed over as revision 0), but that
     // binding is not landed (05 §2.6) and the rejection is a real invariant:
     // `ideology_self_test_revision_rejection_failed` asserts it.
     if (opinion.revision == 0 || opinion.class_hash != _catalog.class_hash ||
-        opinion.class_count != _catalog.class_count || measured_countries == 0 ||
-        measured_countries > country.country_count ||
-        (measured_countries < country.country_count &&
-         opinion.committed_day >= country.committed_day) ||
-        opinion.country_handles.size() != measured_countries ||
-        opinion.country_generations.size() != measured_countries ||
+        opinion.class_count != _catalog.class_count || opinion.country_count != country.country_count ||
+        opinion.country_handles.size() != country.country_count ||
+        opinion.country_generations.size() != country.country_count ||
         opinion.population.size() != lanes || opinion.funds.size() != lanes ||
         opinion.owner_employed.size() != lanes || opinion.satisfaction_weighted.size() != lanes ||
         opinion.satisfaction_q16.size() != lanes) {
@@ -642,28 +322,28 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         (opinion.incidence_channel_count == 0
              ? (!opinion.class_incidence_q16.empty() ||
                 (!opinion.incidence_measured.empty() &&
-                 opinion.incidence_measured.size() != measured_countries))
-             : (opinion.incidence_measured.size() != measured_countries ||
+                 opinion.incidence_measured.size() != country.country_count))
+             : (opinion.incidence_measured.size() != country.country_count ||
                 opinion.class_incidence_q16.size() !=
                     lanes * static_cast<size_t>(opinion.incidence_channel_count)))) {
         error = "ideology_opinion_snapshot_shape_invalid"; return false;
     }
-    for (uint32_t slot = 0; slot < measured_countries; ++slot) {
+    for (uint32_t slot = 0; slot < country.country_count; ++slot) {
         if (opinion.country_generations[slot] != country.country_generation[slot] ||
-            opinion.country_handles[slot] != country_handle(country.country_generation[slot], slot)) {
+            opinion.country_handles[slot] != country_handle(country, slot)) {
             error = "ideology_country_generation_mismatch"; return false;
         }
     }
-    // Once bootstrapped, the worker state is tied to the exact Country handle
-    // table it was captured from. A newer/reused Country generation must not
-    // replay commands against retained ideology state.
+    // A founded country extends the table. Existing rows must still match
+    // their original handles and generations.
     if (!_current.countries.empty()) {
-        if (_current.countries.size() > country.country_count) {
+        if (_current.countries.size() > country.country_count ||
+            (_current.round_day >= 0 && _current.countries.size() != country.country_count)) {
             error = "ideology_country_state_shape_mismatch"; return false;
         }
-        for (uint32_t slot = 0; slot < _current.countries.size(); ++slot) {
+        for (size_t slot = 0; slot < _current.countries.size(); ++slot) {
             const auto &current = _current.countries[slot];
-            const uint64_t expected_handle = country_handle(country.country_generation[slot], slot);
+            const uint64_t expected_handle = country_handle(country, slot);
             if (country.country_active[slot] == 0) {
                 if (current.handle != 0) {
                     error = "ideology_country_state_generation_mismatch";
@@ -681,6 +361,36 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
     return true;
 }
 
+void RuntimeIdeologyPodAuthority::append_country_rows(RuntimeIdeologyPodSnapshot &state,
+        const std::vector<uint8_t> &active, const std::vector<uint32_t> &generations,
+        uint64_t opinion_revision) const {
+    if (state.countries.size() == active.size()) return;
+    const size_t first = state.countries.size();
+    state.countries.resize(active.size());
+    const size_t idea_words = (_catalog.definitions.size() + 63u) / 64u;
+    const size_t gate_words = (_catalog.gate_count + 63u) / 64u;
+    const size_t synergy_words = (_catalog.synergies.size() + 63u) / 64u;
+    for (size_t slot = first; slot < active.size(); ++slot) {
+        auto &out = state.countries[slot];
+        if (active[slot] == 0) continue;
+        out.generation = generations[slot];
+        out.handle = (uint64_t(out.generation) << 32) | uint32_t(slot);
+        out.ideology_points_q16 = _catalog.starting_points_q16;
+        // Seed from the handle and the SHARED constant only. Seeding from
+        // `_catalog.catalog_hash` made the two sides disagree by construction,
+        // because the main thread and the worker hash their catalogs with
+        // different functions.
+        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
+                                                         _catalog.world_seed);
+        out.opinion_revision = opinion_revision;
+        out.known_bits.assign(idea_words, 0);
+        out.banned_bits.assign(idea_words, 0);
+        out.gate_bits.assign(gate_words, 0);
+        out.synergy_bits.assign(synergy_words, 0);
+        out.ideas.resize(_catalog.definitions.size());
+    }
+}
+
 bool RuntimeIdeologyPodAuthority::bootstrap(
         const RuntimeCountryPodSnapshot &country,
         const RuntimeIdeologyOpinionSnapshot &opinion,
@@ -690,9 +400,11 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
     state.catalog_hash = _catalog.catalog_hash;
     state.input_generation = country.generation;
     state.opinion_revision = opinion.revision;
-    append_country_rows(state, country, opinion, _catalog);
+    append_country_rows(state, country.country_active, country.country_generation, opinion.revision);
     state.state_hash = compute_state_hash(state);
     _current = std::move(state);
+    for (auto &country_row : _current.countries)
+        rebuild_active_idea_ids(country_row);
     _planned = _current;
     _plan_ready = false;
     return true;
@@ -1262,8 +974,7 @@ bool RuntimeIdeologyPodAuthority::draw_offer(
 void RuntimeIdeologyPodAuthority::accrue_points(
         RuntimeIdeologyPodSnapshot &state,
         const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) const {
-    // Wait for the first real row before initializing a new country's baseline.
-    const size_t countries = opinion.country_count;
+    const size_t countries = state.countries.size();
     if (opinion.country_population.size() != countries ||
         opinion.country_buildings_installed.size() != countries ||
         opinion.country_trade_base_value.size() != countries) return;
@@ -1520,6 +1231,7 @@ bool RuntimeIdeologyPodAuthority::plan_day(
     plan.input_generation = country.generation;
     plan.next_snapshot = _current;
     auto &state = plan.next_snapshot;
+    append_country_rows(state, country.country_active, country.country_generation, opinion.revision);
     if (state.round_day < 0) {
         if (day <= state.committed_day) {
             // ── a RESTORED state is ahead of this worker's calendar ──────────
@@ -1553,7 +1265,6 @@ bool RuntimeIdeologyPodAuthority::plan_day(
             _plan_ready = true;
             return true;
         }
-        append_country_rows(state, country, opinion, _catalog);
         state.round_day = day;
         state.phase = RuntimeIdeologyPodPhase::PENDING_TRANSITIONS;
         state.pending_cursor = state.command_cursor = 0;
@@ -1698,244 +1409,6 @@ bool RuntimeIdeologyPodAuthority::commit_day(
     // A day that actually advanced the calendar past the restored floor retires the
     // supersede rule; a day the import already settles keeps it armed.
     if (plan.superseded_day == 0) _import_supersedes_calendar = false;
-    return true;
-}
-
-void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
-    serialize_snapshot(_current, out);
-}
-
-// Derived per-country indices + the state hash, for a snapshot built OUTSIDE this
-// POD (the main-thread runtime exporting the state a restore installed). The import
-// path must run this before `serialize_snapshot`: `active_idea_ids` takes part in
-// `compute_state_hash` and `restore` recomputes that hash, so a snapshot that skipped
-// it is refused as `ideology_pod_save_state_hash_failed` -- correctly, because the
-// bytes would otherwise describe a state this POD can never hold.
-void RuntimeIdeologyPodAuthority::canonicalize_import(
-        RuntimeIdeologyPodSnapshot &state) {
-    for (auto &country : state.countries) rebuild_active_idea_ids(country);
-    state.state_hash = compute_state_hash(state);
-}
-
-void RuntimeIdeologyPodAuthority::serialize_snapshot(
-        const RuntimeIdeologyPodSnapshot &state, std::vector<uint8_t> &out) {
-    out.clear(); out.reserve(4096);
-    append_le<uint32_t>(out, SAVE_MAGIC); append_le<uint32_t>(out, RUNTIME_IDEOLOGY_POD_ABI_VERSION);
-    append_le<uint64_t>(out, state.catalog_hash); append_le<uint64_t>(out, state.state_hash);
-    append_le<uint64_t>(out, state.input_generation); append_le<uint64_t>(out, state.opinion_revision);
-    append_le<uint64_t>(out, state.generation); append_le<int64_t>(out, state.committed_day);
-    append_le<int64_t>(out, state.round_day); append_le(out, state.phase);
-    append_le<uint32_t>(out, state.pending_cursor); append_le<uint32_t>(out, state.command_cursor);
-    append_le<uint32_t>(out, state.active_country_cursor); append_le<uint32_t>(out, state.active_idea_cursor);
-    append_le<uint64_t>(out, state.next_submit_order);
-    append_le<uint32_t>(out, static_cast<uint32_t>(state.producer_high_watermarks.size()));
-    for (const auto &watermark : state.producer_high_watermarks) {
-        append_le<uint32_t>(out, watermark.producer_id);
-        append_le<uint64_t>(out, watermark.sequence);
-    }
-    append_le<uint32_t>(out, static_cast<uint32_t>(state.countries.size()));
-    for (const auto &country : state.countries) {
-        append_le<uint64_t>(out, country.handle); append_le<uint32_t>(out, country.generation);
-        append_le<int64_t>(out, country.ideology_points_q16); append_le<uint64_t>(out, country.rng_state);
-        append_le<uint64_t>(out, country.points_revision); append_le<uint8_t>(out, country.baseline_ready);
-        append_le<uint8_t>(out, country.history_count); append_le<uint8_t>(out, country.history_head);
-        append_le<int64_t>(out, country.baseline_population); append_le<int64_t>(out, country.baseline_buildings);
-        append_le<int64_t>(out, country.lifetime_points_q16);
-        // Ring/day markers that gate the trade flow. Omitting one would let a
-        // restored session pay trade again for a day it already paid.
-        append_le<int64_t>(out, country.trade_paid_day);
-        append_le<int64_t>(out, country.ledger.population_q16); append_le<int64_t>(out, country.ledger.building_q16);
-        append_le<int64_t>(out, country.ledger.trade_q16); append_le<int32_t>(out, country.ledger.opinion_factor_q16);
-        append_le<int32_t>(out, country.ledger.gain_factor_q16); append_le<int64_t>(out, country.ledger.gain_q16);
-        append_le<int64_t>(out, country.ledger.day);
-        for (int64_t value : country.history_q16) append_le<int64_t>(out, value);
-        append_le<uint64_t>(out, country.draw_sequence);
-        append_le<uint16_t>(out, country.free_draws);
-        append_le<int32_t>(out, country.ideology_slots_used);
-        append_le<int32_t>(out, country.spirit_slots_used); append_le<int32_t>(out, country.unlocked_era);
-        append_le<uint64_t>(out, country.opinion_revision);
-        append_le<uint32_t>(out, country.offer.generation); for (int32_t id : country.offer.ideology_ids) append_le<int32_t>(out, id);
-        append_le<uint8_t>(out, country.offer.active); append_le<uint8_t>(out, country.offer.choice_count);
-        append_vector(out, country.known_bits); append_vector(out, country.banned_bits);
-        append_vector(out, country.gate_bits); append_vector(out, country.synergy_bits);
-        append_le<uint32_t>(out, static_cast<uint32_t>(country.ideas.size()));
-        for (const auto &idea : country.ideas) {
-            append_le<int64_t>(out, idea.understanding_q16); append_le<int32_t>(out, idea.level);
-            append_le<uint64_t>(out, idea.entered_levels); append_le<uint32_t>(out, idea.generation);
-            append_le(out, idea.location); append_le<uint8_t>(out, idea.slot_index);
-        }
-    }
-    append_le<uint32_t>(out, static_cast<uint32_t>(state.commands.size()));
-    for (const auto &command : state.commands) {
-        append_le<uint64_t>(out, command.request_id); append_le<int32_t>(out, command.source_priority);
-        append_le<uint32_t>(out, command.producer_id); append_le<uint64_t>(out, command.sequence);
-        append_le<uint64_t>(out, command.submit_order); append_le<int64_t>(out, command.requested_day);
-        append_le<int64_t>(out, command.effective_day); append_le(out, command.opcode);
-        append_le<uint64_t>(out, command.country_handle); append_le<int32_t>(out, command.ideology_id);
-        append_le<int64_t>(out, command.value_q16); append_le<uint32_t>(out, command.offer_generation);
-        append_le<int32_t>(out, command.choice_index); append_le<int32_t>(out, command.gate_id);
-    }
-    append_le<uint32_t>(out, static_cast<uint32_t>(state.pending_transitions.size()));
-    for (const auto &transition : state.pending_transitions) {
-        append_le<uint64_t>(out, transition.intent_id); append_le<uint64_t>(out, transition.request_id);
-        append_le<uint32_t>(out, transition.producer_id); append_le<uint64_t>(out, transition.sequence);
-        append_le<int64_t>(out, transition.effective_day); append_le<uint32_t>(out, transition.country_slot);
-        append_le<uint32_t>(out, transition.country_generation); append_le<int32_t>(out, transition.ideology_id);
-        append_le<int32_t>(out, transition.desired_level); append_le<uint64_t>(out, transition.desired_entered_levels);
-        append_le(out, transition.desired_location);
-        append_le<uint8_t>(out, transition.desired_slot_index);
-        append_le<uint8_t>(out, transition.intent_emitted);
-        append_le<uint64_t>(out, transition.previous_entered_levels);
-        append_vector(out, transition.desired_synergy_bits);
-    }
-    append_le<uint32_t>(out, static_cast<uint32_t>(state.receipts.size()));
-    for (const auto &receipt : state.receipts) {
-        append_le<uint64_t>(out, receipt.request_id); append_le<uint32_t>(out, receipt.producer_id);
-        append_le<uint64_t>(out, receipt.sequence); append_le(out, receipt.status); append_le(out, receipt.opcode);
-        append_le<uint64_t>(out, receipt.country_handle); append_le<int32_t>(out, receipt.ideology_id);
-        append_le<int64_t>(out, receipt.settled_day); append_le<uint32_t>(out, receipt.reason_code);
-    }
-    append_le<uint32_t>(out, SAVE_END);
-    append_le<uint64_t>(out, hash_bytes(FNV_OFFSET, out.data(), out.size()));
-}
-
-bool RuntimeIdeologyPodAuthority::restore(
-        const uint8_t *data, size_t size, std::string &error) {
-    error.clear();
-    if (!_configured || data == nullptr || size < 64u || size > MAX_SAVE_BYTES) { error = "ideology_pod_save_invalid"; return false; }
-    uint64_t encoded_checksum = 0; size_t checksum_cursor = size - sizeof(uint64_t);
-    if (!read_le(data, size, checksum_cursor, encoded_checksum) ||
-        hash_bytes(FNV_OFFSET, data, size - sizeof(uint64_t)) != encoded_checksum) { error = "ideology_pod_save_checksum_failed"; return false; }
-    const size_t end = size - sizeof(uint64_t); size_t cursor = 0;
-    uint32_t magic = 0, abi = 0; uint64_t catalog_hash = 0, saved_hash = 0;
-    RuntimeIdeologyPodSnapshot state;
-    if (!read_le(data,end,cursor,magic) || !read_le(data,end,cursor,abi) ||
-        !read_le(data,end,cursor,catalog_hash) || !read_le(data,end,cursor,saved_hash) ||
-        !read_le(data,end,cursor,state.input_generation) || !read_le(data,end,cursor,state.opinion_revision) ||
-        !read_le(data,end,cursor,state.generation) || !read_le(data,end,cursor,state.committed_day) ||
-        !read_le(data,end,cursor,state.round_day) || !read_le(data,end,cursor,state.phase) ||
-        !read_le(data,end,cursor,state.pending_cursor) || !read_le(data,end,cursor,state.command_cursor) ||
-        !read_le(data,end,cursor,state.active_country_cursor) || !read_le(data,end,cursor,state.active_idea_cursor) ||
-        !read_le(data,end,cursor,state.next_submit_order) || magic != SAVE_MAGIC ||
-        abi != RUNTIME_IDEOLOGY_POD_ABI_VERSION || catalog_hash != _catalog.catalog_hash) { error = "ideology_pod_save_header_invalid"; return false; }
-    state.catalog_hash = catalog_hash;
-    uint32_t count = 0;
-    if (!read_le(data, end, cursor, count) ||
-        count > RUNTIME_IDEOLOGY_POD_MAX_COMMANDS) {
-        error = "ideology_pod_producer_watermark_count_invalid";
-        return false;
-    }
-    state.producer_high_watermarks.resize(count);
-    uint32_t previous_producer = 0;
-    for (auto &watermark : state.producer_high_watermarks) {
-        if (!read_le(data, end, cursor, watermark.producer_id) ||
-            !read_le(data, end, cursor, watermark.sequence) ||
-            watermark.producer_id == 0 ||
-            watermark.producer_id <= previous_producer) {
-            error = "ideology_pod_producer_watermark_invalid";
-            return false;
-        }
-        previous_producer = watermark.producer_id;
-    }
-    if (!read_le(data,end,cursor,count) || count > RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES) { error = "ideology_pod_country_count_invalid"; return false; }
-    state.countries.resize(count);
-    const uint32_t bit_limit = static_cast<uint32_t>((std::max(_catalog.definitions.size(), _catalog.synergies.size()) + 63u) / 64u);
-    for (auto &country : state.countries) {
-        if (!read_le(data,end,cursor,country.handle) || !read_le(data,end,cursor,country.generation) ||
-            !read_le(data,end,cursor,country.ideology_points_q16) || !read_le(data,end,cursor,country.rng_state) ||
-            !read_le(data,end,cursor,country.points_revision) || !read_le(data,end,cursor,country.baseline_ready) ||
-            !read_le(data,end,cursor,country.history_count) || !read_le(data,end,cursor,country.history_head) ||
-            country.history_count > RUNTIME_IDEOLOGY_POD_HISTORY || country.history_head >= RUNTIME_IDEOLOGY_POD_HISTORY ||
-            !read_le(data,end,cursor,country.baseline_population) || !read_le(data,end,cursor,country.baseline_buildings) ||
-            !read_le(data,end,cursor,country.lifetime_points_q16) ||
-            !read_le(data,end,cursor,country.trade_paid_day) ||
-            !read_le(data,end,cursor,country.ledger.population_q16) || !read_le(data,end,cursor,country.ledger.building_q16) ||
-            !read_le(data,end,cursor,country.ledger.trade_q16) || !read_le(data,end,cursor,country.ledger.opinion_factor_q16) ||
-            !read_le(data,end,cursor,country.ledger.gain_factor_q16) || !read_le(data,end,cursor,country.ledger.gain_q16) ||
-            !read_le(data,end,cursor,country.ledger.day) ||
-            !std::all_of(country.history_q16.begin(), country.history_q16.end(), [&](int64_t &value) { return read_le(data,end,cursor,value); }) ||
-            !read_le(data,end,cursor,country.draw_sequence) ||
-            !read_le(data,end,cursor,country.free_draws) ||
-            !read_le(data,end,cursor,country.ideology_slots_used) ||
-            !read_le(data,end,cursor,country.spirit_slots_used) || !read_le(data,end,cursor,country.unlocked_era) ||
-            !read_le(data,end,cursor,country.opinion_revision) ||
-            !read_le(data,end,cursor,country.offer.generation) ||
-            // The full capacity, always: the save writes a fixed-size row so a
-            // build with a different capacity is rejected by the ABI version
-            // instead of silently consuming the next field.
-            !read_le(data,end,cursor,country.offer.ideology_ids[0]) ||
-            !read_le(data,end,cursor,country.offer.ideology_ids[1]) ||
-            !read_le(data,end,cursor,country.offer.ideology_ids[2]) ||
-            !read_le(data,end,cursor,country.offer.ideology_ids[3]) ||
-            !read_le(data,end,cursor,country.offer.ideology_ids[4]) ||
-            !read_le(data,end,cursor,country.offer.active) ||
-            !read_le(data,end,cursor,country.offer.choice_count) ||
-            country.offer.choice_count > IDEOLOGY_OFFER_CHOICE_CAPACITY ||
-            !read_vector(data,end,cursor,country.known_bits,bit_limit) ||
-            !read_vector(data,end,cursor,country.banned_bits,bit_limit) ||
-            !read_vector(data,end,cursor,country.gate_bits,static_cast<uint32_t>((_catalog.gate_count + 63u) / 64u)) ||
-            !read_vector(data,end,cursor,country.synergy_bits,bit_limit) ||
-            !read_le(data,end,cursor,count) || count != _catalog.definitions.size()) { error = "ideology_pod_country_truncated"; return false; }
-        country.ideas.resize(count);
-        for (auto &idea : country.ideas)
-            if (!read_le(data,end,cursor,idea.understanding_q16) || !read_le(data,end,cursor,idea.level) ||
-                !read_le(data,end,cursor,idea.entered_levels) || !read_le(data,end,cursor,idea.generation) ||
-                !read_le(data,end,cursor,idea.location) ||
-                !read_le(data,end,cursor,idea.slot_index) ||
-                idea.level < -1 || idea.level >= 64) {
-                error = "ideology_pod_idea_truncated"; return false;
-            }
-        if (country.unlocked_era < 0 || country.unlocked_era > kMaxEraIndex) { error = "ideology_pod_era_invalid"; return false; }
-        rebuild_active_idea_ids(country);
-    }
-    if (!read_le(data,end,cursor,count) || count > RUNTIME_IDEOLOGY_POD_MAX_COMMANDS) { error = "ideology_pod_command_count_invalid"; return false; }
-    state.commands.resize(count);
-    for (auto &command : state.commands) {
-        if (!read_le(data,end,cursor,command.request_id) || !read_le(data,end,cursor,command.source_priority) ||
-            !read_le(data,end,cursor,command.producer_id) || !read_le(data,end,cursor,command.sequence) ||
-            !read_le(data,end,cursor,command.submit_order) || !read_le(data,end,cursor,command.requested_day) ||
-            !read_le(data,end,cursor,command.effective_day) || !read_le(data,end,cursor,command.opcode) ||
-            !read_le(data,end,cursor,command.country_handle) || !read_le(data,end,cursor,command.ideology_id) ||
-            !read_le(data,end,cursor,command.value_q16) || !read_le(data,end,cursor,command.offer_generation) ||
-            !read_le(data,end,cursor,command.choice_index) || !read_le(data,end,cursor,command.gate_id) ||
-            !validate_command(command, error)) return false;
-    }
-    if (!read_le(data,end,cursor,count) || count > RUNTIME_IDEOLOGY_POD_MAX_TRANSITIONS) { error = "ideology_pod_transition_count_invalid"; return false; }
-    state.pending_transitions.resize(count);
-    for (auto &transition : state.pending_transitions)
-        if (!read_le(data,end,cursor,transition.intent_id) || !read_le(data,end,cursor,transition.request_id) ||
-            !read_le(data,end,cursor,transition.producer_id) || !read_le(data,end,cursor,transition.sequence) ||
-            !read_le(data,end,cursor,transition.effective_day) || !read_le(data,end,cursor,transition.country_slot) ||
-            !read_le(data,end,cursor,transition.country_generation) || !read_le(data,end,cursor,transition.ideology_id) ||
-            !read_le(data,end,cursor,transition.desired_level) || !read_le(data,end,cursor,transition.desired_entered_levels) ||
-            !read_le(data,end,cursor,transition.desired_location) ||
-            !read_le(data,end,cursor,transition.desired_slot_index) ||
-            !read_le(data,end,cursor,transition.intent_emitted) ||
-            !read_le(data,end,cursor,transition.previous_entered_levels) ||
-            !read_vector(data,end,cursor,transition.desired_synergy_bits,bit_limit) || transition.intent_id == 0 ||
-            transition.country_slot >= state.countries.size() || transition.ideology_id < 0 ||
-            transition.ideology_id >= static_cast<int32_t>(_catalog.definitions.size())) { error = "ideology_pod_transition_truncated"; return false; }
-    if (!read_le(data,end,cursor,count) || count > RUNTIME_IDEOLOGY_POD_MAX_COMMANDS) { error = "ideology_pod_receipt_count_invalid"; return false; }
-    state.receipts.resize(count);
-    for (auto &receipt : state.receipts)
-        if (!read_le(data,end,cursor,receipt.request_id) || !read_le(data,end,cursor,receipt.producer_id) ||
-            !read_le(data,end,cursor,receipt.sequence) || !read_le(data,end,cursor,receipt.status) ||
-            !read_le(data,end,cursor,receipt.opcode) || !read_le(data,end,cursor,receipt.country_handle) ||
-            !read_le(data,end,cursor,receipt.ideology_id) || !read_le(data,end,cursor,receipt.settled_day) ||
-            !read_le(data,end,cursor,receipt.reason_code)) { error = "ideology_pod_receipt_truncated"; return false; }
-    uint32_t end_marker = 0;
-    if (!read_le(data,end,cursor,end_marker) || end_marker != SAVE_END || cursor != end) { error = "ideology_pod_save_trailing_bytes"; return false; }
-    if (state.command_cursor > state.commands.size() || state.pending_cursor > state.pending_transitions.size() ||
-        state.active_country_cursor > state.countries.size()) { error = "ideology_pod_cursor_invalid"; return false; }
-    state.state_hash = compute_state_hash(state);
-    if (state.state_hash != saved_hash) { error = "ideology_pod_save_state_hash_failed"; return false; }
-    _current = std::move(state); _planned = _current; _plan_ready = false;
-    // A restore MEANS "your authoritative state is now this" -- whether the bytes came
-    // from this POD's own save or from the main-thread runtime's import. Its committed
-    // day is now the FLOOR of this worker's calendar: every day at or below it is
-    // already settled by the imported state and must plan as a no-op instead of
-    // failing `ideology_day_not_monotonic` (see `plan_day`).
-    _import_supersedes_calendar = true;
     return true;
 }
 
@@ -2446,257 +1919,6 @@ bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
         }
     }
     error.clear(); return true;
-}
-
-RuntimeIdeologySnapshotRing::RuntimeIdeologySnapshotRing() { reset(); }
-
-void RuntimeIdeologySnapshotRing::reset() {
-    for (Slot &slot : _slots) {
-        slot.snapshot = RuntimeIdeologyPodSnapshot{};
-        slot.state.store(FREE, std::memory_order_relaxed);
-    }
-    _published_generation.store(0, std::memory_order_relaxed);
-    _publish_drop_count.store(0, std::memory_order_relaxed);
-}
-
-bool RuntimeIdeologySnapshotRing::try_begin_write(uint32_t &index) {
-    for (uint32_t i = 0; i < _slots.size(); ++i) {
-        uint8_t expected = FREE;
-        if (_slots[i].state.compare_exchange_strong(expected, WRITING,
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
-            index = i;
-            return true;
-        }
-    }
-    uint64_t oldest_generation = std::numeric_limits<uint64_t>::max();
-    uint32_t oldest_index = 0;
-    bool ready_found = false;
-    for (uint32_t i = 0; i < _slots.size(); ++i) {
-        if (_slots[i].state.load(std::memory_order_acquire) != READY) continue;
-        const uint64_t generation = _slots[i].snapshot.generation;
-        if (!ready_found || generation < oldest_generation) {
-            oldest_generation = generation;
-            oldest_index = i;
-            ready_found = true;
-        }
-    }
-    if (ready_found) {
-        uint8_t expected = READY;
-        if (_slots[oldest_index].state.compare_exchange_strong(
-                expected, WRITING, std::memory_order_acq_rel,
-                std::memory_order_relaxed)) {
-            index = oldest_index;
-            return true;
-        }
-    }
-    _publish_drop_count.fetch_add(1, std::memory_order_relaxed);
-    return false;
-}
-
-void RuntimeIdeologySnapshotRing::publish(uint32_t index) {
-    if (index >= _slots.size()) return;
-    _published_generation.store(_slots[index].snapshot.generation,
-                                std::memory_order_relaxed);
-    _slots[index].state.store(READY, std::memory_order_release);
-}
-
-bool RuntimeIdeologySnapshotRing::try_acquire_latest(uint64_t after_generation,
-                                                     uint32_t &index) {
-    const bool accept_initial =
-        after_generation == std::numeric_limits<uint64_t>::max();
-    uint64_t best = 0;
-    uint32_t best_index = 0;
-    bool found = false;
-    for (uint32_t i = 0; i < _slots.size(); ++i) {
-        if (_slots[i].state.load(std::memory_order_acquire) != READY) continue;
-        const uint64_t generation = _slots[i].snapshot.generation;
-        if ((accept_initial || generation > after_generation) &&
-            (!found || generation > best)) {
-            best = generation;
-            best_index = i;
-            found = true;
-        }
-    }
-    if (!found) return false;
-    uint8_t expected = READY;
-    if (!_slots[best_index].state.compare_exchange_strong(expected, READING,
-            std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        return false;
-    }
-    index = best_index;
-    return true;
-}
-
-void RuntimeIdeologySnapshotRing::release(uint32_t index) {
-    if (index >= _slots.size()) return;
-    _slots[index].state.store(READY, std::memory_order_release);
-}
-
-bool RuntimeIdeologySnapshotRing::self_test() {
-    RuntimeIdeologySnapshotRing ring;
-    uint32_t slot = 0;
-    if (!ring.try_begin_write(slot)) return false;
-    ring.write_buffer(slot).generation = 7;
-    ring.publish(slot);
-    uint32_t acquired = 0;
-    if (!ring.try_acquire_latest(0, acquired)) return false;
-    if (ring.read_buffer(acquired).generation != 7) return false;
-    ring.release(acquired);
-    return true;
-}
-
-namespace {
-inline uint64_t business_mix(uint64_t hash, uint64_t value) {
-    hash ^= value;
-    hash *= 1099511628211ULL;
-    return hash;
-}
-inline uint64_t business_seed() { return 1469598103934665603ULL; }
-} // namespace
-
-void ideology_business_sections(const RuntimeIdeologyPodSnapshot &state,
-                                IdeologyBusinessSections &out) {
-    out = IdeologyBusinessSections{};
-    // `catalog_hash` is deliberately NOT mixed in. The main thread and the worker
-    // compute it with two different functions over two different structures:
-    //   main   -> NativeIdeologyRuntime::compute_catalog_hash()
-    //   worker -> RuntimeIdeologyPodAuthority::compute_catalog_hash()
-    // so the two values differ by construction. Folding it into `points` made
-    // that section permanently unequal and made every real parity comparison
-    // report `field=points`. Catalog agreement is a PRECONDITION, checked
-    // separately (see `ideology_catalog_mismatch`), never a business field.
-    out.points = business_seed();
-    out.baseline = business_seed();
-    out.history = business_seed();
-    out.draw = business_seed();
-    out.bits = business_seed();
-    out.offer = business_seed();
-    out.ideas = business_seed();
-    out.points_balance = business_seed();
-    out.points_lifetime = business_seed();
-    out.points_revision = business_seed();
-    out.history_cursor = business_seed();
-    for (const RuntimeIdeologyPodCountryState &country : state.countries) {
-        // Empty slots depend on the array length, not on state.
-        if (country.handle == 0) continue;
-        const uint64_t handle = country.handle;
-        // `points` is the business section: balances only. `points_revision` is a
-        // per-side Economy cadence counter (see the sub-hash comment below) and
-        // must not be mixed in here, or this section can never be equal.
-        out.points = business_mix(business_mix(out.points, handle),
-            static_cast<uint64_t>(country.ideology_points_q16));
-        out.points = business_mix(out.points,
-            static_cast<uint64_t>(country.lifetime_points_q16));
-        // Same rows, split by field, so `field=` can say which one moved.
-        out.points_balance = business_mix(
-            business_mix(out.points_balance, handle),
-            static_cast<uint64_t>(country.ideology_points_q16));
-        out.points_lifetime = business_mix(
-            business_mix(out.points_lifetime, handle),
-            static_cast<uint64_t>(country.lifetime_points_q16));
-        // `points_revision` is deliberately NOT part of `points`.
-        //
-        // It is not "how many times this row accrued"; it is the external
-        // Economy opinion revision the row last settled against:
-        //     row->points_revision = opinion.revision;
-        // That counter increments once per Economy development publish, and the
-        // two sides publish on different cadences -- the worker on its own
-        // clock, the main thread on cooperative slices. So the two numbers
-        // differ by construction even when every business value is identical
-        // (observed: reference_revision=1 vs worker_revision=3 while
-        // ideology_points_q16 and lifetime_points_q16 matched exactly).
-        //
-        // It is kept as its own diagnostic sub-hash so a real divergence in
-        // accrual cadence is still visible, but it cannot make `points` unequal.
-        out.points_revision = business_mix(
-            business_mix(out.points_revision, handle),
-            static_cast<uint64_t>(country.points_revision));
-        out.baseline = business_mix(business_mix(out.baseline, handle),
-            static_cast<uint64_t>(country.baseline_ready));
-        out.baseline = business_mix(business_mix(out.baseline,
-            static_cast<uint64_t>(country.baseline_population)),
-            static_cast<uint64_t>(country.baseline_buildings));
-        // History is compared by CONTENT, normalised for ring cadence.
-        //
-        // `history_count` / `history_head` are positions in a fixed-size ring:
-        // they count how many accruals wrote into it. Two sides that accrued a
-        // different NUMBER of times (the worker settles against a higher Economy
-        // revision because it publishes on its own clock) therefore carry
-        // different cursors even when every stored gain is identical. Observed:
-        // reference_history_count=0 vs worker_history_count=2 while both
-        // `reference_history_q16` and `worker_history_q16` were all zero.
-        //
-        // So: mix every NON-ZERO stored gain in ring order. "No gains" then
-        // hashes the same no matter how many empty notches the ring took, while
-        // any real gain still differs. The raw cursors go to a separate
-        // diagnostic sub-hash that cannot make `history` unequal.
-        //
-        // This does not weaken the section: a genuine accrual difference changes
-        // `ideology_points_q16` / `lifetime_points_q16` (in `points`) and the
-        // non-zero entries here.
-        out.history = business_mix(out.history, handle);
-        for (int64_t value : country.history_q16) {
-            if (value == 0) continue;
-            out.history = business_mix(out.history,
-                static_cast<uint64_t>(value));
-        }
-        out.history_cursor = business_mix(
-            business_mix(out.history_cursor, handle),
-            static_cast<uint64_t>(country.history_count) << 32 |
-            static_cast<uint64_t>(country.history_head));
-        out.draw = business_mix(business_mix(out.draw, handle),
-            country.rng_state);
-        out.draw = business_mix(out.draw,
-            static_cast<uint64_t>(country.draw_sequence));
-        out.draw = business_mix(out.draw,
-            static_cast<uint64_t>(country.unlocked_era));
-        out.bits = business_mix(business_mix(out.bits, handle),
-            static_cast<uint64_t>(country.known_bits.size()));
-        for (uint64_t word : country.known_bits)
-            out.bits = business_mix(out.bits, word);
-        for (uint64_t word : country.banned_bits)
-            out.bits = business_mix(out.bits, word);
-        for (uint64_t word : country.gate_bits)
-            out.bits = business_mix(out.bits, word);
-        for (uint64_t word : country.synergy_bits)
-            out.bits = business_mix(out.bits, word);
-        out.offer = business_mix(business_mix(out.offer, handle),
-            country.offer.generation);
-        out.offer = business_mix(out.offer,
-            static_cast<uint64_t>(country.offer.active) << 32 |
-            static_cast<uint64_t>(country.offer.choice_count));
-        for (int32_t id : country.offer.ideology_ids)
-            out.offer = business_mix(out.offer,
-                static_cast<uint64_t>(static_cast<int64_t>(id)));
-        out.ideas = business_mix(business_mix(out.ideas, handle),
-            static_cast<uint64_t>(country.ideas.size()));
-        for (const RuntimeIdeologyPodIdeaState &idea : country.ideas) {
-            out.ideas = business_mix(out.ideas,
-                static_cast<uint64_t>(idea.understanding_q16));
-            out.ideas = business_mix(out.ideas,
-                static_cast<uint64_t>(static_cast<int64_t>(idea.level)) << 32 |
-                static_cast<uint64_t>(idea.generation));
-            out.ideas = business_mix(out.ideas, idea.entered_levels);
-            out.ideas = business_mix(out.ideas,
-                static_cast<uint64_t>(static_cast<int32_t>(idea.location)));
-            out.ideas = business_mix(out.ideas,
-                static_cast<uint64_t>(idea.slot_index));
-        }
-    }
-}
-
-uint64_t ideology_business_hash(const RuntimeIdeologyPodSnapshot &state) {
-    IdeologyBusinessSections sections;
-    ideology_business_sections(state, sections);
-    uint64_t hash = business_mix(business_seed(), state.committed_day);
-    hash = business_mix(hash, sections.points);
-    hash = business_mix(hash, sections.baseline);
-    hash = business_mix(hash, sections.history);
-    hash = business_mix(hash, sections.draw);
-    hash = business_mix(hash, sections.bits);
-    hash = business_mix(hash, sections.offer);
-    hash = business_mix(hash, sections.ideas);
-    return hash;
 }
 
 } // namespace pk

@@ -1,5 +1,6 @@
 class_name EconomyFacade
 extends RefCounted
+const EconomyCommandResultText = preload("res://scripts/economy/economy_command_result_text.gd")
 
 signal economy_event_batch_available(meta: Dictionary)
 signal economy_event_batch(batch: Dictionary)
@@ -346,12 +347,6 @@ func mobilization_odds(cell_idx: int, profession: int, action: int,
 		spend_bp)
 
 
-func resolve_player_mobilization(choice: Dictionary) -> Dictionary:
-	if not _configured or not _world_ext.has_method("resolve_player_mobilization"):
-		return {"ok": false, "code": "mobilization_unavailable"}
-	return _world_ext.resolve_player_mobilization(choice)
-
-
 func apply_mobilization_result(cell_idx: int, profession: int, action: int,
 		success: bool) -> bool:
 	if not _configured \
@@ -446,24 +441,6 @@ func construction_type_columns() -> Dictionary:
 			"building_maturity_ranks", PackedInt32Array()),
 		"building_maturity_display_names": _catalog.get(
 			"building_maturity_display_names", PackedStringArray()),
-		# Fold key for the construction workspace: the first output good decides
-		# which crop option a building belongs to, and the good's category
-		# (starchy_staple) decides whether it is a staple-crop building at all.
-		# Read here rather than in a UI module so every consumer sees one shape.
-		"building_industry_chain_ids": _catalog.get(
-			"building_industry_chain_ids", PackedStringArray()),
-		"building_progression_steps": _catalog.get(
-			"building_progression_steps", PackedInt32Array()),
-		"building_output_offsets": _catalog.get(
-			"building_output_offsets", PackedInt32Array()),
-		"building_output_good_ids": _catalog.get(
-			"building_output_good_ids", PackedInt32Array()),
-		"good_ids": _catalog.get("good_ids", PackedStringArray()),
-		"good_category_ids": _catalog.get(
-			"good_category_ids", PackedStringArray()),
-		# 税分组的产物轴要给人看的货名。这里只透传已加载的显示名表，
-		# 缺项由分组模块退回 stable id，不新建加载路径。
-		"good_display_names": _good_display_names,
 	}
 
 
@@ -648,19 +625,7 @@ func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
 
 
 static func _demolish_result_message(code: String) -> String:
-	return {
-		"ok": "拆除已受理。",
-		"demolish_queued": "拆除已排队，将在下一个经济结算边界执行。",
-		"demolish_target_invalid": "拆除目标无效。",
-		"demolish_not_state_owned": "该建筑不属于官营，无法按官营方式拆除。",
-		"demolish_state_owner_unresolved": "官营属主未能解析，请检查建筑与职业目录。",
-		"demolish_state_building_absent": "该地块上已没有这座官营建筑。",
-		"demolish_owned_count_insufficient": "该地块的这座建筑座数不足。",
-		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
-		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",
-		"economy_fatal": "经济模拟已停止，无法执行拆除。",
-		"save_restore_active": "存档正在读写，稍后再试。",
-	}.get(code, "拆除命令未能执行。")
+	return EconomyCommandResultText._demolish_result_message(code)
 
 
 func dispatch_construction_command_receipts() -> void:
@@ -668,25 +633,32 @@ func dispatch_construction_command_receipts() -> void:
 		return
 	var page: Dictionary = _world_ext.get_construction_command_receipts(
 		_construction_receipt_cursor, 64)
-	if not bool(page.get("ok", false)):
-		return
+	if bool(page.get("ok", false)):
+		emit_construction_command_receipts(page.get("receipts", []))
+
+
+func emit_construction_command_receipts(receipts: Array) -> void:
 	var stable_ids: PackedStringArray = _catalog.get(
 		"building_type_ids", PackedStringArray())
-	for raw in page.get("receipts", []):
-		var result: Dictionary = raw
+	for raw: Dictionary in receipts:
+		var receipt_id := int(raw.get("receipt_id", -1))
+		if receipt_id <= _construction_receipt_cursor:
+			continue
+		_construction_receipt_cursor = receipt_id
+		var result := raw.duplicate()
 		var type_id := int(result.get("type_id", -1))
 		result["building_id"] = String(stable_ids[type_id]) if type_id >= 0 \
 				and type_id < stable_ids.size() else ""
-		result["message"] = _construction_result_message(
-			String(result.get("code", "command_rejected")))
+		var code := String(result.get("code", "command_rejected"))
+		result["message"] = _demolish_result_message(code) \
+			if String(result.get("command", "")) == "military.state.demolish" \
+			else _construction_result_message(code)
 		print("[construction] receipt id=%s seq=%s cell=%s type=%s ok=%s code=%s settled_day=%s" % [
 			str(result.get("receipt_id", -1)), str(result.get("sequence", -1)),
 			str(result.get("cell_idx", -1)), str(result.get("type_id", -1)),
 			str(result.get("ok", false)), str(result.get("code", "")),
 			str(result.get("settled_day", -1))])
 		construction_command_settled.emit(result)
-	_construction_receipt_cursor = maxi(_construction_receipt_cursor,
-		int(page.get("last_receipt_id", _construction_receipt_cursor)))
 
 
 func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
@@ -836,56 +808,31 @@ func dispatch_family_colonization_receipts(country_handle: int) -> void:
 	var cursor := int(_colonization_receipt_cursors.get(country_handle, 0))
 	var page: Dictionary = _world_ext.get_family_colonization_receipts(
 		country_handle, cursor, 64)
-	if not bool(page.get("ok", false)):
-		return
-	for raw in page.get("receipts", []):
-		var result: Dictionary = raw
-		result["country_handle"] = country_handle
+	if bool(page.get("ok", false)):
+		emit_family_colonization_receipts(page.get("receipts", []), country_handle)
+
+
+func emit_family_colonization_receipts(receipts: Array, country_handle: int = 0) -> void:
+	for raw: Dictionary in receipts:
+		var country := int(raw.get("country_handle", country_handle))
+		var receipt_id := int(raw.get("receipt_id", -1))
+		if receipt_id <= int(_colonization_receipt_cursors.get(country, 0)):
+			continue
+		_colonization_receipt_cursors[country] = receipt_id
+		var result := raw.duplicate()
+		result["country_handle"] = country
 		var code := String(result.get("code", ""))
 		result["ok"] = not code.begins_with("colonization_")
 		result["message"] = _colonization_result_message(code)
 		family_colonization_settled.emit(result)
-	_colonization_receipt_cursors[country_handle] = maxi(cursor,
-		int(page.get("last_receipt_id", cursor)))
 
 
 static func _colonization_result_message(code: String) -> String:
-	return {
-		"STARTED": "开拓队已经出发。",
-		"CANCELLED_RETURNING": "开拓已取消，队伍正在返程。",
-		"TARGET_LOST_RETURNING": "目标已被占领，队伍正在返程。",
-		"PREPARING_UNBUILDABLE": "源地缺少开工包所需建材且无法获得，筹备已中止，托管物资已退回。",
-		"CLAIMED": "开拓成功，目标已纳入领土。",
-		"RELOCATED": "迁徙成功，人员已并入目标地块。",
-		"RETURNED": "开拓队已返回原出发地。",
-		"colonization_requote_required": "地图、视野或领土已变化，排队派遣未能出发。",
-		"colonization_population_insufficient": "结算时源分支人口已不足，排队派遣未能出发。",
-		"colonization_duplicate_target": "本国已有队伍前往该目标，排队派遣未能出发。",
-		"colonization_family_cell_capacity": "目标地块家族已满，排队派遣未能出发。",
-	}.get(code, "开拓队状态已更新。")
+	return EconomyCommandResultText._colonization_result_message(code)
 
 
 static func _construction_result_message(code: String) -> String:
-	return {
-		"ok": "建筑已开工。",
-		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
-		"construction_technology_locked": "建造所需科技尚未解锁。",
-		"construction_obsolete": "已有更高阶生产方式；当前方式仍可建造。",
-		"construction_conditions_failed": "目标地块不满足建筑放置条件。",
-		"construction_resource_unavailable": "当地自然资源承载不足。",
-		"construction_materials_insufficient": "国库与当地市场的建材总量不足。",
-		"construction_treasury_cash_insufficient": "国库资金不足以购买缺少的建材。",
-		"construction_market_unavailable": "当地市场没有可结算的商人。",
-		"construction_owner_signature_unavailable": "本地没有合适的业主人口。",
-		"construction_target_invalid": "目标建筑无效。",
-		"political_regime_lacks_treasury_construction": "当前体制不开放国库建造。",
-		"construction_treasury_preflight_drift": "国库结算与营造报价不一致，请重试。",
-		"country_economy_asset_host_pending": "国库结算尚未完成，请稍后重试。",
-		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",
-		"economy_fatal": "经济模拟已停止，无法营造。",
-		"save_restore_active": "存档正在读写，稍后再试。",
-		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
-	}.get(code, "修建命令未能执行（%s）。" % code)
+	return EconomyCommandResultText._construction_result_message(code)
 
 
 func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
@@ -1080,33 +1027,39 @@ func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
 	var result: Dictionary = _world_ext.get_family_founding_offers(offset, limit)
 	if not bool(result.get("ok", false)) or (result.get("offers", []) as Array).is_empty():
 		return result
-	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
 	for offer in result.get("offers", []):
-		var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
-		offer["settlement_name"] = settlement_name
-		var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
-		if split:
-			var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
-			offer["source_family_name"] = String(parent.get("family_name", "原家族"))
-		var plan_index := 0
-		for card in offer.get("candidates", []):
-			_decorate_family_founding_card(card, settlement_name)
-			if split:
-				plan_index += 1
-				card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
-				card["people_label"] = "分支族人"
-				card["choice_label"] = "确立此家风"
-				card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
+		decorate_family_founding_offer(offer)
 	return result
 
 
+func decorate_family_founding_offer(offer: Dictionary) -> void:
+	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
+	var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
+	offer["settlement_name"] = settlement_name
+	var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
+	if split:
+		var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
+		offer["source_family_name"] = String(parent.get("family_name", "原家族"))
+	var plan_index := 0
+	for card in offer.get("candidates", []):
+		_decorate_family_founding_card(card, settlement_name)
+		if split:
+			plan_index += 1
+			card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
+			card["people_label"] = "分支族人"
+			card["choice_label"] = "确立此家风"
+			card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
+
+
 func submit_family_founding_choice(offer_id: int, generation: int,
-		choice_index: int, effective_day: int) -> Dictionary:
+		choice_index: int, effective_day: int, sequence: int = 0) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
-	_family_founding_sequence += 1
+	if sequence == 0:
+		_family_founding_sequence += 1
+		sequence = _family_founding_sequence
 	return _world_ext.submit_family_founding_choice(offer_id, generation,
-		choice_index, maxi(0, effective_day), _family_founding_sequence)
+		choice_index, maxi(0, effective_day), sequence)
 
 
 func _decorate_family_founding_card(card: Dictionary, settlement_name: String) -> void:

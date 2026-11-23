@@ -151,8 +151,8 @@ def load_design_copy(path: Path) -> tuple[dict[str, dict], dict[str, dict]]:
             }
     if len(traits) != 98:
         raise SystemExit(f"design markdown expected 98 traits, got {len(traits)}")
-    if len(effects) != 49:
-        raise SystemExit(f"design markdown expected 49 effects, got {len(effects)}")
+    if len(effects) != 48:
+        raise SystemExit(f"design markdown expected 48 effects, got {len(effects)}")
     return traits, effects
 
 
@@ -370,6 +370,13 @@ def trait(key: str, name: str, desc: str, behaviors: list, *,
 def mag_prestige(scale: float = 1.0) -> list[int]:
     steps = [0.70, 0.82, 0.94, 1.06, 1.18, 1.30]
     return [max(0, min(4 * Q16, q16(v * scale))) for v in steps]
+
+
+def mag_tiers(base_delta: float, tier_deltas: list[float]) -> list[int]:
+    if len(tier_deltas) != 5:
+        raise ValueError(f"expected 5 prestige tiers, got {len(tier_deltas)}")
+    seq = [tier_deltas[0]] + list(tier_deltas)
+    return [max(0, min(4 * Q16, round((d / base_delta) * Q16))) for d in seq]
 
 
 def mag_q16_tiers(tier_values_q16: list[int]) -> list[int]:
@@ -912,42 +919,6 @@ def trigger_tiers(prefix: str) -> list[str]:
     return [f"{prefix}_t{i}" for i in range(6)]
 
 
-# Base delta carried by each family modifier definition.  The prestige
-# magnitude of an effect is expressed relative to this base, so the catalog
-# factor always equals the sum of the authored tier delta and the display copy.
-FAMILY_DEF_BASE: dict[str, float] = {
-    "family.city.birth_boost": 0.32,
-    "family.city.birth_cut": 0.32,
-    "family.city.production_boost_high": 0.24,
-    "family.city.manufacturing_output_boost_high": 0.32,
-    "family.city.knowledge_output_boost": 0.32,
-    "family.city.trade_output_boost": 0.32,
-    "family.city.agriculture_output_boost": 0.70,
-    "family.city.extractive_output_boost": 0.58,
-    "family.city.timber_regen_boost": 0.80,
-    "family.city.good.corn_grain.output": 0.80,
-    "family.city.good.fish.output": 0.96,
-    "family.city.chain_output_boost": 1.00,
-    "family.city.austere_consumption": 0.50,
-    "family.city.staple_consumption_cut": 0.45,
-    "family.city.resource_regen_cut": 0.29,
-    "family.city.hedonism": 0.40,
-    "family.city.owned_building_output": 0.04,
-    "family.country.trade_capacity": 0.08,
-    "family.country.patronage_satisfaction": 1.50,
-}
-
-
-def mag_abs(def_key: str, deltas: list[float]) -> list[int]:
-    """Express absolute tier deltas as multiples of one definition base."""
-    base = FAMILY_DEF_BASE[def_key]
-    ratios = [abs(float(d)) / base for d in deltas]
-    if max(ratios) > 4.0 + 1e-9:
-        raise SystemExit(
-            f"effect delta exceeds one definition ({def_key}): {max(ratios):.3f}x base")
-    return mag_q16_tiers([q16(r) for r in ratios])
-
-
 def build_effects() -> list[dict]:
     rain = cond(OP_EQ, 13, Q16)
     hot = cond(OP_GTE, 5, q16(0.62))
@@ -971,40 +942,40 @@ def build_effects() -> list[dict]:
     rows = []
     rows.append(effect("birth_plenty", "多子多福", "提高本城出生系数。",
         commands=[mod_cmd("family.city.birth_boost")],
-        mags=mag_abs("family.city.birth_boost", [0.06, 0.12, 0.18, 0.25, 0.32]),
+        mags=mag_tiers(0.03, [0.02, 0.04, 0.06, 0.08, 0.10]),
         exclusions=["birth_decline", "wealthy_few_heirs"]))
     rows.append(effect("birth_decline", "少子化", "降低本城出生系数。",
         commands=[mod_cmd("family.city.birth_cut")],
-        mags=mag_abs("family.city.birth_cut", [0.06, 0.12, 0.18, 0.25, 0.32]),
+        mags=mag_tiers(0.03, [0.02, 0.04, 0.06, 0.08, 0.10]),
         exclusions=["birth_plenty"]))
     rows.append(effect("production_boost", "鼓舞生产", "提高本城产出系数。",
-        commands=[mod_cmd("family.city.production_boost_high")],
-        mags=mag_abs("family.city.production_boost_high", [0.03, 0.06, 0.09, 0.13, 0.18])))
+        commands=[mod_cmd("family.city.production_boost")],
+        mags=mag_tiers(0.02, [0.01, 0.02, 0.03, 0.04, 0.05])))
     rows.append(effect("hedonism", "享乐主义", "提高消费并略降产出。",
         commands=[mod_cmd("family.city.hedonism")],
-        mags=mag_abs("family.city.hedonism", [0.08, 0.16, 0.24, 0.32, 0.40])))
+        mags=mag_tiers(0.06, [0.02, 0.04, 0.06, 0.08, 0.10])))
     rows.append(effect("afforestation", "植树造林", "提高木材再生。",
         domain=DOM_BUILDING, selector=SEL_ID, selector_id="timber",
         commands=[mod_cmd("family.city.timber_regen_boost")],
-        mags=mag_abs("family.city.timber_regen_boost", [0.15, 0.30, 0.45, 0.60, 0.80]),
+        mags=mag_tiers(0.10, [0.04, 0.08, 0.12, 0.16, 0.20]),
         techs=["枯枝采集"]))
     rows.append(effect("corn_expert", "玉米专家", "当地可产玉米时提高玉米产出。",
         domain=DOM_BUILDING, selector=SEL_ID, selector_id="corn_grain",
         commands=[mod_cmd("family.city.good.corn_grain.output")],
-        mags=mag_abs("family.city.good.corn_grain.output", [0.15, 0.30, 0.45, 0.60, 0.80]),
+        mags=mag_tiers(0.08, [0.04, 0.08, 0.12, 0.16, 0.20]),
         conditions=[corn], techs=["野生玉米采集"]))
     rows.append(effect("rain_prayer", "求雨", "降低本城经济成雨门槛。",
         commands=[], selector=SEL_CELL,
-        mags=mag_q16_tiers([q16(0.05), q16(0.10), q16(0.15), q16(0.20), q16(0.25)])))
+        mags=mag_q16_tiers([q16(0.02), q16(0.04), q16(0.06), q16(0.08), q16(0.10)])))
     rows.append(effect("cold_resist", "抗寒", "提高本城寒冷气候下的生产容量。",
         commands=[],
-        mags=mag_q16_tiers([q16(0.25), q16(0.40), q16(0.55), q16(0.70), q16(0.85)])))
+        mags=mag_q16_tiers([q16(0.10), q16(0.20), q16(0.30), q16(0.40), q16(0.50)])))
     rows.append(effect("expansionism", "扩张主义", "开拓落户时追加人口奖励。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([60, 90, 130, 180, 250])))
-    rows.append(effect("hardship", "忧患意识", "必需品短缺时压低非必需消费。",
+        mags=mag_q16_tiers([20, 30, 40, 60, 80])))
+    rows.append(effect("hardship", "忧患意识", "必需品短缺时提高非生存消费并压低奢侈。",
         commands=[mod_cmd("family.city.austere_consumption")],
-        mags=mag_abs("family.city.austere_consumption", [0.12, 0.22, 0.32, 0.42, 0.50]),
+        mags=mag_tiers(0.08, [0.05, 0.10, 0.15, 0.20, 0.25]),
         conditions=[cond(OP_GTE, 11, q16(0.15))]))
     rows.append(effect("trade_zealot", "商业狂热者", "累计贸易后奖励人口；威望分档阈值。",
         domain=DOM_FAMILY, selector=SEL_OWNER, operation=OP_EVENT, lifecycle=LIFE_ONCE,
@@ -1014,115 +985,109 @@ def build_effects() -> list[dict]:
     rows.append(effect("rain_farming", "雨水利用", "成雨当日提高农业产出。",
         lifecycle=LIFE_DUR, duration=1, stack=STACK_REFRESH,
         commands=[mod_cmd("family.city.agriculture_output_boost", duration=1)],
-        mags=mag_abs("family.city.agriculture_output_boost", [0.15, 0.25, 0.35, 0.50, 0.70]),
+        mags=mag_tiers(0.05, [0.05, 0.08, 0.12, 0.16, 0.20]),
         conditions=[rain]))
     rows.append(effect("heat_stress", "燥热", "高温时提高出生系数。",
-        commands=[mod_cmd("family.city.birth_boost")],
-        mags=mag_abs("family.city.birth_boost", [0.12, 0.22, 0.32, 0.42, 0.55]),
+        commands=[mod_cmd("family.city.heat_birth_boost")],
+        mags=mag_tiers(0.10, [0.05, 0.10, 0.15, 0.20, 0.25]),
         conditions=[hot]))
     rows.append(effect("valley_farm", "河谷农法", "洪泛地貌提高农业产出。",
         commands=[mod_cmd("family.city.agriculture_output_boost")],
-        mags=mag_abs("family.city.agriculture_output_boost", [0.10, 0.18, 0.26, 0.34, 0.45]),
+        mags=mag_tiers(0.05, [0.03, 0.06, 0.09, 0.12, 0.15]),
         conditions=[delta]))
     rows.append(effect("tide_living", "观潮生计", "海岸邻域提高渔获与贸易产出。",
         commands=[mod_cmd("family.city.good.fish.output"),
                   mod_cmd("family.city.trade_output_boost")],
-        mags=mag_abs("family.city.good.fish.output", [0.09, 0.18, 0.27, 0.36, 0.48]),
+        mags=mag_tiers(0.05, [0.01, 0.02, 0.03, 0.04, 0.05]),
         techs=FISHERY_TECHS, tech_any=True))
     rows.append(effect("mountain_vein", "山地矿脉", "丘陵山地且有矿产时提高采掘产出。",
         commands=[mod_cmd("family.city.extractive_output_boost")],
-        mags=mag_abs("family.city.extractive_output_boost", [0.10, 0.18, 0.26, 0.34, 0.45]),
+        mags=mag_tiers(0.05, [0.03, 0.06, 0.09, 0.12, 0.15]),
         conditions=hill + [extractive, cond(OP_AND, 0, 0)],
         techs=MINERAL_IDENTIFICATION_TECHS, tech_any=True))
     rows.append(effect("drought_stores", "旱年储备", "连续干旱后降低主食消费。",
         commands=[],
-        mags=mag_abs("family.city.staple_consumption_cut", [0.10, 0.18, 0.26, 0.34, 0.45]),
+        mags=mag_tiers(0.06, [0.03, 0.06, 0.09, 0.12, 0.15]),
         triggers=trigger_tiers("family.buff.drought_store")))
     rows.append(effect("many_resources", "百产之地", "资源种类较多时提高产出。",
         commands=[mod_cmd("family.city.chain_output_boost")],
-        mags=mag_q16_tiers([q16(0.015), q16(0.0225), q16(0.03), q16(0.04), q16(0.05)]),
+        mags=mag_tiers(0.05, [0.005, 0.0075, 0.01, 0.0125, 0.015]),
         conditions=resource_n,
         instructions=[
             {"op": 2, "arg0": 23, "value_q16": 0},
             {"op": 1, "arg0": 0, "value_q16": 6 * Q16},
-            {"op": 8, "arg0": 0, "value_q16": 0},
+            {"op": 9, "arg0": 0, "value_q16": 0},
             {"op": 2, "arg0": 0, "value_q16": 0},
             {"op": 6, "arg0": 0, "value_q16": 0},
             {"op": 11, "arg0": 0, "value_q16": 0},
             {"op": 12, "arg0": 0, "value_q16": 0},
         ]))
     rows.append(effect("industry_cluster", "工业集群", "制造建筑较多时提高制造产出。",
-        commands=[mod_cmd("family.city.manufacturing_output_boost_high")],
-        mags=mag_abs("family.city.manufacturing_output_boost_high",
-                     [0.08, 0.13, 0.18, 0.24, 0.32]),
+        commands=[mod_cmd("family.city.manufacturing_output_boost")],
+        mags=mag_tiers(0.05, [0.03, 0.05, 0.07, 0.09, 0.12]),
         conditions=mfg_n, techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("thrift_output", "物尽其用", "提高制造产出并略降资源耗用。",
-        commands=[mod_cmd("family.city.manufacturing_output_boost_high")],
-        mags=mag_abs("family.city.manufacturing_output_boost_high",
-                     [0.06, 0.12, 0.18, 0.25, 0.32])))
+        commands=[mod_cmd("family.city.manufacturing_output_boost")],
+        mags=mag_tiers(0.05, [0.02, 0.04, 0.06, 0.08, 0.10])))
     rows.append(effect("work_relief", "以工代赈", "失业较高时提高家族投资权重。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.25), q16(0.40), q16(0.60), q16(0.80), q16(1.00)]),
+        mags=mag_q16_tiers([q16(0.10), q16(0.20), q16(0.30), q16(0.40), q16(0.50)]),
         conditions=[unemp]))
     rows.append(effect("market_boom", "市集繁荣", "窗口期内贸易次数达标后提高贸易产出。",
         commands=[],
-        mags=mag_abs("family.city.trade_output_boost", [0.08, 0.13, 0.18, 0.24, 0.32]),
+        mags=mag_tiers(0.05, [0.03, 0.05, 0.07, 0.09, 0.12]),
         triggers=e022, techs=TRADE_POOL_TECHS))
     rows.append(effect("city_founder", "城市奠基者", "聚落升档时一次性奖励人口。",
         domain=DOM_FAMILY, selector=SEL_OWNER, operation=OP_EVENT, lifecycle=LIFE_ONCE,
-        commands=[econ_cmd(15, "family.population_reward", 70, value_mode=1)],
-        mags=mag_q16_tiers([70, 110, 160, 220, 300])))
+        commands=[econ_cmd(15, "family.population_reward", 25, value_mode=1)],
+        mags=mag_q16_tiers([25, 40, 60, 90, 120])))
     rows.append(effect("ancestral_precept", "时代鼓舞", "国家进入新时代表扬本国家族产出。",
         source=SRC_COUNTRY, lifecycle=LIFE_DUR, duration=365, stack=STACK_REFRESH,
-        commands=[mod_cmd("family.city.production_boost_high", duration=365)],
-        mags=mag_abs("family.city.production_boost_high", [0.08, 0.11, 0.14, 0.18, 0.24])))
+        commands=[mod_cmd("family.city.production_boost", duration=365)],
+        mags=mag_tiers(0.02, [0.03, 0.04, 0.05, 0.06, 0.08])))
     rows.append(effect("knowledge_spread", "知识扩散", "向邻格扩散知识产出。",
         selector=SEL_R1, commands=[mod_cmd("family.city.knowledge_output_boost")],
-        mags=mag_abs("family.city.knowledge_output_boost", [0.10, 0.14, 0.18, 0.24, 0.32]),
+        mags=mag_tiers(0.05, [0.03, 0.03, 0.05, 0.05, 0.08]),
         conditions=[know], techs=KNOWLEDGE_POOL_TECHS))
     rows.append(effect("shared_water", "共用水利", "降雨时向邻格提供农业加成。",
         selector=SEL_R1, lifecycle=LIFE_DUR, duration=2, stack=STACK_REFRESH,
         commands=[mod_cmd("family.city.agriculture_output_boost", duration=2)],
-        mags=mag_abs("family.city.agriculture_output_boost", [0.07, 0.11, 0.15, 0.20, 0.26]),
+        mags=mag_tiers(0.05, [0.02, 0.04, 0.06, 0.08, 0.10]),
         conditions=[rain]))
     rows.append(effect("branch_network", "分支商网", "分支数较多时提高各分支贸易产出。",
         commands=[mod_cmd("family.city.trade_output_boost")],
-        mags=mag_abs("family.city.trade_output_boost", [0.07, 0.10, 0.14, 0.19, 0.26]),
+        mags=mag_tiers(0.05, [0.02, 0.03, 0.05, 0.07, 0.10]),
         conditions=branches, techs=TRADE_POOL_TECHS))
     rows.append(effect("overfish", "涸泽而渔", "提高采掘产出并降低资源再生。",
         commands=[mod_cmd("family.city.extractive_output_boost"),
                   mod_cmd("family.city.resource_regen_cut")],
-        mags=mag_abs("family.city.extractive_output_boost", [0.12, 0.22, 0.32, 0.44, 0.58])))
+        mags=mag_tiers(0.05, [0.04, 0.08, 0.12, 0.16, 0.20])))
     rows.append(effect("many_trades", "百业共荣", "全城部门多样时提高产出。",
-        commands=[mod_cmd("family.city.production_boost_high")],
-        mags=mag_abs("family.city.production_boost_high", [0.05, 0.08, 0.12, 0.16, 0.22]),
+        commands=[mod_cmd("family.city.production_boost")],
+        mags=mag_tiers(0.02, [0.02, 0.03, 0.04, 0.05, 0.07]),
         conditions=sectors, exclusions=["one_industry_city"],
         techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("one_industry_city", "一业之城", "全城主导部门份额较高时强化该部门。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.12), q16(0.20), q16(0.28), q16(0.38), q16(0.50)]),
+        mags=mag_q16_tiers([q16(0.04), q16(0.07), q16(0.10), q16(0.13), q16(0.16)]),
         conditions=[one_industry], exclusions=["many_trades"],
         techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("city_chain", "全链协作", "全城完成产业链时提高产出。",
         commands=[mod_cmd("family.city.chain_output_boost")],
-        mags=mag_abs("family.city.chain_output_boost", [0.10, 0.16, 0.22, 0.30, 0.40]),
+        mags=mag_tiers(0.05, [0.03, 0.05, 0.07, 0.10, 0.14]),
         conditions=chain, techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("trade_nation", "商贸立国", "提高国家贸易容量。",
         domain=DOM_COUNTRY, selector=SEL_COUNTRY,
         commands=[mod_cmd("family.country.trade_capacity", domain=1)],
-        mags=mag_abs("family.country.trade_capacity", [0.02, 0.03, 0.045, 0.06, 0.08]),
+        mags=mag_tiers(0.06, [0.005, 0.01, 0.015, 0.02, 0.03]),
         techs=TRADE_POOL_TECHS))
-    rows.append(effect("patronage_house", "门客之家", "提高本国匠户、学者、书吏与雇工的满意度。",
-        domain=DOM_COUNTRY, selector=SEL_COUNTRY, operation=OP_ADD,
-        commands=[mod_cmd("family.country.patronage_satisfaction", domain=1)],
-        mags=mag_q16_tiers([q16(1.4), q16(1.8), q16(2.2), q16(2.8), q16(3.4)])))
 
     rows.append(effect("branching_households", "开枝散叶", "按家族成员加权提高出生，不抬匿名人口。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.12), q16(0.22), q16(0.34), q16(0.48), q16(0.65)])))
+        mags=mag_q16_tiers([q16(0.05), q16(0.10), q16(0.15), q16(0.20), q16(0.30)])))
     rows.append(effect("market_bully", "欺行霸市", "买方折扣并提高投资权重。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.40), q16(0.55), q16(0.70), q16(0.85), q16(1.00)])))
+        mags=mag_q16_tiers([q16(0.20), q16(0.40), q16(0.60), q16(0.80), q16(1.00)])))
     rows.append(effect("lucky_pair", "好事成双", "累计建设后免费建成一座建筑。",
         domain=DOM_FAMILY, selector=SEL_OWNER, operation=OP_EVENT, lifecycle=LIFE_ONCE,
         commands=[econ_cmd(14, "family.free_building", 1)],
@@ -1130,7 +1095,7 @@ def build_effects() -> list[dict]:
         triggers=e035, reward=0))
     rows.append(effect("retain_lineage", "抱残守缺", "分裂时尽量保留原有特性。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.70), q16(0.78), q16(0.86), q16(0.93), q16(1.00)]),
+        mags=mag_q16_tiers([q16(0.60), q16(0.70), q16(0.80), q16(0.90), q16(1.00)]),
         exclusions=["absorb_all", "break_with_past"]))
     rows.append(effect("absorb_all", "兼收并蓄", "分裂时提高新特性权重。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
@@ -1138,41 +1103,41 @@ def build_effects() -> list[dict]:
         exclusions=["retain_lineage", "break_with_past"]))
     rows.append(effect("specialized_industry", "一业传家", "家族自有建筑集中于单一部门时调整产出。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.14), q16(0.22), q16(0.30), q16(0.40), q16(0.52)]),
+        mags=mag_q16_tiers([q16(0.05), q16(0.09), q16(0.13), q16(0.17), q16(0.22)]),
         exclusions=["versatile_crafts"], techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("versatile_crafts", "百工兴家", "家族自有建筑跨越多部门时提高产出。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.10), q16(0.16), q16(0.22), q16(0.30), q16(0.40)]),
+        mags=mag_q16_tiers([q16(0.03), q16(0.05), q16(0.07), q16(0.10), q16(0.14)]),
         exclusions=["specialized_industry"], techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("complete_chain", "全链经营", "家族拥有完整升级链时提高该链产出。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.12), q16(0.20), q16(0.28), q16(0.38), q16(0.52)]),
+        mags=mag_q16_tiers([q16(0.04), q16(0.07), q16(0.10), q16(0.14), q16(0.20)]),
         techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("local_monopoly", "垄断豪门", "本地产业链份额较高时提高该链产出。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.10), q16(0.17), q16(0.24), q16(0.32), q16(0.42)]),
+        mags=mag_q16_tiers([q16(0.03), q16(0.05), q16(0.08), q16(0.11), q16(0.15)]),
         techs=INDUSTRY_POOL_TECHS))
     rows.append(effect("remote_kin", "远方亲族", "异地分支提高投资权重。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.25), q16(0.40), q16(0.60), q16(0.80), q16(1.00)])))
+        mags=mag_q16_tiers([q16(0.10), q16(0.15), q16(0.20), q16(0.30), q16(0.40)])))
     rows.append(effect("family_learning", "家学传承", "按威望冻结知识职业就业权重。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.12), q16(0.18), q16(0.26), q16(0.36), q16(0.50)]),
+        mags=mag_q16_tiers([q16(0.05), q16(0.08), q16(0.12), q16(0.16), q16(0.20)]),
         techs=KNOWLEDGE_POOL_TECHS))
     rows.append(effect("century_shop", "百年老店", "仍拥有该类建筑时按年期叠加产出。",
         lifecycle=LIFE_DUR, duration=3650, stack=STACK_ADD, max_stacks=6, cadence=3650,
         commands=[mod_cmd("family.city.owned_building_output", duration=3650, stacks=1)],
-        mags=mag_abs("family.city.owned_building_output", [0.015, 0.02, 0.025, 0.03, 0.04])))
+        mags=mag_tiers(0.02, [0.01, 0.01, 0.015, 0.02, 0.025])))
     rows.append(effect("new_nobility", "新贵崛起", "威望升级时吸收匿名人口。",
         domain=DOM_FAMILY, selector=SEL_OWNER, operation=OP_EVENT, lifecycle=LIFE_ONCE,
-        commands=[econ_cmd(21, "family.absorb_anonymous", 15, value_mode=1)],
-        mags=mag_q16_tiers([15, 30, 50, 80, 120])))
+        commands=[econ_cmd(21, "family.absorb_anonymous", 5, value_mode=1)],
+        mags=mag_q16_tiers([5, 10, 20, 30, 50])))
     rows.append(effect("split_dowry", "分家馈赠", "分裂时赠予建筑与人口。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
         mags=mag_q16_tiers([1, 1, 2, 2, 3])))
     rows.append(effect("wealthy_few_heirs", "富室寡嗣", "人均财富高于当地时降低生育并提高投资。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
-        mags=mag_q16_tiers([q16(0.15), q16(0.28), q16(0.42), q16(0.58), q16(0.75)]),
+        mags=mag_q16_tiers([q16(0.05), q16(0.10), q16(0.15), q16(0.20), q16(0.30)]),
         exclusions=["birth_plenty"]))
     rows.append(effect("break_with_past", "破旧立新", "分裂时替换原有特性。",
         domain=DOM_FAMILY, selector=SEL_OWNER, commands=[],
@@ -1187,8 +1152,8 @@ def main() -> int:
     effects = build_effects()
     if len(traits) != 98:
         raise SystemExit(f"expected 98 traits, got {len(traits)}")
-    if len(effects) != 49:
-        raise SystemExit(f"expected 49 effects, got {len(effects)}")
+    if len(effects) != 48:
+        raise SystemExit(f"expected 48 effects, got {len(effects)}")
     keys = [t["key"] for t in traits]
     if len(keys) != len(set(keys)):
         raise SystemExit("duplicate trait keys")

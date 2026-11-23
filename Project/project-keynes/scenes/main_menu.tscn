@@ -10,6 +10,7 @@
 [ext_resource type="Shader" uid="uid://cuehdjldca646" path="res://shaders/paper_command_slip.gdshader" id="9_slip_shader"]
 [ext_resource type="Texture2D" uid="uid://dbw72vpul2qsy" path="res://assets/ui/paper_aux_v1/torn_note_v1.png" id="10_grain"]
 [ext_resource type="PackedScene" path="res://scenes/ui/graphics_quality_options.tscn" id="11_graphics"]
+[ext_resource type="Script" path="res://scripts/ui/components/event_pause_options.gd" id="12_event_pause"]
 
 [sub_resource type="ShaderMaterial" id="FolioMat"]
 shader = ExtResource("8_folio_shader")
@@ -874,6 +875,11 @@ value = 1.0
 unique_name_in_owner = true
 layout_mode = 2
 text = "静音"
+
+[node name="EventPauseOptions" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("12_event_pause")
 
 [node name="SettingsActions" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column" unique_id=594841108]
 layout_mode = 2

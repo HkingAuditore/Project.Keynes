@@ -49,9 +49,7 @@ MODIFIER_PATH = ROOT / "data/modifiers/default_modifier_catalog.tres"
 NETWORK_PATH = ROOT / "data/technology/technology_network.json"
 SIGNAL_CATALOG_PATH = ROOT / "scripts/research/research_signal_catalog.gd"
 MODIFIER_CATALOG_PATH = ROOT / "scripts/modifier/modifier_catalog.gd"
-MODIFIER_STAT_TABLES_PATH = ROOT / "scripts/modifier/modifier_catalog_stat_tables.gd"
 EFFECT_DOMAIN_CATALOG_PATH = ROOT / "scripts/effect/effect_domain_catalog.gd"
-EFFECT_METRIC_KEYS_PATH = ROOT / "scripts/effect/effect_metric_keys.gd"
 EFFECT_CATALOG_PATH = ROOT / "scripts/effect/effect_catalog.gd"
 
 
@@ -369,15 +367,8 @@ OP_MULTIPLY = 2
 OP_ADD_DOWNSIDE = 0     # Add, and it is the card's price
 OP_ADD_TRANSFER = 4     # Add, but neither buff nor price (see below)
 RARITY_WEIGHTS = {1: 120, 2: 60, 3: 20}
-# Relaxed support gates: only extreme overwhelming opposition blocks enacting or
-# repealing an ideology; real political cost is carried by per-class cohort
-# satisfaction buffs (persistent attitude + 180-day enactment shock) below.
-ADOPT_THRESHOLD = {1: -32768, 2: -29491, 3: -26214}
-REPEAL_THRESHOLD = -32768
-PROMOTE_THRESHOLD = {1: -8192, 2: -4096, 3: 0}
-CLASS_ATTITUDE_PERSISTENT_SCALE_BP = 400
-CLASS_ATTITUDE_SHOCK_SCALE_BP = 1200
-CLASS_ATTITUDE_SHOCK_DURATION_DAYS = 180
+ADOPT_THRESHOLD = {1: 4096, 2: 8192, 3: 12288}
+PROMOTE_THRESHOLD = {1: 16384, 2: 20480, 3: 24576}
 CLIMATE_HAZARDS = ["drought", "flood", "cold_stress", "heat_stress"]
 
 # Class stance templates per school: class -> (adopt, repeal, promote).
@@ -394,10 +385,14 @@ SCHOOL_STANCES = {
     "harmony": {"general": (16384, -8192, 16384), "farmer": (24576, -16384, 20480),
                 "worker": (-8192, 8192, 0)},
 }
-# Critical-class floors per card: cleared so no single class hard-vetoes
-# enacting an ideology; opposing classes instead react via cohort satisfaction
-# debuffs when the ideology is enacted.
-CRITICAL_FLOORS = {}
+# Critical-class floors per card: (card, class) -> {field: q16}. A class whose
+# support falls below its floor vetoes the transition regardless of the total,
+# so a few cards carry a hard political cost beyond their weighted stance.
+CRITICAL_FLOORS = {
+    ("free_exchange", "farmer"): {"adopt_min_support_q16": -8192},
+    ("scholar_office", "technology"): {"promote_min_support_q16": 32768},
+    ("labour_legislation", "worker"): {"adopt_min_support_q16": 0},
+}
 # The 动员 school is organised public action (public works, sanitation, schooling,
 # labour law), not warfare: the project has no military simulation at all, so any
 # war framing on a card is fiction. Its icon is the politics glyph accordingly.
@@ -1972,12 +1967,8 @@ def metric_keys() -> list[str]:
     global _METRIC_KEYS_CACHE
     if _METRIC_KEYS_CACHE is None:
         text = EFFECT_DOMAIN_CATALOG_PATH.read_text(encoding="utf-8")
-        if EFFECT_METRIC_KEYS_PATH.exists():
-            metric_text = EFFECT_METRIC_KEYS_PATH.read_text(encoding="utf-8")
-            body = metric_text.split("const KEYS := [", 1)[1].split("\n]", 1)[0]
-        else:
-            body = text.split("catalog.metric_keys = PackedStringArray([", 1)[1]
-            body = body.split("])", 1)[0]
+        body = text.split("catalog.metric_keys = PackedStringArray([", 1)[1]
+        body = body.split("])", 1)[0]
         keys = []
         for line in body.splitlines():
             match = re.search(r'"([a-z0-9_.]+)"', line)
@@ -5652,21 +5643,17 @@ def _read_scalar_stat_keys() -> set[str]:
     first `]` in the block belongs to the first row, not to the array.
     """
     keys: set[str] = set()
-    sources = [MODIFIER_STAT_TABLES_PATH, MODIFIER_CATALOG_PATH]
-    for source in sources:
-        if not source.exists():
+    inside = False
+    for line in MODIFIER_CATALOG_PATH.read_text(encoding="utf-8").splitlines():
+        if not inside:
+            if "const TECHNOLOGY_STATS := [" in line:
+                inside = True
             continue
-        inside = False
-        for line in source.read_text(encoding="utf-8").splitlines():
-            if not inside:
-                if "const TECHNOLOGY_STATS := [" in line:
-                    inside = True
-                continue
-            if line.strip() == "]":
-                break
-            match = re.search(r'\["([a-z][a-z_.0-9]+)"\s*,', line)
-            if match:
-                keys.add(match.group(1))
+        if line.strip() == "]":
+            break
+        match = re.search(r'\["([a-z][a-z_.0-9]+)"\s*,', line)
+        if match:
+            keys.add(match.group(1))
     return keys
 
 
@@ -5706,8 +5693,6 @@ def allowed_stat_keys() -> set[str]:
             f"economy.profession.{profession}.tax_tolerance_factor",
             f"economy.profession.{profession}.satisfaction_bp",
         }
-    for class_id in ("farmer", "general", "military", "technology", "worker"):
-        allowed.add(f"economy.class.{class_id}.satisfaction_bp")
     for profile in _read_res_dir_ids(PRODUCTION_CLIMATES_DIR):
         allowed |= {f"country.climate.profile.{profile}.{hazard}_loss_factor"
                     for hazard in CLIMATE_HAZARDS}
@@ -5880,27 +5865,6 @@ def build_ideology_catalog() -> str:
                 cost_id = f"Effect{base}CostL{level + 1}"
                 blocks.append(effect_block(cost_id, f"ideology.{key}", Q16))
                 effect_ids.append(cost_id)
-            # Per-class cohort satisfaction tendency while the ideology is active,
-            # derived from SCHOOL_STANCES[school].
-            attitude_id = f"Effect{base}L{level + 1}ClassAttitude"
-            blocks.append(effect_block(
-                attitude_id, f"ideology.school_attitude.{school}", Q16))
-            effect_ids.append(attitude_id)
-            if level == 0:
-                shock_id = f"Effect{base}L1EnactShock"
-                blocks.append(on_enter_effect_block(shock_id, {
-                    "action": 1,
-                    "domain": 1,
-                    "opcode": 1,
-                    "target_resolver": 1,
-                    "value_mode": 0,
-                    "value_q16": Q16,
-                    "duration_days": CLASS_ATTITUDE_SHOCK_DURATION_DAYS,
-                    "stacks": 1,
-                    "command_key": "ideology.enact_shock",
-                    "definition_key": f"ideology.school_shock.{school}",
-                }))
-                on_enter_ids.append(shock_id)
             authored_on_enter = LEVEL_ON_ENTER_EFFECTS.get(key, [[], [], []])[level]
             for row_index, row in enumerate(authored_on_enter):
                 row_id = f"Effect{base}L{level + 1}OnEnter{row_index}"
@@ -5992,7 +5956,7 @@ def build_ideology_catalog() -> str:
             "class_stances = Array[Resource]([%s])\n" % ", ".join(
                 f'SubResource("{stance}")' for stance in stance_ids) +
             f"adopt_threshold_q16 = {ADOPT_THRESHOLD[rarity]}\n"
-            f"repeal_threshold_q16 = {REPEAL_THRESHOLD}\n"
+            "repeal_threshold_q16 = 0\n"
             f"promote_threshold_q16 = {PROMOTE_THRESHOLD[rarity]}\n"
             + (f'exclusion_group = &"{exclusion}"\n' if exclusion else "") +
             ("copy_left_programs = true\n" if key == "algorithmic_governance"
@@ -6298,8 +6262,7 @@ def modifier_blocks() -> tuple[list[str], list[str]]:
             "ideology definitions must be UNIQUE_SOURCE (1) so re-equip and level-up "
             "replace the previous row instead of stacking it")
 
-    def add(def_id: str, key: str, name: str, description: str, terms,
-            default_duration_days: int = -1) -> None:
+    def add(def_id: str, key: str, name: str, description: str, terms) -> None:
         term_ids = []
         for index, entry in enumerate(terms):
             # Two shapes: `(stat, value)` -- the historical multiplier row with
@@ -6333,8 +6296,8 @@ def modifier_blocks() -> tuple[list[str], list[str]]:
             f'key = &"{key}"\n'
             f'display_name = "{name}"\n'
             f'description = "{description}"\n'
-            f"domain = 1\nstack_policy = {IDEOLOGY_MODIFIER_STACK_POLICY}\n"
-            f"default_duration_days = {default_duration_days}\n" +
+            "domain = 1\nstack_policy = {policy}\ndefault_duration_days = -1\n".format(
+                policy=IDEOLOGY_MODIFIER_STACK_POLICY) +
             "terms = Array[Resource]([%s])\n" % ", ".join(
                 f'SubResource("{term}")' for term in term_ids))
 
@@ -6375,36 +6338,6 @@ def modifier_blocks() -> tuple[list[str], list[str]]:
     for key, name, _cards, terms in NAMED_SYNERGIES:
         add("Synergy" + camel(key), f"ideology.synergy.{key}", name, f"{name}联动修正。", terms)
     for school in SCHOOL_ORDER:
-        attitude_terms = []
-        shock_terms = []
-        for class_id, (adopt, _repeal, _promote) in sorted(SCHOOL_STANCES[school].items()):
-            persistent_bp = int(round((adopt / Q16) * CLASS_ATTITUDE_PERSISTENT_SCALE_BP))
-            shock_bp = int(round((adopt / Q16) * CLASS_ATTITUDE_SHOCK_SCALE_BP))
-            if persistent_bp != 0:
-                attitude_terms.append((
-                    f"economy.class.{class_id}.satisfaction_bp",
-                    float(persistent_bp),
-                    OP_ADD_TRANSFER,
-                ))
-            if shock_bp != 0:
-                shock_terms.append((
-                    f"economy.class.{class_id}.satisfaction_bp",
-                    float(shock_bp),
-                    OP_ADD_TRANSFER,
-                ))
-        if attitude_terms:
-            add(f"SchoolAttitude{camel(school)}",
-                f"ideology.school_attitude.{school}",
-                f"{SCHOOL_NAMES[school]}阶层常驻满意度",
-                f"推行{SCHOOL_NAMES[school]}理念期间对各政治阶层满意度的持续影响。",
-                attitude_terms)
-        if shock_terms:
-            add(f"SchoolShock{camel(school)}",
-                f"ideology.school_shock.{school}",
-                f"{SCHOOL_NAMES[school]}推行短期冲击",
-                f"首次推行{SCHOOL_NAMES[school]}理念后持续{CLASS_ATTITUDE_SHOCK_DURATION_DAYS}天的阶层满意度冲击。",
-                shock_terms,
-                default_duration_days=CLASS_ATTITUDE_SHOCK_DURATION_DAYS)
         school_card_count = sum(
             1 for card in cards_to_emit() if card[2] == school)
         for count, terms in zip(RESONANCE_COUNTS, RESONANCES[school]):

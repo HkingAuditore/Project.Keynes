@@ -440,10 +440,11 @@ void NativeEconomyRuntime::apply_due_family_founding_choices() {
                 _family_founding_offers.end(), [&](const FamilyFoundingOffer &offer) {
                     return offer.offer_id == command.offer_id;
                 });
-            if (it == _family_founding_offers.end() ||
-                it->generation != command.generation ||
-                it->status != FAMILY_FOUNDING_OPEN || command.choice_index < 0 ||
-                command.choice_index >= static_cast<int32_t>(it->candidates.size())) {
+            const char *reason = family_founding_choice_error(
+                it - _family_founding_offers.begin(),
+                command.generation, command.choice_index);
+            publish_family_founding_choice_result(command.sequence, command.effective_day, reason);
+            if (reason) {
                 ++_family_offer_choice_rejected;
                 continue;
             }
@@ -581,7 +582,7 @@ Dictionary NativeEconomyRuntime::family_founding_offers(int32_t offset,
 
 Dictionary NativeEconomyRuntime::submit_family_founding_choice(
         int64_t offer_id, int64_t generation, int32_t choice_index,
-        int64_t effective_day, int64_t sequence) {
+        int64_t effective_day, int64_t sequence, bool check_now) {
     Dictionary out;
     auto reject = [&](const char *reason) {
         ++_family_offer_choice_rejected;
@@ -590,26 +591,23 @@ Dictionary NativeEconomyRuntime::submit_family_founding_choice(
         return out;
     };
     if (!_configured) return reject("economy_not_configured");
-    const auto it = std::find_if(_family_founding_offers.begin(),
-        _family_founding_offers.end(), [&](const FamilyFoundingOffer &offer) {
-            return offer.offer_id == offer_id;
-        });
-    if (it == _family_founding_offers.end())
-        return reject("family_founding_offer_missing");
-    if (static_cast<int64_t>(it->generation) != generation)
-        return reject("family_founding_offer_stale");
-    if (it->status != FAMILY_FOUNDING_OPEN)
-        return reject("family_founding_offer_already_chosen");
-    if (choice_index < 0 ||
-        choice_index >= static_cast<int32_t>(it->candidates.size()))
-        return reject("family_founding_choice_invalid");
-    if (effective_day < 0) return reject("family_founding_day_invalid");
-    for (const FamilyFoundingChoiceCommand &command : _family_founding_choices)
-        if (command.offer_id == offer_id)
-            return reject("family_founding_offer_already_chosen");
+    if (effective_day < 0 || generation < 0 || generation > UINT32_MAX)
+        return reject("family_founding_command_invalid");
+    if (check_now) {
+        const auto it = std::find_if(_family_founding_offers.begin(),
+            _family_founding_offers.end(), [offer_id](const auto &offer) {
+                return offer.offer_id == offer_id;
+            });
+        if (const char *reason = family_founding_choice_error(
+                it - _family_founding_offers.begin(), generation, choice_index))
+            return reject(reason);
+        for (const auto &command : _family_founding_choices)
+            if (command.offer_id == offer_id)
+                return reject("family_founding_offer_already_chosen");
+    }
     FamilyFoundingChoiceCommand command;
     command.offer_id = offer_id;
-    command.generation = it->generation;
+    command.generation = static_cast<uint32_t>(generation);
     command.choice_index = choice_index;
     command.effective_day = effective_day;
     command.sequence = sequence;

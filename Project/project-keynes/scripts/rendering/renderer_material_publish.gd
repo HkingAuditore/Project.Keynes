@@ -179,22 +179,9 @@ static func _apply_cell_lut_rebind(host, lut_name: String, world_tex: Texture2D)
 				layer.set_enum_lut_texture(world_tex))
 
 
-## 河流 SDF（height*.B）是否已打包进 height 来源。
-##
-## 纯数据判定：height 纹理就绪 + flow_buffer 覆盖 hm_size 全图。调用方只传"height 来源
-## 是否就绪"（tiled 是 visual_tiles.height，legacy 是 world.height_tex）。
-##
-## **不要**把 DCFeatureFlags.water_flowmap_enabled() 这类动画/省电开关并进来：shader 侧
-## has_flow_tex 是静态河网的总闸（scals.g = has_flow_tex ? height.b : 0），关掉它等于
-## 一条河都不画。移动端默认关的 flowmap 只应影响流速蠕动与环流漂移。
-static func flow_channel_ready(height_ready: bool, flow_size: int, hm_size: Vector2i) -> bool:
-
-	if not height_ready or hm_size.x <= 0 or hm_size.y <= 0:
-		return false
-	return flow_size >= hm_size.x * hm_size.y
-
-
 static func _apply_uniforms(host) -> void:
+	if host._land_base_cache != null:
+		host._land_base_cache.invalidate()
 
 	var sm = host._shader_mat
 	var bounds = host._world.world_bounds
@@ -285,19 +272,12 @@ static func _apply_uniforms(host) -> void:
 	if not tiled:
 		sm.set_shader_parameter("map_index_atlas", host._world.enum_atlas_tex)
 	# [height-flow-pack 2026-08-06] Legacy/Tiled flow 都在 height*.B，不再绑独立 flow sampler。
-	# [river-flow-gate 2026-11-19] has_flow_tex 只表示**数据就绪**（height 已就绪 + flow_buffer
-	# 已打进 B 通道）。它曾被并进 DCFeatureFlags.water_flowmap_enabled()（移动端默认关，见
-	# feature_flags 的 [mobile-drop-flowmap]）—— 那个开关的本意是省掉慢速流速蠕动与海洋环流
-	# 漂移，而 shader 里 has_flow_tex 是**静态河网的总闸**：
-	#   world_map.gdshader   scals.g = has_flow_tex ? height_px.b : 0.0
-	#   land_pipeline        河流本体/河岸 outline/河面法线/roughness 全部由 scals.g 驱动
-	#   water_pipeline/shore_common 河口与岸线 estuary 也读同一通道
-	# ⇒ 移动端整条河网、河口过渡与资源避河全部消失（真机反馈"河流没有正常渲染"）。
-	# 动画开关另有 river_flow_enabled / ocean_current_flow_tex_bound 两处，不要再用它关数据。
-	sm.set_shader_parameter("has_flow_tex", flow_channel_ready(
-		visual_tiles.height != null if tiled else host._world.height_tex != null,
-		host._world.flow_buffer.size(),
-		host._world.hm_size))
+	# has_flow_tex：height 纹理就绪且 flow_buffer 齐 = 已打包。
+	sm.set_shader_parameter("has_flow_tex",
+		DCFeatureFlags.water_flowmap_enabled()
+		and (visual_tiles.height != null if tiled else host._world.height_tex != null)
+		and host._world.flow_buffer.size() >= host._world.hm_size.x * host._world.hm_size.y
+		and host._world.hm_size.x > 0 and host._world.hm_size.y > 0)
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
 	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
 	# water_pipeline 回退旧逐邻域算法。

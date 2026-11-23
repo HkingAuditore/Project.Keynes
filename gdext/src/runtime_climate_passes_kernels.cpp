@@ -7,6 +7,7 @@
 // 不得 include godot_cpp。这一条约束就是“worker 可用”的全部含义。
 
 #include "runtime_climate_passes.h"
+#include "simulation_math.h"
 #include "parallel_dispatcher.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
@@ -97,7 +98,7 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     float thermal_dt = (float)in.scalars.thermal_dt_days;
     if (thermal_dt < 1.0f) thermal_dt = 1.0f;
     else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
-    const float moisture_relax_eff = 1.0f - std::pow(1.0f - moisture_relax, thermal_dt);
+    const float moisture_relax_eff = 1.0f - simulation_math::pow(1.0f - moisture_relax, thermal_dt);
     const float thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
     const float thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
     const float thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
@@ -119,9 +120,9 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     // dt <= 1 时刻意走"直接取基础 alpha"这一支而不是统一算 1-(1-a)^dt：后者在
     // dt == 1 时会引入一次 pow 往返的末位误差，非加速档就不再逐位一致。
     const float ema_alpha_30 = (thermal_dt <= 1.0f) ? (1.0f / 30.0f)
-        : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
+        : (1.0f - simulation_math::pow(1.0f - 1.0f / 30.0f, thermal_dt));
     const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
-        : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
+        : (1.0f - simulation_math::pow(1.0f - annual_ema_alpha, thermal_dt));
 
     constexpr uint8_t COVER_GLACIER = 2;
 
@@ -1028,12 +1029,8 @@ bool _async_ocean_water_kernel_pure(const ClimateInputBuf &in,
     return true;
 }
 
-// ocean_land pure kernel — 移植自 DCWorldExt::run_ocean_land_pass（world_ext.cpp:4736）。
-// 算法逐行 1:1 镜像 sync 主循环（line 4831-4871）：
-//   - 仅 land cell：在 6 邻居里取 water cell，按 dot(self→nb, nb_current) 加权
-//   - anomaly_in = dc_decay_tta(prev) 或 dc_stabilize_tta(prev, weighted_avg * eff_leak, ...)
-//   - 写 work.ocean_tta_inout[i]
-//   - if |anomaly_in| > 1e-5 → 累加到 out.ocean_thermal_anomaly[i]（clamp ±0.08）
+// ocean_land 复用同步和切片入口的纯内核。朝岸投影用于加权海邻居的温差，投影总和
+// 决定衰减与全量带入之间的比例，结果写入 TTA 和 ocean_thermal_anomaly。
 //
 // 注意：必须在 ocean_water 之后跑，依赖 work.ocean_tta_inout 里 water cells 的
 // fresh anomaly（ocean_water 已写）。
@@ -1579,6 +1576,13 @@ void ocean_land_pure(const OceanLandKnobs &knobs, const OceanLandLanes &lanes) {
     float * const __restrict OANOM = lanes.ocean_anomaly;
 
     const float wrap_period_x = knobs.wrap_period_x;
+    // 96×64 地图（种子 20260718）首日岸格的正朝岸投影总和 P25 为 0.00561676。
+    constexpr float full_inflow_weight = 0.0056f;
+    const auto add_ocean_anomaly = [](float &ocean_anomaly, float transport) {
+        if (transport < -1e-5f || transport > 1e-5f) {
+            ocean_anomaly = dc_clampf(ocean_anomaly + transport, -0.08f, 0.08f);
+        }
+    };
 
     for (int i = start; i < end; ++i) {
         if (IW[i] != 0) continue;  // skip water
@@ -1607,18 +1611,24 @@ void ocean_land_pure(const OceanLandKnobs &knobs, const OceanLandLanes &lanes) {
         const float prev_anomaly = A[i];
         float anomaly_in = dc_decay_tta(prev_anomaly, knobs.tta_decay_rate);
         if (weight_total > 0.0f) {
-            anomaly_in = dc_stabilize_tta(
+            const float full_anomaly = dc_stabilize_tta(
                 prev_anomaly, (weighted_sum / weight_total) * knobs.effective_leak,
                 knobs.tta_source_cap, knobs.tta_blend_rate);
+            if (weight_total < full_inflow_weight) {
+                const float fraction = weight_total / full_inflow_weight;
+                float decayed_ocean = OANOM[i];
+                float full_ocean = decayed_ocean;
+                // 先求两端的海洋项，避免弱来流跨过 1e-5 的写入门槛时跳变。
+                add_ocean_anomaly(decayed_ocean, anomaly_in);
+                add_ocean_anomaly(full_ocean, full_anomaly);
+                A[i] = anomaly_in + (full_anomaly - anomaly_in) * fraction;
+                OANOM[i] = decayed_ocean + (full_ocean - decayed_ocean) * fraction;
+                continue;
+            }
+            anomaly_in = full_anomaly;
         }
         A[i] = anomaly_in;
-        // anomaly_in 已过 dc_decay/stabilize，本身有界；这里累加到 oanom 再 clamp。
-        if ((anomaly_in < 0.0f ? -anomaly_in : anomaly_in) > 1e-5f) {
-            float oanom = OANOM[i] + anomaly_in;
-            if (oanom < -0.08f) oanom = -0.08f;
-            else if (oanom > 0.08f) oanom = 0.08f;
-            OANOM[i] = oanom;
-        }
+        add_ocean_anomaly(OANOM[i], anomaly_in);
     }
 }
 

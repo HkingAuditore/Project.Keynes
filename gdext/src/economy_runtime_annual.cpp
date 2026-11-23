@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "runtime_economy_display.h"
 #include "economy_host_port.h"
 #include "country_api.h"
 #include "economy_cost_probe.h"
@@ -144,6 +145,38 @@ void NativeEconomyRuntime::publish_annual_development_facts(){
     if(!_simulation_host||!_simulation_host->annual_development_enabled())return;
     EconomyCostProbe probe("publish.annual", _current_day.get());
     _simulation_host->publish_annual_economy(capture_annual_facts(_simulation_host->annual_country_handle(),true));
+}
+
+std::vector<RuntimeGdpCell> NativeEconomyRuntime::capture_settlement_output(
+        uint64_t country_handle) const {
+    const auto found = std::find(_epoch_country_handles.begin(),
+        _epoch_country_handles.end(), country_handle);
+    if (found == _epoch_country_handles.end()) return {};
+    const auto slot = found - _epoch_country_handles.begin();
+    const bool has_buildings = _building_cell_offsets.size() ==
+        static_cast<size_t>(_cell_count.get()) + 1;
+    const size_t count = std::min(_epoch_cell_country.size(),
+        static_cast<size_t>(_cell_count.get()));
+    std::vector<RuntimeGdpCell> output;
+    for (size_t cell = 0; cell < count; ++cell) {
+        if (_epoch_cell_country[cell] != slot) continue;
+        const auto people = population_total_for_cell(static_cast<int32_t>(cell));
+        if (people <= 0) continue;
+        const auto days = cell_elapsed_days(static_cast<int32_t>(cell));
+        double value = 0;
+        if (has_buildings) {
+            for (int32_t i = _building_cell_offsets[cell]; i < _building_cell_offsets[cell + 1]; ++i) {
+                const auto group = building_view(static_cast<size_t>(i));
+                if (group.cell != static_cast<int32_t>(cell) || group.count <= 0) continue;
+                // Same daily income measure as the settlements overview:
+                // profit + wages = revenue - intermediate inputs - maintenance.
+                value += double(group.last_revenue / days) - double(group.last_input_cost / days) -
+                    double(group.last_maintenance_cost / days);
+            }
+        }
+        output.push_back({static_cast<int32_t>(cell), people, value, 0.0});
+    }
+    return output;
 }
 void NativeEconomyRuntime::record_annual_production(int32_t cell){
     if(!annual_observes_cell(cell)||_building_cell_offsets.size()!=static_cast<size_t>(_cell_count.get())+1)return;

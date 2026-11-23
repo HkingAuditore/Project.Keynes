@@ -57,6 +57,7 @@ var _camera = null
 
 var _configured := false
 var _consumer_id: StringName = &"pk_music_situation"
+var _gameplay_event_cursor := -1
 var _economy_consumer_id: StringName = &"pk_music_situation_economy"
 var _player_country_handle := 0
 var _player_country_slot := -1
@@ -131,6 +132,7 @@ func configure(runtime_host, generator, player_controller) -> void:
 	_time_since_fmod_write = 999.0
 	_local_query_due = 0.0
 	_last_commit_day = -1
+	_gameplay_event_cursor = -1
 	_last_query_ms = 0.0
 	_query_count = 0
 	_candidate_count = 0
@@ -320,10 +322,11 @@ static func aggregate_risk_values(values: PackedFloat32Array) -> float:
 func _consume_gameplay_events() -> void:
 	if _event_bus == null or not _event_bus.has_method("poll_events"):
 		return
-	var batch: Dictionary = _event_bus.poll_events(_consumer_id, 128, 0, true)
+	var batch: Dictionary = _event_bus.poll_events(_consumer_id, 128, 0, false, _gameplay_event_cursor)
 	var count := int(batch.get("count", 0))
 	if count <= 0:
 		return
+	_gameplay_event_cursor = int(batch.get("last_event_id", _gameplay_event_cursor))
 	var types: PackedInt32Array = batch.get("type", PackedInt32Array())
 	var payload_i0: PackedInt32Array = batch.get("payload_i0", PackedInt32Array())
 	var payload_i3: PackedInt32Array = batch.get("payload_i3", PackedInt32Array())

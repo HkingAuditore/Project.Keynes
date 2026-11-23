@@ -1,7 +1,7 @@
 extends Control
-
+const MainMenuLandLayout = preload("res://scripts/ui/main_menu_land_layout.gd")
 const MenuLayout = preload("res://scripts/ui/main_menu_layout.gd")
-const SavePreviewCodecScript = preload("res://scripts/game/save_preview_codec.gd")
+const SavePreviewCodec = preload("res://scripts/game/save_preview_codec.gd")
 
 const ButtonContentScene := preload("res://scenes/ui/main_menu_button_content.tscn")
 const MenuButtonScene := preload("res://scenes/ui/main_menu_button.tscn")
@@ -242,6 +242,7 @@ func _bind_settings_controls() -> void:
 		"volume": %Volume,
 		"muted": %Muted,
 		"reduce_motion": %ReduceMotion,
+		"event_pause": %EventPauseOptions,
 	}
 	%Vsync.toggled.connect(_settings_controls.graphics.set_vsync_enabled)
 	(%Volume as HSlider).value_changed.connect(func(val: float) -> void:
@@ -450,19 +451,17 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 	slot_badge.text = label
 	if bool(slot.get("exists", false)):
 		var cname := String(slot.get("country_name", "未知国家"))
-		var day_num := int(slot.get("day", 0))
+		var day_num := str(slot.get("day", 0))
 		var w_str := str(slot.get("width", 0))
 		var h_str := str(slot.get("height", 0))
 		var saved_at := String(slot.get("saved_at", "")).replace("T", " ")
-		title_label.text = "%s · %s" % [cname, WorldClock.date_text_for_day(day_num)]
+		title_label.text = "%s · 第 %s 天" % [cname, day_num]
 		saved_at_label.text = saved_at
 		description.text = "%s × %s" % [w_str, h_str]
 		if save_service != null and save_service.has_method("load_preview"):
 			var result: Dictionary = save_service.call("load_preview", slot_id)
 			if bool(result.get("ok", false)):
-				# New slots store a scaled JPEG; older ones a full-window PNG.
-				var image: Image = SavePreviewCodecScript.decode(
-					result.get("bytes", PackedByteArray()))
+				var image := SavePreviewCodec.decode(result.get("bytes", PackedByteArray()))
 				if not image.is_empty():
 					preview.texture = ImageTexture.create_from_image(image)
 					empty_seal.visible = false
@@ -506,6 +505,7 @@ func _show_settings() -> void:
 		[Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900), Vector2i(1920, 1080), Vector2i(2560, 1440)],
 		Vector2i(current.resolution_width, current.resolution_height))
 	_settings_controls.graphics.configure(current)
+	_settings_controls.event_pause.configure(int(current.event_pause_mask))
 	# 触摸档：布局策略三档（fit/fill/dense）+ 布局之上的再缩放（50/75/100）。
 	# 桌面档：只有百分比缩放（80/100/125/150），布局行隐藏。
 	var layout_active := _ui_layout_mode_active()
@@ -735,33 +735,11 @@ func _on_land_layout_selected(index: int) -> void:
 
 
 func _apply_land_layout(layout_id: String) -> void:
-	var preset := NewGameConfig.land_layout_by_id(layout_id)
-	if preset.is_empty():
-		return
-	_layout_syncing = true
-	if String(preset.get("id", "")) != NewGameConfig.CUSTOM_LAND_LAYOUT:
-		(_advanced_controls.num_continents as SpinBox).value = int(preset.get("num_continents", 2))
-		(_advanced_controls.continent_size as SpinBox).value = float(preset.get("continent_size", 0.50))
-		(_advanced_controls.sea_level as SpinBox).value = float(preset.get("sea_level", 0.50))
-		(_advanced_controls.continent_spacing as SpinBox).value = int(preset.get("continent_spacing", 55))
-		(_advanced_controls.island_amount as SpinBox).value = int(preset.get("island_amount", 50))
-	var resolved_id := String(preset.get("id", NewGameConfig.CUSTOM_LAND_LAYOUT))
-	var select_index := NewGameConfig.land_layout_index(resolved_id)
-	if _layout_option.selected != select_index:
-		_layout_option.select(select_index)
-	_sync_layout_cards(resolved_id)
-	_layout_syncing = false
-	_refresh_layout_hint()
-	_sync_map_preview(true)
+	MainMenuLandLayout._apply_land_layout(self, layout_id)
 
 
 func _sync_layout_cards(active_id: String) -> void:
-	for id_key in _layout_cards:
-		var card := _layout_cards[id_key] as Button
-		if card != null:
-			card.set_pressed_no_signal(String(id_key) == active_id)
-			if card.has_method("_refresh_visual"):
-				card.call("_refresh_visual")
+	MainMenuLandLayout._sync_layout_cards(self, active_id)
 
 
 func _on_layout_spin_changed() -> void:
@@ -777,33 +755,11 @@ func _on_layout_spin_changed() -> void:
 
 
 func _matched_land_layout_id() -> String:
-	for preset in NewGameConfig.LAND_LAYOUT_PRESETS:
-		var layout: Dictionary = preset
-		if String(layout.get("id", "")) == NewGameConfig.CUSTOM_LAND_LAYOUT:
-			continue
-		if int((_advanced_controls.num_continents as SpinBox).value) != int(layout.get("num_continents", 0)):
-			continue
-		if not is_equal_approx(float((_advanced_controls.continent_size as SpinBox).value),
-				float(layout.get("continent_size", 0.0))):
-			continue
-		if not is_equal_approx(float((_advanced_controls.sea_level as SpinBox).value),
-				float(layout.get("sea_level", 0.0))):
-			continue
-		if int((_advanced_controls.continent_spacing as SpinBox).value) != int(layout.get("continent_spacing", 0)):
-			continue
-		if int((_advanced_controls.island_amount as SpinBox).value) != int(layout.get("island_amount", 0)):
-			continue
-		return String(layout.get("id", NewGameConfig.CUSTOM_LAND_LAYOUT))
-	return NewGameConfig.CUSTOM_LAND_LAYOUT
+	return MainMenuLandLayout._matched_land_layout_id(self)
 
 
 func _refresh_layout_hint() -> void:
-	if _is_pkmap_source():
-		_layout_hint.text = "作者地图已冻结河湖与陆地形状。"
-		return
-	var layout_id := String(_layout_option.get_item_metadata(_layout_option.selected))
-	var preset := NewGameConfig.land_layout_by_id(layout_id)
-	_layout_hint.text = String(preset.get("hint", ""))
+	MainMenuLandLayout._refresh_layout_hint(self)
 
 
 func _set_custom_size_enabled(enabled: bool) -> void:
@@ -1061,6 +1017,7 @@ func _apply_settings() -> void:
 		"master_volume": _settings_controls.volume.value,
 		"master_muted": _settings_controls.muted.button_pressed,
 		"reduce_motion": _settings_controls.reduce_motion.button_pressed,
+		"event_pause_mask": _settings_controls.event_pause.value(),
 	}
 	# 触摸档：UIScale 装缩放百分比（int）、UILayout 装布局档位（String）。
 	# 桌面档：UIScale 装桌面百分比（int），UILayout 隐藏。

@@ -284,7 +284,7 @@ static func _build_user_prompt(
 
 	var lines := PackedStringArray([
 		"【当前世界与聚落状态快照】",
-		"- 纪年日：%s | 国家：%s | 时代：%s（era_index=%d）" % [WorldClock.date_text_for_day(day), country_name, era_name, era_idx],
+		"- 纪年日：第 %d 日 | 国家：%s | 时代：%s（era_index=%d）" % [day, country_name, era_name, era_idx],
 		"- 聚落名称：%s（地块 #%d）" % [settlement_name, int(cell_ctx.get("cell_idx", 0))],
 		"- 自然地理：地形=%s，地貌=%s，海拔=%.2f，河流=%s，沿海=%s" % [
 			terrain_name, landform_name, elevation,
@@ -440,7 +440,7 @@ static func _build_user_prompt(
 				var r_day := int(rd.get("day", 0))
 				var r_title := String(rd.get("title", rd.get("event_title", "历史事件")))
 				var r_outcome := String(rd.get("outcome_title", rd.get("choice_text", "")))
-				lines.append("  * %s：《%s》 -> %s" % [WorldClock.date_text_for_day(r_day), r_title, r_outcome])
+				lines.append("  * 第 %d 日：《%s》 -> %s" % [r_day, r_title, r_outcome])
 			else:
 				lines.append("  * %s" % String(rec))
 

@@ -20,8 +20,8 @@ const HUD_ICON_SIZE := 36
 
 # ── 日历块（日期 + 时代）的排印契约 ───────────────────────────────────
 # 这里全部按"实测字宽"推导，不再写死 108/250 这种魔法宽度：顶栏曾经因为
-# DateLabel 的 108 最小值装不下日期（实测 117px）而把日期裁掉半截，时代名再把
-# 剩下那点空间挤掉。现在：
+# DateLabel 的 108 最小值装不下"第1年 · 1月1日"（实测 117px）而把日期裁成
+# "第1年 · 1月…"，时代名再把剩下那点空间挤掉。现在：
 #   纸框宽度 = 图标 + 段间距 + 日期字宽 + 时代字宽 + DateRow 左右留白（.tscn 的
 #   offset_left/right），只向大取，绝不压到内容之下；每个 Label 还多给
 #   DATE_BLOCK_TEXT_SLACK 的余量，保证字形右侧不会贴到纸边。
@@ -34,7 +34,7 @@ const DATE_BLOCK_MIN_WIDTH := 200.0
 const DATE_BLOCK_MAX_WIDTH := 340.0
 const DATE_BLOCK_TAIL_GUTTER := 24.0
 const DATE_BLOCK_TEXT_SLACK := 3.0
-const DATE_TEXT_FALLBACK := "1年1月1日"
+const DATE_TEXT_FALLBACK := "第1年 · 1月1日"
 
 # ── 国库/人口纸签的排印契约 ───────────────────────────────────────────
 # 和日历块同一条规则，只是这里量的是读数：纸签宽度 = Row 左右留白 + 图标 +
@@ -349,7 +349,7 @@ func update_time_state(
 ) -> void:
 	if _date_label == null:
 		_ready()
-	_date_label.text = "%d年%d月%d日" % [year_idx + 1, month, day_of_month]
+	_date_label.text = "第%d年 · %d月%d日" % [year_idx + 1, month, day_of_month]
 	_update_date_block_width()
 	_apply_clock_controls(paused, speed)
 

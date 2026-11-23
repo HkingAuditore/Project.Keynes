@@ -578,23 +578,6 @@ NativeEconomyRuntime::advance_household_market_chunk(
     for (int32_t relative = 0; relative < market_count; ++relative) {
         const int32_t market = _epoch_market_ids[begin + relative];
         MarketResult &market_result = _market_results_scratch[relative];
-        // Merchant retail pool of the most recently settled day, market-keyed
-        // because the settlement distribution is per market. Overwritten, not
-        // accumulated: the projection wants today's pool at today's prices,
-        // and an epoch running total would have to be re-divided by a day
-        // count that is wrong for every day but the last. Sized lazily against
-        // the live market handle so no second registry can drift.
-        if (market >= 0) {
-            const size_t market_index = static_cast<size_t>(market);
-            if (_merchant_household_retail_by_market.size() <= market_index) {
-                _merchant_household_retail_by_market.resize(market_index + 1, 0);
-                _market_merchant_population.resize(market_index + 1, 0);
-            }
-            _merchant_household_retail_by_market[market_index] =
-                market_result.merchant_household_retail;
-            _market_merchant_population[market_index] =
-                market_result.merchant_population;
-        }
         const auto aggregate_merge_started = Clock::now();
         if (!market_result.ok) {
             fail(market_result.error.empty() ? "household_market_internal_failure"
@@ -1354,7 +1337,8 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
         mix_u64(static_cast<uint64_t>(cmd.i64_0));
         mix_u64(static_cast<uint64_t>(cmd.i64_1));
         mix_u64(static_cast<uint64_t>(cmd.effect_request_id));
-        mix_u64(cmd.effect_idempotency_key);
+        mix_u64(cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
+            ? cmd.expedition_route_hash : cmd.effect_idempotency_key);
     }
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
         const auto group = building_view(pk_row);

@@ -52,8 +52,6 @@ func _close_era_panel(host) -> void:
 		host._era_panel.close()
 	if host._era_indicator != null and (host._era_reward_dialog == null or not host._era_reward_dialog.visible):
 		host._era_indicator.set_expanded(false)
-	# 时代纸笺也是玩家的窗口：关掉后静置的叙事弹窗才接上。
-	host.notify_workspace_closed()
 
 
 
@@ -308,7 +306,8 @@ func _on_era_ceremony_finished(host) -> void:
 		host._era_indicator.reveal_pending_era(false)
 	host._era_ceremony = null
 	host._era_ceremony_index = -1
-	host._restore_clock_after_ceremony()
+	if host._player_controller != null:
+		host._player_controller.open_era_reward_offer()
 
 
 
@@ -317,44 +316,6 @@ func _abort_era_ceremony(host) -> void:
 		host._era_ceremony.abort()
 	host._era_ceremony = null
 	host._era_ceremony_index = -1
-	# 世界已切换：不恢复旧世界的时钟状态。
-	host._era_ceremony_resume_clock = false
-
-
-## 大典期间暂停时钟（同时代奖励/家族创立的做法），只在由大典暂停时才恢复。
-
-func _pause_clock_for_ceremony(host) -> void:
-	if host._world_clock == null or host._era_ceremony_resume_clock:
-		return
-	if host._world_clock.paused:
-		return
-	host._era_ceremony_resume_clock = true
-	host._world_clock.pause(true)
-	if host._player_controller != null and host._player_controller.has_method("sync_ui"):
-		host._player_controller.sync_ui()
-
-
-
-func _restore_clock_after_ceremony(host) -> void:
-	if not host._era_ceremony_resume_clock:
-		return
-	host._era_ceremony_resume_clock = false
-	if host._world_clock == null or not host._world_clock.paused:
-		return
-	# 演出期间若有其他流程接管时钟（时代奖励选择、暂停菜单），交还给它们。
-	if host._pause_menu != null and host._pause_menu.visible:
-		return
-	if host.is_era_reward_modal_open() or host.is_family_founding_modal_open() or host.is_annual_report_open():
-		return
-	if host._player_controller != null and host._player_controller.has_method("era_reward_locked") \
-			and bool(host._player_controller.era_reward_locked()):
-		return
-	if host._player_controller != null and host._player_controller.has_method("ideology_draw_locked") \
-			and bool(host._player_controller.ideology_draw_locked()):
-		return
-	host._world_clock.pause(false)
-	if host._player_controller != null and host._player_controller.has_method("sync_ui"):
-		host._player_controller.sync_ui()
 
 
 ## 时代晋升是必须被看见的一刻：徽记特效、顶栏日历换字和纸贴提醒三件事同时发生。

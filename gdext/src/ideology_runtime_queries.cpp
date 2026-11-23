@@ -560,9 +560,6 @@ Dictionary NativeIdeologyRuntime::explain_batch(int64_t handle,
     PackedInt32Array stance_offsets;
     PackedInt32Array stance_class_indices;
     PackedInt64Array class_influence;
-    PackedInt32Array adopt_stances;
-    PackedInt32Array repeal_stances;
-    PackedInt32Array promote_stances;
     PackedInt64Array adopt_contributions;
     PackedInt64Array repeal_contributions;
     PackedInt64Array promote_contributions;
@@ -670,9 +667,6 @@ Dictionary NativeIdeologyRuntime::explain_batch(int64_t handle,
                     static_cast<size_t>(stance.class_index)] : 0;
             stance_class_indices.append(stance.class_index);
             class_influence.append(influence);
-            adopt_stances.append(stance.stance_q16[SUPPORT_ADOPT]);
-            repeal_stances.append(stance.stance_q16[SUPPORT_REPEAL]);
-            promote_stances.append(stance.stance_q16[SUPPORT_PROMOTE]);
             adopt_contributions.append(mul_sat(influence,
                 stance.stance_q16[SUPPORT_ADOPT]));
             repeal_contributions.append(mul_sat(influence,
@@ -707,16 +701,10 @@ Dictionary NativeIdeologyRuntime::explain_batch(int64_t handle,
         synergy_offsets.append(affected_synergy_ids.size());
     }
 
-    int64_t total_influence = 0;
-    for (const int64_t value : country->class_influence) {
-        total_influence = add_sat(total_influence, std::max<int64_t>(0, value));
-    }
-
     Dictionary out;
     out["ok"] = true;
     out["ideology_ids"] = ids;
     out["support_revision"] = static_cast<int64_t>(revision);
-    out["total_influence"] = total_influence;
     out["support_q16"] = support_q16;
     out["support_thresholds_q16"] = support_thresholds;
     out["support_blocking_classes"] = blocking_classes;
@@ -729,9 +717,6 @@ Dictionary NativeIdeologyRuntime::explain_batch(int64_t handle,
     out["stance_offsets"] = stance_offsets;
     out["stance_class_indices"] = stance_class_indices;
     out["class_influence"] = class_influence;
-    out["adopt_stances_q16"] = adopt_stances;
-    out["repeal_stances_q16"] = repeal_stances;
-    out["promote_stances_q16"] = promote_stances;
     out["adopt_contributions"] = adopt_contributions;
     out["repeal_contributions"] = repeal_contributions;
     out["promote_contributions"] = promote_contributions;

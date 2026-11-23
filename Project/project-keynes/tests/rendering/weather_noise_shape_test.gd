@@ -31,6 +31,9 @@ func run():
 		printerr("weather_noise_shape_test requires an actual rendering display")
 		quit(2)
 		return
+	if not root.is_node_ready():
+		await root.ready
+	await process_frame
 	vp = SubViewport.new()
 	vp.size = Vector2i(800,600)
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS

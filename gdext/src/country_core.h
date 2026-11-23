@@ -284,6 +284,7 @@ struct CountryCoreCheckpoint {
     std::vector<CountryPendingCommandProtocol> pending_protocol;
     std::vector<CountryCommandReceipt> request_states;
     std::vector<CountryCommandReceipt> terminal_receipts;
+    std::vector<uint8_t> effect_adapter;
 };
 
 uint64_t country_checkpoint_checksum(const uint8_t *bytes, size_t size) noexcept;

@@ -263,8 +263,7 @@ func _schedule_policy(schedule_group: StringName, cp, base_stride: int):
 				stride = bucket_stride
 				phase = _stagger_phase(cp, "sim_stagger_dynamic_visual_phase", 2, stride)
 			&"weather_refresh":
-				stride = bucket_stride
-				phase = _stagger_phase(cp, "sim_stagger_weather_phase", 4, stride)
+				return _SusPolicyScript.AlwaysPolicy.new()
 			&"enum_atlas_upload":
 				stride = bucket_stride
 				phase = _stagger_phase(cp, "sim_stagger_enum_atlas_phase", 4, stride)

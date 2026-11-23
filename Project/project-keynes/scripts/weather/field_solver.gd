@@ -712,7 +712,6 @@ func run_slice(cell_budget: int) -> Dictionary:
 		vapor += reevap
 		if on_water:
 			vapor *= 1.0 - post_rain_subsidence * (1.0 - smoothstep(0.28, 0.58, ocean_drive)) * 0.045
-
 		# 降水稳定性(地形阻尼 + 极端 soft cap) + EMA 时间惯性(保留)。
 		precip_target = _weather_system._moderate_field_precip_for_terrain(int(soa_terrain[i]), precip_target)
 		# Stage10 不应期(inhib≥1)作用于 target(EMA 前)→降水随惯性平滑衰减到近零，不再瞬间砍断(去时间跳变)。镜像 world_ext.cpp。
@@ -721,9 +720,8 @@ func run_slice(cell_budget: int) -> Dictionary:
 		var precip: float = lerpf(prev_precip[i], precip_target, _weather_system._field_precip_inertia)
 		if precip_target < prev_precip[i] and dynamic_forcing < 0.20:
 			precip = lerpf(precip, precip_target, post_rain_subsidence * 0.55)
-		# Stage10b 空间平滑(非对称)：强填洞(0.30)、弱削峰(×0.30→保超级单体暴雨)。镜像 world_ext.cpp。
+		# 按配置做空间平滑。削峰权重较小，保留局部强降水。
 		var nbr_precip: float = _neighbor_average_vapor_idx(i, neighbor_indices, prev_precip) if fast_indexed else _neighbor_average_vapor_cached(cell, map, prev_precip)
-		# W5：系数改为 profile 下发（旧实现硬编码 0.30/0.09，C++ 侧也从未收到 GDScript 的值）。
 		var smooth_k: float = _weather_system._field_precip_spatial_smooth
 		precip = lerpf(precip, nbr_precip, smooth_k if nbr_precip > precip else smooth_k * 0.30)
 		var effective_precip_floor: float = 0.014 if on_water else 0.018

@@ -7,6 +7,7 @@
 // float expressions in the same order.
 
 #include "runtime_climate_pass_math.h"
+#include "simulation_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -95,7 +96,7 @@ inline float natres_step_scalar_dt(float t_val, float m_val, float reserve,
     if (std::fabs(1.0f - inv_denom) < 1e-6f) {
         v = reserve_after_external + p * float(dt_days);
     } else {
-        const float a_pow = std::pow(inv_denom, float(dt_days));
+        const float a_pow = simulation_math::pow(inv_denom, float(dt_days));
         const float b = p * inv_denom;
         v = a_pow * reserve_after_external + b * (1.0f - a_pow) / (1.0f - inv_denom);
     }
@@ -136,7 +137,7 @@ inline float natres_step_scalar_fit_dt(float t_val, float m_val, float reserve,
     } else if (std::fabs(1.0f - inv_denom) < 1e-6f) {
         v = reserve_after_external + p * float(dt_days);
     } else {
-        const float a_pow = std::pow(inv_denom, float(dt_days));
+        const float a_pow = simulation_math::pow(inv_denom, float(dt_days));
         const float b = p * inv_denom;
         v = a_pow * reserve_after_external + b * (1.0f - a_pow) / (1.0f - inv_denom);
     }

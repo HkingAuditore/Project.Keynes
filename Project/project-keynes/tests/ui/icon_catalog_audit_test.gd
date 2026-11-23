@@ -29,7 +29,6 @@ func _init() -> void:
 	_audit_assets()
 	_audit_shared_implementations()
 	_audit_context_mappings()
-	_audit_biology_icons()
 	_audit_semantic_contracts()
 	_audit_paper_controls()
 	_audit_military_paper_cutouts()
@@ -205,31 +204,6 @@ func _audit_context_mappings() -> void:
 			])
 		building_signatures[signature] = building_id
 	_audit_building_catalog()
-
-
-func _audit_biology_icons() -> void:
-	var entries := ResearchSignalCatalog.occupancy_overlay_entries()
-	if entries.size() != ResearchSignalCatalog.BIO_OCCUPANCY_BY_ID.size():
-		_failures.append("biology overlay must expose every occupancy species")
-	var signatures := {}
-	var pixels := {}
-	for entry in entries:
-		var id := String(entry.get("id", ""))
-		var key := StringName(entry.get("icon_key", ""))
-		_audit_unique_identity("biology", id, key, signatures)
-		if key != StringName(id):
-			_failures.append("biology overlay must preserve the species semantic: %s" % id)
-		var texture := IconCatalog.texture_for_key(key)
-		if texture == null:
-			continue
-		var picture := texture.get_image()
-		if picture.is_compressed():
-			picture.decompress()
-		var digest := picture.get_data().hex_encode().sha256_text()
-		if pixels.has(digest):
-			_failures.append("biology species share identical artwork: %s / %s" % [pixels[digest], id])
-		pixels[digest] = id
-	print("[icon-catalog-audit] audited %d species icon(s)" % entries.size())
 
 
 func _audit_building_catalog() -> void:

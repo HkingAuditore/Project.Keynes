@@ -6,14 +6,16 @@
 
 - 国家、气候、触发、理念、效果、修正、事件各由自己的 POD authority 推进。
 - 经济计算仍是 `NativeEconomyRuntime`，POD_ACTIVE 时数据绑定 OwnedState。家庭、人物、建筑属于经济状态。
-- 军事由主线程的 `MilitaryCore` 推进，适配层是三个 `world_ext*military*.cpp`；自然资源恢复由主线程 pass 推进。视野与显示不在十二域表里。
+- 军务由 `MilitaryCore` 计算。军务、自然资源恢复、物种、季节慢层和视野的现有交接见 [运行现状](current-state.md#十二域以外的推进)。
 - 每日表是 Host 的装配层。`DayExecution` 只借用本次调用的计划、输入和输出，不跨日保存引用。
 
 存档段的所有者见 [current-state.md](current-state.md#存档)。
 
 ## 目标依赖方向
 
-外部命令 → 状态所有者；业务模块 → 对方已提交的只读视图；业务后果 → 对方接受的 intent；显示 → 已发布结果。所有者之外不能直接写状态。护栏只禁止新增债务，现有债务冻结在基线里，不等于永久许可。
+玩家请求 → 后台状态所有者。跨模块读取 → 对方已提交的只读视图。跨模块写入 → 对方接纳的请求。
+前台展示 → 后台发布结果。模拟状态由后台所有者判断和写入；暂停等待玩家及接收答复也属于后台。
+现有交接与例外见 [运行现状](current-state.md#前台尚存的模拟工作)。
 
 ## 模块公开接口
 
@@ -24,7 +26,7 @@
 | Economy | `economy_api.h/.cpp`（`struct EconomyApi`） | 0 | 36：22 个 `native_simulation_*`、14 个 `world_ext*` | `economy_host_port.h` |
 | Country | `country_api.h/.cpp`（`struct CountryApi`） | 0 | 32：20 个 `native_simulation_*`、12 个 `world_ext*` | `country_host_port.h` |
 | Modifier | `modifier_api.h/.cpp`（`struct ModifierApi`） | 0 | 9 个 `world_ext*` | — |
-| Military | `military_bridge.h`（纯 C++ 契约） | 0 | 2：`world_ext.cpp`、`world_ext_military.cpp` | — |
+| Military | `military_bridge.h`（纯 C++ 契约） | 0 | `world_ext.cpp`、`world_ext_military.cpp`、`world_ext_military_digest.cpp` | — |
 
 - **接口头**只放 POD、枚举、常量、前向声明和 `<module>_api::` 自由函数；能包含系统头、其他模块的 `*_api.h` 和登记过的共享契约头。`struct XApi` 是运行时类的基类，运行时内部写法不变；外部写 `XApi::CONST`。
 - 引号和尖括号引用都检查模块内部头。`gdext/src` 搜索路径中实际存在的头不因使用尖括号而变成系统头；接口和共享契约也适用此规则。
@@ -34,7 +36,7 @@
 - **所有者文件**：`owner_file_patterns` 内的文件是模块自身组件（例如 `trade_visual_cache.*` 属 Economy）。`forbidden_owner_includes` 禁止所有者文件包含宿主头 `native_simulation_host*.h`（引号和尖括号都查），例外必须写原因。
 - **宿主端口**：纯虚方法，签名与宿主原方法完全一致。`class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort`；两个端口都有的方法（如 `domain_is_worker_authoritative`、`allocate_command_request_id`）由宿主的一个 override 同时实现。模块内成员仍叫 `_simulation_host`，类型是端口指针。端口调用是虚调用，都在命令/队列边界或循环外，没有进逐格热循环。Economy 端口 24 个方法，Country 端口 18 个。
 - **交易地图绑定**：`world_ext_economy_topology.cpp` 只包含 `economy_api.h`，通过薄转发接入地形与可见性。完整报告 `detail_report` 属于组合层在停止执行或持有日边界时使用的兼容接口，不能代替已提交视图。存档执行器接管只保留该世界已经绑定的交易图，并清空派生国家分组标记。
-- **军事**：核心只依赖 `military_bridge.h` 与系统头，`military.json` 禁止核心包含其他模块、宿主与 Godot 头。三个适配文件经 Economy/Country/Modifier 的接口头调用对方，宿主和 `MilitaryCore` 由适配层拥有。
+- **军事**：核心只依赖 `military_bridge.h` 与系统头，`military.json` 禁止核心包含其他模块、宿主与 Godot 头。适配层经 Economy/Country/Modifier 的接口头冻结输入与交付结果，并持有 `MilitaryCore`。
 
 Country 的 `country_core*.h`、`country_ai_*.h` 尚未锁进契约（只锁 `country_runtime*.h`）；其中跨模块调用是否全部走接口，靠依赖基线和跨域清单约束。
 
@@ -71,4 +73,4 @@ Country 的 `country_core*.h`、`country_ai_*.h` 尚未锁进契约（只锁 `co
 
 ## 行数棘轮
 
-编排入口 600 行，普通 GDScript 800 行，`gdext/src` C++ 2000 行（编排入口清单在 `check_size_ratchet.py`）。统计物理行，排除 tests、addons、生成物。现有超限文件只能保持或缩短，新文件不准超限。基线 `size_baseline.json` 只在文件变短后收紧。
+编排入口 600 行，普通 GDScript 800 行，`gdext/src` C++ 2000 行（编排入口清单在 `check_size_ratchet.py`）。统计物理行，排除 tests、addons、生成物。基线内的文件多一行即报错。新文件不准超限。基线 `size_baseline.json` 只收紧。

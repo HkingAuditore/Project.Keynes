@@ -7,6 +7,7 @@
 #include "cell_program_eligibility.h"
 #include "ideology_runtime.h"
 #include "native_simulation_host.h"
+#include "runtime_ideology_read_view.h"
 
 #include <cstring>
 #include <limits>
@@ -803,7 +804,11 @@ Dictionary DCWorldExt::get_effective_stat_value(const String &stat_key,
     // while the simulation still consumes a different published generation.
     std::optional<std::unique_lock<std::mutex>> boundary;
     const auto *runtime = static_cast<const ModifierRuntime *>(_modifier_runtime);
-    if (_economy_modifier_view_attached && _economy_modifier_view != nullptr) {
+    const auto ideology_view = _runtime_host && _runtime_host->effect_adapter_owned()
+        ? _runtime_host->latest_ideology_read_view() : nullptr;
+    if (ideology_view) {
+        out["read_source"] = "committed_ideology_projection";
+    } else if (_economy_modifier_view_attached && _economy_modifier_view != nullptr) {
         if (_runtime_host != nullptr) {
             auto acquired = _runtime_host->try_lock_economy_input_capture();
             if (!acquired.owns_lock()) {
@@ -826,14 +831,15 @@ Dictionary DCWorldExt::get_effective_stat_value(const String &stat_key,
     out["ok"] = true;
     out["stat_id"] = stat_id;
     // The production call, so this reports the number the game would see.
-    out["value"] = runtime->effective_value(ModifierRuntime::ECONOMY, stat_id,
-        static_cast<uint64_t>(entity_handle), static_cast<uint64_t>(cell), base_value);
+    const DerivedCellFront *front = ideology_view ? ideology_view->derived.get()
+        : runtime->derived_cell_front();
+    out["value"] = runtime->effective_value_with_front(ModifierRuntime::ECONOMY, stat_id,
+        static_cast<uint64_t>(entity_handle), static_cast<uint64_t>(cell), base_value, front);
 
     // The derived layer's own slice of it, when the cell has one. Reported separately so
     // a test can tell "the derived row contributed" from "the legacy bucket did".
     bool derived_found = false;
     if (cell >= 0) {
-        const DerivedCellFront *front = runtime->derived_cell_front();
         if (front != nullptr) {
             const DerivedCellStatRow *row = front->row_for_stat(stat_id);
             if (row != nullptr) {
@@ -1000,6 +1006,11 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
         out["reason"] = "ideology_runtime_unavailable";
         return out;
     }
+    if (_runtime_host && _runtime_host->effect_adapter_owned()) {
+        out["ok"] = false;
+        out["reason"] = "ideology_executor_owned";
+        return out;
+    }
     // NON-const: draining advances the rebuild.
     auto *ideology = static_cast<NativeIdeologyRuntime *>(_ideology_runtime);
     // A drain for a day the in-flight job does not belong to DESTROYS that job:
@@ -1024,6 +1035,7 @@ Dictionary DCWorldExt::drain_derived_cell_layer(int64_t day_index) {
         if (first_error.empty() && !step_error.empty())
             first_error = step_error;
         ++steps;
+        if (!step_error.empty()) break;
     }
     out["ok"] = true;
     out["steps"] = steps;
@@ -1054,7 +1066,10 @@ Dictionary DCWorldExt::get_derived_multi_country_report() const {
         return out;
     }
     auto *runtime = static_cast<const ModifierRuntime *>(_modifier_runtime);
-    const DerivedCellFront *front = runtime->derived_cell_front();
+    const auto ideology_view = _runtime_host && _runtime_host->effect_adapter_owned()
+        ? _runtime_host->latest_ideology_read_view() : nullptr;
+    const DerivedCellFront *front = ideology_view ? ideology_view->derived.get()
+        : runtime->derived_cell_front();
     if (front == nullptr) {
         out["ok"] = true;
         out["rows"] = 0;
@@ -1144,12 +1159,15 @@ Dictionary DCWorldExt::get_derived_cell_layer_report() const {
         out["reason"] = "modifier_runtime_unavailable";
         return out;
     }
-    const DerivedCellFront *layer =
-        runtime_from(_modifier_runtime)->derived_cell_front();
+    const auto ideology_view = _runtime_host && _runtime_host->effect_adapter_owned()
+        ? _runtime_host->latest_ideology_read_view() : nullptr;
+    const DerivedCellFront *layer = ideology_view ? ideology_view->derived.get()
+        : runtime_from(_modifier_runtime)->derived_cell_front();
     out["ok"] = true;
     out["installed"] = layer != nullptr;
     out["layer_generation"] = static_cast<int64_t>(
-        runtime_from(_modifier_runtime)->derived_cell_layer_generation());
+        ideology_view ? (layer ? layer->generation : 0)
+                      : runtime_from(_modifier_runtime)->derived_cell_layer_generation());
     if (layer == nullptr) {
         out["stat_count"] = int64_t{0};
         out["cell_count"] = int64_t{0};
@@ -1169,8 +1187,7 @@ Dictionary DCWorldExt::get_derived_cell_layer_report() const {
     int64_t contribution_count = 0;
     int64_t row_overhead_bytes = 0;
     {
-        const auto *modifier = runtime_from(_modifier_runtime);
-        const DerivedCellFront *front = modifier->derived_cell_front();
+        const DerivedCellFront *front = layer;
         if (front != nullptr) {
             // ONE formula for both the report and the peak tracker:
             // `pk::derived_cell_front_bytes` in `derived_cell_layer.h`. It also counts
@@ -1232,33 +1249,38 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
         out["reason"] = "modifier_not_worker_authoritative";
         return out;
     }
-    // This copy serves main-thread readers; the worker economy has its own
-    // (attach_economy_modifier_view). Still rebuild only between days: peers
-    // captured under this boundary read it too.
-    auto boundary_lock = _runtime_host->try_lock_economy_input_capture();
-    if (!boundary_lock.owns_lock()) {
-        out["ok"] = true;
-        out["reason"] = "economy_day_inflight";
-        return out;
-    }
     const uint64_t cursor = after_generation < 0
         ? std::numeric_limits<uint64_t>::max()
         : static_cast<uint64_t>(after_generation);
-    uint32_t slot = 0;
-    if (!_runtime_host->try_acquire_modifier_snapshot(cursor, slot)) {
+    RuntimeCommit display = _runtime_display_commit;
+    if (!display.day_tail) _runtime_host->poll_commit(0, display);
+    const auto committed = display.day_tail ? display.day_tail->modifier : nullptr;
+    RuntimeModifierPodSnapshot legacy;
+    if (!committed) {
+        // A partial executor still publishes this view before its other
+        // domains have settled. Copy it only at a day boundary.
+        auto boundary = _runtime_host->try_lock_economy_read_boundary();
+        if (!boundary.owns_lock()) {
+            out["ok"] = true;
+            out["reason"] = "economy_day_inflight";
+            return out;
+        }
+        uint32_t slot = 0;
+        if (!_runtime_host->try_acquire_modifier_snapshot(cursor, slot)) {
+            out["ok"] = true;
+            return out;
+        }
+        legacy = _runtime_host->modifier_snapshot_buffer(slot);
+        _runtime_host->release_modifier_snapshot(slot);
+    }
+    const auto &snapshot = committed ? *committed : legacy;
+    if (snapshot.generation <= cursor) {
         out["ok"] = true;
-        out["reason"] = "";
         return out;
     }
-    // Copy out of the ring before apply. Modifier release returns the slot to
-    // FREE; without a local copy a concurrent publish can rewrite the buffer
-    // while legacy Store vectors are still being rebuilt from it.
-    const RuntimeModifierPodSnapshot snapshot =
-        _runtime_host->modifier_snapshot_buffer(slot);
     const int64_t generation = static_cast<int64_t>(snapshot.generation);
     const int64_t committed_day = snapshot.committed_day;
     const int64_t state_hash = static_cast<int64_t>(snapshot.state_hash);
-    _runtime_host->release_modifier_snapshot(slot);
     bool shape_ok = snapshot.abi_version == RUNTIME_MODIFIER_POD_ABI_VERSION &&
         snapshot.catalog_hash == _runtime_host->modifier_pod_catalog_hash();
     for (const RuntimeModifierPodEntry &entry : snapshot.entries)

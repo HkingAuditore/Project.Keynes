@@ -178,7 +178,7 @@ func refresh_info_panel() -> void:
 
 	# ── 三条独立轴（地貌 / 当前植被 / 地表覆盖）
 	# B.1：landform / vegetation / cover / snow_cover 走 ViewAdapter（schema-mirrored）；
-	# base_vegetation / vegetation_history 仍直读 cell（HexCell-only 无 SoA 对位）。
+	# base_vegetation 保留开局地块的基线。
 	var landform_v: int = ad.get_landform(idx) if ad != null else int(cell.landform)
 	_landform_label.text = "地貌：%s" % LandformType.name_cn(landform_v)
 	var vegetation_v: int = ad.get_vegetation(idx) if ad != null else int(cell.vegetation)
@@ -227,7 +227,7 @@ func refresh_info_panel() -> void:
 
 	# ── 近期植被演替（vegetation_history 环形缓冲，最近 8 季）
 	# Milestone 1：换源到独立植被轴，粒度更细；空缓冲时回退到 biome_history
-	var veg_history := cell.vegetation_history
+	var veg_history := _current_map.season_history_for(cell, true)
 	if not veg_history.is_empty():
 		var names := PackedStringArray()
 		for i in range(veg_history.size()):
@@ -235,7 +235,7 @@ func refresh_info_panel() -> void:
 		_history_label.visible = true
 		_history_label.text = "近期植被：%s" % " → ".join(names)
 	else:
-		var bio_history := cell.biome_history
+		var bio_history := _current_map.season_history_for(cell, false)
 		if bio_history.is_empty():
 			_history_label.visible = false
 		else:
@@ -518,19 +518,18 @@ func refresh_emergent_lines() -> void:
 	if _emergent_ice_label != null:
 		if _world_clock != null and _world_clock.has_method("calendar_date"):
 			var cal: Dictionary = _world_clock.calendar_date()
-			_emergent_ice_label.text = "日期：%s（年内已过 %d/%d 天）" % [
-				WorldClock.date_text_for_day(_world_clock.day_index(), _world_clock.days_per_year()),
-				int(cal.day_of_year), int(cal.days_per_year)
+			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
+				int(cal.month), int(cal.day_of_month), int(cal.day_of_year), int(cal.days_per_year)
 			]
 		elif _generator != null:
 			var phase: float = _world_clock.season_phase() if _world_clock != null else 0.0
 			var cal_fallback: Dictionary = _generator.month_of_year(phase)
-			_emergent_ice_label.text = "日期：%d月%d日（年内已过 %d/%d 天）" % [
+			_emergent_ice_label.text = "日历：%d 月 %d 日（全年第 %d/%d 天）" % [
 				int(cal_fallback.month), int(cal_fallback.day_of_month),
 				int(cal_fallback.day_of_year), int(cal_fallback.get("days_per_year", 365))
 			]
 		else:
-			_emergent_ice_label.text = "日期：—"
+			_emergent_ice_label.text = "日历：—"
 
 	# 行 4：太阳直射点 + 日射相对年均（True Insolation-Driven 因果链可视化）
 	if _emergent_sun_label != null and _generator != null and _world_clock != null:

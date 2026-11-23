@@ -28,7 +28,7 @@
 - **稀疏。** 只遍历成员边、分支、家族所在格的建筑组；没有 `cell × family` 或
   `building × family` 扫描。
 - **工作线程边界。** 市场 worker 只把 `(slot, population_before, deaths)` 写进
-  `MarketResult.family_demography`；成员边只在主线程提交阶段修改。
+  `MarketResult.family_demography`；成员边只在经济执行器提交时修改。
 - **饥饿不变量。** 死亡总数仍只读生存满足度；家族层只重新分配“谁死”。
 
 ## 3. 人口
@@ -74,7 +74,7 @@ w_d = clamp(1 − k_d·φ + λ·D, w_min, w_max)
   不改变出生总量、不移除既有成员，出生因子与确定性系统抽样继续生效；舍入后新生儿并入家族在该无业 cohort 的边，
   无边则新建（`funds_basis` 取同 cohort 兄弟边基数）。新生儿不带 claim。
 - **死亡**：市场 worker 对可能含家族边的 cohort 发出 `family_demography`，否则仍发
-  `person_demography`。主线程合并时 `apply_family_death_attribution()` 按
+  `person_demography`。经济执行器合并时调用 `apply_family_death_attribution()`，按
   `E_d(edge) ∝ n_f·w_d(f)`、匿名 `∝ n_anon` 分摊 `D_k`，上限为边人数；该边的重要人物按同一死亡
   人数确定性退役。
 
@@ -167,7 +167,7 @@ FamilyEffect metric 仍为 0–36；占比/目标/困难度通过查询暴露
 
 ```text
 EPOCH_BEGIN        : clear_epoch_metrics → rebuild_family_demography_weights（含业主岗表）
-HOUSEHOLD_MARKET   : worker 发出 family_demography 死亡事件；主线程合并时按 w_d 归属
+HOUSEHOLD_MARKET   : worker 发出 family_demography 死亡事件；经济执行器合并时按 w_d 归属
 STRUCTURAL_COMMIT  : 出生命令按 w_b 归属
 BUILDING_*         : 投资/施工资金归属、业主岗归因、家族持有组业主招聘先取本家族
 FAMILY_COMMIT

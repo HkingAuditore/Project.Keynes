@@ -98,6 +98,7 @@ func _init() -> void:
 	_check_layer3_index_derivation()
 	_check_index_space_overflow_degrades()
 	_check_publisher_layer_target()
+	_check_publisher_payload_guards()
 	print("=== cell table layout: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -600,6 +601,31 @@ func _check_publisher_layer_target() -> void:
 	_expect(warned,
 		"the degraded path emits exactly one warning mentioning class_by_index (got %d: %s)" % [
 			log_over.messages.size(), str(log_over.messages)])
+
+
+func _check_publisher_payload_guards() -> void:
+	var source := PackedByteArray([11, 12, 13, 14, 21, 22, 23, 24])
+	var padded: PackedByteArray = Baker._cell_index_table_bytes(source, 2, 2, 2)
+	_expect(padded.size() == 16 and padded.slice(0, 8) == source
+			and padded.slice(8, 16) == PackedByteArray([0, 0, 0, 0, 0, 0, 0, 0]),
+		"class_by_index pads only the unused tail after a complete per-cell payload")
+	_expect(Baker._cell_index_table_bytes(source.slice(0, 4), 2, 2, 2).is_empty(),
+		"class_by_index rejects a short source instead of silently padding missing cell data")
+	var oversized := source.duplicate()
+	oversized.append_array(PackedByteArray([31, 32, 33, 34]))
+	_expect(Baker._cell_index_table_bytes(oversized, 2, 2, 2).is_empty(),
+		"class_by_index rejects an oversized source instead of silently truncating it")
+
+	var images: Array[Image] = [Image.new(), Image.new(), Image.new(), Image.new()]
+	var required := [true, true, true, true]
+	_expect(Baker.cell_table_images_valid(images, required),
+		"all required cell_table layers pass the publication guard")
+	images[Codec.LAYER_AUX] = null
+	_expect(not Baker.cell_table_images_valid(images, required),
+		"a missing required layer fails the publication guard before publishing")
+	required[Codec.LAYER_AUX] = false
+	_expect(Baker.cell_table_images_valid(images, required),
+		"an unchanged optional layer may remain null during an incremental publish")
 
 
 # ─────────────────────────────────────────────────────────────────────────

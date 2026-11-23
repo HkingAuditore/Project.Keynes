@@ -320,8 +320,8 @@ static func _family_buff_definitions() -> Array[Resource]:
 		AGG_WINDOW_COUNT, 30, PackedInt32Array([20, 20, 20, 20, 20, 20]),
 		ACTION_MODIFIER_APPLY, 2, &"family.city.trade_output_boost",
 		&"family.city.trade_output_boost", 30, 1, -1, 0, VALUE_ONE, 0, 0,
-		PackedInt32Array([16384, 16384, 26624, 36864, 49152, 65536]),
-		PackedInt32Array([60, 60, 90, 135, 180, 240])))
+		PackedInt32Array([39322, 39322, 65536, 91750, 117965, 157286]),
+		PackedInt32Array([30, 30, 45, 60, 90, 120])))
 	out.append_array(_tiered_family_buff_triggers(
 		"family.buff.construction_gift", "营造馈赠",
 		"累计建设完工后，为家族分支免费建成一座建筑。威望越高，所需累计建设次数越低。",
@@ -336,7 +336,7 @@ static func _family_buff_definitions() -> Array[Resource]:
 		AGG_CONSECUTIVE_DURATION, 0, PackedInt32Array([30, 45, 60, 90, 120, 180]),
 		ACTION_MODIFIER_APPLY, 2, &"family.city.staple_consumption_cut",
 		&"family.city.staple_consumption_cut", 30, 1, PAYLOAD_I0, 2, VALUE_I64, 0, 0,
-		PackedInt32Array([14563, 14563, 26214, 37847, 49525, 65536])))
+		PackedInt32Array([32768, 32768, 65536, 98304, 131072, 163840])))
 	return out
 
 

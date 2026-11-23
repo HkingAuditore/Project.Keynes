@@ -1,4 +1,11 @@
 // Included after NativeEconomyRuntime inside namespace pk.
+// Live cohort moves and investment previews must round cash shares the same way.
+inline int64_t NativeEconomyRuntime::proportional_cash_share(
+        int64_t cash, int64_t people, int64_t population, int64_t &sat) {
+    if (people <= 0 || population <= 0) return 0;
+    return people >= population ? cash : mul_div_sat(cash, people, population, sat);
+}
+
 // Common invoice operands fit a signed 64-bit product. Keep this path inline;
 // extreme quantities still use the established wide saturating arithmetic.
 inline int64_t NativeEconomyRuntime::GoodsBill::total(int64_t &) const {

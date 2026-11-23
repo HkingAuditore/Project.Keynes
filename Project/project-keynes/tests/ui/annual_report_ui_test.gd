@@ -3,6 +3,8 @@ extends SceneTree
 const Model = preload("res://scripts/ui/annual_report_view_model.gd")
 const Fixture = preload("res://tests/ui/annual_report_test.gd")
 const Flow = preload("res://scripts/annual/annual_report_flow.gd")
+const OPEN_FAILURE_FIXTURE := "--annual-open-failure"
+const OPEN_FAILURE_ERROR := "ERROR: [annual] report workspace failed to open for id=1"
 var failures := 0
 
 class ClockStub:
@@ -12,34 +14,49 @@ class ClockStub:
 	func set_speed(value: float) -> void: speed_multiplier = value
 
 class ControllerStub:
-	var locked := false
+	var reason := "annual_report_confirmation_required"
 	var synced := 0
-	func era_reward_locked() -> bool: return locked
-	func family_founding_locked() -> bool: return false
-	func ideology_draw_phase() -> String: return ""
+	func player_confirmation_reason() -> String: return reason
 	func sync_ui() -> void: synced += 1
 
 class HostStub:
 	signal annual_report_ready(id: int)
 	var ready := true
+	var refuse := false
 	var marked := 0
 	var marked_ids: Array[int] = []
 	func annual_report_status() -> Dictionary: return {"ok": ready}
-	func annual_report_snapshot(_id: int) -> Dictionary: return Fixture.fixture()
+	func annual_report_snapshot(id: int) -> Dictionary:
+		var report := Fixture.fixture()
+		report["id"] = id
+		return report
 	func annual_report_history(_offset: int, _limit: int) -> Dictionary: return {"reports": [{"id": 1, "year": 0, "grade": "S"}]}
 	func annual_report_catalogs() -> Dictionary: return {}
-	func mark_annual_report_presented(id: int) -> void:
+	func mark_annual_report_presented(id: int) -> Dictionary:
+		if refuse:
+			return {"ok": false, "admitted": false, "code": "annual_report_reward_pending"}
 		marked = id
 		marked_ids.append(id)
+		return {"ok": true, "admitted": true, "code": "queued"}
 
 class UiStub:
+	signal annual_report_workspace_available()
 	signal annual_history_requested()
 	signal annual_report_closed(id: int)
 	signal annual_report_selected(id: int)
 	signal annual_history_page_requested(offset: int)
 	var opened := 0
-	func annual_other_modal_open() -> bool: return false
-	func show_annual_report(_model: Dictionary, _ceremonial: bool) -> void: opened += 1
+	var open := false
+	var available := true
+	var fail_next_open := false
+	func can_open_annual_report() -> bool: return available
+	func show_annual_report(_model: Dictionary, _ceremonial: bool) -> void:
+		opened += 1
+		if fail_next_open:
+			available = false
+			fail_next_open = false
+		open = available
+	func is_annual_report_open() -> bool: return open
 	func set_annual_history(_rows: Array, _offset: int, _has_more: bool) -> void: pass
 
 func _init() -> void:
@@ -50,6 +67,11 @@ func _expect(label: String, passed: bool) -> void:
 	if not passed: failures += 1
 
 func _run() -> void:
+	if OPEN_FAILURE_FIXTURE in OS.get_cmdline_user_args():
+		await _check_failed_open()
+		print("annual_report_open_failure: %d failures" % failures)
+		quit(0 if failures == 0 else 1)
+		return
 	root.size = Vector2i(1280,720)
 	root.content_scale_factor = 1.0
 	var top = load("res://scenes/ui/player_top_bar.tscn").instantiate()
@@ -268,42 +290,139 @@ func _run() -> void:
 	var controller := ControllerStub.new()
 	var ui := UiStub.new()
 	var flow = Flow.new()
-	flow.configure(controller,host,clock,ui)
-	controller.locked = true
+	flow.configure(controller, host, ui)
+	controller.reason = "era_reward_choice_required"
 	flow.queue_report(1)
-	_expect("annual waits for blocking choices", ui.opened == 0 and not clock.paused)
-	controller.locked = false
+	_expect("annual waits for the executor to select it", ui.opened == 0 and not clock.paused)
+	controller.reason = "annual_report_confirmation_required"
 	flow.try_present()
-	_expect("annual pauses after the other modal ends", ui.opened == 1 and clock.paused)
-	# 只把 WorldClock.paused 置真停不住游戏：worker 权威下日历跑在原生线程里，
-	# 唯一的暂停通道是 sync_ui() → WorldRuntimeHost.on_clock_running_changed
-	# → set_runtime_clock_threaded。开卷必须顺路把它推出去。
-	_expect("annual open pushes the pause into the runtime", controller.synced > 0)
+	_expect("published annual stop opens the report", ui.opened == 1 and not clock.paused)
+	_expect("annual presentation sends no clock update", controller.synced == 0)
 	var state: Dictionary = flow.capture()
 	ui.annual_report_closed.emit(1)
-	_expect("close restores previous 50x state", not clock.paused and clock.speed_multiplier == 50.0 and host.marked == 1)
+	_expect("close acknowledges the report and keeps 50x", not clock.paused and clock.speed_multiplier == 50.0 and host.marked == 1)
 	host.ready = false
 	flow.restore(state)
 	flow.try_present()
 	_expect("load waits for native report facade", ui.opened == 1)
 	host.ready = true
 	flow.try_present()
-	_expect("load reopens report with original resume intent", ui.opened == 2 and clock.paused)
+	_expect("load reopens the published report without pausing the clock", ui.opened == 2 and not clock.paused)
 	ui.annual_report_closed.emit(1)
-	_expect("loaded report restores original running state", not clock.paused and clock.speed_multiplier == 50.0)
+	_expect("loaded report keeps the user's original clock", not clock.paused and clock.speed_multiplier == 50.0)
 	var second_host := HostStub.new()
 	var second_ui := UiStub.new()
 	var second_flow = Flow.new()
-	second_flow.configure(ControllerStub.new(), second_host, ClockStub.new(), second_ui)
+	second_flow.configure(ControllerStub.new(), second_host, second_ui)
 	second_flow.queue_report(1)
 	second_ui.annual_report_selected.emit(2)
 	second_flow.queue_report(1)
 	second_ui.annual_report_closed.emit(2)
 	second_flow.try_present()
 	_expect("history navigation acknowledges all viewed years without duplicate popup", second_host.marked_ids == [1, 2] and second_ui.opened == 2 and not second_flow.is_open())
+	var denied_host := HostStub.new()
+	denied_host.refuse = true
+	var denied_ui := UiStub.new()
+	var denied_flow := Flow.new()
+	denied_flow.configure(ControllerStub.new(), denied_host, denied_ui)
+	denied_flow.queue_report(1)
+	denied_ui.annual_report_closed.emit(1)
+	var denied: Dictionary = denied_flow.capture()
+	print("REVIEW_ANNUAL_REFUSAL=", denied)
+	_expect("a rejected native acknowledgment preserves the viewed report",
+		denied.get("viewed", []).has(1) and denied_host.marked_ids.is_empty())
 	workspace.queue_free()
 	top.queue_free()
 	bar.queue_free()
 	await process_frame
+	await _check_workspace_availability()
+	_check_open_failure_fixture()
 	print("annual_report_ui_test: %d failures" % failures)
 	quit(0 if failures == 0 else 1)
+
+
+func _check_workspace_availability() -> void:
+	# Mount the actual player UI without starting world generation.
+	var game := (load("res://scenes/player_game.tscn") as PackedScene).instantiate()
+	var ui := game.get_node("UI") as GameUIManager
+	game.remove_child(ui)
+	game.free()
+	root.add_child(ui)
+	ui.set_all_ui_suppressed(true)
+	var host := HostStub.new()
+	var flow = Flow.new()
+	flow.configure(ControllerStub.new(), host, ui)
+	host.annual_report_ready.emit(1)
+	flow.try_present()
+	_expect("a hidden modal layer leaves the report awaiting presentation",
+		not flow.is_open() and not ui.is_annual_report_open() and host.marked_ids.is_empty())
+	ui.set_all_ui_suppressed(false)
+	await process_frame
+	_expect("restoring the modal layer opens the report without a new simulation update",
+		flow.is_open() and ui.is_annual_report_open() and host.marked_ids.is_empty())
+	ui.close_annual_report()
+	_expect("closing the visible report acknowledges the executor stop once",
+		not flow.is_open() and host.marked_ids == [1])
+	var workspace := ui.get("_annual_report_workspace") as Control
+	var modal_layer := workspace.get_parent()
+	modal_layer.remove_child(workspace)
+	host.annual_report_ready.emit(2)
+	_expect("a detached workspace leaves the second report pending",
+		not flow.is_open() and host.marked_ids == [1])
+	modal_layer.add_child(workspace)
+	await process_frame
+	_expect("reattaching the workspace presents the second report",
+		flow.is_open() and ui.is_annual_report_open() and host.marked_ids == [1])
+	ui.close_annual_report()
+	_expect("closing the reattached workspace confirms only the second report",
+		not flow.is_open() and host.marked_ids == [1, 2])
+	ui.queue_free()
+	await process_frame
+
+
+func _check_open_failure_fixture() -> void:
+	# Capture the deliberate error so the regression runner still flags every
+	# unexpected diagnostic.
+	var log_path := "user://annual-open-failure-%d.log" % OS.get_process_id()
+	var output: Array = []
+	var status := OS.execute(OS.get_executable_path(), PackedStringArray([
+		"--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"--log-file", ProjectSettings.globalize_path(log_path),
+		"--script", get_script().resource_path, "--", OPEN_FAILURE_FIXTURE,
+	]), output, true)
+	if FileAccess.file_exists(log_path):
+		DirAccess.remove_absolute(log_path)
+	var child_log := String(output[0]) if not output.is_empty() else ""
+	var lines := child_log.replace("\r\n", "\n").split("\n")
+	_expect("the open-failure fixture completes",
+		status == 0 and lines.has("annual_report_open_failure: 0 failures"))
+	_expect("failed report opening logs exactly one error", lines.count(OPEN_FAILURE_ERROR) == 1)
+	for line in lines:
+		if line != OPEN_FAILURE_ERROR and not line.is_empty():
+			print(line)
+
+
+func _check_failed_open() -> void:
+	var failed_open_host := HostStub.new()
+	var failed_open_ui := UiStub.new()
+	failed_open_ui.fail_next_open = true
+	var failed_open_flow := Flow.new()
+	failed_open_flow.configure(ControllerStub.new(), failed_open_host, failed_open_ui)
+	failed_open_flow.queue_report(1)
+	var failed_open_state: Dictionary = failed_open_flow.capture()
+	_expect("failed report opening preserves the pending report without marking it viewed",
+		not failed_open_flow.is_open() and failed_open_state.get("open", false)
+		and failed_open_state.get("report_id", 0) == 1
+		and failed_open_state.get("viewed", []).is_empty()
+		and failed_open_host.marked_ids.is_empty())
+	failed_open_flow.try_present()
+	_expect("the report waits while the workspace is unavailable", failed_open_ui.opened == 1)
+	failed_open_ui.available = true
+	failed_open_ui.annual_report_workspace_available.emit()
+	await process_frame
+	_expect("workspace availability reopens the failed report without a simulation update",
+		failed_open_flow.is_open() and failed_open_ui.opened == 2
+		and failed_open_host.marked_ids.is_empty())
+	failed_open_ui.annual_report_closed.emit(1)
+	_expect("closing the reopened report acknowledges the executor stop",
+		failed_open_host.marked_ids == [1])

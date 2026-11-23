@@ -71,6 +71,26 @@ func _audit_starter_knowledge_routes() -> void:
 			"climate": "", "resource": "",
 			"construction": PackedStringArray(["logs", "bast_fiber"]),
 		},
+		"oral_memory_circle": {
+			"climate": "", "resource": "",
+			"construction": PackedStringArray(["logs", "bast_fiber"]),
+		},
+		"seasonal_observation_shelter": {
+			"climate": "phenology_observation", "resource": "",
+			"construction": PackedStringArray(["logs", "bast_fiber"]),
+		},
+		"pastoral_council_tent": {
+			"climate": "pasture_livestock", "resource": "pasture",
+			"construction": PackedStringArray(["turf_block", "bast_fiber"]),
+		},
+		"tide_observation_hut": {
+			"climate": "", "resource": "",
+			"construction": PackedStringArray(["reed_bundle", "bast_fiber"]),
+		},
+		"flood_calendar_shrine": {
+			"climate": "", "resource": "paddy_land",
+			"construction": PackedStringArray(["reed_bundle", "bast_fiber"]),
+		},
 	}
 	for building_id in expected:
 		var profile: BuildingProfile = load(
@@ -145,7 +165,7 @@ func _audit_two_owner_early_buildings() -> void:
 
 func _audit_zero_cost_starter_construction() -> void:
 	var zero_cost_ids := PackedStringArray([
-		"deadwood_gathering_camp", "primitive_clay_pit", "reed_cutting_camp",
+		"deadwood_gathering_camp", "earth_digging_pit", "reed_cutting_camp",
 		"turf_cutting_ground", "rubble_stone_working",
 	])
 	for building_id in zero_cost_ids:
@@ -304,12 +324,12 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("occupational and status needs compile",
 		needs.has("work_equipment") and needs.has("status_goods"))
 	var corn_farm = load("res://data/economy/buildings/landed_estate.tres")
-	var wheat_farm = load("res://data/economy/buildings/rainfed_wheat_plot.tres")
+	var wheat_farm = load("res://data/economy/buildings/wheat_farm.tres")
 	_expect("corn collector remains an estate crop building",
 		corn_farm != null and String(corn_farm.id) == "landed_estate" and
 		corn_farm.resource_ids.has("arable_land"))
 	_expect("wheat collector remains an arable crop building",
-		wheat_farm != null and String(wheat_farm.id) == "rainfed_wheat_plot" and
+		wheat_farm != null and String(wheat_farm.id) == "wheat_farm" and
 		wheat_farm.resource_ids.has("arable_land"))
 	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
 	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
@@ -517,12 +537,12 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("guild production distinguishes apprentices and journeymen",
 		String(guild_hall.owner_profession_id) == "guild_master" and
 		guild_hall.employee_profession_ids == PackedStringArray(["apprentice", "journeyman"]))
-	var early_institution = load(
-		"res://data/economy/buildings/early_knowledge_institution.tres")
-	_expect("universal knowledge institution is owned by a knowledge profession",
-		early_institution != null and
-		String(early_institution.owner_profession_id) == "lorekeeper" and
-		early_institution.output_good_ids == PackedStringArray(["technology_points"]))
+	var tide_observation_hut = load(
+		"res://data/economy/buildings/tide_observation_hut.tres")
+	_expect("coastal knowledge observation is owned by a knowledge profession",
+		tide_observation_hut != null and
+		String(tide_observation_hut.owner_profession_id) == "lorekeeper" and
+		tide_observation_hut.output_good_ids == PackedStringArray(["technology_points"]))
 	var classical_fishery = load(
 		"res://data/economy/buildings/method_marine_fish_collector_r2.tres")
 	_expect("preindustrial collectors are owned and staffed by their trade",
@@ -1065,10 +1085,12 @@ func _audit_production_climate(catalog: Dictionary,
 		"building_production_climate_profile_indices", PackedInt32Array())
 	_expect("building climate references align", building_profiles.size() == buildings.size())
 	var expected := {
-		"rainfed_wheat_plot": "dryland_crop", "bunded_rice_field": "paddy_crop",
+		"wheat_farm": "dryland_crop", "rice_collector": "paddy_crop",
 		"rubber_tree_collector": "plantation_crop",
 		"pastoral_camp": "pasture_livestock",
 		"gathering_ground": "foraging_plants",
+		"seasonal_observation_shelter": "phenology_observation",
+		"pastoral_council_tent": "pasture_livestock",
 	}
 	for building_id in expected:
 		var building_idx := buildings.find(building_id)
@@ -1077,7 +1099,8 @@ func _audit_production_climate(catalog: Dictionary,
 			building_idx >= 0 and building_profiles[building_idx] == profile_idx)
 	for building_id in ["household_weaving_shelter", "timber_collector",
 			"stone_age_hunting_camp", "freshwater_fishing_camp",
-			"marine_fish_collector", "early_knowledge_institution"]:
+			"marine_fish_collector", "oral_memory_circle", "tide_observation_hut",
+			"flood_calendar_shrine"]:
 		var building_idx := buildings.find(building_id)
 		_expect("%s has no direct climate production penalty" % building_id,
 			building_idx >= 0 and building_profiles[building_idx] == -1)

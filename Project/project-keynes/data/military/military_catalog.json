@@ -2233,10 +2233,8 @@
     "era_militia_attack_factor_q16": 88474
   },
   "unlock_tech_ids": [
-    "tech.river_transport",
     "tech.military.coastal_transport",
-    "tech.celestial_navigation",
-    "tech.oceanic_ship_design"
+    "tech.military.naval_transport"
   ],
   "defaults": {
     "training_kind_factor_q16": {

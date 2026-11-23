@@ -318,24 +318,6 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
             instance.dirty_epoch = 0;
             continue;
         }
-        // EVENT_ONCE (lifecycle 2) delivers one payout per instance generation.
-        // The ACK gate retires it, but a fire transaction that is rejected or
-        // reclaimed by compaction never reaches that gate and used to leave the
-        // row armed: the cadence then replayed the same command every day with a
-        // new fire_sequence (and therefore a new idempotency key), so nothing
-        // downstream could reject the duplicate. A row that already fired and has
-        // no live transaction left is retired here instead of being re-armed.
-        // See fire_family_event_once_effect: city_founder's "+220 people" paid
-        // out once per day for 75 days in the reported save.
-        if (definition.lifecycle == 2 && instance.fire_sequence > 0 &&
-            _pending_transactions_by_instance.find(instance.id) ==
-                _pending_transactions_by_instance.end()) {
-            instance.active = 0;
-            instance.schedule_token = 0;
-            instance.dirty_epoch = 0;
-            release_retired_instance_if_terminal(instance_index);
-            continue;
-        }
         if (definition.lifecycle == 1 && instance.expires_day >= 0 &&
             day_index >= instance.expires_day) {
             std::string expiry_error;
@@ -856,7 +838,23 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
     return out;
 }
 
-Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_runtime) {
+bool EffectRuntime::has_pending_research_discovery(uint64_t country, int32_t signal) const {
+    for (const Transaction &transaction : _transactions) {
+        if (transaction.status == ACKED || transaction.status == REJECTED ||
+            transaction.status == RESYNC_REQUIRED) continue;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command != nullptr && command->action == COUNTRY_COMMAND &&
+                command->target_handle == country &&
+                country_api::discovers_signal(command->opcode, command->payload[0], signal))
+                return true;
+        }
+    }
+    return false;
+}
+
+Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_runtime,
+                                                  bool trigger_delivery) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
@@ -904,6 +902,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
             native.value = command->value_q16;
             native.payload = command->payload;
             native.idempotency_key = command->idempotency_key;
+            native.trigger_delivery = trigger_delivery;
             // For structural country commands the catalog carries immutable
             // names in the existing cold string columns.  No Godot Variant is
             // built in this bridge.

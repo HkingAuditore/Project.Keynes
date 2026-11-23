@@ -68,7 +68,6 @@ func _run(seed: int, width: int, height: int, days: int, inline_env: bool) -> in
 	host.map_height = height
 	host.initial_seed = seed
 	host.generate_test_economy_data = false
-	host.runtime_climate_authority_enabled = true
 	host.runtime_native_daily_inline = true
 	get_root().add_child(host)
 	print("[inline-probe/tree] inside=%s root=%s" % [
@@ -119,10 +118,10 @@ func _run(seed: int, width: int, height: int, days: int, inline_env: bool) -> in
 	var frame_ms_ledger: Array = []
 	for day in range(1, days + 1):
 		clock.current_day = float(day)
-		# 生产路径就是 WorldClock.day_changed → WorldRuntimeHost._on_clock_day_changed；
+		# 生产路径就是 WorldClock.day_changed → WorldRuntimeHost._admit_runtime_calendar；
 		# headless 下时钟不 _process，所以直接调用同一个入口。
 		var frame_started := Time.get_ticks_usec()
-		host._on_clock_day_changed(day)
+		host._admit_runtime_calendar(day)
 		host.finish_daily_tick(0.0, {})
 		var frame_ms := float(Time.get_ticks_usec() - frame_started) / 1000.0
 		var report: Dictionary = generator.get_runtime_thread_report()

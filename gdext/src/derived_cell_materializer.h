@@ -321,6 +321,9 @@ public:
     DerivedCellMaterializeJob(const DerivedCellMaterializeJob &) = delete;
     DerivedCellMaterializeJob &operator=(const DerivedCellMaterializeJob &) = delete;
 
+    // Resolve the live metric readers before passing this job to the executor.
+    void freeze_ramp_inputs(const std::vector<DerivedProgramContribution> &contributions);
+
     // Folds contributions from the current cursor until `budget_ms` is spent or the
     // list is exhausted. Returns true when there is nothing left to fold.
     //

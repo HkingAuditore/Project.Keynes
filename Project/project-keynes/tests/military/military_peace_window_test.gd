@@ -16,7 +16,7 @@ extends SceneTree
 const WINDOW_SCENE := "res://scenes/ui/military_peace_window.tscn"
 const CARD_SCENE := "res://scenes/ui/military_peace_card.tscn"
 const THEME := "res://assets/themes/player_session_theme.tres"
-const PeaceViewModelScript = preload("res://scripts/ui/military_peace_view_model.gd")
+var _peace_view_model_script: GDScript
 
 const Q16 := 65536
 const DAY := 404
@@ -54,6 +54,8 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# Load the UI after project startup so the test releases its scene resources at exit.
+	_peace_view_model_script = load("res://scripts/ui/military_peace_view_model.gd")
 	root.size = Vector2i(1280, 720)
 	_check_terms_encoding()
 	_check_view_model()
@@ -73,12 +75,12 @@ func _expect(label: String, condition: bool) -> void:
 # ── 1. pure encoding ─────────────────────────────────────────────────────
 
 func _check_terms_encoding() -> void:
-	var draft := PeaceViewModelScript.empty_draft()
+	var draft: Dictionary = _peace_view_model_script.empty_draft()
 	_expect("a fresh draft is a white peace",
-		PeaceViewModelScript.peace_terms(draft) == [{"kind": "white"}])
+		_peace_view_model_script.peace_terms(draft) == [{"kind": "white"}])
 	draft["white"] = false
 	draft["ceding"] = {12: true, 4: true, 9: false}
-	var terms := PeaceViewModelScript.peace_terms(draft)
+	var terms: Array = _peace_view_model_script.peace_terms(draft)
 	_expect("ceding cells become cede terms in ascending cell order",
 		terms.size() == 2 and int(terms[0]["cell"]) == 4 and int(terms[1]["cell"]) == 12)
 	_expect("ceded cells are encoded as cede, never as a slot id",
@@ -86,7 +88,7 @@ func _check_terms_encoding() -> void:
 	draft["install"] = true
 	draft["install_amount"] = 500.0
 	draft["install_count"] = 99
-	var with_install := PeaceViewModelScript.peace_terms(draft)
+	var with_install: Array = _peace_view_model_script.peace_terms(draft)
 	var install_term: Dictionary = {}
 	for term_value in with_install:
 		if String((term_value as Dictionary).get("kind", "")) == "installments":
@@ -95,17 +97,17 @@ func _check_terms_encoding() -> void:
 		not install_term.is_empty() and int(install_term["n"]) == 12
 		and is_equal_approx(float(install_term["amount"]), 500.0))
 	_expect("white peace is exclusive of every other term",
-		PeaceViewModelScript.peace_terms({"white": true, "annex": true,
+		_peace_view_model_script.peace_terms({"white": true, "annex": true,
 			"ceding": {4: true}}) == [{"kind": "white"}])
 
 
 # ── 2. view model ────────────────────────────────────────────────────────
 
 func _check_view_model() -> void:
-	var vm := PeaceViewModelScript.new()
+	var vm = _peace_view_model_script.new()
 	vm.configure(_fixture_model())
 	_expect("peace model reports the war situation", vm.available())
-	var draft := PeaceViewModelScript.empty_draft()
+	var draft: Dictionary = _peace_view_model_script.empty_draft()
 	var data: Dictionary = vm.peace_model(WAR_ID, draft)
 	_expect("peace model builds for an active war", bool(data.get("ok", false)))
 	var war: Dictionary = data.get("war", {})
@@ -117,7 +119,7 @@ func _check_view_model() -> void:
 		int(cession.get("total", 0)) == CANDIDATES.size())
 	_expect("a fresh draft selects no cell", int(cession.get("checked", 0)) == 0)
 	_expect("the default draft submits a white peace",
-		PeaceViewModelScript.peace_terms(draft) == [{"kind": "white"}])
+		_peace_view_model_script.peace_terms(draft) == [{"kind": "white"}])
 	var situation: Dictionary = data.get("situation", {})
 	_expect("situation carries four KPIs", (situation.get("kpis", []) as Array).size() == 4)
 	_expect("score parts stay hidden when the snapshot has none",
@@ -148,12 +150,12 @@ func _check_view_model() -> void:
 		(terms.get("terms", []) as Array).size() == 2)
 
 	# Full occupation still refuses annex when someone else holds cells too.
-	var half := vm.peace_model(WAR_ID, draft)
+	var half: Dictionary = vm.peace_model(WAR_ID, draft)
 	var full_model := _fixture_model()
 	full_model["military"]["snapshot"]["wars"][0]["fully_occupied"] = true
-	var full_vm := PeaceViewModelScript.new()
+	var full_vm = _peace_view_model_script.new()
 	full_vm.configure(full_model)
-	var full := full_vm.peace_model(WAR_ID, draft)
+	var full: Dictionary = full_vm.peace_model(WAR_ID, draft)
 	_expect("full occupation alone does not unlock annex while the enemy holds free cells",
 		not bool((full.get("annex", {}) as Dictionary).get("can", true)))
 	_expect("a finished war yields a readable reason, not empty data",
@@ -288,6 +290,8 @@ func _check_window() -> void:
 		(window.get_node("%Submit") as Button).disabled
 		and not String(window.call("debug_snapshot").get("submit_blocked", "")).is_empty())
 	window.close_panel()
+	window.set_player_controller(null)
+	controller.free()
 	host.queue_free()
 	await process_frame
 

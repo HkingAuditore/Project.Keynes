@@ -164,26 +164,6 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "country.consumption.good." + good_id + "_factor") : -1);
     }
-    // Per-good trade factors: same generated-key family as the three vectors
-    // above, resolved once here so the epoch capture only walks dense ids.
-    // A good without the stat resolves to -1, which is LEGAL -- only the goods
-    // that actually declare `country.trade.good.<good>.{capacity,speed}_factor`
-    // get a non-neutral value. Do not add these to the `any_of(id < 0)`
-    // failure gate below: that gate means "the catalog is missing something
-    // every good must have", and these ten keys are declared for seven goods
-    // out of the whole good list.
-    _country_good_trade_capacity_stat_ids.clear();
-    _country_good_trade_speed_stat_ids.clear();
-    _country_good_trade_capacity_stat_ids.reserve(_good_ids.size());
-    _country_good_trade_speed_stat_ids.reserve(_good_ids.size());
-    for (const std::string &good_id : _good_ids) {
-        _country_good_trade_capacity_stat_ids.push_back(_modifier_runtime != nullptr
-            ? modifier_api::stat_id_for_key(*_modifier_runtime,
-                "country.trade.good." + good_id + ".capacity_factor") : -1);
-        _country_good_trade_speed_stat_ids.push_back(_modifier_runtime != nullptr
-            ? modifier_api::stat_id_for_key(*_modifier_runtime,
-                "country.trade.good." + good_id + ".speed_factor") : -1);
-    }
     _country_resource_use_stat_ids.clear();
     _country_resource_generation_stat_ids.clear();
     for (const std::string &resource_id : _resource_ids) {
@@ -212,15 +192,6 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "economy.profession." + profession_id +
                 ".satisfaction_bp") : -1);
-    }
-    _political_class_satisfaction_bp_stat_ids.clear();
-    _political_class_satisfaction_bp_stat_ids.reserve(_political_class_ids.size());
-    for (const std::string &class_id : _political_class_ids) {
-        _political_class_satisfaction_bp_stat_ids.push_back(
-            _modifier_runtime != nullptr
-                ? modifier_api::stat_id_for_key(*_modifier_runtime,
-                    "economy.class." + class_id + ".satisfaction_bp")
-                : -1);
     }
     const auto resolve_geography_stats = [&](const std::string &kind,
             const std::vector<std::string> &geography_ids,
@@ -1874,20 +1845,7 @@ void NativeEconomyRuntime::drain_due_effect_pending_commands() {
             continue;
         }
         if (command.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
-            std::string commit_error;
-            const bool applied = apply_settle_family_expedition(
-                command, commit_error);
-            if (!applied && runtime_country_asset_pending_reason(commit_error)) {
-                kept.push_back(command);
-            } else {
-                auto &result =
-                    _effect_command_results[command.effect_request_id];
-                result.complete = 1;
-                result.ok = applied ? 1 : 0;
-                result.reason = applied ? std::string{} :
-                    (commit_error.empty()
-                        ? "effect_economy_commit_failed" : commit_error);
-            }
+            queue_family_settlement_command(command);
             continue;
         }
         EffectCommandResult &result =

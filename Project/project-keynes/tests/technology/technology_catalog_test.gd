@@ -2,7 +2,6 @@ extends SceneTree
 
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
-const NetworkPresentation = preload("res://scripts/technology/technology_network_presentation.gd")
 
 func _init() -> void:
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
@@ -169,17 +168,12 @@ func _init() -> void:
 	assert(geography_technologies.size() >= 30)
 	assert(climate_terms >= 56)
 	assert(climate_technologies.size() >= 28)
-	var authored_summaries := {}
-	for node: Dictionary in TechnologyCatalogScript._network_payload().nodes:
-		authored_summaries[String(node.id)] = String(node.get("effect_summary", ""))
 	for i in range(catalog.technology_ids.size()):
 		var public_definition: Dictionary = definitions[i]
 		assert(String(public_definition.display_name) \
 			== String(catalog.technology_display_names[i]))
-		assert(String(catalog.technology_effect_summaries[i]) \
-			== String(authored_summaries[String(catalog.technology_ids[i])]))
 		assert(String(public_definition.effect_summary) \
-			== NetworkPresentation.effect_summary(public_definition))
+			== String(catalog.technology_effect_summaries[i]))
 		assert(not String(public_definition.display_name).is_empty())
 		assert(not String(public_definition.display_name).begins_with("tech."))
 		var public_route_tags: PackedStringArray = public_definition.route_tags

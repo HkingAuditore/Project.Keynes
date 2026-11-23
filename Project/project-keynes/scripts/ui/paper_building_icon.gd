@@ -7,6 +7,31 @@ const BUILDING_BASE_OVERRIDES := {
 	&"public_health_center": &"economy.building.service",
 }
 
+static func compose(base_texture: Texture2D, product_texture: Texture2D) -> Texture2D:
+	var base := _read_layer(base_texture, 108)
+	var product := _read_layer(product_texture, 66)
+	if base == null or product == null:
+		return null
+	var canvas := Image.create(128, 128, false, Image.FORMAT_RGBA8)
+	canvas.blend_rect(base, Rect2i(0, 0, 108, 108), Vector2i.ZERO)
+	canvas.blend_rect(product, Rect2i(0, 0, 66, 66), Vector2i(62, 62))
+	return ImageTexture.create_from_image(canvas)
+
+
+static func _read_layer(texture: Texture2D, size: int) -> Image:
+	if texture == null:
+		return null
+	var pixels := texture.get_image()
+	if pixels == null or pixels.is_empty():
+		return null
+	# Imported paper textures may use VRAM compression, which cannot be blended directly.
+	if pixels.is_compressed() and pixels.decompress() != OK:
+		return null
+	pixels.convert(Image.FORMAT_RGBA8)
+	pixels.resize(size, size, Image.INTERPOLATE_LANCZOS)
+	return pixels
+
+
 static func _paper_building_base(kind: String, product_id: StringName,
 		stable_id: StringName = &"") -> StringName:
 	var override_key: StringName = BUILDING_BASE_OVERRIDES.get(stable_id, &"")

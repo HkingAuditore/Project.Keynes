@@ -83,6 +83,22 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
     if (!candidate.apply_pod_snapshot(snapshot, error) ||
         candidate._instances[0].activation_sequence != activation)
         return fail("effect_pod_activation_changed_on_refresh");
+    // Economy may begin a claim before the next catalog snapshot is applied.
+    // Its transaction and the next catalog fire must both survive the merge.
+    constexpr uint64_t country_handle = uint64_t{1} << 32;
+    constexpr uint64_t expedition_handle = country_handle | 1u;
+    candidate.begin_executor_transaction_namespace();
+    int64_t claim_transaction = 0;
+    if (!candidate.enqueue_family_colonization_pod(19, 13, 19,
+            country_handle, 1, expedition_handle, 1, 20, 0, error,
+            &claim_transaction))
+        return false;
+    snapshot.generation = 3;
+    snapshot.transactions[0].transaction_id = 6;
+    if (!candidate.apply_pod_snapshot(snapshot, error)) return false;
+    if (candidate.transaction_status_pod(claim_transaction) != PLANNED ||
+            candidate.transaction_status_pod(6) != ACKED)
+        return fail("effect_pod_family_claim_transaction_lost");
     // Reproduce the old bridge's exact omissions, including its original POD hash.
     // Reproduce the old bridge's exact omissions, then prove the SAVE format
     // rejects them: since the v12 bump the version gate refuses anything but
@@ -100,64 +116,6 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
         return fail("effect_legacy_pod_save_not_rejected");
     if (candidate.capture() != current)
         return fail("effect_legacy_pod_reject_not_atomic");
-
-    // Regression: worker POD snapshots must never drop a main-thread family
-    // colonization builtin transaction even when the worker allocates the next
-    // sequential catalog transaction ID (previously both counters collided at
-    // tx.id == 6 and `apply_pod_snapshot` silently skipped the builtin, leaving
-    // the expedition stuck in EXPEDITION_SETTLING forever).
-    int64_t colo_tx_id = 0;
-    std::string colo_err;
-    if (!candidate.enqueue_family_colonization_pod(
-            77, 13, 77, (uint64_t{1} << 32) | 1u, 1u,
-            (uint64_t{2} << 32) | 3u, 2u, 397, 999ULL, colo_err,
-            &colo_tx_id, true, 0) ||
-        colo_tx_id < BUILTIN_TRANSACTION_ID_BASE) {
-        return fail("effect_pod_colonization_builtin_id_not_disjoint");
-    }
-    RuntimeEffectPodTransaction tx_next = tx;
-    tx_next.transaction_id = 6;
-    tx_next.effective_day = 13;
-    tx_next.fire_sequence = 4;
-    snapshot.transactions.push_back(tx_next);
-    snapshot.generation = 3;
-    snapshot.committed_day = 13;
-    if (!candidate.apply_pod_snapshot(snapshot, error) ||
-        !candidate.has_pending_family_colonization_transactions()) {
-        return fail("effect_pod_snapshot_dropped_colonization_builtin");
-    }
-    // Also verify old-save collision recovery: a builtin with a colliding small
-    // ID (7) must be remapped instead of dropped when the worker snapshot
-    // arrives carrying transaction_id == 7.
-    const int32_t colo_index = candidate.transaction_index_for_id(colo_tx_id);
-    if (colo_index < 0) return fail("effect_pod_colonization_lookup_failed");
-    candidate._transaction_ids.erase(colo_tx_id);
-    candidate._transactions[static_cast<size_t>(colo_index)].id = 7;
-    candidate._transaction_ids[7] = colo_index;
-    candidate._native_country_request_ids.push_back(101);
-    candidate._native_country_ack_bindings.push_back({7, 0, 1, 1u << 7});
-    candidate._native_country_bound_transaction_ids.insert(7);
-    RuntimeEffectPodTransaction tx_collide = tx;
-    tx_collide.transaction_id = 7;
-    tx_collide.effective_day = 14;
-    tx_collide.fire_sequence = 5;
-    snapshot.transactions.push_back(tx_collide);
-    snapshot.generation = 4;
-    snapshot.committed_day = 14;
-    if (!candidate.apply_pod_snapshot(snapshot, error) ||
-        !candidate.has_pending_family_colonization_transactions()) {
-        return fail("effect_pod_snapshot_dropped_colliding_colonization");
-    }
-    int64_t resolved_id = 0;
-    const int32_t resolved_status =
-        candidate.family_colonization_transaction_status_pod(
-            7, 77, 2u, 999ULL, &resolved_id);
-    if (resolved_status == 0 || resolved_id < BUILTIN_TRANSACTION_ID_BASE ||
-        candidate._native_country_ack_bindings.size() != 1 ||
-        candidate._native_country_ack_bindings[0].transaction_id != resolved_id ||
-        candidate._native_country_bound_transaction_ids.count(resolved_id) != 1) {
-        return fail("effect_pod_snapshot_colonization_remap_invalid");
-    }
     return true;
 }
 

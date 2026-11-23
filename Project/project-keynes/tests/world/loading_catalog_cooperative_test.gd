@@ -9,6 +9,17 @@ const Facade = preload("res://scripts/economy/economy_facade.gd")
 const Display = preload("res://scripts/economy/economy_facade_display.gd")
 const Family = preload("res://scripts/family/family_effect_catalog.gd")
 const Ideology = preload("res://scripts/ideology/ideology_catalog.gd")
+
+class CancelOnEconomyResources extends Context:
+	func stage(label: String) -> void:
+		super.stage(label)
+		if label == "economy_compile":
+			# Force the first resource checkpoint to yield regardless of compile speed.
+			_slice_started = Time.get_ticks_usec() - WORK_SLICE_USEC
+		elif label == "catalog_resources":
+			var tree := Engine.get_main_loop() as SceneTree
+			tree.process_frame.connect(frame_gate.cancel, CONNECT_ONE_SHOT)
+
 var failures := 0
 var checks := 0
 
@@ -155,16 +166,16 @@ func _run() -> void:
 	var canceled_result: Dictionary = await Economy.compile_native_catalog_cooperative(stopped)
 	_expect("canceled compiler rejected", canceled_result.get("reason") == "loading_canceled")
 	_expect("canceled result was not cached", stopped.compile_counts.is_empty())
-	var interrupted := Context.new(Gate.new())
-	Engine.set_meta(&"loading_step", "test / before canceled source compile")
-	process_frame.connect(_cancel_at_resource.bind(interrupted))
+	var interrupted := CancelOnEconomyResources.new(Gate.new())
 	var interrupted_result: Dictionary = await Economy.compile_native_catalog_cooperative(interrupted)
 	_expect("mid-compile cancellation rejected", interrupted_result.get("reason") == "loading_canceled")
 	_expect("mid-compile cancellation never publishes", interrupted.compile_counts.is_empty())
+	var interrupted_effect := CancelOnEconomyResources.new(Gate.new())
+	# An explicit family input forces both Effect and its Economy dependency to
+	# compile from source, including when a default snapshot is available.
+	var canceled_effect: Resource = await Effects.build_cooperative(interrupted_effect, Family.new())
+	_expect("Effect returns no catalog when canceled during Economy resource loading",
+		interrupted_effect.canceled and canceled_effect == null)
+	_expect("canceled Effect builds leave no compiled products", interrupted_effect._products.is_empty())
 	print("[loading-catalog-cooperative] checks=%d failures=%d report=%s" % [checks, failures, context.report()])
 	quit(0 if failures == 0 else 1)
-
-func _cancel_at_resource(context) -> void:
-	if String(Engine.get_meta(&"loading_step", "")) == "catalog / catalog_resources":
-		process_frame.disconnect(_cancel_at_resource.bind(context))
-		context.frame_gate.cancel()

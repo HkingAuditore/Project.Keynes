@@ -6,6 +6,7 @@ const MAIN_MENU_SCENE := "res://scenes/main_menu.tscn"
 const PLAYER_GAME_SCENE := "res://scenes/player_game.tscn"
 const TransitionFrames = preload("res://scripts/geography/loading_frame_gate.gd")
 const NativeWorld = preload("res://scripts/data_core/native_world.gd")
+const ResourceRequest = preload("res://scripts/game/loading_resource_request.gd")
 
 var _pending_request: Dictionary = {}
 var _session: Dictionary = {}
@@ -24,17 +25,10 @@ func _ready() -> void:
 	WebTelemetry.flush()
 	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
 		"res://tests/game/game_save_roundtrip_test.gd")
-	# 旧存档续跑：把别的构建写出的存档放进 PK_SAVE_DIR，在已运行的会话里换入，
-	# 验证 CLM2/ECP2/ECP1 的旧布局仍可恢复。见 tests/game/legacy_save_continuation_test.gd。
-	_attach_headless_runner("PK_LEGACY_SAVE_CONTINUITY",
-		"res://tests/game/legacy_save_continuation_test.gd")
 	# 存档回放复现入口。见 tests/headless_save_replay.gd 与
 	# tools/runtime/Invoke-SaveReplay.ps1。
 	_attach_headless_runner("PK_SAVE_REPLAY",
 		"res://tests/game/headless_save_replay.gd")
-	# 故障快照只读加载入口（--load-forensics），见 tests/game/headless_forensics_load.gd。
-	_attach_headless_runner("PK_FORENSICS_LOAD",
-		"res://tests/game/headless_forensics_load.gd")
 	_attach_headless_runner("PK_FAMILY_PROBE",
 		"res://tests/family/family_economy_probe.gd")
 	_attach_headless_runner("PK_COLONIZATION_PROBE",
@@ -159,9 +153,9 @@ func _queue_player_scene() -> Error:
 	var overlay_scene := load("res://scenes/ui/world_loading_overlay.tscn") as PackedScene
 	if overlay_scene == null:
 		return ERR_CANT_OPEN
-	var error := ResourceLoader.load_threaded_request(PLAYER_GAME_SCENE,"PackedScene")
-	if error != OK:
-		return error
+	var request := ResourceRequest.new(PLAYER_GAME_SCENE, "PackedScene")
+	if request.start_error != OK:
+		return request.start_error
 	_transition_active = true
 	_transition_id += 1
 	_transition_frames.cancel()
@@ -182,19 +176,22 @@ func _queue_player_scene() -> Error:
 		if is_instance_valid(_transition_layer):_transition_layer.queue_free()
 		_queue_player_scene())
 	get_tree().root.add_child.call_deferred(_transition_layer)
-	call_deferred("_finish_player_scene_transition",_transition_id,overlay,_transition_frames)
+	call_deferred("_finish_player_scene_transition",_transition_id,overlay,_transition_frames,request)
 	return OK
 
 
-func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, frames) -> void:
+func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, frames,
+		request: ResourceRequest) -> void:
 	await frames.next_frame()
-	var load_progress: Array = []
-	while id==_transition_id and ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE, load_progress)==ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-		var stage_frac := float(load_progress[0]) if not load_progress.is_empty() else 0.0
-		overlay.set_progress("preparing", clampf(stage_frac * 0.12, 0.02, 0.12))
+	if id != _transition_id:
+		return
+	overlay.set_progress("preparing", 0.02)
+	while id == _transition_id and not request.finished:
+		overlay.set_progress("preparing", lerpf(0.02, 0.15, request.progress))
 		await frames.next_frame()
 	if id!=_transition_id:return
-	if ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE)!=ResourceLoader.THREAD_LOAD_LOADED:
+	var scene := request.result as PackedScene
+	if scene == null:
 		overlay.show_failure("游戏场景载入失败。")
 		_transition_active = false
 		return
@@ -221,7 +218,6 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 		overlay.show_failure("上一局游戏尚未关闭，请重试。")
 		_transition_active = false
 		return
-	var scene := ResourceLoader.load_threaded_get(PLAYER_GAME_SCENE) as PackedScene
 	var error := get_tree().change_scene_to_packed(scene)
 	if error != OK:
 		overlay.show_failure("无法进入游戏场景。")
@@ -252,6 +248,7 @@ func quit_game() -> void:
 	var save_service := get_node_or_null(^"/root/GameSave")
 	if save_service != null:
 		await save_service.wait_for_pending_io()
+	await ResourceRequest.wait_for_pending(get_tree())
 	get_tree().quit()
 
 

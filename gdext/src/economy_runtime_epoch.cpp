@@ -317,11 +317,6 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     reset_cell_metric(_merchant_trade_purchase_by_cell);
     reset_cell_metric(_merchant_trade_sale_by_cell);
     reset_cell_metric(_merchant_credit_drawn_by_cell);
-    // Market-keyed twins of the same epoch metric family. Cleared rather
-    // than resized: the merge rewrites every settled market each day, so a
-    // market that produced no retail this epoch must not keep a stale pool.
-    _merchant_household_retail_by_market.clear();
-    _market_merchant_population.clear();
     _owner_working_capital_reserved = 0;
     _production_input_reserved = 0;
     _production_input_reserve_shortfall = 0;
@@ -488,27 +483,6 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _workset_cells_executed = 0;
     _duplicate_range_count = 0;
     _workset_last_cursor = 0;
-    // Sparse-workset probe: epoch-scoped, cleared with the other epoch counters
-    // so every reported value belongs to exactly one epoch.
-    _probe_workset_market_cells_due = 0;
-    _probe_workset_building_cells = 0;
-    _probe_workset_plan_cells = 0;
-    _probe_workset_live_cells = 0;
-    _probe_workset_coverage_permille = 0;
-    _probe_market_bucket_index = 0;
-    _probe_market_cycle_days = 0;
-    _probe_plan_cycle_days = 0;
-    _probe_cells_per_slice = 0;
-    _probe_slice_count = 0;
-    _probe_slice_budget_hits = 0;
-    _probe_slice_ms_total = 0.0;
-    _probe_slice_ms_max = 0.0;
-    _probe_phase_attempt_ms = 0.0;
-    _probe_phase_formula_ms = 0.0;
-    _probe_phase_publish_ms = 0.0;
-    _probe_phase_mirror_capture_ms = 0.0;
-    _probe_phase_mirror_import_ms = 0.0;
-    _probe_trade_plan_ms = 0.0;
     _audit_ms = 0.0;
     _watermark_ms = 0.0;
     _trade_capacity_available = 0;
@@ -728,26 +702,6 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.workset_cells_planned = _workset_cells_planned;
     snapshot.workset_cells_executed = _workset_cells_executed;
     snapshot.duplicate_range_count = _duplicate_range_count;
-    snapshot.workset_market_cells_due = _probe_workset_market_cells_due;
-    snapshot.workset_building_cells = _probe_workset_building_cells;
-    snapshot.workset_plan_cells = _probe_workset_plan_cells;
-    snapshot.workset_live_cells = _probe_workset_live_cells;
-    snapshot.workset_coverage_permille = _probe_workset_coverage_permille;
-    snapshot.workset_market_bucket = _probe_market_bucket_index;
-    snapshot.workset_market_cycle_days = _probe_market_cycle_days;
-    snapshot.workset_plan_cycle_days = _probe_plan_cycle_days;
-    snapshot.workset_cells_per_slice = _probe_cells_per_slice;
-    snapshot.probe_slice_count = _probe_slice_count;
-    snapshot.probe_slice_budget_hits = _probe_slice_budget_hits;
-    snapshot.probe_slice_ms_total = _probe_slice_ms_total;
-    snapshot.probe_slice_ms_max = _probe_slice_ms_max;
-    snapshot.probe_attempt_ms = _probe_phase_attempt_ms;
-    snapshot.probe_formula_ms = _probe_phase_formula_ms;
-    snapshot.probe_publish_ms = _probe_phase_publish_ms;
-    snapshot.probe_epoch_open_ms = _epoch_begin_ms;
-    snapshot.probe_mirror_capture_ms = _probe_phase_mirror_capture_ms;
-    snapshot.probe_mirror_import_ms = _probe_phase_mirror_import_ms;
-    snapshot.probe_trade_plan_ms = _probe_trade_plan_ms;
     snapshot.building_investment_ms = _investment_ms;
     snapshot.investment_evaluate_ms = _investment_evaluate_ms;
     snapshot.investment_allocate_ms = _investment_allocate_ms;
@@ -1110,34 +1064,6 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             }
             std::sort(_epoch_plan_cells.begin(), _epoch_plan_cells.end());
         }
-    }
-    // Sparse-workset probe: freeze this epoch's workset shape. Pure reads; the
-    // values only ever reach the diagnostic report.
-    _probe_workset_building_cells =
-        static_cast<int64_t>(_epoch_building_cells.size());
-    _probe_workset_plan_cells =
-        static_cast<int64_t>(_epoch_plan_cells.size());
-    _probe_workset_live_cells =
-        static_cast<int64_t>(_economy_live_cells.size());
-    _probe_market_bucket_index = _rolling_phase;
-    _probe_market_cycle_days = locked_market_cycle_days();
-    _probe_plan_cycle_days = locked_plan_cycle_days();
-    _probe_cells_per_slice = _building_cells_per_slice;
-    _probe_workset_coverage_permille = _probe_workset_live_cells > 0
-        ? (_probe_workset_building_cells * 1000) / _probe_workset_live_cells
-        : 0;
-    {
-        int64_t market_cells_due = 0;
-        for (size_t relative = 0; relative < _epoch_market_ids.size();
-             ++relative) {
-            const int32_t market = _epoch_market_ids[relative];
-            if (market < 0) continue;
-            const size_t index = static_cast<size_t>(market);
-            if (index + 1 >= _market_cell_offsets.size()) continue;
-            market_cells_due += static_cast<int64_t>(
-                _market_cell_offsets[index + 1] - _market_cell_offsets[index]);
-        }
-        _probe_workset_market_cells_due = market_cells_due;
     }
     _epoch_days = workset_elapsed_days(day_index);
     capture_cell_elapsed_days(day_index);
@@ -1506,24 +1432,11 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
              (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(_signatures.size())))) {
             return reject_epoch_command(cmd);
         }
-        if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
-             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD ||
-             cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH) &&
+        // Treasury construction validates in its settlement handler, which
+        // publishes a terminal receipt for every accepted command.
+        if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
-            return reject_epoch_command(cmd);
-        }
-        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH &&
-            (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
-             _country_runtime == nullptr || !country_reads().valid_handle(
-                 static_cast<int64_t>(cmd.target_handle)))) {
-            return reject_epoch_command(cmd);
-        }
-        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&
-            (cmd.i64_0 != 1 ||
-             cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
-             _country_runtime == nullptr || !country_reads().valid_handle(
-                 static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_BUILD_CANAL &&

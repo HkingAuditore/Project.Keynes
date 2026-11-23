@@ -2,8 +2,8 @@ extends SceneTree
 
 ## Manager-level checks for late player binding and fail-closed snapshots.
 
-const LAYERS_SCRIPT := preload("res://scripts/rendering/military_map_layers.gd")
-const FEED_SCRIPT := preload("res://scripts/rendering/military_render_feed.gd")
+var _layers_script: GDScript
+var _feed_script: GDScript
 
 var _failures := PackedStringArray()
 
@@ -39,11 +39,14 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var manager = LAYERS_SCRIPT.new()
+	# Load the UI after project startup so the test releases its scene resources at exit.
+	_layers_script = load("res://scripts/rendering/military_map_layers.gd")
+	_feed_script = load("res://scripts/rendering/military_render_feed.gd")
+	var manager = _layers_script.new()
 	get_root().add_child(manager)
 	await process_frame
 	manager._ensure_layers()
-	manager._feed = FEED_SCRIPT.new()
+	manager._feed = _feed_script.new()
 
 	var host := FakeHost.new()
 	manager._host = host

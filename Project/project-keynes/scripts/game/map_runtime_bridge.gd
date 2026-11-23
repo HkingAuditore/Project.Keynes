@@ -2,6 +2,7 @@ extends "res://scripts/simulation/generator_context.gd"
 
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const IdeologyFacadeScript = preload("res://scripts/ideology/ideology_facade.gd")
+var _main_steps = preload("res://scripts/game/runtime_main_step_diagnostics.gd").new()
 
 ## 第 5 批：保存边界、停止清理与 worker 控制。可变状态仍由 MapGenerator 持有。
 
@@ -20,7 +21,14 @@ func set_runtime_qos_threaded(interactive: bool) -> Dictionary:
 func get_runtime_thread_report() -> Dictionary:
 	if _generator._data_core_world_ext == null:
 		return {}
-	return _generator._data_core_world_ext.get_runtime_thread_report()
+	var report: Dictionary = _generator._data_core_world_ext.get_runtime_thread_report()
+	report["main_simulation_steps_by_day"] = _main_steps.snapshot(_generator._sus_map)
+	return report
+
+
+func record_runtime_main_step(day: int, step: StringName) -> void:
+	_main_steps.record(_generator._sus_map, day, step)
+
 
 func get_runtime_control_state() -> Dictionary:
 	if _generator._data_core_world_ext == null:
@@ -142,24 +150,10 @@ func submit_runtime_command(command: Dictionary) -> Dictionary:
 	return _generator._data_core_world_ext.submit_runtime_command(command)
 
 
-func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
+func poll_runtime_commit(after_generation: int = 0, take_days: bool = false) -> Dictionary:
 	if _generator._data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
-	return _generator._data_core_world_ext.poll_runtime_commit(after_generation)
-
-
-func flush_runtime_economy_resource_writeback() -> Dictionary:
-	if _generator._data_core_world_ext == null:
-		return {"ok": false, "code": "runtime_worker_api_missing"}
-	return _generator._data_core_world_ext.flush_runtime_economy_resource_writeback()
-
-
-func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
-		max_items: int) -> Dictionary:
-	if _generator._data_core_world_ext == null:
-		return {"ok": false, "code": "runtime_worker_api_missing"}
-	return _generator._data_core_world_ext.consume_runtime_visual_patch(
-		generation, family, cursor, max_items)
+	return _generator._data_core_world_ext.poll_runtime_commit(after_generation, take_days)
 
 
 func request_runtime_save(request_id: int) -> Dictionary:
@@ -168,7 +162,6 @@ func request_runtime_save(request_id: int) -> Dictionary:
 	# P1：存盘准入要求 ring 排空（`!has_pending_climate_input()`），而预发布会让
 	# ring 长期非空。先让 host 把 K 降到 0、停掉新帧；环里的未来帧由 worker 侧
 	# 在存盘准入处丢弃（PKSR 不保存 pending environment）。
-	_generator._get_runtime_climate_capture()._notify_save_prefetch_suspend()
 	return _generator._data_core_world_ext.request_runtime_save(request_id)
 
 
@@ -185,10 +178,10 @@ func restore_runtime_bundle(bytes: PackedByteArray,
 	return _generator._data_core_world_ext.restore_runtime_bundle(bytes, external_ecp2)
 
 
-func request_runtime_stop() -> Dictionary:
+func request_runtime_stop(preserve_day_boundary: bool = false) -> Dictionary:
 	if _generator._data_core_world_ext == null:
 		return {"ok": true, "state": "STOPPED"}
-	return _generator._data_core_world_ext.request_runtime_stop()
+	return _generator._data_core_world_ext.request_runtime_stop(preserve_day_boundary)
 
 
 # 由 main.gd 每日按录制器状态推送。关闭时经济 slice 走 compact 报告。
@@ -250,30 +243,28 @@ func finalize_save_restore_runtime() -> Dictionary:
 		return {"ok": false, "reason": "country_restore_incomplete"}
 	if not bool(economy_report.get("bootstrapped", false)):
 		return {"ok": false, "reason": "economy_restore_incomplete"}
+	# Geography restored the landform column into MapData after the native map
+	# was bound. The first climate round reads the native slot.
+	_generator._data_core_world_ext.refresh_slots_from_map_keys(PackedStringArray(["cell_landform"]))
 	var trade_topology: Dictionary = _generator._get_map_country_initializer()._capture_economy_trade_topology(_generator._sus_map)
 	if not bool(trade_topology.get("ok", false)):
 		return trade_topology
 	var registered: Dictionary = _generator._get_map_rules_initializer()._register_country_economy_systems(_generator._c())
 	if not bool(registered.get("ok", false)):
 		return registered
-	# PKMI has already restored. Never configure again here: that would erase
-	# the recovered armies, orders and AI state. Refresh settlement terrain
-	# from restored ECP2 through the facade's state-preserving terrain path.
+	# PKMI has already restored. Updating the bound map's terrain in place
+	# keeps the restored armies, orders and AI state.
 	if _generator._military_facade != null and _generator._military_facade.is_configured():
 		var terrain: Dictionary = _generator._military_facade.set_terrain(_generator._sus_map, -1, true,
 			_generator._get_map_country_initializer()._military_settlement_tiers(_generator._sus_map))
-		if not bool(terrain.get("ok", false)) or not bool(terrain.get("state_preserved", false)):
+		if not bool(terrain.get("ok", false)):
 			return {"ok": false, "reason": "military_restore_terrain_failed"}
-		if _generator._military_facade.ai_player_handles().is_empty():
-			_generator._get_map_country_initializer()._arm_military_ai(_generator._get_map_country_initializer()._gameplay_player_country_handles())
 	else:
 		# Keep a fallback for restore paths whose preparation did not produce a
 		# configured facade. A successful configure is safe here because no PKMI
 		# state was installed into the facade in that path.
-		var military_configured: Dictionary = _generator._get_map_country_initializer()._configure_military_runtime(
+		_generator._get_map_country_initializer()._configure_military_runtime(
 			_generator._sus_map, null, _generator._save_restore_seed)
-		if bool(military_configured.get("ok", false)):
-			_generator._get_map_country_initializer()._arm_military_ai(_generator._get_map_country_initializer()._gameplay_player_country_handles())
 	_generator._get_map_country_initializer()._maybe_register_military_system()
 	if not _generator._runtime_build_topology("save restore finalize"):
 		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}
@@ -283,40 +274,6 @@ func finalize_save_restore_runtime() -> Dictionary:
 	print("[save/restore] PKCN and PKEC restored; country/economy systems registered")
 	return {"ok": true}
 
-
-func advance_save_boundary() -> void:
-	# Save requests freeze the clock.  Drain the same ordered native Effect
-	# chain that a normal daily SUS tick would run before continuing Country and
-	# Economy at their own safe boundaries.  This keeps PKEF, PKCN, PKEC and the
-	# gameplay journal from being captured on opposite sides of an ACK.
-	if _generator._world_clock_ref == null or _generator._sus == null:
-		return
-	var day: int = _generator._world_clock_ref.day_index()
-	var ctx := SusTickContext.make(day, day, _generator._world_clock_ref.season_phase(),
-		_generator._world_clock_ref.speed_multiplier, &"save_boundary")
-	_generator._drain_native_effect_ack_chain(ctx)
-	# country 是存档边界里唯一没有"推进者"的域：时钟已 pause，而
-	# _continue_economy_inflight() 的 runtime-graph 分支被
-	# needs_continuation_pulse() 挡住（暂停期间没人举 barrier），于是
-	# country_should_run(day) 只能一直为真，_wait_for_safe_boundary() 空转到
-	# 停顿上限失败（web 90 帧 → "保存不了"）。这里按 country 当前的 owner 补推：
-	#   * runtime graph 拥有 country -> 直接 pulse 一次（与正常帧同一条链路）；
-	#   * GDScript country_daily 拥有 country -> continue_system 切片。
-	# 两者都幂等：country 已经空闲时循环一次都不会进。
-	if _generator._runtime_graph_active and _generator._data_core_world_ext != null :
-		if not _generator.native_daily_round_active() and not _generator.bio_occupancy_round_active():
-			_generator._advance_runtime_graph_pulse(day)
-	elif _generator._country_daily_job != null and _generator._country_facade != null \
-			and _generator._country_facade.should_run(day):
-		var country_slices := 0
-		while country_slices < _generator.SAVE_BOUNDARY_COUNTRY_MAX_SLICES \
-				and _generator._country_facade.should_run(day):
-			_generator._sus.continue_system(&"country_daily", ctx)
-			country_slices += 1
-			# Country 会注册新的 Effect 命令；不接着排 ACK 链的话
-			# country_should_run 会因为"等 ACK"保持为真。
-			_generator._drain_native_effect_ack_chain(ctx)
-	_generator._continue_economy_inflight(day)
 
 func _ensure_continuation_perf_pending() -> void:
 	if not _generator._continuation_perf_pending.is_empty():
@@ -1076,8 +1033,7 @@ func _bind_cell_facade_with_cids(cell: Object, facade_on: bool,
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_generator._sus_map = map
 	_generator._sus_world = world
-	# 生成收尾即刻建立散布同步基线：此后任何 tick 级写入（含 season-0 reconcile、
-	# 海冰、veg_dyn）都会在 finish_daily_tick 被 diff 捕获并补发散布刷新。
+	# 生成收尾建立散布同步基线，供显示侧比较已发布的地块变化。
 	_generator._loading_profile_step("scatter_snapshot")
 	_generator._prime_scatter_sync_snapshot(map)
 	await _generator._yield_generation_frame()
@@ -1135,7 +1091,6 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 				await _generator._yield_generation_frame()
 				print("[DataCore] _data_core_world_ext bound=%s (climate co-processor; class=DCWorldExt)" % str(ext_bound))
 				_generator._dc_terrain_mirror_dirty = true
-				_generator._reset_natural_resource_cadence(map.cell_count(), 0)
 				if not ext_bound:
 					push_warning("[DataCore] DCWorldExt.bind_map_data returned false; climate Pass-A C++ acceleration disabled (will fall back to DataCore/GDScript path)")
 					_generator._data_core_world_ext = null
@@ -1392,12 +1347,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# DCSystemScheduler.configure_job_from_profile() 统一解释。
 	var climate_stride: int = 1
 	var sea_ice_stride: int = 1
-	var weather_stride: int = 1
 	if cp != null:
 		climate_stride = max(1, int(cp.daily_climate_refresh_stride))
 		if cp.get("sea_ice_daily_stride") != null:
 			sea_ice_stride = clampi(int(cp.sea_ice_daily_stride), 1, 8)
-		weather_stride = max(1, int(cp.weather_refresh_stride))
 	# ClimateDailySystem：写连续气候基线（priority 100）
 	var climate_phase_getter := Callable()
 	if _generator._world_clock_ref != null:
@@ -1437,12 +1390,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	var weather_dc_system = _generator.WeatherDCSystemScript.new(
 		_generator, map, world,
 		season_idx_getter, season_phase_getter, climate_anomaly_getter,
-		weather_stride
+		1
 	)
 	_generator._weather_refresh_system = weather_dc_system
 	_generator._weather_refresh_job = weather_dc_system.get_inner()
-	_generator._sus.configure_job_from_profile(weather_dc_system, cp, false, &"weather_refresh", weather_stride)
-	_generator._sus.configure_job_from_profile(_generator._weather_refresh_job, cp, false, &"weather_refresh", weather_stride)
+	_generator._sus.configure_job_from_profile(weather_dc_system, cp, false, &"weather_refresh", 1)
+	_generator._sus.configure_job_from_profile(_generator._weather_refresh_job, cp, false, &"weather_refresh", 1)
 	# Weather=0 fix（2026-05-13，与 weather_refresh_job.gd line 498-507 同源
 	# 历史教训）：原 `_weather_refresh_job.depends_on.append(&"season_refresh")`
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
@@ -1719,10 +1672,6 @@ func set_world_clock_ref(world_clock_node) -> void:
 		_generator._economy_daily_job.world_clock = _generator._world_clock_ref
 	if _generator._bio_occupancy_daily_job != null:
 		_generator._bio_occupancy_daily_job.world_clock = _generator._world_clock_ref
-	if _generator._world_clock_ref.has_signal("simulation_backpressure_pulse"):
-		var continuation_cb := Callable(_generator, "_continue_economy_inflight")
-		if not _generator._world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
-			_generator._world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
 	if _generator._ocean_currents_job != null:
 		_generator._ocean_currents_job.season_phase_getter = Callable(_generator._world_clock_ref, "season_phase")
 	# 任务 8：把 world_clock getter 注入给气候 / 天气 Job。

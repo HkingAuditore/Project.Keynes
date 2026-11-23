@@ -144,17 +144,15 @@ func _run() -> void:
 	var current_generation := int(current_commit.get("generation", generation))
 	var stale: Dictionary = ext.poll_runtime_commit(current_generation)
 	_expect("same generation is not republished", not bool(stale.get("available", false)))
-	var empty_patch: Dictionary = ext.consume_runtime_visual_patch(current_generation, 1, 0, 4)
-	_expect("visual patch cursor handles an empty family", bool(empty_patch.get("available", false)) \
-		and bool(empty_patch.get("done", false)) and int(empty_patch.get("next_cursor", -1)) == 0)
 	ext.set_runtime_clock(false, 50.0)
 	OS.delay_msec(80)
 	var newer: Dictionary = ext.poll_runtime_commit(current_generation)
 	_expect("newer commit advances generation", bool(newer.get("available", false)) \
 		and int(newer.get("generation", 0)) > current_generation)
 	ext.set_runtime_clock(true, 50.0)
-	var expired_patch: Dictionary = ext.consume_runtime_visual_patch(current_generation, 1, 0, 4)
-	_expect("expired visual generation is discarded", str(expired_patch.get("code", "")) == "runtime_generation_expired")
+	_expect("dirty generations belong to a published commit",
+		newer.get("dirty_family_generations", PackedInt64Array()).size() == 9
+		and int(newer.get("committed_day", -1)) > int(current_commit.get("committed_day", -1)))
 	var environment_day := int(ext.get_runtime_thread_report().get(
 		"simulation_committed_day", 0))
 	var captured: Dictionary = ext.capture_runtime_inputs({

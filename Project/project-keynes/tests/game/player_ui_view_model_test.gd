@@ -37,57 +37,6 @@ class CountingGenerator extends RefCounted:
 		return facade
 
 
-class EmploymentParityFacade extends RefCounted:
-	var include_summary_fields := true
-
-	func population_cell_summary(_cell_idx: int) -> Dictionary:
-		return {
-			"ok": true,
-			"population": 44,
-			"cohort_count": 2,
-			"job_capacity": 44,
-			"jobs_filled": 43,
-			"job_openings": 1,
-			"employed_population": 43,
-			"unemployed_population": 1,
-			"settlement_generation": 3,
-			"prosperity_name": "聚落",
-			"settlement_name_active": true,
-			"settlement_name": "罗马",
-		}
-
-	func population_cell_snapshot(_cell_idx: int, _include_details: bool = true) -> Dictionary:
-		var out := {
-			"ok": true,
-			"population": 44,
-			"cohort_count": 2,
-			"job_capacity": 44,
-			"jobs_filled": 43,
-			"job_openings": 1,
-			"settlement_generation": 3,
-			"prosperity_name": "聚落",
-			"settlement_name_active": true,
-			"settlement_name": "罗马",
-			"populations": PackedInt64Array([21, 23]),
-			"profession_ids": PackedInt32Array([0, 0]),
-			"ethnicity_ids": PackedInt32Array([0, 0]),
-			"owner_employed_by_cohort": PackedInt64Array([10, 0]),
-			"employee_employed_by_cohort": PackedInt64Array([11, 22]),
-			"unemployed_by_cohort": PackedInt64Array([0, 1]),
-		}
-		if include_summary_fields:
-			out["employed_population"] = 43
-			out["unemployed_population"] = 1
-		return out
-
-
-class EmploymentParityGenerator extends RefCounted:
-	var facade := EmploymentParityFacade.new()
-
-	func get_economy_facade():
-		return facade
-
-
 class ProfessionUnlockFacade extends RefCounted:
 	func building_cell_snapshot(_cell_idx: int) -> Dictionary:
 		return {
@@ -1196,27 +1145,6 @@ func _initialize() -> void:
 	if String(next_generation.get("signature", "")) == \
 			String(visible_model.get("signature", "")):
 		failures.append("trade order signature ignored vision revision")
-
-	# 切到人口页签时，页头「就业率」KPI 必须与地理/汇总口径一致，不得回落为 0%。
-	var emp_generator := EmploymentParityGenerator.new()
-	var emp_vm := CellInspectorViewModel.new()
-	emp_vm.set_context(map, emp_generator, null, null, 0.42, 22.0)
-	var geo_patch := emp_vm.build_live_patch(cell, "geography", true)
-	var pop_patch := emp_vm.build_live_patch(cell, "population", true, {}, false)
-	var geo_jobs_kpi := _find_by_id(geo_patch.get("kpis", []), "kpi_jobs")
-	var pop_jobs_kpi := _find_by_id(pop_patch.get("kpis", []), "kpi_jobs")
-	var expected_emp_rate := 43.0 / 44.0
-	if not is_equal_approx(float(geo_jobs_kpi.get("value", -1.0)), expected_emp_rate) \
-			or not is_equal_approx(float(pop_jobs_kpi.get("value", -1.0)), expected_emp_rate) \
-			or not String(pop_jobs_kpi.get("caption", "")).contains("失业 1"):
-		failures.append("population tab live patch employment rate drifted from summary KPI")
-	# 防御回退：即使旧快照缺少 employed_population 汇总键，也能从分人群就业数组推导。
-	emp_generator.facade.include_summary_fields = false
-	var pop_fallback_patch := emp_vm.build_live_patch(cell, "population", true, {}, false)
-	var pop_fallback_kpi := _find_by_id(pop_fallback_patch.get("kpis", []), "kpi_jobs")
-	if not is_equal_approx(float(pop_fallback_kpi.get("value", -1.0)), expected_emp_rate) \
-			or not String(pop_fallback_kpi.get("caption", "")).contains("失业 1"):
-		failures.append("population tab employment KPI fallback failed when summary keys are absent")
 
 	if failures.is_empty():
 		print("[player-ui-view-model] PASS")

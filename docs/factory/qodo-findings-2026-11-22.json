@@ -1,0 +1,972 @@
+{
+ "source": "qodo read pr-review-session findings, every PR of hrhgit/Project.Keynes with a finding, read 2026-11-22; class chosen by hand",
+ "findings": [
+  {
+   "pr": 1,
+   "title": "Failed agent runs can publish partial fixes",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "A disputed PR gets Codex rerun every poll",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Unready tickets get re-processed every poll forever",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 1,
+   "title": "Submodule edits can escape the pushed commit",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 1,
+   "title": "A PR can be ready before CI finishes",
+   "level": "action_required",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 1,
+   "title": "Required extra checks can be skipped",
+   "level": "action_required",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 1,
+   "title": "Forbidden files can reach the pushed PR",
+   "level": "action_required",
+   "category": "Security"
+  },
+  {
+   "pr": 1,
+   "title": "One dispute can hide another finding",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 1,
+   "title": "A failed GitHub query looks like CI still running",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Broad error rule would flag ordinary default-value code",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 1,
+   "title": "Shader rule's good example does full work on every pixel",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 1,
+   "title": "Failed rule syncs report success",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Tickets stay stuck in working if finishing fails",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Agent-written code runs on the host outside the sandbox",
+   "level": "remediation_recommended",
+   "category": "Security"
+  },
+  {
+   "pr": 1,
+   "title": "Changed Python settings leave polling broken",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Old imports can validate new source",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Transient base failures stay permanent",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Unknown finding levels appear harmless",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 1,
+   "title": "PR stays labelled working after head moves",
+   "level": "informational",
+   "category": "Reliability"
+  },
+  {
+   "pr": 1,
+   "title": "Broken runner checkout looks like a clean idle poll",
+   "level": "informational",
+   "category": "Observability"
+  },
+  {
+   "pr": 1,
+   "title": "A partial local review counts as a clean pass",
+   "level": "informational",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 1,
+   "title": "Agent guide says syncing updates edited rules",
+   "level": "informational",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 2,
+   "title": "Web inline games can freeze on a retried day",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Runtime guide describes an old handoff",
+   "level": "action_required",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 2,
+   "title": "Narrative save silently stores nothing",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Malformed AI setting reports success",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Story saves load without a version check",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Unknown modifiers apply with default id",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Season history save has no version",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Failed narrative payments report success",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Story effects can fail after completion",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Failed season load keeps session running",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Rejected army moves can be booked as done",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Old narrative saves reset probe cadence",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Loaded games lose pending story follow-ups",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Story choices collect no cohort cash",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Coastal event bonuses never activate",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Price-driven story bonuses cannot apply",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Owned-state saves lack a version bump",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Annual reports no longer hold the year",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Corrupt terrain save loads silently",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Loaded games lose season history",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Seasonal vegetation changes disappear",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Seasonal growth-pressure decay is lost",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Fully equipped units lose combat strength",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Unlock test accepts empty equipment slots",
+   "level": "action_required",
+   "category": "Testability"
+  },
+  {
+   "pr": 2,
+   "title": "Biology without resources stops days",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Generation-gate test can hang instead of failing",
+   "level": "action_required",
+   "category": "Testability"
+  },
+  {
+   "pr": 2,
+   "title": "Keyboard users cannot change modes",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Background military events carry no day stamp",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Regression test expectation was relaxed",
+   "level": "action_required",
+   "category": "Testability"
+  },
+  {
+   "pr": 2,
+   "title": "Fog stops tracking compatibility games",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Tax modes show wrong selection",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Android and Web games hit a missing call",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Web loading freezes the overlay",
+   "level": "action_required",
+   "category": "Performance"
+  },
+  {
+   "pr": 2,
+   "title": "Acknowledged notices show a false outcome",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Player commands stall the UI for a whole day",
+   "level": "remediation_recommended",
+   "category": "Performance"
+  },
+  {
+   "pr": 2,
+   "title": "Rejected commands can report a guessed effective date",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "AI story follow-ups arrive nine months late",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Saving AI settings overwrites the global AI choice",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Non-pausing notifications disappear",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Military holds writable country state",
+   "level": "remediation_recommended",
+   "category": "Architecture"
+  },
+  {
+   "pr": 2,
+   "title": "Countries founded mid-game never get military AI",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "A full command queue halts the simulation mid-choice",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "One regression test overwrites its own log",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Legacy worlds lose yearly moisture drift",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Daily adapter helper receives whole host",
+   "level": "remediation_recommended",
+   "category": "Architecture"
+  },
+  {
+   "pr": 2,
+   "title": "Capacity test loses its ordering check",
+   "level": "remediation_recommended",
+   "category": "Testability"
+  },
+  {
+   "pr": 2,
+   "title": "Pause check relies on a fixed sleep",
+   "level": "remediation_recommended",
+   "category": "Testability"
+  },
+  {
+   "pr": 2,
+   "title": "Failed regime effects are never retried",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Corrupt save silently loses queued building changes",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 2,
+   "title": "Economy can apply army moves Military marks failed",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "Seasonal vegetation changes never reach army movement",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 2,
+   "title": "One failed background season round halts climate",
+   "level": "informational",
+   "category": "Reliability"
+  },
+  {
+   "pr": 3,
+   "title": "Malformed disputes can discard agent edits",
+   "level": "remediation_recommended",
+   "category": "Reliability",
+   "class": "gate-input"
+  },
+  {
+   "pr": 3,
+   "title": "Submodule edits are absent from saved patches",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 3,
+   "title": "Disputes written in prompt style stop the PR",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 5,
+   "title": "Sparse dependencies pass as complete",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 6,
+   "title": "Two new oversized files are admitted to baseline",
+   "level": "action_required",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 6,
+   "title": "Size guard now tolerates growth it used to reject",
+   "level": "action_required",
+   "category": "Testability"
+  },
+  {
+   "pr": 6,
+   "title": "One grown file blocks every baseline tightening",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 6,
+   "title": "Architecture guides still forbid growth",
+   "level": "informational",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 7,
+   "title": "Every world starts without ideology",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 7,
+   "title": "The player world fails to load",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 7,
+   "title": "Failed ideology catalog load silently falls back to a sync load",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 7,
+   "title": "Skipped null layer images can publish a stale table",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 7,
+   "title": "Missing class_by_index payload is padded silently",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 7,
+   "title": "Weather publications re-upload every curtain instance",
+   "level": "remediation_recommended",
+   "category": "Performance"
+  },
+  {
+   "pr": 7,
+   "title": "Fast-forward slows to half speed when the map is still",
+   "level": "remediation_recommended",
+   "category": "Performance"
+  },
+  {
+   "pr": 7,
+   "title": "Missing land cache shader falls back with no error log",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 7,
+   "title": "Simulation can freeze when a climate writeback applies nothing",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 7,
+   "title": "Each weather day still sends full-map curtain buffers",
+   "level": "informational",
+   "category": "Performance"
+  },
+  {
+   "pr": 7,
+   "title": "Graphics settings guide now has two sections with the same heading",
+   "level": "informational",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 8,
+   "title": "Queue failures leave pull requests stuck",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 8,
+   "title": "Failed labels let merge attempts repeat",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 8,
+   "title": "Closed pull requests are marked queued",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 8,
+   "title": "Queued merges get no completion record",
+   "level": "remediation_recommended",
+   "category": "Observability"
+  },
+  {
+   "pr": 8,
+   "title": "Queued pull requests appear merged",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 8,
+   "title": "PRs can merge after owners opt out",
+   "level": "remediation_recommended",
+   "category": "Security",
+   "class": "gate-input"
+  },
+  {
+   "pr": 8,
+   "title": "A re-run CI job never unblocks auto-merge",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 8,
+   "title": "Human C++ PRs merge with stale native libraries",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 8,
+   "title": "A completed merge can be reported as failed",
+   "level": "informational",
+   "category": "Observability"
+  },
+  {
+   "pr": 8,
+   "title": "PR labels stop updating on older GitHub CLI",
+   "level": "informational",
+   "category": "Reliability"
+  },
+  {
+   "pr": 9,
+   "title": "Manually paused PRs can still be updated",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 9,
+   "title": "Failures inherited from master block every update",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 9,
+   "title": "Codex can quietly undo master's changes in a merge",
+   "level": "remediation_recommended",
+   "category": "Security"
+  },
+  {
+   "pr": 17,
+   "title": "The poller can take an unlabeled issue PR",
+   "level": "action_required",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 17,
+   "title": "The poller can fix a stopped issue PR",
+   "level": "action_required",
+   "category": "Reliability",
+   "class": "gate-input"
+  },
+  {
+   "pr": 17,
+   "title": "Unhanded issue PRs delay every poll",
+   "level": "remediation_recommended",
+   "category": "Performance"
+  },
+  {
+   "pr": 17,
+   "title": "Issue PRs can be stranded after lookup",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 17,
+   "title": "A ready PR can remain stuck in polling",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 19,
+   "title": "Vision setup fails with restored libraries",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 19,
+   "title": "Ideology test no longer catches stalled clients",
+   "level": "action_required",
+   "category": "Testability"
+  },
+  {
+   "pr": 19,
+   "title": "AI countries can no longer start colonies",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 19,
+   "title": "Old saves lose explored fog on load",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 19,
+   "title": "Old saves with queued country commands fail to load",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 19,
+   "title": "Oversized scouting orders vanish silently",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 19,
+   "title": "Failed peers can stall days forever",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 19,
+   "title": "Older saves change future climate",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 20,
+   "title": "AI follow-ups vanish at high speed",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 20,
+   "title": "Old builds lose queued AI requests",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 20,
+   "title": "Platform builds run outdated native logic",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 20,
+   "title": "Missing history silently uses the mirror",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 20,
+   "title": "Empty story save loads as success",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 20,
+   "title": "Android x86 release lacks its library",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 20,
+   "title": "Date check now follows the system output",
+   "level": "remediation_recommended",
+   "category": "Testability"
+  },
+  {
+   "pr": 20,
+   "title": "Narrative saves from a newer format load as if they were the current one",
+   "level": "informational",
+   "category": "Reliability"
+  },
+  {
+   "pr": 20,
+   "title": "Colonization panel can stay stuck on \"settling\" after a runtime stop",
+   "level": "informational",
+   "category": "Reliability"
+  },
+  {
+   "pr": 21,
+   "title": "Closing an ideology offer stalls the calendar",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 21,
+   "title": "Annual report failures strand the calendar",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 21,
+   "title": "The completion gate fails on a deleted script",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 21,
+   "title": "Valid construction orders are rejected",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 21,
+   "title": "Accepted dismissals can vanish on stop",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 21,
+   "title": "Empty garrisons silently ignore training",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 31,
+   "title": "A second plan check can disappear",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 31,
+   "title": "A requested runtime check can be skipped",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 32,
+   "title": "Broken journal transport passes the gate",
+   "level": "remediation_recommended",
+   "category": "Correctness",
+   "class": "gate-input"
+  },
+  {
+   "pr": 33,
+   "title": "Seal test misses one-day admission drift",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 33,
+   "title": "Regression check still fails on this PR",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 33,
+   "title": "Boundary claim has no reproduction",
+   "level": "remediation_recommended",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 33,
+   "title": "Test scenario changed without a verified freeze bound",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 33,
+   "title": "Release loop now branches on clock state",
+   "level": "informational",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 34,
+   "title": "AI colonies fail outside the player's view",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 34,
+   "title": "Large worlds can lose AI colony quotes",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 35,
+   "title": "Stopped confirmations lose their error code",
+   "level": "remediation_recommended",
+   "category": "Correctness"
+  },
+  {
+   "pr": 35,
+   "title": "Ideology tests pass on any day advance, not the committed day",
+   "level": "remediation_recommended",
+   "category": "Testability"
+  },
+  {
+   "pr": 35,
+   "title": "Required default checks and macOS rebuild are unverified",
+   "level": "remediation_recommended",
+   "category": "Reliability"
+  },
+  {
+   "pr": 36,
+   "title": "UI open failure is logged as a warning, not an error",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 36,
+   "title": "Players stay blocked after a failed report open",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 37,
+   "title": "A paid construction loses its schedule slot",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 38,
+   "title": "Missing season history goes unlogged",
+   "level": "action_required",
+   "category": "Reliability"
+  },
+  {
+   "pr": 38,
+   "title": "Mirror fallback survives in the inspector null-map branch",
+   "level": "informational",
+   "category": "Correctness"
+  },
+  {
+   "pr": 43,
+   "title": "Military bridge docs misdirect readers",
+   "level": "action_required",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 43,
+   "title": "Moved self-test code escapes the size check",
+   "level": "remediation_recommended",
+   "category": "Maintainability",
+   "class": "gate-input"
+  },
+  {
+   "pr": 43,
+   "title": "Reviewers cannot trace which responsibility moved where",
+   "level": "remediation_recommended",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 43,
+   "title": "The growth-warning path can never run",
+   "level": "informational",
+   "category": "Maintainability"
+  },
+  {
+   "pr": 44,
+   "title": "Android and Web keep the old coast model",
+   "level": "action_required",
+   "category": "Correctness"
+  },
+  {
+   "pr": 44,
+   "title": "Coastal threshold lacks runtime docs",
+   "level": "remediation_recommended",
+   "category": "Maintainability"
+  }
+ ]
+}

@@ -114,8 +114,8 @@
       "domain": "VISUAL",
       "cadence": "per day dirty publication",
       "reads": "dirty families",
-      "store": "RuntimeVisualIntent",
-      "intent_types": "RuntimeVisualIntent",
+      "store": "RuntimeCommitHeader",
+      "intent_types": "none",
       "save_sections": "none",
       "view_version": 0
     },

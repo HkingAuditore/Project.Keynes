@@ -11,8 +11,6 @@ const StateCardScene := preload("res://scenes/ui/object_state_card.tscn")
 const NoteScene := preload("res://scenes/ui/object_note.tscn")
 const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
-## NativeCountryRuntime::TaxKind：income 0 / transaction 1 / business 2 / import 3 / export 4。
-const BUSINESS_TAX_KIND := 2
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 const GoodDossierScene := preload("res://scenes/ui/object_good_dossier.tscn")
 const CohortDossierScene := preload("res://scenes/ui/object_cohort_dossier.tscn")
@@ -384,7 +382,7 @@ func _facts_for_row(kind: String, row: Dictionary) -> Array:
 				{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.DOSSIER_INK},
 				{"label": "产业资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.DOSSIER_INK},
 				{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.DOSSIER_VERDIGRIS},
-				{"label": "创立日", "value": WorldClock.date_text_for_day(int(row.get("founded_day", 0))), "accent": UITokens.DOSSIER_INK_SOFT},
+				{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.DOSSIER_INK_SOFT},
 				{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.DOSSIER_INK_MUTED},
 				{"label": "本地威望", "value": "%s · %s" % [
 					["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
@@ -452,64 +450,6 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 			tax_editing_finished.emit())
 		editor.set_data(lane)
 		_tax_editors[editor.editor_key(int(context.get("cell", -1)))] = editor
-	# 建筑税档额外给一个「整组」入口：把当前税率一次写到全国同一组建筑。
-	# 组可以按生产档位 / 产物 / 大类 / 主粮农场取，四轴共用 tax_group_map。
-	# 与上面的单条编辑作用域不同——单条只改本格，整组改全国一大片。
-	if kind == "building" and editable and host != null \
-			and host.has_method("tax_group_axes") \
-			and host.has_method("tax_group_ids_for") \
-			and host.has_method("request_tax_group_override"):
-		var building_item_id := ""
-		for raw_lane in item_lanes:
-			var probe: Dictionary = raw_lane
-			if String(probe.get("kind", "")) == "building":
-				building_item_id = String(probe.get("item_id", ""))
-				break
-		if not building_item_id.is_empty():
-			var axes: Array = host.tax_group_axes()
-			var group_box := HBoxContainer.new()
-			group_box.add_theme_constant_override("separation", 8)
-			var axis_picker := OptionButton.new()
-			for axis_index in range(axes.size()):
-				axis_picker.add_item(String((axes[axis_index] as Dictionary).get("label", "")))
-			axis_picker.selected = 0
-			group_box.add_child(axis_picker)
-			var group_note := Label.new()
-			group_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-			group_box.add_child(group_note)
-			var group_button := Button.new()
-			group_button.text = "把当前税率应用到整组"
-			group_box.add_child(group_button)
-			var state := {"ids": PackedStringArray()}
-			var refresh := func() -> void:
-				var axis: Dictionary = axes[int(axis_picker.selected)]
-				var info: Dictionary = host.tax_group_ids_for(
-					String(axis.get("mode", "")), building_item_id)
-				var ids: PackedStringArray = info.get("item_ids", PackedStringArray())
-				state["ids"] = ids
-				var label := String(info.get("label", ""))
-				axis_picker.tooltip_text = String(axis.get("hint", ""))
-				if ids.is_empty():
-					group_note.text = "整组：不可用"
-					group_button.disabled = true
-				else:
-					group_note.text = "整组：%s · %d 座" % [label, ids.size()]
-					group_button.disabled = false
-					group_button.tooltip_text = "改的是全国「%s」这一组 %d 座建筑的营业税，不是这一个城市" % [
-						label, ids.size()]
-			axis_picker.item_selected.connect(func(_index: int) -> void: refresh.call())
-			group_button.pressed.connect(func() -> void:
-				var ids: PackedStringArray = state["ids"]
-				if ids.is_empty():
-					return
-				for value in _tax_editors.values():
-					var lane_editor = value
-					if lane_editor != null and lane_editor.has_method("displayed_rate"):
-						host.request_tax_group_override(int(BUSINESS_TAX_KIND),
-							ids, int(lane_editor.displayed_rate()))
-						return)
-			refresh.call()
-			lanes.add_child(group_box)
 	lanes.visible = not item_lanes.is_empty()
 
 
@@ -1037,6 +977,9 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 	var capacity_bars := root.get_node("%CapacityBars") as DossierBarList
 	var job_kicker := root.get_node("%JobKicker") as Label
 	var job_bars := root.get_node("%JobBars") as DossierBarList
+	var job_empty_note := root.get_node("%JobEmptyNote") as Label
+	var production_bars := root.get_node("%ProductionBars") as DossierBarList
+	var production_empty_note := root.get_node("%ProductionEmptyNote") as Label
 	var unused_inputs_note := root.get_node("%UnusedInputsNote") as Label
 	var finance_warning := root.get_node("%FinanceWarning") as Label
 	var finance_diverging_bar := root.get_node("%FinanceDivergingBar") as DossierDivergingBar
@@ -1044,10 +987,12 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 	var cost_stacked_bar := root.get_node("%CostStackedBar") as DossierStackedBar
 	var finance_note := root.get_node("%FinanceNote") as Label
 
-	capacity_bars.label_width = 110.0
+	capacity_bars.label_width = 96.0
 	capacity_bars.value_width = 64.0
-	job_bars.label_width = 158.0
+	job_bars.label_width = 112.0
 	job_bars.value_width = 64.0
+	production_bars.label_width = 124.0
+	production_bars.value_width = 104.0
 
 	_fact_columns = [3]
 	_building_refs = {
@@ -1062,12 +1007,9 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 		"capacity_bars": capacity_bars,
 		"job_kicker": job_kicker,
 		"job_bars": job_bars,
-		"capacity_card": root.get_node("%CapacityCard"),
-		"job_rule": root.get_node("%Rule"),
-		"production_card": root.get_node("%ProductionCard"),
-		"production_rows": root.get_node("%ProductionRows"),
-		"construction_card": root.get_node("%ConstructionCard"),
-		"requirements": root.get_node("%Requirements"),
+		"job_empty_note": job_empty_note,
+		"production_bars": production_bars,
+		"production_empty_note": production_empty_note,
 		"unused_inputs_note": unused_inputs_note,
 		"finance_warning": finance_warning,
 		"finance_diverging_bar": finance_diverging_bar,
@@ -1125,24 +1067,30 @@ func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
 	var jbars_data: Array = dossier.get("job_bars", [])
 	var job_kicker := _building_refs.get("job_kicker") as Label
 	var job_bars := _building_refs.get("job_bars") as DossierBarList
-	var has_jobs := not jbars_data.is_empty()
-	job_kicker.visible = has_jobs
-	job_bars.visible = has_jobs
-	job_bars.set_rows(jbars_data)
-	_building_refs.job_rule.visible = has_jobs and cap_bars.visible
-	_building_refs.capacity_card.visible = has_jobs or cap_bars.visible
+	var job_empty := _building_refs.get("job_empty_note") as Label
+	if job_kicker != null:
+		job_kicker.visible = not jbars_data.is_empty()
+	if job_bars != null:
+		job_bars.visible = not jbars_data.is_empty()
+		job_bars.set_rows(jbars_data)
+	if job_empty != null:
+		job_empty.text = "建造中或无专职岗位配置。"
+		job_empty.visible = jbars_data.is_empty()
 
-	var production: Array = dossier.get("production_bars", [])
+	var pbars_data: Array = dossier.get("production_bars", [])
+	var prod_bars := _building_refs.get("production_bars") as DossierBarList
+	var prod_empty := _building_refs.get("production_empty_note") as Label
 	var unused_note := _building_refs.get("unused_inputs_note") as Label
-	unused_note.text = String(dossier.get("unused_inputs_summary", ""))
-	unused_note.visible = not unused_note.text.is_empty()
-	_building_refs.production_card.visible = not production.is_empty() or unused_note.visible
-	_building_refs.production_rows.set_rows(production)
-	_building_refs.production_rows.visible = not production.is_empty()
-
-	var requirements: Array = dossier.get("construction_requirements", [])
-	_building_refs.construction_card.visible = not requirements.is_empty()
-	_building_refs.requirements.set_rows(requirements)
+	if prod_bars != null:
+		prod_bars.visible = not pbars_data.is_empty()
+		prod_bars.set_rows(pbars_data)
+	if prod_empty != null:
+		prod_empty.text = "当前无日常投入或产出流水。"
+		prod_empty.visible = pbars_data.is_empty()
+	if unused_note != null:
+		var unused_str := String(dossier.get("unused_inputs_summary", ""))
+		unused_note.text = unused_str
+		unused_note.visible = not unused_str.is_empty()
 
 	var fwarn := _building_refs.get("finance_warning") as Label
 	if fwarn != null:

@@ -313,45 +313,11 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
 }
 
 Dictionary NativeEconomyRuntime::run_slice(const Dictionary &ctx) {
-    Dictionary out = run_slice_internal(ctx, false);
-    _probe_trade_plan_ms += std::max(0.0, _trade_plan_ms);
-    note_probe_slice(out);
-    return out;
+    return run_slice_internal(ctx, false);
 }
 
 Dictionary NativeEconomyRuntime::run_slice_compact(const Dictionary &ctx) {
-    Dictionary out = run_slice_internal(ctx, true);
-    _probe_trade_plan_ms += std::max(0.0, _trade_plan_ms);
-    note_probe_slice(out);
-    return out;
-}
-
-// Continuation accounting: one entry per executed slice. Reads only the slice
-// result, so it cannot influence stage order, cursors or budgets.
-void NativeEconomyRuntime::note_probe_slice(const Dictionary &slice_result) {
-    ++_probe_slice_count;
-    double slice_ms = static_cast<double>(slice_result.get("elapsed_ms", 0.0));
-    if (!std::isfinite(slice_ms) || slice_ms < 0.0) slice_ms = 0.0;
-    _probe_slice_ms_total += slice_ms;
-    if (slice_ms > _probe_slice_ms_max) _probe_slice_ms_max = slice_ms;
-    const bool done = static_cast<bool>(slice_result.get("done", false));
-    const String yield_reason = String(slice_result.get("yield_reason", ""));
-    if (!done && yield_reason == "budget") ++_probe_slice_budget_hits;
-}
-
-// Boundary phase split pushed by NativeSimulationHost around one economy day.
-// 0 = attempt/preflight, 1 = formula loop, 2 = boundary publish total,
-// 3 = ledger mirror capture, 4 = mirror import + POD publish.
-void NativeEconomyRuntime::note_boundary_phase_ms(int32_t phase, double ms) {
-    if (!std::isfinite(ms) || ms < 0.0) ms = 0.0;
-    switch (phase) {
-        case 0: _probe_phase_attempt_ms += ms; break;
-        case 1: _probe_phase_formula_ms += ms; break;
-        case 2: _probe_phase_publish_ms += ms; break;
-        case 3: _probe_phase_mirror_capture_ms += ms; break;
-        case 4: _probe_phase_mirror_import_ms += ms; break;
-        default: break;
-    }
+    return run_slice_internal(ctx, true);
 }
 
 bool NativeEconomyRuntime::worker_run_compact_slice(int64_t day_index,

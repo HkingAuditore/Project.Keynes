@@ -158,7 +158,6 @@ var _field_precip_inertia: float = 0.58
 var _field_classify_gate_land: float = 0.040   # W4
 var _field_classify_gate_water: float = 0.032  # W4
 var _field_precip_spatial_smooth: float = 0.30  # W5
-var _weather_classify_anomaly_cap: float = 0.12  # W6（分类器距平钳制，≠ _weather_temp_anomaly_cap）
 # 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
 var _field_precip_base_frac: float = 0.08  # 背景成雨比例；降低固定弱雨，让降水更依赖移动动力触发
 var _field_cloud_reevap: float = 0.28      # 干空气云水再蒸发；保留非降水薄云，避免清云过强
@@ -980,11 +979,8 @@ func _clear_weather_field_slice_state() -> void:
 	# begin_slice → 循环 run_slice → commit。
 
 func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomaly: float, neighbor_indices: PackedInt32Array, fast_indexed: bool) -> void:
-	# 锋面温差阈值（temperature 归一化为 [0,1]，0.28 ≈ 14°C，0.06 ≈ 3°C）。
-	# 修（v4）：v3 的 0.20/0.32 在中纬度风带几乎全境触发 → STORM 横贯地图。
-	# 现在大幅收紧：温差需 14°C 以上、辐合需更强，才进入"真正的锋面带"。
+	# 锋面强度由净流入和归一化温差共同决定。
 	const STORM_TEMP_DIFF: float = 0.28
-	const WEAK_TEMP_DIFF: float = 0.06
 	const CONVERGENCE_THRESHOLD: float = 0.64  # W3: net 口径 p95=0.636（旧 0.45 按 legacy p50=0.376 标定）
 	# B-full Step-2：循环外一次性取 SoA 数组引用（与 view_f32 同引用）。
 	# cell-level 字段全部走 PackedArray index 访问；只有 _avg_ocean_anomaly_at_idx
@@ -994,6 +990,7 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 	var soa_field_init: PackedByteArray = map.weather_field_init_arr
 	var soa_convergence: PackedFloat32Array = map.weather_convergence_arr
 	var soa_cloud: PackedFloat32Array = map.weather_cloud_arr
+	var soa_cloud_water: PackedFloat32Array = map.weather_cloud_water_arr
 	var soa_precip: PackedFloat32Array = map.weather_precip_arr
 	var soa_instability: PackedFloat32Array = map.weather_instability_arr
 	var soa_vapor: PackedFloat32Array = map.weather_vapor_arr
@@ -1048,32 +1045,21 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 		)
 		if frontal_score < 0.45:
 			continue
-		# 修（v5）：boost 进一步弱化——只让锋面带"略多云"，不再硬推 precip / inst 过阈值
-		# 让 STORM 等强对流完全由 _classify 的物理条件决定，不再被锋面后处理强制锁
-		var cloud0: float = soa_cloud[i]
-		var precip0: float = soa_precip[i]
-		var inst0: float = soa_instability[i]
-		var cloud1: float = clampf(maxf(cloud0, 0.25 + frontal_score * 0.20), 0.0, 1.0)
+		var cloud1 := clampf(maxf(soa_cloud[i], 0.25 + frontal_score * 0.20), 0.0, 1.0)
 		var vapor1: float = soa_vapor[i]
-		var frontal_precip_allowed: bool = vapor1 > 0.09
-		var precip1: float = clampf(maxf(precip0, 0.05 + frontal_score * 0.12), 0.0, 1.0) if frontal_precip_allowed else precip0
-		var inst1: float = clampf(maxf(inst0, 0.25 + frontal_score * 0.15), 0.0, 1.0)
-		# AoS 镜像写回（兼容 renderer 在 round 内未 flush 时直读 HexCell 字段）
+		var precip1: float = soa_precip[i]
+		var inst1 := clampf(maxf(soa_instability[i], 0.25 + frontal_score * 0.15), 0.0, 1.0)
+		var new_wt: int = soa_type[i]
+		var boosted_precip := clampf(maxf(precip1, 0.05 + frontal_score * 0.12), 0.0, 1.0)
+		if _feedback.meets_precipitation_gate(self, vapor1, cloud1,
+				soa_cloud_water[i], boosted_precip, _is_water_terrain(int(cell.terrain))):
+			precip1 = boosted_precip
+			if not _is_precip_weather_type(new_wt):
+				new_wt = WeatherType.WT.RAIN
+		# AoS 镜像写回（兼容 renderer 在 round 内未 flush 时直读 HexCell 字段）。
 		cell.weather_cloud = cloud1
-		cell.weather_precip = precip1
 		cell.weather_instability = inst1
-		# 修（v5）：彻底取消温差升级到 STORM/BLIZZARD 的锁定逻辑。
-		# 锋面只做云的"轻推"，不再改 type。强对流完全交给 classify 物理条件判断。
-		# 仅保留：温差极小时把残余 STORM/MONSOON 降级 RAIN（防止旧 STORM 持留）
-		var wt0: int = int(soa_type[i])
-		var new_wt: int = wt0
-		if temp_diff < WEAK_TEMP_DIFF and (wt0 == WeatherType.WT.STORM or wt0 == WeatherType.WT.MONSOON):
-			new_wt = WeatherType.WT.RAIN
 		var ocean_an: float = _avg_ocean_anomaly_at_idx(i, cells, neighbor_indices) if fast_indexed else _avg_ocean_anomaly_at(cell, map)
-		if not _is_precip_weather_type(new_wt) and precip1 >= 0.040:
-			new_wt = WeatherType.WT.RAIN
-		if not _is_precip_weather_type(new_wt):
-			precip1 = 0.0
 		cell.weather_type = new_wt
 		cell.weather_precip = precip1
 		# 重算 intensity（沿用同套公式，确保下游可视化一致）。

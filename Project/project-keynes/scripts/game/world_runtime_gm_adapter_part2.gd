@@ -128,12 +128,8 @@ func _gm_set_click_claim_territory_enabled(host, enabled: bool) -> Dictionary:
 		if host._generator == null or host._world_clock == null or host._current_map == null:
 			return host._gm_error("world_not_ready", "世界尚未生成，无法启用点击接管。")
 		if host._player_country_handle == 0:
-			host._player_country_handle = host._resolve_player_country_handle()
-		if host._player_country_handle == 0:
 			return host._gm_error("player_country_unavailable", "无法解析玩家国家，点击接管未启用。")
 	host._gm_click_claim_territory_enabled = enabled
-	if not enabled:
-		host._gm_click_claim_pending_days.clear()
 	host.gm_toggle_changed.emit("simulation.click_claim_territory", enabled)
 	return {"ok": true, "code": "ok", "enabled": enabled,
 		"message": "点击地块接管领土已%s。" % ("启用" if enabled else "关闭")}
@@ -145,38 +141,36 @@ func _gm_claim_selected_cell(host, cell: HexCell) -> void:
 	if host._current_map == null or cell_idx < 0 or cell_idx >= host._current_map.cell_count():
 		host._gm_emit_claim_result(host._gm_error("invalid_cell", "所选地块无效。"), cell_idx)
 		return
-	if cell_idx < host._current_map.is_water_arr.size() and host._current_map.is_water_arr[cell_idx] != 0:
-		host._gm_emit_claim_result(host._gm_error("water_territory", "水域不能成为国家领土。"), cell_idx)
-		return
-	if host._player_country_handle == 0:
-		host._player_country_handle = host._resolve_player_country_handle()
 	if host._player_country_handle == 0:
 		host._gm_emit_claim_result(host._gm_error("player_country_unavailable", "无法解析玩家国家。"), cell_idx)
 		return
-	var facade = host._generator.get_country_facade() if host._generator != null \
-		and host._generator.has_method("get_country_facade") else null
-	if facade == null:
-		host._gm_emit_claim_result(host._gm_error("country_facade_unavailable", "国家运行时尚未就绪。"), cell_idx)
-		return
-	var current_handle = int(facade.cell_summary(cell_idx).get("country_handle", 0))
-	if current_handle == host._player_country_handle:
-		host._gm_emit_claim_result({"ok": true, "code": "already_owned", "queued": false,
-			"effective_day": -1, "message": "地块 #%d 已属于玩家国家。" % cell_idx,
-			"data": {}}, cell_idx)
-		return
-	var current_day = host._world_clock.day_index() if host._world_clock != null else -1
-	var pending_day = int(host._gm_click_claim_pending_days.get(cell_idx, -1))
-	if pending_day >= current_day:
-		host._gm_emit_claim_result({"ok": true, "code": "already_queued", "queued": true,
-			"effective_day": pending_day, "message": "地块 #%d 已排队等待接管。" % cell_idx,
-			"data": {}}, cell_idx)
-		return
 	var result = host.execute_gm_command("country.transfer_territory", {
 		"cell": cell_idx, "country_handle": host._player_country_handle})
-	if bool(result.get("ok", false)) and bool(result.get("queued", false)):
-		host._gm_click_claim_pending_days[cell_idx] = int(result.get("effective_day", current_day + 1))
+	var ids: PackedInt64Array = result.get("data", {}).get("request_ids", PackedInt64Array())
+	if bool(result.get("ok", false)) and not ids.is_empty():
+		host._gm_territory_requests[ids[0]] = cell_idx
 	host._gm_emit_claim_result(result, cell_idx)
 
+
+
+func consume_territory_receipts(host) -> void:
+	if host._gm_territory_requests.is_empty():
+		return
+	var country = host._generator.get_country_facade()
+	if country == null:
+		return
+	var batch: Dictionary = country.poll_worker_command_receipts(host._gm_territory_publication)
+	host._gm_territory_publication = int(batch.get("last_publication_sequence", host._gm_territory_publication))
+	for row: Dictionary in batch.get("receipts", []):
+		var request := int(row.request_id)
+		if not host._gm_territory_requests.has(request):
+			continue
+		var cell := int(host._gm_territory_requests[request])
+		host._gm_territory_requests.erase(request)
+		var succeeded := String(row.status) == "Committed"
+		var result: Dictionary = host._gm_ok("领土已接管。", false, int(row.effective_day)) if succeeded \
+			else host._gm_error(String(row.reason), "接管被拒绝：%s" % String(row.reason), row)
+		_gm_emit_claim_result(host, result, cell)
 
 
 func _gm_emit_claim_result(host, raw_result: Dictionary, cell_idx: int) -> void:
@@ -286,20 +280,6 @@ func _print_enum_lut_view_state(host) -> void:
 # 每一项都正常，要判死必须看 dv16 的 textureSize。
 
 
-## Size text for either a Texture2D or a Texture2DArray (tiled visual layers).
-## Texture2DArray has no get_size(), so the diagnostic must not call it blindly.
-static func _texture_size_text(texture) -> String:
-	if texture == null:
-		return "-"
-	if texture is Texture2DArray:
-		var layered := texture as Texture2DArray
-		return "%dx%d x%d" % [layered.get_width(), layered.get_height(),
-			layered.get_layers()]
-	if texture is Texture2D:
-		return str((texture as Texture2D).get_size())
-	return "<%s>" % texture.get_class()
-
-
 func _print_river_flow_state(host) -> void:
 	if host._renderer == null:
 		return
@@ -310,26 +290,22 @@ func _print_river_flow_state(host) -> void:
 	if tiles != null and bool(tiles.ready) and tiles.layout != null \
 			and String(tiles.layout.mode) == "tiled":
 		tiled = true
-	# Tiled visual layers publish a Texture2DArray (visual_height_tiles), the
-	# non-tiled path a Texture2D. Keep these untyped and describe sizes through a
-	# helper, otherwise the diagnostic itself throws a cast error in tiled mode.
-	var world_tex = null
-	var world_tex_desc := "-"
+	var world_tex: Texture2D = null
 	if world != null:
 		world_tex = tiles.height if tiled else world.height_tex
-		world_tex_desc = _texture_size_text(world_tex)
 		print("[river-flow-view] world 侧: packed_in_height=true tiled=%s tex=%s size=%s derived_size=%s" % [
-			str(tiled), str(world_tex != null), world_tex_desc,
+			str(tiled), str(world_tex != null),
+			str(world_tex.get_size()) if world_tex != null else "-",
 			str(world.derived_size)])
 	if host._renderer._shader_mat != null:
 		var bound_name = "visual_height_tiles" if tiled else "height_tex"
-		var bound = host._renderer._shader_mat.get_shader_parameter(bound_name)
+		var bound: Texture2D = host._renderer._shader_mat.get_shader_parameter(bound_name)
 		var bound_fmt: int = bound.get_format() if bound != null and bound.has_method("get_format") else -1
 		var want_fmt: int = Image.FORMAT_RGBA8
 		print("[river-flow-view] 材质 uniform: %s=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
-			bound_name, str(bound != null), _texture_size_text(bound),
+			bound_name, str(bound != null), str(bound.get_size()) if bound != null else "-",
 			bound_fmt, want_fmt,
-			str(bound != null and world_tex != null and bound == world_tex),
+			str(bound != null and bound == world_tex),
 			str(host._renderer._shader_mat.get_shader_parameter("has_flow_tex"))])
 		if bound == null:
 			push_warning("[river-flow-view] %s 未绑定；GLES3 兜底白纹理会让整片陆地被判成河" % bound_name)

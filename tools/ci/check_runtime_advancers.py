@@ -26,7 +26,8 @@ def inventory(source: str) -> tuple[set[str], set[str]]:
     declared = re.findall(r"^\s*(?:@\w+(?:\([^\n]*?\))?\s+)*(?:static\s+)?var\s+(_runtime_\w+)\b", code, re.M)
     # *_days totals are counters, not date cursors (e.g. inline_pending_days).
     fields = {name for name in declared if "cursor" in name or "catchup" in name
-              or (name.endswith(("_day", "_day_index")) and any(word in name for word in ("last", "pending", "target", "commit")))}
+              or (name.endswith(("_day", "_day_index")) and any(
+                  word in name for word in ("last", "pending", "target", "commit", "completed")))}
     methods = set(re.findall(r"^func\s+((?:_queue|_drain)_runtime_\w*_commits?)\s*\(", code, re.M))
     return fields, methods
 

@@ -691,15 +691,13 @@ func _build_world(name: String) -> Dictionary:
 	host.initial_seed = SEED
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = true
-	host.runtime_shadow_on_generate = true
+	host.start_executor_on_generate = true
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = MASK_WORKER
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var config := NewGameConfig.create_default()
 	config.country.name = "W %s" % name
 	config.country.foreign_count = 1
@@ -740,7 +738,7 @@ func _drive_day(w: Dictionary) -> void:
 	_service_peers(ext)
 	if ext.has_method("publish_ideology_worker_inputs"):
 		ext.publish_ideology_worker_inputs()
-	host.run_daily_tick(day, clock.season_phase_for_day(day))
+	host._admit_runtime_calendar(day + 1)
 	host.finish_daily_tick(0.0, {})
 	for _slice in range(MAX_SLICES_PER_DAY):
 		var ideology: Dictionary = ext.run_ideology_daily(day)

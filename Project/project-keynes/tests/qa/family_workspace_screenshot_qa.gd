@@ -103,7 +103,7 @@ func _model() -> Dictionary:
 			{"label": "本家族人口", "value": "5.15万", "caption": "分支 2 处 · 名人 3 人", "icon": "family.metric.population"},
 			{"label": "净资产", "value": "51.5万", "caption": "现金 32.0万 · 产业 19.5万", "icon": "family.metric.wealth"},
 			{"label": "产业数", "value": "24", "caption": "名下控股建筑规模", "icon": "family.metric.buildings"},
-			{"label": "创立时间", "value": "1年1月1日", "caption": "威望 IV · 得分 89.0%", "icon": "family.metric.time"},
+			{"label": "创立时间", "value": "第0日", "caption": "威望 IV · 得分 89.0%", "icon": "family.metric.time"},
 		],
 		"pages": {
 			"overview": {

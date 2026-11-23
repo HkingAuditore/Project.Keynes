@@ -22,7 +22,7 @@ func _run() -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	root.get_node("GameFlow").set_session({"new_game_config": config.to_dictionary()})
 	_expect("inline formal session configures", host.configure_session({"kind": "new_game", "config": config.to_dictionary()}).get("ok", false))
 	var saves := root.get_node("GameSave")
@@ -37,46 +37,15 @@ func _run() -> void:
 	_expect("inline executor is selected", ext.get_runtime_thread_report().get("native_daily_inline", false))
 	_expect("inline cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(ext))
 	clock.pause(false)
-	for day in range(1, 4):
+	for day in range(1, 5):
 		await _inline_day(host, clock, day)
-	var country = host.generator().get_country_facade()
-	var handle := host._resolve_player_country_handle()
-	var breakaway_cell := -1
+	var handle := 0
 	for cell in host.current_map().cell_count():
-		if host.current_map().is_water_arr[cell] == 0 \
-				and ext.get_country_cell_summary(cell).get("country_handle", 0) == 0:
-			breakaway_cell = cell
+		handle = int(ext.get_country_cell_summary(cell).get("country_handle", 0))
+		if handle != 0:
 			break
-	_expect("independence fixture has a parent country and a second land cell",
-		handle != 0 and breakaway_cell >= 0)
-	_expect("parent country claims the future breakaway cell",
-		country.transfer_territory(breakaway_cell, handle, 4, 90).get("ok", false))
-	await _inline_day(host, clock, 4)
-	_expect("breakaway cell belonged to the parent country",
-		ext.get_country_cell_summary(breakaway_cell).get("country_handle", 0) == handle)
-	_expect("city independence is accepted", country.create_country(
-		&"test.breakaway", "Breakaway City", breakaway_cell, 5, 99).get("ok", false))
 	_expect("formal rename is accepted", ext.submit_country_commands(_rename_batch(handle)).get("ok", false))
 	await _inline_day(host, clock, 5)
-	var economy: Dictionary = ext.get_economy_report()
-	_expect("economy settles the independence day", not economy.get("fatal", true)
-		and economy.get("last_completed_sample_day", -1) == 5)
-	var breakaway_handle := int(ext.get_country_cell_summary(breakaway_cell).get("country_handle", 0))
-	_expect("independence transfers the city to a new country",
-		breakaway_handle != 0 and breakaway_handle != handle)
-	_expect("ideology settles against the previous opinion on independence day",
-		ext.get_runtime_thread_report().get("ideology_pod_committed_day", -1) == 5)
-	var new_ideology: Dictionary = ext.get_ideology_snapshot(breakaway_handle)
-	_expect("new country starts without a fabricated opinion baseline",
-		new_ideology.get("ok", false) and not new_ideology.get("point_baseline_ready", true))
-	if _failures > 0:
-		await host.close_world()
-		saves.bind_runtime(null, null, null)
-		saves._repository = previous_repository
-		host.free()
-		clock.free()
-		quit(1)
-		return
 	var running_save: Dictionary = await saves.request_manual_save("manual_1")
 	_expect("formal save succeeds from a running inline session", running_save.get("ok", false))
 	_expect("save restores the running clock", not clock.paused)
@@ -89,9 +58,14 @@ func _run() -> void:
 	var pending := report.duplicate(true)
 	pending["inline_day_pending"] = true
 	_expect("a partial inline day still blocks formal capture", saves._worker_idle_blocker(pending) == "inline_day_pending")
+	clock.set_speed(10.0)
+	_expect("inline day 6 can be admitted while the clock runs", host._admit_runtime_calendar(7) == 6)
+	clock.set_speed(0.0)
+	host._process(0.0)
+	_expect("zero clock speed leaves the admitted inline day unstarted", ext.runtime_committed_day() == 5)
+	clock.set_speed(1.0)
+	clock.pause(true)
 	await _inline_day(host, clock, 6)
-	_expect("the first measured opinion establishes the new country's baseline",
-		ext.get_ideology_snapshot(breakaway_handle).get("point_baseline_ready", false))
 	var expected_hash := str(ext.get_economy_state_hash())
 	_expect("source session closes", (await host.close_world()).get("ok", false))
 	saves.bind_runtime(null, null, null)
@@ -100,21 +74,19 @@ func _run() -> void:
 	restored.runtime_economy_auto_pod_active = true
 	root.add_child(restored)
 	restored.configure(null, null, clock)
-	restored.set_climate_authority_override("force_on")
+
 	_expect("inline saved session prepares", restored.configure_session({"kind": "load_game", "slot_id": "manual_2"}).get("ok", false))
 	saves.bind_runtime(restored, clock, null)
 	await restored.generate_world()
 	restored.set_process(false)
 	var restored_ext: Object = restored.generator().get_data_core_world_ext()
 	_expect("inline load installs the saved day", restored_ext.get_runtime_thread_report().get("simulation_committed_day", -1) == 5)
-	_expect("inline load retains the independent country",
-		restored_ext.get_country_cell_summary(breakaway_cell).get("country_handle", 0) == breakaway_handle)
 	_expect("restored cadence is fixed", preload("res://tests/runtime/replay_cadence.gd").install(restored_ext))
 	var country_hash: int = restored_ext.get_country_worker_read_view(0).get("state_hash", 0)
 	var receipts: Array = restored_ext.poll_country_command_receipts(0, 100).get("receipts", [])
 	_expect("the saved rename has a durable result", not receipts.is_empty())
 	for repeat in 2:
-		_expect("formal same-policy restart succeeds", restored.set_climate_authority_override("force_on").get("ok", false))
+		_expect("formal same-policy restart succeeds", restored.restart_runtime_executor().get("ok", false))
 		_expect("formal restart retains the committed name", restored_ext.get_country_snapshot(handle).get("country_name", "") == "Restart Country")
 		_expect("formal restart retains Country business state", restored_ext.get_country_worker_read_view(0).get("state_hash", 0) == country_hash)
 		_expect("formal restart retains unclaimed results", restored_ext.poll_country_command_receipts(0, 100).get("receipts", []) == receipts)
@@ -147,17 +119,11 @@ func _run() -> void:
 
 func _inline_day(host: WorldRuntimeHost, clock: WorldClock, day: int) -> void:
 	clock.current_day = float(day + 1)
-	host._on_clock_day_changed(day + 1)
+	host._admit_runtime_calendar(day + 1)
 	host._process(0.0)
 	await process_frame
 	var ext: Object = host.generator().get_data_core_world_ext()
-	var report: Dictionary = ext.get_runtime_thread_report()
-	var committed := bool(host._runtime_native_daily_inline_last.get("ok", false)) \
-		and int(report.get("simulation_committed_day", -1)) == day
-	if not committed:
-		print("inline day %d fault=%s ideology=%s" % [day,
-			report.get("fault_code", ""), report.get("ideology_pod_fallback_reason", "")])
-	_expect("inline day %d commits" % day, committed)
+	_expect("inline day %d commits" % day, host._runtime_native_daily_inline_last.get("ok", false) and ext.get_runtime_thread_report().get("simulation_committed_day", -1) == day)
 	_expect("inline grant suppresses the old Country writer", not ext.country_should_run(day + 1))
 
 func _rename_batch(handle: int) -> Dictionary:

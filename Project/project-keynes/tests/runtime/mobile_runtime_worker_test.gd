@@ -46,7 +46,7 @@ func _run_day(host: WorldRuntimeHost, economy, clock: WorldClock, day: int) -> D
 	# No player controller or UI refresh is needed to resume the worker.
 	clock.current_day = float(day + 1)
 	var started := Time.get_ticks_usec()
-	host._on_clock_day_changed(day + 1)
+	host._admit_runtime_calendar(day + 1)
 	_day_calls_ms.append(float(Time.get_ticks_usec() - started) / 1000.0)
 	for slice in range(MAX_SLICES_PER_DAY):
 		started = Time.get_ticks_usec()

@@ -34,6 +34,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::get_runtime_thread_report);
     ClassDB::bind_method(D_METHOD("get_runtime_control_state"),
                          &DCWorldExt::get_runtime_control_state);
+    ClassDB::bind_method(D_METHOD("submit_player_confirmation", "action", "value", "effective_day"),
+                         &DCWorldExt::submit_player_confirmation);
     ClassDB::bind_method(D_METHOD("record_runtime_visual_timings",
                                   "ui_input_to_feedback_ms", "visual_apply_ms",
                                   "gpu_upload_ms"),
@@ -42,8 +44,6 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::get_runtime_perf_snapshot, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_runtime_graph_last_economy_report"),
                          &DCWorldExt::get_runtime_graph_last_economy_report);
-    ClassDB::bind_method(D_METHOD("get_runtime_economy_probe_report"),
-                         &DCWorldExt::get_runtime_economy_probe_report);
     ClassDB::bind_method(D_METHOD("start_runtime_worker", "config"),
                          &DCWorldExt::start_runtime_worker);
     ClassDB::bind_method(D_METHOD("set_runtime_clock", "paused", "speed_days_per_second"),
@@ -52,6 +52,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::set_runtime_qos_threaded);
      ClassDB::bind_method(D_METHOD("capture_runtime_inputs", "inputs"),
                           &DCWorldExt::capture_runtime_inputs);
+     ClassDB::bind_method(D_METHOD("request_runtime_calendar_day", "date"),
+                          &DCWorldExt::request_runtime_calendar_day);
      ClassDB::bind_method(D_METHOD("compute_runtime_climate_parity_hash", "fields"),
                           &DCWorldExt::compute_runtime_climate_parity_hash);
      ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference_state", "day", "fields"),
@@ -68,12 +70,9 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::submit_runtime_command);
     ClassDB::bind_method(D_METHOD("poll_runtime_receipts", "max_items"),
                          &DCWorldExt::poll_runtime_receipts, DEFVAL(128));
-    ClassDB::bind_method(D_METHOD("poll_runtime_commit", "after_generation"),
-                         &DCWorldExt::poll_runtime_commit, DEFVAL(0));
-    ClassDB::bind_method(D_METHOD("mark_runtime_day_tail_done", "day"),
-                         &DCWorldExt::mark_runtime_day_tail_done);
-    ClassDB::bind_method(D_METHOD("consume_runtime_visual_patch", "generation", "family", "cursor", "max_items"),
-                         &DCWorldExt::consume_runtime_visual_patch, DEFVAL(0), DEFVAL(0), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("finish_runtime_display_frame"), &DCWorldExt::finish_runtime_display_frame);
+    ClassDB::bind_method(D_METHOD("poll_runtime_commit", "after_generation", "take_days"),
+                         &DCWorldExt::poll_runtime_commit, DEFVAL(0), DEFVAL(false));
     ClassDB::bind_method(D_METHOD("profile_runtime_save_window", "active"), &DCWorldExt::profile_runtime_save_window);
     ClassDB::bind_method(D_METHOD("request_runtime_save", "request_id"),
                          &DCWorldExt::request_runtime_save);
@@ -81,8 +80,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::poll_runtime_save);
     ClassDB::bind_method(D_METHOD("restore_runtime_bundle", "bytes", "external_ecp2"),
                          &DCWorldExt::restore_runtime_bundle, DEFVAL(PackedByteArray()));
-    ClassDB::bind_method(D_METHOD("request_runtime_stop"),
-                         &DCWorldExt::request_runtime_stop);
+    ClassDB::bind_method(D_METHOD("request_runtime_stop", "preserve_day_boundary"),
+                         &DCWorldExt::request_runtime_stop, DEFVAL(false));
     ClassDB::bind_method(D_METHOD("climate_worker_authoritative"),
                          &DCWorldExt::climate_worker_authoritative);
     ClassDB::bind_method(D_METHOD("climate_main_thread_suppressed"),

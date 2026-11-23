@@ -12,6 +12,8 @@
 # the military bindings are missing.
 extends SceneTree
 
+const RuntimeScenario = preload("res://tests/runtime/background_daily_military_scenario.gd")
+
 const SEED := 20260727
 const MAP_W := 60
 const MAP_H := 40
@@ -21,8 +23,6 @@ const WARMUP_DAYS := 6
 const TOTAL_DAYS := 120
 const TARGET_HEADCOUNT := 12
 const BARRACKS_TO_BUILD := 3
-const PIPELINE_DEPTH := 3
-const MAX_BARRIER_PULSES_PER_DAY := 4096
 
 ## Report keys that are counters and must never be negative.
 const COUNTER_KEYS := ["armies_active", "armies_moving", "engagements_active",
@@ -87,6 +87,7 @@ func _run() -> int:
 	_clock.initial_speed = 50.0
 	_clock.debug_step_log = false
 	get_root().add_child(_clock)
+	_clock.set_process(false)
 	_clock.set_speed(50.0)
 	_clock.pause(true)
 	_host = WorldRuntimeHost.new()
@@ -112,7 +113,7 @@ func _run() -> int:
 		return _finish()
 	var runtime_ext = generator.get_data_core_world_ext() \
 		if generator.has_method("get_data_core_world_ext") else null
-	if _host.runtime_climate_authority_enabled and runtime_ext != null \
+	if _host._native_environment_active and runtime_ext != null \
 			and runtime_ext.has_method("set_runtime_clock"):
 		runtime_ext.set_runtime_clock(false, 50.0)
 
@@ -135,11 +136,10 @@ func _run() -> int:
 	print("[military-smoke] graph_active=%s capital=%d player=%d" % [
 		str(generator.runtime_graph_active()), capital, player])
 
-	# Native gap: MilitaryCore opens a country slot only inside
-	# capture_military_digest (first run_military_daily), so commands submitted
-	# before the first military day are rejected with command_unknown_country.
-	# Probe that once, then warm up until the slot exists.
-	var early: Dictionary = facade.set_target(player, 0, TARGET_HEADCOUNT)
+	var early: Dictionary = facade.submit([{"op": "force.set_target", "country": player,
+		"value": TARGET_HEADCOUNT, "effective_day": 2}])
+	_expect("opening military order is sealed for day two",
+		bool(early.get("ok", false)) and int(early.get("effective_day", -1)) == 2, str(early))
 	print("[military-smoke] pre-first-step set_target=%s" % JSON.stringify(early))
 	await _advance_to(WARMUP_DAYS)
 	_print_progress("warmup")
@@ -164,12 +164,22 @@ func _run() -> int:
 	_expect("force.set_target accepted", bool(target.get("ok", false)), str(target))
 	if barracks >= 0 and econ_for_build != null:
 		var rows: Array = facade.catalog().get("state_buildings", [])
+		var materials: PackedInt32Array = rows[barracks].get("material_goods", PackedInt32Array())
+		_expect("barracks materials are supplied through the economy inbox",
+			_seed_construction_stock(econ_for_build, capital, materials, _day * 1000 + 100))
 		var tech := String((rows[barracks] as Dictionary).get("unlock_tech_id", ""))
 		if not tech.is_empty():
+			var grant_day := _day + 2
 			var granted: Dictionary = country.grant_technology(player, StringName(tech),
-				_day + 1, _day * 1000 + 1)
+				grant_day, _day * 1000 + 1, true)
+			_expect("barracks technology is sealed for day %d" % grant_day,
+				bool(granted.get("ok", false)) and int(granted.get("effective_day", -1)) == grant_day)
 			print("[military-smoke] gate tech %s -> %s" % [tech,
 				JSON.stringify(_compact(granted))])
+			await _advance_to(grant_day)
+			var tech_ids: PackedStringArray = country.native_catalog().get("technology_ids", PackedStringArray())
+			_expect("barracks technology completes on its sealed day",
+				country.has_completed_technology(player, tech_ids.find(tech)))
 		var econ_id := int(facade.state_building_economy_id(barracks))
 		var type_ids: PackedStringArray = econ_for_build.building_type_ids()
 		for _i in range(BARRACKS_TO_BUILD):
@@ -180,9 +190,11 @@ func _run() -> int:
 			var sponsored: Dictionary = econ_for_build.treasury_sponsored_build(
 				player, capital, StringName(type_ids[econ_id]), _day + 1,
 				_day * 1000 + 10 + _i)
-			var booked: Dictionary = facade.build_state_building(player, capital, barracks)
+			var booked: Dictionary = facade.submit([{"op": "state.build", "country": player,
+				"cell": capital, "unit_to": barracks, "effective_day": _day + 2}])
 			_expect("state.build accepted at capital",
-				bool(sponsored.get("ok", false)) and bool(booked.get("ok", false)),
+				bool(sponsored.get("ok", false)) and int(sponsored.get("effective_day", -1)) == _day + 1
+				and bool(booked.get("ok", false)) and int(booked.get("effective_day", -1)) == _day + 2,
 				"%s / %s" % [JSON.stringify(_compact(sponsored)),
 					JSON.stringify(_compact(booked))])
 
@@ -254,17 +266,19 @@ func _run() -> int:
 		soldier_cohort = settled
 	print("[military-smoke] embark baseline day=%d capital_soldier=%d" % [_day,
 		soldier_cohort])
-	var frozen: Dictionary = facade.set_target(player, 0,
-		int(soldier_cohort))
+	var frozen: Dictionary = facade.submit([{"op": "force.set_target", "country": player,
+		"value": soldier_cohort, "effective_day": _day + 2}])
 	_expect("force.set_target freezes the roster before the embark",
 		bool(frozen.get("ok", false)), str(frozen))
-	var created: Dictionary = facade.create_army(player, capital, {})
+	var created: Dictionary = facade.submit([{"op": "army.create", "country": player,
+		"cell": capital, "units": {}, "effective_day": _day + 2}])
 	_expect("army.create accepted", bool(created.get("ok", false)), str(created))
 	var foreign := _foreign_target(map, country, player)
 	print("[military-smoke] foreign target=%s" % JSON.stringify(foreign))
 	_expect("a foreign country exists", int(foreign.get("handle", 0)) != 0)
 	if int(foreign.get("handle", 0)) != 0:
-		var war: Dictionary = facade.declare_war(player, int(foreign.handle))
+		var war: Dictionary = facade.submit([{"op": "war.declare", "country": player,
+			"other": int(foreign.handle), "effective_day": _day + 2}])
 		_expect("war.declare accepted", bool(war.get("ok", false)), str(war))
 	# The formation materialises on the next military day, and its Economy lane row
 	# is created by the epoch that applies the embark command, so wait for both
@@ -407,7 +421,8 @@ func _run() -> int:
 		personnel_before = int(before_move.get("personnel", -1))
 		var ration_before := int(before_move.get("ration_stock", 0))
 		var cell_before := int(before_move.get("cell", -1))
-		var moved: Dictionary = facade.move_army(handle, march_cell)
+		var moved: Dictionary = facade.submit([{"op": "army.move", "army": handle,
+			"cell": march_cell, "effective_day": _day + 2}])
 		_expect("army.move accepted", bool(moved.get("ok", false)), str(moved))
 		await _advance_to(_day + 6)
 		var after_move: Dictionary = facade.army(handle)
@@ -462,10 +477,14 @@ func _run() -> int:
 					unit_heads - 1)
 				break
 			if split_unit >= 0 and split_heads > 0:
-				var split_result: Dictionary = facade.submit([{"op": "army.split",
-					"country": player, "army": handle,
-					"units": {split_unit: split_heads}}])
-				_expect("army.split accepted", bool(split_result.get("ok", false)),
+				var split_result: Dictionary = facade.submit([
+					{"op": "army.stop", "army": handle, "effective_day": _day + 2},
+					{"op": "army.split", "country": player, "army": handle,
+						"units": {split_unit: split_heads}, "effective_day": _day + 2},
+				])
+				_expect("army.stop and army.split accepted on the sealed day",
+					bool(split_result.get("ok", false)) and int(split_result.get("accepted", 0)) == 2
+						and int(split_result.get("effective_day", -1)) == _day + 2,
 					str(split_result))
 				# The formation and its lane row appear on their own days, so wait
 				# for both instead of assuming a fixed delay (same contract as the
@@ -502,10 +521,20 @@ func _run() -> int:
 				var detached_cell := int(split_child.get("cell", -1))
 				var detach_target := _march_target(map, facade, detached, detached_cell, 4)
 				if detach_target >= 0:
-					var detach_move: Dictionary = facade.move_army(detached, detach_target)
-					_expect("detached army.move accepted",
-						bool(detach_move.get("ok", false)), str(detach_move))
-					await _advance_to(_day + 4)
+					var detach_order_day := _day + 2
+					var detach_move: Dictionary = facade.submit([{"op": "army.move", "army": detached,
+						"cell": detach_target, "effective_day": detach_order_day}])
+					_expect("detached army.move accepted on the sealed day",
+						bool(detach_move.get("ok", false))
+							and int(detach_move.get("effective_day", -1)) == detach_order_day,
+						str(detach_move))
+					await _advance_to(detach_order_day)
+					_expect("detached movement order took effect on the sealed day",
+						int(facade.army(detached).get("target_cell", -1)) == detach_target)
+					# On this route the detached formation needs four daily
+					# movement budgets to reach the next cell.
+					var detach_arrival_day := detach_order_day + 3
+					await _advance_to(detach_arrival_day)
 					var after_detach: Dictionary = facade.army(detached)
 					var parent_hold: Dictionary = facade.army(handle)
 					var moved_people := int(after_detach.get("personnel", -1))
@@ -515,14 +544,16 @@ func _run() -> int:
 						detach_target, child_people, moved_people,
 						int(parent_hold.get("cell", -1)), held_people])
 					_expect("detached formation marches independently",
-						int(after_detach.get("cell", -1)) != detached_cell,
+						int(after_detach.get("cell", -1)) == detach_target
+							and int(after_detach.get("moved_day", -1)) == detach_arrival_day,
 						"%d -> %s (target %d)" % [detached_cell,
 							str(after_detach.get("cell", -1)), detach_target])
 					_expect("detached personnel travels with the formation",
 						moved_people > 0 and moved_people == child_people,
 						"%d -> %d" % [child_people, moved_people])
 					_expect("parent formation keeps its own people during child march",
-						held_people == parent_people,
+						held_people == parent_people
+							and int(parent_hold.get("cell", -1)) == detached_cell,
 						"cell %s personnel %d -> %d" % [
 							str(parent_hold.get("cell", -1)), parent_people, held_people])
 					_expect("split total stays conserved after the march",
@@ -536,16 +567,29 @@ func _run() -> int:
 				var parent_cell_now := int(facade.army(handle).get("cell", -1))
 				var det_cell_now := int(facade.army(detached).get("cell", -1))
 				if det_cell_now != parent_cell_now:
-					facade.submit([{"op": "army.move", "army": detached,
-						"cell": parent_cell_now}])
-					await _advance_to(_day + 6)
+					var rally_order_day := _day + 2
+					var rally: Dictionary = facade.submit([{"op": "army.move", "army": detached,
+						"cell": parent_cell_now, "effective_day": rally_order_day}])
+					_expect("rally accepted on the sealed day",
+						bool(rally.get("ok", false))
+							and int(rally.get("effective_day", -1)) == rally_order_day,
+						str(rally))
+					# The return edge takes three movement budgets.
+					var rally_arrival_day := rally_order_day + 2
+					await _advance_to(rally_arrival_day)
+					var returned: Dictionary = facade.army(detached)
+					_expect("formations meet at the rally cell on the arrival day",
+						int(returned.get("cell", -1)) == parent_cell_now
+							and int(facade.army(handle).get("cell", -1)) == parent_cell_now
+							and int(returned.get("moved_day", -1)) == rally_arrival_day)
 				var total_before := _army_personnel(facade, handle) \
 					+ _army_personnel(facade, detached)
 				var partial: Dictionary = facade.submit([{"op": "army.transfer",
 					"country": player, "army": handle, "other": detached,
-					"units": {-1: 1}}])
+					"units": {-1: 1}, "effective_day": _day + 2}])
 				_expect("army.transfer (partial) accepted",
-					bool(partial.get("ok", false)), str(partial))
+					bool(partial.get("ok", false))
+						and int(partial.get("effective_day", -1)) == _day + 2, str(partial))
 				await _advance_to(_day + 4)
 				var after_partial := _army_personnel(facade, handle) \
 					+ _army_personnel(facade, detached)
@@ -556,9 +600,10 @@ func _run() -> int:
 					"%d -> %d" % [total_before, after_partial])
 				var whole: Dictionary = facade.submit([{"op": "army.transfer",
 					"country": player, "army": handle, "other": detached,
-					"units": {-1: 1000000}}])
+					"units": {-1: 1000000}, "effective_day": _day + 2}])
 				_expect("army.transfer (whole formation) accepted",
-					bool(whole.get("ok", false)), str(whole))
+					bool(whole.get("ok", false))
+						and int(whole.get("effective_day", -1)) == _day + 2, str(whole))
 				await _advance_to(_day + 4)
 				var merged_parent: Dictionary = facade.army(handle)
 				var after_whole := _army_personnel(facade, handle) \
@@ -568,7 +613,7 @@ func _run() -> int:
 					str(merged_parent.get("personnel", -1)),
 					str(_army_personnel(facade, detached))])
 				_expect("whole-formation transfer conserves personnel",
-					after_whole == total_before,
+					after_whole == total_before and not bool(facade.army(detached).get("ok", false)),
 					"%d -> %d" % [total_before, after_whole])
 				# Keep the station assertion below on the current book.
 				personnel_after = int(merged_parent.get("personnel", personnel_after))
@@ -589,8 +634,8 @@ func _run() -> int:
 		var people_at_station := await _cell_population(econ, station_cell)
 		var soldiers_at_station := await _cell_soldiers(econ, station_cell)
 		var station: Dictionary = facade.submit([
-			{"op": "army.stop", "country": player, "army": handle},
-			{"op": "army.station", "country": player, "army": handle}])
+			{"op": "army.stop", "country": player, "army": handle, "effective_day": _day + 2},
+			{"op": "army.station", "country": player, "army": handle, "effective_day": _day + 2}])
 		_expect("army.station accepted", bool(station.get("ok", false)), str(station))
 		await _advance_to(_day + 4)
 		var people_after_station := await _cell_population(econ, station_cell)
@@ -679,6 +724,10 @@ func _run() -> int:
 	var bytes: PackedByteArray = facade.encode_state()
 	_expect("PKMI encodes", not bytes.is_empty(), "bytes=%d" % bytes.size())
 	if not bytes.is_empty():
+		var stopped := await RuntimeScenario.stop_at_committed_day(_host, self)
+		_expect("executor retires at the committed day for PKMI restore", stopped)
+		if not stopped:
+			return _finish()
 		var restored: Dictionary = facade.restore_state(bytes)
 		_expect("PKMI restores", bool(restored.get("ok", false)), str(restored))
 		var hash_after := int(facade.state_hash())
@@ -692,56 +741,43 @@ func _run() -> int:
 
 # ------------------------------------------------------------------ driver
 
+func _seed_construction_stock(economy, cell: int, materials: PackedInt32Array,
+		first_request: int) -> bool:
+	var market: Dictionary = economy.market_cell_snapshot(cell)
+	var market_id := int(market.get("market_id", -1))
+	if market_id < 0 or materials.is_empty():
+		return false
+	var ext = economy.world_ext()
+	for i in materials.size():
+		var admitted: Dictionary = ext.submit_economy_pod_commands({
+			"request_ids": PackedInt64Array([first_request + i]),
+			"opcodes": PackedInt32Array([4]), # ADD_STOCK
+			"transaction_ids": PackedInt64Array([0]),
+			"session_epochs": PackedInt64Array([0]),
+			"economy_generations": PackedInt64Array([0]),
+			"payload0s": PackedInt64Array([800000]),
+			"payload1s": PackedInt64Array([0]),
+			"payload2s": PackedInt64Array([0]),
+			"target_cells": PackedInt32Array([market_id]),
+			"target_countries": PackedInt64Array([materials[i]]),
+			"target_cohorts": PackedInt64Array([0]),
+			"target_buildings": PackedInt64Array([0]),
+		})
+		if not bool(admitted.get("ok", false)):
+			return false
+	return true
+
+
 func _advance_to(target_day: int) -> void:
-	var generator := _host.get_generator()
 	while _day < target_day:
+		if not await RuntimeScenario.settle_clock_day(_host, _clock, self, _day + 1):
+			_expect("formal clock settles day %d" % (_day + 1), false)
+			return
 		_day += 1
-		_clock.current_day = float(_day)
-		var phase := _clock.season_phase_for_day(_day)
-		if _host.runtime_climate_authority_enabled:
-			var capacity_deadline := Time.get_ticks_usec() + 60000000
-			while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
-					and Time.get_ticks_usec() < capacity_deadline:
-				_host._consume_runtime_commit_if_ready()
-				await process_frame
-			_host._consume_runtime_commit_if_ready()
-		_host.run_daily_tick(_day, phase)
-		_host.finish_daily_tick(0.0, {})
-		if _host.runtime_climate_authority_enabled:
-			var deadline := Time.get_ticks_usec() + 60000000
-			while Time.get_ticks_usec() < deadline:
-				_host._consume_runtime_commit_if_ready()
-				var progress: Dictionary = generator.get_runtime_thread_report()
-				if int(progress.get("simulation_committed_day",
-						progress.get("committed_day", -1))) >= _day - 1 - PIPELINE_DEPTH:
-					break
-				await process_frame
-		var pulses := 0
-		while _has_hard_barrier() and pulses < MAX_BARRIER_PULSES_PER_DAY:
-			_clock.simulation_backpressure_pulse.emit(_day)
-			pulses += 1
-			await process_frame
-		if _has_hard_barrier():
-			_expect("hard barrier drains at day %d" % _day, false)
+		var economy: Dictionary = _host.get_generator().get_economy_report()
+		if bool(economy.get("fatal", false)):
+			_expect("economy stays non-fatal (day %d)" % _day, false, str(economy.get("fatal_reason", "")))
 			return
-		if bool(generator.get_economy_report().get("fatal", false)):
-			_expect("economy stays non-fatal (day %d)" % _day, false,
-				str(generator.get_economy_report().get("fatal_reason", "")))
-			return
-	# Let the host drain committed military days (whole-graph ACTIVE replays
-	# at most 4 per frame) before the caller inspects state.
-	for _frame in range(64):
-		_host._consume_runtime_commit_if_ready()
-		var facade = generator.get_military_facade()
-		if facade == null or int(facade.report().get("last_step_day", -1)) \
-				>= _day - 1 - PIPELINE_DEPTH:
-			break
-		await process_frame
-
-
-func _has_hard_barrier() -> bool:
-	return _clock._simulation_backpressure_sources.has(&"country_day_barrier") \
-		or _clock._simulation_backpressure_sources.has(&"economy_day_barrier")
 
 
 func _print_progress(label: String) -> void:

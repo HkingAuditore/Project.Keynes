@@ -1,7 +1,9 @@
 #include "native_simulation_host.h"
+#include "runtime_day_tail.h"
 #include "runtime_golden_diagnostics.h"
 #include "country_core_apply.h"
 #include "economy_api.h"
+#include <algorithm>
 #include <cstring>
 #include <type_traits>
 #include <cstdlib>
@@ -402,7 +404,18 @@ uint64_t events_hash(const RuntimeEventsSnapshot &state) {
         trace_continuation_column("EVENTS", state.committed_day, "idempotency", std::array<uint64_t, 3>{uint64_t(row.key), uint64_t(row.request_id), uint64_t(row.event_id)});
     hash.add(state.committed_day); hash.add(state.next_event_id); hash.add(state.capacity);
     hash.add(state.dropped_event_count); hash.add(state.first_dropped_event_id);
-    rows(hash, state.events); rows(hash, state.consumer_acks); rows(hash, state.idempotency);
+    rows(hash, state.events);
+    // The score reads this cursor at display cadence. Trigger and narrative
+    // acknowledgements still participate in the simulation digest.
+    constexpr uint64_t music_consumer = 4407092808345815469ull; // pk_music_situation
+    const auto simulation_consumer = [](const RuntimeEventsConsumerAck &ack) {
+        return ack.consumer_key != music_consumer;
+    };
+    hash.add(std::count_if(state.consumer_acks.begin(), state.consumer_acks.end(),
+                           simulation_consumer));
+    for (const auto &ack : state.consumer_acks)
+        if (simulation_consumer(ack)) add_row(hash, ack);
+    rows(hash, state.idempotency);
     const char *path = runtime_switch_value(RuntimeSwitch::PK_SIM_DAY_TRACE);
     if (path != nullptr && *path) {
         std::ofstream trace(std::string(path) + ".continuation", std::ios::app);
@@ -424,13 +437,19 @@ bool RuntimeDomainAuthorityRunner::copy_trigger_snapshot(
 }
 
 RuntimeGoldenSnapshot NativeSimulationHost::golden_snapshot() const {
-    RuntimeGoldenSnapshot out;
-    // Same boundary held by the executor for the entire semantic day. This
-    // diagnostic never pumps, commits, publishes, consumes a ring or retries a plan.
-    std::unique_lock<std::mutex> boundary(_economy_authority_boundary_mutex, std::try_to_lock);
+    const auto commit = std::atomic_load(&_latest_commit);
+    if (commit && commit->day_tail && commit->day_tail->golden)
+        return *commit->day_tail->golden;
+    // Standalone diagnostic fixtures may query outside an executor commit.
+    auto boundary = try_lock_economy_read_boundary();
     if (!boundary.owns_lock() || _worker_day_inflight.load(std::memory_order_acquire) != 0)
-        return out;
-    out.day = _committed_day.load(std::memory_order_acquire);
+        return {};
+    return capture_golden_snapshot(_committed_day.load(std::memory_order_acquire));
+}
+
+RuntimeGoldenSnapshot NativeSimulationHost::capture_golden_snapshot(int64_t day) const {
+    RuntimeGoldenSnapshot out;
+    out.day = day;
     if (out.day < 0 || _country_pod_plan_active.load(std::memory_order_acquire)) return out;
     const auto add = [&](const char *id, const char *scope, int64_t day, uint64_t hash) {
         out.domains.push_back({id, scope, day, hash});

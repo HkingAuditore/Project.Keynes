@@ -9,6 +9,7 @@
 #include <cstring>
 #include <numeric>
 #include "economy_runtime.h"
+#include "natural_resource_cadence.h"
 #include "modifier_api.h"
 
 #include <algorithm>
@@ -246,78 +247,72 @@ int32_t modifier_factor_q16(double factor) {
 }
 } // namespace
 
+bool NativeEconomyRuntime::seed_worker_resource_reserves(
+        int64_t initial_day, const std::vector<const float *> &reserves,
+        const std::vector<const float *> &changes) {
+    if (_worker_resource_seeded) return true;
+    const int32_t count = _cell_count.get();
+    const size_t resource_count = _resource_ids.size();
+    if (count <= 0 || reserves.size() != resource_count || changes.size() != resource_count)
+        return false;
+    const size_t lanes = static_cast<size_t>(count) * resource_count;
+    const bool restored = _resource_stock_restored_pending_capture &&
+        resource_stock_lanes().size() == lanes;
+    _worker_resource_reserve.assign(lanes, 0.0f);
+    _worker_resource_extra.assign(lanes, 0.0f);
+    for (size_t resource = 0; resource < resource_count; ++resource) {
+        for (int32_t cell = 0; cell < count; ++cell) {
+            const size_t lane = resource * static_cast<size_t>(count) + cell;
+            if (restored) {
+                _worker_resource_reserve[lane] = static_cast<float>(
+                    static_cast<double>(resource_stock_lanes()[lane]) /
+                    static_cast<double>(GOODS_SCALE));
+            } else {
+                if (reserves[resource]) _worker_resource_reserve[lane] = reserves[resource][cell];
+                if (changes[resource]) _worker_resource_extra[lane] = changes[resource][cell];
+            }
+        }
+    }
+    if (resource_stock_lanes().size() != lanes)
+        resource_stock_lanes().assign(lanes, 0);
+    _worker_resource_extra_dirty.assign(resource_count, 1);
+    const int32_t last_day = static_cast<int32_t>(std::clamp<int64_t>(
+        initial_day, 0, std::numeric_limits<int32_t>::max()));
+    _worker_resource_last_day.assign(static_cast<size_t>(count), last_day);
+    _worker_resource_was_live.assign(static_cast<size_t>(count), 0);
+    _worker_resource_cell_live.assign(static_cast<size_t>(count), 0);
+    _worker_resource_mirror_mark.assign(static_cast<size_t>(count), 0);
+    _worker_resource_mirror_cells.clear();
+    _worker_resource_regen_factors.assign(static_cast<size_t>(count), 1.0f);
+    _worker_resource_seeded = true;
+    for (size_t lane = 0; lane < lanes; ++lane) write_worker_resource_stock(lane);
+    for (int32_t cell = 0; cell < count; ++cell) mark_worker_resource_mirror_cell(cell);
+    return true;
+}
+
 bool NativeEconomyRuntime::advance_worker_resource_reserves(
         const RuntimeEconomyDayInput &input, std::string &error) {
-    constexpr int32_t WILDERNESS_STRIDE = 60;
-    constexpr int32_t LIVE_CATCHUP_MAX_DAYS = 5;
     const int32_t count = _cell_count.get();
     const size_t resource_count = _resource_ids.size();
     const size_t lanes = static_cast<size_t>(count) * resource_count;
     if (count <= 0 || resource_count == 0) return true;
     const int32_t day = static_cast<int32_t>(std::clamp<int64_t>(
         input.day, 0, std::numeric_limits<int32_t>::max()));
-    if (!_worker_resource_seeded) {
-        const bool restored = _resource_stock_restored_pending_capture &&
-            resource_stock_lanes().size() == lanes;
-        _worker_resource_reserve.assign(lanes, 0.0f);
-        _worker_resource_extra.assign(lanes, 0.0f);
-        for (size_t r = 0; r < resource_count; ++r) {
-            const auto &src = input.reserves[r];
-            const auto &change = input.changes[r];
-            for (int32_t cell = 0; cell < count; ++cell) {
-                const size_t lane = r * static_cast<size_t>(count) + cell;
-                if (restored) {
-                    _worker_resource_reserve[lane] = static_cast<float>(
-                        static_cast<double>(resource_stock_lanes()[lane]) /
-                        static_cast<double>(GOODS_SCALE));
-                } else {
-                    if (!src.empty()) _worker_resource_reserve[lane] = src[cell];
-                    if (!change.empty()) _worker_resource_extra[lane] = change[cell];
-                }
-            }
-        }
-        if (resource_stock_lanes().size() != lanes)
-            resource_stock_lanes().assign(lanes, 0);
-        _worker_resource_extra_dirty.assign(resource_count, 1);
-        _worker_resource_last_day.assign(static_cast<size_t>(count), std::max(day - 1, 0));
-        _worker_resource_was_live.assign(static_cast<size_t>(count), 0);
-        _worker_resource_cell_live.assign(static_cast<size_t>(count), 0);
-        _worker_resource_mirror_mark.assign(static_cast<size_t>(count), 0);
-        _worker_resource_mirror_cells.clear();
-        _worker_resource_regen_factors.assign(static_cast<size_t>(count), 1.0f);
-        _worker_resource_seeded = true;
-        for (size_t lane = 0; lane < lanes; ++lane) write_worker_resource_stock(lane);
-        for (int32_t cell = 0; cell < count; ++cell) mark_worker_resource_mirror_cell(cell);
-    }
-    if (_worker_resource_reserve.size() != lanes || _worker_resource_extra.size() != lanes ||
+    if (!_worker_resource_seeded || _worker_resource_reserve.size() != lanes || _worker_resource_extra.size() != lanes ||
         _worker_resource_last_day.size() != static_cast<size_t>(count)) {
         error = "economy_worker_resource_shape_invalid";
         return false;
     }
 
-    std::vector<int32_t> cells;
-    std::vector<int32_t> cell_dt;
-    cells.reserve(_economy_live_cells.size() + static_cast<size_t>(count / WILDERNESS_STRIDE + 1));
-    auto dt_for = [&](int32_t cell, bool live) {
-        int32_t elapsed = std::clamp(day - _worker_resource_last_day[static_cast<size_t>(cell)],
-                                     1, WILDERNESS_STRIDE);
-        if (live && _worker_resource_was_live[static_cast<size_t>(cell)] != 0)
-            elapsed = std::clamp(elapsed, 1, LIVE_CATCHUP_MAX_DAYS);
-        return elapsed;
-    };
-    for (const int32_t cell : _economy_live_cells) {
-        if (cell < 0 || cell >= count) continue;
-        _worker_resource_cell_live[static_cast<size_t>(cell)] = 1;
-        if (_worker_resource_last_day[static_cast<size_t>(cell)] >= day) continue;
-        cells.push_back(cell);
-        cell_dt.push_back(dt_for(cell, true));
-    }
-    for (int32_t cell = day % WILDERNESS_STRIDE; cell < count; cell += WILDERNESS_STRIDE) {
-        if (_worker_resource_cell_live[static_cast<size_t>(cell)] != 0 ||
-            _worker_resource_last_day[static_cast<size_t>(cell)] >= day) continue;
-        cells.push_back(cell);
-        cell_dt.push_back(dt_for(cell, false));
-    }
+    // Economy is still between epochs here. Use the committed population and
+    // buildings both after a normal commit and after restoring that commit.
+    collect_economy_live_cells(_worker_resource_live_cells, nullptr);
+    const auto plan = plan_natural_resource_recovery(day, _worker_resource_live_cells.data(),
+        _worker_resource_live_cells.size(), true, _worker_resource_last_day,
+        _worker_resource_was_live, _worker_resource_cell_live);
+    const auto &cells = plan.cells;
+    const auto &cell_dt = plan.elapsed_days;
+    _worker_resource_recovered_cells = static_cast<int32_t>(cells.size());
 
     const bool have_habitat = input.resource_habitat.size() == static_cast<size_t>(count);
     const uint8_t *habitat = have_habitat ? input.resource_habitat.data() : nullptr;
@@ -390,17 +385,13 @@ bool NativeEconomyRuntime::advance_worker_resource_reserves(
                                       habitat, have_water, water, seg);
             }
         }
+        commit_natural_resource_recovery(day, plan, _worker_resource_last_day,
+                                         _worker_resource_was_live);
         for (const int32_t cell : cells) {
-            _worker_resource_last_day[static_cast<size_t>(cell)] = day;
-            _worker_resource_was_live[static_cast<size_t>(cell)] =
-                _worker_resource_cell_live[static_cast<size_t>(cell)];
             for (size_t r = 0; r < resource_count; ++r)
                 write_worker_resource_stock(r * static_cast<size_t>(count) + cell);
             mark_worker_resource_mirror_cell(cell);
         }
-    }
-    for (const int32_t cell : _economy_live_cells) {
-        if (cell >= 0 && cell < count) _worker_resource_cell_live[static_cast<size_t>(cell)] = 0;
     }
     return true;
 }

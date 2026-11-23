@@ -157,19 +157,6 @@ func _run() -> int:
 	host.initial_seed = seed
 	host.generate_test_economy_data = synthetic_test_economy
 	host.test_economy_population_scale = population_scale
-	# Climate 权威的 A/B 开关。必须在 configure 之前设：它决定 bind 时 worker 要不要
-	# seed climate store，也决定主线程那 14 个 climate 节点会不会被抑制门关掉 —— 两者
-	# 都发生在地图生成里，事后再改开关只会得到一个半开半关的世界。
-	#
-	# 不带参数时跟随 host 默认值（现已为 true），这个 recorder 测的就是生产路径。
-	# 要与转 ACTIVE 之前的历史 CSV 对比，显式传 climate_authority=off。
-	if args.has("climate_authority"):
-		host.runtime_climate_authority_enabled = _argument_enabled(
-			args.get("climate_authority", "false"))
-	# Optional domain mask override (e.g. player play path 0x806 = Climate|Country|COMMIT).
-	# Default host export is 0xFFF for soak/gate runners.
-	if args.has("authority_domain_mask"):
-		host.runtime_authority_domain_mask = int(str(args.get("authority_domain_mask", "0")))
 	if args.has("economy_auto_pod"):
 		host.runtime_economy_auto_pod_active = _argument_enabled(
 			args.get("economy_auto_pod", "false"))
@@ -320,7 +307,7 @@ func _run() -> int:
 	# has to be driven here. The worker also starts paused with the clock.
 	var runtime_ext = generator.get_data_core_world_ext() \
 		if generator.has_method("get_data_core_world_ext") else null
-	if host.runtime_climate_authority_enabled and runtime_ext != null \
+	if host._native_environment_active and runtime_ext != null \
 			and runtime_ext.has_method("set_runtime_clock"):
 		runtime_ext.set_runtime_clock(false, speed)
 
@@ -347,7 +334,7 @@ func _run() -> int:
 			country_ai_recorder = null
 
 	var runtime_report_start := _runtime_report_snapshot(generator)
-	if host.runtime_climate_authority_enabled:
+	if host._native_environment_active:
 		# The first input is day zero. Gate by observed commits below rather
 		# than assuming a particular bootstrap watermark.
 		recorder.configure_authoritative_sampling(0)
@@ -368,7 +355,7 @@ func _run() -> int:
 	# configured to ignore it.  Keep the accounting watermark aligned with that
 	# filter or the harness reports one extra measured day and one missing CSV
 	# row.
-	var sampling_after_day := 0 if host.runtime_climate_authority_enabled else -1
+	var sampling_after_day := 0 if host._native_environment_active else -1
 	var last_authoritative_committed_day := maxi(
 		int(runtime_report_start.get("committed_day", -1)), sampling_after_day)
 	var authoritative_observed := 0
@@ -439,41 +426,14 @@ func _run() -> int:
 			last_country_perf_day = int(workload_result.get(
 				"last_committed_day", day))
 		clock.current_day = float(day)
-		var phase := clock.season_phase_for_day(day)
-		# Headless SceneTree does not pump WorldRuntimeHost._process / day_changed.
-		# Mirror the production boundary so ACTIVE worker can consume environment
-		# publishes and eventually receive the authority grant (mask != 0).
-		if host.runtime_climate_authority_enabled:
-			if host.has_method("wait_for_climate_consumed"):
-				# A full FIFO would reject this day's input. The player scene
-				# retains the day on the same capacity check; mirror that here.
-				var capacity_deadline := Time.get_ticks_usec() + 60000000
-				while not bool(host.wait_for_climate_consumed(0).get("ok", true)) \
-						and Time.get_ticks_usec() < capacity_deadline \
-						and not _sample_budget_reached(
-							recorder, days, auth_measure_start_us):
-					host._consume_runtime_commit_if_ready()
-					harness_capacity_wait_count += 1
-					await process_frame
-			# The capacity wait above may already have filled the sample budget.
-			if not _sample_budget_reached(recorder, days, auth_measure_start_us):
-				host._consume_runtime_commit_if_ready()
-		host.run_daily_tick(day, phase)
+		host._admit_runtime_calendar(day)
 		host.finish_daily_tick(0.0, {})
-		if host.runtime_climate_authority_enabled:
-			# run_daily_tick already froze driver_day - 1. A second capture with
-			# driver_day skips the production input-day convention.
-			# Stop polling once the worker is within pipeline_depth days of that
-			# input day; waiting for the input day itself idles the worker.
+		if host._native_environment_active:
+			# The requested calendar date labels the display. The committed day is
+			# one smaller. Stop polling when it is within the measured pipeline depth.
 			var writeback_window_started := Time.get_ticks_usec()
 			var writeback_deadline := writeback_window_started + 60000000
 			while Time.get_ticks_usec() < writeback_deadline:
-				# One consumed commit can append a recorder row, so the sample
-				# write point must respect the requested row budget. Without this
-				# a pipelined worker pushes rows past `days` and a healthy run
-				# exits with "CSV row count mismatch".
-				if _sample_budget_reached(recorder, days, auth_measure_start_us):
-					break
 				var consume_started := Time.get_ticks_usec()
 				host._consume_runtime_commit_if_ready()
 				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
@@ -603,37 +563,27 @@ func _run() -> int:
 			auth_measure_end_us = observed_commit_us
 			auth_measure_end_day = committed_day
 			# Commit consumption can precede its recorder callback by one frame.
-			# Do not consume once the sample budget is filled: this call was the
-			# source of the extra CSV row, because it writes a row after the
-			# requested row count has already been reached.
-			if not _sample_budget_reached(recorder, days, auth_measure_start_us):
-				host._consume_runtime_commit_if_ready()
-			if pipeline_depth == 0 and (authoritative_measured >= days \
-					or _sample_budget_reached(recorder, days, auth_measure_start_us)):
+			host._consume_runtime_commit_if_ready()
+			if pipeline_depth == 0 and authoritative_measured >= days:
 				break
-		# The recorder rows are the measured samples, so a filled budget ends the
-		# run no matter how many commits one observation covered.
-		if pipeline_depth > 0 and _sample_budget_reached(
-				recorder, days, auth_measure_start_us):
+		# Under a pipeline the recorder samples at finish_daily_tick and this loop
+		# after the poll, so each can group several commits differently. The
+		# recorder rows are the measured samples.
+		if pipeline_depth > 0 and authoritative_observed > warmup_days \
+				and int(recorder.call("row_count")) >= days:
 			break
 
 	# Only publish a late callback if a requested sample is still missing.
 	# A pipeline may commit another day during this frame; publishing after the
 	# requested row count was reached used to append a spurious 51st sample.
-	if host.runtime_climate_authority_enabled and int(recorder.call("row_count")) < days:
+	if host._native_environment_active and int(recorder.call("row_count")) < days:
 		await process_frame
 		host._consume_runtime_commit_if_ready()
-		# The consume above can itself fill the budget; never append past it.
-		if int(recorder.call("row_count")) < days \
-				and host.has_method("_publish_fast_tick_perf_sample"):
+		if host.has_method("_publish_fast_tick_perf_sample"):
 			host._publish_fast_tick_perf_sample(0.0, 0.0, 0.0, 0.0, false)
 
 	var recorded_rows := int(recorder.call("row_count"))
-	# Samples are counted where they are written. `authoritative_measured` counts
-	# main-loop observations, and one observation can cover several commits, so
-	# using it here made `rows == measured_samples` disagree whenever the worker
-	# caught up inside a single observation.
-	var measured_samples := recorded_rows
+	var measured_samples := recorded_rows if pipeline_depth > 0 else authoritative_measured
 	var output_path := String(recorder.call("stop_and_export"))
 	var country_perf_path := _write_country_perf_samples(
 		output_dir, country_perf_samples)
@@ -656,13 +606,11 @@ func _run() -> int:
 	var idle_wait_ms := 0.0
 	var adjusted_run_ms := run_ms
 	var lower_bound_run_ms := maxf(0.0, run_ms - writeback_window_ms)
-	# One CSV row per requested measured day. `measured_samples` is the recorder's
-	# own row count, so a mismatch can only mean the export and the recorder
-	# disagree, or the run stopped early. The fatal path keeps the historical
-	# fast-tick bound; it already fails through the fatal exit code.
-	var expected_rows := days if measured_samples > 0 else host.get_fast_tick_count()
+	var expected_rows := measured_samples if measured_samples > 0 else host.get_fast_tick_count()
 	if fatal:
 		expected_rows = host.get_fast_tick_count()
+	if host._native_environment_active:
+		expected_rows = days
 	var rows_ok := rows == expected_rows
 	var effective_days := float(maxi(authoritative_measured, 0))
 	var auth_elapsed_ms := 0.0
@@ -723,7 +671,7 @@ func _run() -> int:
 		int(tariff_totals.get("subsidy_paid", 0)),
 		int(economy_report.get("memory_bytes", 0)), rows, expected_rows, output_path,
 	])
-	var climate_authority_on := host.runtime_climate_authority_enabled
+	var climate_authority_on := host._native_environment_active
 	# Final report only: these are the last tag snapshot's work and cumulative
 	# cache activity, not fabricated per-day CSV samples. Older builds omit them.
 	print("[headless-perf/economy-inputs] tag_snapshot_sampled_cells=%d tag_snapshot_requested_metrics=%d tag_catalog_metrics=%d country_availability_cache_hits=%d country_availability_cache_rebuilds=%d country_territory_cache_hits=%d country_territory_cache_rebuilds=%d building_upgrade_catalog_builds=%d building_upgrade_catalog_rows=%d" % [
@@ -857,14 +805,6 @@ func _drain_hard_barrier(clock: WorldClock, day: int) -> Dictionary:
 func _has_hard_barrier(clock: WorldClock) -> bool:
 	return clock._simulation_backpressure_sources.has(&"country_day_barrier") \
 		or clock._simulation_backpressure_sources.has(&"economy_day_barrier")
-
-
-## The recorder's row count is the sample count: stop_and_export writes exactly
-## those rows to the CSV. `measure_started_us` marks the measured window (it is
-## stamped when the warm-up rows are cleared), so this budget never applies to
-## warm-up samples or to a `days` smaller than `warmup_days`.
-func _sample_budget_reached(recorder, days: int, measure_started_us: int) -> bool:
-	return measure_started_us != 0 and int(recorder.call("row_count")) >= days
 
 
 func _csv_data_row_count(path: String) -> int:

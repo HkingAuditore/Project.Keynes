@@ -35,7 +35,7 @@ class EconomyStub extends RefCounted:
 		return {"ok": true, "committed": true, "cell_indices": cells,
 			"flags": flags, "severity_q16": severity, "cause_good_ids": causes,
 			"worst_class_ids": classes, "class_ids": PackedStringArray(["farmer"]),
-			"state_days": days, "economy_generation": 5}
+			"state_days": days}
 
 var failures := 0
 var checks := 0
@@ -82,7 +82,7 @@ func _run() -> void:
 	_expect("候选只覆盖视窗而不是全图", layer._scan_count < map.cell_count()
 		and layer._candidates.size() < map.cell_count())
 	var first: PackedInt32Array = economy.batches[0]
-	host.simulation_committed.emit(5, 6, 1)
+	host.simulation_view_updated.emit(5, 6, 1)
 	layer._process(0.3)
 	_expect("后台提交不让分页反复停在第一页", economy.batches.size() == 2
 		and economy.batches[1] != first)
@@ -96,49 +96,6 @@ func _run() -> void:
 	var description: String = layer.tooltip_for(target, 0)
 	_expect("悬停包含具体商品和结算时间", description.contains("谷物") and description.contains("第 5 天"))
 	_expect("悬停指出不满阶层", layer.tooltip_for(target, 3).contains("农民"))
-	var older := economy.cell_situation_snapshot(PackedInt32Array([target]))
-	older.economy_generation = 4
-	older.flags[0] = 0
-	layer.apply_snapshot(older)
-	_expect("较旧地图批次不能覆盖新批次", layer.tooltip_for(target, 3).contains("农民"))
-	var panel := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene).instantiate() as InspectorPanel
-	canvas.add_child(panel)
-	panel.show()
-	panel.population_discontent_changed.connect(layer.set_population_discontent)
-	var recovered := {"class_discontent": {"active": false, "state_day": 6, "economy_generation": 6}}
-	panel.set_model_for_selection({"cell_index": target,
-		"tabs": [{"id": "geography"}, {"id": "population"}],
-		"categories": {"population": recovered}})
-	panel.select_tab("population")
-	_expect("人口页已恢复时隐藏旧的本格不满告警",
-		layer.tooltip_for(target, 3).is_empty() and not layer.tooltip_for(target, 0).is_empty())
-	layer.apply_snapshot(economy.cell_situation_snapshot(PackedInt32Array([target])))
-	_expect("地图批次返回时沿用面板正在显示的同格数据", layer.tooltip_for(target, 3).is_empty())
-	panel.apply_live_patch({"tab_id": "population", "category": {"class_discontent": {
-		"active": true, "class_id": "worker", "severity_q16": 42598,
-		"state_day": 7, "economy_generation": 7}}})
-	var current: String = layer.tooltip_for(target, 3)
-	_expect("本格不满告警显示人口页同批阶层和值",
-		current.contains("工人") and current.contains("35%") and current.contains("第 7 天"))
-	panel.hide()
-	_expect("关闭人口页后不会退回旧告警", layer.tooltip_for(target, 3) == current)
-	var newer := economy.cell_situation_snapshot(PackedInt32Array([target]))
-	newer.economy_generation = 8
-	newer.state_days[0] = 8
-	layer.apply_snapshot(newer)
-	_expect("更新的地图批次接管已关闭人口页的告警", layer.tooltip_for(target, 3).contains("农民"))
-	panel.free()
-	layer.position = Vector2(27, 13)
-	var hit_rect := Rect2(100, 80, 25, 25)
-	layer._hits.assign([{"rect": hit_rect, "cell": target, "kind": 3}])
-	var screen: Vector2 = layer.get_global_transform_with_canvas() * hit_rect.get_center()
-	_expect("告警命中使用浮标所属地块并适配界面偏移", layer.pick_cell_at_screen(screen) == target)
-	layer.set_population_discontent(target, {"active": false, "state_day": 8})
-	_expect("本次绘制前已隐藏的旧告警不能接收点击", layer.pick_cell_at_screen(screen) == -1)
-	layer.set_population_discontent(-1, {})
-	layer.position = Vector2.ZERO
-	weather.drought = target
-	layer._update_weather(target)
 	var before := layer._rows.duplicate(true)
 	layer.apply_snapshot({"ok": false, "read_view_pending": true})
 	_expect("后台读视图等待时保留已提交结果", before == layer._rows)
@@ -146,12 +103,12 @@ func _run() -> void:
 	_expect("拒绝未提交数据", before == layer._rows)
 	map.visible_arr[target] = 0
 	_expect("当前迷雾立即禁止显示和悬停", not layer._can_show(target))
-	host.simulation_committed.emit(6, 7, 2)
+	host.simulation_view_updated.emit(6, 7, 2)
 	layer._process(0.3)
 	_expect("重建剔除不可见缓存", not layer._rows.has(target)
 		and not layer._candidates.has(target))
 	map.visible_arr[target] = 1
-	host.simulation_committed.emit(7, 8, 3)
+	host.simulation_view_updated.emit(7, 8, 3)
 	layer._process(0.3)
 	_expect("新视野无需移动相机即可加入", layer._candidates.has(target))
 	camera.zoom = Vector2.ONE * 2.0
@@ -164,8 +121,7 @@ func _run() -> void:
 	layer._process(0.3)
 	_expect("缩远停止查询且清空显示", not layer._near and layer._rows.is_empty()
 		and layer._hits.is_empty() and economy.batches.size() == queries)
-	_expect("各告警有实际加载的位图", layer._icons.size() == Layer.TITLES.size()
-		and not layer._icons.has(null))
+	_expect("九种透明位图均已装载", layer._icons.size() == 9 and not layer._icons.has(null))
 	layer.configure(map, camera, host, economy, weather)
 	_expect("重绑不残留旧地图状态", layer._rows.is_empty() and layer._candidates.is_empty())
 	var scene: PackedScene = load("res://scenes/player_game.tscn")

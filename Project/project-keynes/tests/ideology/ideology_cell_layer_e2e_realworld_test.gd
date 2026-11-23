@@ -80,7 +80,7 @@ func _run() -> void:
 	host.initial_seed = SEED
 	host.generate_test_economy_data = false
 	host.runtime_parity_forcing = false
-	host.runtime_climate_authority_enabled = false
+	host.start_executor_on_generate = false
 	get_root().add_child(host)
 	_host = host
 	# A child added during `_init()` is not inside the tree yet, so

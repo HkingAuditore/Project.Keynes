@@ -7,6 +7,11 @@ const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 
+static func apply_published_resources(world: Object) -> Dictionary:
+	if world == null:
+		return {"ok": true, "applied": false}
+	return world.apply_runtime_economy_resource_writeback()
+
 static func mapped_names(stable_ids: PackedStringArray, table: Dictionary) -> PackedStringArray:
 	var names := PackedStringArray()
 	for stable_id in stable_ids:
@@ -152,8 +157,6 @@ static func attach_building_display_metadata(host, snapshot: Dictionary) -> void
 		"building_input_category_ids", "building_input_min_quality_levels",
 		"building_input_candidate_offsets", "building_input_candidate_good_ids",
 		"building_input_candidate_efficiency_q16", "building_upgrade_family_ids",
-		"building_construction_offsets", "building_construction_good_ids",
-		"building_construction_quantities",
 		"building_construction_candidate_offsets", "building_construction_candidate_good_ids",
 		"building_construction_candidate_efficiency_q16",
 		"building_upgrade_family_indices", "building_upgrade_tiers",

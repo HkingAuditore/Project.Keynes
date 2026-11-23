@@ -1,5 +1,4 @@
 #include "economy_runtime.h"
-#include "economy_family_move_cash.h"
 
 #include <algorithm>
 #include <chrono>
@@ -759,8 +758,8 @@ int64_t NativeEconomyRuntime::plan_family_membership_move(
         const int64_t people = strict_alloc[i] + shares[i].alloc;
         if (people <= 0) continue;
         const FamilyMembershipEdge &row = family_memberships()[_family_edge_scratch[i]];
-        const int64_t claim = family_move_cash_share(std::max<int64_t>(0, row.cash_claim),
-            people, row.people, sat, mul_div_sat);
+        const int64_t claim = proportional_cash_share(std::max<int64_t>(0, row.cash_claim),
+            people, row.people, sat);
         _family_move_plan.push_back({_family_edge_scratch[i], people, claim});
     }
     return strict_alloc.back() + shares.back().alloc;

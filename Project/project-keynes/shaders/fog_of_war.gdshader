@@ -22,7 +22,7 @@ render_mode blend_mix, unshaded;
 // ── 取 k 的两条路径（`PK_CELL_FIELD` 二选一）────────────────────────────
 // 开（本任务 O3，方案 docs/plans/terrain-cell-field-overlays-plan.md §3.6）：
 //   解析格界（cell field）。世界坐标 → 可平铺低频扭曲（按长度 clamp）→ 对偶三角形
-//   三格 + 重心 → 连续权重（格心/极地保护）→ 三格 k 加权。k 来自 `cell_table` layer2.R（offset 空间的
+//   三格 + 重心 → 锐化权重 → 三格 k 加权。k 来自 `cell_table` layer2.R（offset 空间的
 //   per-cell 表，1 texel = 1 格），不再是"纹理里的类别量"，所以任意 zoom 都没有纹素
 //   台阶。另外**在自己的 shader 内复算地形的早退判定**（约束 3），保证「地形早退的
 //   像素迷雾一定不透明」。开关与环境侧地形**同一个判定口**
@@ -153,9 +153,9 @@ uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
 // 默认 0.6 刻意比地形的 terrain_ecotone_width（0.84）宽 —— 迷雾是"柔边类别量"。
 uniform float fog_field_band : hint_range(0.0, 0.86) = 0.6;
 // 迷雾自己的可平铺低频扭曲（纯 ALU，方案 §3.2 第 3 条：必须沿 x 可平铺）。
-// freq 提高到 0.010，在原有两次噪声内打散长直边；
+// freq 与旧 edge_warp 那条 `fog_tileable_scale(0.0042)` 同值，形态尺度不变；
 // amp 的单位是 **hex_size**（旧 edge_warp 用的是 hex 直径 —— 见下面的约束 2 推导）。
-uniform float fog_warp_freq = 0.010;
+uniform float fog_warp_freq = 0.0042;
 uniform float fog_warp_amp = 0.55;
 // 地形早退判定（必须与地形 program **逐像素同形**，见 fragment 里的约束 3）。
 // 由 FogOfWarLayer 从 host._shader_mat 上读地形**实际收到**的实参再推过来 ——
@@ -809,13 +809,11 @@ void fragment() {
 				wp, wrap_period_x, fog_warp_freq, fog_warp_amp * hex_size);
 		vec2 fog_warp = fog_clamp_length(fog_warp_raw, fog_warp_amax);
 
-		// 显示遮罩是连续量：锐化权重会把每格画成一块透明度平台。
-		// 扰动在原始格心归零以保护格心；格间一直使用连续权重，避免局部锐化斑点。
-		PkHexTri fog_tri = pk_overlay_fog_tri(wp, fog_grid, fog_warp);
-		vec3 fog_w = pk_overlay_fog_weights(fog_tri, fog_grid, fog_band);
+		// ── 显示用 k：三格 k 用**锐化后**的权重混合（类别量用 w，连续量用 w_raw）。
+		PkHexTri fog_tri = pk_overlay_tri(wp, fog_grid, fog_warp);
+		vec3 fog_w = pk_hex_sharpen(fog_tri.w_raw, fog_band);
 		float k = pk_overlay_fog_k(fog_w,
 				fog_cell_k(fog_tri.c0), fog_cell_k(fog_tri.c1), fog_cell_k(fog_tri.c2));
-		k = pk_overlay_fog_edge_k(k, fog_warp_raw, fog_warp_amp * hex_size);
 		fog_k_debug = k;
 
 		// ── 约束 3（强制不透明）：**在自己的 shader 内复算地形的早退判定**。

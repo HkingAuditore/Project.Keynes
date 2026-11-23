@@ -10,8 +10,8 @@ extends SceneTree
 ##   godot --headless --path Project/project-keynes \
 ##     -s res://tests/military/military_map_pick_test.gd
 
-const LAYERS_SCRIPT := preload("res://scripts/rendering/military_map_layers.gd")
-const FEED_SCRIPT := preload("res://scripts/rendering/military_render_feed.gd")
+var _layers_script: GDScript
+var _feed_script: GDScript
 const HEIGHT := 7
 const WIDTH := 9
 const HEX := 22.0
@@ -40,6 +40,9 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# Load the UI after project startup so the test releases its scene resources at exit.
+	_layers_script = load("res://scripts/rendering/military_map_layers.gd")
+	_feed_script = load("res://scripts/rendering/military_render_feed.gd")
 	_map = _make_map()
 	_cell_a = _index_at(_map, 2, 3)
 	_cell_b = _index_at(_map, 3, 3)
@@ -49,14 +52,14 @@ func _run() -> void:
 	_key_bc = _edge_key(_cell_b, _cell_c)
 	_expect(_key_ab >= 0 and _key_bc >= 0, "front keys resolve from the map topology")
 
-	_manager = LAYERS_SCRIPT.new()
+	_manager = _layers_script.new()
 	get_root().add_child(_manager)
 	await process_frame
 	_manager.configure(_map, null, null, null, null)
 	var ext := FakeExt.new()
 	ext.snapshot = _build_snapshot()
 	_manager._ext = ext
-	_manager._feed = FEED_SCRIPT.new()
+	_manager._feed = _feed_script.new()
 	_manager._player_slot = 0
 	_manager._poll()
 	await process_frame

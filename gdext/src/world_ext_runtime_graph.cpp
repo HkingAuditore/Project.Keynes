@@ -369,16 +369,6 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             if (need != day && economy->needs_environment_capture(need))
                 capture_day(need);
         }
-        // Sparse-workset probe. The graph never runs the compact economy slice
-        // while the worker owns the domain, so `_runtime_graph_last_economy_report`
-        // used to stay empty and the headless CSV lost every economy column.
-        // Publish the worker-owned runtime's scalar probe snapshot instead;
-        // it reads counters only and never mutates settlement state.
-        if (_runtime_graph_economy_capture_fatal_reason.empty()) {
-            auto *probe_runtime =
-                static_cast<NativeEconomyRuntime *>(_economy_runtime);
-            _runtime_graph_last_economy_report = probe_runtime->probe_report();
-        }
     }
 
     // Hand every new committed Economy opinion revision to the worker before
@@ -386,7 +376,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // budget; a publish placed only inside the loop then never runs and the
     // worker Ideology stage keeps skipping days awaiting the opinion.
     if (_ideology_runtime != nullptr && _economy_runtime != nullptr &&
-        _runtime_host != nullptr &&
+        _runtime_host != nullptr && !_runtime_host->effect_adapter_owned() &&
         static_cast<NativeEconomyRuntime *>(_economy_runtime)
                 ->country_class_opinion_snapshot().revision !=
             _ideology_opinion_published_revision) {
@@ -431,6 +421,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         TriggerRuntime *trigger_runtime = _trigger_runtime != nullptr
             ? static_cast<TriggerRuntime *>(_trigger_runtime) : nullptr;
         const bool trigger_facade_due = trigger_runtime != nullptr &&
+            (!_runtime_host || !_runtime_host->effect_adapter_owned()) &&
             (trigger_worker_owns_day
                 ? trigger_runtime->pending_effect_count() > 0
                 : trigger_runtime->should_run(day));
@@ -488,7 +479,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         // Ideology runs. Economy settles later in this graph, so the worker
         // cannot form an Ideology<->Economy same-day cycle.
         if (_ideology_runtime != nullptr && _economy_runtime != nullptr &&
-            _runtime_host != nullptr) {
+            _runtime_host != nullptr && !_runtime_host->effect_adapter_owned()) {
             publish_ideology_worker_inputs();
         }
         // G8: publish_ideology_worker_inputs above still runs under worker
@@ -523,10 +514,8 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             // Climate park + hard_ack can otherwise deadlock; after a real drain
             // soft-settle leftovers so founder PREFLIGHTED cannot pin the clock.
             ack_effect_native_country();
-            if (country_worker_authoritative) {
-                static_cast<EffectRuntime *>(_effect_runtime)
-                    ->settle_orphaned_native_country_acks();
-            }
+            if (country_worker_authoritative)
+                settle_orphaned_effect_native_country_acks();
             // Second Economy pass: SETTLE may only proceed after Country CLAIM
             // ACK from the drain/soft-settle above.
             dispatch_effect_native_economy();
@@ -643,17 +632,6 @@ Dictionary DCWorldExt::get_runtime_graph_last_economy_report() const {
     return _runtime_graph_last_economy_report;
 }
 
-// The runtime graph stops pulsing once the simulation worker owns the day
-// loop, so the report captured in `_runtime_graph_last_economy_report` freezes
-// at the last pulse. Perf recording asks this accessor once per sampled row
-// instead, which keeps the probe columns aligned with the committed day.
-// Scalar counters only; nothing here mutates the economy runtime.
-Dictionary DCWorldExt::get_runtime_economy_probe_report() const {
-    if (_economy_runtime == nullptr) return Dictionary();
-    auto *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
-    return economy->probe_report();
-}
-
 void DCWorldExt::flush_runtime_visuals(uint32_t dirty_mask) {
     const auto started = Clock::now();
     const uint32_t requested = dirty_mask == 0
@@ -709,10 +687,39 @@ static void append_runtime_control_state(Dictionary &out,
         host.authority_ready || host.authoritative_domain_mask != 0u;
     out["authoritative_domain_mask"] =
         static_cast<int64_t>(host.authoritative_domain_mask);
+    out["requested_authority_mask"] = static_cast<int64_t>(host.requested_authority_mask);
+    out["whole_graph_requested"] = host.mode == RuntimeSimulationMode::ACTIVE &&
+        host.requested_authority_mask == RUNTIME_ALL_DOMAIN_MASK &&
+        host.state != RuntimeWorkerState::STOPPED && host.state != RuntimeWorkerState::STOPPING &&
+        host.state != RuntimeWorkerState::FAULTED;
     out["climate_worker_authoritative"] =
         (host.authoritative_domain_mask & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    out["country_worker_authoritative"] =
+        (host.authoritative_domain_mask & runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u;
     out["simulation_committed_day"] = host.committed_day;
+    out["player_advance_through"] = host.player_advance_through;
+    if (const auto &view = host.player_confirmation) {
+        out["player_block_reason"] = view->reason ? view->reason : "";
+        out["player_block_day"] = view->day;
+        out["family_founding_offer"] = view->family_offer.duplicate(true);
+        out["ideology_offer_generation"] = view->ideology_generation;
+        out["player_popups_suppressed"] = view->hide_popups;
+    }
     out["interactive"] = host.interactive;
+}
+
+Dictionary DCWorldExt::submit_player_confirmation(const String &action, int64_t value,
+                                                   int64_t effective_day) {
+    using Kind = RuntimePlayerConfirmationRequest::Kind;
+    if (_runtime_host && action == "dismiss_ideology" && value > 0)
+        return _runtime_host->submit_player_confirmation({Kind::DISMISS_IDEOLOGY, value, effective_day});
+    if (_runtime_host && action == "popup_policy" && (value == 0 || value == 1))
+        return _runtime_host->submit_player_confirmation({Kind::POPUP_POLICY, value, effective_day});
+    Dictionary out;
+    out["ok"] = false;
+    out["admitted"] = false;
+    out["code"] = "player_confirmation_invalid";
+    return out;
 }
 
 Dictionary DCWorldExt::get_runtime_control_state() const {
@@ -744,19 +751,24 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["pod_domain_abi_version"] = static_cast<int>(host.pod_domain_abi_version);
         append_runtime_control_state(out, NativeSimulationHost::ControlState{
             host.state, host.mode, host.authority_ready, report.interactive,
-            host.authoritative_domain_mask, host.committed_day});
-        // R-3b: how many CLIENTS are still waiting for a boundary turn. A non-zero
-        // value with `state == PAUSED` means the worker is parked for that client --
-        // which is the exact condition that used to persist for a whole session
-        // because the ideology path requested and never completed.
-        out["main_boundary_service_requests"] =
-            static_cast<int64_t>(_runtime_host->main_boundary_service_requests());
-        out["main_boundary_service_ideology"] =
-            _runtime_host->main_boundary_service_requested_by(
-                NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
-        out["main_boundary_service_trigger"] =
-            _runtime_host->main_boundary_service_requested_by(
-                NativeSimulationHost::MainBoundaryClient::TRIGGER);
+            host.authoritative_domain_mask, host.requested_authority_mask, host.committed_day});
+        constexpr std::array<const char *, RuntimeWorkerTiming::MAIN_WAIT_REASON_COUNT> wait_names = {
+            "environment_input", "other"};
+        Dictionary waits_by_day;
+        for (const auto &day : _runtime_host->main_waits_by_day()) {
+            if (day.day < 0) continue;
+            Dictionary reasons;
+            for (size_t i = 0; i < wait_names.size(); ++i) {
+                const auto &counter = day.reasons[i];
+                if (counter.count == 0) continue;
+                Dictionary values;
+                values["count"] = static_cast<int64_t>(counter.count);
+                values["usec"] = static_cast<int64_t>(counter.usec);
+                reasons[wait_names[i]] = values;
+            }
+            waits_by_day[day.day] = reasons;
+        }
+        out["worker_main_wait_by_day"] = waits_by_day;
         out["graph_coverage_complete"] = host.graph_coverage_complete;
         out["native_daily_inline"] = host.inline_daily;
         out["inline_day_pending"] = _runtime_host->inline_day_pending();
@@ -769,8 +781,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(
             host.completion_gate_missing_domain_mask);
         out["active_gate_blocked"] = host.active_gate_blocked;
-        out["requested_authority_mask"] =
-            static_cast<int64_t>(host.requested_authority_mask);
         out["active_evidence_mask"] =
             static_cast<int64_t>(host.active_evidence_mask);
         // The gate, next to the ledger it is NOT identical to. `suppressed` is what
@@ -792,8 +802,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["simulation_state_hash"] = static_cast<int64_t>(host.state_hash);
         out["state_hash"] = static_cast<int64_t>(host.state_hash);
         out["last_commit_produced_at_us"] = static_cast<int64_t>(host.last_commit_produced_at_us);
-        out["last_visual_publish_at_us"] = static_cast<int64_t>(host.last_visual_publish_at_us);
-        out["snapshot_staleness_ms"] = host.snapshot_staleness_ms;
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
@@ -821,8 +829,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         // consume the direct host report. Both fields describe the same
         // bounded debt value; the prefixed form remains the CSV contract.
         out["time_debt_days"] = host.time_debt_days;
-        out["snapshot_publish_drop_count"] = static_cast<int64_t>(host.snapshot_publish_drop_count);
-        out["snapshot_publish_throttled_count"] = static_cast<int64_t>(host.snapshot_publish_throttled_count);
         out["command_queue_capacity_exceeded"] = static_cast<int64_t>(host.command_queue_capacity_exceeded);
         out["receipt_queue_capacity_exceeded"] = static_cast<int64_t>(host.receipt_queue_capacity_exceeded);
         out["worker_fault_count"] = static_cast<int64_t>(host.worker_fault_count);
@@ -1516,8 +1522,6 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["simulation_generation"] = static_cast<int64_t>(host.generation);
         out["simulation_state_hash"] = static_cast<int64_t>(host.state_hash);
         out["last_commit_produced_at_us"] = static_cast<int64_t>(host.last_commit_produced_at_us);
-        out["last_visual_publish_at_us"] = static_cast<int64_t>(host.last_visual_publish_at_us);
-        out["snapshot_staleness_ms"] = host.snapshot_staleness_ms;
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
@@ -1794,8 +1798,6 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["stale_environment_rejected"] = static_cast<int64_t>(host.stale_environment_rejected);
         out["simulation_time_debt_days"] = host.time_debt_days;
         out["time_debt_days"] = host.time_debt_days;
-        out["snapshot_publish_drop_count"] = static_cast<int64_t>(host.snapshot_publish_drop_count);
-        out["snapshot_publish_throttled_count"] = static_cast<int64_t>(host.snapshot_publish_throttled_count);
         out["command_queue_capacity_exceeded"] = static_cast<int64_t>(host.command_queue_capacity_exceeded);
         out["receipt_queue_capacity_exceeded"] = static_cast<int64_t>(host.receipt_queue_capacity_exceeded);
         out["day_stage_count"] = static_cast<int>(host.day_stage_count);

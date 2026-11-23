@@ -2,7 +2,7 @@
 """Load a specific macOS arm64 library and exercise save/restore and rendering.
 
 The editor normally loads the debug library, so its regression results cannot
-establish that a checked-in release library implements the same save protocol.
+establish that a locally built release library implements the same save protocol.
 """
 from __future__ import annotations
 

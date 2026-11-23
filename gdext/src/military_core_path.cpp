@@ -9,18 +9,18 @@
 // (keyed by the current cell count) so it never needs header fields.
 //
 // Naval transport (army-personnel contract 2 §2.1, design §7.4 "v1 简化"):
-// water is impassable until the country's unlock bits carry the water tier a
-// cell belongs to. The tier comes from the landform (lake / shallow / far /
-// deep, see water_tier.h), never from the length of a crossing: an army may
-// enter a water cell whose tier is at or below the best tier the country has
-// unlocked, and a higher tier also covers the lower ones. A sea step costs 1.5x
-// a land step, an army standing on water is forced to EMBARKED (and gets its
-// previous stance back on landing), and it takes kSeaAttritionBp of daily
-// attrition at sea instead of the land environment loss.
+// water is impassable until the country's unlock bits carry a transport
+// technology. `tech.military.coastal_transport` allows runs of at most
+// kSeaRunMax consecutive water cells with a land cell at both ends (embark and
+// disembark), `tech.military.naval_transport` lifts the run limit. A sea step
+// costs 1.5x a land step, an army standing on water is forced to EMBARKED (and
+// gets its previous stance back on landing), and it takes kSeaAttritionBp of
+// daily attrition at sea instead of the land environment loss. The run limit
+// cannot be checked per cell, so both searches run over (cell, water-run)
+// states; with the ocean technology the run dimension collapses to one state.
 
 #include "military_core.h"
 #include "military_core_internal.h"
-#include "water_tier.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -37,6 +37,8 @@ constexpr int32_t kMaxPathNodes = 4096;
 constexpr int32_t kDijExpansionsDefault = 512;
 
 // ---- naval transport (contract §2.1)
+constexpr int32_t kSeaRunMax = 3;             // coastal: <= 3 consecutive water cells
+constexpr int32_t kSeaRunStates = kSeaRunMax + 1;
 constexpr int32_t kSeaCostNumer = 3;          // sea step = 1.5x the land step
 constexpr int32_t kSeaCostDenom = 2;
 constexpr int32_t kSeaAttritionBp = 20;       // 0.2% per day while at sea
@@ -157,40 +159,18 @@ inline bool sea_bit_set(const MilitaryWorldDigest &d, int32_t slot, int32_t bit)
     return ((d.country_unlock_bits[idx] >> (uint32_t)(bit & 63)) & 1ull) != 0;
 }
 
-// 0 = no water transport, 1 = lake, 2 = shallow sea, 3 = far sea, 4 = deep sea.
-// Tiers nest: a country that can enter the far sea can also enter lakes.
-inline int32_t water_crossing_level(const MilitaryCatalog &catalog,
-                                    const MilitaryWorldDigest &digest, int32_t country_slot) {
+// 0 = no transport, 1 = coastal (<= kSeaRunMax water cells), 2 = ocean.
+inline int32_t sea_transport_level(const MilitaryCatalog &catalog,
+                                   const MilitaryWorldDigest &digest, int32_t country_slot) {
     if (country_slot < 0) return 0;
-    if (sea_bit_set(digest, country_slot, catalog.water_deep_bit)) return 4;
-    if (sea_bit_set(digest, country_slot, catalog.water_far_bit)) return 3;
-    if (sea_bit_set(digest, country_slot, catalog.water_shallow_bit)) return 2;
-    if (sea_bit_set(digest, country_slot, catalog.water_lake_bit)) return 1;
+    if (sea_bit_set(digest, country_slot, catalog.ocean_transport_bit)) return 2;
+    if (sea_bit_set(digest, country_slot, catalog.coastal_transport_bit)) return 1;
     return 0;
 }
 
 inline bool cell_is_water(const MilitaryTerrainInput &terrain, int32_t cell) {
     return cell >= 0 && (size_t)cell < terrain.is_water.size() &&
            terrain.is_water[(size_t)cell] != 0;
-}
-
-// Which kind of water this cell is. Landforms other than the four water ids
-// answer NONE, so a malformed fixture can never make a PLAIN cell crossable.
-inline uint8_t cell_water_tier(const MilitaryTerrainInput &terrain, int32_t cell) {
-    if (!cell_is_water(terrain, cell)) return WATER_TIER_NONE;
-    const size_t index = (size_t)cell;
-    const uint8_t landform = index < terrain.landform.size()
-        ? terrain.landform[index] : (uint8_t)0xFF;
-    return water_tier_from_landform(landform);
-}
-
-// The single water gate: tier of the cell <= best tier the country unlocked.
-inline bool water_passable(const MilitaryCatalog &catalog, const MilitaryWorldDigest &digest,
-                           int32_t country_slot, const MilitaryTerrainInput &terrain,
-                           int32_t cell) {
-    const uint8_t tier = cell_water_tier(terrain, cell);
-    if (tier == WATER_TIER_NONE) return false;
-    return (int32_t)tier <= water_crossing_level(catalog, digest, country_slot);
 }
 
 // Preview duration in days: one day per land cell, 1.5 days per water cell,
@@ -269,12 +249,12 @@ int32_t MilitaryCore::cell_distance(int32_t a, int32_t b) const {
 bool MilitaryCore::passable_for(int32_t cell, int32_t country_slot, const MilitaryWorldDigest &digest) const {
     if (cell < 0 || cell >= _terrain.cell_count) return false;
     if (_terrain.is_water[(size_t)cell]) {
-        // Design 7.4 / contract §2.1: water only opens for the tiers the
-        // country unlocked today. The landing itself is not required to be
-        // land — a crossing may end mid-sea and continue next day — so the gate
-        // is purely "what kind of water is this cell".
+        // Design 7.4 / contract §2.1: water only opens with a transport
+        // technology. The landform table describes land, so it is not consulted
+        // here; the consecutive-water-cell limit needs path context and is
+        // enforced by the search in find_path / preview_path.
         const MilitaryWorldDigest &view = has_unlock_view(digest) ? digest : _last_digest;
-        return water_passable(_catalog, view, country_slot, _terrain, cell);
+        return sea_transport_level(_catalog, view, country_slot) > 0;
     }
     const uint8_t lf = _terrain.landform[(size_t)cell];
     const uint8_t passable = (size_t)lf < _catalog.landform_passable.size()
@@ -425,15 +405,21 @@ bool MilitaryCore::find_path(int32_t army_slot, int32_t target, const MilitaryWo
     ++_path_daily_requests[slot_index];
 
     const int32_t n = _terrain.cell_count;
-    // Water tiers are a per-cell property, so the search keeps one state per
-    // cell; enterability is decided inside step_cost_q16/passable_for.
+    // Naval transport capability: only the coastal gate needs the run
+    // dimension (no transport never enters water, the ocean technology has no
+    // limit), so every other case searches one state per cell.
+    const MilitaryWorldDigest &view = has_unlock_view(digest) ? digest : _last_digest;
+    const int32_t sea_level = sea_transport_level(_catalog, view, owner);
+    const int32_t run_states = sea_level == 1 ? kSeaRunStates : 1;
     PathScratch &s = scratch();
-    s.ensure((size_t)n);
+    s.ensure((size_t)n * (size_t)run_states);
     auto heuristic = [this, target](int32_t cell) -> int32_t {
         const int32_t dist = cell_distance(cell, target);
         return dist > kMaxPathNodes ? 0x07FFFFF0 : dist * kOne;
     };
-    const int32_t src_state = src;
+    // The start state always carries run 0: an army already standing on water
+    // continues with a fresh run budget (its crossing began before this search).
+    const int32_t src_state = src * run_states;
     s.dist[(size_t)src_state] = 0;
     s.parent[(size_t)src_state] = -1;
     s.stamp[(size_t)src_state] = s.gen;
@@ -447,19 +433,25 @@ bool MilitaryCore::find_path(int32_t army_slot, int32_t target, const MilitaryWo
         if (s.closed[(size_t)e.node]) continue;
         s.closed[(size_t)e.node] = 1;
         ++expansions;
-        const int32_t cell = e.node;
+        const int32_t cell = e.node / run_states;
         if (cell == target) {
             found = true;
             target_state = e.node;
             break;
         }
+        const int32_t run = e.node - cell * run_states;
         const int32_t base = cell * 6;
         for (int32_t d = 0; d < 6; ++d) {
             const int32_t nb = _terrain.neighbors[(size_t)(base + d)];
             if (nb < 0) continue;
             const int32_t cost = step_cost_q16(cell, nb, owner, digest);
             if (cost < 0) continue;
-            const int32_t nb_state = nb;
+            int32_t next_run = 0;
+            if (run_states > 1 && cell_is_water(_terrain, nb)) {
+                next_run = run + 1;
+                if (next_run > kSeaRunMax) continue;   // coastal: 4th water cell in a row
+            }
+            const int32_t nb_state = nb * run_states + next_run;
             // closed[] is only valid for states stamped this generation (A3 fix).
             if (s.stamp[(size_t)nb_state] == s.gen && s.closed[(size_t)nb_state]) continue;
             const int32_t cand = s.dist[(size_t)e.node] + cost;
@@ -475,7 +467,7 @@ bool MilitaryCore::find_path(int32_t army_slot, int32_t target, const MilitaryWo
     if (!found) return false;
     int32_t cursor = target_state;
     while (cursor >= 0 && cursor != src_state) {
-        out.push_back(cursor);
+        out.push_back(cursor / run_states);
         cursor = s.parent[(size_t)cursor];
         if (out.size() > (size_t)kMaxPathNodes) {
             out.clear();
@@ -519,14 +511,16 @@ MilitaryExplorationPathResult MilitaryCore::find_exploration_path(
     ++_exploration_daily_path_requests[slot_index];
 
     const int32_t n = _terrain.cell_count;
-    // Water tiers are per cell (see water_tier.h), so one search state per cell.
+    const MilitaryWorldDigest &view = has_unlock_view(digest) ? digest : _last_digest;
+    const int32_t sea_level = sea_transport_level(_catalog, view, owner);
+    const int32_t run_states = sea_level == 1 ? kSeaRunStates : 1;
     PathScratch &s = scratch();
-    s.ensure((size_t)n);
+    s.ensure((size_t)n * (size_t)run_states);
     auto heuristic = [this, target](int32_t cell) -> int32_t {
         const int32_t dist = cell_distance(cell, target);
         return dist > kMaxPathNodes ? 0x07FFFFF0 : dist * kOne;
     };
-    const int32_t src_state = src;
+    const int32_t src_state = src * run_states;
     s.dist[(size_t)src_state] = 0;
     s.parent[(size_t)src_state] = -1;
     s.stamp[(size_t)src_state] = s.gen;
@@ -546,12 +540,13 @@ MilitaryExplorationPathResult MilitaryCore::find_exploration_path(
         if (s.closed[(size_t)e.node]) continue;
         s.closed[(size_t)e.node] = 1;
         ++expansions;
-        const int32_t cell = e.node;
+        const int32_t cell = e.node / run_states;
         if (cell == target) {
             found = true;
             target_state = e.node;
             break;
         }
+        const int32_t run = e.node - cell * run_states;
         const int32_t base = cell * 6;
         for (int32_t d = 0; d < 6; ++d) {
             const int32_t nb = _terrain.neighbors[(size_t)(base + d)];
@@ -559,7 +554,12 @@ MilitaryExplorationPathResult MilitaryCore::find_exploration_path(
             if (!exploration_passable_for(nb, owner, digest)) continue;
             const int32_t cost = step_cost_q16(cell, nb, owner, digest);
             if (cost < 0) continue;
-            const int32_t nb_state = nb;
+            int32_t next_run = 0;
+            if (run_states > 1 && cell_is_water(_terrain, nb)) {
+                next_run = run + 1;
+                if (next_run > kSeaRunMax) continue;
+            }
+            const int32_t nb_state = nb * run_states + next_run;
             if (s.stamp[(size_t)nb_state] == s.gen && s.closed[(size_t)nb_state]) continue;
             const int32_t cand = s.dist[(size_t)e.node] + cost;
             if (s.stamp[(size_t)nb_state] == s.gen && s.dist[(size_t)nb_state] <= cand)
@@ -575,7 +575,7 @@ MilitaryExplorationPathResult MilitaryCore::find_exploration_path(
     if (!found) return MILITARY_EXPLORATION_PATH_UNREACHABLE;
     int32_t cursor = target_state;
     while (cursor >= 0 && cursor != src_state) {
-        out.push_back(cursor);
+        out.push_back(cursor / run_states);
         cursor = s.parent[(size_t)cursor];
         if (out.size() > (size_t)kMaxPathNodes) {
             out.clear();
@@ -631,25 +631,33 @@ bool MilitaryCore::preview_path(uint64_t army, int32_t target_cell, std::vector<
         view.unlock_words = _last_digest.unlock_words;
         view.country_unlock_bits = _last_digest.country_unlock_bits;
     }
+    const int32_t sea_level = sea_transport_level(_catalog, view, owner);
+    const int32_t run_states = sea_level == 1 ? kSeaRunStates : 1;
     const int32_t n = _terrain.cell_count;
     PathScratch &s = scratch();
-    s.ensure((size_t)n);
+    s.ensure((size_t)n * (size_t)run_states);
     if (!passable_for(src, owner, view)) return false;
     if (!passable_for(target_cell, owner, view)) return false;
-    const int32_t src_state = src;
+    const int32_t src_state = src * run_states;
     s.stamp[(size_t)src_state] = s.gen;
     s.parent[(size_t)src_state] = -1;
     s.queue.push_back(src_state);
     bool found = false;
     for (size_t head = 0; head < s.queue.size() && !found; ++head) {
         const int32_t state = s.queue[head];
-        const int32_t cell = state;
+        const int32_t cell = state / run_states;
+        const int32_t run = state - cell * run_states;
         const int32_t base = cell * 6;
         for (int32_t d = 0; d < 6; ++d) {
             const int32_t nb = _terrain.neighbors[(size_t)(base + d)];
             if (nb < 0) continue;
             if (!passable_for(nb, owner, view)) continue;
-            const int32_t nb_state = nb;
+            int32_t next_run = 0;
+            if (run_states > 1 && cell_is_water(_terrain, nb)) {
+                next_run = run + 1;
+                if (next_run > kSeaRunMax) continue;   // coastal: 4th water cell in a row
+            }
+            const int32_t nb_state = nb * run_states + next_run;
             if (s.stamp[(size_t)nb_state] == s.gen) continue;
             s.stamp[(size_t)nb_state] = s.gen;
             s.parent[(size_t)nb_state] = state;
@@ -664,7 +672,7 @@ bool MilitaryCore::preview_path(uint64_t army, int32_t target_cell, std::vector<
     if (!found) return false;
     int32_t cursor2 = s.queue.back();
     while (cursor2 >= 0 && cursor2 != src_state) {
-        out_cells.push_back(cursor2);
+        out_cells.push_back(cursor2 / run_states);
         cursor2 = s.parent[(size_t)cursor2];
     }
     std::reverse(out_cells.begin(), out_cells.end());

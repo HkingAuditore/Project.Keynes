@@ -42,6 +42,7 @@ DEFINING_OVERRIDES: dict[str, str] = {
     "learned_society": "tech.learned_societies",            # correction: 18th-c. society
     "precision_tool_workshop": "tech.precision_engineering",  # correction: pre-steam tools
     "steam_engine_works": "tech.steam_power",               # correction: steam era works
+    "clay_collector": "tech.pottery",
     "method_timber_collector_r2": "tech.timber_sawing",
     "concrete_plant": "tech.reinforced_concrete",
     "fine_furniture_plant": "tech.mass_production",
@@ -104,19 +105,14 @@ DEFINING_OVERRIDES: dict[str, str] = {
 _PRODUCERS: dict = {}
 
 
-def closure_groups_detailed(model: Model, building_id: str, defining: str | None = None):
-    """``closure_groups`` plus the technologies that may not close that group.
-
-    The fourth element is the route-specific set of the group's own edge: a
-    technology that stands for a single alternative of a multi-candidate input
-    cannot be the gate that stands for the whole edge.
-    """
+def closure_groups(model: Model, building_id: str, defining: str | None = None):
+    """Operational groups.  With a defining technology, an output group requires
+    prior knowledge of that good from another producer of the same or an earlier
+    era; without one (or for the first producer) output groups are skipped."""
     if not _PRODUCERS:
         _PRODUCERS.update(model.producers_by_good())
-    banned_by_edge = model.route_specific_by_edge(building_id)
     groups = []
     for kind, dep, acceptable in model.dependency_groups(building_id, False):
-        banned = banned_by_edge.get(dep, set()) if kind == "input_good" else set()
         if kind == "output_good":
             # Starter-core buildings are prebuilt from the starter technology set only.
             if defining is None or defining in STARTERS:
@@ -129,36 +125,15 @@ def closure_groups_detailed(model: Model, building_id: str, defining: str | None
             if not others:
                 continue
             acceptable = others
-        groups.append((kind, dep, acceptable, banned))
+        groups.append((kind, dep, acceptable))
     return groups
 
 
-def closure_groups(model: Model, building_id: str, defining: str | None = None):
-    """Operational groups.  With a defining technology, an output group requires
-    prior knowledge of that good from another producer of the same or an earlier
-    era; without one (or for the first producer) output groups are skipped."""
-    return [(kind, dep, acceptable)
-            for kind, dep, acceptable, _banned in
-            closure_groups_detailed(model, building_id, defining)]
-
-
 def minimal_required(model: Model, building_id: str, defining: str, pool: list[str]) -> list[str]:
-    """Smallest set of pool technologies that still closes the building's operations.
-
-    Scoring stays era-first on purpose (the building must not silently move era),
-    but era alone used to pick the *oldest* technology able to produce one
-    alternative of a multi-candidate input: a stone-age maize-collection
-    technology became the gate for a brewery that accepts wheat or rice just as
-    well.  The first key therefore prefers a technology that is not route
-    specific for the edge it closes; era only breaks ties afterwards.  The
-    preference is not a hard ban because some edges (rubber) genuinely have no
-    technology common to every alternative, and those keep the previous choice.
-    """
     covered = set(model.closure(defining))
     family = model.node[defining]["branch_family_id"]
     authored = set(model.full_gate(building_id))
-    missing = [(acc, banned)
-               for _k, _d, acc, banned in closure_groups_detailed(model, building_id, defining)
+    missing = [acc for _k, _d, acc in closure_groups(model, building_id, defining)
                if not acc & covered]
     chosen: list[str] = []
     pool = [t for t in pool if t not in covered]
@@ -168,19 +143,17 @@ def minimal_required(model: Model, building_id: str, defining: str, pool: list[s
         for tech in pool:
             if tech in chosen:
                 continue
-            hit_groups = [(acc, banned) for acc, banned in missing if tech in acc]
-            if not hit_groups:
+            hits = sum(1 for acc in missing if tech in acc)
+            if hits == 0:
                 continue
-            narrow = any(tech in banned for _acc, banned in hit_groups)
             same_family = model.node[tech]["branch_family_id"] == family
-            score = (0 if not narrow else -1, -model.era(tech), tech in authored,
-                     same_family, len(hit_groups), -model.order[tech])
+            score = (-model.era(tech), tech in authored, same_family, hits, -model.order[tech])
             if best_score is None or score > best_score:
                 best, best_score = tech, score
         if best is None:
             return None
         chosen.append(best)
-        missing = [(acc, banned) for acc, banned in missing if best not in acc]
+        missing = [acc for acc in missing if best not in acc]
     return sorted(chosen, key=lambda t: (model.era(t), model.order[t]))
 
 

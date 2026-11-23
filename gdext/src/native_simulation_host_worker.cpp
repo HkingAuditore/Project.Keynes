@@ -31,6 +31,7 @@
 #include <limits>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -42,22 +43,6 @@
 namespace pk {
 
 namespace {
-// Peer-stall fault threshold. Production keeps the protocol default; headless
-// test suites on a loaded machine may raise it via PK_PEER_STALL_TIMEOUT_MS so
-// wall-clock contention is not reported as a protocol deadlock.
-uint64_t peer_stall_fault_timeout_ms() {
-    static const uint64_t value = [] () -> uint64_t {
-        const char *raw = pk::runtime_switch_value(pk::RuntimeSwitch::PK_PEER_STALL_TIMEOUT_MS);
-        if (raw == nullptr || raw[0] == '\0')
-            return RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS;
-        const unsigned long long parsed = std::strtoull(raw, nullptr, 10);
-        return parsed >= RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
-            ? static_cast<uint64_t>(parsed)
-            : RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS;
-    }();
-    return value;
-}
-
 // Stateless diagnostic tags shared with the daily-plan assembly.
 const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
     switch (domain) {
@@ -79,7 +64,11 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 } // namespace
 
 void NativeSimulationHost::request_stop() {
-    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
+    std::lock_guard<std::mutex> admission(_command_producer_mutex);
+    request_stop_locked();
+}
+
+void NativeSimulationHost::request_stop_locked() {
     _authority_control.revoke();
     RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
@@ -115,9 +104,17 @@ void NativeSimulationHost::join_for_destruction() {
 }
 
 void NativeSimulationHost::set_clock(bool paused, double speed_days_per_second) {
+    const bool calendar_suspended = paused || !std::isfinite(speed_days_per_second) ||
+        speed_days_per_second <= 0.0;
     runtime_control_wakeup(_control_mutex, _control_cv, [&] {
         _worker_timing.pause(paused);
         _paused.store(paused, std::memory_order_release);
+        _calendar_suspended.store(calendar_suspended, std::memory_order_release);
+        if (speed_days_per_second <= 1.0 && _world_environment) {
+            const int64_t permitted = std::min(
+                _clock_requested_day.load(std::memory_order_relaxed), committed_day_value() + 1);
+            _clock_requested_day.store(permitted, std::memory_order_release);
+        }
         _speed_days_per_second.store(std::max(0.0, speed_days_per_second),
                                      std::memory_order_release);
     });
@@ -155,36 +152,16 @@ bool NativeSimulationHost::has_pending_climate_input() const {
 }
 
 int64_t NativeSimulationHost::command_seal_day() const noexcept {
-    const int64_t worker_next = _committed_day.load(std::memory_order_acquire) + 1;
-    const bool sealed =
+    const int64_t next = committed_day_value() + 1;
+    if (_world_environment) {
+        return std::max(next,
+            frozen_command_day() + 1);
+    }
+    const bool climate_driven =
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-    if (!sealed) return worker_next;
-    // Under the tail gate the worker has started at most tail_done+1, and only
-    // the main thread moves tail_done. Sealing at tail_done+2 lands everything
-    // the main thread derives from day D, before it marks D's tail, on D+1.
-    // The environment watermark runs ahead on frame timing, so it cannot be
-    // the seal here.
-    if (_main_day_tail_gate.load(std::memory_order_acquire))
-        return std::max(worker_next,
-                        _main_day_tail_done.load(std::memory_order_acquire) + 2);
-    return std::max(worker_next, next_environment_day());
-}
-
-void NativeSimulationHost::set_main_day_tail_gate(bool enabled) noexcept {
-    std::lock_guard<std::mutex> control_lock(_control_mutex);
-    _main_day_tail_gate.store(enabled, std::memory_order_release);
-    _control_cv.notify_all();
-}
-
-void NativeSimulationHost::mark_main_day_tail_done(int64_t day) noexcept {
-    {
-        std::lock_guard<std::mutex> control_lock(_control_mutex);
-        if (day > _main_day_tail_done.load(std::memory_order_acquire))
-            _main_day_tail_done.store(day, std::memory_order_release);
-    }
-    _control_cv.notify_all();
+    return climate_driven ? std::max(next, next_environment_day()) : next;
 }
 
 bool NativeSimulationHost::environment_ring_full() const {
@@ -273,37 +250,15 @@ void NativeSimulationHost::clear_day_stall_peer_bits() {
                          RUNTIME_DAY_STALL_ECONOMY_INPUT);
 }
 
-bool NativeSimulationHost::fault_if_peer_stall_timed_out(
-        int64_t day, const char *fault_code) {
-    // Derived-only stalls (pending_intents without note_day_stall) never armed
-    // the timer — capacity forensics then showed peer_ms=0 forever. Arm here.
-    if (_day_stall_peer_since_us.load(std::memory_order_acquire) == 0u &&
-        (_country_worker_protocol.pending_intents != 0 ||
-         (_day_stall_reason_mask.load(std::memory_order_acquire) &
-          (RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
-           RUNTIME_DAY_STALL_FISCAL_PEER)) != 0u)) {
-        note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
-                           RUNTIME_DAY_STALL_EFFECT_ACK,
-                       day);
-    }
-    const uint64_t since =
-        _day_stall_peer_since_us.load(std::memory_order_acquire);
-    if (since == 0u) return false;
-    const uint64_t elapsed_ms = (now_us() - since) / 1000u;
-    if (elapsed_ms < peer_stall_fault_timeout_ms()) return false;
-    const uint32_t mask = day_stall_reason_mask();
-    const std::string fault_line = pk::log_format(
-        "[day-stall-fault] day=%d stall=0x%x peer_ms=%d code=%s ring=%d",
-        day, static_cast<int64_t>(mask), static_cast<int64_t>(elapsed_ms),
-        std::string(fault_code != nullptr ? fault_code : "peer_stall_timeout").c_str(),
-        static_cast<int64_t>(_environment_ring.size()));
-    // print + printerr: Godot console may hide stderr-only lines.
-    pk::log_line(fault_line);
-    pk::log_line(fault_line, true);
-    set_fault(fault_code != nullptr && fault_code[0] != '\0'
-                  ? fault_code
-                  : "peer_stall_timeout");
-    return true;
+void NativeSimulationHost::log_slow_peer(int64_t day) {
+    const auto since = _day_stall_peer_since_us.load(std::memory_order_acquire);
+    if (since == 0 || since == _last_peer_stall_warning) return;
+    const auto ms = (now_us() - since) / 1000u;
+    if (ms < 5000u) return;
+    _last_peer_stall_warning = since;
+    pk::log_info("[day-stall] day=%lld stall=0x%x peer_ms=%llu ring=%zu",
+        static_cast<long long>(day), day_stall_reason_mask(),
+        static_cast<unsigned long long>(ms), _environment_ring.size());
 }
 
 void NativeSimulationHost::worker_main() {
@@ -324,8 +279,6 @@ void NativeSimulationHost::worker_main() {
     pending_commands.reserve(RUNTIME_COMMAND_QUEUE_CAPACITY);
     int64_t logged_pending_day = -1;
     uint32_t logged_pending_mask = 0;
-    int64_t events_failed_wait_day = -1;
-    uint64_t events_failed_since_us = 0;
     size_t pending_begin = 0;
     std::vector<RuntimeCommandReceipt> day_receipts;
     day_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
@@ -369,6 +322,11 @@ void NativeSimulationHost::worker_main() {
                _state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
+            service_economy_read_view();
+            if (service_military_commands() || service_economy_boundary_requests() ||
+                service_era_reward_requests() || service_annual_presentations() ||
+                service_narrative_requests() || service_player_confirmations()) continue;
+
             const bool retained_day_pending = active_environment != nullptr &&
                 active_environment->day == _committed_day.load(std::memory_order_acquire) + 1;
             if (_save_requested.load(std::memory_order_acquire) && !retained_day_pending) {
@@ -403,33 +361,51 @@ void NativeSimulationHost::worker_main() {
                 _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
                 (_requested_authority_mask.load(std::memory_order_acquire) &
                  runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-            const bool climate_pending = has_pending_climate_input() || retained_day_pending;
-            if ((climate_driven && !climate_pending) ||
+            const auto daily_work_ready = [&] {
+                if (_world_environment) {
+                    return retained_day_pending || player_response_admits(committed_day_value() + 1) ||
+                        (!_calendar_suspended.load(std::memory_order_acquire) &&
+                         _clock_requested_day.load(std::memory_order_acquire) > committed_day_value());
+                }
+                return has_pending_climate_input() || retained_day_pending;
+            };
+            const bool climate_pending = daily_work_ready();
+            const bool awaiting_player = player_confirmation_block() != nullptr;
+            if (awaiting_player || (climate_driven && !climate_pending) ||
                 (!climate_driven && (paused || speed <= 0.0 || !std::isfinite(speed)))) {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 _state.store(RuntimeWorkerState::PAUSED, std::memory_order_release);
                 last = std::chrono::steady_clock::now();
                 std::unique_lock<std::mutex> lock(_control_mutex);
-                _worker_timing.set(climate_driven ? RuntimeWorkerTiming::ENVIRONMENT_WAIT
-                                                  : RuntimeWorkerTiming::INPUT_WAIT);
+                _worker_timing.set(awaiting_player ? RuntimeWorkerTiming::PAUSED :
+                    (climate_driven && !_world_environment ? RuntimeWorkerTiming::ENVIRONMENT_WAIT
+                                                          : RuntimeWorkerTiming::CLOCK_WAIT));
                 _control_cv.wait(lock, [&] {
-                    return _stop_requested.load(std::memory_order_acquire) ||
+                    const bool blocked = awaiting_player;
+                    const bool ready = _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) ||
-                        (climate_driven ? (has_pending_climate_input() || retained_day_pending) :
+                        player_requests_pending_locked() ||
+                        (_economy_read_view_requested && !retained_day_pending) ||
+                        (!blocked && (climate_driven ?
+                            daily_work_ready() :
                             (!_paused.load(std::memory_order_acquire) &&
-                             _speed_days_per_second.load(std::memory_order_acquire) > 0.0));
+                             _speed_days_per_second.load(std::memory_order_acquire) > 0.0)));
+                    if (!ready && climate_driven && !_world_environment && !blocked &&
+                            !_paused.load(std::memory_order_acquire))
+                        _worker_timing.observe_main_wait(committed_day_value() + 1,
+                            RuntimeWorkerTiming::ENVIRONMENT_INPUT);
+                    return ready;
                 });
+                _worker_timing.finish_main_wait();
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 continue;
             }
             if (_stop_requested.load(std::memory_order_acquire)) break;
             _state.store(RuntimeWorkerState::RUNNING, std::memory_order_release);
             const auto drain_commands = [&] {
-                RuntimeCommandPacket incoming;
-                while (pop_command(incoming)) {
-                    pending_commands.push_back(incoming);
-                    pending_commands_dirty = true;
-                }
+                const size_t previous = pending_commands.size();
+                drain_command_inbox(pending_commands);
+                pending_commands_dirty |= previous != pending_commands.size();
                 publish_pending_count();
             };
             const bool country_delivery_boundary =
@@ -452,7 +428,8 @@ void NativeSimulationHost::worker_main() {
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                         std::chrono::duration<double>(seconds_until_day)), [&] {
                     return _stop_requested.load(std::memory_order_acquire) ||
-                        _save_requested.load(std::memory_order_acquire) ||
+                        player_requests_pending_locked() || _save_requested.load(std::memory_order_acquire) ||
+                        (_economy_read_view_requested && !retained_day_pending) ||
                         _paused.load(std::memory_order_acquire) ||
                         _speed_days_per_second.load(std::memory_order_acquire) != speed;
                 });
@@ -463,51 +440,35 @@ void NativeSimulationHost::worker_main() {
             debt -= static_cast<double>(target_days);
             _time_debt_days.store(std::min(100.0, debt), std::memory_order_release);
             for (int64_t step = 0; step < target_days; ++step) {
-                if (_stop_requested.load(std::memory_order_acquire)) break;
+                if (_stop_requested.load(std::memory_order_acquire) ||
+                    player_confirmation_block()) break;
                 const int64_t from_day = _committed_day.load(std::memory_order_acquire);
                 const int64_t day = from_day + 1;
-                const auto tail_ready = [&] { return !main_day_tail_pending(); };
-                if (!tail_ready()) {
-                    std::unique_lock<std::mutex> control_lock(_control_mutex);
-                    _worker_timing.set(RuntimeWorkerTiming::MAIN_TAIL_WAIT);
-                    _control_cv.wait(control_lock, [&] {
-                        return tail_ready() ||
-                            _stop_requested.load(std::memory_order_acquire) ||
-                            _save_requested.load(std::memory_order_acquire);
-                    });
-                    _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
-                    // A save or stop is served at the day boundary first.
-                    if (!tail_ready()) break;
-                }
-                // Yield between days until every main-thread requester has
-                // completed its protected inbox service; no authority lock is
-                // held while waiting. Country commands are drained afterwards.
-                if (_main_boundary_service_requested.load(std::memory_order_acquire) != 0u) {
-                    std::unique_lock<std::mutex> control_lock(_control_mutex);
-                    while (_main_boundary_service_requested.load(
-                               std::memory_order_acquire) != 0u &&
-                           !_stop_requested.load(std::memory_order_acquire)) {
-                        // Completion is an atomic transport signal. Bound the
-                        // sleep so a notify between predicate and wait cannot
-                        // strand the worker after the main thread completed.
-                        _control_cv.wait_for(control_lock, std::chrono::milliseconds(5));
-                    }
-                    if (_stop_requested.load(std::memory_order_acquire)) break;
-                }
                 // Keep the authority switch closed across the whole semantic
                 // day transaction through publication and generation release.
                 // Counting only execute_day_plan() leaves publication unprotected.
                 _worker_timing.set(RuntimeWorkerTiming::BOUNDARY_WAIT);
                 std::unique_lock<std::mutex> boundary_lock(
-                    _economy_authority_boundary_mutex);
+                    _economy_authority_boundary_mutex, std::try_to_lock);
+                if (!boundary_lock.owns_lock()) {
+                    _worker_timing.observe_main_wait(day, RuntimeWorkerTiming::OTHER);
+                    boundary_lock.lock();
+                    _worker_timing.finish_main_wait();
+                }
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+                if (_world_environment && !retained_day_pending &&
+                    (_save_requested.load(std::memory_order_acquire) ||
+                     (!player_response_admits(day) &&
+                      (_calendar_suspended.load(std::memory_order_acquire) ||
+                       _clock_requested_day.load(std::memory_order_acquire) < day)))) break;
                 AtomicCounterScope day_scope(_worker_day_inflight);
                 if (try_fault_injection("worker.inflight.before")) {
                     break;
                 }
-                // Include commands delivered during the main boundary service;
-                // draining before that service made their admission race a day.
-                if (country_delivery_boundary) drain_commands();
+                if (_world_environment && !try_freeze_command_inputs(day)) break;
+                const bool narrative_commands = prepare_narrative_day(day);
+                if (state() == RuntimeWorkerState::FAULTED) break;
+                if (country_delivery_boundary || narrative_commands) drain_commands();
                 day_receipts.clear();
                 if (pending_commands_dirty) {
                     std::stable_sort(pending_commands.begin() +
@@ -579,7 +540,7 @@ void NativeSimulationHost::worker_main() {
                 // 跨日时（environment.day < worker 下一拍）再从 FIFO 取最旧。
                 if (!active_environment ||
                     active_environment->day < day) {
-                    active_environment = environment_input_for_plan();
+                    active_environment = executor_environment_for_day(day);
                 }
                 const auto &environment = active_environment;
                 // 在执行前采样唤醒游标，避免执行期间已到达的 peer ACK 被漏掉。
@@ -754,15 +715,15 @@ void NativeSimulationHost::worker_main() {
                         if (s_full_mask_preflight_left.fetch_sub(
                                 1, std::memory_order_relaxed) > 0) {
                             pk::log_info(
-                                "[runtime-day-wait] day=%d missing=0x0 "
+                                "[runtime-day-wait] day=%lld missing=0x0 "
                                 "forcing advance (spurious preflight_ok=0) "
-                                "ring=%d climate_committed=%d continuation=%d "
+                                "ring=%zu climate_committed=%lld continuation=%d "
                                 "stall=0x%x",
-                                day,
-                                static_cast<int64_t>(_environment_ring.size()),
-                                climate_committed,
-                                static_cast<int64_t>(day_commit.continuation_pending),
-                                static_cast<int64_t>(day_stall_reason_mask()));
+                                static_cast<long long>(day),
+                                _environment_ring.size(),
+                                static_cast<long long>(climate_committed),
+                                static_cast<int>(day_commit.continuation_pending),
+                                day_stall_reason_mask());
                         }
                         // Only drop envs for this worker day (and earlier).
                         // Never drain through climate_committed when it is
@@ -809,14 +770,13 @@ void NativeSimulationHost::worker_main() {
                         }
                         country_fallback[fb] = '\0';
                         pk::log_info(
-                            "[runtime-day-wait] day=%d env_day=%d missing=0x%x "
-                            "stall=0x%x economy_input=%d ring=%d country=%s",
-                            day,
-                            environment ? environment->day : -1,
-                            static_cast<int64_t>(missing),
-                            static_cast<int64_t>(day_stall_reason_mask()),
-                            economy_input_requested_day(),
-                            static_cast<int64_t>(_environment_ring.size()),
+                            "[runtime-day-wait] day=%lld env_day=%lld missing=0x%x "
+                            "stall=0x%x economy_input=%lld ring=%zu country=%s",
+                            static_cast<long long>(day),
+                            static_cast<long long>(environment ? environment->day : -1),
+                            missing, day_stall_reason_mask(),
+                            static_cast<long long>(economy_input_requested_day()),
+                            _environment_ring.size(),
                             country_fallback);
                         // Economy incomplete with no stall bit has no CV wake
                         // source once Climate capacity fills. Arm a peer stall
@@ -849,47 +809,15 @@ void NativeSimulationHost::worker_main() {
                             }
                             yield_reason[yi] = '\0';
                             pk::log_info(
-                                "[runtime-day-wait] day=%d armed fiscal stall "
-                                "for economy-missing-without-stall ring=%d "
-                                "yield=%s climate_committed=%d",
-                                day,
-                                static_cast<int64_t>(_environment_ring.size()),
+                                "[runtime-day-wait] day=%lld armed fiscal stall "
+                                "for economy-missing-without-stall ring=%zu "
+                                "yield=%s climate_committed=%lld",
+                                static_cast<long long>(day),
+                                _environment_ring.size(),
                                 std::string(yield_reason).c_str(),
-                                climate_committed);
+                                static_cast<long long>(climate_committed));
                         }
                     }
-                    // Events 硬失败不设任何 stall 位，peer 超时永不触发；
-                    // 环满后主线程停在 capacity barrier，表现为无声卡死。
-                    if ((missing & runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u &&
-                        _events_failed_day.load(std::memory_order_acquire) == day) {
-                        if (events_failed_wait_day != day) {
-                            events_failed_wait_day = day;
-                            events_failed_since_us = now_us();
-                        } else if ((now_us() - events_failed_since_us) / 1000u >=
-                                   peer_stall_fault_timeout_ms()) {
-                            char events_reason[64];
-                            size_t er = 0;
-                            for (; er + 1 < sizeof(events_reason) &&
-                                   er < _events_pod_fallback_reason.size(); ++er) {
-                                events_reason[er] = _events_pod_fallback_reason[er].load(
-                                    std::memory_order_acquire);
-                                if (events_reason[er] == '\0') break;
-                            }
-                            events_reason[er] = '\0';
-                            const std::string fault_line = pk::log_format(
-                                "[day-stall-fault] day=%d events_day_failed reason=%s "
-                                "ring=%d",
-                                day, std::string(events_reason).c_str(),
-                                static_cast<int64_t>(_environment_ring.size()));
-                            pk::log_line(fault_line);
-                            pk::log_line(fault_line, true);
-                            set_fault("events_day_failed");
-                            break;
-                        }
-                    } else {
-                        events_failed_wait_day = -1;
-                    }
-
                     if (_state.load(std::memory_order_acquire) ==
                         RuntimeWorkerState::FAULTED) {
                         break;
@@ -916,14 +844,6 @@ void NativeSimulationHost::worker_main() {
                     }
                     // 捕获输入时主线程必须可取得边界锁；等待期间没有公式写入。
                     boundary_lock.unlock();
-                    // Peer-stall timeout must win over prepare-spin. Otherwise
-                    // prepared>0 busy-retries the day forever while Host is
-                    // stuck on a full Climate ring (day≈2745 hang: armed
-                    // fiscal stall, weather LUT for minutes, then faulted).
-                    if (fault_if_peer_stall_timed_out(
-                            day, "day_wait_peer_stall_timeout")) {
-                        break;
-                    }
                     if (prepared_before_wait > 0u) {
                         // Origin assets are now pollable; retry this day without
                         // waiting for an external wake that may never arrive.
@@ -975,6 +895,13 @@ void NativeSimulationHost::worker_main() {
                     // Climate ring is full and no CV signal arrives.
                     constexpr auto kDayWaitSlice =
                         std::chrono::milliseconds(250);
+                    const bool missing_environment = climate_driven && !_world_environment &&
+                        (!environment || environment->day != day);
+                    constexpr uint32_t peer_waits = RUNTIME_DAY_STALL_ECONOMY_INPUT |
+                        RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
+                        RUNTIME_DAY_STALL_IDEOLOGY_ACK | RUNTIME_DAY_STALL_FISCAL_PEER;
+                    const bool waits_for_main = (day_stall_reason_mask() & peer_waits) != 0u ||
+                        (!climate_driven && (missing & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u);
                     _control_cv.wait_for(lock, kDayWaitSlice, [&] {
                         // Match the save admission condition above. A pending
                         // save cannot consume an unfinished environment day;
@@ -984,8 +911,8 @@ void NativeSimulationHost::worker_main() {
                             _save_requested.load(std::memory_order_acquire) &&
                             !has_pending_climate_input() &&
                             !(active_environment && active_environment->day == day);
-                        return _stop_requested.load(std::memory_order_acquire) ||
-                            save_can_run ||
+                        const bool ready = _stop_requested.load(std::memory_order_acquire) ||
+                            save_can_run || player_requests_pending_locked() ||
                             (!climate_driven && _paused.load(std::memory_order_acquire)) ||
                             stale_input_consumed ||
                             _climate_trace_signal.load(std::memory_order_acquire) !=
@@ -998,12 +925,19 @@ void NativeSimulationHost::worker_main() {
                                 attempt_economy_signal ||
                             (!climate_driven &&
                              _climate_trace.consumable_depth() != 0);
+                        if (!ready && missing_environment) {
+                            if (_paused.load(std::memory_order_acquire))
+                                _worker_timing.finish_main_wait();
+                            else
+                                _worker_timing.observe_main_wait(day, RuntimeWorkerTiming::ENVIRONMENT_INPUT);
+                        } else if (!ready && waits_for_main) {
+                            _worker_timing.observe_main_wait(day, RuntimeWorkerTiming::OTHER);
+                        }
+                        return ready;
                     });
+                    _worker_timing.finish_main_wait();
                     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
-                    if (fault_if_peer_stall_timed_out(
-                            day, "day_wait_peer_stall_timeout")) {
-                        break;
-                    }
+                    log_slow_peer(day);
                     break;
                     } // missing != 0
                 }
@@ -1033,7 +967,7 @@ void NativeSimulationHost::worker_main() {
                     // schedule gate suppresses production the moment the grant
                     // lands, so the first suppressed tick must already have a
                     // snapshot to consume.
-                    if ((wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE))
+                    if (!_world_environment && (wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE))
                             != 0u) {
                         // Only a day Climate actually advanced may be
                         // published. The worker clock is free to run ahead of
@@ -1051,7 +985,7 @@ void NativeSimulationHost::worker_main() {
                             _climate_writeback.try_begin_write(slot)) {
                             RuntimeClimateSnapshot &out =
                                 _climate_writeback.write_buffer(slot);
-                            _climate_authority.snapshot_into(out, true);
+                            capture_climate_display(out);
                             // Own monotonic sequence, not the commit
                             // generation: the commit generation is bumped later
                             // inside publish_day, so reading it here would
@@ -1076,7 +1010,6 @@ void NativeSimulationHost::worker_main() {
                                                  std::memory_order_release);
                 _last_day_work_units.store(day_commit.work_units,
                                            std::memory_order_release);
-                _committed_day.store(day, std::memory_order_release);
                 _completed_days.fetch_add(1, std::memory_order_relaxed);
                 publish_day(from_day, day, day_commit, day_receipts);
                 _inline_day_pending.store(false, std::memory_order_release);
@@ -1105,17 +1038,43 @@ void NativeSimulationHost::worker_main() {
         // throws away the only cheap evidence. Log what() before publishing the same
         // fault code, so a worker that dies after a restart says why.
         const std::string line = pk::log_format(
-            "[runtime-worker-exception] what=%s day=%d",
+            "[runtime-worker-exception] what=%s day=%lld",
             error.what() != nullptr ? error.what() : "unknown",
-            _committed_day.load(std::memory_order_relaxed));
+            static_cast<long long>(_committed_day.load(std::memory_order_relaxed)));
         pk::log_line(line);
         pk::log_line(line, true);
         set_fault("unhandled_worker_exception");
     } catch (...) {
         set_fault("unhandled_worker_exception");
     }
+    // Complete already accepted value-only work before a same-world restart.
     compact_pending_commands(true);
     publish_pending_count();
+    std::deque<RuntimePlayerConfirmationRequest> abandoned_confirmations;
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        _military_commands.clear();
+        _economy_boundary_requests.clear();
+        _colonization_read_results.clear();
+        _colonization_quotes_ready = false;
+        _era_reward_requests.clear();
+        _narrative_requests.clear();
+        _annual_presentations.clear();
+        abandoned_confirmations.swap(_player_confirmation.requests);
+        _player_confirmation.ideology_input_changed = false;
+        _control_cv.notify_all();
+    }
+    for (const auto &request : abandoned_confirmations) {
+        constexpr const char *code = "executor_stopped_before_player_confirmation_service";
+        godot::Dictionary result;
+        result["ok"] = false;
+        result["code"] = code;
+        result["reason"] = code;
+        result["settled_day"] = committed_day_value();
+        const char *command = request.kind == RuntimePlayerConfirmationRequest::Kind::DISMISS_IDEOLOGY
+            ? "ideology.offer.dismiss" : "ui.hide_all_except_gm";
+        publish_boundary_command_result(command, 0, std::move(result));
+    }
     _worker_timing.stop();
     // STOPPED is the restart handoff: even timing cleanup must precede it,
     // otherwise the retiring worker can stop the next worker's timing state.

@@ -922,6 +922,8 @@ func _reconcile_optimistic_from_live_snapshot() -> void:
 	for tech_index_value in remaining:
 		var tech_index := int(tech_index_value)
 		var entry = _optimistic_queue[tech_index_value]
+		if _optimistic_request_id(entry) != 0:
+			continue
 		var technology_id := ""
 		if entry is Dictionary:
 			technology_id = String((entry as Dictionary).get("technology_id", ""))
@@ -960,52 +962,28 @@ func _poll_optimistic_receipts() -> void:
 		return
 	var batch: Dictionary = facade.poll_worker_command_receipts(
 		_receipt_cursor, 64)
-	var receipts: Array = batch.get("receipts", [])
-	if receipts.is_empty():
-		return
-	var need_live_apply := false
-	for row_value in receipts:
-		var row: Dictionary = row_value
+	_receipt_cursor = int(batch.get("last_publication_sequence", _receipt_cursor))
+	var pending_changed := false
+	for row: Dictionary in batch.get("receipts", []):
 		var request_id := int(row.get("request_id", 0))
-		_receipt_cursor = maxi(_receipt_cursor, request_id)
-		var status := String(row.get("status", row.get("code", "")))
-		var reason := String(row.get("reason", "")).strip_edges()
-		if status.findn("REJECT") >= 0:
-			_optimistic_queue.clear()
-			var message := _research_command_message(reason)
-			if message == "当前无法加入研究队列。" and not reason.is_empty():
-				message = reason
-			_detail.mark_rejected(message if not message.is_empty() else "提交失败")
-			_force_apply_live_research()
-			return
-		# Only Committed terminals mean the worker applied the queue mutation.
-		# Accepted is admission-only and arrives before the snapshot moves.
-		if status.findn("COMMIT") < 0:
+		if request_id == 0:
 			continue
-		var matched: Array[int] = []
-		for tech_index_value in _optimistic_queue.keys():
-			var tech_index := int(tech_index_value)
-			var entry_request := _optimistic_request_id(
-				_optimistic_queue[tech_index_value])
-			# Prefer exact request_id match. Rows without an id fall through to
-			# live snapshot reconcile (state >= 3) instead of clearing on every
-			# unrelated Country commit.
-			if entry_request != 0 and entry_request == request_id:
-				matched.append(tech_index)
-		for tech_index in matched:
+		var status := String(row.get("status", ""))
+		if status not in ["Committed", "RejectedAtExecution"]:
+			continue
+		for tech_index in _optimistic_queue.keys():
+			if _optimistic_request_id(_optimistic_queue[tech_index]) != request_id:
+				continue
 			_optimistic_queue.erase(tech_index)
-			need_live_apply = true
-	if need_live_apply:
-		# COMMIT may clear the optimistic map before the next panel refresh.
-		# Always re-read the worker replica — do not keep a presentation overlay.
-		if not _force_apply_live_research():
-			_apply_research()
-		elif not _optimistic_queue.is_empty():
-			_reconcile_optimistic_from_live_snapshot()
-	elif not _optimistic_queue.is_empty():
-		_reconcile_optimistic_from_live_snapshot()
-		if not _optimistic_queue.is_empty():
-			_apply_research()
+			pending_changed = true
+			if status == "RejectedAtExecution":
+				var reason := String(row.get("reason", "")).strip_edges()
+				var message := _research_command_message(reason)
+				if message == "当前无法加入研究队列。" and not reason.is_empty():
+					message = reason
+				_detail.mark_rejected(message)
+	if pending_changed and not _force_apply_live_research():
+		_apply_research()
 
 
 func _sample_history() -> void:

@@ -32,6 +32,7 @@
 //
 // 纯 C++、header-only、全 inline、零 Godot 依赖；允许单独编译（见契约 §2.4 自测）。
 
+#include "simulation_math.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -487,7 +488,7 @@ inline void precompute_coeff(const Grid &g, const Flow &fl, const SplParams &sp,
             if (area < sp.min_area_hex) continue;
             const double dx_hex = dir_len()[fl.rcv_k[i]] * inv_hex;
             if (dx_hex <= 1e-12) continue;
-            C[i] = float(k_iter * std::pow(area, sp.m) / dx_hex);
+            C[i] = float(k_iter * pk::simulation_math::pow(area, sp.m) / dx_hex);
         }
     }
 }
@@ -618,7 +619,7 @@ inline void deposit(Grid &g, const Flow &fl, const DepParams &dp, const SplParam
         const double dx_hex = dir_len()[fl.rcv_k[si]] * inv_hex;
         const double slope = std::max(double(g.H[si]) - double(g.H[sr]), 0.0) / dx_hex;
         const double area = double(fl.area_hex[si]);
-        const double qc = dp.kc * std::pow(area, sp.m) * slope;   // 搬运能力（同指数 m）
+        const double qc = dp.kc * pk::simulation_math::pow(area, sp.m) * slope;  // 搬运能力（同指数 m）
         if (Qs[si] > qc && area >= dp.min_area_hex) {
             double room = double(g.H_pre[si]) - double(g.H[si]);   // 不高于侵蚀前
             const double room_child = min_child_h[si] - 1e-6 - double(g.H[si]); // 不高于上游子像素

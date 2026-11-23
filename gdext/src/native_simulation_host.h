@@ -1,11 +1,14 @@
 #pragma once
+#include "runtime_command_admission.h"
 #include "runtime_pod_protocol.h"
+#include "native_simulation_host_status.h"
 #include "runtime_worker_timing.h"
 #include "runtime_thread_retirement.h"
 #include "runtime_authority_control.h"
 #include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
-#include "runtime_snapshot_ring.h"
+#include "runtime_day_tail.h"
+#include "runtime_player_confirmation.h"
 #include "runtime_published_view.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
@@ -29,6 +32,7 @@
 #include <cstddef>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -39,9 +43,18 @@
 #include <unordered_set>
 #include <vector>
 namespace pk {
+
+struct VisionResearchState;
 struct RuntimeGoldenSnapshot;
+struct MilitaryCommandBatch;
+struct RuntimeEconomyBoundaryRequest;
+struct RuntimeEraRewardRequest;
+struct RuntimeEraAdvancement;
+struct RuntimeEraAdvancementView;
+class NativeMilitaryRuntime;
 class NativeEconomyRuntime;
 class ModifierRuntime;
+class EffectRuntime;
 class CountryAiRuntime;
 class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort {
 public:
@@ -53,15 +66,9 @@ public:
     std::unique_ptr<NativeSimulationHost> make_new_world_host(std::string &error) const;
     // Hot-path gates need only these atomics. Do not construct the diagnostic
     // report (timers, transport queues and domain snapshots) to read a grant.
-    struct ControlState {
-        RuntimeWorkerState state = RuntimeWorkerState::STOPPED;
-        RuntimeSimulationMode mode = RuntimeSimulationMode::OFF;
-        bool authority_ready = false;
-        bool interactive = false;
-        uint32_t authoritative_domain_mask = 0;
-        int64_t committed_day = -1;
-    };
+    using ControlState = RuntimeControlState;
     ControlState control_state() const;
+    godot::Dictionary submit_player_confirmation(RuntimePlayerConfirmationRequest request);
 
     // FAULTED describes a business failure, not thread completion. The token
     // is published by the worker wrapper after all worker_main locals unwind.
@@ -76,6 +83,9 @@ public:
     void publish_annual_economy(const AnnualEconomyFacts &facts) override;
     void commit_annual_day(int64_t day, const AnnualCountryFacts &country, uint64_t draws);
     void commit_annual_worker_day(int64_t day);
+    std::shared_ptr<const RuntimeFiscalDisplay> capture_economy_display(
+        int64_t day, int64_t year_length, RuntimeDayTail &tail,
+        const RuntimeDayTail *previous) const;
     void queue_annual_worker_reward(int64_t day);
     void settle_annual_worker_reward(const RuntimeIdeologyPodSnapshot &snapshot);
     bool annual_pending_reward(AnnualDevelopmentReport &out) const;
@@ -84,7 +94,7 @@ public:
                        bool &reward_pending, size_t &count) const;
     bool annual_report(uint64_t id, AnnualDevelopmentReport &out) const;
     std::vector<AnnualDevelopmentReport> annual_history(uint32_t offset, uint32_t limit) const;
-    bool mark_annual_presented(uint64_t id);
+    const char *mark_annual_presented(uint64_t id);
     std::vector<uint8_t> encode_annual_save() const;
     bool restore_annual_save(const uint8_t *bytes, size_t size, std::string &error);
 
@@ -103,6 +113,7 @@ public:
                      initial_day, speed_days_per_second, paused);
     }
     void request_stop();
+    bool try_stop_at_day_boundary();
     void join_for_destruction();
     void set_clock(bool paused, double speed_days_per_second);
     void set_interactive(bool interactive);
@@ -124,41 +135,7 @@ public:
     // 一次内联日尝试的结果。只有 committed=true 表示这一天真的提交并发布了；
     // continuation_pending=true 表示屏障缺 peer 结果（调用方应在同一线程上泵一轮
     // peer 后重试同一天），false 且未提交表示硬失败，重试无用。
-    struct InlineDayOutcome {
-        bool committed = false;
-        bool continuation_pending = false;
-        int64_t from_day = -1;
-        int64_t day = -1;
-        int64_t environment_day = -1;
-        uint32_t completed_domain_mask = 0;
-        uint32_t completed_stage_count = 0;
-        uint32_t stage_count = 0;
-        uint32_t dirty_families = 0;
-        uint64_t work_units = 0;
-        char reason[64]{};
-        // ===== 分域/分阶段计时（native_daily_inline 诊断）=====
-        //
-        // 只覆盖"一次尝试"（一次 run_inline_day 调用）；重试由调用方按域累加。
-        // 下标与 runtime_domain_stage_order() 同序，键名用
-        // runtime_domain_stage_key()。
-        //
-        // 注意 stage_ms[CLIMATE] 装的是 Climate 内核的真实耗时，而内核在 12 域
-        // 循环之前就跑完了（见 execute_day_plan 的 PRE_SETUP 段），所以它是
-        // pre_stage_ms 的一部分。恒等式近似为：
-        //   elapsed_ms ≈ plan_build_ms + pre_stage_ms
-        //              + (sum(stage_ms) - stage_ms[climate])
-        //              + commit_tail_ms
-        double stage_ms[RUNTIME_DOMAIN_STAGE_COUNT]{};
-        double pre_stage_ms = 0.0;   // stage 循环之前（含 Climate 内核）
-        double climate_ms = 0.0;     // pre_stage_ms 中属于 Climate 内核的部分
-        double plan_build_ms = 0.0;  // build_day_plan
-        double commit_tail_ms = 0.0; // 日尾：Climate writeback + publish + 读视图
-        // 单日墙钟预算看门狗：超预算时不再继续推进 stage，而是带着
-        // budget_exceeded 收工，让调用方看到一次"有界的失败"而不是挂死。
-        bool budget_exceeded = false;
-        // 本线程这次是否真的把并行执行器切成了串行（浏览器内置日必须为 true）。
-        uint32_t executor_serial_only = 0;
-    };
+    using InlineDayOutcome = RuntimeInlineDayOutcome;
     // 在调用线程上同步执行一天。不做 CV 等待、不 spawn 线程、不设 peer-stall 超时。
     InlineDayOutcome run_inline_day();
     // 内联日单日墙钟预算（微秒，0 = 不设预算）。默认 30000，可用
@@ -188,6 +165,9 @@ public:
     }
     bool publish_environment(RuntimeEnvironmentSnapshot &&snapshot,
                              std::string &error);
+    bool initialize_world_environment(RuntimeEnvironmentSnapshot &&seed,
+        const godot::Dictionary &config, std::string &error);
+    int64_t request_runtime_calendar_day(int64_t date);
     // worker：ring 内仍有未评估输入（有活可干）。
     bool has_pending_climate_input() const;
     // 主线程 publish：ring 已满，需 wait 腾空位。
@@ -207,10 +187,10 @@ public:
     int64_t next_environment_day() const noexcept {
         return _environment_day.load(std::memory_order_acquire) + 1;
     }
-    // First day a command submitted now may take effect. With the main-day tail
-    // gate it is tail_done+2; otherwise the first day whose environment frame
-    // is not yet sealed (Climate authority), else committed+1.
+    // First day whose command inputs have not been frozen.
     int64_t command_seal_day() const noexcept;
+    RuntimeCommandAdmission admit_command(int64_t &effective_day);
+    godot::Array take_boundary_command_results(bool &colonization_quotes_ready);
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -222,9 +202,7 @@ public:
     // bit — Country commit must not erase Economy fiscal/input stalls.
     void clear_day_stall_bits(uint32_t bits);
     void clear_day_stall_peer_bits();
-    // Returns true if peer stall exceeded RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
-    // and set_fault was called.
-    bool fault_if_peer_stall_timed_out(int64_t day, const char *fault_code);
+    void log_slow_peer(int64_t day);
     // publish 描述这一天生产 Climate 各段的真实执行情况（跑没跑、用的什么输入），
     // 全部字段可选；见 RuntimeClimateReferencePublish。
     bool publish_climate_reference(
@@ -413,92 +391,53 @@ public:
     bool submit_economy_pod_command(const RuntimeEconomyPodCommand &command,
                                     std::string &error);
     bool poll_economy_pod_receipt(RuntimeEconomyPodReceipt &out) noexcept;
+    const RuntimeEconomyPodReceipt *economy_pod_terminal(uint64_t request) const {
+        return _economy_pod_authority.terminal_receipt(request);
+    }
     void set_economy_sync_writes_forbidden(bool forbidden) noexcept;
     int64_t economy_input_requested_day() const noexcept {
         return _economy_input_requested_day.load(std::memory_order_acquire);
     }
-    bool economy_worker_owns_execution() const noexcept override {
-        const auto current = _state.load(std::memory_order_acquire);
-        return current != RuntimeWorkerState::STOPPED &&
-            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
-            _economy_production_runtime != nullptr &&
-            (_requested_authority_mask.load(std::memory_order_acquire) &
-             runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u;
-    }
+    bool economy_worker_owns_execution() const noexcept override;
     std::unique_lock<std::mutex> try_lock_economy_input_capture() {
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
     }
-    // Deferred-boundary handshake: a main-thread caller that lost
-    // `try_lock_economy_input_capture` asks the worker to park between semantic
-    // days until that caller has had its turn ("come back to the boundary").
-    //
-    // COUNTED PER REQUESTER, not one shared bool. The flag shipped as a bool and
-    // that shape cannot express "two subsystems both want a turn":
-    //   * `world_ext_trigger.cpp` requests on a failed handoff and clears on the
-    //     next handoff that wins the lock;
-    //   * `world_ext_ideology.cpp` requests on a failed instance refresh.
-    // With one bool, whichever cleared FIRST spoke for both -- a trigger
-    // completion released a worker that ideology was still waiting on. And the
-    // ideology path requested without ever completing, so the worker parked in
-    // the `_control_cv` loop (`native_simulation_host.cpp`, the
-    // `_main_boundary_service_requested != 0` wait between semantic days) forever:
-    // that is the observed "worker_committed_day 2 -> 2" and the empty receipts.
-    //
-    // Each requester owns one bit. Request/complete must be paired BY THE SAME
-    // CLIENT, and cannot be paired by accident: completing a bit this client does
-    // not hold is a no-op, so one subsystem can never release another's turn.
-    enum class MainBoundaryClient : uint32_t {
-        TRIGGER = 0,
-        IDEOLOGY = 1,
-        CLIENT_COUNT = 2,
-    };
-    static constexpr uint32_t main_boundary_client_bit(MainBoundaryClient client) {
-        return uint32_t{1} << static_cast<uint32_t>(client);
+    void attach_bio_state(std::shared_ptr<struct RuntimeBioState> state) {
+        _executor_bio = std::move(state);
     }
-    void request_main_boundary_service(MainBoundaryClient client) noexcept {
-        const uint32_t bit = main_boundary_client_bit(client);
-        _main_boundary_service_requested.fetch_or(bit, std::memory_order_acq_rel);
+    void attach_military(std::shared_ptr<NativeMilitaryRuntime> military);
+    void attach_vision(std::shared_ptr<VisionResearchState> vision);
+    bool restore_vision_seed(std::vector<uint8_t> &explored, bool &enabled,
+                             uint64_t &player_handle) const;
+    bool restore_bio_seed(std::vector<int32_t> &occupancy) const;
+    std::shared_ptr<const RuntimeVisionFrame> latest_vision() const;
+    bool submit_fog_command(bool enabled, int64_t &effective_day);
+    bool vision_executor_active() const noexcept;
+    godot::Dictionary submit_economy_boundary_request(std::shared_ptr<RuntimeEconomyBoundaryRequest> request);
+    bool military_executor_active() const noexcept;
+    bool submit_military_commands(std::shared_ptr<MilitaryCommandBatch> batch);
+    uint64_t allocate_command_request_id_for_ingress() override;
+    void seed_events_ingress_cursor(int64_t next) noexcept {
+        _events_ingress_cursor.store(next, std::memory_order_release);
     }
-    // Clears ONE client's turn (its own). Idempotent: a client that never asked,
-    // or that already completed, changes nothing. When the last client completes
-    // the worker's wait predicate goes false and `notify_all` releases it.
-    void complete_main_boundary_service(MainBoundaryClient client) noexcept;
-    // Diagnostic: outstanding requesters, as a count. Exported so a parked worker
-    // can be told apart from one subsystem starving on another's bit.
-    uint32_t main_boundary_service_requests() const noexcept {
-        uint32_t mask = _main_boundary_service_requested.load(
-            std::memory_order_acquire);
-        uint32_t count = 0;
-        while (mask != 0) {
-            mask &= mask - 1u;
-            ++count;
-        }
-        return count;
+    int64_t events_ingress_cursor() const noexcept {
+        return _events_ingress_cursor.load(std::memory_order_acquire);
     }
-    bool main_boundary_service_requested_by(MainBoundaryClient client) const noexcept {
-        return (_main_boundary_service_requested.load(std::memory_order_acquire) &
-                main_boundary_client_bit(client)) != 0;
+    int64_t allocate_events_ingress_key() noexcept {
+        return _events_ingress_cursor.fetch_add(1, std::memory_order_relaxed);
     }
-    // Main-thread day tail (Military, natural-resource recovery) reads day D
-    // and writes inputs for D+1; with the gate on, the worker starts D+1 only
-    // after that tail is reported done. Set before start; start() counts the
-    // start day's tail as done.
-    void set_main_day_tail_gate(bool enabled) noexcept;
-    void mark_main_day_tail_done(int64_t day) noexcept;
-    // The committed day's main-thread tail has not run yet. Before the Climate
-    // grant the main thread may be waiting for it without running a tail.
-    bool main_day_tail_pending() const noexcept {
-        return _main_day_tail_gate.load(std::memory_order_acquire) &&
-            (_authority_control.snapshot().granted_mask &
-             runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u &&
-            _main_day_tail_done.load(std::memory_order_acquire) <
-                _committed_day.load(std::memory_order_acquire);
-    }
-    std::unique_lock<std::mutex> try_lock_economy_read_boundary() const {
-        return std::unique_lock<std::mutex>(
-            _economy_authority_boundary_mutex, std::try_to_lock);
-    }
+    bool enqueue_legacy_event_batch(const std::vector<RuntimeEventsRecord> &records,
+                                    int64_t effective_day, uint64_t generation,
+                                    std::string &error);
+    bool has_bio_state() const noexcept { return bool(_executor_bio); }
+    void reset_day_tail_for_world_change();
+    void request_economy_read_view();
+    bool has_resource_display_patch() const;
+    RuntimeResourceDisplayPatch take_resource_display_patch();
+    // The caller retains the day-tail gate until it consumes this result.
+    // The queued computation owns value data and never uses a scene object.
+    std::unique_lock<std::mutex> try_lock_economy_read_boundary() const;
     void complete_economy_input_capture() noexcept {
         {
             std::lock_guard<std::mutex> control_lock(_control_mutex);
@@ -516,89 +455,7 @@ public:
     // its hash for a day, the worker's own state hash is compared against it.
     bool publish_ideology_reference(int64_t day,
                                     const RuntimeIdeologyPodSnapshot &state);
-    struct IdeologyParityReport {
-        bool compared = false;
-        bool matched = false;
-        int64_t compared_count = 0;
-        int64_t matched_count = 0;
-        uint64_t reference_hash = 0;
-        uint64_t worker_hash = 0;
-        int64_t first_mismatch_day = -1;
-        // R8-4: worker days dropped because no reference exists on the same
-        // calendar day. Reported so the gate can tell "the calendars do not
-        // line up" apart from "the two sides agree".
-        int64_t uncompared_day_offset = 0;
-        int64_t last_uncompared_distance = -1;
-        char field[48]{};
-        const char *status = "none";
-        // Raw numbers behind a `points*` field, so a failure is readable without
-        // re-running under a debugger. Zeroed until a points mismatch happens.
-        bool points_diff_valid = false;
-        int64_t points_diff_day = -1;
-        int64_t points_diff_slot = -1;
-        int64_t points_diff_reference_countries = 0;
-        int64_t points_diff_worker_countries = 0;
-        int64_t points_diff_handle = 0;
-        int64_t points_diff_reference_handle = 0;
-        int64_t points_diff_worker_handle = 0;
-        int64_t points_diff_reference_points_q16 = 0;
-        int64_t points_diff_worker_points_q16 = 0;
-        int64_t points_diff_reference_lifetime_q16 = 0;
-        int64_t points_diff_worker_lifetime_q16 = 0;
-        int64_t points_diff_reference_revision = 0;
-        int64_t points_diff_worker_revision = 0;
-        int32_t points_diff_reference_baseline_ready = 0;
-        int32_t points_diff_worker_baseline_ready = 0;
-        int64_t points_diff_reference_baseline_population = 0;
-        int64_t points_diff_worker_baseline_population = 0;
-        int64_t points_diff_reference_baseline_buildings = 0;
-        int64_t points_diff_worker_baseline_buildings = 0;
-        int32_t points_diff_reference_history_count = 0;
-        int32_t points_diff_worker_history_count = 0;
-        int32_t points_diff_reference_history_head = 0;
-        int32_t points_diff_worker_history_head = 0;
-        std::array<int64_t, 8> points_diff_reference_history_q16{};
-        std::array<int64_t, 8> points_diff_worker_history_q16{};
-        int64_t points_diff_reference_last_day = -1;
-        int64_t points_diff_worker_round_day = -1;
-        int64_t points_diff_worker_committed_day = -1;
-        int64_t points_diff_reference_catalog_hash = 0;
-        int64_t points_diff_worker_catalog_hash = 0;
-        int64_t reference_publish_count = 0;
-        int64_t reference_published_day = -1;
-        int64_t reference_published_countries = 0;
-        int32_t reference_published_with_points_revision = 0;
-        int64_t reference_skipped_count = 0;
-        char reference_skip_reason[48]{};
-        // Catalog agreement is a PRECONDITION for comparison, not a business
-        // field: the two sides compute `catalog_hash` with different functions,
-        // so equality is never expected and a mismatch must never be counted as
-        // a business divergence. Reported for diagnosis only.
-        int64_t catalog_mismatch_count = 0;
-        int64_t last_reference_catalog_hash = 0;
-        int64_t last_worker_catalog_hash = 0;
-        // The Economy opinion revision the worker last accrued from. Compared
-        // against the reference's own `points_revision` in `points_diff`: equal
-        // means both sides saw the same input, so a remaining divergence is a
-        // real business one rather than a driver alignment artefact.
-        int64_t worker_opinion_revision = 0;
-        // A1: what the worker actually consumed. A driver binds the main thread
-        // to these so both sides settle the SAME opinion for the same day.
-        int64_t worker_opinion_period_index = -1;
-        int64_t worker_opinion_committed_day = -1;
-        // Day the worker last committed Ideology for. -1 means it never ran.
-        int64_t worker_committed_ideology_day = -1;
-        // The (reference day, worker day) pair the comparison actually used.
-        int64_t paired_reference_day = -1;
-        int64_t paired_worker_day = -1;
-        // First row whose points differ (recomputed row by row).
-        int64_t row_mismatch_slot = -1;
-        int64_t row_mismatch_reference_handle = 0;
-        int64_t row_mismatch_worker_handle = 0;
-        int64_t row_mismatch_reference_points = 0;
-        int64_t row_mismatch_worker_points = 0;
-    };
-    IdeologyParityReport ideology_parity_report() const;
+#include "native_simulation_host_ideology_parity.h"
 
     bool publish_country_reference(int64_t day, uint64_t reference_state_hash,
                                    std::string &error,
@@ -645,6 +502,11 @@ public:
     bool on_worker_thread() const noexcept override {
         return RuntimeExecutionContext::active_for(this);
     }
+    const char *preflight_military_construction(
+        uint64_t country, int32_t cell, int32_t type, bool demolishing,
+        int64_t day, int32_t &building, int32_t &slot) const override;
+    void commit_military_construction(
+        int32_t cell, int32_t building, int32_t slot, int64_t day, int64_t ready_day) override;
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
                                    std::string &error) override;
     bool finish_worker_country_asset(uint64_t request_id,
@@ -707,29 +569,7 @@ public:
     bool country_authority_handoff_self_test(std::string &error) const;
     RuntimeCountryReadView country_worker_read_view(
             uint64_t after_generation = 0) const;
-    struct CountryWorkerProtocolStatus {
-        uint32_t protocol_version = COUNTRY_PEER_PROTOCOL_VERSION;
-        bool configured = false;
-        bool plan_active = false;
-        bool waiting_for_peer = false;
-        uint32_t pending_intents = 0;
-        uint32_t queued_intents = 0;
-        uint32_t result_count = 0;
-        uint32_t rejected_results = 0;
-        uint32_t rejected_intents = 0;
-        bool has_unreported_rejection = false;
-        int64_t retry_day = -1;
-        uint64_t rejected_request_id = 0;
-        uint64_t session_epoch = 0;
-        uint64_t country_generation = 0;
-        int64_t day = -1;
-        uint32_t continuation_index = 0;
-        uint64_t boundary_id = 0;
-        uint64_t last_admitted_submit_order = 0;
-        uint64_t expected_base_generation = 0;
-        uint64_t catalog_hash = 0;
-        char last_reason[64]{};
-    };
+    using CountryWorkerProtocolStatus = RuntimeCountryWorkerProtocolStatus;
     CountryWorkerProtocolStatus country_worker_protocol_status() const;
     bool publish_country_checkpoint(const CountryCoreCheckpoint &checkpoint,
                                     std::string &error);
@@ -837,6 +677,24 @@ public:
     bool queue_effect_pod_remove(int64_t instance_id, uint32_t generation,
                                  std::string &error);
     bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
+    void attach_effect_adapter(EffectRuntime *effect, class NativeCountryRuntime *country,
+                               TriggerRuntime *trigger, NativeIdeologyRuntime *ideology);
+    std::shared_ptr<const RuntimeEffectReadView> latest_effect_read_view() const;
+    std::shared_ptr<const TriggerRuntime> latest_trigger_read_view() const;
+    std::shared_ptr<const RuntimeIdeologyReadView> latest_ideology_read_view() const;
+    std::shared_ptr<const RuntimeEraRewardView> latest_era_reward() const;
+    std::shared_ptr<const RuntimeEraAdvancementView> latest_era_advancement() const;
+    bool initialize_narrative(const godot::Dictionary &, const godot::Dictionary &);
+    godot::Dictionary restore_narrative_checkpoint(const godot::Dictionary &);
+    std::shared_ptr<const RuntimeNarrativeView> latest_narrative() const;
+    godot::Dictionary capture_narrative() const;
+    godot::Dictionary submit_narrative_choice_request(std::shared_ptr<struct RuntimeNarrativeRequest>);
+    bool enqueue_event_consumer_ack(uint64_t consumer, int64_t event, int64_t day,
+        uint64_t generation, bool seal);
+    godot::Dictionary submit_era_reward_request(std::shared_ptr<RuntimeEraRewardRequest> request);
+    bool effect_adapter_owned() const noexcept {
+        return _effect_adapter_runtime != nullptr && !execution_has_stopped();
+    }
     bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
     int32_t effect_pod_program_id_for_key(const char *key) const override;
     // M2a: true once a compiled Effect POD catalog is installed. The forwarder
@@ -916,6 +774,7 @@ public:
     bool queue_ideology_pod_commands(
         const std::vector<RuntimeIdeologyPodCommand> &commands,
         std::string &error);
+    void wake_for_ideology_response(const std::vector<RuntimeIdeologyPodCommand> &commands);
     bool poll_ideology_pod_intent(RuntimeDomainIntent &intent);
     bool submit_ideology_pod_ack(const RuntimeDomainAck &ack,
                                  std::string &error);
@@ -936,15 +795,17 @@ public:
     uint64_t allocate_command_request_id() override;
     void reserve_command_request_ids_through(uint64_t maximum) noexcept;
     uint64_t allocate_producer_sequence(uint32_t producer_id) override;
-    bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
-    bool poll_commit_generation(uint64_t generation, RuntimeCommit &out);
+    std::shared_ptr<const RuntimeClimateSnapshot> latest_climate_display() const;
+    std::shared_ptr<const struct RuntimeDisplayBatch> take_day_publications(uint64_t after);
     bool poll_receipt(RuntimeCommandReceipt &out);
     bool poll_country_command_receipts(
             uint64_t after_request_id, uint32_t limit,
             std::vector<CountryCommandReceipt> &out);
     // Point lookup for Effect ACK. Cursor polls skip lower Effect terminals
     // once an unrelated Country commit advances the high-water mark.
+    void poll_country_command_publications(uint64_t after_sequence, uint32_t limit,
+        std::vector<CountryCommandReceipt> &out);
     bool try_country_command_terminal(
             uint64_t request_id, CountryCommandReceipt &out) override;
     bool country_command_receipt_self_test(std::string &error) const;
@@ -982,7 +843,12 @@ public:
                                double visual_apply_ms,
                                double gpu_upload_ms);
     RuntimeThreadReport report() const;
+    RuntimeWorkerTiming::MainWaitDays main_waits_by_day() const {
+        return _worker_timing.main_wait_snapshot();
+    }
     RuntimeGoldenSnapshot golden_snapshot() const;
+    RuntimeGoldenSnapshot capture_golden_snapshot(int64_t day) const;
+    void publish_restored_ideology_view();
     void profile_save_window(bool active) { _worker_timing.save(active); }
     bool stop_requested() const {
         return _stop_requested.load(std::memory_order_acquire);
@@ -1143,183 +1009,9 @@ public:
     }
 
 private:
-    struct DayExecution;
-    RuntimeDayCommit execute_shadow_day(DayExecution &);
-    void prepare_climate_day(DayExecution &);
-    bool capture_day_input(DayExecution &, const RuntimeEnvironmentSnapshot &);
-    bool run_day_events(DayExecution &, int64_t);
-    bool stage_input_capture(DayExecution &, RuntimeDomainPlan &);
-    bool stage_climate(DayExecution &, RuntimeDomainPlan &);
-    bool stage_country(DayExecution &, RuntimeDomainPlan &);
-    bool stage_trigger_input(DayExecution &, RuntimeDomainPlan &);
-    bool stage_ideology(DayExecution &, RuntimeDomainPlan &);
-    bool stage_effect(DayExecution &, RuntimeDomainPlan &);
-    bool stage_modifier(DayExecution &, RuntimeDomainPlan &);
-    bool stage_gameplay_effect(DayExecution &, RuntimeDomainPlan &);
-    bool stage_economy(DayExecution &, RuntimeDomainPlan &);
-    bool stage_events(DayExecution &, RuntimeDomainPlan &);
-    bool stage_visual(DayExecution &, RuntimeDomainPlan &);
-    bool stage_commit(DayExecution &, RuntimeDomainPlan &);
-    static uint64_t now_us();
-    static uint64_t mix_hash(uint64_t value, uint64_t input);
-    // A worker publishes STOPPED immediately before returning.  Reusing a
-    // host must not make the Godot thread join that already-finished handle;
-    // the handle is handed to a detached reaper instead.  Destruction waits
-    // for reapers after requesting stop, so the host object remains alive for
-    // the last instruction of the old worker.
-    bool reap_completed_worker_nonblocking();
-    void worker_main();
-    // Inline and worker preserve accepted backlogs and share the ordering rule.
-    void drain_inline_day_commands(int64_t day,
-                                   std::vector<RuntimeCommandPacket> &day_commands,
-                                   std::vector<RuntimeCommandReceipt> &day_receipts,
-                                   uint64_t &admitted_submit_order);
-    RuntimeDayPlan build_day_plan(int64_t day, double speed_scale, const RuntimeEnvironmentSnapshot *environment,
-                                  uint64_t command_watermark = 0) const;
-    RuntimeDayCommit execute_day_plan(
-            RuntimeDayPlan &plan,
-            const RuntimeEnvironmentSnapshot *environment,
-            const std::vector<RuntimeCommandPacket> &day_commands,
-            std::vector<RuntimeCommandReceipt> &day_receipts,
-            uint64_t admitted_submit_order);
-    bool execute_country_worker_stage(
-            int64_t day, uint64_t input_generation,
-            const std::vector<RuntimeCommandPacket> &day_commands,
-            RuntimeDayCommit &commit, std::string &error,
-            uint64_t admitted_submit_order);
-    void bind_shadow_country_peer_mirrors_locked();
-    void record_country_parity_locked(const RuntimeCountryPodSnapshot &worker);
-    // Drain Economy-origin CREATED requests into COUNTRY_PREPARED + pollable
-    // queue. Country stage and Economy same-day retry share this helper so a
-    // fiscal/asset enqueue cannot park the worker until the next day attempt
-    // (which used to fill the Climate input ring and pin WorldClock).
-    // Returns how many origin requests were prepared (0 = queue was empty).
-    uint32_t prepare_economy_origin_country_assets(std::string &error);
-    bool country_authority_drain_idle_locked() const;
-    void queue_country_milestone_notifications_locked(
-        const std::shared_ptr<const RuntimeCountryPodSnapshot> &snapshot);
-    // How one Ideology day ended. Only PARKED retries the day; FAULT means the
-    // stage's inputs can never arrive (no catalog, no Country snapshot, a day
-    // before the POD's committed day), so retrying would only hang.
-    enum class IdeologyStageOutcome : uint8_t {
-        COMMITTED,
-        ALREADY_COMMITTED,  // a parked day planned again; the POD settled it
-        AWAITING_OPINION,   // Economy has not committed an opinion yet
-        PARKED,
-        FAULT,
-    };
-    IdeologyStageOutcome execute_ideology_worker_stage(int64_t day,
-                                                       RuntimeDayCommit &commit,
-                                                       std::string &error);
-    // Real Ideology -> Modifier bridge (replaced the synthetic OK ACK; used when the
-    // worker also owns MODIFIER). Transition rows are resolved against the
-    // Modifier catalog up front (all-or-nothing), submitted as one atomic
-    // Modifier batch, and the Ideology ACK is derived from the committed
-    // Modifier batch result.
-    void stage_ideology_modifier_commands(int64_t day,
-                                          uint64_t input_generation);
-    void settle_ideology_modifier_acks(
-        const std::vector<uint8_t> &batch_ok, bool committed);
-    bool ideology_modifier_bridge_active() const;
-    bool execute_trigger_worker_stage(int64_t day, uint64_t input_generation,
-                                      RuntimeDayCommit &commit,
-                                      std::string &error);
-    // Day-local publish of Trigger effect intents. Ids are monotonic inside the
-    // authority and a discarded plan replays the same ones, so the watermark is
-    // what stops an ACK-barrier retry from queueing a duplicate.
-    void publish_trigger_intents_locked(
-            const std::vector<RuntimeTriggerEffectIntent> &intents);
-    // H8 in-worker bridge, same shape as ack_ideology_intents_in_worker: Trigger
-    // effect intents are delivered by the Effect stage under a joint grant, so
-    // the ACK barrier settles on the next Trigger visit instead of waiting a
-    // frame for the main-thread pump.
-    uint32_t ack_trigger_intents_in_worker(int64_t day);
-    std::vector<uint8_t> encode_trigger_transport() const;
-    bool restore_trigger_transport(const std::vector<uint8_t> &, std::string &, bool install);
-    bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
-                                     RuntimeDayCommit &commit,
-                                     std::string &error);
-    // Apply queued instance/metric/remove/ACK transport without planning a day.
-    // Soft-skip and climate-park paths must call this so main-thread ENSURE
-    // registrations are not stranded in `_effect_instance_queue`.
-    bool drain_effect_transport_queues(std::string &error);
-    // E8: shared Modifier POD stage for SHADOW diagnostics and ACTIVE
-    // production. authority_plan is non-null only on SHADOW (fixture ACK /
-    // domain-runner commit). ACTIVE passes nullptr. Failure isolates
-    // Modifier — callers must not roll back Climate/Country already
-    // committed the same day.
-    bool execute_modifier_worker_stage(
-            int64_t day, uint64_t input_generation,
-            const std::vector<RuntimeCommandPacket> &day_commands,
-            bool effect_upstream_ok,
-            RuntimeDomainAuthorityPlan *authority_plan,
-            std::string &authority_error,
-            std::string &error);
-    // Resolve Effect MODIFIER intent → Modifier definition_id via key hash.
-    int32_t resolve_modifier_definition_id_for_effect_intent(
-            const RuntimeDomainIntent &intent) const;
-    // Single place that turns an Effect-produced intent into a Modifier POD
-    // command. Split out of execute_modifier_worker_stage so the adapter
-    // mapping can be asserted without planning a day (planning one feeds ACKs
-    // back into the Effect authority, which a mapping fixture has no
-    // transactions for). Returns false when the intent must be dropped.
-    bool map_effect_intent_to_modifier_command(
-            const RuntimeDomainIntent &intent, uint64_t input_generation,
-            RuntimeModifierPodCommand &command);
-    // Rebuild day-local Effect intents for COMMITTED transactions still missing
-    // ACKs (day-lane retry soft-skip must not drop the Modifier handoff).
-    void reemit_effect_committed_pending_intents(int64_t day);
-    // PUBLISH_EVENT intents do not go through Modifier; ACK them in-worker so
-    // technology activation is not pinned on the main-thread Effect pump.
-    uint32_t ack_effect_events_intents_in_worker(
-            const std::vector<RuntimeDomainIntent> &intents);
-    void publish_country_command_terminals(
-            const std::vector<RuntimeCountryCommand> &commands,
-            CountryCommandReceiptCode code, uint64_t generation,
-            const char *reason, bool include_superseded_ai = false);
-    void retire_country_ai_ingress(const std::vector<RuntimeCommandPacket> &packets);
-    bool pop_command(RuntimeCommandPacket &out);
-    bool launch_executor(bool paused);
-    bool resume_same_world_executor(double speed, bool paused);
-    bool push_receipt(const RuntimeCommandReceipt &receipt);
-    void publish_day(int64_t from_day, int64_t day,
-                     const RuntimeDayCommit &day_commit,
-                     const std::vector<RuntimeCommandReceipt> &day_receipts);
-    void set_fault(const char *code);
-    // Grant and revoke share one atomic state; a finishing day cannot undo stop.
-    void publish_authority_grant(uint32_t mask) noexcept {
-        _authority_control.grant(mask);
-    }
-    void record_save_failure(const char *reason);
-    void publish_economy_tax_diag(const std::string &yield_reason,
-                                  uint32_t slices);
-    // Returns true when an armed one-shot injection matched `point` and
-    // transitioned the worker into FAULTED. Call sites must abort the current
-    // boundary immediately after a true return.
-    bool try_fault_injection(const char *point) noexcept;
-    // Publishes the first diverging Climate field/cell into the report slots.
-    // These slots existed in the ABI but nothing ever wrote them, so a parity
-    // failure could only be observed as two unequal hashes.
-    void publish_climate_parity_divergence(const RuntimeClimateParityReport &diff);
-    void clear_climate_parity_divergence();
-    // Folds one day's full per-field comparison into the cumulative stats.
-    void accumulate_climate_parity_fields(
-            int64_t day, const RuntimeClimateStore &reference,
-            const RuntimeClimateStore &worker);
-    void reset_climate_parity_fields();
-    bool serialize_country_economy_asset_journal(
-            std::vector<uint8_t> &out, std::string &error) const;
-    bool restore_country_economy_asset_journal(
-            const uint8_t *bytes, size_t size, std::string &error);
-    void build_save_bundle(uint64_t request_id,
-                           const std::vector<RuntimeCommandPacket> &pending_commands);
-    bool service_save_request(std::vector<RuntimeCommandPacket> &pending_commands);
-    void service_inline_save_request();
-    void seed_executor_command_orders();
-    static bool command_packet_before(const RuntimeCommandPacket &a, const RuntimeCommandPacket &b);
+#include "native_simulation_host_executor.h"
 
     struct CommandQueueSlot {
-        std::atomic<uint64_t> sequence{0};
         RuntimeCommandPacket packet{};
     };
 
@@ -1343,6 +1035,9 @@ private:
     std::atomic<RuntimeWorkerState> _state{RuntimeWorkerState::STOPPED};
     mutable std::mutex _annual_mutex;
     AnnualDevelopmentLedger _annual_ledger;
+    std::shared_ptr<const AnnualReportPublication> _published_annual;
+    bool _annual_history_changed = false;
+    void publish_annual_view_locked();
     std::atomic<bool> _annual_enabled{false};
     std::atomic<uint64_t> _annual_country{0};
     uint64_t _annual_queued_reward = 0;
@@ -1376,17 +1071,98 @@ private:
     std::atomic<bool> _active_gate_blocked{false};
     std::atomic<int64_t> _committed_day{0};
     std::atomic<uint64_t> _generation{0};
-    // Lightweight commit header retained independently from the visual ring.
-    // If all three visual buffers are READING, the worker drops only visual
-    // intents while the main thread can still observe the authoritative day
-    // commit and its hash.
-    std::atomic<int64_t> _latest_from_day{0};
-    std::atomic<int64_t> _latest_committed_day{0};
-    std::atomic<uint64_t> _latest_produced_at_us{0};
-    std::atomic<uint32_t> _latest_dirty_families{0};
-    std::atomic<uint32_t> _latest_receipt_count{0};
-    std::atomic<uint64_t> _last_visual_publish_us{0};
-    std::atomic<uint64_t> _snapshot_publish_throttled_count{0};
+    // Slow readers can keep this commit while the worker publishes a new one.
+    std::shared_ptr<const RuntimeCommit> _latest_commit;
+    std::shared_ptr<RuntimeDayTail> _executor_day_tail;
+    std::shared_ptr<VisionResearchState> _executor_vision;
+    const char *stage_vision(DayExecution &day);
+    const char *stage_effect_adapter(DayExecution &day);
+    const char *stage_trigger_delivery(DayExecution &day);
+    const char *stage_ideology_projection(DayExecution &day);
+    std::shared_ptr<const RuntimeIdeologyReadView> capture_ideology_read_view() const;
+    const char *settle_era_rewards(DayExecution &day);
+    const char *player_confirmation_block(int64_t published_day = -1);
+    RuntimePlayerConfirmation _player_confirmation;
+    uint64_t confirmation_country() const;
+    uint32_t player_ideology_offer() const;
+    bool ideology_response_queued(uint32_t generation) const;
+    void prepare_player_ideology_responses(int64_t day, bool opinion_missing);
+    bool service_player_confirmations();
+    bool player_response_admits(int64_t day) const;
+    void admit_player_response_through(int64_t day);
+    void finish_player_confirmation_day(int64_t day);
+    std::vector<uint8_t> encode_player_confirmation(int64_t day) const;
+    void restore_player_confirmation(const std::vector<uint8_t> &bytes, int64_t day);
+    bool service_annual_presentations();
+    void execute_era_advancement_request(RuntimeEraRewardRequest &request);
+    bool install_era_advancement_setup();
+    const char *stage_era_advancement(DayExecution &day);
+    const char *stage_prepare_environment(DayExecution &day);
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> executor_environment_for_day(int64_t day);
+    void capture_climate_display(RuntimeClimateSnapshot &out) const;
+    bool settle_player_regime(RuntimeEraAdvancement &state, int32_t regime, int64_t day);
+    bool submit_era_milestone(RuntimeEraAdvancement &state, int32_t era,
+        int64_t requested, int64_t effective, int64_t sequence, bool consume_goods);
+    bool service_era_reward_requests();
+    void prepare_era_advancement_day(int64_t day);
+    const char *stage_narrative(DayExecution &);
+    bool service_narrative_requests();
+    void request_stop_locked();
+    void publish_narrative_boundary(int64_t);
+    const char *narrative_input_block() const;
+    struct NarrativeDay sample_narrative_day(int64_t) const;
+    void sample_narrative_military(struct NarrativeCountryView &) const;
+    bool prepare_narrative_day(int64_t);
+    godot::Dictionary resolve_narrative_choice(int64_t, const godot::Dictionary &);
+    bool dispatch_narrative_independence(int64_t);
+    static std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> expand_ideology_opinion(
+        const RuntimeCountryPodSnapshot &, const RuntimeIdeologyOpinionSnapshot &);
+    std::shared_ptr<const RuntimeEraRewardView> capture_era_reward() const;
+    EffectRuntime *_effect_adapter_runtime = nullptr;
+    class NativeCountryRuntime *_effect_adapter_country = nullptr;
+    RuntimeTriggerDelivery _trigger_delivery;
+    void apply_fog_commands(const std::vector<RuntimeCommandPacket> &commands);
+    bool submit_vision_observations(uint64_t country, int64_t day,
+                                    std::vector<uint64_t> &observations);
+    bool submit_species_observations(int64_t day, const std::vector<int32_t> &cells,
+                                      const std::vector<int32_t> &signals, int32_t &submitted);
+    bool enqueue_batch_at(std::vector<RuntimeCommandPacket> packets,
+                          std::vector<int64_t> *effective_days, bool seal,
+                          const std::function<bool()> &admit_peer = {});
+    std::shared_ptr<NativeMilitaryRuntime> _executor_military;
+    std::deque<std::shared_ptr<MilitaryCommandBatch>> _military_commands; // _control_mutex
+    std::deque<std::shared_ptr<RuntimeEconomyBoundaryRequest>> _economy_boundary_requests;
+    std::deque<std::shared_ptr<RuntimeEconomyBoundaryRequest>> _colonization_read_results;
+    bool _colonization_quotes_ready = false;
+    std::deque<std::shared_ptr<RuntimeEraRewardRequest>> _era_reward_requests;
+    std::deque<uint64_t> _annual_presentations;
+    std::deque<std::shared_ptr<RuntimeNarrativeRequest>> _narrative_requests;
+    godot::Array _boundary_command_results;
+    void publish_boundary_command_result(const char *command, int64_t sequence,
+                                         godot::Dictionary result);
+    std::shared_ptr<class RuntimeNarrative> _executor_narrative;
+    godot::Dictionary _restored_narrative;
+    std::shared_ptr<const RuntimeNarrativeView> _published_narrative;
+    std::shared_ptr<const RuntimeEraRewardView> _published_era_reward;
+    std::shared_ptr<RuntimeEraAdvancement> _era_advancement;
+    std::shared_ptr<const RuntimeEraAdvancementView> _published_era_advancement;
+    std::shared_ptr<RuntimeEraRewardRequest> _era_advancement_bind, _era_advancement_restore;
+    bool player_requests_pending_locked() const noexcept;
+    bool service_economy_boundary_requests();
+    void service_economy_read_view();
+    bool _economy_read_view_requested = false; // protected by _control_mutex
+    const std::vector<uint8_t> *colonization_visibility() const override;
+    std::atomic<int64_t> _events_ingress_cursor{1};
+    bool service_military_commands();
+    const char *stage_military(DayExecution &day);
+    void capture_world_continuation(RuntimeSaveBundle &bundle) const;
+    std::vector<uint8_t> capture_bio_state() const, capture_vision_state() const;
+    std::vector<uint8_t> capture_narrative_save_bytes() const;
+    void publish_military_day();
+    std::shared_ptr<struct RuntimeBioState> _executor_bio;
+    std::vector<int32_t> _executor_resource_display_cells;
+    mutable std::mutex _resource_display_mutex;
+    RuntimeResourceDisplayPatch _resource_display_patch;
     // M4/M5 diagnostics. These fields describe the frozen input manifest and
     // the committed visual-intent batch without exposing worker vectors.
     std::atomic<uint64_t> _input_capture_count{0};
@@ -1402,20 +1178,16 @@ private:
     std::atomic<uint32_t> _gameplay_effect_pending{0};
     std::atomic<uint32_t> _gameplay_effect_terminal{0};
     std::atomic<uint64_t> _gameplay_effect_state_hash{0};
-    std::atomic<uint64_t> _visual_intent_generation{0};
-    std::atomic<uint32_t> _visual_intent_count{0};
-    std::atomic<bool> _visual_full_refresh{false};
     std::atomic<uint64_t> _last_commit_produced_at_us{0};
-    std::array<std::atomic<uint64_t>, RUNTIME_DIRTY_FAMILY_COUNT>
-        _dirty_family_generations{};
     std::atomic<double> _ui_input_to_feedback_ms{0.0};
     std::atomic<double> _visual_apply_ms{0.0};
     std::atomic<double> _gpu_upload_ms{0.0};
-    // Bounded MPMC queue.  The per-slot sequence protocol lets multiple UI
-    // producers reserve distinct slots without a mutex or a blocking retry.
+    // The inbox publishes a whole input batch with one write-cursor update.
     std::atomic<uint64_t> _command_enqueue_pos{0};
     std::atomic<uint64_t> _command_dequeue_pos{0};
-    mutable std::mutex _command_enqueue_mutex;
+    std::map<int64_t, std::vector<RuntimeCountryCommand>> _country_observations;
+    std::mutex _command_producer_mutex;
+    std::vector<RuntimeCommandPacket> _executor_inbox;
     // Monotonic admission order for the shared command boundary. This is
     // independent of producer-local sequence numbers and is Country's final
     // same-day tie-breaker.
@@ -1443,7 +1215,6 @@ private:
     std::thread _worker;
     std::shared_ptr<std::atomic<bool>> _worker_returned =
         std::make_shared<std::atomic<bool>>(true);
-    RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
     RuntimeEnvironmentInputRing _environment_ring;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_snapshot;
@@ -1677,6 +1448,7 @@ private:
     // drained by a request-id cursor so a terminal result cannot be confused
     // with an admission acknowledgement.
     std::map<uint64_t, CountryCommandReceipt> _country_command_terminals;
+    std::vector<uint64_t> _country_command_publications;
     // Complete Host-side request lifecycle. The terminal map is only the
     // cursor-visible projection; this map also retains Accepted requests so a
     // save can prove that every restored Country pending packet is admissible.
@@ -1711,6 +1483,17 @@ private:
     // Accepted world backlog; the active executor has exclusive access.
     std::vector<RuntimeCommandPacket> _executor_pending_commands;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _executor_day_environment;
+    std::shared_ptr<class RuntimeWorldEnvironment> _world_environment;
+    static constexpr int64_t CALENDAR_LOOKAHEAD = 8;
+    std::atomic<int64_t> _clock_requested_day{-1};
+    std::atomic<bool> _calendar_suspended{true};
+    std::atomic<int64_t> _display_consumed_day{-1};
+    std::shared_ptr<const RuntimeDisplayBatch> _published_display;
+    std::shared_ptr<struct RuntimeFiscalHistory> _display_finances;
+    godot::Array _display_notices;
+    std::vector<uint8_t> _executor_cell_lut_pending;
+    std::vector<std::array<uint32_t, 4>> _cell_lut_words;
+    void publish_cell_lut_changes(RuntimeDayTail &tail, const RuntimeDayTail *previous);
     std::atomic<bool> _inline_day_pending{false};
     std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 
@@ -1826,18 +1609,14 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
-    // Outstanding requesters behind `_main_boundary_service_requested`, as a bit
-    // set (one bit per `MainBoundaryClient`). Written only through
-    // `request_main_boundary_service` / `complete_main_boundary_service`. See those
-    // two for why one shared bool parked the worker permanently.
-    std::atomic<uint32_t> _main_boundary_service_requested{0};
-    std::atomic<bool> _main_day_tail_gate{false};
-    std::atomic<int64_t> _main_day_tail_done{-1};
+    // Twice the last sealed day, with the low bit marking an input publication.
+    std::atomic<int64_t> _command_seal{-2};
     std::atomic<int64_t> _economy_input_requested_day{-1};
     // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
     std::atomic<uint32_t> _day_stall_reason_mask{0};
     std::atomic<int64_t> _day_stall_day{-1};
     std::atomic<uint64_t> _day_stall_peer_since_us{0};
+    uint64_t _last_peer_stall_warning = 0;
     // Last day-plan gap seen by the retry loop. Written by the worker, read by
     // the main-thread report; monotonically overwritten, never cleared -- a
     // stale value still names the last stage that held the calendar, which is
@@ -2147,7 +1926,6 @@ private:
     mutable std::mutex _environment_publish_mutex;
     // Reused worker-local output arenas; no per-day heap growth in the hot
     // loop. They are never exposed to Godot or another thread.
-    std::vector<RuntimeVisualIntent> _pod_visual_intents;
     std::vector<RuntimeCommandReceipt> _pod_receipts;
 };
 } // namespace pk

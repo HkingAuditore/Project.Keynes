@@ -82,12 +82,15 @@ func _test_social_media() -> bool:
 			_wait_opinion_revision(),
 			str(_ext.get_country_class_opinion_snapshot())):
 		return false
-	if not _require("the live opinion source publishes to the worker",
-			bool(_ext.publish_ideology_worker_inputs().get("ok", false)),
-			str(_ext.get_runtime_thread_report())):
-		return false
+	var opinion: Dictionary = _ext.get_country_class_opinion_snapshot()
 	_ext.set_runtime_clock(true, WORKER_SPEED)
 	_tick = _drive_days(1)
+	var worker: Dictionary = _ext.get_runtime_thread_report()
+	if not _require("the worker consumes the exact preceding Economy opinion revision",
+			int(worker.get("ideology_parity_worker_opinion_revision", -1)) == int(opinion.get("revision", 0))
+			and int(worker.get("ideology_parity_worker_opinion_committed_day", -2)) == int(opinion.get("commit_day", -1)),
+			str(opinion.get("revision")) + " / " + str(worker.get("ideology_parity_worker_opinion_revision"))):
+		return false
 	if not _require("the worker Ideology POD becomes ready",
 			bool(_ext.get_runtime_thread_report().get(
 				"ideology_pod_ready", false)),
@@ -144,7 +147,7 @@ func _test_social_media() -> bool:
 	_opinion_population = live.population.duplicate()
 	_opinion_satisfaction_q16 = live.satisfaction_q16.duplicate()
 	_opinion_weighted = live.satisfaction_weighted.duplicate()
-	if not _publish_opinion_source("restore real class rows for repeal"):
+	if not _install_opinion_source("restore real class rows for repeal"):
 		return false
 	_tick = _drive_days(1)
 	if not _unequip(CARD):
@@ -221,7 +224,7 @@ func _settle_positive_population(label: String) -> Dictionary:
 	for row in range(row_begin, row_end):
 		_opinion_population[row] += POPULATION_STEP
 	var before_day := int(_snapshot().get("point_ledger_day", -1))
-	if not _publish_opinion_source(label):
+	if not _install_opinion_source(label):
 		return {}
 	var last := _snapshot()
 	for _index in range(16):
@@ -243,16 +246,11 @@ func _wait_point_baseline() -> bool:
 		str(_snapshot()))
 
 
-func _publish_opinion_source(label: String) -> bool:
+func _install_opinion_source(label: String) -> bool:
 	var override: Dictionary = _ext.set_class_opinion_source_override_for_test(
 		_opinion_population, _opinion_satisfaction_q16, _opinion_weighted)
-	if not _require("%s: controlled opinion source applies" % label,
-			bool(override.get("ok", false)), str(override)):
-		return false
-	var published: Dictionary = _ext.publish_ideology_worker_inputs()
-	return _require("%s: worker publication accepts the controlled source"
-			% label,
-		bool(published.get("ok", false)), str(published))
+	return _require("%s: controlled opinion source applies" % label,
+		bool(override.get("ok", false)), str(override))
 
 
 func _snapshot() -> Dictionary:
@@ -379,14 +377,12 @@ func _build_world() -> Dictionary:
 	host.initial_seed = SEED
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = true
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = 0xFFF
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	var config := NewGameConfig.create_default()
 	config.country.name = "C0 SocialMedia"
 	config.country.foreign_count = 1
@@ -435,7 +431,7 @@ func _build_world() -> Dictionary:
 	if not _require("Effect input digest refreshes",
 			bool(_ext.refresh_effect_input_digest_for_test().get("ok", false))):
 		return {}
-	var population := _find_population_cohort()
+	var population := await _find_population_cohort()
 	if population.is_empty():
 		return {}
 	return {
@@ -457,7 +453,12 @@ func _find_population_cohort() -> Dictionary:
 		if int(_ext.get_country_cell_summary(cell).get(
 				"country_handle", 0)) != _handle:
 			continue
-		var snapshot: Dictionary = _ext.get_population_cell_snapshot(cell, false)
+		var snapshot: Dictionary
+		for _frame in range(512):
+			snapshot = _ext.get_population_cell_snapshot(cell, false)
+			if bool(snapshot.get("ok", false)):
+				break
+			await process_frame
 		var handles: PackedInt64Array = snapshot.get(
 			"handles", PackedInt64Array())
 		if not handles.is_empty():

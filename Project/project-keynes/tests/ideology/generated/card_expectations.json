@@ -5817,13 +5817,6 @@
      "kind": "constant",
      "operation": "multiply",
      "scope": "country",
-     "stat": "economy.profession.agronomist.tax_tolerance_factor",
-     "value": 1.08
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
      "stat": "economy.profession.ai_researcher.tax_tolerance_factor",
      "value": 1.08
     },
@@ -5832,13 +5825,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.apprentice.tax_tolerance_factor",
-     "value": 1.08
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.aquaculturist.tax_tolerance_factor",
      "value": 1.08
     },
     {
@@ -5881,13 +5867,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.data_scientist.tax_tolerance_factor",
-     "value": 1.08
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.dyer.tax_tolerance_factor",
      "value": 1.08
     },
     {
@@ -6098,20 +6077,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.sharecropper.tax_tolerance_factor",
-     "value": 1.08
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.ship_officer.tax_tolerance_factor",
-     "value": 1.08
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.soldier.tax_tolerance_factor",
      "value": 1.08
     },
     {
@@ -6195,13 +6160,6 @@
      "kind": "constant",
      "operation": "multiply",
      "scope": "country",
-     "stat": "economy.profession.agronomist.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
      "stat": "economy.profession.ai_researcher.tax_tolerance_factor",
      "value": 1.12
     },
@@ -6210,13 +6168,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.apprentice.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.aquaculturist.tax_tolerance_factor",
      "value": 1.12
     },
     {
@@ -6259,13 +6210,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.data_scientist.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.dyer.tax_tolerance_factor",
      "value": 1.12
     },
     {
@@ -6476,20 +6420,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.sharecropper.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.ship_officer.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.soldier.tax_tolerance_factor",
      "value": 1.12
     },
     {
@@ -6573,13 +6503,6 @@
      "kind": "constant",
      "operation": "multiply",
      "scope": "country",
-     "stat": "economy.profession.agronomist.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
      "stat": "economy.profession.ai_researcher.tax_tolerance_factor",
      "value": 1.12
     },
@@ -6588,13 +6511,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.apprentice.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.aquaculturist.tax_tolerance_factor",
      "value": 1.12
     },
     {
@@ -6637,13 +6553,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.data_scientist.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.dyer.tax_tolerance_factor",
      "value": 1.12
     },
     {
@@ -6854,20 +6763,6 @@
      "operation": "multiply",
      "scope": "country",
      "stat": "economy.profession.sharecropper.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.ship_officer.tax_tolerance_factor",
-     "value": 1.12
-    },
-    {
-     "kind": "constant",
-     "operation": "multiply",
-     "scope": "country",
-     "stat": "economy.profession.soldier.tax_tolerance_factor",
      "value": 1.12
     },
     {

@@ -1,5 +1,6 @@
 #include "military_core.h"
 #include "military_core_personnel_internal.h"
+#include "pk_log.h"
 
 #include <algorithm>
 #include <atomic>
@@ -41,7 +42,7 @@ int64_t transfer_army_to_army(MilitaryCore &core, int32_t from, int32_t to, int3
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, to,
                                                      core._lots.country_slot[i], core._lots.unit_type[i],
                                                      core._lots.equip_quality_q8[i],
-                                                     core._lots.kit_q16[i]);
+                                                     core._lots.kit_q16[i], core._lots.partial_equipment[i]);
         if (dest < 0) {
             core._lots.count[i] += take;
             break;
@@ -104,7 +105,7 @@ int32_t military_embark_army(MilitaryCore &core, int32_t owner, int32_t cell, in
         core._lots.count[i] -= take;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army, owner,
                                                      core._lots.unit_type[i], core._lots.equip_quality_q8[i],
-                                                     core._lots.kit_q16[i]);
+                                                     core._lots.kit_q16[i], core._lots.partial_equipment[i]);
         if (dest < 0) {
             core._lots.count[i] += take;
             break;
@@ -154,7 +155,7 @@ bool military_disembark_army(MilitaryCore &core, int32_t army) {
         if (core._lots.location[i] != army) continue;
         const int32_t dest = core.lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, cell, owner,
                                                      core._lots.unit_type[i], core._lots.equip_quality_q8[i],
-                                                     core._lots.kit_q16[i]);
+                                                     core._lots.kit_q16[i], core._lots.partial_equipment[i]);
         if (dest < 0) break;
         core._lots.count[(size_t)dest] += core._lots.count[i];
         core._lots.count[i] = 0;
@@ -172,6 +173,14 @@ bool military_disembark_army(MilitaryCore &core, int32_t army) {
 // ============================================================== submit
 
 bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
+    if (_configured && command.effective_day >= _last_day && command.sequence == 0)
+        command.sequence = _next_sequence++;
+    if (!validate_command(command, error)) return false;
+    _pending.push_back(std::move(command));
+    return true;
+}
+
+bool MilitaryCore::validate_command(MilitaryCommand &command, std::string &error) const {
     error.clear();
     if (!_configured) {
         error = "military_not_configured";
@@ -182,7 +191,6 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
         error = "command_day_in_past";
         return false;
     }
-    command.sequence = (command.sequence != 0) ? command.sequence : _next_sequence++;
     // Army-scoped commands (move / stance / stop / area_control) may omit the
     // country: the formation knows its owner, and requiring the caller to
     // repeat it only surfaces command_missing_country from the map layer.
@@ -300,11 +308,6 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
         case MCMD_STATE_DEMOLISH: {
             if (!need_country()) return false;
             if (!need_cell(command.cell)) return false;
-            if (!unit_ok(command.unit_to) && command.unit_to != -1) {
-                // state building index lives in unit_to for these two ops
-                error = "command_bad_state_building";
-                return false;
-            }
             if (command.unit_to < 0 || command.unit_to >= (int32_t)_catalog.state_buildings.size()) {
                 error = "command_bad_state_building";
                 return false;
@@ -345,21 +348,6 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
                     return false;
                 }
             }
-            // 三项之和必须 <= 100%：未传的通道沿用当前值，这样 UI 只推一项时
-            // 校验的仍然是玩家最终会看到的那个组合，而不是一份残缺的配置。
-            const int32_t slot_now = country_slot_for_handle(command.country);
-            const MilitaryCountryPolicy &now = _policies[(size_t)slot_now];
-            const int32_t wage = command.ints.size() >= 1 && command.ints[0] >= 0
-                                     ? command.ints[0] : now.budget_wage_bp;
-            const int32_t upkeep = command.ints.size() >= 2 && command.ints[1] >= 0
-                                       ? command.ints[1] : now.budget_upkeep_bp;
-            const int32_t procurement =
-                command.ints.size() >= 3 && command.ints[2] >= 0
-                    ? command.ints[2] : now.procurement_share_bp;
-            if (static_cast<int64_t>(wage) + upkeep + procurement > 10000) {
-                error = "command_budget_channels_exceed_10000";
-                return false;
-            }
             break;
         }
         case MCMD_ARMY_CREATE: {
@@ -370,7 +358,7 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
                 return false;
             }
             const int32_t owner = country_slot_for_handle(command.country);
-            if (garrison_owner_at(*this, command.cell) != owner) {
+            if (command.value == 0 && garrison_owner_at(*this, command.cell) != owner) {
                 error = "command_no_local_garrison";
                 return false;
             }
@@ -378,7 +366,10 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
         }
         case MCMD_ARMY_STATION:
             if (!need_country()) return false;
-            if (!need_country_owns_army(has_country, command)) return false;
+            if (!need_country_owns_army(has_country, command)) {
+                error = "command_not_owner";
+                return false;
+            }
             if (!need_army()) return false;
             break;
         case MCMD_ARMY_TRANSFER: {
@@ -471,14 +462,17 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             break;
         case MCMD_ARMY_EXPLORE: {
             if (!need_country()) return false;
-            if (!need_country_owns_army(has_country, command)) return false;
+            if (command.value <= 0 && !need_country_owns_army(has_country, command)) {
+                error = "command_not_owner";
+                return false;
+            }
             if (!need_army()) return false;
             if (!need_cell(command.cell)) return false;
             if (command.radius < 1 || command.radius > MILITARY_MAX_AREA_RADIUS) {
                 error = "command_bad_exploration_radius";
                 return false;
             }
-            if (command.cells.empty() ||
+            if ((command.cells.empty() && command.value <= 0) ||
                 command.cells.size() > (size_t)MILITARY_MAX_EXPLORATION_CELLS) {
                 error = "command_bad_exploration_cells";
                 return false;
@@ -486,22 +480,17 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             std::sort(command.cells.begin(), command.cells.end());
             command.cells.erase(std::unique(command.cells.begin(), command.cells.end()),
                                 command.cells.end());
-            if (command.cells.empty() ||
-                command.cells.size() > (size_t)MILITARY_MAX_EXPLORATION_CELLS) {
-                error = "command_bad_exploration_cells";
-                return false;
-            }
             for (int32_t cell : command.cells) {
                 if (cell < 0 || cell >= _terrain.cell_count) {
                     error = "command_bad_exploration_cells";
                     return false;
                 }
             }
-            if (_armies.engagement[(size_t)army_slot] >= 0) {
+            if (command.value <= 0 && _armies.engagement[(size_t)army_slot] >= 0) {
                 error = "command_army_in_engagement";
                 return false;
             }
-            if (!can_create_exploration_task(army_slot)) {
+            if (command.value <= 0 && !can_create_exploration_task(army_slot)) {
                 error = "command_exploration_capacity_full";
                 return false;
             }
@@ -528,7 +517,6 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             error = "command_unknown_op";
             return false;
     }
-    _pending.push_back(std::move(command));
     return true;
 }
 
@@ -559,14 +547,67 @@ void MilitaryCore::apply_due_commands(int64_t day) {
         apply_command(_pending[applied], day);
         ++applied;
     }
-    if (applied > 0) _pending.erase(_pending.begin(), _pending.begin() + (ptrdiff_t)applied);
+    if (applied > 0) _pending.erase(_pending.begin(), _pending.begin() + static_cast<std::ptrdiff_t>(applied));
+}
+
+std::vector<MilitaryPlayerCommandRejection> MilitaryCore::take_player_command_rejections() {
+    std::vector<MilitaryPlayerCommandRejection> result;
+    result.swap(_player_command_rejections);
+    return result;
 }
 
 void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
     const int32_t country = country_slot_for_handle(cmd.country);
+    const char *map_order = cmd.op == MCMD_ARMY_MOVE ? "military.army.move" :
+        cmd.op == MCMD_ARMY_AREA_CONTROL ? "military.army.area_control" :
+        cmd.op == MCMD_ARMY_EXPLORE ? "military.army.explore" : nullptr;
+    const bool player_map_order = map_order != nullptr && cmd.value > 0;
+    int32_t army_slot = -1;
+    if (player_map_order) {
+        const char *reason = nullptr;
+        if (!resolve_army(cmd.army, army_slot)) reason = "command_unknown_army";
+        else if (country < 0 || _armies.owner_slot[static_cast<size_t>(army_slot)] != country)
+            reason = "command_not_owner";
+        else if (cmd.op == MCMD_ARMY_EXPLORE) {
+            if (_armies.engagement[static_cast<size_t>(army_slot)] >= 0)
+                reason = "command_army_in_engagement";
+            else if (country != _exploration_observer_slot)
+                reason = "command_not_owner";
+            else if (!can_create_exploration_task(army_slot))
+                reason = "command_exploration_capacity_full";
+        }
+        if (reason != nullptr) {
+            _player_command_rejections.push_back({map_order, cmd.value, reason});
+            return;
+        }
+    }
+    const bool player_order = cmd.value > 0 &&
+        (cmd.op == MCMD_TRAIN || cmd.op == MCMD_ARMY_CREATE);
+    if (player_order) {
+        const char *reason = nullptr;
+        if (country < 0) {
+            reason = "command_unknown_country";
+        } else if (cmd.op == MCMD_TRAIN) {
+            const int32_t bit = _catalog.units[static_cast<size_t>(cmd.unit_to)].unlock_bit;
+            if (!unlocked(_last_digest, country, bit)) reason = "technology_locked";
+        } else {
+            const int32_t controller = controller_of(cmd.cell);
+            if (cmd.cell < 0 || static_cast<size_t>(cmd.cell) >= _last_digest.cell_owner_slot.size() ||
+                _last_digest.cell_owner_slot[static_cast<size_t>(cmd.cell)] != country)
+                reason = "not_own_territory";
+            else if (controller >= 0 && controller != country)
+                reason = "cell_occupied";
+            else if (garrison_owner_at(*this, cmd.cell) != country)
+                reason = "command_no_local_garrison";
+        }
+        if (reason != nullptr) {
+            const char *command = cmd.op == MCMD_TRAIN ? "military.train" : "military.army.create";
+            _player_command_rejections.push_back({command, cmd.value, reason});
+            return;
+        }
+    }
     if (country < 0) return;   // country vanished before the order took effect
     MilitaryCountryPolicy &policy = _policies[(size_t)country];
-    int32_t army_slot = -1;
     switch (cmd.op) {
         case MCMD_GARRISON_TRANSFER_CELL: {
             const int32_t new_owner = country_slot_for_handle(cmd.other);
@@ -598,6 +639,22 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             policy.quality_policy = (uint8_t)cmd.value;
             return;
         case MCMD_CONFIG_SET: {
+            if (cmd.count == 1) {
+                // Apply a partial edit to the policy at its effective day.
+                auto updated = policy.config_share_bp;
+                updated.resize(_catalog.units.size(), 0);
+                for (size_t i = 0; i + 1 < cmd.ints.size(); i += 2)
+                    updated[static_cast<size_t>(cmd.ints[i])] = cmd.ints[i + 1];
+                int64_t sum = 0;
+                for (const int32_t share : updated) sum += share;
+                if (sum > 10000) {
+                    if (cmd.value > 0) _player_command_rejections.push_back(
+                        {"military.config.set", cmd.value, "command_shares_exceed_10000"});
+                    return;
+                }
+                policy.config_share_bp = std::move(updated);
+                return;
+            }
             if (policy.config_share_bp.size() < _catalog.units.size()) {
                 policy.config_share_bp.resize(_catalog.units.size(), 0);
             }
@@ -612,19 +669,27 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             policy.wage_absolute = cmd.value;
             return;
         case MCMD_POLICY_SET_PROCUREMENT:
-            policy.procurement_share_bp = (int32_t)cmd.value;
-            return;
         case MCMD_POLICY_SET_BUDGET: {
-            // -1 表示「本次不改」，让 UI 只推变化的那一项；其余按传入值落库。
-            // 采购占比走 ints[2] 而不是复用 value，因为 value 已经是总份额。
-            if (cmd.value >= 0)
-                policy.budget_share_bp = (int32_t)std::min<int64_t>(cmd.value, 10000);
-            if (cmd.ints.size() >= 1 && cmd.ints[0] >= 0)
-                policy.budget_wage_bp = std::min(cmd.ints[0], 10000);
-            if (cmd.ints.size() >= 2 && cmd.ints[1] >= 0)
-                policy.budget_upkeep_bp = std::min(cmd.ints[1], 10000);
-            if (cmd.ints.size() >= 3 && cmd.ints[2] >= 0)
-                policy.procurement_share_bp = std::min(cmd.ints[2], 10000);
+            const auto share = [&](size_t index, int32_t current) {
+                return index < cmd.ints.size() && cmd.ints[index] >= 0
+                    ? cmd.ints[index] : current;
+            };
+            const bool procurement_only = cmd.op == MCMD_POLICY_SET_PROCUREMENT;
+            const int32_t wage = share(0, policy.budget_wage_bp);
+            const int32_t upkeep = share(1, policy.budget_upkeep_bp);
+            const int32_t procurement = procurement_only ? static_cast<int32_t>(cmd.value)
+                : share(2, policy.procurement_share_bp);
+            if (wage + upkeep + procurement > 10000) {
+                if (cmd.count > 0) _player_command_rejections.push_back({
+                    procurement_only ? "military.policy.set_procurement" : "military.policy.set_budget",
+                    cmd.count, "command_budget_channels_exceed_10000"});
+                return;
+            }
+            if (!procurement_only && cmd.value >= 0)
+                policy.budget_share_bp = static_cast<int32_t>(cmd.value);
+            policy.budget_wage_bp = wage;
+            policy.budget_upkeep_bp = upkeep;
+            policy.procurement_share_bp = procurement;
             return;
         }
         case MCMD_BARRACKS_PAUSE:
@@ -641,7 +706,11 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             const int64_t have = std::max<int64_t>(0,
                 garrison_heads_for_unit(_lots, cmd.cell, country, (int16_t)from_unit) - reserved);
             const int64_t count = std::min(have, cmd.count);
-            if (count <= 0) return;
+            if (count <= 0) {
+                if (player_order) _player_command_rejections.push_back({
+                    "military.train", cmd.value, "command_no_training_garrison"});
+                return;
+            }
             const MilitaryUnitType &to = _catalog.units[(size_t)cmd.unit_to];
             MilitaryCellState *st = cell_state(cmd.cell, false);
             int32_t speed = MILITARY_Q16;
@@ -676,28 +745,21 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             const MilitaryStateBuilding &b = _catalog.state_buildings[(size_t)cmd.unit_to];
             MilitaryCellState *st = cell_state(cmd.cell, true);
             if (!st) return;
-            // Bookkeeping only. `state.build` is no longer a settlement: the
-            // caller issues `COMMAND_TREASURY_SPONSORED_BUILD` first and only
-            // forwards this command once the economy accepted it, so the real
-            // bill (treasury goods, then market gap in cash, booked as
-            // NON_TAX_CONSTRUCTION) exists exactly once. The old cash-only
-            // material estimate charged a second, invented amount on top.
+            // Compatibility opcode for internal AI echoes and core fixtures.
+            // A player build reserves a slot as part of the treasury order.
             //
             // `construction_done_day` is a cache of the economy's schedule:
             // the authoritative completion is the economy building group's
-            // pending-construction row, which also applies the country
-            // construction time factor this local sum cannot see.
-            const int64_t done_day = day + std::max(1, b.build_days);
-            int32_t slot = -1;
-            for (int32_t k = 0; k < 3; ++k) {
-                if (st->construction_building[k] < 0) {
-                    slot = k;
-                    break;
-                }
+            // pending-construction row. Only compatibility orders approximate
+            // that date with the catalog duration.
+            for (int32_t slot = 0; slot < MILITARY_STATE_BUILD_SLOTS; ++slot) {
+                if (!st->construction_slot_available(slot, day)) continue;
+                st->construction_building[slot] = cmd.unit_to;
+                st->construction_done_day[slot] = day + std::max(1, b.build_days);
+                return;
             }
-            if (slot < 0) slot = 0;
-            st->construction_building[slot] = cmd.unit_to;
-            st->construction_done_day[slot] = done_day;
+            log_error("[military] military_construction_schedule_full cell=%d building=%d day=%lld",
+                cmd.cell, cmd.unit_to, static_cast<long long>(day));
             return;
         }
         case MCMD_STATE_DEMOLISH: {
@@ -722,7 +784,12 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                 return sum > 0 ? sum : 0x7FFFFFFFFFFFFFFFll;
             }();
             const int32_t army = military_embark_army(*this, country, cmd.cell, total);
-            if (army < 0) return;
+            if (army < 0) {
+                if (player_order)
+                    _player_command_rejections.push_back({
+                        "military.army.create", cmd.value, "command_no_local_garrison"});
+                return;
+            }
             if (!cmd.ints.empty()) set_template(*this, army, cmd.ints);
             refresh_army_cache(army);
             return;
@@ -755,7 +822,8 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                     if (_lots.location[i] != other) continue;
                     const int32_t dest = lot_find_or_create((uint8_t)MILITARY_LOT_ARMY, army_slot,
                                                             _lots.country_slot[i], _lots.unit_type[i],
-                                                            _lots.equip_quality_q8[i], _lots.kit_q16[i]);
+                                                            _lots.equip_quality_q8[i], _lots.kit_q16[i],
+                                                            _lots.partial_equipment[i]);
                     if (dest < 0) continue;
                     _lots.count[(size_t)dest] += _lots.count[i];
                     _lots.count[i] = 0;
@@ -864,14 +932,19 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             return;
         case MCMD_ARMY_MOVE: {
             if (!resolve_army(cmd.army, army_slot)) return;
-            cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
+            if (!player_map_order)
+                cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             const int32_t owner = _armies.owner_slot[(size_t)army_slot];
             MilitaryWorldDigest empty;
             std::vector<int32_t> path;
             if (!find_path(army_slot, cmd.cell, empty, path)) {
-                // Deferred: the daily path budget is spent (design 21.3).
+                if (player_map_order)
+                    _player_command_rejections.push_back(
+                        {map_order, cmd.value, "military_path_unreachable"});
                 return;
             }
+            if (player_map_order)
+                cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             const size_t s = (size_t)army_slot;
             const int32_t off = (int32_t)_path_cells.size();
             _path_cells.insert(_path_cells.end(), path.begin(), path.end());
@@ -888,6 +961,15 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         }
         case MCMD_ARMY_AREA_CONTROL: {
             if (!resolve_army(cmd.army, army_slot)) return;
+            if (player_map_order && cmd.cell >= 0) {
+                std::vector<int32_t> route;
+                int32_t travel_days = 0;
+                if (!preview_path(cmd.army, cmd.cell, route, travel_days)) {
+                    _player_command_rejections.push_back(
+                        {map_order, cmd.value, "military_path_unreachable"});
+                    return;
+                }
+            }
             cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             std::vector<int32_t> cells = cmd.cells;
             if (cells.empty() && cmd.cell >= 0) {
@@ -957,7 +1039,13 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                 country != _exploration_observer_slot) {
                 return;
             }
-            create_exploration_task(cmd, day, army_slot, country);
+            if (cmd.cells.empty() && player_map_order) {
+                MilitaryCommand order = cmd;
+                order.cells = ring_cells(cmd.cell, cmd.radius);
+                create_exploration_task(order, day, army_slot, country);
+            } else {
+                create_exploration_task(cmd, day, army_slot, country);
+            }
             return;
         }
         default:

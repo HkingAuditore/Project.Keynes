@@ -652,7 +652,9 @@ void MilitaryCore::set_ai_country(int32_t slot, bool ai) {
     if (_ai_next_decision_day.size() < want) _ai_next_decision_day.resize(want, 0);
     const bool was = _ai_country[(size_t)slot] != 0;
     _ai_country[(size_t)slot] = ai ? 1 : 0;
-    if (ai && (!was || _ai_next_decision_day[(size_t)slot] <= _last_day)) {
+    if (!ai) {
+        _ai_next_decision_day[(size_t)slot] = 0;
+    } else if (!was || _ai_next_decision_day[(size_t)slot] <= _last_day) {
         _ai_next_decision_day[(size_t)slot] = next_main_day(_last_day, slot);
     }
 }

@@ -58,15 +58,13 @@ func _ensure_maritime_factor(map: MapData, decay_cells: float) -> PackedFloat32A
 # _async_pass_a_kernel_pure 的硬校验 lane 列表（gdext/src/runtime_climate_passes.cpp
 # 顶部的维度检查）。任一条 size != n_cells，共享内核直接 return false。
 
-func publish_worker_climate_visuals(defer_upload: bool) -> Dictionary:
-	# Reuse the production cell LUT encoders; no simulation or full map rebake.
+func publish_worker_climate_visuals(defer_upload: bool, commit: Dictionary = {}) -> Dictionary:
 	if _generator._baker == null or _generator._sus_map == null or _generator._last_world == null:
 		return {}
-	# Weather LUT is fully re-encoded here: the worker writes weather fields back
-	# but never weather_dirty_mask, so refresh_weather_lut_from_weather's dirty
-	# subset stays empty and the LUT would freeze at its world-gen contents.
+	var dirty: PackedInt32Array = commit.get("display_dirty_cells", PackedInt32Array())
 	return DCCellLutBaker.refresh_cell_luts_daily(_generator._baker,
-			_generator._sus_map, _generator._last_world, PackedInt32Array(), true, true, defer_upload)
+			_generator._sus_map, _generator._last_world, dirty,
+			not commit.has("display_dirty_cells"), true, defer_upload, commit)
 
 
 
@@ -130,7 +128,7 @@ func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: Wo
 		_generator._native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "gdext_unavailable" }
 		return
 	# SHADOW probe 同样是 readiness 探测，强制纳入 weather/stage_b 探完整图。
-	var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, world, false, 30.0, true, true)
+	var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, map, world, false, 30.0, true)
 	var pass_keys: Array[String] = _generator._get_native_daily_bundle_builder()._native_daily_bundle_pass_keys(bundle)
 	if pass_keys.is_empty():
 		_generator._native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "empty_bundle" }
@@ -268,7 +266,7 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	var probe_ctx: SusTickContext = SusTickContext.make(0, 0, 0.0, 1.0, &"native_daily_probe")
 	# probe 是 readiness 探测（“weather 到期时能否跑”），强制纳入 weather/stage_b，
 	# 否则 tick 0 非 weather 到期会让 required pass key 判缺失→错误回退 legacy。
-	var probe_bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(probe_ctx, map, world, false, 30.0, true, true)
+	var probe_bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(probe_ctx, map, world, false, 30.0, true)
 	var required_pass_keys_packed: PackedStringArray = _generator._get_native_daily_bundle_builder()._native_daily_required_pass_keys(cp)
 	var required_pass_keys: Array[String] = _generator._get_native_daily_bundle_builder()._native_daily_required_pass_keys_array(cp)
 	var missing_required: PackedStringArray = _generator._get_native_daily_bundle_builder()._native_daily_missing_required_pass_keys(
@@ -637,7 +635,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		if _map != null and _map.has_soa() and _map.has_method("soa_begin_climate_transaction"):
 			_map.soa_begin_climate_transaction()
 		_generator._get_native_daily_publish()._native_daily_capture_finalizer_start_state(_map)
-		var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, _map, _world, true, 1.0, false, false, true)
+		var bundle: Dictionary = _generator._get_native_daily_bundle_builder()._build_native_daily_bundle(ctx, _map, _world, true, 1.0, false, true)
 		bundle_ms = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
 		_generator._native_daily_slice_active_bundle = bundle
 		_generator._native_daily_slice_unified_weather_embedded = bundle.has("weather_knobs")
@@ -966,20 +964,15 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		di = day_index_override
 	if not is_nan(season_phase_override):
 		sp = season_phase_override
-	# A sliced Climate round may finish on a later render-frame/day boundary.
-	# Release older completed references first; capture remains ordered but is
-	# allowed to queue behind an unreleased frame so each input day is retained.
-	# The tick's input is day - 1, but never a day already published (a fresh
-	# world publishes day 1 during preparation). publish_environment_through
-	# fills any day a full ring refused, in order.
+	# Release older reference slices before capturing the dated input for this tick.
 	var trace_input_day: int = maxi(maxi(0, di - 1),
 		_generator._get_runtime_climate_capture().next_environment_day() - 1)
 	var runtime_climate_pre_reference: Dictionary = \
 		_generator._get_runtime_climate_capture()._publish_ready_runtime_climate_references(trace_input_day - 1, _generator._sus_map)
-	# Capture before the synchronous graph in both OFF and ACTIVE. The worker
-	# consumes the dated packet and never reads MapData directly.
 	var runtime_climate_capture: Dictionary = \
 		_generator._get_runtime_climate_capture().publish_environment_through(trace_input_day, sp, _generator.ENV_CALLSITE_SUS_TICK)
+	if bool(_generator.get_runtime_control_state().get("whole_graph_requested", false)):
+		return {"worker_managed": true, "runtime_climate_capture": runtime_climate_capture}
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
 	# 这样 SUS 决定跳过该 Job 时它就保持 false（main.gd 据此跳过 UI 行刷新）。
 	if _generator._refresh_climate_daily_job != null:
@@ -1374,7 +1367,6 @@ func _wait_climate_authority_grant() -> Dictionary:
 			push_warning("[climate-authority] grant wait timed out at day %d"
 				% int(report.get("simulation_environment_day", -1)))
 			break
-		_generator.service_country_worker_peer_adapter(64, false)
 		if ext != null:
 			ext.wait_climate_consumed(_generator._runtime_input_generation, 10)
 		OS.delay_usec(200)

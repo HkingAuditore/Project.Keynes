@@ -40,6 +40,34 @@
 
 namespace pk {
 
+void NativeSimulationHost::publish_country_input_rejections() {
+    const auto &territory = _country_pod_plan.rejected_territory_transfers;
+    if (!territory.empty())
+        publish_country_command_terminals(territory,
+            CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+            _country_pod_authority.generation(), "country_transfer_cell_invalid");
+    const auto &rejected = _country_pod_plan.rejected_cell_taxes;
+    if (rejected.empty()) return;
+    constexpr const char *reason = "country_cell_tax_territory_invalid";
+    publish_country_command_terminals(rejected,
+        CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+        _country_pod_authority.generation(), reason);
+    constexpr const char *names[] = {"country.tax.cell.set_default",
+        "country.tax.cell.clear_default", "country.tax.cell.set_override",
+        "country.tax.cell.clear_override", "country.tax.cell.clear_all"};
+    for (const auto &row : rejected) {
+        godot::Dictionary result;
+        result["ok"] = false;
+        result["code"] = reason;
+        result["cell"] = row.cell;
+        result["kind"] = row.tax_kind;
+        result["item_id"] = godot::String(row.stable_id.data());
+        publish_boundary_command_result(
+            names[row.opcode - CountryApi::COMMAND_SET_CELL_TAX_DEFAULT],
+            static_cast<int64_t>(row.sequence), std::move(result));
+    }
+}
+
 bool NativeSimulationHost::execute_country_worker_stage(
         int64_t day, uint64_t input_generation,
         const std::vector<RuntimeCommandPacket> &day_commands,
@@ -147,8 +175,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 }
             }
         }
+        const auto observed = _country_observations.find(day);
+        const auto *observations = observed == _country_observations.end() ? nullptr : &observed->second;
         bool country_planned = _country_pod_authority.plan_day(
-            day, input_generation, _country_pod_plan, error);
+            day, input_generation, _country_pod_plan, error, observations);
         if (!country_planned &&
             country_ai != nullptr &&
             _country_pod_authority.remove_pending_producer(COUNTRY_AI_PRODUCER_ID) > 0) {
@@ -156,7 +186,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             if (country_ai != nullptr) country_ai->reject_staged(day, error.c_str());
             error.clear();
             country_planned = _country_pod_authority.plan_day(
-                day, input_generation, _country_pod_plan, error);
+                day, input_generation, _country_pod_plan, error, observations);
         }
         if (!country_planned) {
             if (country_ai != nullptr) country_ai->abort(day);
@@ -243,8 +273,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
                     break;
                 }
                 _country_worker_intents[peer.request_id] = peer;
-                if (effect_in_worker &&
-                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT)
+                if (_effect_adapter_country != nullptr || (effect_in_worker &&
+                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT))
                     worker_effect_peers.push_back(peer);
                 else
                     _country_worker_intent_queue.push_back(peer.request_id);
@@ -263,8 +293,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
         if (error.empty()) {
             for (const CountryPeerIntent &peer : worker_effect_peers) {
-                const CountryPeerResult result =
-                    resolve_country_technology_effect(peer);
+                const CountryPeerResult result = effect_in_worker &&
+                    peer.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT
+                    ? resolve_country_technology_effect(peer)
+                    : _effect_adapter_country->execute_peer_intent_from_worker(peer);
                 std::lock_guard<std::mutex> lock(_country_transport_mutex);
                 _country_worker_results[peer.request_id] = result;
                 if (result.code == CountryPeerResultCode::PENDING) continue;
@@ -375,10 +407,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 if (s_late_fold_left.fetch_sub(
                         1, std::memory_order_relaxed) > 0) {
                     pk::log_info(
-                        "[country][active] late-fold rejected day=%d "
-                        "request=%d reason=%s",
-                        day,
-                        static_cast<int64_t>(packet.envelope.request_id),
+                        "[country][active] late-fold rejected day=%lld "
+                        "request=%llu reason=%s",
+                        static_cast<long long>(day),
+                        static_cast<unsigned long long>(packet.envelope.request_id),
                         command_error.c_str());
                 }
                 continue;
@@ -402,8 +434,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
                             1, std::memory_order_relaxed) > 0) {
                         pk::log_info(
                             "[country][active] late-fold research catch-up "
-                            "failed day=%d reason=%s",
-                            day, research_error.c_str());
+                            "failed day=%lld reason=%s",
+                            static_cast<long long>(day), research_error.c_str());
                     }
                 }
             }
@@ -413,11 +445,11 @@ bool NativeSimulationHost::execute_country_worker_stage(
             if (s_late_fold_ok_left.fetch_sub(
                     1, std::memory_order_relaxed) > 0) {
                 pk::log_info(
-                    "[country][active] late-fold ok day=%d request=%d "
-                    "opcode=%d",
-                    day,
-                    static_cast<int64_t>(packet.envelope.request_id),
-                    static_cast<int64_t>(command.opcode));
+                    "[country][active] late-fold ok day=%lld request=%llu "
+                    "opcode=%u",
+                    static_cast<long long>(day),
+                    static_cast<unsigned long long>(packet.envelope.request_id),
+                    static_cast<unsigned>(command.opcode));
             }
         }
     }
@@ -478,16 +510,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
     if (economy_asset_waiting) {
         // Do not soft-commit Country to escape this wait. Host liveness must
         // pump peers; soft-commit here previously raced with Climate capacity
-        // and stranded research ACKs. Park with a stall bit; timeout → fault.
+        // and stranded research ACKs. Park with a stall bit until a peer result arrives.
         note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
                            RUNTIME_DAY_STALL_FISCAL_PEER,
                        day);
-        if (fault_if_peer_stall_timed_out(
-                day, "country_economy_asset_peer_stall_timeout")) {
-            error = "country_economy_asset_peer_stall_timeout";
-            commit.preflight_ok = 0;
-            return false;
-        }
         error = "country_economy_asset_results_pending";
         commit.preflight_ok = 0;
         commit.continuation_pending = 1;
@@ -660,10 +686,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                                  _country_pod_plan.header.dirty_families);
                     std::fflush(stderr);
                     pk::log_info(
-                        "[country][active] peer-wait preview day=%d "
-                        "commands=%d",
-                        day,
-                        static_cast<int64_t>(_country_pod_plan.commands.size()));
+                        "[country][active] peer-wait preview day=%lld "
+                        "commands=%zu",
+                        static_cast<long long>(day),
+                        _country_pod_plan.commands.size());
                 }
             }
         }
@@ -673,12 +699,6 @@ bool NativeSimulationHost::execute_country_worker_stage(
         if (_environment_ring.pop_while_day_at_most(day) > 0u) {
             _climate_wait_cv.notify_all();
             _control_cv.notify_all();
-        }
-        if (fault_if_peer_stall_timed_out(
-                day, "country_worker_peer_stall_timeout")) {
-            error = "country_worker_peer_stall_timeout";
-            commit.preflight_ok = 0;
-            return false;
         }
         error = "country_worker_peer_results_pending";
         commit.preflight_ok = 0;
@@ -702,6 +722,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
             commit.preflight_ok = 0;
             return false;
         }
+        _country_observations.erase(day);
+        publish_country_input_rejections();
         publish_country_command_terminals(
             _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
             _country_pod_authority.generation(), nullptr);
@@ -783,6 +805,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
         commit.preflight_ok = 0;
         return false;
     }
+    _country_observations.erase(day);
+    publish_country_input_rejections();
     publish_country_command_terminals(
         _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
         _country_pod_authority.generation(), nullptr);

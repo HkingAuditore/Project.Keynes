@@ -227,18 +227,10 @@ void fragment() {
 			snow_hold = 0.6;
 		}
 		if (v_param.y > 0.5) {
-			float hearth = 1.0 - smoothstep(0.10, 0.18, length(p));
+			float hearth = 1.0 - smoothstep(0.12, 0.22, length(p));
 			c = mix(c, vec3(0.16, 0.13, 0.11), hearth);
-			// [early-hearth 2026-11-20] In the stone and agrarian eras the plaza fire
-			// is the settlement's only night light. The old fingertip-sized dot
-			// disappeared as soon as lot decals drew over the plaza, so give it a
-			// readable core plus a warm pool that carries across the paving.
-			float hearth_r = length(p);
-			float flicker = 0.82 + 0.18 * sin(TIME * 7.0 + seed * 30.0);
-			float core = 1.0 - smoothstep(0.0, 0.34, hearth_r);
-			float pool = exp(-hearth_r * 1.9) * 0.65;
-			emit = vec3(1.0, 0.50, 0.17) * (core * 1.15 + pool) * flicker
-				* (0.30 + 0.70 * v_night);
+			emit = vec3(1.0, 0.48, 0.16) * (1.0 - smoothstep(0.0, 0.18, length(p)))
+				* (0.25 + 0.75 * v_night) * (0.8 + 0.2 * sin(TIME * 7.0 + seed * 30.0));
 		}
 		snow_hold = 0.8;
 	} else if (kind == BG_ROAD) {

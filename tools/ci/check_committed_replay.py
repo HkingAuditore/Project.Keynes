@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Replay a nonempty command log twice; optionally compare a PKSV continuation.
 
-No golden baselines are written. On checkpoint divergence, retain evidence and
-stop; do not normalize away generations, state dates or entire domains.
+No golden baselines are written. Keep every observed trajectory, even when a
+process reports a failure or diverges.
 """
 import argparse
 import json
@@ -31,6 +31,9 @@ def coverage_errors(payload, expected_days):
         for name, domain in domains.items():
             if not isinstance(domain, dict) or not domain.get("hash") or not domain.get("scope") or "state_day" not in domain:
                 errors.append(f"day {row.get('day')}: incomplete {name} summary")
+        for key in ("whole_economy_hash", "military", "resources", "vision", "species"):
+            if not row.get(key):
+                errors.append(f"day {row.get('day')}: missing {key}")
     return errors
 
 def continuation_scan(expected, actual):
@@ -49,7 +52,7 @@ def continuation_scan(expected, actual):
                              "first_difference": difference(left, right)}
         extras = {key: {"equal": before.get(key) == row.get(key),
                         "first_difference": difference(before.get(key), row.get(key))}
-                  for key in ("whole_economy_hash", "military", "resources")}
+                  for key in ("whole_economy_hash", "military", "resources", "vision", "species")}
         rows.append({"day": row["day"], "domains": domains, "other": extras})
     return {"valid_payloads": True, "rows": rows}
 
@@ -68,7 +71,7 @@ def main():
                         help="keep the real annual coordinator enabled in the calendar fixture")
     parser.add_argument("--year-days", type=int, help="calendar length (default 8; autosave 365)")
     parser.add_argument("--slot", default="autosave",
-                        help="resume slot; useful with --autosave (default: manual_3)")
+                        help="slot to resume when using --autosave")
     parser.add_argument("--project", type=Path, default=ROOT / "Project/project-keynes")
     args = parser.parse_args()
     if not 1 <= args.save_day < args.days:
@@ -96,7 +99,14 @@ def main():
             env["PK_COMMITTED_REPLAY_YEAR_DAYS"] = str(args.year_days or 365)
             if mode == "resume":
                 import shutil
-                shutil.copyfile(args.log_dir / "saves/annual-checkpoint.pksv", args.log_dir / "saves/autosave.pksv")
+                checkpoint = args.log_dir / "saves/annual-checkpoint.pksv"
+                if checkpoint.is_file():
+                    shutil.copyfile(checkpoint, args.log_dir / "saves/autosave.pksv")
+                else:
+                    results.append(dict(mode=mode, valid=False, errors=["annual checkpoint missing"]))
+                    (args.log_dir / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
+                    print("resume: valid=False; annual checkpoint missing", flush=True)
+                    break
         env["PK_SAVE_DIR"] = str(args.log_dir.resolve() / "saves")
         if args.trace:
             env["PK_SIM_DAY_TRACE"] = str(args.log_dir.resolve() / (mode + ".trace"))
@@ -111,20 +121,21 @@ def main():
         actual = payloads[0] if len(payloads) == 1 else None
         expected_days = range(args.save_day + 1 if mode == "resume" else 1, args.days + 1)
         errors.extend(coverage_errors(actual, expected_days))
-        if reference is None: reference = actual
+        if mode == "original": reference = actual
         expected = reference
         if mode == "resume" and reference:
             expected = dict(reference, rows=[row for row in reference["rows"] if row["day"] > args.save_day])
-        diff = difference(expected, actual)
+        diff = (difference(expected, actual) if expected is not None and actual is not None
+                else {"path": "result", "error": "comparison requires both replay payloads"})
         if mode == "resume":
             (args.log_dir / "continuation-scan.json").write_text(
                 json.dumps(continuation_scan(expected, actual), indent=2) + "\n")
-        valid = process.returncode == 0 and not errors and actual is not None and diff is None
+        valid = process.returncode == 0 and not errors and reference is not None and actual is not None and diff is None
         results.append(dict(mode=mode, valid=valid, exit=process.returncode,
                             errors=errors, first_difference=diff, actual=actual))
         (args.log_dir / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
-        print(f"{mode}: valid={valid}; first_difference={diff}", flush=True)
-        if not valid: return 1
-    return 0
+        print(f"{mode}: valid={valid}; errors={len(errors)}; first_difference_path="
+              f"{diff['path'] if diff else None}", flush=True)
+    return int(not all(result["valid"] for result in results))
 if __name__ == "__main__":
     raise SystemExit(main())

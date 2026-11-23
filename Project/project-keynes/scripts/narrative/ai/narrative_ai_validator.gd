@@ -8,13 +8,6 @@ const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_eff
 const NarrativeEventDefinitionScript = preload("res://scripts/narrative/narrative_event_definition.gd")
 
 const Q16_ONE: int = 65536
-const MIN_MAGNITUDE_Q16: int = 3277  # 5% of 65536
-const MAX_MAGNITUDE_Q16: int = 32768 # 50% of 65536
-const MIN_DURATION_DAYS: int = 15
-const MAX_DURATION_DAYS: int = 365
-const MIN_RATIO_BP: int = 50         # 0.5%
-const MAX_RATIO_BP: int = 2000       # 20%
-
 const SAFE_CITY_MODIFIER_KEYS := {
 	"family.city.production_boost": "economy.city.building.manufacturing_output_factor",
 	"family.city.hunting_output_boost": "economy.city.good.game_meat.output_factor",
@@ -65,17 +58,9 @@ const SAFE_COUNTRY_MODIFIER_KEYS := {
 	"narrative.levy.labor_satisfaction": "narrative.levy.labor_satisfaction",
 }
 
-const DEFAULT_KNOWN_GOODS := [
-	"grain", "food", "fish", "meat", "salt", "timber", "wood", "stone", "clay",
-	"copper", "tin", "bronze", "iron", "coal", "tools", "cloth", "clothing",
-	"pottery", "wine", "luxury", "livestock", "herbs", "paper", "corn_grain",
-]
-
-
 static func validate_and_sanitize(
 		raw_content: Variant,
 		cell_ctx: Dictionary = {},
-		allowed_goods: PackedStringArray = PackedStringArray(),
 		event_id_override: String = ""
 ) -> Dictionary:
 	var parsed_dict: Dictionary = {}
@@ -144,16 +129,13 @@ static func validate_and_sanitize(
 			"event_dict": {},
 		}
 
-	var available_cash := _read_available_cash(cell_ctx)
-	var goods_set := _build_allowed_goods_set(allowed_goods, cell_ctx)
-
 	var sanitized_options: Array[Dictionary] = []
 	var opt_arr: Array = raw_options as Array
 	for opt_idx in range(mini(opt_arr.size(), 4)):
 		var raw_opt: Variant = opt_arr[opt_idx]
 		if not (raw_opt is Dictionary):
 			continue
-		var sanitized_opt := _sanitize_option(raw_opt as Dictionary, opt_idx, available_cash, goods_set)
+		var sanitized_opt := _sanitize_option(raw_opt as Dictionary, opt_idx)
 		if not sanitized_opt.is_empty():
 			sanitized_options.append(sanitized_opt)
 
@@ -184,7 +166,6 @@ static func validate_and_sanitize(
 		sanitized_tags.append("ai_narrative")
 
 	var ai_visual_prompt := String(parsed_dict.get("ai_visual_prompt", "")).strip_edges()
-	var era_idx := clampi(int(cell_ctx.get("era_index", 0)), 0, 10)
 
 	var event_dict := {
 		"event_id": event_id_str,
@@ -204,8 +185,8 @@ static func validate_and_sanitize(
 		"trigger_chance_q16": Q16_ONE,
 		"cooldown_days": clampi(int(parsed_dict.get("cooldown_days", 180)), 15, 3650),
 		"one_shot": bool(parsed_dict.get("one_shot", true)),
-		"min_era_index": clampi(int(parsed_dict.get("min_era_index", 0)), 0, era_idx),
-		"max_era_index": clampi(int(parsed_dict.get("max_era_index", 10)), era_idx, 10),
+		"min_era_index": clampi(int(parsed_dict.get("min_era_index", 0)), 0, 10),
+		"max_era_index": clampi(int(parsed_dict.get("max_era_index", 10)), 0, 10),
 		"required_technologies": [],
 		"blocked_technologies": [],
 		"required_events_completed": [],
@@ -224,15 +205,6 @@ static func validate_and_sanitize(
 		"reason": "",
 		"event_dict": event_dict,
 	}
-
-
-static func validate_json(
-		raw_content: Variant,
-		cell_ctx: Dictionary = {},
-		allowed_goods: PackedStringArray = PackedStringArray(),
-		event_id_override: String = ""
-) -> Dictionary:
-	return validate_and_sanitize(raw_content, cell_ctx, allowed_goods, event_id_override)
 
 
 static func strip_markdown_fences(raw_text: String) -> String:
@@ -331,16 +303,14 @@ static func normalize_temperature_readings(text: String) -> String:
 
 static func _sanitize_option(
 		raw_opt: Dictionary,
-		opt_idx: int,
-		available_cash: int,
-		goods_set: Dictionary
+		opt_idx: int
 ) -> Dictionary:
 	var text := normalize_temperature_readings(String(raw_opt.get("text", "")).strip_edges())
 	if text.is_empty():
 		text = "选项 %d" % (opt_idx + 1)
 	var tooltip_hint := normalize_temperature_readings(
 		String(raw_opt.get("tooltip_hint", "")).strip_edges())
-	var req_cash := clampi(int(raw_opt.get("require_treasury_cash", 0)), 0, maxi(0, available_cash))
+	var req_cash := maxi(0, int(raw_opt.get("require_treasury_cash", 0)))
 	var opt_id := String(raw_opt.get("option_id", "")).strip_edges()
 	if opt_id.is_empty():
 		opt_id = "opt_%d" % (opt_idx + 1)
@@ -362,7 +332,7 @@ static func _sanitize_option(
 				out_title = "结果"
 			var out_narrative := String(od.get("outcome_narrative", od.get("narrative", text))).strip_edges()
 			var w := _extract_outcome_weight(od)
-			var effs := _sanitize_effects_array(od.get("effects", []), available_cash, goods_set)
+			var effs := _sanitize_effects_array(od.get("effects", []))
 			sanitized_outcomes.append({
 				"probability_q16": Q16_ONE,
 				"outcome_title": out_title.left(32),
@@ -372,7 +342,7 @@ static func _sanitize_option(
 			weights.append(w)
 	else:
 		# Allow flat option with direct effects if LLM omitted outcomes wrapper
-		var direct_effs := _sanitize_effects_array(raw_opt.get("effects", []), available_cash, goods_set)
+		var direct_effs := _sanitize_effects_array(raw_opt.get("effects", []))
 		var flat_title := normalize_temperature_readings(
 			String(raw_opt.get("outcome_title", "已执行")).strip_edges())
 		if flat_title.is_empty():
@@ -394,9 +364,6 @@ static func _sanitize_option(
 
 	var req_good_id := _sanitize_identifier(String(raw_opt.get("require_good_id", "")))
 	var req_good_qty := maxi(0, int(raw_opt.get("require_good_qty", 0)))
-	if not req_good_id.is_empty() and not goods_set.has(req_good_id):
-		req_good_id = ""
-		req_good_qty = 0
 
 	return {
 		"option_id": opt_id,
@@ -449,9 +416,7 @@ static func _normalize_weights_to_q16(weights: Array[int]) -> PackedInt32Array:
 
 
 static func _sanitize_effects_array(
-		raw_effects: Variant,
-		available_cash: int,
-		goods_set: Dictionary
+		raw_effects: Variant
 ) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if not (raw_effects is Array):
@@ -461,16 +426,14 @@ static func _sanitize_effects_array(
 		var item: Variant = arr[i]
 		if not (item is Dictionary):
 			continue
-		var sanitized := _sanitize_single_effect(item as Dictionary, available_cash, goods_set)
+		var sanitized := _sanitize_single_effect(item as Dictionary)
 		if not sanitized.is_empty():
 			out.append(sanitized)
 	return out
 
 
 static func _sanitize_single_effect(
-		raw_eff: Dictionary,
-		available_cash: int,
-		goods_set: Dictionary
+		raw_eff: Dictionary
 ) -> Dictionary:
 	var Kind = NarrativeEffectSpecScript.Kind
 	var kind_val := _parse_allowed_kind(raw_eff.get("kind", ""))
@@ -479,86 +442,31 @@ static func _sanitize_single_effect(
 
 	var raw_target := String(raw_eff.get("target_key", "")).strip_edges()
 	var raw_tag := _sanitize_identifier(String(raw_eff.get("tag_key", "")))
-	var duration_days := clampi(int(raw_eff.get("duration_days", 90)), MIN_DURATION_DAYS, MAX_DURATION_DAYS)
-	var mag_q16 := _extract_clamped_magnitude_q16(raw_eff)
-	var ratio_bp := _extract_clamped_ratio_bp(raw_eff)
-	var int_val := int(raw_eff.get("int_value", raw_eff.get("amount", raw_eff.get("quantity", 0))))
+	var duration_days := int(raw_eff.get("duration_days", 90))
+	var mag_q16 := _decode_magnitude_q16(raw_eff)
+	var ratio_bp := int(raw_eff.get("ratio_bp", roundi(float(raw_eff.get("ratio_percent", 0.0)) * 100.0)))
+	var amount_key := "people" if kind_val == Kind.ADD_POPULATION else "quantity"
+	var int_val := int(raw_eff.get("int_value", raw_eff.get("amount", raw_eff.get(amount_key, 0))))
 	var scope_to_cell := bool(raw_eff.get("scope_to_cell", kind_val != Kind.COUNTRY_MODIFIER))
 	var custom_label := String(raw_eff.get("custom_label", "")).strip_edges().left(120)
 	var ai_followup_prompt := String(raw_eff.get("ai_followup_prompt", "")).strip_edges().left(400)
-	# 范围效果只属于 CITY_MODIFIER；其余 Kind 一律写 0，别让模型把全国修正也写成本地范围。
-	var radius_cells := 0
-	var falloff := 0
-
 	var resolved_target := ""
 
 	match kind_val:
 		Kind.CITY_MODIFIER:
-			resolved_target = _resolve_safe_city_modifier_key(raw_target, goods_set)
+			resolved_target = _resolve_safe_city_modifier_key(raw_target)
 			if resolved_target.is_empty():
 				return {}
-			scope_to_cell = true
-			radius_cells = clampi(int(raw_eff.get("radius_cells", 0)), 0, 2)
-			falloff = clampi(int(raw_eff.get("falloff", 0)), 0, 1)
 
 		Kind.COUNTRY_MODIFIER:
 			resolved_target = _resolve_safe_country_modifier_key(raw_target)
 			if resolved_target.is_empty():
 				return {}
-			scope_to_cell = false
-
-		Kind.TREASURY_CASH_TO_COHORT:
-			resolved_target = ""
-			if int_val > 0:
-				if available_cash > 0:
-					int_val = clampi(int_val, 0, available_cash)
-				else:
-					int_val = clampi(int_val, 0, 1000000)
-			else:
-				int_val = 0
-				if ratio_bp <= 0:
-					ratio_bp = 500 # Default 5%
-
-		Kind.COHORT_CASH_TO_TREASURY:
-			resolved_target = ""
-			if int_val > 0:
-				int_val = clampi(int_val, 1, 1000000)
-			else:
-				int_val = 0
-				if ratio_bp <= 0:
-					ratio_bp = 500 # Default 5%
 
 		Kind.COUNTRY_GOOD_TO_MARKET, Kind.MARKET_GOOD_TO_COUNTRY, Kind.MARKET_ADD_STOCK, Kind.MARKET_REMOVE_STOCK:
-			var good_key := _sanitize_identifier(raw_target)
-			if good_key.is_empty() or not goods_set.has(good_key):
+			resolved_target = _sanitize_identifier(raw_target)
+			if resolved_target.is_empty():
 				return {}
-			resolved_target = good_key
-			if int_val > 0:
-				int_val = clampi(int_val, 1, 50000)
-			else:
-				int_val = 100 if kind_val == Kind.MARKET_ADD_STOCK else 0
-				if ratio_bp <= 0 and int_val == 0:
-					ratio_bp = 500
-
-		Kind.ADD_POPULATION:
-			resolved_target = ""
-			scope_to_cell = true
-			# 人口允许负值（迁出），而 _extract_clamped_ratio_bp() 会把负数抹成 0，
-			# 所以这里直接读原始字段，不复用上面那份「只做加项」的夹紧值。
-			var raw_people := int(raw_eff.get("int_value",
-				raw_eff.get("amount", raw_eff.get("people", 0))))
-			var raw_bp := int(raw_eff.get("ratio_bp",
-				roundi(float(raw_eff.get("ratio_percent", 0.0)) * 100.0)))
-			if raw_people != 0:
-				int_val = clampi(raw_people, -3000, 3000)
-				ratio_bp = 0
-			else:
-				int_val = 0
-				ratio_bp = clampi(raw_bp, -3000, 3000)
-				if ratio_bp == 0:
-					# 模型说了「收留/迁走」却没给数：按一小批人算，
-					# 别把整条效果丢掉——丢掉就等于文案收人、数值空转。
-					ratio_bp = 800
 
 		Kind.SET_STORY_FLAG, Kind.CLEAR_STORY_FLAG:
 			var flag_key := _sanitize_identifier(raw_target)
@@ -568,7 +476,6 @@ static func _sanitize_single_effect(
 				else:
 					return {}
 			resolved_target = flag_key
-			int_val = clampi(maxi(1, int_val), 1, 100)
 
 		Kind.ADD_EVENT_WEIGHT_BIAS:
 			resolved_target = _sanitize_identifier(raw_target)
@@ -576,7 +483,6 @@ static func _sanitize_single_effect(
 				raw_tag = resolved_target
 			if raw_tag.is_empty() and resolved_target.is_empty():
 				raw_tag = "economy"
-			int_val = clampi(int_val if int_val != 0 else 50, -300, 500)
 
 		Kind.SCHEDULE_FOLLOWUP_EVENT:
 			resolved_target = _sanitize_identifier(raw_target)
@@ -586,22 +492,6 @@ static func _sanitize_single_effect(
 				raw_tag = "chain"
 			if ai_followup_prompt.is_empty():
 				ai_followup_prompt = custom_label if not custom_label.is_empty() else "承接前事的后续演变"
-
-		_:
-			return {}
-
-	if custom_label.is_empty() and (kind_val == Kind.CITY_MODIFIER or kind_val == Kind.COUNTRY_MODIFIER):
-		# 兜底标签也必须说真话：ADD 族 magnitude 就是幅度，.cut 是减益。
-		var pct := maxi(1, roundi(float(mag_q16) * 100.0 / float(Q16_ONE)))
-		var sign_word := "-" if resolved_target.ends_with(".cut") else "+"
-		custom_label = "%s修正 %s%d%%，%d 日" % [
-			"本地" if kind_val == Kind.CITY_MODIFIER else "全国",
-			sign_word, pct, duration_days,
-		]
-		if kind_val == Kind.CITY_MODIFIER and radius_cells > 0:
-			custom_label += "（周边 %d 环）" % radius_cells
-	if custom_label.is_empty() and kind_val == Kind.ADD_POPULATION:
-		custom_label = NarrativeEffectSpecScript.describe_population_delta(int_val, ratio_bp)
 
 	return {
 		"kind": kind_val,
@@ -614,8 +504,8 @@ static func _sanitize_single_effect(
 		"scope_to_cell": scope_to_cell,
 		"custom_label": custom_label,
 		"ai_followup_prompt": ai_followup_prompt,
-		"radius_cells": radius_cells,
-		"falloff": falloff,
+		"radius_cells": int(raw_eff.get("radius_cells", 0)),
+		"falloff": int(raw_eff.get("falloff", 0)),
 	}
 
 
@@ -647,7 +537,7 @@ static func _parse_allowed_kind(raw_kind: Variant) -> int:
 	return -1
 
 
-static func _resolve_safe_city_modifier_key(raw_key: String, goods_set: Dictionary) -> String:
+static func _resolve_safe_city_modifier_key(raw_key: String) -> String:
 	var k := raw_key.strip_edges()
 	if k.is_empty():
 		return "economy.city.building.manufacturing_output_factor"
@@ -665,7 +555,7 @@ static func _resolve_safe_city_modifier_key(raw_key: String, goods_set: Dictiona
 			var good_part := lower.trim_prefix("economy.city.good.")
 			good_part = good_part.trim_suffix(".output_factor.cut" if is_cut else ".output_factor")
 			var clean_good := _sanitize_identifier(good_part)
-			if not clean_good.is_empty() and goods_set.has(clean_good):
+			if not clean_good.is_empty():
 				return "economy.city.good.%s.output_factor%s" % [
 					clean_good,
 					".cut" if is_cut else "",
@@ -715,60 +605,15 @@ static func _resolve_safe_country_modifier_key(raw_key: String) -> String:
 	return "ideology.country.output.manufacturing_factor.gain"
 
 
-static func _extract_clamped_magnitude_q16(raw_eff: Dictionary) -> int:
+static func _decode_magnitude_q16(raw_eff: Dictionary) -> int:
 	if raw_eff.has("magnitude_q16"):
-		return clampi(int(raw_eff["magnitude_q16"]), MIN_MAGNITUDE_Q16, MAX_MAGNITUDE_Q16)
+		return int(raw_eff["magnitude_q16"])
 	if raw_eff.has("magnitude_percent"):
-		var pct := clampf( absf(float(raw_eff["magnitude_percent"])), 5.0, 50.0 )
-		var q16 := int(round(pct * float(Q16_ONE) / 100.0))
-		return clampi(q16, MIN_MAGNITUDE_Q16, MAX_MAGNITUDE_Q16)
+		return roundi(absf(float(raw_eff["magnitude_percent"])) * float(Q16_ONE) / 100.0)
 	if raw_eff.has("magnitude"):
-		var m := absf(float(raw_eff["magnitude"]))
-		if m <= 1.0:
-			var q16 := int(round(m * float(Q16_ONE)))
-			return clampi(q16, MIN_MAGNITUDE_Q16, MAX_MAGNITUDE_Q16)
-		var q16_pct := int(round(m * float(Q16_ONE) / 100.0))
-		return clampi(q16_pct, MIN_MAGNITUDE_Q16, MAX_MAGNITUDE_Q16)
-	return clampi(int(round(0.15 * float(Q16_ONE))), MIN_MAGNITUDE_Q16, MAX_MAGNITUDE_Q16)
-
-
-static func _extract_clamped_ratio_bp(raw_eff: Dictionary) -> int:
-	if raw_eff.has("ratio_bp"):
-		var r := int(raw_eff["ratio_bp"])
-		if r <= 0:
-			return 0
-		return clampi(r, MIN_RATIO_BP, MAX_RATIO_BP)
-	if raw_eff.has("ratio_percent"):
-		var rp := float(raw_eff["ratio_percent"])
-		if rp <= 0.0:
-			return 0
-		return clampi(int(round(rp * 100.0)), MIN_RATIO_BP, MAX_RATIO_BP)
-	return 0
-
-
-static func _read_available_cash(cell_ctx: Dictionary) -> int:
-	for k in ["treasury_cash", "country_cash", "cash", "treasury"]:
-		if cell_ctx.has(k) and cell_ctx[k] != null:
-			return maxi(0, int(cell_ctx[k]))
-	return 0
-
-
-static func _build_allowed_goods_set(allowed_goods: PackedStringArray, cell_ctx: Dictionary) -> Dictionary:
-	var set_dict := {}
-	for g in allowed_goods:
-		var gs := _sanitize_identifier(String(g))
-		if not gs.is_empty():
-			set_dict[gs] = true
-	if set_dict.is_empty():
-		for g in DEFAULT_KNOWN_GOODS:
-			set_dict[g] = true
-		for dict_key in ["market_stocks_by_id", "market_stocks", "treasury_goods_by_id"]:
-			if cell_ctx.has(dict_key) and cell_ctx[dict_key] is Dictionary:
-				for k in (cell_ctx[dict_key] as Dictionary).keys():
-					var ks := _sanitize_identifier(String(k))
-					if not ks.is_empty():
-						set_dict[ks] = true
-	return set_dict
+		var magnitude := absf(float(raw_eff["magnitude"]))
+		return roundi(magnitude * float(Q16_ONE) / (1.0 if magnitude <= 1.0 else 100.0))
+	return roundi(0.15 * float(Q16_ONE))
 
 
 static func _sanitize_identifier(raw: String) -> String:

@@ -6,11 +6,10 @@
 #   - dots_completion_gate.gd：硬门禁，任一项失败 exit 非零（用于 CI / merge gate）
 #
 # 依次跑下列检查（任一失败立即累积；最后给汇总 + 非零退出码）：
-#   (a) 4 巨石行数历史诊断
+#   (a) 3 个大文件行数历史诊断
 #       - weather_system.gd ≤ 400
 #       - map_generator.gd  ≤ 1500
 #       - map_baker.gd      ≤ 800
-#       - main.gd           ≤ 400
 #       - 该项属于 2026-05 monolith-split 计划。当前生产架构已经转为
 #         native daily graph + DataCore；超限保留为迁移债务警告，不再
 #         伪装成当前 authority 契约，也不允许静默删除这些数据。
@@ -27,10 +26,7 @@
 #       - implemented_domain_mask 包含
 #         COMMIT|CLIMATE|COUNTRY|TRIGGER_INPUT|MODIFIER|EFFECT|IDEOLOGY|EVENTS|ECONOMY
 #       - 生产 worker request 为 0xFFF
-#         （默认值 @export 声明在 world_runtime_host.gd；下发赋值在
-#          world_runtime_generation_adapter.gd —— 2026-11 拆分后的实际位置）
 #       - D7T1 section 与 Economy fiscal peer journal 仍在源码中
-#         （D7 marker 命中 host_source 或 native_simulation_host_journal.cpp 任一）
 #   (e) 1000 tick SAME_SOURCE 数值收敛 [SKIP / RUNTIME-GATED]
 #       - 当前脚本静态校验，不真正跑 tick；记录 baseline.json 中的占位指标。
 #         真正 runtime soak 由项目内 dedicated scene 跑（待 1.1-3.2 拆分稳定后建立）。
@@ -47,18 +43,17 @@
 #   2 = 内部错误（脚本无法读取 baseline.json / climate_profile.gd 等）
 #
 # 失败/警告输出格式（精确定位）：
-#   [LEGACY] (a) main.gd: 1742 lines > historical target 400 (over by 1342)
+#   [LEGACY] (a) map_baker.gd: 1701 lines > historical target 800 (over by 901)
 #   [GATE-FAIL] (b) weather_system.gd: 'out_cell.x =' hit 5 (expected 0)
 #   [GATE-FAIL] (c) feature_flags.FLAGS missing entry for 'use_xxx_yyy' declared on ClimateProfile
 
 extends SceneTree
 
-# 4 巨石行数历史诊断
+# 3 个大文件行数历史诊断
 const _LANDMARKS: Array = [
 	{path = "res://scripts/weather/weather_system.gd",   target =  400, key = "weather_system_gd",  label = "weather_system.gd"},
 	{path = "res://scripts/geography/map_generator.gd",  target = 1500, key = "map_generator_gd",   label = "map_generator.gd"},
 	{path = "res://scripts/rendering/map_baker.gd",      target =  800, key = "map_baker_gd",       label = "map_baker.gd"},
-	{path = "res://scripts/main.gd",                     target =  400, key = "main_gd",            label = "main.gd"},
 ]
 
 # hot path 直写残留 grep（pattern + 当前预期上限）
@@ -86,16 +81,9 @@ const _CLIMATE_PROFILE_PATH: String = "res://scripts/data/climate_profile.gd"
 const _FEATURE_FLAGS_PATH: String = "res://scripts/data_core/feature_flags.gd"
 const _BASELINE_PATH: String = "res://tests/dots_completion/baseline.json"
 const _NATIVE_HOST_HEADER_PATH: String = "gdext/src/native_simulation_host.h"
-const _NATIVE_HOST_SOURCE_PATH: String = "gdext/src/native_simulation_host.cpp"
-# 2026-11 拆分：D7 传输 journal（D7_TRANSACTION_MAGIC / "D7T1"）的实现已搬到独立编译
-# 单元 native_simulation_host_journal.cpp；host_source 只剩调度与转发。(d) 的 marker
-# 契约因此改为「host_source 或 journal 命中」，断言本身不变。
+const _NATIVE_HOST_PERSISTENCE_PATH: String = "gdext/src/native_simulation_host_persistence.cpp"
 const _NATIVE_HOST_JOURNAL_PATH: String = "gdext/src/native_simulation_host_journal.cpp"
 const _WORLD_RUNTIME_HOST_PATH: String = "res://scripts/game/world_runtime_host.gd"
-# 2026-11 拆分：把默认 authority mask 真正下发给 worker 的那行赋值已从
-# world_runtime_host.gd 搬到 generation adapter（写法带 host. 前缀）；默认值
-# 0xFFF 的声明仍留在 world_runtime_host.gd 上，两半各读自己当前所在的文件。
-const _WORLD_RUNTIME_GENERATION_ADAPTER_PATH: String = "res://scripts/game/world_runtime_generation_adapter.gd"
 const _ECONOMY_PERSISTENCE_PATH: String = "gdext/src/economy_runtime_persistence_codec.h"
 
 # 累积失败信息；len > 0 时以 exit 1 退出。
@@ -121,10 +109,10 @@ func _init() -> void:
 	_summarize_and_exit()
 
 
-# ─── (a) 4 巨石行数历史诊断 ─────────────────────────────────────────────
+# ─── (a) 3 个大文件行数历史诊断 ─────────────────────────────────────────
 
 func _check_landmarks() -> void:
-	print("─── (a) 4 巨石行数历史诊断 ───────────────────────")
+	print("─── (a) 3 个大文件行数历史诊断 ────────────────────")
 	print("%-28s %8s  %8s  %s" % ["file", "current", "target", "status"])
 	for entry in _LANDMARKS:
 		var lines: int = _count_lines(String(entry.path))
@@ -200,7 +188,7 @@ func _check_flag_registry() -> void:
 			missing_in_registry.append(d)
 	# 步骤 4：每个 registered 中 resource="ClimateProfile" 的必须在 declared 里命中
 	# 由于本静态扫描分不出 resource 字段，这里只做 declared→registered 单向校验，
-	# 反向校验由 DCFeatureFlags.validate_against({}) 在运行时跑（main.gd 启动期）。
+	# 反向校验由 DCFeatureFlags.validate_against({}) 在运行时启动期执行。
 
 	if missing_in_registry.is_empty():
 		print("all %d ClimateProfile flags registered: PASS" % declared_flags.size())
@@ -219,17 +207,12 @@ func _check_flag_registry() -> void:
 func _check_authority_contract() -> void:
 	print("─── (d) D12 authority / D7 journal contract ─────")
 	var host_header := _read_repo_text(_NATIVE_HOST_HEADER_PATH)
-	var host_source := _read_repo_text(_NATIVE_HOST_SOURCE_PATH)
+	var host_persistence := _read_repo_text(_NATIVE_HOST_PERSISTENCE_PATH)
 	var host_journal := _read_repo_text(_NATIVE_HOST_JOURNAL_PATH)
 	var world_host := _read_text(_WORLD_RUNTIME_HOST_PATH)
-	var world_generation_adapter := _read_text(_WORLD_RUNTIME_GENERATION_ADAPTER_PATH)
 	var economy_persistence := _read_repo_text(_ECONOMY_PERSISTENCE_PATH)
-	# 新增的 journal / generation adapter 必须一起纳入前置检查：否则文件改名或路径
-	# 失效时 _read_* 只会返回 ""，下面的 contains 静默变 false → 门禁假红；更糟的是
-	# 若哪天改成「空串跳过该断言」，就会变成假绿。任何被断言的源文件读不到都算内部错误。
-	if host_header == "" or host_source == "" or host_journal == "" \
-			or world_host == "" or world_generation_adapter == "" \
-			or economy_persistence == "":
+	if host_header == "" or host_persistence == "" or host_journal == "" \
+		or world_host == "" or economy_persistence == "":
 		_internal_errors.append("authority contract source file missing")
 		return
 
@@ -246,24 +229,17 @@ func _check_authority_contract() -> void:
 		and mask_block.contains("RuntimeDomainId::ECONOMY")
 	_expect_gate_contract("(d) implemented_domain_mask is COMMIT|CLIMATE|COUNTRY|TRIGGER|MODIFIER|EFFECT|IDEOLOGY|EVENTS|ECONOMY", mask_ok)
 
-	# The production request is deliberately configurable per session, but its
-	# default must remain the currently proven 0xFFF until M5 promotion evidence
-	# exists. Keep the static gate aligned with that explicit source contract.
-	# 断言本身不变（默认值 == 0xFFF 且该默认值被真正下发），只是这两半在 2026-11 拆分后
-	# 分别落在两个文件里：@export 默认值仍在 host，赋值行在 generation adapter。
-	var request_ok := world_generation_adapter.contains("config[\"authoritative_domain_mask\"] = host.runtime_authority_domain_mask") \
-		and world_host.contains("@export var runtime_authority_domain_mask: int = 0xFFF")
+	var startup := _read_text("res://scripts/game/world_runtime_generation_adapter.gd")
+	var request_ok := startup.contains('"authoritative_domain_mask": 0xFFF') \
+		and startup.contains('"simulation_thread_mode": "ACTIVE"')
 	_expect_gate_contract("(d) production worker default request is exactly 0xFFF", request_ok)
 
-	# 拆分后 D7 传输实现（magic + 段名）在 native_simulation_host_journal.cpp；契约要求
-	# 两个 marker 仍存在于 host_source/journal 这一对「D7 传输实现」文件中。
-	# 用按文件判定的 _any_contains 而不是先把两段文本拼起来再 contains：拼接边界会让
-	# 「文件 A 尾部 + 文件 B 头部」拼出的跨文件串产生伪命中，且命中后也说不清是哪份文件
-	# 在守契约。逐文件判定语义相同（任一命中即满足「存在」），但不会凭空造出 needle。
-	var d7_marker_ok := _any_contains([host_source, host_journal], "D7_TRANSACTION_MAGIC") \
-		and _any_contains([host_source, host_journal], "\"D7T1\"") \
+	var d7_marker_ok := host_persistence.contains("D7_SECTION_MARKER") \
+		and host_persistence.contains("\"D7T1\"") \
+		and host_journal.contains("constexpr uint32_t D7_TRANSACTION_MAGIC") \
+		and host_journal.contains("d7_append_u32(out, D7_TRANSACTION_MAGIC)") \
 		and economy_persistence.contains("SAVE_SECTION_FISCAL_PEER = 30")
-	_expect_gate_contract("(d) D7T1 transport and fiscal peer section are present", d7_marker_ok)
+	_expect_gate_contract("(d) D7T1 journal serializer and fiscal peer section are present", d7_marker_ok)
 
 
 func _expect_gate_contract(label: String, ok: bool) -> void:
@@ -294,16 +270,6 @@ func _read_repo_text(relative_path: String) -> String:
 		"\\", "/").trim_suffix("/")
 	var repo_root := project_root.path_join("..").path_join("..").simplify_path()
 	return _read_text(repo_root.path_join(relative_path))
-
-
-# 一组源文件文本里任一文件包含 needle 即命中。
-# 不用「拼接所有文本再 contains」的原因：拼接处会让跨文件的半截串产生伪命中，且失败时
-# 无法指出该去哪个文件补契约；按文件判定语义等价（「存在」不需要知道在哪），但不会凭空造串。
-func _any_contains(sources: Array, needle: String) -> bool:
-	for source in sources:
-		if String(source).contains(needle):
-			return true
-	return false
 
 
 # ─── (e) / (f) Runtime soak placeholder ────────────────────────────────

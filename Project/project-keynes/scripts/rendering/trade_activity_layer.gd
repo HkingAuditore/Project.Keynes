@@ -2,7 +2,7 @@ extends Node2D
 class_name TradeActivityLayer
 
 ## Bounded read-only observer. Two fixed batches sharing one MultiMesh, no per-order nodes or CPU animation.
-const VEHICLES: Texture2D = preload("res://assets/vfx/trade/vehicles_topdown_v2.png")
+const VEHICLES: TextureLayered = preload("res://assets/vfx/trade/vehicles_topdown_v2.png")
 const VEHICLE_SHADER: Shader = preload("res://shaders/trade_vehicle.gdshader")
 const PATH_WIDTH := 1024
 const INTEREST_CAP := 4096
@@ -21,6 +21,7 @@ var _quality := 2
 var _material: ShaderMaterial
 var _shadow_material: ShaderMaterial
 var _shadow_batch: MultiMeshInstance2D
+var _lighting_world: WorldData
 var _lighting_values: Dictionary = {}
 var _shader_tiled := false
 var _batch: MultiMeshInstance2D
@@ -89,6 +90,7 @@ func clear() -> void:
 	_bounds_rect = Rect2()
 	_external_camera = false
 	_map = null
+	_lighting_world = null
 	_lighting_values.clear()
 	for name in ["terrain_normal_tex", "terrain_horizon_tex", "visual_horizon_tiles", "visual_terrain_normal_tiles"]:
 		_set_parameter(name, null)
@@ -158,7 +160,7 @@ func _ensure_batch() -> void:
 	_set_parameter("shadow_heights", PackedFloat32Array(UITokens.TRADE_SHADOW_HEIGHTS))
 	_set_parameter("shadow_footprint", UITokens.TRADE_SHADOW_FOOTPRINT)
 	_set_parameter("shadow_edge_softness", UITokens.TRADE_SHADOW_EDGE_SOFTNESS)
-	_set_parameter("vehicle_atlas", VEHICLES)
+	_set_parameter("vehicle_sprites", VEHICLES)
 	_set_parameter("travel_speed", UITokens.TRADE_SPEED)
 	_set_parameter("stale_fade_seconds", UITokens.TRADE_FADE_SECONDS)
 	_info.resize(UITokens.TRADE_ROUTE_CAP)
@@ -173,12 +175,10 @@ func _ensure_batch() -> void:
 	_batch = MultiMeshInstance2D.new()
 	_batch.name = "TradeVehicles"
 	_batch.multimesh = instances
-	_batch.texture = VEHICLES
 	_batch.material = _material
 	_shadow_batch = MultiMeshInstance2D.new()
 	_shadow_batch.name = "TradeShadows"
 	_shadow_batch.multimesh = instances
-	_shadow_batch.texture = VEHICLES
 	_shadow_batch.material = _shadow_material
 	_shadow_batch.z_index = -1
 	add_child(_shadow_batch)
@@ -201,9 +201,15 @@ func set_daylight_parameters(values: Dictionary) -> void:
 			_set_parameter(name, values[name])
 
 
-## Static shared map fields; rebinding and asynchronous bake completion use this boundary.
+## Keep the world supplied at session readiness for later lighting refreshes.
 func set_terrain_lighting(world: WorldData, source: ShaderMaterial) -> void:
+	_lighting_world = world
+	refresh_terrain_lighting(source)
+
+
+func refresh_terrain_lighting(source: ShaderMaterial) -> void:
 	_ensure_batch()
+	var world := _lighting_world
 	if world == null:
 		for name in ["terrain_normal_tex_bound", "terrain_horizon_tex_bound", "gi_lut_bound"]:
 			_set_parameter(name, false)

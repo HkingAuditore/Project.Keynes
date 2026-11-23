@@ -53,9 +53,9 @@ INPUT_CAPTURE、GAMEPLAY_EFFECT、VISUAL、COMMIT 四个域由宿主自己实现
 
 | 模块 | 所有者文件 | 别人怎样调用它 | 绑定层 | 存档段 | 脚本入口 | 测试 | skill |
 |---|---|---|---|---|---|---|---|
-| Military（主线程） | `gdext/src/military_*` | `gdext/src/military_bridge.h` | `gdext/src/world_ext_military.cpp`、`gdext/src/world_ext_economy_military.cpp`、`gdext/src/world_ext_military_cell_stats.cpp` | PKMI2 等，见 [module-boundaries.md](module-boundaries.md) 的“请求与提交” | `Project/project-keynes/scripts/military/military_facade.gd` | `gdext/tests/military_core_selftest_main.cpp`、`Project/project-keynes/tests/runtime` 下的 military 用例 | — |
+| Military（执行器持有并结算） | `gdext/src/military_*` | `gdext/src/military_bridge.h` | `gdext/src/world_ext_military.cpp`、`gdext/src/world_ext_military_digest.cpp`、`gdext/src/world_ext_economy_military.cpp`、`gdext/src/world_ext_military_cell_stats.cpp` | PKMI2 等，见 [module-boundaries.md](module-boundaries.md) 的“请求与提交” | `Project/project-keynes/scripts/military/military_facade.gd` | `gdext/tests/military_core_selftest_main.cpp`、`Project/project-keynes/tests/runtime` 下的 military 用例 | project-keynes-military-runtime |
 | 科技 | 目录归 `Project/project-keynes/scripts/economy/technology_catalog.gd`，研究状态归 Country | 经 Country 命令 | — | 随 PKCN | `Project/project-keynes/scripts/technology`、`Project/project-keynes/scripts/research` | `Project/project-keynes/tests/technology` | project-keynes-technology-runtime、project-keynes-technology-tree-design |
-| 会话、存读档、玩家输入 | `Project/project-keynes/scripts/game` | `Project/project-keynes/scripts/game/world_runtime_host.gd` 的公开入口；日推进、生成、GM、展示和 Climate authority 分别委派到 `world_runtime_daily_adapter*.gd`、`world_runtime_generation_adapter.gd`、`world_runtime_gm_adapter*.gd`、`world_runtime_presentation.gd`、`world_runtime_climate.gd` | — | PKSV 整档，由 `Project/project-keynes/scripts/game/game_save_coordinator.gd` 协调 | `Project/project-keynes/scripts/game/player_controller.gd`（玩家会话公开入口；军事、时代/理念、选择和叙事职责在 `scripts/game/player_controller/{military,progression,selection,narrative}.gd`） | `Project/project-keynes/tests/game` | project-keynes-game-flow-runtime、project-keynes-player-controller |
+| 会话、存读档、玩家输入 | `Project/project-keynes/scripts/game` | `world_runtime_host.gd` 放行已到期的日期，`world_runtime_daily_adapter*.gd` 消费提交；生成、GM 和显示分别由对应的宿主协作者处理 | — | PKSV 整档，由 `Project/project-keynes/scripts/game/game_save_coordinator.gd` 协调 | `Project/project-keynes/scripts/game/player_controller.gd`（玩家会话公开入口；军事、时代/理念、选择和叙事职责在 `scripts/game/player_controller/{military,progression,selection,narrative}.gd`） | `Project/project-keynes/tests/game` | project-keynes-game-flow-runtime、project-keynes-player-controller |
 | 地图生成与烘焙 | `gdext/src/world_ext_generate*.cpp`、`gdext/src/world_ext_bake*.cpp`、`gdext/src/world_ext_cell_luts.cpp`（逐格 LUT 与弹射色字节编码；共享量化在 `world_ext_internal_cell_luts.h`） | 生成与显示期请求，不拥有每日模拟状态 | 同左 | 地图输入随整档 | `Project/project-keynes/scripts/geography/map_generator.gd`（请求与检查：`geography/map_generation/native_generation_bridge.gd`；装配与基线：`geography/map_generation/terrain_gen.gd`；季节刷新编排：`scripts/simulation/climate/season_refresh_coordinator.gd`；自然资源初始分布与储量：`scripts/simulation/economy/map_resource_initializer.gd`；保存/停止/worker：`scripts/game/map_runtime_bridge.gd`；规则目录：`scripts/game/map_rules_initializer.gd`；国家与起始国家：`scripts/country/map_country_initializer.gd`）、`Project/project-keynes/scripts/rendering/map_baker.gd` 与 `rendering/bakers/{atlas_encoders,cell_lut_baker,climate_baker,dynamic_atlas_baker,ocean_current_baker,physical_circulation_baker,terrain_baker,terrain_index_baker,weather_baker}.gd` | `Project/project-keynes/tests/world` | map-generation-pipeline |
 | 显示与界面 | `Project/project-keynes/scripts/rendering`、`Project/project-keynes/scripts/ui` | 只读已发布结果 | — | 无 | `Project/project-keynes/scripts/ui/game_ui_manager.gd`（场景组装和公开转发；国家卷宗、时代和覆盖层职责在 `scripts/ui/game_ui/{country_routes,era_progression,overlays}.gd`）；理念工作区宿主为 `ui/components/ideology_workspace.gd`，显示构造和模型刷新在 `ui/components/ideology_workspace_presentation.gd`；地块检查器宿主为 `ui/cell_inspector_view_model.gd`，按分区委派到 `ui/cell_inspector/{object_dossiers,military,overview,population_market,construction,geography}.gd`；地图渲染宿主为 `rendering/hex_renderer.gd`，其职责协作者在 `rendering/renderer_*.gd`；植被宿主为 `rendering/shrub_layer.gd`，其职责协作者在 `rendering/shrub/*.gd` | `Project/project-keynes/tests/rendering`、`Project/project-keynes/tests/ui` | project-keynes-ui-art-direction、building-visual-pcg、vegetation-visual-pcg |
 
@@ -78,10 +78,10 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 
 天气场的一日输入在 `gdext/src/runtime_climate_weather_input.h`。物理场的只读交付、校验和存档编解码在 `gdext/src/runtime_climate_physics_state.cpp`。
 
-军事、自然资源恢复、视野等表外推进者的线程与交接见 [current-state.md](current-state.md) 的“十二域以外的推进”，登记在 `tools/ci/runtime_advancers.json`。
+军务、自然资源恢复和视野等表外推进者登记在 `tools/ci/runtime_advancers.json`，运行顺序由 `gdext/src/native_simulation_host.cpp` 的日尾阶段表决定。军务阶段在 `native_simulation_host_military.cpp`，视野计算在 `world_ext_vision.cpp`，资源恢复在 `native_simulation_host_day_tail.cpp`。`scripts/game/world_runtime_vision_boundary.gd` 消费已发布视野。各阶段的读写见 [current-state.md](current-state.md) 的“十二域以外的推进”。
 
 经济冷配置的共同实现位于 `scripts/economy/economy_facade_configuration.gd`，显示目录准备位于 `scripts/economy/economy_facade_display.gd`。
-异步资源请求的完成回收归 `scripts/game/loading_resource_request.gd`，取消世界不会阻塞等待解析。
+异步资源请求的完成回收归 `scripts/game/loading_resource_request.gd`。关闭会话时取消交付，并等加载任务结束后回收对象。
 加载期规则目录由 `Project/project-keynes/scripts/game/loading_catalog_context.gd` 统一管理
 本次请求的工作预算与不可变编译产物；Economy/Modifier/Effect 编译器提供同步与协作入口。
 建筑编译步骤归 `scripts/economy/economy_building_catalog_compile_steps.gd`，承载力列归
@@ -89,12 +89,6 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 `scripts/modifier/modifier_catalog_stat_tables.gd` 与 `scripts/effect/effect_metric_keys.gd`。
 验收入口为 `Project/project-keynes/tests/world/loading_catalog_cooperative_test.gd` 与
 `tests/world/cooperative_world_generation_test.gd`；专项契约见 feature-guides 的加载期目录准备。
-
-建筑内容精简决策在 `Project/project-keynes/tools/technology_tree/building_distinction_review.json`；
-差异化、删除引用和发展成就主体的回归为
-`Project/project-keynes/tests/building/building_distinction_test.gd`。
-目录增删还须检查 `Project/project-keynes/scripts/research/development_achievement_catalog.gd`、
-科技的完整门槛及生产许可，并重烘 `Project/project-keynes/tools/prebake_loading_catalogs.gd`。
 
 ## 读不动的大文件
 
@@ -108,8 +102,16 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 
 高负载一致性入口为 `tools/ci/check_runtime_load_consistency.py`：正式周期用 `tests/runtime/runtime_load_daily_test.gd`，命令与存档用 `tests/runtime/committed_view_replay_test.gd`；检查器反例见 `tools/ci/test_runtime_load_consistency.py`。帧时钟过载恢复检查为 `tests/runtime/runtime_clock_overload_recovery_test.gd`。范围与设计方向见 `docs/plans/high-load-consistency.md`，实际验证见 feature-status。
 
-Climate ACTIVE 慢层刷新日期归 `scripts/simulation/systems/season_refresh_system.gd`，由 `scripts/simulation/climate/runtime_climate_capture.gd` 在输入采集前调用；继续边界复用 CLM2 和 `scripts/game/world_runtime_climate_restore.gd` 的已有日期。`tests/world/season_refresh_consumer_test.gd` 使用真实日期发布及植被输入构建检查同日抑制、提前输入和跨调用完成；`tests/world/season_refresh_schedule_test.gd` 覆盖冷重建、重复或遗漏调度观察及刷新前后的继续日期。
-资源视觉入口：`Project/project-keynes/scripts/rendering/resource_visual_layer.gd` 持有工作队列/预算/记忆；同目录 `resource_visual_geometry.gd`、`resource_visual_materials.gd`、`resource_visual_work_queue.gd` 分别处理实例、材质、变化调度。变化由 `MapData.resource_visual_inputs_changed` 接入，原生数组发布映射在 `gdext/src/resource_visual_publication.h`。验证见 `tests/economy/resource_visual_update_test.gd` 和 `resource_visual_perf_test.gd`。`MapData` 只读查询归 `Project/project-keynes/scripts/geography/map_data_queries.gd`，生物占领诊断汇总归 `Project/project-keynes/scripts/geography/map_generation/bio_occupancy_summary.gd`；物种出现保底（生成期逐级放宽播种输入）归同目录 `bio_occupancy_guarantee.gd`，契约见 [feature-guides.md](feature-guides.md) 的“物种出现保底”。
+整日模式的季节到期日期和历史列归 `gdext/src/runtime_world_environment.cpp`，继续边界复用 CLM2。
+`world_runtime_daily_adapter_part3.gd` 消费最新发布的气候、季节历史和地块变更。
+独立气候用例直接调用 `season_refresh_system.gd`、`runtime_climate_capture.gd`。相关用例为
+`tests/world/season_refresh_consumer_test.gd` 与 `tests/world/season_refresh_schedule_test.gd`。
+资源视觉入口：`Project/project-keynes/scripts/rendering/resource_visual_layer.gd` 持有工作队列/预算/记忆；同目录 `resource_visual_geometry.gd`、`resource_visual_materials.gd`、`resource_visual_work_queue.gd` 分别处理实例、材质、变化调度。变化由 `MapData.resource_visual_inputs_changed` 接入，原生数组发布映射在 `gdext/src/resource_visual_publication.h`。验证见 `tests/economy/resource_visual_update_test.gd` 和 `resource_visual_perf_test.gd`。`MapData` 只读查询归 `Project/project-keynes/scripts/geography/map_data_queries.gd`，生物占领诊断汇总归 `Project/project-keynes/scripts/geography/map_generation/bio_occupancy_summary.gd`。
+
+大陆矿产配额由 `gdext/src/world_ext_resource_deposits.cpp` 计算，陆块编号归
+`gdext/src/world_ext_landmasses.h`。玩家落点筛选和陆块大小由 `scripts/game/start_location_candidates.gd` 提供。
+近景地块看板的数据整理由 `scripts/ui/cell_board_view_model.gd` 处理，缩略图编码和格式识别归
+`scripts/game/save_preview_codec.gd`。
 `gdext/src/resource_visual_builder.h`、`gdext/src/resource_visual_builder.cpp` 注册独立的 `NativeResourceVisualBuilder` 纯计算类，
 经 `rendering/resource_visual_native_slice.gd` 接入单个同步片段；首次区域输入准备归
 `rendering/resource_visual_chunk_inputs.gd`。像素对象表与数值列的发布归 `WorldData`，三处
@@ -133,12 +135,11 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 `scripts/game/graphics_quality_settings.gd`。主菜单和暂停菜单共用
 `scenes/ui/graphics_quality_options.tscn`。应用到地图和显示层的入口在
 `scripts/rendering/renderer_graphics_settings.gd`，陆地和水面绘制尺寸归同目录的
-`terrain_render_scale.gd`。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
+`terrain_render_scale.gd`，静止镜头的陆地材质缓存归 `land_base_cache.gd`。游戏设置服务根据地图交互状态应用帧率上限。测试入口见[电脑和手机画质设置](feature-guides.md#电脑和手机画质设置)。
+
+缩小绘制的雾层由 `rendering/fog_render_target.gd` 管理刷新时机，视野变化依据 `WorldData.fog_texture_revision`。全屏界面对地图的遮挡归 `rendering/map_draw_visibility.gd`，实际不透明背景由玩家场景登记。
 
 水面波纹、迷雾梯度和天气新旧值的数值纹理共用 `rendering/render_data_table.gd`。更新入口依次在 `renderer_shader_water.gd`、`fog_of_war_layer.gd`、`weather_layer.gd`。地面读取、植被与建筑的着色入口见 [地图绘制中的共享计算](feature-guides.md#地图绘制中的共享计算)，数据校验见 `tests/rendering/render_data_tables_test.gd`。
-
-迷雾连续遮罩与天气视野门控共用 `shaders/include/cell_field_overlays.gdshaderinc` 的权重函数；
-真实 GPU 遮罩、混合视野格心与可选前后耗时对照见 `Project/project-keynes/tests/rendering/fog_continuous_mask_test.gd`。
 
 提交前整理的脚本职责位置见 [源文件职责拆分](source-module-splits.md) 的“移动端 PR 提交前的长度与依赖修复”。
 原生开拓的存储、查询、人口载荷分别在 `gdext/src/economy_runtime_colonization_store.cpp`、

@@ -28,7 +28,8 @@ def command_result():
     return {"commands": [{"day": d, "operation": "military_target", "value": d + 1} for d in range(1, COMMAND_DAYS + 1)],
             "rows": [{"day": d, "domains": domains(d), "gm_receipt": {"ok": True, "effective_day": d + 2},
                       "country_name": f"Replay day {d-2}" if d >= 3 else "Committed View Replay",
-                      "military": {"target_value": d + 1}, "whole_economy_hash": "123", "resources": "456"}
+                      "military": {"target_value": d + 1}, "whole_economy_hash": "123",
+                      "resources": "456", "vision": "789", "species": "abc"}
                      for d in range(1, COMMAND_DAYS + 1)]}
 
 
@@ -64,7 +65,7 @@ class LoadEvidenceTests(unittest.TestCase):
         self.assertEqual(compare(reference, actual)["path"], "result.days[3].domain_hashes.ECONOMY.hash")
 
     def test_command_receipts_and_actual_effective_days_are_checked(self):
-        for field in ("commands", "gm_receipt", "country_name", "military", "resources"):
+        for field in ("commands", "gm_receipt", "country_name", "military", "resources", "vision", "species"):
             actual = command_result()
             if field == "commands": actual[field] = []
             else: actual["rows"][3].pop(field)

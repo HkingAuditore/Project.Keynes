@@ -4,10 +4,10 @@ extends RefCounted
 ## signals and public method names; this object only preserves the old order.
 const AnnualReportSessionScript = preload("res://scripts/annual/annual_report_session.gd")
 
-func restart_worker_with_current_policy(host) -> Dictionary:
+func restart_runtime_executor(host) -> Dictionary:
 	if host._generator == null or not host._generator.has_method("request_runtime_stop"):
-		return host.climate_authority_diagnostics()
-	var requested: Dictionary = host._generator.request_runtime_stop()
+		return {"ok": false, "code": "runtime_unavailable"}
+	var requested: Dictionary = host._generator.request_runtime_stop(true)
 	if not bool(requested.get("ok", false)):
 		return requested
 	var deadline := Time.get_ticks_msec() + 5000
@@ -17,19 +17,17 @@ func restart_worker_with_current_policy(host) -> Dictionary:
 		exited = bool(report.get("simulation_executor_exited", false))
 		if exited:
 			break
-		host._service_country_worker_transport()
 		host._consume_country_worker_read_view_if_authoritative()
 		OS.delay_msec(1)
 	if not exited:
 		return {"ok": false, "code": "runtime_stop_incomplete"}
-	var policy: Dictionary = host._resolve_climate_authority_policy()
-	if bool(policy.get("enabled", false)) and host._generator.has_method("capture_country_worker_inputs"):
+	if host._generator.has_method("capture_country_worker_inputs"):
 		host._country_worker_transport_capture = host._generator.capture_country_worker_inputs()
 		if not bool(host._country_worker_transport_capture.get("ok", false)):
 			return host._country_worker_transport_capture
-	host._start_production_shadow_worker()
+	host._start_runtime_executor()
 	var result: Dictionary = host.climate_authority_diagnostics()
-	result["ok"] = not host.runtime_shadow_on_generate or host._web_worker_start_ok
+	result["ok"] = not host.start_executor_on_generate or host._web_worker_start_ok
 	result["code"] = "ok" if result["ok"] else host._web_worker_start_code
 	return result
 

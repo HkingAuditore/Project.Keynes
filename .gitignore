@@ -106,8 +106,6 @@ Project/*/addons/dots_ext/bin/windows/
 # GDExtension 增量编译产物。
 gdext/src/*.obj
 gdext/src/*.pdb
-# SConstruct 生成的构建标识头（R1-5）：按源码指纹重写，不入库。
-gdext/src/pk_build_id_generated.h
 # 被挪出源码树、尚未接线的实现（harness 停放区）。
 gdext/.wip/
 # 本机编译日志。
@@ -121,3 +119,6 @@ gdext/*.err.log
 **/android/build/.gradle/
 # SCons 签名数据库：每次编译整份改写，纯缓存（单个 52MB）。
 *.sconsign.dblite
+
+# macOS dots_ext libraries are built locally.
+/Project/project-keynes/addons/dots_ext/bin/macos/*.dylib

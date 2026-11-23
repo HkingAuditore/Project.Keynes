@@ -16,6 +16,9 @@ func _init() -> void:
 	call_deferred("run")
 
 func run() -> void:
+	if not root.is_node_ready():
+		await root.ready
+	await process_frame
 	output += "/" + RenderingServer.get_current_rendering_method()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(output))
 	viewport = SubViewport.new()

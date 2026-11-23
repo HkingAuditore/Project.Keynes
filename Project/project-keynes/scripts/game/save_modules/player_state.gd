@@ -1,6 +1,6 @@
 extends "res://scripts/game/save_modules/state_adapter.gd"
 
-const PreviewCodec = preload("res://scripts/game/save_preview_codec.gd")
+const SavePreviewCodec = preload("res://scripts/game/save_preview_codec.gd")
 
 ## Owns player persistence; receives only declared capabilities.
 
@@ -30,18 +30,11 @@ func _restore_player_provider(sections: Dictionary, context: Dictionary) -> Dict
 	return _result(true, "ok", "")
 
 func _capture_preview(context: Dictionary) -> PackedByteArray:
-	# Thumbnails go through SavePreviewCodec (scaled JPEG). The full-window PNG
-	# this used to store was 8.6% of the whole save file and incompressible.
-	var preview := PackedByteArray()
+	if DisplayServer.get_name() == "headless":
+		return SavePreviewCodec.fallback()
 	var viewport: Viewport = context.viewport
-	if DisplayServer.get_name() != "headless" and viewport != null \
-			and viewport.get_texture() != null:
-		var image := viewport.get_texture().get_image()
-		if image != null and not image.is_empty():
-			preview = PreviewCodec.encode(image)
-	if preview.is_empty():
-		preview = PreviewCodec.fallback()
-	return preview
+	var texture := viewport.get_texture() if viewport != null else null
+	return SavePreviewCodec.encode(texture.get_image() if texture != null else null)
 
 
 func section_codecs(_id: StringName, sections: PackedStringArray) -> Dictionary:

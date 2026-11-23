@@ -14,8 +14,8 @@ func build_overview(country_facade, economy_facade, handle: int, ledger: Economy
 		"gdp_tooltip": "本年累计",
 		"per_capita_gdp_tooltip": "",
 		"territory_tooltip": "",
-		"cpi_tooltip": "消费物价 · 1.00× = 成本",
-		"ppi_tooltip": "生产物价 · 1.00× = 成本",
+		"cpi_tooltip": "居民消费价格指数：食品、纺织与消费品按居民需求量加权的现价／成本锚；1.00× 表示等于成本锚。",
+		"ppi_tooltip": "生产者价格指数：按有效生产供给量加权的现价／成本锚；1.00× 表示等于成本锚。",
 		"satisfaction_tooltip": "",
 		"living_standard_tooltip": "0 赤贫 … 6 奢华",
 	}
@@ -58,24 +58,25 @@ static func build_alerts(economy: Dictionary) -> Array[Dictionary]:
 	if population > 0 and unemployed * 10 >= population:
 		alerts.append(_alert("unemployment", "situation.unemployment", "失业率偏高",
 			float(unemployed) / float(population), 0.10,
-			"警戒线 10%。"))
+			"失业人口 ÷ 全国人口；触发线 10%。\n开局时只有业主在自家地块干活，其余人靠过渡库存度日，"
+			+ "等新建筑开工招人，这时失业率高是正常的。"))
 	if population > 0 and int(economy.get("survival_satisfaction_q16", -1)) >= 0 \
 			and int(economy.get("survival_satisfaction_q16", -1)) <= 49152:
 		alerts.append(_alert("survival", "situation.food_shortage", "生存满意度不足",
 			float(economy.get("survival_satisfaction_q16", 0)) / 65536.0, 0.75,
-			"警戒线 75%。"))
+			"全国人口加权生存满意度；低于或等于 75% 时提示。"))
 	if bool(economy.get("consumer_shortage_valid", false)):
 		var shortage := int(economy.get("consumer_shortage_q16", 0))
 		if shortage >= 16384:
 			alerts.append(_alert("consumer_shortage", "situation.consumer_shortage",
 				"纺织与消费品短缺", float(shortage) / 65536.0, 0.25,
-				"警戒线 25%。"))
+				"纺织与消费品按居民需求量加权的短缺率；触发线 25%。"))
 	if bool(economy.get("industrial_shortage_valid", false)):
 		var shortage := int(economy.get("industrial_shortage_q16", 0))
 		if shortage >= 16384:
 			alerts.append(_alert("industrial_shortage", "situation.industry_shortage",
 				"工业物资短缺", float(shortage) / 65536.0, 0.25,
-				"警戒线 25%。"))
+				"生产物资按企业需求量加权的短缺率；触发线 25%。"))
 	var job_capacity := int(economy.get("job_capacity", 0))
 	var job_openings := int(economy.get("job_openings", 0))
 	if job_capacity > 0 and job_openings * 10 >= job_capacity:

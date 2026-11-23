@@ -3,9 +3,9 @@ extends SceneTree
 ## 部队自动探路的跨层契约：
 ##   - PlayerController 的探路草稿不调用 preview_path，中心不可直达仍可确认；
 ##   - MilitaryDossier 的按钮、焦点链、E/Enter/Esc 和状态文案；
-##   - MilitaryFacade 的 army.explore / trail / view 转发形状；
-##   - WorldRuntimeHost 只把 trail 写进 explored，并把冻结快照逐日推给原生；
-##   - whole-graph catch-up 的每个补跑日都先执行 exploration pre-day hook。
+##   - MilitaryFacade forwards the army.explore command unchanged.
+##   - Executed exploration and trail publication are covered by the formal
+##     scenario in background_daily_self_sufficiency_test.gd.
 ##
 ##   godot --headless --path Project/project-keynes \
 ##     -s res://tests/military/military_auto_exploration_test.gd
@@ -89,123 +89,10 @@ class ViewFacade:
 
 class FakeWorldExt:
 	var batches: Array = []
-	var trail := PackedInt32Array([3, 4, 5])
-	var observer_slot := -999
-	var last_view := PackedByteArray()
-	var last_day := -1
-	var last_revision := -1
-	var clear_count := 0
-	var work := true
 
 	func submit_military_commands(batch: Array) -> Dictionary:
 		batches.append(batch.duplicate(true))
 		return {"ok": true, "accepted": batch.size(), "rejected": []}
-
-	func set_military_exploration_observer(slot: int) -> Dictionary:
-		observer_slot = slot
-		return {"ok": true, "observer_slot": slot}
-
-	func set_military_exploration_view(slot: int, explored: PackedByteArray,
-			day: int, revision: int) -> Dictionary:
-		observer_slot = slot
-		last_view = explored.duplicate()
-		last_day = day
-		last_revision = revision
-		return {"ok": true, "cells": explored.size()}
-
-	func get_military_vision_trail(slot: int) -> PackedInt32Array:
-		return trail.duplicate() if slot == observer_slot or observer_slot == -999 \
-			else PackedInt32Array()
-
-	func clear_military_vision_trail(_slot: int) -> Dictionary:
-		clear_count += 1
-		trail.clear()
-		return {"ok": true}
-
-	func has_military_exploration_work() -> bool:
-		return work
-
-
-class TrailFacade:
-	var trail := PackedInt32Array()
-	var observer_slot := -1
-	var last_view := PackedByteArray()
-	var last_day := -1
-	var last_revision := -1
-	var view_pushes := 0
-	var clear_count := 0
-	var fail_clear := false
-	var work := true
-
-	func is_configured() -> bool:
-		return true
-
-	func has_military_exploration_work() -> bool:
-		return work
-
-	func set_military_exploration_observer(slot: int) -> Dictionary:
-		observer_slot = slot
-		return {"ok": true}
-
-	func set_military_exploration_view(slot: int, explored: PackedByteArray,
-			day: int, revision: int) -> Dictionary:
-		observer_slot = slot
-		last_view = explored.duplicate()
-		last_day = day
-		last_revision = revision
-		view_pushes += 1
-		return {"ok": true}
-
-	func get_military_vision_trail(_slot: int) -> PackedInt32Array:
-		return trail.duplicate()
-
-	func clear_military_vision_trail(_slot: int) -> Dictionary:
-		clear_count += 1
-		if fail_clear:
-			return {"ok": false, "reason": "forced_clear_failure"}
-		trail.clear()
-		return {"ok": true}
-
-
-class ExploreMapGenerator extends MapGenerator:
-	var facade
-
-	func get_military_facade():
-		return facade
-
-	func get_military_daily_job():
-		return null
-
-
-class ExploreHostProbe extends WorldRuntimeHost:
-	var poll_count := 0
-	var refresh_count := 0
-
-	func _poll_military_vision_revision() -> void:
-		poll_count += 1
-
-	func _refresh_vision() -> Dictionary:
-		refresh_count += 1
-		return {"ok": true}
-
-
-class CatchupHostProbe extends WorldRuntimeHost:
-	var prepared_days: Array[int] = []
-
-	func _prepare_military_exploration_day(day: int) -> Dictionary:
-		prepared_days.append(day)
-		return {"ok": true, "day": day}
-
-
-class CatchupFacade:
-	func is_configured() -> bool:
-		return true
-
-	func should_run(_day: int) -> bool:
-		return false
-
-	func run_daily(_day: int) -> Dictionary:
-		return {"ok": true}
 
 
 func _init() -> void:
@@ -213,28 +100,14 @@ func _init() -> void:
 
 
 func _run() -> void:
-	_test_native_binding_shape()
 	_test_military_facade_shape()
 	_test_player_explore_order()
 	await _test_dossier_explore_ui()
 	_test_view_model_status_text()
-	await _test_host_trail_boundary()
-	_test_whole_graph_catchup_prepares_each_day()
 	if _dossier != null:
 		_dossier.queue_free()
 	await process_frame
 	_finish()
-
-
-func _test_native_binding_shape() -> void:
-	if not ClassDB.class_exists("DCWorldExt"):
-		_expect(false, "DCWorldExt is not loaded")
-		return
-	for method in ["set_military_exploration_observer",
-			"set_military_exploration_view", "get_military_vision_trail",
-			"clear_military_vision_trail", "has_military_exploration_work"]:
-		_expect(ClassDB.class_has_method("DCWorldExt", method),
-			"DCWorldExt exposes %s" % method)
 
 
 func _test_military_facade_shape() -> void:
@@ -255,14 +128,6 @@ func _test_military_facade_shape() -> void:
 		_expect(row.get("cells", PackedInt32Array()) == cells,
 			"facade forwards the selection unchanged")
 		_expect(int(row.get("radius", 0)) == 3, "facade forwards the radius")
-	_expect(facade.get_military_vision_trail(0) == PackedInt32Array([3, 4, 5]),
-		"facade returns the native trail")
-	_expect(bool(facade.clear_military_vision_trail(0).get("ok", false)),
-		"facade clears the native trail")
-	var pushed: Dictionary = facade.set_military_exploration_view(
-		0, PackedByteArray([1, 0, 1]), 8, 19)
-	_expect(bool(pushed.get("ok", false)) and ext.last_day == 8 \
-		and ext.last_revision == 19, "facade forwards the frozen explored view")
 
 
 func _test_player_explore_order() -> void:
@@ -291,8 +156,6 @@ func _test_player_explore_order() -> void:
 		"explore selection is bounded to 256 cells")
 	_expect(facade.preview_calls == 0,
 		"explore draft never calls preview_path")
-	var preview_cells: PackedInt32Array = controller._military_order_preview.get(
-		"area", PackedInt32Array()).duplicate()
 	var confirmed: Dictionary = controller.confirm_military_arm_order()
 	_expect(bool(confirmed.get("ok", false)), "explore confirmation is accepted")
 	_expect(controller.submitted.size() == 1, "confirmation emits one command")
@@ -303,8 +166,8 @@ func _test_player_explore_order() -> void:
 			"confirmation uses military.army.explore")
 		_expect(int(args.get("army", 0)) == 7 and int(args.get("cell", -1)) == 100,
 			"confirmation sends army and anchor")
-		_expect(args.get("cells", PackedInt32Array()) == preview_cells,
-			"confirmation sends the highlighted selection")
+		_expect(not args.has("cells"),
+			"confirmation leaves cell selection to the executor")
 		_expect(int(args.get("radius", 0)) == 6,
 			"confirmation sends the chosen radius")
 	_expect(controller.military_arm_order().is_empty() == false \
@@ -468,82 +331,6 @@ func _test_view_model_status_text() -> void:
 	_expect(not bool(explore_action.get("enabled", true)) \
 		and String(explore_action.get("reason", "")).contains("交战"),
 		"view model disables explore during an engagement with a reason")
-
-
-func _test_host_trail_boundary() -> void:
-	var map := _make_map(12, 9)
-	var facade := TrailFacade.new()
-	var host := ExploreHostProbe.new()
-	var generator := ExploreMapGenerator.new()
-	generator.facade = facade
-	host._generator = generator
-	host._current_map = map
-	host._player_country_slot = 0
-	host._country_visual_refresh_pending = false
-	map.fog_solved = true
-	var visible_before: PackedByteArray = map.visible_arr.duplicate()
-	var fog_before: PackedByteArray = map.fog_k_arr.duplicate()
-	facade.trail = PackedInt32Array([5, 6, 5])
-	var prepared: Dictionary = host._prepare_military_exploration_day(12)
-	_expect(bool(prepared.get("ok", false)), "host prepares an exploration day")
-	_expect(int(prepared.get("trail_cells", 0)) == 3 \
-		and int(prepared.get("new_explored", 0)) == 2,
-		"host counts trail cells after dedupe")
-	_expect(map.explored_arr[5] == 1 and map.explored_arr[6] == 1,
-		"trail is merged into explored")
-	_expect(map.visible_arr == visible_before and map.fog_k_arr == fog_before,
-		"trail alone never writes visible or fog")
-	_expect(facade.clear_count == 1 and facade.trail.is_empty(),
-		"host clears the native trail only after merging")
-	_expect(host.poll_count == 1 and host.refresh_count == 1,
-		"host refreshes sources and runs the existing vision pass once")
-	_expect(facade.view_pushes == 1 and facade.last_day == 12,
-		"host pushes one frozen explored view for the day")
-	_expect(facade.last_view == map.explored_arr,
-		"the native view is a copy of the merged explored array")
-	var pushes_before := facade.view_pushes
-	var refresh_before := host.refresh_count
-	var quiet: Dictionary = host._prepare_military_exploration_day(13)
-	_expect(bool(quiet.get("ok", false)) and host.refresh_count == refresh_before,
-		"no new explored cells and a solved map do not rerun vision")
-	_expect(facade.view_pushes == pushes_before + 1 and facade.last_day == 13,
-		"the frozen view still advances to the next day")
-	facade.work = false
-	var idle: Dictionary = host._prepare_military_exploration_day(14)
-	_expect(bool(idle.get("skipped", false)) \
-		and facade.view_pushes == pushes_before + 1,
-		"no exploration work early-outs without copying or pushing the map")
-
-	var failing_map := _make_map(6, 6)
-	var failing := TrailFacade.new()
-	failing.trail = PackedInt32Array([2])
-	failing.fail_clear = true
-	var failing_host := ExploreHostProbe.new()
-	failing_host._current_map = failing_map
-	failing_host._player_country_slot = 0
-	var drained: Dictionary = failing_host._drain_military_exploration_trail(failing)
-	_expect(not bool(drained.get("ok", true)) \
-		and String(drained.get("reason", "")) == "forced_clear_failure",
-		"a trail clear failure is reported to the save path")
-	_expect(failing.trail == PackedInt32Array([2]),
-		"a failed clear preserves the native trail for retry")
-	host.queue_free()
-	failing_host.queue_free()
-
-
-func _test_whole_graph_catchup_prepares_each_day() -> void:
-	var generator := ExploreMapGenerator.new()
-	generator.facade = CatchupFacade.new()
-	var host := CatchupHostProbe.new()
-	host._generator = generator
-	host._runtime_military_pending_target_day = 3
-	host._runtime_military_last_commit_day = -1
-	host._drain_runtime_military_commits()
-	_expect(host.prepared_days == [0, 1, 2, 3],
-		"whole-graph catch-up invokes the exploration hook once per replay day")
-	_expect(host._runtime_military_pending_target_day == -1,
-		"catch-up drains the pending military target")
-	host.queue_free()
 
 
 func _mission_text(vm) -> String:

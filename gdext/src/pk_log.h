@@ -69,9 +69,15 @@ inline void write_line(FILE *stream, const char *fmt, va_list args) {
 
 }  // namespace detail
 
+#if defined(__GNUC__) || defined(__clang__)
+#define PK_LOG_PRINTF_FORMAT __attribute__((format(printf, 1, 2)))
+#else
+#define PK_LOG_PRINTF_FORMAT
+#endif
+
 // Formats without emitting. Use when the same text has to go to two streams
 // (the Godot console hides stderr-only lines, so the fault paths write to both).
-inline std::string log_format(const char *fmt, ...) {
+PK_LOG_PRINTF_FORMAT inline std::string log_format(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     std::string out = detail::format_va(fmt, args);
@@ -79,19 +85,21 @@ inline std::string log_format(const char *fmt, ...) {
     return out;
 }
 
-inline void log_info(const char *fmt, ...) {
+PK_LOG_PRINTF_FORMAT inline void log_info(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     detail::write_line(stdout, fmt, args);
     va_end(args);
 }
 
-inline void log_error(const char *fmt, ...) {
+PK_LOG_PRINTF_FORMAT inline void log_error(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     detail::write_line(stderr, fmt, args);
     va_end(args);
 }
+
+#undef PK_LOG_PRINTF_FORMAT
 
 // Emits an already-formatted line to one stream.
 inline void log_line(const std::string &line, bool to_stderr = false) {

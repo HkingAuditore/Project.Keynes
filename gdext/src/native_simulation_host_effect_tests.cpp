@@ -383,6 +383,20 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
         if (instance->active == 0) return fail("effect_transport_stale_retired_newer");
     }
 
+    // A stopped session rejects player input immediately, while a day
+    // already executing can still deliver its effects before it returns.
+    auto stopping = std::make_unique<NativeSimulationHost>();
+    stopping->_state.store(RuntimeWorkerState::RUNNING);
+    RuntimeCommandPacket packet{};
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
+    packet.envelope.effective_day = 2;
+    stopping->request_stop();
+    if (stopping->enqueue(packet)) return fail("effect_transport_stop_admitted_outside_day");
+    const RuntimeExecutionContext execution(stopping.get(), runtime_domain_mask(RuntimeDomainId::COUNTRY));
+    if (stopping->enqueue(packet)) return fail("effect_transport_stop_admitted_idle_executor");
+    AtomicCounterScope day(stopping->_worker_day_inflight);
+    if (!stopping->enqueue(packet)) return fail("effect_transport_stop_lost_inflight_country_command");
+
     return true;
 }
 

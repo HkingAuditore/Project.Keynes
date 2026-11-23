@@ -1,0 +1,4 @@
+# Qodo: skip the tracked GDExtension binaries. Reviews of diffs that contain
+# them never finish; the source under gdext/ is what needs review.
+[ignore]
+glob = ["Project/project-keynes/addons/dots_ext/bin/**"]

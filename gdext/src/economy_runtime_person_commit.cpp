@@ -328,18 +328,6 @@ bool NativeEconomyRuntime::run_person_commit_slice(int64_t &work_done,
             if (persons_store().active[i] == 0) continue;
             register_person_effect(i);
             int32_t family = -1, slot = -1;
-            // A notable person travelling with a family expedition has no
-            // cohort lane until it lands: the payload owns that population
-            // unit and `extract_family_expedition_payload` zeroes both
-            // cohort_handle and the job lanes. Retiring it here would delete a
-            // live traveller, drop one person from the family's people count
-            // and leave the payload with a dead handle that no save can
-            // restore (player code ecp2_restore_failed /
-            // save_family_expedition_person_invalid).
-            if (persons_store().cohort_handle[i] == 0 &&
-                person_in_expedition_transit(
-                    persons_store().handle_for_index(i)))
-                continue;
             if (!families_store().valid_handle(persons_store().family_handle[i], family) ||
                 !population_store().valid_handle(persons_store().cohort_handle[i], slot) ||
                 family_membership_index(persons_store().family_handle[i],

@@ -980,22 +980,6 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 
 # 给 UI / renderer 直接拿到当前天气快照（不触发 tick）
 
-func set_weather_refresh_stride(s: int) -> void:
-	var stride: int = clampi(s, 1, 8)
-	var cp = _generator._c()
-	if cp == null:
-		# 尚无 climate profile（通常是 _ready 完成前的极早调用）——缓存到待应用标志上不太值得，
-		# 外部 main.gd 会在后续 speed_changed 回调里再调一次，直接忽略即可。
-		return
-	cp.weather_refresh_stride = stride
-	if _generator._sus != null:
-		_generator._sus.apply_job_schedule(_generator._weather_refresh_system, cp, &"weather_refresh", stride)
-		_generator._sus.apply_job_schedule(_generator._weather_refresh_job, cp, &"weather_refresh", stride)
-	if stride != _generator._weather_stride_logged:
-		_generator._weather_stride_logged = stride
-		print("[fastpath] weather_refresh_stride = %d" % stride)
-
-
 # 任务 8：daily_climate_refresh_stride 亦迁到 SUS；提供 setter 改写
 # ClimateProfile + Job policy 两者，保持语义一致。默认 main.gd 不随 speed_changed
 # 修改该 stride（历史上也未随速度变化），保持原有 default = 1 行为。

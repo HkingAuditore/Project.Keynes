@@ -14,10 +14,6 @@ const COMMAND_COUNTRY_TAX_SET_DEFAULT := &"country.tax.set_default"
 
 const COMMAND_COUNTRY_TAX_SET_OVERRIDE := &"country.tax.set_override"
 
-## 一次给一组建筑写同一个营业税税率（主粮农场那种整组调税）。
-## 走命令通道而不是让 UI 循环发 N 条，这样整批准入是同生共死的。
-const COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP := &"country.tax.set_override_group"
-
 const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE := &"country.tax.clear_override"
 
 const COMMAND_CELL_TAX_SET_DEFAULT := &"country.tax.cell.set_default"
@@ -116,18 +112,7 @@ const EraAdvancementServiceScript = preload("res://scripts/era/era_advancement_s
 static func _validate_command_args(
 		_economy_facade,
 		_ideology_facade,
-		_era_reward_generation: int,
-		_family_founding_offer_id: int,
-		_family_founding_generation: int,
 		is_milestone_technology: Callable,
-		_validate_owned_cell: Callable,
-		ideology_offer_eligibility: Callable,
-		_era_advancement_preview: Callable,
-		_military_facade: Callable,
-		_completed_technology_ids: Callable,
-		_state_building_gate: Callable,
-		_player_owns_military_cell: Callable,
-		_player_country_handle: int,
 		id: StringName,
 		args: Dictionary,
 		facade = null) -> Dictionary:
@@ -165,7 +150,6 @@ static func _validate_command_args(
 				if move_domain < 0 or move_domain >= 4 or position < 0:
 					return _result(false, "invalid_args", "研究队列位置无效。")
 		COMMAND_COUNTRY_TAX_SET_DEFAULT, COMMAND_COUNTRY_TAX_SET_OVERRIDE, \
-				COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP, \
 				COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE, COMMAND_CELL_TAX_SET_DEFAULT, \
 				COMMAND_CELL_TAX_CLEAR_DEFAULT, COMMAND_CELL_TAX_SET_OVERRIDE, \
 				COMMAND_CELL_TAX_CLEAR_OVERRIDE:
@@ -175,8 +159,7 @@ static func _validate_command_args(
 			if id == COMMAND_COUNTRY_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
-					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE or \
-					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
+					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE:
 				var mode := _tax_assessment_mode(args)
 				if mode != 0 and mode != 1:
 					return _result(false, "invalid_tax_mode", "计税模式无效。")
@@ -195,27 +178,6 @@ static func _validate_command_args(
 				var item_id := StringName(args.get("item_id", &""))
 				if item_id.is_empty() or not _tax_item_exists(facade, kind, item_id):
 					return _result(false, "invalid_tax_item", "税务细项目标无效。")
-			if id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
-				var group_ids: PackedStringArray = args.get(
-					"item_ids", PackedStringArray())
-				if group_ids.is_empty():
-					return _result(false, "invalid_tax_item", "整组调税缺少目标建筑。")
-				for candidate_id in group_ids:
-					if StringName(candidate_id).is_empty() or \
-							not _tax_item_exists(facade, kind, StringName(candidate_id)):
-						return _result(false, "invalid_tax_item",
-							"整组调税包含无效目标：%s" % candidate_id)
-			if id == COMMAND_CELL_TAX_SET_DEFAULT or \
-					id == COMMAND_CELL_TAX_CLEAR_DEFAULT or \
-					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
-					id == COMMAND_CELL_TAX_CLEAR_OVERRIDE:
-				var owned: Dictionary = _validate_owned_cell.call(facade, int(args.get("cell", -1)))
-				if not bool(owned.ok):
-					return owned
-		COMMAND_CELL_TAX_CLEAR_ALL:
-			var owned: Dictionary = _validate_owned_cell.call(facade, int(args.get("cell", -1)))
-			if not bool(owned.ok):
-				return owned
 		COMMAND_CONSTRUCTION_BUILD:
 			if StringName(args.get("building_id", &"")).is_empty():
 				return _result(false, "invalid_args", "缺少建筑标识。")
@@ -223,15 +185,6 @@ static func _validate_command_args(
 					!= &"treasury_sponsored_private":
 				return _result(false, "unsupported_ownership_policy",
 					"当前版本仅支持国库资助私人经营。")
-			var owned: Dictionary = _validate_owned_cell.call(facade, int(args.get("cell_idx", -1)))
-			if not bool(owned.ok):
-				return _result(false, "construction_cell_not_owned",
-					"只能在玩家领土内修建建筑。")
-			if facade != null and facade.has_method("has_political_capability") \
-				and not facade.has_political_capability(_player_country_handle,
-					&"treasury_construction"):
-				return _result(false, "political_regime_lacks_treasury_construction",
-					"当前体制不开放国库建造。")
 		COMMAND_POLITICAL_REGIME_SET:
 			var regime_id := StringName(args.get("regime_id", &""))
 			if regime_id.is_empty() or facade == null \
@@ -260,43 +213,17 @@ static func _validate_command_args(
 			if int(args.get("expedition_handle", 0)) == 0:
 				return _result(false, "invalid_args", "开拓队句柄无效。")
 		COMMAND_ERA_REWARD_CHOOSE:
-			var choice := int(args.get("choice_index", -1))
-			var generation := int(args.get("offer_generation", 0))
-			if choice < 0 or choice > 2 or generation <= 0 \
-					or generation != _era_reward_generation:
-				return _result(false, "era_reward_choice_invalid",
-					"时代奖励代际或选项无效。")
+			if int(args.get("offer_generation", 0)) <= 0 or int(args.get("choice_index", -1)) < 0:
+				return _result(false, "invalid_args", "时代奖励参数不完整。")
 		COMMAND_FAMILY_FOUNDING_CHOOSE:
-			if _economy_facade == null or not _economy_facade.has_method(
-					"submit_family_founding_choice"):
+			if _economy_facade == null:
 				return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
-			var founding_choice := int(args.get("choice_index", -1))
-			if founding_choice < 0 or founding_choice > 2 \
-					or int(args.get("offer_id", 0)) != _family_founding_offer_id \
-					or _family_founding_offer_id <= 0 \
-					or int(args.get("generation", 0)) != _family_founding_generation:
-				return _result(false, "family_founding_choice_invalid",
-					"家族候选已过期或选项无效。")
-		COMMAND_IDEOLOGY_OFFER:
+			if int(args.get("offer_id", 0)) <= 0 or int(args.get("generation", 0)) <= 0 \
+					or int(args.get("choice_index", -1)) < 0:
+				return _result(false, "invalid_args", "家族扶持参数不完整。")
+		COMMAND_IDEOLOGY_OFFER, COMMAND_IDEOLOGY_REROLL:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
-			# Never advance time for a draw the authority would reject.
-			var preview: Dictionary = ideology_offer_eligibility.call()
-			if not bool(preview.get("can_draw", false)):
-				var reason := String(preview.get("reason", "ideology_offer_unavailable"))
-				return _result(false, reason, CountryViewModel.ideology_player_reason(reason))
-		COMMAND_IDEOLOGY_REROLL:
-			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
-			var reroll_preview: Dictionary = ideology_offer_eligibility.call()
-			if not bool(reroll_preview.get("can_reroll", false)):
-				var reroll_reason := "ideology_offer_not_active" \
-					if not bool(reroll_preview.get("offer_active", false)) else (
-					"ideology_offer_pool_insufficient" \
-					if int(reroll_preview.get("pool_size", 0)) <= 0 \
-					else "ideology_points_insufficient")
-				return _result(false, reroll_reason,
-					CountryViewModel.ideology_player_reason(reroll_reason))
 		COMMAND_IDEOLOGY_CHOOSE:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
@@ -310,34 +237,9 @@ static func _validate_command_args(
 				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			if int(args.get("ideology_id", -1)) < 0:
 				return _result(false, "invalid_args", "理念标识无效。")
-		COMMAND_ERA_ADVANCE_START:
-			var preview: Dictionary = _era_advancement_preview.call()
-			match String(preview.get("status", "")):
-				"ready":
-					pass
-				"max":
-					return _result(false, "era_advance_max", "已到达最高时代。")
-				"purchasing", "paused", "completing":
-					return _result(false, "era_advance_in_progress", "时代晋升已在进行中。")
-				_:
-					return _result(false, "era_advance_conditions_unmet",
-						"至少需要满足 2 项晋升条件。")
-		COMMAND_ERA_ADVANCE_PAUSE:
-			if String(_era_advancement_preview.call().get("status", "")) != "purchasing":
-				return _result(false, "era_advance_not_purchasing", "当前没有进行中的收购。")
-		COMMAND_ERA_ADVANCE_RESUME:
-			if String(_era_advancement_preview.call().get("status", "")) != "paused":
-				return _result(false, "era_advance_not_paused", "时代收购没有处于暂停状态。")
 		COMMAND_PROCUREMENT_SET_POLICY:
 			if not args.has("treasury_share_bp") or not args.has("research_share_bp"):
 				return _result(false, "invalid_args", "国家购买预算参数不完整。")
-			var policy_check: Dictionary = EraAdvancementServiceScript.validate_policy(
-				int(args.get("treasury_share_bp", -1)), int(args.get("research_share_bp", -1)),
-				int(args.get("era_share_bp", EraAdvancementServiceScript.SHARE_UNSET)),
-				int(args.get("colonization_share_bp",
-					EraAdvancementServiceScript.SHARE_UNSET)))
-			if not bool(policy_check.get("ok", false)):
-				return policy_check
 		COMMAND_NARRATIVE_CHOOSE:
 			if int(args.get("offer_id", 0)) <= 0 \
 					or int(args.get("offer_generation", 0)) <= 0 \
@@ -370,35 +272,9 @@ static func _validate_command_args(
 			if int(args.get("cell", -1)) < 0 or String(args.get("to", "")).is_empty() \
 					or int(args.get("count", 0)) <= 0:
 				return _result(false, "invalid_args", "训练命令缺少地块、兵种或人数。")
-			# 与官营建筑一致：兵种未解锁时不允许手动下达训练命令。原生
-			# MCMD_TRAIN 拿不到当日 digest，闸门放在唯一的命令入口。
-			var train_facade = _military_facade.call()
-			if train_facade != null and train_facade.has_method("catalog"):
-				var train_catalog: Dictionary = train_facade.catalog()
-				var train_units: Array = train_catalog.get("units", []) if \
-					train_catalog.get("units", null) is Array else []
-				var train_tech := ""
-				for unit_row in train_units:
-					if unit_row is Dictionary and String((unit_row as Dictionary).get(
-							"id", "")) == String(args.get("to", "")):
-						train_tech = String((unit_row as Dictionary).get("tech", ""))
-						break
-				if not train_tech.is_empty():
-					var train_researched = _completed_technology_ids.call()
-					if train_researched == null:
-						return _result(false, "technology_unknown",
-							"科技状态暂不可读，稍后再试。")
-					if not (train_researched as PackedStringArray).has(train_tech):
-						return _result(false, "technology_locked", "尚未解锁这项科技。")
 		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
 			if int(args.get("cell", -1)) < 0 or int(args.get("building", -1)) < 0:
 				return _result(false, "invalid_args", "官营建筑命令缺少地块或建筑。")
-			# 拆除不查科技：打下别人城市的旧城墙也要能拆，只是仍需在本国领土上。
-			var gate: Dictionary = _state_building_gate.call(int(args.get("cell", -1)),
-				int(args.get("building", -1)), id == COMMAND_MILITARY_STATE_DEMOLISH)
-			if not bool(gate.get("ok", false)):
-				return _result(false, String(gate.get("code", "technology_locked")),
-					String(gate.get("message", "该官营建筑尚未解锁。")))
 		COMMAND_MILITARY_WAGE:
 			var wage_mode := int(args.get("mode", -1))
 			if wage_mode < 0 or wage_mode > 1:
@@ -409,27 +285,11 @@ static func _validate_command_args(
 			var procurement_bp := int(args.get("bp", -1))
 			if procurement_bp < 0 or procurement_bp > 10000:
 				return _result(false, "invalid_args", "军需采购份额必须在 0–100% 之间。")
-		COMMAND_MILITARY_BUDGET:
-			# `-1` 是「本次不改」（沿用原生当前值），所以通道份额的合法区间是
-			# -1..10000；总份额不接受 -1：它要么启用信封，要么就是 0（关闭）。
-			var total_bp := int(args.get("total_bp", -1))
-			if total_bp < 0 or total_bp > 10000:
-				return _result(false, "invalid_args", "军事预算份额必须在 0–100% 之间。")
-			for key in ["wage_bp", "upkeep_bp", "procurement_bp"]:
-				if not args.has(key):
-					continue
-				var channel_bp := int(args[key])
-				if channel_bp < -1 or channel_bp > 10000:
-					return _result(false, "invalid_args", "军事通道份额必须在 0–100% 之间。")
 		COMMAND_MILITARY_ARMY_CREATE:
 			var cell := int(args.get("cell", -1))
 			var units = args.get("units", {})
 			if cell < 0 or not units is Dictionary or units.is_empty():
 				return _result(false, "invalid_args", "编成部队需要所在格和驻军兵种。")
-			var army_gate: Dictionary = _player_owns_military_cell.call(cell)
-			if not bool(army_gate.get("ok", false)):
-				return _result(false, String(army_gate.get("code", "not_own_territory")),
-					String(army_gate.get("message", "只能编成本国可控领土上的驻军。")))
 		COMMAND_MILITARY_ARMY_STATION, COMMAND_MILITARY_ARMY_STOP, \
 				COMMAND_MILITARY_ARMY_DISBAND:
 			if int(args.get("army", 0)) <= 0:
@@ -443,7 +303,7 @@ static func _validate_command_args(
 			var area_cells = args.get("cells", PackedInt32Array())
 			var radius := int(args.get("radius", 0))
 			if (not area_cells is PackedInt32Array or (area_cells as PackedInt32Array).is_empty()) \
-					and radius <= 0:
+					and (radius <= 0 or int(args.get("cell", -1)) < 0):
 				return _result(false, "invalid_args", "军事控制需要框选或中心格半径。")
 			if radius > 6:
 				return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
@@ -457,9 +317,8 @@ static func _validate_command_args(
 				return _result(false, "invalid_args", "探查半径必须在 1–6 格之间。")
 			var explore_cells = args.get("cells", PackedInt32Array())
 			if not explore_cells is PackedInt32Array \
-					or (explore_cells as PackedInt32Array).is_empty() \
 					or (explore_cells as PackedInt32Array).size() > 256:
-				return _result(false, "invalid_args", "探查范围必须为 1–256 格。")
+				return _result(false, "invalid_args", "探查范围上限为 256 格。")
 		COMMAND_MILITARY_ARMY_STANCE:
 			var stance := int(args.get("stance", -1))
 			if stance < 0 or stance > 4:

@@ -1,19 +1,7 @@
 extends RefCounted
 
-## Save-slot thumbnail codec. Preloaded by its consumers rather than exposed as
-## a global class: headless `--script` runs do not rescan global class names, so
-## a new class_name would not resolve until the editor re-imports the project.
-##
-## The preview section used to be a full-window PNG: 0.86 MB of a 9.96 MB save
-## (8.6%), and zstd could not shrink it at all (ratio 1.000) because PNG output
-## is already compressed. Thumbnails are now scaled down and JPEG-encoded.
-##
-## `decode` sniffs the magic instead of trusting a version field, so slots
-## written before this change (PNG) keep loading, and a future switch to WebP
-## needs no migration.
-
-## Save-list cells render at ~200 px wide; 480 keeps them crisp after scaling
-## and lands at 20-40 KB.
+## Save previews accept the PNG, JPEG, and WebP signatures inside the same section.
+## A width of 480 px keeps the thumbnail sharp in the save list.
 const MAX_WIDTH := 480
 const JPEG_QUALITY := 0.82
 
@@ -22,6 +10,7 @@ const JPEG_QUALITY := 0.82
 ## mutate `source`: the caller may still be holding the capture.
 static func encode(source: Image) -> PackedByteArray:
 	if source == null or source.is_empty():
+		push_warning("[save/preview] viewport capture returned no image")
 		return fallback()
 	var image := Image.new()
 	image.copy_from(source)
@@ -37,6 +26,7 @@ static func encode(source: Image) -> PackedByteArray:
 	var jpeg := image.save_jpg_to_buffer(JPEG_QUALITY)
 	if not jpeg.is_empty():
 		return jpeg
+	push_warning("[save/preview] JPEG encoding failed for a %s image" % image.get_size())
 	return fallback()
 
 
@@ -47,16 +37,18 @@ static func decode(bytes: PackedByteArray) -> Image:
 	var image := Image.new()
 	if bytes.is_empty():
 		return image
+	var decode_error := ERR_FILE_UNRECOGNIZED
 	if _is_png(bytes):
-		image.load_png_from_buffer(bytes)
-		return image
-	if _is_jpeg(bytes):
-		image.load_jpg_from_buffer(bytes)
-		return image
-	if _is_webp(bytes):
-		image.load_webp_from_buffer(bytes)
-		return image
-	return Image.new()
+		decode_error = image.load_png_from_buffer(bytes)
+	elif _is_jpeg(bytes):
+		decode_error = image.load_jpg_from_buffer(bytes)
+	elif _is_webp(bytes):
+		decode_error = image.load_webp_from_buffer(bytes)
+	if decode_error != OK:
+		push_warning("[save/preview] could not decode %d bytes: %s"
+			% [bytes.size(), error_string(decode_error)])
+		return Image.new()
+	return image
 
 
 static func _is_png(bytes: PackedByteArray) -> bool:

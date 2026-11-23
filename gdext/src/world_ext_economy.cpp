@@ -8,8 +8,8 @@
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
 #include "native_simulation_host.h"
+#include "runtime_economy_boundary_request.h"
 #include "runtime_economy_ecp2.h"
-#include "pk_build_id.h"
 #include "pk_log.h"
 
 #include <algorithm>
@@ -57,6 +57,11 @@ Dictionary unavailable() {
     return out;
 }
 
+Dictionary forward_economy_boundary_request(NativeSimulationHost &host,
+                                        RuntimeEconomyBoundaryRequest request) {
+    return host.submit_economy_boundary_request(std::make_shared<RuntimeEconomyBoundaryRequest>(std::move(request)));
+}
+
 using ReadQuery = NativeEconomyRuntime::ReadQuery;
 using ReadKey = NativeEconomyRuntime::ReadKey;
 
@@ -92,25 +97,18 @@ bool economy_live_readable(const NativeSimulationHost *host,
     return boundary.owns_lock() && !runtime->epoch_active();
 }
 
-// Worker-owned economy is read live only while this thread holds the authority
-// boundary between epochs; otherwise from the worker-published commit view.
+// Unowned stores serve diagnostic queries directly. The formal executor answers
+// queries from its own published view, including while paused.
 template <class Live>
-Dictionary committed_read(const NativeSimulationHost *host,
+Dictionary committed_read(NativeSimulationHost *host,
                           NativeEconomyRuntime *runtime, ReadKey key,
                           Live &&live) {
     if (host == nullptr || !host->economy_worker_owns_execution()) return live();
-    {
-        std::unique_lock<std::mutex> boundary;
-        if (economy_live_readable(host, runtime, boundary)) {
-            Dictionary out = live();
-            out["read_view_source"] = "live_boundary";
-            out["read_view_pending"] = false;
-            return out;
-        }
-    }
     key.seal();
-    runtime->read_view_subscribe(key);
+    const bool subscribed = runtime->read_view_subscribe(key);
     const auto view = runtime->read_view();
+    if (subscribed || (view && view->committed_day < host->committed_day_value()))
+        host->request_economy_read_view();
     if (view != nullptr) {
         if (const NativeEconomyRuntime::ReadViewEntry *entry = view->find(key)) {
             Dictionary out = entry->value.duplicate(true);
@@ -440,193 +438,9 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
     return run_economy_slice_internal(ctx, true);
 }
 
-Dictionary DCWorldExt::configure_economy_natural_resources(const Dictionary &knobs) {
-    Dictionary out;
-    out["ok"] = false;
-    if (_economy_runtime == nullptr) {
-        out["code"] = "economy_runtime_unavailable";
-        return out;
-    }
-    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
-    const PackedStringArray reserve_slots = knobs.get("reserve_slots", PackedStringArray());
-    const PackedInt32Array habitat_modes = knobs.get("habitat_modes", PackedInt32Array());
-    const PackedInt32Array temperature_signals =
-        knobs.get("temperature_signals", PackedInt32Array());
-    const PackedInt32Array moisture_signals = knobs.get("moisture_signals", PackedInt32Array());
-    const char *float_keys[] = {"temp_lo", "temp_hi", "gen_base", "gen_temp", "gen_moisture",
-        "gen_self", "decay_base", "decay_temp", "decay_moisture", "decay_self",
-        "climate_temp_opt", "climate_temp_tol", "climate_moisture_opt",
-        "climate_moisture_tol", "runtime_climate_fit_weight", "decay_stress",
-        "ecology_capacity", "ecology_growth_rate", "ecology_immigration",
-        "ecology_stress_mortality_rate"};
-    constexpr size_t FLOAT_KEY_COUNT = sizeof(float_keys) / sizeof(float_keys[0]);
-    std::array<PackedFloat32Array, FLOAT_KEY_COUNT> values;
-    const int32_t knob_count = reserve_slots.size();
-    if (habitat_modes.size() != knob_count || temperature_signals.size() != knob_count ||
-        moisture_signals.size() != knob_count) {
-        out["code"] = "natural_resource_knob_size_mismatch";
-        return out;
-    }
-    for (size_t k = 0; k < FLOAT_KEY_COUNT; ++k) {
-        values[k] = knobs.get(float_keys[k], PackedFloat32Array());
-        if (values[k].size() != knob_count) {
-            out["code"] = "natural_resource_knob_size_mismatch";
-            out["key"] = float_keys[k];
-            return out;
-        }
-    }
-    const auto &economy_slots = runtime->building_resource_reserve_slots();
-    std::vector<NativeEconomyRuntime::WorkerNaturalResource> resources(economy_slots.size());
-    PackedStringArray missing;
-    for (size_t r = 0; r < economy_slots.size(); ++r) {
-        int32_t k = -1;
-        for (int32_t i = 0; i < knob_count; ++i) {
-            if (String(reserve_slots[i]) == String(economy_slots[r].c_str())) {
-                k = i;
-                break;
-            }
-        }
-        if (k < 0) {
-            missing.push_back(String(economy_slots[r].c_str()));
-            continue;
-        }
-        auto v = [&](size_t key) { return values[key][k]; };
-        NativeEconomyRuntime::WorkerNaturalResource &resource = resources[r];
-        natres_init_constants(resource.constants, v(0), v(1), v(2), v(3), v(4), v(5),
-            v(6), v(7), v(8), v(9), v(10), v(11), v(12), v(13), v(14), v(15),
-            v(16), v(17), v(18), v(19));
-        resource.habitat_mode = habitat_modes[k];
-        resource.temperature_signal = temperature_signals[k];
-        resource.moisture_signal = moisture_signals[k];
-    }
-    if (!missing.is_empty()) {
-        out["code"] = "natural_resource_knob_missing_resource";
-        out["missing"] = missing;
-        return out;
-    }
-    runtime->configure_worker_natural_resources(std::move(resources));
-    out["ok"] = true;
-    out["resource_count"] = static_cast<int64_t>(economy_slots.size());
-    return out;
-}
-
-bool DCWorldExt::economy_worker_owns_natural_resources() const {
-    return _economy_runtime != nullptr && _runtime_host != nullptr &&
-        _runtime_host->economy_worker_owns_execution() &&
-        runtime_from(_economy_runtime)->worker_natural_resources_configured();
-}
-
-Dictionary DCWorldExt::flush_runtime_economy_resource_writeback() {
-    Dictionary out;
-    out["ok"] = true;
-    out["applied"] = false;
-    out["changed_cells"] = int64_t{0};
-    if (_economy_runtime == nullptr) {
-        out["ok"] = false;
-        out["code"] = "economy_runtime_unavailable";
-        return out;
-    }
-    // The worker holds this boundary mutex for the complete semantic day.
-    // Never drain its resource lanes while it is still producing the commit.
-    std::unique_lock<std::mutex> boundary;
-    if (_runtime_host != nullptr) {
-        boundary = _runtime_host->try_lock_economy_input_capture();
-        if (!boundary.owns_lock()) {
-            out["pending"] = true;
-            out["code"] = "economy_worker_day_inflight";
-            return out;
-        }
-    }
-    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
-    std::vector<size_t> lanes;
-    std::vector<int64_t> deltas;
-    if (runtime->worker_resource_seeded()) {
-        // The worker already folded its consumption into its own lanes; the
-        // slots only mirror the worker reserve for readers on this thread.
-        runtime->drain_building_resource_deltas(lanes, deltas);
-        std::vector<int32_t> cells;
-        runtime->take_worker_resource_mirror_cells(cells);
-        const int32_t count = runtime->cell_count();
-        const auto &reserve_slots = runtime->building_resource_reserve_slots();
-        const auto &extra_slots = runtime->building_resource_extra_slots();
-        const auto &reserve = runtime->worker_resource_reserve_lanes();
-        const auto &extra = runtime->worker_resource_extra_lanes();
-        PackedStringArray published;
-        for (size_t r = 0; r < reserve_slots.size() && !cells.empty(); ++r) {
-            const size_t base = r * static_cast<size_t>(std::max(0, count));
-            if (base + static_cast<size_t>(count) > reserve.size() ||
-                base + static_cast<size_t>(count) > extra.size()) break;
-            const int sid_reserve = component_id(StringName(reserve_slots[r].c_str()));
-            const int sid_extra = r < extra_slots.size()
-                ? component_id(StringName(extra_slots[r].c_str())) : -1;
-            auto writable = [&](int sid) {
-                return sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::F32 &&
-                    _slots[sid].arr_f32.size() == count;
-            };
-            if (writable(sid_reserve)) {
-                float *dst = _slots.write[sid_reserve].arr_f32.ptrw();
-                for (const int32_t cell : cells) dst[cell] = reserve[base + cell];
-                published.append(String(reserve_slots[r].c_str()));
-            }
-            if (writable(sid_extra)) {
-                float *dst = _slots.write[sid_extra].arr_f32.ptrw();
-                for (const int32_t cell : cells) dst[cell] = extra[base + cell];
-                published.append(String(extra_slots[r].c_str()));
-            }
-        }
-        if (!published.is_empty()) flush_slots_to_map_keys(published);
-        out["changed_cells"] = static_cast<int64_t>(cells.size());
-        out["applied"] = !cells.empty();
-        out["building_resource_mirror_committed"] = true;
-        out["worker_owned_reserves"] = true;
-        return out;
-    }
-    if (!runtime->drain_building_resource_deltas(lanes, deltas)) return out;
-    const int32_t count = runtime->cell_count();
-    const auto &extra_slots = runtime->building_resource_extra_slots();
-    std::vector<int32_t> slot_ids(extra_slots.size(), -1);
-    std::vector<uint8_t> extra_slot_published(extra_slots.size(), 0);
-    PackedStringArray published_extra_slots;
-    published_extra_slots.resize(0);
-    for (size_t r = 0; r < extra_slots.size(); ++r)
-        slot_ids[r] = component_id(StringName(extra_slots[r].c_str()));
-    if (_economy_resource_slot_resident.size() < _slots.size())
-        _economy_resource_slot_resident.resize(_slots.size(), 0);
-    int64_t changed = 0;
-    for (size_t cursor = 0; cursor < lanes.size(); ++cursor) {
-        const size_t flat = lanes[cursor];
-        const size_t r = count > 0 ? flat / static_cast<size_t>(count) : 0;
-        if (count <= 0 || r >= extra_slots.size()) continue;
-        const int sid = slot_ids[r];
-        if (sid < 0 || sid >= _slots.size() || _slots[sid].dtype != SlotDType::F32 ||
-            _slots[sid].arr_f32.size() != count) continue;
-        Slot &slot = _slots.write[sid];
-        slot.arr_f32.ptrw()[flat % static_cast<size_t>(count)] +=
-            static_cast<float>(deltas[cursor]) /
-            static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
-        _economy_resource_slot_resident[static_cast<size_t>(sid)] = 1;
-        // The next natural-resource pass refreshes its input from MapData.
-        // Publish the pending lane now, otherwise that refresh would replace
-        // the worker delta with the old MapData value and silently lose it.
-        if (extra_slot_published[r] == 0) {
-            extra_slot_published[r] = 1;
-            published_extra_slots.append(String(extra_slots[r].c_str()));
-        }
-        ++changed;
-    }
-    if (!published_extra_slots.is_empty())
-        flush_slots_to_map_keys(published_extra_slots);
-    out["changed_cells"] = changed;
-    out["applied"] = changed > 0;
-    out["building_resource_mirror_committed"] = true;
-    return out;
-}
-
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     if (_runtime_host != nullptr &&
-        (_trigger_handoff_retry_limit > 0 ||
-         _economy_effect_adapter_retry ||
-         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
+        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
          _runtime_host->economy_input_requested_day() >= 0)) {
         auto boundary = _runtime_host->try_lock_economy_input_capture();
         Dictionary pending;
@@ -634,7 +448,6 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
         pending["fatal"] = false;
         pending["captured"] = false;
         if (!boundary.owns_lock()) return pending;
-        service_economy_boundary_inbox();
         int64_t requested = _runtime_host->economy_input_requested_day();
         if (requested < 0) {
             // 主线程发布下一日环境前可预先冻结同一批 slots；只允许严格
@@ -1542,8 +1355,12 @@ Dictionary DCWorldExt::sample_effect_metric_probe(int64_t metric, int64_t cell,
 }
 
 Dictionary DCWorldExt::get_economy_report() const {    if (_economy_runtime == nullptr) {
-        // R1-6: build_id must answer before an economy runtime exists.
-        return economy_unavailable_report();
+        Dictionary out;
+        out["configured"] = false;
+        out["bootstrapped"] = false;
+        out["path"] = "ECONOMY_GRAPH";
+        out["mode"] = "native";
+        return out;
     }
     std::unique_lock<std::mutex> boundary;
     if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
@@ -1552,9 +1369,6 @@ Dictionary DCWorldExt::get_economy_report() const {    if (_economy_runtime == n
             Dictionary cached = _economy_read_report_cache.duplicate(true);
             cached["report_boundary_pending"] = true;
             cached["report_available"] = !_economy_read_report_cache.is_empty();
-            // Same reason as the cold path: the cached report may be empty while
-            // the worker holds the boundary, and the build id never depends on it.
-            cached["build_id"] = String::utf8(pk::pk_build_id());
             return cached;
         }
     }
@@ -1702,10 +1516,8 @@ Dictionary DCWorldExt::get_mobilization_odds(
         int cell_idx, int profession, int action, int64_t spend_bp) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
-    std::unique_lock<std::mutex> boundary;
-    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution() &&
-        !economy_live_readable(_runtime_host.get(), runtime, boundary))
-        return read_view_pending();
+    // Odds depend on the caller's spend, so this is a direct cold read rather
+    // than a cached committed read view.
     return runtime->mobilization_odds(cell_idx, profession, action, spend_bp);
 }
 
@@ -1715,17 +1527,6 @@ bool DCWorldExt::apply_mobilization_result(
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     return runtime->apply_mobilization_result(cell_idx, profession, action,
                                               success);
-}
-
-Dictionary DCWorldExt::resolve_player_mobilization(const Dictionary &choice) {
-    if (_economy_runtime == nullptr) return unavailable();
-    auto *runtime = runtime_from(_economy_runtime);
-    const bool worker_owned = _runtime_host != nullptr &&
-        _runtime_host->economy_worker_owns_execution();
-    std::unique_lock<std::mutex> boundary;
-    if (worker_owned && !economy_live_readable(_runtime_host.get(), runtime, boundary))
-        return read_view_pending();
-    return runtime->resolve_player_mobilization(choice);
 }
 
 Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {
@@ -1778,13 +1579,10 @@ Dictionary DCWorldExt::get_trade_visual_snapshot(
     auto *runtime = runtime_from(_economy_runtime);
     runtime->trade_visual_cache.request(cells, visible, vision_revision, selected_cell, enabled);
     if (enabled) {
-        if (_runtime_host == nullptr || !_runtime_host->economy_worker_owns_execution()) {
+        if (_runtime_host == nullptr || !_runtime_host->economy_worker_owns_execution())
             runtime->trade_visual_cache.step(*runtime);
-        } else {
-            std::unique_lock<std::mutex> boundary;
-            if (economy_live_readable(_runtime_host.get(), runtime, boundary))
-                runtime->trade_visual_cache.step(*runtime);
-        }
+        else
+            _runtime_host->request_economy_read_view();
     }
     Dictionary out = runtime->trade_visual_cache.snapshot();
     if (!static_cast<bool>(out.get("ok", false))) return out;
@@ -1886,13 +1684,9 @@ Dictionary DCWorldExt::get_building_visual_snapshot(
     if (host != nullptr && host->economy_worker_owns_execution()) {
         PackedInt32Array cells = requested_cells;
         cells.append_array(_building_visual_pending_cells);
-        {
-            std::unique_lock<std::mutex> boundary;
-            if (economy_live_readable(host, runtime, boundary))
-                runtime->publish_building_visual_view();
-        }
         const auto view = runtime->building_visual_view();
         if (view == nullptr) {
+            _runtime_host->request_economy_read_view();
             // Newly visible cells are consumed by the caller; keep them for the
             // first call that has a committed view.
             _building_visual_pending_cells = cells;
@@ -1933,11 +1727,6 @@ Dictionary DCWorldExt::consume_building_visual_dirty_cells() {
     const NativeSimulationHost *host = _runtime_host.get();
     if (host == nullptr || !host->economy_worker_owns_execution())
         return runtime->consume_building_visual_dirty_cells();
-    {
-        std::unique_lock<std::mutex> boundary;
-        if (economy_live_readable(host, runtime, boundary))
-            runtime->publish_building_visual_view();
-    }
     const auto view = runtime->building_visual_view();
     Dictionary out;
     out["ok"] = true;
@@ -1976,6 +1765,9 @@ Dictionary DCWorldExt::queue_treasury_sponsored_build(
     if (_economy_runtime == nullptr) return unavailable();
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
+    auto admission = worker_owned ? _runtime_host->admit_command(effective_day)
+                                  : RuntimeCommandAdmission();
+    if (worker_owned && !admission.accepted()) return unavailable();
     return economy_api::queue_treasury_sponsored_build(*runtime_from(_economy_runtime),
         country_handle, cell_idx, type_id, effective_day, sequence,
         worker_owned);
@@ -1987,6 +1779,9 @@ Dictionary DCWorldExt::queue_treasury_sponsored_demolish(
     if (_economy_runtime == nullptr) return unavailable();
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
+    auto admission = worker_owned ? _runtime_host->admit_command(effective_day)
+                                  : RuntimeCommandAdmission();
+    if (worker_owned && !admission.accepted()) return unavailable();
     return economy_api::queue_treasury_sponsored_demolish(*runtime_from(_economy_runtime),
         country_handle, cell_idx, type_id, count, effective_day, sequence,
         worker_owned);
@@ -2052,6 +1847,18 @@ Dictionary DCWorldExt::queue_canal_construction(
         int64_t country_handle, int64_t quote_token,
         int64_t effective_day, int64_t sequence) {
     if (_economy_runtime == nullptr) return unavailable();
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::BUILD_CANAL;
+        request.country_handle = country_handle;
+        request.quote_token = quote_token;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
+    auto admission = _runtime_host ? _runtime_host->admit_command(effective_day)
+                                    : RuntimeCommandAdmission();
+    if (_runtime_host && !admission.accepted()) return unavailable();
     return runtime_from(_economy_runtime)->queue_canal_construction(
         country_handle, quote_token, effective_day, sequence);
 }
@@ -2136,6 +1943,16 @@ Dictionary DCWorldExt::diagnose_colonization_target(
 Dictionary DCWorldExt::get_family_colonization_quotes(
         int64_t country_handle, int target_cell, int64_t family_filter,
         int source_filter, int offset, int limit) {
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.country_handle = country_handle;
+        request.family_handle = family_filter;
+        request.source_cell = source_filter;
+        request.target_cell = target_cell;
+        request.offset = offset;
+        request.limit = limit;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     if (_economy_runtime == nullptr || _map_data == nullptr) {
         Dictionary out;
         out["ok"] = false;
@@ -2170,6 +1987,13 @@ Dictionary DCWorldExt::get_family_colonization_quotes(
 
 Dictionary DCWorldExt::get_family_colonization_quote_detail(
         int64_t quote_token, int64_t population) const {
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::QUOTE_DETAIL;
+        request.quote_token = quote_token;
+        request.population = population;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     return committed_read(_runtime_host.get(), runtime,
@@ -2177,30 +2001,23 @@ Dictionary DCWorldExt::get_family_colonization_quote_detail(
         [&] { return runtime->family_colonization_quote_detail(quote_token, population); });
 }
 
-void DCWorldExt::service_economy_boundary_inbox() {
-    if (_trigger_handoff_retry_limit > 0) {
-        const int limit = _trigger_handoff_retry_limit;
-        _trigger_handoff_retry_limit = 0;
-        _trigger_handoff_completed = handoff_trigger_effects_unlocked(limit);
-    }
-    if (!_economy_effect_adapter_retry || _effect_runtime == nullptr ||
-        _economy_runtime == nullptr) return;
-    _economy_effect_adapter_retry = false;
-    dispatch_effect_native_country_unlocked();
-    ack_effect_native_country_unlocked();
-    if (_runtime_host != nullptr &&
-        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
-         _runtime_host->country_authority_owner_is_worker())) {
-        settle_orphaned_effect_native_country_acks_unlocked();
-    }
-    dispatch_effect_native_economy_unlocked();
-    ack_effect_native_economy_unlocked();
-}
-
 Dictionary DCWorldExt::start_family_colonization(
         int64_t country_handle, int64_t family_handle, int source_cell,
         int target_cell, int64_t population, int64_t quote_token,
         int64_t effective_day, int64_t sequence) {
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::START;
+        request.country_handle = country_handle;
+        request.family_handle = family_handle;
+        request.source_cell = source_cell;
+        request.target_cell = target_cell;
+        request.population = population;
+        request.quote_token = quote_token;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     if (_economy_runtime == nullptr || _map_data == nullptr) return unavailable();
     const Variant visible_variant = _map_data->get(StringName("visible_arr"));
     if (visible_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
@@ -2224,8 +2041,20 @@ Dictionary DCWorldExt::cancel_family_colonization(
         int64_t country_handle, int64_t expedition_handle,
         int64_t effective_day, int64_t sequence) {
     if (_economy_runtime == nullptr) return unavailable();
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::CANCEL;
+        request.country_handle = country_handle;
+        request.subject_id = expedition_handle;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
+    auto admission = worker_owned ? _runtime_host->admit_command(effective_day)
+                                  : RuntimeCommandAdmission();
+    if (worker_owned && !admission.accepted()) return unavailable();
     return runtime_from(_economy_runtime)->submit_family_colonization_cancel(
         country_handle, expedition_handle, effective_day, sequence,
         worker_owned);
@@ -2322,8 +2151,23 @@ Dictionary DCWorldExt::submit_family_founding_choice(
         int64_t offer_id, int64_t generation, int choice_index,
         int64_t effective_day, int64_t sequence) {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->submit_family_founding_choice(
+    if (_runtime_host && _runtime_host->vision_executor_active()) {
+        RuntimeEconomyBoundaryRequest request;
+        request.kind = RuntimeEconomyBoundaryRequest::Kind::FOUNDING_CHOICE;
+        request.subject_id = offer_id;
+        request.offer_generation = generation;
+        request.choice = choice_index;
+        request.effective_day = effective_day;
+        request.sequence = sequence;
+        return forward_economy_boundary_request(*_runtime_host, std::move(request));
+    }
+    auto admission = _runtime_host ? _runtime_host->admit_command(effective_day)
+                                    : RuntimeCommandAdmission();
+    if (_runtime_host && !admission.accepted()) return unavailable();
+    Dictionary result = runtime_from(_economy_runtime)->submit_family_founding_choice(
         offer_id, generation, choice_index, effective_day, sequence);
+    if (bool(result.get("ok", false))) result["effective_day"] = effective_day;
+    return result;
 }
 
 Dictionary DCWorldExt::get_family_industries(
@@ -2625,6 +2469,12 @@ Dictionary DCWorldExt::end_economy_save() {
 
 Dictionary DCWorldExt::capture_economy_ecp2(int flags) const {
     Dictionary out;
+    if (_runtime_host && (_runtime_host->state() != RuntimeWorkerState::STOPPED ||
+                          !_runtime_host->execution_has_stopped())) {
+        out["ok"] = false;
+        out["reason"] = "economy_ecp2_requires_stopped_executor";
+        return out;
+    }
     if (_economy_runtime == nullptr) {
         out["ok"] = false;
         out["reason"] = "economy_runtime_unavailable";
@@ -2681,6 +2531,12 @@ Dictionary DCWorldExt::capture_economy_ecp2(int flags) const {
 
 Dictionary DCWorldExt::restore_economy_ecp2(const PackedByteArray &bytes) {
     Dictionary out;
+    if (_runtime_host && (_runtime_host->state() != RuntimeWorkerState::STOPPED ||
+                          !_runtime_host->execution_has_stopped())) {
+        out["ok"] = false;
+        out["reason"] = "economy_ecp2_requires_stopped_executor";
+        return out;
+    }
     if (_economy_runtime == nullptr) {
         out["ok"] = false;
         out["reason"] = "economy_runtime_unavailable";

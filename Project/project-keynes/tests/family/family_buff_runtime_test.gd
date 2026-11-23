@@ -244,8 +244,8 @@ func _test_catalog_foundation() -> void:
 				and int(trigger_thresholds[trigger_id]) == int(expected_tiers[tier - 1])
 	_expect("tiered family buff triggers compile exact per-tier thresholds",
 		trigger_thresholds_ok)
-	var market_durations := PackedInt32Array([60, 90, 135, 180, 240])
-	var market_values := PackedInt64Array([16384, 26624, 36864, 49152, 65536])
+	var market_durations := PackedInt32Array([30, 45, 60, 90, 120])
+	var market_values := PackedInt64Array([39322, 65536, 91750, 117965, 157286])
 	var market_tiers_ok := true
 	for tier in range(1, 6):
 		var trigger_id := trigger_keys.find("family.buff.market_window_t%d" % tier)
@@ -263,7 +263,7 @@ func _test_catalog_foundation() -> void:
 			and int(trigger_effect_values[effect_id]) == int(market_values[tier - 1])
 	_expect("family.buff.market_window compiles exact duration and effect values",
 		market_tiers_ok)
-	var drought_values := PackedInt64Array([14563, 26214, 37847, 49525, 65536])
+	var drought_values := PackedInt64Array([32768, 65536, 98304, 131072, 163840])
 	var drought_tiers_ok := true
 	for tier in range(1, 6):
 		var trigger_id := trigger_keys.find("family.buff.drought_store_t%d" % tier)

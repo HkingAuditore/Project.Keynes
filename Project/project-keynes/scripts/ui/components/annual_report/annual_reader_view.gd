@@ -226,7 +226,7 @@ func present(model: Dictionary) -> void:
 	_rail.set_chapters(titles)
 	_rail.set_current(-1)
 	var year := int(_model.get("year", 1))
-	_head.set_texts("%d年" % year, "")
+	_head.set_texts("第 %d 年" % year, "")
 	_head.set_ink(UITokens.CHRONICLE_MUTED)
 	_scroll.scroll_vertical = 0
 	_refresh_page_label()
@@ -497,7 +497,7 @@ func _update_chapter(index: int, force: bool = false) -> void:
 	var right := ""
 	if index >= 0 and index < chapters.size():
 		right = "%02d  %s" % [index + 1, String(chapters[index].get("title", ""))]
-	_head.set_texts("%d年" % year, right)
+	_head.set_texts("第 %d 年" % year, right)
 	_refresh_page_label()
 
 
@@ -639,7 +639,7 @@ func set_history(rows: Array, offset: int, has_more: bool) -> void:
 	_history.set_meta("offset", offset)
 	for row in rows:
 		_history_ids.append(int(row.get("id", 0)))
-		_history.add_item("%d年 · %s" % [int(row.get("year", 0)) + 1, String(row.get("grade", "—"))])
+		_history.add_item("第 %d 年 · %s" % [int(row.get("year", 0)) + 1, String(row.get("grade", "—"))])
 	_history.disabled = rows.is_empty()
 	_newer.visible = offset > 0
 	_newer.disabled = offset <= 0

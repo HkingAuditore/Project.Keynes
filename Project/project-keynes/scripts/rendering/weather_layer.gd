@@ -8,6 +8,7 @@ class_name WeatherLayer
 extends Node2D
 
 const WeatherLayerParticlesScript = preload("res://scripts/rendering/weather_layer_particles.gd")
+const WeatherCellCurtains = preload("res://scripts/rendering/weather_cell_curtains.gd")
 
 signal visual_fronts_changed(fronts: Array)
 
@@ -65,16 +66,10 @@ const FogOfWarLayerScript = preload("res://scripts/rendering/fog_of_war_layer.gd
 ## 两个 uniform（fog_warp_*），真源在 FogOfWarLayer（见上）。
 const WEATHER_WARP_FREQ_DEFAULT := 0.004
 const WEATHER_WARP_AMP_DEFAULT := 0.75
-const CURTAIN_SHADER_PATH := "res://shaders/weather_cell_curtain.gdshader"
-const _CELL_CURTAIN_ENABLED := true
 const _FRONT_PARTICLES_ENABLED := false
+const _CELL_CURTAIN_ENABLED := true
 const _CURTAIN_LAYER_COUNT_DESKTOP := 3
 const _CURTAIN_LAYER_COUNT_MOBILE := 1
-const _CURTAIN_PATCH_SCALE := 1.45
-
-# [parallax-rain] 三层视差参数：每层独立的 z_offset（layer_depth 由层数自动计算）
-# 索引 0=近景(z 高) / 1=中景 / 2=远景(z 低)
-const _CURTAIN_PARALLAX_Z_OFFSETS := [2, 1, 0]
 # Presentation interpolation keeps front snapshots moving between day commits.
 # Its blend and prediction limits accommodate occasional 3–4 s gaps between commits.
 const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.65
@@ -113,19 +108,8 @@ const WEATHER_DEBUG_VIEW_NAMES := [
 
 var _overlay_quad: MeshInstance2D
 var _overlay_mat: ShaderMaterial
-var _curtain_root: Node2D
-var _curtain_mesh: ArrayMesh
-# [parallax-rain] 每层独立材质，支持 per-layer layer_depth uniform
-var _curtain_mats: Array[ShaderMaterial] = []
-# 兼容引用：指向 _curtain_mats[0]（供旧代码读取，不再用于推 uniform）
-var _curtain_mat: ShaderMaterial = null
-var _curtain_layers: Array[MultiMeshInstance2D] = []
-var _curtain_multimeshes: Array[MultiMesh] = []
-var _curtain_map: MapData = null
-var _curtain_built_for_map: MapData = null
-var _curtain_built_hex_size: float = -1.0
-var _curtain_built_wrap_period: float = -1.0
-var _curtain_instance_count: int = 0
+var _curtains := WeatherCellCurtains.new()
+var _weather_map: MapData
 var _particles_root: Node2D
 var _particles_pool: Array[GPUParticles2D] = []  # 16 个，按 front index 复用
 # 缓存每个 slot 当前配置类型，避免每次 set_weather_fronts 都重建 process_material
@@ -269,12 +253,7 @@ func _ready() -> void:
 	_overlay_quad.z_index = 0
 	add_child(_overlay_quad)
 
-	_curtain_root = Node2D.new()
-	_curtain_root.name = "CellWeatherCurtains"
-	_curtain_root.z_as_relative = true
-	# 雨幕位于云层下、地表上；避免中等降水的雨线盖住云体，导致“只见雨不见云”。
-	_curtain_root.z_index = -1
-	add_child(_curtain_root)
+	_curtains.attach(self)
 
 	_particles_root = Node2D.new()
 	_particles_root.name = "WeatherParticles"
@@ -308,7 +287,7 @@ func _process(delta: float) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("world_time", _world_time)
 	# [parallax-rain] 遍历所有 curtain 材质
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("world_time", _world_time)
 	if has_weather:
 		_update_weather_front_blend(delta)
@@ -322,13 +301,13 @@ func _process(delta: float) -> void:
 				_wx_pushed_weather_lut = _world_ref.weather_lut_tex
 				_weather_lut_tex = _wx_pushed_weather_lut
 				_overlay_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
-				for mat in _curtain_mats:
+				for mat in _curtains.materials:
 					mat.set_shader_parameter("weather_lut", _weather_lut_tex)
 			if _world_ref.weather_lut_prev_tex != null \
 					and _wx_pushed_weather_prev != _world_ref.weather_lut_prev_tex:
 				_wx_pushed_weather_prev = _world_ref.weather_lut_prev_tex
 				_overlay_mat.set_shader_parameter("weather_lut_prev", _wx_pushed_weather_prev)
-				for mat in _curtain_mats:
+				for mat in _curtains.materials:
 					mat.set_shader_parameter("weather_lut_prev", _wx_pushed_weather_prev)
 			# [cell-field-overlays 2026-11-18] weather_table + 层号：同样按"值变了才推"。
 			# 层号翻转与 weather_lut 换纹理发生在同一次提交（cell_lut_baker 里紧贴），
@@ -351,8 +330,9 @@ func _process(delta: float) -> void:
 			if absf(_wlerp - _wx_pushed_lerp) > 0.002 or _wx_pushed_lerp < 0.0:
 				_wx_pushed_lerp = _wlerp
 				_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
-				for mat in _curtain_mats:
+				for mat in _curtains.materials:
 					mat.set_shader_parameter("weather_lerp", _wlerp)
+			_refresh_curtain_instances(_upd, _wx_pushed_lerp < 0.999)
 			if _upd != 0 and (_wx_lut_diag_count < 12 or _now_us / 1000 - _wx_lut_diag_last_msec >= 2000):
 				_wx_lut_diag_count += 1
 				_wx_lut_diag_last_msec = _now_us / 1000
@@ -406,6 +386,7 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 func set_world_ref(w) -> void:
 	if _world_ref != w:
 		_world_ref = w
+		_curtains.invalidate_inputs()
 		_push_weather_table(true)
 
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
@@ -416,7 +397,7 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 	_hex_size = hex_size
 	_weather_lut_tex = weather_lut
 	_weather_lut_dims = lut_dims
-	_curtain_map = map
+	_weather_map = map
 
 	_reset_front_blend_state()
 	if _overlay_quad != null:
@@ -516,7 +497,7 @@ func _push_fog_mask_uniforms() -> void:
 		_overlay_mat.set_shader_parameter("fog_mask_enabled", _fog_mask_enabled and tex != null)
 		if tex != null:
 			_overlay_mat.set_shader_parameter("enum_lut", tex)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("fog_mask_enabled", _fog_mask_enabled and tex != null)
 		if tex != null:
 			mat.set_shader_parameter("enum_lut", tex)
@@ -535,9 +516,10 @@ func set_cloud_opacity_scale(v: float) -> void:
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
 func set_weather_strength(v: float) -> void:
 	_strength = clampf(v, 0.0, 1.0)
+	_update_curtain_visibility()
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("weather_strength", _strength)
 
 # weather_field_tex 通路已退役（main.gd 始终传 null，云改由 weather_lut 驱动）；
@@ -623,7 +605,7 @@ func _apply_weather_quality() -> void:
 	if _overlay_quad != null:
 		_load_overlay_shader()
 		_push_overlay_runtime_state()
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("cell_curtain_quality", _weather_quality())
 	_update_curtain_visibility()
 
@@ -643,8 +625,8 @@ func get_weather_debug_view_name() -> String:
 
 func get_cell_curtain_diag() -> Dictionary:
 	return {
-		"instances": _curtain_instance_count,
-		"layers": _curtain_layers.size(),
+		"instances": _curtains.instance_count,
+		"layers": _curtains.layers.size(),
 		"active_layers": _desired_curtain_layer_count(),
 		"has_lut": _has_weather_lut_source(),
 		"quality": _weather_quality(),
@@ -682,7 +664,7 @@ func set_day_night_enabled(v: bool) -> void:
 	_day_night_enabled = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("day_night_enabled", _day_night_enabled)
 
 # extreme_weather_ground_effect_enabled uniform 已在重写中移除；保留 setter 供外部安全调用。
@@ -705,7 +687,7 @@ func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("day_phase", _day_phase)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("day_phase", _day_phase)
 
 
@@ -714,7 +696,7 @@ func set_season_phase(v: float) -> void:
 	_season_phase = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("season_phase", _season_phase)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("season_phase", _season_phase)
 
 # 地轴倾角(rad)：drive earth_daylight 的季节赤纬幅度。由 HexRenderer 在 setup/spawn 时推入。
@@ -722,7 +704,7 @@ func set_axial_tilt_rad(v: float) -> void:
 	_axial_tilt_rad = v
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("axial_tilt_rad", _axial_tilt_rad)
 
 func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
@@ -731,7 +713,7 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		_overlay_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 
@@ -744,7 +726,7 @@ func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
 		_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
 		mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
 
@@ -755,7 +737,7 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 		_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 		_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
 		_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
 		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
@@ -783,7 +765,7 @@ func apply_tod(profile: TODProfile) -> void:
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
 		_overlay_mat.set_shader_parameter("tod_exposure", profile.exposure)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("tod_exposure", profile.exposure)
 	# 任务 5：粒子 modulate 随 TOD 重新染色。
 	# base_color * tod_sun_color * (1 - 0.5 * night_factor)
@@ -805,14 +787,14 @@ var _wind_strength: float = 0.15
 
 func set_camera_pitch(pitch_rad: float) -> void:
 	_camera_pitch = clampf(pitch_rad, 0.0, PI * 0.5)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("camera_pitch", _camera_pitch)
 
 func set_wind(dir: Vector2, strength: float) -> void:
 	if dir.length_squared() > 0.0001:
 		_wind_dir = dir.normalized()
 	_wind_strength = clampf(strength, -1.0, 1.0)
-	for mat in _curtain_mats:
+	for mat in _curtains.materials:
 		mat.set_shader_parameter("wind_dir", _wind_dir)
 		mat.set_shader_parameter("wind_strength", _wind_strength)
 
@@ -1444,8 +1426,8 @@ func _resolve_map_dims() -> Vector2:
 		dims = _world_ref.cell_table_dims
 		if dims.x > 0 and dims.y > 0:
 			return Vector2(dims.x, dims.y)
-	if _curtain_map != null and _curtain_map.width > 0 and _curtain_map.height > 0:
-		return Vector2(_curtain_map.width, _curtain_map.height)
+	if _weather_map != null and _weather_map.width > 0 and _weather_map.height > 0:
+		return Vector2(_weather_map.width, _weather_map.height)
 	return Vector2.ZERO
 
 
@@ -1464,9 +1446,11 @@ func set_fog_field_band(v: float = FogOfWarLayerScript.FOG_FIELD_BAND) -> void:
 
 
 func _push_curtain_runtime_state() -> void:
-	if _curtain_mats.is_empty():
+	if _curtains.materials.is_empty():
 		return
-	for mat in _curtain_mats:
+	_curtains.invalidate_inputs()
+	var flags := WeatherCellCurtains.weather_profile_flags()
+	for mat in _curtains.materials:
 		if _weather_lut_tex != null:
 			mat.set_shader_parameter("weather_lut", _weather_lut_tex)
 		if _world_ref != null and _world_ref.weather_lut_prev_tex != null:
@@ -1486,7 +1470,7 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
 		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		mat.set_shader_parameter("tod_exposure", _tod_exposure)
-		mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
+		mat.set_shader_parameter("weather_profile_flags", flags)
 		# [parallax-rain] 俯视投影参数
 		mat.set_shader_parameter("camera_pitch", _camera_pitch)
 		mat.set_shader_parameter("wind_dir", _wind_dir)
@@ -1547,178 +1531,23 @@ func _load_overlay_shader() -> void:
 	_push_edge_transition_data()
 
 func _load_curtain_shader() -> void:
-	var shader := ResourceLoader.load(CURTAIN_SHADER_PATH, "Shader",
-		ResourceLoader.CACHE_MODE_IGNORE) as Shader
-	if shader == null:
-		push_warning("WeatherLayer: shader not found at %s" % CURTAIN_SHADER_PATH)
-		return
-	var shader_tier := _weather_shader_tier()
-	if shader_tier != "" and DCFeatureFlags.uses_shader_quality_tier():
-		var src: String = shader.code
-		if not src.begins_with("#define"):
-			shader = shader.duplicate() as Shader
-			shader.code = "%s%s" % [_shader_quality_define_prefix(shader_tier), src]
-	# [parallax-rain] 清空旧材质，按层数重建
-	_curtain_mats.clear()
-	var layer_count := _curtain_layer_capacity()
-	for layer_idx in range(layer_count):
-		var mat := ShaderMaterial.new()
-		mat.shader = shader
-		# per-layer 的 layer_depth（0=近景，1=远景）
-		var depth_val: float = 0.0
-		if layer_count > 1:
-			depth_val = float(layer_idx) / float(layer_count - 1)
-		mat.set_shader_parameter("layer_depth", depth_val)
-		_curtain_mats.append(mat)
-	# 兼容旧引用：_curtain_mat 指向首个（移动端可能为空数组）
-	if not _curtain_mats.is_empty():
-		_curtain_mat = _curtain_mats[0]
-	# 重新绑定已存在的 layer 节点到新材质
-	for i in range(_curtain_layers.size()):
-		var layer: MultiMeshInstance2D = _curtain_layers[i]
-		if layer != null and i < _curtain_mats.size():
-			layer.material = _curtain_mats[i]
-	_push_curtain_runtime_state()
+	var tier := _weather_shader_tier()
+	var prefix := _shader_quality_define_prefix(tier) if tier != "" and DCFeatureFlags.uses_shader_quality_tier() else ""
+	if _curtains.load_materials(_curtain_layer_capacity(), prefix):
+		_push_curtain_runtime_state()
 
-func _weather_profile_flags() -> PackedInt32Array:
-	var flags := PackedInt32Array()
-	flags.resize(_MAX_WEATHER_TYPES)
-	for wt in range(_MAX_WEATHER_TYPES):
-		var p := WeatherProfileRegistry.get_profile(wt)
-		if p == null:
-			flags[wt] = 0
-			continue
-		var f: int = 0
-		if p.enables_lightning:
-			f |= 2
-		if p.enables_snow_grain:
-			f |= 4
-		if p.enables_rain_streak:
-			f |= 8
-		if p.enables_fog_breathe:
-			f |= 16
-		flags[wt] = f
-	return flags
-
-func _build_curtain_patch_mesh() -> ArrayMesh:
-	var verts := PackedVector2Array([
-		Vector2(-1.0, -1.0),
-		Vector2(1.0, -1.0),
-		Vector2(1.0, 1.0),
-		Vector2(-1.0, 1.0),
-	])
-	var uvs := PackedVector2Array([
-		Vector2(0.0, 0.0),
-		Vector2(1.0, 0.0),
-		Vector2(1.0, 1.0),
-		Vector2(0.0, 1.0),
-	])
-	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
 
 func _rebuild_curtain_layers() -> void:
-	var max_layers := _curtain_layer_capacity()
-	if not _CELL_CURTAIN_ENABLED or _curtain_map == null or _curtain_map.cell_count() <= 0 or max_layers <= 0:
-		_clear_curtain_layers()
-		return
-	if _curtain_built_for_map == _curtain_map \
-			and is_equal_approx(_curtain_built_hex_size, _hex_size) \
-			and is_equal_approx(_curtain_built_wrap_period, _wrap_period_x) \
-			and _curtain_layers.size() == max_layers:
-		return
-	_clear_curtain_layers()
-	if _curtain_mesh == null:
-		_curtain_mesh = _build_curtain_patch_mesh()
-	var cells: Array = _curtain_map.iter_cells()
-	if cells.is_empty():
-		cells = _curtain_map.all_cells()
-	if cells.is_empty():
-		return
-	var tile_offsets := PackedFloat32Array([0.0])
-	if _wrap_period_x > 0.0001:
-		tile_offsets = PackedFloat32Array([-_wrap_period_x, 0.0, _wrap_period_x])
-	var valid_cells: Array = []
-	for order in range(cells.size()):
-		var cell = cells[order]
-		if cell == null:
-			continue
-		var idx: int = int(cell.index)
-		if idx < 0:
-			idx = order
-		if idx < 0 or idx >= 65536:
-			continue
-		valid_cells.append([cell, idx, order])
-	var instance_total: int = valid_cells.size() * tile_offsets.size()
-	if instance_total <= 0:
-		return
-	for layer_idx in range(max_layers):
-		var mmi := MultiMeshInstance2D.new()
-		mmi.name = "CellCurtainLayer_%d" % layer_idx
-		mmi.z_as_relative = true
-		# [parallax-rain] z_index 按视差配置：近景 z 高，远景 z 低
-		var z_off: int = 0
-		if layer_idx < _CURTAIN_PARALLAX_Z_OFFSETS.size():
-			z_off = _CURTAIN_PARALLAX_Z_OFFSETS[layer_idx]
-		mmi.z_index = z_off
-		# 每层用独立材质（layer_depth 已在 _load_curtain_shader 中设置）
-		if layer_idx < _curtain_mats.size():
-			mmi.material = _curtain_mats[layer_idx]
-		elif not _curtain_mats.is_empty():
-			mmi.material = _curtain_mats[0]
-		_curtain_root.add_child(mmi)
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_2D
-		mm.use_colors = false
-		mm.use_custom_data = true
-		mm.mesh = _curtain_mesh
-		mm.instance_count = instance_total
-		mm.visible_instance_count = instance_total
-		mmi.multimesh = mm
-		var depth: float = 0.5
-		if max_layers > 1:
-			depth = float(layer_idx) / float(max_layers - 1)
-		var half_w: float = _hex_size * _CURTAIN_PATCH_SCALE * lerpf(0.96, 1.18, depth)
-		var half_h: float = _hex_size * _CURTAIN_PATCH_SCALE * lerpf(1.10, 1.36, depth)
-		var write_idx: int = 0
-		for item in valid_cells:
-			var item_cell = item[0]
-			var cell_idx: int = int(item[1])
-			var cell_order: int = int(item[2])
-			var center := _curtain_cell_center(item_cell, cell_idx)
-			var seed := _curtain_seed(cell_idx, cell_order)
-			for ox in tile_offsets:
-				var pos := center + Vector2(float(ox), 0.0)
-				mm.set_instance_transform_2d(write_idx, Transform2D(
-					Vector2(half_w, 0.0),
-					Vector2(0.0, half_h),
-					pos
-				))
-				mm.set_instance_custom_data(write_idx, _curtain_custom_data(cell_idx, seed, depth))
-				write_idx += 1
-		_curtain_layers.append(mmi)
-		_curtain_multimeshes.append(mm)
-	_curtain_built_for_map = _curtain_map
-	_curtain_built_hex_size = _hex_size
-	_curtain_built_wrap_period = _wrap_period_x
-	_curtain_instance_count = instance_total * max_layers
+	var capacity := _curtain_layer_capacity() if _CELL_CURTAIN_ENABLED else 0
+	if _curtains.rebuild(_weather_map, _hex_size, _wrap_period_x, capacity):
+		var update_usec: int = _world_ref.weather_lut_update_usec if _world_ref != null else 0
+		_refresh_curtain_instances(update_usec, true)
 
-func _clear_curtain_layers() -> void:
-	for layer in _curtain_layers:
-		if layer != null:
-			if layer.get_parent() != null:
-				layer.get_parent().remove_child(layer)
-			layer.queue_free()
-	_curtain_layers.clear()
-	_curtain_multimeshes.clear()
-	_curtain_instance_count = 0
-	_curtain_built_for_map = null
+
+func _refresh_curtain_instances(update_usec: int, blending: bool) -> void:
+	_curtains.refresh_instances(update_usec, blending, _world_ref, _weather_lut_tex,
+		_weather_lut_dims, _weather_shader_tier(), _desired_curtain_layer_count())
+
 
 func _curtain_layer_capacity() -> int:
 	if OS.has_feature("mobile"):
@@ -1746,38 +1575,7 @@ func _desired_curtain_layer_count() -> int:
 
 
 func _update_curtain_visibility() -> void:
-	var active_layers := _desired_curtain_layer_count()
-	for i in range(_curtain_layers.size()):
-		var layer := _curtain_layers[i]
-		if layer != null:
-			layer.visible = i < active_layers
-	if _curtain_root != null:
-		_curtain_root.visible = active_layers > 0 and _curtain_instance_count > 0
-
-func _curtain_cell_center(cell, idx: int) -> Vector2:
-	if _curtain_map != null \
-			and idx >= 0 \
-			and idx < _curtain_map.cell_pos_x_arr.size() \
-			and idx < _curtain_map.cell_pos_y_arr.size():
-		return Vector2(_curtain_map.cell_pos_x_arr[idx], _curtain_map.cell_pos_y_arr[idx]) * _hex_size
-	return HexUtils.cube_to_world(int(cell.q), int(cell.r), _hex_size)
-
-func _curtain_custom_data(cell_id: int, seed: float, depth: float) -> Color:
-	return Color(
-		float(cell_id & 0xFF) / 255.0,
-		float((cell_id >> 8) & 0xFF) / 255.0,
-		clampf(seed, 0.0, 1.0),
-		clampf(depth, 0.0, 1.0)
-	)
-
-func _curtain_seed(idx: int, order: int) -> float:
-	return _hash_noise_2d(idx * 17 + 11, order * 31 + 7)
-
-func _hash_noise_2d(ix: int, iy: int) -> float:
-	var n: int = ix * 374761393 + iy * 668265263
-	n = (n ^ (n >> 13)) * 1274126177
-	n = n ^ (n >> 16)
-	return float(n & 0x7fffffff) / 2147483647.0
+	_curtains.update_visibility(_desired_curtain_layer_count())
 
 # ─── 粒子池初始化 ────────────────────────────────────────────────────────
 # 16 个 GPUParticles2D，每个有自己的 ParticleProcessMaterial（避免共享导致全部 front

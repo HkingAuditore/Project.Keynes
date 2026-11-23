@@ -84,19 +84,6 @@ static func compile(context,
 			var members: PackedInt32Array = category_good_indices[category_id]
 			members.append(good_idx)
 			category_good_indices[category_id] = members
-	var used_resource_ids := {}
-	for profile in profiles:
-		if context != null:
-			await context.checkpoint("buildings")
-			if context.canceled:
-				return {"ok": false, "reason": "loading_canceled"}
-		for resource_id in profile.resource_ids:
-			used_resource_ids[String(resource_id)] = true
-		for resource_id in profile.resource_generation_ids:
-			used_resource_ids[String(resource_id)] = true
-		for i in range(profile.condition_signals.size()):
-			if int(profile.condition_signals[i]) == 10 and i < profile.condition_reference_ids.size():
-				used_resource_ids[String(profile.condition_reference_ids[i])] = true
 	var resources: Array = ResourceRegistryScript.ordered().duplicate()
 	resources.sort_custom(func(a, b) -> bool: return String(a.id) < String(b.id))
 	var resource_ids := PackedStringArray()
@@ -132,8 +119,6 @@ static func compile(context,
 			if context.canceled:
 				return {"ok": false, "reason": "loading_canceled"}
 		var stable_id := String(resource.id)
-		if not used_resource_ids.has(stable_id):
-			continue
 		var reserve_slot: String = ResourceRegistryScript.reserve_cpp_name(resource)
 		var extra_slot: String = ResourceRegistryScript.extra_change_cpp_name(resource)
 		if stable_id == "" or reserve_slot == "" or extra_slot == "" or resource_index.has(stable_id):

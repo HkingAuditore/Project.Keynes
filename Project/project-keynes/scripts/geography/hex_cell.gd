@@ -261,7 +261,7 @@ var water_depth: float = 0.0
 # base_moisture：生成阶段最终敲定的"年均湿度基线"（包含 coastal boost）。
 # 运行时湿度/降水不再从四季倍率表刷新；由 weather field、水汽、风、地形抬升
 # 和反馈缓冲逐日演化。
-# Phase 8：每年由 refresh_yearly 微调，让长期 FOREST → +base_moisture，长期 DESERT → -。
+# 初始湿度。游戏内年度演化由执行器维护。
 var base_moisture: float = 0.5
 # base_terrain：第一次定型的"年均"地形，给季节重决策做参考（譬如雪地的真正持久性）。
 var base_terrain: TerrainType.TERRAIN = TerrainType.TERRAIN.OCEAN
@@ -608,7 +608,7 @@ var _ema_initialized: bool = false:
 			if cid >= 0:
 				_world.write_u8(cid, index, 1 if v else 0)
 
-# Phase 8：过去若干季的 biome 快照（环形缓冲），给 refresh_yearly 评分用。
+# 过去若干季的生态快照，由开局和发布帧提供。
 # 长度固定 HISTORY_LEN = 8（≈ 2 年）。生命周期：每季 push 当前 terrain。
 # Milestone 1：vegetation_history 平行环形缓冲，新代码评分用真实植被轴。
 const HISTORY_LEN := 8

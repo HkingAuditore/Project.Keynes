@@ -5,6 +5,7 @@
 // production slot formula is float-based; callers that need double (for
 // terrain generation) use the explicitly double helpers below.
 
+#include "simulation_math.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -43,15 +44,15 @@ inline float phase_progress(float season_phase) noexcept {
 
 inline float subsolar_lat_rad(float season_phase, float axial_tilt_deg) noexcept {
     return axial_tilt_deg * (PI_F / 180.0f) *
-           std::cos(TAU_F * phase_progress(season_phase));
+           simulation_math::cos(TAU_F * phase_progress(season_phase));
 }
 
 inline float sunset_hour_angle(float latitude_rad, float declination_rad) noexcept {
     if (std::fabs(declination_rad) <= 1e-6f) return PI_F * 0.5f;
-    const float polar_test = -std::tan(latitude_rad) * std::tan(declination_rad);
+    const float polar_test = -simulation_math::tan(latitude_rad) * simulation_math::tan(declination_rad);
     if (polar_test <= -1.0f) return PI_F;
     if (polar_test >= 1.0f) return 0.0f;
-    return std::acos(polar_test);
+    return simulation_math::acos(polar_test);
 }
 
 // Production native Pass-A astronomical daily integral. The day-length
@@ -65,8 +66,8 @@ inline float daily_insolation(float ny, float season_phase,
     const float declination = subsolar_lat_rad(season_phase, axial_tilt_deg);
     const float hour_angle = sunset_hour_angle(latitude_rad, declination);
     if (hour_angle <= 1e-6f) return 0.0f;
-    const float daily = hour_angle * std::sin(latitude_rad) * std::sin(declination) +
-        std::cos(latitude_rad) * std::cos(declination) * std::sin(hour_angle);
+    const float daily = hour_angle * simulation_math::sin(latitude_rad) * simulation_math::sin(declination) +
+        simulation_math::cos(latitude_rad) * simulation_math::cos(declination) * simulation_math::sin(hour_angle);
     return clamp01(daily);
 }
 
@@ -118,7 +119,7 @@ inline float surface_absorbed_factor(bool is_water, float annual_temperature) no
 inline float compress_season_cooling(float season_offset) noexcept {
     if (season_offset >= 0.0f) return season_offset;
     return -WINTER_COOL_KNEE *
-        std::tanh(-season_offset / WINTER_COOL_KNEE);
+        simulation_math::tanh(-season_offset / WINTER_COOL_KNEE);
 }
 
 inline float season_offset_continental(float insolation_amplitude_gain,
@@ -138,7 +139,7 @@ inline float season_offset_continental(float insolation_amplitude_gain,
 inline float thermal_alpha_eff(float alpha, float dt_days) noexcept {
     alpha = clamp(alpha, 0.0f, 1.0f);
     if (dt_days <= 1.0f) return alpha;
-    return 1.0f - std::pow(1.0f - alpha, dt_days);
+    return 1.0f - simulation_math::pow(1.0f - alpha, dt_days);
 }
 
 inline float signed_hydrology_contribution(float anomaly,
@@ -199,8 +200,8 @@ inline double altitude_penalty(double elevation, double sea_level) noexcept {
 }
 
 inline double lat_temp_bell(double lat_signed) noexcept {
-    const double cosine = std::cos(lat_signed * 3.14159265358979323846 * 0.5);
-    return std::pow(cosine < 0.0 ? 0.0 : cosine, LAT_TEMP_CURVE_EXP);
+    const double cosine = simulation_math::cos(lat_signed * 3.14159265358979323846 * 0.5);
+    return simulation_math::pow(cosine < 0.0 ? 0.0 : cosine, LAT_TEMP_CURVE_EXP);
 }
 
 inline float normalized_rng(uint64_t &state) noexcept {

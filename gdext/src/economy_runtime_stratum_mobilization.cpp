@@ -1,3 +1,4 @@
+#include "runtime_narrative_context.h"
 #include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "pk_log.h"
@@ -116,12 +117,17 @@ void NativeEconomyRuntime::ensure_mobilization_profession_config() {
 int32_t NativeEconomyRuntime::set_military_cell_garrison(
         const std::vector<int32_t> &cells, const std::vector<int32_t> &heads) {
     const size_t count = std::min(cells.size(), heads.size());
-    if (count == 0) return 0;
     const int32_t cell_count = _cell_count.get();
     if (cell_count <= 0) return 0;
     if (_cell_garrison_heads.size() != static_cast<size_t>(cell_count)) {
         _cell_garrison_heads.assign(static_cast<size_t>(cell_count), 0);
         _cell_garrison_present.assign(static_cast<size_t>(cell_count), 0);
+    }
+    // Each publication replaces the previous day's garrison headcounts.
+    for (size_t cell = 0; cell < _cell_garrison_present.size(); ++cell) {
+        if (_cell_garrison_present[cell] == 0) continue;
+        _cell_garrison_heads[cell] = 0;
+        _cell_garrison_present[cell] = 0;
     }
     int32_t written = 0;
     for (size_t i = 0; i < count; ++i) {
@@ -410,13 +416,22 @@ Dictionary NativeEconomyRuntime::mobilization_odds(
         int32_t cell, int32_t profession, int32_t action,
         int64_t spend_bp) const {
     Dictionary out;
-    out["ok"] = false;
+    calculate_mobilization_odds(cell, profession, action, spend_bp, &out);
+    return out;
+}
+
+NarrativeUnrestOdds NativeEconomyRuntime::calculate_mobilization_odds(
+        int32_t cell, int32_t profession, int32_t action, int64_t spend_bp,
+        Dictionary *details) const {
     const int32_t row_index =
         _stratum_mobilization.find(cell, profession);
     if (row_index < 0 ||
         row_index >= static_cast<int32_t>(_stratum_mobilization.rows.size())) {
-        out["reason"] = "mobilization_row_missing";
-        return out;
+        if (details) {
+            (*details)["ok"] = false;
+            (*details)["reason"] = "mobilization_row_missing";
+        }
+        return {};
     }
     const StratumMobilizationRow &row =
         _stratum_mobilization.rows[static_cast<size_t>(row_index)];
@@ -471,13 +486,15 @@ Dictionary NativeEconomyRuntime::mobilization_odds(
         default: base = -1; break;     // ignore/abandon have no roll
     }
     if (base < 0) {
-        out["ok"] = true;
-        out["no_roll"] = true;
-        out["p_success_q16"] = 0;
-        out["cost_bp"] = cost_bp;
-        out["stage"] = stage;
-        out["terms"] = Dictionary();
-        return out;
+        if (details) {
+            (*details)["ok"] = true;
+            (*details)["no_roll"] = true;
+            (*details)["p_success_q16"] = 0;
+            (*details)["cost_bp"] = cost_bp;
+            (*details)["stage"] = stage;
+            (*details)["terms"] = Dictionary();
+        }
+        return {0, static_cast<int32_t>(cost_bp)};
     }
     const int64_t local_term =
         (static_cast<int64_t>(row.local_sat_q16) - 32768) * 70 / 100;
@@ -498,6 +515,9 @@ Dictionary NativeEconomyRuntime::mobilization_odds(
     }
     probability = std::clamp<int64_t>(probability, 3277, 62259);
 
+    const NarrativeUnrestOdds result{static_cast<int32_t>(probability), static_cast<int32_t>(cost_bp)};
+    if (!details) return result;
+    Dictionary &out = *details;
     Dictionary terms;
     terms["base_q16"] = base;
     terms["local_sat_q16"] = local_term;
@@ -516,78 +536,7 @@ Dictionary NativeEconomyRuntime::mobilization_odds(
     out["garrison_strength_q16"] = static_cast<int32_t>(g_strength);
     out["soldier_revolt"] = soldier_revolt;
     out["terms"] = terms;
-    return out;
-}
-
-Dictionary NativeEconomyRuntime::resolve_player_mobilization(
-        const Dictionary &choice) {
-    Dictionary out;
-    auto reject = [&](const char *code) {
-        out["ok"] = false;
-        out["code"] = code;
-        return out;
-    };
-    if (!_bootstrapped || _fatal || _save.active || _restore.active || epoch_active())
-        return reject("economy_busy_retry");
-    const int32_t cell = choice.get("cell", -1);
-    const int32_t profession = choice.get("profession", -1);
-    const int32_t stage = choice.get("stage", 0);
-    const int32_t action = choice.get("action", -1);
-    const int64_t owner = choice.get("owner_handle", int64_t{0});
-    const bool success = choice.get("success", false);
-    if (cell < 0 || cell >= _cell_count.get() || stage < 1 || stage > 4 ||
-        action < 0 || action > 5 || (action == 5 && !success))
-        return reject("mobilization_choice_invalid");
-    const int32_t row_index = _stratum_mobilization.find(cell, profession);
-    if (row_index < 0 || owner == 0 || _country_runtime == nullptr ||
-        country_reads().country_handle_for_cell(cell) != owner)
-        return reject("mobilization_choice_stale");
-    const auto &row = _stratum_mobilization.rows[static_cast<size_t>(row_index)];
-    if (row.stage != stage || (row.flags & 8) != 0 ||
-        (action == 5 && (row.flags & kMobCapitalFlag) != 0))
-        return reject("mobilization_choice_stale");
-
-    Command payment;
-    const int64_t amount = choice.get("cash", int64_t{0});
-    if (amount > 0) {
-        const int64_t recipient = choice.get("cohort_handle", int64_t{0});
-        const int64_t day = choice.get("effective_day", int64_t{-1});
-        const int64_t sequence = choice.get("sequence", int64_t{-1});
-        int32_t slot = -1;
-        if ((action != 0 && action != 1) || day < 0 || sequence < 0)
-            return reject("mobilization_payment_invalid");
-        const auto &pop = population_store();
-        if (!pop.valid_handle(static_cast<uint64_t>(recipient), slot) ||
-            pop.population[slot] <= 0 || pop.page_cell[slot / COHORT_PAGE_SIZE] != cell) {
-            // A queued offer names the locality, so a cohort merged or moved
-            // since quoting can be replaced by a currently resident cohort.
-            slot = -1;
-            pop.for_each_in_cell(cell, [&](int32_t candidate) {
-                const int64_t heads = pop.population[candidate];
-                if (heads > 0 && (slot < 0 || heads > pop.population[slot])) slot = candidate;
-            });
-            if (slot < 0) return reject("mobilization_choice_stale");
-        }
-        payment.opcode = COMMAND_TRANSFER_TO_COHORT;
-        payment.effective_day = day;
-        payment.sequence = sequence;
-        payment.target_handle = pop.handle_for_slot(slot);
-        payment.i64_0 = amount;
-        payment.i64_1 = owner;
-    }
-    if (!apply_mobilization_result(cell, profession, action, success))
-        return reject("mobilization_choice_stale");
-    if (amount > 0) {
-        // The caller holds the economy boundary. Admit the payment to the
-        // persisted queue so a save taken before the next epoch carries it.
-        payment.submit_order = _next_submit_order++;
-        _pending_commands.push_back(payment);
-    }
-    out["ok"] = true;
-    out["queued_cash"] = amount;
-    out["independence_pending"] = (row.flags & 8) != 0;
-    out["stage"] = static_cast<int32_t>(row.stage);
-    return out;
+    return result;
 }
 
 bool NativeEconomyRuntime::apply_mobilization_result(

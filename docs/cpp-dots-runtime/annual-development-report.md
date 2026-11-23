@@ -37,9 +37,12 @@ worker 复用 `GRANT_POINTS` 原生命令，reserved producer `0x415250`、稳�
 
 PKSV provider `pkar` schema 1 使用 native `PKAR` 二进制、LE 明确字段序列与 checksum，保存本年、基线、历史、profile、奖励/已阅读状态。与 PKID 在同一安全检查点冻结；旧 manifest 可缺少 pkar。待展示报告通过 native unread id 恢复；正在阅读的界面与原暂停/速度意图记录在 player_view。损坏的 PKAR 拒绝恢复，不静默修复。
 
-`WorldRuntimeHost` 提供只读 status/history/snapshot；`AnnualReportSession` 仅协调提交屏障。`AnnualReportFlow` 负责暂停、与时代/理念/家族选择排序、读取和关闭后的速度恢复。`AnnualReportViewModel` 从冻结快照生成九章、附表和全文。关闭/重看/跳过动效均不触发奖励。报告节点只在主动切年、切章时重建。
+`WorldRuntimeHost` 提供只读 status/history/snapshot；`AnnualReportSession` 仅协调提交屏障。现有 `AnnualReportFlow` 仍在前台安排暂停、与时代/理念/家族选择排序和关闭后的速度恢复。
+自动等待与恢复属于待迁移工作，目标见 [前后台分工](../architecture/design.md#单一时间线与前后台分工)。
+`AnnualReportViewModel` 从冻结快照生成九章、附表和全文。关闭/重看/跳过动效均不触发奖励。报告节点只在主动切年、切章时重建。
 
-**暂停必须走 `sync_ui()`，不能只置 `WorldClock.paused`。** `WorldClock.paused` 只关掉主线程那一台日历；worker 权威下日历跑在原生线程里，它只听 `set_runtime_clock_threaded`，而那条线的唯一上游是 `PlayerController.sync_ui()` → `WorldRuntimeHost.on_clock_running_changed`。别的入口（暂停键、暂停菜单、调速、时代/理念/家族弹窗）都顺路调了 `sync_ui`，年报流程曾经是唯一只改标志位的地方 —— 表现为年鉴摊开、画面静止、年份还在背后往前走。
+现有年报流程用 `WorldClock` 发出暂停或恢复请求。`RuntimeClockBinding` 订阅时钟变化并转发给执行器，
+`sync_ui()` 更新界面。
 
 玩家入口为**左上角日期按钮**，点击查看年度纪事；下方国家事务栏保持原五项。自动报告在年初结算完成后打开。键鼠、原生文本选择、Ctrl+Shift+C 复制全文，PageUp/Down 或手柄肩键切章，右摇杆滚动，Esc/返回合卷。全文包含全部章节、表格、评分与原始定点账目。
 

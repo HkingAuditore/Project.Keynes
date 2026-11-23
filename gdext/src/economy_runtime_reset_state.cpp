@@ -492,12 +492,6 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_country_good_output_factor_q16.clear();
     _epoch_country_good_input_factor_q16.clear();
     _epoch_country_good_consumption_factor_q16.clear();
-    // Per-good trade twins. The country-level `_epoch_country_trade_*` pair
-    // above is not cleared here (pre-existing); these two are, so a reset world
-    // cannot hand a consumer a stale [country][good] row while the country-level
-    // one is rebuilt by the next capture anyway.
-    _epoch_country_good_trade_capacity_factor_q16.clear();
-    _epoch_country_good_trade_speed_factor_q16.clear();
     _epoch_country_resource_use_factor_q16.clear();
     _epoch_country_resource_generation_factor_q16.clear();
     _epoch_country_terrain_sector_output_factor_q16.clear();

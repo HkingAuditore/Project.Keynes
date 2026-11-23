@@ -4,7 +4,6 @@
 
 [resource]
 script = ExtResource("1")
-weather_refresh_auto_stride_by_speed = false
 dynamic_visual_atlas_upload_stride = 8
 native_daily_sim_mode = 2
 native_runtime_graph_mode = 2
@@ -23,7 +22,6 @@ sim_stagger_climate_phase = 1
 sim_stagger_ocean_phase = 0
 sim_stagger_native_environment_phase = 0
 sim_stagger_dynamic_visual_phase = 5
-sim_stagger_weather_phase = 9
 sim_stagger_enum_atlas_phase = 13
 sim_stagger_sea_ice_phase = 6
 season_refresh_period_ticks = 60
@@ -44,6 +42,9 @@ succession_upgrade_days = 200
 weather_field_advect_steps = 4
 weather_condensation_gain = 0.3
 weather_ocean_evap_gain = 0.45
+weather_precip_classify_gate_land = 0.095
+weather_precip_classify_gate_water = 0.076
+weather_field_precip_spatial_smooth = 0.30
 natural_resource_daily_stride = 10
 runtime_hydrology_enabled = true
 demo_thermal_gradient_path = 1

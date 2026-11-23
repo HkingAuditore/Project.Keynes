@@ -11,9 +11,9 @@ extends SceneTree
 ##   godot --headless --path Project/project-keynes \
 ##     -s res://tests/military/military_dossier_test.gd
 
-const DOSSIER_SCENE := preload("res://scenes/ui/military_dossier.tscn")
-const PANEL_SCENE := preload("res://scenes/ui/inspector_panel.tscn")
-const VM_SCRIPT := preload("res://scripts/ui/military_view_model.gd")
+var _dossier_scene: PackedScene
+var _panel_scene: PackedScene
+var _vm_script: GDScript
 
 var _failures := PackedStringArray()
 var _dossier
@@ -57,6 +57,10 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# Load the UI after project startup so the test releases its scene resources at exit.
+	_dossier_scene = load("res://scenes/ui/military_dossier.tscn")
+	_panel_scene = load("res://scenes/ui/inspector_panel.tscn")
+	_vm_script = load("res://scripts/ui/military_view_model.gd")
 	await _test_army_page()
 	await _test_front_page()
 	await _test_panel_integration()
@@ -71,7 +75,7 @@ func _run() -> void:
 
 
 func _spawn_dossier() -> void:
-	_dossier = DOSSIER_SCENE.instantiate()
+	_dossier = _dossier_scene.instantiate()
 	get_root().add_child(_dossier)
 	await process_frame
 
@@ -256,7 +260,7 @@ func _test_front_page() -> void:
 
 
 func _test_panel_integration() -> void:
-	_panel = PANEL_SCENE.instantiate()
+	_panel = _panel_scene.instantiate()
 	get_root().add_child(_panel)
 	await process_frame
 	# InspectorPanel 依赖一大片 UI/经济脚本。别的改动把依赖弄坏时，
@@ -281,11 +285,11 @@ func _test_panel_integration() -> void:
 
 
 func _test_view_model_shapes() -> void:
-	var script: Script = VM_SCRIPT
+	var script: Script = _vm_script
 	if not script.can_instantiate():
 		_expect(false, "military_view_model.gd 未能编译（项目内有脚本报错？）")
 		return
-	var vm = VM_SCRIPT.new()
+	var vm = _vm_script.new()
 	var facade := FakeFacade.new()
 	vm.configure({
 		"military": {

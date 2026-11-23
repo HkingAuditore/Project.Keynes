@@ -103,7 +103,7 @@ static func family_workspace_model(detail: Dictionary) -> Dictionary:
 				"caption": "名下控股建筑规模",
 				"icon": "family.metric.buildings"},
 			{"id": "founded_day", "label": "创立时间",
-				"value": WorldClock.date_text_for_day(int(row.get("founded_day", 0))),
+				"value": "第%d日" % int(row.get("founded_day", 0)),
 				"caption": "威望 %s · 得分 %s" % [_prestige_text(level), _q16_percent_text(prestige_q16)],
 				"icon": "family.metric.time"},
 		],

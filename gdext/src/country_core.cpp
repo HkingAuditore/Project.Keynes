@@ -464,6 +464,7 @@ bool encode_country_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
         append_receipt(out, receipt);
     append_u32(out, static_cast<uint32_t>(checkpoint.compatibility_pkcn.size()));
     out.insert(out.end(), checkpoint.compatibility_pkcn.begin(), checkpoint.compatibility_pkcn.end());
+    out.insert(out.end(), checkpoint.effect_adapter.begin(), checkpoint.effect_adapter.end());
     append_u64(out, country_checkpoint_checksum(out.data(), out.size()));
     return true;
 }
@@ -565,10 +566,7 @@ bool decode_country_core_checkpoint(const uint8_t *bytes, size_t size,
     }
     parsed.compatibility_pkcn.assign(bytes + cursor, bytes + cursor + count);
     cursor += count;
-    if (cursor != size - sizeof(uint64_t)) {
-        error = "country_checkpoint_tail_invalid";
-        return false;
-    }
+    parsed.effect_adapter.assign(bytes + cursor, bytes + size - sizeof(uint64_t));
     parsed.checkpoint_hash = encoded_checksum;
     if (!validate_country_core_checkpoint(parsed, error)) return false;
     out = std::move(parsed);

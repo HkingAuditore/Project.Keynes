@@ -62,14 +62,6 @@ const PAPER_ALIASES := {
 
 # BEGIN GENERATED PAPER ICONS
 const PAPER_TEXTURES := {
-	&"species.horse": preload("res://assets/icons/paper/species_horse.tres"),
-	&"species.sheep": preload("res://assets/icons/paper/species_sheep.tres"),
-	&"species.goat": preload("res://assets/icons/paper/species_goat.tres"),
-	&"species.cattle": preload("res://assets/icons/paper/species_cattle.tres"),
-	&"species.pig": preload("res://assets/icons/paper/species_pig.tres"),
-	&"species.camel": preload("res://assets/icons/paper/species_camel.tres"),
-	&"species.yak": preload("res://assets/icons/paper/species_yak.tres"),
-	&"species.silkworm": preload("res://assets/icons/paper/species_silkworm.tres"),
 	&"good.adobe_brick": preload("res://assets/icons/paper/good_adobe_brick.tres"),
 	&"good.advanced_chips": preload("res://assets/icons/paper/good_advanced_chips.tres"),
 	&"good.agricultural_machinery": preload("res://assets/icons/paper/good_agricultural_machinery.tres"),
@@ -1061,27 +1053,6 @@ const SPECS := {
 
 # Legacy identifiers exist only at this boundary and should not be added to.
 const COMPATIBILITY_ALIASES := {
-	"bio.maize": &"good.corn_grain",
-	"bio.wheat": &"good.wheat_grain",
-	"bio.rice": &"good.rice_grain",
-	"bio.potato": &"good.potatoes",
-	"bio.horse": &"species.horse",
-	"bio.cotton": &"good.cotton_fiber",
-	"bio.flax": &"good.flax_fiber",
-	"bio.spice": &"good.spices",
-	"bio.rubber": &"good.natural_rubber",
-	"bio.sheep": &"species.sheep",
-	"bio.goat": &"species.goat",
-	"bio.cattle": &"species.cattle",
-	"bio.pig": &"species.pig",
-	"bio.camel": &"species.camel",
-	"bio.yak": &"species.yak",
-	"bio.silkworm": &"species.silkworm",
-	"bio.reed": &"good.reed_bundle",
-	"bio.bast_fiber": &"good.bast_fiber",
-	"bio.dye_plant": &"good.dyestuff",
-	"bio.medicinal_herb": &"good.medicinal_herbs",
-
 	"sun": &"climate.sun", "climate": &"climate.sun", "\u263c": &"climate.sun",
 	"moon": &"climate.moon", "day_night": &"climate.moon", "night": &"climate.moon",
 	"overview": &"summary.overview", "summary": &"summary.overview",
@@ -1094,10 +1065,10 @@ const COMPATIBILITY_ALIASES := {
 	"resource": &"economy.resource", "ore": &"economy.resource", "mineral": &"economy.resource",
 	"stone": &"resource.rock", "\u25c6": &"economy.resource", "\u25c7": &"economy.resource",
 	"fuel": &"economy.fuel", "oil": &"economy.fuel", "gas": &"economy.fuel",
-	"crop": &"economy.crop", "grain": &"economy.crop", "wheat": &"good.wheat_grain",
-	"rice": &"good.rice_grain", "corn": &"good.corn_grain", "potato": &"good.potatoes",
-	"soil": &"economy.crop", "cotton": &"good.cotton_fiber", "flax": &"good.flax_fiber",
-	"livestock": &"economy.livestock", "horse": &"species.horse",
+	"crop": &"economy.crop", "grain": &"economy.crop", "wheat": &"economy.crop",
+	"rice": &"economy.crop", "corn": &"economy.crop", "potato": &"economy.crop",
+	"soil": &"economy.crop", "cotton": &"economy.crop", "flax": &"economy.crop",
+	"livestock": &"economy.livestock", "horse": &"economy.livestock",
 	"pasture": &"economy.livestock", "game": &"economy.livestock",
 	"target": &"system.target", "coord": &"system.target", "wind": &"climate.wind",
 	"trend_up": &"trend.up", "up": &"trend.up", "trend_down": &"trend.down",
@@ -1224,24 +1195,11 @@ static func _paper_building_texture(kind: String, product_id: StringName,
 	var cache_key := "%s@%s@%s" % [kind, product_id, base_key]
 	if _paper_building_textures.has(cache_key):
 		return _paper_building_textures[cache_key] as Texture2D
-	# 只在首次显示时合成纸贴；按建筑类型和产物缓存，不进入每日刷新热路径。
-	var canvas := Image.create(128, 128, false, Image.FORMAT_RGBA8)
-	var base := (PAPER_TEXTURES[base_key] as Texture2D).get_image()
-	# 纸贴图集按 VRAM 压缩导入（compress/mode=1）。压缩 Image 上 convert /
-	# resize / blend_rect 全部被引擎拒绝，图层会被静默丢弃并把坏贴图写进缓存，
-	# 必须先解压再合成。
-	if base != null and base.is_compressed():
-		base.decompress()
-	base.convert(Image.FORMAT_RGBA8)
-	base.resize(108, 108, Image.INTERPOLATE_LANCZOS)
-	canvas.blend_rect(base, Rect2i(0, 0, 108, 108), Vector2i.ZERO)
-	var product := texture_for_key(good_semantic(String(product_id))).get_image()
-	if product != null and product.is_compressed():
-		product.decompress()
-	product.convert(Image.FORMAT_RGBA8)
-	product.resize(66, 66, Image.INTERPOLATE_LANCZOS)
-	canvas.blend_rect(product, Rect2i(0, 0, 66, 66), Vector2i(62, 62))
-	var texture := ImageTexture.create_from_image(canvas)
+	var base := PAPER_TEXTURES[base_key] as Texture2D
+	var product := texture_for_key(good_semantic(String(product_id)))
+	var texture := PaperBuildingIcon.compose(base, product)
+	if texture == null:
+		return base
 	_paper_building_textures[cache_key] = texture
 	return texture
 
@@ -1369,15 +1327,6 @@ static func military_semantic(stable_id: String) -> StringName:
 static func good_semantic(stable_id: String) -> StringName:
 	return StringName("good.%s" % stable_id) if GOOD_IDS.has(StringName(stable_id)) \
 		else &"system.unknown"
-
-
-static func resource_semantic(stable_id: String) -> StringName:
-	match stable_id:
-		"timber": return &"resource.wood"
-		"wild_game": return &"resource.animal"
-		"stone": return &"resource.rock"
-	var key := StringName("resource.%s" % stable_id)
-	return key if PAPER_TEXTURES.has(key) else &"economy.resource"
 
 
 static func profession_semantic(stable_id: String) -> StringName:

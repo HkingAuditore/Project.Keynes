@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
+#include "country_api.h"
 #include "country_ai_core.h"
 #include "economy_hash.h"
 #include "runtime_economy_family_side_tables.h"
@@ -7,6 +8,7 @@
 #include <algorithm>
 #include <limits>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
@@ -24,6 +26,8 @@ struct CountryAiShared {
     std::shared_ptr<const std::vector<CountryAiFamilyPreferenceRow>> family_preferences;
     std::vector<CountryAiColonizationIntent> colonization_inbox;
     std::vector<NativeEconomyRuntime::CountryAiColonizationStat> colonization_stats; // sorted by handle
+    // Kept by the economy executor until same-epoch settlement, keyed by submit order.
+    std::unordered_map<uint64_t, std::vector<int32_t>> expedition_visible_cells;
     int64_t receipt_cursor = 0; // last colonization receipt_id scanned
     uint64_t digest_revision = 0;
 };
@@ -38,11 +42,20 @@ NativeEconomyRuntime::~NativeEconomyRuntime() = default;
 
 void NativeEconomyRuntime::reset_country_ai_pending() {
     import_country_ai_pending({}, {}, 0);
+    restore_country_ai_digest(nullptr);
+    _country_ai->expedition_visible_cells.clear();
 }
 
 std::shared_ptr<const CountryAiEconomyDigest> NativeEconomyRuntime::country_ai_digest() const {
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
     return _country_ai->digest;
+}
+
+void NativeEconomyRuntime::restore_country_ai_digest(
+        std::shared_ptr<const CountryAiEconomyDigest> digest) {
+    std::lock_guard<std::mutex> lock(_country_ai->mutex);
+    _country_ai->digest_revision = digest ? digest->revision : 0;
+    _country_ai->digest = std::move(digest);
 }
 
 void NativeEconomyRuntime::set_country_ai_family_preferences(
@@ -77,7 +90,6 @@ void NativeEconomyRuntime::queue_research_procurement_policy(
     update.sequence = sequence;
     std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
     update.order = _procurement_inbox->next_order++;
-    _procurement_inbox->requested_policy[update.country_handle] = update;
     _procurement_inbox->updates.push_back(std::move(update));
 }
 
@@ -105,6 +117,13 @@ void NativeEconomyRuntime::import_country_ai_pending(
 }
 
 namespace {
+
+void fill_colonization_visibility(std::vector<uint8_t> &visible, int32_t cell_count,
+                                  const std::vector<int32_t> &visible_cells) {
+    visible.assign(static_cast<size_t>(cell_count), 0);
+    for (const int32_t cell : visible_cells)
+        if (cell >= 0 && cell < cell_count) visible[static_cast<size_t>(cell)] = 1;
+}
 
 // Caller holds the CountryAiShared mutex. `started` counts queued commands;
 // an execution rejection moves one queued command into `failures`.
@@ -290,6 +309,7 @@ void NativeEconomyRuntime::mark_country_ai_colonization_demand(
 }
 
 void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_index) {
+    _country_ai->expedition_visible_cells.clear();
     std::vector<CountryAiColonizationIntent> intents;
     {
         std::lock_guard<std::mutex> lock(_country_ai->mutex);
@@ -314,20 +334,19 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
     };
     const int32_t cells = _cell_count.get();
     std::vector<uint8_t> visible;
-    for (const CountryAiColonizationIntent &intent : intents) {
+    std::vector<uint64_t> route_hashes;
+    for (auto &intent : intents) {
         if (intent.target_cell < 0 || intent.target_cell >= cells ||
             _country_runtime == nullptr ||
             !country_reads().valid_handle(static_cast<int64_t>(intent.country_handle))) {
             note(intent.country_handle, false);
             continue;
         }
-        visible.assign(static_cast<size_t>(cells), 0);
-        for (const int32_t cell : intent.visible_cells)
-            if (cell >= 0 && cell < cells) visible[static_cast<size_t>(cell)] = 1;
+        fill_colonization_visibility(visible, cells, intent.visible_cells);
         // Vision revision is the intent day so quote tokens are reproducible.
         const Dictionary quotes = family_colonization_quotes(
             static_cast<int64_t>(intent.country_handle), intent.target_cell, 0, -1, 0, 8,
-            visible.data(), cells, static_cast<uint64_t>(intent.day));
+            visible.data(), cells, static_cast<uint64_t>(intent.day), &route_hashes);
         if (!static_cast<bool>(quotes.get("ok", false)) ||
             static_cast<int64_t>(quotes.get("total", 0)) <= 0) {
             note(intent.country_handle, false);
@@ -337,7 +356,6 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
         const PackedInt32Array sources = quotes.get("source_cells", PackedInt32Array());
         const PackedInt64Array maximums = quotes.get("maximum_populations", PackedInt64Array());
         const PackedInt32Array costs = quotes.get("route_costs", PackedInt32Array());
-        const PackedInt64Array tokens = quotes.get("quote_tokens", PackedInt64Array());
         // Quotes are sorted by route cost, which prefers the nearest (often
         // tiniest) branch. Pick the largest viable party so AI colonies can
         // staff kit buildings instead of founding three-person dead ends.
@@ -373,7 +391,6 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
             best_population = population;
             best_cost = cost;
         }
-        bool queued = false;
         if (best_i >= 0) {
             Command command;
             command.opcode = COMMAND_START_FAMILY_EXPEDITION;
@@ -385,18 +402,29 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
             command.i32_0 = sources[best_i];
             command.i32_1 = intent.target_cell;
             command.i64_0 = best_population;
-            command.i64_1 = tokens[best_i];
+            command.i64_1 = static_cast<int64_t>(intent.country_handle);
+            command.expedition_route_hash = route_hashes[best_i];
             command.submit_order = _next_submit_order++;
+            _country_ai->expedition_visible_cells.emplace(command.submit_order,
+                std::move(intent.visible_cells));
             _pending_commands.push_back(command);
-            queued = true;
         }
-        note(intent.country_handle, queued);
+        note(intent.country_handle, best_i >= 0);
     }
     if (deltas.empty()) return;
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
     for (const CountryAiColonizationStat &d : deltas)
         add_colonization_stat(_country_ai->colonization_stats, d.country_handle,
                               static_cast<int32_t>(d.started), static_cast<int32_t>(d.failures));
+}
+
+bool NativeEconomyRuntime::apply_queued_family_expedition_start(
+        const Command &cmd, std::string &error) {
+    const auto ai_sight = _country_ai->expedition_visible_cells.extract(cmd.submit_order);
+    if (ai_sight.empty()) return apply_start_family_expedition(cmd, error);
+    std::vector<uint8_t> visible;
+    fill_colonization_visibility(visible, _cell_count.get(), ai_sight.mapped());
+    return apply_start_family_expedition(cmd, error, visible.data(), _cell_count.get());
 }
 
 int32_t NativeEconomyRuntime::family_founding_ai_choice(const FamilyFoundingOffer &offer) const {

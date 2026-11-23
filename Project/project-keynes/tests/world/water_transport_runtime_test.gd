@@ -81,7 +81,7 @@ func _run_strait_requires_shallow_sea(catalog: Dictionary) -> void:
 		bool(blocked.get("ok", false)) and int(blocked.get("total", -1)) == 0)
 
 	var shallow := _make_world(catalog, 240803, 3,
-		PackedStringArray(["tech.military.coastal_transport"]),
+		PackedStringArray(["tech.celestial_navigation"]),
 		PackedByteArray([0, 1, 0]), PackedInt32Array([0]),
 		PackedByteArray([2, 2, 2]), landform, PackedByteArray())
 	if shallow.is_empty():
@@ -111,13 +111,13 @@ func _run_nested_sea_classes(catalog: Dictionary) -> void:
 	var coast_landform := PackedByteArray([
 		LandformType.LF.PLAIN, LandformType.LF.COAST, LandformType.LF.PLAIN])
 	_expect("shallow tech cannot enter far ocean",
-		_quote_total(catalog, 240804, PackedStringArray(["tech.military.coastal_transport"]),
+		_quote_total(catalog, 240804, PackedStringArray(["tech.celestial_navigation"]),
 			far_landform) == 0)
 	_expect("far-sea tech crosses OCEAN",
-		_quote_total(catalog, 240805, PackedStringArray(["tech.celestial_navigation"]),
+		_quote_total(catalog, 240805, PackedStringArray(["tech.oceanic_navigation"]),
 			far_landform) == 1)
 	_expect("far-sea tech still cannot enter DEEP_OCEAN",
-		_quote_total(catalog, 240806, PackedStringArray(["tech.celestial_navigation"]),
+		_quote_total(catalog, 240806, PackedStringArray(["tech.oceanic_navigation"]),
 			deep_landform) == 0)
 	_expect("deep-sea tech crosses DEEP_OCEAN",
 		_quote_total(catalog, 240807, PackedStringArray(["tech.oceanic_ship_design"]),
@@ -136,7 +136,7 @@ func _run_lake_and_river(catalog: Dictionary) -> void:
 		_quote_total(catalog, 240810, PackedStringArray(["tech.river_transport"]),
 			lake) == 1)
 	_expect("shallow-sea tech also crosses lakes",
-		_quote_total(catalog, 240811, PackedStringArray(["tech.military.coastal_transport"]),
+		_quote_total(catalog, 240811, PackedStringArray(["tech.celestial_navigation"]),
 			lake) == 1)
 
 	var dry := _make_world(catalog, 240812, 2, PackedStringArray(),
@@ -178,7 +178,7 @@ func _run_water_target_rejected(catalog: Dictionary) -> void:
 	var landform := PackedByteArray([
 		LandformType.LF.PLAIN, LandformType.LF.COAST, LandformType.LF.PLAIN])
 	var world := _make_world(catalog, 240815, 3,
-		PackedStringArray(["tech.military.coastal_transport"]),
+		PackedStringArray(["tech.celestial_navigation"]),
 		PackedByteArray([0, 1, 0]), PackedInt32Array([0]),
 		PackedByteArray([2, 2, 2]), landform, PackedByteArray())
 	if world.is_empty():
@@ -593,7 +593,6 @@ func _line_neighbors(cells: int) -> PackedInt32Array:
 func _tech_ids_except_water(catalog: Dictionary) -> PackedStringArray:
 	var exclude := {
 		"tech.river_transport": true,
-		"tech.military.coastal_transport": true,
 		"tech.celestial_navigation": true,
 		"tech.oceanic_navigation": true,
 		"tech.oceanic_ship_design": true,

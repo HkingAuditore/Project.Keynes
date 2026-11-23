@@ -148,6 +148,65 @@ static bool psi_alias(bool all_land) {
 }
 
 #ifdef PK_TEST_CLIMATE_WORKER
+static bool ocean_land_inflow() {
+    using namespace pk::pk_async_climate;
+    constexpr float full_inflow = 0.0056f;
+    const uint8_t water[] = {0, 1, 1};
+    const float x[] = {0.0f, -1.0f, 0.0f};
+    const float y[] = {0.0f, 0.0f, -1.0f};
+    const int32_t neighbors[] = {1, 2, -1, -1, -1, -1};
+    OceanLandKnobs knobs;
+    knobs.n_cells = 3;
+    knobs.end_idx = 1;
+    knobs.effective_leak = 0.5f;
+    knobs.tta_blend_rate = 0.5f;
+    knobs.tta_decay_rate = 0.25f;
+
+    struct Result { float transport; float ocean; };
+    const auto run = [&](float shoreward, float prev, float background,
+                         float second_shoreward = 0.0f) {
+        // Tangential flow keeps both neighbors above the speed floor even at zero projection.
+        const float current_x[] = {0.0f, shoreward, 0.005f};
+        const float current_y[] = {0.0f, 0.005f, second_shoreward};
+        float transport[] = {prev, -0.125f, -0.25f};
+        float ocean[] = {background, 0.0f, 0.0f};
+        ocean_land_pure(knobs, {water, x, y, current_x, current_y, neighbors, transport, ocean});
+        return Result{transport[0], ocean[0]};
+    };
+
+    const Result tiny = run(1e-10f, 0.0f, 0.0f);
+    CHECK(tiny.transport < 0.0f && tiny.transport > -1e-8f);
+    CHECK(tiny.ocean == tiny.transport);
+
+    constexpr float previous = 0.03125f;
+    constexpr float background = 0.0625f;
+    for (float shoreward : {0.0f, -1e-10f, -0.02f}) {
+        const Result no_inflow = run(shoreward, previous, background);
+        CHECK(no_inflow.transport == 0.0234375f && no_inflow.ocean == 0.08f);
+    }
+    const Result tiny_with_memory = run(1e-10f, previous, background);
+    CHECK(tiny_with_memory.transport == 0.0234375f && tiny_with_memory.ocean == 0.08f);
+
+    // Scaling the full single-neighbor result (-1/32) also scales its ocean term
+    // on both sides of the old 1e-5 write cutoff.
+    for (float divisor : {4096.0f, 2048.0f}) {
+        const Result weak = run(full_inflow / divisor, 0.0f, 0.0f);
+        CHECK(weak.transport == -0.03125f / divisor && weak.ocean == weak.transport);
+    }
+    const Result half = run(full_inflow / 2.0f, previous, background);
+    CHECK(half.transport == (0.0234375f - 0.015625f) * 0.5f);
+    CHECK(half.ocean == (0.08f + 0.046875f) * 0.5f);
+
+    for (float shoreward : {full_inflow, 0.02f}) {
+        const Result full = run(shoreward, previous, background);
+        CHECK(full.transport == -0.015625f && full.ocean == 0.046875f);
+    }
+    // Two individually weak flows reach full transfer together, with both sources weighted in.
+    const Result combined = run(full_inflow / 2.0f, 0.0f, 0.0f, full_inflow / 2.0f);
+    CHECK(combined.transport == -0.046875f && combined.ocean == combined.transport);
+    return true;
+}
+
 static bool validate_large_environment() {
     constexpr int cells = 4097;
     pk::RuntimeEnvironmentSnapshot input;
@@ -265,15 +324,78 @@ static bool worker_progress(bool all_land) {
 }
 #endif
 
+static bool frontal_precipitation_requires_support() {
+    const float temp[] = {0.65f, 0.30f};
+    const float anomaly[] = {0.0f, 0.0f};
+    const int32_t neighbors[] = {1, -1, -1, -1, -1, -1};
+    float cloud = 0.0f, precip = 0.0f, instability = 0.0f, intensity = 0.0f;
+    uint8_t type = 0;
+    pk::wf_apply_frontal_convergence_boost_idx(0, temp, anomaly, neighbors,
+        0.0f, 1.0f, temp[0], 0.15f, 0.0f, 0.0f, true, 0.076f,
+        cloud, precip, instability, type, intensity);
+    CHECK(cloud > 0.4f && precip == 0.0f && type == 0);
+    pk::wf_apply_frontal_convergence_boost_idx(0, temp, anomaly, neighbors,
+        0.0f, 1.0f, temp[0], 0.40f, 0.0f, 0.20f, true, 0.076f,
+        cloud, precip, instability, type, intensity);
+    CHECK(precip > 0.076f && type == 1);
+    return true;
+}
+
+#ifdef PK_TEST_CLIMATE_WORKER
+static bool dry_cyclone_does_not_override_weather_type() {
+    using namespace pk::pk_async_climate;
+    WeatherFieldKnobs knobs;
+    knobs.n_cells = 1;
+    knobs.use_next_outputs = true;
+    knobs.classify_gate_water = 0.076f;
+    const float temp = 0.62f, zero = 0.0f, wind = 1.0f;
+    const uint8_t ocean = 0, empty = 0;
+    const int32_t neighbors[] = {-1, -1, -1, -1, -1, -1};
+    float vapor = -1.0f, cloud = -1.0f, precip = -1.0f;
+    float instability = -1.0f, intensity = -1.0f, convergence = -1.0f;
+    int32_t type = -1;
+    WeatherFieldLanes lanes;
+    lanes.temp_read = &temp;
+    lanes.moisture_read = lanes.air_anomaly = &zero;
+    lanes.wind_x = lanes.wind_speed = &wind;
+    lanes.wind_y = &zero;
+    lanes.terrain = &ocean;
+    lanes.has_river = lanes.vegetation = &empty;
+    lanes.elevation = lanes.pos_x = lanes.pos_y = &zero;
+    lanes.neighbor_indices = neighbors;
+    lanes.prev_vapor = lanes.prev_precip = lanes.temp_transport_anomaly = &zero;
+    lanes.prev_convergence = lanes.prev_cloud = &zero;
+    lanes.out_vapor = &vapor;
+    lanes.out_cloud = &cloud;
+    lanes.out_precip = &precip;
+    lanes.out_instability = &instability;
+    lanes.out_intensity = &intensity;
+    lanes.out_convergence = &convergence;
+    lanes.out_type_i32 = &type;
+    const uint32_t tag = 3;
+    const float lift = 0.65f;
+    WeatherFieldState state;
+    state.cyclone_tag = &tag;
+    state.cyclone_tag_count = 1;
+    state.cyclone_generation = tag;
+    state.cyclone_lift = &lift;
+    state.cyclone_x = state.cyclone_y = &zero;
+    weather_field_solve_pure(knobs, lanes, state, 0, 1);
+    CHECK(type == 0 && precip == 0.0f);
+    return true;
+}
+#endif
+
 int main() {
     std::string error;
     if (!self_test(error)) { std::fprintf(stderr, "%s\n", error.c_str()); return 1; }
 #ifdef PK_TEST_CLIMATE_WORKER
-    if (!validate_large_environment()) return 1;
+    if (!validate_large_environment() || !dry_cyclone_does_not_override_weather_type()) return 1;
 #endif
-    if (!state_roundtrip() || !forcing_and_divergence() || !psi_alias(false) || !psi_alias(true)) return 1;
+    if (!state_roundtrip() || !forcing_and_divergence() || !psi_alias(false) ||
+        !psi_alias(true) || !frontal_precipitation_requires_support()) return 1;
 #ifdef PK_TEST_CLIMATE_WORKER
-    if (!worker_progress(false) || !worker_progress(true)) return 1;
+    if (!ocean_land_inflow() || !worker_progress(false) || !worker_progress(true)) return 1;
 #endif
     std::puts("PASS climate physics focused tests");
     return 0;

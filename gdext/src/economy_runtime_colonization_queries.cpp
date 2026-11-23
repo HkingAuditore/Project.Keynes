@@ -27,7 +27,8 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         int64_t country_handle_value, int32_t target_cell,
         int64_t family_filter_value, int32_t source_filter, int32_t offset,
         int32_t limit, const uint8_t *visible, int32_t visible_count,
-        uint64_t vision_revision) {
+        uint64_t vision_revision, std::vector<uint64_t> *route_hashes) {
+    if (route_hashes != nullptr) route_hashes->clear();
     const auto started = std::chrono::steady_clock::now();
     Dictionary out;
     const uint64_t country_handle = static_cast<uint64_t>(country_handle_value);
@@ -177,7 +178,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         dest_kit_identity = dest_preview.dest_identity;
     }
     struct Candidate { uint64_t family; int32_t source; int64_t maximum;
-        int32_t cost; int32_t days; uint64_t token; };
+        int32_t cost; int32_t days; uint64_t token; uint64_t route_hash; };
     std::vector<Candidate> candidates;
     // One emitter for both kinds of party: a family branch (family_handle != 0)
     // and a plain settler caravan (family_handle == 0). The route, token and
@@ -224,8 +225,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             token = trace_hash_mix(token, value);
         token &= 0x7fffffffffffffffULL;
         if (token == 0) token = 1;
-        if (_colonization_quote_cache.size() >= COLONIZATION_QUOTE_CACHE_LIMIT &&
-            !has_pending_family_expedition_player_command()) {
+        if (_colonization_quote_cache.size() >= COLONIZATION_QUOTE_CACHE_LIMIT) {
             _colonization_quote_cache.clear();
             _colonization_quote_index.clear();
             _colonization_quote_route_cells.clear();
@@ -260,7 +260,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             _colonization_quote_cache[existing->second] = entry;
         }
         candidates.push_back({family_handle, source,
-            maximum_population, entry.route_cost, entry.travel_days, token});
+            maximum_population, entry.route_cost, entry.travel_days, token, route_hash});
     };
     for (const int32_t source : reached_sources) {
         if (source == target_cell) continue;
@@ -322,6 +322,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             ? anonymous_population_in_cell(candidates[i].source) : 0);
         costs.push_back(candidates[i].cost); days.push_back(candidates[i].days);
         tokens.push_back(static_cast<int64_t>(candidates[i].token));
+        if (route_hashes != nullptr) route_hashes->push_back(candidates[i].route_hash);
     }
     out["ok"] = true; out["target_cell"] = target_cell;
     fill_colonization_query_flags(out);
@@ -556,8 +557,6 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     int64_t bridge_missing = 0;
     int64_t material_required = 0;
     int64_t material_missing = 0;
-    // Per-good difference the departure gate still has to buy (see TOPUP).
-    int64_t topup_missing = 0;
     String blocker;
     if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING) {
         bridge_required = family_expeditions_store().kit_bridge_required_units[
@@ -625,39 +624,9 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                     std::max<int64_t>(1, material_required),
                     std::max<int64_t>(0, kit.material_missing_units)));
             }
-            // Progress meters pool cargo per category, so their totals can read
-            // complete while the live plan still misses one specific good (a
-            // substitute moved, or the frozen denominator is older than the
-            // plan). The departure gate buys that per-good difference, so READY
-            // must not be claimed while a top-up line is still unbought.
-            int64_t topup_saturation = 0;
-            for (size_t i = 0; i < kit.cargo.size(); ++i) {
-                const FamilyExpeditionCargoLine &line = kit.cargo[i];
-                bool seen = false;
-                for (size_t j = 0; j < i && !seen; ++j)
-                    seen = kit.cargo[j].good_id == line.good_id &&
-                        kit.cargo[j].flags == line.flags;
-                if (seen) continue;
-                int64_t required = 0;
-                for (const FamilyExpeditionCargoLine &row : kit.cargo)
-                    if (row.good_id == line.good_id && row.flags == line.flags)
-                        required = saturating_add(required, row.quantity,
-                            topup_saturation);
-                int64_t held = 0;
-                for (uint32_t k = cargo_begin; k < cargo_end; ++k) {
-                    const FamilyExpeditionCargoLine &row =
-                        family_expedition_cargo()[k];
-                    if (row.good_id == line.good_id && row.flags == line.flags)
-                        held = saturating_add(held, row.quantity,
-                            topup_saturation);
-                }
-                if (required > held)
-                    topup_missing = saturating_add(topup_missing,
-                        required - held, topup_saturation);
-            }
             // One reason, ordered by how final it is: an unreachable material
             // ends the preparation, an empty plan is a target problem, and the
-            // shortfalls are the ordinary day-by-day stockpiling states.
+            // two shortfalls are the ordinary day-by-day stockpiling states.
             if (kit.kit_unbuildable != 0)
                 blocker = "UNBUILDABLE";
             else if (material_missing > 0)
@@ -668,8 +637,6 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                 blocker = "BRIDGE";
             else if (!launchable)
                 blocker = "INCOMPLETE";
-            else if (topup_missing > 0)
-                blocker = "TOPUP";
             else
                 blocker = "READY";
         }
@@ -678,7 +645,6 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     out["kit_bridge_missing_units"] = bridge_missing;
     out["kit_material_required_units"] = material_required;
     out["kit_material_missing_units"] = material_missing;
-    out["kit_topup_missing_units"] = topup_missing;
     out["kit_blocker"] = blocker;
     const FamilyExpeditionProcurementContinuation &procurement =
         _family_expedition_procurement_continuation;

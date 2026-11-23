@@ -1,4 +1,5 @@
 #include "trigger_runtime.h"
+#include "runtime_trigger_conditions.h"
 #include "effect_runtime.h"
 #include "economy_api.h"
 #include "ideology_runtime.h"
@@ -891,38 +892,23 @@ bool TriggerRuntime::evaluate_conditions(const Definition &definition,
                                          int64_t new_level) const {
     if (definition.condition_count == 0)
         return new_level > old_level;
-    bool stack[MAX_CONDITION_OPS] = {};
-    int32_t depth = 0;
-    for (int32_t i = 0; i < definition.condition_count; ++i) {
-        const int32_t op = _condition_ops[definition.condition_begin + i];
-        if (op >= PUSH_TRUE && op <= PUSH_NOT_COMPLETED) {
-            if (depth >= MAX_CONDITION_OPS) return false;
-            bool value = false;
-            switch (op) {
+    const auto operation = [&](size_t index) {
+        return static_cast<RuntimeTriggerConditionOp>(_condition_ops[definition.condition_begin + index]);
+    };
+    return evaluate_trigger_conditions<MAX_CONDITION_OPS>(definition.condition_count, operation,
+        [&](size_t index, bool &value) {
+            switch (static_cast<int32_t>(operation(index))) {
                 case PUSH_TRUE: value = true; break;
                 case PUSH_ACC_GTE: value = new_value >= definition.threshold; break;
                 case PUSH_CROSSING: value = new_level > old_level; break;
                 case PUSH_LEVEL_CHANGE: value = new_level != old_level; break;
                 case PUSH_COOLDOWN_READY:
                     value = _current_day >= _state.cooldown_until[state_index]; break;
-                case PUSH_NOT_COMPLETED:
-                    value = _state.completed[state_index] == 0; break;
-                default: break;
+                case PUSH_NOT_COMPLETED: value = _state.completed[state_index] == 0; break;
+                default: return false;
             }
-            stack[depth++] = value;
-        } else if (op == BOOL_NOT) {
-            if (depth < 1) return false;
-            stack[depth - 1] = !stack[depth - 1];
-        } else if (op == BOOL_AND || op == BOOL_OR) {
-            if (depth < 2) return false;
-            const bool right = stack[--depth];
-            const bool left = stack[depth - 1];
-            stack[depth - 1] = op == BOOL_AND ? left && right : left || right;
-        } else {
-            return false;
-        }
-    }
-    return depth == 1 && stack[0];
+            return true;
+        });
 }
 
 int64_t TriggerRuntime::fire_count_for(const Definition &definition,

@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -160,7 +161,7 @@ static bool _demo_complex_kernel_pure(int grid_w, int grid_h,
     double kernel_sum = 0.0;
     for (int dy = -kr; dy <= kr; ++dy) {
         for (int dx = -kr; dx <= kr; ++dx) {
-            const double w = std::exp(-(double)(dx*dx + dy*dy) * 0.5);
+            const double w = simulation_math::exp(-(double)(dx*dx + dy*dy) * 0.5);
             kernel[(dy+kr)*ksz + (dx+kr)] = w;
             kernel_sum += w;
         }
@@ -214,8 +215,8 @@ static bool _demo_complex_kernel_pure(int grid_w, int grid_h,
                 const double gy = (S[row_s + xw] + 2.0*S[row_s + x ] + S[row_s + xe]
                                   - S[row_n + xw] - 2.0*S[row_n + x ] - S[row_n + xe]) * 0.125;
 
-                const double cs = std::cos(rot_rad);
-                const double sn = std::sin(rot_rad);
+                const double cs = simulation_math::cos(rot_rad);
+                const double sn = simulation_math::sin(rot_rad);
                 const double gx_p = gx * cs - gy * sn;
                 const double gy_p = gx * sn + gy * cs;
 
