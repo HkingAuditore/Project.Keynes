@@ -1,0 +1,89 @@
+{
+  "protocol": "coast-pan-v1",
+  "source_commit": "0fae578384cd1805945d10259f3f7bcf24e1409e",
+  "date": "2026-11-23",
+  "godot": "4.6.3",
+  "conditions": {
+    "adapter": "Apple A18 GPU (Apple9)",
+    "driver": "metal",
+    "window_px": [
+      1950,
+      1170
+    ],
+    "refresh_hz": 60.0,
+    "vsync": 1,
+    "engine_max_fps": 0,
+    "explored_land_water_fractions": [
+      [
+        0.377011507749557,
+        0.464367806911469
+      ],
+      [
+        0.388505756855011,
+        0.505747139453888
+      ],
+      [
+        0.429885059595108,
+        0.489655166864395
+      ],
+      [
+        0.443678170442581,
+        0.452873557806015
+      ],
+      [
+        0.425287365913391,
+        0.436781615018845
+      ]
+    ],
+    "platform": "iOS",
+    "device": "iphone-16e",
+    "build": "release",
+    "screen_px": [
+      2532,
+      1170
+    ]
+  },
+  "measurements": {
+    "full": {
+      "draw_callback_ms": {
+        "samples": 480,
+        "p95_ms": 17.152,
+        "above_25_ms": 0
+      },
+      "gpu_work_ms": {
+        "samples": 110,
+        "p95_ms": 17.056209,
+        "above_25_ms": 0
+      },
+      "display_intervals_ms": {
+        "samples": 109,
+        "p95_ms": 16.673542,
+        "above_25_ms": 0
+      }
+    },
+    "without_water": {
+      "draw_callback_ms": {
+        "samples": 480,
+        "p95_ms": 19.29,
+        "above_25_ms": 1
+      },
+      "gpu_work_ms": {
+        "samples": 110,
+        "p95_ms": 14.333082,
+        "above_25_ms": 0
+      },
+      "display_intervals_ms": {
+        "samples": 109,
+        "p95_ms": 16.671625,
+        "above_25_ms": 0
+      }
+    }
+  },
+  "model": "iPhone 16e",
+  "arm_sha256": [
+    "46cdf7f119b8941ce15d65e3c42cdb0a5a5b07fdeaf17aaddf67c0434f85db08",
+    "4c3c2e879f57d798617231f6977d876bad7e1a8fc426a5bc247915ff26701617",
+    "4ffabee0a38687ad4e770f7b25a625b5791a3ef82b4a00774103e4333da1c147",
+    "864d08064e63585e9d7ba591ce6968f3ffd0198dde0c113f055a65207c7957be"
+  ]
+}
