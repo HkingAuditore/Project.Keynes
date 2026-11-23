@@ -3,6 +3,7 @@ extends SceneTree
 ## Checks the Issue #54 map, visibility cases and benchmark settings.
 ## --explored prepares exploration memory with fog still enabled.
 ## --fog-off selects the separate diagnostic. --measure runs the actual player scene.
+## --check-exit runs that scene and checks teardown without taking draw samples.
 const GraphicsQualitySettings = preload("res://scripts/game/graphics_quality_settings.gd")
 const DrawCapture = preload("res://tests/rendering/mobile_terrain_draw_capture.gd")
 const ResourceGeometry = preload("res://scripts/rendering/resource_visual_geometry.gd")
@@ -28,13 +29,19 @@ func _run() -> void:
 	var fog_enabled := not args.has("--fog-off")
 	var explored_fixture := args.has("--explored")
 	var measure := args.has("--measure")
+	var check_exit := args.has("--check-exit")
+	var use_player_scene := measure or check_exit
 	var omitted_layer := ""
 	if explored_fixture and not fog_enabled:
 		push_error("--explored requires fog. Run --fog-off separately.")
 		quit(1)
 		return
+	if measure and check_exit:
+		push_error("Run --measure and --check-exit separately.")
+		quit(1)
+		return
 	for arg in args:
-		if arg in ["--explored", "--fog-off", "--measure"]:
+		if arg in ["--explored", "--fog-off", "--measure", "--check-exit"]:
 			continue
 		var layer := arg.trim_prefix("--omit-")
 		if not measure or not omitted_layer.is_empty() or not arg.begins_with("--omit-") \
@@ -77,7 +84,7 @@ func _run() -> void:
 	var game: PlayerGame
 	var clock: WorldClock
 	var host: WorldRuntimeHost
-	if measure:
+	if use_player_scene:
 		game = await DrawCapture.open_game(self, config)
 		_check(game != null, "formal new game accepts the benchmark config")
 		if game == null:
@@ -144,6 +151,9 @@ func _run() -> void:
 		[scene, host.last_seed(), MAP_SIZE, countries.size(), host.is_fog_of_war_enabled(),
 			map.explored_arr.count(1), map.visible_arr.count(1), remembered_land, map.is_water_arr.count(0)])
 
+	var font_probes: Array[WeakRef] = []
+	if check_exit:
+		font_probes = _probe_cached_fonts()
 	var closed := await host.close_world()
 	_check(closed.ok, "formal session closes")
 	if game != null:
@@ -152,10 +162,25 @@ func _run() -> void:
 		host.queue_free()
 		clock.queue_free()
 	await process_frame
-	if not measure:
+	if use_player_scene:
+		_check(not is_instance_valid(game), "player scene is released before font cleanup")
+		# Godot 4.6.3 cleans the text server before releasing script statics.
+		UITokens.release_cached_fonts()
+		for font_ref in font_probes:
+			_check(font_ref.get_ref() == null, "cached UI font is released before engine cleanup")
+	else:
 		await _check_vegetation_omission()
 	print("mobile terrain baseline: %d checks, %d failures" % [_checks, _failures])
 	quit(int(_failures != 0))
+
+
+func _probe_cached_fonts() -> Array[WeakRef]:
+	var probes: Array[WeakRef] = []
+	for font: Font in [UITokens.dossier_font("sans"), UITokens.annual_font("label")]:
+		var size := font.get_string_size("粮食", HORIZONTAL_ALIGNMENT_LEFT, -1, 18)
+		_check(size.x > 0, "cached UI font shapes a line before cleanup")
+		probes.append(weakref(font))
+	return probes
 
 
 func _prepare_explored_map(host: WorldRuntimeHost, map: MapData) -> void:

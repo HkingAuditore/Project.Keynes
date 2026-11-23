@@ -5,113 +5,136 @@
 
 ## 移动低档大片地形慢帧复测（#54，2026-11-23）
 
-本次改动准备了复测场景、采样和验收工具。#54 的瓶颈定位和性能验收仍待实测，工单应保持打开。
+在提交 `0fae578384cd1805945d10259f3f7bcf24e1409e` 上取得桌面移动渲染基线。
+等画质优化、交替复测和真机验收继续由 [#54](https://github.com/hrhgit/Project.Keynes/issues/54) 跟踪。
 
-复测起点为 `7ebdf9d20`，与本机记录的 `fork/master` 一致。GitHub 域名解析失败，远端最新提交待核对。
-历史参考 `7ca1ca31a` 的两份原始日志均为六国、关闭迷雾。Apple M2、Godot 4.6.3、
-Metal Mobile、1600×960 窗口、种子 20260718、60×40、1 倍速，日志报告 VSync 和引擎限帧关闭。
+### 采样条件和证据
 
-| 历史桌面移动低档诊断 | 陆水绘制尺寸 | 样本数 | 平均帧/秒 | 帧间隔 P95 |
+解锁的 macOS 桌面，Apple M2、Godot 4.6.3、Metal Mobile 低档、60 Hz 显示器。
+固定种子 20260718，60×40 格、四国、1 倍速，采样时暂停日期。两个场景均开启迷雾。
+开局与大片已探索场景的采样日分别为 0 和 3。16 段的镜头中心和缩放一致。
+窗口和植被均为 1600×960，迷雾为 800×480。100% 陆水为 1600×960，75% 为 1200×720，
+少 43.75% 的陆水像素。引擎限帧读数为 0，垂直同步模式读数为 0，实际呈现仍接近 60 Hz。
+
+[可移植采样数据](evidence/mobile-terrain-aqua-0fae5783.json) 保存采样版本、原生库校验值、
+时间窗和进程号、观测计数、均值、中位数和 P95。来源为本机
+`54-aqua-20261123-114851` 的 `captures.jsonl`、`environment-check.csv` 和八份 `*-timings.json`。
+逐段核对了进程号、配置、时间窗、应用帧数、呈现请求数和等待事件数。原始系统跟踪保存在采集机。
+
+- **应用间隔**是 Godot 绘制结束回调之间的时间。每段预热 60 帧，采 240 帧，共 3,840 帧。
+  每段也有 240 个窗口绘制 CPU 样本，75% 另有 240 个陆水子视口 CPU 样本。100% 在窗口绘制陆水。
+  这些计时由 Godot 的视口统计给出。实际绘制尺寸来自计时结束后的图像读回。
+- **GPU 工作**按目标 Godot 进程的呈现请求找到对应的 Metal 帧，合并该帧相互重叠的活跃区间。
+  统计包括采样窗口边界之后完成的已归属工作。每段 239–241 个不同的请求帧全部取得 GPU 计时，
+  共 3,840 个。未映射请求及缺少活跃区间的请求帧均为 0。Godot 自带的 Metal GPU 计时为 0 个样本。
+- **实际呈现间隔**来自目标进程带正间隔的已呈现回调。每段 238–240 个间隔，共 3,835 个。
+  所有段的 P95 约 16.67 ms。呈现请求、应用间隔和已呈现回调各自按观测计数。
+- **等待 drawable**按进程记录每条取得可绘制缓冲前的等待事件。每段 230–240 条，共 3,788 条。
+  缺少事件的帧没有填入零，事件也未逐帧配对。等待可能与其他帧的 GPU 工作重叠，两个计时不能相加。
+
+### 实测结果
+
+每行各采一次，时间均为 ms。等待列的样本单位是事件，GPU 列的样本单位是提交帧。
+应用 P95 的样本单位是绘制结束回调间隔。呈现数只含带有效间隔的已呈现回调。
+
+| 场景 | 陆水比例 | 省略层 | 应用 FPS / P95 | 窗口 / 陆水视口 CPU 均值 | GPU 均值 / 帧数 | 等待均值 / 事件数 | 呈现间隔数 |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 开局 | 100% | 无 | 59.00 / 18.66 | 0.465 / — | 10.077 / 241 | 9.829 / 232 | 238 |
+| 开局 | 100% | 陆地 | 60.01 / 19.94 | 0.498 / — | 9.055 / 240 | 9.384 / 239 | 240 |
+| 开局 | 100% | 水面 | 60.00 / 17.88 | 0.495 / — | 9.491 / 240 | 9.781 / 240 | 240 |
+| 开局 | 100% | 植被 | 58.28 / 17.92 | 0.413 / — | 9.947 / 239 | 10.446 / 237 | 238 |
+| 开局 | 75% | 无 | 59.01 / 19.54 | 0.457 / 0.054 | 7.937 / 240 | 9.593 / 239 | 240 |
+| 开局 | 75% | 陆地 | 58.86 / 19.29 | 0.429 / 0.047 | 9.813 / 241 | 9.454 / 230 | 240 |
+| 开局 | 75% | 水面 | 58.29 / 23.63 | 0.431 / 0.047 | 8.082 / 240 | 9.400 / 237 | 240 |
+| 开局 | 75% | 植被 | 60.09 / 18.31 | 0.412 / 0.051 | 9.872 / 239 | 9.433 / 240 | 240 |
+| 大片已探索 | 100% | 无 | 60.01 / 18.17 | 0.481 / — | 9.617 / 240 | 10.167 / 240 | 240 |
+| 大片已探索 | 100% | 陆地 | 59.27 / 17.91 | 0.509 / — | 9.765 / 240 | 10.065 / 231 | 240 |
+| 大片已探索 | 100% | 水面 | 59.99 / 18.22 | 0.497 / — | 8.797 / 240 | 9.701 / 239 | 240 |
+| 大片已探索 | 100% | 植被 | 56.06 / 18.84 | 0.392 / — | 9.328 / 239 | 9.158 / 230 | 239 |
+| 大片已探索 | 75% | 无 | 60.03 / 18.02 | 0.470 / 0.048 | 9.384 / 240 | 9.805 / 240 | 240 |
+| 大片已探索 | 75% | 陆地 | 60.00 / 17.49 | 0.458 / 0.044 | 10.711 / 240 | 10.071 / 240 | 240 |
+| 大片已探索 | 75% | 水面 | 60.01 / 21.45 | 0.481 / 0.088 | 9.118 / 240 | 9.432 / 238 | 240 |
+| 大片已探索 | 75% | 植被 | 59.96 / 19.59 | 0.356 / 0.051 | 8.073 / 241 | 9.636 / 236 | 240 |
+
+同场景、同尺寸下用完整绘制均值减去省略组均值。下表每格为 CPU / GPU 差值，单位 ms。
+GPU 是目标进程整帧的差值，CPU 取对应图层所在视口。负数表示该次省略组更慢。
+省略植被包括散布植被、投影、资源植物批次和共享地被。各组仍运行图层更新和迷雾。
+
+| 场景 | 陆水比例 | 陆地 | 水面 | 植被 |
 | --- | ---: | ---: | ---: | ---: |
-| 100% | 1600×960 | 721 | 60.0 | 19.70 ms |
-| 75% | 1200×720 | 720 | 60.0 | 19.74 ms |
+| 开局 | 100% | −0.033 / +1.022 | −0.030 / +0.586 | +0.053 / +0.130 |
+| 开局 | 75% | +0.007 / −1.876 | +0.007 / −0.145 | +0.045 / −1.935 |
+| 大片已探索 | 100% | −0.029 / −0.148 | −0.016 / +0.820 | +0.088 / +0.289 |
+| 大片已探索 | 75% | +0.004 / −1.327 | −0.041 / +0.266 | +0.114 / +1.311 |
 
-历史样本是游戏循环间隔。把陆水放到子视口的试验也经过窗口呈现，无法单独估算呈现等待和 GPU 耗时。
-Godot 的关闭垂直同步参数仍受驱动限制。[Godot 命令行说明](https://docs.godotengine.org/en/4.6/tutorials/editor/command_line_tutorial.html)
-原始记录在 `/tmp/keynes-perf.sVCEH5/visibleLow100.log` 和 `visibleLow75.log`。
+完整绘制从 100% 切到 75%，开局 GPU 均值少 2.140 ms，应用 P95 从 18.66 ms 到 19.54 ms。
+大片已探索时 GPU 均值少 0.233 ms，应用 P95 从 18.17 ms 到 18.02 ms。实际呈现 P95 均约 16.67 ms。
+大片已探索时省略植被和水面的 GPU 均值在两个比例均下降，75% 时省略植被的差值最大。
+省略陆地的两组探索样本 GPU 均值更高。开局三个省略组的 GPU 差值均随比例改变方向。
+各配置只运行一轮，依次采 100% 和 75%，
+期间同机还有其他工厂检查。这组数据可用来选择复测对象，尚无法确定稳定的分层代价或慢帧主因。
 
-当前版本的有效绘制样本为 0，手机覆盖为 0 台。本轮查询到 0 个活动显示器，Metal 返回空设备。
-正式 `--measure --explored` 复核停在 macOS 图形服务初始化，日志中有 `hiservices-xpcservice`
-连接失败和 0 条绘制记录，日志保存在 `/private/tmp/keynes54-breakdown.nbv8za4o/window.log`。
-先前的 Vulkan 窗口也停在初始化，`xcdevice` 只列出本机 Mac，CoreDevice 初始化超时。
-`xctrace` 无法在其缓存目录创建 `path_manager`，本轮桌面工具申请打开 Instruments 被拒绝。
-实测尺寸、呈现等待、各层 CPU/GPU 耗时、改前改后交替复测和同帧画面对照仍待采集，性能验收保持待测。
+覆盖为一台桌面 Mac、固定镜头、移动渲染器低档。手机和平移缩放尚未采样。
+关雾单独用于诊断。旧六国关雾日志在 100% 和 75% 分别有 721 和 720 个应用间隔样本，
+P95 为 19.70 和 19.74 ms。等画质前后对照与画面一致性验收仍由 #54 跟踪。
 
-无窗口样本通过 `WorldRuntimeHost` 的正式开局入口准备，固定种子 20260718、60×40、四国与 1 倍速。
-探索场景用两日正式领土命令临时获得观察点再归还，核对后台发布的探索记忆、恢复的领土和开局可见范围。
-两次探索场景结果一致。初期完整玩家场景探测两次在 Godot 清理字体时崩溃，场景数据检查现直接走世界宿主。
-[场景测试](../../Project/project-keynes/tests/rendering/mobile_terrain_baseline_test.gd)
+### 退出和已有回归
 
-| 无窗口场景 | 已探索格 | 当前可见格 | 已探索且当前被雾遮挡的陆地 | 检查通过数 |
-| --- | ---: | ---: | ---: | ---: |
-| 开局迷雾 | 66 | 66 | 0 / 456 | 30 |
-| 大片已探索，迷雾开启 | 1248 | 66 | 366 / 456 | 41 |
-| 单列诊断，关雾 | 66 | 2400 | 0 / 456 | 30 |
+大片已探索的完整绘制进程 6630 完成两段采样及 36 项游戏内检查后退出时收到 SIGBUS。
+`explored-full-shutdown.json` 的堆栈从 `Main::cleanup` 经脚本字典、字体与 `TextLine` 释放进入
+`TextServerAdvanced::_free_rid`。该退出失败独立记录，两个时间窗均结束于故障之前。
+[Godot 4.6.3 的清理顺序](https://github.com/godotengine/godot/blob/4.6.3-stable/main/main.cpp#L4739-L4790)。
 
-三组均核对 1600×960 窗口设置、关闭垂直同步与引擎限帧、地表 100% 与 75%、迷雾 50%，
-以及两种地表清晰度下相同的水面、植被、天气与云影设置。
-同时传入探索与关雾参数、在无窗口模式请求绘制采样、单独用省略参数或一次省略多层都会被拒绝。
-植被回归构造实际地被并通过资源上传入口建立批次，检查地被、已有和新上传的植物批次及地图接缝副本均被挡住，
-动物和矿物批次仍可绘制。旧采样脚本在这组检查中有四项失败。
+退出探针复用了正式玩家场景。改前关闭世界并释放场景后，界面缓存仍持有两份已排版字体，两个释放断言均失败。
+基准现于场景释放后、Godot 开始清理文字服务前释放字体缓存。改后开局和探索探针分别通过 28 和 39 项，
+进程退出码均为 0。带窗口的清理复测仍需解锁的桌面。
 
 ```sh
-godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd
-godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --explored
-godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --fog-off
+godot --headless --path Project/project-keynes \
+  --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --check-exit --explored
 ```
 
-带窗口的采样复用上述地图、画质和视野条件，启动正式玩家场景。保持镜头固定，暂停日期推进，
-按 100% 和 75% 各预热 60 帧、记录 240 帧。每组输出平均帧率、帧间隔 P95、绘制次数、
-窗口和地表绘制的 CPU 计时、回读的绘制尺寸、实际同步模式与限帧设置。日志也保留
-Godot 提供的 GPU 计时及有效样本数。Godot 4.6.3 的 Metal 路径把 GPU 时间戳填零，
-此时保留有效的帧间隔和 CPU 数据，并标记 GPU 耗时需要系统跟踪。缺少有效帧、CPU 计时或
-绘制尺寸会使采样失败。
-[Godot 的绘制计时接口](https://docs.godotengine.org/en/4.6/classes/class_renderingserver.html#class-renderingserver-method-viewport-get-measured-render-time-cpu)。
-[Godot 4.6.3 的 Metal 计时实现](https://github.com/godotengine/godot/blob/4.6.3-stable/drivers/metal/rendering_device_driver_metal.mm#L2063-L2083)。
+原汇总只检查跟踪样本数大于零。把 75% 植被省略组的三项跟踪压到各一条，原工具仍接受，
+并从完整组 8 ms 与省略组 1 ms 算出 7 ms 的 GPU 差值。新版汇总核对时窗来源和实际请求、
+唯一帧、GPU 样本的数量。应用必须记录 240 帧，呈现请求允许时窗边界相差一帧，
+每个请求必须映射到不同的帧且有 GPU 活动。实际呈现间隔独立核对覆盖，允许 238–241 个。
+等待事件保留各自的分布和数量，不用于计算逐层差值。
 
 ```sh
-PK_MOBILE_SHADER_TIER=MOBILE_QUALITY_LOW godot --path Project/project-keynes \
+python3 tools/perf/report_mobile_terrain_baseline.py --evidence docs/architecture/evidence/mobile-terrain-aqua-0fae5783.json > breakdown.json
+python3 -m unittest discover -s tools/perf -p test_report_mobile_terrain_baseline.py
+```
+
+重新采样时，每场景运行完整绘制及分别省略陆地、水面和植被的四组命令。探索场景加 `--explored`，
+省略组加其中一个 `--omit-land`、`--omit-water`、`--omit-vegetation`，关雾诊断单独用 `--fog-off`。
+
+```sh
+PK_MOBILE_SHADER_TIER=MOBILE_QUALITY_LOW godot --path Project/project-keynes --resolution 1600x960 \
   --rendering-method mobile --rendering-driver metal --disable-vsync \
   --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --measure --explored
 ```
 
-去掉 `--explored` 测开局迷雾，换成 `--fog-off` 做关雾诊断。每个场景采完整绘制，
-再分别追加 `--omit-land`、`--omit-water` 或 `--omit-vegetation`，一次只暂停提交一个图层的绘制。
-植被组包含散布植被、投影、资源植物批次以及共享地被画面（含同一画面中的放牧痕迹）。
-交替采集完整与省略记录，在相同镜头、实际尺寸和同步模式下比较。每次运行的完整日志分别保存。
-差值是该图层在当前画面中的边际代价，也会受到绘制合批的影响。采样保留迷雾和图层更新。
+使用 Instruments 的 Game Performance 模板。按 Godot 进程号及每段的 `[start_unix_s, end_unix_s)`
+筛出呈现请求、等待事件和已呈现回调。GPU 计时用 `ca-client-present-request` 的命令缓冲，
+经 `metal-command-buffer-frame-assignment` 找到帧，再按帧合并 `metal-gpu-intervals` 的活跃区间。
+等待来自 `ca-client-buffer-wait-interval`，实际呈现间隔来自 `ca-client-presented-handler`。
+用 `--trace-summaries trace-summaries.json captures/*.log` 可直接配对
+记录场景、比例、图层、时间窗、帧覆盖计数及三项计时的进程筛选后导出。字段见可移植采样数据。
+[Apple 的 Metal 跟踪说明](https://developer.apple.com/videos/play/wwdc2020/10603/)。
 
-用 Instruments 的 Game Performance 模板记录。按 `[mobile-terrain-draw]` 中的进程号
-`process_id`、`start_unix_s` 和 `end_unix_s` 选取同一采样段。
-跟踪这些帧实际执行的 GPU 工作，即使 GPU 在采样段末尾之后才完成。分别汇总获取 drawable 的阻塞、
-每帧 GPU 工作和实际呈现间隔。同一帧的 GPU 执行区间重叠时只计一次。
-保留原始跟踪文件，在 `trace-summaries.json` 数组中为每个采样段填写一项，
-包含日志中的进程号与起止时间、跟踪文件名 `source`，
-以及 `present_wait_ms`、`gpu_work_ms` 和 `present_interval_ms` 三组实际计时。
-每组包含 `samples`、`mean`、`median` 和 `p95`。有观测且未发生等待时可记录零等待。
-[Apple 的 Metal 性能跟踪说明](https://developer.apple.com/videos/play/wwdc2020/10603/)。
+原有无窗口场景检查覆盖开局 66 格可见、大片已探索 1248 格且 366 格已探索陆地仍被迷雾遮挡、
+以及单列的关雾 2400 格可见。检查同时覆盖单次只省略一层、植被批次及地图接缝副本、画质和尺寸配置。
+[场景测试](../../Project/project-keynes/tests/rendering/mobile_terrain_baseline_test.gd)。
 
-```sh
-python3 tools/perf/report_mobile_terrain_baseline.py --trace-summaries trace-summaries.json captures/*.log > breakdown.json
-python3 -m unittest discover -s tools/perf -p test_report_mobile_terrain_baseline.py
-```
+- 工具栏回归先前用 60 ms 定时器判断退场中段，固定 200 ms 一帧时动画已经结束。现在推进到动画中点，
+  并等待实际完成信号。正常时序和固定 200 ms 一帧均通过。
+  [工具栏回归](../../Project/project-keynes/tests/ui/cell_board_toolbar_transition_test.gd)。
+- 加载退出回归先前把经济目录准备期间的取消报为配置失败。国家开局准备现按当前请求的取消状态结束配置。
+  改后 20 项通过，覆盖目录和世界的释放。
+  [加载退出回归](../../Project/project-keynes/tests/runtime/runtime_loading_exit_test.gd)。
 
-汇总工具要求开局迷雾和大片已探索两种场景在 100% 和 75% 下都有完整采样和三个省略组。
-每个省略组与时间最接近的完整采样配对。
-关雾数据以 `fog-off` 场景单列。每对保留实际绘制尺寸、帧率、P95、各项计时的样本数和来源。
-逐层对比 CPU 绘制、GPU 工作和呈现等待的平均耗时差，原始帧间隔和呈现间隔也分别保留。
-缺少同一采样段的系统跟踪、同一图层的成对记录或实测尺寸时，工具返回失败。
-用本轮失败日志和历史帧间隔日志运行，得到 `no windowed draw captures in the supplied logs`。
-
-- 工具栏用例原先在 60 ms 定时器结束时判断退场中段。固定 200 ms 一帧复现读取时动画已经结束，
-  工具栏已恢复。现直接推进到动画中点并等待实际完成信号，正常时序和固定 200 ms 一帧均通过。
-  [工具栏回归](../../Project/project-keynes/tests/ui/cell_board_toolbar_transition_test.gd)
-- 加载退出用例在经济目录准备阶段复现主动取消被误报为配置失败。国家开局准备现在使用当前请求的取消状态
-  结束等待中的配置。新增检查在改前报告该错误，改后 20 项通过，覆盖目录和世界的释放。
-  [加载退出回归](../../Project/project-keynes/tests/runtime/runtime_loading_exit_test.gd)
-
-`run_regression_checks.py --jobs 4 --roundtrip` 通过 128 项，含逐日回放和存读档。
-单独通过的无窗口检查涵盖画质设置、陆水缩放、迷雾与地表裁剪、陆地缓存条件、云与天气、
-平移缩放边界、地图与植被接缝、绘制顺序和后台视野开关。迷雾及地表缩放的像素检查需要真实绘制。
-本轮日志在 `/tmp/keynes54-resume.GfkNzUjD`。Qodo 身份检查返回 `not_logged_in`，评审待完成。
-评审复核再次通过 128 项回归、三组无窗口场景检查和六组拒绝用例。复核日志在
-`/tmp/keynes54-review.jp3IDA`，带窗口的采样命令仍停在系统初始化。
-本次植被省略复核通过三组无窗口场景、四组拒绝用例、128 项回归（含回放和存读档）、
-18 项架构检查和 201 项工厂测试。日志在 `/private/tmp/keynes54-verify.JjKvxX`。
-
-本轮通过 7 项汇总测试、三组无窗口场景、四组拒绝用例、7 项画质与绘制回归、
-18 项架构检查和 201 项工厂测试。
-Qodo 身份复查返回 `not_logged_in`，实际绘制及分层基线验收仍待测。
+采样版本先前通过 128 项运行回归，含逐日回放和存读档。本次修订通过 18 项架构检查、201 项工厂测试、
+11 项汇总测试和开局、探索、关雾三组无窗口检查。远端同步受域名解析阻塞，Qodo 身份检查返回未登录。
 
 ## 稀疏经济需求缓存（#53，2026-11-23）
 
