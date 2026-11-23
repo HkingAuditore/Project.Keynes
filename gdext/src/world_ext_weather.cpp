@@ -643,8 +643,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
 
     if (start_idx == 0) {
         _advance_and_stamp_cyclones(knobs, n_cells, NB, POS, TERR, TR, WX, WY,
-                                    WSPD, PV, s_wins.arr_f32.ptr(), PREV_CNV,
-                                    nullptr);
+                                    WSPD, PV, s_wins.arr_f32.ptr(), nullptr);
     }
 
     // ─── 计时 (返回给调用方做对账，charter §0 铁律 3) ──────────────────

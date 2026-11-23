@@ -65,6 +65,7 @@ func _run() -> void:
 	_test_reserve_scale_application(profiles)
 	_test_geology_fields(profiles)
 	_test_landmass_deposit_quota()
+	_test_script_fallback_landmass_quota(profiles)
 
 	print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
 
@@ -418,6 +419,62 @@ func _test_landmass_deposit_quota() -> void:
 	_expect("resource quota ranks by suitability and falls back to cell order on a tie",
 		values[0] == 10.0 and values[96] == 0.0 and values[102] == 10.0)
 	_expect("resource quota leaves the seven-cell island unchanged", values[104] == 0.0)
+
+
+func _test_script_fallback_landmass_quota(profiles: Array) -> void:
+	var salt: ResourceProfile
+	for profile in profiles:
+		if String(profile.id) == "salt":
+			salt = profile
+			break
+	_expect("script landmass quota fixture has salt profile", salt != null)
+	if salt == null:
+		return
+
+	# Three disconnected landmasses of 96, 8 and 7 cells, including across
+	# the wrapped edge of the single-row map.
+	var map := _build_flat_geology_map(114)
+	var water := map.is_water_arr
+	for cell in [0, 97, 106]:
+		water[cell] = 1
+	map.is_water_arr = water
+	var gen := MapGenerator.new()
+	var saved_minimum := salt.init_min_reserve
+	var saved_coverage := salt.init_min_coverage
+	var saved_target := salt.init_target_coverage
+	var saved_quota := salt.init_continent_floor_cells
+	salt.init_min_reserve = 1000000.0
+	salt.init_min_coverage = 0.0
+	salt.init_target_coverage = 0.0
+	salt.init_continent_floor_cells = 3
+	var floor_reserve := salt.init_min_reserve * ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+	# This isolated generator has no attached native world, so the public
+	# bootstrap call must produce the quota through the script fallback.
+	gen._bootstrap_natural_resource_deposits(map, {"seed": 73021})
+	salt.init_min_reserve = saved_minimum
+	salt.init_min_coverage = saved_coverage
+	salt.init_target_coverage = saved_target
+	salt.init_continent_floor_cells = saved_quota
+
+	var reserves := _res_arr(map, profiles, "salt")
+	_expect("script quota initializes the full reserve column", reserves.size() == water.size())
+	if reserves.size() != water.size():
+		return
+	_expect("script quota supplies the 96-cell landmass without global coverage",
+		_count_full_deposits(reserves, 1, 97, floor_reserve) == 1)
+	_expect("script quota supplies the eight-cell landmass independently",
+		_count_full_deposits(reserves, 98, 106, floor_reserve) == 1)
+	_expect("script quota leaves the seven-cell landmass below the floor",
+		_count_full_deposits(reserves, 107, 114, floor_reserve) == 0)
+
+
+func _count_full_deposits(reserves: PackedFloat32Array, begin: int, end: int,
+		minimum: float) -> int:
+	var count := 0
+	for cell in range(begin, end):
+		if reserves[cell] >= minimum:
+			count += 1
+	return count
 
 
 func _build_flat_geology_map(n: int) -> MapData:

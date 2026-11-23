@@ -1142,7 +1142,6 @@ struct CycloneLanes {
     const float   *wind_speed = nullptr;
     const float   *vapor = nullptr;
     const float   *instability = nullptr;
-    const float   *convergence = nullptr;
 };
 
 struct CycloneStamp {
@@ -1197,8 +1196,7 @@ struct CycloneGenesisKnobs {
     float   wake_days = 32.0f;
     // 生产 genesis 消费 WeatherFront.type（summary 段产物）。worker 里没有 front
     // 对象，等价判据是 field solve 的 intensity lane，所以默认不查 weather_type。
-    // 置 true 时额外要求格子当前已被分类为 storm（只有已有 stamp 才可能成立），
-    // 仅供 A/B 复现"旧闭锁奇偶"排查用。
+    // A/B 时可额外要求格子已被分类为 STORM。
     bool    require_storm_type = false;
 };
 
@@ -1211,10 +1209,12 @@ struct CycloneGenesisLanes {
     const float   *precip = nullptr;           // [n_cells]
     const float   *cloud = nullptr;            // [n_cells]
     const float   *instability = nullptr;      // [n_cells]
-    const float   *convergence = nullptr;      // [n_cells]
     const float   *wind_x = nullptr;           // [n_cells]
     const float   *wind_y = nullptr;           // [n_cells]
+    const float   *wind_speed = nullptr;       // [n_cells]
+    const float   *pos_x = nullptr;            // [n_cells]
     const float   *pos_y = nullptr;            // [n_cells]
+    float wrap_width_x = 0.0f;
     const float   *lat_norm = nullptr;         // [n_cells]，可空，语义同 CycloneLanes
     const int32_t *neighbors = nullptr;        // [n_cells * 6]
     const uint8_t *is_water = nullptr;         // [n_cells]，可空（用 LUT 判定）

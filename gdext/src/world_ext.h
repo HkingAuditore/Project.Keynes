@@ -3885,9 +3885,7 @@ private:
                                      const uint8_t *terrain, const float *temp,
                                      const float *wind_x, const float *wind_y,
                                      const float *wind_speed, const float *vapor,
-                                     const float *instability,
-                                     const float *convergence,
-                                     const float *lat_norm);
+                                     const float *instability, const float *lat_norm);
     void _ensure_enso_basin_cache(int n_cells, const uint8_t *is_water,
                                   const uint8_t *terrain, const float *lat_norm,
                                   const float *pos_x, const int32_t *neighbors,

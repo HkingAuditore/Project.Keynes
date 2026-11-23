@@ -882,7 +882,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
             std::max(onshore_moist_flux, coastal_monsoon_flux),
             cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls,
             knobs.classify_gate_land, knobs.classify_gate_water);
-        if (cyclone_lift >= 0.58f && on_water) {
+        if (cyclone_lift >= 0.58f && on_water && wf_is_precip_weather_type(wt)) {
             wt = cyclone_storm_type_id;
         }
         if (!wf_is_precip_weather_type(wt) && precip > 0.0f) {
@@ -916,7 +916,8 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         if (refresh_convergence && apply_convergence_boost) {
             wf_apply_frontal_convergence_boost_idx(
                 i, TR, AA, NB, climate_anomaly, convergence,
-                temp, vapor, ocean_an,
+                temp, vapor, ocean_an, cloud_water, on_water,
+                on_water ? knobs.classify_gate_water : knobs.classify_gate_land,
                 cloud, precip, instability, wt, intensity);
         }
 

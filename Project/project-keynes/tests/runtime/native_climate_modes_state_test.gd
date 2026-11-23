@@ -49,6 +49,13 @@ func _run() -> void:
 			and mobile.native_tropical_cyclone_enabled
 			and mobile.enso_basin_modes_enabled
 			and mobile.tropical_cyclone_capacity < desktop.tropical_cyclone_capacity)
+	_expect("both Earth presets use the same precipitation classification and smoothing",
+		desktop != null and mobile != null
+		and is_equal_approx(mobile.weather_precip_classify_gate_land, 0.095)
+		and is_equal_approx(mobile.weather_precip_classify_gate_water, 0.076)
+		and is_equal_approx(mobile.weather_precip_classify_gate_land, desktop.weather_precip_classify_gate_land)
+		and is_equal_approx(mobile.weather_precip_classify_gate_water, desktop.weather_precip_classify_gate_water)
+		and is_equal_approx(mobile.weather_field_precip_spatial_smooth, desktop.weather_field_precip_spatial_smooth))
 	_finish()
 
 

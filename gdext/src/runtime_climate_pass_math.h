@@ -1046,9 +1046,54 @@ inline float wf_apply_precip_stability(uint8_t terrain, float precip,
     return out;
 }
 
+// Cyclone thresholds were calibrated against the mean of inward components.
+template <typename Delta>
+inline float wf_cyclone_inward_wind(int idx, const int32_t *neighbors,
+        const float *wind_x, const float *wind_y, const float *wind_speed,
+        const Delta &delta) {
+    float incoming = 0.0f;
+    int checked = 0;
+    for (int d = 0; d < 6; ++d) {
+        const int neighbor = neighbors[idx * 6 + d];
+        if (neighbor < 0) continue;
+        float dx, dy;
+        delta(neighbor, idx, dx, dy);
+        const float dl2 = dx * dx + dy * dy;
+        const float wx = wind_x[neighbor], wy = wind_y[neighbor];
+        const float wl2 = wx * wx + wy * wy;
+        if (dl2 <= 0.0001f || wl2 <= 0.0001f) continue;
+        const float cosine = (dx * wx + dy * wy) *
+            ((1.0f / std::sqrt(dl2)) * (1.0f / std::sqrt(wl2)));
+        const float speed = wind_speed ? wf_wind_speed_norm(wx, wy, wind_speed[neighbor])
+                                       : std::sqrt(wl2);
+        incoming += std::max(0.0f, cosine) * std::clamp(speed / 1.2f, 0.20f, 1.25f);
+        ++checked;
+    }
+    return checked > 0 ? std::min(1.0f, incoming / float(checked)) : 0.0f;
+}
+
+inline float wf_cyclone_inward_wind_xy(int idx, const float *pos_x, const float *pos_y,
+        const int32_t *neighbors, const float *wind_x, const float *wind_y,
+        const float *wind_speed, float wrap_width_x) {
+    return wf_cyclone_inward_wind(idx, neighbors, wind_x, wind_y, wind_speed,
+        [&](int from, int to, float &dx, float &dy) {
+            wf_wrapped_delta(pos_x[from], pos_y[from], pos_x[to], pos_y[to],
+                             wrap_width_x, dx, dy);
+        });
+}
+
 // Mirror weather_system.gd::_classify_field_weather_core.
 // WeatherType.WT: CLEAR=0 RAIN=1 STORM=2 BLIZZARD=3 DROUGHT=4 FOG=5 HEATWAVE=6
 //                 MONSOON=7
+inline bool wf_meets_precipitation_gate(float vapor, float cloud, float cloud_water,
+                                         float precip, bool is_water, float gate) {
+    const float cloud_gate = is_water ? 0.18f : 0.10f;
+    const float vapor_gate = is_water ? 0.28f : 0.09f;
+    return precip > gate && std::max(cloud, cloud_water * 1.25f) > cloud_gate &&
+        std::max(cloud_water, precip * 0.70f) > cloud_gate * 0.35f &&
+        vapor > vapor_gate;
+}
+
 inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud,
                                             float cloud_water, float precip,
                                             float instability, float ocean_an,
@@ -1062,10 +1107,6 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
                                             float gate_water = 0.032f) {
     const bool warm  = temp > 0.55f;
     const float humid_gate     = is_water ? 0.28f  : 0.09f;
-    // W4：这两个值原先是「弱分支」的门，并成硬条件后需要下调 —— 否则 cloud=0.20（可见云量）
-    // 的暖湿海面会被判成「无云」而不成雨（weather_field_solver_test 的 marine 用例就是这么红的）。
-    const float mp_cloud_gate  = is_water ? 0.18f  : 0.10f;
-    const float mp_vapor_gate  = is_water ? 0.28f  : 0.09f;
     const float monsoon_vapor  = is_water ? 0.40f  : 0.14f;
     const float monsoon_precip = is_water ? 0.055f : 0.065f;
     const float monsoon_cloud  = is_water ? 0.45f  : 0.24f;
@@ -1078,10 +1119,8 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     // 是**无条件**通过的，等于「下一点就报雨」；这是「到处都是降水图标」的直接成因之一。
     // 门槛值来自 ClimateProfile（陆/水各一档），缺省保持旧的 0.040 / 0.032 以便回滚。
     const float precip_gate = is_water ? gate_water : gate_land;
-    const bool meaningful_precip = precip > precip_gate &&
-        effective_cloud > mp_cloud_gate &&
-        precip_cloud_mass > mp_cloud_gate * 0.35f &&
-        vapor > mp_vapor_gate;
+    const bool meaningful_precip = wf_meets_precipitation_gate(
+        vapor, cloud, cloud_water, precip, is_water, precip_gate);
 
     if (cold_precip_as_blizzard && meaningful_precip) {
         if (temp <= 0.24f)
@@ -1182,11 +1221,10 @@ inline float wf_field_intensity_for_type(uint8_t wt, float temp, float vapor,
 inline void wf_apply_frontal_convergence_boost_idx(
         int idx, const float *T, const float *AA, const int32_t *NB,
         float climate_anomaly, float convergence,
-        float temp_self, float vapor, float ocean_an,
-        float &cloud, float &precip, float &instability, uint8_t &wt,
-        float &intensity) {
+        float temp_self, float vapor, float ocean_an, float cloud_water,
+        bool is_water, float precip_gate, float &cloud, float &precip,
+        float &instability, uint8_t &wt, float &intensity) {
     constexpr float STORM_TEMP_DIFF = 0.28f;
-    constexpr float WEAK_TEMP_DIFF = 0.06f;
     // W3：旧 0.45 是按 legacy 口径（p50=0.376）标的；net 口径 p95=0.636 ⇒ 0.64。
     constexpr float CONVERGENCE_THRESHOLD = 0.64f;
     if (convergence < CONVERGENCE_THRESHOLD) return;
@@ -1215,22 +1253,19 @@ inline void wf_apply_frontal_convergence_boost_idx(
     if (frontal_score < 0.45f) return;
 
     const float cloud_min = 0.25f + frontal_score * 0.20f;
-    const bool frontal_precip_allowed = vapor > 0.09f;
-    const float precip_min = frontal_precip_allowed
-        ? (0.05f + frontal_score * 0.12f) : 0.0f;
+    const float precip_min = 0.05f + frontal_score * 0.12f;
     const float inst_min = 0.25f + frontal_score * 0.15f;
     if (cloud < cloud_min) cloud = cloud_min;
-    if (frontal_precip_allowed && precip < precip_min) precip = precip_min;
     if (instability < inst_min) instability = inst_min;
     if (cloud > 1.0f) cloud = 1.0f;
     if (precip > 1.0f) precip = 1.0f;
     if (instability > 1.0f) instability = 1.0f;
 
-    if (temp_diff < WEAK_TEMP_DIFF && (wt == 2 || wt == 7)) {
-        wt = 1; // RAIN
-    }
-    if (!wf_is_precip_weather_type(wt) && precip >= 0.040f) {
-        wt = 1; // RAIN
+    const float boosted_precip = std::max(precip, precip_min);
+    if (wf_meets_precipitation_gate(vapor, cloud, cloud_water, boosted_precip,
+                                    is_water, precip_gate)) {
+        precip = boosted_precip;
+        if (!wf_is_precip_weather_type(wt)) wt = 1; // RAIN
     }
     intensity = wf_field_intensity_for_type(
         wt, temp_self, vapor, cloud, precip, instability, ocean_an);

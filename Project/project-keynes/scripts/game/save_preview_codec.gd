@@ -10,6 +10,7 @@ const JPEG_QUALITY := 0.82
 ## mutate `source`: the caller may still be holding the capture.
 static func encode(source: Image) -> PackedByteArray:
 	if source == null or source.is_empty():
+		push_warning("[save/preview] viewport capture returned no image")
 		return fallback()
 	var image := Image.new()
 	image.copy_from(source)
@@ -25,6 +26,7 @@ static func encode(source: Image) -> PackedByteArray:
 	var jpeg := image.save_jpg_to_buffer(JPEG_QUALITY)
 	if not jpeg.is_empty():
 		return jpeg
+	push_warning("[save/preview] JPEG encoding failed for a %s image" % image.get_size())
 	return fallback()
 
 
@@ -35,15 +37,17 @@ static func decode(bytes: PackedByteArray) -> Image:
 	var image := Image.new()
 	if bytes.is_empty():
 		return image
+	var decode_error := ERR_FILE_UNRECOGNIZED
 	if _is_png(bytes):
-		image.load_png_from_buffer(bytes)
-		return image
-	if _is_jpeg(bytes):
-		image.load_jpg_from_buffer(bytes)
-		return image
-	if _is_webp(bytes):
-		image.load_webp_from_buffer(bytes)
-		return image
+		decode_error = image.load_png_from_buffer(bytes)
+	elif _is_jpeg(bytes):
+		decode_error = image.load_jpg_from_buffer(bytes)
+	elif _is_webp(bytes):
+		decode_error = image.load_webp_from_buffer(bytes)
+	if decode_error != OK:
+		push_warning("[save/preview] could not decode %d bytes: %s"
+			% [bytes.size(), error_string(decode_error)])
+		return Image.new()
 	return image
 
 

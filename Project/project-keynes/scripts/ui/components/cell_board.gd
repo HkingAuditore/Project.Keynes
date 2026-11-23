@@ -31,7 +31,7 @@ var _suppressed := false
 var _hiding := false
 var _market_slots: Array[Dictionary] = []
 var _cohort_slots: Array[Dictionary] = []
-var _market_data: Array = []
+var _market_data: Dictionary = {}
 var _cohort_data: Array = []
 
 @onready var _slide: Control = $Slide
@@ -39,6 +39,7 @@ var _cohort_data: Array = []
 @onready var _market_card: PanelContainer = $Slide/Column/MarketCard
 @onready var _cohort_card: PanelContainer = $Slide/Column/CohortCard
 @onready var _market_header: HBoxContainer = $Slide/Column/MarketCard/Margin/Body/Header
+@onready var _stock_scale: Label = $Slide/Column/MarketCard/Margin/Body/Header/StockScale
 @onready var _cohort_header: HBoxContainer = $Slide/Column/CohortCard/Margin/Body/Header
 @onready var _market_rows: VBoxContainer = $Slide/Column/MarketCard/Margin/Body/Rows
 @onready var _cohort_rows: VBoxContainer = $Slide/Column/CohortCard/Margin/Body/Rows
@@ -92,7 +93,7 @@ func reset_for_world() -> void:
 	_pending_cell = -1
 	_shown_cell = -1
 	_shown_day = -1
-	_market_data = []
+	_market_data = {}
 	_cohort_data = []
 	if _dwell_timer != null: _dwell_timer.stop()
 	if _retry_timer != null: _retry_timer.stop()
@@ -171,13 +172,13 @@ func _resolve(cell_index: int) -> void:
 
 
 func _apply_payload(cell_index: int, payload: Dictionary, animate: bool) -> bool:
-	var market_rows: Array = (payload.get("market", {}) as Dictionary).get("rows", [])
+	var market := payload.get("market", {}) as Dictionary
 	var cohort_rows: Array = (payload.get("cohorts", {}) as Dictionary).get("rows", [])
-	if market_rows.is_empty() and cohort_rows.is_empty():
+	if (market.get("rows", []) as Array).is_empty() and cohort_rows.is_empty():
 		return false
-	_market_data = market_rows
+	_market_data = market
 	_cohort_data = cohort_rows
-	_apply_rows(market_rows, cohort_rows)
+	_apply_rows(market, cohort_rows)
 	if not _market_card.visible and not _cohort_card.visible:
 		return false
 	_shown_cell = cell_index
@@ -188,12 +189,14 @@ func _apply_payload(cell_index: int, payload: Dictionary, animate: bool) -> bool
 
 # ───────────────────────────── 呈现 ─────────────────────────────
 
-func _apply_rows(market_rows: Array, cohort_rows: Array) -> void:
-	_apply_market_rows(market_rows)
+func _apply_rows(market: Dictionary, cohort_rows: Array) -> void:
+	_apply_market_rows(market)
 	_apply_cohort_rows(cohort_rows)
 
 
-func _apply_market_rows(rows: Array) -> void:
+func _apply_market_rows(market: Dictionary) -> void:
+	var rows: Array = market.get("rows", [])
+	_stock_scale.text = String(market.get("stock_scale", ""))
 	var visible_count := mini(rows.size(), _market_slots.size())
 	for index in _market_slots.size():
 		var slot: Dictionary = _market_slots[index]

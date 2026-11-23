@@ -308,6 +308,21 @@ func _test_board_widget() -> void:
 	_expect("阶层表满五格", _visible_rows(board._cohort_slots) == 5)
 	var first_name := (board._market_slots[0]["name"] as Label).text
 	_expect("行情行写入物资名", first_name == "谷类" or not first_name.is_empty())
+	_expect("储量条显示从零到本轮最大储量的刻度", board._stock_scale.text == "0–900")
+	var refreshed := _market_payload()
+	var stocks: PackedInt64Array = refreshed["stock"]
+	stocks[1] = 200000
+	refreshed["stock"] = stocks
+	_economy.market_payloads[0] = refreshed
+	var previous_day := _clock.current_day
+	_clock.current_day += 1.0
+	board.debug_show_cell(0)
+	var stock_text := (board._market_slots[0]["stock"] as Label).text
+	var fill := board._market_slots[0]["bar"] as ColorRect
+	_expect("储量上限变化时同步更新刻度与条长，并保留精确读数",
+		board._stock_scale.text == "0–200" and stock_text == "100"
+			and is_equal_approx(fill.anchor_right, 0.5))
+	_clock.current_day = previous_day
 	board.apply_available_height(380.0)
 	board.debug_show_cell(0)
 	_expect("窄高度下阶层表压到三行", _visible_rows(board._cohort_slots) <= 3)

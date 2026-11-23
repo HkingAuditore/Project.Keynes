@@ -881,7 +881,7 @@
 	"res://data/weather/rain.tres": "8acd910cfd0675f531744cb67a7cbf1dc56039064acbf82ff0374d924a16a931",
 	"res://data/weather/storm.tres": "9c592e1c56ab2d6854738a96160772c47d7d59c253edc00a6f46107a85d35d4e",
 	"res://data/world/earth_like.tres": "cc25820fc16621347167aab74b2b50e403e93cbc2d08289ab2cd0258f3bf1753",
-	"res://data/world/earth_like_mobile_complex.tres": "d12f8b8cbaaff30320190b8c79a261587d035488392b222882469cb6b713ff3c",
+	"res://data/world/earth_like_mobile_complex.tres": "74afda8b40a4d3388726c3f41183cca28f9bd8247673d59de5fc69195c15cb2c",
 	"res://scripts/country/country_ai_catalog.gd": "31d24988e2a97af0c00c3159aa07712823d889bbef707b5b56aac04af08451a0",
 	"res://scripts/country/country_ai_csv_recorder.gd": "831df5210d26d55c13d352b04db5cbdc976ebe984551bd826ad9ae9a4693f741",
 	"res://scripts/country/country_ai_facade.gd": "27618904f455f8dd522f77cc0c3db4173f78bae2a6e2048827d717b6f7353289",

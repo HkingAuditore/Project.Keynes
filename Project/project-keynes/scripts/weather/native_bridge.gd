@@ -514,6 +514,7 @@ func _build_weather_summary_knobs(host, map: MapData, world: WorldData) -> Dicti
 			"cell_q_arr": host._summary_q_cache,
 			"cell_r_arr": host._summary_r_cache,
 			"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
+			"weather_wrap_width_x": host._field_solver._world_wrap_width_x(map),
 			"cyclone_wake_days": host._cyclone_wake_days,
 			"cyclone_storm_type_id": int(WeatherType.WT.STORM),
 			"water_terrain_ids": water_ids,
@@ -536,6 +537,7 @@ func _build_weather_summary_knobs(host, map: MapData, world: WorldData) -> Dicti
 		"radius_scale": 1.05,
 		# WT 枚举常量（C++ 不直读 GDScript Resource，传过来用整型即可）
 		"wt_clear": int(WeatherType.WT.CLEAR),
+		"weather_wrap_width_x": host._field_solver._world_wrap_width_x(map),
 		"cyclone_wake_days": host._cyclone_wake_days,
 		"cyclone_storm_type_id": int(WeatherType.WT.STORM),
 		"water_terrain_ids": water_ids,

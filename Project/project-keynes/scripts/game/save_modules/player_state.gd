@@ -30,11 +30,11 @@ func _restore_player_provider(sections: Dictionary, context: Dictionary) -> Dict
 	return _result(true, "ok", "")
 
 func _capture_preview(context: Dictionary) -> PackedByteArray:
+	if DisplayServer.get_name() == "headless":
+		return SavePreviewCodec.fallback()
 	var viewport: Viewport = context.viewport
-	if DisplayServer.get_name() != "headless" and viewport != null \
-			and viewport.get_texture() != null:
-		return SavePreviewCodec.encode(viewport.get_texture().get_image())
-	return SavePreviewCodec.fallback()
+	var texture := viewport.get_texture() if viewport != null else null
+	return SavePreviewCodec.encode(texture.get_image() if texture != null else null)
 
 
 func section_codecs(_id: StringName, sections: PackedStringArray) -> Dictionary:

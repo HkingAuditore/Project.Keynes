@@ -1,6 +1,7 @@
 #include "world_ext.h"
 #include "world_ext_internal.h"
 #include "runtime_climate_passes.h"
+#include "runtime_climate_pass_math.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -34,13 +35,13 @@ void DCWorldExt::_advance_and_stamp_cyclones(
         const Dictionary &knobs, int n_cells, const int32_t *neighbors,
         const Vector2 *positions, const uint8_t *terrain, const float *temp,
         const float *wind_x, const float *wind_y, const float *wind_speed,
-        const float *vapor, const float *instability, const float *convergence,
+        const float *vapor, const float *instability,
         const float *lat_norm) {
     const bool enabled = bool(knobs.get("native_tropical_cyclone_enabled",
         _native_runtime_config.get("native_tropical_cyclone_enabled", false)));
     if (!enabled || n_cells <= 0 || neighbors == nullptr || positions == nullptr ||
         terrain == nullptr || temp == nullptr || wind_x == nullptr || wind_y == nullptr ||
-        wind_speed == nullptr || vapor == nullptr || instability == nullptr || convergence == nullptr) return;
+        wind_speed == nullptr || vapor == nullptr || instability == nullptr) return;
     if (_cyclone_force_tag.size() != static_cast<size_t>(n_cells)) {
         _cyclone_force_tag.assign(static_cast<size_t>(n_cells), 0u);
         _cyclone_visit_tag.assign(static_cast<size_t>(n_cells), 0u);
@@ -76,9 +77,14 @@ void DCWorldExt::_advance_and_stamp_cyclones(
                 shear = std::max(shear, std::sqrt(dx * dx + dy * dy) / 2.0f);
             }
             const bool on_water = wf_is_water_terrain(terrain[i]);
+            const float inward = wf_cyclone_inward_wind(i, neighbors, wind_x, wind_y, wind_speed,
+                [&](int from, int to, float &dx, float &dy) {
+                    wf_wrapped_delta(positions[from].x, positions[from].y,
+                        positions[to].x, positions[to].y, wrap_x, dx, dy);
+                });
             const float potential = wf_smoothstep(0.54f, 0.76f, temp[i])
                 * wf_smoothstep(0.42f, 0.72f, vapor[i])
-                * (0.35f + 0.65f * std::max(instability[i], convergence[i]))
+                * (0.35f + 0.65f * std::max(instability[i], inward))
                 * (1.0f - dc_clampf(shear, 0.0f, 1.0f)) * (on_water ? 1.0f : 0.15f);
             e.intensity += (potential - e.intensity) * (on_water ? 0.16f : 0.38f) * dt;
             if (temp[i] < 0.50f) e.intensity -= (0.50f - temp[i]) * 0.35f * dt;
@@ -260,14 +266,14 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     const int sid_w_inst = component_id(StringName("cell_weather_instability"));
     const int sid_w_precip = component_id(StringName("cell_weather_precip"));
     const int sid_w_cloud = component_id(StringName("cell_weather_cloud"));
-    const int sid_w_conv = component_id(StringName("cell_weather_convergence"));
+    const int sid_wspd = component_id(StringName("cell_wind_speed"));
     const int sid_wx = component_id(StringName("cell_wind_x"));
     const int sid_wy = component_id(StringName("cell_wind_y"));
     if (sid_terrain < 0 || n_cells <= 0 || water_ids.size() <= 0 ||
         cell_q.size() < n_cells || cell_r.size() < n_cells ||
         storm_type_id < 0 || cyclone_wake_days <= 0 ||
         sid_temp < 0 || sid_w_inst < 0 || sid_w_precip < 0 ||
-        sid_w_cloud < 0 || sid_w_conv < 0) {
+        sid_w_cloud < 0) {
         write_back_stats();
         auto t1 = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -277,15 +283,14 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     Slot &s_w_inst = _slots.write[sid_w_inst];
     Slot &s_w_precip = _slots.write[sid_w_precip];
     Slot &s_w_cloud = _slots.write[sid_w_cloud];
-    Slot &s_w_conv = _slots.write[sid_w_conv];
+    Slot *s_wspd = sid_wspd >= 0 ? &_slots.write[sid_wspd] : nullptr;
     Slot *s_wx = sid_wx >= 0 ? &_slots.write[sid_wx] : nullptr;
     Slot *s_wy = sid_wy >= 0 ? &_slots.write[sid_wy] : nullptr;
     if (int(s_terrain.arr_u8.size()) < n_cells ||
         int(s_temp.arr_f32.size()) < n_cells ||
         int(s_w_inst.arr_f32.size()) < n_cells ||
         int(s_w_precip.arr_f32.size()) < n_cells ||
-        int(s_w_cloud.arr_f32.size()) < n_cells ||
-        int(s_w_conv.arr_f32.size()) < n_cells) {
+        int(s_w_cloud.arr_f32.size()) < n_cells) {
         write_back_stats();
         auto t1 = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -295,7 +300,8 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     const float * const W_INST = s_w_inst.arr_f32.ptr();
     const float * const W_PRECIP = s_w_precip.arr_f32.ptr();
     const float * const W_CLOUD = s_w_cloud.arr_f32.ptr();
-    const float * const W_CONV = s_w_conv.arr_f32.ptr();
+    const float * const WSPD = s_wspd != nullptr && s_wspd->arr_f32.size() >= n_cells
+        ? s_wspd->arr_f32.ptr() : nullptr;
     const float * const WIND_X = s_wx != nullptr && s_wx->arr_f32.size() >= n_cells ? s_wx->arr_f32.ptr() : nullptr;
     const float * const WIND_Y = s_wy != nullptr && s_wy->arr_f32.size() >= n_cells ? s_wy->arr_f32.ptr() : nullptr;
     const int32_t * const NB_GEN = neighbor_idx.size() >= n_cells * 6 ? neighbor_idx.ptr() : nullptr;
@@ -380,7 +386,18 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
             if (T[idx] < (native_entity_enabled ? min_temp : 0.56f)) continue;
             if (W_PRECIP[idx] < 0.05f) continue;
             if (W_CLOUD[idx] < 0.22f) continue;
-            if (W_INST[idx] < (native_entity_enabled ? min_instability : 0.48f) && W_CONV[idx] < 0.30f) continue;
+            if (W_INST[idx] < (native_entity_enabled ? min_instability : 0.48f)) {
+                const float wrap_width_x = float(knobs.get("weather_wrap_width_x", 0.0f));
+                const float inward = (WIND_X && WIND_Y && NB_GEN)
+                    ? wf_cyclone_inward_wind(idx, NB_GEN, WIND_X, WIND_Y, WSPD,
+                        [&](int from, int to, float &dx, float &dy) {
+                            const float dr = float(cell_r[to] - cell_r[from]);
+                            dx = float(SQRT3) * hex_size * (float(cell_q[to] - cell_q[from]) + dr * 0.5f);
+                            if (wrap_width_x > 0.0f) dx = pk_wrap_min_image_dx(dx, wrap_width_x);
+                            dy = hex_size * 1.5f * dr;
+                        }) : 0.0f;
+                if (inward < 0.30f) continue;
+            }
             if (front_speed_norm < 0.16f && intensity < 0.82f) continue;
             if (wind.length_squared() < 1e-4f) {
                 wind = Vector2(1.0f, 0.0f);

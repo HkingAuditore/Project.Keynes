@@ -122,7 +122,7 @@ func build(cell_index: int) -> Dictionary:
 		"day": day,
 		"settled": settled,
 		"population": population_total,
-		"market": _market_block(_market_rows(market)),
+		"market": _market_block(market),
 		"cohorts": _cohort_block(_cohort_rows(population, mobilization)),
 	}
 	_stats["builds"] = int(_stats["builds"]) + 1
@@ -146,10 +146,10 @@ func _snapshot_pending(snapshot: Dictionary) -> bool:
 ## 五类代表物资：需求最大、本地供给最大、价格最高、价格最低、缺口最大。
 ## 每个角色都在「还没被选走的物资」里挑，所以同一物资只出现一次；某个角色
 ## 挑不出来（例如本地没有供给）就少一行，不拿次优物资凑数冒充。
-func _market_rows(snapshot: Dictionary) -> Array:
+func _market_block(snapshot: Dictionary) -> Dictionary:
 	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
 	if good_ids.is_empty():
-		return []
+		return {"rows": [], "count": 0, "stock_scale": ""}
 	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
 	var price: PackedInt32Array = snapshot.get("price", PackedInt32Array())
 	var demand_ema: PackedInt64Array = snapshot.get("demand_ema", PackedInt64Array())
@@ -224,7 +224,7 @@ func _market_rows(snapshot: Dictionary) -> Array:
 		if picked.size() >= MARKET_TOP_N:
 			break
 	if picked.is_empty():
-		return []
+		return {"rows": [], "count": 0, "stock_scale": ""}
 
 	var max_stock := 0.0
 	for index in picked:
@@ -256,7 +256,8 @@ func _market_rows(snapshot: Dictionary) -> Array:
 			"demand_units": demand_units[index],
 			"supply_units": supply_units[index],
 		})
-	return rows
+	var scale := "0–%s" % UITokens.format_compact_number_cn(max_stock, 3) if max_stock > EPSILON else ""
+	return {"rows": rows, "count": rows.size(), "stock_scale": scale}
 
 
 ## 价格相对成本锚的冷暖：贵 = 朱红，便宜 = 铜绿。颜色代替「偏高/偏低」的文字。
@@ -268,13 +269,6 @@ func _price_accent(price_index: float) -> Color:
 	if price_index <= 0.75:
 		return UITokens.DOSSIER_VERDIGRIS
 	return UITokens.DOSSIER_INK_MUTED
-
-
-func _market_block(rows: Array) -> Dictionary:
-	var total := 0
-	for row in rows:
-		total += 1
-	return {"rows": rows, "count": total}
 
 
 # ───────────────────────────── 阶层人口 ─────────────────────────────

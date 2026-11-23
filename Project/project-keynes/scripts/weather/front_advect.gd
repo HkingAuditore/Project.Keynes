@@ -1,6 +1,8 @@
 extends "res://scripts/weather/weather_context.gd"
 class_name DCWeatherFrontAdvect
 
+const FieldPhysics = preload("res://scripts/weather/field_solver_physics.gd")
+
 ## Phase E.2 / dots-full-migration §Phase E.2：weather front 推进抽出。
 ##
 ## **当前状态（2026-05-14, dots-monolith-split 1.1 第 1 步）**：
@@ -121,7 +123,8 @@ func tick_cyclone_wake(map) -> void:
 			continue
 		if cell.weather_cloud < 0.25:
 			continue
-		if cell.weather_instability < 0.55 and cell.weather_convergence < 0.34:
+		if cell.weather_instability < 0.55 \
+				and FieldPhysics.cyclone_inward_wind(_weather_system._field_solver, cell, map) < 0.34:
 			continue
 		if front_speed_norm < 0.20 and front.intensity < 0.88:
 			continue

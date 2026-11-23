@@ -2,6 +2,7 @@ extends "res://scripts/simulation/generator_context.gd"
 
 
 const RESOURCE_SCALAR_STRIDE := 32
+const MIN_DEPOSIT_QUOTA_LANDMASS_CELLS := 8
 
 func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = false) -> void:
 	if map_ref == null:
@@ -45,9 +46,15 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 	var estuary_strength_arr: PackedFloat32Array = await _collect_estuary_strength(
 		map_ref, cooperative)
 	# native-first：整段矿藏储量（O(资源 × cell) + 每资源排名分配）交给 C++ 一次算完。
-	# 失败（旧 DLL / 形状不符）时继续走下面的 GDScript 路径，行为与迁移前一致。
+	# 旧库或原生计算失败时，由脚本完成储量和陆块配额。
 	if _generator._try_bootstrap_natural_resources_native(map_ref, cfg, habitat_arr, estuary_strength_arr):
 		return
+	var landmass_labels := PackedInt32Array()
+	var landmass_sizes := PackedInt32Array([0])
+	var water: PackedByteArray = map_ref.is_water_arr
+	if have_neighbors and water.size() >= n_cells:
+		_label_landmasses(water, neighbor_indices, n_cells, landmass_labels, landmass_sizes)
+	var quota_totals := Vector2i.ZERO
 	var base_seed: int = 0
 	if cfg != null and cfg.get("seed") != null:
 		base_seed = int(cfg.get("seed"))
@@ -102,6 +109,10 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 		var ranked_cells := []
 		var target_coverage := clampf(float(p.init_target_coverage), 0.0, 1.0)
 		var use_ranked_distribution := target_coverage > 0.0
+		var use_landmass_quota: bool = not landmass_labels.is_empty() \
+			and p.init_continent_floor_cells > 0 and p.init_min_reserve > 0.0
+		var collect_ranked: bool = use_ranked_distribution or use_landmass_quota \
+			or (p.init_min_coverage > 0.0 and p.init_min_reserve > 0.0)
 		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
 		var noise: FastNoiseLite = null
 		if use_noise:
@@ -185,8 +196,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 			arr[i] = maxf(0.0, suit) * reserve_scale
 			if floor_reserve > 0.0:
 				arr[i] = maxf(arr[i], floor_reserve)
-			if use_ranked_distribution or (
-					float(p.init_min_coverage) > 0.0 and float(p.init_min_reserve) > 0.0):
+			if collect_ranked:
 				ranked_cells.append({"cell": i, "suit": suit})
 		var target_cells := 0
 		if use_ranked_distribution:
@@ -250,7 +260,76 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 					var cell := int(ranked_cells[rank].cell)
 					arr[cell] = maxf(arr[cell], float(p.init_min_reserve) * \
 						ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE)
+		if use_landmass_quota:
+			# PackedFloat32Array rounds on write. Count a reserve we already
+			# raised to this same stored floor as a complete deposit.
+			var minimum := PackedFloat32Array([float(p.init_min_reserve) \
+				* ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE])[0]
+			quota_totals += _apply_landmass_quota(arr, ranked_cells, minimum,
+				int(p.init_continent_floor_cells), landmass_labels, landmass_sizes)
 		map_ref.set(field, arr)
+	print("[resource-deposits] path=gdscript quota_cells=%d quota_unmet=%d" \
+		% [quota_totals.x, quota_totals.y])
+
+
+static func _label_landmasses(water: PackedByteArray, neighbors: PackedInt32Array,
+		cell_count: int, labels: PackedInt32Array, sizes: PackedInt32Array) -> void:
+	labels.resize(cell_count)
+	labels.fill(0)
+	var pending: Array[int] = []
+	for cell in range(cell_count):
+		if water[cell] != 0 or labels[cell] != 0:
+			continue
+		var landmass := sizes.size()
+		var size := 0
+		labels[cell] = landmass
+		pending.append(cell)
+		while not pending.is_empty():
+			var current: int = pending.pop_back()
+			size += 1
+			for direction in range(6):
+				var neighbor := neighbors[current * 6 + direction]
+				if neighbor < 0 or neighbor >= cell_count or water[neighbor] != 0 \
+						or labels[neighbor] != 0:
+					continue
+				labels[neighbor] = landmass
+				pending.append(neighbor)
+		sizes.append(size)
+
+
+static func _apply_landmass_quota(reserves: PackedFloat32Array, ranked_cells: Array,
+		minimum: float, quota: int, labels: PackedInt32Array,
+		sizes: PackedInt32Array) -> Vector2i:
+	var remaining := PackedInt32Array()
+	remaining.resize(sizes.size())
+	remaining.fill(0)
+	for landmass in range(1, sizes.size()):
+		if sizes[landmass] >= MIN_DEPOSIT_QUOTA_LANDMASS_CELLS:
+			remaining[landmass] = mini(quota, ceili(0.01 * sizes[landmass]))
+	for cell in range(labels.size()):
+		var landmass := labels[cell]
+		if remaining[landmass] > 0 and reserves[cell] >= minimum:
+			remaining[landmass] -= 1
+	var unmet := 0
+	for count in remaining:
+		unmet += count
+	if unmet == 0:
+		return Vector2i.ZERO
+	# Native quota ranking uses exact suitability and breaks ties by cell ID.
+	ranked_cells.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.suit) > float(b.suit) if a.suit != b.suit else int(a.cell) < int(b.cell))
+	var added := 0
+	for ranked in ranked_cells:
+		var cell := int(ranked.cell)
+		var landmass := labels[cell]
+		if remaining[landmass] <= 0 or reserves[cell] >= minimum:
+			continue
+		reserves[cell] = minimum
+		remaining[landmass] -= 1
+		added += 1
+		if added == unmet:
+			break
+	return Vector2i(added, unmet - added)
 
 
 ## 把整段矿藏储量生成交给 C++（`DCWorldExt.run_resource_deposit_pass`）。
@@ -749,6 +828,9 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 		push_warning("[resource-deposits] native pass unavailable (%s); falling back to GDScript"
 			% String(report.get("reason", "unknown")))
 		return false
+	if not report.has_all(["quota_cells", "quota_unmet"]):
+		push_warning("[resource-deposits] native pass lacks landmass quotas; falling back to GDScript")
+		return false
 	var fields: PackedStringArray = report.get("fields", PackedStringArray())
 	var reserves: Array = report.get("reserves", [])
 	if fields.size() != resource_count or reserves.size() != resource_count:
@@ -860,6 +942,9 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 					report.get("bio_carrier_used", -1)],
 				"deposit_fields": (report.get("deposit_fields", PackedStringArray()) as PackedStringArray).size(),
 				"reserves": (report.get("deposit_reserves", []) as Array).size()})])
+		return false
+	if not report.has_all(["deposit_quota_cells", "deposit_quota_unmet"]):
+		push_warning("[boot-facades] native pass lacks landmass quotas; falling back per stage")
 		return false
 	var wall_ms := float(Time.get_ticks_usec() - started) / 1000.0
 	var fields: PackedStringArray = report.get("deposit_fields", PackedStringArray())
