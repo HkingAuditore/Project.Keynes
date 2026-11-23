@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# Derived-copy guard for technology_network.json.
+#
+# The network stores several values that are derived from hard_prerequisite_ids
+# (visual_edges, knowledge_basis.required_ids, prerequisite_rationales).  Nothing
+# in the engine refreshes them, so editing a node without recomputing makes the
+# in-game technology tree disagree with the actual rules.  This hook re-derives
+# those copies from the *staged* blob and refuses the commit when they disagree.
+#
+# Enable once per clone (this changes nothing for anyone else):
+#     git config core.hooksPath .githooks
+#
+# Bypass for an emergency (please say why in the message):
+#     git commit --no-verify
+#
+# It only runs when technology_network.json is part of the commit, costs about
+# 100 ms, and uses no external tools beyond git and a python interpreter, so a
+# minimal PATH cannot make it pass silently.
+
+target=Project/project-keynes/data/technology/technology_network.json
+
+if [ -z "$(git diff --cached --name-only --diff-filter=ACMR -- "$target")" ]; then
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# Probe the candidates by *running* them: on Windows the bare `python3` name is
+# often a Microsoft Store alias stub that exists on PATH but cannot execute, and
+# `command -v` alone would happily pick it and then fail for the wrong reason.
+py=""
+for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1 \
+            && "$candidate" -c "import sys" >/dev/null 2>&1; then
+        py="$candidate"
+        break
+    fi
+done
+
+if [ -z "$py" ]; then
+    echo "check_derived: no working python interpreter, derived-copy guard skipped" >&2
+    exit 0
+fi
+
+# Feed the staged blob to the checker through stdin: no temp file, and the bytes
+# checked are the bytes being committed, not the working copy.
+git show ":$target" | "$py" tools/technology_tree/check_derived.py --stdin
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo "" >&2
+    echo "technology_network.json has derived copies that disagree with the graph." >&2
+    echo "Recompute them from the generator instead of editing them by hand:" >&2
+    echo "    python tools/technology_tree/wave_d_presentation.py" >&2
+    echo "then stage the result again." >&2
+fi
+
+exit $status
