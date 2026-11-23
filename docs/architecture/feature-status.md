@@ -3,6 +3,154 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 50 倍速的每日交接（#55，2026-11-23）
+
+改前以 `7ebdf9d20` 为基准。正式玩家场景的无画面探针走 `GameFlow.begin_new_game()`，由
+正常时钟放行、后台结算和场景回收。输入准备另用带计时的临时原生构建测量，第 25–175 日
+准备下一个气候输入的中位数为 0.141 ms，P95 为 0.159 ms。四国样本的连续区间里，后台
+日结中位数为 9.63 ms，其中约 0.97 ms 用于发布一日的结果。逐帧记录未发现气候容量或
+国家回执持续阻塞，后台主要在正常等时钟发放下一日。
+
+前台每次发布天气画面时逐格编码风图。带独立输入副本的诊断记录显示，135 次天气更新中有
+118 次的风向和风速与上次一致，编码仍花费中位 1.38 ms。天气表和云影原先各自编码。
+跨日共用风图的试验使前台回收从 2.55 ms 降至 1.26 ms。同一批无画面对照中，帧间隔
+P95 从 25.13 ms 升至 35.15 ms，区间内最长时钟等待的中位数从 27.77 ms 升至
+36.20 ms。长帧出现时，前台回收多已接近零，后台每游戏日累计时钟等待约 10 ms。
+在该缓存上继续省去重复上传，仍观测到 35.86 ms 的帧间隔 P95。
+
+已撤回跨日风图缓存。当前只在图片尺寸和编码字节相同时复用已上传的风纹理，两个过渡
+端点仍随每次天气发布推进。风图重新编码与天气表的布局转换沿用改前路径。
+
+50× 使用四国、60×40、种子 `20260718`、高画质和固定的地图中心视角，复用同一个
+macOS arm64 调试扩展。改前和当前方案交替运行三轮。每轮从第 25–75、85–135、146–175
+结算日各取两侧都采到的首尾日期。首尾的观测日期须精确匹配，避免跨日取样把区间外的
+长帧或等待算进来。下表为九个区间的中位数及范围。
+
+| 无画面正式场景 | 改前 | 当前仅复用风纹理 |
+| --- | ---: | ---: |
+| 游戏日/秒 | 50.12（49.66–51.24） | 50.58（49.68–51.42） |
+| 帧间隔 P95（ms） | 24.94（24.15–42.35） | 25.44（23.82–40.93） |
+| 前台回收（ms，收到结果的帧） | 2.57（2.49–2.62） | 2.57（2.49–2.58） |
+| 发布画面数据（ms，回收中的一步） | 1.97（1.93–2.00） | 1.97（1.93–2.00） |
+| 观察到的时钟等待次数 | 33（17–37） | 32（15–38） |
+| 最长时钟等待（ms，按帧观察） | 27.68（26.79–50.69） | 27.98（26.55–52.53） |
+| 后台累计时钟等待（ms/游戏日） | 9.52（9.06–10.45） | 9.77（9.26–10.77） |
+
+等待起止按帧采样，只统计观察到结束的等待。区间原始记录同时保留了后台实际累计等待时间，
+以及每帧申请、放行、提交、回收、停推来源和故障码。当前方案的无画面 50× 指标范围
+与改前重叠。Godot 在无可绘窗口时会对主循环安排休眠。这里的视口为 64×64。
+[Godot 4.6.3 帧间休眠实现](https://github.com/godotengine/godot/blob/4.6.3-stable/core/os/os.cpp#L666)
+
+真实窗口仍待验证。只等待两次绘制回调的最小项目遇到
+`com.apple.hiservices-xpcservice` 连接错误，未收到绘制确认。从 macOS 应用启动入口打开时返回
+`kLSNoExecutableErr`，桌面工具也拒绝访问 Godot。50× 和 1× 的实际绘制间隔 P95、
+等待次数、最长等待和提速幅度均缺少窗口记录。
+
+六次 50× 测试的第 1–180 日发布哈希和回执全部一致。自然剧情在结算第 20、80、141 日
+等玩家，测试从正式玩家入口答复，分别在第 21、81、142 日生效。四国和补测的当前六国场景
+都提交了第 161 日及后续日期，未复现显示日 162 停住。历史 `7ca1ca31a` 窗口在该处
+缺待答状态和故障码，现有记录无法判定原因。1× 对照第 2–8 结算日为 1.001 → 1.000 天/秒，
+无画面帧间隔 P95 为 35.54 → 34.16 ms。两侧都观测到 6 次正常日历等待，最长为
+977.24 → 997.87 ms。第 1–8 日的发布哈希与回执一致。受控测试另外检查了暂停时仍能
+答复、答复生效日和手动续算。
+
+### 复现
+
+使用 Godot 4.6.3 及同一个本地构建的调试扩展。将两个已导入的临时项目副本分别设为
+`$baseline_copy` 和 `$current_copy`。两边使用同一份探针，将改前副本的
+`weather_wind_source.gd` 换成 `7ebdf9d20` 里的版本。
+
+```sh
+python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$current_copy" \
+  --output "$scratch/rendered"
+```
+
+命令在两种速度各交替运行三组，保留逐帧和逐日数据、运行命令及负载均值。所有样本都须
+实际绘制、提交目标日并匹配同速度的逐日哈希与回执。每组要求实际显示设置一致，在双方均
+观测到的结算日边界内汇报绘制间隔 P95、游戏循环间隔 P95、等待次数及最长等待。
+两种速度验证通过后写出 `summary.json`。
+
+单独复测一侧时使用以下命令。`$first` 和 `$last` 为同一对记录都观测到的结算日边界。
+
+```sh
+PK_SAVE_DIR="$sample.saves" PK_RUNTIME_WATERFALL_CSV="$sample.waterfall.csv" \
+  godot --path "$project_copy" --log-file "$sample.engine.log" \
+  --script res://tests/game/player_scene_handoff_probe.gd -- \
+  --speed=50 --through=180 --answer-story --require-rendered --frames="$sample.jsonl"
+python3 tools/perf/analyze_player_handoff.py --require-rendered \
+  --window "$first" "$last" "$sample.jsonl"
+```
+
+1× 使用 `--speed=1 --through=8` 和 `--window 2 8`。六国用 `--foreign-count=5`。
+无画面诊断在 Godot 命令加 `--headless`，探针和分析命令均省略 `--require-rendered`。
+省略 `--answer-story` 时探针在第一个实际待答处退出并写出停推原因。开局请求被拒绝或
+玩家场景准备失败会提前写入 `startup_failed` 和具体原因。探针固定 1600×960 窗口、高画质、
+垂直同步和地图中心，并记录实际相机、显示设备和窗口设置。
+
+复测原始记录保存在 `/private/tmp/keynes-55-review.Lbvhd1/`。`comparison` 是跨日缓存复测，
+`texture-comparison` 是当前方案。每次运行的命令、退出状态和负载均值在 `trials.jsonl`，
+逐帧状态和逐日结果分别在 `.jsonl` 和 `.jsonl.days`，后台分段耗时在 `.waterfall.csv`，
+实际取样边界及汇总在 `summary-common.json`。此前的气候输入测量和风图取证保存在
+`/private/tmp/keynes-55.PWON1L/` 的 `diagnostic-only.patch`、`diagnostic-prep.log` 和
+`diagnostics-wind-exact.log`。
+性能证据打包在 `/private/tmp/keynes-55-regression.LzwvOn/handoff-performance-evidence.tar.gz`，
+本轮回归、压力和回放记录也保存在该目录。
+
+在改前副本用 `--write-candidate` 保存两组确定性参考，再在改后运行以下检查。
+`$golden_baseline` 和 `$external_baseline` 指向对应的参考文件。
+
+```sh
+python3 tools/ci/check_golden_determinism.py --runs 3 --log-dir "$checks/golden" \
+  --compare-to "$golden_baseline"
+python3 tools/ci/check_golden_determinism.py --runs 3 --external-only --log-dir "$checks/external" \
+  --compare-to "$external_baseline"
+python3 tools/ci/check_replay_matrix.py --annual --godot godot --log-dir "$checks/annual"
+python3 tools/ci/check_runtime_load_consistency.py --workers 7 --log-dir "$checks/load"
+python3 tools/ci/run_regression_checks.py --jobs 4 --roundtrip --log-dir "$checks/full"
+python3 tools/ci/run_regression_checks.py --roundtrip --log-dir "$checks/regression" \
+  tests/game/player_calendar_handoff_test.gd tests/world/weather_table_layout_test.gd \
+  tests/game/narrative_popup_suppression_test.gd tests/game/narrative_event_runtime_test.gd
+```
+
+### 正确性验证
+
+- `player_calendar_handoff_test.gd` 的 26 项覆盖一次放行多日、有序回收和单次回执、两次剧情
+  待答、答复生效日、手动暂停及 1× 续算。七个压力进程并行时同样通过。
+  `runtime_executor_boundary_test.gd` 的 319 项覆盖后台和同线程执行器之间的切换，包含停止、
+  命令和存档边界。
+- `weather_table_layout_test.gd` 的 96 项检查编码后字节相同的风纹理复用、风场变化后的
+  过渡端点、同字节不同尺寸、无效输入恢复和换局。无画面运行跳过真实图形后端读回。
+  `cell_lut_incremental_test.gd` 和 `cloud_weather_quality_test.gd` 通过。
+- 旧探针只等待正式会话并检查宿主的 `FAULTED`。场景资源加载失败时 `GameFlow` 保留了
+  原场景，宿主尚不存在。将场景请求指向脚本资源后，旧探针进入等待且没有写记录。当前探针
+  在同一条件下写出 `player_scene_load_failed` 并以 1 退出。`player_scene_handoff_startup_test.gd`
+  覆盖这条异步失败路径，检查原场景仍在、正式会话为空以及失败记录的原因码。
+- `test_analyze_player_handoff.py` 的 9 项通过，覆盖首尾跳日拒绝、区间中途合并多日、绘制间隔
+  边界、配对的实际画面设置和等待计数。用无画面 Godot 运行双速命令时，探针返回
+  `rendered_backend_required`，对照命令以失败退出。开局配置、保存库和正式存档往返在临时用户目录通过。
+- `check_golden_determinism.py --runs 3` 与 `--runs 3 --external-only` 全部匹配改前结果。
+  `check_replay_matrix.py --annual` 比较了原跑、重放、第 365 日存档和新进程续跑至第 373 日。
+- `check_runtime_load_consistency.py --workers 7` 在当前沙盒读取 `ps` 时受限。补测保留原来的
+  压力进程、比较和断言，系统负载记录改用可读取的负载均值。两轮七进程压力各自与无额外
+  压力的参考一致，覆盖正式 30 日状态、35 日命令日期和第 5 日存档后的续跑。
+- 改前的 `narrative_popup_suppression_test.gd` 把暂停前的放行值 `2` 用在了答复后。
+  改前取证显示答复已受理且第 3 天生效，时钟仍暂停，暂停接口已把放行值设为 `-1`。
+  现在分别断言暂停前的 `2`、暂停后的 `-1` 和答复后的 `-1`。修正后剧情暂停 28 项、
+  剧情运行 89 项和正式存档往返均通过。
+
+### 工厂回归修复
+
+- `cell_board_toolbar_transition_test.gd` 的 60 ms 计时器和 130 ms 退场可在同一个慢帧内结束，
+  旧用例用 `godot --headless --fixed-fps 5 --path Project/project-keynes --script res://tests/ui/cell_board_toolbar_transition_test.gd`
+  可复现中段断言失败。现在直接推进到一半，等待真实动画结束，并检查被打断的动画已取消。
+- `runtime_loading_exit_test.gd` 在经济目录准备期间关闭世界，稳定复现
+  `[economy] configure failed: loading_canceled`，调用栈从加载取消回到初始化入口。
+  入口现在直接结束已取消的准备，实际配置失败仍会上报。新用例检查关闭发生在准备期间，
+  世界资源已释放，同时由回归工具验证没有错误日志。
+- 常规回归、回放矩阵、年度自动存档和完整存读档往返共 128 项通过。风图、日历交接和
+  两个剧情用例另跑均通过。编辑器完成了导入扫描，当前沙盒仍报 ObjectDB 快照目录创建错误。
+  回归使用已导入的临时项目副本。Qodo 本地 CLI 缺登录，当前改动需由工厂提交后评审。
+
 ## 稀疏经济需求缓存（#53，2026-11-23）
 
 改前以本地 `fork/master` 的 `6ce469e952a2466ad1e4bab42984158861125037` 为基准，

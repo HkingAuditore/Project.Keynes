@@ -57,6 +57,7 @@ func _init() -> void:
 	_check_layer_constants()
 	_check_padding_type()
 	_check_wind_encoding_contract()
+	_check_wind_texture_history()
 	_check_offset_to_index_rule()
 	_check_commit_plan_bytes()
 	_check_padding_rows()
@@ -221,6 +222,77 @@ func _check_wind_encoding_contract() -> void:
 	got_zero.append_array(bytes.slice(8, 12))
 	_expect(got_zero == want_zero,
 		"zero wind encodes neutral (127, 127, 0, 255), got %s" % str(got_zero))
+
+
+func _check_wind_texture_history() -> void:
+	var baker := MapBaker.new()
+	baker._last_bake_map = _map
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(_n_cells + 1, 1)
+	var source := WindSource.new()
+	source.bind(world, _map)
+	var expected := WindSource.build_bytes(_map, world.lut_dims)
+	var published := Baker._publish_weather_table_from_luts(
+		baker, world, _weather_src, world.lut_dims.x, world.lut_dims.y)
+	_expect(published.get("weather_table_published", false), "weather table publishes real wind bytes")
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and source.current != null and source._current_wind_bytes == expected,
+		"the wind texture uses the same encoded pixels as the weather table including padding")
+	var first_texture := source.current
+	var speeds := _map.wind_speed_arr
+	var first_speed := speeds[0]
+	speeds[0] = 21.0  # Both 20 and 21 encode as full speed.
+	_map.wind_speed_arr = speeds
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and source.has_previous and first_texture != null
+		and source.current == first_texture and source.previous == first_texture
+		and source._current_wind_bytes == expected,
+		"identical encoded wind advances both endpoints without a second texture upload")
+	speeds[0] = first_speed
+	_map.wind_speed_arr = speeds
+	for field in [&"wind_x_arr", &"wind_y_arr", &"wind_speed_arr"]:
+		var before := source._current_wind_bytes
+		var previous_texture := source.current
+		var values: PackedFloat32Array = _map.get(field)
+		var original := values[0]
+		values[0] = -3.0 if field != &"wind_speed_arr" else 2.0
+		_map.set(field, values)
+		world.weather_lut_update_usec += 1
+		var updated := source.update()
+		var after := source._current_wind_bytes
+		_expect(updated and not after.is_empty() and after != before \
+			and after == WindSource.build_bytes(_map, world.lut_dims),
+			"changing %s invalidates the image and retains exact encoding" % field)
+		_expect(updated and source.current != previous_texture and source.previous == previous_texture,
+			"changing %s preserves the prior texture for interpolation" % field)
+		values[0] = original
+		_map.set(field, values)
+	world.weather_lut_update_usec += 1
+	var restored := source.update()
+	var restored_texture := source.current
+	_expect(restored and source._current_wind_bytes == expected, "original wind bytes are restored")
+	world.lut_dims = Vector2i(1, _n_cells + 1)
+	var resized := source.update()
+	_expect(resized and source.current != null and source.current != restored_texture
+		and source.current.get_size() == Vector2(world.lut_dims) and not source.has_previous
+		and source._current_wind_bytes == expected,
+		"a new shape with the same bytes and weather timestamp starts a new texture pair")
+	var original_y := _map.wind_y_arr
+	_map.wind_y_arr = PackedFloat32Array()
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and source.current == null and source._current_wind_bytes.is_empty(),
+		"an incomplete wind source clears the previously uploaded texture")
+	_map.wind_y_arr = original_y
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and source.current != null and source._current_wind_bytes == expected,
+		"a recovered source publishes the original bytes")
+	var recovered_texture := source.current
+	var replacement := WorldData.new()
+	replacement.lut_dims = world.lut_dims
+	source.bind(replacement, _map)
+	_expect(source.update() and not source.has_previous and source.current != null
+		and source.current != recovered_texture and source._current_wind_bytes == expected,
+		"a replacement world starts its own texture history")
 
 
 # ─────────────────────────────────────────────────────────────────────────

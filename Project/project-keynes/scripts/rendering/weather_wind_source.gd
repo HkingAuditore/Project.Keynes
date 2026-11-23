@@ -8,6 +8,7 @@ var previous: Texture2D
 var has_previous := false
 var _stamp := -1
 var _dims := Vector2i.ZERO
+var _current_wind_bytes := PackedByteArray()
 
 
 func bind(next_world: WorldData, next_map: MapData) -> void:
@@ -20,6 +21,7 @@ func bind(next_world: WorldData, next_map: MapData) -> void:
 	has_previous = false
 	_stamp = -1
 	_dims = Vector2i.ZERO
+	_current_wind_bytes = PackedByteArray()
 
 
 func update() -> bool:
@@ -29,8 +31,13 @@ func update() -> bool:
 	if stamp == _stamp and world.lut_dims == _dims:
 		return false
 	var image := build_image(map, world.lut_dims)
+	var bytes := image.get_data() if image != null else PackedByteArray()
 	previous = current
-	current = ImageTexture.create_from_image(image) if image != null else null
+	# Keep both interpolation endpoints. Identical encoded pixels can use the
+	# current texture for both without another graphics upload.
+	if world.lut_dims != _dims or bytes != _current_wind_bytes:
+		current = ImageTexture.create_from_image(image) if image != null else null
+		_current_wind_bytes = bytes
 	has_previous = current != null and previous != null and _dims == world.lut_dims
 	if not has_previous:
 		previous = current
