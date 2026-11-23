@@ -10,8 +10,12 @@ redesign can be validated before running the engine:
 """
 from __future__ import annotations
 
+import itertools
 import json
+import os
 import re
+import threading
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -61,6 +65,49 @@ def read_tres(path: Path) -> dict:
     return fields
 
 
+_TMP_SEQ = itertools.count()
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write beside the target, then ``os.replace()`` it into place.
+
+    ``technology_network.json`` is the shared input of the catalog compiler and of
+    every test run, so a half-written file is not a private mistake: for as long as
+    the write takes, any reader sees a state that fails to compile, and the error
+    names whichever node happened to be mid-edit.  ``os.replace`` is atomic within
+    one volume, so readers see either the old file or the new one, never a torn one.
+
+    The temporary name is unique per writer (pid + thread + counter).  A fixed name
+    would make two concurrent generators share one temp file: one of them would move
+    it away under the other, and the ``finally`` cleanup would delete the other's
+    file.  Content stayed correct in that case, but the losing writer died with
+    ``FileNotFoundError`` -- and this repo does run several lines at once.
+    """
+    tag = "%d.%d.%d" % (os.getpid(), threading.get_ident(), next(_TMP_SEQ))
+    tmp = path.with_name("%s.%s.tmp" % (path.name, tag))
+    try:
+        with tmp.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        for attempt in range(100):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                # Windows refuses the replace while a reader holds the file, and a
+                # reader (test run, editor, Godot) may hold it for a few ms at a time.
+                # Retry for up to 2.5 s; then fail with the original file intact
+                # rather than leaving a half-written one behind.
+                if attempt == 99:
+                    raise
+                time.sleep(0.025)
+    finally:
+        # only ever this writer's own temp file: the name carries a unique tag
+        if tmp.exists():
+            tmp.unlink()
+
+
 def write_tres_array(path: Path, key: str, values: list[str]) -> bool:
     """Replace one PackedStringArray line; returns True when the file changed."""
     text = path.read_text(encoding="utf-8")
@@ -72,8 +119,7 @@ def write_tres_array(path: Path, key: str, values: list[str]) -> bool:
     new_text = pattern.sub(lambda _m: replacement, text, count=1)
     if new_text == text:
         return False
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(new_text)
+    write_atomic(path, new_text)
     return True
 
 
@@ -357,5 +403,4 @@ class Model:
 
 def dump_json(path: Path, payload) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent="\t") + "\n"
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    write_atomic(path, text)
