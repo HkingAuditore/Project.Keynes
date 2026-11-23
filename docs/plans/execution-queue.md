@@ -73,7 +73,7 @@
 - 已修（2026-11-14）：环满时气候输入采集失败，主线程下一拍跳到 D+1，worker 停在 D 等不到对应的环境帧，5 秒后报 `day_wait_peer_stall_timeout`，看起来像 Country peer 卡死。当时在 `mapgen_native_daily_runtime.gd` 给 SUS_TICK 输入日加了钳位，第 9b 项改成 C++ 游标后钳位已删除。lifecycle 连跑 4 次 0 次卡死（修前约每 2 次 1 次）。x5、x6b 的每日等待去掉 120 秒下限、基线改在推进当天之前读取，从 300 秒超时变为约 30 秒跑完。外包的 E2 补丁没有修掉问题，还放宽了断言，没有采用。
 - 已修（2026-11-14，第 9e 项）：ideology worker 测试剩余失败。lifecycle、x6c、country_ramp、x5、x6b、scalar、x12、x9b、restart_mask、cell_card、derived_pump 全过，根因见第 9e 项。剩 x6a 一条：夹具假设经济静止（见第 9c 项），断言没改。
 - 已修（2026-11-15）：Country 财政请求在 Economy 主线程路径中先确认消费、后落国家账，导致回执提前删除。现按既有执行边界先应用国家账并发布读视图，再确认；加强后的 `economy_fiscal_reservation_continuation_test` 为 57/57，旧二进制仍失败同 2 条。
-- `trade_activity_runtime_integration_test` 访问 nil 的 `visual_tiles` 后一直等待。
+- 已修（#42）：`trade_activity_runtime_integration_test` 从会话取生成好的地图数据。数据缺失时记录断言失败并退出，贸易层用就绪信号交付的地图绑定法线。
 - `military_runtime_smoke_test`：2026-11-14 换成合并前的等价兵营配方后 0 失败，原先登船少 1 名士兵的那条没有复现；真实数据下卡在建兵营（待定 12b）。
 - `technology_refresh_latency_test` 剩 1 条：面板关闭的 6 天里研究进度没变，疑似排队的 3 项科技在测量阶段已研究完，未证实（2026-11-14 从玩法待定移来，原来的延迟问题已通过）。
 - `runtime_country_parity_test`：第 2 天起 `research_deferred_points` 在 Country POD 与主线程科研队列之间不一致，之后屏障超时。2026-11-14 复跑剩 2 条（生产调度没有封住每个推进日；D11 soak 没有产出可比的 Country 帧）。

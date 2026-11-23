@@ -201,7 +201,7 @@ static func _push_world_lighting_profile(
 	if _building_visual_layer != null:
 		_building_visual_layer.set_terrain_lighting(_shader_mat)
 	if is_instance_valid(_trade_visual_layer):
-		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
+		_trade_visual_layer.refresh_terrain_lighting(_shader_mat)
 	if is_instance_valid(_military_visual_layer):
 		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
 

@@ -158,6 +158,7 @@ func _run() -> void:
 		layer._expire_records()
 		await _image("all_objects_preview")
 	layer.clear()
+	layer.refresh_terrain_lighting(context.source)
 	expect("clear releases previous map lighting fields", not bool(layer._material.get_shader_parameter("terrain_normal_tex_bound"))
 		and layer._shadow_material.get_shader_parameter("visual_horizon_tiles") == null)
 	print("=== trade lighting: %d checks, %d failures ===" % [checks, failures])

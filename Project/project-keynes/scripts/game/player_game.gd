@@ -147,7 +147,7 @@ func _connect_signals() -> void:
 
 func _on_world_ready(
 		map: MapData,
-		_world_data: WorldData,
+		world_data: WorldData,
 		generator: MapGenerator,
 		view_adapter: DCViewAdapter
 ) -> void:
@@ -164,12 +164,12 @@ func _on_world_ready(
 	# Manager lives on RuntimeHost (created at renderer bind); it needs the
 	# world/map/camera/clock, which are all valid only here.
 	if _runtime_host.military_map_layers != null:
-		_runtime_host.military_map_layers.configure(map, _world_data, _camera,
+		_runtime_host.military_map_layers.configure(map, world_data, _camera,
 			_world_clock, _runtime_host)
 	# ---- Military layers
 	_cell_situations.configure(map, _camera, _runtime_host,
 		generator.get_economy_facade(), view_adapter)
-	_renderer.configure_trade_visuals(_trade_activity)
+	_renderer.configure_trade_visuals(_trade_activity, world_data)
 	if _runtime_host.military_map_layers != null \
 			and _runtime_host.military_map_layers.token_layer != null:
 		_renderer.configure_military_visuals(

@@ -1297,13 +1297,13 @@ static func _for_each_vegetation_layer(host, callable: Callable) -> void:
 			callable.call(layer)
 
 
-## Player scene assembly supplies the independent read-only trade layer.
+## Player scene assembly supplies the trade layer and the world published at readiness.
 
-static func configure_trade_visuals(host, layer: TradeActivityLayer) -> void:
+static func configure_trade_visuals(host, layer: TradeActivityLayer, world: WorldData) -> void:
 
 	host._trade_visual_layer = layer
 	if is_instance_valid(layer):
-		layer.set_terrain_lighting(host._world, host._shader_mat)
+		layer.set_terrain_lighting(world, host._shader_mat)
 		_sync_trade_daylight(host)
 
 

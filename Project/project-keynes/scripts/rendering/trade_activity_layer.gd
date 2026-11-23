@@ -21,6 +21,7 @@ var _quality := 2
 var _material: ShaderMaterial
 var _shadow_material: ShaderMaterial
 var _shadow_batch: MultiMeshInstance2D
+var _lighting_world: WorldData
 var _lighting_values: Dictionary = {}
 var _shader_tiled := false
 var _batch: MultiMeshInstance2D
@@ -89,6 +90,7 @@ func clear() -> void:
 	_bounds_rect = Rect2()
 	_external_camera = false
 	_map = null
+	_lighting_world = null
 	_lighting_values.clear()
 	for name in ["terrain_normal_tex", "terrain_horizon_tex", "visual_horizon_tiles", "visual_terrain_normal_tiles"]:
 		_set_parameter(name, null)
@@ -199,9 +201,15 @@ func set_daylight_parameters(values: Dictionary) -> void:
 			_set_parameter(name, values[name])
 
 
-## Static shared map fields; rebinding and asynchronous bake completion use this boundary.
+## Keep the world supplied at session readiness for later lighting refreshes.
 func set_terrain_lighting(world: WorldData, source: ShaderMaterial) -> void:
+	_lighting_world = world
+	refresh_terrain_lighting(source)
+
+
+func refresh_terrain_lighting(source: ShaderMaterial) -> void:
 	_ensure_batch()
+	var world := _lighting_world
 	if world == null:
 		for name in ["terrain_normal_tex_bound", "terrain_horizon_tex_bound", "gi_lut_bound"]:
 			_set_parameter(name, false)

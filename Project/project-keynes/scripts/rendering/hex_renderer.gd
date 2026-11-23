@@ -1224,7 +1224,7 @@ func _shader_quality_define_prefix(tier_define: String) -> String: return Render
 
 func _for_each_vegetation_layer(callable: Callable) -> void: return RendererShaderWater._for_each_vegetation_layer(self, callable)
 
-func configure_trade_visuals(layer: TradeActivityLayer) -> void: return RendererShaderWater.configure_trade_visuals(self, layer)
+func configure_trade_visuals(layer: TradeActivityLayer, world: WorldData) -> void: return RendererShaderWater.configure_trade_visuals(self, layer, world)
 
 func configure_military_visuals(layer: MilitaryArmyTokenLayer) -> void: return RendererShaderWater.configure_military_visuals(self, layer)
 

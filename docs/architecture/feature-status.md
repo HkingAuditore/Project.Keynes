@@ -3,6 +3,48 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 贸易光照与所得税回归（#42，2026-11-23）
+
+无窗口贸易集成测试中，天空光照和地平线设置的刷新检查在 `dcb78a2ac` 上均失败，修复后两项均通过。
+两次刷新都检查车辆和阴影是否保留原来的地形法线。
+
+所得税使用 Godot 4.6.3、macOS arm64 和本地调试库，默认地图为 60×40、种子 `20260718`。
+两次默认运行各启动一个新的进程，均以退出码 0 结束。按运行顺序记录完整通过行。
+
+```text
+[income-tax-player] PASS 50 committed days after income change; mixed_fiscal=false; final_committed_day=55; income_collected=650178; ledger_errors=0; writer=stage_ops
+[income-tax-player] PASS 50 committed days after income change; mixed_fiscal=false; final_committed_day=55; income_collected=650178; ledger_errors=0; writer=stage_ops
+```
+
+追加 `income_rate=-500` 的补贴用例也以退出码 0 结束，在第 55 日得到 `income_collected=0`、`ledger_errors=0`。
+各次运行的税率命令均在第 6 日生效。
+
+从仓库根目录执行以下检查。它要求两次运行都成功且各有一条通过行，并逐字比较两行。
+
+```sh
+(
+  set -eu
+  check_dir=$(mktemp -d)
+  for run in 1 2; do
+    output="$check_dir/default-$run.log"
+    godot --headless --path Project/project-keynes --log-file "$check_dir/engine-$run.log" \
+      res://tests/economy/income_tax_player_regression.tscn -- mode=ACTIVE > "$output" 2>&1
+    if rg '^SCRIPT ERROR:' "$output"; then
+      exit 1
+    fi
+    rg '^\[income-tax-player\] PASS ' "$output" > "$check_dir/default-$run.pass"
+    test "$(wc -l < "$check_dir/default-$run.pass")" -eq 1
+  done
+  diff -u "$check_dir/default-1.pass" "$check_dir/default-2.pass"
+  cat "$check_dir/default-1.pass" "$check_dir/default-2.pass"
+)
+```
+
+在 PR #48 合并提交 `a23fbbe19` 的项目副本中，用该提交所带的 macOS 调试库复现了 `650174`。
+随后仅换入本次验证用的调试库，同一命令得到 `650178`。两次均以退出码 0 结束，税率生效日、
+结束日和账目误差一致。两份调试库的 SHA-256 前 12 位分别为 `2ae61440c534` 和 `0e27e30909e2`。
+这次对照定位到版本间的库差异，尚未定位到具体的模拟计算改动。
+
 ## 后台模拟迁移前后的快进吞吐（2026-11-21）
 
 对比 PR #13 合并前的 `5274b84fe` 与合并后的 `fe3220aa2`。两版各在独立 worktree 由源码构建
