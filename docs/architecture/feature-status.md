@@ -41,10 +41,10 @@ macOS arm64 调试扩展。改前和当前方案交替运行三轮。每轮从�
 与改前重叠。Godot 在无可绘窗口时会对主循环安排休眠。这里的视口为 64×64。
 [Godot 4.6.3 帧间休眠实现](https://github.com/godotengine/godot/blob/4.6.3-stable/core/os/os.cpp#L666)
 
-本轮真实窗口启动仍停在 macOS 桌面服务，日志有 `com.apple.hiservices-xpcservice`
-连接错误，探针未进入玩家场景。桌面工具也缺少 Godot 访问权限。50× 与 1× 的真实窗口
-绘制间隔 P95、等待次数、最长等待及整体收益待测。探针可要求真实绘制，并记录每次
-`frame_post_draw` 的时刻。分析器按同一结算日窗口分别汇报游戏循环间隔和绘制完成间隔。
+真实窗口仍待验证。只等待两次绘制回调的最小项目遇到
+`com.apple.hiservices-xpcservice` 连接错误，未收到绘制确认。从 macOS 应用启动入口打开时返回
+`kLSNoExecutableErr`，桌面工具也拒绝访问 Godot。50× 和 1× 的实际绘制间隔 P95、
+等待次数、最长等待和提速幅度均缺少窗口记录。
 
 六次 50× 测试的第 1–180 日发布哈希和回执全部一致。自然剧情在结算第 20、80、141 日
 等玩家，测试从正式玩家入口答复，分别在第 21、81、142 日生效。四国和补测的当前六国场景
@@ -56,10 +56,21 @@ macOS arm64 调试扩展。改前和当前方案交替运行三轮。每轮从�
 
 ### 复现
 
-使用 Godot 4.6.3 及本地构建的调试扩展。在两个临时项目副本运行同一个探针，
-将改前副本的 `weather_wind_source.gd` 换成 `7ebdf9d20` 里的版本。以下真实窗口命令
-在每侧交替运行三次，每次使用新的输出前缀。`$first` 和 `$last` 为同一对记录都观测到的
-结算日边界。每对记录使用相同边界。
+使用 Godot 4.6.3 及同一个本地构建的调试扩展。将两个已导入的临时项目副本分别设为
+`$baseline_copy` 和 `$current_copy`。两边使用同一份探针，将改前副本的
+`weather_wind_source.gd` 换成 `7ebdf9d20` 里的版本。
+
+```sh
+python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$current_copy" \
+  --output "$scratch/rendered"
+```
+
+命令在两种速度各交替运行三组，保留逐帧和逐日数据、运行命令及负载均值。所有样本都须
+实际绘制、提交目标日并匹配同速度的逐日哈希与回执。每组要求实际显示设置一致，在双方均
+观测到的结算日边界内汇报绘制间隔 P95、游戏循环间隔 P95、等待次数及最长等待。
+两种速度验证通过后写出 `summary.json`。
+
+单独复测一侧时使用以下命令。`$first` 和 `$last` 为同一对记录都观测到的结算日边界。
 
 ```sh
 PK_SAVE_DIR="$sample.saves" PK_RUNTIME_WATERFALL_CSV="$sample.waterfall.csv" \
@@ -114,8 +125,9 @@ python3 tools/ci/run_regression_checks.py --roundtrip --log-dir "$checks/regress
   原场景，宿主尚不存在。将场景请求指向脚本资源后，旧探针进入等待且没有写记录。当前探针
   在同一条件下写出 `player_scene_load_failed` 并以 1 退出。`player_scene_handoff_startup_test.gd`
   覆盖这条异步失败路径，检查原场景仍在、正式会话为空以及失败记录的原因码。
-- `test_analyze_player_handoff.py` 的 5 项覆盖首尾跳日拒绝、区间中途合并多日、绘制间隔
-  边界及无画面记录拒绝。开局配置、保存库和正式存档往返在临时用户目录通过。
+- `test_analyze_player_handoff.py` 的 9 项通过，覆盖首尾跳日拒绝、区间中途合并多日、绘制间隔
+  边界、配对的实际画面设置和等待计数。用无画面 Godot 运行双速命令时，探针返回
+  `rendered_backend_required`，对照命令以失败退出。开局配置、保存库和正式存档往返在临时用户目录通过。
 - `check_golden_determinism.py --runs 3` 与 `--runs 3 --external-only` 全部匹配改前结果。
   `check_replay_matrix.py --annual` 比较了原跑、重放、第 365 日存档和新进程续跑至第 373 日。
 - `check_runtime_load_consistency.py --workers 7` 在当前沙盒读取 `ps` 时受限。补测保留原来的
