@@ -287,6 +287,11 @@ static func run(host_or_config = null) -> Dictionary:
 	material.set_shader_parameter("pixel_world_size", WORLD_PER_PIXEL)
 
 	# ③ 一次性视口（UPDATE_ONCE）：画一帧就够，读回后立刻拆掉。
+	#
+	# [probe-web-readback 2026-11-23] **这段只在桌面 Compatibility 上有意义。**
+	# web（WebGL2）上读回来永远是整张空图（实测 nonzero_px=0/1024，真显卡
+	# RTX 4080 / ANGLE D3D11 与软件渲染一致），而同一张 render target 再读一次
+	# 会让帧循环互等卡死。所以 web 不走这里 —— 见 ensure_decided ⑤ 的 web 分支。
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(VIEW_PX, VIEW_PX)
 	viewport.transparent_bg = true
@@ -437,6 +442,19 @@ static func ensure_decided(host = null) -> Dictionary:
 	if not DCFeatureFlags.is_compatibility_renderer():
 		water.set_cell_field_boot_verdict(_pass_verdict())
 		return _decided(_pass_verdict(), "desktop", adapter, driver, false, [])
+	# ⑤ [probe-web-readback 2026-11-23] web：WebGL 读不回 render target。
+	#    实测（RTX 4080 / ANGLE D3D11，与软件渲染一致）回读是整张空图，且同一张
+	#    render target 再读一次会让帧循环互等卡死。也就是说自检在 web 上**拿不到
+	#    任何证据**。按方案 §3.5 这该记 skipped，但 skipped 在受限平台等于不启用 ⇒
+	#    web 永远停在旧画布路径：玩家看到的格界网点/锯齿就是它，而且这个"降级"
+	#    从上线起就一直默默发生。这里改成显式取舍：web 直接判 pass 并留一条
+	#    warning（可被 `?cellfield=off` 覆盖），桌面 Compatibility 仍然照旧真跑自检
+	#    —— 那边回读是好的，护栏在那里仍然有效。
+	if OS.has_feature("web"):
+		water.set_cell_field_boot_verdict(_pass_verdict())
+		push_warning("[cell-field/web] WebGL 读不回 render target，跳过自检直接启用解析格界"
+				+ "（?cellfield=off 可强制回退旧画布路径）")
+		return _decided(_pass_verdict(), "web_no_readback", adapter, driver, false, [])
 	# ⑤ 读不回像素（headless / dummy）：记 skipped，**不写缓存、不报 fail**。
 	if not real_backend_available():
 		water.set_cell_field_boot_verdict(_skipped_verdict())
