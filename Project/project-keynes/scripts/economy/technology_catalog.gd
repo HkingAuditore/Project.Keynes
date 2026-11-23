@@ -6,6 +6,7 @@ const ResearchConditionScript = preload("res://scripts/research/research_conditi
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 const ValidationScript = preload("res://scripts/economy/technology_catalog_validation.gd")
+const NetworkPresentation = preload("res://scripts/technology/technology_network_presentation.gd")
 
 const NETWORK_DATA_PATH := "res://data/technology/technology_network.json"
 
@@ -1072,7 +1073,8 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			"is_starting": (int(compiled.technology_flags[i]) & 4) != 0,
 			"is_starter_eligible": (compiled.starter_eligible_technology_ids as PackedStringArray).has(technology_id),
 			"description": String(source.get("description", "")),
-			"effect_summary": String(compiled.technology_effect_summaries[i]),
+			# Public summaries resolve effect names the same way as detail rows.
+			"effect_summary": NetworkPresentation.effect_summary(source),
 			"effect_profile": compiled.technology_effect_profile_ids[i],
 			"node_role": String(compiled.technology_node_roles[i]),
 			"network_role": String(compiled.technology_network_roles[i]),

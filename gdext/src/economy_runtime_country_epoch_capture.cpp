@@ -431,6 +431,8 @@ bool NativeEconomyRuntime::capture_country_epoch(
     _epoch_country_profession_satisfaction_bp.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) *
             _profession_ids.size(), 0);
+    _epoch_country_general_satisfaction_bp.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     _epoch_country_reserve_pct.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     _epoch_country_terrain_sector_output_factor_q16.assign(
@@ -633,6 +635,35 @@ bool NativeEconomyRuntime::capture_country_epoch(
             // one the game actually uses: a card that stacks to 5x cannot overflow the
             // Q16 multiply later, and a bias cannot push satisfaction past the design
             // envelope.
+            // Per-political-class satisfaction bias (`economy.class.<id>.satisfaction_bp`).
+            // Evaluated once per country and folded into every profession of that class
+            // (and into `_epoch_country_general_satisfaction_bp` for unemployed cohorts).
+            std::vector<int32_t> class_satisfaction_bp(_political_class_ids.size(), 0);
+            int32_t general_class_bias_bp = 0;
+            for (size_t class_index = 0; class_index < _political_class_ids.size();
+                 ++class_index) {
+                const int32_t class_stat =
+                    class_index < _political_class_satisfaction_bp_stat_ids.size()
+                        ? _political_class_satisfaction_bp_stat_ids[class_index] : -1;
+                int32_t class_bias = 0;
+                if (class_stat >= 0) {
+                    class_bias = static_cast<int32_t>(std::clamp<int64_t>(
+                        static_cast<int64_t>(std::llround(
+                            modifier_api::effective_value(*_modifier_runtime,
+                                ModifierApi::COUNTRY, class_stat,
+                                country_handle, 0, 0.0))),
+                        -2500, 2500));
+                }
+                class_satisfaction_bp[class_index] = class_bias;
+                if (_political_class_ids[class_index] == "general") {
+                    general_class_bias_bp = class_bias;
+                }
+            }
+            if (static_cast<size_t>(country) <
+                    _epoch_country_general_satisfaction_bp.size()) {
+                _epoch_country_general_satisfaction_bp[static_cast<size_t>(country)] =
+                    general_class_bias_bp;
+            }
             for (size_t profession = 0; profession < _profession_ids.size();
                  ++profession) {
                 const size_t index = static_cast<size_t>(country) *
@@ -650,14 +681,24 @@ bool NativeEconomyRuntime::capture_country_epoch(
                             ModifierApi::COUNTRY, tolerance_stat,
                             country_handle, 0, 1.0)),
                         Q16_ONE / 2, 3 * Q16_ONE));
-                int32_t bias_bp = 0;
+                int64_t combined_bias_bp = 0;
                 if (bias_stat >= 0)
-                    bias_bp = static_cast<int32_t>(std::clamp<int64_t>(
-                        static_cast<int64_t>(std::llround(
-                            modifier_api::effective_value(*_modifier_runtime,
-                                ModifierApi::COUNTRY, bias_stat,
-                                country_handle, 0, 0.0))),
-                        -2500, 2500));
+                    combined_bias_bp += static_cast<int64_t>(std::llround(
+                        modifier_api::effective_value(*_modifier_runtime,
+                            ModifierApi::COUNTRY, bias_stat,
+                            country_handle, 0, 0.0)));
+                if (profession < _profession_political_class_index.size()) {
+                    const int32_t class_index =
+                        _profession_political_class_index[profession];
+                    if (class_index >= 0 &&
+                            static_cast<size_t>(class_index) <
+                                class_satisfaction_bp.size()) {
+                        combined_bias_bp +=
+                            class_satisfaction_bp[static_cast<size_t>(class_index)];
+                    }
+                }
+                const int32_t bias_bp = static_cast<int32_t>(
+                    std::clamp<int64_t>(combined_bias_bp, -2500, 2500));
                 _epoch_country_profession_tax_tolerance_q16[index] = tolerance_q16;
                 _epoch_country_profession_satisfaction_bp[index] = bias_bp;
                 // X16 PROBE (temporary). Answers "why does the frozen table stay at the

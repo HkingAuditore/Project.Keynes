@@ -785,7 +785,31 @@ func _support_summary(live: Dictionary, direction: int) -> String:
 
 
 func _support_tooltip(live: Dictionary, direction: int) -> String:
-	return _support_summary(live, direction)
+	var summary := _support_summary(live, direction)
+	var classes: Array = live.get("classes", [])
+	if classes.is_empty():
+		return summary
+	var total_influence := int(live.get("total_influence", 0))
+	if total_influence <= 0:
+		for item in classes:
+			total_influence += maxi(0, int((item as Dictionary).get("influence", 0)))
+	var parts := PackedStringArray()
+	for item in classes:
+		var entry := item as Dictionary
+		var stances: Array = entry.get("stances", [])
+		var contribs: Array = entry.get("contributions", [])
+		var stance := int(stances[direction]) if direction < stances.size() else 0
+		var raw_contrib := int(contribs[direction]) if direction < contribs.size() else 0
+		var score_contrib := int(round(float(raw_contrib) / float(total_influence))) \
+			if total_influence > 0 else 0
+		var attitude := "赞成" if stance > 0 else ("反对" if stance < 0 else "中立")
+		var label := IdeologyWorkspacePresentationScript._class_label(
+			self, int(entry.get("class_index", -1)))
+		parts.append("%s %s(%s, 贡献 %s)" % [
+			label, attitude, _q16_signed(stance), _q16_signed(score_contrib)])
+	if parts.is_empty():
+		return summary
+	return "%s\n%s" % [summary, " · ".join(parts)]
 
 
 func _display_name(metadata: Dictionary, ideology_id: int) -> String:

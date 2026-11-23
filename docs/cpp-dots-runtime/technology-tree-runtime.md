@@ -289,10 +289,10 @@ term CSR、路线标签、每路线独立 postfix IR 与总 `ANY_OF`、prerequis
 纯观察辨识节点使用。该字段编译为 `technology_knowledge_basis_json` 并参与目录身份哈希，不新增
 国家运行时状态、研究谓词或存档字段。
 
-权威目录直接使用中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()` 提供研究科技，
-`public_application_intersections()` 提供自动应用卡，前者同时提供中文路线标签；玩家界面不显示
+权威目录保存中文名称及结构化效果。`TechnologyCatalog.public_definitions()` 提供研究科技、中文路线标签，
+并通过与详情行共用的格式化器生成中文效果摘要。`public_application_intersections()` 提供自动应用卡。玩家界面不显示
 内部 `tech.*`/`app.*`/`route.*` ID。稳定 ID、dense 顺序、
-Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档；
+Effect/Trigger/经济绑定与作者目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档；
 旧目录存档明确返回 `catalog_hash_mismatch`。
 
 内容解锁审计验证每项绑定存在且确有消费者。建筑保留一个主 `technology_tags`（定义性科技），并可通过

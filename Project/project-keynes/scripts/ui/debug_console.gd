@@ -123,6 +123,9 @@ var _economy_current_cell_checkbox: CheckBox
 var _economy_data_recorder: RefCounted = null
 var _atlas_river_probe_dump_btn: Button
 var _atlas_river_probe_status_label: Label
+var _open_log_dir_btn: Button
+var _open_log_dir_label: Label
+var _log_dir_opener: Callable
 # _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
 var _record_btn_toast_until_msec: int = 0
 var _tile_record_btn_toast_until_msec: int = 0
@@ -456,6 +459,24 @@ func _build_gm_recording_page(parent: Control) -> void:
 	page.add_child(profile_row)
 
 	_add_gm_atlas_probe_recorder_row(page)
+
+	var log_dir_row := HBoxContainer.new()
+	log_dir_row.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	var log_dir_button := Button.new()
+	log_dir_button.name = "GMOpenLogDirButton"
+	log_dir_button.tooltip_text = "打开日志输出文件夹（%s）" % _resolve_log_output_dir()
+	log_dir_button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconButton.apply(log_dir_button, &"action.chevron_right", 15)
+	log_dir_button.pressed.connect(_on_gm_open_log_dir_pressed)
+	log_dir_row.add_child(log_dir_button)
+	var log_dir_label := Label.new()
+	log_dir_label.text = "打开日志文件夹"
+	log_dir_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_dir_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	log_dir_row.add_child(log_dir_label)
+	page.add_child(log_dir_row)
+	_open_log_dir_btn = log_dir_button
+	_open_log_dir_label = log_dir_label
 
 
 func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
@@ -806,6 +827,42 @@ func _on_gm_atlas_river_probe_record_pressed() -> void:
 		else:
 			_append_gm_output(String(result.get("message", result.get("code", "导出失败"))), true)
 	_refresh_gm_atlas_river_probe_status()
+
+
+static func _resolve_log_output_dir() -> String:
+	var log_path := String(
+		ProjectSettings.get_setting("debug/file_logging/log_path", "user://logs/godot.log")
+	).strip_edges()
+	if log_path.is_empty():
+		log_path = "user://logs/godot.log"
+	var log_dir := log_path.get_base_dir()
+	if log_dir.is_empty():
+		log_dir = "user://logs"
+	return ProjectSettings.globalize_path(log_dir).simplify_path()
+
+
+func _on_gm_open_log_dir_pressed() -> void:
+	var log_dir := _resolve_log_output_dir()
+	DirAccess.make_dir_recursive_absolute(log_dir)
+	var err: Error = OK
+	if _log_dir_opener.is_valid():
+		err = int(_log_dir_opener.call(log_dir)) as Error
+	elif OS.has_feature("mobile"):
+		DisplayServer.clipboard_set(log_dir)
+		if _open_log_dir_label != null:
+			_open_log_dir_label.text = "打开日志文件夹 · 路径已复制"
+		_append_gm_output("日志文件夹路径已复制：%s" % log_dir, false)
+		return
+	else:
+		err = OS.shell_open(log_dir)
+	if err == OK:
+		if _open_log_dir_label != null:
+			_open_log_dir_label.text = "打开日志文件夹 · 已打开"
+		_append_gm_output("已打开日志文件夹：%s" % log_dir, false)
+	else:
+		if _open_log_dir_label != null:
+			_open_log_dir_label.text = "打开日志文件夹 · 失败 (%d)" % err
+		_append_gm_output("打开日志文件夹失败（err=%d）：%s" % [err, log_dir], true)
 
 
 func _refresh_gm_atlas_river_probe_status() -> void:

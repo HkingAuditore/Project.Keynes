@@ -308,6 +308,9 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt64Array owner_employed;
     PackedInt64Array employee_employed;
     PackedInt64Array unemployed;
+    int64_t employed_population = 0;
+    int64_t unemployed_population = 0;
+    int64_t employment_sat = 0;
     std::vector<int32_t> slots;
     population_store().for_each_in_cell(cell_idx, [&](int32_t slot) { slots.push_back(slot); });
     for (int32_t slot : slots) {
@@ -340,11 +343,21 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         worst_need_ids.push_back(population_store().worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
                                      ? -1 : population_store().worst_need_id[slot]);
         merchant_flags.push_back(is_merchant_slot(slot) ? 1 : 0);
+        const int64_t slot_population = std::max<int64_t>(0, population_store().population[slot]);
+        const int64_t slot_owner_employed = std::max<int64_t>(0, population_store().owner_employed[slot]);
+        const int64_t slot_employee_employed = std::max<int64_t>(0, population_store().employee_employed[slot]);
+        const int64_t slot_employed = std::min<int64_t>(slot_population,
+            saturating_add(slot_owner_employed, slot_employee_employed, employment_sat));
+        employed_population = saturating_add(employed_population, slot_employed, employment_sat);
+        unemployed_population = saturating_add(unemployed_population,
+            slot_population - slot_employed, employment_sat);
         owner_employed.push_back(population_store().owner_employed[slot]);
         employee_employed.push_back(population_store().employee_employed[slot]);
         unemployed.push_back(std::max<int64_t>(0, population_store().population[slot] -
             population_store().owner_employed[slot] - population_store().employee_employed[slot]));
     }
+    out["employed_population"] = employed_population;
+    out["unemployed_population"] = unemployed_population;
     out["handles"] = handles;
     out["signature_ids"] = signatures;
     out["profession_ids"] = professions;

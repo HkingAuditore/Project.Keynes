@@ -17,12 +17,20 @@ static func _build_player_gm_ui(host) -> void:
 	margin.add_child(root)
 
 	var header = UIControlParts.h_box_container()
+	header.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	var title = UIControlParts.label()
 	title.text = "GM 管理面板"
 	title.add_theme_font_override("font", UITokens.font_with_weight(700))
 	title.add_theme_font_size_override("font_size", UITokens.FONT_TITLE)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
+	var log_dir_button = UIControlParts.button()
+	log_dir_button.name = "GMHeaderOpenLogDirButton"
+	log_dir_button.tooltip_text = "打开日志输出文件夹（%s）" % host._resolve_log_output_dir()
+	log_dir_button.custom_minimum_size = Vector2(0.0, 32.0)
+	IconButton.apply_with_text(log_dir_button, &"action.chevron_right", "日志目录", 14)
+	log_dir_button.pressed.connect(host._on_gm_open_log_dir_pressed)
+	header.add_child(log_dir_button)
 	var close_button = UIControlParts.button()
 	close_button.tooltip_text = "关闭 GM 面板"
 	close_button.custom_minimum_size = Vector2(34.0, 32.0)

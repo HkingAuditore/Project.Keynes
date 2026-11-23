@@ -1296,6 +1296,10 @@ private:
     // X16: indexed by `profession_id`; -1 means the stat is absent.
     std::vector<int32_t> _profession_tax_tolerance_stat_ids;
     std::vector<int32_t> _profession_satisfaction_bp_stat_ids;
+    // Per-political-class satisfaction bias (`economy.class.<id>.satisfaction_bp`),
+    // indexed in `_political_class_ids` order; folded into per-profession and
+    // general-class epoch satisfaction biases during `freeze_country_epoch_inputs`.
+    std::vector<int32_t> _political_class_satisfaction_bp_stat_ids;
     std::vector<int32_t> _country_terrain_sector_output_stat_ids;
     std::vector<int32_t> _country_landform_sector_output_stat_ids;
     std::vector<int32_t> _country_building_output_stat_ids;
@@ -1484,6 +1488,7 @@ private:
     // clamped to [0.5, 3.0] and [-2500, 2500] respectively.
     std::vector<int32_t> _epoch_country_profession_tax_tolerance_q16;
     std::vector<int32_t> _epoch_country_profession_satisfaction_bp;
+    std::vector<int32_t> _epoch_country_general_satisfaction_bp;
     // R-4 metric 69: per-country treasury reserve ratio, in percentage points.
     // v0 denominator is a 365-day extrapolation of the live income EMA (no new save
     // state); the true rolling-year accumulator is deferred to M4 (09 §8).

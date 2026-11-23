@@ -81,6 +81,8 @@ extends Resource
 @export_range(0.0, 1.0) var ground_cover_clump_strength := 0.45
 # 每档质量的边缘采样数（1 = 无软边，3 = 桌面高档软边）。
 @export var ground_cover_taps := PackedInt32Array([1, 1, 3])
+# Continuous fade strength at cells whose cover community differs from a neighbour.
+@export_range(0.0, 1.0) var ground_cover_edge_blend_strength := 0.85
 # 桌面高档：群落法线与冠层自阴影。
 @export_range(0.0, 2.0) var ground_cover_normal_strength := 0.8
 @export_range(0.0, 1.0) var ground_cover_shadow := 0.45

@@ -84,6 +84,7 @@ func _run() -> void:
 	_test_cohort_ranking()
 	_test_pending()
 	_test_board_widget()
+	_test_same_cell_daily_refresh()
 	_test_label_lod()
 	_test_capital_and_hover()
 	_test_card_avoid_rect()
@@ -295,6 +296,53 @@ func _test_board_widget() -> void:
 	_expect("更窄时只剩行情表", board.desired_height() < 260.0)
 	board.hide_board(true)
 	_expect("hide_board 立即隐藏", not board.visible)
+	root.remove_child(board)
+	board.free()
+
+
+## 悬停同一格跨日时，展板必须随当日快照刷新，而不能冻死在初次悬停那天。
+func _test_same_cell_daily_refresh() -> void:
+	_economy.busy = false
+	_clock.current_day = 1.0
+	_economy.market_payloads = {0: _market_payload()}
+	_economy.population_payloads = {0: _population_payload()}
+	var packed := load(BOARD_SCENE) as PackedScene
+	if packed == null:
+		_failures.append("无法加载 cell_board.tscn")
+		return
+	var board := packed.instantiate() as CellBoard
+	if board == null:
+		_failures.append("cell_board.tscn 根节点不是 CellBoard")
+		return
+	root.add_child(board)
+	board.configure(_map, null,
+		func() -> Object: return _economy, _inspector, _clock)
+	board.apply_available_height(CellBoard.FULL_HEIGHT)
+	board.on_hover_cell_changed(0)
+	# 仍在初次 dwell 期间，同格刷新不得抢跑提前显示。
+	board.on_hover_cell_refreshed(0)
+	_expect("dwell 未结束时刷新不提前出表", not board.visible)
+	board._dwell_timer.stop()
+	board._on_resolve_timer_elapsed()
+	_expect("dwell 到期后展示当前格", board.visible and board.current_cell_index() == 0)
+	var day1_pop := (board._cohort_slots[1]["population"] as Label).text
+	var day1_builds := int(board._view_model.debug_stats().get("builds", 0))
+	# 同日重复触发不应冗余重建。
+	board.on_hover_cell_refreshed(0)
+	_expect("同日重复刷新不冗余重建",
+		int(board._view_model.debug_stats().get("builds", 0)) == day1_builds)
+	# 跨日后更新底层快照，触发同格刷新。
+	_clock.current_day = 2.0
+	var next_pop := _population_payload()
+	var pops := (next_pop["populations"] as PackedInt64Array).duplicate()
+	pops[0] = 750
+	next_pop["populations"] = pops
+	next_pop["population"] = 1215
+	_economy.population_payloads[0] = next_pop
+	board.on_hover_cell_refreshed(0)
+	var day2_pop := (board._cohort_slots[1]["population"] as Label).text
+	_expect("跨日后同格展板刷新为新数据", day2_pop != day1_pop and day2_pop == "750")
+	board.hide_board(true)
 	root.remove_child(board)
 	board.free()
 

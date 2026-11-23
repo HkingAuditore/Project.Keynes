@@ -21,6 +21,9 @@ func _ensure_cell_hover_card(host) -> void:
 	# 悬停格语义只在这里解析一次；地名纸签与左侧展板都订阅这条信号。
 	card.hover_cell_changed.connect(func(cell: int) -> void:
 		_on_hover_cell_changed(host, cell))
+	# 同格跨日或归属变化时，悬停卡按 REVALIDATE_MSEC 重建载荷；左侧展板借此刷新当日数据。
+	card.payload_applied.connect(func(cell: int) -> void:
+		_on_hover_payload_applied(host, cell))
 	_ensure_cell_board(host)
 	host._configure_cell_hover_card()
 
@@ -543,6 +546,12 @@ func _on_hover_cell_changed(host, cell_index: int) -> void:
 	var layout = host._hud_layout_component
 	if layout != null and layout._cell_board != null:
 		layout._cell_board.on_hover_cell_changed(cell_index)
+
+
+func _on_hover_payload_applied(host, cell_index: int) -> void:
+	var layout = host._hud_layout_component
+	if layout != null and layout._cell_board != null:
+		layout._cell_board.on_hover_cell_refreshed(cell_index)
 
 
 ## 地名层由世界运行期持有；UI 只借用它的悬停纸签入口。

@@ -502,10 +502,15 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	ww.w_kelp /= special_sum;
 	ww.w_ice  /= special_sum;
 
-	ww.open_ocean_w = clamp(
-		(1.0 - ww.w_lake - ww.w_reef * 0.62 - ww.w_kelp * 0.78 - ww.w_ice)
-				* smoothstep(0.26, 0.92, ctx.offshore_depth),
-		0.0, 1.0);
+	// Ocean and coast are both water, but their macro colour fields must still
+	// converge at the same continuous primary/secondary edge. Previously this
+	// weight only used depth, so an ocean patch remained fully active inside a
+	// coast cell until the dominant biome flipped, producing a visible kink.
+	float ocean_type_w = water_ctx_type_mix(ctx, B_OCEAN);
+	float coast_type_w = water_ctx_type_mix(ctx, B_COAST);
+	float open_water_w = (1.0 - ww.w_lake - ww.w_reef * 0.62 - ww.w_kelp * 0.78 - ww.w_ice);
+	open_water_w *= ocean_type_w * (1.0 - coast_type_w * 0.70);
+	ww.open_ocean_w = clamp(open_water_w * smoothstep(0.26, 0.92, ctx.offshore_depth), 0.0, 1.0);
 	return ww;
 }
 

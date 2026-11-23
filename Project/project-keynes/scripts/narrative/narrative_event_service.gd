@@ -74,6 +74,10 @@ const AI_FACT_HINTS := {
 # 状态再次成立时才出池。池子就是「下次出现时再触发」的实现，不需要额外调度器。
 const STATE_PROBE_INTERVAL_DAYS := 7
 const MAX_STATE_PROBE_CELLS := 8
+## 每模拟日状态探针最多采样格数（>1 天周期时把 8~16 格分摊到多日，消除每周单帧 15~20ms 尖刺）。
+const MAX_STATE_PROBE_CELLS_PER_DAY := 2
+## 单日事实事件通道最多做几次不同格子的完整上下文采样，防止事件爆发期单帧卡死 100ms+。
+const MAX_FACT_SAMPLE_CELLS_PER_DAY := 4
 const AI_POOL_MAX_ENTRIES := 24
 const AI_POOL_MAX_PER_STATE := 2
 const AI_POOL_TTL_DAYS := 365
@@ -124,6 +128,7 @@ var _pending_ai_requests: Dictionary = {}
 var state_probe_interval_days: int = STATE_PROBE_INTERVAL_DAYS
 var _state_probes: Array = []
 var _last_state_probe_day: int = NEVER_POPPED_DAY
+var _pending_state_probe_cells: PackedInt32Array = PackedInt32Array()
 ## "<state>:<cell>" → {since_day, peak_price_ratio, min_satisfaction}
 var _state_tracking: Dictionary = {}
 ## "<state>:<cell>" → 最近一次预取/出池的日，用于 cooldown。
@@ -470,43 +475,100 @@ func _poll_fact_events(day: int, ai_enabled: bool = false) -> void:
 	if popup_pacing_blocked(day):
 		return
 	var fact_defs := catalog().events_for_channel(NarrativeEventDefinitionScript.TriggerChannel.FACT_DRIVEN)
-	# AI 关闭且没有静态事实事件时，这批事实没有任何消费者，不必再采样上下文。
-	if fact_defs.is_empty() and not ai_enabled:
+	# 先按 ev_type 建立索引并剔除已冷却/一次性已触发定义；若整批没有任何事件命中
+	# 静态定义或 AI 事实白名单，直接返回，避免无意义地采样国家/地块上下文。
+	var defs_by_type: Dictionary = {}
+	var wildcard_defs: Array = []
+	for def in fact_defs:
+		if def == null:
+			continue
+		var def_id := String(def.event_id)
+		if def.one_shot and bool(_completed_one_shots.get(def_id, false)):
+			continue
+		if _cooldowns.has(def_id) and day < int(_cooldowns[def_id]):
+			continue
+		if def.fact_event_type == 0:
+			wildcard_defs.append(def)
+		else:
+			var bucket: Array = defs_by_type.get(def.fact_event_type, [])
+			bucket.append(def)
+			defs_by_type[def.fact_event_type] = bucket
+	var ai_fact_possible := ai_enabled and _ai_request_allowed(day)
+	if defs_by_type.is_empty() and wildcard_defs.is_empty() and not ai_fact_possible:
+		return
+	var types: PackedInt32Array = batch.get("type", PackedInt32Array())
+	var cells: PackedInt32Array = batch.get("cell_idx", PackedInt32Array())
+	var type_scalar := int(batch.get("type_scalar", 0))
+	var has_candidate := false
+	for i in range(count):
+		var ev_type := int(types[i]) if i < types.size() else type_scalar
+		if not wildcard_defs.is_empty() or defs_by_type.has(ev_type) \
+				or (ai_fact_possible and AI_FACT_HINTS.has(ev_type)):
+			has_candidate = true
+			break
+	if not has_candidate:
 		return
 	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 		_map, _generator, _player_country_handle, day, _story_flags)
 	var territory: PackedInt32Array = country_ctx.get("territory_cells", PackedInt32Array())
-	var types: PackedInt32Array = batch.get("type", PackedInt32Array())
-	var cells: PackedInt32Array = batch.get("cell_idx", PackedInt32Array())
+	var territory_set: Dictionary = {}
+	for t_cell in territory:
+		territory_set[int(t_cell)] = true
+	var sampled_cell_ctx: Dictionary = {}
+	var sampled_light_ctx: Dictionary = {}
+	var sampled_cell_count := 0
 	for i in range(count):
-		var ev_type := int(types[i]) if i < types.size() else int(batch.get("type_scalar", 0))
+		var ev_type := int(types[i]) if i < types.size() else type_scalar
+		var wants_ai := ai_enabled and AI_FACT_HINTS.has(ev_type) and _ai_request_allowed(day)
+		var typed_defs: Array = defs_by_type.get(ev_type, [])
+		if not wants_ai and typed_defs.is_empty() and wildcard_defs.is_empty():
+			continue
 		var cell_idx := int(cells[i]) if i < cells.size() else -1
-		if cell_idx >= 0 and not territory.is_empty() and not territory.has(cell_idx):
+		if cell_idx >= 0 and not territory_set.is_empty() and not territory_set.has(cell_idx):
 			continue
 		var resolved_cell := _resolve_valid_player_cell(cell_idx, territory)
-		var matched: Array = []
-		for def in fact_defs:
-			if def.fact_event_type != 0 and def.fact_event_type != ev_type:
-				continue
-			matched.append(def)
-		if not ai_enabled and matched.is_empty():
-			continue
+		var has_static_consumer := not typed_defs.is_empty() or not wildcard_defs.is_empty()
 		# 两段式采样，与脉冲槽同一条原则：先轻采样（不含 cohort 明细/家族/邻城）
 		# 掷 AI 骰，命中之后才补明细。一次明细是十几到二十几次原生查询，而事实通道的
 		# 命中率只有 5%，先采后掷等于让九成五的明细白跑。
 		# AI 事实通道先跑：它不回退队列，也不会因为静态事实事件命中而 return 掉。
 		# 轻采样不带家族，局势分里的家族项在这里不计分——与脉冲槽一致。
-		if ai_enabled:
-			var light_ctx := NarrativeContextSamplerScript.sample_cell_context(
-				resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
+		if wants_ai:
+			var light_ctx: Dictionary
+			if sampled_light_ctx.has(resolved_cell):
+				light_ctx = sampled_light_ctx[resolved_cell]
+			else:
+				light_ctx = NarrativeContextSamplerScript.sample_cell_context(
+					resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
+				sampled_light_ctx[resolved_cell] = light_ctx
 			_maybe_request_fact_ai(day, ev_type, resolved_cell, light_ctx)
-		if matched.is_empty():
+		if not has_static_consumer:
 			continue
 		# 静态事实事件要用明细算权重：战事那几条判据含 cohort 满意度与职业占比，
-		# 轻采样里没有，算出来的权重会失真。只有真有 def 认领这条事实的类型才补采。
-		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-			resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
-		for def in matched:
+		# 轻采样里没有，算出来的权重会失真。邻城只有 prompt 用得到，权重不看，先关掉，
+		# 真发请求时由 ensure_neighbor_settlements 按需补采。
+		# 同一格一批事件只采一次；单日上限防事件爆发期单帧卡死。
+		var cell_ctx: Dictionary
+		if sampled_cell_ctx.has(resolved_cell):
+			cell_ctx = sampled_cell_ctx[resolved_cell]
+		else:
+			if sampled_cell_count >= MAX_FACT_SAMPLE_CELLS_PER_DAY:
+				continue
+			cell_ctx = NarrativeContextSamplerScript.sample_cell_context(
+				resolved_cell, country_ctx, _map, _generator, _view_adapter,
+				_story_flags, true, false)
+			sampled_cell_ctx[resolved_cell] = cell_ctx
+			sampled_cell_count += 1
+		for def in typed_defs:
+			var weight := evaluate_event_weight(def, cell_ctx, day)
+			if weight <= 0:
+				continue
+			var roll := NarrativeRngScript.roll_q16(
+				_world_seed, day, _player_country_handle, resolved_cell, String(def.event_id).hash() + i)
+			if roll < def.trigger_chance_q16:
+				enqueue_event_offer(def, resolved_cell, day)
+				return
+		for def in wildcard_defs:
 			var weight := evaluate_event_weight(def, cell_ctx, day)
 			if weight <= 0:
 				continue
@@ -626,6 +688,8 @@ func _request_ai_generation(
 		# 说不出「谁在不满」，事件就只能写成没有人的通稿。
 		ctx = NarrativeContextSamplerScript.sample_cell_context(
 			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
+	else:
+		NarrativeContextSamplerScript.ensure_neighbor_settlements(ctx, _generator)
 	ai_generation_requested.emit({
 		"ai_request_seq": seq,
 		"day": day,
@@ -668,28 +732,41 @@ func _maybe_request_fact_ai(day: int, ev_type: int, cell_idx: int, cell_ctx: Dic
 # 状态仍成立 → 立即入队；状态已破/闸门关 → 进池子，等状态下次成立再出池。
 
 func _poll_state_probes(day: int, ai_enabled: bool) -> void:
-	if _state_probes.is_empty():
+	if _state_probes.is_empty() or not ai_enabled:
+		_pending_state_probe_cells = PackedInt32Array()
 		return
-	if state_probe_interval_days > 0 and _last_state_probe_day > NEVER_POPPED_DAY \
-			and day - _last_state_probe_day < state_probe_interval_days:
+	var interval_due := state_probe_interval_days <= 0 \
+		or _last_state_probe_day <= NEVER_POPPED_DAY \
+		or day - _last_state_probe_day >= state_probe_interval_days
+	if not interval_due and _pending_state_probe_cells.is_empty():
 		return
-	_last_state_probe_day = day
 	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 		_map, _generator, _player_country_handle, day, _story_flags)
 	var territory: PackedInt32Array = country_ctx.get("territory_cells", PackedInt32Array())
 	if territory.is_empty():
+		_pending_state_probe_cells = PackedInt32Array()
 		return
-	var cells := _pick_sampled_cells(territory, day)
-	# 已在状态里的格子必须继续采样，否则随机抽样会把 dwell 计数打断。
-	for key in _state_tracking.keys():
-		var tracked: Dictionary = _state_tracking[key]
-		var tracked_cell := int(tracked.get("cell", -1))
-		if tracked_cell >= 0 and not cells.has(tracked_cell) \
-				and cells.size() < MAX_STATE_PROBE_CELLS * 2:
-			cells.append(tracked_cell)
-	for cell_idx in cells:
+	if interval_due:
+		_last_state_probe_day = day
+		var cells := _pick_sampled_cells(territory, day)
+		# 已在状态里的格子必须继续采样，否则随机抽样会把 dwell 计数打断。
+		for key in _state_tracking.keys():
+			var tracked: Dictionary = _state_tracking[key]
+			var tracked_cell := int(tracked.get("cell", -1))
+			if tracked_cell >= 0 and not cells.has(tracked_cell) \
+					and cells.size() < MAX_STATE_PROBE_CELLS * 2:
+				cells.append(tracked_cell)
+		_pending_state_probe_cells = cells
+	if _pending_state_probe_cells.is_empty():
+		return
+	var budget := _pending_state_probe_cells.size() if state_probe_interval_days <= 1 \
+		else mini(_pending_state_probe_cells.size(), MAX_STATE_PROBE_CELLS_PER_DAY)
+	var batch := _pending_state_probe_cells.slice(0, budget)
+	_pending_state_probe_cells = _pending_state_probe_cells.slice(budget)
+	for cell_idx in batch:
 		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
+			cell_idx, country_ctx, _map, _generator, _view_adapter,
+			_story_flags, true, false)
 		for probe in _state_probes:
 			if probe != null and probe.has_method("matches"):
 				_evaluate_probe_state(probe, cell_idx, cell_ctx, day, ai_enabled)
@@ -1557,6 +1634,7 @@ func restore_state(state: Dictionary) -> Dictionary:
 	_state_last_seed = (raw_seed_day as Dictionary).duplicate(true) if raw_seed_day is Dictionary else {}
 	# 读档后立即重探一次，旧档里没有这些字段时也能自愈。
 	_last_state_probe_day = NEVER_POPPED_DAY
+	_pending_state_probe_cells = PackedInt32Array()
 	var raw_cell_counts = state.get("cell_year_event_counts", {})
 	_cell_year_event_counts = (raw_cell_counts as Dictionary).duplicate(true) if raw_cell_counts is Dictionary else {}
 
@@ -1618,6 +1696,7 @@ func _reset_empty() -> void:
 	_state_tracking.clear()
 	_state_last_seed.clear()
 	_last_state_probe_day = NEVER_POPPED_DAY
+	_pending_state_probe_cells = PackedInt32Array()
 	_cell_year_event_counts.clear()
 	_active_offer.clear()
 	_ready_queue.clear()

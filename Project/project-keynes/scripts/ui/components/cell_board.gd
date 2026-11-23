@@ -66,6 +66,7 @@ var _hover_view_model: CellHoverViewModel
 
 var _pending_cell := -1
 var _shown_cell := -1
+var _shown_day := -1
 var _dwell_timer: Timer
 var _retry_timer: Timer
 var _retry_left := 0
@@ -172,16 +173,17 @@ func _build_card(node_name: String) -> Dictionary:
 
 
 func _build_timers() -> void:
-	_dwell_timer = Timer.new()
-	_dwell_timer.one_shot = true
-	_dwell_timer.process_mode = Node.PROCESS_MODE_ALWAYS
-	_dwell_timer.timeout.connect(_on_dwell_elapsed)
-	add_child(_dwell_timer)
-	_retry_timer = Timer.new()
-	_retry_timer.one_shot = true
-	_retry_timer.process_mode = Node.PROCESS_MODE_ALWAYS
-	_retry_timer.timeout.connect(_on_retry_elapsed)
-	add_child(_retry_timer)
+	_dwell_timer = _make_resolve_timer()
+	_retry_timer = _make_resolve_timer()
+
+
+func _make_resolve_timer() -> Timer:
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.process_mode = Node.PROCESS_MODE_ALWAYS
+	timer.timeout.connect(_on_resolve_timer_elapsed)
+	add_child(timer)
+	return timer
 
 
 # ───────────────────────────── 表头 ─────────────────────────────
@@ -483,11 +485,10 @@ func configure(map: MapData, hover_view_model: CellHoverViewModel,
 func reset_for_world() -> void:
 	_pending_cell = -1
 	_shown_cell = -1
+	_shown_day = -1
 	_retry_left = 0
-	if _dwell_timer != null:
-		_dwell_timer.stop()
-	if _retry_timer != null:
-		_retry_timer.stop()
+	if _dwell_timer != null: _dwell_timer.stop()
+	if _retry_timer != null: _retry_timer.stop()
 	hide_board(true)
 
 
@@ -515,18 +516,30 @@ func on_hover_cell_changed(cell_index: int) -> void:
 		return
 	_pending_cell = cell_index
 	_retry_left = RETRY_LIMIT
+	_retry_timer.stop()
 	_dwell_timer.start(float(DWELL_MSEC) / 1000.0)
 	# 已经在展示别的格子时，新格子数据没到之前不闪走旧内容。
 	if _shown_cell < 0:
 		hide_board(false)
 
 
-func _on_dwell_elapsed() -> void:
-	if _pending_cell >= 0:
-		_resolve(_pending_cell)
+## 悬停卡同格跨日或归属变化重建后触发：不重走 300ms 停稳等待，直接按当日快照刷新。
+func on_hover_cell_refreshed(cell_index: int) -> void:
+	if _dwell_timer == null or _suppressed or _view_model == null or _map == null:
+		return
+	if cell_index < 0 or cell_index != _pending_cell:
+		return
+	# 初次停稳倒计时还在跑时，等它自然到期读取当日数据，不抢跑跳过 dwell。
+	if not _dwell_timer.is_stopped():
+		return
+	if _shown_cell == cell_index and visible and _shown_day == _view_model.current_day():
+		return
+	_retry_left = RETRY_LIMIT
+	_retry_timer.stop()
+	_resolve(cell_index)
 
 
-func _on_retry_elapsed() -> void:
+func _on_resolve_timer_elapsed() -> void:
 	if _pending_cell >= 0:
 		_resolve(_pending_cell)
 
@@ -552,18 +565,23 @@ func _resolve(cell_index: int) -> void:
 		resolved.emit(cell_index, false)
 		return
 	_retry_left = 0
-	var market_rows: Array = (payload.get("market", {}) as Dictionary).get(
-		"rows", [])
-	var cohort_rows: Array = (payload.get("cohorts", {}) as Dictionary).get(
-		"rows", [])
-	if market_rows.is_empty() and cohort_rows.is_empty():
+	if not _apply_payload(cell_index, payload, true):
 		hide_board(false)
 		resolved.emit(cell_index, false)
 		return
+	resolved.emit(cell_index, true)
+
+
+func _apply_payload(cell_index: int, payload: Dictionary, animate: bool) -> bool:
+	var market_rows: Array = (payload.get("market", {}) as Dictionary).get("rows", [])
+	var cohort_rows: Array = (payload.get("cohorts", {}) as Dictionary).get("rows", [])
+	if market_rows.is_empty() and cohort_rows.is_empty():
+		return false
 	_apply_rows(market_rows, cohort_rows)
 	_shown_cell = cell_index
-	show_board(true)
-	resolved.emit(cell_index, true)
+	_shown_day = int(payload.get("day", -1))
+	show_board(animate)
+	return true
 
 
 # ───────────────────────────── 呈现 ─────────────────────────────
@@ -691,6 +709,7 @@ func show_board(animate: bool) -> void:
 
 func hide_board(immediate: bool) -> void:
 	_shown_cell = -1
+	_shown_day = -1
 	if not visible:
 		return
 	if _hiding and not immediate:
@@ -731,10 +750,8 @@ func apply_available_height(available: float) -> void:
 	_cohort_capacity = 3 if available < FULL_HEIGHT else SLOT_COUNT
 	_show_cohorts = available >= COMPACT_HEIGHT
 	_show_market = available >= COHORTS_HEIGHT
-	if not _show_cohorts:
-		_cohort_card.visible = false
-	if not _show_market:
-		_market_card.visible = false
+	if not _show_cohorts: _cohort_card.visible = false
+	if not _show_market: _market_card.visible = false
 
 
 func desired_height() -> float:
@@ -751,15 +768,8 @@ func debug_show_cell(cell_index: int) -> bool:
 	if _view_model == null or _map == null or _map.cell_at(cell_index) == null:
 		return false
 	var payload: Dictionary = _view_model.build(cell_index)
-	if not bool(payload.get("ok", false)):
+	if not bool(payload.get("ok", false)) or not _apply_payload(cell_index, payload, false):
 		return false
-	var market_rows: Array = (payload.get("market", {}) as Dictionary).get("rows", [])
-	var cohort_rows: Array = (payload.get("cohorts", {}) as Dictionary).get("rows", [])
-	if market_rows.is_empty() and cohort_rows.is_empty():
-		return false
-	_apply_rows(market_rows, cohort_rows)
-	_shown_cell = cell_index
-	show_board(false)
 	_slide.position = Vector2.ZERO
 	return true
 

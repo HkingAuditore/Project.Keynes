@@ -1625,8 +1625,17 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 expected_cash_profit,
                 observed_capacity ? 0 : expected_in_kind,
                 _saturation_count);
-            group.planned_utilization_q16 = expected_profit > 0
-                ? static_cast<int32_t>(Q16_ONE) : 0;
+            // Pure self-employment (no employees) with positive net owner income
+            // after operating costs and taxes keeps full planned utilization
+            // instead of collapsing to the 3.1% probe floor on planning days
+            // (matching positive_self_employment in the suspension gate above).
+            const int64_t expected_owner_net_income = saturating_add(
+                expected_profit, owner_living_cost, _saturation_count);
+            const bool positive_planned_self_employment =
+                type.employee_count == 0 && expected_owner_net_income > 0;
+            group.planned_utilization_q16 =
+                (expected_profit > 0 || positive_planned_self_employment)
+                    ? static_cast<int32_t>(Q16_ONE) : 0;
             // Survival output is a bounded exception to pure cash-profit
             // gating. It may run only far enough to cover the frozen
             // subsistence/clothing floor computed for this owner, while its

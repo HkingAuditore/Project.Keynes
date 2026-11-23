@@ -126,7 +126,8 @@ static func sample_cell_context(
 		generator,
 		view_adapter = null,
 		story_flags: Dictionary = {},
-		include_cohort_details: bool = false
+		include_cohort_details: bool = false,
+		include_neighbors: bool = true
 ) -> Dictionary:
 	var ctx := country_ctx.duplicate(true)
 	ctx["cell_idx"] = cell_idx
@@ -515,14 +516,36 @@ static func sample_cell_context(
 	# 家族上下文与 cohort 明细同一条契约：只在扫描/结算路径取，入队汇总不取。
 	if include_cohort_details and economy_facade.has_method("family_cell_snapshot"):
 		_sample_primary_family(economy_facade, cell_idx, ctx)
-	# 邻城概况与 cohort 明细同一契约：只走扫描/结算路径。最多三处，人口 + 行情各一次查询。
-	if include_cohort_details:
+	# 邻城概况仅用于 AI prompt 拼装，条件判定与状态探针不消费；扫描热路径可传
+	# include_neighbors=false 跳过，真发 AI 请求前再按需补采。
+	if include_cohort_details and include_neighbors:
 		ctx["neighbor_settlements"] = _sample_neighbor_settlements(
 			economy_facade,
 			ctx.get("nearby_owned_cells_r1", PackedInt32Array()),
 			ctx.get("nearby_owned_cells_r2", PackedInt32Array()),
 			3)
 	return ctx
+
+
+## 延迟补采邻城概况：仅在真正发起 AI 生成请求前调用，避免在日常事件/探针扫描里为每格多查 3 个邻城。
+static func ensure_neighbor_settlements(
+		ctx: Dictionary,
+		generator,
+		max_count: int = 3
+) -> void:
+	if ctx.is_empty() or generator == null or not generator.has_method("get_economy_facade"):
+		return
+	var existing: Variant = ctx.get("neighbor_settlements", [])
+	if existing is Array and not (existing as Array).is_empty():
+		return
+	var economy_facade = generator.get_economy_facade()
+	if economy_facade == null:
+		return
+	ctx["neighbor_settlements"] = _sample_neighbor_settlements(
+		economy_facade,
+		ctx.get("nearby_owned_cells_r1", PackedInt32Array()),
+		ctx.get("nearby_owned_cells_r2", PackedInt32Array()),
+		max_count)
 
 
 ## 邻城概况：给「城内事件」一个横向参照，让模型能写「邻城也在涨」「上游的城先封了渡口」。

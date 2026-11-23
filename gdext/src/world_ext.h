@@ -3660,6 +3660,9 @@ private:
     godot::Dictionary                        _trigger_handoff_completed;
     godot::Dictionary handoff_trigger_effects_unlocked(int limit);
     void service_economy_boundary_inbox();
+    godot::Dictionary dispatch_effect_native_country_unlocked();
+    godot::Dictionary ack_effect_native_country_unlocked();
+    godot::Dictionary settle_orphaned_effect_native_country_acks_unlocked();
     godot::Dictionary dispatch_effect_native_economy_unlocked();
     godot::Dictionary ack_effect_native_economy_unlocked();
     uint64_t                                  _canal_topology_generation = 0;

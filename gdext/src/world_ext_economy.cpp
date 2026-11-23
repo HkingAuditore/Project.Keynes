@@ -625,6 +625,7 @@ Dictionary DCWorldExt::flush_runtime_economy_resource_writeback() {
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     if (_runtime_host != nullptr &&
         (_trigger_handoff_retry_limit > 0 ||
+         _economy_effect_adapter_retry ||
          _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
          _runtime_host->economy_input_requested_day() >= 0)) {
         auto boundary = _runtime_host->try_lock_economy_input_capture();
@@ -2185,6 +2186,13 @@ void DCWorldExt::service_economy_boundary_inbox() {
     if (!_economy_effect_adapter_retry || _effect_runtime == nullptr ||
         _economy_runtime == nullptr) return;
     _economy_effect_adapter_retry = false;
+    dispatch_effect_native_country_unlocked();
+    ack_effect_native_country_unlocked();
+    if (_runtime_host != nullptr &&
+        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
+         _runtime_host->country_authority_owner_is_worker())) {
+        settle_orphaned_effect_native_country_acks_unlocked();
+    }
     dispatch_effect_native_economy_unlocked();
     ack_effect_native_economy_unlocked();
 }

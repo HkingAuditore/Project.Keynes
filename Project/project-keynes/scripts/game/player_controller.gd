@@ -830,23 +830,36 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	# the authoritative date; this callback refreshes only lightweight UI state.
 	if _runtime_host == null or _world_clock == null:
 		return
+	var t0 := Time.get_ticks_usec()
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
 	if _ui_manager != null and _ui_manager.has_method("notify_committed_day"):
 		_ui_manager.notify_committed_day()
+	var t1 := Time.get_ticks_usec()
 	if _music_situation != null:
 		_music_situation.refresh_global_from_commit()
+	var t2 := Time.get_ticks_usec()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	# ACTIVE worker days settle here before Godot's own day signal.
 	_sync_ideology_draw()
+	var t3 := Time.get_ticks_usec()
 	_sync_era_music()
 	_sync_event_audio()
+	var t4 := Time.get_ticks_usec()
 	_refresh_era_advancement()
+	var t5 := Time.get_ticks_usec()
 	_step_narrative_daily(to_day)
 	_annual_report_flow.try_present()
 	_narrative_flow.try_present()
+	var t6 := Time.get_ticks_usec()
+	if _runtime_host.has_method("record_commit_listener_timings"):
+		_runtime_host.record_commit_listener_timings(
+			float(t1 - t0) / 1000.0,
+			float(t6 - t5) / 1000.0,
+			float((t2 - t1) + (t4 - t3)) / 1000.0,
+			float((t3 - t2) + (t5 - t4)) / 1000.0)
 
 
 func _on_country_peer_serviced(report: Dictionary) -> void:

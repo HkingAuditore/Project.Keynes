@@ -249,10 +249,22 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 	_build_style_texture()
 	if _cover != null:
 		var tiles = _world.visual_tiles if _world != null else null
+		var map_dims := Vector2i(_map.width, _map.height) if _map != null else Vector2i.ZERO
+		var cell_offsets := PackedInt32Array()
+		if _map != null and map_dims.x > 0 and map_dims.y > 0:
+			var cells := _map.iter_cells()
+			cell_offsets.resize(cells.size() * 2)
+			for i in cells.size():
+				var c: HexCell = cells[i]
+				var off := HexUtils.cube_to_offset(c.q, c.r)
+				cell_offsets[i * 2] = off.x
+				cell_offsets[i * 2 + 1] = off.y
 		_cover.configure(_styles, _hex, dims,
 			_world.world_bounds if _world != null else Rect2(),
 			_world.wrap_period_x if _world != null else 0.0,
-			_world.enum_atlas_tex if _world != null else null, tiles)
+			_world.enum_atlas_tex if _world != null else null, tiles,
+			_map.neighbor_indices_packed() if _map != null else PackedInt32Array(),
+			map_dims, cell_offsets)
 		_cover.material().set_shader_parameter("memory_lut", _memory_texture)
 		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
 			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)

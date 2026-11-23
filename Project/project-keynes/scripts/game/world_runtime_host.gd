@@ -439,10 +439,15 @@ var _sched_proc_country_read_ms: float = 0.0
 var _sched_proc_country_visual_ms: float = 0.0
 var _sched_proc_commit_ms: float = 0.0
 var _sched_proc_resource_ms: float = 0.0
+var _sched_proc_military_ms: float = 0.0
 var _sched_proc_visual_ms: float = 0.0
 var _sched_proc_building_ms: float = 0.0
 var _sched_proc_overlay_ms: float = 0.0
 var _sched_proc_last_total_ms: float = 0.0
+var _commit_ui_ms: float = 0.0
+var _commit_narrative_ms: float = 0.0
+var _commit_music_ms: float = 0.0
+var _commit_progression_ms: float = 0.0
 ## Country vision/border refresh is off the day-boundary critical path. It runs
 ## under a per-frame wall budget so a full Dijkstra cannot inflate day_cost_ema.
 const COUNTRY_VISUAL_REFRESH_BUDGET_MS: float = 3.0
@@ -1587,3 +1592,10 @@ func annual_report_catalogs() -> Dictionary:
 	return _generation_adapter.annual_report_catalogs(self)
 func _player_completed_technology_ids() -> Dictionary:
 	return _generation_adapter._player_completed_technology_ids(self)
+
+func record_commit_listener_timings(ui_ms: float, narrative_ms: float,
+		music_ms: float, progression_ms: float) -> void:
+	_commit_ui_ms += ui_ms
+	_commit_narrative_ms += narrative_ms
+	_commit_music_ms += music_ms
+	_commit_progression_ms += progression_ms

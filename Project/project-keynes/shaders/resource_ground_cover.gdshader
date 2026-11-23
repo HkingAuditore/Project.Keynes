@@ -27,6 +27,15 @@ render_mode unshaded, blend_mix;
 // ════════════════════════════════════════════════════════════════════════
 
 uniform sampler2D cover_lut : filter_nearest, repeat_disable;
+uniform sampler2D cover_edge_lut : filter_nearest, repeat_disable;
+#ifndef PK_MOBILE_ANY
+// [cover-cell-field 2026-11-22] High-quality desktop 3-cell continuous blending:
+// offset-space mirror of cover_lut (1 texel = 1 hex at (col, row)) sampled via
+// pk_hex_tri + pk_hex_sharpen, matching terrain's smooth ecotone transitions.
+uniform sampler2D cover_grid_tex : filter_nearest, repeat_disable;
+uniform vec2 cover_grid_dims = vec2(0.0);
+uniform bool cover_grid_bound = false;
+#endif
 uniform sampler2D memory_lut : filter_nearest, repeat_disable;
 // Live climate for currently visible cells (same blend rule as resource_impostor).
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
@@ -51,6 +60,7 @@ uniform float edge_warp_hex = 0.35;
 uniform float clump_scale_hex = 2.5;
 uniform float clump_strength = 0.45;
 uniform int cover_taps = 1;
+uniform float edge_blend_strength = 0.85;
 uniform float normal_strength = 0.8;
 uniform float shadow_strength = 0.45;
 uniform float lens_amount = 0.0;
@@ -117,12 +127,16 @@ uniform float tod_exposure = 1.0;
 #define VT_USE_MAP_INDEX
 #define VT_USE_HEIGHT
 #define VT_USE_TERRAIN_NORMAL
+#define VT_USE_EDGE_DISTANCE
 #define VT_USE_HORIZON
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
+#ifndef PK_MOBILE_ANY
+#include "res://shaders/include/hex_cell_core.gdshaderinc"
+#endif
 
 varying vec2 v_world;
 
@@ -189,6 +203,60 @@ vec4 gc_cover(float cell) {
 	return cell < 0.0 ? vec4(0.0) : floor(texture(cover_lut, gc_lut_uv(cell)) * 255.0 + 0.5);
 }
 
+#ifndef PK_MOBILE_ANY
+vec4 gc_cover_grid(ivec2 c, PkHexGrid g) {
+	if (c.y < 0 || c.y >= g.map_h) {
+		return vec4(0.0);
+	}
+	ivec2 tc = ivec2(pk_posmod(c.x, g.map_w), c.y);
+	return floor(texelFetch(cover_grid_tex, tc, 0) * 255.0 + 0.5);
+}
+
+vec2 gc_offset_to_world(ivec2 off) {
+	return vec2(
+		hex_size * PK_HEX_SQRT3 * (float(off.x) + 0.5 * float(off.y & 1)),
+		hex_size * 1.5 * float(off.y)
+	);
+}
+
+void gc_accum_layer(float layer, float weight, inout vec3 ls, inout vec3 ws) {
+	if (weight <= 0.0001) {
+		return;
+	}
+	if (ws.x > 0.0 && ls.x == layer) { ws.x += weight; return; }
+	if (ws.y > 0.0 && ls.y == layer) { ws.y += weight; return; }
+	if (ws.z > 0.0 && ls.z == layer) { ws.z += weight; return; }
+	if (ws.x <= 0.0) { ls.x = layer; ws.x = weight; return; }
+	if (ws.y <= 0.0) { ls.y = layer; ws.y = weight; return; }
+	if (ws.z <= 0.0) { ls.z = layer; ws.z = weight; return; }
+	if (ws.x <= ws.y && ws.x <= ws.z) {
+		if (weight > ws.x) { ls.x = layer; ws.x = weight; }
+	} else if (ws.y <= ws.z) {
+		if (weight > ws.y) { ls.y = layer; ws.y = weight; }
+	} else {
+		if (weight > ws.z) { ls.z = layer; ws.z = weight; }
+	}
+}
+
+vec4 gc_sample_albedo_hq(vec2 uv, vec2 dx, vec2 dy, vec2 sway, float layer, float anti_m) {
+	vec4 s0 = textureGrad(cover_albedo, vec3(uv + sway, layer), dx, dy);
+	mat2 rot = mat2(vec2(0.766, 0.643), vec2(-0.643, 0.766)) * 0.61;
+	vec4 s1 = textureGrad(cover_albedo, vec3(rot * uv + vec2(0.31, 0.17) + sway, layer),
+		rot * dx, rot * dy);
+	return mix(s0, s1, anti_m);
+}
+
+vec4 gc_cell_climate(float cid) {
+	vec2 cell_uv = gc_lut_uv(cid);
+	vec4 c = texture(memory_lut, cell_uv);
+	if (has_dynamic_lut) {
+		float live = fog_enabled ? step(0.88, texture(enum_lut, cell_uv).a) : 1.0;
+		c = mix(c, texture(dyn_lut, cell_uv), live);
+	}
+	return c;
+}
+#endif
+
 void fragment() {
 	vec2 wp = gc_wrap(v_world);
 	float hex_px = hex_size * camera_zoom;
@@ -199,30 +267,154 @@ void fragment() {
 	warp += (vec2(gc_noise(wp, warp_scale * 0.31, 3.0), gc_noise(wp, warp_scale * 0.31, 4.0)) - 0.5)
 		* 0.7 * edge_warp_hex * hex_size;
 	vec2 lookup = wp + warp;
-	float cell = gc_cell(lookup);
-	vec4 cover = gc_cover(cell);
-	float layer_p = floor(cover.r / 16.0);
-	float layer_s = cover.r - layer_p * 16.0;
-	float ab_p = cover.g / 255.0;
-	float ab_s = cover.b / 255.0;
-	float trace_kind = floor(cover.a / 64.0);
-	float trace_k = (cover.a - trace_kind * 64.0) / 63.0;
 
 	// Gradients come from the unwrapped, continuous position (no seam spikes) and are
-	// taken before any branch so mip selection stays valid in divergent quads.
+	// taken before any branch so mip selection and AA stay valid in divergent quads.
 	float tile = gc_snap(max(tile_hex, 0.1) * hex_size);
 	vec2 uv = wp / tile;
 	vec2 dx = dFdx(v_world) / tile;
 	vec2 dy = dFdy(v_world) / tile;
 
+	float cell = -1.0;
+	float layer_p = 0.0;
+	float layer_s = 0.0;
+	float ab_p = 0.0;
+	float ab_s = 0.0;
+	float trace_kind = 0.0;
+	float trace_k = 0.0;
+	bool use_field = false;
+	vec3 field_ls = vec3(0.0);
+	vec3 field_ws = vec3(0.0);
+	vec4 field_climate = vec4(0.0);
+#ifndef PK_MOBILE_ANY
+	float field_aa = pk_hex_field_aa(v_world, hex_size, 1.5);
+	use_field = visual_quality >= 2 && cover_grid_bound
+		&& cover_grid_dims.x >= 1.0 && cover_grid_dims.y >= 1.0;
+	if (use_field) {
+		PkHexGrid grid;
+		grid.hex_size = hex_size;
+		grid.map_w = int(cover_grid_dims.x + 0.5);
+		grid.map_h = int(cover_grid_dims.y + 0.5);
+		PkHexTri tri = pk_hex_tri(gc_wrap(lookup), grid);
+		float band = clamp(max(0.84, field_aa), 1e-4, PK_FIELD_BAND_MAX);
+		vec3 w3 = pk_hex_sharpen(tri.w_raw, band);
+
+		vec4 cv0 = gc_cover_grid(tri.c0, grid);
+		vec4 cv1 = gc_cover_grid(tri.c1, grid);
+		vec4 cv2 = gc_cover_grid(tri.c2, grid);
+
+		// Permutation-invariant 3-cell accumulation (primary + within-cell secondary).
+		// Every layer weight is C1-continuous across both species-to-species and
+		// species-to-bare borders, eliminating midline UV/normal/secondary-layer pops.
+		float clump_sec = smoothstep(0.42, 0.62, gc_noise(wp, clump_scale_hex * hex_size * 0.8, 7.0));
+		float lp0 = floor(cv0.r / 16.0);
+		float ls0 = cv0.r - lp0 * 16.0;
+		float abp0 = cv0.g / 255.0;
+		float abs0 = cv0.b / 255.0;
+		float m0 = abs0 * clump_sec;
+		gc_accum_layer(lp0, w3.x * abp0 * (1.0 - m0), field_ls, field_ws);
+		gc_accum_layer(ls0, w3.x * abs0 * m0, field_ls, field_ws);
+
+		float lp1 = floor(cv1.r / 16.0);
+		float ls1 = cv1.r - lp1 * 16.0;
+		float abp1 = cv1.g / 255.0;
+		float abs1 = cv1.b / 255.0;
+		float m1 = abs1 * clump_sec;
+		gc_accum_layer(lp1, w3.y * abp1 * (1.0 - m1), field_ls, field_ws);
+		gc_accum_layer(ls1, w3.y * abs1 * m1, field_ls, field_ws);
+
+		float lp2 = floor(cv2.r / 16.0);
+		float ls2 = cv2.r - lp2 * 16.0;
+		float abp2 = cv2.g / 255.0;
+		float abs2 = cv2.b / 255.0;
+		float m2 = abs2 * clump_sec;
+		gc_accum_layer(lp2, w3.z * abp2 * (1.0 - m2), field_ls, field_ws);
+		gc_accum_layer(ls2, w3.z * abs2 * m2, field_ls, field_ws);
+
+		ab_p = w3.x * mix(abp0, abs0, m0) + w3.y * mix(abp1, abs1, m1) + w3.z * mix(abp2, abs2, m2);
+		layer_p = field_ls.x;
+
+		float tk0 = floor(cv0.a / 64.0);
+		float tk1 = floor(cv1.a / 64.0);
+		float tk2 = floor(cv2.a / 64.0);
+		float tw0 = w3.x * ((cv0.a - tk0 * 64.0) / 63.0);
+		float tw1 = w3.y * ((cv1.a - tk1 * 64.0) / 63.0);
+		float tw2 = w3.z * ((cv2.a - tk2 * 64.0) / 63.0);
+		float best_tk = 0.0;
+		float best_tw = 0.0;
+		if (tk0 > 0.5 && tw0 > 0.0) { best_tk = tk0; best_tw = tw0; }
+		if (tk1 > 0.5 && tw1 > 0.0) {
+			if (tk1 == best_tk) { best_tw += tw1; }
+			else if (tw1 > best_tw) { best_tk = tk1; best_tw = tw1; }
+		}
+		if (tk2 > 0.5 && tw2 > 0.0) {
+			if (tk2 == best_tk) { best_tw += tw2; }
+			else if (tw2 > best_tw) { best_tk = tk2; best_tw = tw2; }
+		}
+		trace_kind = best_tk;
+		trace_k = best_tw;
+
+		// Blend climate continuously across active vertices so phenology/vitality
+		// never steps at the hex midline.
+		if (ab_p > 0.001 || (trace_kind > 0.5 && trace_k > 0.001)) {
+			float cw_sum = 0.0;
+			vec4 c_sum = vec4(0.0);
+			float a0 = w3.x * ((abp0 > 0.0 || tw0 > 0.0) ? 1.0 : 0.0);
+			float a1 = w3.y * ((abp1 > 0.0 || tw1 > 0.0) ? 1.0 : 0.0);
+			float a2 = w3.z * ((abp2 > 0.0 || tw2 > 0.0) ? 1.0 : 0.0);
+			if (a0 > 0.001) {
+				float cid0 = gc_cell(gc_offset_to_world(tri.c0));
+				if (cid0 >= 0.0) { c_sum += gc_cell_climate(cid0) * a0; cw_sum += a0; cell = cid0; }
+			}
+			if (a1 > 0.001) {
+				float cid1 = gc_cell(gc_offset_to_world(tri.c1));
+				if (cid1 >= 0.0) { c_sum += gc_cell_climate(cid1) * a1; cw_sum += a1; if (cell < 0.0) { cell = cid1; } }
+			}
+			if (a2 > 0.001) {
+				float cid2 = gc_cell(gc_offset_to_world(tri.c2));
+				if (cid2 >= 0.0) { c_sum += gc_cell_climate(cid2) * a2; cw_sum += a2; if (cell < 0.0) { cell = cid2; } }
+			}
+			if (cw_sum > 0.0001) {
+				field_climate = c_sum / cw_sum;
+			} else {
+				cell = gc_cell(lookup);
+				if (cell >= 0.0) {
+					field_climate = gc_cell_climate(cell);
+				}
+			}
+		}
+	} else {
+		cell = gc_cell(lookup);
+		vec4 cover = gc_cover(cell);
+		layer_p = floor(cover.r / 16.0);
+		layer_s = cover.r - layer_p * 16.0;
+		ab_p = cover.g / 255.0;
+		ab_s = cover.b / 255.0;
+		trace_kind = floor(cover.a / 64.0);
+		trace_k = (cover.a - trace_kind * 64.0) / 63.0;
+	}
+#else
+	cell = gc_cell(lookup);
+	vec4 cover = gc_cover(cell);
+	layer_p = floor(cover.r / 16.0);
+	layer_s = cover.r - layer_p * 16.0;
+	ab_p = cover.g / 255.0;
+	ab_s = cover.b / 255.0;
+	trace_kind = floor(cover.a / 64.0);
+	trace_k = (cover.a - trace_kind * 64.0) / 63.0;
+#endif
+
 	vec3 out_pm = vec3(0.0);
 	float out_a = 0.0;
-	if (art_bound && cell >= 0.0 && (ab_p > 0.0 || trace_kind > 0.5)) {
-		vec2 cell_uv = gc_lut_uv(cell);
-		vec4 climate = texture(memory_lut, cell_uv);
-		if (has_dynamic_lut) {
-			float live = fog_enabled ? step(0.88, texture(enum_lut, cell_uv).a) : 1.0;
-			climate = mix(climate, texture(dyn_lut, cell_uv), live);
+	if (art_bound && cell >= 0.0 && (ab_p > 0.001 || (trace_kind > 0.5 && trace_k > 0.001))) {
+		vec4 climate = field_climate;
+		if (!use_field) {
+			vec2 cell_uv = gc_lut_uv(cell);
+			climate = texture(memory_lut, cell_uv);
+			if (has_dynamic_lut) {
+				float live = fog_enabled ? step(0.88, texture(enum_lut, cell_uv).a) : 1.0;
+				climate = mix(climate, texture(dyn_lut, cell_uv), live);
+			}
 		}
 		float health = pow(clamp(climate.a, 0.0, 1.0), vitality_power);
 		float snow = clamp(climate.b * snow_response, 0.0, 1.0);
@@ -240,10 +432,11 @@ void fragment() {
 		float cool = 1.0 - smoothstep(0.20, 0.44, climate.r);
 		float dry = clamp(max((0.35 - climate.g) * 1.4 + (1.0 - health) * 0.45, heat * 0.78), 0.0, 1.0);
 
-		// Soft community edge: fraction of nearby taps that share this community.
+		// Soft community edge: fraction of nearby taps that share this community
+		// (only used by the legacy single-cell path; high-quality field path blends continuously).
 		float edge = 1.0;
 #ifndef PK_MOBILE_ANY
-		if (cover_taps > 1 && ab_p > 0.0) {
+		if (!use_field && cover_taps > 1 && ab_p > 0.0) {
 			float r = hex_size * 0.22;
 			vec4 c1 = gc_cover(gc_cell(lookup + vec2(r, r * 0.35)));
 			vec4 c2 = gc_cover(gc_cell(lookup - vec2(r * 0.45, r)));
@@ -263,30 +456,78 @@ void fragment() {
 			+ 0.4 * sin(world_time * 2.3 + dot(wp, vec2(-w.y, w.x)) / (hex_size * 0.17));
 		vec2 sway = w * gust * 0.0055 * (0.5 + wind_strength + weather_wind_boost * 0.6);
 
-		vec4 a = textureGrad(cover_albedo, vec3(uv + sway, layer_p), dx, dy);
-#ifndef PK_MOBILE_ANY
-		if (visual_quality >= 2) {
-			// Anti-tiling: a rotated, rescaled copy blended by macro noise.
-			mat2 rot = mat2(vec2(0.766, 0.643), vec2(-0.643, 0.766)) * 0.61;
-			vec4 a2 = textureGrad(cover_albedo, vec3(rot * uv + vec2(0.31, 0.17) + sway, layer_p),
-				rot * dx, rot * dy);
-			float m = smoothstep(0.35, 0.65, gc_noise(wp, hex_size * 3.7, 9.0));
-			a = mix(a, a2, m);
-		}
-#endif
-		vec4 b = textureGrad(cover_albedo, vec3(uv * 0.93 + vec2(0.37, 0.21) + sway, layer_s), dx * 0.93, dy * 0.93);
 		float clump = gc_noise(wp, clump_scale_hex * hex_size, 5.0) * 0.7
 			+ gc_noise(wp, clump_scale_hex * hex_size * 0.37, 6.0) * 0.3;
+		vec3 plant_pm = vec3(0.0);
+		float raw_plant_a = 0.0;
+		float abundance = ab_p;
+#ifndef PK_MOBILE_ANY
+		if (use_field) {
+			float anti_m = smoothstep(0.35, 0.65, gc_noise(wp, hex_size * 3.7, 9.0));
+			float w_sum = field_ws.x + field_ws.y + field_ws.z;
+			if (w_sum > 0.0001) {
+				vec3 nw = field_ws / w_sum;
+				if (nw.x > 0.0001) {
+					vec4 s0 = gc_sample_albedo_hq(uv, dx, dy, sway, field_ls.x, anti_m);
+					plant_pm += s0.rgb * s0.a * nw.x;
+					raw_plant_a += s0.a * nw.x;
+				}
+				if (nw.y > 0.0001) {
+					vec4 s1 = gc_sample_albedo_hq(uv, dx, dy, sway, field_ls.y, anti_m);
+					plant_pm += s1.rgb * s1.a * nw.y;
+					raw_plant_a += s1.a * nw.y;
+				}
+				if (nw.z > 0.0001) {
+					vec4 s2 = gc_sample_albedo_hq(uv, dx, dy, sway, field_ls.z, anti_m);
+					plant_pm += s2.rgb * s2.a * nw.z;
+					raw_plant_a += s2.a * nw.z;
+				}
+			}
+		} else {
+			vec4 a = textureGrad(cover_albedo, vec3(uv + sway, layer_p), dx, dy);
+			if (visual_quality >= 2) {
+				mat2 rot = mat2(vec2(0.766, 0.643), vec2(-0.643, 0.766)) * 0.61;
+				vec4 a2 = textureGrad(cover_albedo, vec3(rot * uv + vec2(0.31, 0.17) + sway, layer_p),
+					rot * dx, rot * dy);
+				float m = smoothstep(0.35, 0.65, gc_noise(wp, hex_size * 3.7, 9.0));
+				a = mix(a, a2, m);
+			}
+			vec4 b = textureGrad(cover_albedo, vec3(uv * 0.93 + vec2(0.37, 0.21) + sway, layer_s), dx * 0.93, dy * 0.93);
+			float mix_s = ab_s * smoothstep(0.42, 0.62, gc_noise(wp, clump_scale_hex * hex_size * 0.8, 7.0));
+			plant_pm = mix(a.rgb * a.a, b.rgb * b.a, mix_s);
+			raw_plant_a = mix(a.a, b.a, mix_s);
+			abundance = mix(ab_p, ab_s, mix_s);
+		}
+#else
+		vec4 a = textureGrad(cover_albedo, vec3(uv + sway, layer_p), dx, dy);
+		vec4 b = textureGrad(cover_albedo, vec3(uv * 0.93 + vec2(0.37, 0.21) + sway, layer_s), dx * 0.93, dy * 0.93);
 		float mix_s = ab_s * smoothstep(0.42, 0.62, gc_noise(wp, clump_scale_hex * hex_size * 0.8, 7.0));
-		vec3 plant_pm = mix(a.rgb * a.a, b.rgb * b.a, mix_s);
-		float plant_a = mix(a.a, b.a, mix_s);
-		float abundance = mix(ab_p, ab_s, mix_s);
+		plant_pm = mix(a.rgb * a.a, b.rgb * b.a, mix_s);
+		raw_plant_a = mix(a.a, b.a, mix_s);
+		abundance = mix(ab_p, ab_s, mix_s);
+#endif
+		float plant_a = raw_plant_a;
 		// Coverage is sharpened so plant clumps read as solid foliage, gaps as open ground.
 		// [cover-ground-fit 2026-11-18] 0.08–0.62 → 0.06–0.74。原区间把图集里
 		// 半透明的叶簇直接切成二值斑点（0.62 以上全实、0.08 以下全空），中间没有
 		// 过渡，读作"贴纸碎片"。放宽后保留叶簇之间的渐变，群落才连得起来。
-		plant_a = smoothstep(0.06, 0.74, plant_a);
+		// [cover-cell-field 2026-11-22] In field mode, abundance smoothly approaches 0 across
+		// bare-ground boundaries; gently lifting the lower alpha threshold lets wispy leaf
+		// tips recede first so the meadow feathers organically into the terrain.
+		float edge_cov = use_field ? smoothstep(0.0, 0.65, abundance) : 1.0;
+		plant_a = smoothstep(mix(0.32, 0.06, edge_cov), mix(0.88, 0.74, edge_cov), plant_a);
 		plant_a *= abundance * edge * mix(1.0 - clump_strength, 1.0, smoothstep(0.28, 0.68, clump));
+		// Legacy single-cell path: fade near the terrain edge distance (sampled at the same
+		// warped lookup coordinate so the fade aligns with the warped cell boundary).
+		if (!use_field) {
+			vec2 edge_uv = gc_lut_uv(cell);
+			float community_edge = texture(cover_edge_lut, edge_uv).r;
+			vec2 edge_map_uv = visual_static_wrap_uv(gc_map_uv(lookup));
+			float terrain_edge = visual_sample_edge_distance(edge_map_uv).r;
+			float edge_fade = smoothstep(0.04, 0.34, terrain_edge);
+			float edge_strength = clamp(community_edge * edge_blend_strength, 0.0, 1.0);
+			plant_a *= mix(1.0, edge_fade, edge_strength);
+		}
 		plant_a *= mix(0.25, 1.0, health)
 			* smoothstep(vitality_dead_threshold * 0.3, vitality_dead_threshold, climate.a);
 		// Snow buries low communities; only tall tips poke through.
@@ -294,7 +535,7 @@ void fragment() {
 		// Winter-withered meadows die back to sparse stubble.
 		plant_a *= 1.0 - withered * climate_response * 0.35;
 		plant_a = ab_p > 0.0 ? plant_a : 0.0;
-		vec3 plant = plant_pm / max(mix(a.a, b.a, mix_s), 0.0001);
+		vec3 plant = plant_pm / max(raw_plant_a, 0.0001);
 		float plant_l = dot(plant, vec3(0.299, 0.587, 0.114));
 		plant = max(mix(vec3(plant_l), plant, cover_saturation), vec3(0.0)) * cover_gain * cover_grade;
 		// Phenology hues keep the bitmap's luma so leaf detail survives the colour change.
@@ -343,10 +584,22 @@ void fragment() {
 		float ao = 1.0;
 		float self_shadow = 0.0;
 		// Canopy height 0..1 (normal strip B); coverage is a cheap proxy without the normal map.
-		float hgt = a.a * 0.6;
+		float hgt = raw_plant_a * 0.6;
 #ifndef PK_MOBILE_ANY
 		if (visual_quality >= 1) {
-			vec4 nm = textureGrad(cover_normal, vec3(uv + sway, layer_p), dx, dy);
+			vec4 nm = vec4(0.5, 0.5, 0.5, 1.0);
+			if (use_field) {
+				float w_sum = field_ws.x + field_ws.y + field_ws.z;
+				if (w_sum > 0.0001) {
+					vec3 nw = field_ws / w_sum;
+					nm = vec4(0.0);
+					if (nw.x > 0.0001) { nm += textureGrad(cover_normal, vec3(uv + sway, field_ls.x), dx, dy) * nw.x; }
+					if (nw.y > 0.0001) { nm += textureGrad(cover_normal, vec3(uv + sway, field_ls.y), dx, dy) * nw.y; }
+					if (nw.z > 0.0001) { nm += textureGrad(cover_normal, vec3(uv + sway, field_ls.z), dx, dy) * nw.z; }
+				}
+			} else {
+				nm = textureGrad(cover_normal, vec3(uv + sway, layer_p), dx, dy);
+			}
 			vec2 nxy = (nm.rg * 2.0 - 1.0) * normal_strength;
 			n = normalize(vec3(terrain_xy + vec2(nxy.x, -nxy.y), 1.0));
 			ao = mix(1.0, nm.a, 0.8);
@@ -356,7 +609,7 @@ void fragment() {
 			// away from the sun means a tuft stands sunward of it. Longer at low sun.
 			float away = -dot(vec2(nxy.x, -nxy.y), normalize(sun.xy + vec2(0.0001)));
 			float cast = smoothstep(0.04, 0.30, away * mix(1.0, 1.8, 1.0 - clamp(sun.z, 0.0, 1.0)));
-			self_shadow = cast * (1.0 - a.a) * shadow_strength * day * abundance * edge;
+			self_shadow = cast * (1.0 - raw_plant_a) * shadow_strength * day * abundance * edge;
 		}
 #endif
 		TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, sun);

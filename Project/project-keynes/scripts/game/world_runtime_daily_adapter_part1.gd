@@ -1269,10 +1269,15 @@ func _publish_fast_tick_perf_sample(host,
 		"sched_proc_country_visual_ms": host._sched_proc_country_visual_ms,
 		"sched_proc_commit_ms": host._sched_proc_commit_ms,
 		"sched_proc_resource_ms": host._sched_proc_resource_ms,
+		"sched_proc_military_ms": host._sched_proc_military_ms,
 		"sched_proc_visual_ms": host._sched_proc_visual_ms,
 		"sched_proc_building_ms": host._sched_proc_building_ms,
 		"sched_proc_overlay_ms": host._sched_proc_overlay_ms,
 		"sched_proc_last_total_ms": host._sched_proc_last_total_ms,
+		"commit_ui_ms": host._commit_ui_ms,
+		"commit_narrative_ms": host._commit_narrative_ms,
+		"commit_music_ms": host._commit_music_ms,
+		"commit_progression_ms": host._commit_progression_ms,
 		"country_read_full_snapshot_applied": host._country_read_last_full_snapshot,
 		"country_read_applied_cells": host._country_read_last_applied_cells,
 		"country_read_territory_changed_cells": host._country_read_last_territory_changed_cells,
@@ -1338,9 +1343,14 @@ func _publish_fast_tick_perf_sample(host,
 	host._sched_proc_country_visual_ms = 0.0
 	host._sched_proc_commit_ms = 0.0
 	host._sched_proc_resource_ms = 0.0
+	host._sched_proc_military_ms = 0.0
 	host._sched_proc_visual_ms = 0.0
 	host._sched_proc_building_ms = 0.0
 	host._sched_proc_overlay_ms = 0.0
+	host._commit_ui_ms = 0.0
+	host._commit_narrative_ms = 0.0
+	host._commit_music_ms = 0.0
+	host._commit_progression_ms = 0.0
 	host._overlay_bake_ms_accum = 0.0
 	if host._generator != null and host._generator.has_method("sus_climate_breakdown"):
 		var climate_diag: Dictionary = host._generator.sus_climate_breakdown()
