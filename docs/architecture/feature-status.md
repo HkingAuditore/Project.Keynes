@@ -18,10 +18,11 @@ Metal Mobile、1600×960 窗口、种子 20260718、60×40、1 倍速，日志�
 Godot 的关闭垂直同步参数仍受驱动限制。[Godot 命令行说明](https://docs.godotengine.org/en/4.6/tutorials/editor/command_line_tutorial.html)
 原始记录在 `/tmp/keynes-perf.sVCEH5/visibleLow100.log` 和 `visibleLow75.log`。
 
-本轮执行环境查询到 0 个活动显示器，Metal 返回空设备。最小 Godot 项目的 Metal 和 Vulkan
-窗口均停在系统服务初始化，复核时最小 Metal 窗口仍未进入游戏循环。`xctrace` 无法写入其缓存目录。
-`xcdevice` 只列出本机 Mac，CoreDevice 初始化超时。当前版本的有效绘制样本为 0，手机覆盖为 0 台。
-当前版本的实测尺寸、分层耗时、呈现等待、改前改后交替复测和同帧画面对照仍缺数据。
+当前版本的有效绘制样本为 0，手机覆盖为 0 台。本轮查询到 0 个活动显示器，Metal 返回空设备。
+最小 Godot 窗口和正式 `--measure --explored` 都停在 macOS 图形服务初始化，后者没有输出采样记录。
+先前的 Vulkan 窗口也停在初始化，`xcdevice` 只列出本机 Mac，CoreDevice 初始化超时。
+`xctrace` 无法写入其缓存目录，桌面工具也未获准打开 Godot 和 Instruments。
+实测尺寸、呈现等待、各层 CPU/GPU 耗时、改前改后交替复测和同帧画面对照仍待采集，性能验收保持待测。
 
 无窗口样本通过 `WorldRuntimeHost` 的正式开局入口准备，固定种子 20260718、60×40、四国与 1 倍速。
 探索场景用两日正式领土命令临时获得观察点再归还，核对后台发布的探索记忆、恢复的领土和开局可见范围。
@@ -30,13 +31,15 @@ Godot 的关闭垂直同步参数仍受驱动限制。[Godot 命令行说明](ht
 
 | 无窗口场景 | 已探索格 | 当前可见格 | 已探索且当前被雾遮挡的陆地 | 检查通过数 |
 | --- | ---: | ---: | ---: | ---: |
-| 开局迷雾 | 66 | 66 | 0 / 456 | 23 |
-| 大片已探索，迷雾开启 | 1248 | 66 | 366 / 456 | 34 |
-| 单列诊断，关雾 | 66 | 2400 | 0 / 456 | 23 |
+| 开局迷雾 | 66 | 66 | 0 / 456 | 30 |
+| 大片已探索，迷雾开启 | 1248 | 66 | 366 / 456 | 41 |
+| 单列诊断，关雾 | 66 | 2400 | 0 / 456 | 30 |
 
 三组均核对 1600×960 窗口设置、关闭垂直同步与引擎限帧、地表 100% 与 75%、迷雾 50%，
 以及两种地表清晰度下相同的水面、植被、天气与云影设置。
-同时传入探索与关雾参数、在无窗口模式请求绘制采样都会失败。
+同时传入探索与关雾参数、在无窗口模式请求绘制采样、单独用省略参数或一次省略多层都会被拒绝。
+植被回归构造实际地被并通过资源上传入口建立批次，检查地被、已有和新上传的植物批次及地图接缝副本均被挡住，
+动物和矿物批次仍可绘制。旧采样脚本在这组检查中有四项失败。
 
 ```sh
 godot --headless --path Project/project-keynes --script res://tests/rendering/mobile_terrain_baseline_test.gd
@@ -61,12 +64,14 @@ PK_MOBILE_SHADER_TIER=MOBILE_QUALITY_LOW godot --path Project/project-keynes \
 
 去掉 `--explored` 测开局迷雾，换成 `--fog-off` 做关雾诊断。每个场景先采全部图层，
 再分别追加 `--omit-land`、`--omit-water` 或 `--omit-vegetation`，一次只暂停提交一个图层的绘制。
+植被组包含散布植被、投影、资源植物批次以及共享地被画面（含同一画面中的放牧痕迹）。
 交替采集完整画面与每个省略组，在相同镜头、实际尺寸和同步模式下比较。差值是该图层在当前画面中的边际代价，
 还会受到绘制合批的影响。采样保留迷雾和图层更新。
 
 呈现等待单独用 Instruments 的 Game Performance 模板记录。用 `[mobile-terrain-draw]`
 的 `start_unix_s` 和 `end_unix_s` 对齐采样段，记录渲染线程获取 drawable 时的阻塞及帧呈现间隔，
 并用 GPU 时间线核对每段实际执行的工作。帧间隔、绘制时间与呈现等待分别记录。
+分层基线验收需有实际尺寸、各省略组和完整画面的配对样本，以及同一采样段的呈现等待记录。
 [Apple 的 Metal 性能跟踪说明](https://developer.apple.com/videos/play/wwdc2020/10603/)。
 
 - 工具栏用例原先在 60 ms 定时器结束时判断退场中段。固定 200 ms 一帧复现读取时动画已经结束，
@@ -82,6 +87,9 @@ PK_MOBILE_SHADER_TIER=MOBILE_QUALITY_LOW godot --path Project/project-keynes \
 本轮日志在 `/tmp/keynes54-resume.GfkNzUjD`。Qodo 身份检查返回 `not_logged_in`，评审待完成。
 评审复核再次通过 128 项回归、三组无窗口场景检查和六组拒绝用例。复核日志在
 `/tmp/keynes54-review.jp3IDA`，带窗口的采样命令仍停在系统初始化。
+本次植被省略复核通过三组无窗口场景、四组拒绝用例、128 项回归（含回放和存读档）、
+18 项架构检查和 201 项工厂测试。日志在 `/private/tmp/keynes54-verify.JjKvxX`。
+Qodo 身份复查仍返回 `not_logged_in`。
 
 ## 稀疏经济需求缓存（#53，2026-11-23）
 

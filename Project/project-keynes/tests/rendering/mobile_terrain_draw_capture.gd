@@ -2,6 +2,7 @@ extends RefCounted
 
 const WARMUP_FRAMES := 60
 const SAMPLE_FRAMES := 240
+const PLANT_RESOURCE_BATCH := 0 # ResourceVisualLayer's plant family, including lens badges.
 
 
 static func open_game(tree: SceneTree, config: NewGameConfig) -> PlayerGame:
@@ -144,11 +145,35 @@ static func _omit_draw(renderer: HexRenderer, omitted: String) -> bool:
 			for layer in renderer._detail_layers:
 				if is_instance_valid(layer):
 					items.append(layer)
+			var resources := renderer._resource_visual_layer as ResourceVisualLayer
+			if is_instance_valid(resources):
+				var cover := resources.ground_cover()
+				if is_instance_valid(cover):
+					items.append(cover)
+				var resources_id := resources.get_instance_id()
+				_omit_plant_resource_batches(resources_id)
+				# Uploads register the batch and its wrap copies after adding the nodes.
+				var omit_new_batches := _omit_plant_resource_batches.bind(resources_id)
+				if not resources.child_order_changed.is_connected(omit_new_batches):
+					resources.child_order_changed.connect(omit_new_batches, CONNECT_DEFERRED)
 	# Exclude only the draw. The fog culler may change visible on the same item,
 	# and per-layer scripts keep running with the same settings.
 	for item in items:
 		item.visibility_layer = 0
 	return not items.is_empty()
+
+
+static func _omit_plant_resource_batches(resources_id: int) -> void:
+	var resources := instance_from_id(resources_id) as ResourceVisualLayer
+	if resources == null:
+		return
+	for batches: Dictionary in resources._resident.values():
+		var plants := batches.get(PLANT_RESOURCE_BATCH) as MultiMeshInstance2D
+		if not is_instance_valid(plants):
+			continue
+		plants.visibility_layer = 0
+		for copy: MultiMeshInstance2D in plants.get_meta("wraps", []):
+			copy.visibility_layer = 0
 
 
 static func _draw_size(viewport: Viewport) -> Vector2i:

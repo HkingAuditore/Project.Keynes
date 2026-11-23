@@ -5,6 +5,7 @@ extends SceneTree
 ## --fog-off selects the separate diagnostic. --measure runs the actual player scene.
 const GraphicsQualitySettings = preload("res://scripts/game/graphics_quality_settings.gd")
 const DrawCapture = preload("res://tests/rendering/mobile_terrain_draw_capture.gd")
+const ResourceGeometry = preload("res://scripts/rendering/resource_visual_geometry.gd")
 const WebAutotest = preload("res://scripts/game/web_autotest.gd")
 const MAP_SIZE := Vector2i(60, 40)
 const WINDOW_SIZE := Vector2i(1600, 960)
@@ -151,6 +152,8 @@ func _run() -> void:
 		host.queue_free()
 		clock.queue_free()
 	await process_frame
+	if not measure:
+		await _check_vegetation_omission()
 	print("mobile terrain baseline: %d checks, %d failures" % [_checks, _failures])
 	quit(int(_failures != 0))
 
@@ -210,6 +213,56 @@ func _check_profile(values: Dictionary, percent: int, mobile: bool) -> void:
 	_check(profile.water_detail == 0 and profile.vegetation_detail == 0
 		and profile.weather_detail == 0 and not profile.cloud_shadow,
 		"map scale preserves low water, vegetation, weather and cloud shadows")
+
+
+func _check_vegetation_omission() -> void:
+	var renderer := HexRenderer.new()
+	var resources := ResourceVisualLayer.new()
+	root.add_child(resources)
+	renderer._resource_visual_layer = resources
+	resources.set_quality(0, 0)
+	resources._world = WorldData.new()
+	resources._world.wrap_period_x = 800.0
+	resources._camera = Rect2(-1600.0, -100.0, 3200.0, 1600.0)
+	var cover := resources.ground_cover()
+	cover.configure([], 22.0, Vector2i.ONE, Rect2(0.0, 0.0, 800.0, 300.0), 800.0, null, null)
+	var plants := _upload_resource_batch(resources, Vector2i.ZERO, 0)
+	var animals := _upload_resource_batch(resources, Vector2i.ZERO, 1)
+	var minerals := _upload_resource_batch(resources, Vector2i.ZERO, 2)
+	var mask := root.canvas_cull_mask
+	_check(cover.visible and cover._mesh_inst.mesh != null and (cover.visibility_layer & mask) != 0,
+		"the low-quality scene has a drawable ground-cover pass")
+	_check(plants != null and animals != null and minerals != null, "resource batches upload before omission")
+	_check(DrawCapture._omit_draw(renderer, "vegetation"), "vegetation omission selects resource vegetation")
+	_check(cover.visible and (cover.visibility_layer & mask) == 0,
+		"vegetation omission blocks ground-cover drawing while preserving its visibility state")
+	var streamed := _upload_resource_batch(resources, Vector2i(1, 0), 0)
+	await process_frame
+	_check(_batch_uses_mask(plants, 0), "vegetation omission blocks the existing plant batch and wrap copies")
+	_check(_batch_uses_mask(streamed, 0), "vegetation omission blocks a newly uploaded plant batch and wrap copies")
+	_check(_batch_uses_mask(animals, 1) and _batch_uses_mask(minerals, 1) and resources.visibility_layer == 1,
+		"resource omission preserves animal and mineral batches and their wrap copies")
+	resources.queue_free()
+	renderer.free()
+	await process_frame
+
+
+func _upload_resource_batch(layer: ResourceVisualLayer, key: Vector2i, family: int) -> MultiMeshInstance2D:
+	layer._active[key] = true
+	var buffer := PackedFloat32Array([8.0, 0.0, 0.0, 120.0, 0.0, 8.0, 0.0, 60.0,
+		0.0, 1.0, 1.0, 4.0 if family == 0 else 1.0, 0.0, 0.0, 0.0, 3.0])
+	if not ResourceGeometry._install_upload(layer, {"key": key, "revision": layer._revision,
+			"family": family, "buffer": buffer}):
+		return null
+	return layer._resident[key][family]
+
+
+func _batch_uses_mask(batch: MultiMeshInstance2D, mask: int) -> bool:
+	if batch == null or not batch.visible or batch.visibility_layer != mask:
+		return false
+	var copies: Array[MultiMeshInstance2D] = batch.get_meta("wraps", [])
+	return copies.size() == 2 and copies[0].visible and copies[1].visible \
+		and copies[0].visibility_layer == mask and copies[1].visibility_layer == mask
 
 
 func _check(ok: bool, description: String) -> void:
