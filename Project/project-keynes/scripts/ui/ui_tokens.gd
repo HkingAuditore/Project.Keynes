@@ -479,3 +479,9 @@ static func dossier_font(kind: String) -> Font:
 			font = font_with_weight(500)
 	_dossier_fonts[kind] = font
 	return font
+
+
+## 在界面释放后、引擎开始清理文字服务前归还缓存持有的字体。
+static func release_cached_fonts() -> void:
+	_dossier_fonts.clear()
+	_annual_fonts.clear()
