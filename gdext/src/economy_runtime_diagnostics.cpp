@@ -85,7 +85,7 @@ Dictionary NativeEconomyRuntime::fatal_context_report() const {
         row["portfolio_size"] = _construction_fatal_row.portfolio_size;
         row["capital_limited"] = _building_investment_capital_limited;
         row["cost_envelope_trimmed"] = _building_investment_cost_envelope_trimmed;
-        row["pending_construction_count"] = pending_construction_count();
+        row["pending_construction_count"] = static_cast<int64_t>(pending_construction_count());
         out["construction_row"] = row;
     }
     if (!_investment_leg_trace.empty()) {
