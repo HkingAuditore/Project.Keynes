@@ -155,6 +155,30 @@ class Model:
     def resource_tags(self, resource_id: str) -> list[str]:
         return tech_tags(self.resources[resource_id].get("discovery_technology_tags"))
 
+    def input_alternatives(self, building_id: str) -> list[tuple[str, str, list[list[str]]]]:
+        """Hard input edges with their candidate list kept separate.
+
+        ``dependency_groups`` flattens every alternative of one edge into a single
+        acceptable set, which is all the closure check needs.  Choosing a gate
+        technology needs the split form: an edge that accepts four grains must be
+        gated by a technology that does not stand for only one of them.
+        Returns ``(kind, declared_good, [tags_of_candidate_0, ...])``.
+        """
+        row = self.buildings[building_id]
+        required_q16 = row.get("input_required_q16", [])
+        offsets = row.get("input_candidate_offsets", [])
+        candidates = row.get("input_candidate_good_ids", [])
+        out = []
+        for edge, good in enumerate(row.get("input_good_ids", [])):
+            if edge < len(required_q16) and int(required_q16[edge]) < 65536:
+                continue
+            scan = [good]
+            if edge + 1 < len(offsets) and offsets[edge + 1] > offsets[edge]:
+                scan = list(candidates[offsets[edge]:offsets[edge + 1]])
+            out.append(("input_good", good,
+                        [list(self.good_tags(candidate)) for candidate in scan]))
+        return out
+
     def dependency_groups(self, building_id: str, include_construction: bool):
         """Yields (kind, id, acceptable_tech_set) exactly like EconomyCatalog."""
         row = self.buildings[building_id]
@@ -171,20 +195,11 @@ class Model:
                 for candidate in scan:
                     acceptable |= set(self.good_tags(candidate))
                 groups.append(("construction_good", good, acceptable))
-        goods = row.get("input_good_ids", [])
-        required_q16 = row.get("input_required_q16", [])
-        offsets = row.get("input_candidate_offsets", [])
-        candidates = row.get("input_candidate_good_ids", [])
-        for edge, good in enumerate(goods):
-            if edge < len(required_q16) and int(required_q16[edge]) < 65536:
-                continue
-            scan = [good]
-            if edge + 1 < len(offsets) and offsets[edge + 1] > offsets[edge]:
-                scan = candidates[offsets[edge]:offsets[edge + 1]]
+        for kind, good, alternatives in self.input_alternatives(building_id):
             acceptable = set()
-            for candidate in scan:
-                acceptable |= set(self.good_tags(candidate))
-            groups.append(("input_good", good, acceptable))
+            for tags in alternatives:
+                acceptable |= set(tags)
+            groups.append((kind, good, acceptable))
         for good in row.get("output_good_ids", []):
             groups.append(("output_good", good, set(self.good_tags(good))))
         for resource in row.get("resource_ids", []):
@@ -192,6 +207,53 @@ class Model:
         for resource in row.get("resource_generation_ids", []):
             groups.append(("generated_resource", resource, set(self.resource_tags(resource))))
         return groups
+
+    def route_specific_technologies(self, building_id: str) -> set:
+        """Union over every input edge of ``route_specific_set`` (audit helper)."""
+        route_specific = set()
+        for _kind, _good, alternatives in self.input_alternatives(building_id):
+            route_specific |= self.route_specific_set(alternatives)
+        return route_specific
+
+    def route_specific_set(self, alternatives: list[list[str]]) -> set:
+        """Technologies that stand for only one route of an edge that offers several.
+
+        A technology ``t`` on a multi-candidate edge is *route specific* when it
+        covers a proper subset of the alternatives and is not a prerequisite of
+        any technology belonging to at least one uncovered alternative.  Gating a
+        building on it therefore cuts off a supply line that never passes through
+        ``t`` -- the defect where a maize-collection technology gates a brewery
+        that accepts wheat or rice just as well.
+
+        ``t`` is benign when it sits on a route to every alternative (a land
+        institution every tenancy descends from) or when it covers all of them.
+        Pure graph predicate: no eras, no names, nothing hand-written.
+        """
+        if len(alternatives) < 2:
+            return set()
+        route_specific = set()
+        for tech in {t for tags in alternatives for t in tags}:
+            covered = [i for i, tags in enumerate(alternatives) if tech in tags]
+            if len(covered) == len(alternatives):
+                continue
+            reachable = True
+            for index, tags in enumerate(alternatives):
+                if index in covered:
+                    continue
+                if not any(tech in self.closure(tag) for tag in tags):
+                    reachable = False
+                    break
+            if not reachable:
+                route_specific.add(tech)
+        return route_specific
+
+    def route_specific_by_edge(self, building_id: str) -> dict:
+        """Route-specific set for each hard input edge, keyed by declared good."""
+        out: dict = {}
+        for _kind, good, alternatives in self.input_alternatives(building_id):
+            banned = out.setdefault(good, set())
+            banned |= self.route_specific_set(alternatives)
+        return out
 
     def building_closure_failures(self, building_id: str, include_construction: bool,
                                   direct=None, required=None) -> list:
