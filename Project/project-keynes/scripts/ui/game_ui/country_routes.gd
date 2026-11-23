@@ -306,6 +306,17 @@ func _retry_inspector_reads(host, generation: int) -> void:
 ## 营造窗口的一次目录页请求：部门 + 搜索词 + 排序档 + 偏移由窗口自己记，这里只
 ## 负责让 view model 组一整页模型（整部门报价后排序、再切一页）并推回窗口。
 
+## 折叠卡的展开/收起：切换视图模型里的展开状态，再让窗口按它记着的
+## 部门/搜索/排序/偏移重发同一页。展开只是多出几行，不触发任何模拟。
+func _on_construction_fold_action_requested(host, action: Dictionary) -> void:
+	if host._inspector_view_model == null or host._right_panel == null:
+		return
+	if not host._inspector_view_model.toggle_construction_fold(action):
+		return
+	host._last_construction_refresh_ms = Time.get_ticks_msec()
+	host._right_panel.request_construction_refresh()
+
+
 func _on_construction_page_requested(host, sector: String, search: String,
 		sort_id: String, offset: int) -> void:
 	if host._selected_cell == null or host._inspector_view_model == null or host._right_panel == null:

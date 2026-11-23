@@ -14,6 +14,10 @@ const COMMAND_COUNTRY_TAX_SET_DEFAULT := &"country.tax.set_default"
 
 const COMMAND_COUNTRY_TAX_SET_OVERRIDE := &"country.tax.set_override"
 
+## 一次给一组建筑写同一个营业税税率（主粮农场那种整组调税）。
+## 走命令通道而不是让 UI 循环发 N 条，这样整批准入是同生共死的。
+const COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP := &"country.tax.set_override_group"
+
 const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE := &"country.tax.clear_override"
 
 const COMMAND_CELL_TAX_SET_DEFAULT := &"country.tax.cell.set_default"
@@ -161,6 +165,7 @@ static func _validate_command_args(
 				if move_domain < 0 or move_domain >= 4 or position < 0:
 					return _result(false, "invalid_args", "研究队列位置无效。")
 		COMMAND_COUNTRY_TAX_SET_DEFAULT, COMMAND_COUNTRY_TAX_SET_OVERRIDE, \
+				COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP, \
 				COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE, COMMAND_CELL_TAX_SET_DEFAULT, \
 				COMMAND_CELL_TAX_CLEAR_DEFAULT, COMMAND_CELL_TAX_SET_OVERRIDE, \
 				COMMAND_CELL_TAX_CLEAR_OVERRIDE:
@@ -170,7 +175,8 @@ static func _validate_command_args(
 			if id == COMMAND_COUNTRY_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
-					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE:
+					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE or \
+					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
 				var mode := _tax_assessment_mode(args)
 				if mode != 0 and mode != 1:
 					return _result(false, "invalid_tax_mode", "计税模式无效。")
@@ -189,6 +195,16 @@ static func _validate_command_args(
 				var item_id := StringName(args.get("item_id", &""))
 				if item_id.is_empty() or not _tax_item_exists(facade, kind, item_id):
 					return _result(false, "invalid_tax_item", "税务细项目标无效。")
+			if id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
+				var group_ids: PackedStringArray = args.get(
+					"item_ids", PackedStringArray())
+				if group_ids.is_empty():
+					return _result(false, "invalid_tax_item", "整组调税缺少目标建筑。")
+				for candidate_id in group_ids:
+					if StringName(candidate_id).is_empty() or \
+							not _tax_item_exists(facade, kind, StringName(candidate_id)):
+						return _result(false, "invalid_tax_item",
+							"整组调税包含无效目标：%s" % candidate_id)
 			if id == COMMAND_CELL_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_CLEAR_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_OVERRIDE or \

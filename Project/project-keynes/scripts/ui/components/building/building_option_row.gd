@@ -2,16 +2,20 @@ extends PanelContainer
 class_name BuildingOptionRow
 
 ## 营造目录的一行，显示每栋建材、现金支出和停用原因。
+## 折叠卡行（档位卡 / 作物选项）额外带 fold_action：按钮变成展开/收起，
+## 单变体的作物选项仍然直接营造。
 
 signal build_requested(building_id: StringName)
 signal hover_started(row: Dictionary, source: Control)
 signal hover_ended()
+signal fold_toggled(action: Dictionary)
 
 const CASH_FONT_SIZE := 17
 const PENDING_TEXT := "营造中…"
 
 var building_id := ""
 var _row_data: Dictionary = {}
+var _fold_action: Dictionary = {}
 
 var _blocked := false
 var _pending := false
@@ -42,6 +46,7 @@ func set_row(row: Dictionary, pending: bool = false) -> void:
 		_ready()
 	_row_data = row.duplicate(true)
 	building_id = String(row.get("building_id", ""))
+	_fold_action = row.get("fold_action", {}) if row.has("fold_action") else {}
 	_blocked = not bool(row.get("eligible", false))
 	_pending = pending and not _blocked
 	_icon.set_semantic(StringName(row.get("icon", &"economy.building")),
@@ -64,7 +69,7 @@ func set_row(row: Dictionary, pending: bool = false) -> void:
 	# 详情由 BuildingHoverCard 承担；清空原生 tooltip，避免两张卡重叠。
 	tooltip_text = ""
 	_build.tooltip_text = String(row.get("reason_text", "")) if _blocked \
-		else "从国库与本地市场备料，营造一座%s" % _name.text
+		else _build_tooltip_text()
 	_apply_button_state()
 
 
@@ -94,15 +99,55 @@ static func meta_text(row: Dictionary, has_material_rows: bool = false) -> Strin
 	return "%s · %s" % [reason, materials]
 
 
+## 折叠行用「展开/收起 N 项」，普通行仍是「营造」。单变体的作物选项
+## 等同于直接营造，所以不显示展开。
+func _button_label() -> String:
+	if _fold_action.is_empty():
+		return PENDING_TEXT if _pending else "营造"
+	var kind := String(_fold_action.get("kind", ""))
+	var opened := bool(_fold_action.get("expanded", false))
+	if kind == "toggle_rank":
+		if opened:
+			return "收起 ▴"
+		return "%d 种作物 ▾" % int(_fold_action.get("crop_count", 0))
+	if kind == "toggle_crop":
+		if bool(_fold_action.get("single_variant", false)):
+			return PENDING_TEXT if _pending else "营造"
+		if opened:
+			return "收起 ▴"
+		return "%d 种做法 ▾" % int(_fold_action.get("variant_count", 1))
+	return PENDING_TEXT if _pending else "营造"
+
+
+func _build_tooltip_text() -> String:
+	if _fold_action.is_empty():
+		return "从国库与本地市场备料，营造一座%s" % _name.text
+	var kind := String(_fold_action.get("kind", ""))
+	if kind == "toggle_rank":
+		return "展开这一档的作物选项"
+	if kind == "toggle_crop" and not bool(_fold_action.get("single_variant", false)):
+		return "展开这一作物的具体做法"
+	return "从国库与本地市场备料，营造一座%s" % _name.text
+
+
 func _apply_button_state() -> void:
 	if _build == null:
 		return
-	_build.text = PENDING_TEXT if _pending else "营造"
+	_build.text = _button_label()
 	_build.disabled = _blocked or _pending
 
 
 func _on_build_pressed() -> void:
-	if _blocked or _pending or building_id.is_empty():
+	if _pending:
+		return
+	if not _fold_action.is_empty():
+		var kind := String(_fold_action.get("kind", ""))
+		var is_toggle := kind == "toggle_rank" \
+			or (kind == "toggle_crop" and not bool(_fold_action.get("single_variant", false)))
+		if is_toggle:
+			fold_toggled.emit(_fold_action)
+			return
+	if _blocked or building_id.is_empty():
 		return
 	set_pending(true)
 	build_requested.emit(StringName(building_id))

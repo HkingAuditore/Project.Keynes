@@ -1096,6 +1096,44 @@ func _construction_page_label(offset: int, count: int, total: int) -> String:
 func _construction_local_stock(market: Dictionary) -> Dictionary:
 	return _Construction_delegate._construction_local_stock(self, market)
 
+## 主粮折叠的展开状态：档位卡展开出作物选项，作物选项展开出具体做法。
+## 只影响本页 rows 的生成，进度与报价仍按真实 type 走。
+var _construction_expanded_ranks: Dictionary = {}
+var _construction_expanded_crops: Dictionary = {}
+
+
+func _construction_fold_state() -> Dictionary:
+	return {
+		"ranks": _construction_expanded_ranks,
+		"crops": _construction_expanded_crops,
+	}
+
+
+## 切换一个折叠卡的展开状态；返回 false 表示不是折叠动作。
+func toggle_construction_fold(action: Dictionary) -> bool:
+	var kind := String(action.get("kind", ""))
+	var rank := int(action.get("rank", -1))
+	if kind == "toggle_rank":
+		if _construction_expanded_ranks.has(rank):
+			_construction_expanded_ranks.erase(rank)
+		else:
+			_construction_expanded_ranks[rank] = true
+		return true
+	if kind == "toggle_crop":
+		var key := "%d|%s" % [rank, String(action.get("crop", ""))]
+		if _construction_expanded_crops.has(key):
+			_construction_expanded_crops.erase(key)
+		else:
+			_construction_expanded_crops[key] = true
+		return true
+	return false
+
+
+func collapse_construction_fold() -> void:
+	_construction_expanded_ranks.clear()
+	_construction_expanded_crops.clear()
+
+
 func _construction_entries(candidates: PackedInt32Array, quotes: Dictionary,
 		snapshot: Dictionary, market: Dictionary, durations: PackedInt32Array,
 		maturity_ranks: PackedInt32Array) -> Array:

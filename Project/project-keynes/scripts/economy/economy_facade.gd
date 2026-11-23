@@ -446,6 +446,24 @@ func construction_type_columns() -> Dictionary:
 			"building_maturity_ranks", PackedInt32Array()),
 		"building_maturity_display_names": _catalog.get(
 			"building_maturity_display_names", PackedStringArray()),
+		# Fold key for the construction workspace: the first output good decides
+		# which crop option a building belongs to, and the good's category
+		# (starchy_staple) decides whether it is a staple-crop building at all.
+		# Read here rather than in a UI module so every consumer sees one shape.
+		"building_industry_chain_ids": _catalog.get(
+			"building_industry_chain_ids", PackedStringArray()),
+		"building_progression_steps": _catalog.get(
+			"building_progression_steps", PackedInt32Array()),
+		"building_output_offsets": _catalog.get(
+			"building_output_offsets", PackedInt32Array()),
+		"building_output_good_ids": _catalog.get(
+			"building_output_good_ids", PackedInt32Array()),
+		"good_ids": _catalog.get("good_ids", PackedStringArray()),
+		"good_category_ids": _catalog.get(
+			"good_category_ids", PackedStringArray()),
+		# 税分组的产物轴要给人看的货名。这里只透传已加载的显示名表，
+		# 缺项由分组模块退回 stable id，不新建加载路径。
+		"good_display_names": _good_display_names,
 	}
 
 

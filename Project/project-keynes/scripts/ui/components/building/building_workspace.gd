@@ -13,6 +13,8 @@ class_name BuildingWorkspace
 signal closed()
 signal page_requested(sector: String, search: String, sort: String, offset: int)
 signal build_requested(request: Dictionary)
+## 折叠卡被展开/收起：由宿主切换视图模型的展开状态并重算本页。
+signal fold_action_requested(action: Dictionary)
 
 const RowScene := preload("res://scenes/ui/building_option_row.tscn")
 const HoverCardScene := preload("res://scenes/ui/building_hover_card.tscn")
@@ -221,8 +223,7 @@ func _apply_rows(items: Array, rebuild: bool) -> void:
 		_build_rows(items)
 	for raw in items:
 		var item: Dictionary = raw
-		var row := _rows_by_id.get(String(item.get("building_id", ""))) \
-			as BuildingOptionRow
+		var row := _rows_by_id.get(_row_key_of(item)) as BuildingOptionRow
 		if row == null:
 			continue
 		row.set_row(item, _pending_ids.has(String(item.get("building_id", ""))))
@@ -239,7 +240,7 @@ func _apply_rows(items: Array, rebuild: bool) -> void:
 
 func _rows_match(items: Array) -> bool:
 	for raw in items:
-		if not _rows_by_id.has(String((raw as Dictionary).get("building_id", ""))):
+		if not _rows_by_id.has(_row_key_of(raw as Dictionary)):
 			return false
 	return true
 
@@ -256,14 +257,26 @@ func _build_rows(items: Array) -> void:
 		row.build_requested.connect(_on_row_build_requested)
 		row.hover_started.connect(_on_row_hover_started)
 		row.hover_ended.connect(_on_row_hover_ended)
-		_rows_by_id[String(item.get("building_id", ""))] = row
+		row.fold_toggled.connect(_on_row_fold_toggled)
+		_rows_by_id[_row_key_of(item)] = row
 
 
 func _on_row_hover_started(row_data: Dictionary, source: Control) -> void:
 	if _hover_card == null or not visible:
 		return
-	_hovered_row_id = String(row_data.get("building_id", ""))
+	_hovered_row_id = _row_key_of(row_data)
 	_hover_card.show_for(row_data, source, self)
+
+
+## 折叠卡与它的变体可能共用 building_id，所以列表索引用 row_key 优先。
+static func _row_key_of(item: Dictionary) -> String:
+	var key := String(item.get("row_key", ""))
+	return key if not key.is_empty() else String(item.get("building_id", ""))
+
+
+## 折叠卡的展开/收起交给上层：这里是纯呈现组件，不改视图模型状态。
+func _on_row_fold_toggled(action: Dictionary) -> void:
+	fold_action_requested.emit(action)
 
 
 func _on_row_hover_ended() -> void:

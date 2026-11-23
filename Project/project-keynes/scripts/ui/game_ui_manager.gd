@@ -937,6 +937,8 @@ func _bind_ui() -> void:
 		_on_family_colonization_requested)
 	_right_panel.construction_page_requested.connect(_on_construction_page_requested)
 	_right_panel.construction_requested.connect(_on_construction_requested)
+	_right_panel.construction_fold_action_requested.connect(
+		_on_construction_fold_action_requested)
 	_right_panel.colonization_requested.connect(_on_colonization_requested)
 	_right_panel.trade_orders_page_requested.connect(
 		_on_trade_orders_page_requested)
@@ -1388,6 +1390,10 @@ func _refresh_building_workspace(force: bool = false) -> void:
 
 func _on_construction_requested(request: Dictionary) -> void:
 	_country_component._on_construction_requested(self, request)
+
+
+func _on_construction_fold_action_requested(action: Dictionary) -> void:
+	_country_component._on_construction_fold_action_requested(self, action)
 
 func _open_colonization_target(target_cell: int, family_handle: int = 0,
 		source_cell: int = -1) -> void:

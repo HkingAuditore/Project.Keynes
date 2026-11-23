@@ -10,6 +10,7 @@ const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
 const MarketListScene := preload("res://scenes/ui/market_list.tscn")
 const CohortListScene := preload("res://scenes/ui/cohort_list.tscn")
 const BuildingListScene := preload("res://scenes/ui/building_list.tscn")
+const TaxGroupMapScript := preload("res://scripts/country/tax_group_map.gd")
 const ConstructionEntryScene := preload("res://scenes/ui/construction_entry.tscn")
 const BadgeRowScene := preload("res://scenes/ui/badge_row.tscn")
 const FactGridScene := preload("res://scenes/ui/inspector_fact_grid.tscn")
@@ -40,6 +41,8 @@ signal detail_visibility_changed(open: bool)
 signal family_colonization_requested(family_handle: int, source_cell: int)
 signal construction_page_requested(sector: String, search: String, sort: String, offset: int)
 signal construction_requested(request: Dictionary)
+## 折叠卡展开/收起：交给宿主切换视图模型的展开状态并重算本页。
+signal construction_fold_action_requested(action: Dictionary)
 signal colonization_requested(request: Dictionary)
 signal trade_orders_page_requested(offset: int)
 signal trade_order_locate_requested(cell_idx: int)
@@ -194,6 +197,8 @@ func _ready() -> void:
 			construction_page_requested.emit(sector, search, sort, offset))
 	_construction_workspace.build_requested.connect(
 		func(request: Dictionary) -> void: construction_requested.emit(request))
+	_construction_workspace.fold_action_requested.connect(
+		func(action: Dictionary) -> void: construction_fold_action_requested.emit(action))
 	(_kpi_cards[_kpi_cards.size() - 1] as DossierKpiCard).show_divider = false
 	_chapter_nav.custom_minimum_size = Vector2(0.0, DossierChapterNav.HEIGHT)
 	_chapter_nav.chapter_selected.connect(_on_tab_selected)
@@ -770,6 +775,121 @@ func _register_tax_editor(editor: TaxLaneEditor) -> void:
 		var pending: Dictionary = _pending_tax[key]
 		editor.mark_pending(int(pending.get(
 			"rate", editor.lane_data().get("base", 0))))
+
+
+## 税收面板可选的「整组调税」轴。四轴共用一套分组模块，顺序即面板下拉顺序。
+## 档位放第一：它是这次新加的生产方式轴，也是玩家最想「一条滑条管一档」的那条。
+const TAX_GROUP_AXES := [
+	{"mode": "maturity_rank", "label": "按生产档位", "hint": "同一生产方式档位的全国建筑"},
+	{"mode": "output_good", "label": "按产物", "hint": "产出同一件货的全国建筑"},
+	{"mode": "sector", "label": "按大类", "hint": "农业/采掘/制造/能源/知识/军事"},
+	{"mode": "staple_crop", "label": "按主粮农场", "hint": "全国主粮农场，其余按大类"},
+]
+
+
+func tax_group_axes() -> Array:
+	return TAX_GROUP_AXES
+
+
+## 把 catalog 列整理成税分组需要的形状。业主列只给 sector_owner/staple_crop 用，
+## 这里补占位保持长度匹配，避免其他轴因为缺列被拒。
+func _tax_group_columns() -> Dictionary:
+	if _player_controller == null or not _player_controller.has_method("get_economy_facade"):
+		return {}
+	var economy = _player_controller.get_economy_facade()
+	if economy == null or not economy.has_method("construction_type_columns"):
+		return {}
+	var columns: Dictionary = economy.construction_type_columns()
+	var building_ids: PackedStringArray = columns.get(
+		"building_type_ids", PackedStringArray())
+	if building_ids.is_empty():
+		return {}
+	var owners: PackedInt32Array = columns.get(
+		"building_owner_profession_ids", PackedInt32Array())
+	if owners.size() != building_ids.size():
+		owners = PackedInt32Array()
+		owners.resize(building_ids.size())
+		owners.fill(0)
+		columns["building_owner_profession_ids"] = owners
+		columns["profession_ids"] = PackedStringArray(["placeholder"])
+	return columns
+
+
+## 取 item_id 这座建筑在某个分组轴下所属的整组。
+## 返回 {ok, mode, group_id, label, item_ids, count, group_count}；失败返回 {}。
+func tax_group_ids_for(mode: String, item_id: String) -> Dictionary:
+	var columns := _tax_group_columns()
+	if columns.is_empty():
+		return {}
+	var building_ids: PackedStringArray = columns["building_type_ids"]
+	var building := building_ids.find(item_id)
+	if building < 0:
+		return {}
+	var grouped: Dictionary = TaxGroupMapScript.build(columns, mode)
+	if not bool(grouped.get("ok", false)):
+		return {}
+	var group_ids: PackedStringArray = grouped.get("group_ids", PackedStringArray())
+	var group_labels: PackedStringArray = grouped.get(
+		"group_labels", PackedStringArray())
+	var indices: PackedInt32Array = grouped.get(
+		"building_group_indices", PackedInt32Array())
+	if building >= indices.size():
+		return {}
+	var group := int(indices[building])
+	if group < 0 or group >= group_ids.size():
+		return {}
+	var out := PackedStringArray()
+	for member in TaxGroupMapScript.buildings_in_group(indices, group):
+		if member >= 0 and member < building_ids.size():
+			out.append(building_ids[member])
+	return {
+		"ok": true,
+		"mode": mode,
+		"group": group,
+		"group_id": String(group_ids[group]),
+		"label": String(group_labels[group]) if group < group_labels.size() else "",
+		"item_ids": out,
+		"count": out.size(),
+		"group_count": group_ids.size(),
+	}
+
+
+## 主粮农场税组的 item_id 列表（当前 50 座）。整组调税需要它，而分组判定
+## 与建造界面的折叠同源：首个产出货的类别是 starchy_staple。
+## catalog 从 economy facade 的 construction_type_columns 取，不新建数据通路。
+func staple_farm_tax_group_ids() -> PackedStringArray:
+	var columns := _tax_group_columns()
+	if columns.is_empty():
+		return PackedStringArray()
+	var building_ids: PackedStringArray = columns["building_type_ids"]
+	var grouped: Dictionary = TaxGroupMapScript.build(
+		columns, TaxGroupMapScript.MODE_STAPLE_CROP)
+	if not bool(grouped.get("ok", false)):
+		return PackedStringArray()
+	var group_ids: PackedStringArray = grouped.get("group_ids", PackedStringArray())
+	var group := group_ids.find(TaxGroupMapScript.STAPLE_GROUP_ID)
+	if group < 0:
+		return PackedStringArray()
+	var indices: PackedInt32Array = grouped.get(
+		"building_group_indices", PackedInt32Array())
+	var out := PackedStringArray()
+	for building in TaxGroupMapScript.buildings_in_group(indices, group):
+		if building >= 0 and building < building_ids.size():
+			out.append(building_ids[building])
+	return out
+
+
+## 整组调税：一次命令改动全国一组建筑（如全部主粮农场）的营业税。
+## 与单条 override 不同，这里走 country.tax.set_override_group：命令层把 N 条
+## SET_TAX_OVERRIDE 打成一个批次，内核整批准入，不会只生效一半。
+func request_tax_group_override(kind: int, item_ids: PackedStringArray,
+		rate_basis_points: int) -> void:
+	if _player_controller == null or item_ids.is_empty():
+		return
+	_player_controller.request_command(
+		&"country.tax.set_override_group",
+		{"kind": kind, "item_ids": item_ids,
+			"rate_basis_points": rate_basis_points})
 
 
 func _on_tax_override_requested(
