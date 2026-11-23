@@ -604,6 +604,9 @@ restore 按默认值重建 policy 行）。所以 `MilitaryFacade.set_terrain()`
 `tests/technology/technology_detail_card_effect_priority_test.gd` 与
 `tests/technology/technology_effect_text_units_test.gd`。
 
+科技卡片从公开目录读取按结构化效果生成的摘要。摘要和详情共用中文名称解析，商品、建筑、职业
+和资源名称取自内容目录，地理产出效果同时标明适用地理与产业。
+
 ## 科技前置
 
 科技前置修改只写 `data/technology/technology_network.json`，同步知识基础、前置理由和静态连线；

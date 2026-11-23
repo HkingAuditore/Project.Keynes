@@ -2130,6 +2130,16 @@ Shader 日/游戏年比例也已接入 HexRenderer.shader_days_per_game_year；�
 Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通过；
 地被桌面/移动/分块档回归 28 项通过。详见 [TOD 光照](../cpp-dots-runtime/vision-fog-and-borders.md#tod-光照)。
 
+2026-11-22：地表覆盖边界优化。`ResourceGroundCover` 为每个覆盖格维护一张 R8
+邻域差异 LUT，Shader 保留最近邻的群落 ID，只把该权重与已有地形 `edge_distance`
+结合做连续透明度衰减。低成本路径增加一次 R8 LUT 读取和一次 `smoothstep`，不重新采样
+邻居地被图层。默认边界混合强度为 0.85，旧的画质档位和 `[1, 1, 3]` 邻域采样配置保留。
+本机未安装 Godot 可执行文件，未完成图形运行验证；已完成 `git diff --check`。
+
+2026-11-23：海洋/海岸同属水面，但原有 `open_ocean_w` 只由水深决定，没有乘以
+`water_ctx_type_mix(B_OCEAN/COAST)`。海岸主格中的远洋色块因此持续到主导类型切换，
+造成接缝处的突兀扭曲。现改为复用已有主/次水体权重抑制远洋宏观色场，不新增纹理采样。
+
 ## GM 界面与事件屏蔽
 
 正式玩家 GM 的 `ui.suppress_popups` 在 Host 设置后通过 `gm_toggle_changed` 同步到

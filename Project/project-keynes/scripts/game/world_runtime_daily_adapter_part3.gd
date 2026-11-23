@@ -99,6 +99,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	host._drain_runtime_military_commits()
 	_mark_runtime_day_tail(host, host._runtime_commit_day)
 	host._runtime_military_ms = float(Time.get_ticks_usec() - military_usec) / 1000.0
+	host._sched_proc_military_ms += host._runtime_military_ms
 	if dcp:
 		host._dcp_military_ms = host._runtime_military_ms
 	if host._runtime_pending_visual_generation <= 0 \

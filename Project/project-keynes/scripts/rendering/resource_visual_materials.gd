@@ -92,10 +92,14 @@ static func _bind_terrain_textures(host, target: ShaderMaterial, tiles, tiled: b
 			["visual_layer_size", layout.layer_size], ["visual_logical_resolution", layout.logical_size]]:
 			target.set_shader_parameter(pair[0], Vector2(pair[1]))
 		target.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
+		target.set_shader_parameter("terrain_edge_layers_bound", tiles.edge_distance != null)
+		target.set_shader_parameter("visual_edge_distance_tiles", tiles.edge_distance)
 	else:
 		target.set_shader_parameter("terrain_horizon_tex", host._world.terrain_horizon_tex)
 		target.set_shader_parameter("terrain_normal_tex", host._world.terrain_normal_tex)
 		target.set_shader_parameter("height_tex", host._world.height_tex)
+		target.set_shader_parameter("terrain_edge_distance_tex", host._world.terrain_edge_distance_tex)
+		target.set_shader_parameter("terrain_edge_layers_bound", host._world.terrain_edge_distance_tex != null)
 	var height_bound = tiles.height != null if tiled else host._world.height_tex != null
 	target.set_shader_parameter("has_height_tex", height_bound)
 	# [river-flow-gate 2026-11-19] 与主地形同一个数据判定：关掉流动画不等于没有河。

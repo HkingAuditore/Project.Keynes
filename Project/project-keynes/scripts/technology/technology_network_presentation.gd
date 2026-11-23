@@ -20,6 +20,36 @@ const MODIFIER_SUBJECT_NAMES := {
 	"country.trade.speed_factor": "贸易速度",
 }
 
+const PRODUCTION_FAMILY_NAMES := {
+	"chemical_industry": "化工",
+	"cloth_weaving": "织布",
+	"construction_methods": "施工",
+	"copper_extraction": "采铜",
+	"gold_extraction": "采金",
+	"hunting": "狩猎",
+	"iron_extraction": "采铁",
+	"metal_toolmaking": "金属工具制造",
+	"oil_extraction": "石油开采",
+	"paper_making": "造纸",
+	"research_institution": "研究机构",
+	"salt_extraction": "制盐",
+	"silver_extraction": "采银",
+	"specialty_commodity_crops": "特色经济作物",
+	"staple_preparation": "主食加工",
+	"steelmaking": "炼钢",
+	"tin_extraction": "采锡",
+}
+
+const EXTRA_CLIMATE_PROFILE_NAMES := {
+	"controlled_environment": "可控环境生产",
+	"highland_crop": "高地作物",
+	"pasture_livestock": "牧场畜牧",
+	"plantation_crop": "种植园作物",
+	"polar_crop": "极地作物",
+	"xeric_crop": "耐旱作物",
+}
+
+
 static func normalize_effect_summaries(payload: Dictionary) -> bool:
 	var changed := false
 	for node_value in payload.get("nodes", []):
@@ -45,7 +75,7 @@ static func effect_summary(node: Dictionary) -> String:
 		if String(effect.get("operation", "")) != "unlock" \
 				or not bool(effect.get("summary_visible", true)):
 			continue
-		var display_name := String(effect.get("display_name", effect.get("id", "")))
+		var display_name := content_effect_name(effect)
 		var prefix := ""
 		match String(effect.get("kind", "")):
 			"building": prefix = "解锁建筑"
@@ -91,42 +121,79 @@ static func effect_summary(node: Dictionary) -> String:
 
 static func modifier_effect_subject(term: Dictionary) -> String:
 	var stat := String(term.get("stat", ""))
+	if ModifierCatalog.STAT_DISPLAY_NAMES.has(stat):
+		return String(ModifierCatalog.STAT_DISPLAY_NAMES[stat])
+	if stat == "country.ideology.offer_choice_bonus":
+		return "理念候选数量"
 	var subject := String(term.get("subject_display_name", "")).strip_edges()
-	if subject.is_empty():
-		subject = String(MODIFIER_SUBJECT_NAMES.get(stat, stat))
-	if stat.begins_with("country.output.family."):
-		return "「%s」生产家族建筑产出" % subject
-	if stat.begins_with("country.output.building."):
-		return "建筑「%s」产出" % subject
-	if stat.begins_with("country.output.good."):
-		return "商品「%s」产量" % subject
-	if stat.begins_with("country.output.terrain.") \
-			or stat.begins_with("country.output.landform."):
-		return "地理专长「%s」产出" % subject
-	if stat.begins_with("country.input.good."):
-		return "商品「%s」生产投入" % subject
-	if stat.begins_with("country.consumption.good."):
-		return "商品「%s」家庭消费" % subject
-	# 带实例维度的三类：职业税率、职业满意度、资源耗用/再生。概念词固定，
-	# 只有维度名取自数据。
-	if stat.begins_with("country.tax.income.") and stat.ends_with(".rate_bp"):
-		return "%s税率" % subject
-	if stat.begins_with("economy.profession.") and stat.ends_with(".satisfaction_bp"):
-		return "%s满意度" % subject
 	var parts := stat.split(".")
-	if parts.size() == 4 and parts[0] == "country" and parts[1] == "resource":
-		match String(parts[3]):
-			"use_factor":
-				return "%s耗用" % subject
-			"managed_generation_factor":
-				return "%s管护再生" % subject
-	# 其余概念名以 ModifierCatalog 的口径为准。subject_display_name 是逐节点手写的，
-	# 同一个 stat 在数据里能出现两三种叫法（社会研究效率 / 社会领域研究效率、
-	# 投入因子 / 全社会生产投入 / 生产投入），玩家没法把两个科技横向比较。
-	var canonical := String(ModifierCatalog.STAT_DISPLAY_NAMES.get(stat, ""))
-	if not canonical.is_empty():
-		return canonical
+	if parts.size() == 4:
+		var target := parts[3].trim_suffix("_factor")
+		match ".".join(parts.slice(0, 3)):
+			"country.output.family":
+				return "「%s」系列建筑产出" % PRODUCTION_FAMILY_NAMES.get(target, subject)
+			"country.output.building":
+				return "建筑「%s」产出" % _catalog_name(&"building", target, subject)
+			"country.output.good":
+				return "商品「%s」产量" % _catalog_name(&"good", target, subject)
+			"country.input.good":
+				return "商品「%s」生产投入" % _catalog_name(&"good", target, subject)
+			"country.consumption.good":
+				return "商品「%s」家庭消费" % _catalog_name(&"good", target, subject)
+		if parts[0] == "country" and parts[1] == "resource":
+			var resource := _catalog_name(&"resource", parts[2], subject)
+			match parts[3]:
+				"use_factor": return "%s耗用" % resource
+				"managed_generation_factor": return "%s管护再生" % resource
+		if parts[0] == "economy" and parts[1] == "profession":
+			var profession := _catalog_name(&"profession", parts[2], subject)
+			match parts[3]:
+				"satisfaction_bp": return "%s满意度" % profession
+				"tax_tolerance_factor": return "%s税负容忍度" % profession
+	if parts.size() == 5:
+		match ".".join(parts.slice(0, 3)):
+			"country.output.terrain", "country.output.landform":
+				var geography := ModifierCatalog._terrain_display_name(parts[3]) \
+					if parts[2] == "terrain" else ModifierCatalog._landform_display_name(parts[3])
+				var sector := String(ModifierCatalog.SECTOR_DISPLAY_NAMES.get(
+					parts[4].trim_suffix("_factor"), ""))
+				return "%s·%s产出" % [geography, sector]
+			"country.trade.good":
+				var good := _catalog_name(&"good", parts[3], subject)
+				var metric := "贸易容量" if parts[4] == "capacity_factor" else "贸易速度"
+				return "商品「%s」%s" % [good, metric]
+			"country.climate.profile":
+				var profile := String(ModifierCatalog.PRODUCTION_CLIMATE_PROFILE_DISPLAY_NAMES.get(
+					parts[3], EXTRA_CLIMATE_PROFILE_NAMES.get(parts[3], parts[3])))
+				var hazard := parts[4].trim_suffix("_loss_factor")
+				return "%s·%s损失" % [profile, ModifierCatalog.HAZARD_DISPLAY_NAMES.get(hazard, hazard)]
+			"country.tax.income":
+				if parts[4] == "rate_bp":
+					return "%s税率" % _catalog_name(&"profession", parts[3], subject)
 	return subject
+
+
+static func content_effect_name(effect: Dictionary) -> String:
+	return _catalog_name(StringName(effect.get("kind", "")), String(effect.get("id", "")),
+		String(effect.get("display_name", "")))
+
+
+static func _catalog_name(kind: StringName, stable_id: String, authored_name: String) -> String:
+	# The authored label may describe a grouped effect or a specific unlock.
+	if not authored_name.is_empty() and not authored_name.is_valid_identifier():
+		return authored_name
+	var display_name := ModifierCatalog.display_name_of(kind, stable_id)
+	var profile_dir := ""
+	match kind:
+		&"building": profile_dir = EconomyCatalog.BUILDING_DIR
+		&"profession": profile_dir = EconomyCatalog.PROFESSION_DIR
+	if not profile_dir.is_empty() and display_name == stable_id:
+		var path := "%s/%s.tres" % [profile_dir, stable_id]
+		if ResourceLoader.exists(path):
+			var profile := ResourceLoader.load(path)
+			if profile != null and String(profile.get("id")) == stable_id:
+				return String(profile.get("display_name"))
+	return display_name
 
 
 ## 单项修饰的效果增量（+0.07 表示 +7%），供同主语多项相加后再统一格式化。
@@ -143,8 +210,8 @@ static func modifier_delta_fraction(term: Dictionary) -> float:
 ## 把已求和的增量格式化为玩家文案。`_bp` 类统计的量纲是 1/100，单独折算。
 static func modifier_delta_text(delta: float, stat: String) -> String:
 	var percent := delta * 100.0
-	# `_add` 类统计（视野、士气）是绝对加量，不是比例；加百分号会读成「视野 +1000%」。
-	if stat.ends_with("_add"):
+	# 视野、士气和理念候选数量使用绝对增量。
+	if stat.ends_with("_add") or stat == "country.ideology.offer_choice_bonus":
 		var absolute := ("%.1f" % absf(delta)).rstrip("0").rstrip(".")
 		return "%s%s" % ["+" if delta >= 0.0 else "-", absolute]
 	# 基准点（_bp）类统计：值的单位是 0.01%，直接乘 100 会变成 +20000% 这种胡话。

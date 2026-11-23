@@ -35,10 +35,23 @@ func _init() -> void:
 	var summary: Dictionary = ext.get_population_cell_summary(0)
 	if not bool(summary.get("ok", false)) \
 			or int(summary.get("population", 0)) != 105 \
+			or not summary.has("employed_population") \
+			or not summary.has("unemployed_population") \
+			or int(summary.get("employed_population", -1)) + int(summary.get("unemployed_population", -1)) != 105 \
 			or summary.has("demand_good_indices") \
 			or summary.has("populations"):
 		_fail("summary shape mismatch: %s" % str(summary))
 		return
+	for include_details in [false, true]:
+		var snapshot: Dictionary = ext.get_population_cell_snapshot(0, include_details)
+		if not bool(snapshot.get("ok", false)) \
+				or not snapshot.has("employed_population") \
+				or not snapshot.has("unemployed_population") \
+				or int(snapshot.get("employed_population", -1)) != int(summary.get("employed_population", -2)) \
+				or int(snapshot.get("unemployed_population", -1)) != int(summary.get("unemployed_population", -2)):
+			_fail("snapshot employment summary mismatch (include_details=%s): %s" % [
+				str(include_details), str(snapshot)])
+			return
 	print("[population-cell-summary] PASS")
 	quit(0)
 

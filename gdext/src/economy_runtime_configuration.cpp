@@ -213,6 +213,15 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
                 "economy.profession." + profession_id +
                 ".satisfaction_bp") : -1);
     }
+    _political_class_satisfaction_bp_stat_ids.clear();
+    _political_class_satisfaction_bp_stat_ids.reserve(_political_class_ids.size());
+    for (const std::string &class_id : _political_class_ids) {
+        _political_class_satisfaction_bp_stat_ids.push_back(
+            _modifier_runtime != nullptr
+                ? modifier_api::stat_id_for_key(*_modifier_runtime,
+                    "economy.class." + class_id + ".satisfaction_bp")
+                : -1);
+    }
     const auto resolve_geography_stats = [&](const std::string &kind,
             const std::vector<std::string> &geography_ids,
             std::vector<int32_t> &target) {
@@ -1865,7 +1874,20 @@ void NativeEconomyRuntime::drain_due_effect_pending_commands() {
             continue;
         }
         if (command.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
-            queue_family_settlement_command(command);
+            std::string commit_error;
+            const bool applied = apply_settle_family_expedition(
+                command, commit_error);
+            if (!applied && runtime_country_asset_pending_reason(commit_error)) {
+                kept.push_back(command);
+            } else {
+                auto &result =
+                    _effect_command_results[command.effect_request_id];
+                result.complete = 1;
+                result.ok = applied ? 1 : 0;
+                result.reason = applied ? std::string{} :
+                    (commit_error.empty()
+                        ? "effect_economy_commit_failed" : commit_error);
+            }
             continue;
         }
         EffectCommandResult &result =

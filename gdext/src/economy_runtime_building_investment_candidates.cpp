@@ -1635,6 +1635,24 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             const int64_t daily_profit = saturating_sub(
                 daily_economic_revenue, daily_operating_cost,
                 _saturation_count);
+            const int64_t daily_net_owner_income = saturating_sub(
+                daily_economic_revenue, daily_variable_cost,
+                _saturation_count);
+            const int64_t owner_slots = std::max<int64_t>(1,
+                type.owner_slots_per_building);
+            // Zero-material self-employed entry collectors require no upfront
+            // construction or hired wages. When local unemployed labor exists
+            // and the building produces positive net owner income, defer to
+            // opportunity-cost sponsor matching instead of requiring full
+            // theoretical owner_livelihood before unemployed people may work.
+            const bool zero_build_self_employed_unemployed_fallback =
+                entry_zero_build_margin_exempt &&
+                type.employee_count == 0 &&
+                ctx.cell_unemployed >= owner_slots &&
+                daily_net_owner_income > 0;
+            const bool sub_livelihood_fallback =
+                daily_economic_revenue < daily_operating_cost &&
+                zero_build_self_employed_unemployed_fallback;
             // Preserve the economic quote even when a candidate is
             // rejected by a downstream livelihood/margin gate. The
             // inspector uses this to distinguish a real unprofitable
@@ -1642,20 +1660,25 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             if (diagnostic != nullptr) {
                 diagnostic->projected_profit_per_day = daily_profit;
             }
-            if (daily_economic_revenue < daily_operating_cost) {
+            if (daily_economic_revenue < daily_operating_cost &&
+                !sub_livelihood_fallback) {
                 reject(INVESTMENT_REJECTION_OWNER_LIVELIHOOD);
                 continue;
             }
-            if (daily_profit <= 0 ||
+            if ((daily_profit <= 0 && !sub_livelihood_fallback) ||
                 (daily_economic_revenue < required_revenue &&
                  !entry_zero_build_margin_exempt)) {
                 reject(INVESTMENT_REJECTION_TARGET_MARGIN);
                 continue;
             }
-            const int64_t margin_q16 = daily_operating_cost > 0
-                ? mul_div_sat(daily_profit, Q16_ONE,
-                    daily_operating_cost, _saturation_count)
-                : Q16_ONE;
+            const int64_t margin_q16 = sub_livelihood_fallback
+                ? std::max<int64_t>(1, mul_div_sat(daily_net_owner_income,
+                    Q16_ONE / 16, std::max<int64_t>(1, daily_operating_cost),
+                    _saturation_count))
+                : (daily_operating_cost > 0
+                    ? mul_div_sat(daily_profit, Q16_ONE,
+                        daily_operating_cost, _saturation_count)
+                    : Q16_ONE);
             // Investment and employment compare one building's economic
             // signal. Self-use value remains in that same total; do not
             // dilute it by the number of owner slots.
@@ -1664,14 +1687,17 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                     daily_after_tax_cash_revenue, daily_variable_cost,
                     _saturation_count)),
                 daily_in_kind_livelihood, _saturation_count);
+            const int64_t effective_owner_startup_days =
+                zero_build_self_employed_unemployed_fallback ? 0 : owner_startup_days;
             const int64_t required_capital = saturating_add(construction_cost,
                 saturating_add(saturating_mul(daily_input_cost,
                     _investment_operating_cycles.get() * std::max(1, _epoch_days.get()),
                     _saturation_count), saturating_add(saturating_mul(
                         daily_wages, std::max(1, _epoch_days.get()), _saturation_count),
-                        saturating_add(saturating_mul(owner_livelihood, owner_startup_days,
-                            _saturation_count), saturating_mul(
-                                daily_maintenance, owner_startup_days, _saturation_count),
+                        saturating_add(saturating_mul(owner_livelihood,
+                            effective_owner_startup_days, _saturation_count),
+                            saturating_mul(daily_maintenance, owner_startup_days,
+                                _saturation_count),
                             _saturation_count),
                         _saturation_count), _saturation_count), _saturation_count);
             if (diagnostic != nullptr) {
@@ -1729,14 +1755,19 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                 plan.material_quantities = material_plan.quantities;
                 plan.quote = quote;
             }
-            const int64_t payback = daily_profit > 0
-                ? (required_capital + daily_profit - 1) / daily_profit
+            const int64_t effective_daily_return = daily_profit > 0
+                ? daily_profit
+                : (sub_livelihood_fallback ? daily_net_owner_income : 0);
+            const int64_t payback = effective_daily_return > 0
+                ? (required_capital + effective_daily_return - 1) / effective_daily_return
                 : std::numeric_limits<int64_t>::max();
-            const int64_t return_on_capital_q16 = daily_profit > 0
-                ? mul_div_sat(daily_profit, Q16_ONE,
-                    std::max<int64_t>(1, required_capital),
-                    _saturation_count)
-                : 0;
+            const int64_t return_on_capital_q16 = sub_livelihood_fallback
+                ? margin_q16
+                : (daily_profit > 0
+                    ? mul_div_sat(daily_profit, Q16_ONE,
+                        std::max<int64_t>(1, required_capital),
+                        _saturation_count)
+                    : 0);
             const int64_t cost_advantage_q16 = incumbent_unit_cost > 0 &&
                     challenger_unit_cost < incumbent_unit_cost
                 ? mul_div_sat(incumbent_unit_cost - challenger_unit_cost,
@@ -1764,10 +1795,13 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             int64_t transferable_capital = 0;
             int64_t income_improvement_q16 = 0;
             uint64_t sponsor_family_handle = 0;
+            const int64_t sponsor_target_income = sub_livelihood_fallback
+                ? std::max<int64_t>(1, daily_net_owner_income / owner_slots)
+                : std::max<int64_t>(1, projected_owner_income);
             int32_t sponsor = find_entrepreneur_source(
                 cell, target_signature, required_capital,
-                std::max<int64_t>(1, projected_owner_income), living_cost,
-                std::max<int64_t>(1, type.owner_slots_per_building),
+                sponsor_target_income, living_cost,
+                owner_slots,
                 type_id, had_eligible_sponsor, willing_population,
                 transferable_capital, income_improvement_q16,
                 sponsor_family_handle, &investment_living_cost_cache);

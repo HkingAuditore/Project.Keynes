@@ -442,6 +442,10 @@ func _stage_accent(stage: int) -> Color:
 
 # ───────────────────────────── 缓存 ─────────────────────────────
 
+func current_day() -> int:
+	return _day()
+
+
 func _day() -> int:
 	if _inspector != null:
 		return _inspector.sample_day()

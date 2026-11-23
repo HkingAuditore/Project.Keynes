@@ -1102,6 +1102,19 @@ Dictionary DCWorldExt::dispatch_effect_native_country() {
     // enqueued onto the main EffectRuntime from Economy. Skipping this adapter
     // leaves expeditions stuck in SETTLING forever.
     if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            _economy_effect_adapter_retry = true;
+            return economy_adapter_deferred();
+        }
+    }
+    return dispatch_effect_native_country_unlocked();
+}
+
+Dictionary DCWorldExt::dispatch_effect_native_country_unlocked() {
+    if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_country(
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
@@ -1110,11 +1123,37 @@ Dictionary DCWorldExt::ack_effect_native_country() {
     // Mirror dispatch_effect_native_country: Host receipt drain must keep
     // running for externally enqueued Country commands under EFFECT ACTIVE.
     if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            _economy_effect_adapter_retry = true;
+            return economy_adapter_deferred();
+        }
+    }
+    return ack_effect_native_country_unlocked();
+}
+
+Dictionary DCWorldExt::ack_effect_native_country_unlocked() {
+    if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_country(
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
 
 Dictionary DCWorldExt::settle_orphaned_effect_native_country_acks() {
+    if (_effect_runtime == nullptr) return unavailable();
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            _economy_effect_adapter_retry = true;
+            return economy_adapter_deferred();
+        }
+    }
+    return settle_orphaned_effect_native_country_acks_unlocked();
+}
+
+Dictionary DCWorldExt::settle_orphaned_effect_native_country_acks_unlocked() {
     if (_effect_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->settle_orphaned_native_country_acks();
 }
@@ -1195,6 +1234,25 @@ Dictionary DCWorldExt::ack_effect_native_gameplay() {
 
 Dictionary DCWorldExt::get_effect_native_adapter_report() const {
     Dictionary out;
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            // Economy worker is mid-day and may be mutating the shared
+            // EffectRuntime/Economy queues; report non-idle so the caller
+            // queues a retry rather than racing or skipping the adapter pass.
+            out["deferred"] = true;
+            out["country_pending"] = false;
+            out["economy_pending"] = false;
+            out["gameplay_pending"] = false;
+            out["colonization_pending"] = false;
+            out["country_pending_count"] = 0;
+            out["economy_pending_count"] = 0;
+            out["gameplay_pending_count"] = 0;
+            out["idle"] = false;
+            return out;
+        }
+    }
     const bool country_pending = _country_runtime != nullptr &&
         static_cast<const NativeCountryRuntime *>(_country_runtime)
             ->has_pending_effect_commands();

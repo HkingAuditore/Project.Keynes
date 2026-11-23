@@ -164,6 +164,15 @@ const FAMILIES := [
 		"consumer": "economy_runtime.cpp update_cohort_satisfaction",
 	},
 	{
+		# Per-political-class satisfaction bias: basis-point offset folded into every
+		# profession belonging to that political class (and unemployed cohorts for
+		# `general`) during `freeze_country_epoch_inputs`.
+		"id": &"class_satisfaction",
+		"pattern": "economy.class.%s.satisfaction_bp",
+		"dimensions": ["political_class"],
+		"consumer": "economy_runtime.cpp update_cohort_satisfaction",
+	},
+	{
 		"id": &"tax_consumption",
 		"pattern": "country.tax.consumption.%s.rate_bp",
 		"dimensions": ["good"],

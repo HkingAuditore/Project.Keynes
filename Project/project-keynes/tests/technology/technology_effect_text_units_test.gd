@@ -100,17 +100,39 @@ func _run() -> void:
 		return
 	var regex := RegEx.new()
 	regex.compile(PERCENT_PATTERN)
+	var internal_id := RegEx.new()
+	internal_id.compile("[a-zA-Z_]+")
 	var disagreed := PackedStringArray()
+	var untranslated := PackedStringArray()
+	var summaries := {}
 	for value in definitions:
 		var definition: Dictionary = value
-		var summary_numbers := _numbers(String(definition.get("effect_summary", "")), regex)
-		var card_numbers := _numbers(_lines(definition), regex)
+		var id := String(definition.get("id", ""))
+		var summary := EffectTextScript.summary_text(definition)
+		var lines := _lines(definition)
+		summaries[id] = summary
+		var summary_numbers := _numbers(summary, regex)
+		var card_numbers := _numbers(lines, regex)
 		if summary_numbers != card_numbers:
-			disagreed.append(String(definition.get("id", "")))
+			disagreed.append(id)
+		if internal_id.search(summary) != null or internal_id.search(lines) != null:
+			untranslated.append(id)
 	_expect("every technology shows the same numbers in the card and the summary",
 		disagreed.is_empty())
 	if not disagreed.is_empty():
 		print("    disagreeing nodes: ", disagreed)
+	_expect("technology summaries and detail lines contain no untranslated identifiers",
+		untranslated.is_empty())
+	if not untranslated.is_empty():
+		print("    untranslated nodes: ", untranslated)
+	_expect("seasonal gathering uses the good's localized name",
+		String(summaries.get("tech.seasonal_foraging", "")).contains("采集植物食物"))
+	_expect("gold panning names the production family",
+		String(summaries.get("tech.gold_placer_identification", "")).contains("「采金」系列建筑产出"))
+	_expect("flax effects identify both geography and sector",
+		String(summaries.get("tech.flax_identification", "")).contains("草地·采掘产出"))
+	_expect("ideology choices are displayed as an extra choice",
+		"理念候选数量 +1" in String(summaries.get("tech.information_society", "")).split("；"))
 
 	# --- 位置：效果块排在进度条与研究条件之前 ---
 	var card := CardScene.instantiate() as Control
