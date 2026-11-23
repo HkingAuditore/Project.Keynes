@@ -57,6 +57,7 @@ func _init() -> void:
 	_check_layer_constants()
 	_check_padding_type()
 	_check_wind_encoding_contract()
+	_check_wind_publication_reuse()
 	_check_offset_to_index_rule()
 	_check_commit_plan_bytes()
 	_check_padding_rows()
@@ -221,6 +222,70 @@ func _check_wind_encoding_contract() -> void:
 	got_zero.append_array(bytes.slice(8, 12))
 	_expect(got_zero == want_zero,
 		"zero wind encodes neutral (127, 127, 0, 255), got %s" % str(got_zero))
+
+
+func _check_wind_publication_reuse() -> void:
+	var baker := MapBaker.new()
+	baker._last_bake_map = _map
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(_n_cells + 1, 1)
+	var source := WindSource.new()
+	source.bind(world, _map)
+	var expected := WindSource.build_bytes(_map, world.lut_dims)
+	var published := Baker._publish_weather_table_from_luts(
+		baker, world, _weather_src, world.lut_dims.x, world.lut_dims.y)
+	_expect(published.get("weather_table_published", false), "weather table publishes real wind bytes")
+	var first := _published_wind_image(world)
+	_expect(first != null and first.get_data() == expected,
+		"the weather table keeps its encoded image including padding")
+	if first == null:
+		return
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and _published_wind_image(world) == first,
+		"the wind textures share the table's image at the published update")
+	_map.wind_x_arr = _map.wind_x_arr.duplicate()
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and source.has_previous and _published_wind_image(world) == first,
+		"a new weather update with identical wind keeps the encoding and advances texture history")
+	for field in [&"wind_x_arr", &"wind_y_arr", &"wind_speed_arr"]:
+		var before := _published_wind_image(world)
+		var values: PackedFloat32Array = _map.get(field)
+		var original := values[0]
+		values[0] = -3.0 if field != &"wind_speed_arr" else 2.0
+		_map.set(field, values)
+		world.weather_lut_update_usec += 1
+		var updated := source.update()
+		var after := _published_wind_image(world)
+		_expect(updated and after != null and after != before \
+			and after.get_data() == WindSource.build_bytes(_map, world.lut_dims),
+			"changing %s invalidates the image and retains exact encoding" % field)
+		values[0] = original
+		_map.set(field, values)
+	world.lut_dims.x += 1
+	var resized := source.update()
+	var resized_image := _published_wind_image(world)
+	_expect(resized and resized_image != null and resized_image.get_size() == world.lut_dims,
+		"a new layout is encoded even with the same weather timestamp")
+	var original_y := _map.wind_y_arr
+	_map.wind_y_arr = PackedFloat32Array()
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and source.current == null and _published_wind_image(world) == null,
+		"an incomplete wind source cannot reuse the previous image")
+	_map.wind_y_arr = original_y
+	world.weather_lut_update_usec += 1
+	_expect(source.update() and _published_wind_image(world) != null and first.get_data() == expected,
+		"a recovered source publishes again without altering the old image")
+	var replacement := WorldData.new()
+	replacement.lut_dims = world.lut_dims
+	source.bind(replacement, _map)
+	_expect(source.update() and not source.has_previous and _published_wind_image(replacement) != null
+		and _published_wind_image(replacement) != _published_wind_image(world),
+		"a replacement world starts its own image and texture history")
+
+
+func _published_wind_image(world: WorldData) -> Image:
+	var cache = world.get("weather_wind_image_cache")
+	return cache.get("image") as Image if cache is Dictionary else null
 
 
 # ─────────────────────────────────────────────────────────────────────────

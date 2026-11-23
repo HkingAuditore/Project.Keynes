@@ -8,9 +8,8 @@ const WeatherTablePlan = preload("res://scripts/rendering/bakers/weather_table_p
 # .godot/global_script_class_cache.cfg 后才全局可见，headless / 首次运行时尚不存在
 # （tests/world/cell_table_layout_test.gd 同做法）。
 const CellTableCodecScript = preload("res://scripts/rendering/bakers/cell_table_codec.gd")
-# [cell-field-overlays 2026-11-18] 风场字节的上游编码器。weather_table 的 layer2/3 必须与
-# cloud_shadow_field 的 `wind_lut` **逐字节相同**，所以这里不另写一份编码，直接复用
-# weather_wind_source.gd::build_bytes()（内部就是 build_image() + Image.get_data()）。
+# weather_table 的 layer2/3 与 cloud_shadow_field 的 wind_lut 使用同一张风图，
+# 量化为 RGBA8 后再按天气表的格子布局重排。
 const WeatherWindSourceScript = preload("res://scripts/rendering/weather_wind_source.gd")
 
 ## 湖泊水深归一尺度（height 单位）：与 gdext/src/world_ext_bake.cpp:1088 的
@@ -1113,8 +1112,7 @@ static func _publish_weather_lut_bytes(baker: MapBaker, data: PackedByteArray, w
 	# [cell-field-overlays 2026-11-18] weather_table **就地**跟在 weather_lut 后面发布：
 	# 这是同一个提交点（weather_lut 真的换字节的那一次），不新建节拍 —— 与 cell_table
 	# 紧跟三张 LUT 的关系完全对称（上面三行 weather_lut 的字节与时机一行没改）。
-	# 风场字节从**同一个提交点**的上游取：weather_wind_source.build_bytes() 就是
-	# cloud_shadow_field 的 wind_lut 编码器，同一次提交一起重排写入 layer2/3。
+	# 风场与云影共用一份编码，同一次天气提交仍重排写入 layer2/3。
 	report.merge(_publish_weather_table_from_luts(baker, world, data, lw, lh), true)
 	return report
 
@@ -1138,7 +1136,8 @@ static func _publish_weather_table_from_luts(baker: MapBaker, world: WorldData,
 			"weather_table_published": false,
 			"weather_table_reason": "missing_map",
 		}
-	var wind_bytes: PackedByteArray = WeatherWindSourceScript.build_bytes(map, Vector2i(lw, lh))
+	var wind := WeatherWindSourceScript.published_image(world, map, Vector2i(lw, lh))
+	var wind_bytes := wind.get_data() if wind != null else PackedByteArray()
 	return _publish_weather_table(baker, map, world, weather_bytes, wind_bytes)
 
 

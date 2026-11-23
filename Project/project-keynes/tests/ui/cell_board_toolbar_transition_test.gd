@@ -14,6 +14,14 @@ func _expect(condition: bool, message: String) -> void:
 	if not condition:
 		_failures.append(message)
 
+func _active_animation(control: Control) -> Tween:
+	return control.get_meta(&"_ui_active_tween") as Tween if control.has_meta(&"_ui_active_tween") else null
+
+func _finish_animation(control: Control) -> void:
+	var animation := _active_animation(control)
+	if animation != null:
+		await animation.finished
+
 func _run() -> void:
 	var settings := root.get_node("GameSettings")
 	var original: bool = settings.values().get("reduce_motion", false)
@@ -34,23 +42,37 @@ func _run() -> void:
 	host._hud_layout_component._map_overlay_toolbar = toolbar
 	preload("res://scripts/ui/game_ui/overlays.gd").new()._ensure_cell_board(host)
 	var board: CellBoard = host._hud_layout_component._cell_board
+	var slide := board.get_node("Slide") as Control
 	var primary := toolbar.get_node("PrimaryPanel") as Control
 	var secondary := toolbar.get_node("SecondaryPanel") as Control
 	var secondary_rest := secondary.position
 	toolbar._set_category(MapOverlayToolbar.Category.GEOGRAPHY)
-	await create_timer(0.04).timeout
+	var secondary_entry := _active_animation(secondary)
+	_expect(secondary_entry != null, "切换分类时次级栏开始入场")
+	if secondary_entry != null:
+		secondary_entry.custom_step(0.04)
 	var request := toolbar._active_request.duplicate(true)
 	board.show_board(true)
 	_expect(primary.mouse_behavior_recursive == Control.MOUSE_BEHAVIOR_DISABLED,
 		"工具栏淡出起始即停止接收输入")
-	await create_timer(0.3).timeout
+	await _finish_animation(primary)
+	await _finish_animation(secondary)
+	await _finish_animation(slide)
 	_expect(not primary.visible and not secondary.visible, "展板可见时两级工具栏都隐藏")
 	_expect(toolbar.visible, "不改派遣等工作区管理的根可见性")
 	board.hide_board(false)
 	_expect(not primary.visible, "展板退场期间工具栏不提前出现")
-	await create_timer(0.06).timeout
+	# A long frame can finish both a timer and the exit animation. Sample the
+	# animation itself before allowing the engine to advance another frame.
+	var board_exit := _active_animation(slide)
+	_expect(board_exit != null, "展板开始退场动画")
+	if board_exit != null:
+		board_exit.custom_step(CellBoard.SLIDE_OUT_SEC * 0.5)
+	_expect(slide.modulate.a > 0.0 and slide.modulate.a < 1.0, "已进入展板退场中段")
 	_expect(board.visible and not primary.visible, "退场中段保持工具栏隐藏")
-	await create_timer(0.35).timeout
+	await _finish_animation(slide)
+	await _finish_animation(primary)
+	await _finish_animation(secondary)
 	_expect(not board.visible and primary.visible and secondary.visible, "退场后恢复原分类工具栏")
 	_expect(is_equal_approx(primary.modulate.a, 1.0), "恢复后透明度完整")
 	_expect(secondary.position.is_equal_approx(secondary_rest), "打断次级栏入场后恢复原布局位置")
@@ -58,17 +80,24 @@ func _run() -> void:
 	# Reopen in the very same frame that exit starts: the old exit must be cancelled.
 	board.show_board(false)
 	board.hide_board(false)
+	board_exit = _active_animation(slide)
 	board.show_board(true)
-	await create_timer(0.3).timeout
+	_expect(board_exit != null and not board_exit.is_valid(), "重新入场取消旧退场动画")
+	await _finish_animation(primary)
 	_expect(board.visible and not primary.visible, "快速重入不被旧退场回调隐藏")
 	board.hide_board(true)
-	await create_timer(0.04).timeout
+	var toolbar_entry := _active_animation(primary)
+	_expect(toolbar_entry != null, "展板退场后工具栏开始淡入")
+	if toolbar_entry != null:
+		toolbar_entry.custom_step(0.04)
 	board.show_board(true)
-	await create_timer(0.25).timeout
+	_expect(toolbar_entry != null and not toolbar_entry.is_valid(), "再次入场取消工具栏淡入")
+	await _finish_animation(primary)
 	_expect(not primary.visible, "恢复淡入被再次入场打断后没有迟到回调")
 	paused = true
 	board.hide_board(false)
-	await create_timer(0.4).timeout
+	await _finish_animation(slide)
+	await _finish_animation(primary)
 	_expect(not board.visible and primary.visible and is_equal_approx(primary.modulate.a, 1.0),
 		"暂停期间退场与恢复动画仍能收尾")
 	paused = false
@@ -76,11 +105,11 @@ func _run() -> void:
 	# Another workspace owns the root: board dismissal must never unhide it.
 	toolbar.hide()
 	board.hide_board(true)
-	await create_timer(0.25).timeout
+	await _finish_animation(primary)
 	_expect(not toolbar.visible, "派遣等界面隐藏工具栏后不能被展板恢复")
 	toolbar.show()
 	toolbar._set_category(MapOverlayToolbar.Category.NONE)
-	await create_timer(0.2).timeout
+	await _finish_animation(secondary)
 	settings.get("_settings")["reduce_motion"] = true
 	board.show_board(true)
 	_expect(not primary.visible and not secondary.visible, "减少动效时立即隐藏")

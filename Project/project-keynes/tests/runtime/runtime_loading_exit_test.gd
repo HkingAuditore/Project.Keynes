@@ -15,6 +15,7 @@ func _run() -> void:
 	for frames in [0, 2, 5, 15, 40, 80]:
 		await _close_loading_world(frames)
 	await _close_during_catalog()
+	await _close_during_economy_configuration()
 	await ResourceRequest.wait_for_pending(self)
 	_expect("shutdown consumes each background resource request", ResourceRequest.pending_count == 0)
 	print("runtime loading exit: %d checks, %d failures" % [checks, failures])
@@ -67,6 +68,28 @@ func _close_during_catalog() -> void:
 	await process_frame
 	_expect("catalog exit releases loading world", released_generator.get_ref() == null)
 	_expect("catalog exit releases request context", released_context.get_ref() == null)
+
+
+func _close_during_economy_configuration() -> void:
+	var host := WorldRuntimeHost.new()
+	root.add_child(host)
+	host.configure(null, null, null)
+	host.generate_world(20260718)
+	var generator = host.get_generator()
+	while generator.get_economy_facade() == null and host.session_report().state == "PREPARING":
+		await process_frame
+	var economy = generator.get_economy_facade()
+	_expect("economy configuration is still preparing when exit is requested",
+		economy != null and not economy.is_configured() and host.session_report().state == "PREPARING")
+	economy = null
+	var released: WeakRef = weakref(generator)
+	generator = null
+	# The regression runner also requires this cancellation to log no error.
+	print("[loading-exit] closing during economy configuration")
+	host.free()
+	await process_frame
+	_expect("economy configuration exit releases the loading world", released.get_ref() == null)
+
 
 func _expect(label: String, condition: bool) -> void:
 	checks += 1

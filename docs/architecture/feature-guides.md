@@ -427,6 +427,10 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 - 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
   关闭云影仍保留天气云的风场输入。切档验证入口为
   `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
+- 天气表和云影从当前世界共用一份风图。尺寸、两个风向分量和风速完全一致时复用图片，
+  任一输入变化时沿用原来的逐像素编码。缓存保存输入副本，识别显示数组的就地更新。
+  天气换图和前后两帧的过渡仍在原发布点更新。`tests/world/weather_table_layout_test.gd`
+  检查共用、刷新和逐字节一致性。
 
 ## 逐格弹射色 LUT
 
@@ -679,6 +683,8 @@ FamilyTrait / Modifier / Effect 资源在可让帧工作开始前用 `duplicate_
 Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成后才调用原生安装接口。
 Effect 每次等待结束都检查本次请求是否取消。取消时返回 `null`，由调用方读取
 `context.canceled` 并回收上下文。目录校验失败时仍由 `_reject()` 记录具体原因。
+经济初始化在协作配置返回后读取同一个取消标记。主动退出沿世界关闭流程回收，
+配置错误日志只用于仍在进行的请求。`runtime_loading_exit_test.gd` 覆盖配置期间关闭。
 同步调用方仍使用原公开 API。`loading_catalog_cooperative_test.gd` 比较同步/协作全部
 目录列、Effect 扩展与显示文字，并覆盖调用方修改返回值、同实例覆盖输入修改、
 开始前取消与中途取消。有线程时大型理念资源由加载线程准备，无线程 Web 按依赖分帧加载并保留已加载资源，

@@ -3,6 +3,121 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 50 倍速的每日交接（#55，2026-11-23）
+
+改前以 `7ebdf9d20` 为基准。正式玩家场景的无画面探针走 `GameFlow.begin_new_game()`，由
+正常时钟放行、后台结算和场景回收。输入准备另用带计时的临时原生构建测量，第 25–175 日
+准备下一个气候输入的中位数为 0.141 ms，P95 为 0.159 ms。四国样本的连续区间里，后台
+日结中位数为 9.63 ms，其中约 0.97 ms 用于发布一日的结果。逐帧记录未发现气候容量或
+国家回执持续阻塞，后台主要在正常等时钟发放下一日。
+
+前台每次发布天气画面时逐格编码风图。带独立输入副本的诊断记录显示，135 次天气更新中有
+118 次的风向和风速与上次一致，编码仍花费中位 1.38 ms。天气表和云影原先各自编码。
+现在它们复用同一张图片，尺寸或任一风场数组变化时重做，天气发布仍保留前后两帧。
+新测试验证两处确实复用同一张图，逐字节检查也覆盖了对数组的就地修改。
+
+50× 使用四国、60×40、种子 `20260718`、高画质和固定的地图中心视角，复用同一个
+macOS arm64 调试扩展。改前和改后交替运行三轮，每轮取第 25–75、85–135、146–175
+结算日三个连续区间，剧情待答、答复过渡、开局和关闭均排除。下表是九个区间的中位数及范围。
+
+| 无画面正式场景 | 改前 | 改后 |
+| --- | ---: | ---: |
+| 游戏日/秒 | 50.45（49.30–53.01） | 49.83（49.42–50.90） |
+| 帧间隔 P95（ms） | 24.90（23.56–42.15） | 35.45（34.12–36.54） |
+| 前台回收（ms，收到结果的帧） | 2.54（2.50–2.58） | 1.27（1.23–1.34） |
+| 发布画面数据（ms，含回收内的该步骤） | 1.96（1.93–1.98） | 0.62（0.59–0.64） |
+| 玩家界面刷新（ms） | 0.237（0.235–0.244） | 0.251（0.247–0.256） |
+| 观察到的时钟等待次数 | 34（16–38） | 29（14–33） |
+| 最长时钟等待（ms，按帧观察） | 28.26（25.98–28.65） | 35.64（4.39–40.47） |
+| 观察到的气候容量或模块等待次数 | 0 | 0 |
+
+等待起止按帧采样，只统计观察到结束的等待。区间原始记录同时保留了后台实际累计等待时间，
+以及每帧申请、放行、提交、回收、停推来源和故障码。无画面帧间隔变长，结算速率仍约 50 天/秒。
+此处视口为 64×64 的无画面后端。真实窗口启动卡在 macOS 桌面服务，桌面工具无 Godot
+访问权限，窗口画面 P95 与整体加速效果待测。
+
+六次 50× 测试的第 1–180 日发布哈希和回执全部一致。自然剧情在结算第 20、80、141 日
+等玩家，测试从正式玩家入口答复，分别在第 21、81、142 日生效。四国和补测的当前六国场景
+都提交了第 161 日及后续日期，未复现显示日 162 停住。历史 `7ca1ca31a` 窗口在该处
+缺待答状态和故障码，现有记录无法判定原因。1× 对照第 2–8 结算日为 1.001 → 0.997 天/秒，
+无画面帧间隔 P95 为 32.53 → 34.89 ms。两侧都观测到 6 次正常日历等待，最长为
+986.05 → 985.07 ms。受控测试另外检查了暂停时仍能答复、答复生效日和手动续算。
+
+### 复现
+
+使用 Godot 4.6.3 及本地构建的调试扩展。在两个临时项目副本运行同一个探针，
+将改前副本的 `world_data.gd`、`weather_wind_source.gd` 和 `cell_lut_baker.gd`
+换成 `7ebdf9d20` 里的版本。以下命令在每侧交替运行三次，每次使用新的输出前缀。
+
+```sh
+PK_SAVE_DIR="$sample.saves" PK_RUNTIME_WATERFALL_CSV="$sample.waterfall.csv" \
+  godot --headless --path "$project_copy" --log-file "$sample.engine.log" \
+  --script res://tests/game/player_scene_handoff_probe.gd -- \
+  --speed=50 --through=180 --answer-story --frames="$sample.jsonl"
+python3 tools/perf/analyze_player_handoff.py --window 25 75 --window 85 135 \
+  --window 146 175 "$sample.jsonl"
+```
+
+真实窗口用同一命令省略 `--headless`。1× 将参数改为 `--speed=1 --through=8`，取区间
+`--window 2 8`。六国用 `--foreign-count=5`。省略 `--answer-story` 时探针在第一个
+实际待答处退出，保留当时的停推原因。探针固定 1600×960 窗口、高画质、垂直同步和地图中心，
+并记录实际相机、显示设备和窗口设置。
+
+性能原始记录保存在 `/private/tmp/keynes-55.PWON1L/comparison-fixed/`。每次运行的命令、
+退出状态和负载均值在 `trials.jsonl`，逐帧状态和逐日结果分别在 `.jsonl` 和 `.jsonl.days`，
+后台分段耗时在 `.waterfall.csv`。临时气候输入及风图取证在同级的 `diagnostic-only.patch`、
+`diagnostic-prep.log` 和 `diagnostics-wind-exact.log`。
+性能证据打包在 `/private/tmp/keynes-55-regression.LzwvOn/handoff-performance-evidence.tar.gz`，
+本轮回归、压力和回放记录也保存在该目录。
+
+在改前副本用 `--write-candidate` 保存两组确定性参考，再在改后运行以下检查。
+`$golden_baseline` 和 `$external_baseline` 指向对应的参考文件。
+
+```sh
+python3 tools/ci/check_golden_determinism.py --runs 3 --log-dir "$checks/golden" \
+  --compare-to "$golden_baseline"
+python3 tools/ci/check_golden_determinism.py --runs 3 --external-only --log-dir "$checks/external" \
+  --compare-to "$external_baseline"
+python3 tools/ci/check_replay_matrix.py --annual --godot godot --log-dir "$checks/annual"
+python3 tools/ci/check_runtime_load_consistency.py --workers 7 --log-dir "$checks/load"
+python3 tools/ci/run_regression_checks.py --jobs 4 --roundtrip --log-dir "$checks/full"
+python3 tools/ci/run_regression_checks.py --roundtrip --log-dir "$checks/regression" \
+  tests/game/player_calendar_handoff_test.gd tests/world/weather_table_layout_test.gd \
+  tests/game/narrative_popup_suppression_test.gd tests/game/narrative_event_runtime_test.gd
+```
+
+### 正确性验证
+
+- `player_calendar_handoff_test.gd` 的 26 项覆盖一次放行多日、有序回收和单次回执、两次剧情
+  待答、答复生效日、手动暂停及 1× 续算。七个压力进程并行时同样通过。
+  `runtime_executor_boundary_test.gd` 的 319 项覆盖后台和同线程执行器之间的切换，包含停止、
+  命令和存档边界。
+- `weather_table_layout_test.gd` 的 93 项检查风图字节、两处复用、输入改变、形状改变和换局。
+  真实图形后端读回一项跳过。`cell_lut_incremental_test.gd` 和 `cloud_weather_quality_test.gd`
+  通过。
+- `check_golden_determinism.py --runs 3` 与 `--runs 3 --external-only` 全部匹配改前结果。
+  `check_replay_matrix.py --annual` 比较了原跑、重放、第 365 日存档和新进程续跑至第 373 日。
+- `check_runtime_load_consistency.py --workers 7` 在当前沙盒读取 `ps` 时受限。补测保留原来的
+  压力进程、比较和断言，系统负载记录改用可读取的负载均值。两轮七进程压力各自与无额外
+  压力的参考一致，覆盖正式 30 日状态、35 日命令日期和第 5 日存档后的续跑。
+- 改前的 `narrative_popup_suppression_test.gd` 把暂停前的放行值 `2` 用在了答复后。
+  改前取证显示答复已受理且第 3 天生效，时钟仍暂停，暂停接口已把放行值设为 `-1`。
+  现在分别断言暂停前的 `2`、暂停后的 `-1` 和答复后的 `-1`。修正后剧情暂停 28 项、
+  剧情运行 89 项和正式存档往返均通过。
+
+### 工厂回归修复
+
+- `cell_board_toolbar_transition_test.gd` 的 60 ms 计时器和 130 ms 退场可在同一个慢帧内结束，
+  旧用例用 `godot --headless --fixed-fps 5 --path Project/project-keynes --script res://tests/ui/cell_board_toolbar_transition_test.gd`
+  可复现中段断言失败。现在直接推进到一半，等待真实动画结束，并检查被打断的动画已取消。
+- `runtime_loading_exit_test.gd` 在经济目录准备期间关闭世界，稳定复现
+  `[economy] configure failed: loading_canceled`，调用栈从加载取消回到初始化入口。
+  入口现在直接结束已取消的准备，实际配置失败仍会上报。新用例检查关闭发生在准备期间，
+  世界资源已释放，同时由回归工具验证没有错误日志。
+- 常规回归、回放矩阵、年度自动存档和完整存读档往返共 128 项通过。风图、日历交接和
+  两个剧情用例另跑均通过。编辑器完成了导入扫描，当前沙盒仍报 ObjectDB 快照目录创建错误。
+  回归使用已导入的临时项目副本。Qodo 本地 CLI 缺登录，当前改动需由工厂提交后评审。
+
 ## 稀疏经济需求缓存（#53，2026-11-23）
 
 改前以本地 `fork/master` 的 `6ce469e952a2466ad1e4bab42984158861125037` 为基准，

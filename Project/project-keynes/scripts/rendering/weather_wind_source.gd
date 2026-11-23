@@ -28,7 +28,7 @@ func update() -> bool:
 	var stamp := int(world.weather_lut_update_usec)
 	if stamp == _stamp and world.lut_dims == _dims:
 		return false
-	var image := build_image(map, world.lut_dims)
+	var image := published_image(world, map, world.lut_dims)
 	previous = current
 	current = ImageTexture.create_from_image(image) if image != null else null
 	has_previous = current != null and previous != null and _dims == world.lut_dims
@@ -37,6 +37,22 @@ func update() -> bool:
 	_stamp = stamp
 	_dims = world.lut_dims
 	return true
+
+
+## Both weather consumers use these pixels. Weather can change on a day when
+## the published wind lanes stay the same. Copy the lanes on a miss so an
+## in-place display update cannot change the cache key for the old image.
+static func published_image(world: WorldData, map: MapData, dims: Vector2i) -> Image:
+	var wind := [map.wind_x_arr, map.wind_y_arr, map.wind_speed_arr]
+	var cached := world.weather_wind_image_cache
+	if cached.get("dims", Vector2i.ZERO) == dims and cached.get("wind", []) == wind:
+		return cached.image
+	var image := build_image(map, dims)
+	world.weather_wind_image_cache = {} if image == null else {
+		"dims": dims, "wind": [wind[0].duplicate(), wind[1].duplicate(), wind[2].duplicate()],
+		"image": image,
+	}
+	return image
 
 
 static func encode_wind(direction: Vector2, speed: float) -> Color:

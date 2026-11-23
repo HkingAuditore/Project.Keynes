@@ -109,14 +109,17 @@ func _check_choice_while_paused() -> void:
 	flow.configure(story_controller, story_host, story_clock, dialog, story_service)
 	if not await _advance_story(2):
 		return
+	_expect("the calendar had admitted day 2 before the player pauses",
+		story_host._calendar_admitted_through == 2)
 	story_clock.pause(true)
 	story_host._sync_runtime_worker_clock()
+	_expect("manual pause suspends calendar admission", story_host._calendar_admitted_through == -1)
 	var offer := story_service.active_offer()
 	_expect("a real offer is shown before the player responds", dialog.is_narrative_event_modal_open())
 	var receipt: Dictionary = flow.on_option_chosen(int(offer.offer_id), int(offer.offer_generation), 0)
 	_expect("the accepted choice leaves the player able to resume the paused clock",
 		bool(receipt.get("ok", false)) and receipt.get("effective_day") == 3
-		and story_clock.paused and story_host._calendar_admitted_through == 2
+		and story_clock.paused and story_host._calendar_admitted_through == -1
 		and not dialog.is_narrative_event_modal_open())
 	story_clock.pause(false)
 	if not await _advance_story(3):
