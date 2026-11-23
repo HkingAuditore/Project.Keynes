@@ -600,6 +600,9 @@ public:
     godot::Dictionary get_runtime_control_state() const;
     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
     godot::Dictionary get_runtime_graph_last_economy_report() const;
+    // Sparse-workset probe: scalar counters straight from the economy runtime.
+    // Diagnostic only; called once per recorded perf row, never per frame.
+    godot::Dictionary get_runtime_economy_probe_report() const;
     godot::Dictionary record_runtime_visual_timings(double ui_input_to_feedback_ms,
                                                     double visual_apply_ms,
                                                     double gpu_upload_ms);

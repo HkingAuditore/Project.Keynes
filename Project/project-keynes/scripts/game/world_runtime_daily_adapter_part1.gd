@@ -1490,12 +1490,22 @@ func get_sim_breakdowns(host) -> Dictionary:
 			out["country"] = country_breakdown
 	var economy_job = tick_report.get("economy_daily", {})
 	var economy_report: Dictionary = {}
-	if economy_job is Dictionary \
-		and str((economy_job as Dictionary).get("skipped_reason", "")) == "" \
-		and host._generator.has_method("get_economy_perf_report"):
-		# Use the cached compact snapshot. Building the full economy report here
-		# used to allocate hundreds of fields on every fast tick.
+	if host._generator.has_method("get_economy_perf_report"):
+		# Do NOT gate this on the SUS job skipping: whenever the native runtime
+		# owns the economy domain the legacy job reports `skipped_reason=
+		# policy_gated` every single day, and gating here silently deleted the
+		# whole `bd_economy_*` group from every headless recording.
+		# get_economy_perf_report() prefers the compact native snapshot, which
+		# is fresh for the committed day, so an empty result still means
+		# "nothing to publish".
 		economy_report = host._generator.get_economy_perf_report()
+		if economy_report.is_empty() \
+			and not host._generator.get_meta("pp_economy_perf_report_empty", false):
+			host._generator.set_meta("pp_economy_perf_report_empty", true)
+			print("[perf-breakdown] economy report empty (graph_active=%s job_skip=%s)" % [
+				str(host._generator._runtime_graph_active),
+				str((economy_job as Dictionary).get("skipped_reason", ""))
+					if economy_job is Dictionary else "?"])
 		if not economy_report.is_empty():
 			economy_report["_tick_idx"] = host._fast_tick_count
 			out["economy"] = economy_report

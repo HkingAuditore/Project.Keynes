@@ -368,6 +368,28 @@
         int64_t workset_cells_planned = 0;
         int64_t workset_cells_executed = 0;
         int64_t duplicate_range_count = 0;
+        // Sparse-workset probe (diagnostic only, never hashed, reset per epoch).
+        int64_t workset_market_cells_due = 0;
+        int64_t workset_building_cells = 0;
+        int64_t workset_plan_cells = 0;
+        int64_t workset_live_cells = 0;
+        int64_t workset_coverage_permille = 0;
+        int32_t workset_market_bucket = 0;
+        int32_t workset_market_cycle_days = 0;
+        int32_t workset_plan_cycle_days = 0;
+        int32_t workset_cells_per_slice = 0;
+        int64_t probe_slice_count = 0;
+        int64_t probe_slice_budget_hits = 0;
+        double probe_slice_ms_total = 0.0;
+        double probe_slice_ms_max = 0.0;
+        double probe_attempt_ms = 0.0;
+        double probe_formula_ms = 0.0;
+        double probe_publish_ms = 0.0;
+        double probe_epoch_open_ms = 0.0;
+        // Fixed-cost decomposition: boundary mirror split + trade planning.
+        double probe_mirror_capture_ms = 0.0;
+        double probe_mirror_import_ms = 0.0;
+        double probe_trade_plan_ms = 0.0;
         double building_investment_ms = 0.0;
         double investment_evaluate_ms = 0.0;
         double investment_allocate_ms = 0.0;
@@ -1604,6 +1626,29 @@
     int64_t _workset_cells_executed = 0;
     int64_t _duplicate_range_count = 0;
     int32_t _workset_last_cursor = 0;
+    // Sparse-workset shape frozen at epoch open. Diagnostic only: read by the
+    // workset probe report and never by any settlement/stage decision.
+    int64_t _probe_workset_market_cells_due = 0;
+    int64_t _probe_workset_building_cells = 0;
+    int64_t _probe_workset_plan_cells = 0;
+    int64_t _probe_workset_live_cells = 0;
+    int64_t _probe_workset_coverage_permille = 0;
+    int32_t _probe_market_bucket_index = 0;
+    int32_t _probe_market_cycle_days = 0;
+    int32_t _probe_plan_cycle_days = 0;
+    int32_t _probe_cells_per_slice = 0;
+    // Continuation accounting for the current epoch (slice granularity).
+    int64_t _probe_slice_count = 0;
+    int64_t _probe_slice_budget_hits = 0;
+    double _probe_slice_ms_total = 0.0;
+    double _probe_slice_ms_max = 0.0;
+    // Boundary phase split fed by the simulation host around an economy day.
+    double _probe_phase_attempt_ms = 0.0;
+    double _probe_phase_formula_ms = 0.0;
+    double _probe_phase_publish_ms = 0.0;
+    double _probe_phase_mirror_capture_ms = 0.0;
+    double _probe_phase_mirror_import_ms = 0.0;
+    double _probe_trade_plan_ms = 0.0;
 
     int32_t _trace_mode = TRACE_SELECTIVE;
     int64_t _trace_memory_budget = 32LL * 1024 * 1024;

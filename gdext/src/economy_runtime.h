@@ -633,6 +633,12 @@ public:
     bool has_pending_effect_commands() const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
+    // Sparse-workset / continuation probe. Diagnostic only: pure reads of
+    // epoch-scoped counters, no settlement decision depends on it.
+    void write_workset_probe_report(godot::Dictionary &out) const;
+    godot::Dictionary probe_report() const;
+    void note_boundary_phase_ms(int32_t phase, double ms);
+    void note_probe_slice(const godot::Dictionary &slice_result);
     // Worker ACTIVE production: one compact ECONOMY_GRAPH slice on the existing
     // formula owner (no second formula set). Returns false on fatal/ledger error.
     // When non-null, *done is set from the slice result (epoch idle for the day).
