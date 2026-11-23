@@ -594,9 +594,10 @@ class Watcher:
                     return stop("Codex changed the conflict entries in the index")
                 try:
                     choices = agent.parse_conflict_resolutions(out["report"], paths)
-                    work.stage_conflict_resolutions(self.workdir, choices)
+                    work.validate_conflict_files(self.workdir, choices)
                 except ValueError as e:
                     return stop(str(e), out["report"])
+                work.git(self.workdir, "add", "-A", "--", *[f":(top,literal){path}" for path in paths])
                 resolutions.extend(f"- `{path}` · {choices[path][0]}: {choices[path][1]}" for path in paths)
 
             repaired = False

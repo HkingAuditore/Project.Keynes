@@ -177,7 +177,7 @@ def conflict_markers(workdir: str, paths: list[str]) -> list[str]:
     return sorted(filter(None, result.out.split("\0")))
 
 
-def stage_conflict_resolutions(workdir: str, resolutions: dict[str, tuple[str, str]]) -> None:
+def validate_conflict_files(workdir: str, resolutions: dict[str, tuple[str, str]]) -> None:
     for path, (action, _) in resolutions.items():
         target = Path(workdir) / path
         if action == "delete":
@@ -189,7 +189,6 @@ def stage_conflict_resolutions(workdir: str, resolutions: dict[str, tuple[str, s
     marked = conflict_markers(workdir, list(resolutions))
     if marked:
         raise ValueError("conflict markers remain: " + ", ".join(marked))
-    git(workdir, "add", "-A", "--", *[f":(top,literal){p}" for p in resolutions])
 
 
 def remote_head(workdir: str, remote: str, branch: str) -> str | None:
