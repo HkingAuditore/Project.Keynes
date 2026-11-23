@@ -64,6 +64,7 @@ func _run() -> void:
 	_test_reserve_scale_configuration(profiles)
 	_test_reserve_scale_application(profiles)
 	_test_geology_fields(profiles)
+	_test_landmass_deposit_quota()
 
 	print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
 
@@ -356,6 +357,67 @@ func _test_geology_fields(profiles: Array) -> void:
 	_expect("geology generation changes with map seed", copper != copper_other_seed)
 	_expect("same hydrothermal family shares provinces/belts",
 		_correlation(copper, gold) > 0.15)
+
+
+func _test_landmass_deposit_quota() -> void:
+	# The eight-cell island qualifies even though the ecological continent
+	# threshold is higher beside the 96-cell landmass. Seven cells do not.
+	var landmasses := [Vector2i(0, 96), Vector2i(96, 104), Vector2i(104, 111)]
+	var n := 111
+	var neighbors := PackedInt32Array()
+	neighbors.resize(n * 6)
+	neighbors.fill(-1)
+	for landmass in landmasses:
+		for cell in range(landmass.x + 1, landmass.y):
+			neighbors[cell * 6] = cell - 1
+			neighbors[(cell - 1) * 6 + 3] = cell
+	var water := PackedByteArray()
+	water.resize(n)
+	water.fill(0)
+	var habitat := PackedByteArray()
+	habitat.resize(n)
+	habitat.fill(1)
+	var moisture := PackedFloat32Array()
+	moisture.resize(n)
+	moisture.fill(0.0)
+	var temperature := moisture.duplicate()
+	temperature[102] = 0.9
+	var scalars := PackedFloat32Array()
+	scalars.resize(32)
+	scalars.fill(0.0)
+	scalars[1] = 1.0 # init_temp
+	scalars[3] = 1.0 # init_reserve_scale
+	scalars[6] = 10.0 # init_min_reserve
+	scalars[29] = 1.0 # temp_hi
+	scalars[30] = 3.0 # init_continent_floor_cells
+	var native := DCWorldExt.new()
+	var result := native.run_resource_deposit_pass({
+		"cell_count": n,
+		"cell_area_resource_scale": 1.0,
+		"temperature": temperature,
+		"moisture": moisture,
+		"is_water": water,
+		"habitat_mask": habitat,
+		"neighbor_indices": neighbors,
+		"field_names": PackedStringArray(["test_mineral"]),
+		"habitat_codes": PackedInt32Array([1]),
+		"scalars": scalars,
+		"lf_offsets": PackedInt32Array([0, 0]),
+		"veg_offsets": PackedInt32Array([0, 0]),
+		"noise": [null],
+		"province_noise": [null],
+		"belt_noise": [null],
+	})
+	var columns: Array = result.get("reserves", [])
+	_expect("landmass quota pass returns one resource", bool(result.get("ok", false)) and columns.size() == 1)
+	if columns.size() != 1:
+		return
+	var values: PackedFloat32Array = columns[0]
+	_expect("resource quota supplies both eligible landmasses",
+		int(result.get("quota_cells", -1)) == 2 and int(result.get("quota_unmet", -1)) == 0)
+	_expect("resource quota ranks by suitability and falls back to cell order on a tie",
+		values[0] == 10.0 and values[96] == 0.0 and values[102] == 10.0)
+	_expect("resource quota leaves the seven-cell island unchanged", values[104] == 0.0)
 
 
 func _build_flat_geology_map(n: int) -> MapData:

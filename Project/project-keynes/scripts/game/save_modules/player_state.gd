@@ -1,5 +1,7 @@
 extends "res://scripts/game/save_modules/state_adapter.gd"
 
+const SavePreviewCodec = preload("res://scripts/game/save_preview_codec.gd")
+
 ## Owns player persistence; receives only declared capabilities.
 
 func _can_player_provider(context: Dictionary) -> Dictionary:
@@ -28,18 +30,11 @@ func _restore_player_provider(sections: Dictionary, context: Dictionary) -> Dict
 	return _result(true, "ok", "")
 
 func _capture_preview(context: Dictionary) -> PackedByteArray:
-	var preview := PackedByteArray()
 	var viewport: Viewport = context.viewport
 	if DisplayServer.get_name() != "headless" and viewport != null \
 			and viewport.get_texture() != null:
-		var image := viewport.get_texture().get_image()
-		if image != null and not image.is_empty():
-			preview = image.save_png_to_buffer()
-	if preview.is_empty():
-		var fallback := Image.create(1, 1, false, Image.FORMAT_RGBA8)
-		fallback.fill(Color.TRANSPARENT)
-		preview = fallback.save_png_to_buffer()
-	return preview
+		return SavePreviewCodec.encode(viewport.get_texture().get_image())
+	return SavePreviewCodec.fallback()
 
 
 func section_codecs(_id: StringName, sections: PackedStringArray) -> Dictionary:

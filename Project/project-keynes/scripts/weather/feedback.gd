@@ -161,7 +161,7 @@ func _classify_field_weather_core(host, temp: float, vapor: float, cloud: float,
 	# 独立标定:海洋保原值(海洋天气分布已合理);陆地按实测分位下调(陆 vapor p50=.034/p90=.086,cloud
 	# p50=.021/p90=.078),否则陆地 STORM/MONSOON/FOG 被"打死"全归 CLEAR/DROUGHT(用户:内陆永旱)。
 	var humid_gate: float = 0.28 if is_water else 0.09
-	var mp_cloud_gate: float = 0.22 if is_water else 0.12
+	var mp_cloud_gate: float = 0.18 if is_water else 0.10  # W4: 0.22/0.12 → 0.18/0.10（弱分支门变硬条件后的校准）
 	var mp_vapor_gate: float = 0.28 if is_water else 0.09
 	var monsoon_vapor: float = 0.40 if is_water else 0.14
 	var monsoon_precip: float = 0.055 if is_water else 0.065
@@ -177,9 +177,10 @@ func _classify_field_weather_core(host, temp: float, vapor: float, cloud: float,
 	# 降水判据回归单阈值(2026-06-20 根因重构)：precip 已是带时间惯性的 EMA 状态量(见 field_solver/
 	# world_ext)，逐tick平滑由场层惯性提供，分类不再需要滞回/拖尾补丁。precip>0.030 或 中等降水+厚云
 	# 高湿即算"有效降水"。
-	var precip_gate: float = 0.032 if is_water else 0.040
-	var weak_precip_gate: float = 0.022 if is_water else 0.030
-	var meaningful_precip: bool = precip > precip_gate or (precip > weak_precip_gate and effective_cloud > mp_cloud_gate and precip_cloud_mass > mp_cloud_gate * 0.35 and vapor > mp_vapor_gate)
+	# W4：两段门合一（旧实现里「超过降水率门槛」是无条件通过的，等于下一点就报雨）。
+	# 门槛来自 ClimateProfile.weather_precip_classify_gate_land/water。
+	var precip_gate: float = host._field_classify_gate_water if is_water else host._field_classify_gate_land
+	var meaningful_precip: bool = precip > precip_gate and effective_cloud > mp_cloud_gate and precip_cloud_mass > mp_cloud_gate * 0.35 and vapor > mp_vapor_gate
 
 	# 1) 冰雪 / 暴风雪：极冷(temp≤FREEZE)+可观降水 → 直接暴雪（极地降水本就是冰雪）。
 	#    过渡带(FREEZE~MELT)+降水 → 仅当大风(wind_speed>门)才算"暴风雪"，风弱则视为冷雨落到 RAIN。
@@ -199,7 +200,8 @@ func _classify_field_weather_core(host, temp: float, vapor: float, cloud: float,
 	# Stage6h: STORM 阈大幅提高(雷暴应是少数强对流)。原 instability>0.50 被 47% 的 RAIN 格满足→STORM≈RAIN 数量、
 	# 且与 RAIN 在 0.50 阈两侧逐 tick 横跳。提到 0.70(RAIN p90=0.76→仅最强对流入选)+ precip 0.05→0.065。
 	var warm_ocean_core: bool = is_water and ocean_an > 0.05 and instability > 0.64 and precip > 0.060 and effective_cloud > 0.24 and precip_cloud_mass > 0.045
-	if warm and humid and ((instability > 0.70 and precip > 0.065 and precip_cloud_mass > 0.050) or warm_ocean_core):
+	# W4 补丁：STORM 与 MONSOON 一样必须过 meaningful_precip（否则比 RAIN 松，会抢判）。
+	if warm and humid and meaningful_precip and ((instability > 0.70 and precip > 0.065 and precip_cloud_mass > 0.050) or warm_ocean_core):
 		return WeatherType.WT.STORM
 	# 3) 季风：暖 + 季风湿通量/大尺度高湿 + 持续降水 + 厚云。暖海强对流核心先归 STORM，
 	#    季风保留给沿岸/上岸的持续雨带，避免台风种子被 MONSOON 抢占。
@@ -208,7 +210,8 @@ func _classify_field_weather_core(host, temp: float, vapor: float, cloud: float,
 	var monsoon_flux_gate: float = 0.08 if is_water else 0.13
 	var inland_monsoon_plume: bool = (not is_water) and vapor > 0.24 and wind_speed > 0.75 and precip > monsoon_precip and precip_cloud_mass > monsoon_cloud * 0.45
 	var monsoon_flow_gate: bool = monsoon_driver > monsoon_flux_gate or inland_monsoon_plume
-	if warm and sustained_precip and effective_cloud > monsoon_cloud * 0.82 and monsoon_flow_gate:
+	# W4 补丁：MONSOON 也必须先过 meaningful_precip（否则它比 RAIN 更松，会抢判高强度格）。
+	if warm and meaningful_precip and sustained_precip and effective_cloud > monsoon_cloud * 0.82 and monsoon_flow_gate:
 		return WeatherType.WT.MONSOON
 	# 4) 普通降水（含被降级的过渡带冷雨）。
 	if meaningful_precip:

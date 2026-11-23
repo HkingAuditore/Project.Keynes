@@ -980,7 +980,6 @@ static func _encode_native_payload_for_indices(host, indices: PackedInt32Array, 
 
 
 static func _encode_gdscript_payload_for_indices(host, indices: PackedInt32Array) -> Dictionary:
-
 	var transforms: Array = []
 	var colors: Array = []
 	var customs: Array = []
@@ -1004,6 +1003,7 @@ static func _encode_gdscript_payload_for_indices(host, indices: PackedInt32Array
 	mm.transform_format = MultiMesh.TRANSFORM_2D
 	mm.use_colors = true
 	mm.use_custom_data = true
+	mm.mesh = host._cached_detail_mesh()
 	mm.instance_count = transforms.size()
 	for i in range(transforms.size()):
 		mm.set_instance_transform_2d(i, transforms[i])

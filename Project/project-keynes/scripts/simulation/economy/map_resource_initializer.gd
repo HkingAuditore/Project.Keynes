@@ -371,6 +371,7 @@ func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 		scalars[base + 27] = float(p.init_climate_fit)
 		scalars[base + 28] = float(p.temp_lo)
 		scalars[base + 29] = float(p.temp_hi)
+		scalars[base + 30] = float(p.init_continent_floor_cells)
 
 		field_names.append(ResourceProfileRegistry.reserve_map_field(p))
 		habitat_codes[r] = ResourceProfileRegistry.habitat_code(p)
@@ -437,6 +438,7 @@ func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 		"landform": map_ref.landform_arr,
 		"has_river": map_ref.has_river_arr,
 		"is_lake": map_ref.is_lake_seed_arr,
+		"is_water": map_ref.is_water_arr,
 		"has_volcano": map_ref.has_volcano_arr,
 		"ocean_x": map_ref.ocean_current_x_arr,
 		"ocean_y": map_ref.ocean_current_y_arr,
@@ -756,8 +758,10 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 	for i in range(resource_count):
 		map_ref.set(fields[i], reserves[i])
 	var native_ms := float(Time.get_ticks_usec() - started) / 1000.0
-	print("[resource-deposits] path=gdext resources=%d cells=%d total_ms=%.1f native_ms=%.1f"
-		% [resource_count, n_cells, native_ms, float(report.get("elapsed_ms", 0.0))])
+	print(("[resource-deposits] path=gdext resources=%d cells=%d total_ms=%.1f native_ms=%.1f"
+		+ " quota_cells=%d quota_unmet=%d") % [resource_count, n_cells, native_ms,
+			float(report.get("elapsed_ms", 0.0)), int(report.get("quota_cells", 0)),
+			int(report.get("quota_unmet", 0))])
 	return true
 
 
@@ -877,8 +881,10 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 	map_ref.province_id_arr = report.get("province_ids", PackedInt32Array())
 	map_ref.bio_occupancy_bits_arr = report.get("occupancy_bits", PackedInt32Array())
 	_generator._publish_bio_occupancy_to_runtime(map_ref)
-	print("[boot-facades] path=gdext resources=%d cells=%d wall_ms=%.1f native_ms=%.1f stages=%s" % [
+	print(("[boot-facades] path=gdext resources=%d cells=%d wall_ms=%.1f native_ms=%.1f"
+		+ " quota_cells=%d quota_unmet=%d stages=%s") % [
 		fields.size(), n_cells, wall_ms, float(report.get("elapsed_ms", 0.0)),
+		int(report.get("deposit_quota_cells", 0)), int(report.get("deposit_quota_unmet", 0)),
 		str(report.get("stage_ms", {}))])
 	_generator._log_bio_occupancy_seed_native(report, bio_knobs)
 	return true
@@ -888,7 +894,7 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 
 func _knob_signature(knobs: Dictionary) -> int:
 	var keys := [
-		"temperature", "moisture", "elevation", "terrain", "vegetation", "landform",
+		"temperature", "moisture", "elevation", "terrain", "vegetation", "landform", "is_water",
 		"has_river", "is_lake", "has_volcano", "ocean_x", "ocean_y", "upwelling",
 		"pos_x", "pos_y", "scalars", "field_names", "habitat_codes",
 		"lf_keys", "lf_vals", "lf_offsets", "veg_keys", "veg_vals", "veg_offsets",

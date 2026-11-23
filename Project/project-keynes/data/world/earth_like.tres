@@ -53,3 +53,8 @@ tropical_cyclone_capacity = 24
 tropical_cyclone_births_per_commit = 2
 enso_basin_modes_enabled = true
 enso_max_basins = 3
+
+; W4：RAIN 判定降水率门槛（W3 实测陆地降水率 p80 = 0.0949 ≈ 0.095；水域按同倍率 0.032×2.37 = 0.076）
+weather_precip_classify_gate_land = 0.095
+weather_precip_classify_gate_water = 0.076
+weather_field_precip_spatial_smooth = 0.30

@@ -644,6 +644,10 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 // 与生产 staged 路径一致。
                 k.use_next_outputs = true;
                 k.field_advect_steps = ki("field_advect_steps", 3);
+                k.classify_gate_land = clamp_f(
+                    kf("weather_precip_classify_gate_land", 0.040f), 0.0f, 0.5f);
+                k.classify_gate_water = clamp_f(
+                    kf("weather_precip_classify_gate_water", 0.032f), 0.0f, 0.5f);
                 k.field_diffusion = kf("field_diffusion", 0.04f);
                 k.field_ocean_evap_gain = kf("field_ocean_evap_gain", 0.55f);
                 k.field_precip_inertia =

@@ -345,15 +345,25 @@ func _create_shader_bundle() -> Dictionary:
 		["pyramid", PYRAMID_SHADER],
 		["trace", TRACE_SHADER],
 	]:
-		var source_text := FileAccess.get_file_as_string(String(entry[1]))
-		if source_text.is_empty():
-			out.reason = "shader_source_missing:%s" % String(entry[1])
+		var path := String(entry[1])
+		# Exported projects carry imported SPIR-V. Source GLSL is available before import.
+		var spirv: RDShaderSPIRV
+		if ResourceLoader.exists(path, "RDShaderFile"):
+			var shader_file := load(path) as RDShaderFile
+			if shader_file != null:
+				spirv = shader_file.get_spirv()
+		if spirv == null:
+			var source_text := FileAccess.get_file_as_string(path)
+			if source_text.is_empty():
+				out.reason = "shader_source_missing:%s" % path
+				return out
+			source_text = source_text.trim_prefix("#[compute]\r\n").trim_prefix("#[compute]\n")
+			var source := RDShaderSource.new()
+			source.set_stage_source(RenderingDevice.SHADER_STAGE_COMPUTE, source_text)
+			spirv = _rd.shader_compile_spirv_from_source(source)
+		if spirv == null:
+			out.reason = "shader_compile:%s" % String(entry[0])
 			return out
-		# RDShaderSource consumes GLSL directly; #[compute] is the resource importer tag.
-		source_text = source_text.trim_prefix("#[compute]\r\n").trim_prefix("#[compute]\n")
-		var source := RDShaderSource.new()
-		source.set_stage_source(RenderingDevice.SHADER_STAGE_COMPUTE, source_text)
-		var spirv := _rd.shader_compile_spirv_from_source(source)
 		var compile_error := spirv.get_stage_compile_error(RenderingDevice.SHADER_STAGE_COMPUTE)
 		if not compile_error.is_empty():
 			out.reason = "shader_compile:%s:%s" % [String(entry[0]), compile_error]

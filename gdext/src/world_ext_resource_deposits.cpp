@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "world_ext_landmasses.h"
 #include "simulation_math.h"
 
 #include <godot_cpp/classes/noise.hpp>
@@ -73,6 +74,9 @@ enum ScalarSlot : int {
     kInitClimateFit = 27,
     kTempLo = 28,
     kTempHi = 29,
+    // 每块大陆的保底格数上限（0 = 不做大陆配额）。
+    kInitContinentFloorCells = 30,
+    // 槽 31 留空：保底储量不单开参数，直接取该资源的 min_reserve（最小真矿）。
 };
 
 struct RankedCell {
@@ -103,6 +107,9 @@ struct ResourceParams {
     double init_moisture = 0.0;
     double reserve_scale = 0.0;
     double floor_reserve = 0.0;
+    // 按大陆配额补几格；与上面 floor_reserve（全图逐格地板）无关，也不带储量，
+    // 补的格储量固定取 min_reserve。
+    double continent_floor_cells = 0.0;
     double min_coverage = 0.0;
     double min_reserve = 0.0;
     double target_coverage = 0.0;
@@ -262,6 +269,9 @@ bool read_sparse_weights(const Dictionary &knobs, const char *keys_key,
     return true;
 }
 
+// 矿点配额取决于陆块自身的规模，和生态保底的大陆门槛独立。
+constexpr int32_t kMinQuotaCells = 8;
+
 } // namespace
 
 godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary &knobs) {
@@ -293,6 +303,8 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
     const PackedFloat32Array pos_y_arr = knobs.get("pos_y", PackedFloat32Array());
     const PackedByteArray habitat_arr = knobs.get("habitat_mask", PackedByteArray());
     const PackedInt32Array neighbor_arr = knobs.get("neighbor_indices", PackedInt32Array());
+    // 大陆配额用；旧调用方/旧 DLL 不带这个 knob，缺失时整段配额跳过（见 have_landmass）。
+    const PackedByteArray water_arr = knobs.get("is_water", PackedByteArray());
 
     if (temp_arr.size() < n || moist_arr.size() < n || habitat_arr.size() < n) {
         out["reason"] = String("resource_deposit_core_arrays_invalid");
@@ -311,6 +323,7 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
     const bool have_estuary = estuary_arr.size() >= n;
     const bool have_pos = pos_x_arr.size() >= n && pos_y_arr.size() >= n;
     const bool have_neighbors = neighbor_arr.size() >= int64_t(n) * 6;
+    const bool have_landmass = water_arr.size() >= n && have_neighbors;
 
     const PackedStringArray field_names = knobs.get("field_names", PackedStringArray());
     const PackedInt32Array habitat_codes = knobs.get("habitat_codes", PackedInt32Array());
@@ -390,6 +403,25 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
     Array reserves;
     reserves.resize(resource_count);
 
+    // 大陆标号只算一次，供所有资源的配额段复用。is_water 缺失 → 不标、配额整段跳过。
+    std::vector<int32_t> landmass_of;
+    std::vector<int32_t> landmass_size;
+    if (have_landmass) {
+        landmass_of.resize(static_cast<size_t>(n));
+        const int32_t count = label_world_landmasses(
+            water_arr.ptr(), neighbors, n, landmass_of.data());
+        landmass_size.assign(static_cast<size_t>(count) + 1, 0);
+        for (int32_t landmass : landmass_of) ++landmass_size[static_cast<size_t>(landmass)];
+    }
+
+    // 纯诊断，不进存档、不进 state hash。
+    PackedInt32Array quota_fields;
+    quota_fields.resize(resource_count);
+    quota_fields.fill(0);
+    int32_t *quota_field_cells = quota_fields.ptrw();
+    int quota_cells_total = 0;
+    int quota_unmet_total = 0;
+
     for (int r = 0; r < resource_count; ++r) {
         const float *scalar = scalars.ptr() + size_t(r) * kScalarStride;
         ResourceParams p;
@@ -412,6 +444,9 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
         p.micro_reserve_share = double(scalar[kInitMicroReserveShare]);
         p.micro_min_reserve = std::max(
                 double(scalar[kInitMicroMinReserve]), 0.0) * cell_area_scale;
+        // 只决定格数，不含储量 → 不乘 cell_area_scale（保底储量走 p.min_reserve，
+        // 它在上面已经乘过 cell_area_scale）。
+        p.continent_floor_cells = std::max(double(scalar[kInitContinentFloorCells]), 0.0);
         p.w_elev = double(scalar[kInitElevation]);
         p.w_river = double(scalar[kInitRiver]);
         p.w_volc = double(scalar[kInitVolcano]);
@@ -466,10 +501,15 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
         // 否则尾部是堆上残留值（每次进程/分配次序不同 → 储量逐局漂移）。
         arr.fill(0.0f);
         float *values = arr.ptrw();
+        int quota_added = 0;   // 本资源实际补上的格数
+        int quota_unmet = 0;   // 本资源遍历完候选集仍未补满的格数
 
         const bool use_ranked_distribution = p.target_coverage > 0.0;
+        const bool apply_landmass_quota = have_landmass &&
+                p.continent_floor_cells > 0.0 && p.min_reserve > 0.0;
         const bool collect_ranked =
-                use_ranked_distribution || (p.min_coverage > 0.0 && p.min_reserve > 0.0);
+                use_ranked_distribution || apply_landmass_quota ||
+                (p.min_coverage > 0.0 && p.min_reserve > 0.0);
         std::vector<RankedCell> ranked;
         if (collect_ranked) {
             ranked.reserve(size_t(n));
@@ -566,12 +606,14 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                             * clampd(p.min_coverage, 0.0, 1.0))));
         }
 
-        if (target_cells > 0) {
+        if (target_cells > 0 || apply_landmass_quota) {
             std::sort(ranked.begin(), ranked.end(),
                     [](const RankedCell &a, const RankedCell &b) {
                         if (a.suit != b.suit) return a.suit > b.suit;
                         return a.cell < b.cell;
                     });
+        }
+        if (target_cells > 0) {
             if (use_ranked_distribution) {
                 for (const RankedCell &rc : ranked) {
                     values[rc.cell] = 0.0f;
@@ -634,6 +676,47 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
             }
         }
 
+        // ── 大陆保底配额：只对 continent_floor_cells>0 的资源；两种分布分支都已算完。
+        // 判据是「储量 ≥ min_reserve 的格数」，不是「>0 的格数」——散布型的零头格本来
+        // 就该算作没矿。补的格直接写 values[cell]，不进 allocate_ranked_budget：
+        // 不动 cutoff_suit、不改已入选格，只可能把零头抬到最小真矿（逐格只增不减）。
+        // float 与 float 比：floor_v 与 values[] 同为 float32，写进去的就是同一个值。
+        const float floor_v = float(p.min_reserve);
+        if (apply_landmass_quota) {
+            const int floor_n = std::max(1, int(std::lround(p.continent_floor_cells)));
+            std::vector<int32_t> have(landmass_size.size(), 0);
+            std::vector<int32_t> need(landmass_size.size(), 0);
+            int total_need = 0;
+            for (int i = 0; i < n; ++i) {
+                const int32_t l = landmass_of[size_t(i)];
+                if (l > 0 && values[i] >= floor_v) ++have[size_t(l)];
+            }
+            for (size_t l = 1; l < landmass_size.size(); ++l) {
+                if (landmass_size[l] < kMinQuotaCells) continue;
+                const int q = std::min(floor_n,
+                        std::max(1, int(std::ceil(0.01 * double(landmass_size[l])))));
+                if (have[l] < q) {
+                    need[l] = q - have[l];
+                    total_need += need[l];
+                }
+            }
+            for (size_t rank = 0; rank < ranked.size() && total_need > 0; ++rank) {
+                const int32_t cell = ranked[rank].cell;
+                const int32_t l = landmass_of[size_t(cell)];
+                if (l <= 0 || need[size_t(l)] <= 0) continue;
+                if (values[cell] >= floor_v) continue;
+                values[cell] = floor_v;
+                --need[size_t(l)];
+                --total_need;
+                ++quota_added;
+            }
+            // 遍历完 ranked 还没补满 → 必须报出来，不许悄悄降级。
+            quota_unmet += total_need;
+        }
+        quota_field_cells[r] = quota_added;
+        quota_cells_total += quota_added;
+        quota_unmet_total += quota_unmet;
+
         reserves[r] = arr;
     }
 
@@ -643,6 +726,11 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
     out["elapsed_ms"] = elapsed_ms;
     out["fields"] = field_names;
     out["reserves"] = reserves;
+    // A6 诊断（不进存档、不进 state hash）：quota_unmet > 0 = 该图保底没做到。
+    out["quota_fields"] = quota_fields;
+    out["quota_cells"] = quota_cells_total;
+    out["quota_unmet"] = quota_unmet_total;
+    out["quota_skipped"] = have_landmass ? 0 : 1;
     return out;
 }
 

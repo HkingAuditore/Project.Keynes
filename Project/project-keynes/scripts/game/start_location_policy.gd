@@ -2,6 +2,7 @@ class_name StartLocationPolicy
 extends RefCounted
 
 const Profile = preload("res://scripts/game/start_location_profile.gd")
+const CandidateOrder = preload("res://scripts/game/start_location_candidates.gd")
 const ResearchSignalCatalogScript = preload(
 	"res://scripts/research/research_signal_catalog.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
@@ -49,12 +50,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 	if candidates.is_empty():
 		return _error("starter_capability_unsatisfied",
 			"没有找到气候与通行条件合格的出生地。")
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if bool(a.natural_precious) != bool(b.natural_precious):
-			return bool(a.natural_precious)
-		if not is_equal_approx(float(a.survival_score), float(b.survival_score)):
-			return float(a.survival_score) > float(b.survival_score)
-		return int(a.cell) < int(b.cell))
+	CandidateOrder.rank_for_player(candidates, map)
 	var chosen: Dictionary = {}
 	for candidate in candidates:
 		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
@@ -917,12 +913,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	if candidates.is_empty():
 		return _error("starter_capability_unsatisfied",
 			"没有找到气候与通行条件合格的出生地。")
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if bool(a.natural_precious) != bool(b.natural_precious):
-			return bool(a.natural_precious)
-		if not is_equal_approx(float(a.survival_score), float(b.survival_score)):
-			return float(a.survival_score) > float(b.survival_score)
-		return int(a.cell) < int(b.cell))
+	CandidateOrder.rank_for_player(candidates, map)
 	var chosen: Dictionary = {}
 	for candidate in candidates:
 		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:

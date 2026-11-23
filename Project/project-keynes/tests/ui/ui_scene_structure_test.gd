@@ -261,6 +261,8 @@ func _check_player_game() -> void:
 	root.add_child(scene)
 	await process_frame
 	_expect("player UI keeps one fixed UIRoot", scene.get_node("UI").get_child_count() == 1)
+	var board := ui_root.get_node_or_null("PanelLayer/CellBoard") as CellBoard
+	_expect("the tile board starts hidden in the player panel layer", board != null and not board.visible)
 	# 议和窗口：UI 管理器必须真的绑定到场景里那个实例，否则入口会静默失效。
 	var ui_manager := scene.get_node_or_null("UI")
 	_expect("player UI manager exposes the peace window API",

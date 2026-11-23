@@ -155,6 +155,9 @@ var _field_ocean_precip_suppression: float = 0.95
 # 越大越跟手(接近瞬时投影)。2026-06-22 标定为 0.40，减少降水拖尾。
 # 统一替代旧 carryover/拖尾/滞回三件套的时间平滑机制。
 var _field_precip_inertia: float = 0.58
+var _field_classify_gate_land: float = 0.040   # W4
+var _field_classify_gate_water: float = 0.032  # W4
+var _field_precip_spatial_smooth: float = 0.30  # W5
 # 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
 var _field_precip_base_frac: float = 0.08  # 背景成雨比例；降低固定弱雨，让降水更依赖移动动力触发
 var _field_cloud_reevap: float = 0.28      # 干空气云水再蒸发；保留非降水薄云，避免清云过强
@@ -981,7 +984,7 @@ func _apply_frontal_convergence_boost(map: MapData, cells: Array, climate_anomal
 	# 现在大幅收紧：温差需 14°C 以上、辐合需更强，才进入"真正的锋面带"。
 	const STORM_TEMP_DIFF: float = 0.28
 	const WEAK_TEMP_DIFF: float = 0.06
-	const CONVERGENCE_THRESHOLD: float = 0.45
+	const CONVERGENCE_THRESHOLD: float = 0.64  # W3: net 口径 p95=0.636（旧 0.45 按 legacy p50=0.376 标定）
 	# B-full Step-2：循环外一次性取 SoA 数组引用（与 view_f32 同引用）。
 	# cell-level 字段全部走 PackedArray index 访问；只有 _avg_ocean_anomaly_at_idx
 	# 内部读 temperature_transport_anomaly 仍走 AoS（不在本 plan 范围）。
