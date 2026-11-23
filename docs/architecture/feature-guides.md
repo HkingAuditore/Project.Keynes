@@ -360,9 +360,9 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 天气与光照 Shader
 
-- 玩家场景用 `world_ready` 交付的地图数据绑定贸易层的地形光照。无窗口会话跳过地图
-  渲染器的装配，贸易层仍可使用生成好的地形法线。验证入口为
-  `tests/economy/trade_activity_runtime_integration_test.gd`。
+- 贸易层沿用 `world_ready` 交付的地图数据刷新地形光照，清除地图时释放这份引用。
+  无窗口会话跳过地图渲染器的装配，天空光照和地平线设置更新时仍保留地形法线。
+  验证入口为 `tests/economy/trade_activity_runtime_integration_test.gd`。
 
 - 每个水面像素共用一次太阳方向来算主光和水面高光。夜色仍按原来的太阳高度计算，
   保留调试高度缩放的口径。每个陆地或水面像素的直射光和环境光共用一次云影取样，

@@ -64,7 +64,7 @@ static func _push_terrain_horizon_uniforms(host) -> void:
 	if host._building_visual_layer != null:
 		host._building_visual_layer.set_terrain_lighting(host._shader_mat)
 	if is_instance_valid(host._trade_visual_layer):
-		host._trade_visual_layer.set_terrain_lighting(host._world, host._shader_mat)
+		host._trade_visual_layer.refresh_terrain_lighting(host._shader_mat)
 	if is_instance_valid(host._military_visual_layer):
 		host._military_visual_layer.set_terrain_lighting(host._world, host._shader_mat)
 

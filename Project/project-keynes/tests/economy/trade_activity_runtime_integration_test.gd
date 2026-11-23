@@ -95,8 +95,9 @@ func _run() -> void:
 		and is_equal_approx(float(activity._shadow_material.get_shader_parameter("day_phase")), 0.36))
 	var tiled: bool = world.visual_tiles != null and world.visual_tiles.ready and world.visual_tiles.layout.mode == "tiled"
 	var normal: Variant = world.visual_tiles.terrain_normal if tiled else world.terrain_normal_tex
-	expect("trade binds the real map normal field and availability", bool(activity._material.get_shader_parameter("terrain_normal_tex_bound")) == (normal != null)
-		and activity._material.get_shader_parameter("visual_terrain_normal_tiles" if tiled else "terrain_normal_tex") == normal)
+	var normal_uniform := &"visual_terrain_normal_tiles" if tiled else &"terrain_normal_tex"
+	expect("trade binds the real map normal field and availability",
+		_trade_normals_bound(activity, normal_uniform, normal))
 	expect("production worker advances", progressed)
 	expect("economy worker authority is ACTIVE", (int(runtime.get("authoritative_domain_mask", 0)) & 0x100) != 0)
 	expect("new worlds do not invent decorative trade", observed or
@@ -108,7 +109,22 @@ func _run() -> void:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute(_capture_dir)
 		root.get_texture().get_image().save_png(_capture_dir.path_join("production_trade.png"))
+	renderer.world_lighting_profile = WorldLightingProfile.new()
+	expect("world lighting refresh preserves trade terrain normals",
+		_trade_normals_bound(activity, normal_uniform, normal))
+	renderer.set_terrain_horizon_strength(renderer.terrain_horizon_strength * 0.5)
+	expect("terrain horizon refresh preserves trade terrain normals",
+		_trade_normals_bound(activity, normal_uniform, normal))
 	await _finish(game)
+
+func _trade_normals_bound(activity: TradeActivityLayer, uniform: StringName, normal: Variant) -> bool:
+	if normal == null:
+		return false
+	for material: ShaderMaterial in [activity._material, activity._shadow_material]:
+		if not bool(material.get_shader_parameter("terrain_normal_tex_bound")) \
+				or material.get_shader_parameter(uniform) != normal:
+			return false
+	return true
 
 func _finish(game: Node) -> void:
 	if game != null:
