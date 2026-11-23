@@ -20,6 +20,7 @@ func _run() -> void:
 	_test_warm_convection_prefers_storm()
 	_test_warm_humid_open_ocean_forms_rain_without_warm_current()
 	_test_moderate_marine_rain_and_storm_classify_separately()
+	_test_moderate_warm_humid_open_ocean_releases_latent_rain()
 	_test_saturated_open_ocean_forms_monsoon()
 	_test_frontal_boost_requires_humid_ocean_air()
 	_test_cold_precip_prefers_blizzard()
@@ -113,30 +114,33 @@ func _test_moderate_marine_rain_and_storm_classify_separately() -> void:
 	_expect(rain == WeatherType.WT.RAIN, "moderate marine rain stays RAIN (type=%d)" % rain)
 	_expect(storm == WeatherType.WT.STORM, "strong marine convection is STORM (type=%d)" % storm)
 
+func _test_moderate_warm_humid_open_ocean_releases_latent_rain() -> void:
+	var weather := _solve_warm_open_ocean(0.80)
+	var wt := int(weather.get("type", WeatherType.WT.CLEAR))
+	var precip := float(weather.get("precip", 0.0))
+	_expect(wt == WeatherType.WT.RAIN and precip > 0.076,
+		"moderately humid open ocean should produce rain (type=%d precip=%.3f)" % [wt, precip])
+
 func _test_saturated_open_ocean_forms_monsoon() -> void:
+	var weather := _solve_warm_open_ocean(0.86)
+	var wt := int(weather.get("type", WeatherType.WT.CLEAR))
+	var precip := float(weather.get("precip", 0.0))
+	_expect(wt == WeatherType.WT.MONSOON and precip > 0.076,
+		"saturated open ocean should produce monsoon rain (type=%d precip=%.3f)" % [wt, precip])
+
+func _solve_warm_open_ocean(seed_vapor: float) -> Dictionary:
 	var map := MapData.new(5, 1)
 	for q in range(5):
-		var c := _cell(q, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN, 0.04, 0.62, 0.88, Vector2.RIGHT, 0.0)
-		c.wind_speed = 1.20
-		c.weather_field_initialized = true
-		c.weather_vapor = 0.86
-		c.weather_cloud = 0.12
-		map.set_cell(c)
+		var cell := _cell(q, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN,
+			0.04, 0.62, 0.88, Vector2.RIGHT)
+		cell.wind_speed = 1.20
+		map.set_cell(cell)
 	map.rebuild_soa_from_cells()
+	_seed_weather_field(map, seed_vapor, 0.12)
 	var ws := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(220.0, 100.0)))
+	ws._field_classify_gate_water = 0.076
 	ws.tick_one_day(map, _world(), 1, 0.02, 1.5)
-	var q2 := ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
-	var wt: int = int(q2.get("type", WeatherType.WT.CLEAR))
-	# Saturated air crosses the marine monsoon moisture and cloud gates.
-	_expect(wt == WeatherType.WT.MONSOON and float(q2.get("precip", 0.0)) > 0.06,
-		"saturated open ocean should produce monsoon rain (type=%d precip=%.3f cloud_water=%.3f cloud=%.3f vapor=%.3f instability=%.3f)" % [
-			wt,
-			float(q2.get("precip", 0.0)),
-			float(q2.get("cloud_water", 0.0)),
-			float(q2.get("cloud", 0.0)),
-			float(q2.get("vapor", 0.0)),
-			float(q2.get("instability", 0.0)),
-		])
+	return ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
 
 func _test_frontal_boost_requires_humid_ocean_air() -> void:
 	var map := MapData.new(2, 1)
