@@ -484,14 +484,29 @@ func _poll_fact_events(day: int, ai_enabled: bool = false) -> void:
 		if cell_idx >= 0 and not territory.is_empty() and not territory.has(cell_idx):
 			continue
 		var resolved_cell := _resolve_valid_player_cell(cell_idx, territory)
-		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-			resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
-		# AI 事实通道先跑：它不回退队列，也不会因为静态事实事件命中而 return 掉。
-		if ai_enabled:
-			_maybe_request_fact_ai(day, ev_type, resolved_cell, cell_ctx)
+		var matched: Array = []
 		for def in fact_defs:
 			if def.fact_event_type != 0 and def.fact_event_type != ev_type:
 				continue
+			matched.append(def)
+		if not ai_enabled and matched.is_empty():
+			continue
+		# 两段式采样，与脉冲槽同一条原则：先轻采样（不含 cohort 明细/家族/邻城）
+		# 掷 AI 骰，命中之后才补明细。一次明细是十几到二十几次原生查询，而事实通道的
+		# 命中率只有 5%，先采后掷等于让九成五的明细白跑。
+		# AI 事实通道先跑：它不回退队列，也不会因为静态事实事件命中而 return 掉。
+		# 轻采样不带家族，局势分里的家族项在这里不计分——与脉冲槽一致。
+		if ai_enabled:
+			var light_ctx := NarrativeContextSamplerScript.sample_cell_context(
+				resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
+			_maybe_request_fact_ai(day, ev_type, resolved_cell, light_ctx)
+		if matched.is_empty():
+			continue
+		# 静态事实事件要用明细算权重：战事那几条判据含 cohort 满意度与职业占比，
+		# 轻采样里没有，算出来的权重会失真。只有真有 def 认领这条事实的类型才补采。
+		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
+			resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
+		for def in matched:
 			var weight := evaluate_event_weight(def, cell_ctx, day)
 			if weight <= 0:
 				continue
@@ -628,6 +643,9 @@ func _request_ai_generation(
 	return seq
 
 
+## 事实通道的 AI 掷骰。`cell_ctx` 是调用方给的**轻采样**上下文：掷骰只需要紧缺、
+## 溢价、满意度、气候这几项，它们都在轻采样里。命中之后才补明细，因为 prompt 要写
+## 具体的人与生计，而 cohort 构成只在 include_cohort_details=true 时才采得到。
 func _maybe_request_fact_ai(day: int, ev_type: int, cell_idx: int, cell_ctx: Dictionary) -> void:
 	if cell_idx < 0 or not AI_FACT_HINTS.has(ev_type):
 		return
@@ -641,7 +659,8 @@ func _maybe_request_fact_ai(day: int, ev_type: int, cell_idx: int, cell_ctx: Dic
 	var fact_name := String(AI_FACT_HINTS[ev_type])
 	var settlement := String(cell_ctx.get("settlement_name", "本地")).strip_edges()
 	var fact_hint := "%s（%s，%s）" % [fact_name, settlement, _format_calendar_date(day)]
-	_request_ai_generation(day, cell_idx, "", "", fact_hint, day + 1, false, cell_ctx)
+	_request_ai_generation(day, cell_idx, "", "", fact_hint, day + 1, false,
+		_sample_cell_ctx(cell_idx, day))
 
 
 # ─── 状态探针：条件成立并维持 dwell_days 天后才预取 ──────────────────────────
