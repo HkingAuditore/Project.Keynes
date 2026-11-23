@@ -30,6 +30,8 @@ var _ui_usec := 0
 var _day_rows: Array = []
 var _frames: Array = []
 var _answers: Array[Dictionary] = []
+var _draw_times: Array[int] = []
+var _draw_count := 0
 
 
 func _initialize() -> void:
@@ -45,8 +47,15 @@ func _run() -> void:
 	var target := int(args.get("--through", 180))
 	var foreign_count := int(args.get("--foreign-count", 3))
 	var answer_story := args.has("--answer-story")
+	var require_rendered := args.has("--require-rendered")
 	if not output.is_absolute_path() or speed not in [1.0, 50.0, 100.0] or target <= 0:
 		push_error("Pass --frames=<absolute path>, --speed=1|50|100 and --through=<day>")
+		quit(1)
+		return
+	var driver := RenderingServer.get_current_rendering_driver_name()
+	var rendered := DisplayServer.get_name() != "headless" and driver not in ["", "dummy"]
+	if require_rendered and not rendered:
+		_record_start_failure(output, {"ok": false, "code": "rendered_backend_required", "driver": driver})
 		quit(1)
 		return
 	root.get_node("GameSettings").update({
@@ -60,23 +69,14 @@ func _run() -> void:
 	config.base.map_height = HEIGHT
 	config.base.initial_seed = SEED
 	config.country.foreign_count = foreign_count
-	var previous := current_scene
-	var flow := root.get_node("GameFlow")
-	var begin: Dictionary = flow.begin_new_game(config)
-	if not begin.get("ok", false):
-		push_error(str(begin))
+	var start_result := await _start_player_scene(root.get_node("GameFlow"), config)
+	if not start_result.get("ok", false):
+		_record_start_failure(output, start_result)
+		var loading := _player_host()
+		if loading != null:
+			await loading.close_world()
 		quit(1)
 		return
-	# Follow the real scene until it has drawn the selected starting cell.
-	while flow.session().is_empty() or current_scene == previous:
-		await process_frame
-		if current_scene is PlayerGame:
-			var loading := current_scene.get_node("RuntimeHost") as WorldRuntimeHost
-			var session := loading.session_report()
-			if session.state == "FAULTED":
-				push_error(str(session.failure))
-				quit(1)
-				return
 	var scene := current_scene as PlayerGame
 	_host = scene.get_node("RuntimeHost")
 	_clock = scene.get_node("WorldClock")
@@ -108,10 +108,16 @@ func _run() -> void:
 		"display": DisplayServer.get_name(), "window_size": str(DisplayServer.window_get_size()),
 		"viewport_size": str(root.get_visible_rect().size), "max_fps": Engine.max_fps,
 		"vsync": DisplayServer.window_get_vsync_mode(), "quality": settings.render_quality,
-		"renderer": RenderingServer.get_current_rendering_method(), "start_day": start}))
+		"renderer": RenderingServer.get_current_rendering_method(), "driver": driver, "start_day": start}))
+	if rendered:
+		RenderingServer.frame_post_draw.connect(_record_draw)
 	_host.execute_gm_command("time.speed", {"value": speed})
 	_clock.pause(false)
 	var condition := await _capture(target, answer_story)
+	if rendered:
+		RenderingServer.frame_post_draw.disconnect(_record_draw)
+	if require_rendered and _draw_count < 2 and condition in ["target", "player"]:
+		condition = "missing_rendered_frames"
 	_clock.pause(true)
 	_clock._runtime_calendar_admit = _admit_day
 	for connection in _host.simulation_view_updated.get_connections():
@@ -126,12 +132,61 @@ func _run() -> void:
 	var countries := int(_host._country_worker_read_last_result.get("country_count", -1))
 	print("HANDOFF_RESULT=", JSON.stringify({"end": condition, "display_day": _clock.day_index(),
 		"consumed_day": _host._runtime_commit_day, "records": _day_rows.size(),
-		"contiguous": contiguous, "frames": _frames.size(), "written": captured,
+		"contiguous": contiguous, "frames": _frames.size(), "drawn_frames": _draw_count,
+		"written": captured,
 		"countries": countries,
 		"answers": _answers, "last": _frames.back()}))
 	var closed: Dictionary = await _host.close_world()
 	quit(0 if captured and contiguous and countries == foreign_count + 1 and closed.get("ok", false)
 		and condition in ["target", "player"] else 1)
+
+
+func _start_player_scene(flow: Node, config: NewGameConfig) -> Dictionary:
+	var previous_id := current_scene.get_instance_id() if current_scene != null else 0
+	var failures: Array[Dictionary] = []
+	var record := func(result: Dictionary) -> void: failures.append(result)
+	flow.player_start_failed.connect(record, CONNECT_ONE_SHOT)
+	var result: Dictionary = flow.begin_new_game(config)
+	if result.get("ok", false):
+		result = await _wait_for_player_scene(flow, previous_id, failures)
+	if flow.player_start_failed.is_connected(record):
+		flow.player_start_failed.disconnect(record)
+	return result
+
+
+func _wait_for_player_scene(flow: Node, previous_id: int, failures: Array[Dictionary]) -> Dictionary:
+	while failures.is_empty():
+		var arrived := current_scene is PlayerGame and current_scene.get_instance_id() != previous_id
+		if arrived:
+			var loading := _player_host()
+			if loading == null:
+				return {"ok": false, "code": "player_scene_host_missing"}
+			var generation := loading.last_world_generation_error
+			if not generation.is_empty():
+				return {"ok": false, "code": "world_generation_failed", "stage": generation.get("stage", ""),
+					"reason": generation.get("reason", ""), "message": generation.get("summary", "")}
+			var session := loading.session_report()
+			if session.state in ["FAULTED", "CLOSING", "CLOSED"]:
+				return {"ok": false, "code": "startup_session_ended", "session": session}
+			if loading.is_runtime_ready_for_ticks() and not flow.session().is_empty():
+				return {"ok": true}
+		elif not flow.player_scene_transition_active():
+			return {"ok": false, "code": "player_scene_not_installed"}
+		await process_frame
+	return failures[0]
+
+
+func _player_host() -> WorldRuntimeHost:
+	return current_scene.get_node_or_null("RuntimeHost") as WorldRuntimeHost if current_scene is PlayerGame else null
+
+
+func _record_start_failure(output: String, failure: Dictionary) -> void:
+	var result := {"end": "startup_failed", "failure": failure, "frames": 0, "records": 0,
+		"display": DisplayServer.get_name()}
+	var frames_written := _write(output, [result])
+	var days_written := _write(output + ".days", [])
+	result["written"] = frames_written and days_written
+	print("HANDOFF_RESULT=", JSON.stringify(result))
 
 
 func _timed_admit(date: int) -> int:
@@ -160,6 +215,11 @@ func _record_days(records: Array) -> void:
 			"produced_at_us": row.produced_at_us, "receipts": row.get("receipts", [])})
 
 
+func _record_draw() -> void:
+	_draw_times.append(Time.get_ticks_usec())
+	_draw_count += 1
+
+
 func _capture(target: int, answer_story: bool) -> String:
 	var previous_frame := Time.get_ticks_usec()
 	var last_progress := previous_frame
@@ -186,7 +246,7 @@ func _capture(target: int, answer_story: bool) -> String:
 			reason = "domain_wait"
 		elif state == "PAUSED" and committed >= _host._calendar_admitted_through:
 			reason = "calendar_wait"
-		_frames.append({"usec": now, "frame_usec": now - previous_frame,
+		_frames.append({"usec": now, "frame_usec": now - previous_frame, "draw_times": _draw_times,
 			"sample_usec": Time.get_ticks_usec() - now, "display": _clock.day_index(),
 			"requested": _request, "admitted": _host._calendar_admitted_through,
 			"committed": committed, "consumed": consumed, "state": state, "reason": reason,
@@ -203,6 +263,7 @@ func _capture(target: int, answer_story: bool) -> String:
 			"visual_ms": _host._runtime_last_visual_apply_ms if consumed != previous_day else 0.0,
 			"writeback_ms": _host._runtime_climate_writeback_memcpy_ms + _host._runtime_climate_writeback_flush_ms,
 			"host_ms": _host._sched_proc_last_total_ms})
+		_draw_times = []
 		_request = -1
 		_admit_usec = 0
 		_consumer.elapsed_usec = 0

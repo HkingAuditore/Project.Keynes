@@ -427,10 +427,12 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 - 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
   关闭云影仍保留天气云的风场输入。切档验证入口为
   `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
-- 天气表和云影从当前世界共用一份风图。尺寸、两个风向分量和风速完全一致时复用图片，
-  任一输入变化时沿用原来的逐像素编码。缓存保存输入副本，识别显示数组的就地更新。
-  天气换图和前后两帧的过渡仍在原发布点更新。`tests/world/weather_table_layout_test.gd`
-  检查共用、刷新和逐字节一致性。
+- 天气表和云影使用相同风场编码。云影在尺寸和编码后的字节都相同时复用当前风纹理，天气
+  发布仍推进过渡的前后端点。`tests/world/weather_table_layout_test.gd` 检查复用、换图和字节。
+- `tests/game/player_scene_handoff_probe.gd` 通过 `GameFlow` 进入正式场景。场景切换失败和
+  会话配置失败由 `player_start_failed` 报告，世界生成失败读宿主已记录的原因。探针将
+  开局失败写入记录并以失败退出。性能对照要求起止结算日都有逐帧样本。真实窗口测量在
+  探针及分析器上使用 `--require-rendered`，并检查实际画面设置及绘制完成间隔。
 
 ## 逐格弹射色 LUT
 

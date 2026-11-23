@@ -8,6 +8,7 @@ var previous: Texture2D
 var has_previous := false
 var _stamp := -1
 var _dims := Vector2i.ZERO
+var _current_wind_bytes := PackedByteArray()
 
 
 func bind(next_world: WorldData, next_map: MapData) -> void:
@@ -20,6 +21,7 @@ func bind(next_world: WorldData, next_map: MapData) -> void:
 	has_previous = false
 	_stamp = -1
 	_dims = Vector2i.ZERO
+	_current_wind_bytes = PackedByteArray()
 
 
 func update() -> bool:
@@ -28,31 +30,20 @@ func update() -> bool:
 	var stamp := int(world.weather_lut_update_usec)
 	if stamp == _stamp and world.lut_dims == _dims:
 		return false
-	var image := published_image(world, map, world.lut_dims)
+	var image := build_image(map, world.lut_dims)
+	var bytes := image.get_data() if image != null else PackedByteArray()
 	previous = current
-	current = ImageTexture.create_from_image(image) if image != null else null
+	# Keep both interpolation endpoints. Identical encoded pixels can use the
+	# current texture for both without another graphics upload.
+	if world.lut_dims != _dims or bytes != _current_wind_bytes:
+		current = ImageTexture.create_from_image(image) if image != null else null
+		_current_wind_bytes = bytes
 	has_previous = current != null and previous != null and _dims == world.lut_dims
 	if not has_previous:
 		previous = current
 	_stamp = stamp
 	_dims = world.lut_dims
 	return true
-
-
-## Both weather consumers use these pixels. Weather can change on a day when
-## the published wind lanes stay the same. Copy the lanes on a miss so an
-## in-place display update cannot change the cache key for the old image.
-static func published_image(world: WorldData, map: MapData, dims: Vector2i) -> Image:
-	var wind := [map.wind_x_arr, map.wind_y_arr, map.wind_speed_arr]
-	var cached := world.weather_wind_image_cache
-	if cached.get("dims", Vector2i.ZERO) == dims and cached.get("wind", []) == wind:
-		return cached.image
-	var image := build_image(map, dims)
-	world.weather_wind_image_cache = {} if image == null else {
-		"dims": dims, "wind": [wind[0].duplicate(), wind[1].duplicate(), wind[2].duplicate()],
-		"image": image,
-	}
-	return image
 
 
 static func encode_wind(direction: Vector2, speed: float) -> Color:

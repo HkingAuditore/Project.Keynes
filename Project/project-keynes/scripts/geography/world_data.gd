@@ -247,7 +247,6 @@ var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值
 # Native worker commits stage pixel bytes until this world's renderer presents them.
 var staged_cell_lut_upload: Dictionary = {}
 var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
-var weather_wind_image_cache: Dictionary = {}
 var lut_dims: Vector2i = Vector2i.ZERO
 # ─── [cell-field-overlays 2026-11-18] 天气/风的 offset 空间表（方案 §3.3）─────────────
 # weather_table：Texture2DArray（RGBA8，**4 层**，map_w × map_h，1 texel = 1 格，
