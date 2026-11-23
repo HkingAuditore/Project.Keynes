@@ -234,20 +234,11 @@ NativeEconomyRuntime::satisfaction_effective_weights(
 int64_t NativeEconomyRuntime::satisfaction_bias_q16(
         int32_t cell, const Signature &signature) const {
     const int32_t country_slot = cell_country_slot(cell);
-    if (country_slot < 0) return 0;
     const int32_t profession_id = signature.profession_id;
-    if (profession_id < 0) {
-        if (static_cast<size_t>(country_slot) >=
-                _epoch_country_general_satisfaction_bp.size())
-            return 0;
-        return static_cast<int64_t>(
-            _epoch_country_general_satisfaction_bp[
-                static_cast<size_t>(country_slot)]) * Q16_ONE / 10000;
-    }
     const size_t professions = _profession_ids.size();
-    const size_t index = static_cast<size_t>(country_slot) *
-        professions + static_cast<size_t>(profession_id);
-    if (professions == 0 ||
+    const size_t index = static_cast<size_t>(std::max(0, country_slot)) *
+        professions + static_cast<size_t>(std::max(0, profession_id));
+    if (professions == 0 || country_slot < 0 || profession_id < 0 ||
             static_cast<size_t>(profession_id) >= professions ||
             index >= _epoch_country_profession_satisfaction_bp.size())
         return 0;

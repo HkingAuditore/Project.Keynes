@@ -4,6 +4,7 @@ extends Control
 const MenuButtonScene := preload("res://scenes/ui/pause_menu_button.tscn")
 const SettingsFormScene := preload("res://scenes/ui/pause_settings_form.tscn")
 const AiSettingsFormScene := preload("res://scenes/ui/pause_ai_settings_form.tscn")
+const EventPauseOptions := preload("res://scripts/ui/components/event_pause_options.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const NarrativeAiClientScript = preload("res://scripts/narrative/ai/narrative_ai_client.gd")
 
@@ -21,6 +22,7 @@ var _center: CenterContainer
 var _rows_scroll: ScrollContainer
 var _pending_destructive_action: String = ""
 var _panel_generation := 0
+var event_pause_reader: Callable
 
 
 func _ready() -> void:
@@ -157,7 +159,13 @@ func _show_settings() -> void:
 		"render_quality": "auto", "ui_scale_percent": 100,
 		"master_volume": 1.0, "master_muted": false}
 	var form := SettingsFormScene.instantiate() as VBoxContainer
+	_ensure_rows_scroll()
 	_rows.add_child(form)
+	var event_options := EventPauseOptions.new()
+	form.add_child(event_options)
+	var initial_event_mask := int(event_pause_reader.call()) if event_pause_reader.is_valid() \
+		else int(current.get("event_pause_mask", 255))
+	event_options.configure(initial_event_mask)
 	var graphics := form.get_node("GraphicsQualityOptions")
 	graphics.configure(current)
 	if visible:
@@ -204,6 +212,8 @@ func _show_settings() -> void:
 		if settings_service != null:
 			var picked = scale.get_selected_metadata()
 			var payload: Dictionary = graphics.settings_payload()
+			if event_options.value() != initial_event_mask:
+				payload["event_pause_mask"] = event_options.value()
 			payload.merge({"master_volume": volume.value, "master_muted": mute.button_pressed,
 				"reduce_motion": reduce_motion.button_pressed})
 			# 触摸档：Scale 装缩放百分比，Layout 装布局档位。桌面档：只有百分比。

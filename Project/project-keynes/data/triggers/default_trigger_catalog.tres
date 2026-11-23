@@ -171,7 +171,7 @@ value_field = 1
 threshold = 2
 dynamic_binding = true
 selector_field = 2
-selector_key = &"scribal_school"
+selector_key = &"lorekeeper_circle"
 effects = Array[Resource]([SubResource("EffectKnowledgePopulation")])
 
 [sub_resource type="Resource" id="EffectSocialPressureNotice"]

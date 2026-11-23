@@ -1,4 +1,4 @@
-#include "economy_cell_class_satisfaction.h"
+#include "economy_runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -308,9 +308,6 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt64Array owner_employed;
     PackedInt64Array employee_employed;
     PackedInt64Array unemployed;
-    int64_t employed_population = 0;
-    int64_t unemployed_population = 0;
-    int64_t employment_sat = 0;
     std::vector<int32_t> slots;
     population_store().for_each_in_cell(cell_idx, [&](int32_t slot) { slots.push_back(slot); });
     for (int32_t slot : slots) {
@@ -343,21 +340,11 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         worst_need_ids.push_back(population_store().worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
                                      ? -1 : population_store().worst_need_id[slot]);
         merchant_flags.push_back(is_merchant_slot(slot) ? 1 : 0);
-        const int64_t slot_population = std::max<int64_t>(0, population_store().population[slot]);
-        const int64_t slot_owner_employed = std::max<int64_t>(0, population_store().owner_employed[slot]);
-        const int64_t slot_employee_employed = std::max<int64_t>(0, population_store().employee_employed[slot]);
-        const int64_t slot_employed = std::min<int64_t>(slot_population,
-            saturating_add(slot_owner_employed, slot_employee_employed, employment_sat));
-        employed_population = saturating_add(employed_population, slot_employed, employment_sat);
-        unemployed_population = saturating_add(unemployed_population,
-            slot_population - slot_employed, employment_sat);
         owner_employed.push_back(population_store().owner_employed[slot]);
         employee_employed.push_back(population_store().employee_employed[slot]);
         unemployed.push_back(std::max<int64_t>(0, population_store().population[slot] -
             population_store().owner_employed[slot] - population_store().employee_employed[slot]));
     }
-    out["employed_population"] = employed_population;
-    out["unemployed_population"] = unemployed_population;
     out["handles"] = handles;
     out["signature_ids"] = signatures;
     out["profession_ids"] = professions;
@@ -481,15 +468,9 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         welfare_need_offsets.push_back(0);
     bool welfare_complete = include_details && settlement_batch != nullptr &&
         settlement_batch->welfare_entries.size() == slots.size();
-    EconomyCellClassSatisfaction class_satisfaction(_political_class_ids.size());
-    int64_t class_saturation = 0;
     for (int32_t slot : slots) {
         const int64_t composite_q16 = population_store().composite_satisfaction[slot];
         overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
-        const int32_t signature = population_store().signature_id[slot];
-        class_satisfaction.accumulate(_signatures[signature].profession_id,
-            _profession_political_class_index, population_store().population[slot],
-            composite_q16, class_saturation, saturating_add, saturating_mul);
         living_standard_levels.push_back(consumption_living_standard_level(slot));
         if (!include_details)
             continue;
@@ -543,15 +524,6 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         }
     }
     out["overall_satisfaction_by_cohort_q16"] = overall_satisfaction;
-    const auto worst_class = class_satisfaction.worst();
-    Dictionary class_discontent;
-    class_discontent["active"] = worst_class.discontent();
-    class_discontent["severity_q16"] = worst_class.severity_q16;
-    class_discontent["state_day"] = _cell_last_settlement_day[cell_idx];
-    class_discontent["economy_generation"] = static_cast<int64_t>(_committed_generation);
-    if (worst_class.class_index >= 0)
-        class_discontent["class_id"] = String(_political_class_ids[worst_class.class_index].c_str());
-    out["class_discontent"] = class_discontent;
     out["living_standard_level_by_cohort"] = living_standard_levels;
     if (include_details) {
         out["welfare_detail_available"] = welfare_complete;

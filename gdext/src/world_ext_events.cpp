@@ -1,3 +1,4 @@
+#include "runtime_narrative.h"
 #include "world_ext.h"
 #include "economy_runtime.h"
 #include "native_simulation_host.h"
@@ -112,51 +113,8 @@ static bool queue_events_bridge_batch(
         error = "events_bridge_worker_unavailable";
         return false;
     }
-    const uint64_t sequence = host->allocate_producer_sequence(
-        EVENTS_BRIDGE_PRODUCER_ID);
-    const uint64_t request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
-    RuntimeCommandPacket packet{};
-    packet.envelope.request_id = request_id;
-    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
-    packet.envelope.sequence = sequence;
-    packet.envelope.observed_generation = report.generation;
-    packet.envelope.requested_day = std::max<int64_t>(0, records.front().tick);
-    packet.envelope.effective_day = std::max(
-        packet.envelope.requested_day, report.committed_day + 1);
-    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
-    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
-    std::vector<uint8_t> payload;
-    payload.reserve(8u + records.size() * 84u);
-    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
-    append_le<uint32_t>(payload, static_cast<uint32_t>(records.size()));
-    for (const RuntimeEventsRecord &record : records) {
-        append_le<int64_t>(payload, record.tick);
-        append_le<int32_t>(payload, record.phase);
-        append_le<int32_t>(payload, record.type);
-        append_le<int32_t>(payload, record.source);
-        append_le<int32_t>(payload, record.flags);
-        append_le<uint64_t>(payload, record.entity_handle);
-        append_le<int32_t>(payload, record.entity_id);
-        append_le<int32_t>(payload, record.cell_idx);
-        append_le<int32_t>(payload, record.payload_schema);
-        append_le<int64_t>(payload, record.value_i64);
-        append_le<int32_t>(payload, record.payload_i0);
-        append_le<int32_t>(payload, record.payload_i1);
-        append_le<int32_t>(payload, record.payload_i2);
-        append_le<int32_t>(payload, record.payload_i3);
-        append_le<uint64_t>(payload, static_cast<uint64_t>(record.event_id));
-    }
-    if (payload.size() > RUNTIME_MAX_COMMAND_PAYLOAD) {
-        error = "events_bridge_payload_exceeded";
-        return false;
-    }
-    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
-    std::memcpy(packet.payload.data(), payload.data(), payload.size());
-    if (!host->enqueue(packet)) {
-        error = "events_bridge_queue_full";
-        return false;
-    }
-    return true;
+    return host->enqueue_legacy_event_batch(records, report.committed_day + 1,
+        report.generation, error);
 }
 
 static bool queue_events_bridge_ack(NativeSimulationHost *host,
@@ -176,24 +134,8 @@ static bool queue_events_bridge_ack(NativeSimulationHost *host,
         error = "events_bridge_worker_unavailable";
         return false;
     }
-    const uint64_t sequence = host->allocate_producer_sequence(
-        EVENTS_BRIDGE_PRODUCER_ID);
-    RuntimeCommandPacket packet{};
-    packet.envelope.request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
-    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
-    packet.envelope.sequence = sequence;
-    packet.envelope.observed_generation = report.generation;
-    packet.envelope.requested_day = std::max<int64_t>(0, report.committed_day + 1);
-    packet.envelope.effective_day = packet.envelope.requested_day;
-    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
-    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::ACK_CONSUMER);
-    std::vector<uint8_t> payload;
-    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
-    append_le<uint64_t>(payload, stable_consumer_key(consumer_id));
-    append_le<int64_t>(payload, event_id);
-    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
-    std::memcpy(packet.payload.data(), payload.data(), payload.size());
-    if (!host->enqueue(packet)) {
+    if (!host->enqueue_event_consumer_ack(stable_consumer_key(consumer_id),
+            event_id, report.committed_day + 1, report.generation, true)) {
         error = "events_bridge_queue_full";
         return false;
     }
@@ -232,6 +174,76 @@ static PackedInt64Array dictionary_i64_array(const Dictionary &d, const char *ke
 
 } // namespace
 
+bool NativeSimulationHost::enqueue_event_consumer_ack(uint64_t consumer, int64_t event_id,
+        int64_t day, uint64_t generation, bool seal) {
+    const uint64_t sequence = allocate_producer_sequence(EVENTS_BRIDGE_PRODUCER_ID);
+    RuntimeCommandPacket packet{};
+    packet.envelope.request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
+    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
+    packet.envelope.sequence = sequence;
+    packet.envelope.observed_generation = generation;
+    packet.envelope.requested_day = std::max<int64_t>(0, day);
+    packet.envelope.effective_day = packet.envelope.requested_day;
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::ACK_CONSUMER);
+    std::vector<uint8_t> payload;
+    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint64_t>(payload, consumer);
+    append_le<int64_t>(payload, event_id);
+    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::memcpy(packet.payload.data(), payload.data(), payload.size());
+    return enqueue_batch_at({std::move(packet)}, nullptr, seal);
+}
+
+bool NativeSimulationHost::enqueue_legacy_event_batch(
+        const std::vector<RuntimeEventsRecord> &records, int64_t effective_day,
+        uint64_t generation, std::string &error) {
+    const uint64_t sequence = allocate_producer_sequence(
+        EVENTS_BRIDGE_PRODUCER_ID);
+    const uint64_t request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
+    RuntimeCommandPacket packet{};
+    packet.envelope.request_id = request_id;
+    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
+    packet.envelope.sequence = sequence;
+    packet.envelope.observed_generation = generation;
+    packet.envelope.requested_day = std::max<int64_t>(0, records.front().tick);
+    packet.envelope.effective_day = std::max(packet.envelope.requested_day, effective_day);
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
+    std::vector<uint8_t> payload;
+    payload.reserve(8u + records.size() * 84u);
+    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint32_t>(payload, static_cast<uint32_t>(records.size()));
+    for (const RuntimeEventsRecord &record : records) {
+        append_le<int64_t>(payload, record.tick);
+        append_le<int32_t>(payload, record.phase);
+        append_le<int32_t>(payload, record.type);
+        append_le<int32_t>(payload, record.source);
+        append_le<int32_t>(payload, record.flags);
+        append_le<uint64_t>(payload, record.entity_handle);
+        append_le<int32_t>(payload, record.entity_id);
+        append_le<int32_t>(payload, record.cell_idx);
+        append_le<int32_t>(payload, record.payload_schema);
+        append_le<int64_t>(payload, record.value_i64);
+        append_le<int32_t>(payload, record.payload_i0);
+        append_le<int32_t>(payload, record.payload_i1);
+        append_le<int32_t>(payload, record.payload_i2);
+        append_le<int32_t>(payload, record.payload_i3);
+        append_le<uint64_t>(payload, static_cast<uint64_t>(record.event_id));
+    }
+    if (payload.size() > RUNTIME_MAX_COMMAND_PAYLOAD) {
+        error = "events_bridge_payload_exceeded";
+        return false;
+    }
+    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::memcpy(packet.payload.data(), payload.data(), payload.size());
+    if (!enqueue(std::move(packet))) {
+        error = "events_bridge_queue_full";
+        return false;
+    }
+    return true;
+}
+
 int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
                                          int32_t phase,
                                          int32_t type,
@@ -254,7 +266,8 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
         return 0;
     }
     GameplayEventRecord ev;
-    ev.event_id = _gameplay_next_event_id++;
+    ev.event_id = military_executor_active() ? _runtime_host->allocate_events_ingress_key()
+        : _gameplay_next_event_id++;
     ev.tick = tick;
     ev.phase = phase;
     ev.type = type;
@@ -739,6 +752,22 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     return schema;
 }
 
+bool DCWorldExt::publish_legacy_military_events(std::vector<RuntimeEventsRecord> &records) {
+    for (auto &record : records) {
+        record.event_id = _emit_gameplay_event(record.tick, record.phase, record.type,
+            record.source, record.flags, record.entity_handle, record.entity_id, record.cell_idx,
+            record.payload_schema, record.value_i64, record.payload_i0, record.payload_i1,
+            record.payload_i2, record.payload_i3);
+    }
+    records.erase(std::remove_if(records.begin(), records.end(), [](const auto &record) {
+        return record.event_id <= 0;
+    }), records.end());
+    if (records.empty()) return true;
+    std::string error;
+    const bool queued = queue_events_bridge_batch(_runtime_host.get(), records, error);
+    return queued || !_runtime_host || !_runtime_host->events_worker_authoritative();
+}
+
 Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
     auto t0 = std::chrono::high_resolution_clock::now();
     Dictionary out;
@@ -917,6 +946,47 @@ void DCWorldExt::_append_gameplay_event_to_arrays(const GameplayEventRecord &ev,
     p1.append(ev.payload_i1);
     p2.append(ev.payload_i2);
     p3.append(ev.payload_i3);
+}
+
+bool DCWorldExt::configure_gameplay_narrative(Dictionary packet, Dictionary state) {
+    return _runtime_host && _runtime_host->initialize_narrative(packet, state);
+}
+
+Dictionary DCWorldExt::get_gameplay_narrative_view() const {
+    Dictionary out;
+    out["ai_reply_delay_days"] = RuntimeNarrativeCatalog::AI_REPLY_DELAY_DAYS;
+    const auto view = _runtime_host ? _runtime_host->latest_narrative() : nullptr;
+    if (!view) return out;
+    out["day"] = view->day;
+    out["event_pause_mask"] = static_cast<int32_t>(view->pause_mask);
+    out["last_popup_day"] = view->popup_day;
+    out["active_offer"] = view->active_offer.duplicate(true);
+    out["ready_queue"] = view->queue.duplicate(true);
+    out["chronicle"] = view->chronicle.duplicate(true);
+    out["ai_requests"] = view->ai_requests.duplicate(true);
+    out["waiting_for_external_input_day"] = view->waiting_for_external_input_day;
+    out["ai_enabled"] = view->ai_enabled;
+    out["ai_enabled_requested"] = view->ai_enabled_requested;
+    out["unrest_fact_cursor"] = view->unrest_fact;
+    return out;
+}
+
+Dictionary DCWorldExt::capture_gameplay_narrative() const {
+    return _runtime_host ? _runtime_host->capture_narrative() : Dictionary();
+}
+
+Dictionary DCWorldExt::submit_gameplay_narrative(StringName kind, Dictionary args) {
+    if (!_runtime_host) return narrative_response(false, "narrative_runtime_unavailable");
+    if (kind == StringName("restore")) return _runtime_host->restore_narrative_checkpoint(args);
+    auto request = std::make_shared<RuntimeNarrativeRequest>();
+    using Kind = RuntimeNarrativeRequest::Kind;
+    if (kind == StringName("choose")) request->kind = Kind::CHOOSE;
+    else if (kind == StringName("ai_result")) request->kind = Kind::AI_RESULT;
+    else if (kind == StringName("ai_enabled")) request->kind = Kind::SET_AI;
+    else if (kind == StringName("pause_policy")) request->kind = Kind::PAUSE_POLICY;
+    else return narrative_response(false, "narrative_command_invalid");
+    request->args = args.duplicate(true);
+    return _runtime_host->submit_narrative_choice_request(std::move(request));
 }
 
 Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {
@@ -1298,7 +1368,8 @@ Dictionary DCWorldExt::snapshot_gameplay_event_journal(Dictionary opts) const {
     // Those commands mutate authoritative slots instead of appending a normal
     // GameplayEventRecord, but still need durable idempotency evidence.
     out["version"] = 4;
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
     out["max_events"] = _gameplay_max_events;
@@ -1433,7 +1504,8 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
     Dictionary out;
     out["ok"] = true;
     out["restored"] = int(_gameplay_events.size());
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["fallback"] = false;
     return out;
 }
@@ -1455,7 +1527,8 @@ Dictionary DCWorldExt::clear_gameplay_events(Dictionary opts) {
     }
     Dictionary out;
     out["event_count"] = 0;
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["fallback"] = false;
     return out;
 }
@@ -1466,7 +1539,8 @@ Dictionary DCWorldExt::get_gameplay_event_bus_report() const {
     out["max_events"] = _gameplay_max_events;
     out["oldest_event_id"] = _gameplay_events.empty() ? 0 : _gameplay_events.front().event_id;
     out["newest_event_id"] = _gameplay_events.empty() ? 0 : _gameplay_events.back().event_id;
-    out["next_event_id"] = _gameplay_next_event_id;
+    out["next_event_id"] = military_executor_active() ? _runtime_host->events_ingress_cursor()
+        : _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
     out["native_ms"] = _gameplay_last_native_ms;

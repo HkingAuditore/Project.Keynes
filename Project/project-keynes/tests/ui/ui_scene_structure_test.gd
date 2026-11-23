@@ -18,10 +18,7 @@ const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
 	"colonization_planner_panel.gd", "world_setup.gd",
 	"ideology_art.gd", "ideology_card.gd", "ideology_point_scroll.gd",
 	"ideology_slot_niche.gd", "ideology_workspace.gd",
-	"ideology_workspace_presentation.gd",
-	# 悬停展板是固定五行 × 两表的读数面板，行内还带比例条；
-	# 每一行的列宽必须与其他行逐像素对齐，声明式 .tscn 反而更容易改出错位。
-	"cell_board.gd"]
+	"ideology_workspace_presentation.gd"]
 
 var _failures := PackedStringArray()
 
@@ -36,10 +33,57 @@ func _run() -> void:
 	await _check_world_setup()
 	await _check_player_game()
 	_check_component_scenes()
+	_check_touch_number_pad()
 	await _check_embedded_object_detail_row_values()
 	_check_no_runtime_control_new()
 	print("ui scene structure: %d failures" % _failures.size())
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _check_touch_number_pad() -> void:
+	var pad := preload("res://scenes/ui/touch_number_pad.tscn").instantiate()
+	root.add_child(pad)
+	var submissions := []
+	pad.submitted.connect(func(value: String, mode: int) -> void:
+		submissions.append([value, mode]))
+	_expect("touch number pad starts hidden", not pad.visible)
+	pad.open({"title": "税率", "value": "7"})
+	var shortcut := InputEventKey.new()
+	shortcut.pressed = true
+	shortcut.keycode = KEY_5
+	shortcut.shift_pressed = true
+	shortcut.unicode = KEY_PERCENT
+	root.push_input(shortcut)
+	_expect("percent shortcut is inactive while the mode row is hidden",
+		pad.get_node("%Value").text == "7" and int(pad.get("_mode")) == 0)
+	pad.get_node("%Step2").pressed.emit()
+	pad.get_node("%Confirm").pressed.emit()
+	_expect("touch number pad applies the step and submits the value",
+		submissions == [["8", 0]] and not pad.is_open())
+	pad.open({"title": "定额", "value": "12", "mode": 1})
+	var percent: Button = pad.get_node("%Percent")
+	var absolute: Button = pad.get_node("%Absolute")
+	_expect("both tax modes are reachable by keyboard",
+		percent.focus_mode == Control.FOCUS_ALL and absolute.focus_mode == Control.FOCUS_ALL
+		and pad.find_next_valid_focus() == percent and percent.find_next_valid_focus() == absolute)
+	_expect("only the absolute mode is highlighted",
+		absolute.theme_type_variation == &"PKPrimaryButton" and percent.theme_type_variation == &"PKIconButton")
+	percent.pressed.emit()
+	_expect("only the percent mode is highlighted after switching",
+		percent.theme_type_variation == &"PKPrimaryButton" and absolute.theme_type_variation == &"PKIconButton")
+	root.push_input(shortcut)
+	_expect("the percent key selects the other mode without submitting",
+		absolute.theme_type_variation == &"PKPrimaryButton"
+		and pad.get_node("%Value").text == "0" and submissions == [["8", 0]])
+	root.push_input(shortcut)
+	_expect("the same key returns to the percent mode",
+		percent.theme_type_variation == &"PKPrimaryButton")
+	_expect("reopened touch number pad displays the current field title",
+		pad.get_node("%Title").text == "定额")
+	pad.get_node("%Cancel").pressed.emit()
+	_expect("touch number pad cancel leaves the last submission intact",
+		submissions == [["8", 0]] and not pad.is_open())
+	pad.free()
 
 
 func _check_theme_contract() -> void:
@@ -217,6 +261,8 @@ func _check_player_game() -> void:
 	root.add_child(scene)
 	await process_frame
 	_expect("player UI keeps one fixed UIRoot", scene.get_node("UI").get_child_count() == 1)
+	var board := ui_root.get_node_or_null("PanelLayer/CellBoard") as CellBoard
+	_expect("the tile board starts hidden in the player panel layer", board != null and not board.visible)
 	# 议和窗口：UI 管理器必须真的绑定到场景里那个实例，否则入口会静默失效。
 	var ui_manager := scene.get_node_or_null("UI")
 	_expect("player UI manager exposes the peace window API",

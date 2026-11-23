@@ -166,8 +166,7 @@ bool EffectRuntime::era_reward_selected_modifier_commands(
     return true;
 }
 
-Dictionary EffectRuntime::era_reward_offer_snapshot() {
-    refresh_era_reward_offer_status();
+Dictionary EffectRuntime::era_reward_offer_snapshot() const {
     Dictionary out;
     out["ok"] = true;
     const char *status = "NONE";
@@ -184,6 +183,7 @@ Dictionary EffectRuntime::era_reward_offer_snapshot() {
     out["transaction_id"] = _era_reward_offer.transaction_id;
     out["plan_hash"] = static_cast<int64_t>(_era_reward_offer.plan_hash);
     out["error"] = String(_era_reward_offer.error.c_str());
+    out["settles_on_day_advance"] = era_reward_host_selection_pending();
     if (_era_reward_offer.pool_index >= 0 &&
         _era_reward_offer.pool_index < static_cast<int32_t>(_era_reward_pools.size())) {
         const EraRewardPool &pool = _era_reward_pools[

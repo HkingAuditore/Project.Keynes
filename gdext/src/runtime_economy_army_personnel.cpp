@@ -649,8 +649,8 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         if (requested <= 0) return true;
         // Pay through the conserved "treasury -> non-tax expenditure" path
         // (army-pay contract §1.1): the treasury loses exactly what the lane
-        // gains, and nothing is minted. Two execution shapes, picked by whether
-        // Country still accepts synchronous store writes:
+        // gains, and nothing is minted. Use the active executor's Country
+        // authority even before the main-thread suppression flag is mirrored:
         //
         //  * SYNC Country (single-threaded, no worker domination):
         //    Commit one fiscal reserve, then credit the lane in this call.
@@ -671,8 +671,7 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         int64_t moved = 0;
         std::string cash_error;
         if (_country_runtime != nullptr && country_api::economy_available(*_country_runtime) &&
-            country_api::sync_store_writes_forbidden(*_country_runtime) &&
-            _simulation_host != nullptr &&
+            _simulation_host != nullptr && _simulation_host->on_worker_thread() &&
             _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
             (_d7_operation_gate_mask &
              (1u << static_cast<uint32_t>(

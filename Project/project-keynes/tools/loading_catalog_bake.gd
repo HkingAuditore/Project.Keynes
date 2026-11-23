@@ -40,12 +40,12 @@ static func prebake_command() -> String:
 	]
 
 ## 编译并写出全部快照。返回 OK 才代表磁盘上的 7 个文件互相一致且可用。
-static func bake() -> Error:
+static func bake(directory: String = Cache.DIRECTORY) -> Error:
 	var started := Time.get_ticks_msec()
 	Cache.invalidate()
-	var make_err := DirAccess.make_dir_recursive_absolute(Cache.DIRECTORY)
+	var make_err := DirAccess.make_dir_recursive_absolute(directory)
 	if make_err != OK and make_err != ERR_ALREADY_EXISTS:
-		push_error("[loading-catalog] 无法创建快照目录 %s: %s" % [Cache.DIRECTORY, error_string(make_err)])
+		push_error("[loading-catalog] 无法创建快照目录 %s: %s" % [directory, error_string(make_err)])
 		return make_err
 
 	var step := Time.get_ticks_msec()
@@ -109,18 +109,19 @@ static func bake() -> Error:
 	}
 	for filename: String in payload:
 		step = Time.get_ticks_msec()
-		var err := ResourceSaver.save(payload[filename], Cache.DIRECTORY + filename, ResourceSaver.FLAG_COMPRESS)
+		var path := directory.path_join(filename)
+		var err := ResourceSaver.save(payload[filename], path, ResourceSaver.FLAG_COMPRESS)
 		if err != OK:
 			push_error("[loading-catalog] 写入 %s 失败: %s" % [filename, error_string(err)])
 			return err
 		print("[loading-catalog] saved     %-22s %8d bytes  %5d ms" % [
-			filename, _file_size(Cache.DIRECTORY + filename), Time.get_ticks_msec() - step])
+			filename, _file_size(path), Time.get_ticks_msec() - step])
 
 	step = Time.get_ticks_msec()
 	var files: Dictionary = {}
 	for dir in ["res://scripts/research", "res://data", "res://scripts/economy", "res://scripts/family", "res://scripts/effect", "res://scripts/ideology", "res://scripts/modifier", "res://scripts/trigger", "res://scripts/data", "res://scripts/country"]:
 		_collect_sources(dir, files)
-	var manifest_path := Cache.DIRECTORY + "sources.json"
+	var manifest_path := directory.path_join("sources.json")
 	var file := FileAccess.open(manifest_path, FileAccess.WRITE)
 	if file == null:
 		var open_err := FileAccess.get_open_error()
@@ -132,11 +133,11 @@ static func bake() -> Error:
 		"sources.json", _file_size(manifest_path), Time.get_ticks_msec() - step, files.size()])
 
 	# 自检：任何接口写错（例如路径打错）都要在这里暴露，而不是等到玩家进游戏 miss。
-	var status := manifest_status()
+	var status := manifest_status(directory)
 	if not bool(status.get("fresh", false)):
 		push_error("[loading-catalog] 快照清单自检失败: %s" % String(status.get("reason", "")))
 		return ERR_FILE_CORRUPT
-	var snapshots := snapshot_status()
+	var snapshots := snapshot_status(directory)
 	if not bool(snapshots.get("ok", false)):
 		push_error("[loading-catalog] 快照文件缺失: %s" % ", ".join(snapshots.get("missing", [])))
 		return ERR_FILE_MISSING_DEPENDENCIES
@@ -145,8 +146,8 @@ static func bake() -> Error:
 	return OK
 
 ## 比对 sources.json 里记录的 sha256 与磁盘现状。不依赖 native 侧，编辑器内也能跑。
-static func manifest_status() -> Dictionary:
-	var manifest_path := Cache.DIRECTORY + "sources.json"
+static func manifest_status(directory: String = Cache.DIRECTORY) -> Dictionary:
+	var manifest_path := directory.path_join("sources.json")
 	if not FileAccess.file_exists(manifest_path):
 		return {"fresh": false, "entries": 0, "reason": "缺少快照清单 %s" % manifest_path}
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
@@ -174,11 +175,11 @@ static func manifest_status() -> Dictionary:
 	}
 
 ## 检查 7 个快照文件是否都在、字节数多少。
-static func snapshot_status() -> Dictionary:
+static func snapshot_status(directory: String = Cache.DIRECTORY) -> Dictionary:
 	var sizes: Dictionary = {}
 	var missing := PackedStringArray()
 	for filename: String in SNAPSHOT_FILES:
-		var path := Cache.DIRECTORY + filename
+		var path := directory.path_join(filename)
 		if not FileAccess.file_exists(path):
 			missing.append(filename)
 			continue

@@ -14,7 +14,7 @@
 
 ## 0. 你需要先理解的三句话
 
-1. **GDScript 写"游戏逻辑"，C++ 写"逐格子的密集计算"。** 不要反过来。
+1. **正式模拟由后台执行。** 判断、计算、写入和等待玩家都由后台负责。前台转发玩家请求、读已发布的数据并展示。见 [目标架构](architecture/design.md#单一时间线与前后台分工)。
 2. **数据的"主"在 C++ 端**（`DCWorldExt._slots[].arr_f32`），GDScript 通过 `snapshot_f32(comp_id)` 拉一份**只读快照**来用。GDScript 改快照不会反向写回 C++——这是**故意的**。
 3. **C++ pass 是纯函数：** 输入参数 + `_slots` 状态 → 修改 `_slots` 状态。不读 Godot 节点、不调 Godot API、不持有任何场景引用。
 
@@ -22,7 +22,10 @@
 
 ---
 
-## 1. 全局架构地图（一张图记住）
+## 1. 早期 GDExtension 示例的调用关系
+
+这是同步算子示例的结构。正式日推进从 `NativeSimulationHost` 进入后台执行器，
+生产入口与剩余兼容路径见 [运行现状](architecture/current-state.md)。
 
 ```
 ┌──────────────────────── GDScript 层（res://scripts/...）─────────────────────┐
@@ -81,7 +84,7 @@
 
 **经验定律：** 算子越复杂，C++ 优势越大。简单算子 10 倍、复杂算子 100+ 倍。
 
-**反之的告诫：** 极简单的算子（"对每个格子加一个常数"）走 C++ 也只有 10 倍收益，**但你要付出"跨语言桥 + bench 验证 + bit-equal 复刻"的工程成本**。这种小算子直接在 GDScript 写就行，**不要为了"用 C++"而用 C++**。
+**反之的告诫：** 极简单的算子（"对每个格子加一个常数"）走 C++ 也只有 10 倍收益，**但你要付出"跨语言桥 + bench 验证 + bit-equal 复刻"的工程成本**。这些数字可用于选择展示代码或测试参考实现的写法。正式模拟的小算子也随所属模块在后台执行。
 
 ---
 
@@ -109,7 +112,7 @@ var temp_snapshot: PackedFloat32Array = world_ext.snapshot_f32(CELL_TEMP)
 # 你不需要关心它什么时候释放——Godot 的引用计数管。
 ```
 
-**写入协议（GDScript → C++）：**
+**写入协议（底层接入、测试和兼容入口）：** 正式前台应转发请求，由后台所有者执行模拟写入。
 ```gdscript
 # 单格写：
 world_ext.write_f32(CELL_TEMP, idx, 0.42)
@@ -224,7 +227,7 @@ scons platform=windows target=template_debug
 ```
 编译完成后，Godot 编辑器**不需要**重启，但**正在运行的游戏需要重启**才能加载新 .dll。
 
-### Step 5：从 GDScript 调用
+### Step 5：在测试脚本中调用同步示例
 
 ```gdscript
 # 在某个 tick 里：
@@ -334,7 +337,7 @@ assert(diverge == 0, "bit-equal FAILED")
 
 ## 7. 何时**不**该把代码搬到 C++
 
-新手常犯的错是"看到 C++ 快就什么都往里搬"。下面这些情况**继续用 GDScript** 反而更对：
+新手常犯的错是"看到 C++ 快就什么都往里搬"。以下例子用于展示代码和测试参考实现。正式模拟接入后台：
 
 | 情况 | 为什么 |
 |-----|------|
@@ -377,11 +380,10 @@ assert(diverge == 0, "bit-equal FAILED")
 
 ---
 
-## 9. 进阶：何时考虑线程化（D 方案已实测，可量产）
+## 9. 历史实验：独立算子的异步计算
 
-**目前所有 *production* C++ pass 都是主线程同步阻塞的。** `run_demo_complex_pass` 在 60×40/iter=64/kr=5 时实测 ~10 ms 单次——这 10 ms 是把 Godot 主线程**完全卡住**的 10 ms。
-
-如果你要做的真实 climate pass 累计起来超过 4 ms / 帧（@60 FPS 的安全预算），就到了必须考虑线程化的时候。本项目已经完成了 D 方案的可行性实验，**结论是：D 方案完全可量产**。详细数据见 [`docs/architecture/migration.md`](architecture/migration.md)。
+以下是早期独立算子实验。正式模拟将新算子接入现有日执行器，在后台读取冻结输入、
+完成计算并发布结果。模拟继续条件由后台判断。
 
 ### 9.1 D 方案速览
 
@@ -410,17 +412,12 @@ async_climate_shutdown_task(task_id)              // join worker
 - 异步 vs 同步：**bit-equal max_abs_diff = 0.0**（无任何浮点偏差）
 - 100 次 register/shutdown 循环：**平均 180 µs/cycle，零 crash 零死锁**
 
-### 9.3 何时该选 D 方案 vs 同步
+### 9.3 测量结果的用途
 
-| 场景 | 推荐方案 | 理由 |
-|-----|---------|------|
-| 单次 ≥ 200 µs 的 hot pass | **D 方案** | 收益 ≥ 188 µs/帧主线程预算 |
-| 单次 < 50 µs 的小算子 | 同步 | 跨线程 ~12 µs dispatch + memcpy 输入 ≈ 计算本身，无意义 |
-| 每帧 ≤ 4 个并发后台任务 | **D 方案** | 主线程 30 µs；worker 增长 < 50% |
-| 每帧 ≥ 8 个并发任务 | **暂缓**，先做共享 worker 池 | 物理核饱和 → worker_compute 翻倍 |
-| 本帧必须算出 + 本帧消费 | 同步 | D 方案是"下一帧拿"，不适合反馈环 |
+上表用于理解调度、复制与并行的开销。正式模拟的算子由现有后台执行器按依赖组织，
+需要在同一天消费的结果在后台完成交接。
 
-### 9.4 D 方案的"红线契约"（违反必踩坑）
+### 9.4 历史实验的缓冲区契约
 
 > 这条契约是 D 方案能正确工作的根基，任何修改 `world_ext.cpp` async 路径的人**必须逐字遵守**：
 
@@ -429,19 +426,10 @@ async_climate_shutdown_task(task_id)              // join worker
 3. **输出在 `poll()` 内 memcpy 回 `_slots[].arr_f32`。** Worker 只写自己的私有 `result_buf`；主线程在 poll 真返回 true 时才碰 `_slots`。
 4. **`~DCWorldExt()` 必须调 `shutdown_all()` 兜底。** 否则 worker 线程会被悬空析构。
 
-### 9.5 现状：production 路径还是同步
+### 9.5 正式路径
 
-虽然 D 方案已验证可量产，但**当前所有真实 climate pass（包括 climate Pass-A）仍然走同步路径**——切换是一个独立的小项目，需要：
-
-1. 把 `run_climate_pass_a` 的算法抽出成纯 C++ kernel（已经基本是了）
-2. 加 `async_climate_pass_a_*` 系列 API（仿照 `async_climate_*` 模板）
-3. 改 `main.gd` 的 climate tick 路径：dispatch → 下帧 poll
-4. 跑 `bench_async_climate_pass_a.gd` 验证 bit-equal + 性能
-
-**新手不要自己上手做 D 方案接入——先和团队同步。** 但如果你只是想了解"为什么这套东西能 work"，把上面的实验报告读一遍就够了。
-
-> 备选方案 B（保持同步 + ≤ 4 ms × ≤ 4 pass / 帧守门）和方案 C（tick 切片）目前**不再优先**，因为 D 方案数据已经足够好。
-
+气候和天气通过正式日执行器运行。同步算子用于兼容、诊断与对照。
+开发和验证入口见 [开发指南](architecture/development-guide.md#改每日模块)。
 
 ---
 
@@ -452,7 +440,7 @@ async_climate_shutdown_task(task_id)              // join worker
 | 开一个新 C++ pass | 本文 §4 | `world_ext.h/.cpp`，加一个 `run_xxx_pass` |
 | 让 GDScript 能调它 | 本文 §4 Step 3 | `_bind_methods()` |
 | 让 GDScript 看到 C++ 算的数据 | 本文 §3.2 | 用 `snapshot_f32(comp_id)` |
-| 让 GDScript 写数据进 C++ | 本文 §3.2 | 用 `write_f32 / write_f32_range / write_f32_indexed` |
+| 从前台发起模拟状态变更 | [开发指南](architecture/development-guide.md#跨域读取与请求) | 把请求交给后台所有者 |
 | 估算我的 pass 会跑多久 | charter §12.6.6.b 的表 + 经验定律 | — |
 | 把数据可视化叠到地图上 | 本文 §4 Step 9 | `DataOverlayBaker` 加一个新模式 |
 | 验证 C++ 算对了 | 本文 §4 Step 6-8 | 写一份 GDScript reference impl + bench |
@@ -463,7 +451,7 @@ async_climate_shutdown_task(task_id)              // join worker
 ## 11. 进阶储备：ECS 调度模型（仅作为 future-proof 索引）
 
 > 这一节**不属于**新手流程。只是给"未来 pass 数量增长后"的接手者一个指针。
-> 当前 production 仍然手写 tick 顺序在 `main.gd`，**不要**为了用 ECS 而用 ECS。
+> 正式日计划由后台执行器安排。此节保留早期调度实验背景。
 
 如果将来 pass 数量超过 ~10 个、互相依赖复杂到手写 tick 顺序难以维护，可以参考
 [`docs/architecture/migration.md`](architecture/migration.md) 的 A2 实验—— 我们已

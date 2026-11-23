@@ -53,9 +53,9 @@ corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
 [node name="CellHoverCard" type="Control"]
-custom_minimum_size = Vector2(320, 176)
+custom_minimum_size = Vector2(320, 184)
 offset_right = 320.0
-offset_bottom = 176.0
+offset_bottom = 184.0
 mouse_filter = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_card")
@@ -64,7 +64,7 @@ script = ExtResource("1_card")
 offset_left = 8.0
 offset_top = 11.0
 offset_right = 312.0
-offset_bottom = 169.0
+offset_bottom = 177.0
 mouse_filter = 2
 theme_type_variation = &"PKPaperPopup"
 
@@ -72,7 +72,7 @@ theme_type_variation = &"PKPaperPopup"
 offset_left = 8.0
 offset_top = 8.0
 offset_right = 312.0
-offset_bottom = 166.0
+offset_bottom = 174.0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("CardPaper")
 
@@ -157,7 +157,7 @@ mouse_filter = 2
 color = Color(0.69, 0.49, 0.24, 0.75)
 
 [node name="TagRow" type="HBoxContainer" parent="Paper/Body"]
-custom_minimum_size = Vector2(0, 20)
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 theme_override_constants/separation = 6
 
@@ -213,7 +213,7 @@ mouse_filter = 2
 color = Color(0.75, 0.43, 0.25, 1)
 
 [node name="PopRow" type="HBoxContainer" parent="Paper/Body"]
-custom_minimum_size = Vector2(0, 28)
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 theme_override_constants/separation = 6
 
@@ -497,10 +497,3 @@ theme_override_colors/font_color = Color(0.32, 0.23, 0.15, 1)
 theme_override_font_sizes/font_size = 10
 text = "此地无明显自然资源"
 vertical_alignment = 1
-
-[node name="SpeciesRow" type="HFlowContainer" parent="Paper/Body"]
-visible = false
-layout_mode = 2
-mouse_filter = 2
-theme_override_constants/h_separation = 8
-theme_override_constants/v_separation = 4

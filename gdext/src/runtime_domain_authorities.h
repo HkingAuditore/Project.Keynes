@@ -127,6 +127,7 @@ public:
     bool queue_trigger_command(const RuntimeTriggerCommand &command,
                                std::string &error);
     bool trigger_pod_configured() const;
+    bool read_trigger_snapshot(RuntimeTriggerSnapshot &snapshot, std::string &error) const;
     bool copy_trigger_snapshot(RuntimeTriggerSnapshot &out, std::string &error) const;
     // H8 ACTIVE Trigger stage. Same authority object the SHADOW probe uses; the
     // difference is that ACTIVE supplies real peer ACKs and reads the committed

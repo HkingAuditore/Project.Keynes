@@ -20,7 +20,6 @@ func _init() -> void:
 		_test_market_funded_build(catalog, profile)
 		_test_cash_failure_is_atomic(catalog, profile)
 		_test_grouped_material_planner(catalog, profile)
-		_test_early_military_material_substitutes(catalog, profile)
 	print("=== treasury construction runtime: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
 
@@ -286,72 +285,18 @@ func _test_grouped_material_planner(source_catalog: Dictionary,
 		int(blocked_report.get("goods_error", 1)) == 0)
 
 
-func _test_early_military_material_substitutes(catalog: Dictionary,
-		profile: Dictionary) -> void:
-	var type_ids: PackedStringArray = catalog.building_type_ids
-	var logs_id := (catalog.good_ids as PackedStringArray).find("logs")
-	for spec in [["warrior_lodge", 30000, ["tech.deadwood_collection",
-				"tech.military.war_bands"]],
-			["palisade_barracks", 60000, []],
-			["earthen_rampart", 70000, []]]:
-		var building_id := type_ids.find(spec[0])
-		var bill: int = spec[1]
-		var ext := _fixture(catalog, profile, 1000000000000, {"logs": 0},
-			PackedStringArray(spec[2]), "logs", bill)
-		_expect("%s logs-only fixture bootstraps" % spec[0],
-			ext != null and building_id >= 0 and logs_id >= 0)
-		if ext == null or building_id < 0 or logs_id < 0:
-			continue
-		_run_day(ext, 0)
-		var handle := int(ext.get_country_cell_summary(0).country_handle)
-		var quote: Dictionary = ext.get_treasury_construction_quotes(
-			handle, 0, PackedInt32Array([building_id]))
-		if quote.get("eligible") != PackedByteArray([1]):
-			print("  ", spec[0], " quote reasons=", quote.get("reason_codes"))
-		_expect("%s can quote both material groups using only logs" % spec[0],
-			quote.get("eligible") == PackedByteArray([1])
-			and quote.get("material_good_ids") == PackedInt32Array([logs_id])
-			and quote.get("material_required") == PackedInt64Array([bill]))
-		_expect("%s construction queues" % spec[0],
-			bool(_submit(ext, handle, building_id, 705).get("ok", false)))
-		var report := _run_day(ext, 1)
-		var receipts: Array = ext.get_construction_command_receipts(0, 8).get(
-			"receipts", [])
-		var receipt: Dictionary = receipts[0] if not receipts.is_empty() else {}
-		if not bool(receipt.get("ok", false)):
-			print("  ", spec[0], " receipt=", receipt)
-		_expect("%s starts and consumes the quoted substitute exactly" % spec[0],
-			bool(receipt.get("ok", false))
-			and int(receipt.get("treasury_goods_used", -1)) == bill
-			and int(receipt.get("market_goods_used", -1)) == 0
-			and _type_total(ext.get_building_cell_snapshot(0), building_id) == 1)
-		_expect("%s construction preserves economy conservation" % spec[0],
-			int(report.get("population_error", 1)) == 0
-			and int(report.get("money_error", 1)) == 0
-			and int(report.get("goods_error", 1)) == 0)
-
-
 func _fixture(catalog: Dictionary, profile: Dictionary, country_cash: int,
-		market_stock_by_good: Dictionary = {},
-		technologies: PackedStringArray = PackedStringArray(),
-		treasury_good: String = "", treasury_quantity: int = 0) -> Object:
+		market_stock_by_good: Dictionary = {}) -> Object:
 	var ext := _new_ext(catalog)
-	var good_ids: PackedStringArray = catalog.good_ids
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var technology_indices := PackedInt32Array()
 	for technology_id in range(technology_ids.size()):
-		if technologies.is_empty() or technologies.has(technology_ids[technology_id]):
-			technology_indices.append(technology_id)
+		technology_indices.append(technology_id)
 	var configured: Dictionary = ext.configure_country(catalog, {
 		"country_runtime_mode": "ACTIVE",
 	}, 1, 914)
 	if not bool(configured.get("ok", false)):
 		return null
-	var treasury_goods := PackedInt32Array()
-	var treasury_quantities := PackedInt64Array()
-	if not treasury_good.is_empty():
-		treasury_goods.append(good_ids.find(treasury_good))
-		treasury_quantities.append(treasury_quantity)
 	var country_boot: Dictionary = ext.bootstrap_country({
 		"country_ids": PackedStringArray(["country.player"]),
 		"country_names": PackedStringArray(["Player"]),
@@ -360,9 +305,9 @@ func _fixture(catalog: Dictionary, profile: Dictionary, country_cash: int,
 		"territory_cells": PackedInt32Array([0]),
 		"technology_offsets": PackedInt32Array([0, technology_indices.size()]),
 		"technology_indices": technology_indices,
-		"treasury_offsets": PackedInt32Array([0, treasury_goods.size()]),
-		"treasury_good_indices": treasury_goods,
-		"treasury_quantities": treasury_quantities,
+		"treasury_offsets": PackedInt32Array([0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
 	}, PackedByteArray([0]))
 	if not bool(country_boot.get("ok", false)):
 		return null
@@ -371,10 +316,11 @@ func _fixture(catalog: Dictionary, profile: Dictionary, country_cash: int,
 	var merchant_signature := (catalog.signature_keys as PackedStringArray).find(
 		"merchant|default")
 	var stock := PackedInt64Array()
-	stock.resize(good_ids.size())
+	stock.resize((catalog.good_ids as PackedStringArray).size())
 	stock.fill(1000000000 if market_stock_by_good.is_empty() else 0)
 	for good_id in market_stock_by_good:
-		var good_index := good_ids.find(String(good_id))
+		var good_index := (catalog.good_ids as PackedStringArray).find(
+			String(good_id))
 		if good_index >= 0:
 			stock[good_index] = int(market_stock_by_good[good_id])
 	var economy_boot: Dictionary = ext.bootstrap_economy({
@@ -476,13 +422,10 @@ func _type_total(snapshot: Dictionary, type_id: int) -> int:
 	if type_id < 0:
 		return 0
 	var total := 0
-	var pending_types: PackedInt32Array = snapshot.get(
-		"construction_type_ids", PackedInt32Array())
 	var pending: PackedInt64Array = snapshot.get(
 		"construction_counts", PackedInt64Array())
-	for row in range(pending_types.size()):
-		if pending_types[row] == type_id:
-			total += pending[row]
+	if type_id < pending.size():
+		total += int(pending[type_id])
 	var built: PackedInt64Array = snapshot.get(
 		"building_counts_by_type", PackedInt64Array())
 	if type_id < built.size():

@@ -16,6 +16,39 @@ var _building_visual_intel: BuildingVisualIntelCache = BuildingVisualIntelCacheS
 var _building_visual_type_count: int = -1
 var _building_visual_force_full_refresh: bool = false
 var _building_visual_diag_logged: bool = false
+var _presented_day := -1
+var _pending_from_day := -1
+var _pending_day := -1
+var _pending_generation := 0
+
+## Display can skip dates. Keep the first source date until the next frame,
+## independently from the notification sent for every settled day.
+func queue_worker_commit(from_day: int, day: int, generation: int) -> void:
+	if not needs_worker_view(generation):
+		return
+	if _pending_day < 0:
+		_pending_from_day = _presented_day if _presented_day >= 0 else from_day
+	_pending_day = day
+	_pending_generation = generation
+
+func needs_worker_view(generation: int) -> bool:
+	return generation > _pending_generation
+
+func publish_worker_view(publish: Callable) -> void:
+	if _pending_day < 0:
+		return
+	_presented_day = _pending_day
+	_pending_day = -1
+	publish.call(_pending_from_day, _presented_day, _pending_generation)
+
+func presented_worker_day() -> int:
+	return _presented_day
+
+func reset_worker_views() -> void:
+	_presented_day = -1
+	_pending_from_day = -1
+	_pending_day = -1
+	_pending_generation = 0
 
 func map_wrap_period_x() -> float:
 	return _wrap_period
@@ -31,6 +64,7 @@ func bind_resources(map: MapData, generator: Object, renderer: Object,
 	_wrap_period = wrap
 
 func release_resources() -> void:
+	reset_worker_views()
 	_current_map = null
 	_generator = null
 	_renderer = null
@@ -153,25 +187,12 @@ func _bind_settlement_labels() -> void:
 
 
 ## G4 moved host responsibilities
-func on_season_changed(host, season_idx: int) -> void:
+func on_season_changed(host, _season_idx: int) -> void:
 	if host._generator == null or host._current_map == null or host._world_data == null:
 		return
-	var cp = host._generator._c() if host._generator.has_method("_c") else null
 	host.mark_map_overlay_dirty(&"season_changed")
-	var use_legacy = false
-	if cp != null and "season_refresh_legacy_signal" in cp:
-		use_legacy = bool(cp.season_refresh_legacy_signal)
-	if not use_legacy:
-		return
-	if host._generator.has_method("queue_season_refresh"):
-		host._generator.queue_season_refresh(season_idx)
-	else:
-		host._generator.refresh_seasonal(host._current_map, host._world_data, season_idx)
-
-
 func on_year_changed(host, _year_idx: int) -> void:
 	if host._generator != null and host._current_map != null and host._world_data != null:
-		host._generator.refresh_yearly(host._current_map, host._world_data)
 		host.mark_map_overlay_dirty(&"year_changed")
 
 

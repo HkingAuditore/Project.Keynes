@@ -310,7 +310,7 @@ func _apply_model(now_msec: int) -> void:
 		UITokens.ACCENT, "", "tax.default")
 	_country_label.text = String(_model.get("country_name", ""))
 	var day := int(_model.get("current_day", -1))
-	_day_label.text = WorldClock.date_text_for_day(day) if day >= 0 else ""
+	_day_label.text = "第 %d 天" % (day + 1) if day >= 0 else ""
 	_day_label.visible = day >= 0
 	_refresh_tabs()
 	_refresh_tax_tabs()

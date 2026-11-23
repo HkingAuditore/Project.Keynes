@@ -27,7 +27,26 @@ static func orographic_lift_from_upstream_idx(host, idx: int, upstream_idx: int,
 	return 0.0
 
 
-## 风场辐合：有符号净流入（W9 之后生产只剩这一种口径，legacy 分支与开关已退役）。
+## 气旋尾流的门槛沿用脚本原有的邻格向内风分量均值。
+static func cyclone_inward_wind(host, cell: HexCell, map: MapData) -> float:
+	var position: Vector2 = host._weather_system._cell_world_pos(cell)
+	var wrap_width: float = host._world_wrap_width_x(map)
+	var incoming := 0.0
+	var checked := 0
+	for neighbor: HexCell in host._weather_system._cell_neighbors(cell, map):
+		if neighbor == null:
+			continue
+		var direction: Vector2 = host._wrapped_delta(
+			host._weather_system._cell_world_pos(neighbor), position, wrap_width)
+		var wind: Vector2 = neighbor.wind_vector
+		if direction.length_squared() <= 0.0001 or wind.length_squared() <= 0.0001:
+			continue
+		incoming += maxf(0.0, direction.normalized().dot(wind.normalized()))
+		checked += 1
+	return clampf(incoming / float(checked), 0.0, 1.0) if checked > 0 else 0.0
+
+
+## 风场辐合：有符号净流入（W9 之后天气场只发布这一种口径）。
 ##
 ## 旧实现是半波整流均值 `mean_d max(0, cos(self→nb, wind_nb))`：六角格 6 个等间隔方向上
 ## 它恒在 0.29–1.25，均匀流（零辐散）也读 1/3 —— 与辐合无关。回归见

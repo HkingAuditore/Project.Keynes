@@ -1,4 +1,4 @@
-#include "economy_cell_class_satisfaction.h"
+#include "economy_runtime.h"
 
 #include <algorithm>
 #include <array>
@@ -71,7 +71,8 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
     worst_classes.resize(count);
     worst_classes.fill(-1);
     state_days.resize(count);
-    EconomyCellClassSatisfaction class_satisfaction(_political_class_ids.size());
+    std::vector<int64_t> class_pop(_political_class_ids.size(), 0);
+    std::vector<int64_t> class_sat(_political_class_ids.size(), 0);
     int64_t scanned_cohorts = 0, scanned_goods = 0, scanned_groups = 0;
     for (int32_t row = 0; row < count; ++row) {
         const int32_t cell = requested_cells[row];
@@ -95,7 +96,8 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
         }
         mobilization_stage.append(mob_stage);
         mobilization_org.append(mob_org);
-        class_satisfaction.clear();
+        std::fill(class_pop.begin(), class_pop.end(), 0);
+        std::fill(class_sat.begin(), class_sat.end(), 0);
         int64_t people = 0, unemployed = 0, sat = 0;
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             ++scanned_cohorts;
@@ -107,19 +109,32 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
                 std::max<int64_t>(0, population_store().employee_employed[slot]), sat);
             unemployed = saturating_add(unemployed, std::max<int64_t>(0, pop - employed), sat);
             const int32_t signature = population_store().signature_id[slot];
-            class_satisfaction.accumulate(_signatures[signature].profession_id,
-                _profession_political_class_index, pop,
-                population_store().composite_satisfaction[slot], sat, saturating_add, saturating_mul);
+            const int32_t profession = _signatures[signature].profession_id;
+            if (profession < 0 || profession >= static_cast<int32_t>(
+                    _profession_political_class_index.size())) return;
+            const int32_t cls = _profession_political_class_index[profession];
+            if (cls < 0 || cls >= static_cast<int32_t>(class_pop.size())) return;
+            class_pop[cls] = saturating_add(class_pop[cls], pop, sat);
+            class_sat[cls] = saturating_add(class_sat[cls], saturating_mul(pop,
+                population_store().composite_satisfaction[slot], sat), sat);
         });
-        for (const int64_t class_headcount : class_satisfaction.headcounts)
-            class_population.append(class_headcount);
-        const auto worst = class_satisfaction.worst();
-        worst_classes[row] = worst.class_index;
-        severity[base + 3] = worst.severity_q16;
+        for (int32_t cls = 0; cls < static_cast<int32_t>(class_pop.size()); ++cls)
+            class_population.append(class_pop[cls]);
         const int32_t market = market_store().cell_to_market[cell];
         if (people > 0) {
             severity[base + 6] = static_cast<int32_t>(std::clamp<int64_t>(
                 mul_div_sat(unemployed, Q16_ONE, people, sat), 0, Q16_ONE - 1));
+            int64_t lowest = Q16_ONE;
+            for (int32_t cls = 0; cls < static_cast<int32_t>(class_pop.size()); ++cls) {
+                if (class_pop[cls] <= 0) continue;
+                const int64_t value = class_sat[cls] / class_pop[cls];
+                if (value < lowest) {
+                    lowest = value;
+                    worst_classes[row] = cls;
+                }
+            }
+            if (lowest < Q16_ONE)
+                severity[base + 3] = static_cast<int32_t>(Q16_ONE - 1 - lowest);
             for (int32_t good = 0; good < goods; ++good) {
                 ++scanned_goods;
                 const int64_t index = market_store().index(market, good);
@@ -169,7 +184,7 @@ Dictionary NativeEconomyRuntime::cell_situation_snapshot(
         uint8_t mask = 0;
         for (int32_t kind = 0; kind < STRIDE; ++kind) {
             // 25% stock/job gaps, 20% unemployment, class composite below 40%.
-            const int64_t threshold = kind == 3 ? EconomyCellClassSatisfaction::DISCONTENT_THRESHOLD :
+            const int64_t threshold = kind == 3 ? Q16_ONE * 3 / 5 :
                 (kind == 6 ? Q16_ONE / 5 : Q16_ONE / 4);
             if (severity[base + kind] >= threshold) mask |= static_cast<uint8_t>(1U << kind);
         }

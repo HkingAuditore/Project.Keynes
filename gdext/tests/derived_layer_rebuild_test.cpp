@@ -475,6 +475,20 @@ void test_resumable_job_evaluates_ramps() {
         expect(near(six->sum_add, 6.0), "L: cell 6 magnitude",
             std::to_string(six->sum_add));
     }
+
+    // The executor uses sampled values while the live readers stay with their owners.
+    const std::vector<pk::DerivedProgramContribution> programs = {program};
+    pk::DerivedCellMaterializeJob frozen(1, 1, 1, 1, 1, options);
+    frozen.freeze_ramp_inputs(programs);
+    sampler = [](int32_t, int32_t, uint64_t) { return -99.0; };
+    frozen.fold_step(programs, 0.0);
+    pk::DerivedCellFront frozen_front;
+    pk::DerivedMaterializeReport frozen_report;
+    expect(frozen.finish(nullptr, frozen_front, frozen_report, skipped),
+        "L: frozen ramp values build without a live metric reader");
+    expect(frozen_front.content_digest() == front.content_digest() &&
+           frozen_report.ramp_terms_evaluated == report.ramp_terms_evaluated,
+        "L: the frozen fold matches the sliced fold after the source metrics change");
 }
 
 

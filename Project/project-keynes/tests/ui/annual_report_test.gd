@@ -63,7 +63,7 @@ func _run() -> void:
 	_expect("copy drops method notes", not text.contains("口径") and not text.contains("满分目标"))
 	_expect("first year does not invent prior GDP", model.chapters[1].rows[0].previous == "无可比数据")
 	_expect("percentage changes use percent signs", text.contains("%") and not text.contains("个百分点"))
-	_expect("title includes year and country", String(model.title).contains("1年") and model.country_name == raw.country_name)
+	_expect("title includes year and country", String(model.title).contains("第 1 年") and model.country_name == raw.country_name)
 	_expect("reward renders exact points", model.reward_text == "48")
 	_expect("cut-paper era artwork selected", String(model.art_path).ends_with("stone.png"))
 	var partial: Dictionary = raw.duplicate(true)

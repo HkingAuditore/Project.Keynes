@@ -132,17 +132,13 @@ varying flat vec4 v_material;
 varying flat vec4 v_climate;
 varying flat vec4 v_data;
 varying flat vec4 v_art;
-// Pack the three per-instance values used by the fragment into one flat slot.
-// Native OpenGL on macOS allows 16 varying slots in total.
-varying flat vec3 v_instance_detail; // x = sub-style, y = instance kind, z = dryness
+// Keep per-instance values in one flat slot to fit the 16-varying GLES3 budget.
+varying flat vec4 v_instance_detail; // x = sub-style, y = instance kind, z = dryness, w = fog knowledge
 varying flat vec3 v_light;
 varying flat vec3 v_direct;
 varying flat vec3 v_sun;
 varying flat vec2 v_axis;
 varying flat vec2 v_rank;
-// [res-fog-memory 2026-11-18] 知识度按**实例**传（flat）：一个道具一个格，
-// 只做逐格灰化，不做格界过渡 —— 与地形共用 fog_memory.gdshaderinc 的同一份公式。
-varying flat float v_knowledge;
 
 // style_lut 的列寻址：夹到 [0, width-1]。见 vertex() 里 texelFetch 那段的说明。
 int rv_style_col(int col, int width) {
@@ -323,7 +319,7 @@ void vertex() {
 	v_misc.z = max(model_scale.x, model_scale.y);
 	float radius_px = mix(radius_px_world, badge_px * 0.5, clamp(lens_amount, 0.0, 1.0));
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
-	v_knowledge = knowledge;
+	v_instance_detail.w = knowledge;
 	v_misc.y = COLOR.g;
 	v_instance_detail.x = meta.b;
 	v_rank = vec2(INSTANCE_CUSTOM.a, radius_px);
@@ -995,6 +991,6 @@ void fragment() {
 	}
 	// [res-fog-memory 2026-11-18] 与地形、植被**同一份**灰化：同一片未发现区里
 	// 道具、贴花、植株、地表必须是同一个纸白。
-	color = pk_fog_memory_wash(color, v_knowledge, 0.94);
+	color = pk_fog_memory_wash(color, v_instance_detail.w, 0.94);
 	COLOR = vec4(color, out_alpha * v_style.a);
 }

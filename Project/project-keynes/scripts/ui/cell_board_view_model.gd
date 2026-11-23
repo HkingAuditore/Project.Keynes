@@ -90,30 +90,31 @@ func build(cell_index: int) -> Dictionary:
 		return cached
 
 	var population: Dictionary = _economy.population_cell_snapshot(cell_index, false)
+	var population_day := int(population.get("read_view_day", day))
 	var population_ready := bool(population.get("ok", false)) \
-		and population.has("populations")
+		and population.has("populations") and population_day >= day
+	if not population_ready:
+		return _pending_payload(population, population_day < day)
 	var population_total := int(population.get("population", 0))
-	if population_total <= 0 and population_ready:
+	if population_total <= 0:
 		for raw in population.get("populations", PackedInt64Array()):
 			population_total += maxi(int(raw), 0)
 	# 无人区没有市场：不把一张全零的表摆给玩家看，也不白白占一个 read-view 订阅。
-	var settled := population_ready and population_total > 0
+	var settled := population_total > 0
 	var market: Dictionary = {}
+	var mobilization: Dictionary = {}
 	if settled:
 		market = _economy.market_cell_snapshot(cell_index)
-
-	var cohort_rows: Array = []
-	if population_ready:
-		cohort_rows = _cohort_rows(cell_index, population)
-	var market_rows: Array = []
-	var market_ready := bool(market.get("ok", false)) and market.has("good_ids")
-	if market_ready:
-		market_rows = _market_rows(market)
-
-	# 原生 read-view 未就绪：不缓存、不编数，调用方稍后重试。
-	if not population_ready or (settled and not market_ready):
-		_stats["pending"] = int(_stats["pending"]) + 1
-		return {"ok": false, "pending": true}
+		if _economy.has_method("cell_mobilization_snapshot"):
+			mobilization = _economy.cell_mobilization_snapshot(cell_index)
+		var market_day := int(market.get("read_view_day", population_day))
+		if not bool(market.get("ok", false)) or not market.has("good_ids") \
+				or market_day != population_day:
+			return _pending_payload(market, market_day != population_day)
+		var mobilization_stale := bool(mobilization.get("ok", false)) \
+			and int(mobilization.get("read_view_day", population_day)) != population_day
+		if mobilization_stale or _snapshot_pending(mobilization):
+			return _pending_payload(mobilization, mobilization_stale)
 
 	var payload := {
 		"ok": true,
@@ -121,12 +122,23 @@ func build(cell_index: int) -> Dictionary:
 		"day": day,
 		"settled": settled,
 		"population": population_total,
-		"market": _market_block(market_rows),
-		"cohorts": _cohort_block(cohort_rows),
+		"market": _market_block(market),
+		"cohorts": _cohort_block(_cohort_rows(population, mobilization)),
 	}
 	_stats["builds"] = int(_stats["builds"]) + 1
 	_store(key, payload)
 	return payload
+
+
+func _pending_payload(snapshot: Dictionary, stale: bool) -> Dictionary:
+	var pending := stale or _snapshot_pending(snapshot)
+	if pending:
+		_stats["pending"] = int(_stats["pending"]) + 1
+	return {"ok": false, "pending": pending}
+
+
+func _snapshot_pending(snapshot: Dictionary) -> bool:
+	return bool(snapshot.get("busy", false)) or bool(snapshot.get("read_view_pending", false))
 
 
 # ───────────────────────────── 物资行情 ─────────────────────────────
@@ -134,10 +146,10 @@ func build(cell_index: int) -> Dictionary:
 ## 五类代表物资：需求最大、本地供给最大、价格最高、价格最低、缺口最大。
 ## 每个角色都在「还没被选走的物资」里挑，所以同一物资只出现一次；某个角色
 ## 挑不出来（例如本地没有供给）就少一行，不拿次优物资凑数冒充。
-func _market_rows(snapshot: Dictionary) -> Array:
+func _market_block(snapshot: Dictionary) -> Dictionary:
 	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
 	if good_ids.is_empty():
-		return []
+		return {"rows": [], "count": 0, "stock_scale": ""}
 	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
 	var price: PackedInt32Array = snapshot.get("price", PackedInt32Array())
 	var demand_ema: PackedInt64Array = snapshot.get("demand_ema", PackedInt64Array())
@@ -212,7 +224,7 @@ func _market_rows(snapshot: Dictionary) -> Array:
 		if picked.size() >= MARKET_TOP_N:
 			break
 	if picked.is_empty():
-		return []
+		return {"rows": [], "count": 0, "stock_scale": ""}
 
 	var max_stock := 0.0
 	for index in picked:
@@ -244,7 +256,8 @@ func _market_rows(snapshot: Dictionary) -> Array:
 			"demand_units": demand_units[index],
 			"supply_units": supply_units[index],
 		})
-	return rows
+	var scale := "0–%s" % UITokens.format_compact_number_cn(max_stock, 3) if max_stock > EPSILON else ""
+	return {"rows": rows, "count": rows.size(), "stock_scale": scale}
 
 
 ## 价格相对成本锚的冷暖：贵 = 朱红，便宜 = 铜绿。颜色代替「偏高/偏低」的文字。
@@ -258,18 +271,11 @@ func _price_accent(price_index: float) -> Color:
 	return UITokens.DOSSIER_INK_MUTED
 
 
-func _market_block(rows: Array) -> Dictionary:
-	var total := 0
-	for row in rows:
-		total += 1
-	return {"rows": rows, "count": total}
-
-
 # ───────────────────────────── 阶层人口 ─────────────────────────────
 
 ## 按当地影响力取前五：人口 + 有产就业 × 权重 + 存款 / 影响力价。
 ## 组织度按职业读取（原生只对职业聚合），同一职业的多个 cohort 共用一个值。
-func _cohort_rows(cell_index: int, snapshot: Dictionary) -> Array:
+func _cohort_rows(snapshot: Dictionary, mobilization: Dictionary) -> Array:
 	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
 	if populations.is_empty():
 		return []
@@ -291,7 +297,7 @@ func _cohort_rows(cell_index: int, snapshot: Dictionary) -> Array:
 	var profession_names: PackedStringArray = snapshot.get(
 		"profession_display_names", PackedStringArray())
 	var ethnicity_indices: PackedInt32Array = snapshot.get("ethnicity_ids", PackedInt32Array())
-	var organization := _organization_by_profession(cell_index)
+	var organization := _organization_by_profession(mobilization)
 
 	var influences := PackedFloat64Array()
 	influences.resize(populations.size())
@@ -378,11 +384,8 @@ func _cohort_rows(cell_index: int, snapshot: Dictionary) -> Array:
 
 ## 组织度只对职业聚合（原生约定：没有异动的职业不单列一行），
 ## 因此读不到就是「无组织读数」，整段不渲染，不伪造 0。
-func _organization_by_profession(cell_index: int) -> Dictionary:
+func _organization_by_profession(snapshot: Dictionary) -> Dictionary:
 	var out := {}
-	if _economy == null or not _economy.has_method("cell_mobilization_snapshot"):
-		return out
-	var snapshot: Dictionary = _economy.cell_mobilization_snapshot(cell_index)
 	if not bool(snapshot.get("ok", false)):
 		return out
 	for raw in snapshot.get("rows", []):

@@ -26,18 +26,20 @@ int main() {
 
     using Timing = pk::RuntimeWorkerTiming;
     t.start();
-    for (auto phase : {Timing::ENVIRONMENT_WAIT, Timing::MAIN_TAIL_WAIT,
-                       Timing::INPUT_RETRY_WAIT}) {
+    for (auto phase : {Timing::ENVIRONMENT_WAIT, Timing::INPUT_RETRY_WAIT}) {
         t.set(phase);
         wait();
         assert(t.snapshot()[phase] > 0);
     }
-    const auto before_pause = t.snapshot();
+    // snapshot() adds the open interval without settling it, so a snapshot taken
+    // before pause(true) can be a microsecond short of what pause() settles.
+    // Compare against the state right after the pause has settled.
     t.pause(true);
-    t.set(Timing::MAIN_TAIL_WAIT);
+    const auto before_pause = t.snapshot();
+    t.set(Timing::INPUT_RETRY_WAIT);
     wait();
     const auto while_paused = t.snapshot();
-    assert(while_paused[Timing::MAIN_TAIL_WAIT] == before_pause[Timing::MAIN_TAIL_WAIT]);
+    assert(while_paused[Timing::INPUT_RETRY_WAIT] == before_pause[Timing::INPUT_RETRY_WAIT]);
     assert(while_paused[Timing::PAUSED] > 0);
     t.save(true);
     wait();

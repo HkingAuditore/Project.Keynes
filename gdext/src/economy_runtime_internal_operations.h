@@ -336,19 +336,8 @@
                                 bool *source_drained_out = nullptr,
                                 uint64_t preferred_family_handle = 0,
                                 bool preferred_family_strict = false);
-    // Cash that a move of `moved_population` from `source_slot` carries on the
-    // live state, resolved through the same rule the write applies
-    // (economy_family_move_cash.h cohort_move_cash). Fills _family_move_plan as
-    // a dry run and mutates no persisted column, so a caller can preflight a
-    // transfer before writing. `will_drain_out` reports whether the move will
-    // empty the source cohort.
-    int64_t plan_cohort_move_cash(int32_t source_slot, int32_t destination_cell,
-                                  int64_t moved_population,
-                                  uint64_t preferred_family_handle,
-                                  bool preferred_family_strict,
-                                  bool *will_drain_out = nullptr);
-    bool apply_start_family_expedition(const Command &cmd,
-                                       std::string &error);
+    bool apply_start_family_expedition(const Command &cmd, std::string &error,
+        const uint8_t *visible = nullptr, int32_t visible_count = 0, uint64_t kit_identity = 0);
     bool apply_cancel_family_expedition(const Command &cmd,
                                         std::string &error);
     bool apply_settle_family_expedition(const Command &cmd,
@@ -389,7 +378,7 @@
                                        const ColonizationKitPlan &kit);
     void refresh_preparing_family_expedition_missing(int32_t expedition);
     void abort_preparing_family_expedition(int32_t expedition, int64_t day,
-                                           uint8_t kind, const char *code);
+                                           uint8_t kind, const char *code, int64_t sequence = 0);
     bool launch_preparing_family_expedition(int32_t expedition, int64_t day,
                                             const ColonizationKitPlan &kit,
                                             std::string &error);
@@ -411,12 +400,10 @@
                                              int64_t effective_day,
                                              int64_t settled_day,
                                              uint8_t kind, const char *code);
-    bool pending_family_expedition_target_taken(uint64_t country_handle,
-                                                int32_t target_cell) const;
-    bool pending_family_expedition_cancel_taken(uint64_t expedition_handle) const;
-    bool has_pending_family_expedition_player_command() const;
+    bool pending_family_expedition_target_taken(uint64_t country_handle, int32_t target_cell) const;
     bool apply_family_expedition_player_command(const Command &cmd,
                                                 std::string &error);
+    bool apply_queued_family_expedition_start(const Command &cmd, std::string &error);
     int64_t family_population_in_cell(uint64_t family_handle,
                                       int32_t cell) const;
     int64_t family_dispatchable_population_in_cell(uint64_t family_handle,
@@ -992,18 +979,6 @@
                                      const std::vector<int64_t> *living_cost_cache = nullptr) const;
     int64_t projected_owner_income_per_day(BuildingGroupConstRef group,
                                            int64_t &sat) const;
-    // Owner cash a merchant post can claim from its market's settled household
-    // retail pool. `extra_slots` is the number of owner seats that will be
-    // added to the market's merchant population by the decision being priced:
-    // 0 for an already staffed lot, the seat count for a vacancy or a new
-    // building. Dilution is what caps free entry.
-    int64_t merchant_retail_owner_income_per_day(int32_t cell,
-                                                 int64_t owner_slots,
-                                                 int64_t extra_slots,
-                                                 int64_t &sat) const;
-    // True for the zero-output building types whose owner income is the
-    // market retail pool rather than a goods receipt.
-    bool is_merchant_service_post(const BuildingType &type) const;
     OwnerOpportunityQuote owner_opportunity_quote(
         BuildingGroupConstRef group, int64_t owner_fillability_q16,
         int64_t employee_fillability_q16, int64_t &sat) const;
@@ -1380,32 +1355,6 @@
     bool investment_commit_portfolio(BuildingInvestmentCellContext &ctx,
                                      bool &population_changed,
                                      std::string &error);
-    // Records the failing investment leg for fatal_context_report(). Called by
-    // investment_commit_portfolio immediately before it returns false, so the
-    // next player report names the cell, type, leg and the two numbers the
-    // assertion compared instead of reporting a bare reason string.
-    void record_investment_fatal_row(int32_t cell,
-                                     const InvestmentCandidatePlan &plan,
-                                     int32_t portfolio_index,
-                                     int32_t portfolio_size, int32_t branch,
-                                     int64_t owner_population,
-                                     int64_t required_capital, int64_t carried,
-                                     int64_t correction, int32_t owner_slot,
-                                     int64_t owner_funds, bool source_drained);
-    // Records the failing construction-material payment for
-    // fatal_context_report(). commit_preflighted_build_command() calls it at its
-    // two drift assertions (funds / stock); without it a
-    // building_construction_preflight_*_drift stop names no cell, type or number.
-    void record_construction_fatal_row(int32_t cell, int32_t type_id,
-                                       int64_t allocated_count,
-                                       int64_t total_cost, int32_t owner_slot,
-                                       int64_t owner_funds, int64_t funding_gap,
-                                       int64_t debt_principal,
-                                       bool material_feasible,
-                                       int32_t good_count, int32_t first_good_id,
-                                       int64_t first_required,
-                                       int64_t first_stock,
-                                       const char *reason);
     // Phase-2.4.4.4: StageOps drains for early/late graph stages that were still
     // single-slice in dispatch (Host advances stage_index once per pulse).
     bool run_ledger_apply_drain(int64_t &work_done, std::string &error);
@@ -1454,6 +1403,17 @@ private:
                                       bool commit_ledger = false);
     void collect_family_edges_for_cohort(int32_t slot,
                                          std::vector<int32_t> &out) const;
+    // Give the investment preview only the data needed to copy its opening claims.
+    template <typename Visitor>
+    void for_each_cohort_cash_claim(int32_t slot, std::vector<int32_t> &scratch,
+                                   Visitor visit) const {
+        if (family_memberships().empty()) return;
+        collect_family_edges_for_cohort(slot, scratch);
+        for (int32_t edge : scratch) {
+            const auto &row = family_memberships()[edge];
+            visit(row.family_handle, row.people, row.cash_claim);
+        }
+    }
     int64_t family_ledger_basis_for_slot(int32_t slot) const;
     // Structural funds moves (migration, colonization, capital transfers)
     // shift the cohort's ledger opening so they are not read as flows.
@@ -1514,6 +1474,9 @@ private:
                                        int32_t choice_index);
     bool family_founding_player_choice(int32_t cell) const;
     int32_t family_founding_auto_choice(const FamilyFoundingOffer &offer) const;
+    const char *family_founding_choice_error(size_t offer_row,
+        int64_t generation, int32_t choice) const;
+    void publish_family_founding_choice_result(int64_t sequence, int64_t day, const char *reason);
     void apply_due_family_founding_choices();
     void rebuild_family_founding_offer_index();
     int32_t family_founding_offer_for_cell(int32_t cell);
@@ -1537,6 +1500,8 @@ private:
         const std::vector<int32_t> &avoid) const;
     void review_family_lifecycle();
     void assign_core_family_traits(int32_t family_index);
+    int32_t resolve_family_trait_command(int32_t operation, uint64_t handle,
+        const std::string &key, int32_t strength, int64_t day, std::string &error) const;
     void apply_due_family_trait_commands();
     void rebuild_family_influences(bool rebuild_derived = true);
     void reconcile_family_branch_effects(uint64_t branch_handle,

@@ -366,15 +366,6 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         std::clamp(dict_num<int32_t>(
             profile, "investment_merchant_transition_min_improvement_q16",
             32768), 1, static_cast<int32_t>(Q16_ONE));
-    // Share of a market's settled household retail that a merchant *post*
-    // may claim as owner income. See `merchant_retail_owner_income_per_day`:
-    // this is the free-entry cap. 1.0 would split the whole pool down to the
-    // living floor and build ~10x the merchant population; 1/3 keeps the
-    // equilibrium at roughly 2-3x the seed merchant population.
-    _merchant_service_post_share_q16 = std::clamp(dict_num<int32_t>(
-        profile, "merchant_service_post_share_q16",
-        static_cast<int32_t>(Q16_ONE / 3)), 1,
-        static_cast<int32_t>(Q16_ONE));
     const std::string investment_sparse_mode = dict_string(
         profile, "economy_investment_sparse_mode", "ACTIVE");
     _investment_sparse_mode = investment_sparse_mode == "OFF" ? 0

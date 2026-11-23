@@ -115,6 +115,8 @@ func _test_native_passes() -> void:
 	_test_forest_grazer_niche(ext)
 	_test_cold_and_dry_endemic_envelopes(ext)
 	_test_three_continent_food_floor(ext)
+	_test_bootstrap_seeds_climate_compatible_relict(ext)
+	_test_bootstrap_relict_respects_guild_exclusivity(ext)
 	_test_occupancy_persistence_and_introduce(ext)
 	_test_capacity_and_legacy_overlap(ext)
 	_test_730_day_natural_diffusion_invariants(ext)
@@ -657,6 +659,67 @@ func _test_three_continent_food_floor(ext) -> void:
 		if int(foods_by_land[lid]) <= 0:
 			empty_continents += 1
 	_expect("every continent-scale landmass has food", empty_continents == 0)
+
+
+func _test_bootstrap_seeds_climate_compatible_relict(ext) -> void:
+	var map := _make_two_continent_map()
+	var knobs := _species_knobs(map, PackedStringArray(["bio.maize"]))
+	# A 0.55 temperature is too cold for the normal seed envelope here,
+	# but close enough for an established stand to survive.
+	knobs["species_temp_lo"] = PackedFloat32Array([0.60])
+	knobs["species_temp_hi"] = PackedFloat32Array([0.75])
+	knobs["species_moist_lo"] = PackedFloat32Array([0.30])
+	knobs["species_moist_hi"] = PackedFloat32Array([0.80])
+	knobs["species_elev_lo"] = PackedFloat32Array([0.0])
+	knobs["species_elev_hi"] = PackedFloat32Array([0.50])
+	var bootstrap: Dictionary = ext.run_bio_bootstrap_pass(knobs)
+	_expect("bootstrap finds one relict outside the normal seed envelope",
+		bool(bootstrap.get("ok", false)) \
+		and bootstrap.get("occupied_cell_counts") == PackedInt32Array([1]))
+	if not bool(bootstrap.get("ok", false)):
+		return
+	var repeat: Dictionary = ext.run_bio_bootstrap_pass(knobs)
+	_expect("relict placement is deterministic", repeat.get("occupancy_bits") == bootstrap.occupancy_bits)
+	knobs["province_ids"] = bootstrap.province_ids
+	knobs["landmass_ids"] = bootstrap.landmass_ids
+	knobs["occupancy_bits"] = bootstrap.occupancy_bits
+	knobs["explored"] = map.explored_arr
+	knobs["run_diffusion"] = false
+	var persisted: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	_expect("one native persistence pass keeps the relict",
+		bool(persisted.get("ok", false)) and persisted.get("occupancy_bits") == bootstrap.occupancy_bits)
+	knobs["species_temp_lo"] = PackedFloat32Array([0.80])
+	knobs["species_temp_hi"] = PackedFloat32Array([0.95])
+	var hostile: Dictionary = ext.run_bio_bootstrap_pass(knobs)
+	_expect("bootstrap leaves the species absent when no cell can sustain it",
+		bool(hostile.get("ok", false)) and hostile.get("occupied_cell_counts") == PackedInt32Array([0]))
+
+
+func _test_bootstrap_relict_respects_guild_exclusivity(ext) -> void:
+	var map := _make_two_continent_map()
+	var water := map.is_water_arr.duplicate()
+	var land := water.find(0)
+	water.fill(1)
+	water[land] = 0
+	map.is_water_arr = water
+	var knobs := _species_knobs(map, PackedStringArray(["bio.maize", "bio.wheat"]))
+	# The first food species can seed in the only land cell. The second can
+	# survive there at 0.55 but cannot seed normally or share its guild slot.
+	knobs["species_temp_lo"] = PackedFloat32Array([0.40, 0.60])
+	knobs["species_temp_hi"] = PackedFloat32Array([0.75, 0.75])
+	knobs["species_moist_lo"] = PackedFloat32Array([0.30, 0.30])
+	knobs["species_moist_hi"] = PackedFloat32Array([0.80, 0.80])
+	knobs["species_elev_lo"] = PackedFloat32Array([0.0, 0.0])
+	knobs["species_elev_hi"] = PackedFloat32Array([0.50, 0.50])
+	knobs["species_veg_mask0"] = PackedInt32Array([0, 0])
+	knobs["species_veg_mask1"] = PackedInt32Array([0, 0])
+	knobs["species_flags"] = PackedInt32Array([0, 0])
+	knobs["species_carrier_index"] = PackedInt32Array([-1, -1])
+	knobs["species_carrier_alt_index"] = PackedInt32Array([-1, -1])
+	var bootstrap: Dictionary = ext.run_bio_bootstrap_pass(knobs)
+	_expect("relict cannot add a second food species to an occupied guild slot",
+		bool(bootstrap.get("ok", false))
+			and bootstrap.get("occupied_cell_counts") == PackedInt32Array([1, 0]))
 
 
 func _test_occupancy_persistence_and_introduce(ext) -> void:

@@ -1,7 +1,6 @@
 #include "economy_runtime.h"
 #include "country_api.h"
 #include "economy_runtime_variant_helpers.h"
-#include "pk_build_id.h"
 
 #include <algorithm>
 #include <string>
@@ -23,101 +22,6 @@ using namespace variant_helpers;
 Dictionary NativeEconomyRuntime::fatal_context_report() const {
     Dictionary out;
     out["valid"] = _fatal_context.valid;
-    // R1-6: which binary produced this stop. Never persisted, never hashed.
-    out["build_id"] = String::utf8(pk::pk_build_id());
-    // R1-7/R1-8: assertion identity + ledger witness, emitted before the
-    // _fatal_context.valid early-return because the stages that fail without a
-    // command cursor record their row before fail() runs.
-    out["assert_id"] = fatal_assert_id();
-    out["witness"] = fatal_witness_report();
-    if (_investment_fatal_row.valid) {
-        // The BUILDING_COMMIT investment stage has no command/structural cursor,
-        // so the generic fields below stay at their defaults. Without this block
-        // a capital preflight fatal named no cell, type or leg at all. Emitted
-        // even when _fatal_context.valid is still false so a caller that reports
-        // before fail() runs (or the invariant probe) still sees the row.
-        Dictionary row;
-        row["branch"] = _investment_fatal_row.branch;
-        row["cell"] = _investment_fatal_row.cell;
-        row["type_id"] = _investment_fatal_row.type_id;
-        row["portfolio_index"] = _investment_fatal_row.portfolio_index;
-        row["portfolio_size"] = _investment_fatal_row.portfolio_size;
-        row["allocated_count"] = _investment_fatal_row.allocated_count;
-        row["owner_population"] = _investment_fatal_row.owner_population;
-        row["funding_capital"] = _investment_fatal_row.funding_capital;
-        row["merchant_credit"] = _investment_fatal_row.merchant_credit;
-        row["required_capital"] = _investment_fatal_row.required_capital;
-        row["carried"] = _investment_fatal_row.carried;
-        row["correction"] = _investment_fatal_row.correction;
-        row["sponsor_slot"] = _investment_fatal_row.sponsor_slot;
-        row["sponsor_handle"] =
-            static_cast<int64_t>(_investment_fatal_row.sponsor_handle);
-        row["sponsor_family_handle"] = static_cast<int64_t>(
-            _investment_fatal_row.sponsor_family_handle & 0x7fffffffffffffffULL);
-        row["sponsor_population"] = _investment_fatal_row.sponsor_population;
-        row["sponsor_funds"] = _investment_fatal_row.sponsor_funds;
-        row["owner_slot"] = _investment_fatal_row.owner_slot;
-        row["owner_funds"] = _investment_fatal_row.owner_funds;
-        row["source_drained"] = _investment_fatal_row.source_drained;
-        out["investment_row"] = row;
-    }
-    if (_construction_fatal_row.valid) {
-        // Same reason as the investment row: a BUILDING_COMMIT
-        // building_construction_preflight_*_drift stop has no cursor, so the
-        // generic fields are all defaults. Emitted before the _fatal_context.valid
-        // early-return so a reporter that runs before fail() still sees it.
-        Dictionary row;
-        row["reason"] = String::utf8(_construction_fatal_row.reason.c_str());
-        row["cell"] = _construction_fatal_row.cell;
-        row["type_id"] = _construction_fatal_row.type_id;
-        row["allocated_count"] = _construction_fatal_row.allocated_count;
-        row["total_cost"] = _construction_fatal_row.total_cost;
-        row["owner_slot"] = _construction_fatal_row.owner_slot;
-        row["owner_funds"] = _construction_fatal_row.owner_funds;
-        row["funding_gap"] = _construction_fatal_row.funding_gap;
-        row["debt_principal"] = _construction_fatal_row.debt_principal;
-        row["material_feasible"] = _construction_fatal_row.material_feasible;
-        row["good_count"] = _construction_fatal_row.good_count;
-        row["first_good_id"] = _construction_fatal_row.first_good_id;
-        row["first_required"] = _construction_fatal_row.first_required;
-        row["first_stock"] = _construction_fatal_row.first_stock;
-        row["portfolio_index"] = _construction_fatal_row.portfolio_index;
-        row["portfolio_size"] = _construction_fatal_row.portfolio_size;
-        row["capital_limited"] = _building_investment_capital_limited;
-        row["cost_envelope_trimmed"] = _building_investment_cost_envelope_trimmed;
-        row["pending_construction_count"] = static_cast<int64_t>(pending_construction_count());
-        out["construction_row"] = row;
-    }
-    if (!_investment_leg_trace.empty()) {
-        // Every leg of the cell that was being committed, in execution order:
-        // what it carried / corrected / borrowed and how much the owner held when
-        // the material invoice was paid. A drift can be diagnosed from this alone
-        // even when the player cannot send the 40 MB save.
-        godot::Array legs;
-        for (const InvestmentLegTrace &leg : _investment_leg_trace) {
-            Dictionary row;
-            row["candidate"] = leg.candidate;
-            row["type_id"] = leg.type_id;
-            row["allocated"] = leg.allocated;
-            row["transition"] = leg.transition;
-            row["sponsor_slot"] = leg.sponsor_slot;
-            row["owner_slot"] = leg.owner_slot;
-            row["owner_population"] = leg.owner_population;
-            row["required_capital"] = leg.required_capital;
-            row["source_population_before"] = leg.source_population_before;
-            row["source_funds_before"] = leg.source_funds_before;
-            row["carried"] = leg.carried;
-            row["correction"] = leg.correction;
-            row["credit"] = leg.credit;
-            row["owner_funds_after_move"] = leg.owner_funds_after_move;
-            row["owner_funds_after_credit"] = leg.owner_funds_after_credit;
-            row["material_cost"] = leg.material_cost;
-            row["owner_funds_at_material"] = leg.owner_funds_at_material;
-            row["source_drained"] = leg.source_drained;
-            legs.push_back(row);
-        }
-        out["investment_legs"] = legs;
-    }
     if (!_fatal_context.valid) return out;
     out["reason"] = String::utf8(_fatal_context.reason.c_str());
     out["stage"] = stage_name(static_cast<Stage>(_fatal_context.stage));
@@ -789,121 +693,6 @@ Dictionary NativeEconomyRuntime::household_slice_breakdown_work() const {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Sparse-workset probe (diagnostic only).
-//
-// The headless CSV reads the compact slice report, while the full `report()`
-// is what the graphical player consults. Both call this writer so the same
-// counter names exist on both paths; nothing here feeds a settlement decision.
-// ---------------------------------------------------------------------------
-void NativeEconomyRuntime::write_workset_probe_report(Dictionary &out) const {
-    out["workset_cells_planned"] = _workset_cells_planned;
-    out["workset_cells_executed"] = _workset_cells_executed;
-    out["prepare_reuse_count"] = _prepare_reuse_count;
-    out["duplicate_range_count"] = _duplicate_range_count;
-    out["workset_market_cells_due"] = _probe_workset_market_cells_due;
-    out["workset_building_cells"] = _probe_workset_building_cells;
-    out["workset_plan_cells"] = _probe_workset_plan_cells;
-    out["workset_live_cells"] = _probe_workset_live_cells;
-    out["workset_coverage_permille"] = _probe_workset_coverage_permille;
-    out["workset_market_bucket"] = _probe_market_bucket_index;
-    out["workset_market_cycle_days"] = _probe_market_cycle_days;
-    out["workset_plan_cycle_days"] = _probe_plan_cycle_days;
-    out["workset_cells_per_slice"] = _probe_cells_per_slice;
-    out["probe_slice_count"] = _probe_slice_count;
-    out["probe_slice_budget_hits"] = _probe_slice_budget_hits;
-    out["probe_slice_ms_total"] = _probe_slice_ms_total;
-    out["probe_slice_ms_max"] = _probe_slice_ms_max;
-    out["probe_attempt_ms"] = _probe_phase_attempt_ms;
-    out["probe_formula_ms"] = _probe_phase_formula_ms;
-    out["probe_publish_ms"] = _probe_phase_publish_ms;
-    out["probe_epoch_open_ms"] = _epoch_begin_ms;
-    out["probe_formula_loop_ms"] = std::max(
-        0.0, _probe_phase_formula_ms - _epoch_begin_ms);
-    // Fixed-cost decomposition inside the epoch. Every value is an existing or
-    // newly added epoch accumulator; nothing here is recomputed from wall clock
-    // outside the stage that already measured it.
-    out["probe_country_capture_ms"] = _epoch_begin_country_ms;
-    out["probe_workset_ms"] = _epoch_begin_workset_ms;
-    out["probe_resource_lane_ms"] = _epoch_begin_resource_lane_ms;
-    out["probe_fiscal_open_ms"] = _epoch_begin_fiscal_ms;
-    out["probe_fiscal_settlement_ms"] = _fiscal_settlement_ms;
-    out["probe_audit_ms"] = _audit_ms;
-    out["probe_household_market_ms"] = _market_worker_ms +
-        _household_market_prepare_ms + _market_merge_ms;
-    out["probe_investment_ms"] = _investment_ms;
-    out["probe_employment_ms"] = _employment_ms;
-    out["probe_production_ms"] = _production_ms;
-    out["probe_trade_plan_ms"] = _probe_trade_plan_ms;
-    // Remaining stage timers inside the formula loop, exposed so the
-    // "fixed vs per-cell" table has no large unattributed remainder.
-    out["probe_building_plan_ms"] = _building_plan_ms;
-    out["probe_price_ms"] = _price_ms;
-    out["probe_publish_stage_ms"] = _publish_ms;
-    out["probe_trade_settle_ms"] = _trade_settle_ms;
-    out["probe_trade_dispatch_ms"] = _trade_dispatch_ms;
-    out["probe_family_commit_ms"] = _family_commit_normalize_ms +
-        _family_commit_attribution_ms + _family_commit_form_ms +
-        _family_commit_index_ms + _family_commit_lifecycle_ms +
-        _family_commit_influence_ms;
-    out["probe_person_commit_ms"] = _person_commit_retire_ms +
-        _person_commit_index_ms + _person_commit_bind_jobs_ms +
-        _person_commit_claims_ms + _person_commit_equity_ms +
-        _person_commit_promote_ms;
-    out["probe_mirror_capture_ms"] = _probe_phase_mirror_capture_ms;
-    out["probe_mirror_import_ms"] = _probe_phase_mirror_import_ms;
-    // POD publish is whatever the host-measured publish window did not spend on
-    // the mirror. It sits OUTSIDE the host's formulas_ms window, so it must
-    // never be added into the formula total.
-    out["probe_pod_publish_ms"] = std::max(0.0, _probe_phase_publish_ms -
-        _probe_phase_mirror_capture_ms - _probe_phase_mirror_import_ms);
-}
-
-// Compact probe snapshot meant for cross-thread consumption: only scalar
-// counters and the published cadence shape, no market/person/building arrays.
-Dictionary NativeEconomyRuntime::probe_report() const {
-    Dictionary out;
-    out["path"] = "ECONOMY_GRAPH";
-    out["mode"] = "native";
-    out["report_mode"] = "workset_probe";
-    out["configured"] = _configured;
-    out["bootstrapped"] = _bootstrapped;
-    out["epoch_active"] = _epoch_active;
-    out["epoch_id"] = _epoch_id.get();
-    out["current_day"] = _current_day.get();
-    out["sample_day"] = _sample_day;
-    out["last_committed_day"] = _last_committed_day.get();
-    out["stage"] = stage_name();
-    out["fatal"] = _fatal;
-    out["fatal_reason"] = String(_fatal_reason.c_str());
-    write_workset_probe_report(out);
-    // Full cadence shape: N, plan period, per-knife ms, change reason and the
-    // slice-per-epoch estimates. These explain *why* N is what it is, which a
-    // bare N column cannot.
-    write_cadence_report(out);
-    // Cadence shape: the two rotating periods and the slice cap that decide how
-    // much of the map one epoch actually touches.
-    out["market_cycle_days"] = locked_market_cycle_days();
-    out["building_plan_days"] = _building_plan_days.get();
-    out["building_cells_per_slice"] = _building_cells_per_slice;
-    out["economy_live_cells"] = static_cast<int64_t>(_economy_live_cells.size());
-    const CompletedEpochPerf &completed = _last_completed_perf;
-    out["last_completed_perf_valid"] = completed.valid;
-    out["last_completed_epoch_id"] = completed.epoch_id;
-    out["last_completed_sample_day"] = completed.sample_day;
-    out["last_completed_prepare_reuse_count"] = completed.prepare_reuse_count;
-    out["last_completed_workset_cells_planned"] = completed.workset_cells_planned;
-    out["last_completed_workset_cells_executed"] = completed.workset_cells_executed;
-    out["last_completed_duplicate_range_count"] = completed.duplicate_range_count;
-    out["last_completed_household_market_prepare_ms"] =
-        completed.household_market_prepare_ms;
-    out["last_completed_household_market_worker_ms"] =
-        completed.household_market_worker_ms;
-    out["last_completed_household_market_merge_ms"] =
-        completed.household_market_merge_ms;
-    return out;
-}
-
 Dictionary NativeEconomyRuntime::compact_report() const {
     Dictionary out;
     write_hash_work_report(out);
@@ -1402,7 +1191,6 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
     out["fatal_context"] = fatal_context_report();
-    out["build_id"] = String::utf8(pk::pk_build_id());
     out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;
@@ -1410,7 +1198,6 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     write_fiscal_continuation_report(out);
     out["cycle_deadline_day"] = deadline_day;
     write_cadence_report(out);
-    write_workset_probe_report(out);
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
     return out;
@@ -1785,8 +1572,11 @@ Dictionary NativeEconomyRuntime::report() const {
     out["household_market_merge_ms"] = _market_merge_ms;
     out["household_market_merge_aggregate_ms"] = _market_merge_aggregate_ms;
     out["household_market_merge_trade_ms"] = _market_merge_trade_ms;
-    write_workset_probe_report(out);
+    out["prepare_reuse_count"] = _prepare_reuse_count;
+    out["workset_cells_planned"] = _workset_cells_planned;
+    out["workset_cells_executed"] = _workset_cells_executed;
     out["economy_live_cells"] = static_cast<int32_t>(_economy_live_cells.size());
+    out["duplicate_range_count"] = _duplicate_range_count;
     out["market_result_allocation_growth_count"] =
         _market_result_allocation_growth_count;
     out["market_result_allocation_growth_bytes"] =
@@ -3070,7 +2860,6 @@ Dictionary NativeEconomyRuntime::report() const {
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
     out["fatal_context"] = fatal_context_report();
-    out["build_id"] = String::utf8(pk::pk_build_id());
     out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_lag_budget_days"] = _commit_lag_budget_days;
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;

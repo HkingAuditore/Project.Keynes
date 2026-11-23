@@ -1,4 +1,5 @@
 #include "runtime_modifier_pod.h"
+#include "simulation_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -510,7 +511,7 @@ void RuntimeModifierPodAuthority::rebuild_buckets(
                     }
                     if (!merged) rows.emplace_back(identity, add);
                 }
-                const double factor = std::pow(1.0 + (term.factor - 1.0) * magnitude,
+                const double factor = simulation_math::pow(1.0 + (term.factor - 1.0) * magnitude,
                                                static_cast<double>(entry.stacks));
                 bucket.product_factor *= factor;
                 ++bucket.active_count;
@@ -1309,7 +1310,7 @@ bool RuntimeModifierPodAuthority::self_test(std::string &error) {
         });
     if (clamped_bucket == mutated.buckets.end() ||
         std::abs(clamped_bucket->sum_add - 4.0) > 1e-12 ||
-        std::abs(clamped_bucket->product_factor - std::pow(1.25, 4.0)) > 1e-12 ||
+        std::abs(clamped_bucket->product_factor - simulation_math::pow(1.25, 4.0)) > 1e-12 ||
         std::clamp((90.0 + clamped_bucket->sum_add) *
             clamped_bucket->product_factor, -100.0, 100.0) != 100.0)
         return fail("modifier_pod_magnitude_clamp_self_test_failed");

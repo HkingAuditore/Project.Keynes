@@ -10,9 +10,12 @@ namespace pk {
 void append_runtime_golden_report(const NativeSimulationHost *host, godot::Dictionary &report) {
     const char *enabled = pk::runtime_switch_value(pk::RuntimeSwitch::PK_GOLDEN_DOMAINS);
     if (enabled == nullptr || std::strcmp(enabled, "1") != 0 || host == nullptr) return;
+    report["golden_domains"] = runtime_golden_dictionary(host->golden_snapshot());
+}
+
+godot::Dictionary runtime_golden_dictionary(const RuntimeGoldenSnapshot &snapshot) {
     godot::Dictionary out;
     out["enabled"] = true;
-    const auto snapshot = host->golden_snapshot();
     out["ready"] = snapshot.ready;
     out["day"] = snapshot.day;
     godot::Dictionary domains;
@@ -27,6 +30,6 @@ void append_runtime_golden_report(const NativeSimulationHost *host, godot::Dicti
     if (snapshot.whole_economy_ready)
         out["whole_economy_hash"] = godot::String(std::to_string(
             static_cast<int64_t>(snapshot.whole_economy_hash)).c_str());
-    report["golden_domains"] = out;
+    return out;
 }
 } // namespace pk

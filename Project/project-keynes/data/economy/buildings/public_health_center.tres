@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"public_health_center"
-display_name = "公共卫生制药厂"
+display_name = "公共卫生中心"
 building_kind = "industrial"
 economic_sector_id = "manufacturing"
 semantic_tags = PackedStringArray("activity.healthcare", "industry.chemicals")

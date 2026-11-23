@@ -15,7 +15,6 @@ func _expect(label: String, passed: bool) -> void:
 func _run() -> void:
 	root.size = Vector2i(1280, 720)
 	root.content_scale_factor = 1.0
-	var worker: bool = not OS.get_cmdline_user_args().has("sync")
 	var game := (load("res://scenes/player_game.tscn") as PackedScene).instantiate()
 	var runtime: WorldRuntimeHost = game.get_node("RuntimeHost")
 	var clock: WorldClock = game.get_node("WorldClock")
@@ -24,14 +23,10 @@ func _run() -> void:
 		if argument.begins_with("year="):
 			clock.days_per_year_count = int(argument.trim_prefix("year="))
 	clock.auto_start = false
-	runtime.runtime_shadow_on_generate = worker
 	var saves = root.get_node("GameSave")
 	var previous_autosave: bool = bool(saves.get("_autosave_enabled"))
 	saves.set("_autosave_enabled", false)
 	root.add_child(game)
-	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("mask="):
-			runtime.runtime_authority_domain_mask = int(arg.trim_prefix("mask="))
 	await runtime.world_ready
 	await get_tree().process_frame
 	var controller = game.get_node("PlayerController")
@@ -46,7 +41,7 @@ func _run() -> void:
 			break
 		await get_tree().process_frame
 	var state: Dictionary = runtime.annual_report_status()
-	print("[annual-runtime] worker=%s clock=%d state=%s" % [str(worker), clock.day_index(), JSON.stringify(state)])
+	print("[annual-runtime] clock=%d state=%s" % [ clock.day_index(), JSON.stringify(state)])
 	_expect("one report at the first new year", int(state.get("report_count", 0)) == 1)
 	var report: Dictionary = runtime.annual_report_snapshot(1)
 	_expect("first complete new-game year graded", bool(report.get("complete", false)))

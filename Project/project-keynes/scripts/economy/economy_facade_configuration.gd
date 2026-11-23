@@ -34,8 +34,9 @@ static func configure(context, host, world_ext: DCWorldExt, cell_count: int, see
 		var natural: Dictionary = host._world_ext.configure_economy_natural_resources(
 			ResourceProfileRegistry.build_pass_knobs())
 		if not bool(natural.get("ok", false)):
-			push_warning("EconomyFacade: worker natural resources not configured: %s" % [
-				str(natural.get("code", ""))])
+			host._configured = false
+			natural["reason"] = String(natural.get("code", "natural_resource_configuration_failed"))
+			return natural
 	host._construction_receipt_cursor = 0
 	host._colonization_receipt_cursors.clear()
 	host._canal_receipt_cursors.clear()

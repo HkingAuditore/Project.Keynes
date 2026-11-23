@@ -23,6 +23,7 @@
     "native_simulation_host_country_assets.cpp": "simulation host composes and drives NativeEconomyRuntime",
     "native_simulation_host_country_boundary.cpp": "simulation host composes and drives NativeEconomyRuntime",
     "native_simulation_host_country_stage.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_day_tail.cpp": "simulation host publishes executor-owned natural resource results",
     "native_simulation_host_economy.cpp": "simulation host composes and drives NativeEconomyRuntime",
     "native_simulation_host_effect.cpp": "simulation host composes and drives NativeEconomyRuntime",
     "native_simulation_host_effect_tests.cpp": "simulation host composes and drives NativeEconomyRuntime",

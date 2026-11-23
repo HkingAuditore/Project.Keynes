@@ -78,6 +78,8 @@ uint64_t RuntimeClimateKernel::input_hash(const RuntimeEnvironmentSnapshot &inpu
     hash = mix_vector(hash, input.cell_sea_ice_frac_prev);
     hash = mix_vector(hash, input.cell_river_discharge_30d);
     hash = mix_vector(hash, input.cell_vegetation_vitality);
+    if (!input.season_growth_pressure.empty())
+        hash = mix_vector(hash, input.season_growth_pressure);
     hash = mix_vector(hash, input.cell_insolation_dev);
     hash = mix_vector(hash, input.cell_heat_input);
     hash = mix_vector(hash, input.cell_wind_x);

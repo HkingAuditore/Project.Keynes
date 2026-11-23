@@ -1,5 +1,6 @@
 extends Node
 const NativeWorld = preload("res://scripts/data_core/native_world.gd")
+const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 signal save_completed(slot_id: String, result: Dictionary)
 signal load_completed(slot_id: String, result: Dictionary)
 signal _slot_verification_completed(slots: Array)
@@ -337,6 +338,11 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 	return result
 
 
+func pending_era_advancement() -> Dictionary:
+	var state: Variant = _pending_view.get("era_advancement", {})
+	return state if state is Dictionary else {}
+
+
 func apply_pending_view(map: MapData) -> void:
 	if _pending_view.is_empty():
 		return
@@ -365,32 +371,36 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		and OS.get_environment("PK_SAVE_PROVIDER_HASH_SYNC") != "1"
 	_profile_save_window(true)
 	_world_clock.pause(true)
+	_runtime_host._sync_runtime_worker_clock()
 	var boundary: Dictionary = await _wait_for_safe_boundary(generation)
 	if not bool(boundary.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return boundary
-	# The exploration trail is explored-only state that still belongs to the
-	# world. Drain it inside the safe boundary, before any provider snapshot;
-	# refusing the save is safer than writing a PKFG with lost explored cells.
-	if _runtime_host != null and _runtime_host.has_method(
-			"flush_military_exploration_trail_for_save"):
-		var explored_flush: Dictionary = _runtime_host.flush_military_exploration_trail_for_save()
-		if not bool(explored_flush.get("ok", false)):
-			_restore_clock_mode(was_paused, previous_speed, generation)
-			_busy = false
-			return _result(false, String(explored_flush.get("reason",
-				"military_exploration_trail_flush_failed")),
-				"探索轨迹未能写入地图，已取消保存。")
 	var runtime_bundle := await _capture_native_runtime_bundle(generation)
 	if not bool(runtime_bundle.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return runtime_bundle
-	var collected := _collect_sections(was_paused, previous_speed,
-		 runtime_bundle.get("bytes", PackedByteArray()),
-		 runtime_bundle.get("country_pkcn", PackedByteArray()),
-		 runtime_bundle.get("economy_ecp2", PackedByteArray()), defer_provider_hashes)
+	_runtime_host._consume_runtime_commit_if_ready()
+	if not _runtime_host.synchronize_environment_display_for_save():
+		_restore_clock_mode(was_paused, previous_speed, generation)
+		_busy = false
+		return _result(false, "save_environment_display_failed", "未能同步已结算的地图环境，已取消保存。")
+	var ext = _runtime_host.generator().get_data_core_world_ext()
+	if ext != null:
+		var resources := EconomyDisplay.apply_published_resources(ext)
+		var species := BioOccupancyDailySystem.apply_published_occupancy(ext)
+		var vision := _runtime_host.apply_runtime_vision_display()
+		if not bool(vision.get("ok", false)):
+			_restore_clock_mode(was_paused, previous_speed, generation)
+			_busy = false
+			return _result(false, "save_vision_writeback_failed", "视野未能写入地图，已取消保存。")
+		if not bool(resources.get("ok", false)) or not bool(species.get("ok", false)):
+			_restore_clock_mode(was_paused, previous_speed, generation)
+			_busy = false
+			return _result(false, "save_ecology_writeback_failed", "资源或物种未能写入地图，已取消保存。")
+	var collected := _collect_sections(was_paused, previous_speed, runtime_bundle, defer_provider_hashes)
 	if not bool(collected.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
@@ -445,19 +455,7 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 	if generation < 0:
 		generation = _runtime_generation
 	const MAX_WAIT_FRAMES := 1800
-	# 同一个 blocking code 连续出现的帧/墙钟上限。
-	#
-	# 冻结时钟后有些边界不可能在暂停期间推进，最典型的是
-	# save_requires_idle_effect_country：年度结算奖励的 Effect 命令要等下一个
-	# **游戏日** 才会 ACK，而存档已经 pause 了时钟。旧实现会一直等满 1800 帧，
-	# 每帧重跑 advance_save_boundary() 里的整条日系统链（trigger/ideology/
-	# effect/modifier/gameplay_effect + economy inflight）。实测（desktop headless，
-	# 60x40，10x，sync-write 复现 web 路径）这一轮空转把 Godot 静态内存抬高
-	# **约 600 MB，而且永不归还**——每次年度自动存档都会再抬一次，web 的 2 GiB
-	# wasm 堆因此在第 2–4 个游戏年撞墙，随后控制台就是每次鼠标事件一对
-	# "Cannot enlarge memory" + "table index is out of bounds"。
-	# 失败路径本来就会 `_last_autosave_year = year - 1`（下一个年份再试），
-	# 所以早点放弃没有任何功能损失；web 还顺带避免了主线程被堵几十秒。
+	# 某些回执要到次日才会产生。时钟暂停后，避免持续重跑等待中的旧日系统。
 	const MAX_STALL_FRAMES := 240
 	const MAX_STALL_FRAMES_WEB := 90
 	const MAX_WAIT_MSEC := 8000
@@ -504,11 +502,6 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 				print("[save] boundary wait frame=%d code=%s condition=%s detail=%s" % [
 					frame, code, String(boundary.get("blocking_condition", "")),
 					JSON.stringify(_boundary_diagnostics())])
-		# 空转期间不必每帧重跑日系统链；隔帧推进把内存增速再压一半。
-		var generator := _runtime_host.generator()
-		if generator != null and generator.has_method("advance_save_boundary") \
-				and (frame % 2 == 0):
-			generator.advance_save_boundary()
 		await get_tree().process_frame
 	if not _session_active(generation):
 		return _session_cancelled()
@@ -581,16 +574,13 @@ func _can_save() -> Dictionary:
 			or _runtime_host.generator() == null:
 		return _result(false, "save_runtime_missing", "游戏尚未就绪，请稍后再试。")
 	var generator := _runtime_host.generator()
-	# 暂停后 worker 仍会排空已经接收的环境输入。必须等它停稳，才可捕获
-	# 主线程国家只读副本，避免请求时的 PKCN 与稍后生成的 PKSR 相差数天。
+	var country_has_checkpoint := false
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
-		if String(thread.get("simulation_host_state", "")) == "FAULTED":
+		country_has_checkpoint = bool(thread.get("country_worker_authoritative", false))
+		if _runtime_host.is_runtime_fault_paused() or String(thread.get("simulation_host_state", "")) == "FAULTED":
 			return _blocked_result("worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
-				String(thread.get("fault_code", "unknown")), "worker_faulted")
-		# 这三条子条件以前共用一个 code，在日志里完全分不开：state 还停在
-		# RUNNING（暂停没送到 worker）、环里还有未来帧没人消费、和"一天正飞"
-		# 都会表现为同一个 save_requires_idle_worker。condition 把它们分开。
+				String(_runtime_host.get_runtime_fault_diagnostics().get("fault_code", thread.get("fault_code", "unknown"))), "worker_faulted")
 		var idle_blocker := _worker_idle_blocker(thread)
 		if not idle_blocker.is_empty():
 			return _blocked_result("save_requires_idle_worker",
@@ -607,7 +597,9 @@ func _can_save() -> Dictionary:
 	# Effect preflight but has not received the owning domain's durable ACK.
 	if effect != null and effect.world_ext() != null:
 		var adapters: Dictionary = effect.native_adapter_report()
-		if bool(adapters.get("country_pending", false)):
+		# The host checkpoint carries pending Country packets and their Effect
+		# receipt bindings. Future-day commands cannot drain with the clock paused.
+		if not country_has_checkpoint and bool(adapters.get("country_pending", false)):
 			return _blocked_result("save_requires_idle_effect_country",
 				"等待理念/Effect Country 命令提交", "effect_country_pending")
 		if bool(adapters.get("economy_pending", false)):
@@ -636,10 +628,13 @@ func _can_save() -> Dictionary:
 			or int(peer_status.get("rejected_intents", 0)) > 0:
 			return _blocked_result("save_requires_idle_country_peer",
 				"Country peer continuation 尚未到达可保存边界。", "country_peer_intents")
-	if country_ext_available:
-		country_busy = country_busy or country.should_run(_world_clock.day_index())
-	else:
-		country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
+	# The checkpoint includes future commands. The calendar is one day ahead
+	# of the committed state and must not drive the synchronous Country store.
+	if not country_has_checkpoint:
+		if country_ext_available:
+			country_busy = country_busy or country.should_run(_world_clock.day_index())
+		else:
+			country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
 	if country_busy:
 		# 三个来源：report.busy / country_should_run(day) / 无扩展时的
 		# command_preflight。日志里必须能分开，否则又是一句"国家没空闲"。
@@ -676,23 +671,20 @@ func _worker_idle_blocker(thread: Dictionary) -> String:
 		return "inline_day_pending" if bool(thread.get("inline_day_pending", false)) else ""
 	if host_state in ["STARTING", "RUNNING", "SAVE_PENDING"]:
 		return "state_%s" % host_state.to_lower()
-	if host_state != "STOPPED" and int(thread.get("environment_ring_pending", 0)) > 0:
-		return "environment_ring_pending"
 	if int(thread.get("worker_day_inflight", 0)) > 0:
 		return "worker_day_inflight"
 	return ""
 
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
-		native_runtime_bundle: PackedByteArray = PackedByteArray(),
-		native_country_pkcn: PackedByteArray = PackedByteArray(),
-		native_economy_ecp2: PackedByteArray = PackedByteArray(),
-		defer_provider_hashes: bool = false) -> Dictionary:
+		native_bundle: Dictionary, defer_provider_hashes: bool = false) -> Dictionary:
 	var generator := _runtime_host.generator()
 	var context := _provider_context(_runtime_host, generator, saved_paused, saved_speed)
-	context["native_runtime_bundle"] = native_runtime_bundle
-	context["native_country_pkcn"] = native_country_pkcn
-	context["native_economy_ecp2"] = native_economy_ecp2
+	context["native_runtime_bundle"] = native_bundle.get("bytes", PackedByteArray())
+	context["native_country_pkcn"] = native_bundle.get("country_pkcn", PackedByteArray())
+	context["native_economy_ecp2"] = native_bundle.get("economy_ecp2", PackedByteArray())
+	context["native_pkmi"] = native_bundle.get("pkmi", PackedByteArray())
+	context["native_pknr"] = native_bundle.get("pknr", PackedByteArray())
 	var sections := {}
 	var provider_manifest: Array = []
 	var provider_hash_payloads: Array = []
@@ -1047,7 +1039,9 @@ func _capture_native_runtime_bundle(generation: int = -1) -> Dictionary:
 					"后台 runtime bundle 校验失败。")
 			return {"ok": true, "bytes": bytes,
 				"country_pkcn": polled.get("country_pkcn", PackedByteArray()),
-				"economy_ecp2": polled.get("economy_ecp2", PackedByteArray())}
+				"economy_ecp2": polled.get("economy_ecp2", PackedByteArray()),
+				"pkmi": polled.get("pkmi", PackedByteArray()),
+				"pknr": polled.get("pknr", PackedByteArray())}
 		var state := String(generator.get_runtime_thread_report().get(
 			"simulation_host_state", ""))
 		if state == "FAULTED":

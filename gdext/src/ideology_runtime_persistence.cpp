@@ -30,6 +30,77 @@
 namespace pk {
 using namespace godot;
 
+namespace {
+constexpr uint32_t DERIVED_PROJECTION_MARKER = 0x31504344u; // DCP1
+void append_derived_projection(std::vector<uint8_t> &out,
+        const DerivedCellFront &front,
+        const std::vector<DerivedProgramContribution> &targets) {
+    append_le(out, DERIVED_PROJECTION_MARKER);
+    append_le(out, front.generation);
+    append_vec(out, front.stat_versions);
+    append_le<uint32_t>(out, front.rows.size());
+    for (const DerivedCellStatRow &row : front.rows) {
+        append_le(out, row.stat_id);
+        append_vec(out, row.cells);
+        for (const DerivedCellContribution &term : row.contributions) {
+            append_le(out, term.source_country);
+            append_le(out, term.contributor_count);
+            append_le(out, term.sum_add);
+            append_le(out, term.product_nonzero);
+            append_le(out, term.zero_factor_count);
+        }
+    }
+    append_le<uint32_t>(out, targets.size());
+    for (const DerivedProgramContribution &target : targets) {
+        append_le(out, target.source_country);
+        append_le(out, target.ideology_id);
+        append_le(out, target.level);
+        append_le(out, target.program_hash);
+        append_vec(out, target.cells);
+    }
+}
+
+bool read_derived_projection(const uint8_t *data, size_t size, size_t &cursor,
+        DerivedCellFront &front, std::vector<DerivedProgramContribution> &targets) {
+    uint32_t marker = 0, stat_count = 0, target_count = 0;
+    if (!read_le(data, size, cursor, marker) || marker != DERIVED_PROJECTION_MARKER ||
+        !read_le(data, size, cursor, front.generation) ||
+        !read_vec(data, size, cursor, front.stat_versions, size / sizeof(uint64_t)) ||
+        !read_le(data, size, cursor, stat_count) || stat_count > front.stat_versions.size())
+        return false;
+    for (uint32_t i = 0; i < stat_count; ++i) {
+        DerivedCellStatRow row;
+        if (!read_le(data, size, cursor, row.stat_id) ||
+            !read_vec(data, size, cursor, row.cells, size / sizeof(int32_t)))
+            return false;
+        for (size_t cell = 0; cell < row.cells.size(); ++cell) {
+            DerivedCellContribution term;
+            if (!read_le(data, size, cursor, term.source_country) ||
+                !read_le(data, size, cursor, term.contributor_count) ||
+                !read_le(data, size, cursor, term.sum_add) ||
+                !read_le(data, size, cursor, term.product_nonzero) ||
+                !read_le(data, size, cursor, term.zero_factor_count))
+                return false;
+            row.contributions.push_back(term);
+        }
+        front.rows.push_back(std::move(row));
+    }
+    if (!read_le(data, size, cursor, target_count)) return false;
+    for (uint32_t i = 0; i < target_count; ++i) {
+        DerivedProgramContribution target;
+        target.backend = CellProgramBackend::DerivedCell;
+        if (!read_le(data, size, cursor, target.source_country) ||
+            !read_le(data, size, cursor, target.ideology_id) ||
+            !read_le(data, size, cursor, target.level) ||
+            !read_le(data, size, cursor, target.program_hash) ||
+            !read_vec(data, size, cursor, target.cells, size / sizeof(int32_t)))
+            return false;
+        targets.push_back(std::move(target));
+    }
+    return true;
+}
+} // namespace
+
 // One line explaining WHY a scalar comparison failed, so the named refusal says what
 // disagreed. `cross_domain` rows are reported too: a refusal that was mostly about
 // excluded rows is a different finding from a value that moved.
@@ -1021,6 +1092,11 @@ PackedByteArray NativeIdeologyRuntime::capture() const {
         append_le<int32_t>(bytes, command.choice_index); append_le<int32_t>(bytes, command.gate_id);
         append_le<uint64_t>(bytes, command.submit_order);
     }
+    if (_worker_origin && _modifier_runtime != nullptr) {
+        const auto *front = modifier_api::derived_cell_front(*_modifier_runtime);
+        if (front != nullptr && front->generation == _derived_installed_generation)
+            append_derived_projection(bytes, *front, _derived_installed_contributions);
+    }
     // Plan §18.2: the FULL applied-program basis. One row per (country, program)
     // the derived projection folds: the program key, the effective target-selector
     // identity and a digest of the fold inputs.
@@ -1293,6 +1369,14 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     }
     if (!std::is_sorted(commands.begin(), commands.end(), command_less))
         return fail("ideology_save_command_order_invalid");
+    DerivedCellFront restored_projection;
+    std::vector<DerivedProgramContribution> restored_targets;
+    uint32_t projection_marker = 0;
+    size_t peek = cursor;
+    if (read_le(data, size, peek, projection_marker) &&
+        projection_marker == DERIVED_PROJECTION_MARKER &&
+        !read_derived_projection(data, size, cursor, restored_projection, restored_targets))
+        return fail("ideology_save_truncated");
     // ── plan §18.2: the applied-program basis ─────────────────────────────────
     //
     // Read BEFORE the dates, because that is where it is written: after the command
@@ -1633,6 +1717,16 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     if (_worker_origin) {
         // Worker-authored state binds through Modifier UniqueSource rows that
         // PKCM restores and IDP2 audits; it never owned PKEF bindings.
+        if (_modifier_runtime != nullptr) {
+            restored_projection.sample_day = restored_sample_day;
+            restored_projection.world_identity = _derived_world_identity;
+            restored_projection.map_generation = _derived_map_generation;
+            restored_projection.epoch_id = _derived_epoch_id;
+            restored_projection.execution_contract_hash = restored_contract;
+            _derived_installed_generation = restored_projection.generation;
+            _derived_installed_contributions = std::move(restored_targets);
+            modifier_api::restore_derived_cell_layer(*_modifier_runtime, std::move(restored_projection));
+        }
         Dictionary out; out["ok"] = true; out["state_hash"] = static_cast<int64_t>(state_hash);
         out["worker_origin"] = true;
         return out;

@@ -113,13 +113,9 @@ struct RuntimeClimateStore {
     // finite + physics decode 再付一遍；完整 validate 留给 save/restore/seed。
     bool validate_shape(std::string &error) const;
     bool validate(std::string &error) const;
-    // Covers every persisted field including worker-only bookkeeping. Use for
-    // save, restore and snapshot integrity. ABI 10 stops persisting
-    // temperature_history and therefore stops hashing it here.
+    // Covers every field including worker-only bookkeeping. Use for save,
+    // restore and snapshot integrity. ABI 8+ includes terrain/cover.
     uint64_t state_hash() const;
-    // 冻结 ABI 8/9 的哈希算法：abi7 + terrain/cover，历史 lane 仍经 abi6 混入。
-    // 仅用于读取旧 CLM2 section 时复核它写下的 state_hash。
-    uint64_t state_hash_abi8() const;
     // 冻结 ABI 7 的哈希算法：abi6 + physics_state，不含 terrain/cover。
     uint64_t state_hash_abi7() const;
     // 冻结 ABI 6 的哈希算法，仅供 CLM2 旧档完整性校验；不包含 physics_state。

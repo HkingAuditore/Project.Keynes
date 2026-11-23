@@ -46,6 +46,9 @@
         int64_t cash_paid = 0;
         int64_t treasury_goods_used = 0;
         int64_t market_goods_used = 0;
+        bool military_order = false;
+        bool demolishing = false;
+        const char *step = "economy";
     };
 
     enum CanalSourceKind : uint8_t {
@@ -368,28 +371,6 @@
         int64_t workset_cells_planned = 0;
         int64_t workset_cells_executed = 0;
         int64_t duplicate_range_count = 0;
-        // Sparse-workset probe (diagnostic only, never hashed, reset per epoch).
-        int64_t workset_market_cells_due = 0;
-        int64_t workset_building_cells = 0;
-        int64_t workset_plan_cells = 0;
-        int64_t workset_live_cells = 0;
-        int64_t workset_coverage_permille = 0;
-        int32_t workset_market_bucket = 0;
-        int32_t workset_market_cycle_days = 0;
-        int32_t workset_plan_cycle_days = 0;
-        int32_t workset_cells_per_slice = 0;
-        int64_t probe_slice_count = 0;
-        int64_t probe_slice_budget_hits = 0;
-        double probe_slice_ms_total = 0.0;
-        double probe_slice_ms_max = 0.0;
-        double probe_attempt_ms = 0.0;
-        double probe_formula_ms = 0.0;
-        double probe_publish_ms = 0.0;
-        double probe_epoch_open_ms = 0.0;
-        // Fixed-cost decomposition: boundary mirror split + trade planning.
-        double probe_mirror_capture_ms = 0.0;
-        double probe_mirror_import_ms = 0.0;
-        double probe_trade_plan_ms = 0.0;
         double building_investment_ms = 0.0;
         double investment_evaluate_ms = 0.0;
         double investment_allocate_ms = 0.0;
@@ -615,10 +596,6 @@
         bool family_ownership_seen = false;
         int32_t restored_persons = 0;
         int32_t restored_person_needs = 0;
-        // Expedition payload person lanes whose handle no longer resolves. Only
-        // pre-fix saves carry these; the payload's population, funds and
-        // attribution stay authoritative, so the lane is dropped, not rejected.
-        int32_t dropped_transit_persons = 0;
         bool person_records_seen = false;
         bool person_needs_seen = false;
         int32_t restored_family_traits = 0;
@@ -680,92 +657,6 @@
         bool country_worker_authoritative = false;
     };
     FatalContext _fatal_context;
-    // Transient forensics for failures raised inside a stage that carries
-    // neither a ledger command cursor nor a structural cursor (BUILDING_COMMIT
-    // substage investment). FatalContext cannot recover a row there, so the
-    // failing investment leg records itself here; fatal_context_report() emits
-    // it as a nested `investment` object. Diagnostics only: never persisted,
-    // hashed, restored or published into the committed view.
-    struct InvestmentFatalRow {
-        bool valid = false;
-        // 1 = drained-sponsor branch, 2 = capital top-up branch.
-        int32_t branch = 0;
-        int32_t cell = -1;
-        int32_t type_id = -1;
-        int32_t portfolio_index = -1;
-        int32_t portfolio_size = 0;
-        int64_t allocated_count = 0;
-        int64_t owner_population = 0;
-        int64_t funding_capital = 0;
-        int64_t merchant_credit = 0;
-        int64_t required_capital = 0;
-        int64_t carried = 0;
-        int64_t correction = 0;
-        int32_t sponsor_slot = -1;
-        int64_t sponsor_handle = 0;
-        uint64_t sponsor_family_handle = 0;
-        int64_t sponsor_population = 0;
-        int64_t sponsor_funds = 0;
-        int32_t owner_slot = -1;
-        int64_t owner_funds = 0;
-        bool source_drained = false;
-    };
-    InvestmentFatalRow _investment_fatal_row;
-    // Construction-material payment drift (funds / stock) inside
-    // commit_preflighted_build_command(). Same purpose as the investment row:
-    // BUILDING_COMMIT has no command cursor, so the generic fatal context cannot
-    // name the building or the numbers the assertion compared.
-    struct ConstructionFatalRow {
-        bool valid = false;
-        int32_t cell = -1;
-        int32_t type_id = -1;
-        int64_t allocated_count = 0;
-        int64_t total_cost = 0;
-        int32_t owner_slot = -1;
-        int64_t owner_funds = 0;
-        int64_t funding_gap = 0;
-        int64_t debt_principal = 0;
-        bool material_feasible = false;
-        int32_t good_count = 0;
-        int32_t first_good_id = -1;
-        int64_t first_required = 0;
-        int64_t first_stock = 0;
-        int32_t portfolio_index = -1;
-        int32_t portfolio_size = 0;
-        std::string reason;
-    };
-    ConstructionFatalRow _construction_fatal_row;
-    // Per-leg snapshot of the investment commit, recorded while the writes
-    // happen. A drift backstop can then be diagnosed from a single player log:
-    // it shows what each leg actually carried / corrected / credited and how much
-    // the owner held when the material invoice was paid, without needing the
-    // player's 40 MB save.
-    struct InvestmentLegTrace {
-        int32_t candidate = -1;
-        int32_t type_id = -1;
-        int64_t allocated = 0;
-        bool transition = false;
-        int32_t sponsor_slot = -1;
-        int32_t owner_slot = -1;
-        int64_t owner_population = 0;
-        int64_t required_capital = 0;
-        int64_t source_population_before = 0;
-        int64_t source_funds_before = 0;
-        int64_t carried = 0;
-        int64_t correction = 0;
-        int64_t credit = 0;
-        int64_t owner_funds_after_move = 0;
-        int64_t owner_funds_after_credit = 0;
-        int64_t material_cost = -1;
-        int64_t owner_funds_at_material = -1;
-        bool source_drained = false;
-    };
-    std::vector<InvestmentLegTrace> _investment_leg_trace;
-    // Set by investment_commit_portfolio() right before it pays a leg's
-    // material invoice, so a construction drift can name the leg order instead
-    // of only the cell.
-    int32_t _construction_fatal_portfolio_index = -1;
-    int32_t _construction_fatal_portfolio_size = 0;
     // Closing audit totals are only meaningful once PublishPhase::VERIFY has
     // recomputed them. A mid-epoch fatal leaves the previous epoch's snapshot
     // in place, so the three conservation errors must be reported as unknown
@@ -1279,10 +1170,7 @@
         _family_expedition_procurement_orphans;
     std::unordered_map<int32_t, FamilyExpeditionProcurementRejection>
         _family_expedition_procurement_rejections;
-    // ── National procurement budget + era procurement (transient) ──────────
-    // docs/cpp-dots-runtime/era-advancement-runtime.md §2.2-2.4. Nothing here
-    // enters PKEC, the state hash or the read-view authority: the player
-    // session re-pushes policy/targets after load.
+    // National procurement budgets and era purchases continue through ECP2.
     struct EraProcurementLine {
         int32_t good = -1;
         int64_t required = 0;
@@ -1334,10 +1222,6 @@
         std::mutex mutex;
         std::vector<PendingProcurementUpdate> updates;
         uint64_t next_order = 1;
-        // Latest requested configuration per handle, visible immediately to
-        // snapshot readers even before the next epoch applies it.
-        std::map<uint64_t, PendingProcurementUpdate> requested_policy;
-        std::map<uint64_t, PendingProcurementUpdate> requested_era;
     };
     std::unique_ptr<ProcurementInbox> _procurement_inbox =
         std::make_unique<ProcurementInbox>();
@@ -1349,7 +1233,7 @@
     std::vector<int64_t> _epoch_research_daily;
     int32_t _procurement_default_treasury_share_bp = 200;
     int32_t _procurement_default_research_share_bp = 5000;
-    // Transient monotone trade-order counters indexed by country slot and
+    // Monotone trade-order counters indexed by country slot and
     // stamped with the handle that owns the slot.
     std::vector<std::pair<uint64_t, int64_t>> _country_trade_orders_by_slot;
     struct EraProcurementCandidate {
@@ -1407,10 +1291,6 @@
     // -1 = no national policy (legacy behaviour); otherwise remaining cash
     // allowance for colonization procurement today.
     int64_t colonization_procurement_allowance(uint64_t country_handle, int64_t day);
-    // The epoch freeze only grants the channel to countries that already had a
-    // preparing party at the boundary; a party created mid-epoch repairs the
-    // missing budget here instead of being refused until the next epoch.
-    void ensure_epoch_colonization_budget(uint64_t country_handle);
     void consume_colonization_procurement_allowance(uint64_t country_handle,
                                                     int64_t cash);
     void note_procurement_cash(uint64_t country_handle, int32_t kind, int64_t cash);
@@ -1427,21 +1307,6 @@
     std::vector<int64_t> _merchant_trade_purchase_by_cell;
     std::vector<int64_t> _merchant_trade_sale_by_cell;
     std::vector<int64_t> _merchant_credit_drawn_by_cell;
-    // [market] Merchant household retail share of the most recently settled
-    // day, net of income tax. Market-keyed, not cell-keyed: `process_market_cell`
-    // distributes one market's household spend across that market's living
-    // merchants, so the pool a merchant post can claim belongs to the market.
-    // Merchant population is captured in the same settlement pass so the
-    // projection never rescans cohorts. Both reset with the other epoch
-    // metrics and are not persisted -- the same contract as the
-    // `_merchant_procurement_*_by_cell` family above.
-    std::vector<int64_t> _merchant_household_retail_by_market;
-    std::vector<int64_t> _market_merchant_population;
-    // Design knob: the share of household retail attributable to merchant
-    // *posts*. The rest is itinerant trade a post count must not claim.
-    // Free entry would otherwise split the whole market pool down to the
-    // living floor and multiply merchant population by ~10x.
-    int32_t _merchant_service_post_share_q16 = Q16_ONE / 3;
     int64_t _production_input_reserved = 0;
     int64_t _production_input_reserve_shortfall = 0;
     int64_t _construction_material_reserved = 0;
@@ -1626,29 +1491,6 @@
     int64_t _workset_cells_executed = 0;
     int64_t _duplicate_range_count = 0;
     int32_t _workset_last_cursor = 0;
-    // Sparse-workset shape frozen at epoch open. Diagnostic only: read by the
-    // workset probe report and never by any settlement/stage decision.
-    int64_t _probe_workset_market_cells_due = 0;
-    int64_t _probe_workset_building_cells = 0;
-    int64_t _probe_workset_plan_cells = 0;
-    int64_t _probe_workset_live_cells = 0;
-    int64_t _probe_workset_coverage_permille = 0;
-    int32_t _probe_market_bucket_index = 0;
-    int32_t _probe_market_cycle_days = 0;
-    int32_t _probe_plan_cycle_days = 0;
-    int32_t _probe_cells_per_slice = 0;
-    // Continuation accounting for the current epoch (slice granularity).
-    int64_t _probe_slice_count = 0;
-    int64_t _probe_slice_budget_hits = 0;
-    double _probe_slice_ms_total = 0.0;
-    double _probe_slice_ms_max = 0.0;
-    // Boundary phase split fed by the simulation host around an economy day.
-    double _probe_phase_attempt_ms = 0.0;
-    double _probe_phase_formula_ms = 0.0;
-    double _probe_phase_publish_ms = 0.0;
-    double _probe_phase_mirror_capture_ms = 0.0;
-    double _probe_phase_mirror_import_ms = 0.0;
-    double _probe_trade_plan_ms = 0.0;
 
     int32_t _trace_mode = TRACE_SELECTIVE;
     int64_t _trace_memory_budget = 32LL * 1024 * 1024;

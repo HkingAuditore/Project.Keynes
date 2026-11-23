@@ -847,7 +847,7 @@ variant 价格分数先决定替代份额，再形成 market×need 的总量价�
 
 household market 在建筑生产、产品出售和收入分配后计算食品/衣着生存满足，执行确定性缺乏
 生存资料死亡，并按 cohort 人数、当前生存满足率及职业/民族 Q32 率累计出生贡献。worker 只写
-自身 `MarketResult`；主线程按 `cell×ethnicity` 合并为出生结构命令。国内贸易在同一经济
+自身 `MarketResult`。经济执行器按 `cell×ethnicity` 合并为出生结构命令。国内贸易在同一经济
 边界的 `trade_settle` / `trade_dispatch` 阶段运行：到货先进入目的库存；新发运等待本地 household
 清算完成，并保留最新本地需求目标库存和生产投入 reserve 后才移除源库存并
 托管目的商人现金；随后 household market 只使用剩余/已到货状态。出生在结构提交中最后写入
@@ -857,7 +857,7 @@ household market 在建筑生产、产品出售和收入分配后计算食品/�
 ## 并行与确定性
 
 slice 按连续 market range 切分；每个 worker 只写自身市场行及其地块 cohort。worker
-结果先写 `MarketResult`，主线程再按 market 索引归并指标。定点乘除使用 128 位中间
+结果先写 `MarketResult`，经济执行器再按 market 索引归并指标。定点乘除使用 128 位中间
 值与饱和计数；短缺、bundle 和商人收入都使用稳定前缀商，无逐单位余数循环。
 focused test 必须验证 worker/scalar state hash 完全相同。
 
@@ -1242,11 +1242,11 @@ delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacit
   轮转，最多追 60 天。节奏状态不进存档，读档后从当天重新开始（与原主线程行为一致）；
 - 储量仍是 `max(0, reserve + min(extra, 0)) × GOODS_SCALE`，换算与原来的槽位播种完全相同。
 
-再生公式与主线程 `run_natural_resource_pass` 共用 `natural_resource_kernel.h`，系数来自
+再生与旧同步入口 `run_natural_resource_pass` 共用 `natural_resource_kernel.h`，系数来自
 `EconomyFacade.configure()` 调用 `configure_economy_natural_resources(ResourceProfileRegistry.build_pass_knobs())`，
-按储量槽名对齐经济资源。worker 模式下主线程的 `run_natural_resource_pass` 跳过这些资源
-（返回 `skipped_worker_owned_resources`），`flush_runtime_economy_resource_writeback` 改为把 worker 的
-储量和差额按变化格镜像回槽位并 flush 到 MapData，供 UI、生态和存档读取。同步（SUS）路径不变。
+按储量槽名对齐经济资源。正式整日路径由经济执行器推进自己持有的储量，日尾阶段
+`stage_natural_resource_recovery` 推进其余到期资源。主线程通过
+`apply_runtime_economy_resource_writeback` 安装已提交的变化，供地图读取和兼容交接。
 原因：主线程最多领先 worker 3 天，槽位在捕获时反映到哪一天取决于机器速度，按槽位重置储量会让
 同种子长跑不可复现（见 `country-ai-runtime.md` §9）。
 
@@ -1310,7 +1310,7 @@ cause summary；只有 `set_economy_trace_filter()` 选中的 cell 才附带 coh
 `before -> after` delta legs。建筑事件沿用 `(cell, building_type, owner_signature)` owner-lot
 身份，不创建逐栋建筑 Object。
 
-worker 只把选中 market 的 detail fragment 写进 `MarketResult`，主线程按 market index 稳定
+worker 只把选中 market 的 detail fragment 写进 `MarketResult`，经济执行器按 market index 稳定
 append，并在 append 时增量生成 provisional event ID 与 stream hash；`aggregate_publish` 守恒
 通过后只做 O(1) batch commit。失败 epoch 丢弃 staging events，handler 永远看不到未提交变化。
 
@@ -1321,7 +1321,7 @@ scalar/worker 事件确定性。
 
 玩家人口 Inspector 使用独立的 `set_economy_inspector_trace_cell()` 单地块目标。事件 schema v4
 新增 `producer_support_issuance`，把托底发行与普通 `owner_operations` 收入分开。冻结周期中
-worker 仅把居民消费与商人居民销售写入局部结果，主线程再与工资、业主经营、产业供货、商人
+worker 仅把居民消费与商人居民销售写入局部结果，经济执行器再与工资、业主经营、产业供货、商人
 收购、建设和转移支付资金腿合并；提交时以 cohort 总账补齐 `other`，保证来源合计严格等于
 `epoch_income/epoch_expense`。正所得税继续在工资、业主净经营所得和商人家庭销售净所得的
 来源处扣缴；负所得税先写入逐 cohort 临时应税收入，在全部 household clearing 完成后的
@@ -1704,7 +1704,7 @@ identity mapping `cell_to_market[cell] == cell` proves disjoint market ownership
 Each worker mutates only its cell-local population, building, resource-delta,
 market, and sparse-signal lanes. Non-local diagnostics, retained output, trace
 events, and cashflow entries are accumulated in one `ProductionResult` per cell
-and merged on the native main thread in original cursor order. The scalar path
+and merged by the economy executor in original cursor order. The scalar path
 uses the same result-and-merge contract, so worker count does not change state or
 event ordering. Reports expose `building_production_worker_tasks` and
 `building_production_merge_ms`; merge time is already included in
@@ -2015,7 +2015,7 @@ default is `INCREMENTAL` after the fixed-seed 200-day daily dual-audit gate
 completed with zero mismatch. Incremental totals are computed from opening totals plus
 the real delta of generation-stamped population/funds and market-good lanes
 captured at their first mutation. Due household/production worksets are
-pre-registered on the main thread before worker dispatch, while trade, command,
+pre-registered by the economy executor before dispatching parallel work, while trade, command,
 and structural mutations touch their lanes at the native mutation site. The
 shadow, stamps, touched lists, mismatch ledger/lane, and counters are transient
 and excluded from PKEC v19 and both hashes. Bootstrap/restore rebuild the shadow;
@@ -2042,7 +2042,7 @@ evaluation is still scalar. After ready construction is committed,
 pending/existing/resource aggregation as its own cooperative phase; the following
 `investment` phase evaluates and commits bounded review-cell ranges. Both keys are
 always present in `building_commit_breakdown_ms/work`. The planned `>=64` read-only worker result plus
-stable main-thread revalidation/commit split is not yet production behavior.
+stable executor-side revalidation and commit are still planned.
 
 ## 2026-08-24 merit-order offtake and displacement investment
 

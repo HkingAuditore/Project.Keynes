@@ -31,7 +31,7 @@ var text_value := ""
 var decimals := -1
 ## "risk" 让数值与说明转为朱砂色，"warn" 转为黄铜色；空串为常规墨色。
 var tone := ""
-var _ratio_meter := false
+var _snap_value := false
 var _value := 0.0
 var _from_value := 0.0
 var _delta := NAN
@@ -53,6 +53,7 @@ func set_metric(data: Dictionary) -> void:
 	icon_key = StringName(data.get("icon", &""))
 	_from_value = _displayed_value()
 	_value = float(data.get("value", 0.0))
+	_snap_value = bool(data.get("snap_value", false))
 	if is_nan(_from_value) or is_nan(_value):
 		_from_value = _value
 	_delta = float(data.get("delta", NAN))
@@ -60,7 +61,6 @@ func set_metric(data: Dictionary) -> void:
 	text_value = String(data.get("text", ""))
 	decimals = int(data.get("decimals", -1))
 	tone = String(data.get("tone", ""))
-	_ratio_meter = bool(data.get("ratio_meter", false))
 	tooltip_text = String(data.get("tooltip",
 		("%s：%s\n%s" % [title, value_text(), caption]).strip_edges()))
 	_start_animation()
@@ -102,7 +102,7 @@ func _draw_reading(origin: Vector2, text: String, size_px: int, color: Color,
 
 
 func _displayed_value() -> float:
-	if not _has_grown:
+	if _snap_value or not _has_grown:
 		return _value
 	return lerpf(_from_value, _value, _blend)
 
@@ -112,11 +112,6 @@ func _draw() -> void:
 	var h := size.y
 	if show_divider:
 		draw_line(Vector2(w - 0.5, 8.0), Vector2(w - 0.5, h - 8.0), UITokens.DOSSIER_RULE, 1.0)
-	if _ratio_meter:
-		var track := Rect2(10.0, h - 5.0, maxf(0.0, w - 20.0), 3.0)
-		_rounded_bar(track, UITokens.DOSSIER_TRACK, 1.0)
-		track.size.x *= clampf(_displayed_value(), 0.0, 1.0)
-		_rounded_bar(track, _value_color(), 1.0)
 	if dense:
 		_draw_dense(w, h)
 		return

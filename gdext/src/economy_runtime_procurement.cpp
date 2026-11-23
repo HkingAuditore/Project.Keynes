@@ -92,7 +92,6 @@ Dictionary NativeEconomyRuntime::set_country_procurement_policy(
     {
         std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
         update.order = _procurement_inbox->next_order++;
-        _procurement_inbox->requested_policy[update.country_handle] = update;
         _procurement_inbox->updates.push_back(std::move(update));
     }
     out["ok"] = true;
@@ -150,7 +149,6 @@ Dictionary NativeEconomyRuntime::set_era_procurement_target(
     {
         std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
         update.order = _procurement_inbox->next_order++;
-        _procurement_inbox->requested_era[update.country_handle] = update;
         _procurement_inbox->updates.push_back(std::move(update));
     }
     out["ok"] = true;
@@ -174,8 +172,7 @@ void NativeEconomyRuntime::clear_procurement_runtime_state(bool clear_pending) {
     if (clear_pending) {
         std::lock_guard<std::mutex> lock(_procurement_inbox->mutex);
         _procurement_inbox->updates.clear();
-        _procurement_inbox->requested_policy.clear();
-        _procurement_inbox->requested_era.clear();
+        _procurement_inbox->next_order = 1;
     }
 }
 
@@ -384,33 +381,6 @@ void NativeEconomyRuntime::freeze_epoch_procurement_budgets() {
         state->colonization_daily = colonization_daily;
         (void)days;
     }
-}
-
-void NativeEconomyRuntime::ensure_epoch_colonization_budget(
-        uint64_t country_handle) {
-    const auto found = _country_procurement.find(country_handle);
-    if (found == _country_procurement.end()) return;
-    CountryProcurementState &state = found->second;
-    // A party created after the epoch boundary never entered the demand scan,
-    // so the freeze left `colonization_daily` at zero and every purchase would
-    // be judged over budget for the whole epoch. Recover the same split the
-    // freeze would have produced for a country that already had demand.
-    if (!state.policy_enabled || state.colonization_daily > 0 ||
-        state.national_daily <= 0) return;
-    int64_t daily = 0;
-    if (state.colonization_share_bp >= 0) {
-        daily = mul_div_sat(state.national_daily,
-            clamp_bp(state.colonization_share_bp), 10000, _saturation_count);
-    } else {
-        // Legacy split: the channel that never set a share takes whatever the
-        // other pool (national minus research minus era) has left.
-        daily = std::max<int64_t>(0, state.other_daily - state.era_daily);
-    }
-    if (daily <= 0) return;
-    state.colonization_daily = daily;
-    // The channel now exists for this epoch: hand out today's refill instead of
-    // waiting for the next day boundary.
-    state.colonization_allowance = std::max(state.colonization_allowance, daily);
 }
 
 int64_t NativeEconomyRuntime::colonization_procurement_allowance(

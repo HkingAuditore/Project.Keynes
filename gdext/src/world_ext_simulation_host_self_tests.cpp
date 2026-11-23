@@ -1,5 +1,6 @@
 #include "world_ext.h"
 #include "native_simulation_host.h"
+#include "runtime_snapshot_ring.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
 #include "runtime_country_pod.h"
@@ -113,8 +114,9 @@ bool DCWorldExt::runtime_effect_adapter_parity_self_test() {
 }
 
 bool DCWorldExt::runtime_ideology_pod_self_test() const {
+    const auto probe = std::make_unique<NativeSimulationHost>();
     std::string error;
-    const bool ok = RuntimeIdeologyPodAuthority::self_test(error);
+    const bool ok = probe->ideology_pod_self_test(&error);
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_ideology_pod_self_test: ") +

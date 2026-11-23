@@ -24,20 +24,17 @@ extends RefCounted
 ##   supply_goods: Array (6) of PackedInt32Array   (dense good ids)
 ##   supply_yield_q16: Array (6) of PackedInt32Array (q16 per good, 65536 = 1:1)
 ##   unlock_tech_ids: PackedInt32Array   (dense technology ids, index == unlock_bit)
-##   water_lake_bit / water_shallow_bit / water_far_bit / water_deep_bit: int
-##                               (see "water crossing" below; -1 = that water
-##                                tier is never open for this catalog)
+##   coastal_transport_bit / ocean_transport_bit: int  (see "naval transport" below;
+##                               -1 = the catalog does not grant sea movement)
 ##   economy_good_count, soldier_profession_id, unemployed_profession_id,
 ##   ration_need_per_head
 ##
-## Water crossing (army-personnel contract 2 §2.2): the top-level
-## `unlock_tech_ids` array names `tech.river_transport`,
-## `tech.military.coastal_transport`, `tech.celestial_navigation` and
-## `tech.oceanic_ship_design` in that order. Their bits are appended AFTER every
-## unit/building reference, so no existing unlock bit is renumbered; the native
-## core uses them to decide which water tier (lake / shallow / far / deep, from
-## the cell landform) an army may enter. Tiers nest: a country that can enter the
-## far sea can also enter lakes and shallow water.
+## Naval transport (army-personnel contract 2 §2.2): the top-level
+## `unlock_tech_ids` array names the `tech.military.coastal_transport` /
+## `tech.military.naval_transport` ids in that order. Their bits are appended
+## AFTER every unit/building reference, so no existing unlock bit is renumbered;
+## the native core only uses them to gate water movement (coastal = runs of at
+## most 3 consecutive water cells, ocean = no run limit).
 ##
 ## Supply classes (index order, ABI): 0 ration, 1 fodder, 2 ammunition,
 ## 3 fuel, 4 upkeep, 5 equipment.
@@ -210,18 +207,16 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 	var state_buildings: Array = building_result.get("state_buildings", [])
 	unlock_tech_ids = building_result.get("unlock_tech_ids", unlock_tech_ids)
 
-	# ---- water-crossing gates (army-personnel contract 2 §2.2) -------------
-	# Resolved last so every unit/building bit keeps its index. Missing slots
-	# simply never open that water tier.
-	var naval_result := _compile_water_unlocks(data.get("unlock_tech_ids", []),
+	# ---- naval transport gates (army-personnel contract 2 §2.2) ------------
+	# Resolved last so every unit/building bit keeps its index. Both slots are
+	# optional: a catalog without them simply never opens the sea.
+	var naval_result := _compile_naval_unlocks(data.get("unlock_tech_ids", []),
 		tech_index, unlock_tech_ids, unlock_bits)
 	if not bool(naval_result.get("ok", false)):
 		return naval_result
 	unlock_tech_ids = naval_result.get("unlock_tech_ids", unlock_tech_ids)
-	var water_lake_bit := int(naval_result.get("water_lake_bit", -1))
-	var water_shallow_bit := int(naval_result.get("water_shallow_bit", -1))
-	var water_far_bit := int(naval_result.get("water_far_bit", -1))
-	var water_deep_bit := int(naval_result.get("water_deep_bit", -1))
+	var coastal_transport_bit := int(naval_result.get("coastal_transport_bit", -1))
+	var ocean_transport_bit := int(naval_result.get("ocean_transport_bit", -1))
 	var ration := _compile_ration(good_index, economy_catalog)
 	if not bool(ration.get("ok", false)):
 		return ration
@@ -251,10 +246,8 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 		"supply_goods": supply.get("supply_goods", []),
 		"supply_yield_q16": supply.get("supply_yield_q16", []),
 		"unlock_tech_ids": unlock_tech_ids,
-		"water_lake_bit": water_lake_bit,
-		"water_shallow_bit": water_shallow_bit,
-		"water_far_bit": water_far_bit,
-		"water_deep_bit": water_deep_bit,
+		"coastal_transport_bit": coastal_transport_bit,
+		"ocean_transport_bit": ocean_transport_bit,
 		"economy_good_count": good_ids.size(),
 		"soldier_profession_id": soldier_profession,
 		"unemployed_profession_id": unemployed_profession,
@@ -318,12 +311,11 @@ static func validate(catalog: Dictionary, economy_catalog: Dictionary,
 			barracks += 1
 	if barracks == 0:
 		problems.append("no barracks state building declared")
-	# Water crossing (contract 2 §2.2): all four tiers must resolve, or that kind
-	# of water can never open and an army ordered across it would silently do
-	# nothing.
-	for gate in ["water_lake_bit", "water_shallow_bit", "water_far_bit", "water_deep_bit"]:
-		if int(compiled.get(gate, -1)) < 0:
-			problems.append("unlock_tech_ids must name the four water-tier technologies (%s unresolved)" % gate)
+	# Naval transport (contract 2 §2.2): both gates must resolve, or the sea can
+	# never open and an army ordered across water would silently do nothing.
+	if int(compiled.get("coastal_transport_bit", -1)) < 0 \
+			or int(compiled.get("ocean_transport_bit", -1)) < 0:
+		problems.append("unlock_tech_ids must name the coastal and ocean transport technologies")
 	if problems.is_empty():
 		return compiled
 	var failed := compiled.duplicate()
@@ -609,19 +601,16 @@ static func _resolve_unlock(tech_id: String, tech_index: Dictionary,
 	}
 
 
-## Resolves the four water-tier bits from the catalog's `unlock_tech_ids` array,
-## in that order: 0 = lake (`tech.river_transport`), 1 = shallow sea
-## (`tech.military.coastal_transport`), 2 = far sea (`tech.celestial_navigation`),
-## 3 = deep sea (`tech.oceanic_ship_design`). The tier of a tree cell comes from
-## its landform (gdext/src/water_tier.h); a country may enter any tier at or
-## below the highest one it unlocked. Must run after every unit/building
-## reference so no existing unlock bit moves. A missing or empty entry leaves
-## that tier closed (-1).
-static func _compile_water_unlocks(raw_ids, tech_index: Dictionary,
+## Resolves the two naval transport bits from the catalog's `unlock_tech_ids`
+## array: slot 0 = coastal (`tech.military.coastal_transport`, runs of at most 3
+## consecutive water cells) and slot 1 = ocean (`tech.military.naval_transport`,
+## no run limit). Must run after every unit/building reference so no existing
+## unlock bit moves. A missing or empty entry leaves that gate closed (-1).
+static func _compile_naval_unlocks(raw_ids, tech_index: Dictionary,
 		unlock_tech_ids: PackedInt32Array, unlock_bits: Dictionary) -> Dictionary:
 	var ordered_tech := unlock_tech_ids
 	var ordered_bits := unlock_bits
-	var bits := PackedInt32Array([-1, -1, -1, -1])
+	var bits := PackedInt32Array([-1, -1])
 	var rows: Array = raw_ids if raw_ids is Array else []
 	for index in range(mini(rows.size(), bits.size())):
 		var tech_id := String(rows[index]).strip_edges()
@@ -637,10 +626,8 @@ static func _compile_water_unlocks(raw_ids, tech_index: Dictionary,
 		"ok": true,
 		"unlock_tech_ids": ordered_tech,
 		"unlock_bits": ordered_bits,
-		"water_lake_bit": int(bits[0]),
-		"water_shallow_bit": int(bits[1]),
-		"water_far_bit": int(bits[2]),
-		"water_deep_bit": int(bits[3]),
+		"coastal_transport_bit": int(bits[0]),
+		"ocean_transport_bit": int(bits[1]),
 	}
 
 

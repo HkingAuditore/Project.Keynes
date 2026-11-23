@@ -133,6 +133,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	var ideology_facade := IdeologyFacadeScript.new()
 	await _generator._yield_generation_frame()
 	var ideology_catalog: Resource = await _load_ideology_catalog_cooperative()
+	if _generator._loading_frames.canceled:
+		return
 	_generator._loading_profile_step("ideology_facade.configure(")
 	var ideology_configured: Dictionary = ideology_facade.configure(
 		_generator._data_core_world_ext, _generator._country_facade.native_catalog(), ideology_catalog,
@@ -282,17 +284,32 @@ func _load_ideology_catalog_cooperative() -> Resource:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null:
 		return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
-	ResourceLoader.load_threaded_request(IDEOLOGY_CATALOG_PATH, "Resource")
-	while ResourceLoader.load_threaded_get_status(IDEOLOGY_CATALOG_PATH) == \
-			ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+	if _generator._loading_frames.canceled:
+		return null
+	var request := preload("res://scripts/game/loading_resource_request.gd").new(IDEOLOGY_CATALOG_PATH)
+	var start_failure := _ideology_catalog_request_failure(request.start_error, false, null)
+	if not start_failure.is_empty():
+		push_error("[country-init] %s" % start_failure)
+		return null
+	while not request.finished:
 		await _generator._yield_generation_frame()
-	if ResourceLoader.load_threaded_get_status(IDEOLOGY_CATALOG_PATH) == \
-			ResourceLoader.THREAD_LOAD_LOADED:
-		var loaded: Resource = ResourceLoader.load_threaded_get(IDEOLOGY_CATALOG_PATH)
-		# Preserve the catalog's profile/test hook after its threaded load. The
-		# local reference keeps ResourceLoader's cached object alive here.
-		return IdeologyFacadeScript.IdeologyCatalogScript.load_default() if loaded != null else null
-	return IdeologyFacadeScript.IdeologyCatalogScript.load_default()
+		if _generator._loading_frames.canceled:
+			return null
+	var result_failure := _ideology_catalog_request_failure(OK, request.finished, request.result)
+	if not result_failure.is_empty():
+		push_error("[country-init] %s: %s" % [result_failure, IDEOLOGY_CATALOG_PATH])
+		return null
+	# Keep the threaded result while load_default applies the profile/test hook.
+	return IdeologyFacadeScript.IdeologyCatalogScript.load_default(request.result)
+
+
+static func _ideology_catalog_request_failure(start_error: int, finished: bool,
+		result: Resource) -> String:
+	if start_error != OK:
+		return "failed to start ideology catalog load (%s)" % error_string(start_error)
+	if finished and result == null:
+		return "ideology catalog load finished without a resource"
+	return ""
 
 
 func _configure_economy_runtime(map: MapData, seed_value: int) -> Dictionary:
@@ -419,8 +436,7 @@ func refresh_military_terrain(day: int = -1) -> Dictionary:
 	return result
 
 
-## AI 军事议程：玩家国以外的所有国家。player_handles 为空时按
-## gameplay start 的 is_player 标记解析；读档后由 PKAI/PKMI 恢复路径再调一次。
+## 正式开局时启用外国的军事 AI。读档沿用 PKMI 中保存的各国状态。
 
 func _arm_military_ai(player_handles: PackedInt64Array) -> Dictionary:
 	if _generator._military_facade == null or not _generator._military_facade.is_configured():
@@ -455,7 +471,7 @@ func _maybe_register_military_system() -> void:
 	_generator._military_registered_graph_active = _generator._runtime_graph_active
 	_generator._military_registered_graph_mode = graph_mode
 	_generator._military_daily_job = MilitaryDailySystemScript.new(
-		_generator._military_facade, _generator._world_clock_ref, _generator, _generator._gameplay_event_bus)
+		_generator._military_facade, _generator)
 	_generator._sus.configure_job_from_profile(_generator._military_daily_job, cp, false,
 		MilitaryFacadeScript.SYSTEM_ID, 1)
 	_generator._runtime_register_system(_generator._military_daily_job)

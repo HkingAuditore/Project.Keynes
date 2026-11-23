@@ -443,6 +443,29 @@ const BIO_OCCUPANCY_BY_ID := {
 	},
 }
 
+const OVERLAY_ICON_BY_ID := {
+	"bio.maize": &"economy.crop",
+	"bio.wheat": &"economy.crop",
+	"bio.rice": &"economy.crop",
+	"bio.potato": &"economy.crop",
+	"bio.cotton": &"economy.crop",
+	"bio.flax": &"economy.crop",
+	"bio.spice": &"economy.crop",
+	"bio.dye_plant": &"economy.crop",
+	"bio.medicinal_herb": &"economy.crop",
+	"bio.bast_fiber": &"economy.crop",
+	"bio.horse": &"good.horses",
+	"bio.sheep": &"good.wool",
+	"bio.goat": &"economy.livestock",
+	"bio.cattle": &"economy.livestock",
+	"bio.camel": &"economy.livestock",
+	"bio.yak": &"economy.livestock",
+	"bio.pig": &"good.game_meat",
+	"bio.rubber": &"ecology.vegetation",
+	"bio.reed": &"ecology.vegetation",
+	"bio.silkworm": &"ecology.vegetation",
+}
+
 
 static func _veg_masks(veg_ids: Array) -> PackedInt32Array:
 	var mask0 := 0
@@ -603,7 +626,7 @@ static func occupancy_bit_for_signal(compiled: Dictionary, id: StringName) -> in
 
 
 static func overlay_icon_key(id: String) -> StringName:
-	return StringName(id) if BIO_OCCUPANCY_BY_ID.has(id) else &"system.unknown"
+	return OVERLAY_ICON_BY_ID.get(id, &"ecology.growth") as StringName
 
 
 static func occupancy_overlay_entries() -> Array[Dictionary]:

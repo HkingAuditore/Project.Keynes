@@ -16,7 +16,7 @@ func _run() -> void:
 	root.add_child(top_bar)
 	top_bar.set_world_summary(60, 40, 2400, 123456)
 	top_bar.update_time_state(9, 6, 18, false, 20.0)
-	if top_bar._date_label.text != "10年6月18日":
+	if top_bar._date_label.text != "第10年 · 6月18日":
 		failures.append("top bar did not display the current year and calendar date")
 
 	var panel := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene).instantiate() as InspectorPanel

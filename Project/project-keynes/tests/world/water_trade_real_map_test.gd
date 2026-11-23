@@ -78,8 +78,6 @@ func _run() -> void:
 	_host.map_width = MAP_WIDTH
 	_host.map_height = MAP_HEIGHT
 	_host.initial_seed = SEED
-	_host.runtime_climate_authority_enabled = true
-	_host.runtime_authority_domain_mask = 0xFFF
 	_host.runtime_economy_auto_pod_active = true
 	_host.fog_of_war_enabled = false
 	root.add_child(_host)
@@ -200,39 +198,17 @@ func _grant_water_technologies() -> Dictionary:
 
 
 func _run_day(day: int) -> Dictionary:
-	_clock.current_day = float(day)
-	if _host.runtime_climate_authority_enabled:
-		var capacity_deadline := Time.get_ticks_usec() + 60000000
-		while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
-				and Time.get_ticks_usec() < capacity_deadline:
-			_host._consume_runtime_commit_if_ready()
-			await process_frame
-		if not bool(_host.wait_for_climate_consumed(0).get("ok", true)):
-			return {"ok": false, "reason": "climate_input_fifo_not_consumed",
-				"runtime": _runtime_report_snapshot()}
-		_host._consume_runtime_commit_if_ready()
-
-	_host.run_daily_tick(day, _clock.season_phase_for_day(day))
-	_host.finish_daily_tick(0.0, {})
-	if _host.runtime_climate_authority_enabled:
-		var writeback_deadline := Time.get_ticks_usec() + 60000000
-		while Time.get_ticks_usec() < writeback_deadline:
-			_host._consume_runtime_commit_if_ready()
-			var progress := _runtime_report_snapshot()
-			if int(progress.get("simulation_committed_day",
-					progress.get("committed_day", -1))) >= day - 1:
-				break
-			await process_frame
-		var committed := _runtime_report_snapshot()
-		if int(committed.get("simulation_committed_day",
-				committed.get("committed_day", -1))) < day - 1:
-			return {"ok": false, "reason": "simulation_writeback_not_observed",
-				"runtime": committed}
-
-	var drained: Dictionary = await _drain_hard_barrier(day)
-	if not bool(drained.get("ok", false)):
-		return drained
-	return {"ok": true}
+	_host._admit_runtime_calendar(day + 1)
+	var deadline := Time.get_ticks_usec() + 60000000
+	while Time.get_ticks_usec() < deadline:
+		_host._process(0.0)
+		if _host._runtime_commit_day == day:
+			return {"ok": true}
+		if _host.is_runtime_fault_paused():
+			break
+		await process_frame
+	return {"ok": false, "reason": "simulation_commit_not_observed",
+		"runtime": _runtime_report_snapshot()}
 
 
 func _runtime_report_snapshot() -> Dictionary:

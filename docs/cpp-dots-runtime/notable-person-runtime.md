@@ -82,7 +82,7 @@ GDScript 的 `PersonGivenNamePackProfile` 编译稳定排序的名 ID、显示�
 3. 人物继承 cohort 对应需求的实际满足率；
 4. cohort 的实际需求支出按人物需求权重做稳定前缀分摊，匿名人口保留未归因余额；
 5. cohort 的实际消费税按人物已归因支出比例分配为 `epoch_tax`；
-6. worker 只写 `MarketResult`，主线程确定性 merge 到人物 SoA；
+6. 市场并行任务只写 `MarketResult`，经济执行器按确定顺序合并到人物数据；
 7. `PERSON_COMMIT` 依据期初 claim、已实现岗位/产业收入和实际消费流出更新人物 claim，最后以
    membership claim 为硬上限归一化。
 

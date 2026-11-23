@@ -9,8 +9,8 @@
    移除，玩家不能研究它们；它们原本的效果改为「升级时代后获得的 buff」。
 2. 升时代改为：点击屏幕上方时代 icon → 打开时代晋升面板，显示前提条件与成本。
    - 前提条件为科技必达，另三项选二（2026-11-08 调整）：
-     a. 必须完成本时代 45% 科技（本时代 = 当前时代，统计 `era_id == 当前时代` 的研究科技，
-        排除里程碑节点与 `app.*`；state 5 才算完成，开局科技计入；2026-11-19 v7 从 60% 降到 45%）；
+     a. 必须完成本时代 60% 科技（本时代 = 当前时代，统计 `era_id == 当前时代` 的研究科技，
+        排除里程碑节点与 `app.*`；state 5 才算完成，开局科技计入）；
      b. 人口 ≥ 目标时代人口基数 + 每格人口要求 × 当前地块数；
      c. 建筑数 ≥ 目标时代建筑基数 + 每格建筑要求 × 当前地块数（已落成建筑单位数，`BuildingGroup.count` 之和）；
      d. 本时代完成的贸易次数 ≥ 目标时代贸易基数 + 每格贸易要求 × 当前地块数（国内 + 跨国贸易订单，国家作为来源或目的地）。
@@ -61,9 +61,7 @@
   抢经济边界。`research_procurement_policy_for` 在有政策时用 `research_daily` 覆盖日预算
   （研究采购、研究需求信号、财政研究保底三处）。派遣：`refresh_epoch_colonization_demand`
   预算被 `colonization_daily × epoch_days` 截断，筹备期实际国库采购受按日补充、上限 1 周期的额度约束
-  （超额时按剩余额度部分成交、次日继续补买；连一个单位都买不起才记
-  `colonization_procurement_budget_exhausted`；周期中途新建的队伍由
-  `ensure_epoch_colonization_budget` 补发本周期额度）。
+  （超额时 `colonization_procurement_budget_exhausted`，次日重试）。
 - 时代收购 pass `run_government_era_procurement` 在 `GOVERNMENT_RESEARCH_PROCUREMENT` 阶段、
   研究采购完成后运行（slice 路径与 StageOps drain 路径都已接入），一次一笔 `GOOD_FROM_MARKET`，
   同步与 Country worker（`block_or_enqueue_country_worker_asset` + defer settlement）两路；
@@ -167,7 +165,7 @@ good_indices: PackedInt32Array, required_quantities: PackedInt64Array, effective
 - 时代奖励三选一仍由里程碑激活原生触发。若上一份奖励仍为 OPEN/SELECTED_PENDING/ERROR，
   原生 planner 会拒绝新的里程碑通知，所以物资备齐后也要等奖励领取完再提交
   （`PlayerController.get_era_advancement_blocked_reason()` 给出提示）。
-- 条件口径：tech = `era_id == 当前时代` 的非里程碑科技 state 5 比例 ≥ 45%，必须满足；人口
+- 条件口径：tech = `era_id == 当前时代` 的非里程碑科技 state 5 比例 ≥ 60%，必须满足；人口
   `country_economy_overview(summary).population`；建筑 `building_units`；贸易 =
   `country_procurement_snapshot.trade_orders_total` 的会话内日差分（缺接口时为 0）。
 - 提交后进入 COMPLETING 并推送 active=false；5 日内里程碑未进入 pending/完成则回到
@@ -189,11 +187,6 @@ Country 已发布的 `territory_count`、Economy 的人口/已落成建筑摘要
 **基数与每格要求同时降到 v5 的 1/3**（原值 ÷3 四舍五入），贸易次数与物资成本不变。
 玩家反馈 v5 曲线（农耕 250/50 … 智能 1,000,000/4,500）里，人口与建筑两项的积累时间明显长于
 科技与贸易，晋升节奏被拖住。
-
-2026-11-19（v7）把科技必达比例从 60% 降到 45%：玩家反馈升时代要求的科技量过多。0.6 时每代
-必修 14–33 项（石器 33/54、农耕 31/51、王国 32/52、信息 18/30、智能 14/23），晋升实际卡在科技条上；
-0.45 后每代必修 11–25 项（石器 25/54、农耕 23/51、王国 24/52、信息 14/30、智能 11/23）。
-科技仍是必达条件，三个经济条件依旧不能替代它；经济门槛、物资成本、存档格式与本文档其余契约不变。
 
 | 目标时代 | 人口基数 / 每格 | 建筑基数 / 每格 | 贸易基数 / 每格 | 物资倍率 |
 | --- | --- | --- | --- | --- |

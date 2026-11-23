@@ -1,5 +1,6 @@
 class_name CountryViewModel
 extends RefCounted
+const CountryMilitaryFinance = preload("res://scripts/ui/country_military_finance.gd")
 
 const MaintenancePresentation = preload("res://scripts/ui/military_maintenance_presentation.gd")
 
@@ -30,11 +31,6 @@ var _political_regime_catalog_cache: Dictionary = {}
 var _political_regime_catalog_facade = null
 var _military_catalog_cache: Dictionary = {}
 var _military_catalog_facade = null
-## 具名聚落名表（cell -> 名字）与它对应的 Economy 结算 revision。
-## 军事面板每行都要写地块名，而原生只给「有名字的聚落」这一份权威名单；按 revision
-## 增量维护，名字没变时每次刷新只有一次空读，不会把 2400 格扫一遍。
-var _cell_names: Dictionary = {}
-var _cell_names_revision := -1
 var _economy_history := EconomyHistoryBuffer.new()
 ## 国库收支的逐日趋势。与产值账本一样按已提交日采样，面板关闭时也继续走。
 var _fiscal_history := EconomyFiscalHistory.new()
@@ -388,10 +384,6 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	}
 	if normalized_section == "technology":
 		model.merge(build_static_catalog(), true)
-	if normalized_section == "economy":
-		# 国库页的军费板块读 `model["military"]`；经济章以前不装配这一段，
-		# 于是板块永远「暂不可用」。只装它要的那两项读数（见函数注释）。
-		build_military_spending_model(country_handle, model)
 	if normalized_section in ["military", "diplomacy"]:
 		model["good_ids"] = _good_stable_ids()
 		build_military_model(country_handle, model)
@@ -537,7 +529,7 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 				"facade": ideology_facade,
 				"snapshot": native_ideology,
 				"catalog": ideology_catalog,
-			}),
+			}, country_handle),
 		}
 	return {"ideology": _ideology_model(country_handle)}
 
@@ -711,9 +703,6 @@ func build(section_id: String = "technology") -> Dictionary:
 		research["country_cash"] = cash
 		model["research"] = research
 		model.merge(build_static_catalog(), true)
-	if normalized_section == "economy":
-		# 与事件驱动的 `build()` 同源：国库页的军费板块要 `model["military"]`。
-		build_military_spending_model(country_handle, model)
 	if normalized_section in ["military", "diplomacy"]:
 		# 军事面板需要 dense good id → 稳定 id 的对照表来给装备类别起名。
 		model["good_ids"] = _good_stable_ids()
@@ -755,10 +744,6 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		# facade）。缺了它 `session_bound()` 恒为 false，战争页的邻国表就永远是空的。
 		"generator": _generator,
 		"map": _map,
-		# 兵营行、训练行与割地表都要写地块名。名字的权威在 Economy 的具名聚落，
-		# 这里一次装进段里：`MilitaryViewModel.cell_name()` 就不用自己再查原生，
-		# 面板也不至于因为拿不到名字而写「未命名地块」。
-		"cell_names": _cell_name_table(),
 	}
 	if facade == null:
 		model["military"] = section
@@ -823,96 +808,12 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		"tech_gate_known": gate_known,
 		"generator": _generator,
 		"map": _map,
-		# 名字表必须跟着这条主路径一起交出去：兵营行、训练行与割地表都读它。
-		"cell_names": _cell_name_table(),
 		"query_ms": (Time.get_ticks_usec() - started_usec) / 1000.0,
 	}
 	# 财政页的军事只读实付板块。原生只给 30 日滑窗累计，这里统一折成日均，
 	# 三个通道口径相同（否则玩家会把 30 日总额当成一天的花销）。
 	section.merge(military_spending_model(snapshot,
 		_military_maintenance_model(facade, country_handle)), true)
-	model["military"] = section
-	return section
-
-## 地块名表（cell -> 具名聚落名），供军事面板写兵营行、训练行与割地表。
-##
-## 名字的权威在 Economy：`named_settlement_snapshot()` 给「哪些格有名字、叫什么」，
-## `settlement_delta(since)` 给增量。这里按 revision 缓存：名字没变时每次刷新只是一次
-## 空读；首次或 revision 跳变（含 `full_snapshot`）才重扫一遍。读失败（worker 忙、
-## 旧 DLL）时保留上一份，面板退回地区名而不是整列变空。
-##
-## 只收 `name_active != 0` 且名字非空的格：未命名的聚落行在原生里也带一串占位名，
-## 写进面板会比没有名字更糟。
-func _cell_name_table() -> Dictionary:
-	if _generator == null or not _generator.has_method("get_economy_facade"):
-		return _cell_names
-	var economy = _generator.get_economy_facade()
-	if economy == null or not economy.has_method("settlement_delta"):
-		return _cell_names
-	var delta = economy.call("settlement_delta", _cell_names_revision)
-	if not (delta is Dictionary) or not bool((delta as Dictionary).get("ok", false)):
-		return _cell_names
-	var rows: Dictionary = delta
-	var revision := int(rows.get("revision", _cell_names_revision))
-	if revision == _cell_names_revision:
-		return _cell_names
-	if bool(rows.get("full_snapshot", false)):
-		_cell_names.clear()
-	var cells = rows.get("cell_indices", PackedInt32Array())
-	var names = rows.get("settlement_names", PackedStringArray())
-	var active = rows.get("name_active", PackedByteArray())
-	if cells is PackedInt32Array and names is PackedStringArray:
-		var count := mini((cells as PackedInt32Array).size(), (names as PackedStringArray).size())
-		for index in range(count):
-			var cell := int((cells as PackedInt32Array)[index])
-			if cell < 0:
-				continue
-			var named := not (active is PackedByteArray) or index >= (active as PackedByteArray).size() \
-				or int((active as PackedByteArray)[index]) != 0
-			var label := String((names as PackedStringArray)[index]).strip_edges()
-			if named and not label.is_empty():
-				_cell_names[cell] = label
-			else:
-				_cell_names.erase(cell)
-	_cell_names_revision = revision
-	return _cell_names
-
-## 财政（国库）章的军事支出段。
-##
-## 国库页只画三条通道的实付与信封读数（军饷 / 建筑维护 / 装备与给养采购），需要的
-## 输入就是 `military_spending_model` 的两项：国家槽快照 + 实物维护明细。整份军事
-## 模型（部队、目录、科技闸门、逐格快照）属于军事章；把它装进经济章等于每次刷新
-## 国库页都多读三份原生数据，只为一段根本读不到的字段付钱。
-##
-## 关键点：经济章的模型以前**完全没有** `military` 这个键，于是财政页拿到空字典，
-## 军事板块永远显示「暂不可用 / 军事账目尚未就绪」（2026-11-20 玩家截图里的红框）。
-## 这里产出的键集合与 `military_spending_model` 完全一致，所以财政页不必区分
-## 「经济章的军事段」与「军事章的军事段」。
-func build_military_spending_model(country_handle: int, model: Dictionary) -> Dictionary:
-	var facade = null
-	if _generator != null and _generator.has_method("get_military_facade"):
-		facade = _generator.get_military_facade()
-	var section := {
-		"available": false,
-		"reason": "军事机构尚未接通，军费账目暂不可读。",
-		"facade": facade,
-		"country_handle": country_handle,
-	}
-	if facade != null and facade.has_method("country_snapshot"):
-		var fetched = facade.call("country_snapshot", country_handle)
-		var snapshot: Dictionary = fetched if fetched is Dictionary else {}
-		if bool(snapshot.get("ok", false)):
-			var spending := military_spending_model(snapshot,
-				_military_maintenance_model(facade, country_handle))
-			section["available"] = bool(spending.get("available", false))
-			section["reason"] = ""
-			section.merge(spending, true)
-			if not bool(section.get("available", false)):
-				# 快照正常但没有国家政策槽：原生还没为这个国家开军事账。
-				section["reason"] = "军务政策尚未建立，军费账目暂不可读。"
-		elif not String(snapshot.get("reason", "")).is_empty():
-			section["reason"] = "军事数据暂不可用（%s）" % String(
-				snapshot.get("reason", ""))
 	model["military"] = section
 	return section
 
@@ -935,101 +836,9 @@ func _military_maintenance_model(facade, country_handle: int) -> Dictionary:
 	}
 
 ## 军事支出视图（财政页只读板块用）。输入 `get_military_country_snapshot` 的
-## 原始快照，输出三个通道的日均实付与招募集训的等待装备计数。
-##
-## `maintenance` 是维护实物化的模型（见 `_military_maintenance_model`）：`supported`、
-## `summary`（聚合整数）与 `rows`（逐对象明细）。缺省 `{}` 表示「旧 DLL，没有实物维护」，
-## 此时只多一个 `maintenance_is_physical = true` 的语义标记，其余维护键全 0/空。
-##
-## 招募本身不拨预算：这一点由 `recruitment_funded = false` 明确表达，
-## 面板据此把招募行标成「不拨款」，而不是显示 0。
 static func military_spending_model(snapshot: Dictionary,
 		maintenance: Dictionary = {}) -> Dictionary:
-	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
-		return {"available": false}
-	if not bool(snapshot.get("has_policy", false)):
-		return {"available": false}
-	# 30 日滑窗累计 ÷ 30。整除而非四舍五入：上报的是"至少花了这么多"。
-	var payroll_30 := maxi(0, int(snapshot.get("spend_payroll_30", 0)))
-	var upkeep_30 := maxi(0, int(snapshot.get("spend_upkeep_30", 0)))
-	var procurement_30 := maxi(0, int(snapshot.get("spend_procurement_30", 0)))
-	# 训练队列里还没拿到装备的兵：这就是"已排队但还在等"的装备需求。
-	var waiting_equipment := 0
-	var training_rows: Array = snapshot.get("training", [])
-	if training_rows is Array:
-		for row_value in training_rows:
-			if not row_value is Dictionary:
-				continue
-			var row: Dictionary = row_value
-			if bool(row.get("equipment_ready", false)):
-				continue
-			waiting_equipment += maxi(0, int(row.get("count", 0)))
-	# ---- 维护实物化：满足率/失修/短缺由原生按 (国家, 地块, 类型) 判定 ----
-	var maintenance_supported := bool(maintenance.get("supported", false))
-	var summary: Dictionary = maintenance.get("summary", {}) \
-		if maintenance.get("summary", null) is Dictionary else {}
-	var maintenance_rows := maintenance_detail_rows(maintenance.get("rows", []))
-	return {
-		"available": true,
-		"wage_paid_last_period": payroll_30 / 30,
-		"maintenance_paid_last_period": upkeep_30 / 30,
-		"procurement_paid_last_period": procurement_30 / 30,
-		"wage_paid_window": payroll_30,
-		"maintenance_paid_window": upkeep_30,
-		"procurement_paid_window": procurement_30,
-		"window_days": 30,
-		"procurement_share_bp": clampi(
-			int(snapshot.get("procurement_share_bp", 0)), 0, 10000),
-		"waiting_equipment": waiting_equipment,
-		"soldiers_training": maxi(0, int(snapshot.get("soldiers_training", 0))),
-		# 招募与训练本身不领取军事预算：预算只覆盖军饷、维护与采购。
-		"recruitment_funded": false,
-		# ---- 预算信封（任务 6/7/8 的原生字段，任务 9 的可编辑 UI 直接消费）----
-		# `envelope_enabled == false` 是「没有信封」：三个日额是 -1 而不是 0，
-		# 表示"不设上限、跟随现金"，与"份额为 0 暂停该通道"是相反的语义。
-		"envelope_enabled": bool(snapshot.get("budget_enabled", false)),
-		"budget_share_bp": clampi(int(snapshot.get("budget_share_bp", 0)), 0, 10000),
-		"budget_wage_bp": clampi(int(snapshot.get("budget_wage_bp", 6000)), 0, 10000),
-		"budget_upkeep_bp": clampi(int(snapshot.get("budget_upkeep_bp", 2000)), 0, 10000),
-		"budget_procurement_bp": clampi(
-			int(snapshot.get("procurement_share_bp", 2000)), 0, 10000),
-		"envelope_daily": int(snapshot.get("budget_envelope_daily", 0)),
-		"wage_budget_daily": int(snapshot.get("budget_wage_daily", -1)),
-		"upkeep_budget_daily": int(snapshot.get("budget_upkeep_daily", -1)),
-		"procurement_budget_daily": int(snapshot.get("budget_procurement_daily", -1)),
-		# ---- 上一轮结算结果（任务 7/8）----
-		# 军饷与维护是高优先级：超支是允许的，用 `*_overspend` 画铁锈红。
-		# 采购是低优先级：绝不超支，被配额截断的部分在 `procurement_deferred_units`
-		# 里，面板用「待购」而不是「超支」标示。
-		"wage_demand": maxi(0, int(snapshot.get("budget_wage_demand", 0))),
-		"wage_arrears": maxi(0, int(snapshot.get("budget_wage_arrears", 0))),
-		"wage_overspend": maxi(0, int(snapshot.get("budget_wage_overspend", 0))),
-		"upkeep_demand": maxi(0, int(snapshot.get("budget_upkeep_demand", 0))),
-		"upkeep_arrears": maxi(0, int(snapshot.get("budget_upkeep_arrears", 0))),
-		"upkeep_overspend": maxi(0, int(snapshot.get("budget_upkeep_overspend", 0))),
-		"procurement_used": maxi(0, int(snapshot.get("budget_procurement_used", 0))),
-		"procurement_deferred_units": maxi(0,
-			int(snapshot.get("budget_procurement_deferred_units", 0))),
-		# ---- 维护实物化（D7 / S4-6）----
-		# 「维护」通道从此描述**实物维修采购**：国库付给商人换维修材料，材料到货后
-		# 才计入满足率。`maintenance_paid_last_period` 仍是「实际结算的维护花费」
-		# （30 日窗口 ÷ 30），来源不变；下面这组键描述的是这笔钱买到的实物结果。
-		"maintenance_is_physical": true,
-		"maintenance_supported": maintenance_supported,
-		"maintenance_ratio_bp": clampi(
-			int(summary.get("weighted_ratio_bp", 0)), 0, 10000),
-		"maintenance_disrepair_rows": maxi(0, int(summary.get("disrepair_rows", 0))),
-		"maintenance_shortage_rows": maxi(0, int(summary.get("shortage_rows", 0))),
-		"maintenance_object_rows": maxi(0, int(summary.get("rows", 0))),
-		"maintenance_need_goods": maxi(0, int(summary.get("need_goods", 0))),
-		"maintenance_stock_goods": maxi(0, int(summary.get("stock_goods", 0))),
-		"maintenance_inbound_goods": maxi(0, int(summary.get("inbound_goods", 0))),
-		# 逐对象明细（已按短缺优先排序）。面板只画前 N 条，但整表留在这里，
-		# 「为什么是 0 座失修」这类追问不用再去查原生。
-		"maintenance_rows": maintenance_rows,
-		# 一行摘要的变更签名：维护读数天天变，财政页的节流比较需要它。
-		"maintenance_signature": maintenance_signature(maintenance_rows, summary),
-	}
+	return CountryMilitaryFinance.military_spending_model(snapshot, maintenance)
 
 ## 逐对象明细的展示投影。原生行保留 `*_goods` / `*_bp` / `*_x10` 后缀（毫单位、
 ## 万分比、十分之一日），这里改成面板读得懂的短键，并附上整数换算好的文本。
@@ -1298,12 +1107,13 @@ func _ideology_model(country_handle: int) -> Dictionary:
 			catalog.get("reason", "理念数据暂不可用。"))))}
 	return _decorate_ideology({
 		"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog,
-	})
+	}, country_handle)
 
-func _decorate_ideology(ideology: Dictionary) -> Dictionary:
-	var presentation := present_ideology(
-		ideology.get("snapshot", {}), ideology.get("catalog", {}))
-	ideology["presentation"] = presentation
+func _decorate_ideology(ideology: Dictionary, country_handle: int) -> Dictionary:
+	var snapshot: Dictionary = ideology.snapshot.duplicate()
+	snapshot["offer_eligibility"] = ideology.facade.preview_offer_eligibility(country_handle)
+	ideology["snapshot"] = snapshot
+	ideology["presentation"] = present_ideology(snapshot, ideology.catalog)
 	return ideology
 
 static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dictionary:

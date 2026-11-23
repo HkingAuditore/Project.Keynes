@@ -244,11 +244,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         begin_investment_scratch_generation();
         _investment_monetary_units_by_cell.assign(
             static_cast<size_t>(std::max(0, _cell_count.get())), 0);
-        const bool merchant_ranges_ready =
-            _merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1);
-        for (const int32_t cell : _investment_review_cell_indices) {
-            ensure_investment_cell_finance_lane(cell);
-            if (merchant_ranges_ready) {
+        if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
+            for (const int32_t cell : _investment_review_cell_indices) {
+                ensure_investment_cell_finance_lane(cell);
                 for (int32_t k = _merchant_offsets[cell];
                      k < _merchant_offsets[cell + 1]; ++k) {
                     const int32_t merchant_slot = _merchant_slots[k];
@@ -262,10 +260,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         _investment_prepare_lanes_ms += elapsed_ms(prepare_lanes_started);
     }
     if (need_prepare) {
-      const auto is_review_cell = [&](int32_t cell) {
-          // Review order follows batch age; the finance lanes mark membership.
-          return cell >= 0 && cell < _cell_count.get() &&
-              _investment_cell_finance_stamp[cell] == _investment_scratch_generation;
+      auto is_review_cell = [&](int32_t cell) {
+          return std::binary_search(_investment_review_cell_indices.begin(),
+                                    _investment_review_cell_indices.end(), cell);
       };
       const auto prepare_pending_started = Clock::now();
       for (const auto pending : pending_construction()) {

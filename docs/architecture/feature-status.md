@@ -1,681 +1,91 @@
 # 专项现状与验证记录
 
-## 地块展板与图例工具栏互斥动效（2026-11-21）
-
-- 展板入场时两级图例工具栏淡出，鼠标交互即时禁用；展板完全退场后工具栏再淡入。
-  分类、图层请求及工作区对工具栏根节点的显隐控制保持独立。
-- `UIAnimation.fade_visibility()` 处理反向过渡、减少动效、暂停和打断滑动后的坐标归位。
-  展板退场增加进行中标志，快速重新显示时取消旧动画，避免迟到回调重新隐藏展板。
-- 全项目编辑器编译无脚本错误；`cell_board_toolbar_transition_test.gd` 通过正常开关、
-  退场中间态、打断次级栏入场、同帧重入、恢复淡入中再次入场、暂停、工作区隐藏、减少动效检查；
-  `cell_board_test.gd` 回归通过。
-- 带渲染探针在 1600×900、1280×720、2560×1080、720×480 验证展板显示时工具栏隐藏、
-  退场后恢复；人工复核 1280×720 的两态截图。截图使用固定 QA 数据，未跑正式世界快进。
-  渲染退出仍有 FMOD debugger 与资源清理提示。
-
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
-## 地块悬停物资与阶层展板放大（2026-11-21）
-
-- 同日第二次调整：按高分辨率截图反馈，宽度继续从 420 增至 520，正文和数字 14 → 18px，
-  表头 12 → 16px、次级读数 13 → 16px，行内图标 20 → 24px；同步扩大数值列和比例条。
-  五阶层与三阶层高度阈值更新为 650 / 510。全量编辑器编译无脚本错误，展板测试通过，
-  四档带渲染截图检查通过，人工复核 1280×720 与 2560×1080 截图。
-  下列记录为第一次调整时的尺寸与验证。
-
-- 展板宽度 340 → 420，正文与数值 12 → 14px，次级读数 11 → 13px；同步放大图标、
-  数值列宽和行高。展板贴 HUD 左边缘，可覆盖左侧图例工具栏，仍避开顶部和底部 HUD。
-- 保留高度压缩，完整五阶层需 600 可用高度，三阶层需 460；低于该高度只显示物资。
-- 验证：全项目 headless editor 编译无脚本错误，`cell_board_test.gd` 与
-  `cell_hover_card_test.gd` 通过；渲染探针在 1600×900、1280×720、2560×1080、720×480
-  通过宽度、底部边界和左侧定位检查，人工复核前两档截图，产物位于
-  `Project/project-keynes/tmp/cell_board_qa/`。
-- 验证限制：截图使用固定 QA 数据，没有运行正式世界的快进；退出日志仍有 FMOD debugger
-  注册与资源清理提示。UI 反模式扫描已运行并结合本次新增行人工复核，没有新增玩家文案。
-- 扩展检查 `ui_scene_structure_test.gd` 有 12 项失败：2 项来自本次未修改的
-  `cell_hover_card.gd` 动态节点构造，10 项来自 `touch_number_pad.gd` 动态节点构造；
-  本次展板与布局文件没有失败项，未改动上述其他工作区文件。
-
-## 地块悬停物种图标（2026-11-21）
-
-资源条下增加物种图标和短名称；数据复用地理档案的占据位与玩家科技识别过滤。
-20 个 `bio.*` 键接入既有纸贴图标；部分动物共用动物位图，通过名称区分。
-无物种时恢复基础卡片高度；有物种时随内容增高，并使用实际尺寸执行屏幕边缘与展板避让。
-紧凑调整：取消三等分列，改为自然宽度流式排列，图标由 24px 缩至 20px，物种行由 28px
-收至 20px；地形与人口行合计减少 8px 留白。三种物种的卡片从 212px 降至 196px。
-四种分辨率的渲染探针与 50 次刷新复核通过，截图更新为卡片特写。
-紧凑调整后的悬停组件测试通过；本轮全项目编译检查发现并行改动中的
-`annual_report_view_model.gd:265` 缺少 `money_text()` / `count_text()`，年报依赖链未通过编译。
-未修改该文件；本次悬停组件的渲染与测试不受该依赖链影响。
-
-验证：全项目编辑器导入无脚本编译错误，`tests/ui/cell_hover_card_test.gd` 与
-`tests/ui/cell_hover_view_model_test.gd` 通过。临时渲染探针 `tmp/species_hover_probe.gd`
-覆盖 1280×720、1920×1080、2520×1080、720×1280 的实际截图与图标槽边界、50 次刷新节点复用、
-空集合恢复尺寸、空科技集隐藏、完整科技集识别、占据清零和语义图标解析。截图在工程
-`tmp/species_hover_*.png`。本次截图是组件探针，未覆盖正式场景鼠标悬停与实际时钟快进。
-UI 反模式扫描输出在仓库 `tmp/species_ui_audit`，新增行人工复核未引入占位文案或模拟术语。
-数据层测试退出仍报告对象/资源未释放；渲染探针有 FMOD 调试器消息与退出注销诊断，断言通过。
-
-
-## 军事面板两处数据通路缺陷（2026-11-20）
-
-玩家报「完全无法招兵」，并附国库页「军事：暂不可用 / 军事账目尚未就绪」的截图。用玩家存档
-（`user://saves/autosave.pksv`，day 6570）解出 PKMI 段核对：6 个国家的 `target_value` 全为 0、
-命令队列 `pending` 为空、`last_day` 等于存档日、lot 段为空表、唯一的 cell_state 是 cell 1842
-（2 座 tier1 兵营 → 兵额 8、`quota=0`、`pending_enlist=0`），30 日维护实付 799。军事日一直在跑，
-招不到兵的原因是**招募目标恒为 0**：`plan = min(effective_target − soldiers, open_sum)` 因此为 0，
-配额冻在 0，一条 ENLIST/LEVY 都不发。
-
-四处改动：
-
-1. `military_workspace.gd` 的目标滑条原来只在 `drag_ended` 提交，键盘/点击轨道/无障碍调整没有提交
-   入口，而 200ms 的刷新会用原生旧值把把手写回去。现在 `value_changed` 走 250ms 防抖提交、
-   `drag_ended` 仍然松手即提交；提交值在快照追上之前由 `_target_pending_mode/_value` 覆盖，
-   不再回弹；重复值不重复发，点当前模式不再发「value = 滑条当前值」。
-2. 同文件的「人数 / 预算」两个模式签漏了 `IconButton.apply_with_text()` 的 `toggle=true`。该助手会
-   无条件写 `button.toggle_mode`，于是两个签退化成普通按钮：`button_pressed` 恒 false、
-   `set_pressed_no_signal(false)` 被 `!toggle_mode && !pressed` 早退挡掉（两个签会同时显示按下）。
-   后果是「预算」模式进不去，`_commit_target()` 一律按人数模式提交，货币值被当成兵数。
-3. 国库页的军费板块读 `model["military"]`，但经济章的 `CountryViewModel.build("economy")` 从不装配
-   这一段，板块因此永远「暂不可用」。新增 `build_military_spending_model()`，只取国家槽快照 +
-   实物维护两项读数，产出与 `military_spending_model` 同键的段，`build()` 与 `_build_full_legacy()`
-   都接上。
-4. `PlayerController.SUPPORTED_COMMANDS` 缺 `COMMAND_MILITARY_BUDGET`，军事预算信封的四个滑条
-   提交会一律 `unsupported_command`。已补白名单，并在 `PlayerCommandValidation` 加份额范围校验。
-
-验证：`tests/ui/military_target_commit_test.gd`、`tests/ui/fiscal_military_model_test.gd`（新增）
-与 `tests/ui/fiscal_military_block_test.gd`、`tests/ui/military_config_command_test.gd` 全 0 失败；
-`tests/game/player_country_ui_smoke_test.gd` 0 失败，新增三条断言（经济章模型带 `military` 段、
-段内带信封通道、有 facade 时 `available=true`）。
-
-未覆盖：目标命令仍是 D+1 落库；滑条量程（50000 人 / 50000 货币）是 UI 常量，原生只校验非负；
-`budget_*` 三个份额仍不进 PKMI，读档后靠 `_repush_military_budget()` 重推。
-
-同日接上地块名的数据源。`MilitaryViewModel.cell_name()` 读的 `cell_names` 以前只有测试夹具会填，
-生产环境没有装配者，于是兵营行、训练行与割地表一律写「未命名地块」。现在
-`CountryViewModel.build_military_model()` 把 Economy 的具名聚落表装进军事段
-（`named_settlement_snapshot()` 首读、`settlement_delta(revision)` 增量更新，按 revision 缓存；
-读视图排队或旧 DLL 时保留上一份），`MilitaryViewModel` 按**具名聚落 > 作者地区名 > `地块 N`**
-降级，`settlement_name()` 单独暴露聚落名供割地表判断「这一格有没有自己的名字」（不能拿
-`cell_name()` 判断，它已经会退回地区名）。夹具的顶层 `cell_names` 仍然认。
-实机验证：`player_country_ui_smoke_test` 在真实世界里读到 6 条具名聚落，军事面板的名表已装配。
-注意 `build_military_model` 有两处出口——不可用时的早退和通过快照检查后**重新赋值**的 section；
-名字表两处都要带（第一版只写在开头的字面量里，可用状态下整份丢掉，测试第 6 段专门钉它）。
-新增 `tests/ui/military_cell_names_test.gd`（24 条断言：`name_active` 过滤、增量、整表替换、
-读失败保留、三级降级、割地表判定、夹具兼容、可用主路径）；`player_country_ui_smoke_test` 另加
-一条「不再出现未命名占位」的实机断言。
-
-同日按维护者意见收敛文案：命令受理反馈统一为「命令已下达」（`player_controller/military.gd`，
-`game_ui_manager` 的编成回执同步）；国库页军事栏去掉说明行、组标签
-（`独立信封 · 军饷 / 维护 / 装备给养`）与「招募本身不拨款…」「未启用时按现金结算…」
-「每日信封 A：军饷 B…」三类整句，信封行只写 `未启用` / `每日 X`；通道脚注只留
-`超支 X` / `待购 N 件` / `暂停` 这类带数字的状态字。共同额度池那一侧的组标签与说明未动。
-对应的「无说明句」断言写进了 `tests/ui/fiscal_military_block_test.gd`（军事分区首行必须为空、
-脚注不得以句号收尾）与 `tests/ui/military_target_commit_test.gd`（状态行等于「命令已下达」）。
-
-## 存档体积构成与 Inspect-SaveSize（2026-11-20）
-
-实测 day 628、100×64（6400 格）的 `manual_1.pksv` 为 9.96 MiB（10,445,950 B），未压缩载荷 151.3 MiB，
-zstd 压缩比 0.066。按"该块单独 zstd -3 后占文件多少"拆解：365 天逐格温度历史 5.53 MiB（55.5%）、
-ECP2 经济快照两份各 1.12 MiB（22.6%，PKSR bundle 内一份 + 容器 `ecp2` 段一份，实测逐字节相同）、
-`preview` 全窗 PNG 0.86 MiB（8.6%）、ECP1 0.30 MiB（3.0%，恢复路径明确跳过）、`dynamic_world` 0.30 MiB、
-`environment` 0.10 MiB，其余 14 段合计不足 0.2 MiB。
-
-体积主因是 `RuntimeClimateAuthority::serialize` 无条件写 `_store.temperature_history`（`cells × 365 × f32`）。
-该 lane 只被滚动写入与 `state_hash` 使用，`runtime_climate_parity.h` 把它归为 worker bookkeeping，
-玩法读的是另一条 `temperature_365d_ema`；而它的压缩率只有 0.59，因此体积随格数线性抬升：
-6400 格是 8.91 MiB 原始 / 5.53 MiB 落盘。体积与天数不成正比（day 10838 的 `manual_2` 只有 7.42 MiB，
-day 24 的 `manual_3` 只有 1.03 MiB），决定项是格数 × 历史填充度。ECP1 每次保存都编码，
-但 `NativeSimulationHost` 启动时的注释与分支已写明 ECP1 不是权威恢复路径。
-
-新增 `tools/runtime/Inspect-SaveSize.ps1`：浅层只读 PKSV 头，报 provider manifest 与各段压缩/原始体积；
-`-Deep` 解出 PKSR 并拆到内段（含 CLM2 历史 lane、ECP1/ECP2 与重名段检测），`-Verify` 复核每段 sha256，
-`-Json` 输出机器可读报告。四档实测通过：`manual_1`（CLM2 ABI 9）与 `manual_2`（ABI 8）都能定位历史 lane，
-旧标记 `IDP1` 不再中断内段遍历，`-Verify` 21 段全通过；`-Deep` 单档耗时约 1.4 s。
-
-已按上表四项实施（旧档读取路径保留）：
-
-- **CLM2 v10 去历史环**：`RuntimeClimateAuthority::serialize` 不再写 `temperature_history`；
-  `RuntimeClimateStore::state_hash()` 用同一份冻结字段表但不混历史，旧算法以 `state_hash_abi8()` 冻结，
-  restore 按 ABI 分支（v9 读完整 lane 并用 `state_hash_abi8` 复核，v10 补零环跳过该 lane）。
-  `CLIMATE_SECTION_ABI_MIN_SUPPORTED` 仍是 9，迁移自检保留并新增“ABI 9 必须仍可读”的断言。
-  历史环仍留在内存里（kernel 每天照常追加），本轮只停止持久化与哈希，未动逐日写入路径。
-- **ECP2 单份**：`build_save_bundle` 仍捕获一次（poll 要把它交给容器 `ecp2` 段），但不再写进 PKSR、
-  不再置 `RUNTIME_SAVE_SECTION_ECONOMY_ECP2`；解析侧在该位缺失时改用 `restore_bundle` 传入的外部
-  section（先做 marker 与 `decode_ecp2` 校验），带内嵌副本的旧 bundle 仍走原分支。
-- **ECP1 停写**：移除 `encode_ecp1` 调用，`RUNTIME_SAVE_SECTION_ECONOMY_POD` 不再置位；解析端旧分支保留。
-- **缩略图**：新增 `scripts/game/save_preview_codec.gd`（480 px 宽、JPEG q0.82，按 magic 嗅探 PNG/JPEG/WebP），
-  `player_state.gd` 与 `main_menu.gd` 改用它；headless 仍写 1×1 PNG 兜底。
-
-实测（同一测试夹具、40×28 / 1120 格）：旧格式 0.57 MiB → 新格式 0.35 MiB（−39%）。`-Deep` 对比：
-旧档 365 天历史 1.56 MiB、ECP1 4.34 MiB、容器与内嵌 ECP2 各 8.92 MiB；新档三项全部消失，
-`ecp2` 只剩容器一份。6400 格按同比例预计 9.96 → 约 2.2 MiB。
-
-验证：`runtime_climate_authority_test` 通过（含 ABI 9 可读、历史逐字节保留、当前哈希一致，以及 ABI 8 及更旧仍以
-`expected_10_got_N` 明确拒绝）；`runtime_inline_save_restore_test` 116 项 0 失败；
-`game_save_roundtrip_test`（`PK_GAME_SAVE_ROUNDTRIP_TEST=1` + 独立 `PK_SAVE_DIR`）0 失败，恢复后跑完整经济结算周期、
-日志中 `population_error=0`、`money_error=0`；新增 `tests/game/save_preview_codec_test.gd` 10 项 0 失败；
-新增 `tests/game/legacy_save_continuation_test.gd`（旧布局存档与当前布局存档各跑一次，均 0 失败，
-见下）；
-`check_save_contracts.py` 与 `check_save_section_contracts.py` 0 违规；debug/release 扩展均构建通过；
-60 天无头 soak 60/60 天提交、0 ledger 失败。
-
-未覆盖 / 已知问题：`Invoke-SaveReplay` 的"冷启动直接装载存档"路径在本树上失效——它跑起来的世界
-从第 5 日重新开始、`eco_day=-1`，`_wait_for_runtime` 等不到 `PlayerGame` 成为 `current_scene`，
-因此对**当前格式**存档同样报 `runtime_never_became_ready`（提交前后各复现一次）。该入口不能用来
-验证旧档，需要单独修；修之前不要用它当读档回归。
-
-旧档兼容改用新夹具 `tests/game/legacy_save_continuation_test.gd`：先正常开局，再在会话内换入
-`PK_SAVE_DIR` 里暂存的存档（`PK_LEGACY_SAVE_CONTINUITY=1`，槽位 `PK_LEGACY_SAVE_SLOT`，默认 autosave），
-走与玩家"继续游戏"相同的 provider 恢复路径。用 23:15 之前的 debug 扩展写出的旧布局存档
-（`-Deep` 已确认：CLM2 ABI 9 + 1.56 MiB 历史环、ECP1 4.34 MiB、容器与内嵌 ECP2 各 8.92 MiB）
-实测 0 失败：`PKCN restored` / `PKCN and PKEC restored`、恢复后未 FAULTED、经济随存档恢复、
-逐日推进 731→732；同一夹具对当前格式存档同样 0 失败（恢复第 2 日、推进 5→6）。
-坑：恢复 finalize 会在世界变 live 之后重新套用存档里的暂停态，夹具必须逐帧重申时钟状态，
-否则会把"恢复后暂停"误判成"恢复后不再推进"。
-
-2 年/10 年 soak 与逐日一致性对比本轮未跑；soak CSV 不含人口/货币/货品守恒列，
-守恒证据来自 roundtrip 日志（`population_error=0`、`money_error=0`）而非 soak。
-
-## 早期时代夜间火光（2026-11-20）
-
-玩家反馈石器、农耕聚落入夜后几乎全黑，要求加强早期时代的夜间照明。根因是夜灯只有窗光一条通道：
-`building_compound.gdshader` 的窗格从 `era >= 1.5`（王国时代）才开，早期聚落只剩环境光与月光；
-石圈广场的篝火核心半径 0.18 世界单位、亮度上限 1.0，实测被同格地物 decal 以 0.4 alpha 盖住，
-夜间只剩一个几乎看不见的暗点。
-
-改法全部在 shader，不改实例 buffer、调度、存档和物理：
-
-- Body 新增 `BUILDING_HEARTH_*` 一组常量。早期无窗民居每面墙给一个暖色门洞，门洞缩到亚像素以下
-  时退化成整条基座暖带；墙面按 `wall_t/he` 高度加火光反弹，屋面加一层基础火光加檐口更强的暖带，
-  不再出现纯黑体块。约 78% 的民居取 `hearth_lit`，其余只留半档，避免整村均匀发亮像雾；
-  `BF_MOUND`、`BM_HAY`（草堆、坟丘）照旧不发光。
-- 早期地面光晕从 `level 0.22 / falloff 2.6` 改为 `BUILDING_EARLY_HALO_LEVEL 0.5 / FALLOFF 2.4`
-  （大衰减系数让它更紧，不是一团雾），并按 `hearth_lit` 抖动。
-- 广场篝火（`building_ground_decal.gdshader`）改成亮核加铺装光池，核心半径 0.18→0.34、加
-  `exp(-r*1.9)*0.65` 光池与 7 Hz 闪烁，白天保留 0.30 底值（火堆白天可见）。
-- 远景字形（`building_macro.gdshader`）给早期时代补门洞暖点与地面暖核，避免远视角早期聚落变黑块。
-- 火光随时代按 `BUILDING_EARLY_FADE_START 1.5 / END 5.0` 淡出，启蒙时代以后回到原来的窗光；
-  窗光同时对王国、古典两代加 `×(1+0.35*early)` 的增益。
-
-验证：`tests/world/terrain_gi_test.gd` PASS（body/decal/macro 的 legacy 与 tiled 变体都能编译）。
-四套建筑视觉测试全过（layer 31 项、catalog、intel 21 项、native bridge 34 项）。用生产建筑层
-（`BuildingVisualLayer` + 原生规划器）在同一镜头拍改前/改后：早期石圈篝火照亮、民居屋顶由
-近黑变成暖褐并带一圈收紧的光晕，王国与古典屋顶同样由黑转暖，远景 zoom 9 从“几乎全黑”变成
-可读的暖色聚落。白天对照帧只有广场火点与风车叶片（`TIME` 驱动）有差异，屋顶/墙面补光只在
-`night > 0` 生效，现代（era 10）夜景不变。
-
-未覆盖：没有在真实地形、迷雾和移动端上目检（探针地面是替身色块）；远景 macro 的暖点没有截图，
-探针缺少 `map_index_atlas` 等世界纹理，macro 层画不出聚落，只有编译与代码审查。
-截图在 `tmp/building_night_tune/`（`beforeT_*` / `v2_*`）。
-
-## 物种出现保底（2026-11-20）
-
-小地图或单大陆世界里，部分 `bio.*` 物种会在整局里一格都不出现：生态包络（气候/湿度/海拔/植被/地貌
-标志/载体资源）与地图没有交集，或包络只有几格、被先播的同生态行会占满。辨识科技要求目击物种，
-而 `tech.reed_harvesting`（只认 `SIGNAL(bio.reed)`）又是 `野生稻采集 / 湿地稻作 / 稻田水利 / 精准灌溉`
-的硬前置，一旦缺种整条水稻线断掉。实测玩家可选最小尺寸 10×8（80 格、13 格陆地）：20 个物种里
-8 个 `occupied=0`，其中 5 个包络为空、3 个被行会占满。
-
-现在播种结束后走保底阶梯（`scripts/geography/map_generation/bio_occupancy_guarantee.gd`，融合 boot
-pass 与逐段 bootstrap 两条路径都接）：对 `occupied=0` 的物种逐级放宽**只对该物种生效**的播种输入
-（去植被掩码 → 去地貌标志 → 去载体资源 → 气候放宽到 persist 容差内 → 气候全放开）并重发
-`run_bio_seed_pass`；放宽物种的 `fill_keep≤0.08`、`max_cost≤3`，只留小片残存种群。小图行会占满格位时
-最后一步 `manual_relict` 按“离物种气候中心最近、未达每格 3 物种上限”的陆地格补一格（只破行会互斥，
-不破格位上限）。残存格可能落在目录气候带外，`_bio_occupancy_base_knobs()` 建缓存时用
-`realize_bounds()` 把这些物种的气候边界放宽到覆盖实际占领格，保底成功后作废 knobs 缓存并重置原生
-configure，使生成当次与读档后的日推进使用同一份地图本地边界（纯函数于占领位集+气候数组，重算一致）。
-
-验证：`tests/world/bio_coverage_guarantee_test.gd` 12 项全过。10×8：9 个物种被放宽
-（`drop_vegetation` 4、`widen_climate` 2、`map_extremes` 3）、`unplaceable=[]`，每个物种至少一格，
-残存格连续 3 日 persist 后仍在，同 seed 两次生成占领位集逐字节一致；14×10：放宽 4 种、无缺席。
-默认 60×40 世界保底完全不触发——日志没有 `guarantee` 行，20 个物种的
-envelope/hearth/occupied 逐项与改动前一致，说明健康地图的分布没有被改写。
-`tests/world/bio_guarantee_ladder_test.gd` 13 项（只放宽失败物种、原 knobs 不被污染、阶梯用尽报
-`unplaceable`）；`tests/world/bio_occupancy_pass_test.gd` 86 项不变全过。
-
-未覆盖：长读档循环下的 365 日残存稳定性（只验证 3 日）；气候与目录完全不相容的极端地图
-（例如全域无河湖湿地的干旱图上的芦苇）仍可能进入 `unplaceable` 日志，这属于地图本身不支持该物种。
-
-## 开拓筹备的派遣储备额度与逐日部分成交（2026-11-20）
-
-筹备期国库采购受「派遣储备」日额度约束（`colonization_daily`，周期开端冻结、按日补充、上限一个周期）。
-旧实现把一条物资缺口当成一次整行交易：金额超过剩余额度就记 `colonization_procurement_budget_exhausted`
-终态拒绝，而出发闸门要求每一行都买齐，于是一条缺口的价钱一旦超过本周期额度上限，队伍就带着
-「进度 100% / 开工包已齐套」永久停在筹备中。周期中途建立的队伍还会因为冻结时没有需求而整周期额度为 0，
-每次采购都判超额；面板把这个原因码原样显示给玩家，并保留昨天的拒单记录。
-
-现在按「当天剩余额度 ÷ 源地零售价」把该行裁成部分成交，剩余缺口次日重规划继续补买；当天已经买到货时
-后续行的等待不再写拒单；周期中途建队与第一次采购时用 `ensure_epoch_colonization_budget` 补发本周期通道
-预算与当天额度；同一行真正成交即清除旧拒单。`kit_blocker` 在两类总量达标、但逐项仍有差额时报 `TOPUP`，
-快照新增 `kit_topup_missing_units`；面板补上该原因码文案与 TOPUP 说明，未知原因码不再裸露为英文标识。
-
-专项回归 `tests/country/colonization_procurement_budget_test.gd` 先复现：国库 4000、0.1%/日 份额下
-40 天内 39 次整行拒单、托管 0 增长、队伍从未出发。修复后同一夹具第 3 天开始部分成交，第 17 天按额度攒够
-后出发，期间拒单 0 次；周期中途建立（强制 3 日周期）的队伍本周期额度从 0 恢复为 800000（国库 4000 ×
-2%/日，科技份额 0），并从源地买货。两组夹具的人口、货币、货品守恒差额均为 0。
-`family_colonization_runtime_test`、`colonization_planner_context_test`、`procurement_share_contract_test`
-三项回归通过；Windows 调试与发布扩展构建通过。`colonization_demand_runtime_test` 仍因
-`EconomyCatalog._carrying_need_goods` 缺失解析失败，`colonization_workbench_ui_test` 的三项摘要高度断言
-在改动前后的同一份扩展上都失败，两者均为既有问题、与本改动无关。
-
-## 城市独立后日结算中断（2026-11-20）
-
-原日志中第 7102 日的国家阶段已经提交，经济在冻结输入时拒绝少一行的研究信号位图，全图提交停在第 7101 日。
-专项回归复现该故障，补齐位图后又复现理念拒绝昨日民意的故障。建国时同步扩展国家位图。
-理念接受身份一致的昨日民意前缀，新国家收到首份实际民意后建立积分基线。
-
-正式内联推进回归三轮各通过 54 项，覆盖独立当天经济、理念和全图提交、次日民意、独立后存读档和续跑经济哈希。
-Windows 调试与发布扩展构建通过。国家、阶层动员、科技信号、理念和民意生命周期的专项测试通过。
-
-原自动档副本按存档对应的建筑目录加载。无头回放屏蔽弹窗并解除恢复中的年报暂停，以 10 倍速完成 180 天后台结算，
-全图和理念提交至第 7115 日。最终人口、货币、货品守恒差额均为 0。回放使用独立存档目录。
-模块和存档段契约通过。C++ 依赖检查仍报告既有违规，两处修复前后的依赖引用计数一致。
-
-## 组织度事件选项与结算（2026-11-20）
-
-旧事件在叙事选择结束后才通过监听器修改动员，预览和史册因此只有空效果。让步和收买以零投入计算
-成功率，正式后台经济又拒绝旧付款入口。修复后预览和结算使用同一组原生权重，按报价计算资金加成，
-动员结果经经济确认后才记录。第四阶的招安、镇压和弃城文案按实际动作编号修正。
-
-旧实现的目标回归复现了五项失败。更新后组织度服务 25 项、动员存档与拨款 107 项、叙事运行时 108 项、
-叙事弹窗屏蔽 24 项、城市独立整档与续跑 54 项通过。测试命中介于无投入与足额投入成功率之间的随机值，
-验证有资金时走成功分支。Windows 调试与发布扩展均构建，动员存档与拨款测试在两种扩展下通过。
-
-原自动档副本在 10 倍速后台回放至第 7115 日，人口、货币、货品守恒差额均为 0。自动选择的三次让步
-成功率分别为 18%、17%、27%，本次抽样均失败，三笔报价仍各在对应生效日足额支付。另在第 7097 日提交后、
-第 7099 日支付前保存并在新进程恢复，旧实现丢失首笔拨款，修复版第 7099 日实付 312.011。
-
-## 地图阶层不满与人口页一致性（2026-11-20）
-
-地图告警批次与人口页可在不同经济提交代次刷新，浮标的命中区域也可能跨到邻格。地图与人口快照
-现在共用阶层满意度计算。人口页打开时，同格阶层不满提示使用面板已经显示的快照，提示列出该格的
-本地结算日。人口页关闭后，较新的结果保留到地图收到更新代次。浮标的悬停和普通点击共用命中区域。
-
-Windows 调试版和发布版原生快照回归各通过 20 项。地图告警层 26 项、后台提交 14 项，以及人口页
-增量刷新和玩家控制器契约测试通过。Godot 4.6.2 全项目无头脚本编译无脚本错误。实测渲染覆盖
-1280×720 和 1600×900。数值回归使用测试场景，原截图来自的存档未纳入验证。
-
-## 官营军事建筑建材替代（2026-11-20）
-
-17 种官营军事建筑接入经济营造的建材候选组。国库仅存原木时，战士营地、木栅兵营和夯土城垣
-分别按 30、60、70 单位报价并成功开工，扣料和经济守恒检查通过。建筑目录身份随配方变化，
-旧目录的经济存档会被现有目录哈希校验拒绝。
-
-国库营造和家族殖民回归均为 0 失败，后者覆盖仅用芦苇替代的开局物资包。
-已重烘经济目录并核对 17 份军事建筑资源的源指纹。全目录替代性检查的单候选材料只剩其他建筑的锻铁和生皮，
-全目录测试还报工具槽、蛋白方案和后期升级条目的既有失败。资源链测试仍报铜矿开采效率排序。
-
-## 投资分日评审遗漏地块（2026-11-20）
-
-682 号地块的第 1460 天存档复现了漏审。投资周期为 30 天，普通评审在第 1462、1492 天到期。
-原构建默认路径回放至第 1510 天，两次都未生成该地块的评审结果。关闭 Track-B 后，两次均执行。
-建筑提交第四阶段遇到上日未完成的评审时，用旧队列覆盖了当天到期列表。现在将新地块去重追加，
-先执行旧批次，并用地块资金暂存的代次标记判断当前评审成员，支持按批次保留顺序。
-
-原生回归在旧实现上报 `investment_carry_erased_newly_due_cell`。修复后通过，
-并验证重复地块只评审一次、跨日评审全部执行、无序队列仍可查到已有建筑。
-同一存档用修复后的调试扩展和原导出的游戏内容续跑到第 1600 天。682 在第 1463、1493、1523、
-1553、1583 天完成评审，新增 5 座早期知识机构和 4 座狩猎营地。期末人口、货币、商品审计误差均为零。
-建筑运行时 552 项、经济周期 252 项、StageOps 与 compact 一致性 40 项检查通过。
-
-## 营造建材与开工率（2026-11-20）
-
-营造目录逐项显示建材，报价纸笺展示国库供料、市购和缺口。建筑详情显示每栋基础建材，
-分开呈现实际开工率、各岗位在岗人数和每栋每日产量。林木采集显示当前可采量及资源影响。
-
-Godot 4.6.2 全项目脚本编译无脚本错误。营造目录、建筑状态、检查器实时刷新、国库营造、
-军事地块台账测试通过。渲染探针覆盖 424、604、1236 像素栏宽，正式开局以 10× 运行
-5 天后验证目录报价刷新。全局界面结构测试仍有 `touch_number_pad.gd` 的 10 项既有失败。
-
-同日调整悬停卡的信息层级，费用与建材归入报价区，基础日产、资源、岗位和可选工具用图标分组。
-开工率去除说明性段落，满量程直接显示在读数下方。三档栏宽的渲染探针验证狩猎营地卡片
-保留产出和工具候选，并给营造按钮留出空间。正式开局的 10× 验证到第 8 天，三项产出逐行显示。
-
-## 军事建筑悬停卡（2026-11-20）
-
-地块军事页和营造目录军事分类使用同一张结构化建筑卡。材料缺口跟随到货品行，
-驻军名额、守备和训练效果独立显示，维护区区分当前与建成后的费用。地块页的卡片能停在台账旁，
-拆除键显示既有建筑及拆除后果。
-
-渲染探针覆盖 424 和 604 像素栏宽下的报价、受阻与在建状态。正式开局推进到第 6 天，
-验证 10× 下的战士营地悬停卡继续显示收益，并留出台账的点击区域。
-
-## 真机性能实测：编译期档位是最大杠杆（2026-11-19，含当日更正）
-
-小米 15（Adreno 830v2 / 2670×1200 @520dpi）上跑当前工作区 debug 包的 5 组配置，
-用 `tools/android_perf_run.ps1`（`pk_debug.cfg [perf]` 驱动 PerfRecorder + 设备侧 top/meminfo/thermal 采样）采集：
-
-| 配置 | fps 均值 | fps p5 | fast_ms p50 / p95 | 日/秒 |
-| --- | --- | --- | --- | --- |
-| 默认视角 1×（迷雾开，实测 `MOBILE_QUALITY_HIGH`） | 34.6 | 25.8 | 8.0 / 87.2 ms | 0.996 |
-| 默认视角 1×（`tier_override=MOBILE_QUALITY_LOW`） | **57.2** | 44.6 | 3.3 / 35.2 ms | 0.994 |
-| 整图视角 1×（`fog=off`、HIGH） | 15.5 | 13.5 | 4.9 / 73.4 ms | 0.989 |
-| 默认视角 10×（HIGH） | 14.0 | 7.5 | 22.7 / 110.9 ms | 6.91 |
-
-> ⚠ 更正：初版把前两行当成"LOW vs HIGH"，其实这台机器 `settings.cfg` 是 `render_quality="high"`，
-> 两轮都是 HIGH（日志 `quality=MOBILE_QUALITY_HIGH`）。补测 `tier_override=LOW` 后才有真正的台阶：
-> 28.9 ms → 17.4 ms（fps 34.6 → 57.2，+65%）。LOW 档同时把 `[fog] effective` 3 → 2，差值是"编译期分支 + 迷雾质量"合计。
-
-结论：① **编译期档位是最大杠杆**（LOW 比 HIGH 少 40% 帧时间），其次是可见内容量（HIGH 下迷雾关掉 −55%）；
-真正该追问的是"为什么移动端默认设置解析成 HIGH"；② 10× 只跑到 6.9 天/秒，
-瓶颈是日代价 p50 22.7 ms（其中 `event_dispatch` 13.4 ms、`worker_time_execute` 16.6 ms）；
-③ 每日代价尖峰型（p50 8 ms / max 339 ms，36% 的天 > 50 ms），最贵那天已埋点子系统合计 < 15 ms，
-开销在未埋点路径；④ 1× 下 worker 每天 71 ms 只有 2.85 ms 在算、68.6 ms 在等帧边界，
-快照陈旧 58 ms —— 日结延迟是同步问题不是算力问题；⑤ 移动端 `t_render_ms`/`t_ui_ms` 恒 0，
-渲染侧只能靠帧率与场景 A/B 推断，需要补埋点。
-
-证据与全部原始数据：`artifacts/PERF_REPORT_ANDROID_20261119.md` +
-`artifacts/perf_android_2026111*_*/`（CSV/logcat/线程 CPU 序列/截图/summary.json）。
-同轮还确认：叙事事件弹窗会 `pause(true)` 卡住无人值守 soak，因此 perf 录制启动时自动打开 GM 的
-`ui.suppress_popups`；`android_perf_run.ps1` 另加 `-MaxBatteryTempC 43` 热保护（连跑曾把电池顶到 51.9 °C）。
-
-### 渲染耗时细分（逐层扫描，2026-11-19 同日）
-
-`render_perf_probe.gd` 逐帧写 `render_trace_*.csv`（seg / fps / frame_ms / setup_cpu_ms / draw_calls / primitives），
-配合分段扫描（每层 `visible=false`+`set_process(false)`，层间交替插 baseline 抵消世界演进漂移）。
-整图视角（`fog=off`，基准 61.7 ms / 16.2 fps）：HexRenderer 整体 **44.1 ms（71.5%）**，其余 17.6 ms 是 HUD + WorldRoot 其它覆盖层 + present/引擎；
-天气层 **4.6 ms（7.4%）**且占全画面 **82% 的图元**（36.0k→6.4k）；地表基座/资源/建筑/边界各自 ≤1.7 ms（噪声内）。
-默认迷雾视角（23.1 ms）：天气 2.4 ms、世界 6.1 ms、UI 0.4 ms，其余是同一块 ~17 ms 地板（≈57 fps，接近 60 Hz 一个 vsync 周期）。
-
-- **缺陷信号**：把植被层 20 个节点设为不可见后帧时间反而从 61.7 → **119.6 ms（1.94×）**，两轮复现，图元数几乎不变（36.0k→35.6k）。
-  说明隐藏到的只是内层 MultiMesh，layer 自身的实例更新仍在跑并被切成每帧重建 ⇒ **植被层 visible / set_process 没有真正解耦**。
-  在修掉之前，任何"关植被看省多少"的 A/B 都会得出反向结论；要量植被成本只能在 world build 前不生成或加层内计时。
-- 渲染侧口径：迷雾关时渲染线程 CPU ≈18.4 ms/帧（29.9%），GPU/present 等 ~43 ms ⇒ GPU 受限；迷雾开时 ≈10.6 ms（45.7%）。
-  `setup_cpu_ms`（draw list 装配）仅 0.7–1.5 ms。后期世界（day 700+）渲染线程升到 76.3%、帧时间 44.6 ms，瓶颈转向 CPU 渲染侧。
-- 仍未解决：植被/雾/地形之间约 38 ms 拆不开（节点级可见性已到极限，需要层内计时或逐层 GPU timestamp）；
-  `RuntimeClockBinding` 会把 `_clock.pause(true)` 每帧同步回 running，扫描前"冻结世界"的做法不成立。
-
-### 逐模块"独奏"与"关迷雾反而更慢"（2026-11-19 续）
-
-关掉帧率上限与 vsync 后，每次只保留"迷雾层 + 一个模块"量边际成本（默认档、1×、day 6–83）：
-
-| 可见内容 | 帧时间 | 模块成本 | draw calls | 图元 |
-| --- | --- | --- | --- | --- |
-| 全部（baseline） | 23.8 ms | — | 236 | 32.7k |
-| 只留迷雾 | **17.3 ms** | 含引擎固定开销，占默认帧 **73%** | 10 | 473 |
-| + 天气层 | 21.9 ms | **+4.55 ms（19%）** | 20 | **29.5k（90%）** |
-| + UI | 18.3 ms | +0.98 ms | 160 | 1.5k |
-| + 覆盖层 | 17.9 ms | +0.58 ms | 67 | 2.3k |
-| + 资源 | 17.6 ms | +0.34 ms | 22 | 0.8k |
-| + 地表/植被/建筑/边界 | 17.2–17.5 ms | ≤0.2 ms（隔离下未真正出画，只是上界） | 7–18 | 0.4–1.0k |
-
-- **病态路径（最要紧）**：把迷雾层隐藏后，即使其它层也全关，帧时间从 23.8 → **53.7 ms（只剩 2 个 draw call / 2136 图元）**，
-  比"只留迷雾"还贵 36 ms。三种做法都复现：`?fog=off`、隐藏 `FogOfWarLayer`、独奏 `none`。
-  ⇒ 迷雾同时是"地形 early-out 的开关"，关掉后世界材质走进贵得多的路径（疑似每帧重建材质/LUT 或全屏兜底 pass）。
-  **在查清这条路径之前，不要做任何"削减/关闭迷雾"的优化。**
-- **60 fps 上限**：`graphics_quality_settings.resolve()` 对移动端非 `low` 档固定 `frame_rate_limit=60`
-  （`Engine.max_fps=60`），`settings.cfg` 里玩家存的 `frame_rate_limit=30` 因 `graphics_custom=false` 被忽略。
-  实测封顶 57–58 fps 是**上限**不是渲染成本；测真实天花板须 `[perf] max_fps=0` + `vsync=0`。
-
-## 移动端河网消失：has_flow_tex 被画质动画开关关掉（2026-11-19）
-
-真机反馈「手机端河流没有正常渲染」：默认画质（`auto` → `MOBILE_QUALITY_LOW`）下整条河网、
-河口/岸线过渡和资源避河全部消失，只剩地表色与水面。
-
-根因在两条记录之间的语义漂移，两个改动各自都成立：
-
-1. `world_map.gdshader` 把 height 贴图的 B 通道（河流 SDF）当成**静态河网总闸**：
-   `scals.g = has_flow_tex ? flow_raw : 0.0`，`land_pipeline` 的河体/河岸 outline/河面法线/
-   粗糙度、`water_pipeline` 与 `shore_common` 的河口 estuary、`resource_ground_cover` 的
-   避河遮罩全部由 `scals.g` 驱动。
-2. `31ebfda17`（2026-11-17）给 `has_flow_tex` 的发布式加了
-   `DCFeatureFlags.water_flowmap_enabled()`。这个开关的文档写的是「移动端默认关，失掉的是
-   缓慢流向蠕动与环流漂移」（`feature_flags.gd` 的 `[mobile-drop-flowmap]`），但它落在
-   `has_flow_tex` 上就变成了「移动端一条河都不画」。
-
-证据链（无需真机即可判定）：`_heavy_visual_enabled()` 在 `OS.has_feature("mobile")` 时返回
-false → `water_flowmap_enabled()` false → `renderer_material_publish.gd` 推
-`has_flow_tex=false` → shader `scals.g=0` → `smoothstep(river_threshold_low, river_threshold_high, 0)=0`
-→ 河流分支、outline、河面法线、roughness、estuary、避河全部不成立。桌面不受影响（该开关
-默认 true），所以是「只有手机」的表现。
-
-修复：`has_flow_tex` 只表示**数据就绪**，抽成纯函数
-`RendererMaterialPublish.flow_channel_ready(height_ready, flow_size, hm_size)`
-（height 来源就绪 + `flow_buffer` 覆盖 `hm_size` 全图），主地形与资源地表两处发布点共用；
-`water_flowmap_enabled()` 回到它原本的用途（`ocean_current_flow_tex_bound` 与流速动画），
-不再参与「有没有河」。shader 未改，`has_flow_tex` 的闸门语义不变。
-
-验证：`tests/rendering/terrain_river_flow_gate_test.gd`（15 checks / 0 failures）覆盖
-就绪/缺失四种数据状态、两个发布点各只有一处 `has_flow_tex` 推送且都走纯函数、以及
-`world_map` 仍以 `scals.g = has_flow_tex ? flow_raw : 0.0` 作为静态河网闸门（源码守卫，
-因为平台开关在 headless 下无法伪造）。`tests/world/terrain_shader_variant_test.gd`
-（369 checks）与 `tests/ui/visual_tile_layout_test.gd` 同批通过。
-
-未覆盖：本机没有 Android 设备，修复后的真机截图与 logcat 未执行；同一次反馈里的
-「拉丝状地形纹理错误」尚未复现定位（已请玩家提供截图与 `visual tile layout:` /
-`visual tiles: legacy` 日志行），本轮不把它并入本条结论。
-
-## 在途要人被误退场导致读档全灭（2026-11-19）
-
-玩家报送的 9 份日志里，3 份 `map_generation_failure_*.txt` 与 3 份 `godot*.log` 都是同一条：
-读档在 `save_restore` 阶段失败，`reason=save_restore_failed`、`summary=save_family_expedition_person_invalid`、
-`code=ecp2_restore_failed`（另有 11.16.55 一份是独立的经济 worker fault
-`building_investment_capital_preflight_drift`，同批修复，见下面「投资资金预检漂移修复」一节）。
-
-根因：家族开拓载荷抽人时把随行要人的 `cohort_handle` 与职业 lane 清零，人跟着队伍走；
-`economy_runtime_person_commit.cpp` 第 1 阶段只按“家族有效 + cohort 有效 + 成员边存在”判退场，
-于是这些在途要人在出发后的第一个 epoch 就被 `retire_person` 掉，载荷里留下死句柄，
-PKEC 写出后 `economy_runtime_persistence_lineage.cpp` 的 `save_family_expedition_person_invalid`
-校验必然拒绝整份存档。复现：`tests/probes` 一次性探针在 seed 260900 上出发 1 名要人，
-跑一天后该要人从 `get_family_notable_people` 列表里消失（`transit_still=0/1`），PKEC 回读即报该原因。
-
-修复：`person_in_expedition_transit` 让 PERSON_COMMIT 放过在途要人；
-`retire_person` 先 `drop_expedition_transit_person` 摘掉载荷引用并修正后续 `person_begin`
-（家族解散等其它权威仍可能退人）；PKEC 写入按实际句柄 lane 夹紧 `person_count` 防越界；
-读取侧对旧存档里已失效的句柄降级为丢弃该人物 lane 并回报 `dropped_transit_persons`，
-`cohort_handle != 0` 或家族不匹配仍然是硬错误。
-
-验证：Godot 4.6.2 无头 `family_colonization_runtime_test.gd`（含新场景，见
-`-- --transit-person-only`）全绿，PKEC 回读 hash 相等；`get_family_notable_people` 在途中
-`cell_indices == -1` 的要人不再消失。未覆盖：真实玩家 7.9e7 字节存档未拿到，旧存读档
-只在测试用极小存档上验证“丢 lane 后可读”。
-
-## 渲染/音频三项修复（2026-11-19）
-
-本批玩家日志里与读档无关的三条真问题，均非“日志太吵”级别：
-
-1. **细节层 fallback 的 MultiMesh 没有 mesh**（`multimesh->mesh.is_null()` ×363）。GDScript
-   fallback 路径用临时 `MultiMesh` 打包 instance buffer，从未赋 `mesh`，引擎在
-   `set_instance_count` 处拒绝重建 AABB。修：`scripts/rendering/shrub/chunk_refresh.gd` 的
-   fallback 补 `mm.mesh = host._cached_detail_mesh()`（与同文件正常渲染路径一致）；打包出的
-   instance buffer 内容不变，帧时间不受影响，只去掉每次 fallback 的引擎报错与一次多余 RD 分配。
-2. **纸贴建筑图标在 release 下少一层**（`Cannot convert/blit_rect/resize in compressed image
-   formats` ×42）。纸贴图集 `compress/mode=1`，`Image` 的 `convert/resize/blend_rect` 对压缩图
-   全部被拒，产品图层被静默丢弃且坏贴图写进缓存。修：`scripts/ui/icon_catalog.gd`
-   `_paper_building_texture` 合成前 `is_compressed() → decompress()`；dev 工程里图集是未压缩
-   RGBA8（探针实测 `format=5 compressed=false`），所以他本机复现不出来。
-3. **horizon 计算着色器在导出包里永远缺失**（`shader_source_missing:…glsl`）。`.glsl` 有同目录
-   importer，导出包只带导入产物 `.res`，不带源文本；baker 却用 `FileAccess.get_file_as_string`
-   读源。**实测 `include_filter` 对已导入文件无效**（加 `shaders/compute/*.glsl` 后导出日志里只多
-   出 `.glsl.import`，没有源文件），因此回退了那处配置改动，改为
-   `scripts/rendering/visual_tile_horizon_baker.gd::_create_shader_bundle` 优先
-   `load()` 导入后的 `RDShaderFile.get_spirv()`，无导入产物时才回退读源文本现场编译。
-   探针实测三个 shader 的 SPIR-V 均有效（bytecode 5916 / 2868 / 28220，compile_error 空），
-   而导出 pck 本来就带这些 `.res`。
-
-未处理（记录在案）：`[runtime-forensics/stall] day_stall_reason_mask:1` 是环境输入 4 槽环满的
-日屏障等待（不是掉帧），需要单开气候输入吞吐专项；`No active debugger` / `Capture not
-registered: 'fmod'` 是 FMOD addon 在非调试器与退出时自发的日志，项目侧无调用，按既有
-`docs/audio/fmod-integration.md` 记录不处理。
-
-验证：一键探针 `tests/probes/_tmp_horizon_shader_probe.gd`（0 failures）；GDScript 解析检查通过；
-`icon_catalog_audit_test.gd` PASS（451 个图标、21 个图集）。**未做**真实 GPU 下的
-horizon 画质对比与导出包实机验证。
-
-## GM 面板与诊断脚本的三处报错（2026-11-19）
-
-第二批玩家日志（`godot (1).log`，day 2146 的同一经济 fatal 会话）里另有三个**只影响 GM/诊断**的
-脚本错误，都只在该玩家打开 GM 面板时出现，但会污染日志并让诊断数据缺失：
-
-1. `Invalid call. Nonexistent function 'component_id' in base 'RefCounted (EconomyFacade)'` ×8：
-   `scripts/ui/economy_data_recorder.gd` 把组件槽查询发给了 EconomyFacade；槽 id 属于 DataCore
-   世界（`DCWorldExt.component_id`，见 `scripts/data_core/component_schema.gd` 的 `cpp_name`）。
-   已改为经 `facade.world_ext()` 取 `DCWorldExt` 再按 `cell_res_<name>_reserve` 查槽；取不到时告警
-   并跳过资源表，不再每次录制刷 8 条错误。
-2. `Trying to assign value of type 'Texture2DArray' to a variable of type 'Texture2D'`：
-   `scripts/game/world_runtime_gm_adapter_part2.gd` 的河流 flow 诊断在 tiled 模式下把
-   `visual_height_tiles`（`Texture2DArray`）赋给 `Texture2D` 局部变量。已改为无类型局部变量 +
-   `_texture_size_text()`（同时支持 `Texture2D` / `Texture2DArray`，后者用
-   width×height×layers 描述）。
-3. ``NaN` found in argument passed to JSON.stringify()`：`scripts/ui/debug_console.gd` 的快照
-   直接 `JSON.stringify(payload)`，采样窗口为空时 avg/min/max 可能是 NaN/INF，被静默写成
-   `null` 且只警告一次、事后无法知道是哪个指标。已改为写盘前 `_sanitize_non_finite()`，
-   把非有限浮点替换成 `null`（含 PackedFloat*Array）并在告警里打印键路径。
-
-同批截图里还看到 GM 面板「日期 …日 0」：适配层读了不存在的
-`calendar.get("day")`（时钟给的是 `day_of_month`），已在
-`scripts/game/world_runtime_gm_adapter_part1.gd` 修正。
-
-验证：四个脚本 `load()` 解析通过；`_sanitize_non_finite` 探针实测
-`{"a":NaN,"b":[1.0,INF],"c":{"d":2.0},"e":PackedFloat32Array([NaN,3.0])}` →
-`{"a":null,"b":[1.0,null],"c":{"d":2.0},"e":[null,3.0]}`、reported=`["$.a","$.b[1]","$.e[0]"]`；
-`ClassDB.class_has_method("DCWorldExt","component_id")=true`。GM 面板与录制器的实际交互**未在
-真机复验**（需要点开 GM 面板录制与快照按钮）。
-
-## 投资资金预检漂移修复（2026-11-19）
-
-玩家 11.16.55 日志里 day 12236 的经济 worker fault `building_investment_capital_preflight_drift`
-（时钟自动暂停）。
-
-根因不是钱漏洞（`money_now == money_expected`，diff=0）：投资组合的资金预检是一张**快照证书**，
-而写入侧 `move_cohort_population` 按 live 状态算钱，且存在「成功但不搬人」的出口
-（`move_pop == 0`，slot 被前一条腿抽空、`release_slot` 保留 `signature_id`）。原来的顺序是先
-写人口/现金、再在 `investment_commit_portfolio` 里发现补不足只能 `fail()`，违反
-「写入前把矛盾解决掉、落库余额断言不放宽」的既有契约。
-
-修复三部分，均不放宽断言：
-
-1. **一条现金规则**：新增 `gdext/src/economy_family_move_cash.h::cohort_move_cash()`，live 写入
-   （`move_cohort_population`）、组合预检（`investment_portfolio_funds_feasible`）与新的写入前
-   闸门（`plan_cohort_move_cash`，`economy_runtime.cpp:1663`）共用；预检再也不能用另一套公式
-   批准一笔写入付不起的腿。
-2. **写入前闸门**：`investment_commit_portfolio` 在写任何列之前用 live 状态复算本腿转移，不满足
-   就按既有「前缀裁剪」把候选 `allocated_count = 0`、`++_building_investment_capital_limited`
-   并继续；两处 backstop 断言原样保留（现在只会在真正的算术故障时可达）。
-   判据必须按分支写：抽空分支只看 `carried < required_capital`；普通分支因为 backstop 读的是
-   **移动后**的 sponsor 余额（`funds_before - carried < required - carried` 中 `carried` 抵消），
-   等价于 `funds_before < required_capital`。用更窄的 `funds_before < required - carried` 会留下
-   `required - carried <= funds_before < required` 这个窗口重新触发同一 fatal（已加反例 fixture）。
-3. **可诊断**：`record_investment_fatal_row()` 记录失败腿，`fatal_context_report()` 以
-   `investment_row` 输出，`runtime_forensics.gd` 原样写进
-   `[runtime-forensics/<tag>/fatal-context]`。原来 `BUILDING_COMMIT` 的 `amount / handle` 全是
-   `FatalContext{}` 默认值，玩家报告里没有任何可用定位字段。
-
-验证：`tests/building/building_portfolio_funds_regression_test.gd` 在闸门关闭时复现
-`investment_portfolio_exhausted_sponsor_not_trimmed:…preflight_drift`、开启后 PASS；新增
-top-up 窗口反例、无裁剪聚合守恒、fatal-row JSON 三个 fixture；27 个套件里 24 通过（3 个既有失败
-与本改动无关：资源曲线断言、`demand_lag` 内容审计、`colonization_demand_runtime_test.gd` 解析错），
-`building_runtime_test` 552 PASS/0 FAIL（真实投资日 `portfolios_started==1`），40 天无头 soak：
-`fatal=false ledger_failures=0 population/money/goods_error=0`。本机 debug+release 两套配置均已编译；
-集成回归（建筑、家族、殖民、存档、授权门）全绿。遗留：perf 记录没有 `building_investment_*` 列，
-"投资确实执行"目前靠财政结算计时与建筑套件的组合断言；backstop 断言按契约保持可达。
-
-## 建材付款漂移的可诊断性（2026-11-19）
-
-同一批玩家日志的后续会话里出现**第二个** reason：day 2506
-`building_construction_preflight_funds_drift`，触发点是
-`economy_runtime_building_construction.cpp` 的 `commit_preflighted_build_command`
-（`funds[owner_slot] < total_cost`），调用自投资组合第二段「付建材款」
-（`economy_runtime_building_investment_portfolio.cpp` 的 `commit_preflighted_build_command` 调用）。
-它与上一节的 `building_investment_capital_preflight_drift` 是同一「预检快照 vs 提交读 live」家族的
-上下两段：**上一节的写入前闸门只覆盖资金/迁人，不覆盖建材付款**。
-
-按不变量，这条断言理论上不该可达：预检把建材计划收窄到
-`total_cost ≤ allocated_count × (funding_capital + merchant_credit)`，提交侧又保证 owner 拿到
-`max(carried, required_capital) + merchant_credit`，所以只有"预检与提交对 live 状态理解不一致"
-才会破。旧构建连资金闸门都没有，破口应在 owner 实际到账少于预检投影。**没有现场存档不做组合账
-重构**（玩家那份 `economy.pkec` 40 MB、`restore_eligible:false`，在玩家机器上）。
-
-本轮只补可诊断性：新增 `ConstructionFatalRow` + `record_construction_fatal_row()`，在 funds /
-stock 两个断言点记录 `reason / cell / type_id / allocated_count / total_cost / owner_slot /
-owner_funds / funding_gap / debt_principal / material_feasible / good_count / first_good_id /
-first_required / first_stock`，另有投资组合上下文 `portfolio_index / portfolio_size`、
-`capital_limited / cost_envelope_trimmed`、`pending_construction_count()`；
-`fatal_context_report()` 输出 `construction_row`，与 `investment_row` 走同一条 forensics 序列化路径。
-
-玩家后来补的 4 份 `economy_fatal_*.json` 证实两件事：四份全是旧构建（无 `investment_row` /
-`construction_row`）；**day 2506 的建材漂移在同一存档上稳定复现**（16:18 与 16:42 两次，钱只差几千）。
-所以后续只需要玩家的 `.pksv`，用既有入口
-`tools/runtime/Invoke-SaveReplay.ps1 -SavePath <save> -Days 20 -Speed 10`
-（背后是 `tests/game/headless_save_replay.gd`，生产恢复路径）即可复现并补写入前闸门。
-
-验证：debug + release 两套 DLL 重编；`building_portfolio_funds_regression_test` PASS（既有断言用例
-扩展为同时校验 `construction_row` 字段）；`runtime_authority_m5_m6_gate_test` 26 checks / 0 failures。
-**未修**：材料付款腿的写入前闸门，需先拿到可复现存档。
-
-### 无存档排查：把过程量写进 forensics（同日追加）
-
-玩家只发 7 KB 的 `economy_fatal_*.json`、不发 40 MB 存档时，报告必须自带"过程量"。本轮在
-`fatal_context_report()` 增加 `investment_legs`：按执行顺序记录每条投资腿的
-`candidate / type_id / allocated / transition / sponsor_slot / owner_slot / owner_population /
-required_capital / source_population_before / source_funds_before / carried / correction /
-credit / owner_funds_after_move / owner_funds_after_credit / material_cost /
-owner_funds_at_material / source_drained`。它由 `investment_commit_portfolio` 在写入过程中填充
-（每格清空一次，所以 fatal 一定对应失败那一格），成功提交后也可读，便于和预检投影逐项对比。
-`construction_row` 同时补 `portfolio_index / portfolio_size`、`capital_limited /
-cost_envelope_trimmed`、`pending_construction_count()`。
-
-fixture：`investment_portfolio_exhausted_sponsor_must_trim` 断言提交成功后
-`fatal_context_report()` 必含非空 `investment_legs`，且末条腿的 `material_cost /
-owner_funds_at_material / required_capital` 完整。debug+release 重编通过，
-`building_portfolio_funds_regression_test` / `runtime_authority_m5_m6_gate_test` /
-`building_runtime_test` 全绿。
-
-方法论（写进排查流程）：① 先按不变量证明断言"模型上不可达"，把问题收敛到"模型与 live 不一致"；
-② 用同一现场的两次复现做字段差分；③ 让 forensics 自带过程量（本节）；④ 长期：让故障快照可加载、
-让每个 backstop 带稳定 `assert_id` 与可回放 witness，把玩家报告直接变成 fixture。
-
-## 家族效果数值重做（2026-11-19）
-
-玩家反馈家族效果加成普遍只有个位数、且要先爬威望档，付出与收获不成比例。核对后确认三处
-让“纸面数字”比“实际生效”更弱的原因：
-
-1. 正式目录 `family_official_buffs.json` 里 49 条效果的 `magnitude_by_prestige_q16` 全是统一
-   的 `0.70 / 0.82 / 0.94 / 1.06 / 1.18 / 1.30` 倍率，而定义自带的基础增量只有 2%–10%，
-   所以显示 +10% 的档位实际只结算约 +3.9%。
-2. 4 条效果引用了目录里不存在的定义（`family.city.heat_birth_boost`、
-   `family.city.chain_output_boost`、`family.city.good.fish.output`），命令在绑定阶段被丢弃；
-   其中「燥热」还错接到 `family.city.birth_cut`，把“高温提高出生”做成了“降低出生”。
-3. 多命令效果只编译出第一条 `EMIT`（「涸泽而渔」「观潮生计」的第二条命令从未生效），
-   `百产之地` 的取上限指令用了 `MAX`（9）而不是 `MIN`（8）。
-
-本轮把效果表整体上调并按威望拉开档次：48 条既有效果中 38 条数值上调，整体约 2.5–4 倍
-（Ⅰ档中位约 2.9 倍、Ⅴ档中位约 2.6 倍，含持续时间与门槛提升的条目更高），威望Ⅰ大致等于
-旧版威望Ⅴ的六成；保留原条件、对象、范围与代价方向。单格产出类上限多在
-+18%~+50%，窄条件效果（玉米、木材、雨天农业）到 +70%~+80%；投资/就业权重类最高 +100%；
-一次性人口奖励 60–300。已经贴近上限的抗寒、买方折扣、分家保留比例只做小幅上调。
-`门客之家` 补进设计表（E049），目录恢复 49 条效果可复现。
-
-实现方式：`tools/generate_family_official_buffs.py` 新增 `FAMILY_DEF_BASE` 与 `mag_abs()`，
-把绝对档位增量换算成“定义基础增量的倍数”，定义值改为对应档位上限；新增 4 个家族专用定义
-（`production_boost_high`、`manufacturing_output_boost_high`、`chain_output_boost`、
-`good.fish.output`），与理念卡共用的 `production_boost` / `manufacturing_output_boost`
-保持原值不受影响。`触发型`（市集繁荣、旱年储备）的逐档数值同步改在
-`scripts/trigger/trigger_catalog.gd`。
-
-验证：`tools/check_family_buff_balance.py` 逐档核对“定义增量 × 档位倍率”与设计表文案，
-220 个档位全部一致；Godot 4.6.2 无头通过 `family_buff_runtime_test`、
-`family_runtime_test`、`family_effect_output_runtime_test`、`family_behavior_effect_runtime_test`、
-`family_effect_stack_runtime_test`、`family_effect_worker_forward_test`、
-`family_effect_restore_forward_test`、`family_founding_offer_runtime_test`、
-`family_colony_birth_runtime_test`、`family_colonization_runtime_test`、
-`family_workspace_ui_test`、`effect_domain_integration_test`、`effect_native_modifier_bridge_test`。
-未覆盖：真实存档里的旧家族效果实例（目录哈希变化会按既有约定拒绝旧档）；未做 50 日节奏实测。
-
-## 时代晋升科技门槛降到 45%（2026-11-19）
-
-玩家反馈升时代要求的科技量过多。根因是 `EraAdvancementCatalog.TECH_COMPLETION_RATIO`
-（v5 起为 0.6）：即便每代已有 20–45% 的可放弃空间，0.6 仍要求每代完成 14–33 项非里程碑
-科技，而这项条件 `mandatory = true` 不可替代，晋升实际被科技条卡住。现调到 0.45，每代必修
-11–25 项（石器 25/54、农耕 23/51、王国 24/52、电气 16/34、信息 14/30、智能 11/23）。
-只改比例常量，人口/建筑/贸易三项筛选（`CONDITIONS_REQUIRED = 3`）、物资篮子、经济门槛、
-`player_view.era_advancement` 存档字段与条件投影结构均未变；已启动的收购订单照旧履约。
-
-验证：`tests/era/era_advancement_service_test.gd` 改为从目录常量推导石器门槛，并新增
-「差一项不达标」「正好达标」两条边界断言；`tests/technology/era_advancement_service_test.gd`
-的 `TECH_GATE` 本就由常量推导，`tests/game/module_projection_boundaries_test.gd` 同理。
+## 上游地图、天气、地块看板与存档缩略图（2026-11-23）
+
+- 锡、盐、石灰石、硅砂与锌按适合开采的陆块补齐最低数量，合格陆块从 8 格起算。配额和仍缺的数量进入生成诊断。
+  玩家落点优先选至少 4 格的陆块。缺席物种只在满足既有生存条件且有空位时补种。
+- 气流辐合同时计算流入和流出，后台日天气与生成时的计算使用同一口径，降雨、暴雨和季风阈值同步调整。
+- 近景地块看板读取同一天发布的市场行情、阶层人口和组织度。窗口空间不足时保留悬停卡片。
+- 存档预览以 480 像素宽的 JPEG 为主，菜单按文件内容读取已有的 PNG、JPEG 和 WebP 预览。
+
+### PR #52 审查修正
+
+- 气旋生成、强度变化和尾流沿用原来的向内风评分。气旋与锋面只有在降水条件满足时才标记降水天气。复杂移动预设使用与地球预设相同的降水门槛。
+- 旧原生库缺少配额回报时，脚本从地图邻接关系识别陆块，应用同一矿点配额并记录短缺。
+- 看板显示储量条的满格值。缩略图遇到实际捕获、编码或读取异常时记录原因，无界面存档继续使用占位图。
+- 在 96×64、种子 `20260718` 的诊断地图中显式开启气旋，两版各推进 365 天。原强度门槛下，新生成数从 460 增至 494，更新现有气旋的次数从 1,559 降至 1,215。两版的推进速度都低于该脚本的性能门槛，本次只使用气旋计数。
+- 已重建目录缓存的来源清单，只更新了移动预设的来源指纹。清单中 1,006 个文件均存在且内容与指纹一致，包括审查提到的 `economy_command_result_text.gd` 和 `ideology_card_face_text.gd`。
+
+## 贸易光照与所得税回归（#42，2026-11-23）
+
+无窗口贸易集成测试中，天空光照和地平线设置的刷新检查在 `dcb78a2ac` 上均失败，修复后两项均通过。
+两次刷新都检查车辆和阴影是否保留原来的地形法线。
+
+所得税使用 Godot 4.6.3、macOS arm64 和本地调试库，默认地图为 60×40、种子 `20260718`。
+两次默认运行各启动一个新的进程，均以退出码 0 结束。按运行顺序记录完整通过行。
+
+```text
+[income-tax-player] PASS 50 committed days after income change; mixed_fiscal=false; final_committed_day=55; income_collected=650178; ledger_errors=0; writer=stage_ops
+[income-tax-player] PASS 50 committed days after income change; mixed_fiscal=false; final_committed_day=55; income_collected=650178; ledger_errors=0; writer=stage_ops
+```
+
+追加 `income_rate=-500` 的补贴用例也以退出码 0 结束，在第 55 日得到 `income_collected=0`、`ledger_errors=0`。
+各次运行的税率命令均在第 6 日生效。
+
+从仓库根目录执行以下检查。它要求两次运行都成功且各有一条通过行，并逐字比较两行。
+
+```sh
+(
+  set -eu
+  check_dir=$(mktemp -d)
+  for run in 1 2; do
+    output="$check_dir/default-$run.log"
+    godot --headless --path Project/project-keynes --log-file "$check_dir/engine-$run.log" \
+      res://tests/economy/income_tax_player_regression.tscn -- mode=ACTIVE > "$output" 2>&1
+    if rg '^SCRIPT ERROR:' "$output"; then
+      exit 1
+    fi
+    rg '^\[income-tax-player\] PASS ' "$output" > "$check_dir/default-$run.pass"
+    test "$(wc -l < "$check_dir/default-$run.pass")" -eq 1
+  done
+  diff -u "$check_dir/default-1.pass" "$check_dir/default-2.pass"
+  cat "$check_dir/default-1.pass" "$check_dir/default-2.pass"
+)
+```
+
+在 PR #48 合并提交 `a23fbbe19` 的项目副本中，用该提交所带的 macOS 调试库复现了 `650174`。
+随后仅换入本次验证用的调试库，同一命令得到 `650178`。两次均以退出码 0 结束，税率生效日、
+结束日和账目误差一致。两份调试库的 SHA-256 前 12 位分别为 `2ae61440c534` 和 `0e27e30909e2`。
+这次对照定位到版本间的库差异，尚未定位到具体的模拟计算改动。
+
+## 后台模拟迁移前后的快进吞吐（2026-11-21）
+
+对比 PR #13 合并前的 `5274b84fe` 与合并后的 `fe3220aa2`。两版各在独立 worktree 由源码构建
+macOS arm64 Release 库，逐轮用 `lsof` 核对实际加载的库。Apple M2、Godot 4.6.3，正式
+GameFlow 新开局，96×64 双大陆四国、初始人口 160、种子 `20260718`、100 倍速。两版交替各跑
+三次取中位数。无画面计第 5–305 天，窗口 1600×960 高画质、Metal 移动渲染、关垂直同步，
+计第 5–180 天。12 轮均收到连续提交，后台故障为零。机器另有任务，起始 1 分钟负载 2–13。
+
+| 项目 | 迁移前 | 迁移后 |
+| --- | ---: | ---: |
+| 窗口后台提交 | 40.01 天/秒 | 59.51 天/秒 |
+| 窗口实际绘制 | 43.55 帧/秒 | 37.30 帧/秒 |
+| 窗口开局加载 | 12.57 秒 | 12.64 秒 |
+| 无画面后台提交 | 31.93 天/秒 | 59.06 天/秒 |
+| 后台每日计算 `execute`（无画面） | 9.19 ms | 16.43 ms |
+| 后台每日等前台环境输入（无画面） | 17.57 ms | 0 |
+| 后台每日等主线程日尾（无画面） | 4.23 ms | 阶段已删除 |
+
+迁移去掉了等前台环境输入和日尾的时间，日尾工作并入后台计算，`execute` 因此升高。
+迁移后每天约 16.9 ms，100 天/秒需要 10 ms，`execute` 本身已超出。窗口一帧最多收到 8 天，
+帧率下降的 GPU 与主线程占比未剖析。本轮无画面走 GameFlow 并按默认项处理叙事事件，
+与 11-17 直接建宿主的测法不同，绝对值不可与之前的记录直接比较。两版第 1 天起
+`CLIMATE` 与完整经济摘要即不同，未追查。证据见
+`/private/tmp/keynes-migration-perf.zcNySk` 的 `screen-rate/comparison.json`、
+`clock-rate/comparison.json`、`parity/comparison.json` 和 `verification.json`。
 
 ## 开拓后的国界刷新（2026-11-19）
 
@@ -736,6 +146,38 @@ Release 均通过。新用例分别验证家族和无家族转职，以及资金
 库存守恒。建筑运行时 552 项、家族运行时 157 项、经济 StageOps 对照 40 项均通过。
 本机没有第 3743 天的现场存档；尝试回放第 2330 天的旧副本时未进入运行态
 （`runtime_never_became_ready`），因此未验证原局能跨过第 3744 天。
+
+## 每日计算后台交接与读档一致性（2026-11-18）
+
+正式整日模式在后台处理军务、兵员和口粮对账、物理视野、地图上的剩余资源恢复、
+物种变化、季节慢层与理念逐格加成汇总。主线程交接冻结输入和计算结果，再更新显示。
+理念的旧效果实例交接、目标匹配和指标采集仍经主线程兼容层。无线程 Web 走同步执行器。
+正式项目和性能验证项目都已移除空显示补丁的生成、读取和计数。
+
+修复逐日通知早于天气写回、跨年采样读错日、日尾任务占用同一槽位、军饷扣错账本、
+冷读档重复推进物种、恢复后扩散读到旧省区，以及加载中退出仍持有资源的问题。
+暂停期间，保存入口主动完成已结算日的交接。地块数量或物种列尺寸不匹配的存档明确拒绝。
+理念卡测试等科技确认后再发现卡牌。修正后对照了实际运行的后台汇总和主线程参考值。
+
+同一版 macOS arm64 调试库在 96×64 地图、四国开局运行 50 倍、100 倍、100 倍加两个 CPU
+加压进程，各完成第 1 至 370 日。八个系统、完整经济、军务、视野、物种和资源逐日摘要一致。
+另做一组常规对照和两组加压对照，生产、定日命令、冷读档后续算均一致。
+按第 1、20、30、364、366 日保存并在新进程加载。军务用例先招募并组军，续跑后检查
+部队实际移动和领土变更当天的后台视野结果。第 20 日也在两个 CPU 加压进程下续跑并比对。
+跨年对照续跑至第 375 日，短日历的年度自动存档另外通过冷读档对照。
+这些回放验证了所比较的逐日结果。带实际画面的快进与读档帧耗时仍待测量。
+
+正式配置的 15 套原生库已编译并安装。macOS arm64 和 x86_64、Linux x86_64、Windows x86_64
+的调试版与发布版通过 Godot 加载检查，Windows 使用 Wine，Linux 使用容器。两种 Web 线程
+配置的调试版与发布版均在 Chrome 加载通过。Android 三套库已核对架构、动态依赖和入口符号，
+实机加载待验证。iOS 当前没有原生库映射。性能验证项目同步更新其 14 条库映射。
+
+`check_committed_replay.py`、`check_runtime_load_consistency.py`、黄金逐日、军务索引、
+视野、季节刷新、加载退出、线程隔离和执行器切换定向测试通过。全仓库入口仍首先报出
+合并基线的 10 项行数超限。独立复核的 5 项 C++ 依赖违规和 3 项技能镜像差异也来自基线。
+性能验证项目的两套原生运行测试断言通过，空启动也会出现的退出资源告警与基线相同。
+军务功能自测通过。约 10 万格的独立军务耗时基准在同机三次对照中仍高于 2 ms 门槛，
+基线 p95 为 2.81–3.00 ms，本次为 2.53–2.82 ms。后台结果一致性用例单独通过。
 
 ## 地形 S7 复核：同口径对比 · 收益消融 · 判据修正（2026-11-18）
 
@@ -839,6 +281,37 @@ R1–R10 处置（上一轮结论）：
 - Godot 4.6.2 的 Compatibility 与 Forward+ 实际渲染均通过 112 项检查，覆盖 18 种形态、
   轻量远景和 Web LOW 合批变体。散布、合批、默认清单、地形 GI、资源层和地被回归通过。
   Web LOW 使用桌面渲染器编译并验证，浏览器和移动端真机尚无验证记录。
+
+## 静止迷雾与全屏阅读（2026-11-18）
+
+Apple M2，Godot 4.6.3 Metal Mobile，正式玩家场景，种子 20260718，窗口 1600×960。地表 100%、雾层 50%，暂停推演并固定镜头。每个镜头在同一次运行内交错测量，每种方式 4 轮，每轮剔除预热后采 40 帧。下表取各轮平均帧时间的中位数。雾动画每帧推进 1/30 秒，计时解除显示帧率上限。
+
+| 场景 | 原绘制方式 | 复用或停画 | 平均帧时间降幅 |
+| --- | ---: | ---: | ---: |
+| 半屏雾 | 13.92 ms | 13.61 ms | 2.2% |
+| 整屏浓雾 | 1.87 ms | 1.45 ms | 22.2% |
+| 全屏阅读年度报告 | 19.75 ms | 1.07 ms | 94.6% |
+
+两种雾镜头每 40 帧从绘制 40 次降到 20 次。半屏雾和整屏雾的截图平均单通道差分别为 0.02/255 和 0.05/255，平移、重新发布半屏视野和调整雾层分辨率后的首帧逐像素匹配强制重画。年报截图逐像素一致，主视口绘制调用从 179 降到 82。半透明、边缘露出地图和关闭面板的首帧均恢复地图。
+
+另在正常游戏循环中启用移动端自适应帧率，地表 75%、雾层 50%，镜头停稳 90 帧实测显示约 30.25 帧/秒、雾约 15.12 次/秒。全屏年报盖住地图时，时钟推进约 3.14 天，关闭首帧恢复地表。陆地静止镜头资源图层的单次准备耗时中位数（3 轮，各 1,000 次）从 33 降至 17 微秒。
+
+海面镜头另做诊断，在测试着色器中用常量替代水深计算和深浅底色，平均帧时间从 15.17 降至 14.37 ms，但明显改变了水色。这个试验没有计入产品收益，正式水面继续使用原绘制方式。手机功耗和温度无真机实测。本机对照脚本、原始日志和截图在 `/tmp/keynes-idle-redraw.gphv799R/`。 前后使用同一份按本分支原生源文件构建的 Mac 调试库；仓库自带调试库缺少 `run_bake_erosion_spl_pass`。5 项定向测试通过。全库脚本长度检查仍有 7 处原有超限。
+
+## 地图操作帧率与静止陆地缓存（2026-11-18）
+
+Apple M2、Godot 4.6.3 Metal，正式玩家场景，种子 20260718，1600×960。地表 75% 的操作测试中，每阶段记录 40 个实际绘制间隔。静止约 30 帧/秒，连续拖动约 60 帧/秒，松手、惯性结束后约 30 帧/秒。持续拖动期间底图重建 0 次。
+
+固定镜头、日照及动画时间，解除帧率限制，每个镜头交替测试 3 对，每侧取 22 帧的中位数，再取三轮中位数。下表为地表 100% 的稳态帧时间；首次建立缓存和移动镜头时使用直接绘制。地表 85% 时，陆地 15.48 → 14.03 ms，半屏雾 12.83 → 11.82 ms。
+
+| 镜头 | 直接绘制 | 复用底图 |
+| --- | ---: | ---: |
+| 陆地 | 17.14 ms | 15.18 ms |
+| 半屏有雾 | 15.21 ms | 13.72 ms |
+| 海面 | 15.14 ms | 15.11 ms |
+| 整屏浓雾 | 8.16 ms | 8.17 ms |
+
+两个清晰度下，每组截图的平均单通道差小于 0.20/255。日照变化可复用底图，地貌配色修改会刷新底图，移动镜头和重新发布视野的第一帧使用新图。手机功耗与温度尚无真机数据。
 
 ## 浓雾下的植被、点缀和建筑裁剪（2026-11-18）
 
@@ -1369,6 +842,122 @@ M2（闭合洼地）/ M4（流路直线度）/ 性能达标，**M1（脊是分�
    写成断言。
 4. **P4-1 的 fwidth 坑**：新增 `pk_hex_dom_offset()`（无导数、无 AA），供纹样锚点这类
    非一致控制流里调用。
+## 电脑和手机共用的绘制优化与画质自定义（2026-11-17）
+
+两端共用无可见贡献的雨雪遮片剔除和远景细碎水面波光淡出。主菜单和暂停菜单
+均可在预设基础上单独更改地图和迷雾清晰度、水面细节、植被和点缀密度、天气、
+地面云影及帧率上限。电脑自动使用高档、全尺寸地表和迷雾。手机自动保留全尺寸
+地表，使用 50% 宽高的迷雾、低档细节、关闭地面云影，上限 60 帧/秒。手机低档
+默认地表宽高 75%，上限 30 帧/秒。地图清晰度只缩放陆地/水面图层。
+
+Godot 4.6.3 / Apple M2 下，雨雪改前改后在 Metal Mobile 与 OpenGL Compatibility
+各 110 组逐像素一致。设置服务 19 项通过，包括旧设置文件、自定义恢复、独立选项
+和帧率上限。迷雾/天气、抗锯齿、Web 水面与植被分块的定向回归通过。地表缩放
+在真实 Metal 绘制中检查了三个缩放比例、标记对齐、平移、调整窗口和直绘恢复。
+40×28 正式游戏开局验证 100% → 85% 自定义 → 100%，并确认界面、选区、天气档和
+帧率上限。设置界面检查覆盖 1280×720、1512×648 和 1280×576 的触屏布局模拟。
+
+本机结果见 `/tmp/keynes-graphics-check.OOjiqcN7` 下的日志和截图。测试副本以
+当前提交为基础并叠加画质改动，和并行会话中的后台计算改动分开验证。macOS 启动
+仍有已知 FMOD 库缺失日志。Android/iOS 真机帧率和发热待测。
+
+### Mac 图形帧率补测（2026-11-17）
+
+Apple M2、Godot 4.6.3、Metal Mobile，使用同一份 macOS Release 原生库。正式
+60×40 四国开局，种子 20260718，1600×960 窗口，固定镜头和日照，暂停模拟，
+关闭垂直同步和帧率上限。记录实际绘制之间的时间。地图清晰度组关闭迷雾，
+只采纳植被补齐后绘制次数稳定的一轮，每档 90 帧。
+
+| 地图清晰度 | 帧/秒 | 单帧耗时 p95 |
+| --- | ---: | ---: |
+| 100% | 24.7 | 43.4 ms |
+| 90% | 29.1 | 36.5 ms |
+| 85% | 30.1 | 35.6 ms |
+| 75% | 34.3 | 31.3 ms |
+
+迷雾开启、地图清晰度固定 100% 的三轮交替对照中，完整效果中位数 20.7 帧/秒
+（20.5–20.8）。单独把雾层宽高调到 50% 后是 25.5 帧/秒（24.2–26.2）。在此基础
+上降低水面、植被、天气并关闭云影后是 32.1 帧/秒（30.6–33.2）。这组综合结果
+只能用于评价该组合。改前版同画质的整游戏试跑受植被完成程度和同时运行的编译、
+回归影响，未用来估算这次共用优化的整游戏净收益。本次 Metal 的逐视口 GPU 计时
+返回零，耗时取自实际绘制间隔。
+
+原始数据见 `/tmp/keynes-graphics-timing.lRKSEoEL/steady-candidate.log` 和
+`evidence.json`。手机真机当前不可用，发热和功耗未测。
+
+另用 1600×900、1,276 地块的离屏天气场景交替测了三对新旧雨雪 Shader。局部降雪
+每批绘制 48 次后读取图像，按帧折算的批次耗时中位数从 1.122 ms 降到 0.793 ms，
+三对分别缩短 29.9%、29.3%、31.6%。晴天与大范围降雪的结果有波动，收益未定。
+三个场景输出逐字节一致。此计时包括提交与读回等待。原始数据见
+`/tmp/keynes-weather-frame-bench.no2gZJ8W/timing-offscreen.log`。
+
+## 2026-11-19 多日放行后的停帧、季节显示与 Web 加载
+
+从 `81cfe2be1` 继续验证正式 96×64 四国场景。主线程停在第 34 日，
+给后台放行到第 37 日，等后台报告停在该日。用 `run_regression_checks.py --jobs 4`
+连续五次，每次前台帧数为零，实际提交三日。最终库的停帧时间依次为 92.880、136.736、
+129.887、110.070、108.331 ms。每次均输出 `9301 checks, 0 unexpected failures`。
+前 34 日的后台等待前台次数和前台模拟步骤均为零。1× 在第 37 日结算后发出的
+军令回执与结算日期均为第 38 日。
+
+暂停本批的编译任务后，96×64 四国无界面复测的 1×、10×、100×
+速率为 0.999、9.993、71.011 日/秒，前台宿主帧耗时中位数分别为 0.294、
+0.092、3.438 ms。37 日、80 日内联及后台、三组 370 日、规则矩阵和两组
+关闭 AI 的剧情与第 7 轮第 1 批逐字节一致。三个放行档点、四个 AI 档点、
+军务 54 个档点均续跑一致。
+
+季节显示按实际变化的格安装地貌、地表和植被，历史保存为整份发布数据，面板选格时
+切出该格。第 31 日显示安装在 1536、6144、17920 格地图上分别由 2.318、
+9.399、26.674 ms 变为 0.186、0.813、0.900 ms。三个尺寸在第 31、61 日分别
+逐格核对，显示分类和历史均为零差异。计时涵盖这一段安装。显式切回分域诊断时，
+将发布的环形历史和游标一次交回兼容调度。
+
+无线程 Web 将资源依赖从叶到根分帧解析，保留已读的依赖并向加载遮罩发布进度。
+Chromium 的九项资源夹具中，旧实现只观测到起始进度，新实现依次观测到
+`0.0`、`0.4`、`0.6` 和完成。此夹具验证加载期间能刷新遮罩。
+Web 四种构建均在 Chromium 查到全部 669 个原生方法，三个提交与显示相关调用成功。
+关闭渲染的 48×32 四国浏览器测试以无线程的原生执行器提交到第 3 日。
+完整开局另在建筑缓存初始化处复现了线程创建中止。无线程构建改为在取区块时分帧
+运行同一原生规划。2048 格的发布版夹具用 86 帧处理完八个区块，实例缓冲与有线程版一致。
+20×16 四国的有画面开局在无线程调试版和发布版均输出 `autotest_pass`，提交第 1 日。
+
+最终 macOS 调试库的 `--full --roundtrip --jobs 4` 为 118 项通过。Linux 两套库在
+容器内注册 669 个方法并正常退出，调试库另通过线程隔离、内联存读档与执行边界测试。
+
+## 模拟日通知与每帧显示（2026-11-17）
+
+剧情和 UI 账本仍逐日接收结算。地图提示、日期栏和面板在一帧内只接收最新的日期。原生
+提交把日期、版本、刷新标记和显示补丁一起发布。前台应用当日天气后才发出逐日通知，
+并在军务和资源写回完成后安排显示。全部资源由后台结算时，前台跳过该日的再生准备，
+仍写回资源变化并保留同步推进使用的日期。
+
+定向回归输入第 21 至 24 天四份提交，界面显示第 24 天，账本收到四天的结算。状态查询
+落后一日的用例验证了天气尚未应用时，该日的通知要等当天数据。音乐读取事件后的确认
+随逐日通知完成。
+
+第 364 份环境输入沿用第 365 日的日历相位。旧版从当前时钟读年度气候值，在换年信号
+之前采集到 0，之后采集到 0.00172551907598972。两者的气候和完整经济摘要从该日开始
+不同。用同一日期读取相位与年度气候值，保持基准轨迹。定向用例验证换年前后采集相同，
+提前读取时保留时钟的随机数进度。定位记录见
+`/tmp/keynes-split-display.snOh0vOj/compare-year.log`。
+
+Apple M2、Godot 4.6.3、Release 原生库。种子 20260718 的 96×64 四国开局在 1600×960
+高画质窗口以 100 倍运行。两次新版试跑连续结算 180 天，31 种资源均走后台路径。第 5 至
+180 天实测 7.85 和 8.31 天/秒，旧版两次为 8.04 和 17.35 天/秒。机器同时有其他任务，
+各次负载有差异。两次绘制之间最多结算一天。
+
+最终版在第 40 天停住前台 102.9 毫秒，期间绘制 0 帧、结算 0 天。后台几乎全部时间
+在等下一天的环境输入。这次窗口试跑为 9.30 天/秒。主线程仍需为每天准备环境输入并完成
+军务、资源写回和事件交接。真实窗口 100 天/秒的目标未完成。原始数据见
+`/tmp/keynes-split-display.snOh0vOj/graphical/final-comparison.json` 和
+`/tmp/keynes-split-display.snOh0vOj/hold-date-fixed.log`。
+
+最终版无画面以 50 倍、100 倍和 100 倍加两个额外 CPU 加压进程运行 370 天，跨年在内
+逐日对照一致。真实窗口加两个 CPU 加压进程运行 180 天，八个模块与完整经济校验逐日
+一致。命令生效日、加压读档续跑、显示与资源定向用例通过。命令用例有一轮退出时出现
+资源残留警告，重跑通过。结果见 `/tmp/keynes-split-display.snOh0vOj/date-fixed-parity/comparison.json`、
+`date-fixed-screen`、`date-fixed-commands`、`final-commands-saves` 和
+`date-fixed-focused.log`。
 
 ## 96×64 四国开局的后台天气准备（2026-11-17）
 
@@ -2130,16 +1719,6 @@ Shader 日/游戏年比例也已接入 HexRenderer.shader_days_per_game_year；�
 Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通过；
 地被桌面/移动/分块档回归 28 项通过。详见 [TOD 光照](../cpp-dots-runtime/vision-fog-and-borders.md#tod-光照)。
 
-2026-11-22：地表覆盖边界优化。`ResourceGroundCover` 为每个覆盖格维护一张 R8
-邻域差异 LUT，Shader 保留最近邻的群落 ID，只把该权重与已有地形 `edge_distance`
-结合做连续透明度衰减。低成本路径增加一次 R8 LUT 读取和一次 `smoothstep`，不重新采样
-邻居地被图层。默认边界混合强度为 0.85，旧的画质档位和 `[1, 1, 3]` 邻域采样配置保留。
-本机未安装 Godot 可执行文件，未完成图形运行验证；已完成 `git diff --check`。
-
-2026-11-23：海洋/海岸同属水面，但原有 `open_ocean_w` 只由水深决定，没有乘以
-`water_ctx_type_mix(B_OCEAN/COAST)`。海岸主格中的远洋色块因此持续到主导类型切换，
-造成接缝处的突兀扭曲。现改为复用已有主/次水体权重抑制远洋宏观色场，不新增纹理采样。
-
 ## GM 界面与事件屏蔽
 
 正式玩家 GM 的 `ui.suppress_popups` 在 Host 设置后通过 `gm_toggle_changed` 同步到
@@ -2150,29 +1729,6 @@ PlayerController 的年度报告、叙事、时代奖励、家族创立和理念
 中的 GM 面板；关闭后恢复切换前的可见性。
 GM 总览的时钟诊断还显示 `last_pause_source`、`last_pause_day` 和
 `authority_fault_hold`，用于区分 UI 自动暂停与运行时故障保护。
-2026-11-20：事件弹窗改为「窗口开着就静置」。玩家反馈事件极端频繁、且每次都强行打断正在读的
-窗口。根因两处：① `GameUIManager.show_narrative_event_offer` 在展示前直接
-`close_country_panel()`，科技 / 经济(税收) / 军事 / 政治 / 外交卷宗被事件关掉；② 弹窗节奏按
-游戏日计（全局 60 日 + 每格每年两次），x5 速度下 60 日只有约 12 秒。改法：窗口开着时不展示、
-不改模态锁，由 `NarrativeEventFlow` 自己 `pause(true)` 并播一次提示音（复用已烘焙的
-`ideology_reveal`，未新增 FMOD 事件），暂停快照在静置那一刻登记一次，玩家中途自己按继续不会被
-按回去；窗口关闭路径（国家卷宗 / 营造 / 家族档案 / 军务档案 / 派遣 / 议和 / 史册 / GM / 时代
-纸笺）回调 `GameUIManager.notify_workspace_closed()`，内部延后一帧重查，流程另有 0.2 秒兜底
-重试。额度收紧为每格每游戏年一次，脉冲放行 25%→12.5%、AI 预热 4%→2%、事实 20%→10%。
-同日再次收紧（玩家反馈仍太密）：脉冲 12.5%→6.25%，AI 预热 2%→1%、事实 10%→5%、局势上限
-40%→20%。按脉冲模型估算两次弹窗间隔从约 220 天拉到约 380 天（≈ 每游戏年一次；x1 约 6 分钟、
-x5 约 76 秒、x10 约 38 秒）；实际略高频于估算，因为事实通道与定时后续不走脉冲骰子。
-`min_popup_gap_days`(60) 与 `pulse_interval_days`(20) 未动，本次只改概率，便于单独回退。
-验证：新增 `tests/game/narrative_window_deferral_test.gd`（30 项）与
-`tests/ui/narrative_workspace_gate_test.gd`（5 项，须不带 `--quit` 运行）；
-`narrative_popup_suppression_test.gd`（24 项）、`narrative_event_runtime_test.gd`（108 项）、
-`narrative_event_people_test.gd`（38 项）、`narrative_family_bridge_test.gd`（28 项）、
-`narrative_war_bridge_test.gd`（21 项）、`narrative_effect_radius_test.gd`（47 项）通过。
-`narrative_event_waterworks_chain_test.gd` 仍有 2 项既有失败：`narrative.levy.labor_satisfaction`
-的卡面百分比断言（该 stat 是点数不是百分比）与测试内 `_stat_key_for` 映射表未覆盖该键，属内容/
-用例漂移，本次未动。`player_country_ui_smoke_test.gd` 已按静置语义更新（待阅事件先决定掉，并断言
-卷宗没被挤掉），但它在本机无头环境世界启动后即 ACCESS_VIOLATION（HEAD 同样崩），本机无法用它取证。
-
 2026-11-19：恢复玩家叛乱事件链的会话接线。回归测试先复现了旧档已有第 4 阶动员却未投递事件，
 再验证首次提交补发、弹窗暂停、玩家选择、升阶续接及待独立队列序列化。叛乱服务 15 项、
 叙事运行时 108 项、弹窗屏蔽 24 项均通过，正式 PKSV 整档往返 0 失败。
@@ -2781,568 +2337,3 @@ Apple M2、Godot 4.6.3、Metal Mobile，使用同一份 macOS Release 原生库�
 三对分别缩短 29.9%、29.3%、31.6%。晴天与大范围降雪的结果有波动，收益未定。
 三个场景输出逐字节一致。此计时包括提交与读回等待。原始数据见
 `/tmp/keynes-weather-frame-bench.no2gZJ8W/timing-offscreen.log`。
-
-## 玩家可见时间统一为年月日（2026-11-19）
-
-玩家界面此前到处显示模拟内部口径「第 1 日」「第 42 天」「第 1 年 · 1 月 1 日」。本轮把日期文案
-收敛到 `WorldClock.date_text_for_day()` 与 `date_text()`，全游戏统一为 `1年2月14日`。
-
-- 顶栏、事件弹窗、史册、GM 面板、年鉴封面与年报标题改为 `N年M月D日` / `N年`。
-- 经济卷宗与 HUD 结算日、地块检查器的最近结算与在途订单起止日、建造完工日、家族与人物创立日、
-  科技信号首次记录日、殖民队出发/采购/抵达日、停战与和议冷却日、战事日志、国家摘要、
-  存档槽位标题、GDP 横幅起算日都按日索引换算成日期。
-- 时长语义保持不变（已战、剩余、工期、近 N 日）；外交面板的战争计数由「第 N 日」改为「已战 N 日」。
-- 顺带修掉一处既有文案缺陷：宣战按钮在已递交状态下只有「已递交」，现在写明「已递交，次日生效」。
-
-验证（2026-11-19，多为 headless 脚本测试，另有一次带渲染的叙事界面截图）：
-
-- `godot --headless --path Project/project-keynes --editor --quit` 无 Parse Error / SCRIPT ERROR。
-- 通过：`tests/ui/player_top_bar_fit_test.gd`、`tests/ui/hud_status_card_test.gd`、
-  `tests/economy/economy_dossier_view_model_test.gd`、`tests/economy/economy_fiscal_history_rolling_test.gd`、
-  `tests/ui/annual_report_test.gd`、`tests/family/family_workspace_ui_test.gd`、
-  `tests/game/narrative_event_runtime_test.gd`（108 checks）、`tests/ui/inspector_live_patch_test.gd`、
-  `tests/ui/diplomacy_workspace_test.gd`、`tests/ui/gm_panel_view_model_test.gd`、
-  `tests/ui/gm_panel_runtime_test.gd`、`tests/ui/info_panel_resource_lines_test.gd`。
-- 顶栏排印回归的窄窗断点随文案变短重定：800×600 现在按原字号放得下（`DATE_FONT_SIZE`），
-  760×600 才降字号，两条断言分别守住「放得下不裁字」与「放不下先降字号」。
-- 仍失败且与本次无关：`tests/ui/annual_report_ui_test.gd`（撕裂遮罩距离场）与
-  `tests/ui/ui_scene_structure_test.gd`（`touch_number_pad.gd` 运行期构造容器），
-  失败项点名的都是本次未改动的文件；`tools/ci/check_size_ratchet.py` 的 8 个超限文件与
-  `check_skill_mirrors.py` 的 4 个 skill 漂移在改动前就已存在（`cell_inspector/construction.gd`
-  在 HEAD 即为 1355 行，本次只替换 1 行）。其余 guard 在本机因 GBK 默认编码报
-  UnicodeDecodeError，未作为结论。
-- 带渲染截图：`tests/qa/narrative_ui_screenshot_qa.gd` 跑通并目检事件弹窗与史册的日期题头
-  （`1年3月28日`），无裁字。
-- 未做：整游戏内地图与顶栏的多分辨率 A/B 截图；`Project/perf-validation` 镜像（该目录与主工程
-  已大幅漂移，按既有约定不同步）。
-
-## 运行时故障基建 R1–R6（2026-11-19）
-
-计划：[docs/plans/runtime-fault-infrastructure-plan.md](../plans/runtime-fault-infrastructure-plan.md)；
-逐项执行清单与实测数字：[docs/plans/runtime-fault-infrastructure-checklist.md](../plans/runtime-fault-infrastructure-checklist.md)。
-`.pkinc` 格式契约：[docs/runtime/incident-bundle-schema.md](../runtime/incident-bundle-schema.md)。
-
-目标是「玩家报错 → 定位到根因」从平均 7 轮文件往返压到 1 轮：现场自带构建 ID、断言 ID 与
-过程量；故障现场可离线重放；新增 fatal 必须先登记台账否则 CI 红。**本轮不改任何断言逻辑与
-经济账本写入顺序**，只加诊断、复现与治理能力。
-
-### 关键量（本机实测，Windows + Godot 4.6.2 + MSVC，不是估计）
-
-| 指标 | 改动前 | 改动后 |
-| --- | --- | --- |
-| 现场可交付体积 | 40.6 MB `economy.pkec` × 131 份 / 1.07 GB | **1.6 KB** `.pkinc`（同一现场形状） |
-| 现场是否可知「哪次构建」 | 只能反推二进制里有没有某个字符串 | `build_id=<sha>+<utc>` 在 report/fatal_context/`.pkinc`/GM 面板 |
-| 现场是否可知「哪条断言」 | 裸字符串，无 ID、无台账 | `assert_id=INV-ECON-0042` + witness 对象 |
-| 离线复现 | 无入口 | `reproduced=true`、`diff=[]`；篡改 witness → `reproduced=false` 且 `diff` 点名字段 |
-| 400 天 soak（60×40） | ≈ 11 s/天（debug）⇒ 约 1.2 h | **34.6 s** |
-| 提交前核验 | 手工拼命令 | `.\tools\ci\verify.ps1 -Quick` → GREEN（16.6 s） |
-
-### R4.1 结论：快照「能写不能读」是**返回字典缺键**，不是 PKEC header 缺段
-
-这份结论否掉了计划里 H1/H2/H3 三个候选，改按「字段没被上报」处理：
-
-- `NativeEconomyRuntime::begin_save()` 的返回字典只有 `ok/chunk_bytes/schema_version/catalog_hash/committed_day`，
-  **从不返回** `generation` 与 `state_hash`；而 `runtime_forensics.gd` 读的是
-  `begun.get("state_hash", 0)` / `begun.get("generation", 0)`，于是恒为 0。
-- 同一份现场里 `country.pkcn` 是 `native_generation:1` / 非零哈希，正因为 `country_runtime_persistence.cpp`
-  的 `begin_save` 有 `out["state_hash"] = state_hash(); out["generation"] = _generation;`。
-- `restore_eligible` 在 C++ 里**整个仓库不存在**，是 `runtime_forensics.gd` 里硬编码的 `false`。
-- 快照本身是可恢复形态：`epoch_active:false`、`snapshot_boundary:"committed_boundary"`、
-  `economy.pkec ok:true schema:65`、42.5 MB 完整写出。PKEC 头里也确实有 `_committed_generation`
-  （写在 `SAVE_SECTION_CADENCE_STATE` footer）。
-- 唯一真实的缺口是 **Economy 自己的 `state_hash` 从来不存盘**（头里只有 catalog/environment/event/
-  prosperity/family 各 hash 与 Country 的配对 hash），所以该值只能在 `begin_save` 时实时算；
-  新增 `state_hash_source:"live_economy_state_hash"` 明说它不来自文件。恢复并不需要它
-  （恢复校验的是 Country 身份 + catalog hash + 形状/计数）。
-
-修完后 `begin_forensics_save()` 实测：`generation=2  state_hash=1283621631749218751
-restore_eligible=true  epoch_active=false`。
-
-### R1 断言台账与构建标识
-
-- `docs/runtime/invariants.json` 登记 **2731** 条 reason（`gdext/src` 351 个 `.cpp`，3323 处出现点）。
-  计划 §4.6 预估「150–300 条」低估了一个量级：那是 fatal 的量级，实际 error 字符串是 2731 条。
-  其中 `kind=fatal` 4 条已完成 witness/playbook（INV-ECON-0040/0041/0042、INV-SAVE-0001），
-  其余 2727 条先以 `kind=unknown` 入库，按模块分批补（ECON 882 / COUNTRY 469 / CORE 376 / EFFECT 299 /
-  CLIMATE 230 / MODIFIER 129 / SAVE 121 / MILITARY 113 / TRIGGER 107）。
-- `tools/ci/check_fault_taxonomy.py`：扫描 + `--strict/--json/--suggest/--bootstrap-missing/--write-doc/
-  --check-cpp-ids`；`--strict` 1.2 s 退出 0；未登记 reason 会打印 `文件:行` 并退出 1（负路径已验）。
-  `--write-doc` 幂等（两次 sha256 相同 + 解析模型重序列化与磁盘字节逐字节相等）。
-- 构建标识：SCons 生成 `gdext/src/pk_build_id_generated.h`（`<git short sha>+<UTC>`，无 git 退化
-  `nogit+<utc>`）。**没有**按计划字面给每个 TU 加 `-DPK_BUILD_ID`：那会让每个 object 的命令行
-  每次构建都变脏，空转的 scons 也要全量重编重链。实测两个在用 DLL 里都是
-  `e6b869a3a+20261119T140626Z`。另加不依赖任何 runtime 的 `DCWorldExt::get_build_id()`，
-  冷会话（经济尚未 bootstrap）也能问出构建号。
-- 三个 flat 键 `investment_row` / `construction_row` / `investment_legs` 原样保留，`assert_id` 与
-  `witness` 是新增键 —— 旧日志与旧 fixture 不受影响。
-
-### R2 事故包 `.pkinc`
-
-- 生产者 `scripts/game/incident_bundle.gd`（打包/裁剪/落盘）+ `scripts/game/incident_cell_slice.gd`
-  （场景切片采集）。拆两个文件是因为单文件顶到 size ratchet 的 800 行上限，而两者的改动理由不同
-  （采集要认识 facade，打包只认字典与字节）。
-- `runtime_forensics.gd` 在 economy fatal 观察点之后追加写包，路径与快照同源（`tmp/incidents/`，
-  移动端 `user://incidents/`），保留最近 10 份。
-- 实测：真跑 `capture_and_dump("economy_fatal")` 落盘 **1605 字节 / 7 成员**；
-  `python tools/ci/inspect_incident.py` 校验 6/6 成员 sha256 通过。改 1 字节 → 指出
-  `cell.json sha256 不符` 并 exit 2；删成员 → `缺成员 world.json` exit 2；类型违约 → `violated` exit 1。
-- 契约里**如实记 missing** 而非造数的项（`MANIFEST.notes`）：`commands.structural` / `commands.ledger`
-  （经济命令队列无公开查询）、`pending_construction` 的 `required_good/required_qty/stock`、
-  `hashes.economy_state_hash`（`economy_facade` 没包装该原生绑定，从 `scripts/game` 直调会触发
-  `check_script_native_access` 跨模块拦截）、`hashes.ledger_hash`、`world.formal_start`。
-
-### R3 离线重放 `--replay-incident`
-
-- `EconomyInvariantProbe::replay_incident(Dictionary)` + `DCWorldExt::economy_replay_incident`
-  （绑定在 `world_ext_bind_economy.cpp`，`native_binding_manifest.json` 664 methods）。
-- 入口 `tests/runtime/incident_replay.gd`：解包 → 逐成员 sha256 → 调绑定 → 单行
-  `[incident-replay/result]`；退出码 0 复现 / 1 未复现 / 2 包或环境问题。
-- 实测（真实 `.pkinc`，INV-ECON-0042）：`reproduced=true`、`diff=[]`、`witness_after` 与
-  `witness_before` 逐字段一致。反证：只把 `witness.json` 的 `owner_funds` 由 900 改成 900000
-  并重算 MANIFEST 使其包内自洽 → `reproduced=false`、
-  `diff=[{"field":"owner_funds","expected":900000,"actual":900}]`、exit 1。
-- **判据的一处窄化必须说明**：`building_construction_preflight_funds_drift` 下不比较
-  `first_good_id/first_required/first_stock` —— funds 分支结构性地只写 `-1/0/0`，那三个是 stock 分支
-  的证据字段，比较它们等于比较该分支从未计算的值。排除项写进 `uncompared` 键可审计，
-  `incident_replay.gd` 会把它一并透出；其余字段仍逐字段严格相等。
-- `--emit-fixture` 产出的两份 C++ 片段都过 MSVC `cl /Zs /EHsc /std:c++17 /utf-8`。
-- `INV-ECON-0040`（投资资金漂移）的重放是**尽力而为**：`.pkinc` 不记录 runtime slot id 与 family
-  成员关系，只能按 `cohorts[]` 顺序 + witness 值反解；若该腿已被前置 trim gate 抑制，会如实返回
-  `assert_fired=false` + `detail=assertion_no_longer_fires: …`，不会假绿。
-  `save_family_expedition_person_invalid` 直接返回 `assert_point_not_replayable`（需要 PKEC 恢复
-  路径与全量 person/family 表，`.pkinc` 按契约不带）。
-
-### R4 快照可加载
-
-- `generation`/`state_hash`/`restore_eligible` 如实上报；`runtime_forensics.gd` 不再硬编码
-  `restore_eligible=false`；**全量快照改为按需**（默认只写 `.pkinc`，`PK_FORENSICS_FULL=1`
-  或 GM 手动才写 PKEC）—— 这条直接关掉了「每次 fatal 一份 40 MB」的默认行为。
-  两条分支都实测过：默认 → `economic_snapshots={"skipped":true,"reason":"full_snapshot_disabled",
-  "enable":"PK_FORENSICS_FULL=1"}`；开关打开 → 真的进 `_dump_economic_snapshots`。
-- `--load-forensics`（`PK_FORENSICS_LOAD=1` + `PK_FORENSICS_DIR`）已能真正加载并推进一天。
-  实测（`PK_FORENSICS_SELFCHECK=1` 用生产写包接口现写 69.7 KB `country.pkcn` +
-  29.7 MB `economy.pkec`，再走本入口加载）：`restored_country=true`、`restored_economy=true`、
-  `economy_restore_path=pkec_stream`（pkec 分块流共 43 个 record）、`start_day=1 → end_day=2`、
-  `advanced_days=1`、`fatal=false`，账本 `population_error=0 / money_error=0 / goods_error=0`、
-  `audit_incomplete=false`；两次加载 `state_hash_stable=true`（country
-  `-5621575443963560309`、economy `29127171950644891` 两次完全一致）。只读约束：
-  `writes_saves=false`、`autosave_disabled=true`、全程不调 save、退出不写玩家槽位。
-- 打通它踩到的两个真因，下一个人别再踩：
-  1. `begin_country_restore` 的前置是 `economy->country_restore_allowed() = !_bootstrapped`，
-     而 `configure_economy()` 只置 `_configured` 不置 `_bootstrapped`。所以**不要用
-     `begin_new_game` 建世界**（gameplay start 会 bootstrap 经济），改成
-     「`DCWorldExt` + `configure_country` + `configure_economy`」的 configure-only 世界即可。
-     仓库里 `tests/economy/economy_cadence_runtime_test.gd` 等十几个测试本来就这么恢复 PKCN。
-  2. PKEC 流是**按 record 组帧**的（16 字节头 `magic/schema/section/records/payload_bytes`），
-     按固定 4 MiB 切块 feed 会拦腰截断 record 头 → `save_chunk_header_invalid`；
-     必须按 `16 + payload_bytes` 切分。
-- **旧批次快照（2026-11-18 day 2506）仍然拒收，原因是 catalog 漂移而非加载器缺陷**：
-  国家流在 `end_country_restore` 报 `country_restore_rejected:catalog_hash_mismatch`。该快照头
-  `schema=16` 与当前 `country::SCHEMA_VERSION=16` 相同，规模完全一致（goods 172 / professions 50 /
-  buildings 470 / technologies 433 / research_signals 227），但 `saved_catalog` 与当前
-  `catalog_hash()`（`-506376025623507606`）不同 —— 净数量不变说明是改名/重排而非增删。
-  这是 fail-closed 的设计，**不要**为读旧快照加 catalog 兼容白名单（会把「旧快照静默套到
-  catalog 已变的构建上」的风险带回来）。旧批次现场的正确用法是走 R3 的 `.pkinc` 重放
-  （不需要 catalog 逐字节一致）。
-
-### R5 无头复现提速
-
-- `tools/runtime/Use-GdextLibrary.ps1` 做 `.gdextension` 的 debug/release 映射切换，往返
-  hash `D8A99BBF…B045 → 8D22B653…4C4D → D8A99BBF…B045`（identical）、`git diff` 0 行；
-  `verify.ps1` 有防呆项守住「别把 release 映射提交进去」。
-- `Invoke-SaveReplay.ps1` 新增 `-UntilDay` / `-StopOnFault`(exit 2) / `-Bundle` / `-Release` / `-Json`，
-  顺带把一直声明但没实现的 `-TimeoutSeconds` 修好（PS 5.1 的 `Start-Process -PassThru` 拿不到
-  ExitCode，改用 `.NET Process` 抓双流）。
-- 新增 `tools/runtime/Invoke-Soak.ps1`（包装 `headless_perf_record.gd`，统一 `tmp/soak_<stamp>/` + `summary.json`）。
-- **修掉 `headless_perf_record.gd` 的 `rows == measured_samples` off-by-one**。根因不是端点差 1，
-  而是「样本写入点不受预算约束、主循环 break 检查在写之后」，且 `measured_samples` 来自
-  「主循环观测次数」而一次观测可覆盖多个 commit。改法：`_sample_budget_reached()` 在 4 个产行点
-  截断、`measured_samples` 改为实际写入行数、非 fatal 时 `expected_rows` 恒为 `days`
-  （比原来更严，authority=off 也不再走恒真比较）。前后：`rows=11 expected=10 exit 6` →
-  `rows=10 expected=10 PASS`；400 天 soak `rows=400/expected=400`。
-- 实测 400 天 soak（60×40）**34.6 s**（19.1 s 世界生成 + 9.3 s 仿真窗口），`fatal=false`、
-  `ledger_failures=0`。吞吐 45.2 days/s 未打到 50 的 checkpoint，按约定只记 warning。
-  目标「400 天 ≤ 10 分钟」达成（快 17 倍）。
-- 注：仍有一处吞吐 checkpoint 未达（45.2 < 50 days/s），以及 `climate_authority=off` 模式在本构建
-  里本就跑不出 commit（改前改后都失败，现在会明确报行数不符而不是靠恒真比较假绿）。
-
-### R6 CI 一键核验与产物治理
-
-- `tools/ci/verify.ps1` 唯一入口：`static` / `build` / `suites` / `soak` 四阶段，
-  `-Quick` 只跑 static，`-WithSoak` 才跑 soak，`-DryRun` 只规划，`-Strict` 把 known-red 也算失败。
-  退出码 0 全绿 / 1 失败 / 2 环境问题；写 `tmp/verify_<stamp>.json` + 人读摘要。
-  实测 `-Quick` → **GREEN exit=0（16.6 s）**。
-  **未完整跑通的阶段**：`suites` 一次全量尝试在跑到第 38/42 个测试（`family_effect_restore_forward_test`，
-  22:22）之后停滞，未能产出一份完整的 suites 汇总；`build` 阶段未通过 verify 跑（当时的增量构建由
-  C++ 改动方并行持有），但 debug 与 release 两个 target 都已单独构建到 0 错误。
-  这两条要在下一次全量核验里补齐，别的阶段都已留证。
-- 顺带发现一处**既有**的静默红：`tests/dots_completion/dots_completion_gate.gd` 的 `(d)` 两条
-  静态契约断言在源文件拆分之后失效了 —— 门禁读 `native_simulation_host.cpp` 找
-  `D7_TRANSACTION_MAGIC`/`"D7T1"`，但这两个标记已在 `native_simulation_host_journal.cpp`；
-  读 `world_runtime_host.gd` 找 `config["authoritative_domain_mask"] = ...`，但该赋值已搬到
-  `world_runtime_generation_adapter.gd`（且写法是 `host.runtime_authority_domain_mask`）。
-  与本计划无关（本计划没动这三处），但既然发现了就记在这里，下一次动那两个文件的人顺手修。
-- 沿用仓库既有惯例（`Invoke-RuntimeTests.ps1` 的 `$knownRed`）设 `known-red` 机制，只装
-  **HEAD 既有、与本计划无关**的漂移：`check_cpp_deps.py`（6 条依赖边，点到的文件与 baseline 均
-  未在本轮改动）与 `check_size_ratchet.py`（18 条，渲染/UI/geography 等）。人读摘要里单列原因。
-- 本轮新增代码引入的 4 处 size ratchet 超限，按仓库惯例在**同一次改动里刷新 reviewed baseline**
-  （`world_runtime_gm_adapter_part1.gd` 961→972、`economy_runtime.h` 2352→2365、
-  `economy_runtime_diagnostics.cpp` 2975→3073、`economy_runtime_persistence.cpp` 2035→2042）。
-- `check_large_blobs.py`：暂存区单文件 > 5 MB 失败（`git cat-file -s :<path>` 取索引体积），
-  白名单按目录放行既有入库大文件，并明确「本项目不使用 Git LFS」。实测 6 MB 假文件 exit 1。
-- `prune_tmp.ps1`：保留「最新 N 份 ∩ 最近 D 天」。实测 `-DryRun` 列出 `132 dir(s) → delete 112,
-  975.36 MB`。
-- **修掉两个 Windows 上必崩的既有工具**：`check_module_contracts.py` 与 `check_cpp_deps.py`
-  读源码时没指定编码，中文 Windows 的 GBK 默认编码解 UTF-8 源码直接 `UnicodeDecodeError`。
-  补 `encoding="utf-8"` 后都能跑到 0 violations / 只剩既有依赖漂移。这条正是计划 §9.2
-  「23 个脚本的 Windows 适配清单」要发现的东西：实际是 33 个 `.py`，其中 **15 个需要本机适配**。
-  清单写进 `docs/build-from-source.md` 的「Windows 单机核验」一节。
-
-### 未达成与原因（下一轮直接从这里接）
-
-1. **台账分类**：2727 条 `kind=unknown` 待分批补 `kind/stage/witness/playbook`（计划给两周窗口）。
-2. **`INV-ECON-0040` 精确重放**：`.pkinc` 不记录 runtime slot id 与 family 成员关系，只能按
-   `cohorts[]` 顺序 + witness 值反解；要精确重放得给 `cell.json` 扩 slot/family 列，属 schema v2 议题。
-3. **`.pkinc` 的四个 missing 字段**：`commands.structural/ledger`、`economy_state_hash`、
-   `ledger_hash` 需要各模块 facade 加薄包装（`scripts/game` 直调别模块原生绑定会被
-   `check_script_native_access` 拦），属模块归属问题，不在本轮。
-4. **旧批次全量快照不可加载**：catalog 漂移导致 `catalog_hash_mismatch`，见上。这是 fail-closed
-   的正确行为；旧现场请走 `.pkinc` 重放。
-5. **release 相对 debug 的提速没兑现计划预期**：400 天 soak 的耗时主要在世界生成（19 s）与
-   harness 开销，release 只把仿真窗口从 9.3 s 压到 8.3 s（`authoritative_days_per_second` 45.2 → 50.3）。
-   计划 §8.2-A 想要的「5–20×」要到「靠存档跳过世界生成」的回放路径上才显出来。
-6. **`check_cpp_deps.py` 与 `check_size_ratchet.py` 仍是 known-red**：都是 HEAD 既有的漂移
-   （依赖边 6 条 / 18 个超限文件，全部落在本计划没碰的文件上）。`-Strict` 下判失败。
-
-### 一轮核验暴露的既有红：`runtime_country_parity_test`（2026-11-19 诊断，未修）
-
-把全量 suites 跑完（首次真正跑完，41 个测试 640 s）之后，唯一红的是
-`tests/runtime/runtime_country_parity_test.gd`：`33 checks, 5 failures`，稳定复现（6 次运行逐字一致，
-只有计时计数抖动 → 不是负载竞态）。**与本轮故障基建改动无关**，证据：运行 DLL 的
-`build_id=e6b869a3a+20261119T140626Z` 对得上工作区；`gdext/src` 里只改了 8 个 economy 侧文件，
-`runtime_climate_*` / `native_simulation_day_shadow.cpp` / `runtime_country_pod.cpp` / `country_*` /
-`native_simulation_host_worker.cpp` 全部未改（最后一次触碰是 `3ac23d64c`，11-17）；
-经济→国家的唯一通道 TP 库存已被 `country_goods` 相等排除。**证据等级是推断（强），没做二进制 A/B**
-（目录里现成的旧 DLL 早于 `world_ext` 的握手方法表，用它 A/B 会因握手失败而混淆结论）。
-
-5 个失败只有 **2 条根因**（用 `PK_COUNTRY_SOAK_DAYS=2` 让 `budget=8` 走不到 tick 14 即可分离：
-F1/F4 变绿、F2/F3/F5 照旧红）：
-
-**RC-1 业务状态分叉** → F2/F3/F5。`first_mismatch_day=2`，字段 `research_deferred_points`（int64 lane）。
-比较器在它之前已比过 `country_cash`/`country_goods`/队列/队长/权重/自动采购/已得+待激活科技/研究信号，
-全相等；两侧公式文字也相同，所以只剩三种可能：**POD 科技激活路径没有像参考那样把这笔 deferred 清零**
-（`country_runtime_research.cpp:915` 有清零，`runtime_country_pod.cpp` 全文没有处置 0）、
-lane 形状不同（空 vector vs `{0,0}` 被 `operator!=` 判不等）、或 Modifier 派生的
-`research_efficiency/cost_factor`（不在比较表里）不同。
-
-**RC-2 worker 日死锁** → F1/F4。tick=14 的 graph token 恒 `status==3`、`pinned=country,effect`，
-两条互锁：① worker 日卡在 11 且 `preflight_ok=0`，而 spurious-preflight 逃生分支要求
-`_requested_authority_mask != 0`，纯 SHADOW host 不请求 ACTIVE 域 → 永远走不进去；
-② `effect_pending` 永久 latch —— SHADOW 日执行里 Effect 是唯一不受 `climate_ok` 门控的域阶段，
-整天 commit 前就推进 POD 日，而 SHADOW 路径没有 ACTIVE 路径那条 `day<=committed` soft-skip
-（`native_simulation_stage_effect.cpp:44-47` 的注释写死了「再规划会死在 effect_pod_day_not_sequential
-并永久 pin 0xFFF」）。`stall=climate_capacity@-1` 是派生位不是原因（该位从不 `note_day_stall`，
-所以 `day_stall_day` 恒 -1，没法用它定位是哪天）。
-另外 `test:331` 的 400 pulse 与设计里 `RUNTIME_GRAPH_STALL_RELEASE_PULSES=1200` 不一致，
-**harness 永远看不到设计里的自锁放行** —— 这属测试假设过期，不是断言过严。
-
-**顺带两条气候侧观察**（不单独成红，但同属既有问题）：day 3 起天气场整片偏移
-（`vapor oob=502/600`、`instability 377/600`，相对差约 7%），`plant_available_water` 只是字段表里
-最靠前的受害者；`terrain[0] ref=20 worker=0` 是 **worker 没写回海冰翻转**（20 = `SEA_ICE`），
-不是默认值 —— 同日冰分数逐 bit 相等、只有当天新翻的冰带错（`oob=60/600`），指向
-`si_apply_terrain_flips` 这个门（C++ 默认 false，GDScript 置 true）在 round 里没被打开。
-
-**挡住结案的诊断缺口**：`native_simulation_host_country_boundary.cpp` 的 `record_country_parity_locked`
-只记字段名、不记两侧值，所以上面 RC-1 的三种可能没法一眼排除。建议对齐
-`runtime_climate_parity_first_difference` 的做法，记 `reference_bits/worker_bits`（向量记 size + 首个差异项）。
-另 `test:388` 的「compared worker hash 非零」因未比较的 publish 也写 hash 而恒真，无区分力。
-
-完整证据与 6 份日志在 `tmp/parity_diag/DIAGNOSIS.md`（`tmp/` 会被轮转清掉，结论已固化在本节）。
-
-## 地图悬停展板与地名 LOD（2026-11-20）
-
-地图界面补齐四件事，都是显示层，不碰模拟与存档字段：地块地名纸签、左侧市价/民情展板、
-聚落地名常驻与 LOD、以及悬停期间的统一指针语义。
-
-**1. 地名层改成保留式 + 三档视觉。** `scripts/rendering/settlement_label_layer.gd` 原来每次
-相机移动都整层重排、且固定 176×24 的碰撞矩形；现在按「第 N 名 → 第 N 槽」分配槽位，
-同格同槽不重播淡入，只有进出视野/换档才淡入淡出。视觉三档：首都 = 纸签 + 火漆印
-（`decoration.wax_seal`）+ 朱红字，繁荣等级 ≥5 = 纸签 + 墨字，其余 = 描边米色字。
-碰撞矩形改成按实际字宽计算，远档能多留几个大城。
-
-**2. LOD 从等级阈值改成「等级阈值 + 屏幕预算 + 首都豁免」。** 阈值沿用原有四档
-（<0.45 → 5、<0.75 → 4、<1.2 → 3、其余 2，测试锁定未改），另加远/中/近/贴脸
-14/26/44/72 枚的屏幕预算，首都用 `CAPITAL_BONUS` 直接越过筛选。首都是政治事实、
-日内不变，所以在 `refresh_country_visuals` 里从
-`country_facade.snapshot(handle)["capital_cell"]` 推一次，不进每帧路径。
-顺带修掉一个真 bug：环向地图的 ±period 拷贝会让同一聚落同时画两份同名纸签；
-现在只取离相机最近的一份拷贝（最近的都出屏，其余只会更远）。
-
-**3. 悬停纸签。** `set_hover_cell(cell)` 由悬停卡驱动，纸签在地块上方 16px 处升起 7px 淡入
-（`_hover_rise_px` 单独存一份再叠加，动画期间新目标位置不会被每帧覆盖），悬停格自己的
-常驻标签同时让位，避免同一句地名出现两次。
-
-**4. 左侧展板。** 新增 `scripts/ui/cell_board_view_model.gd`（数据）与
-`scripts/ui/components/cell_board.gd` + `scenes/ui/cell_board.tscn`（呈现）。
-市价表一次线性扫描选出需求最大/本地供给最大/价格最高/价格最低/缺口最大五类物资，
-每个角色只在「还没被选走」的物资里挑，所以不会重复；未解锁物资与本地尚无价格的物资
-不参与。民情表按当地影响力取前五，口径与理念系统一致
-（`population + owner_employed × 2 + funds / 1000000`，与 `IdeologyProfile` 默认值同源，
-拿到配置后可用 `set_influence_weights()` 覆盖）。组织度按职业读
-`cell_mobilization_snapshot`，缺失时该格留空轨道而不是伪造 0%。
-两者都只读原生已发布快照，按 `cell:day` 缓存，且只在指针停稳 300ms 后才查
-（原生 read-view 只有 128 条订阅位，逐格 hover 直接查会把它打满）。
-
-**指针语义只有一处。** `CellHoverCard` 新增 `hover_cell_changed(cell_index)`（-1 = 无），
-只在真的换格时发；地名层与展板都订阅它，不再各自解析指针或复判可见性/迷雾/滚轮。
-
-**验证**（本轮实际运行）：
-
-- `godot --headless --editor --quit` → 0 个 `Parse Error` / `Failed to load script` / `SCRIPT ERROR`。
-- `tests/country/settlement_label_layer_test.gd` 5 checks / 0 failures（原有 5 条断言一字未改）。
-- `tests/ui/cell_board_test.gd` 39 checks / 0 failures（新增：五类物资选择与去重、未解锁过滤、
-  影响力排序、组织度缺失、read-view pending 契约、三段压缩、LOD 档位、首都豁免、悬停纸签、
-  卡片避开展板）。
-- `tests/ui/cell_hover_card_test.gd`、`tests/ui/cell_hover_view_model_test.gd` 通过。
-- `tests/ui/cell_board_screenshot_qa.gd`（带渲染）在 1600×900 与 1280×720 各出两张图：
-  纸签层级、火漆印位置、展板列宽与纸边留白已按截图返工三轮（首轮价格列被纸毛边切掉、
-  正文字号 9px 糊成墨点、火漆印挂在纸签外侧）。
-
-**未覆盖**：本轮没有跑起来真实世界会话，所以「真实经济负载下 read-view 订阅是否被
-逐格 hover 打满」「自动生成的聚落名在纸签上的折行表现」只有推理没有实测；截图探针用的是
-构造数据。`tests/ui/ui_scene_structure_test.gd` 有 10 条失败来自 `touch_number_pad.gd`
-（已提交文件未加入该测试的 `SCRIPT_EXCLUSIONS`），与本次改动无关，未顺带修改。
-
-## 2026-11-20 水域通行改为「一档一个时代」
-
-**现状**：四档水级各自绑一个科技，军队与民事（贸易/开拓/殖民）共用同一张等级表。
-
-| 水级 | 地形 | 科技 | 时代 |
-| --- | --- | --- | --- |
-| 湖泊 | `LAKE` | `tech.river_transport` 河运 | 农耕（原王国） |
-| 浅海 | `COAST` | `tech.military.coastal_transport` 近海运兵 | 王国（原帝国） |
-| 远海 | `OCEAN` | `tech.celestial_navigation` 天文导航 | 帝国（原探索） |
-| 深海 | `DEEP_OCEAN` | `tech.oceanic_ship_design` 远洋船舶设计 | 探索（不变） |
-
-`tech.oceanic_navigation` 不再单独发放航道，只保留远洋船舶、远洋造船厂与「海上作业」+48%。
-天文导航的研究路线证据由「地图学」（探索）换成「自然哲学」（帝国），`knowledge_basis`
-替代组同步改；帆船渔场继续由「河运 + 渔舟 + 沿岸捕鱼 + 手工锯木」的应用交汇解锁，
-建筑与鱼货的科技标签仍挂 `tech.river_transport`（建筑只允许一个科技标签，且
-`technology_unlock_closure_audit_test` 要求鱼货的替代科技落在水产养殖的硬前置闭包内）。
-
-**代码**：`economy_runtime_catalog.cpp` 的 `_water_tech_shallow` / `_water_tech_far`
-改指向近海运兵与天文导航；epoch capture 复用同一组成员，无需另改。DLL basename 升为
-`dots_ext_water_tiers_v1`（debug + release），`dots_ext.gdextension` 已改指向。
-
-**验证（本轮实跑）**：
-
-- `technology_network_v5_contract_test`：433 节点 / 0 失败。
-- `technology_topology_audit_test`：PASS（433 节点 / 15 分支边）。
-- `technology_application_intersection_schema_test`：PASS。
-- `technology_water_corridor_card_test`：19 checks / 0 failures。
-- `technology_application_ui_test`、`era_advancement_service_test`：通过（135 checks / 0 失败）。
-- `tests/world/water_transport_runtime_test.gd`：0 failures（浅海=近海运兵、远海=天文导航）。
-- `tests/world/water_trade_real_map_test.gd`：0 failures（真实地图水运订单守恒）。
-- `military_native_binding_test`：功能性用例全部 ok；100k/2048/4096 bench p95 = 5.71 ms，
-  仍高于 2 ms 目标，属既有性能缺口。
-
-**既有未通过（与本次改动无关，未顺手修改）**：
-`technology_unlock_closure_audit_test` 5 条（药草种植园资源）；`technology_industry_chain_balance_test`
-35 条（纸/铁路产线升级收益与同代重复建筑）。
-
-**军队水级门禁**：同一天补齐，军队不再按「连续水格 ≤ 3」判定，详见下一节。存档：科技表与
-军事目录 hash 变化，旧 PKCN/PKMI 以 `catalog_hash_mismatch` 拒绝，按新开局处理。
-
-## 2026-11-20 军队水域通行改为按水级判定（删除连续水格 ≤ 3）
-
-**规则**：水格等级来自 landform（0 深海 / 1 远海 / 2 浅海 / 3 湖），与贸易航道共用
-`gdext/src/water_tier.h`；国家可进入「等级 ≤ 已解锁最高档」的水格，高档覆盖低档。
-科技对应：河运（农耕）= 湖、近海运兵（王国）= 浅海、天文导航（帝国）= 远海、
-远洋船舶设计（探索）= 深海。远洋运兵（探索）不再解除任何距离限制，只剩海运运力 +25%。
-距离不再参与判定：6 格宽的浅海与 1 格宽的浅海一样可渡（selftest 用 6 格横渡反证）。
-
-**代码**：
-- 新增 `gdext/src/water_tier.h`（四档 + landform 映射），`economy_runtime_water.cpp` 的
-  `classify_water_class` 改为调用同一函数，两个域不再各写一份映射。
-- `MilitaryCatalog` 的 `coastal_transport_bit / ocean_transport_bit` 换成
-  `water_lake_bit / water_shallow_bit / water_far_bit / water_deep_bit`；`military_catalog.json`
-  的 `unlock_tech_ids` 变为「河运 / 近海运兵 / 天文导航 / 远洋船舶设计」四槽，
-  `military_catalog_compiler.gd` 的 `_compile_naval_unlocks` 改名 `_compile_water_unlocks` 并校验四槽齐全。
-- `military_core_path.cpp`：删除 `kSeaRunMax / kSeaRunStates` 与 `(cell, water_run)` 状态维度，
-  `find_path` / `find_exploration_path` / `preview_path` 全部回到每格一个状态；`passable_for`
-  改走 `water_tier_from_landform` + 解锁档位比较。海格 1.5× 步成本、1.5 天/格、强制 EMBARKED、
-  0.2%/天损耗都不变。
-- DLL basename 仍是 `dots_ext_water_tiers_v1`，debug + release 已重编并重新指向。
-
-**验证（本轮实跑）**：
-- `tests/military/military_native_binding_test.gd`：naval 用例全部 ok —— 无科技时浅海与单格湖都被拒；
-  河运过湖不过浅海；近海运兵过 6 格浅海（反证距离不再限制）不过远海；天文导航过远海不过深海；
-  远洋船舶设计过深海且嵌套回湖/浅海/远海；预览天数仍为 3×1.5+1=6；EMBARKED / 上岸恢复姿态 /
-  0.2%/天损耗全部保持。100k bench p95 = 4.98 ms，仍高于 2 ms 目标（既有性能缺口，未变差）。
-- `tests/world/water_transport_runtime_test.gd`：0 failures（经济侧航道未回归）。
-- `godot --check-only` 逐个检查本轮改过的 GDScript：0 parse error。
-
-**未覆盖**：跑验证时工作树里另一条线（weather / physical_circulation / map_baker）正在改，
-`game_save_coordinator.gd` 等依赖脚本编译失败，导致需要整图启动的 GDScript 测试（军事目录
-`compile()` 全链路、军事烟雾测试）本轮无法运行；上述 GDScript 结论仅来自 `--check-only`。
-待那条线落地后需补跑：军事目录编译校验 + `military_runtime_smoke_test`（含既有 8 条 fixture 失败基线）。
-
-## 天气降水频率治理（2026-11-20，W1–W9）
-
-**问题**：玩家反馈「降水极其频繁」。实存档解码（CLM2 lane）显示陆地 55% 的格子同时在下雨，
-但下雨格只比平均湿 1.8 倍（地球量级约 10）—— 是「到处都是毛毛雨」，不是雨太多。
-
-**根因（按贡献排序，均已实测）**：
-
-1. `convergence` 是半波整流均值，均匀风场（零辐散）读 **0.3333**，却被当 0–1 物理辐合乘 1.00/1.95；
-2. RAIN 判定是单阈值 `precip > 0.040`，**无条件**通过 —— 下一点就报雨；
-3. STORM/MONSOON 判据比 RAIN 松，出现「RAIN 2.6% / MONSOON 13.8%」的排序倒挂；
-4. native daily 从未填 `wx->temp_anomaly` ⇒ 分类器距平恒 0 ⇒ 旱灾/热浪结构性不可达；
-5. `field_precip_spatial_smooth` 从未由 GDScript 下发，生产吃 C++ 默认 0.30。
-
-**改动**（C++ 权威 + GDScript 镜像同步）：convergence 改有符号净流入（四份镜像、开关已退役）、
-6 个消费者阈值按新分位重标（p50 0.376→0.016 / p90 0.537→0.458 / p95 0.612→0.636）、
-RAIN 改四项合取门（`weather_precip_classify_gate_land/water = 0.095/0.076`，`mp_cloud_gate` 0.22/0.12→0.18/0.10）、
-STORM/MONSOON 补过 `meaningful_precip`、补 `wx->temp_anomaly` 与独立的 `weather_classify_anomaly_cap=0.12`、
-空间平滑纳入 profile。详见 `docs/architecture/feature-guides.md` 的「天气场分类与降水频率」。
-
-**效果（60×40 / seed 20260727 / net 口径 / 365 日均衡）**：
-
-| 指标 | 玩家存档基线 | 现在（365 日均衡） |
-|---|---|---|
-| 陆地降水格 | 55.0% | **17.94%**（季节振幅 15.3–23.4%） |
-| 全图降水格 | 35.6% | 11.88% |
-| 陆地集中度 | 1.817 | **5.576** |
-| 高压区(ψ<−0.05)降水率 | 34.5% | 15.08% |
-| `moisture == 1.0` | 33.9% | 7.2% |
-| `land_moist_med` vs 生成期锚点 0.410 | 0.981（2.39×） | 0.452（**1.10×**） |
-| DROUGHT | 0 | 1.4% |
-
-净水收支随窗口收敛：day 0–60 漂移 11.07%/天 → day 180–365 **0.134%/天**（约等于闭合）。
-
-**验证**：`weather_convergence_metric_test` 3/3、`weather_field_solver_test` 26/26、
-`runtime_climate_parity_test` 175/175、`runtime_climate_stage_order_contract_test` 582/582、
-`native_daily_weather_split_graph_test` 25/25、`native_weather_daily_readiness_test` 12/12、
-`golden_day_hash_test` 203/203；120×80 × 12 日 19 s。退役 legacy 后 probe 37 个数值字段
-与退役前**逐位一致**。
-
-**遗留**：
-
-- HEATWAVE 仍为 0（其窗口 `temp_anom∈[0.04,0.05)` 且 `precip∈[0.006,0.012)` 被 DROUGHT 遮蔽），
-  需在「降 temp_anom 门到 0.03」与「调整与 DROUGHT 的排序/区分条件」之间二选一，改动必须带 30 日实测。
-- `climate_parity_probe.gd` 仍坏（legacy 生成路径），parity 目前由 `runtime_climate_parity_test` 覆盖。
-- `PK_CLIMATE_SYNOPTIC_OFF` 是同类长期 A/B 开关，本批未动，已记入「运行时开关存量清单」待后续处理。
-- 供给侧未改（`weather_land_evapotranspiration_gain` 保持 1.6）。A@1.30 的 365 日均衡是陆地 14.61%，
-  但会把 `land_moist_med` 压到 0.387（低于生成期锚点 0.410），故未采用。
-
-## 玩家 UI 重复解释精简（2026-11-21）
-
-- 调整 15 个展示脚本：干旱/洪泛只留标题；移除地图图层同义描述、岗位空缺猜测、组织度点击引导、
-  未知科技解释、投资机制套话、和平填充提醒、理念评分公式和年报重复原始账目；压缩满意度、威望及图例说明。
-- 空资源整节隐藏、投资注脚随内容隐藏、科技条件去掉重复引导。告警纸片按内容收缩并用实际尺寸约束屏幕边缘。
-- 全项目 headless editor 编译：0 Parse Error / Failed to load script / SCRIPT ERROR。
-- `annual_report_test.gd`、`technology_workspace_smoke_test.gd`、`inspector_geography_semantics_test.gd` 通过。
-- 临时渲染探针 `Project/project-keynes/tmp/ui_copy_screenshot_probe.gd` 在 1280×720、2560×1080、930×558 截图并检查标题与宽度：干旱/洪泛均为 48×31，0 失败；
-  人工复核 930×558 截图。截图为固定数据组件验证，未覆盖真实世界快进。
-- `cell_situation_layer_test.gd` 仍有 1 条旧日序文字断言失败（要求“第 5 天”，当前实现用日历日期）；
-  `annual_report_ui_test.gd` 有 2 条撕纸蒙版资产断言失败。修改前脚本副本对照复跑结果相同。
-- `player_map_overlay_smoke_test.gd` 有 1 条 merged dirty 刷新次数断言失败，未归因于本轮文案改动，保留日志。
-- 证据位于本机临时目录 `keynes-copy-*.json`、`keynes-copy-compile.log`、`keynes-copy-screenshot.log`、
-  `keynes-copy-{1280x720,2560x1080,930x558}.png`。FMOD 渲染探针退出仍有 debugger/capture 日志。
-
-## 2026-11-21 生物分布图标接入
-
-- 根因：覆盖层另设图标映射，将玉米、水稻、马铃薯和多种经济作物归为 `economy.crop`；该键实际显示麦穗。多种动物复用牲畜图，橡胶树、芦苇、蚕复用植被图。
-- 覆盖层直接交付 `bio.*` 物种键，展示映射集中在 IconCatalog；修正小麦、水稻、玉米、马铃薯、棉花、亚麻、马匹的旧键解析。作物复用原有纸贴；马、羊、山羊、牛、猪、骆驼、牦牛、蚕使用新增透明图集。正式图集生成时通过 `referenced_image_paths` 明确传入游戏已有 `goods_02.png` 作为画风参考，首版无参考生成图未接入工程。图集语义、裁切与参考来源已登记 manifest。
-- 验证：最终全项目 headless editor 导入无 Parse Error / Failed to load script / SCRIPT ERROR / ERROR；gda 运行 `tests/ui/icon_catalog_audit_test.gd` 返回 exit_status=0、PASS，覆盖 20 种生物及独立图标身份和像素。带渲染探针核对按钮实际纹理、20 种生物覆盖及去重，0 failures；已人工检查 1280×720、2560×1080、720×480 截图。证据位于本地 `Project/project-keynes/tmp/bio_icon_qa/`（忽略目录）。带渲染启动时 FMOD 调试器输出 No active debugger / Capture not registered，未影响图标校验及截图；未修改音频模块。
-- UI 反模式扫描已运行；本次涉及 UI 文件的命中为既有颜色绘制及地图覆盖层按钮 FOCUS_NONE（规范允许），新增映射与资产未引入玩家文案问题。
-
-## 顶栏国库脚注与残留计算说明补清（2026-11-21）
-
-- 修改 8 个 UI 脚本：删除国库悬停卡折算脚注与零活动套话、经济总览收支悬停解释、理念收益计算说明；
-  物价、生活水平、家族威望及年度满意度去掉加权术语，保留成本基准、警戒线与生活档量程。
-- 国库卡已有按内容隐藏 note 的逻辑，无需修改组件：删除脚注后纸面随内容缩短。
-- 全项目 headless editor 编译无脚本错误；经济卷宗视图模型、年报数据回归通过。
-- `tmp/hud_copy_followup_probe.gd` 对照修改前模型：1/7/30 日历史下除 note 外所有字段逐项一致；
-  1280×720、2560×1080、930×558 渲染检查脚注隐藏、卡片高度下降、卡片未越界，共 15 项通过。
-  人工复核国库卡裁图，未运行真实世界快进。证据：系统临时目录 `keynes-hud-copy-probe.log`、
-  `keynes-hud-copy-card.png`、`keynes-hud-copy-*.png`、`keynes-copy-followup-*.json`。
-- `hud_status_card_test.gd` 唯一失败位于第 62 行：仍断言滚动国库 note 包含“最近 1 日”，与本次删除脚注的需求相反；
-  其余检查通过。未放宽或改写原测试断言。渲染退出仍有 FMOD debugger/capture 日志。
-
-## 战争迷雾连续遮罩（2026-11-21）
-
-- 根因：`fog_of_war.gdshader` 对三格知识度使用锐化权重，造成格内透明度平台；低频扰动不改变这种平台。固定同心视野的 `before_mask.png` 复现环状蜂窝；关闭噪声的格心连线测试旧版仅 11/12 段变化，新版 12/12。
-- 实现：显示遮罩在格间连续插值，只在原始格心小范围保留锐化；涉及极地 padding 的三角形保持原混合。原两次噪声的频率从 0.0042 调到 0.010，仍按原长度上限约束。天气与迷雾共用 `pk_overlay_fog_weights`；不改玩法视野、存档、候选格范围、纹理采样数量或绘制通道。
-- 真实 Vulkan / Godot 4.6.2 / RTX 3070 Ti：`fog_cell_field_test.gd` 151 项、`weather_overlay_field_test.gd` 164 项、`fog_continuous_mask_test.gd` 7 项通过；混合可见/未知格心 42 个无违例，地形早退遮挡与极地 padding 无违例。headless `terrain_draw_coverage_test.gd` 25 项与 `detail_fog_culling_test.gd` 14 项通过；gda 新测试脚本检查 `valid=true`，模块地图护栏通过。
-- 固定合成视野、760×720、q2、时间 17，修改前/后以 ABBA 顺序各采 180 帧 GPU 时间。首轮中位 0.765/0.791 ms（p95 0.979/0.947）；最终轮中位 0.803/0.554 ms（p95 1.035/0.991）。存在 GPU/环境波动，不据此宣称加速或零成本；未观察到稳定增耗。截图人工复核蜂窝平台减弱。未进行真实生产世界全地图帧时或手机实机验证。
-- 验证限制：共享 `render_data_tables_test.gd` 的原有 `_lattices` 在 cycle 0/4 各失败 1 项，画质/分辨率切换与天气表检查通过。只运行未改动的 `_lattices`（依赖 `fog_gradient_lattice.gdshader`、`fog_lattice.gdshaderinc`、`cloud_noise.gdshaderinc` 与 `render_data_table.gd`，均未修改）仍复现同样 2 项失败；未放宽断言，未将整份测试记为通过。长度护栏报告当前工作区已有 46 项超限，本次未增加超限文件行数。图形测试退出伴随已有 FMOD debugger/capture 日志。
-- 本地证据：`.codex/tmp/fog-edge/` 下 `before.gdshader`、前后云层与 mask PNG、`probe.log`、`invariants.log`、`weather.log`、`coverage.log`、`detail-coverage.log`、`data-tables.log` 与 `lattice-only.log`。未提交或推送。
-## 迷雾格心斑点与轮廓起伏修正（2026-11-21）
-
-- 用户指出上一轮合成图边缘存在规则小点，并要求保留云缘不规则起伏。根因是格心附近把连续权重局部切回锐化，给原本连续的知识度场叠加了格心小凸包；上一轮人工验收漏掉了这个视觉问题。
-- 改为坐标扰动在原始格心平滑归零，地图内部全程使用连续权重；极地 padding 仍用原有混合。复用原来的两次噪声给过渡带增加云团尺度的凹凸，深浓雾 k<=0.05 与全可见端不变。迷雾和天气门控共用三角形、权重与轮廓函数，无新增纹理/噪声采样或绘制通道。
-- 新增二维线性知识度场回归：用精确 RGBA8 字节构造输入，误差上限 0.0025 只覆盖回读量化和相机亚像素对齐。冻结的有斑点版本最大误差 0.003526，修复后 0.002042；原始浮点写入版本也在修改前复现 0.007738。没有用放宽断言绕过问题。
-- 同心合成视野 48 个方向的半径跨度为 38 世界单位，断言必须大于一个 hex_size（22）；防止仅去掉小点后把边缘抹成圆。人工检查新的云层与遮罩截图，规则格心斑点消失且轮廓保留较大凹凸。
-- Godot 4.6.2 / Vulkan / RTX 3070 Ti：迷雾原有不变量 151 项、天气门控 165 项、新遮罩与旧版对照 10 项通过。42 个混合可见/未知格心保持原状态，浓雾早退、全可见与极地 padding 无违例；模块地图和改动文件 diff 检查通过。
-- 固定 760×720、q2、时间 17，旧版和修复版均使用其实际频率 0.010；ABBA 各 180 帧，最终 GPU 中位 0.513/0.596 ms，p95 0.593/0.769 ms。前一轮同条件中位 0.623/0.591 ms，仍有环境/GPU 波动，不据此宣称零成本或加速；未测手机与生产世界全图帧时间。
-- 证据：`.codex/tmp/fog-edge/dotted*` 冻结上一版，`dot-repro.log` 保留先失败的复现；`dot-fix-invariants.log`、`dot-fix-weather.log`、`dot-fix.log` 与 `dot-fix/{before,after}{,_mask}.png` 保存最终验证。共享梯度测试原有两项独立失败仍按前节记录，未改动相关梯度实现或宣称通过；未提交或推送。
-## 2026-11-21 同代建筑差异化与精简
-
-- 依据：全量 470 个 BuildingProfile 中，同代完整产出集合相同的 38 组共 90 座，另有 3 对部分产出重合及 2 组军事同角色建筑。审查配方、真实条件、人员与特殊消费者；名称、规模、工具品质和只产通用科技点不单独构成新功能。
-- 已实现：建筑 470→449，删除 21 种，其中知识建筑 21→9（删除 12 种同代科技点副本）。保留原料/能源、地理、产品组合或雇佣阶层的实际选择。逐项删除及保留理由见 `Project/project-keynes/tools/technology_tree/building_distinction_review.json`；其中 absorbed_by 不是存档兼容别名。
-- 家庭纺织坊改为硬投入韧皮纤维，改良家用织机改为硬投入亚麻纤维，均保留自营、不耗燃料的经营方式；不再占地直接产布。对照蒸汽纺织厂的煤、染料和雇员路线保留实际选择，并校准新增配方的单位投入产出递进。水力火药厂增加真实河流条件。公共卫生与核医学建筑明确命名为制药厂，不宣称未实现的公共服务。
-- 保留潮汐、洪水历法、牧群、灌溉等科技已有的贸易、减灾及研究效果；删除空目标的地籍/地理分析机构专属产出项。地理信息系统改为工程研究效率 +5%，仍沿用 Country 的既有研究效率消费者；不新增模拟域或 C++ 状态。
-- 接入完整性：重接产业链前驱、商品科技生产许可、受影响科技绑定/支持与应用交汇；发展成就改接家庭亚麻圃，Trigger 改接书记学校。黏土合并保留原土料坑的零建材入口，沤麻池明确依赖野生亚麻与雨养田制，避免删除旧农场后出现供料解锁断链。统一早期知识机构的研究机构链，并移除未使用的旧地区建筑选择函数。
-- 已重烘 economy、effect、effect_extensions、display、technology 快照，更新稳定 ID/内容清单；983 项加载源哈希全部匹配。活跃 scripts/data 中已删 ID 的完整词引用为 0。目录身份已变化，旧目录存档沿用严格 hash mismatch 拒绝，不静默映射旧建筑。
-- 验证通过：Godot 4.6.2 headless editor 导入，未见脚本/资源加载错误；14 项核心回归（建筑差异化、产业链元数据、科技目录、作物链、bootstrap 合同、建筑显示、开局规划、正式开局、物资账本、每日确定性、建筑运行、科研、采购、协作加载）。`check_intent_baselines.py --runs 2` 的 7 类完整 intent 证据各重复两次一致。`git diff --check` 和 module-map 检查通过。新增差异化回归已加入常规 CI 测试列表。
-- 全量审计未宣称通过：修改前已记录的目录内容失败仍存在；科技/产业时序审计 35→31 项，无新增项；药草 5 条种植地依赖闭包失败与隔离的修改前目录逐项一致。额外隔离复跑确认铜矿效率 1 项和金银矿 6 项失败原本存在。未放宽相关断言，也未用重试或延长超时掩盖失败。重复判定修正了误用 dependency-group offsets 作为 building offsets 的索引问题，改查实际地理条件、产品比例及军事角色/建材路线。
-- 静态总护栏仍有非本轮文件的 size ratchet 46 项、skill mirror 6 项失败；没有上调尺寸基线或修改无关 skill。
-- 证据：本机 `.codex/tmp/building-distinction-delivery-20261121/`（含 summary、content_audit、baseline_comparison、editor-import），`.codex/tmp/building-distinction-final-intents-20261121/`，以及 `.codex/tmp/building-distinction-original-complete/` 的隔离原目录对照。未进行图形实玩或长周期经济平衡验收；未修改原生公式、ABI 或存档段格式。
-
-## 2026-11-21 第 2 批：10 条 trade.good 消费点接通（705 → 715）
-
-- 范围：把 10 条 `country.trade.good.*` 的容量/速度消费点在真实运行路径上接通，消费点接通数 **705 → 715**。6 条容量（`wool` / `horses` / `spices` / `iron_ore` / `cloth` / `glassware`）落在 `gdext/src/economy_runtime_trade.cpp:770`（读数组）、`:772-783`（乘法）、`:781`（`offered`）；4 条速度（`wool` / `horses` / `spices` / `salt`）落在 `gdext/src/economy_runtime_trade_settlement.cpp:1441-1449`。承载科技节点为 `tech.market_institutions` / `tech.steppe_caravan_corridor` / `tech.oasis_caravan_junction` / `tech.caravan_water_rights`。两文件合计 +49 行（`trade.cpp` +21 / `settlement.cpp` +28），无第三处改动。
-- 证据一（激活器非真空）：modifier store 读值证明 `wool.capacity_factor` 被送到 **98304**，不是「声明了但没生效」。
-- 证据二（精确倍数）：活车道诊断显示该因子在 `economy_runtime_trade.cpp:764-785` 处按精确倍数放大成交量，×1.5 与 ×1.0 各自可失败；该 lane 受**目的地侧**约束。诊断跑使用 env-gated trace 与因子 override，**只作诊断、不作验收件，跑完已拆除**。
-- 四臂降为中性证明：L1 / L3 与 L0 逐字节一致（`salt` 的 −5% 会经库存与价格传导，故 L1 不能当 A4 的隔离证明），仅 L2 出现差异且方向为成交量上升。四臂统一单大陆 + `days=120` + `pipeline_depth=0`；默认群岛世界 120 天零交易，不用于任何臂。
-- `state_hash` 跨跑不一致已定性：`country_ai_hash_memory`（`country_ai_core.cpp:1266-1290`，污染源 `last_*_day` 与两个 EMA）与 `economy_runtime_state_hash.cpp`（墙钟切片、cell 结算日/代次、待处理命令；该文件属外来 WIP，钉内容 blob `936ef9a39e18b576cec1be71935dd205cd2eebac` / 91,581 B）。结论：**决策结果可复现，记录节奏依赖墙钟；含这些字段的哈希不可跨跑复现**。
-- A1 双源已闭环：独立命令复现 `compile_counts={"economy":1,"modifier":1}`，同轮 `cache_hits={"economy":4,"modifier":1}`（两次目录加载，一次真编译一次命中，不矛盾）。`modifier_term_invalid` 不是 result 行字段、只能按 token 计数，五臂实测全 0。
-- 明确不覆盖：自然经济里「羊毛贸易量上升」**未证**（该商品 120 天 0 条 trace、不参与贸易）；诊断车道只证明了乘子生效，不等于自然经济成交量上升。
-- 3 条 pending 留下批：`barracks_capacity_factor` ×2（`military_core_store.cpp:812-819`）、`convoy_escort_factor` ×1（`military_core_logistics.cpp:954-961`）。
-- 独立发现（记录、不修）：默认群岛 120 天零交易；国家 125 天停在 1 格；国内贸易结构上不可能；A4 的 7 个商品不参与贸易。
-- 已知滞后：10 条 term 的 `runtime_consumer` 仍是 A4 之前的行号，未改（改会动产品哈希 `2A6D20FE`，而本批验收正引该哈希）。
-- 被排除的跑（不进任何计数）：缺 `csv stop` 的首份 L3（由 L3b 顶替）、缺 result 行的 L0b、缺 `--` 致参数未生效退回 `days=50` 的一次开局。
-- 口径与已知风险：`gdext/src` 现 **19** 个 dirty（A3 四 + A4 二 + 外来 13，含 `economy_runtime_state_hash.cpp`）；DLL 归因只按源码差异，不按二进制可重建（PE 时间戳）。最终臂 DLL `E820EF79` / 16,508,928 B；产品 JSON `2A6D20FE` / 2,845,758 B / 467 节点 · 718 效果 · 787 硬前置 · 683 解锁。
-
-## 2026-11-21 第 3 批：B 组 3 条死 stat 补读点（715 → 718/718）
-
-- 范围：给 3 条「有写入、无读取」的死 stat 补真实读点，消费点接通数 **715 → 718/718**。`country.military.barracks_capacity_factor`（`tech.military.war_bands` / `tech.military.standing_army`）乘进 `gdext/src/military_core_store.cpp:815` 的 posts 汇总，读取在 `:825`（`MSTAT_BARRACKS_CAPACITY`）；`country.military.convoy_escort_factor`（`tech.military.radio_command`）读取在 `gdext/src/military_core_logistics.cpp:964`（`MSTAT_CONVOY_ESCORT`），`:966` 出 `escort`。
-- 中性对照：默认值 1.0 时 48 行 / 4800 posts **逐字节不变**；非默认值按精确倍数变化（`factor 72089`：164000 → 180398 posts，q16 下界 180401 / 十进制 180400 作为反例排除）；封顶在缩放后仍生效（`524288`；把乘法挪到封顶之后得 `527995`）。护航以同一批 shipment + 同一批 rng roll 反读拦截边界：`risk(1.0)=16384`、`risk(1.5)=13107`。
-- 七条断言全绿，并做了三次变异证「能红」：读点换常量（兵营）→ `factor 72089` 红；乘法挪到封顶之后 → `cap still enforced` 红而 72089 仍绿；读点换常量（护航）→ `escort 1.5` 红。Assay 另建仓库外变异副本（`5A149F5F`）独立复现同一红绿组合。
-- **交付范围自述**：本批原定只改两个文件，实际交付三个——`military_core_selftest.cpp`（+172）是 Chief 裁定随产品交付的可失败防回归凭据，「断言写进去」与「断言能失败」是两件事，故留在树里。三文件 `+191 / −3`，blob 为 `f513f715df12…` / `b9a3b1bbd5b1…` / `167f43a40019…`。
-- **边界**：`718/718` = 「读点已接 + 编译通过 + 断言可失败」，**不是实机可观测**。两条读点在世界里都没有流量（`posts_for_cell` 60 天 0 次调用、`_shipments` 120 天为空）。不得据此宣称「军事容量/护航在游戏中生效」。
-- 声明修订：`country.trade.good.*` 那 10 条原声明指向国家维度那段（`economy_runtime_trade.cpp:749-762`、`economy_runtime_trade_settlement.cpp:1412-1420`），照声明当场验会扑空；改为逐商品段 `760-783`（6 条）与 `1426-1447`（4 条）。属「声明指错门」，读点本身一直通。
-- DLL：debug `C9676342` / 16,527,872 B / 17:57:23；release `42E33AB4` / 14,217,728 B / 17:58:39。`bench big p95` 为**既有 FAIL**（本批 5.0875，基线 `E820EF79` 4.525 同样红），按断言原文逐条声明剔除，不按前缀豁免。
-- 判据教训（可复用）：stdout 报告在 **37,339 字符处被截断、断在汉字中间**，不能当 ok 清单；同名断言 808 行只有 476 种，必须用多重集差；`cap fixture is above the cap before truncation` 只是防真空前置守卫，不是封顶生效的证据。
-- 最终产物 `technology_network.json` = **`F561CF2A` / 2,845,758 B / 18:09:30 / LF**（相对上一版 `1EB93EBD` 恰为 `10 10`，只改那 10 个声明串）。`implementation_plan.md` §7 六项落地检查表已在这一版上复跑：**6/6 通过**（JSON 解析与 41 键、term 十字段、U+2212=0、unmapped 0、主干 66/66、unit 语义 0 违例）。
-
-## 2026-11-23 物资合并第 1 组：删结构钢与型钢轧机（货 172→171，建筑 450→449）
-
-- 依据：172 件货 / 450 座建筑的全量取证。`structural_steel` 只有 1 座产出建筑、**0 个精确输入消费者**、0 处家户/军事/晋升篮子引用；它的 216 个建造槽全部是 `structural_metal` **类别槽**（216 座建筑各 1 个），而 `steel` 的 `substitution_category_ids` 本来就含 `structural_metal`，所以删货不动任何建造 BOM。
-- 纯损耗：`steel_rolling_mill` 投入 24,800 钢 + 8,600 煤 + 900 工具，产出 19,200 结构钢/日，产出无人消费——是一座把钢材换成更贵同质材料的净损耗转换。
-- 已实现：删 `data/goods/structural_steel.tres`、`data/economy/buildings/steel_rolling_mill.tres`；`technology_network.json` 的 `tech.coke_smelting` 去掉 2 条 `expected_bindings`、2 条 `content_effects`、1 条 `support_buildings`，`effect_summary` 同步改文。链条复核：`steelmaking` 链删后为 `steam_steel_works`(step 1, entry) → `steel_plant`(step 2, mainline)，无断层、无悬空 `predecessor_building_ids`。
-- 验证：`modern_economy_catalog_test` 的「货条目数 = goods 目录 profile 数」通过（171 = 171），目录编译通过；`technology_content_binding_audit_test` PASS 且全文 0 处提到 steel；`building_progression_catalog_test` PASS；`icon_catalog_audit_test` PASS（图标是图集贴纸，`good_structural_steel` 贴纸保留、未重排 `goods_05` 图集）。`verify.ps1 -Quick` = 7 通过 / 1 红 / 2 既有红。
-- 已知红（均非本次）：`check_fault_taxonomy.py` 报 `gdext/src/runtime_climate_authority.cpp:699` 的 `climate_section_version_mismatch_expected_` 未登记；`check_cpp_deps.py`、`check_size_ratchet.py` 是工具自述的既有基线漂移。`modern_economy_catalog_test` 余下 15 条红：12 条 `*/protein` 变体（同一工作区另一路正在改消费方案）、`chariot_wright` 工具槽、4 条 `method_*_r8` 伪升级、`wrought_iron`/`raw_hide` 单候选。
-- 未做（必须紧跟，不能算完成）：`data/loading_catalog_v1/*.res` **未重烘**。快照指纹校验只在编辑器内执行，导出包无条件使用快照——不重烘则导出包里仍是含结构钢的旧目录。重烘须等另一路 `food_fat` / `grain` / 12 套消费方案落定后由单人执行：`Godot_v4.6.2-stable_win64_console.exe --headless --path <项目> --script res://tools/prebake_loading_catalogs.gd`。
-- 未做：`tools/technology_tree/technology_tree_report.{md,html}` 未重生成——导出器在**改前就红**（`stable_technology_id_manifest_mismatch`：清单 433 个科技、数据 467 个，多 37 缺 3），与本次无关，不能拿它当验证手段。
-- 存档：目录身份已变，旧 PKEC/PKCN/PKRS 按 fail-closed `catalog_hash_mismatch` 拒绝，不做索引静默映射（沿用既有策略）。
-
-## 2026-11-23 油脂并轨：唯一油脂走 `edible_oil`，废掉「畜产品当油」
-
-- 背景：另一路曾把 `livestock_products` 挂成 `food_fat` 的第二个变体（12 套消费方案，偏好 32768 = 食用油的一半）。用户判定「畜产品当油文不对题」，选择「一件通用食用油 + 让相关建筑直接产油」，不新增货。
-- 已实现：① `edible_oil.technology_tags` 增 `tech.herd_management`（可用性是 OR 门，`economy_runtime_availability.cpp:95-104` `cell_has_requirements` 命中任一标签即算可用），使农耕期起的畜牧建筑能产／家户能吃；② `tech.herd_management` 增 `expected_bindings` 与 `content_effects` 各一条 `good.edible_oil`，`effect_summary` 同步；③ 6 座畜牧／屠宰建筑各增一路 `edible_oil` 副产。
-- 产量口径（r = 2.4%，按畜产品吞吐等比摊，四舍五入到整数）：牧野营地 2,016→**48**、庄园牧场 52,571→**1,262**、大牧场 725,841→**17,420**、智慧畜牧 6,183,090→**148,394**、屠宰场 5,610（投入）→**135**、机械化屠宰场 328,015（投入）→**7,872**；合计 **175,131/日**。原两座玉米油厂供给 306,313/日；家户需求均值 35.083/人/日、工业（制皂 ×2 + 综合食品）17,846/日。10k 人时总供给约为需求的 1.31 倍，20k 人时 0.67 倍；两座油厂在 8,222 人以下本就不会盖起来，故低人口的动物脂是「保底」而非过剩。
-- 方案侧：`food_fat_livestock` 变体从 12 套方案各删 10 个数组列（共 120 列，含 24 个偏移列），脚本化删除并逐文件校验三条不变量（`need_variant_offsets` 尾值 = 变体数、`variant_component_offsets` 尾值 = 分量列长、两组偏移单调）。删除后 12 套方案与 HEAD 逐字节一致——另一路那笔未提交的「双变体」改动正好被本次撤销。
-- 验证：`modern_economy_catalog_test` 红点与改前**逐条相同**（16 条，无新增无消除）；`technology_content_binding_audit_test` PASS；`gameplay_start_runtime_test` 0 失败。
-- 已知未做：`data/loading_catalog_v1/*.res` 仍未重烘（同上一条原因）；另一路两个未提交的诊断脚本 `tests/economy/food_fat_fallback_check_test.gd`、`food_fat_market_probe_test.gd` 其假设（畜产品当油）已被本次作废，其中后者断言「双变体方案存在」会红——这两个文件未跟踪，不进提交，处置权归其作者。

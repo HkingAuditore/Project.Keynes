@@ -45,6 +45,9 @@ func _ready() -> void:
 		PKLog.enabled = false
 	# Web 自动测试：先挂跟车节点再配置运行时，这样连"会话配置失败"也能被超时抓到。
 	_attach_web_autotest()
+	var modals := _ui_manager.get_node("UIRoot/ModalLayer")
+	var loading := modals.get_node("WorldLoadingOverlay") as WorldLoadingOverlay
+	$WorldRoot.backdrops.assign([loading, modals.get_node("AnnualReportWorkspace/Desk")])
 	_configure_runtime()
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
@@ -64,7 +67,6 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 	_push_visual_toggles()
 	_ui_manager.show_loading("正在生成世界...")
-	var loading := _ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
 	loading.retry_requested.connect(_retry_session)
 	loading.return_requested.connect(func() -> void: get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH))
@@ -87,25 +89,6 @@ func _attach_web_autotest() -> void:
 	add_child(soak)
 
 
-func _apply_stage_c_debug_metadata() -> void:
-	# Stage C is a development-only measurement hook. It is intentionally read
-	# before WorldRuntimeHost.configure() because the authority choice is
-	# consumed during world bind/generation. No product setting or GM toggle is
-	# added for this path.
-	if not OS.is_debug_build():
-		return
-	if not Engine.has_meta(&"stage_c_authority_mode"):
-		return
-	var mode := String(Engine.get_meta(&"stage_c_authority_mode", "")).to_upper()
-	if mode not in ["ACTIVE", "OFF"]:
-		push_warning("[stage-c] ignored invalid authority mode: %s" % mode)
-		return
-	_runtime_host.runtime_climate_authority_enabled = mode == "ACTIVE"
-	print("[stage-c] authority=%s worker=%s" % [
-		mode, "ACTIVE" if mode == "ACTIVE" else "SHADOW",
-	])
-
-
 func _on_viewport_size_changed() -> void:
 	if _viewport_refit_pending:
 		return
@@ -120,27 +103,11 @@ func _refit_after_viewport_resize() -> void:
 
 func _configure_runtime() -> void:
 	_map_overlay.set_alpha(0.58)
-	# 正式玩家会话：整图 worker ACTIVE（0xFFF）。Effect→Country ACK 与 soft-settle
-	# 已修好，不再用 0x806 把 Trigger 等留在主线程拖垮 50x 日历吞吐。
-	_runtime_host.runtime_climate_authority_enabled = true
-	if OS.is_debug_build() and Engine.has_meta(&"stage_c_auto_pod_active"):
-		_runtime_host.runtime_economy_auto_pod_active = bool(Engine.get_meta(&"stage_c_auto_pod_active"))
-		Engine.remove_meta(&"stage_c_auto_pod_active")
-	_runtime_host.runtime_authority_domain_mask = 0xFFF
-	# Web 曾经在这里把权威位退回主线程（当时浏览器里 native worker 图的 day barrier
-	# 收不了尾）。后来查明那次"卡死"的真正原因是首帧着色器编译 45s 把整帧堵住，
-	# shader 裁剪之后 worker 图可以正常 commit day —— 而**只有 ACTIVE 才推进日历**
-	# （SHADOW 只做 parity 对比，日历会停在 day 1）。所以 web 不再降级。
-	# Apply the explicit A/B request after production defaults; otherwise OFF
-	# is silently overwritten and both arms measure ACTIVE.
-	_apply_stage_c_debug_metadata()
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_ui_manager.bind_gm_sun_camera(_camera)
 	_ui_manager.bind_player_camera(_camera)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
-	_player_controller.set_cell_situation_picker(_cell_situations.pick_cell_at_screen)
-	_ui_manager.population_discontent_changed.connect(_cell_situations.set_population_discontent)
 	# Injected after configure so the single-cell selection highlight and the
 	# many-cell card overlay stay independent: selecting a hex must not wipe the
 	# card's hits, and showing a card's hits must not move the selection.
@@ -150,9 +117,9 @@ func _configure_runtime() -> void:
 	var save: Node = _game_save()
 	if save != null:
 		save.bind_runtime(_runtime_host, _world_clock, _player_controller)
-	# 生成前钉死 force_on，避免 AUTO 策略或 GM 残值把会话退回 SHADOW。
-	_runtime_host.set_climate_authority_override(
-		"force_on" if _runtime_host.runtime_climate_authority_enabled else "force_off")
+	var era_session: Dictionary = _player_controller.register_era_session(save)
+	if not bool(era_session.get("ok", false)):
+		push_error("时代会话初始化失败：%s" % era_session.get("code", "module_invalid"))
 
 
 func _connect_signals() -> void:
@@ -160,6 +127,7 @@ func _connect_signals() -> void:
 	_runtime_host.world_generation_failed.connect(_on_world_generation_failed)
 	_runtime_host.generation_progress.connect(_ui_manager.set_generation_progress)
 	_runtime_host.gm_toggle_changed.connect(_on_gm_runtime_toggle_changed)
+	_runtime_host.player_confirmation_updated.connect(_on_player_confirmation_updated)
 	_player_controller.selection_changed.connect(_runtime_host.set_selected_cell)
 	_player_controller.regeneration_requested.connect(_regenerate_world)
 	_ui_manager.fit_requested.connect(_on_fit_requested)
@@ -170,13 +138,16 @@ func _connect_signals() -> void:
 	_ui_manager.return_main_menu_requested.connect(_request_return_main_menu)
 	_ui_manager.exit_game_requested.connect(_request_exit_game)
 	var settings: Node = _game_settings()
-	if settings != null and not settings.settings_changed.is_connected(_on_settings_changed):
-		settings.settings_changed.connect(_on_settings_changed)
+	if settings != null:
+		if not OS.has_feature("web"):
+			settings.follow_map_camera(_camera, _world_clock)
+		if not settings.settings_changed.is_connected(_on_settings_changed):
+			settings.settings_changed.connect(_on_settings_changed)
 
 
 func _on_world_ready(
 		map: MapData,
-		_world_data: WorldData,
+		world_data: WorldData,
 		generator: MapGenerator,
 		view_adapter: DCViewAdapter
 ) -> void:
@@ -193,12 +164,12 @@ func _on_world_ready(
 	# Manager lives on RuntimeHost (created at renderer bind); it needs the
 	# world/map/camera/clock, which are all valid only here.
 	if _runtime_host.military_map_layers != null:
-		_runtime_host.military_map_layers.configure(map, _world_data, _camera,
+		_runtime_host.military_map_layers.configure(map, world_data, _camera,
 			_world_clock, _runtime_host)
 	# ---- Military layers
 	_cell_situations.configure(map, _camera, _runtime_host,
 		generator.get_economy_facade(), view_adapter)
-	_renderer.configure_trade_visuals(_trade_activity)
+	_renderer.configure_trade_visuals(_trade_activity, world_data)
 	if _runtime_host.military_map_layers != null \
 			and _runtime_host.military_map_layers.token_layer != null:
 		_renderer.configure_military_visuals(
@@ -213,7 +184,10 @@ func _on_world_ready(
 	)
 	_ui_manager.set_world_summary(map.width, map.height, map.cell_count(), _runtime_host.last_seed())
 	print("[player-ready-step] UI context %.1fms" % [float(Time.get_ticks_usec()-ready_t0)/1000.0])
-	await get_tree().process_frame
+	var frames = _runtime_host._session_frames
+	await frames.next_frame()
+	if frames.canceled:
+		return
 	_player_controller.sync_ui()
 	var start_report: Dictionary = generator.gameplay_start_report() \
 		if generator != null and generator.has_method("gameplay_start_report") else {}
@@ -221,15 +195,18 @@ func _on_world_ready(
 		if not _runtime_host.is_loading_session():
 			var start_cell := map.cell_at(int(start_report.get("cell", -1)))
 			if start_cell != null:
-				await get_tree().process_frame
+				await frames.next_frame()
+				if frames.canceled:
+					return
 				var select_t0 := Time.get_ticks_usec()
 				_player_controller.select_cell(start_cell)
 				print("[player-ready-step] select %.1fms" % [float(Time.get_ticks_usec()-select_t0)/1000.0])
 		var flow: Node = _game_flow()
-		if flow != null:
+		if flow != null and not _runtime_host.is_loading_session():
 			flow.set_session({
 				"new_game_config": _runtime_host.session_config(),
 				"player_country_id": "country.player",
+				"player_country_handle": _player_controller.get_player_country_handle(),
 				"start_cell": int(start_report.get("cell", -1)),
 				"precious_resource": String(start_report.get("precious_resource", "")),
 			})
@@ -325,20 +302,17 @@ func _on_day_night_toggled(enabled: bool) -> void:
 
 
 func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
-	if toggle_id == "ui.suppress_popups":
-		if _player_controller != null:
-			_player_controller.set_popups_suppressed(enabled)
-		if _ui_manager != null and _ui_manager.has_method("set_popups_suppressed"):
-			_ui_manager.set_popups_suppressed(enabled)
-	elif toggle_id == "simulation.paused":
+	if toggle_id == "simulation.paused":
 		_player_controller.sync_ui()
-	elif toggle_id == "ui.hide_all_except_gm":
-		if enabled and _player_controller != null:
-			_player_controller.set_popups_suppressed(true)
-		if _ui_manager != null and _ui_manager.has_method("set_all_ui_suppressed"):
-			_ui_manager.set_all_ui_suppressed(enabled)
 	elif toggle_id == "visual.day_night":
 		day_night_enabled = enabled
+
+
+func _on_player_confirmation_updated(view: Dictionary) -> void:
+	if _ui_manager != null:
+		# Required responses still need a visible surface while GM hides the HUD.
+		_ui_manager.set_era_ceremony_suppressed(bool(view.hide_popups))
+		_ui_manager.set_all_ui_suppressed(bool(view.hide_popups) and String(view.reason).is_empty())
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -407,7 +381,7 @@ func _push_visual_toggles() -> void:
 ##
 ##   [render]
 ##   visual_quality = 0|1|2   # 覆盖 PBR/线性光照/ACES 这些运行期档位
-##   hide = "vegetation,maximpostor,fog,weather"   # 按节点名子串隐藏渲染层
+##   hide = "vegetation,maximpostor,fog,weather"   # vegetation 排除整组植被，其余按节点名子串匹配
 ##
 ## 用途：不重新导出就能在真机上逐项关掉渲染层量 fps，定位 LOW→MID 的台阶在哪。
 func _apply_render_debug_overrides() -> void:
@@ -428,28 +402,19 @@ func _apply_render_debug_overrides() -> void:
 				_renderer.set_visual_quality(forced)
 			if _trade_activity != null:
 				_trade_activity.set_quality(forced)
-	var hide := String(cfg.get_value("render", "hide", "")).strip_edges()
-	if hide == "":
-		return
-	var needles := PackedStringArray()
-	for token in hide.split(","):
-		var needle := token.strip_edges().to_lower()
-		if needle != "":
-			needles.append(needle)
-	_set_layers_hidden(_renderer, needles)
+	var needles := DCFeatureFlags.render_debug_hidden_layers(cfg)
+	if not needles.is_empty():
+		_set_layers_hidden(_renderer, needles)
 
 
 func _set_layers_hidden(root: Node, needles: PackedStringArray) -> void:
 	if root == null:
 		return
 	for child in root.get_children():
-		var node_name := String(child.name).to_lower()
-		var matched := false
-		for needle in needles:
-			if node_name.contains(needle):
-				matched = true
-				break
-		if matched:
+		# 植被由 HexRenderer 直接调用和排队，在创建时按同一配置排除。
+		if child is ShrubLayer or child is VegetationFamilyLayer:
+			continue
+		if DCFeatureFlags.render_debug_hides_layer(child.name, needles):
 			var item := child as CanvasItem
 			if item != null:
 				item.visible = false

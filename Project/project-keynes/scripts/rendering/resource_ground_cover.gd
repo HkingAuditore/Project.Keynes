@@ -13,7 +13,6 @@ extends Node2D
 #   R = primary layer * 16 + secondary layer
 #   G = primary abundance (0 = no plant community), B = secondary abundance
 #   A = trace kind * 64 + trace strength (kind 1..3, strength 0..63)
-# edge_lut texel (R8): fraction of the six neighbours whose primary community differs.
 
 const SHADER = preload("res://shaders/resource_ground_cover.gdshader")
 const TRACE_IDS := ["trace.pasture", "trace.mud", "trace.sand"]
@@ -31,13 +30,6 @@ var _cloud_shadow_wrap_origin_uv := 0.0
 var _cloud_shadow_wrap_period_uv := 0.0
 var _image: Image
 var _texture: ImageTexture
-var _grid_image: Image
-var _grid_texture: ImageTexture
-var _grid_dims := Vector2i.ZERO
-var _cell_offsets := PackedInt32Array()
-var _edge_image: Image
-var _edge_texture: ImageTexture
-var _neighbor_indices := PackedInt32Array()
 var _dirty := false
 var _last_upload_msec := -100000
 var _cover_of_style := PackedInt32Array()  # style -> cover layer, -1 = not a plant community
@@ -49,6 +41,8 @@ var _enabled := true
 var _hex := 22.0
 var _zoom := 1.0
 var _stats := {"cells_written": 0, "uploads": 0}
+var _frame_shader: Shader
+var _frame_values: Dictionary = {}
 ## QA/debug: shade only from remembered climate (ignore live dyn_lut).
 var memory_climate_only := false
 
@@ -97,10 +91,7 @@ func _push_cloud_shadow_uniforms() -> void:
 
 ## styles: ResourceVisualCatalog entries (layer order). lut_dims must match dyn/enum LUTs.
 func configure(styles: Array[Dictionary], hex_size: float, lut_dims: Vector2i,
-		bounds: Rect2, wrap_period_x: float, map_index_atlas: Texture2D, visual_tiles,
-		neighbor_indices: PackedInt32Array = PackedInt32Array(),
-		map_dims: Vector2i = Vector2i.ZERO,
-		cell_offsets: PackedInt32Array = PackedInt32Array()) -> void:
+		bounds: Rect2, wrap_period_x: float, map_index_atlas: Texture2D, visual_tiles) -> void:
 	_ensure_nodes()
 	_hex = hex_size
 	_art = ResourceArtLibrary.shared()
@@ -118,25 +109,11 @@ func configure(styles: Array[Dictionary], hex_size: float, lut_dims: Vector2i,
 	var dims := Vector2i(maxi(1, lut_dims.x), maxi(1, lut_dims.y))
 	_image = Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
 	_texture = ImageTexture.create_from_image(_image)
-	_grid_dims = map_dims
-	_cell_offsets = cell_offsets
-	if map_dims.x > 0 and map_dims.y > 0 and not cell_offsets.is_empty():
-		_grid_image = Image.create(map_dims.x, map_dims.y, false, Image.FORMAT_RGBA8)
-		_grid_texture = ImageTexture.create_from_image(_grid_image)
-	else:
-		_grid_image = null
-		_grid_texture = null
-	_neighbor_indices = neighbor_indices
-	_edge_image = Image.create(dims.x, dims.y, false, Image.FORMAT_R8)
-	_edge_image.fill(Color(0.0, 0.0, 0.0, 1.0))
-	_edge_texture = ImageTexture.create_from_image(_edge_image)
 	_dirty = false
 	var tiled := visual_tiles != null and bool(visual_tiles.ready) and String(visual_tiles.layout.mode) == "tiled"
 	_tiled = tiled
 	_select_shader()
 	_material.set_shader_parameter("cover_lut", _texture)
-	_material.set_shader_parameter("cover_edge_lut", _edge_texture)
-	_push_grid_uniforms()
 	_material.set_shader_parameter("lut_dims", Vector2(dims))
 	_material.set_shader_parameter("hex_size", _hex)
 	_material.set_shader_parameter("world_origin", bounds.position)
@@ -174,17 +151,6 @@ func _select_shader() -> void:
 		shader.code = prefix + SHADER.code
 		_material.shader = shader
 	_push_cloud_shadow_uniforms()
-	_push_grid_uniforms()
-
-
-func _push_grid_uniforms() -> void:
-	if _material == null or _mobile_tier >= 0:
-		return
-	var bound := _grid_texture != null and _grid_dims.x > 0 and _grid_dims.y > 0
-	if bound:
-		_material.set_shader_parameter("cover_grid_tex", _grid_texture)
-	_material.set_shader_parameter("cover_grid_dims", Vector2(_grid_dims) if bound else Vector2.ZERO)
-	_material.set_shader_parameter("cover_grid_bound", bound)
 
 func set_quality(quality: int, mobile_tier: int) -> void:
 	_ensure_nodes()
@@ -206,8 +172,7 @@ func apply_profile(p: Resource) -> void:
 			["climate_response", "climate_response"], ["snow_response", "snow_response"],
 			["vitality_dead_threshold", "vitality_dead_threshold"], ["vitality_power", "vitality_power"],
 			["wind_strength", "wind_strength"], ["river_clear_threshold", "river_clear_threshold"],
-			["cover_ground_tint", "ground_cover_ground_tint"], ["cover_slope_fit", "ground_cover_slope_fit"],
-			["edge_blend_strength", "ground_cover_edge_blend_strength"]]:
+			["cover_ground_tint", "ground_cover_ground_tint"], ["cover_slope_fit", "ground_cover_slope_fit"]]:
 		_material.set_shader_parameter(pair[0], p.get(pair[1]))
 	_enabled = bool(p.enabled) and bool(p.ground_cover_enabled)
 	_update_visibility()
@@ -277,12 +242,6 @@ func write_cell(cell: int, value: Color) -> bool:
 	if _image.get_pixel(x, y) == value:
 		return false
 	_image.set_pixel(x, y, value)
-	if _grid_image != null and cell * 2 + 1 < _cell_offsets.size():
-		var gx := _cell_offsets[cell * 2]
-		var gy := _cell_offsets[cell * 2 + 1]
-		if gx >= 0 and gx < _grid_dims.x and gy >= 0 and gy < _grid_dims.y:
-			_grid_image.set_pixel(gx, gy, value)
-	_refresh_edge_cells(cell)
 	_dirty = true
 	_stats.cells_written = int(_stats.cells_written) + 1
 	return true
@@ -294,47 +253,6 @@ func read_cell(cell: int) -> Color:
 func clear_cells() -> void:
 	if _image != null:
 		_image.fill(Color(0, 0, 0, 0))
-		if _grid_image != null:
-			_grid_image.fill(Color(0, 0, 0, 0))
-			_grid_texture.update(_grid_image)
-		if _edge_image != null:
-			_edge_image.fill(Color(0.0, 0.0, 0.0, 1.0))
-			_edge_texture.update(_edge_image)
-		_dirty = true
-
-func _refresh_edge_cells(cell: int) -> void:
-	if _edge_image == null:
-		return
-	for slot in 7:
-		var target := cell
-		if slot > 0:
-			if cell < 0 or cell * 6 + slot - 1 >= _neighbor_indices.size():
-				continue
-			target = int(_neighbor_indices[cell * 6 + slot - 1])
-		if target < 0 or target >= _image.get_width() * _image.get_height():
-			continue
-		var x := target % _image.get_width()
-		var y := target / _image.get_width()
-		var px := _image.get_pixel(x, y)
-		if px.g8 <= 0:
-			_edge_image.set_pixel(x, y, Color(0.0, 0.0, 0.0, 1.0))
-			continue
-		var current := px.r8 / 16
-		var mismatch := 0
-		var neighbours := 0
-		if target * 6 + 5 < _neighbor_indices.size():
-			for direction in 6:
-				var neighbor := int(_neighbor_indices[target * 6 + direction])
-				if neighbor < 0:
-					continue
-				neighbours += 1
-				var nx := neighbor % _image.get_width()
-				var ny := neighbor / _image.get_width()
-				var npx := _image.get_pixel(nx, ny)
-				if npx.g8 <= 0 or npx.r8 / 16 != current:
-					mismatch += 1
-		var weight := float(mismatch) / maxf(float(neighbours), 1.0)
-		_edge_image.set_pixel(x, y, Color(weight, 0.0, 0.0, 1.0))
 		_dirty = true
 
 func dirty() -> bool:
@@ -353,9 +271,6 @@ func flush(force: bool = false) -> bool:
 	if not can_flush(now, force):
 		return false
 	_texture.update(_image)
-	if _grid_texture != null and _grid_image != null:
-		_grid_texture.update(_grid_image)
-	_edge_texture.update(_edge_image)
 	_dirty = false
 	_last_upload_msec = now
 	_stats.uploads = int(_stats.uploads) + 1
@@ -366,11 +281,17 @@ func set_frame_state(time: float, state: Dictionary, memory_lut: Texture2D) -> v
 	if _material == null:
 		return
 	_material.set_shader_parameter("world_time", time)
-	for name in state:
-		_material.set_shader_parameter(name, state[name])
+	var values := state.duplicate()
 	if memory_climate_only:
-		_material.set_shader_parameter("has_dynamic_lut", false)
-	_material.set_shader_parameter("memory_lut", memory_lut)
+		values["has_dynamic_lut"] = false
+	values["memory_lut"] = memory_lut
+	var rebind := _frame_shader != _material.shader
+	for name in values:
+		var value: Variant = values[name]
+		if rebind or not _frame_values.has(name) or _frame_values[name] != value:
+			_material.set_shader_parameter(name, value)
+	_frame_shader = _material.shader
+	_frame_values = values
 
 func set_enabled(value: bool) -> void:
 	_enabled = value

@@ -502,15 +502,10 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	ww.w_kelp /= special_sum;
 	ww.w_ice  /= special_sum;
 
-	// Ocean and coast are both water, but their macro colour fields must still
-	// converge at the same continuous primary/secondary edge. Previously this
-	// weight only used depth, so an ocean patch remained fully active inside a
-	// coast cell until the dominant biome flipped, producing a visible kink.
-	float ocean_type_w = water_ctx_type_mix(ctx, B_OCEAN);
-	float coast_type_w = water_ctx_type_mix(ctx, B_COAST);
-	float open_water_w = (1.0 - ww.w_lake - ww.w_reef * 0.62 - ww.w_kelp * 0.78 - ww.w_ice);
-	open_water_w *= ocean_type_w * (1.0 - coast_type_w * 0.70);
-	ww.open_ocean_w = clamp(open_water_w * smoothstep(0.26, 0.92, ctx.offshore_depth), 0.0, 1.0);
+	ww.open_ocean_w = clamp(
+		(1.0 - ww.w_lake - ww.w_reef * 0.62 - ww.w_kelp * 0.78 - ww.w_ice)
+				* smoothstep(0.26, 0.92, ctx.offshore_depth),
+		0.0, 1.0);
 	return ww;
 }
 
@@ -845,6 +840,9 @@ vec3 apply_estuary_plume(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 // ─────────────────────────────────────────────────────────────────────
 vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 		inout vec3 N_out) {
+#ifdef PK_WATER_FLAT_LOW
+	N_out = vec3(0.0, 0.0, 1.0);
+#else
 	float ocean_w = clamp(1.0 - ww.w_lake - ww.w_reef - ww.w_kelp, 0.0, 1.0);
 	// [water-flow-waves 2026-11-06] 冰面剔除：旧版 ocean_w 不扣 w_ice，全冰格仍按
 	// 0.78 幅度跑波浪法线，高光会随浪在冰上起伏。w_ice 是连续的 sea_ice_fraction
@@ -928,6 +926,7 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 
 	}
 #endif // PK_WEB_WORLD_MIN
+#endif // PK_WATER_FLAT_LOW
 	return col;
 }
 
@@ -1264,6 +1263,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 	}
 #endif
 
+#ifndef PK_WATER_FLAT_LOW
 	// SEA 3.2：菲涅尔天空反射（与 BRDF 的 F_Schlick 互补） ──────────────
 	if (water_fresnel_enabled && water_detail_override != 0) {
 		float F;
@@ -1331,6 +1331,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 		}
 	}
 #endif
+#endif // PK_WATER_FLAT_LOW
 	return col;
 }
 

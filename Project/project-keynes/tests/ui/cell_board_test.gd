@@ -1,20 +1,19 @@
 extends SceneTree
 
-## 悬停展板与地名层的数据契约：
+## 悬停展板的数据契约：
 ##   1. 行情表选出的五类物资（含去重、未解锁过滤、最低价的有效性门槛）。
 ##   2. 阶层表按当地影响力排序，组织度缺失时整格不占位。
 ##   3. 原生 read-view 未就绪时的 pending 契约。
-##   4. 展板组件在窄高度下的三段压缩，以及地名层的 LOD / 首都 / 悬停纸签。
+##   4. 展板组件在窄高度下的三段压缩和对悬停卡的避让。
 
 const BOARD_SCENE := "res://scenes/ui/cell_board.tscn"
 
 var _failures: Array[String] = []
 
 
-class BoardEconomyFacade extends RefCounted:
+class BoardEconomyWithoutMobilization extends RefCounted:
 	var market_payloads: Dictionary = {}
 	var population_payloads: Dictionary = {}
-	var mobilization_payloads: Dictionary = {}
 	var busy := false
 
 	func market_cell_snapshot(cell_idx: int) -> Dictionary:
@@ -26,6 +25,10 @@ class BoardEconomyFacade extends RefCounted:
 		if busy:
 			return {"ok": false, "busy": true}
 		return population_payloads.get(cell_idx, {"ok": false, "reason": "absent"})
+
+
+class BoardEconomyFacade extends BoardEconomyWithoutMobilization:
+	var mobilization_payloads: Dictionary = {}
 
 	func cell_mobilization_snapshot(cell_idx: int) -> Dictionary:
 		return mobilization_payloads.get(cell_idx, {"ok": false})
@@ -39,30 +42,6 @@ class BoardGenerator extends RefCounted:
 
 	func gameplay_start_report() -> Dictionary:
 		return {"ok": true, "cell": 0}
-
-
-class LabelFacade extends RefCounted:
-	var revision := 1
-	var rows: Array = []
-
-	func named_settlement_snapshot() -> Dictionary:
-		var cells := PackedInt32Array()
-		var tiers := PackedByteArray()
-		var active := PackedByteArray()
-		var names := PackedStringArray()
-		for row in rows:
-			cells.append(int(row[0]))
-			tiers.append(int(row[1]))
-			active.append(1)
-			names.append(String(row[2]))
-		return {
-			"ok": true, "revision": revision, "full_snapshot": true,
-			"cell_indices": cells, "prosperity_tiers": tiers,
-			"name_active": active, "settlement_names": names,
-		}
-
-	func settlement_delta(_since_revision: int) -> Dictionary:
-		return {"ok": true, "revision": revision, "full_snapshot": false}
 
 
 var _economy: BoardEconomyFacade
@@ -83,11 +62,12 @@ func _run() -> void:
 	_test_market_distinct()
 	_test_cohort_ranking()
 	_test_pending()
+	_test_same_published_day()
 	_test_board_widget()
+	_test_narrow_board_layout()
 	_test_same_cell_daily_refresh()
-	_test_label_lod()
-	_test_capital_and_hover()
 	_test_card_avoid_rect()
+	_clock.free()
 	if _failures.is_empty():
 		print("[cell-board] PASS")
 		quit(0)
@@ -258,6 +238,45 @@ func _test_pending() -> void:
 	_economy.busy = false
 
 
+func _test_same_published_day() -> void:
+	_clock.current_day = 2.0
+	var population := _population_payload()
+	population["read_view_day"] = 1
+	var market := _market_payload()
+	market["read_view_day"] = 1
+	var mobilization := {"ok": false, "read_view_pending": true}
+	_economy.population_payloads = {0: population}
+	_economy.market_payloads = {0: market}
+	_economy.mobilization_payloads = {0: mobilization}
+	_fresh_view_model()
+	_expect("旧日的人口视图要等当天发布", bool(_view_model.build(0).get("pending", false)))
+	population["read_view_day"] = 2
+	_expect("人口和市场来自同一发布日", bool(_view_model.build(0).get("pending", false)))
+	market["read_view_day"] = 2
+	_expect("当天组织度仍待发布时不缓存空值", bool(_view_model.build(0).get("pending", false)))
+	mobilization.merge({
+		"ok": true, "read_view_pending": false, "read_view_day": 1,
+		"rows": [{"profession": 2, "stage": 2, "mobilization_q16": 13107}],
+	}, true)
+	_expect("不把旧日组织度混入当天", bool(_view_model.build(0).get("pending", false)))
+	mobilization["read_view_day"] = 2
+	var payload := _view_model.build(0)
+	var rows: Array = (payload.get("cohorts", {}) as Dictionary).get("rows", [])
+	var worker := _row_id(rows, 13)
+	_expect("三份视图到齐后显示组织度",
+		bool(payload.get("ok", false)) and worker >= 0
+			and is_equal_approx(float(rows[worker].organization), 13107.0 / 65536.0))
+	_economy.mobilization_payloads.clear()
+
+	var without_mobilization := BoardEconomyWithoutMobilization.new()
+	without_mobilization.population_payloads = {0: population}
+	without_mobilization.market_payloads = {0: market}
+	var optional_view := CellBoardViewModel.new()
+	optional_view.set_context(_map, func() -> Object: return without_mobilization, _inspector, _clock)
+	_expect("没有组织度接口时仍可显示其他读数", bool(optional_view.build(0).get("ok", false)))
+	_clock.current_day = 1.0
+
+
 ## 同一格里 payloads 会被换掉，缓存按 (cell, day) 命中——每个子用例都要一份新实例。
 func _fresh_view_model() -> void:
 	_view_model = CellBoardViewModel.new()
@@ -279,7 +298,7 @@ func _test_board_widget() -> void:
 		_failures.append("cell_board.tscn 根节点不是 CellBoard")
 		return
 	root.add_child(board)
-	board.configure(_map, null,
+	board.configure(_map,
 		func() -> Object: return _economy, _inspector, _clock)
 	board.apply_available_height(CellBoard.FULL_HEIGHT)
 	if not board.debug_show_cell(0):
@@ -289,6 +308,21 @@ func _test_board_widget() -> void:
 	_expect("阶层表满五格", _visible_rows(board._cohort_slots) == 5)
 	var first_name := (board._market_slots[0]["name"] as Label).text
 	_expect("行情行写入物资名", first_name == "谷类" or not first_name.is_empty())
+	_expect("储量条显示从零到本轮最大储量的刻度", board._stock_scale.text == "0–900")
+	var refreshed := _market_payload()
+	var stocks: PackedInt64Array = refreshed["stock"]
+	stocks[1] = 200000
+	refreshed["stock"] = stocks
+	_economy.market_payloads[0] = refreshed
+	var previous_day := _clock.current_day
+	_clock.current_day += 1.0
+	board.debug_show_cell(0)
+	var stock_text := (board._market_slots[0]["stock"] as Label).text
+	var fill := board._market_slots[0]["bar"] as ColorRect
+	_expect("储量上限变化时同步更新刻度与条长，并保留精确读数",
+		board._stock_scale.text == "0–200" and stock_text == "100"
+			and is_equal_approx(fill.anchor_right, 0.5))
+	_clock.current_day = previous_day
 	board.apply_available_height(380.0)
 	board.debug_show_cell(0)
 	_expect("窄高度下阶层表压到三行", _visible_rows(board._cohort_slots) <= 3)
@@ -298,6 +332,32 @@ func _test_board_widget() -> void:
 	_expect("hide_board 立即隐藏", not board.visible)
 	root.remove_child(board)
 	board.free()
+
+
+func _test_narrow_board_layout() -> void:
+	_economy.market_payloads = {0: _market_payload()}
+	_economy.population_payloads = {0: _population_payload()}
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1000, 900)
+	root.add_child(viewport)
+	var board := (load(BOARD_SCENE) as PackedScene).instantiate() as CellBoard
+	viewport.add_child(board)
+	board.configure(_map, func() -> Object: return _economy, _inspector, _clock)
+	var layout := preload("res://scripts/ui/game_hud_layout.gd").new()
+	layout._viewport = viewport
+	layout._cell_board = board
+	layout._layout_cell_board()
+	board.on_hover_cell_changed(0)
+	board._dwell_timer.stop()
+	board._on_resolve_timer_elapsed()
+	_expect("空间充足时显示展板", board.visible)
+	viewport.size = Vector2i(800, 900)
+	layout._layout_cell_board()
+	_expect("空间不能并排容纳悬停卡时收起展板", not board.visible and board.desired_height() == 0.0)
+	viewport.size = Vector2i(1000, 900)
+	layout._layout_cell_board()
+	_expect("扩大窗口后仍悬停同一格可恢复展板", board.visible and board.current_cell_index() == 0)
+	viewport.free()
 
 
 ## 悬停同一格跨日时，展板必须随当日快照刷新，而不能冻死在初次悬停那天。
@@ -315,7 +375,7 @@ func _test_same_cell_daily_refresh() -> void:
 		_failures.append("cell_board.tscn 根节点不是 CellBoard")
 		return
 	root.add_child(board)
-	board.configure(_map, null,
+	board.configure(_map,
 		func() -> Object: return _economy, _inspector, _clock)
 	board.apply_available_height(CellBoard.FULL_HEIGHT)
 	board.on_hover_cell_changed(0)
@@ -346,54 +406,6 @@ func _test_same_cell_daily_refresh() -> void:
 	root.remove_child(board)
 	board.free()
 
-
-func _test_label_lod() -> void:
-	_expect("远档只放城市以上", SettlementLabelLayer.minimum_tier_for_zoom(0.4) == 5)
-	_expect("中档放到县城", SettlementLabelLayer.minimum_tier_for_zoom(0.9) == 3)
-	_expect("近档放到乡村", SettlementLabelLayer.minimum_tier_for_zoom(1.5) == 2)
-	_expect("远档预算少", SettlementLabelLayer.budget_for_zoom(0.4)
-		< SettlementLabelLayer.budget_for_zoom(1.5))
-
-
-## 首都越过 LOD：远景也必须留名，并且悬停纸签读的是同一份地名。
-func _test_capital_and_hover() -> void:
-	var map := MapData.new(4, 1)
-	for index in 4:
-		var cell := HexCell.new(index, 0)
-		cell.index = index
-		map.set_cell(cell)
-	map._build_indices()
-	map.visible_arr = PackedByteArray([1, 1, 1, 1])
-	var holder := Node2D.new()
-	root.add_child(holder)
-	var camera := Camera2D.new()
-	holder.add_child(camera)
-	camera.zoom = Vector2(0.4, 0.4)
-	var facade := LabelFacade.new()
-	# 三座小城 + 一座属于首都格的聚落（第 3 格）。
-	facade.rows = [[0, 2, "青禾村"], [1, 2, "芦苇渡"], [2, 2, "石桥镇"], [3, 3, "临江市"]]
-	var layer := SettlementLabelLayer.new()
-	holder.add_child(layer)
-	layer.configure(map, camera, facade, 22.0,
-		HexUtils.wrap_period_x(map.width, 22.0), false)
-	layer._rebuild_visible_labels()
-	_expect("远档两枚小城都不出", layer._last_rebuild_label_count == 0)
-	layer.set_player_capital_cell(3)
-	layer._rebuild_visible_labels()
-	_expect("首都远景仍留名", layer._last_rebuild_label_count == 1)
-	_expect("留下的正是首都", layer._pool[0].text == "临江市")
-	layer.set_hover_cell(0)
-	layer._update_hover_label()
-	_expect("悬停纸签显示该格地名",
-		layer.hover_label_visible() and layer.hover_label_text() == "青禾村")
-	layer.set_hover_cell(-1)
-	layer._update_hover_label()
-	_expect("指针离开后纸签退场", not layer.hover_label_visible())
-	root.remove_child(holder)
-	holder.free()
-
-
-# ───────────────────────────── 工具 ─────────────────────────────
 
 ## 两块浮层不许互相遮挡：展板可见时卡片必须让开。
 func _test_card_avoid_rect() -> void:

@@ -74,6 +74,13 @@ inline constexpr uint16_t SAVE_SECTION_END_V20_TO_V22 = 13;
 inline constexpr uint16_t SAVE_SECTION_END_V11_TO_V19 = 12;
 inline constexpr uint16_t SAVE_SECTION_END_V10 = 10;
 
+inline int64_t maintenance_from_operating_cost(int64_t operating_cost,
+        int64_t input_cost, int64_t wages_due) {
+    const int64_t after_inputs = std::max<int64_t>(0, operating_cost) -
+        std::clamp<int64_t>(input_cost, 0, std::max<int64_t>(0, operating_cost));
+    return after_inputs - std::clamp<int64_t>(wages_due, 0, after_inputs);
+}
+
 inline godot::PackedByteArray make_save_chunk(
         uint16_t section, uint32_t records,
         const std::vector<uint8_t> &payload) {

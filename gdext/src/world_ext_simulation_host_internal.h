@@ -25,7 +25,7 @@ static inline void append_worker_timing(const RuntimeWorkerTiming::Totals &time,
     using Timing = RuntimeWorkerTiming;
     constexpr const char *names[]{
         "execute", "input_wait", "clock_wait", "save_build", "save_pause",
-        "paused", "overhead", "boundary_wait", "environment_wait", "main_tail_wait",
+        "paused", "overhead", "boundary_wait", "environment_wait",
         "input_retry_wait"};
     static_assert(std::size(names) == Timing::COUNT);
     uint64_t total = 0;
@@ -35,7 +35,7 @@ static inline void append_worker_timing(const RuntimeWorkerTiming::Totals &time,
     }
     // Keep the original aggregate for existing recordings and dashboards.
     out["worker_time_input_wait_us"] = static_cast<int64_t>(time[Timing::INPUT_WAIT] +
-        time[Timing::ENVIRONMENT_WAIT] + time[Timing::MAIN_TAIL_WAIT] + time[Timing::INPUT_RETRY_WAIT]);
+        time[Timing::ENVIRONMENT_WAIT] + time[Timing::INPUT_RETRY_WAIT]);
     out["worker_time_total_us"] = static_cast<int64_t>(total);
 }
 

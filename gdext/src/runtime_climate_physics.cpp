@@ -8,6 +8,7 @@
 // 公式、阈值、遍历顺序、累加顺序都不许动。
 
 #include "runtime_climate_physics.h"
+#include "simulation_math.h"
 
 #include "runtime_climate_formulas.h"
 #include "runtime_climate_pass_math.h"   // pk::wind_belt_at（行星风带基线）
@@ -133,21 +134,21 @@ int slp_pass_a_range(int n_cells, int begin, int end,
                              0.0, 1.0);
             const double py = double(ny);
             synoptic = knobs.synoptic_amp * float(
-                0.65 * std::sin(TWO_PI * (double(knobs.syn_k1x) * px +
+                0.65 * simulation_math::sin(TWO_PI * (double(knobs.syn_k1x) * px +
                                           double(knobs.syn_k1y) * py) +
                                 double(knobs.syn_phase) + double(ls) * 0.6 +
                                 double(knobs.syn_sa)) +
-                0.35 * std::cos(TWO_PI * (double(knobs.syn_k2x) * px -
+                0.35 * simulation_math::cos(TWO_PI * (double(knobs.syn_k2x) * px -
                                           double(knobs.syn_k2y) * py) -
                                 double(knobs.syn_phase2) + double(ls_abs) * 0.9 +
                                 double(knobs.syn_sb)));
         } else {
             // 退化（无 pos_x lane）：沿用 cell 索引波，保持向后兼容。
             synoptic = knobs.synoptic_amp * float(
-                0.65 * std::sin(double(i) * 4.886 +
+                0.65 * simulation_math::sin(double(i) * 4.886 +
                                 double(knobs.world_seed) * 0.00011 +
                                 double(knobs.syn_phase) + double(ls) * 5.3) +
-                0.35 * std::cos(double(i) * 2.191 -
+                0.35 * simulation_math::cos(double(i) * 2.191 -
                                 double(knobs.world_seed) * 0.00017 +
                                 double(knobs.syn_phase2) + double(ls_abs) * 8.1));
         }
@@ -166,7 +167,7 @@ int slp_pass_a_range(int n_cells, int begin, int end,
                 const float dy = ny - knobs.mobile_low_cy[j];
                 const float r2 = dx * dx + dy * dy;
                 mobile_low -= knobs.mobile_low_amp *
-                    std::exp(-r2 * knobs.mobile_low_inv2s2);
+                    simulation_math::exp(-r2 * knobs.mobile_low_inv2s2);
             }
         }
         slp_buf[i] = base_lat + landsea + thermal_slp + ice_high + snow_high +
@@ -378,10 +379,10 @@ int wind_field_range(int n_cells, int begin, int end,
         }
 
         // (d) 科氏偏转：离赤道越远越接近沿等压线流，赤道附近保留直接压差流。
-        const double coriolis_angle = WIND_CORIOLIS_MAX_RAD * std::pow(ls_abs, 0.55);
+        const double coriolis_angle = WIND_CORIOLIS_MAX_RAD * simulation_math::pow(ls_abs, 0.55);
         const double rot = (ls < 0.0) ? coriolis_angle : -coriolis_angle;
-        const double cos_r = std::cos(rot);
-        const double sin_r = std::sin(rot);
+        const double cos_r = simulation_math::cos(rot);
+        const double sin_r = simulation_math::sin(rot);
         const double v_geo_x = v_grad_raw_x * cos_r - v_grad_raw_y * sin_r;
         const double v_geo_y = v_grad_raw_x * sin_r + v_grad_raw_y * cos_r;
         const double ageo_w = 1.0 - pk_wind_smoothstep(0.10, 0.55, ls_abs);
@@ -471,15 +472,15 @@ int wind_field_range(int n_cells, int begin, int end,
             const double seed_b =
                 double((seed_bits >> 10) & 1023u) * 0.006135923151542565;
             const double k1x = 3.0 + double(seed_bits & 3u);
-            const double k1y = std::cos(seed_a) * 0.90 + 2.30;
+            const double k1y = simulation_math::cos(seed_a) * 0.90 + 2.30;
             const double k2x = 3.0 + double((seed_bits >> 2) & 3u);
-            const double k2y = std::sin(seed_b) * 1.00 + 2.40;
+            const double k2y = simulation_math::sin(seed_b) * 1.00 + 2.40;
             const double p1 =
                 6.283185307179586 * (k1x * px + k1y * py + syn_cycles) + seed_a;
             const double p2 =
                 6.283185307179586 * (k2x * px - k2y * py - syn_cycles * 0.56) + seed_b;
-            const double psi1 = std::sin(p1);
-            const double psi2 = std::cos(p2);
+            const double psi1 = simulation_math::sin(p1);
+            const double psi2 = simulation_math::cos(p2);
             double syn_x = k1y * psi1 + k2y * psi2;
             double syn_y = -k1x * psi1 + k2x * psi2;
             const double syn_len2 = syn_x * syn_x + syn_y * syn_y;
@@ -692,13 +693,13 @@ int wind_field_range(int n_cells, int begin, int end,
                 double dot = old_unit_x * final_dir_x + old_unit_y * final_dir_y;
                 if (dot < -1.0) dot = -1.0;
                 else if (dot > 1.0) dot = 1.0;
-                const double angle = std::acos(dot);
+                const double angle = simulation_math::acos(dot);
                 if (angle > max_turn_rad) {
                     const double cross =
                         old_unit_x * final_dir_y - old_unit_y * final_dir_x;
                     const double sign = (cross < 0.0) ? -1.0 : 1.0;
-                    const double cos_t = std::cos(max_turn_rad);
-                    const double sin_t = std::sin(max_turn_rad) * sign;
+                    const double cos_t = simulation_math::cos(max_turn_rad);
+                    const double sin_t = simulation_math::sin(max_turn_rad) * sign;
                     final_dir_x = old_unit_x * cos_t - old_unit_y * sin_t;
                     final_dir_y = old_unit_x * sin_t + old_unit_y * cos_t;
                 }
@@ -751,8 +752,8 @@ struct SlpSelfTestGrid {
         for (int b = 0; b < 8; ++b) {
             const float ny = float(b) / 7.0f;
             const float ls_abs = std::fabs((ny - 0.5f) * 2.0f);
-            lut_base[b] = -0.16f * std::cos(ls_abs * 3.14159265358979323846f * 3.0f);
-            const float s_lat = std::sin(ls_abs * 3.14159265358979323846f);
+            lut_base[b] = -0.16f * simulation_math::cos(ls_abs * 3.14159265358979323846f * 3.0f);
+            const float s_lat = simulation_math::sin(ls_abs * 3.14159265358979323846f);
             lut_heat[b] = 0.05f * s_lat * s_lat;
         }
     }
@@ -894,10 +895,10 @@ bool psi_solve_pure(const PsiSolveKnobs &knobs, const PsiSolveLanes &lanes,
         (knobs.depth_curl_damp > 0.0f && ELEV != nullptr);
     for (int k = 0; k < n_water; ++k) {
         const float ls_abs = std::fabs(LS_W[k]);
-        float b = std::cos(ls_abs * HALF_PI_PREP);
+        float b = simulation_math::cos(ls_abs * HALF_PI_PREP);
         if (b < knobs.beta_floor) b = knobs.beta_floor;
         BETA[k] = b;
-        RFAC[k] = knobs.r_base * (0.5f + std::sin(ls_abs * PI_PREP));
+        RFAC[k] = knobs.r_base * (0.5f + simulation_math::sin(ls_abs * PI_PREP));
         SRC[k] = -knobs.source_scale * CURL[k] / b;
         if (depth_damp_active) {
             const int i_w = water_to_cell[k];
@@ -1043,7 +1044,7 @@ bool psi_solve_pure(const PsiSolveKnobs &knobs, const PsiSolveLanes &lanes,
             if (temp_rel < knobs.cold_sink_temp) {
                 const float pole_dir_y =
                     (ls > 0.0f) ? 1.0f : ((ls < 0.0f) ? -1.0f : 0.0f);
-                const float grad_mag = std::sin(ls_abs * PI_F);
+                const float grad_mag = simulation_math::sin(ls_abs * PI_F);
                 cy += pole_dir_y * grad_mag * knobs.thermohaline_weight;
             }
         }
@@ -2093,8 +2094,8 @@ void prepare_slp_forcing(SlpPassAKnobs &k, int bins, float season,
     for (int b = 0; b < bins; ++b) {
         const float ny = float(b) / float(bins - 1);
         const float la = std::fabs((ny - 0.5f) * 2.0f);
-        base[b] = -k.lat_amp * std::cos(la * 3.14159265358979323846f * 3.0f);
-        const float s = std::sin(la * 3.14159265358979323846f);
+        base[b] = -k.lat_amp * simulation_math::cos(la * 3.14159265358979323846f * 3.0f);
+        const float s = simulation_math::sin(la * 3.14159265358979323846f);
         const float factor = s * s;
         const float now = dc_insolation_now(ny, season, tilt, daylen);
         const float mean = annual_mean ? annual_mean[b] : dc_insolation_annual_mean(ny, tilt, daylen);
@@ -2106,8 +2107,8 @@ void prepare_slp_forcing(SlpPassAKnobs &k, int bins, float season,
     const double phase = double(day) * (6.283185307179586 / std::max(0.5, period));
     const uint32_t seed = static_cast<uint32_t>(k.world_seed);
     k.syn_sa = float(sa); k.syn_sb = float(sb); k.syn_phase = float(phase); k.syn_phase2 = float(phase * 0.66);
-    k.syn_k1x = float(3.0 + double(seed & 3u)); k.syn_k1y = float(1.30 + 0.40 * std::cos(sa));
-    k.syn_k2x = float(3.0 + double((seed >> 2) & 3u)); k.syn_k2y = float(1.45 + 0.35 * std::sin(sb));
+    k.syn_k1x = float(3.0 + double(seed & 3u)); k.syn_k1y = float(1.30 + 0.40 * simulation_math::cos(sa));
+    k.syn_k2x = float(3.0 + double((seed >> 2) & 3u)); k.syn_k2y = float(1.45 + 0.35 * simulation_math::sin(sb));
     k.n_mobile_low = mobile_amp > 0.0f ? std::clamp(mobile_count, 0, 8) : 0;
     k.mobile_low_amp = std::max(0.0f, mobile_amp);
     mobile_sigma = std::max(0.02f, mobile_sigma);
@@ -2120,7 +2121,7 @@ void prepare_slp_forcing(SlpPassAKnobs &k, int bins, float season,
         double cx = double(hx) + double(day) / std::max(1.0, mobile_period);
         cx -= std::floor(cx);
         const float base_y = 0.22f + 0.56f * hy;
-        const float wob = 0.05f * float(std::sin(double(day) * 0.045 + double(j) * 1.7));
+        const float wob = 0.05f * float(simulation_math::sin(double(day) * 0.045 + double(j) * 1.7));
         k.mobile_low_cx[j] = float(cx); k.mobile_low_cy[j] = std::clamp(base_y + wob, 0.04f, 0.96f);
     }
 }

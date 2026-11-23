@@ -396,40 +396,20 @@ func _run_capture_leg() -> Dictionary:
 			% [int(w["visits_at_start"]), int(final["cell_layer_rebuild_visits"]),
 				int(w["generation_at_start"]), int(final["layer_generation"])])
 	_expect("W[9.3]: the basis pair is real (both dates >= 0) and eligible == "
-		+ "confirmed + 1, and the front did not install before its eligibility day",
+		+ "confirmed + 1, and the front is published for the next eligible day",
 		int(final["basis_confirmed_day"]) >= 0
 			and int(final["basis_eligible_day"])
 				== int(final["basis_confirmed_day"]) + 1
 			and int(w["first_installed_day"]) >= 0
-			and int(w["first_installed_day"]) >= int(w.get(
+			and int(w["first_installed_day"]) + 1 == int(w.get(
 				"eligible_at_first_install", -1)),
 		"confirmed=%d eligible=%d first_installed_day=%d eligible_at_install=%d"
 			% [int(final["basis_confirmed_day"]),
 				int(final["basis_eligible_day"]), int(w["first_installed_day"]),
 				int(w.get("eligible_at_first_install", -1))])
-	var days: Array = w.get("days", [])
-	var pumped := 0
-	var attempts_total := 0
-	var inflight_total := 0
-	var bad_rows := 0
-	for row_value in days:
-		var row: Dictionary = row_value
-		if not bool(row.get("pumped", false)):
-			continue
-		pumped += 1
-		attempts_total += int(row["attempts"])
-		inflight_total += int(row["inflight"])
-		if int(row["attempts"]) < 1 or int(row["attempts"]) > ATTEMPTS_PER_DAY \
-				or int(row["inflight"]) < 0 \
-				or int(row["inflight"]) > int(row["attempts"]):
-			bad_rows += 1
-	print("[W][RETRY] pumped_days=%d calls=%d inflight=%d incomplete_rows=%d"
-		% [pumped, attempts_total, inflight_total, bad_rows])
-	_expect("W[RETRY]: every pumped day recorded a complete attempt ledger, so 'the "
-		+ "layer appeared' is not an accident of one lucky call",
-		pumped > 0 and bad_rows == 0,
-		"pumped=%d bad_rows=%d calls=%d inflight=%d"
-			% [pumped, bad_rows, attempts_total, inflight_total])
+	_expect("W[PUBLISH]: the first derived layer is dated for the exact next day",
+		int(w["sample_at_first_install"]) == int(w["first_installed_day"]) + 1,
+		"commit=%d sample=%d" % [int(w["first_installed_day"]), int(w["sample_at_first_install"])])
 	var probe := _probe_all_cells(w["ext"], STAT_ADD, int(w["cells"]))
 	var magnitude := _program_magnitude(w, PROGRAM, "W")
 	var expected := float(magnitude) / float(Q16_ONE)
@@ -642,13 +622,15 @@ func _run_restore_leg(captured: Dictionary) -> Dictionary:
 				== int(loaded["basis_confirmed_day"]) + 1,
 		"confirmed=%d eligible=%d" % [int(loaded["basis_confirmed_day"]),
 			int(loaded["basis_eligible_day"])])
-	# PKID does not carry the front, so the world must have NOTHING yet. If this ever
-	# fails, the comparison below is comparing a carried front with a rebuilt one.
-	_expect("R[3/4]: the restored world still has NO derived front -- PKID does not "
-		+ "persist it, so the projection below can only come from a REBUILD",
-		not bool(loaded["installed"]) and int(loaded["cell_count"]) <= 0,
-		"installed=%s cells=%d" % [str(loaded["installed"]),
-			int(loaded["cell_count"])])
+	var immediate := _probe_all_cells(ext, STAT_ADD, int(w["cells"]))
+	var immediate_diff := _compare_probes(captured["probe"], immediate)
+	var written: Dictionary = captured["state"]
+	_expect("R[3/4]: the exact derived projection is present before the first resumed day",
+		bool(loaded["installed"]) and int(loaded["cell_count"]) == int(written["cell_count"])
+			and int(loaded["sample_day"]) == int(written["sample_day"])
+			and int(immediate_diff["presence_mismatch"]) == 0
+			and float(immediate_diff["max_abs_add_diff"]) == 0.0,
+		str(immediate_diff))
 	# The tag/metric fixture is WORLD INPUT (the board the selector reads), not ideology
 	# state, so it is re-installed into the restore world exactly as the map would be
 	# when a save is loaded. It changes WHICH cells a selector matches, never the
@@ -658,20 +640,14 @@ func _run_restore_leg(captured: Dictionary) -> Dictionary:
 	var rebuild_day := int(loaded["basis_eligible_day"])
 	if rebuild_day < 0:
 		rebuild_day = int(w["tick"]) + 1
-	var pump := _pump_derived(w, rebuild_day, RESTORE_PUMP_ATTEMPTS)
-	print("[R][PUMP] day=%d calls=%d inflight=%d done=%s pending=%s code='%s'"
-		% [rebuild_day, int(pump.get("attempts", 0)),
-			int(pump.get("inflight", 0)), str(pump.get("done", false)),
-			str(pump.get("pending", false)), String(pump.get("code", ""))])
-	var drained: Dictionary = ext.drain_derived_cell_layer(rebuild_day)
 	var after := _layer_state(ext)
 	print("[R] after the rebuild at day %d: installed=%s cells=%d contributions=%d "
 		% [rebuild_day, str(after["installed"]), int(after["cell_count"]),
 			int(after["contribution_count"])]
-		+ "stats=%d generation=%d sample_day=%d visits=%d gated=%d drain_steps=%d"
+		+ "stats=%d generation=%d sample_day=%d visits=%d gated=%d"
 		% [int(after["stat_count"]), int(after["layer_generation"]),
 			int(after["sample_day"]), int(after["cell_layer_rebuild_visits"]),
-			int(after["gated_by_eligibility"]), int(drained.get("steps", -1))])
+			int(after["gated_by_eligibility"])])
 	_expect("R[3/4]: the restored world REBUILDS a projection (installed=true, "
 		+ "cell_count>0, contribution_count>0)",
 		bool(after["installed"]) and int(after["cell_count"]) > 0
@@ -683,7 +659,7 @@ func _run_restore_leg(captured: Dictionary) -> Dictionary:
 	print("[R] probe: covered=%d add_sum=%.10f" % [int(probe["covered"]),
 		float(probe["add_sum"])])
 	return {"world": w, "state": after, "probe": probe, "refused": false,
-		"reason": "", "day": rebuild_day, "pump": pump,
+		"reason": "", "day": rebuild_day,
 		"pkef_ok": bool(pkef_result.get("ok", false)),
 		"pkef_reason": String(pkef_result.get("reason", "")),
 		"import_result": pkid_result}
@@ -989,9 +965,8 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 		% [str(import_result.get("worker_imported", false)),
 			String(import_result.get("worker_import_detail", ""))])
 	_expect("DUR[1/4]: the restore PUSHES the restored state into the worker, and the "
-		+ "result names the channel (`worker_import` is `applied`, or "
-		+ "`economy_day_inflight` when the worker held its day and the write-back retries)",
-		import_code == "applied" or import_code == "economy_day_inflight",
+		+ "result names the applied import before returning",
+		import_code == "applied" and bool(import_result.get("worker_imported", false)),
 		"worker_import='%s' detail='%s'" % [import_code,
 			String(import_result.get("worker_import_detail", ""))])
 	var rows_before := _idea_rows(target, handle)
@@ -1000,22 +975,17 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 		"ideology_pod_committed_day", -1))
 	var mask_before := int(target.get_runtime_thread_report().get(
 		"authoritative_domain_mask", -1))
-	var writeback_generation_before := int(w["host"]._ideology_worker_snapshot_generation)
-	w["pump"] = false
-	# A fresh worker world spends its first days starting the pod up (`pod_day` reads -1
-	# and the authority mask is still 0x000), so ONE day says nothing about durability.
-	# Drive until the pod has committed the imported day, or the bound is reached.
-	_pod_wait_ms = AFTER_DAY_POD_WAIT_MS
+	var initial_commit := int(target.get_runtime_control_state().get("simulation_committed_day", -1))
 	var driven := 0
 	var last_ok := false
+	_pod_wait_ms = AFTER_DAY_POD_WAIT_MS
 	for _index in range(AFTER_DAY_LIMIT):
 		if bool(w.get("faulted", false)) or _budget_exhausted:
 			break
 		var outcome := _drive_day(w)
 		driven += 1
 		last_ok = bool(outcome.get("ok", false))
-		if int(target.get_runtime_thread_report().get(
-				"ideology_pod_committed_day", -1)) > pod_before:
+		if int(w["tick"]) >= pod_before:
 			break
 	_pod_wait_ms = POD_WAIT_MS
 	var rows_after := _idea_rows(target, handle)
@@ -1052,36 +1022,12 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 			% [String(layer_report.get("worker_import_last_code", "?")),
 				str(layer_report.get("worker_import_pending", "?")),
 				str(layer_report.get("worker_import_attempts", "?"))])
-	# The production consumer now runs during the day waits. Its cursor only
-	# advances after apply_runtime_ideology_snapshot reports applied=true, so
-	# observe that real handoff instead of forcing an older ring entry with -1.
-	# While the worker's parked day holds the boundary, the consumer answers
-	# economy_day_inflight and production tries again next frame; give it those
-	# frames (no further day is driven) before reading the cursor.
-	var handoff_deadline := Time.get_ticks_msec() + POD_WAIT_MS
-	while int(w["host"]._ideology_worker_snapshot_generation) <= writeback_generation_before \
-			and Time.get_ticks_msec() < handoff_deadline:
-		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec(), false)
-		OS.delay_msec(2)
-	var writeback_generation_after := int(w["host"]._ideology_worker_snapshot_generation)
-	print("[R][AFTER-DAY] production write-back generation %d -> %d" % [
-		writeback_generation_before, writeback_generation_after])
-	var rows_written := _idea_rows(target, handle)
-	var layer_written := _layer_state(target)
-	print("[R][AFTER-DAY] after the write-back: idea_rows %s -> %s | installed %s -> %s "
-		% [str(rows_after), str(rows_written), str(layer_after["installed"]),
-			str(layer_written["installed"])]
-		+ "| cells %d -> %d | confirmed/eligible %d/%d -> %d/%d"
-		% [int(layer_after["cell_count"]), int(layer_written["cell_count"]),
-			int(layer_after["basis_confirmed_day"]),
-			int(layer_after["basis_eligible_day"]),
-			int(layer_written["basis_confirmed_day"]),
-			int(layer_written["basis_eligible_day"])])
-	_expect("DUR[3/4]: a real worker write-back RAN on the loaded world (a snapshot was "
-		+ "applied, not refused), so the assertions below are about a load that met the "
-		+ "worker's own publish path",
-		writeback_generation_after > writeback_generation_before,
-		"production generation=%d -> %d" % [writeback_generation_before, writeback_generation_after])
+	var rows_written := rows_after
+	var layer_written := layer_after
+	_expect("DUR[3/4]: every driven day was published with the restored projection",
+		driven > 0 and last_ok and int(w["tick"]) == initial_commit + driven
+		and pod_after == pod_before,
+		"initial=%d driven=%d published=%d imported=%d" % [initial_commit, driven, int(w["tick"]), pod_before])
 	# ---- 4. HEADLINE: the payload's rows/dates/front survive that write-back ----
 	_expect("DUR[4/4][HEADLINE]: the restored IDEA ROWS are still the payload's after "
 		+ "the write-back (the worker adopted them instead of publishing over them)",
@@ -1101,21 +1047,10 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 				int(payload_state["basis_eligible_day"]),
 				int(layer_written["basis_confirmed_day"]),
 				int(layer_written["basis_eligible_day"])])
-	# One pump at the restored eligibility day, exactly as the host pump would: the front
-	# must be rebuilt FROM the surviving rows, and the rows must not move in the process.
-	var pump_day := int(restored.get("day", int(w["tick"])))
-	var pump := _pump_derived(w, pump_day, RESTORE_PUMP_ATTEMPTS)
 	var layer_pumped := _layer_state(target)
 	var rows_pumped := _idea_rows(target, handle)
 	var probe_pumped := _probe_all_cells(target, STAT_ADD, int(w["cells"]))
 	var diff := _compare_probes(payload_probe, probe_pumped)
-	print("[R][AFTER-DAY] pump at day %d: calls=%d inflight=%d done=%s code='%s' -> "
-		% [pump_day, int(pump.get("attempts", 0)), int(pump.get("inflight", 0)),
-			str(pump.get("done", false)), String(pump.get("code", ""))]
-		+ "installed=%s cells=%d contributions=%d gated=%d | rows %s"
-		% [str(layer_pumped["installed"]), int(layer_pumped["cell_count"]),
-			int(layer_pumped["contribution_count"]),
-			int(layer_pumped["gated_by_eligibility"]), str(rows_pumped)])
 	print("[R][AFTER-DAY][PARITY] cells=%d presence_mismatch=%d add_mismatch=%d "
 		% [int(diff["cells"]), int(diff["presence_mismatch"]),
 			int(diff["add_mismatch"])]
@@ -1123,7 +1058,7 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 		% [float(diff["max_abs_add_diff"]), int(payload_probe["covered"]),
 			int(probe_pumped["covered"])])
 	_expect("DUR[4/4][HEADLINE]: the front is STILL INSTALLED after the write-back and "
-		+ "the pump, with the payload's cell/contribution counts",
+		+ "the executor publication, with the payload's cell/contribution counts",
 		bool(layer_pumped["installed"])
 			and int(layer_pumped["cell_count"]) == int(payload_state["cell_count"])
 			and int(layer_pumped["contribution_count"])
@@ -1142,7 +1077,7 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 		"cells=%d presence_mismatch=%d add_mismatch=%d max_abs_add_diff=%.17f"
 			% [int(diff["cells"]), int(diff["presence_mismatch"]),
 				int(diff["add_mismatch"]), float(diff["max_abs_add_diff"])])
-	_expect("DUR[4/4]: the pump rebuilt from the surviving rows -- the idea rows are "
+	_expect("DUR[4/4]: the executor kept the imported idea rows unchanged "
 		+ "unchanged by it, so the front above came from the restored cards",
 		rows_pumped == payload_rows,
 		"payload=%s after pump=%s" % [str(payload_rows), str(rows_pumped)])
@@ -1212,10 +1147,16 @@ func _run_main_thread_negative_control(captured: Dictionary) -> void:
 				int(layer_restored["basis_eligible_day"]),
 				int((captured["state"] as Dictionary)["basis_confirmed_day"]),
 				int((captured["state"] as Dictionary)["basis_eligible_day"])])
-	# A main-thread day: `run_ideology_daily` is NOT suppressed here, so it settles on the
-	# main thread and must leave the restored rows alone (nothing to equip, nothing to
-	# promote). This is the leg that would break if the import had become a second writer.
-	_drive_day(w)
+	# Exercise the native standalone decoder's first step without starting a
+	# second world scheduler. The restored rows have no staged card changes.
+	var ideology: Dictionary = {}
+	for _slice in range(MAX_SLICES_PER_DAY):
+		ideology = ext.run_ideology_daily(1)
+		if not bool(ideology.get("ok", false)) or bool(ideology.get("done", false)):
+			break
+	w["tick"] = 1
+	w["last_ideology"] = ideology
+	w["last_suppressed"] = bool(ideology.get("suppressed", false))
 	var rows_after_day := _idea_rows(ext, handle)
 	var layer_after_day := _layer_state(ext)
 	print("[NC/MAIN] after one main-thread day %d: rows=%s confirmed/eligible=%d/%d "
@@ -1228,6 +1169,7 @@ func _run_main_thread_negative_control(captured: Dictionary) -> void:
 	_expect("NC/MAIN[3/3]: one real main-thread ideology day leaves the restored rows "
 		+ "and dates alone, and the day RAN on the main thread (not suppressed)",
 		rows_after_day == rows_restored
+			and bool(ideology.get("ok", false)) and bool(ideology.get("done", false))
 			and int(layer_after_day["basis_confirmed_day"])
 				== int(layer_restored["basis_confirmed_day"])
 			and not bool(w["last_suppressed"]),
@@ -1551,16 +1493,12 @@ func _build_world(spec: Dictionary, worker: bool) -> Dictionary:
 	host.initial_seed = seed
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 100
-	host.runtime_climate_authority_enabled = bool(spec.get("authority", false))
-	host.runtime_shadow_on_generate = bool(spec.get("shadow_on_generate", true))
+	host.start_executor_on_generate = bool(spec.get("shadow_on_generate", true))
 	host.runtime_economy_auto_pod_active = true
-	host.runtime_authority_domain_mask = int(spec.get("mask", MASK_WORKER_IDEOLOGY))
 	host.runtime_parity_forcing = bool(spec.get("parity_forcing", false))
 	get_root().add_child(host)
 	await process_frame
 	host.configure(null, null, clock)
-	if bool(spec.get("authority", false)):
-		host.set_climate_authority_override("force_on")
 	var config := NewGameConfig.create_default()
 	config.country.name = "W %s" % name
 	config.country.foreign_count = int(spec.get("foreign_count", 1))
@@ -1585,13 +1523,13 @@ func _build_world(spec: Dictionary, worker: bool) -> Dictionary:
 		ext.set_runtime_ideology_parity_enabled(false)
 		ext.set_runtime_clock(true, WORKER_SPEED)
 	var w := {
-		"name": name, "host": host, "clock": clock, "ext": ext,
+		"name": name, "host": host, "clock": clock, "ext": ext, "executor": worker,
 		"generator": generator, "tick": 0, "cells": width * height,
 		"handle": 0, "started_ms": Time.get_ticks_msec(),
 		"last_ideology": {}, "last_suppressed": false, "last_effect": {},
 		"slices": 0, "faulted": false, "fault_reported": false, "seed": seed,
 		"pump": false, "days": [], "pumped_days": 0,
-		"first_installed_day": -1, "confirmed_at_first_install": -1,
+		"first_installed_day": -1, "sample_at_first_install": -1, "confirmed_at_first_install": -1,
 		"eligible_at_first_install": -1,
 	}
 	var handles := _country_handles(w)
@@ -1657,90 +1595,37 @@ func _drive_day(w: Dictionary) -> Dictionary:
 				% [String(w["name"]), fault, int(w["tick"])]
 				+ "remaining days are not driven and what was measured is reported")
 		return {"ok": false, "fault": fault}
-	w["tick"] = int(w["tick"]) + 1
-	var day := int(w["tick"])
-	clock.current_day = float(day)
-	_service_peers(ext)
-	# As each production frame does: consume the committed day, which also
-	# reports the main-thread day tail the worker waits for (main_day_tail_gate).
-	host._consume_runtime_commit_if_ready()
-	if ext.has_method("publish_ideology_worker_inputs"):
-		ext.publish_ideology_worker_inputs()
-	host.run_daily_tick(day, clock.season_phase_for_day(day))
-	host.finish_daily_tick(0.0, {})
-	# Production settle handshake only on the main-thread side; under worker authority
-	# the worker's own graph owns it and a second handshake here would double-apply.
-	var ideology: Dictionary = {}
-	var slices := 0
-	for _slice in range(MAX_SLICES_PER_DAY):
-		slices += 1
-		ideology = ext.run_ideology_daily(day)
-		if not bool(ideology.get("ok", true)):
-			break
-		if bool(ideology.get("suppressed", false)):
-			break
-		if bool(ideology.get("done", false)):
-			break
-	w["last_ideology"] = ideology
-	w["last_suppressed"] = bool(ideology.get("suppressed", false))
-	w["slices"] = int(w.get("slices", 0)) + slices
-	if not bool(ideology.get("suppressed", false)):
-		for _slice in range(16):
-			var effect_slice: Dictionary = ext.run_effect_daily(day)
-			w["last_effect"] = effect_slice
-			if not bool(effect_slice.get("ok", true)):
-				break
-			if bool(effect_slice.get("done", true)):
-				break
-		ext.dispatch_effect_native_modifier()
-		ext.run_modifier_daily(day)
-		ext.ack_effect_native_modifier()
-	if bool(ideology.get("suppressed", false)):
-		# Waiting for the worker does not apply its snapshot to the main-thread
-		# mirror. Service the same production handoff that runs each UI frame,
-		# including one final pass after the committed day releases its lock.
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_await_pod_day(w, before, _pod_wait_ms)
-		host._service_runtime_liveness(Time.get_ticks_usec(), false)
-	var pump := {}
-	if bool(w.get("pump", false)):
-		pump = _pump_derived(w, day, ATTEMPTS_PER_DAY)
-		w["pumped_days"] = int(w.get("pumped_days", 0)) + 1
-	var drained: Dictionary = ext.drain_derived_cell_layer(day)
-	_record_day(w, day, pump, drained)
-	return {"ok": true, "day": day, "slices": slices, "drained": drained,
-		"pump": pump, "suppressed": bool(ideology.get("suppressed", false))}
+	assert(bool(w.get("executor", false)), "only executor worlds advance days")
+	return _drive_executor_day(w, ext, host, clock)
 
 
-## Calls the BOUND facade until it reports the rebuild finished, and accounts for every
-## call. `economy_day_inflight` is the worker holding the economy-input-capture boundary
-## for its own day transaction; the facade has asked it to park, so a short sleep gives
-## it the boundary window the next call needs. That is contention, not a failure.
-func _pump_derived(w: Dictionary, day: int, attempts: int) -> Dictionary:
-	var ext: Object = w["ext"]
-	var calls := 0
-	var inflight := 0
-	var done := false
-	var first_lock := false
-	var pending := false
-	var code := ""
-	while calls < attempts:
-		calls += 1
-		var stepped: Dictionary = ext.step_ideology_derived_rebuild(day)
-		code = String(stepped.get("code", ""))
-		if code == INFLIGHT_CODE:
-			inflight += 1
-			OS.delay_msec(ATTEMPT_SLEEP_MS)
-			continue
-		if calls == 1:
-			first_lock = true
-		pending = bool(stepped.get("pending", true))
-		if bool(stepped.get("done", false)) and not pending:
-			done = true
+func _drive_executor_day(w: Dictionary, ext: Object, host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
+	# Generation can already have published the first day. Consume its tail
+	# before asking for another calendar tick, like the normal process loop.
+	host._process(0.0)
+	var day := int(ext.get_runtime_control_state().get("simulation_committed_day", 0)) + 1
+	var probe: Dictionary = ext.run_ideology_daily(day)
+	w["last_suppressed"] = bool(probe.get("suppressed", false))
+	w["last_ideology"] = probe
+	clock.current_day = float(day + 1)
+	host._admit_runtime_calendar(day + 1)
+	var deadline := Time.get_ticks_msec() + _pod_wait_ms
+	while Time.get_ticks_msec() < deadline:
+		host._process(0.0)
+		if host._runtime_commit_day == day or not _worker_fault(ext).is_empty():
 			break
-	return {"attempts": calls, "inflight": inflight, "acquired": calls - inflight,
-		"done": done, "pending": pending, "first_lock": first_lock, "code": code}
+		OS.delay_msec(2)
+	var settled := host._runtime_commit_day == day
+	_expect("executor settles complete day %d with its projection" % day, settled, str(ext.get_runtime_control_state()))
+	if settled:
+		w["tick"] = day
+		var report: Dictionary = ext.get_runtime_thread_report()
+		var steps: Dictionary = report.get("main_simulation_steps_by_day", {}).get(day, {})
+		for step in ["ideology_snapshot_install", "ideology_instance_service", "ideology_projection_service",
+				"ideology_projection_install", "ideology_worker_ack"]:
+			_expect("no %s on settled day %d" % [step, day], int(steps.get(step, 0)) == 0)
+	_record_day(w, day, {}, {})
+	return {"ok": settled, "day": day, "suppressed": w["last_suppressed"]}
 
 
 func _record_day(w: Dictionary, day: int, pump: Dictionary, drained: Dictionary) -> void:
@@ -1774,6 +1659,7 @@ func _record_day(w: Dictionary, day: int, pump: Dictionary, drained: Dictionary)
 	if int(w["first_installed_day"]) < 0 and bool(state["installed"]) \
 			and int(state["cell_count"]) > 0:
 		w["first_installed_day"] = day
+		w["sample_at_first_install"] = int(state["sample_day"])
 		w["confirmed_at_first_install"] = int(state["basis_confirmed_day"])
 		w["eligible_at_first_install"] = int(state["basis_eligible_day"])
 		print("[%s][LAYER] the derived cell layer is installed for the first time on "
@@ -1806,7 +1692,7 @@ func _await_pod_day(w: Dictionary, before: int, timeout_ms: int) -> int:
 	while Time.get_ticks_msec() < deadline:
 		# This fixture drives days synchronously, so _process cannot perform the
 		# normal input/peer/snapshot work while this wait is on the call stack.
-		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec(), false)
+		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec())
 		var report: Dictionary = ext.get_runtime_thread_report()
 		day = int(report.get("ideology_pod_committed_day", -1))
 		if day > before:

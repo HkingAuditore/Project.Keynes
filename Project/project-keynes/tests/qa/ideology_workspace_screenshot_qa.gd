@@ -84,7 +84,7 @@ func _run() -> void:
 	if not bool(chosen.get("ok", false)):
 		_failures.append("choose rejected: %s" % str(chosen))
 	deadline = Time.get_ticks_msec() + 30000
-	while controller.ideology_draw_locked() and Time.get_ticks_msec() < deadline:
+	while bool(facade.snapshot(handle).get("offer_active", false)) and Time.get_ticks_msec() < deadline:
 		await process_frame
 	for viewport_size in SIZES:
 		_resize(viewport_size)

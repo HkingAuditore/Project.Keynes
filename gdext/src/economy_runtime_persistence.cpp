@@ -262,11 +262,6 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     out["schema_version"] = SCHEMA_VERSION;
     out["catalog_hash"] = _catalog_hash.get();
     out["committed_day"] = _last_committed_day.get();
-    // R4-2: generation / state_hash / restore_eligible. Without them the fatal
-    // snapshot manifest recorded native_generation=0 and native_state_hash=0 for
-    // a 42 MB archive that was in fact written at a committed boundary, while the
-    // paired country.pkcn recorded generation=1 and a real hash.
-    write_save_identity_report(out);
     return out;
 }
 
@@ -798,8 +793,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool expedition_player =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
-        int32_t family = -1;
-        int32_t expedition = -1;
         const bool target_ok = (cmd.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT || cmd.opcode == COMMAND_MILITARY_PURCHASE || cmd.opcode == COMMAND_MILITARY_PURCHASE_ACK) ? (cmd.i64_0 >= 0 && cmd.i64_1 >= 0) : cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ? military_procurement_demand_valid(cmd)
             : family_reward ? family_ledger_command_preflight(cmd)
             : split_policy
@@ -810,25 +803,22 @@ Dictionary NativeEconomyRuntime::end_restore() {
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 == 1 &&
-               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+               cmd.treasury_construction_policy_valid())
             : treasury_demolish
             ? (_country_runtime != nullptr && country_reads().valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) &&
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 > 0 &&
-               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+               cmd.treasury_construction_policy_valid())
             : canal_build
             ? (_country_runtime != nullptr && country_reads().valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)
             : expedition_player
             ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
-                ? ((cmd.target_handle == 0 ||
-                    families_store().valid_handle(cmd.target_handle, family)) &&
-                   cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
-                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() &&
-                   cmd.i64_0 >= 1)
-                : family_expeditions_store().valid_handle(cmd.target_handle, expedition))
+                ? (cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
+                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() && cmd.i64_0 >= 1)
+                : cmd.target_handle != 0)
             : market_target
             ? (cmd.i32_0 >= 0 && cmd.i32_0 < market_store().market_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < market_store().good_count.get() &&
@@ -1355,7 +1345,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_person_indices();
     rebuild_family_demography_weights();
     _bootstrapped = true;
-    military_soldier_profession(); // Rebuild the catalog lookup before the first restored quote.
     _track_b_investment_cells_pending.swap(_restore.track_b_investment_cells_pending);
     _track_b_derived_cell_cache.swap(_restore.track_b_derived_cell_cache);
     _track_b_derived_cell_cache_day = _restore.track_b_derived_cell_cache_day;
@@ -1417,7 +1406,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
     const int32_t restored_commands = _restore.restored_commands;
     const int32_t restored_buildings = _restore.restored_buildings;
     const int32_t restored_schema = _restore.schema_version;
-    const int32_t dropped_transit_persons = _restore.dropped_transit_persons;
     _resource_stock_restored_pending_capture = _restore.resource_stock_seen;
     _restore = {};
     trace_begin_epoch();
@@ -1438,7 +1426,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_families"] = families_store().active_count.get();
     out["restored_persons"] = persons_store().active_count.get();
     out["restored_person_needs"] = static_cast<int64_t>(person_needs().size());
-    out["dropped_transit_persons"] = dropped_transit_persons;
     out["migration"] = restored_schema == 27
         ? "v27_empty_birth_residual_bootstrap"
         : (restored_schema == 25

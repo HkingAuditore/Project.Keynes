@@ -157,30 +157,6 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     const int32_t market = group.cell >= 0 && group.cell < _cell_count.get()
         ? market_store().cell_to_market[group.cell] : -1;
     if (market < 0 || market >= market_store().market_count.get()) return quote;
-    // A merchant post sells no good, so every receipt term of the normal
-    // quote stays zero forever and the vacancy it leaves can never be ranked
-    // as a mobility target -- which also keeps the type pinned on
-    // INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY. Its owner quote is the
-    // market retail pool share instead, priced against the seats this group
-    // would add.
-    if (is_merchant_service_post(type)) {
-        const int64_t seats = std::max<int64_t>(1, saturating_mul(
-            std::max<int64_t>(1, group.count),
-            std::max<int64_t>(1, type.owner_slots_per_building), sat));
-        const int64_t per_owner_day = merchant_retail_owner_income_per_day(
-            group.cell, seats, seats, sat);
-        quote.owner_income_per_day = per_owner_day;
-        quote.disposable_survival_power_per_day = per_owner_day;
-        quote.cash_receipt = saturating_mul(per_owner_day, seats, sat);
-        quote.cash_revenue_per_day = quote.cash_receipt;
-        quote.economic_revenue_per_day = quote.cash_receipt;
-        quote.after_tax_revenue_per_day = quote.cash_receipt;
-        quote.profit_per_day = per_owner_day;
-        quote.utilization_q16 = Q16_ONE;
-        quote.executable_capacity_q16 = Q16_ONE;
-        quote.feasible = per_owner_day > 0;
-        return quote;
-    }
     const int32_t owner_slot = find_cohort_slot(
         group.cell, group.owner_signature_id);
     const bool has_owner_cohort = owner_slot >= 0 && owner_slot <
@@ -1212,9 +1188,9 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             return false;
         return true;
     };
-    std::unordered_map<std::string, int32_t> desired;
-    std::unordered_map<std::string, int32_t> desired_effects;
-    std::unordered_map<std::string, int32_t> desired_triggers;
+    std::map<std::string, int32_t> desired;
+    std::map<std::string, int32_t> desired_effects;
+    std::map<std::string, int32_t> desired_triggers;
     const uint64_t family_handle = family_influences().family_handle[branch];
     const auto trait_begin = std::lower_bound(family_trait_rolls().begin(),
         family_trait_rolls().end(), family_handle,
@@ -1292,9 +1268,18 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
     if (_effect_runtime != nullptr) {
         const auto branch_bindings = _family_effect_instances_by_branch.find(
             branch_handle);
-        const std::vector<int64_t> existing_instance_ids = branch_bindings ==
+        std::vector<int64_t> existing_instance_ids = branch_bindings ==
                 _family_effect_instances_by_branch.end()
             ? std::vector<int64_t>() : branch_bindings->second;
+        existing_instance_ids.erase(std::remove_if(existing_instance_ids.begin(), existing_instance_ids.end(),
+            [&](int64_t id) { return _family_effect_binding_by_instance.count(id) == 0; }),
+            existing_instance_ids.end());
+        auto binding_order = [&](int64_t id) {
+            const auto &binding = _family_effect_bindings[_family_effect_binding_by_instance.at(id)];
+            return std::tie(binding.definition_key, binding.target_handle, binding.instance_id);
+        };
+        std::sort(existing_instance_ids.begin(), existing_instance_ids.end(),
+            [&](int64_t a, int64_t b) { return binding_order(a) < binding_order(b); });
         std::vector<std::string> desired_non_trait;
         for (const int64_t existing_instance_id : existing_instance_ids) {
             const auto indexed = _family_effect_binding_by_instance.find(
@@ -1696,7 +1681,14 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         if (binding.branch_handle != branch_handle) continue;
         add_effect_triggers(binding.definition_key);
     }
-    for (size_t binding_row = 0; binding_row < _family_modifier_bindings.size(); ++binding_row) {
+    std::vector<size_t> modifier_rows;
+    for (size_t i = 0; i < _family_modifier_bindings.size(); ++i)
+        if (_family_modifier_bindings[i].branch_handle == branch_handle)
+            modifier_rows.push_back(i);
+    std::stable_sort(modifier_rows.begin(), modifier_rows.end(), [&](size_t a, size_t b) {
+        return _family_modifier_bindings[a].definition_key < _family_modifier_bindings[b].definition_key;
+    });
+    for (const size_t binding_row : modifier_rows) {
         auto binding_write = _family_modifier_bindings.edit_row(binding_row);
         FamilyModifierBinding &binding = binding_write[0];
         if (binding.branch_handle != branch_handle) continue;
@@ -1736,30 +1728,33 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         _family_modifier_bindings.push_back(
             {branch_handle, item.first, magnitude});
     }
-    for (auto it = _family_trigger_bindings.begin();
-         it != _family_trigger_bindings.end();) {
-        if (it->branch_handle != branch_handle) {
-            ++it;
-            continue;
-        }
-        const auto found = desired_triggers.find(it->definition_key);
+    std::map<std::string, size_t> existing_triggers;
+    for (size_t i = 0; i < _family_trigger_bindings.size(); ++i) {
+        const auto &binding = _family_trigger_bindings[i];
+        if (binding.branch_handle == branch_handle)
+            existing_triggers.emplace(binding.definition_key, i);
+    }
+    std::vector<size_t> expired_triggers;
+    for (const auto &[key, row] : existing_triggers) {
+        const auto &binding = _family_trigger_bindings[row];
+        const auto found = desired_triggers.find(key);
         if (found == desired_triggers.end()) {
-            reconcile_trigger_branch_binding(_trigger_runtime,
-                it->definition_key, branch_handle,
-                family_influences().cell[branch], it->reward_target, false);
-            it = _family_trigger_bindings.erase(it);
+            reconcile_trigger_branch_binding(_trigger_runtime, key, branch_handle,
+                family_influences().cell[branch], binding.reward_target, false);
+            expired_triggers.push_back(row);
             continue;
         }
-        if (found->second != it->reward_target &&
-            reconcile_trigger_branch_binding(_trigger_runtime,
-                it->definition_key, branch_handle,
-                family_influences().cell[branch], found->second, true)) {
-            auto binding_write = _family_trigger_bindings.edit_row(it - _family_trigger_bindings.begin());
+        if (found->second != binding.reward_target &&
+                reconcile_trigger_branch_binding(_trigger_runtime, key, branch_handle,
+                    family_influences().cell[branch], found->second, true)) {
+            auto binding_write = _family_trigger_bindings.edit_row(row);
             binding_write[0].reward_target = found->second;
         }
         desired_triggers.erase(found);
-        ++it;
     }
+    std::sort(expired_triggers.rbegin(), expired_triggers.rend());
+    for (const size_t row : expired_triggers)
+        _family_trigger_bindings.erase(_family_trigger_bindings.begin() + row);
     for (const auto &item : desired_triggers) {
         if (reconcile_trigger_branch_binding(_trigger_runtime, item.first,
                 branch_handle, family_influences().cell[branch], item.second,

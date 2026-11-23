@@ -1,6 +1,7 @@
 #include "ideology_runtime.h"
 #include "ideology_runtime_internal.h"
 #include "ideology_runtime_common.inc"
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
@@ -803,8 +804,8 @@ void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
     }
 }
 
-bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
-                                               std::string &error) {
+bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day, std::string &error,
+                                               bool finish_in_day) {
     error.clear();
     if (!_configured || _modifier_runtime == nullptr || _effect_runtime == nullptr)
         return true;
@@ -967,14 +968,25 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
         _derived_rebuild_job.reset(new DerivedCellMaterializeJob(
             _derived_world_identity, _derived_map_generation, day,
             _derived_epoch_id, compute_execution_contract_hash(), job_options));
+        if (finish_in_day && !_derived_rebuild_contributions.empty())
+            _derived_rebuild_job->freeze_ramp_inputs(_derived_rebuild_contributions);
         return false;   // fold happens in later steps
     }
 
     ++_derived_rebuild_slices;
-    if (_derived_rebuild_job == nullptr) return true;
-    const bool folded = _derived_rebuild_job->fold_step(
-        _derived_rebuild_contributions, DERIVED_REBUILD_STEP_BUDGET_MS);
+    DerivedCellFront front;
+    DerivedMaterializeReport report;
+    bool skipped = false;
+    const DerivedCellFront *previous = modifier_api::derived_cell_front(*_modifier_runtime);
+    if (!_derived_rebuild_job) return true;
+    const double budget = finish_in_day ? std::numeric_limits<double>::infinity()
+                                        : DERIVED_REBUILD_STEP_BUDGET_MS;
+    const bool folded = _derived_rebuild_job->fold_step(_derived_rebuild_contributions, budget);
     const double step_ms = elapsed_ms(started);
+    if (folded && !_derived_rebuild_job->finish(previous, front, report, skipped)) {
+        error = "derived_cell_layer_finish_failed";
+        return false;
+    }
     _cell_layer_rebuild_ms = std::max(_cell_layer_rebuild_ms, step_ms);
     _derived_materialise_ms = std::max(_derived_materialise_ms, step_ms);
     _derived_rebuild_steps = _derived_rebuild_slices;
@@ -982,14 +994,6 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
 
     if (!folded) return false;   // more steps needed; nothing installed yet
 
-    DerivedCellFront front;
-    DerivedMaterializeReport report;
-    bool skipped = false;
-    const DerivedCellFront *previous = modifier_api::derived_cell_front(*_modifier_runtime);
-    if (!_derived_rebuild_job->finish(previous, front, report, skipped)) {
-        error = "derived_cell_layer_finish_failed";
-        return true;
-    }
     _last_derived_materialize = report;
     // PEAK MEMORY (§18.3): the only point where the RETAINED front (still serving
     // readers) and the CANDIDATE front (just built, not yet installed) both exist.

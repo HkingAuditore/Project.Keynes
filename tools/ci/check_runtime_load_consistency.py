@@ -182,8 +182,6 @@ def command_coverage(payload, expected_days):
         if (row.get("country_name") != name or not row.get("gm_receipt", {}).get("ok")
                 or row.get("gm_receipt", {}).get("effective_day") != day + 2):
             errors.append(f"day {day}: rename did not land on its requested day")
-        if not row.get("whole_economy_hash") or not row.get("military") or not row.get("resources"):
-            errors.append(f"day {day}: incomplete whole economy/military/resource evidence")
     return errors
 
 

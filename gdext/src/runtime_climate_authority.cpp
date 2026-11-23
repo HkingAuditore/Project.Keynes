@@ -25,12 +25,7 @@ constexpr uint32_t CLIMATE_SECTION_MARKER = 0x324d4c43u; // CLM2
 // ABI 8 = worker 自持的 terrain + cover u8 lanes。
 // 开发期不迁移旧档；版本不符必须明确拒绝，不能静默冷启动。
 // ABI 9 appends committed kernel continuation lanes; the v8 prefix is unchanged.
-// ABI 10 drops the 365-day per-cell temperature ring from the payload. It was the
-// single largest block of a save (6400 cells: 8.91 MiB raw / 5.53 MiB after zstd,
-// 55% of the file) and nothing reads it: the daily kernel only appends to it and
-// the gameplay lane is temperature_365d_ema. ABI 9 stays readable so existing
-// saves still load; only new writes omit the ring.
-constexpr uint32_t CLIMATE_SECTION_ABI = 10u;
+constexpr uint32_t CLIMATE_SECTION_ABI = 9u;
 constexpr uint32_t CLIMATE_SECTION_ABI_MIN_SUPPORTED = 9u;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
@@ -598,7 +593,8 @@ bool RuntimeClimateAuthority::serialize(std::vector<uint8_t> &bytes,
         return false;
     }
     std::vector<uint8_t> payload;
-    payload.reserve(static_cast<size_t>(_store.cell_count) * 160u);
+    payload.reserve(static_cast<size_t>(_store.cell_count) * 160u +
+                    _store.temperature_history.size() * sizeof(float));
     append_u32(payload, _store.cell_count);
     append_u64(payload, _store.generation);
     append_u64(payload, _store.climate_generation);
@@ -611,8 +607,7 @@ bool RuntimeClimateAuthority::serialize(std::vector<uint8_t> &bytes,
 #define APPEND_FLOAT(name) append_float_vector(payload, _store.name);
     CLIMATE_CELL_FLOAT_LANES(APPEND_FLOAT)
 #undef APPEND_FLOAT
-    // temperature_history 自 ABI 10 起不再落盘（见 CLIMATE_SECTION_ABI 注释）。
-    // 恢复侧对 ABI 9 仍按旧布局读取，因此旧档的 state_hash 复核不受影响。
+    append_float_vector(payload, _store.temperature_history);
 #define APPEND_U8(name) append_u8_vector(payload, _store.name);
     CLIMATE_U8_LANES(APPEND_U8)
 #undef APPEND_U8
@@ -696,9 +691,7 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     // Only the current development format is accepted; no partial-fidelity restore.
     if (section_abi < CLIMATE_SECTION_ABI_MIN_SUPPORTED ||
         section_abi > CLIMATE_SECTION_ABI) {
-        error = "climate_section_version_mismatch_expected_" +
-            std::to_string(CLIMATE_SECTION_ABI) + "_got_" +
-            std::to_string(section_abi);
+        error = "climate_section_version_mismatch_expected_9_got_" + std::to_string(section_abi);
         return false;
     }
     if (runtime_abi != RUNTIME_DOMAIN_POD_ABI_VERSION) {
@@ -773,11 +766,7 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     }
 #undef READ_FLOAT
     const uint64_t history_count = static_cast<uint64_t>(cells) * 365u;
-    if (section_abi >= 10u) {
-        // ABI 10 不再携带历史 lane。环内容不参与任何判定，但 validate() 仍要求
-        // 它保持 cells*365 的形状，所以补一份零环即等价于“这局没有历史”。
-        restored.temperature_history.assign(static_cast<size_t>(history_count), 0.0f);
-    } else if (history_count > std::numeric_limits<uint32_t>::max() ||
+    if (history_count > std::numeric_limits<uint32_t>::max() ||
         !payload.floats(restored.temperature_history,
                         static_cast<uint32_t>(history_count))) {
         error = "climate_section_history_invalid";
@@ -889,14 +878,12 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
         return false;
     }
     // ABI 6 继续按原算法严格校验，不能随 ABI bump 自动失去哈希保护。
-    // ABI 7 冻结为 abi6 + physics；ABI 8/9 再混入 terrain/cover，历史 lane 仍经
-    // abi6 参与；ABI 10 起历史 lane 不再落盘，用当前 state_hash() 复核。
+    // ABI 7 冻结为 abi6 + physics；ABI 8+ 再混入 terrain/cover。
     // v9 沿用原 store hash，新增继续态另由完整 payload checksum 保护。
-    const uint64_t expected_hash = section_abi >= 10u
+    const uint64_t expected_hash = section_abi >= 8u
         ? restored.state_hash()
-        : (section_abi >= 8u ? restored.state_hash_abi8()
-            : (section_abi >= 7u ? restored.state_hash_abi7()
-                                 : restored.state_hash_abi6()));
+        : (section_abi >= 7u ? restored.state_hash_abi7()
+                             : restored.state_hash_abi6());
     if (section_abi >= 6u && expected_hash != state_hash) {
         error = "climate_section_state_hash_mismatch";
         return false;
@@ -913,9 +900,7 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     _store = std::move(restored);
     _kernel.invalidate_committed_physics();
     _next = std::move(restored_next);
-    // 继续态一律用当前算法盖章：旧档读完历史 lane 后，后续 plan/commit 只会
-    // 产出不含历史的哈希，若这里沿用旧值就会在下一日对不上。
-    _committed_state_hash = section_abi >= 8u ? restored.state_hash() : 0;
+    _committed_state_hash = section_abi >= 8u ? expected_hash : 0;
     _catalog = restored_catalog;
     _catalog_ready = catalog_hash != 0;
     _economy_view_cursor = {};
@@ -970,9 +955,7 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
             return migration_fail(error.empty()
                 ? "climate_abi_migration_serialize_failed" : error);
         }
-        // 下面的布局常量描述 ABI 9（含历史 lane）：本函数会先把当前 ABI 10 的
-        // payload 还原成 ABI 9 再逐级裁剪。
-        // ABI 9 payload：header 80B + 前缀 56B +
+        // payload 布局（ABI 8）：header 80B + 前缀 56B +
         //   31 条 float lane（每条 u32 长度 + cells*f32）+
         //   temperature_history（u32 长度 + 365*cells*f32）+
         //   8 条 u8 lane（每条 u32 长度 + cells 字节）+
@@ -994,34 +977,6 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
         const size_t u8_start = history_start + history_block;
         const size_t i32_start = u8_start + U8_LANES * u8_lane;
         const size_t blob_start = i32_start + I32_LANES * i32_lane;
-        // 当前序列化已是 ABI 10，不带历史 lane。把它还原成 ABI 9 的布局（在
-        // history_start 插回 365*cells 的 f32 lane 并改写 header 的 abi/hash/
-        // payload_size/checksum），再用这份 payload 按旧布局逐级裁剪：ABI 9 必须
-        // 仍能恢复，ABI 8 及更旧必须被明确拒绝。
-        {
-            const auto &history = authority.store().temperature_history;
-            if (history.size() != static_cast<size_t>(cells) * 365u) {
-                return migration_fail("climate_abi_migration_history_shape_unexpected");
-            }
-            const uint32_t history_count = static_cast<uint32_t>(history.size());
-            std::vector<uint8_t> values(sizeof(uint32_t) +
-                                        history.size() * sizeof(float));
-            std::memcpy(values.data(), &history_count, sizeof(history_count));
-            std::memcpy(values.data() + sizeof(history_count), history.data(),
-                        history.size() * sizeof(float));
-            v4.insert(v4.begin() + static_cast<ptrdiff_t>(history_start),
-                      values.begin(), values.end());
-            const uint32_t abi9 = 9u;
-            std::memcpy(v4.data() + 4, &abi9, sizeof(abi9));
-            const uint64_t legacy_hash = authority.store().state_hash_abi8();
-            std::memcpy(v4.data() + 56, &legacy_hash, sizeof(legacy_hash));
-            const uint64_t payload_size = static_cast<uint64_t>(v4.size() - 80u);
-            std::memcpy(v4.data() + 64, &payload_size, sizeof(payload_size));
-            const uint64_t payload_checksum =
-                checksum(v4.data() + 80, v4.size() - 80u);
-            std::memcpy(v4.data() + 72, &payload_checksum,
-                        sizeof(payload_checksum));
-        }
         // blob 区 = u32 长度前缀 + bytes；长度必须与实际长度一致，否则形状异常。
         if (v4.size() < blob_start + sizeof(uint32_t)) {
             return migration_fail("climate_abi_migration_shape_unexpected");
@@ -1054,7 +1009,7 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
                        v4.begin() + static_cast<ptrdiff_t>(i32_start),
                        v4.begin() + static_cast<ptrdiff_t>(payload_end));
             std::memcpy(out.data() + 4, &abi, sizeof(abi));
-            const uint64_t legacy_hash = abi >= 8u ? authority.store().state_hash_abi8() : abi >= 7u
+            const uint64_t legacy_hash = abi >= 8u ? authority.store().state_hash() : abi >= 7u
                 ? authority.store().state_hash_abi7()
                 : authority.store().state_hash_abi6();
             std::memcpy(out.data() + 56, &legacy_hash, sizeof(legacy_hash));
@@ -1080,28 +1035,11 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
             restored.reset(2);
             std::string restore_error;
             if (restored.restore(legacy.data(), legacy.size(), restore_error) ||
-                restore_error != "climate_section_version_mismatch_expected_10_got_" + std::to_string(abi)) {
+                restore_error != "climate_section_version_mismatch_expected_9_got_" + std::to_string(abi)) {
                 return migration_fail(std::string(label) + "_not_explicitly_rejected:" + restore_error);
             }
             return true;
         };
-        // ABI 9 必须仍然可读：旧档带着历史 lane，恢复后 state_hash_abi8 复核要过，
-        // 而 ABI 10 的当前哈希必须与它不同（历史不再参与）。
-        {
-            RuntimeClimateAuthority legacy_reader;
-            legacy_reader.reset(2);
-            std::string restore_error;
-            if (!legacy_reader.restore(v4.data(), v4.size(), restore_error)) {
-                return migration_fail("climate_abi9_read_failed:" + restore_error);
-            }
-            if (legacy_reader.store().temperature_history !=
-                authority.store().temperature_history) {
-                return migration_fail("climate_abi9_history_lost");
-            }
-            if (legacy_reader.store().state_hash() != authority.store().state_hash()) {
-                return migration_fail("climate_abi9_current_hash_drift");
-            }
-        }
         if (!check_legacy(8u, 0u, 0u, "climate_abi8")) return false;
         // ABI 7 = 只缺 terrain / cover（2 条 u8 lane），保留 physics。
         if (!check_legacy(7u, 0u, 2u, "climate_abi7")) return false;
@@ -1373,7 +1311,7 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
     bad_section_abi[4] = 1u;
     RuntimeClimateAuthority incompatible;
     if (incompatible.restore(bad_section_abi.data(), bad_section_abi.size(), error) ||
-        error != "climate_section_version_mismatch_expected_10_got_1") {
+        error != "climate_section_version_mismatch_expected_9_got_1") {
         error = "climate_section_abi_mismatch_not_rejected";
         return false;
     }

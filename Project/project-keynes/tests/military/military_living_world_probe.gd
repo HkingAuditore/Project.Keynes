@@ -165,7 +165,7 @@ func _run() -> void:
 		return
 	var runtime_ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
-	if _host.runtime_climate_authority_enabled and runtime_ext != null \
+	if _host._native_environment_active and runtime_ext != null \
 			and runtime_ext.has_method("set_runtime_clock"):
 		runtime_ext.set_runtime_clock(false, 50.0)
 
@@ -196,7 +196,7 @@ func _run() -> void:
 		"setup_day": SETUP_DAY if _setup_enabled else -1,
 		"target": TARGET_HEADCOUNT,
 		"barracks": BARRACKS_TO_BUILD,
-		"climate_authority": _host.runtime_climate_authority_enabled,
+		"climate_authority": _host._native_environment_active,
 		"terrain_ready": bool(_facade.terrain_ready()),
 	}))
 	# Subscribe the Economy read-view key while the main thread still owns the
@@ -270,16 +270,9 @@ func _advance_to(target_day: int) -> void:
 		_day += 1
 		_clock.current_day = float(_day)
 		var phase := _clock.season_phase_for_day(_day)
-		if _host.runtime_climate_authority_enabled:
-			var capacity_deadline := Time.get_ticks_usec() + 60000000
-			while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
-					and Time.get_ticks_usec() < capacity_deadline:
-				_host._consume_runtime_commit_if_ready()
-				await process_frame
-			_host._consume_runtime_commit_if_ready()
-		_host.run_daily_tick(_day, phase)
+		_host._admit_runtime_calendar(_day + 1)
 		_host.finish_daily_tick(0.0, {})
-		if _host.runtime_climate_authority_enabled:
+		if _host._native_environment_active:
 			var deadline := Time.get_ticks_usec() + 60000000
 			while Time.get_ticks_usec() < deadline:
 				_host._consume_runtime_commit_if_ready()

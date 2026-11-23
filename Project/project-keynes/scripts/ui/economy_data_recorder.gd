@@ -150,18 +150,8 @@ func start() -> void:
 
 	var resource_slot_ids := PackedInt32Array()
 	var resource_ids := PackedStringArray()
-	# Slot ids belong to the DataCore world (DCWorldExt), not to the economy
-	# facade: calling component_id() on the facade raised "Nonexistent function
-	# component_id" for every middle name and recorded no resource table.
-	var component_source = world.world_ext() if world.has_method("world_ext") else null
-	if component_source == null:
-		push_warning("[economy-record] component ids unavailable (no DCWorldExt); "
-			+ "resource table will be skipped")
 	for middle_name in RESOURCE_MIDDLE_NAMES:
-		var sid: int = -1
-		if component_source != null:
-			sid = int(component_source.component_id(
-				StringName("cell_res_" + middle_name + "_reserve")))
+		var sid: int = int(world.component_id("cell_res_" + middle_name + "_reserve"))
 		if sid >= 0:
 			resource_slot_ids.append(sid)
 			resource_ids.append(middle_name)

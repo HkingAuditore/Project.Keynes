@@ -171,6 +171,7 @@ var _max_style_scale := 1.0
 var _last_profile_enabled := true
 var _configured := false
 var _last_intel: Object
+var _last_frame_bindings: Dictionary = {}
 # Wild plant communities + grazing traces: one full-world quad drawn under all props.
 var _cover: ResourceGroundCover
 var _cover_pending: Array[int] = []
@@ -206,6 +207,7 @@ func _ready() -> void:
 
 func configure(map: MapData, world: WorldData, hex_size: float,
 		intel: BuildingVisualIntelCache) -> Dictionary:
+	_last_frame_bindings.clear()
 	_configured = false
 	_clear_geometry()
 	if _map != null and _map.resource_visual_inputs_changed.is_connected(notify_resource_inputs):
@@ -249,22 +251,10 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 	_build_style_texture()
 	if _cover != null:
 		var tiles = _world.visual_tiles if _world != null else null
-		var map_dims := Vector2i(_map.width, _map.height) if _map != null else Vector2i.ZERO
-		var cell_offsets := PackedInt32Array()
-		if _map != null and map_dims.x > 0 and map_dims.y > 0:
-			var cells := _map.iter_cells()
-			cell_offsets.resize(cells.size() * 2)
-			for i in cells.size():
-				var c: HexCell = cells[i]
-				var off := HexUtils.cube_to_offset(c.q, c.r)
-				cell_offsets[i * 2] = off.x
-				cell_offsets[i * 2 + 1] = off.y
 		_cover.configure(_styles, _hex, dims,
 			_world.world_bounds if _world != null else Rect2(),
 			_world.wrap_period_x if _world != null else 0.0,
-			_world.enum_atlas_tex if _world != null else null, tiles,
-			_map.neighbor_indices_packed() if _map != null else PackedInt32Array(),
-			map_dims, cell_offsets)
+			_world.enum_atlas_tex if _world != null else null, tiles)
 		_cover.material().set_shader_parameter("memory_lut", _memory_texture)
 		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
 			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
@@ -529,24 +519,7 @@ func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
 		return
 	_set_param("world_time", time)
 	_update_lens()
-	_set_param("tod_sun_dir", sun)
-	for name in state:
-		_set_param(name, state[name])
-	if _world != null:
-		_set_param("dyn_lut", _world.dyn_lut_tex)
-		_set_param("has_dynamic_lut", _world.dyn_lut_tex != null)
-		_set_param("eco_lut", _world.eco_lut_tex)
-		_set_param("has_ecology_lut", _world.eco_lut_tex != null)
-		_set_param("enum_lut", _world.enum_lut_tex)
-	if _cover != null:
-		var cover_state := state.duplicate()
-		cover_state["tod_sun_dir"] = sun
-		cover_state["fog_enabled"] = _fog
-		if _world != null:
-			cover_state["dyn_lut"] = _world.dyn_lut_tex
-			cover_state["has_dynamic_lut"] = _world.dyn_lut_tex != null
-			cover_state["enum_lut"] = _world.enum_lut_tex
-		_cover.set_frame_state(time, cover_state, _memory_texture)
+	Materials.sync_frame_bindings(self, time, sun, state)
 	_sync_restored_memory()
 	var begin := Time.get_ticks_usec()
 	_stats.last_setup_ms = float(begin - frame_begin) / 1000.0

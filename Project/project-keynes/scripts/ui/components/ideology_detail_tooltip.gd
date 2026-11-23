@@ -44,11 +44,12 @@ func setup(data: Dictionary) -> void:
 		_caption("操作条件")
 		for support in supports:
 			_support(support)
+	# Material support model: who gains and who pays, in the class's own unit
+	# (relative income change), not an opaque "weighted contribution".
 	var breakdown: Array = data.get("breakdown", [])
 	if not breakdown.is_empty():
-		var is_material := (breakdown[0] as Dictionary).has("delta_q16")
 		_rule()
-		_caption("阶层损益" if is_material else "评分来源 · 各阶层态度")
+		_caption("阶层损益")
 		for row in breakdown:
 			_breakdown_row(row)
 	# Cell-level support: the same stance re-weighted by each hit cell's class mix.
@@ -119,7 +120,7 @@ func _estimate_height(data: Dictionary) -> float:
 		height += 52 + 74 * supports.size()
 	var breakdown: Array = data.get("breakdown", [])
 	if not breakdown.is_empty():
-		height += 48 + 26 * breakdown.size()
+		height += 52 + 22 * breakdown.size()
 	if not (data.get("local_support", []) as Array).is_empty():
 		height += 64
 	var notes: PackedStringArray = data.get("notes", PackedStringArray())
@@ -230,30 +231,14 @@ func _breakdown_row(data: Dictionary) -> void:
 	label.add_theme_font_size_override("font_size", maxi(UITokens.FONT_SMALL, 14))
 	label.add_theme_font_override("font", UITokens.dossier_font("sans"))
 	label.add_theme_color_override("font_color", Art.INK)
-	var copy := row.get_node("Figures") as Label
+	var delta := int(data.get("delta_q16", 0))
 	var stance := int(data.get("stance_q16", 0))
-	var tone: Color
-	if data.has("delta_q16"):
-		var delta := int(data.get("delta_q16", 0))
-		tone = Art.school_color("harmony") if delta > 0 \
-			else (Art.VERMILION if delta < 0 else Art.INK_MUTED)
-		copy.text = "收入 %+.1f%%   立场 %+.2f   影响力 %d" % [
-			float(delta) / Q16 * 100.0, float(stance) / Q16,
-			int(data.get("influence", 0))]
-	else:
-		var inf := int(data.get("influence", 0))
-		var share_pct := int(data.get("share_pct", 0))
-		var contrib := int(data.get("contribution_q16", 0))
-		var attitude := "赞成" if stance > 0 else ("反对" if stance < 0 else "中立")
-		tone = Art.school_color("harmony") if stance > 0 \
-			else (Art.VERMILION if stance < 0 else Art.INK_MUTED)
-		if inf <= 0:
-			tone = Art.INK_MUTED
-			copy.text = "%s  立场 %+.2f · 占比 0%%（暂无影响）" % [
-				attitude, float(stance) / Q16]
-		else:
-			copy.text = "%s  立场 %+.2f · 占比 %d%% · 贡献 %+.2f" % [
-				attitude, float(stance) / Q16, share_pct, float(contrib) / Q16]
+	var tone := Art.school_color("harmony") if delta > 0 \
+		else (Art.VERMILION if delta < 0 else Art.INK_MUTED)
+	var copy := row.get_node("Figures") as Label
+	copy.text = "收入 %+.1f%%   立场 %+.2f   影响力 %d" % [
+		float(delta) / Q16 * 100.0, float(stance) / Q16,
+		int(data.get("influence", 0))]
 	copy.add_theme_font_size_override("font_size", maxi(UITokens.FONT_SMALL, 13))
 	copy.add_theme_font_override("font", UITokens.dossier_font("sans"))
 	copy.add_theme_color_override("font_color", tone)

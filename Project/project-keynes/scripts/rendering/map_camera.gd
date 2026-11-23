@@ -266,6 +266,11 @@ func _update_inertia(delta: float) -> void:
 
 ## Called by PlayerController after UI focus gating. Keeping input dispatch out
 ## of the camera prevents it from bypassing the formal player-session boundary.
+func is_animating_view() -> bool:
+	return _pan_anim_active or not zoom.is_equal_approx(_target_zoom) \
+		or (pan_inertia_enabled and not _measuring_pan and _pan_velocity.length() > pan_inertia_min_speed)
+
+
 func handle_player_input(event: InputEvent) -> bool:
 	if event is InputEventScreenTouch:
 		_handle_screen_touch(event as InputEventScreenTouch)

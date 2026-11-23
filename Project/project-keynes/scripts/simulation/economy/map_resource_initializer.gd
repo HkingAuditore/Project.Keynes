@@ -1,7 +1,8 @@
 extends "res://scripts/simulation/generator_context.gd"
 
+
 const RESOURCE_SCALAR_STRIDE := 32
-const BioOccupancyGuaranteeScript = preload("res://scripts/geography/map_generation/bio_occupancy_guarantee.gd")
+const MIN_DEPOSIT_QUOTA_LANDMASS_CELLS := 8
 
 func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = false) -> void:
 	if map_ref == null:
@@ -45,9 +46,15 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 	var estuary_strength_arr: PackedFloat32Array = await _collect_estuary_strength(
 		map_ref, cooperative)
 	# native-first：整段矿藏储量（O(资源 × cell) + 每资源排名分配）交给 C++ 一次算完。
-	# 失败（旧 DLL / 形状不符）时继续走下面的 GDScript 路径，行为与迁移前一致。
+	# 旧库或原生计算失败时，由脚本完成储量和陆块配额。
 	if _generator._try_bootstrap_natural_resources_native(map_ref, cfg, habitat_arr, estuary_strength_arr):
 		return
+	var landmass_labels := PackedInt32Array()
+	var landmass_sizes := PackedInt32Array([0])
+	var water: PackedByteArray = map_ref.is_water_arr
+	if have_neighbors and water.size() >= n_cells:
+		_label_landmasses(water, neighbor_indices, n_cells, landmass_labels, landmass_sizes)
+	var quota_totals := Vector2i.ZERO
 	var base_seed: int = 0
 	if cfg != null and cfg.get("seed") != null:
 		base_seed = int(cfg.get("seed"))
@@ -102,6 +109,10 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 		var ranked_cells := []
 		var target_coverage := clampf(float(p.init_target_coverage), 0.0, 1.0)
 		var use_ranked_distribution := target_coverage > 0.0
+		var use_landmass_quota: bool = not landmass_labels.is_empty() \
+			and p.init_continent_floor_cells > 0 and p.init_min_reserve > 0.0
+		var collect_ranked: bool = use_ranked_distribution or use_landmass_quota \
+			or (p.init_min_coverage > 0.0 and p.init_min_reserve > 0.0)
 		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
 		var noise: FastNoiseLite = null
 		if use_noise:
@@ -185,8 +196,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 			arr[i] = maxf(0.0, suit) * reserve_scale
 			if floor_reserve > 0.0:
 				arr[i] = maxf(arr[i], floor_reserve)
-			if use_ranked_distribution or (
-					float(p.init_min_coverage) > 0.0 and float(p.init_min_reserve) > 0.0):
+			if collect_ranked:
 				ranked_cells.append({"cell": i, "suit": suit})
 		var target_cells := 0
 		if use_ranked_distribution:
@@ -250,7 +260,76 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 					var cell := int(ranked_cells[rank].cell)
 					arr[cell] = maxf(arr[cell], float(p.init_min_reserve) * \
 						ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE)
+		if use_landmass_quota:
+			# PackedFloat32Array rounds on write. Count a reserve we already
+			# raised to this same stored floor as a complete deposit.
+			var minimum := PackedFloat32Array([float(p.init_min_reserve) \
+				* ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE])[0]
+			quota_totals += _apply_landmass_quota(arr, ranked_cells, minimum,
+				int(p.init_continent_floor_cells), landmass_labels, landmass_sizes)
 		map_ref.set(field, arr)
+	print("[resource-deposits] path=gdscript quota_cells=%d quota_unmet=%d" \
+		% [quota_totals.x, quota_totals.y])
+
+
+static func _label_landmasses(water: PackedByteArray, neighbors: PackedInt32Array,
+		cell_count: int, labels: PackedInt32Array, sizes: PackedInt32Array) -> void:
+	labels.resize(cell_count)
+	labels.fill(0)
+	var pending: Array[int] = []
+	for cell in range(cell_count):
+		if water[cell] != 0 or labels[cell] != 0:
+			continue
+		var landmass := sizes.size()
+		var size := 0
+		labels[cell] = landmass
+		pending.append(cell)
+		while not pending.is_empty():
+			var current: int = pending.pop_back()
+			size += 1
+			for direction in range(6):
+				var neighbor := neighbors[current * 6 + direction]
+				if neighbor < 0 or neighbor >= cell_count or water[neighbor] != 0 \
+						or labels[neighbor] != 0:
+					continue
+				labels[neighbor] = landmass
+				pending.append(neighbor)
+		sizes.append(size)
+
+
+static func _apply_landmass_quota(reserves: PackedFloat32Array, ranked_cells: Array,
+		minimum: float, quota: int, labels: PackedInt32Array,
+		sizes: PackedInt32Array) -> Vector2i:
+	var remaining := PackedInt32Array()
+	remaining.resize(sizes.size())
+	remaining.fill(0)
+	for landmass in range(1, sizes.size()):
+		if sizes[landmass] >= MIN_DEPOSIT_QUOTA_LANDMASS_CELLS:
+			remaining[landmass] = mini(quota, ceili(0.01 * sizes[landmass]))
+	for cell in range(labels.size()):
+		var landmass := labels[cell]
+		if remaining[landmass] > 0 and reserves[cell] >= minimum:
+			remaining[landmass] -= 1
+	var unmet := 0
+	for count in remaining:
+		unmet += count
+	if unmet == 0:
+		return Vector2i.ZERO
+	# Native quota ranking uses exact suitability and breaks ties by cell ID.
+	ranked_cells.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.suit) > float(b.suit) if a.suit != b.suit else int(a.cell) < int(b.cell))
+	var added := 0
+	for ranked in ranked_cells:
+		var cell := int(ranked.cell)
+		var landmass := labels[cell]
+		if remaining[landmass] <= 0 or reserves[cell] >= minimum:
+			continue
+		reserves[cell] = minimum
+		remaining[landmass] -= 1
+		added += 1
+		if added == unmet:
+			break
+	return Vector2i(added, unmet - added)
 
 
 ## 把整段矿藏储量生成交给 C++（`DCWorldExt.run_resource_deposit_pass`）。
@@ -749,6 +828,9 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 		push_warning("[resource-deposits] native pass unavailable (%s); falling back to GDScript"
 			% String(report.get("reason", "unknown")))
 		return false
+	if not report.has_all(["quota_cells", "quota_unmet"]):
+		push_warning("[resource-deposits] native pass lacks landmass quotas; falling back to GDScript")
+		return false
 	var fields: PackedStringArray = report.get("fields", PackedStringArray())
 	var reserves: Array = report.get("reserves", [])
 	if fields.size() != resource_count or reserves.size() != resource_count:
@@ -758,8 +840,10 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 	for i in range(resource_count):
 		map_ref.set(fields[i], reserves[i])
 	var native_ms := float(Time.get_ticks_usec() - started) / 1000.0
-	print("[resource-deposits] path=gdext resources=%d cells=%d total_ms=%.1f native_ms=%.1f"
-		% [resource_count, n_cells, native_ms, float(report.get("elapsed_ms", 0.0))])
+	print(("[resource-deposits] path=gdext resources=%d cells=%d total_ms=%.1f native_ms=%.1f"
+		+ " quota_cells=%d quota_unmet=%d") % [resource_count, n_cells, native_ms,
+			float(report.get("elapsed_ms", 0.0)), int(report.get("quota_cells", 0)),
+			int(report.get("quota_unmet", 0))])
 	return true
 
 
@@ -859,6 +943,9 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 				"deposit_fields": (report.get("deposit_fields", PackedStringArray()) as PackedStringArray).size(),
 				"reserves": (report.get("deposit_reserves", []) as Array).size()})])
 		return false
+	if not report.has_all(["deposit_quota_cells", "deposit_quota_unmet"]):
+		push_warning("[boot-facades] native pass lacks landmass quotas; falling back per stage")
+		return false
 	var wall_ms := float(Time.get_ticks_usec() - started) / 1000.0
 	var fields: PackedStringArray = report.get("deposit_fields", PackedStringArray())
 	var reserves: Array = report.get("deposit_reserves", [])
@@ -879,11 +966,12 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 	map_ref.province_id_arr = report.get("province_ids", PackedInt32Array())
 	map_ref.bio_occupancy_bits_arr = report.get("occupancy_bits", PackedInt32Array())
 	_generator._publish_bio_occupancy_to_runtime(map_ref)
-	print("[boot-facades] path=gdext resources=%d cells=%d wall_ms=%.1f native_ms=%.1f stages=%s" % [
+	print(("[boot-facades] path=gdext resources=%d cells=%d wall_ms=%.1f native_ms=%.1f"
+		+ " quota_cells=%d quota_unmet=%d stages=%s") % [
 		fields.size(), n_cells, wall_ms, float(report.get("elapsed_ms", 0.0)),
+		int(report.get("deposit_quota_cells", 0)), int(report.get("deposit_quota_unmet", 0)),
 		str(report.get("stage_ms", {}))])
 	_generator._log_bio_occupancy_seed_native(report, bio_knobs)
-	BioOccupancyGuaranteeScript.ensure_after_boot(_generator, map_ref, report)
 	return true
 
 
@@ -891,7 +979,7 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 
 func _knob_signature(knobs: Dictionary) -> int:
 	var keys := [
-		"temperature", "moisture", "elevation", "terrain", "vegetation", "landform",
+		"temperature", "moisture", "elevation", "terrain", "vegetation", "landform", "is_water",
 		"has_river", "is_lake", "has_volcano", "ocean_x", "ocean_y", "upwelling",
 		"pos_x", "pos_y", "scalars", "field_names", "habitat_codes",
 		"lf_keys", "lf_vals", "lf_offsets", "veg_keys", "veg_vals", "veg_offsets",
@@ -908,9 +996,10 @@ func run_natural_resource_pass_native(
 		map_ref,
 		dt_days: int = 1,
 		cell_indices: PackedInt32Array = PackedInt32Array(),
-		cell_dt_days: PackedInt32Array = PackedInt32Array()) -> Dictionary:
+		cell_dt_days: PackedInt32Array = PackedInt32Array(),
+		schedule_day: int = -1, live_cells: PackedInt32Array = PackedInt32Array(),
+		live_catchup: bool = false) -> Dictionary:
 	var t_wall: int = Time.get_ticks_usec()
-	dt_days = clampi(dt_days, 1, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
 	if map_ref == null:
 		return _generator._remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
 	var n_cells: int = map_ref.cell_count()
@@ -944,6 +1033,14 @@ func run_natural_resource_pass_native(
 		refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
 		_generator._natural_resource_pass_knobs["n_cells"] = n_cells
 		_generator._natural_resource_pass_knobs["dt_days"] = dt_days
+		if schedule_day >= 0:
+			_generator._natural_resource_pass_knobs["schedule_day"] = schedule_day
+			_generator._natural_resource_pass_knobs["scheduled_live_cells"] = live_cells
+			_generator._natural_resource_pass_knobs["live_catchup"] = live_catchup
+		else:
+			_generator._natural_resource_pass_knobs.erase("schedule_day")
+			_generator._natural_resource_pass_knobs.erase("scheduled_live_cells")
+			_generator._natural_resource_pass_knobs.erase("live_catchup")
 		if cell_indices.is_empty():
 			_generator._natural_resource_pass_knobs.erase("cell_indices")
 			_generator._natural_resource_pass_knobs.erase("cell_dt_days")
@@ -956,14 +1053,13 @@ func run_natural_resource_pass_native(
 		knob_update_ms = (Time.get_ticks_usec() - knob_update_started) / 1000.0
 		var native_call_started: int = Time.get_ticks_usec()
 		var res: Dictionary = _generator._data_core_world_ext.run_natural_resource_pass(_generator._natural_resource_pass_knobs)
-		native_reason = String(res.get("reason", "native_failed"))
+		native_reason = String(res.get("reason", res.get("fallback_reason", "native_failed")))
 		var native_call_ms: float = (Time.get_ticks_usec() - native_call_started) / 1000.0
 		res["factor_lookup_ms"] = factor_lookup_ms
 		res["slot_refresh_ms"] = refresh_ms
 		res["knob_update_ms"] = knob_update_ms
 		res["native_call_ms"] = native_call_ms
 		if bool(res.get("published_to_slot", false)):
-			res["dt_days"] = dt_days
 			res["wrapper_wall_ms"] = (Time.get_ticks_usec() - t_wall) / 1000.0
 			res["wrapper_overhead_ms"] = max(0.0, float(res.get("wrapper_wall_ms", 0.0)) - float(res.get("native_ms", 0.0)))
 			return _generator._remember_natural_resource_report(res)
@@ -983,118 +1079,13 @@ func run_natural_resource_pass_native(
 
 
 
-func run_natural_resource_pass_for_runtime_commit(day: int) -> Dictionary:
-	if _generator._sus_map == null:
-		return {"done": true, "path": "skip", "published_to_slot": false}
-	var live_cells = _generator.economy_live_cells()
-	return _generator.run_natural_resource_pass_scheduled(_generator._sus_map, maxi(0, day), live_cells)
-
-
-
-func _reset_natural_resource_cadence(n_cells: int, last_day: int) -> void:
-	_generator._natural_resource_last_day.resize(maxi(0, n_cells))
-	_generator._natural_resource_was_live.resize(maxi(0, n_cells))
-	_generator._natural_resource_last_day.fill(last_day)
-	_generator._natural_resource_was_live.fill(0)
-
-
-
-func _natural_resource_dt_for_cell(cell: int, day: int, is_live: bool) -> int:
-	var last: int = int(_generator._natural_resource_last_day[cell])
-	var elapsed: int = clampi(day - last, 1, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
-	if is_live and int(_generator._natural_resource_was_live[cell]) != 0:
-		elapsed = clampi(elapsed, 1, _generator.NATURAL_RESOURCE_LIVE_CATCHUP_MAX_DAYS)
-	return elapsed
-
-
-
-func collect_natural_resource_pass_cells(day: int, live_cells: PackedInt32Array) -> Dictionary:
-	var n_cells: int = _generator._natural_resource_last_day.size()
-	var live_set := {}
-	var cell_indices := PackedInt32Array()
-	var cell_dt_days := PackedInt32Array()
-	for cell in live_cells:
-		var idx := int(cell)
-		if idx < 0 or idx >= n_cells:
-			continue
-		live_set[idx] = true
-		if int(_generator._natural_resource_last_day[idx]) >= day:
-			continue
-		cell_indices.append(idx)
-		cell_dt_days.append(_generator._natural_resource_dt_for_cell(idx, day, true))
-	var bucket: int = posmod(day, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE)
-	for idx in range(bucket, n_cells, _generator.NATURAL_RESOURCE_WILDERNESS_STRIDE):
-		if live_set.has(idx):
-			continue
-		if int(_generator._natural_resource_last_day[idx]) >= day:
-			continue
-		cell_indices.append(idx)
-		cell_dt_days.append(_generator._natural_resource_dt_for_cell(idx, day, false))
-	return {"cell_indices": cell_indices, "cell_dt_days": cell_dt_days, "live_set": live_set}
-
-
-
-func _commit_natural_resource_pass_days(day: int, cell_indices: PackedInt32Array, live_set: Dictionary) -> void:
-	for cell in cell_indices:
-		var idx := int(cell)
-		if idx < 0 or idx >= _generator._natural_resource_last_day.size():
-			continue
-		_generator._natural_resource_last_day[idx] = day
-		_generator._natural_resource_was_live[idx] = 1 if live_set.has(idx) else 0
-
-
-
 func run_natural_resource_pass_scheduled(map_ref, day: int, live_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
-	if map_ref == null:
-		return _generator._remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
-	var n_cells: int = map_ref.cell_count()
-	_generator._ensure_natural_resource_cadence(n_cells, day)
-	var planned: Dictionary = _generator.collect_natural_resource_pass_cells(day, live_cells)
-	var cell_indices: PackedInt32Array = planned.get("cell_indices", PackedInt32Array())
-	var cell_dt_days: PackedInt32Array = planned.get("cell_dt_days", PackedInt32Array())
-	if cell_indices.is_empty():
-		return _generator._remember_natural_resource_report({
-			"done": true,
-			"path": "indexed_empty",
-			"published_to_slot": true,
-			"dt_days": 1,
-			"indexed_cell_count": 0,
-			"n_cells": n_cells,
-			"total_delta": 0.0,
-		})
-	var res: Dictionary = _generator.run_natural_resource_pass_native(map_ref, 1, cell_indices, cell_dt_days)
-	if bool(res.get("published_to_slot", false)):
-		_generator._commit_natural_resource_pass_days(day, cell_indices, planned.get("live_set", {}))
-	res["indexed_cell_count"] = cell_indices.size()
-	return res
-
+	return run_natural_resource_pass_native(map_ref, 1, PackedInt32Array(), PackedInt32Array(), maxi(0, day), live_cells)
 
 
 func catchup_natural_resources_for_live_cells(day: int) -> Dictionary:
-	if _generator._sus_map == null:
-		return {"done": true, "path": "skip", "indexed_cell_count": 0}
-	_generator._ensure_natural_resource_cadence(_generator._sus_map.cell_count(), day)
-	var live: PackedInt32Array = _generator.economy_live_cells()
-	var due := PackedInt32Array()
-	var dts := PackedInt32Array()
-	var live_set := {}
-	for cell in live:
-		var idx := int(cell)
-		if idx < 0 or idx >= _generator._natural_resource_last_day.size():
-			continue
-		live_set[idx] = true
-		if int(_generator._natural_resource_last_day[idx]) >= day:
-			continue
-		due.append(idx)
-		dts.append(_generator._natural_resource_dt_for_cell(idx, day, true))
-	if due.is_empty():
-		return {"done": true, "path": "catchup_empty", "indexed_cell_count": 0}
-	var res: Dictionary = _generator.run_natural_resource_pass_native(_generator._sus_map, 1, due, dts)
-	if bool(res.get("published_to_slot", false)):
-		_generator._commit_natural_resource_pass_days(day, due, live_set)
-	res["indexed_cell_count"] = due.size()
-	return res
-
+	return run_natural_resource_pass_native(_generator._sus_map, 1, PackedInt32Array(),
+		PackedInt32Array(), maxi(0, day), _generator.economy_live_cells(), true)
 
 
 func dump_climate_daily_round_slots_stats() -> Dictionary:

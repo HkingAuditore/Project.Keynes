@@ -30,15 +30,10 @@ const ACTION_OPS := {
 @onready var _create_army: Button = %CreateArmy
 @onready var _army_feedback: Label = %ArmyFeedback
 @onready var _rows_box: VBoxContainer = %Rows
-@onready var _building_hover: BuildingHoverCard = %BuildingHover
 
 var _model: Dictionary = {}
 var _cell := -1
 var _rows: Array = []
-var _preview_index := -1
-var _preview_demolition := false
-var _preview_payload: Dictionary = {}
-var _preview_boundary: Control
 ## 最近一次按下动作键的行：命令回执写在这一行上（成功与被拒都写）。
 ## 只在按下时更新，模型落地不改写——回执的存活时间由行自己按秒计。
 var _action_index := -1
@@ -49,12 +44,6 @@ func _ready() -> void:
 		push_error("MilitaryCellLedger 必须通过 military_cell_ledger.tscn 实例化。")
 		return
 	_build_rows()
-	visibility_changed.connect(_on_preview_visibility_changed)
-	var ancestor := get_parent()
-	while ancestor != null and not ancestor is ScrollContainer:
-		ancestor = ancestor.get_parent()
-	if ancestor is ScrollContainer:
-		ancestor.get_v_scroll_bar().value_changed.connect(_on_preview_scroll)
 	IconButton.apply_with_text(_create_army, &"military.banner", "编成部队",
 		IconButton.SMALL, "把本格驻军编成一支野战部队")
 	_create_army.focus_mode = Control.FOCUS_ALL
@@ -78,21 +67,14 @@ func _build_rows() -> void:
 		_rows_box.add_child(row)
 		row.action_pressed.connect(_on_row_action.bind(index))
 		row.demolish_pressed.connect(_on_row_demolish.bind(index))
-		row.preview_changed.connect(_on_row_preview.bind(index))
 		_rows.append(row)
 
 
 func set_model(model: Dictionary) -> void:
 	_model = model
-	if _cell != int(model.get("cell", -1)):
-		_clear_preview()
 	_cell = int(model.get("cell", -1))
 	if is_node_ready() and _rows_box != null:
 		_apply_model()
-
-
-func set_preview_boundary(boundary: Control) -> void:
-	_preview_boundary = boundary
 
 
 func _apply_model() -> void:
@@ -113,51 +95,6 @@ func _apply_model() -> void:
 		if index < buildings.size() and buildings[index] is Dictionary:
 			entry = buildings[index]
 		(_rows[index] as Control).set_data(entry)
-	_refresh_preview()
-
-
-func _on_row_preview(show: bool, demolition: bool, index: int) -> void:
-	if not show:
-		if index == _preview_index:
-			_clear_preview()
-		return
-	if not is_visible_in_tree():
-		return
-	var same_row := index == _preview_index and demolition == _preview_demolition
-	_preview_index = index
-	_preview_demolition = demolition
-	_refresh_preview(not same_row)
-
-
-func _refresh_preview(reopen: bool = false) -> void:
-	if _preview_index < 0:
-		return
-	var row: Control = _rows[_preview_index]
-	var payload: Dictionary = row.preview_data(_preview_demolition)
-	if payload.is_empty():
-		_clear_preview()
-	elif reopen or not _building_hover.visible:
-		_preview_payload = payload
-		_building_hover.show_for(payload, row, _preview_boundary if is_instance_valid(_preview_boundary) else self, true)
-	elif payload != _preview_payload:
-		_preview_payload = payload
-		_building_hover.refresh(payload)
-
-
-func _clear_preview() -> void:
-	_preview_index = -1
-	_preview_payload = {}
-	if _building_hover != null:
-		_building_hover.hide_card()
-
-
-func _on_preview_visibility_changed() -> void:
-	if not is_visible_in_tree():
-		_clear_preview()
-
-
-func _on_preview_scroll(_value: float) -> void:
-	_clear_preview()
 
 
 func cell_index() -> int:

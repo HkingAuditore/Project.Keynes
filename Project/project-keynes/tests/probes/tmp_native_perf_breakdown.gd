@@ -144,16 +144,16 @@ func _run() -> void:
 	print("=== isolated _build_native_daily_bundle timing (20 reps) ===")
 	var ctx := SusTickContext.make(40, 40, 0.25, 1.0, &"perf_probe")
 	# Warm once.
-	generator._build_native_daily_bundle(ctx, map, world, false, 30.0, true, true)
+	generator._build_native_daily_bundle(ctx, map, world, false, 30.0, true)
 	var reps: int = 20
 	var full_t0: int = Time.get_ticks_usec()
 	for i in range(reps):
-		generator._build_native_daily_bundle(ctx, map, world, false, 30.0, true, true)
+		generator._build_native_daily_bundle(ctx, map, world, false, 30.0, true)
 	var full_ms: float = float(Time.get_ticks_usec() - full_t0) / 1000.0 / float(reps)
 	print("  FULL bundle (force_weather=true): %.3f ms/build" % full_ms)
 	var noweather_t0: int = Time.get_ticks_usec()
 	for i in range(reps):
-		generator._build_native_daily_bundle(ctx, map, world, false, 30.0, true, false)
+		generator._build_native_daily_bundle(ctx, map, world, false, 30.0, true)
 	var noweather_ms: float = float(Time.get_ticks_usec() - noweather_t0) / 1000.0 / float(reps)
 	print("  bundle WITHOUT forced weather: %.3f ms/build (delta=%.3f = weather knob build)" % [noweather_ms, full_ms - noweather_ms])
 

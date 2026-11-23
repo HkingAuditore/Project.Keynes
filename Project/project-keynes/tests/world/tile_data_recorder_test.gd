@@ -178,15 +178,15 @@ class _MockCountryFacade:
 	func world_ext():
 		return ext
 
-	func poll_worker_command_receipts(after_request_id: int,
+	func poll_worker_command_receipts(after_publication: int,
 			_limit: int) -> Dictionary:
-		if after_request_id > 0:
+		if after_publication > 0:
 			return {
 				"ok": true, "available": false, "receipts": [],
-				"last_request_id": after_request_id,
+				"last_publication_sequence": after_publication,
 			}
 		return {
-			"ok": true, "available": true, "last_request_id": 7,
+			"ok": true, "available": true, "last_publication_sequence": 7,
 			"receipts": [{
 				"request_id": 7, "status": "Committed", "code": 2,
 			}],

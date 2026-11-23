@@ -520,10 +520,10 @@ func present_offer(offer: Dictionary) -> void:
 	_title_label.text = String(offer.get("title", "事件"))
 	_locate_button.visible = _cell_idx >= 0
 
-	# 题头只留日历：1年2月14日。地名在标题里，地貌/气温不再上题头。
+	# 题头只留日历：第 N 年 · M 月 D 日。地名在标题里，地貌/气温不再上题头。
 	var date_text := String(offer.get("date_text", "")).strip_edges()
 	if date_text.is_empty():
-		date_text = WorldClock.date_text_for_day(int(offer.get("day", 0)))
+		date_text = "第 %d 日" % int(offer.get("day", 1))
 	_kicker_label.text = date_text
 
 	for child in _tags_row.get_children():
@@ -727,8 +727,9 @@ func set_illustration_texture(tex: Texture2D) -> void:
 
 
 func show_outcome(resolution: Dictionary) -> void:
-	if _main_sheet == null:
-		_build_ui()
+	var record: Dictionary = resolution.get("record", {})
+	if not is_offer_open():
+		present_offer(record)
 	_showing_outcome = true
 	_options_vbox.visible = false
 	_error_label.visible = false
@@ -739,7 +740,6 @@ func show_outcome(resolution: Dictionary) -> void:
 	_quote_block.visible = false
 
 	var outcome: Dictionary = resolution.get("outcome", {})
-	var record: Dictionary = resolution.get("record", {})
 	var prob_pct := int(outcome.get("probability_percent", record.get("outcome_probability_percent", 100)))
 	var out_title := String(outcome.get("outcome_title", record.get("outcome_title", "已执行")))
 	# 概率分支才需要标出命中比例；确定结果没有额外信息。

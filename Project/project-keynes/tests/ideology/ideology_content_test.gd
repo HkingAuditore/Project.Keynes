@@ -331,6 +331,7 @@ func _init() -> void:
 		"ok": true,
 		"materialized": false,
 		"ideology_points_q16": 0,
+		"offer_eligibility": {"can_draw": false, "reason": "ideology_points_insufficient"},
 	}, {
 		"ok": true,
 		"ideology_capacity": 3,
@@ -349,6 +350,7 @@ func _init() -> void:
 		"ok": true, "materialized": true, "ideology_points_q16": 196608,
 		"next_offer_cost_q16": 163840, "reroll_cost_q16": 81920,
 		"offer_active": true, "ideology_slots_capacity": 3,
+		"offer_eligibility": {"can_reroll": true},
 		"national_spirit_slots_capacity": 1,
 		"capacity_unlock_owned": PackedByteArray([1, 0]),
 	}, {"ok": true, "ideology_capacity": 2, "national_spirit_capacity": 1,
@@ -381,6 +383,7 @@ func _init() -> void:
 				"national_spirit_slots_capacity": 2,
 				"known_ids": PackedInt32Array(),
 				"offer_active": false,
+				"offer_eligibility": {"can_draw": true},
 			},
 			"catalog": {"ok": true, "ideologies": []},
 		},

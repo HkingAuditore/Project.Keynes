@@ -17,6 +17,10 @@
 
 namespace pk {
 
+class MilitaryCore;
+struct NarrativeCountryView;
+void sample_narrative_military_country(const MilitaryCore &, NarrativeCountryView &);
+
 constexpr int64_t MILITARY_MONEY_SCALE = 10000;
 constexpr int64_t MILITARY_GOODS_SCALE = 1000;
 constexpr int32_t MILITARY_Q16 = 65536;
@@ -60,6 +64,8 @@ struct MilitaryWorldDigest {
     std::vector<int32_t> market_good;
     std::vector<int64_t> market_sellable;      // GOODS_SCALE
     std::vector<int64_t> market_price;         // MONEY_SCALE per 1.0 good
+    // Country technology and existing stock, independent of sellable quantity.
+    std::vector<uint8_t> country_equipment_available; // country_capacity * economy_good_count
     // Average non-food soldier living cost per head/day, by country slot.
     std::vector<int64_t> country_soldier_living_cost; // MONEY_SCALE
     // Technology gate: bitset rows per country over military unlock ids
@@ -199,6 +205,34 @@ struct MilitaryIntentReceipt {
     int64_t committed_count = 0;
     int64_t committed_amount = 0;
     int64_t request_sequence = 0;
+};
+
+struct MilitaryPlayerCommandRejection {
+    const char *command;
+    int64_t caller_sequence;
+    const char *reason;
+};
+
+// Dated order admitted through the host and applied by the military owner.
+struct MilitaryCommand {
+    uint16_t op = 0;          // MilitaryCommandOp
+    int64_t effective_day = 0;
+    uint64_t sequence = 0;
+    uint64_t country = 0;     // issuing country handle
+    uint64_t army = 0;
+    uint64_t other = 0;       // second army / target country / war id
+    int32_t cell = -1;
+    int32_t radius = 0;
+    int32_t unit_from = -1;
+    int32_t unit_to = -1;
+    // For budget edits, this unused argument carries the player's receipt ID.
+    int64_t count = 0;
+    // Training, formation and map orders carry the player's receipt sequence
+    // here. Zero identifies an internal or standalone order for those opcodes.
+    int64_t value = 0;
+    std::vector<int32_t> cells;     // area cells / ceded cells
+    std::vector<int32_t> ints;      // config shares (unit, bp pairs), template rows, treaty terms
+    std::vector<int64_t> longs;
 };
 
 } // namespace pk

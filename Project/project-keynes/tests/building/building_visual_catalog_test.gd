@@ -30,7 +30,7 @@ func _init() -> void:
 		_expect("every visual family draws at least one authored type", all_used)
 		var ids := economy.building_type_ids as PackedStringArray
 		var spot := {
-			"tenant_paddy": "paddy", "rainfed_wheat_plot": "field", "spice_shade_garden": "plantation",
+			"tenant_paddy": "paddy", "wheat_farm": "field", "spice_shade_garden": "plantation",
 			"pastoral_camp": "pasture", "wool_shed": "pasture", "gathering_ground": "forage",
 			"marine_fish_collector": "fishery", "coal_mine": "mine", "stone_collector": "quarry",
 			"timber_collector": "forestry", "lumber_plant": "forestry", "salt_collector": "saltworks",

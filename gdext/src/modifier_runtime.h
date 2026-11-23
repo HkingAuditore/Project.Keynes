@@ -75,6 +75,9 @@ public:
 
     double effective_value(int32_t domain, int32_t stat_id, uint64_t entity_handle,
                            uint64_t group_handle, double base_value) const;
+    double effective_value_with_front(int32_t domain, int32_t stat_id,
+        uint64_t entity_handle, uint64_t group_handle, double base_value,
+        const DerivedCellFront *front) const;
     int32_t stat_id_for_key(const std::string &key) const { return stat_id(key); }
     void effective_values(int32_t domain, const int32_t *stat_ids,
                           uint64_t entity_handle, const int32_t *base_values,
@@ -123,6 +126,7 @@ public:
     // Publish the completed main-thread layer to its Economy read replica.
     // Caller holds the Economy input boundary; this never installs new terms.
     void copy_derived_cell_layer_from(const ModifierRuntime &source);
+    void restore_derived_cell_layer(DerivedCellFront front);
     // Read access. Returns nullptr when no front is installed, which readers must
     // treat as "no derived term", never as a zero contribution.
     const DerivedCellFront *derived_cell_front() const {
@@ -473,6 +477,7 @@ private:
     // E8 ACTIVE write-back：最近一次 apply_pod_snapshot 的代次。apply 侧用它做
     // 单调性检查，host 侧用 pod_snapshot_generation() 做失效令牌。
     uint64_t _pod_snapshot_generation = 0;
+    std::array<uint64_t, DOMAIN_COUNT> _pod_domain_versions{};
     uint64_t _submit_order = 0;
     uint64_t _journal_overflow = 0;
     uint64_t _commands_applied = 0;

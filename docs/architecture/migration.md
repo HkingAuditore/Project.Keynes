@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 模块公开接口 | Economy、Country、Modifier、Military 完成（外部包含者均为 0） | 4 个契约、6 个共享头，`check_module_api.py` 机检引号与尖括号包含 | Effect、Trigger、Ideology、Climate 尚无接口头；Country 的 `country_core*`/`country_ai_*` 未锁 |
 | 宿主端口 | Economy、Country 完成 | 所有者文件包含宿主头为 0，宿主一个类实现两个端口 | 其他模块仍直接持有宿主 |
-| 军事解耦 | 完成（不含行为测试） | 核心只依赖 `military_bridge.h`；适配层经接口头访问 | 军事自身请求队列未进共享契约；推进仍在主线程 |
+| 军事解耦 | 完成（不含行为测试） | 核心只依赖 `military_bridge.h`；适配层经接口头访问 | 军事自身请求队列未进共享契约。后续后台推进与主线程交接见 [运行现状](current-state.md#十二域以外的推进) |
 | 依赖棘轮 | 默认检查 | 30 域对、`total=2181`、`header_exposed=519` | 文本检查，不是 C++ 名称解析；25 个域对待逐函数语义核查 |
 | 已提交视图 | 9 条 | 副本 + generation/day，绕行反例 | 未迁移读边见 current-state |
 | 请求与提交 | 共享入队与顺序键（4 队列）、3 个 Apply 入口检查 | Country 直接写 0 | 全域统一去重、全调用树写集合、全域事务/回滚未做 |
@@ -24,7 +24,7 @@
 
 ## 推迟项（已决定推迟，不是遗漏）
 
-- **Web 回退第 2 步**：Web 正式执行器定为“worker + 原生 inline”，删除 GDScript 每日回退和 `PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK`。删除前要先把依赖同步/SHADOW 配置的测试迁走，并有一次 emcc 构建的真实浏览器验证；本机没有这个环境。
+- **Web 回退第 2 步**：Web 正式执行器定为“worker + 原生 inline”，删除 GDScript 每日回退和 `PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK`。删除前要先把依赖同步/SHADOW 配置的测试迁走，并有一次 emcc 构建的真实浏览器验证；这项为 2026-11-10 的计划记录。新的 Web 构建与加载证据见 [验证记录](feature-status.md#每日计算后台交接与读档一致性2026-11-18)，无线程版的同步路径仍待迁移。
 - **多种子与战争覆盖（R5）**：军事没有行为测试是用户决定，先只做解耦。
 - **D+1 军事维护费的收款方/销毁/只统计**：玩法决定，等军事设计完成。
 

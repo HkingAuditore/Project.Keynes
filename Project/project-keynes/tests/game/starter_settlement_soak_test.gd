@@ -8,7 +8,7 @@ const MAX_SLICES_PER_DAY := 2048
 class OpeningSnapshotHost extends WorldRuntimeHost:
 	var opening: Dictionary = {}
 
-	func _start_production_shadow_worker() -> void:
+	func _start_runtime_executor() -> void:
 		if opening.is_empty() and _generator != null:
 			var start: Dictionary = _generator.gameplay_start_report()
 			var cell := int(start.get("cell", -1))
@@ -22,7 +22,7 @@ class OpeningSnapshotHost extends WorldRuntimeHost:
 					"population": economy.population_cell_snapshot(cell),
 					"buildings": economy.building_cell_snapshot(cell), "families": families,
 					"people": economy.family_notable_people(int(handles[0]), 0, 64) if handles.size() == 1 else {}}
-		super._start_production_shadow_worker()
+		super._start_runtime_executor()
 
 
 var _checks := 0
@@ -53,7 +53,7 @@ func _run() -> void:
 	root.add_child(host)
 	host.configure(null, null, clock)
 	# Match PlayerGame: AUTO is a diagnostic size policy, not the formal path.
-	host.set_climate_authority_override("force_on")
+
 	var configured := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
 	_expect("formal starter session configures", bool(configured.get("ok", false)))
 	await host.generate_world()
@@ -179,7 +179,7 @@ func _run_day(host: WorldRuntimeHost, economy, clock: WorldClock, day: int) -> D
 	# Same headless driver as headless_perf_record: exercise the daily runtime
 	# without opening annual-report UI, whose year-end catchup can submit extra
 	# days before the test reads this day's ledger.
-	host.run_daily_tick(day + 1, clock.season_phase())
+	host._admit_runtime_calendar(day + 1)
 	host.finish_daily_tick(0.0, {})
 	for _slice in range(MAX_SLICES_PER_DAY):
 		host._process(0.0)

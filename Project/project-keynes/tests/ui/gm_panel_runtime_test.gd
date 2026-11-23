@@ -167,28 +167,6 @@ func _run() -> void:
 	console.call("_execute_pending_gm_command")
 	_expect(runtime.command_calls == before_confirm + 1, "execution after confirmation", failures)
 
-	var opened_log_dirs: Array[String] = []
-	console.set("_log_dir_opener", func(path: String) -> Error:
-		opened_log_dirs.append(path)
-		return OK
-	)
-	var header_log_btn := console.find_child("GMHeaderOpenLogDirButton", true, false) as Button
-	var page_log_btn := console.find_child("GMOpenLogDirButton", true, false) as Button
-	_expect(header_log_btn != null and page_log_btn != null,
-		"GM open log dir buttons exist in header and recording page", failures)
-	if header_log_btn != null:
-		header_log_btn.pressed.emit()
-	if page_log_btn != null:
-		page_log_btn.pressed.emit()
-	var expected_log_dir := DebugConsole._resolve_log_output_dir()
-	_expect(opened_log_dirs.size() == 2
-		and opened_log_dirs[0] == expected_log_dir
-		and opened_log_dirs[1] == expected_log_dir
-		and DirAccess.dir_exists_absolute(expected_log_dir),
-		"GM open log dir buttons ensure and open the resolved log directory", failures)
-	_expect(output.text.contains("已打开日志文件夹"),
-		"GM open log dir feedback recorded in output", failures)
-
 	for failure in failures:
 		push_error("[gm-panel-runtime] FAIL: %s" % failure)
 	print("[gm-panel-runtime] %s" % ("PASS" if failures.is_empty() else "FAIL"))

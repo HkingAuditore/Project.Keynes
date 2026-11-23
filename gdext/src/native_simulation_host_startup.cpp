@@ -104,6 +104,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         _requested_authority_mask.load(std::memory_order_acquire) == wanted)
         return resume_same_world_executor(speed_days_per_second, paused);
+    if (_world_environment && wanted != RUNTIME_ALL_DOMAIN_MASK) {
+        // The legacy ring can still remember the opening frame. The next
+        // owner needs the latest frame published by the full executor.
+        _environment_ring.reset();
+        _world_environment.reset();
+        _clock_requested_day.store(-1, std::memory_order_release);
+    }
     // STOPPED proves the previous worker no longer accesses the host; the
     // independent retirement task may still be joining its OS handle. Reset
     // the continuation machine here rather than touching its
@@ -164,9 +171,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     } else {
         // Commands still in ingress are accepted work too. Drain before the
         // transport is reinitialized, preserving their original identities.
-        std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
-        RuntimeCommandPacket queued;
-        while (pop_command(queued)) _executor_pending_commands.push_back(std::move(queued));
+        std::lock_guard<std::mutex> lock(_command_producer_mutex);
+        drain_command_inbox(_executor_pending_commands);
     }
     {
         std::lock_guard<std::mutex> lock(_control_mutex);
@@ -186,6 +192,23 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _prestart_modifier_commands.clear();
     }
     seed_executor_command_orders();
+    if (restore_pending) {
+        _country_observations.clear();
+        auto &pending = _executor_pending_commands;
+        pending.erase(std::remove_if(pending.begin(), pending.end(), [&](const auto &packet) {
+            if (!is_country_day_observation(packet.envelope)) return false;
+            RuntimeCountryCommand observation;
+            std::string error;
+            if (!RuntimeCountryPodAdapter::decode_command(packet, observation, error)) {
+                log_error("country observation restore: %s", error.c_str());
+                return true;
+            }
+            observation.producer_id = 0;
+            reserve_command_request_ids_through(observation.request_id);
+            _country_observations[observation.effective_day].push_back(std::move(observation));
+            return true;
+        }), pending.end());
+    }
     _executor_day_environment.reset();
     _inline_day_pending.store(false, std::memory_order_release);
     // The caller's flag is only an eligibility request.  Coverage is proven
@@ -206,22 +229,17 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
-    // The start day's tail is done: a save waits for it before packing. The
-    // caller's calendar is a day ahead after a load, and the seal is
-    // tail_done+2, so taking it would land the first day's commands a day late.
-    _main_day_tail_done.store(start_day, std::memory_order_release);
+    publish_narrative_boundary(start_day);
+    _command_seal.store(start_day * 2, std::memory_order_release);
+    _clock_requested_day.store(start_day, std::memory_order_release);
+    _calendar_suspended.store(start_paused, std::memory_order_release);
+    _display_consumed_day.store(start_day, std::memory_order_release);
+    std::atomic_store(&_published_display, std::shared_ptr<const RuntimeDisplayBatch>());
     _speed_days_per_second.store(std::max(0.0, start_speed),
                                  std::memory_order_release);
     _paused.store(start_paused, std::memory_order_release);
     _stop_requested.store(false, std::memory_order_release);
     _generation.store(start_generation, std::memory_order_release);
-    _latest_from_day.store(start_day, std::memory_order_release);
-    _latest_committed_day.store(start_day, std::memory_order_release);
-    _latest_produced_at_us.store(0, std::memory_order_release);
-    _latest_dirty_families.store(0, std::memory_order_release);
-    _latest_receipt_count.store(0, std::memory_order_release);
-    _last_visual_publish_us.store(0, std::memory_order_release);
-    _snapshot_publish_throttled_count.store(0, std::memory_order_release);
     _last_commit_produced_at_us.store(0, std::memory_order_release);
     _worker_day_inflight.store(0, std::memory_order_release);
     _economy_inflight_mutations.store(0, std::memory_order_release);
@@ -251,9 +269,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_authority_switch_audit_sequence.store(0,
         std::memory_order_release);
     _economy_authority_switch_audit_hash.store(0, std::memory_order_release);
-    for (auto &family_generation : _dirty_family_generations) {
-        family_generation.store(0, std::memory_order_release);
-    }
     _ui_input_to_feedback_ms.store(0.0, std::memory_order_release);
     _visual_apply_ms.store(0.0, std::memory_order_release);
     _gpu_upload_ms.store(0.0, std::memory_order_release);
@@ -282,7 +297,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_pod_parity_ready_mask.store(0, std::memory_order_release);
     _economy_sync_writes_forbidden.store(false, std::memory_order_release);
     _economy_input_requested_day.store(-1, std::memory_order_release);
-    _main_boundary_service_requested.store(0, std::memory_order_release);
+
     _economy_input_signal.store(0, std::memory_order_release);
     _economy_shadow_stage_invocations.store(0, std::memory_order_release);
     _economy_shadow_stage_cache_hits.store(0, std::memory_order_release);
@@ -415,9 +430,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _command_enqueue_pos.store(0, std::memory_order_relaxed);
     _command_dequeue_pos.store(0, std::memory_order_relaxed);
-    for (uint64_t i = 0; i < RUNTIME_COMMAND_QUEUE_CAPACITY; ++i) {
-        _command_slots[i].sequence.store(i, std::memory_order_relaxed);
-    }
     _receipt_write.store(0, std::memory_order_relaxed);
     _receipt_read.store(0, std::memory_order_relaxed);
     for (size_t i = 0; i < _producer_sequences.size(); ++i) {
@@ -432,7 +444,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _save_failed_request_id.store(0, std::memory_order_release);
     std::atomic_store_explicit(&_save_bundle,
         std::shared_ptr<const RuntimeSaveBundle>(), std::memory_order_release);
-    _snapshots.reset();
     // WorldRuntimeHost captures the initial immutable input immediately
     // before starting the worker. Preserve that frame so the OFF reference
     // can release it after the synchronous day boundary. A trace belonging to
@@ -457,6 +468,20 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     clear_climate_parity_divergence();
     reset_climate_parity_fields();
     _state_hash.store(start_state_hash, std::memory_order_release);
+    auto initial = std::make_shared<RuntimeCommit>();
+    RuntimeCommitHeader &initial_commit = initial->header;
+    initial_commit.generation = start_generation;
+    initial_commit.from_day = start_day;
+    initial_commit.committed_day = start_day;
+    initial_commit.state_hash = start_state_hash;
+    if (auto vision = latest_vision()) {
+        auto tail = std::make_shared<RuntimeDayTail>();
+        tail->vision = std::move(vision);
+        initial->day_tail = std::move(tail);
+    }
+    std::atomic_store_explicit(&_latest_commit,
+        std::shared_ptr<const RuntimeCommit>(std::move(initial)),
+        std::memory_order_release);
     // Restore input is staged outside the stopped timeline's queue. Its queued
     // future frames must not shadow the replacement snapshot during reseeding.
     const auto bootstrap_environment = restore_pending
@@ -788,7 +813,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
             return false;
         }
-
+        uint32_t restore_slot = 0;
+        if (_events_snapshots.try_begin_write(restore_slot)) {
+            _events_snapshots.write_buffer(restore_slot) = _events_authority.snapshot();
+            _events_snapshots.publish(restore_slot);
+        }
     }
     if (restore_pending && !_pending_restore_bundle.gameplay_effect_bytes.empty()) {
         const std::vector<uint8_t> &gmp =
@@ -939,6 +968,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
         if (restore_pending) {
             _country_command_terminals.clear();
+            _country_command_publications.clear();
             _country_command_states.clear();
         }
         if (restored_country_checkpoint_valid) {
@@ -948,7 +978,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             }
             for (const CountryCommandReceipt &receipt :
                      restored_country_checkpoint.terminal_receipts) {
-                _country_command_terminals.emplace(receipt.request_id, receipt);
+                if (_country_command_terminals.emplace(receipt.request_id, receipt).second &&
+                    receipt.producer_id != COUNTRY_AI_PRODUCER_ID)
+                    _country_command_publications.push_back(receipt.request_id);
             }
         }
         _country_pod_plan = RuntimeCountryPodPlan{};
@@ -1036,7 +1068,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _ideology_pod_ready.store(true, std::memory_order_release);
         }
     }
-    _pod_visual_intents.clear();
     _pod_receipts.clear();
     // A fresh ACTIVE start earns its grant from the first fully committed day.
     // A restore start must not wait for that: every domain's POD state was just
@@ -1054,7 +1085,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         uint32_t restore_slot = 0;
         if (!_pending_restore_bundle.climate_bytes.empty() && _climate_writeback.try_begin_write(restore_slot)) {
             auto &writeback = _climate_writeback.write_buffer(restore_slot);
-            _climate_authority.snapshot_into(writeback, true);
+            capture_climate_display(writeback);
             writeback.restored_capture_cursors = _climate_authority.capture_cursors();
             writeback.generation = _climate_writeback_sequence.fetch_add(1) + 1u;
             _climate_writeback.publish(restore_slot);
@@ -1121,8 +1152,21 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     if (restore_pending && !restore_trigger_transport(_pending_restore_bundle.trigger_transport_bytes, ecp2_apply_error, true)) {
         set_fault(ecp2_apply_error.c_str()); return false;
     }
+    if (restore_pending)
+        restore_effect_transport(_pending_restore_bundle.effect_transport_bytes);
+    if (restore_pending && _world_environment && _economy_production_runtime &&
+        _economy_production_runtime->worker_resource_seeded()) {
+        std::lock_guard<std::mutex> display(_resource_display_mutex);
+        _economy_production_runtime->take_worker_resource_mirror_cells(_executor_resource_display_cells);
+        merge_resource_display_patch(_resource_display_patch);
+        _executor_resource_display_cells.clear();
+    }
+    if (restore_pending || !resuming_previous_lifetime)
+        restore_player_confirmation(_pending_restore_bundle.player_confirmation_bytes, start_day);
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
+    if (!install_era_advancement_setup()) return false;
+    player_confirmation_block(start_day);
     return launch_executor(paused);
 }
 

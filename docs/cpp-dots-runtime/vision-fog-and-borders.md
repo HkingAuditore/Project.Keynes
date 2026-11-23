@@ -22,8 +22,9 @@
 ```mermaid
 flowchart LR
   bake["bake_world post_base<br/>bake_static_fields()"] --> solve
-  terr["country_committed<br/>领土变更"] --> solve["多源 Dijkstra<br/>VisionSolver.solve()"]
-  solve --> vis["visible_arr / explored_arr<br/>+ hex 邻域 blur → fog_k_arr"]
+  inputs["领土、玩家部队位置和探索轨迹<br/>境外观察资格"] --> solve["C++ 物理视野<br/>多源 Dijkstra + 迷雾柔化"]
+  solve --> vis["提交可见性、探索与迷雾<br/>physical_visible / explored_arr / fog_k_arr"]
+  solve --> research["科研发现<br/>按 D+1 提交"]
   vis --> lut["enum_lut.a @ lut_dims<br/>RGBA8"]
   lut --> fog["FogOfWarLayer<br/>fog_of_war.gdshader"]
   lut --> wm["world_map.gdshader<br/>灰化 + 可选早退<br/>零新增采样"]
@@ -39,9 +40,9 @@ lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
 不做 Tile 空间采样。这样改变 Tile 数只改变静态边界采样精度，不改变知识度、天气状态或存档。
 详见 [Visual Tile Rendering](./visual-tile-rendering.md)。
 
-触发点是 country bootstrap 后一次（`world_ready`）、每次 `country_committed`，以及
-玩家军事 `render_revision` 变化（部队移动/合并/解散）。军事变化只排队一次合并的
-视觉刷新，不在每个静止日重复 O(n) 解算；领土与部队仍共用同一份物理视野数组。
+开局和读档先建立物理视野。整日后台模式在当天军务结算后处理领土变化、玩家军队视野源变化、
+新探索格和境外观察资格变化。主线程冻结输入，日执行线程计算结果，主线程安装后安排地图刷新。
+无变化且已有视野时跳过全图解算。同步模式运行同一原生算法。
 
 ## 军事探路 trail 与日边界（2026-11-10）
 
@@ -56,7 +57,8 @@ MilitaryCore.run_movement
   -> WorldRuntimeHost._drain_military_exploration_trail()
   -> MapData.explored_arr |= trail
   -> clear_military_vision_trail()
-  -> 既有 _refresh_vision()（只有此时才重算 visible/fog/LUT）
+  -> 标记物理视野待更新
+  -> 当天军务完成后解算物理视野，发布后刷新迷雾 LUT
 ```
 
 - trail **不写** `visible_arr`、`fog_k_arr`、fog dirty 或 LUT，也不入 PKMI。
@@ -65,8 +67,8 @@ MilitaryCore.run_movement
 - 多格日行军会记录全部实际进入格；最终落点仍是普通 `military_source_cells` 低预算源。
 - `GameSaveCoordinator._save()` 在安全边界后 flush trail；合并/清空失败拒绝保存，
   避免 PKFG 静默丢失已探索格。
-- inline、legacy SUS、whole-graph 补跑都使用同一 hook；whole-graph 每个补跑日各自
-  冻结一次 explored，不能整批共用第一天视图。
+- 整日模式按每个结算日分别冻结 explored 给军务，并在该日军务完成后合并新增轨迹。
+  旧 SUS 路径在准备军务输入时按需同步解算。
 
 自动探路永远不主动进入他国控制格；它不会改变控制者、宣战或占领，也不会在 Military
 内另写迷雾。
@@ -756,6 +758,11 @@ ribbon 的内边界截断。
 逐格 parity 回滚。物理视野是独立瞬态数组。关闭迷雾只把渲染
 `visible/fog_k` 直通为全图，不改变物理视野、科研资格或 `explored`。
 
+整日后台模式仍由主线程从已提交状态准备并复制输入，安装物理视野、探索与科研资格，
+将新发现排入 D+1，再放行次日。画面使用已安装结果更新迷雾和国界。开局和读档即使没有
+渲染器也会建立物理视野。读档重建可见性和科研资格，已入队的发现由存档继续交付。
+后台交接的逐日对照见 [验证记录](../architecture/feature-status.md#每日计算后台交接与读档一致性2026-11-18)。
+
 ```text
 eligible = owned_by_player
         OR (research.observe_visible_foreign AND physically_visible)
@@ -766,9 +773,9 @@ eligible = owned_by_player
 `tech.magnetic_navigation` 时，O(1) 完成位查询检测 capability 跃迁，只回填
 当前物理视野中的境外格。
 
-`country_committed` 仍是唯一广播，但 `changed_cells > 0` 才重算视野和国界。
-纯证据、税务或国库提交不触发这两个 O(n) 工作；capability 跃迁只重算视野，
-不重建国界。vision pass 返回 fog dirty indices，地图 LUT 只刷新这些格。
+国家的 `country_committed` 有实际领土变化（`changed_cells > 0`）时，标记视野和国界待更新。
+纯证据、税务或国库提交本身不触发全图工作。境外观察资格变化只更新视野。军队视野源或新探索格
+变化也可触发视野解算。日常增量发布按 vision pass 给出的变化格更新地图 LUT。
 Worker read-view 在 `full_snapshot_required` 时仍会整图修复 `country_slot_arr`，
 但广播的 `changed_cells` 是真实 diff；主线程用帧预算执行
 `refresh_country_visuals`，避免一次 CLAIM 把 `day_changed` / 50× 时钟拖死。

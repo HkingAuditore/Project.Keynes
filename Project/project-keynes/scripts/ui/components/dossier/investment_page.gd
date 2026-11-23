@@ -56,8 +56,8 @@ func refresh(vm: EconomyDossierViewModel, _filter = null) -> void:
 	var pending_total := int(model.pending_total)
 	_flow_bar.set_segments("在建项目 · 按部门", model.flow, "%d 座" % pending_total)
 	var sufficient := float(model.sufficient_units)
-	_flow_note.visible = sufficient > 0.0
-	_flow_note.text = "%d 组建筑产能已足够，暂不扩产" % int(sufficient) if sufficient > 0.0 else ""
+	_flow_note.text = ("%d 组建筑产能已足够，暂不扩产" % int(sufficient)) if sufficient > 0.0 \
+		else "资本流向由各城市商人按利润与需求自主决定"
 	_refresh_pressure(model.pressure)
 	_refresh_categories(model.categories)
 	var rows: Array = []

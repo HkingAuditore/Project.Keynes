@@ -32,7 +32,7 @@ void country_copy_fixed(std::array<char, N> &destination, const String &value) {
 
 Dictionary enqueue_country_host_command_batch(
         NativeSimulationHost &host, const Dictionary &packed_batch,
-        bool enforce_committed_day, uint32_t producer_id = 0) {
+        uint32_t producer_id = 0) {
     const PackedInt32Array opcodes = packed_batch.get(
         "opcodes", PackedInt32Array());
     const PackedInt64Array effective_days = packed_batch.get(
@@ -71,7 +71,15 @@ Dictionary enqueue_country_host_command_batch(
         "display_names", PackedStringArray());
     const int64_t count = opcodes.size();
     Dictionary out;
-    if (count <= 0 || count > static_cast<int64_t>(RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY)) {
+    // A vision sweep can discover more signals than a normal player batch.
+    // Admit the full sweep atomically into the Host queue.
+    const bool too_many_commands =
+        count > static_cast<int64_t>(RUNTIME_COMMAND_QUEUE_CAPACITY) ||
+        (count > static_cast<int64_t>(RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY) &&
+         !std::all_of(opcodes.ptr(), opcodes.ptr() + count, [](int32_t opcode) {
+             return opcode == CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL;
+         }));
+    if (count <= 0 || too_many_commands) {
         out["ok"] = false;
         out["code"] = count <= 0 ? "country_command_batch_empty"
                                  : "country_command_batch_capacity_exceeded";
@@ -99,8 +107,6 @@ Dictionary enqueue_country_host_command_batch(
         }
     }
 
-    const int64_t first_allowed_day = host.command_seal_day();
-    const bool scheduled = packed_batch.get("preserve_effective_days", false);
     std::vector<RuntimeCommandPacket> packets;
     packets.reserve(static_cast<size_t>(count));
     PackedInt64Array request_ids;
@@ -120,12 +126,6 @@ Dictionary enqueue_country_host_command_batch(
             out["code"] = "country_worker_command_day_invalid";
             return out;
         }
-        // Immediate player actions use the first unsealed day. Explicitly
-        // dated actions and mirrors retain their promised date; the Host can
-        // only move an already sealed date later, never execute it early.
-        const int64_t scheduled_day = enforce_committed_day && !scheduled
-            ? first_allowed_day
-            : std::max<int64_t>(effective_days[index], first_allowed_day);
         RuntimeCountryCommand command;
         command.request_id = host.allocate_command_request_id();
         request_ids[index] = static_cast<int64_t>(command.request_id);
@@ -135,7 +135,7 @@ Dictionary enqueue_country_host_command_batch(
             : host.allocate_producer_sequence(producer_id);
         command.observed_generation = 0;
         command.requested_day = effective_days[index];
-        command.effective_day = scheduled_day;
+        command.effective_day = command.requested_day;
         command.opcode = opcode;
         command.target_handle = static_cast<uint64_t>(target_handles[index]);
         command.cell = cells[index];
@@ -151,20 +151,7 @@ Dictionary enqueue_country_host_command_batch(
         command.value = values[index];
         country_copy_fixed(command.stable_id, stable_ids[index]);
         country_copy_fixed(command.display_name, display_names[index]);
-        RuntimeCommandPacket packet;
-        packet.envelope.request_id = command.request_id;
-        packet.envelope.producer_id = command.producer_id;
-        packet.envelope.sequence = command.sequence;
-        packet.envelope.observed_generation = command.observed_generation;
-        packet.envelope.requested_day = command.requested_day;
-        packet.envelope.effective_day = command.effective_day;
-        packet.envelope.domain = static_cast<uint16_t>(
-            RuntimeDomainId::COUNTRY);
-        packet.envelope.opcode = opcode;
-        packet.envelope.payload_offset = 0;
-        packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
-        std::memcpy(packet.payload.data(), &command, sizeof(command));
-        packets.push_back(packet);
+        packets.push_back(encode_country_packet(command));
     }
     std::vector<int64_t> admitted_days;
     if (!host.enqueue_batch(std::move(packets), &admitted_days)) {
@@ -202,12 +189,11 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
             return out;
         }
     }
-    const bool worker_authoritative = _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(
-            RuntimeDomainId::COUNTRY);
-    if (worker_authoritative) {
+    // The ACTIVE executor owns admission from the start, including the
+    // first-day interval before it has proved the full Country grant.
+    if (_runtime_host && _runtime_host->domain_main_thread_suppressed(RuntimeDomainId::COUNTRY)) {
         return enqueue_country_host_command_batch(
-            *_runtime_host, packed_batch, true);
+            *_runtime_host, packed_batch);
     }
 
     Dictionary out = country_api::submit_commands(
@@ -222,7 +208,7 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
         host_state != RuntimeWorkerState::FAULTED;
     if (!host_live || !_runtime_host->country_pod_configured()) return out;
     Dictionary mirrored = enqueue_country_host_command_batch(
-        *_runtime_host, packed_batch, false);
+        *_runtime_host, packed_batch);
     if (!static_cast<bool>(mirrored.get("ok", false))) {
         out["shadow_mirror_ok"] = false;
         out["shadow_mirror_code"] = String(mirrored.get("code",
@@ -248,7 +234,7 @@ Dictionary DCWorldExt::submit_country_ai_batch(const Dictionary &packed_batch) {
         return out;
     // SHADOW parity: the worker replays the exact AI commands on the same day.
     Dictionary mirrored = enqueue_country_host_command_batch(
-        *_runtime_host, packed_batch, false, COUNTRY_AI_PRODUCER_ID);
+        *_runtime_host, packed_batch, COUNTRY_AI_PRODUCER_ID);
     out["shadow_mirror_ok"] = static_cast<bool>(mirrored.get("ok", false));
     return out;
 }

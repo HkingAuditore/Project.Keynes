@@ -48,18 +48,18 @@ func _ready() -> void:
 		return
 	_configure_category_button(Category.GEOGRAPHY,
 		_primary_box.get_node("Geography") as Button, &"hud.overlay.geography",
-		"地理信息", "")
+		"地理信息", "显示海拔、地貌、气候区与当前植被")
 	_configure_category_button(Category.CLIMATE,
 		_primary_box.get_node("Climate") as Button, &"hud.overlay.climate",
-		"气候信息", "")
+		"气候信息", "显示实时温度、湿度、风向与洋流")
 	_configure_category_button(Category.RESOURCES,
 		_primary_box.get_node("Resources") as Button, &"hud.overlay.resources",
-		"资源信息", "")
+		"资源信息", "显示当前所有自然资源储量")
 	_configure_category_button(Category.BIOLOGY,
 		_primary_box.get_node("Biology") as Button, &"hud.overlay.biology",
-		"生物信息", "")
+		"生物信息", "显示当前物种占领分布")
 	IconButton.apply(_close_button, &"hud.overlay.clear", 24,
-		"关闭图层", false, false)
+		"关闭图层\n关闭当前地图信息遮罩", false, false)
 	_close_button.focus_mode = Control.FOCUS_NONE
 	_close_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_close_button.pressed.connect(_on_clear_pressed)
@@ -125,7 +125,7 @@ func primary_safe_width() -> float:
 func _configure_category_button(category: int, button: Button,
 		icon_key: StringName, title: String, description: String) -> void:
 	IconButton.apply(button, icon_key, PRIMARY_ICON_SIZE,
-		tr(title) if description.is_empty() else "%s\n%s" % [tr(title), tr(description)], true, false)
+		"%s\n%s" % [tr(title), tr(description)], true, false)
 	button.focus_mode = Control.FOCUS_NONE
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	UIAnimation.bind_tactile_button(button)
@@ -165,22 +165,22 @@ func _rebuild_secondary() -> void:
 	match _category:
 		Category.GEOGRAPHY:
 			_add_mode_button(OverlayMode.MODE.ELEVATION, &"geography.elevation", "海拔",
-				"")
+				"显示各地区当前权威海拔")
 			_add_mode_button(OverlayMode.MODE.LANDFORM, &"geography.surface", "地貌",
-				"")
+				"显示各地区当前地貌类型")
 			_add_mode_button(OverlayMode.MODE.BIOME_GROUP, &"geography.terrain", "生物群系组",
-				"")
+				"显示各地区当前生物群系分组，不代表具体植被")
 			_add_mode_button(OverlayMode.MODE.VEGETATION_TYPE, &"ecology.vegetation", "当前植被",
-				"")
+				"显示各地区当前植被类型")
 		Category.CLIMATE:
 			_add_mode_button(OverlayMode.MODE.TEMPERATURE, &"climate.temperature", "温度",
-				"")
+				"显示各地区当前温度")
 			_add_mode_button(OverlayMode.MODE.HUMIDITY, &"climate.humidity", "湿度",
-				"")
+				"显示各地区当前空气与地表湿润程度")
 			_add_mode_button(OverlayMode.MODE.WIND_DIR, &"climate.wind", "风向",
-				"色相：风向；亮度：风力")
+				"以色相表示方向、亮度表示风力")
 			_add_mode_button(OverlayMode.MODE.OCEAN_CURRENT_DIR, &"hydrology.current", "洋流",
-				"色相：流向；亮度：流速")
+				"以色相表示方向、亮度表示流速")
 		Category.RESOURCES:
 			_add_resource_buttons()
 		Category.BIOLOGY:
@@ -295,7 +295,8 @@ func _add_resource_buttons() -> void:
 			continue
 		var icon_key := ResourceProfileRegistry.icon_key(profile)
 		var button := _make_icon_button(
-			icon_key, "%s储量" % profile.display_name, ""
+			icon_key, profile.display_name,
+			"显示各地区当前%s相对储量" % profile.display_name
 		)
 		if profile.icon != null:
 			button.icon = profile.icon
@@ -323,12 +324,12 @@ func _add_biology_buttons() -> void:
 				signal_id, _technology_ids, compiled):
 			continue
 		var display_name := String(entry.get("display_name", ""))
-		var icon_key := entry.get("icon_key", &"system.unknown") as StringName
+		var icon_key := entry.get("icon_key", &"ecology.growth") as StringName
 		var button := _make_icon_button(
 			icon_key, display_name,
-			"目击分布"
+			"当前目击分布，会随气候、承载和人类活动变化"
 		)
-		if not IconCatalog.has_icon(icon_key):
+		if icon_key == &"system.unknown":
 			var species_id := StringName(entry.get("id", &""))
 			if not _warned_missing_icons.has(species_id):
 				_warned_missing_icons[species_id] = true
@@ -347,7 +348,7 @@ func _add_biology_buttons() -> void:
 func _make_icon_button(icon_key: StringName, title: String, description: String) -> Button:
 	var button := OverlayButtonScene.instantiate() as Button
 	button.custom_minimum_size = BUTTON_SIZE
-	button.tooltip_text = tr(title) if description.is_empty() else "%s\n%s" % [tr(title), tr(description)]
+	button.tooltip_text = "%s\n%s" % [tr(title), tr(description)]
 	IconButton.apply(button, icon_key, SECONDARY_ICON_SIZE)
 	button.focus_mode = Control.FOCUS_NONE
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND

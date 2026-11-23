@@ -4,10 +4,9 @@ extends SceneTree
 ## No native military DLL rebuild is required: dense ids are injected with the
 ## same stable-id order used by MilitaryCatalogCompiler.
 
-const FEED_SCRIPT := preload("res://scripts/rendering/military_render_feed.gd")
-const TOKEN_SCRIPT := preload("res://scripts/rendering/military_army_token_layer.gd")
-const FORMATION_CATALOG_SCRIPT := preload(
-	"res://scripts/rendering/military_formation_catalog.gd")
+var _feed_script: GDScript
+var _token_script: GDScript
+var _formation_catalog_script: GDScript
 const MILITARY_CATALOG_PATH := "res://data/military/military_catalog.json"
 
 var _failures := PackedStringArray()
@@ -48,6 +47,10 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# Load the UI after project startup so the test releases its scene resources at exit.
+	_feed_script = load("res://scripts/rendering/military_render_feed.gd")
+	_token_script = load("res://scripts/rendering/military_army_token_layer.gd")
+	_formation_catalog_script = load("res://scripts/rendering/military_formation_catalog.gd")
 	_build_dense_catalog()
 	_test_catalog_mapping()
 	_test_lod_hysteresis()
@@ -74,7 +77,7 @@ func _build_dense_catalog() -> void:
 
 
 func _test_catalog_mapping() -> void:
-	var catalog = FORMATION_CATALOG_SCRIPT.new()
+	var catalog = _formation_catalog_script.new()
 	_expect(catalog.load_catalog(), "formation visual catalog loads")
 	var report: Dictionary = catalog.bind_dense_units(_dense_units)
 	_expect(bool(report.get("ok", false)), "dense visual mapping binds")
@@ -100,26 +103,26 @@ func _test_catalog_mapping() -> void:
 
 
 func _test_lod_hysteresis() -> void:
-	_expect(TOKEN_SCRIPT.lod_for_zoom_with_hysteresis(0.36, 0) == 0,
+	_expect(_token_script.lod_for_zoom_with_hysteresis(0.36, 0) == 0,
 		"aggregate does not exit before 0.37")
-	_expect(TOKEN_SCRIPT.lod_for_zoom_with_hysteresis(0.38, 0) == 1,
+	_expect(_token_script.lod_for_zoom_with_hysteresis(0.38, 0) == 1,
 		"aggregate exits to representative above 0.37")
-	_expect(TOKEN_SCRIPT.lod_for_zoom_with_hysteresis(0.32, 1) == 0,
+	_expect(_token_script.lod_for_zoom_with_hysteresis(0.32, 1) == 0,
 		"representative re-enters aggregate below 0.33")
-	_expect(TOKEN_SCRIPT.lod_for_zoom_with_hysteresis(0.71, 1) == 1,
+	_expect(_token_script.lod_for_zoom_with_hysteresis(0.71, 1) == 1,
 		"representative waits before formation at 0.72")
-	_expect(TOKEN_SCRIPT.lod_for_zoom_with_hysteresis(0.73, 1) == 2,
+	_expect(_token_script.lod_for_zoom_with_hysteresis(0.73, 1) == 2,
 		"representative enters formation above 0.72")
-	_expect(TOKEN_SCRIPT.lod_for_zoom_with_hysteresis(0.67, 2) == 1,
+	_expect(_token_script.lod_for_zoom_with_hysteresis(0.67, 2) == 1,
 		"formation exits below 0.68")
-	_expect(is_equal_approx(TOKEN_SCRIPT.one_shot_member_start(10.0, 0), 10.0),
+	_expect(is_equal_approx(_token_script.one_shot_member_start(10.0, 0), 10.0),
 		"first formation member begins a one-shot action immediately")
-	_expect(TOKEN_SCRIPT.one_shot_member_start(10.0, 4) > 10.0,
+	_expect(_token_script.one_shot_member_start(10.0, 4) > 10.0,
 		"formation members stagger later instead of starting the action early")
 
 
 func _test_token_layer_backend() -> void:
-	var layer = TOKEN_SCRIPT.new()
+	var layer = _token_script.new()
 	get_root().add_child(layer)
 	await process_frame
 	layer.configure(FakeMap.new(), null, 22.0, 0.0)
@@ -133,7 +136,7 @@ func _test_token_layer_backend() -> void:
 		"formation MultiMesh has a world-sized culling AABB")
 	layer.set_formation_allow_all_for_tests(true)
 
-	var feed = FEED_SCRIPT.new()
+	var feed = _feed_script.new()
 	feed.apply_synthetic(
 		_snapshot_with_six_armies([0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]), -1)
 	layer.set_lod_override_for_tests(2)
@@ -188,7 +191,7 @@ func _test_token_layer_backend() -> void:
 	var before_cue: int = int(layer.debug_snapshot().get("uploads", 0))
 	var before_cue_signature: int = int(layer._last_signature)
 	var before_cue_formation: int = int(layer._last_formation_signature)
-	var cue_feed = FEED_SCRIPT.new()
+	var cue_feed = _feed_script.new()
 	cue_feed.apply_synthetic(
 		_snapshot_with_six_armies([1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], 2), -1)
 	layer.set_armies(cue_feed)
@@ -235,14 +238,14 @@ func _test_token_layer_backend() -> void:
 	_expect(int(layer.debug_snapshot().get("paper_instances", 0)) == 5,
 		"restoring fog visibility restores the hidden foreign fallback")
 
-	var unbound_layer = TOKEN_SCRIPT.new()
+	var unbound_layer = _token_script.new()
 	get_root().add_child(unbound_layer)
 	await process_frame
 	unbound_layer.configure(FakeMap.new(), null, 22.0, 0.0)
 	unbound_layer.configure_formation_catalog(_dense_units)
 	unbound_layer.set_lod_override_for_tests(2)
 	unbound_layer.set_zoom_override_for_tests(1.0)
-	var unbound_feed = FEED_SCRIPT.new()
+	var unbound_feed = _feed_script.new()
 	unbound_feed.apply_synthetic(_snapshot_with_six_armies(
 		[0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]), -1)
 	unbound_layer.set_armies(unbound_feed)
@@ -252,13 +255,13 @@ func _test_token_layer_backend() -> void:
 	_expect(int(unbound.get("paper_instances", 0)) == 6,
 		"unbound player slot keeps all armies on paper fallback")
 
-	var fallback_layer = TOKEN_SCRIPT.new()
+	var fallback_layer = _token_script.new()
 	get_root().add_child(fallback_layer)
 	await process_frame
 	fallback_layer.configure(FakeMap.new(), null, 22.0, 0.0)
 	fallback_layer.set_lod_override_for_tests(2)
 	fallback_layer.set_zoom_override_for_tests(1.0)
-	var old_feed = FEED_SCRIPT.new()
+	var old_feed = _feed_script.new()
 	old_feed.apply_synthetic(_snapshot_without_visual_fields(), -1)
 	fallback_layer.set_armies(old_feed)
 	var fallback: Dictionary = fallback_layer.debug_snapshot()
@@ -279,7 +282,7 @@ func _test_token_layer_backend() -> void:
 
 
 func _test_handle_replacement_resets_position() -> void:
-	var layer = TOKEN_SCRIPT.new()
+	var layer = _token_script.new()
 	get_root().add_child(layer)
 	await process_frame
 	layer.configure(FakeMap.new(), null, 22.0, 0.0)
@@ -287,7 +290,7 @@ func _test_handle_replacement_resets_position() -> void:
 	layer.set_lod_override_for_tests(2)
 	layer.set_zoom_override_for_tests(1.0)
 
-	var feed = FEED_SCRIPT.new()
+	var feed = _feed_script.new()
 	feed.apply_synthetic(_snapshot_with_six_armies(
 		[0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], 1), -1)
 	layer.set_armies(feed)
@@ -331,14 +334,14 @@ func _test_handle_replacement_resets_position() -> void:
 
 
 func _test_aggregate_signature_covers_visible_row_state() -> void:
-	var layer = TOKEN_SCRIPT.new()
+	var layer = _token_script.new()
 	get_root().add_child(layer)
 	await process_frame
 	layer.configure(FakeMap.new(), null, 22.0, 0.0)
 	layer.set_lod_override_for_tests(0)
 	layer.set_zoom_override_for_tests(0.2)
 
-	var feed = FEED_SCRIPT.new()
+	var feed = _feed_script.new()
 	var base := _snapshot_with_six_armies(
 		[0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], 1)
 	feed.apply_synthetic(base, -1)

@@ -1,6 +1,7 @@
 extends SceneTree
 
 class DispatchStub extends RefCounted:
+	signal colonization_quotes_ready()
 	var count := 8
 	var quote_calls := 0
 	var preview_calls := 0
@@ -11,6 +12,7 @@ class DispatchStub extends RefCounted:
 	var modern_unlocked := false
 	var single_source := false
 	var expedition_count := 0
+	var pending_target := -1
 
 	func dispatch_cell_display_name(cell: int) -> String:
 		return {3: "长安", 8: "洛阳", 22: "临海新城", 24: "北方谷地"}.get(cell, "目的地")
@@ -58,6 +60,8 @@ class DispatchStub extends RefCounted:
 	func get_family_colonization_quotes(target: int, family: int, source: int,
 			offset: int, limit: int) -> Dictionary:
 		quote_calls += 1
+		if target == pending_target:
+			return {"ok": false, "pending": true, "busy": true, "code": "economy_busy_retry"}
 		if target == 999 or target == source:
 			return {"ok": false, "code": "colonization_target_invalid"}
 		if target == 55:
@@ -111,12 +115,6 @@ class EconomyStub extends RefCounted:
 	var reads := 0
 	var modern_unlocked := false
 	var snapshot_unavailable := false
-	var dispatches: Array = []
-	func start_family_colonization(country: int, family: int, source: int, target: int,
-			population: int, token: int, day: int, sequence: int) -> Dictionary:
-		dispatches.append([country, family, source, target, population, token, day, sequence])
-		return {"ok": true, "code": "colonization_queued"}
-
 	func family_cell_snapshot(_cell: int, _offset: int, _limit: int) -> Dictionary:
 		reads += 1
 		return {"ok": true, "family_handles": PackedInt64Array([11]), "populations": PackedInt64Array([6])}
@@ -145,10 +143,6 @@ class ControllerGuard extends PlayerController:
 	func _resolve_player_country() -> Dictionary:
 		_player_country_handle = 10
 		return {"ok": true, "facade": country}
-
-class ClockStub extends RefCounted:
-	func day_index() -> int:
-		return 42
 
 var _failures := 0
 
@@ -240,8 +234,21 @@ func _run() -> void:
 	panel.cancel_target_selection()
 	_expect("canceling map selection leaves the ready dispatch intact", panel._target_cell == 22 and not panel._start.disabled)
 	panel.begin_target_selection()
+	stub.pending_target = 24
+	_expect("an unpublished route consumes the click without changing the selected destination",
+		panel.try_target_cell(24) and panel._target_cell == 22 and panel._start.disabled)
+	panel.cancel_target_selection()
+	stub.pending_target = -1
+	stub.colonization_quotes_ready.emit()
+	_expect("a route published after cancellation cannot replace the selected destination",
+		panel._target_cell == 22 and not panel._start.disabled)
+	panel.begin_target_selection()
+	stub.pending_target = 24
+	panel.try_target_cell(24)
+	stub.pending_target = -1
+	stub.colonization_quotes_ready.emit()
 	_expect("changing the destination preserves the branch and people and updates the quote",
-		panel.try_target_cell(24) and panel._title.text == "开拓"
+		panel._target_cell == 24 and panel._title.text == "开拓"
 		and panel._selected_quote.family_handle == 11 and int(panel._population.value) == 2
 		and int(panel._selected_quote.quote_token) != int(before.quote_token))
 	var row_id: int = panel._quote_row_refs["3:11"].get_instance_id()
@@ -389,7 +396,13 @@ func _run_density_and_layout() -> void:
 		var scroll := panel.get_node("%RowsScroll") as ScrollContainer
 		await process_frame
 		await process_frame
-		var visible_rows := floori((scroll.size.y + 2.0) / 50.0)
+		var list := first.get_parent() as VBoxContainer
+		var separation := list.get_theme_constant("separation")
+		var row_height: float = first.size.y
+		for child in list.get_children():
+			if child is ColonizationFamilyRow and child.visible:
+				row_height = maxf(row_height, child.size.y)
+		var visible_rows := floori((scroll.size.y + separation) / (row_height + separation))
 		var expected_rows := 6 if root.get_visible_rect().size.y >= 720 else 3
 		_expect("source directory keeps %d complete summaries at this UI scale for %d branches" % [expected_rows, count],
 			visible_rows >= expected_rows and not (panel.get_node("%Body") as BoxContainer).vertical)
@@ -474,23 +487,6 @@ func _run_controller_guard() -> void:
 	var controller := ControllerGuard.new()
 	var economy := EconomyStub.new()
 	controller._economy_facade = economy
-	controller._world_clock = ClockStub.new()
-	var args := {"family_handle": 0, "source_cell": 3, "target_cell": 24,
-		"population": 5, "quote_token": 71}
-	var sequence := int(controller._command_sequence)
-	var result := controller.request_command(PlayerController.COMMAND_FAMILY_COLONIZATION_START, args)
-	_expect("anonymous migration reaches the economy with an explicit zero family handle",
-		result.get("ok", false) and economy.dispatches == [[10, 0, 3, 24, 5, 71, 42, sequence]])
-	var dispatch_count := economy.dispatches.size()
-	var next_sequence := int(controller._command_sequence)
-	for field in args.keys():
-		var incomplete := args.duplicate()
-		incomplete.erase(field)
-		result = controller.request_command(PlayerController.COMMAND_FAMILY_COLONIZATION_START, incomplete)
-		_expect("dispatch without %s is rejected before submission" % field,
-			not result.get("ok", true) and result.get("code") == "invalid_args"
-			and economy.dispatches.size() == dispatch_count
-			and controller._command_sequence == next_sequence)
 	_expect("dispatch readers reject foreign sources before accessing family state",
 		not controller.get_family_dispatch_candidates(8).get("ok", false) and economy.reads == 0)
 	var preview := controller.get_family_dispatch_preview(11, 3)

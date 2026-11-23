@@ -25,6 +25,11 @@
 
 namespace pk {
 
+struct RuntimeEffectReadView {
+    godot::Dictionary report;
+    godot::Dictionary adapters;
+};
+
 class ModifierRuntime;
 class NativeCountryRuntime;
 class NativeEconomyRuntime;
@@ -681,8 +686,6 @@ public:
     // Built-in colonization transaction used by the Economy-owned expedition
     // state machine. Unowned targets emit CLAIM then SETTLE and stay unpublished
     // until Country and Economy ACK. Own-country relocation emits SETTLE only.
-    static constexpr int64_t BUILTIN_TRANSACTION_ID_BASE = int64_t{1} << 50;
-
     bool enqueue_family_colonization_pod(
         int64_t effect_id, int64_t effective_day, int64_t source_id,
         uint64_t country_handle, uint32_t country_generation,
@@ -691,10 +694,6 @@ public:
         int64_t *out_transaction_id = nullptr,
         bool claim_unowned = true,
         int32_t population_reward = 0);
-    int32_t family_colonization_transaction_status_pod(
-        int64_t transaction_id, int64_t effect_id,
-        uint32_t expedition_generation, uint64_t fire_sequence,
-        int64_t *out_resolved_transaction_id = nullptr) const;
     uint64_t family_colonization_settle_idempotency_key(
         int64_t effect_id, uint32_t expedition_generation,
         uint64_t fire_sequence) const;
@@ -720,6 +719,7 @@ public:
     // worker-committed POD snapshot. Generation must be monotonic.
     bool apply_pod_snapshot(const struct RuntimeEffectPodSnapshot &snapshot,
                             std::string &error);
+    void begin_executor_transaction_namespace() noexcept;
     uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
     // Day the committed Effect state belongs to. The split-authority settle uses
     // it as the submission watermark: a worker Modifier snapshot whose
@@ -796,7 +796,8 @@ public:
     // the transaction back to PLANNED so the next settle retries it. Without this
     // a single rejected enqueue would stall the equip forever.
     void discard_worker_modifier_rows(const std::vector<int64_t> &transaction_ids);
-    godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime);
+    godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime,
+                                               bool trigger_delivery = false);
     godot::Dictionary ack_native_country(NativeCountryRuntime *country_runtime);
     // Soft-settle leftover PREFLIGHTED Country bindings after a real Host
     // receipt drain under COUNTRY worker authority. Colonization CLAIM/SETTLE
@@ -875,7 +876,11 @@ public:
     bool notify_era_reward_technology_activated_pod(
         uint64_t country_handle, int32_t technology_id, int64_t day_index,
         std::string &error);
-    godot::Dictionary era_reward_offer_snapshot();
+    godot::Dictionary era_reward_offer_snapshot() const;
+    bool era_reward_requires_choice() const noexcept {
+        return _era_reward_offer.status == 1 || _era_reward_offer.status == 4;
+    }
+    bool has_pending_research_discovery(uint64_t country, int32_t signal) const;
     // host_commit: under worker Effect authority this runtime is a read
     // replica and cannot own transactions. The selection is then recorded
     // without one (transaction_id 0) and the caller commits the selected
@@ -1332,7 +1337,6 @@ private:
     int64_t _last_completed_day = -1;
     int64_t _run_day = -1;
     int32_t _run_cursor = 0;
-    int64_t allocate_builtin_transaction_id();
     int64_t _next_transaction_id = 1;
     int64_t _acked_transaction_id = 0;
     uint64_t _next_activation_sequence = 1;

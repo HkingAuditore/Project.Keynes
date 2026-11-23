@@ -138,6 +138,38 @@ func sample(day_idx: int) -> bool:
 	return true
 
 
+func apply_committed_view(view: Dictionary) -> void:
+	if not _ensure_capacity():
+		return
+	var day: int = view.day
+	var year_length: int = view.year_length
+	var year := floori(float(day) / year_length)
+	if year != _year or year_length != _days_per_year:
+		_year = year
+		_days_per_year = year_length
+		_reset_year_values()
+	var indices: PackedInt32Array = view.cells
+	var population: PackedInt64Array = view.cell_population
+	var daily: PackedFloat64Array = view.cell_per_day
+	var total: PackedFloat64Array = view.cell_accumulated
+	for i in indices.size():
+		var cell := indices[i]
+		_cell_tracked[cell] = 1
+		_cell_population[cell] = population[i]
+		_cell_per_day[cell] = daily[i]
+		_cell_ytd[cell] = total[i]
+	_national_ytd = view.accumulated
+	_national_per_day = view.per_day
+	_national_population = view.population
+	_first_sample_span = 2 if view.backfilled else 1
+	_days_counted = day - year * year_length
+	_last_day = day
+	_has_sample = true
+	_partial = false
+	_trend = view.trend
+	_trend_days = view.trend_days
+
+
 ## 人均日产值按已提交日入队；人口为零的样本记 NAN，画图时跳过而不是画成 0。
 func _record_trend(day_idx: int) -> void:
 	var per_capita := NAN

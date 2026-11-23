@@ -91,19 +91,19 @@ func _run() -> void:
 		int(country_facade.cell_summary(capital_cell).get("cash", 0)) \
 			!= int(start_capital.get("cash", 0)))
 	_saved_paused = first_clock.paused
-	var expected := _capture_hashes(first_host, first_clock)
-	var expected_environment: Dictionary = \
+	var before_save_environment: Dictionary = \
 		first_host.generator().export_environment_runtime_state()
 	var save_result: Dictionary = await _game_save.call("request_manual_save", "manual_3")
 	# 存档完成后再取样：speed=0 时 worker 仍会把 ring 里已挂起的输入跑完，
 	# 存档前取的值可能比真正写进存档的状态早一次提交。
+	var expected := _capture_hashes(first_host, first_clock)
 	var expected_capital: Dictionary = country_facade.cell_summary(capital_cell)
 	var expected_tax: Dictionary = country_facade.tax_policy_snapshot(player_handle)
-	var saved_environment: Dictionary = \
+	var expected_environment: Dictionary = \
 		first_host.generator().export_environment_runtime_state()
-	if _hash_variant(saved_environment) != _hash_variant(expected_environment):
+	if _hash_variant(before_save_environment) != _hash_variant(expected_environment):
 		print("[save-roundtrip] environment drifted during the save call: %s" % [
-			_diff_keys(expected_environment, saved_environment)])
+			_diff_keys(before_save_environment, expected_environment)])
 	if not bool(save_result.get("ok", false)):
 		# 不打出 code/message 的话，一次写档失败在日志里只剩一行 FAIL，
 		# 既看不出是边界没停稳还是 provider 缺 section。
@@ -132,21 +132,15 @@ func _run() -> void:
 	# Compare frozen military bytes at load completion, before the worker starts
 	# its next day. A later live hash can legitimately include new daily work.
 	var saved_container: Dictionary = _game_save.get("_repository").load_slot("manual_3")
+	_expect("saved dynamic world matches the committed map",
+		_hash_variant(bytes_to_var(saved_container.section_bytes.dynamic_world)) == expected.dynamic_world)
 	var saved_military: PackedByteArray = saved_container.section_bytes.pkmi
 	var saved_clock: Dictionary = bytes_to_var(saved_container.section_bytes.world_clock)
 	expected.clock = _hash_variant(saved_clock)
 	_expect("saved clock records the requested pause state and speed",
 		bool(saved_clock.paused) == _saved_paused and is_zero_approx(float(saved_clock.speed_multiplier)))
-	var restored_military: Array[PackedByteArray] = []
 	var restored_clocks: Array[Dictionary] = []
 	_game_save.load_completed.connect(func(_slot_id: String, _result: Dictionary) -> void:
-		var host: WorldRuntimeHost = _game_save.get("_runtime_host")
-		# The provider owns the MDJ1 event-forwarding tail as well as PKMI.
-		var provider = preload("res://scripts/game/save_modules/country_state.gd").new()
-		var captured: Dictionary = provider._write_military_provider({
-			"military": host.generator().get_military_facade(),
-			"military_progress": host.generator()._military_daily_job})
-		restored_military.append(captured.get("sections", {}).get("pkmi", PackedByteArray()))
 		restored_clocks.append((_game_save.get("_world_clock") as WorldClock).export_state()), CONNECT_ONE_SHOT)
 	var previous_session = first_host.get("_runtime_session")
 	var previous_generation: int = previous_session.generation
@@ -158,9 +152,12 @@ func _run() -> void:
 	if loaded_host != null:
 		_expect("loaded world has a distinct session generation",
 			int(loaded_host.session_report().generation) != previous_generation)
-		_expect("military bytes survive restore and terrain refresh exactly",
-			not saved_military.is_empty() and restored_military.size() == 1
-			and restored_military[0] == saved_military)
+		var resaved: Dictionary = await _game_save.call("request_manual_save", "manual_2")
+		var reopened: Dictionary = _game_save.get("_repository").load_slot("manual_2")
+		var restored_military: PackedByteArray = reopened.get("section_bytes", {}).get("pkmi", PackedByteArray())
+		_expect("military bytes and MDJ1 survive restore and a second native capture exactly",
+			bool(resaved.get("ok", false)) and not saved_military.is_empty()
+			and restored_military == saved_military)
 		var loaded_scene := loaded_host.get_parent() as PlayerGame
 		var loaded_clock: WorldClock = loaded_scene.get_node("WorldClock")
 		var loaded_generator := loaded_host.generator()
@@ -233,27 +230,43 @@ func _run() -> void:
 	_finish()
 
 
-## 探索进度是单调的玩家资产。视野解算一旦失效（历史 bug 会把玩家国家绑成 -1），
-## 写档必须先自修复，修不好就拒绝落盘，绝不能把全 0 位图盖到上一份存档上。
+## Changing the display copy must not change the authoritative saved exploration.
 func _verify_wiped_fog_is_never_persisted(host: WorldRuntimeHost) -> void:
-	var wiped := PackedByteArray()
-	wiped.resize(host.current_map().cell_count())
-	host.current_map().explored_arr = wiped
+	var ext: DCWorldExt = host.generator().get_data_core_world_ext()
+	var committed: PackedByteArray = ext.get_runtime_vision_frame(-1).explored_arr
+	var altered := committed.duplicate()
+	var unexplored := altered.find(0)
+	_expect("fixture contains unexplored terrain", unexplored >= 0)
+	if unexplored >= 0:
+		altered[unexplored] = 1
+	host.current_map().explored_arr = altered
 	var guarded: Dictionary = await _game_save.call("request_manual_save", "manual_2")
+	host.current_map().explored_arr = committed
+	_expect("native exploration can be saved with a corrupted display copy", bool(guarded.get("ok", false)))
 	if not bool(guarded.get("ok", false)):
-		_expect("wiped fog save is rejected with the vision code",
-			String(guarded.get("code", "")) == "pkfg_vision_unsolved")
 		return
 	var probe: Dictionary = _game_save.call("prepare_load", "manual_2")
-	var bundle: Dictionary = probe.get("bundle", {})
-	var sections: Dictionary = bundle.get("sections", {})
-	var pkfg: Dictionary = sections.get("pkfg", {})
-	_expect("save never persists an empty explored bitmap",
-		_count_nonzero(PackedByteArray(pkfg.get("explored", PackedByteArray()))) > 0)
+	var sections: Dictionary = probe.get("bundle", {}).get("sections", {})
+	var header = preload("res://scripts/game/pksr_bundle_header.gd")
+	var expected: int = header.SECTION_VISION | header.SECTION_BIO | header.SECTION_CLIMATE_CALENDAR
+	var mask := header.section_mask(sections.simulation_runtime)
+	_expect("the committed bundle owns exploration, species and the climate draw",
+		(mask & expected) == expected)
+	_expect("the display files contain no duplicate simulation seeds",
+		not sections.pkfg.has("explored") and not sections.pkfg.has("fog_enabled")
+		and not sections.dynamic_world.cells.has("cell_bio_occupancy_bits")
+		and not sections.world_clock.has("rng_state") and not sections.world_clock.has("climate_rng_year"))
+	var bytes: PackedByteArray = sections.pkmi
+	_expect("the same bundle provides nonempty story and military checkpoint sections",
+		sections.pknr is Dictionary and not sections.pknr.is_empty()
+		and bytes.size() > 28 and bytes.decode_u32(bytes.size() - 28) == 0x314a444d)
+	print("ARCHIVE_AUTHORITY day=", ext.runtime_committed_day(), " native_mask=", mask & expected,
+		" mirror_altered=", unexplored, " PKMI=", bytes.size())
 
 
 func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> void:
 	var generator := host.generator()
+	var player := host.get_parent().get_node("PlayerController") as PlayerController
 	var start_day := clock.day_index()
 	var target_day := start_day + 6
 	var start_economy: Dictionary = generator.get_economy_report()
@@ -265,10 +278,15 @@ func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> vo
 	])
 	clock.set_speed(1.0)
 	clock.pause(false)
+	var submitted_offer := -1
 	for frame in range(1200):
 		await get_tree().process_frame
-		# Presentation offers can pause a real player. This fixture explicitly
-		# advances simulation; pause(false) still respects authority fault holds.
+		var offer: Dictionary = player.narrative_service().active_offer()
+		if not offer.is_empty() and int(offer.offer_id) != submitted_offer:
+			if not _answer_narrative(player, generator, offer):
+				break
+			# The published offer can remain visible until the worker receives the choice.
+			submitted_offer = int(offer.offer_id)
 		clock.pause(false)
 		var economy: Dictionary = generator.get_economy_report()
 		if bool(economy.get("fatal", false)):
@@ -292,6 +310,34 @@ func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> vo
 	_expect("loaded economy remains non-fatal after its first settlement cycle",
 		not bool(generator.get_economy_report().get("fatal", false)))
 	clock.set_speed(0.0)
+
+
+func _answer_narrative(player: PlayerController, generator: MapGenerator,
+		offer: Dictionary) -> bool:
+	var options: Array = offer.get("options", [])
+	var index := -1
+	for i in range(options.size()):
+		if bool(options[i].get("eligible", false)):
+			index = i
+			break
+	_expect("the restored session has an eligible narrative choice", index >= 0)
+	if index < 0:
+		return false
+	var day := int(generator.get_runtime_thread_report().get("simulation_committed_day", -1))
+	var result: Dictionary = player.narrative_flow().on_option_chosen(
+		int(offer.offer_id), int(offer.offer_generation), index)
+	var accepted := bool(result.get("ok", false)) and bool(result.get("pending", false)) \
+		and int(result.get("effective_day", -1)) == day + 1
+	_expect("the narrative choice is accepted for the day after the blocked commit", accepted)
+	if accepted:
+		var offer_id := int(offer.offer_id)
+		player.narrative_service().choice_resolved.connect(func(record: Dictionary) -> void:
+			_expect("the accepted choice settles in the following commit",
+				int(record.get("offer_id", -1)) == offer_id and int(record.get("resolved_day", -1)) == day + 1)
+			player.narrative_flow().on_outcome_acknowledged(), CONNECT_ONE_SHOT)
+		print("ROUNDTRIP_NARRATIVE_CHOICE day=%d effective_day=%d event=%s" % [
+			day, int(result.effective_day), String(offer.event_id)])
+	return accepted
 
 
 func _advance_days(host: WorldRuntimeHost, clock: WorldClock, days: int) -> void:
@@ -356,12 +402,15 @@ func _capture_hashes(host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
 	var generator := host.generator()
 	var hashes := {}
 	hashes.clock = _hash_variant(clock.export_state())
-	hashes.dynamic_world = _hash_variant(generator.get_data_core_world().serialize())
+	var world: Dictionary = generator.get_data_core_world().serialize()
+	world.cells.erase("cell_bio_occupancy_bits")
+	hashes.dynamic_world = _hash_variant(world)
+	hashes.species = _hash_variant(host.current_map().bio_occupancy_bits_arr)
 	hashes.environment = _hash_variant(generator.export_environment_runtime_state())
 	hashes.country = str(generator.get_country_facade().report().get("state_hash", ""))
 	hashes.economy = str(generator.get_economy_facade().report().get("state_hash", ""))
 	hashes.session = _hash_variant(_game_flow.call("session"))
-	# PKFG：cell_explored 是单调累积的玩家进度，重算不回来，必须逐字节对上。
+	# The display is populated by the restored authority before the first new day.
 	hashes.explored = _hash_variant(host.current_map().explored_arr)
 	return hashes
 

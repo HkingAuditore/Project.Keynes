@@ -37,7 +37,7 @@ func _check_models() -> void:
 	_check("国库卡读到币值与结算日",
 		String(treasury.get("value", "")) == UITokens.format_compact_number_cn(123456.0, 2)
 		and bool(treasury.get("value_money", false))
-		and String(treasury.get("meta", "")) == "1年2月11日")
+		and String(treasury.get("meta", "")) == "第 42 日")
 	_check("国库卡按收入/支出拆出构成段",
 		bool(treasury.get("ok", false))
 		and (treasury.income_bar.segments as Array).size() == 2
@@ -128,7 +128,7 @@ func _check_card_scene() -> void:
 		and not (card.get_node("%ValueLabel") as Label).text.contains("¥")
 		and (card.get_node("%ValueIcon") as TextureRect).visible
 		and (card.get_node("%ValueIcon") as TextureRect).texture == MoneyDisplay.ICON
-		and (card.get_node("%MetaLabel") as Label).text == "1年2月11日"
+		and (card.get_node("%MetaLabel") as Label).text == "第 42 日"
 		and (card.get_node("%FooterLabel") as Label).text.contains("总览"))
 	_check("卡片贴在纸签下方且整张卡落在视口内",
 		is_equal_approx(card.position.y, 16.0 + 50.0 + HudStatusCard.ANCHOR_GAP)

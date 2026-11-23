@@ -98,6 +98,11 @@ func _restore_direct_drawing() -> void:
 
 
 func _sync_target() -> void:
+	var mode := SubViewport.UPDATE_ALWAYS if _surface_parent.is_visible_in_tree() else SubViewport.UPDATE_DISABLED
+	if _target.render_target_update_mode != mode:
+		_target.render_target_update_mode = mode
+	if mode == SubViewport.UPDATE_DISABLED:
+		return
 	var source := get_viewport()
 	var view := source.get_visible_rect()
 	if view.size.x <= 0.0 or view.size.y <= 0.0:

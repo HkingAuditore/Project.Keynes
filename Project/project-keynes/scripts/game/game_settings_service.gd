@@ -1,6 +1,8 @@
 extends Node
 
 signal settings_changed(settings: Dictionary)
+signal event_pause_changed(mask: int)
+signal ai_narrative_changed(enabled: bool)
 
 ## 移动端 UI 缩放策略的唯一入口（content_scale_mode/aspect/factor + 安全区）。
 ## 用 preload 而不是 class_name：新脚本还没进 global_script_class_cache 时裸类名会编译失败。
@@ -34,6 +36,7 @@ const DEFAULTS := {
 	"master_muted": false,
 	"autosave_enabled": true,
 	"ai_narrative_enabled": false,
+	"event_pause_mask": 255,
 	"ai_llm_base_url": "https://api.deepseek.com/v1/chat/completions",
 	"ai_llm_model": "deepseek-chat",
 	"ai_image_enabled": false,
@@ -46,6 +49,9 @@ var _ui_scaling: Node = null
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(false)
+	set_process_input(false)
 	_ui_scaling = MobileUIScalingScript.new()
 	_ui_scaling.name = "MobileUIScaling"
 	add_child(_ui_scaling)
@@ -75,6 +81,10 @@ func update(values_to_apply: Dictionary, persist: bool = true) -> Dictionary:
 		if not bool(saved.get("ok", false)):
 			return saved
 	settings_changed.emit(values())
+	if values_to_apply.has("event_pause_mask"):
+		event_pause_changed.emit(int(_settings.event_pause_mask))
+	if values_to_apply.has("ai_narrative_enabled"):
+		ai_narrative_changed.emit(bool(_settings.ai_narrative_enabled))
 	return {"ok": true, "code": "ok", "message": ""}
 
 
@@ -114,10 +124,97 @@ func save_settings() -> Dictionary:
 		"message": "" if error == OK else "无法保存设置。"}
 
 
+var _frame_limit := 0
+var _map_camera: MapCamera
+var _map_clock: WorldClock
+var _held_inputs: Dictionary = {}
+var _gesture_event := false
+var _last_view: Transform2D
+
+
+func follow_map_camera(camera: MapCamera, clock: WorldClock = null) -> void:
+	if is_instance_valid(_map_camera):
+		_release_map_camera()
+	_map_camera = camera
+	_map_clock = clock
+	camera.tree_exiting.connect(_release_map_camera)
+	_configure_frame_limit()
+
+
+func _release_map_camera() -> void:
+	_map_camera.tree_exiting.disconnect(_release_map_camera)
+	_map_camera = null
+	_map_clock = null
+	_configure_frame_limit()
+
+
+func _configure_frame_limit() -> void:
+	var adaptive := _frame_limit == GraphicsQualitySettings.ADAPTIVE_FPS
+	var watch := adaptive and _map_camera != null
+	set_process(watch)
+	set_process_input(watch)
+	if watch:
+		_last_view = _map_camera.get_canvas_transform()
+		_update_navigation_limit(false)
+	else:
+		_held_inputs.clear()
+		_gesture_event = false
+		Engine.max_fps = 60 if adaptive else _frame_limit
+
+
+func _input(event: InputEvent) -> void:
+	# Observe presses and releases before GUI consumption, including dragging a panel.
+	if event is InputEventScreenTouch:
+		_track_press(event.index, event.pressed and not event.canceled)
+	elif event is InputEventMouseButton:
+		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
+			_track_press(-int(event.button_index), event.pressed and not event.canceled)
+		else:
+			_gesture_event = event.pressed
+	elif event is InputEventGesture or event is InputEventScreenDrag:
+		_gesture_event = true
+	elif event is InputEventKey and event.pressed and (event.is_action("player_zoom_in") or event.is_action("player_zoom_out")):
+		_gesture_event = true
+	else:
+		return
+	_update_navigation_limit(false)
+
+
+func _track_press(id: int, pressed: bool) -> void:
+	if pressed:
+		_held_inputs[id] = true
+	else:
+		_held_inputs.erase(id)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_held_inputs.clear()
+		_gesture_event = false
+
+
+func _process(_delta: float) -> void:
+	var view := _map_camera.get_canvas_transform()
+	_update_navigation_limit(view != _last_view)
+	_last_view = view
+	_gesture_event = false
+
+
+func _update_navigation_limit(moved: bool) -> void:
+	var simulation_running := _map_clock != null and not _map_clock.paused \
+		and _map_clock.speed_multiplier > 0.0
+	var active := simulation_running or moved or _gesture_event or not _held_inputs.is_empty() \
+		or _map_camera.is_animating_view()
+	var limit := 60 if active else 30
+	if Engine.max_fps != limit:
+		Engine.max_fps = limit
+
+
 func apply() -> void:
 	if not OS.has_feature("web"):
 		var graphics := GraphicsQualitySettings.resolve(_settings, OS.has_feature("mobile"))
-		Engine.max_fps = int(graphics.frame_rate_limit)
+		_frame_limit = int(graphics.frame_rate_limit)
+		_configure_frame_limit()
 	# Web 没有原生窗口概念："fullscreen"在浏览器里必须由用户输入手势触发，
 	# 否则 requestFullscreen() 会被静默拒绝（见 DisplayServerWeb::window_set_mode
 	# 的报错提示）；WINDOW_FLAG_BORDERLESS / window_set_size 在 Web 平台也均为
@@ -176,6 +273,7 @@ func _validate() -> void:
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
 	_settings.autosave_enabled = bool(_settings.autosave_enabled)
 	_settings.reduce_motion = bool(_settings.reduce_motion)
+	_settings.event_pause_mask = clampi(int(_settings.event_pause_mask), 0, 65535)
 	_settings.ai_narrative_enabled = bool(_settings.get("ai_narrative_enabled", DEFAULTS.ai_narrative_enabled))
 	var llm_url := String(_settings.get("ai_llm_base_url", DEFAULTS.ai_llm_base_url)).strip_edges()
 	_settings.ai_llm_base_url = llm_url if not llm_url.is_empty() else String(DEFAULTS.ai_llm_base_url)

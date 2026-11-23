@@ -146,7 +146,7 @@ profession-class selector，查询时以 `_profession_class_index` 匹配，精�
 它声明六类来源（Trait、随机池、事件、玩家命令、科技、国家状态）、六类目标（家族、分支、
 聚落格、国家、气候格、格内建筑/商品/资源）、五类运算、三类生命周期、五类 stack policy 和
 八类 target selector（含 `NEIGHBORS_R1` / `NEIGHBORS_R2`，绑定处只对 `_building_neighbors`
-做 6/18 格扇出）。`default_family_effects.tres` 是指向官方 JSON 的薄包装；官方目录的新立族/分家会对随机池先做确定性的稀有标签抽取，约 20% 的家族获得一条独立效果，其余家族保持“只有家风偏好”的身份差异；已有 random_pool 绑定则跳过。小型测试目录保留原有确定性抽取语义。官方 49 条效果的威望倍率由 `tools/generate_family_official_buffs.py` 的 `FAMILY_DEF_BASE` / `mag_abs()` 从“绝对档位增量 ÷ 定义基础增量”算出，定义值取该效果的最高档增量，因此“定义增量 × 档位倍率”必须等于 `family_official_buffs.md` 的文案；档次、触发门槛、扩散范围、持续时间与堆叠上限随档位变化的有无取决于运行期是否支持（知识扩散按威望切 本地/距离1/距离2；时代鼓舞与共用水利为固定持续时间；百年老店为固定 6 层）。改档位数值时同步改设计表、定义值与触发目录三处。威望缩放的投资/出生/降雨门槛/抗寒容量在
+做 6/18 格扇出）。`default_family_effects.tres` 是指向官方 JSON 的薄包装；官方目录的新立族/分家会对随机池先做确定性的稀有标签抽取，约 20% 的家族获得一条独立效果，其余家族保持“只有家风偏好”的身份差异；已有 random_pool 绑定则跳过。小型测试目录保留原有确定性抽取语义。官方 48 条效果均按 `family_official_buffs.md` 的威望Ⅰ–Ⅴ逐档数值、触发门槛、扩散范围与持续时间精确编译（而非统一 `0.70–1.30` 倍率）。威望缩放的投资/出生/降雨门槛/抗寒容量在
 `FAMILY_COMMIT` 冻成 `_family_investment_factor_q16` / `_family_birth_factor_q16` /
 `_epoch_cell_rain_event_threshold_q16` / `_epoch_cell_cold_capacity_factor_q16`，热循环只读。
 「开枝散叶」按 membership 人口加权出生，禁止写 `economy.city.birth_factor`。后续内容包只需
@@ -353,7 +353,7 @@ building/market transaction
 
 出生与死亡不在本阶段：`EPOCH_BEGIN` 从持久化状态派生分支人口学行（占比、目标占比、困难度、
 出生/死亡权重，`family_demography_weights_ms`）；市场 worker 对可能含家族成员的 cohort 只发出
-`MarketResult.family_demography` 死亡事件，主线程合并时按死亡权重分摊到成员边与匿名；
+`MarketResult.family_demography` 死亡事件，经济执行器合并时按死亡权重分摊到成员边与匿名；
 `STRUCTURAL_COMMIT` 的出生命令按出生权重把新生儿记入家族在无业 cohort 的成员边。
 出生归属的家族基准份额取 `min(实际占比, 目标占比)`，其余基准份额留给匿名新生儿；
 超过目标的既有成员保持身份，因此纯家族开拓地通过后续出生逐步恢复匿名人口，而不会永久封闭立族来源。

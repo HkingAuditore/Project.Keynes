@@ -411,8 +411,8 @@ func _check_fog_gate_contract(source: String) -> void:
 			+ " own shape parameter, unrelated to fog)")
 	# 逐字：k 的三角形与迷雾显示走同一串调用。
 	for needle in ["pk_soft_warp_tiled(wp, wrap_period_x, fog_warp_freq, fog_warp_amp * hex_size)",
-			"pk_overlay_fog_tri(wp, g, wx_clamp_length(ws_fog, fog_amax))",
-			"pk_overlay_fog_weights(t_fog, g, fog_band)",
+			"pk_overlay_tri(wp, g, wx_clamp_length(ws_fog, fog_amax))",
+			"pk_hex_sharpen(t_fog.w_raw, fog_band)",
 			"pk_overlay_fog_k(w_fog,"]:
 		_expect(gate_block.contains(String(needle)),
 			"the fog gate block calls `%s`" % needle)
@@ -430,8 +430,8 @@ func _check_fog_gate_contract(source: String) -> void:
 		"vec2 fog_warp_raw = pk_soft_warp_tiled(", "fog_k_debug = k;")
 	_expect(not fog_block.is_empty(),
 		"the fog shader's k construction block is locatable (%d chars)" % fog_block.length())
-	var k_sequence := ["pk_soft_warp_tiled(", "pk_overlay_fog_tri(", "pk_overlay_fog_weights(",
-		"pk_overlay_fog_k(", "pk_overlay_fog_edge_k("]
+	var k_sequence := ["pk_soft_warp_tiled(", "pk_overlay_tri(", "pk_hex_sharpen(",
+		"pk_overlay_fog_k("]
 	var fog_positions: Array = []
 	var weather_positions: Array = []
 	for fn_name in k_sequence:

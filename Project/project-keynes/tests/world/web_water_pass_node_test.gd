@@ -437,10 +437,18 @@ func _check_cell_field_variant() -> void:
 	var attach_b := graphics_source.find("\nfunc ", attach_a + 1)
 	var attach_block := graphics_source.substr(attach_a, attach_b - attach_a) \
 		if attach_a >= 0 and attach_b > attach_a else ""
+	var order_host := HexRenderer.new()
+	order_host._world_quad = MeshInstance2D.new()
+	order_host.add_child(order_host._world_quad)
+	order_host.add_child(Node2D.new())
+	order_host._water_quad = MeshInstance2D.new()
+	order_host._graphics_details.attach_water_surface(order_host)
 	_expect(water_renderer.contains("host._water_quad.z_index = 0")
 			and water_renderer.contains("host._graphics_details.attach_water_surface(host)")
-			and attach_block.contains("move_child(host._water_quad"),
+			and attach_block.contains("move_child(host._water_quad")
+			and order_host._water_quad.get_index() == order_host._world_quad.get_index() + 1,
 		"draw order evidence: the water quad is moved right after the land quad")
+	order_host.free()
 	# Web 与桌面共用同一段**定序**代码 ⇒ 绘制顺序相同（平台分支只允许出现在编译失败
 	# 的回退里，不能出现在"谁盖谁"这段）。检查 z_index→挂接调用之间，以及挂接函数本身。
 	var order_a := water_renderer.find("host._water_quad.z_index = 0")

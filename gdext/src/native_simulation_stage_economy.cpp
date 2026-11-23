@@ -1,5 +1,6 @@
 #include <cassert>
 #include "native_simulation_day_context.h"
+#include "runtime_vision.h"
 #include "economy_runtime.h"
 #include "economy_authority_transfer.h"
 #include "pk_log.h"
@@ -94,18 +95,16 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
         // Host day loop when effective writer is STAGE_OPS (opt-in; start
         // gate still refuses until BOUNDED_KERNELS lands).
         if (climate_authority_requested && !active_climate_ok) {
-            // No peer wake source — arm a stall so day-wait timeout can fire
-            // instead of parking forever with stall=0x0.
+            // Keep the incomplete Climate boundary visible in diagnostics.
             note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER, plan.context.day);
             {
                 static int s_econ_climate_gate_left = 8;
                 if (s_econ_climate_gate_left-- > 0) {
                     pk::log_info(
-                        "[economy-climate-gate] day=%d climate_ok=0 "
-                        "stall=0x%x ring=%d",
-                        plan.context.day,
-                        static_cast<int64_t>(day_stall_reason_mask()),
-                        static_cast<int64_t>(_environment_ring.size()));
+                        "[economy-climate-gate] day=%lld climate_ok=0 "
+                        "stall=0x%x ring=%zu",
+                        static_cast<long long>(plan.context.day),
+                        day_stall_reason_mask(), _environment_ring.size());
                 }
             }
             stage.completed = 0;
@@ -118,6 +117,8 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
             stage.completed = 0;
             return true;
         }
+        if (_country_pod_authority.committed_day() == plan.context.day)
+            prepare_era_advancement_day(plan.context.day);
         const EconomyProductionWriter production_writer =
             economy_production_writer_effective();
         open_granted_economy_d7_gates(*this, *_economy_production_runtime);
@@ -154,6 +155,13 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                     worker_climate_input.geography[0] = std::move(climate_view.categories[2]);
                 if (climate_view.categories[3].size() == economy_day_input->fields[0].size())
                     worker_climate_input.geography[2] = std::move(climate_view.categories[3]);
+                economy_day_input = &worker_climate_input;
+            }
+            if (_executor_vision) {
+                if (economy_day_input != &worker_climate_input)
+                    worker_climate_input = *economy_day_input;
+                worker_climate_input.geography[5] = _executor_vision->frame->visible;
+                worker_climate_input.fog_solved = true;
                 economy_day_input = &worker_climate_input;
             }
             if (std::FILE *trace = sim_day_trace_file()) {
@@ -204,9 +212,6 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
         // (≥12 on a 6-country map); keep preparing until the fiscal peer
         // barrier clears or we hit a hard safety cap.
         constexpr int kMaxEconomyAssetRounds = 64;
-        // Probe mark: end of attempt/preflight and start of the formula loop.
-        // Timing only; it never gates a slice.
-        const auto economy_loop_started = std::chrono::steady_clock::now();
         for (int asset_round = 0; asset_round < kMaxEconomyAssetRounds;
              ++asset_round) {
             economy_pending_input = false;
@@ -216,25 +221,11 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 for (int slice = 0; slice < 64; ++slice) {
                     bool slice_done = false;
                     bool pending_input = false;
-                    const auto slice_started = std::chrono::steady_clock::now();
                     if (!worker_run_stage_ops_slice(
                             plan.context.day, plan.context.input_generation,
                             economy_error, &slice_done, &pending_input)) {
                         economy_fatal = true;
                         break;
-                    }
-                    // Probe: this writer bypasses NativeEconomyRuntime::run_slice*,
-                    // so account the slice here. Timing only.
-                    {
-                        godot::Dictionary slice_probe;
-                        slice_probe["done"] = slice_done || pending_input;
-                        slice_probe["elapsed_ms"] =
-                            std::chrono::duration<double, std::milli>(
-                                std::chrono::steady_clock::now() - slice_started)
-                                .count();
-                        slice_probe["yield_reason"] = slice_done
-                            ? godot::String("") : godot::String("budget");
-                        _economy_production_runtime->note_probe_slice(slice_probe);
                     }
                     if (pending_input) {
                         economy_pending_input = true;
@@ -346,25 +337,18 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                     _climate_wait_cv.notify_all();
                     _control_cv.notify_all();
                 }
-                if (fault_if_peer_stall_timed_out(
-                        plan.context.day,
-                        "economy_fiscal_peer_stall_timeout")) {
-                    stage.completed = 0;
-                    commit.preflight_ok = 0;
-                    return true;
-                }
                 {
                     static int s_fiscal_stall_left = 12;
                     if (s_fiscal_stall_left-- > 0) {
                         pk::log_info(
-                            "[economy-fiscal-stall] day=%d reason=%s "
-                            "stall=0x%x work=%d ring=%d climate_committed=%d",
-                            plan.context.day,
+                            "[economy-fiscal-stall] day=%lld reason=%s "
+                            "stall=0x%x work=%llu ring=%zu climate_committed=%lld",
+                            static_cast<long long>(plan.context.day),
                             std::string(economy_error.c_str()).c_str(),
-                            static_cast<int64_t>(day_stall_reason_mask()),
-                            static_cast<int64_t>(economy_work),
-                            static_cast<int64_t>(_environment_ring.size()),
-                            climate_committed);
+                            day_stall_reason_mask(),
+                            static_cast<unsigned long long>(economy_work),
+                            _environment_ring.size(),
+                            static_cast<long long>(climate_committed));
                     }
                 }
                 commit.continuation_pending = 1;
@@ -381,23 +365,16 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 static int s_unknown_pending_left = 12;
                 if (s_unknown_pending_left-- > 0) {
                     pk::log_info(
-                        "[economy-pending-stall] day=%d reason=%s "
-                        "stall=0x%x work=%d ring=%d",
-                        plan.context.day,
+                        "[economy-pending-stall] day=%lld reason=%s "
+                        "stall=0x%x work=%llu ring=%zu",
+                        static_cast<long long>(plan.context.day),
                         std::string(economy_error.empty()
                                           ? "pending_input"
                                           : economy_error.c_str()).c_str(),
-                        static_cast<int64_t>(day_stall_reason_mask()),
-                        static_cast<int64_t>(economy_work),
-                        static_cast<int64_t>(_environment_ring.size()));
+                        day_stall_reason_mask(),
+                        static_cast<unsigned long long>(economy_work),
+                        _environment_ring.size());
                 }
-            }
-            if (fault_if_peer_stall_timed_out(
-                    plan.context.day,
-                    "economy_pending_input_stall_timeout")) {
-                stage.completed = 0;
-                commit.preflight_ok = 0;
-                return true;
             }
             commit.continuation_pending = 1;
             stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
@@ -421,12 +398,6 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
         // slice done 也可能表示空闲或前置领域尚未就绪，不能伪造 epoch 提交。
         const auto economy_formulas_finished = std::chrono::steady_clock::now();
         _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_FORMULAS);
-        _economy_production_runtime->note_boundary_phase_ms(0,
-            std::chrono::duration<double, std::milli>(
-                economy_loop_started - economy_attempt_started).count());
-        _economy_production_runtime->note_boundary_phase_ms(1,
-            std::chrono::duration<double, std::milli>(
-                economy_formulas_finished - economy_loop_started).count());
         economy_day_done = economy_day_done &&
             !_economy_production_runtime->epoch_active() &&
             _economy_production_runtime->last_committed_day() >= 0;
@@ -492,24 +463,15 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 // capture → POD import would replace the bound object.
                 // Flush the domain mirrors into the Owned committed blocks
                 // and republish the snapshot from that live state instead.
-                const auto owned_flush_started = std::chrono::steady_clock::now();
                 _economy_production_runtime
                     ->flush_formula_owned_domain_mirrors();
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_CAPTURE);
-                const auto owned_publish_started = std::chrono::steady_clock::now();
-                _economy_production_runtime->note_boundary_phase_ms(3,
-                    std::chrono::duration<double, std::milli>(
-                        owned_publish_started - owned_flush_started).count());
                 ledger_published =
                     _economy_pod_authority.publish_owned_committed_mirror(
                         _economy_production_runtime->committed_generation(),
                         _economy_production_runtime->current_day(),
                         economy_error);
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_PUBLISH);
-                _economy_production_runtime->note_boundary_phase_ms(4,
-                    std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - owned_publish_started)
-                        .count());
             } else {
                 RuntimeEconomyLedgerState &ledger_state =
                     _economy_mirror_capture_scratch;
@@ -522,16 +484,10 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                         false);
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_CAPTURE);
                 const auto import_started = std::chrono::steady_clock::now();
-                _economy_production_runtime->note_boundary_phase_ms(3,
-                    std::chrono::duration<double, std::milli>(
-                        import_started - capture_started).count());
                 ledger_published =
                     _economy_pod_authority.import_and_publish_captured_ledger(
                         ledger_state, economy_error);
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_PUBLISH);
-                _economy_production_runtime->note_boundary_phase_ms(4,
-                    std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - import_started).count());
                 static thread_local unsigned mirror_samples = 0;
                 if (mirror_samples++ < 8) {
                     std::fprintf(stderr, "[economy-mirror-cost] day=%lld capture_ms=%.3f import_ms=%.3f\n",
@@ -579,10 +535,6 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 stages_ms,
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - economy_formulas_finished).count());
         }
-        // Probe: boundary publish segment (mirror capture/import + POD hash).
-        _economy_production_runtime->note_boundary_phase_ms(2,
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - economy_formulas_finished).count());
         // Phase 5: publish production snapshot into the Economy POD ring.
         {
             uint32_t ring_index = 0;

@@ -23,7 +23,7 @@ inline constexpr RuntimeModuleContract runtime_module_contracts[] = {
     {"gameplay_effect", RuntimeDomainId::GAMEPLAY_EFFECT, "per day", "commands", "host ingress counters and command queues", "RuntimeCommandPacket", 0, "PKSR.gameplay_effect_bytes"},
     {"economy", RuntimeDomainId::ECONOMY, "per day; epoch cadence unchanged", "climate, country, modifier", "RuntimeEconomyOwnedState", "CountryFiscalReturnIntent", 1, "ECP2;PKEC"},
     {"events", RuntimeDomainId::EVENTS, "per day", "economy, gameplay_effect", "RuntimeEventsSnapshot", "RuntimeCommandPacket", 1, "PKSR.events_bytes"},
-    {"visual", RuntimeDomainId::VISUAL, "per day dirty publication", "dirty families", "RuntimeVisualIntent", "RuntimeVisualIntent", 0, "none"},
+    {"visual", RuntimeDomainId::VISUAL, "per day dirty publication", "dirty families", "RuntimeCommitHeader", "none", 0, "none"},
     {"commit", RuntimeDomainId::COMMIT, "per completed day", "stage results", "RuntimeDayCommit", "none", 0, "PKSR"},
 };
 } // namespace pk

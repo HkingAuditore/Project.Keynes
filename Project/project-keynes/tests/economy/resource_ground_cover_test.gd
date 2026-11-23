@@ -38,9 +38,6 @@ func run() -> void:
 	world.lut_dims = Vector2i(map.cell_count(), 1)
 	_expect("layer configures with ground cover", bool(layer.configure(map, world, 22.0, intel).ok))
 	var cover: ResourceGroundCover = layer.ground_cover()
-	_expect("cover binds offset grid for high-quality field blending",
-		bool(cover.material().get_shader_parameter("cover_grid_bound"))
-		and cover.material().get_shader_parameter("cover_grid_dims") == Vector2(map.width, map.height))
 	_expect("cover sits below props in the same draw subtree", cover != null and layer.get_child(0) == cover and cover.z_index == 0 and not cover.top_level)
 	layer.set_context(false, 11)
 	var wheat := _index(styles, "bio.wheat")
@@ -88,10 +85,6 @@ func run() -> void:
 	_expect("no upload without an observation change", int(cover.diagnostics().uploads) == uploads)
 	cover.write_cell(1, Color8(16, 200, 0, 0))
 	_expect("uploads are throttled", not cover.flush() and cover.dirty())
-	# Layer 0 (r8 / 16 == 0, g8 > 0) must still compute non-zero edge weight against empty neighbors.
-	cover.write_cell(0, Color8(0, 220, 0, 0))
-	_expect("layer 0 cell computes non-zero edge weight", cover._edge_image.get_pixel(0, 0).r > 0.0)
-	cover.write_cell(0, Color(0, 0, 0, 0))
 	layer.set_context(true, 11)
 	map.visible_arr[3] = 0
 	map.bio_occupancy_bits_arr[3] = 0

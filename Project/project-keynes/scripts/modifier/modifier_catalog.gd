@@ -485,31 +485,6 @@ func _compile_native_catalog(context) -> Dictionary:
 		out.stat_persistable.append(1)
 		stat_domains_by_id.append(1)
 		stat_allowed_operations_by_id.append(1)
-	# Per-political-class satisfaction bias: ADD only (1), folded into each
-	# profession of that class (and unemployed cohorts for `general`) at epoch freeze.
-	var political_class_ids: Array[String] = []
-	for value in economy.get("profession_class_ids", PackedStringArray()):
-		var class_id := String(value).strip_edges()
-		if class_id.is_empty():
-			class_id = "general"
-		if not political_class_ids.has(class_id):
-			political_class_ids.append(class_id)
-	if not political_class_ids.has("general"):
-		political_class_ids.append("general")
-	political_class_ids.sort()
-	for class_id in political_class_ids:
-		var class_satisfaction_key := StringName(
-			"economy.class.%s.satisfaction_bp" % class_id)
-		if stat_ids.has(class_satisfaction_key):
-			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
-		stat_ids[class_satisfaction_key] = out.stat_keys.size()
-		out.stat_keys.append(String(class_satisfaction_key))
-		out.stat_domains.append(1)
-		out.stat_min_values.append(-2500.0)
-		out.stat_max_values.append(2500.0)
-		out.stat_persistable.append(1)
-		stat_domains_by_id.append(1)
-		stat_allowed_operations_by_id.append(1)
 	# Fill the two aggregate columns in one pass, at the end, in `stat_keys` order.
 	# Doing it here instead of at the eight append sites is deliberate: a stat can
 	# be declared by the resource, by a constant table, by an economy-derived loop
@@ -844,12 +819,6 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 						"unit": UNIT_POINTS, "profession_id": parts[2],
 						"profession_metric": "satisfaction"}
 			return {}
-		# economy.class.<class_id>.satisfaction_bp
-		if parts[0] == "economy" and parts[1] == "class" \
-				and parts[3] == "satisfaction_bp":
-			var class_label := String(POLITICAL_CLASS_DISPLAY_NAMES.get(
-				parts[2], parts[2]))
-			return {"label": "%s满意度" % class_label, "unit": UNIT_POINTS}
 		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
 		if parts[0] == "country" and parts[1] == "resource":
 			var resource_name := display_name_of(&"resource", parts[2])
@@ -1021,14 +990,6 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			"提高" if delta > 0.0 else "降低", absi(percent)]
 	return "%s %+d%%" % [label, percent]
 
-
-const POLITICAL_CLASS_DISPLAY_NAMES := {
-	"farmer": "农民阶层",
-	"worker": "工人阶层",
-	"technology": "科技阶层",
-	"military": "军事阶层",
-	"general": "普通阶层",
-}
 
 const PROFESSION_DISPLAY_NAMES := {
 	"agricultural_worker": "农业工人",

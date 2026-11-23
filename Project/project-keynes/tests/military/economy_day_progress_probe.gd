@@ -126,7 +126,7 @@ func _run() -> int:
 		if _generator.has_method("get_economy_facade") else null
 	_facade = _generator.get_military_facade() \
 		if _generator.has_method("get_military_facade") else null
-	if _host.runtime_climate_authority_enabled and _ext != null \
+	if _host._native_environment_active and _ext != null \
 			and _ext.has_method("set_runtime_clock"):
 		_ext.set_runtime_clock(false, 50.0)
 
@@ -138,7 +138,7 @@ func _run() -> int:
 	var policy: Dictionary = auth_diag.get("authority_policy", {})
 	var boot_thread := _thread_fields()
 	print("[econ-probe] boot graph_active=%s climate_authority_enabled=%s policy_enabled=%s policy_reason=%s" % [
-		str(graph_active), str(_host.runtime_climate_authority_enabled),
+		str(graph_active), str(_host._native_environment_active),
 		str(policy.get("enabled", "?")), str(policy.get("reason", "?"))])
 	print("[econ-probe] boot thread %s" % JSON.stringify(boot_thread))
 	print("[econ-probe] boot econ %s" % JSON.stringify(_econ_fields()))
@@ -203,16 +203,9 @@ func _step_one_day() -> void:
 	_day += 1
 	_clock.current_day = float(_day)
 	var phase := _clock.season_phase_for_day(_day)
-	if _host.runtime_climate_authority_enabled:
-		var capacity_deadline := Time.get_ticks_usec() + 60000000
-		while not bool(_host.wait_for_climate_consumed(0).get("ok", true)) \
-				and Time.get_ticks_usec() < capacity_deadline:
-			_host._consume_runtime_commit_if_ready()
-			await process_frame
-		_host._consume_runtime_commit_if_ready()
-	_host.run_daily_tick(_day, phase)
+	_host._admit_runtime_calendar(_day + 1)
 	_host.finish_daily_tick(0.0, {})
-	if _host.runtime_climate_authority_enabled:
+	if _host._native_environment_active:
 		var deadline := Time.get_ticks_usec() + 60000000
 		while Time.get_ticks_usec() < deadline:
 			_host._consume_runtime_commit_if_ready()

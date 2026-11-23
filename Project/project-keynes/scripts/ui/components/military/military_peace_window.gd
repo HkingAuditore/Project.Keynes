@@ -353,7 +353,7 @@ func _paint_log(rows: Array) -> void:
 		label.visible = index < rows.size()
 		if label.visible:
 			var row: Dictionary = rows[index]
-			label.text = "%s · %s · %s" % [WorldClock.date_text_for_day(int(row.get("day", 0))),
+			label.text = "第 %d 日 · %s · %s" % [int(row.get("day", 0)),
 				String(row.get("kind", "战事")), String(row.get("text", ""))]
 
 
@@ -445,7 +445,7 @@ func _track_cooldown(data: Dictionary) -> void:
 		return
 	if _cooldown_until <= day:
 		_cooldown_until = _submitted_day + PEACE_COOLDOWN_DAYS
-		_set_status("对方未接受这次和议：%s之后可再次提出。" % WorldClock.date_text_for_day(_cooldown_until), true)
+		_set_status("对方未接受这次和议：第 %d 日后可再次提出。" % _cooldown_until, true)
 
 
 func _blocked_reason() -> String:
@@ -457,7 +457,7 @@ func _blocked_reason() -> String:
 	if _submitted_day >= 0 and day <= _submitted_day:
 		return "今日已递交，次日答复。"
 	if _submitted_day >= 0 and _cooldown_until > day:
-		return "对方已拒绝：%s之后可再次提出。" % WorldClock.date_text_for_day(_cooldown_until)
+		return "对方已拒绝：第 %d 日后可再次提出。" % _cooldown_until
 	if draft_terms().is_empty():
 		return "先勾选条款（白和平也是一份和约）。"
 	if _controller == null:

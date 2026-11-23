@@ -13,6 +13,10 @@ bool self_test() noexcept {
                   daily_insolation(0.5f, 2.0f, 23.5f)) > 1e-6f) return false;
     const float equator_day = day_length_norm(0.5f, 0.0f, 23.5f);
     if (equator_day <= 0.0f || equator_day >= 1.0f) return false;
+    // This latitude exposed different tan/acos rounding on macOS and Web.
+    constexpr float sample_latitude = 19.0f / 64.0f;
+    if (day_length_norm(sample_latitude, 0.0f, 23.44f) != 0x1.954b12p-2f ||
+        daily_insolation(sample_latitude, 0.0f, 23.44f) != 0x1.9cd150p-2f) return false;
     if (surface_absorbed_factor(false, 0.30f) != 1.0f ||
         surface_absorbed_factor(false, 0.0f) >= 1.0f ||
         surface_absorbed_factor(true, 0.0f) >= 1.0f) return false;

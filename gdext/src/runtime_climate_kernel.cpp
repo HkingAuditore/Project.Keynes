@@ -1,4 +1,5 @@
 #include "runtime_climate_kernel.h"
+#include "simulation_math.h"
 #include "runtime_climate_weather_input.h"
 #include "economy_cost_probe.h"
 #include "parallel_dispatcher.h"
@@ -311,7 +312,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
         const double diffuse = std::clamp(double(k.wind_momentum_diffuse_w_daily), 0.0, 0.5);
         w.momentum_active = w.momentum_advect_w > 0.0 || diffuse > 0.0;
         const double grid_s = std::sqrt(double(n) / 15000.0);
-        w.diffuse_w = std::min(0.5, (1.0 - std::pow(1.0 - diffuse, elapsed)) * grid_s * grid_s);
+        w.diffuse_w = std::min(0.5, (1.0 - simulation_math::pow(1.0 - diffuse, elapsed)) * grid_s * grid_s);
         std::vector<float> fx, fy;
         if (w.momentum_active) {
             fx.resize(n); fy.resize(n);
@@ -989,7 +990,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                           current.terrain.size() == n) ? current.terrain.data() : input.terrain.data();
             cl.temp = current.temperature.data();
             cl.wind_x = _physics.wind_x.data(); cl.wind_y = _physics.wind_y.data(); cl.wind_speed = _physics.wind_speed.data();
-            cl.vapor = current.vapor.data(); cl.instability = current.instability.data(); cl.convergence = current.convergence.data();
+            cl.vapor = current.vapor.data(); cl.instability = current.instability.data();
             pk_async_climate::CycloneStamp stamp;
             stamp.force_tag = _cyclone_force_tag.data(); stamp.visit_tag = _cyclone_visit_tag.data();
             stamp.force_x = _cyclone_force_x.data(); stamp.force_y = _cyclone_force_y.data(); stamp.lift = _cyclone_lift.data();
@@ -1140,7 +1141,10 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // 生产 stage 11（consume_feedback_buffers）在 climate round / hydrology 之前
     // 把 VGP *= decay。放在全部 stage 之后会让当天 hydrology 仍按未衰减的 VGP
     // 抽水，比完之后 VGP 本身却是绿的——day 28 的 moisture/PAW/河网链就是这样。
-    if (input.climate_seasonal_feedback_ran &&
+    if (input.season_growth_pressure.size() == current.cell_count) {
+        next.vegetation_growth_pressure = input.season_growth_pressure;
+        next.vegetation = input.vegetation;
+    } else if (input.climate_seasonal_feedback_ran &&
         next.vegetation_growth_pressure.size() == current.cell_count) {
         const float decay = input.climate_seasonal_feedback_decay;
         if (std::isfinite(decay)) {
@@ -2308,8 +2312,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                     wx.wind_x.size() == cells && wx.wind_y.size() == cells &&
                     wx.wind_speed.size() == cells && wx.temp_read.size() == cells &&
                     wx.terrain.size() == cells && neighbors.size() >= cells * 6u &&
-                    next.vapor.size() == cells && next.instability.size() == cells &&
-                    next.convergence.size() == cells) {
+                    next.vapor.size() == cells && next.instability.size() == cells) {
                     pk_async_climate::CycloneAdvanceKnobs cyc;
                     cyc.enabled = true;
                     cyc.dt_days = input.cyclone_dt_days;
@@ -2326,12 +2329,9 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                     cyc_lanes.wind_x = wx.wind_x.data();
                     cyc_lanes.wind_y = wx.wind_y.data();
                     cyc_lanes.wind_speed = wx.wind_speed.data();
-                    // 与生产同源：生产在 solve 循环之前解引用的是 slot 里"上一轮"的
-                    // vapor / instability / convergence，worker 侧对应 next.*（本段
-                    // 尚未被本次 solve 覆盖）。
+                    // 水汽和不稳定度仍取本次天气计算开始前的已提交值。
                     cyc_lanes.vapor = next.vapor.data();
                     cyc_lanes.instability = next.instability.data();
-                    cyc_lanes.convergence = next.convergence.data();
                     cyc_lanes.lat_norm = input.cell_lat_norm.size() == cells
                         ? input.cell_lat_norm.data() : nullptr;
                     pk_async_climate::CycloneStamp cyc_stamp;
@@ -2541,13 +2541,12 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 next.weather_precipitation.size() == cells &&
                 next.cloud_cover.size() == cells &&
                 next.instability.size() == cells &&
-                next.convergence.size() == cells &&
                 next.temperature.size() == cells) {
                 const auto &water_ids =
                     input.climate_round_static_knobs.water_terrain_ids;
                 if (water_ids.size() > 0u && wx.terrain.size() == cells &&
-                    wx.pos_y.size() == cells && wx.wind_x.size() == cells &&
-                    wx.wind_y.size() == cells &&
+                    wx.pos_x.size() == cells && wx.pos_y.size() == cells &&
+                    wx.wind_x.size() == cells && wx.wind_y.size() == cells &&
                     neighbors.size() >= cells * 6u) {
                     uint8_t water_lut[256] = {};
                     for (size_t k = 0; k < water_ids.size(); ++k) {
@@ -2589,10 +2588,12 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                     gen_lanes.precip = next.weather_precipitation.data();
                     gen_lanes.cloud = next.cloud_cover.data();
                     gen_lanes.instability = next.instability.data();
-                    gen_lanes.convergence = next.convergence.data();
                     gen_lanes.wind_x = wx.wind_x.data();
                     gen_lanes.wind_y = wx.wind_y.data();
+                    gen_lanes.wind_speed = wx.wind_speed.data();
+                    gen_lanes.pos_x = wx.pos_x.data();
                     gen_lanes.pos_y = wx.pos_y.data();
+                    gen_lanes.wrap_width_x = input.cyclone_wrap_width_x;
                     gen_lanes.lat_norm = input.cell_lat_norm.size() == cells
                         ? input.cell_lat_norm.data() : nullptr;
                     gen_lanes.neighbors = neighbors.data();
@@ -3229,7 +3230,6 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
         std::vector<float> temp(kCells, 0.90f), wind_x(kCells, 1.0f);
         std::vector<float> wind_y(kCells, 0.0f), wind_speed(kCells, 0.80f);
         std::vector<float> vapor(kCells, 0.85f), instability(kCells, 0.80f);
-        std::vector<float> convergence(kCells, 0.70f);
         for (int i = 0; i < kCells; ++i) pos_x[static_cast<size_t>(i)] = float(i);
         pk_async_climate::CycloneAdvanceKnobs knobs;
         knobs.enabled = true;
@@ -3249,7 +3249,6 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
         lanes.wind_speed = wind_speed.data();
         lanes.vapor = vapor.data();
         lanes.instability = instability.data();
-        lanes.convergence = convergence.data();
         std::vector<uint32_t> tag(kCells, 0u), visit(kCells, 0u);
         std::vector<float> fx(kCells, 0.0f), fy(kCells, 0.0f), lift(kCells, 0.0f);
         pk_async_climate::CycloneStamp stamp;
@@ -3298,8 +3297,7 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
             error = "cyclone_state_codec_failed";
             return false;
         }
-        // genesis 自检：同一份 lanes 连续调用两次 —— 第一次注入 1 个，第二次
-        // 命中同键变成 replaced，不该重复出生。
+        // 气旋生成自检：第一次最多注入两个，第二次只刷新同键气旋。
         {
             constexpr int kGenCells = 3;
             uint8_t water_lut[256] = {};
@@ -3311,8 +3309,8 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
             std::vector<float> gen_temp(kGenCells, 0.90f);
             std::vector<float> gen_precip(kGenCells, 0.20f);
             std::vector<float> gen_cloud(kGenCells, 0.50f);
-            std::vector<float> gen_inst(kGenCells, 0.60f);
-            std::vector<float> gen_conv(kGenCells, 0.50f);
+            std::vector<float> gen_inst = {0.60f, 0.10f, 0.10f};
+            std::vector<float> gen_posx = {0.0f, 1.0f, 2.0f};
             std::vector<float> gen_wx(kGenCells, 1.0f);
             std::vector<float> gen_wy(kGenCells, 0.0f);
             std::vector<float> gen_posy = {0.35f, 0.35f, 0.35f};
@@ -3334,7 +3332,7 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
             gen_lanes.precip = gen_precip.data();
             gen_lanes.cloud = gen_cloud.data();
             gen_lanes.instability = gen_inst.data();
-            gen_lanes.convergence = gen_conv.data();
+            gen_lanes.pos_x = gen_posx.data();
             gen_lanes.wind_x = gen_wx.data();
             gen_lanes.wind_y = gen_wy.data();
             gen_lanes.pos_y = gen_posy.data();
@@ -3346,17 +3344,17 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
             pk_async_climate::cyclone_genesis_pure(kGenCells, gen, gen_lanes,
                                                   gen_entries, gen_next_id,
                                                   gen_stats);
-             // births_per_commit=2、3 个同条件格：按 cell 升序注入 2 个后停。
-             if (gen_stats.injected != 2 || gen_entries.size() != 2u ||
-                 gen_next_id != 3u || gen_stats.cand_water != 3 ||
-                 gen_stats.cand_shear != 3) {
+            // 水格 1 和 2 靠原向内风评分达标，尽管不稳定度不足。
+            if (gen_stats.injected != 2 || gen_entries.size() != 2u ||
+                gen_next_id != 3u || gen_stats.cand_water != 3 ||
+                gen_stats.cand_shear != 3 || gen_entries[0].cell_idx != 0 ||
+                gen_entries[1].cell_idx != 1) {
                 error = "cyclone_genesis_inject_failed";
                 return false;
              }
-             // 第二次调用把容量压到已满：同键（0/1）走 replaced，第 3 格因容量
-             // 被挡住，不该再出生，也不该产生重复条目。
-             gen.capacity = 2;
-             pk_async_climate::cyclone_genesis_pure(kGenCells, gen, gen_lanes,
+            // 第二次调用把容量压到已满：同键（0/1）刷新，第 3 格因容量被挡住。
+            gen.capacity = 2;
+            pk_async_climate::cyclone_genesis_pure(kGenCells, gen, gen_lanes,
                                                   gen_entries, gen_next_id,
                                                   gen_stats);
             if (gen_stats.injected != 0 || gen_stats.replaced != 2 ||

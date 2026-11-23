@@ -19,6 +19,7 @@ var failures := 0
 var checks := 0
 var capture_dir := "res://tmp/trade_activity_qa/lighting"
 var layer: TradeActivityLayer
+var target: SubViewport
 
 func _init() -> void: call_deferred("_run")
 func expect(label: String, passed: bool) -> void:
@@ -29,19 +30,24 @@ func expect(label: String, passed: bool) -> void:
 func _run() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("capture_dir="): capture_dir = argument.trim_prefix("capture_dir=")
-	root.size = Vector2i(1280, 900)
-	root.transparent_bg = true
+	if not root.is_node_ready():
+		await root.ready
+	target = SubViewport.new()
+	target.size = Vector2i(1280, 900)
+	target.transparent_bg = true
+	target.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	root.add_child(target)
 	var map := TestMap.new()
 	var camera := Camera2D.new()
-	root.add_child(camera)
+	target.add_child(camera)
 	camera.position = Vector2(760, 396)
 	camera.zoom = Vector2(0.75, 0.75)
 	camera.make_current()
 	var host := Host.new()
-	root.add_child(host)
+	target.add_child(host)
 	var economy := Economy.new()
 	layer = Layer.new()
-	root.add_child(layer)
+	target.add_child(layer)
 	layer.configure(map, camera, host, null, economy, null)
 	layer.set_process(false)
 	await process_frame
@@ -139,7 +145,7 @@ func _run() -> void:
 			"away": away, "blocked": blocked, "gi_off": no_gi, "gi_on": gi,
 			"tiled": tiled, "shadow": shadow, "no_shadow": no_shadow})
 		# Ground-colour art preview, captured after all alpha-based pixel checks.
-		root.transparent_bg = false
+		target.transparent_bg = false
 		RenderingServer.set_default_clear_color(Color(0.50, 0.54, 0.33))
 		layer.set_daylight_parameters({"day_night_enabled": false, "tod_debug_sun_position_enabled": true,
 			"tod_sun_dir": Vector3(0.75, -0.25, 0.61).normalized()})
@@ -152,13 +158,12 @@ func _run() -> void:
 		layer._expire_records()
 		await _image("all_objects_preview")
 	layer.clear()
+	layer.refresh_terrain_lighting(context.source)
 	expect("clear releases previous map lighting fields", not bool(layer._material.get_shader_parameter("terrain_normal_tex_bound"))
 		and layer._shadow_material.get_shader_parameter("visual_horizon_tiles") == null)
 	print("=== trade lighting: %d checks, %d failures ===" % [checks, failures])
 	context.clear()
-	layer.queue_free()
-	host.queue_free()
-	camera.queue_free()
+	target.queue_free()
 	await process_frame
 	quit(0 if failures == 0 else 1)
 
@@ -180,9 +185,9 @@ func _snapshot(all_styles: bool) -> Dictionary:
 	return out
 
 func _image(label: String) -> Image:
-	for frame in 6: await process_frame
-	await RenderingServer.frame_post_draw
-	var image := root.get_texture().get_image()
+	await process_frame
+	RenderingServer.force_draw(false)
+	var image := target.get_texture().get_image()
 	DirAccess.make_dir_recursive_absolute(capture_dir)
 	image.save_png(capture_dir.path_join(label + ".png"))
 	return image
@@ -245,8 +250,8 @@ func _check_style_footprint(style: int) -> void:
 	expect(name + " low sun still stretches the shadow", low_sun.width > footprint.width * 1.15)
 	layer._batch.visible = true
 	layer.set_daylight_parameters({"tod_sun_dir": Vector3(0, 0, 1)})
-	root.transparent_bg = false
+	target.transparent_bg = false
 	RenderingServer.set_default_clear_color(Color(0.50, 0.54, 0.33))
 	await _image(name + "_preview")
-	root.transparent_bg = true
+	target.transparent_bg = true
 	print("[trade-footprint] ", {"style": name, "body": body, "footprint": footprint, "low_sun": low_sun})

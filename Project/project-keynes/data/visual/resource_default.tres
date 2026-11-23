@@ -23,4 +23,3 @@ palette_saturation = 0.88
 ground_cover_opacity = 0.92
 ground_cover_clump_strength = 0.35
 ground_cover_taps = PackedInt32Array(1, 1, 3)
-ground_cover_edge_blend_strength = 0.85

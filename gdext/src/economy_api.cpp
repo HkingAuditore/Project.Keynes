@@ -2,13 +2,50 @@
 // No logic lives here: each function calls exactly one member, unchanged.
 #include "economy_api.h"
 #include "economy_runtime.h"
+#include "runtime_economy_display.h"
 
 namespace pk {
 namespace economy_api { bool military_purchase_receipt(const NativeEconomyRuntime &e, int64_t s, int64_t &q, int64_t &c) { return e.military_purchase_receipt(s, q, c); } }
 namespace economy_api {
 
+void serve_read_view(NativeEconomyRuntime &economy, bool requested) { economy.serve_read_view(requested); }
+std::vector<RuntimeGdpCell> capture_settlement_output(
+        const NativeEconomyRuntime &economy, uint64_t country) {
+    return economy.capture_settlement_output(country);
+}
+
+godot::Dictionary fiscal_snapshot(const NativeEconomyRuntime &economy, int64_t country) {
+    return economy.fiscal_snapshot(country);
+}
+
+EconomyNaturalResourceCatalogView natural_resource_catalog(const NativeEconomyRuntime &economy) {
+    return economy.natural_resource_catalog();
+}
+
+void configure_natural_resources(NativeEconomyRuntime &economy,
+                                 const std::vector<EconomyNaturalResourceProfile> &profiles) {
+    economy.configure_worker_natural_resources(profiles);
+}
+
+bool natural_resources_configured(const NativeEconomyRuntime &economy) {
+    return economy.worker_natural_resources_configured();
+}
+
+bool natural_resources_seeded(const NativeEconomyRuntime &economy) {
+    return economy.worker_resource_seeded();
+}
+
+bool seed_natural_resources(NativeEconomyRuntime &economy, int64_t day,
+                           const std::vector<const float *> &reserves,
+                           const std::vector<const float *> &changes) {
+    return economy.seed_worker_resource_reserves(day, reserves, changes);
+}
+
 godot::Dictionary detail_report(const NativeEconomyRuntime &economy) {
     return economy.report();
+}
+godot::Dictionary named_settlement_snapshot(const NativeEconomyRuntime &economy) {
+    return economy.named_settlement_snapshot();
 }
 bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
     const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
@@ -155,7 +192,16 @@ void notify_era_milestone_activated(NativeEconomyRuntime &economy,
 
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 void military_read_cell_view(const NativeEconomyRuntime &economy, EconomyMilitaryCellView &out, int32_t good_count) { economy.military_read_cell_view(out, good_count); }
-void military_read_market(const NativeEconomyRuntime &economy, int32_t good, std::vector<int32_t> &out_cells, std::vector<int64_t> &out_sellable, std::vector<int64_t> &out_price) { economy.military_read_market(good, out_cells, out_sellable, out_price); }
+void military_read_market(const NativeEconomyRuntime &economy, int32_t good,
+    std::vector<int32_t> &cells, std::vector<int64_t> &sellable,
+    std::vector<int64_t> &price, std::vector<uint8_t> &stocked) {
+    economy.military_read_market(good, cells, sellable, price, stocked);
+}
+void military_read_equipment_production(const NativeEconomyRuntime &economy,
+    const std::vector<int32_t> &cells, const std::vector<uint8_t> &equipment,
+    std::vector<uint8_t> &out) {
+    economy.military_read_equipment_production(cells, equipment, out);
+}
 int32_t military_soldier_profession(NativeEconomyRuntime &economy) { return economy.military_soldier_profession(); }
 int32_t military_unemployed_profession(const NativeEconomyRuntime &economy) { return economy.military_unemployed_profession(); }
 int32_t military_merchant_profession(const NativeEconomyRuntime &economy) { return economy.military_merchant_profession(); }
@@ -186,8 +232,58 @@ void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy) { economy.
 
 // ---- State building and procurement bindings (world_ext_economy.cpp, world_ext_military.cpp)
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units) { return economy.military_read_state_buildings(out_cells, out_type_ids, out_state_roles, out_units); }
-godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_build(country_handle, cell_idx, type_id, effective_day, sequence, queue_for_worker); }
-godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_demolish(country_handle, cell_idx, type_id, count, effective_day, sequence, queue_for_worker); }
+godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order) { return economy.queue_treasury_sponsored_build(country_handle, cell_idx, type_id, effective_day, sequence, queue_for_worker, military_order); }
+godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order) { return economy.queue_treasury_sponsored_demolish(country_handle, cell_idx, type_id, count, effective_day, sequence, queue_for_worker, military_order); }
+godot::Dictionary family_colonization_quotes(NativeEconomyRuntime &economy,
+    int64_t country, int32_t target, int64_t family, int32_t source, int32_t offset, int32_t limit,
+    const uint8_t *visible, int32_t visible_count, uint64_t vision_revision) {
+    return economy.family_colonization_quotes(country, target, family, source, offset, limit,
+        visible, visible_count, vision_revision);
+}
+godot::Dictionary family_colonization_quote_detail(const NativeEconomyRuntime &economy,
+    int64_t quote, int64_t population) {
+    return economy.family_colonization_quote_detail(quote, population);
+}
+godot::Dictionary submit_family_colonization_start(NativeEconomyRuntime &economy,
+    int64_t country, int64_t family, int32_t source, int32_t target, int64_t population,
+    int64_t quote, int64_t day, int64_t sequence, const uint8_t *visible,
+    int32_t visible_count, uint64_t vision_revision, bool queue_for_worker) {
+    return economy.submit_family_colonization_start(country, family, source, target, population,
+        quote, day, sequence, visible, visible_count, vision_revision, queue_for_worker);
+}
+godot::Dictionary country_procurement_snapshot(const NativeEconomyRuntime &economy, int64_t country) {
+    return economy.country_procurement_snapshot(country);
+}
+godot::Dictionary submit_family_colonization_cancel(NativeEconomyRuntime &economy,
+    int64_t country, int64_t expedition, int64_t day, int64_t sequence) {
+    return economy.submit_family_colonization_cancel(country, expedition, day, sequence, true);
+}
+int32_t player_family_founding_offer(const NativeEconomyRuntime &economy) {
+    return economy.player_family_founding_offer();
+}
+godot::Dictionary family_founding_offer(const NativeEconomyRuntime &economy, int32_t offset) {
+    return economy.family_founding_offers(offset, 1);
+}
+godot::Dictionary submit_family_founding_choice(NativeEconomyRuntime &economy,
+    int64_t offer, int64_t generation, int32_t choice, int64_t day, int64_t sequence,
+    bool check_now) {
+    return economy.submit_family_founding_choice(offer, generation, choice, day, sequence, check_now);
+}
+godot::Array take_family_founding_receipts(NativeEconomyRuntime &economy) {
+    return economy.take_family_founding_receipts();
+}
+godot::Dictionary queue_canal_construction(NativeEconomyRuntime &economy,
+    int64_t country, int64_t quote, int64_t day, int64_t sequence) {
+    return economy.queue_canal_construction(country, quote, day, sequence);
+}
+godot::Dictionary era_advancement_economy_summary(const NativeEconomyRuntime &economy, int64_t country) {
+    return economy.country_economy_overview(country, "summary", -1, -1, 0, 64);
+}
+godot::Dictionary set_era_procurement_target(NativeEconomyRuntime &economy,
+        int64_t country, bool active, const godot::PackedInt32Array &goods,
+        const godot::PackedInt64Array &quantities, int64_t day, int64_t sequence) {
+    return economy.set_era_procurement_target(country, active, goods, quantities, day, sequence);
+}
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp) { return economy.set_country_procurement_policy(country_handle, enabled, treasury_share_bp, research_share_bp, effective_day, sequence, era_share_bp, colonization_share_bp); }
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy) { return economy.trade_topology_ready_for_test(); }
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell) { return economy.trade_passable_for_test(cell); }

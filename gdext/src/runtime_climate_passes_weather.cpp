@@ -820,14 +820,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         const float effective_precip_floor = on_water ? 0.014f : 0.018f;
         if (precip < 0.003f) precip = 0.0f;
         const float provisional_cloud = dc_clampf(cloud_water * 1.10f + condensation * 0.25f, 0.0f, 1.0f);
-        // W6：分类器温度距平。W6 之前 TANO 在 native daily 路径恒为 nullptr（计划 F13），
-        // 所以 DROUGHT/HEATWAVE 两条分支结构性不可达；host 现在会填 lane，这里加钳制。
-        float temp_anom_i = (TANO != nullptr) ? TANO[i] : 0.0f;
-        {
-            const float cap = knobs.classify_anomaly_cap;
-            if (temp_anom_i > cap) temp_anom_i = cap;
-            else if (temp_anom_i < -cap) temp_anom_i = -cap;
-        }
+        const float temp_anom_i = (TANO != nullptr) ? TANO[i] : 0.0f;
         const float snow_cover_cls = (SNOWR != nullptr) ? SNOWR[i] : 0.0f;
         uint8_t pre_wt = wf_classify_field_weather_at(
             temp, vapor, provisional_cloud, cloud_water, precip, instability,
@@ -889,7 +882,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
             std::max(onshore_moist_flux, coastal_monsoon_flux),
             cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls,
             knobs.classify_gate_land, knobs.classify_gate_water);
-        if (cyclone_lift >= 0.58f && on_water) {
+        if (cyclone_lift >= 0.58f && on_water && wf_is_precip_weather_type(wt)) {
             wt = cyclone_storm_type_id;
         }
         if (!wf_is_precip_weather_type(wt) && precip > 0.0f) {
@@ -923,7 +916,8 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         if (refresh_convergence && apply_convergence_boost) {
             wf_apply_frontal_convergence_boost_idx(
                 i, TR, AA, NB, climate_anomaly, convergence,
-                temp, vapor, ocean_an,
+                temp, vapor, ocean_an, cloud_water, on_water,
+                on_water ? knobs.classify_gate_water : knobs.classify_gate_land,
                 cloud, precip, instability, wt, intensity);
         }
 

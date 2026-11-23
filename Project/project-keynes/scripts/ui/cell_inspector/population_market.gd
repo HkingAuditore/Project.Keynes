@@ -499,7 +499,6 @@ func _population_category(host, snapshot: Dictionary, market_snapshot: Dictionar
 		"gauges": gauges,
 		"metrics": local_metrics,
 		"cohort_rows": rows,
-		"class_discontent": snapshot.get("class_discontent", {}),
 		"list_header": {"lead": "阶层 · 族群 · 生活水平 · 满意度" if mixed_identity else "阶层 · 生活水平 · 满意度",
 			"indent": 41.0, "columns": [
 			{"text": "人口", "width": 54.0}, {"text": "存款/净收", "width": 72.0}]},
@@ -1243,7 +1242,7 @@ func _build_trade_orders_model(host, page: Dictionary,
 	if waiting_receivers > 0:
 		page_text += " · 待收款 %d 笔" % waiting_receivers
 	if first_arrival >= 0 and not rows.is_empty():
-		page_text += " · 最近到达 %s" % WorldClock.date_text_for_day(first_arrival)
+		page_text += " · 最近到达 第 %d 天" % (first_arrival + 1)
 	var ids = PackedStringArray()
 	for value in order_ids:
 		ids.append(str(int(value)))
@@ -1311,8 +1310,8 @@ func _trade_order_tooltip(host, order_id: int, direction: int, counterpart_name:
 	if counterpart_visible and source_price > 0 and destination_price > 0:
 		lines.append("单价：%s → %s" % [
 			host._money_text(source_price), host._money_text(destination_price)])
-	lines.append("出发 %s → 到达 %s（%s）" % [
-		WorldClock.date_text_for_day(departure), WorldClock.date_text_for_day(arrival),
+	lines.append("出发 第 %d 天 → 到达 第 %d 天（%s）" % [
+		departure + 1, arrival + 1,
 		"今日到达" if remaining <= 0 else "剩余 %d 日" % remaining])
 	lines.append("托管现金 %s · 运力 %s" % [
 		host._money_text(escrow),

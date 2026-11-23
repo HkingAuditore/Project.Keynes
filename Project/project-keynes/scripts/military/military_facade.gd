@@ -86,17 +86,9 @@ var _last_configure_result: Dictionary = {}
 var _last_daily_report: Dictionary = {}
 var _terrain_signature := 0
 var _terrain_cells := 0
-var _terrain_width := 0
-var _terrain_height := 0
-## 上一次成功推送的邻居表。原生只把「shape 或邻居表变了」当作换地形，其余一律
-## 原地换数组并保住状态（military_core.cpp 的 `same_topology`），所以这里也必须
-## 按同一条件判断，才能知道这次推送会不会把原生状态清掉。
-var _terrain_neighbors := PackedInt32Array()
 var _terrain_set_day := -1
-var _ai_player_handles := PackedInt64Array()
 var _missing_api_reason := ""
 var _event_cursor := 0
-var _restored_event_progress := PackedInt64Array()
 ## 维护快照的整形结果：一次原生读取服务同一刷新里的明细表与汇总，跨日/命令/
 ## 读档才失效（见 `invalidate_maintenance_cache`）。UI 每天最多读一次。
 ## 键是缓存槽（见 `_maintenance_view`），不是国家槽。
@@ -150,12 +142,7 @@ func configure(world_ext: DCWorldExt, economy_catalog: Dictionary,
 	_catalog_hash = int(compiled.get("catalog_hash", 0))
 	_configured = true
 	_event_cursor = 0
-	_restored_event_progress.clear()
 	_terrain_signature = 0
-	_terrain_cells = 0
-	_terrain_width = 0
-	_terrain_height = 0
-	_terrain_neighbors = PackedInt32Array()
 	_terrain_set_day = -1
 	_last_configure_result = result.duplicate(false)
 	_last_configure_result["catalog_hash"] = _catalog_hash
@@ -209,28 +196,6 @@ func set_terrain(map, day: int = -1, force: bool = false,
 	var tiers := settlement_tiers
 	if tiers.size() != int(map.cell_count()):
 		tiers = _settlement_tiers_from_map(map, int(map.cell_count()))
-	# MilitaryCore::set_terrain only calls reset_state() when the push changes the
-	# topology (shape or neighbour table); a same-topology push swaps the arrays in
-	# place and keeps wars, armies, lots, policies and the step cursor (design §21).
-	# So the PKMI snapshot-and-restore below is a fallback for the resetting case
-	# only — and it must never run on the same-topology path, which is exactly the
-	# seasonal cover refresh path (`refresh_military_terrain`).
-	#
-	# Why it must not: PKMI deliberately omits the transient budget shares
-	# (write_policies does not write budget_share_bp / budget_wage_bp /
-	# budget_upkeep_bp / budget_enabled; restore rebuilds the policy rows at their
-	# defaults), so the round trip silently reset the player's military budget to
-	# 0 / 60% / 20% on the first season edge after he set it.
-	var same_topology := terrain_ready() \
-		and int(map.cell_count()) == _terrain_cells \
-		and int(map.width) == _terrain_width \
-		and int(map.height) == _terrain_height \
-		and neighbors == _terrain_neighbors
-	var preserved := PackedByteArray()
-	if not same_topology and terrain_ready():
-		var encoded = _world_ext.encode_military_state()
-		if encoded is PackedByteArray:
-			preserved = encoded
 	var result: Dictionary = _world_ext.set_military_terrain({
 		"cell_count": int(map.cell_count()),
 		"width": int(map.width),
@@ -246,22 +211,8 @@ func set_terrain(map, day: int = -1, force: bool = false,
 	if bool(result.get("ok", false)):
 		_terrain_signature = signature
 		_terrain_cells = int(map.cell_count())
-		_terrain_width = int(map.width)
-		_terrain_height = int(map.height)
-		_terrain_neighbors = neighbors
 		_terrain_set_day = day
 		invalidate_maintenance_cache()
-		# A same-topology push keeps native state by itself; only a resetting push
-		# depends on (and may fail) the snapshot restore.
-		result["state_preserved"] = same_topology
-		if not preserved.is_empty():
-			# Native call on purpose: restore_state() rewinds the event cursor,
-			# but the restored ring keeps its ids, so forwarding must continue.
-			var restored: Dictionary = _world_ext.restore_military_state(preserved)
-			result["state_preserved"] = bool(restored.get("ok", false))
-			if not bool(restored.get("ok", false)):
-				push_error("[military] terrain refresh lost military state: %s" % String(
-					restored.get("reason", "restore_failed")))
 	return result
 
 
@@ -300,17 +251,12 @@ func should_run(day: int) -> bool:
 func run_daily(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	var result: Dictionary = _world_ext.run_military_daily({"day_index": int(day)})
+	var result: Dictionary = _world_ext.run_military_daily({"day_index": day})
 	_last_daily_report = result if result is Dictionary else {}
 	invalidate_maintenance_cache()
 	return _last_daily_report
 
 
-## Legacy alias kept for older callers. The worker NEVER steps Military: in
-## whole-graph ACTIVE, WorldRuntimeHost replays each committed day on the main
-## thread through [run_daily] (native `run_military_daily`). This forwards to
-## `run_military_catch_up`, which is the same main-thread step guarded by the
-## one-step-per-day check (`military_day_already_stepped` when already run).
 func catch_up(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
@@ -328,6 +274,10 @@ func set_render_selection(army_handle: int) -> Dictionary:
 
 
 func last_daily_report() -> Dictionary:
+	if _configured:
+		var current: Dictionary = _world_ext.get_military_daily_result()
+		if not current.is_empty():
+			return current
 	return _last_daily_report.duplicate(false)
 
 
@@ -364,29 +314,6 @@ func submit(batch: Array) -> Dictionary:
 			rejected.append({"index": index, "reason": "military_command_op_missing"})
 			continue
 		var normalized := command.duplicate(false)
-		if op == "config.set" and command.get("shares") is Dictionary:
-			# 玩家传稳定兵种 id 的局部修改；原生命令是 dense id 的整表替换。
-			var snapshot := country_snapshot(int(command.get("country", 0)))
-			if not bool(snapshot.get("ok", false)):
-				rejected.append({"index": index, "reason": "military_country_snapshot_unavailable"})
-				continue
-			var rows: Array = _catalog.get("units", [])
-			var previous = snapshot.get("config_share_bp", PackedInt32Array())
-			var changes: Dictionary = command["shares"]
-			var remaining := changes.duplicate()
-			var config_pairs := PackedInt32Array()
-			for unit_index in range(rows.size()):
-				var unit_id := String(rows[unit_index].get("id", ""))
-				var bp := int(previous[unit_index]) if unit_index < previous.size() else 0
-				if changes.has(unit_id):
-					bp = int(changes[unit_id])
-					remaining.erase(unit_id)
-				config_pairs.append(unit_index)
-				config_pairs.append(bp)
-			if not remaining.is_empty():
-				rejected.append({"index": index, "reason": "command_bad_unit"})
-				continue
-			normalized["int_pairs"] = config_pairs
 		var units_value = command.get("units", null)
 		if units_value is Dictionary and not normalized.has("int_pairs"):
 			var pairs := PackedInt32Array()
@@ -470,42 +397,6 @@ func explore_army(army: int, cell: int, cells: PackedInt32Array,
 		radius: int) -> Dictionary:
 	return submit([{"op": "army.explore", "army": army, "cell": int(cell),
 		"cells": cells, "radius": int(radius)}])
-
-
-func set_military_exploration_observer(observer_slot: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"set_military_exploration_observer"):
-		return _fail("military_exploration_observer_unavailable")
-	return _world_ext.set_military_exploration_observer(int(observer_slot))
-
-
-func set_military_exploration_view(observer_slot: int, explored: PackedByteArray,
-		day: int, revision: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"set_military_exploration_view"):
-		return _fail("military_exploration_view_unavailable")
-	return _world_ext.set_military_exploration_view(
-		int(observer_slot), explored, int(day), int(revision))
-
-
-func get_military_vision_trail(observer_slot: int) -> PackedInt32Array:
-	if not _configured or not _world_ext.has_method("get_military_vision_trail"):
-		return PackedInt32Array()
-	var trail = _world_ext.get_military_vision_trail(int(observer_slot))
-	return trail if trail is PackedInt32Array else PackedInt32Array()
-
-
-func clear_military_vision_trail(observer_slot: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("clear_military_vision_trail"):
-		return _fail("military_exploration_trail_unavailable")
-	return _world_ext.clear_military_vision_trail(int(observer_slot))
-
-
-func has_military_exploration_work() -> bool:
-	if not _configured or not _world_ext.has_method(
-			"has_military_exploration_work"):
-		return false
-	return bool(_world_ext.has_military_exploration_work())
 
 
 func declare_war(country: int, target_country: int) -> Dictionary:
@@ -946,23 +837,11 @@ func state_hash() -> int:
 
 # ------------------------------------------------------------- AI arming
 
-## AI countries are every non-player country. Called after bootstrap and again
-## when the player set is restored from a save.
+## Arm the foreign countries during a new game's bootstrap.
 func arm_ai(player_handles: PackedInt64Array) -> Dictionary:
-	_ai_player_handles = player_handles.duplicate()
-	if not _configured:
-		return _fail("military_not_configured")
-	return _apply_ai_arming()
-
-
-func _apply_ai_arming() -> Dictionary:
 	if not _configured or _world_ext == null:
 		return _fail("military_not_configured")
-	return _world_ext.set_military_ai_player_handles(_ai_player_handles)
-
-
-func ai_player_handles() -> PackedInt64Array:
-	return _ai_player_handles
+	return _world_ext.set_military_ai_player_handles(player_handles)
 
 
 ## Annual-report war section (design §19.2). Null when the native report has no
@@ -987,17 +866,9 @@ func _fail(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason}
 
 
-# The save provider restores before DCSystem registration. Hold only forwarding
-# metadata here, then hand it to the session-owned job once at construction.
+# MDJ1 belongs to the same native boundary as the battle and event records.
 func restore_pending_event_progress(values: PackedInt64Array) -> bool:
-	if values.size() != 3 or values[0] < 0 or values[1] < -1 or values[2] < 0: return false
-	_restored_event_progress = values.duplicate()
-	return true
+	return _world_ext.restore_military_event_progress(values)
 
 func capture_pending_event_progress() -> PackedInt64Array:
-	return PackedInt64Array([0, -1, 0]) if _restored_event_progress.is_empty() else _restored_event_progress.duplicate()
-
-func take_restored_event_progress() -> PackedInt64Array:
-	var values := _restored_event_progress.duplicate()
-	_restored_event_progress.clear()
-	return values
+	return _world_ext.capture_military_event_progress()

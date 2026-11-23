@@ -21,6 +21,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /tools/ci/
+            /tools/factory/
             /gdext/src/
             /gdext/tests/
             /Project/project-keynes/**/*.gd
@@ -28,6 +29,8 @@ jobs:
             /.*/skills/
             /docs/architecture/
             /docs/plans/
+            /docs/factory/
+            /AGENTS.md
             /.github/workflows/
       - uses: actions/setup-python@v5
         with:
@@ -46,6 +49,12 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+      - name: Factory tests
+        if: success() || failure()
+        # poll.sh runs under zsh on macOS; the poll-script tests need it here too.
+        run: |
+          sudo apt-get install -y -qq zsh >/dev/null
+          python -m unittest discover -s tools/factory/tests -v
   authoring-and-thread-lifetime:
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +65,7 @@ jobs:
             tools/map_authoring
             gdext/src
             gdext/tests
+            gdext/thirdparty/simulation_math
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

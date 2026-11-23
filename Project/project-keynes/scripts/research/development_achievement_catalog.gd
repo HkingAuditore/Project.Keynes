@@ -46,7 +46,7 @@ static func definitions() -> Array[Dictionary]:
 		SubjectKind.GOOD, ["seed_cotton", "cotton_fiber", "flax_fiber", "spices", "latex"], 2, 1)
 	_add(out, "development.commodity_crop_facilities_4_180d", "商品作物设施稳定经营", "exploration",
 		"保持 4 座商品作物设施活跃 180 日", MetricType.BUILDING_ACTIVE,
-		SubjectKind.BUILDING, ["cotton_garden", "household_flax_plot", "spice_shade_garden"], 4, 180)
+		SubjectKind.BUILDING, ["cotton_garden", "flax_collector", "spice_shade_garden"], 4, 180)
 	_add(out, "development.commodity_crop_trade_value_100000", "商品作物贸易资本", "exploration",
 		"累计完成 10 万基础价值的商品作物贸易", MetricType.TRADE_BASE_VALUE,
 		SubjectKind.GOOD, ["seed_cotton", "cotton_fiber", "flax_fiber", "spices", "latex"], 100000, 1)

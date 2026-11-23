@@ -48,7 +48,7 @@ func _run() -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	_expect("golden configures", bool(host.configure_session({
 		"kind": "new_game", "config": config.to_dictionary()}).get("ok", false)))
 	await host.generate_world()
@@ -109,7 +109,8 @@ func _run() -> void:
 				_expect("Ideology consumes the latest committed opinion on day %d" % day,
 					int(runtime.get("ideology_parity_worker_opinion_committed_day", -2)) ==
 					int(opinion_before.get("commit_day", -3)))
-			var opinion_after: Dictionary = economy.world_ext().get_country_class_opinion_snapshot()
+			var opinion_after := await _published_economy(
+				economy.world_ext().get_country_class_opinion_snapshot, day)
 			_expect("Economy publishes the completed day's opinion on day %d" % day,
 				int(opinion_after.get("revision", 0)) > 0 and
 				int(opinion_after.get("commit_day", -1)) == day)
@@ -129,7 +130,7 @@ func _run() -> void:
 					"runtime": runtime, "report": report}))
 			_expect("golden full ACTIVE grant", int(runtime.get("authoritative_domain_mask", 0)) == 0xFFF)
 			_expect("golden keeps shadow disabled", not bool(runtime.get("economy_shadow_probe_enabled", true)))
-			var population: Dictionary = economy.population_cell_snapshot(cell)
+			var population := await _published_economy(economy.population_cell_snapshot.bind(cell), day)
 			# Canonical ordered values; exclude timings, retries, instance IDs and
 			# report-only generations. Never hash an arbitrary Dictionary ordering.
 			var values: Array = [day, cell, int(population.get("population", -1))]
@@ -139,7 +140,7 @@ func _run() -> void:
 			for field in ["funds", "epoch_income", "epoch_expense", "cohort_count", "satisfaction_q16"]:
 				_expect("golden population field " + field, population.has(field))
 				values.append(int(population.get(field, -1)))
-			var market: Dictionary = economy.market_cell_snapshot(cell)
+			var market := await _published_economy(economy.market_cell_snapshot.bind(cell), day)
 			for field in ["stock", "price"]:
 				_expect("golden market field " + field, market.has(field))
 				values.append(Array(market.get(field, PackedInt64Array())))
@@ -183,17 +184,31 @@ func _wait_golden_read_boundary(host: WorldRuntimeHost, economy, day: int) -> bo
 	# Do not submit another date while sampling. Consume the existing protected
 	# writeback, then require the worker and its compatibility view to agree.
 	for _slice in range(MAX_SLICES_PER_DAY):
-		host._consume_modifier_worker_snapshot_if_authoritative()
+		host._process(0.0)
 		var runtime: Dictionary = host.get_generator().get_runtime_thread_report()
 		var modifier: Dictionary = economy.world_ext().get_modifier_report()
-		if int(runtime.get("simulation_committed_day", -1)) == day \
+		var at_read_boundary: bool = (not host._native_environment_active
+			or host._native_daily_inline_active
+			or runtime.get("simulation_host_state") == "PAUSED")
+		if host._runtime_commit_day == day \
+				and int(runtime.get("simulation_committed_day", -1)) == day \
 				and int(runtime.get("worker_day_inflight", -1)) == 0 \
+				and at_read_boundary \
 				and int(host._modifier_worker_snapshot_generation) == int(runtime.get(
 					"modifier_pod_snapshot_generation", -1)) \
 				and int(modifier.get("current_day", -1)) == day:
 			return true
 		await process_frame
 	return false
+
+
+func _published_economy(query: Callable, day: int = -1) -> Dictionary:
+	for _slice in range(MAX_SLICES_PER_DAY):
+		var row: Dictionary = query.call()
+		if bool(row.get("ok", false)) and (day < 0 or int(row.get("read_view_day", -1)) == day):
+			return row
+		await process_frame
+	return {}
 
 
 ## Whole economy hash from the same boundary snapshot as the last _read_domains.

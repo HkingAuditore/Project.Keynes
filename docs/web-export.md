@@ -44,9 +44,9 @@ atlas 与材质数组尺寸在生成时选择；要获得对应静态精度，�
 > 新机器从零构建的完整前置条件与各平台工具链见
 > [`docs/build-from-source.md`](./build-from-source.md)。
 
-> 结论摘要：**可以导出，并且已经跑通到可玩状态**（threads 变体：主菜单 → 新游戏
-> → 世界生成 → 进入世界、HUD 与模拟正常）。`nothreads` 变体只能到"进入世界"98%
-> 就冻结，原因见 §6.1；所以预设固定 `variant/thread_support=true`。
+> 正式 Web 导出使用线程版，浏览器默认走后台模拟。无线程版仍以同步执行作为兼容路径。
+> 本次迁移的原生库加载证据见 [验证记录](architecture/feature-status.md#每日计算后台交接与读档一致性2026-11-18)，
+> 历史完整导出与性能记录见下文。
 
 ---
 
@@ -257,11 +257,11 @@ python tools\subset_fonts.py restore      :: 手动还原
 | 建筑/植被细节 | 降低常驻实例上限、关影子 | `building_visual_layer.gd`、`trade_activity_layer.gd` |
 | 音频 | Web 使用 Godot/Vorbis 完整混音：菜单、四时代组曲、三首升级过渡、UI 与游戏事件音效；Windows 继续使用 FMOD | `scripts/audio/native_audio_backend.gd` |
 | 存档后台写 | 关掉后台线程写 | `scripts/game/game_save_coordinator.gd` |
-| 仿真线程 | nothreads 变体全在主线程；threads 变体才有 worker | 见 §6 |
+| 仿真线程 | 线程版默认后台执行；无线程版继续使用同步兼容路径 | `world_runtime_daily_adapter_part1.gd::_web_worker_requested` |
 
 ## 6. 已知问题
 
-### 6.1 `nothreads` 变体会卡在"进入世界"98%（不要用这个变体）
+### 6.1 历史问题：无线程版加载卡在 98%
 
 `threads=no` + `variant/thread_support=false` 能进主菜单、开新游戏、生成世界，
 但加载条到 98% 后**主线程硬卡死**（画面完全冻结，两次截图逐像素相同），
@@ -1087,8 +1087,7 @@ python tools\pk_web_reload_probe.py --wait 45 --profile tmp\chrome_profile_pk  #
 
 （以下为修闸前的历史数据，保留以便对照）
 
-web 现在有两条"日屏障执行者"：默认的 **inline**（12 域在主线程逐日跑）与 `?worker=1`
-打开的 **worker**（`std::thread` 跑 native daily 图，主线程只做输入发布与提交消费）。
+这次历史测试比较了当时默认的 **inline**（12 域同步执行）和 `?worker=1` 开启的后台日执行器。
 两条**都能跑满一年**、都不 FAULT，但：
 
 | | 稳态天/秒 | fps | 单日**主线程**成本 | 最长帧 |

@@ -839,7 +839,7 @@ func _capture_country_evidence(tick_idx: int, map_data) -> void:
 					receipt["observed_tick_idx"] = tick_idx
 					_country_receipts.append(receipt)
 			_country_receipt_cursor = maxi(_country_receipt_cursor,
-				int(receipt_batch.get("last_request_id",
+				int(receipt_batch.get("last_publication_sequence",
 					_country_receipt_cursor)))
 
 

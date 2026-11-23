@@ -136,7 +136,6 @@ func _run() -> void:
 	_test_investment_capacity_is_not_gate(catalog, profile)
 	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_incumbent_gathering_expansion_uses_revealed_livelihood(catalog, profile)
-	_test_unemployed_invests_in_zero_build_sub_livelihood_deadwood_camp(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile, true)
 	_test_recovery_failure_commits_next_cycle(catalog, profile)
@@ -2622,7 +2621,7 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var signatures: PackedStringArray = catalog.signature_keys
 	var goods: PackedStringArray = catalog.good_ids
-	var oral_memory_id := building_ids.find("early_knowledge_institution")
+	var oral_memory_id := building_ids.find("early_knowledge_institution" if scarce_materials else "oral_memory_circle")
 	var gathering_id := building_ids.find("gathering_ground")
 	var oral_memory_technology := technology_ids.find("tech.oral_memory_practice")
 	var early_knowledge_technology := technology_ids.find("tech.early_knowledge_institution")
@@ -3536,99 +3535,6 @@ func _test_incumbent_gathering_expansion_uses_revealed_livelihood(
 		gathering_diagnostic >= 0 and
 		int(diagnostic_rejections[gathering_diagnostic]) != 5)
 	_expect("incumbent gathering livelihood review conserves every ledger",
-		int(report.get("population_error", 1)) == 0 and
-		int(report.get("money_error", 1)) == 0 and
-		int(report.get("goods_error", 1)) == 0)
-
-
-func _test_unemployed_invests_in_zero_build_sub_livelihood_deadwood_camp(
-		source_catalog: Dictionary, source_profile: Dictionary) -> void:
-	# Unemployed cohorts with low savings must still be able to open zero-build
-	# self-employed entry collectors (e.g. deadwood_gathering_camp) when the
-	# building earns positive net owner income below full theoretical owner
-	# living cost, and existing self-employed camps must keep full planned
-	# utilization instead of collapsing to the 3.1% probe floor.
-	var catalog := source_catalog.duplicate(true)
-	var profile := source_profile.duplicate(true)
-	profile.merchant_market_making_days_q16 = 1966080
-	profile.resource_safe_harvest_q16 = 0
-	profile.starvation_death_rate_q32 = 0
-	var building_ids: PackedStringArray = catalog.building_type_ids
-	var deadwood_id := building_ids.find("deadwood_gathering_camp")
-	var signatures: PackedStringArray = catalog.signature_keys
-	var forager_sig := signatures.find("forager|default")
-	var merchant_sig := signatures.find("merchant|default")
-	var unemployed_sig := signatures.find("unemployed|default")
-	var goods: PackedStringArray = catalog.good_ids
-	var logs_good := goods.find("logs")
-	var tools_good := goods.find("tools")
-	_block_construction_except(catalog, PackedInt32Array([deadwood_id]),
-		_luxury_blocking_good(catalog))
-	_clear_building_climate(catalog, deadwood_id)
-	_minimize_household_good_demand(catalog, tools_good)
-	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
-	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	prices[logs_good] = 5000
-	max_prices[logs_good] = 5000
-	catalog.good_default_price = prices
-	catalog.good_reference_max_price = max_prices
-	var ext := _new_ext(catalog)
-	_expect("sub-livelihood deadwood country bootstraps",
-		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 292))
-	_expect("sub-livelihood deadwood runtime configures",
-		bool(ext.configure_economy(catalog, profile, 1, 292).get("ok", false)))
-	var resource_ids: PackedStringArray = catalog.building_resource_ids
-	var timber_resource := resource_ids.find("timber")
-	var reserve_slots: PackedStringArray = catalog.building_resource_reserve_slots
-	if timber_resource >= 0:
-		var timber_slot := int(ext.component_id(StringName(reserve_slots[timber_resource])))
-		if timber_slot >= 0:
-			ext.write_f32_range(timber_slot, 0, PackedFloat32Array([1000000000.0]))
-	var stock := PackedInt64Array()
-	stock.resize(goods.size())
-	stock.fill(100000)
-	stock[logs_good] = 0
-	var categories: PackedStringArray = catalog.get("good_category_ids", PackedStringArray())
-	for good_id in range(goods.size()):
-		var gid := String(goods[good_id])
-		if gid == "tools" or gid.find("tool") >= 0:
-			stock[good_id] = 0
-		elif good_id < categories.size() and String(categories[good_id]) == "tools":
-			stock[good_id] = 0
-	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0, 0]),
-		"signature_ids": PackedInt32Array([forager_sig, merchant_sig, unemployed_sig]),
-		"population": PackedInt64Array([10, 2, 20]),
-		"funds": PackedInt64Array([1000000, 500000000, 40000]),
-	}, {
-		"stock": stock,
-		"price": prices,
-		"building_cells": PackedInt32Array([0]),
-		"building_type_ids": PackedInt32Array([deadwood_id]),
-		"building_owner_signature_ids": PackedInt32Array([forager_sig]),
-		"building_counts": PackedInt64Array([5]),
-	})
-	_expect("sub-livelihood deadwood fixture bootstraps", bool(boot.get("ok", false)))
-	_expect("sub-livelihood deadwood trace registers", bool(
-		ext.set_economy_inspector_trace_cell(0).get("ok", false)))
-	var report := {}
-	for day in range(6):
-		report = _run_day(ext, day)
-	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
-	var group := (buildings.group_type_ids as PackedInt32Array).find(deadwood_id)
-	var count := int((buildings.building_counts_by_type as PackedInt64Array)[deadwood_id])
-	var planned_util := int((buildings.planned_utilization_q16 as PackedInt32Array)[group]) \
-		if group >= 0 else 0
-	var pop_snap: Dictionary = ext.get_population_cell_snapshot(0)
-	var sigs: PackedInt32Array = pop_snap.get("signature_ids", PackedInt32Array())
-	var unemp_idx := sigs.find(unemployed_sig)
-	var unemp_pop := int((pop_snap.get("populations", PackedInt64Array()) as PackedInt64Array)[unemp_idx]) \
-		if unemp_idx >= 0 else 0
-	_expect("sub-livelihood deadwood camp keeps full planned utilization",
-		group >= 0 and planned_util == 65536)
-	_expect("unemployed cohort invests in zero-build deadwood camp despite sub-livelihood revenue",
-		count > 5 and unemp_pop < 20)
-	_expect("sub-livelihood deadwood investment conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)

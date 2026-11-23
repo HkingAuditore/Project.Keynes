@@ -426,8 +426,8 @@ bool country_core_apply_command(
         if (!state.treasury_goods_consumed_total.empty())
             state.treasury_goods_consumed_total.push_back(0);
         state.research_peer_flags.insert(state.research_peer_flags.end(), state.technology_count, 0);
-        state.country_research_signals.insert(state.country_research_signals.end(),
-            state.research_signal_words, 0);
+        state.country_research_signals.insert(
+            state.country_research_signals.end(), state.research_signal_words, 0);
         state.research_signal_cell_offsets.push_back(
             state.research_signal_cell_offsets.back());
         state.research_signal_evidence_offsets.push_back(

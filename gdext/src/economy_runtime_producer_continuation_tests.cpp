@@ -22,8 +22,9 @@ bool EconomyTargetSelectorTests::run_producer_continuation(std::string &error) {
     // channel after a cold restore. Both generations are read by quotes.
     source->_epoch_producer_sellable_current = {1000, 2000};
     source->_epoch_producer_merchant_sold_current = {200, 0};
-    source->_epoch_previous_producer_sellable = {500, 800};
-    source->_epoch_previous_producer_merchant_sold = {400, 300};
+    // The second signal can be created after the prior epoch's sample.
+    source->_epoch_previous_producer_sellable = {500};
+    source->_epoch_previous_producer_merchant_sold = {400};
     source->_save.active = true;
     source->_save.section = persistence_codec::SAVE_SECTION_SIGNALS;
     const auto packed = source->read_save_chunk(65536);

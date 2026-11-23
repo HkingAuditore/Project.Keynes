@@ -628,14 +628,6 @@ uint64_t EffectRuntime::family_colonization_settle_idempotency_key(
                      fire_sequence, 1);
 }
 
-int64_t EffectRuntime::allocate_builtin_transaction_id() {
-    if (_next_transaction_id < BUILTIN_TRANSACTION_ID_BASE)
-        _next_transaction_id = BUILTIN_TRANSACTION_ID_BASE;
-    while (_transaction_ids.find(_next_transaction_id) != _transaction_ids.end())
-        ++_next_transaction_id;
-    return _next_transaction_id++;
-}
-
 bool EffectRuntime::enqueue_canal_commit_pod(
         int64_t effect_id, int64_t effective_day, int64_t source_id,
         uint64_t project_handle, uint32_t project_generation,
@@ -664,7 +656,7 @@ bool EffectRuntime::enqueue_canal_commit_pod(
         }
     }
     Transaction transaction;
-    transaction.id = allocate_builtin_transaction_id();
+    transaction.id = _next_transaction_id++;
     transaction.source_instance_id = source_id;
     transaction.source_generation = project_generation;
     transaction.program_id = -2;
@@ -1105,6 +1097,8 @@ bool EffectRuntime::acknowledge_native_domain(Transaction &transaction,
     apply_acked_instance_transition(transaction);
     _acked_transaction_id = std::max(_acked_transaction_id, transaction.id);
     ++_transactions_acked;
+    if (_era_reward_offer.transaction_id == transaction.id)
+        refresh_era_reward_offer_status();
     return true;
 }
 
@@ -1358,7 +1352,10 @@ Dictionary EffectRuntime::ack_transactions(const Dictionary &batch) {
             transaction.status = COMMITTED;
         }
     }
-    if (acknowledged != 0) compact_terminal_transactions();
+    if (acknowledged != 0) {
+        refresh_era_reward_offer_status();
+        compact_terminal_transactions();
+    }
     Dictionary out;
     out["ok"] = rejected == 0;
     out["acknowledged"] = acknowledged;
@@ -1839,7 +1836,7 @@ bool EffectRuntime::enqueue_family_colonization_pod(
         }
     }
     Transaction transaction;
-    transaction.id = allocate_builtin_transaction_id();
+    transaction.id = _next_transaction_id++;
     transaction.source_instance_id = source_id;
     transaction.source_generation = expedition_generation;
     transaction.program_id = -1;
@@ -1902,47 +1899,6 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     index_transaction_commands(_transactions.back());
     if (out_transaction_id != nullptr) *out_transaction_id = _transactions.back().id;
     return true;
-}
-
-int32_t EffectRuntime::family_colonization_transaction_status_pod(
-        int64_t transaction_id, int64_t effect_id,
-        uint32_t expedition_generation, uint64_t fire_sequence,
-        int64_t *out_resolved_transaction_id) const {
-    if (out_resolved_transaction_id != nullptr) *out_resolved_transaction_id = 0;
-    if (effect_id <= 0 || expedition_generation == 0) return 0;
-    const uint64_t base_key = make_hash(static_cast<uint64_t>(effect_id),
-        expedition_generation, fire_sequence, 0x434f4c4fU);
-    const uint64_t settle_key = make_hash(static_cast<uint64_t>(effect_id),
-        expedition_generation, fire_sequence, 1);
-    auto matches = [&](const Transaction &tx) {
-        if (tx.program_id != -1 || tx.source_generation != expedition_generation)
-            return false;
-        for (uint32_t ordinal = 0; ordinal < tx.command_count; ++ordinal) {
-            const Command *command = command_at(tx, ordinal);
-            if (command == nullptr) continue;
-            if (command->idempotency_key == base_key ||
-                command->idempotency_key == settle_key) {
-                return true;
-            }
-        }
-        return false;
-    };
-    const int32_t direct = transaction_index_for_id(transaction_id);
-    if (direct >= 0 && direct < static_cast<int32_t>(_transactions.size())) {
-        const Transaction &tx = _transactions[static_cast<size_t>(direct)];
-        if (matches(tx)) {
-            if (out_resolved_transaction_id != nullptr)
-                *out_resolved_transaction_id = tx.id;
-            return tx.status;
-        }
-    }
-    for (const Transaction &tx : _transactions) {
-        if (!matches(tx)) continue;
-        if (out_resolved_transaction_id != nullptr)
-            *out_resolved_transaction_id = tx.id;
-        return tx.status;
-    }
-    return 0;
 }
 
 bool EffectRuntime::family_colonization_includes_claim(

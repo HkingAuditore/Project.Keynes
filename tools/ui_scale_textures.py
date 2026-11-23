@@ -78,6 +78,9 @@ def collect_targets(project: Path, scope: str, min_kb: int, anchored: set[str]):
             continue
         if rel in anchored:
             continue
+        # 年报撕口有固定取样行，透明像素的绿通道还存着纸外距离。
+        if rel == "assets/ui/annual_chronicle/paper_tear_mask.png":
+            continue
         # 作者源图不进包（source / bitmap_sources 目录），缩了只会破坏母版
         if "/source/" in rel or "bitmap_sources" in rel or "/source_" in rel:
             continue

@@ -16,6 +16,8 @@ void DCWorldExt::_bind_climate_methods() {
                          &DCWorldExt::run_bio_bootstrap_pass);
     ClassDB::bind_method(D_METHOD("configure_bio_occupancy", "config"),
                          &DCWorldExt::configure_bio_occupancy);
+    ClassDB::bind_method(D_METHOD("apply_runtime_species_writeback"),
+                         &DCWorldExt::apply_runtime_species_writeback);
     ClassDB::bind_method(D_METHOD("run_bio_occupancy_pass", "knobs"),
                          &DCWorldExt::run_bio_occupancy_pass);
     ClassDB::bind_method(D_METHOD("run_bio_occupancy_slice", "knobs"),

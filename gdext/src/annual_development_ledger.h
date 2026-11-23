@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -90,6 +91,14 @@ struct AnnualDevelopmentReport {
         last_people_days = 0, first_days = 0, last_days = 0;
 };
 
+struct AnnualReportPublication {
+    uint64_t revision = 0;
+    int64_t day = -1;
+    uint64_t ready = 0;
+    bool reward_pending = false;
+    std::shared_ptr<const std::vector<AnnualDevelopmentReport>> history;
+};
+
 // NativeSimulationHost owns this reducer. Its mutex is held by the host, never
 // by Economy while invoking callbacks. No Godot, clock timers or UI sampling.
 class AnnualDevelopmentLedger {
@@ -130,7 +139,8 @@ private:
     int64_t _population_days = 0, _days = 0;
     std::array<int64_t, 8> _dimension_sum{}, _dimension_days{};
     std::vector<AnnualDevelopmentReport> _reports;
-    mutable size_t _ready_cursor = 0, _reward_cursor = 0;
+    size_t _ready_cursor = 0, _reward_cursor = 0;
+    void advance_report_cursors();
     void begin_year(int64_t year);
     void finish_year(uint64_t draw_sequence);
 };

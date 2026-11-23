@@ -150,7 +150,7 @@ static func append_waterworks_events(catalog) -> void:
 								"target_key": "narrative.levy.labor_satisfaction",
 								"magnitude_q16": 65536,
 								"duration_days": 240,
-								"custom_label": "力役与雇工阶层满意度 -4，240 日",
+								"custom_label": "农业工人、工人、矿工满意度 -4，营造工与徭役劳动者 -5，240 日",
 							},
 							{
 								"kind": Kind.SET_STORY_FLAG,

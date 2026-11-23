@@ -1,7 +1,6 @@
 extends "res://scripts/simulation/generator_context.gd"
 class_name DCTerrainGenerator
 const BioSummary = preload("res://scripts/geography/map_generation/bio_occupancy_summary.gd")
-const BioOccupancyGuaranteeScript = preload("res://scripts/geography/map_generation/bio_occupancy_guarantee.gd")
 
 func _init(generator) -> void:
 	_generator = generator
@@ -60,12 +59,17 @@ func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
 	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
 	var water_depth_arr: PackedFloat32Array = res["water_depth_arr"] if res.has("water_depth_arr") else PackedFloat32Array()
+	var frame_gate = _generator._loading_frames if _generator != null else null
+	if frame_gate != null and frame_gate.canceled:
+		return null
 	var map := MapData.new(cfg.width, cfg.height)
 	var slice_start := Time.get_ticks_usec()
 	var tree := Engine.get_main_loop() as SceneTree
 	for i in range(n):
 		if tree != null and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return null
 			slice_start = Time.get_ticks_usec()
 		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
 		cell.elevation = float(elevation_arr[i])
@@ -121,8 +125,9 @@ func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	if hydro_parent_arr.size() == n:
 		map.hydro_parent_arr = hydro_parent_arr.duplicate()
 	if native_generation_array_ok(res, "neighbor_indices", n * 6, TYPE_PACKED_INT32_ARRAY) and map.cell_count() == n:
-		var gate = _generator._loading_frames if _generator != null else null
-		await map.build_indices_cooperative(gate, res["neighbor_indices"])
+		await map.build_indices_cooperative(frame_gate, res["neighbor_indices"])
+		if frame_gate != null and frame_gate.canceled:
+			return null
 	return map
 
 
@@ -1201,8 +1206,6 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		_generator._bio_occupancy_knob_cache_map_id = map_id
 		_generator._bio_occupancy_knob_cache_n = n
 		_generator._bio_occupancy_knob_cache_version = _generator._BIO_OCCUPANCY_KNOB_CACHE_VERSION
-		# 保底残存格可能落在目录气候带外：把地图本地气候边界写回，persist 才不会次日剔除。
-		BioOccupancyGuaranteeScript.realize_bounds(_generator._bio_occupancy_knob_cache, map_ref)
 	var static_knobs: Dictionary = _generator._bio_occupancy_knob_cache
 	if _generator._bio_occupancy_native_configured_map_id != map_id \
 			and _generator._data_core_world_ext != null :
@@ -1291,10 +1294,9 @@ func _publish_bio_occupancy_to_runtime(map_ref: MapData) -> void:
 			var cid := int(_generator._data_core_world.component_id(component))
 			if cid >= 0:
 				_generator._data_core_world.write_i32_range(cid, 0, values)
-		if _generator._data_core_world_ext != null :
-			var cid_ext := int(_generator._data_core_world_ext.component_id(component))
-			if cid_ext >= 0:
-				_generator._data_core_world_ext.write_i32_range(cid_ext, 0, values)
+	if _generator._data_core_world_ext != null:
+		_generator._data_core_world_ext.refresh_slots_from_map_keys(PackedStringArray([
+			"cell_bio_occupancy_bits", "cell_landmass_id", "cell_province_id"]))
 	map_ref.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS)
 
 
@@ -1324,6 +1326,12 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	map_ref.province_id_arr = provinces
 	knobs["province_ids"] = provinces
 	knobs["landmass_ids"] = landmass
+	if seed_res.is_empty():
+		seed_res = _generator._data_core_world_ext.run_bio_seed_pass(knobs)
+		if not bool(seed_res.get("ok", false)):
+			push_error("[bio-occupancy] seed pass failed: %s" % String(
+				seed_res.get("reason", "unknown")))
+			return
 	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
 	if occupancy.size() != n:
 		push_error("[bio-occupancy] occupancy output shape invalid")
@@ -1332,7 +1340,6 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	_generator._publish_bio_occupancy_to_runtime(map_ref)
 	_generator._log_bio_occupancy_seed(knobs, seed_res, int(province_res.get("landmass_count", 0)),
 		int(province_res.get("province_count", 0)))
-	BioOccupancyGuaranteeScript.ensure_after_boot(_generator, map_ref, seed_res)
 
 
 ## 生态播种诊断的「表头 + 每物种」段；两条路径（整段 native / 逐段 GDScript）
@@ -1369,8 +1376,17 @@ func _log_bio_occupancy_seed_summary(knobs: Dictionary, seed_res: Dictionary,
 
 func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: int,
 		province_count: int) -> void:
-	BioOccupancyGuaranteeScript.log_seed(knobs, seed_res, landmass_count, province_count,
-		_generator)
+	_generator._log_bio_occupancy_seed_summary(knobs, seed_res, landmass_count, province_count)
+	var landmass_ids := PackedInt32Array()
+	var classes_out := PackedStringArray()
+	var foods_out := PackedStringArray()
+	_bio_landmass_summary_gdscript(
+		seed_res.get("occupancy_bits", PackedInt32Array()),
+		knobs.get("landmass_ids", PackedInt32Array()),
+		knobs, landmass_ids, classes_out, foods_out)
+	for i in range(landmass_ids.size()):
+		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
+			int(landmass_ids[i]), String(classes_out[i]), String(foods_out[i])])
 
 
 ## 融合 pass 返回的 landmass 摘要直接打印（聚合在 C++ 里做完）。
@@ -1418,13 +1434,9 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 	knobs["run_diffusion"] = run_diffusion
 	knobs["day_index"] = day_index
 	knobs["slice_enabled"] = slice_enabled
-	if _generator._bio_observation_country_handle == 0 and _generator._country_facade != null:
-		var start_cell := int(_generator.gameplay_start_report().get("cell", -1))
-		if start_cell >= 0:
-			_generator._bio_observation_country_handle = int(_generator._country_facade.cell_summary(
-				start_cell).get("country_handle", 0))
-	if _generator._bio_observation_country_handle != 0:
-		knobs["observation_country_handle"] = _generator._bio_observation_country_handle
+	var observation_handle: int = _generator._resolve_bio_observation_country_handle()
+	if observation_handle != 0:
+		knobs["observation_country_handle"] = observation_handle
 		knobs["observation_effective_day"] = day_index + 1
 	# Keep phase boundaries (persistence/diffusion/merge/publish) preemptible
 	# while using a fixed deterministic range per call. The round is frozen by
@@ -1433,12 +1445,13 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 		knobs["bio_slice_cells"] = clampi(bio_slice_cells, 2048, 32768)
 	# The first sliced call captures the full input snapshot.  Subsequent fixed
 	# cursor calls reuse native staging and must not refresh/copy MapData again.
-	var refresh_inputs = not slice_enabled or not _generator._bio_occupancy_slice_inflight
-	if refresh_inputs:
+	if not _generator._bio_occupancy_slice_inflight:
 		var refresh_keys := PackedStringArray([
 			"cell_bio_occupancy_bits",
+			"cell_province_id",
 			"cell_temp_30d",
 			"cell_moisture",
+			"cell_landform",
 			"cell_vegetation",
 		])
 		for slot_name in _generator._bio_occupancy_knob_cache.get(
@@ -1446,19 +1459,11 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 			if not refresh_keys.has(slot_name):
 				refresh_keys.append(slot_name)
 		_generator._data_core_world_ext.refresh_slots_from_map_keys(refresh_keys)
-	var sliced_call := slice_enabled and \
-			true
 	var res: Dictionary = _generator._data_core_world_ext.run_bio_occupancy_slice(knobs) \
-			if sliced_call else _generator._data_core_world_ext.run_bio_occupancy_pass(knobs)
+			if slice_enabled else _generator._data_core_world_ext.run_bio_occupancy_pass(knobs)
 	res["bio_knob_cache_hit"] = bool(knobs.get("_knob_cache_hit", false))
 	res["bio_knob_cache_build_ms"] = float(knobs.get("_knob_cache_build_ms", 0.0))
-	if slice_enabled and not sliced_call:
-		res["path"] = "gdext_one_shot_fallback"
-		res["bio_slice_fallback_reason"] = "missing_run_bio_occupancy_slice"
-		res["fallback_reason"] = "missing_run_bio_occupancy_slice"
-		res["fail_stage"] = "bio_occupancy_daily"
-		_generator._bio_occupancy_slice_inflight = false
-	if not bool(res.get("ok", false)) and sliced_call:
+	if not bool(res.get("ok", false)) and slice_enabled:
 		# A failed slice never publishes partial staging.  Retry the legacy pass
 		# with the same knobs so feature-flag rollback remains lossless.
 		var fallback_res: Dictionary = _generator._data_core_world_ext.run_bio_occupancy_pass(knobs)
@@ -1478,7 +1483,6 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 			map_ref.bio_occupancy_bits_arr = occupancy
 			_generator._publish_bio_occupancy_to_runtime(map_ref)
 			res["published_to_slot"] = true
-		_generator._bio_occupancy_slice_inflight = false
 	return res
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。

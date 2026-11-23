@@ -217,31 +217,15 @@ func _kpis(host,
 	var jobs_filled = int(population_summary.get("jobs_filled", 0))
 	var employed_population = int(population_summary.get("employed_population", 0))
 	var unemployed_population = int(population_summary.get("unemployed_population", 0))
-	if not population_summary.has("employed_population") \
-			and population_summary.has("populations"):
-		var pops: PackedInt64Array = population_summary.get("populations", PackedInt64Array())
-		var owners: PackedInt64Array = population_summary.get(
-			"owner_employed_by_cohort", PackedInt64Array())
-		var employees: PackedInt64Array = population_summary.get(
-			"employee_employed_by_cohort", PackedInt64Array())
-		employed_population = 0
-		unemployed_population = 0
-		for i in range(pops.size()):
-			var cohort_pop = maxi(0, int(pops[i]))
-			var cohort_emp = mini(cohort_pop,
-				(maxi(0, int(owners[i])) if i < owners.size() else 0)
-				+ (maxi(0, int(employees[i])) if i < employees.size() else 0))
-			employed_population += cohort_emp
-			unemployed_population += cohort_pop - cohort_emp
 	var openings = int(population_summary.get("job_openings", 0))
 	# 页头与全国经济、阶层、城市、年度报告用同一个口径：人口就业率。
 	# 综合不可读时才退回 cell summary 的生存值，并在提示里说明口径。
 	var survival_q16 = int(population_summary.get("satisfaction_q16", 0))
 	var composite = host._cell_composite_satisfaction(cell_idx)
 	var satisfaction = composite if composite >= 0.0 else float(survival_q16) / 65536.0
-	var satisfaction_tooltip = "生存满足 %s；生活短板见人口页。" % h._q16_percent_text(survival_q16)
+	var satisfaction_tooltip = "综合满意度：生存、基本生活、舒适、奢侈、收入、储蓄、税负、社会发展八维按人口加权。生存与基本生活不足会限制总分；有相应需求的阶层，还需改善舒适和奢侈生活才能获得高分。当前生存 %s，分项见「人口」页。" % h._q16_percent_text(survival_q16)
 	if composite < 0.0:
-		satisfaction_tooltip = "仅含口粮与御寒满足情况。"
+		satisfaction_tooltip = "生存满意度（综合满意度暂不可读）：口粮与御寒衣着两项里较差的那一项，不含舒适与奢侈需求。"
 	var over_capacity = carrying > 0 and population > carrying
 	var carrying_text = UITokens.format_compact_number_cn(float(carrying), 1)
 	# 页头四格是玩家扫一眼就要读懂的四件事：人头、产值、满意度、就业率。
@@ -285,7 +269,7 @@ func _gdp_kpi(host, cell_idx: int) -> Dictionary:
 		return {
 			"id": "kpi_gdp", "title": "GDP", "icon": &"metric.treasury",
 			"kind": "text", "text": "—", "caption": "统计中",
-			"tooltip": "本年累计产值",
+			"tooltip": "本地年内累计产值，按已提交的经济周期累计；首个结算周期完成前显示「—」。",
 		}
 	var ytd = float(gdp.get("ytd", 0.0)) / h.MONEY_SCALE
 	var per_day = float(gdp.get("per_day", 0.0)) / h.MONEY_SCALE
@@ -294,7 +278,7 @@ func _gdp_kpi(host, cell_idx: int) -> Dictionary:
 	var per_day_text = UITokens.format_compact_number_cn(per_day, 1)
 	return {
 		"id": "kpi_gdp", "title": "GDP", "icon": &"metric.treasury",
-		"kind": "money", "value": ytd, "decimals": 0,
+		"kind": "money", "value": ytd, "decimals": 0, "snap_value": true,
 		"caption": "日均 %s" % per_day_text,
 		"tooltip": "本地年内累计产值（已计 %d/%d 天）。收入法：建筑营收 − 中间投入 − 维护 = 工资 + 营业盈余，不含营业税。日均 %s。" % [days, days_per_year, per_day_text],
 	}
@@ -445,8 +429,6 @@ func _append_resources_to_geography(host, category: Dictionary, idx: int,
 	var visibility = host._resource_visibility_context(idx)
 	var resource_section = host._resources_category(
 		host._resource_state(idx, is_water, visibility), visibility)
-	if resource_section.is_empty():
-		return
 	resource_section["id"] = "natural_resources"
 	resource_section["title"] = "自然资源"
 	resource_section["icon"] = "resource"
@@ -679,14 +661,18 @@ func _resources_category(host, resource_state: Array, visibility: Dictionary = {
 	var rows = []
 	ResourceProfileRegistry.ensure_loaded()
 	if ResourceProfileRegistry.count() <= 0:
-		return {}
+		return {"insights": [{
+			"id": "resource_unconfigured",
+			"text": "尚未配置自然资源类型。",
+			"accent": UITokens.TEXT_MUTED,
+			"icon": "resource",
+		}]}
 	if resource_state.is_empty():
 		var gated = bool(visibility.get("enforce_discovery", false))
-		if not gated:
-			return {}
 		return {"insights": [{
-			"id": "resource_undiscovered",
-			"text": "当前科技尚未识别此地资源。",
+			"id": "resource_undiscovered" if gated else "resource_empty",
+			"text": "当前科技尚未识别此地资源。" if gated \
+				else "此地块当前无可显示自然资源。",
 			"accent": UITokens.TEXT_MUTED,
 			"icon": "resource",
 		}]}
@@ -716,7 +702,10 @@ func _resources_category(host, resource_state: Array, visibility: Dictionary = {
 		if reserve > 0.000001:
 			visible_count += 1
 	if visible_count == 0:
-		return {}
+		return {
+			"insights": [{"id": "resource_empty", "text": "此地块当前无可显示自然资源。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}],
+			"resource_rows": rows,
+		}
 	return {"resource_rows": rows, "summary": "%d 种" % visible_count}
 
 

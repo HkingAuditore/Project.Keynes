@@ -35,8 +35,6 @@
 | 12 | 智能体开发框架的下一轮优化（见下） | — | 待做 |
 | 13 | 单一时间线迁移（见下） | `docs/architecture/design.md` 单一时间线 | 进行中（2026-11-14） |
 | 14 | 落实上游在 PR #6 的玩法决策并回应审查（见下） | `gameplay-pending-decisions.md` | 代码部分完成（2026-11-14）：全量回归只剩 military20 原始模式（12b）；内容与数值等上游定，见待定文档 |
-| 15 | 运行时故障基建：断言台账 + 构建 ID、事故包 `.pkinc`、离线重放、故障快照可加载、无头复现提速、CI/产物治理 | `runtime-fault-infrastructure-plan.md` | 计划待评审（2026-11-19）；建议先做 R1（台账+构建 ID） |
-| 16 | 天气降水频率治理：`convergence` 改有符号净流入 + 6 个消费者重标定、RAIN 分类门合并、关降水空间平滑、补分类温度距平救活旱灾/热浪、供给侧或雨强上限抉择 | `weather-precipitation-frequency-plan.md`（v2） | 诊断完成（2026-11-20）；方案待评审，建议 W1 标定 → W2/W3 一次做完 |
 
 第 2 项排在拆分之前，是因为后面每一批都要跑回归，先缩短它最划算。
 
@@ -75,7 +73,7 @@
 - 已修（2026-11-14）：环满时气候输入采集失败，主线程下一拍跳到 D+1，worker 停在 D 等不到对应的环境帧，5 秒后报 `day_wait_peer_stall_timeout`，看起来像 Country peer 卡死。当时在 `mapgen_native_daily_runtime.gd` 给 SUS_TICK 输入日加了钳位，第 9b 项改成 C++ 游标后钳位已删除。lifecycle 连跑 4 次 0 次卡死（修前约每 2 次 1 次）。x5、x6b 的每日等待去掉 120 秒下限、基线改在推进当天之前读取，从 300 秒超时变为约 30 秒跑完。外包的 E2 补丁没有修掉问题，还放宽了断言，没有采用。
 - 已修（2026-11-14，第 9e 项）：ideology worker 测试剩余失败。lifecycle、x6c、country_ramp、x5、x6b、scalar、x12、x9b、restart_mask、cell_card、derived_pump 全过，根因见第 9e 项。剩 x6a 一条：夹具假设经济静止（见第 9c 项），断言没改。
 - 已修（2026-11-15）：Country 财政请求在 Economy 主线程路径中先确认消费、后落国家账，导致回执提前删除。现按既有执行边界先应用国家账并发布读视图，再确认；加强后的 `economy_fiscal_reservation_continuation_test` 为 57/57，旧二进制仍失败同 2 条。
-- `trade_activity_runtime_integration_test` 访问 nil 的 `visual_tiles` 后一直等待。
+- 已修（#42）：`trade_activity_runtime_integration_test` 从会话取生成好的地图数据。数据缺失时记录断言失败并退出，贸易层用就绪信号交付的地图绑定法线。
 - `military_runtime_smoke_test`：2026-11-14 换成合并前的等价兵营配方后 0 失败，原先登船少 1 名士兵的那条没有复现；真实数据下卡在建兵营（待定 12b）。
 - `technology_refresh_latency_test` 剩 1 条：面板关闭的 6 天里研究进度没变，疑似排队的 3 项科技在测量阶段已研究完，未证实（2026-11-14 从玩法待定移来，原来的延迟问题已通过）。
 - `runtime_country_parity_test`：第 2 天起 `research_deferred_points` 在 Country POD 与主线程科研队列之间不一致，之后屏障超时。2026-11-14 复跑剩 2 条（生产调度没有封住每个推进日；D11 soak 没有产出可比的 Country 帧）。
@@ -163,6 +161,9 @@ worker 缺环境帧的另一半已由第 9b 项消除：跳日的帧进不了环
 
 ## 第 13 项：单一时间线迁移
 
+接续以 [后台分工目标](../architecture/design.md#单一时间线与前后台分工) 和
+[运行现状](../architecture/current-state.md#前台尚存的模拟工作) 为准。下表保留前一轮的迁移记录。
+
 根因（2026-11-14 核对代码）：不一致和偶发失败来自线程分工，不在 DOTS 数据布局。
 
 1. 两个日历：命令生效日取提交瞬间 worker 的已提交日（`submit_runtime_command`、`enqueue_country_host_command_batch`），晚到的命令被 worker 改期到当天（Country 阶段）。
@@ -179,7 +180,7 @@ worker 缺环境帧的另一半已由第 9b 项消除：跳日的帧进不了环
 | 0 | 命令按日封口：生效日 = max(请求日, 主线程封口日 + 1)，删 worker 端改期；worker 先取第 D 天环境帧再收命令 | 完成（2026-11-14）：golden 空闲 4/4、负载约 26 下 6/6 一致；military20/multicountry5 第 13 天 EFFECT 分叉定位到科技效果跨线程回执，归第 2 步。之后加压又查出 Effect 镜像回 Country 的命令沿用 Effect 自己的生效日，可能落在已封口的一天，审查又查出事件和 Modifier 也不取封口日，于是封口统一放在命令环入口 `enqueue_batch`（调用方都在主线程）。Ideology 队列（worker 上的 Trigger 也写它，不能在命令环入口统一取）和 Economy POD 命令（`RuntimeEconomyPodCommand` 没有日期字段）当时没封口。golden 之后又分叉一次，原因是封口日取环境帧水位，而水位跟着帧时序跑在前面：有日尾闸门时封口日改为日尾完成日 + 2，Trigger 队列和 Ideology 队列的主线程入口也取封口日（worker 端写入不经过入口），日尾标记前交接 Trigger 效果，worker 启动时日尾完成日取起始已提交日（见 `feature-status.md`）。剩 Economy POD 命令没封口：默认整图加日尾闸门时它在第 D 天日尾提交、D+1 开头取走，次序固定；部分权威模式下仍依赖时序 |
 | 1 | 世界创建即 worker 权威：删运行中切换、SHADOW、对拍 | 部分完成（2026-11-14）：删了主线程那条与 worker 抢着把经济切到 POD_ACTIVE 的路径，只留 worker 在两天之间自己切（第 1 天提交后，镜像齐了就切，日期固定）；`runtime_economy_auto_pod_active` 默认打开，测试与正式会话同一条权威路径。SHADOW、对拍按 design.md 黄金回放一节"覆盖充分前保留"，没删；新世界仍要等首日提交才授权。授权前那段窗口里，主线程原来照常跑 Country、Effect、Modifier 等已请求的域，会往 Effect POD 排科技实例、往命令环镜像 Country AI 决策，进多少取决于 worker 首日何时提交；现在主线程从请求起就停推这些域（`domain_main_thread_suppressed`，见 `feature-status.md`） |
 | 2 | 去掉一天中途的跨线程请求（科技效果、经济输入采集、财政资产），每去一个删一种停等原因 | 部分完成（2026-11-14）：科技效果 ENSURE 在 worker 上解决；military20 主线程意图泵 0 次收到排队意图，剩下的国家停等（第 2、13、14 天）是 worker 内部等自己的 Effect 阶段回执。经济输入仍由 worker 在当天中途请求主线程从 MapData 采集：有了第 3 步的日尾闸门，采集读到的是第 D 天日尾之后的稳定状态，矩阵与加压 golden 一致；改成 worker 自取需要气候写回带温度历史（30 日、365 日）并把雾的可见格做成已提交视图，未做。财政资产停等在矩阵里 0 次出现 |
-| 3 | 表外推进者并入每日表，军事最后，边界改动先与上游商量 | 完成（2026-11-14，闸门方式）：worker 等主线程报告第 D 天日尾（军事、自然资源）做完才开始 D+1（`mark_runtime_day_tail_done`），Climate 授权前不等；军事仍在主线程跑，不动上游边界。删了外围同日对齐实验。试过在日尾顺手采集 D+1 的经济输入：checkpoint 与 resume 采集时机不同，military20 第 21 天 COUNTRY/ECONOMY 分叉，已撤回，归第 2 步 |
+| 3 | 表外推进者并入每日表，军事最后，边界改动先与上游商量 | 完成（2026-11-14，闸门方式）：worker 等主线程报告第 D 天日尾（军事、自然资源）做完才开始 D+1（`mark_runtime_day_tail_done`），Climate 授权前不等；当时军事仍在主线程跑。后续在整日模式迁入军务、物理视野与资源恢复的计算，主线程仍承担部分交接。删了外围同日对齐实验。试过在日尾顺手采集 D+1 的经济输入：checkpoint 与 resume 采集时机不同，military20 第 21 天 COUNTRY/ECONOMY 分叉，已撤回，归第 2 步 |
 | 4 | 各域快照合成每日一帧，界面改读帧，删主线程镜像 | 待做，已评估（2026-11-14）：Trigger、Ideology、Modifier、Effect、Country、Economy 六个域约 20 个 C++ 文件在主线程保留完整运行时，由 worker 快照重建（`apply_runtime_*_snapshot`、`mirror_*`），界面和 GDScript 直接读它们。要先给每个域定只读帧接口，再逐域把读方改过去，才能删镜像，单独立项 |
 | 5 | 测试改用同步推进 | 待做，已评估（2026-11-14）：21 个测试用第 9c 项的 `drive_worker_day` / `wait_committed` 等 worker，10 个测试已引用内联模式（`native_daily_inline`）。迁移是把前者逐个改成内联单步，单独立项 |
 | 经济 | 按实际消费者采样指标、复用固定目录与未变化的国家输入 | 经济重设计与三轮对照完成（2026-11-15）：固定目录改为配置时整理一次，国家输入按精确变化重建，地理标签仍覆盖空地。CORE 中位 28.707→51.749 天/秒（+80.3%），但仅 2/3 次达到 50；DETAIL 27.934→48.271（+72.8%），标签阶段均值的三轮中位 14.824→0.756 ms。黄金/表外/意图逐字段一致；第一轮仅收窄指标的收益在噪声内，不能归功于它。线程完成通知与库存命令的独立缺陷已完成定向验证；合并版补测 CORE 为 48.934/48.410/48.791 天/秒（均未达 50），不另宣称这些修复带来吞吐收益。最终军事/视觉版本尚待全整合验收。 |

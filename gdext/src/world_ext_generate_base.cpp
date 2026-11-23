@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "simulation_math.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -204,8 +205,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     const double hydro_dist_scale = std::sqrt(std::max(0.0625, double(n) / PK_HYDRO_REF_CELLS));
     const double inv_hydro_dist_scale = 1.0 / hydro_dist_scale;
     const double moisture_wind_evap_eff = moisture_wind_evap * inv_hydro_dist_scale;
-    const double moisture_rainout_base_eff = 1.0 - std::pow(1.0 - moisture_rainout_base, inv_hydro_dist_scale);
-    const double moisture_continental_dry_eff = 1.0 - std::pow(1.0 - moisture_continental_dry, inv_hydro_dist_scale);
+    const double moisture_rainout_base_eff = 1.0 - simulation_math::pow(1.0 - moisture_rainout_base, inv_hydro_dist_scale);
+    const double moisture_continental_dry_eff = 1.0 - simulation_math::pow(1.0 - moisture_continental_dry, inv_hydro_dist_scale);
     const double coastal_temp_scale_eff = std::max(0.5, coastal_temp_scale * hydro_dist_scale);
     const double coastal_moist_scale_eff = std::max(0.25,
             std::max(1.0, getd(profile, "moisture_coastal_scale", 7.0)) * hydro_dist_scale);
@@ -351,8 +352,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             p.y = prng.is_valid() ? double(prng->randf()) : 0.5;
             const double ang = (prng.is_valid() ? double(prng->randf()) : 0.0) * 2.0 * M_PI;
             const double spd = tectonic_drift_speed * (0.4 + 0.6 * (prng.is_valid() ? double(prng->randf()) : 0.5));
-            p.dx = std::cos(ang) * spd;
-            p.dy = std::sin(ang) * spd;
+            p.dx = simulation_math::cos(ang) * spd;
+            p.dy = simulation_math::sin(ang) * spd;
             p.continental = (prng.is_valid() ? double(prng->randf()) : 0.5) < tectonic_continental_fraction;
             p.base_h = p.continental ? tectonic_continental_base : tectonic_oceanic_base;
             plates.push_back(p);
@@ -522,7 +523,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // 参考图的山系整体放大（放大后格间高差 ∝ 1/s，内陆读成平地）。大陆轮廓仍按整图定义。
     // N <= feature_ref_cells 时 feature_scale=1，与旧行为逐位一致。
     const double feature_ref_cells = std::max(100.0, getd(profile, "feature_ref_cells", 2400.0));
-    const double feature_scale = std::pow(std::max(1.0, std::sqrt(double(width) * double(height) / feature_ref_cells)),
+    const double feature_scale = simulation_math::pow(std::max(1.0, std::sqrt(double(width) * double(height) / feature_ref_cells)),
                                           std::clamp(getd(profile, "feature_scale_exp", 1.0), 0.0, 1.0));
 
     // ── 1. coords + elevation —— 镜像 _compute_elevation（行主序，与 all_cells() 一致）──
@@ -542,8 +543,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             // col=width-1 仅差 1 角步、相邻而非重合（若用 col/(width-1) 会让首尾列采到同一角→"双列"接缝）。
             const double lon = double(col) / double(width);
             const double theta = PK_TWO_PI * lon;   // 经度角（周期）→ 东西无缝
-            const double ct = std::cos(theta);
-            const double st = std::sin(theta);
+            const double ct = simulation_math::cos(theta);
+            const double st = simulation_math::sin(theta);
             const double dist_perturb = cyl_noise(height_warp.ptr(), ct, st, ny, 250.0, 11.3, -7.1, 0.0) * continent_warp_amp;
             // [bimodal-hypsography 2026-06-26] 大陆距离场（不再 pow → 当 mask 种子而非穹顶）。
             double dist_field = 0.0;
@@ -567,7 +568,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const double c2 = double(detail_noise->get_noise_3d(cx * 1.7 + u_warp, cy * 1.7 + v_warp, cz * 1.7));
             const double cont_noise = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5;
             const double offshore_raw = cyl_noise(detail_noise.ptr(), ct, st, ny, 900.0, -333.0, 217.0, 0.0);
-            const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;  // 近海岛屿
+            const double offshore = simulation_math::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;  // 近海岛屿
             const double macro = cyl_noise(height_noise.ptr(), ct, st, ny, 95.0 * feature_scale, 701.0, -419.0, 0.0);   // 大尺度起伏
             // 极地纬度衰减（双峰下用于降低极地大陆性；旧路径下仍用于减高程）。
             const double edge_dy = std::fabs(ny - 0.5) * 2.0;
@@ -588,7 +589,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 ridge = pk_clamp01(ridge);
                 const double belt_n = cyl_noise(detail_noise.ptr(), ct, st, ny, 70.0 * feature_scale, 137.0, -91.0, 0.0);
                 const double belt = pk_smoothstep(PK_OROG_BELT_LO, PK_OROG_BELT_HI, (belt_n + 1.0) * 0.5);
-                const double orogeny = std::pow(ridge, PK_OROG_SHARP) * belt * PK_OROGENY_AMP;
+                const double orogeny = simulation_math::pow(ridge, PK_OROG_SHARP) * belt * PK_OROGENY_AMP;
                 // 合成：海岸线定在 C=0.5。陆地从海岸(sea)抬到内陆平台(含造山) → 内陆平坦 + 海岸上坡(海岸法线)；
                 // 水侧仅占位(确保 E<sea)，真实深度由下面 #3 距岸 BFS 重塑出大陆架→坡→深渊。跳过 min/max normalize。
                 const double platform = PK_PLATFORM_H + macro * PK_PLATFORM_UNDULATE + orogeny;
@@ -599,7 +600,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     // [water-tuning 2026-06-26] 此处仅产出"水侧占位深度"(确保 E<sea_level，供 dist_ocean
                     // 与海陆 mask 正确播种)；最终洋底深度由上文 dist_ocean 之后的"距岸距离驱动洋底深度"
                     // BFS 统一重写。凹幂律(p=0.62)使占位本身也呈架→坡过渡，BFS 关闭时仍是合理回退。
-                    const double wt = std::pow(pk_clamp01((0.5 - C) * 2.0), 0.62);          // 0=海岸 → 1=开阔洋
+                    const double wt = simulation_math::pow(pk_clamp01((0.5 - C) * 2.0), 0.62);          // 0=海岸 → 1=开阔洋
                     e_out = sea_level - 0.02 - wt * (sea_level * PK_OCEAN_DEPTH_FRAC);
                 }
             } else {
@@ -607,7 +608,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double noise_01 = cont_noise;
                 const double meso = (cyl_noise(detail_noise.ptr(), ct, st, ny, 400.0, 137.0, -91.0, 0.0) + 1.0) * 0.5;
                 const double coast = cyl_noise(height_noise.ptr(), ct, st, ny, 80.0, 500.0, 500.0, 0.0) * 0.06;
-                const double df15 = std::pow(dist_field, 1.5);
+                const double df15 = simulation_math::pow(dist_field, 1.5);
                 double raw = df15 * (dist_field_weight + noise_01 * noise_weight + meso * meso_weight)
                     + coast + offshore + macro * df15 * macro_relief_weight;
                 raw -= edge_t * edge_falloff_depth;
@@ -685,7 +686,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const int col = i % width;
                 const double ny = double(row) * inv_h;
                 const double th = PK_TWO_PI * (double(col) / double(width));
-                const double basin = cyl_noise(height_noise.ptr(), std::cos(th), std::sin(th), ny, 120.0, -571.0, 311.0, 0.0);
+                const double basin = cyl_noise(height_noise.ptr(), simulation_math::cos(th), simulation_math::sin(th), ny, 120.0, -571.0, 311.0, 0.0);
                 depth01 += basin * PK_OCEAN_BASIN_AMP * ramp;
                 if (depth01 < 0.0) depth01 = 0.0; else if (depth01 > 1.0) depth01 = 1.0;
                 double e_new = sea - depth01 * max_depth;
@@ -722,11 +723,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 // [cylindrical-earth-daylight] 山脊噪声圆柱采样 → 山脉跨接缝东西无缝；
                 // 经度 period=width（col/width），col=0 与 col=width-1 相邻不重合。
                 const double th2 = PK_TWO_PI * (double(col) / double(width));
-                const double ct2 = std::cos(th2);
-                const double st2 = std::sin(th2);
+                const double ct2 = simulation_math::cos(th2);
+                const double st2 = simulation_math::sin(th2);
                 const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0 * feature_scale, 71.3, -33.7, 0.0));
                 const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0 * feature_scale, -50.7, 91.1, 0.0));
-                const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
+                const double ridge_signal = simulation_math::pow(std::max(ridge_a, ridge_b), 1.4);
                 double lowest = double(e0_frozen[size_t(idx)]);
                 for (int d = 0; d < 6; ++d) {
                     const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
@@ -737,7 +738,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 if (slope_gate < 0.30) slope_gate = 0.30;
                 else if (slope_gate > 1.0) slope_gate = 1.0;
                 double land_factor = (double(e0_frozen[size_t(idx)]) - sea_level) / denom_lf;
-                land_factor = std::pow(land_factor, 1.5);
+                land_factor = simulation_math::pow(land_factor, 1.5);
                 ridge_add[size_t(idx)] = float(ridge_signal * land_factor * slope_gate * ridge_boost_amp);
             }
         }
@@ -943,7 +944,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     if (d < 0) continue;
                     if (double(E[i]) < sea_level) continue; // 海洋不侵蚀
                     const double C = spl_k * spl_res_scale
-                            * std::pow(area[size_t(i)] * inv_area_mean / spl_res_scale, spl_m);
+                            * simulation_math::pow(area[size_t(i)] * inv_area_mean / spl_res_scale, spl_m);
                     // [P5-1.2] 每轮抬升 = 残余地势回补 + 构造脊抬升场（ridge_add 由 §R 在冻结的 E0 上算得）。
                     // [S7-T6 / G1] 其中脊项只留 (1−f_pre) 的份额：f_pre 的份额已在建树前预叠进 E_init，
                     // 两者相加仍是 u·ridge_add，所以 f_pre 只改变「脊在第几轮出现」、不改变总脊量。
@@ -1066,14 +1067,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 // 使 col=0 与 col=width-1 相邻不重合 → 湖盆可跨接缝、东西无缝。经度 warp 经 Δθ 施加。
                 const double l_theta = PK_TWO_PI * (double(col) / double(width));
                 const double l_rc = double(width) / PK_TWO_PI;
-                const double lcx = std::cos(l_theta) * l_rc;
-                const double lcy = std::sin(l_theta) * l_rc;
+                const double lcx = simulation_math::cos(l_theta) * l_rc;
+                const double lcy = simulation_math::sin(l_theta) * l_rc;
                 const double lz = double(row);
                 const double warp_lon = double(lake_noise_small->get_noise_3d(lcx + 211.0, lcy - 77.0, lz)) * warp_amp;
                 const double warp_lat = double(lake_noise_small->get_noise_3d(lcx - 53.0, lcy + 169.0, lz)) * warp_amp;
                 const double th2 = l_theta + warp_lon / l_rc;   // 经度方向 warp（保持周期）
-                const double wcx = std::cos(th2) * l_rc;
-                const double wcy = std::sin(th2) * l_rc;
+                const double wcx = simulation_math::cos(th2) * l_rc;
+                const double wcy = simulation_math::sin(th2) * l_rc;
                 const double wz = lz + warp_lat;                // 纬度方向 warp
                 const double n_large = double(lake_noise->get_noise_3d(wcx, wcy, wz));
                 const double n_small = double(lake_noise_small->get_noise_3d(wcx, wcy, wz));
@@ -1181,7 +1182,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     double h = double(ridge_pre[size_t(i)]) + g * ridge_resid * double(ridge_add[size_t(i)]);
                     if (h > soft_max) {
                         const double span = land_elev_cap - soft_max;
-                        h = soft_max + span * (1.0 - std::exp(-(h - soft_max) / span));
+                        h = soft_max + span * (1.0 - simulation_math::exp(-(h - soft_max) / span));
                         ++tail_count;
                     }
                     E[i] = float(h);
@@ -1341,7 +1342,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     auto ocean_influence = [&](int i) -> double {
         const int dd = dist_ocean[size_t(i)];
         if (dd < 0) return 0.0; // 全陆地(无海)→极内陆
-        return std::exp(-double(dd) / coastal_temp_scale_eff);  // [scale-fix] ×s，见 knobs 区
+        return simulation_math::exp(-double(dd) / coastal_temp_scale_eff);  // [scale-fix] ×s，见 knobs 区
     };
     // 生成期温度：纬度钟形 - 海平面相对海拔惩罚，再按海洋邻近度拉向温带(沿海冬暖夏凉)。仅用于
     // 生成期地形/biome 分类；运行时温度场同样走 pk_compute_temperature(ny, elevation, sea_level)。
@@ -1358,7 +1359,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // 乘在 rainout 上而非直接加减 M：辐合带快速降空水汽 → 信风带下游(副热带)自然更干。
     auto zgauss = [](double x, double c, double w) {
         const double z = (x - c) / w;
-        return std::exp(-0.5 * z * z);
+        return simulation_math::exp(-0.5 * z * z);
     };
     auto zonal_precip_factor = [&](double ny) -> double {
         const double eq_dist = std::abs(ny * 2.0 - 1.0);
@@ -1412,7 +1413,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double precip = humidity * rainout;
                 // [cylindrical-earth-daylight] 湿度抖动噪声圆柱采样 → 东西无缝；经度 period=width（col/width）
                 const double mth = PK_TWO_PI * (double(col) / double(width));
-                const double jitter = cyl_noise(moisture_noise.ptr(), std::cos(mth), std::sin(mth), ny, 100.0, 0.0, 0.0, 0.0) * moisture_noise_amp;
+                const double jitter = cyl_noise(moisture_noise.ptr(), simulation_math::cos(mth), simulation_math::sin(mth), ny, 100.0, 0.0, 0.0, 0.0) * moisture_noise_amp;
                 double m = moisture_land_base + precip * moisture_precip_gain + jitter;
                 if (record) M[idx] = float(pk_clamp01(m));
                 // [zonal-envelope] ITCZ：降水一部分蒸散回气柱(再循环)，另有辐合流恒量注入——
@@ -1450,7 +1451,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (double(E[i]) < sea_level) continue;
         const int dd = dist_ocean[size_t(i)];
         if (dd <= 0) continue;
-        const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
+        const double prox = simulation_math::exp(-double(dd) / coastal_moist_scale_eff);
         const double floor_m = moisture_land_base + coastal_moist_floor * prox;
         if (double(M[i]) < floor_m) M[i] = float(floor_m);
     }
@@ -1466,7 +1467,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (double(E[i]) < sea_level) continue;
         const int dd = dist_ocean[size_t(i)];
         if (dd <= 0) continue;
-        const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
+        const double prox = simulation_math::exp(-double(dd) / coastal_moist_scale_eff);
         const double guard_m = moisture_land_base
             + coastal_moist_floor * PK_COASTAL_MOIST_GUARD * prox;
         if (double(M[i]) < guard_m) M[i] = float(guard_m);
@@ -1486,7 +1487,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             if (interior <= 0.0) continue;
             const double abs_lat = std::abs(double(R[i]) * inv_h * 2.0 - 1.0);
             const double z = (abs_lat - subtropical_dry_center) / subtropical_dry_width;
-            const double dry_belt = std::exp(-0.5 * z * z);
+            const double dry_belt = simulation_math::exp(-0.5 * z * z);
             M[i] = float(pk_clamp01(double(M[i]) - subtropical_dry_strength * dry_belt * interior));
         }
     }

@@ -273,7 +273,7 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	# 日期行只补标题里缺的定位信息，避免同一行重复地名。
 	var date_text := String(rec.get("date_text", "")).strip_edges()
 	if date_text.is_empty():
-		date_text = WorldClock.date_text_for_day(day)
+		date_text = "第 %d 日" % day
 	var date_parts := PackedStringArray([date_text])
 	if not settlement.is_empty() and not title_text.contains(settlement):
 		date_parts.append(settlement)
@@ -305,7 +305,12 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	choice_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
 	choice_lbl.add_theme_font_size_override("font_size", 14)
 	choice_lbl.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK_SOFT)
-	vbox.add_child(choice_lbl)
+	if bool(rec.get("notice_only", false)):
+		choice_lbl.text = String(rec.get("settlement_name", ""))
+	if not choice_lbl.text.is_empty():
+		vbox.add_child(choice_lbl)
+	else:
+		choice_lbl.free()
 
 	var effects: PackedStringArray = PackedStringArray(rec.get("applied_effects_summary", []))
 	if not effects.is_empty():

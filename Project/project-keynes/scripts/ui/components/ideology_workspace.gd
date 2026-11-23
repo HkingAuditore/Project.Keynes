@@ -67,7 +67,7 @@ var _pending_promotion_id := -1
 var _compact := false
 var _tab_school := ""
 var _sort_mode := 0
-var _draw_phase := ""
+var _pending_draw_sequence := -1
 var _revealed_generation := 0
 var _chosen_generation := -1
 var _dismissed_generation := -1
@@ -418,7 +418,7 @@ func _reroll_offer() -> void:
 func _dismiss_offer() -> void:
 	_dismissed_generation = int(_snapshot.get("offer_generation", 0))
 	if _player_controller != null and _player_controller.has_method("dismiss_ideology_offer"):
-		_player_controller.dismiss_ideology_offer()
+		_player_controller.dismiss_ideology_offer(_dismissed_generation)
 	_render_top()
 	_rebuild_offer()
 	_offer_button.grab_focus()
@@ -457,6 +457,13 @@ func _confirm_promotion() -> void:
 	_command("promote", ideology_id)
 
 
+func _on_player_command_completed(id: StringName, result: Dictionary) -> void:
+	if id in [&"ideology.offer", &"ideology.reroll"] and bool(result.get("ok", false)):
+		_pending_draw_sequence = int(result.get("sequence", -1))
+		_render_top()
+		_rebuild_offer()
+
+
 func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 	if id not in [
 		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER,
@@ -467,6 +474,10 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 		PlayerControllerScript.COMMAND_IDEOLOGY_PROMOTE,
 	]:
 		return
+	if _pending_draw_sequence == int(result.get("sequence", -2)):
+		_pending_draw_sequence = -1
+		_render_top()
+		_rebuild_offer()
 	if bool(result.get("ok", false)):
 		_flash_hint("")
 	else:
@@ -479,22 +490,11 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 func _on_ideology_offer_ready(snapshot: Dictionary) -> void:
 	if snapshot.is_empty():
 		return
-	_draw_phase = "presenting"
 	_snapshot = snapshot
 	_presentation = CountryViewModel.present_ideology(_snapshot, _catalog)
 	_index_states()
 	_dismissed_generation = -1
 	_hint_hold_until = 0
-	_render_top()
-	_rebuild_offer()
-
-
-func _on_ideology_draw_state_changed(phase: String, detail: Dictionary) -> void:
-	_draw_phase = phase
-	var message := String(detail.get("message", ""))
-	if not message.is_empty():
-		_flash_hint(message)
-		_toast(message)
 	_render_top()
 	_rebuild_offer()
 
@@ -785,31 +785,12 @@ func _support_summary(live: Dictionary, direction: int) -> String:
 
 
 func _support_tooltip(live: Dictionary, direction: int) -> String:
-	var summary := _support_summary(live, direction)
-	var classes: Array = live.get("classes", [])
-	if classes.is_empty():
-		return summary
-	var total_influence := int(live.get("total_influence", 0))
-	if total_influence <= 0:
-		for item in classes:
-			total_influence += maxi(0, int((item as Dictionary).get("influence", 0)))
-	var parts := PackedStringArray()
-	for item in classes:
-		var entry := item as Dictionary
-		var stances: Array = entry.get("stances", [])
-		var contribs: Array = entry.get("contributions", [])
-		var stance := int(stances[direction]) if direction < stances.size() else 0
-		var raw_contrib := int(contribs[direction]) if direction < contribs.size() else 0
-		var score_contrib := int(round(float(raw_contrib) / float(total_influence))) \
-			if total_influence > 0 else 0
-		var attitude := "赞成" if stance > 0 else ("反对" if stance < 0 else "中立")
-		var label := IdeologyWorkspacePresentationScript._class_label(
-			self, int(entry.get("class_index", -1)))
-		parts.append("%s %s(%s, 贡献 %s)" % [
-			label, attitude, _q16_signed(stance), _q16_signed(score_contrib)])
-	if parts.is_empty():
-		return summary
-	return "%s\n%s" % [summary, " · ".join(parts)]
+	# The old per-class "加权贡献" line printed `influence x stance`, a raw product
+	# whose unit the player could not read. The real per-class numbers are the
+	# income change and the resulting stance, shown in the detail sheet where one
+	# native call per card is affordable.
+	return "%s\n%s" % [_support_summary(live, direction),
+		"支持评分 = 各阶层立场按影响力加权；立场 = 该阶层收入变化 × 5。"]
 
 
 func _display_name(metadata: Dictionary, ideology_id: int) -> String:

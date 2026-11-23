@@ -181,7 +181,7 @@ func _apply_weather_to_map_feedback_pass(map: MapData, day_scale: float = 1.0, w
 # 设计原则：
 #   - 三个 pass 全部只动 cell.current_state 与 cell.vegetation_vitality / streak 计数器，
 #     不写 base_moisture / base_temperature / base_vegetation。base_* 仅由 refresh_seasonal /
-#     refresh_yearly 缓慢漂移；M4 反馈是"日尺度"的快变扰动。
+#     执行器的年度湿度变化；M4 反馈是"日尺度"的快变扰动。
 #   - 蒸腾外溢只在陆地 cell 之间扩散（海面 / 冰川不参与）。
 #   - 反照率只在陆地 cell 上调整温度（海洋温度由洋流体系决定，M4 不动）。
 #   - 演替触发后立即写 cell.vegetation 并刷 base_vegetation，让玩家在 panel 看到"演替已发生"。

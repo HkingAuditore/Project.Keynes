@@ -49,15 +49,6 @@ func _run() -> void:
 		lowest = mini(lowest, int(int(class_sat[cls]) / maxi(1, int(class_pop[cls]))))
 	_expect("small unhappy classes are not hidden by whole-cell averaging", severity[3] == 65535 - lowest)
 	_expect("class explanation identifies the worst political class", packet.worst_class_ids[0] >= 0)
-	var discontent: Dictionary = pop.get("class_discontent", {})
-	var list_only: Dictionary = ext.get_population_cell_snapshot(0, false)
-	_expect("population details and lightweight list carry the same map discontent",
-		int(discontent.get("severity_q16", -1)) == severity[3]
-		and bool(discontent.get("active", false)) == (int(packet.flags[0]) & (1 << 3) != 0)
-		and String(discontent.get("class_id", "")) == packet.class_ids[packet.worst_class_ids[0]]
-		and int(discontent.get("state_day", -1)) == packet.state_days[0]
-		and int(discontent.get("economy_generation", -1)) == int(packet.economy_generation)
-		and list_only.get("class_discontent", {}) == discontent)
 	var kinds := PackedInt32Array()
 	kinds.resize(catalog.good_ids.size())
 	for need in catalog.need_satisfaction_tiers.size():

@@ -1,4 +1,5 @@
 #include "runtime_climate_passes.h"
+#include "runtime_climate_pass_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -90,8 +91,8 @@ void cyclone_genesis_pure(int n_cells,
         lanes.weather_type == nullptr || lanes.weather_intensity == nullptr ||
         lanes.temp == nullptr || lanes.precip == nullptr ||
         lanes.cloud == nullptr || lanes.instability == nullptr ||
-        lanes.convergence == nullptr || lanes.wind_x == nullptr ||
-        lanes.wind_y == nullptr || lanes.pos_y == nullptr ||
+        lanes.wind_x == nullptr || lanes.wind_y == nullptr ||
+        lanes.pos_x == nullptr || lanes.pos_y == nullptr ||
         lanes.neighbors == nullptr) {
         return;
     }
@@ -116,12 +117,14 @@ void cyclone_genesis_pure(int n_cells,
         stats.max_precip = std::max(stats.max_precip, lanes.precip[i]);
         stats.max_cloud = std::max(stats.max_cloud, lanes.cloud[i]);
         stats.max_instability = std::max(stats.max_instability, lanes.instability[i]);
-        stats.max_convergence = std::max(stats.max_convergence, lanes.convergence[i]);
         if (lanes.temp[i] < knobs.min_temp) { ++stats.fail_temp; continue; }
         if (lanes.precip[i] < knobs.precip_gate) { ++stats.fail_precip; continue; }
         if (lanes.cloud[i] < knobs.cloud_gate) { ++stats.fail_cloud; continue; }
-        if (lanes.instability[i] < knobs.min_instability &&
-            lanes.convergence[i] < 0.30f) {
+        const float inward = wf_cyclone_inward_wind_xy(i, lanes.pos_x, lanes.pos_y,
+            lanes.neighbors, lanes.wind_x, lanes.wind_y, lanes.wind_speed,
+            lanes.wrap_width_x);
+        stats.max_convergence = std::max(stats.max_convergence, inward);
+        if (lanes.instability[i] < knobs.min_instability && inward < 0.30f) {
             ++stats.fail_instability;
             continue;
         }
@@ -222,8 +225,7 @@ void cyclone_advance_and_stamp_pure(int n_cells,
         lanes.pos_y == nullptr || lanes.terrain == nullptr ||
         lanes.temp == nullptr || lanes.wind_x == nullptr ||
         lanes.wind_y == nullptr || lanes.wind_speed == nullptr ||
-        lanes.vapor == nullptr || lanes.instability == nullptr ||
-        lanes.convergence == nullptr) {
+        lanes.vapor == nullptr || lanes.instability == nullptr) {
         return;
     }
     if (stamp.force_tag == nullptr || stamp.visit_tag == nullptr ||
@@ -260,9 +262,11 @@ void cyclone_advance_and_stamp_pure(int n_cells,
                 shear = std::max(shear, std::sqrt(dx * dx + dy * dy) / 2.0f);
             }
             const bool on_water = wf_is_water_terrain(terrain[i]);
+            const float inward = wf_cyclone_inward_wind_xy(i, positions_x, positions_y,
+                neighbors, lanes.wind_x, lanes.wind_y, lanes.wind_speed, wrap_x);
             const float potential = wf_smoothstep(0.54f, 0.76f, lanes.temp[i]) *
                 wf_smoothstep(0.42f, 0.72f, lanes.vapor[i]) *
-                (0.35f + 0.65f * std::max(lanes.instability[i], lanes.convergence[i])) *
+                (0.35f + 0.65f * std::max(lanes.instability[i], inward)) *
                 (1.0f - dc_clampf(shear, 0.0f, 1.0f)) * (on_water ? 1.0f : 0.15f);
             e.intensity += (potential - e.intensity) * (on_water ? 0.16f : 0.38f) * dt;
             if (lanes.temp[i] < 0.50f) {

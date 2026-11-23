@@ -63,8 +63,6 @@ func _run() -> void:
 	# The live HUD plays the era ceremony by pausing the clock. This headless
 	# barrier check only needs the committed era and ACK path, so use the
 	# existing popup suppression before the grant is observed by the UI.
-	if controller != null and controller.has_method("set_popups_suppressed"):
-		controller.set_popups_suppressed(true)
 	ui.set("_gm_popups_suppressed", true)
 	var granted: Dictionary = facade.grant_technology(handle, StringName(milestone_id),
 		int(clock.day_index()), 4242)

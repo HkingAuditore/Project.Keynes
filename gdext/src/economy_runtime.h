@@ -39,7 +39,7 @@
 #include "runtime_economy_army_personnel.h"
 // END army personnel lane
 #include "runtime_pod_protocol.h"
-#include "country_read_view.h"
+#include "country_api.h"
 #include "natural_resource_kernel.h"
 #include "trade_visual_cache.h"
 #include "annual_development_ledger.h"
@@ -73,6 +73,7 @@ struct TrackBDerivedCellWork {
 };
 
 struct RuntimeEconomyEcp2State;
+struct RuntimeGdpCell;
 
 class EffectRuntime;
 class EffectInstanceForwarder;
@@ -419,6 +420,7 @@ public:
 
     enum ConstructionOwnershipPolicy : int32_t {
         OWNERSHIP_TREASURY_SPONSORED_PRIVATE = 1,
+        OWNERSHIP_TREASURY_MILITARY_ORDER = 2,
     };
 
     NativeEconomyRuntime();
@@ -426,6 +428,7 @@ public:
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(EconomyHostPort *host) { _simulation_host = host; }
     AnnualEconomyFacts capture_annual_facts(uint64_t country_handle, bool flows) const;
+    std::vector<RuntimeGdpCell> capture_settlement_output(uint64_t country_handle) const;
     void publish_annual_development_facts();
     bool annual_observes_cell(int32_t cell) const;
     void record_annual_event(int32_t cell, AnnualMetric metric, int64_t value);
@@ -633,12 +636,6 @@ public:
     bool has_pending_effect_commands() const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
-    // Sparse-workset / continuation probe. Diagnostic only: pure reads of
-    // epoch-scoped counters, no settlement decision depends on it.
-    void write_workset_probe_report(godot::Dictionary &out) const;
-    godot::Dictionary probe_report() const;
-    void note_boundary_phase_ms(int32_t phase, double ms);
-    void note_probe_slice(const godot::Dictionary &slice_result);
     // Worker ACTIVE production: one compact ECONOMY_GRAPH slice on the existing
     // formula owner (no second formula set). Returns false on fatal/ledger error.
     // When non-null, *done is set from the slice result (epoch idle for the day).
@@ -695,8 +692,8 @@ public:
     // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
     // epoch; this value identifies the latest committed aggregate state.
     uint64_t committed_generation() const { return _committed_generation; }
-    void drain_bio_introduces(godot::PackedInt32Array &cells,
-                              godot::PackedInt32Array &bits);
+    void take_bio_introduces(std::vector<int32_t> &cells,
+                            std::vector<int32_t> &bits);
     godot::PackedInt32Array economy_live_cells_query();
     godot::Dictionary report() const;
     godot::Dictionary committed_audit_report() const;
@@ -753,21 +750,22 @@ public:
         int64_t country_handle, int32_t cell_idx,
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
-                                                     int32_t limit) const;
+                                                     int32_t limit,
+                                                     int64_t settled_day = -1) const;
     // Player-facing treasury construction ingress. `submit_commands` is
     // fail-closed while StageOps owns production, so a formal build request
     // reaches the epoch command queue through this boundary instead (same
     // contract as the canal / family-colonization lanes).
     godot::Dictionary queue_treasury_sponsored_build(
         int64_t country_handle, int32_t cell_idx, int32_t type_id,
-        int64_t effective_day, int64_t sequence, bool queue_for_worker);
+        int64_t effective_day, int64_t sequence, bool queue_for_worker, bool military_order = false);
     // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
     // economy ledger first, and the military bookkeeping command is only
     // forwarded afterwards (requirement 6.5).
     godot::Dictionary queue_treasury_sponsored_demolish(
         int64_t country_handle, int32_t cell_idx, int32_t type_id,
         int64_t count, int64_t effective_day, int64_t sequence,
-        bool queue_for_worker);
+        bool queue_for_worker, bool military_order = false);
     godot::Dictionary canal_route_quote(
         int64_t country_handle, int32_t start_cell, int32_t end_cell,
         const godot::PackedInt32Array &waypoints);
@@ -787,25 +785,23 @@ public:
     godot::Dictionary family_traits(int64_t family_handle) const;
     godot::Dictionary family_branch_effects(int64_t family_handle,
                                             int32_t cell) const;
+    bool submit_effect_family_trait(uint64_t family, const std::string &trait, bool grant,
+        int32_t strength, int64_t day, int64_t sequence);
     godot::Dictionary submit_family_trait_commands(
         const godot::Dictionary &packed_batch);
     godot::Dictionary family_founding_offers(int32_t offset,
                                              int32_t limit) const;
     godot::Dictionary submit_family_founding_choice(
         int64_t offer_id, int64_t generation, int32_t choice_index,
-        int64_t effective_day, int64_t sequence);
+        int64_t effective_day, int64_t sequence, bool check_now = true);
     godot::Dictionary family_industries(int64_t family_handle, int32_t offset,
                                         int32_t limit) const;
     godot::Dictionary family_notable_people(int64_t family_handle,
                                             int32_t offset,
                                             int32_t limit) const;
-    godot::Dictionary family_colonization_quotes(
-        int64_t country_handle, int32_t target_cell, int64_t family_filter,
-        int32_t source_filter, int32_t offset, int32_t limit,
-        const uint8_t *visible, int32_t visible_count,
-        uint64_t vision_revision);
-    godot::Dictionary family_colonization_quote_detail(
-        int64_t quote_token, int64_t population = -1) const;
+    int32_t player_family_founding_offer() const;
+    godot::Array take_family_founding_receipts();
+#include "economy_runtime_internal_colonization_quotes.h"
     void fill_colonization_query_flags(godot::Dictionary &out) const;
     godot::Dictionary submit_family_colonization_start(
         int64_t country_handle, int64_t family_handle, int32_t source_cell,
@@ -854,6 +850,11 @@ public:
     // Per-cell stratum-mobilization rows (organization/stage/cooldown). Returns
     // an empty list when the cell has no aggrieved profession.
     godot::Dictionary cell_mobilization_snapshot(int32_t cell_idx) const;
+    void sample_narrative_cell(NarrativeCellView &, bool detailed) const;
+    std::vector<NarrativeEconomyNotice> narrative_economy_notices(int64_t day, uint64_t country) const;
+    bool narrative_unrest_rows(int32_t cell, std::vector<NarrativeUnrestRow> &) const;
+    NarrativeUnrestOdds calculate_mobilization_odds(int32_t cell, int32_t profession,
+        int32_t action, int64_t spend_bp, godot::Dictionary *details) const;
     // Bounded country-level summary for the top bar/alerts.
     godot::Dictionary country_mobilization_summary(int32_t country_slot) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
@@ -909,6 +910,7 @@ public:
         return !_epoch_active && day_index > _last_committed_day &&
                _building_context_day != day_index;
     }
+    const std::vector<std::string> &resource_ids() const { return _resource_ids; }
     const std::vector<std::string> &building_resource_reserve_slots() const {
         return _resource_reserve_slots;
     }
@@ -926,20 +928,16 @@ public:
         int32_t temperature_signal = 0;
         int32_t moisture_signal = 0;
     };
-    void configure_worker_natural_resources(
-        std::vector<WorkerNaturalResource> resources);
-    bool worker_natural_resources_configured() const {
-        return !_worker_natural_resources.empty() &&
-            _worker_natural_resources.size() == _resource_ids.size();
-    }
-    bool worker_resource_seeded() const { return _worker_resource_seeded; }
+    EconomyNaturalResourceCatalogView natural_resource_catalog() const;
+    void configure_worker_natural_resources(const std::vector<EconomyNaturalResourceProfile> &profiles);
+    bool worker_natural_resources_configured() const;
+    bool worker_resource_seeded() const;
+    int32_t worker_resource_recovered_cells() const;
+    bool seed_worker_resource_reserves(int64_t initial_day,
+        const std::vector<const float *> &reserves, const std::vector<const float *> &changes);
     void take_worker_resource_mirror_cells(std::vector<int32_t> &out);
-    const std::vector<float> &worker_resource_reserve_lanes() const {
-        return _worker_resource_reserve;
-    }
-    const std::vector<float> &worker_resource_extra_lanes() const {
-        return _worker_resource_extra;
-    }
+    const std::vector<float> &worker_resource_reserve_lanes() const;
+    const std::vector<float> &worker_resource_extra_lanes() const;
     struct CommittedGameplayFact {
         int32_t kind = 0;
         int32_t cell = -1;
@@ -1240,7 +1238,8 @@ public:
     // at Economy commit, preferences are frozen inputs read by FAMILY_COMMIT,
     // and colonization intents are converted into ordinary expedition
     // commands at the next epoch open.
-    std::shared_ptr<const struct CountryAiEconomyDigest> country_ai_digest() const;
+    std::shared_ptr<const CountryAiEconomyDigest> country_ai_digest() const;
+    void restore_country_ai_digest(std::shared_ptr<const CountryAiEconomyDigest> digest);
     void set_country_ai_family_preferences(std::vector<struct CountryAiFamilyPreferenceRow> rows);
     void queue_country_ai_colonization(std::vector<struct CountryAiColonizationIntent> intents);
     // AI research shares become ordinary procurement policies (whole treasury
@@ -1257,109 +1256,7 @@ public:
         std::vector<CountryAiColonizationStat> stats,
         int64_t receipt_cursor);
 
-    // EconomyCommitView. While the worker owns economy execution the main
-    // thread must not read live economy state outside the authority boundary.
-    // It registers demand for a query key; the worker evaluates the demanded
-    // keys at its committed day boundary and publishes an immutable view.
-    // Views are UI/diagnostic reads only: never simulation input, PKEC or hash.
-    enum class ReadQuery : uint16_t {
-        NONE = 0,
-        POPULATION_CELL_SNAPSHOT,
-        POPULATION_CELL_SUMMARY,
-        NAMED_SETTLEMENT_SNAPSHOT,
-        SETTLEMENT_DELTA,
-        MARKET_CELL_SNAPSHOT,
-        EXPLAIN_COHORT_SATISFACTION,
-        CELL_SATISFACTION_ATTRACTIVENESS,
-        FISCAL_SNAPSHOT,
-        COUNTRY_TRADE_SNAPSHOT,
-        TRADE_ORDERS_FOR_CELL,
-        BUILDING_CELL_SNAPSHOT,
-        TREASURY_CONSTRUCTION_QUOTES,
-        CONSTRUCTION_COMMAND_RECEIPTS,
-        CANAL_ROUTE_QUOTE,
-        CANAL_ROUTE_QUOTE_DETAIL,
-        CANAL_CONSTRUCTION_RECEIPTS,
-        FAMILY_CELL_SNAPSHOT,
-        FAMILY_SNAPSHOT,
-        FAMILY_TRAITS,
-        FAMILY_BRANCHES,
-        FAMILY_COLONIZATION_QUOTES,
-        FAMILY_COLONIZATION_QUOTE_DETAIL,
-        FAMILY_EXPEDITIONS,
-        FAMILY_EXPEDITION_SNAPSHOT,
-        FAMILY_COLONIZATION_RECEIPTS,
-        FAMILY_BRANCH_EFFECTS,
-        FAMILY_FOUNDING_OFFERS,
-        FAMILY_INDUSTRIES,
-        FAMILY_NOTABLE_PEOPLE,
-        NOTABLE_PERSON_SNAPSHOT,
-        NOTABLE_PERSON_NEEDS,
-        BUILDING_NOTABLE_PEOPLE,
-        COUNTRY_CLASS_OPINION_SNAPSHOT,
-        COUNTRY_ECONOMY_OVERVIEW,
-        SITUATION_VISUAL_SNAPSHOT,
-        COUNTRY_PROCUREMENT_SNAPSHOT,
-        CELL_MOBILIZATION_SNAPSHOT,
-        COUNTRY_MOBILIZATION_SUMMARY,
-    };
-    struct ReadKey {
-        ReadQuery query = ReadQuery::NONE;
-        std::array<int64_t, 8> args{};
-        godot::String text;
-        godot::PackedInt32Array ints;
-        // Payload only (colonization visibility); its identity is the vision
-        // revision carried in args.
-        godot::PackedByteArray bytes;
-        uint64_t hash = 0;
-        void seal();
-        bool same(const ReadKey &other) const;
-    };
-    struct ReadViewEntry {
-        ReadKey key;
-        godot::Dictionary value;
-        // Entries survive across serves until the refresh interval, so each
-        // carries the committed day it was evaluated at.
-        int64_t committed_day = -1;
-        uint64_t generation = 0;
-    };
-    struct ReadView {
-        uint64_t serial = 0;
-        uint64_t generation = 0;
-        int64_t committed_day = -1;
-        std::vector<ReadViewEntry> entries; // sorted by key.hash
-        const ReadViewEntry *find(const ReadKey &key) const;
-    };
-    struct BuildingVisualView {
-        uint64_t generation = 0;
-        int32_t cell_count = 0;
-        std::vector<int32_t> cell_offsets;
-        std::vector<int32_t> type_indices;
-        std::vector<int64_t> counts;
-        // Per cell; BUILDING_VISUAL_UNKNOWN where no cohort has been sampled.
-        std::vector<uint8_t> settlement_tiers;
-        std::vector<uint8_t> living_levels;
-        std::vector<uint8_t> rich_buckets;
-        std::vector<uint8_t> poor_buckets;
-    };
-    godot::Dictionary evaluate_read_query(const ReadKey &key);
-    void read_view_subscribe(const ReadKey &key);
-    std::shared_ptr<const ReadView> read_view() const {
-        return std::atomic_load_explicit(&_read_view, std::memory_order_acquire);
-    }
-    // Caller must hold the economy authority boundary with no epoch open.
-    void serve_read_view();
-    void publish_building_visual_view();
-    std::shared_ptr<const BuildingVisualView> building_visual_view() const {
-        return std::atomic_load_explicit(&_building_visual_view,
-                                         std::memory_order_acquire);
-    }
-    static godot::Dictionary building_visual_rows(
-        const BuildingVisualView &view,
-        const godot::PackedInt32Array &requested_cells);
-    godot::PackedInt32Array drain_building_visual_outbox();
-    void read_view_reset();
-    godot::Dictionary read_view_status() const;
+#include "economy_runtime_internal_read_views.h"
     TradeVisualCache trade_visual_cache;
 
 #include "economy_runtime_internal_planning_types.h"
@@ -1411,7 +1308,6 @@ public:
     // it only mutates the sparse row and never touches conserved ledgers.
     bool apply_mobilization_result(int32_t cell, int32_t profession,
                                    int32_t action, bool success);
-    godot::Dictionary resolve_player_mobilization(const godot::Dictionary &choice);
     // Convenience read used by the ration path and by diagnostics.
     int32_t military_ration_satisfaction_q16(int32_t cell) const {
         return cell >= 0 &&
@@ -1674,7 +1570,9 @@ public:
     // operating floor; `price` is MONEY_SCALE per 1.0 good.
     void military_read_market(int32_t good, std::vector<int32_t> &out_cells,
                               std::vector<int64_t> &out_sellable,
-                              std::vector<int64_t> &out_price) const;
+                              std::vector<int64_t> &out_price, std::vector<uint8_t> &out_stocked) const;
+    void military_read_equipment_production(const std::vector<int32_t> &cells,
+        const std::vector<uint8_t> &equipment, std::vector<uint8_t> &out) const;
     // Dense soldier / unemployed profession ids (resolved from the profession
     // catalog; -1 when the catalog predates the military content).
     int32_t military_soldier_profession();
@@ -1809,13 +1707,6 @@ private:
     void promote_person_for_family(int32_t family_index);
     void register_person_effect(int32_t person_index);
     void retire_person(int32_t person_index);
-    // An expedition payload detaches its people from the cohort lane on
-    // purpose (cohort_handle == 0). `person_in_expedition_transit` marks such a
-    // travelling person so PERSON_COMMIT does not retire them mid-voyage, and
-    // `drop_expedition_transit_person` keeps the payload lanes consistent when
-    // some other authority (family dissolution) does retire one.
-    bool person_in_expedition_transit(uint64_t person_handle) const;
-    void drop_expedition_transit_person(uint64_t person_handle);
     void record_person_demography(int32_t cohort_slot,
                                   int64_t population_before,
                                   int64_t deaths);
@@ -1866,264 +1757,9 @@ private:
     int32_t choose_epoch_days(int64_t cohort_count);
     void write_cadence_report(godot::Dictionary &out) const;
     void write_hash_work_report(godot::Dictionary &out) const;
-    EconomyWorkerChanges *market_mutation_sink() const {
-        if (_production_result_sink) return &_production_result_sink->market_changes;
-        if (_market_result_sink) return &_market_result_sink->market_changes;
-        return nullptr;
-    }
-    ChangeRegistry &worker_change_registry(EconomyFieldId field) {
-        switch (field.domain) {
-            case 1: return population_store().changes;
-            case 2: return market_store().changes;
-            case 3:
-                return _formula_owned && field.column == 1
-                    ? _formula_owned->resources.changes : _resource_changes_local;
-            case 4: return buildings_store().changes;
-            case 5: return families_store().changes;
-            case 6: return persons_store().changes;
-            case 7: return family_influences().changes;
-            case 8: return family_expeditions_store().changes;
-            case 9: return trade_orders_store().changes;
-            case 10: return _building_role_changes;
-            case 14:
-                switch (field.column) {
-                    case 1: return _pending_commands.registry();
-                    case 2: return _epoch_commands.registry();
-                    case 3: return _structural_commands.registry();
-                    case 4: return _family_trait_commands.registry();
-                    case 5: return _family_founding_choices.registry();
-                    default: throw std::logic_error("economy_worker_command_column_unregistered");
-                }
-            case 17:
-                switch (field.column) {
-                    case 1: return _settlements.tier.registry();
-                    case 2: return _settlements.name_active.registry();
-                    case 3: return _settlements.name_forced.registry();
-                    case 4: return _settlements.prosperity_generation.registry();
-                    case 5: return _settlements.name_roll_generation.registry();
-                    case 6: return _settlements.prefix.registry();
-                    case 7: return _settlements.root.registry();
-                    case 8: return _settlements.suffix.registry();
-                    case 9: return _settlements.disambiguator.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 18:
-                switch (field.column) {
-                    case 1: return _market_signals.cell_offsets.registry();
-                    case 2: return _market_signals.good_ids.registry();
-                    case 3: return _market_signals.business_demand_ema.registry();
-                    case 4: return _market_signals.offered_supply_ema.registry();
-                    case 5: return _market_signals.realized_withdrawal_ema.registry();
-                    case 6: return _market_signals.cost_anchor_price.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 19:
-                switch (field.column) {
-                    case 1: return _labor_signals.cell_offsets.registry();
-                    case 2: return _labor_signals.profession_ids.registry();
-                    case 3: return _labor_signals.base_living_cost.registry();
-                    case 4: return _labor_signals.role_living_cost.registry();
-                    case 5: return _labor_signals.contract_wage_ema.registry();
-                    case 6: return _labor_signals.paid_wage_ema.registry();
-                    case 7: return _labor_signals.job_days.registry();
-                    case 8: return _labor_signals.pay_ratio_q16.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 20:
-                switch (field.column) {
-                    case 1: return _trade_flows.cells.registry();
-                    case 2: return _trade_flows.goods.registry();
-                    case 3: return _trade_flows.import_ema.registry();
-                    case 4: return _trade_flows.export_ema.registry();
-                    case 5: return _trade_flows.period_import.registry();
-                    case 6: return _trade_flows.period_export.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 21:
-                switch (field.column) {
-                    case 1: return _country_good_trade.countries.registry();
-                    case 2: return _country_good_trade.goods.registry();
-                    case 3: return _country_good_trade.import_quantity.registry();
-                    case 4: return _country_good_trade.export_quantity.registry();
-                    case 5: return _country_good_trade.import_base.registry();
-                    case 6: return _country_good_trade.export_base.registry();
-                    case 7: return _country_good_trade.import_tariff.registry();
-                    case 8: return _country_good_trade.export_tariff.registry();
-                    case 9: return _country_good_trade.batch_epoch.registry();
-                    case 10: return _country_good_trade.batch_import_quantity.registry();
-                    case 11: return _country_good_trade.batch_export_quantity.registry();
-                    case 12: return _country_good_trade.batch_import_base.registry();
-                    case 13: return _country_good_trade.batch_export_base.registry();
-                    case 14: return _country_good_trade.batch_import_tariff.registry();
-                    case 15: return _country_good_trade.batch_export_tariff.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 22:
-                switch (field.column) {
-                    case 1: return _country_partner_trade.countries.registry();
-                    case 2: return _country_partner_trade.partners.registry();
-                    case 3: return _country_partner_trade.import_quantity.registry();
-                    case 4: return _country_partner_trade.export_quantity.registry();
-                    case 5: return _country_partner_trade.import_base.registry();
-                    case 6: return _country_partner_trade.export_base.registry();
-                    case 7: return _country_partner_trade.order_count.registry();
-                    case 8: return _country_partner_trade.batch_epoch.registry();
-                    case 9: return _country_partner_trade.batch_import_quantity.registry();
-                    case 10: return _country_partner_trade.batch_export_quantity.registry();
-                    case 11: return _country_partner_trade.batch_import_base.registry();
-                    case 12: return _country_partner_trade.batch_export_base.registry();
-                    case 13: return _country_partner_trade.batch_order_count.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 23:
-                switch (field.column) {
-                    case 1: return _tariff_history.countries.registry();
-                    case 2: return _tariff_history.kinds.registry();
-                    case 3: return _tariff_history.bases.registry();
-                    case 4: return _tariff_history.assessed.registry();
-                    case 5: return _tariff_history.collected.registry();
-                    case 6: return _tariff_history.requests.registry();
-                    case 7: return _tariff_history.reserved.registry();
-                    case 8: return _tariff_history.paid.registry();
-                    case 9: return _tariff_history.cumulative_bases.registry();
-                    case 10: return _tariff_history.cumulative_collected.registry();
-                    case 11: return _tariff_history.cumulative_requests.registry();
-                    case 12: return _tariff_history.cumulative_paid.registry();
-                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
-                }
-            case 25: return market_store().price_ceilings.registry();
-            case 27: return _canal_projects.registry();
-            case 26:
-                switch (field.column) {
-                    case 1: return _settlement_full_name_ids.registry();
-                    case 2: return _settlement_prefix_ids.registry();
-                    case 3: return _settlement_root_ids.registry();
-                    case 4: return _settlement_suffix_ids.registry();
-                    case 5: return _settlement_name_pack_id.registry();
-                    case 6: return _ethnicity_ids.registry();
-                    case 7: return _good_ids.registry();
-                    case 8: return _plan_ids.registry();
-                    case 9: return _profession_ids.registry();
-                    default: throw std::logic_error("economy_name_catalog_column_unregistered");
-                }
-            case 24:
-                switch (field.column) {
-                    case 1: return _family_founding_offers.registry();
-                    case 2: return _family_modifier_bindings.registry();
-                    case 3: return _family_trigger_bindings.registry();
-                    case 4: return _family_effect_bindings.registry();
-                    case 5: return _family_founding_effects.registry();
-                    case 6: return _family_split_parents.registry();
-                    default: throw std::logic_error("economy_worker_variable_column_unregistered");
-                }
-            case 16:
-                switch (field.column) {
-                    case 1: return _birth_residual_q32.registry();
-                    case 2: return _cell_building_structure_gen.registry();
-                    case 3: return _cell_food_access_eq_previous.registry();
-                    case 4: return _cell_food_export_eq_previous.registry();
-                    case 5: return _cell_food_flow_valid.registry();
-                    case 6: return _cell_food_import_eq_previous.registry();
-                    case 7: return _cell_food_input_eq_previous.registry();
-                    case 8: return _cell_food_output_eq_previous.registry();
-                    case 9: return _cell_last_settlement_day.registry();
-                    case 10: return _cell_owner_cash_gen.registry();
-                    case 11: return _cell_population_gen.registry();
-                    case 12: return _cell_price_stock_gen.registry();
-                    case 13: return _cell_settlement_generation.registry();
-                    case 14: return _cell_social_pressure_level.registry();
-                    case 15: return _cell_support_ema_q16.registry();
-                    case 16: return _cell_technology_gen.registry();
-                    case 17: return _cell_trade_gen.registry();
-                    case 18: return _epoch_country_handles.registry();
-                    case 19: return _fiscal_cumulative_bases.registry();
-                    case 20: return _fiscal_cumulative_collected.registry();
-                    case 21: return _fiscal_cumulative_paid.registry();
-                    case 22: return _fiscal_cumulative_requests.registry();
-                    case 23: return _fiscal_escrow_by_country.registry();
-                    case 24: return _fiscal_last_events.registry();
-                    case 25: return _fiscal_previous_country_handles.registry();
-                    case 26: return _fiscal_previous_requests.registry();
-                    case 27: return _family_milestones_reached.registry();
-                    case 28: return _cell_effect_shortage_q16.registry();
-                    case 29: return _cell_essentials_shortage_q16.registry();
-                    case 30: return _cell_force_wake.registry();
-                    case 31: return _cell_next_review_day.registry();
-                    case 32: return _cell_shortage_since_day.registry();
-                    case 33: return _cell_tier.registry();
-                    case 34: return _cell_tier_change_day.registry();
-                    case 35: return _cell_tier_seen_gen.registry();
-                    case 36: return _cell_tier_seen_population.registry();
-                    case 37: return _environment_moisture_q16.registry();
-                    case 38: return _environment_plant_available_water_q16.registry();
-                    case 39: return _environment_precipitation_q16.registry();
-                    case 40: return _environment_snow_q16.registry();
-                    case 41: return _environment_temperature_30d_q16.registry();
-                    case 42: return _environment_temperature_q16.registry();
-                    case 43: return _environment_weather_q16.registry();
-                    case 44: return _fiscal_last_assessed.registry();
-                    case 45: return _fiscal_last_bases.registry();
-                    case 46: return _fiscal_last_collected.registry();
-                    case 47: return _fiscal_last_paid.registry();
-                    case 48: return _fiscal_last_requests.registry();
-                    case 49: return _fiscal_last_reserved.registry();
-                    case 50: return _fiscal_last_unmet.registry();
-                    case 51: return _maintenance_horizon_days_by_sector.registry();
-                    case 52: return _cell_temperature_annual_q16.registry();
-                    case 53: return _cell_temperature_anomaly_q16.registry();
-                    case 54: return _cell_hazard_today_mask.registry();
-                    case 55: return _cell_dry_streak_days.registry();
-                    case 56: return _cell_days_since_hazard.registry();
-                    case 57: return _cell_previous_hazard_mask.registry();
-                    case 58: return _cell_weather_type.registry();
-                    case 59: return _cell_cover.registry();
-                    case 60: return _fiscal_last_non_tax_outflow.registry();
-                    default: throw std::logic_error("economy_worker_native_column_unregistered");
-                }
-            case 15: return _metadata_changes;
-            case 13: return _asset_peer_journal.registry();
-            case 12:
-                switch (field.column) {
-                    case 1: return family_memberships().registry();
-                    case 2: return family_ownerships().registry();
-                    case 3: return family_trait_rolls().registry();
-                    case 4: return person_needs().registry();
-                    case 5: return family_expedition_payloads().registry();
-                    case 6: return family_expedition_cargo().registry();
-                    case 7: return family_expedition_kit_buildings().registry();
-                    default: throw std::logic_error("economy_worker_record_column_unregistered");
-                }
-            case 11:
-                switch (field.column) {
-                    case 1: return family_expedition_route_cells().registry();
-                    case 2: return family_expedition_route_costs().registry();
-                    case 3: return family_expedition_person_handles().registry();
-                    case 4: return family_expedition_missing_good_ids().registry();
-                    case 5: return family_expedition_missing_good_quantities().registry();
-                    default: throw std::logic_error("economy_worker_change_side_column_unregistered");
-                }
-
-            default: throw std::logic_error("economy_worker_change_domain_unregistered");
-        }
-    }
-    void merge_economy_worker_changes(const EconomyWorkerChanges &changes) {
-        // The coordinator visits each private record once in task order.
-        // Adding domains must not multiply scans over the same touched list.
-        for (const auto &before : changes.preimages)
-            worker_change_registry(before.field).capture_before(before.field, before.lane, before.bits);
-        for (const auto &range : changes.ranges)
-            worker_change_registry(range.field).touch(range.field, range.first, range.count);
-    }
+#include "economy_runtime_internal_change_tracking.h"
     void write_fiscal_continuation_report(godot::Dictionary &out) const;
     godot::Dictionary fatal_context_report() const;
-    // R1-7/R1-8: assert_id + typed witness for the reason last stopped on.
-    // Live in economy_runtime_fault_context.cpp; diagnostics only, never saved.
-    godot::String fatal_assert_id() const;
-    godot::Dictionary fatal_witness_report() const;
-    // R4-2: generation / state_hash / restore_eligible for begin_save()'s result.
-    // Lives in economy_runtime_fault_context.cpp so the persistence leaf does not
-    // grow for a diagnostics-only contract.
-    void write_save_identity_report(godot::Dictionary &out) const;
     int32_t locked_market_cycle_days() const;
     int32_t locked_slow_cycle_days() const;
     int32_t locked_plan_cycle_days() const;
@@ -2156,6 +1792,8 @@ private:
     void refresh_cell_activity_tiers(int64_t day_index);
     void request_cell_wake(int32_t cell);
     int32_t tier_review_period_days(uint8_t tier) const;
+    void collect_economy_live_cells(std::vector<int32_t> &cells,
+                                    std::vector<int64_t> *population_totals) const;
     void rebuild_economy_live_cells();
     void capture_epoch_country_population();
     void refresh_cadence_estimates();
@@ -2197,6 +1835,8 @@ private:
     static int64_t goods_cost(int64_t quantity, int64_t price, int64_t &sat);
     static int64_t mul_div_sat(int64_t a, int64_t b, int64_t divisor,
                                int64_t &saturation_count);
+    static int64_t proportional_cash_share(int64_t cash, int64_t people,
+                                          int64_t population, int64_t &sat);
     static int64_t pow_q16(int64_t ratio_q16, int64_t exponent_q16,
                            int64_t &saturation_count);
     int32_t sample_environment_curve(int32_t curve_id, int32_t cell) const;
@@ -2363,7 +2003,7 @@ private:
     void stage_construction_receipt(const Command &cmd, bool ok,
                                     const char *code, int64_t cash_paid = 0,
                                     int64_t treasury_goods_used = 0,
-                                    int64_t market_goods_used = 0);
+                                    int64_t market_goods_used = 0, const char *step = "economy");
 };
 
 #include "economy_runtime_internal_arithmetic.h"

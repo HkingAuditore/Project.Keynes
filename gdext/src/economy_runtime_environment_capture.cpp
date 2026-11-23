@@ -101,9 +101,41 @@ bool NativeEconomyRuntime::capture_worker_day_input(
         advance_worker_resource_reserves(input, error);
 }
 
+bool NativeEconomyRuntime::worker_natural_resources_configured() const {
+    return !_worker_natural_resources.empty() &&
+        _worker_natural_resources.size() == _resource_ids.size();
+}
+
+bool NativeEconomyRuntime::worker_resource_seeded() const { return _worker_resource_seeded; }
+
+int32_t NativeEconomyRuntime::worker_resource_recovered_cells() const { return _worker_resource_recovered_cells; }
+
+const std::vector<float> &NativeEconomyRuntime::worker_resource_reserve_lanes() const {
+    return _worker_resource_reserve;
+}
+
+const std::vector<float> &NativeEconomyRuntime::worker_resource_extra_lanes() const {
+    return _worker_resource_extra;
+}
+
+EconomyNaturalResourceCatalogView NativeEconomyRuntime::natural_resource_catalog() const {
+    return {_resource_ids, _resource_reserve_slots, _resource_extra_slots};
+}
+
 void NativeEconomyRuntime::configure_worker_natural_resources(
-        std::vector<WorkerNaturalResource> resources) {
-    _worker_natural_resources = std::move(resources);
+        const std::vector<EconomyNaturalResourceProfile> &profiles) {
+    _worker_natural_resources.clear();
+    _worker_natural_resources.reserve(profiles.size());
+    for (const auto &profile : profiles) {
+        auto &resource = _worker_natural_resources.emplace_back();
+        const auto &v = profile.coefficients;
+        natres_init_constants(resource.constants, v[0], v[1], v[2], v[3], v[4], v[5],
+            v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15],
+            v[16], v[17], v[18], v[19]);
+        resource.habitat_mode = profile.habitat_mode;
+        resource.temperature_signal = profile.temperature_signal;
+        resource.moisture_signal = profile.moisture_signal;
+    }
     _worker_resource_seeded = false;
 }
 

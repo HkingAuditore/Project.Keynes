@@ -763,6 +763,8 @@ private:
     static uint64_t compute_catalog_hash(const RuntimeIdeologyPodCatalog &catalog);
     bool validate_catalog(const RuntimeIdeologyPodCatalog &catalog,
                           std::string &error) const;
+    void append_country_rows(RuntimeIdeologyPodSnapshot &, const std::vector<uint8_t> &active,
+                             const std::vector<uint32_t> &generations, uint64_t opinion_revision) const;
     bool validate_inputs(const RuntimeCountryPodSnapshot &country,
                          const RuntimeIdeologyOpinionSnapshot &opinion,
                          std::string &error) const;

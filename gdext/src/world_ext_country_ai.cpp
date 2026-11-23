@@ -4,6 +4,7 @@
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "native_simulation_host.h"
+#include "runtime_checkpoint_wire.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -21,6 +22,28 @@ namespace {
 
 constexpr uint32_t PKAW_MAGIC = 0x57414b50u; // "PKAW"
 constexpr uint32_t PKAW_VERSION = 1u;
+constexpr uint32_t COUNTRY_AI_ECONOMY_DIGEST = 0x31444143u; // CAD1
+
+template<class IO, class Row>
+bool country_ai_economy_fields(IO &io, Row &row) {
+    return io.field(row.country_handle) && io.field(row.population) &&
+        io.field(row.satisfaction_q16) && io.field(row.essentials_q16) &&
+        io.field(row.tax_paid) && io.field(row.subsidy_received) &&
+        io.field(row.income) && io.field(row.expense) &&
+        io.field(row.family_count) && io.field(row.expeditions_active) &&
+        io.field(row.ai_colonization_failures) && io.field(row.ai_colonization_started) &&
+        io.field(row.carrying_k_eff) && io.field(row.carrying_k_geo) &&
+        io.field(row.carrying_load_q16) && io.field(row.hungry_share_q16);
+}
+
+template<class IO, class Digest>
+bool country_ai_economy_digest_fields(IO &io, Digest &digest) {
+    return io.field(digest.revision) && io.field(digest.commit_day) &&
+        io.rows(digest.rows, [](auto &codec, auto &row) {
+            return country_ai_economy_fields(codec, row);
+        }) && io.rows(digest.food_building_types, checkpoint_scalar) &&
+        io.rows(digest.cell_population, checkpoint_scalar);
+}
 
 CountryAiRuntime *ai_from(void *opaque) { return static_cast<CountryAiRuntime *>(opaque); }
 const CountryAiRuntime *ai_from(const void *opaque) {
@@ -533,6 +556,17 @@ PackedByteArray DCWorldExt::encode_country_ai_state() const {
         w.u32(s.started);
     }
     w.u64(static_cast<uint64_t>(receipt_cursor));
+    if (_economy_runtime != nullptr) {
+        const auto &economy = *static_cast<const NativeEconomyRuntime *>(_economy_runtime);
+        if (const auto digest = economy.country_ai_digest()) {
+            // Country runs before Economy. Keep the sample it would read
+            // on the first resumed day, including the previous cycle's rates.
+            CheckpointWriter snapshot;
+            snapshot.field(COUNTRY_AI_ECONOMY_DIGEST);
+            country_ai_economy_digest_fields(snapshot, *digest);
+            w.bytes.insert(w.bytes.end(), snapshot.bytes.begin(), snapshot.bytes.end());
+        }
+    }
     bytes.resize(static_cast<int64_t>(w.bytes.size()));
     if (!w.bytes.empty()) std::memcpy(bytes.ptrw(), w.bytes.data(), w.bytes.size());
     return bytes;
@@ -575,13 +609,25 @@ Dictionary DCWorldExt::restore_country_ai_state(const PackedByteArray &bytes) {
         s.started = r.u32();
     }
     const int64_t receipt_cursor = static_cast<int64_t>(r.u64());
-    if (!r.ok || r.at != r.size) return fail("pkai_wrapper_truncated");
+    if (!r.ok) return fail("pkai_wrapper_truncated");
+    std::shared_ptr<CountryAiEconomyDigest> digest;
+    if (r.at < r.size) {
+        CheckpointReader snapshot{r.data + r.at, r.size - r.at};
+        uint32_t marker = 0;
+        if (snapshot.field(marker) && marker == COUNTRY_AI_ECONOMY_DIGEST) {
+            auto saved = std::make_shared<CountryAiEconomyDigest>();
+            if (country_ai_economy_digest_fields(snapshot, *saved) &&
+                snapshot.cursor == snapshot.size) digest = std::move(saved);
+        }
+    }
     std::string error;
     if (!ai_from(_country_ai_runtime)->restore(ai_bytes, ai_size, error))
         return fail(error.c_str());
-    if (_economy_runtime != nullptr)
-        static_cast<NativeEconomyRuntime *>(_economy_runtime)
-            ->import_country_ai_pending(std::move(intents), std::move(stats), receipt_cursor);
+    if (_economy_runtime != nullptr) {
+        auto &economy = *static_cast<NativeEconomyRuntime *>(_economy_runtime);
+        economy.import_country_ai_pending(std::move(intents), std::move(stats), receipt_cursor);
+        economy.restore_country_ai_digest(std::move(digest));
+    }
     _country_ai_sync_day = -1;
     push_country_ai_family_preferences();
     const CountryAiReport report = ai_from(_country_ai_runtime)->report();

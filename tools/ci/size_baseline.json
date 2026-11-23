@@ -26,7 +26,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/economy_facade.gd": {
-      "lines": 1672,
+      "lines": 1649,
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/starter_economy_planner.gd": {
@@ -66,7 +66,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_gm_adapter_part1.gd": {
-      "lines": 972,
+      "lines": 961,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
@@ -78,7 +78,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_data.gd": {
-      "lines": 1172,
+      "lines": 1165,
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
@@ -98,7 +98,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ideology/ideology_catalog.gd": {
-      "lines": 1665,
+      "lines": 1280,
       "limit": 800
     },
     "Project/project-keynes/scripts/main/debug_tools.gd": {
@@ -170,7 +170,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/map_baker.gd": {
-      "lines": 1697,
+      "lines": 1643,
       "limit": 600
     },
     "Project/project-keynes/scripts/rendering/military_army_token_layer.gd": {
@@ -186,11 +186,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/renderer_scene_services.gd": {
-      "lines": 852,
+      "lines": 815,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/renderer_shader_water.gd": {
-      "lines": 1432,
+      "lines": 1384,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub/chunk_refresh.gd": {
@@ -202,7 +202,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub_layer.gd": {
-      "lines": 1663,
+      "lines": 1631,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/weather_layer.gd": {
@@ -282,7 +282,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/cell_inspector/construction.gd": {
-      "lines": 1341,
+      "lines": 1287,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/cell_inspector/military.gd": {
@@ -306,7 +306,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/colonization_planner_panel.gd": {
-      "lines": 1620,
+      "lines": 1573,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/economy_workspace.gd": {
@@ -342,7 +342,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/inspector_panel.gd": {
-      "lines": 1400,
+      "lines": 1393,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/military_workspace.gd": {
@@ -366,7 +366,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/country_view_model.gd": {
-      "lines": 1493,
+      "lines": 1403,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/debug_console.gd": {
@@ -378,11 +378,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/game_ui/country_routes.gd": {
-      "lines": 1297,
+      "lines": 1289,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/game_ui_manager.gd": {
-      "lines": 1693,
+      "lines": 1633,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/icon_catalog.gd": {
@@ -390,7 +390,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/main_menu.gd": {
-      "lines": 1079,
+      "lines": 1038,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/military_view_model.gd": {
@@ -438,7 +438,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime.h": {
-      "lines": 2365,
+      "lines": 2018,
       "limit": 2000
     },
     "gdext/src/economy_runtime_building_employment.cpp": {
@@ -454,7 +454,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_diagnostics.cpp": {
-      "lines": 3073,
+      "lines": 2975,
       "limit": 2000
     },
     "gdext/src/economy_runtime_market.cpp": {
@@ -462,19 +462,11 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2042,
+      "lines": 2035,
       "limit": 2000
     },
     "gdext/src/economy_runtime_queries_market_building.cpp": {
       "lines": 2911,
-      "limit": 2000
-    },
-    "gdext/src/military_core_save.cpp": {
-      "lines": 2112,
-      "limit": 2000
-    },
-    "gdext/src/military_core_selftest.cpp": {
-      "lines": 2016,
       "limit": 2000
     },
     "gdext/src/modifier_runtime.cpp": {
@@ -482,7 +474,7 @@
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
-      "lines": 2153,
+      "lines": 1931,
       "limit": 600
     },
     "gdext/src/runtime_climate_kernel.cpp": {
@@ -497,24 +489,8 @@
       "lines": 2296,
       "limit": 2000
     },
-    "gdext/src/runtime_country_pod.cpp": {
-      "lines": 2076,
-      "limit": 2000
-    },
-    "gdext/src/runtime_economy_pod.cpp": {
-      "lines": 3390,
-      "limit": 2000
-    },
     "gdext/src/runtime_effect_pod.cpp": {
       "lines": 3383,
-      "limit": 2000
-    },
-    "gdext/src/runtime_ideology_pod.cpp": {
-      "lines": 2687,
-      "limit": 2000
-    },
-    "gdext/src/runtime_pod_protocol.h": {
-      "lines": 2005,
       "limit": 2000
     },
     "gdext/src/trigger_runtime.cpp": {
@@ -554,27 +530,23 @@
       "limit": 2000
     },
     "gdext/src/world_ext_military.cpp": {
-      "lines": 3943,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_physical.cpp": {
-      "lines": 2433,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_weather.cpp": {
-      "lines": 3491,
+      "lines": 2652,
       "limit": 2000
     },
     "Project/project-keynes/scripts/rendering/bakers/cell_lut_baker.gd": {
-      "lines": 1297,
-      "limit": 800
-    },
-    "Project/project-keynes/scripts/rendering/bakers/surface_baker.gd": {
-      "lines": 850,
+      "lines": 1304,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/fog_of_war_layer.gd": {
-      "lines": 822,
+      "lines": 916,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/resource_visual_layer.gd": {
+      "lines": 802,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/vegetation_family_layer.gd": {
+      "lines": 804,
       "limit": 800
     }
   }

@@ -724,49 +724,6 @@ func _native_daily_weather_active_bootstrap_allowed(readiness: Dictionary) -> bo
 			and _generator._sus_world != null \
 			and _generator._weather_system.has_method("build_unified_fast_tick_weather_knobs")
 
-# Stagger 对齐（2026-06）：legacy 的 weather_refresh + _generator.refresh_daily_stage_b 跑在
-# sim_stagger 的 weather bucket 上（默认 stride=8 / phase=4），而不是每天。native
-# daily 此前每轮都嵌入 weather/stage_b（must_run），让天气场与 stage_b call_index
-# 以 ~8× 速率推进，导致天气分类（BLIZZARD↔RAIN/HEATWAVE）严重偏移。本判定复刻
-# DCSystemScheduler._schedule_policy 的 &"weather_refresh" 分支 + StridePolicy
-# (((tick + phase) % stride) == 0)，让 native 的 weather/stage_b 节点与 legacy 同 cadence
-# 推进；非到期 tick 不嵌入 weather_knobs / stage_b_knobs，C++ 端短路跳过该节点，
-# 持久 slot 保留天气场（与 legacy “当天不刷新天气” bit-equal）。
-
-func _native_daily_weather_cadence_stride(cp_now) -> int:
-	if cp_now == null:
-		return 1
-	var stagger_on: bool = cp_now.get("sim_stagger_enabled") != null \
-			and bool(cp_now.sim_stagger_enabled)
-	if stagger_on:
-		return clampi(int(cp_now.sim_stagger_bucket_stride), 1, 16) \
-				if cp_now.get("sim_stagger_bucket_stride") != null else 8
-	return maxi(1, int(cp_now.weather_refresh_stride)) \
-			if cp_now.get("weather_refresh_stride") != null else 1
-
-func _native_daily_weather_cadence_due(cp_now, ctx: SusTickContext) -> bool:
-	if cp_now == null or ctx == null:
-		return true
-	var stride: int = _native_daily_weather_cadence_stride(cp_now)
-	if stride <= 1:
-		return true
-	# 频率对齐：weather/stage_b 每 stride 个模拟日推进一次（与 legacy weather bucket
-	# 同频）。用“距上次嵌入天数 ≥ stride”而非 tick 取模——native round 可能跨多天、
-	# 起始日与 phase 错开会让取模永不命中。phase 错峰（load spreading）留到阶段 2。
-	var day: int = int(ctx.day_index)
-	if _generator._native_daily_last_weather_embed_day <= -1000000:
-		# 冷启动首次：对齐 legacy weather bucket 的首跑日（StridePolicy 在
-		# (day+phase)%stride==0 处首跑，即 day=stride-phase），让 native 冷启动相位与
-		# legacy 一致——前几日同样无天气场（与 legacy bit-equal 的“尚未刷新”）。
-		var phase: int = 0
-		if cp_now.get("sim_stagger_enabled") != null and bool(cp_now.sim_stagger_enabled):
-			var raw: int = int(cp_now.sim_stagger_weather_phase) \
-					if cp_now.get("sim_stagger_weather_phase") != null else 4
-			phase = posmod(raw, stride)
-		var first_due_day: int = (stride - phase) if phase > 0 else stride
-		return day >= first_due_day
-	return (day - _generator._native_daily_last_weather_embed_day) >= stride
-
 func _native_daily_split_weather_node_enabled(cp_now) -> bool:
 	return cp_now != null \
 		and cp_now.get("native_daily_split_weather_node_enabled") != null \
@@ -777,10 +734,9 @@ func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
 	var values := {"season_idx": 0, "anomaly": 0.0, "season_phase": default_phase}
 	if clock == null:
 		return values
-	var anomaly = clock.get("climate_anomaly")
-	if anomaly != null:
-		values["anomaly"] = float(anomaly)
-	var date: int = _generator._get_runtime_climate_capture().calendar_day
+	var capture = _generator._get_runtime_climate_capture()
+	values["anomaly"] = capture.sample_anomaly()
+	var date: int = capture.calendar_day
 	if date >= 0:
 		values["season_idx"] = clock.season_index_for_day(date)
 		values["season_phase"] = clock.season_phase_for_day(date)
@@ -792,14 +748,12 @@ func _native_daily_weather_clock_values(default_phase: float) -> Dictionary:
 	return values
 
 func _build_native_daily_weather_super_knobs(
-		ctx: SusTickContext,
 		map: MapData,
 		world: WorldData,
 		phase_default: float,
 		stage_b_knobs: Dictionary,
 		runtime_hydrology_active: bool,
-		commit_side_effects: bool,
-		force_weather_embed: bool) -> Dictionary:
+		commit_side_effects: bool) -> Dictionary:
 	if _generator._weather_system == null or world == null \
 			or not _generator._weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 		return {}
@@ -820,8 +774,6 @@ func _build_native_daily_weather_super_knobs(
 	if not weather_super.is_empty():
 		weather_super["native_daily_weather_stage_b_embedded"] = not runtime_hydrology_active \
 			and not weather_stage_b_knobs.is_empty()
-		if commit_side_effects and not force_weather_embed and ctx != null:
-			_generator._native_daily_last_weather_embed_day = int(ctx.day_index)
 		return weather_super
 	if commit_side_effects:
 		_generator._weather_stage_b_call_index = maxi(0, _generator._weather_stage_b_call_index - 1)
@@ -921,7 +873,6 @@ func _build_native_daily_bundle(
 		commit_side_effects: bool = false,
 		sea_ice_dt_cap_days: float = 30.0,
 		commit_sea_ice_side_effects: bool = true,
-		force_weather_embed: bool = false,
 		defer_heavy_pass_knobs: bool = false) -> Dictionary:
 	var t_bundle_us: int = Time.get_ticks_usec()
 	var cp_now = _generator._c()
@@ -963,41 +914,36 @@ func _build_native_daily_bundle(
 				or native_weather_active_bootstrap
 		var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
 				and bool(cp_now.runtime_hydrology_enabled)
-		var weather_due_this_tick: bool = force_weather_embed \
-				or _native_daily_weather_cadence_due(cp_now, ctx)
-		if weather_due_this_tick:
-			if native_weather_daily_allowed and _generator._weather_system != null and _world != null \
-					and _generator._weather_system.has_method("build_unified_fast_tick_weather_knobs"):
-				var stage_b_knobs_prebuilt: Dictionary = _build_native_daily_stage_b_knobs(
-					map,
-					cp_now,
-					maxi(0, _generator._weather_stage_b_call_index),
-					float(_generator._native_daily_contract_stride_days())
-				)
-				var weather_super_prebuilt: Dictionary = _build_native_daily_weather_super_knobs(
-					ctx,
-					map,
-					_world,
-					ctx.season_phase,
-					stage_b_knobs_prebuilt,
-					runtime_hydrology_active,
-					commit_side_effects,
-					force_weather_embed
-				)
-				if not weather_super_prebuilt.is_empty():
-					bundle["weather_knobs"] = weather_super_prebuilt
-					bundle["weather_knobs_prebuilt"] = true
-				deferred_nodes.append(12)
-				if runtime_hydrology_active:
-					deferred_nodes.append(19)
-					deferred_nodes.append(20)
-				elif not weather_split_enabled:
-					deferred_nodes.append(11)
-			elif _generator._weather_system != null and _world != null and not native_weather_daily_allowed:
-				bundle["weather_native_daily_blocked"] = true
-				bundle["weather_native_daily_block_reason"] = str(native_weather_readiness.get("reason", "not_ready"))
-				if not runtime_hydrology_active:
-					deferred_nodes.append(11)
+		if native_weather_daily_allowed and _generator._weather_system != null and _world != null \
+				and _generator._weather_system.has_method("build_unified_fast_tick_weather_knobs"):
+			var stage_b_knobs_prebuilt: Dictionary = _build_native_daily_stage_b_knobs(
+				map,
+				cp_now,
+				maxi(0, _generator._weather_stage_b_call_index),
+				float(_generator._native_daily_contract_stride_days())
+			)
+			var weather_super_prebuilt: Dictionary = _build_native_daily_weather_super_knobs(
+				map,
+				_world,
+				ctx.season_phase,
+				stage_b_knobs_prebuilt,
+				runtime_hydrology_active,
+				commit_side_effects
+			)
+			if not weather_super_prebuilt.is_empty():
+				bundle["weather_knobs"] = weather_super_prebuilt
+				bundle["weather_knobs_prebuilt"] = true
+			deferred_nodes.append(12)
+			if runtime_hydrology_active:
+				deferred_nodes.append(19)
+				deferred_nodes.append(20)
+			elif not weather_split_enabled:
+				deferred_nodes.append(11)
+		elif _generator._weather_system != null and _world != null and not native_weather_daily_allowed:
+			bundle["weather_native_daily_blocked"] = true
+			bundle["weather_native_daily_block_reason"] = str(native_weather_readiness.get("reason", "not_ready"))
+			if not runtime_hydrology_active:
+				deferred_nodes.append(11)
 		bundle["season_cadence_policy"] = _native_daily_season_cadence_policy(
 			cp_now,
 			maxi(0, _generator._weather_stage_b_call_index)
@@ -1060,10 +1006,6 @@ func _build_native_daily_bundle(
 			or native_weather_active_bootstrap
 	var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
 			and bool(cp_now.runtime_hydrology_enabled)
-	# Stagger 对齐：weather + stage_b 节点只在 legacy weather bucket 到期 tick 推进。
-	# 注册/SHADOW probe 用 force_weather_embed=true 强制纳入以保留 readiness 校验。
-	var weather_due_this_tick: bool = force_weather_embed \
-			or _native_daily_weather_cadence_due(cp_now, ctx)
 	# runtime_hydrology_stride 此前在 ClimateProfile 里声明但全库无引用，也就是说
 	# 无论配成几，水文都跟着每个 weather 轮跑。按 stage_b 三件套的同一套模式接线：
 	# 计数器只在真实 tick 的 weather 到期轮推进，probe（commit_side_effects=false）
@@ -1073,7 +1015,7 @@ func _build_native_daily_bundle(
 		runtime_hydrology_stride = maxi(1, int(cp_now.runtime_hydrology_stride))
 	var runtime_hydrology_due: bool = true
 	if runtime_hydrology_active and runtime_hydrology_stride > 1:
-		if commit_side_effects and weather_due_this_tick:
+		if commit_side_effects:
 			_generator._native_daily_hydrology_call_index += 1
 		runtime_hydrology_due = (_generator._native_daily_hydrology_call_index % runtime_hydrology_stride) == 0
 	var runtime_hydrology_knobs: Dictionary = {}
@@ -1085,17 +1027,14 @@ func _build_native_daily_bundle(
 		)
 	if _generator._weather_system != null and _world != null \
 			and native_weather_daily_allowed \
-			and weather_due_this_tick \
 			and _generator._weather_system.has_method("build_unified_fast_tick_weather_knobs"):
 		var weather_super: Dictionary = _build_native_daily_weather_super_knobs(
-			ctx,
 			map,
 			_world,
 			ctx.season_phase,
 			stage_b_knobs,
 			runtime_hydrology_active,
-			commit_side_effects,
-			force_weather_embed
+			commit_side_effects
 		)
 		if not weather_super.is_empty():
 			bundle["weather_knobs"] = weather_super
@@ -1106,13 +1045,9 @@ func _build_native_daily_bundle(
 		bundle["weather_native_daily_block_reason"] = str(native_weather_readiness.get("reason", "not_ready"))
 	if runtime_hydrology_active and not runtime_hydrology_knobs.is_empty():
 		bundle["runtime_hydrology_knobs"] = runtime_hydrology_knobs
-	# stage_b 是 legacy weather_refresh 的子步（_generator.refresh_daily_stage_b 随 weather 每 8 天
-	# 推进 + albedo/veg/feedback 子 stride），故与 weather 同 cadence 闸控；非到期 tick
-	# 不嵌入，stage_b 节点被 C++ 短路跳过，避免 call_index/feedback 以 8× 速率漂移温度
-	# 进而扭曲天气分类。
-	if weather_due_this_tick and runtime_hydrology_active and not stage_b_knobs.is_empty():
+	if runtime_hydrology_active and not stage_b_knobs.is_empty():
 		bundle["stage_b_after_hydrology_knobs"] = stage_b_knobs
-	elif weather_due_this_tick and not stage_b_embedded_in_weather and not stage_b_knobs.is_empty():
+	elif not stage_b_embedded_in_weather and not stage_b_knobs.is_empty():
 		bundle["stage_b_knobs"] = stage_b_knobs
 	bundle["deferred_node_count"] = 0
 	bundle["bundle_cache_hit"] = bundle_cache_hit
@@ -1270,14 +1205,12 @@ func _build_native_daily_slice_bundle_patch(
 					float(_generator._native_daily_contract_stride_days())
 				)
 				var weather_super: Dictionary = _build_native_daily_weather_super_knobs(
-					ctx,
 					map,
 					world,
 					phase_locked,
 					stage_b_knobs_for_weather,
 					runtime_hydrology_active,
-					true,
-					false
+					true
 				)
 				if not weather_super.is_empty():
 					patch["weather_knobs"] = weather_super

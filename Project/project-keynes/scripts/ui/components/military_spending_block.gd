@@ -4,23 +4,19 @@ class_name MilitarySpendingBlock
 ## 军事预算板块（可编辑 + 实付对账）。
 ##
 ## 两段结构，从上到下：
-##  1. 预算：一条「军事预算」滑条（每日国库现金份额 0..100%），下辖军饷、
+##  1. 预算：一条「军事总预算份额」滑条（每日国库现金份额 0..100%），下辖军饷、
 ##     建筑维护、装备与给养采购三条占比滑条；三者之和不得超过 100%，可拖上限
 ##     由本类按 `100% - 另两项` 实时收窄，玩家拖到边缘就自然停住。
 ##  2. 结算：三条通道各自的「预算日额 / 上一轮实付」对账行。高优先级通道
-##     （军饷、维护）需求超过份额时允许超支，标铁锈红与「超支 X」；低优先级通道
-##     （采购）永不超支，被配额截断的部分标「待购 N 件」。
+##     （军饷、维护）需求超过份额时允许超支，标铁锈红与「超支」；低优先级通道
+##     （采购）永不超支，被配额截断的部分标「待购」。
 ##
 ## 语义要点：`budget_share_bp <= 0` 表示「没有信封」，不是「军费归零」。
 ## 那种状态下原生按现金与需求直接结算（外国 AI 与未推送政策的存档都在这条路上），
-## 所以读数写「未启用」，三条通道滑条降为不可拖。
-##
-## 排版契约：**只有读数，没有说明句**。标题、滑条读数、表头已经说明每行是什么，
-## 所以备注句（「招募本身不拨款…」「未启用时按现金结算…」「每日信封 A：军饷 B…」）
-## 一律不写；脚注只保留「超支 X / 待购 N 件 / 暂停」这类带数字的状态字。
+## 所以读数写「未启用 · 按现金结算」，三条通道滑条降为不可拖。
 ##
 ## 招募不在预算内（需求 6.1）：它只把同格人口转成士兵，不产生现金意图。
-## 因此「招募集训」始终只是一行读数，不挂滑条。
+## 因此「招募集训」始终只是一行说明，不挂滑条。
 ##
 ## 组件只发意图：`budget_committed(total_bp, wage_bp, upkeep_bp, procurement_bp)`，
 ## 由宿主（财政页 → 工作区）经 PlayerController 折算成
@@ -59,9 +55,11 @@ const CHANNELS := [
 		"share": "budget_procurement_bp"},
 ]
 
-## 版式契约：这一块只放读数，不放说明文字。通道名、滑条自身的份额与日额、
-## 结算表头、维护明细表头已经说明每一行是什么；「招募本身不拨款…」「未启用时按
-## 现金结算…」这类整句在面板上属于噪声，一律不写。
+const NOTE_TEXT := "招募本身不拨款：只把同格人口转为士兵，费用落在军饷与装备给养上。"
+const ENVELOPE_OFF_TEXT := "军事预算未启用：军饷、维护与采购按现金与需求直接结算，不设上限。"
+
+## 维护实物化（S4-6）：维护通道下面挂一张至多 8 行的实物明细。
+## 行数固定、读数原地改写，同一身份刷新不新增节点。
 const MAINTENANCE_ROW_LIMIT := 8
 const MAINTENANCE_UNSUPPORTED_TEXT := "实物维护未接通"
 const MAINTENANCE_EMPTY_TEXT := "暂无维护对象"
@@ -74,7 +72,9 @@ var _envelope = null
 var _envelope_row: HBoxContainer = null
 var _envelope_value: Label = null
 var _empty: Label = null
+var _summary: Label = null
 var _train_value: Label = null
+var _note: Label = null
 var _content: VBoxContainer = null
 var _channels: Dictionary = {}
 var _rows: Dictionary = {}
@@ -86,6 +86,8 @@ var _maintenance_head: Label = null
 var _maintenance_note: Label = null
 var _maintenance_header: HBoxContainer = null
 var _maintenance_rows: Array = []
+## 上一次渲染时的告警签名：只有跨越阈值才脉冲一次，之后保持静态。
+var _alert_signature := ""
 
 
 func _init() -> void:
@@ -102,10 +104,12 @@ func _init() -> void:
 func set_state(model: Dictionary, editable := true) -> void:
 	if not _built:
 		_build()
+	var previous_alert := _alert_signature
 	_model = model
 	var available := bool(model.get("available", false))
 	_envelope_row.visible = available
 	_envelope.visible = available
+	_summary.visible = available
 	_content.visible = available
 	_empty.visible = not available
 	if not available:
@@ -119,8 +123,12 @@ func set_state(model: Dictionary, editable := true) -> void:
 	for spec in CHANNELS:
 		_refresh_channel(spec, can_edit, enabled, envelope_daily)
 	_refresh_rows()
-	_refresh_envelope_value(enabled)
+	_refresh_summary(enabled)
 	_refresh_maintenance_detail()
+	# 阈值跨越：从"平衡"进入"超支/待购"（或反向）时脉冲一次，之后保持静态。
+	_alert_signature = _compute_alert_signature()
+	if not previous_alert.is_empty() and _alert_signature != previous_alert:
+		_pulse_alert()
 
 
 func is_available() -> bool:
@@ -171,8 +179,16 @@ func training_text() -> String:
 	return _train_value.text if _train_value != null else ""
 
 
+func note_text() -> String:
+	return _note.text if _note != null else ""
+
+
 func empty_text() -> String:
 	return _empty.text if _empty != null else ""
+
+
+func summary_text() -> String:
+	return _summary.text if _summary != null else ""
 
 
 ## 维护明细的一句话摘要（「N 项失修 · 加权满足率 X%」，或「实物维护未接通」）。
@@ -416,6 +432,15 @@ func _build() -> void:
 			_build_maintenance_detail(channel)
 		_channels[String(spec.id)] = {"slider": slider, "note": note}
 
+	_summary = UIControlParts.label()
+	_summary.name = "Summary"
+	_summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_summary.add_theme_font_override("font", UITokens.dossier_font("sans"))
+	_summary.add_theme_font_size_override("font_size", 13)
+	_summary.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
+	_content.add_child(_summary)
+
 	# ---- 结算段 -----------------------------------------------------------
 	var divider := DottedRule.new()
 	divider.name = "Divider"
@@ -449,8 +474,19 @@ func _build() -> void:
 	_train_value.text = "在训 0 人 · 待装备 0 件"
 	_content.add_child(train.row as Control)
 
+	_note = UIControlParts.label()
+	_note.name = "Note"
+	_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_note.text = NOTE_TEXT
+	_note.add_theme_font_override("font", UITokens.dossier_font("sans"))
+	_note.add_theme_font_size_override("font_size", 12)
+	_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
+	_content.add_child(_note)
+
 	_envelope_row.visible = false
 	_envelope.visible = false
+	_summary.visible = false
 
 
 ## 军事总预算份额提交：只推总份额，三项通道传 -1（本次不改），
@@ -507,23 +543,20 @@ func _refresh_channel(spec: Dictionary, can_edit: bool, enabled: bool,
 		_refresh_channel_note(note, channel_id, share, overspend, deferred)
 
 
-## 通道脚注只写承重的状态字和数字，不写整句解释：
-##   「超支 X」= 高优先级通道花超了份额；「待购 N 件」= 低优先级被配额截断。
-## 没有超支 / 没有待购时整行不出现；信封关闭时连脚注也不写——顶部信封行已经
-## 写着「未启用」，再补一句「按现金结算」只是把同一件事说第二遍。
+## 通道脚注只写需要一句话解释的语义；单纯实付差异不重复文字。
 func _refresh_channel_note(note: Label, channel_id: String, share: int,
 		overspend: int, deferred: int) -> void:
 	var text := ""
 	var colour := UITokens.DOSSIER_INK_MUTED
 	if not is_envelope_enabled():
-		text = ""
+		text = "未启用预算：该通道按现金与需求直接结算。"
 	elif share <= 0:
-		text = "暂停"
+		text = "份额为 0，该通道暂停。"
 	elif overspend > 0:
-		text = "超支 %s" % amount_text(overspend)
+		text = "需求超过份额，已紧急超支 %s。" % amount_text(overspend)
 		colour = UITokens.RISK
 	elif deferred > 0 and channel_id == KIND_PROCUREMENT:
-		text = "待购 %d 件" % deferred
+		text = "配额用尽，尚有 %d 件待购。" % deferred
 		colour = UITokens.DOSSIER_OXBLOOD
 	note.text = text
 	note.visible = not text.is_empty()
@@ -552,15 +585,57 @@ func _refresh_rows() -> void:
 		UITokens.DOSSIER_OXBLOOD if waiting > 0 else UITokens.DOSSIER_INK_SOFT)
 
 
-## 信封行右上角的读数：启用了就是每日额度，没启用就是「未启用」。
-## 不在这里复述三条通道的预算拆分——它们各自的滑条已经带着份额与日额。
-func _refresh_envelope_value(enabled: bool) -> void:
-	if _envelope_value == null:
-		return
+func _refresh_summary(enabled: bool) -> void:
 	var envelope_daily := maxi(0, int(_model.get("envelope_daily", 0)))
-	_envelope_value.text = "每日 " + amount_text(envelope_daily) if enabled else "未启用"
-	_envelope_value.add_theme_color_override("font_color",
-		UITokens.DOSSIER_OXBLOOD if enabled else UITokens.DOSSIER_INK_MUTED)
+	if _envelope_value != null:
+		_envelope_value.text = "每日 " + amount_text(envelope_daily) if enabled \
+			else "未启用"
+		_envelope_value.add_theme_color_override("font_color",
+			UITokens.DOSSIER_OXBLOOD if enabled else UITokens.DOSSIER_INK_MUTED)
+	if _summary == null:
+		return
+	if not enabled:
+		_summary.text = ENVELOPE_OFF_TEXT
+		_summary.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
+		return
+	var parts := PackedStringArray()
+	var over_total := 0
+	for spec in CHANNELS:
+		var budget := maxi(0, int(_model.get(String(spec.budget), 0)))
+		parts.append("%s %s" % [String(spec.title), amount_text(budget)])
+		if not String(spec.overspend).is_empty():
+			over_total += maxi(0, int(_model.get(String(spec.overspend), 0)))
+	var deferred_total := maxi(0, int(_model.get("procurement_deferred_units", 0)))
+	var text := "每日信封 %s：%s" % [amount_text(envelope_daily), " · ".join(parts)]
+	if over_total > 0:
+		text += "。上一轮超支 %s" % amount_text(over_total)
+	if deferred_total > 0:
+		text += "，待购 %d 件" % deferred_total
+	_summary.text = text
+	_summary.add_theme_color_override("font_color",
+		UITokens.RISK if over_total > 0 else UITokens.DOSSIER_INK_SOFT)
+
+
+## 告警签名：只看"哪些通道在超支 / 是否还有待购"这组布尔值。
+## 用布尔而不是金额，避免实付天天波动就天天脉冲。
+func _compute_alert_signature() -> String:
+	if not is_available():
+		return ""
+	var bits := PackedStringArray()
+	for spec in CHANNELS:
+		var over := 0
+		if not String(spec.overspend).is_empty():
+			over = maxi(0, int(_model.get(String(spec.overspend), 0)))
+		bits.append("1" if over > 0 else "0")
+	bits.append("1" if maxi(0, int(_model.get("procurement_deferred_units", 0))) > 0 else "0")
+	return "".join(bits)
+
+
+## 轻微高亮脉冲一次；随后保持静态。减动效偏好下直接跳过。
+func _pulse_alert() -> void:
+	if UIAnimation.reduced_motion():
+		return
+	UIAnimation.pulse(_summary, UITokens.ANIM_MED)
 
 
 ## 国家已提交的国库现金：信封是「现金 × 份额」，拖动时按它估算日额。

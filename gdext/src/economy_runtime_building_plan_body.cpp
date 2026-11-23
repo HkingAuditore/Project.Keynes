@@ -1389,16 +1389,6 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             }
         }
         constexpr int64_t recovery_probe_floor_q16 = 0;
-        // Dead by intent, not by accident: d3d061c96 replaced this old
-        // "recovery probe" capacity pass with the executable/viable restart
-        // decision above (pending_operating_state + credit_needed) and left the
-        // block behind with a zero floor. Its only consumer,
-        // economy_runtime_slice_execution.cpp's liquidation capacity, takes
-        // max(planned_utilization_q16, probe_capacity), so a missing writer
-        // degrades to planned utilization instead of blocking retirement.
-        // Delete the block (and the zero floor constant) in a dedicated cleanup;
-        // re-enabling it would double count _recovery_candidates and re-add a
-        // cost model of zero.
         if (false && type.kind != 2 && group.operating_state == 1 && !suspended_now &&
             group.recovery_cooldown_cycles == 0) {
             const int32_t owner_slot = find_cohort_slot(group.cell, group.owner_signature_id);
@@ -1625,17 +1615,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 expected_cash_profit,
                 observed_capacity ? 0 : expected_in_kind,
                 _saturation_count);
-            // Pure self-employment (no employees) with positive net owner income
-            // after operating costs and taxes keeps full planned utilization
-            // instead of collapsing to the 3.1% probe floor on planning days
-            // (matching positive_self_employment in the suspension gate above).
-            const int64_t expected_owner_net_income = saturating_add(
-                expected_profit, owner_living_cost, _saturation_count);
-            const bool positive_planned_self_employment =
-                type.employee_count == 0 && expected_owner_net_income > 0;
-            group.planned_utilization_q16 =
-                (expected_profit > 0 || positive_planned_self_employment)
-                    ? static_cast<int32_t>(Q16_ONE) : 0;
+            group.planned_utilization_q16 = expected_profit > 0
+                ? static_cast<int32_t>(Q16_ONE) : 0;
             // Survival output is a bounded exception to pure cash-profit
             // gating. It may run only far enough to cover the frozen
             // subsistence/clothing floor computed for this owner, while its

@@ -155,7 +155,6 @@ func _compose(cell: HexCell, idx: int, day: int, slot: int) -> Dictionary:
 		"settlement_tier": tier,
 		"tier_pending": bool(population.get("pending", false)),
 		"resources": resource_rows,
-		"species": _inspector.local_species_badges(idx, tech_ids) if _inspector != null else [],
 		"resource_note": resource_note,
 		"resource_gated": resource_gated,
 	}

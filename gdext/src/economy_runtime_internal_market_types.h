@@ -956,6 +956,16 @@
         uint64_t submit_order = 0;
         int64_t effect_request_id = 0;
         uint64_t effect_idempotency_key = 0;
+        uint64_t expedition_route_hash = 0;
+        bool military_construction() const {
+            return (opcode == COMMAND_TREASURY_SPONSORED_BUILD ||
+                    opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH) &&
+                i64_1 == OWNERSHIP_TREASURY_MILITARY_ORDER;
+        }
+        bool treasury_construction_policy_valid() const {
+            return military_construction() || i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE;
+        }
+
         template<class Visitor> void visit_persisted(Visitor &visit) const {
             visit(opcode);
             visit(effective_day);
@@ -967,7 +977,8 @@
             visit(i64_1);
             visit(submit_order);
             visit(effect_request_id);
-            visit(effect_idempotency_key);
+            visit(opcode == COMMAND_START_FAMILY_EXPEDITION
+                ? expedition_route_hash : effect_idempotency_key);
         }
     };
 
@@ -1223,11 +1234,6 @@
         double price_ms = 0.0;
         int64_t merchant_count = 0;
         int64_t merchant_repairs = 0;
-        // Net-of-income-tax household retail share this market distributed to
-        // its living merchants, and the merchant population it divided by.
-        // Merged into the epoch metric used by the merchant post projection.
-        int64_t merchant_household_retail = 0;
-        int64_t merchant_population = 0;
         // Union of every price-shaping event below. Kept so existing
         // diagnostics and tests keep reading one headline number.
         std::vector<PriceCeilingObservation> price_ceiling_observations;

@@ -1,109 +1,125 @@
-extends SceneTree
+extends "res://tests/support/runtime_narrative_scenario.gd"
 
-const Flow = preload("res://scripts/narrative/narrative_event_flow.gd")
-const Service = preload("res://scripts/narrative/narrative_event_service.gd")
-const Catalog = preload("res://scripts/narrative/narrative_event_catalog.gd")
+const Categories = preload("res://scripts/narrative/narrative_pause_categories.gd")
+const Options = preload("res://scripts/ui/components/event_pause_options.gd")
 
-var failures := 0
-var checks := 0
 
-class ControllerStub extends Node:
-	var service
-	var flow
-	var busy := false
-	func era_reward_locked() -> bool: return busy
-	func family_founding_locked() -> bool: return false
-	func ideology_draw_phase() -> String: return ""
-	func sync_ui() -> void: flow.try_present()
-	func clear_cell_highlights() -> void: pass
-	func request_command(_id: StringName, args: Dictionary) -> Dictionary:
-		return service.choose_option(args.offer_id, args.offer_generation, args.option_index, 21)
+class StoryDialog extends RefCounted:
+	var offer := {}
+	var outcome := {}
 
-class UiStub extends RefCounted:
-	var opened := 0
-	var is_open := false
-	func show_narrative_event_offer(_offer: Dictionary) -> void:
-		opened += 1
-		is_open = true
-	func close_narrative_event_offer() -> void: is_open = false
-	func is_narrative_event_modal_open() -> bool: return is_open
+	func show_narrative_event_offer(value: Dictionary) -> void:
+		offer = value
 
-func _init() -> void:
-	call_deferred("_run")
+	func close_narrative_event_offer() -> void:
+		offer = {}
 
-func _expect(label: String, ok: bool) -> void:
-	checks += 1
-	if not ok:
-		failures += 1
-		push_error(label)
+	func is_narrative_event_modal_open() -> bool:
+		return not offer.is_empty() or not outcome.is_empty()
 
-func _enqueue(service, catalog) -> void:
-	service.enqueue_event_offer(catalog.get_event(&"evt.climate.severe_drought"),
-		3, 20, &"", true, {"cell_idx": 3, "population": 40})
+	func show_narrative_event_outcome(value: Dictionary) -> void:
+		outcome = value.get("record", {})
+
 
 func _run() -> void:
-	for initial_paused in [false, true]:
-		var clock := WorldClock.new()
-		clock.set_speed(50.0)
-		clock.pause(initial_paused)
-		var catalog = Catalog.build_default_catalog()
-		var service = Service.new()
-		service.configure(null, null, null, clock, 1, 877972513, catalog)
-		var controller := ControllerStub.new()
-		controller.service = service
-		var ui := UiStub.new()
-		var flow = Flow.new()
-		controller.flow = flow
-		flow.configure(controller, null, clock, ui, service)
-		flow.set_popups_suppressed(true)
-		for event_index in range(3):
-			_enqueue(service, catalog)
-			flow.try_present()
-			_expect("suppressed event preserves clock mode and speed",
-				clock.paused == initial_paused and clock.speed_multiplier == 50.0)
-		_expect("suppressed events resolve without modal or residual lock",
-			service.chronicle_total_count() == 3 and ui.opened == 0
-			and not flow.is_locked() and not flow.capture().restore_pending)
-		flow.on_outcome_acknowledged()
-		_expect("duplicate acknowledgement leaves clock untouched",
-			clock.paused == initial_paused and clock.speed_multiplier == 50.0)
-		# A normally opened event owns a real clock snapshot. Suppression must release it.
-		flow.set_popups_suppressed(false)
-		_enqueue(service, catalog)
-		_expect("normal event pauses and displays modal", clock.paused and flow.is_locked() and ui.is_open)
-		flow.set_popups_suppressed(true)
-		controller.busy = true
-		flow.try_present()
-		_expect("another modal delays restoration", clock.paused and flow.capture().restore_pending)
-		controller.busy = false
-		flow.try_present()
-		_expect("suppression restores acquired pause once busy ends",
-			clock.paused == initial_paused and clock.speed_multiplier == 50.0
-			and not flow.capture().restore_pending and not ui.is_open)
-		clock.set_speed(10.0)
-		_enqueue(service, catalog)
-		flow.try_present()
-		_expect("later suppressed event cannot replay previous speed", clock.speed_multiplier == 10.0)
-		flow.set_popups_suppressed(false)
-		_enqueue(service, catalog)
-		var offer: Dictionary = service.active_offer()
-		flow.on_option_chosen(offer.offer_id, offer.offer_generation, 0)
-		_expect("normal event completion restores running clock",
-			not clock.paused and clock.speed_multiplier == 10.0 and not flow.is_locked())
-		# A restored open modal must release the persisted pre-modal snapshot as well.
-		flow.restore({"locked": true, "was_paused": initial_paused, "previous_speed": 5.0})
-		flow.set_popups_suppressed(true)
-		flow.try_present()
-		_expect("suppression releases restored modal pause",
-			clock.paused == initial_paused and clock.speed_multiplier == 5.0
-			and not flow.capture().locked and not flow.capture().restore_pending)
-		clock.latch_authority_fault_hold()
-		_enqueue(service, catalog)
-		flow.try_present()
-		_expect("automatic acknowledgement preserves authority fault hold",
-			clock.paused and clock.authority_fault_hold and clock.speed_multiplier == 5.0)
-		controller.flow = null
-		controller.free()
-		clock.free()
-	print("narrative_popup_suppression_test: %d checks, %d failures" % [checks, failures])
-	quit(0 if failures == 0 else 1)
+	var options := Options.new()
+	root.add_child(options)
+	_expect("the eight groups carry sixteen independent settings", Categories.NAMES.size() == 8)
+	for mask in [0, 255, 65535, 0x5aa5]:
+		options.configure(mask)
+		_expect("settings keep all sixteen choices for %d" % mask, options.value() == mask)
+	options.free()
+	if await _start_story({"scheduled_events": [
+		{"due_day": 2, "event_id": "evt.ages.first_seed"},
+		{"due_day": 4, "event_id": "evt.chain.ancient_foundry_legacy"},
+		{"due_day": 6, "event_id": "evt.climate.severe_drought"},
+	]}):
+		await _check_policy()
+	await _close_story()
+	if await _start_story({"scheduled_events": [{"due_day": 2, "event_id": "evt.ages.first_seed"}]}):
+		await _check_choice_while_paused()
+	await _close_story()
+	print("narrative event pause: %d checks, %d failures" % [_checks, _failures])
+	call_deferred("quit", 0 if _failures == 0 else 1)
+
+
+func _check_policy() -> void:
+	if not await _advance_story(2):
+		return
+	_expect("choices are stopped by default", story_service.event_pause_mask() == 255
+		and story_service.active_offer().get("event_id") == "evt.ages.first_seed")
+	story_clock.pause(true)
+	story_host._sync_runtime_worker_clock()
+	var category := Categories.category("evt.ages.first_seed")
+	var mask := 255 ^ (1 << category)
+	var change := story_service.update_event_pause_mask(mask)
+	var before := story_ext.capture_gameplay_narrative()
+	print("EVENT_PAUSE_BOUNDARY receipt=", change, " stored=", before.get("event_pause_mask"),
+		" pending=", before.get("pending_event_pause_masks"))
+	_expect("changing the active choice's category takes effect on day 3",
+		bool(change.get("ok", false)) and int(change.get("effective_day", -1)) == 3
+		and int(before.get("event_pause_mask", -1)) == 255
+		and before.get("pending_event_pause_masks") == [[3, mask]])
+	_expect("accepting a policy does not release the player's pause", story_clock.paused)
+	story_clock.pause(false)
+	story_host._sync_runtime_worker_clock()
+	if not await _advance_story(3):
+		return
+	var records := _story_records()
+	_expect("the choice is made by the executor on the policy day",
+		records.size() == 1 and bool(records[0].get("automatically_chosen", false))
+		and records[0].get("resolved_day") == 3 and records[0].get("chosen_option_index") == 0)
+	_expect("the policy is stored only after it takes effect",
+		story_ext.capture_gameplay_narrative().get("event_pause_mask") == mask)
+	if not await _advance_story(4):
+		return
+	var foundry: Dictionary = story_ext.capture_gameplay_narrative().get("pending_choice", {})
+	_expect("the one-option foundry is a default non-stopping notice",
+		int(foundry.get("effective_day", -1)) == 5 and not story_service.has_active_offer())
+	if not await _advance_story(5):
+		return
+	records = _story_records()
+	_expect("the foundry notice resolves with its actual option on day 5",
+		records.size() == 2 and records[0].get("event_id") == "evt.chain.ancient_foundry_legacy"
+		and records[0].get("resolved_day") == 5)
+	story_clock.pause(true)
+	var saved_speed := story_clock.speed_multiplier
+	# Leave notices running so the scheduled choice owns the next stop.
+	var restored_policy := story_service.update_event_pause_mask(255)
+	_expect("an event setting preserves the player's explicit pause and speed",
+		restored_policy.get("ok", false) and restored_policy.get("effective_day") == 6
+		and story_clock.paused and story_clock.speed_multiplier == saved_speed)
+	story_clock.pause(false)
+	if not await _advance_story(6):
+		return
+	_expect("the next choice is actively waiting for a player",
+		story_service.active_offer().get("event_id") == "evt.climate.severe_drought")
+	_publish_day(story_host, story_clock, 7)
+	var frame := Engine.get_process_frames()
+	OS.delay_msec(HOLD_MSEC)
+	_expect("the native stop survives without a foreground frame",
+		story_host._calendar_admitted_through >= 7 and story_ext.runtime_committed_day() == 6
+		and Engine.get_process_frames() == frame
+		and story_host.get_generator().get_runtime_control_state().get("simulation_host_state") == "PAUSED")
+
+
+func _check_choice_while_paused() -> void:
+	var dialog := StoryDialog.new()
+	var flow = story_controller.narrative_flow()
+	flow.configure(story_controller, story_host, story_clock, dialog, story_service)
+	if not await _advance_story(2):
+		return
+	story_clock.pause(true)
+	story_host._sync_runtime_worker_clock()
+	var offer := story_service.active_offer()
+	_expect("a real offer is shown before the player responds", dialog.is_narrative_event_modal_open())
+	var receipt: Dictionary = flow.on_option_chosen(int(offer.offer_id), int(offer.offer_generation), 0)
+	_expect("the accepted choice leaves the player able to resume the paused clock",
+		bool(receipt.get("ok", false)) and receipt.get("effective_day") == 3
+		and story_clock.paused and story_host._calendar_admitted_through == 2
+		and not dialog.is_narrative_event_modal_open())
+	story_clock.pause(false)
+	if not await _advance_story(3):
+		return
+	_expect("the dialog shows the outcome from the committed choice",
+		dialog.outcome.get("offer_id") == offer.offer_id and dialog.outcome.get("resolved_day") == 3)

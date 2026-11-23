@@ -74,12 +74,6 @@ custom_minimum_size = Vector2(120, 34)
 layout_mode = 2
 text = "生成世界"
 
-[node name="DebugButton" type="Button" parent="Margin/Root/Header/Actions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 34)
-layout_mode = 2
-text = "调试场景"
-
 [node name="ResponsiveBody" type="BoxContainer" parent="Margin/Root"]
 unique_name_in_owner = true
 layout_mode = 2

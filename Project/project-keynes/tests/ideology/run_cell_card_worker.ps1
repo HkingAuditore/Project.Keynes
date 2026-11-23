@@ -24,7 +24,6 @@ $cards = if ($Cards.Count -gt 0) { $Cards } else { $defaultCards }
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $env:PK_DISABLE_SUPPORT_GATE = "1"
-$env:PK_PEER_STALL_TIMEOUT_MS = "60000"
 $results = [ordered]@{}
 $running = @()
 $index = 0

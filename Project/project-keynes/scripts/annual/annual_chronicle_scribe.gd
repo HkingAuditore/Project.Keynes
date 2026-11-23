@@ -97,7 +97,7 @@ static func build_messages(model: Dictionary) -> Array:
 		"",
 		"只输出这一段文字。不要标题，不要分条，不要解释。",
 	]))
-	var user_content := "【%s · %d年 · %s】\n%s" % [
+	var user_content := "【%s · 第 %d 年 · %s】\n%s" % [
 		String(model.get("country_name", "本国")),
 		int(model.get("year", 1)),
 		String(model.get("era_name", "当代")),

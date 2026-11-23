@@ -2,6 +2,7 @@ extends "res://tests/runtime/golden_day_hash_test.gd"
 
 # Independent world and command log; the v1-v4 fixture is never modified.
 const EXTERNAL_DAYS := 4
+const FAMILY_CELLS_PER_BATCH := 32
 const FAMILY_FIELDS := ["family_handles", "stable_ids", "populations", "cash_claims",
     "owned_buildings", "home_cells", "origin_cells", "origin_ethnicity_ids",
     "culture_group_ids", "notable_person_counts", "prestige_levels", "prestige_scores_q16"]
@@ -36,7 +37,7 @@ func _run() -> void:
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
-	host.set_climate_authority_override("force_on")
+
 	_expect("golden configures", bool(host.configure_session({
 		"kind": "new_game", "config": config.to_dictionary()}).get("ok", false)))
 	await host.generate_world()
@@ -53,11 +54,16 @@ func _run() -> void:
 	var opening_resources := _resource_state(ext)
 	var opening_reserves: Array = opening_resources.reserves
 	var rows: Array = []
-	var chain := "keynes-external-v5:seed=20260727:days1-4:target=2,3,4,5"
+	var admitted_targets := {1: 0}
+	var chain := "keynes-external-v5:seed=20260727:days1-4:target=0,2,3,4"
 	clock.pause(false)
 	for day in range(1, EXTERNAL_DAYS + 1):
-		# This is a real player command, accepted before the next day is released.
-		_expect("v5 military target accepted", bool(military.set_target(handle, 0, day + 1).get("ok", false)))
+		# Keep the fixture's explicitly dated military target.
+		var target: Dictionary = military.submit([{"op": "force.set_target", "country": handle,
+			"value": day + 1, "effective_day": day + 1}])
+		_expect("v5 military target accepted on the first unsealed day",
+			bool(target.get("ok", false)) and int(target.get("effective_day", -1)) == day + 1)
+		admitted_targets[int(target.get("effective_day", -1))] = day + 1
 		var report := await _run_day(host, economy, clock, day)
 		_expect("v5 economy commits", bool(report.get("done", false)))
 		_expect("v5 all ledgers conserved", int(report.get("money_error", -1)) == 0
@@ -67,15 +73,26 @@ func _run() -> void:
 		var caught_up := false
 		for _slice in range(MAX_SLICES_PER_DAY):
 			host._process(0.0)
-			if host._runtime_military_last_commit_day == day and host._runtime_natural_resource_last_commit_day == day:
+			if host._runtime_commit_day == day:
 				caught_up = true
 				break
 			await process_frame
-		_expect("v5 main-thread advancers caught up", caught_up)
+		_expect("v5 committed tail caught up", caught_up)
 		if not caught_up:
 			break
 		var army: Dictionary = military.country_snapshot(handle)
-		_expect("v5 military command applied, not only a date change", int(army.get("target_value", -1)) == day + 1)
+		if not host._native_daily_inline_active:
+			_expect("v5 the first military order wakes the executor on day two",
+				int(ext.get_military_report().get("background_day", -2)) == (day if day > 1 else -1))
+			_expect("v5 the executor published vision for this day",
+				int(host._runtime_last_commit.get("committed_day", -1)) == day
+				and bool(host._runtime_last_commit.get("vision_writeback", false)))
+			_expect("v5 species update ran on the executor for this day",
+				int(host._runtime_last_commit.get("committed_day", -1)) == day
+				and bool(host._runtime_last_commit.get("species_writeback", false)))
+		_expect("v5 military target is exactly the command admitted for committed day %d" % day,
+			int(ext.runtime_committed_day()) == day and admitted_targets.has(day)
+			and int(army.get("target_value", -1)) == int(admitted_targets[day]))
 		var resource := _resource_state(ext)
 		var recovery_count := 0
 		for i in range(resource.reserves.size()):
@@ -89,29 +106,32 @@ func _run() -> void:
 		var people: Array = []
 		var handles: Array[int] = []
 		var all_family_reads := true
-		for index in range(host.get_current_map().cell_count()):
-			var offset := 0
-			while true:
-				var family: Dictionary = ext.get_family_cell_snapshot(index, offset, 64)
+		var cell_count := host.get_current_map().cell_count()
+		for first_cell in range(0, cell_count, FAMILY_CELLS_PER_BATCH):
+			var end_cell := mini(cell_count, first_cell + FAMILY_CELLS_PER_BATCH)
+			var pages := await _published_family_pages(ext, day, first_cell, end_cell)
+			for index in range(first_cell, end_cell):
+				var family: Dictionary = pages.get(index, {})
+				var offset := 0
+				while _current_read(family, day):
+					if int(family.get("total", 0)) > 0:
+						families.append([index, offset, _fields(family, FAMILY_FIELDS)])
+						for id in family.get("family_handles", PackedInt64Array()):
+							if not handles.has(int(id)):
+								handles.append(int(id))
+					if not bool(family.get("has_more", false)):
+						break
+					offset += 64
+					family = await _published_economy(ext.get_family_cell_snapshot.bind(index, offset, 64), day)
 				all_family_reads = all_family_reads and _current_read(family, day)
-				if not _current_read(family, day):
-					break
-				if int(family.get("total", 0)) > 0:
-					families.append([index, offset, _fields(family, FAMILY_FIELDS)])
-					for id in family.get("family_handles", PackedInt64Array()):
-						if not handles.has(int(id)):
-							handles.append(int(id))
-				if not bool(family.get("has_more", false)):
-					break
-				offset += 64
 		_expect("v5 all family reads are current committed state", all_family_reads)
 		for id in handles:
 			var offset := 0
 			while true:
-				var list: Dictionary = ext.get_family_notable_people(id, offset, 64)
+				var list := await _published_economy(ext.get_family_notable_people.bind(id, offset, 64), day)
 				_expect("v5 people list is committed", _current_read(list, day))
 				for person_id in list.get("person_handles", PackedInt64Array()):
-					var person: Dictionary = ext.get_notable_person_snapshot(person_id)
+					var person := await _published_economy(ext.get_notable_person_snapshot.bind(person_id), day)
 					_expect("v5 person is committed", _current_read(person, day))
 					people.append(_fields(person, PERSON_FIELDS))
 				if not bool(list.get("has_more", false)):
@@ -137,6 +157,22 @@ func _run() -> void:
 	host.free()
 	clock.free()
 	_finish()
+
+# Subscribe to one group at a time so published pages remain in the bounded cache.
+func _published_family_pages(ext: Object, day: int, first_cell: int, end_cell: int) -> Dictionary:
+	var pages := {}
+	for _slice in range(MAX_SLICES_PER_DAY):
+		for cell in range(first_cell, end_cell):
+			if pages.has(cell):
+				continue
+			var page: Dictionary = ext.get_family_cell_snapshot(cell, 0, 64)
+			if _current_read(page, day):
+				pages[cell] = page
+		if pages.size() == end_cell - first_cell:
+			break
+		await process_frame
+	return pages
+
 
 func _current_read(value: Dictionary, day: int) -> bool:
 	return bool(value.get("ok", false)) and not bool(value.get("read_view_pending", false)) and int(value.get("read_view_day", day)) == day
@@ -166,7 +202,7 @@ func _canonical(value: Variant) -> Variant:
 func _digest(value: Variant) -> String:
 	return JSON.stringify(value).sha256_text()
 
-func _resource_state(ext: Object) -> Dictionary:
+func _resource_state(ext: Object, expected_cells: int = 40 * 28) -> Dictionary:
 	var columns: Array = []
 	var reserves: Array = []
 	for profile in ResourceProfileRegistry.ordered():
@@ -174,7 +210,7 @@ func _resource_state(ext: Object) -> Dictionary:
 		var extra_name := ResourceProfileRegistry.extra_change_cpp_name(profile)
 		var reserve: PackedFloat32Array = ext.snapshot_f32(ext.component_id(reserve_name))
 		var extra: PackedFloat32Array = ext.snapshot_f32(ext.component_id(extra_name))
-		_expect("v5 complete resource columns", reserve.size() == 40 * 28 and extra.size() == reserve.size())
+		_expect("v5 complete resource columns", reserve.size() == expected_cells and extra.size() == reserve.size())
 		reserves.append(reserve)
 		columns.append([String(profile.id), reserve.to_byte_array().hex_encode(), extra.to_byte_array().hex_encode()])
 	return {"hash": _digest(columns), "reserves": reserves, "columns": columns}

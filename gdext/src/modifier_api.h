@@ -70,6 +70,7 @@ double effective_value(const ModifierRuntime &modifier, int32_t domain, int32_t 
 double effective_value(const ModifierRuntime &modifier, int32_t domain, const char *stat_key, uint64_t entity_handle, uint64_t group_handle, double base_value);
 int32_t stat_id_for_key(const ModifierRuntime &modifier, const std::string &key);
 const DerivedCellFront *derived_cell_front(const ModifierRuntime &modifier);
+void climate_radiative_terms(const ModifierRuntime &modifier, int32_t cell, double &add, double &factor);
 
 // ---- Economy/Effect/Ideology shared (economy_runtime_building_commit.cpp, effect_runtime.cpp, ideology_runtime.cpp)
 bool configured(const ModifierRuntime &modifier);
@@ -115,6 +116,7 @@ int32_t remove_rows_for_source(ModifierRuntime &modifier, uint64_t source_type, 
 // ---- Ideology (ideology_runtime.cpp)
 uint64_t catalog_hash(const ModifierRuntime &modifier);
 bool install_derived_cell_layer(ModifierRuntime &modifier, DerivedCellFront front, uint64_t expected_generation, bool &skipped, std::string &error);
+void restore_derived_cell_layer(ModifierRuntime &modifier, DerivedCellFront front);
 bool resolve_definition_terms(const ModifierRuntime &modifier, const std::string &definition_key, std::vector<ModifierApi::ResolvedTerm> &out);
 } // namespace modifier_api
 } // namespace pk

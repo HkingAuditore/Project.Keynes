@@ -85,11 +85,11 @@ func _run() -> void:
 	if not celestial.is_empty():
 		_expect("tech.celestial_navigation keeps its authored corridor summary",
 			(celestial.get("modifier_terms", []) as Array).is_empty()
-			and String(celestial.get("effect_summary", "")).contains("远海运输走廊"))
+			and String(celestial.get("effect_summary", "")).contains("浅海运输走廊"))
 		var items: Array = card._effect_items(celestial)
 		_expect("tech.celestial_navigation shows the shallow-sea corridor",
 			items.size() == 1 and String((items[0] as Dictionary).get("text", "")) \
-				== "开启航道 · 远海运输走廊")
+				== "开启航道 · 浅海运输走廊")
 	_expect("detail card defers to the shared effect module",
 		TechnologyEffectTextScript.effect_items(celestial) == card._effect_items(celestial))
 	card.free()
@@ -107,7 +107,7 @@ func _run_shared_summary(definitions: Array, celestial: Dictionary) -> void:
 	if celestial.is_empty():
 		return
 	_expect("shared summary falls back to structured effects when the author left it blank",
-		TechnologyEffectTextScript.summary_text(celestial) == "开启航道 · 远海运输走廊")
+		TechnologyEffectTextScript.summary_text(celestial) == "开启航道 · 浅海运输走廊")
 	var river: Dictionary = {}
 	for value in definitions:
 		var definition: Dictionary = value
@@ -120,7 +120,7 @@ func _run_shared_summary(definitions: Array, celestial: Dictionary) -> void:
 			TechnologyEffectTextScript.summary_text(river) \
 				== String(river.get("effect_summary", "")).strip_edges())
 	_expect("effect_texts carries at least the corridor line",
-		TechnologyEffectTextScript.effect_texts(celestial).has("开启航道 · 远海运输走廊"))
+		TechnologyEffectTextScript.effect_texts(celestial).has("开启航道 · 浅海运输走廊"))
 
 	var list: Control = TechnologyAvailableListScript.new()
 	list._definitions = [celestial]
@@ -129,5 +129,5 @@ func _run_shared_summary(definitions: Array, celestial: Dictionary) -> void:
 	var tooltip := String(list._tooltip_for(0, "card"))
 	list.free()
 	_expect("research list tooltip no longer shows a summary-less technology",
-		tooltip.contains("开启航道 · 远海运输走廊")
+		tooltip.contains("开启航道 · 浅海运输走廊")
 		and tooltip.contains(String(celestial.get("display_name", ""))))

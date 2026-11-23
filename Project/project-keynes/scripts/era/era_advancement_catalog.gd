@@ -21,10 +21,7 @@ const ValidatorScript = preload("res://scripts/technology/technology_network_val
 const GOODS_SCALE := 1000
 ## v5：门槛从 0.8 降到 0.6。0.8 时全树必修 328/416（79%），玩家无法放弃任何支线；
 ## 0.6 时必修约 60%，每代留下 20–40% 的可放弃空间，构筑才真正存在。
-## v7（2026-11-19）：0.6 → 0.45。玩家反馈「升时代要求的科技量太多」：0.6 时每代必修
-## 14–33 项（石器 33/54、农耕 31/51、王国 32/52），科技条是晋升里最长的一关。0.45 后每代
-## 必修 11–25 项，约留 55% 可放弃空间；科技仍是必达条件，只是不再要求跑完大半个时代。
-const TECH_COMPLETION_RATIO := 0.45
+const TECH_COMPLETION_RATIO := 0.6
 const CONDITIONS_REQUIRED := 3
 const MIN_TARGET_ERA := 1
 const MAX_ERA_INDEX := 10
@@ -68,7 +65,7 @@ const PROCUREMENT := [
 	# agrarian -> kingdom
 	[{"good_id": "adobe_brick", "per_cell": 25 * GOODS_SCALE, "floor": 60 * GOODS_SCALE},
 		{"good_id": "pottery", "per_cell": 15 * GOODS_SCALE, "floor": 40 * GOODS_SCALE},
-		{"good_id": "copper_tools", "per_cell": 5 * GOODS_SCALE, "floor": 12 * GOODS_SCALE}],
+		{"good_id": "bronze_tools", "per_cell": 5 * GOODS_SCALE, "floor": 12 * GOODS_SCALE}],
 	# kingdom -> empire
 	[{"good_id": "bricks", "per_cell": 25 * GOODS_SCALE, "floor": 80 * GOODS_SCALE},
 		{"good_id": "wrought_iron", "per_cell": 8 * GOODS_SCALE, "floor": 25 * GOODS_SCALE},
@@ -81,7 +78,7 @@ const PROCUREMENT := [
 		{"good_id": "furniture", "per_cell": 10 * GOODS_SCALE, "floor": 30 * GOODS_SCALE}],
 	# exploration -> enlightenment
 	[{"good_id": "paper", "per_cell": 20 * GOODS_SCALE, "floor": 80 * GOODS_SCALE},
-		{"good_id": "lime", "per_cell": 15 * GOODS_SCALE, "floor": 60 * GOODS_SCALE},
+		{"good_id": "glass", "per_cell": 15 * GOODS_SCALE, "floor": 60 * GOODS_SCALE},
 		{"good_id": "printed_materials", "per_cell": 12 * GOODS_SCALE, "floor": 50 * GOODS_SCALE},
 		{"good_id": "tools", "per_cell": 12 * GOODS_SCALE, "floor": 50 * GOODS_SCALE}],
 	# enlightenment -> steam

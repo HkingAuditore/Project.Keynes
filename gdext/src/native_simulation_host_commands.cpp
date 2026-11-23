@@ -19,6 +19,7 @@
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
 #include "runtime_switch_registry.h"
+#include "runtime_golden_diagnostics.h"
 #include "pk_log.h"
 
 #include <algorithm>
@@ -50,87 +51,86 @@ bool NativeSimulationHost::enqueue(RuntimeCommandPacket packet) {
 bool NativeSimulationHost::enqueue_batch(
         std::vector<RuntimeCommandPacket> packets,
         std::vector<int64_t> *effective_days) {
+    return enqueue_batch_at(std::move(packets), effective_days, true);
+}
+
+RuntimeCommandAdmission NativeSimulationHost::admit_command(int64_t &effective_day) {
+    if (on_worker_thread()) return RuntimeCommandAdmission(true);
+    RuntimeCommandAdmission admission(_command_producer_mutex, _command_seal);
+    const auto current = state();
+    if (_world_environment && (current == RuntimeWorkerState::FAULTED ||
+            current == RuntimeWorkerState::STOPPED || current == RuntimeWorkerState::STOPPING ||
+            _stop_requested.load(std::memory_order_acquire))) return {};
+    if (_world_environment && effective_day >= 0)
+        effective_day = std::max(effective_day, command_seal_day());
+    return admission;
+}
+
+bool NativeSimulationHost::try_freeze_command_inputs(int64_t day) {
+    std::lock_guard<std::mutex> control(_control_mutex);
+    if (player_requests_pending_locked()) return false;
+    int64_t seal = _command_seal.load(std::memory_order_acquire);
+    if ((seal & 1) != 0) return false;
+    return _command_seal.compare_exchange_strong(seal, day * 2,
+        std::memory_order_acq_rel, std::memory_order_acquire);
+}
+
+bool NativeSimulationHost::enqueue_batch_at(
+        std::vector<RuntimeCommandPacket> packets,
+        std::vector<int64_t> *effective_days, bool seal,
+        const std::function<bool()> &admit_peer) {
     if (effective_days != nullptr) effective_days->clear();
     if (packets.empty()) return false;
-    const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
-    if (current == RuntimeWorkerState::STOPPED ||
-        current == RuntimeWorkerState::STOPPING ||
-        current == RuntimeWorkerState::FAULTED) return false;
+    // A day that already owns the execution boundary must finish delivering
+    // its consequences even if stop revoked admission for future days.
+    const bool executor = on_worker_thread();
+    const bool settling = executor && _worker_day_inflight.load(std::memory_order_acquire) != 0;
+    const auto accepts = [settling](RuntimeWorkerState state) {
+        return state != RuntimeWorkerState::STOPPED &&
+            state != RuntimeWorkerState::FAULTED &&
+            (settling || state != RuntimeWorkerState::STOPPING);
+    };
+    if (!accepts(_state.load(std::memory_order_acquire))) return false;
 
-    // Serialise producers for the batch path. The consumer remains lock-free
-    // and may advance dequeue_pos while this lock is held.
-    std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
-    const auto admitted_state = _state.load(std::memory_order_acquire);
-    if (admitted_state == RuntimeWorkerState::STOPPED ||
-        admitted_state == RuntimeWorkerState::STOPPING ||
-        admitted_state == RuntimeWorkerState::FAULTED ||
-        _stop_requested.load(std::memory_order_acquire)) return false;
+    int64_t earliest = std::max<int64_t>(0, std::min_element(packets.begin(), packets.end(),
+        [](const auto &a, const auto &b) {
+            return a.envelope.effective_day < b.envelope.effective_day;
+        })->envelope.effective_day);
+    auto admission = admit_command(earliest);
+    if (!admission.accepted() || !accepts(_state.load(std::memory_order_acquire)) ||
+        (!settling && _stop_requested.load(std::memory_order_acquire))) return false;
     const uint64_t write = _command_enqueue_pos.load(std::memory_order_relaxed);
     const uint64_t read = _command_dequeue_pos.load(std::memory_order_acquire);
+    const size_t executor_pending = executor ? _executor_inbox.size() : 0;
     if (packets.size() > RUNTIME_COMMAND_QUEUE_CAPACITY ||
-        write - read > RUNTIME_COMMAND_QUEUE_CAPACITY - packets.size()) {
+        write - read + executor_pending > RUNTIME_COMMAND_QUEUE_CAPACITY - packets.size()) {
         _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    for (size_t index = 0; index < packets.size(); ++index) {
-        const uint64_t position = write + static_cast<uint64_t>(index);
-        CommandQueueSlot &slot = _command_slots[
-            position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        const uint64_t sequence = slot.sequence.load(std::memory_order_acquire);
-        if (sequence != position) {
-            _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
-            return false;
-        }
-    }
-    // Every caller is a main-thread producer. A command takes effect no
-    // earlier than the first day whose inputs are not sealed yet, so it can
-    // never land on a day the worker already started.
-    const int64_t seal_day = command_seal_day();
+    if (admit_peer && !admit_peer()) return false;
+    // The executor may enqueue a consequence of today's settlement at its
+    // exact D+1 date. External input captures the fence while admitting.
+    const int64_t seal_day = seal ? command_seal_day() : 0;
     if (effective_days != nullptr) effective_days->reserve(packets.size());
     for (size_t index = 0; index < packets.size(); ++index) {
         RuntimeCommandPacket &packet = packets[index];
-        packet.envelope.effective_day =
-            std::max(packet.envelope.effective_day, seal_day);
+        packet.envelope.effective_day = std::max(packet.envelope.effective_day, seal_day);
         if (effective_days != nullptr)
             effective_days->push_back(packet.envelope.effective_day);
         if (packet.submit_order == 0) {
             packet.submit_order = _command_submit_order.fetch_add(
                 1u, std::memory_order_relaxed) + 1u;
         }
-        const uint64_t position = write + static_cast<uint64_t>(index);
-        CommandQueueSlot &slot = _command_slots[
-            position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        slot.packet = packet;
-        slot.sequence.store(position + 1, std::memory_order_release);
-    }
-    // Country's typed lifecycle begins at Host admission. Keep this state
-    // under the same transport mutex used by terminal publication so a save
-    // boundary cannot observe a pending packet without its Accepted record.
-    {
-        std::lock_guard<std::mutex> country_lock(_country_transport_mutex);
-        for (const RuntimeCommandPacket &packet : packets) {
-            if (packet.envelope.domain !=
-                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
-                packet.envelope.request_id == 0) {
-                continue;
-            }
-            if (_country_command_states.find(packet.envelope.request_id) !=
-                    _country_command_states.end()) {
-                continue;
-            }
-            CountryCommandReceipt receipt;
-            receipt.request_id = packet.envelope.request_id;
-            receipt.producer_id = packet.envelope.producer_id;
-            receipt.sequence = packet.envelope.sequence;
-            receipt.effective_day = packet.envelope.effective_day;
-            receipt.generation = _generation.load(std::memory_order_acquire);
-            receipt.code = CountryCommandReceiptCode::ACCEPTED;
-            _country_command_states.emplace(receipt.request_id,
-                                             std::move(receipt));
+        packet.admission_generation = _generation.load(std::memory_order_acquire);
+        if (executor) {
+            _executor_inbox.push_back(std::move(packet));
+        } else {
+            const uint64_t position = write + static_cast<uint64_t>(index);
+            _command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY].packet = std::move(packet);
         }
     }
-    _command_enqueue_pos.store(write + packets.size(),
-                               std::memory_order_release);
+    if (!executor)
+        _command_enqueue_pos.store(write + packets.size(), std::memory_order_release);
     _last_command_admitted_us.store(now_us(), std::memory_order_release);
     _control_cv.notify_one();
     return true;
@@ -152,6 +152,10 @@ uint64_t NativeSimulationHost::allocate_command_request_id() {
     if (on_worker_thread())
         return (_executor_request_id.fetch_add(1u, std::memory_order_relaxed) + 1u) |
             EXECUTOR_REQUEST_ID_TAG;
+    return allocate_command_request_id_for_ingress();
+}
+
+uint64_t NativeSimulationHost::allocate_command_request_id_for_ingress() {
     uint64_t value = _command_request_id.fetch_add(
         1u, std::memory_order_relaxed) + 1u;
     if (value == 0) {
@@ -186,8 +190,9 @@ bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) 
         packet.submit_order = _command_submit_order.fetch_add(
             1u, std::memory_order_relaxed) + 1u;
     }
-    std::lock_guard<std::mutex> lock(_control_mutex);
+    std::unique_lock<std::mutex> lock(_control_mutex);
     if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::STOPPED) {
+        lock.unlock();
         if (!modifier_enqueue_allowed()) return false;
         return enqueue(std::move(packet));
     }
@@ -206,38 +211,37 @@ uint64_t NativeSimulationHost::allocate_producer_sequence(uint32_t producer_id) 
     return _fallback_producer_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
-bool NativeSimulationHost::pop_command(RuntimeCommandPacket &out) {
-    uint64_t position = _command_dequeue_pos.load(std::memory_order_relaxed);
-    CommandQueueSlot *slot = nullptr;
-    for (;;) {
-        slot = &_command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        const uint64_t sequence = slot->sequence.load(std::memory_order_acquire);
-        const int64_t difference = static_cast<int64_t>(sequence - (position + 1));
-        if (difference == 0) {
-            if (_command_dequeue_pos.compare_exchange_weak(
-                    position, position + 1, std::memory_order_relaxed,
-                    std::memory_order_relaxed)) {
-                break;
-            }
-        } else if (difference < 0) {
-            return false;
-        } else {
-            position = _command_dequeue_pos.load(std::memory_order_relaxed);
-        }
-    }
-    out = slot->packet;
-    slot->sequence.store(position + RUNTIME_COMMAND_QUEUE_CAPACITY,
-                         std::memory_order_release);
-    return true;
+void NativeSimulationHost::register_country_acceptance(const RuntimeCommandPacket &packet) {
+    const auto &envelope = packet.envelope;
+    if (envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
+            envelope.request_id == 0) return;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    CountryCommandReceipt receipt;
+    receipt.request_id = envelope.request_id;
+    receipt.producer_id = envelope.producer_id;
+    receipt.sequence = envelope.sequence;
+    receipt.effective_day = envelope.effective_day;
+    receipt.generation = packet.admission_generation;
+    _country_command_states.try_emplace(receipt.request_id, std::move(receipt));
 }
 
-bool NativeSimulationHost::next_command(RuntimeCommandPacket &out) const {
-    const uint64_t position = _command_dequeue_pos.load(std::memory_order_relaxed);
-    const CommandQueueSlot &slot = _command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-    const uint64_t sequence = slot.sequence.load(std::memory_order_acquire);
-    if (sequence != position + 1) return false;
-    out = slot.packet;
-    return true;
+void NativeSimulationHost::drain_command_inbox_through(
+        std::vector<RuntimeCommandPacket> &out, uint64_t end) {
+    // The acquired cursor is a complete batch boundary. Later admissions
+    // belong to the next drain. The producer may reuse slots only after the
+    // corresponding packet has been moved out of the ring.
+    const uint64_t begin = _command_dequeue_pos.load(std::memory_order_relaxed);
+    for (uint64_t position = begin; position < end; ++position) {
+        auto &packet = _command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY].packet;
+        register_country_acceptance(packet);
+        out.push_back(std::move(packet));
+    }
+    _command_dequeue_pos.store(end, std::memory_order_release);
+    for (auto &packet : _executor_inbox) {
+        register_country_acceptance(packet);
+        out.push_back(std::move(packet));
+    }
+    _executor_inbox.clear();
 }
 
 bool NativeSimulationHost::push_receipt(const RuntimeCommandReceipt &receipt) {
@@ -318,6 +322,8 @@ void NativeSimulationHost::publish_country_command_terminals(
         receipt.code = code;
         if (reason != nullptr) receipt.reason = reason;
         _country_command_states[receipt.request_id] = receipt;
+        if (receipt.producer_id != COUNTRY_AI_PRODUCER_ID)
+            _country_command_publications.push_back(receipt.request_id);
         _country_command_terminals.emplace(receipt.request_id,
                                            std::move(receipt));
     }
@@ -363,6 +369,19 @@ bool NativeSimulationHost::poll_country_command_receipts(
     return true;
 }
 
+void NativeSimulationHost::poll_country_command_publications(
+        uint64_t after_sequence, uint32_t limit,
+        std::vector<CountryCommandReceipt> &out) {
+    out.clear();
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    const size_t begin = std::min<uint64_t>(after_sequence, _country_command_publications.size());
+    const size_t end = std::min(_country_command_publications.size(),
+        begin + std::min<uint32_t>(limit, 4096u));
+    out.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i)
+        out.push_back(_country_command_terminals.at(_country_command_publications[i]));
+}
+
 bool NativeSimulationHost::try_country_command_terminal(
         uint64_t request_id, CountryCommandReceipt &out) {
     if (request_id == 0) return false;
@@ -374,69 +393,10 @@ bool NativeSimulationHost::try_country_command_terminal(
 }
 
 bool NativeSimulationHost::poll_commit(uint64_t after_generation, RuntimeCommit &out) {
-    const uint64_t latest_generation = _generation.load(std::memory_order_acquire);
-    uint32_t index = 0;
-    if (_snapshots.try_acquire_latest(after_generation, index)) {
-        RuntimeCommit candidate = _snapshots.read_buffer(index);
-        _snapshots.release(index);
-        // Visual publication is intentionally throttled.  A READY buffer may
-        // therefore describe an older generation than the authoritative scalar
-        // header. Never move the facade backwards just because the newest
-        // visual buffer is still within the 20 Hz window; return the scalar
-        // boundary below and let visual patch consumption remain generation
-        // aware.
-        if (candidate.header.generation >= latest_generation) {
-            out = std::move(candidate);
-            return true;
-        }
-    }
-    // The visual ring is allowed to drop intents under backpressure, but a
-    // dropped buffer must not erase the authoritative commit boundary.
-    const uint64_t generation = _generation.load(std::memory_order_acquire);
-    // A throttled visual publication still advances the authoritative
-    // generation. Return the scalar header even when no READY buffer exists;
-    // the caller can then observe progress while visual patch consumption
-    // remains generation-aware and may legitimately report no intents.
-    if (generation == 0 || generation <= after_generation) return false;
-    out = RuntimeCommit{};
-    out.header.generation = generation;
-    out.header.from_day = _latest_from_day.load(std::memory_order_acquire);
-    out.header.committed_day = _latest_committed_day.load(std::memory_order_acquire);
-    out.header.produced_at_us = _latest_produced_at_us.load(std::memory_order_acquire);
-    out.header.dirty_families = _latest_dirty_families.load(std::memory_order_acquire);
-    out.header.state_hash = _state_hash.load(std::memory_order_acquire);
-    out.header.command_receipt_count = _latest_receipt_count.load(std::memory_order_acquire);
-    for (size_t family_index = 0; family_index < RUNTIME_DIRTY_FAMILY_COUNT; ++family_index) {
-        out.header.dirty_family_generations[family_index] =
-            _dirty_family_generations[family_index].load(std::memory_order_acquire);
-    }
-    return true;
-}
-
-bool NativeSimulationHost::poll_commit_generation(uint64_t generation, RuntimeCommit &out) {
-    uint32_t index = 0;
-    if (_snapshots.try_acquire_generation(generation, index)) {
-        out = _snapshots.read_buffer(index);
-        _snapshots.release(index);
-        return true;
-    }
-    // Exact lookup is only reconstructible for the newest scalar header. A
-    // throttled generation has no visual buffer, but the current generation
-    // is still a valid authoritative commit boundary.
-    if (generation == 0 ||
-        generation != _generation.load(std::memory_order_acquire)) return false;
-    out = RuntimeCommit{};
-    out.header.generation = generation;
-    out.header.from_day = _latest_from_day.load(std::memory_order_acquire);
-    out.header.committed_day = _latest_committed_day.load(std::memory_order_acquire);
-    out.header.produced_at_us = _latest_produced_at_us.load(std::memory_order_acquire);
-    out.header.dirty_families = _latest_dirty_families.load(std::memory_order_acquire);
-    out.header.state_hash = _state_hash.load(std::memory_order_acquire);
-    out.header.command_receipt_count = _latest_receipt_count.load(std::memory_order_acquire);
-    for (size_t family_index = 0; family_index < RUNTIME_DIRTY_FAMILY_COUNT; ++family_index) {
-        out.header.dirty_family_generations[family_index] =
-            _dirty_family_generations[family_index].load(std::memory_order_acquire);
-    }
+    const auto latest = std::atomic_load_explicit(&_latest_commit,
+                                                  std::memory_order_acquire);
+    if (!latest || latest->header.generation <= after_generation) return false;
+    out = *latest;
     return true;
 }
 
@@ -474,8 +434,7 @@ void NativeSimulationHost::drain_inline_day_commands(
     day_commands.clear();
     day_receipts.clear();
     admitted_submit_order = 0;
-    RuntimeCommandPacket incoming;
-    while (pop_command(incoming)) _executor_pending_commands.push_back(std::move(incoming));
+    drain_command_inbox(_executor_pending_commands);
     std::stable_sort(_executor_pending_commands.begin(), _executor_pending_commands.end(),
                      command_packet_before);
     for (const auto &packet : _executor_pending_commands)
@@ -555,6 +514,9 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         runtime_copy_text(out.reason, "inline_daily_stop_requested");
         return out;
     }
+    service_economy_boundary_requests();
+    service_era_reward_requests();
+    service_player_confirmations();
     // 与 worker 日事务同一把边界锁。内联模式下执行者就是调用线程，这把锁在
     // 这里只是"一天一个事务"的互斥，不会再有人跨线程等它。
     std::unique_lock<std::mutex> boundary_lock(_economy_authority_boundary_mutex);
@@ -567,11 +529,15 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     const int64_t day = from_day + 1;
     out.from_day = from_day;
     out.day = day;
+    if (const char *block = player_confirmation_block()) {
+        runtime_copy_text(out.reason, block);
+        return out;
+    }
     // An unfinished day keeps the same frozen frame across executor lifetimes.
     auto environment = _executor_day_environment;
     if (environment && environment->day != day) environment.reset();
     for (uint32_t peek = 0; !environment && peek < 4u; ++peek) {
-        environment = environment_input_for_plan();
+        environment = executor_environment_for_day(day);
         if (environment == nullptr || environment->day >= day) break;
         const size_t popped = _environment_ring.pop_while_day_at_most(environment->day);
         if (popped == 0u) break;
@@ -593,8 +559,17 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     day_commands.reserve(16u);
     std::vector<RuntimeCommandReceipt> day_receipts;
     uint64_t admitted_submit_order = 0;
-    drain_inline_day_commands(day, day_commands, day_receipts,
-                              admitted_submit_order);
+    const int64_t previous_seal = frozen_command_day();
+    if (_world_environment && !try_freeze_command_inputs(day)) {
+        runtime_copy_text(out.reason, "inline_daily_command_input_pending");
+        return out;
+    }
+    prepare_narrative_day(day);
+    if (state() == RuntimeWorkerState::FAULTED) {
+        runtime_copy_text(out.reason, "narrative_choice_apply_failed");
+        return out;
+    }
+    drain_inline_day_commands(day, day_commands, day_receipts, admitted_submit_order);
     const double speed = _speed_days_per_second.load(std::memory_order_acquire);
     _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
     _day_waterfall.begin(day);
@@ -604,6 +579,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _day_waterfall.mark(RuntimeDayWaterfall::BUILD_PLAN);
     out.plan_build_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_build_started).count();
+    const auto peer_signal = _country_peer_signal.load(std::memory_order_acquire);
     _inline_day_pending.store(true, std::memory_order_release);
     const RuntimeDayCommit day_commit = execute_day_plan(
         day_plan, environment.get(), day_commands, day_receipts,
@@ -623,7 +599,12 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     out.dirty_families = day_commit.dirty_families;
     out.work_units = day_commit.work_units;
     out.continuation_pending = day_commit.continuation_pending != 0;
+    out.country_peer_progress =
+        _country_peer_signal.load(std::memory_order_acquire) != peer_signal;
     if (_inline_budget_exceeded) {
+        int64_t expected = day * 2;
+        _command_seal.compare_exchange_strong(expected, previous_seal * 2,
+            std::memory_order_acq_rel, std::memory_order_acquire);
         // 看门狗掐断：这一天没有提交，也不该被当成"缺 peer"再重试 —— 重试只
         // 会再花一次同样的预算。调用方看到的是可上报的一次明确失败。
         runtime_copy_text(out.reason, "inline_daily_day_budget_exceeded");
@@ -639,6 +620,9 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         return out;
     }
     if (day_commit.preflight_ok == 0) {
+        int64_t expected = day * 2;
+        _command_seal.compare_exchange_strong(expected, previous_seal * 2,
+            std::memory_order_acq_rel, std::memory_order_acquire);
         // 没提交：收据与命令都退回，等调用方泵完 peer 再试同一天。
         _executor_pending_commands.insert(_executor_pending_commands.begin(),
             day_commands.begin(), day_commands.end());
@@ -694,7 +678,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
             (day_commit.completed_domain_mask & wanted) == wanted) {
             publish_authority_grant(wanted);
         }
-        if ((wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u) {
+        if (!_world_environment && (wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u) {
             const int64_t climate_day = _climate_authority.store().committed_day;
             uint32_t slot = 0;
             if (climate_day > _climate_writeback_last_day.load(
@@ -702,7 +686,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
                 _climate_writeback.try_begin_write(slot)) {
                 RuntimeClimateSnapshot &writeback =
                     _climate_writeback.write_buffer(slot);
-                _climate_authority.snapshot_into(writeback, true);
+                capture_climate_display(writeback);
                 writeback.generation = _climate_writeback_sequence.fetch_add(
                     1, std::memory_order_relaxed) + 1u;
                 writeback.committed_day = climate_day;
@@ -718,7 +702,6 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _last_day_completed_stages.store(day_commit.completed_stage_count,
                                      std::memory_order_release);
     _last_day_work_units.store(day_commit.work_units, std::memory_order_release);
-    _committed_day.store(day, std::memory_order_release);
     _completed_days.fetch_add(1, std::memory_order_relaxed);
     publish_day(from_day, day, day_commit, day_receipts);
     _inline_day_pending.store(false, std::memory_order_release);
@@ -727,9 +710,6 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _day_waterfall.mark(RuntimeDayWaterfall::WORKER_PUBLISH_DAY);
     _day_waterfall.finish(true, day_commit.completed_domain_mask);
     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
-    // 内联模式没有等待者；保留这一行是为了让"提交后唤醒"的语义与 worker 一致，
-    // 将来若有人在 CV 上等一天完成也不会漏唤醒。
-    _control_cv.notify_all();
     out.committed = true;
     out.continuation_pending = false;
     out.commit_tail_ms = std::chrono::duration<double, std::milli>(
@@ -781,9 +761,8 @@ void NativeSimulationHost::publish_day(
             static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.resources.stock)));
         std::fflush(day_trace);
     }
-    // Publish scalar header fields before the generation release store. A
-    // non-blocking reader that observes this generation therefore cannot see
-    // metadata from the preceding day even when the visual ring is saturated.
+    // The authoritative header advances on every day, independent of the
+    // visual payload's throttle and buffer occupancy.
     const uint64_t generation = _generation.load(std::memory_order_relaxed) + 1;
     constexpr std::array<uint32_t, RUNTIME_DIRTY_FAMILY_COUNT> FAMILY_BITS{
         RUNTIME_DIRTY_CLOCK,
@@ -796,84 +775,91 @@ void NativeSimulationHost::publish_day(
         RUNTIME_DIRTY_EVENTS,
         RUNTIME_DIRTY_OVERLAY,
     };
-    for (size_t family_index = 0; family_index < FAMILY_BITS.size(); ++family_index) {
-        if ((day_commit.dirty_families & FAMILY_BITS[family_index]) != 0) {
-            _dirty_family_generations[family_index].store(
-                generation, std::memory_order_relaxed);
-        }
-    }
-    _latest_from_day.store(from_day, std::memory_order_relaxed);
-    _latest_committed_day.store(day, std::memory_order_relaxed);
-    _latest_dirty_families.store(day_commit.dirty_families, std::memory_order_relaxed);
-    _latest_receipt_count.store(static_cast<uint32_t>(
-        std::min<size_t>(day_receipts.size(), std::numeric_limits<uint32_t>::max())),
-        std::memory_order_relaxed);
+    const auto previous = std::atomic_load_explicit(&_latest_commit,
+                                                    std::memory_order_acquire);
+    auto published = std::make_shared<RuntimeCommit>();
+    RuntimeCommitHeader &header = published->header;
     const uint64_t produced_at_us = now_us();
-    _latest_produced_at_us.store(produced_at_us, std::memory_order_release);
-    _generation.store(generation, std::memory_order_release);
-    _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);
-    const uint64_t last_visual = _last_visual_publish_us.load(std::memory_order_relaxed);
-    // Visual state is capped at 20 Hz. Commands and non-clock dirty families
-    // bypass the cap so a user action or major event is visible immediately.
-    const bool force_visual = !day_receipts.empty() ||
-        (day_commit.dirty_families & ~RUNTIME_DIRTY_CLOCK) != 0;
-    if (!force_visual && last_visual != 0 && produced_at_us - last_visual < 50000u) {
-        _snapshot_publish_throttled_count.fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
-    uint32_t index = 0;
-    if (!_snapshots.try_begin_write(index)) return;
-    RuntimeCommit &commit = _snapshots.write_buffer(index);
-    commit.header = RuntimeCommitHeader{};
-    commit.header.generation = generation;
-    commit.header.from_day = from_day;
-    commit.header.committed_day = day;
-    commit.header.produced_at_us = produced_at_us;
-    commit.header.dirty_families = day_commit.dirty_families;
-    commit.header.state_hash = _state_hash.load(std::memory_order_acquire);
-    commit.header.command_receipt_count = static_cast<uint32_t>(
+    header.generation = generation;
+    header.from_day = from_day;
+    header.committed_day = day;
+    header.produced_at_us = produced_at_us;
+    header.dirty_families = day_commit.dirty_families;
+    header.state_hash = next_hash;
+    header.command_receipt_count = static_cast<uint32_t>(
         std::min<size_t>(day_receipts.size(), std::numeric_limits<uint32_t>::max()));
+    if (previous) header.dirty_family_generations = previous->header.dirty_family_generations;
     for (size_t family_index = 0; family_index < FAMILY_BITS.size(); ++family_index) {
-        commit.header.dirty_family_generations[family_index] =
-            _dirty_family_generations[family_index].load(std::memory_order_acquire);
+        if ((day_commit.dirty_families & FAMILY_BITS[family_index]) != 0)
+            header.dirty_family_generations[family_index] = generation;
     }
-    // VISUAL is a committed intent boundary. Sort and deduplicate worker
-    // intents before exposing them, so consumers never observe order that
-    // depends on worker traversal or a half-built batch.
-    std::stable_sort(_pod_visual_intents.begin(), _pod_visual_intents.end(),
-        [](const RuntimeVisualIntent &a, const RuntimeVisualIntent &b) {
-            if (a.family != b.family) return a.family < b.family;
-            if (a.cell_index != b.cell_index) return a.cell_index < b.cell_index;
-            return a.field_id < b.field_id;
-        });
-    _pod_visual_intents.erase(std::unique(_pod_visual_intents.begin(),
-        _pod_visual_intents.end(), [](const RuntimeVisualIntent &a,
-                                      const RuntimeVisualIntent &b) {
-            return a.family == b.family && a.cell_index == b.cell_index &&
-                   a.field_id == b.field_id && a.value_i32 == b.value_i32 &&
-                   a.value_f32 == b.value_f32;
-        }), _pod_visual_intents.end());
-    _visual_intent_generation.store(generation, std::memory_order_release);
-    _visual_intent_count.store(static_cast<uint32_t>(
-        std::min<size_t>(_pod_visual_intents.size(),
-                         std::numeric_limits<uint32_t>::max())),
-        std::memory_order_release);
-    _visual_full_refresh.store(_snapshots.publish_drop_count() != 0,
-                               std::memory_order_release);
-    commit.visual_intents.clear();
-    commit.visual_intents.reserve(_pod_visual_intents.size());
-    commit.visual_intents.insert(commit.visual_intents.end(),
-                                 _pod_visual_intents.begin(),
-                                 _pod_visual_intents.end());
-    commit.receipts.clear();
-    commit.receipts.reserve(day_receipts.size());
-    for (const RuntimeCommandReceipt &receipt : day_receipts) {
-        commit.receipts.push_back(receipt);
+    published->receipts = day_receipts;
+    if (_executor_vision && (!_executor_day_tail || !_executor_day_tail->vision) &&
+        previous && previous->day_tail && previous->day_tail->vision) {
+        if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+        _executor_day_tail->vision = previous->day_tail->vision;
     }
-    _snapshots.publish(index);
-    _last_visual_publish_us.store(produced_at_us, std::memory_order_release);
-    _last_commit_produced_at_us.store(commit.header.produced_at_us,
-                                      std::memory_order_release);
+    const char *golden = runtime_switch_value(RuntimeSwitch::PK_GOLDEN_DOMAINS);
+    if (golden != nullptr && std::strcmp(golden, "1") == 0) {
+        if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+        _executor_day_tail->golden = std::make_shared<RuntimeGoldenSnapshot>(capture_golden_snapshot(day));
+    }
+    if (_world_environment) {
+        if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
+        _executor_day_tail->country = country_worker_read_view(0);
+        if (_modifier_pod_configured) {
+            const auto &modifier = _modifier_pod_authority.snapshot();
+            const auto old = previous && previous->day_tail ? previous->day_tail->modifier : nullptr;
+            _executor_day_tail->modifier = old && old->generation == modifier.generation
+                ? old : std::make_shared<const RuntimeModifierPodSnapshot>(modifier);
+        }
+        auto climate = std::make_shared<RuntimeClimateSnapshot>();
+        capture_climate_display(*climate);
+        climate->generation = _climate_writeback_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+        climate->dirty_families = day_commit.dirty_families;
+        _executor_day_tail->climate = std::move(climate);
+    }
+    if (_world_environment) publish_cell_lut_changes(*_executor_day_tail,
+        previous ? previous->day_tail.get() : nullptr);
+    int64_t year_length = 0;
+    bool annual_reward_pending = false;
+    if (_world_environment && annual_development_enabled()) {
+        std::lock_guard<std::mutex> annual(_annual_mutex);
+        year_length = _annual_ledger.days_per_year();
+        annual_reward_pending = _annual_ledger.has_pending_reward();
+    }
+    const auto fiscal = year_length > 0 ? capture_economy_display(day, year_length,
+        *_executor_day_tail, previous ? previous->day_tail.get() : nullptr) : nullptr;
+    published->day_tail = std::move(_executor_day_tail);
+    publish_military_day();
+    if (published->day_tail && published->day_tail->era_reward)
+        std::atomic_store(&_published_era_reward, published->day_tail->era_reward);
+    if (published->day_tail && published->day_tail->narrative)
+        std::atomic_store(&_published_narrative, published->day_tail->narrative);
+    if (published->day_tail && published->day_tail->era_advancement)
+        std::atomic_store(&_published_era_advancement, published->day_tail->era_advancement);
+    finish_player_confirmation_day(day);
+    {
+        std::lock_guard<std::mutex> control(_control_mutex);
+        _committed_day.store(day, std::memory_order_release);
+        _generation.store(generation, std::memory_order_release);
+        std::atomic_store_explicit(&_latest_commit,
+            std::shared_ptr<const RuntimeCommit>(published),
+            std::memory_order_release);
+    }
+    if (_world_environment) {
+        uint64_t business = mix_hash(
+            _climate_pod_state_hash.load(std::memory_order_relaxed),
+            _economy_pod_state_hash.load(std::memory_order_relaxed));
+        for (auto *hash : {&_trigger_pod_state_hash, &_ideology_pod_state_hash,
+                &_effect_pod_state_hash, &_modifier_pod_state_hash, &_events_pod_state_hash})
+            business = mix_hash(business, hash->load(std::memory_order_relaxed));
+        business = mix_hash(business, published->day_tail->country.state_hash);
+        publish_display_batch(published, {header, published->receipts, published->day_tail->golden,
+            published->day_tail->notices, fiscal, business, annual_reward_pending});
+    }
+    _control_cv.notify_all();
+    _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);
     try_fault_injection("day.commit.after");
 }
 

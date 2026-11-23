@@ -127,7 +127,7 @@ func _draw_progress(w: float, h: float, progress_width: float) -> void:
 	if ratio > 0.0:
 		draw_rect(Rect2(track.position, Vector2(progress_width * ratio, 3.0)),
 			UITokens.DOSSIER_BRASS, true)
-	var caption := "%d / %d 天" % [_days_counted, _days_per_year]
+	var caption := "第 %d / %d 天" % [_days_counted, _days_per_year]
 	_text(Vector2(x, h * 0.76), _fit_text(caption, 11, progress_width),
 		11, UITokens.DOSSIER_INK_MUTED)
 
@@ -153,7 +153,7 @@ func _detail_runs() -> Array:
 	if _days_counted <= 0:
 		if not runs.is_empty():
 			runs.append(" · ")
-		runs.append("%d 天" % _days_counted)
+		runs.append("第 %d 天" % _days_counted)
 	return runs
 
 
@@ -181,6 +181,7 @@ func _tooltip() -> String:
 	var lines := PackedStringArray()
 	if not _has_data:
 		lines.append(_reason if not _reason.is_empty() else "年度产值暂不可用")
+		lines.append("等经济结算提交后这里会显示本年度累计产值。")
 		return "\n".join(lines)
 	lines.append("%s：%s" % [title, _money(_value)])
 	if not is_nan(_per_capita):
@@ -188,7 +189,6 @@ func _tooltip() -> String:
 	if _days_counted > 0:
 		lines.append("日均产值：%s" % _money(_value / float(_days_counted)))
 	var start_day := _year_index * _days_per_year
-	lines.append("自%s起算，本年度已计 %d / %d 天。" % [
-		WorldClock.date_text_for_day(start_day, _days_per_year),
-		_days_counted, _days_per_year])
+	lines.append("第 %d 年起算于第 %d 日，当前第 %d / %d 天。" % [
+		_year_index + 1, start_day, _days_counted, _days_per_year])
 	return "\n".join(lines)

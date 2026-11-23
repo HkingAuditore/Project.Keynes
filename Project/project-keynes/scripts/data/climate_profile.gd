@@ -214,11 +214,6 @@ extends Resource
 # days reuse the last active fronts snapshot. Auto-adjusted by main.gd on
 # speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.
-@export_range(1, 8, 1) var weather_refresh_stride: int = 1
-# When true, main.gd may retune weather_refresh_stride on speed changes
-# (x1=1, x5=4, x20=8). Disable this when the profile should be the single
-# source of truth for weather cadence.
-@export var weather_refresh_auto_stride_by_speed: bool = true
 @export_range(1, 30, 1) var weather_albedo_stride: int = 10
 # 2026-05-19 vegetation-survival-rebalance v2：植被 pass 频率从 10 → 5，
 # 配合 vitality_change_rate 提升后让漂移更密集地写回 vitality / streak。
@@ -361,7 +356,6 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0, 15, 1) var sim_stagger_ocean_phase: int = 0
 @export_range(0, 15, 1) var sim_stagger_native_environment_phase: int = 0
 @export_range(0, 15, 1) var sim_stagger_dynamic_visual_phase: int = 2
-@export_range(0, 15, 1) var sim_stagger_weather_phase: int = 4
 @export_range(0, 15, 1) var sim_stagger_enum_atlas_phase: int = 4
 @export_range(0, 15, 1) var sim_stagger_sea_ice_phase: int = 6
 
@@ -836,13 +830,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 # precip_inertia(2026-06-20 根因重构)：降水 EMA 惯性系数 α。precip=lerp(prev_precip,target,α)，越小越
 # 平滑(惯性强)、越大越跟手。从机制上消除天气逐tick横跳/不连续，统一替代旧 carryover/拖尾/滞回三件套。
 @export_range(0.05, 1.0, 0.01) var weather_precip_inertia: float = 0.58
-# W4：RAIN 判定的降水率门槛（陆/水各一档）。旧实现里 `precip > 0.040` 是**无条件**通过的
-# （见计划 §2 F11），等于「下一点就报雨」。现在并成一段门：降水率超门槛 + 云/水汽支持。
-# 验收值取 W3 实测陆地降水率 p80；改这里就能改行为，不用重编。
+# 陆地和水域的降水率门槛，还须有云层、云水和水汽。
+# 地球预设的陆地值取上游采样降水率的第 80 百分位。
 @export_range(0.0, 0.5, 0.001) var weather_precip_classify_gate_land: float = 0.040
 @export_range(0.0, 0.5, 0.001) var weather_precip_classify_gate_water: float = 0.032
-# W5：降水空间平滑系数。C++ 侧一直有此 knob（默认 0.30），但 GDScript 从未下发（计划 F12），
-# 生产永远吃 C++ 默认值。现在显式下发，0 = 关闭填洞/扩边。
+# 降水空间平滑系数。0 为关闭，削峰权重为填洞权重的 30%。
 @export_range(0.0, 0.8, 0.01) var weather_field_precip_spatial_smooth: float = 0.30
 # 雨云化(2026-06-22):把降水从"静力+背景主导"转为"动力触发主导",消除弥漫弱雨/原地永雨,让降水集中成雨核并随
 # 辐合/锋面/对流系统移动(生成-运动-消减)。两参数经 weather_system→knobs 进 C++ run_climate_pass_a(不重编)。
@@ -863,9 +855,6 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var weather_extreme_precip_soft_cap: float = 0.16
 @export_range(0.0, 1.0, 0.01) var weather_extreme_precip_softness: float = 0.45  # 收尾标定: 0.32→0.45 进一步少压缩暴雨峰→恢复方案③后偏低的暴雨(只放大已下大雨的格,不增降雨频率)
 @export_range(0.0, 0.10, 0.005) var weather_temp_anomaly_cap: float = 0.025
-# W6：**分类器**用的温度距平钳制。与上面那条（distribute 阶段改温度的幅度上限）语义不同 ——
-# 混用会把天气对温度的扰动放大 5 倍。DAY 判据是 temp_anom>0.04/0.05，旧 cap 0.025 让两条死分支不可达。
-@export_range(0.0, 0.5, 0.005) var weather_classify_anomaly_cap: float = 0.12
 @export_range(0.0, 2.0, 0.01) var weather_orographic_lift_gain: float = 0.22
 @export_range(0.0, 2.0, 0.01) var weather_convergence_gain: float = 0.18
 @export_range(1, 12, 1) var weather_convergence_refresh_stride: int = 2

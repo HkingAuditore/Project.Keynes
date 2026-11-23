@@ -20,6 +20,7 @@ const MONEY_ICON_FONT_SIZE := 13
 
 var _data: Dictionary = {}
 var _pending := false
+var _rejection := ""
 var _pending_rate := 0
 var _pending_mode := TAX_MODE_PERCENT_BP
 var _dirty := false
@@ -146,6 +147,7 @@ func editor_key(cell_idx: int) -> String:
 
 
 func mark_pending(rate: int, mode: int = TAX_MODE_PERCENT_BP) -> void:
+	_rejection = ""
 	_pending = true
 	_pending_rate = rate
 	_pending_mode = mode
@@ -292,7 +294,15 @@ func _restore_pending_spin() -> void:
 		_set_mode_button(_pending_mode)
 
 
+func show_rejection(message: String) -> void:
+	_rejection = message
+	_refresh_note()
+
+
 func _refresh_note() -> void:
+	if not _rejection.is_empty():
+		_note.text = _rejection
+		return
 	var inherited := int(_data.get("default_rate", 0))
 	var inherited_mode := int(_data.get("default_mode", TAX_MODE_PERCENT_BP))
 	var base := int(_data.get("base", inherited))

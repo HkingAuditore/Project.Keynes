@@ -2,9 +2,9 @@ extends SceneTree
 
 ## 顶栏日历块（日期 + 时代）排印回归。
 ##
-## 历史缺陷：DateLabel 在 .tscn 里被钉死 custom_minimum_size.x = 108，装不下日期
-## 文案（当时实测 117px），于是玩家看到的是日期被裁掉半截，时代名再把剩下的空间
-## 挤掉。这里守住的硬契约是：
+## 历史缺陷：DateLabel 在 .tscn 里被钉死 custom_minimum_size.x = 108，而
+## "第1年 · 1月1日" 实测 117px，于是玩家看到的是"第1年 · 1月…"，时代名再把
+## 剩下的空间挤掉。这里守住的硬契约是：
 ##   1) 字一定在纸框内：日期与时代的实测字宽都 <= 各自 Label 的宽度；
 ##   2) 纸框边缘留有余量：图标离纸框左边、时代文字离纸框右边都不少于
 ##      DateRow 在 .tscn 里声明的 offset（16px）；
@@ -19,8 +19,6 @@ const DIMENSIONS: Array[Vector2i] = [
 	Vector2i(2560, 1392),
 ]
 const NARROW := Vector2i(800, 600)
-## 比 NARROW 再窄一档：日期文案在 800 宽已能按原字号放下，降到 760 才需要降字号。
-const TIGHT := Vector2i(760, 600)
 const SQUEEZED := Vector2i(700, 600)
 const STATUS_SAMPLES := [
 	{"cash": 1234560000.0, "population": 6789},      # 12.35万 / 6789
@@ -71,27 +69,14 @@ func _run() -> void:
 		narrow.update_time_state(11, 12, 30, false, 1.0)
 		narrow.set_era_name("帝国时代")
 		await process_frame
-		_check("%s 窄窗放得下就保持原字号，且不裁字" % NARROW,
-			_font_size(narrow, "%DateLabel") == PlayerTopBar.DATE_FONT_SIZE
+		_check("%s 窄窗整体降字号，但依然不裁字" % NARROW,
+			_font_size(narrow, "%DateLabel") < PlayerTopBar.DATE_FONT_SIZE
+			and _font_size(narrow, "%DateLabel") >= PlayerTopBar.DATE_FONT_MIN_SIZE
 			and _fits_inside(narrow) and not _clipped(narrow) and _keeps_edge_margin(narrow))
 		print("[info] %s 字号 %d/%d 纸框 %.1f px" % [NARROW,
 			_font_size(narrow, "%DateLabel"), _font_size(narrow, "%EraName"),
 			float(_metrics(narrow).block_width)])
 		_free_mount(narrow)
-
-	var tight := _mount(TIGHT)
-	if tight != null:
-		tight.update_time_state(11, 12, 30, false, 1.0)
-		tight.set_era_name("帝国时代")
-		await process_frame
-		_check("%s 更窄时整体降字号，但依然不裁字" % TIGHT,
-			_font_size(tight, "%DateLabel") < PlayerTopBar.DATE_FONT_SIZE
-			and _font_size(tight, "%DateLabel") >= PlayerTopBar.DATE_FONT_MIN_SIZE
-			and _fits_inside(tight) and not _clipped(tight) and _keeps_edge_margin(tight))
-		print("[info] %s 字号 %d/%d 纸框 %.1f px" % [TIGHT,
-			_font_size(tight, "%DateLabel"), _font_size(tight, "%EraName"),
-			float(_metrics(tight).block_width)])
-		_free_mount(tight)
 
 	var squeezed := _mount(SQUEEZED)
 	if squeezed != null:

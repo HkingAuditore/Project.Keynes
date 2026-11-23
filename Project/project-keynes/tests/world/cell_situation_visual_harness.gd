@@ -4,11 +4,6 @@ const Situations = preload("res://scripts/rendering/cell_situation_layer.gd")
 const Fixtures = preload("res://tests/world/cell_situation_layer_test.gd")
 
 func _run(_world: WorldData) -> void:
-	var args := OS.get_cmdline_user_args()
-	if args.size() >= 3:
-		get_window().mode = Window.MODE_WINDOWED
-		get_window().size = Vector2i(int(args[1]), int(args[2]))
-		await get_tree().process_frame
 	_view((_cell_center(2, 1) + _cell_center(7, 4)) * 0.5, 4.0)
 	var host := Fixtures.ActivityFixtures.HostStub.new()
 	add_child(host)
@@ -44,12 +39,10 @@ func _run(_world: WorldData) -> void:
 	hud.add_theme_constant_override("shadow_offset_y", 2)
 	canvas.add_child(hud)
 	await _shot("situation_near")
-	for hit in situations._hits:
-		if int(hit.kind) != Situations.DISCONTENT_KIND:
-			continue
-		situations._mouse_position = situations.get_global_transform_with_canvas() * hit.rect.get_center()
+	if not situations._hits.is_empty():
+		var hit: Dictionary = situations._hits[-1]
+		situations._mouse_position = hit.rect.get_center()
 		situations._update_tooltip()
-		break
 	await _shot("situation_tooltip")
 	_view(_camera.position, 1.5)
 	_camera.force_update_scroll()
