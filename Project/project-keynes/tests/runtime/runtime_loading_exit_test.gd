@@ -71,6 +71,12 @@ func _close_during_catalog(stage: String) -> void:
 		_expect("loading reaches " + stage, false)
 		host.free()
 		return
+	if stage == "economy_catalog":
+		var economy = generator.get_economy_facade()
+		_expect("economy configuration is still preparing when exit is requested",
+			economy != null and not economy.is_configured() and host._runtime_session.is_preparing())
+		economy = null
+		print("[loading-exit] closing during economy configuration")
 	var context = generator.get_meta(&"loading_catalog_context")
 	var released_generator: WeakRef = weakref(generator)
 	var released_context: WeakRef = weakref(context)

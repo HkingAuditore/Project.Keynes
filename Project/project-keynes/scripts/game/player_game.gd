@@ -57,6 +57,8 @@ func _ready() -> void:
 	_session_request = request.duplicate(true)
 	var session_result := _runtime_host.configure_session(request)
 	if not bool(session_result.get("ok", false)):
+		if flow != null:
+			flow.report_player_start_failure(session_result)
 		# autotest 会话：会话配置失败要立刻进事件流，而不是等 world_ready 超时。
 		WebAutotestScript.report_failure("session_config_failed",
 			{"message": String(session_result.get("message", "")),
@@ -210,6 +212,10 @@ func _on_world_ready(
 				"start_cell": int(start_report.get("cell", -1)),
 				"precious_resource": String(start_report.get("precious_resource", "")),
 			})
+	elif not _runtime_host.is_loading_session():
+		var flow: Node = _game_flow()
+		if flow != null:
+			flow.report_player_start_failure({"ok": false, "code": "player_start_result_missing"})
 	var save: Node = _game_save()
 	if save != null:
 		save.apply_pending_view(map)

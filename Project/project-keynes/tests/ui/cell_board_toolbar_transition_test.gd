@@ -52,6 +52,7 @@ func _run() -> void:
 	board.hide_board(false)
 	_expect(not primary.visible, "展板退场期间工具栏不提前出现")
 	_step_midway(slide, CellBoard.SLIDE_OUT_SEC)
+	_expect(slide.modulate.a > 0.0 and slide.modulate.a < 1.0, "已进入展板退场中段")
 	_expect(board.visible and not primary.visible, "退场中段保持工具栏隐藏")
 	await _wait_for_animation(slide)
 	await _wait_for_animation(primary)
