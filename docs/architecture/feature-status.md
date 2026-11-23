@@ -5,6 +5,8 @@
 
 ## 移动低档大片地形慢帧复测（#54，2026-11-23）
 
+本次改动准备了复测场景、采样和验收工具。#54 的瓶颈定位和性能验收仍待实测，工单应保持打开。
+
 复测起点为 `7ebdf9d20`，与本机记录的 `fork/master` 一致。GitHub 域名解析失败，远端最新提交待核对。
 历史参考 `7ca1ca31a` 的两份原始日志均为六国、关闭迷雾。Apple M2、Godot 4.6.3、
 Metal Mobile、1600×960 窗口、种子 20260718、60×40、1 倍速，日志报告 VSync 和引擎限帧关闭。
@@ -19,9 +21,10 @@ Godot 的关闭垂直同步参数仍受驱动限制。[Godot 命令行说明](ht
 原始记录在 `/tmp/keynes-perf.sVCEH5/visibleLow100.log` 和 `visibleLow75.log`。
 
 当前版本的有效绘制样本为 0，手机覆盖为 0 台。本轮查询到 0 个活动显示器，Metal 返回空设备。
-最小 Godot 窗口和正式 `--measure --explored` 都停在 macOS 图形服务初始化，后者没有输出采样记录。
+正式 `--measure --explored` 复核停在 macOS 图形服务初始化，日志中有 `hiservices-xpcservice`
+连接失败和 0 条绘制记录，日志保存在 `/private/tmp/keynes54-breakdown.nbv8za4o/window.log`。
 先前的 Vulkan 窗口也停在初始化，`xcdevice` 只列出本机 Mac，CoreDevice 初始化超时。
-`xctrace` 无法写入其缓存目录，桌面工具也未获准打开 Godot 和 Instruments。
+`xctrace` 无法在其缓存目录创建 `path_manager`，本轮桌面工具申请打开 Instruments 被拒绝。
 实测尺寸、呈现等待、各层 CPU/GPU 耗时、改前改后交替复测和同帧画面对照仍待采集，性能验收保持待测。
 
 无窗口样本通过 `WorldRuntimeHost` 的正式开局入口准备，固定种子 20260718、60×40、四国与 1 倍速。
@@ -62,17 +65,33 @@ PK_MOBILE_SHADER_TIER=MOBILE_QUALITY_LOW godot --path Project/project-keynes \
   --script res://tests/rendering/mobile_terrain_baseline_test.gd -- --measure --explored
 ```
 
-去掉 `--explored` 测开局迷雾，换成 `--fog-off` 做关雾诊断。每个场景先采全部图层，
+去掉 `--explored` 测开局迷雾，换成 `--fog-off` 做关雾诊断。每个场景采完整绘制，
 再分别追加 `--omit-land`、`--omit-water` 或 `--omit-vegetation`，一次只暂停提交一个图层的绘制。
 植被组包含散布植被、投影、资源植物批次以及共享地被画面（含同一画面中的放牧痕迹）。
-交替采集完整画面与每个省略组，在相同镜头、实际尺寸和同步模式下比较。差值是该图层在当前画面中的边际代价，
-还会受到绘制合批的影响。采样保留迷雾和图层更新。
+交替采集完整与省略记录，在相同镜头、实际尺寸和同步模式下比较。每次运行的完整日志分别保存。
+差值是该图层在当前画面中的边际代价，也会受到绘制合批的影响。采样保留迷雾和图层更新。
 
-呈现等待单独用 Instruments 的 Game Performance 模板记录。用 `[mobile-terrain-draw]`
-的 `start_unix_s` 和 `end_unix_s` 对齐采样段，记录渲染线程获取 drawable 时的阻塞及帧呈现间隔，
-并用 GPU 时间线核对每段实际执行的工作。帧间隔、绘制时间与呈现等待分别记录。
-分层基线验收需有实际尺寸、各省略组和完整画面的配对样本，以及同一采样段的呈现等待记录。
+用 Instruments 的 Game Performance 模板记录。按 `[mobile-terrain-draw]` 中的进程号
+`process_id`、`start_unix_s` 和 `end_unix_s` 选取同一采样段。
+跟踪这些帧实际执行的 GPU 工作，即使 GPU 在采样段末尾之后才完成。分别汇总获取 drawable 的阻塞、
+每帧 GPU 工作和实际呈现间隔。同一帧的 GPU 执行区间重叠时只计一次。
+保留原始跟踪文件，在 `trace-summaries.json` 数组中为每个采样段填写一项，
+包含日志中的进程号与起止时间、跟踪文件名 `source`，
+以及 `present_wait_ms`、`gpu_work_ms` 和 `present_interval_ms` 三组实际计时。
+每组包含 `samples`、`mean`、`median` 和 `p95`。有观测且未发生等待时可记录零等待。
 [Apple 的 Metal 性能跟踪说明](https://developer.apple.com/videos/play/wwdc2020/10603/)。
+
+```sh
+python3 tools/perf/report_mobile_terrain_baseline.py --trace-summaries trace-summaries.json captures/*.log > breakdown.json
+python3 -m unittest discover -s tools/perf -p test_report_mobile_terrain_baseline.py
+```
+
+汇总工具要求开局迷雾和大片已探索两种场景在 100% 和 75% 下都有完整采样和三个省略组。
+每个省略组与时间最接近的完整采样配对。
+关雾数据以 `fog-off` 场景单列。每对保留实际绘制尺寸、帧率、P95、各项计时的样本数和来源。
+逐层对比 CPU 绘制、GPU 工作和呈现等待的平均耗时差，原始帧间隔和呈现间隔也分别保留。
+缺少同一采样段的系统跟踪、同一图层的成对记录或实测尺寸时，工具返回失败。
+用本轮失败日志和历史帧间隔日志运行，得到 `no windowed draw captures in the supplied logs`。
 
 - 工具栏用例原先在 60 ms 定时器结束时判断退场中段。固定 200 ms 一帧复现读取时动画已经结束，
   工具栏已恢复。现直接推进到动画中点并等待实际完成信号，正常时序和固定 200 ms 一帧均通过。
@@ -89,7 +108,10 @@ PK_MOBILE_SHADER_TIER=MOBILE_QUALITY_LOW godot --path Project/project-keynes \
 `/tmp/keynes54-review.jp3IDA`，带窗口的采样命令仍停在系统初始化。
 本次植被省略复核通过三组无窗口场景、四组拒绝用例、128 项回归（含回放和存读档）、
 18 项架构检查和 201 项工厂测试。日志在 `/private/tmp/keynes54-verify.JjKvxX`。
-Qodo 身份复查仍返回 `not_logged_in`。
+
+本轮通过 7 项汇总测试、三组无窗口场景、四组拒绝用例、7 项画质与绘制回归、
+18 项架构检查和 201 项工厂测试。
+Qodo 身份复查返回 `not_logged_in`，实际绘制及分层基线验收仍待测。
 
 ## 稀疏经济需求缓存（#53，2026-11-23）
 

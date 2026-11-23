@@ -81,6 +81,7 @@ static func record(game: PlayerGame, scene: String, scale: int, omitted: String)
 		"os": OS.get_name(),
 		"driver": driver,
 		"adapter": RenderingServer.get_video_adapter_name(),
+		"process_id": OS.get_process_id(),
 		"engine_max_fps": max_fps,
 		"vsync_mode": vsync,
 		"display_refresh_hz": DisplayServer.screen_get_refresh_rate(),
@@ -121,7 +122,8 @@ static func record(game: PlayerGame, scene: String, scale: int, omitted: String)
 		and DisplayServer.window_get_vsync_mode() == vsync and window.size == window_size
 	report["fixed_view"] = fixed_view
 	# Godot 4.6's Metal driver returns zero GPU timestamps. Keep the valid
-	# frame and CPU data and require the GPU timing from the system trace.
+	# frame and CPU data. The baseline report requires matched GPU and present
+	# timing from the system trace for both members of every layer pair.
 	report["gpu_timing_source"] = "godot" if gpu_timings_ok else "system_trace_required"
 	report["ok"] = sizes_ok and timings_ok and fixed_view and (gpu_timings_ok or driver == "metal")
 	print("[mobile-terrain-draw] ", JSON.stringify(report))
