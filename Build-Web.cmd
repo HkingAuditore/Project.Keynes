@@ -449,6 +449,18 @@ rem Register FmodGodot for the web export: drop the addon .gdignore, reimport so
 rem .godot\extension_list.cfg lists it, and verify. Must happen BEFORE the export
 rem (runtime load_extension deadlocks the browser main thread) and BEFORE
 rem :bank_begin (the .bank importer only exists while FmodGodot is registered).
+rem
+rem PK_WEB_SKIP_FMOD=1 -> leave the addon out entirely (silent package).
+rem 2026-11-23: the only web binary FmodGodot ships is the pthreads one, and the
+rem pthreads side module is exactly what traps at boot ("operation does not
+rem support unaligned accesses" out of dynamic-linking + pthreads). Until
+rem gdext\fmod_godot is rebuilt single-threaded there is nothing to register:
+rem registering it only bakes "No GDExtension library found (web.wasm32)" into
+rem the package. Audio is off on web either way in that configuration.
+if defined PK_WEB_SKIP_FMOD (
+    echo [fmod] skipped ^(PK_WEB_SKIP_FMOD=1^): package ships without FMOD ^(no audio^)
+    exit /b 0
+)
 rem FMOD_ENABLED is set before the call so the failure path still tries to restore.
 set "FMOD_ENABLED=1"
 echo [fmod] registering FmodGodot for the web export ...
@@ -485,6 +497,27 @@ rem Swap the Desktop (Vorbis q70) banks for the HTML5 (q37) ones. The pck stores
 rem the .bank at its source path, so the source itself has to change; the import
 rem cache and its .md5 sidecar are swapped too so Godot never reimports mid-build.
 rem Skipping is a supported fallback: PK_WEB_SKIP_BANK_DOWNGRADE=1.
+if defined PK_WEB_SKIP_FMOD (
+    rem No FMOD means no .bank importer and no banks in the package: nothing to swap.
+    rem 但"没有 importer"不等于"banks 不进包"：实测 2026-11-23 的 pck 里
+    rem assets/audio/banks/Desktop/*.bank 8 个文件 91.38 MB 照进（preset 的
+    rem exclude=assets/audio/banks/* 对这类导入型资源不生效，包内路径是
+    rem .godot/imported/ 那一份）。唯一可靠的做法和 era bank 一样：物理挪出去。
+    echo [bank] stashing assets\audio\banks out of the project ^(this package has no FMOD^) ...
+    if exist "%ROOT%Project\project-keynes\assets\audio\banks" (
+        if exist "%ROOT%tmp\web_banks_stash" (
+            echo === ERROR: tmp\web_banks_stash already exists - a previous run did not restore it ===
+            exit /b 1
+        )
+        move "%ROOT%Project\project-keynes\assets\audio\banks" "%ROOT%tmp\web_banks_stash" >nul
+        if errorlevel 1 (
+            echo === ERROR: could not stash assets\audio\banks ===
+            exit /b 1
+        )
+        set "BANKS_STASHED=1"
+    )
+    exit /b 0
+)
 if defined PK_WEB_SKIP_BANK_DOWNGRADE (
     echo [bank] skipped ^(PK_WEB_SKIP_BANK_DOWNGRADE=1^): pck keeps the q70 Music.bank
     exit /b 0
@@ -504,6 +537,18 @@ exit /b 0
 rem ---------------------------------------------------------------------------
 :bank_end
 rem Idempotent: the tool exits 0 when there is no state to restore.
+if defined BANKS_STASHED (
+    echo [bank] restoring assets\audio\banks ...
+    if exist "%ROOT%tmp\web_banks_stash" (
+        move "%ROOT%tmp\web_banks_stash" "%ROOT%Project\project-keynes\assets\audio\banks" >nul
+        if errorlevel 1 (
+            echo === WARNING: could not restore assets\audio\banks from tmp\web_banks_stash ===
+            echo Move it back by hand before building desktop/Android again.
+            exit /b 1
+        )
+    )
+    set "BANKS_STASHED="
+)
 if not defined BANK_SWAPPED exit /b 0
 call :find_python
 if errorlevel 1 exit /b 1
@@ -564,6 +609,8 @@ rem 但 GDExtension 是拿 res:// 路径去站点根目录 fetch 它的。少了
 rem FMOD 根本起不来 —— 表现是全程静音，而且从 bank 侧完全看不出问题（2026-11-11
 rem 实测：导出目录里只有 pck 和 dots_ext 的 wasm）。老包里这个是手工拷的，这里补成
 rem 构建期自动步骤。
+rem PK_WEB_SKIP_FMOD=1 时整个包不含 FMOD：既不注册、也不拷 side module。
+if defined PK_WEB_SKIP_FMOD goto :fmod_wasm_done
 set "FMOD_WASM=%ROOT%Project\project-keynes\addons\FmodGodot\bin\web\libFmodGodot.web.template_release.threads.wasm32.wasm"
 if not exist "!FMOD_WASM!" set "FMOD_WASM=%ROOT%Project\project-keynes\addons\FmodGodot\bin\web\libFmodGodot.web.template_debug.threads.wasm32.wasm"
 if exist "!FMOD_WASM!" (
@@ -573,6 +620,7 @@ if exist "!FMOD_WASM!" (
     echo === WARNING: libFmodGodot web side module not found under addons\FmodGodot\bin\web ===
     echo === The exported web build will have NO audio: the extension cannot be fetched.
 )
+:fmod_wasm_done
 
 rem Prove the pck really contains the subset .fontdata (not the full 10 MB ones).
 rem This catches the silent failure mode where Godot re-imports mid-export and the

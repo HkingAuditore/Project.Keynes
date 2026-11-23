@@ -228,7 +228,19 @@ INVISIBLE_CHARS.update(chr(cp) for cp in range(0xFE00, 0xFE10))  # VS1..VS16
 #             （"♟  岗位配置"）。**这一条是真问题**：现有 7 套字体都没有这个字形，
 #             玩家看到的是豆腐块。要么换成字体覆盖的图标，要么加一套符号字体。
 #             登记在这里只是为了让字体子集不被它卡住，不代表观感可以接受。
-KNOWN_UNCOVERED_CHARS = "▴▾▸⌈⌉►✅✗❌↟☼⏳⏸⏹⏺📸∘▬♟"
+#   ── 只出现在注释里、永远不会经过字体（2026-11-23 登记）──────────────────────
+#   注释不是渲染文本：// 和 # 后面的字符永远不进 UI，字体缺不缺它不影响观感。
+#   扫描器按行扫源码，分不出注释和字符串，所以这一批只能登记，不能算漏字。
+#   δ U+03B4 φ U+03C6     shaders/include/earth_daylight.gdshaderinc:8,97,101（太阳高度角公式）
+#   φ U+03C6 同上:101      不同纬度 φ
+#   ∧ U+2227              shaders/weather_overlay.gdshader:957（门控条件 "fog_mask ∧ cell_table"）
+#   ∫ U+222B              shaders/include/terrain_horizon.gdshaderinc:15,16（半球归一化积分）
+#   κ U+03BA              scripts/data/climate_profile.gd:1341,1346（坡面扩散系数）
+#   蒄 U+8484              shaders/data_overlay.gdshader:124
+#   嶌 U+5D8C              shaders/data_overlay.gdshader:165
+#   紙 U+7D19              shaders/papercut_relief_map.gdshader:187（"预计算紙张肌理"）
+#   如果哪天这些字符要进玩家能看到的文案，先把覆盖它们的字体加进来，再把这条删掉。
+KNOWN_UNCOVERED_CHARS = "▴▾▸⌈⌉►✅✗❌↟☼⏳⏸⏹⏺📸∘▬♟δφ∧∫κ蒄嶌紙"
 
 # 迷你工程里让 Godot 复核子集产物的探针脚本（临时写在缓存目录，不进仓库）。
 GODOT_PROBE_SCRIPT = r"""extends SceneTree
@@ -403,7 +415,12 @@ def scan_project_text(project: Path) -> ScanResult:
                     result.chars.add(ch)
                     if shipped:
                         result.shipped.add(ch)
-                    if ch not in result.samples:
+                    # 报告里要指向"真正会打包"的那份。同一个字符常在 android/build
+                    # 的 shader 副本里也出现，os.walk 先撞到谁就记谁 —— 那会把维护者
+                    # 引到构建产物上去（2026-11-23 实际踩过）。所以一旦有 shipped 的
+                    # 出处，就覆盖掉非 shipped 的样本。
+                    if ch not in result.samples or (
+                            shipped and not is_shipped(result.samples[ch][0])):
                         result.samples[ch] = (rel, lineno)
 
             # GDScript / JSON 里的 \uXXXX 写法：源码里看不到真实字符，但运行期会渲染。

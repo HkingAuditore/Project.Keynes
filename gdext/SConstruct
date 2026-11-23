@@ -163,6 +163,46 @@ if platform == "android":
     # libc++_shared.so 互相插桩。
     env.Append(LINKFLAGS=["-static-libstdc++", "-Wl,--exclude-libs,ALL"])
 
+if platform == "web":
+    # The web link exceeds the Windows command-line limit.
+    #
+    # On Windows emcc/em++ are .bat launchers, so the whole command line is
+    # expanded by cmd.exe, which caps it at 8191 characters. This extension is
+    # 351 translation units: `em++ -o <target> <flags> <351 .o>` is roughly
+    # 20k characters, so the link died with "The command line is too long."
+    # right after every object had compiled (2026-11-23) - i.e. a full compile
+    # followed by no artifact at all.
+    #
+    # emcc reads `@file` response files very early (emcc.py calls
+    # tools/response_file.substitute_response_files()), and godot-cpp's
+    # tools/web.py already wraps ARCOM in ${TEMPFILE(ARCOM_POSIX)} for exactly
+    # this reason. Only the link was left unwrapped. Same idiom here.
+    #
+    # Two details the AR wrapper already got right and this must match:
+    #   * Wrap the WHOLE command, not just $SOURCES: TempFileMunge keeps cmd[0]
+    #     (the program) on the real command line and writes the rest to the
+    #     response file, so a $SOURCES-only wrap would leak the first object
+    #     path out as the "program".
+    #   * Use POSIX paths: the response file is parsed with shlex, which eats
+    #     backslashes as escapes, so "src\foo.o" would arrive as "srcfoo.o".
+    #
+    #   * Every argument written to the file must use forward slashes. $SOURCES
+    #     can be redirected with .posix, but the static library comes through
+    #     $_LIBFLAGS as an already-formatted string ("godot-cpp\bin\lib..."):
+    #     shlex turned that into "godot-cppbinlibgodot-cpp...a". So escape at
+    #     the source instead, with the hook the SCons manual documents for this
+    #     exact case (TEMPFILEARGESCFUNC - "GCC ... let's use UNIX separator").
+    env["SHLINKCOM_POSIX"] = env["SHLINKCOM"].replace(
+        "$TARGET", "$TARGET.posix").replace("$SOURCES", "$SOURCES.posix")
+    env["SHLINKCOM"] = "${TEMPFILE(SHLINKCOM_POSIX)}"
+
+    from SCons.Subst import quote_spaces
+
+    def _pk_tempfile_arg_esc(arg):
+        return quote_spaces(arg).replace("\\", "/")
+
+    env["TEMPFILEARGESCFUNC"] = _pk_tempfile_arg_esc
+
 # Expose object nodes directly as link inputs so the incremental build graph
 # includes every source and compiler setting at the object boundary.
 objects = env.SharedObject(sources)

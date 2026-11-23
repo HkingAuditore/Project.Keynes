@@ -732,19 +732,22 @@ def cmd_begin(args: Any, state: str) -> int:
             run_res_stub(godot, project, os.path.join(state, "res_stub.log"))
         run_import(godot, project, os.path.join(state, "import_begin.log"))
 
-        total_before = total_after = 0
         bad: list[str] = []
+        regressed: list[dict[str, Any]] = []
         for e in entries:
             after = {d: dest_size(project, d) for d in e["dests"]}
             e["dest_sizes_after"] = after
             b = sum(max(0, v) for v in e["dest_sizes_before"].values())
             a = sum(max(0, v) for v in after.values())
-            total_before += b
-            total_after += a
             if a <= 0:
                 bad.append(f"{e['res_path']}: 重导入后没有产物（{after}）")
             elif a > b:
-                bad.append(f"{e['res_path']}: 体积反而变大 {human(b)} -> {human(a)}")
+                # 有损 WebP 对少数高频/噪声类贴图反而更差（2026-11-23 实测 4 张
+                # terrain_materials 变大 20~30 KB）。这不是"降规格失败"，而是这条
+                # 策略对这几张图不成立：它们退回原规格、保留原图，别的照常降。
+                # 早期做法是把整包导出打断在这里 —— 为了 4 张图共 ~70 KB，整个
+                # web 包一个都不出，代价不对等。
+                regressed.append(e)
         res_before = res_after = 0
         for r in res_entries:
             r["size_after"] = os.path.getsize(r["path"])
@@ -756,8 +759,38 @@ def cmd_begin(args: Any, state: str) -> int:
         if bad:
             raise RuntimeError("降规格结果异常：\n  " + "\n  ".join(bad[:10]))
 
+        if regressed:
+            print(f"[tex] {len(regressed)} 张贴图有损后反而变大，退回原规格（保留原图）：")
+            for e in regressed:
+                b = sum(max(0, v) for v in e["dest_sizes_before"].values())
+                a = sum(max(0, v) for v in e["dest_sizes_after"].values())
+                print(f"       {e['res_path'].replace('res://', '')}: {human(b)} -> {human(a)}")
+                shutil.copy2(e["backup"], e["import_abspath"])
+                e["reverted"] = True
+            # 退回 .import 之后缓存里还是 web 规格的 ctex，必须再导一遍把产物也换回来；
+            # 否则 pck 里装的是"web 参数生成的图"，而我们声明的是"保留原图"。
+            run_import(godot, project, os.path.join(state, "import_revert.log"))
+            still: list[str] = []
+            for e in regressed:
+                after = {d: dest_size(project, d) for d in e["dests"]}
+                e["dest_sizes_after"] = after
+                a = sum(max(0, v) for v in after.values())
+                b = sum(max(0, v) for v in e["dest_sizes_before"].values())
+                if a != b:
+                    still.append(f"{e['res_path']}: 退回原规格后产物没回到原值 "
+                                 f"{human(b)} -> {human(a)}")
+            if still:
+                raise RuntimeError("退回原规格失败：\n  " + "\n  ".join(still[:10]))
+
+        total_before = total_after = 0
+        for e in entries:
+            total_before += sum(max(0, v) for v in e["dest_sizes_before"].values())
+            total_after += sum(max(0, v) for v in e["dest_sizes_after"].values())
+
         save_manifest({"before": total_before, "after": total_after,
                        "res_before": res_before, "res_after": res_after})
+        if regressed:
+            print(f"[tex] 上表合计里这 {len(regressed)} 张按原值计入（节省 0）")
         print(f"[tex] texture 降规格：{human(total_before)} -> {human(total_after)}"
               f"（省 {human(total_before - total_after)}，"
               f"{(total_before - total_after) / max(1, total_before) * 100:.1f}%）")
