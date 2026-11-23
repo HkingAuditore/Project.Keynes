@@ -1,9 +1,10 @@
 extends SceneTree
 
-## Checks the Issue #54 map, visibility cases and benchmark settings headlessly.
+## Checks the Issue #54 map, visibility cases and benchmark settings.
 ## --explored prepares exploration memory with fog still enabled.
-## --fog-off selects the separate diagnostic. Frame measurements run separately.
+## --fog-off selects the separate diagnostic. --measure runs the actual player scene.
 const GraphicsQualitySettings = preload("res://scripts/game/graphics_quality_settings.gd")
+const DrawCapture = preload("res://tests/rendering/mobile_terrain_draw_capture.gd")
 const WebAutotest = preload("res://scripts/game/web_autotest.gd")
 const MAP_SIZE := Vector2i(60, 40)
 const WINDOW_SIZE := Vector2i(1600, 960)
@@ -25,8 +26,26 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var fog_enabled := not args.has("--fog-off")
 	var explored_fixture := args.has("--explored")
+	var measure := args.has("--measure")
+	var omitted_layer := ""
 	if explored_fixture and not fog_enabled:
 		push_error("--explored requires fog. Run --fog-off separately.")
+		quit(1)
+		return
+	for arg in args:
+		if arg in ["--explored", "--fog-off", "--measure"]:
+			continue
+		var layer := arg.trim_prefix("--omit-")
+		if not measure or not omitted_layer.is_empty() or not arg.begins_with("--omit-") \
+				or layer not in ["land", "water", "vegetation"]:
+			push_error("Use --measure with at most one of --omit-land, --omit-water, --omit-vegetation.")
+			quit(1)
+			return
+		omitted_layer = layer
+	if measure and (DisplayServer.get_name() == "headless"
+			or RenderingServer.get_current_rendering_method() != "mobile"
+			or RenderingServer.get_rendering_device() == null):
+		push_error("--measure requires a window and the Mobile renderer. No draw samples recorded.")
 		quit(1)
 		return
 	Engine.set_meta("pk_fog_off", not fog_enabled)
@@ -54,18 +73,30 @@ func _run() -> void:
 	_check(applied.ok, "benchmark settings apply without saving")
 	var config := WebAutotest.build_config({"seed": SEED, "width": MAP_SIZE.x, "height": MAP_SIZE.y})
 	config.country.foreign_count = FOREIGN_COUNT
-	var clock := WorldClock.new()
-	clock.auto_start = false
-	root.add_child(clock)
-	var host := WorldRuntimeHost.new()
-	root.add_child(host)
-	host.configure(null, null, clock)
-	var started := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
-	_check(started.ok, "formal new game accepts the benchmark config")
-	if not started.ok:
-		quit(1)
-		return
-	await host.generate_world()
+	var game: PlayerGame
+	var clock: WorldClock
+	var host: WorldRuntimeHost
+	if measure:
+		game = await DrawCapture.open_game(self, config)
+		_check(game != null, "formal new game accepts the benchmark config")
+		if game == null:
+			quit(1)
+			return
+		clock = game._world_clock
+		host = game._runtime_host
+	else:
+		clock = WorldClock.new()
+		clock.auto_start = false
+		root.add_child(clock)
+		host = WorldRuntimeHost.new()
+		root.add_child(host)
+		host.configure(null, null, clock)
+		var started := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
+		_check(started.ok, "formal new game accepts the benchmark config")
+		if not started.ok:
+			quit(1)
+			return
+		await host.generate_world()
 	var map := host.current_map()
 	var ready := map != null and host.is_runtime_ready_for_ticks()
 	_check(ready, "formal new game publishes the map and starts the executor")
@@ -99,19 +130,26 @@ func _run() -> void:
 		_check(remembered_land * 2 > map.is_water_arr.count(0), "most land remains explored under fog")
 		_check(map.explored_arr.count(0) > 0, "the explored fixture keeps unexplored cells")
 
+	var scene := ("explored" if explored_fixture else "opening") if fog_enabled else "fog-off"
+	var capture_ready := measure and _failures == 0
 	for percent in [100, 75]:
 		settings.update({"map_render_scale": percent}, false)
 		_check_profile(settings.values(), percent, false)
 		_check_profile(settings.values(), percent, true)
-	var scene := ("explored" if explored_fixture else "opening") if fog_enabled else "fog-off"
+		if capture_ready:
+			var captured := await DrawCapture.record(game, scene, percent, omitted_layer)
+			_check(captured, "valid windowed draw samples and sizes at %d%%" % percent)
 	print("[mobile-terrain-baseline] scene=%s seed=%d map=%s countries=%d fog=%s explored=%d visible=%d remembered_land=%d/%d" %
 		[scene, host.last_seed(), MAP_SIZE, countries.size(), host.is_fog_of_war_enabled(),
 			map.explored_arr.count(1), map.visible_arr.count(1), remembered_land, map.is_water_arr.count(0)])
 
 	var closed := await host.close_world()
 	_check(closed.ok, "formal session closes")
-	host.queue_free()
-	clock.queue_free()
+	if game != null:
+		game.queue_free()
+	else:
+		host.queue_free()
+		clock.queue_free()
 	await process_frame
 	print("mobile terrain baseline: %d checks, %d failures" % [_checks, _failures])
 	quit(int(_failures != 0))
