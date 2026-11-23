@@ -644,8 +644,11 @@ class ConflictUpdateTest(TempFactory):
     def write_versions(self, paths):
         for path, data in paths.items():
             target = self.source / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
+            if data is None:
+                target.unlink()
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
 
     def commit(self, repo):
         work.git(str(repo), "add", "-A")
@@ -733,13 +736,14 @@ class ConflictUpdateTest(TempFactory):
         self.watcher.gh.relabel.assert_any_call(7, ["agent-needs-help"], ["agent-working"])
         self.assertIn(reason, self.watcher.gh.comment.call_args.args[1])
 
-    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n", stage=True, session=None):
+    def resolve_text(self, cfg, workdir, prompt, report, writable, *, text="PR and master\n",
+                     declare=True, session=None):
         self.assertIn("edit.gd", prompt)
         self.assertTrue(writable)
         self.write_file(Path(workdir), "edit.gd", text)
-        if stage:
-            work.git(workdir, "add", "edit.gd")
-        return {"ok": True, "code": 0, "report": "edit.gd combines the changes from both branches."}
+        self.assertIn("edit.gd", work.unmerged(workdir))
+        resolution = [{"path": "edit.gd", "action": "keep", "reason": "Combine both edits"}]
+        return {"ok": True, "code": 0, "report": json.dumps(resolution if declare else [])}
 
     def text_conflict(self):
         self.prepare_conflict({"edit.gd": (b"common\n", b"master\n", b"PR\n")})
@@ -840,7 +844,7 @@ class ConflictUpdateTest(TempFactory):
         self.assertEqual(record["checks"]["new"], [])
         self.assertEqual(work.git(str(self.remote), "show", f"{sha}:edit.gd"), "PR and master")
         self.assertEqual(work.git(str(self.remote), "show", f"{sha}:.github/master.yml"), "upstream check")
-        self.assertIn("combines the changes", self.watcher.gh.comment.call_args.args[1])
+        self.assertIn("`edit.gd` · keep: Combine both edits", self.watcher.gh.comment.call_args.args[1])
 
     def test_check_already_failing_on_base_does_not_block_the_update(self):
         self.text_conflict()
@@ -1027,18 +1031,60 @@ class ConflictUpdateTest(TempFactory):
         self.watcher.gh.pr_merge_state.assert_called_once_with(7)
         self.watcher.gh.comment.assert_not_called()
 
-    def test_staged_leftover_marker_stops_the_update(self):
+    def test_leftover_marker_stops_before_staging(self):
         self.text_conflict()
         self.codex.side_effect = lambda *args, **kwargs: self.resolve_text(*args, **kwargs, text="<<<<<<< HEAD\nPR\n")
         self.assertEqual(self.tick()["outcome"], "stopped")
         self.assert_stopped("conflict markers remain: edit.gd")
         self.runner.assert_not_called()
 
-    def test_unmerged_index_stops_even_when_the_working_file_has_no_markers(self):
+    def test_factory_stages_agent_resolution_without_agent_index_access(self):
         self.text_conflict()
-        self.codex.side_effect = lambda *args, **kwargs: self.resolve_text(*args, **kwargs, stage=False)
+
+        record = self.tick()
+        self.assertEqual(record["outcome"], "pushed", record.get("reason"))
+        sha = self.assert_merge(used_codex=True)
+        self.assertEqual(work.git(str(self.remote), "show", f"{sha}:edit.gd"), "PR and master")
+
+    def test_missing_resolution_stops_even_when_the_working_file_has_no_markers(self):
+        self.text_conflict()
+        self.codex.side_effect = lambda *args, **kwargs: self.resolve_text(*args, **kwargs, declare=False)
         self.tick()
-        self.assert_stopped("unmerged paths remain: edit.gd")
+        self.assert_stopped("Missing conflict resolutions: edit.gd")
+        self.runner.assert_not_called()
+
+    def resolve_deletion(self, cfg, workdir, prompt, report, writable, *, remove):
+        if remove:
+            (Path(workdir) / "edit.gd").unlink()
+        return {"ok": True, "code": 0, "report": json.dumps([
+            {"path": "edit.gd", "action": "delete", "reason": "Retire the obsolete file"},
+        ])}
+
+    def test_factory_stages_declared_deletion(self):
+        self.prepare_conflict({"edit.gd": (b"common\n", None, b"PR\n")})
+        self.codex.side_effect = lambda *args, **kwargs: self.resolve_deletion(*args, **kwargs, remove=True)
+        self.assertEqual(self.tick()["outcome"], "pushed")
+        sha = self.assert_merge(used_codex=True)
+        self.assertEqual(work.git(str(self.remote), "ls-tree", sha, "--", "edit.gd"), "")
+
+    def test_factory_refuses_deletion_report_if_file_still_exists(self):
+        self.prepare_conflict({"edit.gd": (b"common\n", None, b"PR\n")})
+        self.codex.side_effect = lambda *args, **kwargs: self.resolve_deletion(*args, **kwargs, remove=False)
+        self.tick()
+        self.assert_stopped("declares deletion but 'edit.gd' still exists")
+        self.runner.assert_not_called()
+
+    def test_agent_cannot_stage_conflict_instead_of_leaving_staging_to_factory(self):
+        self.text_conflict()
+
+        def edit_and_stage(cfg, workdir, *args, **kwargs):
+            out = self.resolve_text(cfg, workdir, *args, **kwargs)
+            work.git(workdir, "add", "--", "edit.gd")
+            return out
+
+        self.codex.side_effect = edit_and_stage
+        self.tick()
+        self.assert_stopped("Codex changed the conflict entries in the index")
         self.runner.assert_not_called()
 
     def test_protected_path_conflict_aborts_without_codex_or_push(self):

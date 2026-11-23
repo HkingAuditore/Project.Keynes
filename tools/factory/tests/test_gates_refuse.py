@@ -6,6 +6,7 @@ enforced by this test and not by anyone remembering it.
 """
 
 import ast
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -29,6 +30,14 @@ FINDINGS = [{"id": "f1"}, {"id": "f10"}]
 def refuses_dispute(text):
     try:
         agent.parse_disputes(text, FINDINGS)
+    except ValueError:
+        return True
+    return False
+
+
+def refuses_resolution(entries):
+    try:
+        agent.parse_conflict_resolutions(json.dumps(entries), ["file.gd"])
     except ValueError:
         return True
     return False
@@ -75,6 +84,14 @@ GATES = {
         ("no space after the colon", lambda: refuses_dispute("- f1:evidence")),
         ("backtick left inside the id", lambda: refuses_dispute("- `f1: evidence")),
         ("one good line and one bad line", lambda: refuses_dispute("- f1: ok\n- f9: no")),
+    ],
+    "parse_conflict_resolutions": [
+        ("report is not an array", lambda: refuses_resolution({"file.gd": "keep"})),
+        ("missing path", lambda: refuses_resolution([])),
+        ("unrelated path", lambda: refuses_resolution([{"path": "../file.gd", "action": "keep", "reason": "Merge"}])),
+        ("duplicate path", lambda: refuses_resolution([{"path": "file.gd", "action": "keep", "reason": "Merge"}] * 2)),
+        ("unknown action", lambda: refuses_resolution([{"path": "file.gd", "action": "skip", "reason": "Merge"}])),
+        ("empty reason", lambda: refuses_resolution([{"path": "file.gd", "action": "keep", "reason": "  "}])),
     ],
     "classify_level": [
         ("missing level is unknown", lambda: verdict.classify_level(None) == "unknown"),
