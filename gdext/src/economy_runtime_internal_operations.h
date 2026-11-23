@@ -179,6 +179,16 @@
     godot::Dictionary household_slice_breakdown_ms() const;
     godot::Dictionary household_slice_breakdown_work() const;
     bool start_epoch(int64_t day_index, std::string &error);
+    void clear_demand_basis_day();
+    void register_demand_basis_cell(int32_t cell);
+    size_t demand_basis_row_width() const;
+    void store_demand_basis_row(int32_t slot,
+                                const std::vector<int64_t> &variant_scores,
+                                const std::vector<int64_t> &variant_prices,
+                                const std::vector<int64_t> &need_score_sums,
+                                const std::vector<int64_t> &need_composites,
+                                const std::vector<int64_t> &need_environment);
+    godot::Dictionary demand_basis_cache_report() const;
     bool finish_epoch_start_after_fiscal(int64_t day_index,
                                          std::string &error);
     bool trade_planner_should_run() const;

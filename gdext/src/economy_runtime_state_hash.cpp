@@ -409,8 +409,9 @@ NativeEconomyRuntime::advance_household_market_chunk(
         _market_results_scratch.resize(static_cast<size_t>(market_count));
     for (int32_t relative = 0; relative < market_count; ++relative) {
         _market_results_scratch[relative].reset();
-        _market_results_scratch[relative].market =
-            _epoch_market_ids[begin + relative];
+        const int32_t market = _epoch_market_ids[begin + relative];
+        _market_results_scratch[relative].market = market;
+        register_demand_basis_cell(market);
         if (_accuracy_preset != 0 &&
             _approximation_runtime_mode != 0 &&
             _approximation_cooldown_epochs_left == 0) {

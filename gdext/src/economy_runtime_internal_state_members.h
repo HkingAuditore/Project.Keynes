@@ -323,14 +323,25 @@
     int64_t _epoch_bullion_quota_initial_total = 0;
     int64_t _epoch_bullion_quota_remaining_total = 0;
     int64_t _epoch_bullion_quota_remainder_units = 0;
-    // Building retention and household clearing share the same frozen basis.
-    // These non-authoritative arrays avoid repeating elasticity/pow work.
-    std::vector<int64_t> _demand_basis_cache_day;
-    std::vector<int64_t> _demand_basis_variant_scores;
-    std::vector<int64_t> _demand_basis_variant_prices;
-    std::vector<int64_t> _demand_basis_need_score_sums;
-    std::vector<int64_t> _demand_basis_need_composites;
-    std::vector<int64_t> _demand_basis_need_environment;
+    // Temporary rows shared by wages, building retention, and households.
+    // The economy owner assigns slots before dispatch. Workers fill separate rows.
+    struct DemandBasisCache {
+        struct Slot {
+            int32_t cell;
+            bool ready;
+        };
+        std::vector<int32_t> cell_to_slot;
+        std::vector<Slot> slots;
+        std::vector<int64_t> values;
+
+        int64_t values_bytes() const {
+            return static_cast<int64_t>(values.capacity()) * sizeof(int64_t);
+        }
+        int64_t index_bytes() const {
+            return static_cast<int64_t>(cell_to_slot.capacity()) * sizeof(int32_t) +
+                   static_cast<int64_t>(slots.capacity()) * sizeof(Slot);
+        }
+    } _demand_basis_cache;
     // Persistent per-cell rolling settlement state. Phase is derived from the
     // Stable cell id; last day and generation are PKEC v16 authority.
     EconomyOwnedColumn<int64_t> _cell_last_settlement_day{{{16, 9}, "native_columns.cell_last_settlement_day", EconomyFieldEncoding::I64, 8}};

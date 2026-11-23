@@ -668,12 +668,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _employment_owner_jobs_by_cell.clear();
     _employment_employee_jobs_by_cell.clear();
     _employment_unemployed_by_cell.clear();
-    _demand_basis_cache_day.clear();
-    _demand_basis_variant_scores.clear();
-    _demand_basis_variant_prices.clear();
-    _demand_basis_need_score_sums.clear();
-    _demand_basis_need_composites.clear();
-    _demand_basis_need_environment.clear();
+    _demand_basis_cache = {};
     _building_employee_filled.clear();
     _building_last_input_selected_goods.clear();
     clear_pending_construction();

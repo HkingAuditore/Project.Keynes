@@ -454,8 +454,9 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             cursor_start = _building_cell_cursor;
             const int32_t end = building_slice_end(_building_cell_cursor);
             for (; _building_cell_cursor < end; ++_building_cell_cursor) {
-                if (!run_building_employment_cell(
-                        _epoch_building_cells[_building_cell_cursor], true, error)) {
+                const int32_t cell = _epoch_building_cells[_building_cell_cursor];
+                register_demand_basis_cell(cell);
+                if (!run_building_employment_cell(cell, true, error)) {
                     fail(error.empty() ? "building_employment_failed" : error);
                     break;
                 }
