@@ -321,13 +321,16 @@ func _move_to(screen: Vector2, safe: Rect2) -> void:
 static func avoid_overlap(origin: Vector2, card_size: Vector2, avoid: Rect2, safe: Rect2) -> Vector2:
 	if not avoid.has_area() or not Rect2(origin, card_size).intersects(avoid):
 		return origin
-	var right := avoid.end.x + POINTER_OFFSET.x
-	if right + card_size.x <= safe.end.x - EDGE_MARGIN:
-		return Vector2(right, origin.y)
+	if fits_right_of(avoid.end.x, safe, card_size.x):
+		return Vector2(avoid.end.x + POINTER_OFFSET.x, origin.y)
 	var left := avoid.position.x - card_size.x - POINTER_OFFSET.x
 	if left >= safe.position.x + EDGE_MARGIN:
 		return Vector2(left, origin.y)
 	return origin
+
+
+static func fits_right_of(edge: float, safe: Rect2, card_width: float = CARD_SIZE.x) -> bool:
+	return edge + POINTER_OFFSET.x + card_width <= safe.end.x - EDGE_MARGIN
 
 
 ## 指针右下偏移；右侧/下方不够就翻到另一侧，最后夹进安全区。

@@ -123,14 +123,14 @@ func _layout_cell_board() -> void:
 	if _cell_board == null or _viewport == null:
 		return
 	var safe := map_safe_area()
-	var available := safe.size.y - UITokens.SPACE_MD * 2.0
-	if safe.end.x < CellBoard.BOARD_WIDTH + UITokens.SPACE_MD * 2.0:
-		available = 0.0
-	_cell_board.apply_available_height(available)
 	_cell_board.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_cell_board.offset_left = UITokens.SPACE_MD
 	_cell_board.offset_top = safe.position.y + UITokens.SPACE_MD
 	_cell_board.offset_right = _cell_board.offset_left + CellBoard.BOARD_WIDTH
+	var available := safe.size.y - UITokens.SPACE_MD * 2.0
+	if not CellHoverCard.fits_right_of(_cell_board.get_global_rect().end.x, safe):
+		available = 0.0
+	_cell_board.apply_available_height(available)
 	_cell_board.offset_bottom = _cell_board.offset_top + _cell_board.desired_height()
 	sync_board_avoidance()
 

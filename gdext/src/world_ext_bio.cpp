@@ -1527,23 +1527,22 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
         }
     }
 
-    // Seed at most one relict for an absent species, using the same climate
-    // limits as daily persistence so no map-specific limit must be restored.
+    // Seed at most one relict for an absent species. Use the daily climate
+    // limits and the same occupancy rules as normal natural seeding.
     if (bool(knobs.get("seed_missing_species", false))) {
         for (int s = 0; s < sp.count; ++s) {
             const int32_t bit = sp.bits[s];
             if (occupied_n[s] != 0 || bit < 0 || bit >= 32) continue;
             int best = -1;
-            std::pair<bool, float> best_score{true, std::numeric_limits<float>::infinity()};
+            float best_distance = std::numeric_limits<float>::infinity();
             for (int cell = 0; cell < n; ++cell) {
-                if (landmass[cell] <= 0 || occupancy_count(occ[cell]) >= kMaxNewOccupancyPerCell ||
-                    !persist_ok(cell, s, sp, water, temp, moist, elev)) continue;
+                if (landmass[cell] <= 0 || !persist_ok(cell, s, sp, water, temp, moist, elev) ||
+                    !natural_slot_free(cell, s, sp, occ)) continue;
                 const float distance = std::abs(temp[cell] - 0.5f * (sp.temp_lo[s] + sp.temp_hi[s])) +
                     std::abs(moist[cell] - 0.5f * (sp.moist_lo[s] + sp.moist_hi[s])) +
                     std::abs(elev[cell] - 0.5f * (sp.elev_lo[s] + sp.elev_hi[s]));
-                const std::pair<bool, float> score{!guild_slot_free(cell, s, sp, occ), distance};
-                if (score >= best_score) continue;
-                best_score = score;
+                if (distance >= best_distance) continue;
+                best_distance = distance;
                 best = cell;
             }
             if (best < 0) continue;

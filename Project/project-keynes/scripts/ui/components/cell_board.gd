@@ -314,14 +314,16 @@ func apply_available_height(available: float) -> void:
 	var show_market := available >= MARKET_HEIGHT
 	if capacity == _cohort_capacity and show_cohorts == _show_cohorts and show_market == _show_market:
 		return
+	var restored := show_market and not _show_market
 	_cohort_capacity = capacity
 	_show_cohorts = show_cohorts
 	_show_market = show_market
 	_apply_rows(_market_data, _cohort_data)
 	if not _market_card.visible and not _cohort_card.visible:
 		hide_board(true)
-		if _show_market and _pending_cell >= 0 and _dwell_timer.is_stopped():
-			_resolve(_pending_cell)
+	if restored and _pending_cell >= 0 and _dwell_timer.is_stopped():
+		_retry_timer.stop()
+		_resolve(_pending_cell)
 
 
 func desired_height() -> float:
