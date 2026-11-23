@@ -3327,3 +3327,12 @@ STORM/MONSOON 补过 `meaningful_precip`、补 `wx->temp_anomaly` 与独立的 `
 - 未做（必须紧跟，不能算完成）：`data/loading_catalog_v1/*.res` **未重烘**。快照指纹校验只在编辑器内执行，导出包无条件使用快照——不重烘则导出包里仍是含结构钢的旧目录。重烘须等另一路 `food_fat` / `grain` / 12 套消费方案落定后由单人执行：`Godot_v4.6.2-stable_win64_console.exe --headless --path <项目> --script res://tools/prebake_loading_catalogs.gd`。
 - 未做：`tools/technology_tree/technology_tree_report.{md,html}` 未重生成——导出器在**改前就红**（`stable_technology_id_manifest_mismatch`：清单 433 个科技、数据 467 个，多 37 缺 3），与本次无关，不能拿它当验证手段。
 - 存档：目录身份已变，旧 PKEC/PKCN/PKRS 按 fail-closed `catalog_hash_mismatch` 拒绝，不做索引静默映射（沿用既有策略）。
+
+## 2026-11-23 油脂并轨：唯一油脂走 `edible_oil`，废掉「畜产品当油」
+
+- 背景：另一路曾把 `livestock_products` 挂成 `food_fat` 的第二个变体（12 套消费方案，偏好 32768 = 食用油的一半）。用户判定「畜产品当油文不对题」，选择「一件通用食用油 + 让相关建筑直接产油」，不新增货。
+- 已实现：① `edible_oil.technology_tags` 增 `tech.herd_management`（可用性是 OR 门，`economy_runtime_availability.cpp:95-104` `cell_has_requirements` 命中任一标签即算可用），使农耕期起的畜牧建筑能产／家户能吃；② `tech.herd_management` 增 `expected_bindings` 与 `content_effects` 各一条 `good.edible_oil`，`effect_summary` 同步；③ 6 座畜牧／屠宰建筑各增一路 `edible_oil` 副产。
+- 产量口径（r = 2.4%，按畜产品吞吐等比摊，四舍五入到整数）：牧野营地 2,016→**48**、庄园牧场 52,571→**1,262**、大牧场 725,841→**17,420**、智慧畜牧 6,183,090→**148,394**、屠宰场 5,610（投入）→**135**、机械化屠宰场 328,015（投入）→**7,872**；合计 **175,131/日**。原两座玉米油厂供给 306,313/日；家户需求均值 35.083/人/日、工业（制皂 ×2 + 综合食品）17,846/日。10k 人时总供给约为需求的 1.31 倍，20k 人时 0.67 倍；两座油厂在 8,222 人以下本就不会盖起来，故低人口的动物脂是「保底」而非过剩。
+- 方案侧：`food_fat_livestock` 变体从 12 套方案各删 10 个数组列（共 120 列，含 24 个偏移列），脚本化删除并逐文件校验三条不变量（`need_variant_offsets` 尾值 = 变体数、`variant_component_offsets` 尾值 = 分量列长、两组偏移单调）。删除后 12 套方案与 HEAD 逐字节一致——另一路那笔未提交的「双变体」改动正好被本次撤销。
+- 验证：`modern_economy_catalog_test` 红点与改前**逐条相同**（16 条，无新增无消除）；`technology_content_binding_audit_test` PASS；`gameplay_start_runtime_test` 0 失败。
+- 已知未做：`data/loading_catalog_v1/*.res` 仍未重烘（同上一条原因）；另一路两个未提交的诊断脚本 `tests/economy/food_fat_fallback_check_test.gd`、`food_fat_market_probe_test.gd` 其假设（畜产品当油）已被本次作废，其中后者断言「双变体方案存在」会红——这两个文件未跟踪，不进提交，处置权归其作者。

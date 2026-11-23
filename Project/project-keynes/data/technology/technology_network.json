@@ -7480,6 +7480,10 @@
 					"id": "livestock_products"
 				},
 				{
+					"kind": 1.0,
+					"id": "edible_oil"
+				},
+				{
 					"kind": 2.0,
 					"id": "pastoral_camp"
 				}
@@ -7499,6 +7503,19 @@
 					"summary_visible": true
 				},
 				{
+					"kind": "good",
+					"id": "edible_oil",
+					"binding_kind": 1.0,
+					"subject": "good.edible_oil",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "食用油",
+					"summary_visible": true
+				},
+				{
 					"kind": "building",
 					"id": "pastoral_camp",
 					"binding_kind": 2.0,
@@ -7511,7 +7528,7 @@
 					"display_name": "游牧营地"
 				}
 			],
-			"effect_summary": "解锁物资：畜牧产品；解锁建筑：游牧营地；地理专长「agriculture」产出 +14.6%",
+			"effect_summary": "解锁物资：畜牧产品、食用油；解锁建筑：游牧营地；地理专长「agriculture」产出 +14.6%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
