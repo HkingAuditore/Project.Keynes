@@ -97,10 +97,14 @@ done
 `/private/tmp/keynes-issue63.zOmKne/first.log`。审查修复版的正式配对采集在第一轮启动时收到
 LaunchServices `-10827`，桌面工具也未获准打开 Godot，两边均没有新绘制样本。命令、退出状态和
 日志见 `/private/tmp/keynes-63-review.qKdUuF/window-overload/` 及 `logs/window-overload.log`。
+用两份已核对版本的项目复测，启动器仍在第一轮返回 `-10827`。`gda` 的窗口检查返回
+`live_windowed_permission_denied`，当前会话无法访问 macOS 窗口服务。采集器现将启动错误写入
+每轮的 `.launch.log`，启动失败时指向该日志。拒绝启动的回归用例和其余 16 项采集检查通过。
+本轮错误与命令见 `/private/tmp/keynes-63-window-final.YZUbpi/launch-diagnostic/`。
 改后实际绘制间隔、后台天/秒、地图更新频率、落后游戏日和各档绘制瓶颈待测。
 配对采集使用两份已导入的项目、对应版本的本地扩展和相同的
 `player_scene_handoff_probe.gd`、`player_scene_handoff_timings.gd` 和
-`player_scene_display_checks.gd`。本机已准备以下两份项目。
+`player_scene_display_checks.gd`。在有绘图权限的 macOS 桌面终端运行以下命令。
 
 ```sh
 baseline_copy=/private/tmp/keynes-63-review.qKdUuF/comparison-before

@@ -1,11 +1,14 @@
 from dataclasses import replace
+import json
 from pathlib import Path
+from subprocess import CompletedProcess, STDOUT
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from tools.perf.analyze_player_handoff import summarize
 from tools.perf.run_rendered_player_handoff import (
-    Recording, check_display_pacing, compare_recordings, load_recording,
+    Recording, check_display_pacing, compare_recordings, load_recording, run_sample,
 )
 
 
@@ -150,6 +153,25 @@ class RenderedHandoffComparisonTest(unittest.TestCase):
             self.assertEqual(window[side]["draw_p95_ms"], 1.0)
         self.assertEqual(window["baseline"]["observed_waits"]["calendar_wait"], {"count": 1, "max_ms": 1.0})
         self.assertEqual(window["candidate"]["observed_waits"]["calendar_wait"], {"count": 0, "max_ms": 0.0})
+
+
+class RenderedHandoffLaunchTest(unittest.TestCase):
+    def test_macos_launch_failure_preserves_system_error(self):
+        def denied(command, *, stdout=None, stderr=None):
+            if stdout is not None and stderr == STDOUT:
+                stdout.write("LaunchServices -10827: kLSNoExecutableErr\n")
+            return CompletedProcess(command, 1)
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix = root / "baseline"
+            with patch("tools.perf.run_rendered_player_handoff.subprocess.run", side_effect=denied):
+                with self.assertRaisesRegex(ValueError, r"exited with 1.*baseline\.launch\.log"):
+                    run_sample("godot", root, prefix, 50, 180, "30", True, Path("/Applications/Godot.app"))
+
+            self.assertIn("LaunchServices -10827", prefix.with_suffix(".launch.log").read_text())
+            self.assertEqual(json.loads(prefix.with_suffix(".run.json").read_text())["exit_code"], 1)
+            self.assertFalse(prefix.with_suffix(".jsonl").exists())
 
 
 class DisplayPacingTraceTest(unittest.TestCase):

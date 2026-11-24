@@ -70,9 +70,11 @@ def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_
     paths = {"PK_SAVE_DIR": f"{prefix}.saves",
                         "PK_RUNTIME_WATERFALL_CSV": f"{prefix}.waterfall.csv"}
     logfile = prefix.with_suffix(".log")
+    launch_log = logfile
     load_before = os.getloadavg()
     if macos_app is not None:
         stderr = prefix.with_suffix(".stderr.log")
+        launch_log = prefix.with_suffix(".launch.log")
         logfile.touch()
         stderr.touch()
         command = ["/usr/bin/open", "-W", "-n", "-a", str(macos_app),
@@ -80,7 +82,8 @@ def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_
         for name, path in paths.items():
             command += ["--env", f"{name}={path}"]
         command += ["--args", *arguments]
-        result = subprocess.run(command)
+        with launch_log.open("w") as output:
+            result = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT)
     else:
         command = [godot, *arguments]
         with logfile.open("w") as stdout:
@@ -89,7 +92,7 @@ def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_
                 "load_before": load_before, "load_after": os.getloadavg()}
     prefix.with_suffix(".run.json").write_text(json.dumps(metadata, indent=2) + "\n")
     if result.returncode:
-        raise ValueError(f"{prefix.name} exited with {result.returncode}, see {prefix}.log")
+        raise ValueError(f"{prefix.name} exited with {result.returncode}, see {launch_log}")
     recording = load_recording(prefix, speed, target)
     if recording.config["fps_mode"] != fps_mode or recording.config["overload"] != overload:
         raise ValueError(f"{prefix.name} did not apply the requested frame and load settings")
