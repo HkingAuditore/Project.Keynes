@@ -2,6 +2,13 @@ extends Node
 
 ## Renders the terrain surfaces at a smaller size while the camera, map input,
 ## overlays and UI keep using the window's canvas.
+## [resize-loop 2026-11-24] 尺寸死区（像素）。`_sync_target` 挂在
+## `RenderingServer.frame_pre_draw` 上每帧跑一次，而写 `SubViewport.size` 会**重新分配
+## 渲染目标**（窗口级纹理，1400×1000×4 ≈ 5.6 MB）。UI 缩放一旦抖动，尺寸每帧变一两像素，
+## 就会变成每秒数百 MB 的分配/释放，实测把浏览器内存推到 GB 级后被系统杀掉。
+## 小于死区的变化直接忽略：视觉上看不出，但不再每帧重建。
+const SIZE_DEADBAND_PX := 8
+
 var _land: MeshInstance2D
 var _water: MeshInstance2D
 var _surface_parent: Node2D
@@ -110,7 +117,13 @@ func _sync_target() -> void:
 	var physical_size := view.size * source.get_stretch_transform().get_scale().abs()
 	var target_size := Vector2i(physical_size * (_percent / 100.0)).max(Vector2i(2, 2))
 	if _target.size != target_size:
-		_target.size = target_size
+		var dx: int = absi(_target.size.x - target_size.x)
+		var dy: int = absi(_target.size.y - target_size.y)
+		if dx >= SIZE_DEADBAND_PX or dy >= SIZE_DEADBAND_PX:
+			_target.size = target_size
+		else:
+			# 抖动太小，保持现尺寸，并让后续换算按**实际**尺寸走，避免变换与纹理不一致。
+			target_size = _target.size
 	var ratio := Vector2(target_size) / view.size
 	var to_target := Transform2D(Vector2(ratio.x, 0.0), Vector2(0.0, ratio.y), -view.position * ratio)
 	var to_canvas := _surface_parent.get_global_transform_with_canvas()

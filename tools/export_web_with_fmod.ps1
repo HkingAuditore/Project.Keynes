@@ -46,6 +46,21 @@ $statePath = Join-Path $stateDir 'web_fmod_export_state.json'
 # 才需要的 0_fmod_bootstrap（它在 Windows 上根本没有库文件），每次启动刷一串 ERROR。
 $listPath = Join-Path $projectPath '.godot\extension_list.cfg'
 $listBackup = Join-Path $stateDir 'web_fmod_extension_list.bak'
+# 预设也要临时改、按字节还原：FMOD 只有 pthreads 版（thread_support=true），且
+# exclude 里的 addons/FmodGodot/* 会让导出器跳过库登记（side module 进不了
+# gdextensionLibs）。这两条只在本脚本（FMOD 导出路径）生效，PK_WEB_SKIP_FMOD
+# 的 nothreads 包不走这里，预设保持原样，不会把 FMOD 拖进单线程包。
+$presetTool = Join-Path $root 'tools\web_fmod_preset.py'
+$bridgeTool = Join-Path $root 'tools\web_fmod_bridge.py'
+# era bank 必须物理挪出工程：preset 的 exclude 对导入型资源（.bank/.ctex）不生效，
+# 包内路径是 .godot/imported/ 那一份，所以只能让源文件在导出期间不存在。
+# 用的就是 Build-Web.cmd 的 :bank_begin 那同一个工具（它自带备份、sha 校验、中断恢复）。
+$bankTool = Join-Path $root 'tools\web_bank_downgrade.py'
+function Get-Python {
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
 # 默认清单：EnableOnly 找不到状态文件时用它兜底（顺序无关，只用来重建 .gdignore）。
 $defaultAddons = @(
     'Project\project-keynes\addons\FmodGodot',
@@ -74,6 +89,10 @@ function Invoke-Import {
 }
 
 function Enable-FmodForWeb {
+    $py = Get-Python
+    if (-not $py) { throw 'python not found: tools/web_fmod_preset.py is required for the FMOD web export' }
+    & $py $presetTool begin
+    if ($LASTEXITCODE -ne 0) { throw 'failed to shape export_presets.cfg for the FMOD web export' }
     $removed = @()
     foreach ($addon in $defaultAddons) {
         $flag = Join-Path $addon '.gdignore'
@@ -100,9 +119,33 @@ function Enable-FmodForWeb {
     if ($list -notmatch 'FmodGodot\.gdextension') {
         throw 'FmodGodot is missing from extension_list.cfg - the import step did not pick it up'
     }
+
+    # 放在 import 之后、export 之前：此时 .bank 导入器已经注册（.godot/imported 也齐了），
+    # 再让 era bank 消失，导出器就没有东西可打。core bank 会被换成本平台(HTML5 q37)那份。
+    if (Test-Path $bankTool) {
+        & $py $bankTool begin
+        if ($LASTEXITCODE -ne 0) { throw 'web_bank_downgrade begin failed; export aborted (banks would be packed)' }
+    }
+    else {
+        Write-Host '[web] WARNING: tools\web_bank_downgrade.py missing - the pck will carry ~90 MB of Desktop era banks'
+    }
 }
 
 function Restore-FmodState {
+    $py = Get-Python
+    # 先还 bank（它动的是 assets/audio/banks 和 .godot/imported），失败只告警并给出补救命令。
+    if ($py -and (Test-Path $bankTool)) {
+        & $py $bankTool end
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '[web] WARNING: banks were not restored automatically; run: python tools\web_bank_downgrade.py end'
+        }
+    }
+    if ($py -and (Test-Path $presetTool)) {
+        & $py $presetTool end
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '[web] WARNING: export_presets.cfg was not restored automatically; run: python tools\web_fmod_preset.py end'
+        }
+    }
     $state = Read-State
     $flags = @()
     if ($state -and $state.removed) { $flags = @($state.removed) }
@@ -184,6 +227,20 @@ try {
     $wasm = Get-ChildItem (Split-Path $outPath) -Filter 'libFmodGodot*wasm*' -ErrorAction SilentlyContinue
     if (-not $wasm) { Write-Host '[web] WARNING: no libFmodGodot wasm next to the html' }
     else { $wasm | ForEach-Object { Write-Host "[web] side module: $($_.Name) $([math]::Round($_.Length/1MB,2)) MB" } }
+    $py = Get-Python
+    if (-not $py) { throw 'python not found: tools/web_fmod_bridge.py is required for FMOD audio on web' }
+    $outDir = Split-Path -Parent $outPath
+    $jsName = [IO.Path]::GetFileNameWithoutExtension($outPath) + '.js'
+    & $py $bridgeTool $outDir $jsName
+    if ($LASTEXITCODE -ne 0) { throw 'FMOD side-module JS bridge patch failed; the package would ship silent' }
+    Write-Host '[web] FMOD JS bridge patched'
+
+    # P0 复核：era bank 一个都不能漏进包，漏了就是白背 ~90 MB。
+    $pckPath = [IO.Path]::ChangeExtension($outPath, '.pck')
+    if ((Test-Path $bankTool) -and (Test-Path $pckPath)) {
+        & $py $bankTool verify --pck $pckPath
+        if ($LASTEXITCODE -ne 0) { throw 'era banks leaked into the pck - the packaging fix regressed' }
+    }
     Write-Host "[web] ready: $outPath"
 }
 finally {

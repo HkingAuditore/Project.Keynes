@@ -23,6 +23,7 @@ fail to load with a bare "failed to load dynamic library".
 import os
 
 libname = "FmodGodot"
+fmod_archives = []
 
 env = SConscript("../godot-cpp/SConstruct")
 
@@ -92,7 +93,12 @@ def web_config():
                               "fmodstudio%s%s.a" % (prefix, logging))
         core = os.path.join(fmod_sdk, "api/core/lib/browser", flavour, "c_cpp",
                             "fmod%s%s.a" % (prefix, logging))
-    # studio 归档里通常已经带了 core 符号；只有缺符号时才补 core（见下面 duplicate 注释）。
+    # [sb 2026-11-24] The archive MUST come after the object files. In LINKFLAGS
+    # SCons puts it before $SOURCES, so the static archive is scanned before any
+    # undefined symbol exists and not a single member is pulled in -- the side
+    # module then keeps 4846 FMOD symbols as imports and cannot be instantiated.
+    # 2.03.15's studio archive already bundles core (duplicate fmod.o otherwise),
+    # so the studio archive alone is correct here.
     archives = (studio,)
     for archive in archives:
         if not os.path.exists(archive):
@@ -101,7 +107,12 @@ def web_config():
         os.path.join(fmod_sdk, "api/core/inc"),
         os.path.join(fmod_sdk, "api/studio/inc"),
     ])
-    env.Append(LINKFLAGS=list(archives) + ["-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,setValue,getValue"])
+    # whole-archive: LINKFLAGS are emitted before $SOURCES, so the archive is
+    # never rescanned after the objects. Forcing every member in sidesteps the
+    # ordering problem without a custom LINKCOM.
+    env.Append(LINKFLAGS=["-Wl,--whole-archive"] + list(archives) +
+                       ["-Wl,--no-whole-archive",
+                        "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,setValue,getValue"])
 
 
 web_config()

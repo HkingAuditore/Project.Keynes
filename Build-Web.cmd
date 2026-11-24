@@ -604,6 +604,24 @@ if errorlevel 1 (
 )
 echo [export] ok
 
+rem --- 4.5 patch the exported shell: first-visit service worker timing ------------
+rem Godot's shell reloads as soon as the service worker *registration* exists, not
+rem when the worker is active. The reloaded page is still uncontrolled, sees the
+rem registration and never reloads again, so a first-time visitor stays on the
+rem "missing Cross-Origin Isolation" notice until a manual refresh (observed on
+rem keynes.pages.example.invalid). tools\patch_web_html.py makes the reload wait for
+rem navigator.serviceWorker.ready, reuses an existing registration, and keeps a
+rem one-shot reload guard. Idempotent; fails loudly if the stock markers change.
+rem Runs before :precompress so the .br/.gz sidecars cover the patched file.
+call :find_python
+if errorlevel 1 exit /b 1
+echo [html-patch] patching the exported web shell (service worker ready timing) ...
+!PY! "%ROOT%tools\patch_web_html.py" --root "!EXPORT_DIR!"
+if errorlevel 1 (
+    echo === ERROR: patching the exported html FAILED ===
+    exit /b 1
+)
+
 rem FmodGodot 的 web side module 被 preset 的 `addons/FmodGodot/*` 排除在 pck 之外，
 rem 但 GDExtension 是拿 res:// 路径去站点根目录 fetch 它的。少了这一个文件，web 上
 rem FMOD 根本起不来 —— 表现是全程静音，而且从 bank 侧完全看不出问题（2026-11-11
@@ -729,6 +747,8 @@ if defined PY (
         echo [deploy] host and serve it with: python tools\serve_web.py --root ^<dir^> --immutable
         echo [deploy] ^(that sends "public, max-age=31536000, immutable"; without it the server
         echo [deploy] sends "no-cache" + ETag, so a rebuild is picked up on the next refresh^)
+        echo [deploy] OA Pages at https://keynes.pages.example.invalid/ -- run Deploy-Pages.cmd after this
+        echo [deploy] ^(whole-site zip; .br/.gz sidecars are dropped, pages serves identity^)
     )
 ) else (
     echo === WARNING: Python not found; sidecars + manifest.json not generated ===

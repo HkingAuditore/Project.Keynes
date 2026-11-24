@@ -21,8 +21,13 @@ const ERAS := [&"stone", &"agrarian", &"kingdom", &"empire"]
 var _mounted: Dictionary = {}
 ## 正在拉的包名 -> true。
 var _inflight: Dictionary = {}
-## 拉失败过的包名 -> 错误串。
+## 拉失败过的包名 -> 错误串（**仅在用尽重试次数后才写入**，见 MAX_ATTEMPTS）。
 var _failed: Dictionary = {}
+## 包名 -> 已尝试次数。首访时 service worker 会 reload 一次，可能把正在拉的
+## 请求打断（net::ERR_ABORTED / TypeError: Failed to fetch），那是一次性事件，
+## 不能据此永久静音，所以允许有限次重试。
+var _attempts: Dictionary = {}
+const MAX_ATTEMPTS := 3
 ## 包名 -> [Callable...]（挂载完成后要做的重试）。
 var _waiters: Dictionary = {}
 
@@ -88,8 +93,11 @@ func ensure_pack(pack_name: String, on_ready: Callable) -> void:
 	var url := PACK_URL_FMT % pack_name
 	WebTelemetry.emit("music_pack_begin", {"pack": pack_name, "url": url})
 	var target := MOUNT_PATH_FMT % pack_name
+	# 第三个参数必须是**回调名的字符串**（"__pkPckCb"），不能是回调对象本身。
+	# 旧写法直接拼 "window.__pkPckCb" 生成 `window[cbName]` 时 cbName 是对象，
+	# 会抛 `TypeError: window[$name] is not a function`，导致 200 已到达却挂载不上。
 	_bridge.call("eval", "window.__pkFetchPck(%s, %s, %s);" % [
-		JSON.stringify(url), JSON.stringify(target), "window.__pkPckCb"])
+		JSON.stringify(url), JSON.stringify(target), JSON.stringify("__pkPckCb")])
 
 
 func _install_js() -> void:
@@ -134,10 +142,19 @@ func _on_fetch_result(args: Array) -> void:
 	var pack_name := url.get_file().trim_prefix("music_").trim_suffix(".pck")
 	_inflight.erase(pack_name)
 	if size <= 0 or not error.is_empty():
-		_failed[pack_name] = error if not error.is_empty() else "empty_body"
+		var reason := error if not error.is_empty() else "empty_body"
+		var tries := int(_attempts.get(pack_name, 0)) + 1
+		_attempts[pack_name] = tries
+		# 关键：**不要清空 _waiters**。等待者要的是"挂上之后重放这一次播放请求"，
+		# 重试成功时它们仍然有效；旧写法一失败就丢掉回调，即使后来挂上也永远不播。
+		if tries < MAX_ATTEMPTS:
+			push_warning("[music] pack fetch failed (%s, try %d/%d): %s" % [pack_name, tries, MAX_ATTEMPTS, reason])
+			WebTelemetry.emit("music_pack_fail", {"pack": pack_name, "error": reason, "try": tries, "retry": true})
+			return
+		_failed[pack_name] = reason
 		_waiters.erase(pack_name)
-		push_warning("[music] pack fetch failed (%s): %s" % [pack_name, _failed[pack_name]])
-		WebTelemetry.emit("music_pack_fail", {"pack": pack_name, "error": _failed[pack_name]})
+		push_warning("[music] pack fetch failed (%s): %s (giving up after %d tries)" % [pack_name, reason, tries])
+		WebTelemetry.emit("music_pack_fail", {"pack": pack_name, "error": reason, "try": tries, "retry": false})
 		return
 	var target := MOUNT_PATH_FMT % pack_name
 	var mounted := ProjectSettings.load_resource_pack(target, true)
@@ -148,6 +165,8 @@ func _on_fetch_result(args: Array) -> void:
 		WebTelemetry.emit("music_pack_fail", {"pack": pack_name, "error": "mount_false"})
 		return
 	_mounted[pack_name] = true
+	_attempts.erase(pack_name)
+	_failed.erase(pack_name)
 	WebTelemetry.emit("music_pack_done", {"pack": pack_name, "bytes": size})
 	var waiters: Array = _waiters.get(pack_name, [])
 	_waiters.erase(pack_name)

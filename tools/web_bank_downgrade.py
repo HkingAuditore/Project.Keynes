@@ -5,10 +5,22 @@
 问题
 ----
 `Music.bank` 单个 91.04 MiB，占 Web pck 的 27.7%（见 `tools/pck_audit.py`）。
-根因不是"没压缩"，而是**发错平台**：工程里 Desktop 平台的编码设置是
-Vorbis quality=70（`Metadata/EncodingSetting/{fa3463e9-...}.xml`），而
-HTML5 平台一直是 quality=37（`{e8cf84fd-...}.xml`）。Web 包却一直在带
-`banks/Desktop/` 那一套。
+根因不是"没压缩"，而是**发错平台**：三套平台的 Vorbis 编码设置各不相同
+（quality / sampleRate 的**唯一权威**是 `Audio/ProjectKeynes/Metadata/EncodingSetting/*.xml`）：
+
+    平台      setting 文件                                  quality  sampleRate  四个 era bank 合计
+    Desktop   {fa3463e9-0731-437c-8bee-4e68a4d3ffea}        70       默认        89.89 MiB
+    HTML5     {e8cf84fd-2b13-4cfe-82da-f09bd25d6f4f}        24       默认        37.34 MiB
+    Mobile    {fe2e66c7-4650-4d74-8280-33b71b02cd97}        37       24000       24.83 MiB
+
+Web 包却一直在带 `banks/Desktop/` 那一套（q70）。
+
+⚠️ 2026-11-24 更正：本文早先写「HTML5 平台一直是 quality=37」是**错的** ——
+37 + 24 kHz 那套是 **Mobile**。曾经有会话（含一次压缩评估）依据这句话去改
+HTML5 档的 quality，白改一场。要查平台先查 GUID，别按文件名或 quality 数值猜：
+`Metadata/Platform/*.xml` 每个文件里的 `id` 是平台 GUID，EncodingSetting 的
+`relationship/platform/destination` 指向它。当前映射：
+`{8d452eed}=HTML5`、`{3d7edcbe}=Mobile`、`{c9f35dc9}=Desktop`。
 
 为什么不能靠 export_presets.cfg 的 exclude_filter 解决
 ------------------------------------------------------

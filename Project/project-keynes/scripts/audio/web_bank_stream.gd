@@ -68,7 +68,7 @@ func ensure(bank_name: String, on_ready: Callable) -> void:
 	_target_of[url] = target
 	print("[audio] era bank fetch: %s -> %s" % [url, target])
 	_bridge.call("eval", "window.__pkFetchBank(%s, %s, %s);" % [
-		JSON.stringify(url), JSON.stringify(target), "window.__pkBankCb"])
+		JSON.stringify(url), JSON.stringify(target), JSON.stringify("__pkBankCb")])
 
 
 func _flush(url: String, path: String) -> void:
@@ -94,8 +94,11 @@ func _install_js() -> void:
 	  if (window.__pkFetchBank) return;
 	  window.__pkFetchBank = function(url, target, cbName){
 	    try {
-	      // 同一会话内不缓存：bank 由构建产出，带 hash 的部署已经由宿主管缓存。
-	      fetch(url, {cache:'no-store'}).then(function(resp){
+	      // 交给宿主的 Cache-Control 决定：serve_web 默认发 `no-cache`（重验证后复用，
+	       // 未变更只花一个 304），`--immutable` 或带 `?v=<hash>` 时发长缓存。
+	       // 原来是 cache:'no-store'，那等于命令浏览器"别存"，于是每次刷新都要重下
+	       // 当前时代那个 8.8~10.3 MiB 的 bank，把宿主的缓存策略整条废掉。
+	       fetch(url).then(function(resp){
 	        if (!resp.ok) { window[cbName](url, 0, 'http_' + resp.status); return null; }
 	        return resp.arrayBuffer().then(function(buf){
 	          try {

@@ -18,6 +18,9 @@ var music: AudioStreamPlayer
 var music_key := &""
 var _voices: Array[AudioStreamPlayer] = []
 var _streams: Dictionary = {}
+## 已经报过「缺失」的路径。只用来把重复的警告压成一条，**不缓存失败结果**：
+## 音乐包异步挂载后仍会重新 load，语义不变。
+var _warned_missing: Dictionary = {}
 var _next_voice := 0
 ## [web-music-defer 2026-11-01] Web 把音乐拆成 `music_<era>.pck` / `music_trans.pck`，
 ## 首屏不再背 17.7 MB。这里记录"因为包还没挂上而没放成"的请求，挂载完成后重放。
@@ -91,11 +94,16 @@ func _stream(path: String) -> AudioStreamOggVorbis:
 	if _streams.has(path):
 		return _streams[path] as AudioStreamOggVorbis
 	if not ResourceLoader.exists(path):
-		push_warning("[audio] Missing portable audio: " + path)
+		# 同一路径只报一次，避免音乐包挂载前按帧刷屏（原生 Web 实测单局 430 条）。
+		# 仍然每次都重试：包一旦挂上，下一次调用就能正常加载。
+		if not _warned_missing.has(path):
+			_warned_missing[path] = true
+			push_warning("[audio] Missing portable audio: " + path)
 		return null
 	var stream := load(path) as AudioStreamOggVorbis
 	if stream != null:
 		_streams[path] = stream
+		_warned_missing.erase(path)
 	return stream
 
 

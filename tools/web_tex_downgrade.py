@@ -69,13 +69,13 @@ from typing import Any
 #   "mipmaps/generate"       数组/3D 用途要保留，UI 图本来是 false 就别开
 RULES: list[tuple[str, dict[str, str], int]] = [
     # 基线：所有 2D 纹理 无损 -> lossy
-    ("res://assets/**", {"compress/mode": "1", "compress/lossy_quality": "0.72"}, 0),
+    ("res://assets/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
 
     # 大头：手绘 UI 纸面/面板（assets/ui 占 97.9 MB），观感容错最高
-    ("res://assets/ui/**", {"compress/mode": "1", "compress/lossy_quality": "0.68"}, 0),
+    ("res://assets/ui/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
 
     # 图标集：屏幕显示尺寸小（1080p 下 32~64 px）
-    ("res://assets/icons/**", {"compress/mode": "1", "compress/lossy_quality": "0.62"}, 0),
+    ("res://assets/icons/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
 
     # 地形材质：1024^2 平铺细节图，铺满整张地图，质量给高一些
     ("res://assets/textures/terrain_materials/**",
@@ -99,7 +99,7 @@ RULES: list[tuple[str, dict[str, str], int]] = [
     ("res://textures/weather/**", {}, 0),
 
     # 贸易车辆等 vfx 精灵图集
-    ("res://assets/vfx/**", {"compress/mode": "1", "compress/lossy_quality": "0.70"}, 0),
+    ("res://assets/vfx/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
 ]
 
 # ⚠️ 2026-11-11 撤回：这里曾经有三条 `process/size_limit`（ui 1152 / icons 1024 /
@@ -168,6 +168,12 @@ SCALE_RULES: list[tuple[str, str, float]] = [
     ("assets/textures/resource_art/crown_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
     ("assets/textures/resource_art/crown_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
     ("assets/textures/resource_art/fauna_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
+    # [2026-11-24] 贸易单位俯视图：实测唯一能安全减半的图集类资源（450,266 B -> 约 149 KB）。
+    # 判据：着色器按**归一化 UV** 取图（`shaders/trade_vehicle.gdshader:42`
+    # `(vec2(col,row)+uv)/vec2(2.0,6.0)`），没有像素常量参与布局，也没有任何
+    # AtlasTexture.region / get_size() 指向它。其余图集（military_atlas_v1 等）
+    # 有 region 绝对像素或 get_size() 排版，一律**不缩**。
+    ("assets/vfx/trade/vehicles_topdown_v2.png", "PK_WEB_TRADE_VEHICLE_SCALE", 0.5),
     # 法线跟着 albedo 同倍率缩放，但质量档见 RULES 里的 *_normal 规则（>=0.90）
 ]
 

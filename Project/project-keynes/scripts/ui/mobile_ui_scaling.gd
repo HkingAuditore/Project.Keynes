@@ -280,7 +280,24 @@ func clear_qa_override() -> void:
 	_apply()
 
 
+## [resize-loop 2026-11-24] 重入锁：`_apply()` 会写 `content_scale_*`，而 web 单线程
+## 消息循环里这次写入会让引擎重设 canvas 并**同步**回调 `size_changed` →
+## `_on_window_resized` → `_apply()`，形成自激环（实测 logical 宽度
+## 1140→1136→994→968→867→825→823 持续收缩，同时 terrain_render_scale 每帧
+## 按新尺寸重分配渲染目标）。只把判重提前解决不了：签名里的 win 尺寸正是被自己
+## 上一轮写入改掉的量。重入锁直接切断"自己的写入触发自己"。
+var _applying := false
+
+
 func _apply() -> void:
+	if _applying:
+		return
+	_applying = true
+	_apply_inner()
+	_applying = false
+
+
+func _apply_inner() -> void:
 	var window := _content_scale_window()
 	var win := DisplayServer.window_get_size()
 	if win.x <= 0 or win.y <= 0:
@@ -291,6 +308,17 @@ func _apply() -> void:
 		if forced_mode in LAYOUT_MODES:
 			_layout_mode = forced_mode
 	_dpi = _resolve_dpi(win)
+	# [resize-loop 2026-11-24] 判重必须在**写 content_scale_* 之前**做。
+	# 旧实现把它放在 :341 写入之后，于是每次调用都先改窗口的 content_scale_mode/size/
+	# factor，改完又触发 window.size_changed -> _on_window_resized -> _apply()，
+	# 自激成环：实测用户控制台 logical 宽度 1140→1136→994→968→867→825→823 持续收缩，
+	# 同时 terrain_render_scale 每帧按新尺寸重分配渲染目标（见 terrain_render_scale.gd:107）。
+	# 这里用「输入」做签名：输入定了输出就定了，不必等输出算完再比。
+	var input_sig := "%s|%s|%.1f|%d|%d|%d|%d" % ["touch" if _is_touch else "desktop",
+		_layout_mode, _dpi, _user_percent, _layout_scale, win.x, win.y]
+	if input_sig == _last_signature:
+		return
+	_last_signature = input_sig
 	var user := float(_user_percent) / 100.0
 	if _is_touch:
 		# [layout-scale 2026-11-17] 触摸档的缩放来自独立的「界面缩放」档（50/75/100），
@@ -338,11 +366,7 @@ func _apply() -> void:
 		_base_stretch = 1.0
 		window.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 		window.content_scale_factor = user
-	var signature := "%s|%s|%.1f|%.3f|%.3f|%d|%s" % ["touch" if _is_touch else "desktop",
-		_layout_mode, _dpi, _device_scale, _total_scale, win.x, win.y]
-	if signature == _last_signature:
-		return
-	_last_signature = signature
+	# 判重已在函数开头完成（输入签名），这里不再重复比较。
 	# fit（KEEP）的逻辑画布就是 REFERENCE_SIZE；fill/dense（EXPAND）与桌面档按窗口/总缩放换算。
 	var keep_logical := _is_touch and _layout_mode == "fit"
 	var logical_w := REFERENCE_SIZE.x if keep_logical \

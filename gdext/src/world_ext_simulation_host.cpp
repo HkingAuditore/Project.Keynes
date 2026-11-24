@@ -461,8 +461,17 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     // native_daily_inline：必须在 start() 之前落到 host 上，start() 读它决定
     // "起不起 worker 线程"。缺省 false —— 桌面端路径逐字节不变。
+#if defined(__EMSCRIPTEN__)
+    // web 上一律走内联日，与有没有 pthreads 无关：
+    //  * 无 pthreads（nothreads 包）：std::thread 构造会 abort，必须内联；
+    //  * 有 pthreads（threads 包，给 FMOD 用）：host 在 start() 里等 worker
+    //    会把浏览器主线程堵死（"Blocking on the main thread is very dangerous"），
+    //    实测世界生成走不完；而且同一份 12 域日图 inline 46 ms vs worker 250–370 ms。
+    const bool native_daily_inline = true;
+#else
     const bool native_daily_inline = static_cast<bool>(
         config.get("native_daily_inline", false));
+#endif
     // Inline uses serial dispatch; PK_INLINE_PARALLEL is the diagnostic override.
     static const bool inline_parallel_override = [] {
         const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_INLINE_PARALLEL);

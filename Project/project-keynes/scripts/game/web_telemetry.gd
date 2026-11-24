@@ -17,6 +17,9 @@ static var _bridge: Object = null
 ## 于是"最该看到的那条事件"正好丢了。改成先入队、下一帧开头统一冲刷。
 static var _queue: Array[String] = []
 const MAX_QUEUE := 512
+## 页面侧环形缓冲容量：window.__pkTelemetry.buf 最多保留这么多条。
+## 线上静态站对 POST /_log 一律回 405，事件全丢，这里是唯一的取证通道。
+const BROWSER_RING_CAP := 200
 
 
 static func enabled() -> bool:
@@ -39,12 +42,27 @@ static func emit(event_name: String, fields: Dictionary = {}) -> void:
 		_queue.remove_at(0)
 
 
+## 把一批 JSON 事件推进页面侧环形缓冲 window.__pkTelemetry.buf。
+## 整批一次 eval，避免每条一次跨语言调用；容量固定，满了从头部裁掉，失败也不涨内存。
+static func _push_browser_ring(batch_json: String) -> void:
+	if _bridge == null:
+		return
+	var js := ("try{(function(p){var t=window.__pkTelemetry;"
+		+ "if(!t){t=window.__pkTelemetry={cap:%d,buf:[]};}"
+		+ "for(var i=0;i<p.length;i++){t.buf.push(p[i]);}"
+		+ "var n=t.buf.length-t.cap;if(n>0){t.buf.splice(0,n);}})(") % BROWSER_RING_CAP
+	js += batch_json + ");}catch(e){}"
+	_bridge.call("eval", js)
+
+
 ## 把队列里的 JSON 一次性发出去（由 host 每帧开头调用，保证长帧之后也能送达）。
 static func flush() -> void:
 	if not enabled() or _queue.is_empty():
 		return
 	var pending := _queue
 	_queue = []
+	# 先落页面侧环形缓冲：不管 /_log 通不通，现场都留得下来（CDP 读 window.__pkTelemetry.buf）。
+	_push_browser_ring("[" + ",".join(PackedStringArray(pending)) + "]")
 	for body in pending:
 		# JSON.stringify(body) 把 JSON 文本再编码成 JS 字符串字面量，避免引号/换行问题。
 		var js := "try{fetch('/_log',{method:'POST',headers:{'Content-Type':'application/json'},body:%s,keepalive:true}).catch(function(){});}catch(e){}" % JSON.stringify(body)
@@ -59,9 +77,21 @@ static func install_page_hooks() -> void:
 	var js := """
 	(function(){
 	  if (window.__pkHooks) return; window.__pkHooks = 1;
+	  function ringTrack(entry){
+	    try{
+	      var t = window.__pkTelemetry || (window.__pkTelemetry = {cap: 200, buf: []});
+	      // 统一存**对象**（与 GDScript 侧 _push_browser_ring 的数组字面量一致），
+	      // 这样 CDP 里 JSON.stringify(window.__pkTelemetry.buf) 一次成型，不用二次 parse。
+	      t.buf.push(entry);
+	      var n = t.buf.length - t.cap;
+	      if (n > 0) t.buf.splice(0, n);
+	    }catch(e){}
+	  }
 	  function post(kind, extra){
 	    try{
-	      var body = JSON.stringify(Object.assign({e: kind, src: "browser"}, extra||{}));
+	      var entry = Object.assign({e: kind, src: "browser"}, extra||{});
+	      var body = JSON.stringify(entry);
+	      ringTrack(entry);
 	      fetch('/_log', {method:'POST', headers:{'Content-Type':'application/json'},
 	                      body: body, keepalive: true}).catch(function(){});
 	    }catch(e){}

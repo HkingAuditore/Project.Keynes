@@ -12,7 +12,11 @@ SOURCE = ROOT / "Audio/ProjectKeynes/Assets"
 OUTPUT = ROOT / "Project/project-keynes/assets/audio/native"
 
 
-def encode(ffmpeg, inputs, target):
+MUSIC_Q = 4          # [2026-11-24] 音乐档：q7(实测 186.6 kbps) -> q4(实测 113.3 kbps)
+SFX_Q = 7              # 音效保持原档（ui+events 合计仅 423,039 B，降档省不到 0.16 MB）
+
+
+def encode(ffmpeg, inputs, target, quality=SFX_Q):
     target.parent.mkdir(parents=True, exist_ok=True)
     args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
     for source in inputs:
@@ -21,7 +25,7 @@ def encode(ffmpeg, inputs, target):
         args += ["-i", str(source)]
     if len(inputs) > 1:
         args += ["-filter_complex", f"amix=inputs={len(inputs)}:normalize=0"]
-    args += ["-c:a", "libvorbis", "-q:a", "7", str(target)]
+    args += ["-c:a", "libvorbis", "-q:a", str(quality), str(target)]
     subprocess.run(args, check=True)
     print(f"{target.relative_to(ROOT)}: {target.stat().st_size:,} bytes", flush=True)
 
@@ -38,10 +42,10 @@ def main():
         ("empire", "stem_emp_", ["base_core", "pulse", "theme", "color", "impact"]),
     ]:
         encode(ffmpeg, [SOURCE / f"{prefix}{role}.wav" for role in roles],
-               OUTPUT / "music" / f"{era}.ogg")
+               OUTPUT / "music" / f"{era}.ogg", quality=MUSIC_Q)
     for transition in ["stone_to_agrarian", "agrarian_to_kingdom", "kingdom_to_empire"]:
         encode(ffmpeg, [SOURCE / f"trans_{transition}.wav"],
-               OUTPUT / "music" / f"trans_{transition}.ogg")
+               OUTPUT / "music" / f"trans_{transition}.ogg", quality=MUSIC_Q)
     for cue in ["click", "page", "open", "close", "confirm", "toggle_on", "toggle_off", "tick"]:
         encode(ffmpeg, [SOURCE / "UI" / f"{cue}.wav"], OUTPUT / "ui" / f"{cue}.ogg")
     progression = {"tech_start", "tech_research", "tech_cancel", "ideology_draw", "ideology_use",
