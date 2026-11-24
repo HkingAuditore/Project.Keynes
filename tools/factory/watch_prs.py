@@ -23,7 +23,7 @@ import agent  # noqa: E402
 import checks  # noqa: E402
 import qodo  # noqa: E402
 import work  # noqa: E402
-from common import Events, lane_lock, legacy_running, load_config, must  # noqa: E402
+from common import Events, lane_lock, legacy_lane_gate, load_config, must  # noqa: E402
 from github import PR_MERGE_FIELDS, ChangedFile, GitHub  # noqa: E402
 from verdict import CIFacts, NativeFacts, unknown_findings  # noqa: E402
 
@@ -689,8 +689,7 @@ class Watcher:
                     self.save(n, st)
                 return "head moved" if blocker == "head moved" else "skipped"
             try:
-                work.git(self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
-                         cfg["remote"], f"HEAD:refs/heads/{branch}")
+                work.push(self.workdir, cfg["remote"], branch, expected_head=head)
             except RuntimeError:
                 if self.update_head_moved(pr, ev):
                     return "head moved"
@@ -841,8 +840,7 @@ class Watcher:
         sha = work.commit(self.workdir, f"Address Qodo findings on #{n}\n\nFindings: {', '.join(ids)}\n\n"
                                         f"Implemented-By: Codex ({cfg['agent']['model']})\n{TRAILER}\n")
         candidate.committed()
-        must(["git", "-C", self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
-              cfg["remote"], f"HEAD:refs/heads/{branch}"])
+        work.push(self.workdir, cfg["remote"], branch, expected_head=head)
         st.pushed.append(sha)
         st.rounds += 1
         st.gave_up_at = st.reason = None
@@ -885,7 +883,7 @@ def main() -> int:
         return Watcher(cfg, True).tick(a.pr)
     home = Path(cfg["home"])
     with lane_lock(home, "pr") as acquired:
-        if not acquired or legacy_running(home, "watch_prs.py"):
+        if not acquired or legacy_lane_gate(home, "pr"):
             print("the PR lane is already running", flush=True)
             return 0
         return Watcher(cfg, False).tick(a.pr)

@@ -34,14 +34,17 @@ def lane_lock(home: Path, lane: str):
         yield True
 
 
-def legacy_running(home: Path, script: str) -> bool:
-    """Let an invocation from before the lane split finish using its original lock."""
+def legacy_lane_gate(home: Path, lane: str) -> bool:
+    """Refuse a lane if the old single-lock worker may share its work or PR ownership."""
     try:
         pid = int((home / "lock").read_text().strip())
     except (FileNotFoundError, ValueError):
         return False
     owner = sh(["ps", "-o", "command=", "-p", str(pid)])
-    return any(part.endswith(f"tools/factory/{script}") for part in owner.out.split())
+    commands = owner.out.split()
+    if any(part.endswith("tools/factory/watch_prs.py") for part in commands):
+        return True
+    return lane == "issue" and any(part.endswith("tools/factory/run.py") for part in commands)
 
 
 def godot_environment(cfg: dict, workdir: str) -> dict[str, str]:

@@ -25,8 +25,10 @@ HOME_DIR="$HOME/.keynes-factory"
 ref=""
 if [ "$#" -eq 2 ]; then
   ref="$(git -C "$FACTORY_DIR" rev-parse --verify "$2^{commit}")"
+else
+  python3 "$FACTORY_DIR/git_remote.py" "$REPO" fetch -q fork
 fi
-if ! git -C "$REPO" cat-file -e "${ref:-fork/master}:tools/factory/bin/godot" 2>/dev/null; then
+if ! git -C "$REPO" cat-file -e "${ref:-fork/master}:tools/factory/git_remote.py" 2>/dev/null; then
   echo "${ref:-fork/master} lacks the parallel factory code. Use --runner-ref with a compatible commit." >&2
   exit 1
 fi
@@ -34,7 +36,7 @@ fi
 mkdir -p "$HOME_DIR" "$AGENTS"
 stage="$(mktemp -d "$HOME_DIR/install.XXXXXX")"
 trap 'rm -rf -- "$stage"' EXIT
-cp "$FACTORY_DIR/poll.sh" "$stage/poll.sh"
+cp "$FACTORY_DIR/poll.sh" "$FACTORY_DIR/git_remote.py" "$stage/"
 chmod +x "$stage/poll.sh"
 python3 - "$FACTORY_DIR" "$stage" "$ISSUE_LABEL" "$PR_LABEL" "$REPO" "$HOME_DIR" <<'PY'
 import plistlib
@@ -62,6 +64,7 @@ if [ -n "$ref" ]; then
 else
   rm -f "$HOME_DIR/runner-ref"
 fi
+mv "$stage/git_remote.py" "$HOME_DIR/git_remote.py"
 mv "$stage/poll.sh" "$HOME_DIR/poll.sh"
 
 for label in "$ISSUE_LABEL" "$PR_LABEL"; do

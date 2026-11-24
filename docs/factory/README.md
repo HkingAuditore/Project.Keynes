@@ -121,7 +121,7 @@ python3 tools/factory/sync_rules.py [--apply]   # 把 qodo-rules.json 里缺的�
 python3 -m unittest discover -s tools/factory/tests
 ```
 
-Issue 开发和 PR 检查独立运行。Issue 任务领最早的一张可领工单，开发、验证并开 PR；PR 任务检查已交接的 PR，并持有 PR 锁逐个合并。两项任务可以重叠，合并前仍会重新核对 GitHub 上的 PR 和目标分支。
+Issue 开发和 PR 检查独立运行。Issue 任务领最早的一张可领工单，开发、验证并开 PR；PR 任务检查已交接的 PR，并持有 PR 锁逐个合并。两项任务可以重叠。它们只在更新共享的 Git 引用时短暂排队，合并前仍会重新核对 GitHub 上的 PR 和目标分支。旧版任务在途时会保留原来的工作目录，等它退出后才复用。
 
 | 本机路径 | Issue 开发 | PR 检查 |
 |---|---|---|
@@ -133,7 +133,7 @@ Issue 开发和 PR 检查独立运行。Issue 任务领最早的一张可领工�
 
 这些目录都在 `~/.keynes-factory/` 下。每份工作树保留自己的 Godot 导入缓存、Godot 用户数据和 SCons 编译文件。两边的检查日志与运行记录分别按任务保存在 `logs/` 和 `runs/`。PR 检查沿用 `prs/` 下的历史状态。
 
-安装脚本把 `tools.python` 写进两个 launchd 任务。配置改变后重新安装。两个程序目录默认从 `fork/master` 更新。也可用 `install_poller.sh --runner-ref <本地提交>` 部署本地版本。该提交进入 `fork/master` 后会自动跟随 `fork/master`。无参数运行 `poll.sh` 领 Issue，传 `--pr-lane` 检查 PR，传 `--pr 5` 或 `--dry` 则保持原有的 PR 模式。手动执行时，未配置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。
+默认安装会先从 fork 抓取 `master`，再检查该版本是否支持并行。安装脚本把 `tools.python` 写进两个 launchd 任务。配置改变后重新安装。两个程序目录默认从 `fork/master` 更新。也可用 `install_poller.sh --runner-ref <本地提交>` 部署本地版本。该提交进入 `fork/master` 后会自动跟随 `fork/master`。无参数运行 `poll.sh` 领 Issue，传 `--pr-lane` 检查 PR，传 `--pr 5` 或 `--dry` 则保持原有的 PR 模式。手动执行时，未配置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。
 
 `sync_rules.py --apply` 创建缺失规则，有任何创建失败就返回非零。修改已有规则先用 `qodo rules update`，再更新 JSON。
 

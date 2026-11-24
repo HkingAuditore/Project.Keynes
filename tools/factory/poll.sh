@@ -29,7 +29,9 @@ if ! zsystem flock -t 0 -f runner_lock "$runner.lock"; then
   exit 0
 fi
 
-git -C "$KEYNES_REPO" fetch --prune -q "$REMOTE"
+py="${KEYNES_FACTORY_PYTHON:-python3}"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+"$py" "$script_dir/git_remote.py" "$KEYNES_REPO" fetch --prune -q "$REMOTE"
 ref="$REMOTE/master"
 if [ -f "$HOME_DIR/runner-ref" ]; then
   pinned="$(cat "$HOME_DIR/runner-ref")"
@@ -52,10 +54,9 @@ if [ ! -f "tools/factory/$entry" ]; then
   echo "$(date -u +%FT%TZ) tools/factory/$entry is missing from $runner" >&2
   exit 1
 fi
-if [ ! -x tools/factory/bin/godot ]; then
+if [ ! -f tools/factory/git_remote.py ] || [ ! -x tools/factory/bin/godot ]; then
   echo "$ref lacks the parallel factory code. Install with --runner-ref or update fork/master." >&2
   exit 1
 fi
 
-py="${KEYNES_FACTORY_PYTHON:-python3}"
 "$py" "tools/factory/$entry" "$@"

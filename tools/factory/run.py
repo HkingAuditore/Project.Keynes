@@ -23,7 +23,7 @@ import agent  # noqa: E402
 import checks  # noqa: E402
 import qodo  # noqa: E402
 import work  # noqa: E402
-from common import Events, lane_lock, legacy_running, load_config  # noqa: E402
+from common import Events, lane_lock, legacy_lane_gate, load_config  # noqa: E402
 from github import GitHub  # noqa: E402
 from ticket import criteria, gate  # noqa: E402
 from verdict import Facts, judge, unknown_findings  # noqa: E402
@@ -536,7 +536,7 @@ def main() -> int:
         return process_ticket(a, cfg)
     home = Path(cfg["home"])
     with lane_lock(home, "issue") as acquired:
-        if not acquired or legacy_running(home, "run.py"):
+        if not acquired or legacy_lane_gate(home, "issue"):
             print("the Issue lane is already running", flush=True)
             return 0
         return process_ticket(a, cfg)
