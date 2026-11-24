@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import subprocess
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,9 +16,42 @@ FACTORY = Path(__file__).resolve().parent
 
 def load_config() -> dict:
     cfg = json.loads((FACTORY / "config.json").read_text(encoding="utf-8"))
-    cfg["home"] = str(Path(os.path.expanduser(cfg["home"])))
+    cfg["home"] = str(Path(os.path.expanduser(os.environ.get("KEYNES_FACTORY_HOME", cfg["home"]))))
     cfg["tools"] = {k: os.path.expanduser(v) for k, v in cfg["tools"].items()}
     return cfg
+
+
+@contextmanager
+def lane_lock(home: Path, lane: str):
+    """Hold one lane until exit, including manual invocations and automatic merges."""
+    home.mkdir(parents=True, exist_ok=True)
+    with (home / f"{lane}.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        yield True
+
+
+def legacy_running(home: Path, script: str) -> bool:
+    """Let an invocation from before the lane split finish using its original lock."""
+    try:
+        pid = int((home / "lock").read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return False
+    owner = sh(["ps", "-o", "command=", "-p", str(pid)])
+    return any(part.endswith(f"tools/factory/{script}") for part in owner.out.split())
+
+
+def godot_environment(cfg: dict, workdir: str) -> dict[str, str]:
+    wrapper_dir = FACTORY / "bin"
+    return {
+        "PATH": os.pathsep.join([str(wrapper_dir), os.environ.get("PATH", os.defpath)]),
+        "GODOT_BIN": str(wrapper_dir / "godot"),
+        "KEYNES_FACTORY_REAL_GODOT": cfg["tools"]["godot"],
+        "KEYNES_FACTORY_GODOT_HOME": str(Path(workdir) / "Project/project-keynes/.godot/factory-home"),
+    }
 
 
 @dataclass

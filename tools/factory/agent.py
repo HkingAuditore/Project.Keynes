@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from common import FACTORY, sh
+from common import FACTORY, godot_environment, sh
 from ticket import section
 
 
@@ -29,7 +29,8 @@ def codex(cfg: dict, workdir: str, prompt: str, report: str, writable: bool, *, 
                 "-c", f'model_reasoning_effort="{a["effort"]}"', "-s", sandbox]
     args += ["--json", "--skip-git-repo-check", "-o", report, "-"]
     log = report + ".log"
-    r = sh(args, cwd=workdir, stdin=prompt, timeout=a["timeoutMinutes"] * 60, log=log)
+    r = sh(args, cwd=workdir, stdin=prompt, timeout=a["timeoutMinutes"] * 60, log=log,
+           env=godot_environment(cfg, workdir))
     text = Path(report).read_text(encoding="utf-8") if Path(report).exists() else ""
     return {"ok": r.ok, "code": r.code, "report": text, "log": log, "session": session or session_id(log)}
 

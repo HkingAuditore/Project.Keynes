@@ -115,15 +115,25 @@ python3 tools/factory/watch_prs.py --dry        # 只打印每个 PR 的决定�
 python3 tools/factory/watch_prs.py --pr 5       # 只看一个 PR
 python3 tools/factory/run.py --issue 12 --dry   # issue 模式：只跑 G0
 python3 tools/factory/run.py --issue 12         # issue 模式：处理一张指定工单
-tools/factory/install_poller.sh                 # 每 600 秒运行一次 watch_prs.py（launchd）
+tools/factory/install_poller.sh                 # 安装两项独立的 launchd 任务，各每 600 秒运行一次
 tools/factory/install_poller.sh --remove
 python3 tools/factory/sync_rules.py [--apply]   # 把 qodo-rules.json 里缺的规则建到 Qodo
 python3 -m unittest discover -s tools/factory/tests
 ```
 
-本机目录 `~/.keynes-factory/`：`runner/` 是轮询用的稀疏工作树，只检出 `tools/factory/` 和 `.github/`，固定在 fork/master。即使从 `runner/` 创建，agent 使用的 `work/` 也是完整工作树。每次准备会关闭主工作树和 `gdext/godot-cpp` 子模块已有的稀疏检出，重置主工作树并更新、清理子模块，保留忽略的 `.godot` 和 SCons 缓存，最后检查主工作树和子模块是否还有稀疏设置或缺失的跟踪文件。`runs/` 存每次运行的 JSON 记录；`logs/` 存检查和 Codex 的日志；`base-checks/` 按提交缓存通过项，下次重跑失败项和缺失项。
+Issue 开发和 PR 检查独立运行。Issue 任务领最早的一张可领工单，开发、验证并开 PR；PR 任务检查已交接的 PR，并持有 PR 锁逐个合并。两项任务可以重叠，合并前仍会重新核对 GitHub 上的 PR 和目标分支。
 
-安装轮询任务时，脚本把配置里的 `tools.python` 写进 launchd。更改路径后再运行一次安装脚本。手动运行 `poll.sh` 时，未设置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。fork/master 尚无工厂目录时轮询正常退出，目录已存在但启动脚本缺失时则报错。
+| 本机路径 | Issue 开发 | PR 检查 |
+|---|---|---|
+| 程序目录 | `runner/` | `pr-runner/` |
+| 完整工作树 | `work/` | `pr-work/` |
+| 基线检查缓存 | `base-checks/` | `pr-base-checks/` |
+| 任务锁 | `issue.lock` | `pr.lock` |
+| 轮询日志 | `poll.log` | `poll-pr.log` |
+
+这些目录都在 `~/.keynes-factory/` 下。每份工作树保留自己的 Godot 导入缓存、Godot 用户数据和 SCons 编译文件。两边的检查日志与运行记录分别按任务保存在 `logs/` 和 `runs/`。PR 检查沿用 `prs/` 下的历史状态。
+
+安装脚本把 `tools.python` 写进两个 launchd 任务。配置改变后重新安装。两个程序目录默认从 `fork/master` 更新。也可用 `install_poller.sh --runner-ref <本地提交>` 部署本地版本。该提交进入 `fork/master` 后会自动跟随 `fork/master`。无参数运行 `poll.sh` 领 Issue，传 `--pr-lane` 检查 PR，传 `--pr 5` 或 `--dry` 则保持原有的 PR 模式。手动执行时，未配置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。
 
 `sync_rules.py --apply` 创建缺失规则，有任何创建失败就返回非零。修改已有规则先用 `qodo rules update`，再更新 JSON。
 

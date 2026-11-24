@@ -21,7 +21,7 @@ import qodo
 import run as issue_runner
 import sync_rules
 import work
-from common import Events, Result, load_config
+from common import Events, Result, lane_lock, legacy_running, load_config
 from github import GitHub
 from run import Run
 from verdict import CIFacts, CIRun, Verdict
@@ -685,7 +685,7 @@ class ConflictUpdateTest(TempFactory):
     def check_baseline(self, cfg, workdir, head, cache, logs):
         self.assertEqual(work.head(workdir), head)
         self.assertIsNone(work.merge_head(workdir))
-        self.assertEqual(Path(cache), self.root / "base-checks")
+        self.assertEqual(Path(cache), self.root / "pr-base-checks")
         if head == self.base:
             return self.parent_results["base"]
         self.assertEqual(head, self.pr["headRefOid"])
@@ -1387,7 +1387,7 @@ class AdapterTest(TempFactory):
 
 class PollScriptsTest(TempFactory):
     def test_poll_distinguishes_unmerged_factory_from_broken_checkout(self):
-        runner = self.root / "runner"
+        runner = self.root / "pr-runner"
         runner.mkdir()
         (runner / ".git").touch()
         fake_git = self.root / "git"
@@ -1404,6 +1404,7 @@ class PollScriptsTest(TempFactory):
         factory = runner / "tools/factory"
         factory.mkdir(parents=True)
         (factory / "watch_prs.py").write_text("import sys\nprint(sys.executable, sys.argv[1])\n")
+        self.write_file(factory, "bin/godot").chmod(0o755)
         result = subprocess.run(args, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), f"{sys.executable} --dry")
@@ -1414,18 +1415,61 @@ class PollScriptsTest(TempFactory):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(result.stdout.strip().endswith(" --dry"))
 
+    def test_both_poll_jobs_run_at_the_same_time_in_separate_checkouts(self):
+        fake_git = self.write_file(self.root, "git", "#!/bin/sh\nexit 0\n")
+        fake_git.chmod(0o755)
+        for name, entry in (("runner", "run.py"), ("pr-runner", "watch_prs.py")):
+            runner = self.root / name
+            self.write_file(runner, ".git")
+            self.write_file(runner, "tools/factory/bin/godot").chmod(0o755)
+            self.write_file(runner, f"tools/factory/{entry}", """import os
+import sys
+print(os.getcwd(), *sys.argv[1:], flush=True)
+sys.stdin.read()
+""")
+        env = {**os.environ, "PATH": f"{self.root}:/usr/bin:/bin", "KEYNES_REPO": str(self.root),
+               "KEYNES_FACTORY_HOME": str(self.root), "KEYNES_FACTORY_PYTHON": sys.executable}
+        poll = ["/bin/zsh", str(FACTORY / "poll.sh")]
+        with subprocess.Popen(poll, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as issue:
+            try:
+                self.assertEqual(issue.stdout.readline().strip(), f"{(self.root / 'runner').resolve()} --next")
+                pr = subprocess.run([*poll, "--pr-lane"], env=env, input="", capture_output=True, text=True, check=True)
+                self.assertEqual(pr.stdout.strip(), str((self.root / "pr-runner").resolve()))
+                self.assertIsNone(issue.poll())
+                duplicate = subprocess.run(poll, env=env, input="", capture_output=True, text=True, check=True)
+                self.assertIn("already running", duplicate.stdout)
+            finally:
+                issue.stdin.close()
+
+    def test_lane_locks_are_independent_and_same_lane_merges_serialize(self):
+        with lane_lock(self.root, "pr") as pr, lane_lock(self.root, "issue") as issue:
+            self.assertTrue(pr and issue)
+            with lane_lock(self.root, "pr") as second_pr, lane_lock(self.root, "issue") as second_issue:
+                self.assertFalse(second_pr or second_issue)
+        with lane_lock(self.root, "pr") as pr:
+            self.assertTrue(pr)
+
+    def test_existing_issue_run_does_not_block_the_pr_lane(self):
+        (self.root / "lock").write_text("42")
+        with patch("common.sh", return_value=Result(0, "python3 tools/factory/run.py --next", "")):
+            self.assertTrue(legacy_running(self.root, "run.py"))
+            self.assertFalse(legacy_running(self.root, "watch_prs.py"))
+
     def test_installer_plist_carries_configured_python(self):
-        path = self.root / "launch.plist"
         script = (FACTORY / "install_poller.sh").read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         factory = self.root / "factory"
         factory.mkdir()
         (factory / "common.py").write_text((FACTORY / "common.py").read_text())
         self.cfg["tools"]["python"] = "/test/path with spaces & symbols/python3"
         (factory / "config.json").write_text(json.dumps(self.cfg))
-        subprocess.run([sys.executable, "-", str(factory), str(path), "test", str(self.root), str(self.root)],
+        subprocess.run([sys.executable, "-", str(factory), str(self.root), "issue", "pr", str(self.root), str(self.root)],
                        input=script, text=True, check=True)
-        env = plistlib.loads(path.read_bytes())["EnvironmentVariables"]
-        self.assertEqual(env["KEYNES_FACTORY_PYTHON"], self.cfg["tools"]["python"])
+        issue = plistlib.loads((self.root / "issue.plist").read_bytes())
+        pr = plistlib.loads((self.root / "pr.plist").read_bytes())
+        for job in (issue, pr):
+            self.assertEqual(job["EnvironmentVariables"]["KEYNES_FACTORY_PYTHON"], self.cfg["tools"]["python"])
+        self.assertEqual(pr["ProgramArguments"], [*issue["ProgramArguments"], "--pr-lane"])
+        self.assertNotEqual(pr["StandardOutPath"], issue["StandardOutPath"])
 
 
 class EnsureTest(unittest.TestCase):

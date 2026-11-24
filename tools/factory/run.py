@@ -4,14 +4,13 @@ Stages: G0 ticket gate -> plan (Codex, read-only) -> implement + checks (Codex, 
 -> Qodo local review of uncommitted changes -> commit, push, PR -> Qodo PR review + CI
 -> fix loop -> verdict from facts -> run record, issue comment, label.
 
-Manual only (the poller runs watch_prs.py instead): python3 tools/factory/run.py --issue N [--dry]
+Manual entry: python3 tools/factory/run.py --issue N [--dry]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 import traceback
@@ -24,30 +23,10 @@ import agent  # noqa: E402
 import checks  # noqa: E402
 import qodo  # noqa: E402
 import work  # noqa: E402
-from common import Events, load_config, sh  # noqa: E402
+from common import Events, lane_lock, legacy_running, load_config  # noqa: E402
 from github import GitHub  # noqa: E402
 from ticket import criteria, gate  # noqa: E402
 from verdict import Facts, judge, unknown_findings  # noqa: E402
-
-
-def take_lock(path: Path) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(2):
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(fd, str(os.getpid()).encode())
-            os.close(fd)
-            return True
-        except FileExistsError:
-            try:
-                pid = int(path.read_text().strip() or 0)
-            except (OSError, ValueError):
-                pid = 0
-            owner = sh(["ps", "-o", "command=", "-p", str(pid)]).out if pid else ""
-            if "tools/factory/" in owner:
-                return False
-            path.unlink(missing_ok=True)
-    return False
 
 
 class Run:
@@ -516,13 +495,7 @@ def next_ticket(gh: GitHub, cfg: dict) -> int | None:
     return None
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--issue", type=int)
-    ap.add_argument("--next", action="store_true", help="take the oldest claimable ticket (the poller runs this)")
-    ap.add_argument("--dry", action="store_true")
-    a = ap.parse_args()
-    cfg = load_config()
+def process_ticket(a: argparse.Namespace, cfg: dict) -> int:
     gh = GitHub(cfg["repo"])
     if a.next and not a.issue:
         if not cfg.get("autoClaimIssues", False):
@@ -541,10 +514,6 @@ def main() -> int:
         # Claimed by another run (or never queued): starting again would only mark it for a person.
         print(f"issue #{a.issue} has no {cfg['labels']['trigger']} label; nothing to do")
         return 0
-    lock = Path(cfg["home"]) / "lock"
-    if not a.dry and not take_lock(lock):
-        print("another factory run holds the lock")
-        return 0
     run = Run(cfg, issue["number"], a.dry)
     try:
         run.go(issue)
@@ -553,9 +522,24 @@ def main() -> int:
         run.ev.add("error", trace=traceback.format_exc()[-3000:])
     finally:
         code = run.finish()
-        if not a.dry:
-            lock.unlink(missing_ok=True)
     return code
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--issue", type=int)
+    ap.add_argument("--next", action="store_true", help="take the oldest claimable ticket (the poller runs this)")
+    ap.add_argument("--dry", action="store_true")
+    a = ap.parse_args()
+    cfg = load_config()
+    if a.dry:
+        return process_ticket(a, cfg)
+    home = Path(cfg["home"])
+    with lane_lock(home, "issue") as acquired:
+        if not acquired or legacy_running(home, "run.py"):
+            print("the Issue lane is already running", flush=True)
+            return 0
+        return process_ticket(a, cfg)
 
 
 if __name__ == "__main__":

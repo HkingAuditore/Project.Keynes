@@ -1,0 +1,8 @@
+#!/bin/sh
+# Godot's user:// and global caches otherwise point to the same place in both worktrees.
+set -eu
+: "${KEYNES_FACTORY_REAL_GODOT:?}" "${KEYNES_FACTORY_GODOT_HOME:?}"
+export HOME="$KEYNES_FACTORY_GODOT_HOME"
+export XDG_DATA_HOME="$HOME/data" XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache"
+mkdir -p "$HOME"
+exec "$KEYNES_FACTORY_REAL_GODOT" "$@"

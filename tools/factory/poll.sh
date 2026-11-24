@@ -1,34 +1,61 @@
 #!/bin/zsh -l
-# One poll: refresh the runner worktree to the fork's master, look at the open PRs once,
-# then start the oldest claimable ready-for-agent ticket if no run holds the lock.
-# launchd starts this through `/bin/zsh -l` so PATH has gh, git, codex and node.
+# launchd invokes this with a login shell so PATH includes the configured tools.
 set -eu
 : "${KEYNES_REPO:?set KEYNES_REPO to the main Project.Keynes checkout}"
 HOME_DIR="${KEYNES_FACTORY_HOME:-$HOME/.keynes-factory}"
-RUNNER="$HOME_DIR/runner"
 REMOTE="${KEYNES_FACTORY_REMOTE:-fork}"
-mkdir -p "$HOME_DIR"
-git -C "$KEYNES_REPO" fetch --prune -q "$REMOTE"
-if [ ! -e "$RUNNER/.git" ]; then
-  git -C "$KEYNES_REPO" worktree add --no-checkout --detach "$RUNNER" "$REMOTE/master"
-  git -C "$RUNNER" sparse-checkout set --no-cone '/tools/factory/' '/.github/'
+export KEYNES_FACTORY_HOME="$HOME_DIR"
+
+if [ "${1:-}" = "--pr-lane" ]; then
+  shift
+  runner="$HOME_DIR/pr-runner"
+  entry=watch_prs.py
+elif [ "$#" -eq 0 ]; then
+  runner="$HOME_DIR/runner"
+  entry=run.py
+  set -- --next
+else
+  # Preserve targeted and dry PR invocations of the installed script.
+  runner="$HOME_DIR/pr-runner"
+  entry=watch_prs.py
 fi
-git -C "$RUNNER" checkout -q --detach "$REMOTE/master"
-cd "$RUNNER"
-if [ ! -f tools/factory/watch_prs.py ]; then
+
+mkdir -p "$HOME_DIR"
+# Also protect the sparse checkout before the Python entry point takes its lane lock.
+zmodload zsh/system
+touch "$runner.lock"
+if ! zsystem flock -t 0 -f runner_lock "$runner.lock"; then
+  echo "$entry is already running"
+  exit 0
+fi
+
+git -C "$KEYNES_REPO" fetch --prune -q "$REMOTE"
+ref="$REMOTE/master"
+if [ -f "$HOME_DIR/runner-ref" ]; then
+  pinned="$(cat "$HOME_DIR/runner-ref")"
+  if ! git -C "$KEYNES_REPO" merge-base --is-ancestor "$pinned" "$ref"; then
+    ref="$pinned"
+  fi
+fi
+if [ ! -e "$runner/.git" ]; then
+  git -C "$KEYNES_REPO" worktree add --no-checkout --detach "$runner" "$ref"
+  git -C "$runner" sparse-checkout set --no-cone '/tools/factory/' '/.github/'
+fi
+git -C "$runner" checkout -q --detach "$ref"
+cd "$runner"
+if [ ! -f "tools/factory/$entry" ]; then
   factory_entry="$(git ls-tree --name-only HEAD -- tools/factory)"
   if [ -z "$factory_entry" ] && [ ! -d tools/factory ]; then
-    echo "$(date -u +%FT%TZ) $REMOTE/master has no tools/factory/ yet"
+    echo "$(date -u +%FT%TZ) $ref has no tools/factory/ yet"
     exit 0
   fi
-  echo "$(date -u +%FT%TZ) tools/factory/watch_prs.py is missing from $RUNNER" >&2
+  echo "$(date -u +%FT%TZ) tools/factory/$entry is missing from $runner" >&2
   exit 1
 fi
-py="${KEYNES_FACTORY_PYTHON:-python3}"
-# PRs first; then, on a plain poll, at most one ready-for-agent ticket (run.py --next).
-rc=0
-"$py" tools/factory/watch_prs.py "$@" || rc=$?
-if [ "$#" -eq 0 ]; then
-  "$py" tools/factory/run.py --next || rc=$?
+if [ ! -x tools/factory/bin/godot ]; then
+  echo "$ref lacks the parallel factory code. Install with --runner-ref or update fork/master." >&2
+  exit 1
 fi
-exit $rc
+
+py="${KEYNES_FACTORY_PYTHON:-python3}"
+"$py" "tools/factory/$entry" "$@"

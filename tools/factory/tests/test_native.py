@@ -21,7 +21,7 @@ class NativeWorkflowTest(TempFactory):
     def setup_repo(self, mode):
         home = self.root / mode
         self.cfg["home"] = str(home)
-        self.repo = home / "work"
+        self.repo = home / ("work" if mode == "issue" else "pr-work")
         self.repo.mkdir(parents=True)
         self.libraries = self.cfg["checks"]["nativeBuildOutputs"]
         self.extra_binary = self.cfg["paths"]["trackedBinaries"][0] + "other.so"
@@ -68,14 +68,14 @@ class NativeWorkflowTest(TempFactory):
                     self.assertFalse((self.repo / library).exists())
                     if failure != stage:
                         self.write_file(self.repo, library, "old" if library == unchanged_library else "factory output")
-            elif args[0] == tools["godot"]:
+            elif args[0] == env["GODOT_BIN"]:
                 stage = checks.NATIVE_IMPORT
                 self.assertEqual(args[1:], c["nativeImport"])
                 self.assertEqual(cwd, str(self.repo))
             elif args[1] == c["nativeRuntimeCheck"]:
                 lib = args[args.index("--library") + 1]
                 stage = checks.runtime_name(lib)
-                self.assertEqual(args[args.index("--godot") + 1], tools["godot"])
+                self.assertEqual(args[args.index("--godot") + 1], env["GODOT_BIN"])
                 self.assertEqual((self.repo / lib).read_text(), "old" if lib == unchanged_library else "factory output")
             else:
                 stage = "regression"
@@ -86,6 +86,9 @@ class NativeWorkflowTest(TempFactory):
                     self.assertEqual((self.repo / self.libraries[0]).read_text(), "agent output")
                 if tamper or not native:
                     self.write_file(self.repo, self.libraries[0], "rewritten by regression")
+            self.assertEqual(env["KEYNES_FACTORY_REAL_GODOT"], tools["godot"])
+            self.assertEqual(Path(env["KEYNES_FACTORY_GODOT_HOME"]),
+                             self.repo / "Project/project-keynes/.godot/factory-home")
             stages.append(stage)
             failed = stage == failure
             path = Path(log)

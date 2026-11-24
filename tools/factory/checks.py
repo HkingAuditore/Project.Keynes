@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 import work
-from common import sh, tail
+from common import godot_environment, sh, tail
 from verdict import NativeFacts
 
 GUARD_LIST = re.compile(r"for guard in (.*?); do", re.S)
@@ -78,6 +78,8 @@ class Runner:
     def __init__(self, cfg: dict, workdir: str, logdir: str) -> None:
         self.cfg, self.workdir, self.logdir = cfg, workdir, Path(logdir)
         self.py = cfg["tools"]["python"]
+        self.env = godot_environment(cfg, workdir)
+        self.godot = self.env["GODOT_BIN"]
         self.timeout = cfg["limits"]["checkTimeoutMinutes"] * 60
 
     def _require_path(self, name: str, *, cwd: str | None = None, directory: bool = False) -> None:
@@ -110,7 +112,7 @@ class Runner:
     def _run(self, name: str, args: list[str], cwd: str | None = None, *, env: dict | None = None) -> dict:
         log = str(self.logdir / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', name)}.log")
         started = time.time()
-        r = sh(args, cwd=cwd or self.workdir, timeout=self.timeout, log=log, env=env)
+        r = sh(args, cwd=cwd or self.workdir, timeout=self.timeout, log=log, env={**self.env, **(env or {})})
         return {"name": name, "ok": r.ok, "code": r.code, "log": log,
                 "seconds": round(time.time() - started)}
 
@@ -128,20 +130,20 @@ class Runner:
             (Path(self.workdir) / lib).unlink(missing_ok=True)
         scons_dir = str(Path(tools["scons"]).expanduser().parent)
         build = self._run(NATIVE_REBUILD, ["bash", rebuild.name], cwd=str(Path(self.workdir) / rebuild.parent),
-                          env={"PATH": os.pathsep.join([scons_dir, os.environ.get("PATH", os.defpath)])})
+                          env={"PATH": os.pathsep.join([scons_dir, self.env["PATH"]])})
         results.append(build)
         if not build["ok"]:
             return False
         build["libraries"] = {lib: file_digest(Path(self.workdir) / lib) for lib in libraries}
 
-        imported = self._run(NATIVE_IMPORT, [tools["godot"], *args])
+        imported = self._run(NATIVE_IMPORT, [self.godot, *args])
         results.append(imported)
         if not imported["ok"]:
             return False
         for lib in libraries:
             name = runtime_name(lib)
             logs = self.logdir / f"probe-{Path(lib).stem}"
-            results.append(self._run(name, [self.py, c["nativeRuntimeCheck"], "--godot", tools["godot"],
+            results.append(self._run(name, [self.py, c["nativeRuntimeCheck"], "--godot", self.godot,
                                             "--library", lib, "--log-dir", str(logs)]))
         return True
 
@@ -162,10 +164,9 @@ class Runner:
             results.append(run_check("unit:" + " ".join(args[-1:]), [self.py, *args]))
         if native and not self.run_native(results):
             return results
-        godot = self.cfg["tools"]["godot"]
         reg_logs = str(self.logdir / f"regression-{int(time.time())}")
         self._require_path(c["regression"][0])
-        reg = [self.py, *c["regression"], "--godot", godot, "--log-dir", reg_logs, "--import"]
+        reg = [self.py, *c["regression"], "--godot", self.godot, "--log-dir", reg_logs, "--import"]
         results.append(run_check("regression", reg))
         results += self.run_extras(extra, run_check)
         return results
@@ -173,14 +174,13 @@ class Runner:
     def run_extras(self, extra: list[str], run_check=None) -> list[dict]:
         """The commands the plan asked for on top of the default checks."""
         run_check = run_check or (lambda name, args, cwd=None: self._run(name, args, cwd))
-        godot = self.cfg["tools"]["godot"]
         results = []
         for cmd in extra:
             parts = shlex.split(cmd)
             self._require_path(parts[0])
             args = [self.py, *parts]
             if "--godot" not in parts and any(p.endswith(("replay.py", "matrix.py", "determinism.py", "regression_checks.py")) for p in parts):
-                args += ["--godot", godot, "--log-dir", str(self.logdir / f"extra-{int(time.time())}")]
+                args += ["--godot", self.godot, "--log-dir", str(self.logdir / f"extra-{int(time.time())}")]
             results.append(run_check(f"extra:{cmd}", args))
         return results
 
