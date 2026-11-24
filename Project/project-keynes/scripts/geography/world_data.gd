@@ -248,6 +248,8 @@ var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值
 var staged_cell_lut_upload: Dictionary = {}
 var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
 var lut_dims: Vector2i = Vector2i.ZERO
+# This world's last weather publication, in cell.index order.
+var _weather_wind_publication: Dictionary = {}
 # ─── [cell-field-overlays 2026-11-18] 天气/风的 offset 空间表（方案 §3.3）─────────────
 # weather_table：Texture2DArray（RGBA8，**4 层**，map_w × map_h，1 texel = 1 格，
 # **offset 空间**，texel 线性下标 = row * map_w + col）。存在的理由只有一个：让天气
@@ -305,6 +307,26 @@ var cell_table_fog_coverage: FogTerrainCoverage
 # 消费点：渲染推送的 `cell_class_index_bound = cell_table_layers >= 4`（陆地 + 水面两片
 # program 各推一次，必须同值）。初始化就是 0，所以旧存档天然"不读 layer3"。
 var cell_table_layers: int = 0
+
+func publish_weather_wind(map: MapData, dims: Vector2i, stamp: int, bytes: PackedByteArray) -> void:
+	_weather_wind_publication = {
+		"map_id": map.get_instance_id() if map != null else 0,
+		"dims": dims,
+		"stamp": stamp,
+		"bytes": PackedByteArray(bytes),
+	}
+	weather_lut_update_usec = stamp
+
+
+func published_weather_wind_bytes(map: MapData) -> Variant:
+	var publication := _weather_wind_publication
+	if publication.is_empty() or map == null or publication.map_id != map.get_instance_id() \
+			or publication.dims != lut_dims or publication.stamp != weather_lut_update_usec:
+		return null
+	# The packed-array constructor shares storage until a caller writes to it.
+	# An empty array is a published result too, meaning there is no valid local wind.
+	return PackedByteArray(publication.bytes)
+
 
 func fog_covers_surface(world_samples: Rect2, hex_size: float) -> bool:
 	if cell_table_fog_coverage == null:

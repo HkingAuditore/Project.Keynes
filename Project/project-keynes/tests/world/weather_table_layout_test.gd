@@ -58,6 +58,7 @@ func _init() -> void:
 	_check_padding_type()
 	_check_wind_encoding_contract()
 	_check_wind_texture_history()
+	_check_shared_wind_publication()
 	_check_offset_to_index_rule()
 	_check_commit_plan_bytes()
 	_check_padding_rows()
@@ -232,10 +233,10 @@ func _check_wind_texture_history() -> void:
 	var source := WindSource.new()
 	source.bind(world, _map)
 	var expected := WindSource.build_bytes(_map, world.lut_dims)
-	var published := Baker._publish_weather_table_from_luts(
-		baker, world, _weather_src, world.lut_dims.x, world.lut_dims.y)
+	var weather := _weather_src.duplicate()
+	weather.resize(expected.size())
+	var published := baker._publish_weather_lut_bytes(weather, world, world.lut_dims.x, world.lut_dims.y)
 	_expect(published.get("weather_table_published", false), "weather table publishes real wind bytes")
-	world.weather_lut_update_usec += 1
 	_expect(source.update() and source.current != null and source._current_wind_bytes == expected,
 		"the wind texture uses the same encoded pixels as the weather table including padding")
 	var first_texture := source.current
@@ -293,6 +294,124 @@ func _check_wind_texture_history() -> void:
 	_expect(source.update() and not source.has_previous and source.current != null
 		and source.current != recovered_texture and source._current_wind_bytes == expected,
 		"a replacement world starts its own texture history")
+
+
+func _check_shared_wind_publication() -> void:
+	var baker := MapBaker.new()
+	baker._last_bake_map = _map
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(_n_cells + 1, 1)
+	var first_wind := WindSource.build_bytes(_map, world.lut_dims)
+	var first_weather := _weather_src.duplicate()
+	first_weather.resize(first_wind.size())
+	var early := WindSource.new()
+	early.bind(world, _map)
+	_expect(early.update() and early._current_wind_bytes == first_wind and not early.has_previous,
+		"a wind reader can bind before the first weather publication")
+	var early_texture: Texture2D = early.current
+	baker._publish_weather_lut_bytes(first_weather, world, world.lut_dims.x, world.lut_dims.y)
+
+	# Simulate newer input arriving before the wind-texture reader. Both readers
+	# must use the published pixels even though the live input now differs.
+	var original_speeds := _map.wind_speed_arr.duplicate()
+	_map.wind_speed_arr[0] = 5.0
+	var second_wind := WindSource.build_bytes(_map, world.lut_dims)
+	_expect(second_wind != first_wind, "new input would produce different wind bytes")
+	var late := WindSource.new()
+	late.bind(world, _map)
+	_expect(late.update() and late._current_wind_bytes == first_wind and not late.has_previous
+		and late.previous == late.current,
+		"a first bind after the weather table uses the same published wind")
+	_expect(early.update() and early.current == early_texture and early.has_previous
+		and early.previous == early_texture and early._current_wind_bytes == first_wind,
+		"a reader already bound reuses the matching texture for both endpoints")
+	var detached = world.published_weather_wind_bytes(_map)
+	_expect(detached == first_wind, "the world exposes the published wind bytes")
+	if detached is PackedByteArray and not detached.is_empty():
+		detached[0] ^= 1
+		_expect(world.published_weather_wind_bytes(_map) == first_wind,
+			"a caller writing its copy cannot change the published wind")
+	_expect(not late.update(), "a read before the next publication keeps the current wind")
+
+	var first_texture: Texture2D = late.current
+	var second_weather := _shift_bytes(first_weather, 17)
+	baker._publish_weather_lut_bytes(second_weather, world, world.lut_dims.x, world.lut_dims.y)
+	var unchanged := baker._publish_weather_lut_bytes(second_weather, world, world.lut_dims.x, world.lut_dims.y)
+	_expect(world.weather_table_valid and world.weather_table_cur == 1
+		and not unchanged.weather_lut_published,
+		"the weather table flips once for the second distinct weather payload")
+	_expect(late.update() and late.has_previous and late.previous == first_texture
+		and late.current != first_texture and late._current_wind_bytes == second_wind
+		and late.current.get_size() == Vector2(world.lut_dims),
+		"the second publication supplies its wind and retains the old texture")
+	_check_shared_wind_readback(world, late, [
+		_reorder_expected(first_weather, Baker.WEATHER_TABLE_PAD_TYPE),
+		_reorder_expected(second_weather, Baker.WEATHER_TABLE_PAD_TYPE),
+		_reorder_expected(first_wind), _reorder_expected(second_wind),
+	], first_wind, second_wind)
+
+	# Keeping the same world, stamp and dimensions cannot make another map's
+	# preview consume this map's previously published bytes.
+	var next_map := MapData.new(MAP_W, MAP_H)
+	next_map.wind_x_arr = _map.wind_x_arr
+	next_map.wind_y_arr = _map.wind_y_arr
+	next_map.wind_speed_arr = original_speeds.duplicate()
+	late.bind(world, next_map)
+	_expect(late.update() and not late.has_previous and late._current_wind_bytes == first_wind,
+		"a different map with the same stamp and shape uses its own wind")
+	for cell in _map.all_cells():
+		next_map.set_cell(cell)
+	var replacement := WorldData.new()
+	replacement.lut_dims = world.lut_dims
+	var next_baker := MapBaker.new()
+	next_baker._last_bake_map = next_map
+	next_baker._publish_weather_lut_bytes(first_weather, replacement, replacement.lut_dims.x, replacement.lut_dims.y)
+	var replacement_wind = replacement.published_weather_wind_bytes(next_map)
+	_expect(replacement_wind == first_wind, "the replacement world publishes its own wind")
+	if replacement_wind is PackedByteArray:
+		# Force matching stamps to exercise world identity independently of time.
+		replacement.publish_weather_wind(next_map, replacement.lut_dims, world.weather_lut_update_usec, replacement_wind)
+	next_map.wind_speed_arr[0] = 15.0
+	late.bind(replacement, next_map)
+	_expect(late.update() and not late.has_previous and late._current_wind_bytes == first_wind,
+		"a replacement world at the same stamp reads its published pixels on the first bind")
+
+	var saved_y := _map.wind_y_arr
+	_map.wind_y_arr = PackedFloat32Array()
+	baker._publish_weather_lut_bytes(first_weather, world, world.lut_dims.x, world.lut_dims.y)
+	_map.wind_y_arr = saved_y
+	_expect(early.update() and early.current == null and not world.weather_table_valid,
+		"an invalid published wind clears the texture even after the input is repaired")
+	baker._publish_weather_lut_bytes(second_weather, world, world.lut_dims.x, world.lut_dims.y)
+	_expect(early.update() and early._current_wind_bytes == second_wind and not early.has_previous
+		and world.weather_table_valid and world.weather_table_cur == 0,
+		"the next publication restores both consumers without interpolating invalid wind")
+	var recovered: Texture2D = early.current
+	world.lut_dims = Vector2i(1, _n_cells + 1)
+	baker._publish_weather_lut_bytes(second_weather, world, world.lut_dims.x, world.lut_dims.y)
+	_expect(early.update() and early._current_wind_bytes == second_wind and not early.has_previous
+		and early.current != recovered and early.current.get_size() == Vector2(world.lut_dims),
+		"a new publication with the same pixels in a new shape starts a fresh pair")
+	_map.wind_speed_arr = original_speeds
+
+
+func _check_shared_wind_readback(world: WorldData, source, expected_layers: Array[PackedByteArray],
+		first_wind: PackedByteArray, second_wind: PackedByteArray) -> void:
+	if DisplayServer.get_name() == "headless":
+		_skip("shared weather publication: real texture readback requires a graphics backend")
+		return
+	var table := world.weather_table_tex
+	_expect(table != null and table.get_width() == MAP_W and table.get_height() == MAP_H,
+		"the weather table has the map's row and column dimensions")
+	for layer in expected_layers.size():
+		var image := table.get_layer_data(layer) if table != null else null
+		_expect(image != null and image.get_data() == expected_layers[layer],
+			"weather table layer %d retains the exact current or previous pixels" % layer)
+	var previous: Image = source.previous.get_image() if source.previous != null else null
+	var current: Image = source.current.get_image() if source.current != null else null
+	_expect(previous != null and previous.get_data() == first_wind
+		and current != null and current.get_data() == second_wind,
+		"both wind texture endpoints retain the index-ordered pixels")
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ extends SceneTree
 #   godot --headless --path . --script res://tests/ui/cell_lut_incremental_test.gd
 
 const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
+const WindSource = preload("res://scripts/rendering/weather_wind_source.gd")
 
 var _checks := 0
 var _failures := 0
@@ -312,7 +313,12 @@ func _test_late_presentation() -> void:
 	world.lut_dims = Vector2i(4, 1)
 	var baker := RecordingBaker.new()
 	baker.set_world_ext(ext)
+	baker._last_bake_map = map
 	baker.bake_cell_luts(map, world)
+	var wind := WindSource.new()
+	wind.bind(world, map)
+	_expect("initial weather upload provides the first wind endpoint", wind.update() and wind.current != null)
+	var first_wind: Texture2D = wind.current
 	renderer._map_baker = baker
 	renderer._world = world
 	renderer._weather_layer = WeatherReader.new()
@@ -325,11 +331,19 @@ func _test_late_presentation() -> void:
 	renderer.publish = func() -> void:
 		_expect("live renderer accepts a staged upload",
 				RendererWeatherState.can_defer_cell_lut_upload(renderer, baker, world))
+		map.wind_x_arr[0] = 1.0
+		map.wind_speed_arr[0] = 20.0
+		ext.write_f32(intensity_id, 0, 0.5)
+		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+				PackedInt32Array(), true, true, true)
+		map.wind_x_arr[0] = -1.0
 		ext.write_f32(intensity_id, 0, 0.625)
 		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
 				PackedInt32Array(), true, true, true)
 		_expect("worker commit leaves the previous interpolation timestamp alone",
 				world.weather_lut_update_usec == prior)
+		_expect("a wind read before the late upload still sees the last publication",
+				not wind.update() and wind.current == first_wind)
 	await process_frame
 	await process_frame
 	_expect("weather reads the new timestamp in the commit's render frame",
@@ -337,6 +351,11 @@ func _test_late_presentation() -> void:
 			and renderer._weather_layer.timestamp == world.weather_lut_update_usec \
 			and renderer._weather_layer.changed_frame == renderer.committed_frame)
 	_expect("render flush consumes the pending batch", world.staged_cell_lut_upload.is_empty())
+	_expect("late weather upload flips the weather table once for two staged updates",
+			world.weather_table_valid and world.weather_table_cur == 1)
+	_expect("late upload supplies the batch's final wind with the previous texture as its endpoint",
+			wind.update() and wind.has_previous and wind.previous == first_wind
+			and wind._current_wind_bytes.slice(0, 4) == PackedByteArray([0, 127, 255, 255]))
 	renderer.free()
 
 
