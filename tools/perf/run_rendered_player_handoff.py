@@ -55,7 +55,17 @@ def load_recording(prefix, speed, target):
     days = [row["day"] for row in records]
     if result["consumed_day"] < target or days != list(range(1, result["consumed_day"] + 1)):
         raise ValueError(f"{prefix.name} has incomplete daily records")
-    return Recording(config, read_rows(trace), {row["day"]: row for row in records})
+    frames = read_rows(trace)
+    if not frames:
+        raise ValueError(f"{prefix.name}: window visibility was not recorded")
+    for frame in frames:
+        drawable = frame.get("window_drawable")
+        # Godot can emit a callback to process render resources while the window is hidden.
+        if drawable is False:
+            raise ValueError(f"{prefix.name}: window could not draw at game day {frame['committed']}")
+        if drawable is not True:
+            raise ValueError(f"{prefix.name}: window visibility was not recorded")
+    return Recording(config, frames, {row["day"]: row for row in records})
 
 
 def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_app=None):

@@ -96,6 +96,10 @@ func _run() -> void:
 		settings_patch.graphics_custom = true
 		settings_patch.frame_rate_limit = FRAME_LIMITS[fps_mode]
 	settings_service.update(settings_patch, false)
+	if require_rendered and DisplayServer.get_name() == "macOS":
+		# Keep the benchmark drawable while the desktop remains in use.
+		root.always_on_top = true
+		root.grab_focus()
 	var config := NewGameConfig.new()
 	config.apply_land_layout(NewGameConfig.DEFAULT_LAND_LAYOUT)
 	config.base.map_width = WIDTH
@@ -304,6 +308,7 @@ func _capture(target: int, answer_story: bool) -> String:
 	var last_progress := previous_frame
 	var previous_day := _host._runtime_commit_day
 	var answered_offer := 0
+	var window_drawable := DisplayServer.window_can_draw()
 	while true:
 		await process_frame
 		if _simulate_frames:
@@ -312,6 +317,7 @@ func _capture(target: int, answer_story: bool) -> String:
 			_host._presentation.observe_draw()
 			_host._presentation.begin_frame()
 		var now := Time.get_ticks_usec()
+		var window_drawable_now := DisplayServer.window_can_draw()
 		var runtime := _generator.get_runtime_thread_report()
 		var control := _generator.get_runtime_control_state()
 		var consumed := _host._runtime_commit_day
@@ -331,6 +337,7 @@ func _capture(target: int, answer_story: bool) -> String:
 		elif state == "PAUSED" and committed >= _host._calendar_admitted_through:
 			reason = "calendar_wait"
 		var frame := {"usec": now, "frame_usec": now - previous_frame, "draw_times": _draw_times,
+			"window_drawable": window_drawable and window_drawable_now,
 			"draw_lag_days": _draw_lag_days, "view_updates": _view_updates,
 			"presented": _host.presented_worker_day(), "effective_max_fps": Engine.max_fps,
 			"overload_us": _overload_us,
@@ -359,6 +366,7 @@ func _capture(target: int, answer_story: bool) -> String:
 		_admit_usec = 0
 		_ui_usec = 0
 		previous_frame = now
+		window_drawable = window_drawable_now
 		if consumed != previous_day:
 			previous_day = consumed
 			last_progress = now

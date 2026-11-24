@@ -125,6 +125,42 @@ class RenderedHandoffComparisonTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "used no window renderer"):
                 load_recording(prefix, 50, 180)
 
+    def write_window(self, prefix, frames):
+        config = {"display": "macOS", "driver": "metal", "speed": 50}
+        result = {"end": "target", "contiguous": True, "written": True, "consumed_day": 2}
+        prefix.with_suffix(".log").write_text(
+            f"HANDOFF_CONFIG={json.dumps(config)}\nHANDOFF_RESULT={json.dumps(result)}\n")
+        prefix.with_suffix(".jsonl.days").write_text('{"day":1}\n{"day":2}\n')
+        prefix.with_suffix(".jsonl").write_text("".join(json.dumps(frame) + "\n" for frame in frames))
+
+    def test_rejects_hidden_window_even_if_callbacks_were_delivered(self):
+        with TemporaryDirectory() as directory:
+            prefix = Path(directory) / "covered"
+            self.write_window(prefix, [
+                {"committed": 1, "window_drawable": True, "draw_times": [1000]},
+                {"committed": 2, "window_drawable": False, "draw_times": [400000]},
+            ])
+            with self.assertRaisesRegex(ValueError, "window could not draw.*day 2"):
+                load_recording(prefix, 50, 2)
+
+    def test_requires_window_visibility_evidence(self):
+        with TemporaryDirectory() as directory:
+            prefix = Path(directory) / "unknown"
+            self.write_window(prefix, [{"committed": 1, "draw_times": [1000]}])
+            with self.assertRaisesRegex(ValueError, "window visibility was not recorded"):
+                load_recording(prefix, 50, 2)
+
+    def test_keeps_a_real_draw_gap_when_the_window_stays_visible(self):
+        with TemporaryDirectory() as directory:
+            prefix = Path(directory) / "drawable"
+            frames = [
+                {"committed": 1, "window_drawable": True, "draw_times": [1000]},
+                {"committed": 1, "window_drawable": True, "draw_times": []},
+                {"committed": 2, "window_drawable": True, "draw_times": [401000]},
+            ]
+            self.write_window(prefix, frames)
+            self.assertEqual(load_recording(prefix, 50, 2).frames, frames)
+
     def test_pair_refuses_different_viewport_sizes(self):
         baseline = self.sample([4, 5, 6, 7, 8, 9, 10])
         resized = replace(baseline, config=self.config | {"viewport_size": "(1280, 800)"})

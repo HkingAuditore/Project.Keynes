@@ -93,27 +93,56 @@ done
 存档列表用例首轮读到了复制来的旧测试存档，换用空目录的副本后通过全部 26 项检查。
 改前和改后导入均报系统证书和编辑器目录错误，运行及导入日志见同一目录下的 `logs/`。
 
-改后窗口复测仍待完成。首次直接启动停在 macOS 窗口服务连接阶段，记录见
-`/private/tmp/keynes-issue63.zOmKne/first.log`。审查修复版的正式配对采集在第一轮启动时收到
-LaunchServices `-10827`，桌面工具也未获准打开 Godot，两边均没有新绘制样本。命令、退出状态和
-日志见 `/private/tmp/keynes-63-review.qKdUuF/window-overload/` 及 `logs/window-overload.log`。
-用两份已核对版本的项目复测，启动器仍在第一轮返回 `-10827`。`gda` 的窗口检查返回
-`live_windowed_permission_denied`，当前会话无法访问 macOS 窗口服务。采集器现将启动错误写入
-每轮的 `.launch.log`，启动失败时指向该日志。拒绝启动的回归用例和其余 16 项采集检查通过。
-本轮错误与命令见 `/private/tmp/keynes-63-window-final.YZUbpi/launch-diagnostic/`。
-改后实际绘制间隔、后台天/秒、地图更新频率、落后游戏日和各档绘制瓶颈待测。
+macOS 桌面上的常规配对跑完 36 次窗口，另有 18 次注入忙帧窗口。全部前 180 日或前 8 日的
+逐日摘要和命令回执一致，两种速度共有的前 8 日也一致。采集期间 #66 有并行编译。
+逐轮设置、原始记录和耗时见
+`~/.keynes-factory/evidence/issue-63-ab.JTevdp/report.md`。
+这批采集未逐帧验证 macOS 窗口可绘制，耗时包含窗口不可绘制区间的风险。
+
+30 帧档的诊断自然复现了 311.247 ms 的绘制记录缺口。缺口内多次前台处理耗时约 37–40 ms，
+持续领取模拟日，窗口一直报告不可绘制，绘制前后信号和引擎绘制计数同时停在原处。
+Godot 可在没有可绘制窗口时为待处理渲染资源执行绘制步骤，因而只看到 Metal 和绘制回调
+不足以证明窗口可绘制。另一轮诊断中，可绘制窗口上的最长间隔为 48.691 ms。
+诊断记录位于 `~/.keynes-factory/evidence/issue-63-draw-cause.Eig7bx/`。
+
+采样用例在 macOS 将窗口置顶并请求焦点，逐帧记录可绘制状态。配对工具拒绝缺少可见性证据
+或窗口不可绘制的录制，窗口可绘制时的长帧仍保留。此约束只在配对采集工具执行。
+同一台 M2 以 Godot 4.6.3、Metal Mobile、1600×960、高画质和相同种子复测 30 帧、50 倍速。
+下表给出三个共同游戏日区间的改前 → 改后结果。基线为 `9ddb12734`，改后为 `c5c3eff65`。
+样本数和范围均按完成绘制之间的间隔计算。三对窗口逐帧可绘制，模拟摘要和回执与原录制的前 180 日一致。
+过载轮的改后版本通过合并积压和追上更新的检查。
+
+| 负载 | 共同游戏日 | 绘制 P95（ms） | 绘制间隔样本 | 绘制范围（ms） | 后台天/秒 | 地图更新/秒 | 最大显示落后（游戏日） |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 常规，改前先跑 | 26–75 | 49.0 → 45.7 | 29 → 85 | 30.2–49.4 → 32.8–57.2 | 48.7 → 15.0 | 29.6 → 10.7 | 3 → 4 |
+| 常规，改前先跑 | 85–134 | 37.1 → 48.1 | 32 → 90 | 33.0–38.7 → 42.8–56.2 | 43.1 → 12.2 | 28.8 → 5.7 | 2 → 3 |
+| 常规，改前先跑 | 147–174 | 41.2 → 46.9 | 15 → 55 | 37.6–41.2 → 42.8–62.4 | 43.6 → 11.1 | 25.5 → 5.2 | 2 → 3 |
+| 常规，改后先跑 | 26–75 | 37.4 → 38.4 | 27 → 62 | 30.5–49.7 → 32.8–43.1 | 51.4 → 22.7 | 29.5 → 21.4 | 2 → 3 |
+| 常规，改后先跑 | 86–135 | 36.8 → 43.3 | 31 → 54 | 31.9–37.1 → 39.5–43.5 | 44.7 → 21.2 | 29.2 → 6.1 | 2 → 4 |
+| 常规，改后先跑 | 146–175 | 41.4 → 49.5 | 16 → 38 | 37.7–41.4 → 42.1–49.9 | 44.1 → 16.5 | 25.6 → 5.1 | 2 → 3 |
+| 注入忙帧 | 25–74 | 52.0 → 48.5 | 41 → 41 | 28.6–55.6 → 29.8–55.9 | 32.0 → 30.0 | 26.1 → 7.9 | 2 → 16 |
+| 注入忙帧 | 85–135 | 42.1 → 49.9 | 46 → 38 | 34.0–43.4 → 41.4–51.8 | 27.0 → 28.6 | 24.4 → 5.7 | 2 → 6 |
+| 注入忙帧 | 146–175 | 43.4 → 52.1 | 24 → 22 | 41.1–43.6 → 44.5–54.6 | 26.8 → 26.3 | 22.7 → 5.4 | 2 → 6 |
+
+窗口持续可绘制的测量区间内，改后最长间隔为 62.4 ms。两对常规窗口的改后后台速度较低，改前和改后
+采集时系统负载不同。数据保留这个差异，具体原因仍待定位。
+每组共同日界、样本数、波动和复现结果见
+`~/.keynes-factory/evidence/issue-63-draw-cause.Eig7bx/report.md`。
+
 配对采集使用两份已导入的项目、对应版本的本地扩展和相同的
 `player_scene_handoff_probe.gd`、`player_scene_handoff_timings.gd` 和
 `player_scene_display_checks.gd`。在有绘图权限的 macOS 桌面终端运行以下命令。
 
 ```sh
-baseline_copy=/private/tmp/keynes-63-review.qKdUuF/comparison-before
-candidate_copy=/private/tmp/keynes-63-review.qKdUuF/comparison-after
+verified_dir=~/.keynes-factory/evidence/issue-63-draw-cause.Eig7bx/verified
+baseline_copy=$verified_dir/before
+candidate_copy=$verified_dir/after
+engine=/Applications/Godot.app/Contents/MacOS/Godot
 sample_dir=$(mktemp -d /tmp/keynes-63-pairs.XXXXXX)
 python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$candidate_copy" \
-  --macos-app /Applications/Godot.app --fps 30 --fps 60 --fps adaptive --output "$sample_dir/alternating"
+  --godot "$engine" --fps 30 --fps 60 --fps adaptive --output "$sample_dir/alternating"
 python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$candidate_copy" \
-  --macos-app /Applications/Godot.app --fps 30 --fps 60 --fps adaptive \
+  --godot "$engine" --fps 30 --fps 60 --fps adaptive \
   --overload --expect-pacing --output "$sample_dir/overload"
 ```
 
