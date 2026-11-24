@@ -87,8 +87,12 @@ env = env.Clone()
 # Simulation arithmetic must round the same way on hardware with and without
 # fused multiply-add, including WebAssembly's scalar floating-point operations.
 if env.get("is_msvc", False):
-    env.AppendUnique(CCFLAGS=["/fp:strict"])
-    env.AppendUnique(CFLAGS=["/std:c11"])
+    # MSVC /fp:strict disables FMA contraction on C++ code, but in C11 mode it
+    # rejects constant floating-point arithmetic in musl static initializers
+    # (C2099). Compile C files with /fp:precise and disable FMA via
+    # `#pragma fp_contract(off)` in thirdparty/simulation_math/libm.h.
+    env.AppendUnique(CXXFLAGS=["/fp:strict"])
+    env.AppendUnique(CFLAGS=["/std:c11", "/fp:precise"])
 else:
     env.AppendUnique(CCFLAGS=["-ffp-contract=off"])
 

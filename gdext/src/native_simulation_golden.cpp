@@ -407,7 +407,7 @@ uint64_t events_hash(const RuntimeEventsSnapshot &state) {
     rows(hash, state.events);
     // The score reads this cursor at display cadence. Trigger and narrative
     // acknowledgements still participate in the simulation digest.
-    constexpr uint64_t music_consumer = 4407092808345815469ull; // pk_music_situation
+    static constexpr uint64_t music_consumer = 4407092808345815469ull; // pk_music_situation
     const auto simulation_consumer = [](const RuntimeEventsConsumerAck &ack) {
         return ack.consumer_key != music_consumer;
     };

@@ -131,7 +131,7 @@ std::string narrative_key(const Variant &value) {
 }
 
 uint64_t narrative_hash(uint64_t seed, int64_t day, uint64_t country, int64_t cell, int64_t salt) {
-    constexpr uint64_t mask = 0x7fffffffffffffffULL;
+    static constexpr uint64_t mask = 0x7fffffffffffffffULL;
     const auto mix = [](uint64_t value) {
         uint64_t z = (value + 0x6a09e667f3bcc908ULL) & mask;
         z = ((z ^ (z >> 30)) * 0x517cc1b727220a95ULL) & mask;

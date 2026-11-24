@@ -18,6 +18,9 @@
 
 /* Never select an architecture-specific FMA branch or expose libc symbols. */
 #define PK_MATH_USE_FMA 0
+#ifdef _MSC_VER
+#pragma fp_contract(off)
+#endif
 #if defined(__GNUC__) || defined(__clang__)
 #define hidden __attribute__((visibility("hidden")))
 #else
